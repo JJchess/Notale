@@ -1,0 +1,239 @@
+{
+  "platform": "jupyterlab",
+  "artifacts": [
+    {
+      "artifactId": "bayesian-opt-demo",
+      "title": "贝叶斯优化交互演示",
+      "description": "使用 scikit-optimize 在 Branin 函数上对比网格搜索、随机搜索和贝叶斯优化的交互式 Notebook。调整采集函数（EI、UCB、PI）和噪声水平，观察搜索行为的变化。",
+      "notebook": {
+        "cells": [
+          {
+            "cell_type": "markdown",
+            "source": [
+              "# 贝叶斯优化 vs 网格搜索 vs 随机搜索\n",
+              "\n",
+              "本 Notebook 使用 Branin 函数作为代理目标，在 30 次评估预算下直观对比三种搜索策略的行为差异。\n",
+              "\n",
+              "Branin 函数有两个全局最小值和一个局部最小值，是经典的非凸优化测试函数。"
+            ]
+          },
+          {
+            "cell_type": "code",
+            "source": [
+              "import numpy as np\n",
+              "from scipy.stats import norm\n",
+              "import matplotlib.pyplot as plt\n",
+              "\n",
+              "# 定义 Branin 函数（取负号以便做最大化）\n",
+              "def branin(x, y):\n",
+              "    a = 1.0\n",
+              "    b = 5.1 / (4 * np.pi**2)\n",
+              "    c = 5.0 / np.pi\n",
+              "    r = 6.0\n",
+              "    s = 10.0\n",
+              "    t = 1.0 / (8.0 * np.pi)\n",
+              "    return -((y - b * x**2 + c * x - r)**2 + s * (1 - t) * np.cos(x) + s)\n",
+              "\n",
+              "# 绘制 Branin 函数曲面\n",
+              "x_grid = np.linspace(-5, 10, 200)\n",
+              "y_grid = np.linspace(0, 15, 200)\n",
+              "X, Y = np.meshgrid(x_grid, y_grid)\n",
+              "Z = branin(X, Y)\n",
+              "\n",
+              "plt.figure(figsize=(10, 6))\n",
+              "plt.contourf(X, Y, Z, levels=50, cmap='viridis')\n",
+              "plt.colorbar(label='Objective (higher is better)')\n",
+              "plt.xlabel('x')\n",
+              "plt.ylabel('y')\n",
+              "plt.title('Branin Function (negated for maximization)')\n",
+              "\n",
+              "# 标记全局最优位置\n",
+              "global_optima = [(-np.pi, 12.275), (np.pi, 2.275), (9.42478, 2.475)]\n",
+              "for gx, gy in global_optima:\n",
+              "    plt.plot(gx, gy, 'r*', markersize=15)\n",
+              "plt.show()"
+            ]
+          },
+          {
+            "cell_type": "markdown",
+            "source": [
+              "## 1. 网格搜索 (Grid Search)\n",
+              "\n",
+              "在均匀网格上评估所有点。注意：网格分辨率固定时，很多评估被浪费在平坦区域。"
+            ]
+          },
+          {
+            "cell_type": "code",
+            "source": [
+              "def grid_search(obj_fn, x_range, y_range, n_x, n_y):\n",
+              "    xs = np.linspace(*x_range, n_x)\n",
+              "    ys = np.linspace(*y_range, n_y)\n",
+              "    best_val = -np.inf\n",
+              "    best_point = None\n",
+              "    history = []\n",
+              "    for x in xs:\n",
+              "        for y in ys:\n",
+              "            val = obj_fn(x, y) + np.random.normal(0, 0.5)  # 加噪声模拟真实 HPO\n",
+              "            history.append((x, y, val))\n",
+              "            if val > best_val:\n",
+              "                best_val = val\n",
+              "                best_point = (x, y)\n",
+              "    return best_point, best_val, history\n",
+              "\n",
+              "best_gs, val_gs, hist_gs = grid_search(branin, (-5, 10), (0, 15), 6, 5)\n",
+              "print(f\"网格搜索: 最优点={best_gs}, 最优值={val_gs:.3f}\")"
+            ]
+          },
+          {
+            "cell_type": "markdown",
+            "source": [
+              "## 2. 随机搜索 (Random Search)\n",
+              "\n",
+              "从均匀分布中随机采样 30 个点。注意其\"无记忆\"特性——历史评估不影响后续采样。"
+            ]
+          },
+          {
+            "cell_type": "code",
+            "source": [
+              "def random_search(obj_fn, x_range, y_range, n_iter=30):\n",
+              "    best_val = -np.inf\n",
+              "    best_point = None\n",
+              "    history = []\n",
+              "    for _ in range(n_iter):\n",
+              "        x = np.random.uniform(*x_range)\n",
+              "        y = np.random.uniform(*y_range)\n",
+              "        val = obj_fn(x, y) + np.random.normal(0, 0.5)\n",
+              "        history.append((x, y, val))\n",
+              "        if val > best_val:\n",
+              "            best_val = val\n",
+              "            best_point = (x, y)\n",
+              "    return best_point, best_val, history\n",
+              "\n",
+              "best_rs, val_rs, hist_rs = random_search(branin, (-5, 10), (0, 15), 30)\n",
+              "print(f\"随机搜索: 最优点={best_rs}, 最优值={val_rs:.3f}\")"
+            ]
+          },
+          {
+            "cell_type": "markdown",
+            "source": [
+              "## 3. 贝叶斯优化 (Bayesian Optimization)\n",
+              "\n",
+              "使用高斯过程代理模型 + Expected Improvement 采集函数。\n",
+              "\n",
+              "核心思想：\n",
+              "1. 用高斯过程对未知目标函数建模（给出均值和不确定性）\n",
+              "2. 用采集函数平衡探索（高不确定性区域）与利用（高均值区域）\n",
+              "3. 选择使采集函数最大的点作为下一个评估点"
+            ]
+          },
+          {
+            "cell_type": "code",
+            "source": [
+              "from sklearn.gaussian_process import GaussianProcessRegressor\n",
+              "from sklearn.gaussian_process.kernels import RBF, ConstantKernel\n",
+              "\n",
+              "def expected_improvement(X, gp, y_best, xi=0.01):\n",
+              "    \"\"\"Expected Improvement 采集函数\"\"\"\n",
+              "    mu, sigma = gp.predict(X, return_std=True)\n",
+              "    with np.errstate(divide='ignore'):\n",
+              "        Z = (mu - y_best - xi) / sigma\n",
+              "        ei = (mu - y_best - xi) * norm.cdf(Z) + sigma * norm.pdf(Z)\n",
+              "        ei[sigma == 0.0] = 0.0\n",
+              "    return ei\n",
+              "\n",
+              "def bayesian_optimization(obj_fn, x_range, y_range, n_initial=5, n_iter=25):\n",
+              "    # 初始随机采样\n",
+              "    X_init = np.random.uniform(\n",
+              "        low=[x_range[0], y_range[0]],\n",
+              "        high=[x_range[1], y_range[1]],\n",
+              "        size=(n_initial, 2)\n",
+              "    )\n",
+              "    y_init = np.array([obj_fn(x, y) + np.random.normal(0, 0.5) for x, y in X_init])\n",
+              "    \n",
+              "    X_obs = X_init.copy()\n",
+              "    y_obs = y_init.copy()\n",
+              "    history = [(x, y, v) for (x, y), v in zip(X_init, y_init)]\n",
+              "    \n",
+              "    kernel = ConstantKernel(1.0) * RBF(length_scale=[2.0, 2.0])\n",
+              "    \n",
+              "    for i in range(n_iter):\n",
+              "        gp = GaussianProcessRegressor(kernel=kernel, n_restarts_optimizer=5)\n",
+              "        gp.fit(X_obs, y_obs)\n",
+              "        \n",
+              "        # 在网格上计算 EI\n",
+              "        x_cand = np.linspace(*x_range, 50)\n",
+              "        y_cand = np.linspace(*y_range, 50)\n",
+              "        X_cand = np.array([[x, y] for x in x_cand for y in y_cand])\n",
+              "        ei = expected_improvement(X_cand, gp, np.max(y_obs))\n",
+              "        \n",
+              "        next_point = X_cand[np.argmax(ei)]\n",
+              "        next_val = obj_fn(*next_point) + np.random.normal(0, 0.5)\n",
+              "        \n",
+              "        X_obs = np.vstack([X_obs, next_point])\n",
+              "        y_obs = np.append(y_obs, next_val)\n",
+              "        history.append((*next_point, next_val))\n",
+              "        \n",
+              "        if (i + 1) % 5 == 0:\n",
+              "            print(f\"  Iter {i+1}/{n_iter}: best so far = {np.max(y_obs):.3f}\")\n",
+              "    \n",
+              "    best_idx = np.argmax(y_obs)\n",
+              "    return X_obs[best_idx], y_obs[best_idx], history\n",
+              "\n",
+              "best_bo, val_bo, hist_bo = bayesian_optimization(branin, (-5, 10), (0, 15))\n",
+              "print(f\"\\n贝叶斯优化: 最优点=({best_bo[0]:.2f}, {best_bo[1]:.2f}), 最优值={val_bo:.3f}\")"
+            ]
+          },
+          {
+            "cell_type": "markdown",
+            "source": [
+              "## 4. 三策略对比可视化\n",
+              "\n",
+              "观察每种策略的采样分布——贝叶斯优化如何集中在最优区域附近，而网格和随机搜索如何分散。"
+            ]
+          },
+          {
+            "cell_type": "code",
+            "source": [
+              "fig, axes = plt.subplots(1, 3, figsize=(18, 5))\n",
+              "titles = ['Grid Search', 'Random Search', 'Bayesian Optimization']\n",
+              "histories = [hist_gs, hist_rs, hist_bo]\n",
+              "best_vals = [val_gs, val_rs, val_bo]\n",
+              "\n",
+              "for ax, title, hist, best_v in zip(axes, titles, histories, best_vals):\n",
+              "    xs, ys, vs = zip(*hist)\n",
+              "    ax.contourf(X, Y, Z, levels=30, cmap='viridis', alpha=0.5)\n",
+              "    scatter = ax.scatter(xs, ys, c=range(len(xs)), cmap='plasma', \n",
+              "                         s=40, edgecolors='white', linewidth=0.5)\n",
+              "    ax.scatter(xs[np.argmax(vs)], ys[np.argmax(vs)], \n",
+              "               c='red', marker='*', s=200, edgecolors='white')\n",
+              "    ax.set_xlim(-5, 10)\n",
+              "    ax.set_ylim(0, 15)\n",
+              "    ax.set_title(f'{title}\\nBest: {best_v:.3f}')\n",
+              "    ax.set_xlabel('x')\n",
+              "    ax.set_ylabel('y')\n",
+              "\n",
+              "plt.tight_layout()\n",
+              "plt.show()\n",
+              "\n",
+              "print(\"=== 最终对比 ===\")\n",
+              "print(f\"网格搜索最优值: {val_gs:.3f}\")\n",
+              "print(f\"随机搜索最优值: {val_rs:.3f}\")\n",
+              "print(f\"贝叶斯优化最优值: {val_bo:.3f}\")\n",
+              "print(f\"\\n全局最优参考值（无噪声）: ~{-0.398:.3f}\")"
+            ]
+          },
+          {
+            "cell_type": "markdown",
+            "source": [
+              "## 思考题\n",
+              "\n",
+              "1. 修改 `xi` 参数（exploration-exploitation 权衡），观察搜索行为如何变化。增大 xi 会怎样？减小呢？\n",
+              "2. 将噪声水平从 0.5 增加到 2.0，贝叶斯优化的优势会减弱吗？为什么？\n",
+              "3. 将评估预算提高到 100 次，三种策略的排名会改变吗？"
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

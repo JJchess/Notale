@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>讲义</title>
+<link rel="stylesheet" href="vendor/reveal/reveal.css">
+<link rel="stylesheet" href="vendor/reveal/monokai.css">
+<link rel="stylesheet" href="vendor/codemirror/lib/codemirror.css">
+<link rel="stylesheet" href="vendor/codemirror/theme/eclipse.css">
+<link rel="stylesheet" href="vendor/katex/katex.min.css">
+<link rel="stylesheet" href="vendor/fonts/fonts.css">
+<style>
+  /* ===================== Cartesian 设计系统（运行时壳） ======================
+     内容不在本文件——一切内容来自 course.lecture.json（LectureDoc v1，
+     见 schema/SPEC.md），由 doc-to-deck.js 渲染。本文件只负责视觉与静态 chrome。
+     暖沙米色画布 + Playfair Display(仅 400 字重)衬线标题 + Inter 正文。
+     五色克制调色板，没有任何强调色——层级靠字号对比、1px 细线、留白构建。
+     参考: refs/frontend-slides/bold-template-pack/templates/cartesian/design.md */
+  :root{
+    --bg:#EDE8E0; --bg2:#E2DBD1; --ink:#1A1A1A; --text2:#5A5A5A; --accent:#8A8178; --line:#B8B0A4;
+    --card:var(--bg2);
+    --serif:'Playfair Display','Noto Serif SC',Georgia,serif;
+    --sans:'Inter','Noto Serif SC',sans-serif;
+    --mono:'DM Mono',ui-monospace,Consolas,monospace; /* 仅用于真实代码/公式，不用于界面文案 */
+  }
+  html,body{ margin:0; padding:0; height:100%; overflow:hidden; background:var(--bg); }
+  /* ---------- base ---------- */
+  .reveal{ font-family:var(--sans); font-size:26px; color:var(--ink); }
+  .reveal-viewport{ background:var(--bg); }
+  .reveal .slides section{ text-align:left; top:0!important; height:100%; padding:0; }
+  .reveal h1,.reveal h2,.reveal h3{ color:var(--ink); font-family:var(--serif); font-weight:400;
+    text-transform:none; letter-spacing:-.005em; text-shadow:none; line-height:1.1; margin:0; }
+  .reveal p{ line-height:1.65; } .reveal strong{ color:var(--ink); font-weight:600; }
+  .reveal em{ color:var(--ink); font-style:italic; font-weight:400; font-family:var(--serif); }
+  .reveal b{ color:var(--ink); font-family:var(--serif); font-weight:400; font-style:italic; }
+  .reveal a{ color:var(--ink); }
+  .reveal .slide-number{ background:transparent; color:var(--accent); font-family:var(--sans); font-size:12px;
+    font-weight:500; letter-spacing:.06em; right:44px; bottom:28px; }
+  .reveal .progress{ color:var(--accent); height:1px; background:var(--line); }
+  .reveal ::selection{ background:rgba(138,129,120,.25); }
+
+  /* 圆规作图式装饰环——纯氛围，不承载信息 */
+  .geo-ring{ position:absolute; border:1px solid var(--line); border-radius:50%; opacity:.4; pointer-events:none; z-index:0; }
+  .geo-ring::before{ content:''; position:absolute; inset:13%; border:1px dashed var(--line); border-radius:50%; opacity:.7; }
+  .h-accent{ width:170px; height:1px; background:var(--ink); }
+
+  /* content slide scaffold */
+  .reveal .pad, .reveal .pad *{ box-sizing:border-box; }
+  .pad{ padding:64px 90px 66px; height:100%; display:flex; flex-direction:column; position:relative; z-index:1; }
+  .eyebrow{ font-family:var(--sans); font-size:13px; font-weight:500; color:var(--accent); margin-bottom:16px; }
+  .reveal h2.headline{ font-size:42px; margin-bottom:10px; }
+  .lead{ color:var(--text2); font-family:var(--sans); font-size:19px; margin:6px 0 22px; max-width:56ch; line-height:1.55; }
+  .body{ flex:1; min-height:0; }
+
+  /* bullets — 序数用 Playfair 衬线数字 */
+  ul.pts{ list-style:none; margin:0; padding:0; counter-reset:pts; }
+  ul.pts li{ counter-increment:pts; position:relative; padding:15px 0 15px 44px; font-size:21px; line-height:1.5;
+    border-bottom:1px solid var(--line); color:var(--text2); font-family:var(--sans); }
+  ul.pts li:last-child{ border-bottom:none; }
+  ul.pts li::before{ content:counter(pts); position:absolute; left:0; top:12px;
+    font-family:var(--serif); font-size:20px; color:var(--accent); }
+  ul.pts li b, ul.pts li strong{ color:var(--ink); font-family:var(--serif); font-weight:400; font-style:italic; }
+  ul.pts li .sub{ color:var(--accent); font-size:16px; }
+
+  /* two column（仅用于内容天然对称的场景，如代码前后对照） */
+  .cols{ display:grid; grid-template-columns:1fr 1fr; gap:5vw; align-items:start; }
+  .cmp-cap{ font-family:var(--sans); font-size:13px; color:var(--accent); font-weight:600; margin-bottom:6px; }
+
+  /* callout — 顶部 1px 细线 + 无底色 */
+  .callout{ border-top:1px solid var(--line); background:transparent; border-radius:0;
+    padding:16px 0 2px; font-size:19px; line-height:1.55; color:var(--text2); font-family:var(--sans); }
+  .callout .k{ font-family:var(--sans); font-size:12px; letter-spacing:.02em; color:var(--accent);
+    font-weight:600; display:block; margin-bottom:8px; }
+  .callout b{ color:var(--ink); font-family:var(--serif); font-weight:400; font-style:italic; }
+
+  /* agenda-row — 单列等高列表 */
+  .agenda{ display:flex; flex-direction:column; }
+  .agenda-row{ display:grid; grid-template-columns:56px 1fr; gap:18px; padding:16px 0; border-bottom:1px solid var(--line); align-items:baseline; }
+  .agenda-row:last-child{ border-bottom:none; }
+  .agenda-row .num{ font-family:var(--serif); font-size:24px; color:var(--accent); }
+  .agenda-row .k{ font-family:var(--sans); font-size:13px; font-weight:600; color:var(--accent); display:block; margin-bottom:5px; }
+  .agenda-row .v{ font-family:var(--sans); font-size:18px; color:var(--text2); line-height:1.5; }
+  .agenda-row .v b{ color:var(--ink); font-family:var(--serif); font-weight:400; font-style:italic; }
+
+  /* freeform 逃生舱 — 有意做得显眼，绝不悄悄融入正常排版（见 schema/SPEC.md §3.3） */
+  .freeform{ border:1.5px dashed var(--accent); border-radius:0; padding:16px 18px; }
+  .freeform-flag{ font-family:var(--sans); font-size:12px; font-weight:600; letter-spacing:.02em;
+    color:var(--accent); margin-bottom:12px; }
+  .freeform-body{ font-family:var(--sans); font-size:18px; color:var(--text2); line-height:1.5; }
+  .freeform-rationale{ margin-top:12px; padding-top:10px; border-top:1px dashed var(--line);
+    font-family:var(--sans); font-size:13px; color:var(--accent); font-style:italic; }
+
+  /* table — ledger 风格 */
+  table.tbl{ border-collapse:collapse; width:100%; font-size:18px; background:transparent; border-radius:0; box-shadow:none; font-family:var(--sans); }
+  table.tbl th{ background:transparent; color:var(--accent); font-family:var(--sans); font-size:13px; font-weight:600;
+    text-align:left; padding:10px 14px; border-bottom:1.5px solid var(--line); }
+  table.tbl td{ padding:12px 14px; border-bottom:1px solid var(--line); color:var(--text2); vertical-align:top; line-height:1.42; }
+  table.tbl tr:last-child td{ border-bottom:none; }
+  table.tbl td:first-child{ color:var(--ink); font-family:var(--serif); font-weight:400; font-size:1.05em; }
+  table.tbl .hi{ color:var(--ink); font-weight:600; }
+
+  /* math */
+  .mi{ font-family:var(--mono); font-style:italic; color:var(--ink); background:transparent; padding:0 2px; }
+  .mblock{ text-align:center; font-family:var(--mono); font-size:27px; color:var(--ink); background:transparent;
+    border:1px solid var(--line); border-radius:0; padding:18px; margin:4px 0; }
+  .mblock .katex-display{ margin:0; }
+
+  /* diagram flow */
+  .flow{ display:flex; align-items:center; justify-content:center; gap:0; flex-wrap:wrap; margin:6px 0; }
+  .node{ padding:14px 22px; border-radius:0; border:1px solid var(--line); background:transparent; font-weight:400;
+    font-family:var(--serif); font-size:21px; color:var(--ink); text-align:center; box-shadow:none; }
+  .node .t{ font-family:var(--sans); font-size:12px; color:var(--accent); font-weight:500; display:block; margin-top:4px; }
+  .node.on{ border-color:var(--ink); border-width:1.5px; }
+  .node.q{ border-style:dashed; opacity:.6; }
+  .arrow{ color:var(--line); font-size:20px; margin:0 14px; }
+  .loop-note{ margin-left:14px; color:var(--accent); font-family:var(--sans); font-size:15px; }
+
+  /* code card — 浅石色面板 */
+  .codecard{ background:var(--bg2); border:1px solid var(--line); border-radius:0; overflow:hidden; box-shadow:none; }
+  .codecard .bar{ display:flex; align-items:center; gap:7px; padding:9px 16px; border-bottom:1px solid var(--line); }
+  .codecard .bar .d{ width:7px; height:7px; border-radius:50%; background:var(--line); }
+  .codecard .bar .lbl{ margin-left:8px; font-family:var(--sans); font-size:12px; color:var(--accent); }
+  .reveal .codecard pre{ margin:0; box-shadow:none; width:100%; background:transparent; }
+  .reveal .codecard code{ font-family:var(--mono); font-size:15px; line-height:1.6; background:transparent; padding:16px 18px; }
+  .codecard code, .codecard code *{ color:var(--ink) !important; background:transparent !important; font-style:normal !important; font-family:var(--mono) !important; font-weight:400 !important; }
+  .codecard code .hljs-comment{ color:var(--text2) !important; }
+
+  /* cover — 与内页同底色，靠留白与一条黑色细线做唯一强调 */
+  .cover .inner{ position:relative; color:var(--ink); padding:0 96px; z-index:2; }
+  .cover .pad{ justify-content:center; }
+  .cover .tag{ font-family:var(--sans); font-size:14px; font-weight:500; color:var(--accent); margin-bottom:22px; }
+  .reveal .cover h1{ color:var(--ink); font-size:60px; line-height:1.12; letter-spacing:-.008em; max-width:19ch; }
+  .cover .sub{ font-family:var(--sans); font-size:19px; color:var(--text2); margin-top:20px; max-width:42ch; line-height:1.6; }
+  .cover .facts{ margin-top:28px; font-family:var(--sans); font-size:14px; color:var(--accent); }
+  .cover .h-accent{ margin:26px 0 0; }
+  .cover .hint{ margin-top:36px; font-size:13px; font-family:var(--sans); color:var(--line); }
+
+  /* big idea / statement */
+  section.bigidea .pad{ justify-content:center; }
+  .bigidea .q{ font-family:var(--serif); font-size:42px; font-weight:400; line-height:1.32; color:var(--ink); max-width:21ch; }
+  .bigidea .q em{ color:var(--ink); }
+  .q-sub{ font-size:24px; color:var(--text2); font-weight:400; font-family:var(--sans); }
+  .bigidea .cite{ margin-top:22px; color:var(--accent); font-family:var(--sans); font-size:15px; }
+  .cite{ color:var(--accent); font-family:var(--sans); font-size:15px; }
+
+  /* quiz */
+  .quiz-context{ font-family:var(--mono); color:var(--text2); margin-bottom:16px; }
+  .quiz .choice{ display:flex; align-items:center; gap:16px; padding:15px 4px; border:none; border-bottom:1px solid var(--line);
+    border-radius:0; margin-bottom:0; cursor:pointer; background:transparent; transition:.12s; font-size:19px; font-family:var(--sans); color:var(--text2); }
+  .quiz .choice:hover{ background:rgba(138,129,120,.08); }
+  .quiz .choice .k{ font-family:var(--serif); font-weight:400; color:var(--accent); width:22px; font-size:19px; }
+  .quiz .choice.correct{ border-bottom:1.5px solid var(--ink); color:var(--ink); font-weight:500; }
+  .quiz .choice.correct .k{ color:var(--ink); }
+  .quiz .choice.wrong{ color:var(--line); text-decoration:line-through; }
+  .quiz .choice.wrong .k{ color:var(--line); }
+  .quiz .explain{ display:none; margin-top:14px; padding:16px 0 2px; border-radius:0; font-size:18px; line-height:1.58;
+    background:transparent; border-top:1px solid var(--line); color:var(--text2); font-family:var(--sans); }
+  .quiz .explain.show{ display:block; } .quiz .explain b{ color:var(--ink); font-family:var(--serif); font-style:italic; font-weight:400; }
+
+  /* ---------- interactive lab (Observable Plot · Quarto/OJS 技术方案) ---------- */
+  .labbar{ display:flex; align-items:center; gap:24px; margin-bottom:16px; flex-wrap:wrap; }
+  .labbar .ctl{ display:flex; align-items:center; gap:12px; }
+  .labbar label, .lab .ctl label{ font-size:15px; color:var(--ink); font-family:var(--sans); font-weight:500; white-space:nowrap; }
+  .labbar label .v{ font-family:var(--mono); color:var(--ink); font-weight:500; }
+  .labbar input[type=range]{ width:200px; accent-color:var(--ink); }
+  .labbar .legend{ margin-left:auto; font-size:13px; color:var(--accent); font-family:var(--sans); }
+  .btn{ background:transparent; color:var(--ink); border:1px solid var(--line); border-radius:0; padding:8px 16px; font-size:13px;
+    font-weight:500; cursor:pointer; font-family:var(--sans); }
+  .btn:hover{ background:var(--ink); color:var(--bg); border-color:var(--ink); }
+  .charts{ display:flex; gap:20px; justify-content:center; }
+  .mini{ background:transparent; border:1px solid var(--line); border-radius:0; padding:10px 12px 4px; }
+  .mini.win{ border-color:var(--ink); border-width:1.5px; }
+  .mini .mtitle{ display:flex; justify-content:space-between; align-items:baseline; font-size:14px; font-weight:500; font-family:var(--sans);
+    color:var(--ink); margin-bottom:2px; padding:0 4px; }
+  .mini .mtitle b{ font-family:var(--mono); font-weight:500; color:var(--text2); font-style:normal; }
+  .mini svg, .plotwrap svg{ display:block; }
+
+  .lab{ display:grid; grid-template-columns:280px 1fr; gap:5vw; align-items:stretch; }
+  .lab .panel{ background:transparent; border:1px solid var(--line); border-radius:0; padding:20px;
+    display:flex; flex-direction:column; gap:16px; }
+  .lab .ctl label{ display:block; margin-bottom:10px; }
+  .lab .ctl label .v{ float:right; font-family:var(--mono); color:var(--ink); }
+  .lab .ctl input[type=range]{ width:100%; accent-color:var(--ink); }
+  .lab .badge{ border-radius:0; padding:14px 0 4px; font-size:14px; line-height:1.5; border-top:1px solid var(--line); font-family:var(--sans); color:var(--text2); }
+  .lab .badge .rt{ font-weight:400; font-family:var(--serif); font-style:italic; font-size:19px; display:block; margin-bottom:6px; color:var(--ink); }
+  .lab .codecard .bar{ padding:8px 12px; } .lab .codecard code{ font-size:13.5px; padding:12px 14px; line-height:1.5; }
+  .lab .plotwrap{ background:transparent; border:1px solid var(--line); border-radius:0; padding:12px;
+    display:flex; align-items:center; justify-content:center; }
+
+  /* ---------- runnable code cell (Quarto/quarto-live 技术方案: Pyodide + CodeMirror) ---------- */
+  .runlab{ display:grid; grid-template-columns:1fr 1fr; gap:4vw; align-items:stretch; }
+  .editor-col{ display:flex; flex-direction:column; min-height:0; }
+  .rc-tabs{ display:flex; align-items:center; gap:8px; margin-bottom:8px; }
+  .rc-tabs [data-lang]{ font-family:var(--mono); font-size:12px; padding:7px 16px; border:1px solid var(--line);
+    background:transparent; color:var(--text2); border-radius:0; cursor:pointer; }
+  .rc-tabs [data-lang].on{ background:var(--ink); color:var(--bg); border-color:var(--ink); }
+  .rc-run{ margin-left:auto; background:var(--ink); color:var(--bg); border:1px solid var(--ink); border-radius:0; padding:7px 20px;
+    font-weight:500; font-size:14px; cursor:pointer; font-family:var(--sans); }
+  .rc-run:hover{ background:transparent; color:var(--ink); }
+  .rc-run:disabled{ opacity:.5; cursor:default; }
+  .rc-reset{ background:transparent; border:1px solid var(--line); color:var(--accent); border-radius:0;
+    padding:7px 12px; font-size:13px; cursor:pointer; font-family:var(--sans); }
+  .rc-editor-anchor{ flex:1; min-height:0; visibility:hidden; }
+  .rc-editor-portal{ position:fixed; z-index:45; display:none; border:1px solid var(--line); border-radius:0;
+    overflow:hidden; background:var(--bg2); box-shadow:none; }
+  .rc-editor-portal .CodeMirror{ height:100%; font-family:var(--mono); font-size:14px; line-height:1.5;
+    background:var(--bg2) !important; color:var(--ink) !important; }
+  .rc-editor-portal .CodeMirror-gutters{ background:var(--bg2) !important; border-right:1px solid var(--line) !important; }
+  .rc-editor-portal .CodeMirror-linenumber{ color:var(--accent) !important; font-family:var(--mono); }
+  .rc-editor-portal .CodeMirror-cursor{ border-left-color:var(--ink) !important; }
+  .rc-editor-portal .CodeMirror-selected{ background:rgba(26,26,26,.1) !important; }
+  .rc-editor-portal .CodeMirror .cm-comment{ color:var(--text2) !important; }
+  .rc-editor-portal .CodeMirror .cm-keyword,.rc-editor-portal .CodeMirror .cm-string,
+  .rc-editor-portal .CodeMirror .cm-number,.rc-editor-portal .CodeMirror .cm-def,
+  .rc-editor-portal .CodeMirror .cm-variable,.rc-editor-portal .CodeMirror .cm-variable-2,
+  .rc-editor-portal .CodeMirror .cm-operator,.rc-editor-portal .CodeMirror .cm-property,
+  .rc-editor-portal .CodeMirror .cm-atom{ color:var(--ink) !important; }
+  .out-col{ display:flex; flex-direction:column; gap:12px; min-height:0; }
+  .rc-plot{ background:transparent; border:1px solid var(--line); border-radius:0; padding:10px;
+    display:flex; align-items:center; justify-content:center; height:308px; flex:none; }
+  .rc-plot svg{ display:block; }
+  .rc-console{ background:var(--bg2); color:var(--ink); border:1px solid var(--line); border-radius:0; padding:12px 15px; font-family:var(--mono);
+    font-size:13px; line-height:1.55; white-space:pre-wrap; flex:1; overflow:auto; min-height:0; }
+  .rc-console .err{ color:var(--ink); text-decoration:underline wavy; }
+  .rc-console .k{ color:var(--text2); }
+  .rc-hint{ color:var(--accent); font-size:14px; text-align:center; font-family:var(--sans); }
+
+  /* fixed chrome — 底部左下角工具条，方形按钮 1px 细线 */
+  .ppt-bar{ position:fixed; left:24px; bottom:24px; z-index:60; display:flex; align-items:center; gap:0;
+    border-radius:0; background:var(--bg); border:1px solid var(--line); box-shadow:none; padding:0; }
+  .ppt-bar button{ width:40px; height:40px; border-radius:0; border:none; border-right:1px solid var(--line); background:transparent;
+    color:var(--ink); font-size:14px; cursor:pointer; display:flex; align-items:center; justify-content:center;
+    transition:background .12s,color .12s; }
+  .ppt-bar button:last-child{ border-right:none; }
+  .ppt-bar button:hover{ background:var(--ink); color:var(--bg); }
+  .ppt-bar button.on{ background:var(--ink); color:var(--bg); }
+  .ppt-bar .sep{ width:1px; height:22px; background:var(--line); margin:0; }
+
+  /* notes overlay */
+  .notes-ov{ position:fixed; left:0; right:0; bottom:0; z-index:55; background:var(--bg); border-top:1px solid var(--line);
+    padding:18px 32px; font-size:15px; color:var(--text2); line-height:1.7; display:none; max-height:34vh; overflow-y:auto; box-shadow:none; font-family:var(--sans); }
+  .notes-ov.show{ display:block; }
+  .notes-ov .lbl{ font-family:var(--sans); font-size:12px; color:var(--accent); font-weight:600; margin-bottom:8px; }
+  .notes-ov b{ color:var(--ink); font-family:var(--serif); font-style:italic; font-weight:400; }
+
+  /* tutor */
+  .tutor-panel{ position:fixed; top:0; right:-400px; width:380px; height:100%; z-index:70; background:var(--bg);
+    border-left:1px solid var(--line); display:flex; flex-direction:column; transition:right .25s ease; box-shadow:none; }
+  .tutor-panel.open{ right:0; }
+  .tp-head{ display:flex; align-items:center; gap:10px; padding:20px 22px; border-bottom:1px solid var(--line); }
+  .tp-head .ic{ font-size:15px; color:var(--accent); } .tp-head .h{ font-weight:400; font-family:var(--serif); font-style:italic; color:var(--ink); font-size:19px; }
+  .tp-head .x{ margin-left:auto; cursor:pointer; color:var(--accent); font-size:20px; }
+  .tp-ctx{ padding:12px 22px; border-bottom:1px solid var(--line); font-size:12px; color:var(--accent); background:transparent; font-family:var(--sans); }
+  .tp-ctx b{ color:var(--ink); font-family:var(--sans); font-weight:600; font-style:normal; }
+  .tp-body{ flex:1; overflow-y:auto; padding:20px 22px; display:flex; flex-direction:column; gap:16px; }
+  .msg{ font-size:14px; line-height:1.65; font-family:var(--sans); }
+  .msg.u{ align-self:flex-end; background:var(--ink); color:var(--bg); padding:10px 14px; border-radius:0; max-width:86%; }
+  .msg.a{ background:transparent; border:1px solid var(--line); color:var(--text2); padding:12px 15px; border-radius:0; max-width:92%; }
+  .msg.a .who{ font-family:var(--sans); font-size:11px; color:var(--accent); margin-bottom:6px; font-weight:600; }
+  .tp-sugg{ padding:0 22px 14px; display:flex; flex-wrap:wrap; gap:8px; }
+  .tp-sugg button{ font-size:12px; background:transparent; border:1px solid var(--line); color:var(--accent); border-radius:0; padding:6px 12px; cursor:pointer; font-family:var(--sans); }
+  .tp-sugg button:hover{ border-color:var(--ink); color:var(--ink); }
+  .tp-input{ padding:18px 22px; border-top:1px solid var(--line); display:flex; gap:8px; }
+  .tp-input input{ flex:1; background:transparent; border:1px solid var(--line); border-radius:0; padding:11px 13px; color:var(--ink); font-size:14px; outline:none; font-family:var(--sans); }
+  .tp-input input:focus{ border-color:var(--ink); }
+  .tp-input button{ background:var(--ink); color:var(--bg); border:none; border-radius:0; padding:0 18px; font-weight:500; cursor:pointer; font-family:var(--sans); font-size:13px; }
+
+  ::-webkit-scrollbar{ width:8px; height:8px; } ::-webkit-scrollbar-thumb{ background:var(--line); border-radius:0; }
+</style>
+</head>
+<body>
+  <div class="ppt-bar">
+    <button id="btnPrev" title="上一页 (←)">◀</button>
+    <button id="btnNext" title="下一页 (→)">▶</button>
+    <span class="sep"></span>
+    <button id="btnNotes" title="演讲者备注 (N)">✎</button>
+    <button id="btnOverview" title="总览 (O)">▦</button>
+    <button id="btnTutor" title="AI 助教 (A)">✦</button>
+  </div>
+
+  <div class="reveal"><div class="slides" id="slides"><!-- 由 doc-to-deck.js 从 course.lecture.json 渲染 --></div></div>
+
+  <div class="notes-ov" id="notesOv"></div>
+
+  <aside class="tutor-panel" id="tutorPanel">
+    <div class="tp-head"><span class="ic">✦</span><span class="h">AI 助教</span><span class="x" id="tutorClose">×</span></div>
+    <div class="tp-ctx" id="tutorCtx"></div>
+    <div class="tp-body" id="tutorBody"></div>
+    <div class="tp-sugg" id="tutorSugg"></div>
+    <div class="tp-input"><input id="tutorInput" placeholder="就当前这一页提问…"><button id="tutorSend">发送</button></div>
+  </aside>
+
+  <!-- CodeMirror 不支持在 CSS transform:scale() 的祖先里工作(FE-48/knowledge-base 001)：
+       编辑器"传送门"挂在 body 下(不在缩放子树里)，由 doc-to-deck.js 每帧同步到占位框位置。 -->
+  <div class="rc-editor-portal" id="rcEditorPortal"></div>
+
+<script src="vendor/plot/d3.min.js"></script>
+<script src="vendor/plot/plot.umd.min.js"></script>
+<script src="vendor/codemirror/lib/codemirror.js"></script>
+<script src="vendor/codemirror/mode/python/python.js"></script>
+<script src="vendor/codemirror/mode/javascript/javascript.js"></script>
+<script src="vendor/katex/katex.min.js"></script>
+<script src="vendor/reveal/reveal.js"></script>
+<script src="vendor/reveal/plugin/highlight.js"></script>
+<script src="doc-to-deck.js"></script>
+</body>
+</html>

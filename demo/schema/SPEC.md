@@ -1,0 +1,191 @@
+# LectureDoc v1 — 内容协议规范
+
+> **这是什么：** 新一代讲义的唯一内容协议。一门课 = 一个符合 [`lecture-doc.schema.json`](lecture-doc.schema.json) 的 JSON 文档；渲染由 [`../doc-to-deck.js`](../doc-to-deck.js) 运行时完成（reveal.js 引擎 + Cartesian 设计系统 + KaTeX + Observable Plot + CodeMirror/Pyodide，全部离线 vendor）。
+>
+> **给谁看：** ① 人类作者；② **未来的 LectureGenAgent（Hermes 流水线）**——生成前必读本文，产出 JSON 后必须先过 [`validate.mjs`](validate.mjs) 再交付。
+>
+> **参考实现：** [`../course.lecture.json`](../course.lecture.json) 是一门完整课程（自演化智能体，15 页）的合法实例，覆盖大部分 block 类型，当作 few-shot 范例用。
+
+---
+
+## 1. 三层结构
+
+```
+LectureDoc                     一门课
+ ├─ meta（id/title/language/theme/audience）
+ ├─ tutor（AI 助教：建议问题 + 知识库）        ← deck 级横切能力
+ └─ scenes[]                   页（reveal.js 的一个 <section>）
+     ├─ 页框架字段（kind/eyebrow/headline/lead/notes/decor/layout）
+     └─ blocks[]               页内内容块（按序渲染成垂直流）
+```
+
+**scene.kind 决定页框架：**
+
+| kind | 用途 | 框架 |
+|---|---|---|
+| `hero` | 封面 / 收尾 | 无 eyebrow/headline；由一个 `hero` block 填充（tag+大标题+副题+黑色细线+facts+hint），可配 `decor.rings` |
+| `content` | 常规内容页 | eyebrow + headline (+lead) + blocks 垂直流 |
+| `quiz` | 测验页 | 同 content；含一个 `quiz` block（客观题自动接判分交互） |
+| `statement` | 全课回顾式大字陈述页 | eyebrow + 一个 `statement` block，垂直居中 |
+
+**scene.notes 必填**——演讲者备注是"详细讲解的收纳处"。正文（学生可见）保持克制，展开解释、教学策略、数据出处、诚实的边界说明全部写进 notes。
+
+---
+
+## 2. 行内富文本（inlineMd）
+
+所有标注为 `inlineMd` 的字段接受**受限 markdown 子集**，禁止原始 HTML：
+
+| 写法 | 渲染 | 用途 |
+|---|---|---|
+| `**文字**` | 衬线斜体强调（ink 色） | 关键术语/结论 |
+| `*文字*` | 同上（同义） | — |
+| `` `文字` `` | 等宽内联 | 变量名/符号 |
+| `$...$` | 行内 KaTeX | 行内公式，如 `$E[\text{偏离}] \approx \varepsilon\cdot\sqrt{n}$` |
+
+展示公式（独立成块、居中带边框）用 `formula` block 或 `callout.latex`，一律 **LaTeX 源码**（KaTeX 方言）。不要用 Unicode 上下标或 HTML 伪造公式。
+
+---
+
+## 3. Block 类型速查
+
+### 3.1 内容类
+
+| type | 何时用 | 说明 |
+|---|---|---|
+| `list` | 编号要点（≤6 条，每条一行内讲完） | items[].fragment 控制逐条渐显 |
+| `agenda` | 「标签 + 正文」的等高编号行 | **首选的多要点结构**——逐行等高，不会出现两栏高度不齐 |
+| `callout` | 顶线小结/核心思想 | label(小字标签) + text；可附 `latex` 展示公式 |
+| `formula` | 独立展示公式 | LaTeX；`size` 可调字号（默认 27） |
+| `flow` | 2–5 节点流程链 | `state:"on"`=强调实线框，`"q"`=虚线待解框；`loopNote` 加循环注记；节点 title 支持行内公式 |
+| `table` | ledger 风格对比表 | 单元格可 `{text, hi:true}` 强调；**能用 agenda 讲清就别用表** |
+| `code` | 静态代码卡（展示，不可运行） | filename + language + source |
+| `compare` | 两栏对照（典型：修改前/后代码） | **唯一推荐的两栏场景**——左右内容天然对称时才用 |
+| `hero` / `statement` | 见 scene.kind | — |
+
+### 3.2 交互类
+
+**`quiz`（kind:"objective"）** — 客观题。choices 2–6 项（key 为 a/b/c…），answer 单选，explain 必填（判后展示）。可选 `context` 在选项上方放一行铺垫（支持行内公式）。运行时自动接判分交互：点对→整行强调，点错→删除线+同时揭示正确项+展示 explain。
+
+**`quiz`（kind:"subjective"）** — 主观/研讨题。prompt（题干）+ angles[]（可选切入角度）+ instruction（作答要求）。运行时渲染为衬线大字题干 + 角度列表 + 顶线说明。未来接 AI 批改时，本块是锚点。
+
+**`sim`** — 参数仿真（滑块 → 实时重算 → 出图）。**注册表优先 + 代码逃生舱**：
+
+- `engine:"dynamics1d"` — 一维迭代动力学。`model`:
+  ```jsonc
+  { "stateVar":"c", "init":0.05, "steps":40,
+    "update":"c + alpha*(T - c) + sigma*xi",   // 受限表达式，见 §4
+    "consts":{ "T": 1 } }
+  ```
+  `regimes[]` 按序取第一个 `when` 为真者，决定曲线样式（tone: line/accent/ink 三档 + dash）与面板文案。`noiseNote` 满足条件时在 regime 文案后追加一句。`chart:{ xLabel, yLabel, targetLine:{value,label} }`。
+- `engine:"searchCompare"` — 一维黑箱优化三策略对比（网格/随机/贝叶斯，贝叶斯=GP 代理+LCB 采集，引擎内置）。`model`:
+  ```jsonc
+  { "objective":"sin(x) + sin(10*x/3)",        // 受限表达式，变量只有 x
+    "domain":[2.7,7.5], "yDomain":[-2.4,2.2],
+    "strategies":["grid","random","bayes"], "budgetParam":"n" }
+  ```
+  `labels` 给各策略中文名；`legend` 为图例行。
+- `engine:"custom"` — **逃生舱**。`computeJs` 为沙箱 JS 纯函数源码（`AsyncFunction` 执行，无 DOM/网络访问），契约：
+  ```js
+  // (params, rng) => { series:[{ points:[{x,y}], dash?, tone? }], note? }
+  ```
+  配 `chart:{ xLabel, yLabel, xDomain?, yDomain? }`。**优先选注册表引擎；只有教学内容确实无法用现有引擎表达时才用 custom。**
+
+**`runnable`** — 可编辑可运行代码单元（CodeMirror 编辑器 + Python(Pyodide)/JS 双引擎 + stdout 控制台 + 结果图）。
+- `starter.{python,js}`：初始代码。约定：把最终结果赋给 `result` 变量（点数组 `[{x,y}]`）→ 运行时自动绘图。
+- `env.kind:"objective1d"`：运行时向两种语言注入等价 helper——`truef(x)`（由 `objective` 表达式生成）、`candidates`（domain 均匀采样）、`predict(observed,x)`（最近邻代理，返回 `[mu, sd]`）。
+- `env.kind:"custom"`：`pythonPreamble` 为字面 Python 源码；`jsPreamble` 为求值后返回 helper 对象的 JS 表达式。
+- **当前运行时约束：每个 deck 至多一个 runnable block**（编辑器传送门为单例，见 knowledge-base/001）。
+
+**`embed`** — 保留位。未来嵌入后端三产品（代码实验室 JupyterLab / 互动视频 AutoVideo / 互动实验室 GenUI），沿用 `launch`（拉起参数）/`artifact`（url/status 回填）契约。当前运行时只渲染占位框。
+
+### 3.3 逃生舱：`freeform`（未分类内容）
+
+当教学内容需要的**版式/内容形态**不在上述 14 种正式类型里、且 `sim.custom`/`embed` 也不适用时的最后手段。字段：
+
+```jsonc
+{ "type": "freeform",
+  "rationale": "必须具体说明现有类型为何都不适用（≥10 字，不接受\"需要自定义排版\"这类泛泛之词）",
+  "html": "<div>...结构化 HTML 片段...</div>" }
+```
+
+**这是有意做得"能用但显眼"的设计，不是普通 block**：
+- 永远渲染成带虚线边框 + `⚠ 未分类内容` 标签 + 底部展示 `rationale` 的样式，**绝不会悄悄融入正常排版**——排版审查一眼就能认出它。
+- `html` **不是可信任意 HTML 通道**。`validate.mjs` 先做一遍静态危险标签检查（禁 `script`/`style`/`iframe`/`object`/`embed`/内联事件处理器/`javascript:` 协议，命中即校验失败，不允许提交）；运行时渲染前再做一次白名单净化（`doc-to-deck.js` 的 `sanitizeFreeformHtml`：只保留纯结构/文本类标签如 `div`/`p`/`table`/`strong` 等，被剥离的标签保留其文字内容，不吞用户可见文本；属性只保留 `class`/`colspan`/`rowspan`）——两道关都是防御性的，不要指望靠 `freeform` 塞入脚本或样式。
+- **agent 应把它当稀有出口，不是默认选项**：生成前必须先确认 14 种正式类型（含 `sim.custom`）都无法表达，才允许落到 `freeform`；`rationale` 写清楚具体卡在哪，因为这些 rationale 会被汇总，反复出现的诉求就是该长出新正式 block 类型的信号（见 §7 流水线里 batch_runner 的角色）。
+
+### 3.4 流式生成
+
+每个 block 可带 `status:"ready"|"pending"|"error"`（默认 ready）。渲染器对 `pending` 出骨架占位——这是"骨架先出、逐块回填"流式协议（doc.skeleton → block.fill → doc.done）的地基；本版运行时只实现占位渲染路径，WS 推送留给主仓库集成。
+
+---
+
+## 4. 受限表达式（sim 引擎用）
+
+`update` / `objective` / `when` 字段是**数学表达式字符串**，不是任意 JS。求值前做白名单校验：
+
+- 允许的标识符：该 block 的 `params[].name`、`model.consts` 键、`stateVar`、噪声项 `xi`（标准正态，每步一个）、数学函数 `sin cos tan exp log sqrt abs pow min max floor round` 与常量 `PI E`。
+- 允许的字符：标识符、数字、`+ - * / % ( ) , . < > = ! ? : & |` 与空白。
+- 出现白名单外的标识符 → 渲染器报错拒绝执行（validate.mjs 也会静态检查）。
+
+这让 agent 能自由表达新动力学/新目标函数，而不必获得任意代码执行权；确需完整编程时走 `engine:"custom"` 的沙箱通道。
+
+---
+
+## 5. Agent 创作规范（authoring rules，来自真实迭代反馈的硬约束）
+
+以下规则来自本项目与真实用户的多轮迭代，**违反其中任意一条都曾被用户明确打回**：
+
+1. **正文克制，细节进 notes。** 每页一个清晰观点；`lead` 是一句短陈述（如"同样的预算，谁更快逼近最优？"），**不是**"这一页将向你展示…"式的产品引导文案。操作提示（"点 Run 查看结果"）压到最短或不写。
+2. **禁 AI 味元素。** 不写"让我们一起…""值得注意的是…"；不造边框胶囊徽标堆（hero.facts 就是一行纯文字）；不用彩虹强调色（主题只有一种 ink + 一种 accent 小字色，这由主题层保证，内容层不要试图指定颜色）。
+3. **多要点用 agenda（等高行），别把两个不等高的块并排。** `compare` 只用于左右天然对称的内容（前/后代码）。
+4. **中文排版**：全角标点用于中文句；汉字与拉丁/数字间留空格（`2026 年`、`AI 产品`）；标题不带句号；标签类小字不做 uppercase 处理（内容层直接写自然大小写）。
+5. **公式一律 LaTeX**（`$...$` 行内 / formula 块展示）。不要 Unicode 上下标拼公式。
+6. **仿真优先选注册表引擎**（dynamics1d / searchCompare），并诚实设置 regimes 的分界条件；custom 是最后手段。
+7. **quiz.explain 必须解释"为什么对/为什么最像的干扰项不对"**，不只是复述正确项。
+8. **notes 里可以（且应该）写**：展开推导、教学建议（"可让学生先举手再点开"）、数据的诚实说明（"预算极小时贝叶斯偶尔被随机反超，n≥8 稳定领先"）、下一页的衔接。
+9. **`freeform`（§3.3）是稀有出口，不是默认选项。** 生成前必须先确认 14 种正式类型（含 `sim.custom`）都表达不了，才允许用它；`rationale` 要写清楚具体卡在哪一点，泛泛的"需要自定义排版"不合格（`validate.mjs` 会拒绝短于 10 字的 rationale，但更长不等于更合格——要具体）。
+
+---
+
+## 6. 校验与交付流程
+
+```
+agent 产出 course.lecture.json
+  → node demo/schema/validate.mjs <file>     # 结构 + 受限表达式静态检查，第一道关
+  → 运行时渲染（python demo/serve.py → http://localhost:8778）
+  → 无头/预览验收：每页 scrollHeight ≤ 720（禁溢出）、控制台无错、交互可用
+```
+
+`validate.mjs` 是零依赖 Node 脚本，错误信息带 JSON 路径，专为 agent 自修循环设计（读错误 → 改 JSON → 重跑）。
+
+---
+
+## 7. Hermes 流水线接入草图（契约冻结，实现属 Phase 3）
+
+基于 `refs/hermes-agent`（技能自创建 / 子代理并行 / RPC 工具管道 / batch_runner）：
+
+```
+Hermes 技能: generate-lecture <课题> <素材目录?>
+  ① PlanScenes    读本 SPEC + course.lecture.json 范例 → 产出 deck 骨架
+                  （meta + tutor + scenes[] 全部 blocks 标 status:"pending"）
+  ② FillBlocks    逐 scene fan-out 子代理并行生成 block 内容
+                  （每个子代理领：SPEC §对应类型 + 该页的教学意图 + 素材切片）
+  ③ Validate      node validate.mjs — 失败则把带路径的错误喂回对应子代理自修
+  ④ Assemble      合并为 status 全 ready 的 course.lecture.json
+  ⑤ Verify        无头浏览器加载渲染：0 溢出 / 0 控制台错误 / 交互冒烟
+                  （溢出页 → 回炉：按 §5.1 拆页或精简，而不是缩字号）
+  ⑥ 批量评测      batch_runner 对多个课题跑 ①–⑤，产出通过率/回炉率作为质量指标
+  ⑦ Schema 生长   汇总所有课题里 freeform 的 rationale；同类诉求反复出现
+                  （如"时间轴""地图标注"）→ 提案为新正式 block 类型，
+                  走 schemaVersion 加法式升级（见 §3.3 末尾）——不是靠预先
+                  猜测扩充词汇表，是靠 freeform 暴露的真实缺口来长
+```
+
+关键设计意图：**schema 即接口**——agent 不接触 HTML/CSS/渲染代码；渲染质量（设计系统、排版、交互实现）由运行时统一保证并独立演进。`freeform` 逃生舱是这条设计意图在"内容形态"维度的延伸：结构层（scene/block 的骨架、校验规则）保持强约束，内容形态层留出可控的开口，让 schema 能被真实需求驱动着长大，而不是被预先猜测撑大或被完全放开而失控。
+
+---
+
+## 附：与旧草稿的差异
+
+早期草稿（原 `demo/lecture-doc.js`，已删除）以「嵌入三产品 iframe」为中心；经用户定向（"不强塞产品 URL、用 Quarto 技术方案原生实现交互"），v1 以**原生交互 block**（sim/runnable/quiz）为中心，`embed` 降级为保留位。scene/block/status 三层与流式协议的思路保持不变。
