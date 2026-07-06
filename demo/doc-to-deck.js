@@ -13,14 +13,58 @@
   function randn(rng) { let u = 0, v = 0; while (u === 0) u = rng(); while (v === 0) v = rng(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v); }
   const escapeHtml = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
-  /* ---------------- freeform 逃生舱：白名单 HTML 净化 ----------------
-     不是"可信任意 HTML"通道。校验器(validate.mjs)已做过一遍静态危险标签检查，
-     这里是运行时的第二道关（防御性冗余，也覆盖校验器之外直接构造 DOM 的路径）。
-     策略：解析进 <template>，递归遍历，剥离不在白名单里的标签/属性；
-     标签被剥离时保留其子内容（不吞用户可见文本），彻底移除 script/style 等危险标签整体。 */
-  const FREEFORM_TAG_ALLOW = new Set(['div', 'span', 'p', 'ul', 'ol', 'li', 'table', 'thead', 'tbody', 'tr', 'td', 'th', 'h1', 'h2', 'h3', 'h4', 'strong', 'em', 'b', 'i', 'br', 'hr', 'small', 'sub', 'sup', 'blockquote']);
-  const FREEFORM_TAG_STRIP_ENTIRELY = new Set(['script', 'style', 'iframe', 'object', 'embed', 'link', 'meta', 'form', 'input', 'button']);
-  const FREEFORM_ATTR_ALLOW = new Set(['class', 'colspan', 'rowspan']);
+  /* ---------------- widget 逃生舱：自包含 HTML 片段 → sandbox iframe（借鉴 GenUI，见 SPEC §3.2） ----------------
+     iframe 用 srcdoc + sandbox="allow-scripts"（**不含** allow-same-origin）→ 文档是 null origin：
+     脚本能跑，但取不到 vendor/、发不出网络请求、碰不到父页面——比 sim.custom 的"omission 沙箱"更强的真隔离。
+     当前主题 token 序列化注入 iframe 的 :root，片段内 canvas 用 getComputedStyle 读 --token → 主题一致。
+     代价：null-origin iframe 加载不到我们 vendored woff2，字体降级到 Georgia/系统栈（sim 以 canvas 绘制为主，可接受）。 */
+  const widgetBuilds = [];   // 每个已挂载 widget 的重建函数；主题变化时全部重跑（refreshThemeColors 内调用）
+  const WIDGET_TOKENS = ['--bg', '--bg2', '--card', '--ink', '--text2', '--accent', '--line', '--serif', '--sans', '--mono', '--radius', '--sel'];
+  function buildWidgetSrcdoc(fragment) {
+    const cs = getComputedStyle(document.documentElement);
+    const theme = document.documentElement.dataset.theme || 'cartesian';
+    const vars = WIDGET_TOKENS.map(t => t + ':' + (cs.getPropertyValue(t).trim() || 'inherit')).join(';');
+    return '<!doctype html><html data-theme="' + escapeHtml(theme) + '"><head><meta charset="utf-8"><style>'
+      + ':root{' + vars + '}'
+      + '*{box-sizing:border-box}'
+      + 'html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:15px}'
+      + 'button{font-family:var(--sans);font-size:13px;color:var(--ink);background:transparent;border:1px solid var(--line);border-radius:var(--radius,0);padding:6px 12px;cursor:pointer;transition:background .15s,border-color .15s,transform .1s}'
+      + 'button:hover{border-color:var(--ink)}button:active{transform:scale(.97)}'
+      + 'input[type=range]{accent-color:var(--ink)}'
+      + '.mono{font-family:var(--mono);font-variant-numeric:tabular-nums}'
+      + '</style></head><body>' + fragment + '</body></html>';
+  }
+
+  /* ---------------- freeform 逃生舱：白名单 HTML 净化（布局+媒体+token 绑定样式） ----------------
+     不是"可信任意 HTML"通道。核心原则（SPEC §3.3 / §8）：**自由在布局，不在裸视觉**——
+     放行结构/媒体/SVG 与布局类 style，但 color/font/背景/描边等"品牌"属性只接受 var(--token)/
+     currentColor 等，裸色值/裸字体一律剥离，从而 freeform 也强制在主题内、不产生 slop。
+     校验器(validate.mjs)已做静态预检；这里是运行时权威净化。 */
+  const FF_TAG_ALLOW = new Set(['div', 'span', 'p', 'ul', 'ol', 'li', 'dl', 'dt', 'dd', 'table', 'thead', 'tbody', 'tr', 'td', 'th', 'h1', 'h2', 'h3', 'h4', 'h5', 'strong', 'em', 'b', 'i', 'u', 'br', 'hr', 'small', 'sub', 'sup', 'blockquote', 'figure', 'figcaption', 'code', 'pre', 'a', 'img', 'svg', 'path', 'circle', 'rect', 'line', 'polyline', 'polygon', 'g', 'text']);
+  const FF_TAG_STRIP = new Set(['script', 'style', 'iframe', 'object', 'embed', 'link', 'meta', 'form', 'input', 'button', 'textarea', 'select', 'video', 'audio', 'source']);
+  const FF_ATTR_PLAIN = new Set(['class', 'colspan', 'rowspan', 'alt', 'width', 'height', 'viewbox', 'd', 'x', 'y', 'cx', 'cy', 'r', 'rx', 'ry', 'x1', 'y1', 'x2', 'y2', 'points', 'transform', 'text-anchor', 'font-size', 'opacity', 'stroke-width', 'stroke-dasharray', 'stroke-linecap', 'stroke-linejoin', 'aria-hidden', 'role']);
+  const FF_LAYOUT_PROPS = new Set(['display', 'grid', 'grid-template-columns', 'grid-template-rows', 'grid-template-areas', 'grid-template', 'grid-column', 'grid-row', 'grid-area', 'grid-auto-flow', 'grid-auto-rows', 'grid-auto-columns', 'gap', 'row-gap', 'column-gap', 'flex', 'flex-direction', 'flex-wrap', 'flex-flow', 'flex-grow', 'flex-shrink', 'flex-basis', 'align-items', 'align-content', 'align-self', 'justify-content', 'justify-items', 'justify-self', 'place-items', 'place-content', 'place-self', 'width', 'height', 'min-width', 'min-height', 'max-width', 'max-height', 'margin', 'margin-top', 'margin-right', 'margin-bottom', 'margin-left', 'padding', 'padding-top', 'padding-right', 'padding-bottom', 'padding-left', 'top', 'left', 'right', 'bottom', 'inset', 'transform', 'transform-origin', 'text-align', 'aspect-ratio', 'object-fit', 'order', 'overflow', 'overflow-x', 'overflow-y', 'box-sizing', 'border-radius', 'border-width', 'border-style', 'list-style', 'list-style-type', 'line-height', 'letter-spacing', 'font-size', 'font-weight', 'font-style', 'z-index', 'white-space', 'word-break', 'overflow-wrap', 'vertical-align', 'float', 'clear', 'columns', 'column-count', 'text-transform']);
+  const FF_TOKEN_PROPS = new Set(['color', 'background', 'background-color', 'background-image', 'border', 'border-top', 'border-right', 'border-bottom', 'border-left', 'border-color', 'outline', 'outline-color', 'fill', 'stroke', 'box-shadow', 'text-shadow', 'text-decoration-color', 'font-family']);
+  const FF_PAINT_OK = /var\(\s*--/;                                    // 引用了主题 token
+  const FF_KEYWORD_OK = /^(currentcolor|transparent|none|inherit|initial|unset)$/i;
+  function ffSafeSrc(v) { return /^(vendor\/|assets\/|\.\/|data:image\/)/i.test(v.trim()); }
+  function ffSafeHref(v) { return !/^\s*(javascript|data|vbscript):/i.test(v); }
+  function ffSafePaint(v) { return FF_PAINT_OK.test(v) || FF_KEYWORD_OK.test(v.trim()); }
+  function ffFilterStyle(styleStr) {
+    const out = [];
+    for (const decl of String(styleStr).split(';')) {
+      const i = decl.indexOf(':'); if (i < 0) continue;
+      const prop = decl.slice(0, i).trim().toLowerCase();
+      const val = decl.slice(i + 1).trim();
+      if (!prop || !val) continue;
+      if (/url\(/i.test(val) || /expression\(/i.test(val)) continue;      // 禁 url()（外链/追踪）与老式 expression()
+      if (prop === 'position') { if (/^(relative|absolute|static|sticky)$/i.test(val)) out.push(prop + ':' + val); continue; }  // 禁 fixed
+      if (FF_LAYOUT_PROPS.has(prop)) { out.push(prop + ':' + val); continue; }
+      if (FF_TOKEN_PROPS.has(prop)) { if (ffSafePaint(val)) out.push(prop + ':' + val); continue; } // 颜色/字体只接受 token
+      /* 未知属性 → 丢弃 */
+    }
+    return out.join('; ');
+  }
   function sanitizeFreeformHtml(html) {
     const tpl = document.createElement('template');
     tpl.innerHTML = html;
@@ -28,12 +72,21 @@
       for (const child of [...node.childNodes]) {
         if (child.nodeType === Node.ELEMENT_NODE) {
           const tag = child.tagName.toLowerCase();
-          if (FREEFORM_TAG_STRIP_ENTIRELY.has(tag)) { child.remove(); continue; }
+          if (FF_TAG_STRIP.has(tag)) { child.remove(); continue; }
+          let drop = false;
           for (const attr of [...child.attributes]) {
-            if (!FREEFORM_ATTR_ALLOW.has(attr.name.toLowerCase()) || /^on/i.test(attr.name) || /javascript:/i.test(attr.value)) child.removeAttribute(attr.name);
+            const name = attr.name.toLowerCase(), val = attr.value;
+            if (/^on/i.test(name)) { child.removeAttribute(attr.name); continue; }
+            if (name === 'style') { const f = ffFilterStyle(val); if (f) child.setAttribute('style', f); else child.removeAttribute(attr.name); continue; }
+            if (name === 'src') { if (tag === 'img' && !ffSafeSrc(val)) { drop = true; } continue; }
+            if (name === 'href') { if (!ffSafeHref(val)) child.removeAttribute(attr.name); continue; }
+            if (name === 'fill' || name === 'stroke') { if (!ffSafePaint(val)) child.removeAttribute(attr.name); continue; }
+            if (FF_ATTR_PLAIN.has(name)) continue;
+            child.removeAttribute(attr.name);
           }
+          if (drop) { child.remove(); continue; }               // img 的 src 非法 → 整个删掉
           walk(child);
-          if (!FREEFORM_TAG_ALLOW.has(tag)) { while (child.firstChild) child.parentNode.insertBefore(child.firstChild, child); child.remove(); }
+          if (!FF_TAG_ALLOW.has(tag)) { while (child.firstChild) child.parentNode.insertBefore(child.firstChild, child); child.remove(); }
         } else if (child.nodeType !== Node.TEXT_NODE) { child.remove(); }
       }
     })(tpl.content);
@@ -53,7 +106,9 @@
       .replace(/\*([^*]+)\*/g, '<em>$1</em>');
     return s.replace(/ (\d+) /g, (_, i) => stash[+i]);
   }
-  const displayTex = (tex) => katex.renderToString(tex, { throwOnError: false, output: 'html', displayMode: true });
+  /* latex 字段应是纯 LaTeX 源码；防御性剥掉误加的 $…$ / $$…$$ 包裹（否则 KaTeX 把 $ 当非法字符、整串标红回退）。 */
+  const stripDollar = (t) => String(t).trim().replace(/^\${1,2}/, '').replace(/\${1,2}$/, '').trim();
+  const displayTex = (tex) => katex.renderToString(stripDollar(tex), { throwOnError: false, output: 'html', displayMode: true });
 
   /* ---------------- 受限表达式编译（SPEC §4） ----------------
      仅允许白名单标识符与数学字符；不是任意 JS。 */
@@ -75,10 +130,20 @@
       .replace(/\bpow\(/g, 'math.pow(');
   }
 
-  /* ---------------- Cartesian 图表常量（与设计系统一致） ---------------- */
-  const C_INK = '#1A1A1A', C_LINE = '#B8B0A4', C_TEXT2 = '#5A5A5A', C_ACCENT = '#8A8178';
-  const TONE = { line: C_LINE, accent: C_ACCENT, ink: C_INK };
-  const PLOT_STYLE = { background: 'transparent', color: C_TEXT2, fontSize: '11px', fontFamily: "'Inter',sans-serif" };
+  /* ---------------- 图表配色：从当前主题 token 读，随 data-theme 切换 ----------------
+     C_* / TONE / PLOT_STYLE 是 let，refreshThemeColors() 在设好 data-theme 后赋值；
+     所有 Plot/CodeMirror 渲染在此之后发生，读到的是当前主题的值。 */
+  let C_INK, C_LINE, C_TEXT2, C_ACCENT, TONE, PLOT_STYLE;
+  function refreshThemeColors() {
+    const cs = getComputedStyle(document.documentElement);
+    const g = (n, f) => (cs.getPropertyValue(n).trim() || f);
+    C_INK = g('--ink', '#1A1A1A'); C_LINE = g('--line', '#B8B0A4');
+    C_TEXT2 = g('--text2', '#5A5A5A'); C_ACCENT = g('--accent', '#8A8178');
+    TONE = { line: C_LINE, accent: C_ACCENT, ink: C_INK };
+    PLOT_STYLE = { background: 'transparent', color: C_TEXT2, fontSize: '11px', fontFamily: g('--sans', "'Inter',sans-serif") };
+    widgetBuilds.forEach(f => f());   // 主题 token 变了 → 已挂载的 widget iframe 用新 token 重建 srcdoc
+  }
+  refreshThemeColors(); /* 先给默认值兜底；设好 data-theme 后会再刷新一次 */
 
   /* ================= Block 渲染器 ================= */
   const blockRenderers = {
@@ -176,6 +241,18 @@
         cols.appendChild(cell);
       }
       return cols;
+    },
+    grid(b, ctx) {
+      const g = el('div', 'grid-block');
+      g.style.gridTemplateColumns = 'repeat(' + b.columns + ',1fr)';
+      g.style.gap = (b.gap != null ? b.gap : 24) + 'px';
+      for (const it of b.items) {
+        const cell = el('div');
+        if (it.span) cell.style.gridColumn = 'span ' + Math.min(it.span, b.columns);
+        cell.appendChild(renderBlock(it.block, ctx));
+        g.appendChild(cell);
+      }
+      return g;
     },
     quiz(b) {
       const wrap = el('div');
@@ -411,6 +488,23 @@
       }
       ctx.onReady(render);
       return root;
+    },
+
+    /* —— widget：自包含 HTML 片段跑在 sandbox iframe 里（逃生舱，SPEC §3.2） ——
+       给 sim.custom（纯计算/只出折线）补上做不到的：实时动画、canvas 粒子/波/摆、几何作图、任意交互。
+       控件按 GenUI 惯例长在片段内部，故不使用外层 paramPanelControls。 */
+    widget(b, ctx) {
+      const root = el('div', 'widlab');
+      const frame = el('iframe', 'widframe');
+      frame.setAttribute('sandbox', 'allow-scripts');   // 无 allow-same-origin → null origin，真隔离
+      frame.setAttribute('scrolling', 'no');
+      frame.setAttribute('title', b.caption || '互动组件');
+      root.appendChild(frame);
+      if (b.caption) root.appendChild(el('div', 'widcap', escapeHtml(b.caption)));
+      const build = () => { frame.srcdoc = buildWidgetSrcdoc(b.html); };
+      widgetBuilds.push(build);   // 主题切换时重建
+      ctx.onReady(build);
+      return root;
     }
   };
 
@@ -612,8 +706,18 @@
   }
 
   /* ================= 装配 & 启动 ================= */
-  const doc = await fetch('course.lecture.json').then(r => r.json());
+  /* 默认渲染手写基线 course.lecture.json；?doc=generated/xxx.lecture.json 可预览别的（如 agent 生成的），
+     不必覆盖基线。路径相对 demo/（服务器根），只能取 demo/ 下的文件。 */
+  const docUrl = new URLSearchParams(location.search).get('doc') || 'course.lecture.json';
+  const doc = await fetch(docUrl).then(r => r.json());
   document.title = doc.title;
+
+  /* 选定主题：内容决定 doc.theme，之后整套讲义强制一致（不支持 per-page 覆盖）。
+     加新主题只需在 index.html 里加一个 :root[data-theme="x"] token 块。
+     ?theme=xxx 仅用于预览/对比不同主题（不改内容），不影响正式产物。 */
+  const themeOverride = new URLSearchParams(location.search).get('theme');
+  document.documentElement.dataset.theme = themeOverride || doc.theme || 'cartesian';
+  refreshThemeColors();
 
   const readyCallbacks = [];
   let runnableActivator = null;

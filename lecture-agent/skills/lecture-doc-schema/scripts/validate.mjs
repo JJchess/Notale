@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+/* ⚠ 生成物：由 demo/schema/ 同步而来（node lecture-agent/sync.mjs）。别在这里改，改 demo/schema/。 */
 /* ============================================================================
    LectureDoc v1 校验器（零依赖）
    用法:  node demo/schema/validate.mjs [json文件路径]
