@@ -29,7 +29,7 @@ function skeletonSpec(pages, autoTypes, themeHint, wants, authoringRules) {
     {"id":"close","kind":"hero","notes":"...","blocks":[{"id":"b_close","type":"hero","intent":"收尾页"}]}
   ]}
 规则:
-- 约 ${pages} 页(scenes)；第一页 kind:hero(封面, 恰含一个 hero block)，最后可用 statement 回顾 + hero 收尾。
+- **页数严格控制在 ${pages} 页左右（±1），不要显著超出**——别为凑"封面+内容+测验+回顾+收尾"的模板而堆页。第一页 kind:hero(封面, 恰含一个 hero block)。页数充裕(≥7)时才加 statement 回顾页 + hero 收尾；**页数少(≤4)时省掉回顾/收尾页，封面后直接进核心内容**（3 页 ≈ 封面 + 1~2 页内容）。
 - scene.kind: hero(封面/收尾, 一个 hero block) | content(常规) | quiz(含一个 quiz block) | statement(含一个 statement block)。
 - 每个 block 是占位 {id(全局唯一), type, intent}。可用 type: ${autoTypes.join(', ')}。
 - 一页通常 1-2 个 block；叙事连贯、由浅入深。
