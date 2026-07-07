@@ -31,7 +31,7 @@ function skeletonSpec(pages, autoTypes, themeHint, wants, authoringRules) {
 规则:
 - **页数严格控制在 ${pages} 页左右（±1），不要显著超出**——别为凑"封面+内容+测验+回顾+收尾"的模板而堆页。第一页 kind:hero(封面, 恰含一个 hero block)。页数充裕(≥7)时才加 statement 回顾页 + hero 收尾；**页数少(≤4)时省掉回顾/收尾页，封面后直接进核心内容**（3 页 ≈ 封面 + 1~2 页内容）。
 - scene.kind: hero(封面/收尾, 一个 hero block) | content(常规) | quiz(含一个 quiz block) | statement(含一个 statement block)。
-- 每个 block 是占位 {id(全局唯一), type, intent}。可用 type: ${autoTypes.join(', ')}。
+- 每个 block 是占位 {id(全局唯一), type, intent}。**type 只能从这个清单里选，禁止新造类型名**（如 timeline/map/chart/diagram 都不存在）——想要时间轴/地图/图示就用 flow、agenda、table、list 表达。可用 type: ${autoTypes.join(', ')}。
 - 一页通常 1-2 个 block；叙事连贯、由浅入深。
 - **交互按题材选，别硬塞**：只有**可量化/可模拟**的题材（物理、数学、算法、带动态的经济/生物等）才用 sim（浏览器内真算，放在最能体现的知识点）；**人文/艺术/历史/语言/思辨类绝不硬塞 sim**——把概念套进假公式（如"格律严格度→情感"编个方程）是最糟的 AI 味，宁可不放 sim，改用 compare/flow/table/list 表达对比与结构。无论题材都建议放至少 1 个 quiz（客观或研讨）。${wants ? '用户明确点名的交互: ' + wants + '（题材允许时优先满足；题材不适合 sim 就忽略该项）。' : ''}
 - 主题按课程气质选(${themeHint ? '用户指定: ' + themeHint : 'cartesian 克制人文 / cobalt-grid 研究公报 / lab 暗仪表台(仿真多时)'})。

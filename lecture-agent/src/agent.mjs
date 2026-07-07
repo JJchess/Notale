@@ -48,7 +48,11 @@ export async function generateLecture({ topic, pages = 12, theme = '', audience 
   doc.id = doc.id || 'lecture';
 
   const placeholders = [];
-  doc.scenes.forEach((s, si) => (s.blocks || []).forEach((b, bi) => { b.id = b.id || `s${si}b${bi}`; placeholders.push({ ph: b, scene: s }); }));
+  doc.scenes.forEach((s, si) => (s.blocks || []).forEach((b, bi) => {
+    b.id = b.id || `s${si}b${bi}`;
+    if (!registry.has(b.type)) { log(`[plan] 规划器造了未知 type "${b.type}"，回退为 list（内容不丢）`); b.type = 'list'; }  // 防幻觉类型丢内容
+    placeholders.push({ ph: b, scene: s });
+  }));
   log(`[plan] ${doc.scenes.length} 页 / ${placeholders.length} block；theme=${doc.theme}`);
 
   if (outDir) { mkdirSync(outDir, { recursive: true }); writeFileSync(join(outDir, 'skeleton.json'), JSON.stringify(doc, null, 2)); }
