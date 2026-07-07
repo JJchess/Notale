@@ -52,9 +52,15 @@ export async function planLecture({ topic, pages = 12, theme = '', audience = ''
       + perspectives.map(p => `【${p.name}·${p.focus}】\n  必讲: ${(p.mustCover || []).join('；')}\n  疑问/误区: ${(p.questions || []).join('；')}`).join('\n')
     : '';
 
-  // 阶段二：综合骨架
+  // 阶段二：综合骨架（外层再重试 2 次——骨架是单点，网络/限流抖动不该整轮崩）
   const sys = `你是讲义(LectureDoc)总编排器。只输出一个 JSON 对象(骨架)，不要代码围栏、不要解释。\n${skeletonSpec(pages, autoTypes, theme, wants, authoringRules)}`;
   const user = `课题: ${topic}${audience ? '\n受众: ' + audience : ''}${theme ? '\n主题: ' + theme : ''}${wants ? '\n要的交互: ' + wants : ''}${extra ? '\n额外要求: ' + extra : ''}\n\n${coverage}\n\n产出骨架 JSON。`;
-  const raw = await chat([{ role: 'system', content: sys }, { role: 'user', content: user }], { temperature: 0.4 });
-  return { doc: parseJson(raw), perspectives };
+  let lastErr;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const raw = await chat([{ role: 'system', content: sys }, { role: 'user', content: user }], { temperature: 0.4 });
+      return { doc: parseJson(raw), perspectives };
+    } catch (e) { lastErr = e; if (attempt < 3) { log(`[plan] 骨架生成第 ${attempt} 次失败(${String(e.message || e).slice(0, 50)})，退避重试…`); await new Promise(r => setTimeout(r, 3000 * attempt)); } }
+  }
+  throw new Error('骨架生成失败（网络/限流/解析）: ' + String(lastErr?.message || lastErr).slice(0, 100));
 }
