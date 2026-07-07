@@ -109,6 +109,12 @@ function checkWidgetHtml(html, path) {
   const low = html.toLowerCase();
   if (/<!doctype|<html[\s>]|<head[\s>]|<body[\s>]/.test(low)) err(path, 'widget.html 必须是**片段**，不要写 <!doctype>/<html>/<head>/<body>（运行时会包进 iframe 文档）');
   if (!/(<div|<svg|<canvas|<style)/.test(low)) err(path, 'widget.html 至少应含 <div>/<svg>/<canvas>/<style> 之一');
+  /* 内嵌 <script> 的 JS 语法必须能解析（只查语法不查运行——浏览器全局在此不求值），防坏 canvas 代码出厂 */
+  const scripts = [...html.matchAll(/<script[^>]*>([\s\S]*?)<\/script>/gi)].map(m => m[1]).filter(s => s.trim());
+  for (const js of scripts) {
+    try { new Function(js); }
+    catch (e) { if (e instanceof SyntaxError) err(path, 'widget 的 <script> 有 JS 语法错误: ' + String(e.message).slice(0, 100)); }
+  }
   aestheticLint(html, path, { requireMotion: true });
 }
 
