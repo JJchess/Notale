@@ -8,6 +8,7 @@ import { generateBlock, pool } from './delegate.mjs';
 import { validateDoc } from './pipeline.mjs';
 import { planLecture } from './plan.mjs';
 import { checkCoverage } from './coverage.mjs';
+import { enrichNotes } from './notes.mjs';
 
 const CONC = 4;
 
@@ -72,6 +73,9 @@ export async function generateLecture({ topic, pages = 12, theme = '', audience 
 
   // ④ 整档校验 + 结构自修
   const finalRes = await docRepair(doc, registry, log);
+
+  // ④.5 讲者备注增强（正文克制、细节沉 notes；一次调用把占位式 notes 补成有料讲稿）
+  if (!finalRes.errors.length) { try { await enrichNotes(doc, { audience }); log('[notes] 讲者备注已增强'); } catch { /* 保留原 notes */ } }
 
   // ⑤ 覆盖度审查（opt-in，完成 STORM 闭环）
   let cov = null;
