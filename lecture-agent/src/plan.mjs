@@ -7,9 +7,9 @@ import { chat, parseJson } from './llm.mjs';
 const PERSPECTIVE_SCHEMA = `{ "perspectives": [ { "name":"视角名(如 重直觉的入门讲法 / 重推导的理论派 / 重工程实践 / 爱追问的学生)", "focus":"这个视角最在意什么(一句)", "mustCover":["这个视角认为必须讲到的要点", "..."], "questions":["学生在这个视角下常见的疑问/误区", "..."] } ] }`;
 
 /** STORM 阶段一：发现互补的教学视角 + 每视角的"必讲点"与"常见疑问"（= 覆盖清单）。 */
-async function discoverCoverage({ topic, audience, extra }) {
-  const sys = `你是课程设计专家。用"多视角提问"扩大一节讲义的覆盖面：对给定课题，列出 3-4 个**互补**的教学视角，每个视角给出它认为**必须讲到的要点**与学生在该视角下的**常见疑问/误区**。视角要真的不同（入门直觉 / 理论推导 / 工程实践 / 历史动机 / 易错点…按课题取最相关的几种），别重复。只输出 JSON：\n${PERSPECTIVE_SCHEMA}`;
-  const user = `课题: ${topic}${audience ? `\n受众: ${audience}` : ''}${extra ? `\n额外要求: ${extra}` : ''}\n输出 perspectives JSON。`;
+async function discoverCoverage({ topic, audience, extra, material }) {
+  const sys = `你是课程设计专家。用"多视角提问"扩大一节讲义的覆盖面：对给定课题，列出 3-4 个**互补**的教学视角，每个视角给出它认为**必须讲到的要点**与学生在该视角下的**常见疑问/误区**。视角要真的不同（入门直觉 / 理论推导 / 工程实践 / 历史动机 / 易错点…按课题取最相关的几种），别重复。${material ? '**必讲点要从下面的参考素材里提炼，别脱离素材另起炉灶。**' : ''}只输出 JSON：\n${PERSPECTIVE_SCHEMA}`;
+  const user = `课题: ${topic}${audience ? `\n受众: ${audience}` : ''}${extra ? `\n额外要求: ${extra}` : ''}${material ? `\n\n参考素材：\n${material}` : ''}\n输出 perspectives JSON。`;
   try {
     const data = parseJson(await chat([{ role: 'system', content: sys }, { role: 'user', content: user }], { temperature: 0.7 }));
     const ps = Array.isArray(data.perspectives) ? data.perspectives : [];
@@ -42,9 +42,9 @@ ${authoringRules}`;
 }
 
 /** STORM 阶段二：把多视角覆盖清单综合成一份连贯、递进的 skeleton（大纲生成）。 */
-export async function planLecture({ topic, pages = 12, theme = '', audience = '', wants = '', extra = '', autoTypes, authoringRules, log = () => {} }) {
+export async function planLecture({ topic, pages = 12, theme = '', audience = '', wants = '', extra = '', material = '', autoTypes, authoringRules, log = () => {} }) {
   // 阶段一：多视角覆盖
-  const perspectives = await discoverCoverage({ topic, audience, extra });
+  const perspectives = await discoverCoverage({ topic, audience, extra, material });
   if (perspectives.length) {
     log(`[plan] 多视角覆盖: ${perspectives.map(p => p.name).join(' / ')}`);
   } else {
@@ -57,7 +57,7 @@ export async function planLecture({ topic, pages = 12, theme = '', audience = ''
 
   // 阶段二：综合骨架（外层再重试 2 次——骨架是单点，网络/限流抖动不该整轮崩）
   const sys = `你是讲义(LectureDoc)总编排器。只输出一个 JSON 对象(骨架)，不要代码围栏、不要解释。\n${skeletonSpec(pages, autoTypes, theme, wants, authoringRules)}`;
-  const user = `课题: ${topic}${audience ? '\n受众: ' + audience : ''}${theme ? '\n主题: ' + theme : ''}${wants ? '\n要的交互: ' + wants : ''}${extra ? '\n额外要求: ' + extra : ''}\n\n${coverage}\n\n产出骨架 JSON。`;
+  const user = `课题: ${topic}${audience ? '\n受众: ' + audience : ''}${theme ? '\n主题: ' + theme : ''}${wants ? '\n要的交互: ' + wants : ''}${extra ? '\n额外要求: ' + extra : ''}${material ? '\n\n参考素材（讲义内容据此取材，别脱离/编造）：\n' + material : ''}\n\n${coverage}\n\n产出骨架 JSON。`;
   let lastErr;
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {

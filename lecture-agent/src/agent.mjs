@@ -12,7 +12,7 @@ import { enrichNotes } from './notes.mjs';
 
 const CONC = 4;
 
-async function docRepair(doc, registry, log, rounds = 2) {
+async function docRepair(doc, registry, log, material = '', rounds = 2) {
   for (let round = 1; round <= rounds; round++) {
     const res = validateDoc(doc);
     if (!res.errors.length) return res;
@@ -24,7 +24,7 @@ async function docRepair(doc, registry, log, rounds = 2) {
     await pool([...targets.entries()], CONC, async ([k, errs]) => {
       const [si, bi] = k.split(',').map(Number);
       const cur = doc.scenes[si].blocks[bi]; const reg = registry.get(cur.type); if (!reg) return;
-      const r = await generateBlock({ type: cur.type, intent: '修正下述校验错误：' + errs.join('；'), sceneCtx: `当前(有错): ${JSON.stringify(cur)}`, contract: reg.contract });
+      const r = await generateBlock({ type: cur.type, intent: '修正下述校验错误：' + errs.join('；'), sceneCtx: `当前(有错): ${JSON.stringify(cur)}`, contract: reg.contract, material });
       if (r.block) { doc.scenes[si].blocks[bi] = r.block; log(`  ↻ 修好 scenes[${si}].blocks[${bi}] (${cur.type})`); }
     });
   }
@@ -32,13 +32,15 @@ async function docRepair(doc, registry, log, rounds = 2) {
 }
 
 /** 生成一节课。返回 { doc, errors, warnings, dropped, calls, outFile }。 */
-export async function generateLecture({ topic, pages = 12, theme = '', audience = '', wants = '', extra = '', outDir, coverage = false, log = () => {} }) {
+export async function generateLecture({ topic, pages = 12, theme = '', audience = '', wants = '', extra = '', material = '', outDir, coverage = false, log = () => {} }) {
   const { registry, autoTypes } = loadSkills();
+  const mat = material ? String(material).slice(0, 4000) : '';   // 截断防 token 爆炸（素材过长时只取前段）
+  if (material && material.length > 4000) log(`[material] 素材 ${material.length} 字，截断到 4000 字用于 grounding`);
 
   // ① Plan（STORM 式多视角规划，见 src/plan.mjs）
-  log(`[plan] 课题: ${topic} (~${pages} 页)`);
+  log(`[plan] 课题: ${topic} (~${pages} 页)${mat ? ' · 基于素材' : ''}`);
   let doc, perspectives;
-  try { ({ doc, perspectives } = await planLecture({ topic, pages, theme, audience, wants, extra, autoTypes, authoringRules: AUTHORING_RULES, log })); }
+  try { ({ doc, perspectives } = await planLecture({ topic, pages, theme, audience, wants, extra, material: mat, autoTypes, authoringRules: AUTHORING_RULES, log })); }
   catch (e) { throw new Error('骨架解析失败: ' + e.message); }
   doc.schemaVersion = '1.0';
   if (!doc.language) doc.language = 'zh-CN';
@@ -56,7 +58,7 @@ export async function generateLecture({ topic, pages = 12, theme = '', audience 
   const results = await pool(placeholders, CONC, async ({ ph, scene }) => {
     const reg = registry.get(ph.type);
     if (!reg) { log(`  ✗ ${ph.id} — 没有技能处理 type ${ph.type}`); return { id: ph.id, block: null, err: '无技能处理 type ' + ph.type }; }
-    const r = await generateBlock({ type: ph.type, intent: ph.intent || '', sceneCtx: `所在页: ${scene.headline || scene.eyebrow || scene.kind}`, contract: reg.contract });
+    const r = await generateBlock({ type: ph.type, intent: ph.intent || '', sceneCtx: `所在页: ${scene.headline || scene.eyebrow || scene.kind}`, contract: reg.contract, material: mat });
     log(`  ${r.err ? '✗' : '✓'} ${ph.id} (${ph.type})${r.err ? ' — ' + r.err.slice(0, 70) : ''}`);
     return { id: ph.id, ...r };
   });
@@ -72,7 +74,7 @@ export async function generateLecture({ topic, pages = 12, theme = '', audience 
   }
 
   // ④ 整档校验 + 结构自修
-  const finalRes = await docRepair(doc, registry, log);
+  const finalRes = await docRepair(doc, registry, log, mat);
 
   // ④.5 讲者备注增强（正文克制、细节沉 notes；一次调用把占位式 notes 补成有料讲稿）
   if (!finalRes.errors.length) { try { await enrichNotes(doc, { audience }); log('[notes] 讲者备注已增强'); } catch { /* 保留原 notes */ } }

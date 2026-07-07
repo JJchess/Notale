@@ -52,7 +52,10 @@ function persist(r, ev) {
 async function cmdGenerate() {
   const topic = positional[0];
   if (!topic) { console.error('用法: lecture-agent generate "<课题>" [--pages N] [--theme cartesian|cobalt-grid|lab] [--audience "..."] [--wants sim,quiz] [--id kebab] [--no-clarify]'); process.exit(2); }
-  let opts = { topic, pages: +flag('pages', 12) || 12, theme: flag('theme', '') === true ? '' : flag('theme', ''), audience: flag('audience', '') === true ? '' : flag('audience', ''), wants: flag('wants', '') === true ? '' : flag('wants', ''), extra: '', coverage: has('coverage') };
+  const matFile = flag('material', '');
+  let material = '';
+  if (matFile && matFile !== true) { if (existsSync(matFile)) material = readFileSync(matFile, 'utf8'); else { console.error('找不到素材文件: ' + matFile); process.exit(2); } }
+  let opts = { topic, pages: +flag('pages', 12) || 12, theme: flag('theme', '') === true ? '' : flag('theme', ''), audience: flag('audience', '') === true ? '' : flag('audience', ''), wants: flag('wants', '') === true ? '' : flag('wants', ''), extra: '', coverage: has('coverage'), material };
   if (!has('no-clarify') && process.stdin.isTTY) {
     const c = await clarify(topic);
     opts = { ...opts, pages: c.pages || opts.pages, theme: c.theme || opts.theme, audience: c.audience || opts.audience, wants: c.wants || opts.wants, extra: c.extra || '' };
@@ -111,8 +114,8 @@ function cmdSkills() {
 }
 
 const HELP = `lecture-agent —— 自演化讲义生成 agent (Node/零依赖/离线)
-  generate "<课题>" [--pages N] [--theme X] [--audience ..] [--wants sim,quiz] [--id kebab] [--no-clarify] [--eval] [--revise] [--coverage]
-                                  --eval 生成后打质量分；--revise 分低则按建议重生成一版取优；--coverage 核对规划必讲点是否落地(STORM 闭环)
+  generate "<课题>" [--pages N] [--theme X] [--audience ..] [--wants sim,quiz] [--material file] [--id kebab] [--no-clarify] [--eval] [--revise] [--coverage]
+                                  --material 用源素材做 grounding(内容据素材,防编造)；--eval 打质量分；--revise 分低重生成取优；--coverage 核对必讲点落地
   eval <course.lecture.json>    给一份讲义打质量分 (content/coherence/pedagogy, 移植自 PPTEval)
   batch [topics.jsonl]          批量跑一轮 (缺省 examples/topics.jsonl)
   loop  [topics.jsonl] [--every 1h]   常驻循环

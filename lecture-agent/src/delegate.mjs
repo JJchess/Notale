@@ -8,12 +8,13 @@ export { pool };
 
 const SYS = `你是 LectureDoc 单个 block 生成器。只输出**一个** block 的 JSON 对象，不要代码围栏、不要解释。\n${AUTHORING_RULES}`;
 
-/** 生成并自校验一个 block。{type, intent, sceneCtx, contract} → { block, warns } | { block:null, err }。 */
-export async function generateBlock({ type, intent, sceneCtx, contract }) {
+/** 生成并自校验一个 block。{type, intent, sceneCtx, contract, material?} → { block, warns } | { block:null, err }。 */
+export async function generateBlock({ type, intent, sceneCtx, contract, material = '' }) {
   const ctx = `${sceneCtx ? sceneCtx + '。' : ''}本 block 教学意图: ${intent}。`;
+  const mat = material ? `\n\n参考素材（内容/例子/数据据此，别编造脱离素材的事实）：\n${material}` : '';
   let messages = [
     { role: 'system', content: SYS },
-    { role: 'user', content: `生成一个 ${type} block。\n契约:\n${contract}\n\n${ctx}\n只输出该 block 的 JSON。` },
+    { role: 'user', content: `生成一个 ${type} block。\n契约:\n${contract}\n\n${ctx}${mat}\n只输出该 block 的 JSON。` },
   ];
   const ROUNDS = 3;                                       // 初次 + 2 次自修
   for (let round = 1; round <= ROUNDS; round++) {

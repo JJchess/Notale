@@ -28,7 +28,9 @@ python demo/serve.py
 
 ```
 lecture-agent generate "<课题>" [--pages N] [--theme cartesian|cobalt-grid|lab]
-                                [--audience "..."] [--wants sim,quiz] [--id kebab] [--no-clarify]
+                                [--audience "..."] [--wants sim,quiz] [--material file] [--id kebab]
+                                [--no-clarify] [--eval] [--revise] [--coverage]
+    --material <file>  用源素材做 grounding（内容据素材、防编造，贯穿规划+逐块生成）
 lecture-agent batch  [topics.jsonl]           批量跑一轮（缺省 examples/topics.jsonl）
 lecture-agent loop   [topics.jsonl] [--every 1h]   常驻循环（loop 能力）
 lecture-agent evolve [dir...]                 聚合信号 → 提案（缺省 out/）
