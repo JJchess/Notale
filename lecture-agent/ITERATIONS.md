@@ -81,3 +81,8 @@
 - **顺着 iter14 信号**：把反复被"想要"的 timeline 从"幻觉类型"收编为**第 17 种正式 block**——这正是自演化机制的兑现（真实反复需求 → 加法式长出新 block）。
 - **加法式接入**（一处类型碰 6 处，按扩展点）：validate.mjs(BLOCK_TYPES+校验分支 2-8 事件) + doc-to-deck.js(blockRenderers.timeline 竖向渲染) + index.html(.timeline CSS 走 token，191/191 平衡) + lecture-doc.schema.json(enum+timelineBlock def) + create-content/contracts.json(契约) + sync。
 - **验证**：good/bad block 校验正确；timeline 路由到 create-content 且进 autoTypes；e2e「计算机发展简史」**主动用了 2 个 timeline**(各 4 事件，如 1936 图灵机/1941 Z3)、8 页/10 block 全过、无回退。schema 图(docs/…architecture.html)未同步(published 件，留作单独文档任务)。
+
+## Iter 16 — 全管道集成测试 + SPEC 补 timeline（验证/文档，goal②）
+- **集成测试**：`--material --eval --coverage` 三特性首次**合并**跑（此前各自单测）——KMP 材料 → eval 4/5(coherence 5)、coverage 56%(措辞正确为"广度诊断")、notes 增强、material 接地(eval 点名 next 数组)、7页/8block 全过，**无集成冲突**。13 calls。
+- **文档同步**：SPEC.md §3.1 block 表补上 `timeline`（iter15 新增但漏文档）；sync 刷新技能副本。
+- 结论：跨 15 轮改动的各能力可叠加共存，管道稳。schema 架构图仍待单独更新（published 件）。

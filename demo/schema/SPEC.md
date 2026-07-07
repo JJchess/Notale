@@ -56,6 +56,7 @@ LectureDoc                     一门课
 | `list` | 编号要点（≤12 条，建议 ≤8，每条一行内讲完） | items[].fragment 控制逐条渐显 |
 | `agenda` | 「标签 + 正文」的等高编号行（≤12，建议 ≤8） | **首选的多要点结构**——逐行等高，不会出现两栏高度不齐 |
 | `callout` | 顶线小结/核心思想 | label(小字标签) + text；可附 `latex` 展示公式 |
+| `timeline` | 竖向时间线（历史/演进/分步过程） | events[2–8]：{time, title, desc?}；左侧发丝线 + 节点圆点，全走主题 token |
 | `formula` | 独立展示公式 | LaTeX；`size` 可调字号（默认 27） |
 | `flow` | 2–7 节点流程链 | `state:"on"`=强调实线框，`"q"`=虚线待解框；`loopNote` 加循环注记；节点 title 支持行内公式 |
 | `table` | ledger 风格对比表 | 单元格可 `{text, hi:true}` 强调；**能用 agenda 讲清就别用表** |
