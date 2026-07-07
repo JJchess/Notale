@@ -35,9 +35,12 @@ function visit(b, docId) {
   if (b.type === 'compare') { for (const s of ['left', 'right']) if (b[s] && b[s].block) visit(b[s].block, docId); }
   if (b.type === 'grid' && Array.isArray(b.items)) for (const it of b.items) if (it && it.block) visit(it.block, docId);
 }
+const evals = [];   // PPTEval 式质量分（若 batch/generate --eval 存了 eval.json）
 for (const f of files) {
-  let doc; try { doc = JSON.parse(readFileSync(f, 'utf8')); } catch { continue; }
-  if (!doc || !Array.isArray(doc.scenes)) continue;   // 不是 LectureDoc，跳过（可能是 block 片段/骨架）
+  let obj; try { obj = JSON.parse(readFileSync(f, 'utf8')); } catch { continue; }
+  if (obj && obj.overall !== undefined && obj.content && obj.coherence) { evals.push(obj); continue; }  // eval.json
+  if (!obj || !Array.isArray(obj.scenes)) continue;   // 不是 LectureDoc，跳过（可能是 block 片段/骨架）
+  const doc = obj;
   docCount++;
   const id = doc.id || f;
   if (doc.theme) themes[doc.theme] = (themes[doc.theme] || 0) + 1;
@@ -78,5 +81,19 @@ if (signals.length) {
 } else {
   console.log('\n（暂无跨 doc 反复出现的 freeform 诉求——schema 现有词汇够用，无需生长。）');
 }
+
+/* 质量分聚合（移植自 PPTEval，来自 batch/generate --eval 存的 eval.json）：给自演化一个质量轴 */
+let qual = null;
+if (evals.length) {
+  const dims = ['content', 'coherence', 'pedagogy'];
+  const avg = {}; for (const d of dims) avg[d] = +(evals.reduce((s, e) => s + (e[d]?.score || 0), 0) / evals.length).toFixed(2);
+  avg.overall = +(evals.reduce((s, e) => s + (e.overall || 0), 0) / evals.length).toFixed(2);
+  const weakest = dims.slice().sort((a, b) => avg[a] - avg[b])[0];
+  qual = { n: evals.length, avg, weakest, topFixes: evals.map(e => e.topFix).filter(Boolean).slice(0, 8) };
+  console.log(`\n📊 质量分（${evals.length} 份评估过的讲义，移植自 PPTEval）：overall ${avg.overall}/5 · content ${avg.content} · coherence ${avg.coherence} · pedagogy ${avg.pedagogy}`);
+  console.log(`  最弱维度: ${weakest}（${avg[weakest]}/5）→ 这是 agent 该系统改进的方向`);
+  if (qual.topFixes.length) { console.log('  各篇 topFix（改进线索）:'); for (const t of qual.topFixes) console.log('    · ' + t); }
+}
+
 /* 机器可读一行（cron/batch 消费） */
-console.log('\n@@EVOLVE_JSON@@ ' + JSON.stringify({ docCount, themes, engines, freeformCount: freeforms.length, signals }));
+console.log('\n@@EVOLVE_JSON@@ ' + JSON.stringify({ docCount, themes, engines, freeformCount: freeforms.length, signals, quality: qual }));

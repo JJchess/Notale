@@ -33,8 +33,8 @@ For the top recurring signal, draft — as a PR-style proposal, not an applied c
 4. **反例测试** — a validate.mjs case (positive + negative).
 Present all four to a human. Only after review does it merge (then `node lecture-agent/sync.mjs` re-syncs the skill copies).
 
-## Batch as the data source
-`refs/hermes-agent/batch_runner.py` runs `generate-lecture` over a topics JSONL (see `lecture-agent/hermes/topics.sample.jsonl`), producing many docs + pass/rate/repair stats (trajectories). Point `aggregate.mjs` at that output dir to turn a batch into evolution signals. Wire it as a Hermes cron routine (see `lecture-agent/hermes/config.sample.yaml`) for a standing loop: generate → aggregate → surface proposals.
+## Batch as the data source (via the CLI)
+`lecture-agent batch examples/topics.jsonl` generates many lectures into `out/`; then `lecture-agent evolve out/` turns that corpus into evolution signals. For a standing loop use `lecture-agent loop examples/topics.jsonl --every 1h` (generate → accumulate), and run `evolve` periodically to surface proposals. (`aggregate.mjs` is the underlying implementation, wrapped by `src/evolve.mjs` + the `evolve` subcommand.)
 
 ## Guardrail (do not cross)
 The agent may **draft** proposals; it must not silently modify `demo/schema/`, the renderer, or the family skills' contracts. Growth is governed, additive, and human-approved — that's what keeps "controlled self-evolution" controlled.

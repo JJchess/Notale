@@ -1,80 +1,79 @@
-# lecture-agent —— 自演化讲义生成 agent（建在 Hermes harness 上）
+# lecture-agent
 
-把课题变成一份合法的 **LectureDoc**（新一代互动"讲义/PPT"，由 `demo/doc-to-deck.js` 渲染成 reveal.js deck）。
-主流程 = **input query → clarification → output 讲义**。不 fork Hermes，而是**复用它的 harness**（agent loop、`delegate_task` 并行、`clarify`、cron、技能自创建、batch_runner），只在其上装我们的技能套件 + 确定性管道 + loop 路由 + 自演化机制。
+自演化的**讲义生成 agent**：给一个课题，产出一份合法、可交互的 **LectureDoc**——由 reveal.js 运行时渲染成的网页讲义（富文本、KaTeX 公式、浏览器内仿真、可编辑代码、测验、AI 助教）。
 
-## 目录
-```
-lecture-agent/
-├─ skills/
-│  ├─ generate-lecture/       编排器（harness）：clarify→plan→fan-out→assemble→validate→repair→verify
-│  ├─ create-content/         静态块家族（hero/statement/list/agenda/callout/formula/flow/table/code/compare/grid）
-│  ├─ create-quiz/            quiz（客观/主观）
-│  ├─ create-sim/             sim 4 引擎（dynamics1d/searchCompare/custom/widget）
-│  ├─ create-code-runtime/    runnable（Pyodide/JS，全 deck 至多一个）
-│  ├─ create-freeform/        逃生舱
-│  ├─ lecture-doc-schema/     共享契约：references/{schema,SPEC} + scripts/{validate,assemble,render-verify}
-│  └─ evolve-schema/          自演化：scripts/aggregate.mjs 汇总信号 → 提案（人类 review）
-├─ hermes/{config.sample.yaml, topics.sample.jsonl}
-├─ sync.mjs                   从 demo/schema/ 同步契约+脚本进 lecture-doc-schema 技能（单一事实源=demo/schema/）
-└─ out/                       生成产物（<id>/skeleton.json, frags/, course.lecture.json）
-```
+- **纯 Node、零运行时依赖、离线优先**（只用内置 `fetch` 调一个 OpenAI 兼容的 LLM 端点）。
+- **它是自己的 harness**——[Nous Research Hermes](https://github.com/NousResearch/hermes-agent) 是架构蓝图，不是依赖。我们只取其思想（agent 编排 / 并行 fan-out / 技能加载 / clarify / loop / 自演化），用最小实现落成，不搬它的代码。
+- **schema 即接口**：agent 只产 JSON（LectureDoc），从不写 HTML/CSS/渲染器；渲染质量由运行时统一保证。
 
-## 单一事实源
-契约与管道脚本的**真相在 `demo/schema/`**（`lecture-doc.schema.json` / `SPEC.md` / `validate.mjs` / `assemble.mjs` / `render-verify.mjs`）。技能里的 `references/`+`scripts/` 是同步副本：
-```
-node lecture-agent/sync.mjs      # 改了 demo/schema/ 后重跑
+## 快速开始
+
+```bash
+# 1. 配一个 OpenAI 兼容 LLM（如硅基流动 SiliconFlow）——仓库根 .env（已 gitignore）
+#    SILICONFLOW_API_KEY=sk-...
+#    SILICONFLOW_BASE_URL=https://api.siliconflow.cn/v1
+#    （或用环境变量 OPENAI_API_KEY / OPENAI_BASE_URL）
+
+# 2. 生成一节课（交互式会先澄清受众/篇幅/交互/主题；--no-clarify 跳过）
+node bin/lecture-agent.mjs generate "梯度下降与学习率" --pages 8 --audience 本科生
+
+# 3. 预览：把产物拷进 demo/ 并起服务
+python demo/serve.py
+#    浏览器打开 http://127.0.0.1:8778/index.html?doc=generated/<id>.lecture.json
 ```
 
-## 接入 Hermes（一次）
-1. 装 Hermes（`refs/hermes-agent`，Windows 原生支持；见其 README）。
-2. 配一个 LLM provider（本地 LM Studio/Ollama，或 OpenRouter/Anthropic 等——provider 无关；key 放 `.env`）。
-3. 把 `hermes/config.sample.yaml` 里的 `skills.external_dirs` 指向你机器上的 `lecture-agent/skills` 绝对路径，合并进 Hermes 配置。Hermes 会原地读到 8 个技能，各自获得 `/generate-lecture`、`/create-sim` … 斜杠命令。
+默认模型 `deepseek-ai/DeepSeek-V3`（`LA_MODEL=<id>` 可换）。产物写到 `out/<id>/` 与 `demo/generated/<id>.lecture.json`（后者供 `?doc=` 预览）。
 
-## 生成一节课
-在 Hermes 里：
-```
-/generate-lecture 为「梯度下降」生成一节面向本科生的互动讲义，约十几页，含一个 sim
-```
-编排器会先 `clarify` 追问（受众/篇幅/要不要 sim·runnable·quiz/主题气质），再 plan→fan-out（每个 block 一个子代理，加载对应 `create-*` 技能）→ assemble → validate → 自修 → verify，产出 `lecture-agent/out/<id>/course.lecture.json`。
-把它拷成 `demo/course.lecture.json`（或让运行时指向它），`python demo/serve.py` 打开即看。
+## CLI
 
-单独调某个块家族也行：`/create-sim ...`、`/create-quiz ...`（都是普通技能）。
-
-## 端到端冒烟（真实 LLM，无需 Hermes）
-已接**硅基流动 (SiliconFlow)** 作 LLM（OpenAI 兼容；key 在仓库根 `.env`，已 gitignore）。用一个轻量冒烟证明「LLM 生成 → validateBlock → 自修环」真能闭合：
 ```
-node lecture-agent/smoke-generate.mjs <type> "<intent>"
-#   type ∈ list | callout | formula | quiz | sim
-#   例: node lecture-agent/smoke-generate.mjs sim "学习率 alpha 决定收敛还是发散"
-```
-它按 create-* 契约向硅基流动要一个 block，跑 validateBlock；不合格则把带路径的错误喂回自修一次。**已实测**：quiz 与 dynamics1d sim（含受限表达式）均首轮通过。默认模型 `deepseek-ai/DeepSeek-V3`（`SF_MODEL=... node ...` 可换）。
-> 这是冒烟测试，不是 Hermes 的替代——真正的编排/并行 fan-out/loop 仍走 Hermes。
-
-## 独立生成一整节课（mini 编排器，无需 Hermes）——路径 B
-`run-lecture.mjs` 复刻 generate-lecture 技能的完整流程但独立跑：**plan(骨架) → 逐 block 并行生成(自校验+自修) → 组装 → 整档校验+自修 → render-verify → 写出**。
-```
-node lecture-agent/run-lecture.mjs "<课题>" [--pages N] [--theme cartesian|cobalt-grid|lab] [--audience "..."] [--id kebab]
-#   例: node lecture-agent/run-lecture.mjs "梯度下降与学习率" --pages 8 --audience 本科生
-```
-产物在 `lecture-agent/out/<id>/`（`skeleton.json` / `frags/*.json` / `course.lecture.json`）。**已实测**："梯度下降与学习率"8 页 / 9 block 全部首轮合法、整档校验通过、render-verify 结构断言通过，共 ~12 次 LLM 调用；生成的 dynamics1d sim 是真正的 $f(x)=x^2$ 梯度下降（`update: x - alpha*2*x`）+ 正确的 α 分档 regime，主题自动选了 lab。
-预览：把 `out/<id>/course.lecture.json` 拷成 `demo/course.lecture.json`（会覆盖手写的自演化智能体基线，注意备份），`python demo/serve.py` 打开。
-> 路径 B 用来立刻验证「契约足以驱动全流程」。路径 A（把编排/并行/loop/自演化落到 Hermes）见下方 config/cron。
-
-## 确定性管道（不依赖 LLM，随时可离线跑/测）
-```
-node demo/schema/validate.mjs <doc.json>            # 整份校验
-node demo/schema/validate.mjs --block <block.json>  # 单块校验（逐块自检）
-node demo/schema/assemble.mjs <skeleton> <frags> <out>   # 骨架+片段→整份+校验
-node demo/schema/render-verify.mjs <doc.json>       # 结构断言+溢出启发式（真渲染需无头浏览器/人工）
+lecture-agent generate "<课题>" [--pages N] [--theme cartesian|cobalt-grid|lab]
+                                [--audience "..."] [--wants sim,quiz] [--id kebab] [--no-clarify]
+lecture-agent batch  [topics.jsonl]           批量跑一轮（缺省 examples/topics.jsonl）
+lecture-agent loop   [topics.jsonl] [--every 1h]   常驻循环（loop 能力）
+lecture-agent evolve [dir...]                 聚合信号 → 提案（缺省 out/）
+lecture-agent skills                          列出已加载技能与 block 路由
 ```
 
-## loop（standing）与自演化
-- **loop**：`hermes/config.sample.yaml` 里的 cron 路由——周期性从 `topics.sample.jsonl` 取题→生成→验收→聚合。
-- **batch 评测**：`refs/hermes-agent/batch_runner.py --dataset_file=lecture-agent/hermes/topics.sample.jsonl ...` 跑多课题产出轨迹+通过率。
-- **自演化**：`node lecture-agent/skills/evolve-schema/scripts/aggregate.mjs lecture-agent/out` 汇总反复出现的 freeform 诉求/主题/引擎 → 提案（新 block 类型/主题/引擎）。**agent 只提案，人类 review 后才并入**（改 `demo/schema/` 再 `sync.mjs`）。
+## 它怎么工作（Hermes 蓝图的最小落地）
 
-## 现状 / 边界
-- **确定性管道 + 8 个技能骨架**：已建、离线测通过（validate 正反例、assemble、render-verify、各技能样例块、evolve 聚合冒烟）。
-- **端到端 LLM 生成**：需你装好 Hermes+LLM 后真跑（本仓库开发环境无 LLM）。
-- **真实渲染验收**（每页 0 溢出/交互冒烟/光标对齐）需无头浏览器或人工在 `demo/serve.py` 翻一遍——`render-verify.mjs` 目前是结构断言，已在文件里标了接无头浏览器的 TODO。
+主流程 = **input → clarify → output**，编排是**确定性骨架 + 每节点 LLM 智能 + 自修环**（比自由 tool-loop 更稳、可调试）：
+
+```
+① Clarify   交互澄清受众/篇幅/要哪些交互/主题气质（可跳过）
+② Plan      多视角规划(src/plan.mjs，移植自 STORM)：先发现 3-4 个互补教学视角→各自给"必讲点+常见疑问"
+            (覆盖清单)→综合成骨架 JSON（scenes[]，每 block 是 {id,type,intent} 占位）。覆盖比单次出大纲更广更深。
+③ Fan-out   每个 block 一个"子任务"并行生成：按 block 类型路由到对应家族技能的契约
+            → 一次聚焦 LLM 调用 → validateBlock 自校验 → 不合格把带路径的错误喂回自修（≤3 轮）
+④ Assemble  占位 → 生成块（失败块诚实丢弃/降级并报告，不编造内容）
+⑤ Validate  整档 validateDoc；block 级错误按路径回炉重生成（≤2 轮）
+⑥ Verify    render-verify 结构断言 + 溢出启发式（真实浏览器渲染仍需人工/无头浏览器）
+⑦ Eval      (可选 --eval/--revise) 质量评审(src/evaluate.mjs，移植自 PPTAgent 的 PPTEval)：
+            content/coherence/pedagogy 三维各 1-5 + 理由 + topFix；--revise 分低则按 topFix 重生成一版取优。
+⑧ Output    合法 course.lecture.json = 讲义
+```
+
+### 借鉴来源（取思想/移植算法，非搬码；均为 Node 重写）
+- **内容规划** ← [Stanford STORM](https://github.com/stanford-oval/storm)（多视角提问 → 大纲）：`src/plan.mjs`。
+- **质量评估** ← [PPTAgent / PPTEval](https://github.com/icip-cas/PPTAgent)（Content/Design/Coherence 三维评分）：`src/evaluate.mjs`（改造为 content/coherence/pedagogy）。
+
+模块（`src/`）：`agent.mjs`（编排）· `plan.mjs`（STORM 式多视角规划）· `delegate.mjs`（fan-out 子任务）· `skills.mjs`（技能加载器）· `clarify.mjs` · `evaluate.mjs`（PPTEval 式质量评估）· `llm.mjs`（OpenAI 兼容客户端）· `pipeline.mjs`（校验/验收）· `loop.mjs` · `evolve.mjs`。
+
+## 扩展：加一个技能 = 加一个文件夹
+
+`skills/<name>/` 里放 `SKILL.md`（frontmatter: name/description + 人读的创作指南）+ 可选 `contracts.json`（`{ "<blockType>": "<紧凑契约模板>" }`）。带 `contracts.json` 的即 **block 家族生成器**，agent 自动发现并按 block 类型路由（`lecture-agent skills` 可查）。**一个 block 类型只能归一个家族**（冲突会报错）。逃生舱类型（`runnable`/`freeform`）注册但不进自动规划菜单。
+
+现有家族：`create-content`（hero/statement/list/agenda/callout/formula/flow/table/code/compare）· `create-quiz` · `create-sim`（dynamics1d/searchCompare/custom/widget）· `create-code-runtime` · `create-freeform`。元/文档技能：`lecture-doc-schema`（契约总纲）· `generate-lecture`（编排说明）· `evolve-schema`（自演化）。
+
+## 自演化（学习/积累）
+
+`evolve` 扫描已生成的讲义，用重叠 n-gram 统计**跨多篇反复出现**的 freeform 诉求 / 主题 / 引擎 → 输出"该长什么"的**提案**（新 block 类型 / 新主题 / 新 sim 引擎）。若用 `--eval` 生成/批量（会存 `out/<id>/eval.json`），`evolve` 还会聚合**质量轴**：三维平均分 + 最弱维度 + 各篇 `topFix`，指出 agent 该系统改进的方向。护栏：**agent 只提案，人类 review 后才并入**（改 `demo/schema/` 再落新契约）——结构层强约束、内容形态层由真实缺口驱动生长。配合 `loop --eval` + 题材队列即成"生成→评分→聚合→提案"的自改进环。
+
+## 契约与渲染（单一事实源）
+
+LectureDoc 的 schema、校验器、组装/验收脚本权威在 `../demo/schema/`（`lecture-doc.schema.json` / `SPEC.md` / `validate.mjs` / `assemble.mjs` / `render-verify.mjs`）；本 agent 的 `src/pipeline.mjs` 相对 import 它们。渲染运行时是 `../demo/`（reveal.js + KaTeX + Observable Plot + Pyodide/CodeMirror，全离线 vendor）。
+> 独立发布本 agent 时，把 `demo/schema/` 连同一个最小渲染器 vendored 进来即可自包含（后续项）。`sync.mjs` 会把契约/脚本同步进 `skills/lecture-doc-schema/` 作为文档副本。
+
+## 许可
+
+MIT（见 LICENSE）。
