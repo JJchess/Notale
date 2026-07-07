@@ -60,12 +60,20 @@ async function cmdGenerate() {
   let r = await generateLecture({ ...opts, log });
   let ev = null;
   if (has('revise')) {
-    ev = await evaluateLecture(r.doc); log(''); printEval(ev);
-    if (ev.overall < 4 && ev.topFix) {
-      log('\n[revise] overall<4，按 topFix 重生成一版对比…');
-      const r2 = await generateLecture({ ...opts, extra: (opts.extra ? opts.extra + '；' : '') + '特别改进: ' + ev.topFix, log });
-      const ev2 = await evaluateLecture(r2.doc); log('[revise] 第二版:'); printEval(ev2);
-      if ((ev2.overall || 0) > (ev.overall || 0) && !r2.errors.length) { r = r2; ev = ev2; log('[revise] → 采用第二版'); } else log('[revise] → 保留第一版');
+    if (opts.coverage && r.coverage && r.coverage.ratio < 0.85 && r.coverage.missing.length && !r.errors.length) {
+      // 覆盖驱动 revise：把规划想讲但没落地的必讲点注入，重规划一版，取覆盖度更高者
+      const miss = r.coverage.missing.map(m => m.point).join('；');
+      log(`\n[revise] 规划保真度 ${Math.round(r.coverage.ratio * 100)}% 偏低，注入 ${r.coverage.missing.length} 个遗漏必讲点重生成…`);
+      const r2 = await generateLecture({ ...opts, extra: (opts.extra ? opts.extra + '；' : '') + '补上其中最核心的遗漏点(挑最重要的几个深入讲透,页数有限不必全覆盖)：' + miss, log });
+      if ((r2.coverage?.ratio || 0) > r.coverage.ratio && !r2.errors.length) { r = r2; log(`[revise] → 采用第二版（保真度 ${Math.round((r2.coverage.ratio) * 100)}%）`); } else log('[revise] → 保留第一版');
+    } else {
+      ev = await evaluateLecture(r.doc); log(''); printEval(ev);
+      if (ev.overall < 4 && ev.topFix) {
+        log('\n[revise] overall<4，按 topFix 重生成一版对比…');
+        const r2 = await generateLecture({ ...opts, extra: (opts.extra ? opts.extra + '；' : '') + '特别改进: ' + ev.topFix, log });
+        const ev2 = await evaluateLecture(r2.doc); log('[revise] 第二版:'); printEval(ev2);
+        if ((ev2.overall || 0) > (ev.overall || 0) && !r2.errors.length) { r = r2; ev = ev2; log('[revise] → 采用第二版'); } else log('[revise] → 保留第一版');
+      }
     }
   } else if (has('eval')) { ev = await evaluateLecture(r.doc); }
   persist(r, ev);

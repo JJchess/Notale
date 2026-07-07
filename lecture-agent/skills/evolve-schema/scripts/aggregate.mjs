@@ -103,9 +103,8 @@ if (covs.length) {
   const avg = +(covs.reduce((s, c) => s + (c.ratio || 0), 0) / covs.length).toFixed(2);
   const allMissing = covs.flatMap(c => (c.missing || []).map(m => m.point)).filter(Boolean);
   covAgg = { n: covs.length, avgRatio: avg, missingCount: allMissing.length, sampleMissing: allMissing.slice(0, 8) };
-  console.log(`\n📐 规划保真度（${covs.length} 份带 coverage 的讲义，STORM 闭环）：平均 ${Math.round(avg * 100)}% 必讲点落地`);
-  if (allMissing.length) { console.log(`  常见缺失（共 ${allMissing.length} 处，规划想讲但成品没充分覆盖）:`); for (const p of covAgg.sampleMissing) console.log('    · ' + p); }
-  if (avg < 0.7) console.log('  → 保真度偏低：规划期发散的必讲点没被内容兑现，考虑加页/加覆盖驱动 revise。');
+  console.log(`\n📐 覆盖广度（${covs.length} 份带 coverage 的讲义，STORM 闭环诊断，非达标目标）：平均 ${Math.round(avg * 100)}% 候选点被展开`);
+  if (allMissing.length) { console.log(`  常被舍弃的点（共 ${allMissing.length}，多视角发散出但成品未展开——少而深的正常取舍；仅当某重要点反复被漏才需补）:`); for (const p of covAgg.sampleMissing) console.log('    · ' + p); }
 }
 
 /* 机器可读一行（cron/batch 消费） */

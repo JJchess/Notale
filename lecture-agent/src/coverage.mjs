@@ -19,6 +19,6 @@ export async function checkCoverage(doc, perspectives) {
 
 export function printCoverage(cov) {
   if (!cov) { console.log('[coverage] 无多视角 mustCover 可核对（规划回退了单阶段）'); return; }
-  console.log(`[coverage] 规划保真度 ${Math.round(cov.ratio * 100)}%（${cov.covered}/${cov.total} 必讲点已充分覆盖）`);
-  for (const m of cov.missing) console.log(`  ✗ 缺: ${m.point} — ${m.why}`);
+  console.log(`[coverage] 覆盖广度 ${Math.round(cov.ratio * 100)}%（${cov.covered}/${cov.total} 候选必讲点被展开——诊断用；少而深时天然 <100%，不是越高越好）`);
+  for (const m of cov.missing) console.log(`  · 未展开: ${m.point}`);
 }
