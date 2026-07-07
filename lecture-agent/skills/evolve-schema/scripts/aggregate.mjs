@@ -36,9 +36,11 @@ function visit(b, docId) {
   if (b.type === 'grid' && Array.isArray(b.items)) for (const it of b.items) if (it && it.block) visit(it.block, docId);
 }
 const evals = [];   // PPTEval 式质量分（若 batch/generate --eval 存了 eval.json）
+const covs = [];    // 规划保真度（若 generate --coverage 存了 coverage.json）
 for (const f of files) {
   let obj; try { obj = JSON.parse(readFileSync(f, 'utf8')); } catch { continue; }
   if (obj && obj.overall !== undefined && obj.content && obj.coherence) { evals.push(obj); continue; }  // eval.json
+  if (obj && obj.ratio !== undefined && obj.total !== undefined && Array.isArray(obj.missing)) { covs.push(obj); continue; }  // coverage.json
   if (!obj || !Array.isArray(obj.scenes)) continue;   // 不是 LectureDoc，跳过（可能是 block 片段/骨架）
   const doc = obj;
   docCount++;
@@ -95,5 +97,16 @@ if (evals.length) {
   if (qual.topFixes.length) { console.log('  各篇 topFix（改进线索）:'); for (const t of qual.topFixes) console.log('    · ' + t); }
 }
 
+/* 规划保真度聚合（来自 generate --coverage 存的 coverage.json）：给自演化一个"计划覆盖是否落地"的轴 */
+let covAgg = null;
+if (covs.length) {
+  const avg = +(covs.reduce((s, c) => s + (c.ratio || 0), 0) / covs.length).toFixed(2);
+  const allMissing = covs.flatMap(c => (c.missing || []).map(m => m.point)).filter(Boolean);
+  covAgg = { n: covs.length, avgRatio: avg, missingCount: allMissing.length, sampleMissing: allMissing.slice(0, 8) };
+  console.log(`\n📐 规划保真度（${covs.length} 份带 coverage 的讲义，STORM 闭环）：平均 ${Math.round(avg * 100)}% 必讲点落地`);
+  if (allMissing.length) { console.log(`  常见缺失（共 ${allMissing.length} 处，规划想讲但成品没充分覆盖）:`); for (const p of covAgg.sampleMissing) console.log('    · ' + p); }
+  if (avg < 0.7) console.log('  → 保真度偏低：规划期发散的必讲点没被内容兑现，考虑加页/加覆盖驱动 revise。');
+}
+
 /* 机器可读一行（cron/batch 消费） */
-console.log('\n@@EVOLVE_JSON@@ ' + JSON.stringify({ docCount, themes, engines, freeformCount: freeforms.length, signals, quality: qual }));
+console.log('\n@@EVOLVE_JSON@@ ' + JSON.stringify({ docCount, themes, engines, freeformCount: freeforms.length, signals, quality: qual, coverage: covAgg }));
