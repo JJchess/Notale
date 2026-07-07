@@ -15,6 +15,7 @@ export const AUTO_EXCLUDE = new Set(['runnable', 'freeform', 'embed']);
 /* 全局创作硬规则（所有 block 生成共享；违反会被 validate.mjs 打回）。 */
 export const AUTHORING_RULES = `硬规则(违反会被校验/打回)：
 - 正文克制，一页一个观点；lead 是一句陈述，不是"本页将展示…"这类引导语；不写"让我们""值得注意的是"。
+- **具体优先，别空泛**：给真实的例子/数据/名称/引文，而非抽象概括——讲文学就引真实作品与词句、讲算法就给具体输入→输出和一个边界/错误例子、讲科学就带数值与单位。每个要点尽量落到一个可感的具体物；宁可少讲一点也要讲实。
 - 文本字段只用 inline-md(**b**/*em*/\`code\`/$latex$)，禁原始 HTML 标签。
 - 公式一律 LaTeX，不用 Unicode 上下标。formula 块的 latex 填纯源码，**不要** $ / $$ 包裹（正文里的行内公式才用 $…$）。
 - 绝不写死颜色/字体(主题 token 负责视觉)。
