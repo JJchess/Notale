@@ -12,6 +12,7 @@ import { runLoop, parseInterval } from '../src/loop.mjs';
 import { evolve } from '../src/evolve.mjs';
 import { renderVerify } from '../src/pipeline.mjs';
 import { evaluateLecture, printEval } from '../src/evaluate.mjs';
+import { printCoverage } from '../src/coverage.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(here, '..');
@@ -33,6 +34,7 @@ function persist(r, ev) {
   const file = join(dir, 'course.lecture.json');
   writeFileSync(file, JSON.stringify(r.doc, null, 2));
   if (ev) writeFileSync(join(dir, 'eval.json'), JSON.stringify(ev, null, 2));  // 供 evolve 聚合质量轴
+  if (r.coverage) writeFileSync(join(dir, 'coverage.json'), JSON.stringify(r.coverage, null, 2));  // 规划保真度指标
   mkdirSync(DEMO_GEN, { recursive: true });
   const preview = join(DEMO_GEN, id + '.lecture.json');
   writeFileSync(preview, JSON.stringify(r.doc, null, 2));
@@ -50,7 +52,7 @@ function persist(r, ev) {
 async function cmdGenerate() {
   const topic = positional[0];
   if (!topic) { console.error('用法: lecture-agent generate "<课题>" [--pages N] [--theme cartesian|cobalt-grid|lab] [--audience "..."] [--wants sim,quiz] [--id kebab] [--no-clarify]'); process.exit(2); }
-  let opts = { topic, pages: +flag('pages', 12) || 12, theme: flag('theme', '') === true ? '' : flag('theme', ''), audience: flag('audience', '') === true ? '' : flag('audience', ''), wants: flag('wants', '') === true ? '' : flag('wants', ''), extra: '' };
+  let opts = { topic, pages: +flag('pages', 12) || 12, theme: flag('theme', '') === true ? '' : flag('theme', ''), audience: flag('audience', '') === true ? '' : flag('audience', ''), wants: flag('wants', '') === true ? '' : flag('wants', ''), extra: '', coverage: has('coverage') };
   if (!has('no-clarify') && process.stdin.isTTY) {
     const c = await clarify(topic);
     opts = { ...opts, pages: c.pages || opts.pages, theme: c.theme || opts.theme, audience: c.audience || opts.audience, wants: c.wants || opts.wants, extra: c.extra || '' };
@@ -68,6 +70,7 @@ async function cmdGenerate() {
   } else if (has('eval')) { ev = await evaluateLecture(r.doc); }
   persist(r, ev);
   if (ev && !has('revise')) { log(''); printEval(ev); }
+  if (r.coverage) { log(''); printCoverage(r.coverage); }
   log(`[done] LLM 调用 ${r.calls} 次。`);
 }
 
@@ -100,8 +103,8 @@ function cmdSkills() {
 }
 
 const HELP = `lecture-agent —— 自演化讲义生成 agent (Node/零依赖/离线)
-  generate "<课题>" [--pages N] [--theme X] [--audience ..] [--wants sim,quiz] [--id kebab] [--no-clarify] [--eval] [--revise]
-                                  --eval 生成后打质量分；--revise 分低则按建议重生成一版取优
+  generate "<课题>" [--pages N] [--theme X] [--audience ..] [--wants sim,quiz] [--id kebab] [--no-clarify] [--eval] [--revise] [--coverage]
+                                  --eval 生成后打质量分；--revise 分低则按建议重生成一版取优；--coverage 核对规划必讲点是否落地(STORM 闭环)
   eval <course.lecture.json>    给一份讲义打质量分 (content/coherence/pedagogy, 移植自 PPTEval)
   batch [topics.jsonl]          批量跑一轮 (缺省 examples/topics.jsonl)
   loop  [topics.jsonl] [--every 1h]   常驻循环

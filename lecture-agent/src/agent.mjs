@@ -7,6 +7,7 @@ import { loadSkills, AUTHORING_RULES } from './skills.mjs';
 import { generateBlock, pool } from './delegate.mjs';
 import { validateDoc } from './pipeline.mjs';
 import { planLecture } from './plan.mjs';
+import { checkCoverage } from './coverage.mjs';
 
 const CONC = 4;
 
@@ -30,7 +31,7 @@ async function docRepair(doc, registry, log, rounds = 2) {
 }
 
 /** 生成一节课。返回 { doc, errors, warnings, dropped, calls, outFile }。 */
-export async function generateLecture({ topic, pages = 12, theme = '', audience = '', wants = '', extra = '', outDir, log = () => {} }) {
+export async function generateLecture({ topic, pages = 12, theme = '', audience = '', wants = '', extra = '', outDir, coverage = false, log = () => {} }) {
   const { registry, autoTypes } = loadSkills();
 
   // ① Plan（STORM 式多视角规划，见 src/plan.mjs）
@@ -72,8 +73,14 @@ export async function generateLecture({ topic, pages = 12, theme = '', audience 
   // ④ 整档校验 + 结构自修
   const finalRes = await docRepair(doc, registry, log);
 
-  // ⑤ 写出
+  // ⑤ 覆盖度审查（opt-in，完成 STORM 闭环）
+  let cov = null;
+  if (coverage && perspectives?.length && !finalRes.errors.length) {
+    try { cov = await checkCoverage(doc, perspectives); } catch (e) { log('[coverage] 审查失败: ' + String(e.message || e).slice(0, 60)); }
+  }
+
+  // ⑥ 写出
   let outFile = '';
   if (outDir) { outFile = join(outDir, 'course.lecture.json'); writeFileSync(outFile, JSON.stringify(doc, null, 2)); }
-  return { doc, errors: finalRes.errors, warnings: finalRes.warnings, dropped, calls: callCount(), outFile, perspectives };
+  return { doc, errors: finalRes.errors, warnings: finalRes.warnings, dropped, calls: callCount(), outFile, perspectives, coverage: cov };
 }
