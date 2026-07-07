@@ -76,3 +76,8 @@
 - **重生成老件**：--id 覆盖重生 → 无 $-包裹 formula、整份合法，**确认 formula-$ 修复在 e2e 生成中根治**。
 - **新 bug（重生成时暴露）**：规划器造了个不存在的 type `timeline` → 该块被丢、内容损失。修：① plan.mjs 明令"type 只能从清单选、禁新造(timeline/map/chart 不存在)、要时间轴用 flow/agenda"；② agent.mjs 兜底——未注册 type 回退为 list，内容不丢。
 - **信号**：`timeline` 是反复被"想要"的类型（evolve 里也见过"时间轴"）——记为未来可正式收编的 block 候选。
+
+## Iter 15 — 新增 timeline block 类型（capability，goal①；自演化闭环落地）
+- **顺着 iter14 信号**：把反复被"想要"的 timeline 从"幻觉类型"收编为**第 17 种正式 block**——这正是自演化机制的兑现（真实反复需求 → 加法式长出新 block）。
+- **加法式接入**（一处类型碰 6 处，按扩展点）：validate.mjs(BLOCK_TYPES+校验分支 2-8 事件) + doc-to-deck.js(blockRenderers.timeline 竖向渲染) + index.html(.timeline CSS 走 token，191/191 平衡) + lecture-doc.schema.json(enum+timelineBlock def) + create-content/contracts.json(契约) + sync。
+- **验证**：good/bad block 校验正确；timeline 路由到 create-content 且进 autoTypes；e2e「计算机发展简史」**主动用了 2 个 timeline**(各 4 事件，如 1936 图灵机/1941 Z3)、8 页/10 block 全过、无回退。schema 图(docs/…architecture.html)未同步(published 件，留作单独文档任务)。

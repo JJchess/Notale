@@ -118,7 +118,7 @@ function checkWidgetHtml(html, path) {
 }
 
 /* ---------- block 校验 ---------- */
-const BLOCK_TYPES = ['hero', 'statement', 'list', 'agenda', 'callout', 'formula', 'flow', 'table', 'code', 'compare', 'grid', 'quiz', 'sim', 'runnable', 'embed', 'freeform'];
+const BLOCK_TYPES = ['hero', 'statement', 'list', 'agenda', 'callout', 'timeline', 'formula', 'flow', 'table', 'code', 'compare', 'grid', 'quiz', 'sim', 'runnable', 'embed', 'freeform'];
 function checkBlock(b, path, state) {
   if (!isObj(b)) { err(path, 'block 应为对象'); return; }
   if (!BLOCK_TYPES.includes(b.type)) { err(path + '.type', '未知 block 类型: ' + b.type); return; }
@@ -144,6 +144,13 @@ function checkBlock(b, path, state) {
   } else if (T === 'callout') {
     req(b, 'label', isStr, path, 'string'); req(b, 'text', isStr, path, 'string');
     checkInline(b.text, path + '.text');
+  } else if (T === 'timeline') {
+    if (req(b, 'events', v => Array.isArray(v) && v.length >= 2 && v.length <= 8, path, '2–8 事件数组')) {
+      b.events.forEach((e, i) => {
+        if (!isObj(e) || !isStr(e.time) || !isStr(e.title)) err(path + `.events[${i}]`, '每项需 {time, title, desc?}');
+        else { checkInline(e.title, path + `.events[${i}].title`); if (e.desc) { if (!isStr(e.desc)) err(path + `.events[${i}].desc`, 'desc 应为 string'); else checkInline(e.desc, path + `.events[${i}].desc`); } }
+      });
+    }
   } else if (T === 'formula') {
     if (req(b, 'latex', isStr, path, 'string') && /\$/.test(b.latex))
       err(path + '.latex', 'latex 是纯 LaTeX 源码，不要用 $ 或 $$ 包裹（渲染器自动按公式渲染；$ 会被 KaTeX 当非法字符标红）');

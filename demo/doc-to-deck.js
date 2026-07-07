@@ -195,6 +195,19 @@
       }
       return d;
     },
+    timeline(b) {
+      const wrap = el('div', 'timeline');
+      for (const e of b.events || []) {
+        const it = el('div', 'tl-item');
+        it.appendChild(el('div', 'tl-time', escapeHtml(e.time)));
+        const bd = el('div', 'tl-body');
+        bd.appendChild(el('div', 'tl-title', inlineMd(e.title)));
+        if (e.desc) bd.appendChild(el('div', 'tl-desc', inlineMd(e.desc)));
+        it.appendChild(bd);
+        wrap.appendChild(it);
+      }
+      return wrap;
+    },
     formula(b) {
       const m = el('div', 'mblock', displayTex(b.latex));
       if (b.size) m.style.fontSize = b.size + 'px';
