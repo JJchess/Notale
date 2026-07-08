@@ -79,6 +79,12 @@ async function cmdGenerate() {
       }
     }
   } else if (has('eval')) { ev = await evaluateLecture(r.doc); }
+  // --id 覆盖产物 id（此前被静默忽略）：规范成 kebab-slug，驱动 out/ 目录、预览文件名与 doc.id
+  const idFlag = flag('id', '');
+  if (idFlag && idFlag !== true) {
+    const slug = String(idFlag).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+    if (slug) r.doc.id = slug;
+  }
   persist(r, ev);
   if (ev && !has('revise')) { log(''); printEval(ev); }
   if (r.coverage) { log(''); printCoverage(r.coverage); }

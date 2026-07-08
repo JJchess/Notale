@@ -104,3 +104,9 @@
 - **修法**：新增 `src/material.mjs` `condenseMaterial(material,{topic,targetChars,log})`——用一遍 LLM 把长素材压成"保事实摘要"（保留定义/公式/数字/关键例子/术语，删冗余）；**超长(>12000字)分块各自浓缩再合并(map-reduce)**，合并后仍超长则二次浓缩。`agent.mjs` 第 37 行的硬截断替换为 `await condenseMaterial(...)`。
 - **不劣于现状护栏**：短素材(≤targetChars)原样返回；任何 LLM 失败/分块失败都**回退到硬截断**——永远不比旧行为差。
 - **验证**（1 次真实 LLM 调用）：造 6722 字素材、独特事实放在**第 6638 字**（远超 4000）。结果：→141 字摘要、**非原文前缀**（证明不是截断）、**末段事实（Adam/beta2=0.999）与中段事实（动量/0.9）均保留**、冗余重复段被收敛。直接证明"4000 字后的内容不再被丢弃"。`node --check` 两文件过。
+
+## Iter 20 — e2e 验证 iter19（真管道）+ 修 --id 被静默忽略（verify + bug，goal②）
+- **自检（e2e 生成，验证 iter19）**：拼 4 份 DNA 素材=14223 字 → `generate --material --eval`。日志确认 **`[material] 素材 14223 字 → 分 2 块各浓缩再合并`——iter19 的 map-reduce 浓缩在真管道里生效**（不再硬截断）。产物 7 页/10 block 全生成、整档校验过、eval **overall 4/5（coherence 5/5）**、素材接地（前导链/后随链等 DNA 事实入内容）、18 次调用。
+- **暴露的 bug**：产物 id 是按 topic slug 的 `dna-replication-mechanism`，而我传了 `--id dna-replication-mat`——**`--id` 被静默忽略**（文档里有此 flag，`opts` 从没读它）。
+- **修法**：`bin/lecture-agent.mjs` 在 `persist` 前读 `flag('id')`，规范成 kebab-slug 覆盖 `r.doc.id`（驱动 out/ 目录、预览文件名、doc.id）；放在 revise 块之后 → normal 与 --revise(r2) 两条路都覆盖到；空 slug（如纯中文输入）则保留规划器 slug 不破坏。
+- **验证**：`node --check` 过；slug 变换单测 4 例正确（保留合法 kebab / 小写 / 折叠分隔 / 纯中文→空→回退）。
