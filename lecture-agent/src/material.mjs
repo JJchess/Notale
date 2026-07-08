@@ -9,6 +9,32 @@ const CHUNK = 12000;   // 单块上限字符数（分块浓缩阈值）
 
 function truncate(s, n) { return s.length > n ? s.slice(0, n) : s; }
 
+/* 按自然边界切块：每块 ~size 字，但切点回溯到最近的段落/换行/句末标点，
+   避免 slice 硬切把句子/段落拦腰截断（否则每块开头结尾都是残句，浓缩质量下降）。
+   回溯窗口 = 块尾 25%；窗口内找不到边界才硬切。切块无损可拼回原文。 */
+export function chunkText(src, size) {
+  const s = String(src);
+  if (s.length <= size) return [s];
+  const parts = [];
+  let i = 0;
+  while (i < s.length) {
+    let end = Math.min(i + size, s.length);
+    if (end < s.length) {
+      const floor = i + Math.floor(size * 0.75);           // 至少要到块的 75% 才允许在此断
+      let cut = -1;
+      for (const re of [/\n\n/g, /\n/g, /[。！？.!?][」）】"']?/g]) {  // 优先级：空行 > 换行 > 句末
+        let m; re.lastIndex = floor;
+        while ((m = re.exec(s)) && m.index < end) cut = m.index + m[0].length;
+        if (cut > floor) break;
+      }
+      if (cut > floor) end = cut;
+    }
+    parts.push(s.slice(i, end));
+    i = end;
+  }
+  return parts;
+}
+
 async function condenseOne(text, topic, targetChars) {
   const sys = `你是资深教研，负责把课程素材浓缩成"保事实的摘要"用于备课接地（grounding）。要求：
 - 保留所有具体事实：定义、公式、数字、关键例子、专有名词、步骤、因果关系。
@@ -30,9 +56,8 @@ export async function condenseMaterial(material, { topic = '', targetChars = 400
       const digest = await condenseOne(src, topic, targetChars);
       return digest ? truncate(digest, targetChars + 400) : truncate(src, targetChars);
     }
-    // 超长：分块浓缩再合并
-    const parts = [];
-    for (let i = 0; i < src.length; i += CHUNK) parts.push(src.slice(i, i + CHUNK));
+    // 超长：按自然边界分块浓缩再合并（chunkText 切点对齐段落/句末，不拦腰截句）
+    const parts = chunkText(src, CHUNK);
     const per = Math.max(600, Math.floor(targetChars / parts.length));
     log(`[material] 素材 ${src.length} 字 → 分 ${parts.length} 块各浓缩 ~${per} 字再合并`);
     const digests = [];

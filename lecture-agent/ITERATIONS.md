@@ -110,3 +110,8 @@
 - **暴露的 bug**：产物 id 是按 topic slug 的 `dna-replication-mechanism`，而我传了 `--id dna-replication-mat`——**`--id` 被静默忽略**（文档里有此 flag，`opts` 从没读它）。
 - **修法**：`bin/lecture-agent.mjs` 在 `persist` 前读 `flag('id')`，规范成 kebab-slug 覆盖 `r.doc.id`（驱动 out/ 目录、预览文件名、doc.id）；放在 revise 块之后 → normal 与 --revise(r2) 两条路都覆盖到；空 slug（如纯中文输入）则保留规划器 slug 不破坏。
 - **验证**：`node --check` 过；slug 变换单测 4 例正确（保留合法 kebab / 小写 / 折叠分隔 / 纯中文→空→回退）。
+
+## Iter 21 — 素材浓缩分块改为自然边界切分（quality，goal①：打磨 iter19）
+- **动机（iter19 遗留质量点）**：map-reduce 分块用 `slice(i, i+CHUNK)` 硬切，会把句子/段落拦腰截断——每块首尾都是残句，喂给浓缩会降质（残句易被误解或丢事实）。
+- **修法**：新增导出 `chunkText(src, size)`——每块 ~size 字，但切点回溯到块尾 25% 窗口内最近的边界（优先级 空行 `\n\n` > 换行 `\n` > 句末标点 `。！？.!?`）；窗口内无边界才硬切。map-reduce 路径改用它。
+- **验证**（0 API 单测）：120 段文本→6 块，**无损拼回原文**、**非末块全部在边界收尾、0 拦腰截句**、各块 ≤size；无边界纯文本回退硬切且无损。`node --check` 过。
