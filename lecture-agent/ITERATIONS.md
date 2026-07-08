@@ -91,3 +91,10 @@
 - **质量快照**（eval 3 个跨领域 doc：history/algorithm/biology）：**全部 overall 4/5、coherence 恒 5/5**、content/pedagogy 4/5。16 轮迭代后系统在多题材上质量稳定良好 = **已收敛**。
 - **唯一一致信号**：topFix 反复指向 `statement`(大字收束页)偏抽象。据此给 create-content 的 statement 契约加"可点一个具体触点(例子/数字/意象)锚住，但仍简短"——针对性、不破坏"克制"。（本次重生成该 topic 恰好没排 statement 页，未当场验证，属低风险文案微调。）
 - **收敛判断**：已审计 tutor/notes/sim/quiz/coverage/material/页数 均达良好；余下多为 4→5 的边际打磨，再堆 prompt 有过度填充风险。loop 进入 fine-tuning 区间。
+
+## Iter 18 — 稀疏页自动纵向居中（design，goal③：别让页面显得空/只贴一边）
+- **动机**（用户本轮新增 goal③）：内容少的普通内容页默认顶对齐（`.body{flex:1}` 撑满高度但内容堆在顶部），底部留一大片空白 = "只向上边缘对齐"，显空。
+- **修法（渲染器侧，universal，0 API）**：`doc-to-deck.js` 新增 `balanceScene(section)`，在 `ready`/`slidechanged`/`fonts.ready` 时对**当前页**实测：`body` 子块 `offsetHeight` 之和 + gap vs `body.clientHeight`；内容 < 72% 可用高度即判为稀疏 → `justify-content:center` 纵向居中，不再贴顶。
+- **关键正确性**：用 `offsetHeight`（布局像素）比 `clientHeight`，两者同尺度、**不受 reveal 的 CSS 缩放影响**（getBoundingClientRect 会被缩放，故不用）。
+- **护栏（防回归）**：① 跳过 `.cover`/`.bigidea`（本就居中）与 `.lab`/`.runlab`/`.widlab`（sim/runnable/widget 按设计填满）；② 尊重作者显式 `layout.centered`（打 `dataset.centered` 标记，只加不覆盖）——基线 6 处 centered 不受影响；③ 近满页（≥72%）保持顶对齐，**不引入溢出风险**。
+- **验证**：`node --check` 过；基线 course.lecture.json 仍合法(16 页/23 block)；`getCurrentSlide` API 确认在 vendored reveal 内。**浏览器实测留待补**（本会话无 debug 浏览器/preview 工具）——逻辑与尺度一致性已核，风险低。

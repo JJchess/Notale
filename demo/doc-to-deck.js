@@ -706,7 +706,7 @@
         body.style.display = 'flex'; body.style.flexDirection = 'column';
         const L = scene.layout || {};
         body.style.gap = (L.gap != null ? L.gap : 18) + 'px';
-        if (L.centered) body.style.justifyContent = 'center';
+        if (L.centered) { body.style.justifyContent = 'center'; body.dataset.centered = '1'; }
         for (const blk of scene.blocks) body.appendChild(renderBlock(blk, ctx));
         pad.appendChild(body);
       }
@@ -716,6 +716,26 @@
     notes.className = 'notes'; notes.innerHTML = inlineMd(scene.notes);
     sec.appendChild(notes);
     return sec;
+  }
+
+  /* 稀疏页自动平衡：内容少的普通内容页默认顶对齐，会在底部留一大片空白（“向一个边对齐”）。
+     每次某页变为当前页时实测其内容高度 vs 可用高度，明显偏空就纵向居中，不再贴顶。
+     用 offsetHeight（布局像素，不受 reveal 的 CSS 缩放影响），与 clientHeight 同尺度可比。 */
+  function balanceScene(section) {
+    if (!section) return;
+    if (section.classList.contains('cover') || section.classList.contains('bigidea')) return;
+    const body = section.querySelector('.pad > .body');
+    if (!body) return;
+    /* sim/runnable/widget 的 body 按设计填满，作者显式 centered 也别覆盖 */
+    if (['lab', 'runlab', 'widlab'].some(c => body.classList.contains(c))) return;
+    if (body.dataset.centered) return;              /* 作者显式 layout.centered，尊重其意图，不覆盖 */
+    body.style.justifyContent = '';                 /* 先复位再实测，避免测到上次居中态 */
+    const avail = body.clientHeight;
+    const kids = Array.from(body.children);
+    if (!avail || !kids.length) return;             /* 不可见或空 body 不处理 */
+    const gap = parseFloat(getComputedStyle(body).rowGap) || 0;
+    const contentH = kids.reduce((h, k) => h + k.offsetHeight, 0) + gap * (kids.length - 1);
+    if (contentH < avail * 0.72) body.style.justifyContent = 'center';
   }
 
   /* ================= 装配 & 启动 ================= */
@@ -810,8 +830,10 @@
   Reveal.initialize({ hash: true, slideNumber: 'c/t', controls: false, progress: true, center: false,
     transition: 'slide', backgroundTransition: 'fade', width: 1280, height: 720, margin: 0,
     viewDistance: 5, hashOneBasedIndex: true, plugins: [RevealHighlight] });
-  Reveal.on('ready', e => { readyCallbacks.forEach(fn => fn()); activateRunCell(e.currentSlide); updateCtx(); refreshNotes(); });
-  Reveal.on('slidechanged', e => { activateRunCell(e.currentSlide); updateCtx(); refreshNotes(); });
+  Reveal.on('ready', e => { readyCallbacks.forEach(fn => fn()); activateRunCell(e.currentSlide); updateCtx(); refreshNotes(); requestAnimationFrame(() => balanceScene(e.currentSlide));
+    /* 字体加载完会改变块高度 → 字体就绪后按当前页重测一次，避免用未换字体的旧高度居中 */
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => balanceScene(Reveal.getCurrentSlide())); });
+  Reveal.on('slidechanged', e => { activateRunCell(e.currentSlide); updateCtx(); refreshNotes(); requestAnimationFrame(() => balanceScene(e.currentSlide)); });
   /* reveal 缩放变化时 CodeMirror 度量会过期（FE-48），ResizeObserver 兜底 refresh */
   new ResizeObserver(() => { if (window.__rcCM) requestAnimationFrame(() => window.__rcCM.refresh()); }).observe($('.reveal'));
 })();
