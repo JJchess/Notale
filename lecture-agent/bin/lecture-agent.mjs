@@ -43,7 +43,14 @@ function persist(r, ev) {
   if (r.errors.length) { log(`✗ 整档仍有 ${r.errors.length} 个校验错误（多为 scene 结构级）:`); for (const e of r.errors) log('  · ' + e); }
   else log(`✓ 整档校验通过 — ${r.doc.scenes.length} 页 / ${r.doc.scenes.reduce((n, s) => n + s.blocks.length, 0)} block`);
   if (r.warnings?.length) log(`（${r.warnings.length} 条非致命提醒）`);
-  const rv = renderVerify(file); log('[verify] ' + rv.out.trim().split('\n').slice(0, 2).join(' / '));
+  const rv = renderVerify(file);
+  const vlines = rv.out.trim().split('\n');
+  const head = vlines[0] || '';
+  const passed = vlines.some(l => /结构断言全过/.test(l));
+  log('[verify] ' + head + (passed ? ' / ✓ 结构断言全过' : ''));
+  // surfacing iter22 的偏空/偏高页提醒——此前只打前 2 行被截掉，作者看不到该改哪页
+  for (const l of vlines.filter(l => /·\s*scene#/.test(l) && /(偏空|偏高)/.test(l)))
+    log('  ⚠ ' + l.replace(/^\s*·\s*/, ''));
   log(`\n产物: ${file}`);
   log(`预览: python demo/serve.py 后打开  http://127.0.0.1:8778/index.html?doc=generated/${id}.lecture.json`);
   return file;
