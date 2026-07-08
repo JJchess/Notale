@@ -59,13 +59,19 @@ function densityScore(scene) {
     else if (b.type === 'agenda') n += (b.rows || []).length;
     else if (b.type === 'table') n += (b.rows || []).length + 1;
     else if (b.type === 'flow') n += Math.ceil((b.nodes || []).length / 2);
+    else if (b.type === 'quiz') n += 2 + (b.choices || b.angles || []).length; /* 题干+选项/角度，比 flat +3 更贴实 */
     else n += 3; /* 一个中等块约占若干行 */
   }
   return n;
 }
+/* 偏空启发式（goal③ 的对称面）：内容太少的页会显空、易“只贴一边”。
+   跳过本就该疏朗的 hero/statement，以及被 sim/runnable 这类“满幅交互块”主导的页（低密度分但按设计填满）。 */
+const fillByDesign = s => (s.blocks || []).some(b => b && (b.type === 'sim' || b.type === 'runnable'));
 for (const s of doc.scenes) {
   const sc = densityScore(s);
   if (sc > 16) note.push(`scene#${s.id || '?'} 密度分 ${sc} 偏高，浏览器里可能溢出（需无头验收确认；按 §5 拆页或精简，别缩字号）`);
+  if (sc < 3 && !['hero', 'statement'].includes(s.kind) && !fillByDesign(s))
+    note.push(`scene#${s.id || '?'} 密度分 ${sc} 偏低，页面可能偏空（内容少易“只贴一边”；考虑合并邻页/补要点/换更充实的块。渲染器 balanceScene 会纵向居中兜底，但内容本身仍宜充实）`);
 }
 
 /* 4) 报告 */
