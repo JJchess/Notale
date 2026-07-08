@@ -9,6 +9,7 @@ import { validateDoc } from './pipeline.mjs';
 import { planLecture } from './plan.mjs';
 import { checkCoverage } from './coverage.mjs';
 import { enrichNotes } from './notes.mjs';
+import { condenseMaterial } from './material.mjs';
 
 const CONC = 4;
 
@@ -34,8 +35,8 @@ async function docRepair(doc, registry, log, material = '', rounds = 2) {
 /** 生成一节课。返回 { doc, errors, warnings, dropped, calls, outFile }。 */
 export async function generateLecture({ topic, pages = 12, theme = '', audience = '', wants = '', extra = '', material = '', outDir, coverage = false, log = () => {} }) {
   const { registry, autoTypes } = loadSkills();
-  const mat = material ? String(material).slice(0, 4000) : '';   // 截断防 token 爆炸（素材过长时只取前段）
-  if (material && material.length > 4000) log(`[material] 素材 ${material.length} 字，截断到 4000 字用于 grounding`);
+  // 长素材：保事实浓缩（替代旧的硬截断——超出 4000 字的后半段不再被静默丢弃）；失败自动回退截断
+  const mat = material ? await condenseMaterial(material, { topic, targetChars: 4000, log }) : '';
 
   // ① Plan（STORM 式多视角规划，见 src/plan.mjs）
   log(`[plan] 课题: ${topic} (~${pages} 页)${mat ? ' · 基于素材' : ''}`);
