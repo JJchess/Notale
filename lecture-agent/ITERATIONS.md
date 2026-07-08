@@ -121,3 +121,8 @@
 - **修法**（`demo/schema/render-verify.mjs`）：加偏空启发式——`densityScore < 3` 且 kind∉{hero,statement} 且非 sim/runnable 满幅页 → 非致命提醒。顺手把 quiz 的 densityScore 从 flat +3 改为 `2+选项/角度数`（更贴实，同时服务过密判断）。
 - **调阈值防误报**：初版阈值 <4 把基线 3 个页（两 quiz + 一个 3 行 agenda "boundaries"）误报；quiz 计分修正后消除 quiz 误报，阈值收到 <3 后基线归零误报（避免催生 AI slop 过度填充，呼应 FE-5/FE-21）。
 - **验证**（0 API）：基线 16 页 **0 偏空误报**；构造 doc——单条 list（分1）**命中**、widget 满幅页**豁免**、4 项 list（分4）**不报**、hero**豁免**。`node --check` 过。
+
+## Iter 23 — 按 evolve 信号增"难点具象锚点"授权规则（capability，goal①；自演化闭环）
+- **数据驱动**：`evolve` 子命令跑通并明确报出——6 份评估**最弱维度恒为 content(4/5)**，且**全部 topFix 同一模式**："在最难的那个概念处补一个具象锚点（worked 例子/反例/分步/类比/图示）"。这正是自演化机制该消费的信号。
+- **修法**：`src/skills.mjs` AUTHORING_RULES 新增一条**聚焦规则**——"全课最难的那个概念就地补一个到位的具象锚点帮学生跨门槛；一个足矣、别堆砌"。区别于已有的逐点"具体优先"，专打"crux 深度"。规则同时进**规划器**(plan.mjs skeletonSpec)与**每个 block 生成器**(delegate.mjs SYS)——注入路径已核。
+- **验证**：`node --check` 过；注入路径 grep 确认双通道。**证据性生成**（1 次，"反向传播算法" 概念重、易空泛）：content **4/5 不回归**、coherence 5/5、eval 明确夸"例子公式到位、**没有空泛或堆砌**"（"别堆砌"护栏生效）、topFix 从核心概念下移到次要细节（mini-batch 代码示例）。用了 code+compare+quiz+statement 多样块。**注**：单样本+judge 方差 → 是趋势证据非严格证明；严格 A/B 留后。顺带再次确认 iter20 --id 修复(产物目录 backprop-intuition)。
