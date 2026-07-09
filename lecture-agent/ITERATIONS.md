@@ -154,3 +154,8 @@
 - **动机**：iter26/27 连着两次同一类漂移——加了 block 类型却漏改某处 prompt/文档事实。与其再逐个手修，不如加个守卫从源头挡住复发。
 - **修法**：新增 `tools/check-consistency.mjs`（+ `npm run check`）——以 live registry 为权威，两项交叉核对：**Check A** plan.mjs 的"都不存在"禁用清单里不得含任何已注册类型（iter26 类）；**Check B** SPEC/schema/create-freeform 里所有"N 种正式"计数须等于 `BLOCK_TYPES` 非 freeform 数（iter27 类，本轮覆盖 6 处）。
 - **验证**：正例通过（registry 17/正式 16，6 处计数对齐）；**两个反例各命中**——把某计数改 14→报"应为 16"、把已注册 `list` 塞进禁用清单→报"列为不存在"，均 exit 1；git 还原后复跑通过。这套检查若早存在会同时抓住 iter26+27。`node --check` + package.json JSON 均过。
+
+## Iter 29 — 收紧 timeline/flow 区分：编年(有时间点) vs 步骤(无时间点)（quality，goal①；iter26 微调）
+- **自检（--plan-only 探针）**：探"文艺复兴透视法"发现 p4 把"分步拆解透视**构建过程**"排成了 timeline——iter26 的 nudge 让规划器把"分步/过程"也误当 timeline（timeline 应仅限编年）。
+- **修法**：`plan.mjs` 第 34 行再收紧——"**timeline 只用于有明确时间点的编年/历史序列（年代、发展史、里程碑）；无时间点的步骤/流程/推导/构建过程一律用 flow（timeline 不是'分步'的意思）**"。
+- **验证（双向，~4 次调用）**：① 复探透视法——过程页改回 `flow`/`list`、**无 timeline 误用**；② 探"青霉素发现史"——p2 正确用 `timeline`(1928→1938→1942→1944 真实年代)、机制页用 `flow`。编年归 timeline、过程归 flow，两向都对。`node --check` + `npm run check`(iter28 一致性) 均过。
