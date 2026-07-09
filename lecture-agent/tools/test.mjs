@@ -2,7 +2,8 @@
 /* 离线自检套件（无需 LLM / 浏览器）：把此前逐轮手跑的确定性检查合并成一条命令。
    用法: node tools/test.mjs  （亦即 npm test）。退出码 0 全过 / 1 有失败。
    涵盖：① 全部 .mjs 语法(node --check) ② 契约一致性(check-consistency) ③ 基线 doc 合法(validate)
-        ④ 基线渲染结构断言(render-verify) ⑤ 每个技能样例块过 validateBlock（加文件夹=加能力的契约自洽）。
+        ④ 基线渲染结构断言(render-verify) ⑤ 每个技能样例块过 validateBlock（加文件夹=加能力的契约自洽）
+        ⑥ 技能镜像与 demo/schema 源同步（sync --check，防改契约漏跑 sync）。
    不含：端到端 LLM 生成、真实浏览器渲染（各需外部资源，另行验）。 */
 import { execFileSync } from 'node:child_process';
 import { readdirSync, readFileSync, existsSync } from 'node:fs';
@@ -51,6 +52,9 @@ run('技能契约', () => {
   }
   if (!n) throw new Error('未发现任何技能契约');
 });
+
+console.log('⑥ 技能镜像与 demo/schema 源同步（sync --check）');
+run('sync 镜像新鲜度', () => node(['sync.mjs', '--check']));
 
 console.log(failed ? `\n✗ 自检失败：${failed} 项` : '\n✓ 全部离线自检通过');
 process.exit(failed ? 1 : 0);

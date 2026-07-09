@@ -196,3 +196,10 @@
 - **修法（Check C，加法）**：`check-consistency.mjs` 增 Check C——JSON.parse schema、递归定位含 `freeform` 的那一处 block 类型 enum（断言恰好 1 处，防结构漂移），与 `BLOCK_TYPES` 做**双向集合比对**，任一方多/缺都精确报出是"校验器漏加"还是"schema 漏同步"。
 - **归类**：红线（block 类型事实一致性属"钉死不变量"）· 加法。收紧理由**有据**：该漂移类已在 iter26、iter27 两次真实发生（≥2 次），非提前上镣铐。
 - **验证**：正例全过 exit 0；负例（临时从 schema enum 删 `grid`）→ 精确报 `BLOCK_TYPES 有而 schema enum 无: grid（schema 漏同步？）` exit 1；还原后复跑 OK；`npm test` 全 5 项过（Check C 已并入步骤② check-consistency）。
+
+## Iter 35 — sync 加 --check 新鲜度校验并入 npm test：堵住"改契约漏跑 sync"漂移（一致性，goal①）
+- **全局扫描**：先查 src/ 全部 export 均被引用（无死代码）、基础 helper(escapeHtml/inlineMd) 无重复实现——代码本已精简，无可硬砍。转而审 `demo/schema/`(权威) 与 `skills/lecture-doc-schema/`(镜像) 的一致性：当前全一致（仅差 sync 注入的 banner），但**发现真缺口**。
+- **缺口**：`sync.mjs` 是单向生成器，**无任何新鲜度守卫**。改了 `demo/schema/*`(如 iter32 改 validate.mjs) 却忘跑 `node lecture-agent/sync.mjs`，技能镜像就静默过期，没有测试会发现——正是 iter27/32 每次改契约都要手动 sync 的漂移类，靠人肉记忆兜底。
+- **修法（做薄式加法：复用 sync 自身逻辑，零重复）**：① `sync.mjs` 重构——把「镜像应有内容」算成一张 `targets` 表，写入(默认)与校验(`--check`)共用同一张表（banner/路径/shebang 处理只写一遍）；`--check` 逐个比对磁盘现状 vs 应有内容、报出过期项、exit 1；用 `\r\n→\n` 归一化抹平 git autocrlf 假阳性。② `test.mjs` 加步骤⑥跑 `sync.mjs --check`，并入 `npm test`。
+- **归类**：红线（契约镜像一致性属"钉死不变量"）· 加法（补守卫）。收紧**有据**：改契约漏 sync 的风险在 iter27、iter32 两次真实出现（≥2 次）。
+- **验证**：`sync --check` 正例过 exit 0（5 文件一致）；负例（篡改镜像 validate.mjs）→ 精确报 `scripts/validate.mjs（与 demo/schema 源不一致）` exit 1；还原后过；`npm test` 6 步全绿。

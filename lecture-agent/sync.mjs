@@ -24,22 +24,35 @@ const BANNER = '/* ⚠ 生成物：由 demo/schema/ 同步而来（node lecture-
 const asRef = ['lecture-doc.schema.json', 'SPEC.md'];
 const asScript = ['validate.mjs', 'assemble.mjs', 'render-verify.mjs'];
 
-let n = 0;
-for (const f of asRef) {
-  writeFileSync(join(refs, f), readFileSync(join(src, f)));
-  console.log('  refs/' + f); n++;
-}
-for (const f of asScript) {
-  let body = readFileSync(join(src, f), 'utf8');
-  /* .mjs 用相对 import './validate.mjs'，复制到同目录 scripts/ 后相对关系不变，直接可跑。
-     banner 必须插在 shebang 之后（否则 shebang 不在第 1 行会被当成非法 JS）。 */
-  if (body.startsWith('#!')) {
-    const nl = body.indexOf('\n');
-    body = body.slice(0, nl + 1) + BANNER + body.slice(nl + 1);
-  } else {
-    body = BANNER + body;
+/* .mjs 用相对 import './validate.mjs'，复制到同目录 scripts/ 后相对关系不变，直接可跑。
+   banner 必须插在 shebang 之后（否则 shebang 不在第 1 行会被当成非法 JS）。 */
+const injectBanner = (body) => {
+  if (body.startsWith('#!')) { const nl = body.indexOf('\n'); return body.slice(0, nl + 1) + BANNER + body.slice(nl + 1); }
+  return BANNER + body;
+};
+
+// 单一事实源 = demo/schema/。下面一次性算出所有镜像目标的「应有内容」，供写入(默认)或校验(--check)复用。
+const targets = [
+  ...asRef.map(f => ({ rel: 'references/' + f, abs: join(refs, f), expected: readFileSync(join(src, f), 'utf8') })),
+  ...asScript.map(f => ({ rel: 'scripts/' + f, abs: join(scripts, f), expected: injectBanner(readFileSync(join(src, f), 'utf8')) })),
+];
+
+const norm = s => s.replace(/\r\n/g, '\n');   // 抹平 git autocrlf 差异，只比实质内容
+
+if (process.argv.includes('--check')) {
+  const drift = [];
+  for (const t of targets) {
+    let cur;
+    try { cur = readFileSync(t.abs, 'utf8'); } catch { drift.push(t.rel + '（镜像缺失）'); continue; }
+    if (norm(cur) !== norm(t.expected)) drift.push(t.rel + '（与 demo/schema 源不一致）');
   }
-  writeFileSync(join(scripts, f), body);
-  console.log('  scripts/' + f); n++;
+  if (drift.length) {
+    console.error('✗ 技能镜像已过期，请运行 `node lecture-agent/sync.mjs` 重新同步：');
+    drift.forEach(d => console.error('  · ' + d));
+    process.exit(1);
+  }
+  console.log('✓ 技能镜像与 demo/schema 源一致（' + targets.length + ' 个文件）');
+} else {
+  for (const t of targets) { writeFileSync(t.abs, t.expected); console.log('  ' + t.rel); }
+  console.log('✓ 同步 ' + targets.length + ' 个文件 → ' + skill);
 }
-console.log('✓ 同步 ' + n + ' 个文件 → ' + skill);
