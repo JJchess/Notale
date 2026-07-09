@@ -216,6 +216,7 @@ function checkBlock(b, path, state) {
         if (isStr(M.update)) checkExpr(M.update, [M.stateVar, ...paramNames, ...constNames, 'xi'], mp + '.update');
         else err(mp + '.update', '缺少 update 表达式');
       }
+      if (!Array.isArray(b.regimes) || !b.regimes.length) err(path + '.regimes', 'dynamics1d 至少需 1 个 regime（渲染时按 regime 定色/描述当前状态，缺失会导致渲染崩溃）');
       (b.regimes || []).forEach((r, i) => {
         if (!isObj(r) || !isStr(r.when) || !isStr(r.label) || !isStr(r.desc)) err(path + `.regimes[${i}]`, '需 {when,label,desc}');
         else { checkExpr(r.when, paramNames, path + `.regimes[${i}].when`);

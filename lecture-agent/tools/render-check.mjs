@@ -17,7 +17,7 @@
 
 import http from 'node:http';
 import { readFile, mkdtemp, rm } from 'node:fs/promises';
-import { accessSync } from 'node:fs';
+import { accessSync, readdirSync } from 'node:fs';
 import { spawn } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
@@ -89,77 +89,39 @@ class CDP {
     });
   }
   on(fn) { this.listeners.push(fn); }
+  off(fn) { const i = this.listeners.indexOf(fn); if (i >= 0) this.listeners.splice(i, 1); }
   close() { try { this.ws.close(); } catch {} }
 }
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
-async function main() {
-  const args = process.argv.slice(2);
-  const docFlag = args.includes('--doc') ? args[args.indexOf('--doc') + 1] : '';
-  const query = args.find(a => a.startsWith('?')) || '';
-  const qs = new URLSearchParams(query.replace(/^\?/, ''));
-  if (docFlag) qs.set('doc', docFlag);
-  const q = qs.toString();
-
-  const browserPath = findBrowser();
-  if (!browserPath) { console.error('✗ 找不到 Edge/Chrome，跳过（非致命）'); process.exit(0); }
-
-  const { server, port } = await startServer(DEMO_ROOT);
-  const pageUrl = `http://127.0.0.1:${port}/index.html${q ? '?' + q : ''}`;
-  const userDataDir = await mkdtemp(path.join(os.tmpdir(), 'la-render-'));
-  const dbgPort = 9200 + Math.floor((Date.now() % 500));
-
-  const proc = spawn(browserPath, [
-    '--headless=new', '--disable-gpu', '--no-first-run', '--no-default-browser-check',
-    '--disable-extensions', '--window-size=1440,900',
-    `--remote-debugging-port=${dbgPort}`, `--user-data-dir=${userDataDir}`, 'about:blank',
-  ], { stdio: 'ignore' });
-
+/* 验收单份讲义：开一个新标签页导航到 url，跑 A-E 断言，收尾关标签页。返回 {label, fails, ready}。 */
+async function verifyScene(cdp, url, label) {
   const fails = [];
-  let cdp;
-  const cleanup = async () => {
-    try { cdp && cdp.close(); } catch {}
-    try { proc.kill(); } catch {}
-    server.close();
-    await rm(userDataDir, { recursive: true, force: true }).catch(() => {});
-  };
-
+  let ready = null, S, targetId;
   try {
-    // 等 DevTools 端点起来
-    let ver;
-    for (let i = 0; i < 50; i++) {
-      try { ver = await fetch(`http://127.0.0.1:${dbgPort}/json/version`).then(r => r.json()); break; }
-      catch { await sleep(200); }
-    }
-    if (!ver) throw new Error('浏览器 DevTools 端点未就绪');
+    ({ targetId } = await cdp.send('Target.createTarget', { url: 'about:blank' }));
+    ({ sessionId: S } = await cdp.send('Target.attachToTarget', { targetId, flatten: true }));
 
-    cdp = await CDP.attach(ver.webSocketDebuggerUrl);
-    const { targetId } = await cdp.send('Target.createTarget', { url: 'about:blank' });
-    const { sessionId } = await cdp.send('Target.attachToTarget', { targetId, flatten: true });
-    const S = sessionId;
-
-    // 收集 console error / 未捕获异常
     const consoleErrors = [];
-    cdp.on(msg => {
+    const listener = msg => {
       if (msg.sessionId !== S) return;
       if (msg.method === 'Runtime.consoleAPICalled' && msg.params.type === 'error')
         consoleErrors.push(msg.params.args.map(a => a.value ?? a.description ?? '').join(' '));
       if (msg.method === 'Runtime.exceptionThrown')
         consoleErrors.push('EXCEPTION: ' + (msg.params.exceptionDetails?.exception?.description || msg.params.exceptionDetails?.text || 'unknown'));
-    });
+    };
+    cdp.on(listener);
     await cdp.send('Runtime.enable', {}, S);
     await cdp.send('Page.enable', {}, S);
+    await cdp.send('Page.navigate', { url }, S);
 
-    await cdp.send('Page.navigate', { url: pageUrl }, S);
-
-    // 轮询就绪：Reveal 存在 + 分页数 + 字体加载完
     const evalJs = async (expression) => {
       const r = await cdp.send('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true }, S);
       if (r.exceptionDetails) throw new Error('页内异常: ' + (r.exceptionDetails.exception?.description || r.exceptionDetails.text));
       return r.result.value;
     };
-    let ready = null;
+
     for (let i = 0; i < 80; i++) {
       try {
         ready = await evalJs(`(() => {
@@ -173,10 +135,7 @@ async function main() {
       if (ready) break;
       await sleep(250);
     }
-    if (!ready) throw new Error('Reveal 未在超时内就绪（10s）');
-
-    // A 分页数
-    console.log(`  slides=${ready.slides} theme=${ready.theme || '(default)'} fonts=${ready.fontsStatus}`);
+    if (!ready) throw new Error('Reveal 未在超时内就绪（20s）');
     if (ready.slides < 1) fails.push('A: 分页数为 0');
 
     // C 字体
@@ -194,7 +153,6 @@ async function main() {
         const sec = Reveal.getCurrentSlide();
         const pad = sec.querySelector('.pad') || sec;
         const overflowX = pad.scrollWidth - pad.clientWidth;
-        // balanceScene 期望：非豁免页，内容 <72% 可用高度 → 居中
         const body = sec.querySelector('.pad > .body');
         let expectCenter = null, actualCenter = null;
         const exempt = sec.classList.contains('cover') || sec.classList.contains('bigidea');
@@ -208,31 +166,101 @@ async function main() {
             actualCenter = getComputedStyle(body).justifyContent === 'center';
           }
         }
-        out.push({ i, cls: sec.className.trim(), overflowX: Math.round(overflowX), expectCenter, actualCenter });
+        out.push({ i, overflowX: Math.round(overflowX), expectCenter, actualCenter });
       }
       return out;
     })()`);
 
     const overflowed = perSlide.filter(s => s.overflowX > 1);
     if (overflowed.length) fails.push(`D: ${overflowed.length} 页横向溢出 → ` + overflowed.map(s => `#${s.i}(${s.overflowX}px)`).join(', '));
-
     const balanceBad = perSlide.filter(s => s.expectCenter != null && s.expectCenter !== s.actualCenter);
     if (balanceBad.length) fails.push(`E: balanceScene ${balanceBad.length} 页规则未生效 → ` + balanceBad.map(s => `#${s.i}(应${s.expectCenter?'居中':'贴顶'}, 实${s.actualCenter?'居中':'贴顶'})`).join(', '));
-    const centeredCount = perSlide.filter(s => s.actualCenter).length;
-    console.log(`  balanceScene: ${centeredCount} 页判为稀疏并纵向居中`);
+    ready.centered = perSlide.filter(s => s.actualCenter).length;
 
-    // B console error
-    await sleep(200);
+    await sleep(150);
     if (consoleErrors.length) fails.push(`B: ${consoleErrors.length} 条 console error → ` + consoleErrors.slice(0, 3).join(' | '));
+    cdp.off(listener);
   } catch (e) {
     fails.push('运行失败: ' + (e.message || e));
+  } finally {
+    if (targetId) await cdp.send('Target.closeTarget', { targetId }).catch(() => {});
+  }
+  return { label, fails, ready };
+}
+
+async function main() {
+  const args = process.argv.slice(2);
+  const allGenerated = args.includes('--all-generated');
+  const docFlag = args.includes('--doc') ? args[args.indexOf('--doc') + 1] : '';
+  const query = args.find(a => a.startsWith('?')) || '';
+
+  // 组装待验收清单：--all-generated 扫 demo/generated/*.lecture.json；否则单份（默认基线）
+  let scenes;
+  if (allGenerated) {
+    const dir = path.join(DEMO_ROOT, 'generated');
+    const files = readdirSync(dir).filter(f => f.endsWith('.lecture.json')).sort();
+    scenes = files.map(f => ({ label: f.replace('.lecture.json', ''), doc: `generated/${f}`, query: '' }));
+    if (!scenes.length) { console.error('✗ demo/generated/ 下没有 .lecture.json'); process.exit(1); }
+  } else {
+    const qs = new URLSearchParams(query.replace(/^\?/, ''));
+    if (docFlag) qs.set('doc', docFlag);
+    scenes = [{ label: docFlag || (qs.get('theme') ? `theme=${qs.get('theme')}` : 'baseline'), _qs: qs }];
+  }
+
+  const browserPath = findBrowser();
+  if (!browserPath) { console.error('✗ 找不到 Edge/Chrome，跳过（非致命）'); process.exit(0); }
+
+  const { server, port } = await startServer(DEMO_ROOT);
+  const userDataDir = await mkdtemp(path.join(os.tmpdir(), 'la-render-'));
+  const dbgPort = 9200 + Math.floor((Date.now() % 500));
+  const proc = spawn(browserPath, [
+    '--headless=new', '--disable-gpu', '--no-first-run', '--no-default-browser-check',
+    '--disable-extensions', '--window-size=1440,900',
+    `--remote-debugging-port=${dbgPort}`, `--user-data-dir=${userDataDir}`, 'about:blank',
+  ], { stdio: 'ignore' });
+
+  let cdp;
+  const cleanup = async () => {
+    try { cdp && cdp.close(); } catch {}
+    try { proc.kill(); } catch {}
+    server.close();
+    await rm(userDataDir, { recursive: true, force: true }).catch(() => {});
+  };
+
+  const results = [];
+  try {
+    let ver;
+    for (let i = 0; i < 50; i++) {
+      try { ver = await fetch(`http://127.0.0.1:${dbgPort}/json/version`).then(r => r.json()); break; }
+      catch { await sleep(200); }
+    }
+    if (!ver) throw new Error('浏览器 DevTools 端点未就绪');
+    cdp = await CDP.attach(ver.webSocketDebuggerUrl);
+
+    for (const sc of scenes) {
+      const qs = sc._qs || new URLSearchParams(sc.doc ? { doc: sc.doc } : {});
+      const q = qs.toString();
+      const url = `http://127.0.0.1:${port}/index.html${q ? '?' + q : ''}`;
+      const res = await verifyScene(cdp, url, sc.label);
+      const r = res.ready || {};
+      const tag = res.fails.length ? '✗' : '✓';
+      console.log(`${tag} ${res.label} :: slides=${r.slides ?? '?'} theme=${r.theme || '-'} fonts=${r.fontsStatus || '?'} centered=${r.centered ?? '?'}`);
+      if (res.fails.length) res.fails.forEach(f => console.log(`    - ${f}`));
+      results.push(res);
+    }
+  } catch (e) {
+    results.push({ label: '(harness)', fails: ['运行失败: ' + (e.message || e)] });
   } finally {
     await cleanup();
   }
 
+  const failed = results.filter(r => r.fails.length);
   console.log('');
-  if (fails.length) { console.error('✗ 渲染验收失败:\n  - ' + fails.join('\n  - ')); process.exit(1); }
-  console.log('✓ 渲染验收通过（分页/字体/0 溢出/balanceScene 规则/0 console error）');
+  if (failed.length) {
+    console.error(`✗ 渲染验收失败：${failed.length}/${results.length} 份 → ${failed.map(r => r.label).join(', ')}`);
+    process.exit(1);
+  }
+  console.log(`✓ 渲染验收通过：${results.length} 份（分页/字体/0 溢出/balanceScene 规则/0 console error）`);
 }
 
 main().catch(e => { console.error('✗ ' + (e.message || e)); process.exit(1); });

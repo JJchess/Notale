@@ -172,3 +172,13 @@
 - **不进 `npm test`**：需外部浏览器（非纯离线），独立脚本；头注写明。
 - **验证（真浏览器，本项目史上首次）**：基线 course.lecture.json → **16 页、0 溢出、0 console error、四字体 loaded、balanceScene 3 页判稀疏并居中**——iter18 机制首次得到真浏览器确证。`?theme=lab` 与 `?theme=cobalt-grid` 均 data-theme 正确切换、同样全绿——§十三 可插拔主题层首次真浏览器验收通过。`node --check` 过。
 - **意义**：把项目最大的验证盲区补上；此后所有 goal③ 版式/交互改动都可 `npm run render-check` 真机回归，不再"逻辑已核、浏览器留待补"。
+
+## Iter 32 — render-check 批量模式 + 用它抓出并修两个真 bug（robustness，goal②；iter31 立即兑现）
+- **动机**：iter31 的 render-check 每份都重启浏览器(~30s/份)，19 份生成 doc 跑不完(5min 超时)。且只验了手写基线；**真正的版式/崩溃 bug 藏在 LLM 生成的多样内容里**，从没真机验过。
+- **A 批量模式**（`tools/render-check.mjs` 重构）：抽出 `verifyScene(cdp,url,label)`——每份开一个 Target 标签页、跑 A-E 断言、收尾 `Target.closeTarget`；`main` **只启一次浏览器**迭代所有场景。新增 `--all-generated`（扫 `demo/generated/*.lecture.json` 全验）；单份/`?theme=`/`--doc` 行为保留。CDP 类加 `off()` 摘监听防串台。19 份一次浏览器跑完（vs 逐份重启）。
+- **抓到 2 个真 bug（首次真机全量扫生成物）**：
+  - **① 渲染器崩溃（高危）**：`simple-pendulum` 的 `dynamics1d` sim **无 regimes** → `doc-to-deck.js:447` `regimes.find()||regimes[len-1]` 双双 undefined → `reg.tone` 抛 `TypeError`，**整页渲染中断**。根因是校验器 `(b.regimes||[])` 放行了 0 regime。
+  - **② 横向溢出**：`matrix-eigenvalues-eigenvectors` 第 2 页溢出 266px（内容级版式，留待 iter33）。
+- **双向修 ①**：① **校验器**(`validate.mjs`)dynamics1d 分支加"至少 1 个 regime"硬校验——生成侧自修环从此拦住(治本，防再生成)；② **渲染器**(`doc-to-deck.js`)`reg` 兜底 `|| {tone:'ink',desc:'',label:''}`——任何漏网/旧/手改 doc 都不再崩(纵深防御)。
+- **验证**：`node --check` 两文件过；`sync.mjs` 刷新技能镜像；`npm test` 基线仍全绿(基线 dynamics1d 本就带 regimes)；负例(regime-less dynamics1d)→ 精确报 `$block.regimes — 至少需 1 个 regime`；`simple-pendulum`(仍是旧 0-regime 产物)真机重验 → **0 console error**，崩溃根治。
+- **意义**：iter31 的验收能力立刻兑现成 2 个真 bug 的定位+修复；`npm run render-check --all-generated` 成为生成物的真机回归网。**下一步 iter33**：修 matrix #2 的 266px 溢出（查是渲染器普适问题还是该 doc 内容过宽）。

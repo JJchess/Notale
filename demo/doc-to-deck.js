@@ -444,7 +444,7 @@
       }
       function render() {
         if (!window.Plot) return;
-        const reg = regimes.find(r => r.test(values)) || regimes[regimes.length - 1];
+        const reg = regimes.find(r => r.test(values)) || regimes[regimes.length - 1] || { tone: 'ink', desc: '', label: '' };
         const color = TONE[reg.tone || 'ink'] || C_INK;
         const dash = reg.dash && reg.dash !== 'solid' ? reg.dash : null;
         let desc = reg.desc;
