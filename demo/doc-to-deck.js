@@ -316,7 +316,18 @@
   };
   function renderBlock(b, ctx) {
     if (b.status === 'pending') { const sk = el('div', 'rc-plot'); sk.style.height = '160px'; sk.appendChild(el('div', 'rc-hint', '生成中…')); return sk; }
-    const root = blockRenderers[b.type](b, ctx);
+    let root;
+    try {
+      const renderer = blockRenderers[b.type];
+      if (typeof renderer !== 'function') throw new Error('未知 block 类型: ' + b.type);
+      root = renderer(b, ctx);
+    } catch (e) {
+      /* 红线：任一 block 渲染失败（坏表达式/未知类型/缺字段…）都不许拖垮整份讲义——
+         就地降级成可见错误占位，其余块与页照常渲染。校验器在生成侧拦(治本)，这里是纵深兜底。 */
+      root = el('div', 'block-error');
+      root.appendChild(el('div', 'block-error-t', '⚠ 此块渲染失败'));
+      root.appendChild(el('div', 'block-error-m', escapeHtml((b && b.type || '?') + '：' + ((e && e.message) || String(e)))));
+    }
     if (b.fragment && !root.classList.contains('fragment')) root.classList.add('fragment');
     return root;
   }
