@@ -149,3 +149,8 @@
 - **发现**：freeform 的说明多处仍写"**15 种**正式类型都不适用"——iter15 加 timeline 后就该是 16，漏改（与 iter26 同源：加类型漏改文案）。散落在 `demo/schema/SPEC.md`(×3)、`lecture-doc.schema.json`(freeform description + rationale desc ×2)、`create-freeform/contracts.json`(×1)。
 - **修法**：canonical 三文件 `15 种正式`→`16 种正式`，跑 sync.mjs 刷新 `lecture-doc-schema/references/` 镜像。
 - **验证**：两 JSON 仍合法、baseline 仍过(16 页/23 block)、canonical 与镜像均 0 处残留"15 种正式"。（`docs/…architecture.html` 的计数亦可能陈旧，但那是 published artifact，另作文档任务。）
+
+## Iter 28 — 加"block 类型事实一致性" meta-test，防 iter26/27 复发（prevent，goal②）
+- **动机**：iter26/27 连着两次同一类漂移——加了 block 类型却漏改某处 prompt/文档事实。与其再逐个手修，不如加个守卫从源头挡住复发。
+- **修法**：新增 `tools/check-consistency.mjs`（+ `npm run check`）——以 live registry 为权威，两项交叉核对：**Check A** plan.mjs 的"都不存在"禁用清单里不得含任何已注册类型（iter26 类）；**Check B** SPEC/schema/create-freeform 里所有"N 种正式"计数须等于 `BLOCK_TYPES` 非 freeform 数（iter27 类，本轮覆盖 6 处）。
+- **验证**：正例通过（registry 17/正式 16，6 处计数对齐）；**两个反例各命中**——把某计数改 14→报"应为 16"、把已注册 `list` 塞进禁用清单→报"列为不存在"，均 exit 1；git 还原后复跑通过。这套检查若早存在会同时抓住 iter26+27。`node --check` + package.json JSON 均过。
