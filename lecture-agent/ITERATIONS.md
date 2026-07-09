@@ -227,3 +227,10 @@
 - **修法（治本，纵深防御）**：`renderBlock` 包 try/catch——渲染器不存在或抛错时，就地降级成可见 `.block-error` 占位（类型+错误信息，已转义），其余块与页照常渲染。校验器在生成侧拦(治本第一层)，此为渲染侧兜底(第二层)——延续 iter32"两side"信条。配套 index.html 加 `.block-error` 极简降级样式（虚线框，不喧宾夺主）。
 - **归类**：红线（渲染器不许崩）· 加法（补普适兜底）。收紧**有据**：该崩溃类已在 iter32 真实发生（simple-pendulum），本轮从点修升级为普适防线。
 - **验证**：造崩溃测试 doc（含未知类型块 + 无 items 的 list 块，两种抛错）→ 渲染 **0 console error/异常**、坏块降级、前后正常块照常渲染、出 2 页（修前必崩）；**基线 16 页 + 全量 19 份全绿**（无正常块误降级）；`npm test` 6 步全绿。测试 doc 用后即删，未入库。
+
+## Iter 39 — 做薄：BLOCK_TYPES 从"正则刮源码"改为直接 import（单一事实源，goal①）
+- **全局扫描**：语料内容与渲染红线近轮已扎实，转做一次代码层"回头看"。发现真重复：权威类型清单 `BLOCK_TYPES` 定义在 `validate.mjs`，却在 **两处**被正则从源码文本里刮出来——`check-consistency.mjs`(Check A/B/C 的基准) 与 `test.mjs`(步骤⑤)，正则 `/BLOCK_TYPES\s*=\s*\[([^\]]*)\]/` 脆（数组一旦换行/重排就断），且与真值脱节。
+- **修法（纯做薄，减法）**：`validate.mjs` 把 `BLOCK_TYPES` 由 `const` 改 `export const`（已有 isMain 守卫 + pipeline.mjs 早已安全 import 该模块，无副作用）；两处工具改为 `import { BLOCK_TYPES }`，删掉两段正则刮取 + readFileSync。Check C 从此比对**真数组**而非文本刮取物，更诚实。validate.mjs 变了→`node sync.mjs` 刷新技能镜像。
+- **净变化**：删 2 段脆正则解析、2 处 readFileSync 源码文本；加 2 行 import + 1 个 export。行数与脆度双降，单一事实源真正被 import 而非重复再解析。
+- **归类**：成长（非红线，属代码整洁/健壮）· 减法（做薄）。
+- **验证**：`node sync.mjs` 刷新镜像；`check-consistency` 正例全过；负例（schema enum 删 `compare`）→ Check C 精确报 `BLOCK_TYPES 有而 schema enum 无: compare` 并 exit 1；还原后过；`npm test` 6 步全绿（步骤⑤用 import 的 BT、⑥镜像新鲜）。

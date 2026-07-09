@@ -6,16 +6,14 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 import { loadSkills } from '../src/skills.mjs';
+import { BLOCK_TYPES } from '../../demo/schema/validate.mjs';   // 权威类型清单直接 import，不再正则刮源码（iter39 做薄）
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = resolve(here, '..');
 const R = p => readFileSync(resolve(root, p), 'utf8');
 const fails = [];
 
-// —— 权威事实：BLOCK_TYPES（validate.mjs）与 registry（skills）——
-const schemaSrc = R('../demo/schema/validate.mjs');
-const btMatch = schemaSrc.match(/BLOCK_TYPES\s*=\s*\[([^\]]*)\]/);
-const BLOCK_TYPES = btMatch[1].split(',').map(s => s.trim().replace(/['"]/g, '')).filter(Boolean);
+// —— 权威事实：BLOCK_TYPES（validate.mjs，直接 import）与 registry（skills）——
 const formalCount = BLOCK_TYPES.filter(t => t !== 'freeform').length;   // 非 freeform 的正式类型数
 const { registry } = loadSkills();
 const registered = [...registry.keys()];

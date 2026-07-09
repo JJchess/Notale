@@ -9,6 +9,7 @@ import { execFileSync } from 'node:child_process';
 import { readdirSync, readFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve, join } from 'node:path';
+import { BLOCK_TYPES as BT } from '../../demo/schema/validate.mjs';   // 直接 import 权威类型清单（iter39 做薄，不再正则刮源码）
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = resolve(here, '..');
@@ -38,8 +39,6 @@ run('render-verify baseline', () => node([join(demoSchema, 'render-verify.mjs'),
 console.log('⑤ 技能契约自洽（contracts.json 合法 JSON 且只声明真实 block 类型）');
 const skillsDir = join(root, 'skills');
 run('技能契约', () => {
-  const btSrc = readFileSync(join(demoSchema, 'validate.mjs'), 'utf8');
-  const BT = btSrc.match(/BLOCK_TYPES\s*=\s*\[([^\]]*)\]/)[1].split(',').map(s => s.trim().replace(/['"]/g, '')).filter(Boolean);
   let n = 0;
   for (const name of readdirSync(skillsDir)) {
     const cf = join(skillsDir, name, 'contracts.json');
