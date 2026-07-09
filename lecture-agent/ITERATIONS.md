@@ -143,3 +143,9 @@
 - **根因**：`plan.mjs` 骨架规则第 34 行是 iter15 之前的陈旧文案——仍写"禁止新造类型名（如 **timeline**/map/chart/diagram 都不存在）——想要时间轴就用 flow/agenda/table/list"。但 timeline 现已注册并在 autoTypes 里 → 规划器收到**自相矛盾**指令（清单含 timeline，却又被告知它不存在、时间轴要用 flow），于是时好时坏地退回 flow。
 - **修法**：改第 34 行——从"不存在"清单移除 timeline，加正向指引"**编年/历史事件序列用 timeline，别用 flow 凑；flow 留给逻辑/流程/推导链条**"；map/chart/diagram 仍属不存在。
 - **验证**（~2 次调用，--plan-only 复探宋词）：现 p2=**timeline**(词人生平轨迹与历史事件)、p3=**flow**(政治经济→功能演变→分化的因果链)——编年归 timeline、因果归 flow，区分到位。`node --check` 过。
+
+## Iter 27 — 修 freeform 文案陈旧计数"15 种正式类型"→16（bug/doc，goal②；同 iter26 一类）
+- **自检（顺 iter26 的"陈旧 block 事实"线索做审计）**：grep 全仓 block 类型计数/存在性声明，对齐 live registry（BLOCK_TYPES=17，非 freeform 正式类型=**16**）。
+- **发现**：freeform 的说明多处仍写"**15 种**正式类型都不适用"——iter15 加 timeline 后就该是 16，漏改（与 iter26 同源：加类型漏改文案）。散落在 `demo/schema/SPEC.md`(×3)、`lecture-doc.schema.json`(freeform description + rationale desc ×2)、`create-freeform/contracts.json`(×1)。
+- **修法**：canonical 三文件 `15 种正式`→`16 种正式`，跑 sync.mjs 刷新 `lecture-doc-schema/references/` 镜像。
+- **验证**：两 JSON 仍合法、baseline 仍过(16 页/23 block)、canonical 与镜像均 0 处残留"15 种正式"。（`docs/…architecture.html` 的计数亦可能陈旧，但那是 published artifact，另作文档任务。）
