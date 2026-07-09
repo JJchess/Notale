@@ -33,7 +33,7 @@ async function docRepair(doc, registry, log, material = '', rounds = 2) {
 }
 
 /** 生成一节课。返回 { doc, errors, warnings, dropped, calls, outFile }。 */
-export async function generateLecture({ topic, pages = 12, theme = '', audience = '', wants = '', extra = '', material = '', outDir, coverage = false, log = () => {} }) {
+export async function generateLecture({ topic, pages = 12, theme = '', audience = '', wants = '', extra = '', material = '', outDir, coverage = false, planOnly = false, log = () => {} }) {
   const { registry, autoTypes } = loadSkills();
   // 长素材：保事实浓缩（替代旧的硬截断——超出 4000 字的后半段不再被静默丢弃）；失败自动回退截断
   const mat = material ? await condenseMaterial(material, { topic, targetChars: 4000, log }) : '';
@@ -57,6 +57,9 @@ export async function generateLecture({ topic, pages = 12, theme = '', audience 
   log(`[plan] ${doc.scenes.length} 页 / ${placeholders.length} block；theme=${doc.theme}`);
 
   if (outDir) { mkdirSync(outDir, { recursive: true }); writeFileSync(join(outDir, 'skeleton.json'), JSON.stringify(doc, null, 2)); }
+
+  // 规划专检：只出骨架不 fan-out（低成本审规划质量，~2 次调用 vs 全量 ~14）
+  if (planOnly) return { doc, errors: [], warnings: [], dropped: [], calls: callCount(), outFile: '', perspectives, planOnly: true };
 
   // ② Fan-out
   log(`[fan-out] 并行生成 ${placeholders.length} 个 block (并发 ${CONC})…`);

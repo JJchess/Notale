@@ -132,3 +132,8 @@
 - **暴露的 gap**：`persist()` 打印 render-verify 输出时只取**前 2 行**（`slice(0,2)`）——iter22 新增的"偏空/偏高页"提醒排在结构断言行之后，**被截断、生成时作者根本看不到**，等于 iter22 的信号在真实流程里哑火。
 - **修法**（`bin/lecture-agent.mjs` persist）：改为打印结构断言头+通过态，并**逐条透出**所有 `· scene# … (偏空|偏高)` 提醒行（`⚠ scene#…`）。
 - **验证**（0 API，离线复现 persist 解析）：对稀疏构造 doc 跑 render-verify 再套用相同解析——`[verify]` 头正确、`⚠ scene#thin1 …偏空` 如实透出；基线 0 提醒 → 不打噪声。`node --check` 过。
+
+## Iter 25 — 新增 --plan-only 规划专检模式（capability，goal①）
+- **动机**：审"内容规划"质量此前必须跑全量生成(~14 次调用/几分钟)；本 loop 屡次为验证规划改动被迫全量生成，成本高。需要一个只出骨架、不 fan-out 的低成本入口。
+- **修法**：`generateLecture` 加 `planOnly` 选项——plan 完成后（骨架+多视角就绪）即返回，不进 fan-out/组装/eval。CLI 加 `--plan-only`：打印规划大纲（逐页 kind/headline/块类型+intent）+ 多视角列表后退出。help 文本同步。
+- **验证**（真实跑，2 次调用）："快速排序的分区与递归" → 6 页大纲(hero→flow 分区→agenda 递归树→formula 复杂度→quiz→hero)、4 视角、**LLM 仅 2 次**（vs 全量 ~14）。`node --check` 过。副作用：后续规划类迭代的验证成本降到 ~1/7。

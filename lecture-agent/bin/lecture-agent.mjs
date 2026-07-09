@@ -67,6 +67,17 @@ async function cmdGenerate() {
     const c = await clarify(topic);
     opts = { ...opts, pages: c.pages || opts.pages, theme: c.theme || opts.theme, audience: c.audience || opts.audience, wants: c.wants || opts.wants, extra: c.extra || '' };
   }
+  if (has('plan-only')) {   // 只审规划：出骨架大纲不 fan-out（低成本查规划质量）
+    const pr = await generateLecture({ ...opts, planOnly: true, log });
+    log(`\n=== 规划大纲：${pr.doc.title || topic} · ${pr.doc.scenes.length} 页 · theme=${pr.doc.theme} ===`);
+    pr.doc.scenes.forEach((s, i) => {
+      const types = (s.blocks || []).map(b => b.type + (b.intent ? `(${b.intent})` : '')).join(', ');
+      log(`  p${i + 1} [${s.kind}] ${s.headline || s.eyebrow || '(封面/收尾)'}${types ? ' — ' + types : ''}`);
+    });
+    if (pr.perspectives?.length) log(`\n多视角(${pr.perspectives.length}): ` + pr.perspectives.map(p => p.name || p).join(' · '));
+    log(`\n[done] 规划专检 · LLM 调用 ${pr.calls} 次（未生成内容；去掉 --plan-only 走全量）。`);
+    return;
+  }
   let r = await generateLecture({ ...opts, log });
   let ev = null;
   if (has('revise')) {
@@ -127,8 +138,8 @@ function cmdSkills() {
 }
 
 const HELP = `lecture-agent —— 自演化讲义生成 agent (Node/零依赖/离线)
-  generate "<课题>" [--pages N] [--theme X] [--audience ..] [--wants sim,quiz] [--material file] [--id kebab] [--no-clarify] [--eval] [--revise] [--coverage]
-                                  --material 用源素材做 grounding(内容据素材,防编造)；--eval 打质量分；--revise 分低重生成取优；--coverage 核对必讲点落地
+  generate "<课题>" [--pages N] [--theme X] [--audience ..] [--wants sim,quiz] [--material file] [--id kebab] [--no-clarify] [--eval] [--revise] [--coverage] [--plan-only]
+                                  --material 用源素材做 grounding(内容据素材,防编造)；--eval 打质量分；--revise 分低重生成取优；--coverage 核对必讲点落地；--plan-only 只出规划大纲不生成内容(~2 次调用,审规划质量)
   eval <course.lecture.json>    给一份讲义打质量分 (content/coherence/pedagogy, 移植自 PPTEval)
   batch [topics.jsonl]          批量跑一轮 (缺省 examples/topics.jsonl)
   loop  [topics.jsonl] [--every 1h]   常驻循环
