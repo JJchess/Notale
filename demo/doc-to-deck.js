@@ -729,13 +729,22 @@
     /* sim/runnable/widget 的 body 按设计填满，作者显式 centered 也别覆盖 */
     if (['lab', 'runlab', 'widlab'].some(c => body.classList.contains(c))) return;
     if (body.dataset.centered) return;              /* 作者显式 layout.centered，尊重其意图，不覆盖 */
-    body.style.justifyContent = '';                 /* 先复位再实测，避免测到上次居中态 */
+    body.style.justifyContent = '';                 /* 先复位再实测，避免测到上次居中/缩放态 */
+    body.style.zoom = '';
     const avail = body.clientHeight;
     const kids = Array.from(body.children);
     if (!avail || !kids.length) return;             /* 不可见或空 body 不处理 */
     const gap = parseFloat(getComputedStyle(body).rowGap) || 0;
     const contentH = kids.reduce((h, k) => h + k.offsetHeight, 0) + gap * (kids.length - 1);
-    if (contentH < avail * 0.72) body.style.justifyContent = 'center';
+    if (contentH < avail * 0.72) {
+      body.style.justifyContent = 'center';         /* 偏稀疏页：垂直居中，避免贴顶留大片空白 */
+    } else if (contentH > avail + 4) {
+      /* 内容超高会被 .pad 的 overflow:hidden 裁掉，学生看不到底部（红线）。用 zoom 等比缩到刚好放下——
+         zoom 影响布局(Chromium/Edge/新版 FF)，scrollHeight 随之收缩、真正不裁切（transform 只视觉缩放，救不了 scrollHeight）。
+         下限 0.8 防过度缩小伤可读；触底仍溢出说明内容确实过多，交给 render-check 断言 F 告警、生成侧收敛。
+         lab/runlab/widlab(sim/代码/CodeMirror 子树)已在上面提前 return，不受 zoom 影响（避 FE-48）。 */
+      body.style.zoom = Math.max(0.8, avail / contentH);
+    }
   }
 
   /* ================= 装配 & 启动 ================= */

@@ -212,3 +212,11 @@
 - **归类**：红线（内容被裁不可见，与横向溢出同级）· 加法（补验证维度）。收紧**有据**：一次普查即 3 份命中。
 - **验证**：`node --check` 过；基线 render-check 全绿（含新 F）；`npm test` 6 步不受影响（F 仅在需浏览器的 render-check，未进离线 test）。3 份命中的是 gitignore 的可再生成样例产物(demo/generated/)，**非提交源**，故提交源零破坏。
 - **下一步 iter37 候选**：修纵向裁切。两条路——(a) 渲染器加"过高页等比缩小到放下"的对称机制（balanceScene 现只处理偏稀疏页，需用 zoom 等**影响布局**的缩放，非 transform 视觉缩放，且要避开 lab/sim/CodeMirror 子树，属需独立验证的较大改动）；(b) 重新生成这 3 份样例（需 LLM）。优先评估 (a) 的普适性与风险。
+
+## Iter 37 — balanceScene 对称补齐：过高页 zoom 自适应缩放，根治纵向裁切（红线修复，goal②③）
+- **动机**：iter36 断言 F 抓出 3 份 doc 内容超页高被 `overflow:hidden` 裁掉（computer-history/dna-replication-mechanism/simple-pendulum）。本轮治本。
+- **定性（普适 vs 内容级）**：iter18 的 `balanceScene` 只处理**偏稀疏**页（内容 <72% 高 → 垂直居中），对**偏满溢出**页无对策——是渲染器的对称缺口，任何超高页都会被裁，普适问题。据哲学 A，"内容不可被截断"是断言 F 钉死的红线，在渲染器治本。
+- **修法（对称加法，一处 balanceScene）**：测出 `contentH > avail` 时，`body.style.zoom = max(0.8, avail/contentH)` 等比缩到刚好放下。关键取舍：用 **zoom 而非 transform**——zoom 影响布局(Chromium/Edge/新版 FF)，`scrollHeight` 随之收缩、真正不裁；transform 只做视觉缩放救不了 `scrollHeight`。下限 0.8 防过度缩小伤可读；lab/runlab/widlab(sim/代码/CodeMirror)已提前 return 不受 zoom 影响（避 FE-48）。测量前同时复位 `zoom` 与 `justifyContent`，防测到上次态。
+- **经验性验证优先**（zoom×flex 跨引擎行为有歧义，不空想）：先在 3 份命中 doc 上实测 → F 全清。
+- **归类**：红线（防内容裁切）· 加法（补对称缩放）。收紧**有据**：iter36 一次普查 3 份命中（≥2）。
+- **验证**：3 份命中 doc 复验 F 全清；**全量 19 份 + 基线 16 页全绿**（分页/字体/0 横纵溢出/balanceScene/0 console error）；`centered` 计数与 iter34 逐份一致 → 居中路径(E)未被扰动（zoom 与居中互斥：仅 contentH>avail 触发 zoom、<0.72 触发居中）；`npm test` 6 步全绿。
