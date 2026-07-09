@@ -810,9 +810,9 @@
     if (!$('#tutorSugg').dataset.init) { $('#tutorSugg').dataset.init = '1';
       SUGG.forEach(q => { const b = el('button', null, q); b.onclick = () => ask(q); $('#tutorSugg').appendChild(b); }); } }
   function closeTutor() { $('#tutorPanel').classList.remove('open'); $('#btnTutor').classList.remove('on'); }
-  function updateCtx() { $('#tutorCtx').innerHTML = '当前上下文：<b>' + curInfo() + '</b>'; }
+  function updateCtx() { $('#tutorCtx').innerHTML = '当前上下文：<b>' + escapeHtml(curInfo()) + '</b>'; }
   function ask(q) { const b = $('#tutorBody'); b.appendChild(el('div', 'msg u', escapeHtml(q)));
-    let ans = '结合本页「' + curInfo() + '」：'; const hit = KB.find(([re]) => re.test(q));
+    let ans = '结合本页「' + escapeHtml(curInfo()) + '」：'; const hit = KB.find(([re]) => re.test(q));
     ans += hit ? hit[1] : '好问题。真实产品里我会把<b>当前这页的要点与你的进度</b>作为上下文发给后端对话模型，给出针对性讲解。（demo 本地离线应答）';
     b.appendChild(el('div', 'msg a', '<div class="who">✦ AI 助教 · 已注入本页上下文</div>' + ans)); b.scrollTop = b.scrollHeight; }
 

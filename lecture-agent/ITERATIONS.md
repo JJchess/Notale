@@ -240,3 +240,10 @@
 - **修法（文档，减法式澄清 + 精准加法）**：① 快速开始后加「## 验证（离线自检 + 真机渲染）」——列 `npm test` / `npm run render-check` / `-- --all-generated` 三条命令及各自断言项，注明 render-check 零依赖(内置 http + 内置 WebSocket 手写 CDP)、找不到浏览器则跳过非致命；② 第 64 行改为"结构断言(离线)；真机渲染验收由 `npm run render-check` 补齐"，消除失真。
 - **归类**：成长（文档，非红线）· 净加一节 + 修一处失真。不涉代码逻辑。
 - **验证**：文档所述命令实跑核对——`npm test` 6 步全绿；`npm run render-check -- --doc generated/binary-search.lecture.json` 正常（**佐证 `--` arg 透传可用**，即文档里 `-- --all-generated` 写法成立）。README 描述与实际行为一致、无过度承诺。
+
+## Iter 41 — 修 AI 助教上下文回显的转义漏洞（红线：所有内容必须转义，goal②）
+- **全局扫描**：本轮专审"转义"红线。逐一核查所有 `innerHTML`/`insertAdjacentHTML` 注入点——`inlineMd` 先转义再套 md(安全)、`sanitizeFreeformHtml` 是真白名单净化器(strip 危险标签/去 on* 处理器/过滤 src·href·style，安全)、`notesHtml` 回读已转义 DOM(安全)。**发现一处真漏洞**。
+- **漏洞（红线级）**：`curInfo()` 取当前页 `.headline` 的 `.textContent`(解码后原文)，而 `updateCtx()`(第 813 行) 与 `ask()`(第 815 行) 把它**未转义拼进 innerHTML**。含 HTML 的标题(如 `<img src=x onerror=...>`)正常渲染时被转义显示为文本，但经助教上下文栏回显时被**重新解析为活动 HTML → 注入执行**。反页面导航(slidechanged→updateCtx)即触发。违反红线"所有用户/LLM 内容做转义"。
+- **修法（转义在 sink，遵本文件既有惯例）**：两处 `curInfo()` 外包 `escapeHtml(...)`。
+- **归类**：红线（转义）· 加法（补两处 sink 转义）。
+- **验证（严格双向，真机）**：造注入 doc（headline 含 `<img onerror="console.error('XSS-FIRED')">`）——**修复后** render-check `0 console error` 全绿；**临时撤回一处修复** → render-check 精确捕获 `B: 1 条 console error → XSS-FIRED`（证明漏洞真实、测试非空转）；还原修复（2 处 escapeHtml(curInfo()) 复位）。基线 + 全量 19 份全绿、`npm test` 全绿；测试 doc 用后即删未入库。
