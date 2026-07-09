@@ -234,3 +234,9 @@
 - **净变化**：删 2 段脆正则解析、2 处 readFileSync 源码文本；加 2 行 import + 1 个 export。行数与脆度双降，单一事实源真正被 import 而非重复再解析。
 - **归类**：成长（非红线，属代码整洁/健壮）· 减法（做薄）。
 - **验证**：`node sync.mjs` 刷新镜像；`check-consistency` 正例全过；负例（schema enum 删 `compare`）→ Check C 精确报 `BLOCK_TYPES 有而 schema enum 无: compare` 并 exit 1；还原后过；`npm test` 6 步全绿（步骤⑤用 import 的 BT、⑥镜像新鲜）。
+
+## Iter 40 — README 补「验证」章 + 修一处失真陈述（文档/可信度，goal①）
+- **全局扫描**：红线/一致性/做薄近轮已覆盖，转看项目"可被认可"的短板——文档。README(81 行)结构完整、内容准确，但**发现两处真缺口**：① 全无验证/测试说明——iter30 的 `npm test`(6 步离线自检) 与 iter31/36 的 `npm run render-check`(真机无头渲染验收) 只字未提；② 第 64 行工作流「⑥ Verify」写"真实浏览器渲染仍需人工/无头浏览器"，是 **iter31 前的失真陈述**（真机验收早已由 render-check 补齐）。对一个靠"可复现"立信的项目，验证故事缺席直接削弱可信度（呼应用户两次问的学术认可）。
+- **修法（文档，减法式澄清 + 精准加法）**：① 快速开始后加「## 验证（离线自检 + 真机渲染）」——列 `npm test` / `npm run render-check` / `-- --all-generated` 三条命令及各自断言项，注明 render-check 零依赖(内置 http + 内置 WebSocket 手写 CDP)、找不到浏览器则跳过非致命；② 第 64 行改为"结构断言(离线)；真机渲染验收由 `npm run render-check` 补齐"，消除失真。
+- **归类**：成长（文档，非红线）· 净加一节 + 修一处失真。不涉代码逻辑。
+- **验证**：文档所述命令实跑核对——`npm test` 6 步全绿；`npm run render-check -- --doc generated/binary-search.lecture.json` 正常（**佐证 `--` arg 透传可用**，即文档里 `-- --all-generated` 写法成立）。README 描述与实际行为一致、无过度承诺。

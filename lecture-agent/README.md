@@ -24,6 +24,18 @@ python demo/serve.py
 
 默认模型 `deepseek-ai/DeepSeek-V3`（`LA_MODEL=<id>` 可换）。产物写到 `out/<id>/` 与 `demo/generated/<id>.lecture.json`（后者供 `?doc=` 预览）。
 
+## 验证（离线自检 + 真机渲染）
+
+```bash
+npm test              # 离线自检（无需 LLM/浏览器，确定性、适合 CI）：语法 / 契约一致性 /
+                      #   基线合法 / 渲染结构断言 / 技能契约自洽 / 技能镜像新鲜度 —— 任一失败退出码 1
+npm run render-check  # 真机渲染验收：系统 Edge/Chrome 无头（零依赖 CDP）逐页断言——
+                      #   分页数 / 0 console 错误 / 字体加载 / 0 横纵向溢出 / 稀疏页居中规则
+npm run render-check -- --all-generated   # 扫全部 demo/generated/*.lecture.json
+```
+
+`render-check` 需本机装有 Edge/Chrome（找不到则跳过、非致命），零第三方依赖（内置 `http` 起静态服 + 内置 `WebSocket` 手写 CDP 客户端驱动无头浏览器）。
+
 ## CLI
 
 ```
@@ -49,7 +61,7 @@ lecture-agent skills                          列出已加载技能与 block 路
             → 一次聚焦 LLM 调用 → validateBlock 自校验 → 不合格把带路径的错误喂回自修（≤3 轮）
 ④ Assemble  占位 → 生成块（失败块诚实丢弃/降级并报告，不编造内容）
 ⑤ Validate  整档 validateDoc；block 级错误按路径回炉重生成（≤2 轮）
-⑥ Verify    render-verify 结构断言 + 溢出启发式（真实浏览器渲染仍需人工/无头浏览器）
+⑥ Verify    render-verify 结构断言 + 溢出启发式（离线）；真机渲染验收由 `npm run render-check` 补齐（无头 Edge/Chrome，见「验证」）
 ⑦ Eval      (可选 --eval/--revise) 质量评审(src/evaluate.mjs，移植自 PPTAgent 的 PPTEval)：
             content/coherence/pedagogy 三维各 1-5 + 理由 + topFix；--revise 分低则按 topFix 重生成一版取优。
 ⑧ Output    合法 course.lecture.json = 讲义
