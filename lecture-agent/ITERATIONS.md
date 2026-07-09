@@ -159,3 +159,9 @@
 - **自检（--plan-only 探针）**：探"文艺复兴透视法"发现 p4 把"分步拆解透视**构建过程**"排成了 timeline——iter26 的 nudge 让规划器把"分步/过程"也误当 timeline（timeline 应仅限编年）。
 - **修法**：`plan.mjs` 第 34 行再收紧——"**timeline 只用于有明确时间点的编年/历史序列（年代、发展史、里程碑）；无时间点的步骤/流程/推导/构建过程一律用 flow（timeline 不是'分步'的意思）**"。
 - **验证（双向，~4 次调用）**：① 复探透视法——过程页改回 `flow`/`list`、**无 timeline 误用**；② 探"青霉素发现史"——p2 正确用 `timeline`(1928→1938→1942→1944 真实年代)、机制页用 `flow`。编年归 timeline、过程归 flow，两向都对。`node --check` + `npm run check`(iter28 一致性) 均过。
+
+## Iter 30 — 合并离线自检为 `npm test`（OSS 硬化，goal②）
+- **动机**：前 12 轮的确定性检查一直手跑、零散（node --check / validate / render-verify / consistency 各敲一遍）。开源项目该有一条 `npm test` 一键跑通；本 loop 自身也能用它替代逐轮手拼 sweep。
+- **修法**：新增 `tools/test.mjs`（+ `npm test`）——① 全部 .mjs `node --check`（17 个）② 契约一致性(iter28) ③ 基线 doc validate ④ 基线 render-verify 结构断言 ⑤ 技能 contracts.json 合法 JSON 且只声明真实 block 类型。逐项 ✓/✗、任一失败 exit 1。
+- **验证**：正例全 5 项过、exit 0；注入漂移(某计数改 13)→步骤②报 ✗ 具体错误、其余续跑、总 "✗ 失败 1 项" exit 1；git 还原后复跑全过。`node --check` + package.json JSON 均过。
+- **边界**：不含端到端 LLM 生成与真实浏览器渲染（各需外部资源，另行验）——test.mjs 头注已写明。
