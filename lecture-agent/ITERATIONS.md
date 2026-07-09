@@ -189,3 +189,10 @@
 - **修法（2 处极小 CSS，治本、惠及全部 doc）**：① `.mblock{ max-width:100%; overflow-x:auto; }`——超长公式横向自滚动，绝不撑破页；② `.cols > *{ min-width:0; }`——列内宽内容不再撑破 1fr 网格，与既有 `.grid-block > *` 护栏对齐。
 - **验证（真浏览器）**：matrix doc → 从 `D: 1 页横向溢出 #2(266px)` 转为**全绿（0 溢出）**；基线 course（16 页）、`fourier-transform`（公式密集，10 页）真机复验均全绿无回归；`npm test` 全 5 项离线自检过。
 - **类型**：红线（横向溢出属 harness D 钉死的不变量）· 加法（补渲染器缺失的溢出兜底护栏，非堆功能）。
+
+## Iter 34 — 补上 block 类型漂移的最后缺口：schema enum ≡ BLOCK_TYPES（一致性硬校验，goal①）
+- **全局扫描**：本轮先真机全量跑 `render-check --all-generated`——**19 份生成 doc 全绿**（分页/字体/0 溢出/balanceScene/0 console error），iter33 的溢出修复对全语料无回归、红线健康。`out/`、`demo/generated/` 均已 gitignore 且未入库，无死产物可清。故转向 goal① 的一致性。
+- **发现的真缺口**：项目有两份独立的权威 block 类型清单——`validate.mjs` 的 `BLOCK_TYPES`（手写校验器，零依赖，不读 schema）与 `lecture-doc.schema.json` 的 `$defs/block/properties/type.enum`。而 iter28 的 `check-consistency` 只核对 plan.mjs 禁用清单(Check A)与文档"N 种正式"**计数文本**(Check B)，**从不比对 schema enum 本体**。即：加了新 block 类型却漏同步 schema enum，现有测试抓不到——正是 iter26/27 反复出现的"加类型漏改某处"漂移类的最后缺口。
+- **修法（Check C，加法）**：`check-consistency.mjs` 增 Check C——JSON.parse schema、递归定位含 `freeform` 的那一处 block 类型 enum（断言恰好 1 处，防结构漂移），与 `BLOCK_TYPES` 做**双向集合比对**，任一方多/缺都精确报出是"校验器漏加"还是"schema 漏同步"。
+- **归类**：红线（block 类型事实一致性属"钉死不变量"）· 加法。收紧理由**有据**：该漂移类已在 iter26、iter27 两次真实发生（≥2 次），非提前上镣铐。
+- **验证**：正例全过 exit 0；负例（临时从 schema enum 删 `grid`）→ 精确报 `BLOCK_TYPES 有而 schema enum 无: grid（schema 漏同步？）` exit 1；还原后复跑 OK；`npm test` 全 5 项过（Check C 已并入步骤② check-consistency）。

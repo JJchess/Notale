@@ -40,8 +40,27 @@ for (const f of docFiles) {
   }
 }
 
+// —— Check C（iter34）：schema JSON 的 block 类型 enum 必须与 validate.mjs 的 BLOCK_TYPES 逐一对齐 ——
+// 二者是两份独立的权威清单（校验器手写不读 schema，见零依赖设计）；此前只核对文档"N 种正式"计数，
+// 不查 enum 本体——漏改 enum（加了类型却忘同步 schema）不会被发现。这是 iter26/27 那类漂移的最后缺口。
+let cChecked = 0;
+try {
+  const schema = JSON.parse(R('../demo/schema/lecture-doc.schema.json'));
+  const enums = [];
+  (function walk(o) { if (!o || typeof o !== 'object') return; if (Array.isArray(o.enum) && o.enum.includes('freeform')) enums.push(o.enum); for (const k of Object.keys(o)) walk(o[k]); })(schema);
+  if (enums.length !== 1) fails.push(`schema 里含 'freeform' 的 block 类型 enum 应恰好 1 处，实际 ${enums.length} 处（结构变了？请核对 Check C）`);
+  else {
+    cChecked = 1;
+    const schemaSet = new Set(enums[0]), btSet = new Set(BLOCK_TYPES);
+    const onlySchema = [...schemaSet].filter(t => !btSet.has(t));
+    const onlyBt = [...btSet].filter(t => !schemaSet.has(t));
+    if (onlySchema.length) fails.push(`schema enum 有而 BLOCK_TYPES 无: ${onlySchema.join(', ')}（校验器漏加？）`);
+    if (onlyBt.length) fails.push(`BLOCK_TYPES 有而 schema enum 无: ${onlyBt.join(', ')}（schema 漏同步？）`);
+  }
+} catch (e) { fails.push('Check C 读取/解析 schema 失败: ' + e.message); }
+
 // —— 报告 ——
 console.log(`registry: ${BLOCK_TYPES.length} 种 block（含 freeform），正式 ${formalCount} 种；注册家族类型 ${registered.length} 个`);
-console.log(`Check A（plan.mjs 禁用清单 vs 注册类型）· Check B（文档"N 种正式"计数 ×${bChecked} 处）`);
+console.log(`Check A（plan.mjs 禁用清单 vs 注册类型）· Check B（文档"N 种正式"计数 ×${bChecked} 处）· Check C（schema enum ≡ BLOCK_TYPES ×${cChecked}）`);
 if (fails.length) { console.error('✗ 一致性检查发现 ' + fails.length + ' 处漂移:'); for (const x of fails) console.error('  · ' + x); process.exit(1); }
 console.log('✓ 一致性检查全过（block 类型事实与 registry 对齐）。');
