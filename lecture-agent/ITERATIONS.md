@@ -165,3 +165,10 @@
 - **修法**：新增 `tools/test.mjs`（+ `npm test`）——① 全部 .mjs `node --check`（17 个）② 契约一致性(iter28) ③ 基线 doc validate ④ 基线 render-verify 结构断言 ⑤ 技能 contracts.json 合法 JSON 且只声明真实 block 类型。逐项 ✓/✗、任一失败 exit 1。
 - **验证**：正例全 5 项过、exit 0；注入漂移(某计数改 13)→步骤②报 ✗ 具体错误、其余续跑、总 "✗ 失败 1 项" exit 1；git 还原后复跑全过。`node --check` + package.json JSON 均过。
 - **边界**：不含端到端 LLM 生成与真实浏览器渲染（各需外部资源，另行验）——test.mjs 头注已写明。
+
+## Iter 31 — 补齐真实浏览器渲染验收（verify，goal②③；30 轮最大的验证空白）
+- **动机**：iter18 balanceScene、§十三 可插拔主题、逐页 0 溢出等大量渲染/版式代码，历轮都因本机 preview MCP 不可用而**从未在真浏览器里验过**（memory 反复记"浏览器实测留待补"）。这是全项目最大的验证盲区，直接影响 goal③ 的每一步 UX 改动都无法确认。
+- **修法**：新增 `tools/render-check.mjs`（+ `npm run render-check`）——**零依赖**（贴合项目零运行时依赖信条）：Node 内置 http 起本地静态服（异步天生不死锁，无需 Python ThreadingHTTPServer）、内置全局 WebSocket 手写极简 CDP 客户端驱动**系统 Edge/Chrome 无头**（新版 headless 已移除 /json/new，改用 `Target.createTarget`+`attachToTarget` flatten 会话）。断言：A 分页数>0、B 全程 0 console error/异常、C 四字体 loaded、D 逐页 0 横向溢出（.pad scrollWidth≤clientWidth，布局像素不受 reveal 缩放影响）、E **iter18 balanceScene 规则真生效**（页内重算内容/可用高度比，<72% 应 justifyContent==='center'，与实际 computed style 交叉核对）。
+- **不进 `npm test`**：需外部浏览器（非纯离线），独立脚本；头注写明。
+- **验证（真浏览器，本项目史上首次）**：基线 course.lecture.json → **16 页、0 溢出、0 console error、四字体 loaded、balanceScene 3 页判稀疏并居中**——iter18 机制首次得到真浏览器确证。`?theme=lab` 与 `?theme=cobalt-grid` 均 data-theme 正确切换、同样全绿——§十三 可插拔主题层首次真浏览器验收通过。`node --check` 过。
+- **意义**：把项目最大的验证盲区补上；此后所有 goal③ 版式/交互改动都可 `npm run render-check` 真机回归，不再"逻辑已核、浏览器留待补"。
