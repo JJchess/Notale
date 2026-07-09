@@ -182,3 +182,10 @@
 - **双向修 ①**：① **校验器**(`validate.mjs`)dynamics1d 分支加"至少 1 个 regime"硬校验——生成侧自修环从此拦住(治本，防再生成)；② **渲染器**(`doc-to-deck.js`)`reg` 兜底 `|| {tone:'ink',desc:'',label:''}`——任何漏网/旧/手改 doc 都不再崩(纵深防御)。
 - **验证**：`node --check` 两文件过；`sync.mjs` 刷新技能镜像；`npm test` 基线仍全绿(基线 dynamics1d 本就带 regimes)；负例(regime-less dynamics1d)→ 精确报 `$block.regimes — 至少需 1 个 regime`；`simple-pendulum`(仍是旧 0-regime 产物)真机重验 → **0 console error**，崩溃根治。
 - **意义**：iter31 的验收能力立刻兑现成 2 个真 bug 的定位+修复；`npm run render-check --all-generated` 成为生成物的真机回归网。**下一步 iter33**：修 matrix #2 的 266px 溢出（查是渲染器普适问题还是该 doc 内容过宽）。
+
+## Iter 33 — 长公式/宽内容永不撑破页面（红线：逐页 0 横向溢出，goal②③）
+- **动机**：iter32 抓到 `matrix-eigenvalues-eigenvectors` 第 2 页横向溢出 266px，留待本轮查根因。真机复现：该页一个超长特征多项式 `\det(A-\lambda I)=(-1)^n\lambda^n+\cdots` + 一个 `compare` 双矩阵并排。
+- **定性（普适 vs 内容级）**：查渲染器 `doc-to-deck.js` + `index.html` CSS——`.mblock`（KaTeX display）**无横向溢出兜底**，`.cols`（compare 两列）**缺 `min-width:0` 护栏**（而 `.grid-block` 早已有 line 112）。故**任何 doc 的长公式都会撑破页面**——是渲染器普适问题，不是该 doc 内容特例。据 loop 哲学 A，"逐页 0 横向溢出"是 harness 断言 D 钉死的**红线**，应在渲染器治本，而非改单份 doc 内容。
+- **修法（2 处极小 CSS，治本、惠及全部 doc）**：① `.mblock{ max-width:100%; overflow-x:auto; }`——超长公式横向自滚动，绝不撑破页；② `.cols > *{ min-width:0; }`——列内宽内容不再撑破 1fr 网格，与既有 `.grid-block > *` 护栏对齐。
+- **验证（真浏览器）**：matrix doc → 从 `D: 1 页横向溢出 #2(266px)` 转为**全绿（0 溢出）**；基线 course（16 页）、`fourier-transform`（公式密集，10 页）真机复验均全绿无回归；`npm test` 全 5 项离线自检过。
+- **类型**：红线（横向溢出属 harness D 钉死的不变量）· 加法（补渲染器缺失的溢出兜底护栏，非堆功能）。
