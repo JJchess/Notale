@@ -13,6 +13,7 @@
      C 四款字体 document.fonts 全部 loaded
      D 逐页 0 横向溢出（.pad scrollWidth ≤ clientWidth）
      E iter18 balanceScene 规则真的生效：非豁免页若内容 <72% 可用高度 → justifyContent==='center'
+     F 逐页 0 纵向溢出（.pad scrollHeight ≤ clientHeight）——内容超高会被 overflow:hidden 裁掉
    任一失败 exit 1。用法：node tools/render-check.mjs [?query 如 ?theme=lab]  或  --doc generated/x.lecture.json */
 
 import http from 'node:http';
@@ -153,6 +154,7 @@ async function verifyScene(cdp, url, label) {
         const sec = Reveal.getCurrentSlide();
         const pad = sec.querySelector('.pad') || sec;
         const overflowX = pad.scrollWidth - pad.clientWidth;
+        const overflowY = pad.scrollHeight - pad.clientHeight;   // pad height:100% + body overflow:hidden → 纵向超出即被裁掉看不见
         const body = sec.querySelector('.pad > .body');
         let expectCenter = null, actualCenter = null;
         const exempt = sec.classList.contains('cover') || sec.classList.contains('bigidea');
@@ -166,13 +168,16 @@ async function verifyScene(cdp, url, label) {
             actualCenter = getComputedStyle(body).justifyContent === 'center';
           }
         }
-        out.push({ i, overflowX: Math.round(overflowX), expectCenter, actualCenter });
+        out.push({ i, overflowX: Math.round(overflowX), overflowY: Math.round(overflowY), expectCenter, actualCenter });
       }
       return out;
     })()`);
 
     const overflowed = perSlide.filter(s => s.overflowX > 1);
     if (overflowed.length) fails.push(`D: ${overflowed.length} 页横向溢出 → ` + overflowed.map(s => `#${s.i}(${s.overflowX}px)`).join(', '));
+    // F 纵向溢出：内容比 .pad 高 → 被 overflow:hidden 裁掉，学生看不到底部（与 D 同属红线，阈值放宽到 >4px 避亚像素假阳性）
+    const clipped = perSlide.filter(s => s.overflowY > 4);
+    if (clipped.length) fails.push(`F: ${clipped.length} 页纵向溢出(内容被裁) → ` + clipped.map(s => `#${s.i}(${s.overflowY}px)`).join(', '));
     const balanceBad = perSlide.filter(s => s.expectCenter != null && s.expectCenter !== s.actualCenter);
     if (balanceBad.length) fails.push(`E: balanceScene ${balanceBad.length} 页规则未生效 → ` + balanceBad.map(s => `#${s.i}(应${s.expectCenter?'居中':'贴顶'}, 实${s.actualCenter?'居中':'贴顶'})`).join(', '));
     ready.centered = perSlide.filter(s => s.actualCenter).length;

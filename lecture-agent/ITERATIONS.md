@@ -203,3 +203,12 @@
 - **修法（做薄式加法：复用 sync 自身逻辑，零重复）**：① `sync.mjs` 重构——把「镜像应有内容」算成一张 `targets` 表，写入(默认)与校验(`--check`)共用同一张表（banner/路径/shebang 处理只写一遍）；`--check` 逐个比对磁盘现状 vs 应有内容、报出过期项、exit 1；用 `\r\n→\n` 归一化抹平 git autocrlf 假阳性。② `test.mjs` 加步骤⑥跑 `sync.mjs --check`，并入 `npm test`。
 - **归类**：红线（契约镜像一致性属"钉死不变量"）· 加法（补守卫）。收紧**有据**：改契约漏 sync 的风险在 iter27、iter32 两次真实出现（≥2 次）。
 - **验证**：`sync --check` 正例过 exit 0（5 文件一致）；负例（篡改镜像 validate.mjs）→ 精确报 `scripts/validate.mjs（与 demo/schema 源不一致）` exit 1；还原后过；`npm test` 6 步全绿。
+
+## Iter 36 — render-check 补纵向溢出断言 F：抓出内容被裁的红线盲区（verify，goal②）
+- **全局扫描**：先审生成提示词（plan.mjs 骨架规则 vs skills.mjs AUTHORING_RULES）——二者作用域不同（骨架结构 vs 块内容创作），重叠极少，强行合并会伤质量，不做。转查 render-check 的断言覆盖，**发现真盲区**。
+- **盲区**：`.pad{height:100%}` + body `overflow:hidden` → 内容比页高就被**静默裁掉**，学生看不到底部。而 render-check 只测 `overflowX`(断言 D 横向)，**从不测纵向**——与"内容不可被截断"这条红线之间是缺口。
+- **修法（加法，几乎零成本对称补齐）**：perSlide 走查里在 `overflowX` 旁加 `overflowY = pad.scrollHeight - pad.clientHeight`；新增断言 F——纵向溢出 >4px（放宽避亚像素假阳性）即失败、逐页报 px。头注同步补 F。
+- **立刻兑现：抓到 3 个真 bug（3 份不同 doc，≥2 次 → 坐实红线级）**：`computer-history` #2(59px)、`dna-replication-mechanism` #3(97px)、`simple-pendulum` #1(16px)——内容超页高被裁。基线 course 16 页仍全绿（F 通过）。
+- **归类**：红线（内容被裁不可见，与横向溢出同级）· 加法（补验证维度）。收紧**有据**：一次普查即 3 份命中。
+- **验证**：`node --check` 过；基线 render-check 全绿（含新 F）；`npm test` 6 步不受影响（F 仅在需浏览器的 render-check，未进离线 test）。3 份命中的是 gitignore 的可再生成样例产物(demo/generated/)，**非提交源**，故提交源零破坏。
+- **下一步 iter37 候选**：修纵向裁切。两条路——(a) 渲染器加"过高页等比缩小到放下"的对称机制（balanceScene 现只处理偏稀疏页，需用 zoom 等**影响布局**的缩放，非 transform 视觉缩放，且要避开 lab/sim/CodeMirror 子树，属需独立验证的较大改动）；(b) 重新生成这 3 份样例（需 LLM）。优先评估 (a) 的普适性与风险。
