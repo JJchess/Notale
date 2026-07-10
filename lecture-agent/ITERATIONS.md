@@ -305,3 +305,10 @@
 - **修法（加法，一行提示）**：`persist()` 完成输出里，预览命令下补一行"验证"命令 `npm run render-check -- --doc generated/<id>.lecture.json`，并注明它查 offline 看不出的溢出/公式裁切/文本损坏。把 iter42-47 建起的真机验收能力接到用户工作流末端。
 - **归类**：成长（UX/引导，非红线）· 加法。
 - **验证**：`node --check bin` 过；`node bin/lecture-agent.mjs`（无参）帮助正常；`npm test` 6 步全绿（步骤①语法检查覆盖 bin）。命令本身在 iter40/42 已实测可用（`--` arg 透传 + --doc 相对 demo 根）。
+
+## Iter 50 — 修 flow 块 sub/loopNote 不渲染 inline-md：$…$ 公式漏成字面源码（内容红线邻近，goal①②）
+- **--shot 继续揪"断言绿但内容错"**：截从未肉眼看过的 fourier-transform（10 页、公式最密）第 5 页 flow「从连续到离散」，发现各步 sub 标注渲染成**字面 LaTeX 源码**——`8点 DFT $x[0..7]$`、`$x[2k]$ 和 $x[2k+1]$`、`合并为 $X[k] = X_{even} + W_N^k X_{odd}$`——`$…$` 行内公式没被 KaTeX 处理，观众看到一串带美元号的源码。同页 compare 块的公式却渲染正常，故是 flow 渲染器专属缺陷。
+- **根因（渲染器内部不对称，非内容问题）**：`flow(b)` 里 `node.title` 走 `inlineMd`（正确，渲染 `$…$`），但 `node.sub` 走 `escapeHtml`（只转义、不套 md），`loopNote` 同样走 `escapeHtml`——是一处 copy 疏漏：全文件其余文本 sink（list 的 `.sub` 行 160、statement 的 `.q-sub` 行 168）一律用 `inlineMd`。属 iter45(题干)/iter46(undefined) 同类——应显示的内容被静默错渲，结构断言/0 console error 全绿、只有肉眼可见。
+- **修法（对齐既有惯例，一处两行）**：`escapeHtml(n.sub)`→`inlineMd(n.sub)`；`escapeHtml(b.loopNote)`→`inlineMd(b.loopNote)`（loopNote 是同一 block 内相邻的同类 LLM 文案，此前带 `$` 会犯一模一样的潜伏 bug，一并对齐）。**红线守住**：`inlineMd` 内部先转义再套 md，转义不丢。
+- **归类**：红线邻近（内容被错渲、应显示的公式不显示）· 加法（补两处 sink 的 md 渲染）。这是渲染器内部不对称的**直接 bug 修复**（title 用 inlineMd、sub 却不用），非"软规则收紧"，故不受"≥2 次"约束；证据：fourier flow 真机可见。
+- **验证（真机可视 + 全量断言）**：`--shot=4` 重截 fourier flow 页 → 五个 sub 全部渲成正体数学（`x[0..7]`、`x[2k]`、`X_{even}/X_{odd}`、`X[k]=X_{even}+W_N^k X_{odd}`、`X[0..7]`），无一美元号残留；**基线 + 全量 19 份 render-check 全绿**（无回归，其余含 flow 的 doc 不受影响）；`npm test` 6 步全绿。doc-to-deck.js 是浏览器 JS 非 .mjs，`node --check` 不覆盖，但 render-check 已跨 19 份 + 基线实机跑过该渲染器。

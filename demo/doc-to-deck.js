@@ -223,10 +223,10 @@
       b.nodes.forEach((n, i) => {
         if (i > 0) f.appendChild(el('span', 'arrow', '→'));
         const node = el('div', 'node' + (n.state === 'on' ? ' on' : n.state === 'q' ? ' q' : ''));
-        node.innerHTML = inlineMd(n.title) + (n.sub ? '<span class="t">' + escapeHtml(n.sub) + '</span>' : '');
+        node.innerHTML = inlineMd(n.title) + (n.sub ? '<span class="t">' + inlineMd(n.sub) + '</span>' : '');
         f.appendChild(node);
       });
-      if (b.loopNote) f.appendChild(el('span', 'loop-note', escapeHtml(b.loopNote)));
+      if (b.loopNote) f.appendChild(el('span', 'loop-note', inlineMd(b.loopNote)));
       return f;
     },
     table(b) {
