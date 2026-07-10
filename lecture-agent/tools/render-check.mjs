@@ -14,6 +14,7 @@
      D 逐页 0 横向溢出（.pad scrollWidth ≤ clientWidth）
      E iter18 balanceScene 规则真的生效：非豁免页若内容 <72% 可用高度 → justifyContent==='center'
      F 逐页 0 纵向溢出（.pad scrollHeight ≤ clientHeight）——内容超高会被 overflow:hidden 裁掉
+     G 逐页 0 公式被裁（.mblock 不横向可滚）——fitFormulas 应把宽公式缩进容器，否则右侧公式看不见
    任一失败 exit 1。用法：node tools/render-check.mjs [?query 如 ?theme=lab]  或  --doc generated/x.lecture.json
                        批量：--all-generated（扫 demo/generated/*）
                        截图：--shot[=1,2,8]（把指定页/全部页渲染成 PNG 供人工看视觉质量，写到临时目录 la-shots；配 --doc 选 doc）*/
@@ -157,6 +158,8 @@ async function verifyScene(cdp, url, label) {
         const pad = sec.querySelector('.pad') || sec;
         const overflowX = pad.scrollWidth - pad.clientWidth;
         const overflowY = pad.scrollHeight - pad.clientHeight;   // pad height:100% + body overflow:hidden → 纵向超出即被裁掉看不见
+        // 公式被裁：.mblock 若横向可滚(overflow-x:auto)说明 fitFormulas 没把宽公式缩进容器，右侧内容幻灯片上看不见
+        const mblockClip = Math.round(Math.max(0, ...[...sec.querySelectorAll('.mblock')].map(m => m.scrollWidth - m.clientWidth)));
         const body = sec.querySelector('.pad > .body');
         let expectCenter = null, actualCenter = null;
         const exempt = sec.classList.contains('cover') || sec.classList.contains('bigidea');
@@ -170,7 +173,7 @@ async function verifyScene(cdp, url, label) {
             actualCenter = getComputedStyle(body).justifyContent === 'center';
           }
         }
-        out.push({ i, overflowX: Math.round(overflowX), overflowY: Math.round(overflowY), expectCenter, actualCenter });
+        out.push({ i, overflowX: Math.round(overflowX), overflowY: Math.round(overflowY), mblockClip, expectCenter, actualCenter });
       }
       return out;
     })()`);
@@ -180,6 +183,9 @@ async function verifyScene(cdp, url, label) {
     // F 纵向溢出：内容比 .pad 高 → 被 overflow:hidden 裁掉，学生看不到底部（与 D 同属红线，阈值放宽到 >4px 避亚像素假阳性）
     const clipped = perSlide.filter(s => s.overflowY > 4);
     if (clipped.length) fails.push(`F: ${clipped.length} 页纵向溢出(内容被裁) → ` + clipped.map(s => `#${s.i}(${s.overflowY}px)`).join(', '));
+    // G 公式被裁：fitFormulas(iter43) 应把宽公式缩进容器；仍横向可滚说明右侧公式在幻灯片上看不见（阈值 >4px 避亚像素）
+    const fmlClip = perSlide.filter(s => s.mblockClip > 4);
+    if (fmlClip.length) fails.push(`G: ${fmlClip.length} 页公式被裁(横向可滚，右侧看不见) → ` + fmlClip.map(s => `#${s.i}(${s.mblockClip}px)`).join(', '));
     const balanceBad = perSlide.filter(s => s.expectCenter != null && s.expectCenter !== s.actualCenter);
     if (balanceBad.length) fails.push(`E: balanceScene ${balanceBad.length} 页规则未生效 → ` + balanceBad.map(s => `#${s.i}(应${s.expectCenter?'居中':'贴顶'}, 实${s.actualCenter?'居中':'贴顶'})`).join(', '));
     ready.centered = perSlide.filter(s => s.actualCenter).length;

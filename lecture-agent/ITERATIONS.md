@@ -261,3 +261,10 @@
 - **修法（对称加法）**：新增 `fitFormulas(section)`——display 公式天然宽 > 容器时，对 `.katex` 设 `zoom = max(0.55, avail/natural)` 等比缩到放下（zoom 影响布局，缩完不再触发滚动条；transform 只视觉缩放救不了滚动条，同 iter37 取舍）。下限 0.55 防不可读；触底仍超宽由 `overflow-x:auto` 兜底。新增 `layoutScene = fitFormulas + balanceScene`（先缩公式再按新高度做纵向平衡），三处 Reveal 钩子(ready/fonts.ready/slidechanged)改调 layoutScene。
 - **归类**：成长（版式，非红线）· 加法（补横向对称缩放）。收紧**有据**：--shot 真机可见的裁切（matrix compare 两列均中招）。
 - **验证（真机可视 + 断言）**：`--shot=2` 重截 matrix 第 2 页 → 两列公式**完整可见、无滚动条**（`A=…,P=…,D=(2 0;0 3)`、`J=…,几何重数=1<2=代数重数`）；基线 + 全量 19 份 render-check 全绿（0 横纵溢出/balanceScene/0 console error 无回归）；`npm test` 6 步全绿。
+
+## Iter 44 — render-check 加断言 G：公式被裁回归守卫（钉死 iter43，verify，goal②③）
+- **动机**：iter43 修了 compare 窄列宽公式被滚动裁切，但**没有自动守卫**——该 bug 恰恰绕过了断言 D(页面级横向溢出全绿，因溢出被收进 .mblock 的 overflow-x 滚动盒)。若日后 CSS/fitFormulas 被改坏，公式重新被裁不会被任何测试发现。延续 iter36(F) 的"修完立刻补断言"节奏。
+- **修法（加法，几乎零成本，复用 perSlide 走查）**：逐页取所有 `.mblock` 的 `scrollWidth - clientWidth` 最大值 `mblockClip`；新增断言 G——>4px(避亚像素) 即"公式被裁(横向可滚，右侧看不见)"、逐页报 px。头注补 G。
+- **归类**：红线邻近（公式右侧内容不可见，视觉级内容裁切）· 加法（补验证维度）。收紧**有据**：iter43 真机 --shot 可见的裁切。
+- **验证（严格双向）**：正例 matrix doc → G 过全绿；负例（临时 `fitFormulas` 直接 return 禁用）→ 精确报 `G: 1 页公式被裁 → #2(161px)` exit 1；还原后过。**基线 + 全量 19 份**含新 G 全绿（fitFormulas 对全语料生效、无残留裁切）；`npm test` 6 步全绿。
+- **现断言全景**：A 分页 · B 0 console error · C 字体 · D 0 横向页溢出 · E balanceScene 居中 · F 0 纵向裁切 · G 0 公式裁切。渲染红线的"看不见的内容"三面（页宽/页高/公式宽）now 全被钉死。
