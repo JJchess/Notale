@@ -15,6 +15,7 @@
      E iter18 balanceScene 规则真的生效：非豁免页若内容 <72% 可用高度 → justifyContent==='center'
      F 逐页 0 纵向溢出（.pad scrollHeight ≤ clientHeight）——内容超高会被 overflow:hidden 裁掉
      G 逐页 0 公式被裁（.mblock 不横向可滚）——fitFormulas 应把宽公式缩进容器，否则右侧公式看不见
+     H 非代码正文 0 损坏标记（undefined/NaN/[object Object]）——插值 bug 的信号，结构断言抓不到
    任一失败 exit 1。用法：node tools/render-check.mjs [?query 如 ?theme=lab]  或  --doc generated/x.lecture.json
                        批量：--all-generated（扫 demo/generated/*）
                        截图：--shot[=1,2,8]（把指定页/全部页渲染成 PNG 供人工看视觉质量，写到临时目录 la-shots；配 --doc 选 doc）*/
@@ -173,7 +174,15 @@ async function verifyScene(cdp, url, label) {
             actualCenter = getComputedStyle(body).justifyContent === 'center';
           }
         }
-        out.push({ i, overflowX: Math.round(overflowX), overflowY: Math.round(overflowY), mblockClip, expectCenter, actualCenter });
+        // 文本损坏标记：非代码正文里出现 undefined/NaN/[object Object] 几乎必是插值 bug（如 iter46 占位符碰撞）。
+        // 排除 code/pre/.mi/代码卡/iframe/notes——这些地方 undefined/NaN 可能是合法讲授内容（如 JS 课）。
+        let corrupt = '';
+        { const clone = sec.cloneNode(true);
+          clone.querySelectorAll('code, pre, .mi, .codecard, iframe, aside').forEach(e => e.remove());
+          // 反斜杠须双写：本段在 evalJs 模板字符串里，\\[ / \\b 才能作为正则元字符送到浏览器（单写会被模板字面量吃掉）
+          const m = (clone.textContent || '').match(/\\[object Object\\]|\\bundefined\\b|\\bNaN\\b/);
+          if (m) corrupt = m[0]; }
+        out.push({ i, overflowX: Math.round(overflowX), overflowY: Math.round(overflowY), mblockClip, corrupt, expectCenter, actualCenter });
       }
       return out;
     })()`);
@@ -186,6 +195,9 @@ async function verifyScene(cdp, url, label) {
     // G 公式被裁：fitFormulas(iter43) 应把宽公式缩进容器；仍横向可滚说明右侧公式在幻灯片上看不见（阈值 >4px 避亚像素）
     const fmlClip = perSlide.filter(s => s.mblockClip > 4);
     if (fmlClip.length) fails.push(`G: ${fmlClip.length} 页公式被裁(横向可滚，右侧看不见) → ` + fmlClip.map(s => `#${s.i}(${s.mblockClip}px)`).join(', '));
+    // H 文本损坏：非代码正文出现 undefined/NaN/[object Object]，几乎必是插值 bug（结构断言/0 console error 抓不到）
+    const corrupt = perSlide.filter(s => s.corrupt);
+    if (corrupt.length) fails.push(`H: ${corrupt.length} 页正文含损坏标记(插值 bug?) → ` + corrupt.map(s => `#${s.i}("${s.corrupt}")`).join(', '));
     const balanceBad = perSlide.filter(s => s.expectCenter != null && s.expectCenter !== s.actualCenter);
     if (balanceBad.length) fails.push(`E: balanceScene ${balanceBad.length} 页规则未生效 → ` + balanceBad.map(s => `#${s.i}(应${s.expectCenter?'居中':'贴顶'}, 实${s.actualCenter?'居中':'贴顶'})`).join(', '));
     ready.centered = perSlide.filter(s => s.actualCenter).length;

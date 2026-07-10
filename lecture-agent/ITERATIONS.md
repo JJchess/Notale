@@ -283,3 +283,12 @@
 - **修法（治本，换不可能碰撞的占位符）**：占位符从 " <idx> " 改为私有区哨兵 `<idx>`（U+E000/E001 绝不出现在正文），回填正则相应改 `/(\d+)/g`。正文数字再不会被误当占位。私有区自带定界，顺带修掉相邻占位符共享空格的老隐患。
 - **归类**：红线（正文被渲染器篡改成 "undefined"/错内容，违"内容有据、不编造"）· 加法（换健壮占位符）。收笃**有据**：真机可见、且 CJK 数字空格是普遍写法。
 - **验证（真机可视 + 断言）**：`--shot=2` 重截 computer-history → 所有数字正确显示（"重 27 吨"/"IBM 7090"/"Intel 4004"/"92 TOPS"/callout "1965 年…4004…2300 个…2020 年…160 亿个"），无一 "undefined"；基线 + 全量 19 份 render-check 全绿；`npm test` 6 步全绿。
+
+## Iter 47 — render-check 加断言 H：非代码正文出现 undefined/NaN/[object Object] 即报（插值 bug 自动网，verify，goal②）
+- **--shot 探查确认渲染质量**：本轮截 widget(bubble-sort)、dynamics1d(dna)、searchCompare(基线)、table(binary-search) 等此前没肉眼看过的块——**全部渲染优良**（sim 图表/滑块/图例、iframe 沙箱、表格对齐俱佳），无新 bug。
+- **动机（沉淀近三轮教训成自动网）**：iter43/45/46 三个"结构断言全绿、0 console error，只有肉眼可见"的内容 bug 里，iter46（占位符碰撞→正文渲染出字面 "undefined"）是**可被自动检测的一类**——插值 bug 常在正文留下 `undefined`/`NaN`/`[object Object]`。加断言把这类"看不见的内容损坏"钉死，不再只靠人眼。
+- **修法（加法，复用 perSlide 走查）**：逐页克隆 slide、**剔除 code/pre/.mi/代码卡/iframe/notes**（这些地方 undefined/NaN 是合法讲授内容，如 JS 课），对剩余正文匹配 `[object Object]|\bundefined\b|\bNaN\b`；断言 H 命中即报页号+损坏词。头注补 H。
+- **关键坑（已修）**：该正则在 `evalJs` 模板字符串里，反斜杠须**双写**（`\[`/`\b`）才能作为正则元字符送进浏览器——单写被模板字面量吃掉，`\[object Object\]` 退化成**字符类** `[object Object]`（匹配任意 o/b/j/e/c/t/空格/O），导致每页误报。双写后正确。
+- **归类**：红线邻近（正文内容完整性，同 iter46）· 加法（补验证维度）。收紧**有据**：iter46 真实发生。
+- **验证（严格双向 + 全语料无误报）**：正例造 doc（list 含 `[object Object]`）→ H 精确报 `#1("[object Object]")` exit 1；**同 doc 的 code 块里 `undefined` 不误报**（豁免生效）；基线 + 全量 19 份（含 binary-search/kmp/bubble-sort 等 CS/数学 deck）含 H **全绿无一误报**；`npm test` 6 步全绿。
+- **断言全景**：A 分页 · B console · C 字体 · D 横溢 · E 居中 · F 纵裁 · G 公式裁 · **H 文本损坏**。
