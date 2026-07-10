@@ -98,13 +98,17 @@
   function inlineMd(src) {
     if (src == null) return '';
     const stash = [];
+    /* 占位符用私有区哨兵 <idx>，绝不与正文冲突。
+       （旧版用 " <idx> " 空格包数字，会和正文里带空格的数字如 "重 27 吨" 撞车——27 被当成占位下标，
+        stash[27] 不存在→渲染出 "undefined"，或误插入别处的公式/代码。CJK 排版要求数字两侧留空格，命中面很广。） */
+    const stash_ph = () => '' + (stash.length - 1) + '';
     let s = String(src)
-      .replace(/\$([^$]+)\$/g, (_, tex) => { stash.push(katex.renderToString(tex, { throwOnError: false, output: 'html' })); return ' ' + (stash.length - 1) + ' '; })
-      .replace(/`([^`]+)`/g, (_, code) => { stash.push('<span class="mi">' + escapeHtml(code) + '</span>'); return ' ' + (stash.length - 1) + ' '; });
+      .replace(/\$([^$]+)\$/g, (_, tex) => { stash.push(katex.renderToString(tex, { throwOnError: false, output: 'html' })); return stash_ph(); })
+      .replace(/`([^`]+)`/g, (_, code) => { stash.push('<span class="mi">' + escapeHtml(code) + '</span>'); return stash_ph(); });
     s = escapeHtml(s)
       .replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>')
       .replace(/\*([^*]+)\*/g, '<em>$1</em>');
-    return s.replace(/ (\d+) /g, (_, i) => stash[+i]);
+    return s.replace(/(\d+)/g, (_, i) => stash[+i]);
   }
   /* latex 字段应是纯 LaTeX 源码；防御性剥掉误加的 $…$ / $$…$$ 包裹（否则 KaTeX 把 $ 当非法字符、整串标红回退）。 */
   const stripDollar = (t) => String(t).trim().replace(/^\${1,2}/, '').replace(/\${1,2}$/, '').trim();
