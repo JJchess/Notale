@@ -154,13 +154,13 @@
     hero(b, ctx) {
       const inner = el('div', 'inner');
       if (b.tag) inner.appendChild(el('div', 'tag', escapeHtml(b.tag)));
-      const h1 = el('h1', null, b.title.map(escapeHtml).join('<br>'));
+      const h1 = el('h1', null, b.title.map(inlineMd).join('<br>'));
       if (b.titleSize) h1.style.fontSize = b.titleSize + 'px';
       inner.appendChild(h1);
       if (b.sub) inner.appendChild(el('div', 'sub', inlineMd(b.sub)));
       if (b.accentRule) inner.appendChild(el('div', 'h-accent'));
-      if (b.facts) inner.appendChild(el('div', 'facts', escapeHtml(b.facts)));
-      if (b.hint) inner.appendChild(el('div', 'hint', escapeHtml(b.hint)));
+      if (b.facts) inner.appendChild(el('div', 'facts', inlineMd(b.facts)));
+      if (b.hint) inner.appendChild(el('div', 'hint', inlineMd(b.hint)));
       return inner;
     },
     statement(b) {
@@ -529,7 +529,7 @@
       frame.setAttribute('scrolling', 'no');
       frame.setAttribute('title', b.caption || '互动组件');
       root.appendChild(frame);
-      if (b.caption) root.appendChild(el('div', 'widcap', escapeHtml(b.caption)));
+      if (b.caption) root.appendChild(el('div', 'widcap', inlineMd(b.caption)));
       const build = () => { frame.srcdoc = buildWidgetSrcdoc(b.html); };
       widgetBuilds.push(build);   // 主题切换时重建
       ctx.onReady(build);

@@ -312,3 +312,12 @@
 - **修法（对齐既有惯例，一处两行）**：`escapeHtml(n.sub)`→`inlineMd(n.sub)`；`escapeHtml(b.loopNote)`→`inlineMd(b.loopNote)`（loopNote 是同一 block 内相邻的同类 LLM 文案，此前带 `$` 会犯一模一样的潜伏 bug，一并对齐）。**红线守住**：`inlineMd` 内部先转义再套 md，转义不丢。
 - **归类**：红线邻近（内容被错渲、应显示的公式不显示）· 加法（补两处 sink 的 md 渲染）。这是渲染器内部不对称的**直接 bug 修复**（title 用 inlineMd、sub 却不用），非"软规则收紧"，故不受"≥2 次"约束；证据：fourier flow 真机可见。
 - **验证（真机可视 + 全量断言）**：`--shot=4` 重截 fourier flow 页 → 五个 sub 全部渲成正体数学（`x[0..7]`、`x[2k]`、`X_{even}/X_{odd}`、`X[k]=X_{even}+W_N^k X_{odd}`、`X[0..7]`），无一美元号残留；**基线 + 全量 19 份 render-check 全绿**（无回归，其余含 flow 的 doc 不受影响）；`npm test` 6 步全绿。doc-to-deck.js 是浏览器 JS 非 .mjs，`node --check` 不覆盖，但 render-check 已跨 19 份 + 基线实机跑过该渲染器。
+
+## Iter 51 — 系统排查 inline-md sink 不对称：hero title/facts/hint + widget caption 补 inlineMd（内容红线邻近，goal②）
+- **全局扫描（承 iter50 的 FE-56 类，系统化排查而非只盯一处）**：iter50 修 flow sub 后，把 doc-to-deck.js **所有** `escapeHtml(` sink 逐个列出，判定"机器标识符(该 escape)"vs"给人读、可能含 md/公式(该 inlineMd)"，再**用全语料实证**哪些字段真的漏了 md/公式（扫 19 份 doc 各候选字段是否含 `$…$`/`**b**`/`` `code` ``）。
+- **实证命中（≥2 不同 doc，坐实同类反复）**：`hero.facts` 3 份（bubble-sort `**317 年**`/`**1.2 秒**`、dna `**~200 ATP**`/`**10⁻⁹**`、backprop `` `autograd` ``）；`hero.hint` 3 份（dna `**5 次**`、matrix `$det(A-λI)=0$`、simple-pendulum `$T=2π\sqrt{L/g}$`）；`hero.title` 1 份（bubble-sort `从 $O(n^2)$ 到 $O(n\log n)$`）。这些字段全走 `escapeHtml` → `$…$`/`**b**` 漏成字面源码，而同一 hero 渲染器里的**兄弟字段 `sub` 早已用 `inlineMd`**——正是 iter50/ FE-56 的 title-vs-sub 不对称。
+- **修法（对齐既有惯例，4 处 sink）**：hero 的 `facts`(162)、`hint`(163)、`title`(157，array 逐元素 inlineMd 再 `<br>` join)、widget 的 `caption`(532) 一律 `escapeHtml`→`inlineMd`。**红线守住**：inlineMd 内部先转义再套 md，转义不丢（是 escape 的超集）。
+- **克制（哲学 A：无据不上）**：`table.head`/`compare.caption`/`timeline.time`/`sim.legend`/`regime.desc`/`callout.tag`/`cite`/`freeform.rationale` 全语料**零命中** md/公式，保持 escapeHtml 不动。`title` 仅 1 份命中，但这是与 flow sub 完全同型的**渲染器不对称 bug 直接修复**（非"软规则收紧成硬校验"，不受 ≥2 门槛约束）、且同函数顺手对齐、真机确认渲染优良无破版，故纳入。
+- **归类**：红线邻近（应显示的公式/强调漏成字面源码）· 加法（补 4 处 sink 的 md 渲染）。
+- **另有发现（记入下轮候选，本轮不动以保原子）**：**code 块的 `b.caption` 被渲染器完全丢弃**（code(b) 只渲 filename+source，从不渲 caption）——5 份 doc 的 code 说明文字（binary-search `关键点：循环条件 `<=`…`、backprop、bubble-sort、matrix 等）静默不可见，属 iter45 类内容丢失。需先定 caption 在 code 卡中的位置/样式并核对 F(纵向溢出)，独立成 iter52。
+- **验证（真机可视 + 全量断言）**：`--shot` 复看 bubble-sort 封面 → 大标题渲成 `O(n²)`/`O(n log n)` 正体数学、facts `317 年`/`1.2 秒` 强调、无美元号残留、无破版；dna 封面 facts `~200 ATP`/`10⁻⁹`/hint `5 次` 正常。**基线 + 全量 19 份 render-check 全绿**（含新公式的 hero title 未触发溢出/裁切回归）；`npm test` 6 步全绿。
