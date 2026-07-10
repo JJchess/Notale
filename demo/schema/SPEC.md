@@ -67,7 +67,7 @@ LectureDoc                     一门课
 
 ### 3.2 交互类
 
-**`quiz`（kind:"objective"）** — 客观题。choices 2–6 项（key 为 a/b/c…），answer 单选，explain 必填（判后展示）。可选 `context` 在选项上方放一行铺垫（支持行内公式）。运行时自动接判分交互：点对→整行强调，点错→删除线+同时揭示正确项+展示 explain。
+**`quiz`（kind:"objective"）** — 客观题。choices 2–6 项（key 为 a/b/c…），answer 单选，explain 必填（判后展示）。题干放 `stem`（在选项上方，支持行内公式；`context` 为兼容旧内容的别名）——不写题干则问题需体现在页 headline 里。运行时自动接判分交互：点对→整行强调，点错→删除线+同时揭示正确项+展示 explain。
 
 **`quiz`（kind:"subjective"）** — 主观/研讨题。prompt（题干）+ angles[]（可选切入角度）+ instruction（作答要求）。运行时渲染为衬线大字题干 + 角度列表 + 顶线说明。未来接 AI 批改时，本块是锚点。
 

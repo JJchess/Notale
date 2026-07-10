@@ -271,7 +271,8 @@
       const wrap = el('div');
       if (b.kind === 'objective') {
         wrap.dataset.answer = b.answer;
-        if (b.context) wrap.appendChild(el('p', 'quiz-context', inlineMd(b.context)));
+        const stem = b.stem || b.context;   // stem 是 create-quiz 契约/生成侧的题干字段名；context 为兼容基线的旧别名
+        if (stem) wrap.appendChild(el('p', 'quiz-context', inlineMd(stem)));
         for (const c of b.choices) {
           const ch = el('div', 'choice', '<span class="k">' + c.key.toUpperCase() + '</span><span>' + inlineMd(c.text) + '</span>');
           ch.dataset.c = c.key;
