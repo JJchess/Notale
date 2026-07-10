@@ -44,7 +44,9 @@ ${authoringRules}`;
 /** STORM 阶段二：把多视角覆盖清单综合成一份连贯、递进的 skeleton（大纲生成）。 */
 export async function planLecture({ topic, pages = 12, theme = '', audience = '', wants = '', extra = '', material = '', autoTypes, authoringRules, log = () => {} }) {
   // 阶段一：多视角覆盖
+  const _tp = Date.now();
   const perspectives = await discoverCoverage({ topic, audience, extra, material });
+  const perspectiveMs = Date.now() - _tp;
   if (perspectives.length) {
     log(`[plan] 多视角覆盖: ${perspectives.map(p => p.name).join(' / ')}`);
   } else {
@@ -59,10 +61,11 @@ export async function planLecture({ topic, pages = 12, theme = '', audience = ''
   const sys = `你是讲义(LectureDoc)总编排器。只输出一个 JSON 对象(骨架)，不要代码围栏、不要解释。\n${skeletonSpec(pages, autoTypes, theme, wants, authoringRules)}`;
   const user = `课题: ${topic}${audience ? '\n受众: ' + audience : ''}${theme ? '\n主题: ' + theme : ''}${wants ? '\n要的交互: ' + wants : ''}${extra ? '\n额外要求: ' + extra : ''}${material ? '\n\n参考素材（讲义内容据此取材，别脱离/编造）：\n' + material : ''}\n\n${coverage}\n\n产出骨架 JSON。`;
   let lastErr;
+  const _ts = Date.now();
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
       const raw = await chat([{ role: 'system', content: sys }, { role: 'user', content: user }], { temperature: 0.4 });
-      return { doc: parseJson(raw), perspectives };
+      return { doc: parseJson(raw), perspectives, timing: { perspectiveMs, skeletonMs: Date.now() - _ts } };
     } catch (e) { lastErr = e; if (attempt < 3) { log(`[plan] 骨架生成第 ${attempt} 次失败(${String(e.message || e).slice(0, 50)})，退避重试…`); await new Promise(r => setTimeout(r, 3000 * attempt)); } }
   }
   throw new Error('骨架生成失败（网络/限流/解析）: ' + String(lastErr?.message || lastErr).slice(0, 100));

@@ -35,14 +35,20 @@ async function docRepair(doc, registry, log, material = '', rounds = 2) {
 /** 生成一节课。返回 { doc, errors, warnings, dropped, calls, outFile }。 */
 export async function generateLecture({ topic, pages = 12, theme = '', audience = '', wants = '', extra = '', material = '', outDir, coverage = false, planOnly = false, log = () => {} }) {
   const { registry, autoTypes } = loadSkills();
+  const _t0 = Date.now(); const _dt = t => ((Date.now() - t) / 1000);   // 秒
+  const timing = {};
   // 长素材：保事实浓缩（替代旧的硬截断——超出 4000 字的后半段不再被静默丢弃）；失败自动回退截断
+  let _t = Date.now();
   const mat = material ? await condenseMaterial(material, { topic, targetChars: 4000, log }) : '';
+  if (material) timing.material = _dt(_t);
 
   // ① Plan（STORM 式多视角规划，见 src/plan.mjs）
   log(`[plan] 课题: ${topic} (~${pages} 页)${mat ? ' · 基于素材' : ''}`);
-  let doc, perspectives;
-  try { ({ doc, perspectives } = await planLecture({ topic, pages, theme, audience, wants, extra, material: mat, autoTypes, authoringRules: AUTHORING_RULES, log })); }
+  let doc, perspectives, planTiming;
+  _t = Date.now();
+  try { ({ doc, perspectives, timing: planTiming } = await planLecture({ topic, pages, theme, audience, wants, extra, material: mat, autoTypes, authoringRules: AUTHORING_RULES, log })); }
   catch (e) { throw new Error('骨架解析失败: ' + e.message); }
+  timing.plan = _dt(_t); timing.planPerspective = (planTiming?.perspectiveMs || 0) / 1000; timing.planSkeleton = (planTiming?.skeletonMs || 0) / 1000;
   doc.schemaVersion = '1.0';
   if (!doc.language) doc.language = 'zh-CN';
   if (theme) doc.theme = theme;
@@ -59,10 +65,15 @@ export async function generateLecture({ topic, pages = 12, theme = '', audience 
   if (outDir) { mkdirSync(outDir, { recursive: true }); writeFileSync(join(outDir, 'skeleton.json'), JSON.stringify(doc, null, 2)); }
 
   // 规划专检：只出骨架不 fan-out（低成本审规划质量，~2 次调用 vs 全量 ~14）
-  if (planOnly) return { doc, errors: [], warnings: [], dropped: [], calls: callCount(), outFile: '', perspectives, planOnly: true };
+  if (planOnly) {
+    timing.total = _dt(_t0);
+    log(`[timing] 规划 ${timing.plan.toFixed(1)}s（视角 ${timing.planPerspective.toFixed(1)}s + 骨架 ${timing.planSkeleton.toFixed(1)}s） · 合计 ${timing.total.toFixed(1)}s · LLM ×${callCount()}`);
+    return { doc, errors: [], warnings: [], dropped: [], calls: callCount(), outFile: '', perspectives, planOnly: true, timing };
+  }
 
   // ② Fan-out
   log(`[fan-out] 并行生成 ${placeholders.length} 个 block (并发 ${CONC})…`);
+  _t = Date.now();
   const results = await pool(placeholders, CONC, async ({ ph, scene }) => {
     const reg = registry.get(ph.type);
     if (!reg) { log(`  ✗ ${ph.id} — 没有技能处理 type ${ph.type}`); return { id: ph.id, block: null, err: '无技能处理 type ' + ph.type }; }
@@ -70,6 +81,7 @@ export async function generateLecture({ topic, pages = 12, theme = '', audience 
     log(`  ${r.err ? '✗' : '✓'} ${ph.id} (${ph.type})${r.err ? ' — ' + r.err.slice(0, 70) : ''}`);
     return { id: ph.id, ...r };
   });
+  timing.fanout = _dt(_t);
 
   // ③ Assemble
   const byId = new Map(); for (const r of results) if (r && r.id) byId.set(r.id, r);
@@ -82,19 +94,38 @@ export async function generateLecture({ topic, pages = 12, theme = '', audience 
   }
 
   // ④ 整档校验 + 结构自修
+  _t = Date.now();
   const finalRes = await docRepair(doc, registry, log, mat);
+  timing.repair = _dt(_t);
 
   // ④.5 讲者备注增强（正文克制、细节沉 notes；一次调用把占位式 notes 补成有料讲稿）
+  _t = Date.now();
   if (!finalRes.errors.length) { try { await enrichNotes(doc, { audience }); log('[notes] 讲者备注已增强'); } catch { /* 保留原 notes */ } }
+  timing.notes = _dt(_t);
 
   // ⑤ 覆盖度审查（opt-in，完成 STORM 闭环）
   let cov = null;
+  _t = Date.now();
   if (coverage && perspectives?.length && !finalRes.errors.length) {
     try { cov = await checkCoverage(doc, perspectives); } catch (e) { log('[coverage] 审查失败: ' + String(e.message || e).slice(0, 60)); }
+    timing.coverage = _dt(_t);
   }
 
   // ⑥ 写出
   let outFile = '';
   if (outDir) { outFile = join(outDir, 'course.lecture.json'); writeFileSync(outFile, JSON.stringify(doc, null, 2)); }
-  return { doc, errors: finalRes.errors, warnings: finalRes.warnings, dropped, calls: callCount(), outFile, perspectives, coverage: cov };
+
+  // 时间报告（自动记录：以后任何一轮跑生成都白得一份分阶段耗时，无需再单独计时实验）
+  timing.total = _dt(_t0);
+  const rep = [
+    `规划 ${timing.plan.toFixed(1)}s（视角 ${timing.planPerspective.toFixed(1)}s + 骨架 ${timing.planSkeleton.toFixed(1)}s）`,
+    `fan-out ${timing.fanout.toFixed(1)}s（${placeholders.length} 块/并发 ${CONC}）`,
+    `回炉 ${timing.repair.toFixed(1)}s`,
+    `备注 ${timing.notes.toFixed(1)}s`,
+    timing.coverage != null ? `覆盖 ${timing.coverage.toFixed(1)}s` : null,
+    timing.material != null ? `素材 ${timing.material.toFixed(1)}s` : null,
+  ].filter(Boolean).join(' · ');
+  log(`[timing] ${rep} · 合计 ${timing.total.toFixed(1)}s · LLM ×${callCount()}`);
+
+  return { doc, errors: finalRes.errors, warnings: finalRes.warnings, dropped, calls: callCount(), outFile, perspectives, coverage: cov, timing };
 }
