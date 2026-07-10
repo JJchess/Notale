@@ -292,3 +292,10 @@
 - **归类**：红线邻近（正文内容完整性，同 iter46）· 加法（补验证维度）。收紧**有据**：iter46 真实发生。
 - **验证（严格双向 + 全语料无误报）**：正例造 doc（list 含 `[object Object]`）→ H 精确报 `#1("[object Object]")` exit 1；**同 doc 的 code 块里 `undefined` 不误报**（豁免生效）；基线 + 全量 19 份（含 binary-search/kmp/bubble-sort 等 CS/数学 deck）含 H **全绿无一误报**；`npm test` 6 步全绿。
 - **断言全景**：A 分页 · B console · C 字体 · D 横溢 · E 居中 · F 纵裁 · G 公式裁 · **H 文本损坏**。
+
+## Iter 48 — 做薄：删 validate.mjs 里定义却从未调用的 noExtra（回头看减法轮，goal②）
+- **动机**：距上次纯减法轮(iter39)已 9 轮、全是加法，按哲学 B 该安排一次"回头看"做薄。扫 validate.mjs 各具名函数/顶层 const 的引用计数：`noExtra`(未知字段白名单校验) 计数为 1——**定义了但从未被调用**，是死代码（iter45 查 quiz-stem bug 时已注意到）。其余函数/const 均 ≥2 处引用（活跃）。
+- **为何删而非接上**：接上 noExtra 需为 17 种 block 各维护 allowed-keys 白名单，面广且易漂移（加字段就要同步白名单），还可能误拒合法 doc；而"typo 字段/多余字段"这类问题在真实产出里从未复现（无证据）。据"反过度设计"+哲学 A"无反复证据不上镣铐"，删除比激活更对。它的存在还会误导读者以为校验器在做未知字段拦截（其实没有）。
+- **修法（纯减法）**：删 `function noExtra(...)`（3 行）；`node sync.mjs` 刷新技能镜像。
+- **归类**：成长（代码整洁，非红线）· **减法（做薄）**。
+- **验证**：全仓 grep 确认权威源再无 `noExtra` 引用（本就无调用方，删除零影响）；`node --check` 过；镜像同步；`npm test` 6 步全绿（基线 validate/render-verify/一致性/镜像新鲜度均不受影响）。

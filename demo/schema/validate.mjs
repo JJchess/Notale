@@ -29,9 +29,6 @@ function opt(obj, key, pred, path, what) {
   if (key in obj && !pred(obj[key])) { err(path + '.' + key, '类型不对，应为 ' + what); return false; }
   return true;
 }
-function noExtra(obj, allowed, path) {
-  for (const k of Object.keys(obj)) if (!allowed.includes(k)) err(path + '.' + k, '未知字段（schema 不允许额外属性）');
-}
 
 /* ---------- 受限表达式静态检查（SPEC §4） ---------- */
 const MATH_IDS = ['sin', 'cos', 'tan', 'exp', 'log', 'sqrt', 'abs', 'pow', 'min', 'max', 'floor', 'round', 'PI', 'E'];
