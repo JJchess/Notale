@@ -26,7 +26,7 @@ async function docRepair(doc, registry, log, material = '', rounds = 2) {
       const [si, bi] = k.split(',').map(Number);
       const cur = doc.scenes[si].blocks[bi]; const reg = registry.get(cur.type); if (!reg) return;
       const r = await generateBlock({ type: cur.type, intent: '修正下述校验错误：' + errs.join('；'), sceneCtx: `当前(有错): ${JSON.stringify(cur)}`, contract: reg.contract, material });
-      if (r.block) { doc.scenes[si].blocks[bi] = r.block; log(`  ↻ 修好 scenes[${si}].blocks[${bi}] (${cur.type})`); }
+      if (r.block) { r.block.id = cur.id; doc.scenes[si].blocks[bi] = r.block; log(`  ↻ 修好 scenes[${si}].blocks[${bi}] (${cur.type})`); }   // 保留块 id（版式引用依赖）
     });
   }
   return validateDoc(doc);
@@ -88,7 +88,7 @@ export async function generateLecture({ topic, pages = 12, theme = '', audience 
   const dropped = [];
   for (const s of doc.scenes) {
     const kept = [];
-    for (const ph of s.blocks) { const r = byId.get(ph.id); if (r && r.block) kept.push(r.block); else dropped.push(`${ph.id}(${ph.type}): ${r ? r.err : '缺失'}`); }
+    for (const ph of s.blocks) { const r = byId.get(ph.id); if (r && r.block) { r.block.id = ph.id; kept.push(r.block); } else dropped.push(`${ph.id}(${ph.type}): ${r ? r.err : '缺失'}`); }   // 保留规划器分配的块 id，供 scene.layout 的 steps/anchor 引用（否则版式引用失效→回落）
     if (!kept.length) kept.push({ type: 'callout', label: '待补', text: '本页 block 生成失败，需重跑' });
     s.blocks = kept;
   }

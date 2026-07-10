@@ -16,6 +16,7 @@
      F 逐页 0 纵向溢出（.pad scrollHeight ≤ clientHeight）——内容超高会被 overflow:hidden 裁掉
      G 逐页 0 公式被裁（.mblock 不横向可滚）——fitFormulas 应把宽公式缩进容器，否则右侧公式看不见
      H 非代码正文 0 损坏标记（undefined/NaN/[object Object]）——插值 bug 的信号，结构断言抓不到
+     I 自定义版式(index/split) 0 内容裁切——active panel / 分栏列不超各自容器（absolute panel 不撑大 .pad，F 抓不到）
    任一失败 exit 1。用法：node tools/render-check.mjs [?query 如 ?theme=lab]  或  --doc generated/x.lecture.json
                        批量：--all-generated（扫 demo/generated/*）
                        截图：--shot[=1,2,8]（把指定页/全部页渲染成 PNG 供人工看视觉质量，写到临时目录 la-shots；配 --doc 选 doc）*/
@@ -164,7 +165,7 @@ async function verifyScene(cdp, url, label) {
         const body = sec.querySelector('.pad > .body');
         let expectCenter = null, actualCenter = null;
         const exempt = sec.classList.contains('cover') || sec.classList.contains('bigidea');
-        if (body && !exempt && !['lab','runlab','widlab'].some(c => body.classList.contains(c)) && !body.dataset.centered) {
+        if (body && !exempt && !['lab','runlab','widlab'].some(c => body.classList.contains(c)) && !body.dataset.centered && !body.dataset.layout) {
           const avail = body.clientHeight;
           const kids = Array.from(body.children);
           if (avail && kids.length) {
@@ -182,7 +183,18 @@ async function verifyScene(cdp, url, label) {
           // 反斜杠须双写：本段在 evalJs 模板字符串里，\\[ / \\b 才能作为正则元字符送到浏览器（单写会被模板字面量吃掉）
           const m = (clone.textContent || '').match(/\\[object Object\\]|\\bundefined\\b|\\bNaN\\b/);
           if (m) corrupt = m[0]; }
-        out.push({ i, overflowX: Math.round(overflowX), overflowY: Math.round(overflowY), mblockClip, corrupt, expectCenter, actualCenter });
+        // 自定义版式(index/split)：active panel 是 position:absolute，不会撑大 .pad，F 抓不到其裁切 → 单独测
+        // index 量当前显示的 .step-panel vs .step-stage；split 量每个 .split-col。两轴取最大溢出。
+        let layoutClip = 0;
+        if (body && body.dataset.layout === 'index') {
+          const stage = body.querySelector('.step-stage');
+          const active = stage && stage.querySelector('.step-panel.show');
+          if (stage && active) layoutClip = Math.max(active.scrollHeight - stage.clientHeight, active.scrollWidth - stage.clientWidth);
+        } else if (body && body.dataset.layout === 'split') {
+          for (const c of body.querySelectorAll('.split-col')) layoutClip = Math.max(layoutClip, c.scrollHeight - c.clientHeight, c.scrollWidth - c.clientWidth);
+        }
+        layoutClip = Math.round(Math.max(0, layoutClip));
+        out.push({ i, overflowX: Math.round(overflowX), overflowY: Math.round(overflowY), mblockClip, corrupt, expectCenter, actualCenter, layoutClip });
       }
       return out;
     })()`);
@@ -200,6 +212,9 @@ async function verifyScene(cdp, url, label) {
     if (corrupt.length) fails.push(`H: ${corrupt.length} 页正文含损坏标记(插值 bug?) → ` + corrupt.map(s => `#${s.i}("${s.corrupt}")`).join(', '));
     const balanceBad = perSlide.filter(s => s.expectCenter != null && s.expectCenter !== s.actualCenter);
     if (balanceBad.length) fails.push(`E: balanceScene ${balanceBad.length} 页规则未生效 → ` + balanceBad.map(s => `#${s.i}(应${s.expectCenter?'居中':'贴顶'}, 实${s.actualCenter?'居中':'贴顶'})`).join(', '));
+    // I 自定义版式内容被裁：index 的 active panel / split 的分栏列超出各自容器（absolute panel 不撑大 .pad，F 抓不到）
+    const layoutClipped = perSlide.filter(s => s.layoutClip > 4);
+    if (layoutClipped.length) fails.push(`I: ${layoutClipped.length} 页自定义版式内容被裁(index面板/split列超容器) → ` + layoutClipped.map(s => `#${s.i}(${s.layoutClip}px)`).join(', '));
     ready.centered = perSlide.filter(s => s.actualCenter).length;
 
     await sleep(150);

@@ -279,7 +279,20 @@ function checkScene(s, path, state, seenIds) {
   if (s.kind === 'hero' && (s.blocks.length !== 1 || s.blocks[0].type !== 'hero')) err(path + '.blocks', 'hero 页应恰好含一个 hero block');
   if (s.kind === 'statement' && !s.blocks.some(b => b.type === 'statement')) err(path + '.blocks', 'statement 页应含 statement block');
   if (s.kind === 'quiz' && !s.blocks.some(b => b.type === 'quiz')) err(path + '.blocks', 'quiz 页应含 quiz block');
+  checkLayout(s, path);
   s.blocks.forEach((b, i) => checkBlock(b, path + `.blocks[${i}]`, state));
+}
+
+/* 版式软校验（成长规则）：kind 若给验 enum；index/split 的 block id 引用若失效只 warn，不阻断——
+   渲染器对空/失效引用一律回落默认竖排且绝不丢内容，是真正的安全网（红线在渲染侧兜底）。 */
+function checkLayout(s, path) {
+  const L = s.layout; if (!isObj(L)) return;
+  const p = path + '.layout';
+  if ('kind' in L && !['flow', 'index', 'split'].includes(L.kind)) warn(p + '.kind', '未知版式 kind: ' + L.kind + '（渲染器将回落 flow）');
+  const ids = new Set((s.blocks || []).map(b => b && b.id).filter(x => x != null));
+  const chk = (id, where) => { if (!ids.has(id)) warn(where, '引用了不存在的 block id: ' + id + '（渲染器将回落）'); };
+  if (Array.isArray(L.steps)) L.steps.forEach((st, i) => { if (isObj(st) && Array.isArray(st.blockIds)) st.blockIds.forEach(id => chk(id, p + `.steps[${i}].blockIds`)); });
+  if (Array.isArray(L.anchor)) L.anchor.forEach(id => chk(id, p + '.anchor'));
 }
 
 /* ---------- deck 校验 ---------- */

@@ -688,6 +688,75 @@
     return root;
   }
 
+  /* ============ 场景版式模板（加一个函数 = 加一种版式；对照 blockRenderers）============
+     签名 (scene, ctx, body, L)：把 blocks 排进 body。红线：绝不丢内容——任何未被版式引用到的
+     block 一律回落进默认竖排/主栏；缺字段/失效引用/不足以成版式则整片回落 flow。版式是开放集，
+     这里是起步的几种，规划器可按内容自选、拿不准回落 flow（见 plan.mjs skeletonSpec）。 */
+  function blocksById(scene) { const m = {}; for (const b of scene.blocks) if (b && b.id != null) m[b.id] = b; return m; }
+
+  const sceneLayouts = {
+    flow(scene, ctx, body, L) {
+      body.style.display = 'flex'; body.style.flexDirection = 'column';
+      body.style.gap = (L.gap != null ? L.gap : 18) + 'px';
+      if (L.centered) { body.style.justifyContent = 'center'; body.dataset.centered = '1'; }
+      for (const blk of scene.blocks) body.appendChild(renderBlock(blk, ctx));
+    },
+
+    /* index：片内分节。左目录 + 右 stage（每子节一绝对定位 panel，仅 active 显示）。
+       隐形 fragment 哨兵（n-1 个）复用 reveal 既有导航步进；syncIndex() 据当前 fragment index 切 active。 */
+    index(scene, ctx, body, L) {
+      const map = blocksById(scene);
+      const used = new Set();
+      const panels = [];
+      for (const st of (Array.isArray(L.steps) ? L.steps : [])) {
+        const blks = (st && Array.isArray(st.blockIds) ? st.blockIds : []).map(id => map[id]).filter(Boolean);
+        if (!blks.length) continue;
+        blks.forEach(b => used.add(b.id));
+        panels.push({ label: (st && st.label || '').trim() || ('第 ' + (panels.length + 1) + ' 节'), blks });
+      }
+      if (panels.length < 2) return sceneLayouts.flow(scene, ctx, body, L);   // 不足两节 → 回落
+      const leftover = scene.blocks.filter(b => !used.has(b.id));             // 未引用的不丢：并入末节
+      if (leftover.length) panels[panels.length - 1].blks.push(...leftover);
+
+      body.dataset.layout = 'index';
+      body.classList.add('layout-index');
+      const rail = el('div', 'scene-index');
+      const stage = el('div', 'step-stage');
+      const frags = el('div', 'step-frags');
+      panels.forEach((p, i) => {
+        const item = el('div', 'idx-item' + (i === 0 ? ' on' : ''));
+        item.innerHTML = '<span class="n">' + (i + 1) + '</span><span class="t">' + inlineMd(p.label) + '</span>';
+        item.onclick = () => { const ix = Reveal.getIndices(); Reveal.slide(ix.h, ix.v, i - 1); };   // 跳到该子节
+        rail.appendChild(item);
+        const panel = el('div', 'step-panel' + (i === 0 ? ' show' : ''));
+        for (const b of p.blks) panel.appendChild(renderBlock(b, ctx));
+        stage.appendChild(panel);
+        if (i > 0) frags.appendChild(el('span', 'fragment step-frag'));       // 哨兵：f∈[-1,n-2] → active 0..n-1
+      });
+      body.appendChild(rail); body.appendChild(stage); body.appendChild(frags);
+    },
+
+    /* split：锚定分栏。左锚常驻（anchor 引用的 block），右主栏其余（递进沿用各 block 的 fragment）。 */
+    split(scene, ctx, body, L) {
+      const map = blocksById(scene);
+      const anchorIds = new Set(Array.isArray(L.anchor) ? L.anchor : []);
+      const anchor = (Array.isArray(L.anchor) ? L.anchor : []).map(id => map[id]).filter(Boolean);
+      const rest = scene.blocks.filter(b => !anchorIds.has(b.id));
+      if (!anchor.length || !rest.length) return sceneLayouts.flow(scene, ctx, body, L);   // 缺锚/右栏空 → 回落
+      const r = Math.min(0.6, Math.max(0.25, +L.ratio || 0.4));
+      body.dataset.layout = 'split';
+      body.classList.add('layout-split');
+      body.style.display = 'grid';
+      body.style.gridTemplateColumns = r.toFixed(3) + 'fr ' + (1 - r).toFixed(3) + 'fr';
+      body.style.gap = (L.gap != null ? L.gap : 40) + 'px';
+      const aCol = el('div', 'split-col split-anchor');
+      for (const b of anchor) aCol.appendChild(renderBlock(b, ctx));
+      const mCol = el('div', 'split-col split-main');
+      for (const b of rest) mCol.appendChild(renderBlock(b, ctx));
+      body.appendChild(aCol); body.appendChild(mCol);
+    },
+  };
+
   /* ================= Scene → <section> ================= */
   function renderScene(scene, ctx) {
     const sec = document.createElement('section');
@@ -720,11 +789,9 @@
         rendered.classList.add('body');
         pad.appendChild(rendered);
       } else {
-        body.style.display = 'flex'; body.style.flexDirection = 'column';
         const L = scene.layout || {};
-        body.style.gap = (L.gap != null ? L.gap : 18) + 'px';
-        if (L.centered) { body.style.justifyContent = 'center'; body.dataset.centered = '1'; }
-        for (const blk of scene.blocks) body.appendChild(renderBlock(blk, ctx));
+        const kind = typeof sceneLayouts[L.kind] === 'function' ? L.kind : 'flow';   // 未知 kind → flow，不崩
+        sceneLayouts[kind](scene, ctx, body, L);
         pad.appendChild(body);
       }
     }
@@ -745,6 +812,7 @@
     if (!body) return;
     /* sim/runnable/widget 的 body 按设计填满，作者显式 centered 也别覆盖 */
     if (['lab', 'runlab', 'widlab'].some(c => body.classList.contains(c))) return;
+    if (body.dataset.layout) return;                /* index/split 等自定义版式自管高度(fitCustomLayout)，不走默认竖排测量 */
     if (body.dataset.centered) return;              /* 作者显式 layout.centered，尊重其意图，不覆盖 */
     body.style.justifyContent = '';                 /* 先复位再实测，避免测到上次居中/缩放态 */
     body.style.zoom = '';
@@ -778,8 +846,35 @@
       if (avail && natural > avail + 1) k.style.zoom = Math.max(0.55, avail / natural);
     }
   }
-  /* 一页的版式自适应统一入口：先把宽公式缩到放下（影响高度），再按新高度做稀疏/超高的纵向平衡。 */
-  function layoutScene(section) { fitFormulas(section); balanceScene(section); }
+  /* 自定义版式(index/split)的高度自适应：balanceScene 只管默认竖排，这里管 index 的 active panel 与 split 的分栏列。
+     宽度由 fitFormulas(section) 统一处理；这里只处理“太高被裁”——同 balanceScene 用 zoom 缩到放下（红线：不裁切）。 */
+  function fitScroll(box, availH) {
+    if (!box) return;
+    box.style.zoom = '';
+    if (!availH) return;
+    const need = box.scrollHeight;
+    if (need > availH + 4) box.style.zoom = Math.max(0.7, availH / need);
+  }
+  function fitCustomLayout(section) {
+    if (!section) return;
+    const idx = section.querySelector('.layout-index');
+    if (idx) { const stage = idx.querySelector('.step-stage'); const active = stage && stage.querySelector('.step-panel.show'); if (stage && active) fitScroll(active, stage.clientHeight); }
+    const sp = section.querySelector('.layout-split');
+    if (sp) { const h = sp.clientHeight; sp.querySelectorAll('.split-col').forEach(c => fitScroll(c, h)); }
+  }
+  /* index：据 reveal 当前 fragment index 切 active 子节 + 高亮目录（fragment 事件/翻页时调用）。 */
+  function syncIndex(section) {
+    const sec = section || (window.Reveal && Reveal.getCurrentSlide());
+    const idx = sec && sec.querySelector('.layout-index'); if (!idx) return;
+    const panels = idx.querySelectorAll('.step-panel'); const items = idx.querySelectorAll('.idx-item');
+    const f = (window.Reveal && Reveal.getIndices) ? Reveal.getIndices().f : -1;
+    const active = Math.max(0, Math.min(panels.length - 1, (typeof f === 'number' ? f : -1) + 1));
+    panels.forEach((p, i) => p.classList.toggle('show', i === active));
+    items.forEach((it, i) => { it.classList.toggle('on', i === active); it.classList.toggle('done', i < active); });
+    fitCustomLayout(sec);
+  }
+  /* 一页的版式自适应统一入口：先把宽公式缩到放下（影响高度），再按新高度做稀疏/超高的纵向平衡，最后处理自定义版式。 */
+  function layoutScene(section) { fitFormulas(section); balanceScene(section); fitCustomLayout(section); }
 
   /* ================= 装配 & 启动 ================= */
   /* 默认渲染手写基线 course.lecture.json；?doc=generated/xxx.lecture.json 可预览别的（如 agent 生成的），
@@ -873,10 +968,13 @@
   Reveal.initialize({ hash: true, slideNumber: 'c/t', controls: false, progress: true, center: false,
     transition: 'slide', backgroundTransition: 'fade', width: 1280, height: 720, margin: 0,
     viewDistance: 5, hashOneBasedIndex: true, plugins: [RevealHighlight] });
-  Reveal.on('ready', e => { readyCallbacks.forEach(fn => fn()); activateRunCell(e.currentSlide); updateCtx(); refreshNotes(); requestAnimationFrame(() => layoutScene(e.currentSlide));
+  Reveal.on('ready', e => { readyCallbacks.forEach(fn => fn()); activateRunCell(e.currentSlide); updateCtx(); refreshNotes(); requestAnimationFrame(() => { layoutScene(e.currentSlide); syncIndex(e.currentSlide); });
     /* 字体加载完会改变块高度 → 字体就绪后按当前页重测一次，避免用未换字体的旧高度居中 */
-    if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => layoutScene(Reveal.getCurrentSlide())); });
-  Reveal.on('slidechanged', e => { activateRunCell(e.currentSlide); updateCtx(); refreshNotes(); requestAnimationFrame(() => layoutScene(e.currentSlide)); });
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { layoutScene(Reveal.getCurrentSlide()); syncIndex(); }); });
+  Reveal.on('slidechanged', e => { activateRunCell(e.currentSlide); updateCtx(); refreshNotes(); requestAnimationFrame(() => { layoutScene(e.currentSlide); syncIndex(e.currentSlide); }); });
+  /* index 版式：翻 fragment 即步进子节（复用 reveal 导航），据当前 fragment index 切 active panel + 高亮目录 */
+  Reveal.on('fragmentshown', () => requestAnimationFrame(() => syncIndex()));
+  Reveal.on('fragmenthidden', () => requestAnimationFrame(() => syncIndex()));
   /* reveal 缩放变化时 CodeMirror 度量会过期（FE-48），ResizeObserver 兜底 refresh */
   new ResizeObserver(() => { if (window.__rcCM) requestAnimationFrame(() => window.__rcCM.refresh()); }).observe($('.reveal'));
 })();

@@ -28,6 +28,16 @@ LectureDoc                     一门课
 | `quiz` | 测验页 | 同 content；含一个 `quiz` block（客观题自动接判分交互） |
 | `statement` | 全课回顾式大字陈述页 | eyebrow + 一个 `statement` block，垂直居中 |
 
+**scene.layout 决定本页版式（per-scene，可只用于某一页；开放集，起步几种）：**
+
+| kind | 用途 | 内容模型 |
+|---|---|---|
+| `flow`（默认） | 竖直流；`centered`/`gap` 微调 | 直接排 blocks |
+| `index` | 片内分节：左目录 + 右侧逐节"上画"切入（点目录或翻页步进） | `steps:[{label, blockIds:[…]}]`，按 id 把本页 blocks 分成子节；未引用的并入末节，不丢 |
+| `split` | 锚定分栏：左锚常驻（核心公式/示意/题面）+ 右侧递进 | `anchor:[blockId,…]` 引用左锚，其余进右栏；`ratio` 控左栏占比(默认 0.4) |
+
+版式**按内容形态选、非必填**，拿不准就默认 flow；`kind`/引用 id 非法时渲染器**一律回落 flow 且绝不丢内容**（红线在渲染侧兜底，校验器只 warn 不阻断）。
+
 **scene.notes 必填**——演讲者备注是"详细讲解的收纳处"。正文（学生可见）保持克制，展开解释、教学策略、数据出处、诚实的边界说明全部写进 notes。
 
 ---

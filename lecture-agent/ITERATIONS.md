@@ -333,3 +333,12 @@
 - **修法（加法，最小侵入，零行为改变）**：`src/plan.mjs` 的 `planLecture` 计时并返回 `timing:{perspectiveMs, skeletonMs}`（视角发现 vs 综合骨架分项，因骨架是最大头需单独可见）；`src/agent.mjs` 的 `generateLecture` 用 `Date.now()` 卡各阶段边界（素材浓缩/规划/fan-out/回炉/备注/覆盖/合计），结束打一行 `[timing] 规划(视角+骨架) · fan-out(N 块/并发) · 回炉 · 备注 [· 覆盖][· 素材] · 合计 · LLM ×N`，并把 `timing` 挂到返回值。planOnly 分支也打精简版。CLI 走 `log` 自动透传，无需改 bin。
 - **归类**：成长（可观测性/产品，非红线）· 加法。红线不受影响：纯读时钟、不改生成逻辑、不引依赖。
 - **验证（真机实测 ×2，自证其用）**：跑两份不同课题 7 页讲义——①《哈希表》7 页/9 块：合计 131.3s（规划 91.6s〔视角22.4+骨架69.2〕· fan-out22.7 · 备注16.7）· LLM×13；②《队列与栈》7 页/10 块：合计 124.9s（规划83.2〔视角24.7+骨架58.5〕· fan-out25.9 · 回炉0 · 备注15.9）· LLM×15。两次一致、报告自动打印、**综合骨架单次调用为最大瓶颈（占 ~45–53%）**。`node --check` + `npm test` 6 步全绿。
+
+## Iter 54 — per-scene 版式机制 + 两个旗舰版式(index 片内分节 / split 锚定分栏)，规划器自动选用（内容架构/UX，goal①③，用户直接要求）
+- **动机（用户要求，非自主轮）**：用户想要"左目录+右内容+上画切入"这类版式，且明确①可只用于某一页的"分节"、②要更多元、"给模型创造力、版式无限"。据此把版式做成**开放注册表**而非写死一种。
+- **机制（对照 blockRenderers）**：`doc-to-deck.js` 加 `sceneLayouts` 模板表，`renderScene` 非 hero 分支按 `scene.layout.kind` 派发（未知/缺省→`flow`=原竖排，零行为变化）。`加一个模板函数=加一种版式`。
+- **两个旗舰**：① **index**（片内分节）左目录+右 stage，每子节一绝对定位 panel、仅 active 显示、进入 translateY+透明度"上画"切入；隐形 `.fragment` 哨兵复用 reveal 原生导航步进，`syncIndex()` 据 fragment index 切 active+高亮目录，目录项可点击跳转。② **split**（锚定分栏）左锚常驻+右主栏，中缝分割线+轻阴影，`ratio` 控栏宽。内容模型复用 `scene.blocks`，按 **block id** 引用（`layout.steps[{label,blockIds}]` / `anchor[]`）。
+- **红线守护**：任何非法 layout（未知 kind/空 steps/失效 id/无锚）**一律回落 flow 且绝不丢内容**（未引用 block 并入末节/主栏）；`inlineMd` 转义不变；离线零依赖；切入动画加 `@media (prefers-reduced-motion:reduce)`（补上此前缺失的无障碍项）。防裁切：index/split 走 `body.dataset.layout` 让 `balanceScene` 跳过，改由 `fitCustomLayout` 对 active panel/分栏列各自 zoom-fit（absolute panel 不撑大 .pad 的新盲区）。
+- **贯穿全栈（加法）**：schema 加 `layout.kind/steps/anchor/ratio` + `block.id`；validate 成长式软校验（kind enum + 失效 id 只 warn 不阻断）；plan.mjs 教规划器按内容形态选、**明确"示例非穷举、拿不准回落 flow、别炫技"**；render-check 加**断言 I**（index panel/split 列裁切）+ E 居中断言豁免 dataset.layout；SPEC + 技能镜像同步。
+- **端到端才抓到的真集成 bug**：首个真跑规划器产出了 index 却**渲染成 flow**——fan-out 后 `assemble` 用生成块替换占位块**丢了规划器 block id**（final id=undefined），layout 引用全失效→回落。修：`agent.mjs` assemble/docRepair `r.block.id=ph.id`，schema 补 block.id。离线/结构断言全绿却静默 no-op，正是"跑真流程"才暴露。
+- **验证（全绿）**：`npm test` 6 步；`render-check --all-generated` 19 份既有(全 flow)零回归；手写 index+split 测试 doc A–I 全过 + 双向截图确认目录/切入/分割线/无裁切；CDP 驱动 stepping 实测 next/prev/点目录 active 与目录高亮始终同步(0→1→2→3→2→0)；负例(未知 kind/失效 id/空锚)回落 flow、0 console error、无丢失；真跑《高斯消元》规划器自动产出 index、块 id 保留、真实内容渲成 index(截图确认)。
