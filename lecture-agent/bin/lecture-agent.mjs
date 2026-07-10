@@ -53,6 +53,7 @@ function persist(r, ev) {
     log('  ⚠ ' + l.replace(/^\s*·\s*/, ''));
   log(`\n产物: ${file}`);
   log(`预览: python demo/serve.py 后打开  http://127.0.0.1:8778/index.html?doc=generated/${id}.lecture.json`);
+  log(`验证: (在 lecture-agent/) npm run render-check -- --doc generated/${id}.lecture.json   # 真浏览器查溢出/公式裁切/文本损坏，离线结构断言看不出的问题`);
   return file;
 }
 

@@ -299,3 +299,9 @@
 - **修法（纯减法）**：删 `function noExtra(...)`（3 行）；`node sync.mjs` 刷新技能镜像。
 - **归类**：成长（代码整洁，非红线）· **减法（做薄）**。
 - **验证**：全仓 grep 确认权威源再无 `noExtra` 引用（本就无调用方，删除零影响）；`node --check` 过；镜像同步；`npm test` 6 步全绿（基线 validate/render-verify/一致性/镜像新鲜度均不受影响）。
+
+## Iter 49 — 生成完成后提示跑 render-check：闭合"生成→真机验证"环（UX/产品，goal②③）
+- **全局扫描 CLI（用户直接面对的面）**：`bin/lecture-agent.mjs` 结构清晰、报告详实（丢弃/降级块、校验错、offline renderVerify 结果、偏空/偏高页提醒、产物路径、预览命令），无 bug。但**发现一个闭环缺口**：`persist()` 生成后只跑 offline `renderVerify`（结构断言）并提示 `serve.py` 预览，**从不提 `npm run render-check`**——而近 6 轮证明恰恰是真浏览器 render-check 抓出了 offline/结构断言看不出的三个真 bug（iter43 公式裁切、iter45 题干消失、iter46 文本 undefined）。用户刚生成的 deck 可能正有这类"断言绿但肉眼错"的问题，却不知道能一键验。
+- **修法（加法，一行提示）**：`persist()` 完成输出里，预览命令下补一行"验证"命令 `npm run render-check -- --doc generated/<id>.lecture.json`，并注明它查 offline 看不出的溢出/公式裁切/文本损坏。把 iter42-47 建起的真机验收能力接到用户工作流末端。
+- **归类**：成长（UX/引导，非红线）· 加法。
+- **验证**：`node --check bin` 过；`node bin/lecture-agent.mjs`（无参）帮助正常；`npm test` 6 步全绿（步骤①语法检查覆盖 bin）。命令本身在 iter40/42 已实测可用（`--` arg 透传 + --doc 相对 demo 根）。
