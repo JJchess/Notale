@@ -254,3 +254,10 @@
 - **落成可交付**：把"项目此前无法自视"这一历史空白补上——`render-check` 加 `--shot[=1,2,8]` 截图模式，复用既有 http 服 + 无头浏览器 + CDP（零重复），内建关过渡避开陷阱①，PNG 写临时目录 `la-shots`。验收断言路径完全不动。
 - **归类**：成长（工具/可视验证，非红线）· 加法（做厚：补一种验证能力）。
 - **验证**：`--shot=8` 截出有效 PNG（65KB、magic `89504e47`）；验收路径未受影响（baseline 仍全绿）；`node --check` + `npm test` 6 步全绿。
+
+## Iter 43 — 宽公式自适应缩放 fitFormulas：修 compare/窄列里公式被滚动裁切（UX，goal③）
+- **全局扫描 + 用 iter42 的 --shot 真看生成产物**：截 matrix doc 第 2 页，**肉眼发现真 UX bug**——`compare` 两列里的矩阵公式**右侧被裁**、带横向滚动条（左列 `…D` 后截断、右列 `…1<2` 后截断）。根因：iter33 给 `.mblock` 加 `overflow-x:auto` 挡住了页面级溢出（红线），但代价是窄列里的宽公式变成"横向可滚动"——而幻灯片不可滚，等于右半截公式看不见。render-check D(0 页面横向溢出) 因此仍绿（溢出被收进滚动盒），但观众看不全。
+- **定性**：这是 iter37 纵向 zoom-fit 的**横向对应缺口**——渲染器只处理了"页太满(纵向)"，没处理"公式太宽(横向)"。普适问题（任何窄容器放宽公式都中招），在渲染器治本。
+- **修法（对称加法）**：新增 `fitFormulas(section)`——display 公式天然宽 > 容器时，对 `.katex` 设 `zoom = max(0.55, avail/natural)` 等比缩到放下（zoom 影响布局，缩完不再触发滚动条；transform 只视觉缩放救不了滚动条，同 iter37 取舍）。下限 0.55 防不可读；触底仍超宽由 `overflow-x:auto` 兜底。新增 `layoutScene = fitFormulas + balanceScene`（先缩公式再按新高度做纵向平衡），三处 Reveal 钩子(ready/fonts.ready/slidechanged)改调 layoutScene。
+- **归类**：成长（版式，非红线）· 加法（补横向对称缩放）。收紧**有据**：--shot 真机可见的裁切（matrix compare 两列均中招）。
+- **验证（真机可视 + 断言）**：`--shot=2` 重截 matrix 第 2 页 → 两列公式**完整可见、无滚动条**（`A=…,P=…,D=(2 0;0 3)`、`J=…,几何重数=1<2=代数重数`）；基线 + 全量 19 份 render-check 全绿（0 横纵溢出/balanceScene/0 console error 无回归）；`npm test` 6 步全绿。

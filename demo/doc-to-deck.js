@@ -758,6 +758,23 @@
     }
   }
 
+  /* 宽公式自适应（横向的 balanceScene）：display 公式天然比容器宽时——尤其 compare/grid 的窄列里放矩阵——
+     .mblock 的 overflow-x:auto 只能让它横向滚动，但幻灯片不可滚，等于右侧公式看不见。这里等比缩到刚好放下：
+     zoom 影响布局，缩完不再触发滚动条（transform 只视觉缩放、救不了滚动条）。下限 0.55 防缩到不可读；
+     触底仍超宽（极长公式，属内容问题）由 overflow-x:auto 兜底。先复位再实测，避免测到上次缩放态。 */
+  function fitFormulas(section) {
+    if (!section) return;
+    for (const disp of section.querySelectorAll('.mblock .katex-display')) {
+      const k = disp.querySelector('.katex');
+      if (!k) continue;
+      k.style.zoom = '';
+      const avail = disp.clientWidth, natural = k.scrollWidth;
+      if (avail && natural > avail + 1) k.style.zoom = Math.max(0.55, avail / natural);
+    }
+  }
+  /* 一页的版式自适应统一入口：先把宽公式缩到放下（影响高度），再按新高度做稀疏/超高的纵向平衡。 */
+  function layoutScene(section) { fitFormulas(section); balanceScene(section); }
+
   /* ================= 装配 & 启动 ================= */
   /* 默认渲染手写基线 course.lecture.json；?doc=generated/xxx.lecture.json 可预览别的（如 agent 生成的），
      不必覆盖基线。路径相对 demo/（服务器根），只能取 demo/ 下的文件。 */
@@ -850,10 +867,10 @@
   Reveal.initialize({ hash: true, slideNumber: 'c/t', controls: false, progress: true, center: false,
     transition: 'slide', backgroundTransition: 'fade', width: 1280, height: 720, margin: 0,
     viewDistance: 5, hashOneBasedIndex: true, plugins: [RevealHighlight] });
-  Reveal.on('ready', e => { readyCallbacks.forEach(fn => fn()); activateRunCell(e.currentSlide); updateCtx(); refreshNotes(); requestAnimationFrame(() => balanceScene(e.currentSlide));
+  Reveal.on('ready', e => { readyCallbacks.forEach(fn => fn()); activateRunCell(e.currentSlide); updateCtx(); refreshNotes(); requestAnimationFrame(() => layoutScene(e.currentSlide));
     /* 字体加载完会改变块高度 → 字体就绪后按当前页重测一次，避免用未换字体的旧高度居中 */
-    if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => balanceScene(Reveal.getCurrentSlide())); });
-  Reveal.on('slidechanged', e => { activateRunCell(e.currentSlide); updateCtx(); refreshNotes(); requestAnimationFrame(() => balanceScene(e.currentSlide)); });
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => layoutScene(Reveal.getCurrentSlide())); });
+  Reveal.on('slidechanged', e => { activateRunCell(e.currentSlide); updateCtx(); refreshNotes(); requestAnimationFrame(() => layoutScene(e.currentSlide)); });
   /* reveal 缩放变化时 CodeMirror 度量会过期（FE-48），ResizeObserver 兜底 refresh */
   new ResizeObserver(() => { if (window.__rcCM) requestAnimationFrame(() => window.__rcCM.refresh()); }).observe($('.reveal'));
 })();
