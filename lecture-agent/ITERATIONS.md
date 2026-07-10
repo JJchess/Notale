@@ -247,3 +247,10 @@
 - **修法（转义在 sink，遵本文件既有惯例）**：两处 `curInfo()` 外包 `escapeHtml(...)`。
 - **归类**：红线（转义）· 加法（补两处 sink 转义）。
 - **验证（严格双向，真机）**：造注入 doc（headline 含 `<img onerror="console.error('XSS-FIRED')">`）——**修复后** render-check `0 console error` 全绿；**临时撤回一处修复** → render-check 精确捕获 `B: 1 条 console error → XSS-FIRED`（证明漏洞真实、测试非空转）；还原修复（2 处 escapeHtml(curInfo()) 复位）。基线 + 全量 19 份全绿、`npm test` 全绿；测试 doc 用后即删未入库。
+
+## Iter 42 — render-check 加 --shot 截图模式：项目首次能"看见"自己的渲染（可视验证，goal②③）
+- **全局扫描**：本轮把没验过的红线逐一核实为"扎实"——widget iframe 用 `sandbox="allow-scripts"` 无 `allow-same-origin`(null origin 真隔离)；生成管道失败块诚实丢弃/降级为"待补"占位不编造(no-mock)；LLM 客户端缺 key 报清晰错、退避重试稳；`table` 行列数不一致校验器未卡但语料 0 例(据哲学 A 不提前收紧)；BLOCK_TYPES 17 类渲染器全覆盖。红线无缺口。
+- **转 goal③ UX（从未直接看过渲染）**：写零依赖 CDP 截图脚本截基线若干页。**过程本身踩到并厘清两个真陷阱**：① 截图早于 reveal 过渡结束 → 截到横向滑动中途，页面"错位/标题截断"是动画帧假象(非 bug)，须先 `Reveal.configure({transition:'none'})`；② 整页 block 全 `fragment:true` 时加载即空白是**设计内**行为(演讲者逐步揭示)，非缺内容。核实结论：**渲染质量好**（代码对照页版式、层次、间距俱佳），无 UX bug；生成语料 0 fragment（全空白页只存在于手调基线且有意为之）。
+- **落成可交付**：把"项目此前无法自视"这一历史空白补上——`render-check` 加 `--shot[=1,2,8]` 截图模式，复用既有 http 服 + 无头浏览器 + CDP（零重复），内建关过渡避开陷阱①，PNG 写临时目录 `la-shots`。验收断言路径完全不动。
+- **归类**：成长（工具/可视验证，非红线）· 加法（做厚：补一种验证能力）。
+- **验证**：`--shot=8` 截出有效 PNG（65KB、magic `89504e47`）；验收路径未受影响（baseline 仍全绿）；`node --check` + `npm test` 6 步全绿。

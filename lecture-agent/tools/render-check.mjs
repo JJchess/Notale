@@ -14,10 +14,12 @@
      D 逐页 0 横向溢出（.pad scrollWidth ≤ clientWidth）
      E iter18 balanceScene 规则真的生效：非豁免页若内容 <72% 可用高度 → justifyContent==='center'
      F 逐页 0 纵向溢出（.pad scrollHeight ≤ clientHeight）——内容超高会被 overflow:hidden 裁掉
-   任一失败 exit 1。用法：node tools/render-check.mjs [?query 如 ?theme=lab]  或  --doc generated/x.lecture.json */
+   任一失败 exit 1。用法：node tools/render-check.mjs [?query 如 ?theme=lab]  或  --doc generated/x.lecture.json
+                       批量：--all-generated（扫 demo/generated/*）
+                       截图：--shot[=1,2,8]（把指定页/全部页渲染成 PNG 供人工看视觉质量，写到临时目录 la-shots；配 --doc 选 doc）*/
 
 import http from 'node:http';
-import { readFile, mkdtemp, rm } from 'node:fs/promises';
+import { readFile, mkdtemp, rm, writeFile, mkdir } from 'node:fs/promises';
 import { accessSync, readdirSync } from 'node:fs';
 import { spawn } from 'node:child_process';
 import os from 'node:os';
@@ -193,11 +195,41 @@ async function verifyScene(cdp, url, label) {
   return { label, fails, ready };
 }
 
+/* 截图模式（--shot）：把指定页渲染成 PNG 供人工评估视觉质量——结构验收(A-F)之外的补充，
+   同一套零依赖无头浏览器。关键：先关掉 reveal 过渡，否则会截到横向滑动的中途（页面看似"错位/截断"，实为动画帧）。 */
+async function captureShots(cdp, url, pages, outDir) {
+  const { targetId } = await cdp.send('Target.createTarget', { url: 'about:blank' });
+  const { sessionId: S } = await cdp.send('Target.attachToTarget', { targetId, flatten: true });
+  await cdp.send('Page.enable', {}, S); await cdp.send('Runtime.enable', {}, S);
+  await cdp.send('Page.navigate', { url }, S);
+  const evalJs = async e => { const r = await cdp.send('Runtime.evaluate', { expression: e, returnByValue: true, awaitPromise: true }, S); return r.result && r.result.value; };
+  for (let i = 0; i < 80; i++) { if (await evalJs(`!!(window.Reveal && Reveal.isReady && Reveal.isReady())`)) break; await sleep(250); }
+  await evalJs('document.fonts.ready').catch(() => {});
+  await evalJs(`Reveal.configure({ transition:'none', backgroundTransition:'none' })`);
+  const total = await evalJs('Reveal.getTotalSlides()') || 0;
+  const want = pages.length ? pages.filter(p => p >= 0 && p < total) : Array.from({ length: total }, (_, i) => i);
+  const saved = [];
+  for (const pg of want) {
+    await evalJs(`(async()=>{ Reveal.slide(${pg}); await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))); await new Promise(r=>setTimeout(r,300)); })()`);
+    const { data } = await cdp.send('Page.captureScreenshot', { format: 'png' }, S);
+    const file = path.join(outDir, `page${pg}.png`);
+    await writeFile(file, Buffer.from(data, 'base64'));
+    saved.push(file);
+  }
+  await cdp.send('Target.closeTarget', { targetId }).catch(() => {});
+  return saved;
+}
+
 async function main() {
   const args = process.argv.slice(2);
   const allGenerated = args.includes('--all-generated');
   const docFlag = args.includes('--doc') ? args[args.indexOf('--doc') + 1] : '';
   const query = args.find(a => a.startsWith('?')) || '';
+  // --shot[=1,2,8] 或 --shot 1,2,8：截图模式（默认全部页）。仅对单份 doc 生效（配 --doc / ?theme=）。
+  let shotMode = false, shotPages = [];
+  const eqShot = args.find(a => a.startsWith('--shot='));
+  if (eqShot) { shotMode = true; shotPages = eqShot.slice(7).split(',').map(Number).filter(Number.isInteger); }
+  else if (args.includes('--shot')) { shotMode = true; const nx = args[args.indexOf('--shot') + 1]; if (nx && !nx.startsWith('-')) shotPages = nx.split(',').map(Number).filter(Number.isInteger); }
 
   // 组装待验收清单：--all-generated 扫 demo/generated/*.lecture.json；否则单份（默认基线）
   let scenes;
@@ -242,7 +274,17 @@ async function main() {
     if (!ver) throw new Error('浏览器 DevTools 端点未就绪');
     cdp = await CDP.attach(ver.webSocketDebuggerUrl);
 
-    for (const sc of scenes) {
+    if (shotMode) {
+      const sc = scenes[0];
+      const qs = sc._qs || new URLSearchParams(sc.doc ? { doc: sc.doc } : {});
+      const q = qs.toString();
+      const url = `http://127.0.0.1:${port}/index.html${q ? '?' + q : ''}`;
+      const outDir = path.join(os.tmpdir(), 'la-shots');
+      await mkdir(outDir, { recursive: true });
+      const saved = await captureShots(cdp, url, shotPages, outDir);
+      console.log(`✓ 截图 ${saved.length} 张（${sc.label}）→ ${outDir}`);
+      saved.forEach(f => console.log('  ' + path.basename(f)));
+    } else for (const sc of scenes) {
       const qs = sc._qs || new URLSearchParams(sc.doc ? { doc: sc.doc } : {});
       const q = qs.toString();
       const url = `http://127.0.0.1:${port}/index.html${q ? '?' + q : ''}`;
@@ -259,6 +301,7 @@ async function main() {
     await cleanup();
   }
 
+  if (shotMode) return;   // 截图模式无验收断言，不走下面的通过/失败汇总
   const failed = results.filter(r => r.fails.length);
   console.log('');
   if (failed.length) {
