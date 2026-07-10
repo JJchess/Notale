@@ -247,6 +247,7 @@
       card.appendChild(el('div', 'bar', '<span class="d"></span><span class="lbl">' + escapeHtml(b.filename || '') + '</span>'));
       const pre = el('pre'); const code = el('code', 'language-' + (b.language || 'text'));
       code.textContent = b.source; pre.appendChild(code); card.appendChild(pre);
+      if (b.caption) { const w = el('div'); w.appendChild(card); w.appendChild(el('div', 'cite', inlineMd(b.caption))); return w; }
       return card;
     },
     compare(b, ctx) {

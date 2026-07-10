@@ -321,3 +321,9 @@
 - **归类**：红线邻近（应显示的公式/强调漏成字面源码）· 加法（补 4 处 sink 的 md 渲染）。
 - **另有发现（记入下轮候选，本轮不动以保原子）**：**code 块的 `b.caption` 被渲染器完全丢弃**（code(b) 只渲 filename+source，从不渲 caption）——5 份 doc 的 code 说明文字（binary-search `关键点：循环条件 `<=`…`、backprop、bubble-sort、matrix 等）静默不可见，属 iter45 类内容丢失。需先定 caption 在 code 卡中的位置/样式并核对 F(纵向溢出)，独立成 iter52。
 - **验证（真机可视 + 全量断言）**：`--shot` 复看 bubble-sort 封面 → 大标题渲成 `O(n²)`/`O(n log n)` 正体数学、facts `317 年`/`1.2 秒` 强调、无美元号残留、无破版；dna 封面 facts `~200 ATP`/`10⁻⁹`/hint `5 次` 正常。**基线 + 全量 19 份 render-check 全绿**（含新公式的 hero title 未触发溢出/裁切回归）；`npm test` 6 步全绿。
+
+## Iter 52 — 修 code 块 caption 被渲染器完全丢弃：5 份 doc 的代码说明静默不可见（内容红线邻近，goal①②）
+- **承 iter51 定位**：iter51 排查 caption sink 时发现 `code(b)` 渲染器只渲 filename bar + source，**从不渲 `b.caption`**——而 schema `codeBlock` 明确声明了 `caption`(第 235 行)、LLM 也在产：普查 **5 份 doc** 的 code 块都带 caption（binary-search `关键点：循环条件 `<=` 确保空区间检查，`mid ± 1` 避免死循环`、backprop `PyTorch…`clip_grad_norm_`…`、bubble-sort、binary-search-algorithm、matrix 幂迭代法），全部静默丢弃、学生看不到。属 iter45(题干消失) 同类：schema 声明且 LLM 产出的内容被渲染器静默扔掉。
+- **修法（镜像 formula 既有惯例，最小改动、复用样式）**：`code(b)` 末尾比照 `formula(b)`(第 218 行"block+caption 在下") 的写法——有 caption 时包一层 div、卡片在上、`el('div','cite', inlineMd(b.caption))` 在下。**复用既有 `.cite` 类**（formula caption 同款，不新增 CSS，反过度设计）；用 `inlineMd` 渲染（caption 含 `` `<=` ``/`mid ± 1` 等行内代码，且与 formula caption 一致）——红线转义由 inlineMd 内部守住。
+- **归类**：红线邻近（schema 声明 + LLM 产出的内容被静默丢弃、应显示未显示）· 加法（补渲染一个此前被扔掉的字段）。证据：5 份 doc 命中（≥2 坐实）。
+- **验证（真机可视 + 全量断言，重点看 F）**：`--shot` 截 binary-search 第 3 页 → 代码卡下方正确显示 caption「关键点：循环条件 `<=` 确保空区间检查，`mid ± 1` 避免死循环」（`<=`/`mid ± 1` 渲成行内 mono、位置自然、与 formula caption 风格一致，修前完全不可见）；**新增 caption 增高了 code 页，重点复验 F(纵向裁切)**——基线 + 全量 19 份 render-check 全绿（含 F，balanceScene 自适应吸收了新增高度、无裁切）；`npm test` 6 步全绿。
