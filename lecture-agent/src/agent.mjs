@@ -6,7 +6,7 @@ import { callCount } from './llm.mjs';
 import { loadSkills, AUTHORING_RULES } from './skills.mjs';
 import { generateBlock, pool } from './delegate.mjs';
 import { validateDoc } from './pipeline.mjs';
-import { planLecture } from './plan.mjs';
+import { planLecture, assignLayouts } from './plan.mjs';
 import { checkCoverage } from './coverage.mjs';
 import { enrichNotes } from './notes.mjs';
 import { condenseMaterial } from './material.mjs';
@@ -61,6 +61,10 @@ export async function generateLecture({ topic, pages = 12, theme = '', audience 
     placeholders.push({ ph: b, scene: s });
   }));
   log(`[plan] ${doc.scenes.length} 页 / ${placeholders.length} block；theme=${doc.theme}`);
+
+  // 版式确定性兜底：多段内容页改 index，确保版式机制真被用上（规划器实测从不主动产出）
+  const laid = assignLayouts(doc, log);
+  if (laid) log(`[layout] ${laid} 页应用 index 版式（打破整份 flow 单调）`);
 
   if (outDir) { mkdirSync(outDir, { recursive: true }); writeFileSync(join(outDir, 'skeleton.json'), JSON.stringify(doc, null, 2)); }
 

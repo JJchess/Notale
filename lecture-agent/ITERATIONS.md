@@ -342,3 +342,12 @@
 - **贯穿全栈（加法）**：schema 加 `layout.kind/steps/anchor/ratio` + `block.id`；validate 成长式软校验（kind enum + 失效 id 只 warn 不阻断）；plan.mjs 教规划器按内容形态选、**明确"示例非穷举、拿不准回落 flow、别炫技"**；render-check 加**断言 I**（index panel/split 列裁切）+ E 居中断言豁免 dataset.layout；SPEC + 技能镜像同步。
 - **端到端才抓到的真集成 bug**：首个真跑规划器产出了 index 却**渲染成 flow**——fan-out 后 `assemble` 用生成块替换占位块**丢了规划器 block id**（final id=undefined），layout 引用全失效→回落。修：`agent.mjs` assemble/docRepair `r.block.id=ph.id`，schema 补 block.id。离线/结构断言全绿却静默 no-op，正是"跑真流程"才暴露。
 - **验证（全绿）**：`npm test` 6 步；`render-check --all-generated` 19 份既有(全 flow)零回归；手写 index+split 测试 doc A–I 全过 + 双向截图确认目录/切入/分割线/无裁切；CDP 驱动 stepping 实测 next/prev/点目录 active 与目录高亮始终同步(0→1→2→3→2→0)；负例(未知 kind/失效 id/空锚)回落 flow、0 console error、无丢失；真跑《高斯消元》规划器自动产出 index、块 id 保留、真实内容渲成 index(截图确认)。
+
+## Iter 55 — 版式确定性兜底：把 index 版式从"从不被用"变成真被用上（去 AI 味/多元性·轨道②，v2 charter 首轮）
+- **v2 charter 首次落地**（LOOP_PROMPT.md）。先看·实测诊断：全语料 20 份 deck、146/146 页全是 flow，iter54 的 index/split 版式**使用率 0**——这正是"50 轮讲义还是老样子"的量化根因：版式机制存在但生成端从不触发。
+- **验证 root cause**：对 TCP 握手/挥手（教科书级分步题材）跑 `--plan-only`，规划器产出 8 页**全无 layout 字段**；即使加强提示词（正向软配额 + 骨架示例带 index）重跑，仍 0 使用——temp 0.4 下模型建了多段内容页(p2 3 步 / p4 4 步)却始终不套 layout 包装。**结论：光靠提示词纠正不动，需确定性介入。**
+- **改（加法·轨道②）**：`src/plan.mjs` 新增 `assignLayouts(doc)`——确定性把"天然多段"内容页(kind=content、≥3 block、无显式 layout)兜底改成 `index`，step 标签从 block.intent 首段派生（截首个标点、≤14 字）。红线守护：只加不删、只碰 content 页、每份至多 2 页且**不相邻**(避免连续两页同版式=新单调)、取 block 最多者。`src/agent.mjs` 在 block-id 规范化后、fan-out 前调用（steps 需引用已存在的 id）。同时把 skeletonSpec 里过度对冲的版式说明("绝大多数页都用默认/拿不准就省略/别为炫技")改成正向软配额("整份清一色竖排是最单调的 AI 味，≥6 页应有 1~2 页非竖排")并补一个 index 骨架示例（提示词侧仍留，作 split 的软引导）。
+- **验证（before/after 真机截图为主验收）**：真跑 `generate "TCP 三次握手与四次挥手" --id tcp-handshake` → p4「四次挥手的机制」(4 步 FIN→ACK→FIN→ACK) 自动获 `layout=index`，恰 1 页命中(其余页 <3 block 不误伤)。`--shot=3` 截图确认：左目录(第一/二/三/四次挥手,带序号徽章,①高亮其余暗置) + 中缝分割线 + 右侧当前子节内容——**正是用户描述的版式，首次在真实生成 deck 里出现**。指标：该 deck 非竖排页 0→1。`render-check --doc` 全绿(含断言 I: index active-panel 不裁切)；`npm test` 6 步全过；`timing` 合计 121.7s / LLM ×19。
+- **红线/成长**：成长式（版式编排从软提示→确定性兜底）。此前提示词软引导实测 2 次不同题材(TCP×2 run)使用率 0，符合"同类问题反复出现才收紧"——本轮把它从"劝模型用"收紧成"确定性保证用"，并记因何收紧。split 仍留提示词软引导(未确定性化,锚点检测更难,待真实需要再做)。
+- **加法/减法**：加法（新增 assignLayouts 机制 + 提示词再平衡）。
+- **取经**：呼应 Slidev/PPTAgent 的"内容形态→版式匹配"——但落地为确定性 assigner 而非纯 LLM 判断，因实测 LLM 判断在此不可靠。

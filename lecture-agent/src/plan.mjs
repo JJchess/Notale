@@ -24,6 +24,7 @@ function skeletonSpec(pages, autoTypes, themeHint, wants, authoringRules) {
   "scenes":[
     {"id":"cover","kind":"hero","notes":"讲者备注","blocks":[{"id":"b_cover","type":"hero","intent":"封面：标题+一句副题"}]},
     {"id":"...","kind":"content","eyebrow":"小节标签(可选)","headline":"页标题","lead":"一句陈述式导语(可选)","notes":"讲者备注","blocks":[{"id":"b1","type":"list","intent":"这一块要讲清什么(一句)"}]},
+    {"id":"...","kind":"content","headline":"某机制的分步拆解","notes":"...","layout":{"kind":"index","steps":[{"label":"第一步","blockIds":["s1"]},{"label":"第二步","blockIds":["s2"]},{"label":"小结","blockIds":["s3"]}]},"blocks":[{"id":"s1","type":"flow","intent":"第一步做什么"},{"id":"s2","type":"flow","intent":"第二步做什么"},{"id":"s3","type":"list","intent":"三步小结"}]},
     {"id":"...","kind":"quiz","headline":"随堂检验","notes":"...","blocks":[{"id":"bq","type":"quiz","intent":"考察点"}]},
     {"id":"recap","kind":"statement","notes":"...","blocks":[{"id":"b_recap","type":"statement","intent":"全课一句话收束"}]},
     {"id":"close","kind":"hero","notes":"...","blocks":[{"id":"b_close","type":"hero","intent":"收尾页"}]}
@@ -33,13 +34,38 @@ function skeletonSpec(pages, autoTypes, themeHint, wants, authoringRules) {
 - scene.kind: hero(封面/收尾, 一个 hero block) | content(常规) | quiz(含一个 quiz block) | statement(含一个 statement block)。
 - 每个 block 是占位 {id(全局唯一), type, intent}。**type 只能从这个清单里选，禁止新造类型名**（map/chart/diagram 都不存在，用 flow/table/list 表达）。**timeline 只用于有明确时间点的编年/历史序列**（年代、发展史、里程碑）——这种别用 flow 凑；**无时间点的步骤/流程/推导/构建过程一律用 flow**（timeline 不是"分步"的意思）。可用 type: ${autoTypes.join(', ')}。
 - 一页通常 1-2 个 block；叙事连贯、由浅入深。（用 index/split 版式的页可承载更多 block，见下）
-- **版式(scene.layout，可选，按内容形态选，绝非必填)**：默认竖排(flow)即可，绝大多数页都用默认。仅当某页内容天然契合时才点用，且**只作用于这一页**：① 一页是【一串可分步的子节】(如 定义→步骤→反例→小结、或一个机制的 3-5 个阶段)→ \`layout:{kind:"index", steps:[{label:"定义", blockIds:["b1"]}, {label:"步骤", blockIds:["b2","b3"]}, ...]}\`，左目录+右侧逐节切入；② 一页有个需【全程对照的锚】(一条核心公式/一张示意/一段题面/一段代码)、其余内容围绕它展开 → \`layout:{kind:"split", anchor:["b1"], ratio:0.4}\`，左锚常驻+右侧递进。blockIds/anchor 引用**本页 blocks 里的 id**。**这只是起步的几种版式、并非穷举**——拿不准就省略(=默认竖排)，别为炫技硬套版式，版式必须服务内容。用了 index/split 的页可以多放几个 block（正好分配到各子节/两栏）。
+- **版式(scene.layout，按内容形态主动选用)**：默认竖排(flow)，但**全篇清一色竖排是最单调的 AI 味**——一份 ≥6 页的讲义里，只要内容契合就应有 **1~2 页**用上非竖排版式，别整份都堆竖排。两种可用版式，**只作用于所在这一页**：① 一页是【一串可分步的子节】(定义→步骤→反例→小结、或一个机制的 3-5 个阶段、握手/挥手这类分步协议、算法的几个阶段)→ \`layout:{kind:"index", steps:[{label:"定义", blockIds:["b1"]}, {label:"步骤", blockIds:["b2","b3"]}, ...]}\`，左目录+右侧逐节上画切入；② 一页有个需【全程对照的锚】(一条核心公式/一张示意/一段题面/一段代码)、其余内容围绕它展开 → \`layout:{kind:"split", anchor:["b1"], ratio:0.4}\`，左锚常驻+右侧要点递进。blockIds/anchor 引用**本页 blocks 里的 id**；用了 index/split 的页要多放几个 block（3-5 个，正好分配到各子节/两栏，别只放 1 个）。**这只是起步的两种、并非穷举**；版式必须服务内容，内容不契合就用竖排，但别因保守而整份都不用。
 - **交互按题材选，别硬塞**：只有**可量化/可模拟**的题材（物理、数学、算法、带动态的经济/生物等）才用 sim（浏览器内真算，放在最能体现的知识点）；**人文/艺术/历史/语言/思辨类绝不硬塞 sim**——把概念套进假公式（如"格律严格度→情感"编个方程）是最糟的 AI 味，宁可不放 sim，改用 compare/flow/table/list 表达对比与结构。无论题材都建议放至少 1 个 quiz（客观或研讨）。${wants ? '用户明确点名的交互: ' + wants + '（题材允许时优先满足；题材不适合 sim 就忽略该项）。' : ''}
 - 主题按课程气质选(${themeHint ? '用户指定: ' + themeHint : 'cartesian 克制人文 / cobalt-grid 研究公报 / lab 暗仪表台(仿真多时)'})。
 - **少而深 > 面面俱到**：覆盖清单只是候选，往往超出 ${pages} 页能承载；**挑与主线最相关的核心点讲透**，次要点并入 notes 或舍弃——一节好课是聚焦的，覆盖不全很正常，别为凑全把页面塞满。
 - **notes 是"有料的讲者稿"，不是一句话元描述**：正文克制、细节沉到 notes——写关键点的展开解释/推导/直觉、学生常见误区、数据的诚实说明、承上启下的衔接。每页 notes 至少 2-3 句、几十字以上；**禁**"总结核心要点""鼓励动手实践"这种没信息量的占位。
 - **AI 助教要充实**：tutor.suggestions 给 3-4 个本课最值得问的问题（贴具体知识点、含常见误区）；tutor.kb 覆盖本课**主要术语与易混概念 4-6 条**（别只给 1-2 条），每条 pattern 用 \`关键词|同义词\` 正则、answer 一句准确的 inline-md。
 ${authoringRules}`;
+}
+
+/** 确定性版式分配：实测规划器常年只产竖排(index/split 使用率 0)，光靠提示词纠正不动。
+ *  这里把"天然多段"的内容页(≥3 block、且没显式指定版式)兜底改成 index 左目录+右侧逐节，
+ *  确保 iter54 的版式机制真的被用上、打破整份 flow 的单调。红线守护：只加不删、只碰 content 页、
+ *  每份至多 2 页且不相邻(避免连续两页同版式=新的单调)，取 block 最多者(收益最大)。渲染器对失效引用有回落，安全。 */
+export function assignLayouts(doc, log = () => {}) {
+  const label = (intent = '', i) => {
+    const first = String(intent).split(/[：:（(，,。、\n]/)[0].trim();
+    const s = first.slice(0, 14);
+    return s ? (first.length > 14 ? s + '…' : s) : `第 ${i + 1} 节`;
+  };
+  const cands = (doc.scenes || [])
+    .map((s, i) => ({ s, i }))
+    .filter(({ s }) => s.kind === 'content' && !s.layout && Array.isArray(s.blocks) && s.blocks.length >= 3)
+    .sort((a, b) => b.s.blocks.length - a.s.blocks.length);
+  let used = 0; const taken = new Set();
+  for (const { s, i } of cands) {
+    if (used >= 2) break;
+    if (taken.has(i - 1) || taken.has(i + 1)) continue;   // 不相邻
+    s.layout = { kind: 'index', steps: s.blocks.map((b, k) => ({ label: label(b.intent, k), blockIds: [b.id] })) };
+    taken.add(i); used++;
+    log(`[layout] scene#${i + 1} "${s.headline || ''}" → index(${s.blocks.length} 节) 确定性分配`);
+  }
+  return used;
 }
 
 /** STORM 阶段二：把多视角覆盖清单综合成一份连贯、递进的 skeleton（大纲生成）。 */
