@@ -873,8 +873,15 @@
     items.forEach((it, i) => { it.classList.toggle('on', i === active); it.classList.toggle('done', i < active); });
     fitCustomLayout(sec);
   }
+  /* 金句页(bigidea)始终纵向居中(CSS)，但大号 pull-quote 遇长句可能超高被裁——balanceScene 跳过 bigidea，
+     故这里专门给它兜底：body 内容超出可用高就 zoom 缩到放下(红线：不裁切)。 */
+  function fitStatement(section) {
+    if (!section || !section.classList.contains('bigidea')) return;
+    const body = section.querySelector('.pad > .body');
+    if (body) fitScroll(body, body.clientHeight);
+  }
   /* 一页的版式自适应统一入口：先把宽公式缩到放下（影响高度），再按新高度做稀疏/超高的纵向平衡，最后处理自定义版式。 */
-  function layoutScene(section) { fitFormulas(section); balanceScene(section); fitCustomLayout(section); }
+  function layoutScene(section) { fitFormulas(section); balanceScene(section); fitCustomLayout(section); fitStatement(section); }
 
   /* ================= 装配 & 启动 ================= */
   /* 默认渲染手写基线 course.lecture.json；?doc=generated/xxx.lecture.json 可预览别的（如 agent 生成的），

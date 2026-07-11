@@ -351,3 +351,11 @@
 - **红线/成长**：成长式（版式编排从软提示→确定性兜底）。此前提示词软引导实测 2 次不同题材(TCP×2 run)使用率 0，符合"同类问题反复出现才收紧"——本轮把它从"劝模型用"收紧成"确定性保证用"，并记因何收紧。split 仍留提示词软引导(未确定性化,锚点检测更难,待真实需要再做)。
 - **加法/减法**：加法（新增 assignLayouts 机制 + 提示词再平衡）。
 - **取经**：呼应 Slidev/PPTAgent 的"内容形态→版式匹配"——但落地为确定性 assigner 而非纯 LLM 判断，因实测 LLM 判断在此不可靠。
+
+## Iter 56 — 金句(statement)页重设计：从"top-left 一小行+65%死白"到撑满画面的纵向居中 pull-quote（去 AI 味/视觉质量·轨道①③）
+- **先看·截图诊断**：`--shot` 抽查 TCP deck，p7 statement/金句页是全 deck 最丑的一页——大段死白：金句文字被挤在**左上角**、下方 ~65% 完全空白；且**左对齐**（金句本该居中，charter 明列"居中只留封面/金句"）；强调词随机衬线斜体、同色无意义（命中"单词斜体救场"红旗）。statement 页几乎每份 deck 都有（收束页），是高频可复用的观感杠杆。
+- **root cause**：`.body{flex:1}` 抢满 flex 列高度 → `section.bigidea .pad{justify-content:center}`(index.html:231) 对它无效，`.q` 顶在满高 body 的**顶部**；而 balanceScene 对 `.bigidea` 提前 return(doc-to-deck.js:810)，金句页既没纵向居中也没防裁切兜底。
+- **改（加法·轨道①③）**：`demo/index.html` — 新增 `section.bigidea .body{display:flex;flex-direction:column;justify-content:center}` 始终纵向居中(修根因)；`.q` 42→54px、max-width 21→24ch、line-height 收紧 → 真正的大号 pull-quote 撑满画面；`.q::before` 加一道 60×4px 主色强调短杠作编辑级锚点(有意识用留白，非 AI slop 的渐变/pill)；`.q em` 从"同色斜体"改为**主色高亮斜体**(强调=有意义的排版device,去 AI 味)；`.q-sub` 转 block+间距。`demo/doc-to-deck.js` — 新增 `fitStatement(section)`：因 balanceScene 跳过 bigidea,专门给放大后的金句兜底 zoom 防裁切(红线:不裁切),接入 layoutScene。
+- **验证（before/after 真机截图为主）**：同一 TCP deck 重渲 p7 — before: 文字缩在左上角、下方大片空白;after: 大号衬线金句纵向居中、撑满画面、上方一道主色短杠锚定。`render-check --doc` 全绿(0 溢出/0 console error);`npm test` 6 步全过。观感指标:金句页有效画面占用 ~35%→~85%,死白基本消除。
+- **红线/成长**：成长式(金句页视觉规格)。属"审美红线"——统一改渲染器/CSS 硬规格,一劳永逸覆盖所有 statement 页(不靠 LLM 每次自觉)。无回归(改动 scoped 到 `section.bigidea`,不碰 cover/content)。
+- **加法/减法**：加法(金句页重设计)。
