@@ -29,7 +29,7 @@ if (v.errors.length) {
 }
 
 /* 2) 结构断言：渲染器 doc-to-deck.js 依赖的不变量 */
-const KIND = new Set(['hero', 'content', 'quiz', 'statement']);
+const KIND = new Set(['hero', 'content', 'quiz', 'statement', 'section']);
 const SIM_ENGINES = new Set(['dynamics1d', 'searchCompare', 'custom', 'widget']);
 const fail = [];
 const note = [];

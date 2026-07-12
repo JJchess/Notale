@@ -8,6 +8,21 @@
   const $ = (s, r = document) => r.querySelector(s);
   const el = (t, c, h) => { const e = document.createElement(t); if (c) e.className = c; if (h != null) e.innerHTML = h; return e; };
 
+  /* ---- 运行时状态（live.html 可重渲时复用） ----
+     KB/SUGG 改为 let：renderDoc 重渲时按新 doc 重新初始化（旧版 const 一次定死，重渲后 AI 助教还用旧词表）。
+     chromeBound/revealInited 是幂等守护：重渲只刷 slides + Reveal.sync()，不重复绑按钮 / 不重复 initialize。 */
+  let currentDoc = null;
+  let KB = [], SUGG = [];
+  let chromeBound = false, revealInited = false;
+  let runnableActivator = null;
+  let rcPortalRAF = null;
+  const readyCallbacks = [];
+  const ctx = {
+    onReady: fn => readyCallbacks.push(fn),
+    registerRunnableActivator: a => { runnableActivator = a; },
+    previewMode: false,
+  };
+
   /* ---------------- 基础工具 ---------------- */
   function mulberry32(a) { return function () { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
   function randn(rng) { let u = 0, v = 0; while (u === 0) u = rng(); while (v === 0) v = rng(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v); }
@@ -321,6 +336,8 @@
     }
   };
   function renderBlock(b, ctx) {
+    /* previewMode 下骨架占位块（无内容字段）→ 渲染成占位卡，不激活任何 sim/Pyodide/widget */
+    if (ctx && ctx.previewMode && !hasContent(b)) return placeholderBlock(b);
     if (b.status === 'pending') { const sk = el('div', 'rc-plot'); sk.style.height = '160px'; sk.appendChild(el('div', 'rc-hint', '生成中…')); return sk; }
     let root;
     try {
@@ -763,6 +780,7 @@
     if (scene.kind === 'hero') sec.className = 'cover';
     if (scene.kind === 'statement') sec.className = 'bigidea';
     if (scene.kind === 'quiz') sec.className = 'quiz';
+    if (scene.kind === 'section') sec.className = 'divider';
     /* 装饰环 */
     for (const r of (scene.decor && scene.decor.rings) || []) {
       const g = el('div', 'geo-ring');
@@ -773,6 +791,16 @@
     const pad = el('div', 'pad');
     if (scene.kind === 'hero') {
       pad.appendChild(renderBlock(scene.blocks[0], ctx));
+    } else if (scene.kind === 'section') {
+      /* 章节分隔页：大号自增序号 + 章节名 + 一句主旨(statement block)——给讲义打节拍、破"每页一个样"的单调。
+         内容据 scene.headline + 其 statement block；缺字段兜底不抛（红线）。 */
+      ctx.sectionNo = (ctx.sectionNo || 0) + 1;
+      pad.appendChild(el('div', 'sec-no', String(ctx.sectionNo).padStart(2, '0')));
+      if (scene.eyebrow) pad.appendChild(el('div', 'eyebrow', escapeHtml(scene.eyebrow)));
+      if (scene.headline) pad.appendChild(el('h2', 'sec-title', inlineMd(scene.headline)));
+      const dek = (scene.blocks || []).find(b => b && b.type === 'statement');
+      const dekText = dek ? dek.statement : scene.lead;
+      if (dekText) pad.appendChild(el('div', 'sec-dek', inlineMd(dekText)));
     } else {
       if (scene.eyebrow) pad.appendChild(el('div', 'eyebrow', escapeHtml(scene.eyebrow)));
       if (scene.headline) {
@@ -807,7 +835,7 @@
      用 offsetHeight（布局像素，不受 reveal 的 CSS 缩放影响），与 clientHeight 同尺度可比。 */
   function balanceScene(section) {
     if (!section) return;
-    if (section.classList.contains('cover') || section.classList.contains('bigidea')) return;
+    if (section.classList.contains('cover') || section.classList.contains('bigidea') || section.classList.contains('divider')) return;
     const body = section.querySelector('.pad > .body');
     if (!body) return;
     /* sim/runnable/widget 的 body 按设计填满，作者显式 centered 也别覆盖 */
@@ -884,28 +912,79 @@
   function layoutScene(section) { fitFormulas(section); balanceScene(section); fitCustomLayout(section); fitStatement(section); }
 
   /* ================= 装配 & 启动 ================= */
-  /* 默认渲染手写基线 course.lecture.json；?doc=generated/xxx.lecture.json 可预览别的（如 agent 生成的），
-     不必覆盖基线。路径相对 demo/（服务器根），只能取 demo/ 下的文件。 */
-  const docUrl = new URLSearchParams(location.search).get('doc') || 'course.lecture.json';
-  const doc = await fetch(docUrl).then(r => r.json());
-  document.title = doc.title;
+  /* 骨架块识别：agent 规划阶段产出的占位 block 仅有 {id,type,intent}，没有真实内容字段。
+     previewMode 下把这些渲染成占位卡（让 live dashboard 能在生成期间看到结构），正式渲染跳过此判断。 */
+  const CONTENT_KEYS = ['title','sub','items','statement','prompt','label','text','source','formula','rows','head','left','right','sides','engine','html','filename','fallbackPoster','answers','choices','steps','cells','events','data','question','nodes','adjList','stages','cite','hint','tag','facts','objective'];
+  function hasContent(b) {
+    if (!b || typeof b !== 'object') return false;
+    for (const k of CONTENT_KEYS) if (b[k] != null && b[k] !== '') return true;
+    return false;
+  }
+  function placeholderBlock(b) {
+    const dp = el('div', 'block-placeholder');
+    dp.innerHTML = '<div class="bp-type">' + escapeHtml(b.type || 'block') + '</div>'
+      + (b.intent ? '<div class="bp-intent">' + escapeHtml(b.intent) + '</div>' : '');
+    return dp;
+  }
 
-  /* 选定主题：内容决定 doc.theme，之后整套讲义强制一致（不支持 per-page 覆盖）。
-     加新主题只需在 index.html 里加一个 :root[data-theme="x"] token 块。
-     ?theme=xxx 仅用于预览/对比不同主题（不改内容），不影响正式产物。 */
-  const themeOverride = new URLSearchParams(location.search).get('theme');
-  document.documentElement.dataset.theme = themeOverride || doc.theme || 'cartesian';
-  refreshThemeColors();
+  /** 全量（重）渲染一整份 doc。首次调用会 Reveal.initialize + 绑 chrome；后续调用仅替换 slides + Reveal.sync()。
+   *  opts.previewMode=true 时骨架占位块渲染成占位卡（不激活 sim/Pyodide），供 live dashboard 生成期间用。 */
+  function renderDoc(doc, opts = {}) {
+    currentDoc = doc;
+    ctx.previewMode = !!opts.previewMode;
+    document.title = doc.title || '讲义';
 
-  const readyCallbacks = [];
-  let runnableActivator = null;
-  const ctx = {
-    onReady: fn => readyCallbacks.push(fn),
-    registerRunnableActivator: a => { runnableActivator = a; }
-  };
+    /* 主题：?theme=xxx 仅用于预览/对比（不改内容）；默认用 doc.theme 或 cartesian。
+       重渲时尊重 URL override 可让 live 预览也支持 ?theme= 切换对比。 */
+    const themeOverride = new URLSearchParams(location.search).get('theme');
+    document.documentElement.dataset.theme = themeOverride || doc.theme || 'cartesian';
+    refreshThemeColors();
 
-  const slidesEl = $('#slides');
-  for (const scene of doc.scenes) slidesEl.appendChild(renderScene(scene, ctx));
+    /* AI 助教数据按当前 doc 重新初始化（重渲后词表跟着更新） */
+    KB = ((doc.tutor || {}).kb || []).map(k => [new RegExp(k.pattern, k.flags || ''), inlineMd(k.answer)]);
+    SUGG = (doc.tutor || {}).suggestions || [];
+
+    const slidesEl = $('#slides');
+    if (!slidesEl) return;
+    slidesEl.innerHTML = '';
+    for (const scene of doc.scenes) {
+      const sec = renderScene(scene, ctx);
+      if (scene.id) sec.dataset.sceneId = scene.id;
+      slidesEl.appendChild(sec);
+    }
+
+    if (!revealInited) {
+      bindChrome();
+      Reveal.initialize({ hash: true, slideNumber: 'c/t', controls: false, progress: true, center: false,
+        transition: 'slide', backgroundTransition: 'fade', width: 1280, height: 720, margin: 0,
+        viewDistance: 5, hashOneBasedIndex: true, plugins: [RevealHighlight] });
+      Reveal.on('ready', e => { readyCallbacks.forEach(fn => fn()); activateRunCell(e.currentSlide); updateCtx(); refreshNotes(); requestAnimationFrame(() => { layoutScene(e.currentSlide); syncIndex(e.currentSlide); });
+        if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { layoutScene(Reveal.getCurrentSlide()); syncIndex(); }); });
+      Reveal.on('slidechanged', e => { activateRunCell(e.currentSlide); updateCtx(); refreshNotes(); requestAnimationFrame(() => { layoutScene(e.currentSlide); syncIndex(e.currentSlide); }); });
+      Reveal.on('fragmentshown', () => requestAnimationFrame(() => syncIndex()));
+      Reveal.on('fragmenthidden', () => requestAnimationFrame(() => syncIndex()));
+      new ResizeObserver(() => { if (window.__rcCM) requestAnimationFrame(() => window.__rcCM.refresh()); }).observe($('.reveal'));
+      revealInited = true;
+    } else {
+      Reveal.sync();
+      Reveal.slide(0);
+      requestAnimationFrame(() => { const cur = Reveal.getCurrentSlide(); if (cur) { layoutScene(cur); syncIndex(cur); } activateRunCell(cur); });
+    }
+  }
+
+  /** 增量替换一页 section（live dashboard：单个 block 生成完只重渲该页，不刷整份 deck）。 */
+  function rerenderScene(sceneId, scene) {
+    if (!currentDoc) return;
+    const slidesEl = $('#slides');
+    if (!slidesEl) return;
+    const old = slidesEl.querySelector('section[data-scene-id="' + CSS.escape(sceneId) + '"]');
+    if (!old) return;
+    const fresh = renderScene(scene, ctx);
+    fresh.dataset.sceneId = sceneId;
+    old.replaceWith(fresh);
+    if (window.Reveal && Reveal.sync) Reveal.sync();
+    requestAnimationFrame(() => { layoutScene(fresh); syncIndex(fresh); activateRunCell(fresh); });
+  }
 
   /* ---- quiz 判分（事件委托） ---- */
   document.addEventListener('click', e => {
@@ -925,9 +1004,7 @@
     else { ov.innerHTML = notesHtml(); ov.classList.add('show'); $('#btnNotes').classList.add('on'); } }
   function refreshNotes() { if ($('#notesOv').classList.contains('show')) $('#notesOv').innerHTML = notesHtml(); }
 
-  /* ---- AI 助教（数据驱动：doc.tutor） ---- */
-  const KB = ((doc.tutor || {}).kb || []).map(k => [new RegExp(k.pattern, k.flags || ''), inlineMd(k.answer)]);
-  const SUGG = (doc.tutor || {}).suggestions || [];
+  /* ---- AI 助教（数据驱动：doc.tutor，在 renderDoc 里按当前 doc 刷新 KB/SUGG） ---- */
   function curInfo() { const s = Reveal.getCurrentSlide();
     const t = s && (s.querySelector('.headline')?.textContent || s.querySelector('h2,h1')?.textContent || s.querySelector('.eyebrow')?.textContent) || '本页';
     return t.trim(); }
@@ -942,7 +1019,6 @@
     b.appendChild(el('div', 'msg a', '<div class="who">✦ AI 助教 · 已注入本页上下文</div>' + ans)); b.scrollTop = b.scrollHeight; }
 
   /* ---- 传送门（FE-48）：编辑器挂 body 下，rAF 同步屏幕矩形 ---- */
-  let rcPortalRAF = null;
   function syncPortalRect() {
     const anchor = $('#rcEditor'), portal = $('#rcEditorPortal');
     if (!anchor || !portal) return;
@@ -960,28 +1036,31 @@
     if (!rcPortalRAF) { const loop = () => { syncPortalRect(); rcPortalRAF = requestAnimationFrame(loop); }; loop(); }
   }
 
-  /* ---- chrome 事件 ---- */
-  $('#btnTutor').onclick = () => $('#tutorPanel').classList.contains('open') ? closeTutor() : openTutor();
-  $('#tutorClose').onclick = closeTutor;
-  $('#tutorSend').onclick = () => { const v = $('#tutorInput').value.trim(); if (v) { ask(v); $('#tutorInput').value = ''; } };
-  $('#tutorInput').addEventListener('keydown', e => { if (e.key === 'Enter') $('#tutorSend').click(); });
-  $('#btnNotes').onclick = toggleNotes;
-  $('#btnOverview').onclick = () => Reveal.toggleOverview();
-  $('#btnPrev').onclick = () => Reveal.prev();
-  $('#btnNext').onclick = () => Reveal.next();
-  document.addEventListener('keydown', e => { if (e.target.tagName === 'INPUT') return; if (e.key === 'a' || e.key === 'A') $('#btnTutor').click(); });
+  /** 绑 chrome 事件（按钮/快捷键/quiz 已在上面绑 document）。.onclick 赋值幂等但只绑一次更干净。 */
+  function bindChrome() {
+    if (chromeBound) return; chromeBound = true;
+    $('#btnTutor').onclick = () => $('#tutorPanel').classList.contains('open') ? closeTutor() : openTutor();
+    $('#tutorClose').onclick = closeTutor;
+    $('#tutorSend').onclick = () => { const v = $('#tutorInput').value.trim(); if (v) { ask(v); $('#tutorInput').value = ''; } };
+    $('#tutorInput').addEventListener('keydown', e => { if (e.key === 'Enter') $('#tutorSend').click(); });
+    $('#btnNotes').onclick = toggleNotes;
+    $('#btnOverview').onclick = () => Reveal.toggleOverview();
+    $('#btnPrev').onclick = () => Reveal.prev();
+    $('#btnNext').onclick = () => Reveal.next();
+    document.addEventListener('keydown', e => { if (e.target.tagName === 'INPUT') return; if (e.key === 'a' || e.key === 'A') $('#btnTutor').click(); });
+  }
 
-  /* ---- reveal 启动 ---- */
-  Reveal.initialize({ hash: true, slideNumber: 'c/t', controls: false, progress: true, center: false,
-    transition: 'slide', backgroundTransition: 'fade', width: 1280, height: 720, margin: 0,
-    viewDistance: 5, hashOneBasedIndex: true, plugins: [RevealHighlight] });
-  Reveal.on('ready', e => { readyCallbacks.forEach(fn => fn()); activateRunCell(e.currentSlide); updateCtx(); refreshNotes(); requestAnimationFrame(() => { layoutScene(e.currentSlide); syncIndex(e.currentSlide); });
-    /* 字体加载完会改变块高度 → 字体就绪后按当前页重测一次，避免用未换字体的旧高度居中 */
-    if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { layoutScene(Reveal.getCurrentSlide()); syncIndex(); }); });
-  Reveal.on('slidechanged', e => { activateRunCell(e.currentSlide); updateCtx(); refreshNotes(); requestAnimationFrame(() => { layoutScene(e.currentSlide); syncIndex(e.currentSlide); }); });
-  /* index 版式：翻 fragment 即步进子节（复用 reveal 导航），据当前 fragment index 切 active panel + 高亮目录 */
-  Reveal.on('fragmentshown', () => requestAnimationFrame(() => syncIndex()));
-  Reveal.on('fragmenthidden', () => requestAnimationFrame(() => syncIndex()));
-  /* reveal 缩放变化时 CodeMirror 度量会过期（FE-48），ResizeObserver 兜底 refresh */
-  new ResizeObserver(() => { if (window.__rcCM) requestAnimationFrame(() => window.__rcCM.refresh()); }).observe($('.reveal'));
+  /* ---- 自动启动（index.html 兼容路径：?doc= 或默认 course.lecture.json） ----
+     默认渲染手写基线 course.lecture.json；?doc=generated/xxx.lecture.json 可预览别的（如 agent 生成的），
+     不必覆盖基线。路径相对 demo/（服务器根），只能取 demo/ 下的文件。
+     ?live=1 时跳过：live.html Dashboard 由控制器自己驱动 renderDoc（订阅 SSE 后增量渲染），
+     不做初始 fetch——避免短暂闪现基线 deck 与正在生成的 doc 冲突。 */
+  if (!new URLSearchParams(location.search).has('live')) {
+    const docUrl = new URLSearchParams(location.search).get('doc') || 'course.lecture.json';
+    const initialDoc = await fetch(docUrl).then(r => r.json());
+    renderDoc(initialDoc);
+  }
+
+  /* ---- live.html 公共 API：renderDoc/rerenderScene 让 Dashboard 增量更新预览 ---- */
+  window.LectureDeck = { renderDoc, rerenderScene, refreshTheme: refreshThemeColors };
 })();

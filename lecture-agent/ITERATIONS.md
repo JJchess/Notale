@@ -359,3 +359,12 @@
 - **验证（before/after 真机截图为主）**：同一 TCP deck 重渲 p7 — before: 文字缩在左上角、下方大片空白;after: 大号衬线金句纵向居中、撑满画面、上方一道主色短杠锚定。`render-check --doc` 全绿(0 溢出/0 console error);`npm test` 6 步全过。观感指标:金句页有效画面占用 ~35%→~85%,死白基本消除。
 - **红线/成长**：成长式(金句页视觉规格)。属"审美红线"——统一改渲染器/CSS 硬规格,一劳永逸覆盖所有 statement 页(不靠 LLM 每次自觉)。无回归(改动 scoped 到 `section.bigidea`,不碰 cover/content)。
 - **加法/减法**：加法(金句页重设计)。
+
+## Iter 57 — 新增 section 章节分隔页（博物馆式"编号大节"）+ 确定性插入：给讲义打节拍、破"每页一个样"（多元性·轨道②③）
+- **先看·跨主题抽样**：`--shot` 扫 cartesian(宋词)/lab(光合)/cobalt(TCP) 三主题，发现单页观感已不错，但**结构节奏平铺**——每张内容页都是 eyebrow+大标题+lead+body 同一骨架，全程无"章节分隔"，是"老样子"的结构性来源。charter 明列需 section 分隔页。
+- **改（加法·轨道②③）**：新增 `scene.kind:"section"` 章节分隔页——大号自增序号(01/02，serif) + eyebrow 部分标签 + 章节名(大 serif) + 一道主色分隔杠 + 一句主旨(statement block)，书籍 part-title 式、垂直居中。改动：`demo/doc-to-deck.js`(renderScene 加 section 分支 + balanceScene 跳过 divider)、`demo/index.html`(`.divider`/`.sec-no`/`.sec-title`/`.sec-dek` CSS)、schema kind enum + validate(section 须含 statement block) + `render-verify.mjs` KIND 集补 section(否则离线断言报"未知 kind") + SPEC.md + 技能镜像 sync。
+- **确定性插入 `insertSections()`（plan.mjs，focused 调用）**：实测规划器对 section 使用率 0（**同 index/split，已第 2 次复现"LLM 忽略可选编排页"**）——按 charter 哲学A"≥2 次复现即收紧"，改成确定性：仅内容页≥5 时，一次 focused 调用判定 2-3 个大部分边界(start/title/thesis)，在各部分首个内容页前插 section；护栏：分隔页数 > 内容页半数则不插（避免"分隔+单页"碎片单调）、无清晰分界/调用失败→不插。分隔页的 statement 占位随 fan-out 正常生成（不 mock）。
+- **验证（before/after 真机截图为主）**：① 手写 test doc 截图——section 页渲染出"01/第一部分/意象与情感"+分隔杠+accent 斜体强调，序号 01→02 自增正确。② 真跑 `generate 关系型数据库 --pages 14 --id rdbms-intro` → 自动插入 p2 section「表设计与范式化」，其 dek 经 fan-out 生成为**真实具体**"users 表拆分为 user_profiles 和 user_auth 后，登录查询减少 40% 列扫描"（有据、有数字、非 mock）；整份 deck 出现 section+split+index+quiz+statement 多版式并存。`render-verify`(修 KIND 后)、`render-check`(0 溢出/0 err)、`npm test` 6 步全绿。观感·多元指标：单份 deck 版式种类 1(全 flow) → 5 种；新增结构节拍。
+- **红线/成长**：成长式，且第 2 次复现后收紧为确定性（记因何收紧）。红线守护：缺字段兜底不抛、失效不插不崩、statement 走 fan-out 不 mock、改动 scoped。
+- **加法/减法**：加法（新增页型 + 确定性插入机制）。
+- **取经**：呼应用户"博物馆/编辑设计"方向——section 分隔页即"numbered section styles / 章节分隔 / 视觉节奏"的落地；亦对齐 Slidev 语义 layout 枚举思路。

@@ -23,6 +23,7 @@ function skeletonSpec(pages, autoTypes, themeHint, wants, authoringRules) {
   "tutor":{"suggestions":["建议问题"],"kb":[{"pattern":"关键词|同义词","answer":"本地应答(inline-md)"}]},
   "scenes":[
     {"id":"cover","kind":"hero","notes":"讲者备注","blocks":[{"id":"b_cover","type":"hero","intent":"封面：标题+一句副题"}]},
+    {"id":"...","kind":"section","eyebrow":"第一部分(可选)","headline":"章节名","notes":"...","blocks":[{"id":"b_sec1","type":"statement","intent":"本章一句话主旨(章节分隔页,只此一句)"}]},
     {"id":"...","kind":"content","eyebrow":"小节标签(可选)","headline":"页标题","lead":"一句陈述式导语(可选)","notes":"讲者备注","blocks":[{"id":"b1","type":"list","intent":"这一块要讲清什么(一句)"}]},
     {"id":"...","kind":"content","headline":"某机制的分步拆解","notes":"...","layout":{"kind":"index","steps":[{"label":"第一步","blockIds":["s1"]},{"label":"第二步","blockIds":["s2"]},{"label":"小结","blockIds":["s3"]}]},"blocks":[{"id":"s1","type":"flow","intent":"第一步做什么"},{"id":"s2","type":"flow","intent":"第二步做什么"},{"id":"s3","type":"list","intent":"三步小结"}]},
     {"id":"...","kind":"quiz","headline":"随堂检验","notes":"...","blocks":[{"id":"bq","type":"quiz","intent":"考察点"}]},
@@ -31,7 +32,8 @@ function skeletonSpec(pages, autoTypes, themeHint, wants, authoringRules) {
   ]}
 规则:
 - **页数严格控制在 ${pages} 页左右（±1），不要显著超出**——别为凑"封面+内容+测验+回顾+收尾"的模板而堆页。第一页 kind:hero(封面, 恰含一个 hero block)。页数充裕(≥7)时才加 statement 回顾页 + hero 收尾；**页数少(≤4)时省掉回顾/收尾页，封面后直接进核心内容**（3 页 ≈ 封面 + 1~2 页内容）。
-- scene.kind: hero(封面/收尾, 一个 hero block) | content(常规) | quiz(含一个 quiz block) | statement(含一个 statement block)。
+- scene.kind: hero(封面/收尾, 一个 hero block) | content(常规) | quiz(含一个 quiz block) | statement(含一个 statement block) | **section(章节分隔页：大号序号+章节名+一句主旨,含一个 statement block)**。
+- **章节节拍**：页数充裕(≥8)且内容明显分 2-3 大主题时，在每个大主题**开始前**插一个 \`kind:"section"\` 分隔页（headline=章节名、一个 statement block=本章一句话主旨），给讲义打节拍、避免"每页一个样"的平铺单调。别滥用——3-5 页的短讲义或单一主题不插；分隔页只做标题不塞内容。
 - 每个 block 是占位 {id(全局唯一), type, intent}。**type 只能从这个清单里选，禁止新造类型名**（map/chart/diagram 都不存在，用 flow/table/list 表达）。**timeline 只用于有明确时间点的编年/历史序列**（年代、发展史、里程碑）——这种别用 flow 凑；**无时间点的步骤/流程/推导/构建过程一律用 flow**（timeline 不是"分步"的意思）。可用 type: ${autoTypes.join(', ')}。
 - 一页通常 1-2 个 block；叙事连贯、由浅入深。（用 index/split 版式的页可承载更多 block，见下）
 - **版式(scene.layout，按内容形态主动选用)**：默认竖排(flow)，但**全篇清一色竖排是最单调的 AI 味**——一份 ≥6 页的讲义里，只要内容契合就应有 **1~2 页**用上非竖排版式，别整份都堆竖排。两种可用版式，**只作用于所在这一页**：① 一页是【一串可分步的子节】(定义→步骤→反例→小结、或一个机制的 3-5 个阶段、握手/挥手这类分步协议、算法的几个阶段)→ \`layout:{kind:"index", steps:[{label:"定义", blockIds:["b1"]}, {label:"步骤", blockIds:["b2","b3"]}, ...]}\`，左目录+右侧逐节上画切入；② 一页有个需【全程对照的锚】(一条核心公式/一张示意/一段题面/一段代码)、其余内容围绕它展开 → \`layout:{kind:"split", anchor:["b1"], ratio:0.4}\`，左锚常驻+右侧要点递进。blockIds/anchor 引用**本页 blocks 里的 id**；用了 index/split 的页要多放几个 block（3-5 个，正好分配到各子节/两栏，别只放 1 个）。**这只是起步的两种、并非穷举**；版式必须服务内容，内容不契合就用竖排，但别因保守而整份都不用。
@@ -41,6 +43,46 @@ function skeletonSpec(pages, autoTypes, themeHint, wants, authoringRules) {
 - **notes 是"有料的讲者稿"，不是一句话元描述**：正文克制、细节沉到 notes——写关键点的展开解释/推导/直觉、学生常见误区、数据的诚实说明、承上启下的衔接。每页 notes 至少 2-3 句、几十字以上；**禁**"总结核心要点""鼓励动手实践"这种没信息量的占位。
 - **AI 助教要充实**：tutor.suggestions 给 3-4 个本课最值得问的问题（贴具体知识点、含常见误区）；tutor.kb 覆盖本课**主要术语与易混概念 4-6 条**（别只给 1-2 条），每条 pattern 用 \`关键词|同义词\` 正则、answer 一句准确的 inline-md。
 ${authoringRules}`;
+}
+
+/** 章节分隔页·确定性插入：实测规划器几乎从不主动产出可选结构页(section，同 index/split ——已第 2 次复现"LLM 忽略可选编排")。
+ *  focused 单一目的调用(远比大骨架提示里塞一条可靠)：仅长讲义(内容页≥5、总页≥8)才判定 2-3 个大部分边界，
+ *  在各部分首个内容页前插一个 section 分隔页(headline=部分名 + 一个 statement 占位块=本部分主旨,随 fan-out 生成)。
+ *  红线守护：无清晰分界/调用失败→不插(graceful)；只加分隔页不删改既有内容页；插入的 statement 走占位→fan-out,不 mock。 */
+export async function insertSections(doc, log = () => {}) {
+  const scenes = doc.scenes || [];
+  const contentIdx = scenes.map((s, i) => ({ s, i })).filter(({ s }) => s.kind === 'content');
+  if (contentIdx.length < 5) return 0;                           // 内容页太少不打节拍（分隔页只在多页大部分时有意义）
+  if (scenes.some(s => s.kind === 'section')) return 0;          // 规划器已给则尊重，不重复
+  const list = contentIdx.map(({ s }, k) => `${k + 1}. ${typeof s.headline === 'string' && s.headline ? s.headline : (s.eyebrow || '(无题)')}`).join('\n');
+  const sys = `你是讲义编排师。下面是一节课按顺序的内容页标题。判断它们是否自然分成 2-3 个连贯的大部分(part)。`
+    + `**只有确实存在清晰主题分界时才分；牵强、或本就单一主题就返回空**。每个 part 给：start(起始页序号,对应下面编号)、title(部分标题,4-12字)、thesis(一句话主旨,≤30字)。`
+    + `第一部分通常从第 1 页起。只输出 JSON：{ "parts": [ { "start": 1, "title": "…", "thesis": "…" } ] }；无清晰分界则 {"parts":[]}。`;
+  const user = `内容页标题（共 ${contentIdx.length} 页）：\n${list}\n\n输出 parts JSON。`;
+  let parts;
+  try { parts = (parseJson(await chat([{ role: 'system', content: sys }, { role: 'user', content: user }], { temperature: 0.3 })).parts) || []; }
+  catch { return 0; }
+  if (!Array.isArray(parts) || parts.length < 2) return 0;                   // <2 部分不值得插分隔
+  if (parts.length > Math.ceil(contentIdx.length / 2)) return 0;             // 分隔页数 > 内容页半数 = 每部分不足 2 页 → 过度打点，不插（避免"分隔+单页"的碎片单调）
+  const seen = new Set();
+  const targets = parts.map(p => {
+    const k = (+p.start || 0) - 1;
+    if (k < 0 || k >= contentIdx.length) return null;
+    const title = String(p.title || '').trim(), thesis = String(p.thesis || '').trim();
+    if (!title || !thesis) return null;
+    return { sceneIndex: contentIdx[k].i, title, thesis };
+  }).filter(t => t && !seen.has(t.sceneIndex) && seen.add(t.sceneIndex))
+    .sort((a, b) => b.sceneIndex - a.sceneIndex);                // 降序插入，避免索引错位
+  let n = 0;
+  for (const t of targets) {
+    scenes.splice(t.sceneIndex, 0, {
+      id: `section-${t.sceneIndex}`, kind: 'section', headline: t.title,
+      notes: `章节分隔：${t.title}。${t.thesis}`,
+      blocks: [{ id: `sec${t.sceneIndex}s`, type: 'statement', intent: `本部分「${t.title}」一句话主旨：${t.thesis}` }],
+    });
+    n++; log(`[section] 页 ${t.sceneIndex + 1} 前插入分隔页「${t.title}」`);
+  }
+  return n;
 }
 
 /** 确定性版式分配：实测规划器常年只产竖排(index/split 使用率 0)，光靠提示词纠正不动。
@@ -92,7 +134,11 @@ export async function planLecture({ topic, pages = 12, theme = '', audience = ''
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
       const raw = await chat([{ role: 'system', content: sys }, { role: 'user', content: user }], { temperature: 0.4 });
-      return { doc: parseJson(raw), perspectives, timing: { perspectiveMs, skeletonMs: Date.now() - _ts } };
+      const doc = parseJson(raw);
+      // 章节分隔页确定性插入（规划器几乎从不主动产 section；focused 调用判定部分边界）——在返回骨架前完成，
+      // 使分隔页的 statement 占位块随后进入 fan-out 正常生成（不 mock）。失败/无分界则不插（graceful）。
+      try { const secs = await insertSections(doc, log); if (secs) log(`[section] 插入 ${secs} 个章节分隔页（打节拍，破每页一个样）`); } catch (e) { log('[section] 跳过: ' + String(e.message || e).slice(0, 50)); }
+      return { doc, perspectives, timing: { perspectiveMs, skeletonMs: Date.now() - _ts } };
     } catch (e) { lastErr = e; if (attempt < 3) { log(`[plan] 骨架生成第 ${attempt} 次失败(${String(e.message || e).slice(0, 50)})，退避重试…`); await new Promise(r => setTimeout(r, 3000 * attempt)); } }
   }
   throw new Error('骨架生成失败（网络/限流/解析）: ' + String(lastErr?.message || lastErr).slice(0, 100));

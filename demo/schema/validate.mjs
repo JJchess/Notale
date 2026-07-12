@@ -269,7 +269,7 @@ function checkScene(s, path, state, seenIds) {
   if (req(s, 'id', v => isStr(v) && /^[a-z0-9][a-z0-9-]*$/.test(v), path, 'kebab-case id')) {
     if (seenIds.has(s.id)) err(path + '.id', 'scene id 重复: ' + s.id); seenIds.add(s.id);
   }
-  req(s, 'kind', v => ['hero', 'content', 'quiz', 'statement'].includes(v), path, 'hero|content|quiz|statement');
+  req(s, 'kind', v => ['hero', 'content', 'quiz', 'statement', 'section'].includes(v), path, 'hero|content|quiz|statement|section');
   req(s, 'notes', v => isStr(v) && v.length > 0, path, '非空字符串（演讲者备注必填）');
   for (const k of ['eyebrow', 'headline', 'lead']) opt(s, k, isStr, path, 'string');
   if (s.headline) checkInline(s.headline, path + '.headline');
@@ -278,6 +278,7 @@ function checkScene(s, path, state, seenIds) {
   if (s.kind === 'hero' && (s.blocks.length !== 1 || s.blocks[0].type !== 'hero')) err(path + '.blocks', 'hero 页应恰好含一个 hero block');
   if (s.kind === 'statement' && !s.blocks.some(b => b.type === 'statement')) err(path + '.blocks', 'statement 页应含 statement block');
   if (s.kind === 'quiz' && !s.blocks.some(b => b.type === 'quiz')) err(path + '.blocks', 'quiz 页应含 quiz block');
+  if (s.kind === 'section' && !s.blocks.some(b => b.type === 'statement')) err(path + '.blocks', 'section 分隔页应含一个 statement block（章节一句话主旨）');
   checkLayout(s, path);
   s.blocks.forEach((b, i) => checkBlock(b, path + `.blocks[${i}]`, state));
 }

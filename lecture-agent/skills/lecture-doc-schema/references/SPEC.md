@@ -27,6 +27,7 @@ LectureDoc                     一门课
 | `content` | 常规内容页 | eyebrow + headline (+lead) + blocks 垂直流 |
 | `quiz` | 测验页 | 同 content；含一个 `quiz` block（客观题自动接判分交互） |
 | `statement` | 全课回顾式大字陈述页 | eyebrow + 一个 `statement` block，垂直居中 |
+| `section` | 章节分隔页（打节拍） | 大号自增序号 + eyebrow(可选) + headline(章节名) + 一个 `statement` block(本章一句话主旨)，垂直居中；≥8 页且分多主题时插于各主题前 |
 
 **scene.layout 决定本页版式（per-scene，可只用于某一页；开放集，起步几种）：**
 
