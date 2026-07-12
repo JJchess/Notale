@@ -377,3 +377,11 @@
 - **红线/成长**：成长（token 词汇 + 新块）。token 作"词汇"每主题参数化以**增**多元，非 homogenize（守住用户纠偏）；存量硬编码只迁核心几处、加法为主防回归。
 - **加法/减法**：加法。**取经**：DESIGN_RESEARCH T1(分层字阶)/T3(模数间距)/T5(行宽)/T6(左对齐)/T12(pullquote)。
 - **下一轮**：iter59 = compose 中间层核心（12 列区域图 + figure-context/marginalia preset）。
+
+## Iter 59 — compose 中间层（freeform 与固定版式之间）+ sidenote 旁注 preset + 确定性分配（多元性·轨道②，NAMING 首个消费者）
+- **背景**：三层版式光谱的中间层此前是空的（固定 flow/index/split ↔ freeform 逃生舱）。compose = 一等公民、建在 12 列栅格上、组合自由但视觉受 token 约束（扩展 freeform 的"自由在布局不在裸视觉"，去掉 ⚠ 污名）。也是命名规范 NAMING 的首个消费者（compose/sidenote/role 全走本地名、过 lint）。
+- **改（加法·轨道②）**：`demo/doc-to-deck.js` 新增 `sceneLayouts.compose`——12 列 `areas` 区域图（块声明 `col/row` 线号 + `role` 驱动样式）+ `composePresets`（`sidenote`=主栏+右窄旁注，据 blocks 确定性展开）+ 栅格辅助 `colSpanCss/rowSpanCss`；`fitCustomLayout` 加 compose 各区域防裁切。`demo/index.html` 加 `.layout-compose`/`.compose-area`/`.role-aside`(发丝线+低对比窄栏)等 CSS（全走 token）。schema：`layout.kind` 加 compose + `cols/areas/preset(sidenote)/role` 字段。`validate.mjs` checkLayout 认 compose + areas id 软校验。`render-check.mjs` 断言 I 扩到 compose 各区域不裁切。
+- **确定性分配（plan.mjs assignLayouts）**：恰 2 块、末块为 callout 的内容页 → `compose/sidenote`（与 index 的 ≥3 块不重叠、每份≤2）。规划器实测不自选可选编排（**第 3 次复现**，见 [[FE-59]]），故沿用确定性化。
+- **验证（离线，额度受限无真机生成）**：手写 test doc 两页——`preset:sidenote`（list 主栏 + callout 低对比右窄栏+发丝分隔线）与显式 `areas`（formula 主区 cols1-8 + list 旁注区 cols8-13 + role 样式）均渲染正确；`render-check` 全绿（0 溢出，含断言 I compose 区域不裁切）。确定性分配纯函数离线验证：2块+callout→sidenote、3块→index、2块非callout→不分配，符合预期。`npm test` 6 步全过；命名 lint 零告警（compose/sidenote/role/compose-area 全合 NAMING）。
+- **红线/成长**：成长（新版式）。红线守护：无有效区域→回落 flow、未引用块整行全宽追加不丢、视觉只走 token（不产 slop）、缺字段不崩。**真机生成采用率待额度恢复后验证**（机制与确定性分配逻辑已离线证实）。
+- **加法/减法**：加法。**取经**：DESIGN_RESEARCH T18(12列栅格)/T19(非对称)/T23(marginalia→sidenote)。figure/specimen 等 preset 待 iter60（需图/展品块）。

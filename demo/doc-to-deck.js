@@ -718,6 +718,33 @@
      这里是起步的几种，规划器可按内容自选、拿不准回落 flow（见 plan.mjs skeletonSpec）。 */
   function blocksById(scene) { const m = {}; for (const b of scene.blocks) if (b && b.id != null) m[b.id] = b; return m; }
 
+  /* compose 版式的栅格辅助：把 [start,end] 线号对转成 CSS grid-column/row 值（越界钳制，缺 end 则单格/自动流）。 */
+  function gridLine(v, max) { const n = parseInt(v, 10); return Number.isFinite(n) ? Math.min(max, Math.max(1, n)) : null; }
+  function colSpanCss(pair, cols) {
+    if (!Array.isArray(pair)) return null;
+    const s = gridLine(pair[0], cols + 1); if (s == null) return null;
+    const e = gridLine(pair[1], cols + 1);
+    return e != null && e > s ? s + ' / ' + e : '' + s;
+  }
+  function rowSpanCss(pair) {
+    if (!Array.isArray(pair)) return null;
+    const s = gridLine(pair[0], 999); if (s == null) return null;
+    const e = gridLine(pair[1], 999);
+    return e != null && e > s ? s + ' / ' + e : null;   // 不给 end 就交给 grid 自动流
+  }
+  /* compose preset = 罐装 areas 图（据 scene.blocks 确定性展开）。加一个 preset = 加一种编辑版式。 */
+  const composePresets = {
+    // sidenote 旁注（← marginalia · DESIGN_RESEARCH T23）：主栏(前面的块) + 右窄侧栏(末块作低对比语境)。需 ≥2 块。
+    sidenote(scene) {
+      const bs = scene.blocks || [];
+      if (bs.length < 2) return [];
+      return [
+        { blockIds: bs.slice(0, -1).map(b => b.id), col: [1, 9], role: 'main' },
+        { blockIds: [bs[bs.length - 1].id], col: [9, 13], role: 'aside' },
+      ];
+    },
+  };
+
   const sceneLayouts = {
     flow(scene, ctx, body, L) {
       body.style.display = 'flex'; body.style.flexDirection = 'column';
@@ -778,6 +805,44 @@
       const mCol = el('div', 'split-col split-main');
       for (const b of rest) mCol.appendChild(renderBlock(b, ctx));
       body.appendChild(aCol); body.appendChild(mCol);
+    },
+
+    /* compose：freeform 与固定版式之间的中间层——12 列区域图，块声明列/行线号 + role(驱动 token 化样式)。
+       preset 展开成 areas（同一机制）。红线：未引用 block 追加全宽不丢；无有效区域 → 回落 flow；视觉只走 token。 */
+    compose(scene, ctx, body, L) {
+      const map = blocksById(scene);
+      const cols = Math.min(12, Math.max(2, parseInt(L.cols, 10) || 12));
+      let areas = Array.isArray(L.areas) ? L.areas : [];
+      if (!areas.length && L.preset && typeof composePresets[L.preset] === 'function') areas = composePresets[L.preset](scene);
+      const used = new Set(); const resolved = [];
+      for (const a of (Array.isArray(areas) ? areas : [])) {
+        const blks = (a && Array.isArray(a.blockIds) ? a.blockIds : []).map(id => map[id]).filter(Boolean);
+        if (!blks.length) continue;
+        blks.forEach(b => used.add(b.id));
+        resolved.push({ blks, col: a.col, row: a.row, role: (a.role || '').trim() });
+      }
+      if (!resolved.length) return sceneLayouts.flow(scene, ctx, body, L);   // 无有效区域 → 回落 flow
+      body.dataset.layout = 'compose';
+      body.classList.add('layout-compose');
+      body.style.display = 'grid';
+      body.style.gridTemplateColumns = 'repeat(' + cols + ', 1fr)';
+      body.style.gap = (L.gap != null ? L.gap : 24) + 'px';
+      body.style.alignContent = 'center';
+      const ROLES = { main: 1, aside: 1, feature: 1, caption: 1, quote: 1 };
+      for (const a of resolved) {
+        const cell = el('div', 'compose-area' + (ROLES[a.role] ? ' role-' + a.role : ''));
+        const c = colSpanCss(a.col, cols), rw = rowSpanCss(a.row);
+        if (c) cell.style.gridColumn = c;
+        if (rw) cell.style.gridRow = rw;
+        for (const b of a.blks) cell.appendChild(renderBlock(b, ctx));
+        body.appendChild(cell);
+      }
+      const leftover = scene.blocks.filter(b => !used.has(b.id));            // 未引用不丢：整行全宽追加
+      if (leftover.length) {
+        const cell = el('div', 'compose-area'); cell.style.gridColumn = '1 / -1';
+        for (const b of leftover) cell.appendChild(renderBlock(b, ctx));
+        body.appendChild(cell);
+      }
     },
   };
 
@@ -896,6 +961,8 @@
     if (idx) { const stage = idx.querySelector('.step-stage'); const active = stage && stage.querySelector('.step-panel.show'); if (stage && active) fitScroll(active, stage.clientHeight); }
     const sp = section.querySelector('.layout-split');
     if (sp) { const h = sp.clientHeight; sp.querySelectorAll('.split-col').forEach(c => fitScroll(c, h)); }
+    const cp = section.querySelector('.layout-compose');
+    if (cp) { const h = cp.clientHeight; cp.querySelectorAll('.compose-area').forEach(c => fitScroll(c, h)); }   // 每区域太高就缩，红线不裁切
   }
   /* index：据 reveal 当前 fragment index 切 active 子节 + 高亮目录（fragment 事件/翻页时调用）。 */
   function syncIndex(section) {

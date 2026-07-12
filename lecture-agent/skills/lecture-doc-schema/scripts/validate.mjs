@@ -292,11 +292,12 @@ function checkScene(s, path, state, seenIds) {
 function checkLayout(s, path) {
   const L = s.layout; if (!isObj(L)) return;
   const p = path + '.layout';
-  if ('kind' in L && !['flow', 'index', 'split'].includes(L.kind)) warn(p + '.kind', '未知版式 kind: ' + L.kind + '（渲染器将回落 flow）');
+  if ('kind' in L && !['flow', 'index', 'split', 'compose'].includes(L.kind)) warn(p + '.kind', '未知版式 kind: ' + L.kind + '（渲染器将回落 flow）');
   const ids = new Set((s.blocks || []).map(b => b && b.id).filter(x => x != null));
   const chk = (id, where) => { if (!ids.has(id)) warn(where, '引用了不存在的 block id: ' + id + '（渲染器将回落）'); };
   if (Array.isArray(L.steps)) L.steps.forEach((st, i) => { if (isObj(st) && Array.isArray(st.blockIds)) st.blockIds.forEach(id => chk(id, p + `.steps[${i}].blockIds`)); });
   if (Array.isArray(L.anchor)) L.anchor.forEach(id => chk(id, p + '.anchor'));
+  if (Array.isArray(L.areas)) L.areas.forEach((a, i) => { if (isObj(a) && Array.isArray(a.blockIds)) a.blockIds.forEach(id => chk(id, p + `.areas[${i}].blockIds`)); });
 }
 
 /* ---------- deck 校验 ---------- */

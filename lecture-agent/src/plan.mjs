@@ -108,7 +108,19 @@ export function assignLayouts(doc, log = () => {}) {
     taken.add(i); used++;
     log(`[layout] scene#${i + 1} "${s.headline || ''}" → index(${s.blocks.length} 节) 确定性分配`);
   }
-  return used;
+  // sidenote 兜底：恰 2 块、末块是 callout（天然语境旁注）的内容页 → compose sidenote（主栏+右窄栏）。
+  // 与 index(≥3 块)不重叠；每份至多 2 页，避免新单调。规划器实测不自选 compose，同 index/section 确定性化（见 FE-59）。
+  let side = 0;
+  (doc.scenes || []).forEach((s, i) => {
+    if (side >= 2) return;
+    if (s.kind === 'content' && !s.layout && Array.isArray(s.blocks) && s.blocks.length === 2
+        && s.blocks[1] && s.blocks[1].type === 'callout') {
+      s.layout = { kind: 'compose', preset: 'sidenote' };
+      side++;
+      log(`[layout] scene#${i + 1} "${s.headline || ''}" → compose/sidenote 确定性分配`);
+    }
+  });
+  return used + side;
 }
 
 /** STORM 阶段二：把多视角覆盖清单综合成一份连贯、递进的 skeleton（大纲生成）。 */

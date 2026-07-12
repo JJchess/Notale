@@ -192,6 +192,8 @@ async function verifyScene(cdp, url, label) {
           if (stage && active) layoutClip = Math.max(active.scrollHeight - stage.clientHeight, active.scrollWidth - stage.clientWidth);
         } else if (body && body.dataset.layout === 'split') {
           for (const c of body.querySelectorAll('.split-col')) layoutClip = Math.max(layoutClip, c.scrollHeight - c.clientHeight, c.scrollWidth - c.clientWidth);
+        } else if (body && body.dataset.layout === 'compose') {
+          for (const c of body.querySelectorAll('.compose-area')) layoutClip = Math.max(layoutClip, c.scrollHeight - c.clientHeight, c.scrollWidth - c.clientWidth);
         }
         layoutClip = Math.round(Math.max(0, layoutClip));
         out.push({ i, overflowX: Math.round(overflowX), overflowY: Math.round(overflowY), mblockClip, corrupt, expectCenter, actualCenter, layoutClip });

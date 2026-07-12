@@ -38,6 +38,7 @@ LectureDoc                     一门课
 | `flow`（默认） | 竖直流；`centered`/`gap` 微调 | 直接排 blocks |
 | `index` | 片内分节：左目录 + 右侧逐节"上画"切入（点目录或翻页步进） | `steps:[{label, blockIds:[…]}]`，按 id 把本页 blocks 分成子节；未引用的并入末节，不丢 |
 | `split` | 锚定分栏：左锚常驻（核心公式/示意/题面）+ 右侧递进 | `anchor:[blockId,…]` 引用左锚，其余进右栏；`ratio` 控左栏占比(默认 0.4) |
+| `compose` | 中间层：12 列区域图 + `role` 语义样式（freeform 与固定版式之间；起步 preset `sidenote`=主栏+右窄旁注） | `areas:[{blockIds:[…], col:[起,止], row?, role?}]` 把块摆到栅格列/行线号，`role∈main/aside/feature/caption/quote`；或 `preset:"sidenote"` 罐装展开；`cols` 默认 12；未引用块整行全宽追加，不丢 |
 
 版式**按内容形态选、非必填**，拿不准就默认 flow；`kind`/引用 id 非法时渲染器**一律回落 flow 且绝不丢内容**（红线在渲染侧兜底，校验器只 warn 不阻断）。
 
