@@ -385,3 +385,12 @@
 - **验证（离线，额度受限无真机生成）**：手写 test doc 两页——`preset:sidenote`（list 主栏 + callout 低对比右窄栏+发丝分隔线）与显式 `areas`（formula 主区 cols1-8 + list 旁注区 cols8-13 + role 样式）均渲染正确；`render-check` 全绿（0 溢出，含断言 I compose 区域不裁切）。确定性分配纯函数离线验证：2块+callout→sidenote、3块→index、2块非callout→不分配，符合预期。`npm test` 6 步全过；命名 lint 零告警（compose/sidenote/role/compose-area 全合 NAMING）。
 - **红线/成长**：成长（新版式）。红线守护：无有效区域→回落 flow、未引用块整行全宽追加不丢、视觉只走 token（不产 slop）、缺字段不崩。**真机生成采用率待额度恢复后验证**（机制与确定性分配逻辑已离线证实）。
 - **加法/减法**：加法。**取经**：DESIGN_RESEARCH T18(12列栅格)/T19(非对称)/T23(marginalia→sidenote)。figure/specimen 等 preset 待 iter60（需图/展品块）。
+
+## Iter 60 — 多元度度量工具 tools/diversity.mjs（accountability·charter 强制的多元度指标；离线）
+- **背景**：charter 要求"多元度指标度量并报告"作为验收，但此前每轮都没有一个多元度数字，无法量化"是否更多元"。额度受限、真机生成被阻，本轮做安全的离线基础设施——把"讲义是否千篇一律"变成可报告的数。
+- **先看**：抽样发现语料已非全 flow（index 6 / split 3，来自本会话确定性分配），值得正式度量。
+- **改（加法·infra）**：新增 `tools/diversity.mjs`（零依赖、纯离线读 `demo/generated/*.lecture.json`，不跑 LLM）+ `npm run diversity`。报告：主题/scene.kind/版式(内容页)/block 类型分布 + 结构多元度(非 flow 占比)、版式种类数、全 flow deck 数、连续 ≥5 页同版式的 deck。
+- **基线（26 份 deck / 190 页）**：主题 cobalt-grid 12 · lab 10 · cartesian 4（**cartesian 偏少、cobalt 偏多**）；版式内容页 flow 85 · index 6 · split 3 → **非 flow 仅 10%**；版式种类 3/4（compose 0——iter59 后无真机生成）；**全 flow deck 20/26**；fourier-transform 连续 6 页同版式。→ 后续迭代的量化靶：平衡主题、重生成让 compose/pullquote/section 真正进语料。
+- **一个设计决定（摸着石头）**：否决了 backlog 里的 T14"callout 改左竖条+淡底卡片"——它与去 AI 味北极星**冲突**（"圆角卡片+单边彩条/accent rail"正是 AI 味红旗）。现有 callout（顶部发丝线+标签+正文）更克制、更编辑感，保留不动。记此以防未来又想当然照搬 DESIGN_RESEARCH。
+- **红线/自测**：纯只读工具，零 deck 风险；`node --check`(20 mjs)、`npm test` 6 步、命名 lint 零告警；已跑出基线。
+- **加法/减法**：加法（度量基础设施）。属"不可见"轮（度量非改观感），charter 允许每 3 轮≤1；上一可见轮 iter59。真机采用率仍待额度恢复。
