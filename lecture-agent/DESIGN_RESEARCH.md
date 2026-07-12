@@ -6,6 +6,8 @@
 > 每条标注落点：① blockRenderers ② sceneLayouts ③ 主题 token / 基础层。
 >
 > **三份报告一致把"分层字阶 + 克制调色/留白"列为最高 ROI、最先做。**
+>
+> **命名**：本文件的 T 编号只作 provenance。把任一机制并入系统时，按 `NAMING.md` 起朴素本地 id + 中文显示名（如 marginalia→`sidenote`旁注、tombstone→`specimen`展品标签），别把 T 号或外来术语当暴露名。见 NAMING.md §5 词表。
 
 ## 落地优先级（三报告共识）
 1. **A/F — token 基础层**（改几个变量、提升最大、最快去 AI 味）：分层字阶、8px 基线与模数间距、正文行宽、左对齐、单一 accent、发丝线、留白分隔、禁阴影/渐变/emoji 标题。

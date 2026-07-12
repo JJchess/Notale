@@ -4,6 +4,8 @@
 >
 > **给谁看：** ① 人类作者；② **未来的 LectureGenAgent（Hermes 流水线）**——生成前必读本文，产出 JSON 后必须先过 [`validate.mjs`](validate.mjs) 再交付。
 >
+> **命名：** 所有 id（scene.kind / block.type / layout.kind / theme）与显示名遵循 `lecture-agent/NAMING.md`（朴素小写英文 id + 中文显示名；外来术语译成本地词、研究编号只作 provenance）。
+>
 > **参考实现：** [`../course.lecture.json`](../course.lecture.json) 是一门完整课程（自演化智能体，15 页）的合法实例，覆盖大部分 block 类型，当作 few-shot 范例用。
 
 ---

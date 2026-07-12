@@ -57,8 +57,32 @@ try {
   }
 } catch (e) { fails.push('Check C 读取/解析 schema 失败: ' + e.message); }
 
+// —— Check D（命名规范 lint · warn 级，渐进法制不阻断）：见 NAMING.md ——
+// 不进 fails（不 exit 1）；只提示，让"新命名不合规"尽早暴露。同类复现 ≥2 次再升级为 hard。
+const warns = [];
+const JARGON = ['marginalia', 'tombstone', 'enfilade', 'object-label', 'objectlabel', 'small-multiples', 'smallmultiples'];
+// D1 数据 id 全小写朴素英文
+const dataIds = [...BLOCK_TYPES, 'hero', 'content', 'quiz', 'statement', 'section', 'flow', 'index', 'split', 'compose'];
+for (const id of dataIds) if (!/^[a-z][a-z0-9-]*$/.test(id)) warns.push(`数据 id "${id}" 不合规（须全小写 [a-z0-9-]，见 NAMING.md §1）`);
+// D2 外来黑话不得作 id（扫 schema enum 与 plan.mjs）
+const schemaTxt2 = R('../demo/schema/lecture-doc.schema.json');
+for (const j of JARGON) if (new RegExp('"' + j + '"').test(schemaTxt2) || new RegExp("['\"]" + j + "['\"]").test(planSrc))
+  warns.push(`外来黑话 "${j}" 疑似被用作 id——应译成本地词（见 NAMING.md §5 词表）`);
+// D3 CSS token 家族语法
+const TOKEN_OK = /^--(bg|bg-2|ink|ink-2|accent|accent-ink|line|card|panel|sel|cover-bg|page-bg-image|radius|measure|ff-serif|ff-sans|ff-mono|fs-(caption|body|lead|h2|h1|hero)|sp-([1-6]|gutter|rest|tight))$/;
+try {
+  const cssTxt = R('../demo/index.html');
+  const toks = new Set([...cssTxt.matchAll(/(--[a-z][a-z0-9-]*)\s*:/g)].map(m => m[1]));
+  for (const t of toks) if (!TOKEN_OK.test(t)) warns.push(`CSS token "${t}" 不合家族语法（见 NAMING.md §4）`);
+} catch { /* index.html 不可读则跳过 */ }
+// D4 CSS class 缩写
+for (const f of ['../demo/index.html', '../demo/doc-to-deck.js']) {
+  try { if (/\.(pq|sec|idx|cmp)-[a-z]/.test(R(f))) warns.push(`${f}: 含缩写 class（pq-/sec-/idx-/cmp-），应全词化（见 NAMING.md §4b）`); } catch { /* skip */ }
+}
+
 // —— 报告 ——
 console.log(`registry: ${BLOCK_TYPES.length} 种 block（含 freeform），正式 ${formalCount} 种；注册家族类型 ${registered.length} 个`);
-console.log(`Check A（plan.mjs 禁用清单 vs 注册类型）· Check B（文档"N 种正式"计数 ×${bChecked} 处）· Check C（schema enum ≡ BLOCK_TYPES ×${cChecked}）`);
+console.log(`Check A（plan.mjs 禁用清单 vs 注册类型）· Check B（文档"N 种正式"计数 ×${bChecked} 处）· Check C（schema enum ≡ BLOCK_TYPES ×${cChecked}）· Check D（命名 lint · warn）`);
+if (warns.length) { console.warn(`⚠ 命名 lint：${warns.length} 处待规整（warn，不阻断；见 NAMING.md）`); for (const w of warns) console.warn('  · ' + w); }
 if (fails.length) { console.error('✗ 一致性检查发现 ' + fails.length + ' 处漂移:'); for (const x of fails) console.error('  · ' + x); process.exit(1); }
 console.log('✓ 一致性检查全过（block 类型事实与 registry 对齐）。');
