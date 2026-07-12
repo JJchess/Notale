@@ -22,6 +22,7 @@
 - Marp：两级"全局默认+单页 spot 覆盖"；color-mix 派生次要色 / light-dark() 明暗共用；声明式图片（尺寸/滤镜/split-background 分栏）；auto-fit 溢出缩放；`section>:last-child{margin-bottom:0}`。
 - reveal.js：r-stack/r-hstack/r-fit-text/r-stretch 版式原语；data-background-* 章节换肤；fragment/auto-animate 受控披露与叙事；代码 `data-line-numbers="1|2-5"` 分步高亮。
 - PPTAgent/PPTEval：布局库+"内容→版式"匹配（每槽建议字符数）；三维 describe→judge 自评；Vendi-Score 多样性度量；字符预算/词汇对齐/来源锚定/图片去重等反套路硬约束；两级校验+回喂 traceback 自修。
+- **博物馆展陈 / Swiss·编辑排版 / 信息设计（2026-07-12 调研，详见 `DESIGN_RESEARCH.md`，24 条可编码机制映射到三扩展点）**：分层字阶(6 级、比率写死、"对比度也分层")；8px 基线+模数间距刻度；正文行宽 45–75 CPL(中文 30–38 字)；左对齐散尾为默认；单一 accent+墨+纸三色、发丝线、留白做分隔(少画线)；衬线×无衬线角色固定配对；三维度(字号×字重×空间)造层级。新块：pullquote/quote 引文面板、label 墓碑式文物标签、callout 左条淡底重构、caption 一等公民+论点句优先、section 巨号锚、自建内联 SVG 图标集。版式：12 列模数栅格+非对称占格、figure+context 并置、对齐对比表、timeline 方向自适应、旁注侧栏、Tufte 前景/背景分层。**三报告共识：先做"分层字阶+克制调色/留白"(token 基础层)，ROI 最高、最快去 AI 味。**
 
 【红线·第一天就硬，永不放松】绝不 mock 任何数据/交互；渲染器对任何输入不许崩（缺字段兜底不抛）；所有用户/LLM 内容转义、widget 走 iframe 沙箱；离线零运行时依赖；一切内容有据可依、不编造。去 AI 味/加版式/换主题时同样守。
 
