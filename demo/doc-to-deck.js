@@ -185,6 +185,13 @@
       if (b.cite) wrap.appendChild(el('div', 'cite', escapeHtml(b.cite)));
       return wrap;
     },
+    /* pullquote：编辑级抽句——左竖条 + 斜体衬线大字旁置，给正文流一个呼吸点（DESIGN_RESEARCH T12）。缺字段兜底不抛。 */
+    pullquote(b) {
+      const w = el('div', 'pullquote');
+      w.appendChild(el('div', 'pq-text', inlineMd(b.text || '')));
+      if (b.cite) w.appendChild(el('div', 'pq-cite', inlineMd(b.cite)));
+      return w;
+    },
     list(b) {
       const ul = el('ul', 'pts');
       for (const it of b.items) {

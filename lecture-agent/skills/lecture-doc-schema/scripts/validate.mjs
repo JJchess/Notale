@@ -116,7 +116,7 @@ function checkWidgetHtml(html, path) {
 }
 
 /* ---------- block 校验 ---------- */
-export const BLOCK_TYPES = ['hero', 'statement', 'list', 'agenda', 'callout', 'timeline', 'formula', 'flow', 'table', 'code', 'compare', 'grid', 'quiz', 'sim', 'runnable', 'embed', 'freeform'];
+export const BLOCK_TYPES = ['hero', 'statement', 'list', 'agenda', 'callout', 'timeline', 'formula', 'flow', 'table', 'code', 'compare', 'grid', 'quiz', 'sim', 'runnable', 'embed', 'freeform', 'pullquote'];
 function checkBlock(b, path, state) {
   if (!isObj(b)) { err(path, 'block 应为对象'); return; }
   if (!BLOCK_TYPES.includes(b.type)) { err(path + '.type', '未知 block 类型: ' + b.type); return; }
@@ -129,6 +129,9 @@ function checkBlock(b, path, state) {
     if (b.sub) checkInline(b.sub, path + '.sub');
   } else if (T === 'statement') {
     req(b, 'statement', isStr, path, 'string'); checkInline(b.statement, path + '.statement');
+  } else if (T === 'pullquote') {
+    req(b, 'text', isStr, path, 'string'); checkInline(b.text, path + '.text');
+    if (b.cite != null) { opt(b, 'cite', isStr, path, 'string'); checkInline(b.cite, path + '.cite'); }
   } else if (T === 'list') {
     if (req(b, 'items', v => Array.isArray(v) && v.length >= 1 && v.length <= 12, path, '1–12 项数组')) {
       if (b.items.length > 8) warn(path + '.items', '条目数 ' + b.items.length + ' 偏多，注意别在一页里堆太满（硬顶 12，建议 ≤8）');

@@ -368,3 +368,12 @@
 - **红线/成长**：成长式，且第 2 次复现后收紧为确定性（记因何收紧）。红线守护：缺字段兜底不抛、失效不插不崩、statement 走 fan-out 不 mock、改动 scoped。
 - **加法/减法**：加法（新增页型 + 确定性插入机制）。
 - **取经**：呼应用户"博物馆/编辑设计"方向——section 分隔页即"numbered section styles / 章节分隔 / 视觉节奏"的落地；亦对齐 Slidev 语义 layout 枚举思路。
+
+## Iter 58 — 设计 token 基础层（分层字阶/模数间距/行宽，每主题参数化）+ 新块 pullquote（多元性·轨道①②，博物馆/编辑取经首轮实现）
+- **背景**：用户纠偏——调研博物馆/Swiss·编辑/信息设计（`DESIGN_RESEARCH.md` 24 条机制）**不是为统一成单调房子样式，而是让版式更多元**；设计"制度"应成为 freeform 与固定版式之间的中间层。已 `/plan` 定案三层光谱（固定 sceneLayouts → compose 中间层 → freeform），本轮按"先出可见多元"起步。
+- **先看**：跨 cartesian/lab/cobalt 三主题 `--shot`——单页尚可但**字号/间距/栅格全硬编码、跨主题共享**（eyebrow 13/lead 19/headline 42px 写死），三主题只有色/字不同、结构千篇一律。
+- **改（加法·轨道①②）**：① `demo/index.html` 加**设计 token 基础层**——离散字阶 `--fs-caption/body/lead/h2/h1/hero`（**每主题不同比率**：cartesian 1.333 保持现状 / cobalt 1.25 略收 / lab 1.18 更平更技术）、模数间距 `--s1..s6`+`--gutter`+`--gap-rest/tight`、行宽 `--measure`(36em)；把 headline/lead/eyebrow/bullets 迁到字阶 token（cartesian 零变、cobalt/lab 字号收敛出个性）。② 新一等公民块 **`pullquote`**（编辑级抽句：左竖条+斜体衬线大字旁置+署名，`em` 反转为正体主色）——渲染器 blockRenderers、CSS、schema(+pullquoteBlock)、validate(BLOCK_TYPES+checkBlock)、SPEC、create-content 契约、skeletonSpec 用法提示、技能镜像全套。③ 一致性计数 16→17 正式类型（6 处文档）。
+- **验证（before/after 真机截图为主）**：手写 test doc 同一内容三主题渲染——pullquote 三主题皆渲染正确（cartesian 42px 衬线换行 / lab 34px 无衬线单行 / cobalt 居中），**三主题字型个性肉眼可辨**（此前仅色差）。真跑 `generate 自由意志 --id freewill` → 规划器**自动产出 pullquote:1**（采用率非 0；BLOCK 类型无需 iter55/57 那种确定性兜底，教了就用——补充 [[FE-59]]：可选*结构字段*模型不用，但*新块类型*会用）。存量 4 份 deck(tcp/photosynthesis/song-ci/fourier) render-check 全绿**无回归**（cobalt/lab 字号变小、溢出风险更低）；`npm test` 6 步全过。
+- **红线/成长**：成长（token 词汇 + 新块）。token 作"词汇"每主题参数化以**增**多元，非 homogenize（守住用户纠偏）；存量硬编码只迁核心几处、加法为主防回归。
+- **加法/减法**：加法。**取经**：DESIGN_RESEARCH T1(分层字阶)/T3(模数间距)/T5(行宽)/T6(左对齐)/T12(pullquote)。
+- **下一轮**：iter59 = compose 中间层核心（12 列区域图 + figure-context/marginalia preset）。
