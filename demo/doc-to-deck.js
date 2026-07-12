@@ -188,8 +188,8 @@
     /* pullquote：编辑级抽句——左竖条 + 斜体衬线大字旁置，给正文流一个呼吸点（DESIGN_RESEARCH T12）。缺字段兜底不抛。 */
     pullquote(b) {
       const w = el('div', 'pullquote');
-      w.appendChild(el('div', 'pq-text', inlineMd(b.text || '')));
-      if (b.cite) w.appendChild(el('div', 'pq-cite', inlineMd(b.cite)));
+      w.appendChild(el('div', 'pullquote-text', inlineMd(b.text || '')));
+      if (b.cite) w.appendChild(el('div', 'pullquote-cite', inlineMd(b.cite)));
       return w;
     },
     list(b) {
@@ -276,7 +276,7 @@
       const cols = el('div', 'cols');
       for (const side of [b.left, b.right]) {
         const cell = el('div');
-        if (side.caption) cell.appendChild(el('div', 'cmp-cap', escapeHtml(side.caption)));
+        if (side.caption) cell.appendChild(el('div', 'compare-caption', escapeHtml(side.caption)));
         cell.appendChild(renderBlock(side.block, ctx));
         cols.appendChild(cell);
       }
@@ -748,7 +748,7 @@
       const stage = el('div', 'step-stage');
       const frags = el('div', 'step-frags');
       panels.forEach((p, i) => {
-        const item = el('div', 'idx-item' + (i === 0 ? ' on' : ''));
+        const item = el('div', 'index-item' + (i === 0 ? ' on' : ''));
         item.innerHTML = '<span class="n">' + (i + 1) + '</span><span class="t">' + inlineMd(p.label) + '</span>';
         item.onclick = () => { const ix = Reveal.getIndices(); Reveal.slide(ix.h, ix.v, i - 1); };   // 跳到该子节
         rail.appendChild(item);
@@ -802,12 +802,12 @@
       /* 章节分隔页：大号自增序号 + 章节名 + 一句主旨(statement block)——给讲义打节拍、破"每页一个样"的单调。
          内容据 scene.headline + 其 statement block；缺字段兜底不抛（红线）。 */
       ctx.sectionNo = (ctx.sectionNo || 0) + 1;
-      pad.appendChild(el('div', 'sec-no', String(ctx.sectionNo).padStart(2, '0')));
+      pad.appendChild(el('div', 'section-num', String(ctx.sectionNo).padStart(2, '0')));
       if (scene.eyebrow) pad.appendChild(el('div', 'eyebrow', escapeHtml(scene.eyebrow)));
-      if (scene.headline) pad.appendChild(el('h2', 'sec-title', inlineMd(scene.headline)));
+      if (scene.headline) pad.appendChild(el('h2', 'section-title', inlineMd(scene.headline)));
       const dek = (scene.blocks || []).find(b => b && b.type === 'statement');
       const dekText = dek ? dek.statement : scene.lead;
-      if (dekText) pad.appendChild(el('div', 'sec-dek', inlineMd(dekText)));
+      if (dekText) pad.appendChild(el('div', 'section-dek', inlineMd(dekText)));
     } else {
       if (scene.eyebrow) pad.appendChild(el('div', 'eyebrow', escapeHtml(scene.eyebrow)));
       if (scene.headline) {
@@ -901,7 +901,7 @@
   function syncIndex(section) {
     const sec = section || (window.Reveal && Reveal.getCurrentSlide());
     const idx = sec && sec.querySelector('.layout-index'); if (!idx) return;
-    const panels = idx.querySelectorAll('.step-panel'); const items = idx.querySelectorAll('.idx-item');
+    const panels = idx.querySelectorAll('.step-panel'); const items = idx.querySelectorAll('.index-item');
     const f = (window.Reveal && Reveal.getIndices) ? Reveal.getIndices().f : -1;
     const active = Math.max(0, Math.min(panels.length - 1, (typeof f === 'number' ? f : -1) + 1));
     panels.forEach((p, i) => p.classList.toggle('show', i === active));

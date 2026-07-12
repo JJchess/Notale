@@ -51,10 +51,12 @@
 | 间距 | `--sp-*`（8px 基线模数 + 语义档） | `--sp-1`…`--sp-6` · `--sp-gutter` · `--sp-rest` · `--sp-tight` |
 | 尺寸/形状 | 语义裸名 | `--measure`（正文行宽）· `--radius` · `--page-bg-image` |
 
-**旧→新映射（廉价清理）**：`--bg2→--bg-2` · `--text2→--ink-2` · `--serif/sans/mono→--ff-serif/sans/mono` · `--s1..s6→--sp-1..6` · `--gutter→--sp-gutter` · `--gap-rest→--sp-rest` · `--gap-tight→--sp-tight`。**纯重命名，不改任何值**（截图逐像素一致）。
+**已做（纯重命名，值不变）**：`--s1..s6→--sp-1..6` · `--gutter→--sp-gutter` · `--gap-rest→--sp-rest` · `--gap-tight→--sp-tight`（间距族仅在 index.html，安全）。
+**grandfathered（保留原名，不改）**：`--serif` `--sans` `--mono` `--bg2` `--text2`——它们被 `doc-to-deck.js`（渲染器 getComputedStyle）**和内容 JSON 的 `var(--…)`**（如 baseline `course.lecture.json`）引用，改名=破坏语料/渲染，故按渐进法制缓行；目标态 `--ff-*`/`--bg-2`/`--ink-2` 留待未来配套内容迁移时再动。lint 已把这几个列为接受。
 
 ## 4b. CSS class 命名（目标态）
 `组件-部件` 全词 kebab，禁缩写。旧→新：`pq-text→pullquote-text` · `pq-cite→pullquote-cite` · `sec-no→section-num` · `sec-title→section-title` · `sec-dek→section-dek` · `idx-item→index-item` · `cmp-cap→compare-caption` · `q→statement-quote` · `q-sub→statement-quote-sub`。已合规的保留：`freeform-*` `step-*` `split-*` `scene-index` `layout-index/split` `eyebrow` `headline` `lead` 等。
+**本轮已做**：`pq-*→pullquote-*` · `sec-*→section-*` · `idx-item→index-item` · `cmp-cap→compare-caption`。`.q`/`.q-sub`（金句块）单字母歧义大、sed 易误伤，本轮未动，留待后续手工改。
 
 ---
 

@@ -69,7 +69,8 @@ const schemaTxt2 = R('../demo/schema/lecture-doc.schema.json');
 for (const j of JARGON) if (new RegExp('"' + j + '"').test(schemaTxt2) || new RegExp("['\"]" + j + "['\"]").test(planSrc))
   warns.push(`外来黑话 "${j}" 疑似被用作 id——应译成本地词（见 NAMING.md §5 词表）`);
 // D3 CSS token 家族语法
-const TOKEN_OK = /^--(bg|bg-2|ink|ink-2|accent|accent-ink|line|card|panel|sel|cover-bg|page-bg-image|radius|measure|ff-serif|ff-sans|ff-mono|fs-(caption|body|lead|h2|h1|hero)|sp-([1-6]|gutter|rest|tight))$/;
+// serif/sans/mono/bg2/text2 = grandfathered（被 renderer JS + 内容 JSON 引用，改名即破坏，NAMING §4 记为例外）
+const TOKEN_OK = /^--(bg|bg2|bg-2|ink|ink-2|text2|accent|accent-ink|line|card|panel|sel|cover-bg|page-bg-image|radius|measure|serif|sans|mono|ff-serif|ff-sans|ff-mono|fs-(caption|body|lead|h2|h1|hero)|sp-([1-6]|gutter|rest|tight))$/;
 try {
   const cssTxt = R('../demo/index.html');
   const toks = new Set([...cssTxt.matchAll(/(--[a-z][a-z0-9-]*)\s*:/g)].map(m => m[1]));
