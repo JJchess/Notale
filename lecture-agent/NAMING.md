@@ -36,7 +36,7 @@
 
 **scene.kind**：hero=封面 · content=内容页 · quiz=测验页 · statement=金句页 · section=章节页
 **layout.kind**：flow=竖排 · index=分节目录 · split=锚定分栏 · compose=自由编排*(新)*
-**block.type**：hero=封面块 · statement=金句 · pullquote=抽句 · list=要点 · agenda=并列条目 · callout=要点框 · timeline=时间线 · formula=公式 · flow=流程 · table=表格 · code=代码 · compare=对照 · grid=网格 · quiz=测验 · sim=仿真 · runnable=可运行代码 · embed=嵌入 · freeform=自由块
+**block.type**：hero=封面块 · statement=金句 · pullquote=抽句 · list=要点 · agenda=并列条目 · callout=要点框 · timeline=时间线 · formula=公式 · flow=流程 · table=表格 · code=代码 · compare=对照 · grid=网格 · quiz=测验 · sim=仿真 · runnable=可运行代码 · embed=嵌入 · freeform=自由块 · video=视频
 **theme**：cartesian=坐标纸（克制人文）· cobalt-grid=钴蓝公报 · lab=暗仪表台 · slate=石板（冷灰编辑/工程）
 
 ---
@@ -71,6 +71,7 @@
 | `quote` | 引文 | quote panel / historical note | T12b | block | 待做 iter60 |
 | `gallery` | 图阵 | small multiples / gallery | T24 | layout preset | 待做 iter62 |
 | `compose` | 自由编排 | modular grid compose | T18 | layout kind | 待做 iter59 |
+| `video` | 视频 | HTML→MP4 explainer（客户端捕获） | 视频调研 | block | 阶段1 已上(块) |
 
 *（enfilade「线性轴动线」、visual rhythm「节奏留白」等是原则，不作 id。）*
 

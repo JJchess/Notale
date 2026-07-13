@@ -470,3 +470,10 @@
 - **验证（离线）**：`node --check` + 跑工具——底部新增"校验健康：3 errors · 5 warnings · 有 error 的 deck: simple-harmonic-motion(1), simple-pendulum(2)"；`npm test` 6 步过；命名 lint 零告警。
 - **红线/成长**：可观测性（成长）。零渲染/数据改动，纯加只读健康报告。零回归。
 - **加法/减法**：加法（健康度量并入既有工具，不新增重复工具）。**5 个 widget 缺动效 warn 是生成侧既有质量项**——真机重生成时应补 rAF/transition，渲染侧无需改。
+
+## Iter 71 — 视频嵌入 阶段1·离线 MVP：一等 `video` 块（研究定稿方案落地第一步·可插拔隔离）
+- **背景**：用户要"agent 用 HTML 生成科普讲解视频嵌进讲义"。深度调研后定稿路径（详见计划文件 + 主要来源 TheoremExplainAgent/canvas-record/mediabunny/manim-voiceover）：**不采 HyperFrames 服务端栈**，走"浏览器内确定性捕获"——复用我们已有的 canvas 动画能力 + headless CDP，客户端 WebCodecs 捕获、零服务端 FFmpeg，deck 运行时仍离线。**可插拔隔离**：授权=独立 skill、捕获=opt-in 工具、核心只加一个轻量 `video` 渲染器、不用视频时零影响。本轮做阶段1（deck 侧播放能力，离线可验）。
+- **改（加法·新块）**：`demo/doc-to-deck.js` 一等 `video` 块渲染 `<video controls poster preload=metadata>` + 字幕 `<track>` + caption；**只接受本地相对/`data:` 源，拒 http(s)://与协议相对//host（渲染器不设远程 src=不发网络请求）**；无有效源→"视频待生成"占位（不静默、不 mock）。freeform 仍 strip `<video>`，仅本一等块渲染。`demo/index.html` `.video-block`/`.video-note`/`.video-cap` CSS 全走 token。schema(enum+dispatch+videoBlock：src/poster/captions 本地正则、anyOf 至少 src|poster)+validate(BLOCK_TYPES+video 校验+拒远程 src)+SPEC+NAMING(§3 video=视频、§5 provenance)+一致性计数 17→18+技能镜像 sync。
+- **验证（before/after 真机截图）**：slate 主题 test doc → `<video>` 原生控件+data:海报+caption(inline-md) 正确渲染；`render-check` 0 溢出/**0 console error**（无 src→无 404）；负例 `validateDoc` 远程 src 被拒（守离线红线）；`npm test` 6 步过（含计数/schema≡BLOCK_TYPES）；命名 lint 零告警。
+- **红线/成长**：成长（新块）。红线：离线（拒远程、渲染器不发网络）、不 mock（无源占位）、渲染不崩（缺字段兜底）、视觉走 token、命名走 NAMING。隔离：不用视频时 deck/核心/体积与现在完全一致。
+- **加法/减法**：加法。**待续**：阶段2 `tools/render-video.mjs`（复用 render-check CDP + canvas-record/WebCodecs + mediabunny 客户端捕获，多数离线可验）；阶段3 `skills/create-video/`（两段式 planner→composition，真机待额度）。真机播放待阶段2 产出本地 clip。

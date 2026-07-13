@@ -115,7 +115,7 @@ function checkWidgetHtml(html, path) {
 }
 
 /* ---------- block 校验 ---------- */
-export const BLOCK_TYPES = ['hero', 'statement', 'list', 'agenda', 'callout', 'timeline', 'formula', 'flow', 'table', 'code', 'compare', 'grid', 'quiz', 'sim', 'runnable', 'embed', 'freeform', 'pullquote'];
+export const BLOCK_TYPES = ['hero', 'statement', 'list', 'agenda', 'callout', 'timeline', 'formula', 'flow', 'table', 'code', 'compare', 'grid', 'quiz', 'sim', 'runnable', 'embed', 'freeform', 'pullquote', 'video'];
 function checkBlock(b, path, state) {
   if (!isObj(b)) { err(path, 'block 应为对象'); return; }
   if (!BLOCK_TYPES.includes(b.type)) { err(path + '.type', '未知 block 类型: ' + b.type); return; }
@@ -131,6 +131,14 @@ function checkBlock(b, path, state) {
   } else if (T === 'pullquote') {
     req(b, 'text', isStr, path, 'string'); checkInline(b.text, path + '.text');
     if (b.cite != null) { opt(b, 'cite', isStr, path, 'string'); checkInline(b.cite, path + '.cite'); }
+  } else if (T === 'video') {
+    if (!isStr(b.src) && !isStr(b.poster)) err(path, 'video 至少需 src 或 poster');
+    const remote = v => isStr(v) && /^\s*(https?:)?\/\//i.test(v);   // http(s):// 或协议相对 //host
+    for (const k of ['src', 'poster', 'captions']) {
+      if (b[k] != null) { opt(b, k, isStr, path, 'string'); if (remote(b[k])) err(path + '.' + k, '只能是本地相对路径或 data:，禁远程 URL(守离线红线)'); }
+    }
+    if (b.caption != null) { opt(b, 'caption', isStr, path, 'string'); checkInline(b.caption, path + '.caption'); }
+    if (b.loop != null) opt(b, 'loop', v => typeof v === 'boolean', path, 'boolean');
   } else if (T === 'list') {
     if (req(b, 'items', v => Array.isArray(v) && v.length >= 1 && v.length <= 12, path, '1–12 项数组')) {
       if (b.items.length > 8) warn(path + '.items', '条目数 ' + b.items.length + ' 偏多，注意别在一页里堆太满（硬顶 12，建议 ≤8）');

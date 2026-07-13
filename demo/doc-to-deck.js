@@ -335,6 +335,24 @@
       box.appendChild(el('div', 'rc-hint', escapeHtml(b.fallbackPoster || '嵌入内容（' + b.product + '）· 接入后端后可用')));
       return box;
     },
+    /* video：一等视频块（播本地 vendored 视频，非 freeform 逃生舱）。红线：只接受本地相对/data: 源，拒远程 URL(无网络)；
+       无有效源→显式占位不静默、不 mock。渲染器只碰这一处核心，重捕获工具(阶段2)与之解耦。 */
+    video(b) {
+      const isLocal = s => typeof s === 'string' && s.length > 0 && !/^\s*(https?:)?\/\//i.test(s);   // 拒 http(s):// 与 //host（协议相对）；放行本地相对路径与 data:
+      const w = el('div', 'video-block');
+      const v = document.createElement('video');
+      v.controls = true; v.preload = 'metadata'; v.setAttribute('playsinline', '');
+      if (b.loop) v.loop = true;
+      if (isLocal(b.poster)) v.poster = b.poster;
+      if (isLocal(b.src)) {
+        v.src = b.src;
+        if (isLocal(b.captions)) { const tr = document.createElement('track'); tr.kind = 'subtitles'; tr.srclang = b.language || 'zh'; tr.src = b.captions; tr.default = true; v.appendChild(tr); }
+      }
+      w.appendChild(v);
+      if (!isLocal(b.src) && !isLocal(b.poster)) { v.style.display = 'none'; w.appendChild(el('div', 'video-note', '视频待生成')); }   // 无源无海报：占位
+      if (b.caption) w.appendChild(el('div', 'video-cap', inlineMd(b.caption)));
+      return w;
+    },
     freeform(b) {
       /* 逃生舱：永远显眼渲染，绝不悄悄融入正常排版（见 SPEC §3.3）。
          html 已在校验阶段查过危险标签，这里净化是运行时防御性第二道关。 */
