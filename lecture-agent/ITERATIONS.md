@@ -410,3 +410,11 @@
 - **验证（真机截图）**：rdbms 设 theme=lab 渲染 split 页 → 左锚（代码卡）与右栏现在有 token 化的恰当分离（此前黑影在暗底不可见）；`render-check` 全绿（0 溢出/0 err）。quiz hover 为悬停态无法静态截图，但 token 替换显然正确。`npm test` 6 步过；命名 lint 零告警。
 - **红线/成长**：红线修正（视觉走 token）。修好后全 4 主题 quiz 悬停/split 分栏一致。**遗留**：CodeMirror 选区 `rgba(26,26,26,.1)`（runnable 块罕见 + CM 主题上下文复杂）暂留、记此。
 - **加法/减法**：修正（token 化）。跨主题、跨全部 quiz(26)/split 页即时生效，无需真机生成。
+
+## Iter 63 — 封面标题接入 per-theme --fs-hero：让最常看到的页也有主题字型个性（去 AI 味/视觉·轨道①）
+- **先看**：抽查 timeline（勿改：竖排+散文事件本就合适，T22"少事件转横排"不适用我们）与 block 字号后，发现 `.cover h1` **硬编码 60px**、无视 iter58 定的 per-theme `--fs-hero`（cartesian 74 / cobalt 66 / lab 56 / slate 70）——封面是每份 deck 必看的第一页，却在此丢了主题个性（4 主题封面标题一样大）。
+- **改（修正·轨道①）**：`demo/index.html` `.reveal .cover h1{ font-size:60px }` → `var(--fs-hero)`。完成 iter58 字阶迁移在 hero 层（差异最显著处：56↔74，18px 跨度）的落地。
+- **验证（before/after 真机截图）**：同一 deck(freewill) 封面——cartesian 74px 大号衬线(编辑气派) vs lab 56px 紧凑无衬线(技术克制)，主题个性肉眼分明（此前全是 60px 一个样）；两者单行不裁切；`render-check` 全绿；`npm test` 6 步过；命名 lint 零告警。
+- **红线/成长**：修正（字阶 token 一致性）。封面无 balanceScene 兜底，已验证中等长度标题各主题不裁切；极长标题(3行+全可选字段)在最大主题 74px 下有理论裁切风险（同 60px 时已存在、只是更小），hero 有 titleSize 覆盖与 title[1-3] 行数控制兜底，暂不加 cover-fit，记此。
+- **两处避坑（摸着石头）**：① timeline 竖排适配散文事件，不套 T22 横排；② block 正文字号各主题仅差 1-2px，迁 --fs-body 收益≈0 而有回归风险，不做。
+- **加法/减法**：修正（token 化）。跨 4 主题、26 份 deck 封面即时生效，无需真机生成。
