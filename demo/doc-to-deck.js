@@ -926,9 +926,10 @@
     } else if (contentH > avail + 4) {
       /* 内容超高会被 .pad 的 overflow:hidden 裁掉，学生看不到底部（红线）。用 zoom 等比缩到刚好放下——
          zoom 影响布局(Chromium/Edge/新版 FF)，scrollHeight 随之收缩、真正不裁切（transform 只视觉缩放，救不了 scrollHeight）。
-         下限 0.8 防过度缩小伤可读；触底仍溢出说明内容确实过多，交给 render-check 断言 F 告警、生成侧收敛。
+         下限 0.72：红线"不丢内容"高于"可读性下限"偏好——内容略超(如 compare+长 timeline 同页)时宁可缩到 0.72 也不裁掉尾部；
+         触底(0.72)仍溢出才说明内容确实过多，交给 render-check 断言 F 告警、生成侧收敛。
          lab/runlab/widlab(sim/代码/CodeMirror 子树)已在上面提前 return，不受 zoom 影响（避 FE-48）。 */
-      body.style.zoom = Math.max(0.8, avail / contentH);
+      body.style.zoom = Math.max(0.72, avail / contentH);
     }
   }
 
