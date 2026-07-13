@@ -164,6 +164,11 @@
   }
   refreshThemeColors(); /* 先给默认值兜底；设好 data-theme 后会再刷新一次 */
 
+  /* Observable Plot 是异步 vendored 脚本；若 sim 的 render 在其加载完成前经 onReady 触发，早退会让图表**永久空白**
+     （sim 图表偶发空图的竞态根因）。needPlot：未就绪则下一帧重试(Plot 一到就画)，全局上限 ~300 帧(≈5s)防 Plot 缺失时空转。 */
+  let _plotFrames = 0;
+  function needPlot(render) { if (window.Plot) return false; if (_plotFrames++ < 300) requestAnimationFrame(render); return true; }
+
   /* ================= Block 渲染器 ================= */
   const blockRenderers = {
     hero(b, ctx) {
@@ -435,7 +440,7 @@
       const row = el('div', 'charts');
       root.appendChild(bar); root.appendChild(row);
       function render() {
-        if (!window.Plot) return;
+        if (needPlot(render)) return;
         row.innerHTML = '';
         const n = Math.round(values[M.budgetParam]);
         const results = M.strategies.map(sname => { const pts = STRATS[sname].pts(n); return { sname, pts, best: Math.min(...pts.map(p => p.y)) }; });
@@ -484,7 +489,7 @@
         return out;
       }
       function render() {
-        if (!window.Plot) return;
+        if (needPlot(render)) return;
         const reg = regimes.find(r => r.test(values)) || regimes[regimes.length - 1] || { tone: 'ink', desc: '', label: '' };
         const color = TONE[reg.tone || 'ink'] || C_INK;
         const dash = reg.dash && reg.dash !== 'solid' ? reg.dash : null;
@@ -527,7 +532,7 @@
       const AF = Object.getPrototypeOf(async function () {}).constructor;
       const compute = new AF('params', 'rng', '"use strict";\nreturn (' + b.computeJs + ')(params, rng);');
       async function render() {
-        if (!window.Plot) return;
+        if (needPlot(render)) return;
         try {
           const out = await compute({ ...values }, mulberry32(seed));
           note.innerHTML = out.note ? escapeHtml(out.note) : '';

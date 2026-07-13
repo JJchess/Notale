@@ -440,3 +440,11 @@
 - **验证（离线）**：`node --check` plan.mjs、`npm test` 6 步过、命名 lint 零告警（新文案只提及既有 id：compare/timeline/table/compose，无黑话）。**真机效果待额度恢复验证**——这是内容指引，生成侧内容规则实测比结构 opt-in 更被遵循（承 [[FE-59]]：模型忽略可选结构字段，但听内容指引），但仍需真跑几份确认稀疏/超载页减少。
 - **红线/成长**：成长（生成侧内容规则）。不改渲染、不改数据、纯提示词。诚实标注：本轮不可见（无 before/after 截图，charter 每 3 轮≤1，上一不可见轮 iter60）。
 - **加法/减法**：加法（提示词指引）。属"治本"——iter65 是渲染侧兜底(治标)，本轮是生成侧收敛(治本)，配套。
+
+## Iter 67 — 修 sim 图表 Plot 竞态"永久空白"：bail-forever → 有界重试（鲁棒·轨道④）
+- **先看**：抽查 sim 页发现 simple-harmonic-motion 的 dynamics1d 图表**空白**（滑块/regime 正常，位移曲线全无）；photosynthesis 的 sim 却有曲线 → 同代码不同表现 = 竞态。
+- **根因（代码推理）**：三个 Plot 系 sim 渲染(searchCompare/dynamics1d/custom)的 `render()` 经 `ctx.onReady` 触发，但都 `if(!window.Plot) return;` **一次性早退、零重试**。Observable Plot 是异步 vendored 脚本；onReady 时若 Plot 未就绪 → 整份 deck 的 sim 全部永久空白（onReady 只触发一次、全 deck 一次性），且此后 Plot 加载了也不会重画。加载顺序时序敏感 → 偶发空图。
+- **改（修正·轨道④）**：`demo/doc-to-deck.js` 加 `needPlot(render)`：Plot 未就绪则下一帧重试（Plot 一到就画），全局上限 ~300 帧防缺失时空转；三处早退统一改 `if (needPlot(render)) return;`。**零回归**：Plot 就绪时 needPlot 立即返回 false、行为与原来完全一致。
+- **验证（离线）**：`render-check --all-generated` **26/26 全绿零回归**；`npm test` 6 步过；命名 lint 零告警。**诚实标注**：这是对真实竞态的**代码推理修正**，非截图验收——headless render-check 的 Plot 加载时序不可靠，simple-harmonic 截图仍空（可能该 headless 运行 Plot 超 300 帧才到、或该 sim 另有 model/domain 数据问题）；**真机浏览器 + sim model 排查待额度/交互环境**。修正本身零回归、对"Plot 迟到→永久空白"这一确定的 latent bug 是正解。
+- **红线/成长**：修正（渲染健壮性；不因时序丢内容）。不改数据/视觉值，仅加重试。
+- **加法/减法**：修正（robustness）。承 iter62 先例——有据可推的健壮性修正即便无法截图验收亦可落地，但如实标注未验部分。
