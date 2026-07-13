@@ -6,6 +6,7 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve, join } from 'node:path';
+import { validateDoc } from '../../demo/schema/validate.mjs';   // 顺带跑校验健康——一条命令看全语料多元度 + 有效性
 
 const here = dirname(fileURLToPath(import.meta.url));
 const dir = resolve(here, '..', process.argv[2] || '../demo/generated');   // 默认 ws2/demo/generated（相对 lecture-agent 根）
@@ -15,10 +16,12 @@ const layoutOf = s => (s.layout && s.layout.kind) || 'flow';
 const bump = (m, k) => m.set(k, (m.get(k) || 0) + 1);
 const theme = new Map(), sceneKind = new Map(), layout = new Map(), block = new Map();
 let contentPages = 0, nonFlowContent = 0, allFlowDecks = 0, totalPages = 0;
+let vErr = 0, vWarn = 0; const errDecks = [];   // 校验健康
 const perDeck = [];
 
 for (const f of files) {
   let doc; try { doc = JSON.parse(readFileSync(join(dir, f), 'utf8')); } catch { continue; }
+  try { const vr = validateDoc(doc); vErr += vr.errors.length; vWarn += (vr.warnings || []).length; if (vr.errors.length) errDecks.push(f.replace('.lecture.json', '') + '(' + vr.errors.length + ')'); } catch { /* 校验器不该崩；崩了也别拖垮多元度统计 */ }
   bump(theme, doc.theme || '?');
   const seq = [];                                  // 内容页版式序列（算连续同版式）
   const deckLayouts = new Set();
@@ -57,4 +60,6 @@ if (longRun.length) {
   console.log(`连续 ≥5 页同版式的 deck（节奏单调）：`);
   for (const d of longRun.slice(0, 8)) console.log(`  · ${d.f}（${d.maxRun} 连）`);
 } else console.log('无 deck 连续 ≥5 页同版式。');
+console.log(line);
+console.log(`校验健康：${vErr} errors · ${vWarn} warnings${errDecks.length ? ' · 有 error 的 deck: ' + errDecks.join(', ') : '（0 err，全部有效）'}`);
 console.log('');

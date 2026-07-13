@@ -463,3 +463,10 @@
 - **验证（离线，精确）**：`validateDoc` 跑三份——simple-harmonic 报 1 处 consts err、simple-pendulum 报 consts err、photosynthesis(对照)0 err；精确命中 2 份 broken、不误伤干净 sim。`npm test` 6 步过（基线 ③ 不含此类、不受影响；⑥ 镜像新鲜）；命名 lint 零告警。
 - **红线/成长**：成长（校验规则收紧——iter68 契约"劝 LLM 别这么写"+本轮 validate"这么写就拦下+可 docRepair 修"，防线闭合）。承 [[FE-59]]：把静默坏 sim 变成 validate 硬报错。
 - **加法/减法**：加法（校验闸门）。三层防线合围二阶误用：生成契约(iter68 create-sim)→校验拦截+docRepair(本轮)→渲染兜底诚实提示(iter68)。真机 docRepair 自愈待额度。
+
+## Iter 70 — 全语料校验健康扫描 + 并入 diversity 工具（可观测性·轨道④；承 FE-64 系统扫描）
+- **先看·校验层全扫**：对全 26 份 deck 跑 `validateDoc`（render 层 iter65 已扫，本轮补校验层）——3 errors（simple-harmonic 1 / simple-pendulum 2，即 iter69 已识别的二阶 sim）+ 5 warnings（bubble-sort/dna-replication/entropy/fourier/matrix-eigenvalues 的 widget html **缺动效**——生成侧质量、既有 warn 已在纠），无新增可离线修的渲染/schema bug。校验层健康基线：除 2 份已知坏 sim 外全有效。
+- **改（productize·轨道④）**：把这次一次性扫描**并入 `tools/diversity.mjs`**——`npm run diversity` 现一条命令出"多元度 + 校验健康"（errors/warnings 计数 + 有 error 的 deck）。承 [[FE-64]] #3：把"偶然撞见坏的"固化成"可复现的全量健康报告"。
+- **验证（离线）**：`node --check` + 跑工具——底部新增"校验健康：3 errors · 5 warnings · 有 error 的 deck: simple-harmonic-motion(1), simple-pendulum(2)"；`npm test` 6 步过；命名 lint 零告警。
+- **红线/成长**：可观测性（成长）。零渲染/数据改动，纯加只读健康报告。零回归。
+- **加法/减法**：加法（健康度量并入既有工具，不新增重复工具）。**5 个 widget 缺动效 warn 是生成侧既有质量项**——真机重生成时应补 rAF/transition，渲染侧无需改。
