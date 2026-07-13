@@ -456,3 +456,10 @@
 - **验证（before/after 真机截图）**：simple-harmonic sim 页——空图 → 现显「此仿真数据不可用」诚实提示（证实诊断 + 兜底生效）；`render-check --all-generated` **26/26 零回归**；`npm test` 6 步过(含契约 JSON 合法)；命名 lint 零告警。**根治(契约)真机效果待额度**——现存二阶 sim(SHM/pendulum/牛二律等 lab deck)在regen前仍无效、但已被兜底诚实标注而非空白。
 - **红线/成长**：修正+成长。红线：不静默失败(空图→诚实提示)、不 mock(是真实错误态非假数据)。承 [[FE-59]]：把静默失败变可见。
 - **加法/减法**：修正(渲染兜底)+成长(契约收紧)。**本轮亮点**：离线 Node 复算精确定位真因(推翻上一轮对症状的归因)，双管齐下(渲染 surface + 生成根治)。
+
+## Iter 69 — 校验器拦截 dynamics1d 字符串 consts（二阶误用的源头闸门）+ 全语料 sim 健康离线扫描（鲁棒·轨道④）
+- **先看·离线扫描**：承 iter68，写 Node 复算脚本扫全语料所有 dynamics1d sim 的递推——**确证 2 份 broken**：simple-harmonic-motion（consts.v="v+(-k*x-b*v)*0.1"）、simple-pendulum（consts.dtheta/v="sqrt(g/l)*cos(theta)"），均二阶振子塞进一维、consts 是字符串→NaN→空图；newtons-second-law 是合法一阶、不 broken。即"仅二阶误用坏"，与 iter68 契约收紧的靶一致。
+- **改（源头闸门·轨道④）**：`demo/schema/validate.mjs` dynamics1d 校验加"consts 值必须是数字常量"——字符串/表达式 consts 报 err（附指引："二阶/振子系统改用 custom 引擎"）。这样生成时即被 validate 拦下→docRepair 拿着这条 err 重生成（LLM 据此改用 custom/修正），额度恢复后自动闭环。同步技能镜像。
+- **验证（离线，精确）**：`validateDoc` 跑三份——simple-harmonic 报 1 处 consts err、simple-pendulum 报 consts err、photosynthesis(对照)0 err；精确命中 2 份 broken、不误伤干净 sim。`npm test` 6 步过（基线 ③ 不含此类、不受影响；⑥ 镜像新鲜）；命名 lint 零告警。
+- **红线/成长**：成长（校验规则收紧——iter68 契约"劝 LLM 别这么写"+本轮 validate"这么写就拦下+可 docRepair 修"，防线闭合）。承 [[FE-59]]：把静默坏 sim 变成 validate 硬报错。
+- **加法/减法**：加法（校验闸门）。三层防线合围二阶误用：生成契约(iter68 create-sim)→校验拦截+docRepair(本轮)→渲染兜底诚实提示(iter68)。真机 docRepair 自愈待额度。

@@ -212,6 +212,10 @@ function checkBlock(b, path, state) {
         req(M, 'stateVar', isStr, mp, 'string'); req(M, 'init', isNum, mp, 'number');
         req(M, 'steps', v => Number.isInteger(v) && v > 0 && v <= 500, mp, '1–500 整数');
         const constNames = Object.keys(M.consts || {});
+        // consts 必须是数字常量：填表达式(如把"速度 v"塞成字符串)会被渲染器当字符串拼接→NaN→图表空白。
+        // 这正是二阶/振子系统(简谐/阻尼/单摆,需位置+速度两个状态)误塞进一维 dynamics1d 的典型症状——应改用 custom 引擎自维护多状态。
+        for (const [ck, cv] of Object.entries(M.consts || {}))
+          if (!isNum(cv)) err(mp + '.consts.' + ck, 'consts 值必须是数字常量，不能是表达式/字符串(会被当字符串算出 NaN、图表空白)；二阶/振子系统(需多个状态变量)改用 custom 引擎');
         if (isStr(M.update)) checkExpr(M.update, [M.stateVar, ...paramNames, ...constNames, 'xi'], mp + '.update');
         else err(mp + '.update', '缺少 update 表达式');
       }
