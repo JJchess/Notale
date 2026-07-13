@@ -946,6 +946,16 @@
       if (avail && natural > avail + 1) k.style.zoom = Math.max(0.55, avail / natural);
     }
   }
+  /* 代码卡宽度自适应：codecard 是 overflow:hidden，pre 不换行——窄栏(split/compose)里长代码行会被静默裁掉(丢内容红线)，
+     assertion 也测不到(卡内部裁切、外层不溢出)。这里等比缩到放下，保代码行完整可见(不换行伤可读)。下限 0.6 防过小。 */
+  function fitCode(section) {
+    if (!section) return;
+    for (const code of section.querySelectorAll('.codecard code')) {
+      code.style.zoom = '';
+      const avail = code.clientWidth, natural = code.scrollWidth;
+      if (avail && natural > avail + 1) code.style.zoom = Math.max(0.6, avail / natural);
+    }
+  }
   /* 自定义版式(index/split)的高度自适应：balanceScene 只管默认竖排，这里管 index 的 active panel 与 split 的分栏列。
      宽度由 fitFormulas(section) 统一处理；这里只处理“太高被裁”——同 balanceScene 用 zoom 缩到放下（红线：不裁切）。 */
   function fitScroll(box, availH) {
@@ -983,7 +993,7 @@
     if (body) fitScroll(body, body.clientHeight);
   }
   /* 一页的版式自适应统一入口：先把宽公式缩到放下（影响高度），再按新高度做稀疏/超高的纵向平衡，最后处理自定义版式。 */
-  function layoutScene(section) { fitFormulas(section); balanceScene(section); fitCustomLayout(section); fitStatement(section); }
+  function layoutScene(section) { fitFormulas(section); fitCode(section); balanceScene(section); fitCustomLayout(section); fitStatement(section); }
 
   /* ================= 装配 & 启动 ================= */
   /* 骨架块识别：agent 规划阶段产出的占位 block 仅有 {id,type,intent}，没有真实内容字段。

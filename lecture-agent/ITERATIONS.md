@@ -418,3 +418,11 @@
 - **红线/成长**：修正（字阶 token 一致性）。封面无 balanceScene 兜底，已验证中等长度标题各主题不裁切；极长标题(3行+全可选字段)在最大主题 74px 下有理论裁切风险（同 60px 时已存在、只是更小），hero 有 titleSize 覆盖与 title[1-3] 行数控制兜底，暂不加 cover-fit，记此。
 - **两处避坑（摸着石头）**：① timeline 竖排适配散文事件，不套 T22 横排；② block 正文字号各主题仅差 1-2px，迁 --fs-body 收益≈0 而有回归风险，不做。
 - **加法/减法**：修正（token 化）。跨 4 主题、26 份 deck 封面即时生效，无需真机生成。
+
+## Iter 64 — 代码卡长行自适应 fitCode：修窄栏里长代码行被静默裁掉（不丢内容红线·轨道④）
+- **先看**：抽查 code 页——全宽代码（62 字/行）渲染良好；但 iter59 rdbms 的 split 页里，代码作左锚（~40% 窄栏）时长 SQL 行 `EXPLAIN … WHERE customer_id = 42 AND status = 'shipped'` 被 `.codecard{overflow:hidden}` **静默裁掉**（丢内容红线），且断言测不到（卡内部裁切、外层列不溢出——同 FE-59 "绿断言但内容没了"）。
+- **改（修正·轨道④）**：`demo/doc-to-deck.js` 新增 `fitCode(section)`——对每个 `.codecard code`，内容宽超容器就等比 zoom 缩到放下（下限 0.6 防过小伤可读，不换行以保代码行完整），接入 `layoutScene`（在 balanceScene 前，缩完高度也随之变）。镜 `fitFormulas` 的宽度自适应。
+- **验证（before/after 真机截图）**：rdbms split 页重渲——长 SQL 行从"cut 在 custom"恢复到显出到 `status='shi…`（缩小后多显一大截）；全宽代码页(backprop 62字/行)`render-check` 全绿、**无回归**（fitCode 仅在溢出时 zoom，合适即不动）；`npm test` 6 步过；命名 lint 零告警。
+- **红线/成长**：修正（不丢内容）。net 改进——严格优于此前(此前 custom 处即断)。**已知残留**：极长行(~75+字)在极窄栏(<40%)即便到 0.6 下限仍可能裁尾；这是内容规划问题（不该把宽代码塞窄锚），真机侧规避优于渲染侧无限缩小。记此。
+- **两处避坑（摸着石头）**：timeline 竖排合宜勿动、block 正文字号迁移收益≈0 勿动（承 iter63）。
+- **加法/减法**：修正（robustness）。窄栏代码即时生效，无需真机生成。
