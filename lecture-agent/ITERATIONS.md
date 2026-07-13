@@ -394,3 +394,10 @@
 - **一个设计决定（摸着石头）**：否决了 backlog 里的 T14"callout 改左竖条+淡底卡片"——它与去 AI 味北极星**冲突**（"圆角卡片+单边彩条/accent rail"正是 AI 味红旗）。现有 callout（顶部发丝线+标签+正文）更克制、更编辑感，保留不动。记此以防未来又想当然照搬 DESIGN_RESEARCH。
 - **红线/自测**：纯只读工具，零 deck 风险；`node --check`(20 mjs)、`npm test` 6 步、命名 lint 零告警；已跑出基线。
 - **加法/减法**：加法（度量基础设施）。属"不可见"轮（度量非改观感），charter 允许每 3 轮≤1；上一可见轮 iter59。真机采用率仍待额度恢复。
+
+## Iter 61 — 新增第 4 套主题 slate（冷灰绘图纸+Newsreader 衬线+琥珀强调）：扩主题库、破"仅 3 套主题"单调（多元性·轨道②）
+- **先看**：iter60 多元度基线点名主题偏斜/偏少——cobalt 12 / lab 10 / cartesian 4，且仅 3 套。架构支持"加一套主题=加一个 token 块，渲染器零改"，是安全的离线多元增益。
+- **改（加法·轨道②）**：`demo/index.html` 加 `:root[data-theme="slate"]` token 块——冷灰纸(`--bg:#E7E9EB`)+冷墨+单一**琥珀**强调(`--accent:#A6692A`)+Newsreader 衬线+Inter，无底纹、比率 ~1.28。与暖沙 cartesian / 钴蓝 cobalt / 暗仪表 lab 三者在底色/字型/强调色上全拉开；复用已 vendor 的字体（Newsreader+Inter，离线零新增资源）。schema `theme` enum +slate、`NAMING.md §3` 显示名 slate=石板、`plan.mjs` 主题选择提示 +slate。
+- **验证（before/after 真机截图）**：把 freewill 设 theme=slate 真机渲染——封面（琥珀 eyebrow + Newsreader 大标题 + 冷灰底）与 split 内容页（左锚流程图 border/shadow + 右栏 callout/编号列表）均渲染正确、观感冷静克制且与其余主题肉眼可辨；`render-check` 全绿（0 溢出/0 err）；无回归。`npm test` 6 步过；命名 lint 零告警（slate 合 NAMING）。
+- **红线/成长**：成长（主题库扩容）。视觉全走 token；新命名走 NAMING。可用主题 3→4；**真机采用率待额度恢复**（规划器提示已加、schema 已放行，能选）。
+- **加法/减法**：加法。取经：Swiss/编辑排版的"冷中性 + 单一暖强调 + 衬线×无衬线"（DESIGN_RESEARCH T7/T9）。

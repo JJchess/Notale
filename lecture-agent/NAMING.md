@@ -37,7 +37,7 @@
 **scene.kind**：hero=封面 · content=内容页 · quiz=测验页 · statement=金句页 · section=章节页
 **layout.kind**：flow=竖排 · index=分节目录 · split=锚定分栏 · compose=自由编排*(新)*
 **block.type**：hero=封面块 · statement=金句 · pullquote=抽句 · list=要点 · agenda=并列条目 · callout=要点框 · timeline=时间线 · formula=公式 · flow=流程 · table=表格 · code=代码 · compare=对照 · grid=网格 · quiz=测验 · sim=仿真 · runnable=可运行代码 · embed=嵌入 · freeform=自由块
-**theme**：cartesian=坐标纸（克制人文）· cobalt-grid=钴蓝公报 · lab=暗仪表台
+**theme**：cartesian=坐标纸（克制人文）· cobalt-grid=钴蓝公报 · lab=暗仪表台 · slate=石板（冷灰编辑/工程）
 
 ---
 
