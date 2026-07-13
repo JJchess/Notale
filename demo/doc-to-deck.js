@@ -498,6 +498,13 @@
         badge.innerHTML = '<span class="rt">' + escapeHtml(reg.label) + '</span>' + escapeHtml(desc);
         const data = run();
         const cs = data.map(d => d.c);
+        /* 兜底：递推产出非有限值(如把 2 阶振子塞进 1 维 dynamics1d，consts 里的"速度"是字符串→NaN)时，
+           别留一张神秘空图——显式标注数据无效(不静默失败红线)。根治在生成侧(见 create-sim 契约)。 */
+        if (cs.filter(Number.isFinite).length < 2) {
+          plotwrap.innerHTML = '';
+          plotwrap.appendChild(el('div', 'sim-note', '此仿真数据不可用（模型非一维一阶递推）'));
+          return;
+        }
         const tl = (b.chart && b.chart.targetLine) || null;
         const lo = Math.max(-3, Math.min(...cs) - 0.2), hi = Math.min(4, Math.max((tl ? tl.value + 0.2 : 1.2), Math.max(...cs) + 0.2));
         plotwrap.innerHTML = '';

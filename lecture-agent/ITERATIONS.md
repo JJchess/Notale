@@ -448,3 +448,11 @@
 - **验证（离线）**：`render-check --all-generated` **26/26 全绿零回归**；`npm test` 6 步过；命名 lint 零告警。**诚实标注**：这是对真实竞态的**代码推理修正**，非截图验收——headless render-check 的 Plot 加载时序不可靠，simple-harmonic 截图仍空（可能该 headless 运行 Plot 超 300 帧才到、或该 sim 另有 model/domain 数据问题）；**真机浏览器 + sim model 排查待额度/交互环境**。修正本身零回归、对"Plot 迟到→永久空白"这一确定的 latent bug 是正解。
 - **红线/成长**：修正（渲染健壮性；不因时序丢内容）。不改数据/视觉值，仅加重试。
 - **加法/减法**：修正（robustness）。承 iter62 先例——有据可推的健壮性修正即便无法截图验收亦可落地，但如实标注未验部分。
+
+## Iter 68 — sim 空图真因定位 + 双修：渲染兜底(surface 无效数据) + 生成契约禁二阶塞 dynamics1d（鲁棒+内容质量·轨道④③）
+- **先看·离线诊断**：承 iter67，把 simple-harmonic 的 dynamics1d 递推在 Node 里复算——**真因不是 Plot 竞态**：model 是 `update:"x+v", consts:{v:"v+(-k*x-b*v)*0.1"}`，这是**二阶阻尼振子**(需位置 x + 速度 v 两个状态)，但 dynamics1d 只有一个 stateVar；`consts.v` 被当**字符串**注入 scope→`x+v` 字符串拼接→`c` 第 1 步即 **NaN**→曲线画不出→空图。（iter67 的 Plot 重试是真 latent bug 但非此症之因，两者独立。）
+- **改①·渲染兜底（轨道④，可离线验）**：`demo/doc-to-deck.js` dynamics1d render——`data` 有限值 <2 时不留神秘空图，显式渲 `.sim-note`「此仿真数据不可用（模型非一维一阶递推）」（不静默失败红线；token 化样式）。
+- **改②·生成契约根治（轨道③）**：`skills/create-sim` sim 契约的 dynamics1d 防误用指引，明确加**二阶/振子系统(简谐/阻尼/单摆)禁用 dynamics1d**——需 x,v 两状态，塞 consts 会 NaN 空图，改用 custom(computeJs 自维护 x,v)或 widget。
+- **验证（before/after 真机截图）**：simple-harmonic sim 页——空图 → 现显「此仿真数据不可用」诚实提示（证实诊断 + 兜底生效）；`render-check --all-generated` **26/26 零回归**；`npm test` 6 步过(含契约 JSON 合法)；命名 lint 零告警。**根治(契约)真机效果待额度**——现存二阶 sim(SHM/pendulum/牛二律等 lab deck)在regen前仍无效、但已被兜底诚实标注而非空白。
+- **红线/成长**：修正+成长。红线：不静默失败(空图→诚实提示)、不 mock(是真实错误态非假数据)。承 [[FE-59]]：把静默失败变可见。
+- **加法/减法**：修正(渲染兜底)+成长(契约收紧)。**本轮亮点**：离线 Node 复算精确定位真因(推翻上一轮对症状的归因)，双管齐下(渲染 surface + 生成根治)。
