@@ -129,7 +129,7 @@ LectureDoc                     一门课
 
 ### 3.3 逃生舱：`freeform`（未分类内容）
 
-当教学内容需要的**版式/内容形态**不在上述 18 种正式类型里、且 `grid`/`sim.custom`/`embed` 也不适用时的最后手段。字段：
+当教学内容需要的**版式/内容形态**不在上述 正式类型里、且 `grid`/`sim.custom`/`embed` 也不适用时的最后手段。字段：
 
 ```jsonc
 { "type": "freeform",
@@ -141,7 +141,7 @@ LectureDoc                     一门课
 - 永远渲染成带虚线边框 + `⚠ 未分类内容` 标签 + 底部展示 `rationale` 的样式，**绝不会悄悄融入正常排版**——排版审查一眼就能认出它。
 - **能力（自由在布局，不在裸视觉）**：`html` 支持结构/文本标签、`<img>`（仅本地 `vendor/`/`assets/`/`data:image/`）、`<svg>`（path/rect/circle/line/g/text/polyline/polygon）、`<a>`，以及**布局类 `style`**（grid/flex/gap/尺寸/`position:relative|absolute`/transform/text-align/aspect-ratio/border-radius/font-size…）。于是它终于能做"带图带定位的时间轴""自定义网格拼贴"这类现有积木拼不出的版式。
 - **约束（强制在主题内）**：`style` 里的 `color`/`background`/`border(-color)`/`fill`/`stroke`/`font-family`/`box-shadow` **只接受 `var(--token)` 或 `currentColor`/`transparent`/`none`**——裸色值/裸字体会被剥离；SVG 的 `fill`/`stroke` 同理。禁 `script`/`style`/`iframe`/`object`/`embed` 标签、内联事件、`javascript:`、`url()`、`position:fixed`、远程 `img`。**两道关**：`validate.mjs` 静态预检（命中即校验失败，给出带 JSON 路径的可读报错）；运行时 `sanitizeFreeformHtml` 权威净化（剥离不合规标签/属性/声明；被剥的标签保留其文字内容不吞可见文本）。
-- **agent 应把它当稀有出口，不是默认选项**：生成前必须先确认 18 种正式类型（尤其 `grid` 能否搞定版式、`sim.custom` 能否搞定交互）都无法表达，才允许落到 `freeform`；`rationale` 写清楚具体卡在哪——这些 rationale 会被 `validate.mjs` 汇总成警告，反复出现的诉求就是该长出新正式 block 类型的信号（见 §7 流水线里 batch_runner 的角色）。
+- **agent 应把它当稀有出口，不是默认选项**：生成前必须先确认 正式类型（尤其 `grid` 能否搞定版式、`sim.custom` 能否搞定交互）都无法表达，才允许落到 `freeform`；`rationale` 写清楚具体卡在哪——这些 rationale 会被 `validate.mjs` 汇总成警告，反复出现的诉求就是该长出新正式 block 类型的信号（见 §7 流水线里 batch_runner 的角色）。
 
 ### 3.4 流式生成
 
@@ -173,7 +173,7 @@ LectureDoc                     一门课
 6. **仿真优先选注册表引擎**（dynamics1d / searchCompare），并诚实设置 regimes 的分界条件；`custom`（参数驱动折线）次之，`widget`（sandbox iframe 里的 canvas 动画/任意交互）优先级最低——只在确需实时动画/canvas/几何/自由交互时用。`widget`/`freeform` 的 `html` 会过反 AI-slop lint：交互组件须有动效、不写自我介绍 `<h1>`、不贴"提示:"说明胶囊、不用 `@media (prefers-color-scheme)`（走 `[data-theme]`/token）、不抄样例桩色。
 7. **quiz.explain 必须解释"为什么对/为什么最像的干扰项不对"**，不只是复述正确项。
 8. **notes 里可以（且应该）写**：展开推导、教学建议（"可让学生先举手再点开"）、数据的诚实说明（"预算极小时贝叶斯偶尔被随机反超，n≥8 稳定领先"）、下一页的衔接。
-9. **`freeform`（§3.3）是稀有出口，不是默认选项。** 生成前必须先确认 18 种正式类型（版式想想 `grid`、交互想想 `sim.custom`）都表达不了，才允许用它；`rationale` 要写清楚具体卡在哪一点，泛泛的"需要自定义排版"不合格（`validate.mjs` 会拒绝短于 10 字的 rationale，但更长不等于更合格——要具体）。
+9. **`freeform`（§3.3）是稀有出口，不是默认选项。** 生成前必须先确认 正式类型（版式想想 `grid`、交互想想 `sim.custom`）都表达不了，才允许用它；`rationale` 要写清楚具体卡在哪一点，泛泛的"需要自定义排版"不合格（`validate.mjs` 会拒绝短于 10 字的 rationale，但更长不等于更合格——要具体）。
 10. **颜色/字体/间距永远走主题 token，内容层绝不写具体色值/字体。** 主题（§8）选定后一切视觉从其 token 流出——这是"放开自由但不变 slop"的核心；连 `freeform` 的内联 `style` 也只接受 `var(--…)`。想要不同观感就换 `theme`，不是在内容里调色。
 
 ---

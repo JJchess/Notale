@@ -477,3 +477,11 @@
 - **验证（before/after 真机截图）**：slate 主题 test doc → `<video>` 原生控件+data:海报+caption(inline-md) 正确渲染；`render-check` 0 溢出/**0 console error**（无 src→无 404）；负例 `validateDoc` 远程 src 被拒（守离线红线）；`npm test` 6 步过（含计数/schema≡BLOCK_TYPES）；命名 lint 零告警。
 - **红线/成长**：成长（新块）。红线：离线（拒远程、渲染器不发网络）、不 mock（无源占位）、渲染不崩（缺字段兜底）、视觉走 token、命名走 NAMING。隔离：不用视频时 deck/核心/体积与现在完全一致。
 - **加法/减法**：加法。**待续**：阶段2 `tools/render-video.mjs`（复用 render-check CDP + canvas-record/WebCodecs + mediabunny 客户端捕获，多数离线可验）；阶段3 `skills/create-video/`（两段式 planner→composition，真机待额度）。真机播放待阶段2 产出本地 clip。
+
+## Iter 72 — 解耦：消除"N 种正式类型"硬编码计数（加 block 类型不再手改 6 处）（做薄·用户直指的耦合）
+- **背景（用户直指）**：iter71 加一个 video 块，竟要同时把"17 种正式"手改成"18 种"于 6 处散文——典型 DRY 违背/耦合；`check-consistency` 的 Check B 只是**给这个耦合打的补丁**（守数字漂移），治标不治本。
+- **改（减法·解耦）**：把 `demo/schema/SPEC.md`(×3)/`lecture-doc.schema.json`(×2)/`create-freeform/contracts.json`(×1) 里的"N 种正式类型"**全改成不带数字的措辞**（"正式类型"/"现有各正式类型"）——加 block 类型从此**零计数改动**。`check-consistency` 的 **Check B 从"守数字对齐"翻转成 Check B'"禁止散文里再出现硬编码计数"**（防耦合复辟）；派生计数仍由 registry 打印供参考（不入散文）。
+- **验证（离线）**：`node --check`；`grep "N 种正式"` 全语料**零残留**；`check-consistency` 全过（B' 命中 0、C schema≡BLOCK_TYPES 对齐）；`npm test` 6 步过；命名 lint 零告警。
+- **红线/成长**：做薄（去掉一个 magic number + 把其守卫翻成反向防复辟）。加 block 类型现只碰：schema(enum+dispatch+def) + validate(BLOCK_TYPES+checkBlock，Check C 守双表对齐) + 渲染器 + 可选契约 + 显示名/provenance——**数字耦合已除**。
+- **诚实边界**：schema-enum↔validate-BLOCK_TYPES 双表、以及 schema/validate/renderer 三层各写一次，是**零依赖分层设计的结构性权衡**（validate 手写不读 schema），由 Check C 守齐、非纯债务，本轮不动、记此。用户"很多界限不够清晰"的更大解耦（如把三层 block 定义收敛到单一注册）值得后续单独立项。
+- **加法/减法**：减法（消除耦合）。承 [[FE-59]] 精神但反用：与其加检查守耦合，不如去掉耦合本身。

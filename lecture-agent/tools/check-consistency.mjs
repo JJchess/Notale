@@ -27,15 +27,12 @@ if (forbidden) {
   if (wrong.length) fails.push(`plan.mjs 把已注册类型列为"不存在": ${wrong.join(', ')}（应从禁用清单移除）`);
 } else fails.push('plan.mjs 未找到"都不存在"禁用清单（结构变了？请核对 Check A 正则）');
 
-// —— Check B（iter27 类）：文档里"N 种正式"的计数须等于 formalCount ——
-const docFiles = ['../demo/schema/SPEC.md', '../demo/schema/lecture-doc.schema.json', 'skills/create-freeform/contracts.json'];
-let bChecked = 0;
-for (const f of docFiles) {
-  const txt = R(f);
-  for (const m of txt.matchAll(/(\d+)\s*种正式/g)) {
-    bChecked++;
-    if (+m[1] !== formalCount) fails.push(`${f}: "${m[1]} 种正式" 与 registry 不符（应为 ${formalCount}）`);
-  }
+// —— Check B 已移除（iter72 解耦）：文档不再硬编码"N 种正式"计数——加 block 类型不必再手改 6 处数字，
+//    因此这个"守数字漂移"的检查已无对象。加类型只改：schema enum + validate BLOCK_TYPES（Check C 守其对齐）+ 渲染器 + 契约。
+//    禁止回归：docs 里若再出现 "N 种正式" 硬编码计数即视为耦合复辟——下面 Check B' 反向拦截。
+let bViol = 0;
+for (const f of ['../demo/schema/SPEC.md', '../demo/schema/lecture-doc.schema.json', 'skills/create-freeform/contracts.json']) {
+  for (const m of R(f).matchAll(/\d+\s*种正式/g)) { bViol++; fails.push(`${f}: 又出现硬编码计数 "${m[0]}"——正式类型数不该写进散文(耦合)，改为"正式类型"等不带数字的措辞（iter72 解耦）`); }
 }
 
 // —— Check C（iter34）：schema JSON 的 block 类型 enum 必须与 validate.mjs 的 BLOCK_TYPES 逐一对齐 ——
@@ -83,7 +80,7 @@ for (const f of ['../demo/index.html', '../demo/doc-to-deck.js']) {
 
 // —— 报告 ——
 console.log(`registry: ${BLOCK_TYPES.length} 种 block（含 freeform），正式 ${formalCount} 种；注册家族类型 ${registered.length} 个`);
-console.log(`Check A（plan.mjs 禁用清单 vs 注册类型）· Check B（文档"N 种正式"计数 ×${bChecked} 处）· Check C（schema enum ≡ BLOCK_TYPES ×${cChecked}）· Check D（命名 lint · warn）`);
+console.log(`Check A（plan.mjs 禁用清单 vs 注册类型）· Check B'（禁散文里硬编码"N 种正式"计数·解耦，命中 ${bViol}）· Check C（schema enum ≡ BLOCK_TYPES ×${cChecked}）· Check D（命名 lint · warn）`);
 if (warns.length) { console.warn(`⚠ 命名 lint：${warns.length} 处待规整（warn，不阻断；见 NAMING.md）`); for (const w of warns) console.warn('  · ' + w); }
 if (fails.length) { console.error('✗ 一致性检查发现 ' + fails.length + ' 处漂移:'); for (const x of fails) console.error('  · ' + x); process.exit(1); }
 console.log('✓ 一致性检查全过（block 类型事实与 registry 对齐）。');
