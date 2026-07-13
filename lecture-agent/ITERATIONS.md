@@ -401,3 +401,12 @@
 - **验证（before/after 真机截图）**：把 freewill 设 theme=slate 真机渲染——封面（琥珀 eyebrow + Newsreader 大标题 + 冷灰底）与 split 内容页（左锚流程图 border/shadow + 右栏 callout/编号列表）均渲染正确、观感冷静克制且与其余主题肉眼可辨；`render-check` 全绿（0 溢出/0 err）；无回归。`npm test` 6 步过；命名 lint 零告警（slate 合 NAMING）。
 - **红线/成长**：成长（主题库扩容）。视觉全走 token；新命名走 NAMING。可用主题 3→4；**真机采用率待额度恢复**（规划器提示已加、schema 已放行，能选）。
 - **加法/减法**：加法。取经：Swiss/编辑排版的"冷中性 + 单一暖强调 + 衬线×无衬线"（DESIGN_RESEARCH T7/T9）。
+
+## Iter 62 — 修两处硬编码颜色 → token（跨主题破损 + 视觉走 token 红线）（鲁棒/正确·轨道④）
+- **先看**：抽查 quiz 页（26 实例）→ 顺藤查结构 CSS 里的硬编码色，发现两处违反"视觉走 token"红线、且在非默认主题上破损：
+  1. `.quiz .choice:hover{ background:rgba(138,129,120,.08) }`——硬编码 **cartesian 沙色**，在 cobalt/lab/slate 上是错主题色。
+  2. `.split-anchor{ box-shadow:… rgba(0,0,0,.5) }`——硬编码**黑影**，在暗主题 lab 上不可见→左锚分栏丢失分离感；且黑 drop-shadow 本身偏 AI 味。
+- **改（减法/修正·轨道④）**：`demo/index.html` — quiz hover 改 `var(--panel, rgba(127,127,127,.08))`（主题中性，与 index-item 高亮一致）；split-anchor 阴影改 `var(--line)`（各主题恰当分离：暗主题上成微光而非隐形黑影）。纯 token 化，不新增视觉值。
+- **验证（真机截图）**：rdbms 设 theme=lab 渲染 split 页 → 左锚（代码卡）与右栏现在有 token 化的恰当分离（此前黑影在暗底不可见）；`render-check` 全绿（0 溢出/0 err）。quiz hover 为悬停态无法静态截图，但 token 替换显然正确。`npm test` 6 步过；命名 lint 零告警。
+- **红线/成长**：红线修正（视觉走 token）。修好后全 4 主题 quiz 悬停/split 分栏一致。**遗留**：CodeMirror 选区 `rgba(26,26,26,.1)`（runnable 块罕见 + CM 主题上下文复杂）暂留、记此。
+- **加法/减法**：修正（token 化）。跨主题、跨全部 quiz(26)/split 页即时生效，无需真机生成。
