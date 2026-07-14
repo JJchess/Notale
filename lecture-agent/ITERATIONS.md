@@ -515,3 +515,10 @@
 - **验证（离线）**：`lecture-agent skills` 正确列为"元/文档技能"（不进路由表）；`npm test` 6 步全绿；命名 lint 零告警。**agent 真用此技能写 composition 的采用率待额度**（承 FE-59 诚实标注）。
 - **红线/成长**：成长（授权文档化）。不可见轮（上两轮 74/75 均有截图验收，配额合规）。
 - **待续**：2b 旁白（Piper-WASM ~75MB vendor，**待用户拍板**再动）；真机整链（agent 按 SKILL 写 composition→捕获→嵌入）待额度。
+
+## Iter 77 — 激活 grid：补上"灵活版式主力"的缺失契约（多元性·轨道②；生成侧）
+- **先看·两个判断**：① 抽查 section 分隔页——现状（巨号+kicker+大标题+分隔杠+有据 dek）已克制得体，DESIGN_RESEARCH T16"描边巨号叠标题"是审美赌博非明确提升，按 [[FE-61]] 纪律**否决不动**（记档防再议）。② 发现真缺口：**`grid` 从没有契约**——SPEC 称它"灵活版式的主力、能拼出真正的多栏/网格/不对称布局"，但不在任何 contracts.json → 不进 registry → 不进 autoTypes → **规划器永远用不了**（与 iter4 widget 闲置同构：能力存在、生成端不可达）。
+- **改（加法·轨道②）**：`create-content/contracts.json` 加 `grid` 契约——columns 2-4、items 2-8、span 跨列做不对称版面；约束镜 compare：子块限简单类型（list/callout/formula/statement/code），禁 sim/runnable/quiz/嵌套 grid/compare；"别为凑格硬拆内容，项目间须真正并列"（防滥用）。注册后自动进 autoTypes（AUTO_EXCLUDE 只排 runnable/freeform/embed）。
+- **验证（离线）**：`lecture-agent skills` → grid 路由至 create-content、出现在"自动可规划类型"菜单；样例 3 列 grid（1NF/2NF/3NF callout 卡）过 `validateBlock`；渲染器/CSS 早已支持（Check E 全 BLOCK_TYPES 存在性零告警）；`npm test` 6 步 + 一致性 + lint 全绿。**真机采用率待额度**（承 FE-59——但 block 类型历史上教了就用，如 pullquote 首跑即产出）。
+- **红线/成长**：成长（激活既有能力）。多元性直接受益路径：grid 是页内不对称/多栏的生成端入口，与 compose(页级) 互补。
+- **加法/减法**：加法（一条契约）。生成侧不可见轮：上两轮 74/75 可见，配额合规（76 亦不可见——**下轮须可见**）。
