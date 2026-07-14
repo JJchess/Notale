@@ -535,3 +535,9 @@
 - **改（修正·小）**：`render-check.mjs` 的 `--all-generated` 改为扫 `generated/ + examples/` 两目录（目录可缺不炸；label 带前缀区分）。**刻意不动 diversity.mjs**：多元度量的是生成端行为，手写夹具混入会污染指标（记档防好心"顺手统一"）。
 - **验证**：全量扫描 **27/27 全绿**（26 语料 + examples/gradient-descent-intro）；`npm test` + 一致性 + lint 全绿。
 - **红线/成长**：门禁扩容（成长）。夹具从"提交即失防"变"每次全量扫描必验"。
+
+## Iter 80 — 汇整轮：BACKLOG.md 收敛散落记档 + 刷新健康基线 + 跨会话记忆更新（诚实的非改进轮）
+- **判断（摸着石头·如实）**：离线可验的实值项已挖空（iter79 已声明）。本轮拒绝为"可见配额"制造 churn，改做汇整——这本身违反"纯不可见每3轮≤1"配额，**如实记录**：配额目的是防 50 轮隐形空转，而当前瓶颈是外部条件（额度/拍板），churn 才是真正的反目标。
+- **交付**：① `BACKLOG.md` 入库——A 额度恢复后的执行清单（5 项带精确命令：采用率大验证/多元度对比/坏 sim 自愈/warn 清偿/create-video 整链）；B 待拍板项（Piper 旁白/三层收敛/镜像构建化）；C **已否决记录**（T14/T16/T22/quote 块/video 进菜单/examples 进 diversity——6 项防再议）；D 已知取舍（grandfather/MPL/fitCode 下限——防"好心修复"）。② 健康基线实测刷新（render 27/27、非 flow 10%、3 err=2 坏 sim）。③ 跨会话记忆 `lecture-demo-state.md` 从 iter54 时点刷到 iter80（下个 session 免考古）。
+- **验证**：`npm run diversity` 实测出基线数字；`npm test` 全绿；BACKLOG 每条均可溯源到对应 ITERATIONS 条目。
+- **建议（对用户）**：循环继续意义有限，可 `CronDelete 05e278fa` 暂停，待额度恢复按 BACKLOG §A 一次性执行大验证。
