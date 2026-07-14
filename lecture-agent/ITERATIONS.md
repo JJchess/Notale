@@ -508,3 +508,10 @@
 - **验证（负例截图为主验收）**：① 坏 JSON doc → 面板显示 "Bad control character … line 1 column 34"（精确到列）✓；② 不存在路径 → "HTTP 404（路径相对 demo/ 根…）" ✓；③ 基线正常 doc `render-check` 全绿（正路径零行为变化）✓。`npm test` 6 步、命名 lint 零告警。
 - **红线/成长**：红线修正（不静默失败——错误态是真实信息非 mock）。承 [[FE-64]]"渲染兜底诚实提示"三层防线思想，用在 doc 加载层。
 - **加法/减法**：修正（小而准，~20 行 + CSS）。作者体验直接受益：转义/路径错误从"白屏猜谜"变"一屏定位"。
+
+## Iter 76 — 视频阶段3a·create-video 元技能：composition 创作工作流授权（获批视频计划推进；不可见轮）
+- **改（加法·技能）**：新增 `skills/create-video/SKILL.md`（**元技能，刻意无 contracts.json**）——三步工作流（写 composition → `npm run render-video` 捕获 → 嵌 video 块）+ 帧锁定契约硬规则（renderAt 纯函数、禁 Date/random/自跑 rAF、两次捕获字节一致自检）+ 内容纪律（**内容有据**：动画数据须真实计算，sim 反伪仿真纪律的视频版；叙事骨架 hook→intuition→formalize→recap、一次一概念、渐进构建+元素持久化、stagger/camera/emphasis 技法、视觉克制）+ 预算（960×540@30fps、20–90s）。指向范例 `demo/examples/gradient-descent.composition.html`。
+- **关键设计决定（记档防"好心修复"）**：**video 块刻意不进 fan-out 菜单**——若加 contracts.json，规划器会让 LLM 直接编 `src` 指向不存在的文件（=编造，mock 红线）。正确路径永远"先捕获出文件才写块"；未来编排器把捕获接进生成流水线后再评估。SKILL.md 内已写明此理由。
+- **验证（离线）**：`lecture-agent skills` 正确列为"元/文档技能"（不进路由表）；`npm test` 6 步全绿；命名 lint 零告警。**agent 真用此技能写 composition 的采用率待额度**（承 FE-59 诚实标注）。
+- **红线/成长**：成长（授权文档化）。不可见轮（上两轮 74/75 均有截图验收，配额合规）。
+- **待续**：2b 旁白（Piper-WASM ~75MB vendor，**待用户拍板**再动）；真机整链（agent 按 SKILL 写 composition→捕获→嵌入）待额度。
