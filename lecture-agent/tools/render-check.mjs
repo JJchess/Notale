@@ -201,10 +201,14 @@ async function main() {
   // 组装待验收清单：--all-generated 扫 demo/generated/*.lecture.json；否则单份（默认基线）
   let scenes;
   if (allGenerated) {
-    const dir = path.join(DEMO_ROOT, 'generated');
-    const files = readdirSync(dir).filter(f => f.endsWith('.lecture.json')).sort();
-    scenes = files.map(f => ({ label: f.replace('.lecture.json', ''), doc: `generated/${f}`, query: '' }));
-    if (!scenes.length) { console.error('✗ demo/generated/ 下没有 .lecture.json'); process.exit(1); }
+    // 扫 generated/（本地生成语料，gitignored）+ examples/（入库手写夹具，如 showcase deck——不纳则静默腐烂）
+    scenes = [];
+    for (const sub of ['generated', 'examples']) {
+      let files = [];
+      try { files = readdirSync(path.join(DEMO_ROOT, sub)).filter(f => f.endsWith('.lecture.json')).sort(); } catch { /* 目录可缺 */ }
+      scenes.push(...files.map(f => ({ label: `${sub}/${f.replace('.lecture.json', '')}`, doc: `${sub}/${f}`, query: '' })));
+    }
+    if (!scenes.length) { console.error('✗ demo/generated|examples/ 下没有 .lecture.json'); process.exit(1); }
   } else {
     const qs = new URLSearchParams(query.replace(/^\?/, ''));
     if (docFlag) qs.set('doc', docFlag);

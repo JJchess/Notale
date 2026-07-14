@@ -529,3 +529,9 @@
 - **验证（截图为主验收）**：`validateDoc` 0 err 0 warn；`render-check --doc examples/…` 全绿（0 溢出/0 console error）；截图确认——grid 页三张发丝线 callout 卡（琥珀标签、无卡片框，克制）、compose 页公式主栏+右窄旁注（旁注内联 KaTeX 正常）；video 页复用 iter74 已验的播放路径。`npm test` + 一致性 + lint 全绿。
 - **红线/成长**：加法。红线全守：内容有据（每个数字可验算）、video src 本地、视觉走 token、无 mock（clip 缺失时 caption 给出真实的再生成命令而非假装存在）。
 - **价值**：① 活文档（入库可看全部能力）② 手写回归夹具（render-check --doc examples/… 可随时验）③ grid/video 首次出现在入库 deck。可见轮配额恢复。
+
+## Iter 79 — render-check 全量扫描纳入 examples/ 夹具（防 showcase 静默腐烂·轨道④小修）
+- **先看**：iter78 的入库 showcase 夹具不在任何自动门禁里——`--all-generated` 只扫 gitignored 的 generated/，夹具改坏了没人知道（静默腐烂，同 FE-59"绿断言盲区"家族）。
+- **改（修正·小）**：`render-check.mjs` 的 `--all-generated` 改为扫 `generated/ + examples/` 两目录（目录可缺不炸；label 带前缀区分）。**刻意不动 diversity.mjs**：多元度量的是生成端行为，手写夹具混入会污染指标（记档防好心"顺手统一"）。
+- **验证**：全量扫描 **27/27 全绿**（26 语料 + examples/gradient-descent-intro）；`npm test` + 一致性 + lint 全绿。
+- **红线/成长**：门禁扩容（成长）。夹具从"提交即失防"变"每次全量扫描必验"。
