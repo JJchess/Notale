@@ -501,3 +501,10 @@
 - **验证**：`npm test` 6 步（21 mjs 语法含新库/新工具）；命名 lint 零告警（render-video/browser/composition 朴素词）；**`render-check --all-generated` 26/26 零回归**（render-check 重构后必须全扫，过）。
 - **红线/成长**：加法（管线）。红线守住：deck 只播本地 MP4（无网络）；捕获全客户端；composition 内容有据；帧锁定确定性（同 composition 每次逐帧一致）。**mediabunny=MPL-2.0**（弱 copyleft 文件级，作依赖直接用无碍，记档）。
 - **待续**：阶段2b 旁白（Piper-WASM TTS + 词级时间戳 + WebVTT + AudioEncoder 双轨）；阶段3 `skills/create-video/`（agent 授权写 composition，真机待额度）。doc 解析失败的诚实错误页，候选小修。
+
+## Iter 75 — doc 加载失败的诚实错误页：白屏 → 显式错误面板（不静默失败·轨道④，iter74 记档缺口闭环）
+- **背景（有据）**：iter74 实测踩到——doc JSON 转义错（`\e`）→ `fetch().then(r=>r.json())` 未捕获 rejection → **整页静默白屏**，作者无从定位（404 路径错同样白屏）。"渲染不崩/不静默失败"红线在 doc 加载这第一步就有缺口。
+- **改（修正·轨道④）**：`doc-to-deck.js` 启动 fetch 包 try/catch——失败渲显式 `.doc-error` 面板：哪个文件（mono 琥珀）、什么错（JSON 解析器原始信息含 line/col、或 HTTP 状态+路径提示）、怎么定位（指向 `validate.mjs`，点名"手写 doc 反斜杠转义"常见坑）；同时 console.error 保留给 DevTools。`index.html` 加 `.doc-error*` CSS（全 token、居中、衬线标题+发丝线）。
+- **验证（负例截图为主验收）**：① 坏 JSON doc → 面板显示 "Bad control character … line 1 column 34"（精确到列）✓；② 不存在路径 → "HTTP 404（路径相对 demo/ 根…）" ✓；③ 基线正常 doc `render-check` 全绿（正路径零行为变化）✓。`npm test` 6 步、命名 lint 零告警。
+- **红线/成长**：红线修正（不静默失败——错误态是真实信息非 mock）。承 [[FE-64]]"渲染兜底诚实提示"三层防线思想，用在 doc 加载层。
+- **加法/减法**：修正（小而准，~20 行 + CSS）。作者体验直接受益：转义/路径错误从"白屏猜谜"变"一屏定位"。

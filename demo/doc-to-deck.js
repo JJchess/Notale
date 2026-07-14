@@ -1172,8 +1172,21 @@
      不做初始 fetch——避免短暂闪现基线 deck 与正在生成的 doc 冲突。 */
   if (!new URLSearchParams(location.search).has('live')) {
     const docUrl = new URLSearchParams(location.search).get('doc') || 'course.lecture.json';
-    const initialDoc = await fetch(docUrl).then(r => r.json());
-    renderDoc(initialDoc);
+    /* 诚实失败（iter75）：此前 fetch/JSON 解析失败 → 未捕获 rejection → 整页静默白屏（手写 doc 转义错、路径错都会踩）。
+       现在渲一块显式错误面板：哪个文件、什么错、怎么定位——不静默、不假装正常（不 mock 红线的运行时面）。 */
+    try {
+      const res = await fetch(docUrl);
+      if (!res.ok) throw new Error(`HTTP ${res.status}（路径相对 demo/ 根，如 generated/xxx.lecture.json）`);
+      renderDoc(await res.json());
+    } catch (e) {
+      console.error('讲义加载失败:', docUrl, e);
+      const box = el('div', 'doc-error');
+      box.innerHTML = '<div class="doc-error-title">讲义加载失败</div>'
+        + '<div class="doc-error-file">' + escapeHtml(docUrl) + '</div>'
+        + '<div class="doc-error-msg">' + escapeHtml(String(e && e.message || e)) + '</div>'
+        + '<div class="doc-error-hint">若是 JSON 语法错：node demo/schema/validate.mjs &lt;文件&gt; 可定位；常见于手写 doc 的反斜杠转义。</div>';
+      document.body.appendChild(box);
+    }
   }
 
   /* ---- live.html 公共 API：renderDoc/rerenderScene 让 Dashboard 增量更新预览 ---- */
