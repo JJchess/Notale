@@ -493,3 +493,11 @@
 - **验证**：负例①往 SCENE_KINDS 加 'fake' → C′ fail（0 匹配，指向两侧漂移）；负例②把 index.html slate 块改名 → E warn（"忘落 CSS"）；均还原后全过、index.html 零 diff。`npm test` 6 步全绿（①语法含 enums.mjs、⑥镜像 6 文件新鲜）；diversity 输出值不变但"满分"改派生；`render-check --all-generated` 26/26 零回归（渲染器净零改动）；命名 lint 零告警。
 - **红线/成长**：做薄+守卫（渐进法制：C′ fail 级因已 3 次实证漂移是真风险；E warn 级先提醒）。**加一个枚举值从"N 处静默手改"变为"改真相源+schema，其余漏改被 npm test 抓"**。
 - **边界（不做，已记档）**：技能镜像整份拷贝（Check ⑥ 守、自包含刻意代价）；block 三层定义收敛单一注册（架构另项）；散文改插值（教学内容，用 E 存在性盖住）。
+
+## Iter 74 — 视频阶段2·客户端捕获管线 render-video.mjs：HTML composition → 浏览器内 WebCodecs 编码 → 本地 MP4（研究定稿方案核心落地）
+- **交付**：① vendor **mediabunny v1.50.8**（单文件 ESM 625KB + MPL-2.0 LICENSE，唯一新依赖，仅捕获时在浏览器里加载——deck 运行时零涉及，可插拔隔离兑现）。② **composition 契约**：`window.COMPOSITION={width,height,fps,durationMs,renderAt(tMs) 纯函数}`——帧锁定确定性（研究定稿的核心抽象），示例 `demo/examples/gradient-descent.composition.html`（源入库；MP4 产物在 gitignored 的 generated/assets/，随时可再生成）（真实梯度下降迭代 x_{k+1}=x_k−η·f'(x_k)，非装饰假动画，内容有据红线）。③ **`tools/render-video.mjs`**：加载 composition → 页内逐帧 renderAt(f/fps) → mediabunny CanvasSource（WebCodecs 客户端编码，MP4/avc 优先、WebM 兜底探测）→ CDP 取回落盘 assets/。**零服务端 FFmpeg、零新 Node 依赖**。④ **抽共享库 `tools/lib/browser.mjs`**（server/CDP/findBrowser/launch，CDP.send 加可配超时）——render-check 改 import 删本地百行副本（刚做完枚举解耦就复制粘贴太讽刺）；⑤ `npm run render-video`。
+- **实测**：180 帧(6s@30fps 960×540) → **H.264 MP4 142KB，合计 1.3s**（WebCodecs 客户端编码，研究说的 ~20× 快于 FFmpeg 实证）。端到端闭环：MP4 嵌 video 块 deck → render-check 全绿 + CDP 验 `duration=6s 960×540 readyState=4`（可完整播放）+ 截图（deck 内原生控件+首帧正确；composition t=3000 中段帧：抛物线+尾迹+琥珀球+第6步 HUD，内容真实）。
+- **过程踩坑（记档）**：① heredoc 写 JSON 把 `\eta` 折成 `\eta` → doc 非法 → **整页白屏**（doc JSON 解析失败无诚实错误页——记为已知缺口，validate 会在生成流程拦住，但手写 doc 会踩）；② video src 相对 **demo/index.html** 解析——`assets/x` 错、`generated/assets/x` 对（工具提示文案已修）。
+- **验证**：`npm test` 6 步（21 mjs 语法含新库/新工具）；命名 lint 零告警（render-video/browser/composition 朴素词）；**`render-check --all-generated` 26/26 零回归**（render-check 重构后必须全扫，过）。
+- **红线/成长**：加法（管线）。红线守住：deck 只播本地 MP4（无网络）；捕获全客户端；composition 内容有据；帧锁定确定性（同 composition 每次逐帧一致）。**mediabunny=MPL-2.0**（弱 copyleft 文件级，作依赖直接用无碍，记档）。
+- **待续**：阶段2b 旁白（Piper-WASM TTS + 词级时间戳 + WebVTT + AudioEncoder 双轨）；阶段3 `skills/create-video/`（agent 授权写 composition，真机待额度）。doc 解析失败的诚实错误页，候选小修。

@@ -21,85 +21,17 @@
                        批量：--all-generated（扫 demo/generated/*）
                        截图：--shot[=1,2,8]（把指定页/全部页渲染成 PNG 供人工看视觉质量，写到临时目录 la-shots；配 --doc 选 doc）*/
 
-import http from 'node:http';
-import { readFile, mkdtemp, rm, writeFile, mkdir } from 'node:fs/promises';
-import { accessSync, readdirSync } from 'node:fs';
+import { mkdtemp, rm, writeFile, mkdir } from 'node:fs/promises';
+import { readdirSync } from 'node:fs';
 import { spawn } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { startServer, findBrowser, CDP, sleep } from './lib/browser.mjs';   // 共享无头驱动（iter74 抽库，render-video 同用）
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const DEMO_ROOT = path.resolve(HERE, '../../demo');
 
-const MIME = {
-  '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript',
-  '.css': 'text/css', '.json': 'application/json', '.wasm': 'application/wasm',
-  '.woff2': 'font/woff2', '.woff': 'font/woff', '.ttf': 'font/ttf',
-  '.svg': 'image/svg+xml', '.png': 'image/png', '.map': 'application/json',
-};
-
-/* ---------- 本地静态服务器（Node http 天生异步，多连接不死锁，无需线程） ---------- */
-function startServer(root) {
-  const server = http.createServer(async (req, res) => {
-    try {
-      const url = decodeURIComponent(req.url.split('?')[0]);
-      const filePath = path.join(root, path.normalize(url).replace(/^([/\\])+/, ''));
-      if (!filePath.startsWith(root)) { res.writeHead(403).end(); return; }
-      const target = url.endsWith('/') || url === '' ? path.join(filePath, 'index.html') : filePath;
-      const data = await readFile(target);
-      res.writeHead(200, {
-        'Content-Type': MIME[path.extname(target).toLowerCase()] || 'application/octet-stream',
-        'Cache-Control': 'no-store',
-      });
-      res.end(data);
-    } catch { res.writeHead(404).end('not found'); }
-  });
-  return new Promise(resolve => server.listen(0, '127.0.0.1', () => resolve({ server, port: server.address().port })));
-}
-
-/* ---------- 定位 Edge/Chrome ---------- */
-function findBrowser() {
-  const c = [
-    'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe',
-    'C:/Program Files/Microsoft/Edge/Application/msedge.exe',
-    'C:/Program Files/Google/Chrome/Application/chrome.exe',
-    'C:/Program Files (x86)/Google/Chrome/Application/chrome.exe',
-  ];
-  for (const p of c) { try { accessSync(p); return p; } catch {} }
-  return null;
-}
-
-/* ---------- 极简 CDP 客户端（全局 WebSocket，id 关联；flatten 会话共用一条连接） ---------- */
-class CDP {
-  constructor(ws) { this.ws = ws; this.id = 0; this.pending = new Map(); this.listeners = []; }
-  static async attach(wsUrl) {
-    const ws = new WebSocket(wsUrl);
-    await new Promise((res, rej) => { ws.onopen = res; ws.onerror = e => rej(new Error('ws open failed')); });
-    const cdp = new CDP(ws);
-    ws.onmessage = ev => {
-      const msg = JSON.parse(ev.data);
-      if (msg.id != null && cdp.pending.has(msg.id)) {
-        const { resolve, reject } = cdp.pending.get(msg.id); cdp.pending.delete(msg.id);
-        msg.error ? reject(new Error(msg.error.message)) : resolve(msg.result);
-      } else if (msg.method) { cdp.listeners.forEach(fn => fn(msg)); }
-    };
-    return cdp;
-  }
-  send(method, params = {}, sessionId) {
-    const id = ++this.id;
-    return new Promise((resolve, reject) => {
-      this.pending.set(id, { resolve, reject });
-      this.ws.send(JSON.stringify(sessionId ? { id, method, params, sessionId } : { id, method, params }));
-      setTimeout(() => { if (this.pending.has(id)) { this.pending.delete(id); reject(new Error(`CDP timeout: ${method}`)); } }, 30000);
-    });
-  }
-  on(fn) { this.listeners.push(fn); }
-  off(fn) { const i = this.listeners.indexOf(fn); if (i >= 0) this.listeners.splice(i, 1); }
-  close() { try { this.ws.close(); } catch {} }
-}
-
-const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 /* 验收单份讲义：开一个新标签页导航到 url，跑 A-E 断言，收尾关标签页。返回 {label, fails, ready}。 */
 async function verifyScene(cdp, url, label) {

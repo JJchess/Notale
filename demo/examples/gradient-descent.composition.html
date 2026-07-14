@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>composition · 梯度下降</title>
+<style>html,body{margin:0;background:#111}canvas{display:block}</style>
+</head>
+<body>
+<canvas id="stage" width="960" height="540"></canvas>
+<script>
+/* ============================================================================
+   video composition 契约（阶段2·帧锁定确定性渲染）：
+   - window.COMPOSITION = { width, height, fps, durationMs, renderAt(tMs) }
+   - renderAt(tMs) 是 t 的**纯函数**：同一 t 必绘出同一帧（禁 Date.now/Math.random/rAF 自驱）。
+     预览用 rAF 调它，捕获（tools/render-video.mjs）用帧循环调它——同一函数两种驱动。
+   - 自包含零依赖（系统字体、内联绘制）；内容有据（真实梯度下降迭代，非装饰假动画）。
+   演示：f(x)=x² 上的梯度下降，x₀=-2.6，η=0.15，逐步逼近极小值。
+   ========================================================================== */
+(() => {
+  const W = 960, H = 540, FPS = 30, DUR = 6000;
+  const cv = document.getElementById('stage');
+  const ctx = cv.getContext('2d');
+
+  /* 调色（slate 气质，独立成片不依赖 deck token）*/
+  const BG = '#E7E9EB', INK = '#1C2126', SUB = '#586069', ACCENT = '#A6692A', LINE = '#C4CACE';
+
+  /* 真实迭代序列（确定性预计算）：x_{k+1} = x_k − η·f'(x_k)，f(x)=x²，f'(x)=2x */
+  const ETA = 0.15, X0 = -2.6, STEPS = 14;
+  const xs = [X0];
+  for (let k = 0; k < STEPS; k++) xs.push(xs[k] - ETA * 2 * xs[k]);
+
+  /* 世界→屏幕：x∈[-3,3]，y=f(x)∈[0,9] 画进图区 */
+  const M = { l: 90, r: 40, t: 70, b: 80 };
+  const sx = x => M.l + (x + 3) / 6 * (W - M.l - M.r);
+  const sy = y => H - M.b - y / 9 * (H - M.t - M.b);
+  const f = x => x * x;
+  const ease = p => p < .5 ? 2 * p * p : 1 - Math.pow(-2 * p + 2, 2) / 2;   // easeInOutQuad
+
+  function renderAt(tMs) {
+    const t = Math.max(0, Math.min(DUR, tMs));
+    ctx.clearRect(0, 0, W, H);
+    ctx.fillStyle = BG; ctx.fillRect(0, 0, W, H);
+
+    /* 坐标轴 + 网格刻度 */
+    ctx.strokeStyle = LINE; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(sx(-3), sy(0)); ctx.lineTo(sx(3), sy(0)); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(sx(0), sy(0)); ctx.lineTo(sx(0), sy(9)); ctx.stroke();
+    ctx.fillStyle = SUB; ctx.font = '13px system-ui, sans-serif'; ctx.textAlign = 'center';
+    for (const gx of [-3, -2, -1, 1, 2, 3]) ctx.fillText(String(gx), sx(gx), sy(0) + 20);
+
+    /* 损失曲线 f(x)=x²（逐帧全画，前 800ms 从左往右生长） */
+    const grow = Math.min(1, t / 800);
+    ctx.strokeStyle = INK; ctx.lineWidth = 2.2; ctx.beginPath();
+    const xEnd = -3 + 6 * grow;
+    for (let x = -3; x <= xEnd + 1e-9; x += 0.02) { const X = sx(x), Y = sy(f(x)); x === -3 ? ctx.moveTo(X, Y) : ctx.lineTo(X, Y); }
+    ctx.stroke();
+
+    /* 迭代进度：曲线画完后，每步一跳（缓动），剩余时间均分 */
+    const tIter = Math.max(0, t - 900);
+    const per = (DUR - 900 - 300) / STEPS;
+    const kFloat = Math.min(STEPS, tIter / per);
+    const k = Math.floor(kFloat);
+    const hop = ease(Math.min(1, kFloat - k));
+    const xNow = k >= STEPS ? xs[STEPS] : xs[k] + (xs[k + 1] - xs[k]) * hop;
+
+    /* 轨迹尾迹：已到过的点 */
+    ctx.fillStyle = SUB;
+    for (let i = 0; i <= Math.min(k, STEPS); i++) { ctx.beginPath(); ctx.arc(sx(xs[i]), sy(f(xs[i])), 3, 0, 7); ctx.fill(); }
+
+    /* 当前球 + 该点切线方向的负梯度小箭头 */
+    if (t > 900) {
+      const gx = sx(xNow), gy = sy(f(xNow));
+      ctx.fillStyle = ACCENT; ctx.beginPath(); ctx.arc(gx, gy, 9, 0, 7); ctx.fill();
+      const grad = 2 * xNow, dir = -Math.sign(grad) || 0;
+      if (Math.abs(grad) > 0.05) {
+        ctx.strokeStyle = ACCENT; ctx.lineWidth = 2.4; ctx.beginPath();
+        ctx.moveTo(gx, gy); ctx.lineTo(gx + dir * 34, gy); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(gx + dir * 34, gy);
+        ctx.lineTo(gx + dir * 26, gy - 5); ctx.lineTo(gx + dir * 26, gy + 5); ctx.closePath(); ctx.fill();
+      }
+    }
+
+    /* 标题 + HUD（真实数值） */
+    ctx.fillStyle = INK; ctx.font = '600 24px system-ui, sans-serif'; ctx.textAlign = 'left';
+    ctx.fillText('梯度下降：沿负梯度逼近极小值', M.l, 42);
+    ctx.font = '15px ui-monospace, Consolas, monospace'; ctx.fillStyle = SUB;
+    const kShow = Math.min(k, STEPS);
+    ctx.fillText(`第 ${kShow} 步   x = ${xNow.toFixed(3)}   f(x) = ${f(xNow).toFixed(3)}   η = ${ETA}`, M.l, H - 34);
+    ctx.textAlign = 'right'; ctx.fillStyle = ACCENT; ctx.font = '13px system-ui, sans-serif';
+    ctx.fillText('x_{k+1} = x_k − η·f′(x_k)', W - M.r, 42);
+  }
+
+  window.COMPOSITION = { width: W, height: H, fps: FPS, durationMs: DUR, renderAt };
+  renderAt(0);   // 预览首帧
+  /* 手动预览（非捕获时可开）：在控制台跑 __preview() */
+  window.__preview = () => { const t0 = performance.now(); (function loop() { const t = (performance.now() - t0) % DUR; renderAt(t); requestAnimationFrame(loop); })(); };
+})();
+</script>
+</body>
+</html>
