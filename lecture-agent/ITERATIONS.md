@@ -522,3 +522,10 @@
 - **验证（离线）**：`lecture-agent skills` → grid 路由至 create-content、出现在"自动可规划类型"菜单；样例 3 列 grid（1NF/2NF/3NF callout 卡）过 `validateBlock`；渲染器/CSS 早已支持（Check E 全 BLOCK_TYPES 存在性零告警）；`npm test` 6 步 + 一致性 + lint 全绿。**真机采用率待额度**（承 FE-59——但 block 类型历史上教了就用，如 pullquote 首跑即产出）。
 - **红线/成长**：成长（激活既有能力）。多元性直接受益路径：grid 是页内不对称/多栏的生成端入口，与 compose(页级) 互补。
 - **加法/减法**：加法（一条契约）。生成侧不可见轮：上两轮 74/75 可见，配额合规（76 亦不可见——**下轮须可见**）。
+
+## Iter 78 — 入库 showcase deck《梯度下降入门》：新能力端到端串演（可见轮·活文档+回归夹具）
+- **背景**：corpus（demo/generated）gitignored——iter55-77 的新能力（slate/section/compose/grid/video/pullquote）在**入库文件**里没有任何一份 deck 同时用到；克隆者/评审者看不到全貌，也没有稳定夹具。
+- **改（加法·可见）**：手写 `demo/examples/gradient-descent-intro.lecture.json`（7 页，**内容有据**：真实收缩因子 (1−2η)、44 步/14 步收敛数、η=1.1 发散均可代入验证）——一份 deck 串起：slate 主题 · hero 封面 · **section** 分隔页 · **video 块**（引用 iter74 clip，caption 注明缺失时的再生成命令）· **compose/sidenote**（公式主栏+符号旁注）· **grid** 三卡（学习率三种命运，iter77 刚激活的能力首次进 deck）· **pullquote** 抽句 · statement 收束 · 充实 tutor.kb ×4。与 examples/ 里的 composition 源配对成完整视频示例。
+- **验证（截图为主验收）**：`validateDoc` 0 err 0 warn；`render-check --doc examples/…` 全绿（0 溢出/0 console error）；截图确认——grid 页三张发丝线 callout 卡（琥珀标签、无卡片框，克制）、compose 页公式主栏+右窄旁注（旁注内联 KaTeX 正常）；video 页复用 iter74 已验的播放路径。`npm test` + 一致性 + lint 全绿。
+- **红线/成长**：加法。红线全守：内容有据（每个数字可验算）、video src 本地、视觉走 token、无 mock（clip 缺失时 caption 给出真实的再生成命令而非假装存在）。
+- **价值**：① 活文档（入库可看全部能力）② 手写回归夹具（render-check --doc examples/… 可随时验）③ grid/video 首次出现在入库 deck。可见轮配额恢复。
