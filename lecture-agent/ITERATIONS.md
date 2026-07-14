@@ -541,3 +541,12 @@
 - **交付**：① `BACKLOG.md` 入库——A 额度恢复后的执行清单（5 项带精确命令：采用率大验证/多元度对比/坏 sim 自愈/warn 清偿/create-video 整链）；B 待拍板项（Piper 旁白/三层收敛/镜像构建化）；C **已否决记录**（T14/T16/T22/quote 块/video 进菜单/examples 进 diversity——6 项防再议）；D 已知取舍（grandfather/MPL/fitCode 下限——防"好心修复"）。② 健康基线实测刷新（render 27/27、非 flow 10%、3 err=2 坏 sim）。③ 跨会话记忆 `lecture-demo-state.md` 从 iter54 时点刷到 iter80（下个 session 免考古）。
 - **验证**：`npm run diversity` 实测出基线数字；`npm test` 全绿；BACKLOG 每条均可溯源到对应 ITERATIONS 条目。
 - **建议（对用户）**：循环继续意义有限，可 `CronDelete 05e278fa` 暂停，待额度恢复按 BACKLOG §A 一次性执行大验证。
+
+## Iter 81 — 大验证轮：推翻"生成被锁"误判 → 执行 BACKLOG §A1-3 + 修出 2 个真渲染 bug（本 session 最重一轮）
+- **摸着石头·推翻假设**：`--plan-only` 探针证实**"真机生成被额度锁"一直是误判**——生成走 SiliconFlow(.env)，撞额度的是 Anthropic 子 agent（两者被混同 20 余轮）。BACKLOG §A 即刻解锁。
+- **§A1 采用率大验证**（三题材真跑）：dns-journey[**slate 首次被规划器选中**] / trolley-problem[cartesian，**section 由规划器自选**] / compound-interest-e[**insertSections 真机触发×3**]。块级：**grid 首跑即用**(trolley)、pullquote×2、compose/sidenote 确定性分配×6。三份 render-check 全绿。**验证了 iter55-77 全部"教了没验"的能力**。
+- **§A2 多元度对比**：非 flow 内容页 **10%→19%**（9→20 页）、版式种类 **3/4→4/4 满格**（compose 进语料）、全 flow deck 20/26→19/29。
+- **§A3 坏 sim 自愈**：简谐重生成→iter68 契约引导在**源头**起效——model 从"二阶位置塞 consts(NaN)"变**一维能量几何衰减 E−½dt²E**（诚实一阶递推），0 回炉 0 错；校验 errors 3→2（剩 pendulum 待 regen，命令已入 BACKLOG）。三层防线第 1 层即拦截。
+- **顺藤修出 2 个真渲染 bug**（新 SHM deck 断言 I 报 67px 裁切）：① **fitScroll 单趟不收敛**——zoom 后内容回流再长高留残余；改 3 趟收敛 + 补宽度轴（宽图表/代码进窄面板）+ 内外坐标换算（zoom 元素 scrollH 是内坐标）。② **断言 I 坐标系混用虚报 3×**——zoomed panel 的 scrollHeight(内) 直接减 stage.clientHeight(外)，67px 里真实视觉裁切仅 ~19px；index 跨元素比较改 ×zoom 换算（split/compose 同元素比较本一致，勿动）。③ sim 异步渲染晚于 fitCustomLayout 量高→加 `refitAfterChart`（三处 Plot 渲染完重 fit 所在 section）。实测 67→10→**0**。
+- **终态门禁**：`render-check --all-generated` **30/30 全绿**（26 旧+3 新+夹具）；`npm test` + 一致性 + lint 全绿；BACKLOG 已更新（§A1-3 勾销，剩 pendulum/widget-warn/create-video 整链）。
+- **红线/成长**：大验证 = charter 的"采用率+多元度指标"验收首次真机闭环。误判教训另沉淀 lessons。

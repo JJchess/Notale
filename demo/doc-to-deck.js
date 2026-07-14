@@ -168,6 +168,9 @@
      （sim 图表偶发空图的竞态根因）。needPlot：未就绪则下一帧重试(Plot 一到就画)，全局上限 ~300 帧(≈5s)防 Plot 缺失时空转。 */
   let _plotFrames = 0;
   function needPlot(render) { if (window.Plot) return false; if (_plotFrames++ < 300) requestAnimationFrame(render); return true; }
+  /* sim 图表是异步渲染（needPlot 重试等 Plot 到位）——若晚于 fitCustomLayout 的量高，所在 index/split/compose 面板会事后长高被裁
+     （iter81 大验证实测 67px）。画完后重 fit 所在 section 一次，闭掉这个时序缺口。 */
+  function refitAfterChart(elInside) { const sec = elInside && elInside.closest && elInside.closest('section'); if (sec) requestAnimationFrame(() => fitCustomLayout(sec)); }
 
   /* ================= Block 渲染器 ================= */
   const blockRenderers = {
@@ -469,6 +472,7 @@
           box.appendChild(miniChart(r.pts, STRATS[r.sname].color));
           row.appendChild(box);
         }
+        refitAfterChart(row);
       }
       ctx.onReady(render);
       return root;
@@ -537,6 +541,7 @@
           x: { domain: [0, M.steps], label: (b.chart || {}).xLabel, ticks: 8 },
           y: { domain: [lo, hi], label: (b.chart || {}).yLabel, grid: true },
           marks }));
+        refitAfterChart(plotwrap);
       }
       ctx.onReady(render);
       return root;
@@ -569,6 +574,7 @@
           plotwrap.appendChild(Plot.plot({ width: 744, height: 418, marginLeft: 52, marginBottom: 44, marginTop: 14, marginRight: 20, style: PLOT_STYLE,
             x: { label: ch.xLabel, domain: ch.xDomain }, y: { label: ch.yLabel, domain: ch.yDomain, grid: true }, marks }));
         } catch (e) { note.innerHTML = '<span class="rt">计算出错</span>' + escapeHtml(e.message || String(e)); }
+        refitAfterChart(plotwrap);
       }
       ctx.onReady(render);
       return root;
@@ -989,17 +995,25 @@
   }
   /* 自定义版式(index/split)的高度自适应：balanceScene 只管默认竖排，这里管 index 的 active panel 与 split 的分栏列。
      宽度由 fitFormulas(section) 统一处理；这里只处理“太高被裁”——同 balanceScene 用 zoom 缩到放下（红线：不裁切）。 */
-  function fitScroll(box, availH) {
+  function fitScroll(box, availH, availW) {
     if (!box) return;
     box.style.zoom = '';
     if (!availH) return;
-    const need = box.scrollHeight;
-    if (need > availH + 4) box.style.zoom = Math.max(0.7, availH / need);
+    if (availW == null) availW = box.clientWidth;
+    /* 两趟收敛（iter81）：zoom 后内容会回流（如代码换行）再长高，单趟必留残余裁切；
+       且 scrollWidth/Height 在 zoom 元素上是内坐标，须换算比较。同时管住宽度轴（宽图表/代码进窄面板）。 */
+    for (let pass = 0; pass < 3; pass++) {
+      const z = parseFloat(box.style.zoom) || 1;
+      const needH = box.scrollHeight * z, needW = box.scrollWidth * z;   // 内坐标 → 外坐标
+      if (needH <= availH + 4 && (!availW || needW <= availW + 4)) return;
+      const target = Math.min(availH / (box.scrollHeight || 1), availW ? availW / (box.scrollWidth || 1) : 1);
+      box.style.zoom = Math.max(0.6, Math.min(1, target));
+    }
   }
   function fitCustomLayout(section) {
     if (!section) return;
     const idx = section.querySelector('.layout-index');
-    if (idx) { const stage = idx.querySelector('.step-stage'); const active = stage && stage.querySelector('.step-panel.show'); if (stage && active) fitScroll(active, stage.clientHeight); }
+    if (idx) { const stage = idx.querySelector('.step-stage'); const active = stage && stage.querySelector('.step-panel.show'); if (stage && active) fitScroll(active, stage.clientHeight, stage.clientWidth); }
     const sp = section.querySelector('.layout-split');
     if (sp) { const h = sp.clientHeight; sp.querySelectorAll('.split-col').forEach(c => fitScroll(c, h)); }
     const cp = section.querySelector('.layout-compose');

@@ -118,11 +118,14 @@ async function verifyScene(cdp, url, label) {
         // 自定义版式(index/split)：active panel 是 position:absolute，不会撑大 .pad，F 抓不到其裁切 → 单独测
         // index 量当前显示的 .step-panel vs .step-stage；split 量每个 .split-col。两轴取最大溢出。
         let layoutClip = 0;
+        // 注意坐标系：元素设了 CSS zoom 后 scrollWidth/Height 是内坐标，须 ×zoom 换算成外坐标再与容器比（iter81 修，此前虚报 3× 溢出）
+        const eff = (el, prop) => (el[prop] || 0) * (parseFloat(el.style.zoom) || 1);
         if (body && body.dataset.layout === 'index') {
           const stage = body.querySelector('.step-stage');
           const active = stage && stage.querySelector('.step-panel.show');
-          if (stage && active) layoutClip = Math.max(active.scrollHeight - stage.clientHeight, active.scrollWidth - stage.clientWidth);
+          if (stage && active) layoutClip = Math.max(eff(active,'scrollHeight') - stage.clientHeight, eff(active,'scrollWidth') - stage.clientWidth);
         } else if (body && body.dataset.layout === 'split') {
+          // 同元素 scrollH/W vs clientH/W：同处内坐标，直接比即一致（勿再乘 zoom）
           for (const c of body.querySelectorAll('.split-col')) layoutClip = Math.max(layoutClip, c.scrollHeight - c.clientHeight, c.scrollWidth - c.clientWidth);
         } else if (body && body.dataset.layout === 'compose') {
           for (const c of body.querySelectorAll('.compose-area')) layoutClip = Math.max(layoutClip, c.scrollHeight - c.clientHeight, c.scrollWidth - c.clientWidth);

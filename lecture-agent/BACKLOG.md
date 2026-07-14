@@ -1,22 +1,18 @@
-# BACKLOG — 待外部条件解锁的执行清单（iter80 汇整）
+# BACKLOG — 待外部条件解锁的执行清单（iter80 汇整 · iter81 大验证后更新）
+
+> **iter81 重大更正**：「真机生成被额度锁」系误判——生成走 SiliconFlow（.env），撞额度的是 Anthropic 子 agent。§A 1-3 已于 iter81 执行完毕（详见 ITERATIONS iter81），剩余项如下。
 
 > iter55–79 期间散在 ITERATIONS.md 的"待额度/待拍板/已否决"记档收敛于此。
 > 当前健康基线（2026-07-14，iter80 实测）：render 27/27 全绿（26 语料 + examples 夹具）；
 > 多元度：非 flow 内容页 9/94（10%）、版式 3/4 种、全 flow deck 20/26、fourier 6 连同版式；
 > 校验：3 errors（simple-harmonic ×1 / simple-pendulum ×2，已知二阶坏 sim）+ 5 warnings（widget 缺动效）。
 
-## A · 额度恢复后（真机 LLM 生成，按序执行）
+## A · 剩余真机项（生成随时可跑）
 
-1. **采用率大验证**（FE-59：断言绿≠被用）——多主题多题材各真跑 1 份：
-   ```
-   npm run generate -- "<题材A·分步机制类>" --pages 10 --no-clarify
-   npm run generate -- "<题材B·人文思辨类>" --pages 10 --no-clarify
-   npm run generate -- "<题材C·公式推导类>" --pages 10 --no-clarify
-   ```
-   查采用率：compose/sidenote（iter59 确定性分配）、grid（iter77 契约）、pullquote/section/slate（57/58/61）、内容预算（iter66 稀疏/超载页应减少）。
-2. **多元度前后对比**：`npm run diversity`——非 flow 占比应 >10%、版式种类应 4/4、全 flow deck 占比应下降；结果记 ITERATIONS。
-3. **坏 sim 自愈闭环**（iter69 闸门）：重生成 simple-harmonic-motion / simple-pendulum 题材 → validate 的 consts err 应触发 docRepair 改用 custom 引擎 → `npm run diversity` 校验健康应 3→0 errors。
-4. **widget 动效 warn 清偿**：重生成 bubble-sort/dna/entropy/fourier/matrix 五份（5 warnings 应减少）；顺带 fourier 6 连同版式应被节拍/版式分配打散。
+1. ~~采用率大验证~~ ✅ iter81（compose 0→8页、grid/pullquote/section/slate 全采用）
+2. ~~多元度对比~~ ✅ iter81（非flow 10%→19%、版式 4/4）
+3. ~~坏 sim 自愈~~ ✅ iter81（简谐重生成→契约引导改一维能量衰减模型，3→2 errors）；**剩 simple-pendulum 待 regen**（同法：`npm run generate -- "单摆周期与摆长" --pages 8 --no-clarify --id simple-pendulum`）
+4. **widget 动效 warn 清偿**：重生成 bubble-sort/dna/entropy/fourier/matrix 五份（5 warnings + fourier 6连）
 5. **create-video 整链**（iter76 技能）：让 agent 按 SKILL.md 写一份新 composition → `npm run render-video` → 嵌 video 块 → render-check；验证帧锁定纪律被遵守（两次捕获字节一致）。
 
 ## B · 待用户拍板
