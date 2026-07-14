@@ -77,6 +77,12 @@
 
 ---
 
+## 5b. 枚举值 = 单一真相源 `demo/schema/enums.mjs`（iter73）
+
+所有数据 id 清单（SCENE_KINDS / LAYOUT_KINDS / BLOCK_TYPES / SIM_ENGINES / THEMES）只在 `enums.mjs` 声明一次；validate / render-verify / check-consistency / diversity 全部 import 它，**JS 侧不许再手抄清单**。
+**加一个枚举值的 checklist**：① `enums.mjs` → ② schema JSON 对应 enum（Check C′ 守两侧集合相等，fail 级）→ ③ 渲染侧落地（doc-to-deck 渲染分支 / index.html `[data-theme]` 块，Check E warn）→ ④ 教学散文若涉及（plan.mjs，Check E warn）→ ⑤ `npm test`。漏任何一处守卫都会叫。
+grandfather 例外：`searchCompare`（camelCase，早于本规范、已进语料）——D1 lint 记档豁免，新枚举值不得效仿。
+
 ## 6. 执行护栏
 - **命名 lint** 并入 `tools/check-consistency.mjs`（`npm test` 第 ② 步）：数据 id 须全小写 `[a-z][a-z0-9-]*`；token 名须匹配 §4 家族白名单；命中黑话/缩写黑名单则**告警**（渐进法制，先 warn；同类复现 ≥2 次再升为 hard 拦截）。
 - **charter**（`LOOP_PROMPT.md`）：吸收外来机制必须走 §2 流程（本地名 + 中文显示名 + provenance + 过 lint），方可落地。

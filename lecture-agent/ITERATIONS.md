@@ -485,3 +485,11 @@
 - **红线/成长**：做薄（去掉一个 magic number + 把其守卫翻成反向防复辟）。加 block 类型现只碰：schema(enum+dispatch+def) + validate(BLOCK_TYPES+checkBlock，Check C 守双表对齐) + 渲染器 + 可选契约 + 显示名/provenance——**数字耦合已除**。
 - **诚实边界**：schema-enum↔validate-BLOCK_TYPES 双表、以及 schema/validate/renderer 三层各写一次，是**零依赖分层设计的结构性权衡**（validate 手写不读 schema），由 Check C 守齐、非纯债务，本轮不动、记此。用户"很多界限不够清晰"的更大解耦（如把三层 block 定义收敛到单一注册）值得后续单独立项。
 - **加法/减法**：减法（消除耦合）。承 [[FE-59]] 精神但反用：与其加检查守耦合，不如去掉耦合本身。
+
+## Iter 73 — 枚举单一真相源 enums.mjs + 全枚举对齐守卫（架构级解耦第二步·用户直指"不仅是数字"）
+- **背景（用户两次直指）**：iter72 只消了数字耦合；审计确认更深的枚举硬拷贝仍在且**大多无守卫**——scene.kind 抄 5 处、layout.kind 4 处(+diversity"满分 4"又一个漏网硬编码计数)、sim engine 3 处、theme 4 处，漏改是静默的（iter57 加 section 漏 render-verify 即实证）。只有 block.type 有 Check C。
+- **改（减法/解耦）**：新增 `demo/schema/enums.mjs` **单一真相源**（SCENE_KINDS/LAYOUT_KINDS/BLOCK_TYPES/SIM_ENGINES/THEMES，文件头写明加值流程）。消费方全改 import：validate.mjs（3 处硬清单→常量，BLOCK_TYPES re-export 兼容 check-consistency/test.mjs）、render-verify.mjs（KIND/SIM_ENGINES 两个手抄 Set→真相源，iter57 那类静默漂移根除）、check-consistency dataIds（派生）、diversity（"满分 4"→`LAYOUT_KINDS.length` 派生）、sync.mjs asScript 加 enums.mjs（镜像 5→6 文件，相对 import 不断链）。**守卫扩容**：Check C 泛化为 **Check C′（fail 级）**——schema JSON 里每个 enums 家族须恰有一个集合相等的 enum（×5，两侧任一单边增删即 fail）；新增 **Check E（warn 级 ×31）**——不能-import 载体的存在性对齐（THEMES↔index.html `[data-theme]` 块、LAYOUT_KINDS↔doc-to-deck sceneLayouts 方法、BLOCK_TYPES↔渲染分支、THEMES↔plan.mjs 教学散文，防 iter61"加主题忘教规划器"）。NAMING.md 加 §5b 枚举加值 checklist。
+- **守卫首战即抓真问题**：D1 派生清单后立刻抓到 `searchCompare`（camelCase 违 NAMING §1）——此前手抄清单从没覆盖 SIM_ENGINES。已进语料，按渐进法制 grandfather 记档豁免（NAMING §5b + D1_GRANDFATHER），新值不得效仿。
+- **验证**：负例①往 SCENE_KINDS 加 'fake' → C′ fail（0 匹配，指向两侧漂移）；负例②把 index.html slate 块改名 → E warn（"忘落 CSS"）；均还原后全过、index.html 零 diff。`npm test` 6 步全绿（①语法含 enums.mjs、⑥镜像 6 文件新鲜）；diversity 输出值不变但"满分"改派生；`render-check --all-generated` 26/26 零回归（渲染器净零改动）；命名 lint 零告警。
+- **红线/成长**：做薄+守卫（渐进法制：C′ fail 级因已 3 次实证漂移是真风险；E warn 级先提醒）。**加一个枚举值从"N 处静默手改"变为"改真相源+schema，其余漏改被 npm test 抓"**。
+- **边界（不做，已记档）**：技能镜像整份拷贝（Check ⑥ 守、自包含刻意代价）；block 三层定义收敛单一注册（架构另项）；散文改插值（教学内容，用 E 存在性盖住）。

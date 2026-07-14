@@ -116,7 +116,8 @@ function checkWidgetHtml(html, path) {
 }
 
 /* ---------- block 校验 ---------- */
-export const BLOCK_TYPES = ['hero', 'statement', 'list', 'agenda', 'callout', 'timeline', 'formula', 'flow', 'table', 'code', 'compare', 'grid', 'quiz', 'sim', 'runnable', 'embed', 'freeform', 'pullquote', 'video'];
+import { SCENE_KINDS, LAYOUT_KINDS, BLOCK_TYPES, SIM_ENGINES } from './enums.mjs';   // 单一真相源（iter73 解耦）
+export { BLOCK_TYPES };   // re-export 兼容既有 import（check-consistency / tools/test.mjs）
 function checkBlock(b, path, state) {
   if (!isObj(b)) { err(path, 'block 应为对象'); return; }
   if (!BLOCK_TYPES.includes(b.type)) { err(path + '.type', '未知 block 类型: ' + b.type); return; }
@@ -196,7 +197,7 @@ function checkBlock(b, path, state) {
       req(b, 'prompt', isStr, path, 'string');
     }
   } else if (T === 'sim') {
-    if (!['dynamics1d', 'searchCompare', 'custom', 'widget'].includes(b.engine)) { err(path + '.engine', '未知引擎: ' + b.engine); return; }
+    if (!SIM_ENGINES.includes(b.engine)) { err(path + '.engine', '未知引擎: ' + b.engine); return; }
     let paramNames = [];
     /* widget 引擎控件长在片段内部，params 可选；其余引擎必填 */
     const hasParams = Array.isArray(b.params);
@@ -285,7 +286,7 @@ function checkScene(s, path, state, seenIds) {
   if (req(s, 'id', v => isStr(v) && /^[a-z0-9][a-z0-9-]*$/.test(v), path, 'kebab-case id')) {
     if (seenIds.has(s.id)) err(path + '.id', 'scene id 重复: ' + s.id); seenIds.add(s.id);
   }
-  req(s, 'kind', v => ['hero', 'content', 'quiz', 'statement', 'section'].includes(v), path, 'hero|content|quiz|statement|section');
+  req(s, 'kind', v => SCENE_KINDS.includes(v), path, SCENE_KINDS.join('|'));
   req(s, 'notes', v => isStr(v) && v.length > 0, path, '非空字符串（演讲者备注必填）');
   for (const k of ['eyebrow', 'headline', 'lead']) opt(s, k, isStr, path, 'string');
   if (s.headline) checkInline(s.headline, path + '.headline');
@@ -304,7 +305,7 @@ function checkScene(s, path, state, seenIds) {
 function checkLayout(s, path) {
   const L = s.layout; if (!isObj(L)) return;
   const p = path + '.layout';
-  if ('kind' in L && !['flow', 'index', 'split', 'compose'].includes(L.kind)) warn(p + '.kind', '未知版式 kind: ' + L.kind + '（渲染器将回落 flow）');
+  if ('kind' in L && !LAYOUT_KINDS.includes(L.kind)) warn(p + '.kind', '未知版式 kind: ' + L.kind + '（渲染器将回落 flow）');
   const ids = new Set((s.blocks || []).map(b => b && b.id).filter(x => x != null));
   const chk = (id, where) => { if (!ids.has(id)) warn(where, '引用了不存在的 block id: ' + id + '（渲染器将回落）'); };
   if (Array.isArray(L.steps)) L.steps.forEach((st, i) => { if (isObj(st) && Array.isArray(st.blockIds)) st.blockIds.forEach(id => chk(id, p + `.steps[${i}].blockIds`)); });

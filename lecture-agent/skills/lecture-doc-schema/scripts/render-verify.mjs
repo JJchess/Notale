@@ -13,6 +13,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 import { validateDoc } from './validate.mjs';
+import * as E from './enums.mjs';   // 单一真相源（iter73 解耦）
 
 const here = dirname(fileURLToPath(import.meta.url));
 const file = process.argv[2] ? resolve(process.argv[2]) : resolve(here, '..', 'course.lecture.json');
@@ -29,9 +30,10 @@ if (v.errors.length) {
   process.exit(1);
 }
 
-/* 2) 结构断言：渲染器 doc-to-deck.js 依赖的不变量 */
-const KIND = new Set(['hero', 'content', 'quiz', 'statement', 'section']);
-const SIM_ENGINES = new Set(['dynamics1d', 'searchCompare', 'custom', 'widget']);
+/* 2) 结构断言：渲染器 doc-to-deck.js 依赖的不变量（清单取自单一真相源 enums.mjs，iter73 解耦——
+   此前是手抄副本，iter57 加 section 时曾静默漏同步） */
+const KIND = new Set(E.SCENE_KINDS);
+const SIM_ENGINES = new Set(E.SIM_ENGINES);
 const fail = [];
 const note = [];
 

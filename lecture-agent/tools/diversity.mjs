@@ -7,6 +7,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve, join } from 'node:path';
 import { validateDoc } from '../../demo/schema/validate.mjs';   // 顺带跑校验健康——一条命令看全语料多元度 + 有效性
+import { LAYOUT_KINDS } from '../../demo/schema/enums.mjs';     // 单一真相源（iter73）：满分派生、不硬编码
 
 const here = dirname(fileURLToPath(import.meta.url));
 const dir = resolve(here, '..', process.argv[2] || '../demo/generated');   // 默认 ws2/demo/generated（相对 lecture-agent 根）
@@ -53,7 +54,7 @@ console.log('版式(内容页)  ', dist(layout));
 console.log('block 类型    ', dist(block));
 console.log(line);
 console.log(`结构多元度：内容页 ${contentPages}，非 flow 版式 ${nonFlowContent}（${pct(nonFlowContent, contentPages)}）`);
-console.log(`版式种类：语料共用 ${layout.size} 种（flow/index/split/compose 满分 4）`);
+console.log(`版式种类：语料共用 ${layout.size} 种（${LAYOUT_KINDS.join('/')} 满分 ${LAYOUT_KINDS.length}）`);
 console.log(`全 flow 的 deck：${allFlowDecks}/${files.length}（越少越好——这些 deck 每页一个样）`);
 const longRun = perDeck.filter(d => d.maxRun >= 5).sort((a, b) => b.maxRun - a.maxRun);
 if (longRun.length) {

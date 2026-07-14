@@ -22,7 +22,7 @@ mkdirSync(scripts, { recursive: true });
 const BANNER = '/* ⚠ 生成物：由 demo/schema/ 同步而来（node lecture-agent/sync.mjs）。别在这里改，改 demo/schema/。 */\n';
 
 const asRef = ['lecture-doc.schema.json', 'SPEC.md'];
-const asScript = ['validate.mjs', 'assemble.mjs', 'render-verify.mjs'];
+const asScript = ['validate.mjs', 'assemble.mjs', 'render-verify.mjs', 'enums.mjs'];   // enums=单一真相源，validate/render-verify 相对 import 它（iter73）
 
 /* .mjs 用相对 import './validate.mjs'，复制到同目录 scripts/ 后相对关系不变，直接可跑。
    banner 必须插在 shebang 之后（否则 shebang 不在第 1 行会被当成非法 JS）。 */

@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 import { loadSkills } from '../src/skills.mjs';
 import { BLOCK_TYPES } from '../../demo/schema/validate.mjs';   // 权威类型清单直接 import，不再正则刮源码（iter39 做薄）
+import * as ENUMS from '../../demo/schema/enums.mjs';           // 单一真相源（iter73）：全枚举家族对齐守卫据此展开
 
 const here = dirname(fileURLToPath(import.meta.url));
 const root = resolve(here, '..');
@@ -41,25 +42,28 @@ for (const f of ['../demo/schema/SPEC.md', '../demo/schema/lecture-doc.schema.js
 let cChecked = 0;
 try {
   const schema = JSON.parse(R('../demo/schema/lecture-doc.schema.json'));
-  const enums = [];
-  (function walk(o) { if (!o || typeof o !== 'object') return; if (Array.isArray(o.enum) && o.enum.includes('freeform')) enums.push(o.enum); for (const k of Object.keys(o)) walk(o[k]); })(schema);
-  if (enums.length !== 1) fails.push(`schema 里含 'freeform' 的 block 类型 enum 应恰好 1 处，实际 ${enums.length} 处（结构变了？请核对 Check C）`);
-  else {
-    cChecked = 1;
-    const schemaSet = new Set(enums[0]), btSet = new Set(BLOCK_TYPES);
-    const onlySchema = [...schemaSet].filter(t => !btSet.has(t));
-    const onlyBt = [...btSet].filter(t => !schemaSet.has(t));
-    if (onlySchema.length) fails.push(`schema enum 有而 BLOCK_TYPES 无: ${onlySchema.join(', ')}（校验器漏加？）`);
-    if (onlyBt.length) fails.push(`BLOCK_TYPES 有而 schema enum 无: ${onlyBt.join(', ')}（schema 漏同步？）`);
+  const schemaEnums = [];
+  (function walk(o) { if (!o || typeof o !== 'object') return; if (Array.isArray(o.enum)) schemaEnums.push(o.enum); for (const k of Object.keys(o)) walk(o[k]); })(schema);
+  const setEq = (a, b) => a.length === b.length && a.every(x => b.includes(x));
+  // 对 enums.mjs 每个家族：schema 里须**恰有一个** enum 与其集合相等。
+  // 任一侧单边增删都会失配→fail（enums 加了 schema 没加：0 匹配；schema 加了 enums 没加：改动后的 enum 不再等于家族→0 匹配）。
+  // quiz kind / layout preset 等不属家族的 enum 自然被忽略。
+  for (const [fam, list] of Object.entries(ENUMS)) {
+    if (!Array.isArray(list)) continue;
+    const hits = schemaEnums.filter(e => setEq(e, list)).length;
+    cChecked++;
+    if (hits !== 1) fails.push(`Check C′: schema 里与 enums.${fam} 集合相等的 enum 有 ${hits} 处（应恰 1）——两侧漂移了，改了一侧忘了另一侧（enums.mjs ↔ lecture-doc.schema.json）`);
   }
-} catch (e) { fails.push('Check C 读取/解析 schema 失败: ' + e.message); }
+} catch (e) { fails.push('Check C′ 读取/解析 schema 失败: ' + e.message); }
 
 // —— Check D（命名规范 lint · warn 级，渐进法制不阻断）：见 NAMING.md ——
 // 不进 fails（不 exit 1）；只提示，让"新命名不合规"尽早暴露。同类复现 ≥2 次再升级为 hard。
 const warns = [];
 const JARGON = ['marginalia', 'tombstone', 'enfilade', 'object-label', 'objectlabel', 'small-multiples', 'smallmultiples'];
-// D1 数据 id 全小写朴素英文
-const dataIds = [...BLOCK_TYPES, 'hero', 'content', 'quiz', 'statement', 'section', 'flow', 'index', 'split', 'compose'];
+// D1 数据 id 全小写朴素英文（清单由单一真相源派生，iter73——此前是又一份手抄副本）
+// grandfather：searchCompare(camelCase) 早于 NAMING、已进语料 sim 数据，改名即破坏——记档豁免（NAMING §1 例外）
+const D1_GRANDFATHER = new Set(['searchCompare']);
+const dataIds = [...new Set(Object.values(ENUMS).filter(Array.isArray).flat())].filter(id => !D1_GRANDFATHER.has(id));
 for (const id of dataIds) if (!/^[a-z][a-z0-9-]*$/.test(id)) warns.push(`数据 id "${id}" 不合规（须全小写 [a-z0-9-]，见 NAMING.md §1）`);
 // D2 外来黑话不得作 id（扫 schema enum 与 plan.mjs）
 const schemaTxt2 = R('../demo/schema/lecture-doc.schema.json');
@@ -78,9 +82,20 @@ for (const f of ['../demo/index.html', '../demo/doc-to-deck.js']) {
   try { if (/\.(pq|sec|idx|cmp)-[a-z]/.test(R(f))) warns.push(`${f}: 含缩写 class（pq-/sec-/idx-/cmp-），应全词化（见 NAMING.md §4b）`); } catch { /* skip */ }
 }
 
+// —— Check E（warn 级）：不能-import 载体（CSS/经典浏览器脚本/教学散文）与 enums 的存在性对齐 ——
+// 渲染器对未知值有回落兜底（不崩不丢），故 warn 提醒即可；复现 ≥2 次再升 fail（渐进法制）。
+let eChecked = 0;
+try {
+  const css = R('../demo/index.html'), deck = R('../demo/doc-to-deck.js');
+  for (const t of ENUMS.THEMES) { eChecked++; if (!css.includes(`data-theme="${t}"`) ) warns.push(`Check E: 主题 "${t}" 在 index.html 无 [data-theme] token 块（加了枚举忘落 CSS？）`); }
+  for (const k of ENUMS.LAYOUT_KINDS) { eChecked++; if (!new RegExp(`\\b${k}\\(scene`).test(deck)) warns.push(`Check E: 版式 "${k}" 在 doc-to-deck.js 无 sceneLayouts 方法（渲染会回落 flow）`); }
+  for (const b of ENUMS.BLOCK_TYPES) { eChecked++; if (!new RegExp(`\\b${b}\\s*\\(b`).test(deck)) warns.push(`Check E: block "${b}" 在 doc-to-deck.js 疑似无渲染分支（regex 尽力，误报请调 Check E）`); }
+  for (const t of ENUMS.THEMES) { eChecked++; if (!planSrc.includes(t)) warns.push(`Check E: 主题 "${t}" 未出现在 plan.mjs 教学散文（加了主题忘教规划器——iter61 之坑）`); }
+} catch (e) { warns.push('Check E 读取失败: ' + e.message); }
+
 // —— 报告 ——
 console.log(`registry: ${BLOCK_TYPES.length} 种 block（含 freeform），正式 ${formalCount} 种；注册家族类型 ${registered.length} 个`);
-console.log(`Check A（plan.mjs 禁用清单 vs 注册类型）· Check B'（禁散文里硬编码"N 种正式"计数·解耦，命中 ${bViol}）· Check C（schema enum ≡ BLOCK_TYPES ×${cChecked}）· Check D（命名 lint · warn）`);
+console.log(`Check A（plan.mjs 禁用清单 vs 注册类型）· Check B'（禁硬编码计数，命中 ${bViol}）· Check C′（schema ≡ enums 全家族 ×${cChecked}）· Check D（命名 lint）· Check E（CSS/渲染器/散文存在性 ×${eChecked}·warn）`);
 if (warns.length) { console.warn(`⚠ 命名 lint：${warns.length} 处待规整（warn，不阻断；见 NAMING.md）`); for (const w of warns) console.warn('  · ' + w); }
 if (fails.length) { console.error('✗ 一致性检查发现 ' + fails.length + ' 处漂移:'); for (const x of fails) console.error('  · ' + x); process.exit(1); }
 console.log('✓ 一致性检查全过（block 类型事实与 registry 对齐）。');
