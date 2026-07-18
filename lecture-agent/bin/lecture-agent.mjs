@@ -2,7 +2,7 @@
 /* lecture-agent CLI —— 自演化讲义生成 agent（Node、零依赖、离线、OpenAI 兼容）。
    子命令: generate | batch | loop | evolve | skills
    ============================================================================ */
-import { writeFileSync, mkdirSync, readFileSync, existsSync } from 'node:fs';
+import { writeFileSync, mkdirSync, readFileSync, existsSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve, join } from 'node:path';
 import { generateLecture } from '../src/agent.mjs';
@@ -63,7 +63,33 @@ function writeRunLog({ r, ev = null, topic = '', renderWarnings = [] }) {
     log(`[log] 运行日志 → out/${id}/runs/${stamp}.json（+ .log 原始输出 · latest.json 最近一轮）`);
     const slow = [...cl].filter(c => c.ok).sort((a, b) => b.ms - a.ms)[0];
     if (slow) log(`[log] 最慢调用 ${slow.purpose} ${(slow.ms / 1000).toFixed(1)}s（${slow.attempts} 试）· 总重试 ${retries} 次 · 生成 token ${record.llm.completionTokens || '?'}`);
+    const u = scanUsage();                                   // 累计（含本轮，刚写的文件也扫进来）
+    const cum = u.reduce((n, r) => n + r.tokens, 0);
+    log(`[log] 累计 token（${u.length} 轮）合计 ${cum.toLocaleString()}（本轮 ${((record.llm.promptTokens || 0) + (record.llm.completionTokens || 0)).toLocaleString()}）· 明细见 \`lecture-agent tokens\``);
   } catch (e) { log('[log] 写运行日志失败（不影响产物）: ' + String(e.message || e).slice(0, 80)); }
+}
+
+/* 扫所有历史 run 日志汇总 token（累计花费——只按 token，不折算钱）。
+   每轮的 runs/<时间戳>.json 就是账本；跳过 latest.json（它是最近一轮的副本，扫了会重复计）。 */
+function scanUsage() {
+  const rows = [];
+  let ids = [];
+  try { ids = readdirSync(OUT, { withFileTypes: true }).filter(d => d.isDirectory()).map(d => d.name); } catch { return rows; }
+  for (const id of ids) {
+    let files = [];
+    try { files = readdirSync(join(OUT, id, 'runs')).filter(f => f.endsWith('.json') && f !== 'latest.json'); } catch { continue; }
+    for (const f of files) {
+      try {
+        const rec = JSON.parse(readFileSync(join(OUT, id, 'runs', f), 'utf8'));
+        const pt = rec.llm?.promptTokens || 0, ct = rec.llm?.completionTokens || 0;
+        rows.push({ ts: rec.ts || '', id, topic: rec.topic || '', model: rec.model || '', planOnly: !!rec.planOnly,
+          calls: rec.llm?.logicalCalls || 0, attempts: rec.llm?.attempts || 0, retries: rec.llm?.retries || 0,
+          promptTokens: pt, completionTokens: ct, tokens: pt + ct });
+      } catch { /* 损坏文件跳过 */ }
+    }
+  }
+  rows.sort((a, b) => (a.ts || '').localeCompare(b.ts || ''));
+  return rows;
 }
 
 /* --- arg 解析 --- */
@@ -212,6 +238,35 @@ function cmdSkills() {
   log('\n自动可规划类型: ' + autoTypes.join(', '));
 }
 
+/* token 累计报表：总量 + 按模型 + 逐轮（累计花费，只按 token）。--by purpose 时再按用途细分。 */
+function cmdTokens() {
+  const rows = scanUsage();
+  if (!rows.length) { log('（还没有带 token 记录的运行日志——跑一次 generate 后再看。老日志若无 token 字段也不计入。）'); return; }
+  const fmt = n => n.toLocaleString();
+  const tp = rows.reduce((n, r) => n + r.promptTokens, 0);
+  const tc = rows.reduce((n, r) => n + r.completionTokens, 0);
+  const line = '─'.repeat(72);
+  log(`\nToken 累计报表 · ${rows.length} 轮 · 目录 lecture-agent/out/`);
+  log(line);
+  log(`合计: ${fmt(tp + tc)} tokens  =  输入 ${fmt(tp)} + 输出 ${fmt(tc)}`);
+  const attempts = rows.reduce((n, r) => n + r.attempts, 0), retries = rows.reduce((n, r) => n + r.retries, 0);
+  log(`调用: ${rows.reduce((n, r) => n + r.calls, 0)} 次逻辑调用 · ${attempts} 次 HTTP 尝试 · ${retries} 次重试`);
+  // 按模型
+  const byModel = {};
+  for (const r of rows) { const m = byModel[r.model] || (byModel[r.model] = { runs: 0, tok: 0 }); m.runs++; m.tok += r.tokens; }
+  log(line); log('按模型:');
+  for (const [m, v] of Object.entries(byModel).sort((a, b) => b[1].tok - a[1].tok))
+    log(`  ${fmt(v.tok).padStart(12)}  ${String(v.runs).padStart(3)} 轮  ${m}`);
+  // 逐轮（最近 15）
+  log(line); log(`逐轮（最近 ${Math.min(15, rows.length)}）:`);
+  for (const r of rows.slice(-15)) {
+    const day = (r.ts || '').slice(0, 16).replace('T', ' ');
+    log(`  ${day}  ${fmt(r.tokens).padStart(10)}  ${(r.planOnly ? '[plan]' : '      ')} ${r.id}`);
+  }
+  log(line);
+  log('注：只统计 token（未折算金额——单价随账户档位/模型而变，需要时再配单价表）。');
+}
+
 const HELP = `lecture-agent —— 自演化讲义生成 agent (Node/零依赖/离线)
   generate "<课题>" [--pages N] [--theme X] [--audience ..] [--wants sim,quiz] [--material file] [--id kebab] [--no-clarify] [--eval] [--revise] [--coverage] [--plan-only] [--live]
                                    --material 用源素材做 grounding(内容据素材,防编造)；--eval 打质量分；--revise 分低重生成取优；--coverage 核对必讲点落地；--plan-only 只出规划大纲不生成内容(~2 次调用,审规划质量)；
@@ -220,6 +275,7 @@ const HELP = `lecture-agent —— 自演化讲义生成 agent (Node/零依赖/�
   batch [topics.jsonl]          批量跑一轮 (缺省 examples/topics.jsonl)
   loop  [topics.jsonl] [--every 1h]   常驻循环
   evolve [dir...]               聚合 freeform/主题/引擎信号 → 提案 (缺省 out/)
+  tokens                        累计 token 报表（总量/按模型/逐轮；只算 token 不折算钱）
   skills                        列出已加载技能与 block 路由`;
 
 (async () => {
@@ -229,6 +285,7 @@ const HELP = `lecture-agent —— 自演化讲义生成 agent (Node/零依赖/�
     else if (cmd === 'batch') await cmdBatchOrLoop(true);
     else if (cmd === 'loop') await cmdBatchOrLoop(false);
     else if (cmd === 'evolve') cmdEvolve();
+    else if (cmd === 'tokens') cmdTokens();
     else if (cmd === 'skills') cmdSkills();
     else { console.log(HELP); process.exit(cmd ? 1 : 0); }
   } catch (e) { console.error('✗ ' + (e.stack || e.message)); process.exit(1); }
