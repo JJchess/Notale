@@ -15,10 +15,10 @@ metadata:
 
 三步工作流（全离线、零服务端 FFmpeg）：
 1. **写 composition**（本技能的核心产出）：一个自包含 HTML，暴露帧锁定契约。
-2. **捕获**：`npm run render-video <composition 相对 demo/ 路径>` → 浏览器内 WebCodecs 编码 → `demo/generated/assets/<名>.mp4`。
-3. **嵌入**：deck 里加一等 video 块 `{ "type":"video", "src":"generated/assets/<名>.mp4", "caption":"…" }`（src 相对 demo/index.html 解析；本地路径，禁远程）。
+2. **捕获**：`npm run render-video <composition 相对 viewer/ 路径>` → 浏览器内 WebCodecs 编码 → `viewer/generated/assets/<名>.mp4`。
+3. **嵌入**：deck 里加一等 video 块 `{ "type":"video", "src":"generated/assets/<名>.mp4", "caption":"…" }`（src 相对 viewer/index.html 解析；本地路径，禁远程）。
 
-范例（先读再写）：`demo/examples/gradient-descent.composition.html`。
+范例（先读再写）：`viewer/examples/gradient-descent.composition.html`。
 
 ## composition 契约（帧锁定=确定性，硬性）
 ```html

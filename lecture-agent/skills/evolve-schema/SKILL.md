@@ -27,8 +27,8 @@ It scans generated `course.lecture.json` files, tallies freeform rationales (key
 
 ## From signal to proposal (human-reviewed)
 For the top recurring signal, draft — as a PR-style proposal, not an applied change:
-1. **schema 片段** — the new block type's fields (added to `demo/schema/lecture-doc.schema.json`), via **additive** `schemaVersion` bump.
-2. **渲染器分支** — a `blockRenderers.<type>` sketch in `demo/doc-to-deck.js`.
+1. **schema 片段** — the new block type's fields (added to `viewer/schema/lecture-doc.schema.json`), via **additive** `schemaVersion` bump.
+2. **渲染器分支** — a `blockRenderers.<type>` sketch in `viewer/doc-to-deck.js`.
 3. **create-* 技能草案** — a new/updated family skill so future generation can use it.
 4. **反例测试** — a validate.mjs case (positive + negative).
 Present all four to a human. Only after review does it merge (then `node lecture-agent/sync.mjs` re-syncs the skill copies).
@@ -37,4 +37,4 @@ Present all four to a human. Only after review does it merge (then `node lecture
 `lecture-agent batch examples/topics.jsonl` generates many lectures into `out/`; then `lecture-agent evolve out/` turns that corpus into evolution signals. For a standing loop use `lecture-agent loop examples/topics.jsonl --every 1h` (generate → accumulate), and run `evolve` periodically to surface proposals. (`aggregate.mjs` is the underlying implementation, wrapped by `src/evolve.mjs` + the `evolve` subcommand.)
 
 ## Guardrail (do not cross)
-The agent may **draft** proposals; it must not silently modify `demo/schema/`, the renderer, or the family skills' contracts. Growth is governed, additive, and human-approved — that's what keeps "controlled self-evolution" controlled.
+The agent may **draft** proposals; it must not silently modify `viewer/schema/`, the renderer, or the family skills' contracts. Growth is governed, additive, and human-approved — that's what keeps "controlled self-evolution" controlled.

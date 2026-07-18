@@ -58,4 +58,4 @@ Validator errors carry a JSON path (e.g. `$.scenes[2].blocks[0].html — ...`) �
 
 ## Note on maintenance
 
-`references/` and `scripts/` here are **synced from `demo/schema/`** (single source of truth) via `node lecture-agent/sync.mjs`. Edit the contract in `demo/schema/`, then re-sync — don't edit the copies here.
+`references/` and `scripts/` here are **synced from `viewer/schema/`** (single source of truth) via `node lecture-agent/sync.mjs`. Edit the contract in `viewer/schema/`, then re-sync — don't edit the copies here.

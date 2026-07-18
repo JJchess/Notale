@@ -22,7 +22,7 @@
 
 ## 📖 如何使用
 
-1. **人类开发者：** 动手改 `demo/` 前，先扫一眼下表，命中相关组件就点进去读一遍"根因 + 修法 + 验证方法"。
+1. **人类开发者：** 动手改 `viewer/` 前，先扫一眼下表，命中相关组件就点进去读一遍"根因 + 修法 + 验证方法"。
 2. **自动化 Agent（LectureGenAgent 等）：** 生成/修改涉及下表"适用场景"列的代码前，**先读取对应条目全文**并遵循其"给自动化流程的检查清单"小节；条目里的反例代码就是负样本，别重蹈。
 3. **新增条目：** 沉淀新坑时复制 [`frontend-rendering/001-codemirror-transform-scale.md`](frontend-rendering/001-codemirror-transform-scale.md) 的结构（frontmatter + TL;DR + 现象 + 根因 + 修法 + 验证 + 自动化检查清单），保持人和机器都能一眼抓住重点。
 

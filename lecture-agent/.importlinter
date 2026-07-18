@@ -1,0 +1,52 @@
+; 解耦契约（进 CI）：机器强制 PROJECT_STRUCTURE.md 的五层单向依赖。
+; 见 §1 骨架 / §5 依赖规则的机器强制。
+[importlinter]
+root_package = lecture_agent
+
+; —— 整体层序（高层可依赖低层，低层不得反向依赖高层）——
+[importlinter:contract:layers]
+name = Hexagonal layers (app > agent > {adapters|domain} > ports > {schema|utils})
+type = layers
+layers =
+    lecture_agent.app
+    lecture_agent.agent
+    lecture_agent.adapters | lecture_agent.domain
+    lecture_agent.ports
+    lecture_agent.schema | lecture_agent.utils
+
+; —— layers 无法表达的关键解耦：agent/domain 禁碰 adapters（只认 ports）——
+[importlinter:contract:domain-not-adapters]
+name = domain must not import adapters
+type = forbidden
+source_modules = lecture_agent.domain
+forbidden_modules = lecture_agent.adapters
+
+[importlinter:contract:agent-not-adapters]
+name = agent must not import adapters (只认 port + domain)
+type = forbidden
+source_modules = lecture_agent.agent
+forbidden_modules = lecture_agent.adapters
+
+; —— ports 是纯抽象：只允许依赖 schema ——
+[importlinter:contract:ports-pure]
+name = ports must not import domain/adapters/agent/app
+type = forbidden
+source_modules = lecture_agent.ports
+forbidden_modules =
+    lecture_agent.domain
+    lecture_agent.adapters
+    lecture_agent.agent
+    lecture_agent.app
+
+; —— schema 是共享内核：不依赖任何其它内部包 ——
+[importlinter:contract:schema-pure]
+name = schema kernel must not import any other internal package
+type = forbidden
+source_modules = lecture_agent.schema
+forbidden_modules =
+    lecture_agent.utils
+    lecture_agent.ports
+    lecture_agent.domain
+    lecture_agent.adapters
+    lecture_agent.agent
+    lecture_agent.app

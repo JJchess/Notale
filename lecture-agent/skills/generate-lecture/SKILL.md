@@ -22,8 +22,8 @@ node bin/lecture-agent.mjs generate "<课题>" [--pages N] [--theme cartesian|co
 3. **Fan-out** (`src/delegate.mjs`, concurrency pool) — each placeholder → route by `type` to the owning family skill's contract (`skills.mjs` registry) → one focused LLM call → `validateBlock` self-check → feed path-tagged errors back to self-repair (≤3 rounds).
 4. **Assemble** — fill placeholders; a block that can't be made valid is honestly dropped/downgraded and reported (never fabricated).
 5. **Validate + repair** — `validateDoc`; block-level errors are routed back by JSON path and regenerated (≤2 rounds).
-6. **Verify** — `render-verify.mjs` structural assertions + overflow heuristic (true render/interaction needs a headless browser or a human pass in `demo/serve.py`).
-7. **Output** — a valid `course.lecture.json` (written to `out/<id>/` and `demo/generated/<id>.lecture.json` for `?doc=` preview).
+6. **Verify** — `render-verify.mjs` structural assertions + overflow heuristic (true render/interaction needs a headless browser or a human pass in `viewer/serve.py`).
+7. **Output** — a valid `course.lecture.json` (written to `out/<id>/` and `viewer/generated/<id>.lecture.json` for `?doc=` preview).
 
 ## Principles
 - Orchestration-first: this skill's job is *what block goes where*; each family skill owns *how* to write its blocks well (see `create-*`).

@@ -5,7 +5,7 @@ severity: critical
 status: fixed
 components: [reveal.js, codemirror5, css-transform-scale]
 discovered: 2026-07-05
-fixed_in: demo/index.html
+fixed_in: viewer/index.html
 mirrors: ~/.claude/lessons/frontend.md#FE-48
 ---
 
@@ -31,7 +31,7 @@ mirrors: ~/.claude/lessons/frontend.md#FE-48
 
 ## 🩻 现象
 
-在 reveal.js 讲义里嵌入一个真实可编辑、可运行的代码框（`CodeMirror` 5 + `Pyodide`/JS 双引擎做"改代码 → Run"交互，详见 `demo/index.html` 第 5 页），用户反馈：
+在 reveal.js 讲义里嵌入一个真实可编辑、可运行的代码框（`CodeMirror` 5 + `Pyodide`/JS 双引擎做"改代码 → Run"交互，详见 `viewer/index.html` 第 5 页），用户反馈：
 
 > "code runtime 部分，光标的位置和代码的位置有很大偏差，偏右偏下"
 
@@ -114,7 +114,7 @@ CodeMirror 5（2011 年设计，从未考虑过"祖先带 CSS transform"这种�
 └──────────────────────────────┘        └───────────────────────────────┘
 ```
 
-### 实现（节选自 `demo/index.html`）
+### 实现（节选自 `viewer/index.html`）
 
 **1. HTML：slide 里只留占位框，编辑器挂在 body 下**
 
@@ -231,4 +231,4 @@ function checkCursorAlignment(cm, {line, ch}) {
 
 - 同 session 内另一条相关但独立的坑：本地静态服务器必须用 `ThreadingHTTPServer`（Pyodide 并发请求在单线程服务器上会死锁）——不属于本条范围，如需要另建条目。
 - 全局镜像：`~/.claude/lessons/frontend.md` → `[FE-48]`
-- 触发场景源码：`demo/index.html`（第 5 页"贝叶斯选点循环：改一行，亲自跑"）
+- 触发场景源码：`viewer/index.html`（第 5 页"贝叶斯选点循环：改一行，亲自跑"）
