@@ -11,7 +11,7 @@ export async function checkCoverage(doc, perspectives) {
   const sys = `你是讲义覆盖度审查。给定一节讲义的大纲 + 规划阶段列出的"必讲要点"清单，逐点判断该要点是否在讲义里被**充分覆盖**（不只是提一句）。只输出 JSON：
 { "covered": ["已充分覆盖的要点(原文)"], "missing": [{"point":"缺失或只浅尝的要点","why":"缺在哪/为何不够"}] }`;
   const user = `必讲要点（共 ${must.length}）：\n${must.map((m, i) => `${i + 1}. ${m}`).join('\n')}\n\n讲义大纲：\n${summarize(doc)}`;
-  const r = parseJson(await chat([{ role: 'system', content: sys }, { role: 'user', content: user }], { temperature: 0.2 }));
+  const r = parseJson(await chat([{ role: 'system', content: sys }, { role: 'user', content: user }], { temperature: 0.2, purpose: 'coverage' }));
   const covered = (r.covered || []).length;
   const missing = Array.isArray(r.missing) ? r.missing : [];
   return { total: must.length, covered, missing, ratio: must.length ? +(covered / must.length).toFixed(2) : 1 };

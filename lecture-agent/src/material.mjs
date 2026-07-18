@@ -42,7 +42,7 @@ async function condenseOne(text, topic, targetChars) {
 - 不要评论、不要加"本文介绍了…"这类元话语，直接给浓缩后的知识内容。
 - 中文输出，控制在约 ${targetChars} 字以内。只输出摘要正文，不要 JSON、不要标题。`;
   const user = `课题：${topic || '(未指定)'}\n\n素材原文：\n${text}\n\n请浓缩为约 ${targetChars} 字的保事实摘要。`;
-  const out = await chat([{ role: 'system', content: sys }, { role: 'user', content: user }], { jsonMode: false, temperature: 0.2 });
+  const out = await chat([{ role: 'system', content: sys }, { role: 'user', content: user }], { jsonMode: false, temperature: 0.2, purpose: 'material' });
   return String(out || '').trim();
 }
 

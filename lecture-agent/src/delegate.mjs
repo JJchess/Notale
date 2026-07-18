@@ -19,7 +19,7 @@ export async function generateBlock({ type, intent, sceneCtx, contract, material
   const ROUNDS = 3;                                       // 初次 + 2 次自修
   for (let round = 1; round <= ROUNDS; round++) {
     let raw;
-    try { raw = await chat(messages, { temperature: 0.3 }); }
+    try { raw = await chat(messages, { temperature: 0.3, purpose: (round === 1 ? 'block:' : 'repair:') + type }); }
     catch (e) { if (round === ROUNDS) return { block: null, err: 'LLM 调用失败: ' + String(e.message || e).slice(0, 80) }; await new Promise(r => setTimeout(r, 1500)); continue; }
     let block;
     try { block = parseJson(raw); }

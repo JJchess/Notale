@@ -2,7 +2,72 @@
    STORM 的洞见：直接让 LLM 出大纲，覆盖面窄；先发现"多个视角(perspective)"、每个视角提出"必须讲到的点+常见疑问"，
    再据此综合大纲，覆盖更广更深、组织更好。我们把它落成"教学视角"两阶段规划，产出与旧 planner 相同的 skeleton 格式。
    来源: github.com/stanford-oval/storm（Synthesis of Topic Outlines through Retrieval and Multi-perspective Question Asking）。 */
-import { chat, parseJson } from './llm.mjs';
+import { chat, chatStream, parseJson } from './llm.mjs';
+
+/** 字符串感知的数组对象扫描：在 text 里定位 "key":[ 之后，逐字符扫出已闭合的顶层 {} 子串，
+ *  外加尾部仍在流入的未闭合子串。给流式增量抽取 scene / block 用（buffer 小，全量重扫成本可忽略）。 */
+function scanArrayObjects(text, key) {
+  const ki = text.indexOf('"' + key + '"');
+  if (ki < 0) return null;
+  const lb = text.indexOf('[', ki);
+  if (lb < 0) return null;
+  const objs = [];
+  let depth = 0, objStart = -1, inStr = false, esc = false, incomplete = null;
+  for (let i = lb + 1; i < text.length; i++) {
+    const ch = text[i];
+    if (inStr) { if (esc) esc = false; else if (ch === '\\') esc = true; else if (ch === '"') inStr = false; continue; }
+    if (ch === '"') { inStr = true; continue; }
+    if (depth === 0) {
+      if (ch === ']') { objStart = -1; break; }          // 数组闭合
+      if (ch === '{') { depth = 1; objStart = i; }
+      continue;
+    }
+    if (ch === '{') depth++;
+    else if (ch === '}') { depth--; if (depth === 0) { objs.push(text.slice(objStart, i + 1)); objStart = -1; } }
+  }
+  if (objStart >= 0) incomplete = text.slice(objStart);
+  return { objs, incomplete };
+}
+
+/** 流式增量抽取泵：喂入累积 buffer，把已闭合的 scene / block 逐个 emit（按 sceneId / 计数幂等去重）。
+ *  只服务 live UI 浮现；正确性由流末 parseJson 保证。返回一个 pump(full) 闭包（自带去重状态）。 */
+export function makePlanPump(onPlanEvent) {
+  const sceneHdr = {};                    // sceneId -> 上次发出的 header 序列化（内容变化才 upsert，避免逐字符重发）
+  const blkCount = {};                    // sceneId -> 已发 block 数
+  const clean = o => { const r = {}; for (const k of ['id', 'kind', 'headline', 'eyebrow']) if (o[k] != null && o[k] !== '') r[k] = o[k]; return r; };
+  return function pump(full) {
+    const s = scanArrayObjects(full, 'scenes');
+    if (!s) return;
+    const items = [];
+    for (const t of s.objs) { try { const o = JSON.parse(t); items.push({ header: o, blocks: Array.isArray(o.blocks) ? o.blocks : [] }); } catch { /* 闭合对象一般可解析；异常跳过 */ } }
+    if (s.incomplete) {                   // 尾部仍在流入的 scene：header 用正则、已闭合 block 用扫描
+      const before = s.incomplete.split('"blocks"')[0];
+      const grab = re => { const m = before.match(re); return m ? m[1] : undefined; };
+      const header = { id: grab(/"id"\s*:\s*"([^"]+)"/), kind: grab(/"kind"\s*:\s*"([^"]*)"/), headline: grab(/"headline"\s*:\s*"([^"]*)"/), eyebrow: grab(/"eyebrow"\s*:\s*"([^"]*)"/) };
+      const bs = scanArrayObjects(s.incomplete, 'blocks');
+      const blocks = [];
+      if (bs) for (const t of bs.objs) { try { blocks.push(JSON.parse(t)); } catch { /* skip */ } }
+      items.push({ header, blocks });
+    }
+    for (const it of items) {
+      const sid = it.header && it.header.id;
+      if (!sid) continue;                 // 需 id 才发，避免 sceneId 前后不一致
+      const hdr = clean(it.header);
+      const key = JSON.stringify(hdr);
+      if (sceneHdr[sid] !== key) {        // 首见 或 header 新增了字段(如 headline 后到)→ upsert（UI 按 id 更新标签）
+        if (!(sid in blkCount)) blkCount[sid] = 0;
+        sceneHdr[sid] = key;
+        onPlanEvent({ type: 'plan-scene', scene: hdr });
+      }
+      for (let j = blkCount[sid]; j < it.blocks.length; j++) {
+        const b = it.blocks[j];
+        if (!b || !b.type) continue;
+        onPlanEvent({ type: 'plan-block', sceneId: sid, block: { id: b.id || `${sid}b${j}`, type: b.type, intent: b.intent } });
+        blkCount[sid] = j + 1;
+      }
+    }
+  };
+}
 
 const PERSPECTIVE_SCHEMA = `{ "perspectives": [ { "name":"视角名(如 重直觉的入门讲法 / 重推导的理论派 / 重工程实践 / 爱追问的学生)", "focus":"这个视角最在意什么(一句)", "mustCover":["这个视角认为必须讲到的要点", "..."], "questions":["学生在这个视角下常见的疑问/误区", "..."] } ] }`;
 
@@ -11,7 +76,7 @@ async function discoverCoverage({ topic, audience, extra, material }) {
   const sys = `你是课程设计专家。用"多视角提问"扩大一节讲义的覆盖面：对给定课题，列出 3-4 个**互补**的教学视角，每个视角给出它认为**必须讲到的要点**与学生在该视角下的**常见疑问/误区**。视角要真的不同（入门直觉 / 理论推导 / 工程实践 / 历史动机 / 易错点…按课题取最相关的几种），别重复。${material ? '**必讲点要从下面的参考素材里提炼，别脱离素材另起炉灶。**' : ''}只输出 JSON：\n${PERSPECTIVE_SCHEMA}`;
   const user = `课题: ${topic}${audience ? `\n受众: ${audience}` : ''}${extra ? `\n额外要求: ${extra}` : ''}${material ? `\n\n参考素材：\n${material}` : ''}\n输出 perspectives JSON。`;
   try {
-    const data = parseJson(await chat([{ role: 'system', content: sys }, { role: 'user', content: user }], { temperature: 0.7 }));
+    const data = parseJson(await chat([{ role: 'system', content: sys }, { role: 'user', content: user }], { temperature: 0.7, purpose: 'plan:perspectives' }));
     const ps = Array.isArray(data.perspectives) ? data.perspectives : [];
     return ps.slice(0, 4);
   } catch { return []; }
@@ -61,7 +126,7 @@ export async function insertSections(doc, log = () => {}) {
     + `第一部分通常从第 1 页起。只输出 JSON：{ "parts": [ { "start": 1, "title": "…", "thesis": "…" } ] }；无清晰分界则 {"parts":[]}。`;
   const user = `内容页标题（共 ${contentIdx.length} 页）：\n${list}\n\n输出 parts JSON。`;
   let parts;
-  try { parts = (parseJson(await chat([{ role: 'system', content: sys }, { role: 'user', content: user }], { temperature: 0.3 })).parts) || []; }
+  try { parts = (parseJson(await chat([{ role: 'system', content: sys }, { role: 'user', content: user }], { temperature: 0.3, purpose: 'plan:sections' })).parts) || []; }
   catch { return 0; }
   if (!Array.isArray(parts) || parts.length < 2) return 0;                   // <2 部分不值得插分隔
   if (parts.length > Math.ceil(contentIdx.length / 2)) return 0;             // 分隔页数 > 内容页半数 = 每部分不足 2 页 → 过度打点，不插（避免"分隔+单页"的碎片单调）
@@ -123,8 +188,11 @@ export function assignLayouts(doc, log = () => {}) {
   return used + side;
 }
 
-/** STORM 阶段二：把多视角覆盖清单综合成一份连贯、递进的 skeleton（大纲生成）。 */
-export async function planLecture({ topic, pages = 12, theme = '', audience = '', wants = '', extra = '', material = '', autoTypes, authoringRules, log = () => {} }) {
+/** STORM 阶段二：把多视角覆盖清单综合成一份连贯、递进的 skeleton（大纲生成）。
+ *  onPlanEvent + stream=true 时用流式骨架调用，token 到达即增量 emit plan-scene / plan-block
+ *  驱动 live 进度浮现（同一次连贯调用，不拆多次，保叙事连贯）。增量抽取仅服务 UI，
+ *  流末仍走 parseJson 做权威解析；流式失败自动回退原子 chat()。 */
+export async function planLecture({ topic, pages = 12, theme = '', audience = '', wants = '', extra = '', material = '', autoTypes, authoringRules, log = () => {}, onPlanEvent = null, stream = false }) {
   // 阶段一：多视角覆盖
   const _tp = Date.now();
   const perspectives = await discoverCoverage({ topic, audience, extra, material });
@@ -142,16 +210,30 @@ export async function planLecture({ topic, pages = 12, theme = '', audience = ''
   // 阶段二：综合骨架（外层再重试 2 次——骨架是单点，网络/限流抖动不该整轮崩）
   const sys = `你是讲义(LectureDoc)总编排器。只输出一个 JSON 对象(骨架)，不要代码围栏、不要解释。\n${skeletonSpec(pages, autoTypes, theme, wants, authoringRules)}`;
   const user = `课题: ${topic}${audience ? '\n受众: ' + audience : ''}${theme ? '\n主题: ' + theme : ''}${wants ? '\n要的交互: ' + wants : ''}${extra ? '\n额外要求: ' + extra : ''}${material ? '\n\n参考素材（讲义内容据此取材，别脱离/编造）：\n' + material : ''}\n\n${coverage}\n\n产出骨架 JSON。`;
+  const msgs = [{ role: 'system', content: sys }, { role: 'user', content: user }];
+
   let lastErr;
   const _ts = Date.now();
+  const finish = doc => {
+    // 章节分隔页确定性插入（规划器几乎从不主动产 section；focused 调用判定部分边界）——在返回骨架前完成，
+    // 使分隔页的 statement 占位块随后进入 fan-out 正常生成（不 mock）。失败/无分界则不插（graceful）。
+    return (async () => { try { const secs = await insertSections(doc, log); if (secs) log(`[section] 插入 ${secs} 个章节分隔页（打节拍，破每页一个样）`); } catch (e) { log('[section] 跳过: ' + String(e.message || e).slice(0, 50)); }
+      return { doc, perspectives, timing: { perspectiveMs, skeletonMs: Date.now() - _ts } }; })();
+  };
+
+  // 流式路径（仅 live 时启用，保非 live 干跑零变化）：先试一次流式；失败或解析失败→回退原子重试
+  if (stream && onPlanEvent) {
+    try {
+      const pump = makePlanPump(onPlanEvent);
+      const raw = await chatStream(msgs, { temperature: 0.4, purpose: 'plan:skeleton' }, (_d, full) => { try { pump(full); } catch { /* 增量抽取故障不该中断流 */ } });
+      return await finish(parseJson(raw));
+    } catch (e) { log(`[plan] 流式骨架失败(${String(e.message || e).slice(0, 50)})，回退原子生成`); lastErr = e; }
+  }
+
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
-      const raw = await chat([{ role: 'system', content: sys }, { role: 'user', content: user }], { temperature: 0.4 });
-      const doc = parseJson(raw);
-      // 章节分隔页确定性插入（规划器几乎从不主动产 section；focused 调用判定部分边界）——在返回骨架前完成，
-      // 使分隔页的 statement 占位块随后进入 fan-out 正常生成（不 mock）。失败/无分界则不插（graceful）。
-      try { const secs = await insertSections(doc, log); if (secs) log(`[section] 插入 ${secs} 个章节分隔页（打节拍，破每页一个样）`); } catch (e) { log('[section] 跳过: ' + String(e.message || e).slice(0, 50)); }
-      return { doc, perspectives, timing: { perspectiveMs, skeletonMs: Date.now() - _ts } };
+      const doc = parseJson(await chat(msgs, { temperature: 0.4, purpose: 'plan:skeleton' }));
+      return await finish(doc);
     } catch (e) { lastErr = e; if (attempt < 3) { log(`[plan] 骨架生成第 ${attempt} 次失败(${String(e.message || e).slice(0, 50)})，退避重试…`); await new Promise(r => setTimeout(r, 3000 * attempt)); } }
   }
   throw new Error('骨架生成失败（网络/限流/解析）: ' + String(lastErr?.message || lastErr).slice(0, 100));

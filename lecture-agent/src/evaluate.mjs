@@ -43,7 +43,7 @@ const SYS = `你是讲义质量评审（三维评分，移植自 PPTAgent 的 PP
 
 /** 评估一份 LectureDoc，返回三维分数对象。 */
 export async function evaluateLecture(doc) {
-  return parseJson(await chat([{ role: 'system', content: SYS }, { role: 'user', content: summarize(doc) }], { temperature: 0.2 }));
+  return parseJson(await chat([{ role: 'system', content: SYS }, { role: 'user', content: summarize(doc) }], { temperature: 0.2, purpose: 'eval' }));
 }
 
 /** 打印评估结果（CLI 用）。 */

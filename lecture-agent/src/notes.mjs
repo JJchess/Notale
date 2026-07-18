@@ -12,7 +12,7 @@ export async function enrichNotes(doc, { audience = '' } = {}) {
   const list = scenes.map((s, i) => `p${i + 1} [${s.kind}] ${s.headline || s.eyebrow || '(封面/收尾)'} — 块: ${(s.blocks || []).map(b => b.type).join(',')}`).join('\n');
   const user = `讲义标题：${doc.title}\n页数：${scenes.length}\n\n各页：\n${list}\n\n为这 ${scenes.length} 页各写一条讲者备注。`;
   try {
-    const r = parseJson(await chat([{ role: 'system', content: sys }, { role: 'user', content: user }], { temperature: 0.4 }));
+    const r = parseJson(await chat([{ role: 'system', content: sys }, { role: 'user', content: user }], { temperature: 0.4, purpose: 'notes' }));
     const notes = Array.isArray(r.notes) ? r.notes : null;
     if (notes && notes.length === scenes.length) {
       scenes.forEach((s, i) => { if (typeof notes[i] === 'string' && notes[i].trim().length > (s.notes || '').length) s.notes = notes[i].trim(); });
