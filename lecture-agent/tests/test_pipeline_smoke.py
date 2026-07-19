@@ -40,9 +40,8 @@ _BY_PURPOSE = {
     "plan:skeleton": _SKELETON,
     "block:hero": json.dumps({"type": "hero", "title": ["示例讲义", "副标题"]}),
     "block:statement": json.dumps({"type": "statement", "statement": "梯度下降沿负梯度方向迭代。"}),
-    "notes": json.dumps(
-        {"notes": ["封面备注，讲清本课主线与结构安排。", "主旨备注，展开核心直觉与常见误区。"]}
-    ),
+    # 逐页并行 notes：每页一次调用，返回单条 {"note": ...}
+    "notes": json.dumps({"note": "本页备注，讲清主线、展开核心直觉与常见误区。"}),
 }
 
 

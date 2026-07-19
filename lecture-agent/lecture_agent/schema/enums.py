@@ -59,6 +59,18 @@ class Theme(StrEnum):
     COBALT_GRID = "cobalt-grid"
     LAB = "lab"
     SLATE = "slate"
+    # 扩展主题库（移植自 bold-template-pack；每个在 viewer/index.html 有同名 [data-theme] token 块）
+    SOFT_EDITORIAL = "soft-editorial"
+    VELLUM = "vellum"
+    GROVE = "grove"
+    MONOCHROME = "monochrome"
+    SIGNAL = "signal"
+    BROADSIDE = "broadside"
+    EMERALD_EDITORIAL = "emerald-editorial"
+    EDITORIAL_FOREST = "editorial-forest"
+    BOLD_POSTER = "bold-poster"
+    CORAL = "coral"
+    STUDIO = "studio"
 
 
 # 供守卫/测试做集合相等断言（对齐旧 check-consistency Check C′）。

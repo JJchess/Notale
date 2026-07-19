@@ -14,6 +14,7 @@ from ...ports.llm import LLMClient, Message, ToolCallingLLM
 from ...ports.tool import Tool
 from ...schema.validate import validate_block
 from ...utils.jsonio import parse_json
+from ..evaluation.completeness import block_issues
 from ..skills.authoring import AUTHORING_RULES
 from ..tool_loop import run_tool_loop
 
@@ -45,16 +46,26 @@ async def generate_block(
     intent: str,
     scene_ctx: str,
     contract: Any,
+    topic: str = "",
     material: str = "",
     rounds: int = 3,
     tools: dict[str, Tool] | None = None,
 ) -> BlockResult:
     """生成并自校验一个 block。初次 + (rounds-1) 次自修。
 
+    topic 是**全局课题锚**：块生成器只看到本块意图与所在页，若不注入 topic，封面/收尾这类"标题+副题"
+    的通用意图会与课题脱钩而跑题（且同 namespace 内跨题 prompt-hash 相同还会缓存串用）。故强制紧扣。
+
     tools 非空且 llm 支持 function-calling 时，首轮走 tool-loop——模型可先调工具（如 calc 验证 sim
     表达式）再产出 JSON；骨架流程不变，这只是节点内部能力。
     """
-    ctx = f"{scene_ctx + '。' if scene_ctx else ''}本 block 教学意图: {intent}。"
+    anchor = (
+        f"本讲义课题: 「{topic}」——本 block 所有内容必须紧扣此课题，"
+        f"标题/副题/示例严禁写成其它主题。"
+        if topic
+        else ""
+    )
+    ctx = f"{anchor}{scene_ctx + '。' if scene_ctx else ''}本 block 教学意图: {intent}。"
     mat = (
         f"\n\n参考素材（内容/例子/数据据此，别编造脱离素材的事实）：\n{material}"
         if material
@@ -96,7 +107,20 @@ async def generate_block(
         block["type"] = type  # 钉死类型，防漂移
         res = validate_block(block, type)
         if not res.errors:
-            return BlockResult(block, warns=res.warnings)
+            trunc = block_issues(block)
+            if not trunc or last:  # 干净，或最后一轮（best-effort 保留，不丢内容）
+                return BlockResult(block, warns=(res.warnings or []) + trunc)
+            # schema 过但语义截断/占位 → 回炉补全
+            messages.append({"role": "assistant", "content": json.dumps(block, ensure_ascii=False)})
+            messages.append(
+                {
+                    "role": "user",
+                    "content": "内容不完整（截断/占位）:\n"
+                    + "\n".join(trunc)
+                    + "\n请补全被截断的文本/公式、去掉占位，只重新输出该 block JSON。",
+                }
+            )
+            continue
         if last:
             return BlockResult(None, "; ".join(res.errors))
         messages.append({"role": "assistant", "content": json.dumps(block, ensure_ascii=False)})

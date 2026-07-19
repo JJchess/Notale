@@ -28,12 +28,11 @@ from pathlib import Path
 from typing import Any
 
 from hydra.utils import instantiate
-from omegaconf import OmegaConf
-
 from lecture_agent.adapters.render.structural import StructuralVerifier
 from lecture_agent.agent import GeneratorOptions, generate_lecture
 from lecture_agent.domain.evaluation import diversity, evaluate_lecture
 from lecture_agent.utils.seed import seed_everything
+from omegaconf import OmegaConf
 
 # ── 实验矩阵定义 ───────────────────────────────────────────────────────────────
 ROOT = Path(__file__).resolve().parent.parent
@@ -79,9 +78,21 @@ def slug(s: str) -> str:
     return re.sub(r"[^0-9A-Za-z一-鿿]+", "_", s).strip("_")[:40]
 
 
+def audience_of(topic: str) -> str:
+    """从课题括号里解析受众年级（如"（高中生物学）"→"高中生物学"）；无年级信号则空。"""
+    m = re.search(r"（(.*?)）", topic)
+    inner = m.group(1) if m else ""
+    return inner if re.search(r"高中|初中|小学|大学|研究生", inner) else ""
+
+
 def build_llm(config_name: str, *, namespace: str | None = None) -> Any:
-    """从 configs/llm/<config_name>.yaml 构造 CassetteClient（解析 ${seed}）。"""
+    """从 configs/llm/<config_name>.yaml 构造 CassetteClient（解析 ${seed}）。
+
+    fast_extra_body 是给 bench fast 变体用的 per-model 参数，不是 CassetteClient 的入参——
+    这里剥掉再 instantiate（slow/生成/评测路径都走这个，忽略它）。
+    """
     node = OmegaConf.load(CONFIG_DIR / f"{config_name}.yaml")
+    node.pop("fast_extra_body", None)  # type: ignore[union-attr]
     if namespace is not None:
         node["namespace"] = namespace
     cfg = OmegaConf.create({"seed": SEED, "llm": node})
@@ -128,6 +139,7 @@ async def one_run(display: str, config_name: str, topic: str, run_dir: Path, pag
             llm,
             topic=topic,
             pages=pages,
+            audience=audience_of(topic),  # 从课题解析受众年级，供规划/备注贴合难度
             options=GeneratorOptions(),  # full：fan-out + revise + 3 视角
             log=logger.info,
         )

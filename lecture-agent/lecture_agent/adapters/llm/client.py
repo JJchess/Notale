@@ -33,6 +33,8 @@ class HttpxClient:
         api_key_env: str = "SILICONFLOW_API_KEY",
         attempts: int = 4,
         timeout: float = 120.0,
+        proxy: str | None = None,
+        extra_body: dict[str, Any] | None = None,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.model = model
@@ -41,6 +43,11 @@ class HttpxClient:
         self.api_key_env = api_key_env
         self.attempts = attempts
         self.timeout = timeout
+        # 境外端点（如 Gemini 评委）需显式走翻墙代理；国内端点留 None=直连。
+        self.proxy = proxy
+        # 任意 OpenAI 兼容额外参数透传（enable_thinking / thinking / reasoning_effort / max_tokens …）。
+        # 普适："关思考"等 per-model 差异全交配置，不进代码。
+        self.extra_body = dict(extra_body or {})
         # 累计 token（供实验 harness 归因；仅真调计数，命中缓存的调用不计）
         self.usage: dict[str, int] = {
             "prompt_tokens": 0,
@@ -66,7 +73,10 @@ class HttpxClient:
         headers = {"Authorization": f"Bearer {self._api_key()}", "Content-Type": "application/json"}
         last_err: Exception | None = None
         # trust_env=False：忽略环境 *_PROXY（本地翻墙代理不路由国内端点，且 SOCKS 需额外依赖）。
-        async with httpx.AsyncClient(timeout=self.timeout, trust_env=False) as client:
+        # self.proxy 显式给定时（境外评委端点）走该 http 代理；否则直连。
+        async with httpx.AsyncClient(
+            timeout=self.timeout, trust_env=False, proxy=self.proxy
+        ) as client:
             for attempt in range(1, self.attempts + 1):
                 try:
                     resp = await client.post(
@@ -105,6 +115,7 @@ class HttpxClient:
         }
         if self.seed is not None:
             body["seed"] = self.seed
+        body.update(self.extra_body)  # 透传关思考/reasoning_effort/max_tokens 等
         return body
 
     async def complete(

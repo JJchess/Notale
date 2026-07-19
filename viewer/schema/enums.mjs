@@ -13,4 +13,9 @@ export const BLOCK_TYPES = ['hero', 'statement', 'list', 'agenda', 'callout', 't
 
 export const SIM_ENGINES = ['dynamics1d', 'searchCompare', 'custom', 'widget'];
 
-export const THEMES = ['cartesian', 'cobalt-grid', 'lab', 'slate'];
+export const THEMES = [
+  'cartesian', 'cobalt-grid', 'lab', 'slate',
+  // 扩展主题库（移植自 bold-template-pack；各有同名 [data-theme] token 块 + 已 vendor 字体）
+  'soft-editorial', 'vellum', 'grove', 'monochrome', 'signal', 'broadside',
+  'emerald-editorial', 'editorial-forest', 'bold-poster', 'coral', 'studio',
+];

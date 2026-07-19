@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>实验操作台 · LectureDoc</title>
+<style>
+  :root {
+    --bg: #0e1116; --panel: #171b22; --panel2: #1e242e; --line: #2a313c;
+    --fg: #e6edf3; --dim: #9aa7b4; --accent: #4c8dff; --ok: #3fb950; --bad: #f85149; --warn: #d29922;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg);
+    font: 14px/1.5 -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif; }
+  #app { display: flex; flex-direction: column; height: 100vh; }
+  header { display: flex; align-items: center; gap: 16px; padding: 10px 16px;
+    background: var(--panel); border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+  header h1 { font-size: 15px; margin: 0; font-weight: 600; letter-spacing: .3px; }
+  .tabs { display: flex; gap: 6px; }
+  .tab { padding: 5px 12px; border: 1px solid var(--line); border-radius: 7px; cursor: pointer;
+    color: var(--dim); background: var(--panel2); white-space: nowrap; }
+  .tab.on { color: #fff; border-color: var(--accent); background: #21375f; }
+  .tab small { color: var(--dim); margin-left: 6px; }
+  .spacer { flex: 1; }
+  .toggle { display: flex; align-items: center; gap: 8px; color: var(--dim); cursor: pointer;
+    user-select: none; padding: 5px 10px; border: 1px solid var(--line); border-radius: 7px; }
+  .toggle.on { color: #fff; border-color: var(--accent); }
+  main { flex: 1; display: flex; min-height: 0; }
+  aside { width: 250px; background: var(--panel); border-right: 1px solid var(--line);
+    padding: 12px; overflow: auto; flex-shrink: 0; }
+  aside.right { border-right: none; border-left: 1px solid var(--line); width: 300px; }
+  .lbl { font-size: 11px; text-transform: uppercase; letter-spacing: .8px; color: var(--dim);
+    margin: 4px 0 8px; }
+  /* 模型×课题矩阵 */
+  .matrix { display: grid; gap: 4px; }
+  .cell { border: 1px solid var(--line); border-radius: 6px; padding: 6px 4px; cursor: pointer;
+    background: var(--panel2); text-align: center; font-size: 12px; transition: .12s; }
+  .cell:hover { border-color: var(--accent); }
+  .cell.sel { border-color: var(--accent); background: #21375f; box-shadow: 0 0 0 1px var(--accent); }
+  .cell .m { color: var(--fg); font-weight: 600; font-size: 11px; }
+  .cell .badge { font-size: 13px; }
+  .cell.head { cursor: default; background: transparent; border: none; color: var(--dim);
+    font-size: 11px; display: flex; align-items: center; justify-content: center; }
+  .center { flex: 1; display: flex; min-width: 0; background: #000; }
+  .frame-wrap { flex: 1; display: flex; flex-direction: column; min-width: 0; border-right: 1px solid var(--line); }
+  .frame-wrap:last-child { border-right: none; }
+  .frame-head { padding: 5px 10px; background: var(--panel2); border-bottom: 1px solid var(--line);
+    font-size: 12px; display: flex; align-items: center; gap: 8px; }
+  iframe { flex: 1; width: 100%; border: 0; background: #000; }
+  .pass { color: var(--ok); } .fail { color: var(--bad); } .muted { color: var(--dim); }
+  .card { background: var(--panel2); border: 1px solid var(--line); border-radius: 8px;
+    padding: 10px 12px; margin-bottom: 12px; }
+  .card h3 { margin: 0 0 8px; font-size: 12px; color: var(--dim); text-transform: uppercase; letter-spacing: .6px; }
+  .kv { display: flex; justify-content: space-between; padding: 2px 0; }
+  .kv b { font-weight: 600; }
+  .issue { color: var(--warn); font-size: 12px; padding: 3px 0; border-top: 1px dashed var(--line); }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  th, td { text-align: left; padding: 4px 6px; border-bottom: 1px solid var(--line); }
+  th { color: var(--dim); font-weight: 500; }
+  td.n { text-align: right; font-variant-numeric: tabular-nums; }
+  tr.me td { color: #fff; background: #21375f; }
+  .rankbar { height: 6px; background: var(--accent); border-radius: 3px; display: inline-block; vertical-align: middle; }
+  a.raw { color: var(--accent); text-decoration: none; font-size: 12px; }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1>🧪 实验操作台</h1>
+    <div class="tabs" id="tabs"></div>
+    <div class="spacer"></div>
+    <div class="toggle" id="cmpBtn" title="并排对比同一份在两个实验里的表现">
+      <span id="cmpIcon">▢</span> 修复前后并排对比
+    </div>
+  </header>
+  <main>
+    <aside class="left">
+      <div class="lbl">选择 模型 × 课题</div>
+      <div class="matrix" id="matrix"></div>
+      <div class="lbl" style="margin-top:16px">图例</div>
+      <div class="muted" style="font-size:12px">
+        <span class="pass">✓</span> 门通过 &nbsp; <span class="fail">✗</span> 有缺陷<br>
+        单元格 = 该实验里这份 deck 的确定性门
+      </div>
+    </aside>
+    <div class="center" id="center"></div>
+    <aside class="right">
+      <div id="meta"></div>
+    </aside>
+  </main>
+</div>
+
+<script>
+const state = { manifest: null, exp: null, model: null, topic: null, compare: false };
+
+async function boot() {
+  const r = await fetch('experiments/manifest.json');
+  state.manifest = await r.json();
+  state.exp = state.manifest.experiments[state.manifest.experiments.length - 1].id; // 默认最新
+  state.model = state.manifest.models[0];
+  state.topic = state.manifest.topics[0];
+  renderTabs(); renderMatrix(); renderAll();
+}
+
+function expById(id){ return state.manifest.experiments.find(e => e.id === id); }
+function deckOf(expId, model, topic){
+  const e = expById(expId); if (!e) return null;
+  return e.decks.find(d => d.model === model && d.topic === topic) || null;
+}
+
+function renderTabs(){
+  const t = document.getElementById('tabs');
+  t.innerHTML = '';
+  state.manifest.experiments.forEach(e => {
+    const d = document.createElement('div');
+    d.className = 'tab' + (e.id === state.exp ? ' on' : '');
+    d.innerHTML = `${e.label.split('（')[0]} <small>门 ${e.gatePass}/${e.total}</small>`;
+    d.onclick = () => { state.exp = e.id; renderTabs(); renderMatrix(); renderAll(); };
+    t.appendChild(d);
+  });
+  const btn = document.getElementById('cmpBtn');
+  btn.className = 'toggle' + (state.compare ? ' on' : '');
+  document.getElementById('cmpIcon').textContent = state.compare ? '☑' : '▢';
+  btn.onclick = () => { state.compare = !state.compare; renderTabs(); renderAll(); };
+}
+
+function badge(deck){
+  if (!deck || deck.gate.pass == null) return '<span class="muted">–</span>';
+  return deck.gate.pass ? '<span class="pass">✓</span>' : '<span class="fail">✗</span>';
+}
+
+function renderMatrix(){
+  const m = document.getElementById('matrix');
+  const topics = state.manifest.topics, models = state.manifest.models;
+  m.style.gridTemplateColumns = `88px repeat(${topics.length}, 1fr)`;
+  let html = '<div class="cell head"></div>';
+  topics.forEach(t => html += `<div class="cell head">${t.split('（')[0]}</div>`);
+  models.forEach(model => {
+    html += `<div class="cell head" style="justify-content:flex-start">${model.replace('DeepSeek-V4-','DS-').replace('Kimi-K2.','K2.')}</div>`;
+    topics.forEach(topic => {
+      const d = deckOf(state.exp, model, topic);
+      const sel = (model === state.model && topic === state.topic) ? ' sel' : '';
+      html += `<div class="cell${sel}" data-m="${model}" data-t="${topic}"><div class="badge">${badge(d)}</div></div>`;
+    });
+  });
+  m.innerHTML = html;
+  m.querySelectorAll('.cell[data-m]').forEach(c => c.onclick = () => {
+    state.model = c.dataset.m; state.topic = c.dataset.t; renderMatrix(); renderAll();
+  });
+}
+
+function frameHTML(expId){
+  const e = expById(expId), d = deckOf(expId, state.model, state.topic);
+  if (!d) return `<div class="frame-wrap"><div class="frame-head">${e?e.label:''} · 无此 deck</div></div>`;
+  const src = 'index.html?doc=' + encodeURI(d.file);
+  return `<div class="frame-wrap">
+    <div class="frame-head">${badge(d)} <b>${e.label.split('（')[0]}</b>
+      <span class="muted">${d.gate.pages}页 · Δ${d.gate.pageDelta}</span>
+      <a class="raw" href="${src}" target="_blank">↗ 单开</a></div>
+    <iframe src="${src}"></iframe></div>`;
+}
+
+function renderAll(){
+  const c = document.getElementById('center');
+  if (state.compare){
+    c.innerHTML = state.manifest.experiments.map(e => frameHTML(e.id)).join('');
+  } else {
+    c.innerHTML = frameHTML(state.exp);
+  }
+  renderMeta();
+}
+
+function renderMeta(){
+  const e = expById(state.exp), d = deckOf(state.exp, state.model, state.topic);
+  const box = document.getElementById('meta');
+  if (!d){ box.innerHTML = ''; return; }
+  const g = d.gate;
+  const issues = [
+    ...g.heroOfftopic.map(x => '🎯 跑题：' + x),
+    ...g.truncation.map(x => '✂ 截断：' + x),
+  ];
+  // 该模型本题名次
+  const rank = (e.rankByTopic[state.topic] || []);
+  const meIdx = rank.findIndex(r => r.model === state.model);
+  // 实验总排名
+  const agg = e.aggregate, maxScore = Math.max(...agg.map(a => a.score), 1);
+
+  box.innerHTML = `
+    <div class="card">
+      <h3>当前 deck · ${state.model}</h3>
+      <div class="kv"><span>确定性门</span><b class="${g.pass?'pass':'fail'}">${g.pass?'通过 ✓':'有缺陷 ✗'}</b></div>
+      <div class="kv"><span>页数 / 目标12</span><b>${g.pages}（Δ ${g.pageDelta}）</b></div>
+      <div class="kv"><span>首末页跑题</span><b class="${g.heroOfftopic.length?'fail':'pass'}">${g.heroOfftopic.length}</b></div>
+      <div class="kv"><span>截断/占位</span><b class="${g.truncation.length?'fail':'pass'}">${g.truncation.length}</b></div>
+      ${issues.length ? issues.map(x => `<div class="issue">${x}</div>`).join('') : ''}
+    </div>
+    <div class="card">
+      <h3>本题去偏成对名次 · ${state.topic.split('（')[0]}</h3>
+      <table><tr><th>#</th><th>模型</th><th class="n">胜率分</th></tr>
+      ${rank.map((r,i)=>`<tr class="${r.model===state.model?'me':''}"><td>${i+1}</td><td>${r.model}</td><td class="n">${r.score}</td></tr>`).join('')}
+      </table>
+    </div>
+    <div class="card">
+      <h3>${e.label.split('（')[0]} · 跨3题总排名</h3>
+      <table><tr><th>模型</th><th class="n">总分/12</th><th></th></tr>
+      ${agg.map(a=>`<tr class="${a.model===state.model?'me':''}"><td>${a.model}</td><td class="n">${a.score}</td>
+        <td><span class="rankbar" style="width:${Math.round(a.score/maxScore*70)}px"></span></td></tr>`).join('')}
+      </table>
+    </div>`;
+}
+
+boot();
+</script>
+</body>
+</html>

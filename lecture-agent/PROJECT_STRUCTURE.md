@@ -3,6 +3,8 @@
 > 全量 Python 重写的**文件结构 / 目录层级规范**，以**解耦**为第一组织原则。
 > 设计语言（codebase-design）：**深模块** = 小接口 + 大实现；**接缝（seam）** = 能换实现而不改调用方之处；**规则：一个 adapter 是假想接缝，两个才是真接缝——只在真正会变的轴上开接缝，不为解耦而过度分层。**
 > 复现理念：一切皆实验 · 配置驱动零魔法常数 · schema 即接口（pydantic）· 确定性录制盒。
+>
+> **文件管理纪律（防无序新建）**：加文件前先问"它属于哪个既有文件夹的既有模式"——放得进就按那个模式放，放不进是危险信号（先改设计或讨论，别硬塞）。**加完立刻回来更新本文档的目录树**，让这张地图始终和代码对得上。临时探针/冒烟脚本一律走临时目录，不进仓库。
 
 ---
 
@@ -41,8 +43,9 @@ lecture-agent/
 │
 ├── configs/                      # 旋钮唯一真相源（Hydra）；_target_ 在此把 adapter 绑到 port
 │   ├── config.yaml               #   defaults + seed + 全局
-│   ├── llm/                      #   端点/模型/温度/seed/mode（live|replay）+ 选哪个 LLMClient adapter
-│   ├── generator/                #   ★消融轴：full / no_fanout / no_revise / single_pass
+│   ├── llm/                      #   端点/模型/温度/seed/mode + 5 被测模型 + judge_gemini（境外走 proxy）
+│   │                             #     每模型自带 fast_extra_body（关思考参数）；client 支持 extra_body/proxy 透传
+│   ├── generator/                #   ★消融轴：full / single_pass / tools / fast（关思考+高并发+无章节，≤5min）
 │   ├── planner/  eval/  theme/
 │   └── experiment/               #   ★一份=一个可复现实验
 │
@@ -50,7 +53,10 @@ lecture-agent/
 │   │
 │   ├── schema/                   # L0 kernel · 依赖：无内部  ── 共享内核，最稳定
 │   │   ├── document.py           #   LectureDoc/Scene/Block（pydantic）——数据契约
-│   │   ├── enums.py              #   block.type/scene.kind/layout.kind/theme（枚举单一真相源）
+│   │   ├── enums.py              #   block.type/scene.kind/layout.kind/theme（枚举单一真相源；
+│   │                             #     Theme 共 15 个：4 原生 + 11 个移植自 refs/frontend-slides/
+│   │                             #     bold-template-pack，token 化进 viewer/index.html，与
+│   │                             #     viewer/schema/enums.mjs 的 THEMES 保持双侧一致）
 │   │   └── validate.py           #   跨字段语义校验（纯函数，不做 I/O）
 │   │
 │   ├── utils/                    # L0 kernel · 依赖：无内部  ── 横切机制
@@ -69,7 +75,7 @@ lecture-agent/
 │   │   ├── tool_loop.py          #   有界 think→call→observe 循环（节点内用，只认 ports）
 │   │   ├── tools/                #   纯工具：calc（AST 安全求值，验 sim 表达式）实现 ports.Tool
 │   │   ├── generation/           #   blocks + material + notes（多文件包）  接口: generate_block
-│   │   ├── evaluation/           #   ppteval/coverage/diversity（judge 经 ports.LLMClient）
+│   │   ├── evaluation/           #   ppteval/coverage/diversity + completeness(确定性门,纯函数) + pairwise(去偏成对,judge 经 port)
 │   │   └── skills/               #   registry + authoring（契约注册表）
 │   │
 │   ├── adapters/                 # L3 · 依赖：schema+ports+utils  ── 实现 port，独担 I/O 副作用
@@ -87,6 +93,9 @@ lecture-agent/
 │
 ├── scripts/                      # L5 薄入口：只 import app/ + 读配置
 │   ├── generate.py  evaluate.py  evolve.py  render_check.py  run_experiment.py
+│   ├── run_matrix.py             #   多模型×多样本横评机楼（build_llm/计时/日志，被下面两个复用）
+│   ├── eval_matrix.py            #   可信标尺：确定性门 + Gemini 去偏成对排名 → eval_v2
+│   └── bench_latency.py          #   延迟 benchmark：slow vs fast(关思考) 时间×质量对照表
 │
 ├── assets/runtime/               # reveal.js 主题/CSS/JS 静态资源（离线，随包分发）
 ├── data/{topics,corpus,human_ratings}/   # topics/ratings 版本化；corpus 大件走 release

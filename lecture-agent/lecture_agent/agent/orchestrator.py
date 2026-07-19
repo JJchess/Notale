@@ -22,7 +22,6 @@ from ..ports.tool import Tool
 from ..schema.validate import validate_doc
 from ..utils.concurrency import pool
 
-_CONC = 4
 _BLOCK_ERR = re.compile(r"\$\.scenes\[(\d+)\]\.blocks\[(\d+)\]")
 
 
@@ -33,6 +32,8 @@ class GeneratorOptions:
     evolve: bool = False
     plan_perspectives: int = 3
     tools: bool = False  # 开启后 sim 块生成走 tool-loop（模型可用 calc 验证表达式）
+    concurrency: int = 4  # fan-out / 修复 / notes 的有界并发（fast 档提到 8）
+    sections: bool = True  # 章节分隔页插入（fast 档关，省一次规划调用+少几页）
 
 
 @dataclass
@@ -53,6 +54,8 @@ async def _doc_repair(
     log: Callable[[str], None],
     tools: dict[str, Tool] | None = None,
     rounds: int = 2,
+    topic: str = "",
+    concurrency: int = 4,
 ) -> Any:
     """整档校验 → 把 block 级错误路由回对应子代理自修（保留块 id 供版式引用）。"""
     res = validate_doc(doc)
@@ -81,6 +84,7 @@ async def _doc_repair(
                 intent="修正下述校验错误：" + "；".join(errs),
                 scene_ctx=f"当前(有错): {cur}",
                 contract=reg.contract,
+                topic=topic,
                 material=material,
                 tools=tools if cur["type"] == "sim" else None,
             )
@@ -88,7 +92,7 @@ async def _doc_repair(
                 r.block["id"] = cur.get("id")
                 doc["scenes"][si]["blocks"][bi] = r.block
 
-        await pool(list(targets.items()), _CONC, fix)
+        await pool(list(targets.items()), concurrency, fix)
     return validate_doc(doc)
 
 
@@ -127,6 +131,7 @@ async def generate_lecture(
         auto_types=auto_types,
         authoring_rules=AUTHORING_RULES,
         perspectives_n=opts.plan_perspectives,
+        sections=opts.sections,
     )
     doc = plan.doc
     doc["schemaVersion"] = "1.0"
@@ -150,7 +155,7 @@ async def generate_lecture(
     )
 
     # ② Fan-out（逐块生成；no_fanout 消融 = 串行）
-    conc = _CONC if opts.fanout else 1
+    conc = opts.concurrency if opts.fanout else 1
 
     async def gen(item: tuple[dict[str, Any], dict[str, Any]], _i: int) -> tuple[str, BlockResult]:
         ph, scene = item
@@ -163,6 +168,7 @@ async def generate_lecture(
             intent=ph.get("intent", ""),
             scene_ctx=f"所在页: {scene.get('headline') or scene.get('eyebrow') or scene.get('kind')}",
             contract=reg.contract,
+            topic=topic,
             material=mat,
             tools=tool_kit if ph["type"] == "sim" else None,
         )
@@ -177,13 +183,15 @@ async def generate_lecture(
 
     # ④ 整档校验 + 结构自修（revise 消融可关）
     if opts.revise:
-        final = await _doc_repair(llm, doc, registry, mat, log, tool_kit)
+        final = await _doc_repair(
+            llm, doc, registry, mat, log, tool_kit, topic=topic, concurrency=opts.concurrency
+        )
     else:
         final = validate_doc(doc)
 
     # ④.5 讲者备注增强
     if not final.errors:
-        await enrich_notes(llm, doc, audience=audience)
+        await enrich_notes(llm, doc, audience=audience, concurrency=opts.concurrency)
 
     # ⑤ 覆盖度审查（opt-in，完成 STORM 闭环）
     cov = None
