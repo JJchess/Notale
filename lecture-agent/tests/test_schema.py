@@ -83,6 +83,52 @@ def test_semantic_dup_scene_id_flagged() -> None:
     assert any("重复" in e for e in res.errors)
 
 
+def test_chart_bar_valid() -> None:
+    from lecture_agent.schema.document import ChartBlock
+
+    ChartBlock.model_validate(
+        {
+            "type": "chart",
+            "chartType": "bar",
+            "categories": ["2021", "2022", "2023"],
+            "series": [{"name": "营收", "values": [12, 18, 25]}],
+        }
+    )
+
+
+def test_chart_series_length_must_match_categories() -> None:
+    from lecture_agent.schema.document import ChartBlock
+
+    with pytest.raises(ValidationError):
+        ChartBlock.model_validate(
+            {
+                "type": "chart",
+                "chartType": "line",
+                "categories": ["Q1", "Q2", "Q3"],
+                "series": [{"name": "A", "values": [1, 2]}],
+            }
+        )
+
+
+def test_chart_scatter_requires_points() -> None:
+    from lecture_agent.schema.document import ChartBlock
+
+    with pytest.raises(ValidationError):
+        ChartBlock.model_validate({"type": "chart", "chartType": "scatter"})
+
+
+def test_chart_scatter_valid() -> None:
+    from lecture_agent.schema.document import ChartBlock
+
+    ChartBlock.model_validate(
+        {
+            "type": "chart",
+            "chartType": "scatter",
+            "points": [{"x": 1, "y": 2.3}, {"x": 2, "y": 3.1}],
+        }
+    )
+
+
 def test_semantic_expr_whitelist_blocks_unknown_ident() -> None:
     doc = _minimal_doc()
     doc["scenes"][1]["blocks"] = [

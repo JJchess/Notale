@@ -272,6 +272,47 @@
       t.appendChild(tb);
       return t;
     },
+    /* chart：bar(单序列)/line/area(多序列叠加)/scatter，复用 sim 的 Plot 主题联动(PLOT_STYLE/C_*)与
+       needPlot/refitAfterChart 时序纪律(Plot 是异步 vendored 脚本，早绘会永久空白——sim 已踩过的坑)。 */
+    chart(b, ctx) {
+      const root = el('div', 'chart-block');
+      const plotwrap = el('div', 'plotwrap');
+      root.appendChild(plotwrap);
+      if (b.caption) root.appendChild(el('div', 'cite', inlineMd(b.caption)));
+      const colors = [C_ACCENT, C_INK, C_LINE];
+      function render() {
+        if (needPlot(render)) return;
+        plotwrap.innerHTML = '';
+        const marks = [];
+        if (b.chartType === 'bar') {
+          const s = (b.series || [])[0];
+          const data = (b.categories || []).map((c, i) => ({ category: c, value: s ? s.values[i] : 0 }));
+          marks.push(Plot.barY(data, { x: 'category', y: 'value', fill: C_ACCENT }));
+        } else if (b.chartType === 'line' || b.chartType === 'area') {
+          (b.series || []).forEach((s, i) => {
+            const data = (b.categories || []).map((c, j) => ({ category: c, value: s.values[j] }));
+            const color = colors[i % colors.length];
+            if (b.chartType === 'area') marks.push(Plot.areaY(data, { x: 'category', y: 'value', fill: color, fillOpacity: 0.22 }));
+            marks.push(Plot.line(data, { x: 'category', y: 'value', stroke: color, strokeWidth: 2.2, curve: 'catmull-rom' }));
+            marks.push(Plot.dot(data, { x: 'category', y: 'value', fill: color, r: 2.6 }));
+          });
+        } else if (b.chartType === 'scatter') {
+          marks.push(Plot.dot(b.points || [], { x: 'x', y: 'y', fill: C_ACCENT, r: 4.5, stroke: C_INK, strokeWidth: 0.6 }));
+        }
+        plotwrap.appendChild(Plot.plot({
+          width: 700, height: 380, marginLeft: 52, marginBottom: 44, marginTop: 32, marginRight: 20,
+          style: PLOT_STYLE,
+          /* categories 常是"2021"这种数字形字符串——不显式声明 band/point 序数刻度，Plot 会当成误传数字
+             警告并画出角标感叹号；scatter 走真数值 x，留给 Plot 自动推断线性刻度。 */
+          x: { label: b.xLabel, type: b.chartType === 'scatter' ? undefined : 'band' },
+          y: { label: b.yLabel, grid: true, nice: true },
+          marks,
+        }));
+        refitAfterChart(plotwrap);
+      }
+      ctx.onReady(render);
+      return root;
+    },
     code(b) {
       const card = el('div', 'codecard');
       card.appendChild(el('div', 'bar', '<span class="d"></span><span class="lbl">' + escapeHtml(b.filename || '') + '</span>'));

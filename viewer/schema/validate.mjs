@@ -172,6 +172,18 @@ function checkBlock(b, path, state) {
     req(b, 'head', v => Array.isArray(v) && v.length >= 2 && v.every(isStr), path, '表头字符串数组');
     if (req(b, 'rows', v => Array.isArray(v) && v.length >= 1, path, '行数组'))
       b.rows.forEach((row, i) => { if (!Array.isArray(row)) err(path + `.rows[${i}]`, '行应为数组'); });
+  } else if (T === 'chart') {
+    if (!['bar', 'line', 'area', 'scatter'].includes(b.chartType)) { err(path + '.chartType', '应为 bar|line|area|scatter'); return; }
+    if (b.chartType === 'scatter') {
+      if (req(b, 'points', v => Array.isArray(v) && v.length >= 2, path, '≥2 点数组'))
+        b.points.forEach((p, i) => { if (!isObj(p) || !isNum(p.x) || !isNum(p.y)) err(path + `.points[${i}]`, '每项需 {x,y,label?}'); });
+    } else if (req(b, 'categories', v => Array.isArray(v) && v.every(isStr), path, '字符串数组')
+      && req(b, 'series', v => Array.isArray(v) && v.length >= 1, path, '至少 1 条 series')) {
+      b.series.forEach((s, i) => {
+        if (!isObj(s) || !isStr(s.name) || !Array.isArray(s.values) || !s.values.every(isNum)) err(path + `.series[${i}]`, '每条需 {name, values:number[]}');
+        else if (s.values.length !== b.categories.length) err(path + `.series[${i}].values`, 'values 长度需与 categories 一致');
+      });
+    }
   } else if (T === 'code') {
     req(b, 'language', v => ['python', 'javascript', 'text'].includes(v), path, 'python|javascript|text');
     req(b, 'source', isStr, path, 'string');

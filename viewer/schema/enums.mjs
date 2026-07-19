@@ -9,7 +9,7 @@ export const SCENE_KINDS = ['hero', 'content', 'quiz', 'statement', 'section'];
 
 export const LAYOUT_KINDS = ['flow', 'index', 'split', 'compose'];
 
-export const BLOCK_TYPES = ['hero', 'statement', 'list', 'agenda', 'callout', 'timeline', 'formula', 'flow', 'table', 'code', 'compare', 'grid', 'quiz', 'sim', 'runnable', 'embed', 'freeform', 'pullquote', 'video'];
+export const BLOCK_TYPES = ['hero', 'statement', 'list', 'agenda', 'callout', 'timeline', 'formula', 'flow', 'table', 'code', 'compare', 'grid', 'quiz', 'sim', 'chart', 'runnable', 'embed', 'freeform', 'pullquote', 'video'];
 
 export const SIM_ENGINES = ['dynamics1d', 'searchCompare', 'custom', 'widget'];
 

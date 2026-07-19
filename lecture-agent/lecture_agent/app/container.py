@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from hydra.utils import instantiate
-from omegaconf import DictConfig, OmegaConf
+from omegaconf import DictConfig, OmegaConf, open_dict
 
 from ..adapters.store import FilesystemStore
 from ..agent import GenerateResult, GeneratorOptions, generate_lecture
@@ -19,6 +19,10 @@ from ..utils.seed import seed_everything
 
 
 def build_llm(cfg: DictConfig) -> LLMClient:
+    """fast_extra_body 是给 bench fast 变体用的 per-model 参数，不是 CassetteClient 的入参——
+    这里剥掉再 instantiate（同 scripts/run_matrix.py build_llm 的既有处理）。"""
+    with open_dict(cfg):
+        cfg.llm.pop("fast_extra_body", None)
     llm: LLMClient = instantiate(cfg.llm)
     return llm
 

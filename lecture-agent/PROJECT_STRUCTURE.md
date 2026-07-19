@@ -76,7 +76,8 @@ lecture-agent/
 │   │   ├── tools/                #   纯工具：calc（AST 安全求值，验 sim 表达式）实现 ports.Tool
 │   │   ├── generation/           #   blocks + material + notes（多文件包）  接口: generate_block
 │   │   ├── evaluation/           #   ppteval/coverage/diversity + completeness(确定性门,纯函数) + pairwise(去偏成对,judge 经 port)
-│   │   └── skills/               #   registry + authoring（契约注册表）
+│   │   └── skills/               #   registry + authoring（契约注册表；家族契约文件在仓库根 skills/，
+│   │                             #     如 skills/create-sim/、skills/create-chart/(CONTENT_TAXONOMY §三-1)）
 │   │
 │   ├── adapters/                 # L3 · 依赖：schema+ports+utils  ── 实现 port，独担 I/O 副作用
 │   │   ├── llm/                  #   httpx OpenAI 客户端 + cassette（live/replay） → LLMClient

@@ -126,6 +126,46 @@ class TableBlock(_Block):
     rows: list[list[Any]] = Field(min_length=1)
 
 
+# ---- chart（bar/line/area 走 categories+series；scatter 走 points）
+
+
+class ChartSeries(BaseModel):
+    model_config = ConfigDict(extra="allow")
+    name: str
+    values: list[float] = Field(min_length=1)
+
+
+class ChartPoint(BaseModel):
+    model_config = ConfigDict(extra="allow")
+    x: float
+    y: float
+    label: str | None = None
+
+
+class ChartBlock(_Block):
+    type: Literal["chart"]
+    chartType: Literal["bar", "line", "area", "scatter"]
+    categories: list[str] | None = None
+    series: list[ChartSeries] | None = None
+    points: list[ChartPoint] | None = None
+    xLabel: str | None = None
+    yLabel: str | None = None
+    caption: str | None = None
+
+    @model_validator(mode="after")
+    def _shape_by_type(self) -> ChartBlock:
+        if self.chartType == "scatter":
+            if not self.points or len(self.points) < 2:
+                raise ValueError("scatter 需 points（≥2）")
+        else:
+            if not self.categories or not self.series:
+                raise ValueError(f"{self.chartType} 需 categories + series")
+            for s in self.series:
+                if len(s.values) != len(self.categories):
+                    raise ValueError(f"series「{s.name}」values 长度需与 categories 一致")
+        return self
+
+
 class CodeBlock(_Block):
     type: Literal["code"]
     language: Literal["python", "javascript", "text"]
@@ -275,6 +315,7 @@ Block = Annotated[
     | FormulaBlock
     | FlowBlock
     | TableBlock
+    | ChartBlock
     | CodeBlock
     | CompareBlock
     | GridBlock

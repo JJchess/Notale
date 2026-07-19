@@ -40,6 +40,7 @@ class BlockType(StrEnum):
     GRID = "grid"
     QUIZ = "quiz"
     SIM = "sim"
+    CHART = "chart"
     RUNNABLE = "runnable"
     EMBED = "embed"
     FREEFORM = "freeform"

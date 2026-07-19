@@ -74,6 +74,7 @@ def _skeleton_spec(
 - scene.kind: hero(封面/收尾,一个 hero block) | content(常规) | quiz(含一个 quiz block) | statement(含一个 statement block) | section(章节分隔页,含一个 statement block)。
 - 每个 block 是占位 {{id(全局唯一), type, intent}}。**type 只能从这个清单里选，禁止新造类型名**。timeline 只用于有明确时间点的编年序列；无时间点的步骤/流程一律用 flow。可用 type: {", ".join(auto_types)}。
 - **一页 1-2 个 block，叙事由浅入深**；大块（compare、大 table、>5 事件 timeline）优先独占一页。
+- **能用图表表达的定量对比/趋势/相关性优先用 chart（bar/line/area/scatter）而非 table**；纯名目罗列、无需比较数值大小或走势的数据才用 table。
 - **交互按题材选，别硬塞**：只有可量化/可模拟的题材才用 sim；人文/艺术/历史/思辨类绝不硬塞 sim。建议每课至少 1 个 quiz。{"用户点名的交互: " + wants if wants else ""}
 - **主题按题材气质与情绪选最贴的一个，别总默认 cobalt-grid/研究公报**（theme 只是视觉气质、不承诺实验环节；非可实验/可量化题材别选 lab）。{"用户指定主题: " + theme_hint if theme_hint else "可选：cartesian(暖沙克制人文) / cobalt-grid(钴蓝研究公报) / lab(暗仪表理工实验) / slate(冷灰工程编辑) / soft-editorial(奶油文学优雅,人文经典) / vellum(深靛暖黄学术,严肃研究) / grove(深绿人文,自然/思辨) / monochrome(象牙全墨极简,密集文本/考据) / signal(海军蓝哑金,机构稳重) / broadside(近黑烈焰橙,报头戏剧/宣言) / emerald-editorial(翡翠绿杂志封面,有设计感) / editorial-forest(奶油森绿,安静编辑) / bold-poster(近白火红海报大字,少字口号) / coral(近黑珊瑚,杂志粗体) / studio(近黑电黄,最响/发布会)。按课题气质挑一个最搭的"}。
 - **notes 是有料的讲者稿**：每页至少 2-3 句，写关键点展开/直觉/误区/衔接；禁没信息量的占位。
