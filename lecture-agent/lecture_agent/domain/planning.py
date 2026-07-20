@@ -57,25 +57,47 @@ async def _discover_coverage(
         return []
 
 
+def _render_menu(type_menu: list[tuple[str, str, list[str]]]) -> str:
+    """把「家族描述 → 可选类型」菜单渲染成规划器的路由决策面。"""
+    lines = []
+    for _skill, desc, types in type_menu:
+        lines.append(f"- {'/'.join(types)} — {desc}")
+    return "\n".join(lines)
+
+
 def _skeleton_spec(
-    pages: int, auto_types: list[str], theme_hint: str, wants: str, authoring_rules: str
+    pages: int,
+    type_menu: list[tuple[str, str, list[str]]],
+    theme_hint: str,
+    wants: str,
+    authoring_rules: str,
 ) -> str:
+    all_types = [t for _s, _d, types in type_menu for t in types]
     return f"""骨架结构:
 {{ "id":"kebab-id","title":"...","subtitle":"...(可选)","language":"zh-CN","audience":"...","theme":"cartesian|cobalt-grid|lab|slate",
   "tutor":{{"suggestions":["建议问题"],"kb":[{{"pattern":"关键词|同义词","answer":"本地应答(inline-md)"}}]}},
   "scenes":[
-    {{"id":"cover","kind":"hero","notes":"讲者备注","blocks":[{{"id":"b_cover","type":"hero","intent":"封面：标题+一句副题"}}]}},
-    {{"id":"...","kind":"content","eyebrow":"小节标签(可选)","headline":"页标题","lead":"一句陈述式导语(可选)","notes":"讲者备注","blocks":[{{"id":"b1","type":"list","intent":"这一块要讲清什么(一句)"}}]}},
-    {{"id":"...","kind":"quiz","headline":"随堂检验","notes":"...","blocks":[{{"id":"bq","type":"quiz","intent":"考察点"}}]}}
+    {{"id":"cover","kind":"hero","notes":"讲者备注","blocks":[{{"id":"b_cover","type":"hero","intent":"封面：标题+一句副题","size":"xl"}}]}},
+    {{"id":"...","kind":"content","eyebrow":"小节标签(可选)","headline":"页标题","lead":"一句陈述式导语(可选)","transition":"zoom(可选,只在确有强调/章节切换意图时用)","notes":"讲者备注","blocks":[{{"id":"b1","type":"list","intent":"这一块要讲清什么(一句)","size":"m"}},{{"id":"b2","type":"callout","intent":"...","size":"s"}}]}},
+    {{"id":"...","kind":"quiz","headline":"随堂检验","notes":"...","blocks":[{{"id":"bq","type":"quiz","intent":"考察点","size":"m"}}]}}
   ]}}
+
+可选组件（**描述即选择依据：按每个家族的描述判断这一页/这一块内容最贴哪个就选哪个；别被"高级/低级""稀有出口"之类预设吓退，也别硬塞不贴题的**。type 只能从下面出现的名字里选、禁止新造）：
+{_render_menu(type_menu)}
+
 规则:
 - **总页数硬约束：恰好 {pages} 页（可 {pages}−1，绝不少于 {pages}−2、绝不多于 {pages}）**，含封面/收尾/可能的章节分隔页。第一页 kind:hero(封面, 恰含一个 hero block)。页数少(≤4)时省掉回顾/收尾页。
 - **封面与收尾页的标题/副题必须直接点出课题本身**，严禁写成其它主题或泛泛套话。
 - scene.kind: hero(封面/收尾,一个 hero block) | content(常规) | quiz(含一个 quiz block) | statement(含一个 statement block) | section(章节分隔页,含一个 statement block)。
-- 每个 block 是占位 {{id(全局唯一), type, intent}}。**type 只能从这个清单里选，禁止新造类型名**。timeline 只用于有明确时间点的编年序列；无时间点的步骤/流程一律用 flow。可用 type: {", ".join(auto_types)}。
-- **一页 1-2 个 block，叙事由浅入深**；大块（compare、大 table、>5 事件 timeline）优先独占一页。
+- 每个 block 是占位 {{id(全局唯一), type, intent, size}}。**type 只能从上方「可选组件」里的名字选，禁止新造类型名**（共 {len(all_types)} 个：{", ".join(all_types)}）。timeline 只用于有明确时间点的编年序列；无时间点的步骤/流程一律用 flow。sim 块**若**要做「活」的动画/交互演示（见下方 sim 规则），额外写 `"engine":"widget"`，如 `{{"id":"bw","type":"sim","engine":"widget","intent":"...","size":"l"}}`；其余 sim 只写 type、引擎留给后续自动选。
+- **每个 block 标一个粗粒度 size：`xl`(几乎独占整页的主体，如封面、复杂大图) / `l`(大块/主体，如复杂图表、大表格、多轮对比、长 timeline) / `m`(默认，一般讲解块) / `s`(小/辅助，如一句注解、次要论点、callout 补充)。不写默认按 m 处理。**
+- **一页配几个 block、配多大由内容真实需要决定，不设死数量上限**——但整页视觉重量要有节奏：粗略按 xl=4/l=3/m=2/s=1 心算一页总重量，大致落在 ~6 上下浮动即可；**不要为了凑够页数而硬拆一个大块，也不要图省事把一页堆成 5-6 个同重量小块**；真正复杂的内容（compare、大 table、>5 事件 timeline）给 l/xl 并考虑独占一页；叙事仍由浅入深。
 - **能用图表表达的定量对比/趋势/相关性优先用 chart（bar/line/area/scatter）而非 table**；纯名目罗列、无需比较数值大小或走势的数据才用 table。
-- **交互按题材选，别硬塞**：只有可量化/可模拟的题材才用 sim；人文/艺术/历史/思辨类绝不硬塞 sim。建议每课至少 1 个 quiz。{"用户点名的交互: " + wants if wants else ""}
+- **几个孤立的关键数字（一眼看大小，不是走势/分布）用 stats 数字卡**；有循环/层级/递进/网络等特殊结构关系的内容用 diagram（cycle/pyramid/staircase/snake/arrow-seq/circular-grid/connected-circles，按关系语义选，不要混用，简单 2-3 步线性流程仍用 flow 就够）。
+- **scene 可选 `transition`**（reveal 切场动效名，如 zoom/convex/none）：只在确有强调或大段落切换的意图时用，**不要每页都加**——多数页留空即可。
+- **交互按题材贴合度选**：可量化/可模拟/可交互的过程，该用 sim/widget/runnable 就**大胆用**，别因它"高级"或"重"而回避（互动恰恰是这套讲义相对静态 PPT 的价值所在）；但人文/艺术/历史/思辨这类**不贴题**的题材不要硬塞 sim。建议每课至少 1 个 quiz。{"用户点名的交互: " + wants if wants else ""}
+- **`sim` + `engine:"widget"`**：当一个过程要靠**实时动画/canvas 波形粒子/几何作图/任意鼠标交互**才讲得清（如排序·查找·图遍历的分步动画、单摆/阻尼振子等二阶运动、向量/边界作图）——注册表引擎(dynamics1d/searchCompare)与声明式 block 都表达不了——就在骨架里给该 sim 标 `engine:"widget"`，通常给 size `l`/`xl` 并独占一页。按"贴不贴题"判断：贴题就用、别套模板、也别回避。
+- **runnable**：学生需要**真正改代码、点运行、看结果**时用（如手写实现算法、调参看效果）；纯展示代码用 `code`。一份讲义可有多个 runnable（各自独立、贴题就用）。
 - **主题按题材气质与情绪选最贴的一个，别总默认 cobalt-grid/研究公报**（theme 只是视觉气质、不承诺实验环节；非可实验/可量化题材别选 lab）。{"用户指定主题: " + theme_hint if theme_hint else "可选：cartesian(暖沙克制人文) / cobalt-grid(钴蓝研究公报) / lab(暗仪表理工实验) / slate(冷灰工程编辑) / soft-editorial(奶油文学优雅,人文经典) / vellum(深靛暖黄学术,严肃研究) / grove(深绿人文,自然/思辨) / monochrome(象牙全墨极简,密集文本/考据) / signal(海军蓝哑金,机构稳重) / broadside(近黑烈焰橙,报头戏剧/宣言) / emerald-editorial(翡翠绿杂志封面,有设计感) / editorial-forest(奶油森绿,安静编辑) / bold-poster(近白火红海报大字,少字口号) / coral(近黑珊瑚,杂志粗体) / studio(近黑电黄,最响/发布会)。按课题气质挑一个最搭的"}。
 - **notes 是有料的讲者稿**：每页至少 2-3 句，写关键点展开/直觉/误区/衔接；禁没信息量的占位。
 - **AI 助教**：tutor.suggestions 给 3-4 个贴具体知识点的问题；tutor.kb 覆盖主要术语 4-6 条，pattern 用 `关键词|同义词`。
@@ -160,10 +182,42 @@ async def insert_sections(llm: LLMClient, doc: dict[str, Any], budget: int | Non
     return n
 
 
-def assign_layouts(doc: dict[str, Any]) -> int:
-    """确定性版式分配：天然多段(≥3 block)内容页兜底改 index；恰 2 块末块 callout 改 compose/sidenote。
+_DATA_TYPES = {"chart", "table", "sim", "grid"}
+_SIZE_WEIGHT = {"s": 1, "m": 2, "l": 3, "xl": 4}
 
-    规划器实测常年只产竖排；这里打破整份 flow 单调。每类至多 2 页、不相邻。渲染器对失效引用有回落。
+
+def _size(b: dict[str, Any]) -> str:
+    """block 的粗粒度尺寸提示（骨架阶段模型给的信号，缺省当 m）。"""
+    return str(b.get("size") or "m")
+
+
+def _weight(b: dict[str, Any]) -> int:
+    return _SIZE_WEIGHT.get(_size(b), 2)
+
+
+def _compose_areas_from_sizes(blocks: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """按 size 权重把 block 序列切成不重叠的 12 栏 col 跨度；不设 row——
+    compose 渲染器本就"缺 row 交给 grid 自动流"（viewer/doc-to-deck.js rowSpanCss 注释），
+    cursor 撞到 12 栏就回卷到第 1 栏，浏览器原生 grid 自动换行成新的一行。"""
+    colspan = {"s": 4, "m": 6, "l": 8, "xl": 12}
+    areas: list[dict[str, Any]] = []
+    cursor = 1
+    for b in blocks:
+        span = colspan.get(_size(b), 6)
+        if cursor + span > 13:
+            cursor = 1
+        areas.append({"blockIds": [b["id"]], "col": [cursor, cursor + span]})
+        cursor += span
+    return areas
+
+
+def assign_layouts(doc: dict[str, Any]) -> int:
+    """确定性版式分配：由骨架阶段模型给的粗粒度 block.size 提示驱动，而非硬编码数 block 个数。
+
+    规划器实测常年只产竖排；这里打破整份 flow 单调。规则按优先级顺序尝试，每类至多 2 页、不相邻
+    （index 沿用原有相邻页互斥；其余几类跟历史行为一致，不额外加相邻互斥）。size 只是骨架阶段的
+    临时决策信号，读取时机在 fill_blocks 替换占位符之前，不需要进 schema、也不用担心被冲掉。
+    渲染器对失效引用有回落。
     """
 
     def label(intent: str, i: int) -> str:
@@ -172,13 +226,65 @@ def assign_layouts(doc: dict[str, Any]) -> int:
         return (first[:14] + "…" if len(first) > 14 else s) if s else f"第 {i + 1} 节"
 
     scenes = doc.get("scenes", [])
+
+    # 1. compose/sidenote：2 block，末块 callout（不变，最高优先级）
+    side = 0
+    for s in scenes:
+        if side >= 2:
+            break
+        blocks = s.get("blocks") or []
+        if (
+            s.get("kind") == "content"
+            and not s.get("layout")
+            and len(blocks) == 2
+            and blocks[1].get("type") == "callout"
+        ):
+            s["layout"] = {"kind": "compose", "preset": "sidenote"}
+            side += 1
+
+    # 2. full：单 block，type 命中 _DATA_TYPES 或 size 是 l/xl（新增 size 判据，type 判据向后兼容）
+    full_n = 0
+    for s in scenes:
+        if full_n >= 2:
+            break
+        blocks = s.get("blocks") or []
+        if (
+            s.get("kind") == "content"
+            and not s.get("layout")
+            and len(blocks) == 1
+            and (blocks[0].get("type") in _DATA_TYPES or _size(blocks[0]) in ("l", "xl"))
+        ):
+            s["layout"] = {"kind": "full"}
+            full_n += 1
+
+    # 3. split：2 block，第二块 type 命中 _DATA_TYPES，或两块尺寸权重差 >=2。
+    #    anchor 是渲染器里较窄的侧栏——type 触发时保留原行为(锚 blocks[0])；
+    #    纯 size 触发时锚较小的那块，让更重的块占更宽的主栏。
+    split_n = 0
+    for s in scenes:
+        if split_n >= 2:
+            break
+        blocks = s.get("blocks") or []
+        if s.get("kind") != "content" or s.get("layout") or len(blocks) != 2:
+            continue
+        by_type = blocks[1].get("type") in _DATA_TYPES
+        w0, w1 = _weight(blocks[0]), _weight(blocks[1])
+        if not (by_type or abs(w0 - w1) >= 2):
+            continue
+        anchor = blocks[0] if (by_type or w0 <= w1) else blocks[1]
+        s["layout"] = {"kind": "split", "anchor": [anchor["id"]], "ratio": 0.4}
+        split_n += 1
+
+    # 4. index：>=2 block 且尺寸大致均匀（原本"多段但地位相当"的语义；阈值从 >=3 降到 >=2，
+    #    因为"一页 1-2 个 block"硬约束已去掉后 >=3 block 的均匀页才重新可能出现，但 2 块也一样适用）。
     cands = sorted(
         (
             (s, i)
             for i, s in enumerate(scenes)
             if s.get("kind") == "content"
             and not s.get("layout")
-            and len(s.get("blocks") or []) >= 3
+            and len(s.get("blocks") or []) >= 2
+            and (max(_weight(b) for b in s["blocks"]) - min(_weight(b) for b in s["blocks"]) <= 1)
         ),
         key=lambda si: -len(si[0]["blocks"]),
     )
@@ -197,20 +303,23 @@ def assign_layouts(doc: dict[str, Any]) -> int:
         }
         taken.add(i)
         used += 1
-    side = 0
+
+    # 5. compose/computed：>=3 block 且尺寸不均匀——本轮真正解锁的能力，把 size 序列算成
+    #    不重叠的 col 跨度网格，不依赖任何预设名字。
+    computed_n = 0
     for s in scenes:
-        if side >= 2:
+        if computed_n >= 2:
             break
         blocks = s.get("blocks") or []
-        if (
-            s.get("kind") == "content"
-            and not s.get("layout")
-            and len(blocks) == 2
-            and blocks[1].get("type") == "callout"
-        ):
-            s["layout"] = {"kind": "compose", "preset": "sidenote"}
-            side += 1
-    return used + side
+        if s.get("kind") != "content" or s.get("layout") or len(blocks) < 3:
+            continue
+        weights = [_weight(b) for b in blocks]
+        if max(weights) - min(weights) < 2:
+            continue
+        s["layout"] = {"kind": "compose", "areas": _compose_areas_from_sizes(blocks)}
+        computed_n += 1
+
+    return side + full_n + split_n + used + computed_n
 
 
 async def plan_lecture(
@@ -223,7 +332,7 @@ async def plan_lecture(
     wants: str = "",
     extra: str = "",
     material: str = "",
-    auto_types: list[str],
+    type_menu: list[tuple[str, str, list[str]]],
     authoring_rules: str,
     perspectives_n: int = 3,
     sections: bool = True,
@@ -243,7 +352,7 @@ async def plan_lecture(
         )
     sys = (
         "你是讲义(LectureDoc)总编排器。只输出一个 JSON 对象(骨架)，不要代码围栏、不要解释。\n"
-        + _skeleton_spec(pages, auto_types, theme, wants, authoring_rules)
+        + _skeleton_spec(pages, type_menu, theme, wants, authoring_rules)
     )
     user = (
         f"课题: {topic}"

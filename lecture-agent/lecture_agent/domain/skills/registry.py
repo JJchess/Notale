@@ -11,8 +11,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-# 逃生舱/单例类型：注册但不进"自动规划菜单"。
-AUTO_EXCLUDE = frozenset(["runnable", "freeform", "embed"])
+# 逃生舱类型：注册但不进"自动规划菜单"。runnable 曾在此列（因"每 deck 至多一个"的运行时
+# 单例约束），viewer 已支持多实例挂载（各自独立 portal/CodeMirror + 共享 Pyodide/每块命名空间），
+# 约束解除，规划器现在可以自动产出它。
+AUTO_EXCLUDE = frozenset(["freeform", "embed"])
 
 _FM = re.compile(r"^---\n(.*?)\n---", re.S)
 _KV = re.compile(r"^(\w[\w-]*):\s*(.*)$")
@@ -65,3 +67,31 @@ def load_skills(skills_dir: str | Path | None = None) -> tuple[dict[str, SkillEn
                 )
     auto_types = [t for t in registry if t not in AUTO_EXCLUDE]
     return registry, auto_types
+
+
+_DESC_TAIL = re.compile(r"\s*Produces schema-valid[^.]*\.\s*$")
+
+
+def _trim_desc(desc: str) -> str:
+    """去掉描述尾部对规划无用的 `Produces schema-valid … JSON.` boilerplate。"""
+    return _DESC_TAIL.sub("", desc).strip()
+
+
+def plan_menu(registry: dict[str, SkillEntry]) -> list[tuple[str, str, list[str]]]:
+    """把 registry 按 skill 家族分组成规划器的「描述 → 可选类型」菜单。
+
+    **描述即路由决策面**：规划器据每个家族自己的 `description` 判断何时调用哪个组件，
+    而不是靠中心 prompt 里手写的启发式（那套会屏蔽描述、又把互动组件劝退）。加一个组件家族=
+    写好它的 description 即自动可被选中。排除 AUTO_EXCLUDE（逃生舱不进自动菜单）。顺序稳定
+    （registry 插入序），供 prompt 渲染与测试断言。
+    """
+    acc: dict[str, tuple[str, list[str]]] = {}
+    order: list[str] = []
+    for btype, entry in registry.items():
+        if btype in AUTO_EXCLUDE:
+            continue
+        if entry.skill not in acc:
+            acc[entry.skill] = (_trim_desc(entry.description), [])
+            order.append(entry.skill)
+        acc[entry.skill][1].append(btype)
+    return [(sk, acc[sk][0], acc[sk][1]) for sk in order]

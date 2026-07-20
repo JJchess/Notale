@@ -83,6 +83,42 @@ def test_semantic_dup_scene_id_flagged() -> None:
     assert any("重复" in e for e in res.errors)
 
 
+def test_runnable_custom_env_requires_preamble() -> None:
+    doc = _minimal_doc()
+    doc["scenes"][1]["blocks"] = [
+        {
+            "type": "runnable",
+            "languages": ["python"],
+            "starter": {"python": "result = []"},
+            "env": {"kind": "custom"},
+        },
+    ]
+    res = validate_doc(doc)
+    assert any("pythonPreamble" in e for e in res.errors)
+
+
+def test_runnable_multiple_per_deck_allowed() -> None:
+    doc = _minimal_doc()
+    rc = {
+        "type": "runnable",
+        "languages": ["python"],
+        "starter": {"python": "result = []"},
+        "env": {"kind": "objective1d", "objective": "x", "domain": [0, 1]},
+    }
+    doc["scenes"][1]["kind"] = "content"
+    doc["scenes"][1]["blocks"] = [{**rc, "id": "rc-a"}]
+    doc["scenes"].append(
+        {
+            "id": "extra",
+            "kind": "content",
+            "notes": "第二个 runnable。",
+            "blocks": [{**rc, "id": "rc-b"}],
+        }
+    )
+    res = validate_doc(doc)
+    assert res.errors == []
+
+
 def test_chart_bar_valid() -> None:
     from lecture_agent.schema.document import ChartBlock
 

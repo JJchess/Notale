@@ -46,6 +46,8 @@ lecture-agent/
 │   ├── llm/                      #   端点/模型/温度/seed/mode + 5 被测模型 + judge_gemini（境外走 proxy）
 │   │                             #     每模型自带 fast_extra_body（关思考参数）；client 支持 extra_body/proxy 透传
 │   ├── generator/                #   ★消融轴：full / single_pass / tools / fast（关思考+高并发+无章节，≤5min）
+│   ├── media/                     #   default.yaml：配图 finder(Pixabay)+generator(Gemini nano-banana pro)，
+│   │                             #     只在 generator.media=true 时才 instantiate，默认零成本
 │   ├── planner/  eval/  theme/
 │   └── experiment/               #   ★一份=一个可复现实验
 │
@@ -57,7 +59,11 @@ lecture-agent/
 │   │                             #     Theme 共 15 个：4 原生 + 11 个移植自 refs/frontend-slides/
 │   │                             #     bold-template-pack，token 化进 viewer/index.html，与
 │   │                             #     viewer/schema/enums.mjs 的 THEMES 保持双侧一致）
-│   │   └── validate.py           #   跨字段语义校验（纯函数，不做 I/O）
+│   │   ├── validate.py           #   跨字段语义校验（纯函数，不做 I/O；hero.image/离线红线在此拦远程 URL）
+│   │   │                         #   BlockType 新增 chart/stats/diagram（CONTENT_TAXONOMY 路线图 1/3 项）；
+│   │   │                         #   LayoutKind 新增 full；_Block.fragment 拓宽 bool|str（reveal fragment 类型名）
+│   │   └── experiment.py         #   ExperimentRecord/CapabilityProfile/CodeMarker/Cost —— 实验账本一行的契约
+│   │                             #     （results/ledger.jsonl，见 §实验记录员）
 │   │
 │   ├── utils/                    # L0 kernel · 依赖：无内部  ── 横切机制
 │   │   ├── seed.py  logging.py  provenance.py  registry.py
@@ -66,7 +72,8 @@ lecture-agent/
 │   │   ├── llm.py                #   LLMClient + ToolCallingLLM —— 真接缝（httpx-live/cassette/fake）
 │   │   ├── tool.py               #   Tool —— function-calling 工具接缝（纯工具/IO 工具/fake）
 │   │   ├── renderer.py           #   RenderVerifier —— 真接缝（Playwright / test-fake）
-│   │   └── store.py              #   CorpusStore —— 真接缝（filesystem / in-memory）
+│   │   ├── store.py              #   CorpusStore —— 真接缝（filesystem / in-memory）
+│   │   └── media.py              #   ImageFinder + ImageGenerator —— 真接缝（Pixabay live / Gemini live / fake）
 │   │
 │   ├── domain/                   # L2 · 依赖：schema+ports+utils  ── 纯逻辑，深模块，禁碰 adapters
 │   │   ├── planning.py           #   多视角 STORM 规划（单文件，拍平）  接口: plan_lecture->PlanResult
@@ -74,36 +81,50 @@ lecture-agent/
 │   │   ├── evolve.py             #   语料挖掘 n-gram 未满足需求->提案（human-in-loop gate）
 │   │   ├── tool_loop.py          #   有界 think→call→observe 循环（节点内用，只认 ports）
 │   │   ├── tools/                #   纯工具：calc（AST 安全求值，验 sim 表达式）实现 ports.Tool
-│   │   ├── generation/           #   blocks + material + notes（多文件包）  接口: generate_block
+│   │   ├── generation/           #   blocks + material + notes + widget（多文件包）  接口: generate_block
+│   │   │                         #     widget.py: sim.widget 生成子配方(plan→build→repair,借鉴 GenUI,SPEC §7.1)
 │   │   ├── evaluation/           #   ppteval/coverage/diversity + completeness(确定性门,纯函数) + pairwise(去偏成对,judge 经 port)
-│   │   └── skills/               #   registry + authoring（契约注册表；家族契约文件在仓库根 skills/，
-│   │                             #     如 skills/create-sim/、skills/create-chart/(CONTENT_TAXONOMY §三-1)）
+│   │   ├── skills/               #   registry + authoring（契约注册表；家族契约文件在仓库根 skills/，
+│   │   │                         #     如 skills/create-sim/、skills/create-chart/、skills/create-infographic/
+│   │   │                         #     (stats+7种diagram，CONTENT_TAXONOMY §三-1/3)）
+│   │   ├── media/                #   icons.py：图标关键词匹配(纯函数) + attach_icons(list 项自动配图标收尾)
+│   │   └── telemetry/            #   profile.py：profile_deck(doc)->CapabilityProfile（纯函数，遍历
+│   │                             #     scenes/blocks 数能力画像；记录 hook 与回填脚本共用同一口径）
 │   │
 │   ├── adapters/                 # L3 · 依赖：schema+ports+utils  ── 实现 port，独担 I/O 副作用
 │   │   ├── llm/                  #   httpx OpenAI 客户端 + cassette（live/replay） → LLMClient
 │   │   │   └── prompts/          #     Jinja2 模板（提示词属 LLM adapter 的私有资产，不泄进 domain）
 │   │   ├── render/               #   Playwright 无头验证 → RenderVerifier
-│   │   └── store/                #   文件系统 corpus/results 读写 → CorpusStore
+│   │   ├── store/                #   文件系统 corpus/results 读写 → CorpusStore
+│   │   │   └── ledger.py         #     LedgerStore：append-only 写/读 results/ledger.jsonl（实验记录账本）
+│   │   └── media/                #   pixabay.py(图库) + gemini_image.py(nano-banana pro 文生图) + fake.py
 │   │
 │   ├── agent/                    # L4 · 依赖：schema+ports+domain  ── 编排，只认接口
 │   │   ├── orchestrator.py       #   clarify→plan→generate→assemble→validate→render→eval（全走 port）
+│   │   │                         #   GeneratorOptions.record（默认 true）——本次生成是否记进实验账本
 │   │   ├── clarify.py  delegate.py   #   fan-out 用 asyncio.gather
 │   │
 │   └── app/                      # L5 · 依赖：一切  ── 组合根：唯一 new 具体 adapter 之处
-│       └── container.py          #   build_orchestrator(cfg)：Hydra instantiate，注入 port
+│       ├── container.py          #   build_orchestrator(cfg)：Hydra instantiate，注入 port；
+│       │                         #     run_generation 末尾组装 ExperimentRecord → LedgerStore.append
+│       └── codeprint.py          #   git_rev/git_dirty/agent_fingerprint —— 给账本行盖"哪版 agent 代码
+│                                 #     产出"的戳（只对 agent/domain/skills/configs 相关代码面取哈希）
 │
 ├── scripts/                      # L5 薄入口：只 import app/ + 读配置
 │   ├── generate.py  evaluate.py  evolve.py  render_check.py  run_experiment.py
 │   ├── run_matrix.py             #   多模型×多样本横评机楼（build_llm/计时/日志，被下面两个复用）
 │   ├── eval_matrix.py            #   可信标尺：确定性门 + Gemini 去偏成对排名 → eval_v2
-│   └── bench_latency.py          #   延迟 benchmark：slow vs fast(关思考) 时间×质量对照表
+│   ├── bench_latency.py          #   延迟 benchmark：slow vs fast(关思考) 时间×质量对照表
+│   └── backfill_ledger.py        #   一次性：把 results/matrix_*/**/deck.json + data/corpus/*.lecture.json
+│                                 #     历史产物回填进 results/ledger.jsonl（幂等，历史行 code.label="historical"）
 │
 ├── assets/runtime/               # reveal.js 主题/CSS/JS 静态资源（离线，随包分发）
 ├── data/{topics,corpus,human_ratings}/   # topics/ratings 版本化；corpus 大件走 release
 ├── fixtures/                     # LLM 录制盒（离线 replay；随 release 发快照）
-├── results/                      # gitignore，每 run 一目录
+├── results/                      # gitignore，每 run 一目录；ledger.jsonl 例外——append-only 实验账本，
+│                                 #   每次 generate 追加一行 ExperimentRecord（见 viewer/coverage.html 热力图）
 └── tests/                        # 传 fake adapter，不碰真 LLM/浏览器
-    ├── test_schema.py  test_assemble.py  test_pipeline_smoke.py
+    ├── test_schema.py  test_assemble.py  test_pipeline_smoke.py  test_experiment.py
 ```
 
 ---

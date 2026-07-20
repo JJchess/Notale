@@ -94,3 +94,13 @@ adversarial_result: "Wire" it to a warn-only log nothing acts on — the same th
 rubric: enforceability=pass, falsifiability=pass, minimality=pass, boundary=pass, gaming=pass, simplification=pass
 mechanisms: M-007
 outcome: accepted (enforcement pending — code change deferred)
+
+## D-008  Route the planner on component descriptions; relax interactive-component suppression
+date: 2026-07-20
+scenario: S-008
+delta: workflow — feed plan_menu(registry) (per-family descriptions) into the plan prompt instead of bare type names, and remove the quantity/priority suppression on sim/widget/runnable in _skeleton_spec; keep topic-fit gating.
+alternatives: Invent a per-type use_when routing field — rejected (duplicates the description into a second hand-maintained surface). Leave routing as the hand-written heuristic — rejected (S-008: hides descriptions, suppresses interactive blocks).
+adversarial_result: Descriptions present but vague, so the guard passes while routing stays poor — caught only by human/eval review (M-008 failure_mode). Relaxing suppression could regress into widget-everywhere slop — mitigated by the anti-slop advisories (M-101/103/104) staying, topic-fit gating retained, and a real-generation slop check in verification; fully reversible.
+rubric: enforceability=pass, falsifiability=pass, minimality=pass, boundary=pass, gaming=pass, simplification=pass
+mechanisms: M-008
+outcome: accepted (M-102 quantity-suppression deliberately relaxed here — reversible)

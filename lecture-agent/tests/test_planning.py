@@ -1,0 +1,174 @@
+"""版式分配契约测试：size 驱动的 assign_layouts + _compose_areas_from_sizes 纯函数。
+
+覆盖此前完全零测试的 index/split/full/新 compose 分支——这正是"index 版式恒为 0"这类
+死能力能在真实语料里悄悄发生而没人发现的原因之一。
+"""
+
+from __future__ import annotations
+
+from lecture_agent.domain.planning import (
+    _compose_areas_from_sizes,
+    _skeleton_spec,
+    assign_layouts,
+)
+from lecture_agent.domain.skills import load_skills, plan_menu
+
+
+def _scene(scene_id: str, blocks: list[dict]) -> dict:
+    return {"id": scene_id, "kind": "content", "notes": "备注。", "blocks": blocks}
+
+
+def _block(bid: str, btype: str = "list", size: str | None = None) -> dict:
+    b = {"id": bid, "type": btype}
+    if size is not None:
+        b["size"] = size
+    return b
+
+
+def test_compose_areas_from_sizes_no_overlap_and_wraps() -> None:
+    blocks = [_block("a", size="l"), _block("b", size="s"), _block("c", size="m")]
+    areas = _compose_areas_from_sizes(blocks)
+    assert len(areas) == 3
+    for a in areas:
+        start, end = a["col"]
+        assert 1 <= start < end <= 13
+    # l(8)+s(4)=12 恰好占满第一行，m(6) 应回卷到第二行(col 从 1 开始)
+    assert areas[0]["col"] == [1, 9]
+    assert areas[1]["col"] == [9, 13]
+    assert areas[2]["col"] == [1, 7]
+
+
+def test_compose_areas_from_sizes_preserves_block_ids() -> None:
+    blocks = [_block("x", size="xl")]
+    areas = _compose_areas_from_sizes(blocks)
+    assert areas == [{"blockIds": ["x"], "col": [1, 13]}]
+
+
+# ---- 描述驱动路由：规划器 prompt 应吃各组件描述、且不再压制互动组件 ----
+
+
+def test_skeleton_prompt_is_description_driven() -> None:
+    registry, auto_types = load_skills()
+    spec = _skeleton_spec(8, plan_menu(registry), "", "", "AUTH")
+    # ① 描述菜单在场（组件家族的 description 被真正塞进 plan 提示，而非裸类型名）。
+    assert "可选组件" in spec
+    assert "Reach for it" in spec  # 来自打磨后的 sim/runnable/chart/quiz 描述
+    # ② 每个 auto_type 的名字仍出现（合法性/禁新造那条硬规则的清单）。
+    for t in auto_types:
+        assert t in spec
+
+
+def test_skeleton_prompt_drops_interactive_suppression() -> None:
+    spec = _skeleton_spec(8, plan_menu(load_skills()[0]), "", "", "AUTH")
+    # 放开：不再有"最低优先级 / 别过量 / 至多 2 个"这类把互动组件劝退的措辞。
+    for banned in ("最低优先级", "别过量", "至多 2 个", "0-2 个"):
+        assert banned not in spec, f"压制措辞未清除: {banned}"
+    # 保留：题材适配护栏与 widget 触发机制仍在。
+    assert "人文/艺术" in spec
+    assert 'engine:"widget"' in spec
+
+
+def test_single_large_block_gets_full() -> None:
+    doc = {"scenes": [_scene("s1", [_block("b1", "chart", size="l")])]}
+    n = assign_layouts(doc)
+    assert n == 1
+    assert doc["scenes"][0]["layout"] == {"kind": "full"}
+
+
+def test_single_small_block_not_full() -> None:
+    doc = {"scenes": [_scene("s1", [_block("b1", "statement", size="s")])]}
+    assign_layouts(doc)
+    assert "layout" not in doc["scenes"][0]
+
+
+def test_two_similar_size_blocks_get_index() -> None:
+    doc = {"scenes": [_scene("s1", [_block("b1", size="m"), _block("b2", size="m")])]}
+    n = assign_layouts(doc)
+    assert n == 1
+    layout = doc["scenes"][0]["layout"]
+    assert layout["kind"] == "index"
+    assert len(layout["steps"]) == 2
+
+
+def test_two_blocks_size_gap_get_split_anchored_on_smaller() -> None:
+    doc = {
+        "scenes": [_scene("s1", [_block("b1", "list", size="s"), _block("b2", "agenda", size="l")])]
+    }
+    n = assign_layouts(doc)
+    assert n == 1
+    layout = doc["scenes"][0]["layout"]
+    assert layout["kind"] == "split"
+    assert layout["anchor"] == ["b1"]  # 较小的那块做锚(窄侧栏)，较大的占主栏
+
+
+def test_callout_pair_still_gets_compose_sidenote_regression() -> None:
+    """回归：type 触发的 compose/sidenote 不受 size 改动影响。"""
+    doc = {
+        "scenes": [
+            _scene("s1", [_block("b1", "list", size="l"), _block("b2", "callout", size="l")])
+        ]
+    }
+    n = assign_layouts(doc)
+    assert n == 1
+    assert doc["scenes"][0]["layout"] == {"kind": "compose", "preset": "sidenote"}
+
+
+def test_three_mixed_size_blocks_get_computed_compose() -> None:
+    doc = {
+        "scenes": [
+            _scene(
+                "s1",
+                [_block("b1", size="l"), _block("b2", size="s"), _block("b3", size="s")],
+            )
+        ]
+    }
+    n = assign_layouts(doc)
+    assert n == 1
+    layout = doc["scenes"][0]["layout"]
+    assert layout["kind"] == "compose"
+    assert "areas" in layout
+    assert len(layout["areas"]) == 3
+
+
+def test_three_similar_size_blocks_get_index_not_compose() -> None:
+    doc = {
+        "scenes": [
+            _scene(
+                "s1",
+                [_block("b1", size="m"), _block("b2", size="m"), _block("b3", size="m")],
+            )
+        ]
+    }
+    n = assign_layouts(doc)
+    assert n == 1
+    assert doc["scenes"][0]["layout"]["kind"] == "index"
+
+
+def test_missing_size_defaults_to_medium() -> None:
+    doc = {"scenes": [_scene("s1", [_block("b1"), _block("b2")])]}
+    n = assign_layouts(doc)
+    assert n == 1
+    assert doc["scenes"][0]["layout"]["kind"] == "index"
+
+
+def test_split_type_trigger_keeps_old_anchor_behavior() -> None:
+    """回归：type 触发(blocks[1] 是数据类型)时 anchor 仍是 blocks[0]，不受 size 影响。"""
+    doc = {
+        "scenes": [_scene("s1", [_block("b1", "list", size="xl"), _block("b2", "chart", size="s")])]
+    }
+    n = assign_layouts(doc)
+    assert n == 1
+    layout = doc["scenes"][0]["layout"]
+    assert layout["kind"] == "split"
+    assert layout["anchor"] == ["b1"]
+
+
+def test_caps_at_two_non_adjacent_pages_per_kind() -> None:
+    scenes = [
+        _scene(f"s{i}", [_block(f"b{i}a", size="m"), _block(f"b{i}b", size="m")]) for i in range(5)
+    ]
+    doc = {"scenes": scenes}
+    n = assign_layouts(doc)
+    index_count = sum(1 for s in scenes if s.get("layout", {}).get("kind") == "index")
+    assert index_count == 2
+    assert n == 2

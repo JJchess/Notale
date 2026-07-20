@@ -2,7 +2,7 @@
 
 移植自旧 `demo/schema/validate.mjs` 中 pydantic 无法声明式表达的部分：
 受限表达式白名单、inline-md（禁原始 HTML / $ 配对）、freeform/widget HTML 安全、
-反 AI-slop 美学 lint、跨场景规则（scene id 去重 / 每 deck ≤1 runnable / kind↔block / latex 禁 $）。
+反 AI-slop 美学 lint、跨场景规则（scene id 去重 / kind↔block / latex 禁 $）。
 
 结构/类型/枚举/长度由 `document.py` 的 pydantic 负责；这里只补语义。
 返回 {errors, warnings, freeform_uses}，不打印、不退出——供 agent 自修循环读错误→改→重跑。
@@ -203,6 +203,8 @@ def _check_block(b: dict[str, Any], path: str, r: Result, state: dict[str, Any])
     elif t == "hero":
         if b.get("sub"):
             _check_inline(b["sub"], f"{path}.sub", r)
+        if isinstance(b.get("image"), str) and _REMOTE.match(b["image"]):
+            r.err(f"{path}.image", "只能是本地相对路径或 data:，禁远程 URL（守离线红线）")
     elif t == "video":
         for k in ("src", "poster", "captions"):
             v = b.get(k)
@@ -238,9 +240,12 @@ def _check_block(b: dict[str, Any], path: str, r: Result, state: dict[str, Any])
         if isinstance(b.get("rationale"), str):
             state["freeform_uses"].append({"path": path, "rationale": b["rationale"]})
     elif t == "runnable":
-        state["runnable_count"] += 1
-        if state["runnable_count"] > 1:
-            r.err(path, "每个 deck 至多一个 runnable block（运行时约束）")
+        env = b.get("env")
+        if isinstance(env, dict) and env.get("kind") == "custom":
+            if not isinstance(env.get("pythonPreamble"), str) and not isinstance(
+                env.get("jsPreamble"), str
+            ):
+                r.err(f"{path}.env", "custom 环境需 pythonPreamble 或 jsPreamble 至少一个")
     elif t == "sim":
         _check_sim(b, path, r)
     elif t == "compare":
@@ -350,7 +355,7 @@ def _check_layout(s: dict[str, Any], path: str, r: Result) -> None:
 def validate_doc(doc: dict[str, Any]) -> Result:
     """校验整份 LectureDoc 的语义层（结构层用 document.LectureDoc 先过 pydantic）。"""
     r = Result()
-    state: dict[str, Any] = {"runnable_count": 0, "freeform_uses": r.freeform_uses}
+    state: dict[str, Any] = {"freeform_uses": r.freeform_uses}
     if doc.get("tutor"):
         for i, k in enumerate(doc["tutor"].get("kb", []) or []):
             if isinstance(k, dict):
@@ -373,5 +378,5 @@ def validate_block(
     if expect_type and isinstance(block, dict) and block.get("type") != expect_type:
         r.err(f"{path}.type", f"期望 {expect_type}，实际 {block.get('type')}")
     _structural(block, path, r)
-    _check_block(block, path, r, {"runnable_count": 0, "freeform_uses": r.freeform_uses})
+    _check_block(block, path, r, {"freeform_uses": r.freeform_uses})
     return r

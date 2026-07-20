@@ -23,7 +23,8 @@ class _Block(BaseModel):
     model_config = ConfigDict(extra="allow")  # 容忍 id/status/fragment/视觉字段
     id: str | None = None
     status: Literal["ready", "pending", "error"] | None = None
-    fragment: bool | None = None
+    # bool(朴素淡入)或 reveal fragment 类型名(fade-up/highlight-red/grow/...)
+    fragment: bool | str | None = None
 
 
 # ------------------------------------------------------------------ 叶子块
@@ -36,6 +37,7 @@ class HeroBlock(_Block):
     sub: str | None = None
     facts: str | None = None
     hint: str | None = None
+    image: str | None = None  # data: URI（离线红线，禁远程 URL——由 validate.py 语义层拦）
 
 
 class StatementBlock(_Block):
@@ -67,6 +69,7 @@ class VideoBlock(_Block):
 class ListItem(BaseModel):
     model_config = ConfigDict(extra="allow")
     text: str
+    icon: str | None = None  # 本地图标 id，见 viewer/vendor/icons/icons.json
 
 
 class ListBlock(_Block):
@@ -274,6 +277,38 @@ class RunnableBlock(_Block):
         return self
 
 
+# ---- stats（KPI 数字卡）
+
+
+class StatItem(BaseModel):
+    model_config = ConfigDict(extra="allow")
+    value: str
+    label: str
+    delta: str | None = None  # 如 "+12%"，可选涨跌注解
+
+
+class StatsBlock(_Block):
+    type: Literal["stats"]
+    items: list[StatItem] = Field(min_length=2, max_length=6)
+
+
+# ---- diagram（序列/关系图示，7 种 diagramType 共用一个渲染分派，仿 sim.engine/chart.chartType）
+
+
+class DiagramNode(BaseModel):
+    model_config = ConfigDict(extra="allow")
+    title: str
+    sub: str | None = None
+
+
+class DiagramBlock(_Block):
+    type: Literal["diagram"]
+    diagramType: Literal[
+        "cycle", "pyramid", "staircase", "snake", "arrow-seq", "circular-grid", "connected-circles"
+    ]
+    nodes: list[DiagramNode] = Field(min_length=2, max_length=8)
+
+
 # ---- 容器块（递归引用 Block）
 
 
@@ -316,6 +351,8 @@ Block = Annotated[
     | FlowBlock
     | TableBlock
     | ChartBlock
+    | StatsBlock
+    | DiagramBlock
     | CodeBlock
     | CompareBlock
     | GridBlock
@@ -333,7 +370,7 @@ Block = Annotated[
 
 class Layout(BaseModel):
     model_config = ConfigDict(extra="allow")  # kind/steps/anchor/areas/centered/gap…
-    kind: Literal["flow", "index", "split", "compose"] | None = None
+    kind: Literal["flow", "index", "split", "compose", "full"] | None = None
 
 
 class Scene(BaseModel):
@@ -345,6 +382,8 @@ class Scene(BaseModel):
     headline: str | None = None
     lead: str | None = None
     layout: Layout | None = None
+    transition: str | None = None  # reveal 单页 data-transition（如 "zoom"/"convex"/"none"）
+    autoAnimate: bool | None = None  # 与相邻页配对+复用相同 block id 时触发 reveal auto-animate morph
     blocks: list[Block] = Field(min_length=1)
 
 

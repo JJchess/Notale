@@ -23,6 +23,7 @@ class LayoutKind(StrEnum):
     INDEX = "index"
     SPLIT = "split"
     COMPOSE = "compose"
+    FULL = "full"
 
 
 class BlockType(StrEnum):
@@ -41,6 +42,8 @@ class BlockType(StrEnum):
     QUIZ = "quiz"
     SIM = "sim"
     CHART = "chart"
+    STATS = "stats"
+    DIAGRAM = "diagram"
     RUNNABLE = "runnable"
     EMBED = "embed"
     FREEFORM = "freeform"

@@ -13,11 +13,20 @@ from typing import Any
 
 from ..domain.assemble import fill_blocks
 from ..domain.evaluation import check_coverage
-from ..domain.generation import BlockResult, condense_material, enrich_notes, generate_block
+from ..domain.generation import (
+    BlockResult,
+    condense_material,
+    enrich_notes,
+    generate_block,
+    generate_widget,
+    load_widget_guidelines,
+)
+from ..domain.media import attach_icons
 from ..domain.planning import assign_layouts, plan_lecture
-from ..domain.skills import AUTHORING_RULES, SkillEntry, load_skills
+from ..domain.skills import AUTHORING_RULES, SkillEntry, load_skills, plan_menu
 from ..domain.tools import CalcTool
 from ..ports.llm import LLMClient
+from ..ports.media import ImageFinder, ImageGenerator
 from ..ports.tool import Tool
 from ..schema.validate import validate_doc
 from ..utils.concurrency import pool
@@ -34,6 +43,10 @@ class GeneratorOptions:
     tools: bool = False  # 开启后 sim 块生成走 tool-loop（模型可用 calc 验证表达式）
     concurrency: int = 4  # fan-out / 修复 / notes 的有界并发（fast 档提到 8）
     sections: bool = True  # 章节分隔页插入（fast 档关，省一次规划调用+少几页）
+    media: bool = False  # 封面配图（真调图库/文生图外部服务，默认关——避免每次生成都增加时延/成本）
+    record: bool = (
+        True  # 记录到 results/ledger.jsonl（能力画像+token+代码指纹，见 app/container.py）
+    )
 
 
 @dataclass
@@ -78,6 +91,21 @@ async def _doc_repair(
             reg = registry.get(cur.get("type"))
             if not reg:
                 return
+            if cur.get("type") == "sim" and cur.get("engine") == "widget":
+                # widget 修复也走两阶段子配方，别退回一次性 generate_block。
+                r = await generate_widget(
+                    llm,
+                    intent="修正下述校验错误：" + "；".join(errs),
+                    theme=str(doc.get("theme") or "cartesian"),
+                    language=str(doc.get("language") or "zh-CN"),
+                    topic=topic,
+                    material=material,
+                    guidelines=load_widget_guidelines(reg.dir),
+                )
+                if r.block:
+                    r.block["id"] = cur.get("id")
+                    doc["scenes"][si]["blocks"][bi] = r.block
+                return
             r = await generate_block(
                 llm,
                 type=cur["type"],
@@ -96,6 +124,44 @@ async def _doc_repair(
     return validate_doc(doc)
 
 
+async def _attach_hero_image(
+    doc: dict[str, Any],
+    topic: str,
+    image_finder: ImageFinder | None,
+    image_generator: ImageGenerator | None,
+) -> None:
+    """封面配图：先查图库，查无再文生图兜底。两者都缺/都失败就不配图，不阻断生成。"""
+    if not image_finder and not image_generator:
+        return
+    hero = next(
+        (
+            b
+            for s in doc.get("scenes", [])
+            for b in (s.get("blocks") or [])
+            if b.get("type") == "hero"
+        ),
+        None,
+    )
+    if hero is None or hero.get("image"):
+        return
+    query = " ".join(hero.get("title") or []) or topic
+    asset = None
+    if image_finder:
+        try:
+            asset = await image_finder.find_image(query)
+        except Exception:  # noqa: BLE001 - 配图失败不阻断整份生成
+            asset = None
+    if asset is None and image_generator:
+        try:
+            asset = await image_generator.generate_image(
+                f"一张适合作为课程封面配图的插图，主题：{query}"
+            )
+        except Exception:  # noqa: BLE001
+            asset = None
+    if asset:
+        hero["image"] = asset.data_uri
+
+
 async def generate_lecture(
     llm: LLMClient,
     *,
@@ -109,10 +175,12 @@ async def generate_lecture(
     coverage: bool = False,
     options: GeneratorOptions | None = None,
     skills_dir: str | None = None,
+    image_finder: ImageFinder | None = None,
+    image_generator: ImageGenerator | None = None,
     log: Callable[[str], None] = lambda _m: None,
 ) -> GenerateResult:
     opts = options or GeneratorOptions()
-    registry, auto_types = load_skills(skills_dir)
+    registry, _auto_types = load_skills(skills_dir)
     tool_kit: dict[str, Tool] | None = {"calc": CalcTool()} if opts.tools else None
 
     mat = await condense_material(llm, material, topic=topic, target_chars=4000) if material else ""
@@ -128,7 +196,7 @@ async def generate_lecture(
         wants=wants,
         extra=extra,
         material=mat,
-        auto_types=auto_types,
+        type_menu=plan_menu(registry),
         authoring_rules=AUTHORING_RULES,
         perspectives_n=opts.plan_perspectives,
         sections=opts.sections,
@@ -156,12 +224,31 @@ async def generate_lecture(
 
     # ② Fan-out（逐块生成；no_fanout 消融 = 串行）
     conc = opts.concurrency if opts.fanout else 1
+    # sim.widget 走独立 plan→build→repair 子配方；预加载一次裁剪版 craft 指引（仅当真有 widget 块）。
+    widget_guidelines = ""
+    if any(p[0].get("type") == "sim" and p[0].get("engine") == "widget" for p in placeholders):
+        sim_reg = registry.get("sim")
+        if sim_reg:
+            widget_guidelines = load_widget_guidelines(sim_reg.dir)
 
     async def gen(item: tuple[dict[str, Any], dict[str, Any]], _i: int) -> tuple[str, BlockResult]:
         ph, scene = item
         reg = registry.get(ph["type"])
         if not reg:
             return ph["id"], BlockResult(None, f"无技能处理 type {ph['type']}")
+        if ph["type"] == "sim" and ph.get("engine") == "widget":
+            # 逃生舱：直接产 HTML 片段，两阶段（先契约后写码）+ 校验自修，观感钉死 deck 主题。
+            r = await generate_widget(
+                llm,
+                intent=ph.get("intent", ""),
+                theme=str(doc.get("theme") or "cartesian"),
+                language=str(doc.get("language") or "zh-CN"),
+                topic=topic,
+                material=mat,
+                guidelines=widget_guidelines,
+            )
+            log(f"  {'✗' if r.err else '✓'} {ph['id']} (sim:widget)")
+            return ph["id"], r
         r = await generate_block(
             llm,
             type=ph["type"],
@@ -180,6 +267,9 @@ async def generate_lecture(
 
     # ③ Assemble（回填）
     dropped = fill_blocks(doc, blocks_by_id)
+    attach_icons(doc)  # 确定性收尾：list 项按关键词自动配本地图标（零 LLM/零网络）
+    if opts.media:
+        await _attach_hero_image(doc, topic, image_finder, image_generator)
 
     # ④ 整档校验 + 结构自修（revise 消融可关）
     if opts.revise:

@@ -13,4 +13,7 @@ AUTHORING_RULES = """硬规则(违反会被校验/打回)：
 - 绝不写死颜色/字体(主题 token 负责视觉)。
 - 中文排版：中文句全角标点；汉字与拉丁/数字间空格(如 2026 年、AI 产品)；中文标签不做 uppercase。
 - 多个并列要点用 agenda(逐行等高)，别把两个不等高的块并排；compare 只用于左右天然对称内容。
-- sim 优先 dynamics1d/searchCompare；表达式只能用白名单标识符+数学函数。"""
+- sim 优先 dynamics1d/searchCompare；表达式只能用白名单标识符+数学函数。
+- **动效克制使用**：block 可选 `"fragment"`（`true` 或 reveal 类型名如 `"fade-up"`/`"highlight-red"`/`"grow"`），\
+让整块相对本页其它块分步出现；list/agenda 的每个 item/row 也可以单独带 `"fragment"` 做行内分步揭示。\
+仅用于确实需要"边讲边现"的多步骤讲解，**不要给每个 block/item 都打上**，一页里最多一组分步揭示。"""

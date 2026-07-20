@@ -8,7 +8,9 @@ from __future__ import annotations
 import json
 
 from lecture_agent.adapters.llm.fake import FakeClient
+from lecture_agent.adapters.media.fake import FakeMediaProvider
 from lecture_agent.agent import GeneratorOptions, generate_lecture
+from lecture_agent.ports.media import ImageAsset
 from lecture_agent.schema import LectureDoc, validate_doc
 
 # 规划器返回的骨架（两页：hero + statement 内容页）
@@ -61,3 +63,54 @@ async def test_end_to_end_with_fake_llm() -> None:
     assert validate_doc(result.doc).errors == []
     # notes 被增强
     assert "备注" in result.doc["scenes"][0]["notes"]
+
+
+async def test_media_off_by_default_no_hero_image() -> None:
+    llm = FakeClient(by_purpose=_BY_PURPOSE)
+    finder = FakeMediaProvider(found=ImageAsset(data_uri="data:image/png;base64,AAAA"))
+    result = await generate_lecture(
+        llm,
+        topic="梯度下降",
+        pages=2,
+        theme="cartesian",
+        options=GeneratorOptions(plan_perspectives=1, media=False),
+        image_finder=finder,
+    )
+    hero = result.doc["scenes"][0]["blocks"][0]
+    assert "image" not in hero
+    assert finder.find_calls == []  # media=False：连 provider 都不该被调
+
+
+async def test_media_on_attaches_hero_image_via_finder() -> None:
+    llm = FakeClient(by_purpose=_BY_PURPOSE)
+    finder = FakeMediaProvider(found=ImageAsset(data_uri="data:image/png;base64,AAAA"))
+    result = await generate_lecture(
+        llm,
+        topic="梯度下降",
+        pages=2,
+        theme="cartesian",
+        options=GeneratorOptions(plan_perspectives=1, media=True),
+        image_finder=finder,
+    )
+    hero = result.doc["scenes"][0]["blocks"][0]
+    assert hero["image"] == "data:image/png;base64,AAAA"
+    assert len(finder.find_calls) == 1
+    assert validate_doc(result.doc).errors == []
+
+
+async def test_media_falls_back_to_generator_when_finder_misses() -> None:
+    llm = FakeClient(by_purpose=_BY_PURPOSE)
+    finder = FakeMediaProvider(found=None)
+    generator = FakeMediaProvider(generated=ImageAsset(data_uri="data:image/png;base64,BBBB"))
+    result = await generate_lecture(
+        llm,
+        topic="梯度下降",
+        pages=2,
+        theme="cartesian",
+        options=GeneratorOptions(plan_perspectives=1, media=True),
+        image_finder=finder,
+        image_generator=generator,
+    )
+    hero = result.doc["scenes"][0]["blocks"][0]
+    assert hero["image"] == "data:image/png;base64,BBBB"
+    assert len(generator.generate_calls) == 1

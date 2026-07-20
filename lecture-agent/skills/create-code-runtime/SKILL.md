@@ -1,6 +1,6 @@
 ---
 name: create-code-runtime
-description: Author a runnable (edit → Run) code cell block for a LectureDoc lecture — an in-browser Python (Pyodide) + JavaScript editor with a console and a result chart. Use when students should edit and run real code (Scrimba / Jupyter-lite style). Produces schema-valid runnable block JSON.
+description: Author a runnable (edit → Run) code cell block for a LectureDoc lecture — an in-browser Python (Pyodide) + JavaScript editor with a console and a result chart. Reach for it whenever the student should learn by writing/modifying and actually executing code themselves: implementing an algorithm by hand, tuning parameters and seeing the effect, exploratory what-if coding. Use a plain `code` block instead for read-only display the student will not run. Produces schema-valid runnable block JSON.
 version: 1.0.0
 license: MIT
 platforms: [linux, macos, windows]
@@ -14,8 +14,8 @@ metadata:
 
 Read `lecture-doc-schema` first (SPEC §3.2 runnable, §4 restricted expressions). This is the editable code cell: CodeMirror editor + language tabs + Run + stdout console + result plot, Python via offline Pyodide, JS native. Produce ONE runnable block; self-check with `node <lecture-doc-schema>/scripts/validate.mjs --block <file>`.
 
-## Hard runtime constraint
-**At most ONE runnable block per deck** (the CodeMirror editor is a singleton "portal", see the demo's knowledge-base 001). If the lecture already has a runnable, do not add another — use a static `code` block (create-content) or a `sim` (create-sim) instead.
+## Multiple runnables per deck
+A lecture can contain **more than one** runnable block — each gets its own editor/portal/Python namespace at render time (see knowledge-base 001: the CodeMirror-in-`transform:scale` workaround now supports N instances, one shared Pyodide interpreter + per-block namespace isolation). Prefer **at most one runnable per slide** (layout — the dedicated full-bleed treatment triggers when it's the sole block on its scene) and keep the whole deck to **roughly 0-2 runnables** — only add one where the student genuinely needs to edit-and-run, not for every code topic. Pure code display (no editing) is a static `code` block (create-content); a live but non-editable simulation is `sim` (create-sim).
 
 ## Shape
 ```json

@@ -1,6 +1,6 @@
 ---
 name: create-chart
-description: Author a chart block for a LectureDoc lecture — a data chart (bar/line/area/scatter) rendered via Observable Plot, theme-aware. Use whenever a page needs to show numeric comparison, trend, share, or correlation instead of a plain table. Produces schema-valid chart block JSON.
+description: Author a chart block for a LectureDoc lecture — a data chart (bar/line/area/scatter) rendered via Observable Plot, theme-aware. Reach for it whenever a page shows numeric comparison, trend over time, share/composition, or correlation — anything where seeing the shape of the numbers beats reading them. Prefer a chart over a table when magnitude/trend/relationship is the point; use a table only for exact nominal lookup where values are not being compared. Produces schema-valid chart block JSON.
 version: 1.0.0
 license: MIT
 platforms: [linux, macos, windows]
