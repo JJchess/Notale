@@ -14,12 +14,17 @@
   let currentDoc = null;
   let KB = [], SUGG = [];
   let chromeBound = false, revealInited = false;
-  let runnableActivator = null;
+  /* runnable 多实例登记表：uid(block.id) -> { portal, initCM, anchor, cm }。
+     一份讲义可以有 N 个 runnable；同屏(reveal 任一时刻只显示一张 slide)最多同时激活其中几个，
+     activePortals 是"当前 slide 上正显示"的子集，一个共享 RAF 遍历它逐个贴传送门位置。 */
+  const runnableRegistry = new Map();
+  const activePortals = new Set();
   let rcPortalRAF = null;
+  let rcAutoUid = 0;
   const readyCallbacks = [];
   const ctx = {
     onReady: fn => readyCallbacks.push(fn),
-    registerRunnableActivator: a => { runnableActivator = a; },
+    registerRunnable: (uid, entry) => { runnableRegistry.set(uid, entry); },
     previewMode: false,
   };
 
@@ -108,6 +113,23 @@
     return tpl.innerHTML;
   }
 
+  /* 本地图标：window.ICON_INNER 由 vendor/icons/icons-inline.js 挂载(id -> 内联 <path> markup)。
+     stroke=currentColor，包一层 span 设 color:var(--accent) 即继承主题色，零新增主题接线。 */
+  function renderIcon(id) {
+    const inner = window.ICON_INNER && window.ICON_INNER[id];
+    if (!inner) return null;
+    const span = el('span', 'inline-icon');
+    span.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + inner + '</svg>';
+    return span;
+  }
+
+  /* fragment 字段：bool(朴素淡入) 或 reveal 支持的类型名字符串(fade-up/highlight-red/grow/...)。
+     '' = 不打 fragment，交调用方判断是否已有 fragment class 再决定要不要追加。 */
+  function fragClass(v) {
+    if (!v) return '';
+    return typeof v === 'string' ? 'fragment ' + v : 'fragment';
+  }
+
   /* ---------------- 受限行内 markdown（SPEC §2） ----------------
      **b** / *em* / `code` / $latex$ ；先抽走 code 与 math 占位，转义 HTML，再回填。 */
   function inlineMd(src) {
@@ -184,6 +206,11 @@
       if (b.accentRule) inner.appendChild(el('div', 'h-accent'));
       if (b.facts) inner.appendChild(el('div', 'facts', inlineMd(b.facts)));
       if (b.hint) inner.appendChild(el('div', 'hint', inlineMd(b.hint)));
+      if (b.image) {
+        const img = document.createElement('img');
+        img.className = 'hero-image'; img.alt = ''; img.src = b.image;   // data: URI（离线红线，schema/validate 已拦远程 URL）
+        inner.appendChild(img);
+      }
       return inner;
     },
     statement(b) {
@@ -203,7 +230,10 @@
     list(b) {
       const ul = el('ul', 'pts');
       for (const it of b.items) {
-        const li = el('li', it.fragment ? 'fragment' : null, inlineMd(it.text));
+        const li = el('li', fragClass(it.fragment) || null);
+        const icon = it.icon && renderIcon(it.icon);
+        if (icon) { li.classList.add('has-icon'); li.appendChild(icon); }
+        li.appendChild(el('span', null, inlineMd(it.text)));
         ul.appendChild(li);
       }
       return ul;
@@ -211,7 +241,7 @@
     agenda(b) {
       const wrap = el('div', 'agenda');
       b.rows.forEach((r, i) => {
-        const row = el('div', 'agenda-row' + (r.fragment ? ' fragment' : ''));
+        const row = el('div', 'agenda-row' + (r.fragment ? ' ' + fragClass(r.fragment) : ''));
         row.appendChild(el('span', 'num', String(i + 1)));
         row.appendChild(el('span', 'v', '<span class="k">' + escapeHtml(r.label) + '</span>' + inlineMd(r.text)));
         wrap.appendChild(row);
@@ -219,7 +249,7 @@
       return wrap;
     },
     callout(b) {
-      const d = el('div', 'callout' + (b.fragment ? ' fragment' : ''));
+      const d = el('div', 'callout' + (b.fragment ? ' ' + fragClass(b.fragment) : ''));
       d.innerHTML = '<span class="k">' + escapeHtml(b.label) + '</span>' + inlineMd(b.text);
       if (b.latex) {
         const m = el('div', 'mblock', displayTex(b.latex));
@@ -303,8 +333,13 @@
           width: 700, height: 380, marginLeft: 52, marginBottom: 44, marginTop: 32, marginRight: 20,
           style: PLOT_STYLE,
           /* categories 常是"2021"这种数字形字符串——不显式声明 band/point 序数刻度，Plot 会当成误传数字
-             警告并画出角标感叹号；scatter 走真数值 x，留给 Plot 自动推断线性刻度。 */
-          x: { label: b.xLabel, type: b.chartType === 'scatter' ? undefined : 'band' },
+             警告并画出角标感叹号；scatter 走真数值 x，留给 Plot 自动推断线性刻度。
+             domain 必须显式给 b.categories 原始顺序——不给的话 Plot 对序数刻度会按值做字典序排序，
+             "10,50,100,500,1000,5000,10000" 这种数字形字符串会被拍成 "10,100,1000,10000,50,500,5000"，
+             author 给定的顺序（哪怕是刻意乱序）必须原样保留。 */
+          x: b.chartType === 'scatter'
+            ? { label: b.xLabel }
+            : { label: b.xLabel, type: 'band', domain: b.categories || [] },
           y: { label: b.yLabel, grid: true, nice: true },
           marks,
         }));
@@ -342,6 +377,24 @@
         g.appendChild(cell);
       }
       return g;
+    },
+    stats(b) {
+      const row = el('div', 'stats-row');
+      row.style.gridTemplateColumns = 'repeat(' + b.items.length + ',1fr)';
+      for (const it of b.items) {
+        const card = el('div', 'stat-card');
+        card.appendChild(el('div', 'stat-value', inlineMd(it.value)));
+        if (it.delta) card.appendChild(el('div', 'stat-delta', inlineMd(it.delta)));
+        card.appendChild(el('div', 'stat-label', inlineMd(it.label)));
+        row.appendChild(card);
+      }
+      return row;
+    },
+    /* diagram：7 种 diagramType 共用一个块类型（仿 sim.engine/chart.chartType 判别分派），
+       几何形状(cycle/circular-grid/connected-circles)由 diagramRadial 统一算圆周坐标。 */
+    diagram(b) {
+      const fn = diagramRenderers[b.diagramType] || diagramRenderers['arrow-seq'];
+      return fn(b.nodes || []);
     },
     quiz(b) {
       const wrap = el('div');
@@ -425,9 +478,125 @@
       root.appendChild(el('div', 'block-error-t', '⚠ 此块渲染失败'));
       root.appendChild(el('div', 'block-error-m', escapeHtml((b && b.type || '?') + '：' + ((e && e.message) || String(e)))));
     }
-    if (b.fragment && !root.classList.contains('fragment')) root.classList.add('fragment');
+    if (b.fragment && !root.classList.contains('fragment')) fragClass(b.fragment).split(' ').forEach(c => root.classList.add(c));
     return root;
   }
+
+  /* ================= diagram 几何渲染 ================= */
+  function diagNodeBox(n) {
+    const box = el('div', 'diagram-node');
+    box.appendChild(el('div', 'dn-title', inlineMd(n.title || '')));
+    if (n.sub) box.appendChild(el('div', 'dn-sub', inlineMd(n.sub)));
+    return box;
+  }
+
+  /* cycle/circular-grid/connected-circles 共用：N 个节点按圆周均匀分布(viewBox 0-100 坐标)，
+     SVG 覆盖层画连线（ring=首尾相接+箭头，mesh=两两全连，none=纯环绕不连线）。 */
+  function diagramRadial(nodes, connect) {
+    const n = nodes.length;
+    const wrap = el('div', 'diagram-radial');
+    const svgNS = 'http://www.w3.org/2000/svg';
+    const svg = document.createElementNS(svgNS, 'svg');
+    svg.setAttribute('viewBox', '0 0 100 100');
+    svg.classList.add('diagram-radial-svg');
+    const cx = 50, cy = 50, r = 34;
+    const pts = Array.from({ length: n }, (_, i) => {
+      const a = -Math.PI / 2 + i * (2 * Math.PI / Math.max(1, n));
+      return { x: cx + r * Math.cos(a), y: cy + r * Math.sin(a) };
+    });
+    if (connect === 'ring') {
+      const defs = document.createElementNS(svgNS, 'defs');
+      const marker = document.createElementNS(svgNS, 'marker');
+      marker.setAttribute('id', 'dia-arrow'); marker.setAttribute('viewBox', '0 0 10 10');
+      marker.setAttribute('refX', '8'); marker.setAttribute('refY', '5');
+      marker.setAttribute('markerWidth', '5'); marker.setAttribute('markerHeight', '5'); marker.setAttribute('orient', 'auto-start-reverse');
+      const path = document.createElementNS(svgNS, 'path');
+      path.setAttribute('d', 'M0,0 L10,5 L0,10 Z'); path.setAttribute('fill', 'var(--accent)');
+      marker.appendChild(path); defs.appendChild(marker); svg.appendChild(defs);
+      for (let i = 0; i < n; i++) {
+        const a = pts[i], bpt = pts[(i + 1) % n];
+        const line = document.createElementNS(svgNS, 'line');
+        line.setAttribute('x1', a.x); line.setAttribute('y1', a.y);
+        line.setAttribute('x2', bpt.x); line.setAttribute('y2', bpt.y);
+        line.setAttribute('stroke', 'var(--accent)'); line.setAttribute('stroke-width', '1');
+        line.setAttribute('vector-effect', 'non-scaling-stroke');
+        line.setAttribute('marker-end', 'url(#dia-arrow)');
+        svg.appendChild(line);
+      }
+    } else if (connect === 'mesh') {
+      for (let i = 0; i < n; i++) {
+        for (let j = i + 1; j < n; j++) {
+          const line = document.createElementNS(svgNS, 'line');
+          line.setAttribute('x1', pts[i].x); line.setAttribute('y1', pts[i].y);
+          line.setAttribute('x2', pts[j].x); line.setAttribute('y2', pts[j].y);
+          line.setAttribute('stroke', 'var(--line)'); line.setAttribute('stroke-width', '0.6');
+          line.setAttribute('vector-effect', 'non-scaling-stroke');
+          svg.appendChild(line);
+        }
+      }
+    }
+    wrap.appendChild(svg);
+    nodes.forEach((node, i) => {
+      const box = diagNodeBox(node);
+      box.classList.add('diagram-radial-node');
+      box.style.left = pts[i].x + '%';
+      box.style.top = pts[i].y + '%';
+      wrap.appendChild(box);
+    });
+    return wrap;
+  }
+
+  const diagramRenderers = {
+    'arrow-seq'(nodes) {
+      const wrap = el('div', 'diagram-arrowseq');
+      nodes.forEach((n, i) => {
+        if (i > 0) wrap.appendChild(el('span', 'da-arrow', '›'));
+        wrap.appendChild(diagNodeBox(n));
+      });
+      return wrap;
+    },
+    staircase(nodes) {
+      const wrap = el('div', 'diagram-staircase');
+      nodes.forEach((n, i) => {
+        const step = diagNodeBox(n);
+        step.classList.add('ds-step');
+        step.style.marginTop = (i === 0 ? 0 : 14) + 'px';
+        step.style.marginLeft = (i * 56) + 'px';
+        wrap.appendChild(step);
+      });
+      return wrap;
+    },
+    snake(nodes) {
+      const PER_ROW = 4;
+      const wrap = el('div', 'diagram-snake');
+      for (let i = 0; i < nodes.length; i += PER_ROW) {
+        const rowIdx = i / PER_ROW;
+        const rev = rowIdx % 2 === 1;
+        const row = el('div', 'ds-row' + (rev ? ' rev' : ''));
+        nodes.slice(i, i + PER_ROW).forEach((n, j) => {
+          if (j > 0) row.appendChild(el('span', 'da-arrow', rev ? '‹' : '›'));
+          row.appendChild(diagNodeBox(n));
+        });
+        wrap.appendChild(row);
+      }
+      return wrap;
+    },
+    pyramid(nodes) {
+      const wrap = el('div', 'diagram-pyramid');
+      const n = nodes.length;
+      nodes.forEach((node, i) => {
+        const row = el('div', 'dp-row');
+        const widthPct = n > 1 ? 40 + i * (60 / (n - 1)) : 100;
+        row.style.width = Math.min(100, widthPct) + '%';
+        row.appendChild(diagNodeBox(node));
+        wrap.appendChild(row);
+      });
+      return wrap;
+    },
+    cycle(nodes) { return diagramRadial(nodes, 'ring'); },
+    'circular-grid'(nodes) { return diagramRadial(nodes, 'none'); },
+    'connected-circles'(nodes) { return diagramRadial(nodes, 'mesh'); },
+  };
 
   /* ================= sim 引擎注册表 ================= */
   function paramPanelControls(b, onInput, blockCls) {
@@ -640,11 +809,26 @@
   };
 
   /* ================= runnable：可编辑可运行代码单元 =================
-     约束：每个 deck 至多一个（编辑器传送门为单例，见 knowledge-base/001）。 */
-  let runnableWired = false;
+     一份讲义可以有多个（各自独立编辑器/portal/状态；同屏一张 slide 最多同时激活一个）。
+     Pyodide 解释器全局共享一份(WASM 加载贵)，每块用独立命名空间 dict 隔离全局变量，
+     避免块间互相污染 preamble/result（见 knowledge-base/001 FE-48 传送门 + 多实例泛化）。 */
+  let sharedPyodide = null, sharedPyLoading = null;
+  function loadScript(src) { return new Promise((res, rej) => { const s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = () => rej(new Error('加载失败: ' + src)); document.head.appendChild(s); }); }
+  async function ensureSharedPyodide() {
+    if (sharedPyodide) return sharedPyodide;
+    if (!sharedPyLoading) sharedPyLoading = (async () => {
+      if (!window.loadPyodide) await loadScript('vendor/pyodide/pyodide.js');
+      sharedPyodide = await loadPyodide({ indexURL: 'vendor/pyodide/' });
+      return sharedPyodide;
+    })();
+    return sharedPyLoading;
+  }
   function renderRunnable(b, ctx) {
-    if (runnableWired) { const w = el('div', 'rc-hint', '（本版运行时每个讲义仅支持一个可运行单元）'); return w; }
-    runnableWired = true;
+    /* uid：优先用 block.id（orchestrator/作者保证唯一）；缺失时兜底自增，避免撞 key。
+       同一 uid 再次渲染(live 单页重渲)——清掉旧 portal，按新状态重建，不做跨渲染的状态搬运。 */
+    const uid = b.id || ('rc-auto-' + (rcAutoUid++));
+    const prevEntry = runnableRegistry.get(uid);
+    if (prevEntry) { prevEntry.portal.remove(); activePortals.delete(uid); runnableRegistry.delete(uid); }
     /* 环境构建 */
     let jsCtxFactory, pyPreamble, resultChartCfg;
     if (b.env.kind === 'objective1d') {
@@ -689,38 +873,41 @@
     const resetBtn = el('button', 'rc-reset', '↺ 复位'); resetBtn.title = '恢复初始代码';
     const runBtn = el('button', 'rc-run', '▶ Run');
     tabs.appendChild(resetBtn); tabs.appendChild(runBtn);
-    const anchor = el('div', 'rc-editor-anchor'); anchor.id = 'rcEditor';
+    const anchor = el('div', 'rc-editor-anchor'); anchor.dataset.rcAnchor = uid;
     edCol.appendChild(tabs); edCol.appendChild(anchor);
     const outCol = el('div', 'out-col');
-    const plotBox = el('div', 'rc-plot'); plotBox.id = 'rcPlot';
+    const plotBox = el('div', 'rc-plot');
     plotBox.appendChild(el('div', 'rc-hint', escapeHtml(b.hint || '▶ Run')));
-    const consoleBox = el('div', 'rc-console'); consoleBox.id = 'rcConsole';
+    const consoleBox = el('div', 'rc-console');
     consoleBox.innerHTML = '<span class="k">' + escapeHtml(b.consoleHint || '') + '</span>';
     outCol.appendChild(plotBox); outCol.appendChild(consoleBox);
     root.appendChild(edCol); root.appendChild(outCol);
+
+    /* 每块独立的传送门（FE-48：CodeMirror 不能住在 transform:scale 子树里），挂 body 下脱离缩放子树。 */
+    const portal = el('div', 'rc-editor-portal');
+    document.body.appendChild(portal);
 
     /* 状态 */
     let rcLang = b.languages[0];
     langBtns[rcLang].classList.add('on');
     const starter = { python: b.starter.python || '', js: b.starter.js || '' };
     const buf = { python: starter.python, js: starter.js };
-    let cm = null, pyodide = null, pyLoading = null;
+    let cm = null, pyNsLoading = null;
 
-    function loadScript(src) { return new Promise((res, rej) => { const s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = () => rej(new Error('加载失败: ' + src)); document.head.appendChild(s); }); }
-    async function ensurePy() {
-      if (pyodide) return pyodide;
-      if (!pyLoading) pyLoading = (async () => {
-        if (!window.loadPyodide) await loadScript('vendor/pyodide/pyodide.js');
-        const py = await loadPyodide({ indexURL: 'vendor/pyodide/' });
-        if (pyPreamble) py.runPython(pyPreamble);
-        pyodide = py; return py;
+    /* 本块的 Python 命名空间：懒建，首次运行时把 pyPreamble 灌进去，与其它 runnable 块隔离。 */
+    async function ensurePyNs() {
+      if (!pyNsLoading) pyNsLoading = (async () => {
+        const py = await ensureSharedPyodide();
+        const ns = py.globals.get('dict')();
+        if (pyPreamble) py.runPython(pyPreamble, { globals: ns });
+        return ns;
       })();
-      return pyLoading;
+      return pyNsLoading;
     }
     function initCM() {
       if (cm || !window.CodeMirror) return;
-      cm = CodeMirror($('#rcEditorPortal'), { value: buf[rcLang], mode: rcLang === 'python' ? 'python' : 'javascript', theme: 'eclipse', lineNumbers: true, indentUnit: 4, tabSize: 4, viewportMargin: Infinity });
-      window.__rcCM = cm; /* ResizeObserver 钩子用 */
+      cm = CodeMirror(portal, { value: buf[rcLang], mode: rcLang === 'python' ? 'python' : 'javascript', theme: 'eclipse', lineNumbers: true, indentUnit: 4, tabSize: 4, viewportMargin: Infinity });
+      entry.cm = cm; /* ResizeObserver 钩子用（遍历 activePortals 逐个刷新，见 renderDoc 附近） */
     }
     function setLang(l) {
       if (l === rcLang) return;
@@ -762,11 +949,11 @@
       return { result, logs };
     }
     async function runPy(code) {
-      const py = await ensurePy(); const logs = [];
+      const py = await ensureSharedPyodide(); const ns = await ensurePyNs(); const logs = [];
       py.setStdout({ batched: s => logs.push(s) }); py.setStderr({ batched: s => logs.push(s) });
-      py.globals.set('result', py.toPy([]));
-      await py.runPythonAsync(code);
-      const r = py.globals.get('result');
+      ns.set('result', py.toPy([]));
+      await py.runPythonAsync(code, { globals: ns });
+      const r = ns.get('result');
       const result = (r && r.toJs) ? r.toJs({ dict_converter: Object.fromEntries }) : [];
       if (r && r.destroy) r.destroy();
       return { result, logs };
@@ -775,7 +962,7 @@
       const code = cm.getValue(); buf[rcLang] = code;
       runBtn.disabled = true; const label = runBtn.textContent;
       try {
-        if (rcLang === 'python' && !pyodide) consoleBox.innerHTML = '<span class="k">正在初始化 Python 运行时…</span>';
+        if (rcLang === 'python' && !sharedPyodide) consoleBox.innerHTML = '<span class="k">正在初始化 Python 运行时…</span>';
         runBtn.textContent = '运行中…';
         const out = rcLang === 'python' ? await runPy(code) : await runJS(code);
         consoleBox.textContent = out.logs.join('\n') || '(无 print 输出)';
@@ -784,8 +971,8 @@
       finally { runBtn.disabled = false; runBtn.textContent = label; }
     };
 
-    /* 传送门激活（FE-48：CodeMirror 不能住在 transform:scale 子树里） */
-    ctx.registerRunnableActivator({ initCM });
+    const entry = { portal, initCM, anchor, cm: null };
+    ctx.registerRunnable(uid, entry);
     return root;
   }
 
@@ -921,6 +1108,17 @@
         body.appendChild(cell);
       }
     },
+
+    /* full：单 block 居中占满，给需要大画面的 chart/sim/table 呼吸空间（非多块，多块回落 flow）。 */
+    full(scene, ctx, body, L) {
+      const blocks = scene.blocks || [];
+      if (blocks.length !== 1) return sceneLayouts.flow(scene, ctx, body, L);
+      body.dataset.layout = 'full';
+      body.classList.add('layout-full');
+      body.style.display = 'flex'; body.style.flexDirection = 'column';
+      body.style.justifyContent = 'center'; body.style.alignItems = 'center';
+      body.appendChild(renderBlock(blocks[0], ctx));
+    },
   };
 
   /* ================= Scene → <section> ================= */
@@ -930,6 +1128,8 @@
     if (scene.kind === 'statement') sec.className = 'bigidea';
     if (scene.kind === 'quiz') sec.className = 'quiz';
     if (scene.kind === 'section') sec.className = 'divider';
+    if (scene.transition) sec.setAttribute('data-transition', scene.transition);
+    if (scene.autoAnimate) sec.setAttribute('data-auto-animate', '');   // 需相邻两页都置位+复用相同 block id 才会真正 morph
     /* 装饰环 */
     for (const r of (scene.decor && scene.decor.rings) || []) {
       const g = el('div', 'geo-ring');
@@ -989,7 +1189,20 @@
     if (!body) return;
     /* sim/runnable/widget 的 body 按设计填满，作者显式 centered 也别覆盖 */
     if (['lab', 'runlab', 'widlab'].some(c => body.classList.contains(c))) return;
-    if (body.dataset.layout) return;                /* index/split 等自定义版式自管高度(fitCustomLayout)，不走默认竖排测量 */
+    if (body.dataset.layout) {
+      /* index/split/compose/full 等自定义版式不走下面"逐子元素求和"的测高(那套假设纵向单栏堆叠，
+         compose 是二维 grid，子项可能同行并排，求和会重复计入)。但仍需要溢出保护——尤其 compose：
+         chart/table 类块高度不随列宽收缩，size 换行到第二行时总高度可能超出可视区却没有任何裁切/警告，
+         内容会安静地被推到视口以下（reveal 不滚动，等于学生看不到）。用 scrollHeight/clientHeight
+         整体判断，兼容任意内部结构，zoom 等比缩到刚好放下，跟下面 flow 分支同一条"不丢内容"红线。 */
+      body.style.zoom = '';
+      const availCustom = body.clientHeight;
+      const totalCustom = body.scrollHeight;
+      if (availCustom && totalCustom > availCustom + 4) {
+        body.style.zoom = Math.max(0.72, availCustom / totalCustom);
+      }
+      return;
+    }
     if (body.dataset.centered) return;              /* 作者显式 layout.centered，尊重其意图，不覆盖 */
     body.style.justifyContent = '';                 /* 先复位再实测，避免测到上次居中/缩放态 */
     body.style.zoom = '';
@@ -1104,6 +1317,13 @@
     ctx.previewMode = !!opts.previewMode;
     document.title = doc.title || '讲义';
 
+    /* 整份 doc 重渲(live 预览换一份新 doc)：清掉上一份遗留的 runnable 传送门，
+       它们挂在 body 下不随 #slides 的重建而消失，不清会越攒越多。 */
+    if (rcPortalRAF) { cancelAnimationFrame(rcPortalRAF); rcPortalRAF = null; }
+    for (const entry of runnableRegistry.values()) entry.portal.remove();
+    runnableRegistry.clear();
+    activePortals.clear();
+
     /* 主题：?theme=xxx 仅用于预览/对比（不改内容）；默认用 doc.theme 或 cartesian。
        重渲时尊重 URL override 可让 live 预览也支持 ?theme= 切换对比。 */
     const themeOverride = new URLSearchParams(location.search).get('theme');
@@ -1127,13 +1347,13 @@
       bindChrome();
       Reveal.initialize({ hash: true, slideNumber: 'c/t', controls: false, progress: true, center: false,
         transition: 'slide', backgroundTransition: 'fade', width: 1280, height: 720, margin: 0,
-        viewDistance: 5, hashOneBasedIndex: true, plugins: [RevealHighlight] });
+        viewDistance: 5, hashOneBasedIndex: true, autoAnimate: true, plugins: [RevealHighlight] });
       Reveal.on('ready', e => { readyCallbacks.forEach(fn => fn()); activateRunCell(e.currentSlide); updateCtx(); refreshNotes(); requestAnimationFrame(() => { layoutScene(e.currentSlide); syncIndex(e.currentSlide); });
         if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { layoutScene(Reveal.getCurrentSlide()); syncIndex(); }); });
       Reveal.on('slidechanged', e => { activateRunCell(e.currentSlide); updateCtx(); refreshNotes(); requestAnimationFrame(() => { layoutScene(e.currentSlide); syncIndex(e.currentSlide); }); });
       Reveal.on('fragmentshown', () => requestAnimationFrame(() => syncIndex()));
       Reveal.on('fragmenthidden', () => requestAnimationFrame(() => syncIndex()));
-      new ResizeObserver(() => { if (window.__rcCM) requestAnimationFrame(() => window.__rcCM.refresh()); }).observe($('.reveal'));
+      new ResizeObserver(() => { requestAnimationFrame(() => { for (const uid of activePortals) { const e = runnableRegistry.get(uid); if (e && e.cm) e.cm.refresh(); } }); }).observe($('.reveal'));
       revealInited = true;
     } else {
       Reveal.sync();
@@ -1188,22 +1408,44 @@
     ans += hit ? hit[1] : '好问题。真实产品里我会把<b>当前这页的要点与你的进度</b>作为上下文发给后端对话模型，给出针对性讲解。（demo 本地离线应答）';
     b.appendChild(el('div', 'msg a', '<div class="who">✦ AI 助教 · 已注入本页上下文</div>' + ans)); b.scrollTop = b.scrollHeight; }
 
-  /* ---- 传送门（FE-48）：编辑器挂 body 下，rAF 同步屏幕矩形 ---- */
-  function syncPortalRect() {
-    const anchor = $('#rcEditor'), portal = $('#rcEditorPortal');
-    if (!anchor || !portal) return;
-    const r = anchor.getBoundingClientRect();
-    portal.style.left = r.left + 'px'; portal.style.top = r.top + 'px';
-    portal.style.width = r.width + 'px'; portal.style.height = r.height + 'px';
+  /* ---- 传送门（FE-48 多实例版）：每个 runnable 一个 portal，挂 body 下；一个共享 RAF
+     遍历"当前 slide 上显示"的 activePortals 集合，逐个同步屏幕矩形。 ---- */
+  function syncAllPortals() {
+    for (const uid of activePortals) {
+      const entry = runnableRegistry.get(uid);
+      if (!entry || !entry.anchor) continue;
+      const r = entry.anchor.getBoundingClientRect();
+      entry.portal.style.left = r.left + 'px'; entry.portal.style.top = r.top + 'px';
+      entry.portal.style.width = r.width + 'px'; entry.portal.style.height = r.height + 'px';
+    }
   }
   function activateRunCell(slide) {
-    const portal = $('#rcEditorPortal');
-    const on = !!(slide && slide.querySelector('#rcEditor'));
-    if (!on) { if (portal) portal.style.display = 'none'; if (rcPortalRAF) { cancelAnimationFrame(rcPortalRAF); rcPortalRAF = null; } return; }
-    if (runnableActivator) runnableActivator.initCM();
-    portal.style.display = 'block';
-    if (window.__rcCM) window.__rcCM.refresh();
-    if (!rcPortalRAF) { const loop = () => { syncPortalRect(); rcPortalRAF = requestAnimationFrame(loop); }; loop(); }
+    const anchors = slide ? Array.from(slide.querySelectorAll('[data-rc-anchor]')) : [];
+    const liveUids = new Set(anchors.map(a => a.dataset.rcAnchor));
+
+    for (const uid of activePortals) {
+      if (liveUids.has(uid)) continue;
+      const entry = runnableRegistry.get(uid);
+      if (entry) entry.portal.style.display = 'none';
+      activePortals.delete(uid);
+    }
+
+    for (const anchor of anchors) {
+      const uid = anchor.dataset.rcAnchor;
+      const entry = runnableRegistry.get(uid);
+      if (!entry) continue;
+      entry.anchor = anchor;   /* 场景重渲后 anchor 节点会变，刷新引用 */
+      entry.initCM();
+      entry.portal.style.display = 'block';
+      if (entry.cm) entry.cm.refresh();
+      activePortals.add(uid);
+    }
+
+    if (activePortals.size && !rcPortalRAF) {
+      const loop = () => { syncAllPortals(); rcPortalRAF = requestAnimationFrame(loop); }; loop();
+    } else if (!activePortals.size && rcPortalRAF) {
+      cancelAnimationFrame(rcPortalRAF); rcPortalRAF = null;
+    }
   }
 
   /** 绑 chrome 事件（按钮/快捷键/quiz 已在上面绑 document）。.onclick 赋值幂等但只绑一次更干净。 */

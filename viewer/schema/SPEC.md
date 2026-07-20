@@ -123,7 +123,7 @@ LectureDoc                     一门课
 - `starter.{python,js}`：初始代码。约定：把最终结果赋给 `result` 变量（点数组 `[{x,y}]`）→ 运行时自动绘图。
 - `env.kind:"objective1d"`：运行时向两种语言注入等价 helper——`truef(x)`（由 `objective` 表达式生成）、`candidates`（domain 均匀采样）、`predict(observed,x)`（最近邻代理，返回 `[mu, sd]`）。
 - `env.kind:"custom"`：`pythonPreamble` 为字面 Python 源码；`jsPreamble` 为求值后返回 helper 对象的 JS 表达式。
-- **当前运行时约束：每个 deck 至多一个 runnable block**（编辑器传送门为单例，见 knowledge-base/001）。
+- **一个 deck 可以有多个 runnable block**：各自独立编辑器/传送门/状态（见 knowledge-base/001 多实例泛化），共享一个 Pyodide 解释器但每块有独立命名空间，互不污染变量。建议每页至多一个（布局上的整屏特判以此为前提），全 deck 通常 0-2 个。
 
 **`embed`** — 保留位。未来嵌入后端三产品（代码实验室 JupyterLab / 互动视频 AutoVideo / 互动实验室 GenUI），沿用 `launch`（拉起参数）/`artifact`（url/status 回填）契约。当前运行时只渲染占位框。
 

@@ -227,8 +227,30 @@ function checkCursorAlignment(cm, {line, ch}) {
 
 ---
 
+## 🔁 多实例泛化（2026-07 追记）
+
+传送门模式最初只做了**一个**：`#rcEditorPortal` 是 `index.html` 里的静态单例 div，配一个全局 `window.__rcCM`、一个全局 `runnableActivator`、一个全局 `rcPortalRAF`。一份讲义因此被硬限制"至多一个 runnable block"（两侧校验器都会拒第 2 个），这个限制其实**不是传送门模式本身要求的**，只是 v1 图省事的单例实现。
+
+**推广到 N 个的关键认识**：reveal.js 任一时刻只显示一张 slide，所以传送门模式天生就是"当前激活集"问题，不是"唯一实例"问题——把所有单例状态改成按 block id 键控的登记表即可：
+
+```
+runnableRegistry: Map<uid, { portal, initCM, anchor, cm }>   // 每个 runnable 一份
+activePortals: Set<uid>                                       // 当前 slide 上正显示的子集
+一个共享 rAF 循环遍历 activePortals，逐个 syncRect(entry.anchor, entry.portal)
+```
+
+`activateRunCell(slide)` 从"查一个 `#rcEditor` 存不存在"改成"`slide.querySelectorAll('[data-rc-anchor]')` 找出当前页全部锚点"，对每个锚点懒挂载/显示对应 portal，不在当前页的一律隐藏并移出 `activePortals`。
+
+**Pyodide 的处理是分开的两件事，别混为一谈**：
+- **传送门/CodeMirror**：必须每实例一份（各自的编辑状态、DOM、光标），不能共享。
+- **Pyodide 解释器**：一次性 WASM 加载很贵，可以全局共享一份；但 `pyPreamble` 会写进解释器的全局命名空间、用户代码也在全局命名空间里跑，**两个 runnable 共享同一个解释器会互相污染变量**。解法是解释器共享 + 每块一个独立命名空间 dict（`pyodide.globals.get('dict')()` 建一个新 dict，`runPython(code, {globals: ns})` 传进去执行）——Pyodide 官方支持的命名空间隔离用法，不是本项目发明的技巧。
+
+一句话教训：**传送门模式解决的是"这个组件不能活在缩放子树里"，跟"能不能有多个"是两个正交问题；遇到"每 xxx 至多一个"的约束时，先确认是真的架构限制，还是只是 v1 实现图简单——后者往往一次性能推广成"当前激活集"模型，不需要重新设计。**
+
+---
+
 ## 🔗 相关
 
 - 同 session 内另一条相关但独立的坑：本地静态服务器必须用 `ThreadingHTTPServer`（Pyodide 并发请求在单线程服务器上会死锁）——不属于本条范围，如需要另建条目。
 - 全局镜像：`~/.claude/lessons/frontend.md` → `[FE-48]`
-- 触发场景源码：`viewer/index.html`（第 5 页"贝叶斯选点循环：改一行，亲自跑"）
+- 触发场景源码：`viewer/index.html`（第 5 页"贝叶斯选点循环：改一行，亲自跑"）、`viewer/doc-to-deck.js` `renderRunnable`/`activateRunCell`/`syncAllPortals`（多实例登记表实现）
