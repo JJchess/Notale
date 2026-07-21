@@ -65,16 +65,29 @@ def _render_menu(type_menu: list[tuple[str, str, list[str]]]) -> str:
     return "\n".join(lines)
 
 
+def _render_theme_menu(theme_menu: list[tuple[str, str]]) -> str:
+    """把主题「名 → 纯视觉/情绪描述」菜单渲染成规划器的选主题决策面(零学科词)。"""
+    return "\n".join(f"- {name} — {desc}" for name, desc in theme_menu)
+
+
 def _skeleton_spec(
     pages: int,
     type_menu: list[tuple[str, str, list[str]]],
     theme_hint: str,
+    theme_menu: list[tuple[str, str]],
     wants: str,
     authoring_rules: str,
 ) -> str:
     all_types = [t for _s, _d, types in type_menu for t in types]
+    # 主题选单指引:纯视觉/情绪、零方向驱动。用户显式指定则优先(既有行为)。
+    # 单列出来算,避免在 f-string 表达式里写 "\n"(Py3.11 不允许 f-string 内含反斜杠)。
+    theme_block = (
+        "从下面的主题菜单里,按本课题的气质与情绪挑视觉上最贴的一个"
+        "(纯凭观感自行判断,不必默认某个、也不必刻意求新):\n" + _render_theme_menu(theme_menu)
+    )
+    theme_line = f"用户指定主题: {theme_hint}" if theme_hint else theme_block
     return f"""骨架结构:
-{{ "id":"kebab-id","title":"...","subtitle":"...(可选)","language":"zh-CN","audience":"...","theme":"cartesian|cobalt-grid|lab|slate",
+{{ "id":"kebab-id","title":"...","subtitle":"...(可选)","language":"zh-CN","audience":"...","theme":"...(从下方主题菜单里挑一个名字)",
   "tutor":{{"suggestions":["建议问题"],"kb":[{{"pattern":"关键词|同义词","answer":"本地应答(inline-md)"}}]}},
   "scenes":[
     {{"id":"cover","kind":"hero","notes":"讲者备注","blocks":[{{"id":"b_cover","type":"hero","intent":"封面：标题+一句副题","size":"xl"}}]}},
@@ -95,10 +108,10 @@ def _skeleton_spec(
 - **能用图表表达的定量对比/趋势/相关性优先用 chart（bar/line/area/scatter）而非 table**；纯名目罗列、无需比较数值大小或走势的数据才用 table。
 - **几个孤立的关键数字（一眼看大小，不是走势/分布）用 stats 数字卡**；有循环/层级/递进/网络等特殊结构关系的内容用 diagram（cycle/pyramid/staircase/snake/arrow-seq/circular-grid/connected-circles，按关系语义选，不要混用，简单 2-3 步线性流程仍用 flow 就够）。
 - **scene 可选 `transition`**（reveal 切场动效名，如 zoom/convex/none）：只在确有强调或大段落切换的意图时用，**不要每页都加**——多数页留空即可。
-- **交互按题材贴合度选**：可量化/可模拟/可交互的过程，该用 sim/widget/runnable 就**大胆用**，别因它"高级"或"重"而回避（互动恰恰是这套讲义相对静态 PPT 的价值所在）；但人文/艺术/历史/思辨这类**不贴题**的题材不要硬塞 sim。建议每课至少 1 个 quiz。{"用户点名的交互: " + wants if wants else ""}
+- **交互按题材贴合度选**：可量化/可模拟/可交互的过程，该用 sim/widget/runnable 就**大胆用**，别因它"高级"或"重"而回避（互动恰恰是这套讲义相对静态 PPT 的价值所在）；但**没有可量化/可模拟/可交互过程**的题材（纯叙述、纯观点、无参数可调）不要硬塞 sim——sim 里没有真参数可转，就是装饰不是互动。建议每课至少 1 个 quiz。{"用户点名的交互: " + wants if wants else ""}
 - **`sim` + `engine:"widget"`**：当一个过程要靠**实时动画/canvas 波形粒子/几何作图/任意鼠标交互**才讲得清（如排序·查找·图遍历的分步动画、单摆/阻尼振子等二阶运动、向量/边界作图）——注册表引擎(dynamics1d/searchCompare)与声明式 block 都表达不了——就在骨架里给该 sim 标 `engine:"widget"`，通常给 size `l`/`xl` 并独占一页。按"贴不贴题"判断：贴题就用、别套模板、也别回避。
 - **runnable**：学生需要**真正改代码、点运行、看结果**时用（如手写实现算法、调参看效果）；纯展示代码用 `code`。一份讲义可有多个 runnable（各自独立、贴题就用）。
-- **主题按题材气质与情绪选最贴的一个，别总默认 cobalt-grid/研究公报**（theme 只是视觉气质、不承诺实验环节；非可实验/可量化题材别选 lab）。{"用户指定主题: " + theme_hint if theme_hint else "可选：cartesian(暖沙克制人文) / cobalt-grid(钴蓝研究公报) / lab(暗仪表理工实验) / slate(冷灰工程编辑) / soft-editorial(奶油文学优雅,人文经典) / vellum(深靛暖黄学术,严肃研究) / grove(深绿人文,自然/思辨) / monochrome(象牙全墨极简,密集文本/考据) / signal(海军蓝哑金,机构稳重) / broadside(近黑烈焰橙,报头戏剧/宣言) / emerald-editorial(翡翠绿杂志封面,有设计感) / editorial-forest(奶油森绿,安静编辑) / bold-poster(近白火红海报大字,少字口号) / coral(近黑珊瑚,杂志粗体) / studio(近黑电黄,最响/发布会)。按课题气质挑一个最搭的"}。
+- **主题(theme)只是视觉气质、不承诺任何环节**。{theme_line}
 - **notes 是有料的讲者稿**：每页至少 2-3 句，写关键点展开/直觉/误区/衔接；禁没信息量的占位。
 - **AI 助教**：tutor.suggestions 给 3-4 个贴具体知识点的问题；tutor.kb 覆盖主要术语 4-6 条，pattern 用 `关键词|同义词`。
 {authoring_rules}"""
@@ -333,6 +346,7 @@ async def plan_lecture(
     extra: str = "",
     material: str = "",
     type_menu: list[tuple[str, str, list[str]]],
+    theme_menu: list[tuple[str, str]],
     authoring_rules: str,
     perspectives_n: int = 3,
     sections: bool = True,
@@ -352,7 +366,7 @@ async def plan_lecture(
         )
     sys = (
         "你是讲义(LectureDoc)总编排器。只输出一个 JSON 对象(骨架)，不要代码围栏、不要解释。\n"
-        + _skeleton_spec(pages, type_menu, theme, wants, authoring_rules)
+        + _skeleton_spec(pages, type_menu, theme, theme_menu, wants, authoring_rules)
     )
     user = (
         f"课题: {topic}"

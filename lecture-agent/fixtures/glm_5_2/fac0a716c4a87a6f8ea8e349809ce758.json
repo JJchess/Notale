@@ -1,0 +1,15 @@
+{
+  "purpose": "block:code",
+  "json_mode": true,
+  "messages": [
+    {
+      "role": "system",
+      "content": "你是 LectureDoc 单个 block 生成器。只输出**一个** block 的 JSON 对象，不要代码围栏、不要解释。\n硬规则(违反会被校验/打回)：\n- 正文克制，一页一个观点；lead 是一句陈述，不是\"本页将展示…\"这类引导语；不写\"让我们\"\"值得注意的是\"。\n- **具体优先，别空泛**：给真实的例子/数据/名称/引文，而非抽象概括——讲文学就引真实作品与词句、讲算法就给具体输入→输出和一个边界/错误例子、讲科学就带数值与单位。每个要点尽量落到一个可感的具体物；宁可少讲一点也要讲实。\n- **难点要有一个具象锚点**：全课最难的那个概念/机制，别停在抽象描述——就地补一个到位的具象锚点帮学生跨过门槛（一步步走一个最小例子 / 一个反例或错误示范 / 一个贴切类比 / 一张 flow 或 sim 图示）。一个足矣、别堆砌。\n- 文本字段只用 inline-md(**b**/*em*/`code`/$latex$)，禁原始 HTML 标签。\n- 公式一律 LaTeX，不用 Unicode 上下标。formula 块的 latex 填纯源码，**不要** $ / $$ 包裹（正文里的行内公式才用 $…$）。\n- 绝不写死颜色/字体(主题 token 负责视觉)。\n- 中文排版：中文句全角标点；汉字与拉丁/数字间空格(如 2026 年、AI 产品)；中文标签不做 uppercase。\n- 多个并列要点用 agenda(逐行等高)，别把两个不等高的块并排；compare 只用于左右天然对称内容。\n- sim 优先 dynamics1d/searchCompare；表达式只能用白名单标识符+数学函数。\n- **动效克制使用**：block 可选 `\"fragment\"`（`true` 或 reveal 类型名如 `\"fade-up\"`/`\"highlight-red\"`/`\"grow\"`），让整块相对本页其它块分步出现；list/agenda 的每个 item/row 也可以单独带 `\"fragment\"` 做行内分步揭示。仅用于确实需要\"边讲边现\"的多步骤讲解，**不要给每个 block/item 都打上**，一页里最多一组分步揭示。"
+    },
+    {
+      "role": "user",
+      "content": "生成一个 code block。\n契约:\n{ \"type\":\"code\", \"language\":\"python|javascript|text\", \"source\":\"静态展示代码(不可运行)\", \"filename\":\"可选\", \"caption\":\"可选\" }\n\n本讲义课题: 「神经网络的反向传播」——本 block 所有内容必须紧扣此课题，标题/副题/示例严禁写成其它主题。所在页: 框架底层：动态图、梯度缓存与显存。本 block 教学意图: PyTorch 代码片段：zero_grad → forward → loss → backward → step，标注 detach() 和 with torch.no_grad() 的用法。\n只输出该 block 的 JSON。"
+    }
+  ],
+  "response": "{\"type\":\"code\",\"language\":\"python\",\"filename\":\"train_step.py\",\"caption\":\"一次完整的反向传播训练步：zero_grad → forward → loss → backward → step，并标注 detach() 与 no_grad() 的显存边界\",\"source\":\"import torch\\nimport torch.nn as nn\\n\\nmodel = nn.Sequential(nn.Linear(784, 256), nn.ReLU(), nn.Linear(256, 10))\\noptim = torch.optim.SGD(model.parameters(), lr=1e-2)\\nloss_fn = nn.CrossEntropyLoss()\\n\\nx = torch.randn(64, 784)          # 一个 mini-batch\\ny = torch.randint(0, 10, (64,))   # 真实标签\\n\\n# 1) 清空上一步残留的 .grad —— 否则梯度会累加\\noptim.zero_grad()\\n\\n# 2) 前向：动态图被构建，中间激活被缓存以供反向使用\\nlogits = model(x)                 # requires_grad=True 的张量\\n\\n# 3) 计算损失：loss 是图中的叶节点之一\\nloss = loss_fn(logits, y)\\n\\n# 4) 反向传播：沿动态图反向遍历，逐层计算并累积 .grad\\nloss.backward()                   # 此刻释放中间激活，显存占用回落\\n\\n# 5) 用 .grad 更新参数\\noptim.step()\\n\\n# ---- 以下两种场景需要切断梯度流，避免无谓的显存开销 ----\\n\\n# (a) detach(): 把张量从计算图上摘下，后续运算不建图、不缓存\\nwith torch.no_grad():\\n    val_logits = model(x_val)     # 推理/评估：整段不追踪梯度\\n    val_loss = loss_fn(val_logits, y_val)\\n\\n# (b) detach(): 只对单个张量断开，常用于把网络输出喂给不参与训练的模块\\ntarget = model(x).detach()        # target 不再带 grad_fn\\n\"}"
+}

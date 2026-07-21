@@ -79,7 +79,9 @@ def build() -> dict[str, Any]:
             coverage[cap]["runs_used"] += 1
 
         model = rec.get("model") or "(unknown)"
-        theme = rec.get("theme") or "(unknown)"
+        # theme 顶层字段是 cfg 回声（显式指定时才有值）；未指定（如 genre_routing 故意留空
+        # 让模型自选）时回退到 profile.theme——那才是模型真实选中的值（profile_deck(doc) 写入）。
+        theme = rec.get("theme") or (rec.get("profile") or {}).get("theme") or "(unknown)"
         topic = rec.get("topic") or "(unknown)"
         _merge(by_model, model, counts)
         _merge(by_theme, theme, counts)

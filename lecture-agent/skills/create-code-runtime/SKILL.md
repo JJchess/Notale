@@ -15,7 +15,7 @@ metadata:
 Read `lecture-doc-schema` first (SPEC §3.2 runnable, §4 restricted expressions). This is the editable code cell: CodeMirror editor + language tabs + Run + stdout console + result plot, Python via offline Pyodide, JS native. Produce ONE runnable block; self-check with `node <lecture-doc-schema>/scripts/validate.mjs --block <file>`.
 
 ## Multiple runnables per deck
-A lecture can contain **more than one** runnable block — each gets its own editor/portal/Python namespace at render time (see knowledge-base 001: the CodeMirror-in-`transform:scale` workaround now supports N instances, one shared Pyodide interpreter + per-block namespace isolation). Prefer **at most one runnable per slide** (layout — the dedicated full-bleed treatment triggers when it's the sole block on its scene) and keep the whole deck to **roughly 0-2 runnables** — only add one where the student genuinely needs to edit-and-run, not for every code topic. Pure code display (no editing) is a static `code` block (create-content); a live but non-editable simulation is `sim` (create-sim).
+A lecture can contain **more than one** runnable block — each gets its own editor/portal/Python namespace at render time (see knowledge-base 001: the CodeMirror-in-`transform:scale` workaround now supports N instances, one shared Pyodide interpreter + per-block namespace isolation). Prefer **at most one runnable per slide** (layout — the dedicated full-bleed treatment triggers when it's the sole block on its scene). Use it whenever the student genuinely needs to edit-and-run — don't avoid it because it "feels heavy"; also don't reach for it where a static `code` block (create-content) or a live non-editable `sim` (create-sim) already fits better.
 
 ## Shape
 ```json

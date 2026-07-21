@@ -1,0 +1,553 @@
+{
+  "id": "gradient-descent-and-learning-rate",
+  "title": "梯度下降与学习率",
+  "subtitle": "从下山直觉到优化引擎",
+  "language": "zh-CN",
+  "audience": "机器学习初学者与算法工程师",
+  "theme": "lab",
+  "tutor": {
+    "suggestions": [
+      "为什么梯度指向上升方向，我们却要顺着负梯度走？",
+      "在峡谷地形中，把学习率设得足够小能解决震荡吗？",
+      "既然 Adam 能自适应调整学习率，为什么初始学习率设错还是会崩？",
+      "高维空间中为什么鞍点比局部极小值更普遍？"
+    ],
+    "kb": [
+      {
+        "pattern": "梯度|gradient",
+        "answer": "损失函数在某点的一阶导数（向量），指向该点处**上升最快**的方向。负梯度即最陡下降方向。"
+      },
+      {
+        "pattern": "学习率|learning rate|步长",
+        "answer": "控制每次参数更新步幅的超参数 $\\eta$。并非绝对距离，而是梯度模长的缩放因子。"
+      },
+      {
+        "pattern": "Lipschitz 连续|Hessian|学习率上界",
+        "answer": "保证梯度下降收敛的理论约束：$\\eta < 2/\\lambda_{max}$，其中 $\\lambda_{max}$ 为 Hessian 矩阵最大特征值。"
+      },
+      {
+        "pattern": "鞍点|saddle point",
+        "answer": "梯度为 0 但 Hessian 矩阵特征值有正有负的驻点，在高位空间中远比局部极小值常见。"
+      },
+      {
+        "pattern": "病态曲率|峡谷|之字形",
+        "answer": "损失曲面在不同维度曲率差异极大，导致梯度下降在陡峭维震荡、在平缓维停滞，需动量法缓解。"
+      }
+    ]
+  },
+  "scenes": [
+    {
+      "id": "cover",
+      "kind": "hero",
+      "notes": "梯度下降的本质是“蒙眼下山”的直觉，而学习率决定了你每一步迈多大，千万别误以为步子越大收敛越快，步子太大反而容易跨过谷底甚至发散。为了真正理解这个下山过程，我们下一页先来看看我们要下的这座“山”——损失地形——到底长什么样。",
+      "blocks": [
+        {
+          "type": "hero",
+          "title": [
+            "梯度下降与学习率",
+            "从下山直觉到优化引擎"
+          ],
+          "tag": "优化方法 · 第一讲",
+          "sub": "在 $L(w)=\\frac{1}{2}(w-3)^2$ 上，学习率 $\\eta=0.1$ 时约 50 步收敛，$\\eta=2.1$ 时则发散到无穷。",
+          "facts": "学习率是深度学习中最重要却最难调的超参数之一——Yoshua Bengio, 2012",
+          "hint": "本讲从一维抛物线最小化出发，建立对步长与收敛的直觉。",
+          "id": "b_cover"
+        }
+      ]
+    },
+    {
+      "id": "intuition-terrain",
+      "kind": "content",
+      "eyebrow": "直觉建立",
+      "headline": "损失地形与最陡下降",
+      "lead": "梯度的物理意义是坡度，负梯度指向最陡的下山方向。",
+      "notes": "想象你蒙着眼睛站在这个损失地形上，梯度并不指向全局最低点，它只告诉你脚下最陡的上升方向，所以必须向负梯度方向走才能最速下山。同学们常误以为顺着梯度就能直达终点，却忽略了局部极小值和鞍点的陷阱；既然知道了下山方向，那每一步究竟该迈多大？这就引出了下一页关于学习率如何控制参数更新步长的核心问题。",
+      "blocks": [
+        {
+          "type": "diagram",
+          "diagramType": "connected-circles",
+          "nodes": [
+            {
+              "title": "等高线 $L(\\mathbf{w})=c$",
+              "sub": "同心圆，如 $c=4,\\;1,\\;0.25$"
+            },
+            {
+              "title": "梯度 $\\nabla L$",
+              "sub": "处处正交于等高线，指向 $L$ 增大方向"
+            },
+            {
+              "title": "负梯度 $-\\nabla L$",
+              "sub": "指向圆心 $\\mathbf{w}^*$，即最陡下降方向"
+            },
+            {
+              "title": "学习率 $\\eta$",
+              "sub": "步长系数，如 $\\eta=0.1$"
+            },
+            {
+              "title": "更新 $\\mathbf{w}_{t+1}=\\mathbf{w}_t-\\eta\\nabla L$",
+              "sub": "$(2,3)\\to(1.6,2.4)$，向圆心靠近"
+            }
+          ],
+          "id": "b_terrain"
+        },
+        {
+          "type": "callout",
+          "label": "辨析",
+          "text": "梯度 $\\nabla L$ 指向损失上升最陡方向，取负才是下山方向；学习率 $\\eta$ 缩放的是梯度向量，而非直接决定移动的绝对距离。",
+          "id": "b_why_neg"
+        }
+      ],
+      "layout": {
+        "kind": "compose",
+        "preset": "sidenote"
+      }
+    },
+    {
+      "id": "lr-and-update",
+      "kind": "content",
+      "eyebrow": "核心机制",
+      "headline": "参数更新与学习率效应",
+      "lead": "新位置 = 原位置 - 学习率 × 梯度，学习率的大小直接决定收敛的命运。",
+      "transition": "zoom",
+      "notes": "承接上页找到的最陡方向，本页核心在于“迈出多大步”，即学习率 η 的缩放效应；同学们常误以为梯度绝对值决定了步长，其实梯度只定方向，步幅由 η 全权掌控。右侧模拟直观展示了 η 过大导致越过谷底甚至发散、过小则停滞不前的困境。究竟多大的步长才能保证收敛？我们下一页将通过一阶泰勒展开从数学上给出严格的上界证明。",
+      "blocks": [
+        {
+          "type": "formula",
+          "latex": "\\theta_{t+1} = \\theta_t - \\eta \\nabla L(\\theta_t)",
+          "caption": "参数沿梯度反方向更新。以 $L(\\theta) = \\theta^2$ 为例：在 $\\theta_t = 3$ 处梯度为 $6$；若 $\\eta = 0.1$，则 $\\theta_{t+1} = 3 - 0.1 \\times 6 = 2.4$（稳步逼近谷底）；若 $\\eta = 1$，则 $\\theta_{t+1} = -3$（越过极小值发生震荡）。",
+          "id": "b_update_formula"
+        },
+        {
+          "type": "sim",
+          "engine": "widget",
+          "html": "<style>\n  .widget {\n    background: var(--bg2);\n    border-radius: var(--radius, 12px);\n    padding: 20px;\n    color: var(--ink);\n    display: flex;\n    flex-direction: column;\n    height: 100%;\n    box-sizing: border-box;\n    font-family: var(--sans);\n  }\n  svg#stage {\n    width: 100%;\n    flex: 1;\n    min-height: 0;\n    cursor: crosshair;\n    background: var(--card);\n    border-radius: var(--radius, 8px);\n  }\n  .controls {\n    display: flex;\n    align-items: center;\n    gap: 12px;\n    margin-top: 16px;\n  }\n  label {\n    font-size: 12px;\n    letter-spacing: .08em;\n    text-transform: uppercase;\n    color: var(--text2);\n  }\n  input[type=range] {\n    flex: 1;\n    accent-color: var(--accent);\n  }\n  .val {\n    font-family: var(--mono);\n    font-variant-numeric: tabular-nums;\n    font-size: 14px;\n    color: var(--accent);\n    min-width: 36px;\n    text-align: right;\n  }\n  button {\n    background: var(--card);\n    border: 1px solid var(--line);\n    color: var(--ink);\n    padding: 6px 16px;\n    border-radius: var(--radius, 6px);\n    cursor: pointer;\n    font-family: var(--sans);\n    font-size: 13px;\n    transition: all 120ms linear;\n  }\n  button:hover {\n    background: var(--accent);\n    color: var(--bg);\n    border-color: var(--accent);\n  }\n  button:active {\n    transform: scale(0.95);\n  }\n</style>\n<div class=\"widget\">\n  <svg id=\"stage\" viewBox=\"0 0 680 360\" preserveAspectRatio=\"xMidYMid meet\">\n    <defs>\n      <filter id=\"glow\">\n        <feGaussianBlur stdDeviation=\"3\" result=\"coloredBlur\"/>\n        <feMerge>\n          <feMergeNode in=\"coloredBlur\"/>\n          <feMergeNode in=\"SourceGraphic\"/>\n        </feMerge>\n      </filter>\n      <marker id=\"arrowhead\" markerWidth=\"8\" markerHeight=\"6\" refX=\"8\" refY=\"3\" orient=\"auto\">\n        <polygon points=\"0 0, 8 3, 0 6\" fill=\"var(--accent)\" />\n      </marker>\n    </defs>\n    <g id=\"ticks\"></g>\n    <path id=\"curve\" fill=\"none\" stroke=\"var(--line)\" stroke-width=\"1.5\" vector-effect=\"non-scaling-stroke\" />\n    <line id=\"crossX\" stroke=\"var(--line)\" stroke-width=\"1\" stroke-dasharray=\"4 4\" vector-effect=\"non-scaling-stroke\" />\n    <line id=\"crossY\" stroke=\"var(--line)\" stroke-width=\"1\" stroke-dasharray=\"4 4\" vector-effect=\"non-scaling-stroke\" />\n    <path id=\"trail\" fill=\"none\" stroke=\"var(--accent)\" stroke-width=\"2\" vector-effect=\"non-scaling-stroke\" filter=\"url(#glow)\" />\n    <line id=\"gradArrow\" stroke=\"var(--accent)\" stroke-width=\"2\" marker-end=\"url(#arrowhead)\" vector-effect=\"non-scaling-stroke\" />\n    <circle id=\"ball\" r=\"6\" fill=\"var(--accent)\" filter=\"url(#glow)\" />\n    <text x=\"16\" y=\"24\" font-family=\"var(--mono)\" font-size=\"11\" fill=\"var(--text2)\">\n      step <tspan id=\"stepLabel\" fill=\"var(--ink)\">3</tspan>\n      <tspan dx=\"12\">lr </tspan><tspan id=\"lrLabel\" fill=\"var(--ink)\">0.30</tspan>\n      <tspan dx=\"12\">loss </tspan><tspan id=\"lossLabel\" fill=\"var(--ink)\">0.72</tspan>\n    </text>\n    <text id=\"statusLabel\" x=\"664\" y=\"24\" text-anchor=\"end\" font-family=\"var(--mono)\" font-size=\"11\" fill=\"var(--accent)\">收敛中</text>\n  </svg>\n  <div class=\"controls\">\n    <label for=\"lr\">学习率</label>\n    <input type=\"range\" id=\"lr\" min=\"0.01\" max=\"2.0\" step=\"0.01\" value=\"0.3\">\n    <span class=\"val\" id=\"lrReadout\">0.30</span>\n    <button id=\"playpause\">暂停</button>\n    <button id=\"reset\">重置</button>\n  </div>\n</div>\n<script>\n  const stage = document.getElementById('stage');\n  const curve = document.getElementById('curve');\n  const trail = document.getElementById('trail');\n  const gradArrow = document.getElementById('gradArrow');\n  const ball = document.getElementById('ball');\n  const crossX = document.getElementById('crossX');\n  const crossY = document.getElementById('crossY');\n  const stepLabel = document.getElementById('stepLabel');\n  const lrLabel = document.getElementById('lrLabel');\n  const lossLabel = document.getElementById('lossLabel');\n  const statusLabel = document.getElementById('statusLabel');\n  const lrSlider = document.getElementById('lr');\n  const lrReadout = document.getElementById('lrReadout');\n  const playpause = document.getElementById('playpause');\n  const resetBtn = document.getElementById('reset');\n  const ticksGroup = document.getElementById('ticks');\n\n  const loss = x => 0.5 * (x - 3) * (x - 3);\n  const sx = x => 40 + x * 100;\n  const sy = y => 320 - y * 60;\n\n  const state = {\n    lr: 0.3,\n    x: 4.2,\n    step: 3,\n    path: [{x:5.5, y:loss(5.5)}, {x:4.8, y:loss(4.8)}, {x:4.2, y:loss(4.2)}],\n    running: true\n  };\n\n  function init() {\n    let d = `M ${sx(0)} ${sy(loss(0))}`;\n    for (let i = 1; i <= 60; i++) {\n      const xi = 6 * i / 60;\n      d += ` L ${sx(xi)} ${sy(loss(xi))}`;\n    }\n    curve.setAttribute('d', d);\n\n    let ticksHTML = '';\n    for (let i = 0; i <= 6; i++) {\n      const x = sx(i);\n      ticksHTML += `<line x1=\"${x}\" y1=\"320\" x2=\"${x}\" y2=\"326\" stroke=\"var(--line)\" stroke-width=\"1\" vector-effect=\"non-scaling-stroke\"/>`;\n      if (i > 0 && i < 6) {\n        ticksHTML += `<text x=\"${x}\" y=\"342\" text-anchor=\"middle\" fill=\"var(--text2)\" font-size=\"10\" font-family=\"var(--mono)\">${i}</text>`;\n      }\n    }\n    for (let i = 0; i <= 4; i++) {\n      const y = sy(i);\n      ticksHTML += `<line x1=\"34\" y1=\"${y}\" x2=\"40\" y2=\"${y}\" stroke=\"var(--line)\" stroke-width=\"1\" vector-effect=\"non-scaling-stroke\"/>`;\n      if (i > 0) {\n        ticksHTML += `<text x=\"30\" y=\"${y + 4}\" text-anchor=\"end\" fill=\"var(--text2)\" font-size=\"10\" font-family=\"var(--mono)\">${i}</text>`;\n      }\n    }\n    ticksGroup.innerHTML = ticksHTML;\n\n    update();\n  }\n\n  function update() {\n    const x = state.x;\n    const y = loss(x);\n    const grad = x - 3;\n\n    ball.setAttribute('cx', sx(x));\n    ball.setAttribute('cy', sy(y));\n\n    let d = `M ${sx(state.path[0].x)} ${sy(state.path[0].y)}`;\n    for (let i = 1; i < state.path.length; i++) {\n      d += ` L ${sx(state.path[i].x)} ${sy(state.path[i].y)}`;\n    }\n    trail.setAttribute('d', d);\n\n    const nextX = x - state.lr * grad;\n    const nextY = loss(nextX);\n    gradArrow.setAttribute('x1', sx(x));\n    gradArrow.setAttribute('y1', sy(y));\n    gradArrow.setAttribute('x2', sx(nextX));\n    gradArrow.setAttribute('y2', sy(nextY));\n\n    crossX.setAttribute('x1', 40);\n    crossX.setAttribute('x2', sx(x));\n    crossX.setAttribute('y1', sy(y));\n    crossX.setAttribute('y2', sy(y));\n\n    crossY.setAttribute('x1', sx(x));\n    crossY.setAttribute('x2', sx(x));\n    crossY.setAttribute('y1', sy(y));\n    crossY.setAttribute('y2', 320);\n\n    stepLabel.textContent = state.step;\n    lrLabel.textContent = state.lr.toFixed(2);\n    lossLabel.textContent = y.toFixed(2);\n\n    let status = '收敛中';\n    if (state.path.length >= 2) {\n      const last = state.path[state.path.length - 1];\n      const prev = state.path[state.path.length - 2];\n      if ((last.x - 3) * (prev.x - 3) < 0) {\n        status = '震荡';\n      }\n      if (last.y > prev.y + 0.01) {\n        status = '发散';\n      }\n    }\n    if (x < 0 || x > 6) status = '发散';\n    statusLabel.textContent = status;\n  }\n\n  function step() {\n    if (state.x < 0 || state.x > 6) {\n      state.running = false;\n      playpause.textContent = '播放';\n      return;\n    }\n    if (state.step >= 120) {\n      state.running = false;\n      playpause.textContent = '播放';\n      return;\n    }\n\n    const grad = state.x - 3;\n    const nextX = state.x - state.lr * grad;\n    const nextY = loss(nextX);\n\n    state.x = nextX;\n    state.step++;\n    state.path.push({ x: nextX, y: nextY });\n\n    update();\n  }\n\n  lrSlider.addEventListener('input', e => {\n    state.lr = parseFloat(e.target.value);\n    lrReadout.textContent = state.lr.toFixed(2);\n    update();\n  });\n\n  resetBtn.addEventListener('click', () => {\n    state.x = 5.5;\n    state.step = 0;\n    state.path = [{ x: 5.5, y: loss(5.5) }];\n    state.running = true;\n    playpause.textContent = '暂停';\n    update();\n  });\n\n  playpause.addEventListener('click', () => {\n    state.running = !state.running;\n    playpause.textContent = state.running ? '暂停' : '播放';\n  });\n\n  stage.addEventListener('click', e => {\n    const rect = stage.getBoundingClientRect();\n    const svgX = (e.clientX - rect.left) / rect.width * 680;\n    const dataX = (svgX - 40) / 100;\n    if (dataX < 0 || dataX > 6) return;\n    const clampedX = Math.max(0.1, Math.min(5.9, dataX));\n    state.x = clampedX;\n    state.step = 0;\n    state.path = [{ x: clampedX, y: loss(clampedX) }];\n    state.running = true;\n    playpause.textContent = '暂停';\n    update();\n  });\n\n  let lastTime = 0;\n  function animate(time) {\n    if (state.running) {\n      if (time - lastTime > 400) {\n        step();\n        lastTime = time;\n      }\n    } else {\n      lastTime = time;\n    }\n    requestAnimationFrame(animate);\n  }\n\n  init();\n  requestAnimationFrame(animate);\n</script>",
+          "id": "b_lr_sim"
+        }
+      ],
+      "layout": {
+        "kind": "split",
+        "anchor": [
+          "b_update_formula"
+        ],
+        "ratio": 0.4
+      }
+    },
+    {
+      "id": "theory-constraint",
+      "kind": "content",
+      "eyebrow": "理论约束",
+      "headline": "一阶泰勒展开与收敛上界",
+      "lead": "梯度下降的局部最优性源于一阶近似，学习率存在严格的理论上限。",
+      "notes": "承接上一页对学习率效应的直观感受，本页通过一阶泰勒展开将局部曲面近似为直线，从而严格推导出保证损失下降的学习率上界。同学们常误以为该展开是全局精确的，但超过上界意味着步长跨出了局部近似的有效区域，必然导致发散；而即便学习率满足此上界，面对复杂的非凸地形依然不够，下一页我们将探讨峡谷震荡与鞍点陷阱。",
+      "blocks": [
+        {
+          "type": "formula",
+          "latex": "L(\\theta + \\Delta\\theta) \\approx L(\\theta) + \\nabla L(\\theta)^\\top \\Delta\\theta",
+          "caption": "损失函数在参数 $\\theta$ 处的一阶泰勒近似，揭示了梯度 $\\nabla L(\\theta)$ 与步长 $\\Delta\\theta$ 对损失变化的线性贡献",
+          "id": "b_taylor"
+        },
+        {
+          "type": "list",
+          "items": [
+            {
+              "lead": "一阶泰勒上界",
+              "text": "$f(x+\\eta d) \\leq f(x) + \\eta \\nabla f(x)^T d + \\frac{L\\eta^2}{2}\\|d\\|^2$，其中 $L$ 为梯度 Lipschitz 常数。右端是 $d$ 的二次上界，最小化它即得下降方向。",
+              "fragment": "fade-up",
+              "icon": "trending-down"
+            },
+            {
+              "lead": "负梯度最优",
+              "text": "由 Cauchy–Schwarz 不等式 $\\nabla f(x)^T d \\geq -\\|\\nabla f(x)\\|\\cdot\\|d\\|$，等号当 $d \\propto -\\nabla f(x)$ 成立，故单位下降最快方向为 $d^* = -\\nabla f(x)/\\|\\nabla f(x)\\|$。",
+              "fragment": "fade-up",
+              "icon": "trending-down"
+            },
+            {
+              "lead": "最优步长",
+              "text": "代入 $d=-\\nabla f(x)$ 后对 $\\eta$ 求极小，得 $\\eta^*=1/L$，单步保证 $f(x_{k+1}) \\leq f(x_k) - \\frac{1}{2L}\\|\\nabla f(x_k)\\|^2$。",
+              "fragment": "fade-up",
+              "icon": "check"
+            },
+            {
+              "lead": "学习率上界",
+              "text": "对二次 $f(x)=\\frac{1}{2}x^T\\!Ax$，迭代矩阵 $I-\\eta A$ 谱半径 $<1$ 要求 $\\eta < 2/\\lambda_{max}$。例：$A=\\mathrm{diag}(1,100)$ 时 $\\eta<0.02$，取 $\\eta=0.03$ 即发散。",
+              "icon": "check"
+            },
+            {
+              "lead": "凸收敛率",
+              "text": "凸函数下 $f(x_k)-f^* \\leq \\frac{\\|x_0-x^*\\|^2}{2\\eta k}$，即 $O(1/k)$ 亚线性收敛。",
+              "icon": "trending-down"
+            },
+            {
+              "lead": "强凸收敛率",
+              "text": "$\\mu$-强凸时 $f(x_k)-f^* \\leq (1-\\eta\\mu)^k[f(x_0)-f^*]$，取 $\\eta=1/L$ 得 $O((1-\\mu/L)^k)$ 线性收敛。",
+              "icon": "clock"
+            }
+          ],
+          "id": "b_lr_upper_bound"
+        },
+        {
+          "type": "callout",
+          "label": "理论≠实际",
+          "text": "收敛上界 $\\rho < 1$ 仅对一阶泰勒近似 $L(x)$ 成立，截断误差会导致真实损失 $f(x)$ 在步长 $\\eta$ 偏大时反而上升。",
+          "id": "b_approx_error"
+        }
+      ],
+      "layout": {
+        "kind": "index",
+        "steps": [
+          {
+            "label": "一阶泰勒展开",
+            "blockIds": [
+              "b_taylor"
+            ]
+          },
+          {
+            "label": "推导负梯度最优性",
+            "blockIds": [
+              "b_lr_upper_bound"
+            ]
+          },
+          {
+            "label": "误区",
+            "blockIds": [
+              "b_approx_error"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "pathology-saddle",
+      "kind": "content",
+      "eyebrow": "反直觉现象",
+      "headline": "峡谷震荡与鞍点陷阱",
+      "lead": "真实损失地形并非完美碗状，病态曲率与高维鞍点才是常态。",
+      "notes": "上一页的收敛上界揭示了曲率不一致时的困境，这具体表现为本页的“峡谷震荡”（梯度在陡壁间横跳而非沿谷底前进）和“鞍点陷阱”（梯度近乎为零导致停滞）。大家常误以为鞍点就是局部极小值，其实它只是某些维度的平缓区；正是这两种一阶法难以逾越的痛点，直接催生了下一页对自适应学习率算法的需求。",
+      "blocks": [
+        {
+          "type": "diagram",
+          "diagramType": "snake",
+          "nodes": [
+            {
+              "title": "步 0",
+              "sub": "$x_1$=+2.0 $x_2$=0.00 右壁"
+            },
+            {
+              "title": "步 1",
+              "sub": "$x_1$=−1.8 $x_2$=0.10 左壁"
+            },
+            {
+              "title": "步 2",
+              "sub": "$x_1$=+1.6 $x_2$=0.20 右壁"
+            },
+            {
+              "title": "步 3",
+              "sub": "$x_1$=−1.4 $x_2$=0.30 左壁"
+            },
+            {
+              "title": "步 4",
+              "sub": "$x_1$=+1.2 $x_2$=0.40 右壁"
+            },
+            {
+              "title": "步 5",
+              "sub": "$x_1$=−1.0 $x_2$=0.50 左壁"
+            },
+            {
+              "title": "步 6",
+              "sub": "$x_1$=+0.8 $x_2$=0.60 右壁"
+            },
+            {
+              "title": "步 7",
+              "sub": "$x_1$=−0.6 $x_2$=0.70 左壁"
+            }
+          ],
+          "id": "b_canyon"
+        },
+        {
+          "type": "stats",
+          "items": [
+            {
+              "value": ">90%",
+              "label": "高维驻点中鞍点占比",
+              "delta": "Dauphin et al. 2014"
+            },
+            {
+              "value": "<10%",
+              "label": "局部极小值占比"
+            },
+            {
+              "value": "$2.5 \\times 10^7$",
+              "label": "ResNet-50 参数维度",
+              "delta": "维度推高鞍点密度"
+            }
+          ],
+          "id": "b_saddle_stats"
+        },
+        {
+          "type": "callout",
+          "label": "鞍点对策",
+          "text": "严格鞍点的 Hessian 含负特征值，梯度下降沿负曲率方向自然滑落；退化鞍点负曲率消失，须靠 SGD 噪声或动量积累方能脱困。",
+          "id": "b_saddle_note"
+        }
+      ],
+      "layout": {
+        "kind": "compose",
+        "areas": [
+          {
+            "blockIds": [
+              "b_canyon"
+            ],
+            "col": [
+              1,
+              9
+            ]
+          },
+          {
+            "blockIds": [
+              "b_saddle_stats"
+            ],
+            "col": [
+              1,
+              7
+            ]
+          },
+          {
+            "blockIds": [
+              "b_saddle_note"
+            ],
+            "col": [
+              7,
+              11
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "adaptive-optim",
+      "kind": "content",
+      "eyebrow": "工程演进",
+      "headline": "从 SGD 到 Adam：自适应学习率",
+      "lead": "不同参数维度需要不同的步长，自适应优化器通过历史梯度缩放学习率。",
+      "notes": "刚才提到的峡谷震荡问题，Adam 通过引入梯度的二阶矩来“抹平”各维度的差异，实现陡峭方向缓步走、平缓方向大步迈的自适应效果。但千万别陷入“Adam 免调参”的误区，它的基础学习率依然决定生死，这就自然引出下一页关于预热、衰减与缩放规则的探讨。",
+      "blocks": [
+        {
+          "type": "flow",
+          "nodes": [
+            {
+              "title": "SGD",
+              "sub": "固定学习率，在 $y=100x_1^2+x_2^2$ 峡谷地形中沿陡壁剧烈震荡"
+            },
+            {
+              "title": "+ Momentum",
+              "sub": "累加历史梯度指数加权，像带惯性的小球冲过峡谷震荡区"
+            },
+            {
+              "title": "+ RMSprop",
+              "sub": "除以梯度平方累积 $E[g^2]$，陡峭维度（$x_1$）自动小步，平缓维度大步"
+            },
+            {
+              "title": "Adam",
+              "sub": "一阶动量定方向 + 二阶动量调步长，加偏置校正防冷启动偏差"
+            }
+          ],
+          "id": "b_opt_flow"
+        },
+        {
+          "type": "compare",
+          "left": {
+            "caption": "SGD：步长正比于梯度",
+            "block": {
+              "type": "list",
+              "items": [
+                {
+                  "text": "罕见特征在 1000 步中仅出现 2 次，每次梯度 $g=0.5$"
+                },
+                {
+                  "text": "单步更新 $\\Delta w = \\eta g = 0.1 \\times 0.5 = 0.05$"
+                },
+                {
+                  "text": "2 次累计位移仅 $0.1$"
+                },
+                {
+                  "text": "频繁特征每步都出现，累计位移 $\\approx 50$"
+                },
+                {
+                  "text": "稀疏权重几乎停滞，被高频特征淹没"
+                }
+              ]
+            }
+          },
+          "right": {
+            "caption": "Adam：步长被梯度平方根归一化",
+            "block": {
+              "type": "list",
+              "items": [
+                {
+                  "text": "同一罕见特征，Adam 维护二阶矩 $v \\approx g^2 = 0.25$"
+                },
+                {
+                  "text": "单步更新 $\\Delta w \\approx \\frac{\\eta g}{\\sqrt{v}+\\epsilon} = \\frac{0.1 \\times 0.5}{0.5} = 0.1$"
+                },
+                {
+                  "text": "2 次累计位移 $\\approx 0.2$，是 SGD 的 2 倍"
+                },
+                {
+                  "text": "有效步长被归一化为 $\\approx \\eta$，与梯度绝对值无关"
+                },
+                {
+                  "text": "罕见特征获得自适应放大，不被淹没"
+                }
+              ]
+            }
+          },
+          "id": "b_sparse_compare"
+        },
+        {
+          "type": "callout",
+          "label": "反直觉",
+          "text": "Adam 的自适应仅调整参数间的**相对步长**（除以 $\\sqrt{v_t}$），全局 $\\alpha$ 仍掌控**绝对尺度**——若设 $\\alpha=1.0$，步长依然过大导致损失发散。",
+          "id": "b_adam_warning"
+        }
+      ],
+      "layout": {
+        "kind": "index",
+        "steps": [
+          {
+            "label": "优化器演进",
+            "blockIds": [
+              "b_opt_flow"
+            ]
+          },
+          {
+            "label": "稀疏特征更新对比",
+            "blockIds": [
+              "b_sparse_compare"
+            ]
+          },
+          {
+            "label": "反直觉",
+            "blockIds": [
+              "b_adam_warning"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "lr-schedule",
+      "kind": "content",
+      "eyebrow": "调参实践",
+      "headline": "预热、衰减与缩放规则",
+      "lead": "动态调整学习率是工程落地的关键，预热防发散，衰减促收敛。",
+      "notes": "上一页我们讲到Adam等自适应优化器，但即便有了自适应机制，训练初期二阶矩估计偏差大，仍需Warmup防止发散；而后期接近最优解时曲率变化，必须靠衰减来避免震荡。大家常犯的误区是盲目套用“线性缩放规则”——即批次大小翻倍学习率就翻倍，实际上这仅在批次大小适中时成立，过大时会导致泛化性能下降。理解了这些动态调度策略后，我们接下来通过随堂检验，看看大家对学习率的全局把控是否到位。",
+      "blocks": [
+        {
+          "type": "chart",
+          "chartType": "line",
+          "categories": [
+            "0",
+            "2",
+            "4",
+            "5",
+            "10",
+            "15",
+            "20",
+            "25",
+            "30",
+            "35",
+            "40",
+            "45",
+            "50"
+          ],
+          "series": [
+            {
+              "name": "学习率",
+              "values": [
+                0.0,
+                0.4,
+                0.8,
+                1.0,
+                0.94,
+                0.75,
+                0.5,
+                0.25,
+                0.09,
+                0.02,
+                0.0,
+                0.0,
+                0.0
+              ]
+            }
+          ],
+          "xLabel": "训练轮次（Epoch）",
+          "yLabel": "学习率（$\\times 10^{-3}$）",
+          "caption": "Warmup 阶段（0-5 Epoch）线性爬升避免初期梯度震荡，随后 Cosine Decay 阶段平滑衰减至零以稳定收敛。",
+          "id": "b_lr_curve"
+        },
+        {
+          "type": "list",
+          "items": [
+            {
+              "lead": "线性缩放规则",
+              "text": "Krizhevsky 2014：BS 从 256 翻到 512，η 同步从 0.1 翻到 0.2，即 $\\eta \\propto \\text{BS}$。"
+            },
+            {
+              "lead": "为何成立",
+              "text": "大 BS 下梯度估计方差 $\\sigma^2/N$ 随 $N$ 增大而减小，噪声小了可以迈大步。",
+              "icon": "trending-up"
+            },
+            {
+              "lead": "失效边界",
+              "text": "Goyal et al. 2017 在 ImageNet 上 BS=8192 时即使按线性缩放 η，top-1 精度仍掉约 2-3 个点。",
+              "fragment": "fade-up",
+              "icon": "gauge"
+            },
+            {
+              "lead": "修正",
+              "text": "前几个 epoch 用 warmup 线性升 η，避免初期大 η 冲毁模型。",
+              "fragment": "fade-up",
+              "icon": "user"
+            }
+          ],
+          "id": "b_scaling_rule"
+        }
+      ]
+    },
+    {
+      "id": "quiz",
+      "kind": "quiz",
+      "headline": "随堂检验",
+      "notes": "刚才我们探讨了预热与衰减策略，这个随堂测验旨在检验大家是否真正建立了“动态调整学习率”的直觉，而非死记硬背公式。大家常犯的误区是总想寻找一个万能的静态学习率，但实际训练中损失曲面的复杂度要求我们必须随进程灵活缩放。完成测验后，本节内容暂告段落，而这些调度规则将是你后续理解 Adam 等自适应优化器内部机制的基石。",
+      "blocks": [
+        {
+          "type": "quiz",
+          "kind": "objective",
+          "stem": "考虑峡谷形损失 $L(w_1,w_2)=100w_1^2+w_2^2$，在点 $(1,1)$ 处梯度为 $(200,2)$。关于学习率选择与优化器行为，下列说法正确的是：",
+          "choices": [
+            {
+              "key": "a",
+              "text": "用固定学习率 SGD，只要学习率足够小，两个方向都能快速收敛"
+            },
+            {
+              "key": "b",
+              "text": "Adam 对每个参数维度自适应缩放梯度，能完全消除峡谷地形的学习率困境"
+            },
+            {
+              "key": "c",
+              "text": "由 $w_1$ 方向的二阶泰勒展开，SGD 需 $\\eta<1/100$ 才不发散，此时 $w_2$ 方向每步仅移动约 $0.02$，收敛极慢"
+            },
+            {
+              "key": "d",
+              "text": "动量法必然加剧峡谷短轴方向的振荡，峡谷地形中应完全避免使用动量"
+            }
+          ],
+          "answer": "c",
+          "explain": "正确。对 $w_1$ 方向做二阶泰勒近似得局部曲率 $200$，一步更新后 $w_1'=1-200\\eta$，要求 $|1-200\\eta|<1$ 即 $\\eta<1/100$。此时 $w_2$ 方向每步移动 $2\\eta\\approx0.02$，约 $50$ 步才走一个单位——这就是峡谷地形学习率困境的本质。干扰项 b 最具迷惑性：Adam 确实通过二阶矩估计逐维缩放梯度来缓解各向异性，但无法'完全消除'困境——二阶矩是历史梯度的指数移动平均，初始阶段估计不准，且基础学习率仍需人工设定，极端各向异性下仍可能发散或停滞。",
+          "id": "bq"
+        }
+      ]
+    }
+  ],
+  "schemaVersion": "1.0"
+}

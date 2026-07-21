@@ -24,6 +24,7 @@ from ..domain.generation import (
 from ..domain.media import attach_icons
 from ..domain.planning import assign_layouts, plan_lecture
 from ..domain.skills import AUTHORING_RULES, SkillEntry, load_skills, plan_menu
+from ..domain.themes import theme_menu
 from ..domain.tools import CalcTool
 from ..ports.llm import LLMClient
 from ..ports.media import ImageFinder, ImageGenerator
@@ -197,6 +198,7 @@ async def generate_lecture(
         extra=extra,
         material=mat,
         type_menu=plan_menu(registry),
+        theme_menu=theme_menu(),
         authoring_rules=AUTHORING_RULES,
         perspectives_n=opts.plan_perspectives,
         sections=opts.sections,

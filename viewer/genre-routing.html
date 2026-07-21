@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>genre_routing 试验台 · LectureDoc</title>
+<style>
+  :root {
+    --bg: #0e1116; --panel: #171b22; --panel2: #1e242e; --line: #2a313c;
+    --fg: #e6edf3; --dim: #9aa7b4; --accent: #4c8dff; --ok: #3fb950; --bad: #f85149; --warn: #d29922;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg);
+    font: 14px/1.5 -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif; }
+  #app { display: flex; flex-direction: column; height: 100vh; }
+  header { display: flex; align-items: center; gap: 16px; padding: 10px 16px;
+    background: var(--panel); border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+  header h1 { font-size: 15px; margin: 0; font-weight: 600; letter-spacing: .3px; }
+  header a { color: var(--dim); text-decoration: none; font-size: 12px; }
+  header a:hover { color: var(--accent); }
+  .spacer { flex: 1; }
+  #meta-line { font-size: 12px; color: var(--dim); }
+  main { flex: 1; display: flex; min-height: 0; }
+  aside { width: 260px; background: var(--panel); border-right: 1px solid var(--line);
+    padding: 12px; overflow: auto; flex-shrink: 0; }
+  aside.right { border-right: none; border-left: 1px solid var(--line); width: 300px; }
+
+  .grp { margin-bottom: 16px; }
+  .grp h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .6px; color: var(--dim);
+    margin: 0 0 8px; display: flex; justify-content: space-between; }
+  .grp h2 .hint { font-weight: 400; text-transform: none; letter-spacing: 0; opacity: .8; }
+  .item { display: flex; align-items: center; gap: 8px; padding: 7px 8px; border-radius: 6px;
+    cursor: pointer; font-size: 12.5px; border: 1px solid transparent; }
+  .item:hover { background: var(--panel2); }
+  .item.sel { background: #21375f; border-color: var(--accent); }
+  .item .badge { flex-shrink: 0; width: 14px; text-align: center; }
+  .item.status-ok .badge { color: var(--ok); }
+  .item.status-empty .badge { color: var(--warn); }
+  .item.status-failed .badge { color: var(--bad); }
+  .item .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .item .hits { flex-shrink: 0; font-size: 11px; color: var(--dim); font-variant-numeric: tabular-nums; }
+  .item.sel .hits { color: #cfe0ff; }
+  .item.status-failed, .item.status-empty { opacity: .75; cursor: default; }
+
+  .center { flex: 1; display: flex; flex-direction: column; min-width: 0; background: #000; }
+  .frame-head { padding: 6px 12px; background: var(--panel2); border-bottom: 1px solid var(--line);
+    font-size: 12px; display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+  iframe { flex: 1; width: 100%; border: 0; background: #000; }
+  .empty-state { flex: 1; display: flex; align-items: center; justify-content: center;
+    color: var(--dim); font-size: 13px; text-align: center; padding: 20px; }
+  a.raw { color: var(--accent); text-decoration: none; font-size: 12px; }
+
+  .card { background: var(--panel2); border: 1px solid var(--line); border-radius: 8px;
+    padding: 10px 12px; margin-bottom: 12px; }
+  .card h3 { margin: 0 0 8px; font-size: 12px; color: var(--dim); text-transform: uppercase; letter-spacing: .6px; }
+  .kv { display: flex; justify-content: space-between; padding: 2px 0; font-size: 12.5px; }
+  .kv b { font-weight: 600; }
+  table.bt { width: 100%; border-collapse: collapse; font-size: 12px; }
+  table.bt td { padding: 3px 0; border-bottom: 1px solid var(--line); }
+  table.bt td.n { text-align: right; font-variant-numeric: tabular-nums; }
+  table.bt tr.hot td { color: var(--warn); font-weight: 600; }
+  .legend { font-size: 11px; color: var(--dim); line-height: 1.8; }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1>🧪 genre_routing 试验台</h1>
+    <a href="coverage.html">← 覆盖热力图</a>
+    <a href="console.html">跨模型实验操作台</a>
+    <div class="spacer"></div>
+    <div id="meta-line">加载中…</div>
+  </header>
+  <main>
+    <aside class="left" id="sidebar"></aside>
+    <div class="center" id="center">
+      <div class="empty-state">从左侧选一个题目预览</div>
+    </div>
+    <aside class="right" id="meta"></aside>
+  </main>
+</div>
+
+<script>
+const state = { data: null, sel: null };
+
+async function boot() {
+  try {
+    const r = await fetch('telemetry/genre_routing.json', { cache: 'no-store' });
+    state.data = await r.json();
+  } catch (e) {
+    document.getElementById('meta-line').textContent = '无法加载 telemetry/genre_routing.json —— 先跑 python viewer/build_genre_routing.py';
+    return;
+  }
+  // 默认选中第一个成功的题目
+  for (const g of state.data.groups) {
+    const first = g.topics.find(t => t.status === 'ok');
+    if (first) { state.sel = { group: g.key, topic: first.topic }; break; }
+  }
+  renderSidebar();
+  renderCenter();
+  renderMeta();
+}
+
+function statusBadge(status) {
+  return status === 'ok' ? '✓' : status === 'empty' ? '⚠' : '✗';
+}
+
+function findTopic(groupKey, topicName) {
+  const g = state.data.groups.find(g => g.key === groupKey);
+  return g ? g.topics.find(t => t.topic === topicName) : null;
+}
+
+function renderSidebar() {
+  const box = document.getElementById('sidebar');
+  const total = state.data.groups.reduce((n, g) => n + g.topics.length, 0);
+  const ok = state.data.groups.reduce((n, g) => n + g.topics.filter(t => t.status === 'ok').length, 0);
+  document.getElementById('meta-line').textContent = `${ok}/${total} 题内容完整`;
+
+  box.innerHTML = state.data.groups.map(g => {
+    const okCount = g.topics.filter(t => t.status === 'ok').length;
+    const items = g.topics.map(t => {
+      const sel = (state.sel && state.sel.group === g.key && state.sel.topic === t.topic) ? ' sel' : '';
+      const hits = t.status === 'ok' ? `${t.interactive_hits} 处互动` : '';
+      return `<div class="item status-${t.status}${sel}" data-g="${g.key}" data-t="${escapeAttr(t.topic)}">
+        <span class="badge">${statusBadge(t.status)}</span>
+        <span class="name">${t.topic}</span>
+        <span class="hits">${hits}</span>
+      </div>`;
+    }).join('');
+    return `<div class="grp"><h2>${g.label} <span class="hint">${okCount}/${g.topics.length}</span></h2>${items}</div>`;
+  }).join('');
+
+  box.querySelectorAll('.item.status-ok').forEach(el => {
+    el.onclick = () => {
+      state.sel = { group: el.dataset.g, topic: el.dataset.t };
+      renderSidebar(); renderCenter(); renderMeta();
+    };
+  });
+}
+
+function escapeAttr(s) { return s.replace(/"/g, '&quot;'); }
+
+function renderCenter() {
+  const box = document.getElementById('center');
+  if (!state.sel) { box.innerHTML = '<div class="empty-state">从左侧选一个题目预览</div>'; return; }
+  const t = findTopic(state.sel.group, state.sel.topic);
+  if (!t || t.status !== 'ok') { box.innerHTML = '<div class="empty-state">这个题目没有可预览的内容</div>'; return; }
+  const src = 'index.html?doc=' + encodeURI(t.file);
+  box.innerHTML = `<div class="frame-head"><b>${t.topic}</b>
+    <span style="color:var(--dim)">${t.theme || '(无主题)'} · ${t.pages} 页</span>
+    <div class="spacer" style="flex:1"></div>
+    <a class="raw" href="${src}" target="_blank">↗ 单开</a></div>
+    <iframe src="${src}"></iframe>`;
+}
+
+function renderMeta() {
+  const box = document.getElementById('meta');
+  if (!state.sel) { box.innerHTML = ''; return; }
+  const t = findTopic(state.sel.group, state.sel.topic);
+  if (!t) { box.innerHTML = ''; return; }
+  if (t.status !== 'ok') {
+    const msg = t.status === 'empty'
+      ? '账本记为成功，但文档没有 scenes——响应被截断的静默失败（S-013）。'
+      : '生成过程崩溃，未产出文档（S-011：骨架偶发把某个 scene 返回成字符串）。';
+    box.innerHTML = `<div class="card"><h3>${t.topic}</h3><div class="kv" style="color:var(--dim)">${msg}</div></div>`;
+    return;
+  }
+  const maxCount = Math.max(1, ...Object.values(t.block_types));
+  const rows = Object.entries(t.block_types).map(([k, n]) => {
+    const hot = (k.startsWith('sim') || k === 'runnable' || k === 'formula') ? ' hot' : '';
+    return `<tr class="${hot.trim()}"><td>${k}</td><td class="n">${n}</td></tr>`;
+  }).join('');
+  box.innerHTML = `
+    <div class="card">
+      <h3>${t.topic}</h3>
+      <div class="kv"><span>主题</span><b>${t.theme || '—'}</b></div>
+      <div class="kv"><span>页数</span><b>${t.pages}</b></div>
+      <div class="kv"><span>互动命中(sim/formula/runnable)</span><b style="color:var(--warn)">${t.interactive_hits}</b></div>
+    </div>
+    <div class="card">
+      <h3>内容块构成</h3>
+      <table class="bt">${rows}</table>
+    </div>
+    <div class="legend">
+      <span style="color:var(--warn)">■</span> sim / formula / runnable
+    </div>`;
+}
+
+boot();
+</script>
+</body>
+</html>

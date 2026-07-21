@@ -42,3 +42,14 @@ def test_desc_tail_boilerplate_trimmed() -> None:
     menu = plan_menu(registry)
     for _skill, desc, _types in menu:
         assert "Produces schema-valid" not in desc
+
+
+def test_runnable_contract_has_no_quantity_cap() -> None:
+    """runnable 的 contract(reg.contract,fan-out 时逐块注入,见 blocks.py:78)不得再带
+    "deck 里最多几个/别过量"这类数量压制——这条抑制语句曾同时活在 planning.py(已被 D-008 删)
+    和 skills/create-code-runtime/{SKILL.md,contracts.json}(D-008 漏删的第二处，S-014)。
+    """
+    registry, _ = load_skills()
+    contract = str(registry["runnable"].contract)
+    for banned in ("0-2", "别过量"):
+        assert banned not in contract, f"runnable 契约仍带数量压制词: {banned}"

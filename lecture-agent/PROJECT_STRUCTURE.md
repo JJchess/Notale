@@ -77,6 +77,7 @@ lecture-agent/
 │   │
 │   ├── domain/                   # L2 · 依赖：schema+ports+utils  ── 纯逻辑，深模块，禁碰 adapters
 │   │   ├── planning.py           #   多视角 STORM 规划（单文件，拍平）  接口: plan_lecture->PlanResult
+│   │   ├── themes.py             #   主题描述注册表(纯视觉/零学科,取自 frontend-slides 源头) 接口: theme_menu()；喂规划器选主题决策面
 │   │   ├── assemble.py           #   ★纯函数：骨架+生成结果->整份 doc（回填，可纯测）
 │   │   ├── evolve.py             #   语料挖掘 n-gram 未满足需求->提案（human-in-loop gate）
 │   │   ├── tool_loop.py          #   有界 think→call→observe 循环（节点内用，只认 ports）

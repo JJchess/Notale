@@ -1,0 +1,476 @@
+{
+  "id": "backpropagation",
+  "title": "反向传播",
+  "subtitle": "从计算图到链式法则——神经网络如何学会修正自己的错误",
+  "language": "zh-CN",
+  "audience": "有微积分基础、正在学习深度学习的学生",
+  "theme": "lab",
+  "tutor": {
+    "suggestions": [
+      "为什么反向传播比正向逐个参数求梯度快得多？",
+      "矩阵求导时怎么判断什么时候需要转置？",
+      "PyTorch 每次迭代为什么要手动 zero_grad()，不自动清零？",
+      "残差连接是怎么从数学上缓解梯度消失的？"
+    ],
+    "kb": [
+      {
+        "pattern": "链式法则|chain rule",
+        "answer": "链式法则是反向传播的数学基础：$\\frac{\\partial L}{\\partial x} = \\frac{\\partial L}{\\partial y} \\cdot \\frac{\\partial y}{\\partial x}$。复合函数的梯度等于各层局部梯度的乘积。"
+      },
+      {
+        "pattern": "计算图|computational graph",
+        "answer": "计算图把神经网络拆成一串基本运算节点（加、乘、激活等）。前向传播是数据从左到右流过计算图，反向传播是误差信号从右到左沿同一条路径回传。"
+      },
+      {
+        "pattern": "局部梯度|local gradient",
+        "answer": "局部梯度是当前节点的输出对其输入的偏导 $\\frac{\\partial y}{\\partial x}$，只关心本节点的输入输出关系，不需要知道整个网络的结构。反向传播中，每个节点只需将上游传来的误差信号乘以自己的局部梯度。"
+      },
+      {
+        "pattern": "雅可比|Jacobian",
+        "answer": "雅可比矩阵是向量函数的全部偏导数排列成的矩阵。反向传播本质上不需要显式构造雅可比矩阵，而是计算雅可比向量积（VJP），复杂度从 $O(n^2)$ 降到 $O(n)$。"
+      },
+      {
+        "pattern": "梯度消失|vanishing gradient",
+        "answer": "反向传播穿过 $n$ 层时，梯度是 $n$ 个局部梯度的连乘。当每层因子绝对值小于 1 时，乘积指数衰减，导致浅层参数几乎收不到梯度信号。残差连接通过加法路径提供梯度直通，缓解连乘衰减。"
+      },
+      {
+        "pattern": "zero_grad|梯度清零|梯度累加",
+        "answer": "PyTorch 默认梯度累加而非自动清零，这是为了支持梯度累加（gradient accumulation）——显存不够时可以分小批前向+反向，梯度自动累加后统一更新。因此每次迭代前需手动调用 `optimizer.zero_grad()`。"
+      }
+    ]
+  },
+  "scenes": [
+    {
+      "id": "cover",
+      "kind": "hero",
+      "notes": "欢迎来到反向传播模块。很多同学初学时会觉得反向传播是一套全新的高深数学理论，但它的本质其实只是微积分中“链式法则”的高效工程实现，核心直觉在于“从后往前，分步计算并复用中间结果”来求梯度。为了让大家彻底看清梯度是如何在复杂网络中流动的，下一页我们将引入“计算图”这个强大的可视化工具，把看似复杂的神经网络拆解成一串最基础的加减乘除操作。",
+      "blocks": [
+        {
+          "type": "hero",
+          "tag": "深度学习核心机制",
+          "title": [
+            "反向传播",
+            "计算图上的链式法则"
+          ],
+          "sub": "将前向计算抽象为**计算图**，沿边逆向应用**链式法则** $\\frac{\\partial L}{\\partial w} = \\frac{\\partial L}{\\partial z}\\frac{\\partial z}{\\partial w}$，将全局误差分解为局部梯度的连乘。",
+          "facts": "1986 年 Hinton 等人证明反向传播可让多层感知机学习内部表示，开启了深度学习时代。",
+          "hint": "关注梯度如何沿网络逆向流动。",
+          "id": "b_cover"
+        }
+      ]
+    },
+    {
+      "id": "intuition",
+      "kind": "content",
+      "eyebrow": "直觉",
+      "headline": "计算图：把网络拆成一串加减乘除",
+      "lead": "前向传播是数据从左到右流过计算图，反向传播是误差信号从右到左沿同一条路径回传。",
+      "notes": "关键直觉：前向传播是'算结果'，反向传播是'分配责任'。每个节点只需知道两件事——自己的输出对输入的局部梯度，以及上游传回来的误差信号，两者相乘就是本节点要承担的梯度。这就是为什么叫'反向'——误差信号从损失端出发，逆着前向计算的方向回传。如果顺着正向算，每个参数的梯度都要重新遍历它后面的整条路径，复杂度是 $O(n^2)$；反向传播只需遍历一次，$O(n)$。",
+      "blocks": [
+        {
+          "type": "flow",
+          "nodes": [
+            {
+              "title": "输入 $x$",
+              "sub": "如 $x = 2.0$"
+            },
+            {
+              "title": "线性变换 $z$",
+              "sub": "$z = wx + b$，如 $3 \\times 2 + 1 = 7$"
+            },
+            {
+              "title": "激活 $a$",
+              "sub": "$a = \\text{ReLU}(z)$，如 $\\text{ReLU}(7) = 7$"
+            },
+            {
+              "title": "损失 $L$",
+              "sub": "$L = (a - y)^2$，如 $(7 - 5)^2 = 4$"
+            }
+          ],
+          "id": "b2_flow"
+        },
+        {
+          "type": "formula",
+          "latex": "\\frac{\\partial L}{\\partial x}=\\frac{\\partial L}{\\partial y}\\cdot\\frac{\\partial y}{\\partial x}",
+          "caption": "标量链式法则：损失 $L$ 对输入 $x$ 的梯度，等于 $L$ 对中间量 $y$ 的梯度乘以 $y$ 对 $x$ 的局部梯度——反向传播就是沿计算图把一连串局部梯度逐段相乘。",
+          "id": "b2_formula"
+        },
+        {
+          "type": "callout",
+          "label": "责任分摊",
+          "text": "反向传播就是计算图上的责任分摊：哪个参数对损失的贡献大，它分摊到的梯度就多——比如 $w_1$ 让损失增加了 $0.8$，它就背 $0.8$ 的梯度。",
+          "id": "b2_callout"
+        }
+      ],
+      "layout": {
+        "kind": "index",
+        "steps": [
+          {
+            "label": "前向传播的数据流",
+            "blockIds": [
+              "b2_flow"
+            ]
+          },
+          {
+            "label": "标量链式法则",
+            "blockIds": [
+              "b2_formula"
+            ]
+          },
+          {
+            "label": "误差分摊直觉",
+            "blockIds": [
+              "b2_callout"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "minimal-example",
+      "kind": "content",
+      "eyebrow": "具象锚点",
+      "headline": "一个单神经元：手算一遍反向传播",
+      "lead": "取 f = σ(wx + b)，损失 L = (f − y)²，从损失出发逐步回传梯度到 w 和 b。",
+      "transition": "zoom",
+      "notes": "这是全课最该慢下来的地方。前向：z = wx+b → a = σ(z) → L = (a−y)²。反向：dL/da = 2(a−y)，乘 da/dz = σ(z)(1−σ(z)) 得 dL/dz，再乘 dz/dw = x 得 dL/dw。每一步都是'上游梯度 × 局部梯度'。局部梯度只关心当前节点的输入输出关系，不需要知道整个网络长什么样——这就是模块化的力量。常见错误：学生常把 da/dz 和 dz/da 搞混，记住我们求的是'输出对输入'的导数，方向和前向一致。",
+      "blocks": [
+        {
+          "type": "sim",
+          "engine": "widget",
+          "html": "<style>\n  .bp {\n    background: var(--bg2);\n    border-radius: var(--radius, 12px);\n    padding: 16px 20px 18px;\n    color: var(--ink);\n    font-family: var(--sans);\n    height: 100%;\n    box-sizing: border-box;\n    display: flex;\n    flex-direction: column;\n    gap: 12px;\n  }\n  .stage-wrap {\n    flex: 1;\n    position: relative;\n    background: var(--card);\n    border-radius: var(--radius, 8px);\n    overflow: hidden;\n    min-height: 0;\n    border: 1px solid var(--line);\n  }\n  .stage-wrap svg {\n    width: 100%;\n    height: 100%;\n    display: block;\n  }\n  .corner-readout {\n    position: absolute;\n    top: 10px;\n    right: 14px;\n    font-family: var(--mono);\n    font-size: 10px;\n    color: var(--text2);\n    letter-spacing: 0.04em;\n    line-height: 1.55;\n    text-align: right;\n    pointer-events: none;\n  }\n  .corner-readout .phase { color: var(--accent); }\n  .corner-readout .detail {\n    color: var(--ink);\n    font-size: 10px;\n    letter-spacing: 0;\n    margin-top: 2px;\n    max-width: 210px;\n  }\n  .controls {\n    display: flex;\n    align-items: center;\n    gap: 12px;\n  }\n  .controls button {\n    background: var(--card);\n    color: var(--ink);\n    border: 1px solid var(--line);\n    border-radius: var(--radius, 6px);\n    padding: 7px 16px;\n    font-family: var(--sans);\n    font-size: 13px;\n    cursor: pointer;\n    transition: all 120ms linear;\n    white-space: nowrap;\n  }\n  .controls button:hover:not(:disabled) {\n    border-color: var(--accent);\n    color: var(--accent);\n  }\n  .controls button:active:not(:disabled) {\n    transform: scale(0.96);\n  }\n  .controls button:disabled {\n    opacity: 0.35;\n    cursor: not-allowed;\n  }\n  .step-bar {\n    flex: 1;\n    display: flex;\n    align-items: flex-end;\n    justify-content: space-evenly;\n    height: 18px;\n    position: relative;\n    padding: 0 10px;\n  }\n  .step-bar::before {\n    content: '';\n    position: absolute;\n    bottom: 3px;\n    left: 6px;\n    right: 6px;\n    height: 1px;\n    background: var(--line);\n  }\n  .step-bar .tick {\n    width: 2px;\n    height: 6px;\n    background: var(--line);\n    transition: all 120ms linear;\n    position: relative;\n    z-index: 1;\n  }\n  .step-bar .tick.major { height: 10px; }\n  .step-bar .tick.done { background: var(--text2); }\n  .step-bar .tick.active {\n    background: var(--accent);\n    height: 14px;\n    box-shadow: 0 0 5px var(--accent);\n  }\n  .step-num {\n    font-family: var(--mono);\n    font-size: 11px;\n    color: var(--text2);\n    min-width: 44px;\n    text-align: center;\n    letter-spacing: 0.04em;\n    font-variant-numeric: tabular-nums;\n  }\n  .step-num .cur { color: var(--accent); }\n  .node-bg {\n    fill: var(--card);\n    stroke: var(--line);\n    stroke-width: 1.5;\n    transition: fill 200ms cubic-bezier(.22,1,.36,1), stroke 200ms cubic-bezier(.22,1,.36,1);\n  }\n  .node-text {\n    font-family: var(--mono);\n    font-size: 15px;\n    fill: var(--ink);\n    text-anchor: middle;\n    dominant-baseline: central;\n    transition: fill 200ms linear;\n    pointer-events: none;\n    user-select: none;\n  }\n  .node.active .node-bg {\n    fill: var(--accent);\n    stroke: var(--accent);\n  }\n  .node.active .node-text { fill: var(--bg); }\n  .node.glow .node-bg {\n    filter: drop-shadow(0 0 7px var(--accent));\n  }\n  .edge {\n    stroke: var(--line);\n    stroke-width: 1.5;\n    fill: none;\n    transition: stroke 200ms cubic-bezier(.22,1,.36,1), stroke-width 200ms linear;\n  }\n  .edge.active {\n    stroke: var(--accent);\n    stroke-width: 2.5;\n  }\n  .val-label, .grad-label {\n    font-family: var(--mono);\n    font-size: 11px;\n    text-anchor: middle;\n    opacity: 0;\n    transition: opacity 250ms linear;\n    pointer-events: none;\n    user-select: none;\n  }\n  .val-label { fill: var(--ink); }\n  .grad-label { fill: var(--accent); }\n  .val-label.show, .grad-label.show { opacity: 1; }\n  .dir-arrow {\n    font-family: var(--mono);\n    font-size: 10px;\n    fill: var(--text2);\n    letter-spacing: 0.1em;\n    text-anchor: middle;\n    transition: fill 200ms linear;\n  }\n  .dir-arrow.active { fill: var(--accent); }\n</style>\n<div class=\"bp\">\n  <div class=\"stage-wrap\">\n    <svg id=\"graph\" viewBox=\"0 0 700 360\" preserveAspectRatio=\"xMidYMid meet\">\n      <text x=\"150\" y=\"22\" class=\"dir-arrow\" id=\"dir-fwd\">前向传播 →</text>\n      <text x=\"550\" y=\"22\" class=\"dir-arrow\" id=\"dir-bwd\">← 反向传播</text>\n\n      <line id=\"edge-x-mul\" class=\"edge\" x1=\"79\" y1=\"86\" x2=\"221\" y2=\"134\"/>\n      <line id=\"edge-w-mul\" class=\"edge\" x1=\"79\" y1=\"194\" x2=\"221\" y2=\"146\"/>\n      <line id=\"edge-mul-add\" class=\"edge\" x1=\"259\" y1=\"147\" x2=\"411\" y2=\"203\"/>\n      <line id=\"edge-b-add\" class=\"edge\" x1=\"258\" y1=\"282\" x2=\"412\" y2=\"218\"/>\n      <line id=\"edge-add-sigma\" class=\"edge\" x1=\"450\" y1=\"210\" x2=\"590\" y2=\"210\"/>\n\n      <g id=\"node-x\" class=\"node\">\n        <circle class=\"node-bg\" cx=\"60\" cy=\"80\" r=\"20\"/>\n        <text class=\"node-text\" x=\"60\" y=\"80\">x</text>\n      </g>\n      <g id=\"node-w\" class=\"node\">\n        <circle class=\"node-bg\" cx=\"60\" cy=\"200\" r=\"20\"/>\n        <text class=\"node-text\" x=\"60\" y=\"200\">w</text>\n      </g>\n      <g id=\"node-b\" class=\"node\">\n        <circle class=\"node-bg\" cx=\"240\" cy=\"290\" r=\"20\"/>\n        <text class=\"node-text\" x=\"240\" y=\"290\">b</text>\n      </g>\n      <g id=\"node-mul\" class=\"node\">\n        <circle class=\"node-bg\" cx=\"240\" cy=\"140\" r=\"20\"/>\n        <text class=\"node-text\" x=\"240\" y=\"140\">×</text>\n      </g>\n      <g id=\"node-add\" class=\"node\">\n        <circle class=\"node-bg\" cx=\"430\" cy=\"210\" r=\"20\"/>\n        <text class=\"node-text\" x=\"430\" y=\"210\">+</text>\n      </g>\n      <g id=\"node-sigma\" class=\"node\">\n        <circle class=\"node-bg\" cx=\"610\" cy=\"210\" r=\"20\"/>\n        <text class=\"node-text\" x=\"610\" y=\"210\">σ</text>\n      </g>\n\n      <text id=\"val-x\" class=\"val-label\" x=\"60\" y=\"45\">x = 2</text>\n      <text id=\"val-w\" class=\"val-label\" x=\"60\" y=\"236\">w = 3</text>\n      <text id=\"val-b\" class=\"val-label\" x=\"240\" y=\"326\">b = 1</text>\n      <text id=\"val-mul\" class=\"val-label\" x=\"240\" y=\"105\">= 6</text>\n      <text id=\"val-add\" class=\"val-label\" x=\"430\" y=\"175\">= 7</text>\n      <text id=\"val-sigma\" class=\"val-label\" x=\"610\" y=\"175\">≈ 0.999</text>\n\n      <text id=\"grad-sigma\" class=\"grad-label\" x=\"610\" y=\"246\">σ′ ≈ 0.0009</text>\n      <text id=\"grad-add\" class=\"grad-label\" x=\"430\" y=\"246\">∂L/∂add ≈ 0.0009</text>\n      <text id=\"grad-mul\" class=\"grad-label\" x=\"240\" y=\"176\">∂L/∂mul ≈ 0.0009</text>\n      <text id=\"grad-x\" class=\"grad-label\" x=\"60\" y=\"45\">∂L/∂x ≈ 0.0027</text>\n      <text id=\"grad-w\" class=\"grad-label\" x=\"60\" y=\"236\">∂L/∂w ≈ 0.0018</text>\n      <text id=\"grad-b\" class=\"grad-label\" x=\"240\" y=\"326\">∂L/∂b ≈ 0.0009</text>\n    </svg>\n    <div class=\"corner-readout\" id=\"readout\">\n      <div>步骤 <span id=\"r-step\">1</span>/10 · <span class=\"phase\" id=\"r-phase\">前向</span></div>\n      <div class=\"detail\" id=\"r-detail\">输入 x = 2</div>\n    </div>\n  </div>\n  <div class=\"controls\">\n    <button id=\"prev\">← 上一步</button>\n    <div class=\"step-bar\" id=\"stepbar\"></div>\n    <span class=\"step-num\"><span class=\"cur\" id=\"s-cur\">1</span>/10</span>\n    <button id=\"next\">下一步 →</button>\n  </div>\n</div>\n<script>\n  const state = { step: 1 };\n  const TOTAL = 10;\n\n  const stepData = [\n    { phase:'idle', nodes:[], edges:[], vals:[], grads:[], detail:'计算图全貌：x·w+b → σ' },\n    { phase:'forward', nodes:['x'], edges:['x-mul'], vals:['x'], grads:[], detail:'输入 x = 2' },\n    { phase:'forward', nodes:['w'], edges:['w-mul'], vals:['w'], grads:[], detail:'权重 w = 3' },\n    { phase:'forward', nodes:['b'], edges:['b-add'], vals:['b'], grads:[], detail:'偏置 b = 1' },\n    { phase:'forward', nodes:['mul'], edges:['mul-add'], vals:['mul'], grads:[], detail:'mul = x·w = 2×3 = 6' },\n    { phase:'forward', nodes:['add'], edges:['add-sigma'], vals:['add'], grads:[], detail:'add = mul+b = 6+1 = 7' },\n    { phase:'forward', nodes:['sigma'], edges:[], vals:['sigma'], grads:[], detail:'σ(7) = 1/(1+e⁻⁷) ≈ 0.999' },\n    { phase:'backward', nodes:['sigma'], edges:[], vals:[], grads:['sigma'], detail:\"σ′(z)=σ(1−σ) ≈ 0.0009\" },\n    { phase:'backward', nodes:['add'], edges:['add-sigma'], vals:[], grads:['add'], detail:'∂add/∂mul=1 → ∂L/∂mul ≈ 0.0009' },\n    { phase:'backward', nodes:['mul'], edges:['mul-add'], vals:[], grads:['mul'], detail:'∂mul/∂x=w=3 → ∂L/∂x ≈ 0.0027' },\n    { phase:'backward', nodes:['x','w','b'], edges:['x-mul','w-mul','b-add'], vals:[], grads:['x','w','b'], detail:'链式法则：∂L/∂x=σ′·1·w ≈ 0.0027' },\n  ];\n\n  const nodeIds = ['x','w','b','mul','add','sigma'];\n  const edgeIds = ['x-mul','w-mul','mul-add','b-add','add-sigma'];\n  const phaseLabel = { forward:'前向', backward:'反向', idle:'待机' };\n\n  function update() {\n    const s = state.step;\n    const data = stepData[s];\n\n    nodeIds.forEach(id => {\n      const el = document.getElementById('node-' + id);\n      el.classList.remove('active','glow');\n      document.getElementById('val-' + id).classList.remove('show');\n      document.getElementById('grad-' + id).classList.remove('show');\n    });\n    edgeIds.forEach(id => {\n      document.getElementById('edge-' + id).classList.remove('active');\n    });\n\n    data.nodes.forEach(id => {\n      const el = document.getElementById('node-' + id);\n      el.classList.add('active');\n      if (data.phase !== 'idle') el.classList.add('glow');\n    });\n    data.edges.forEach(id => document.getElementById('edge-' + id).classList.add('active'));\n    data.vals.forEach(id => document.getElementById('val-' + id).classList.add('show'));\n    data.grads.forEach(id => document.getElementById('grad-' + id).classList.add('show'));\n\n    document.getElementById('r-step').textContent = s;\n    document.getElementById('r-phase').textContent = phaseLabel[data.phase];\n    document.getElementById('r-detail').textContent = data.detail;\n    document.getElementById('dir-fwd').classList.toggle('active', data.phase === 'forward');\n    document.getElementById('dir-bwd').classList.toggle('active', data.phase === 'backward');\n    document.getElementById('s-cur').textContent = s;\n\n    document.querySelectorAll('.step-bar .tick').forEach((t, i) => {\n      t.classList.remove('active','done');\n      if (i + 1 < s) t.classList.add('done');\n      if (i + 1 === s) t.classList.add('active');\n    });\n\n    document.getElementById('prev').disabled = s <= 0;\n    document.getElementById('next').disabled = s >= TOTAL;\n  }\n\n  const stepbar = document.getElementById('stepbar');\n  for (let i = 1; i <= TOTAL; i++) {\n    const tick = document.createElement('div');\n    tick.className = 'tick' + (i === 1 || i === 6 || i === 10 ? ' major' : '');\n    stepbar.appendChild(tick);\n  }\n\n  document.getElementById('next').addEventListener('click', () => {\n    if (state.step < TOTAL) { state.step++; update(); }\n  });\n  document.getElementById('prev').addEventListener('click', () => {\n    if (state.step > 0) { state.step--; update(); }\n  });\n  document.addEventListener('keydown', (e) => {\n    if (e.key === 'ArrowRight' && state.step < TOTAL) { state.step++; update(); }\n    if (e.key === 'ArrowLeft' && state.step > 0) { state.step--; update(); }\n  });\n\n  update();\n</script>",
+          "id": "b3_sim"
+        },
+        {
+          "type": "formula",
+          "latex": "\\begin{aligned}\\frac{\\partial L}{\\partial a} &= 2(a - y) \\\\\\frac{\\partial L}{\\partial z} &= \\frac{\\partial L}{\\partial a} \\cdot \\sigma'(z) \\\\\\frac{\\partial L}{\\partial w} &= \\frac{\\partial L}{\\partial z} \\cdot x\\end{aligned}",
+          "caption": "单神经元链式法则的三个核心梯度",
+          "id": "b3_formula"
+        },
+        {
+          "type": "callout",
+          "label": "局部性",
+          "text": "对 $z=wx+b$ 经 ReLU 得 $a$ 的节点，$\\frac{\\partial a}{\\partial z}$ 只看 $z$ 正负取 $1$ 或 $0$——不问上游谁连过来、下游怎么用，所以每个节点能独立算自己的局部梯度，再由链式法则拼接。",
+          "id": "b3_callout"
+        }
+      ],
+      "layout": {
+        "kind": "compose",
+        "areas": [
+          {
+            "blockIds": [
+              "b3_sim"
+            ],
+            "col": [
+              1,
+              9
+            ]
+          },
+          {
+            "blockIds": [
+              "b3_formula"
+            ],
+            "col": [
+              1,
+              7
+            ]
+          },
+          {
+            "blockIds": [
+              "b3_callout"
+            ],
+            "col": [
+              7,
+              11
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "matrix-form",
+      "kind": "content",
+      "eyebrow": "理论",
+      "headline": "矩阵形式：维度分析就是你的检查器",
+      "lead": "全连接层 Y = XW⊤ + b 的反向传播，靠维度匹配法则推断转置方向。",
+      "notes": "矩阵形式的核心法则：结果张量的形状必须和待求梯度的参数形状一致。比如 W 是 [out, in]，X 是 [batch, in]，Y = XW^T 是 [batch, out]。已知 dL/dY 是 [batch, out]，求 dL/dW：要把 [batch, out] 变成 [out, in]，自然想到 X^T [in, batch] × [batch, out] = [in, out]，转置后就是 [out, in]。维度对不上就转置——这不是技巧，是线性代数的必然。雅可比矩阵是向量函数的全部偏导数排列，反向传播本质上就是雅可比向量积（VJP），不需要显式构造雅可比矩阵本身。海森矩阵是二阶偏导，BP 只算一阶。",
+      "blocks": [
+        {
+          "type": "formula",
+          "latex": "\\begin{aligned} \\frac{\\partial L}{\\partial W} &= X^\\top \\frac{\\partial L}{\\partial Y} \\\\ \\frac{\\partial L}{\\partial X} &= \\frac{\\partial L}{\\partial Y} W^\\top \\\\ \\frac{\\partial L}{\\partial b} &= \\mathbf{1}^\\top \\frac{\\partial L}{\\partial Y} \\end{aligned}",
+          "caption": "维度验证：设批次 $N=4$，特征 $d=3$，输出 $m=2$，则 $X$ 为 $4 \\times 3$，$\\frac{\\partial L}{\\partial Y}$ 为 $4 \\times 2$。计算 $\\frac{\\partial L}{\\partial W}$ 时，$(3 \\times 4) \\cdot (4 \\times 2) = 3 \\times 2$，与 $W$ 同形，转置与乘法顺序唯一。",
+          "id": "b4_formula"
+        },
+        {
+          "type": "list",
+          "items": [
+            {
+              "lead": "①写出所有张量形状",
+              "text": "全连接层 $Y = XW$，设 $X \\in \\mathbb{R}^{4 \\times 3}$，$W \\in \\mathbb{R}^{3 \\times 2}$，则 $Y \\in \\mathbb{R}^{4 \\times 2}$，上游梯度 $\\frac{\\partial L}{\\partial Y}$ 形状同为 $4 \\times 2$。",
+              "icon": "network"
+            },
+            {
+              "lead": "②让结果形状匹配参数形状",
+              "text": "求 $\\frac{\\partial L}{\\partial W}$ 时，梯度形状必须与 $W$ 一致，即目标形状必须是 $3 \\times 2$。",
+              "fragment": "fade-up",
+              "icon": "target"
+            },
+            {
+              "lead": "③缺什么转置补什么",
+              "text": "手头有 $4 \\times 2$ 的 $\\frac{\\partial L}{\\partial Y}$ 和 $4 \\times 3$ 的 $X$，直接相乘不合法；将 $X$ 转置为 $3 \\times 4$，执行 $X^T \\frac{\\partial L}{\\partial Y}$ 即得 $3 \\times 2$。",
+              "fragment": "fade-up",
+              "icon": "handshake"
+            }
+          ],
+          "id": "b4_list"
+        },
+        {
+          "type": "callout",
+          "label": "VJP",
+          "text": "反向传播本质是计算雅可比向量积 $J^T \bar{v}$，单次反向即得全部梯度；有限差分对 $n$ 个参数需 $n+1$ 次前向——百万参数时差 $10^6$ 倍。",
+          "id": "b4_callout"
+        }
+      ],
+      "layout": {
+        "kind": "compose",
+        "areas": [
+          {
+            "blockIds": [
+              "b4_formula"
+            ],
+            "col": [
+              1,
+              9
+            ]
+          },
+          {
+            "blockIds": [
+              "b4_list"
+            ],
+            "col": [
+              1,
+              7
+            ]
+          },
+          {
+            "blockIds": [
+              "b4_callout"
+            ],
+            "col": [
+              7,
+              11
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "engineering",
+      "kind": "content",
+      "eyebrow": "工程",
+      "headline": "框架底层：动态图、梯度缓存与显存",
+      "lead": "PyTorch 的动态图每次前向都重建计算图，反向传播后立即释放。",
+      "notes": "PyTorch 的动态图意味着每次前向传播都新建一个计算图，loss.backward() 沿图回传梯度后立即释放图结构——这就是为什么默认不能二次 backward（除非 retain_graph=True）。zero_grad() 不自动清零是因为梯度累加是正经功能：batch 太大显存不够时，可以分小批前向+反向，梯度自动累加，最后一起更新。梯度检查点（checkpoint）用时间换空间：前向时不存中间激活值，反向时重新计算，显存从 O(n) 降到 O(√n)。detach() 切断梯度流，用于冻结预训练层或停止 GAN 生成器的梯度传播。OOM 几乎总是发生在反向传播阶段，因为前向的中间激活值要全部缓存住等反向用。",
+      "blocks": [
+        {
+          "type": "code",
+          "language": "python",
+          "filename": "train_step.py",
+          "caption": "一次完整的反向传播训练步：zero_grad → forward → loss → backward → step，并标注 detach() 与 no_grad() 的显存边界",
+          "source": "import torch\nimport torch.nn as nn\n\nmodel = nn.Sequential(nn.Linear(784, 256), nn.ReLU(), nn.Linear(256, 10))\noptim = torch.optim.SGD(model.parameters(), lr=1e-2)\nloss_fn = nn.CrossEntropyLoss()\n\nx = torch.randn(64, 784)          # 一个 mini-batch\ny = torch.randint(0, 10, (64,))   # 真实标签\n\n# 1) 清空上一步残留的 .grad —— 否则梯度会累加\noptim.zero_grad()\n\n# 2) 前向：动态图被构建，中间激活被缓存以供反向使用\nlogits = model(x)                 # requires_grad=True 的张量\n\n# 3) 计算损失：loss 是图中的叶节点之一\nloss = loss_fn(logits, y)\n\n# 4) 反向传播：沿动态图反向遍历，逐层计算并累积 .grad\nloss.backward()                   # 此刻释放中间激活，显存占用回落\n\n# 5) 用 .grad 更新参数\noptim.step()\n\n# ---- 以下两种场景需要切断梯度流，避免无谓的显存开销 ----\n\n# (a) detach(): 把张量从计算图上摘下，后续运算不建图、不缓存\nwith torch.no_grad():\n    val_logits = model(x_val)     # 推理/评估：整段不追踪梯度\n    val_loss = loss_fn(val_logits, y_val)\n\n# (b) detach(): 只对单个张量断开，常用于把网络输出喂给不参与训练的模块\ntarget = model(x).detach()        # target 不再带 grad_fn\n",
+          "id": "b5_code"
+        },
+        {
+          "type": "list",
+          "items": [
+            {
+              "lead": "梯度累加",
+              "text": "PyTorch 的 `.grad` 是**累加**而非覆盖：对 $y=x^2$ 连续两次 `backward` 不清零，梯度从 $2.0$ 变成 $4.0$。每个训练步前必须 `optimizer.zero_grad()`，否则梯度逐 batch 叠加发散。",
+              "fragment": "fade-up",
+              "icon": "check"
+            },
+            {
+              "lead": "梯度检查点",
+              "text": "`torch.utils.checkpoint.checkpoint(layer, x)` 反向时**重算前向**而非缓存激活，显存从 $O(n)$ 降到 $O(\\sqrt{n})$，代价是前向多算一遍、训练慢约 20–30%。",
+              "fragment": "fade-up",
+              "icon": "arrow-right"
+            },
+            {
+              "lead": "detach() 切断流",
+              "text": "`z = y.detach()` 返回共享数据但 `requires_grad=False` 的张量，反向传播到此停止。GAN 中用它把判别器输出当常数喂给生成器，强化学习中把 reward 信号与策略梯度解耦。",
+              "fragment": "fade-up",
+              "icon": "share-2"
+            },
+            {
+              "lead": "图即用即弃",
+              "text": "默认 `retain_graph=False`，`loss.backward()` 执行后中间缓冲区立即释放；再次 backward 会报 `RuntimeError: Trying to backward through the graph a second time`。需多次 backward 时才设 `retain_graph=True`。",
+              "fragment": "fade-up",
+              "icon": "clock"
+            }
+          ],
+          "id": "b5_list"
+        },
+        {
+          "type": "callout",
+          "label": "OOM 根源",
+          "text": "前向阶段的每一份中间激活值都被缓存在显存中等待反向求导，导致显存占用在反向传播开始时达到顶峰。",
+          "id": "b5_callout"
+        }
+      ],
+      "layout": {
+        "kind": "index",
+        "steps": [
+          {
+            "label": "PyTorch 代码片段",
+            "blockIds": [
+              "b5_code"
+            ]
+          },
+          {
+            "label": "工程要点",
+            "blockIds": [
+              "b5_list"
+            ]
+          },
+          {
+            "label": "OOM 几乎总发生在反向传播…",
+            "blockIds": [
+              "b5_callout"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "vanishing-gradient",
+      "kind": "content",
+      "eyebrow": "深层逻辑",
+      "headline": "连乘效应：梯度消失与爆炸的数学根源",
+      "lead": "反向传播穿过 n 层，梯度是 n 个局部梯度的连乘——每层因子绝对值小于 1 时，乘积指数衰减。",
+      "notes": "梯度消失不只是激活函数的锅。即使每层局部梯度只有 0.99，穿过 100 层就是 0.99^100 ≈ 0.37，穿过 1000 层就是 0.00004。连乘效应才是根源——任何小于 1 的因子都会被指数放大。残差连接 h_{l+1} = h_l + F(h_l) 的梯度路径是 dh_{l+1}/dh_l = 1 + F'(h_l)，那个常数 1 给了梯度一条不衰减的直通路径。历史上，没有反向传播之前，人们用有限差分法估梯度——对每个参数扰动两次前向传播，n 个参数要 2n 次前向，根本不可行。BP 把这个复杂度降到一次前向+一次反向。早期不被重视 partly 因为 1986 年之前没有足够的算力和数据，partly 因为人们认为多层感知机无法被有效训练——BP 证明了可以。",
+      "blocks": [
+        {
+          "type": "chart",
+          "chartType": "line",
+          "categories": [
+            "10",
+            "20",
+            "50",
+            "100",
+            "200",
+            "500",
+            "1000"
+          ],
+          "series": [
+            {
+              "name": "Sigmoid (导数≈0.25)",
+              "values": [
+                -6.02,
+                -12.04,
+                -30.1,
+                -60.21,
+                -120.41,
+                -301.03,
+                -602.06
+              ]
+            },
+            {
+              "name": "Tanh (导数≈0.5)",
+              "values": [
+                -3.01,
+                -6.02,
+                -15.05,
+                -30.1,
+                -60.21,
+                -150.51,
+                -301.03
+              ]
+            },
+            {
+              "name": "残差连接 (导数≈1.0)",
+              "values": [
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0
+              ]
+            }
+          ],
+          "xLabel": "网络层数",
+          "yLabel": "$\\log_{10}$(梯度范数)",
+          "caption": "初始梯度范数设为 1.0，每层乘以该激活函数的典型导数值；sigmoid 在 100 层时梯度已降至 $10^{-61}$ 量级，残差连接则保持恒定。",
+          "id": "b6_chart"
+        },
+        {
+          "type": "formula",
+          "latex": "\\frac{\\partial L}{\\partial x_0} = \\prod_{i=1}^{n} \\frac{\\partial h_i}{\\partial h_{i-1}}",
+          "caption": "当每层局部梯度 $\\frac{\\partial h_i}{\\partial h_{i-1}}$ 恒小于 1（如 Sigmoid 导数最大仅 0.25），$n$ 层连乘将导致梯度指数级衰减至近 0；若恒大于 1 则引发梯度爆炸。",
+          "id": "b6_formula"
+        },
+        {
+          "type": "callout",
+          "label": "残差修正",
+          "text": "残差连接 $h_{l+1}=h_l+F(h_l)$ 将层间雅可比改为 $1+F'(h_l)$，常数 $1$ 提供一条不参与连乘的直通路径，梯度得以无损回传。",
+          "id": "b6_callout"
+        }
+      ]
+    },
+    {
+      "id": "quiz",
+      "kind": "quiz",
+      "headline": "随堂检验",
+      "notes": "刚才我们推导了连乘效应导致梯度消失或爆炸的数学根源，现在通过这个随堂检验来测试一下大家是否真正理解了激活函数导数在其中的关键作用——很多同学会误以为仅仅是权重过大导致爆炸，而忽略了导数连乘的衰减效应。做完这道题，我们就能带着对底层机制的深刻理解，进入最后的核心总结了。",
+      "blocks": [
+        {
+          "type": "quiz",
+          "kind": "objective",
+          "stem": "在一个 10 层全连接网络中，每层使用 Sigmoid 激活（导数最大值为 $0.25$）。若某次前向传播后计算损失 $L$，且代码中漏写了 `optimizer.zero_grad()`，关于梯度传播与累加，下列说法正确的是：",
+          "choices": [
+            {
+              "key": "a",
+              "text": "链式法则要求各层局部梯度**相加**，Sigmoid 导数最大 $0.25$ 不会引发梯度消失"
+            },
+            {
+              "key": "b",
+              "text": "链式法则要求局部梯度**相乘**，第 1 层梯度至少乘以 $0.25^9$，极易引发梯度消失；漏写 `zero_grad()` 会导致梯度跨批次累加"
+            },
+            {
+              "key": "c",
+              "text": "矩阵反向传播要求维度匹配，Sigmoid 导数矩阵维度不匹配会直接报错，与 `zero_grad()` 无关"
+            },
+            {
+              "key": "d",
+              "text": "漏写 `zero_grad()` 会导致本层局部梯度与上游梯度相加，破坏链式法则，从而引发梯度爆炸"
+            }
+          ],
+          "answer": "b",
+          "explain": "链式法则的核心机制是局部梯度**相乘**，而非相加。当网络深度为 10 时，梯度传到第 1 层需连乘至少 9 次 Sigmoid 导数（$0.25^9 \\approx 3.8 \\times 10^{-6}$），这是梯度消失的连乘根源。`zero_grad()` 的工程意义是在每次迭代前清空 `.grad` 缓冲区，漏写会导致当前 batch 的梯度叠加在历史梯度上。矩阵反向传播的维度匹配（如 $\\frac{\\partial L}{\\partial W} = \\frac{\\partial L}{\\partial h} \\cdot h^T$）保证乘法合法，不会因 Sigmoid 报错。",
+          "id": "bq"
+        }
+      ]
+    },
+    {
+      "id": "closing",
+      "kind": "hero",
+      "notes": "最重要的一句话：反向传播是求梯度的算法，不是优化算法。梯度下降（SGD/Adam）才是决定参数怎么更新的优化器。BP 告诉你'方向在哪'，优化器决定'走多远、怎么走'。两者经常被混为一谈，但它们是正交的——你可以用 BP 算梯度，然后用任何优化器更新。自动微分（autodiff）在数学本质上和反向传播是同一件事，BP 是 autodiff 的 reverse mode 在神经网络上的特例。",
+      "blocks": [
+        {
+          "type": "hero",
+          "tag": "收尾 · 概念辨析",
+          "title": [
+            "反向传播求梯度",
+            "梯度下降做更新"
+          ],
+          "sub": "BP 通过一次反向遍历高效计算 $\\nabla_\\theta L$，复杂度约为一次前向的 2 倍；拿到梯度后，学习率与更新策略由梯度下降决定。",
+          "facts": "BP 的计算成本约为前向传播的 2 倍，而非随参数数量平方增长",
+          "hint": "算梯度和用梯度更新是两件事——BP 管前者，优化器管后者",
+          "id": "b_closing"
+        }
+      ]
+    }
+  ],
+  "schemaVersion": "1.0"
+}

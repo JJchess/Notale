@@ -12,6 +12,7 @@ from lecture_agent.domain.planning import (
     assign_layouts,
 )
 from lecture_agent.domain.skills import load_skills, plan_menu
+from lecture_agent.domain.themes import theme_menu
 
 
 def _scene(scene_id: str, blocks: list[dict]) -> dict:
@@ -49,7 +50,7 @@ def test_compose_areas_from_sizes_preserves_block_ids() -> None:
 
 def test_skeleton_prompt_is_description_driven() -> None:
     registry, auto_types = load_skills()
-    spec = _skeleton_spec(8, plan_menu(registry), "", "", "AUTH")
+    spec = _skeleton_spec(8, plan_menu(registry), "", theme_menu(), "", "AUTH")
     # ① 描述菜单在场（组件家族的 description 被真正塞进 plan 提示，而非裸类型名）。
     assert "可选组件" in spec
     assert "Reach for it" in spec  # 来自打磨后的 sim/runnable/chart/quiz 描述
@@ -59,12 +60,13 @@ def test_skeleton_prompt_is_description_driven() -> None:
 
 
 def test_skeleton_prompt_drops_interactive_suppression() -> None:
-    spec = _skeleton_spec(8, plan_menu(load_skills()[0]), "", "", "AUTH")
+    spec = _skeleton_spec(8, plan_menu(load_skills()[0]), "", theme_menu(), "", "AUTH")
     # 放开：不再有"最低优先级 / 别过量 / 至多 2 个"这类把互动组件劝退的措辞。
     for banned in ("最低优先级", "别过量", "至多 2 个", "0-2 个"):
         assert banned not in spec, f"压制措辞未清除: {banned}"
-    # 保留：题材适配护栏与 widget 触发机制仍在。
-    assert "人文/艺术" in spec
+    # 保留：题材适配护栏(判据式，不点名学科)与 widget 触发机制仍在。
+    assert "没有可量化" in spec
+    assert "人文" not in spec and "艺术" not in spec and "历史" not in spec  # 不再点名学科
     assert 'engine:"widget"' in spec
 
 

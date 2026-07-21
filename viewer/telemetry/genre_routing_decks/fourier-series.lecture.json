@@ -1,0 +1,683 @@
+{
+  "id": "fourier-series",
+  "title": "傅里叶级数",
+  "subtitle": "用正弦波拆解一切周期信号",
+  "language": "zh-CN",
+  "audience": "理工科本科生（微积分基础）",
+  "theme": "lab",
+  "tutor": {
+    "suggestions": [
+      "为什么谐波频率必须是基频的整数倍？1.5 倍基频的正弦波叠加进去会怎样？",
+      "在间断点处级数收敛到左右极限的中点，那原函数和级数在间断点还'相等'吗？",
+      "负频率在物理上真的存在吗？还是只是数学对称性的产物？",
+      "如果用多项式（泰勒级数）而不是正弦波来展开周期函数，会出什么问题？"
+    ],
+    "kb": [
+      {
+        "pattern": "基频|fundamental frequency",
+        "answer": "周期信号完成一个完整周期所需时间的倒数 $f_0 = 1/T$。傅里叶级数中所有谐波的频率都是它的整数倍。"
+      },
+      {
+        "pattern": "正交性|orthogonality",
+        "answer": "三角函数系在 $[-\\pi,\\pi]$ 上满足 $\\int_{-\\pi}^{\\pi}\\sin(nx)\\cos(mx)\\,dx=0$ 等条件，使得不同频率分量互不干扰，系数可独立求出。"
+      },
+      {
+        "pattern": "吉布斯现象|Gibbs phenomenon",
+        "answer": "用有限项傅里叶级数逼近含间断点的函数时，间断点附近出现约 9% 的固定过冲，不随项数增加而消除。"
+      },
+      {
+        "pattern": "帕塞瓦尔|Parseval",
+        "answer": "时域能量等于频域能量：$\\frac{1}{T}\\int_0^T|f(t)|^2dt = \\frac{a_0^2}{4} + \\frac{1}{2}\\sum(a_n^2+b_n^2)$。"
+      },
+      {
+        "pattern": "狄利克雷条件|Dirichlet conditions",
+        "answer": "函数在周期内分段单调、有限个间断点、绝对可积，则傅里叶级数处处收敛，间断点处收敛到左右极限的中点。"
+      },
+      {
+        "pattern": "负频率|negative frequency",
+        "answer": "复指数形式中 $e^{-in\\omega t}$ 项对应的频率。物理上可理解为顺时针旋转的相量，与正频率合成为实信号。"
+      }
+    ]
+  },
+  "scenes": [
+    {
+      "id": "cover",
+      "kind": "hero",
+      "notes": "开场点题：1822 年傅里叶断言任何周期函数都能分解为正弦波叠加——无论波形多怪。本课从旋转圆的几何直觉出发，走到正交基的代数结构，再落到吉布斯现象与工程截断，最后打开通向傅里叶变换和 DFT 的大门。提醒学生：这不是公式背诵课，而是建立'频域思维'的直觉训练。",
+      "blocks": [
+        {
+          "type": "hero",
+          "tag": "数学分析",
+          "title": [
+            "傅里叶级数",
+            "用正弦波拆解一切周期信号"
+          ],
+          "sub": "任意周期函数 $f(t)$ 均可表示为 $f(t) = \\frac{a_0}{2} + \\sum_{n=1}^{\\infty} (a_n \\cos n\\omega t + b_n \\sin n\\omega t)$",
+          "facts": "1807 年，傅里叶向巴黎科学院提交论文，断言任意周期函数都能展开为三角级数。",
+          "hint": "满足狄利克雷条件的信号，皆可由基频及其谐波重建。",
+          "id": "b_cover"
+        }
+      ]
+    },
+    {
+      "id": "time-freq-duality",
+      "kind": "content",
+      "eyebrow": "直觉入门",
+      "headline": "时域与频域：同一信号的两副面孔",
+      "lead": "一段波形既是时间的函数，也是一组频率的清单——两种视角完全等价，却各自照亮不同的信息。",
+      "notes": "承接上一页的引入，大家看屏幕上的模拟：时域里复杂的波形，在频域视角下被拆解成了几根清晰的谱线。很多初学者会误以为频域是某种“新生成”的信号，但请记住，它只是同一信号在正交基下的另一种投影，信息量完全等价。既然频域是由离散的谱线构成的，那么这些谱线的位置能随意排列吗？这就自然引出了下一页的核心问题——为什么频率必须是基频的整数倍。",
+      "blocks": [
+        {
+          "type": "statement",
+          "statement": "同一个方波，示波器上是棱角分明的电压跳变，频谱仪上是基频与奇次谐波的离散谱线——**信息完全等价**，只是换了一副面孔。",
+          "id": "b_duality"
+        },
+        {
+          "type": "sim",
+          "engine": "widget",
+          "html": "<style>\n  .lab { background: var(--bg2); border-radius: var(--radius, 12px); padding: 20px; color: var(--ink); }\n  .lab canvas { display: block; width: 100%; max-width: 680px; height: auto; margin: 0 auto;\n                background: var(--card); border-radius: var(--radius, 8px); }\n  .row { display: flex; align-items: center; gap: 12px; margin-top: 16px; }\n  .lab label { font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--text2); }\n  .lab input[type=range] { flex: 1; accent-color: var(--accent); }\n  .val { font-family: var(--mono); font-variant-numeric: tabular-nums;\n         font-size: 14px; color: var(--accent); min-width: 32px; text-align: right; }\n  .lab button { background: var(--bg); border: 1px solid var(--line); color: var(--ink);\n                padding: 6px 16px; border-radius: var(--radius, 6px); cursor: pointer;\n                font-family: var(--sans); font-size: 13px; transition: all 120ms linear; }\n  .lab button:hover { border-color: var(--accent); color: var(--accent); }\n  .lab button:active { transform: scale(0.96); }\n</style>\n<div class=\"lab\">\n  <canvas id=\"stage\" width=\"680\" height=\"360\"></canvas>\n  <div class=\"row\">\n    <label for=\"harmonics\">谐波数</label>\n    <input type=\"range\" id=\"harmonics\" min=\"1\" max=\"50\" step=\"1\" value=\"5\">\n    <span class=\"val mono\" id=\"harmonicsVal\">5</span>\n    <button id=\"playpause\">暂停</button>\n  </div>\n</div>\n<script>\n  const root = document.documentElement;\n  const tok = n => getComputedStyle(root).getPropertyValue(n).trim();\n  const ctx = document.getElementById('stage').getContext('2d');\n\n  const W = 680, H = 360;\n  const cx = 160, cy = H / 2;\n  const waveStartX = 300, waveEndX = 660, waveWidth = waveEndX - waveStartX;\n  const period = 2 * Math.PI;\n  const scale = 50;\n\n  let numHarmonics = 5;\n  let time = 1.2;\n  let wave = [];\n  let isPlaying = true;\n\n  function getTipPos(t, nMax) {\n    let x = cx, y = cy;\n    for (let k = 1; k <= nMax; k++) {\n      const n = 2 * k - 1;\n      const r = scale * 4 / (n * Math.PI);\n      x += r * Math.cos(n * t);\n      y -= r * Math.sin(n * t);\n    }\n    return { x, y };\n  }\n\n  function prefillWave() {\n    wave = [];\n    const step = 0.02;\n    for (let t = 0; t <= time; t += step) {\n      const p = getTipPos(t, numHarmonics);\n      wave.push({ t, y: p.y });\n    }\n  }\n\n  prefillWave();\n\n  document.getElementById('harmonics').addEventListener('input', e => {\n    numHarmonics = parseInt(e.target.value);\n    document.getElementById('harmonicsVal').textContent = numHarmonics;\n    wave = [];\n  });\n\n  document.getElementById('playpause').addEventListener('click', () => {\n    isPlaying = !isPlaying;\n    document.getElementById('playpause').textContent = isPlaying ? '暂停' : '播放';\n  });\n\n  function update() {\n    const C = {\n      ink: tok('--ink'), accent: tok('--accent'), line: tok('--line'),\n      bg: tok('--bg'), card: tok('--card'), muted: tok('--text2'), mono: tok('--mono')\n    };\n\n    ctx.clearRect(0, 0, W, H);\n\n    // Grid & Ticks (lab signature)\n    ctx.strokeStyle = C.line;\n    ctx.lineWidth = 1;\n    ctx.beginPath();\n    ctx.moveTo(waveStartX, cy);\n    ctx.lineTo(waveEndX, cy);\n    ctx.stroke();\n\n    for (let i = 0; i <= 4; i++) {\n      const tx = waveStartX + (waveWidth / 4) * i;\n      ctx.beginPath();\n      ctx.moveTo(tx, cy - 4);\n      ctx.lineTo(tx, cy + 4);\n      ctx.stroke();\n    }\n\n    // Draw Circles\n    let x = cx, y = cy;\n    for (let k = 1; k <= numHarmonics; k++) {\n      const n = 2 * k - 1;\n      const r = Math.max(0.5, scale * 4 / (n * Math.PI));\n      \n      ctx.beginPath();\n      ctx.arc(x, y, r, 0, Math.PI * 2);\n      ctx.strokeStyle = C.line;\n      ctx.lineWidth = 1;\n      ctx.stroke();\n\n      const nx = x + r * Math.cos(n * time);\n      const ny = y - r * Math.sin(n * time);\n\n      ctx.beginPath();\n      ctx.moveTo(x, y);\n      ctx.lineTo(nx, ny);\n      ctx.strokeStyle = C.muted;\n      ctx.lineWidth = 1;\n      ctx.stroke();\n\n      x = nx;\n      y = ny;\n    }\n\n    // Tip glow (lab signature: only active trace glows)\n    ctx.beginPath();\n    ctx.arc(x, y, 4, 0, Math.PI * 2);\n    ctx.fillStyle = C.accent;\n    ctx.shadowColor = C.accent;\n    ctx.shadowBlur = 14;\n    ctx.fill();\n    ctx.shadowBlur = 0;\n\n    // Connecting line\n    ctx.beginPath();\n    ctx.moveTo(x, y);\n    ctx.lineTo(waveStartX, y);\n    ctx.strokeStyle = C.accent;\n    ctx.lineWidth = 1;\n    ctx.setLineDash([4, 4]);\n    ctx.stroke();\n    ctx.setLineDash([]);\n\n    // Draw Wave\n    if (wave.length > 1) {\n      ctx.beginPath();\n      for (let i = 0; i < wave.length; i++) {\n        const p = wave[i];\n        const px = waveStartX + (time - p.t) * (waveWidth / period);\n        if (i === 0) ctx.moveTo(px, p.y);\n        else ctx.lineTo(px, p.y);\n      }\n      ctx.strokeStyle = C.accent;\n      ctx.lineWidth = 2;\n      ctx.shadowColor = C.accent;\n      ctx.shadowBlur = 8;\n      ctx.stroke();\n      ctx.shadowBlur = 0;\n    }\n\n    // Corner readouts (lab signature)\n    ctx.fillStyle = C.muted;\n    ctx.font = '11px ' + C.mono;\n    ctx.textAlign = 'left';\n    ctx.fillText('N ' + numHarmonics, 16, 24);\n    ctx.fillText('t  ' + time.toFixed(2), 16, 40);\n  }\n\n  let last = performance.now();\n  (function loop(now) {\n    const dt = Math.min((now - last) / 1000, 0.05);\n    last = now;\n\n    if (isPlaying) {\n      time += dt * 2;\n      const p = getTipPos(time, numHarmonics);\n      wave.push({ t: time, y: p.y });\n\n      let trimIndex = 0;\n      while (trimIndex < wave.length && wave[trimIndex].t < time - period) {\n        trimIndex++;\n      }\n      if (trimIndex > 0) wave.splice(0, trimIndex);\n    }\n\n    update();\n    requestAnimationFrame(loop);\n  })(performance.now());\n</script>",
+          "id": "b_epicycles"
+        },
+        {
+          "type": "callout",
+          "label": "频谱",
+          "text": "频谱图上第 $n$ 根竖线的高度即 $|c_n|$（旋转圆半径），其起始角即 $\\arg c_n$（相位）——每根线对应一个匀速旋转的复指数分量 $c_n e^{j n\\omega_0 t}$。",
+          "id": "b_freq_axis"
+        }
+      ],
+      "layout": {
+        "kind": "compose",
+        "areas": [
+          {
+            "blockIds": [
+              "b_duality"
+            ],
+            "col": [
+              1,
+              7
+            ]
+          },
+          {
+            "blockIds": [
+              "b_epicycles"
+            ],
+            "col": [
+              1,
+              9
+            ]
+          },
+          {
+            "blockIds": [
+              "b_freq_axis"
+            ],
+            "col": [
+              9,
+              13
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "fundamental-harmonics",
+      "kind": "content",
+      "eyebrow": "几何对应",
+      "headline": "基频与谐波：为什么必须是整数倍",
+      "lead": "周期为 $T$ 的信号只能分解为频率为 $1/T, 2/T, 3/T, \\ldots$ 的正弦波——非整数倍频率无法满足周期性边界条件。",
+      "notes": "上一页我们建立了时域与频域的直觉，现在来回答为什么频域图上的竖线必须是整数倍排列——核心在于“周期性约束”。为了让合成信号在每个基波周期 T 内完美重复，所有参与叠加的简谐波必须在 T 内刚好走完整数个完整循环，否则波形就会发生“漂移”而无法闭合。同学们常误以为可以随意叠加任意频率的正弦波，但那样得到的通常是非周期信号，已不属于傅里叶级数的讨论范畴。明确了这组“离散且整数倍”的基底后，下一页我们将利用正交性，看看如何从原信号中精准提取出这些特定谐波的幅度。",
+      "blocks": [
+        {
+          "type": "list",
+          "items": [
+            {
+              "lead": "基频",
+              "text": "周期为 $T$ 的信号最低频率分量为 $f_0=1/T$；例如标准音 A4 周期 $T \\approx 2.27$ ms，基频即 440 Hz。",
+              "icon": "ruler"
+            },
+            {
+              "lead": "整数倍谐波",
+              "text": "高阶分量必为 $nf_0$（$n$ 为正整数）；若含 $1.5f_0$，两周期后波形无法重合，将破坏 $T$ 周期性。",
+              "icon": "combine"
+            },
+            {
+              "lead": "方波",
+              "text": "仅含**奇次**谐波（$n=1,3,5...$）；440 Hz 方波不含 880 Hz 分量，频谱由 440 Hz、1320 Hz、2200 Hz 构成。",
+              "icon": "layers"
+            },
+            {
+              "lead": "锯齿波",
+              "text": "包含**全部**谐波（$n=1,2,3...$），幅度按 $1/n$ 衰减；440 Hz 锯齿波的二次谐波（880 Hz）幅度仅为基频的一半。",
+              "icon": "trending-down"
+            }
+          ],
+          "id": "b_harmonics_list"
+        },
+        {
+          "type": "chart",
+          "chartType": "line",
+          "categories": [
+            "0",
+            "π/6",
+            "π/3",
+            "π/2",
+            "2π/3",
+            "5π/6",
+            "π",
+            "7π/6",
+            "4π/3",
+            "3π/2",
+            "5π/3",
+            "11π/6",
+            "2π"
+          ],
+          "series": [
+            {
+              "name": "N=1",
+              "values": [
+                0,
+                0.64,
+                1.1,
+                1.27,
+                1.1,
+                0.64,
+                0,
+                -0.64,
+                -1.1,
+                -1.27,
+                -1.1,
+                -0.64,
+                0
+              ]
+            },
+            {
+              "name": "N=3",
+              "values": [
+                0,
+                1.06,
+                1.1,
+                0.85,
+                1.1,
+                1.06,
+                0,
+                -1.06,
+                -1.1,
+                -0.85,
+                -1.1,
+                -1.06,
+                0
+              ]
+            },
+            {
+              "name": "N=5",
+              "values": [
+                0,
+                1.19,
+                0.98,
+                1.1,
+                1.23,
+                1.19,
+                0,
+                -1.19,
+                -0.98,
+                -1.1,
+                -1.23,
+                -1.19,
+                0
+              ]
+            },
+            {
+              "name": "N=9",
+              "values": [
+                0,
+                0.96,
+                1.13,
+                1.06,
+                1.39,
+                1.14,
+                0,
+                -0.96,
+                -1.13,
+                -1.06,
+                -1.39,
+                -1.14,
+                0
+              ]
+            },
+            {
+              "name": "N=21",
+              "values": [
+                0,
+                0.98,
+                1.05,
+                1.03,
+                1.27,
+                1.15,
+                0,
+                -0.98,
+                -1.05,
+                -1.03,
+                -1.27,
+                -1.15,
+                0
+              ]
+            }
+          ],
+          "xLabel": "相位 $\\omega t$",
+          "yLabel": "振幅 $f(t)$",
+          "caption": "方波傅里叶级数 $f(t) = \\frac{4}{\\pi} \\sum_{k=1,3,5...}^N \\frac{1}{k} \\sin(k \\omega t)$ 的前 N 项叠加",
+          "id": "b_square_approx"
+        },
+        {
+          "type": "callout",
+          "label": "周期性约束",
+          "text": "叠加 $1.5f_0$ 的正弦波后，波形在第二个周期即错位失步；只有 $nf_0$ 才能保证所有分量在基频周期 $T_0$ 后同时复位，维持整体周期性。",
+          "id": "b_15freq"
+        }
+      ],
+      "layout": {
+        "kind": "compose",
+        "areas": [
+          {
+            "blockIds": [
+              "b_harmonics_list"
+            ],
+            "col": [
+              1,
+              7
+            ]
+          },
+          {
+            "blockIds": [
+              "b_square_approx"
+            ],
+            "col": [
+              1,
+              9
+            ]
+          },
+          {
+            "blockIds": [
+              "b_15freq"
+            ],
+            "col": [
+              9,
+              13
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "orthogonality-coefficients",
+      "kind": "content",
+      "eyebrow": "理论核心",
+      "headline": "正交性：为什么系数公式长这样",
+      "lead": "三角函数系在 $[-\\pi,\\pi]$ 上的正交性，使得每个频率分量的系数可以独立投影求出。",
+      "notes": "这是全课的代数核心。正交性的含义：不同频率的正弦/余弦函数在整周期上的内积为零，就像互相垂直的向量点乘为零。因此求 $a_n$ 就是把 $f(t)$ 向 $\\cos(n\\omega t)$ 做投影——两边乘 $\\cos(n\\omega t)$ 再积分，其他项自动消去，只留下 $a_n$。分母上的 $\\pi$ 来自 $\\int_{-\\pi}^{\\pi}\\cos^2(nx)\\,dx = \\pi$。奇函数的 $a_n=0$、偶函数的 $b_n=0$ 不是计算巧合，而是对称性使然：奇函数与偶函数的乘积是奇函数，对称区间积分为零。",
+      "blocks": [
+        {
+          "type": "formula",
+          "latex": "\\begin{aligned}\\int_{-\\pi}^{\\pi} \\sin(nx)\\cos(mx) \\, dx &= 0 \\\\ \\int_{-\\pi}^{\\pi} \\sin(nx)\\sin(mx) \\, dx &= \\pi \\delta_{nm} \\quad (n \\neq 0)\\end{aligned}",
+          "caption": "不同频率的三角函数在 $[-\\pi, \\pi]$ 上内积为零（正交），仅同频自内积为 $\\pi$，这正是傅里叶系数能逐个提取的代数根源。",
+          "id": "b_orthogonality"
+        },
+        {
+          "type": "formula",
+          "latex": "a_n=\\frac{1}{\\pi}\\int_{-\\pi}^{\\pi}f(x)\\cos(nx)\\,dx,\\quad b_n=\\frac{1}{\\pi}\\int_{-\\pi}^{\\pi}f(x)\\sin(nx)\\,dx",
+          "caption": "傅里叶系数公式：正交性使每一项的系数可独立提取，积分区间为 $[-\\pi,\\pi]$。",
+          "id": "b_coefficients"
+        },
+        {
+          "type": "callout",
+          "label": "对称捷径",
+          "text": "奇函数只剩 $b_n$，偶函数只剩 $a_n$——因为奇×偶=奇，在对称区间 $[-\\pi,\\pi]$ 上积分为零。",
+          "id": "b_odd_even"
+        }
+      ],
+      "layout": {
+        "kind": "index",
+        "steps": [
+          {
+            "label": "正交性条件",
+            "blockIds": [
+              "b_orthogonality"
+            ]
+          },
+          {
+            "label": "系数公式",
+            "blockIds": [
+              "b_coefficients"
+            ]
+          },
+          {
+            "label": "奇函数 → $a_n=0$；…",
+            "blockIds": [
+              "b_odd_even"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "gibbs-convergence",
+      "kind": "content",
+      "eyebrow": "收敛与边界",
+      "headline": "吉布斯现象：过冲永不消失",
+      "lead": "在间断点附近，有限项傅里叶级数始终产生约 9% 的过冲——项数再多也不收敛于函数值。",
+      "notes": "吉布斯现象是傅里叶级数最反直觉的性质之一。增加项数，过冲不会减小，只会向间断点压缩。这个约 9% 的过冲来自高频谐波的截断，本质是正弦波试图'追上'跳跃时的惯性振荡。狄利克雷条件保证级数收敛：分段单调、有限间断、绝对可积。在间断点处级数收敛到左右极限的中点 $(f(x^+)+f(x^-))/2$，而不是函数值本身——所以严格说，级数在间断点不等于原函数。工程上这个过冲可能导致电路中的电压尖峰，需要用窗函数或预加重来缓解。",
+      "blocks": [
+        {
+          "type": "chart",
+          "chartType": "line",
+          "categories": [
+            "0.01",
+            "0.03",
+            "0.05",
+            "0.08",
+            "0.12",
+            "0.16",
+            "0.20",
+            "0.25",
+            "0.30",
+            "0.40",
+            "0.50",
+            "0.70",
+            "1.00"
+          ],
+          "series": [
+            {
+              "name": "N=5",
+              "values": [
+                0.06,
+                0.19,
+                0.31,
+                0.49,
+                0.71,
+                0.89,
+                1.02,
+                1.14,
+                1.18,
+                1.12,
+                0.98,
+                0.92,
+                1.07
+              ]
+            },
+            {
+              "name": "N=11",
+              "values": [
+                0.14,
+                0.41,
+                0.66,
+                0.96,
+                1.15,
+                1.17,
+                1.1,
+                0.93,
+                0.91,
+                1.04,
+                1.01,
+                1.0,
+                1.0
+              ]
+            },
+            {
+              "name": "N=21",
+              "values": [
+                0.26,
+                0.74,
+                1.05,
+                1.18,
+                0.97,
+                0.9,
+                1.02,
+                1.03,
+                0.95,
+                0.98,
+                0.99,
+                1.0,
+                1.0
+              ]
+            },
+            {
+              "name": "N=51",
+              "values": [
+                0.61,
+                1.18,
+                0.97,
+                1.01,
+                1.0,
+                1.0,
+                1.0,
+                1.0,
+                1.0,
+                1.0,
+                1.0,
+                1.0,
+                1.0
+              ]
+            }
+          ],
+          "xLabel": "x（弧度，距间断点 x=0 的距离）",
+          "yLabel": "S_N(x)",
+          "caption": "方波傅里叶部分和在间断点附近：N 从 5 增到 51，过冲峰值始终 ≈1.18（占跳变量 2 的 ~9%），过冲宽度收窄但高度不降——这就是吉布斯现象。",
+          "id": "b_gibbs_chart"
+        },
+        {
+          "type": "statement",
+          "statement": "满足分段单调、有限间断与绝对可积的函数，其傅里叶级数必处处收敛——即便在方波的跳变点，级数也收敛于左右极限的均值 $\\frac{f(x^+)+f(x^-)}{2}$。",
+          "id": "b_dirichlet"
+        },
+        {
+          "type": "callout",
+          "label": "中点收敛",
+          "text": "在间断点 $x_0$ 处，傅里叶级数收敛到左右极限的中点 $(f(x_0^+)+f(x_0^-))/2$，而非 $f(x_0)$ 本身——级数与原函数在此点不相等。",
+          "id": "b_midpoint"
+        }
+      ]
+    },
+    {
+      "id": "parseval-truncation",
+      "kind": "content",
+      "eyebrow": "能量与截断",
+      "headline": "帕塞瓦尔定理：时域能量 = 频域能量",
+      "lead": "信号的总能量等于各谐波能量之和——截断到第 N 项，丢掉的能量就是剩余谐波的能量。",
+      "notes": "帕塞瓦尔定理本质上是向量空间中的勾股定理：由于不同频率的正余弦基相互正交，时域信号的总能量就等于各频域分量能量的直接相加。同学们常犯的错误是忘记对系数平方，或者混淆能量与功率而漏掉了归一化因子（如1/T）；记住，增加谐波项并不会“创造”新能量，只是把总能量分配到更细的频段。这也解释了上一页吉布斯现象中，虽然过冲幅度不减小，但截断信号的均方误差（能量差）确实会随着项数增加而趋于零。既然实数形式的能量守恒已经清晰，下一页我们将引入复指数形式，看看所谓的“负频率”在能量分配中扮演什么角色。",
+      "blocks": [
+        {
+          "type": "formula",
+          "latex": "\\frac{1}{T}\\int_{0}^{T} |f(t)|^2 dt = \\frac{a_0^2}{4} + \\frac{1}{2}\\sum_{n=1}^{\\infty}(a_n^2 + b_n^2)",
+          "caption": "帕塞瓦尔定理：信号在时域的平均功率（左）等于其直流分量及各次谐波分量功率之和（右）。",
+          "id": "b_parseval"
+        },
+        {
+          "type": "chart",
+          "chartType": "bar",
+          "categories": [
+            "1 次",
+            "1,3 次",
+            "1,3,5 次",
+            "1,3,5,7 次",
+            "1,3,5,7,9 次",
+            "1,3,5,7,9,11 次",
+            "1,3,5,7,9,11,13 次"
+          ],
+          "series": [
+            {
+              "name": "能量捕获比例",
+              "values": [
+                81.1,
+                90.1,
+                93.3,
+                95.0,
+                96.0,
+                96.6,
+                97.1
+              ]
+            }
+          ],
+          "xLabel": "保留的谐波",
+          "yLabel": "能量占比 (%)",
+          "caption": "方波傅里叶级数截断能量占比：仅基波 (k=1) 即捕获 81.1%，加入 3 次谐波 (k=3) 后超 90%",
+          "id": "b_energy_chart"
+        },
+        {
+          "type": "callout",
+          "label": "辨析",
+          "text": "帕塞瓦尔保证 $L^2$ 能量收敛，但**不蕴含逐点收敛**：方波间断点处的吉布斯过冲恒约 $9\\%$，不随 $N\\to\\infty$ 消失。",
+          "id": "b_energy_vs_pointwise"
+        }
+      ],
+      "layout": {
+        "kind": "index",
+        "steps": [
+          {
+            "label": "帕塞瓦尔定理",
+            "blockIds": [
+              "b_parseval"
+            ]
+          },
+          {
+            "label": "方波截断项数 vs 能量捕获…",
+            "blockIds": [
+              "b_energy_chart"
+            ]
+          },
+          {
+            "label": "能量收敛 ≠ 逐点收敛",
+            "blockIds": [
+              "b_energy_vs_pointwise"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "complex-exponential",
+      "kind": "content",
+      "eyebrow": "复指数与批判性思考",
+      "headline": "复指数形式与负频率：数学把戏还是物理实在",
+      "lead": "用 $e^{in\\omega t}$ 替代 $\\sin/\\cos$ 后，频谱从单侧变成双侧——负频率不是 bug，而是实信号的对称镜像。",
+      "notes": "复指数形式 $f(t)=\\sum c_n e^{in\\omega t}$ 通过欧拉公式与三角形式等价。$c_n = (a_n - ib_n)/2$，$c_{-n} = c_n^*$（实信号时共轭）。负频率的物理意义：$e^{-in\\omega t}$ 是顺时针旋转的相量，与正频率的逆时针旋转合成为实信号。在通信中，负频率对应下边带，是实信号频谱的必然对称。为什么不用多项式（泰勒级数）展开周期函数？因为多项式不是周期的，且在全局区间上不构成正交基——泰勒展开是局部近似，傅里叶展开是全局正交分解。直流分量 $c_0 = a_0/2$，就是信号的平均值。",
+      "blocks": [
+        {
+          "type": "formula",
+          "latex": "f(t) = \\sum_{n=-\\infty}^{\\infty} c_n e^{i n \\omega t} \\qquad c_n = \\frac{1}{T} \\int_0^T f(t) e^{-i n \\omega t} dt",
+          "caption": "复指数形式将正余弦合并，系数 $c_n$ 直接给出了频率 $n\\omega$（包括 $n<0$ 的负频率）的复数振幅",
+          "id": "b_complex_form"
+        },
+        {
+          "type": "compare",
+          "left": {
+            "caption": "三角形式",
+            "block": {
+              "type": "list",
+              "items": [
+                {
+                  "text": "$f(t)=\\dfrac{a_0}{2}+\\sum_{n=1}^{\\infty}\\bigl(a_n\\cos n\\omega_0 t+b_n\\sin n\\omega_0 t\\bigr)$"
+                },
+                {
+                  "text": "$a_n=\\dfrac{2}{T}\\displaystyle\\int_0^T f(t)\\cos n\\omega_0 t\\,dt$，$b_n=\\dfrac{2}{T}\\displaystyle\\int_0^T f(t)\\sin n\\omega_0 t\\,dt$"
+                },
+                {
+                  "text": "频谱仅出现在 $n\\geq 1$，**单侧**"
+                },
+                {
+                  "text": "每个谐波是一个实振动，无负频率"
+                }
+              ]
+            }
+          },
+          "right": {
+            "caption": "复指数形式",
+            "block": {
+              "type": "list",
+              "items": [
+                {
+                  "text": "$f(t)=\\sum_{n=-\\infty}^{\\infty}c_n\\,e^{in\\omega_0 t}$"
+                },
+                {
+                  "text": "$c_n=\\dfrac{1}{T}\\displaystyle\\int_0^T f(t)\\,e^{-in\\omega_0 t}\\,dt$"
+                },
+                {
+                  "text": "频谱 $n\\in\\mathbb{Z}$，**双侧**，且 $c_{-n}=c_n^{*}$"
+                },
+                {
+                  "text": "桥接：$c_n=\\dfrac{a_n-ib_n}{2}$，$c_{-n}=\\dfrac{a_n+ib_n}{2}$"
+                }
+              ]
+            }
+          },
+          "id": "b_tri_vs_complex"
+        },
+        {
+          "type": "callout",
+          "label": "核心结论",
+          "text": "负频率对应顺时针旋转相量 $e^{-i\\omega t}$；实信号要求 $c_{-n}=\\overline{c_{+n}}$，频谱关于零频共轭对称——负频率标记旋转方向，不是数学把戏。",
+          "id": "b_neg_freq"
+        }
+      ]
+    },
+    {
+      "id": "quiz-outlook",
+      "kind": "quiz",
+      "eyebrow": "检验与展望",
+      "headline": "随堂检验与后续路径",
+      "notes": "用 quiz 检验三个关键点：正交性如何导出系数公式、吉布斯现象的过冲不随项数消失、帕塞瓦尔定理的截断评估。最后点出后续路径：周期→非周期（傅里叶变换 CTFT）、连续→离散（DFT/FFT）。现实中的信号都是有限长、离散的，所以 DFT/FFT 才是工程主力工具——傅里叶级数是理解这一切的理论起点。",
+      "blocks": [
+        {
+          "type": "quiz",
+          "kind": "objective",
+          "stem": "对方波 $f(t)=\\mathrm{sgn}(\\sin t)$（周期 $2\\pi$）做傅里叶级数，取前 $N$ 项部分和 $S_N(t)$。下列判断正确的是：",
+          "choices": [
+            {
+              "key": "a",
+              "text": "由正交性 $\\int_{-\\pi}^{\\pi}\\sin(kt)\\sin(mt)\\,dt=\\pi\\delta_{km}$ 推出 $b_k=\\frac{4}{\\pi k}$（$k$ 奇），且增大 $N$ 可使间断点处最大过冲趋于零"
+            },
+            {
+              "key": "b",
+              "text": "正交性给出 $b_k=\\frac{4}{\\pi k}$（$k$ 奇），但间断点附近过冲恒约 $9\\%$，不随 $N$ 消失——这正是吉布斯现象"
+            },
+            {
+              "key": "c",
+              "text": "由帕塞瓦尔等式，截断剩余能量 $\\sum_{k>N}b_k^2$ 随 $N$ 线性下降至零"
+            },
+            {
+              "key": "d",
+              "text": "$f$ 为奇函数故 $a_k=0$，但 $b_k$ 无解析式，须数值积分逐个求出"
+            }
+          ],
+          "answer": "b",
+          "explain": "b 正确：正交性直接给出 $b_k=\\frac{4}{\\pi k}$（仅奇次项），而吉布斯过冲量约为跳变幅度的 $8.95\\%$，增大 $N$ 只让过冲位置向间断点收缩、幅值不变。a 最具迷惑性——前半段系数推导完全正确，但'过冲趋于零'恰恰是吉布斯现象所否定的直觉。c 错：$b_k\\sim 1/k$，剩余能量 $\\sum_{k>N}b_k^2\\sim\\sum 1/k^2\\sim 1/N$，是 $O(1/N)$ 而非线性。d 错：$b_k$ 同样由正交性解析给出，无需数值积分。",
+          "id": "b_quiz"
+        },
+        {
+          "type": "agenda",
+          "rows": [
+            {
+              "label": "傅里叶级数",
+              "text": "处理**周期连续**信号，如 $f(t)=f(t+2\\pi)$ 的方波展开"
+            },
+            {
+              "label": "傅里叶变换",
+              "text": "推广至**非周期连续**信号，如单次矩形脉冲的连续频谱 $F(\\omega)$",
+              "fragment": "fade-up"
+            },
+            {
+              "label": "离散傅里叶变换",
+              "text": "处理**周期离散**采样序列，如 $N$ 点序列 $\\{x_n\\}$ 到 $\\{X_k\\}$ 的映射",
+              "fragment": "fade-up"
+            },
+            {
+              "label": "快速傅里叶变换",
+              "text": "Cooley-Tukey 算法将 DFT 复杂度从 $O(N^2)$ 降至 $O(N \\log N)$",
+              "fragment": "fade-up"
+            }
+          ],
+          "id": "b_roadmap"
+        }
+      ]
+    }
+  ],
+  "schemaVersion": "1.0"
+}
