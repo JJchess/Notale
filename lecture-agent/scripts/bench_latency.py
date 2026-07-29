@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import Any
 
 from hydra.utils import instantiate
-from lecture_agent.agent import GeneratorOptions, generate_lecture
+from lecture_agent.engine import GeneratorOptions, generate_lecture
 from lecture_agent.domain.evaluation import compare, gate
 from lecture_agent.utils.seed import seed_everything
 from omegaconf import OmegaConf
@@ -113,7 +113,7 @@ async def main() -> None:
     picked = [(d, c) for d, c in MODELS if c in args.models]
 
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    out = ROOT / "results" / f"bench_{ts}"
+    out = ROOT / "experiments" / "results" / f"bench_{ts}"
     out.mkdir(parents=True, exist_ok=True)
     print(f"→ {out.name}: {len(picked)} 模型 × (slow|fast) × {PAGES}页，目标 ≤{TARGET_MIN}min")
 

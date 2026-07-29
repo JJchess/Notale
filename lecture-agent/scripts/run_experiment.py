@@ -15,7 +15,7 @@ import json
 from pathlib import Path
 
 import hydra
-from lecture_agent.app.container import run_generation
+from lecture_agent.app.generate import run_generation
 from lecture_agent.domain.evaluation import diversity
 from lecture_agent.utils.logging import get_logger
 from omegaconf import DictConfig, OmegaConf
@@ -55,7 +55,7 @@ async def _run(cfg: DictConfig) -> dict[str, object]:
 @hydra.main(version_base=None, config_path="../configs", config_name="config")
 def main(cfg: DictConfig) -> None:
     metrics = asyncio.run(_run(cfg))
-    out = Path(cfg.get("out_dir", "results")) / "metrics.json"
+    out = Path(cfg.get("out_dir", "experiments/results")) / "metrics.json"
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(metrics, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"✓ 实验完成，metrics → {out}")

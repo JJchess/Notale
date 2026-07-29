@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from typing import Any
 
 from ..ports.llm import ToolCallingLLM
@@ -20,11 +21,16 @@ async def run_tool_loop(
     *,
     max_rounds: int = 4,
     purpose: str = "tools",
+    on_round: Callable[[int, list[str]], None] | None = None,
 ) -> str:
-    """跑最多 max_rounds 回合工具循环；返回模型最终 content。工具返回值也进对话供模型观察。"""
+    """跑最多 max_rounds 回合工具循环；返回模型最终 content。工具返回值也进对话供模型观察。
+
+    on_round(rnd, tool_names)：每完成一个含工具调用的回合后回调（外壳用来记工具序列 / nudge 计数）。
+    纯观察钩子，不改控制流；不传则行为与旧调用者完全一致。
+    """
     specs = [t.spec for t in tools.values()]
     msgs: list[dict[str, Any]] = [dict(m) for m in messages]
-    for _ in range(max_rounds):
+    for rnd in range(max_rounds):
         turn = await llm.complete_tools(msgs, specs, purpose=purpose)
         if not turn.tool_calls:
             return turn.content or ""
@@ -49,6 +55,8 @@ async def run_tool_loop(
             tool = tools.get(c.name)
             obs = await tool.run(c.arguments) if tool is not None else f"ERROR: 未知工具 {c.name}"
             msgs.append({"role": "tool", "tool_call_id": c.id, "content": obs})
+        if on_round is not None:
+            on_round(rnd, [c.name for c in turn.tool_calls])
     # 轮次用尽：最后再问一次，逼出最终答复
     final = await llm.complete_tools(msgs, specs, purpose=purpose)
     return final.content or ""

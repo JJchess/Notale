@@ -8,7 +8,7 @@ from __future__ import annotations
 import json
 
 from lecture_agent.adapters.llm.fake import FakeClient
-from lecture_agent.agent import GeneratorOptions, generate_lecture
+from lecture_agent.engine import GeneratorOptions, generate_lecture
 from lecture_agent.domain.generation import generate_widget
 from lecture_agent.schema import validate_doc
 from lecture_agent.schema.validate import validate_block

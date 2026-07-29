@@ -1,7 +1,7 @@
 """StructuralVerifier —— 无浏览器的结构验证，实现 ports.RenderVerifier。
 
 复用 schema.validate_doc（结构+语义）做"渲染前"结构断言。它不是真机渲染，但对生成流水线足够作把关；
-真机渲染由 PlaywrightVerifier 承担（需 vendored 运行时）。输入是 LectureDoc 的 JSON 字符串。
+（真机无头渲染的 verifier 曾存在，因运行时无处注入 + 依赖缺失已删。）输入是 LectureDoc 的 JSON 字符串。
 """
 
 from __future__ import annotations

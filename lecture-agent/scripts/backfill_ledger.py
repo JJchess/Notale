@@ -1,8 +1,8 @@
 """一次性回填历史实验产物到 results/ledger.jsonl。
 
 扫两类既有产物：
-  - results/matrix_*/**/deck.json（配套 result.json，取 model/topic/tokens/耗时/gate）
-  - data/corpus/*.lecture.json（单次生成产物，没有 result.json，能力画像仍可从 deck 本身数出）
+  - experiments/results/matrix_*/**/deck.json（配套 result.json，取 model/topic/tokens/耗时/gate）
+  - experiments/corpus/*.lecture.json（单次生成产物，没有 result.json，能力画像仍可从 deck 本身数出）
 
 历史产物无法精确重建当时的 agent 代码指纹 —— 诚实标 `code.label="historical"`、
 `agent_fingerprint=None`，不去凭空编造；往后 `container.run_generation` 记的新记录才有精确指纹。
@@ -87,18 +87,18 @@ def _record_from_corpus(deck_path: Path, existing_ids: set[str]) -> ExperimentRe
 
 
 def main() -> None:
-    ledger = LedgerStore(ROOT / "results" / "ledger.jsonl")
+    ledger = LedgerStore(ROOT / "experiments" / "results" / "ledger.jsonl")
     existing_ids = {r.run_id for r in ledger.read_all()}
 
     added = 0
-    for deck_path in sorted((ROOT / "results").glob("matrix_*/**/deck.json")):
+    for deck_path in sorted((ROOT / "experiments" / "results").glob("matrix_*/**/deck.json")):
         rec = _record_from_matrix(deck_path, existing_ids)
         if rec is not None:
             ledger.append(rec)
             existing_ids.add(rec.run_id)
             added += 1
 
-    for deck_path in sorted((ROOT / "data" / "corpus").glob("*.lecture.json")):
+    for deck_path in sorted((ROOT / "experiments" / "corpus").glob("*.lecture.json")):
         rec = _record_from_corpus(deck_path, existing_ids)
         if rec is not None:
             ledger.append(rec)

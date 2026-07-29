@@ -12,7 +12,7 @@ from pathlib import Path
 
 from hydra import compose, initialize_config_dir
 
-from .container import run_generation
+from .generate import run_generation
 
 _CONFIGS = Path(__file__).resolve().parents[2] / "configs"
 

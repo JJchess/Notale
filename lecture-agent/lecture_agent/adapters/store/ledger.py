@@ -8,7 +8,7 @@ from ...schema import ExperimentRecord
 
 
 class LedgerStore:
-    def __init__(self, path: str | Path = "results/ledger.jsonl") -> None:
+    def __init__(self, path: str | Path = "experiments/results/ledger.jsonl") -> None:
         self.path = Path(path)
 
     def append(self, record: ExperimentRecord) -> None:

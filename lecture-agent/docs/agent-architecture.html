@@ -1,0 +1,243 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>lecture-agent · Agent 架构对照（before / after）</title>
+<style>
+  :root{
+    --ink:#2b333b; --muted:#6b7681; --line:#8a95a0;
+    --card:#ffffff; --bg:#f4f6f8; --cardline:#e2e7ec;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;}
+  .wrap{max-width:1200px;margin:0 auto;padding:28px 20px 60px;}
+  h1{font-size:22px;margin:0 0 4px;font-weight:800;letter-spacing:.3px}
+  .lede{color:var(--muted);font-size:13px;margin:0 0 22px;line-height:1.6}
+  .panel{background:var(--card);border:1px solid var(--cardline);border-radius:16px;
+    padding:14px 16px 6px;margin:16px 0;box-shadow:0 1px 3px rgba(30,40,60,.05);overflow-x:auto}
+  .panel h2{font-size:15px;margin:2px 4px 2px;font-weight:800}
+  .panel .cap{font-size:12px;color:var(--muted);margin:0 4px 6px;line-height:1.5}
+  svg{display:block;width:100%;height:auto;min-width:760px}
+  .bridge{display:flex;align-items:center;gap:14px;justify-content:center;
+    margin:10px auto;max-width:900px;padding:12px 18px;border-radius:14px;
+    background:#eef3ff;border:1px dashed #9db4e0;color:#33456f;font-size:13.5px;line-height:1.5;text-align:center}
+  .bridge b{color:#22345e}
+  .bridge .arrow{font-size:26px;color:#7f97cf;flex:0 0 auto}
+  .foot{color:#9aa4ad;font-size:11.5px;text-align:right;margin-top:8px}
+  code{background:#eef1f4;border-radius:5px;padding:0 4px;font-size:.9em;color:#3a4750}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>lecture-agent · Agent 架构对照</h1>
+  <p class="lede">同一套配色/形状语言画两版：<b>上＝改造前的确定性流水线</b>（固定 DAG，模型不决定下一步）；
+  <b>下＝现状（A+B+C 全部已实现的“专能 Hermes”外壳）</b>（有界 agentic loop，模型自主选工具）。核心：整条老流水线原样保留，
+  只是被降级成外壳里的一个工具 <code>make_lecture</code>。</p>
+
+  <div class="panel">
+    <h2>① 改造前 · 确定性流水线（as-is，<code>agent/orchestrator.py::generate_lecture</code>）</h2>
+    <p class="cap">单轨有向流程，仅有的循环是<b>有界的块级/整档自修</b>；模型只在每个节点内出力，从不选择“下一步做什么”。</p>
+    <svg id="svgA" viewBox="0 0 1160 500" role="img" aria-label="改造前确定性流水线"></svg>
+  </div>
+
+  <div class="bridge">
+    <span class="arrow">⬇</span>
+    <span>改造后并没有推翻它 —— <b>改造前的 ①→⑤ 整条流水线 ≡ 改造后「工具执行」里的 <code>make_lecture</code> 内部</b>。
+    外壳负责“何时调用、要不要澄清、要不要再来一轮、记住什么”；流水线负责“把谈定的 brief 确定性地产出一份合法 deck”。</span>
+    <span class="arrow">⬇</span>
+  </div>
+
+  <div class="panel">
+    <h2>② 现状 · 专能 Hermes 外壳（A+B+C 全部已实现，<code>agent/shell.py</code> 复用 <code>run_tool_loop</code>）</h2>
+    <p class="cap">有界 ReAct 主循环：预处理上下文 → 模型采样 → 工具执行 → 补 side inputs → 组包 →
+    <code>needsFollowUp?</code> → 进入下一轮 / 本轮结束。deck 全程在 <code>CorpusStore</code>，不进上下文窗口。
+    <b>120 tests 绿</b>；含 PTC 沙箱、evolve 自演化环、cron 调度。</p>
+    <svg id="svgB" viewBox="0 0 1160 660" role="img" aria-label="改造后专能 Hermes 外壳"></svg>
+  </div>
+
+  <p class="foot">lecture-agent · 自包含离线图（内联 SVG，无网络依赖）</p>
+</div>
+
+<script>
+/* ---------- 迷你渲染器：钉住参考图观感（药丸/圆角/菱形/虚线浮框 + 粗标题+浅色小字） ---------- */
+const NS="http://www.w3.org/2000/svg";
+const PAL={
+  yellow:{fill:"#f7e7a6",stroke:"#d9ad48",title:"#6f5411",sub:"#8a6b1f"},
+  blue:  {fill:"#dce6f4",stroke:"#a9bfdd",title:"#2f4c7a",sub:"#5c78a2"},
+  green: {fill:"#d9ecd6",stroke:"#a6cf9f",title:"#356b37",sub:"#5f8c5c"},
+  purple:{fill:"#e6dcf1",stroke:"#c4addf",title:"#5c3f86",sub:"#7f61a6"},
+  peach: {fill:"#f8e8d5",stroke:"#e2b78d",title:"#8a5a2c",sub:"#9c6f45",dash:true},
+  pink:  {fill:"#f7e0e1",stroke:"#e2abb0",title:"#8a3c46",sub:"#9d626b",dash:true},
+  grey:  {fill:"#eef1f3",stroke:"#c6ced6",title:"#49535d",sub:"#6d7681",dash:true},
+};
+const EDGE="#8a95a0";
+
+function el(tag,attrs){const e=document.createElementNS(NS,tag);for(const k in attrs)e.setAttribute(k,attrs[k]);return e;}
+function polyMid(pts){
+  const seg=[]; let total=0;
+  for(let i=1;i<pts.length;i++){const l=Math.hypot(pts[i][0]-pts[i-1][0],pts[i][1]-pts[i-1][1]);seg.push(l);total+=l;}
+  let half=total/2;
+  for(let i=1;i<pts.length;i++){ if(half<=seg[i-1]){const t=seg[i-1]?half/seg[i-1]:0;
+    return[pts[i-1][0]+(pts[i][0]-pts[i-1][0])*t, pts[i-1][1]+(pts[i][1]-pts[i-1][1])*t];} half-=seg[i-1]; }
+  return pts[pts.length-1];
+}
+function anchor(n,side){
+  const cx=n.x+n.w/2, cy=n.y+n.h/2;
+  if(n.shape==="diamond"){
+    if(side==="r")return[n.x+n.w,cy]; if(side==="l")return[n.x,cy];
+    if(side==="t")return[cx,n.y];     return[cx,n.y+n.h];
+  }
+  if(side==="r")return[n.x+n.w,cy]; if(side==="l")return[n.x,cy];
+  if(side==="t")return[cx,n.y];     if(side==="b")return[cx,n.y+n.h];
+  return[cx,cy];
+}
+function drawNode(svg,n){
+  const p=PAL[n.role]||PAL.grey;
+  const dash = (n.dash||p.dash)?"5 4":null;
+  if(n.shape==="diamond"){
+    const cx=n.x+n.w/2, cy=n.y+n.h/2;
+    const pts=[[cx,n.y],[n.x+n.w,cy],[cx,n.y+n.h],[n.x,cy]].map(a=>a.join(",")).join(" ");
+    svg.appendChild(el("polygon",{points:pts,fill:p.fill,stroke:p.stroke,"stroke-width":2}));
+  }else{
+    const rx = n.shape==="pill" ? n.h/2 : 14;
+    const a={x:n.x,y:n.y,width:n.w,height:n.h,rx:rx,ry:rx,fill:p.fill,stroke:p.stroke,"stroke-width":2};
+    if(dash)a["stroke-dasharray"]=dash;
+    svg.appendChild(el("rect",a));
+  }
+  drawLabel(svg,n.x+n.w/2,n.y+n.h/2,n.title,n.sub,p,"middle",n.shape==="diamond");
+}
+function drawLabel(svg,cx,cy,title,sub,p,align,tight){
+  const subs = sub?(Array.isArray(sub)?sub:[sub]):[];
+  const lh=13.5, tSize=tight?12.5:14.5;
+  const total = tSize + subs.length*lh;
+  let y = cy - total/2 + tSize*0.8;
+  const t=el("text",{x:cx,y:y,"text-anchor":align,fill:p.title,"font-size":tSize,"font-weight":700});
+  t.textContent=title; svg.appendChild(t);
+  y += 6;
+  for(const s of subs){ y+=lh;
+    const e=el("text",{x:cx,y:y,"text-anchor":align,fill:p.sub,"font-size":10.8});
+    e.textContent=s; svg.appendChild(e);
+  }
+}
+function drawCallout(svg,c){
+  const p=PAL[c.role]||PAL.peach;
+  svg.appendChild(el("rect",{x:c.x,y:c.y,width:c.w,height:c.h,rx:12,ry:12,
+    fill:p.fill,stroke:p.stroke,"stroke-width":1.8,"stroke-dasharray":"6 4"}));
+  const th=el("text",{x:c.x+14,y:c.y+22,fill:p.title,"font-size":13,"font-weight":800});
+  th.textContent=c.title; svg.appendChild(th);
+  let y=c.y+22;
+  for(const line of (c.lines||[])){ y+=16.5;
+    const e=el("text",{x:c.x+14,y:y,fill:p.sub,"font-size":10.8});
+    e.textContent=line; svg.appendChild(e);
+  }
+}
+function drawEdge(svg,nodes,e){
+  let pts = e.pts;
+  if(!pts){
+    const a=anchor(nodes[e.from],e.fromSide||"r"), b=anchor(nodes[e.to],e.toSide||"l");
+    if(a[0]!==b[0] && a[1]!==b[1]) pts=[a,[b[0],a[1]],b]; else pts=[a,b];
+  }
+  const d="M"+pts.map(p=>p.join(" ")).join(" L ");
+  const path=el("path",{d:d,fill:"none",stroke:EDGE,"stroke-width":1.7,"marker-end":"url(#arw)"});
+  if(e.dash)path.setAttribute("stroke-dasharray","5 4");
+  svg.appendChild(path);
+  if(e.label){
+    const mp=e.labelAt||polyMid(pts);
+    const lines=Array.isArray(e.label)?e.label:[e.label];
+    const w=Math.max(...lines.map(l=>l.length))*6.0+10, h=lines.length*13+6;
+    svg.appendChild(el("rect",{x:mp[0]-w/2,y:mp[1]-h/2,width:w,height:h,rx:5,ry:5,fill:"#ffffff",opacity:.86}));
+    let y=mp[1]-h/2+12;
+    for(const l of lines){const t=el("text",{x:mp[0],y:y,"text-anchor":"middle",fill:"#7b8590","font-size":10.5});t.textContent=l;svg.appendChild(t);y+=13;}
+  }
+}
+function render(id,spec){
+  const svg=document.getElementById(id);
+  const defs=el("defs",{});
+  const m=el("marker",{id:"arw",viewBox:"0 0 10 10",refX:"9",refY:"5",markerWidth:"7",markerHeight:"7",orient:"auto-start-reverse"});
+  m.appendChild(el("path",{d:"M0 0 L10 5 L0 10 z",fill:EDGE})); defs.appendChild(m); svg.appendChild(defs);
+  (spec.callouts||[]).forEach(c=>drawCallout(svg,c));
+  (spec.edges||[]).forEach(e=>drawEdge(svg,spec.nodes,e));
+  Object.values(spec.nodes).forEach(n=>drawNode(svg,n));
+  (spec.tags||[]).forEach(t=>{
+    svg.appendChild(el("rect",{x:t.x,y:t.y,width:t.w,height:26,rx:13,ry:13,fill:"#fff",stroke:"#cbd3db","stroke-dasharray":"4 3"}));
+    const e=el("text",{x:t.x+t.w/2,y:t.y+17,"text-anchor":"middle",fill:"#5a6570","font-size":11.5,"font-weight":700});
+    e.textContent=t.text; svg.appendChild(e);
+  });
+}
+
+/* ---------- 布局网格 ---------- */
+const C=[40,250,470,690,900], W=182, H=84;
+
+/* ===== 面板 A：改造前（固定流水线） ===== */
+const Ar1=150, Ar2=320;
+const A={nodes:{},edges:[],callouts:[],tags:[]};
+A.nodes.IN  ={x:C[0],y:Ar1,w:150,h:H,shape:"pill",role:"yellow",title:"输入",sub:["topic / material","pages / theme"]};
+A.nodes.PLAN={x:C[1],y:Ar1,w:W,h:H,role:"green",title:"① Plan",sub:["plan_lecture()","STORM 多视角 · type/theme_menu"]};
+A.nodes.FAN ={x:C[2],y:Ar1,w:W,h:H,role:"green",title:"② Fan-out",sub:["generate_block / _widget","并发 pool · 逐块自校验"]};
+A.nodes.ASM ={x:C[3],y:Ar1,w:W,h:H,role:"blue",title:"③ 组装",sub:["fill_blocks · attach_icons","hero 配图(opt)"]};
+A.nodes.VAL ={x:C[4],y:Ar1,w:W,h:H,role:"blue",title:"④ 整档校验+自修",sub:["validate_doc · _doc_repair","≤2 轮 · block 错回炉"]};
+A.nodes.NOTE={x:C[4],y:Ar2,w:W,h:H,role:"blue",title:"④.5 讲者备注",sub:["enrich_notes"]};
+A.nodes.COV ={x:C[3],y:Ar2,w:W,h:H,role:"grey",title:"⑤ 覆盖度审查",sub:["check_coverage","opt-in · STORM 闭环"]};
+A.nodes.OUT ={x:C[2],y:Ar2,w:150,h:H,shape:"pill",role:"yellow",title:"输出",sub:["LectureDoc","→ CorpusStore + ledger"]};
+A.edges=[
+  {from:"IN",to:"PLAN"},{from:"PLAN",to:"FAN"},{from:"FAN",to:"ASM"},{from:"ASM",to:"VAL"},
+  {from:"VAL",to:"NOTE",fromSide:"b",toSide:"t"},
+  {from:"NOTE",to:"COV",fromSide:"l",toSide:"r"},
+  {from:"COV",to:"OUT",fromSide:"l",toSide:"r"},
+];
+// 有界自修小回环（仅有的循环）
+[["FAN"],["VAL"]].forEach(([id])=>{
+  const n=A.nodes[id], cx=n.x+n.w/2;
+  A.edges.push({pts:[[cx-26,n.y],[cx-26,n.y-32],[cx+26,n.y-32],[cx+26,n.y]],dash:true,
+    label:"↺ 自校验自修",labelAt:[cx,n.y-32]});
+});
+A.callouts=[
+  {x:C[1]+40,y:20,w:300,h:34,role:"grey",title:"⚙ GeneratorOptions（消融开关）",lines:["fanout / revise / tools / media · 不改控制流"]},
+];
+A.tags=[{x:C[3]-6,y:Ar2+120,w:330,text:"固定 DAG · 模型不决定“下一步做什么”"}];
+render("svgA",A);
+
+/* ===== 面板 B：改造后（专能 Hermes 外壳） ===== */
+const Br1=170, Br2=360;
+const B={nodes:{},edges:[],callouts:[],tags:[]};
+// 顶排主流
+B.nodes.IN  ={x:C[0],y:Br1,w:150,h:H,shape:"pill",role:"yellow",title:"输入",sub:["用户请求 / topic","systemPrompt(冻结)"]};
+B.nodes.PRE ={x:C[1],y:Br1,w:W,h:H,role:"blue",title:"预处理上下文",sub:["前缀缓存稳定 · 观测遮蔽","70% 压缩 · 预算触发"]};
+B.nodes.SAMP={x:C[2],y:Br1,w:W,h:H,role:"green",title:"模型流式采样",sub:["complete_tools()","assistant / tool_use"]};
+B.nodes.BUF ={x:C[3],y:Br1,w:W,h:H,role:"blue",title:"暂存本轮输出",sub:["tool_calls","摘要观测(非全量)"]};
+B.nodes.EXEC={x:C[4],y:Br1,w:W,h:H,role:"green",title:"工具执行",sub:["make_lecture·view·skill_view·evaluate","render·revise·clarify·execute_code(PTC)"]};
+// 回流
+B.nodes.SIDE={x:C[4],y:Br2,w:W,h:H,role:"blue",title:"补 side inputs",sub:["remember 写穿透 · recall","技能索引 · delegate 汇报"]};
+B.nodes.PACK={x:C[3],y:Br2,w:W,h:H,role:"blue",title:"组包 next.messages",sub:["旧消息 + assistant","+ tool 观测"]};
+B.nodes.DEC ={x:C[2],y:Br2,w:W,h:H+16,shape:"diamond",role:"purple",title:"needsFollowUp?",sub:["是否再来一轮"]};
+B.nodes.NEXT={x:C[1],y:Br2,w:W,h:H,role:"purple",title:"进入下一轮",sub:["tool_result 带回 loop 顶部","消息继续,非调用栈继续"]};
+B.nodes.END ={x:C[2],y:530,w:190,h:66,shape:"pill",role:"yellow",title:"本轮结束",sub:["无 tool_use / 预算耗尽 → 交付 deck"]};
+B.edges=[
+  {from:"IN",to:"PRE"},{from:"PRE",to:"SAMP"},{from:"SAMP",to:"BUF"},{from:"BUF",to:"EXEC"},
+  {from:"EXEC",to:"SIDE",fromSide:"b",toSide:"t",label:["工具结果","补齐上下文"]},
+  {from:"SIDE",to:"PACK",fromSide:"l",toSide:"r"},
+  {from:"PACK",to:"DEC",fromSide:"l",toSide:"r"},
+  {from:"DEC",to:"NEXT",fromSide:"l",toSide:"r"},
+  {from:"NEXT",to:"PRE",fromSide:"t",toSide:"b",label:"继续 agent loop"},
+  {from:"DEC",to:"END",fromSide:"b",toSide:"t"},
+];
+B.callouts=[
+  {x:C[2]-6,y:24,w:410,h:92,role:"peach",title:"支撑上下文（会话开始注入一次·可缓存）",
+   lines:["· 冻结记忆快照 USER.md / MEMORY.md（讲者画像+制作笔记）",
+          "· 技能紧凑索引（渐进披露）· 工具规格（前缀缓存稳定）",
+          "· deck 本体常驻 CorpusStore，只经 view_* 按需拉片"]},
+  {x:C[3]+40,y:530,w:340,h:64,role:"pink",title:"异常补偿",
+   lines:["LoopBudget 耗尽兜底 / 工具错误回灌自修","revise 改坏即回滚，不落非法 deck"]},
+  {x:C[0],y:530,w:360,h:64,role:"pink",title:"会话末 · evolve 自演化环（已实现）",
+   lines:["复盘 fork(白名单) → 逐条 delta 提案 → 待审队列","两分裂验收 · 评测器环外隐藏 · 人工 gate"]},
+];
+// 支撑上下文 → 顶排的虚线牵引（对齐参考图）
+B.edges.push({pts:[[B.nodes.SAMP.x+B.nodes.SAMP.w/2,116],[B.nodes.SAMP.x+B.nodes.SAMP.w/2,Br1]],dash:true});
+B.edges.push({pts:[[C[2]+404,90],[B.nodes.EXEC.x+B.nodes.EXEC.w/2,90],[B.nodes.EXEC.x+B.nodes.EXEC.w/2,Br1]],dash:true});
+B.tags=[{x:C[0],y:Br1-40,w:330,text:"外壳自主选工具 · 无 tool_use/预算耗尽即收束"}];
+render("svgB",B);
+</script>
+</body>
+</html>

@@ -9,7 +9,7 @@ import json
 
 from lecture_agent.adapters.llm.fake import FakeClient
 from lecture_agent.adapters.media.fake import FakeMediaProvider
-from lecture_agent.agent import GeneratorOptions, generate_lecture
+from lecture_agent.engine import GeneratorOptions, generate_lecture
 from lecture_agent.ports.media import ImageAsset
 from lecture_agent.schema import LectureDoc, validate_doc
 

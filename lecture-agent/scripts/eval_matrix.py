@@ -24,10 +24,10 @@ SLUG2TOPIC = {slug(t): t for t in TOPICS}
 
 
 def latest_matrix() -> Path:
-    dirs = sorted((ROOT / "results").glob("matrix_*"), key=lambda p: p.stat().st_mtime)
+    dirs = sorted((ROOT / "experiments" / "results").glob("matrix_*"), key=lambda p: p.stat().st_mtime)
     dirs = [d for d in dirs if d.is_dir() and "smoke" not in d.name]
     if not dirs:
-        raise SystemExit("找不到 results/matrix_* 目录")
+        raise SystemExit("找不到 experiments/results/matrix_* 目录")
     return dirs[-1]
 
 

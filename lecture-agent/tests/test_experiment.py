@@ -11,7 +11,7 @@ from lecture_agent.schema import CapabilityProfile, ExperimentRecord
 from pydantic import ValidationError
 
 FIXTURE = (
-    Path(__file__).resolve().parent.parent / "data" / "corpus" / "tree-bst-avl-lecture.lecture.json"
+    Path(__file__).resolve().parent.parent / "experiments" / "corpus" / "tree-bst-avl-lecture.lecture.json"
 )
 
 
@@ -100,3 +100,27 @@ def test_experiment_record_minimal_valid() -> None:
 def test_experiment_record_rejects_missing_required_fields() -> None:
     with pytest.raises(ValidationError):
         ExperimentRecord(ts="2026-01-01T00:00:00")  # 缺 run_id
+
+
+def test_experiment_record_memory_snapshot_is_pinned_input() -> None:
+    """P1 · 支柱3：记忆快照指纹进账本，与 seed/cassette 共同钉死一次可复现 run。"""
+    rec = ExperimentRecord(
+        run_id="r2",
+        ts="2026-01-01T00:00:00",
+        source="shell",
+        seed=7,
+        memory_snapshot="deadbeefcafe0000",
+        held_split="held_in",
+    )
+    assert rec.memory_snapshot == "deadbeefcafe0000"
+    assert rec.held_split == "held_in"
+    # 序列化后仍带这两字段（热力图/复现比对读得到）
+    assert json.loads(rec.model_dump_json())["memory_snapshot"] == "deadbeefcafe0000"
+
+
+def test_experiment_record_backward_compat_without_new_fields() -> None:
+    """历史账本行没有 memory_snapshot/held_split——仍应合法（默认 None），不破坏回读。"""
+    old = '{"run_id": "hist1", "ts": "2026-01-01T00:00:00", "topic": "旧行"}'
+    rec = ExperimentRecord.model_validate_json(old)
+    assert rec.memory_snapshot is None
+    assert rec.held_split is None

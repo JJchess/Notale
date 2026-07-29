@@ -21,10 +21,13 @@ L2  domain      domain/*                    ← 依赖：schema+ports+utils  （
         ▲
 L3  adapters    adapters/*                  ← 依赖：schema+ports+utils  （实现 ports，碰 I/O/网络/浏览器）
         ▲
-L4  application agent/                       ← 依赖：schema+ports+domain （编排，只认接口不认实现）
+L4  application engine/                      ← 依赖：schema+ports+domain （确定性建 deck 引擎，只认接口）
         ▲
 L5  composition app/ · scripts/             ← 依赖：一切；唯一把 adapter 接到 port 的地方
 ```
+
+> **只有一条 workflow**：`engine/generate_lecture` 是确定性建 deck 引擎，`app/generate.py::run_generation` 是它的批量/实验前端(A)，`app/build.py` 收拢共享装配。
+> **对话式 agent 外壳(曾经的 Pipeline B)已整体归档至 `legacy/hermes-shell/`**（零生产里程 + 删繁就简，见其 README）；live 树只保留 workflow。
 
 - **domain 与 adapters 是兄弟**：都只依赖 `ports`，互不 import。domain 写"做什么"，adapter 写"用什么做"。
 - **只有 L5（composition root）知道具体类**：在这里用 Hydra `_target_` 把 `adapters/llm/CassetteClient` 注入成 `ports.LLMClient`。换实现 = 改一行配置，domain/agent 一字不动。
@@ -63,7 +66,7 @@ lecture-agent/
 │   │   │                         #   BlockType 新增 chart/stats/diagram（CONTENT_TAXONOMY 路线图 1/3 项）；
 │   │   │                         #   LayoutKind 新增 full；_Block.fragment 拓宽 bool|str（reveal fragment 类型名）
 │   │   └── experiment.py         #   ExperimentRecord/CapabilityProfile/CodeMarker/Cost —— 实验账本一行的契约
-│   │                             #     （results/ledger.jsonl，见 §实验记录员）
+│   │                             #     （experiments/results/ledger.jsonl，见 §实验记录员）
 │   │
 │   ├── utils/                    # L0 kernel · 依赖：无内部  ── 横切机制
 │   │   ├── seed.py  logging.py  provenance.py  registry.py
@@ -71,7 +74,7 @@ lecture-agent/
 │   ├── ports/                    # L1 · 依赖：schema  ── 纯抽象接缝（Protocol，零实现）
 │   │   ├── llm.py                #   LLMClient + ToolCallingLLM —— 真接缝（httpx-live/cassette/fake）
 │   │   ├── tool.py               #   Tool —— function-calling 工具接缝（纯工具/IO 工具/fake）
-│   │   ├── renderer.py           #   RenderVerifier —— 真接缝（Playwright / test-fake）
+│   │   ├── renderer.py           #   RenderVerifier —— 接缝（当前仅 structural；真机 verifier 已归档）
 │   │   ├── store.py              #   CorpusStore —— 真接缝（filesystem / in-memory）
 │   │   └── media.py              #   ImageFinder + ImageGenerator —— 真接缝（Pixabay live / Gemini live / fake）
 │   │
@@ -95,35 +98,37 @@ lecture-agent/
 │   ├── adapters/                 # L3 · 依赖：schema+ports+utils  ── 实现 port，独担 I/O 副作用
 │   │   ├── llm/                  #   httpx OpenAI 客户端 + cassette（live/replay） → LLMClient
 │   │   │   └── prompts/          #     Jinja2 模板（提示词属 LLM adapter 的私有资产，不泄进 domain）
-│   │   ├── render/               #   Playwright 无头验证 → RenderVerifier
+│   │   ├── render/               #   structural.py：无浏览器结构校验 → RenderVerifier
 │   │   ├── store/                #   文件系统 corpus/results 读写 → CorpusStore
-│   │   │   └── ledger.py         #     LedgerStore：append-only 写/读 results/ledger.jsonl（实验记录账本）
+│   │   │   └── ledger.py         #     LedgerStore：append-only 写/读 experiments/results/ledger.jsonl（实验账本）
 │   │   └── media/                #   pixabay.py(图库) + gemini_image.py(nano-banana pro 文生图) + fake.py
 │   │
-│   ├── agent/                    # L4 · 依赖：schema+ports+domain  ── 编排，只认接口
-│   │   ├── orchestrator.py       #   clarify→plan→generate→assemble→validate→render→eval（全走 port）
-│   │   │                         #   GeneratorOptions.record（默认 true）——本次生成是否记进实验账本
-│   │   ├── clarify.py  delegate.py   #   fan-out 用 asyncio.gather
+│   ├── engine/                   # L4 · 依赖：schema+ports+domain  ── 确定性建 deck 引擎
+│   │   ├── __init__.py           #   导出 generate_lecture / GeneratorOptions / GenerateResult
+│   │   └── pipeline.py           #   plan→generate→assemble→validate→render→eval（全走 port）
 │   │
 │   └── app/                      # L5 · 依赖：一切  ── 组合根：唯一 new 具体 adapter 之处
-│       ├── container.py          #   build_orchestrator(cfg)：Hydra instantiate，注入 port；
-│       │                         #     run_generation 末尾组装 ExperimentRecord → LedgerStore.append
-│       └── codeprint.py          #   git_rev/git_dirty/agent_fingerprint —— 给账本行盖"哪版 agent 代码
-│                                 #     产出"的戳（只对 agent/domain/skills/configs 相关代码面取哈希）
+│       ├── build.py              #   共享装配：build_llm / build_options / model_of / usage_of
+│       ├── generate.py           #   run_generation（注入 port → 跑 engine → 存 deck → 记账本）
+│       ├── cli.py                #   `lecture-agent generate` 薄入口 → app.generate
+│       └── codeprint.py          #   git_rev/git_dirty/agent_fingerprint —— 给账本行盖"哪版代码产出"的戳
+│                                 #   （对话式 agent 外壳 shell/ + app/chat.py 已归档 legacy/hermes-shell/）
 │
 ├── scripts/                      # L5 薄入口：只 import app/ + 读配置
 │   ├── generate.py  evaluate.py  evolve.py  render_check.py  run_experiment.py
 │   ├── run_matrix.py             #   多模型×多样本横评机楼（build_llm/计时/日志，被下面两个复用）
 │   ├── eval_matrix.py            #   可信标尺：确定性门 + Gemini 去偏成对排名 → eval_v2
 │   ├── bench_latency.py          #   延迟 benchmark：slow vs fast(关思考) 时间×质量对照表
-│   └── backfill_ledger.py        #   一次性：把 results/matrix_*/**/deck.json + data/corpus/*.lecture.json
-│                                 #     历史产物回填进 results/ledger.jsonl（幂等，历史行 code.label="historical"）
+│   └── backfill_ledger.py        #   一次性：把 experiments/results/matrix_*/**/deck.json + experiments/corpus/*.lecture.json
+│                                 #     历史产物回填进 experiments/results/ledger.jsonl（幂等，历史行 code.label="historical"）
 │
 ├── assets/runtime/               # reveal.js 主题/CSS/JS 静态资源（离线，随包分发）
-├── data/{topics,corpus,human_ratings}/   # topics/ratings 版本化；corpus 大件走 release
-├── fixtures/                     # LLM 录制盒（离线 replay；随 release 发快照）
-├── results/                      # gitignore，每 run 一目录；ledger.jsonl 例外——append-only 实验账本，
-│                                 #   每次 generate 追加一行 ExperimentRecord（见 viewer/coverage.html 热力图）
+├── experiments/                  # 实验相关一处收拢（输入入库 / 生成物 gitignore）
+│   ├── fixtures/                 #   [入库] LLM 录制盒（离线 replay；配置里 fixtures_dir 指向它）
+│   ├── topics/                   #   [入库] 输入题集（topics.jsonl + benchmark_topics.md）
+│   ├── corpus/                   #   [gitignore] 生成的 deck 产品（out_dir 默认）
+│   └── results/                  #   [gitignore] 每 run 一目录 + ledger.jsonl（append-only 实验账本）
+├── docs/harness/                 # 工程纪律档案：decisions.md + mechanisms/M-*（"为什么这么设计"）
 └── tests/                        # 传 fake adapter，不碰真 LLM/浏览器
     ├── test_schema.py  test_assemble.py  test_pipeline_smoke.py  test_experiment.py
 ```
@@ -134,9 +139,9 @@ lecture-agent/
 
 | Port（L1） | 实现（adapters） | 为何是真接缝 | 谁依赖它 |
 |---|---|---|---|
-| `LLMClient` | httpx-live · cassette-replay · in-memory-fake | 生成/评测都要调 LLM；live/replay 是确定性命根子；测试要 fake | domain.generation / planning / evaluation / evolve |
-| `RenderVerifier` | Playwright · test-stub（返回罐装报告） | 真机渲染慢且需浏览器；单测要绕开 | agent.orchestrator |
-| `CorpusStore` | filesystem · in-memory | run 产物读写要可换、测试要隔离磁盘 | agent / evaluation / evolve |
+| `LLMClient` | httpx-live · cassette-replay · in-memory-fake | 生成/评测都要调 LLM；live/replay 是确定性命根子；测试要 fake | domain.generation / planning / evaluation |
+| `RenderVerifier` | structural（结构校验，不起浏览器） | run 产物结构校验要可换、单测要隔离 | run_matrix（真机 verifier 已随外壳归档） |
+| `CorpusStore` | filesystem | run 产物读写要可换 | app.generate / run_matrix |
 
 **不开的接缝（避免过度设计）**：
 - `assemble`（JSON→HTML）是**纯函数**，不开 port——只有一种实现，直接调，天然可测。
@@ -160,9 +165,9 @@ lecture-agent/
 
 ## 5 · 依赖规则的机器强制（否则规范会腐烂）
 
-- 用 **import-linter** 写契约，进 CI：声明层序 `schema < ports < {domain, adapters} < agent < app`，任何逆向/跨层/环 import 直接 fail。
+- 用 **import-linter** 写契约，进 CI：声明层序 `schema < ports < {domain, adapters} < engine < app`，任何逆向/跨层/环 import 直接 fail。
 - `domain/` 禁止出现 `import ...adapters...`（linter forbidden contract）。
-- `agent/` 禁止 import `adapters/`（只能 import `ports/` 与 `domain/`）。
+- `engine/` 禁止 import `adapters/`（只能 import `ports/` 与 `domain/`）。
 - `mypy` 开严格模式：port 是 `Protocol`，adapter 结构化满足即可，连显式继承都不需要——解耦到类型层。
 
 ---
@@ -179,11 +184,12 @@ lecture-agent/
 | `src/pipeline.mjs` | `domain/generation/pipeline.py`+`blocks/` (L2) | block 注册化 |
 | `src/material.mjs` `notes.mjs` | `domain/generation/material.py` (L2) | 素材锚定 |
 | `src/skills.mjs`+`skills/` | `domain/skills/` (L2) | registry+loader |
-| `src/evolve.mjs` | `domain/evolve/miner.py` (L2) | 提案 gate |
+| `src/evolve.mjs` | （已删：运行时无引用的死代码，见瘦身记录） | 提案 gate 概念仍在 skills/evolve-schema 与 propose 工具 |
 | `src/evaluate.mjs` `coverage.mjs` `tools/diversity.mjs` | `domain/evaluation/` (L2) | judge 经 port |
 | `tools/render-check.mjs` `tools/lib/browser.mjs` | `adapters/render/` (L3) | 改 Playwright |
-| `src/agent.mjs` `loop.mjs` `clarify.mjs` `delegate.mjs` | `agent/` (L4) | 只认 port |
-| `bin/lecture-agent.mjs` | `app/container.py` + `scripts/generate.py` (L5) | 组合根 + 薄入口 |
+| `src/agent.mjs` `pipeline.mjs` | `engine/pipeline.py` (L4 共享) | 建 deck 引擎，只认 port |
+| `src/loop.mjs` `clarify.mjs` `delegate.mjs` | `legacy/hermes-shell/`（已归档） | ReAct 外壳；曾是 Pipeline B，零生产里程后冻结 |
+| `bin/lecture-agent.mjs` | `app/{build,generate,cli}.py` + `scripts/*` (L5) | 组合根 + 薄入口 |
 | `tools/check-consistency.mjs` | `tests/` + `mypy` + import-linter | 一致性靠类型+契约 |
 
 ---

@@ -8,7 +8,7 @@ from typing import Any
 
 
 class FilesystemStore:
-    def __init__(self, root: str | Path = "data/corpus") -> None:
+    def __init__(self, root: str | Path = "experiments/corpus") -> None:
         self.root = Path(root)
 
     def save_deck(self, deck_id: str, doc: dict[str, Any]) -> None:

@@ -10,7 +10,7 @@
 - 客观指标：页数 / 块数 / 丢块 / 校验错误 / 警告 / 多元度 / 结构渲染是否过 / 耗时 / token。
 
 用法：
-  uv run python scripts/run_matrix.py                 # 全量 5 模型 × 3 样本
+  uv run python scripts/run_matrix.py                 # 全量 5 模型 × 5 样本
   uv run python scripts/run_matrix.py --smoke         # 冒烟：1 模型 × 1 样本 × 4 页
   uv run python scripts/run_matrix.py --no-judge      # 跳过 LLM 评审
 """
@@ -29,8 +29,10 @@ from typing import Any
 
 from hydra.utils import instantiate
 from lecture_agent.adapters.render.structural import StructuralVerifier
-from lecture_agent.agent import GeneratorOptions, generate_lecture
+from lecture_agent.app.build import usage_of
+from lecture_agent.engine import GeneratorOptions, generate_lecture
 from lecture_agent.domain.evaluation import diversity, evaluate_lecture
+from lecture_agent.utils.env import load_env as _load_env_file
 from lecture_agent.utils.seed import seed_everything
 from omegaconf import OmegaConf
 
@@ -51,6 +53,8 @@ TOPICS: list[str] = [
     "树（数据结构）",
     "遗传学定律（高中生物学）",
     "电磁感应（高中物理学）",
+    "导数（高中数学）",
+    "化学平衡（高中化学）",
 ]
 
 PAGES = 12
@@ -58,20 +62,11 @@ SEED = 0
 JUDGE_CONFIG = "deepseek_v4_pro"  # 固定评委：DeepSeek-V4-Pro
 
 
-# ── .env 加载（ws2/.env，OpenAI 兼容 key）──────────────────────────────────────
+# ── .env 加载（ws2/.env 与 lecture-agent/.env，OpenAI 兼容 key）─────────────────
 def load_env() -> None:
-    import os
-
+    """依次灌 ws2/.env 与 lecture-agent/.env（setdefault，前者优先）；复用 utils.env 解析器，不再自搓。"""
     for envp in (ROOT.parent / ".env", ROOT / ".env"):
-        if not envp.exists():
-            continue
-        for line in envp.read_text(encoding="utf-8").splitlines():
-            line = line.strip()
-            if not line or line.startswith("#") or "=" not in line:
-                continue
-            k, _, v = line.partition("=")
-            k, v = k.strip(), v.strip().strip('"').strip("'")
-            os.environ.setdefault(k, v)
+        _load_env_file(envp)
 
 
 def slug(s: str) -> str:
@@ -111,12 +106,6 @@ def run_logger(name: str, logfile: Path) -> logging.Logger:
     fh.setFormatter(fmt)
     logger.addHandler(fh)
     return logger
-
-
-def usage_of(llm: Any) -> dict[str, int]:
-    inner = getattr(llm, "inner", None)
-    u = getattr(inner, "usage", None)
-    return dict(u) if u else {}
 
 
 # ── 单次生成 ───────────────────────────────────────────────────────────────────
@@ -188,7 +177,7 @@ async def one_run(display: str, config_name: str, topic: str, run_dir: Path, pag
 
 
 async def model_worker(display: str, config_name: str, out: Path, pages: int, topics: list[str]) -> list[dict]:
-    """单模型：3 样本串行（同一模型内不并发，保护限流）。"""
+    """单模型：5 样本串行（同一模型内不并发，保护限流）。"""
     recs = []
     for topic in topics:
         run_dir = out / config_name / slug(topic)
@@ -328,7 +317,7 @@ async def main() -> None:
     pages = 4 if args.smoke else PAGES
 
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    out = ROOT / "results" / f"matrix_{'smoke_' if args.smoke else ''}{ts}"
+    out = ROOT / "experiments" / "results" / f"matrix_{'smoke_' if args.smoke else ''}{ts}"
     out.mkdir(parents=True, exist_ok=True)
     print(f"→ 实验目录: {out}")
     print(f"→ {len(models)} 模型 × {len(topics)} 样本 × {pages} 页 (并行模型/串行样本)")

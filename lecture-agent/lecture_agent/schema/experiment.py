@@ -1,6 +1,6 @@
 """实验记录契约（L0 kernel）—— 账本一行 = 一次生成的 provenance + 能力画像 + 代价。
 
-`results/ledger.jsonl` 每行一个 `ExperimentRecord.model_dump_json()`。记录 hook(`app/container.py`)
+`experiments/results/ledger.jsonl` 每行一个 `ExperimentRecord.model_dump_json()`。记录 hook(`app/generate.py`)
 与历史回填(`scripts/backfill_ledger.py`)都产它、都校验它——账本永远是合法 ExperimentRecord 的拼接，
 不是自由格式日志。热力图（viewer/build_coverage.py）只读这个真源。
 """
@@ -73,6 +73,8 @@ class ExperimentRecord(BaseModel):
     topic: str | None = None
     pages_target: int | None = None
     seed: int | None = None
+    memory_snapshot: str | None = None  # 冻结记忆快照指纹（见 ports.memory）——与 seed/cassette 共同钉死一次可复现 run
+    held_split: str | None = None  # evolve 两分裂标签："held_in" | "held_out" | None（非自演化 run）
     audience: str | None = None
     wants: str | None = None
     extra: str | None = None
