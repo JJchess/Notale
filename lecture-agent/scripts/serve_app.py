@@ -5,7 +5,8 @@
   → 前端进度视图实时渲染 → done 事件带最终 doc → 前端亮出成片。
 
 依赖可选组 `app`(aiohttp):`uv sync --extra app`。启动:
-  uv run python scripts/serve_app.py            # 默认 llm=kimi_k3 generator=full(真 live,需 key)
+  uv run python scripts/serve_app.py            # 默认 llm=kimi_k2_7_code generator=full(真 live,需 key)
+  #   （K3 待你在 SiliconFlow 给这把 key 开通后:--llm kimi_k3 即可,或把上面默认改回 kimi_k3）
   uv run python scripts/serve_app.py --llm replay  # 离线(仅命中已录制课题)
 
 设计要点:
@@ -220,7 +221,7 @@ def _preflight_model(base_cfg: DictConfig, *, strict: bool) -> None:
 
 def main() -> None:
     ap = argparse.ArgumentParser(prog="serve_app")
-    ap.add_argument("--llm", default="kimi_k3", help="configs/llm 名(任意 query 需 live 模型)")
+    ap.add_argument("--llm", default="kimi_k2_7_code", help="configs/llm 名(任意 query 需 live 模型;K3 未对本 key 开通,默认回落 K2.7-Code)")
     ap.add_argument("--generator", default="full", help="configs/generator:full | fast | single_pass")
     ap.add_argument("--host", default="127.0.0.1")
     ap.add_argument("--port", type=int, default=8778)
