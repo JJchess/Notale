@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import time
 import uuid
+from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -16,13 +17,13 @@ from hydra.utils import instantiate
 from omegaconf import DictConfig, OmegaConf
 
 from ..adapters.store import FilesystemStore, LedgerStore
+from ..domain.telemetry import profile_deck
 from ..engine import GenerateResult, generate_lecture
 from ..ports.media import ImageFinder, ImageGenerator
 from ..schema import CodeMarker, Cost, ExperimentRecord
 from ..utils.env import load_env
 from ..utils.logging import get_logger
 from ..utils.seed import seed_everything
-from ..domain.telemetry import profile_deck
 from .build import build_llm, build_options, model_of, usage_of
 from .codeprint import agent_fingerprint, git_dirty, git_rev
 
@@ -36,8 +37,16 @@ def build_media(cfg: DictConfig) -> tuple[ImageFinder | None, ImageGenerator | N
     return finder, generator
 
 
-async def run_generation(cfg: DictConfig, out_root: str | Path | None = None) -> GenerateResult:
-    """一次端到端生成：seed → 注入 LLM → 编排 → 存 deck → 记录实验账本。返回 GenerateResult。"""
+async def run_generation(
+    cfg: DictConfig,
+    out_root: str | Path | None = None,
+    *,
+    progress: Callable[[dict[str, Any]], None] = lambda _e: None,
+) -> GenerateResult:
+    """一次端到端生成：seed → 注入 LLM → 编排 → 存 deck → 记录实验账本。返回 GenerateResult。
+
+    progress：结构化进度回调（默认 no-op），透传给 engine 供 Web App 进度视图消费。
+    """
     load_env()  # 统一密钥文件 lecture-agent/.env → os.environ（不覆盖已设的），跑前不必手动 source
     seed_everything(int(cfg.seed))
     topic = cfg.get("topic")
@@ -61,6 +70,7 @@ async def run_generation(cfg: DictConfig, out_root: str | Path | None = None) ->
         image_finder=image_finder,
         image_generator=image_generator,
         log=log.info,
+        progress=progress,
     )
     elapsed_s = time.perf_counter() - started
     store = FilesystemStore(Path(out_root or cfg.get("out_dir", "experiments/corpus")))

@@ -20,8 +20,8 @@ from pathlib import Path
 from typing import Any
 
 from hydra.utils import instantiate
-from lecture_agent.engine import GeneratorOptions, generate_lecture
 from lecture_agent.domain.evaluation import compare, gate
+from lecture_agent.engine import GeneratorOptions, generate_lecture
 from lecture_agent.utils.seed import seed_everything
 from omegaconf import OmegaConf
 from run_matrix import (

@@ -35,6 +35,18 @@ from ..utils.concurrency import pool
 _BLOCK_ERR = re.compile(r"\$\.scenes\[(\d+)\]\.blocks\[(\d+)\]")
 
 
+def _emit_block_done(
+    progress: Callable[[dict[str, Any]], None], block_id: str, scene_id: str | None, err: Any
+) -> None:
+    """一块完成：出错走 block:err（UI 折成"精修"，不吓用户），否则 docUpdated:done。"""
+    if err:
+        progress({"type": "block", "blockId": block_id, "sceneId": scene_id, "status": "err"})
+    else:
+        progress(
+            {"type": "docUpdated", "blockId": block_id, "sceneId": scene_id, "status": "done"}
+        )
+
+
 @dataclass
 class GeneratorOptions:
     fanout: bool = True
@@ -70,6 +82,7 @@ async def _doc_repair(
     rounds: int = 2,
     topic: str = "",
     concurrency: int = 4,
+    progress: Callable[[dict[str, Any]], None] = lambda _e: None,
 ) -> Any:
     """整档校验 → 把 block 级错误路由回对应子代理自修（保留块 id 供版式引用）。"""
     res = validate_doc(doc)
@@ -89,6 +102,8 @@ async def _doc_repair(
         async def fix(item: tuple[tuple[int, int], list[str]], _i: int) -> None:
             (si, bi), errs = item
             cur = doc["scenes"][si]["blocks"][bi]
+            sid = doc["scenes"][si].get("id")
+            progress({"type": "block", "blockId": cur.get("id"), "sceneId": sid, "status": "err"})
             reg = registry.get(cur.get("type"))
             if not reg:
                 return
@@ -106,6 +121,7 @@ async def _doc_repair(
                 if r.block:
                     r.block["id"] = cur.get("id")
                     doc["scenes"][si]["blocks"][bi] = r.block
+                    progress({"type": "docUpdated", "blockId": cur.get("id"), "sceneId": sid, "status": "done"})
                 return
             r = await generate_block(
                 llm,
@@ -120,6 +136,7 @@ async def _doc_repair(
             if r.block:
                 r.block["id"] = cur.get("id")
                 doc["scenes"][si]["blocks"][bi] = r.block
+                progress({"type": "docUpdated", "blockId": cur.get("id"), "sceneId": sid, "status": "done"})
 
         await pool(list(targets.items()), concurrency, fix)
     return validate_doc(doc)
@@ -179,7 +196,10 @@ async def generate_lecture(
     image_finder: ImageFinder | None = None,
     image_generator: ImageGenerator | None = None,
     log: Callable[[str], None] = lambda _m: None,
+    progress: Callable[[dict[str, Any]], None] = lambda _e: None,
 ) -> GenerateResult:
+    # progress：结构化进度观测点（供 Web App 的进度视图消费；纯观测，不影响生成）。
+    # 事件形如 {"type": "stage"|"skeleton"|"block"|"docUpdated"|"done", ...}；回调不得抛异常。
     opts = options or GeneratorOptions()
     registry, _auto_types = load_skills(skills_dir)
     tool_kit: dict[str, Tool] | None = {"calc": CalcTool()} if opts.tools else None
@@ -188,6 +208,7 @@ async def generate_lecture(
 
     # ① Plan（STORM 多视角）
     log(f"[plan] 课题: {topic} (~{pages} 页)")
+    progress({"type": "stage", "stage": "plan", "status": "start"})
     plan = await plan_lecture(
         llm,
         topic=topic,
@@ -202,6 +223,7 @@ async def generate_lecture(
         authoring_rules=AUTHORING_RULES,
         perspectives_n=opts.plan_perspectives,
         sections=opts.sections,
+        concurrency=opts.concurrency,
     )
     doc = plan.doc
     doc["schemaVersion"] = "1.0"
@@ -212,6 +234,7 @@ async def generate_lecture(
 
     placeholders: list[tuple[dict[str, Any], dict[str, Any]]] = []
     for si, s in enumerate(doc.get("scenes", [])):
+        s["id"] = s.get("id") or f"s{si}"  # 稳定 scene id：供进度视图 / 版式引用（与 block id 同规）
         for bi, b in enumerate(s.get("blocks") or []):
             b["id"] = b.get("id") or f"s{si}b{bi}"
             if b.get("type") not in registry:  # 防幻觉类型丢内容
@@ -223,6 +246,30 @@ async def generate_lecture(
     log(
         f"[plan] {len(doc.get('scenes', []))} 页 / {len(placeholders)} block；theme={doc.get('theme')}"
     )
+    # 骨架就绪：先发结构（页/块占位）供进度视图搭骨架，再标记规划阶段结束。
+    progress(
+        {
+            "type": "skeleton",
+            "doc": {
+                "title": doc.get("title"),
+                "theme": doc.get("theme"),
+                "scenes": [
+                    {
+                        "id": s.get("id"),
+                        "kind": s.get("kind"),
+                        "headline": s.get("headline"),
+                        "eyebrow": s.get("eyebrow"),
+                        "blocks": [
+                            {"id": b.get("id"), "type": b.get("type")}
+                            for b in (s.get("blocks") or [])
+                        ],
+                    }
+                    for s in doc.get("scenes", [])
+                ],
+            },
+        }
+    )
+    progress({"type": "stage", "stage": "plan", "status": "done"})
 
     # ② Fan-out（逐块生成；no_fanout 消融 = 串行）
     conc = opts.concurrency if opts.fanout else 1
@@ -233,10 +280,16 @@ async def generate_lecture(
         if sim_reg:
             widget_guidelines = load_widget_guidelines(sim_reg.dir)
 
+    progress({"type": "stage", "stage": "fanout", "status": "start", "total": len(placeholders)})
+
     async def gen(item: tuple[dict[str, Any], dict[str, Any]], _i: int) -> tuple[str, BlockResult]:
         ph, scene = item
+        progress(
+            {"type": "block", "blockId": ph["id"], "sceneId": scene.get("id"), "status": "active"}
+        )
         reg = registry.get(ph["type"])
         if not reg:
+            progress({"type": "block", "blockId": ph["id"], "sceneId": scene.get("id"), "status": "err"})
             return ph["id"], BlockResult(None, f"无技能处理 type {ph['type']}")
         if ph["type"] == "sim" and ph.get("engine") == "widget":
             # 逃生舱：直接产 HTML 片段，两阶段（先契约后写码）+ 校验自修，观感钉死 deck 主题。
@@ -250,6 +303,7 @@ async def generate_lecture(
                 guidelines=widget_guidelines,
             )
             log(f"  {'✗' if r.err else '✓'} {ph['id']} (sim:widget)")
+            _emit_block_done(progress, ph["id"], scene.get("id"), r.err)
             return ph["id"], r
         r = await generate_block(
             llm,
@@ -262,37 +316,59 @@ async def generate_lecture(
             tools=tool_kit if ph["type"] == "sim" else None,
         )
         log(f"  {'✗' if r.err else '✓'} {ph['id']} ({ph['type']})")
+        _emit_block_done(progress, ph["id"], scene.get("id"), r.err)
         return ph["id"], r
 
     results = await pool(placeholders, conc, gen)
     blocks_by_id = {bid: r.block for bid, r in results}
 
     # ③ Assemble（回填）
+    progress({"type": "stage", "stage": "assemble", "status": "start"})
     dropped = fill_blocks(doc, blocks_by_id)
     attach_icons(doc)  # 确定性收尾：list 项按关键词自动配本地图标（零 LLM/零网络）
     if opts.media:
         await _attach_hero_image(doc, topic, image_finder, image_generator)
+    for s in doc.get("scenes", []):  # 每页组装完成 → 转绿
+        progress({"type": "docUpdated", "sceneId": s.get("id"), "status": "done"})
+    progress({"type": "stage", "stage": "assemble", "status": "done"})
 
     # ④ 整档校验 + 结构自修（revise 消融可关）
+    progress({"type": "stage", "stage": "validate", "status": "start"})
     if opts.revise:
         final = await _doc_repair(
-            llm, doc, registry, mat, log, tool_kit, topic=topic, concurrency=opts.concurrency
+            llm, doc, registry, mat, log, tool_kit, topic=topic,
+            concurrency=opts.concurrency, progress=progress,
         )
     else:
         final = validate_doc(doc)
+    progress({"type": "docUpdated", "doc": doc, "reason": "validate"})
+    progress({"type": "stage", "stage": "validate", "status": "done"})
 
     # ④.5 讲者备注增强
     if not final.errors:
+        progress({"type": "stage", "stage": "notes", "status": "start"})
         await enrich_notes(llm, doc, audience=audience, concurrency=opts.concurrency)
+        progress({"type": "stage", "stage": "notes", "status": "done"})
 
     # ⑤ 覆盖度审查（opt-in，完成 STORM 闭环）
     cov = None
     if coverage and plan.perspectives and not final.errors:
+        progress({"type": "stage", "stage": "coverage", "status": "start"})
         try:
             cov = await check_coverage(llm, doc, plan.perspectives)
         except Exception:  # noqa: BLE001
             pass
+        progress({"type": "stage", "stage": "coverage", "status": "done"})
 
+    progress(
+        {
+            "type": "done",
+            "errors": len(final.errors),
+            "dropped": len(dropped),
+            "coverage": bool(cov),
+            "doc": doc,
+        }
+    )
     return GenerateResult(
         doc=doc,
         errors=final.errors,

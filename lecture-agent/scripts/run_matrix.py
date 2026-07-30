@@ -30,8 +30,8 @@ from typing import Any
 from hydra.utils import instantiate
 from lecture_agent.adapters.render.structural import StructuralVerifier
 from lecture_agent.app.build import usage_of
-from lecture_agent.engine import GeneratorOptions, generate_lecture
 from lecture_agent.domain.evaluation import diversity, evaluate_lecture
+from lecture_agent.engine import GeneratorOptions, generate_lecture
 from lecture_agent.utils.env import load_env as _load_env_file
 from lecture_agent.utils.seed import seed_everything
 from omegaconf import OmegaConf

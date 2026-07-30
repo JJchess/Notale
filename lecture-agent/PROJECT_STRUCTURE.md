@@ -119,8 +119,10 @@ lecture-agent/
 │   ├── run_matrix.py             #   多模型×多样本横评机楼（build_llm/计时/日志，被下面两个复用）
 │   ├── eval_matrix.py            #   可信标尺：确定性门 + Gemini 去偏成对排名 → eval_v2
 │   ├── bench_latency.py          #   延迟 benchmark：slow vs fast(关思考) 时间×质量对照表
-│   └── backfill_ledger.py        #   一次性：把 experiments/results/matrix_*/**/deck.json + experiments/corpus/*.lecture.json
-│                                 #     历史产物回填进 experiments/results/ledger.jsonl（幂等，历史行 code.label="historical"）
+│   ├── backfill_ledger.py        #   一次性：把 experiments/results/matrix_*/**/deck.json + experiments/corpus/*.lecture.json
+│   │                             #     历史产物回填进 experiments/results/ledger.jsonl（幂等，历史行 code.label="historical"）
+│   └── serve_app.py              #   端到端 Web App(可选依赖 app=aiohttp)：服务 ../viewer/app.html +
+│                                 #     POST /api/generate → run_generation(progress) → SSE /api/events 推进度 → 成片
 │
 ├── assets/runtime/               # reveal.js 主题/CSS/JS 静态资源（离线，随包分发）
 ├── experiments/                  # 实验相关一处收拢（输入入库 / 生成物 gitignore）
