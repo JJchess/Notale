@@ -128,7 +128,90 @@ function checkWidgetHtml(html, path) {
 }
 
 /* ---------- block 校验 ---------- */
-import { SCENE_KINDS, LAYOUT_KINDS, BLOCK_TYPES, SIM_ENGINES, DIAGRAM_TYPES } from './enums.mjs';   // 单一真相源（iter73 解耦）
+import { SCENE_KINDS, LAYOUT_KINDS, BLOCK_TYPES, SIM_ENGINES, DIAGRAM_TYPES, GRAPH_TYPES } from './enums.mjs';   // 单一真相源（iter73 解耦）
+
+/* graph 块的图论完整性检查。结构/类型由 JSON Schema 管，这里补它表达不了的关系约束：
+   边指向不存在的节点、孤立节点、tree 的单父约束、环。这些不拦住的话渲染出来就是断线/乱穿。 */
+/** 去掉 dashed 边后是否无环。flowchart 允许回边，但回边必须显式标虚线。 */
+function acyclicWithoutDashed(edges, ids) {
+  const deg = new Map([...ids].map(k => [k, 0]));
+  const adj = new Map([...ids].map(k => [k, []]));
+  for (const e of edges) {
+    if (!isObj(e) || e.style === 'dashed') continue;
+    if (!ids.has(e.from) || !ids.has(e.to) || e.from === e.to) continue;
+    adj.get(e.from).push(e.to);
+    deg.set(e.to, deg.get(e.to) + 1);
+  }
+  const q = [...deg].filter(([, d]) => d === 0).map(([k]) => k);
+  let seen = 0;
+  while (q.length) {
+    const cur = q.shift(); seen++;
+    for (const nxt of adj.get(cur)) { deg.set(nxt, deg.get(nxt) - 1); if (deg.get(nxt) === 0) q.push(nxt); }
+  }
+  return seen === ids.size;
+}
+
+function checkGraph(b, path) {
+  if (!GRAPH_TYPES.includes(b.graphType)) { err(path + '.graphType', GRAPH_TYPES.join('|')); return; }
+  if (!req(b, 'nodes', v => Array.isArray(v) && v.length >= 2 && v.length <= 14, path, '2–14 节点数组')) return;
+  if (!req(b, 'edges', v => Array.isArray(v) && v.length >= 1 && v.length <= 24, path, '1–24 边数组')) return;
+
+  const ids = new Set();
+  b.nodes.forEach((n, i) => {
+    if (!isObj(n) || !isStr(n.id) || !isStr(n.title)) { err(path + `.nodes[${i}]`, '每项需 {id, title}'); return; }
+    if (ids.has(n.id)) err(path + `.nodes[${i}].id`, '节点 id 重复: ' + n.id);
+    ids.add(n.id);
+    checkInline(n.title, path + `.nodes[${i}].title`);
+    if (n.sub) checkInline(n.sub, path + `.nodes[${i}].sub`);
+  });
+  if (ids.size < 2) return;
+
+  const indeg = new Map([...ids].map(k => [k, 0]));
+  const adj = new Map([...ids].map(k => [k, []]));
+  const touched = new Set();
+  b.edges.forEach((e, i) => {
+    if (!isObj(e) || !isStr(e.from) || !isStr(e.to)) { err(path + `.edges[${i}]`, '每项需 {from, to}'); return; }
+    if (!ids.has(e.from)) err(path + `.edges[${i}].from`, `指向不存在的节点 "${e.from}"（会渲染成断线）`);
+    if (!ids.has(e.to)) err(path + `.edges[${i}].to`, `指向不存在的节点 "${e.to}"（会渲染成断线）`);
+    if (e.from === e.to) err(path + `.edges[${i}]`, '自环边（from===to）无法渲染');
+    // 端点合法就先记 touched，免得一条断边把两头都连带报成「孤立节点」，噪音盖住真问题
+    if (ids.has(e.from)) touched.add(e.from);
+    if (ids.has(e.to)) touched.add(e.to);
+    if (!ids.has(e.from) || !ids.has(e.to) || e.from === e.to) return;
+    adj.get(e.from).push(e.to);
+    indeg.set(e.to, indeg.get(e.to) + 1);
+  });
+
+  const orphans = [...ids].filter(k => !touched.has(k));
+  if (orphans.length) err(path + '.nodes', '有节点不连任何边（会孤零零飘着）: ' + orphans.join(', '));
+
+  if (b.graphType === 'tree') {
+    const multi = [...indeg].filter(([, d]) => d > 1).map(([k]) => k);
+    if (multi.length) err(path + '.edges', 'tree 每个节点至多一个父，以下有多个: ' + multi.join(', ') + '（多父请用 graphType:"dag"）');
+    const roots = [...indeg].filter(([, d]) => d === 0).map(([k]) => k);
+    if (roots.length !== 1) err(path + '.edges', `tree 应恰好一个根（入度 0），实得 ${roots.length} 个: ${roots.join(', ') || '无'}`);
+  }
+
+  // 环检测（Kahn）：tree/dag 都不允许环；flowchart 允许回边但必须显式 dashed
+  const deg = new Map(indeg);
+  const queue = [...deg].filter(([, d]) => d === 0).map(([k]) => k);
+  let seen = 0;
+  while (queue.length) {
+    const cur = queue.shift(); seen++;
+    for (const nxt of adj.get(cur) || []) { deg.set(nxt, deg.get(nxt) - 1); if (deg.get(nxt) === 0) queue.push(nxt); }
+  }
+  if (seen < ids.size) {
+    if (b.graphType !== 'flowchart') {
+      err(path + '.edges', `存在环（${ids.size - seen} 个节点在环上），tree/dag 不允许；确实要回边请用 graphType:"flowchart" 且把回边标 style:"dashed"`);
+    } else if (!acyclicWithoutDashed(b.edges, ids)) {
+      /* 判据：把 dashed 边拿掉后必须无环——即"闭合每个环的那条边都已标虚线"。
+         别用"目标能绕回源头"当回边判据：环上**每**条边都满足它，会把主流程边一起冤枉。 */
+      err(path + '.edges', 'flowchart 存在未标虚线的回边：请把闭合循环的那条边标 style:"dashed"，否则读者分不清主流程与回流');
+    }
+  }
+
+  if (b.caption != null) { opt(b, 'caption', isStr, path, 'string'); checkInline(b.caption, path + '.caption'); }
+}
 export { BLOCK_TYPES };   // re-export 兼容既有 import（check-consistency / tools/test.mjs）
 function checkBlock(b, path, state) {
   if (!isObj(b)) { err(path, 'block 应为对象'); return; }
@@ -232,6 +315,8 @@ function checkBlock(b, path, state) {
         else if (n.sub != null && !isStr(n.sub)) err(path + `.nodes[${i}].sub`, '应为 string');
         else { checkInline(n.title, path + `.nodes[${i}].title`); if (n.sub) checkInline(n.sub, path + `.nodes[${i}].sub`); }
       });
+  } else if (T === 'graph') {
+    checkGraph(b, path);
   } else if (T === 'code') {
     req(b, 'language', v => ['python', 'javascript', 'text'].includes(v), path, 'python|javascript|text');
     req(b, 'source', isStr, path, 'string');

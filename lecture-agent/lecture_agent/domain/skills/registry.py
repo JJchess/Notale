@@ -14,7 +14,11 @@ from typing import Any
 # 逃生舱类型：注册但不进"自动规划菜单"。runnable 曾在此列（因"每 deck 至多一个"的运行时
 # 单例约束），viewer 已支持多实例挂载（各自独立 portal/CodeMirror + 共享 Pyodide/每块命名空间），
 # 约束解除，规划器现在可以自动产出它。
-AUTO_EXCLUDE = frozenset(["freeform", "embed"])
+#
+# freeform 也已移出：它此前既被排除在规划菜单外（规划器根本选不到）、又被渲染成"⚠ 未分类内容"，
+# 等于把唯一能表达"schema 没预先建模的视觉关系"的出口彻底堵死。现在树/DAG 有了一等的 graph 块，
+# freeform 回到它该在的位置——长尾兜底，可达但不常用。embed 仍排除（依赖外部产物，非自足）。
+AUTO_EXCLUDE = frozenset(["embed"])
 
 _FM = re.compile(r"^---\n(.*?)\n---", re.S)
 _KV = re.compile(r"^(\w[\w-]*):\s*(.*)$")

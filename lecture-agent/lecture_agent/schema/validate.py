@@ -214,6 +214,122 @@ def _check_widget_html(html: Any, path: str, r: Result) -> None:
     _aesthetic_lint(html, path, r, require_motion=True)
 
 
+def _acyclic_without_dashed(edges: list[Any], ids: set[str]) -> bool:
+    """去掉 dashed 边后是否无环。flowchart 允许回边，但回边必须显式标虚线。"""
+    deg = dict.fromkeys(ids, 0)
+    adj: dict[str, list[str]] = {k: [] for k in ids}
+    for e in edges:
+        if not isinstance(e, dict) or e.get("style") == "dashed":
+            continue
+        src, dst = e.get("from"), e.get("to")
+        if src not in ids or dst not in ids or src == dst:
+            continue
+        adj[src].append(dst)
+        deg[dst] += 1
+    queue = [k for k, d in deg.items() if d == 0]
+    seen = 0
+    while queue:
+        cur = queue.pop()
+        seen += 1
+        for nxt in adj[cur]:
+            deg[nxt] -= 1
+            if deg[nxt] == 0:
+                queue.append(nxt)
+    return seen == len(ids)
+
+
+def _check_graph(b: dict[str, Any], path: str, r: Result) -> None:
+    """graph 块的图论完整性。
+
+    结构/类型由 pydantic 管，这里补它表达不了的**关系**约束：边指向不存在的节点、
+    孤立节点、tree 的单父/单根、环。不拦住的话渲染出来就是断线与乱穿。
+    与 viewer/schema/validate.mjs::checkGraph 保持一致——两边同时改。
+    """
+    nodes = b.get("nodes") or []
+    edges = b.get("edges") or []
+    ids: set[str] = set()
+    for i, n in enumerate(nodes):
+        if not isinstance(n, dict) or not isinstance(n.get("id"), str):
+            continue
+        if n["id"] in ids:
+            r.err(f"{path}.nodes[{i}].id", f"节点 id 重复: {n['id']}")
+        ids.add(n["id"])
+        _check_inline(n.get("title"), f"{path}.nodes[{i}].title", r)
+        if n.get("sub"):
+            _check_inline(n["sub"], f"{path}.nodes[{i}].sub", r)
+    if len(ids) < 2:
+        return
+
+    indeg = dict.fromkeys(ids, 0)
+    adj: dict[str, list[str]] = {k: [] for k in ids}
+    touched: set[str] = set()
+    for i, e in enumerate(edges):
+        if not isinstance(e, dict):
+            continue
+        src, dst = e.get("from"), e.get("to")
+        if src not in ids:
+            r.err(f"{path}.edges[{i}].from", f'指向不存在的节点 "{src}"（会渲染成断线）')
+        if dst not in ids:
+            r.err(f"{path}.edges[{i}].to", f'指向不存在的节点 "{dst}"（会渲染成断线）')
+        if src == dst:
+            r.err(f"{path}.edges[{i}]", "自环边（from===to）无法渲染")
+        # 端点合法就先记 touched，免得一条断边把两头都连带报成「孤立节点」
+        if src in ids:
+            touched.add(src)
+        if dst in ids:
+            touched.add(dst)
+        if src not in ids or dst not in ids or src == dst:
+            continue
+        adj[src].append(dst)
+        indeg[dst] += 1
+
+    orphans = sorted(ids - touched)
+    if orphans:
+        r.err(f"{path}.nodes", "有节点不连任何边（会孤零零飘着）: " + ", ".join(orphans))
+
+    gtype = b.get("graphType")
+    if gtype == "tree":
+        multi = sorted(k for k, d in indeg.items() if d > 1)
+        if multi:
+            r.err(
+                f"{path}.edges",
+                "tree 每个节点至多一个父，以下有多个: " + ", ".join(multi) + '（多父请用 graphType:"dag"）',
+            )
+        roots = sorted(k for k, d in indeg.items() if d == 0)
+        if len(roots) != 1:
+            r.err(f"{path}.edges", f"tree 应恰好一个根（入度 0），实得 {len(roots)} 个: {', '.join(roots) or '无'}")
+
+    # 环检测（Kahn）
+    deg = dict(indeg)
+    queue = [k for k, d in deg.items() if d == 0]
+    seen = 0
+    while queue:
+        cur = queue.pop()
+        seen += 1
+        for nxt in adj[cur]:
+            deg[nxt] -= 1
+            if deg[nxt] == 0:
+                queue.append(nxt)
+    if seen < len(ids):
+        if gtype != "flowchart":
+            r.err(
+                f"{path}.edges",
+                f"存在环（{len(ids) - seen} 个节点在环上），tree/dag 不允许；"
+                '确实要回边请用 graphType:"flowchart" 且把回边标 style:"dashed"',
+            )
+        elif not _acyclic_without_dashed(edges, ids):
+            # 判据：把 dashed 边拿掉后必须无环——即「闭合每个环的那条边都已标虚线」。
+            # 别用「目标能绕回源头」当回边判据：环上**每**条边都满足它，会把主流程边一起冤枉。
+            r.err(
+                f"{path}.edges",
+                'flowchart 存在未标虚线的回边：请把闭合循环的那条边标 style:"dashed"，'
+                "否则读者分不清主流程与回流",
+            )
+
+    if b.get("caption"):
+        _check_inline(b["caption"], f"{path}.caption", r)
+
+
 # ------------------------------------------------------------------ block 语义
 
 
@@ -296,6 +412,8 @@ def _check_block(b: dict[str, Any], path: str, r: Result, state: dict[str, Any])
                 _check_inline(n.get("title"), f"{path}.nodes[{i}].title", r)
                 if n.get("sub"):
                     _check_inline(n["sub"], f"{path}.nodes[{i}].sub", r)
+    elif t == "graph":
+        _check_graph(b, path, r)
     elif t == "quiz":
         for i, c in enumerate(b.get("choices") or []):
             if isinstance(c, dict):

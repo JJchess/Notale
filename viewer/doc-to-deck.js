@@ -399,6 +399,9 @@
       const fn = diagramRenderers[b.diagramType] || diagramRenderers['arrow-seq'];
       return fn(b.nodes || []);
     },
+    /* graph：带 edges 的树/DAG/分支流程，真 SVG 分层图（见上方 graphBlock）。
+       要画"有父子/分支关系"的结构就用它，别再用 diagram 硬凑。 */
+    graph(b) { return graphBlock(b); },
     quiz(b) {
       const wrap = el('div');
       if (b.kind === 'objective') {
@@ -454,14 +457,16 @@
       return w;
     },
     freeform(b) {
-      /* 逃生舱：永远显眼渲染，绝不悄悄融入正常排版（见 SPEC §3.3）。
+      /* 长尾兜底：结构化块表达不了的图形/版式走这里。
+         此前它被无条件套上虚线框 + "⚠ 未分类内容"标签，等于告诉读者"这块是次品"——
+         但对 schema 没预先建模的视觉关系，它是唯一正解，羞辱它只会逼模型交出更差的近似。
+         现在正常渲染；rationale 仍保留（作者自述为何逃逸），但降为脚注而非警告。
          html 已在校验阶段查过危险标签，这里净化是运行时防御性第二道关。 */
       const wrap = el('div', 'freeform');
-      wrap.appendChild(el('div', 'freeform-flag', '⚠ 未分类内容（freeform）'));
       const body = el('div', 'freeform-body');
       body.innerHTML = sanitizeFreeformHtml(b.html);
       wrap.appendChild(body);
-      wrap.appendChild(el('div', 'freeform-rationale', escapeHtml(b.rationale)));
+      if (b.rationale) wrap.appendChild(el('div', 'freeform-rationale', escapeHtml(b.rationale)));
       return wrap;
     }
   };
@@ -491,6 +496,268 @@
     box.appendChild(el('div', 'dn-title', inlineMd(n.title || '')));
     if (n.sub) box.appendChild(el('div', 'dn-sub', inlineMd(n.sub)));
     return box;
+  }
+
+  /* ============================ graph：带边的一等图块（树 / DAG / 分支流程） ============================
+     与 diagram/flow 的根本区别：它有 edges。那两者只能表达一条线性链或一圈环——一棵带父子关系的
+     真实树在它们的契约里根本不可表达，于是模型只能把树硬塞成"叠盘子"，箭头指向空白。
+
+     布局是 Sugiyama-lite：① 最长路径分层 ② 重心法排序减少交叉 ③ 按测得的文字宽度定位。
+     关键约束：**不能依赖 DOM 测量**——reveal 的非当前页是 display:none，getBoundingClientRect
+     一律返回 0，等到 slidechanged 再算就会闪一下。改用 canvas measureText：它不走布局，
+     隐藏页里也能拿到真实文字宽度（同 lessons FE-7 的做法）。 */
+
+  let _measureCtx = null;
+  function measureText(text, font) {
+    if (!_measureCtx) _measureCtx = document.createElement('canvas').getContext('2d');
+    _measureCtx.font = font;
+    return _measureCtx.measureText(String(text == null ? '' : text)).width;
+  }
+
+  const G_PAD_X = 14, G_PAD_Y = 10, G_MIN_W = 76, G_MAX_W = 190;
+  const G_GAP_X = 26, G_GAP_Y = 54;
+
+  /** 纯文本长度（去掉 **粗体** / `code` / $math$ 记号），用于量宽——量到记号会把盒子撑歪。 */
+  function graphPlainText(s) {
+    return String(s == null ? '' : s)
+      .replace(/\$[^$]*\$/g, m => m.slice(1, -1))
+      .replace(/`([^`]*)`/g, '$1')
+      .replace(/\*\*([^*]*)\*\*/g, '$1')
+      .replace(/\*([^*]*)\*/g, '$1');
+  }
+
+  /** 节点盒尺寸：按标题/副标题的实测宽度，超过 G_MAX_W 就折行并相应加高。 */
+  function graphNodeSize(node, fonts) {
+    const tW = measureText(graphPlainText(node.title), fonts.title);
+    const sW = node.sub ? measureText(graphPlainText(node.sub), fonts.sub) : 0;
+    /* 菱形（判定节点）的可用内宽只有外接矩形的一半左右，同样的字要给更大的盒子才装得下 */
+    const diamond = node.shape === 'diamond';
+    const slack = diamond ? 1.7 : 1;
+    const w = Math.max(G_MIN_W, Math.min(G_MAX_W * slack, Math.max(tW, sW) * slack + G_PAD_X * 2));
+    const inner = Math.max(24, w / slack - G_PAD_X * 2);
+    const tLines = Math.max(1, Math.ceil(tW / inner));
+    const sLines = node.sub ? Math.max(1, Math.ceil(sW / inner)) : 0;
+    const h = G_PAD_Y * 2 + tLines * 20 + (sLines ? sLines * 15 + 3 : 0);
+    return { w, h: Math.max(diamond ? 64 : 44, diamond ? h * 1.7 : h) };
+  }
+
+  /** 最长路径分层。**dashed 边不参与分层**——它们按契约就是回边，算进去会让含环的
+   *  flowchart 一个 indeg=0 的节点都找不到，Kahn 直接空转，所有节点留在第 0 层挤成一行。 */
+  function graphLayers(nodes, edges) {
+    const idx = new Map(nodes.map((n, i) => [n.id, i]));
+    const out = new Map(nodes.map(n => [n.id, []]));
+    const indeg = new Map(nodes.map(n => [n.id, 0]));
+    for (const e of edges) {
+      if (!idx.has(e.from) || !idx.has(e.to) || e.from === e.to) continue;
+      if (e.style === 'dashed') continue;
+      out.get(e.from).push(e.to);
+      indeg.set(e.to, indeg.get(e.to) + 1);
+    }
+    // Kahn 拓扑序；有环时把剩余节点按原序追加（回边不该阻塞布局）
+    const layer = new Map(nodes.map(n => [n.id, 0]));
+    const deg = new Map(indeg);
+    const q = nodes.filter(n => deg.get(n.id) === 0).map(n => n.id);
+    const order = [];
+    while (q.length) {
+      const cur = q.shift(); order.push(cur);
+      for (const nxt of out.get(cur)) {
+        layer.set(nxt, Math.max(layer.get(nxt), layer.get(cur) + 1));
+        deg.set(nxt, deg.get(nxt) - 1);
+        if (deg.get(nxt) === 0) q.push(nxt);
+      }
+    }
+    for (const n of nodes) if (!order.includes(n.id)) order.push(n.id);   // 环上的节点保底
+    return layer;
+  }
+
+  /** 重心法排序：按父节点的平均位置重排每层，减少连线交叉（两趟足够，图不大）。 */
+  function graphOrder(nodes, edges, layer) {
+    const byLayer = new Map();
+    for (const n of nodes) {
+      const L = layer.get(n.id) || 0;
+      if (!byLayer.has(L)) byLayer.set(L, []);
+      byLayer.get(L).push(n.id);
+    }
+    const parents = new Map(nodes.map(n => [n.id, []]));
+    for (const e of edges) {
+      if (e.style === 'dashed') continue;                    // 与分层口径一致：回边不参与排序
+      if (parents.has(e.to) && parents.has(e.from)) parents.get(e.to).push(e.from);
+    }
+    const maxL = Math.max(...byLayer.keys());
+    for (let pass = 0; pass < 2; pass++) {
+      for (let L = 1; L <= maxL; L++) {
+        const above = byLayer.get(L - 1) || [];
+        const pos = new Map(above.map((id, i) => [id, i]));
+        const row = byLayer.get(L) || [];
+        const bary = new Map(row.map(id => {
+          const ps = parents.get(id).filter(p => pos.has(p)).map(p => pos.get(p));
+          return [id, ps.length ? ps.reduce((a, b) => a + b, 0) / ps.length : Number.MAX_SAFE_INTEGER];
+        }));
+        row.sort((a, b) => bary.get(a) - bary.get(b));
+      }
+    }
+    return byLayer;
+  }
+
+  /** 正交折线：父底 → 中间水平段 → 子顶（树/DAG 读起来最清楚；横向时轴对调）。
+   *  回边（目标在源之前的层，典型是 flowchart 的循环）不能走中间——那样会横穿整张图、
+   *  和主流程线叠在一起。改成从侧面绕出去再拐回来，一眼就能看出"这是回流"。 */
+  function graphEdgePath(a, b, horizontal, gutter) {
+    if (horizontal) {
+      const back = b.x < a.x;
+      const y1 = a.y + a.h / 2, y2 = b.y + b.h / 2;
+      if (back) {
+        const yy = gutter;                                   // 绕到整图上沿之外
+        return `M${a.x + a.w / 2},${a.y} V${yy} H${b.x + b.w / 2} V${b.y}`;
+      }
+      const x1 = a.x + a.w, x2 = b.x, mx = (x1 + x2) / 2;
+      return `M${x1},${y1} H${mx} V${y2} H${x2}`;
+    }
+    const back = b.y < a.y;
+    if (back) {
+      const xx = gutter;                                     // 绕到整图右侧之外
+      const y1 = a.y + a.h / 2, y2 = b.y + b.h / 2;
+      return `M${a.x + a.w},${y1} H${xx} V${y2} H${b.x + b.w}`;
+    }
+    const x1 = a.x + a.w / 2, y1 = a.y + a.h, x2 = b.x + b.w / 2, y2 = b.y;
+    const my = (y1 + y2) / 2;
+    return `M${x1},${y1} V${my} H${x2} V${y2}`;
+  }
+
+  function graphBlock(b) {
+    const nodes = (b.nodes || []).filter(n => n && n.id);
+    const edges = (b.edges || []).filter(e => e && e.from && e.to);
+    const wrap = el('div', 'graphwrap');
+    if (nodes.length < 2) return wrap;                       // 缺字段兜底不抛（红线）
+    const horizontal = b.orientation === 'horizontal';
+
+    /* 字体取自主题 token（.graph 的 computedStyle），保证测量与实际渲染同一套字面 */
+    const probe = el('div', 'graph');
+    wrap.appendChild(probe);
+    const cs = getComputedStyle(probe);
+    const family = cs.fontFamily || 'sans-serif';
+    const fonts = { title: `600 15px ${family}`, sub: `400 12px ${family}` };
+
+    const size = new Map(nodes.map(n => [n.id, graphNodeSize(n, fonts)]));
+    const layer = graphLayers(nodes, edges);
+    const byLayer = graphOrder(nodes, edges, layer);
+    const layerKeys = [...byLayer.keys()].sort((x, y) => x - y);
+
+    /* 定位：沿"层轴"按层累进，沿"排轴"每层居中铺开 */
+    const place = new Map();
+    let cross = 0;                                            // 层轴累计（vertical=y, horizontal=x）
+    const rowSpan = [];
+    for (const L of layerKeys) {
+      const row = byLayer.get(L);
+      const along = row.reduce((s, id) => s + (horizontal ? size.get(id).h : size.get(id).w), 0)
+        + G_GAP_X * (row.length - 1);
+      rowSpan.push(along);
+    }
+    const maxSpan = Math.max(...rowSpan, 1);
+    layerKeys.forEach((L, li) => {
+      const row = byLayer.get(L);
+      let along = (maxSpan - rowSpan[li]) / 2;                // 本层整体居中
+      let thick = 0;
+      for (const id of row) {
+        const { w, h } = size.get(id);
+        if (horizontal) { place.set(id, { x: cross, y: along, w, h }); along += h + G_GAP_X; thick = Math.max(thick, w); }
+        else { place.set(id, { x: along, y: cross, w, h }); along += w + G_GAP_X; thick = Math.max(thick, h); }
+      }
+      cross += thick + G_GAP_Y;
+    });
+    let totalW = horizontal ? cross - G_GAP_Y : maxSpan;
+    let totalH = horizontal ? maxSpan : cross - G_GAP_Y;
+    /* 有回边就在绕行侧预留一条走线沟，并把整图挪开——否则折线画到 viewBox 之外被裁掉 */
+    const hasBack = edges.some(e => {
+      const a = place.get(e.from), c = place.get(e.to);
+      return a && c && (horizontal ? c.x < a.x : c.y < a.y);
+    });
+    const GUTTER = 22;
+    let gutter = 0;
+    if (hasBack) {
+      if (horizontal) {
+        for (const p of place.values()) p.y += GUTTER;
+        totalH += GUTTER; gutter = GUTTER / 2;
+      } else {
+        totalW += GUTTER; gutter = totalW - GUTTER / 2;
+      }
+    }
+
+    /* SVG 只画边（节点用 HTML div，能继承主题排版与 inlineMd 富文本）。
+       viewBox + width/height:100% 让整张图随容器等比缩放，不需要 JS 二次 fit。 */
+    const svgNS = 'http://www.w3.org/2000/svg';
+    const svg = document.createElementNS(svgNS, 'svg');
+    svg.setAttribute('viewBox', `0 0 ${Math.max(1, totalW)} ${Math.max(1, totalH)}`);
+    svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+    svg.classList.add('graph-svg');
+    const defs = document.createElementNS(svgNS, 'defs');
+    for (const [mid, color] of [['graph-arrow', 'var(--accent)'], ['graph-arrow-dim', 'var(--text2)']]) {
+      const marker = document.createElementNS(svgNS, 'marker');
+      marker.setAttribute('id', mid); marker.setAttribute('viewBox', '0 0 10 10');
+      marker.setAttribute('refX', '9'); marker.setAttribute('refY', '5');
+      marker.setAttribute('markerWidth', '5'); marker.setAttribute('markerHeight', '5');
+      marker.setAttribute('orient', 'auto-start-reverse');
+      const tip = document.createElementNS(svgNS, 'path');
+      tip.setAttribute('d', 'M0,0 L10,5 L0,10 Z'); tip.setAttribute('fill', color);
+      marker.appendChild(tip); defs.appendChild(marker);
+    }
+    svg.appendChild(defs);
+
+    for (const e of edges) {
+      const a = place.get(e.from), c = place.get(e.to);
+      if (!a || !c) continue;                                 // 断边：校验器已报错，渲染侧静默跳过不崩
+      const dashed = e.style === 'dashed';
+      const p = document.createElementNS(svgNS, 'path');
+      p.setAttribute('d', graphEdgePath(a, c, horizontal, gutter));
+      p.setAttribute('fill', 'none');
+      p.setAttribute('stroke', dashed ? 'var(--text2)' : 'var(--accent)');
+      p.setAttribute('stroke-width', '1.5');
+      if (dashed) p.setAttribute('stroke-dasharray', '5 4');
+      p.setAttribute('marker-end', `url(#${dashed ? 'graph-arrow-dim' : 'graph-arrow'})`);
+      svg.appendChild(p);
+      if (e.label) {
+        /* 标签压在折线的中段：先垫一块底色矩形再写字，否则线会从字中间穿过去 */
+        const mx = horizontal ? (a.x + a.w + c.x) / 2 : (a.x + a.w / 2 + c.x + c.w / 2) / 2;
+        const my = horizontal ? (a.y + a.h / 2 + c.y + c.h / 2) / 2 : (a.y + a.h + c.y) / 2;
+        const tw = measureText(e.label, `500 11px ${family}`) + 8;
+        const bg = document.createElementNS(svgNS, 'rect');
+        bg.setAttribute('x', mx - tw / 2); bg.setAttribute('y', my - 8);
+        bg.setAttribute('width', tw); bg.setAttribute('height', 16);
+        bg.setAttribute('fill', 'var(--bg)');
+        svg.appendChild(bg);
+        const t = document.createElementNS(svgNS, 'text');
+        t.setAttribute('x', mx); t.setAttribute('y', my + 4);
+        t.setAttribute('text-anchor', 'middle');
+        t.setAttribute('class', 'graph-elabel');
+        t.textContent = e.label;
+        svg.appendChild(t);
+      }
+    }
+
+    const stage = el('div', 'graph-stage');
+    /* 固定成"算出来的自然尺寸"，再用 max-width:100% 允许缩不允许放。
+       若只写 width:100%+aspect-ratio，小图会被拉满整幅：盒子涨大而字号不变，
+       看起来就是几个空旷的大框——节点尺寸本就是按实测文字算的，按原尺寸画才对得上。
+       真放不下时交给 balanceScene 的 zoom 与 ④.7 的溢出回炉，不在这里自作主张。 */
+    stage.style.width = Math.max(1, totalW) + 'px';
+    stage.style.aspectRatio = `${Math.max(1, totalW)} / ${Math.max(1, totalH)}`;
+    stage.appendChild(svg);
+    for (const n of nodes) {
+      const p = place.get(n.id);
+      if (!p) continue;
+      const box = el('div', 'graph-node' + (n.state ? ' is-' + n.state : '') + (n.shape ? ' shape-' + n.shape : ''));
+      box.style.left = (p.x / totalW * 100) + '%';
+      box.style.top = (p.y / totalH * 100) + '%';
+      box.style.width = (p.w / totalW * 100) + '%';
+      box.style.height = (p.h / totalH * 100) + '%';
+      box.appendChild(el('div', 'gn-title', inlineMd(n.title)));
+      if (n.sub) box.appendChild(el('div', 'gn-sub', inlineMd(n.sub)));
+      stage.appendChild(box);
+    }
+    probe.remove();
+    wrap.appendChild(stage);
+    if (b.caption) wrap.appendChild(el('div', 'cite', inlineMd(b.caption)));
+    return wrap;
   }
 
   /* cycle/circular-grid/connected-circles 共用：N 个节点按圆周均匀分布(viewBox 0-100 坐标)，
@@ -1315,7 +1582,7 @@
   /* ================= 装配 & 启动 ================= */
   /* 骨架块识别：agent 规划阶段产出的占位 block 仅有 {id,type,intent}，没有真实内容字段。
      previewMode 下把这些渲染成占位卡（让 live dashboard 能在生成期间看到结构），正式渲染跳过此判断。 */
-  const CONTENT_KEYS = ['title','sub','items','statement','prompt','label','text','source','formula','rows','head','left','right','sides','engine','html','filename','fallbackPoster','answers','choices','steps','cells','events','data','question','nodes','adjList','stages','cite','hint','tag','facts','objective'];
+  const CONTENT_KEYS = ['title','sub','items','statement','prompt','label','text','source','formula','rows','head','left','right','sides','engine','html','filename','fallbackPoster','answers','choices','steps','cells','events','data','question','nodes','edges','cite','hint','tag','facts','objective'];
   function hasContent(b) {
     if (!b || typeof b !== 'object') return false;
     for (const k of CONTENT_KEYS) if (b[k] != null && b[k] !== '') return true;

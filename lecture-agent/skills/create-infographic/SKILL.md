@@ -1,6 +1,6 @@
 ---
 name: create-infographic
-description: Author stats (KPI number cards) and diagram (structural shapes — cycle/pyramid/staircase/snake/arrow-seq/circular-grid/connected-circles) blocks for a LectureDoc lecture. Reach for stats to spotlight a handful of standalone key numbers the audience should remember; reach for diagram to show a non-linear or specially-shaped relationship — a cycle, hierarchy, progression, or network — that a plain flow/timeline/chart cannot capture. Use flow instead for a simple linear 2-3 step sequence. Produces schema-valid stats/diagram block JSON.
+description: Author stats (KPI number cards), diagram (fixed structural shapes — cycle/pyramid/staircase/snake/arrow-seq/circular-grid/connected-circles) and graph (true node-edge trees, DAGs and branching flowcharts, rendered as real layered SVG) blocks for a LectureDoc lecture. Reach for stats to spotlight a handful of standalone key numbers; reach for graph whenever nodes have *named relationships* — parent/child, dependency, branch, merge — since it is the only block type with an edges field; reach for diagram only for a fixed decorative shape with no explicit edges. Use flow for a simple linear 2-3 step sequence. Produces schema-valid stats/diagram/graph block JSON.
 version: 1.0.0
 license: MIT
 platforms: [linux, macos, windows]
@@ -44,3 +44,43 @@ metadata:
 | `connected-circles` | Cross-connections between nodes (stakeholder maps, concept networks) rather than a single path | A simple chain (that's arrow-seq/staircase/snake) |
 
 **Don't use `diagram` for quantitative comparison/trend data** (that's `chart`'s job), **and don't reach for it for a trivial 2-3 step flow with no special emphasis need** — the existing `flow` block already covers that; adding a new type just to use it is not a reason.
+
+## `graph` — 带边的树 / DAG / 分支流程
+
+```json
+{ "type":"graph", "graphType":"tree", "orientation":"vertical",
+  "nodes":[
+    {"id":"root","title":"二叉搜索树","sub":"BST"},
+    {"id":"l","title":"左子树","sub":"全部 < 根"},
+    {"id":"r","title":"右子树","sub":"全部 > 根"}
+  ],
+  "edges":[
+    {"from":"root","to":"l","label":"左"},
+    {"from":"root","to":"r","label":"右"}
+  ],
+  "caption":"BST 的定义性质：中序遍历即有序序列" }
+```
+
+**这是唯一带 `edges` 的块类型。** 只要节点之间存在具名关系（父子、依赖、分支、汇聚），
+就用 `graph`，不要拿 `diagram`/`flow` 硬凑——那两个没有边字段：`flow` 只能表达一条线性链，
+`diagram` 只能表达一圈环或一种固定形状。一棵带父子关系的树在它们里**根本表达不出来**，
+硬塞的结果就是「叠盘子」和指向空白的箭头。
+
+| graphType | 用于 | 约束 |
+|---|---|---|
+| `tree` | 二叉树、目录树、分类体系、组织架构、语法树 | 每节点至多一父、恰好一根 |
+| `dag` | 依赖关系、数据流水线、状态演化、知识点前置图 | 允许多父/汇聚，不许环 |
+| `flowchart` | 带判定的分支流程 | 判定节点 `shape:"diamond"`，分支边用 `label` 标「是」「否」；唯一允许回边，且回边必须 `style:"dashed"` |
+
+硬规则（校验器会拦）：
+1. `node.id` 同块内唯一；`edges` 的 `from`/`to` 必须引用已存在的 id——断边直接报错。
+2. 每个节点至少连一条边，别留孤立节点。
+3. `tree` 不许多父、不许多根；真需要多父就改 `dag`。
+4. 节点 `title` 要短（一般 ≤10 字），长解释放 `sub`；节点多于 8 个时优先 `orientation:"horizontal"` 或拆两页。
+
+渲染细节：SVG 画边（自动分层 + 重心法减少交叉 + 正交折线 + 箭头），节点是继承主题排版的 HTML
+盒子，整图按 viewBox 等比缩放。节点宽度由 canvas `measureText` 实测文字得出——不依赖 DOM 布局，
+所以在 reveal 的隐藏页里也能算准。
+
+何时**不**用 `graph`：纯线性 2-5 步流程用 `flow` 或 `diagram:arrow-seq`；纯数据走势用 `chart`；
+时间轴用 `timeline`。

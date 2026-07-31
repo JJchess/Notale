@@ -1,6 +1,6 @@
 ---
 name: create-freeform
-description: Author a freeform block for a LectureDoc lecture — the sanctioned escape hatch for layouts/content shapes that none of the 15 formal block types can express. Rare, always rendered visibly (dashed frame + warning label + rationale). Produces schema-valid freeform block JSON. Prefer grid/sim.custom/sim.widget first.
+description: Author a freeform block for a LectureDoc lecture — the long-tail fallback for a visual relationship that none of the formal block types can express, drawn as inline SVG/HTML restricted to theme colour tokens. Reach for it only after checking the structured types: graph covers trees, DAGs and branching flowcharts; chart covers data; diagram covers fixed shapes; grid and sim.widget cover custom layouts and interactive pieces. When it genuinely is the right tool it now renders as normal page content, so use it without hedging. Produces schema-valid freeform block JSON.
 version: 1.0.0
 license: MIT
 platforms: [linux, macos, windows]
@@ -12,7 +12,12 @@ metadata:
 
 # create-freeform — the escape hatch (use rarely)
 
-Read `lecture-doc-schema` first (SPEC §3.3). `freeform` is the last resort when a **layout/content shape** isn't in the 15 formal types AND `grid` / `sim.custom` / `sim.widget` also don't fit. Before using it, confirm those don't work — the rationale must say specifically why.
+Read `lecture-doc-schema` first (SPEC §3.3). `freeform` is the long-tail fallback for a **layout/content shape** that isn't in the formal types AND that `graph` / `grid` / `sim.custom` / `sim.widget` also can't express. Before using it, confirm those don't work — the rationale must say specifically why.
+
+**Check `graph` first for anything with edges.** Trees, DAGs, branching flowcharts and dependency
+diagrams are now a first-class block (`create-infographic`), rendered as real layered SVG with
+computed edge routing. Hand-drawing one of those in freeform is strictly worse: you'd be laying out
+node coordinates by hand with no re-layout when the text changes.
 
 ## Shape
 ```json
@@ -31,6 +36,14 @@ Read `lecture-doc-schema` first (SPEC §3.3). `freeform` is the last resort when
 - **Colors/fonts only via `var(--token)`** — so freeform still stays inside the chosen theme.
 
 ## Contract you cannot change
-It always renders with a dashed frame + `⚠ 未分类内容` label + the `rationale` shown beneath — it will NOT blend into normal layout. That friction is intentional: it keeps freeform a rare exit, and its `rationale` becomes a signal for `evolve-schema` (recurring same-shape rationales → propose a new formal block type). `rationale` ≥ 10 chars, specific — "需要自定义排版" is rejected.
+`rationale` is required, ≥ 10 chars, and must be specific — "需要自定义排版" is rejected. It renders as
+a small footnote under the block and, more importantly, feeds `evolve-schema`: recurring same-shape
+rationales are the signal to propose a new formal block type (that's exactly how `graph` came to exist).
+
+Note this used to say freeform "always renders with a dashed frame + `⚠ 未分类内容` label" as
+deliberate friction. That was removed: for a visual relationship the schema never modelled, freeform
+is the *correct* tool, and branding it as defective merely pushed models toward a worse structured
+approximation. Colours/fonts are still confined to `var(--token)`, so it cannot break theme coherence
+— which was the only part of that friction actually doing useful work.
 
 Self-check: `node <lecture-doc-schema>/scripts/validate.mjs --block <file>` — fix any path-tagged error/warning.

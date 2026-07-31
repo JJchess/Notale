@@ -310,6 +310,38 @@ class DiagramBlock(_Block):
     nodes: list[DiagramNode] = Field(min_length=2, max_length=8)
 
 
+class GraphNode(BaseModel):
+    model_config = ConfigDict(extra="allow")
+    id: str = Field(pattern=r"^[A-Za-z0-9_-]{1,24}$")
+    title: str
+    sub: str | None = None
+    state: Literal["on", "q"] | None = None
+    shape: Literal["box", "round", "diamond"] | None = None
+
+
+class GraphEdge(BaseModel):
+    model_config = ConfigDict(extra="allow")
+    from_: str = Field(alias="from")   # from 是 Python 关键字，用 alias 映射
+    to: str
+    label: str | None = Field(default=None, max_length=12)
+    style: Literal["solid", "dashed"] | None = None
+
+
+class GraphBlock(_Block):
+    """带命名边的一等图块：树 / DAG / 分支流程。
+
+    与 diagram/flow 的根本区别是它有 edges——那两者只能表达一条线性链或一圈环，
+    一棵带父子关系的真实树在它们里不可表达。图论完整性（断边/环/tree 单父）见 validate.py。
+    """
+
+    type: Literal["graph"]
+    graphType: Literal["tree", "dag", "flowchart"]
+    orientation: Literal["vertical", "horizontal"] | None = None
+    nodes: list[GraphNode] = Field(min_length=2, max_length=14)
+    edges: list[GraphEdge] = Field(min_length=1, max_length=24)
+    caption: str | None = None
+
+
 # ---- 容器块（递归引用 Block）
 
 
@@ -354,6 +386,7 @@ Block = Annotated[
     | ChartBlock
     | StatsBlock
     | DiagramBlock
+    | GraphBlock
     | CodeBlock
     | CompareBlock
     | GridBlock

@@ -124,7 +124,7 @@
       "required": ["type"],
       "properties": {
         "id": { "type": "string", "description": "块 id（规划器分配，全局唯一）；scene.layout 的 steps/anchor 按此引用块" },
-        "type": { "enum": ["hero", "statement", "list", "agenda", "callout", "timeline", "formula", "flow", "table", "code", "compare", "grid", "quiz", "sim", "chart", "stats", "diagram", "runnable", "embed", "freeform", "pullquote", "video"] },
+        "type": { "enum": ["hero", "statement", "list", "agenda", "callout", "timeline", "formula", "flow", "table", "code", "compare", "grid", "quiz", "sim", "chart", "stats", "diagram", "graph", "runnable", "embed", "freeform", "pullquote", "video"] },
         "status": { "enum": ["ready", "pending", "error"], "default": "ready" },
         "fragment": { "type": "boolean", "description": "整块渐显" }
       },
@@ -146,6 +146,7 @@
         { "if": { "properties": { "type": { "const": "chart" } } }, "then": { "$ref": "#/$defs/chartBlock" } },
         { "if": { "properties": { "type": { "const": "stats" } } }, "then": { "$ref": "#/$defs/statsBlock" } },
         { "if": { "properties": { "type": { "const": "diagram" } } }, "then": { "$ref": "#/$defs/diagramBlock" } },
+        { "if": { "properties": { "type": { "const": "graph" } } }, "then": { "$ref": "#/$defs/graphBlock" } },
         { "if": { "properties": { "type": { "const": "runnable" } } }, "then": { "$ref": "#/$defs/runnableBlock" } },
         { "if": { "properties": { "type": { "const": "embed" } } }, "then": { "$ref": "#/$defs/embedBlock" } },
         { "if": { "properties": { "type": { "const": "freeform" } } }, "then": { "$ref": "#/$defs/freeformBlock" } },
@@ -323,6 +324,40 @@
             "properties": { "title": { "$ref": "#/$defs/inlineMd" }, "sub": { "type": "string", "description": "可选：一行说明" } }
           }
         }
+      }
+    },
+    "graphBlock": {
+      "description": "带命名边的一等图块：树 / DAG / 分支流程。与 diagram/flow 的根本区别是它有 edges —— 那两者只能表达一条线性链或一圈环，一棵带父子关系的真实树在它们里根本不可表达。渲染为真 SVG 分层图（自动分层 + 计算边路由），不是文字箭头。",
+      "required": ["graphType", "nodes", "edges"],
+      "properties": {
+        "graphType": { "enum": ["tree", "dag", "flowchart"], "description": "tree=层次树（每节点至多一个父）；dag=有向无环图（可多父/汇聚）；flowchart=带分支判定的流程" },
+        "orientation": { "enum": ["vertical", "horizontal"], "default": "vertical", "description": "vertical=自顶向下（树的默认）；horizontal=自左向右（长链更省横向空间）" },
+        "nodes": {
+          "type": "array", "minItems": 2, "maxItems": 14,
+          "items": {
+            "type": "object", "required": ["id", "title"], "additionalProperties": false,
+            "properties": {
+              "id": { "type": "string", "pattern": "^[A-Za-z0-9_-]{1,24}$", "description": "节点 id，edges 按此引用；同块内唯一" },
+              "title": { "$ref": "#/$defs/inlineMd" },
+              "sub": { "type": "string", "description": "可选：一行说明" },
+              "state": { "enum": ["on", "q"], "description": "on=高亮当前节点；q=待定/疑问（虚线框）" },
+              "shape": { "enum": ["box", "round", "diamond"], "default": "box", "description": "diamond 用于 flowchart 的判定节点" }
+            }
+          }
+        },
+        "edges": {
+          "type": "array", "minItems": 1, "maxItems": 24,
+          "items": {
+            "type": "object", "required": ["from", "to"], "additionalProperties": false,
+            "properties": {
+              "from": { "type": "string", "description": "源节点 id" },
+              "to": { "type": "string", "description": "目标节点 id" },
+              "label": { "type": "string", "maxLength": 12, "description": "可选：边上的短标注，如「是」「否」「左子树」" },
+              "style": { "enum": ["solid", "dashed"], "default": "solid", "description": "dashed 表示可选/回边/弱关系" }
+            }
+          }
+        },
+        "caption": { "$ref": "#/$defs/inlineMd" }
       }
     },
     "tableBlock": {

@@ -44,6 +44,7 @@ class BlockType(StrEnum):
     CHART = "chart"
     STATS = "stats"
     DIAGRAM = "diagram"
+    GRAPH = "graph"
     RUNNABLE = "runnable"
     EMBED = "embed"
     FREEFORM = "freeform"
