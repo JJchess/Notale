@@ -59,6 +59,22 @@ _MATH_IDS = frozenset(
 _EXPR_CHARS = re.compile(r"^[\w\s+\-*/%(),.<>=!?:&|]*$")
 _IDENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 _INLINE_HTML = re.compile(r"<[a-zA-Z/][^>]*>")
+# 裸 LaTeX = 没有 $…$ 包起来的 LaTeX 记号。渲染器只对 $…$ 内的内容调 KaTeX，
+# 分隔符外的一律按散文 escape 输出，于是 \texttt{"ababc"}、ρ_{密度} 会原样印在幻灯片上。
+# 旧检查只数 $ 的奇偶，零个 $ 即偶数即通过，这类缺陷完全无人拦截。
+_MATH_SPAN = re.compile(r"\$[^$]*\$")
+_CODE_SPAN = re.compile(r"`[^`]*`")
+_WRONG_DELIM = re.compile(r"\\[(\[\])]")
+_BARE_TEX_CMD = re.compile(r"\\[a-zA-Z]+\s*\{")
+_BARE_TEX_MACRO = re.compile(
+    r"\\(pi|alpha|beta|gamma|delta|epsilon|theta|lambda|mu|sigma|omega|Delta|Sigma|Omega"
+    r"|sum|prod|int|lim|max|min|log|ln|exp|sin|cos|tan|sqrt|frac|infty|partial|nabla"
+    r"|cdot|times|div|pm|leq?|geq?|neq|approx|equiv|sim|in|notin|subset|supset|cup|cap"
+    r"|emptyset|forall|exists|land|lor|neg|to|rightarrow|leftarrow|Rightarrow|Leftarrow"
+    r"|mapsto|langle|rangle|lfloor|rfloor|lceil|rceil|quad|qquad|text|texttt|textbf"
+    r"|textit|mathrm|mathbb|mathcal|mathbf|operatorname)\b"
+)
+_BARE_SCRIPT = re.compile(r"[_^]\{[^}]*\}")
 _DANGEROUS_HTML = re.compile(
     r"<script\b|<style\b|<iframe\b|<object\b|<embed\b|\son\w+\s*=|javascript:", re.I
 )
@@ -115,12 +131,26 @@ def _check_expr(expr: Any, var_names: list[str], path: str, r: Result) -> None:
 
 
 def _check_inline(s: Any, path: str, r: Result) -> None:
+    """inline-md 字段的语义闸。
+
+    与 viewer/schema/validate.mjs::checkInline 保持一致——两边同时改。
+    所有检查只看 ``$…$`` 与 ```code``` 之外的部分：里面本来就该是 LaTeX / 原样代码，
+    渲染器的 inlineMd 会先把它们摘出来单独处理（讲 XML 的课件写 `<catalog>` 完全合法）。
+    """
     if not isinstance(s, str):
         return
-    if _INLINE_HTML.search(s):
-        r.err(path, "inlineMd 禁止原始 HTML 标签（用 **b** / *em* / `code` / $latex$）")
     if s.count("$") % 2 != 0:
         r.err(path, "行内公式 $ 未配对")
+        return
+    outside = _CODE_SPAN.sub(" ", _MATH_SPAN.sub(" ", s))
+    if _INLINE_HTML.search(outside):
+        r.err(path, "inlineMd 禁止原始 HTML 标签（用 **b** / *em* / `code` / $latex$）")
+    if _WRONG_DELIM.search(outside):
+        r.err(path, r"行内公式请用 $…$ 分隔符，不要用 \( \) / \[ \]（渲染器只识别 $…$）")
+    elif _BARE_TEX_CMD.search(outside) or _BARE_TEX_MACRO.search(outside):
+        r.err(path, "出现未被 $…$ 包裹的裸 LaTeX 命令 —— 会原样印在页面上，请补齐 $…$ 或改写成纯文本")
+    elif _BARE_SCRIPT.search(outside):
+        r.err(path, "出现未被 $…$ 包裹的上/下标 _{…} / ^{…} —— 会原样印在页面上，请补齐 $…$ 或改用纯文本")
 
 
 # ------------------------------------------------------------------ freeform / widget
@@ -200,9 +230,14 @@ def _check_block(b: dict[str, Any], path: str, r: Result, state: dict[str, Any])
             _check_inline(b["cite"], f"{path}.cite", r)
     elif t == "callout":
         _check_inline(b.get("text"), f"{path}.text", r)
+        _check_inline(b.get("label"), f"{path}.label", r)
     elif t == "hero":
         if b.get("sub"):
             _check_inline(b["sub"], f"{path}.sub", r)
+        if b.get("tag"):
+            _check_inline(b["tag"], f"{path}.tag", r)
+        for i, line in enumerate(b.get("title") or []):
+            _check_inline(line, f"{path}.title[{i}]", r)
         if isinstance(b.get("image"), str) and _REMOTE.match(b["image"]):
             r.err(f"{path}.image", "只能是本地相对路径或 data:，禁远程 URL（守离线红线）")
     elif t == "video":
@@ -216,16 +251,20 @@ def _check_block(b: dict[str, Any], path: str, r: Result, state: dict[str, Any])
         for i, it in enumerate(b.get("items", [])):
             if isinstance(it, dict):
                 _check_inline(it.get("text"), f"{path}.items[{i}].text", r)
+                if it.get("lead"):
+                    _check_inline(it["lead"], f"{path}.items[{i}].lead", r)
         if len(b.get("items", [])) > 8:
             r.warn(f"{path}.items", f"条目数 {len(b['items'])} 偏多（硬顶 12，建议 ≤8）")
     elif t == "agenda":
         for i, row in enumerate(b.get("rows", [])):
             if isinstance(row, dict):
                 _check_inline(row.get("text"), f"{path}.rows[{i}].text", r)
+                _check_inline(row.get("label"), f"{path}.rows[{i}].label", r)
     elif t == "timeline":
         for i, e in enumerate(b.get("events", [])):
             if isinstance(e, dict):
                 _check_inline(e.get("title"), f"{path}.events[{i}].title", r)
+                _check_inline(e.get("time"), f"{path}.events[{i}].time", r)
                 if e.get("desc"):
                     _check_inline(e["desc"], f"{path}.events[{i}].desc", r)
     elif t == "formula":
@@ -233,6 +272,36 @@ def _check_block(b: dict[str, Any], path: str, r: Result, state: dict[str, Any])
             r.err(
                 f"{path}.latex", "latex 是纯 LaTeX 源码，不要用 $ 或 $$ 包裹（$ 会被 KaTeX 标红）"
             )
+        # caption 是散文字段，走 inlineMd —— 里面的数学必须自带 $…$，否则原样印出
+        if b.get("caption"):
+            _check_inline(b["caption"], f"{path}.caption", r)
+    elif t == "code":
+        # source 是原样代码（textContent，不过 inlineMd）；filename/caption 是散文
+        for k in ("filename", "caption"):
+            if b.get(k):
+                _check_inline(b[k], f"{path}.{k}", r)
+    elif t == "chart":
+        if b.get("caption"):
+            _check_inline(b["caption"], f"{path}.caption", r)
+    elif t == "table":
+        for i, h in enumerate(b.get("head") or []):
+            _check_inline(h, f"{path}.head[{i}]", r)
+        for i, row in enumerate(b.get("rows") or []):
+            if isinstance(row, list):
+                for j, c in enumerate(row):
+                    _check_inline(c.get("text") if isinstance(c, dict) else c, f"{path}.rows[{i}][{j}]", r)
+    elif t in ("flow", "diagram"):
+        for i, n in enumerate(b.get("nodes") or []):
+            if isinstance(n, dict):
+                _check_inline(n.get("title"), f"{path}.nodes[{i}].title", r)
+                if n.get("sub"):
+                    _check_inline(n["sub"], f"{path}.nodes[{i}].sub", r)
+    elif t == "quiz":
+        for i, c in enumerate(b.get("choices") or []):
+            if isinstance(c, dict):
+                _check_inline(c.get("text"), f"{path}.choices[{i}].text", r)
+        if b.get("explain"):
+            _check_inline(b["explain"], f"{path}.explain", r)
     elif t == "freeform":
         if isinstance(b.get("html"), str):
             _check_freeform_html(b["html"], f"{path}.html", r)
@@ -251,8 +320,11 @@ def _check_block(b: dict[str, Any], path: str, r: Result, state: dict[str, Any])
     elif t == "compare":
         for side in ("left", "right"):
             s = b.get(side)
-            if isinstance(s, dict) and isinstance(s.get("block"), dict):
-                _check_block(s["block"], f"{path}.{side}.block", r, state)
+            if isinstance(s, dict):
+                if s.get("caption"):
+                    _check_inline(s["caption"], f"{path}.{side}.caption", r)
+                if isinstance(s.get("block"), dict):
+                    _check_block(s["block"], f"{path}.{side}.block", r, state)
     elif t == "grid":
         for i, it in enumerate(b.get("items", [])):
             if isinstance(it, dict) and isinstance(it.get("block"), dict):

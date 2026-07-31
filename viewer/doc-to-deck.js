@@ -233,6 +233,9 @@
         const li = el('li', fragClass(it.fragment) || null);
         const icon = it.icon && renderIcon(it.icon);
         if (icon) { li.classList.add('has-icon'); li.appendChild(icon); }
+        /* lead：条目粗体小标题（"集合结构" / "线性结构" …）。曾被静默丢弃——生成侧
+           大量写 lead 而此处只读 text，整条层级信息不上屏，观感即"文字墙"。 */
+        if (it.lead) li.appendChild(el('span', 'li-lead', inlineMd(it.lead)));
         li.appendChild(el('span', null, inlineMd(it.text)));
         ul.appendChild(li);
       }
@@ -403,7 +406,7 @@
         const stem = b.stem || b.context;   // stem 是 create-quiz 契约/生成侧的题干字段名；context 为兼容基线的旧别名
         if (stem) wrap.appendChild(el('p', 'quiz-context', inlineMd(stem)));
         for (const c of b.choices) {
-          const ch = el('div', 'choice', '<span class="k">' + c.key.toUpperCase() + '</span><span>' + inlineMd(c.text) + '</span>');
+          const ch = el('div', 'choice', '<span class="k">' + inlineMd(String(c.key).toUpperCase()) + '</span><span>' + inlineMd(c.text) + '</span>');
           ch.dataset.c = c.key;
           wrap.appendChild(ch);
         }
@@ -1122,6 +1125,21 @@
   };
 
   /* ================= Scene → <section> ================= */
+  /** 章节序号：按 scene 在 doc 里的位置**推导**，不是渲染时自增。
+   *  自增版（ctx.sectionNo++）有两个坑：① renderDoc 不重置它，live dashboard 一个会话渲三次
+   *  （骨架/更新/终稿）会让序号累加成 07-12、13-18；② rerenderScene 单页重渲时会再 +1 造成漂移。
+   *  推导天然对两者幂等。找不到（脱离 doc 单独渲染）时回落 1，不抛。 */
+  function sectionOrdinal(scene) {
+    const scenes = (currentDoc && currentDoc.scenes) || [];
+    const idx = scenes.indexOf(scene);
+    const i = idx >= 0 ? idx
+      : (scene && scene.id ? scenes.findIndex(s => s && s.id === scene.id) : -1);
+    if (i < 0) return 1;
+    let n = 0;
+    for (let k = 0; k <= i; k++) if (scenes[k] && scenes[k].kind === 'section') n++;
+    return n || 1;
+  }
+
   function renderScene(scene, ctx) {
     const sec = document.createElement('section');
     if (scene.kind === 'hero') sec.className = 'cover';
@@ -1141,10 +1159,9 @@
     if (scene.kind === 'hero') {
       pad.appendChild(renderBlock(scene.blocks[0], ctx));
     } else if (scene.kind === 'section') {
-      /* 章节分隔页：大号自增序号 + 章节名 + 一句主旨(statement block)——给讲义打节拍、破"每页一个样"的单调。
+      /* 章节分隔页：章节序号 + 章节名 + 一句主旨(statement block)——给讲义打节拍、破"每页一个样"的单调。
          内容据 scene.headline + 其 statement block；缺字段兜底不抛（红线）。 */
-      ctx.sectionNo = (ctx.sectionNo || 0) + 1;
-      pad.appendChild(el('div', 'section-num', String(ctx.sectionNo).padStart(2, '0')));
+      pad.appendChild(el('div', 'section-num', String(sectionOrdinal(scene)).padStart(2, '0')));
       if (scene.eyebrow) pad.appendChild(el('div', 'eyebrow', inlineMd(scene.eyebrow)));
       if (scene.headline) pad.appendChild(el('h2', 'section-title', inlineMd(scene.headline)));
       const dek = (scene.blocks || []).find(b => b && b.type === 'statement');
@@ -1214,7 +1231,8 @@
     if (contentH < avail * 0.72) {
       body.style.justifyContent = 'center';         /* 偏稀疏页：垂直居中，避免贴顶留大片空白 */
     } else if (contentH > avail + 4) {
-      /* 内容超高会被 .pad 的 overflow:hidden 裁掉，学生看不到底部（红线）。用 zoom 等比缩到刚好放下——
+      /* 内容超高会被裁掉，学生看不到底部（红线）。注意裁切来自舞台根部的 html,body{overflow:hidden}
+         （.pad 自身并没有 overflow 规则，别照着旧注释去 .pad 上找）。用 zoom 等比缩到刚好放下——
          zoom 影响布局(Chromium/Edge/新版 FF)，scrollHeight 随之收缩、真正不裁切（transform 只视觉缩放，救不了 scrollHeight）。
          下限 0.72：红线"不丢内容"高于"可读性下限"偏好——内容略超(如 compare+长 timeline 同页)时宁可缩到 0.72 也不裁掉尾部；
          触底(0.72)仍溢出才说明内容确实过多，交给 render-check 断言 F 告警、生成侧收敛。

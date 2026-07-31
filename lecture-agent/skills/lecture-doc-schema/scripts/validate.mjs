@@ -41,11 +41,24 @@ function checkExpr(expr, varNames, path) {
   for (const id of ids) if (!allowed.has(id)) err(path, '表达式标识符不在白名单: "' + id + '"（允许: ' + [...varNames].join(', ') + ' + 数学函数）');
 }
 
-/* ---------- inline-md 检查：禁原始 HTML ---------- */
+/* ---------- inline-md 检查：禁原始 HTML + 禁裸 LaTeX ----------
+   裸 LaTeX = 没有 $…$ 包起来的 LaTeX 记号。渲染器的 inlineMd 只对 $…$ 内的内容调 KaTeX，
+   分隔符外的一律按散文 escape 输出，于是 `\texttt{"ababc"}`、`ρ_{密度}`、`\pi[4]=2`
+   会原样印在幻灯片上。这类缺陷此前完全无人拦截：旧检查只数 $ 的奇偶，零个 $ 即偶数即通过。 */
+const BARE_TEX_MACROS = /\\(pi|alpha|beta|gamma|delta|epsilon|theta|lambda|mu|sigma|omega|Delta|Sigma|Omega|sum|prod|int|lim|max|min|log|ln|exp|sin|cos|tan|sqrt|frac|infty|partial|nabla|cdot|times|div|pm|leq?|geq?|neq|approx|equiv|sim|in|notin|subset|supset|cup|cap|emptyset|forall|exists|land|lor|neg|to|rightarrow|leftarrow|Rightarrow|Leftarrow|mapsto|langle|rangle|lfloor|rfloor|lceil|rceil|quad|qquad|text|texttt|textbf|textit|mathrm|mathbb|mathcal|mathbf|operatorname)\b/;
 function checkInline(s, path) {
   if (!isStr(s)) return;
-  if (/<[a-zA-Z/][^>]*>/.test(s)) err(path, 'inlineMd 禁止原始 HTML 标签（用 **b** / *em* / `code` / $latex$）');
-  if ((s.match(/\$/g) || []).length % 2 !== 0) err(path, '行内公式 $ 未配对');
+  if ((s.match(/\$/g) || []).length % 2 !== 0) { err(path, '行内公式 $ 未配对'); return; }
+  /* 所有检查只看 $…$ 与 `code` 之外的部分——里面本来就该是 LaTeX / 原样代码，
+     inlineMd 会先把它们摘出来单独处理。讲 XML/HTML 的课件写 `<catalog>` 完全合法。 */
+  const outside = s.replace(/\$[^$]*\$/g, ' ').replace(/`[^`]*`/g, ' ');
+  if (/<[a-zA-Z/][^>]*>/.test(outside)) err(path, 'inlineMd 禁止原始 HTML 标签（用 **b** / *em* / `code` / $latex$）');
+  if (/\\[([\])]/.test(outside))
+    err(path, '行内公式请用 $…$ 分隔符，不要用 \\( \\) / \\[ \\]（渲染器只识别 $…$）');
+  else if (/\\[a-zA-Z]+\s*\{/.test(outside) || BARE_TEX_MACROS.test(outside))
+    err(path, '出现未被 $…$ 包裹的裸 LaTeX 命令 —— 会原样印在页面上，请补齐 $…$ 或改写成纯文本');
+  else if (/[_^]\{[^}]*\}/.test(outside))
+    err(path, '出现未被 $…$ 包裹的上/下标 _{…} / ^{…} —— 会原样印在页面上，请补齐 $…$ 或改用纯文本');
 }
 
 /* ---------- freeform.html 静态检查（净化的第一道关，运行时 sanitizeFreeformHtml 是权威第二道关） ----------
@@ -125,9 +138,11 @@ function checkBlock(b, path, state) {
   opt(b, 'fragment', v => typeof v === 'boolean' || typeof v === 'string', path, 'boolean 或 reveal fragment 类型名(如 fade-up/highlight-red)');
   const T = b.type;
   if (T === 'hero') {
-    if (req(b, 'title', v => Array.isArray(v) && v.length >= 1 && v.length <= 3 && v.every(isStr), path, '1–3 行字符串数组')) {}
+    if (req(b, 'title', v => Array.isArray(v) && v.length >= 1 && v.length <= 3 && v.every(isStr), path, '1–3 行字符串数组'))
+      b.title.forEach((t, i) => checkInline(t, path + `.title[${i}]`));
     for (const k of ['tag', 'sub', 'facts', 'hint']) opt(b, k, isStr, path, 'string');
     if (b.sub) checkInline(b.sub, path + '.sub');
+    if (b.tag) checkInline(b.tag, path + '.tag');
     if (b.image != null) {
       opt(b, 'image', isStr, path, 'string');
       if (isStr(b.image) && /^\s*(https?:)?\/\//i.test(b.image)) err(path + '.image', '只能是本地相对路径或 data:，禁远程 URL（守离线红线）');
@@ -150,36 +165,47 @@ function checkBlock(b, path, state) {
       if (b.items.length > 8) warn(path + '.items', '条目数 ' + b.items.length + ' 偏多，注意别在一页里堆太满（硬顶 12，建议 ≤8）');
       b.items.forEach((it, i) => {
         if (!isObj(it) || !isStr(it.text)) err(path + `.items[${i}]`, '每项需 {text}');
-        else { checkInline(it.text, path + `.items[${i}].text`); if (it.icon != null && !isStr(it.icon)) err(path + `.items[${i}].icon`, '应为 string(本地图标 id)'); }
+        else {
+          checkInline(it.text, path + `.items[${i}].text`);
+          if (it.lead != null) { if (!isStr(it.lead)) err(path + `.items[${i}].lead`, '应为 string'); else checkInline(it.lead, path + `.items[${i}].lead`); }
+          if (it.icon != null && !isStr(it.icon)) err(path + `.items[${i}].icon`, '应为 string(本地图标 id)');
+        }
       });
     }
   } else if (T === 'agenda') {
     if (req(b, 'rows', v => Array.isArray(v) && v.length >= 1 && v.length <= 12, path, '1–12 行数组')) {
       if (b.rows.length > 8) warn(path + '.rows', '行数 ' + b.rows.length + ' 偏多，注意别在一页里堆太满（硬顶 12，建议 ≤8）');
-      b.rows.forEach((r, i) => { if (!isObj(r) || !isStr(r.label) || !isStr(r.text)) err(path + `.rows[${i}]`, '每行需 {label, text}'); else checkInline(r.text, path + `.rows[${i}].text`); });
+      b.rows.forEach((r, i) => { if (!isObj(r) || !isStr(r.label) || !isStr(r.text)) err(path + `.rows[${i}]`, '每行需 {label, text}'); else { checkInline(r.text, path + `.rows[${i}].text`); checkInline(r.label, path + `.rows[${i}].label`); } });
     }
   } else if (T === 'callout') {
     req(b, 'label', isStr, path, 'string'); req(b, 'text', isStr, path, 'string');
     checkInline(b.text, path + '.text');
+    if (b.label) checkInline(b.label, path + '.label');
   } else if (T === 'timeline') {
     if (req(b, 'events', v => Array.isArray(v) && v.length >= 2 && v.length <= 8, path, '2–8 事件数组')) {
       b.events.forEach((e, i) => {
         if (!isObj(e) || !isStr(e.time) || !isStr(e.title)) err(path + `.events[${i}]`, '每项需 {time, title, desc?}');
-        else { checkInline(e.title, path + `.events[${i}].title`); if (e.desc) { if (!isStr(e.desc)) err(path + `.events[${i}].desc`, 'desc 应为 string'); else checkInline(e.desc, path + `.events[${i}].desc`); } }
+        else { checkInline(e.title, path + `.events[${i}].title`); checkInline(e.time, path + `.events[${i}].time`); if (e.desc) { if (!isStr(e.desc)) err(path + `.events[${i}].desc`, 'desc 应为 string'); else checkInline(e.desc, path + `.events[${i}].desc`); } }
       });
     }
   } else if (T === 'formula') {
     if (req(b, 'latex', isStr, path, 'string') && /\$/.test(b.latex))
       err(path + '.latex', 'latex 是纯 LaTeX 源码，不要用 $ 或 $$ 包裹（渲染器自动按公式渲染；$ 会被 KaTeX 当非法字符标红）');
+    /* caption 是散文字段，走 inlineMd —— 里面的数学必须自带 $…$，否则原样印出 */
+    if (b.caption != null) { opt(b, 'caption', isStr, path, 'string'); checkInline(b.caption, path + '.caption'); }
   } else if (T === 'flow') {
     if (req(b, 'nodes', v => Array.isArray(v) && v.length >= 2 && v.length <= 7, path, '2–7 节点数组')) {
       if (b.nodes.length > 6) warn(path + '.nodes', '节点数 ' + b.nodes.length + ' 偏多，横向流程易挤（硬顶 7）');
-      b.nodes.forEach((n, i) => { if (!isObj(n) || !isStr(n.title)) err(path + `.nodes[${i}]`, '节点需 {title}'); if (n.state && !['on', 'q'].includes(n.state)) err(path + `.nodes[${i}].state`, '应为 on|q'); });
+      b.nodes.forEach((n, i) => { if (!isObj(n) || !isStr(n.title)) err(path + `.nodes[${i}]`, '节点需 {title}'); else { checkInline(n.title, path + `.nodes[${i}].title`); if (n.sub) checkInline(n.sub, path + `.nodes[${i}].sub`); } if (n.state && !['on', 'q'].includes(n.state)) err(path + `.nodes[${i}].state`, '应为 on|q'); });
     }
   } else if (T === 'table') {
-    req(b, 'head', v => Array.isArray(v) && v.length >= 2 && v.every(isStr), path, '表头字符串数组');
+    if (req(b, 'head', v => Array.isArray(v) && v.length >= 2 && v.every(isStr), path, '表头字符串数组'))
+      b.head.forEach((h, i) => checkInline(h, path + `.head[${i}]`));
     if (req(b, 'rows', v => Array.isArray(v) && v.length >= 1, path, '行数组'))
-      b.rows.forEach((row, i) => { if (!Array.isArray(row)) err(path + `.rows[${i}]`, '行应为数组'); });
+      b.rows.forEach((row, i) => {
+        if (!Array.isArray(row)) { err(path + `.rows[${i}]`, '行应为数组'); return; }
+        row.forEach((c, j) => { const t = isObj(c) ? c.text : c; if (isStr(t)) checkInline(t, path + `.rows[${i}][${j}]`); });
+      });
   } else if (T === 'chart') {
     if (!['bar', 'line', 'area', 'scatter'].includes(b.chartType)) { err(path + '.chartType', '应为 bar|line|area|scatter'); return; }
     if (b.chartType === 'scatter') {
@@ -192,6 +218,7 @@ function checkBlock(b, path, state) {
         else if (s.values.length !== b.categories.length) err(path + `.series[${i}].values`, 'values 长度需与 categories 一致');
       });
     }
+    if (b.caption != null) { opt(b, 'caption', isStr, path, 'string'); checkInline(b.caption, path + '.caption'); }
   } else if (T === 'stats') {
     if (req(b, 'items', v => Array.isArray(v) && v.length >= 2 && v.length <= 6, path, '2–6 项数组'))
       b.items.forEach((it, i) => {
@@ -204,13 +231,18 @@ function checkBlock(b, path, state) {
       b.nodes.forEach((n, i) => {
         if (!isObj(n) || !isStr(n.title)) err(path + `.nodes[${i}]`, '每项需 {title, sub?}');
         else if (n.sub != null && !isStr(n.sub)) err(path + `.nodes[${i}].sub`, '应为 string');
+        else { checkInline(n.title, path + `.nodes[${i}].title`); if (n.sub) checkInline(n.sub, path + `.nodes[${i}].sub`); }
       });
   } else if (T === 'code') {
     req(b, 'language', v => ['python', 'javascript', 'text'].includes(v), path, 'python|javascript|text');
     req(b, 'source', isStr, path, 'string');
+    /* source 是原样代码（textContent，不过 inlineMd）；filename/caption 是散文，过 inlineMd */
+    if (b.filename != null) { opt(b, 'filename', isStr, path, 'string'); checkInline(b.filename, path + '.filename'); }
+    if (b.caption != null) { opt(b, 'caption', isStr, path, 'string'); checkInline(b.caption, path + '.caption'); }
   } else if (T === 'compare') {
     for (const side of ['left', 'right']) {
       if (!isObj(b[side]) || !isObj(b[side].block)) { err(path + '.' + side, '需 {caption?, block}'); continue; }
+      if (b[side].caption != null) { if (!isStr(b[side].caption)) err(path + '.' + side + '.caption', '应为 string'); else checkInline(b[side].caption, path + '.' + side + '.caption'); }
       checkBlock(b[side].block, path + '.' + side + '.block', state);
     }
   } else if (T === 'quiz') {
@@ -220,11 +252,11 @@ function checkBlock(b, path, state) {
         const keys = new Set();
         b.choices.forEach((c, i) => {
           if (!isObj(c) || !/^[a-z]$/.test(c.key || '') || !isStr(c.text)) err(path + `.choices[${i}]`, '每项需 {key:"a"-"z", text}');
-          else { if (keys.has(c.key)) err(path + `.choices[${i}].key`, '选项 key 重复: ' + c.key); keys.add(c.key); }
+          else { if (keys.has(c.key)) err(path + `.choices[${i}].key`, '选项 key 重复: ' + c.key); keys.add(c.key); checkInline(c.text, path + `.choices[${i}].text`); }
         });
         if (req(b, 'answer', v => /^[a-z]$/.test(v), path, '单字母') && !keys.has(b.answer)) err(path + '.answer', 'answer "' + b.answer + '" 不在选项 key 里');
       }
-      req(b, 'explain', isStr, path, 'string');
+      if (req(b, 'explain', isStr, path, 'string')) checkInline(b.explain, path + '.explain');
     } else {
       req(b, 'prompt', isStr, path, 'string');
     }

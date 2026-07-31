@@ -68,6 +68,7 @@ class VideoBlock(_Block):
 
 class ListItem(BaseModel):
     model_config = ConfigDict(extra="allow")
+    lead: str | None = None  # 可选：条目粗体小标题，渲染成强调色小字块（给长列表一层可扫读层级）
     text: str
     icon: str | None = None  # 本地图标 id，见 viewer/vendor/icons/icons.json
 
