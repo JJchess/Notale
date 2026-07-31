@@ -8,18 +8,16 @@
 | 顶层 | 是什么 |
 |---|---|
 | **`lecture-agent/`** | **生成器 / 核心交付**：把课题生成 LectureDoc 的 agent（Python，六边形分层，可复现）。发行名 `lecture-agent`、import 包 `lecture_agent`。 |
-| **`viewer/`** | **查看器**：reveal.js 运行时，消费 LectureDoc JSON 在浏览器渲染（`index.html`、`doc-to-deck.js`、`serve.py`）。自带默认 demo deck。 |
+| **`viewer/`** | **查看器**：reveal.js 运行时，消费 LectureDoc JSON 在浏览器渲染（`app.html`、`doc-to-deck.js`）。 |
 | **`samples/`** | 示例讲义一处收拢：`decks/`（curated 单文件 deck）+ `cases/`（富端到端案例包：course + materials + 报告）。 |
-| **`docs/`** | 人读文档：项目计划、深度调研报告、schema 架构、前端渲染知识库。 |
-| **`legacy/`** | 旧 Node 原型（已被 Python 重写取代，冻结存档、不再运行）。 |
+| **`docs/`** | 人读文档：内容分类法、workflow 架构图、前端渲染知识库。 |
+| **`legacy/`** | 冻结存档：旧 Node 原型、归档的 viewer 纯查看器分支/旧进度原型、早期规划与调研快照（均不再运行/引用，仅供考据）。 |
 | **`refs/`** | 外部参考克隆（hermes / quarto 等），各自带 `.git`，是调研输入而非本项目代码（gitignore，不入库）。 |
 
 ## 快速上手
 
 ```bash
-# 生成（详见 lecture-agent/README.md）
-cd lecture-agent && uv sync && uv run python scripts/generate.py topic=梯度下降 llm=deepseek_v3
-
-# 渲染产物
-python viewer/serve.py          # 起本地服务，浏览器打开渲染 deck
+# 生成 + 查看（端到端 App：query 输入 → 实时进度 → 成片预览）
+cd lecture-agent && uv sync --extra app
+uv run python scripts/serve_app.py       # 浏览器打开 http://127.0.0.1:8778/app.html
 ```

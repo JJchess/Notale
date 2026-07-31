@@ -5,10 +5,7 @@
 ## 运行
 
 ```bash
-# 1) 纯查看器（静态）：渲染已有 deck
-python viewer/serve.py      # 起本地静态服务，默认渲染 course.lecture.json
-
-# 2) 端到端 App（输入 query → 实时进度 → 成片）——由 lecture-agent 侧服务
+# 端到端 App（输入 query → 实时进度 → 成片）——由 lecture-agent 侧服务
 cd ../lecture-agent && uv sync --extra app
 uv run python scripts/serve_app.py             # 真 live 生成，需 SILICONFLOW_API_KEY，每次数分钟
 #   → 浏览器打开 http://127.0.0.1:8778/app.html：居中输入框输入课题，看它规划/逐块生成/组装成片
@@ -16,12 +13,14 @@ uv run python scripts/serve_app.py             # 真 live 生成，需 SILICONFL
 
 默认渲染 `course.lecture.json`（自带 demo deck，改这个文件即换内容）。其它示例见 `../samples/decks/`。
 
+> 曾经的"纯静态查看器"分支（`index.html`/`serve.py`）与旧进度动画原型（`live.html`/`progress.html`）
+> 已归档到 `../legacy/viewer-standalone-shell/`，见其 README。
+
 ## 组成
 
-- `index.html` · `doc-to-deck.js` — 把 LectureDoc JSON 渲染成 reveal.js slides（`?doc=` 载入任意 deck）
 - `app.html` — **端到端 App**：query 输入 → 生成中进度视图 → 成片预览（订阅 `scripts/serve_app.py` 的 SSE）
-- `progress-view.js` — 进度渲染器（消费结构化进度事件；`app.html`/`live.html` 共用）
-- `live.html` — 无输入框的实时预览页（`app.html` 的蓝本）
+- `doc-to-deck.js` — 把 LectureDoc JSON 渲染成 reveal.js slides 的核心渲染器
+- `progress-view.js` — 进度渲染器（消费结构化进度事件，`app.html` 使用）
 - `vendor/` — reveal.js / KaTeX 等离线资源
 - `schema/` — 查看器侧的 LectureDoc 契约（Node `.mjs`：validate/enums/assemble/render-verify）
 
