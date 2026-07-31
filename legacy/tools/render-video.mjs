@@ -9,7 +9,7 @@
 import { writeFile, mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { launch, sleep } from './lib/browser.mjs';
+import { launch, sleep } from '../../tools/lib/browser.mjs';   // 共享无头驱动已随 render-check 提升到主线 tools/
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const DEMO_ROOT = path.resolve(HERE, '../../demo');

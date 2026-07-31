@@ -15,11 +15,18 @@ export const MIME = {
   '.webm': 'video/webm', '.mp4': 'video/mp4', '.vtt': 'text/vtt',
 };
 
-/* 本地静态服务器（Node http 天生异步，多连接不死锁） */
-export function startServer(root) {
+/* 本地静态服务器（Node http 天生异步，多连接不死锁）。
+   routes: { '/虚拟路径': '/绝对文件路径' } —— 把 root 之外的单个文件挂进来（如仓库外的待验收 doc），
+   免得为了让浏览器读到它而把文件拷进仓库。 */
+export function startServer(root, { routes = {} } = {}) {
   const server = http.createServer(async (req, res) => {
     try {
       const url = decodeURIComponent(req.url.split('?')[0]);
+      if (routes[url]) {
+        const data = await readFile(routes[url]);
+        res.writeHead(200, { 'Content-Type': MIME[path.extname(routes[url]).toLowerCase()] || 'application/octet-stream', 'Cache-Control': 'no-store' });
+        res.end(data); return;
+      }
       const filePath = path.join(root, path.normalize(url).replace(/^([/\\])+/, ''));
       if (!filePath.startsWith(root)) { res.writeHead(403).end(); return; }
       const target = url.endsWith('/') || url === '' ? path.join(filePath, 'index.html') : filePath;

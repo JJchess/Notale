@@ -3,6 +3,7 @@
 from .blocks import BlockResult, generate_block
 from .material import condense_material
 from .notes import enrich_notes
+from .reflow import ReflowResult, condense_scene
 from .widget import generate_widget, load_widget_guidelines
 
 __all__ = [
@@ -10,6 +11,8 @@ __all__ = [
     "generate_block",
     "condense_material",
     "enrich_notes",
+    "ReflowResult",
+    "condense_scene",
     "generate_widget",
     "load_widget_guidelines",
 ]

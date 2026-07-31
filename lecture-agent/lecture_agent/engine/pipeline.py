@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -16,6 +17,7 @@ from ..domain.evaluation import check_coverage
 from ..domain.generation import (
     BlockResult,
     condense_material,
+    condense_scene,
     enrich_notes,
     generate_block,
     generate_widget,
@@ -28,6 +30,7 @@ from ..domain.themes import theme_menu
 from ..domain.tools import CalcTool
 from ..ports.llm import LLMClient
 from ..ports.media import ImageFinder, ImageGenerator
+from ..ports.renderer import RenderVerifier
 from ..ports.tool import Tool
 from ..schema.validate import validate_doc
 from ..utils.concurrency import pool
@@ -60,6 +63,8 @@ class GeneratorOptions:
     record: bool = (
         True  # 记录到 results/ledger.jsonl（能力画像+token+代码指纹，见 app/container.py）
     )
+    # 真机渲染验收 → 溢出页回炉精简的最大轮数（需注入 render_verifier 才生效；0=关）
+    render_rounds: int = 2
 
 
 @dataclass
@@ -195,6 +200,7 @@ async def generate_lecture(
     skills_dir: str | None = None,
     image_finder: ImageFinder | None = None,
     image_generator: ImageGenerator | None = None,
+    render_verifier: RenderVerifier | None = None,
     log: Callable[[str], None] = lambda _m: None,
     progress: Callable[[dict[str, Any]], None] = lambda _e: None,
 ) -> GenerateResult:
@@ -349,6 +355,48 @@ async def generate_lecture(
         progress({"type": "stage", "stage": "notes", "status": "start"})
         await enrich_notes(llm, doc, audience=audience, concurrency=opts.concurrency)
         progress({"type": "stage", "stage": "notes", "status": "done"})
+
+    # ④.7 真机渲染验收 → 溢出页回炉精简（注入了 render_verifier 才跑）
+    #
+    # 这是流水线唯一的**视觉**反馈点。此前 SPEC 写着「每页 scrollHeight ≤ 720、禁溢出」，
+    # 但没有任何东西在执行——溢出的页被渲染器 zoom 到下限后直接裁掉，无人知晓。
+    # 注意顺序：必须在 notes 之后，因为回炉会改写 scene 内容，讲者备注要基于最终文本。
+    render_report = None
+    if render_verifier is not None and opts.render_rounds > 0 and not final.errors:
+        progress({"type": "stage", "stage": "render", "status": "start"})
+        for rnd in range(1, opts.render_rounds + 1):
+            render_report = await render_verifier.verify(json.dumps(doc, ensure_ascii=False))
+            bad = {
+                int(p["page"]): int(p.get("overflowY") or 0)
+                for p in render_report.overflow_pages
+                if 0 <= int(p["page"]) < len(doc.get("scenes") or [])
+            }
+            if not bad:
+                log(f"[render] 第 {rnd} 轮: 0 溢出，验收通过")
+                break
+            log(f"[render] 第 {rnd} 轮: {len(bad)} 页溢出，回炉精简 → {sorted(bad)}")
+
+            async def reflow(item: tuple[int, int], _i: int) -> None:
+                idx, px = item
+                scene = doc["scenes"][idx]
+                progress({"type": "block", "sceneId": scene.get("id"), "status": "err"})
+                r = await condense_scene(llm, scene, overflow_px=px, topic=topic)
+                if r.scene is not None:
+                    doc["scenes"][idx] = r.scene
+                    progress({"type": "docUpdated", "sceneId": r.scene.get("id"), "status": "done"})
+                else:
+                    log(f"[render] 第 {idx} 页精简失败: {r.err}")
+
+            await pool(sorted(bad.items()), opts.concurrency, reflow)
+            progress({"type": "docUpdated", "doc": doc, "reason": "reflow"})
+        # 回炉后内容变了，重跑整档校验，避免精简引入的结构错逃逸
+        final = validate_doc(doc)
+        if render_report is not None and render_report.overflow_pages:
+            final.warnings.append(
+                f"真机渲染仍有 {len(render_report.overflow_pages)} 页溢出（已尽力精简）："
+                + ", ".join(f"#{p['page']}({p['overflowY']}px)" for p in render_report.overflow_pages[:8])
+            )
+        progress({"type": "stage", "stage": "render", "status": "done"})
 
     # ⑤ 覆盖度审查（opt-in，完成 STORM 闭环）
     cov = None

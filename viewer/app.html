@@ -851,7 +851,26 @@ import { createProgressView } from './progress-view.js';
   /* ---------- 启动 ---------- */
   $('#tabProgress').onclick = () => setView('progress', true);
   $('#tabPreview').onclick = () => setView('preview', true);
-  setView('progress');
+
+  /* ?doc=<path> —— 静态渲染一份已有的 .lecture.json，不起 job、不连 SSE。
+     供 tools/render-check.mjs 的真机验收与人工离线预览用（此前只能经 /api 走完整生成才看得到成品）。
+     渲染完置 window.__deckReady，验收脚本据此判定就绪；失败置 __deckError 而不是静默白屏。 */
+  const docParam = new URLSearchParams(location.search).get('doc');
+  if (docParam) {
+    $('#inputView').classList.add('app-hidden');
+    setView('preview');
+    fetch(docParam)
+      .then(r => r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status + ' ' + docParam)))
+      .then(doc => {
+        $('#title').textContent = doc.title || '讲义';
+        setMeta('静态预览 · ' + (doc.scenes?.length || 0) + ' 页 · 主题 ' + (doc.theme || 'cartesian'));
+        window.LectureDeck.renderDoc(doc);
+        window.__deckReady = true;
+      })
+      .catch(err => { window.__deckError = String(err && err.message || err); showError(window.__deckError); });
+  } else {
+    setView('progress');
+  }
   $('#ivForm').addEventListener('submit', (e) => {
     e.preventDefault();
     const q = $('#ivQuery').value.trim(); if (!q) return;

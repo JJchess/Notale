@@ -17,9 +17,11 @@
      G 逐页 0 公式被裁（.mblock 不横向可滚）——fitFormulas 应把宽公式缩进容器，否则右侧公式看不见
      H 非代码正文 0 损坏标记（undefined/NaN/[object Object]）——插值 bug 的信号，结构断言抓不到
      I 自定义版式(index/split) 0 内容裁切——active panel / 分栏列不超各自容器（absolute panel 不撑大 .pad，F 抓不到）
-   任一失败 exit 1。用法：node tools/render-check.mjs [?query 如 ?theme=lab]  或  --doc generated/x.lecture.json
-                       批量：--all-generated（扫 demo/generated/*）
-                       截图：--shot[=1,2,8]（把指定页/全部页渲染成 PNG 供人工看视觉质量，写到临时目录 la-shots；配 --doc 选 doc）*/
+   任一失败 exit 1。用法：node tools/render-check.mjs --doc <path/to/x.lecture.json>（可为仓库外绝对路径）
+                       主题：追加 ?theme=lab
+                       批量：--all-generated（扫 viewer/generated|examples/*）
+                       截图：--shot[=1,2,8]（渲染成 PNG 供人工看视觉质量；--shot-dir <dir> 指定输出目录）
+                       机读：--json（结果以单行 JSON 打到 stdout，供 adapters/render/headless.py 消费）*/
 
 import { mkdtemp, rm, writeFile, mkdir } from 'node:fs/promises';
 import { readdirSync } from 'node:fs';
@@ -30,13 +32,18 @@ import { fileURLToPath } from 'node:url';
 import { startServer, findBrowser, CDP, sleep } from './lib/browser.mjs';   // 共享无头驱动（iter74 抽库，render-video 同用）
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-const DEMO_ROOT = path.resolve(HERE, '../../demo');
+const REPO = path.resolve(HERE, '..');
+/* 静态服务根 = 仓库根。app.html 在 /viewer/ 下，被验收的 doc 常在 lecture-agent/experiments/ 下，
+   两者不同子树，故把根设在仓库顶层，doc 以仓库相对路径经 ?doc= 传给 app.html。 */
+const SERVE_ROOT = REPO;
+const VIEWER_ENTRY = '/viewer/app.html';
+const DOC_DIRS = ['viewer/generated', 'viewer/examples'];
 
 
 /* 验收单份讲义：开一个新标签页导航到 url，跑 A-E 断言，收尾关标签页。返回 {label, fails, ready}。 */
 async function verifyScene(cdp, url, label) {
   const fails = [];
-  let ready = null, S, targetId;
+  let ready = null, S, targetId, slideStats = [];
   try {
     ({ targetId } = await cdp.send('Target.createTarget', { url: 'about:blank' }));
     ({ sessionId: S } = await cdp.send('Target.attachToTarget', { targetId, flatten: true }));
@@ -60,8 +67,13 @@ async function verifyScene(cdp, url, label) {
       return r.result.value;
     };
 
+    let loadErr = null;
     for (let i = 0; i < 80; i++) {
       try {
+        /* app.html 的 ?doc= 分支拿不到 doc 时会置 __deckError —— 优先读它，
+           否则 fetch 404 只会表现为「Reveal 20s 未就绪」，误导成渲染器问题。 */
+        loadErr = await evalJs('window.__deckError || null');
+        if (loadErr) break;
         ready = await evalJs(`(() => {
           if (!window.Reveal || !Reveal.isReady || !Reveal.isReady()) return null;
           const secs = document.querySelectorAll('.reveal .slides > section');
@@ -73,6 +85,7 @@ async function verifyScene(cdp, url, label) {
       if (ready) break;
       await sleep(250);
     }
+    if (loadErr) throw new Error('doc 加载失败: ' + loadErr);
     if (!ready) throw new Error('Reveal 未在超时内就绪（20s）');
     if (ready.slides < 1) fails.push('A: 分页数为 0');
 
@@ -153,6 +166,7 @@ async function verifyScene(cdp, url, label) {
     const layoutClipped = perSlide.filter(s => s.layoutClip > 4);
     if (layoutClipped.length) fails.push(`I: ${layoutClipped.length} 页自定义版式内容被裁(index面板/split列超容器) → ` + layoutClipped.map(s => `#${s.i}(${s.layoutClip}px)`).join(', '));
     ready.centered = perSlide.filter(s => s.actualCenter).length;
+    slideStats = perSlide;   // 交给 --json：Python 侧据此知道「哪几页」溢出，才能定点回炉
 
     await sleep(150);
     if (consoleErrors.length) fails.push(`B: ${consoleErrors.length} 条 console error → ` + consoleErrors.slice(0, 3).join(' | '));
@@ -162,7 +176,7 @@ async function verifyScene(cdp, url, label) {
   } finally {
     if (targetId) await cdp.send('Target.closeTarget', { targetId }).catch(() => {});
   }
-  return { label, fails, ready };
+  return { label, fails, ready, slides: slideStats };
 }
 
 /* 截图模式（--shot）：把指定页渲染成 PNG 供人工评估视觉质量——结构验收(A-F)之外的补充，
@@ -200,28 +214,40 @@ async function main() {
   const eqShot = args.find(a => a.startsWith('--shot='));
   if (eqShot) { shotMode = true; shotPages = eqShot.slice(7).split(',').map(Number).filter(Number.isInteger); }
   else if (args.includes('--shot')) { shotMode = true; const nx = args[args.indexOf('--shot') + 1]; if (nx && !nx.startsWith('-')) shotPages = nx.split(',').map(Number).filter(Number.isInteger); }
+  const shotDir = args.includes('--shot-dir') ? path.resolve(args[args.indexOf('--shot-dir') + 1]) : '';
+  const jsonMode = args.includes('--json');   // 机读：结果以单行 JSON 输出，供 Python 侧 RenderVerifier 消费
+  let shots = [];
 
-  // 组装待验收清单：--all-generated 扫 demo/generated/*.lecture.json；否则单份（默认基线）
+  // 组装待验收清单：--all-generated 扫 viewer/generated|examples；否则单份 --doc
+  // routes：--doc 允许仓库外的绝对路径，挂到虚拟路径上服务（见 startServer 的 routes 参数）
+  const routes = {};
   let scenes;
   if (allGenerated) {
-    // 扫 generated/（本地生成语料，gitignored）+ examples/（入库手写夹具，如 showcase deck——不纳则静默腐烂）
+    // generated/（本地生成语料，gitignored）+ examples/（入库手写夹具，如 showcase deck——不纳则静默腐烂）
     scenes = [];
-    for (const sub of ['generated', 'examples']) {
+    for (const sub of DOC_DIRS) {
       let files = [];
-      try { files = readdirSync(path.join(DEMO_ROOT, sub)).filter(f => f.endsWith('.lecture.json')).sort(); } catch { /* 目录可缺 */ }
-      scenes.push(...files.map(f => ({ label: `${sub}/${f.replace('.lecture.json', '')}`, doc: `${sub}/${f}`, query: '' })));
+      try { files = readdirSync(path.join(SERVE_ROOT, sub)).filter(f => f.endsWith('.lecture.json')).sort(); } catch { /* 目录可缺 */ }
+      scenes.push(...files.map(f => ({ label: `${path.basename(sub)}/${f.replace('.lecture.json', '')}`, docUrl: `/${sub}/${f}` })));
     }
-    if (!scenes.length) { console.error('✗ demo/generated|examples/ 下没有 .lecture.json'); process.exit(1); }
+    if (!scenes.length) { console.error(`✗ ${DOC_DIRS.join(' | ')} 下没有 .lecture.json`); process.exit(1); }
   } else {
-    const qs = new URLSearchParams(query.replace(/^\?/, ''));
-    if (docFlag) qs.set('doc', docFlag);
-    scenes = [{ label: docFlag || (qs.get('theme') ? `theme=${qs.get('theme')}` : 'baseline'), _qs: qs }];
+    if (!docFlag) { console.error('✗ 需要 --doc <path/to/x.lecture.json>'); process.exit(1); }
+    const abs = path.resolve(docFlag);
+    let docUrl;
+    if (abs.startsWith(SERVE_ROOT + path.sep)) {
+      docUrl = '/' + path.relative(SERVE_ROOT, abs).split(path.sep).join('/');
+    } else {
+      docUrl = '/__external.lecture.json';          // 仓库外：虚拟挂载，不拷文件进仓库
+      routes[docUrl] = abs;
+    }
+    scenes = [{ label: path.basename(docFlag), docUrl }];
   }
 
   const browserPath = findBrowser();
   if (!browserPath) { console.error('✗ 找不到 Edge/Chrome，跳过（非致命）'); process.exit(0); }
 
-  const { server, port } = await startServer(DEMO_ROOT);
+  const { server, port } = await startServer(SERVE_ROOT, { routes });
   const userDataDir = await mkdtemp(path.join(os.tmpdir(), 'la-render-'));
   const dbgPort = 9200 + Math.floor((Date.now() % 500));
   const proc = spawn(browserPath, [
@@ -248,25 +274,29 @@ async function main() {
     if (!ver) throw new Error('浏览器 DevTools 端点未就绪');
     cdp = await CDP.attach(ver.webSocketDebuggerUrl);
 
+    const urlFor = sc => {
+      const qs = new URLSearchParams(query.replace(/^\?/, ''));
+      qs.set('doc', sc.docUrl);
+      return `http://127.0.0.1:${port}${VIEWER_ENTRY}?${qs.toString()}`;
+    };
     if (shotMode) {
       const sc = scenes[0];
-      const qs = sc._qs || new URLSearchParams(sc.doc ? { doc: sc.doc } : {});
-      const q = qs.toString();
-      const url = `http://127.0.0.1:${port}/index.html${q ? '?' + q : ''}`;
-      const outDir = path.join(os.tmpdir(), 'la-shots');
+      const outDir = shotDir || path.join(os.tmpdir(), 'la-shots');
       await mkdir(outDir, { recursive: true });
-      const saved = await captureShots(cdp, url, shotPages, outDir);
-      console.log(`✓ 截图 ${saved.length} 张（${sc.label}）→ ${outDir}`);
-      saved.forEach(f => console.log('  ' + path.basename(f)));
+      const saved = await captureShots(cdp, urlFor(sc), shotPages, outDir);
+      if (!jsonMode) {
+        console.log(`✓ 截图 ${saved.length} 张（${sc.label}）→ ${outDir}`);
+        saved.forEach(f => console.log('  ' + path.basename(f)));
+      }
+      shots = saved;
     } else for (const sc of scenes) {
-      const qs = sc._qs || new URLSearchParams(sc.doc ? { doc: sc.doc } : {});
-      const q = qs.toString();
-      const url = `http://127.0.0.1:${port}/index.html${q ? '?' + q : ''}`;
-      const res = await verifyScene(cdp, url, sc.label);
+      const res = await verifyScene(cdp, urlFor(sc), sc.label);
       const r = res.ready || {};
       const tag = res.fails.length ? '✗' : '✓';
-      console.log(`${tag} ${res.label} :: slides=${r.slides ?? '?'} theme=${r.theme || '-'} fonts=${r.fontsStatus || '?'} centered=${r.centered ?? '?'}`);
-      if (res.fails.length) res.fails.forEach(f => console.log(`    - ${f}`));
+      if (!jsonMode) {
+        console.log(`${tag} ${res.label} :: slides=${r.slides ?? '?'} theme=${r.theme || '-'} fonts=${r.fontsStatus || '?'} centered=${r.centered ?? '?'}`);
+        if (res.fails.length) res.fails.forEach(f => console.log(`    - ${f}`));
+      }
       results.push(res);
     }
   } catch (e) {
@@ -275,8 +305,29 @@ async function main() {
     await cleanup();
   }
 
-  if (shotMode) return;   // 截图模式无验收断言，不走下面的通过/失败汇总
   const failed = results.filter(r => r.fails.length);
+
+  if (jsonMode) {
+    /* 单行 JSON：ok / 每份的失败项 / 逐页量化指标（overflowY 等）/ 截图路径。
+       Python 侧 RenderVerifier 只解析这个，不解析人类日志。 */
+    process.stdout.write(JSON.stringify({
+      ok: !failed.length,
+      shots,
+      docs: results.map(r => ({
+        label: r.label,
+        fails: r.fails,
+        slides: r.ready ? r.ready.slides : null,
+        theme: r.ready ? r.ready.theme : null,
+        fontsStatus: r.ready ? r.ready.fontsStatus : null,
+        overflowPages: (r.slides || []).filter(s => s.overflowY > 4 || s.overflowX > 1 || s.layoutClip > 4)
+          .map(s => ({ page: s.i, overflowY: s.overflowY, overflowX: s.overflowX, layoutClip: s.layoutClip })),
+        corruptPages: (r.slides || []).filter(s => s.corrupt).map(s => ({ page: s.i, marker: s.corrupt })),
+      })),
+    }) + '\n');
+    process.exit(failed.length ? 1 : 0);
+  }
+
+  if (shotMode) return;   // 截图模式无验收断言，不走下面的通过/失败汇总
   console.log('');
   if (failed.length) {
     console.error(`✗ 渲染验收失败：${failed.length}/${results.length} 份 → ${failed.map(r => r.label).join(', ')}`);

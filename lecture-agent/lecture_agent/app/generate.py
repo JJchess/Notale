@@ -16,6 +16,7 @@ from typing import Any
 from hydra.utils import instantiate
 from omegaconf import DictConfig, OmegaConf
 
+from ..adapters.render import HeadlessVerifier
 from ..adapters.store import FilesystemStore, LedgerStore
 from ..domain.telemetry import profile_deck
 from ..engine import GenerateResult, generate_lecture
@@ -26,6 +27,17 @@ from ..utils.logging import get_logger
 from ..utils.seed import seed_everything
 from .build import build_llm, build_options, model_of, usage_of
 from .codeprint import agent_fingerprint, git_dirty, git_rev
+
+
+def build_render_verifier(cfg: DictConfig, shot_dir: str | Path | None = None):
+    """真机渲染验收（generator.render_rounds>0 时启用，默认开）。
+
+    HeadlessVerifier 本身在无 node / 无 Edge 时会返回 ok=True+warning 而非报错，
+    所以这里可以无条件构造——离线机器上它自动退化成 no-op，不必再加开关。
+    """
+    if int(cfg.generator.get("render_rounds", 2)) <= 0:
+        return None
+    return HeadlessVerifier(shot_dir=shot_dir)
 
 
 def build_media(cfg: DictConfig) -> tuple[ImageFinder | None, ImageGenerator | None]:
@@ -69,6 +81,7 @@ async def run_generation(
         options=options,
         image_finder=image_finder,
         image_generator=image_generator,
+        render_verifier=build_render_verifier(cfg),
         log=log.info,
         progress=progress,
     )

@@ -3,7 +3,7 @@
 只在"真会变的轴"上开接缝（≥2 实现才算真接缝）：
 - LLMClient / ToolCallingLLM：httpx-live / cassette-replay / in-memory-fake
 - Tool：纯工具(calc,domain) / 有 I-O 工具(retrieve,adapters) / test-fake
-- RenderVerifier：结构校验（真机渲染 verifier 曾在此，随 agent 外壳归档 legacy/hermes-shell）
+- RenderVerifier：structural（纯 schema，无浏览器）/ headless（真机无头 Edge，驱动 tools/render-check.mjs）
 - CorpusStore：filesystem（共享 store adapter 的契约）
 """
 
