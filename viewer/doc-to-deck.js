@@ -198,7 +198,7 @@
   const blockRenderers = {
     hero(b, ctx) {
       const inner = el('div', 'inner');
-      if (b.tag) inner.appendChild(el('div', 'tag', escapeHtml(b.tag)));
+      if (b.tag) inner.appendChild(el('div', 'tag', inlineMd(b.tag)));
       const h1 = el('h1', null, b.title.map(inlineMd).join('<br>'));
       if (b.titleSize) h1.style.fontSize = b.titleSize + 'px';
       inner.appendChild(h1);
@@ -217,7 +217,7 @@
       const wrap = el('div');
       const q = el('div', 'q', inlineMd(b.statement) + (b.sub ? '<br><span class="q-sub">' + inlineMd(b.sub) + '</span>' : ''));
       wrap.appendChild(q);
-      if (b.cite) wrap.appendChild(el('div', 'cite', escapeHtml(b.cite)));
+      if (b.cite) wrap.appendChild(el('div', 'cite', inlineMd(b.cite)));
       return wrap;
     },
     /* pullquote：编辑级抽句——左竖条 + 斜体衬线大字旁置，给正文流一个呼吸点（DESIGN_RESEARCH T12）。缺字段兜底不抛。 */
@@ -243,14 +243,14 @@
       b.rows.forEach((r, i) => {
         const row = el('div', 'agenda-row' + (r.fragment ? ' ' + fragClass(r.fragment) : ''));
         row.appendChild(el('span', 'num', String(i + 1)));
-        row.appendChild(el('span', 'v', '<span class="k">' + escapeHtml(r.label) + '</span>' + inlineMd(r.text)));
+        row.appendChild(el('span', 'v', '<span class="k">' + inlineMd(r.label) + '</span>' + inlineMd(r.text)));
         wrap.appendChild(row);
       });
       return wrap;
     },
     callout(b) {
       const d = el('div', 'callout' + (b.fragment ? ' ' + fragClass(b.fragment) : ''));
-      d.innerHTML = '<span class="k">' + escapeHtml(b.label) + '</span>' + inlineMd(b.text);
+      d.innerHTML = '<span class="k">' + inlineMd(b.label) + '</span>' + inlineMd(b.text);
       if (b.latex) {
         const m = el('div', 'mblock', displayTex(b.latex));
         if (b.latexSize) m.style.fontSize = b.latexSize + 'px';
@@ -263,7 +263,7 @@
       const wrap = el('div', 'timeline');
       for (const e of b.events || []) {
         const it = el('div', 'tl-item');
-        it.appendChild(el('div', 'tl-time', escapeHtml(e.time)));
+        it.appendChild(el('div', 'tl-time', inlineMd(e.time)));
         const bd = el('div', 'tl-body');
         bd.appendChild(el('div', 'tl-title', inlineMd(e.title)));
         if (e.desc) bd.appendChild(el('div', 'tl-desc', inlineMd(e.desc)));
@@ -291,7 +291,7 @@
     },
     table(b) {
       const t = el('table', 'tbl');
-      t.appendChild(el('thead', null, '<tr>' + b.head.map(h => '<th>' + escapeHtml(h) + '</th>').join('') + '</tr>'));
+      t.appendChild(el('thead', null, '<tr>' + b.head.map(h => '<th>' + inlineMd(h) + '</th>').join('') + '</tr>'));
       const tb = el('tbody');
       for (const row of b.rows) {
         tb.appendChild(el('tr', null, row.map(c => {
@@ -350,7 +350,7 @@
     },
     code(b) {
       const card = el('div', 'codecard');
-      card.appendChild(el('div', 'bar', '<span class="d"></span><span class="lbl">' + escapeHtml(b.filename || '') + '</span>'));
+      card.appendChild(el('div', 'bar', '<span class="d"></span><span class="lbl">' + inlineMd(b.filename || '') + '</span>'));
       const pre = el('pre'); const code = el('code', 'language-' + (b.language || 'text'));
       code.textContent = b.source; pre.appendChild(code); card.appendChild(pre);
       if (b.caption) { const w = el('div'); w.appendChild(card); w.appendChild(el('div', 'cite', inlineMd(b.caption))); return w; }
@@ -360,7 +360,7 @@
       const cols = el('div', 'cols');
       for (const side of [b.left, b.right]) {
         const cell = el('div');
-        if (side.caption) cell.appendChild(el('div', 'compare-caption', escapeHtml(side.caption)));
+        if (side.caption) cell.appendChild(el('div', 'compare-caption', inlineMd(side.caption)));
         cell.appendChild(renderBlock(side.block, ctx));
         cols.appendChild(cell);
       }
@@ -1145,13 +1145,13 @@
          内容据 scene.headline + 其 statement block；缺字段兜底不抛（红线）。 */
       ctx.sectionNo = (ctx.sectionNo || 0) + 1;
       pad.appendChild(el('div', 'section-num', String(ctx.sectionNo).padStart(2, '0')));
-      if (scene.eyebrow) pad.appendChild(el('div', 'eyebrow', escapeHtml(scene.eyebrow)));
+      if (scene.eyebrow) pad.appendChild(el('div', 'eyebrow', inlineMd(scene.eyebrow)));
       if (scene.headline) pad.appendChild(el('h2', 'section-title', inlineMd(scene.headline)));
       const dek = (scene.blocks || []).find(b => b && b.type === 'statement');
       const dekText = dek ? dek.statement : scene.lead;
       if (dekText) pad.appendChild(el('div', 'section-dek', inlineMd(dekText)));
     } else {
-      if (scene.eyebrow) pad.appendChild(el('div', 'eyebrow', escapeHtml(scene.eyebrow)));
+      if (scene.eyebrow) pad.appendChild(el('div', 'eyebrow', inlineMd(scene.eyebrow)));
       if (scene.headline) {
         const h = el('h2', 'headline', inlineMd(scene.headline));
         if (scene.headlineSize) h.style.fontSize = scene.headlineSize + 'px';

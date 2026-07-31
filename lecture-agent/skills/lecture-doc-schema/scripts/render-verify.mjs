@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/* ⚠ 生成物：由 demo/schema/ 同步而来（node lecture-agent/sync.mjs）。别在这里改，改 demo/schema/。 */
+/* ⚠ 生成物：镜像自 viewer/schema/（单一事实源）。别在这里改，改 viewer/schema/ 后重新同步。 */
 /* ============================================================================
    LectureDoc 渲染验收（Phase 3 生成管道 · 第 6 步 Verify）
    用法:  node render-verify.mjs [file]   （缺省 ../course.lecture.json）

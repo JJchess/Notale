@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/* ⚠ 生成物：由 demo/schema/ 同步而来（node lecture-agent/sync.mjs）。别在这里改，改 demo/schema/。 */
+/* ⚠ 生成物：镜像自 viewer/schema/（单一事实源）。别在这里改，改 viewer/schema/ 后重新同步。 */
 /* ============================================================================
    LectureDoc v1 校验器（零依赖）
    用法:  node demo/schema/validate.mjs [json文件路径]
@@ -116,18 +116,22 @@ function checkWidgetHtml(html, path) {
 }
 
 /* ---------- block 校验 ---------- */
-import { SCENE_KINDS, LAYOUT_KINDS, BLOCK_TYPES, SIM_ENGINES } from './enums.mjs';   // 单一真相源（iter73 解耦）
+import { SCENE_KINDS, LAYOUT_KINDS, BLOCK_TYPES, SIM_ENGINES, DIAGRAM_TYPES } from './enums.mjs';   // 单一真相源（iter73 解耦）
 export { BLOCK_TYPES };   // re-export 兼容既有 import（check-consistency / tools/test.mjs）
 function checkBlock(b, path, state) {
   if (!isObj(b)) { err(path, 'block 应为对象'); return; }
   if (!BLOCK_TYPES.includes(b.type)) { err(path + '.type', '未知 block 类型: ' + b.type); return; }
   opt(b, 'status', v => ['ready', 'pending', 'error'].includes(v), path, 'ready|pending|error');
-  opt(b, 'fragment', v => typeof v === 'boolean', path, 'boolean');
+  opt(b, 'fragment', v => typeof v === 'boolean' || typeof v === 'string', path, 'boolean 或 reveal fragment 类型名(如 fade-up/highlight-red)');
   const T = b.type;
   if (T === 'hero') {
     if (req(b, 'title', v => Array.isArray(v) && v.length >= 1 && v.length <= 3 && v.every(isStr), path, '1–3 行字符串数组')) {}
     for (const k of ['tag', 'sub', 'facts', 'hint']) opt(b, k, isStr, path, 'string');
     if (b.sub) checkInline(b.sub, path + '.sub');
+    if (b.image != null) {
+      opt(b, 'image', isStr, path, 'string');
+      if (isStr(b.image) && /^\s*(https?:)?\/\//i.test(b.image)) err(path + '.image', '只能是本地相对路径或 data:，禁远程 URL（守离线红线）');
+    }
   } else if (T === 'statement') {
     req(b, 'statement', isStr, path, 'string'); checkInline(b.statement, path + '.statement');
   } else if (T === 'pullquote') {
@@ -144,7 +148,10 @@ function checkBlock(b, path, state) {
   } else if (T === 'list') {
     if (req(b, 'items', v => Array.isArray(v) && v.length >= 1 && v.length <= 12, path, '1–12 项数组')) {
       if (b.items.length > 8) warn(path + '.items', '条目数 ' + b.items.length + ' 偏多，注意别在一页里堆太满（硬顶 12，建议 ≤8）');
-      b.items.forEach((it, i) => { if (!isObj(it) || !isStr(it.text)) err(path + `.items[${i}]`, '每项需 {text}'); else checkInline(it.text, path + `.items[${i}].text`); });
+      b.items.forEach((it, i) => {
+        if (!isObj(it) || !isStr(it.text)) err(path + `.items[${i}]`, '每项需 {text}');
+        else { checkInline(it.text, path + `.items[${i}].text`); if (it.icon != null && !isStr(it.icon)) err(path + `.items[${i}].icon`, '应为 string(本地图标 id)'); }
+      });
     }
   } else if (T === 'agenda') {
     if (req(b, 'rows', v => Array.isArray(v) && v.length >= 1 && v.length <= 12, path, '1–12 行数组')) {
@@ -173,6 +180,31 @@ function checkBlock(b, path, state) {
     req(b, 'head', v => Array.isArray(v) && v.length >= 2 && v.every(isStr), path, '表头字符串数组');
     if (req(b, 'rows', v => Array.isArray(v) && v.length >= 1, path, '行数组'))
       b.rows.forEach((row, i) => { if (!Array.isArray(row)) err(path + `.rows[${i}]`, '行应为数组'); });
+  } else if (T === 'chart') {
+    if (!['bar', 'line', 'area', 'scatter'].includes(b.chartType)) { err(path + '.chartType', '应为 bar|line|area|scatter'); return; }
+    if (b.chartType === 'scatter') {
+      if (req(b, 'points', v => Array.isArray(v) && v.length >= 2, path, '≥2 点数组'))
+        b.points.forEach((p, i) => { if (!isObj(p) || !isNum(p.x) || !isNum(p.y)) err(path + `.points[${i}]`, '每项需 {x,y,label?}'); });
+    } else if (req(b, 'categories', v => Array.isArray(v) && v.every(isStr), path, '字符串数组')
+      && req(b, 'series', v => Array.isArray(v) && v.length >= 1, path, '至少 1 条 series')) {
+      b.series.forEach((s, i) => {
+        if (!isObj(s) || !isStr(s.name) || !Array.isArray(s.values) || !s.values.every(isNum)) err(path + `.series[${i}]`, '每条需 {name, values:number[]}');
+        else if (s.values.length !== b.categories.length) err(path + `.series[${i}].values`, 'values 长度需与 categories 一致');
+      });
+    }
+  } else if (T === 'stats') {
+    if (req(b, 'items', v => Array.isArray(v) && v.length >= 2 && v.length <= 6, path, '2–6 项数组'))
+      b.items.forEach((it, i) => {
+        if (!isObj(it) || !isStr(it.value) || !isStr(it.label)) err(path + `.items[${i}]`, '每项需 {value, label, delta?}');
+        else if (it.delta != null && !isStr(it.delta)) err(path + `.items[${i}].delta`, '应为 string');
+      });
+  } else if (T === 'diagram') {
+    if (!DIAGRAM_TYPES.includes(b.diagramType)) { err(path + '.diagramType', DIAGRAM_TYPES.join('|')); return; }
+    if (req(b, 'nodes', v => Array.isArray(v) && v.length >= 2 && v.length <= 8, path, '2–8 节点数组'))
+      b.nodes.forEach((n, i) => {
+        if (!isObj(n) || !isStr(n.title)) err(path + `.nodes[${i}]`, '每项需 {title, sub?}');
+        else if (n.sub != null && !isStr(n.sub)) err(path + `.nodes[${i}].sub`, '应为 string');
+      });
   } else if (T === 'code') {
     req(b, 'language', v => ['python', 'javascript', 'text'].includes(v), path, 'python|javascript|text');
     req(b, 'source', isStr, path, 'string');
@@ -249,7 +281,6 @@ function checkBlock(b, path, state) {
       req(b, 'chart', isObj, path, 'object');
     }
   } else if (T === 'runnable') {
-    if (state.runnableCount++ > 0) err(path, '每个 deck 至多一个 runnable block（运行时约束，见 SPEC §3.2）');
     req(b, 'languages', v => Array.isArray(v) && v.length >= 1 && v.every(l => ['python', 'js'].includes(l)), path, 'python|js 数组');
     if (req(b, 'starter', isObj, path, 'object'))
       for (const l of b.languages || []) if (!isStr(b.starter[l])) err(path + '.starter.' + l, '缺少该语言的初始代码');
@@ -288,7 +319,8 @@ function checkScene(s, path, state, seenIds) {
   }
   req(s, 'kind', v => SCENE_KINDS.includes(v), path, SCENE_KINDS.join('|'));
   req(s, 'notes', v => isStr(v) && v.length > 0, path, '非空字符串（演讲者备注必填）');
-  for (const k of ['eyebrow', 'headline', 'lead']) opt(s, k, isStr, path, 'string');
+  for (const k of ['eyebrow', 'headline', 'lead', 'transition']) opt(s, k, isStr, path, 'string');
+  opt(s, 'autoAnimate', v => typeof v === 'boolean', path, 'boolean');
   if (s.headline) checkInline(s.headline, path + '.headline');
   if (s.lead) checkInline(s.lead, path + '.lead');
   if (!req(s, 'blocks', v => Array.isArray(v) && v.length >= 1, path, '非空数组')) return;
@@ -333,7 +365,7 @@ function validate(doc, state) {
 }
 
 /* ---------- 可复用导出（供 assemble.mjs / validate-block.mjs import） ---------- */
-function freshState() { return { runnableCount: 0, freeformUses: [] }; }
+function freshState() { return { freeformUses: [] }; }
 /** 校验整份 LectureDoc；返回 {errors, warnings, freeformUses}，不打印、不 exit。 */
 export function validateDoc(doc) {
   R.errors = []; R.warnings = [];

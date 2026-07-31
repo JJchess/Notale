@@ -123,7 +123,7 @@ LectureDoc                     一门课
 - `starter.{python,js}`：初始代码。约定：把最终结果赋给 `result` 变量（点数组 `[{x,y}]`）→ 运行时自动绘图。
 - `env.kind:"objective1d"`：运行时向两种语言注入等价 helper——`truef(x)`（由 `objective` 表达式生成）、`candidates`（domain 均匀采样）、`predict(observed,x)`（最近邻代理，返回 `[mu, sd]`）。
 - `env.kind:"custom"`：`pythonPreamble` 为字面 Python 源码；`jsPreamble` 为求值后返回 helper 对象的 JS 表达式。
-- **当前运行时约束：每个 deck 至多一个 runnable block**（编辑器传送门为单例，见 knowledge-base/001）。
+- **一个 deck 可以有多个 runnable block**：各自独立编辑器/传送门/状态（见 knowledge-base/001 多实例泛化），共享一个 Pyodide 解释器但每块有独立命名空间，互不污染变量。建议每页至多一个（布局上的整屏特判以此为前提），全 deck 通常 0-2 个。
 
 **`embed`** — 保留位。未来嵌入后端三产品（代码实验室 JupyterLab / 互动视频 AutoVideo / 互动实验室 GenUI），沿用 `launch`（拉起参数）/`artifact`（url/status 回填）契约。当前运行时只渲染占位框。
 
@@ -182,8 +182,8 @@ LectureDoc                     一门课
 
 ```
 agent 产出 course.lecture.json
-  → node viewer/schema/validate.mjs <file>     # 结构 + 受限表达式静态检查，第一道关
-  → 运行时渲染（python viewer/serve.py → http://localhost:8778）
+  → node demo/schema/validate.mjs <file>     # 结构 + 受限表达式静态检查，第一道关
+  → 运行时渲染（python demo/serve.py → http://localhost:8778）
   → 无头/预览验收：每页 scrollHeight ≤ 720（禁溢出）、控制台无错、交互可用
 ```
 
@@ -193,7 +193,7 @@ agent 产出 course.lecture.json
 
 ## 7. Hermes 流水线（Phase 3 骨架已落地 → `lecture-agent/`）
 
-> **已落地**：本节的流水线已实现为一套建在 Hermes harness 上的技能套件，见 `lecture-agent/`（`generate-lecture` 编排器 + `create-{content,quiz,sim,code-runtime,freeform}` 家族技能 + `lecture-doc-schema` 共享契约 + `evolve-schema` 自演化 + 确定性管道 `viewer/schema/{validate,assemble,render-verify}.mjs`）。装好 Hermes+LLM 后 `/generate-lecture <题>` 即走 input→clarify→output。详见 `lecture-agent/README.md`。下面是其设计骨架。
+> **已落地**：本节的流水线已实现为一套建在 Hermes harness 上的技能套件，见 `lecture-agent/`（`generate-lecture` 编排器 + `create-{content,quiz,sim,code-runtime,freeform}` 家族技能 + `lecture-doc-schema` 共享契约 + `evolve-schema` 自演化 + 确定性管道 `demo/schema/{validate,assemble,render-verify}.mjs`）。装好 Hermes+LLM 后 `/generate-lecture <题>` 即走 input→clarify→output。详见 `lecture-agent/README.md`。下面是其设计骨架。
 
 基于 `refs/hermes-agent`（技能自创建 / 子代理并行 / RPC 工具管道 / batch_runner）：
 
@@ -257,4 +257,4 @@ Hermes 技能: generate-lecture <课题> <素材目录?>
 
 ## 附：与旧草稿的差异
 
-早期草稿（原 `viewer/lecture-doc.js`，已删除）以「嵌入三产品 iframe」为中心；经用户定向（"不强塞产品 URL、用 Quarto 技术方案原生实现交互"），v1 以**原生交互 block**（sim/runnable/quiz）为中心，`embed` 降级为保留位。scene/block/status 三层与流式协议的思路保持不变。
+早期草稿（原 `demo/lecture-doc.js`，已删除）以「嵌入三产品 iframe」为中心；经用户定向（"不强塞产品 URL、用 Quarto 技术方案原生实现交互"），v1 以**原生交互 block**（sim/runnable/quiz）为中心，`embed` 降级为保留位。scene/block/status 三层与流式协议的思路保持不变。
