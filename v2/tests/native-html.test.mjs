@@ -87,6 +87,27 @@ test('确定性渲染把文字与关系图编译为 DOM/SVG，原生审计通过
   assert.equal(audit.nativeOwnership.semanticGraph, 'svg+html');
 });
 
+test('VLM 多路径几何被安全编译为可缩放内联 SVG', () => {
+  const scene = buildDeterministicNativeScene({ page: { ...page, graph: null }, pagePlan: {}, design });
+  scene.nodes.push({
+    id: 'observed-symbol', type: 'svg', role: 'observed-symbol', parentId: null,
+    bbox: { x: .65, y: .35, w: .22, h: .3 }, sourceBBox: null, anchors: ['center'],
+    geometryConfidence: .9, layerConfidence: .9, z: 8,
+    binding: { kind: 'none', index: null, key: null }, style: {},
+    svgPaths: [
+      { d: 'M 100 500 C 250 100 750 100 900 500', fill: null, stroke: '#fbbf24', strokeWidth: 24, opacity: 1 },
+      { d: 'M 100 500 C 250 900 750 900 900 500 Z', fill: '#2563eb', stroke: '#ffffff', strokeWidth: 12, opacity: .9 },
+    ],
+    variant: 'observed-paths', shape: 'none', assetId: null, depth: 0, tilt: 0,
+  });
+  scene.observedElementCount = scene.nodes.length;
+  validateNativeScene(scene, { pageId: page.id });
+  const { html } = renderNativeScene({ scene, page: { ...page, graph: null }, design, assetManifest: [] });
+  assert.match(html, /viewBox="0 0 1000 1000"/);
+  assert.match(html, /M 100 500 C 250 100 750 100 900 500/);
+  assert.doesNotMatch(html, /<canvas\b/i);
+});
+
 test('原生审计拒绝非背景整页位图', () => {
   const scene = buildDeterministicNativeScene({ page, pagePlan: {}, design });
   scene.mode = 'asset-assisted';

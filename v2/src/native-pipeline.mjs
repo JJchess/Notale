@@ -2,9 +2,9 @@ import { appendFile, copyFile, cp, readFile, readdir } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { bindDeck, writeReport } from './bind.mjs';
-import { probeNativeGeometry, probeNativeInteractions } from './browser.mjs';
+import { compareImagesInBrowser, probeNativeGeometry, probeNativeInteractions } from './browser.mjs';
 import { validateContentPack, validateDesignBaseline, validateSectionHtml } from './contracts.mjs';
-import { ensureDir, readJson, rel, replaceDir, writeBinary, writeJson, writeText } from './lib/io.mjs';
+import { ensureDir, readJson, rel, replaceDir, sha256File, sha256Text, writeBinary, writeJson, writeText } from './lib/io.mjs';
 import { auditNativePage, summarizeNativeAudit } from './native-audit.mjs';
 import { analyzeReferenceScene, generateNativeAsset, reprocessNativeChromaAsset, reviewNativeScreenshot } from './native-providers.mjs';
 import { buildDeterministicNativeScene, normalizeNativeScene, validateNativeScene } from './native-scene.mjs';
@@ -72,9 +72,20 @@ function operationalConfig(project, overrides = {}) {
     geometryTolerance: Number(base.geometryTolerance || .015),
     minSceneConfidence: Number(base.minSceneConfidence || .5),
     minNodeConfidence: Number(base.minNodeConfidence || .4),
+    minReconstructionCoverage: Number(base.minReconstructionCoverage || .78),
+    minObservedElementRatio: Number(base.minObservedElementRatio || .65),
     vlm: { ...(base.vlm || {}), allowWebgl: overrides.allowWebgl === true || base.allowWebgl === true },
     assets: { enabled: !offline && base.assets?.enabled !== false, ...(base.assets || {}) },
     review: { enabled: !offline && base.review?.enabled !== false, ...(base.review || {}) },
+    fidelity: {
+      enabled: !offline && base.fidelity?.enabled !== false,
+      compareWidth: Number(base.fidelity?.compareWidth || 360),
+      compareHeight: Number(base.fidelity?.compareHeight || 225),
+      maxMeanAbsDiff: Number(base.fidelity?.maxMeanAbsDiff || 72),
+      maxChangedPixelFraction32: Number(base.fidelity?.maxChangedPixelFraction32 || .72),
+      blocking: base.fidelity?.blocking !== false,
+      ...(base.fidelity || {}),
+    },
     viewports: Array.isArray(base.viewports) && base.viewports.length
       ? base.viewports
       : [{ width: 2560, height: 1440 }, { width: 1500, height: 844 }, { width: 980, height: 800 }, { width: 390, height: 844 }],
@@ -137,9 +148,15 @@ export async function buildNativeHtmlFromReferenceRun({ sourceRun, outDir, optio
     let status = 'pass';
     let failure = null;
     const existingSceneFile = path.join(runDir, 'native-scenes', `${page.id}.json`);
-    if (options.reuseScenes === true && await exists(existingSceneFile)) {
+    const existingMetaFile = path.join(runDir, 'evidence', page.id, 'native-scene-meta.json');
+    const existingMeta = await exists(existingMetaFile) ? await readJson(existingMetaFile) : null;
+    const reusableScene = options.reuseScenes === true
+      && await exists(existingSceneFile)
+      && existingMeta?.provider !== 'strict-failure'
+      && existingMeta?.quarantinePreview !== true;
+    if (reusableScene) {
       scene = normalizeNativeScene(await readJson(existingSceneFile), { page, design });
-      metadata = { provider: 'scene-replay', model: null, reason: 'reuse-scenes' };
+      metadata = { provider: 'scene-replay', model: existingMeta?.model || null, reason: 'reuse-passed-scene', sourceProvider: existingMeta?.provider || null };
       status = 'replay';
     } else if (config.offline || options.vlm === false) {
       scene = buildDeterministicNativeScene({ page, pagePlan: visualById.get(page.id), design });
@@ -171,8 +188,9 @@ export async function buildNativeHtmlFromReferenceRun({ sourceRun, outDir, optio
     }
     if (config.strict && !failure) {
       const lowNodes = scene.nodes.filter(node => Number(node.geometryConfidence ?? .5) < config.minNodeConfidence || Number(node.layerConfidence ?? .5) < config.minNodeConfidence).map(node => node.id);
-      if (scene.confidence < config.minSceneConfidence || lowNodes.length) {
-        const reason = `${page.id}: 场景置信度未达严格门禁；scene=${scene.confidence.toFixed(2)} lowNodes=${lowNodes.join(',') || 'none'}`;
+      const elementRatio = scene.nodes.length / Math.max(1, scene.observedElementCount);
+      if (scene.confidence < config.minSceneConfidence || scene.reconstructionCoverage < config.minReconstructionCoverage || elementRatio < config.minObservedElementRatio || lowNodes.length) {
+        const reason = `${page.id}: 场景完整度未达严格门禁；scene=${scene.confidence.toFixed(2)} coverage=${scene.reconstructionCoverage.toFixed(2)} elementRatio=${elementRatio.toFixed(2)} lowNodes=${lowNodes.join(',') || 'none'}`;
         failure = { reason, attempts: metadata?.attempts || [] };
         scene = buildDeterministicNativeScene({ page, pagePlan: visualById.get(page.id), design });
         metadata = { provider: 'strict-failure', model: metadata?.model || null, ...failure, quarantinePreview: true };
@@ -198,6 +216,13 @@ export async function buildNativeHtmlFromReferenceRun({ sourceRun, outDir, optio
     const started = performance.now();
     telemetry.log('native.asset.start', { stage: 'native-asset', pageId: page.id, assetId: asset.id, role: asset.role });
     const base = { id: asset.id, pageId: page.id, role: asset.role, bbox: asset.bbox, transparent: asset.transparent, providerPreference: asset.providerPreference };
+    const cacheKey = sha256Text(JSON.stringify({
+      prompt: asset.prompt, role: asset.role, bbox: asset.bbox, transparent: asset.transparent,
+      providerPreference: asset.providerPreference, useReference: asset.useReference,
+      referenceSha256: asset.useReference ? await sha256File(references.get(page.id)) : null,
+    }));
+    const cacheDir = path.join(ROOT, '.cache', 'native-assets', cacheKey);
+    const cacheMetaFile = path.join(cacheDir, 'metadata.json');
     const previous = previousAssets.find(item => item.pageId === page.id && item.id === asset.id && item.status === 'pass' && item.file);
     if (previous && await exists(path.join(runDir, previous.file))) {
       let record = { ...previous, ...base, status: 'pass', replayed: true };
@@ -209,6 +234,20 @@ export async function buildNativeHtmlFromReferenceRun({ sourceRun, outDir, optio
       }
       telemetry.log('native.asset.end', { stage: 'native-asset', pageId: page.id, assetId: asset.id, status: 'replay', durationMs: 0 });
       return record;
+    }
+    if (await exists(cacheMetaFile)) {
+      const cached = await readJson(cacheMetaFile);
+      const cachedFile = path.join(cacheDir, cached.file || 'asset.png');
+      if (cached.status === 'pass' && await exists(cachedFile)) {
+        const assetDir = path.join(runDir, 'assets', 'native', page.id);
+        await ensureDir(assetDir);
+        const safeId = asset.id.replace(/[^a-z0-9_-]/gi, '-');
+        const target = path.join(assetDir, `${safeId}.${cached.extension || 'png'}`);
+        await copyFile(cachedFile, target);
+        const record = { ...base, ...cached.metadata, status: 'pass', file: rel(runDir, target), cacheKey, cacheHit: true };
+        telemetry.log('native.asset.end', { stage: 'native-asset', pageId: page.id, assetId: asset.id, status: 'cache', durationMs: Math.round(performance.now() - started), provider: record.provider, model: record.model, bytes: record.bytes });
+        return record;
+      }
     }
     if (!config.assets.enabled) {
       const record = { ...base, status: 'skipped', file: null, reason: 'asset generation disabled' };
@@ -225,6 +264,12 @@ export async function buildNativeHtmlFromReferenceRun({ sourceRun, outDir, optio
       const target = path.join(assetDir, `${safeId}.${output.extension}`);
       await writeBinary(target, output.binary);
       const record = { ...base, status: 'pass', file: rel(runDir, target), ...output.metadata };
+      await ensureDir(cacheDir);
+      const cachedFile = path.join(cacheDir, `asset.${output.extension}`);
+      await writeBinary(cachedFile, output.binary);
+      await writeJson(cacheMetaFile, { status: 'pass', file: path.basename(cachedFile), extension: output.extension, metadata: output.metadata });
+      record.cacheKey = cacheKey;
+      record.cacheHit = false;
       telemetry.log('native.asset.end', { stage: 'native-asset', pageId: page.id, assetId: asset.id, status: 'pass', durationMs: Math.round(performance.now() - started), provider: output.metadata.provider, model: output.metadata.model, bytes: output.metadata.bytes });
       return record;
     } catch (error) {
@@ -281,6 +326,42 @@ export async function buildNativeHtmlFromReferenceRun({ sourceRun, outDir, optio
   telemetry.log('native.geometry.end', { stage: 'native-geometry', status: geometry.pass ? 'pass' : 'fail', durationMs: Math.round(performance.now() - geometryStarted), tolerance: config.geometryTolerance });
 
   const primaryProbe = viewportResults[0];
+  const fidelityPages = await mapLimit(contentPack.pages, config.renderConcurrency, async page => {
+    const screenshot = primaryProbe.pages.find(item => item.pageId === page.id)?.screenshot;
+    if (!config.fidelity.enabled || !screenshot) return { pageId: page.id, status: 'not-applicable', pass: true };
+    const started = performance.now();
+    telemetry.log('native.fidelity.start', { stage: 'native-fidelity', pageId: page.id });
+    try {
+      const metrics = await compareImagesInBrowser({
+        root: runDir,
+        source: rel(runDir, references.get(page.id)),
+        preview: screenshot,
+        width: config.fidelity.compareWidth,
+        height: config.fidelity.compareHeight,
+      });
+      const pass = metrics.meanAbsDiff <= config.fidelity.maxMeanAbsDiff
+        && metrics.changedPixelFraction32 <= config.fidelity.maxChangedPixelFraction32;
+      const result = {
+        pageId: page.id, status: pass ? 'pass' : 'fail', pass,
+        score: Math.max(0, Math.round(100 - metrics.meanAbsDiff - metrics.changedPixelFraction32 * 25)),
+        thresholds: { maxMeanAbsDiff: config.fidelity.maxMeanAbsDiff, maxChangedPixelFraction32: config.fidelity.maxChangedPixelFraction32 },
+        metrics,
+      };
+      telemetry.log('native.fidelity.end', { stage: 'native-fidelity', pageId: page.id, status: result.status, durationMs: Math.round(performance.now() - started), score: result.score });
+      return result;
+    } catch (error) {
+      telemetry.log('native.fidelity.end', { stage: 'native-fidelity', pageId: page.id, status: 'fail', durationMs: Math.round(performance.now() - started), error: error.message });
+      return { pageId: page.id, status: 'fail', pass: false, score: 0, error: error.message };
+    }
+  });
+  const fidelity = {
+    version: '1.0',
+    pass: fidelityPages.every(item => item.pass) || !config.fidelity.blocking,
+    blocking: config.fidelity.blocking,
+    pages: fidelityPages,
+    averageScore: fidelityPages.length ? Math.round(fidelityPages.reduce((sum, item) => sum + Number(item.score || 0), 0) / fidelityPages.length) : null,
+  };
+  await writeJson(path.join(runDir, 'native-fidelity-summary.json'), fidelity);
   const reviews = await mapLimit(contentPack.pages, config.vlmConcurrency, async page => {
     const screenshot = primaryProbe.pages.find(item => item.pageId === page.id)?.screenshot;
     if (!config.review.enabled || !screenshot) return { pageId: page.id, status: 'not-applicable', pass: true, blocking: false, issues: [], reason: '单图评审已关闭' };
@@ -303,7 +384,7 @@ export async function buildNativeHtmlFromReferenceRun({ sourceRun, outDir, optio
   const reviewFailures = reviews.filter(item => !item.pass && item.blocking);
   const reviewPending = reviews.some(item => item.status === 'pending');
   const sceneFailures = sceneResults.filter(item => item.status === 'quarantine');
-  const hardPass = !sceneFailures.length && nativeAudit.pass && nativeProbe.pass && interactions.pass && geometry.pass && !reviewFailures.length;
+  const hardPass = !sceneFailures.length && nativeAudit.pass && nativeProbe.pass && interactions.pass && geometry.pass && fidelity.pass && !reviewFailures.length;
   const status = !hardPass ? 'fail' : config.strict && reviewPending ? 'pending' : 'pass';
   const previousRun = await exists(path.join(runDir, 'run.json')) ? await readJson(path.join(runDir, 'run.json')) : {};
   const manifest = {
@@ -317,6 +398,7 @@ export async function buildNativeHtmlFromReferenceRun({ sourceRun, outDir, optio
     hardGate: nativeProbe.pass ? 'pass' : 'fail',
     interactionGate: interactions.pass ? 'pass' : 'fail',
     geometryGate: geometry.pass ? 'pass' : 'fail',
+    fidelityGate: fidelity.pass ? 'pass' : 'fail',
     visualGate: reviewFailures.length ? 'fail' : reviews.some(item => item.status === 'pending') ? 'pending' : 'pass',
     deck: 'deck.html',
     nativeScenes: 'native-scenes',
@@ -325,6 +407,7 @@ export async function buildNativeHtmlFromReferenceRun({ sourceRun, outDir, optio
     nativeProbe: 'native-probe-summary.json',
     nativeInteractions: 'native-interaction-summary.json',
     nativeGeometry: 'native-geometry-summary.json',
+    nativeFidelity: 'native-fidelity-summary.json',
     nativeReview: 'native-review-summary.json',
     nativeTimings: 'native-timings-summary.json',
     pageCount: contentPack.pages.length,
@@ -342,5 +425,5 @@ export async function buildNativeHtmlFromReferenceRun({ sourceRun, outDir, optio
   telemetry.log('native.run.end', { status, pageCount: contentPack.pages.length, totalDurationMs, degradedPages: manifest.degradedPages.length });
   await telemetry.flush();
   await writeJson(path.join(runDir, 'native-timings-summary.json'), timingSummary(telemetry.events, totalDurationMs, config, contentPack.pages.length));
-  return { runDir, manifest, audit: nativeAudit, probes: nativeProbe, interactions, geometry, reviews };
+  return { runDir, manifest, audit: nativeAudit, probes: nativeProbe, interactions, geometry, fidelity, reviews };
 }

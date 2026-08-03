@@ -8,6 +8,7 @@ const NODE_TYPES = new Set(['text', 'shape', 'image', 'svg', 'chart', 'diagram',
 const BINDING_TYPES = new Set(['title', 'purpose', 'coreLogic', 'displayCopy', 'claim', 'graphNode', 'seriesLabel', 'seriesValue', 'code', 'none']);
 const ASSET_ROLES = new Set(['background', 'photo', 'portrait', 'illustration', 'texture', 'cutout', 'decorative-vector']);
 const ASSET_PROVIDERS = new Set(['seedream', 'gpt-image-2', 'recraft']);
+const SAFE_SVG_PATH = /^[MmLlHhVvCcSsQqTtAaZz0-9+.,\-\s]+$/;
 
 export async function nativeSceneJsonSchema() {
   return JSON.parse(await readFile(path.join(ROOT, 'schemas', 'native-scene.schema.json'), 'utf8'));
@@ -81,6 +82,17 @@ export function validateNativeScene(scene, { pageId, allowWebgl = false } = {}) 
     if (!BINDING_TYPES.has(node.binding.kind)) throw new Error(`nodes[${index}].binding.kind 无效`);
     if (node.type === 'text' && node.binding.kind === 'none') throw new Error(`${node.id}: 文本节点必须绑定 content-pack`);
     object(node.style, `nodes[${index}].style`);
+    if (node.svgPaths != null) {
+      if (!Array.isArray(node.svgPaths) || node.svgPaths.length > 64) throw new Error(`nodes[${index}].svgPaths 无效`);
+      for (const [pathIndex, primitive] of node.svgPaths.entries()) {
+        object(primitive, `nodes[${index}].svgPaths[${pathIndex}]`);
+        if (typeof primitive.d !== 'string' || !primitive.d.trim() || primitive.d.length > 4000 || !SAFE_SVG_PATH.test(primitive.d)) {
+          throw new Error(`nodes[${index}].svgPaths[${pathIndex}].d 无效`);
+        }
+        finite(primitive.strokeWidth, `nodes[${index}].svgPaths[${pathIndex}].strokeWidth`, 0, 80);
+        finite(primitive.opacity, `nodes[${index}].svgPaths[${pathIndex}].opacity`, 0, 1);
+      }
+    }
   }
   const assetIds = new Set();
   for (const [index, asset] of scene.assets.entries()) {
@@ -105,6 +117,8 @@ export function validateNativeScene(scene, { pageId, allowWebgl = false } = {}) 
   for (const interaction of scene.interactions) {
     if (!nodeIds.has(interaction.targetId)) throw new Error(`interaction target 不存在: ${interaction.targetId}`);
   }
+  finite(scene.observedElementCount, 'native-scene.observedElementCount', 1, 160);
+  finite(scene.reconstructionCoverage, 'native-scene.reconstructionCoverage', 0, 1);
   finite(scene.confidence, 'native-scene.confidence', 0, 1);
   return scene;
 }
@@ -174,6 +188,7 @@ function node(id, type, role, bbox, z, options = {}) {
     z,
     binding: binding('none'),
     style: style(),
+    svgPaths: [],
     variant: null,
     shape: 'none',
     assetId: null,
@@ -249,6 +264,8 @@ export function buildDeterministicNativeScene({ page, pagePlan, design }) {
     nodes,
     assets: [],
     interactions: [],
+    observedElementCount: nodes.length,
+    reconstructionCoverage: 1,
     confidence: .55,
     rationale: `确定性降级布局；${pagePlan?.archetype || '保留语义层级'}`,
   }, { pageId: page.id });
@@ -259,18 +276,85 @@ function clamp(value, min, max, fallback) {
   return Number.isFinite(number) ? Math.max(min, Math.min(max, number)) : fallback;
 }
 
+function rgb(color) {
+  const match = String(color || '').trim().match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i);
+  if (!match) return null;
+  const hex = match[1].length === 3 ? [...match[1]].map(value => value + value).join('') : match[1];
+  return [0, 2, 4].map(index => Number.parseInt(hex.slice(index, index + 2), 16));
+}
+
+function luminance(color) {
+  const value = rgb(color);
+  if (!value) return null;
+  const channels = value.map(channel => {
+    const normalized = channel / 255;
+    return normalized <= .03928 ? normalized / 12.92 : ((normalized + .055) / 1.055) ** 2.4;
+  });
+  return .2126 * channels[0] + .7152 * channels[1] + .0722 * channels[2];
+}
+
+function contrast(a, b) {
+  const first = luminance(a), second = luminance(b);
+  if (first == null || second == null) return null;
+  return (Math.max(first, second) + .05) / (Math.min(first, second) + .05);
+}
+
 function compileAssetOwnership(nodes, assets) {
   const simpleRole = /(?:connector|arrow|brace|line|label|banner|container|overlay|header|frame|border|panel|divider|badge|icon)/i;
   const simplePrompt = /(?:rounded rectangle|banner|container|overlay|header|frame|border|curly brace|arrow|divider|straight line|simple badge|shield badge)/i;
-  const complexPrompt = /(?:photo|portrait|illustration|botanical|plant|flower|cell|mitochond|bacter|chromosome|dna|human|scientist|organic|texture|lego|brick)/i;
+  const complexPrompt = /(?:photo|portrait|illustration|botanical|plant|flower|cell|mitochond|bacter|dna|human|scientist|organic|texture)/i;
   const assetById = new Map(assets.map(asset => [asset.id, asset]));
+
+  const inferredColor = text => /green|emerald|绿色/i.test(text) ? '#65a30d'
+    : /pink|rose|粉|红/i.test(text) ? '#f472b6'
+      : /purple|violet|紫/i.test(text) ? '#8b5cf6'
+        : /blue|cyan|蓝|青/i.test(text) ? '#0284c7'
+          : /white|gray|grey|白|灰/i.test(text) ? '#e5e7eb'
+            : '#fbbf24';
+  const inferredSecondary = text => {
+    const colors = [];
+    if (/yellow|gold|黄|金/i.test(text)) colors.push('#fbbf24');
+    if (/green|emerald|绿色/i.test(text)) colors.push('#65a30d');
+    if (/pink|rose|粉|红/i.test(text)) colors.push('#f472b6');
+    if (/white|gray|grey|白|灰/i.test(text)) colors.push('#e5e7eb');
+    return colors.find(color => color !== inferredColor(text)) || inferredColor(text);
+  };
+  const inferredCount = text => {
+    const explicit = text.match(/\b(\d{1,2})\b/);
+    if (explicit) return Math.max(1, Math.min(12, Number(explicit[1])));
+    const words = { one: 1, single: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8 };
+    let total = 0;
+    for (const [word, value] of Object.entries(words)) if (new RegExp(`\\b${word}\\b`, 'i').test(text)) total += value;
+    return Math.max(1, Math.min(12, total || 1));
+  };
 
   for (const node of nodes) {
     if (node.type !== 'image' || !node.assetId) continue;
     const asset = assetById.get(node.assetId);
     if (!asset || asset.role === 'background') continue;
     const signature = `${node.id} ${node.role} ${node.variant || ''}`;
-    const primitive = simpleRole.test(signature) || (simplePrompt.test(asset.prompt) && !complexPrompt.test(asset.prompt));
+    const prompt = String(asset.prompt || '');
+    if (/lego|brick|积木/i.test(prompt)) {
+      node.type = 'shape'; node.shape = 'rect'; node.variant = `native-lego-${inferredCount(prompt)}`; node.assetId = null;
+      node.style.color = inferredColor(prompt); node.style.background = inferredColor(prompt); node.style.borderColor = inferredSecondary(prompt); node.style.borderWidth = Math.max(1, Number(node.style.borderWidth || 2));
+      continue;
+    }
+    if (/puzzle|拼图/i.test(prompt)) {
+      node.type = 'shape'; node.shape = 'rect'; node.variant = `native-puzzle-${inferredCount(prompt)}`; node.assetId = null;
+      node.style.color = inferredColor(prompt); node.style.background = inferredColor(prompt); node.style.borderColor = inferredSecondary(prompt);
+      continue;
+    }
+    if (/\b(?:sphere|orb|seed)s?\b|圆球|种子球/i.test(prompt) && !/plant|flower|pod|trait|pair|comparison|collage|illustration|植物|花|豆荚|性状|对比|拼贴|插画/i.test(prompt)) {
+      node.type = 'shape'; node.shape = 'circle'; node.variant = `native-orb-${inferredCount(prompt)}`; node.assetId = null;
+      node.style.color = inferredColor(prompt); node.style.background = inferredColor(prompt); node.style.borderColor = inferredSecondary(prompt);
+      continue;
+    }
+    if (/chromosome|染色体/i.test(prompt) && !/plant.?cell|cell.?diagram|whole.?cell|植物细胞|完整细胞/i.test(prompt)) {
+      node.type = 'svg'; node.variant = `chromosome-${inferredCount(prompt)}`; node.assetId = null;
+      node.style.color = inferredColor(prompt); node.style.borderColor = inferredSecondary(prompt);
+      continue;
+    }
+    const primitive = simpleRole.test(signature) || (simplePrompt.test(prompt) && !complexPrompt.test(prompt));
     if (primitive) {
       node.type = /(?:connector|arrow|brace|line)/i.test(signature) ? 'svg' : 'shape';
       node.variant = node.variant || (/arrow/i.test(signature) ? 'arrow' : /brace/i.test(signature) ? 'brace' : 'panel');
@@ -368,12 +452,88 @@ export function normalizeNativeScene(raw, { page, design }) {
       shadow: item?.style?.shadow == null ? null : String(item.style.shadow),
       rotation: item?.style?.rotation == null ? null : clamp(item.style.rotation, -180, 180, 0),
     }),
+    svgPaths: (Array.isArray(item?.svgPaths) ? item.svgPaths : []).slice(0, 64).map(primitive => ({
+      d: String(primitive?.d || '').slice(0, 4000),
+      fill: primitive?.fill == null ? null : String(primitive.fill),
+      stroke: primitive?.stroke == null ? null : String(primitive.stroke),
+      strokeWidth: clamp(primitive?.strokeWidth, 0, 80, 2),
+      opacity: clamp(primitive?.opacity, 0, 1, 1),
+    })).filter(primitive => primitive.d && SAFE_SVG_PATH.test(primitive.d)),
     variant: item?.variant == null ? null : String(item.variant),
     shape: ['rect', 'circle', 'pill', 'line', 'none'].includes(item?.shape) ? item.shape : 'none',
     assetId: item?.assetId == null ? null : String(item.assetId),
     depth: clamp(item?.depth, -500, 500, 0),
     tilt: clamp(item?.tilt, -60, 60, 0),
   }); });
+  // VLMs occasionally identify a text region correctly but leave binding as
+  // none.  Repair only the semantic pointer, never the wording: titles map to
+  // page.title and remaining text boxes consume the content-pack displayCopy
+  // catalog in visual reading order.
+  const usedDisplayCopy = new Set(nodes.filter(item => item.type === 'text' && item.binding.kind === 'displayCopy' && Number.isInteger(item.binding.index)).map(item => item.binding.index));
+  const availableDisplayCopy = (page.displayCopy || []).map((copy, index) => ({ copy, index }))
+    .filter(({ copy, index }) => !usedDisplayCopy.has(index) && !(copy?.text === page.title && nodes.some(node => node.type === 'text' && (node.binding.kind === 'title' || /title|heading|主标题|标题/i.test(`${node.id} ${node.role}`)))))
+    .map(({ index }) => index);
+  for (const item of nodes.filter(node => node.type === 'text' && node.binding.kind === 'none').sort((a, b) => a.bbox.y - b.bbox.y || a.bbox.x - b.bbox.x)) {
+    const signature = `${item.id} ${item.role} ${item.variant || ''}`.toLowerCase();
+    if (/(?:^|[-_ ])(?:main|page)?[-_ ]?(?:title|heading)(?:$|[-_ ])|主标题/.test(signature)) item.binding = { kind: 'title', index: null, key: null };
+    else if (availableDisplayCopy.length) item.binding = { kind: 'displayCopy', index: availableDisplayCopy.shift(), key: null };
+    else if (/subtitle|subheading|副标题/.test(signature) && page.purpose) item.binding = { kind: 'purpose', index: null, key: null };
+    else if (/takeaway|conclusion|summary|结论|总结/.test(signature) && page.coreLogic) item.binding = { kind: 'coreLogic', index: null, key: null };
+  }
+  const semanticBest = new Map();
+  const removeText = new Set();
+  for (const [index, item] of nodes.entries()) {
+    if (item.type !== 'text') continue;
+    if (item.binding.kind === 'none') { removeText.add(index); continue; }
+    const key = item.binding.kind === 'title' ? 'title'
+      : item.binding.kind === 'graphNode'
+      ? `${item.binding.kind}:${item.binding.key ?? ''}`
+      : `${item.binding.kind}:${item.binding.index ?? ''}`;
+    const score = (/(?:main-title|title-main|主标题)/i.test(`${item.id} ${item.role}`) ? 100 : 0) + item.bbox.w * item.bbox.h;
+    const previous = semanticBest.get(key);
+    if (!previous || score > previous.score) {
+      if (previous) removeText.add(previous.index);
+      semanticBest.set(key, { index, score });
+    } else removeText.add(index);
+  }
+  for (const index of [...removeText].sort((a, b) => b - a)) nodes.splice(index, 1);
+  for (const item of nodes.filter(node => node.type === 'text')) {
+    item.z = Math.max(30, item.z);
+    if (/(?:^|[-_ ])(?:main|page)?[-_ ]?(?:title|heading)(?:$|[-_ ])|主标题/.test(`${item.id} ${item.role}`.toLowerCase())) {
+      item.style.fontSize = Math.max(46, Number(item.style.fontSize || 0));
+      item.style.fontWeight = Math.max(700, Number(item.style.fontWeight || 0));
+    }
+    const background = item.style.background && item.style.background !== 'transparent' ? item.style.background : (theme.background || '#0b1728');
+    const color = item.style.color || theme.foreground || '#ffffff';
+    const ratio = contrast(color, background);
+    if (ratio != null && ratio < 4.5) item.style.color = (contrast('#ffffff', background) || 0) >= (contrast('#111827', background) || 0) ? '#ffffff' : '#111827';
+    const value = resolveBinding(page, item.binding);
+    const fontSize = Number(item.style.fontSize || 24);
+    if (item.bbox.y >= .88 && item.bbox.w < .7) item.bbox.w = Math.max(item.bbox.w, .95 - item.bbox.x);
+    const pixelWidth = item.bbox.w * design.canvas.width;
+    const glyphFactor = /[\u3400-\u9fff]/.test(String(value)) ? 1 : .56;
+    const charsPerLine = Math.max(4, Math.floor(pixelWidth / Math.max(8, fontSize * glyphFactor)));
+    const lines = Math.max(1, Math.ceil([...String(value)].length / charsPerLine));
+    const required = (fontSize * 1.7 * lines + (['claim', 'takeaway'].includes(item.role) ? 38 : 12)) / design.canvas.height;
+    if (required > item.bbox.h) {
+      const available = Math.max(.025, 1 - item.bbox.y);
+      item.bbox.h = Math.min(available, required);
+      if (required > available) item.style.fontSize = Math.max(18, Math.floor(fontSize * available / required));
+    }
+  }
+  const overlapRatio = (a, b) => {
+    const width = Math.max(0, Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x));
+    const height = Math.max(0, Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y));
+    return width * height / Math.max(.0001, Math.min(a.w * a.h, b.w * b.h));
+  };
+  for (const icon of nodes.filter(node => node.type === 'shape' && /icon|badge|图标/i.test(`${node.id} ${node.role}`))) {
+    const text = nodes.find(node => node.type === 'text' && overlapRatio(node.bbox, icon.bbox) > .45);
+    if (!text) continue;
+    const iconWidth = Math.min(.045, text.bbox.w * .24);
+    icon.bbox = { x: text.bbox.x, y: text.bbox.y + text.bbox.h * .2, w: iconWidth, h: text.bbox.h * .6 };
+    text.bbox.x += iconWidth + .012;
+    text.bbox.w = Math.max(.04, text.bbox.w - iconWidth - .012);
+  }
   const assets = (Array.isArray(raw?.assets) ? raw.assets : []).slice(0, 12).map((item, index) => ({
     id: String(item?.id || `asset-${index + 1}`),
     role: ASSET_ROLES.has(item?.role) ? item.role : 'illustration',
@@ -497,6 +657,8 @@ export function normalizeNativeScene(raw, { page, design }) {
     nodes,
     assets,
     interactions,
+    observedElementCount: Math.round(clamp(raw?.observedElementCount, 1, 160, Math.max(1, nodes.length))),
+    reconstructionCoverage: clamp(raw?.reconstructionCoverage, 0, 1, .5),
     confidence: clamp(raw?.confidence, 0, 1, .5),
     rationale: String(raw?.rationale || 'VLM scene analysis'),
   };

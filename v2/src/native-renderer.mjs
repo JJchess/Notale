@@ -44,7 +44,20 @@ function textNode(node, page, canvas) {
 
 function shapeNode(node, canvas) {
   const shape = node.shape || 'rect';
-  return `<div class="native-node native-shape shape-${escapeHtml(shape)}" data-native-node-id="${escapeHtml(node.id)}" aria-hidden="true" style="${nodeStyle(node, canvas)}"></div>`;
+  const variant = String(node.variant || '');
+  const count = Math.max(1, Math.min(12, Number(variant.match(/-(\d+)$/)?.[1] || 1)));
+  let body = '';
+  const signature = `${node.id} ${node.role} ${variant}`.toLowerCase();
+  if (/punnett|棋盘/.test(signature)) body = Array.from({ length: 4 }, (_, index) => `<i class="native-punnett-cell"><b></b><b></b></i>`).join('');
+  else if (variant.startsWith('native-lego-')) body = Array.from({ length: count }, (_, index) => `<i class="native-lego-piece" style="--item:${index}"><b></b><b></b><b></b><b></b></i>`).join('');
+  else if (variant.startsWith('native-puzzle-')) body = Array.from({ length: count }, (_, index) => `<i class="native-puzzle-piece" style="--item:${index}"></i>`).join('');
+  else if (variant.startsWith('native-orb-')) body = Array.from({ length: count }, (_, index) => `<i class="native-orb" style="--item:${index}"></i>`).join('');
+  else if (variant.includes('painterly') || /fusion-illustration|融合遗传隐喻/.test(signature)) body = '<i class="native-paint red"></i><strong>+</strong><i class="native-paint white"></i><em>↓</em><i class="native-paint pink"></i>';
+  else if (shape === 'line' || variant.includes('arrow')) body = '<i class="native-line-arrow"></i>';
+  const cluster = body ? ' native-object-cluster' : '';
+  const semantic = body ? ' data-semantic-owner="dom-svg"' : '';
+  const columns = /punnett|棋盘/.test(signature) ? 2 : variant.startsWith('native-orb-') ? Math.ceil(Math.sqrt(count)) : variant.startsWith('native-lego-') && count >= 6 ? 4 : null;
+  return `<div class="native-node native-shape shape-${escapeHtml(shape)}${cluster}" data-native-node-id="${escapeHtml(node.id)}" data-native-variant="${escapeHtml(variant)}"${semantic} aria-hidden="true" style="${nodeStyle(node, canvas)}${columns ? `;grid-template-columns:repeat(${columns},1fr)` : ''}">${body}</div>`;
 }
 
 function assetNode(node, assetById, outputById, canvas) {
@@ -135,9 +148,11 @@ function chartNode(node, page, canvas) {
 
 function decorativeSvg(node, canvas) {
   const box = rect(node, canvas);
-  const variant = String(node.variant || 'flow').toLowerCase();
+  const variant = `${node.variant || ''} ${node.id || ''} ${node.role || ''}`.toLowerCase();
   let body;
-  if (variant.includes('dna') || variant.includes('helix')) {
+  if (node.svgPaths?.length) {
+    body = node.svgPaths.map(item => `<path d="${escapeHtml(item.d)}" fill="${safeColor(item.fill, 'none')}" stroke="${safeColor(item.stroke, 'none')}" stroke-width="${Number(item.strokeWidth || 0)}" opacity="${Number(item.opacity ?? 1)}"></path>`).join('');
+  } else if (variant.includes('dna') || variant.includes('helix')) {
     const pointsA = [], pointsB = [], rungs = [];
     for (let i = 0; i <= 16; i += 1) {
       const y = i * box.h / 16;
@@ -147,10 +162,27 @@ function decorativeSvg(node, canvas) {
       if (i % 2 === 0) rungs.push(`<line x1="${a}" y1="${y}" x2="${b}" y2="${y}"></line>`);
     }
     body = `<polyline class="strand-a" points="${pointsA.join(' ')}"></polyline><polyline class="strand-b" points="${pointsB.join(' ')}"></polyline>${rungs.join('')}`;
+  } else if (variant.includes('chromosome')) {
+    const count = Math.max(1, Math.min(6, Number(variant.match(/-(\d+)$/)?.[1] || 2)));
+    const chromosomes = Array.from({ length: count }, (_, index) => {
+      const cx = (index + 1) * 1000 / (count + 1);
+      const spread = Math.min(95, 360 / count);
+      return `<path d="M ${cx - spread} 150 C ${cx - spread * .35} 330 ${cx + spread * .35} 670 ${cx + spread} 850 M ${cx + spread} 150 C ${cx + spread * .35} 330 ${cx - spread * .35} 670 ${cx - spread} 850" stroke="${safeColor(index % 2 ? node.style?.borderColor : node.style?.color, '#f97316')}" stroke-width="42"></path><circle cx="${cx}" cy="500" r="34" fill="${safeColor(node.style?.background, '#fbbf24')}"></circle>`;
+    }).join('');
+    body = `<circle cx="500" cy="500" r="450" fill="rgba(190,225,245,.16)" stroke="rgba(190,225,245,.52)" stroke-width="18"></circle>${chromosomes}`;
+  } else if (variant.includes('pedigree')) {
+    body = `<path d="M 500 120 V 300 M 220 300 H 780 M 220 300 V 520 M 500 300 V 520 M 780 300 V 520" stroke-width="20"></path><circle cx="500" cy="110" r="72"></circle><rect x="148" y="500" width="144" height="144" rx="24"></rect><circle cx="500" cy="572" r="72"></circle><rect x="708" y="500" width="144" height="144" rx="24"></rect>`;
+  } else if (variant.includes('gene-puzzle') || variant.includes('central-diagram')) {
+    body = `<path d="M 110 390 H 410 V 160 H 590 V 390 H 890 V 610 H 590 V 840 H 410 V 610 H 110 Z" fill="rgba(251,191,36,.72)" stroke-width="24"></path><circle cx="500" cy="500" r="94" fill="rgba(37,99,235,.84)"></circle>`;
+  } else if (variant.includes('arrow') || variant.includes('connector') || variant.includes('line')) {
+    body = `<path d="M 18 ${box.h * .5} H ${Math.max(24, box.w - 42)}"></path><path d="M ${Math.max(18, box.w - 72)} ${box.h * .25} L ${Math.max(24, box.w - 18)} ${box.h * .5} L ${Math.max(18, box.w - 72)} ${box.h * .75}"></path>`;
+  } else if (variant.includes('brace')) {
+    body = `<path d="M ${box.w - 8} 6 C ${box.w * .35} 6 ${box.w * .7} ${box.h * .42} 8 ${box.h * .5} C ${box.w * .7} ${box.h * .58} ${box.w * .35} ${box.h - 6} ${box.w - 8} ${box.h - 6}"></path>`;
   } else {
     body = `<path d="M 8 ${box.h * .72} C ${box.w * .24} ${box.h * .12}, ${box.w * .58} ${box.h * .86}, ${box.w - 8} ${box.h * .25}"></path><circle cx="${box.w * .2}" cy="${box.h * .45}" r="9"></circle><circle cx="${box.w * .65}" cy="${box.h * .61}" r="12"></circle>`;
   }
-  return `<svg class="native-node native-decorative-svg" data-native-node-id="${escapeHtml(node.id)}" viewBox="0 0 ${box.w} ${box.h}" aria-hidden="true" style="${nodeStyle(node, canvas)}">${body}</svg>`;
+  const viewBox = node.svgPaths?.length || /chromosome|pedigree|gene-puzzle|central-diagram/.test(variant) ? '0 0 1000 1000' : `0 0 ${box.w} ${box.h}`;
+  return `<svg class="native-node native-decorative-svg" data-native-node-id="${escapeHtml(node.id)}" viewBox="${viewBox}" preserveAspectRatio="none" aria-hidden="true" style="${nodeStyle(node, canvas)}">${body}</svg>`;
 }
 
 function css3dNode(node, page, canvas, outputById) {
@@ -218,6 +250,23 @@ export function renderNativeScene({ scene, page, design, assetManifest = [] }) {
     ${prefix} pre.native-text{padding:26px;font-family:"Cascadia Code",Consolas,monospace;line-height:1.45;white-space:pre-wrap}
     ${prefix} .native-shape.shape-circle{border-radius:50%!important}
     ${prefix} .native-shape.shape-pill{border-radius:999px!important}
+    ${prefix} .native-object-cluster{display:grid!important;grid-template-columns:repeat(auto-fit,minmax(22px,1fr));align-items:center;gap:7px;padding:4px;background:transparent!important;border:0!important;overflow:visible}
+    ${prefix} .native-line-arrow{position:absolute;left:0;top:50%;width:100%;height:4px;transform:translateY(-50%);border-radius:99px;background:currentColor}
+    ${prefix} .native-line-arrow::after{content:"";position:absolute;right:-1px;top:50%;width:13px;height:13px;border-top:4px solid currentColor;border-right:4px solid currentColor;transform:translateY(-50%) rotate(45deg)}
+    ${prefix} .native-lego-piece{position:relative;display:grid;grid-template-columns:1fr 1fr;gap:2px;min-width:22px;height:72%;padding:5px;border-radius:7px;background:var(--cluster-a,currentColor);background:color-mix(in srgb,currentColor 78%,#fff);box-shadow:inset 0 -8px 10px rgba(0,0,0,.22),0 5px 9px rgba(0,0,0,.22)}
+    ${prefix} .native-lego-piece:nth-child(even){background:color-mix(in srgb,var(--cluster-b,currentColor) 72%,#fff)}
+    ${prefix} .native-lego-piece b{display:block;border-radius:50%;background:rgba(255,255,255,.28);box-shadow:inset 0 -2px 2px rgba(0,0,0,.25)}
+    ${prefix} .native-puzzle-piece{display:block;height:72%;min-width:24px;border-radius:8px;background:color-mix(in srgb,currentColor 78%,#fff);box-shadow:inset 0 -7px 10px rgba(0,0,0,.18),0 4px 8px rgba(0,0,0,.2);clip-path:polygon(0 0,38% 0,38% 14%,62% 14%,62% 0,100% 0,100% 38%,86% 38%,86% 62%,100% 62%,100% 100%,62% 100%,62% 86%,38% 86%,38% 100%,0 100%,0 62%,14% 62%,14% 38%,0 38%)}
+    ${prefix} .native-puzzle-piece:nth-child(even),${prefix} .native-orb:nth-child(even){filter:hue-rotate(95deg)}
+    ${prefix} .native-orb{display:block;aspect-ratio:1;border-radius:50%;background:radial-gradient(circle at 32% 28%,#fff 0 7%,color-mix(in srgb,currentColor 80%,#fff) 14%,currentColor 62%,#26311a 100%);box-shadow:0 5px 10px rgba(0,0,0,.25)}
+    ${prefix} .native-punnett-cell{display:flex;align-items:center;justify-content:center;gap:7px;min-height:54px;border:2px solid color-mix(in srgb,currentColor 50%,#fff);background:rgba(255,255,255,.1)}
+    ${prefix} .native-punnett-cell b{width:34%;aspect-ratio:1;border-radius:50%;background:radial-gradient(circle at 32% 28%,#fff 0 8%,#fbbf24 18%,#d97706 100%)}
+    ${prefix} .native-punnett-cell:nth-child(2) b:last-child,${prefix} .native-punnett-cell:nth-child(3) b:first-child,${prefix} .native-punnett-cell:nth-child(4) b{background:radial-gradient(circle at 32% 28%,#fff 0 8%,#84cc16 18%,#3f6212 100%)}
+    ${prefix} .native-paint{display:block;width:23%;aspect-ratio:1.35;border-radius:48% 54% 45% 58%/54% 44% 60% 46%;box-shadow:inset -8px -10px 14px rgba(0,0,0,.18),0 8px 16px rgba(0,0,0,.24)}
+    ${prefix} .native-paint.red{background:#dc2626}${prefix} .native-paint.white{background:#f8fafc}${prefix} .native-paint.pink{background:#f9a8d4}
+    ${prefix} .native-object-cluster>strong,${prefix} .native-object-cluster>em{align-self:center;color:#fff;font:800 34px/1 sans-serif;text-align:center;font-style:normal}
+    ${prefix} .native-shape[data-native-variant*="painterly"]{grid-template-columns:1fr auto 1fr!important;grid-template-rows:1fr auto 1fr!important;justify-items:center}
+    ${prefix} .native-shape[data-native-variant*="painterly"]>.red{grid-area:1/1}${prefix} .native-shape[data-native-variant*="painterly"]>strong{grid-area:1/2}${prefix} .native-shape[data-native-variant*="painterly"]>.white{grid-area:1/3}${prefix} .native-shape[data-native-variant*="painterly"]>em{grid-area:2/2}${prefix} .native-shape[data-native-variant*="painterly"]>.pink{grid-area:3/2;width:70%}
     ${prefix} .native-asset{object-fit:cover;display:block}
     ${prefix} .native-asset.role-cutout,${prefix} .native-asset.role-portrait,${prefix} .native-asset.role-illustration{object-fit:contain}
     ${prefix} .native-asset-fallback{background:radial-gradient(circle at 35% 35%,color-mix(in srgb,${safeColor(scene.theme.accent, '#f97316')} 32%,transparent),transparent 58%)}
@@ -234,7 +283,7 @@ export function renderNativeScene({ scene, page, design, assetManifest = [] }) {
     ${prefix} .native-bar{width:64%;justify-self:center;border-radius:14px 14px 3px 3px;background:linear-gradient(180deg,${safeColor(scene.theme.accent, '#f97316')},${safeColor(scene.theme.secondary, '#2563eb')})}
     ${prefix} .native-bar-value{font-size:20px;font-weight:800;color:${safeColor(scene.theme.foreground, '#10233c')};align-self:center}
     ${prefix} .native-bar-label{font-size:18px;font-weight:650;color:${safeColor(scene.theme.muted, '#53657a')};line-height:1.2;padding-top:8px;align-self:start}
-    ${prefix} .native-decorative-svg{overflow:visible;fill:none;stroke:${safeColor(scene.theme.secondary, '#2563eb')};stroke-width:6;stroke-linecap:round;stroke-linejoin:round}
+    ${prefix} .native-decorative-svg{overflow:hidden;fill:none;stroke:${safeColor(scene.theme.secondary, '#2563eb')};stroke-width:6;stroke-linecap:round;stroke-linejoin:round}
     ${prefix} .native-decorative-svg .strand-b{stroke:${safeColor(scene.theme.accent, '#f97316')}}
     ${prefix} .native-decorative-svg circle{fill:${safeColor(scene.theme.surface, '#fff')};stroke-width:5}
     ${prefix} .native-3d{perspective:1400px;touch-action:none;cursor:grab;outline:none;--native-spread:0px}
