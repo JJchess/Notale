@@ -1,0 +1,1031 @@
+{
+  "id": "avl-tree",
+  "title": "AVL树：自平衡二叉搜索树",
+  "subtitle": "从退化的链表到log n的高度",
+  "language": "zh-CN",
+  "audience": "计算机科学学生",
+  "theme": "cobalt-grid",
+  "tutor": {
+    "suggestions": [
+      "AVL树如何通过旋转保持平衡？",
+      "四种旋转（LL、RR、LR、RL）分别对应什么情况？",
+      "为什么AVL树的高度严格小于1.44log₂(n+2)？",
+      "AVL树和红黑树在实际应用中如何选择？"
+    ],
+    "kb": [
+      {
+        "pattern": "平衡因子|BF|平衡系数",
+        "answer": "平衡因子 = 左子树高度 - 右子树高度，AVL树要求所有节点的平衡因子绝对值不超过1。"
+      },
+      {
+        "pattern": "LL旋转|右单旋|LL",
+        "answer": "LL旋转（右单旋）用于解决在失衡节点的左子树的左孩子上插入导致的不平衡。"
+      },
+      {
+        "pattern": "RR旋转|左单旋|RR",
+        "answer": "RR旋转（左单旋）用于解决在失衡节点的右子树的右孩子上插入导致的不平衡。"
+      },
+      {
+        "pattern": "LR旋转|左右双旋|LR",
+        "answer": "LR旋转（左右双旋）用于解决在失衡节点的左子树的右孩子上插入导致的不平衡，先左旋后右旋。"
+      },
+      {
+        "pattern": "RL旋转|右左双旋|RL",
+        "answer": "RL旋转（右左双旋）用于解决在失衡节点的右子树的左孩子上插入导致的不平衡，先右旋后左旋。"
+      },
+      {
+        "pattern": "插入调整|插入后平衡",
+        "answer": "插入新节点后，从插入点向上回溯，更新高度，检查平衡因子，若失衡则进行相应旋转，最多一次旋转即可恢复平衡。"
+      },
+      {
+        "pattern": "删除调整|删除后平衡",
+        "answer": "删除节点后，从删除点向上回溯，可能需要进行多次旋转才能恢复平衡，但总次数为O(log n)。"
+      }
+    ]
+  },
+  "scenes": [
+    {
+      "id": "cover",
+      "kind": "hero",
+      "notes": "封面：建立AVL树的核心问题——如何保持二叉搜索树的平衡",
+      "blocks": [
+        {
+          "type": "hero",
+          "title": [
+            "AVL 树",
+            "自平衡二叉搜索树"
+          ],
+          "tag": "数据结构",
+          "sub": "通过旋转保持平衡，保证操作时间复杂度为 O(log n)",
+          "facts": "由 Adelson-Velsky 和 Landis 于 1962 年提出",
+          "hint": "平衡不是完全对称，而是左右子树高度差不超过 1",
+          "id": "b_cover"
+        }
+      ]
+    },
+    {
+      "id": "bst-imbalance",
+      "kind": "content",
+      "headline": "二叉搜索树的不平衡问题",
+      "lead": "当插入有序数据时，BST退化为链表，查找复杂度从$O(\\log n)$恶化到$O(n)$。",
+      "notes": "引出不平衡的后果，为AVL树铺垫",
+      "blocks": [
+        {
+          "type": "graph",
+          "graphType": "dag",
+          "orientation": "vertical",
+          "nodes": [
+            {
+              "id": "d1",
+              "title": "1",
+              "sub": "高度 5"
+            },
+            {
+              "id": "d2",
+              "title": "2"
+            },
+            {
+              "id": "d3",
+              "title": "3"
+            },
+            {
+              "id": "d4",
+              "title": "4"
+            },
+            {
+              "id": "d5",
+              "title": "5"
+            },
+            {
+              "id": "b3",
+              "title": "3",
+              "sub": "高度 3"
+            },
+            {
+              "id": "b1",
+              "title": "1"
+            },
+            {
+              "id": "b4",
+              "title": "4"
+            },
+            {
+              "id": "b2",
+              "title": "2"
+            },
+            {
+              "id": "b5",
+              "title": "5"
+            }
+          ],
+          "edges": [
+            {
+              "from": "d1",
+              "to": "d2"
+            },
+            {
+              "from": "d2",
+              "to": "d3"
+            },
+            {
+              "from": "d3",
+              "to": "d4"
+            },
+            {
+              "from": "d4",
+              "to": "d5"
+            },
+            {
+              "from": "b3",
+              "to": "b1"
+            },
+            {
+              "from": "b3",
+              "to": "b4"
+            },
+            {
+              "from": "b1",
+              "to": "b2"
+            },
+            {
+              "from": "b4",
+              "to": "b5"
+            }
+          ],
+          "caption": "退化树（有序插入1,2,3,4,5，每次新节点成为最右叶子，形成链）与平衡树（插入顺序3,1,4,2,5，保持平衡）高度对比",
+          "id": "b2_1"
+        },
+        {
+          "type": "callout",
+          "label": "查找性能",
+          "text": "退化后查找复杂度从 $O(\\log n)$ 恶化到 $O(n)$。",
+          "id": "b2_2"
+        }
+      ],
+      "layout": {
+        "kind": "compose",
+        "preset": "sidenote"
+      }
+    },
+    {
+      "id": "balance-factor",
+      "kind": "content",
+      "headline": "平衡因子：衡量树的平衡状态",
+      "lead": "平衡因子 = 左子树高度 - 右子树高度，绝对值不超过1则平衡。",
+      "notes": "定义平衡因子，为旋转提供依据",
+      "blocks": [
+        {
+          "type": "formula",
+          "latex": "\\text{BF} = h_{\\text{left}} - h_{\\text{right}}",
+          "caption": "平衡因子定义",
+          "id": "b3_1"
+        },
+        {
+          "type": "graph",
+          "graphType": "tree",
+          "orientation": "vertical",
+          "nodes": [
+            {
+              "id": "n1",
+              "title": "30",
+              "sub": "BF=0"
+            },
+            {
+              "id": "n2",
+              "title": "20",
+              "sub": "BF=0"
+            },
+            {
+              "id": "n3",
+              "title": "40",
+              "sub": "BF=1"
+            },
+            {
+              "id": "n4",
+              "title": "10",
+              "sub": "BF=0"
+            },
+            {
+              "id": "n5",
+              "title": "25",
+              "sub": "BF=0"
+            },
+            {
+              "id": "n6",
+              "title": "35",
+              "sub": "BF=0"
+            }
+          ],
+          "edges": [
+            {
+              "from": "n1",
+              "to": "n2"
+            },
+            {
+              "from": "n1",
+              "to": "n3"
+            },
+            {
+              "from": "n2",
+              "to": "n4"
+            },
+            {
+              "from": "n2",
+              "to": "n5"
+            },
+            {
+              "from": "n3",
+              "to": "n6"
+            }
+          ],
+          "caption": "AVL 树各节点平衡因子示例，所有 |BF| ≤ 1",
+          "id": "b3_2"
+        },
+        {
+          "type": "callout",
+          "label": "平衡条件",
+          "text": "平衡因子绝对值 ≤ 1 是 AVL 树的平衡条件。",
+          "id": "b3_3"
+        }
+      ],
+      "layout": {
+        "kind": "compose",
+        "areas": [
+          {
+            "blockIds": [
+              "b3_1"
+            ],
+            "col": [
+              1,
+              7
+            ]
+          },
+          {
+            "blockIds": [
+              "b3_2"
+            ],
+            "col": [
+              1,
+              9
+            ]
+          },
+          {
+            "blockIds": [
+              "b3_3"
+            ],
+            "col": [
+              9,
+              13
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "rotation-overview",
+      "kind": "content",
+      "headline": "旋转操作：恢复平衡的四种基本动作",
+      "lead": "当插入或删除导致平衡因子绝对值超过1时，通过旋转调整。",
+      "transition": "zoom",
+      "notes": "概览四种旋转，建立直观印象",
+      "blocks": [
+        {
+          "type": "grid",
+          "columns": 2,
+          "gap": 24,
+          "items": [
+            {
+              "block": {
+                "type": "callout",
+                "label": "LL 旋转（右旋）",
+                "text": "插入到左子树的左子树，导致节点 z 失衡，进行右旋。\n\n```\n     z                y\n    / \\\\              / \\\\\n   y   T4           T1  z\n  / \\\\       =>         / \\\\\n T1  x                x   T4\n    / \\\\              / \\\\\n   T2 T3            T2 T3\n```"
+              }
+            },
+            {
+              "block": {
+                "type": "callout",
+                "label": "RR 旋转（左旋）",
+                "text": "插入到右子树的右子树，导致节点 z 失衡，进行左旋。\n\n```\n  z                  y\n / \\\\                / \\\\\nT1  y              z   T4\n   / \\\\    =>      / \\\\\n  x   T4         T1  x\n / \\\\                / \\\\\nT2 T3              T2 T3\n```"
+              }
+            },
+            {
+              "block": {
+                "type": "callout",
+                "label": "LR 旋转（先左旋后右旋）",
+                "text": "插入到左子树的右子树，导致节点 z 失衡，先左旋 y-x，再右旋 z-x。\n\n```\n    z                x\n   / \\\\              / \\\\\n  y   T4           y   z\n / \\\\       =>     / \\\\ / \\\\\nT1  x            T1 T2 T3 T4\n   / \\\\\n  T2 T3\n```"
+              }
+            },
+            {
+              "block": {
+                "type": "callout",
+                "label": "RL 旋转（先右旋后左旋）",
+                "text": "插入到右子树的左子树，导致节点 z 失衡，先右旋 y-x，再左旋 z-x。\n\n```\n  z                x\n / \\\\              / \\\\\nT1  y            z   y\n   / \\\\    =>    / \\\\ / \\\\\n  x   T4       T1 T2 T3 T4\n / \\\\\nT2 T3\n```"
+              }
+            }
+          ],
+          "id": "b4_1"
+        },
+        {
+          "type": "callout",
+          "label": "BST 不变性",
+          "text": "旋转操作**不会破坏二叉搜索树的性质**：中序遍历序列在旋转前后完全一致。",
+          "id": "b4_2"
+        }
+      ],
+      "layout": {
+        "kind": "compose",
+        "preset": "sidenote"
+      }
+    },
+    {
+      "id": "ll-rr-comparison",
+      "kind": "content",
+      "headline": "LL与RR旋转：单旋解决外侧插入",
+      "lead": "LL旋转（右单旋）处理左子树的左孩子插入；RR旋转（左单旋）处理右子树的右孩子插入。",
+      "notes": "详细讲解LL和RR，对称性",
+      "blocks": [
+        {
+          "type": "compare",
+          "left": {
+            "caption": "LL旋转（右单旋）",
+            "block": {
+              "type": "list",
+              "items": [
+                {
+                  "text": "**初始状态**：节点 $10$（$BF=+1$），左孩子 $5$（$BF=0$）。在 $5$ 的左子树插入 $2$，导致 $10$ 的 $BF=+2$，$5$ 的 $BF=+1$，失去平衡。"
+                },
+                {
+                  "text": "**旋转操作**：将 $5$ 提升为根，$10$ 变为 $5$ 的右孩子。$5$ 的原右子树（$T_2$）变为 $10$ 的左子树。"
+                },
+                {
+                  "text": "**更新平衡因子**：旋转后，$5$ 和 $10$ 的 $BF$ 均变为 $0$，树恢复平衡。"
+                }
+              ]
+            }
+          },
+          "right": {
+            "caption": "RR旋转（左单旋）",
+            "block": {
+              "type": "list",
+              "items": [
+                {
+                  "text": "**初始状态**：节点 $10$（$BF=-1$），右孩子 $15$（$BF=0$）。在 $15$ 的右子树插入 $20$，导致 $10$ 的 $BF=-2$，$15$ 的 $BF=-1$，失去平衡。"
+                },
+                {
+                  "text": "**旋转操作**：将 $15$ 提升为根，$10$ 变为 $15$ 的左孩子。$15$ 的原左子树（$T_2$）变为 $10$ 的右子树。"
+                },
+                {
+                  "text": "**更新平衡因子**：旋转后，$15$ 和 $10$ 的 $BF$ 均变为 $0$，树恢复平衡。"
+                }
+              ]
+            }
+          },
+          "id": "b5_1"
+        },
+        {
+          "type": "callout",
+          "label": "平衡因子更新",
+          "text": "LL 和 RR 旋转后，仅原根和新根的平衡因子变为 0，其余节点不变。",
+          "id": "b5_2"
+        }
+      ],
+      "layout": {
+        "kind": "compose",
+        "preset": "sidenote"
+      }
+    },
+    {
+      "id": "lr-rl-comparison",
+      "kind": "content",
+      "headline": "LR与RL旋转：双旋解决内侧插入",
+      "lead": "LR旋转（左右双旋）处理左子树的右孩子插入；RL旋转（右左双旋）处理右子树的左孩子插入。",
+      "notes": "详细讲解LR和RL，先左旋再右旋等",
+      "blocks": [
+        {
+          "type": "compare",
+          "id": "b6_1",
+          "left": {
+            "caption": "LR旋转",
+            "block": {
+              "type": "code",
+              "language": "text",
+              "source": "初始状态（左子树右孩子插入）：\n    A\n   /\n  B\n   \\\n    C\n\n步骤1：左旋左子树（B为轴，C上提）\n    A\n   /\n  C\n /\nB\n（中间状态：LL型）\n\n步骤2：右旋根节点（A为轴，C上提）\n  C\n / \\\nB   A\n（平衡状态）"
+            }
+          },
+          "right": {
+            "caption": "RL旋转",
+            "block": {
+              "type": "code",
+              "language": "text",
+              "source": "初始状态（右子树左孩子插入）：\n  A\n   \\\n    B\n   /\n  C\n\n步骤1：右旋右子树（B为轴，C上提）\n  A\n   \\\n    C\n     \\\n      B\n（中间状态：RR型）\n\n步骤2：左旋根节点（A为轴，C上提）\n  C\n / \\\nA   B\n（平衡状态）"
+            }
+          }
+        },
+        {
+          "type": "callout",
+          "label": "本质",
+          "text": "LR 旋转先左旋将 LR 型变为 LL 型，再右旋解决 LL 型，因此不能直接右旋；RL 旋转先右旋将 RL 型变为 RR 型，再左旋解决 RR 型。**双旋的本质是两次方向相反的单旋**，顺序固定。",
+          "id": "b6_2"
+        }
+      ],
+      "layout": {
+        "kind": "compose",
+        "preset": "sidenote"
+      }
+    },
+    {
+      "id": "node-structure",
+      "kind": "content",
+      "headline": "AVL树的节点结构：存储高度而非平衡因子",
+      "lead": "每个AVL节点存储键值、左右孩子指针和高度（height），通过高度可随时计算平衡因子，避免直接存储平衡因子带来的更新复杂性。",
+      "notes": "介绍工程实现中的节点设计，强调存储高度的原因，纠正直接存储平衡因子的误解。",
+      "blocks": [
+        {
+          "type": "freeform",
+          "rationale": "现有block类型（code/callout/list）无法以网格布局直观展示节点字段结构，需要freeform自定义视觉排列。",
+          "html": "<div style=\"display:grid; gap:var(--gap); padding:var(--spacing); border:2px solid var(--border-color); border-radius:12px; background:var(--bg-card); max-width:400px; margin:0 auto;\"><div style=\"text-align:center; font-weight:bold; color:var(--text-primary); font-size:1.1em; margin-bottom:8px;\">AVL 节点</div><div style=\"display:grid; grid-template-columns: 1fr 1fr; gap:var(--gap);\"><div style=\"padding:12px; border:1px solid var(--border-color); border-radius:6px; background:var(--bg-secondary);\"><div style=\"font-size:0.8em; color:var(--text-secondary);\">key</div><div style=\"font-size:1.2em; font-weight:bold; color:var(--text-primary);\">30</div></div><div style=\"padding:12px; border:1px solid var(--border-color); border-radius:6px; background:var(--bg-secondary);\"><div style=\"font-size:0.8em; color:var(--text-secondary);\">height</div><div style=\"font-size:1.2em; font-weight:bold; color:var(--text-primary);\">2</div></div><div style=\"padding:12px; border:1px solid var(--border-color); border-radius:6px; background:var(--bg-secondary);\"><div style=\"font-size:0.8em; color:var(--text-secondary);\">left</div><div style=\"font-size:1.2em; font-weight:bold; color:var(--text-primary);\">→ 18</div></div><div style=\"padding:12px; border:1px solid var(--border-color); border-radius:6px; background:var(--bg-secondary);\"><div style=\"font-size:0.8em; color:var(--text-secondary);\">right</div><div style=\"font-size:1.2em; font-weight:bold; color:var(--text-primary);\">→ 40</div></div></div><div style=\"text-align:center; font-size:0.85em; color:var(--text-secondary); margin-top:8px;\">平衡因子 = left.height - right.height</div></div>",
+          "id": "ns-freeform"
+        },
+        {
+          "type": "callout",
+          "label": "为什么存储高度？",
+          "text": "高度更新只需 $height = 1 + \\max(left.height, right.height)$，平衡因子可随时由 $balance = left.height - right.height$ 算出；直接存平衡因子在旋转时需同时更新多个节点，易出错。",
+          "id": "ns-callout"
+        },
+        {
+          "type": "code",
+          "language": "text",
+          "source": "struct AVLNode {\n    int key;\n    struct AVLNode *left;\n    struct AVLNode *right;\n    int height;\n};",
+          "filename": "avl_node.h",
+          "caption": "AVL节点结构体定义，包含键值、左右孩子指针和高度字段。",
+          "id": "ns-code"
+        }
+      ],
+      "layout": {
+        "kind": "index",
+        "steps": [
+          {
+            "label": "以可视化方式展示AVL节点结…",
+            "blockIds": [
+              "ns-freeform"
+            ]
+          },
+          {
+            "label": "解释为什么存储高度而非平衡因…",
+            "blockIds": [
+              "ns-callout"
+            ]
+          },
+          {
+            "label": "提供AVL节点结构的C语言定…",
+            "blockIds": [
+              "ns-code"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "insertion-adjustment",
+      "kind": "content",
+      "headline": "插入操作：从插入点回溯调整",
+      "lead": "插入新节点后，沿路径向上更新高度并检查平衡因子，必要时旋转。",
+      "notes": "讲解插入的完整流程",
+      "blocks": [
+        {
+          "type": "flow",
+          "id": "b8_1",
+          "nodes": [
+            {
+              "title": "插入新节点",
+              "sub": "将新节点插入到正确位置"
+            },
+            {
+              "title": "更新高度",
+              "sub": "计算当前节点高度"
+            },
+            {
+              "title": "计算平衡因子",
+              "sub": "$BF = h_L - h_R$"
+            },
+            {
+              "title": "检查失衡",
+              "sub": "若 $|BF| > 1$ 则失衡，需旋转；否则继续向上"
+            },
+            {
+              "title": "旋转调整",
+              "sub": "根据失衡类型选择单旋（LL/RR）或双旋（LR/RL），恢复平衡并结束"
+            },
+            {
+              "title": "向上回溯",
+              "sub": "未失衡，移动到父节点，重复检查"
+            },
+            {
+              "title": "结束",
+              "sub": "调整完成"
+            }
+          ],
+          "edges": [
+            {
+              "from": "插入新节点",
+              "to": "更新高度"
+            },
+            {
+              "from": "更新高度",
+              "to": "计算平衡因子"
+            },
+            {
+              "from": "计算平衡因子",
+              "to": "检查失衡"
+            },
+            {
+              "from": "检查失衡",
+              "to": "旋转调整",
+              "label": "失衡"
+            },
+            {
+              "from": "检查失衡",
+              "to": "向上回溯",
+              "label": "未失衡"
+            },
+            {
+              "from": "旋转调整",
+              "to": "结束"
+            },
+            {
+              "from": "向上回溯",
+              "to": "更新高度",
+              "label": "未到根"
+            },
+            {
+              "from": "向上回溯",
+              "to": "结束",
+              "label": "到达根"
+            }
+          ],
+          "loopNote": "从插入点向上重复，直到根节点或发生旋转（旋转后树已平衡，不再需要继续检查）"
+        },
+        {
+          "type": "callout",
+          "label": "关键结论",
+          "text": "插入新节点后，最多只需**一次旋转**（单旋或双旋）即可使整棵树恢复平衡。",
+          "id": "b8_2"
+        }
+      ],
+      "layout": {
+        "kind": "compose",
+        "preset": "sidenote"
+      }
+    },
+    {
+      "id": "insertion-example",
+      "kind": "content",
+      "headline": "插入示例：从空树构建AVL树",
+      "lead": "依次插入3,2,1,4,5,6,7，观察旋转过程。",
+      "notes": "具体例子，巩固理解",
+      "blocks": [
+        {
+          "type": "timeline",
+          "events": [
+            {
+              "time": "第1步",
+              "title": "插入 3",
+              "desc": "树：3（根）。平衡，无旋转。"
+            },
+            {
+              "time": "第2步",
+              "title": "插入 2",
+              "desc": "树：3（根）→左子 2。平衡，无旋转。"
+            },
+            {
+              "time": "第3步",
+              "title": "插入 1",
+              "desc": "树：3（根）→左子 2→左子 1。**节点 3 失衡**（平衡因子 2），执行**右旋**。旋转后：2 为根，左 1 右 3。"
+            },
+            {
+              "time": "第4步",
+              "title": "插入 4",
+              "desc": "树：2（根）→左 1，右 3→右子 4。平衡，无旋转。"
+            },
+            {
+              "time": "第5步",
+              "title": "插入 5",
+              "desc": "树：2（根）→左 1，右 3→右子 4→右子 5。**节点 3 失衡**（平衡因子 -2），执行**左旋**。旋转后：2 为根，左 1，右 4（左子 3，右子 5）。"
+            },
+            {
+              "time": "第6步",
+              "title": "插入 6",
+              "desc": "树：2（根）→左 1，右 4（左子 3，右子 5→右子 6）。**节点 2 失衡**（平衡因子 -2），执行**左旋**。旋转后：4 为根，左 2（左子 1，右子 3），右 5（右子 6）。"
+            },
+            {
+              "time": "第7步",
+              "title": "插入 7",
+              "desc": "树：4（根）→左 2（左子 1，右子 3），右 5（右子 6→右子 7）。**节点 5 失衡**（平衡因子 -2），执行**左旋**。旋转后：4 为根，左 2（左子 1，右子 3），右 6（左子 5，右子 7）。"
+            }
+          ],
+          "id": "b9_1"
+        },
+        {
+          "type": "callout",
+          "label": "总结",
+          "text": "每次插入后最多只需一次旋转（单旋转或双旋转）即可恢复平衡。",
+          "id": "b9_2"
+        }
+      ],
+      "layout": {
+        "kind": "compose",
+        "preset": "sidenote"
+      }
+    },
+    {
+      "id": "deletion-adjustment",
+      "kind": "content",
+      "headline": "删除操作：更复杂的平衡维护",
+      "lead": "删除节点后，可能需要多次旋转才能恢复平衡，且需要回溯到根。",
+      "notes": "讲解删除的复杂性",
+      "blocks": [
+        {
+          "type": "graph",
+          "graphType": "tree",
+          "orientation": "vertical",
+          "nodes": [
+            {
+              "id": "50",
+              "title": "50",
+              "sub": "右旋",
+              "state": "on"
+            },
+            {
+              "id": "30",
+              "title": "30",
+              "sub": "BF=2"
+            },
+            {
+              "id": "70",
+              "title": "70"
+            },
+            {
+              "id": "20",
+              "title": "20",
+              "sub": "RL旋转",
+              "state": "on"
+            },
+            {
+              "id": "40",
+              "title": "40"
+            },
+            {
+              "id": "25",
+              "title": "25"
+            },
+            {
+              "id": "22",
+              "title": "22"
+            }
+          ],
+          "edges": [
+            {
+              "from": "30",
+              "to": "50",
+              "style": "dashed"
+            },
+            {
+              "from": "50",
+              "to": "70",
+              "style": "solid"
+            },
+            {
+              "from": "20",
+              "to": "30",
+              "style": "dashed"
+            },
+            {
+              "from": "30",
+              "to": "40",
+              "style": "solid"
+            },
+            {
+              "from": "20",
+              "to": "25",
+              "style": "solid"
+            },
+            {
+              "from": "25",
+              "to": "22",
+              "style": "solid"
+            }
+          ],
+          "caption": "删除节点10后，节点20（BF=-2）、节点30（BF=2）和节点50（BF=3）失衡。先对20进行RL旋转使20平衡，然后节点30恢复平衡，最后对50进行右旋。虚线边表示回溯检查路径（从20向上到30再到50）。",
+          "id": "b10_1"
+        },
+        {
+          "type": "callout",
+          "label": "复杂度",
+          "text": "删除调整可能需多次旋转，但总次数为 O(log n)。",
+          "id": "b10_2"
+        }
+      ],
+      "layout": {
+        "kind": "compose",
+        "preset": "sidenote"
+      }
+    },
+    {
+      "id": "deletion-example",
+      "kind": "content",
+      "headline": "删除示例：从AVL树中删除节点",
+      "lead": "从一棵AVL树中删除节点，观察平衡调整过程。",
+      "notes": "具体例子",
+      "blocks": [
+        {
+          "id": "b11_1",
+          "type": "timeline",
+          "events": [
+            {
+              "time": "步骤1",
+              "title": "初始AVL树",
+              "desc": "初始AVL树：`50(0)` 左子 `30(0)` 右子 `70(0)`；`30` 左子 `20(0)` 右子 `40(0)`；`20` 左子 `10(0)` 右子 `25(0)`；`70` 左子 `60(0)` 右子 `80(0)`。所有节点平衡因子绝对值 $\\leq 1$。"
+            },
+            {
+              "time": "步骤2",
+              "title": "删除叶子节点 `40`",
+              "desc": "删除叶子节点 `40` 后，节点 `30` 的右子树为空，其平衡因子变为 `2`，导致不平衡。当前树：`50(0)` 左子 `30(2)` 右子 `70(0)`；`30` 左子 `20(0)` 右子空；`20` 左子 `10(0)` 右子 `25(0)`；`70` 左子 `60(0)` 右子 `80(0)`。"
+            },
+            {
+              "time": "步骤3",
+              "title": "更新平衡因子，发现不平衡",
+              "desc": "从节点 `30` 开始向上更新平衡因子，发现 `30` 的平衡因子为 `2`，需要进行旋转调整。当前树结构同上。"
+            },
+            {
+              "time": "步骤4",
+              "title": "确定旋转类型",
+              "desc": "检查 `30` 的左子节点 `20`，其平衡因子为 `0`，属于 LL 失衡情况，应执行右旋操作。当前树：`50(0)` 左子 `30(2)` 右子 `70(0)`；`30` 左子 `20(0)` 右子空；`20` 左子 `10(0)` 右子 `25(0)`。"
+            },
+            {
+              "time": "步骤5",
+              "title": "执行右旋",
+              "desc": "以 `30` 为轴进行右旋：`20` 成为新子树根，`30` 成为 `20` 的右子节点，`20` 的原右子 `25` 成为 `30` 的左子节点。旋转后树：`50(0)` 左子 `20(?)` 右子 `70(0)`；`20` 左子 `10(0)` 右子 `30(?)`；`30` 左子 `25(0)` 右子空。需要更新平衡因子。"
+            },
+            {
+              "time": "步骤6",
+              "title": "树重新平衡",
+              "desc": "旋转后更新各节点平衡因子：`20(0)`, `30(0)`, `10(0)`, `25(0)`, `50(0)`, `70(0)`, `60(0)`, `80(0)`。所有节点平衡因子绝对值 $\\leq 1$，树重新平衡。"
+            }
+          ]
+        },
+        {
+          "type": "callout",
+          "label": "核心要点",
+          "text": "删除调整比插入更复杂（可能引发多级失衡），但**旋转操作**与插入完全相同。",
+          "id": "b11_2"
+        }
+      ],
+      "layout": {
+        "kind": "compose",
+        "preset": "sidenote"
+      }
+    },
+    {
+      "id": "height-analysis",
+      "kind": "content",
+      "headline": "AVL树的高度：严格O(log n)",
+      "lead": "AVL树的高度h满足 $h \\leq 1.44 \\log_2(n+2) - 1.328$，与红黑树同数量级。",
+      "notes": "理论推导，展示数学基础",
+      "blocks": [
+        {
+          "type": "formula",
+          "id": "b12_1",
+          "latex": "N(h) = N(h-1) + N(h-2) + 1, \\quad N(0)=1,\\, N(1)=2",
+          "caption": "高度为h的AVL树最少节点数满足递推 $N(h)=N(h-1)+N(h-2)+1$，初始 $N(0)=1, N(1)=2$。求解可得 $N(h)=F_{h+3}-1$（其中 $F_1=1, F_2=1$ 的斐波那契数列）。由 $n \\geq N(h)$ 可导出 $h \\leq \\log_\\varphi(\\sqrt{5}(n+2)) - 2 \\approx 1.44 \\log_2(n+2) - 1.328$。"
+        },
+        {
+          "type": "chart",
+          "chartType": "line",
+          "categories": [
+            "1",
+            "2",
+            "3",
+            "5",
+            "10",
+            "20",
+            "50",
+            "100",
+            "200",
+            "500",
+            "1000"
+          ],
+          "series": [
+            {
+              "name": "实际最大高度 h",
+              "values": [
+                0,
+                1,
+                1,
+                2,
+                3,
+                5,
+                6,
+                8,
+                9,
+                11,
+                13
+              ]
+            },
+            {
+              "name": "上界 1.44log₂(n+2)-1.328",
+              "values": [
+                0.954,
+                1.552,
+                2.016,
+                2.714,
+                3.834,
+                5.093,
+                6.88,
+                8.279,
+                9.699,
+                11.59,
+                13.027
+              ]
+            },
+            {
+              "name": "log₂(n)",
+              "values": [
+                0,
+                1,
+                1.585,
+                2.322,
+                3.322,
+                4.322,
+                5.644,
+                6.644,
+                7.644,
+                8.966,
+                9.966
+              ]
+            }
+          ],
+          "xLabel": "节点数 n",
+          "yLabel": "高度 h",
+          "caption": "AVL树高度与节点数的关系，对比理论界",
+          "annotations": [
+            {
+              "kind": "point",
+              "x": "1000",
+              "y": 13.027,
+              "label": "上界 ≈13.03",
+              "tone": "accent"
+            }
+          ],
+          "id": "b12_2"
+        },
+        {
+          "type": "callout",
+          "label": "结论",
+          "text": "AVL树的高度 $h = O(\\log n)$，最坏情况下约为 $1.44 \\log_2 n$。",
+          "id": "b12_3"
+        }
+      ],
+      "layout": {
+        "kind": "compose",
+        "areas": [
+          {
+            "blockIds": [
+              "b12_1"
+            ],
+            "col": [
+              1,
+              7
+            ]
+          },
+          {
+            "blockIds": [
+              "b12_2"
+            ],
+            "col": [
+              1,
+              9
+            ]
+          },
+          {
+            "blockIds": [
+              "b12_3"
+            ],
+            "col": [
+              9,
+              13
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "avl-vs-rbt",
+      "kind": "content",
+      "headline": "AVL树与红黑树的对比",
+      "lead": "红黑树也是自平衡BST，但平衡条件更宽松，插入删除更快，查找略慢。",
+      "notes": "工程选型对比",
+      "blocks": [
+        {
+          "type": "table",
+          "head": [
+            "特性",
+            "AVL树",
+            "红黑树"
+          ],
+          "rows": [
+            [
+              "平衡条件",
+              "严格平衡：左右子树高度差 ≤ 1",
+              "弱平衡：最长路径 ≤ 2 × 最短路径"
+            ],
+            [
+              "查找时间复杂度",
+              {
+                "text": "O(log n)（更优）",
+                "hi": true
+              },
+              "O(log n)（略慢）"
+            ],
+            [
+              "插入时间复杂度",
+              "O(log n)（旋转较多）",
+              {
+                "text": "O(log n)（旋转较少，平均更快）",
+                "hi": true
+              }
+            ],
+            [
+              "删除时间复杂度",
+              "O(log n)（旋转可能多）",
+              {
+                "text": "O(log n)（旋转较少）",
+                "hi": true
+              }
+            ],
+            [
+              "空间开销",
+              "每个节点存储平衡因子（int）",
+              "每个节点存储颜色（1 bit）"
+            ],
+            [
+              "实际应用",
+              "适用于查找密集型（如内存中的字典）",
+              "适用于插入删除频繁（如 Java TreeMap, C++ std::map）"
+            ]
+          ],
+          "id": "b13_1"
+        },
+        {
+          "type": "callout",
+          "label": "实践选择",
+          "text": "Java `TreeMap`、C++ `std::map` 等标准库均采用红黑树，因其插入删除性能更优。",
+          "id": "b13_2"
+        }
+      ],
+      "layout": {
+        "kind": "compose",
+        "preset": "sidenote"
+      }
+    },
+    {
+      "id": "quiz",
+      "kind": "quiz",
+      "headline": "随堂检验：AVL树旋转",
+      "notes": "检验学生对旋转的掌握",
+      "blocks": [
+        {
+          "type": "quiz",
+          "kind": "subjective",
+          "prompt": "给定以下失衡的 AVL 树（节点值后的数字是平衡因子）：根节点 30（bf=2），左子节点 20（bf=-1），右子节点 40（bf=0），20 的左子节点 10（bf=0），20 的右子节点 25（bf=1），25 的左子节点 23（bf=0）。该树因在左子树的右子树插入节点 23 而失衡。请选择正确的旋转类型（LL、RR、LR、RL）并写出旋转后的树（包括每个节点的平衡因子）。",
+          "angles": [
+            "确定失衡节点（第一个平衡因子绝对值大于 1 的节点）",
+            "观察失衡节点与其子节点、孙节点的相对位置，判断是 LL、RR、LR 还是 RL",
+            "提示：LR 旋转对应左子树的右子树插入，先左旋后右旋；RL 旋转对应右子树的左子树插入，先右旋后左旋。"
+          ],
+          "instruction": "请先写出旋转类型（如 LR 旋转），然后画出旋转后的树结构，并标注每个节点的平衡因子。",
+          "id": "b14_1"
+        }
+      ]
+    },
+    {
+      "id": "conclusion",
+      "kind": "hero",
+      "notes": "收尾，回顾关键点",
+      "blocks": [
+        {
+          "type": "hero",
+          "title": [
+            "AVL 树",
+            "自平衡二叉搜索树"
+          ],
+          "tag": "数据结构",
+          "sub": "通过旋转保持平衡，保证 $O(\\log n)$ 基本操作",
+          "facts": "1962 年由 Adelson-Velsky 和 Landis 提出",
+          "hint": "旋转是核心操作，理解 LL/RR/LR/RL 四种情况",
+          "id": "b15_1"
+        }
+      ]
+    }
+  ],
+  "schemaVersion": "1.0"
+}

@@ -51,3 +51,12 @@ Same shape as `line`; pick `area` when the visual weight of "how much" matters m
 
 ## Rule
 `categories.length` must equal every `series[].values.length` (bar/line/area) — mismatched lengths are rejected by schema. **When the data has no numeric comparison to make — a glossary, a step list, a pairing of terms — use `table`, not `chart`.** Chart is for "there's a number, and its size/trend/correlation is the point."
+
+Before emitting JSON, audit the chart as evidence, not decoration:
+
+1. Every value must be traceable to supplied material, directly reproducible from a formula shown in the lecture, or explicitly described in `caption` as illustrative/synthetic. Never invent a paper/year, benchmark result, percentage, or measured series.
+2. Recompute formula-derived points, endpoints, and schedules. The caption, axis labels, categories, and values must describe the same function (for example, a “5→50 cosine schedule” must actually start at 5 and end at 50 in the stated direction).
+3. Choose domains and sampling points that reveal the page brief's `visualTask`; do not waste most of the plot area or make the decisive labels unreadably small.
+4. A coordinate, trajectory, gradient, boundary, or loss surface is quantitative geometry: encode it with scatter/line/series (or a sim when interaction matters), never substitute a decorative diagram.
+5. Use optional `annotations` for a few pedagogical points/segments/arrows; never fake a point or tangent by adding a mostly-zero line series. Scatter annotations use numeric coordinates, e.g. `{"kind":"point","x":1.5,"y":2.25,"label":"当前点","tone":"accent"}` or `{"kind":"arrow","x":1.5,"y":2.25,"x2":0.5,"y2":0.25,"label":"更新"}`. Category charts use category strings that already exist in `categories`. `line`/`arrow` require `x2` and `y2`.
+6. Plot the quantity the page claims to explain. For a learning-rate schedule, plot $\eta_t$ versus step. Do not invent downstream loss/accuracy curves and present them as if the schedule formula determined those values.

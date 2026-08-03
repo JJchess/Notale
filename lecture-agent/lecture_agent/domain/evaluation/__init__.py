@@ -3,7 +3,9 @@
 from .completeness import detect_truncation, gate, hero_on_topic, page_adherence
 from .coverage import check_coverage
 from .diversity import diversity
+from .page_quality import PageReview, review_page
 from .pairwise import compare, rank
+from .plan_quality import refine_plan, replan_page, validate_plan_revision
 from .ppteval import evaluate_lecture, summarize
 
 __all__ = [
@@ -17,4 +19,9 @@ __all__ = [
     "gate",
     "compare",
     "rank",
+    "PageReview",
+    "review_page",
+    "refine_plan",
+    "replan_page",
+    "validate_plan_revision",
 ]

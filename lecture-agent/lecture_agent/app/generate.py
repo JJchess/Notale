@@ -29,7 +29,9 @@ from .build import build_llm, build_options, model_of, usage_of
 from .codeprint import agent_fingerprint, git_dirty, git_rev
 
 
-def build_render_verifier(cfg: DictConfig, shot_dir: str | Path | None = None):
+def build_render_verifier(
+    cfg: DictConfig, shot_dir: str | Path | None = None
+) -> HeadlessVerifier | None:
     """真机渲染验收（generator.render_rounds>0 时启用，默认开）。
 
     HeadlessVerifier 本身在无 node / 无 Edge 时会返回 ok=True+warning 而非报错，

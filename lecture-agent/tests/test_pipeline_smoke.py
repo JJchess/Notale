@@ -5,10 +5,13 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 
+import lecture_agent.domain.generation.blocks as blocks_module
 from lecture_agent.adapters.llm.fake import FakeClient
 from lecture_agent.adapters.media.fake import FakeMediaProvider
+from lecture_agent.domain.assemble import fill_blocks
 from lecture_agent.engine import GeneratorOptions, generate_lecture
 from lecture_agent.ports.media import ImageAsset
 from lecture_agent.schema import LectureDoc, validate_doc
@@ -63,6 +66,56 @@ async def test_end_to_end_with_fake_llm() -> None:
     assert validate_doc(result.doc).errors == []
     # notes 被增强
     assert "备注" in result.doc["scenes"][0]["notes"]
+    statement_prompt = next(msgs[1]["content"] for purpose, msgs in llm.calls if purpose == "block:statement")
+    assert "页级共享契约" in statement_prompt
+    assert "siblingPlan" in statement_prompt
+    assert "不得虚构论文年份" in statement_prompt
+    statement_system = next(msgs[0]["content"] for purpose, msgs in llm.calls if purpose == "block:statement")
+    assert "不得臆测兄弟块会采用的具体衰减因子" in statement_system
+
+
+async def test_fanout_retries_one_timed_out_block_once(monkeypatch) -> None:
+    class SlowFirstStatement(FakeClient):
+        statement_calls = 0
+
+        async def complete(self, messages, *, json_mode=True, purpose="chat"):
+            if purpose == "block:statement":
+                self.statement_calls += 1
+                if self.statement_calls == 1:
+                    await asyncio.sleep(0.05)
+            return await super().complete(messages, json_mode=json_mode, purpose=purpose)
+
+    monkeypatch.setattr(blocks_module, "_BLOCK_INITIAL_TIMEOUT_S", 0.01)
+    llm = SlowFirstStatement(by_purpose=_BY_PURPOSE)
+    result = await generate_lecture(
+        llm,
+        topic="梯度下降",
+        pages=2,
+        options=GeneratorOptions(plan_perspectives=1),
+    )
+    assert llm.statement_calls == 2
+    assert result.dropped == [] and result.errors == []
+
+
+def test_fill_blocks_clears_layout_that_references_dropped_block() -> None:
+    doc = {
+        "scenes": [
+            {
+                "id": "p1",
+                "layout": {"kind": "split", "anchor": ["gone"]},
+                "blocks": [
+                    {"id": "kept", "type": "statement"},
+                    {"id": "gone", "type": "agenda"},
+                ],
+            }
+        ]
+    }
+    dropped = fill_blocks(
+        doc,
+        {"kept": {"type": "statement", "statement": "保留"}, "gone": None},
+    )
+    assert dropped == ["gone(agenda)"]
+    assert "layout" not in doc["scenes"][0]
 
 
 async def test_media_off_by_default_no_hero_image() -> None:

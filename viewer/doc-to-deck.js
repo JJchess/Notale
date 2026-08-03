@@ -22,6 +22,12 @@
   let rcPortalRAF = null;
   let rcAutoUid = 0;
   const readyCallbacks = [];
+  function runReadyCallbacks() {
+    const pending = readyCallbacks.splice(0, readyCallbacks.length);
+    for (const fn of pending) {
+      try { fn(); } catch (e) { console.error('动态 block 初始化失败:', e); }
+    }
+  }
   const ctx = {
     onReady: fn => readyCallbacks.push(fn),
     registerRunnable: (uid, entry) => { runnableRegistry.set(uid, entry); },
@@ -39,8 +45,18 @@
      当前主题 token 序列化注入 iframe 的 :root，片段内 canvas 用 getComputedStyle 读 --token → 主题一致。
      代价：null-origin iframe 加载不到我们 vendored woff2，字体降级到 Georgia/系统栈（sim 以 canvas 绘制为主，可接受）。 */
   const widgetBuilds = [];   // 每个已挂载 widget 的重建函数；主题变化时全部重跑（refreshThemeColors 内调用）
+  const widgetRoots = new Map();
+  window.addEventListener('message', ev => {
+    const data = ev.data;
+    if (!data || data.__lectureWidgetError !== true || !data.widgetId) return;
+    const root = widgetRoots.get(String(data.widgetId));
+    if (!root) return;
+    const message = String(data.message || 'unknown widget runtime error').slice(0, 500);
+    root.dataset.widgetError = message;
+    console.error('[widget ' + data.widgetId + '] ' + message);
+  });
   const WIDGET_TOKENS = ['--bg', '--bg2', '--card', '--ink', '--text2', '--accent', '--line', '--serif', '--sans', '--mono', '--radius', '--sel'];
-  function buildWidgetSrcdoc(fragment) {
+  function buildWidgetSrcdoc(fragment, widgetId) {
     const cs = getComputedStyle(document.documentElement);
     const theme = document.documentElement.dataset.theme || 'cartesian';
     const vars = WIDGET_TOKENS.map(t => t + ':' + (cs.getPropertyValue(t).trim() || 'inherit')).join(';');
@@ -52,7 +68,19 @@
       + 'button:hover{border-color:var(--ink)}button:active{transform:scale(.97)}'
       + 'input[type=range]{accent-color:var(--ink)}'
       + '.mono{font-family:var(--mono);font-variant-numeric:tabular-nums}'
-      + '</style></head><body>' + fragment + '</body></html>';
+      + '</style><script>(function(){'
+      + 'const widgetId=' + JSON.stringify(String(widgetId || 'unknown')) + ';'
+      + 'const report=function(message){parent.postMessage({__lectureWidgetError:true,widgetId:widgetId,message:String(message||"unknown")},"*")};'
+      + 'addEventListener("error",function(e){report(e.message||e.error||"runtime error")});'
+      + 'addEventListener("unhandledrejection",function(e){report(e.reason||"unhandled rejection")});'
+      + 'const originalAssert=console.assert.bind(console);console.assert=function(condition){originalAssert.apply(console,arguments);'
+      + 'if(!condition)report("console.assert failed: "+Array.prototype.slice.call(arguments,1).join(" "))};'
+      + 'let canvasPaints=0;try{const proto=CanvasRenderingContext2D.prototype;'
+      + '["fill","stroke","fillRect","strokeRect","fillText","strokeText","drawImage","putImageData"].forEach(function(name){'
+      + 'const original=proto[name];if(typeof original!=="function")return;proto[name]=function(){canvasPaints++;return original.apply(this,arguments)}})}catch(e){}'
+      + 'addEventListener("load",function(){setTimeout(function(){if(document.querySelector("canvas")&&canvasPaints===0)'
+      + 'report("canvas initial frame produced no paint operations")},1200)});'
+      + '})();</script></head><body>' + fragment + '</body></html>';
   }
 
   /* ---------------- freeform 逃生舱：白名单 HTML 净化（布局+媒体+token 绑定样式） ----------------
@@ -313,6 +341,7 @@
       root.appendChild(plotwrap);
       if (b.caption) root.appendChild(el('div', 'cite', inlineMd(b.caption)));
       const colors = [C_ACCENT, C_INK, C_LINE];
+      let lastPlotWidth = 0;
       function render() {
         if (needPlot(render)) return;
         plotwrap.innerHTML = '';
@@ -332,8 +361,34 @@
         } else if (b.chartType === 'scatter') {
           marks.push(Plot.dot(b.points || [], { x: 'x', y: 'y', fill: C_ACCENT, r: 4.5, stroke: C_INK, strokeWidth: 0.6 }));
         }
+        // 教学标注必须是独立语义层，不能再伪造成「大部分为 0 的额外 series」。
+        // point 用于当前状态/关键点；line/arrow 用于切线、阈值、更新方向。
+        const toneColor = a => ({ accent: C_ACCENT, ink: C_INK, line: C_LINE }[a.tone || 'accent'] || C_ACCENT);
+        const annotations = b.annotations || [];
+        const points = annotations.filter(a => a.kind === 'point');
+        const segments = annotations.filter(a => a.kind === 'line');
+        const arrows = annotations.filter(a => a.kind === 'arrow');
+        if (segments.length) marks.push(Plot.link(segments, {
+          x1: 'x', y1: 'y', x2: 'x2', y2: 'y2', stroke: toneColor, strokeWidth: 2.2,
+        }));
+        if (arrows.length) marks.push(Plot.arrow(arrows, {
+          x1: 'x', y1: 'y', x2: 'x2', y2: 'y2', stroke: toneColor, strokeWidth: 2.2,
+        }));
+        if (points.length) marks.push(Plot.dot(points, {
+          x: 'x', y: 'y', fill: toneColor, stroke: C_INK, strokeWidth: 1, r: 6,
+        }));
+        const labels = annotations.filter(a => a.label).map(a => ({
+          ...a,
+          labelX: a.kind === 'point' ? a.x : a.x2,
+          labelY: a.kind === 'point' ? a.y : a.y2,
+        }));
+        if (labels.length) marks.push(Plot.text(labels, {
+          x: 'labelX', y: 'labelY', text: 'label', dx: 8, dy: -9,
+          textAnchor: 'start', fill: C_INK, fontSize: 12,
+        }));
+        const plotWidth = Math.max(420, Math.min(1600, Math.round(plotwrap.clientWidth || 700)));
         plotwrap.appendChild(Plot.plot({
-          width: 700, height: 380, marginLeft: 52, marginBottom: 44, marginTop: 32, marginRight: 20,
+          width: plotWidth, height: 380, marginLeft: 52, marginBottom: 44, marginTop: 32, marginRight: 20,
           style: PLOT_STYLE,
           /* categories 常是"2021"这种数字形字符串——不显式声明 band/point 序数刻度，Plot 会当成误传数字
              警告并画出角标感叹号；scatter 走真数值 x，留给 Plot 自动推断线性刻度。
@@ -346,8 +401,20 @@
           y: { label: b.yLabel, grid: true, nice: true },
           marks,
         }));
+        lastPlotWidth = plotWidth;
         refitAfterChart(plotwrap);
       }
+      // Reveal 初始化时非当前页是 display:none，clientWidth=0；旧逻辑永远保留 700px fallback，
+      // 该页后来变为可见也不重画，导致全宽 quiz 图只占约半栏。观察真实宽度，激活后补画一次。
+      if (window.ResizeObserver) {
+        const ro = new ResizeObserver(() => {
+          const width = Math.round(plotwrap.clientWidth || 0);
+          const desired = Math.max(420, Math.min(1600, width));
+          if (width > 0 && Math.abs(desired - lastPlotWidth) > 12) requestAnimationFrame(render);
+        });
+        ro.observe(plotwrap);
+      }
+      plotwrap.__lectureChartRender = render;
       ctx.onReady(render);
       return root;
     },
@@ -1066,12 +1133,17 @@
     widget(b, ctx) {
       const root = el('div', 'widlab');
       const frame = el('iframe', 'widframe');
+      const widgetId = String(b.id || ('widget-' + widgetRoots.size));
+      widgetRoots.set(widgetId, root);
       frame.setAttribute('sandbox', 'allow-scripts');   // 无 allow-same-origin → null origin，真隔离
       frame.setAttribute('scrolling', 'no');
       frame.setAttribute('title', b.caption || '互动组件');
       root.appendChild(frame);
       if (b.caption) root.appendChild(el('div', 'widcap', inlineMd(b.caption)));
-      const build = () => { frame.srcdoc = buildWidgetSrcdoc(b.html); };
+      const build = () => {
+        root.removeAttribute('data-widget-error');
+        frame.srcdoc = buildWidgetSrcdoc(b.html, widgetId);
+      };
       widgetBuilds.push(build);   // 主题切换时重建
       ctx.onReady(build);
       return root;
@@ -1251,6 +1323,14 @@
      block 一律回落进默认竖排/主栏；缺字段/失效引用/不足以成版式则整片回落 flow。版式是开放集，
      这里是起步的几种，规划器可按内容自选、拿不准回落 flow（见 plan.mjs skeletonSpec）。 */
   function blocksById(scene) { const m = {}; for (const b of scene.blocks) if (b && b.id != null) m[b.id] = b; return m; }
+  /* index/split/compose 已经用空间层级组织叙事；内部条目再套 fragment 会让首帧只剩目录或空栏。
+     自定义版式中取消嵌套 fragment，保留 index 自己的隐形步进哨兵。 */
+  function renderLayoutBlock(block, ctx) {
+    const node = renderBlock(block, ctx);
+    node.classList.remove('fragment');
+    node.querySelectorAll('.fragment').forEach(e => e.classList.remove('fragment'));
+    return node;
+  }
 
   /* compose 版式的栅格辅助：把 [start,end] 线号对转成 CSS grid-column/row 值（越界钳制，缺 end 则单格/自动流）。 */
   function gridLine(v, max) { const n = parseInt(v, 10); return Number.isFinite(n) ? Math.min(max, Math.max(1, n)) : null; }
@@ -1314,7 +1394,7 @@
         item.onclick = () => { const ix = Reveal.getIndices(); Reveal.slide(ix.h, ix.v, i - 1); };   // 跳到该子节
         rail.appendChild(item);
         const panel = el('div', 'step-panel' + (i === 0 ? ' show' : ''));
-        for (const b of p.blks) panel.appendChild(renderBlock(b, ctx));
+        for (const b of p.blks) panel.appendChild(renderLayoutBlock(b, ctx));
         stage.appendChild(panel);
         if (i > 0) frags.appendChild(el('span', 'fragment step-frag'));       // 哨兵：f∈[-1,n-2] → active 0..n-1
       });
@@ -1335,9 +1415,9 @@
       body.style.gridTemplateColumns = r.toFixed(3) + 'fr ' + (1 - r).toFixed(3) + 'fr';
       body.style.gap = (L.gap != null ? L.gap : 40) + 'px';
       const aCol = el('div', 'split-col split-anchor');
-      for (const b of anchor) aCol.appendChild(renderBlock(b, ctx));
+      for (const b of anchor) aCol.appendChild(renderLayoutBlock(b, ctx));
       const mCol = el('div', 'split-col split-main');
-      for (const b of rest) mCol.appendChild(renderBlock(b, ctx));
+      for (const b of rest) mCol.appendChild(renderLayoutBlock(b, ctx));
       body.appendChild(aCol); body.appendChild(mCol);
     },
 
@@ -1368,13 +1448,13 @@
         const c = colSpanCss(a.col, cols), rw = rowSpanCss(a.row);
         if (c) cell.style.gridColumn = c;
         if (rw) cell.style.gridRow = rw;
-        for (const b of a.blks) cell.appendChild(renderBlock(b, ctx));
+        for (const b of a.blks) cell.appendChild(renderLayoutBlock(b, ctx));
         body.appendChild(cell);
       }
       const leftover = scene.blocks.filter(b => !used.has(b.id));            // 未引用不丢：整行全宽追加
       if (leftover.length) {
         const cell = el('div', 'compose-area'); cell.style.gridColumn = '1 / -1';
-        for (const b of leftover) cell.appendChild(renderBlock(b, ctx));
+        for (const b of leftover) cell.appendChild(renderLayoutBlock(b, ctx));
         body.appendChild(cell);
       }
     },
@@ -1578,6 +1658,12 @@
   }
   /* 一页的版式自适应统一入口：先把宽公式缩到放下（影响高度），再按新高度做稀疏/超高的纵向平衡，最后处理自定义版式。 */
   function layoutScene(section) { fitFormulas(section); fitCode(section); balanceScene(section); fitCustomLayout(section); fitStatement(section); }
+  function renderVisibleCharts(section) {
+    if (!section) return;
+    section.querySelectorAll('.chart-block .plotwrap').forEach(p => {
+      if (typeof p.__lectureChartRender === 'function') p.__lectureChartRender();
+    });
+  }
 
   /* ================= 装配 & 启动 ================= */
   /* 骨架块识别：agent 规划阶段产出的占位 block 仅有 {id,type,intent}，没有真实内容字段。
@@ -1621,6 +1707,9 @@
 
     const slidesEl = $('#slides');
     if (!slidesEl) return;
+    /* 每次全量渲染产生一组新的 chart/sim/widget 初始化回调。旧节点会被销毁，
+       因而必须先丢弃尚未执行的旧回调，避免 live 重渲后操作脱离 DOM 的节点。 */
+    readyCallbacks.length = 0;
     slidesEl.innerHTML = '';
     for (const scene of doc.scenes) {
       const sec = renderScene(scene, ctx);
@@ -1633,9 +1722,9 @@
       Reveal.initialize({ hash: true, slideNumber: 'c/t', controls: false, progress: true, center: false,
         transition: 'slide', backgroundTransition: 'fade', width: 1280, height: 720, margin: 0,
         viewDistance: 5, hashOneBasedIndex: true, autoAnimate: true, plugins: [RevealHighlight] });
-      Reveal.on('ready', e => { readyCallbacks.forEach(fn => fn()); activateRunCell(e.currentSlide); updateCtx(); refreshNotes(); requestAnimationFrame(() => { layoutScene(e.currentSlide); syncIndex(e.currentSlide); });
+      Reveal.on('ready', e => { runReadyCallbacks(); activateRunCell(e.currentSlide); updateCtx(); refreshNotes(); requestAnimationFrame(() => { renderVisibleCharts(e.currentSlide); layoutScene(e.currentSlide); syncIndex(e.currentSlide); });
         if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { layoutScene(Reveal.getCurrentSlide()); syncIndex(); }); });
-      Reveal.on('slidechanged', e => { activateRunCell(e.currentSlide); updateCtx(); refreshNotes(); requestAnimationFrame(() => { layoutScene(e.currentSlide); syncIndex(e.currentSlide); }); });
+      Reveal.on('slidechanged', e => { activateRunCell(e.currentSlide); updateCtx(); refreshNotes(); requestAnimationFrame(() => { renderVisibleCharts(e.currentSlide); layoutScene(e.currentSlide); syncIndex(e.currentSlide); }); });
       Reveal.on('fragmentshown', () => requestAnimationFrame(() => syncIndex()));
       Reveal.on('fragmenthidden', () => requestAnimationFrame(() => syncIndex()));
       new ResizeObserver(() => { requestAnimationFrame(() => { for (const uid of activePortals) { const e = runnableRegistry.get(uid); if (e && e.cm) e.cm.refresh(); } }); }).observe($('.reveal'));
@@ -1643,7 +1732,8 @@
     } else {
       Reveal.sync();
       Reveal.slide(0);
-      requestAnimationFrame(() => { const cur = Reveal.getCurrentSlide(); if (cur) { layoutScene(cur); syncIndex(cur); } activateRunCell(cur); });
+      /* Reveal 的 ready 事件只触发一次；后续 renderDoc 产生的新动态块必须在这里显式初始化。 */
+      requestAnimationFrame(() => { runReadyCallbacks(); const cur = Reveal.getCurrentSlide(); if (cur) { layoutScene(cur); syncIndex(cur); } activateRunCell(cur); });
     }
   }
 
@@ -1658,7 +1748,7 @@
     fresh.dataset.sceneId = sceneId;
     old.replaceWith(fresh);
     if (window.Reveal && Reveal.sync) Reveal.sync();
-    requestAnimationFrame(() => { layoutScene(fresh); syncIndex(fresh); activateRunCell(fresh); });
+    requestAnimationFrame(() => { if (revealInited && Reveal.isReady()) runReadyCallbacks(); layoutScene(fresh); syncIndex(fresh); activateRunCell(fresh); });
   }
 
   /* ---- quiz 判分（事件委托） ---- */
@@ -1752,7 +1842,7 @@
      不必覆盖基线。路径相对 demo/（服务器根），只能取 demo/ 下的文件。
      ?live=1 时跳过：live.html Dashboard 由控制器自己驱动 renderDoc（订阅 SSE 后增量渲染），
      不做初始 fetch——避免短暂闪现基线 deck 与正在生成的 doc 冲突。 */
-  if (!new URLSearchParams(location.search).has('live')) {
+  if (!window.__LECTURE_DECK_MANUAL_BOOT__ && !new URLSearchParams(location.search).has('live')) {
     const docUrl = new URLSearchParams(location.search).get('doc') || 'course.lecture.json';
     /* 诚实失败（iter75）：此前 fetch/JSON 解析失败 → 未捕获 rejection → 整页静默白屏（手写 doc 转义错、路径错都会踩）。
        现在渲一块显式错误面板：哪个文件、什么错、怎么定位——不静默、不假装正常（不 mock 红线的运行时面）。 */

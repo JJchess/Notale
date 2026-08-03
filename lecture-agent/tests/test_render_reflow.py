@@ -123,6 +123,135 @@ async def test_persistent_overflow_is_reported_not_hidden() -> None:
     assert any("溢出" in w for w in result.warnings), "残留溢出必须出现在 warnings 里"
 
 
+async def test_formula_clip_is_routed_to_reflow() -> None:
+    """公式横向裁切属于可见内容丢失，必须像纵向溢出一样定点回炉。"""
+
+    class _FormulaClipVerifier:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def verify(self, html: str) -> RenderReport:
+            self.calls += 1
+            if self.calls == 1:
+                return RenderReport(
+                    ok=False,
+                    errors=["G: 1 页公式被裁 → #1(383px)"],
+                    overflow_pages=[
+                        {
+                            "page": 1,
+                            "overflowY": 0,
+                            "overflowX": 0,
+                            "layoutClip": 0,
+                            "mblockClip": 383,
+                        }
+                    ],
+                )
+            return RenderReport(ok=True)
+
+    verifier = _FormulaClipVerifier()
+    result = await generate_lecture(
+        FakeClient(by_purpose=_BY_PURPOSE),
+        topic="数据结构",
+        pages=2,
+        options=GeneratorOptions(sections=False, render_rounds=2),
+        render_verifier=verifier,
+    )
+    assert verifier.calls == 2
+    assert len(result.doc["scenes"][1]["blocks"][0]["items"]) == 3
+    assert not result.errors
+
+
+async def test_widget_runtime_error_is_repaired_and_reverified() -> None:
+    widget_html = (
+        "<style>.w{height:100%;color:var(--ink);transition:opacity .2s}</style><div class=w>"
+        "<canvas id=cv width=320 height=180></canvas></div>"
+        "<script>const c=document.getElementById('cv').getContext('2d');"
+        "function update(){c.fillStyle=getComputedStyle(document.documentElement).getPropertyValue('--ink');"
+        "c.fillRect(0,0,10,10)}update();</script>"
+    )
+    fixed_html = widget_html.replace("fillRect(0,0,10,10)", "fillRect(20,20,20,20)")
+    skeleton = json.dumps(
+        {
+            "id": "widget-runtime",
+            "title": "运行时",
+            "language": "zh-CN",
+            "theme": "lab",
+            "scenes": [
+                {"id": "cover", "kind": "hero", "notes": "开场。", "blocks": [{"id": "h", "type": "hero", "intent": "封面"}]},
+                {
+                    "id": "p1",
+                    "kind": "content",
+                    "notes": "演示。",
+                    "blocks": [{"id": "w", "type": "sim", "engine": "widget", "intent": "演示", "size": "xl"}],
+                },
+            ],
+        },
+        ensure_ascii=False,
+    )
+    contract = json.dumps(
+        {
+            "core_insight": "状态变化",
+            "render_medium": "canvas",
+            "state_model": [{"name": "step", "type": "int", "range": "0..1", "init": "1"}],
+            "interactions": [{"trigger": "canvas click", "effect": "重画"}],
+            "update": "update() 重画",
+            "initial_paint": "首帧已有方块",
+            "visible_encodings": [{"quantity": "状态", "mark": "方块", "where": "画布"}],
+            "comparison_states": [],
+            "math_model": {"formula": "none", "screen_mapping": "not applicable", "invariants": []},
+            "verification_cases": [],
+        },
+        ensure_ascii=False,
+    )
+    response = (
+        '{"title":"状态","widget_type":"interactive",'
+        '"loading_messages":["准备"],"assistant_text":"观察状态。"}'
+        f"\n<widget_code>{widget_html}</widget_code>"
+    )
+
+    class RuntimeVerifier:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def verify(self, html: str) -> RenderReport:
+            self.calls += 1
+            if self.calls == 1:
+                return RenderReport(
+                    ok=False,
+                    errors=["O: widget 运行时错误", "B: console error"],
+                    page_metrics=[
+                        {"i": 0, "widgetErrors": []},
+                        {"i": 1, "widgetErrors": ["Assignment to constant variable"]},
+                    ],
+                )
+            return RenderReport(ok=True, page_metrics=[{"i": 0}, {"i": 1}])
+
+    verifier = RuntimeVerifier()
+    fake = FakeClient(
+        by_purpose={
+            "plan:skeleton": skeleton,
+            "block:hero": json.dumps({"type": "hero", "title": ["运行时", "测试"]}, ensure_ascii=False),
+            "widget:plan": contract,
+            "widget:build": response,
+            "widget:quality-repair": fixed_html,
+            "quality:page": '{"score":10,"pass":true,"blockIssues":[],"pageIssues":[]}',
+            "notes": json.dumps({"note": "说明运行状态。"}, ensure_ascii=False),
+        }
+    )
+    result = await generate_lecture(
+        fake,
+        topic="运行时",
+        pages=2,
+        options=GeneratorOptions(sections=False, render_rounds=2, quality_rounds=1),
+        render_verifier=verifier,
+    )
+    assert verifier.calls == 2
+    assert result.doc["scenes"][1]["blocks"][0]["html"] == fixed_html
+    # 初审两页 + 浏览器修复后只复核变更的 widget 页；旧语义分数不能沿用。
+    assert [purpose for purpose, _messages in fake.calls].count("quality:page") == 3
+    assert not result.errors
+
+
 async def test_condense_scene_rejects_block_id_tampering() -> None:
     """回炉不许改 block id/顺序——版式按 id 引用，动了会散架。"""
     scene = {"id": "p1", "kind": "content", "blocks": [{"id": "b1", "type": "statement", "statement": "原文。"}]}

@@ -93,6 +93,9 @@ async function verifyScene(cdp, url, label) {
     await evalJs('document.fonts.ready').catch(() => {});
     const fontsLoaded = await evalJs(`document.fonts.status === 'loaded'`);
     if (!fontsLoaded) fails.push(`C: 字体未全部 loaded（status=${await evalJs('document.fonts.status')}）`);
+    // widget 的 error/assert/no-initial-paint bridge 在 iframe load 后最多 1.2s 上报；
+    // 先等它完成再采逐页指标，避免 srcdoc 非空但画布静默空白的假绿。
+    await sleep(1400);
 
     // D+E 逐页走查：溢出 + balanceScene 规则
     const perSlide = await evalJs(`(async () => {
@@ -144,7 +147,34 @@ async function verifyScene(cdp, url, label) {
           for (const c of body.querySelectorAll('.compose-area')) layoutClip = Math.max(layoutClip, c.scrollHeight - c.clientHeight, c.scrollWidth - c.clientWidth);
         }
         layoutClip = Math.round(Math.max(0, layoutClip));
-        out.push({ i, overflowX: Math.round(overflowX), overflowY: Math.round(overflowY), mblockClip, corrupt, expectCenter, actualCenter, layoutClip });
+        // 动态块不能只占一个空容器：chart/sim 至少应产出 SVG（或显式数据错误提示），
+        // widget 的 srcdoc 必须已由 ready 回调写入。此前二次 render 后回调未执行，结构/溢出全绿但页面是空的。
+        const dynamicBlank = [];
+        for (const p of sec.querySelectorAll('.chart-block .plotwrap')) if (!p.querySelector('svg')) dynamicBlank.push('chart');
+        for (const p of sec.querySelectorAll('.lab .plotwrap')) if (!p.querySelector('svg') && !p.querySelector('.sim-note')) dynamicBlank.push('sim');
+        for (const f of sec.querySelectorAll('iframe.widframe')) if (!(f.srcdoc || '').trim()) dynamicBlank.push('widget');
+        const widgetErrors = [...sec.querySelectorAll('.widlab[data-widget-error]')]
+          .map(el => String(el.dataset.widgetError || 'unknown').slice(0, 160));
+        // Observable Plot 会在推断尺度/数据失败时把黄色 ⚠ 直接画进 SVG；页面不空、无 console error，
+        // 但这显然不是可交付图表。把 aria-label 和文本两条形态都抓住。
+        const plotWarnings = [...sec.querySelectorAll('.chart-block svg')].flatMap(svg =>
+          [...svg.querySelectorAll('[aria-label],text')].filter(e => /warning|warn|⚠/i.test((e.getAttribute('aria-label') || '') + (e.textContent || '')))
+        ).length;
+        // 视觉可读性量化：图表应使用可用宽度，widget 不能退成默认 150px 邮票，正文不得小到不可读。
+        const chartWidthUse = [...sec.querySelectorAll('.chart-block .plotwrap')].map(p => {
+          const svg = p.querySelector('svg'), pw = p.getBoundingClientRect().width;
+          return svg && pw ? +(svg.getBoundingClientRect().width / pw).toFixed(3) : 0;
+        });
+        const widgetHeights = [...sec.querySelectorAll('iframe.widframe')].map(f => Math.round(f.clientHeight));
+        const textSizes = [...sec.querySelectorAll('.pad *')].filter(e => {
+          if (e.closest('svg,pre,code,iframe,aside,.katex,.step-frags') || e.children.length || !(e.textContent || '').trim()) return false;
+          const cs = getComputedStyle(e); return cs.display !== 'none' && cs.visibility !== 'hidden' && +cs.opacity !== 0;
+        }).map(e => parseFloat(getComputedStyle(e).fontSize)).filter(Number.isFinite);
+        const minTextPx = textSizes.length ? +Math.min(...textSizes).toFixed(2) : null;
+        out.push({ i, overflowX: Math.round(overflowX), overflowY: Math.round(overflowY), mblockClip, corrupt, expectCenter, actualCenter, layoutClip, dynamicBlank, widgetErrors, plotWarnings,
+          chartMinWidthUse: chartWidthUse.length ? Math.min(...chartWidthUse) : null,
+          widgetMinHeight: widgetHeights.length ? Math.min(...widgetHeights) : null,
+          minTextPx });
       }
       return out;
     })()`);
@@ -165,6 +195,18 @@ async function verifyScene(cdp, url, label) {
     // I 自定义版式内容被裁：index 的 active panel / split 的分栏列超出各自容器（absolute panel 不撑大 .pad，F 抓不到）
     const layoutClipped = perSlide.filter(s => s.layoutClip > 4);
     if (layoutClipped.length) fails.push(`I: ${layoutClipped.length} 页自定义版式内容被裁(index面板/split列超容器) → ` + layoutClipped.map(s => `#${s.i}(${s.layoutClip}px)`).join(', '));
+    const blankDynamic = perSlide.filter(s => s.dynamicBlank.length);
+    if (blankDynamic.length) fails.push(`J: ${blankDynamic.length} 页动态内容未初始化 → ` + blankDynamic.map(s => `#${s.i}(${s.dynamicBlank.join('+')})`).join(', '));
+    const narrowCharts = perSlide.filter(s => s.chartMinWidthUse != null && s.chartMinWidthUse < 0.78);
+    if (narrowCharts.length) fails.push(`K: ${narrowCharts.length} 页图表未利用可用宽度 → ` + narrowCharts.map(s => `#${s.i}(${Math.round(s.chartMinWidthUse*100)}%)`).join(', '));
+    const shortWidgets = perSlide.filter(s => s.widgetMinHeight != null && s.widgetMinHeight < 260);
+    if (shortWidgets.length) fails.push(`L: ${shortWidgets.length} 页互动区域过矮 → ` + shortWidgets.map(s => `#${s.i}(${s.widgetMinHeight}px)`).join(', '));
+    const tinyText = perSlide.filter(s => s.minTextPx != null && s.minTextPx < 12);
+    if (tinyText.length) fails.push(`M: ${tinyText.length} 页正文最小字号低于 12px → ` + tinyText.map(s => `#${s.i}(${s.minTextPx}px)`).join(', '));
+    const plotWarnings = perSlide.filter(s => s.plotWarnings > 0);
+    if (plotWarnings.length) fails.push(`N: ${plotWarnings.length} 页图表含 Plot 警告标记 → ` + plotWarnings.map(s => `#${s.i}(${s.plotWarnings})`).join(', '));
+    const widgetErrors = perSlide.filter(s => s.widgetErrors?.length);
+    if (widgetErrors.length) fails.push(`O: ${widgetErrors.length} 页 widget 运行时错误 → ` + widgetErrors.map(s => `#${s.i}(${s.widgetErrors.join(' | ')})`).join(', '));
     ready.centered = perSlide.filter(s => s.actualCenter).length;
     slideStats = perSlide;   // 交给 --json：Python 侧据此知道「哪几页」溢出，才能定点回炉
 
@@ -279,6 +321,18 @@ async function main() {
       qs.set('doc', sc.docUrl);
       return `http://127.0.0.1:${port}${VIEWER_ENTRY}?${qs.toString()}`;
     };
+    /* 验收和截图必须在同一次运行里同时发生。旧逻辑进入 shotMode 就跳过 verifyScene，
+       导致 Python 侧拿到 docs=[] / ok=true 的假绿。 */
+    for (const sc of scenes) {
+      const res = await verifyScene(cdp, urlFor(sc), sc.label);
+      const r = res.ready || {};
+      const tag = res.fails.length ? '✗' : '✓';
+      if (!jsonMode) {
+        console.log(`${tag} ${res.label} :: slides=${r.slides ?? '?'} theme=${r.theme || '-'} fonts=${r.fontsStatus || '?'} centered=${r.centered ?? '?'}`);
+        if (res.fails.length) res.fails.forEach(f => console.log(`    - ${f}`));
+      }
+      results.push(res);
+    }
     if (shotMode) {
       const sc = scenes[0];
       const outDir = shotDir || path.join(os.tmpdir(), 'la-shots');
@@ -289,15 +343,6 @@ async function main() {
         saved.forEach(f => console.log('  ' + path.basename(f)));
       }
       shots = saved;
-    } else for (const sc of scenes) {
-      const res = await verifyScene(cdp, urlFor(sc), sc.label);
-      const r = res.ready || {};
-      const tag = res.fails.length ? '✗' : '✓';
-      if (!jsonMode) {
-        console.log(`${tag} ${res.label} :: slides=${r.slides ?? '?'} theme=${r.theme || '-'} fonts=${r.fontsStatus || '?'} centered=${r.centered ?? '?'}`);
-        if (res.fails.length) res.fails.forEach(f => console.log(`    - ${f}`));
-      }
-      results.push(res);
     }
   } catch (e) {
     results.push({ label: '(harness)', fails: ['运行失败: ' + (e.message || e)] });
@@ -319,9 +364,10 @@ async function main() {
         slides: r.ready ? r.ready.slides : null,
         theme: r.ready ? r.ready.theme : null,
         fontsStatus: r.ready ? r.ready.fontsStatus : null,
-        overflowPages: (r.slides || []).filter(s => s.overflowY > 4 || s.overflowX > 1 || s.layoutClip > 4)
-          .map(s => ({ page: s.i, overflowY: s.overflowY, overflowX: s.overflowX, layoutClip: s.layoutClip })),
+        overflowPages: (r.slides || []).filter(s => s.overflowY > 4 || s.overflowX > 1 || s.layoutClip > 4 || s.mblockClip > 4)
+          .map(s => ({ page: s.i, overflowY: s.overflowY, overflowX: s.overflowX, layoutClip: s.layoutClip, mblockClip: s.mblockClip })),
         corruptPages: (r.slides || []).filter(s => s.corrupt).map(s => ({ page: s.i, marker: s.corrupt })),
+        pageMetrics: r.slides || [],
       })),
     }) + '\n');
     process.exit(failed.length ? 1 : 0);

@@ -69,7 +69,7 @@ class HeadlessVerifier:
                 stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
             )
             out, err = await asyncio.wait_for(proc.communicate(), timeout=self.timeout_s)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             return RenderReport(ok=False, errors=[f"真机渲染验收超时（>{self.timeout_s:.0f}s）"])
         except OSError as e:
             return RenderReport(ok=True, warnings=[f"无法启动渲染验收进程，跳过: {e}"])
@@ -90,7 +90,9 @@ def _last_json_line(stdout: str) -> dict[str, Any] | None:
     for line in reversed([ln.strip() for ln in stdout.splitlines() if ln.strip()]):
         if line.startswith("{"):
             try:
-                return json.loads(line)
+                value = json.loads(line)
+                if isinstance(value, dict):
+                    return value
             except json.JSONDecodeError:
                 continue
     return None
@@ -100,14 +102,17 @@ def _to_report(payload: dict[str, Any]) -> RenderReport:
     errors: list[str] = []
     overflow: list[dict[str, Any]] = []
     corrupt: list[dict[str, Any]] = []
+    metrics: list[dict[str, Any]] = []
     for doc in payload.get("docs") or []:
         errors.extend(doc.get("fails") or [])
         overflow.extend(doc.get("overflowPages") or [])
         corrupt.extend(doc.get("corruptPages") or [])
+        metrics.extend(doc.get("pageMetrics") or [])
     return RenderReport(
         ok=bool(payload.get("ok")) and not errors,
         errors=errors,
         overflow_pages=overflow,
         corrupt_pages=corrupt,
+        page_metrics=metrics,
         shots=list(payload.get("shots") or []),
     )

@@ -202,7 +202,7 @@ def _aesthetic_lint(html: str, path: str, r: Result, *, require_motion: bool) ->
         r.warn(path, "用了样例桩色 #4fc3f7——请从主题 token 取色")
 
 
-def _check_widget_html(html: Any, path: str, r: Result) -> None:
+def _check_widget_html(html: Any, path: str, r: Result, spec: Any = None) -> None:
     if not isinstance(html, str) or len(html) < 40:
         r.err(path, "片段过短或缺失（应是自包含 HTML 片段）")
         return
@@ -211,6 +211,26 @@ def _check_widget_html(html: Any, path: str, r: Result) -> None:
         r.err(path, "widget.html 必须是**片段**，不要写 <!doctype>/<html>/<head>/<body>")
     if not re.search(r"(<div|<svg|<canvas|<style)", low):
         r.err(path, "widget.html 至少应含 <div>/<svg>/<canvas>/<style> 之一")
+    if re.search(
+        r"<script\b[^>]*\bsrc\s*=|<link\b|\bfetch\s*\(|\bxmlhttprequest\b|\bwebsocket\s*\(|"
+        r"\bimport\s*\(|(?:^|[;{}\n])\s*import\s+[^;]+\bfrom\b|(?:src|href)\s*=\s*[\"']https?://",
+        html,
+        re.I,
+    ):
+        r.err(path, "widget 含外部依赖/网络调用；null-origin iframe 必须使用零依赖 vanilla HTML/CSS/JS")
+    hard_colors = re.findall(
+        r"(?:color|background(?:-color)?|fill|stroke)\s*:\s*#[0-9a-fA-F]{3,8}\b|"
+        r"[\"']#[0-9a-fA-F]{3,8}[\"']",
+        html,
+        re.I,
+    )
+    if hard_colors:
+        r.err(path, "widget 含硬编码颜色；必须读取 --ink/--accent/--line/--bg 等主题 token")
+    if isinstance(spec, dict):
+        math_model = spec.get("math_model")
+        formula = math_model.get("formula") if isinstance(math_model, dict) else None
+        if formula and str(formula).strip().lower() != "none" and "console.assert" not in low:
+            r.err(path, "数学 widget 有 math_model 但缺 console.assert 验证例；坐标/方向错误无法自动暴露")
     _aesthetic_lint(html, path, r, require_motion=True)
 
 
@@ -456,7 +476,7 @@ def _check_sim(b: dict[str, Any], path: str, r: Result) -> None:
     engine = b.get("engine")
     if engine == "widget":
         if isinstance(b.get("html"), str):
-            _check_widget_html(b["html"], f"{path}.html", r)
+            _check_widget_html(b["html"], f"{path}.html", r, b.get("spec"))
     elif engine == "dynamics1d":
         m = b.get("model")
         if isinstance(m, dict):

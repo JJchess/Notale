@@ -5,14 +5,33 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 
+import lecture_agent.domain.generation.blocks as blocks_module
 from lecture_agent.adapters.llm.cassette import CassetteClient
 from lecture_agent.adapters.llm.fake import FakeClient
 from lecture_agent.domain.generation import generate_block
 from lecture_agent.domain.tool_loop import run_tool_loop
 from lecture_agent.domain.tools import CalcTool
 from lecture_agent.ports.llm import ToolInvocation, Turn
+
+
+async def test_block_call_timeout_stops_provider_retry_tail(monkeypatch) -> None:
+    class SlowClient(FakeClient):
+        async def complete(self, messages, *, json_mode=True, purpose="chat"):
+            await asyncio.sleep(1)
+            return await super().complete(messages, json_mode=json_mode, purpose=purpose)
+
+    monkeypatch.setattr(blocks_module, "_BLOCK_INITIAL_TIMEOUT_S", 0.01)
+    result = await generate_block(
+        SlowClient(),
+        type="statement",
+        intent="一句结论",
+        scene_ctx="",
+        contract="{}",
+    )
+    assert result.block is None and result.err and "调用超时" in result.err
 
 
 async def test_calc_valid_and_safe() -> None:

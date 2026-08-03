@@ -15,7 +15,6 @@ import subprocess
 from pathlib import Path
 
 import pytest
-
 from lecture_agent.schema.enums import BlockType
 
 _REPO = Path(__file__).resolve().parents[2]

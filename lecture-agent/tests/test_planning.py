@@ -57,6 +57,11 @@ def test_skeleton_prompt_is_description_driven() -> None:
     # ② 每个 auto_type 的名字仍出现（合法性/禁新造那条硬规则的清单）。
     for t in auto_types:
         assert t in spec
+    # 页级教学/视觉/证据契约必须在规划阶段建立，不能留给互不通信的 block 猜。
+    for field in ("objective", "keyClaim", "misconception", "visualTask", "evidencePolicy"):
+        assert field in spec
+    assert "禁止凭空写论文名+年份" in spec
+    assert "装饰模板冒充数学图" in spec
 
 
 def test_skeleton_prompt_drops_interactive_suppression() -> None:
@@ -165,12 +170,37 @@ def test_split_type_trigger_keeps_old_anchor_behavior() -> None:
     assert layout["anchor"] == ["b1"]
 
 
-def test_caps_at_two_non_adjacent_pages_per_kind() -> None:
+def test_layout_fit_is_not_disabled_by_global_style_quota() -> None:
     scenes = [
         _scene(f"s{i}", [_block(f"b{i}a", size="m"), _block(f"b{i}b", size="m")]) for i in range(5)
     ]
     doc = {"scenes": scenes}
     n = assign_layouts(doc)
     index_count = sum(1 for s in scenes if s.get("layout", {}).get("kind") == "index")
-    assert index_count == 2
-    assert n == 2
+    assert index_count == 5
+    assert n == 5
+
+
+def test_chart_first_still_gets_wide_main_column() -> None:
+    doc = {
+        "scenes": [_scene("s1", [_block("chart", "chart", size="l"), _block("why", "list", size="m")])]
+    }
+    assign_layouts(doc)
+    layout = doc["scenes"][0]["layout"]
+    assert layout["kind"] == "split"
+    assert layout["anchor"] == ["why"]
+
+
+def test_formula_and_chart_use_full_width_index_not_narrow_split() -> None:
+    doc = {
+        "scenes": [
+            _scene(
+                "s1",
+                [_block("derivation", "formula", size="m"), _block("curve", "chart", size="l")],
+            )
+        ]
+    }
+    assign_layouts(doc)
+    layout = doc["scenes"][0]["layout"]
+    assert layout["kind"] == "index"
+    assert [s["blockIds"] for s in layout["steps"]] == [["derivation"], ["curve"]]

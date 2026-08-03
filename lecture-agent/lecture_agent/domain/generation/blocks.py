@@ -20,8 +20,15 @@ from ..tool_loop import run_tool_loop
 
 _SYS = (
     "你是 LectureDoc 单个 block 生成器。只输出**一个** block 的 JSON 对象，"
-    f"不要代码围栏、不要解释。\n{AUTHORING_RULES}"
+    "不要代码围栏、不要解释。你必须服从页级 brief，并把当前 block 当作同页协作中的一个角色，不能自立新主题。"
+    "任何精确数字、引文、论文归因或真实世界统计，必须来自提供的素材；否则只能使用可复算推导，"
+    "或明确标注为「示意/合成数据」。禁止为了显得具体而编造来源。图形类型必须真实编码 visualTask 的关系，"
+    "不能用装饰形状冒充坐标、轨迹、梯度或因果关系。同页 sibling blocks 是并发生成的："
+    "不得臆测兄弟块会采用的具体衰减因子、阈值、步数或数据；若共享数值未在页 brief/intent 明定，"
+    f"就使用符号描述或不举数值例子，避免跨块互相矛盾。\n{AUTHORING_RULES}"
 )
+_BLOCK_INITIAL_TIMEOUT_S = 360.0
+_BLOCK_REPAIR_TIMEOUT_S = 240.0
 
 
 @dataclass
@@ -80,19 +87,30 @@ async def generate_block(
     ]
     for rnd in range(1, rounds + 1):
         last = rnd == rounds
+        call_timeout = _BLOCK_INITIAL_TIMEOUT_S if rnd == 1 else _BLOCK_REPAIR_TIMEOUT_S
         try:
             use_tools = rnd == 1 and tools and isinstance(llm, ToolCallingLLM)
             if use_tools:
-                raw = await run_tool_loop(
-                    cast(ToolCallingLLM, llm),
-                    cast(list[dict[str, Any]], messages),
-                    tools or {},
-                    purpose="block:" + type,
+                raw = await asyncio.wait_for(
+                    run_tool_loop(
+                        cast(ToolCallingLLM, llm),
+                        cast(list[dict[str, Any]], messages),
+                        tools or {},
+                        purpose="block:" + type,
+                    ),
+                    timeout=call_timeout,
                 )
             else:
-                raw = await llm.complete(
-                    messages, purpose=("block:" if rnd == 1 else "repair:") + type
+                raw = await asyncio.wait_for(
+                    llm.complete(
+                        messages, purpose=("block:" if rnd == 1 else "repair:") + type
+                    ),
+                    timeout=call_timeout,
                 )
+        except TimeoutError:
+            # provider 自己可能配置 600s×4 次重试；编排层必须有更短的任务级截止时间，
+            # 否则六个失败页会把一次生成拖成数小时。超时不在同一 block 内盲目重试。
+            return BlockResult(None, f"block {type} 调用超时（>{call_timeout:.0f}s）")
         except Exception as e:  # noqa: BLE001
             if last:
                 return BlockResult(None, f"LLM 调用失败: {str(e)[:80]}")

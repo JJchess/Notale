@@ -32,6 +32,8 @@ Read `lecture-doc-schema` first (SPEC §3.2 quiz). A quiz block lives on a `kind
 ```
 - 2–6 `choices`, each `{key:"a".."z", text}`, unique keys. `answer` = one key that exists.
 - **`explain` 必须解释"为什么对 + 为什么最像的干扰项不对"**，不只是复述正确项（SPEC §5 rule 7）。
+- For any numerical or iterative question, recompute the answer from the actual recurrence/formula. The explanation must show the governing expression (for example `$w_{t+1}=(1-2\eta)w_t$`), not replace geometric change with a false constant-step story.
+- The stem must test the page brief's observable objective, and each distractor should correspond to the stated misconception or another identifiable reasoning error; avoid trivia that can be guessed without using the lesson.
 
 **Subjective (discussion anchor):**
 ```json

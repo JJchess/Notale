@@ -24,6 +24,8 @@ class RenderReport:
     overflow_pages: list[dict[str, Any]] = field(default_factory=list)
     # 逐页损坏标记（undefined / NaN / [object Object]），插值 bug 的信号
     corrupt_pages: list[dict[str, Any]] = field(default_factory=list)
+    # 浏览器逐页实测（溢出、动态初始化、图表宽度利用、widget 高度、最小正文字号等）
+    page_metrics: list[dict[str, Any]] = field(default_factory=list)
     shots: list[str] = field(default_factory=list)   # --shot 产出的 PNG 路径
 
     @property

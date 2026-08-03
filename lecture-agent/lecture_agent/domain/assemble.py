@@ -14,6 +14,7 @@ def fill_blocks(doc: dict[str, Any], blocks_by_id: dict[str, dict[str, Any] | No
     dropped: list[str] = []
     for s in doc.get("scenes", []):
         kept: list[dict[str, Any]] = []
+        scene_dropped = False
         for ph in s.get("blocks", []):
             bid = ph.get("id")
             gen = blocks_by_id.get(bid) if bid else None
@@ -22,7 +23,10 @@ def fill_blocks(doc: dict[str, Any], blocks_by_id: dict[str, dict[str, Any] | No
                 kept.append(gen)
             else:
                 dropped.append(f"{bid}({ph.get('type')})")
+                scene_dropped = True
         if not kept:
             kept.append({"type": "callout", "label": "待补", "text": "本页 block 生成失败，需重跑"})
         s["blocks"] = kept
+        if scene_dropped:
+            s.pop("layout", None)
     return dropped

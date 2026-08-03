@@ -16,6 +16,7 @@ from ..utils.concurrency import pool
 from ..utils.jsonio import parse_json
 
 _HIER_THRESHOLD = 16  # 页数 > 此值走分层规划（单次骨架 ~15 页封顶，靠分章并发才够）
+_PLAN_CALL_TIMEOUT_S = 300.0
 
 _PERSPECTIVE_SCHEMA = (
     '{ "perspectives": [ { "name":"视角名(如 重直觉的入门讲法 / 重推导的理论派 / 重工程实践 / 爱追问的学生)", '
@@ -49,9 +50,12 @@ async def _discover_coverage(
     )
     try:
         data = parse_json(
-            await llm.complete(
-                [{"role": "system", "content": sys}, {"role": "user", "content": user}],
-                purpose="plan:perspectives",
+            await asyncio.wait_for(
+                llm.complete(
+                    [{"role": "system", "content": sys}, {"role": "user", "content": user}],
+                    purpose="plan:perspectives",
+                ),
+                timeout=_PLAN_CALL_TIMEOUT_S,
             )
         )
         ps = data.get("perspectives") if isinstance(data, dict) else None
@@ -93,9 +97,9 @@ def _skeleton_spec(
 {{ "id":"kebab-id","title":"...","subtitle":"...(可选)","language":"zh-CN","audience":"...","theme":"...(从下方主题菜单里挑一个名字)",
   "tutor":{{"suggestions":["建议问题"],"kb":[{{"pattern":"关键词|同义词","answer":"本地应答(inline-md)"}}]}},
   "scenes":[
-    {{"id":"cover","kind":"hero","notes":"讲者备注","blocks":[{{"id":"b_cover","type":"hero","intent":"封面：标题+一句副题","size":"xl"}}]}},
-    {{"id":"...","kind":"content","eyebrow":"小节标签(可选)","headline":"页标题","lead":"一句陈述式导语(可选)","transition":"zoom(可选,只在确有强调/章节切换意图时用)","notes":"讲者备注","blocks":[{{"id":"b1","type":"list","intent":"这一块要讲清什么(一句)","size":"m"}},{{"id":"b2","type":"callout","intent":"...","size":"s"}}]}},
-    {{"id":"...","kind":"quiz","headline":"随堂检验","notes":"...","blocks":[{{"id":"bq","type":"quiz","intent":"考察点","size":"m"}}]}}
+    {{"id":"cover","kind":"hero","notes":"开场作用一句话","brief":{{"objective":"学生能说出本讲要解决的问题","keyClaim":"本讲唯一承诺","misconception":"","visualTask":"封面只建立主题与问题张力","evidencePolicy":"none"}},"blocks":[{{"id":"b_cover","type":"hero","role":"claim","intent":"封面：标题+一句副题","size":"xl"}}]}},
+    {{"id":"...","kind":"content","eyebrow":"小节标签(可选)","headline":"页标题","lead":"一句陈述式导语(可选)","transition":"zoom(可选,只在确有强调/章节切换意图时用)","notes":"本页作用一句话","brief":{{"objective":"学完本页学生能做出的可观察动作","keyClaim":"本页唯一核心结论","misconception":"本页要纠正的一个具体误区","visualTask":"图形/交互必须让学生看见的变量关系或状态变化","evidencePolicy":"derived|provided|synthetic|none"}},"blocks":[{{"id":"b1","type":"list","role":"claim","intent":"这一块要讲清什么(一句)","size":"m"}},{{"id":"b2","type":"callout","role":"support","intent":"...","size":"s"}}]}},
+    {{"id":"...","kind":"quiz","headline":"随堂检验","notes":"检验本页目标","brief":{{"objective":"学生能独立完成什么判断/计算","keyClaim":"被检验的知识点","misconception":"错误选项针对的误区","visualTask":"作答后能从解释看出判定链条","evidencePolicy":"derived"}},"blocks":[{{"id":"bq","type":"quiz","role":"practice","intent":"考察点","size":"m"}}]}}
   ]}}
 
 可选组件（**描述即选择依据：按每个家族的描述判断这一页/这一块内容最贴哪个就选哪个；别被"高级/低级""稀有出口"之类预设吓退，也别硬塞不贴题的**。type 只能从下面出现的名字里选、禁止新造）：
@@ -105,17 +109,28 @@ def _skeleton_spec(
 - **总页数硬约束：恰好 {pages} 页（可 {pages}−1，绝不少于 {pages}−2、绝不多于 {pages}）**，含封面/收尾/可能的章节分隔页。第一页 kind:hero(封面, 恰含一个 hero block)。页数少(≤4)时省掉回顾/收尾页。
 - **封面与收尾页的标题/副题必须直接点出课题本身**，严禁写成其它主题或泛泛套话。
 - scene.kind: hero(封面/收尾,一个 hero block) | content(常规) | quiz(含一个 quiz block) | statement(含一个 statement block) | section(章节分隔页,含一个 statement block)。
-- 每个 block 是占位 {{id(全局唯一), type, intent, size}}。**type 只能从上方「可选组件」里的名字选，禁止新造类型名**（共 {len(all_types)} 个：{", ".join(all_types)}）。timeline 只用于有明确时间点的编年序列；无时间点的步骤/流程一律用 flow。sim 块**若**要做「活」的动画/交互演示（见下方 sim 规则），额外写 `"engine":"widget"`，如 `{{"id":"bw","type":"sim","engine":"widget","intent":"...","size":"l"}}`；其余 sim 只写 type、引擎留给后续自动选。
+- 每页必须有内部规划字段 `brief`：`objective` 用「学生能比较/计算/解释/预测……」写成**可验收动作**；`keyClaim` 只写一个核心结论；`misconception` 只写一个具体错误想法（无则空串）；`visualTask` 描述图形或交互必须编码的**关系**，不能只写「美观展示」；`evidencePolicy` 只能是 `derived`(由本页公式/数据可推导)、`provided`(来自用户素材)、`synthetic`(明确标成示意/合成)、`none`。这些字段供后续生成与质检使用，不是给观众看的正文。
+- 每个 block 是占位 {{id(全局唯一), type, role, intent, size}}。`role` 只能是 `claim|evidence|visualization|practice|support`，同页各块必须围绕同一个 brief 分工，不能各讲各的。**type 只能从上方「可选组件」里的名字选，禁止新造类型名**（共 {len(all_types)} 个：{", ".join(all_types)}）。timeline 只用于有明确时间点的编年序列；无时间点的步骤/流程一律用 flow。sim 块**若**要做「活」的动画/交互演示（见下方 sim 规则），额外写 `"engine":"widget"`，如 `{{"id":"bw","type":"sim","engine":"widget","role":"visualization","intent":"...","size":"l"}}`；其余 sim 只写 type、引擎留给后续自动选。
 - **每个 block 标一个粗粒度 size：`xl`(几乎独占整页的主体，如封面、复杂大图) / `l`(大块/主体，如复杂图表、大表格、多轮对比、长 timeline) / `m`(默认，一般讲解块) / `s`(小/辅助，如一句注解、次要论点、callout 补充)。不写默认按 m 处理。**
 - **一页配几个 block、配多大由内容真实需要决定，不设死数量上限**——但整页视觉重量要有节奏：粗略按 xl=4/l=3/m=2/s=1 心算一页总重量，大致落在 ~6 上下浮动即可；**不要为了凑够页数而硬拆一个大块，也不要图省事把一页堆成 5-6 个同重量小块**；真正复杂的内容（compare、大 table、>5 事件 timeline）给 l/xl 并考虑独占一页；叙事仍由浅入深。
 - **能用图表表达的定量对比/趋势/相关性优先用 chart（bar/line/area/scatter）而非 table**；纯名目罗列、无需比较数值大小或走势的数据才用 table。
+- **视觉语法必须服从 `brief.visualTask`**：坐标位置、轨迹、梯度、边界等几何关系必须用 chart/scatter/line 或 sim 真实编码坐标，不能拿 connected-circles、蛇形卡片等装饰模板冒充数学图；diagram 只用于它的形状确实表达了循环/层级/步骤/网络关系时。若视觉不能让学生仅凭图形读出目标关系，宁可换组件。
+- **证据纪律**：没有参考素材时，禁止凭空写论文名+年份、人物原话、调查比例、精确行业数字。定量内容只能来自可展示的推导，或明确标为「示意/合成数据」；需要外部来源而当前没有素材的事实，应改写为不依赖精确数字的定性结论，不能先编一个数再让后续补引用。
+- **数学层级不能偷换**：近似/直觉、带条件引理、特殊模型精确结论、一般定理要分别命名并写清前提。不能用“一阶 Taylor 近似”直接宣称全局下降保证；若保证依赖光滑性、凸性、强凸性等条件，页目标和标题必须显式写条件。一个页面若需要跨越两层以上（如近似→下降引理→谱条件→收敛率），必须拆开，不准压成公式拼盘。
+- **保证必须可见地带条件**：收敛、速率、全局最优等结论所需的光滑性/凸性/强凸性与步长范围，必须能放入观众可见的 headline/lead/formula/caption；只计划写在 notes 或内部 brief 等于没写。
+- **比较必须在首帧成立**：objective 若写“比较 A/B/C”，visualTask 与主视觉 block.intent 必须要求初始画面同时显示 A/B/C（或清楚的并排小多图）；一次只显示滑块当前选中的一条曲线不算完成比较。
+- **鞍点需要二维证据**：要解释鞍点/相反曲率，必须用二维曲面/等高线，或至少两条明确标注的正交切片；单条只向上/只向下的一维曲线不能证明鞍点。
+- **复杂 widget 页最多两个 block**：一个 l/xl 的 sim.widget 主舞台最多搭配一个 s/m 的短公式或短说明。quiz、callout、长公式不得再堆在同页；如果页数预算不允许另起一页，就删掉次要块并让互动本身完成证据链。
+- **语言一致**：`language` 决定所有观众可见的 title/headline/lead/caption/控件文案；除数学符号、代码标识符和必要专名外，不得无故中英混排。
+- **quiz 目标必须匹配一道题**：一个 quiz block 只承载一道可复算题，brief.objective/keyClaim 只写这一个判定链；不得声称一道题同时覆盖梯度方向、学习率、调度策略等整章目标。
 - **几个孤立的关键数字（一眼看大小，不是走势/分布）用 stats 数字卡**；有循环/层级/递进/网络等特殊结构关系的内容用 diagram（cycle/pyramid/staircase/snake/arrow-seq/circular-grid/connected-circles，按关系语义选，不要混用，简单 2-3 步线性流程仍用 flow 就够）。
 - **scene 可选 `transition`**（reveal 切场动效名，如 zoom/convex/none）：只在确有强调或大段落切换的意图时用，**不要每页都加**——多数页留空即可。
 - **交互按题材贴合度选**：可量化/可模拟/可交互的过程，该用 sim/widget/runnable 就**大胆用**，别因它"高级"或"重"而回避（互动恰恰是这套讲义相对静态 PPT 的价值所在）；但**没有可量化/可模拟/可交互过程**的题材（纯叙述、纯观点、无参数可调）不要硬塞 sim——sim 里没有真参数可转，就是装饰不是互动。建议每课至少 1 个 quiz。{"用户点名的交互: " + wants if wants else ""}
 - **`sim` + `engine:"widget"`**：当一个过程要靠**实时动画/canvas 波形粒子/几何作图/任意鼠标交互**才讲得清（如排序·查找·图遍历的分步动画、单摆/阻尼振子等二阶运动、向量/边界作图）——注册表引擎(dynamics1d/searchCompare)与声明式 block 都表达不了——就在骨架里给该 sim 标 `engine:"widget"`，通常给 size `l`/`xl` 并独占一页。按"贴不贴题"判断：贴题就用、别套模板、也别回避。
+- **先用声明式 sim 再升级 widget**：只有一个标量状态、形如 `x_(t+1)=g(x_t, 参数)` 的一阶递推及其轨迹，直接用普通 `sim`（不写 engine，后续走 dynamics1d）；不要为了画一个移动点/箭头就升级 widget。只有二维几何、连续场、粒子/canvas、复杂鼠标作图或声明式引擎确实无法编码的状态才写 `engine:"widget"`。widget 每块要额外经历 plan→build→validate，滥用会显著放大延迟与失败面。
 - **runnable**：学生需要**真正改代码、点运行、看结果**时用（如手写实现算法、调参看效果）；纯展示代码用 `code`。一份讲义可有多个 runnable（各自独立、贴题就用）。
 - **主题(theme)只是视觉气质、不承诺任何环节**。{theme_line}
-- **notes 是有料的讲者稿**：每页至少 2-3 句，写关键点展开/直觉/误区/衔接；禁没信息量的占位。
+- 骨架阶段的 `notes` 只写本页在叙事中的作用（一句话），不要提前编推导、数字或讲稿；实际讲者稿会在所有 block 生成后依据最终页面内容重写。
 - **AI 助教**：tutor.suggestions 给 3-4 个贴具体知识点的问题；tutor.kb 覆盖主要术语 4-6 条，pattern 用 `关键词|同义词`。
 {authoring_rules}"""
 
@@ -147,9 +162,12 @@ async def insert_sections(llm: LLMClient, doc: dict[str, Any], budget: int | Non
     try:
         parts = (
             parse_json(
-                await llm.complete(
-                    [{"role": "system", "content": sys}, {"role": "user", "content": user}],
-                    purpose="plan:sections",
+                await asyncio.wait_for(
+                    llm.complete(
+                        [{"role": "system", "content": sys}, {"role": "user", "content": user}],
+                        purpose="plan:sections",
+                    ),
+                    timeout=_PLAN_CALL_TIMEOUT_S,
                 )
             ).get("parts")
             or []
@@ -230,9 +248,9 @@ def _compose_areas_from_sizes(blocks: list[dict[str, Any]]) -> list[dict[str, An
 def assign_layouts(doc: dict[str, Any]) -> int:
     """确定性版式分配：由骨架阶段模型给的粗粒度 block.size 提示驱动，而非硬编码数 block 个数。
 
-    规划器实测常年只产竖排；这里打破整份 flow 单调。规则按优先级顺序尝试，每类至多 2 页、不相邻
-    （index 沿用原有相邻页互斥；其余几类跟历史行为一致，不额外加相邻互斥）。size 只是骨架阶段的
-    临时决策信号，读取时机在 fill_blocks 替换占位符之前，不需要进 schema、也不用担心被冲掉。
+    规划器实测常年只产竖排；这里按每页的 block 语义/尺寸选择能放下内容的版式。版式是可读性约束，
+    不再设置“每类至多 2 页 / 相邻页禁用”的全局审美配额——旧配额会让后半份中结构相同的页面退回
+    flow，产生可预测的溢出。size/role 是骨架阶段的临时信号，在 fill_blocks 替换占位符前读取。
     渲染器对失效引用有回落。
     """
 
@@ -246,8 +264,6 @@ def assign_layouts(doc: dict[str, Any]) -> int:
     # 1. compose/sidenote：2 block，末块 callout（不变，最高优先级）
     side = 0
     for s in scenes:
-        if side >= 2:
-            break
         blocks = s.get("blocks") or []
         if (
             s.get("kind") == "content"
@@ -258,11 +274,9 @@ def assign_layouts(doc: dict[str, Any]) -> int:
             s["layout"] = {"kind": "compose", "preset": "sidenote"}
             side += 1
 
-    # 2. full：单 block，type 命中 _DATA_TYPES 或 size 是 l/xl（新增 size 判据，type 判据向后兼容）
+    # 2. full：单 block，type 命中 _DATA_TYPES 或 size 是 l/xl（逐页适配，不设全局配额）
     full_n = 0
     for s in scenes:
-        if full_n >= 2:
-            break
         blocks = s.get("blocks") or []
         if (
             s.get("kind") == "content"
@@ -273,25 +287,45 @@ def assign_layouts(doc: dict[str, Any]) -> int:
             s["layout"] = {"kind": "full"}
             full_n += 1
 
-    # 3. split：2 block，第二块 type 命中 _DATA_TYPES，或两块尺寸权重差 >=2。
-    #    anchor 是渲染器里较窄的侧栏——type 触发时保留原行为(锚 blocks[0])；
-    #    纯 size 触发时锚较小的那块，让更重的块占更宽的主栏。
+    # 3. 公式 + 数据图：用 index 逐步全宽展示。长公式放 split 窄锚栏必然缩小/裁切，且推导→图示
+    #    本来就是适合 reveal 分步呈现的顺序关系。
+    formula_data_n = 0
+    for s in scenes:
+        blocks = s.get("blocks") or []
+        types = {b.get("type") for b in blocks}
+        if (
+            s.get("kind") == "content"
+            and not s.get("layout")
+            and len(blocks) == 2
+            and "formula" in types
+            and bool(types & _DATA_TYPES)
+        ):
+            s["layout"] = {
+                "kind": "index",
+                "steps": [
+                    {"label": label(b.get("intent", ""), k), "blockIds": [b["id"]]}
+                    for k, b in enumerate(blocks)
+                ],
+            }
+            formula_data_n += 1
+
+    # 4. split：2 block，只要其中一块是数据/互动主体，另一块就做窄侧栏；或尺寸权重差 >=2。
+    #    旧逻辑只识别“第二块是数据块”，导致 chart 在前、解释在后的常见页面退回 flow 并溢出。
     split_n = 0
     for s in scenes:
-        if split_n >= 2:
-            break
         blocks = s.get("blocks") or []
         if s.get("kind") != "content" or s.get("layout") or len(blocks) != 2:
             continue
-        by_type = blocks[1].get("type") in _DATA_TYPES
+        data_blocks = [b for b in blocks if b.get("type") in _DATA_TYPES]
+        by_type = len(data_blocks) == 1
         w0, w1 = _weight(blocks[0]), _weight(blocks[1])
         if not (by_type or abs(w0 - w1) >= 2):
             continue
-        anchor = blocks[0] if (by_type or w0 <= w1) else blocks[1]
+        anchor = next(b for b in blocks if b is not data_blocks[0]) if by_type else (blocks[0] if w0 <= w1 else blocks[1])
         s["layout"] = {"kind": "split", "anchor": [anchor["id"]], "ratio": 0.4}
         split_n += 1
 
-    # 4. index：>=2 block 且尺寸大致均匀（原本"多段但地位相当"的语义；阈值从 >=3 降到 >=2，
+    # 5. index：>=2 block 且尺寸大致均匀（原本"多段但地位相当"的语义；阈值从 >=3 降到 >=2，
     #    因为"一页 1-2 个 block"硬约束已去掉后 >=3 block 的均匀页才重新可能出现，但 2 块也一样适用）。
     cands = sorted(
         (
@@ -304,12 +338,8 @@ def assign_layouts(doc: dict[str, Any]) -> int:
         ),
         key=lambda si: -len(si[0]["blocks"]),
     )
-    used, taken = 0, set()
-    for s, i in cands:
-        if used >= 2:
-            break
-        if (i - 1) in taken or (i + 1) in taken:
-            continue
+    used = 0
+    for s, _i in cands:
         s["layout"] = {
             "kind": "index",
             "steps": [
@@ -317,15 +347,12 @@ def assign_layouts(doc: dict[str, Any]) -> int:
                 for k, b in enumerate(s["blocks"])
             ],
         }
-        taken.add(i)
         used += 1
 
-    # 5. compose/computed：>=3 block 且尺寸不均匀——本轮真正解锁的能力，把 size 序列算成
+    # 6. compose/computed：>=3 block 且尺寸不均匀——本轮真正解锁的能力，把 size 序列算成
     #    不重叠的 col 跨度网格，不依赖任何预设名字。
     computed_n = 0
     for s in scenes:
-        if computed_n >= 2:
-            break
         blocks = s.get("blocks") or []
         if s.get("kind") != "content" or s.get("layout") or len(blocks) < 3:
             continue
@@ -335,7 +362,7 @@ def assign_layouts(doc: dict[str, Any]) -> int:
         s["layout"] = {"kind": "compose", "areas": _compose_areas_from_sizes(blocks)}
         computed_n += 1
 
-    return side + full_n + split_n + used + computed_n
+    return side + full_n + formula_data_n + split_n + used + computed_n
 
 
 def _coverage_text(perspectives: list[dict[str, Any]]) -> str:
@@ -412,12 +439,17 @@ async def _outline(
         + "\n\n输出大纲 JSON。"
     )
     data = parse_json(
-        await llm.complete(
-            [{"role": "system", "content": sys}, {"role": "user", "content": user}],
-            purpose="plan:outline",
+        await asyncio.wait_for(
+            llm.complete(
+                [{"role": "system", "content": sys}, {"role": "user", "content": user}],
+                purpose="plan:outline",
+            ),
+            timeout=_PLAN_CALL_TIMEOUT_S,
         )
     )
-    secs = data.get("sections") if isinstance(data, dict) else None
+    if not isinstance(data, dict):
+        raise RuntimeError("大纲 JSON 顶层必须是对象")
+    secs = data.get("sections")
     if not isinstance(secs, list) or len(secs) < 2:
         raise RuntimeError("大纲章节解析失败或过少")
     budgets = _normalize_budgets([int(s.get("pageBudget", 5) or 5) for s in secs], target)
@@ -456,9 +488,12 @@ async def _section_skeleton(
         + f"\n\n只产本章 {budget} 页的 scenes JSON（对象含 scenes 数组）。"
     )
     doc = parse_json(
-        await llm.complete(
-            [{"role": "system", "content": sys}, {"role": "user", "content": user}],
-            purpose="plan:section",
+        await asyncio.wait_for(
+            llm.complete(
+                [{"role": "system", "content": sys}, {"role": "user", "content": user}],
+                purpose="plan:section",
+            ),
+            timeout=_PLAN_CALL_TIMEOUT_S,
         )
     )
     scenes = doc.get("scenes") if isinstance(doc, dict) else None
@@ -591,12 +626,19 @@ async def plan_lecture(
     last_err: Exception | None = None
     for attempt in range(1, 4):
         try:
-            doc = parse_json(await llm.complete(msgs, purpose="plan:skeleton"))
+            doc = parse_json(
+                await asyncio.wait_for(
+                    llm.complete(msgs, purpose="plan:skeleton"),
+                    timeout=_PLAN_CALL_TIMEOUT_S,
+                )
+            )
             if sections:
                 await insert_sections(llm, doc, budget=pages)
             return PlanResult(doc=doc, perspectives=perspectives)
         except Exception as e:  # noqa: BLE001
             last_err = e
+            if isinstance(e, TimeoutError):
+                break
             if attempt < 3:
                 await asyncio.sleep(3.0 * attempt)
     raise RuntimeError(f"骨架生成失败（网络/限流/解析）: {str(last_err)[:100]}")

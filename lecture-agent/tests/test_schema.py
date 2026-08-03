@@ -165,6 +165,67 @@ def test_chart_scatter_valid() -> None:
     )
 
 
+def test_chart_annotations_support_point_and_arrow() -> None:
+    from lecture_agent.schema.document import ChartBlock
+
+    ChartBlock.model_validate(
+        {
+            "type": "chart",
+            "chartType": "line",
+            "categories": ["0", "1", "2"],
+            "series": [{"name": "f(x)", "values": [4, 1, 0]}],
+            "annotations": [
+                {"kind": "point", "x": "1", "y": 1, "label": "当前位置"},
+                {"kind": "arrow", "x": "1", "y": 1, "x2": "2", "y2": 0, "label": "更新"},
+            ],
+        }
+    )
+
+
+def test_chart_line_annotation_requires_endpoint() -> None:
+    from lecture_agent.schema.document import ChartBlock
+
+    with pytest.raises(ValidationError):
+        ChartBlock.model_validate(
+            {
+                "type": "chart",
+                "chartType": "line",
+                "categories": ["0", "1"],
+                "series": [{"name": "f", "values": [1, 0]}],
+                "annotations": [{"kind": "line", "x": "0", "y": 1}],
+            }
+        )
+
+
+def test_scatter_annotation_rejects_string_x_that_would_trigger_plot_warning() -> None:
+    from lecture_agent.schema.document import ChartBlock
+
+    with pytest.raises(ValidationError):
+        ChartBlock.model_validate(
+            {
+                "type": "chart",
+                "chartType": "scatter",
+                "points": [{"x": -1, "y": 1}, {"x": 1, "y": 1}],
+                "annotations": [{"kind": "point", "x": "0", "y": 0, "label": "鞍点"}],
+            }
+        )
+
+
+def test_category_annotation_must_reference_existing_category() -> None:
+    from lecture_agent.schema.document import ChartBlock
+
+    with pytest.raises(ValidationError):
+        ChartBlock.model_validate(
+            {
+                "type": "chart",
+                "chartType": "line",
+                "categories": ["0", "1"],
+                "series": [{"name": "f", "values": [1, 0]}],
+                "annotations": [{"kind": "point", "x": "2", "y": 0, "label": "越界"}],
+            }
+        )
+
+
 def test_semantic_expr_whitelist_blocks_unknown_ident() -> None:
     doc = _minimal_doc()
     doc["scenes"][1]["blocks"] = [

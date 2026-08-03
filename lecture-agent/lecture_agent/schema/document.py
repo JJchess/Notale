@@ -146,12 +146,30 @@ class ChartPoint(BaseModel):
     label: str | None = None
 
 
+class ChartAnnotation(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    kind: Literal["point", "line", "arrow"]
+    x: float | str
+    y: float
+    x2: float | str | None = None
+    y2: float | None = None
+    label: str | None = None
+    tone: Literal["accent", "ink", "line"] | None = None
+
+    @model_validator(mode="after")
+    def _segment_has_end(self) -> ChartAnnotation:
+        if self.kind in {"line", "arrow"} and (self.x2 is None or self.y2 is None):
+            raise ValueError(f"annotation {self.kind} 需 x2/y2")
+        return self
+
+
 class ChartBlock(_Block):
     type: Literal["chart"]
     chartType: Literal["bar", "line", "area", "scatter"]
     categories: list[str] | None = None
     series: list[ChartSeries] | None = None
     points: list[ChartPoint] | None = None
+    annotations: list[ChartAnnotation] | None = Field(default=None, max_length=12)
     xLabel: str | None = None
     yLabel: str | None = None
     caption: str | None = None
@@ -161,12 +179,22 @@ class ChartBlock(_Block):
         if self.chartType == "scatter":
             if not self.points or len(self.points) < 2:
                 raise ValueError("scatter 需 points（≥2）")
+            for annotation in self.annotations or []:
+                if not isinstance(annotation.x, (int, float)) or (
+                    annotation.x2 is not None and not isinstance(annotation.x2, (int, float))
+                ):
+                    raise ValueError("scatter annotations 的 x/x2 必须是数值坐标，不能与字符串类目混用")
         else:
             if not self.categories or not self.series:
                 raise ValueError(f"{self.chartType} 需 categories + series")
             for s in self.series:
                 if len(s.values) != len(self.categories):
                     raise ValueError(f"series「{s.name}」values 长度需与 categories 一致")
+            categories = set(self.categories)
+            for annotation in self.annotations or []:
+                for value in (annotation.x, annotation.x2):
+                    if value is not None and (not isinstance(value, str) or value not in categories):
+                        raise ValueError("类目 chart annotations 的 x/x2 必须引用已有 categories 字符串")
         return self
 
 

@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from ..domain.assemble import fill_blocks
-from ..domain.evaluation import check_coverage
+from ..domain.evaluation import check_coverage, refine_plan, replan_page, review_page
 from ..domain.generation import (
     BlockResult,
     condense_material,
@@ -22,6 +22,7 @@ from ..domain.generation import (
     generate_block,
     generate_widget,
     load_widget_guidelines,
+    repair_widget,
 )
 from ..domain.media import attach_icons
 from ..domain.planning import assign_layouts, plan_lecture
@@ -30,7 +31,7 @@ from ..domain.themes import theme_menu
 from ..domain.tools import CalcTool
 from ..ports.llm import LLMClient
 from ..ports.media import ImageFinder, ImageGenerator
-from ..ports.renderer import RenderVerifier
+from ..ports.renderer import RenderReport, RenderVerifier
 from ..ports.tool import Tool
 from ..schema.validate import validate_doc
 from ..utils.concurrency import pool
@@ -65,6 +66,9 @@ class GeneratorOptions:
     )
     # 真机渲染验收 → 溢出页回炉精简的最大轮数（需注入 render_verifier 才生效；0=关）
     render_rounds: int = 2
+    # 逐页六维语义审查→定点回炉轮数；full 配置开启，fast/single-pass 可关以控时延。
+    quality_rounds: int = 0
+    plan_quality_rounds: int = 0
 
 
 @dataclass
@@ -75,6 +79,124 @@ class GenerateResult:
     dropped: list[str] = field(default_factory=list)
     perspectives: list[dict[str, Any]] = field(default_factory=list)
     coverage: dict[str, Any] | None = None
+    quality: list[dict[str, Any]] = field(default_factory=list)
+
+
+def _page_brief(scene: dict[str, Any]) -> dict[str, str]:
+    """把规划器的页级质量契约规整成内部数据；最终 LectureDoc 不携带该字段。"""
+    raw_value = scene.get("brief")
+    raw: dict[str, Any] = raw_value if isinstance(raw_value, dict) else {}
+    headline = str(scene.get("headline") or scene.get("eyebrow") or scene.get("kind") or "本页")
+    brief = {
+        "objective": str(raw.get("objective") or f"学生能复述「{headline}」的核心结论"),
+        "keyClaim": str(raw.get("keyClaim") or headline),
+        "misconception": str(raw.get("misconception") or ""),
+        "visualTask": str(raw.get("visualTask") or "视觉必须直接服务本页核心结论"),
+        "evidencePolicy": str(raw.get("evidencePolicy") or "none"),
+    }
+    if scene.get("kind") == "hero":
+        brief["visualTask"] = "封面只建立课题、核心问题与视觉张力；装饰图不承担数学证明"
+        brief["evidencePolicy"] = "none"
+    return brief
+
+
+def _block_scene_context(
+    scene: dict[str, Any], brief: dict[str, str], placeholders: list[dict[str, Any]]
+) -> str:
+    """给 fan-out 子任务共享同一份页契约，避免每块只凭标题各自猜题。"""
+    siblings = [
+        {
+            "id": b.get("id"),
+            "type": b.get("type"),
+            "role": b.get("role") or "support",
+            "intent": b.get("intent") or "",
+            "size": b.get("size") or "m",
+        }
+        for b in placeholders
+    ]
+    payload = {
+        "page": {
+            "kind": scene.get("kind"),
+            "eyebrow": scene.get("eyebrow"),
+            "headline": scene.get("headline"),
+            "lead": scene.get("lead"),
+        },
+        "brief": brief,
+        "siblingPlan": siblings,
+    }
+    return (
+        "页级共享契约（所有同页 block 必须协同，不得各讲各的）:\n"
+        + json.dumps(payload, ensure_ascii=False)
+        + "\n证据纪律：没有参考素材时，不得虚构论文年份、人物原话、百分比或精确行业数字；"
+        "数值只能是可复算推导，或在画面中明确标为示意/合成数据。视觉必须真实编码 visualTask 所述关系。"
+    )
+
+
+def _merge_render_quality(
+    quality: list[dict[str, Any]], scenes: list[dict[str, Any]], report: Any
+) -> None:
+    """把浏览器逐页实测合并到语义分数；坏页面不能保留“语义 pass”的假高分。"""
+    by_scene = {str(item.get("sceneId")): item for item in quality}
+    by_page = {int(m.get("i", -1)): m for m in (getattr(report, "page_metrics", []) or [])}
+    for page, scene in enumerate(scenes):
+        item = by_scene.get(str(scene.get("id")))
+        if item is None:
+            continue
+        metric = by_page.get(page)
+        item["semanticScore"] = item.get("score")
+        item["renderVerified"] = metric is not None
+        if metric is None:
+            item["renderPass"] = None
+            item["renderIssues"] = ["浏览器未返回本页指标"]
+            item["pass"] = False
+            continue
+        issues: list[str] = []
+        ceiling = 10.0
+        overflow_x = int(metric.get("overflowX") or 0)
+        overflow_y = int(metric.get("overflowY") or 0)
+        layout_clip = int(metric.get("layoutClip") or 0)
+        formula_clip = int(metric.get("mblockClip") or 0)
+        dynamic_blank = list(metric.get("dynamicBlank") or [])
+        widget_errors = list(metric.get("widgetErrors") or [])
+        plot_warnings = int(metric.get("plotWarnings") or 0)
+        if overflow_x > 1 or overflow_y > 4 or layout_clip > 4:
+            issues.append(
+                f"内容裁切/溢出：x={overflow_x}px, y={overflow_y}px, layout={layout_clip}px"
+            )
+            ceiling = min(ceiling, 6.0)
+        if formula_clip > 4:
+            issues.append(f"公式横向裁切 {formula_clip}px")
+            ceiling = min(ceiling, 6.0)
+        if metric.get("corrupt"):
+            issues.append(f"正文损坏标记：{metric['corrupt']}")
+            ceiling = min(ceiling, 3.0)
+        if dynamic_blank:
+            issues.append("动态内容未初始化：" + "+".join(str(x) for x in dynamic_blank))
+            ceiling = min(ceiling, 4.0)
+        if widget_errors:
+            issues.append("widget 运行时错误：" + " | ".join(str(x) for x in widget_errors[:3]))
+            ceiling = min(ceiling, 2.0)
+        if plot_warnings:
+            issues.append(f"图表含 {plot_warnings} 个 Plot 警告标记")
+            ceiling = min(ceiling, 4.0)
+        chart_use = metric.get("chartMinWidthUse")
+        if chart_use is not None and float(chart_use) < 0.78:
+            issues.append(f"图表仅利用 {float(chart_use):.0%} 可用宽度")
+            ceiling = min(ceiling, 7.0)
+        widget_height = metric.get("widgetMinHeight")
+        if widget_height is not None and float(widget_height) < 260:
+            issues.append(f"互动区域仅高 {float(widget_height):.0f}px")
+            ceiling = min(ceiling, 7.0)
+        min_text = metric.get("minTextPx")
+        if min_text is not None and float(min_text) < 12:
+            issues.append(f"正文最小字号 {float(min_text):.1f}px")
+            ceiling = min(ceiling, 7.0)
+        item["renderMetrics"] = metric
+        item["renderIssues"] = issues
+        item["renderPass"] = not issues
+        if issues:
+            item["score"] = min(float(item.get("score") or 0), ceiling)
+            item["pass"] = False
 
 
 async def _doc_repair(
@@ -145,6 +267,300 @@ async def _doc_repair(
 
         await pool(list(targets.items()), concurrency, fix)
     return validate_doc(doc)
+
+
+async def _quality_repair(
+    llm: LLMClient,
+    doc: dict[str, Any],
+    *,
+    registry: dict[str, SkillEntry],
+    page_briefs: dict[str, dict[str, str]],
+    placeholder_specs: dict[str, dict[str, Any]],
+    topic: str,
+    audience: str,
+    material: str,
+    concurrency: int,
+    rounds: int,
+    tools: dict[str, Tool] | None,
+    log: Callable[[str], None],
+    progress: Callable[[dict[str, Any]], None],
+) -> tuple[list[str], list[dict[str, Any]]]:
+    """逐页完整审查：块内错误定点修；类型/布局错误整页重规划后重生。"""
+    warnings: list[str] = []
+    latest: dict[str, dict[str, Any]] = {}
+    scenes = doc.get("scenes") or []
+    active_scene_ids = {str(scene.get("id") or "?") for scene in scenes}
+    last_changed: set[str] = set()
+    replan_attempted: set[str] = set()
+
+    def route_page_issues(
+        scene: dict[str, Any], issues: list[str], targets: dict[str, list[dict[str, str]]]
+    ) -> None:
+        """一页最多重规划一次；之后的内容/代码问题必须落到现有主视觉 block。"""
+        blocks = list(scene.get("blocks") or [])
+        if not blocks:
+            return
+        current = next(
+            (b for b in blocks if b.get("type") == "sim" and b.get("engine") == "widget"),
+            next((b for b in blocks if b.get("type") in {"chart", "sim", "formula"}), blocks[0]),
+        )
+        block_id = str(current.get("id") or "")
+        if not block_id:
+            return
+        targets.setdefault(block_id, []).append(
+            {
+                "blockId": block_id,
+                "severity": "major",
+                "problem": "；".join(issues),
+                "instruction": "保持当前 block 类型，直接修正其内容、代码、数据或数学映射；不要再次重规划页面。",
+            }
+        )
+
+    async def regenerate_scene(scene: dict[str, Any], issues: list[str]) -> bool:
+        """pageIssue 说明原类型/布局不可救：生成新骨架，再把该页全部 block 重生。"""
+        sid = str(scene.get("id") or "?")
+        brief = page_briefs.get(sid, _page_brief(scene))
+        skeleton, err = await replan_page(
+            llm,
+            current_scene=scene,
+            brief=brief,
+            issues=issues,
+            topic=topic,
+            audience=audience,
+            material=material,
+            allowed_types=set(registry),
+            type_descriptions={name: entry.description for name, entry in registry.items()},
+            all_scenes=scenes,
+        )
+        if skeleton is None:
+            warnings.append(f"逐页质检重规划失败 {sid}: {err}")
+            return False
+        new_brief = _page_brief(skeleton)
+        skeleton.pop("brief", None)
+        assign_layouts({"scenes": [skeleton]})
+        placeholders = [dict(block) for block in (skeleton.get("blocks") or [])]
+        scene_ctx = _block_scene_context(skeleton, new_brief, placeholders)
+
+        async def generate_one(ph: dict[str, Any], _i: int) -> tuple[dict[str, Any], BlockResult]:
+            reg = registry.get(str(ph.get("type") or ""))
+            if reg is None:
+                return ph, BlockResult(None, f"无技能处理 type {ph.get('type')}")
+            progress({"type": "block", "blockId": ph.get("id"), "sceneId": sid, "status": "active"})
+            if ph.get("type") == "sim" and ph.get("engine") == "widget":
+                result = await generate_widget(
+                    llm,
+                    intent=(
+                        f"{ph.get('intent', '')}\n本块角色: {ph.get('role') or 'visualization'}。\n"
+                        f"{scene_ctx}"
+                    ),
+                    theme=str(doc.get("theme") or "cartesian"),
+                    language=str(doc.get("language") or "zh-CN"),
+                    topic=topic,
+                    material=material,
+                    guidelines=load_widget_guidelines(reg.dir),
+                )
+            else:
+                result = await generate_block(
+                    llm,
+                    type=str(ph.get("type")),
+                    intent=str(ph.get("intent") or ""),
+                    scene_ctx=scene_ctx + f"\n当前 block 角色: {ph.get('role') or 'support'}。",
+                    contract=reg.contract,
+                    topic=topic,
+                    material=material,
+                    tools=tools if ph.get("type") == "sim" else None,
+                )
+            _emit_block_done(progress, str(ph.get("id") or "?"), sid, result.err)
+            return ph, result
+
+        generated = await pool(placeholders, min(concurrency, max(1, len(placeholders))), generate_one)
+        if any(result.block is None for _ph, result in generated):
+            failed = [f"{ph.get('id')}: {result.err}" for ph, result in generated if result.block is None]
+            warnings.append(f"逐页质检重规划生成失败 {sid}: {'；'.join(failed)}")
+            return False
+        final_blocks: list[dict[str, Any]] = []
+        for ph, result in generated:
+            block = dict(result.block or {})
+            block["id"] = ph.get("id")
+            final_blocks.append(block)
+            placeholder_specs[str(ph.get("id"))] = ph
+        skeleton["blocks"] = final_blocks
+        page_briefs[sid] = new_brief
+        scene.clear()
+        scene.update(skeleton)
+        log(f"[quality] {sid}: pageIssue → 整页重规划并重生 {len(final_blocks)} blocks")
+        return True
+
+    for rnd in range(1, rounds + 1):
+        review_scenes = [s for s in scenes if str(s.get("id") or "?") in active_scene_ids]
+        if not review_scenes:
+            break
+
+        async def inspect(scene: dict[str, Any], _i: int) -> tuple[dict[str, Any], Any]:
+            brief = page_briefs.get(str(scene.get("id")), _page_brief(scene))
+            return scene, await review_page(
+                llm,
+                topic=topic,
+                scene=scene,
+                brief=brief,
+                audience=audience,
+                material=material,
+            )
+
+        reviews = await pool(review_scenes, concurrency, inspect)
+        targets: dict[str, list[dict[str, str]]] = {}
+        replan_targets: list[tuple[dict[str, Any], list[str]]] = []
+        for scene, review in reviews:
+            sid = str(scene.get("id") or "?")
+            log(
+                f"[quality] 第 {rnd} 轮 {sid}: {review.score:.1f}/10"
+                + (" pass" if review.passed else " needs-work")
+            )
+            latest[sid] = {
+                "sceneId": sid,
+                "score": review.score,
+                "pass": review.passed,
+                "blockIssues": review.block_issues,
+                "pageIssues": review.page_issues,
+            }
+            if review.page_issues and sid not in replan_attempted:
+                combined = review.page_issues + [
+                    f"{x['problem']}；{x['instruction']}" for x in review.block_issues
+                ]
+                replan_targets.append((scene, combined))
+                replan_attempted.add(sid)
+            else:
+                for issue in review.block_issues:
+                    targets.setdefault(issue["blockId"], []).append(issue)
+                if review.page_issues:
+                    route_page_issues(scene, review.page_issues, targets)
+
+        if not targets and not replan_targets:
+            last_changed = set()
+            break
+
+        changed_this_round: set[str] = set()
+        if replan_targets:
+            async def replan_one(item: tuple[dict[str, Any], list[str]], _i: int) -> tuple[str, bool]:
+                scene, issues = item
+                return str(scene.get("id") or "?"), await regenerate_scene(scene, issues)
+
+            for sid, changed in await pool(replan_targets, concurrency, replan_one):
+                if changed:
+                    changed_this_round.add(sid)
+                else:
+                    failed_scene, failed_issues = next(
+                        (scene, issues)
+                        for scene, issues in replan_targets
+                        if str(scene.get("id") or "?") == sid
+                    )
+                    route_page_issues(failed_scene, failed_issues, targets)
+
+        block_locations = {
+            str(block.get("id")): (scene, bi, block)
+            for scene in scenes
+            for bi, block in enumerate(scene.get("blocks") or [])
+            if block.get("id")
+        }
+
+        async def fix(
+            item: tuple[str, list[dict[str, str]]],
+            _i: int,
+            locations: dict[str, tuple[dict[str, Any], int, dict[str, Any]]] = block_locations,
+            changed: set[str] = changed_this_round,
+        ) -> None:
+            block_id, issues = item
+            located = locations.get(block_id)
+            if not located:
+                warnings.append(f"逐页质检定位到不存在的 block: {block_id}")
+                return
+            scene, bi, current = located
+            spec = placeholder_specs.get(block_id, {})
+            block_type = str(current.get("type") or spec.get("type") or "")
+            reg = registry.get(block_type)
+            if not reg:
+                warnings.append(f"逐页质检无法回炉未知 block 类型: {block_id}/{block_type}")
+                return
+            corrections = "\n".join(
+                f"- [{x['severity']}] {x['problem']}；修法：{x['instruction']}" for x in issues
+            )
+            brief = page_briefs.get(str(scene.get("id")), _page_brief(scene))
+            scene_ctx = _block_scene_context(scene, brief, list(scene.get("blocks") or []))
+            scene_ctx += "\n当前整页真实内容：\n" + json.dumps(scene, ensure_ascii=False)
+            intent = (
+                str(spec.get("intent") or "保持原教学意图")
+                + "\n逐页质量门要求修正：\n"
+                + corrections
+                + "\n保持 block id、类型及本页唯一 keyClaim，不新增无来源事实。"
+            )
+            progress({"type": "block", "blockId": block_id, "sceneId": scene.get("id"), "status": "err"})
+            if block_type == "sim" and (spec.get("engine") == "widget" or current.get("engine") == "widget"):
+                result = await repair_widget(
+                    llm,
+                    current=current,
+                    issues=intent + "\n" + scene_ctx,
+                    theme=str(doc.get("theme") or "cartesian"),
+                    language=str(doc.get("language") or "zh-CN"),
+                    topic=topic,
+                    guidelines=load_widget_guidelines(reg.dir),
+                )
+            else:
+                result = await generate_block(
+                    llm,
+                    type=block_type,
+                    intent=intent,
+                    scene_ctx=scene_ctx,
+                    contract=reg.contract,
+                    topic=topic,
+                    material=material,
+                    tools=tools if block_type == "sim" else None,
+                )
+            if result.block:
+                result.block["id"] = block_id
+                scene["blocks"][bi] = result.block
+                changed.add(str(scene.get("id") or "?"))
+                progress({"type": "docUpdated", "blockId": block_id, "sceneId": scene.get("id"), "status": "done"})
+            else:
+                warnings.append(f"逐页质检回炉失败 {block_id}: {result.err}")
+
+        if targets:
+            await pool(list(targets.items()), concurrency, fix)
+        if changed_this_round:
+            attach_icons(doc)
+        progress({"type": "docUpdated", "doc": doc, "reason": "quality"})
+        active_scene_ids = changed_this_round
+        last_changed = changed_this_round
+
+    # 最后一轮回炉后的页尚未被查看；只复核这一小组。更早修过的页已在下一轮复核过，不重复花费。
+    audit_scenes = [s for s in scenes if str(s.get("id") or "?") in last_changed]
+    if audit_scenes:
+        async def audit(scene: dict[str, Any], _i: int) -> tuple[dict[str, Any], Any]:
+            brief = page_briefs.get(str(scene.get("id")), _page_brief(scene))
+            return scene, await review_page(
+                llm,
+                topic=topic,
+                scene=scene,
+                brief=brief,
+                audience=audience,
+                material=material,
+            )
+
+        for scene, review in await pool(audit_scenes, concurrency, audit):
+            sid = str(scene.get("id") or "?")
+            latest[sid] = {
+                "sceneId": sid,
+                "score": review.score,
+                "pass": review.passed,
+                "blockIssues": review.block_issues,
+                "pageIssues": review.page_issues,
+            }
+            log(f"[quality] 最终复核 {sid}: {review.score:.1f}/10" + (" pass" if review.passed else " needs-work"))
+    for sid, item in latest.items():
+        if item.get("pass"):
+            continue
+        for issue in item.get("pageIssues") or []:
+            warnings.append(f"逐页最终复核 {sid}（{float(item.get('score') or 0):.1f}/10）：{issue}")
+    return warnings, list(latest.values())
 
 
 async def _attach_hero_image(
@@ -232,6 +648,21 @@ async def generate_lecture(
         concurrency=opts.concurrency,
     )
     doc = plan.doc
+    plan_quality_warnings: list[str] = []
+    if opts.plan_quality_rounds > 0:
+        progress({"type": "stage", "stage": "plan-quality", "status": "start"})
+        plan_quality_warnings = await refine_plan(
+            llm,
+            doc,
+            topic=topic,
+            audience=audience,
+            material=mat,
+            allowed_types=set(registry),
+            rounds=opts.plan_quality_rounds,
+        )
+        for warning in plan_quality_warnings:
+            log(f"[plan-quality] {warning}")
+        progress({"type": "stage", "stage": "plan-quality", "status": "done"})
     doc["schemaVersion"] = "1.0"
     doc.setdefault("language", "zh-CN")
     if theme:
@@ -239,13 +670,20 @@ async def generate_lecture(
     doc.setdefault("id", "lecture")
 
     placeholders: list[tuple[dict[str, Any], dict[str, Any]]] = []
+    placeholder_specs: dict[str, dict[str, Any]] = {}
+    page_briefs: dict[str, dict[str, str]] = {}
     for si, s in enumerate(doc.get("scenes", [])):
         s["id"] = s.get("id") or f"s{si}"  # 稳定 scene id：供进度视图 / 版式引用（与 block id 同规）
+        # brief 是规划→生成→讲稿/质检之间的内部契约。先保存，随后从 scene 移除，
+        # 避免规划元数据混进最终 LectureDoc 或被 viewer 当成公开内容。
+        page_briefs[str(s["id"])] = _page_brief(s)
+        s.pop("brief", None)
         for bi, b in enumerate(s.get("blocks") or []):
             b["id"] = b.get("id") or f"s{si}b{bi}"
             if b.get("type") not in registry:  # 防幻觉类型丢内容
                 log(f'[plan] 未知 type "{b.get("type")}"，回退 list')
                 b["type"] = "list"
+            placeholder_specs[str(b["id"])] = dict(b)
             placeholders.append((b, s))
 
     assign_layouts(doc)
@@ -290,6 +728,8 @@ async def generate_lecture(
 
     async def gen(item: tuple[dict[str, Any], dict[str, Any]], _i: int) -> tuple[str, BlockResult]:
         ph, scene = item
+        brief = page_briefs.get(str(scene.get("id")), _page_brief(scene))
+        scene_ctx = _block_scene_context(scene, brief, list(scene.get("blocks") or []))
         progress(
             {"type": "block", "blockId": ph["id"], "sceneId": scene.get("id"), "status": "active"}
         )
@@ -301,7 +741,10 @@ async def generate_lecture(
             # 逃生舱：直接产 HTML 片段，两阶段（先契约后写码）+ 校验自修，观感钉死 deck 主题。
             r = await generate_widget(
                 llm,
-                intent=ph.get("intent", ""),
+                intent=(
+                    f"{ph.get('intent', '')}\n本块角色: {ph.get('role') or 'visualization'}。\n"
+                    f"{scene_ctx}"
+                ),
                 theme=str(doc.get("theme") or "cartesian"),
                 language=str(doc.get("language") or "zh-CN"),
                 topic=topic,
@@ -315,7 +758,7 @@ async def generate_lecture(
             llm,
             type=ph["type"],
             intent=ph.get("intent", ""),
-            scene_ctx=f"所在页: {scene.get('headline') or scene.get('eyebrow') or scene.get('kind')}",
+            scene_ctx=scene_ctx + f"\n当前 block 角色: {ph.get('role') or 'support'}。",
             contract=reg.contract,
             topic=topic,
             material=mat,
@@ -326,11 +769,26 @@ async def generate_lecture(
         return ph["id"], r
 
     results = await pool(placeholders, conc, gen)
+    # 初始 fan-out 的网络/模型长尾不应直接变成 dropped block。只对失败节点再调度一次；
+    # 每个节点内部已有任务级 deadline，所以这次重试仍然有界，不会恢复成 provider 的数小时尾部。
+    failed_ids = {bid for bid, result in results if result.block is None}
+    if failed_ids:
+        retry_items = [item for item in placeholders if str(item[0].get("id")) in failed_ids]
+        log(f"[fanout] {len(retry_items)} block 首次失败，进行一次有界重试")
+        retried = await pool(retry_items, min(conc, max(1, len(retry_items))), gen)
+        retry_map = dict(retried)
+        results = [
+            (bid, retry_map.get(bid, result)) if bid in retry_map else (bid, result)
+            for bid, result in results
+        ]
     blocks_by_id = {bid: r.block for bid, r in results}
 
     # ③ Assemble（回填）
     progress({"type": "stage", "stage": "assemble", "status": "start"})
     dropped = fill_blocks(doc, blocks_by_id)
+    if dropped:
+        # fill_blocks 会清掉引用失效 block 的 layout；基于剩余真实类型重新分配，避免 anchor/steps 悬空。
+        assign_layouts(doc)
     attach_icons(doc)  # 确定性收尾：list 项按关键词自动配本地图标（零 LLM/零网络）
     if opts.media:
         await _attach_hero_image(doc, topic, image_finder, image_generator)
@@ -347,30 +805,154 @@ async def generate_lecture(
         )
     else:
         final = validate_doc(doc)
+    quality_summary: list[dict[str, Any]] = []
+    final.warnings.extend(plan_quality_warnings)
     progress({"type": "docUpdated", "doc": doc, "reason": "validate"})
     progress({"type": "stage", "stage": "validate", "status": "done"})
 
-    # ④.5 讲者备注增强
-    if not final.errors:
-        progress({"type": "stage", "stage": "notes", "status": "start"})
-        await enrich_notes(llm, doc, audience=audience, concurrency=opts.concurrency)
-        progress({"type": "stage", "stage": "notes", "status": "done"})
+    # ④.3 逐页语义质量门：完整查看同页公式/数据/解释/视觉类型，问题按 block id 定点回炉。
+    # 与结构校验分离：schema 合法只说明“能渲染”，不说明“讲得对、图选对、数据有依据”。
+    if opts.quality_rounds > 0 and not final.errors:
+        progress({"type": "stage", "stage": "quality", "status": "start"})
+        quality_warnings, quality_summary = await _quality_repair(
+            llm,
+            doc,
+            registry=registry,
+            page_briefs=page_briefs,
+            placeholder_specs=placeholder_specs,
+            topic=topic,
+            audience=audience,
+            material=mat,
+            concurrency=opts.concurrency,
+            rounds=opts.quality_rounds,
+            tools=tool_kit,
+            log=log,
+            progress=progress,
+        )
+        final = validate_doc(doc)
+        final.warnings.extend(quality_warnings)
+        progress({"type": "stage", "stage": "quality", "status": "done"})
 
-    # ④.7 真机渲染验收 → 溢出页回炉精简（注入了 render_verifier 才跑）
+    # ④.5 真机渲染验收 → 溢出页回炉精简（注入了 render_verifier 才跑）
     #
     # 这是流水线唯一的**视觉**反馈点。此前 SPEC 写着「每页 scrollHeight ≤ 720、禁溢出」，
     # 但没有任何东西在执行——溢出的页被渲染器 zoom 到下限后直接裁掉，无人知晓。
-    # 注意顺序：必须在 notes 之后，因为回炉会改写 scene 内容，讲者备注要基于最终文本。
+    # 注意顺序：必须在 notes 之前，因为回炉会改写 scene 内容，讲者备注只能依据最终文本。
     render_report = None
+    render_hard_errors: list[str] = []
+    render_changed_scene_ids: set[str] = set()
     if render_verifier is not None and opts.render_rounds > 0 and not final.errors:
         progress({"type": "stage", "stage": "render", "status": "start"})
         for rnd in range(1, opts.render_rounds + 1):
             render_report = await render_verifier.verify(json.dumps(doc, ensure_ascii=False))
+            runtime_bad = {
+                int(metric.get("i", -1)): [str(error) for error in metric.get("widgetErrors") or []]
+                for metric in render_report.page_metrics
+                if metric.get("widgetErrors")
+                and 0 <= int(metric.get("i", -1)) < len(doc.get("scenes") or [])
+            }
+            if runtime_bad:
+                log(f"[render] 第 {rnd} 轮: {len(runtime_bad)} 页 widget 运行时错误，定点修复")
+
+                async def fix_runtime_widget(
+                    item: tuple[int, list[str]], _i: int
+                ) -> tuple[int, str | None]:
+                    idx, errors = item
+                    scene = doc["scenes"][idx]
+                    widgets = [
+                        (bi, block)
+                        for bi, block in enumerate(scene.get("blocks") or [])
+                        if block.get("type") == "sim" and block.get("engine") == "widget"
+                    ]
+                    if not widgets:
+                        return idx, "浏览器报告 widget 错误，但页面中找不到 widget block"
+                    for bi, current in widgets:
+                        progress(
+                            {
+                                "type": "block",
+                                "blockId": current.get("id"),
+                                "sceneId": scene.get("id"),
+                                "status": "err",
+                            }
+                        )
+                        result = await repair_widget(
+                            llm,
+                            current=current,
+                            issues=(
+                                "真实浏览器执行失败，必须修正后保持首帧非空：\n- "
+                                + "\n- ".join(errors)
+                            ),
+                            theme=str(doc.get("theme") or "cartesian"),
+                            language=str(doc.get("language") or "zh-CN"),
+                            topic=topic,
+                            guidelines=widget_guidelines,
+                            # 浏览器会立即复验；这里只做一次针对错误信息的代码修复，
+                            # 避免非致命静态 warning 再触发一轮昂贵调用。
+                            rounds=1,
+                        )
+                        if result.block is None:
+                            return idx, result.err or "widget 运行时修复失败"
+                        repaired = dict(result.block)
+                        repaired["id"] = current.get("id")
+                        scene["blocks"][bi] = repaired
+                        render_changed_scene_ids.add(str(scene.get("id") or "?"))
+                        progress(
+                            {
+                                "type": "docUpdated",
+                                "blockId": repaired.get("id"),
+                                "sceneId": scene.get("id"),
+                                "status": "done",
+                            }
+                        )
+                    return idx, None
+
+                runtime_results = await pool(
+                    sorted(runtime_bad.items()), opts.concurrency, fix_runtime_widget
+                )
+                runtime_failures = [
+                    f"#{idx}: {error}" for idx, error in runtime_results if error is not None
+                ]
+                if runtime_failures:
+                    render_hard_errors = ["widget 运行时修复失败：" + "；".join(runtime_failures)]
+                    break
+                progress({"type": "docUpdated", "doc": doc, "reason": "widget-runtime-repair"})
+                # 运行时修复必须在同一轮真实复验。否则错误若发生在最后一轮，
+                # 旧报告可能被当成已解决，形成新的 fake-green。
+                render_report = await render_verifier.verify(json.dumps(doc, ensure_ascii=False))
+                runtime_bad = {
+                    int(metric.get("i", -1)): [
+                        str(error) for error in metric.get("widgetErrors") or []
+                    ]
+                    for metric in render_report.page_metrics
+                    if metric.get("widgetErrors")
+                    and 0 <= int(metric.get("i", -1)) < len(doc.get("scenes") or [])
+                }
+                if runtime_bad:
+                    render_hard_errors = [
+                        "widget 运行时修复后复验仍失败："
+                        + "；".join(
+                            f"#{idx}: {', '.join(errors)}"
+                            for idx, errors in sorted(runtime_bad.items())
+                        )
+                    ]
+                    break
             bad = {
-                int(p["page"]): int(p.get("overflowY") or 0)
+                int(p["page"]): max(
+                    1,
+                    int(p.get("overflowY") or 0),
+                    int(p.get("overflowX") or 0),
+                    int(p.get("layoutClip") or 0),
+                    int(p.get("mblockClip") or 0),
+                )
                 for p in render_report.overflow_pages
                 if 0 <= int(p["page"]) < len(doc.get("scenes") or [])
             }
+            ignored_prefixes = ("D:", "F:", "G:", "I:", "O:")
+            non_overflow_errors = [e for e in render_report.errors if not e.startswith(ignored_prefixes)]
+            if non_overflow_errors:
+                render_hard_errors = non_overflow_errors
+                log(f"[render] 第 {rnd} 轮: 运行时硬失败 → {non_overflow_errors[:3]}")
+                break
             if not bad:
                 log(f"[render] 第 {rnd} 轮: 0 溢出，验收通过")
                 break
@@ -383,20 +965,96 @@ async def generate_lecture(
                 r = await condense_scene(llm, scene, overflow_px=px, topic=topic)
                 if r.scene is not None:
                     doc["scenes"][idx] = r.scene
+                    render_changed_scene_ids.add(str(r.scene.get("id") or "?"))
                     progress({"type": "docUpdated", "sceneId": r.scene.get("id"), "status": "done"})
                 else:
                     log(f"[render] 第 {idx} 页精简失败: {r.err}")
 
             await pool(sorted(bad.items()), opts.concurrency, reflow)
             progress({"type": "docUpdated", "doc": doc, "reason": "reflow"})
+        # 浏览器回炉改过 HTML/文案后，旧的语义分数已经失效。只重审被改页，避免运行时修复
+        # 修好了空白却悄悄改坏数学映射；不重复审查未变化页。
+        if render_changed_scene_ids and opts.quality_rounds > 0 and not render_hard_errors:
+            changed_scenes = [
+                scene
+                for scene in doc.get("scenes") or []
+                if str(scene.get("id") or "?") in render_changed_scene_ids
+            ]
+
+            async def audit_render_change(
+                scene: dict[str, Any], _i: int
+            ) -> tuple[dict[str, Any], Any]:
+                sid = str(scene.get("id") or "?")
+                return scene, await review_page(
+                    llm,
+                    topic=topic,
+                    scene=scene,
+                    brief=page_briefs.get(sid, _page_brief(scene)),
+                    audience=audience,
+                    material=mat,
+                )
+
+            by_scene = {str(item.get("sceneId")): item for item in quality_summary}
+            for scene, review in await pool(changed_scenes, opts.concurrency, audit_render_change):
+                sid = str(scene.get("id") or "?")
+                by_scene[sid] = {
+                    "sceneId": sid,
+                    "score": review.score,
+                    "pass": review.passed,
+                    "blockIssues": review.block_issues,
+                    "pageIssues": review.page_issues,
+                }
+                log(
+                    f"[quality] 浏览器回炉后复核 {sid}: {review.score:.1f}/10"
+                    + (" pass" if review.passed else " needs-work")
+                )
+            quality_summary = list(by_scene.values())
         # 回炉后内容变了，重跑整档校验，避免精简引入的结构错逃逸
+        prior_warnings = list(final.warnings)
         final = validate_doc(doc)
+        final.warnings = prior_warnings + final.warnings
+        final.errors.extend(render_hard_errors)
         if render_report is not None and render_report.overflow_pages:
             final.warnings.append(
                 f"真机渲染仍有 {len(render_report.overflow_pages)} 页溢出（已尽力精简）："
-                + ", ".join(f"#{p['page']}({p['overflowY']}px)" for p in render_report.overflow_pages[:8])
+                + ", ".join(
+                    f"#{p['page']}({max(int(p.get('overflowY') or 0), int(p.get('mblockClip') or 0), int(p.get('layoutClip') or 0))}px)"
+                    for p in render_report.overflow_pages[:8]
+                )
             )
+        if render_report is not None and quality_summary:
+            _merge_render_quality(quality_summary, list(doc.get("scenes") or []), render_report)
         progress({"type": "stage", "stage": "render", "status": "done"})
+
+    if quality_summary and render_report is None:
+        _merge_render_quality(
+            quality_summary,
+            list(doc.get("scenes") or []),
+            RenderReport(ok=True, warnings=["未执行浏览器逐页验收"]),
+        )
+    for item in quality_summary:
+        if item.get("pass"):
+            continue
+        issues = list(item.get("pageIssues") or []) + list(item.get("renderIssues") or [])
+        block_issues = [str(x.get("problem")) for x in (item.get("blockIssues") or []) if isinstance(x, dict)]
+        detail = (issues + block_issues)[:3]
+        final.errors.append(
+            f"逐页质量未通过 {item.get('sceneId')}（{float(item.get('score') or 0):.1f}/10）："
+            + ("；".join(detail) if detail else "未达到 9.8 且零 issue 的交付门槛")
+        )
+
+    # ④.7 讲者备注增强：只对语义与真机验收都已通过的最终页面写讲稿。
+    # 旧顺序在 render/reflow 之前写 notes，既会让讲稿依据旧内容，也会为已知失败 deck 白花调用。
+    if not final.errors:
+        progress({"type": "stage", "stage": "notes", "status": "start"})
+        await enrich_notes(
+            llm,
+            doc,
+            audience=audience,
+            concurrency=opts.concurrency,
+            page_briefs=page_briefs,
+        )
+        progress({"type": "stage", "stage": "notes", "status": "done"})
 
     # ⑤ 覆盖度审查（opt-in，完成 STORM 闭环）
     cov = None
@@ -414,6 +1072,7 @@ async def generate_lecture(
             "errors": len(final.errors),
             "dropped": len(dropped),
             "coverage": bool(cov),
+            "quality": quality_summary,
             "doc": doc,
         }
     )
@@ -424,4 +1083,5 @@ async def generate_lecture(
         dropped=dropped,
         perspectives=plan.perspectives,
         coverage=cov,
+        quality=quality_summary,
     )

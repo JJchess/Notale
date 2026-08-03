@@ -39,6 +39,10 @@ Read `lecture-doc-schema` first (schema + SPEC §3, §5). This skill owns the no
 - Never write literal colors/fonts — everything is theme-token-driven at render time.
 - Chinese typography: full-width punctuation, space between CJK and Latin/digits, no uppercasing Chinese labels.
 - Put detailed explanation in the scene's `notes`, keep on-slide text lean.
+- Treat the page brief as a contract: this block must serve its assigned role and the single `keyClaim`; do not introduce a second lesson just because the schema has room.
+- A formula caption must state assumptions and the exact implication of that formula. Distinguish an approximation from a theorem and a special-case quadratic result from a general result; never broaden a condition in prose.
+- Keep one derivation chain or one conceptual contrast per page. If an intent asks for a descent lemma, step-size choice, spectral analysis, and convergence-rate taxonomy together, flag the page as needing a split instead of compressing four theorems into one list/grid.
+- Do not add attributed quotations, exact empirical percentages, paper/year claims, or benchmark numbers unless they appear in supplied material. Use explicitly labeled toy examples for pedagogy.
 
 ## Example (list block)
 

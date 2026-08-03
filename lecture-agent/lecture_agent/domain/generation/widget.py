@@ -26,15 +26,33 @@ from ...ports.llm import LLMClient, Message
 from ...schema.validate import validate_block
 from ...utils.jsonio import parse_json
 from .blocks import BlockResult
+from .generative_ui import (
+    build_planning_prompt as genui_planning_prompt,
+)
+from .generative_ui import (
+    build_primary_prompt as genui_primary_prompt,
+)
+from .generative_ui import (
+    build_validation_repair_prompt as genui_validation_repair_prompt,
+)
+from .generative_ui import (
+    infer_widget_type,
+    parse_split_response,
+    payload_validation_errors,
+)
 
-# guidelines/ 下四份指引（craft 通则 / 交互实现 / 主题 register / 读 token 的范例片段）。
-_GUIDELINE_MD = ("craft-core.md", "interactive.md", "registers.md")
-_GUIDELINE_EXAMPLE = "example.html"
+_WIDGET_PLAN_TIMEOUT_S = 120.0
+_WIDGET_BUILD_TIMEOUT_S = 240.0
+_WIDGET_PLAN_ROUNDS = 2
 
 _BUILD_SYS = (
-    "你是 lecture 互动组件(sim.widget)生成器。只输出**一个自包含 HTML 片段**"
-    "（顺序 <style>→markup→<script>）：不要 markdown 代码围栏、不要 JSON、不要任何解释文字。"
-    "不要 <!doctype>/<html>/<head>/<body>（运行时会包进 iframe）。"
+    "你是 lecture 互动组件(sim.widget)生成器。严格按用户提示输出两部分：先元数据 JSON，再输出"
+    "<widget_code> 包裹的自包含 HTML 片段。不要 markdown 围栏或额外解释。"
+    "片段不要 <!doctype>/<html>/<head>/<body>（LectureDoc 运行时会包进 iframe）。"
+)
+_REPAIR_SYS = (
+    "你是 lecture 互动组件(sim.widget)代码修复器。只输出一个自包含 HTML 片段："
+    "<style>→markup→<script>；不要围栏、JSON、解释或完整 HTML 文档标签。"
 )
 _PLAN_SYS = (
     "你是 lecture 互动组件(sim.widget)的设计规划器。先想清楚结构再写码，本步**不写 HTML**，"
@@ -43,70 +61,112 @@ _PLAN_SYS = (
 
 
 def load_widget_guidelines(skill_dir: str | Path) -> str:
-    """读 create-sim/guidelines/ 下的裁剪版 craft 指引，拼成一份注入 build 提示的 bundle。
+    """兼容旧调用点，但不再把旧 craft/register/example 与完整 GenUI bundle 重复注入。
 
-    file I/O 留在这个 helper 里（与 skills/registry.py、domain/media/icons.py 同类惯例），
-    好让 generate_widget 只吃一个字符串、可用 fake LLM 无 I/O 单测。
+    宿主差异只由本模块的 LectureDoc host adapter 声明；vendored GenUI core 是唯一审美/交互内核。
+    ``skill_dir`` 保留在签名中，避免破坏 registry 与第三方调用方。
     """
-    gdir = Path(skill_dir) / "guidelines"
-    parts: list[str] = []
-    for name in _GUIDELINE_MD:
-        p = gdir / name
-        if p.exists():
-            parts.append(p.read_text(encoding="utf-8").strip())
-    ex = gdir / _GUIDELINE_EXAMPLE
-    if ex.exists():
-        parts.append(
-            "## 范例片段（读 token 的阻尼单摆——注意 update()、rAF 动画、颜色全走 --token）\n"
-            "```html\n" + ex.read_text(encoding="utf-8").strip() + "\n```"
-        )
-    return "\n\n---\n\n".join(parts)
+    _ = skill_dir
+    return ""
 
 
 def _plan_prompt(*, intent: str, topic: str, material: str) -> str:
     anchor = f"所在讲义课题：「{topic}」。" if topic else ""
-    mat = f"\n参考素材（内容/数据据此，别编造）：\n{material}" if material else ""
-    return f"""{anchor}本互动组件的教学意图：{intent}。{mat}
+    query = f"{anchor}本互动组件的教学意图：{intent}。"
+    recent = f"参考素材（内容/数据据此，别编造）：\n{material}" if material else ""
+    base = genui_planning_prompt(query=query, widget_type="interactive", recent_context=recent)
+    return base + """
 
-想清楚什么让它成为一个好的**演示**而非静态图：对概念/技术题材，学生要能动一下、看见后果；一块静态\
-标注图配「点击看文字」是失败模式。CLARITY BEATS RICHNESS——核心概念读得清晰无歧义压倒一切，别加\
-让主视觉更难读的多余控件；拿不准就砍。
+---
 
-只返回一个 JSON 对象（无 markdown 围栏）：
-{{
-  "core_insight": "<一句：用完组件后学生该看懂的那一件事>",
-  "render_medium": "svg | canvas",
-  "render_medium_reason": "<短：为什么这个介质配这个主视觉；几何/结构→svg，粒子/场/连续运动→canvas>",
-  "state_model": [{{"name":"<jsVar>","type":"int|float|bool|string|array","range":"<如 0..0.2>","init":"<具体初值>"}}],
-  "interactions": [{{"trigger":"<元素+事件，如 range#damp input>","effect":"<改哪个 state、主视觉如何变>"}}],
-  "update": "<一句：单一 update() 从当前 state 重推整幅画面——svg 设哪些命名元素 / canvas 重绘什么>",
-  "initial_paint": "<首帧画面（用 state 初值），且是 mid-action：系统已走一步，绝非清零仪表盘或空舞台等点击>"
-}}
-每个字符串短而具体。state_model 里取的名字**就是**实现时要用的变量名。"""
+LectureDoc host extension（优先于上面的通用 schema）：返回同一个 JSON 对象，但必须额外加入：
+{
+  "visible_encodings": [{"quantity":"标题/objective 声称解释的量","mark":"轴/曲线/点/箭头/文本","where":"首帧位置或图例"}],
+  "comparison_states": ["若目标要求比较，逐项列出首帧必须同时可见的状态；否则空数组"],
+  "math_model": {"formula":"主公式；非数学题写 none","screen_mapping":"数学坐标到屏幕坐标，尤其 y 轴符号","invariants":["必须恒真的关系"]},
+  "verification_cases": [{"input":"具体状态/参数","expected":"可复算结果或符号关系"}]
+}
+并把通用字段 render_contract 同值复制为 update。若 objective/intent 含“比较”，comparison_states 不得为空，
+initial_paint 必须同时出现全部状态；不得靠学生拖动滑块后脑补对照。数学题的 screen_mapping、invariants、
+verification_cases 均不得为空。每个数值控件都要覆盖初始值和最小/最大边界；声明的整个范围必须保持
+有限、非空且可读。发散系统应缩短到有教学意义的范围，不能让极端值把主图压成一条线。只输出完整 JSON 对象。"""
+
+
+def _contract_problem(contract: Any) -> str:
+    """拒绝不可审计的 widget 设计契约；坏契约不能静默降级成自由写码。"""
+    if not isinstance(contract, dict):
+        return "顶层不是对象"
+    for key in ("core_insight", "render_medium", "update", "initial_paint"):
+        if not str(contract.get(key) or "").strip():
+            return f"缺少 {key}"
+    if contract.get("render_medium") not in {"svg", "canvas"}:
+        return "render_medium 只能是 svg 或 canvas"
+    for key in ("state_model", "interactions", "visible_encodings", "comparison_states", "verification_cases"):
+        if not isinstance(contract.get(key), list):
+            return f"{key} 必须是数组"
+    if not contract["state_model"] or not contract["interactions"] or not contract["visible_encodings"]:
+        return "state_model/interactions/visible_encodings 不得为空"
+    math_model = contract.get("math_model")
+    if not isinstance(math_model, dict) or not str(math_model.get("formula") or "").strip():
+        return "缺少 math_model.formula（非数学题也要写 none）"
+    formula = str(math_model.get("formula") or "").strip().lower()
+    if formula != "none":
+        if not str(math_model.get("screen_mapping") or "").strip():
+            return "数学契约缺少 screen_mapping"
+        if not isinstance(math_model.get("invariants"), list) or not math_model["invariants"]:
+            return "数学契约缺少 invariants"
+        if not contract["verification_cases"]:
+            return "数学契约缺少 verification_cases"
+    return ""
+
+
+def _normalize_contract(contract: Any) -> Any:
+    """只适配 GenUI 与 LectureDoc 的外层字段名，不改写设计内核。"""
+    if not isinstance(contract, dict):
+        return contract
+    normalized = dict(contract)
+    if not normalized.get("update") and normalized.get("render_contract"):
+        normalized["update"] = normalized["render_contract"]
+    return normalized
 
 
 def _build_prompt(
     *, intent: str, topic: str, theme: str, language: str, contract: str, guidelines: str
 ) -> str:
     anchor = f"所在讲义课题：「{topic}」。" if topic else ""
-    return f"""{anchor}本互动组件的教学意图：{intent}。
+    query = f"{anchor}本互动组件的教学意图：{intent}。用户可见文案语言：{language}。"
+    widget_type = infer_widget_type(intent)
+    if widget_type in {"chart", "chart_interactive", "mockup"}:
+        widget_type = "interactive"  # sim.widget 离线逃生舱，不引入 Chart.js 或业务 UI 假壳
+    base = genui_primary_prompt(
+        query=query,
+        widget_type=widget_type,
+        recent_context="",
+        plan=contract,
+    )
+    return base + f"""
 
-用户可见文案（按钮/标签/图注）一律用讲义语言：{language}；代码标识符/JSON 键保持 ASCII。
-deck 主题（**观感钉死于此，颜色全从注入的 --token 出**）：{theme}
+---
 
-要忠实实现的结构契约（别重新设计；用契约里的 state 变量名；每个 interaction 接到真实事件 handler；\
-所有更新走契约描述的**单一 update()**；按 render_medium 选 svg/canvas）：
-{contract}
+LectureDoc host adapter（与通用 GenUI 规则冲突时，以这里为准）：
+- deck theme 是 `{theme}`。不得实现 GenUI palette 中的十六进制颜色；所有 surface/ink/accent/line 必须映射到
+  `var(--bg)`, `var(--bg2)`, `var(--card)`, `var(--ink)`, `var(--text2)`, `var(--accent)`, `var(--line)`。
+  canvas 通过 getComputedStyle(document.documentElement) 读取同名 token。aesthetic_direction 只保留结构、字体层级、
+  motion 和 signature_detail，不另起一套配色或 `[data-theme=dark]` register。
+- iframe 固定高度且 overflow:hidden：根节点必须 width:100%; height:100%; min-width:0; min-height:0；不得依赖内容撑高，
+  不得出现内部滚动条。主舞台优先占据可用高度，控件/读数保持紧凑。
+- 纯离线 vanilla，禁 CDN、import、fetch、Chart.js 及任何外部资源。
+- 数学/算法视觉必须把 math_model 写成独立纯函数，并用 verification_cases 在初始化时执行 console.assert；
+  屏幕映射、箭头方向、曲线变量必须由这些函数生成，不能另画装饰路径。
+- 首帧逐项实现 visible_encodings；comparison_states 非空时全部状态必须同时可见并有清楚图例。
+- 每个控件在声明的初始值、最小值和最大值都必须产生 finite、非空、可读的画面；若动力学发散，缩短控件范围、
+  固定教学视窗或显式裁切，不能让一个极端轨迹把主体缩成不可读的一条线。
+- 所有用户可见文案使用 `{language}`；除标准符号/专名外，不得无故混用另一种语言。
+- 仍按通用 GenUI 的两段格式返回；不要只返回裸 HTML。
 
-实现规范（craft 通则 + 交互/canvas/SVG + 主题 register + 范例）：
+Lecture 既有补充规范：
 {guidelines}
-
-硬规则复述：零依赖纯 vanilla（canvas/SVG + 原生 JS，禁 CDN/库）；颜色一律 `var(--token)` 或 canvas 里\
-`getComputedStyle(document.documentElement).getPropertyValue('--ink'|'--accent'|'--line'|'--bg'…)`，禁写死色值；\
-控件长在片段内；要有动效（transition/animation/requestAnimationFrame）；无自我介绍 `<h1>`；无「提示：」胶囊；\
-禁 `@media (prefers-color-scheme)`；填满 iframe 且不出现内部滚动条。
-
-只输出 HTML 片段本身，`<style>` 在前、markup 居中、`<script>` 在后。片段至少含 <div>/<svg>/<canvas>/<style> 之一。"""
+"""
 
 
 def _extract_fragment(raw: str) -> str:
@@ -132,25 +192,38 @@ async def generate_widget(
     rounds: int = 3,
 ) -> BlockResult:
     """两阶段生成一个 `sim.widget` block：① 契约 → ②build/③validate/④repair 循环。"""
-    # ① 契约（先想清楚再写码）。产不出合法 JSON 也不致命——退化成无契约，build 仍可工作。
-    contract_str = "（本次未产出结构化契约，直接按意图与规范实现）"
-    try:
-        raw = await llm.complete(
-            [
-                {"role": "system", "content": _PLAN_SYS},
+    # ① 契约（先想清楚再写码）。契约是后续质量门的可审计依据，失败不得退化成自由写码。
+    contract_str = ""
+    contract_obj: dict[str, Any] | None = None
+    plan_messages: list[Message] = [
+        {"role": "system", "content": _PLAN_SYS},
+        {"role": "user", "content": _plan_prompt(intent=intent, topic=topic, material=material)},
+    ]
+    last_contract_problem = "未返回契约"
+    for attempt in range(_WIDGET_PLAN_ROUNDS):
+        try:
+            raw = await asyncio.wait_for(
+                llm.complete(plan_messages, json_mode=True, purpose="widget:plan"),
+                timeout=_WIDGET_PLAN_TIMEOUT_S,
+            )
+            contract = _normalize_contract(parse_json(raw))
+            last_contract_problem = _contract_problem(contract)
+            if not last_contract_problem:
+                contract_obj = contract
+                contract_str = json.dumps(contract, ensure_ascii=False, indent=2)
+                break
+        except Exception as exc:  # noqa: BLE001
+            last_contract_problem = str(exc)[:100] or "契约解析失败"
+        if attempt + 1 < _WIDGET_PLAN_ROUNDS:
+            plan_messages.append({"role": "assistant", "content": str(raw) if "raw" in locals() else "{}"})
+            plan_messages.append(
                 {
                     "role": "user",
-                    "content": _plan_prompt(intent=intent, topic=topic, material=material),
-                },
-            ],
-            json_mode=True,
-            purpose="widget:plan",
-        )
-        contract = parse_json(raw)
-        if isinstance(contract, dict) and contract:
-            contract_str = json.dumps(contract, ensure_ascii=False, indent=2)
-    except Exception:  # noqa: BLE001 —— 契约是加分项，拿不到就退化，不阻断 build
-        pass
+                    "content": f"契约不合格：{last_contract_problem}。补齐字段后只输出完整 JSON 对象。",
+                }
+            )
+    if contract_obj is None:
+        return BlockResult(None, f"widget 设计契约失败: {last_contract_problem}")
 
     # ②③④ build → validate → repair
     messages: list[Message] = [
@@ -170,35 +243,129 @@ async def generate_widget(
     for rnd in range(1, rounds + 1):
         last = rnd == rounds
         try:
-            raw = await llm.complete(
-                messages, json_mode=False, purpose=("widget:build" if rnd == 1 else "widget:repair")
+            raw = await asyncio.wait_for(
+                llm.complete(
+                    messages,
+                    json_mode=False,
+                    purpose=("widget:build" if rnd == 1 else "widget:repair"),
+                ),
+                timeout=_WIDGET_BUILD_TIMEOUT_S,
             )
+        except TimeoutError:
+            # 底层 provider 可配置 600s×多次重试；一个 widget 不应把整份 deck 挂几十分钟。
+            return BlockResult(None, f"widget 构建超时（>{_WIDGET_BUILD_TIMEOUT_S:.0f}s）")
         except Exception as e:  # noqa: BLE001
             if last:
                 return BlockResult(None, f"LLM 调用失败: {str(e)[:80]}")
             await asyncio.sleep(1.0)
             continue
 
-        fragment = _extract_fragment(raw)
+        payload = parse_split_response(raw)
+        fragment = str(payload.get("widget_code") or _extract_fragment(raw))
         block: dict[str, Any] = {"type": "sim", "engine": "widget", "html": fragment}
+        # 保留设计契约供逐页质量门核对“计划中的状态/交互是否真的接上线”；viewer 忽略该字段。
+        block["spec"] = contract_obj
         res = validate_block(block, "sim")
         # widget 的 machine-tells（<h1>/无动效/prefers-color-scheme/桩色）是 warning 而非 error——
         # 但它们正是反 slop 质量闸，非末轮一并回炉修（对齐 GenUI validation_repair）；末轮只剩
         # warning 则 best-effort 收下不丢内容（同 blocks.py 的截断处理）。
-        issues = res.errors + res.warnings
+        genui_issues = payload_validation_errors(payload)
+        issues = genui_issues + res.errors + res.warnings
         if not issues:
             return BlockResult(block, warns=[])
         if last:
-            if res.errors:
-                return BlockResult(None, "; ".join(res.errors))
+            if genui_issues or res.errors:
+                return BlockResult(None, "; ".join(genui_issues + res.errors))
             return BlockResult(block, warns=res.warnings)  # 只剩 warning → best-effort 收下
-        messages.append({"role": "assistant", "content": fragment})
+        messages.append({"role": "assistant", "content": raw})
         messages.append(
             {
                 "role": "user",
-                "content": "widget 片段有以下问题需修正：\n"
-                + "\n".join(issues)
-                + "\n修正后只重新输出该 HTML 片段（仍不要围栏/JSON/解释）。",
+                "content": genui_validation_repair_prompt(
+                    query=f"课题：{topic}；教学意图：{intent}",
+                    widget_type=str(payload.get("widget_type") or infer_widget_type(intent)),
+                    recent_context="",
+                    broken_payload=payload,
+                    validation_errors=issues,
+                )
+                + "\n继续遵守上一条 LectureDoc host adapter：颜色只用 --token、离线零依赖、固定 iframe 内无滚动。",
             }
         )
     return BlockResult(None, "未知失败")
+
+
+async def repair_widget(
+    llm: LLMClient,
+    *,
+    current: dict[str, Any],
+    issues: str,
+    theme: str,
+    language: str = "zh-CN",
+    topic: str = "",
+    guidelines: str = "",
+    rounds: int = 2,
+) -> BlockResult:
+    """质量门针对现有 widget 的代码级修复；复用 spec，避免再次 plan→build 整页重做。"""
+    spec = current.get("spec") if isinstance(current.get("spec"), dict) else {}
+    fragment = str(current.get("html") or "")
+    prompt = f"""所在讲义课题：「{topic}」。用户可见文案语言：{language}；主题：{theme}。
+下面是已生成 widget 的设计契约、HTML 与逐页质量门问题。保持核心教学目标和现有控件，不重新规划页面；
+直接修正代码/文案/数学映射。所有颜色继续读取 --token。数学问题必须增加或修正纯函数与 console.assert 验证例。
+
+设计契约：
+{json.dumps(spec, ensure_ascii=False, indent=2)}
+
+必须修正：
+{issues}
+
+现有 HTML：
+{fragment}
+
+LectureDoc 宿主硬约束：保持自包含 HTML 片段；零依赖、禁网络/CDN/import/fetch；颜色只读 --token；
+根节点填满固定高度 iframe 且无内部滚动。首帧和每个控件的初始/最小/最大状态均须 finite、非空、可读。
+
+调用方额外规范（若有）：
+{guidelines}
+
+只输出修正后的完整 HTML 片段，不要围栏/解释。"""
+    messages: list[Message] = [
+        {"role": "system", "content": _REPAIR_SYS},
+        {"role": "user", "content": prompt},
+    ]
+    for rnd in range(1, rounds + 1):
+        try:
+            raw = await asyncio.wait_for(
+                llm.complete(
+                    messages,
+                    json_mode=False,
+                    purpose="widget:quality-repair" if rnd == 1 else "widget:repair",
+                ),
+                timeout=_WIDGET_BUILD_TIMEOUT_S,
+            )
+        except TimeoutError:
+            return BlockResult(None, f"widget 质量修复超时（>{_WIDGET_BUILD_TIMEOUT_S:.0f}s）")
+        except Exception as exc:  # noqa: BLE001
+            if rnd == rounds:
+                return BlockResult(None, f"widget 质量修复失败: {str(exc)[:100]}")
+            continue
+        repaired: dict[str, Any] = {
+            "type": "sim",
+            "engine": "widget",
+            "html": _extract_fragment(raw),
+        }
+        if spec:
+            repaired["spec"] = spec
+        result = validate_block(repaired, "sim")
+        validation_issues = result.errors + result.warnings
+        if not validation_issues or (rnd == rounds and not result.errors):
+            return BlockResult(repaired, warns=result.warnings)
+        messages.append({"role": "assistant", "content": repaired["html"]})
+        messages.append(
+            {
+                "role": "user",
+                "content": "仍有以下结构/主题问题：\n"
+                + "\n".join(validation_issues)
+                + "\n只输出再次修正后的完整 HTML。",
+            }
+        )
+    return BlockResult(None, "widget 质量修复未收敛")

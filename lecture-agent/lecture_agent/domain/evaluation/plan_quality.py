@@ -1,0 +1,456 @@
+"""fan-out 前的整份骨架审查：修复需要换页目标/组件组合的规划级问题。"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import re
+from typing import Any
+
+from ...ports.llm import LLMClient
+from ...utils.jsonio import parse_json
+
+_PLAN_REVIEW_TIMEOUT_S = 300.0
+_PAGE_REPLAN_TIMEOUT_S = 240.0
+
+
+async def refine_plan(
+    llm: LLMClient,
+    doc: dict[str, Any],
+    *,
+    topic: str,
+    audience: str = "",
+    material: str = "",
+    allowed_types: set[str],
+    rounds: int = 1,
+) -> list[str]:
+    """原地修订有规划级缺陷的 scene；严格保持页数、顺序、scene id 与 kind。"""
+    warnings: list[str] = []
+    system = """你是课程骨架的总编审。此时 block 尚未生成，所以必须在昂贵 fan-out 之前修掉页目标和组件选择错误。
+逐页及跨页检查：
+1. 每页只有一个可观察 objective 和一个 keyClaim；相邻页不重复。
+2. 近似直觉、带条件引理、特殊模型结论、一般定理不得偷换。依赖 L-smooth/凸/强凸等条件时标题和目标显式写条件。
+   收敛/速率/保证页还要在观众可见的 headline/lead/formula 规划里容纳步长范围等必要假设，不能只写进 notes/brief。
+3. visualTask 必须能由所选 block 真正编码：chart 适合数值趋势/比较并可用 annotations 标点、线段、箭头；标量一阶递推用普通 sim；二维几何/复杂交互才用 widget；装饰 diagram 不表达坐标或梯度。
+4. 若解释学习率调度，优先画学习率 η(t) 本身；没有可复算模型时不要编造“某调度对应的损失曲线”。
+   若 objective 是“比较多个条件/参数”，visualTask 和 block intent 必须要求首帧同时出现各对照；一个滑块一次只显示一条轨迹不算比较。
+   若讲鞍点，必须规划二维曲面/等高线或两条正交切片来编码相反曲率；单条一维切片不能承担该目标。
+   比较 SGD/AdaGrad/RMSProp/Adam/动量时，不得用随手合成的 loss 曲线暗示固定性能排名；应比较更新机制，
+   或显式给出可复算目标函数、初值和超参数后再画派生轨迹。
+5. 无素材时不规划论文年份、引语、百分比、真实基准数字；示意数据明确 synthetic。
+6. 一页视觉重量约 4–7；公式+图表若公式很长，应改成分步公式或避免窄栏；quiz 必须可从前文推导。
+   l/xl 的 sim.widget 页面最多再配一个 s/m 短辅助块；quiz、callout、长公式不得和复杂互动舞台四块同页。
+7. 所有观众可见标题/导语/组件文案与 doc language 一致；数学符号、代码标识符和必要专名除外。
+8. 一个 quiz block 只有一道题，objective/keyClaim 只能检验一个判定链；不得写成同时覆盖梯度方向、学习率、调度等整章目标。
+
+只输出 JSON：{"revisions":[{"sceneId":"原 id","reason":"为什么必须改","scene":{完整修订 scene}}]}。
+只列确实低于 9.8/10 的页；若全合格返回空 revisions。硬约束：页数/顺序/sceneId/kind 不变；scene 仍是骨架，blocks 只能含 id/type/role/intent/size/可选 engine，不写最终 block 内容；每个修订 scene 必须含 brief、notes、blocks。"""
+    for _round in range(rounds):
+        deterministic_problems = []
+        for scene in doc.get("scenes") or []:
+            problem = validate_plan_revision(scene, scene, doc.get("scenes") or [], allowed_types)
+            if problem:
+                deterministic_problems.append({"sceneId": scene.get("id"), "problem": problem})
+        payload = {
+            "topic": topic,
+            "audience": audience,
+            "allowedTypes": sorted(allowed_types),
+            "referenceMaterial": material or "[none provided]",
+            "deckSkeleton": doc,
+            "deterministicProblems": deterministic_problems,
+        }
+        try:
+            raw = parse_json(
+                await asyncio.wait_for(
+                    llm.complete(
+                        [
+                            {"role": "system", "content": system},
+                            {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
+                        ],
+                        purpose="quality:plan",
+                    ),
+                    timeout=_PLAN_REVIEW_TIMEOUT_S,
+                )
+            )
+        except Exception as exc:  # noqa: BLE001
+            warnings.append(f"规划质量审查失败: {str(exc)[:120]}")
+            break
+        revisions = raw.get("revisions") if isinstance(raw, dict) else None
+        if not isinstance(revisions, list) or not revisions:
+            break
+        scenes = doc.get("scenes") or []
+        by_id = {str(s.get("id")): (i, s) for i, s in enumerate(scenes)}
+        changed = 0
+        for rev in revisions:
+            if not isinstance(rev, dict):
+                continue
+            sid = str(rev.get("sceneId") or "")
+            candidate = rev.get("scene")
+            located = by_id.get(sid)
+            if located is None or not isinstance(candidate, dict):
+                warnings.append(f"规划修订忽略未知 scene: {sid or '?'}")
+                continue
+            idx, old = located
+            _normalize_revision_candidate(candidate, old, scenes)
+            problem = validate_plan_revision(candidate, old, scenes, allowed_types)
+            if problem:
+                warnings.append(f"规划修订 {sid} 被拒绝: {problem}")
+                continue
+            candidate["id"] = sid
+            candidate["kind"] = old.get("kind")
+            candidate.pop("layout", None)
+            scenes[idx] = candidate
+            changed += 1
+        if not changed:
+            break
+    warnings.extend(_enforce_evidence_safe_plans(doc, allowed_types))
+    warnings.extend(_enforce_geometry_routes(doc, allowed_types))
+    warnings.extend(_enforce_widget_capacity(doc))
+    warnings.extend(_enforce_quiz_scope(doc))
+    return warnings
+
+
+def _enforce_widget_capacity(doc: dict[str, Any]) -> list[str]:
+    """模型即使忽略容量提示，也不允许复杂互动页带四块内容进入 fan-out。"""
+    warnings: list[str] = []
+    preference = {"formula": 0, "statement": 1, "callout": 2, "list": 3, "quiz": 4}
+    for scene in doc.get("scenes") or []:
+        blocks = list(scene.get("blocks") or [])
+        widgets = [
+            block
+            for block in blocks
+            if block.get("type") == "sim" and block.get("engine") == "widget"
+        ]
+        if not widgets or len(blocks) <= 2:
+            continue
+        widget = widgets[0]
+        auxiliaries = [block for block in blocks if block is not widget]
+        auxiliary = min(
+            auxiliaries,
+            key=lambda block: (
+                preference.get(str(block.get("type")), 9),
+                {"s": 0, "m": 1, "l": 2, "xl": 3}.get(str(block.get("size")), 4),
+            ),
+        )
+        kept = [block for block in blocks if block is widget or block is auxiliary]
+        removed = [str(block.get("id") or block.get("type") or "?") for block in blocks if block not in kept]
+        scene["blocks"] = kept
+        warnings.append(
+            f"规划容量兜底 {scene.get('id') or '?'}：复杂 widget 页只保留主舞台 + {auxiliary.get('type')}，移除 {', '.join(removed)}"
+        )
+    return warnings
+
+
+def _enforce_evidence_safe_plans(doc: dict[str, Any], allowed_types: set[str]) -> list[str]:
+    """不允许未解决的合成优化器排名进入 fan-out；确定性退回机制比较。"""
+    warnings: list[str] = []
+    fallback_type = "table" if "table" in allowed_types else ("list" if "list" in allowed_types else "")
+    if not fallback_type:
+        return warnings
+    optimizer_names = ("sgd", "adagrad", "rmsprop", "adam", "momentum", "动量")
+    for scene in doc.get("scenes") or []:
+        brief = scene.get("brief") if isinstance(scene.get("brief"), dict) else {}
+        visual_task = str(brief.get("visualTask") or "").lower()
+        if (
+            sum(name in visual_task for name in optimizer_names) < 2
+            or not any(
+                token in visual_task
+                for token in ("loss", "损失", "收敛轨迹", "收敛路径", "下降曲线")
+            )
+            or str(brief.get("evidencePolicy") or "").lower() != "synthetic"
+        ):
+            continue
+        charts = [block for block in scene.get("blocks") or [] if block.get("type") == "chart"]
+        if not charts:
+            continue
+        main = charts[0]
+        main["type"] = fallback_type
+        main.pop("engine", None)
+        main["role"] = "evidence"
+        main["size"] = "xl"
+        main["intent"] = (
+            "逐方法比较状态变量、累积量与参数更新公式；只讲机制差异，不给出固定性能排名"
+        )
+        brief["visualTask"] = "对照各优化器保存的状态量和参数更新路径，不编码普遍性能排名"
+        brief["evidencePolicy"] = "derived"
+        # 四种方法的状态/递推本身已是高密度主体；旧说明 list 会重复并把表格压进窄栏。
+        scene["blocks"] = [main]
+        warnings.append(
+            f"规划证据兜底 {scene.get('id') or '?'}：synthetic 优化器 loss 排名改为 {fallback_type} 机制比较"
+        )
+    return warnings
+
+
+def _enforce_geometry_routes(doc: dict[str, Any], allowed_types: set[str]) -> list[str]:
+    """二维曲面/等高线不能因规划审查漏修而落回普通 chart/graph。"""
+    if "sim" not in allowed_types:
+        return []
+    warnings: list[str] = []
+    for scene in doc.get("scenes") or []:
+        brief = scene.get("brief") if isinstance(scene.get("brief"), dict) else {}
+        visual_task = str(brief.get("visualTask") or "").lower()
+        if not any(token in visual_task for token in ("等高线", "损失曲面", "contour", "surface")):
+            continue
+        blocks = list(scene.get("blocks") or [])
+        if any(block.get("type") == "sim" and block.get("engine") == "widget" for block in blocks):
+            continue
+        visual = next(
+            (block for block in blocks if block.get("type") in {"chart", "graph", "sim", "diagram"}),
+            None,
+        )
+        if visual is None:
+            continue
+        visual["type"] = "sim"
+        visual["engine"] = "widget"
+        visual["role"] = "visualization"
+        visual["size"] = "l"
+        visual["intent"] = str(visual.get("intent") or visual_task) + "；真实绘制二维几何与轨迹"
+        warnings.append(
+            f"规划几何兜底 {scene.get('id') or '?'}：二维等高线/曲面主视觉路由到 sim.widget"
+        )
+    return warnings
+
+
+def _enforce_quiz_scope(doc: dict[str, Any]) -> list[str]:
+    """一个 quiz block 只生成一道题；把模型常见的“整章都考”承诺收窄成一个可验证目标。"""
+    warnings: list[str] = []
+    for scene in doc.get("scenes") or []:
+        if scene.get("kind") != "quiz":
+            continue
+        brief = scene.get("brief") if isinstance(scene.get("brief"), dict) else {}
+        objective = str(brief.get("objective") or "")
+        quiz_topics = ("梯度方向", "学习率影响", "调度", "自适应", "动量")
+        if sum(topic in objective for topic in quiz_topics) < 2:
+            continue
+        blocks = [block for block in scene.get("blocks") or [] if block.get("type") == "quiz"]
+        if not blocks:
+            continue
+        if "学习率" in objective:
+            brief.update(
+                {
+                    "objective": "学生能判断学习率过大时迭代会震荡或发散",
+                    "keyClaim": "学习率并非越大越好",
+                    "misconception": "学习率越大一定收敛越快",
+                    "visualTask": "作答后从一步更新与轨迹变化读出判定链条",
+                }
+            )
+            blocks[0]["intent"] = "用一道可复算题检验学习率过大导致震荡或发散"
+        else:
+            brief.update(
+                {
+                    "objective": "学生能判断更新方向是否为负梯度方向",
+                    "keyClaim": "下降更新与梯度的点积应为负",
+                    "misconception": "梯度方向就是下降方向",
+                    "visualTask": "作答后从点积符号读出判定链条",
+                }
+            )
+            blocks[0]["intent"] = "用一道可复算题检验负梯度方向"
+        warnings.append(f"规划测评兜底 {scene.get('id') or '?'}：整章测评收窄为一道判定链")
+    return warnings
+
+
+def validate_plan_revision(
+    scene: dict[str, Any],
+    old: dict[str, Any],
+    all_scenes: list[dict[str, Any]],
+    allowed_types: set[str],
+) -> str:
+    if scene.get("id") != old.get("id") or scene.get("kind") != old.get("kind"):
+        return "不得改变 scene id/kind"
+    brief = scene.get("brief")
+    required_brief = {"objective", "keyClaim", "misconception", "visualTask", "evidencePolicy"}
+    if not isinstance(brief, dict) or not required_brief.issubset(brief):
+        return "brief 字段不完整"
+    blocks = scene.get("blocks")
+    if not isinstance(blocks, list) or not blocks or len(blocks) > 4:
+        return "blocks 应为 1–4 个骨架占位"
+    other_ids = {
+        str(b.get("id"))
+        for s in all_scenes
+        if s is not old
+        for b in (s.get("blocks") or [])
+        if isinstance(b, dict) and b.get("id")
+    }
+    seen: set[str] = set()
+    placeholder_keys = {"id", "type", "role", "intent", "size", "engine"}
+    for block in blocks:
+        if not isinstance(block, dict):
+            return "block 占位必须是对象"
+        extra_keys = set(block) - placeholder_keys
+        if extra_keys:
+            return f"block 占位含最终内容字段: {', '.join(sorted(extra_keys))}"
+        bid = str(block.get("id") or "")
+        if not bid or bid in seen or bid in other_ids:
+            return f"block id 缺失或重复: {bid or '?'}"
+        seen.add(bid)
+        if block.get("type") not in allowed_types:
+            return f"非法 block type: {block.get('type')}"
+        if not str(block.get("intent") or "").strip():
+            return f"block {bid} 缺 intent"
+        if block.get("size") not in {"s", "m", "l", "xl"}:
+            return f"block {bid} size 非法"
+    weights = {"s": 1, "m": 2, "l": 3, "xl": 4}
+    total_weight = sum(weights[str(block.get("size"))] for block in blocks)
+    if total_weight > 7:
+        return f"页面视觉重量 {total_weight} 超过 7；删减辅助块或把主体设为独占页"
+    widget_blocks = [
+        block for block in blocks if block.get("type") == "sim" and block.get("engine") == "widget"
+    ]
+    if widget_blocks and len(blocks) > 2:
+        return "复杂 widget 页最多再配一个短辅助块；quiz/callout/长公式不能与互动舞台同页堆叠"
+    kind = old.get("kind")
+    types = [b.get("type") for b in blocks]
+    if kind == "hero" and types != ["hero"]:
+        return "hero 页必须恰好一个 hero block"
+    if kind == "quiz" and "quiz" not in types:
+        return "quiz 页必须含 quiz block"
+    if kind == "quiz":
+        objective = str(brief.get("objective") or "").lower()
+        quiz_topics = ("梯度方向", "学习率影响", "调度", "自适应", "动量")
+        if sum(topic in objective for topic in quiz_topics) >= 2:
+            return "一个 quiz block 只能检验一个判定链；objective 不得同时覆盖多个章节知识点"
+    visual_task = str(brief.get("visualTask") or "").lower()
+    optimizer_names = ("sgd", "adagrad", "rmsprop", "adam", "momentum", "动量")
+    optimizer_count = sum(name in visual_task for name in optimizer_names)
+    evidence_policy = str(brief.get("evidencePolicy") or "").lower()
+    if (
+        optimizer_count >= 2
+        and any(
+            token in visual_task for token in ("loss", "损失", "收敛轨迹", "收敛路径", "下降曲线")
+        )
+        and evidence_policy == "synthetic"
+    ):
+        return "优化器性能依赖目标函数与超参数；synthetic loss 曲线不能暗示 SGD/AdaGrad/RMSProp/Adam/动量的固定排名"
+    if any(token in visual_task for token in ("等高线", "损失曲面", "contour", "surface")):
+        has_geometry_engine = any(
+            b.get("type") == "sim" and b.get("engine") == "widget" for b in blocks
+        )
+        if not has_geometry_engine:
+            return "等高线/曲面 visualTask 必须使用 sim engine=widget 真实编码二维几何"
+    if any(token in visual_task for token in ("坐标", "轨迹", "梯度方向")) and set(types) <= {
+        "graph",
+        "diagram",
+        "list",
+        "callout",
+        "statement",
+    }:
+        return "坐标/轨迹 visualTask 不能只用 graph/diagram 等概念图"
+    return ""
+
+
+def _normalize_revision_candidate(
+    candidate: dict[str, Any], old: dict[str, Any], all_scenes: list[dict[str, Any]]
+) -> None:
+    """容忍模型沿用旧骨架字段名，但归一后仍走同一严格 validator。"""
+    if candidate.get("id") != old.get("id") or candidate.get("kind") != old.get("kind"):
+        return  # id/kind 篡改必须留给 validator 拒绝，不能悄悄改回去
+    old_brief_value = old.get("brief")
+    old_brief: dict[str, Any] = old_brief_value if isinstance(old_brief_value, dict) else {}
+    raw_brief_value = candidate.get("brief")
+    raw_brief: dict[str, Any] = raw_brief_value if isinstance(raw_brief_value, dict) else {}
+    brief = {
+        key: str(candidate.get(key) or raw_brief.get(key) or old_brief.get(key) or fallback)
+        for key, fallback in {
+            "objective": "学生能复述本页核心结论",
+            "keyClaim": candidate.get("headline") or old.get("headline") or "本页核心结论",
+            "misconception": "",
+            "visualTask": old_brief.get("visualTask") or "视觉直接编码本页核心关系",
+            "evidencePolicy": old_brief.get("evidencePolicy") or "none",
+        }.items()
+    }
+    candidate["brief"] = brief
+    for key in brief:
+        candidate.pop(key, None)
+    candidate.setdefault("notes", old.get("notes") or "说明本页在叙事中的作用。")
+    candidate.pop("layout", None)
+
+    other_ids = {
+        str(block.get("id"))
+        for scene in all_scenes
+        if scene is not old
+        for block in (scene.get("blocks") or [])
+        if isinstance(block, dict) and block.get("id")
+    }
+    valid_roles = {"claim", "evidence", "visualization", "practice", "support"}
+    visual_types = {"chart", "sim", "graph", "diagram", "timeline", "flow"}
+    size_map = {"small": "s", "medium": "m", "large": "l", "extra-large": "xl"}
+    geometry_task = any(
+        token in str(brief.get("visualTask") or "").lower()
+        for token in ("等高线", "损失曲面", "contour", "surface")
+    )
+    slug = re.sub(r"[^a-zA-Z0-9_-]+", "-", str(old.get("id") or "scene")).strip("-") or "scene"
+    seen: set[str] = set()
+    for i, block in enumerate(candidate.get("blocks") or []):
+        if not isinstance(block, dict):
+            continue
+        bid = str(block.get("id") or "")
+        if not bid or bid in seen or bid in other_ids:
+            bid = f"{slug}-r{i + 1}"
+        block["id"] = bid
+        seen.add(bid)
+        if block.get("role") not in valid_roles:
+            block["role"] = "visualization" if block.get("type") in visual_types else ("claim" if i == 0 else "support")
+        block["size"] = size_map.get(str(block.get("size") or "").lower(), block.get("size") or "m")
+        if block.get("type") == "sim" and geometry_task:
+            # 规划模型经常正确选择 sim，却漏写唯一能承载二维几何的 engine 字段。
+            # 这是宿主能力路由，不改变教学意图；在 validator 前确定性补齐，避免好修订被整页拒绝。
+            block["engine"] = "widget"
+        elif block.get("type") != "sim":
+            block.pop("engine", None)
+
+
+async def replan_page(
+    llm: LLMClient,
+    *,
+    current_scene: dict[str, Any],
+    brief: dict[str, str],
+    issues: list[str],
+    topic: str,
+    audience: str,
+    material: str,
+    allowed_types: set[str],
+    type_descriptions: dict[str, str],
+    all_scenes: list[dict[str, Any]],
+) -> tuple[dict[str, Any] | None, str | None]:
+    """质量门发现“类型/布局/页目标级”问题时，重做本页骨架而非死守错误 block 类型。"""
+    system = """你是课程页重规划器。质量门已证明当前页靠原 block 类型无法修好；请只重做这一页的骨架。
+输出 JSON：{"scene":{完整 scene 骨架}}，不要解释。硬约束：
+- scene id/kind 不变；保留同一教学位置，但可改 headline/lead/brief/notes 和 block 组合。
+- blocks 只含 id/type/role/intent/size/可选 engine，不写最终内容；id 全局唯一。
+- 每页一个可观察 objective、一个 keyClaim；标题写清所有必要前提。
+- 二维曲面/等高线/几何轨迹用 sim + engine=widget；普通 graph/diagram 只表达概念关系，不能冒充坐标。
+- 定量曲线必须由页面给出的公式直接计算，或清楚标为合成示意；不能用随手编的点冒充数学定义。
+- 若现有 objective 本身要求一页塞两件事，可收窄目标；不要增加页数。"""
+    payload = {
+        "topic": topic,
+        "audience": audience,
+        "referenceMaterial": material or "[none provided]",
+        "allowedTypes": type_descriptions,
+        "currentBrief": brief,
+        "currentScene": current_scene,
+        "qualityIssues": issues,
+    }
+    try:
+        raw = parse_json(
+            await asyncio.wait_for(
+                llm.complete(
+                    [
+                        {"role": "system", "content": system},
+                        {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
+                    ],
+                    purpose="quality:replan",
+                ),
+                timeout=_PAGE_REPLAN_TIMEOUT_S,
+            )
+        )
+    except Exception as exc:  # noqa: BLE001
+        return None, f"页级重规划失败: {str(exc)[:120]}"
+    candidate = raw.get("scene") if isinstance(raw, dict) else None
+    if not isinstance(candidate, dict):
+        return None, "页级重规划未返回 scene 对象"
+    _normalize_revision_candidate(candidate, current_scene, all_scenes)
+    problem = validate_plan_revision(candidate, current_scene, all_scenes, allowed_types)
+    if problem:
+        return None, f"页级重规划被拒绝: {problem}"
+    candidate.pop("layout", None)
+    return candidate, None

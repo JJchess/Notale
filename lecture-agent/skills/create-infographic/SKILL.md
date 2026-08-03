@@ -21,6 +21,8 @@ metadata:
 ```
 2-6 items. `value` is the big number/percentage to spotlight (string, no unit conversion done for you — write it exactly as it should render). `label` says what the number is. `delta` is optional (YoY/QoQ change). **If the data has a trend or distribution across categories, that's a `chart`, not `stats`** — stats is for a handful of standalone numbers you want to spotlight, not for anything with an x-axis.
 
+`stats` is not permission to manufacture specificity. A real-world percentage, count, quotation-like number, or paper result must come from supplied material. Without a source, replace it with a qualitative claim or clearly label it as a toy/illustrative value; never output authoritative-looking “>90% / <10%” cards from general memory.
+
 ## `diagram` — sequence/relationship shapes
 ```json
 { "type":"diagram", "diagramType":"pyramid", "nodes":[
@@ -44,6 +46,8 @@ metadata:
 | `connected-circles` | Cross-connections between nodes (stakeholder maps, concept networks) rather than a single path | A simple chain (that's arrow-seq/staircase/snake) |
 
 **Don't use `diagram` for quantitative comparison/trend data** (that's `chart`'s job), **and don't reach for it for a trivial 2-3 step flow with no special emphasis need** — the existing `flow` block already covers that; adding a new type just to use it is not a reason.
+
+Decorative topology is not mathematical geometry. `connected-circles`, `snake`, and the other fixed shapes do not have a coordinate system and cannot prove direction, distance, slope, curvature, trajectory, or convergence. If the page brief asks the learner to *see* any of those, return to the orchestrator's chart/sim choice instead of approximating the idea with labeled shapes.
 
 ## `graph` — 带边的树 / DAG / 分支流程
 
