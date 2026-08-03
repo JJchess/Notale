@@ -135,19 +135,49 @@ def test_learning_evidence_requires_executable_capability() -> None:
     assert validate_plan_revision(scene, scene, [scene], {"code", "runnable"}) == ""
 
 
-def test_manual_tree_construction_does_not_require_code_runtime() -> None:
+def test_algorithm_structure_transition_requires_sim_not_code_runtime() -> None:
     scene = _doc()["scenes"][0]
     scene["brief"].update(
         {
-            "objective": "学生能手动画出旋转后的树",
-            "learningAction": "construct",
-            "requiredEvidence": "旋转后的树结构与平衡因子",
+            "objective": "学生能逐步构造旋转前后的树",
+            "learningAction": "trace",
+            "requiredEvidence": "旋转的状态序列、中间状态与每一步平衡因子变化",
+            "visualTask": "保留旋转前态与当前态并高亮结构变化",
         }
     )
     scene["blocks"] = [
         {"id": "g1", "type": "graph", "role": "practice", "intent": "画出旋转结果", "size": "l"}
     ]
-    assert validate_plan_revision(scene, scene, [scene], {"graph", "runnable"}) == ""
+    problem = validate_plan_revision(scene, scene, [scene], {"graph", "sim", "runnable"})
+    assert problem and "sim" in problem
+
+    scene["blocks"] = [
+        {
+            "id": "g1",
+            "type": "sim",
+            "engine": "widget",
+            "role": "practice",
+            "intent": "单步执行旋转并显示前后状态",
+            "size": "xl",
+        }
+    ]
+    assert validate_plan_revision(scene, scene, [scene], {"graph", "sim", "runnable"}) == ""
+
+
+def test_fixed_final_tree_snapshot_can_remain_static() -> None:
+    scene = _doc()["scenes"][0]
+    scene["brief"].update(
+        {
+            "objective": "学生能识别旋转完成后的树",
+            "learningAction": "inspect",
+            "requiredEvidence": "一个最终树结构及其平衡因子",
+            "visualTask": "标注最终树中每个节点的平衡因子",
+        }
+    )
+    scene["blocks"] = [
+        {"id": "g1", "type": "graph", "role": "evidence", "intent": "最终树快照", "size": "l"}
+    ]
+    assert validate_plan_revision(scene, scene, [scene], {"graph", "sim"}) == ""
 
 
 async def test_plan_fallback_routes_explicit_execution_evidence_to_runnable() -> None:
@@ -172,6 +202,32 @@ async def test_plan_fallback_routes_explicit_execution_evidence_to_runnable() ->
     )
     assert [block["type"] for block in scene["blocks"]] == ["runnable"]
     assert any("执行证据路由到 runnable" in warning for warning in warnings)
+
+
+async def test_plan_fallback_routes_state_sequence_to_sim_without_interaction_keyword() -> None:
+    doc = _doc()
+    scene = doc["scenes"][0]
+    scene["brief"].update(
+        {
+            "objective": "学生能追踪一次树旋转",
+            "learningAction": "trace",
+            "requiredEvidence": "旋转前、中间、旋转后的状态序列",
+            "visualTask": "逐步执行并高亮每一步结构变化",
+        }
+    )
+    scene["blocks"] = [
+        {"id": "g1", "type": "graph", "role": "visualization", "intent": "树结构", "size": "l"},
+        {"id": "n1", "type": "callout", "role": "support", "intent": "说明", "size": "s"},
+    ]
+    warnings = await refine_plan(
+        FakeClient(by_purpose={"quality:plan": '{"revisions":[]}'}),
+        doc,
+        topic="AVL",
+        allowed_types={"graph", "callout", "sim"},
+    )
+    assert [block["type"] for block in scene["blocks"]] == ["sim"]
+    assert scene["blocks"][0]["engine"] == "widget"
+    assert any("过程状态证据路由到 sim.widget" in warning for warning in warnings)
 
 
 def test_complex_widget_page_rejects_four_block_overload() -> None:

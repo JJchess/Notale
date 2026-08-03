@@ -31,7 +31,9 @@ async def refine_plan(
 逐页及跨页检查：
 1. 每页只有一个可观察 objective 和一个 keyClaim；相邻页不重复。
    objective 必须落成一个主要 learningAction 和可观察的 requiredEvidence。先判断证据，再依据 Skill 菜单的
-   affordance 选表达能力：固定少量状态可用静态并排图；改变输入观察因果用 sim；实现/运行/调试用 runnable。
+   affordance 选表达能力：固定关系、单个最终快照或无需控制的少量状态可用静态图；状态序列、中间状态、
+   结构变换、逐步执行、回放或改变输入观察因果必须用 sim，即使 brief 没写“交互/试验”；实现/运行/调试用 runnable。
+   sim 证明过程状态，runnable 证明代码执行，不能互相冒充。
    不按主题硬编码组件，也不按配额硬塞互动。跨页还要检查课程是否只有 read/inspect 而没有任何主动产出证据的活动。
 2. 近似直觉、带条件引理、特殊模型结论、一般定理不得偷换。依赖 L-smooth/凸/强凸等条件时标题和目标显式写条件。
    收敛/速率/保证页还要在观众可见的 headline/lead/formula 规划里容纳步长范围等必要假设，不能只写进 notes/brief。
@@ -121,7 +123,8 @@ def _learning_evidence_needs(brief: dict[str, Any]) -> tuple[bool, bool]:
     action = str(brief.get("learningAction") or "").lower()
     evidence = str(brief.get("requiredEvidence") or "").lower()
     objective = str(brief.get("objective") or "").lower()
-    text = " ".join((action, evidence, objective))
+    visual_task = str(brief.get("visualTask") or "").lower()
+    text = " ".join((action, evidence, objective, visual_task))
     code_evidence = any(
         token in text
         for token in (
@@ -133,14 +136,24 @@ def _learning_evidence_needs(brief: dict[str, Any]) -> tuple[bool, bool]:
         token in text
         for token in ("implement", "debug", "run", "execute", "实现", "调试", "运行", "执行")
     )
-    needs_interactive = any(
+    explicit_interaction = any(
         token in text
         for token in (
             "manipulate", "experiment", "change input", "adjust parameter",
-            "操纵", "试验", "改变输入", "调参",
+            "step through", "play back", "replay",
+            "操纵", "试验", "改变输入", "调参", "单步", "回放",
         )
     )
-    return needs_runnable, needs_interactive
+    transition_evidence = action in {"trace", "step", "play", "replay"} or any(
+        token in text
+        for token in (
+            "state sequence", "state transition", "intermediate state", "step-by-step",
+            "structure transformation", "structure mutation", "before and after",
+            "状态序列", "状态转移", "中间状态", "逐步执行", "每一步",
+            "结构变换", "结构变化", "结构演化", "前后状态", "演化过程",
+        )
+    )
+    return needs_runnable, explicit_interaction or transition_evidence
 
 
 def _enforce_learning_evidence_routes(
@@ -156,7 +169,7 @@ def _enforce_learning_evidence_routes(
         if not blocks:
             continue
         types = {str(block.get("type") or "") for block in blocks}
-        needs_runnable, needs_interactive = _learning_evidence_needs(brief)
+        needs_runnable, needs_sim = _learning_evidence_needs(brief)
         if needs_runnable and "runnable" in allowed_types and "runnable" not in types:
             main = next(
                 (block for block in blocks if block.get("type") in {"code", "sim", "graph", "diagram"}),
@@ -173,9 +186,9 @@ def _enforce_learning_evidence_routes(
             scene["blocks"] = [main]
             warnings.append(f"规划证据兜底 {scene.get('id') or '?'}：执行证据路由到 runnable")
         elif (
-            needs_interactive
+            needs_sim
             and "sim" in allowed_types
-            and not ({"sim", "runnable"} & types)
+            and "sim" not in types
         ):
             main = next(
                 (block for block in blocks if block.get("type") in {"graph", "diagram", "chart", "timeline", "flow"}),
@@ -187,10 +200,10 @@ def _enforce_learning_evidence_routes(
             main["size"] = "xl"
             main["intent"] = (
                 str(main.get("intent") or brief.get("visualTask") or "交互探索")
-                + "；提供真实可操作输入，并突出输入变化导致的状态变化"
+                + "；首帧已执行一步，提供单步/复位或真实可操作输入，保留前后状态并突出变化"
             )
             scene["blocks"] = [main]
-            warnings.append(f"规划证据兜底 {scene.get('id') or '?'}：可操作因果证据路由到 sim.widget")
+            warnings.append(f"规划证据兜底 {scene.get('id') or '?'}：过程状态证据路由到 sim.widget")
     return warnings
 
 
@@ -394,11 +407,11 @@ def validate_plan_revision(
         if sum(topic in objective for topic in quiz_topics) >= 2:
             return "一个 quiz block 只能检验一个判定链；objective 不得同时覆盖多个章节知识点"
     visual_task = str(brief.get("visualTask") or "").lower()
-    needs_runnable, needs_interactive = _learning_evidence_needs(brief)
+    needs_runnable, needs_sim = _learning_evidence_needs(brief)
     if needs_runnable and "runnable" not in types:
         return "学习动作要求实现/运行/调试，必须由 runnable 产出执行证据；只读 code 不成立"
-    if needs_interactive and not ({"sim", "runnable"} & set(types)):
-        return "学习动作要求改变输入并观察结果，必须使用 sim 或 runnable 产出因果证据"
+    if needs_sim and "sim" not in types:
+        return "学习证据包含状态序列/结构变换/逐步执行或可控因果，必须使用 sim 呈现过程状态"
     optimizer_names = ("sgd", "adagrad", "rmsprop", "adam", "momentum", "动量")
     optimizer_count = sum(name in visual_task for name in optimizer_names)
     evidence_policy = str(brief.get("evidencePolicy") or "").lower()
@@ -503,7 +516,7 @@ def _fit_revision_capacity(candidate: dict[str, Any], old: dict[str, Any]) -> No
         return
     weights = {"s": 1, "m": 2, "l": 3, "xl": 4}
     brief = candidate.get("brief") if isinstance(candidate.get("brief"), dict) else {}
-    needs_runnable, needs_interactive = _learning_evidence_needs(brief)
+    needs_runnable, needs_sim = _learning_evidence_needs(brief)
     widget = next(
         (block for block in blocks if block.get("type") == "sim" and block.get("engine") == "widget"),
         None,
@@ -527,14 +540,14 @@ def _fit_revision_capacity(candidate: dict[str, Any], old: dict[str, Any]) -> No
         block_type = str(block.get("type") or "")
         if needs_runnable and block_type == "runnable":
             rank = 0
-        elif needs_interactive and block_type in {"sim", "runnable"}:
+        elif needs_sim and block_type == "sim":
             rank = 0
         elif old.get("kind") == "quiz" and block_type == "quiz":
             rank = 0
         else:
             rank = {
-                "sim": 1, "runnable": 1, "graph": 2, "chart": 2, "diagram": 2,
-                "formula": 3, "quiz": 3, "statement": 4, "callout": 5, "list": 6,
+                "sim": 1, "graph": 2, "chart": 2, "diagram": 2, "formula": 3,
+                "quiz": 3, "statement": 4, "callout": 5, "list": 6, "runnable": 7,
             }.get(block_type, 7)
         return rank, weights.get(str(block.get("size")), 2)
 
@@ -567,7 +580,7 @@ async def replan_page(
     system = """你是课程页重规划器。质量门已证明当前页靠原 block 类型无法修好；请只重做这一页的骨架。
 输出 JSON：{"scene":{完整 scene 骨架}}，不要解释。硬约束：
 - scene id/kind 不变；保留同一教学位置，但可改 headline/lead/brief/notes 和 block 组合。
-- brief 必须明确一个 learningAction 与 requiredEvidence；先选择能产出该证据的 Skill，再决定 block。固定少量状态可用静态并排图；改变输入观察因果用 sim；实现/运行/调试用 runnable。
+    - brief 必须明确一个 learningAction 与 requiredEvidence；先选择能产出该证据的 Skill，再决定 block。固定关系、单个最终快照或无需控制的少量状态可用静态图；状态序列、中间状态、结构变换、逐步执行、回放或改变输入观察因果必须用 sim；实现/运行/调试用 runnable。sim 与 runnable 的证据不可互相替代。
 - blocks 只含 id/type/role/intent/size/可选 engine，不写最终内容；id 全局唯一。
 - 每页一个可观察 objective、一个 keyClaim；标题写清所有必要前提。
 - 二维曲面/等高线/几何轨迹用 sim + engine=widget；普通 graph/diagram 只表达概念关系，不能冒充坐标。

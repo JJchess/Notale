@@ -52,8 +52,18 @@ _CONTRACT = json.dumps(
         "initial_paint": "摆已从 60° 释放、正摆动中",
         "visible_encodings": [{"quantity": "摆角", "mark": "摆杆", "where": "主画布"}],
         "comparison_states": [],
+        "interaction_loop": {
+            "action": "拖动阻尼滑块",
+            "model_update": "更新 damp 后重算 theta/omega",
+            "visible_change": "摆幅衰减速度立即变化",
+            "history": "保留上一周期包络线",
+            "reset": "恢复 damp=0.05 与相同初始角",
+        },
         "math_model": {"formula": "none", "screen_mapping": "not applicable", "invariants": []},
-        "verification_cases": [],
+        "verification_cases": [
+            {"input": "首帧 damp=0.05", "expected": "摆已离开初始角"},
+            {"input": "reset", "expected": "恢复同一初态"},
+        ],
     },
     ensure_ascii=False,
 )
@@ -89,6 +99,7 @@ async def test_contract_threaded_into_build_prompt() -> None:
     plan_prompt = plan_msgs[-1]["content"]
     assert "layout_pattern" in plan_prompt and "aesthetic_direction" in plan_prompt
     assert "visible_encodings" in plan_prompt and "verification_cases" in plan_prompt
+    assert "interaction_loop" in plan_prompt and "前态/当前态" in user_content
     assert "最小/最大边界" in plan_prompt and "把主图压成一条线" in plan_prompt
     assert "不得无故混用另一种语言" in user_content
 

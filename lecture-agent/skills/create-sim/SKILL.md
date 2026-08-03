@@ -1,11 +1,11 @@
 ---
 name: create-sim
-description: Author a sim (simulation) block for a LectureDoc lecture — a parameter-driven interactive that recomputes and redraws in-browser as the student changes inputs. Reach for it whenever a quantitative or mechanistic process becomes clearer by letting the student turn a knob and watch the outcome change (physics/chem dynamics, algorithm behaviour, parameter sensitivity); pick a sim over a static chart when the interaction itself is the teaching point. Engines are chosen at build time: dynamics1d/searchCompare (declarative restricted-expression math → line charts), custom (sandboxed compute), widget (live canvas/SVG animation, geometric construction, or arbitrary mouse interaction). Skip it when the topic has no quantifiable/mechanistic process to manipulate — a sim with no real parameter to turn is decoration, not interaction. Produces schema-valid sim block JSON.
-affordances: [state-transition, parameter-manipulation, causal-exploration, synchronized-comparison]
-learner-actions: [manipulate, predict, experiment, inspect]
-evidence-outputs: [state-sequence, changed-state-highlight, parameter-outcome-link]
-limitations: [requires meaningful controllable state, not for read-only explanation]
-version: 1.0.0
+description: "Author a sim block for a LectureDoc lecture — a question-specific inline visual whose HTML/SVG/canvas state updates immediately as the learner steps, plays, drags, selects, or changes an input. Use it whenever understanding depends on seeing a process unfold rather than only seeing its final snapshot: algorithm execution and data-structure mutation, state-machine/protocol transitions, physical or chemical dynamics, geometric construction, parameter sensitivity, or synchronized comparison. A state sequence, intermediate state, structure transformation, invariant-preservation step, or controllable cause→effect relationship MUST route to sim even when the brief never says ‘interactive’ or ‘experiment.’ Prefer a static graph/chart/flow only when all required evidence is fixed and interaction would reveal nothing new; prefer runnable when the evidence is authored code/stdout/tests rather than the process state itself. Engines: dynamics1d/searchCompare for supported declarative line models, custom for computed line series, and widget for discrete state transitions, live SVG/canvas, geometry, and direct manipulation. Produces schema-valid sim block JSON."
+affordances: [state-transition, temporal-progression, structure-transformation, parameter-manipulation, causal-exploration, synchronized-comparison, direct-manipulation]
+learner-actions: [step, play, replay, manipulate, predict, experiment, trace, construct, compare]
+evidence-outputs: [state-sequence, intermediate-state, changed-state-highlight, before-after-mapping, parameter-outcome-link, invariant-preservation]
+limitations: [requires meaningful changing state or controllable cause, not for a fixed read-only snapshot, not a substitute for code execution evidence]
+version: 1.1.0
 license: MIT
 platforms: [linux, macos, windows]
 metadata:
@@ -18,10 +18,39 @@ metadata:
 
 Read `lecture-doc-schema` first (SPEC §3.2 sim, §4 restricted expressions, §8 themes). Produce ONE sim block; self-check with `node <lecture-doc-schema>/scripts/validate.mjs --block <file>`.
 
+## Decision contract — choose by evidence, not by the word “interactive”
+
+Claude-style custom visuals are generated for the specific question when a visual explains the idea better than prose, then remain directly manipulable: buttons, sliders, selections, and follow-up changes update the same visual state. Apply that principle to learning evidence:
+
+**Sim is mandatory** when the learner must see any of these to meet the objective:
+- an ordered state sequence or an intermediate state;
+- a structure changing across an operation, including before/active/after states;
+- a mechanism unfolding step by step, with the changed part visibly highlighted;
+- one input causing a recomputed visual outcome;
+- two or more conditions explored through the same synchronized model.
+
+Do not wait for `learningAction=manipulate`. `trace`, `construct`, `predict`, or `compare` also require sim when their evidence is dynamic. Examples: AVL rotations, sorting passes, graph traversal frontier, parser stack evolution, protocol state changes, geometric construction, or a physical trajectory.
+
+Use a static block when the evidence is a fixed relationship, one final structure, or a small set of snapshots that the learner does not need to control. Use `runnable` when success is editable code plus stdout/tests. If one page asks for both code authoring and a state sequence, narrow or split the objective rather than letting one capability impersonate the other.
+
+## Interaction closure — a control alone is not a simulation
+
+Every sim must close this loop:
+
+`meaningful first paint → learner action → model recomputation → visible state change → interpretable evidence`
+
+- Start one step in, never with a blank “click to begin” stage.
+- Every control must change the underlying model, not merely a label or decoration.
+- Keep previous/current or before/after state legible; highlight exactly what changed.
+- For discrete processes provide appropriate `step`, `back/reset`, and optionally `play/pause`; keep replay deterministic.
+- Put phase, invariant, comparison, or key readout on the stage so the learner can explain the consequence.
+- Define reproducible verification cases for initial state, at least one transition, reset, and boundary input.
+- If the same lesson is equally clear after taking a screenshot, the interaction has not earned its place.
+
 ## Engine priority — pick the LEAST powerful that fits (this is the anti-slop discipline)
 1. **`dynamics1d` / `searchCompare`** (registry, declarative) — first choice.
 2. **`custom`** — param-driven compute that returns line series, when the two registry engines can't express the model.
-3. **`widget`** — canvas/SVG animation, particles, geometric construction, arbitrary interaction, in a sandbox iframe. **Last resort**, only when you genuinely need live animation / non-line visuals.
+3. **`widget`** — discrete algorithm/state transitions, structure mutation, canvas/SVG animation, geometric construction, or direct manipulation in a sandbox iframe. It is the required engine when the evidence is visual state rather than a line series; “least powerful” must not mean “discard the required state sequence.”
 
 ## `dynamics1d` — 1-D iterated dynamics
 ```json

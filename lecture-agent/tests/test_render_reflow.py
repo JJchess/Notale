@@ -198,8 +198,15 @@ async def test_widget_runtime_error_is_repaired_and_reverified() -> None:
             "initial_paint": "首帧已有方块",
             "visible_encodings": [{"quantity": "状态", "mark": "方块", "where": "画布"}],
             "comparison_states": [],
+            "interaction_loop": {
+                "action": "点击画布",
+                "model_update": "更新 step",
+                "visible_change": "方块位置变化",
+                "history": "保留前态轮廓",
+                "reset": "恢复 step=1",
+            },
             "math_model": {"formula": "none", "screen_mapping": "not applicable", "invariants": []},
-            "verification_cases": [],
+            "verification_cases": [{"input": "step=1", "expected": "首帧已有方块"}],
         },
         ensure_ascii=False,
     )

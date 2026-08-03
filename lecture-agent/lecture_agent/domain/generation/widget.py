@@ -83,12 +83,14 @@ LectureDoc host extension（优先于上面的通用 schema）：返回同一个
 {
   "visible_encodings": [{"quantity":"标题/objective 声称解释的量","mark":"轴/曲线/点/箭头/文本","where":"首帧位置或图例"}],
   "comparison_states": ["若目标要求比较，逐项列出首帧必须同时可见的状态；否则空数组"],
+  "interaction_loop": {"action":"学习者的具体操作","model_update":"操作如何改变 state_model","visible_change":"哪一个视觉编码立即变化","history":"如何保留前态/当前态或 before→after 映射","reset":"如何确定性回到同一初态"},
   "math_model": {"formula":"主公式；非数学题写 none","screen_mapping":"数学坐标到屏幕坐标，尤其 y 轴符号","invariants":["必须恒真的关系"]},
   "verification_cases": [{"input":"具体状态/参数","expected":"可复算结果或符号关系"}]
 }
 并把通用字段 render_contract 同值复制为 update。若 objective/intent 含“比较”，comparison_states 不得为空，
 initial_paint 必须同时出现全部状态；不得靠学生拖动滑块后脑补对照。数学题的 screen_mapping、invariants、
-verification_cases 均不得为空。每个数值控件都要覆盖初始值和最小/最大边界；声明的整个范围必须保持
+verification_cases 均不得为空。所有题型的 interaction_loop 五项和 verification_cases 都不得为空；用例至少覆盖
+首帧中间态、一次有效转移、复位，数值控件再覆盖最小/最大边界。声明的整个范围必须保持
 有限、非空且可读。发散系统应缩短到有教学意义的范围，不能让极端值把主图压成一条线。只输出完整 JSON 对象。"""
 
 
@@ -106,6 +108,14 @@ def _contract_problem(contract: Any) -> str:
             return f"{key} 必须是数组"
     if not contract["state_model"] or not contract["interactions"] or not contract["visible_encodings"]:
         return "state_model/interactions/visible_encodings 不得为空"
+    interaction_loop = contract.get("interaction_loop")
+    if not isinstance(interaction_loop, dict):
+        return "interaction_loop 必须是对象"
+    for key in ("action", "model_update", "visible_change", "history", "reset"):
+        if not str(interaction_loop.get(key) or "").strip():
+            return f"interaction_loop 缺少 {key}"
+    if not contract["verification_cases"]:
+        return "verification_cases 不得为空（至少覆盖初态、一次转移与复位）"
     math_model = contract.get("math_model")
     if not isinstance(math_model, dict) or not str(math_model.get("formula") or "").strip():
         return "缺少 math_model.formula（非数学题也要写 none）"
@@ -115,8 +125,6 @@ def _contract_problem(contract: Any) -> str:
             return "数学契约缺少 screen_mapping"
         if not isinstance(math_model.get("invariants"), list) or not math_model["invariants"]:
             return "数学契约缺少 invariants"
-        if not contract["verification_cases"]:
-            return "数学契约缺少 verification_cases"
     return ""
 
 
@@ -158,6 +166,8 @@ LectureDoc host adapter（与通用 GenUI 规则冲突时，以这里为准）�
 - 纯离线 vanilla，禁 CDN、import、fetch、Chart.js 及任何外部资源。
 - 数学/算法视觉必须把 math_model 写成独立纯函数，并用 verification_cases 在初始化时执行 console.assert；
   屏幕映射、箭头方向、曲线变量必须由这些函数生成，不能另画装饰路径。
+- 严格实现 interaction_loop：操作必须修改 state_model 并立即调用统一 update()；同屏保留前态/当前态或 before→after，
+  只高亮本步变化；离散过程实现单步与确定性 reset，不能只切换说明文字。
 - 首帧逐项实现 visible_encodings；comparison_states 非空时全部状态必须同时可见并有清楚图例。
 - 每个控件在声明的初始值、最小值和最大值都必须产生 finite、非空、可读的画面；若动力学发散，缩短控件范围、
   固定教学视窗或显式裁切，不能让一个极端轨迹把主体缩成不可读的一条线。

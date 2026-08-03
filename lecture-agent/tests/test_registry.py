@@ -47,6 +47,8 @@ def test_desc_tail_boilerplate_trimmed() -> None:
 def test_skill_manifest_affordances_are_exposed_to_planner() -> None:
     registry, _ = load_skills()
     assert "state-transition" in registry["sim"].affordances
+    assert "trace" in registry["sim"].learner_actions
+    assert "intermediate-state" in registry["sim"].evidence_outputs
     assert "implement" in registry["runnable"].learner_actions
     by_type = {
         block_type: desc
@@ -54,6 +56,7 @@ def test_skill_manifest_affordances_are_exposed_to_planner() -> None:
         for block_type in types
     }
     assert "Evidence outputs:" in by_type["sim"]
+    assert "MUST route to sim" in by_type["sim"]
     assert "code-execution" in by_type["runnable"]
 
 
