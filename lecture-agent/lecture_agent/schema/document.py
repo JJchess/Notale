@@ -289,6 +289,22 @@ class SimBlock(_Block):
 class RunnableEnv(BaseModel):
     model_config = ConfigDict(extra="allow")
     kind: Literal["objective1d", "custom"]
+    objective: str | None = None
+    domain: list[float] | None = Field(default=None, min_length=2, max_length=2)
+    output: Literal["chart", "console"] | None = None
+    pythonPreamble: str | None = None
+    jsPreamble: str | None = None
+
+    @model_validator(mode="after")
+    def _validate_mode_contract(self) -> RunnableEnv:
+        if self.kind == "objective1d":
+            if not self.objective or self.domain is None:
+                raise ValueError("objective1d 环境必须提供 objective 与二元 domain")
+            if self.output == "console":
+                raise ValueError("console 输出必须使用 custom 环境，不能与 objective1d 混用")
+        elif not self.pythonPreamble and not self.jsPreamble:
+            raise ValueError("custom 环境需 pythonPreamble 或 jsPreamble 至少一个")
+        return self
 
 
 class RunnableBlock(_Block):

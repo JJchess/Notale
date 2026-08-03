@@ -110,8 +110,87 @@ async def refine_plan(
             break
     warnings.extend(_enforce_evidence_safe_plans(doc, allowed_types))
     warnings.extend(_enforce_geometry_routes(doc, allowed_types))
+    warnings.extend(_enforce_learning_evidence_routes(doc, allowed_types))
     warnings.extend(_enforce_widget_capacity(doc))
     warnings.extend(_enforce_quiz_scope(doc))
+    return warnings
+
+
+def _learning_evidence_needs(brief: dict[str, Any]) -> tuple[bool, bool]:
+    """从显式学习契约判定能力需求；不按课题或学科名称做映射。"""
+    action = str(brief.get("learningAction") or "").lower()
+    evidence = str(brief.get("requiredEvidence") or "").lower()
+    objective = str(brief.get("objective") or "").lower()
+    text = " ".join((action, evidence, objective))
+    code_evidence = any(
+        token in text
+        for token in (
+            "code", "program", "function", "stdout", "test result",
+            "代码", "程序", "函数", "运行结果", "测试结果",
+        )
+    )
+    needs_runnable = code_evidence and any(
+        token in text
+        for token in ("implement", "debug", "run", "execute", "实现", "调试", "运行", "执行")
+    )
+    needs_interactive = any(
+        token in text
+        for token in (
+            "manipulate", "experiment", "change input", "adjust parameter",
+            "操纵", "试验", "改变输入", "调参",
+        )
+    )
+    return needs_runnable, needs_interactive
+
+
+def _enforce_learning_evidence_routes(
+    doc: dict[str, Any], allowed_types: set[str]
+) -> list[str]:
+    """模型审查超时时仍保证显式的执行/交互证据有可承载的 Skill。"""
+    warnings: list[str] = []
+    for scene in doc.get("scenes") or []:
+        if scene.get("kind") in {"hero", "section"}:
+            continue
+        brief = scene.get("brief") if isinstance(scene.get("brief"), dict) else {}
+        blocks = list(scene.get("blocks") or [])
+        if not blocks:
+            continue
+        types = {str(block.get("type") or "") for block in blocks}
+        needs_runnable, needs_interactive = _learning_evidence_needs(brief)
+        if needs_runnable and "runnable" in allowed_types and "runnable" not in types:
+            main = next(
+                (block for block in blocks if block.get("type") in {"code", "sim", "graph", "diagram"}),
+                blocks[0],
+            )
+            main["type"] = "runnable"
+            main.pop("engine", None)
+            main["role"] = "practice"
+            main["size"] = "xl"
+            main["intent"] = (
+                str(main.get("intent") or brief.get("objective") or "实现并运行代码")
+                + "；提供可编辑代码、固定测试输入、stdout 与测试结果"
+            )
+            scene["blocks"] = [main]
+            warnings.append(f"规划证据兜底 {scene.get('id') or '?'}：执行证据路由到 runnable")
+        elif (
+            needs_interactive
+            and "sim" in allowed_types
+            and not ({"sim", "runnable"} & types)
+        ):
+            main = next(
+                (block for block in blocks if block.get("type") in {"graph", "diagram", "chart", "timeline", "flow"}),
+                blocks[0],
+            )
+            main["type"] = "sim"
+            main["engine"] = "widget"
+            main["role"] = "visualization"
+            main["size"] = "xl"
+            main["intent"] = (
+                str(main.get("intent") or brief.get("visualTask") or "交互探索")
+                + "；提供真实可操作输入，并突出输入变化导致的状态变化"
+            )
+            scene["blocks"] = [main]
+            warnings.append(f"规划证据兜底 {scene.get('id') or '?'}：可操作因果证据路由到 sim.widget")
     return warnings
 
 
@@ -315,12 +394,10 @@ def validate_plan_revision(
         if sum(topic in objective for topic in quiz_topics) >= 2:
             return "一个 quiz block 只能检验一个判定链；objective 不得同时覆盖多个章节知识点"
     visual_task = str(brief.get("visualTask") or "").lower()
-    learning_action = str(brief.get("learningAction") or "").lower()
-    required_evidence = str(brief.get("requiredEvidence") or "").lower()
-    action_text = " ".join((learning_action, required_evidence, str(brief.get("objective") or "").lower()))
-    if any(token in action_text for token in ("implement", "debug", "run code", "execute code", "实现", "调试", "运行代码", "执行代码")) and "runnable" not in types:
+    needs_runnable, needs_interactive = _learning_evidence_needs(brief)
+    if needs_runnable and "runnable" not in types:
         return "学习动作要求实现/运行/调试，必须由 runnable 产出执行证据；只读 code 不成立"
-    if any(token in action_text for token in ("manipulate", "experiment", "change input", "操纵", "试验", "改变输入", "调参")) and not ({"sim", "runnable"} & set(types)):
+    if needs_interactive and not ({"sim", "runnable"} & set(types)):
         return "学习动作要求改变输入并观察结果，必须使用 sim 或 runnable 产出因果证据"
     optimizer_names = ("sgd", "adagrad", "rmsprop", "adam", "momentum", "动量")
     optimizer_count = sum(name in visual_task for name in optimizer_names)
@@ -416,6 +493,61 @@ def _normalize_revision_candidate(
             block["engine"] = "widget"
         elif block.get("type") != "sim":
             block.pop("engine", None)
+    _fit_revision_capacity(candidate, old)
+
+
+def _fit_revision_capacity(candidate: dict[str, Any], old: dict[str, Any]) -> None:
+    """把正确但过载的 replan 编译成最小证据集，而不是整页拒绝。"""
+    blocks = [block for block in (candidate.get("blocks") or []) if isinstance(block, dict)]
+    if not blocks:
+        return
+    weights = {"s": 1, "m": 2, "l": 3, "xl": 4}
+    brief = candidate.get("brief") if isinstance(candidate.get("brief"), dict) else {}
+    needs_runnable, needs_interactive = _learning_evidence_needs(brief)
+    widget = next(
+        (block for block in blocks if block.get("type") == "sim" and block.get("engine") == "widget"),
+        None,
+    )
+    if widget is not None:
+        auxiliaries = [block for block in blocks if block is not widget]
+        auxiliary = min(
+            auxiliaries,
+            key=lambda block: (
+                {"formula": 0, "statement": 1, "callout": 2, "list": 3, "quiz": 4}.get(str(block.get("type")), 8),
+                weights.get(str(block.get("size")), 2),
+            ),
+            default=None,
+        )
+        candidate["blocks"] = [block for block in blocks if block is widget or block is auxiliary]
+        return
+    if len(blocks) <= 4 and sum(weights.get(str(block.get("size")), 2) for block in blocks) <= 7:
+        return
+
+    def priority(block: dict[str, Any]) -> tuple[int, int]:
+        block_type = str(block.get("type") or "")
+        if needs_runnable and block_type == "runnable":
+            rank = 0
+        elif needs_interactive and block_type in {"sim", "runnable"}:
+            rank = 0
+        elif old.get("kind") == "quiz" and block_type == "quiz":
+            rank = 0
+        else:
+            rank = {
+                "sim": 1, "runnable": 1, "graph": 2, "chart": 2, "diagram": 2,
+                "formula": 3, "quiz": 3, "statement": 4, "callout": 5, "list": 6,
+            }.get(block_type, 7)
+        return rank, weights.get(str(block.get("size")), 2)
+
+    chosen: list[dict[str, Any]] = []
+    total = 0
+    for block in sorted(blocks, key=priority):
+        weight = weights.get(str(block.get("size")), 2)
+        if len(chosen) >= 4 or total + weight > 7:
+            continue
+        chosen.append(block)
+        total += weight
+    if chosen:
+        candidate["blocks"] = [block for block in blocks if block in chosen]
 
 
 async def replan_page(

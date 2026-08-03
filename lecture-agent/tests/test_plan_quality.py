@@ -135,6 +135,45 @@ def test_learning_evidence_requires_executable_capability() -> None:
     assert validate_plan_revision(scene, scene, [scene], {"code", "runnable"}) == ""
 
 
+def test_manual_tree_construction_does_not_require_code_runtime() -> None:
+    scene = _doc()["scenes"][0]
+    scene["brief"].update(
+        {
+            "objective": "学生能手动画出旋转后的树",
+            "learningAction": "construct",
+            "requiredEvidence": "旋转后的树结构与平衡因子",
+        }
+    )
+    scene["blocks"] = [
+        {"id": "g1", "type": "graph", "role": "practice", "intent": "画出旋转结果", "size": "l"}
+    ]
+    assert validate_plan_revision(scene, scene, [scene], {"graph", "runnable"}) == ""
+
+
+async def test_plan_fallback_routes_explicit_execution_evidence_to_runnable() -> None:
+    doc = _doc()
+    scene = doc["scenes"][0]
+    scene["brief"].update(
+        {
+            "objective": "学生能实现AVL插入函数并通过测试",
+            "learningAction": "implement",
+            "requiredEvidence": "可编辑代码、stdout 与测试结果",
+        }
+    )
+    scene["blocks"] = [
+        {"id": "c1", "type": "code", "role": "practice", "intent": "实现插入函数", "size": "l"},
+        {"id": "n1", "type": "callout", "role": "support", "intent": "提示", "size": "s"},
+    ]
+    warnings = await refine_plan(
+        FakeClient(by_purpose={"quality:plan": '{"revisions":[]}'}),
+        doc,
+        topic="AVL",
+        allowed_types={"code", "callout", "runnable"},
+    )
+    assert [block["type"] for block in scene["blocks"]] == ["runnable"]
+    assert any("执行证据路由到 runnable" in warning for warning in warnings)
+
+
 def test_complex_widget_page_rejects_four_block_overload() -> None:
     scene = _doc()["scenes"][0]
     scene["brief"]["visualTask"] = "二维鞍点曲面与轨迹"
@@ -320,3 +359,40 @@ async def test_replan_page_normalizes_legacy_brief_role_size_and_colliding_ids()
     assert candidate["blocks"][0]["role"] == "visualization"
     assert candidate["blocks"][0]["size"] == "l"
     assert candidate["blocks"][0]["id"] != "used-elsewhere"
+
+
+async def test_replan_compiles_overloaded_widget_to_minimum_evidence_set() -> None:
+    current = _doc()["scenes"][0]
+    current["brief"].update(
+        {
+            "learningAction": "manipulate",
+            "requiredEvidence": "改变输入并观察状态变化",
+            "visualTask": "拖动输入观察树结构变化",
+        }
+    )
+    response = {
+        "scene": {
+            **current,
+            "blocks": [
+                {"id": "w1", "type": "sim", "engine": "widget", "role": "visualization", "intent": "互动主舞台", "size": "full"},
+                {"id": "s1", "type": "statement", "role": "claim", "intent": "一句核心结论", "size": "medium"},
+                {"id": "c1", "type": "callout", "role": "support", "intent": "重复提示", "size": "small"},
+            ],
+        }
+    }
+    fake = FakeClient(by_purpose={"quality:replan": json.dumps(response, ensure_ascii=False)})
+    candidate, err = await replan_page(
+        fake,
+        current_scene=current,
+        brief=current["brief"],
+        issues=["需要交互证据"],
+        topic="AVL",
+        audience="",
+        material="",
+        allowed_types={"sim", "statement", "callout"},
+        type_descriptions={"sim": "交互", "statement": "结论", "callout": "提示"},
+        all_scenes=[current],
+    )
+    assert err is None and candidate is not None
+    assert [block["type"] for block in candidate["blocks"]] == ["sim", "statement"]
+    assert candidate["blocks"][0]["size"] == "xl"

@@ -139,6 +139,26 @@ def test_runnable_custom_console_output_is_valid() -> None:
     assert res.errors == []
 
 
+def test_runnable_rejects_console_objective1d_mixed_mode() -> None:
+    doc = _minimal_doc()
+    doc["scenes"][1]["kind"] = "content"
+    doc["scenes"][1]["blocks"] = [
+        {
+            "type": "runnable",
+            "languages": ["python"],
+            "starter": {"python": "result = []"},
+            "env": {
+                "kind": "objective1d",
+                "objective": "x*x",
+                "domain": [-1, 1],
+                "output": "console",
+            },
+        }
+    ]
+    res = validate_doc(doc)
+    assert any("console" in error and "objective1d" in error for error in res.errors)
+
+
 def test_chart_bar_valid() -> None:
     from lecture_agent.schema.document import ChartBlock
 
