@@ -1,6 +1,10 @@
 ---
 name: create-infographic
 description: Author stats (KPI number cards), diagram (fixed structural shapes — cycle/pyramid/staircase/snake/arrow-seq/circular-grid/connected-circles) and graph (true node-edge trees, DAGs and branching flowcharts, rendered as real layered SVG) blocks for a LectureDoc lecture. Reach for stats to spotlight a handful of standalone key numbers; reach for graph whenever nodes have *named relationships* — parent/child, dependency, branch, merge — since it is the only block type with an edges field; reach for diagram only for a fixed decorative shape with no explicit edges. Use flow for a simple linear 2-3 step sequence. Produces schema-valid stats/diagram/graph block JSON.
+affordances: [spatial-structure, node-edge-relations, hierarchy, fixed-state]
+learner-actions: [inspect, trace, compare]
+evidence-outputs: [named-relations, topology, fixed-structure]
+limitations: [single state, no learner manipulation, no code execution]
 version: 1.0.0
 license: MIT
 platforms: [linux, macos, windows]

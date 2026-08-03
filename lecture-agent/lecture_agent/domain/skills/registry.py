@@ -30,6 +30,10 @@ class SkillEntry:
     dir: str
     description: str
     contract: Any  # 契约模板（字符串或结构；喂 LLM 前 stringify）
+    affordances: tuple[str, ...] = ()
+    learner_actions: tuple[str, ...] = ()
+    evidence_outputs: tuple[str, ...] = ()
+    limitations: tuple[str, ...] = ()
 
 
 def default_skills_dir() -> Path:
@@ -46,6 +50,12 @@ def _parse_frontmatter(md: str) -> dict[str, str]:
             if kv:
                 fm[kv.group(1)] = kv.group(2).strip().strip("\"'")
     return fm
+
+
+def _parse_list(value: str) -> tuple[str, ...]:
+    """解析 frontmatter 的单行列表；保持 loader 无第三方 YAML 依赖。"""
+    raw = value.strip().strip("[]")
+    return tuple(part.strip().strip("\"'") for part in raw.split(",") if part.strip())
 
 
 def load_skills(skills_dir: str | Path | None = None) -> tuple[dict[str, SkillEntry], list[str]]:
@@ -68,6 +78,10 @@ def load_skills(skills_dir: str | Path | None = None) -> tuple[dict[str, SkillEn
                     dir=str(sdir),
                     description=fm.get("description", ""),
                     contract=contract,
+                    affordances=_parse_list(fm.get("affordances", "")),
+                    learner_actions=_parse_list(fm.get("learner-actions", "")),
+                    evidence_outputs=_parse_list(fm.get("evidence-outputs", "")),
+                    limitations=_parse_list(fm.get("limitations", "")),
                 )
     auto_types = [t for t in registry if t not in AUTO_EXCLUDE]
     return registry, auto_types
@@ -79,6 +93,20 @@ _DESC_TAIL = re.compile(r"\s*Produces schema-valid[^.]*\.\s*$")
 def _trim_desc(desc: str) -> str:
     """去掉描述尾部对规划无用的 `Produces schema-valid … JSON.` boilerplate。"""
     return _DESC_TAIL.sub("", desc).strip()
+
+
+def _decision_description(entry: SkillEntry) -> str:
+    """把 Skill 自声明的能力契约编译进规划菜单，而非在中心 prompt 按学科写特判。"""
+    parts = [_trim_desc(entry.description)]
+    if entry.affordances:
+        parts.append("Affordances: " + ", ".join(entry.affordances) + ".")
+    if entry.learner_actions:
+        parts.append("Learner actions: " + ", ".join(entry.learner_actions) + ".")
+    if entry.evidence_outputs:
+        parts.append("Evidence outputs: " + ", ".join(entry.evidence_outputs) + ".")
+    if entry.limitations:
+        parts.append("Limitations: " + ", ".join(entry.limitations) + ".")
+    return " ".join(part for part in parts if part)
 
 
 def plan_menu(registry: dict[str, SkillEntry]) -> list[tuple[str, str, list[str]]]:
@@ -95,7 +123,7 @@ def plan_menu(registry: dict[str, SkillEntry]) -> list[tuple[str, str, list[str]
         if btype in AUTO_EXCLUDE:
             continue
         if entry.skill not in acc:
-            acc[entry.skill] = (_trim_desc(entry.description), [])
+            acc[entry.skill] = (_decision_description(entry), [])
             order.append(entry.skill)
         acc[entry.skill][1].append(btype)
     return [(sk, acc[sk][0], acc[sk][1]) for sk in order]

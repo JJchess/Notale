@@ -44,6 +44,19 @@ def test_desc_tail_boilerplate_trimmed() -> None:
         assert "Produces schema-valid" not in desc
 
 
+def test_skill_manifest_affordances_are_exposed_to_planner() -> None:
+    registry, _ = load_skills()
+    assert "state-transition" in registry["sim"].affordances
+    assert "implement" in registry["runnable"].learner_actions
+    by_type = {
+        block_type: desc
+        for _skill, desc, types in plan_menu(registry)
+        for block_type in types
+    }
+    assert "Evidence outputs:" in by_type["sim"]
+    assert "code-execution" in by_type["runnable"]
+
+
 def test_runnable_contract_has_no_quantity_cap() -> None:
     """runnable 的 contract(reg.contract,fan-out 时逐块注入,见 blocks.py:78)不得再带
     "deck 里最多几个/别过量"这类数量压制——这条抑制语句曾同时活在 planning.py(已被 D-008 删)

@@ -119,6 +119,26 @@ def test_runnable_multiple_per_deck_allowed() -> None:
     assert res.errors == []
 
 
+def test_runnable_custom_console_output_is_valid() -> None:
+    doc = _minimal_doc()
+    doc["scenes"][1]["kind"] = "content"
+    doc["scenes"][1]["blocks"] = [
+        {
+            "type": "runnable",
+            "languages": ["python"],
+            "starter": {"python": "print('ok')\nresult = {'height': 3}"},
+            "env": {
+                "kind": "custom",
+                "output": "console",
+                "resultLabel": "AVL 结果",
+                "pythonPreamble": "TEST_KEYS = [30, 20, 10]",
+            },
+        }
+    ]
+    res = validate_doc(doc)
+    assert res.errors == []
+
+
 def test_chart_bar_valid() -> None:
     from lecture_agent.schema.document import ChartBlock
 

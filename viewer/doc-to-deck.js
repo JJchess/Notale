@@ -525,15 +525,12 @@
     },
     freeform(b) {
       /* 长尾兜底：结构化块表达不了的图形/版式走这里。
-         此前它被无条件套上虚线框 + "⚠ 未分类内容"标签，等于告诉读者"这块是次品"——
-         但对 schema 没预先建模的视觉关系，它是唯一正解，羞辱它只会逼模型交出更差的近似。
-         现在正常渲染；rationale 仍保留（作者自述为何逃逸），但降为脚注而非警告。
+         rationale 供 schema 演进与离线审计使用，不属于课程正文，绝不展示给学生。
          html 已在校验阶段查过危险标签，这里净化是运行时防御性第二道关。 */
       const wrap = el('div', 'freeform');
       const body = el('div', 'freeform-body');
       body.innerHTML = sanitizeFreeformHtml(b.html);
       wrap.appendChild(body);
-      if (b.rationale) wrap.appendChild(el('div', 'freeform-rationale', escapeHtml(b.rationale)));
       return wrap;
     }
   };
@@ -1263,6 +1260,16 @@
 
     function renderResult(pts) {
       plotBox.innerHTML = '';
+      if (b.env.output === 'console') {
+        plotBox.appendChild(el('div', 'rc-hint', escapeHtml(b.env.resultLabel || '运行结果')));
+        const pre = document.createElement('pre');
+        pre.className = 'rc-console';
+        if (pts == null || (Array.isArray(pts) && !pts.length)) pre.textContent = 'result 为空；可通过 print 输出过程，或把最终结构赋给 result。';
+        else if (typeof pts === 'string') pre.textContent = pts;
+        else { try { pre.textContent = JSON.stringify(pts, null, 2); } catch (_) { pre.textContent = String(pts); } }
+        plotBox.appendChild(pre);
+        return;
+      }
       if (!Array.isArray(pts) || !pts.length) { plotBox.appendChild(el('div', 'rc-hint', 'result 为空——记得把选中的点赋给 result')); return; }
       const wo = pts.map((p, i) => ({ x: +p.x, y: +p.y, i })); const best = wo.reduce((a, b2) => b2.y < a.y ? b2 : a);
       const marks = [];

@@ -1,6 +1,10 @@
 ---
 name: create-code-runtime
 description: Author a runnable (edit → Run) code cell block for a LectureDoc lecture — an in-browser Python (Pyodide) + JavaScript editor with a console and a result chart. Reach for it whenever the student should learn by writing/modifying and actually executing code themselves: implementing an algorithm by hand, tuning parameters and seeing the effect, exploratory what-if coding. Use a plain `code` block instead for read-only display the student will not run. Produces schema-valid runnable block JSON.
+affordances: [editable-code, code-execution, console-output, result-visualization]
+learner-actions: [implement, run, debug, modify]
+evidence-outputs: [stdout, execution-result, test-result]
+limitations: [requires self-contained browser-safe code]
 version: 1.0.0
 license: MIT
 platforms: [linux, macos, windows]

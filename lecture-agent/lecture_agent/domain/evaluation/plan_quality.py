@@ -22,6 +22,7 @@ async def refine_plan(
     audience: str = "",
     material: str = "",
     allowed_types: set[str],
+    type_descriptions: dict[str, str] | None = None,
     rounds: int = 1,
 ) -> list[str]:
     """原地修订有规划级缺陷的 scene；严格保持页数、顺序、scene id 与 kind。"""
@@ -29,6 +30,9 @@ async def refine_plan(
     system = """你是课程骨架的总编审。此时 block 尚未生成，所以必须在昂贵 fan-out 之前修掉页目标和组件选择错误。
 逐页及跨页检查：
 1. 每页只有一个可观察 objective 和一个 keyClaim；相邻页不重复。
+   objective 必须落成一个主要 learningAction 和可观察的 requiredEvidence。先判断证据，再依据 Skill 菜单的
+   affordance 选表达能力：固定少量状态可用静态并排图；改变输入观察因果用 sim；实现/运行/调试用 runnable。
+   不按主题硬编码组件，也不按配额硬塞互动。跨页还要检查课程是否只有 read/inspect 而没有任何主动产出证据的活动。
 2. 近似直觉、带条件引理、特殊模型结论、一般定理不得偷换。依赖 L-smooth/凸/强凸等条件时标题和目标显式写条件。
    收敛/速率/保证页还要在观众可见的 headline/lead/formula 规划里容纳步长范围等必要假设，不能只写进 notes/brief。
 3. visualTask 必须能由所选 block 真正编码：chart 适合数值趋势/比较并可用 annotations 标点、线段、箭头；标量一阶递推用普通 sim；二维几何/复杂交互才用 widget；装饰 diagram 不表达坐标或梯度。
@@ -55,6 +59,7 @@ async def refine_plan(
             "topic": topic,
             "audience": audience,
             "allowedTypes": sorted(allowed_types),
+            "skillCapabilities": type_descriptions or {},
             "referenceMaterial": material or "[none provided]",
             "deckSkeleton": doc,
             "deterministicProblems": deterministic_problems,
@@ -310,6 +315,13 @@ def validate_plan_revision(
         if sum(topic in objective for topic in quiz_topics) >= 2:
             return "一个 quiz block 只能检验一个判定链；objective 不得同时覆盖多个章节知识点"
     visual_task = str(brief.get("visualTask") or "").lower()
+    learning_action = str(brief.get("learningAction") or "").lower()
+    required_evidence = str(brief.get("requiredEvidence") or "").lower()
+    action_text = " ".join((learning_action, required_evidence, str(brief.get("objective") or "").lower()))
+    if any(token in action_text for token in ("implement", "debug", "run code", "execute code", "实现", "调试", "运行代码", "执行代码")) and "runnable" not in types:
+        return "学习动作要求实现/运行/调试，必须由 runnable 产出执行证据；只读 code 不成立"
+    if any(token in action_text for token in ("manipulate", "experiment", "change input", "操纵", "试验", "改变输入", "调参")) and not ({"sim", "runnable"} & set(types)):
+        return "学习动作要求改变输入并观察结果，必须使用 sim 或 runnable 产出因果证据"
     optimizer_names = ("sgd", "adagrad", "rmsprop", "adam", "momentum", "动量")
     optimizer_count = sum(name in visual_task for name in optimizer_names)
     evidence_policy = str(brief.get("evidencePolicy") or "").lower()
@@ -352,6 +364,8 @@ def _normalize_revision_candidate(
         key: str(candidate.get(key) or raw_brief.get(key) or old_brief.get(key) or fallback)
         for key, fallback in {
             "objective": "学生能复述本页核心结论",
+            "learningAction": old_brief.get("learningAction") or "inspect",
+            "requiredEvidence": old_brief.get("requiredEvidence") or old_brief.get("visualTask") or "可见的核心结论",
             "keyClaim": candidate.get("headline") or old.get("headline") or "本页核心结论",
             "misconception": "",
             "visualTask": old_brief.get("visualTask") or "视觉直接编码本页核心关系",
@@ -373,7 +387,12 @@ def _normalize_revision_candidate(
     }
     valid_roles = {"claim", "evidence", "visualization", "practice", "support"}
     visual_types = {"chart", "sim", "graph", "diagram", "timeline", "flow"}
-    size_map = {"small": "s", "medium": "m", "large": "l", "extra-large": "xl"}
+    size_map = {
+        "s": "s", "sm": "s", "small": "s", "half": "m",
+        "m": "m", "md": "m", "medium": "m",
+        "l": "l", "lg": "l", "large": "l",
+        "xl": "xl", "full": "xl", "extra-large": "xl", "extra_large": "xl",
+    }
     geometry_task = any(
         token in str(brief.get("visualTask") or "").lower()
         for token in ("等高线", "损失曲面", "contour", "surface")
@@ -416,6 +435,7 @@ async def replan_page(
     system = """你是课程页重规划器。质量门已证明当前页靠原 block 类型无法修好；请只重做这一页的骨架。
 输出 JSON：{"scene":{完整 scene 骨架}}，不要解释。硬约束：
 - scene id/kind 不变；保留同一教学位置，但可改 headline/lead/brief/notes 和 block 组合。
+- brief 必须明确一个 learningAction 与 requiredEvidence；先选择能产出该证据的 Skill，再决定 block。固定少量状态可用静态并排图；改变输入观察因果用 sim；实现/运行/调试用 runnable。
 - blocks 只含 id/type/role/intent/size/可选 engine，不写最终内容；id 全局唯一。
 - 每页一个可观察 objective、一个 keyClaim；标题写清所有必要前提。
 - 二维曲面/等高线/几何轨迹用 sim + engine=widget；普通 graph/diagram 只表达概念关系，不能冒充坐标。

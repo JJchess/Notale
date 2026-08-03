@@ -359,6 +359,95 @@ async def test_page_issue_can_replan_block_type_and_regenerate_whole_page() -> N
     assert result.quality[0]["renderVerified"] is False
 
 
+async def test_rejected_replan_does_not_lock_wrong_block_type() -> None:
+    brief = {
+        "objective": "学生能识别风险",
+        "learningAction": "inspect",
+        "requiredEvidence": "醒目的风险层级",
+        "keyClaim": "风险需要醒目标记",
+        "misconception": "普通正文足够醒目",
+        "visualTask": "突出风险",
+        "evidencePolicy": "none",
+    }
+    skeleton = json.dumps(
+        {
+            "id": "retry-replan",
+            "title": "风险",
+            "scenes": [
+                {
+                    "id": "p1",
+                    "kind": "content",
+                    "headline": "旧标题",
+                    "notes": "旧规划。",
+                    "brief": brief,
+                    "blocks": [
+                        {"id": "b1", "type": "statement", "role": "claim", "intent": "普通陈述", "size": "m"}
+                    ],
+                }
+            ],
+        },
+        ensure_ascii=False,
+    )
+    invalid = {
+        "scene": {
+            "id": "p1",
+            "kind": "content",
+            "headline": "风险提示",
+            "notes": "改用醒目提示。",
+            "brief": brief,
+            "blocks": [
+                {"id": "b2", "type": "callout", "role": "claim", "intent": "醒目标出风险", "size": "jumbo"}
+            ],
+        }
+    }
+    valid = json.loads(json.dumps(invalid, ensure_ascii=False))
+    valid["scene"]["blocks"][0]["size"] = "lg"
+    issue = json.dumps(
+        {"score": 5, "pass": False, "blockIssues": [], "pageIssues": ["必须更换 block 类型"]},
+        ensure_ascii=False,
+    )
+    clean = json.dumps(
+        {"score": 9.8, "pass": True, "blockIssues": [], "pageIssues": []}, ensure_ascii=False
+    )
+
+    class RetryFake(FakeClient):
+        def __init__(self) -> None:
+            super().__init__(
+                by_purpose={
+                    "plan:skeleton": skeleton,
+                    "block:statement": '{"type":"statement","statement":"普通风险。"}',
+                    "block:callout": '{"type":"callout","label":"风险","text":"必须醒目标出。"}',
+                    "notes": '{"note":"指出风险视觉层级。"}',
+                }
+            )
+            self.reviews = 0
+            self.replans = 0
+
+        async def complete(
+            self, messages: list[Message], *, json_mode: bool = True, purpose: str = "chat"
+        ) -> str:
+            if purpose == "quality:page":
+                self.calls.append((purpose, messages))
+                self.reviews += 1
+                return issue if self.reviews <= 2 else clean
+            if purpose == "quality:replan":
+                self.calls.append((purpose, messages))
+                self.replans += 1
+                return json.dumps(invalid if self.replans == 1 else valid, ensure_ascii=False)
+            return await super().complete(messages, json_mode=json_mode, purpose=purpose)
+
+    fake: Any = RetryFake()
+    result = await generate_lecture(
+        fake,
+        topic="风险",
+        pages=1,
+        options=GeneratorOptions(plan_perspectives=1, sections=False, quality_rounds=3),
+    )
+    assert fake.replans == 2
+    assert result.doc["scenes"][0]["blocks"][0]["type"] == "callout"
+    assert result.quality[0]["semanticScore"] == 9.8
+
+
 async def test_same_page_replans_once_then_repairs_existing_widget() -> None:
     widget_html = (
         "<style>.w{color:var(--ink);background:var(--bg2)}</style>"

@@ -63,6 +63,8 @@ async def review_page(
    收敛、速率、保证类结论的必要假设（如 L-smooth、凸性、步长范围）必须出现在观众可见的
    headline/lead/formula/caption 中；只藏在 notes、brief 或代码里不算完成。
 2) 教学目标：所有 block 共同完成 brief.objective/keyClaim，不能一页塞多条互不依赖的定理。
+   必须检查 brief.learningAction 与 requiredEvidence：页面应让学生执行声明的动作并看见或产出相应证据。
+   只读 code 不能证明 implement/run/debug；没有可操作输入的静态图不能证明 manipulate/experiment。
 3) 视觉语义：组件与数据必须真实编码 brief.visualTask；装饰形状不能冒充坐标、轨迹、梯度或因果。
    chart 的 point/arrow 标注坐标必须落在它声称引用的序列点上，除非明确是独立几何向量；由公式命名的合成曲线必须可复算。
    - 箭头/轨迹要结合屏幕坐标映射做一次数值验算；声称“负梯度”时更新位移与梯度的点积必须 < 0。

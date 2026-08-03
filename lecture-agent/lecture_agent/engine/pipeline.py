@@ -39,6 +39,15 @@ from ..utils.concurrency import pool
 _BLOCK_ERR = re.compile(r"\$\.scenes\[(\d+)\]\.blocks\[(\d+)\]")
 
 
+def _skill_decision_descriptions(registry: dict[str, SkillEntry]) -> dict[str, str]:
+    """展开家族级 Skill Manifest，供规划审查与页级重新编译使用同一决策面。"""
+    descriptions: dict[str, str] = {}
+    for skill, description, types in plan_menu(registry):
+        for block_type in types:
+            descriptions[block_type] = f"{skill}: {description}"
+    return descriptions
+
+
 def _emit_block_done(
     progress: Callable[[dict[str, Any]], None], block_id: str, scene_id: str | None, err: Any
 ) -> None:
@@ -89,12 +98,16 @@ def _page_brief(scene: dict[str, Any]) -> dict[str, str]:
     headline = str(scene.get("headline") or scene.get("eyebrow") or scene.get("kind") or "本页")
     brief = {
         "objective": str(raw.get("objective") or f"学生能复述「{headline}」的核心结论"),
+        "learningAction": str(raw.get("learningAction") or "inspect"),
+        "requiredEvidence": str(raw.get("requiredEvidence") or raw.get("visualTask") or "可见的核心结论"),
         "keyClaim": str(raw.get("keyClaim") or headline),
         "misconception": str(raw.get("misconception") or ""),
         "visualTask": str(raw.get("visualTask") or "视觉必须直接服务本页核心结论"),
         "evidencePolicy": str(raw.get("evidencePolicy") or "none"),
     }
     if scene.get("kind") == "hero":
+        brief["learningAction"] = "orient"
+        brief["requiredEvidence"] = "主题、核心问题与学习承诺"
         brief["visualTask"] = "封面只建立课题、核心问题与视觉张力；装饰图不承担数学证明"
         brief["evidencePolicy"] = "none"
     return brief
@@ -291,12 +304,15 @@ async def _quality_repair(
     scenes = doc.get("scenes") or []
     active_scene_ids = {str(scene.get("id") or "?") for scene in scenes}
     last_changed: set[str] = set()
-    replan_attempted: set[str] = set()
+    # 只有成功换型才锁定；格式/校验/生成失败不应耗掉该页唯一一次重新编译机会。
+    # 总尝试次数仍受 quality rounds 限制，避免无界循环。
+    replan_succeeded: set[str] = set()
+    skill_descriptions = _skill_decision_descriptions(registry)
 
     def route_page_issues(
         scene: dict[str, Any], issues: list[str], targets: dict[str, list[dict[str, str]]]
     ) -> None:
-        """一页最多重规划一次；之后的内容/代码问题必须落到现有主视觉 block。"""
+        """本轮无法重新编译时，先把可局部修的问题路由到现有主视觉 block。"""
         blocks = list(scene.get("blocks") or [])
         if not blocks:
             return
@@ -312,7 +328,7 @@ async def _quality_repair(
                 "blockId": block_id,
                 "severity": "major",
                 "problem": "；".join(issues),
-                "instruction": "保持当前 block 类型，直接修正其内容、代码、数据或数学映射；不要再次重规划页面。",
+                "instruction": "本轮保持当前 block 类型，先修正其内容、代码、数据或数学映射；若学习证据仍不成立，下一轮可再次重新编译页面。",
             }
         )
 
@@ -329,7 +345,7 @@ async def _quality_repair(
             audience=audience,
             material=material,
             allowed_types=set(registry),
-            type_descriptions={name: entry.description for name, entry in registry.items()},
+            type_descriptions=skill_descriptions,
             all_scenes=scenes,
         )
         if skeleton is None:
@@ -423,12 +439,11 @@ async def _quality_repair(
                 "blockIssues": review.block_issues,
                 "pageIssues": review.page_issues,
             }
-            if review.page_issues and sid not in replan_attempted:
+            if review.page_issues and sid not in replan_succeeded:
                 combined = review.page_issues + [
                     f"{x['problem']}；{x['instruction']}" for x in review.block_issues
                 ]
                 replan_targets.append((scene, combined))
-                replan_attempted.add(sid)
             else:
                 for issue in review.block_issues:
                     targets.setdefault(issue["blockId"], []).append(issue)
@@ -448,6 +463,7 @@ async def _quality_repair(
             for sid, changed in await pool(replan_targets, concurrency, replan_one):
                 if changed:
                     changed_this_round.add(sid)
+                    replan_succeeded.add(sid)
                 else:
                     failed_scene, failed_issues = next(
                         (scene, issues)
@@ -651,13 +667,15 @@ async def generate_lecture(
     plan_quality_warnings: list[str] = []
     if opts.plan_quality_rounds > 0:
         progress({"type": "stage", "stage": "plan-quality", "status": "start"})
+        skill_descriptions = _skill_decision_descriptions(registry)
         plan_quality_warnings = await refine_plan(
             llm,
             doc,
             topic=topic,
             audience=audience,
             material=mat,
-            allowed_types=set(registry),
+            allowed_types=set(skill_descriptions),
+            type_descriptions=skill_descriptions,
             rounds=opts.plan_quality_rounds,
         )
         for warning in plan_quality_warnings:

@@ -1,6 +1,10 @@
 ---
 name: create-quiz
 description: Author a quiz block for a LectureDoc lecture — objective (multiple-choice, auto-graded) or subjective (open discussion prompt). Reach for it whenever a page should check understanding or provoke reflection rather than only present — at least one per lecture is encouraged. Objective for a checkable fact/skill, subjective for open-ended thinking. Produces schema-valid quiz block JSON.
+affordances: [elicited-response, auto-grading, misconception-diagnosis]
+learner-actions: [predict, calculate, judge, explain]
+evidence-outputs: [student-answer, correctness-feedback, explanation]
+limitations: [one assessment chain per block]
 version: 1.0.0
 license: MIT
 platforms: [linux, macos, windows]

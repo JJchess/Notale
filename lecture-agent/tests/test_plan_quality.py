@@ -116,6 +116,25 @@ def test_synthetic_optimizer_loss_ranking_is_rejected() -> None:
     assert problem and "固定排名" in problem
 
 
+def test_learning_evidence_requires_executable_capability() -> None:
+    scene = _doc()["scenes"][0]
+    scene["brief"].update(
+        {
+            "objective": "学生能实现并运行一次更新算法",
+            "learningAction": "implement",
+            "requiredEvidence": "运行代码并看到测试结果",
+        }
+    )
+    scene["blocks"] = [
+        {"id": "c1", "type": "code", "role": "practice", "intent": "展示参考代码", "size": "l"}
+    ]
+    problem = validate_plan_revision(scene, scene, [scene], {"code", "runnable"})
+    assert problem and "runnable" in problem
+
+    scene["blocks"][0]["type"] = "runnable"
+    assert validate_plan_revision(scene, scene, [scene], {"code", "runnable"}) == ""
+
+
 def test_complex_widget_page_rejects_four_block_overload() -> None:
     scene = _doc()["scenes"][0]
     scene["brief"]["visualTask"] = "二维鞍点曲面与轨迹"
@@ -277,7 +296,7 @@ async def test_replan_page_normalizes_legacy_brief_role_size_and_colliding_ids()
                     "engine": "widget",
                     "role": "interactive-demonstration",
                     "intent": "画二维等高线与真实更新轨迹",
-                    "size": "large",
+                    "size": "lg",
                 }
             ],
         }
