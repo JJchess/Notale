@@ -578,6 +578,9 @@
       root.appendChild(el('div', 'block-error-m', escapeHtml((b && b.type || '?') + '：' + ((e && e.message) || String(e)))));
     }
     if (b.fragment && !root.classList.contains('fragment')) fragClass(b.fragment).split(' ').forEach(c => root.classList.add(c));
+    /* 块级 DOM 锚点：让"改一个块"能只换这一个节点（rerenderBlock），不牵动同页的
+       runnable 传送门 / widget iframe。scene 侧的锚点是 section[data-scene-id]，两者成对。 */
+    if (b && b.id != null) root.dataset.blockId = String(b.id);
     return root;
   }
 
@@ -967,6 +970,7 @@
       const ctl = el('div', 'ctl');
       const lab = el('label', null, escapeHtml(p.label) + ' <span class="v"></span>');
       const input = el('input'); input.type = 'range'; input.min = p.min; input.max = p.max; input.step = p.step; input.value = p.default;
+      input.dataset.simParam = p.name;   /* 运行时状态锚点：重渲前后靠它采集/回填滑块位置（见 captureRuntimeState） */
       const vspan = lab.querySelector('.v');
       const fmt = v => (+v).toFixed(p.decimals ?? 2);
       vspan.textContent = fmt(p.default);
@@ -1347,7 +1351,27 @@
       finally { runBtn.disabled = false; runBtn.textContent = label; }
     };
 
-    const entry = { portal, initCM, anchor, cm: null };
+    /* getState/setState：把"用户写到一半的代码"从渲染期状态里救出来。
+       重渲必然销毁 portal 里的 CodeMirror（本函数开头就 remove 了旧 portal），所以想在换主题/
+       换版式这类必须整页重渲的操作里不丢代码，只能靠外部先 capture 再 restore。
+       setState 允许在 initCM 之前调用——它写的是 buf，initCM 建 CodeMirror 时正好读 buf。
+       不保存运行输出（图/console）：主题变了配色也该重算，让用户重新点 Run 是正确行为。 */
+    const entry = {
+      portal, initCM, anchor, cm: null,
+      getState() {
+        if (cm) buf[rcLang] = cm.getValue();
+        return { lang: rcLang, buf: { ...buf } };
+      },
+      setState(s) {
+        if (!s || typeof s !== 'object') return;
+        if (s.buf && typeof s.buf === 'object') for (const k of ['python', 'js']) if (typeof s.buf[k] === 'string') buf[k] = s.buf[k];
+        if (typeof s.lang === 'string' && langBtns[s.lang]) {
+          rcLang = s.lang;
+          Object.entries(langBtns).forEach(([k, btn]) => btn.classList.toggle('on', k === rcLang));
+        }
+        if (cm) { cm.setOption('mode', rcLang === 'python' ? 'python' : 'javascript'); cm.setValue(buf[rcLang]); cm.refresh(); }
+      },
+    };
     ctx.registerRunnable(uid, entry);
     return root;
   }
@@ -1521,6 +1545,11 @@
     return n || 1;
   }
 
+  /* 编辑锚点：标记"这个节点显示的是 scene 的哪个字段"。
+     只标来源唯一的字段——节点里是 inlineMd 渲染后的 HTML，编辑时要换成源文本再编辑，
+     所以必须能反查回 doc 上那一个字段（scene 由外层 section[data-scene-id] 定位）。 */
+  function editField(node, field) { node.dataset.editField = field; return node; }
+
   function renderScene(scene, ctx) {
     const sec = document.createElement('section');
     if (scene.kind === 'hero') sec.className = 'cover';
@@ -1563,19 +1592,21 @@
       /* 章节分隔页：章节序号 + 章节名 + 一句主旨(statement block)——给讲义打节拍、破"每页一个样"的单调。
          内容据 scene.headline + 其 statement block；缺字段兜底不抛（红线）。 */
       pad.appendChild(el('div', 'section-num', String(sectionOrdinal(scene)).padStart(2, '0')));
-      if (scene.eyebrow) pad.appendChild(el('div', 'eyebrow', inlineMd(scene.eyebrow)));
-      if (scene.headline) pad.appendChild(el('h2', 'section-title', inlineMd(scene.headline)));
+      if (scene.eyebrow) pad.appendChild(editField(el('div', 'eyebrow', inlineMd(scene.eyebrow)), 'eyebrow'));
+      if (scene.headline) pad.appendChild(editField(el('h2', 'section-title', inlineMd(scene.headline)), 'headline'));
       const dek = (scene.blocks || []).find(b => b && b.type === 'statement');
       const dekText = dek ? dek.statement : scene.lead;
-      if (dekText) pad.appendChild(el('div', 'section-dek', inlineMd(dekText)));
+      /* 分隔页的 dek 可能来自 statement block，不是 scene.lead——来源不唯一就不标编辑锚点，
+         免得改了却写回不到正确字段。要改这类文字请回到那个 statement block。 */
+      if (dekText) pad.appendChild(dek ? el('div', 'section-dek', inlineMd(dekText)) : editField(el('div', 'section-dek', inlineMd(dekText)), 'lead'));
     } else {
-      if (scene.eyebrow) pad.appendChild(el('div', 'eyebrow', inlineMd(scene.eyebrow)));
+      if (scene.eyebrow) pad.appendChild(editField(el('div', 'eyebrow', inlineMd(scene.eyebrow)), 'eyebrow'));
       if (scene.headline) {
         const h = el('h2', 'headline', inlineMd(scene.headline));
         if (scene.headlineSize) h.style.fontSize = scene.headlineSize + 'px';
-        pad.appendChild(h);
+        pad.appendChild(editField(h, 'headline'));
       }
-      if (scene.lead) pad.appendChild(el('div', 'lead', inlineMd(scene.lead)));
+      if (scene.lead) pad.appendChild(editField(el('div', 'lead', inlineMd(scene.lead)), 'lead'));
       const body = el('div', 'body');
       const single = scene.blocks.length === 1 && ['sim', 'runnable'].includes(scene.blocks[0].type);
       if (single) {
@@ -1735,9 +1766,39 @@
     return dp;
   }
 
+  /** 就地补齐缺失的 block.id（幂等、确定性）。
+   *  schema 说 id 由"规划器分配、全局唯一"，但它是可选字段，实际语料里常常整份都没有。
+   *  没有 id 的后果不只是编辑器无处下锚（data-block-id / rerenderBlock）——autoAnimate 的
+   *  morph、layout.steps/anchor、compose.areas 全都靠 id 引用块，缺了就只能整页整块地动。
+   *  这里按"场景 id + 块下标"派生，同一份 doc 反复渲染得到同一组 id，多次保存不会churn。 */
+  function ensureBlockIds(doc) {
+    if (!doc || !Array.isArray(doc.scenes)) return;
+    const seen = new Set();
+    for (const scene of doc.scenes) for (const b of (scene && scene.blocks) || []) if (b && b.id != null) seen.add(String(b.id));
+    for (const [si, scene] of doc.scenes.entries()) {
+      if (!scene || !Array.isArray(scene.blocks)) continue;
+      const base = scene.id || ('s' + si);
+      const walk = (blocks, prefix) => {
+        for (const [bi, b] of blocks.entries()) {
+          if (!b || typeof b !== 'object') continue;
+          if (b.id == null) {
+            let id = prefix + '-b' + bi, n = 2;
+            while (seen.has(id)) id = prefix + '-b' + bi + '-' + n++;
+            seen.add(id); b.id = id;
+          }
+          /* 容器块递归：compare 的左右、grid 的格子里也是一等 block，同样需要锚点 */
+          if (b.type === 'compare') for (const side of ['left', 'right']) if (b[side] && b[side].block) walk([b[side].block], String(b.id) + '-' + side);
+          if (b.type === 'grid') walk((b.items || []).map(it => it && it.block).filter(Boolean), String(b.id) + '-i');
+        }
+      };
+      walk(scene.blocks, base);
+    }
+  }
+
   /** 全量（重）渲染一整份 doc。首次调用会 Reveal.initialize + 绑 chrome；后续调用仅替换 slides + Reveal.sync()。
    *  opts.previewMode=true 时骨架占位块渲染成占位卡（不激活 sim/Pyodide），供 live dashboard 生成期间用。 */
   function renderDoc(doc, opts = {}) {
+    ensureBlockIds(doc);
     currentDoc = doc;
     ctx.previewMode = !!opts.previewMode;
     document.title = doc.title || '讲义';
@@ -1800,9 +1861,105 @@
     if (!old) return;
     const fresh = renderScene(scene, ctx);
     fresh.dataset.sceneId = sceneId;
+    /* 替换当前页时 Reveal.sync() 不会把"当前页"指针挪到新节点上——新 section 拿不到 .present，
+       于是 activateRunCell 认不出它、runnable 的传送门一直不显示（要等用户翻一次页才恢复）。
+       所以重渲前先记下 indices，替换后显式 slide() 回去。 */
+    const wasCurrent = old.classList.contains('present');
+    const idx = wasCurrent && window.Reveal && Reveal.getIndices ? Reveal.getIndices() : null;
     old.replaceWith(fresh);
     if (window.Reveal && Reveal.sync) Reveal.sync();
-    requestAnimationFrame(() => { if (revealInited && Reveal.isReady()) runReadyCallbacks(); layoutScene(fresh); syncIndex(fresh); activateRunCell(fresh); });
+    if (idx && Reveal.slide) Reveal.slide(idx.h, idx.v);
+    /* activateRunCell 必须同步调用（不能塞进 rAF）：它只是刷新 portal 的 anchor 引用并建 CodeMirror，
+       不需要测量；而页面不合成帧时（后台标签页/不可见的预览面板）rAF 整体停摆，塞进去就等于永不执行——
+       表现是重渲后代码框空着，要等用户翻一次页才回来（slidechanged 里它就是同步调的）。见 lessons FE-106。
+       真正需要"先有一帧再量"的只有 layoutScene/syncIndex，它们留在 rAF 里。 */
+    if (revealInited && Reveal.isReady()) runReadyCallbacks();
+    activateRunCell(fresh);
+    requestAnimationFrame(() => { layoutScene(fresh); syncIndex(fresh); });
+  }
+
+  /* ================= 编辑支撑：三级重渲 + 运行时状态搬运 =================
+     编辑一份已渲染的讲义时，"改完刷新一下"是会静默毁能力的：整页重渲会 remove runnable 的
+     portal（CodeMirror 连同用户写的代码一起没）、重建 widget 的 srcdoc（回到默认参数），
+     而 fit* 系列写在节点上的内联字号也会被重算成另一套。所以编辑要分三级用力：
+       ① 改文字   → 完全不重渲，只写回 doc + relayoutScene（最常用，零风险）
+       ② 改一个块 → rerenderBlock，只换那一个 [data-block-id] 节点，兄弟节点纹丝不动
+       ③ 换主题/版式 → 不得不整页重渲：captureRuntimeState → 重渲 → restoreRuntimeState
+     ③ 做完之后连"换主题不丢用户代码"都成立，比原来的 live 预览更强。 */
+
+  /** 只换一个 block 的 DOM 节点。返回是否命中（未命中时调用方可回落 rerenderScene）。 */
+  function rerenderBlock(sceneId, blockId, block) {
+    const slidesEl = $('#slides');
+    if (!slidesEl) return false;
+    const sec = slidesEl.querySelector('section[data-scene-id="' + CSS.escape(String(sceneId)) + '"]');
+    if (!sec) return false;
+    const old = sec.querySelector('[data-block-id="' + CSS.escape(String(blockId)) + '"]');
+    if (!old) return false;
+    /* 自定义版式（index/split/compose）里的块由 renderLayoutBlock 渲染——它会剥掉块级 fragment，
+       因为那些版式已经用空间层级组织了叙事。重渲单块必须沿用同一条路径，否则这一个块会突然带上
+       fragment 而首帧消失。full/flow 走普通 renderBlock。 */
+    const body = old.closest('[data-layout]');
+    const layoutKind = body ? body.dataset.layout : '';
+    const fresh = ['index', 'split', 'compose'].includes(layoutKind)
+      ? renderLayoutBlock(block, ctx)
+      : renderBlock(block, ctx);
+    old.replaceWith(fresh);
+    /* 同 rerenderScene：初始化与 anchor 刷新同步做，只有需要测量的排版留给 rAF（FE-106）。 */
+    if (revealInited && Reveal.isReady()) runReadyCallbacks();   /* 新块的 chart/widget 初始化回调 */
+    activateRunCell(sec);                                        /* 刷新本页 portal 的 anchor 引用 */
+    requestAnimationFrame(() => { layoutScene(sec); syncIndex(sec); });
+    return true;
+  }
+
+  /** 改完文字后重跑本页的自适应排版（不重渲，DOM 已是目标状态）。 */
+  function relayoutScene(section) {
+    const sec = section || (revealInited && Reveal.getCurrentSlide());
+    if (!sec) return;
+    requestAnimationFrame(() => { layoutScene(sec); syncIndex(sec); renderVisibleCharts(sec); });
+  }
+
+  /** 采集容器内"渲染期才存在"的状态。
+   *  @returns {{states: Object, lost: string[]}} lost = 已知无法保全的块 id（sim.widget 的控件长在
+   *  sandbox="allow-scripts" 的 null-origin iframe 里，外部无从读取——调用方应据此提示用户）。 */
+  function captureRuntimeState(root) {
+    const states = {}, lost = [];
+    if (!root) return { states, lost };
+    const slot = id => (states[id] || (states[id] = {}));
+    for (const node of root.querySelectorAll('[data-block-id]')) {
+      const id = node.dataset.blockId;
+      const sliders = Array.from(node.querySelectorAll('input[data-sim-param]'));
+      if (sliders.length) {
+        const params = {};
+        for (const s of sliders) params[s.dataset.simParam] = s.value;
+        slot(id).simParams = params;
+      }
+      if (node.querySelector('iframe.widframe')) lost.push(id);
+    }
+    for (const [uid, entry] of runnableRegistry) {
+      if (!root.querySelector('[data-rc-anchor="' + CSS.escape(uid) + '"]')) continue;
+      if (typeof entry.getState === 'function') slot(uid).runnable = entry.getState();
+    }
+    return { states, lost };
+  }
+
+  /** 把 captureRuntimeState 的快照回填进重渲后的新 DOM。必须在重渲完成后调用。 */
+  function restoreRuntimeState(root, snapshot) {
+    if (!root || !snapshot || !snapshot.states) return;
+    for (const [id, st] of Object.entries(snapshot.states)) {
+      if (st.simParams) {
+        const node = root.querySelector('[data-block-id="' + CSS.escape(id) + '"]');
+        /* 走 dispatchEvent('input') 而不是直接改内部 values：复用既有监听器，
+           顺带把数值标签和图表重绘都带上，不必知道各引擎内部长什么样。 */
+        if (node) for (const [name, v] of Object.entries(st.simParams)) {
+          const input = node.querySelector('input[data-sim-param="' + CSS.escape(name) + '"]');
+          if (input) { input.value = v; input.dispatchEvent(new Event('input', { bubbles: true })); }
+        }
+      }
+      if (st.runnable) {
+        const entry = runnableRegistry.get(id);
+        if (entry && typeof entry.setState === 'function') entry.setState(st.runnable);
+      }
+    }
   }
 
   /* ---- quiz 判分（事件委托） ---- */
@@ -1888,7 +2045,12 @@
     $('#btnOverview').onclick = () => Reveal.toggleOverview();
     $('#btnPrev').onclick = () => Reveal.prev();
     $('#btnNext').onclick = () => Reveal.next();
-    document.addEventListener('keydown', e => { if (e.target.tagName === 'INPUT') return; if (e.key === 'a' || e.key === 'A') $('#btnTutor').click(); });
+    /* isContentEditable 守卫：不加的话在可编辑标题里打一个 "a" 就会弹出 AI 助教面板。
+       （reveal 自身的翻页快捷键已有同样的守卫，这条是我们自己加的快捷键，得自己补。） */
+    document.addEventListener('keydown', e => {
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable) return;
+      if (e.key === 'a' || e.key === 'A') $('#btnTutor').click();
+    });
   }
 
   /* ---- 自动启动（index.html 兼容路径：?doc= 或默认 course.lecture.json） ----
@@ -1916,5 +2078,11 @@
   }
 
   /* ---- live.html 公共 API：renderDoc/rerenderScene 让 Dashboard 增量更新预览 ---- */
-  window.LectureDeck = { renderDoc, rerenderScene, refreshTheme: refreshThemeColors };
+  window.LectureDeck = {
+    renderDoc, rerenderScene, refreshTheme: refreshThemeColors,
+    /* 编辑支撑（deck-edit.js 消费）：三级重渲 + 运行时状态搬运 + 取当前 doc */
+    rerenderBlock, relayoutScene, captureRuntimeState, restoreRuntimeState,
+    renderInline: inlineMd,   /* 字段级重绘：改完一行文字只需重跑受限行内 markdown，不必重渲块 */
+    getDoc: () => currentDoc,
+  };
 })();
