@@ -14,7 +14,7 @@ export const SCENE_KINDS = ['hero', 'content', 'quiz', 'statement', 'section'];
 
 export const LAYOUT_KINDS = ['flow', 'index', 'split', 'compose', 'full'];
 
-export const BLOCK_TYPES = ['hero', 'statement', 'list', 'agenda', 'callout', 'timeline', 'formula', 'flow', 'table', 'code', 'compare', 'grid', 'quiz', 'sim', 'chart', 'stats', 'diagram', 'graph', 'runnable', 'embed', 'freeform', 'pullquote', 'video'];
+export const BLOCK_TYPES = ['hero', 'statement', 'list', 'agenda', 'callout', 'timeline', 'formula', 'flow', 'table', 'code', 'compare', 'grid', 'quiz', 'sim', 'chart', 'stats', 'diagram', 'graph', 'runnable', 'embed', 'freeform', 'pullquote', 'video', 'media'];
 
 export const DIAGRAM_TYPES = ['cycle', 'pyramid', 'staircase', 'snake', 'arrow-seq', 'circular-grid', 'connected-circles'];
 
@@ -55,7 +55,7 @@ const UNREACHABLE_FLAT = new Set(['video']);   // freeform 已解除 AUTO_EXCLUD
 
 export const CAPABILITIES = [
   ...FLAT_BLOCK_TYPES.map((k) => ({ key: k, group: 'block', reachable: true })),
-  ...['freeform', 'video'].map((k) => ({ key: k, group: 'block', reachable: !UNREACHABLE_FLAT.has(k) })),
+  ...['freeform', 'video', 'media'].map((k) => ({ key: k, group: 'block', reachable: !UNREACHABLE_FLAT.has(k) })),
   ...CHART_TYPES.map((v) => ({ key: `chart:${v}`, group: 'variant', reachable: true })),
   ...DIAGRAM_TYPES.map((v) => ({ key: `diagram:${v}`, group: 'variant', reachable: true })),
   ...GRAPH_TYPES.map((v) => ({ key: `graph:${v}`, group: 'variant', reachable: true })),

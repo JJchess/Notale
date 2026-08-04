@@ -242,6 +242,13 @@ function checkBlock(b, path, state) {
     }
     if (b.caption != null) { opt(b, 'caption', isStr, path, 'string'); checkInline(b.caption, path + '.caption'); }
     if (b.loop != null) opt(b, 'loop', v => typeof v === 'boolean', path, 'boolean');
+  } else if (T === 'media') {
+    req(b, 'assetId', isStr, path, 'string');
+    req(b, 'purpose', v => ['evidence', 'explanatory', 'narrative', 'atmospheric'].includes(v), path, 'evidence|explanatory|narrative|atmospheric');
+    req(b, 'placement', v => ['illustration', 'decoration'].includes(v), path, 'illustration|decoration');
+    if (b.placement === 'decoration' && b.purpose === 'evidence') err(path, 'decoration 不得承担 evidence');
+    if (b.assetId && state.assetIds && !state.assetIds.has(b.assetId)) err(path + '.assetId', '引用未知 asset: ' + b.assetId);
+    if (b.caption != null) { opt(b, 'caption', isStr, path, 'string'); checkInline(b.caption, path + '.caption'); }
   } else if (T === 'list') {
     if (req(b, 'items', v => Array.isArray(v) && v.length >= 1 && v.length <= 12, path, '1–12 项数组')) {
       if (b.items.length > 8) warn(path + '.items', '条目数 ' + b.items.length + ' 偏多，注意别在一页里堆太满（硬顶 12，建议 ≤8）');
@@ -439,6 +446,12 @@ function checkScene(s, path, state, seenIds) {
   opt(s, 'autoAnimate', v => typeof v === 'boolean', path, 'boolean');
   if (s.headline) checkInline(s.headline, path + '.headline');
   if (s.lead) checkInline(s.lead, path + '.lead');
+  if (isObj(s.background)) {
+    req(s.background, 'assetId', isStr, path + '.background', 'string');
+    req(s.background, 'purpose', v => ['explanatory', 'narrative', 'atmospheric'].includes(v), path + '.background', 'explanatory|narrative|atmospheric');
+    if (s.background.assetId && state.assetIds && !state.assetIds.has(s.background.assetId)) err(path + '.background.assetId', '引用未知 asset: ' + s.background.assetId);
+    if (!s.background.safeZone) warn(path + '.background.safeZone', '背景未声明原生文字安全区');
+  }
   if (!req(s, 'blocks', v => Array.isArray(v) && v.length >= 1, path, '非空数组')) return;
   if (s.kind === 'hero' && (s.blocks.length !== 1 || s.blocks[0].type !== 'hero')) err(path + '.blocks', 'hero 页应恰好含一个 hero block');
   if (s.kind === 'statement' && !s.blocks.some(b => b.type === 'statement')) err(path + '.blocks', 'statement 页应含 statement block');
@@ -468,6 +481,12 @@ function validate(doc, state) {
   req(doc, 'id', v => isStr(v) && /^[a-z0-9][a-z0-9-]*$/.test(v), '$', 'kebab-case id');
   req(doc, 'title', v => isStr(v) && v.length > 0, '$', '非空字符串');
   req(doc, 'language', isStr, '$', 'string');
+  for (const [i, asset] of (doc.assets || []).entries()) {
+    if (!isObj(asset) || !isStr(asset.id) || !isStr(asset.src) || !isStr(asset.alt)) { err(`$.assets[${i}]`, '需 {id,kind,src,alt}'); continue; }
+    if (state.assetIds.has(asset.id)) err(`$.assets[${i}].id`, 'asset id 重复: ' + asset.id);
+    state.assetIds.add(asset.id);
+    if (/^\s*(https?:)?\/\//i.test(asset.src)) err(`$.assets[${i}].src`, '只能是本地相对路径或 data:，禁远程 URL');
+  }
   if (doc.tutor) {
     (doc.tutor.kb || []).forEach((k, i) => {
       if (!isObj(k) || !isStr(k.pattern) || !isStr(k.answer)) { err(`$.tutor.kb[${i}]`, '需 {pattern, answer}'); return; }
@@ -481,7 +500,7 @@ function validate(doc, state) {
 }
 
 /* ---------- 可复用导出（供 assemble.mjs / validate-block.mjs import） ---------- */
-function freshState() { return { freeformUses: [] }; }
+function freshState() { return { freeformUses: [], assetIds: new Set() }; }
 /** 校验整份 LectureDoc；返回 {errors, warnings, freeformUses}，不打印、不 exit。 */
 export function validateDoc(doc) {
   R.errors = []; R.warnings = [];

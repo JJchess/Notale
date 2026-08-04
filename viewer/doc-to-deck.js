@@ -223,6 +223,17 @@
   function refitAfterChart(elInside) { const sec = elInside && elInside.closest && elInside.closest('section'); if (sec) requestAnimationFrame(() => fitCustomLayout(sec)); }
 
   /* ================= Block 渲染器 ================= */
+  function assetById(id) {
+    return ((currentDoc && currentDoc.assets) || []).find(a => a && a.id === id) || null;
+  }
+
+  function applyAssetFocalPoint(img, asset) {
+    const fp = asset && asset.focalPoint;
+    if (fp && Number.isFinite(+fp.x) && Number.isFinite(+fp.y)) {
+      img.style.objectPosition = Math.max(0, Math.min(1, +fp.x)) * 100 + '% ' + Math.max(0, Math.min(1, +fp.y)) * 100 + '%';
+    }
+  }
+
   const blockRenderers = {
     hero(b, ctx) {
       const inner = el('div', 'inner');
@@ -240,6 +251,22 @@
         inner.appendChild(img);
       }
       return inner;
+    },
+    media(b) {
+      const asset = assetById(b.assetId);
+      if (!asset) throw new Error('media 引用未知 asset: ' + b.assetId);
+      const figure = el('figure', 'media-block media-' + (b.placement || 'illustration') + ' media-purpose-' + (b.purpose || 'explanatory'));
+      const img = document.createElement('img');
+      img.src = asset.src;
+      img.alt = b.placement === 'decoration' ? '' : (asset.alt || '');
+      img.loading = 'eager';
+      img.style.objectFit = b.fit === 'cover' ? 'cover' : 'contain';
+      applyAssetFocalPoint(img, asset);
+      if (b.mask) img.dataset.mask = b.mask;
+      if (b.placement === 'decoration') figure.setAttribute('aria-hidden', 'true');
+      figure.appendChild(img);
+      if (b.caption) figure.appendChild(el('figcaption', 'media-caption', inlineMd(b.caption)));
+      return figure;
     },
     statement(b) {
       const wrap = el('div');
@@ -1502,6 +1529,26 @@
     if (scene.kind === 'section') sec.className = 'divider';
     if (scene.transition) sec.setAttribute('data-transition', scene.transition);
     if (scene.autoAnimate) sec.setAttribute('data-auto-animate', '');   // 需相邻两页都置位+复用相同 block id 才会真正 morph
+    if (scene.compositionFamily) {
+      sec.dataset.composition = scene.compositionFamily;
+      sec.classList.add('composition-' + scene.compositionFamily);
+    }
+    if (scene.background) {
+      const asset = assetById(scene.background.assetId);
+      if (asset) {
+        sec.classList.add('has-scene-background');
+        const layer = el('div', 'scene-background');
+        const img = document.createElement('img');
+        img.src = asset.src; img.alt = ''; img.setAttribute('aria-hidden', 'true');
+        img.style.objectFit = scene.background.fit === 'contain' ? 'contain' : 'cover';
+        applyAssetFocalPoint(img, asset);
+        layer.appendChild(img);
+        const overlay = el('div', 'scene-background-overlay overlay-' + (scene.background.overlay || 'scrim'));
+        overlay.style.setProperty('--overlay-strength', String(scene.background.overlayStrength == null ? 0.45 : scene.background.overlayStrength));
+        layer.appendChild(overlay);
+        sec.appendChild(layer);
+      }
+    }
     /* 装饰环 */
     for (const r of (scene.decor && scene.decor.rings) || []) {
       const g = el('div', 'geo-ring');
@@ -1675,7 +1722,7 @@
   /* ================= 装配 & 启动 ================= */
   /* 骨架块识别：agent 规划阶段产出的占位 block 仅有 {id,type,intent}，没有真实内容字段。
      previewMode 下把这些渲染成占位卡（让 live dashboard 能在生成期间看到结构），正式渲染跳过此判断。 */
-  const CONTENT_KEYS = ['title','sub','items','statement','prompt','label','text','source','formula','rows','head','left','right','sides','engine','html','filename','fallbackPoster','answers','choices','steps','cells','events','data','question','nodes','edges','cite','hint','tag','facts','objective'];
+  const CONTENT_KEYS = ['title','sub','items','statement','prompt','label','text','source','formula','rows','head','left','right','sides','engine','html','filename','fallbackPoster','answers','choices','steps','cells','events','data','question','nodes','edges','cite','hint','tag','facts','objective','assetId'];
   function hasContent(b) {
     if (!b || typeof b !== 'object') return false;
     for (const k of CONTENT_KEYS) if (b[k] != null && b[k] !== '') return true;

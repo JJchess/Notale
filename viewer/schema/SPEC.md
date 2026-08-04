@@ -255,6 +255,18 @@ Hermes 技能: generate-lecture <课题> <素材目录?>
 
 ---
 
+## 9. Media 能力与资产分层
+
+Media 是可选设计能力，不是每页配额。规划器只有在 `create-media` 声明的能力比 diagram、chart、sim、runnable 或原生图形更合适时才选择它。
+
+- `LectureDoc.assets` 保存离线资产、来源、alt、查询或提示词与焦点；页面只按 `assetId` 引用。
+- `media` block 只承载 `illustration|decoration`。必须声明 `purpose=evidence|explanatory|narrative|atmospheric`。
+- 背景资产写入 `scene.background`，并声明安全区、蒙版与强度。整页海报采用背景视觉层加原生文字层，不把关键文字烘焙进图片。
+- 算法状态、执行结果、定量数据、精确关系和坐标约束分别由 sim、runnable、chart、diagram、geometry-sim 证明，Media 不得替代。
+- `scene.compositionFamily` 记录页面的构图家族；它编译到既有 layout primitive，并保持旧文档兼容。
+
+---
+
 ## 附：与旧草稿的差异
 
 早期草稿（原 `demo/lecture-doc.js`，已删除）以「嵌入三产品 iframe」为中心；经用户定向（"不强塞产品 URL、用 Quarto 技术方案原生实现交互"），v1 以**原生交互 block**（sim/runnable/quiz）为中心，`embed` 降级为保留位。scene/block/status 三层与流式协议的思路保持不变。

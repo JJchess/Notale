@@ -14,6 +14,7 @@
     "language": { "type": "string", "examples": ["zh-CN", "en"] },
     "audience": { "type": "string" },
     "theme": { "enum": ["cartesian", "cobalt-grid", "lab", "slate"], "default": "cartesian", "description": "视觉主题：agent 按课程气质选一套，选定后整份讲义强制一致（无 per-page 覆盖）。cartesian=暖沙米色+Playfair 衬线，克制留白；cobalt-grid=电钴蓝双色 risograph+方格坐标纸+封面反相，研究公报感；lab=暗磷光仪表台，专给物理/化学/算法仿真（含 sim.widget canvas 动画）；slate=冷灰绘图纸+Newsreader 衬线+单一琥珀强调，冷静克制的编辑/工程气质。选择指南见 SPEC.md §8。" },
+    "assets": { "type": "array", "items": { "$ref": "#/$defs/asset" }, "description": "离线媒体资产清单；block 与 scene 只按 assetId 引用。" },
     "tutor": { "$ref": "#/$defs/tutor" },
     "scenes": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/scene" } }
   },
@@ -21,6 +22,23 @@
     "inlineMd": {
       "type": "string",
       "description": "受限行内 markdown：**强调**(衬线斜体) / *强调* / `等宽` / $行内LaTeX$。禁止原始 HTML。"
+    },
+    "asset": {
+      "type": "object",
+      "required": ["id", "kind", "src", "alt"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$" },
+        "kind": { "enum": ["photo", "illustration", "cutout", "texture", "icon", "generated-art"] },
+        "src": { "type": "string", "pattern": "^(?!\\s*(https?:)?//).+" },
+        "alt": { "type": "string" },
+        "source": { "type": "string" },
+        "attribution": { "type": "string" },
+        "promptOrQuery": { "type": "string" },
+        "width": { "type": "integer", "minimum": 1 },
+        "height": { "type": "integer", "minimum": 1 },
+        "focalPoint": { "type": "object", "required": ["x", "y"], "additionalProperties": false, "properties": { "x": { "type": "number", "minimum": 0, "maximum": 1 }, "y": { "type": "number", "minimum": 0, "maximum": 1 } } }
+      }
     },
     "tutor": {
       "type": "object",
@@ -58,7 +76,7 @@
           "additionalProperties": false,
           "description": "本页版式（per-scene，可只用于某一页）。kind 缺省 flow=竖排。版式是开放集，这里是起步几种。",
           "properties": {
-            "kind": { "enum": ["flow", "index", "split", "compose"], "description": "flow 默认竖排 | index 片内分节(左目录+右切入) | split 锚定分栏(左锚常驻+右递进) | compose 中间层(12列区域图+role，见 cols/areas/preset)" },
+            "kind": { "enum": ["flow", "index", "split", "compose", "full"], "description": "flow 默认竖排 | index 片内分节 | split 锚定分栏 | compose 12列区域图 | full 单主体全幅" },
             "centered": { "type": "boolean", "description": "flow：body 内容垂直居中" },
             "gap": { "type": "number", "minimum": 0, "maximum": 60 },
             "cols": { "type": "integer", "minimum": 2, "maximum": 12, "description": "kind=compose：栅格列数（默认 12）" },
@@ -95,6 +113,18 @@
             "ratio": { "type": "number", "minimum": 0.25, "maximum": 0.6, "description": "kind=split：左锚栏宽度占比（默认 0.4）" }
           }
         },
+        "compositionFamily": { "enum": ["full-bleed-hero", "text-over-image", "cutout-split", "annotated-specimen", "focal-object", "process-path", "before-after", "comparison", "experiment-setup", "proof-equation-stage", "data-evidence", "collage", "poster", "research-figure", "interactive-stage"] },
+        "background": {
+          "type": "object", "required": ["assetId", "purpose"], "additionalProperties": false,
+          "properties": {
+            "assetId": { "type": "string" },
+            "purpose": { "enum": ["explanatory", "narrative", "atmospheric"] },
+            "fit": { "enum": ["cover", "contain"], "default": "cover" },
+            "overlay": { "enum": ["none", "solid", "gradient", "scrim"], "default": "scrim" },
+            "overlayStrength": { "type": "number", "minimum": 0, "maximum": 1, "default": 0.45 },
+            "safeZone": { "type": "string" }
+          }
+        },
         "decor": {
           "type": "object",
           "additionalProperties": false,
@@ -124,7 +154,7 @@
       "required": ["type"],
       "properties": {
         "id": { "type": "string", "description": "块 id（规划器分配，全局唯一）；scene.layout 的 steps/anchor 按此引用块" },
-        "type": { "enum": ["hero", "statement", "list", "agenda", "callout", "timeline", "formula", "flow", "table", "code", "compare", "grid", "quiz", "sim", "chart", "stats", "diagram", "graph", "runnable", "embed", "freeform", "pullquote", "video"] },
+        "type": { "enum": ["hero", "statement", "list", "agenda", "callout", "timeline", "formula", "flow", "table", "code", "compare", "grid", "quiz", "sim", "chart", "stats", "diagram", "graph", "runnable", "embed", "freeform", "pullquote", "video", "media"] },
         "status": { "enum": ["ready", "pending", "error"], "default": "ready" },
         "fragment": { "type": "boolean", "description": "整块渐显" }
       },
@@ -151,7 +181,8 @@
         { "if": { "properties": { "type": { "const": "embed" } } }, "then": { "$ref": "#/$defs/embedBlock" } },
         { "if": { "properties": { "type": { "const": "freeform" } } }, "then": { "$ref": "#/$defs/freeformBlock" } },
         { "if": { "properties": { "type": { "const": "pullquote" } } }, "then": { "$ref": "#/$defs/pullquoteBlock" } },
-        { "if": { "properties": { "type": { "const": "video" } } }, "then": { "$ref": "#/$defs/videoBlock" } }
+        { "if": { "properties": { "type": { "const": "video" } } }, "then": { "$ref": "#/$defs/videoBlock" } },
+        { "if": { "properties": { "type": { "const": "media" } } }, "then": { "$ref": "#/$defs/mediaBlock" } }
       ]
     },
     "heroBlock": {
@@ -191,6 +222,18 @@
         "caption": { "$ref": "#/$defs/inlineMd", "description": "视频下方一行说明" },
         "loop": { "type": "boolean" },
         "language": { "type": "string", "description": "字幕语言(默认 zh)" }
+      }
+    },
+    "mediaBlock": {
+      "description": "有明确教学或设计用途的媒体块；背景媒体 lowering 到 scene.background。",
+      "required": ["assetId", "purpose", "placement"],
+      "properties": {
+        "assetId": { "type": "string" },
+        "purpose": { "enum": ["evidence", "explanatory", "narrative", "atmospheric"] },
+        "placement": { "enum": ["illustration", "decoration"] },
+        "fit": { "enum": ["contain", "cover"], "default": "contain" },
+        "mask": { "type": "string" },
+        "caption": { "$ref": "#/$defs/inlineMd" }
       }
     },
     "listBlock": {
