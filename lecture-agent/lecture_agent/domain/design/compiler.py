@@ -31,6 +31,7 @@ _STAGE_TYPES = {"sim", "runnable"}
 _MEDIA_TYPES = {"media", "video"}
 _DATA_TYPES = {"chart", "table", "stats"}
 _VISUAL_TYPES = _MEDIA_TYPES | _DATA_TYPES | {"diagram", "graph", "flow", "timeline"}
+_WIDE_EVIDENCE_TYPES = _STAGE_TYPES | _DATA_TYPES | {"formula", "diagram", "graph", "runnable"}
 
 
 def _text_length(value: Any) -> int:
@@ -175,6 +176,20 @@ def _cutout_split(blocks: list[dict[str, Any]], assets: dict[str, dict[str, Any]
 
 
 def _annotated(blocks: list[dict[str, Any]], assets: dict[str, dict[str, Any]], _dense: bool) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    wide = [block for block in _rank_blocks(blocks) if block.get("type") in _WIDE_EVIDENCE_TYPES]
+    if len(wide) >= 2:
+        areas = [
+            _area(wide[0], (1, 7, 4, 10), role="evidence", clip=True),
+            _area(wide[1], (7, 13, 4, 10), role="evidence", clip=True),
+        ]
+        areas.extend(
+            _remaining_stack(
+                [block for block in blocks if block not in wide[:2]],
+                (2, 12, 10, 13),
+                role="caption",
+            )
+        )
+        return _title((1, 10, 1, 4), width=88), areas
     main = _rank_blocks(blocks)[0]
     areas = [_area(main, (4, 10, 4, 12), role="feature", clip=True)]
     rest = [block for block in blocks if block is not main]
@@ -242,6 +257,11 @@ def _collage(blocks: list[dict[str, Any]], assets: dict[str, dict[str, Any]], _d
 
 def _poster(blocks: list[dict[str, Any]], assets: dict[str, dict[str, Any]], _dense: bool) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     media = next((block for block in blocks if block.get("type") in _MEDIA_TYPES), None)
+    if media is None:
+        return (
+            _title((2, 12, 2, 8), align="center", justify="center", width=82),
+            _remaining_stack(blocks, (2, 12, 8, 13), role="caption"),
+        )
     areas: list[dict[str, Any]] = []
     if media:
         align, justify = _focal_alignment(_asset_for(media, assets))
@@ -259,7 +279,7 @@ def _research(blocks: list[dict[str, Any]], assets: dict[str, dict[str, Any]], _
 
 def _interactive(blocks: list[dict[str, Any]], assets: dict[str, dict[str, Any]], _dense: bool) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     stage = next((block for block in blocks if block.get("type") in _STAGE_TYPES), _rank_blocks(blocks)[0])
-    areas = [_area(stage, (1, 10, 4, 13), role="feature", clip=True)]
+    areas = [_area(stage, (1, 10, 4, 13), role="stage", clip=False)]
     areas.extend(_remaining_stack([block for block in blocks if block is not stage], (10, 13, 4, 13), role="aside"))
     return _title((1, 9, 1, 4), width=88), areas
 
@@ -295,7 +315,7 @@ def _safe_family_layout(family: str, blocks: list[dict[str, Any]]) -> dict[str, 
     stage = next((block for block in blocks if block.get("type") in _STAGE_TYPES), None)
     if stage:
         title = _title((1, 9, 1, 4), width=86)
-        areas = [_area(stage, (1, 10, 4, 13), role="feature", clip=True)]
+        areas = [_area(stage, (1, 10, 4, 13), role="stage", clip=False)]
         areas.extend(_remaining_stack([block for block in blocks if block is not stage], (10, 13, 4, 13)))
     elif family in {"comparison", "before-after", "process-path"}:
         title, areas = _paired(blocks, {}, False, stagger=family == "before-after")
@@ -315,6 +335,33 @@ def _safe_family_layout(family: str, blocks: list[dict[str, Any]]) -> dict[str, 
         "titleRegion": title,
         "areas": areas,
     }
+
+
+def _reconcile_family(
+    requested: str,
+    blocks: list[dict[str, Any]],
+    *,
+    has_background: bool,
+) -> str:
+    """Resolve contradictions between a prose family choice and the generated evidence blocks."""
+    types = {str(block.get("type") or "") for block in blocks}
+    if types & _STAGE_TYPES:
+        return "interactive-stage"
+    if has_background and requested in {"full-bleed-hero", "text-over-image", "poster"}:
+        return requested
+    has_media = bool(types & _MEDIA_TYPES)
+    if has_media:
+        if requested in {
+            "text-over-image", "cutout-split", "annotated-specimen", "collage",
+            "poster", "full-bleed-hero", "experiment-setup",
+        }:
+            return requested
+        return "annotated-specimen"
+    if requested == "focal-object" and len(blocks) >= 3:
+        return "research-figure"
+    if requested == "poster" and not has_media and len(blocks) >= 3:
+        return "research-figure"
+    return requested
 
 
 def compile_scene_composition(
@@ -341,6 +388,8 @@ def compile_scene_composition(
     # 这类页不得把第一个文字 block 误当全幅图片层。
     has_background = isinstance(scene.get("background"), dict)
     has_media_block = any(block.get("type") in _MEDIA_TYPES for block in blocks)
+    family = _reconcile_family(family, blocks, has_background=has_background)
+    scene["compositionFamily"] = family
     if has_background and not has_media_block and family in {
         "full-bleed-hero", "text-over-image", "poster"
     }:

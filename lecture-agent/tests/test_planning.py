@@ -106,6 +106,21 @@ def test_knowledge_forms_require_evidence_semantics_not_positioned_nodes() -> No
     ]
 
 
+def test_observational_evidence_requires_faithful_appearance_semantics() -> None:
+    perspectives = [
+        {
+            "focus": "从标本照片辨认可观察形态，再用关系图解释机制",
+            "mustCover": ["真实对象的外观差异", "固定结构关系"],
+            "questions": ["哪些特征能从实物观察直接判断？"],
+        }
+    ]
+    forms = _validated_knowledge_forms(["observational-evidence"], perspectives)
+    assert forms == ["relational-structure", "observational-evidence"]
+    obligation = _evidence_obligation("observational-evidence", perspectives)
+    assert obligation["capability"] == "media"
+    assert "真实对象" in obligation["requiredEvidence"]
+
+
 def test_quantitative_obligation_uses_chart_without_parameter_control() -> None:
     static = _evidence_obligation(
         "quantitative-model",

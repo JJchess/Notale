@@ -333,6 +333,7 @@ async def _quality_repair(
     registry: dict[str, SkillEntry],
     planning: dict[str, PlanningEntry],
     page_briefs: dict[str, dict[str, str]],
+    page_visual_briefs: dict[str, dict[str, Any]],
     placeholder_specs: dict[str, dict[str, Any]],
     topic: str,
     audience: str,
@@ -397,13 +398,23 @@ async def _quality_repair(
             warnings.append(f"逐页质检重规划失败 {sid}: {err}")
             return False
         new_brief = _page_brief(skeleton)
+        new_visual_brief = _page_visual_brief(skeleton)
+        composition = new_visual_brief.get("compositionFamily")
+        if composition:
+            skeleton["compositionFamily"] = composition
         skeleton.pop("brief", None)
+        skeleton.pop("visualBrief", None)
         assign_layouts({"scenes": [skeleton]})
         placeholders = [
             lower_planning_placeholder(dict(block), planning)
             for block in (skeleton.get("blocks") or [])
         ]
-        scene_ctx = _block_scene_context(skeleton, new_brief, placeholders)
+        scene_ctx = _block_scene_context(
+            skeleton,
+            new_brief,
+            placeholders,
+            visual_brief=new_visual_brief,
+        )
 
         async def generate_one(ph: dict[str, Any], _i: int) -> tuple[dict[str, Any], BlockResult]:
             reg = registry.get(str(ph.get("type") or ""))
@@ -461,6 +472,7 @@ async def _quality_repair(
             placeholder_specs[str(ph.get("id"))] = ph
         skeleton["blocks"] = final_blocks
         page_briefs[sid] = new_brief
+        page_visual_briefs[sid] = new_visual_brief
         scene.clear()
         scene.update(skeleton)
         log(f"[quality] {sid}: pageIssue → 整页重规划并重生 {len(final_blocks)} blocks")
@@ -708,6 +720,8 @@ async def _generate_media_block(
     strategy = str(placeholder.get("sourceStrategy") or "").strip()
     if strategy not in {"search-first", "generate-first"}:
         strategy = "generate-first" if purpose == "atmospheric" or placement == "decoration" else "search-first"
+    if purpose == "evidence":
+        strategy = "search-first"
     query = subject + (f"；{relationship}" if relationship else "")
     dna = json.dumps(design_brief.get("designDNA") or {}, ensure_ascii=False)
     prompt = (
@@ -733,7 +747,12 @@ async def _generate_media_block(
         except Exception:  # noqa: BLE001 - 单资产失败允许走另一来源
             return None
 
-    if strategy == "search-first":
+    if purpose == "evidence":
+        # Generated imagery may explain or set a scene, but it cannot authenticate appearance.
+        # Failing closed keeps observational evidence honest instead of fabricating a specimen.
+        asset = await try_finder()
+        route = "finder" if asset is not None else ""
+    elif strategy == "search-first":
         asset = await try_finder()
         route = "finder" if asset is not None else ""
         if asset is None:
@@ -746,6 +765,8 @@ async def _generate_media_block(
             asset = await try_finder()
             route = "finder" if asset is not None else ""
     if asset is None:
+        if purpose == "evidence":
+            return BlockResult(None, f"evidence media 缺少可追溯搜索资产: {subject}")
         return BlockResult(None, f"media 资产获取失败: {subject}")
 
     raw_id = re.sub(r"[^a-z0-9-]+", "-", str(placeholder.get("id") or "media").lower()).strip("-")
@@ -1042,7 +1063,7 @@ async def generate_lecture(
     doc["_knowledgeForms"] = list(plan.knowledge_forms)
     doc["_evidenceObligations"] = list(plan.evidence_obligations)
     plan_quality_warnings: list[str] = []
-    skill_descriptions = _skill_decision_descriptions(registry, planning)
+    skill_descriptions = _skill_decision_descriptions(registry, planning_surface)
     if opts.plan_quality_rounds > 0:
         progress({"type": "stage", "stage": "plan-quality", "status": "start"})
     # rounds=0 仍运行确定性的证据路由/容量守卫；制度约束不能依赖是否开启额外 LLM 审查。
@@ -1293,8 +1314,9 @@ async def generate_lecture(
             llm,
             doc,
             registry=registry,
-            planning=planning,
+            planning=planning_surface,
             page_briefs=page_briefs,
+            page_visual_briefs=page_visual_briefs,
             placeholder_specs=placeholder_specs,
             topic=topic,
             audience=audience,
@@ -1305,6 +1327,19 @@ async def generate_lecture(
             log=log,
             progress=progress,
         )
+        # Page-quality may replace an entire scene after the initial composition pass.
+        # Recompile from the new real blocks so sim/runtime never fall back to legacy 150px layouts.
+        for warning in _lower_media_backgrounds(doc):
+            quality_warnings.append(warning)
+            log(f"[media] {warning}")
+        for warning in _compile_page_design(
+            doc,
+            page_visual_briefs=page_visual_briefs,
+            design_brief=design_brief,
+        ):
+            quality_warnings.append(warning)
+            log(f"[design] {warning}")
+        assign_layouts(doc)
         final = validate_doc(doc)
         final.warnings.extend(quality_warnings)
         progress({"type": "stage", "stage": "quality", "status": "done"})

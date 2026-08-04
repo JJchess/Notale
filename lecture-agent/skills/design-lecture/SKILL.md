@@ -11,8 +11,10 @@ Work evidence-first and design-led. Establish one course-level Design DNA, then 
 
 1. Derive `designBrief` from audience, learning purpose, density, and evidence obligations. Keep one Design DNA across the deck.
 2. For each page, state one `designIntent`, select evidence capabilities from the planning registry, then choose one composition family.
+   Create an observational evidence obligation only when the learner must recognize faithful appearance, a specimen, a place, an artifact, or a primary source. Route that obligation to source-grounded `media`; do not infer it from the subject label and do not count atmospheric art as evidence.
 3. Generate blocks and assets before freezing coordinates. Media remains optional; inspect real aspect ratio and focal point when it is selected.
 4. Compile Design DNA into `visualSystem` tokens and compile every family into a 12×12 `artboard`. Preserve the family signature; use its safe variant instead of falling back to generic flow.
+   Recompile whenever page-quality replaces a scene or changes its blocks; a layout compiled against old block ids is invalid.
 5. Validate title safety, block references, bounds, overlap, and sim/runtime prominence. Let screenshot review assess the pixels after deterministic checks pass.
 
 ## Required internal fields

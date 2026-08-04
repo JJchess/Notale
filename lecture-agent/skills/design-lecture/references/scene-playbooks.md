@@ -14,7 +14,7 @@ Use these playbooks when a deck matches the knowledge forms, not merely the exam
 ## Biological mechanism and scientific observation
 
 - Evidence spine: faithful appearance/context → labeled structures → causal mechanism → comparison/prediction → synthesis.
-- Capability sequence: evidence media for appearance; native labels or diagram for relations; state/model sim only when the learner must manipulate a causal process.
+- Capability sequence: source-grounded evidence media for appearance; native labels or diagram for relations; state/model sim only when the learner must manipulate a causal process. Generated imagery may explain a mechanism or establish atmosphere, but it is not specimen evidence.
 - Composition rhythm: annotated-specimen → process-path → comparison → interactive-stage when required → research-figure.
 - Visual language: scientific fidelity, organic but controlled shapes, low-noise surfaces, explicit scale and provenance. Keep labels native.
 - Good: a sourced specimen anchors callouts while a separate mechanism diagram owns causal arrows.

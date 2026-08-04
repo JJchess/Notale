@@ -25,5 +25,7 @@ Coordinates are compiled after block and asset generation on a 12×12 artboard. 
 - Select by evidence relationship, not by subject name or desired novelty.
 - Use real asset aspect ratio and focal point to choose the split and title safe side.
 - Widen prose rails for dense text; do not shrink a stage below readable minimums.
+- Never place formula, table, chart, diagram, graph, sim, or runtime evidence in a narrow caption rail. Give two wide evidence blocks a balanced field and move only short prose to the footer/rail.
 - Avoid adjacent identical signatures unless the repetition is the comparison.
+- Use motifs as rhythmic punctuation on selected pages, not as the same decorative stamp on every page.
 - If validation fails, remove fragile overlap and use the same family's safe axis. Never collapse to `flow`.

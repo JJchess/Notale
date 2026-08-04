@@ -377,6 +377,16 @@ def _enforce_course_evidence_obligations(
             )
         if capability == "geometry-sim":
             return sum(token in text for token in ("coordinate", "constraint", "坐标", "约束", "几何"))
+        if capability == "media":
+            return sum(
+                token in text
+                for token in (
+                    "appearance", "specimen", "morphology", "photograph", "primary source",
+                    "artifact", "observe", "observable", "visual evidence",
+                    "外观", "标本", "形态", "照片", "史料", "文物", "实物", "观察",
+                    "可观察", "性状表现", "真实对象",
+                )
+            )
         return sum(
             token in text
             for token in (
@@ -403,11 +413,16 @@ def _enforce_course_evidence_obligations(
             acceptable |= {"diagram", "graph", "flow", "timeline"}
         elif knowledge_form == "quantitative-model":
             acceptable |= {"chart", "model-sim"}
-        if any(
+        obligation_satisfied = any(
             str(block.get("type") or "") in acceptable
+            and (
+                knowledge_form != "observational-evidence"
+                or str(block.get("purpose") or "") == "evidence"
+            )
             for scene in scenes
             for block in (scene.get("blocks") or [])
-        ):
+        )
+        if obligation_satisfied:
             continue
         candidates = []
         for i, scene in enumerate(scenes):
@@ -436,6 +451,14 @@ def _enforce_course_evidence_obligations(
             brief["objective"] = "学生能实现并运行本页核心可执行过程，通过固定测试验证结果"
             brief["visualTask"] = "编辑核心实现并同时看到固定输入、stdout 与测试反馈"
             role = "practice"
+        elif capability == "media":
+            brief.setdefault("objective", "学生能从忠实的观察材料辨认与解释本页核心特征")
+            brief["visualTask"] = str(
+                raw.get("requiredEvidence")
+                or brief.get("visualTask")
+                or "从有来源的真实对象或史料中辨认可观察特征"
+            )
+            role = "evidence"
         else:
             brief.setdefault("objective", "学生能通过可观察证据解释本页核心关系")
             brief["visualTask"] = str(raw.get("requiredEvidence") or brief.get("visualTask") or "直接编码核心证据")
@@ -448,6 +471,53 @@ def _enforce_course_evidence_obligations(
             ),
             scene["blocks"][0],
         )
+        if capability == "media":
+            existing_ids = {
+                str(block.get("id") or "") for block in (scene.get("blocks") or [])
+            }
+            base_id = f"{scene.get('id') or 'scene'}-media"
+            media_id = base_id
+            suffix = 2
+            while media_id in existing_ids:
+                media_id = f"{base_id}-{suffix}"
+                suffix += 1
+            media_block = {
+                "id": media_id,
+                "type": "media",
+                "role": "evidence",
+                "size": "l",
+                "intent": str(raw.get("requiredEvidence") or brief.get("visualTask")),
+                "purpose": "evidence",
+                "placement": "illustration",
+                "subject": str(brief.get("visualTask") or brief.get("requiredEvidence") or scene.get("headline") or "真实观察对象"),
+                "relationshipToContent": str(brief.get("keyClaim") or brief.get("objective") or "作为本页观察证据"),
+                "fidelity": "documentary",
+                "required": True,
+                "fit": "contain",
+                "sourceStrategy": "search-first",
+            }
+            # Media 与原生标签/关系块共同承担证据；不把整页替换成一张图片。
+            current_blocks = list(scene.get("blocks") or [])
+            keep = [
+                block
+                for block in current_blocks
+                if block.get("type") not in {"agenda", "list", "callout"}
+            ]
+            if not keep:
+                keep = current_blocks[:1]
+            scene["blocks"] = [media_block, *keep[:2]]
+            visual = scene.get("visualBrief") if isinstance(scene.get("visualBrief"), dict) else {}
+            scene["visualBrief"] = visual
+            capabilities = visual.get("selectedCapabilities")
+            selected = [str(value) for value in capabilities] if isinstance(capabilities, list) else []
+            visual["selectedCapabilities"] = list(dict.fromkeys([*selected, "media"]))
+            visual["compositionFamily"] = "annotated-specimen"
+            visual.setdefault("designIntent", "以忠实观察材料为主体，原生标注解释可观察特征")
+            scene["compositionFamily"] = "annotated-specimen"
+            warnings.append(
+                f"课程证据义务 {raw.get('knowledgeForm') or '?'}：{scene.get('id') or '?'} 路由到 media(evidence)"
+            )
+            continue
         main["type"] = effective
         main["role"] = role
         main["size"] = "xl"

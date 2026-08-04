@@ -612,3 +612,49 @@ async def test_course_evidence_obligations_cannot_be_omitted_from_skeleton() -> 
     planned = {block["type"] for scene in doc["scenes"] for block in scene["blocks"]}
     assert {"state-sim", "runnable"} <= planned
     assert sum("课程证据义务" in warning for warning in warnings) == 2
+
+
+async def test_observational_obligation_adds_evidence_media_without_replacing_native_labels() -> None:
+    scene = _doc()["scenes"][0]
+    scene["headline"] = "观察两种可辨认形态"
+    scene["brief"] = {
+        "objective": "学生能从真实对象辨认两种外观特征",
+        "learningAction": "inspect",
+        "requiredEvidence": "有来源的标本照片及可观察形态差异",
+        "keyClaim": "两种形态可由外观直接区分",
+        "visualTask": "在真实标本上辨认形态差异并由原生标签指出特征",
+        "evidencePolicy": "provided",
+    }
+    scene["visualBrief"] = {
+        "designIntent": "让观察材料承担证据",
+        "selectedCapabilities": ["list"],
+        "compositionFamily": "focal-object",
+    }
+    doc = {
+        "_evidenceObligations": [
+            {
+                "knowledgeForm": "observational-evidence",
+                "capability": "media",
+                "learningAction": "inspect",
+                "requiredEvidence": "从有来源的真实对象或标本中辨认可观察特征",
+            }
+        ],
+        "scenes": [scene],
+    }
+
+    warnings = await refine_plan(
+        FakeClient(),
+        doc,
+        topic="任意观察任务",
+        allowed_types={"media", "list", "diagram"},
+        rounds=0,
+    )
+
+    media = next(block for block in scene["blocks"] if block["type"] == "media")
+    assert media["purpose"] == "evidence"
+    assert media["placement"] == "illustration"
+    assert media["required"] is True
+    assert any(block["type"] != "media" for block in scene["blocks"])
+    assert scene["visualBrief"]["compositionFamily"] == "annotated-specimen"
+    assert "media" in scene["visualBrief"]["selectedCapabilities"]
+    assert any("observational-evidence" in warning for warning in warnings)

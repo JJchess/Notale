@@ -24,7 +24,7 @@ _PLAN_CALL_TIMEOUT_S = 600.0
 _PERSPECTIVE_SCHEMA = (
     '{ "perspectives": [ { "name":"视角名(如 重直觉的入门讲法 / 重推导的理论派 / 重工程实践 / 爱追问的学生)", '
     '"focus":"这个视角最在意什么(一句)", "mustCover":["必须讲到的要点"], "questions":["常见疑问/误区"] } ], '
-    '"knowledgeForms":["dynamic-process|executable-artifact|quantitative-model|spatial-constraint|relational-structure"] }'
+    '"knowledgeForms":["dynamic-process|executable-artifact|quantitative-model|spatial-constraint|relational-structure|observational-evidence"] }'
 )
 
 
@@ -69,6 +69,11 @@ _KNOWLEDGE_FORM_OBLIGATIONS: dict[str, tuple[str, str, str]] = {
         "inspect",
         "从节点与具名边读出固定的层级、分支或依赖关系",
     ),
+    "observational-evidence": (
+        "media",
+        "inspect",
+        "从有来源的真实对象、标本、地点、史料或外观差异中辨认可观察特征",
+    ),
 }
 
 _KNOWLEDGE_FORM_SIGNALS: dict[str, tuple[str, ...]] = {
@@ -91,6 +96,12 @@ _KNOWLEDGE_FORM_SIGNALS: dict[str, tuple[str, ...]] = {
     "relational-structure": (
         "hierarchy", "node", "edge", "relation", "dependency", "tree", "graph",
         "层级", "节点", "边", "关系", "依赖", "树", "图",
+    ),
+    "observational-evidence": (
+        "appearance", "specimen", "morphology", "photograph", "primary source",
+        "artifact", "field observation", "observable trait", "visual evidence",
+        "外观", "标本", "形态", "照片", "史料", "文物", "实物", "田野观察",
+        "可观察特征", "性状表现", "真实对象",
     ),
 }
 
@@ -148,6 +159,8 @@ async def _discover_coverage(
     sys = (
         f"你是课程设计专家。用多视角提问扩大一节讲义的覆盖面：对给定课题，列出 3-4 个**互补**的教学视角，"
         f"每个视角给出必须讲到的要点与学生常见疑问/误区。视角要真的不同，别重复。"
+        "knowledgeForms 按学习证据而非学科名选择：只有学习者必须观察真实外观、标本、地点、史料或实物差异时，"
+        "才声明 observational-evidence；抽象机制、精确关系和状态变化分别留给 diagram/sim，不能用图片代替。"
         f"{'**必讲点要从下面的参考素材里提炼。**' if material else ''}只输出 JSON：\n{_PERSPECTIVE_SCHEMA}"
     )
     user = (

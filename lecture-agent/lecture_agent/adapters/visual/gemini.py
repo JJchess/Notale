@@ -106,7 +106,26 @@ class GeminiVisualReviewer:
                 ],
             }
             raw = await asyncio.wait_for(self._complete(body, key), timeout=self.timeout)
-            return parse_visual_review(raw)
+            try:
+                return parse_visual_review(raw)
+            except (ValueError, json.JSONDecodeError):
+                # Even with response_format, model-authored issue text can contain an invalid
+                # backslash escape. Repair the existing judgment without resending screenshots.
+                repair_body = {
+                    **body,
+                    "messages": [
+                        {"role": "system", "content": _SYSTEM_PROMPT},
+                        {"role": "assistant", "content": raw},
+                        {
+                            "role": "user",
+                            "content": "上条不是合法 JSON。保持分数、sceneId 和问题含义不变，转义所有反斜杠，只输出合法 JSON 对象。",
+                        },
+                    ],
+                }
+                repaired = await asyncio.wait_for(
+                    self._complete(repair_body, key), timeout=self.timeout
+                )
+                return parse_visual_review(repaired)
         except TimeoutError:
             return unavailable_visual_review(
                 f"视觉审查超过 {self.timeout:g}s，已 fail-open，不阻塞生成"

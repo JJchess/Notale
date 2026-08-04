@@ -155,3 +155,33 @@ async def test_gemini_adapter_timeout_and_parse_failure_fail_open(
     malformed_report = await reviewer.review(VisualReviewRequest(contact_sheet=b"sheet"))
     assert not malformed_report.available
     assert "fail-open" in malformed_report.warnings[0]
+
+
+@pytest.mark.asyncio
+async def test_gemini_adapter_repairs_invalid_json_without_resending_images(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("GEMINI_API_KEY", "test-only")
+    reviewer = GeminiVisualReviewer(timeout=1)
+    calls: list[dict[str, object]] = []
+
+    async def invalid_then_valid(body: dict[str, object], _key: str) -> str:
+        calls.append(body)
+        if len(calls) == 1:
+            return '{"scores":{"visualHierarchy":3},"issues":[],"summary":"bad \\q"}'
+        return _response()
+
+    monkeypatch.setattr(reviewer, "_complete", invalid_then_valid)
+    report = await reviewer.review(
+        VisualReviewRequest(contact_sheet=b"sheet", failed_pages=[b"page"])
+    )
+
+    assert report.available
+    assert len(calls) == 2
+    repair_messages = calls[1]["messages"]
+    assert isinstance(repair_messages, list)
+    assert all(
+        not isinstance(part, dict) or part.get("type") != "image_url"
+        for message in repair_messages
+        for part in (message.get("content") if isinstance(message.get("content"), list) else [])
+    )

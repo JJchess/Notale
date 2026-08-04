@@ -9,10 +9,12 @@ import asyncio
 import json
 
 import lecture_agent.domain.generation.blocks as blocks_module
+import lecture_agent.engine.pipeline as pipeline_module
 from lecture_agent.adapters.llm.fake import FakeClient
 from lecture_agent.adapters.media.fake import FakeMediaProvider
 from lecture_agent.domain.assemble import fill_blocks
 from lecture_agent.engine import GeneratorOptions, generate_lecture
+from lecture_agent.engine.pipeline import _generate_media_block
 from lecture_agent.ports.media import ImageAsset
 from lecture_agent.schema import LectureDoc, validate_doc
 
@@ -247,3 +249,90 @@ async def test_planner_selected_background_media_resolves_before_final_compositi
     assert result.doc["assets"][0]["src"] == "data:image/png;base64,PEAS"
     assert "不要字母、汉字、数字、公式" in generator.generate_calls[0]
     assert validate_doc(result.doc).errors == []
+
+
+async def test_evidence_media_never_falls_back_to_generated_pseudo_evidence() -> None:
+    finder = FakeMediaProvider(found=None)
+    generator = FakeMediaProvider(generated=ImageAsset(data_uri="data:image/png;base64,FAKE"))
+    assets: dict[str, dict] = {}
+
+    result = await _generate_media_block(
+        {
+            "id": "specimen",
+            "type": "media",
+            "purpose": "evidence",
+            "placement": "illustration",
+            "subject": "真实标本的可观察形态",
+            "relationshipToContent": "用于辨认外观差异",
+            "fidelity": "documentary",
+            "sourceStrategy": "generate-first",
+        },
+        design_brief={},
+        image_finder=finder,
+        image_generator=generator,
+        assets=assets,
+    )
+
+    assert result.block is None
+    assert "可追溯搜索资产" in str(result.err)
+    assert len(finder.find_calls) == 1
+    assert generator.generate_calls == []
+    assert assets == {}
+
+
+async def test_page_quality_scene_replacement_is_recompiled_to_artboard(monkeypatch) -> None:
+    skeleton = {
+        "id": "quality-layout",
+        "title": "重编译",
+        "language": "zh-CN",
+        "theme": "cartesian",
+        "scenes": [
+            {
+                "id": "cover",
+                "kind": "hero",
+                "notes": "开场。",
+                "blocks": [{"id": "h", "type": "hero", "intent": "封面"}],
+            },
+            {
+                "id": "p1",
+                "kind": "content",
+                "headline": "比较两条证据",
+                "notes": "比较。",
+                "visualBrief": {
+                    "designIntent": "首帧并排比较",
+                    "selectedCapabilities": ["list", "callout"],
+                    "compositionFamily": "comparison",
+                },
+                "blocks": [
+                    {"id": "l", "type": "list", "intent": "左侧证据"},
+                    {"id": "c", "type": "callout", "intent": "右侧结论"},
+                ],
+            },
+        ],
+    }
+    responses = {
+        **_BY_PURPOSE,
+        "plan:skeleton": json.dumps(skeleton, ensure_ascii=False),
+        "block:list": json.dumps({"type": "list", "items": [{"text": "证据 A"}]}),
+        "block:callout": json.dumps({"type": "callout", "label": "结论", "text": "证据 B"}),
+    }
+
+    async def replace_layout(_llm, doc, **_kwargs):
+        doc["scenes"][1]["layout"] = {"kind": "flow", "centered": True}
+        return [], []
+
+    monkeypatch.setattr(pipeline_module, "_quality_repair", replace_layout)
+    result = await generate_lecture(
+        FakeClient(by_purpose=responses),
+        topic="证据比较",
+        pages=2,
+        options=GeneratorOptions(
+            plan_perspectives=1,
+            quality_rounds=1,
+            revise=False,
+            render_rounds=0,
+        ),
+    )
+
+    assert result.errors == []
+    assert result.doc["scenes"][1]["layout"]["kind"] == "artboard"

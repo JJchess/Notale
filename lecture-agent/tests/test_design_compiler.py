@@ -102,8 +102,58 @@ def test_interactive_stage_is_the_largest_uninterrupted_area() -> None:
     height = stage["row"][1] - stage["row"][0]
 
     assert width * height == 81
-    assert stage["styleRole"] == "feature"
+    assert stage["styleRole"] == "stage"
+    assert stage["clip"] is False
     assert not validate_scene_composition(scene, layout)
+
+
+def test_stage_evidence_overrides_incompatible_requested_family() -> None:
+    scene = _scene("sim", "statement")
+    layout = compile_scene_composition(
+        scene, {"compositionFamily": "comparison"}, {"density": "medium"}, []
+    )
+    stage = next(area for area in layout["areas"] if area["blockIds"] == ["block-0"])
+
+    assert scene["compositionFamily"] == "interactive-stage"
+    assert stage["col"] == [1, 10]
+    assert stage["row"] == [4, 13]
+    assert stage["styleRole"] == "stage"
+
+
+def test_wide_evidence_never_enters_annotated_caption_rail() -> None:
+    scene = _scene("table", "formula", "statement")
+    layout = compile_scene_composition(
+        scene, {"compositionFamily": "annotated-specimen"}, {"density": "medium"}, []
+    )
+    by_id = {
+        block_id: area
+        for area in layout["areas"]
+        for block_id in area["blockIds"]
+    }
+
+    for block_id in ("block-0", "block-1"):
+        width = by_id[block_id]["col"][1] - by_id[block_id]["col"][0]
+        assert width >= 6
+        assert by_id[block_id]["styleRole"] == "evidence"
+
+
+def test_text_only_poster_centers_claim_instead_of_reserving_fake_media_space() -> None:
+    scene = _scene("statement", "callout")
+    layout = compile_scene_composition(
+        scene, {"compositionFamily": "poster"}, {"density": "light"}, []
+    )
+
+    assert layout["titleRegion"]["align"] == "center"
+    assert layout["titleRegion"]["col"] == [2, 12]
+    assert all(area["col"] == [2, 12] for area in layout["areas"])
+
+
+def test_dense_text_only_poster_reconciles_to_research_figure() -> None:
+    scene = _scene("code", "callout", "quiz")
+    compile_scene_composition(
+        scene, {"compositionFamily": "poster"}, {"density": "dense"}, []
+    )
+    assert scene["compositionFamily"] == "research-figure"
 
 
 def test_cutout_split_uses_asset_dimensions_focal_point_and_text_density() -> None:

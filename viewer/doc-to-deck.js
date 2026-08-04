@@ -60,11 +60,27 @@
     console.error('[widget ' + data.widgetId + '] ' + message);
   });
   const WIDGET_TOKENS = ['--bg', '--bg2', '--card', '--ink', '--text2', '--accent', '--accent2', '--line', '--serif', '--sans', '--mono', '--radius', '--sel'];
+  function widgetColorScheme(value) {
+    const text = String(value || '').trim();
+    let rgb = null;
+    const hex = text.match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i);
+    if (hex) {
+      const raw = hex[1].length === 3 ? hex[1].split('').map(ch => ch + ch).join('') : hex[1];
+      rgb = [0, 2, 4].map(i => parseInt(raw.slice(i, i + 2), 16));
+    } else {
+      const match = text.match(/rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)/i);
+      if (match) rgb = [Number(match[1]), Number(match[2]), Number(match[3])];
+    }
+    if (!rgb || rgb.some(value => !Number.isFinite(value))) return 'light';
+    return (0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2]) / 255 < 0.46
+      ? 'dark' : 'light';
+  }
   function buildWidgetSrcdoc(fragment, widgetId) {
     const cs = getComputedStyle(document.documentElement);
     const theme = document.documentElement.dataset.theme || 'cartesian';
+    const colorScheme = widgetColorScheme(cs.getPropertyValue('--bg'));
     const vars = WIDGET_TOKENS.map(t => t + ':' + (cs.getPropertyValue(t).trim() || 'inherit')).join(';');
-    return '<!doctype html><html data-theme="' + escapeHtml(theme) + '"><head><meta charset="utf-8"><style>'
+    return '<!doctype html><html data-theme="' + colorScheme + '" data-deck-theme="' + escapeHtml(theme) + '"><head><meta charset="utf-8"><style>'
       + ':root{' + vars + '}'
       + '*{box-sizing:border-box}'
       + 'html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:15px}'
@@ -1741,13 +1757,21 @@
       orb: 'ring', wave: 'wave', rule: 'line', grid: 'grid', corner: 'corner', blob: 'blob',
     };
     const colorRoles = { accent: '--accent', accent2: '--accent2', line: '--line', surfaceAlt: '--bg2' };
+    const scenes = (currentDoc && currentDoc.scenes) || [];
+    const sceneIndex = Math.max(0, scenes.indexOf(scene));
+    const emphatic = ['hero', 'section', 'statement'].includes(scene && scene.kind)
+      || ['full-bleed-hero', 'poster', 'collage'].includes(scene && scene.compositionFamily);
+    // Motifs establish rhythm; stamping the same decoration on every page turns it into UI noise.
+    if (!emphatic && sceneIndex % 4 !== 0) return null;
     const layer = el('div', 'motif-layer');
     layer.setAttribute('aria-hidden', 'true');
-    motifs.slice(0, 4).forEach((raw, index) => {
+    const selected = [motifs[sceneIndex % motifs.length]];
+    selected.forEach((raw, index) => {
       const spec = typeof raw === 'string' ? { type: raw } : (raw && typeof raw === 'object' ? raw : {});
       const motifClass = motifClasses[spec.type];
       if (!motifClass) return;
-      const mark = el('span', 'motif motif-' + motifClass + ' motif-slot-' + (index + 1));
+      const slot = (sceneIndex + index) % 4 + 1;
+      const mark = el('span', 'motif motif-' + motifClass + ' motif-slot-' + slot);
       const colorToken = colorRoles[spec.colorRole];
       if (colorToken) mark.style.color = 'var(' + colorToken + ')';
       if (Number.isFinite(+spec.opacity)) mark.style.opacity = String(Math.min(0.45, Math.max(0.04, +spec.opacity)));

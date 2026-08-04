@@ -40,7 +40,8 @@ test('media treatments and masks have real rendering rules', () => {
 });
 
 test('motifs are decorative, bounded, and non-interactive', () => {
-  assert.match(runtime, /motifs\.slice\(0, 4\)/);
+  assert.match(runtime, /sceneIndex % 4 !== 0/);
+  assert.match(runtime, /motifs\[sceneIndex % motifs\.length\]/);
   for (const motif of ['orb', 'wave', 'rule', 'grid', 'corner', 'blob']) {
     assert.match(runtime, new RegExp(`${motif}:`));
   }
@@ -56,4 +57,15 @@ test('every declared composition family has a visible runtime signature', () => 
     'process-path', 'before-after', 'comparison', 'experiment-setup', 'proof-equation-stage',
     'data-evidence', 'collage', 'poster', 'research-figure', 'interactive-stage',
   ]) assert.match(styles, new RegExp(`composition-${family}`));
+});
+
+test('artboard interaction stretches the widget root, not only its iframe', () => {
+  assert.match(styles, /\.artboard-area\.role-stage>\.widlab[^}]*height:100%/s);
+  assert.match(styles, /\.artboard-area\.has-interaction>\.widlab[^}]*height:100%/s);
+});
+
+test('widget iframe receives a light-dark register separate from the deck theme name', () => {
+  assert.match(runtime, /function widgetColorScheme\(/);
+  assert.match(runtime, /data-theme="' \+ colorScheme/);
+  assert.match(runtime, /data-deck-theme="' \+ escapeHtml\(theme\)/);
 });
