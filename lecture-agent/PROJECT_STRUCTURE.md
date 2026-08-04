@@ -49,8 +49,8 @@ lecture-agent/
 │   ├── llm/                      #   端点/模型/温度/seed/mode + 5 被测模型 + judge_gemini（境外走 proxy）
 │   │                             #     每模型自带 fast_extra_body（关思考参数）；client 支持 extra_body/proxy 透传
 │   ├── generator/                #   ★消融轴：full / single_pass / tools / fast（关思考+高并发+无章节，≤5min）
-│   ├── media/                     #   default.yaml：配图 finder(Pixabay)+generator(Gemini nano-banana pro)，
-│   │                             #     只在 generator.media=true 时才 instantiate，默认零成本
+│   ├── media/                     #   finder(Pixabay)+generator(Gemini)；media=auto 只开放能力，
+│   │                             #     planner 真正选择 create-media 后才调用，不做逐页配额
 │   ├── planner/  eval/  theme/
 │   └── experiment/               #   ★一份=一个可复现实验
 │
@@ -125,6 +125,8 @@ lecture-agent/
 │                                 #     POST /api/generate → run_generation(progress) → SSE /api/events 推进度 → 成片
 │
 ├── assets/runtime/               # reveal.js 主题/CSS/JS 静态资源（离线，随包分发）
+├── skills/                       # block/planning 能力包；create-media 声明 why/how/边界，
+│                                 # design-lecture 提供跨场景 Design DNA 与构图路由
 ├── experiments/                  # 实验相关一处收拢（输入入库 / 生成物 gitignore）
 │   ├── fixtures/                 #   [入库] LLM 录制盒（离线 replay；配置里 fixtures_dir 指向它）
 │   ├── topics/                   #   [入库] 输入题集（topics.jsonl + benchmark_topics.md）

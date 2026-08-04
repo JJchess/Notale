@@ -135,7 +135,7 @@ async def refine_plan(
 8. 一个 quiz block 只有一道题，objective/keyClaim 只能检验一个判定链；不得写成同时覆盖梯度方向、学习率、调度等整章目标。
 
 只输出 JSON：{"revisions":[{"sceneId":"原 id","reason":"为什么必须改","scene":{完整修订 scene}}]}。
-只列确实低于 9.8/10 的页；若全合格返回空 revisions。硬约束：页数/顺序/sceneId/kind 不变；scene 仍是骨架，blocks 只能含 id/type/role/intent/size/可选 engine/interactionBrief，不写最终 block 内容；每个修订 scene 必须含 brief、notes、blocks。"""
+只列确实低于 9.8/10 的页；若全合格返回空 revisions。硬约束：页数/顺序/sceneId/kind 不变；scene 仍是骨架，blocks 只写规划字段，不写最终内容；sim 可带 engine/interactionBrief，media 必须保留其 Skill 声明的 purpose/placement/subject/relationshipToContent/fidelity/required；每个修订 scene 必须含 brief、notes、blocks。"""
     for _round in range(rounds):
         deterministic_problems = []
         for scene in doc.get("scenes") or []:
@@ -200,8 +200,53 @@ async def refine_plan(
     warnings.extend(_enforce_evidence_safe_plans(doc, allowed_types))
     warnings.extend(_enforce_geometry_routes(doc, allowed_types))
     warnings.extend(_enforce_learning_evidence_routes(doc, allowed_types))
+    warnings.extend(_enforce_media_contracts(doc, allowed_types))
     warnings.extend(_enforce_widget_capacity(doc))
     warnings.extend(_enforce_quiz_scope(doc))
+    return warnings
+
+
+def _enforce_media_contracts(doc: dict[str, Any], allowed_types: set[str]) -> list[str]:
+    """Validate planner-selected media without creating demand or subject-keyword routing."""
+    warnings: list[str] = []
+    purposes = {"evidence", "explanatory", "narrative", "atmospheric"}
+    placements = {"illustration", "decoration", "background"}
+    for scene in doc.get("scenes") or []:
+        blocks = [block for block in (scene.get("blocks") or []) if isinstance(block, dict)]
+        media_blocks = [block for block in blocks if block.get("type") == "media"]
+        for block in media_blocks:
+            bid = str(block.get("id") or "media")
+            purpose = str(block.get("purpose") or "")
+            placement = str(block.get("placement") or "")
+            if purpose not in purposes:
+                block["purpose"] = "explanatory"
+                warnings.append(f"规划 Media 兜底 {scene.get('id') or '?'}:{bid}：补 purpose=explanatory")
+            if placement not in placements:
+                block["placement"] = "illustration"
+                placement = "illustration"
+                warnings.append(f"规划 Media 兜底 {scene.get('id') or '?'}:{bid}：补 placement=illustration")
+            if not str(block.get("subject") or "").strip():
+                block["subject"] = str(block.get("intent") or scene.get("headline") or "页面主视觉")
+                warnings.append(f"规划 Media 兜底 {scene.get('id') or '?'}:{bid}：从 intent 补 subject")
+            if not str(block.get("relationshipToContent") or "").strip():
+                brief = scene.get("brief") if isinstance(scene.get("brief"), dict) else {}
+                block["relationshipToContent"] = str(brief.get("visualTask") or brief.get("keyClaim") or "支持本页设计意图")
+            block.setdefault("fidelity", "conceptual")
+            block.setdefault("required", False)
+            if block.get("placement") == "decoration" and block.get("purpose") == "evidence":
+                block["placement"] = "illustration"
+                warnings.append(f"规划 Media 边界 {scene.get('id') or '?'}:{bid}：evidence 不得作为 decoration")
+            if block.get("placement") == "background" and block.get("purpose") == "evidence":
+                block["placement"] = "illustration"
+                warnings.append(f"规划 Media 边界 {scene.get('id') or '?'}:{bid}：evidence 不得作为 background")
+            if block.get("placement") == "background" and len(blocks) == 1:
+                block["placement"] = "illustration"
+                warnings.append(f"规划 Media 边界 {scene.get('id') or '?'}:{bid}：背景缺原生内容层，降级 illustration")
+        if "media" not in allowed_types and media_blocks:
+            for block in media_blocks:
+                block["type"] = "list"
+                block["intent"] = str(block.get("relationshipToContent") or block.get("intent") or "解释页面核心内容")
+            warnings.append(f"规划 Media 兜底 {scene.get('id') or '?'}：能力禁用，回退原生内容")
     return warnings
 
 
@@ -595,7 +640,11 @@ def validate_plan_revision(
         if isinstance(b, dict) and b.get("id")
     }
     seen: set[str] = set()
-    placeholder_keys = {"id", "type", "role", "intent", "size", "engine", "interactionBrief"}
+    placeholder_keys = {
+        "id", "type", "role", "intent", "size", "engine", "interactionBrief",
+        "purpose", "placement", "subject", "relationshipToContent", "fidelity", "required",
+        "fit", "safeZone", "overlay", "overlayStrength", "sourceStrategy", "focalPoint", "caption", "mask",
+    }
     for block in blocks:
         if not isinstance(block, dict):
             return "block 占位必须是对象"

@@ -51,4 +51,11 @@ class PixabayProvider:
                 return None
             mime = img_resp.headers.get("content-type", "image/jpeg").split(";")[0]
             b64 = base64.b64encode(img_resp.content).decode("ascii")
-            return ImageAsset(data_uri=f"data:{mime};base64,{b64}")
+            hit = hits[0]
+            return ImageAsset(
+                data_uri=f"data:{mime};base64,{b64}",
+                source=str(hit.get("pageURL") or "Pixabay"),
+                attribution=str(hit.get("user") or "Pixabay contributor"),
+                width=int(hit.get("imageWidth") or 0) or None,
+                height=int(hit.get("imageHeight") or 0) or None,
+            )

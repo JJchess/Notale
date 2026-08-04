@@ -38,6 +38,54 @@ def test_minimal_doc_parses_and_validates() -> None:
     assert res.errors == []
 
 
+def test_media_asset_block_and_background_are_schema_valid() -> None:
+    doc = _minimal_doc()
+    doc["assets"] = [
+        {
+            "id": "asset-pea",
+            "kind": "photo",
+            "src": "data:image/png;base64,AAAA",
+            "alt": "一株豌豆",
+            "source": "image-finder",
+            "focalPoint": {"x": 0.5, "y": 0.4},
+        }
+    ]
+    doc["scenes"][1]["kind"] = "content"
+    doc["scenes"][1]["compositionFamily"] = "annotated-specimen"
+    doc["scenes"][1]["background"] = {
+        "assetId": "asset-pea",
+        "purpose": "explanatory",
+        "fit": "cover",
+        "overlay": "scrim",
+        "overlayStrength": 0.5,
+        "safeZone": "left",
+    }
+    doc["scenes"][1]["blocks"] = [
+        {
+            "type": "media",
+            "assetId": "asset-pea",
+            "purpose": "evidence",
+            "placement": "illustration",
+            "fit": "contain",
+            "caption": "观察茎的高度差异。",
+        }
+    ]
+    LectureDoc.model_validate(doc)
+    assert validate_doc(doc).errors == []
+
+
+def test_media_rejects_remote_or_unknown_assets() -> None:
+    doc = _minimal_doc()
+    doc["assets"] = [{"id": "remote", "kind": "photo", "src": "https://example.com/a.png", "alt": ""}]
+    doc["scenes"][1]["kind"] = "content"
+    doc["scenes"][1]["blocks"] = [
+        {"type": "media", "assetId": "missing", "purpose": "explanatory", "placement": "illustration"}
+    ]
+    res = validate_doc(doc)
+    assert any("远程 URL" in error for error in res.errors)
+    assert any("未知 asset" in error for error in res.errors)
+
+
 def test_unknown_block_type_rejected() -> None:
     doc = _minimal_doc()
     doc["scenes"][1]["blocks"] = [{"type": "nonesuch", "foo": 1}]

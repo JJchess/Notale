@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from lecture_agent.domain.skills import (
     AUTO_EXCLUDE,
+    load_design_rules,
     load_skill_catalog,
     load_skills,
     lower_planning_placeholder,
@@ -95,3 +96,36 @@ def test_runnable_contract_has_no_quantity_cap() -> None:
     contract = str(registry["runnable"].contract)
     for banned in ("0-2", "别过量"):
         assert banned not in contract, f"runnable 契约仍带数量压制词: {banned}"
+
+
+def test_media_capability_declares_why_how_and_boundaries() -> None:
+    registry, planning = load_skill_catalog()
+    media = planning["media"]
+    assert media.target_type == "media"
+    assert media.purposes == ("evidence", "explanatory", "narrative", "atmospheric")
+    assert media.placements == ("illustration", "decoration", "background")
+    assert "algorithm-state" in media.anti_capabilities
+    menu_desc = next(desc for _skill, desc, types in plan_menu(registry, planning) if "media" in types)
+    assert "Purposes (why):" in menu_desc
+    assert "Placements (how):" in menu_desc
+    assert "Do not substitute for:" in menu_desc
+
+
+def test_design_lecture_rules_cover_cross_scenario_routing_without_copying_media_contract() -> None:
+    rules = load_design_rules()
+    for scenario in (
+        "Primary math concept",
+        "Primary science observation",
+        "Secondary math proof",
+        "Secondary biology mechanism",
+        "Physics experiment",
+        "Chemistry microscopic process",
+        "History source",
+        "Geography spatial",
+        "Language reading",
+        "Literature analysis",
+        "University algorithm",
+        "Academic report",
+    ):
+        assert scenario in rules
+    assert "Media 是可选能力" not in rules  # 详细边界由 create-media 独占

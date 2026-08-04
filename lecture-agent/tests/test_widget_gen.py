@@ -125,12 +125,13 @@ async def test_complete_interaction_brief_skips_widget_plan() -> None:
     )
     assert result.err is None and result.block is not None
     assert [purpose for purpose, _messages in llm.calls] == ["widget:build"]
-    assert result.block["spec"]["aesthetic_direction"] == "host-calm"
+    assert result.block["spec"]["aesthetic_direction"] == "blueprint"
     assert result.block["spec"]["source_aesthetic_direction"] == "blueprint"
-    assert result.block["spec"]["palette"] == [
-        "var(--bg)", "var(--bg2)", "var(--ink)", "var(--text2)",
-        "var(--accent)", "var(--line)",
-    ]
+    assert result.block["spec"]["host_integration"]["mode"] == "scoped-role-map"
+    build_messages = next(messages for purpose, messages in llm.calls if purpose == "widget:build")
+    build_prompt = build_messages[-1]["content"]
+    assert "aesthetic_direction: blueprint" in build_prompt
+    assert "lever_balance_blueprint" in build_prompt
 
 
 def test_incomplete_geometry_brief_requires_slow_plan() -> None:
@@ -163,7 +164,7 @@ def test_compact_brief_rows_compile_without_slow_plan() -> None:
     assert contract["verification_cases"][1] == {"input": "单步", "expected": "根节点改变"}
 
 
-def test_host_palette_lowering_removes_standalone_svg_fallbacks() -> None:
+def test_host_palette_integration_preserves_distinct_direction_colors() -> None:
     html = """<style>
     .x { color:#fff; background:var(--bg, #F3F1FA); stroke:#E24B4A }
     </style><svg><circle id='n'/></svg><script>
@@ -171,8 +172,8 @@ def test_host_palette_lowering_removes_standalone_svg_fallbacks() -> None:
     document.getElementById('n').setAttribute('stroke', '#E24B4A');
     </script>"""
     compiled = widget_module._compile_host_palette_html(html, render_medium="svg")
-    assert "#" not in compiled
-    assert "var(--bg)" in compiled and "var(--accent)" in compiled and "var(--card)" in compiled
+    assert compiled == html
+    assert "#F3F1FA" in compiled and "#E24B4A" in compiled
 
 
 async def test_contract_threaded_into_build_prompt() -> None:
@@ -244,6 +245,22 @@ async def test_quality_repair_reuses_existing_widget_without_replanning() -> Non
     assert result.err is None and result.block is not None
     assert result.block["spec"] == current["spec"]
     assert [purpose for purpose, _messages in llm.calls] == ["widget:quality-repair"]
+
+
+async def test_quality_repair_keeps_selected_direction_guidance() -> None:
+    current = {
+        "type": "sim",
+        "engine": "widget",
+        "html": _GOOD_HTML,
+        "spec": {**json.loads(_CONTRACT), "aesthetic_direction": "soft-organic", "signature_detail": "seed reveal"},
+    }
+    llm = FakeClient(by_purpose={"widget:quality-repair": _GOOD_HTML})
+    result = await repair_widget(llm, current=current, issues="视觉层级不足", theme="forest")
+    assert result.err is None
+    messages = llm.calls[0][1]
+    prompt = messages[-1]["content"]
+    assert "soft-organic" in prompt and "field notebook" in prompt
+    assert "不得把不同状态全部改成 --accent" in prompt
 
 
 async def test_all_rounds_bad_returns_error_not_block() -> None:

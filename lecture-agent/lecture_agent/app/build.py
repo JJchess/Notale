@@ -10,6 +10,7 @@ from typing import Any
 from hydra.utils import instantiate
 from omegaconf import DictConfig, OmegaConf, open_dict
 
+from ..adapters.llm import PurposeRouterClient
 from ..engine import GeneratorOptions
 from ..ports.llm import LLMClient
 
@@ -20,7 +21,12 @@ def build_llm(cfg: DictConfig) -> LLMClient:
     with open_dict(cfg):
         cfg.llm.pop("fast_extra_body", None)
     llm: LLMClient = instantiate(cfg.llm)
-    return llm
+    if "sim_llm" not in cfg or not cfg.sim_llm:
+        return llm
+    with open_dict(cfg):
+        cfg.sim_llm.pop("fast_extra_body", None)
+    sim_llm: LLMClient = instantiate(cfg.sim_llm)
+    return PurposeRouterClient(default=llm, routes={"widget:": sim_llm})
 
 
 def build_options(cfg: DictConfig) -> GeneratorOptions:
@@ -34,6 +40,15 @@ def model_of(cfg: DictConfig) -> str | None:
         return None
     inner = cfg.llm.get("inner")
     model = (inner.get("model") if inner else None) or cfg.llm.get("model")
+    return str(model) if model else None
+
+
+def sim_model_of(cfg: DictConfig) -> str | None:
+    """Return the dedicated create-sim model, when purpose routing is configured."""
+    if "sim_llm" not in cfg or not cfg.sim_llm:
+        return None
+    inner = cfg.sim_llm.get("inner")
+    model = (inner.get("model") if inner else None) or cfg.sim_llm.get("model")
     return str(model) if model else None
 
 

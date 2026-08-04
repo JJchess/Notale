@@ -35,6 +35,9 @@ class SkillEntry:
     learner_actions: tuple[str, ...] = ()
     evidence_outputs: tuple[str, ...] = ()
     limitations: tuple[str, ...] = ()
+    purposes: tuple[str, ...] = ()
+    placements: tuple[str, ...] = ()
+    anti_capabilities: tuple[str, ...] = ()
 
 
 @dataclass
@@ -52,6 +55,9 @@ class PlanningEntry:
     learner_actions: tuple[str, ...] = ()
     evidence_outputs: tuple[str, ...] = ()
     limitations: tuple[str, ...] = ()
+    purposes: tuple[str, ...] = ()
+    placements: tuple[str, ...] = ()
+    anti_capabilities: tuple[str, ...] = ()
 
 
 def default_skills_dir() -> Path:
@@ -123,6 +129,9 @@ def load_skill_catalog(
                     learner_actions=_parse_list(fm.get("learner-actions", "")),
                     evidence_outputs=_parse_list(fm.get("evidence-outputs", "")),
                     limitations=_parse_list(fm.get("limitations", "")),
+                    purposes=_manifest_list(manifest, "purposes", ""),
+                    placements=_manifest_list(manifest, "placements", ""),
+                    anti_capabilities=_manifest_list(manifest, "antiCapabilities", ""),
                 )
 
     planning: dict[str, PlanningEntry] = {}
@@ -148,6 +157,9 @@ def load_skill_catalog(
                         manifest, "evidenceOutputs", fm.get("evidence-outputs", "")
                     ),
                     limitations=_manifest_list(manifest, "limitations", fm.get("limitations", "")),
+                    purposes=_manifest_list(manifest, "purposes", ""),
+                    placements=_manifest_list(manifest, "placements", ""),
+                    anti_capabilities=_manifest_list(manifest, "antiCapabilities", ""),
                 )
         capabilities = manifest.get("capabilities") or []
         if not isinstance(capabilities, list):
@@ -184,6 +196,9 @@ def load_skill_catalog(
                     manifest, "evidenceOutputs", fm.get("evidence-outputs", "")
                 ),
                 limitations=_manifest_list(manifest, "limitations", fm.get("limitations", "")),
+                purposes=_manifest_list(manifest, "purposes", ""),
+                placements=_manifest_list(manifest, "placements", ""),
+                anti_capabilities=_manifest_list(manifest, "antiCapabilities", ""),
             )
     return registry, planning
 
@@ -216,6 +231,12 @@ def _decision_description(entry: SkillEntry | PlanningEntry) -> str:
         parts.append("Evidence outputs: " + ", ".join(entry.evidence_outputs) + ".")
     if entry.limitations:
         parts.append("Limitations: " + ", ".join(entry.limitations) + ".")
+    if entry.purposes:
+        parts.append("Purposes (why): " + ", ".join(entry.purposes) + ".")
+    if entry.placements:
+        parts.append("Placements (how): " + ", ".join(entry.placements) + ".")
+    if entry.anti_capabilities:
+        parts.append("Do not substitute for: " + ", ".join(entry.anti_capabilities) + ".")
     return " ".join(part for part in parts if part)
 
 
@@ -266,3 +287,19 @@ def lower_planning_placeholder(
     if entry.profile:
         lowered["_simProfile"] = entry.profile
     return lowered
+
+
+def load_design_rules(skills_dir: str | Path | None = None) -> str:
+    """Load the course-level design director without duplicating capability rules centrally."""
+    root = Path(skills_dir) if skills_dir else default_skills_dir()
+    skill_dir = root / "design-lecture"
+    skill_path = skill_dir / "SKILL.md"
+    if not skill_path.exists():
+        return ""
+    body = _FM.sub("", skill_path.read_text(encoding="utf-8"), count=1).strip()
+    references = []
+    for name in ("scenario-routing.md", "composition-families.md"):
+        path = skill_dir / "references" / name
+        if path.exists():
+            references.append(path.read_text(encoding="utf-8").strip())
+    return "\n\n".join([body, *references])

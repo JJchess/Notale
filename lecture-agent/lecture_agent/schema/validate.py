@@ -383,6 +383,11 @@ def _check_block(b: dict[str, Any], path: str, r: Result, state: dict[str, Any])
                 r.err(f"{path}.{k}", "只能是本地相对路径或 data:，禁远程 URL（守离线红线）")
         if b.get("caption"):
             _check_inline(b["caption"], f"{path}.caption", r)
+    elif t == "media":
+        if b.get("caption"):
+            _check_inline(b["caption"], f"{path}.caption", r)
+        if b.get("placement") == "decoration" and b.get("purpose") == "evidence":
+            r.err(path, "decoration 不得承担 evidence；改为 illustration 或更换 purpose")
     elif t == "list":
         for i, it in enumerate(b.get("items", [])):
             if isinstance(it, dict):
@@ -566,6 +571,18 @@ def validate_doc(doc: dict[str, Any]) -> Result:
     """校验整份 LectureDoc 的语义层（结构层用 document.LectureDoc 先过 pydantic）。"""
     r = Result()
     state: dict[str, Any] = {"freeform_uses": r.freeform_uses}
+    assets = doc.get("assets") or []
+    asset_ids: set[str] = set()
+    for i, asset in enumerate(assets):
+        if not isinstance(asset, dict):
+            continue
+        aid = str(asset.get("id") or "")
+        if aid in asset_ids:
+            r.err(f"$.assets[{i}].id", f"asset id 重复: {aid}")
+        asset_ids.add(aid)
+        src = asset.get("src")
+        if isinstance(src, str) and _REMOTE.match(src):
+            r.err(f"$.assets[{i}].src", "只能是本地相对路径或 data:，禁远程 URL（守离线红线）")
     if doc.get("tutor"):
         for i, k in enumerate(doc["tutor"].get("kb", []) or []):
             if isinstance(k, dict):
@@ -577,6 +594,22 @@ def validate_doc(doc: dict[str, Any]) -> Result:
     seen: set[str] = set()
     for i, s in enumerate(doc.get("scenes", []) or []):
         _check_scene(s, f"$.scenes[{i}]", r, state, seen)
+        background = s.get("background") if isinstance(s, dict) else None
+        if isinstance(background, dict):
+            aid = str(background.get("assetId") or "")
+            if aid not in asset_ids:
+                r.err(f"$.scenes[{i}].background.assetId", f"引用未知 asset: {aid}")
+            if not background.get("safeZone"):
+                r.warn(f"$.scenes[{i}].background.safeZone", "背景未声明原生文字安全区")
+        for j, block in enumerate((s.get("blocks") or []) if isinstance(s, dict) else []):
+            if isinstance(block, dict) and block.get("type") == "media":
+                aid = str(block.get("assetId") or "")
+                if aid not in asset_ids:
+                    r.err(f"$.scenes[{i}].blocks[{j}].assetId", f"引用未知 asset: {aid}")
+                if block.get("purpose") == "evidence":
+                    asset = next((a for a in assets if isinstance(a, dict) and a.get("id") == aid), {})
+                    if not asset.get("source") and not asset.get("attribution"):
+                        r.warn(f"$.assets[{aid}]", "evidence 资产缺少来源或署名")
     return r
 
 

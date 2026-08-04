@@ -41,6 +41,7 @@ from .generative_ui import (
     parse_split_response,
     payload_validation_errors,
 )
+from .generative_ui.directions import DIRECTIONS
 
 _WIDGET_PLAN_TIMEOUT_S = 120.0
 _WIDGET_BUILD_TIMEOUT_S = 240.0
@@ -140,18 +141,27 @@ def _normalize_contract(contract: Any) -> Any:
 
 
 def _compile_lecture_host_contract(contract: dict[str, Any]) -> dict[str, Any]:
-    """Lower standalone GenUI art directions onto LectureDoc theme tokens."""
+    """Attach host integration without rewriting GenUI's selected direction.
+
+    Direction is evidence-bearing design state: it selects both the detailed
+    guideline and the matching few-shot example.  Replacing it with
+    ``host-calm`` made every subject look like a business record widget.
+    """
     compiled = dict(contract)
     source_direction = str(compiled.get("aesthetic_direction") or "host-calm")
     compiled["source_aesthetic_direction"] = source_direction
-    compiled["aesthetic_direction"] = "host-calm"
-    compiled["palette"] = [
-        "var(--bg)", "var(--bg2)", "var(--ink)", "var(--text2)",
-        "var(--accent)", "var(--line)",
-    ]
-    compiled["direction_reason"] = (
-        f"LectureDoc host palette; preserve {source_direction} only in layout, motion, and signature detail"
-    )
+    compiled["aesthetic_direction"] = source_direction
+    compiled["host_integration"] = {
+        "mode": "scoped-role-map",
+        "surface": "var(--bg)",
+        "stage": "var(--bg2)",
+        "card": "var(--card)",
+        "ink": "var(--ink)",
+        "muted": "var(--text2)",
+        "line": "var(--line)",
+        "deck_accent": "var(--accent)",
+        "direction_accents": "scoped CSS custom properties on the widget root",
+    }
     return compiled
 
 
@@ -308,11 +318,14 @@ def _build_prompt(
 ---
 
 LectureDoc host adapter（与通用 GenUI 规则冲突时，以这里为准）：
-- deck theme 是 `{theme}`。不得实现 GenUI palette 中的十六进制颜色；所有 surface/ink/accent/line 必须映射到
-  `var(--bg)`, `var(--bg2)`, `var(--card)`, `var(--ink)`, `var(--text2)`, `var(--accent)`, `var(--line)`。
-  canvas 通过 getComputedStyle(document.documentElement) 读取同名 token。aesthetic_direction 只保留结构、字体层级、
-  motion 和 signature_detail，不另起一套配色或 `[data-theme=dark]` register。契约里的
-  `source_aesthetic_direction` 只是结构特征来源；可执行方向已编译为 host-calm，禁止恢复原方向色板。
+- deck theme 是 `{theme}`。严格实现契约中的 `aesthetic_direction` 与 `signature_detail`，不得降级成
+  host-calm、通用卡片或后台 dashboard。通用 GenUI 中与该方向匹配的示例是结构承诺，不是可忽略的装饰建议。
+- 根 surface、正文 ink、弱化文字和普通边线分别锚定 `var(--bg)`, `var(--ink)`, `var(--text2)`,
+  `var(--line)`；舞台/卡片可用 `var(--bg2)` / `var(--card)`。在 widget 根节点声明 scoped CSS custom
+  properties 保留该 direction 的 accent、状态色与绘图色。不得把 completed/current/pending、多个数据系列或
+  direction palette 中不同的语义角色全部压成 `var(--accent)`。canvas 从 computed style 读取这些局部变量。
+- direction accent 可以使用对应 GenUI spec 的固定色值，但只能出现在 widget 根节点的局部变量中；关键正文和
+  大面积页面底色仍跟随 host token。禁止全局 CSS、禁止污染 LectureDoc 主题。
 - iframe 固定高度且 overflow:hidden：根节点必须 width:100%; height:100%; min-width:0; min-height:0；不得依赖内容撑高，
   不得出现内部滚动条。主舞台优先占据可用高度，控件/读数保持紧凑。
 - 纯离线 vanilla，禁 CDN、import、fetch、Chart.js 及任何外部资源。
@@ -343,44 +356,16 @@ def _extract_fragment(raw: str) -> str:
 
 
 def _compile_host_palette_html(fragment: str, *, render_medium: str) -> str:
-    """Lower harmless standalone palette fallbacks and SVG accents to host tokens."""
-    compiled = re.sub(
-        r"var\(\s*(--(?:bg|bg2|card|ink|text2|accent|line))\s*,\s*#[0-9a-fA-F]{3,8}\s*\)",
-        r"var(\1)",
-        fragment,
-        flags=re.I,
-    )
-    compiled = re.sub(
-        r"(getPropertyValue\(\s*['\"]--(?:bg|bg2|card|ink|text2|accent|line)['\"]\s*\)"
-        r"\.trim\(\))\s*\|\|\s*['\"]#[0-9a-fA-F]{3,8}['\"]",
-        r"\1",
-        compiled,
-        flags=re.I,
-    )
+    """Preserve the generated semantic palette.
 
-    def css_token(match: re.Match[str]) -> str:
-        prop, color = match.group(1), match.group(2).lower()
-        token = "--card" if color in {"fff", "ffffff", "ffffffff"} else "--accent"
-        return f"{prop}:var({token})"
-
-    compiled = re.sub(
-        r"\b(color|background(?:-color)?|fill|stroke)\s*:\s*#([0-9a-fA-F]{3,8})\b",
-        css_token,
-        compiled,
-        flags=re.I,
-    )
-    if render_medium == "svg":
-        def svg_token(match: re.Match[str]) -> str:
-            quote, color = match.group(1), match.group(2).lower()
-            token = "--card" if color in {"fff", "ffffff", "ffffffff"} else "--accent"
-            return f"{quote}var({token}){quote}"
-
-        compiled = re.sub(
-            r"(['\"])#([0-9a-fA-F]{3,8})\1",
-            svg_token,
-            compiled,
-        )
-    return compiled
+    The former regex collapsed every non-white CSS/SVG color to ``--accent``.
+    That destroyed state encodings and the selected GenUI direction after the
+    model had produced them. Host alignment now happens through the scoped role
+    contract in the build prompt; this compatibility hook deliberately does no
+    lossy post-processing.
+    """
+    _ = render_medium
+    return fragment
 
 
 async def generate_widget(
@@ -524,8 +509,12 @@ async def repair_widget(
     rounds: int = 2,
 ) -> BlockResult:
     """质量门针对现有 widget 的代码级修复；复用 spec，避免再次 plan→build 整页重做。"""
-    spec = current.get("spec") if isinstance(current.get("spec"), dict) else {}
+    raw_spec = current.get("spec")
+    spec: dict[str, Any] = raw_spec if isinstance(raw_spec, dict) else {}
     fragment = str(current.get("html") or "")
+    direction = str(spec.get("aesthetic_direction") or "host-calm")
+    direction_key = direction if direction in DIRECTIONS else "host-calm"
+    direction_guidance = DIRECTIONS[direction_key].spec_block
     prompt = f"""所在讲义课题：「{topic}」。用户可见文案语言：{language}；主题：{theme}。
 下面是已生成 widget 的设计契约、HTML 与逐页质量门问题。保持核心教学目标和现有控件，不重新规划页面；
 直接修正代码/文案/数学映射。所有颜色继续读取 --token。数学问题必须增加或修正纯函数与 console.assert 验证例。
@@ -533,14 +522,21 @@ async def repair_widget(
 设计契约：
 {json.dumps(spec, ensure_ascii=False, indent=2)}
 
+必须保持的 GenUI aesthetic direction：`{direction}`
+{direction_guidance}
+
+修复不得把该方向降级成 host-calm、通用卡片或后台 dashboard；必须保留并实现 signature_detail。
+
 必须修正：
 {issues}
 
 现有 HTML：
 {fragment}
 
-LectureDoc 宿主硬约束：保持自包含 HTML 片段；零依赖、禁网络/CDN/import/fetch；颜色只读 --token；
-根节点填满固定高度 iframe 且无内部滚动。首帧和每个控件的初始/最小/最大状态均须 finite、非空、可读。
+LectureDoc 宿主硬约束：保持自包含 HTML 片段；零依赖、禁网络/CDN/import/fetch；根 surface、正文 ink、
+弱化文字和普通边线跟随 host token；direction accent 与状态色使用 widget 根节点 scoped CSS variables，
+不得把不同状态全部改成 --accent。根节点填满固定高度 iframe 且无内部滚动。首帧和每个控件的
+初始/最小/最大状态均须 finite、非空、可读。
 
 调用方额外规范（若有）：
 {guidelines}

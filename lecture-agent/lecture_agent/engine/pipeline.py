@@ -31,6 +31,7 @@ from ..domain.skills import (
     AUTHORING_RULES,
     PlanningEntry,
     SkillEntry,
+    load_design_rules,
     load_skill_catalog,
     lower_planning_placeholder,
     plan_menu,
@@ -79,7 +80,7 @@ class GeneratorOptions:
     tools: bool = False  # 开启后 sim 块生成走 tool-loop（模型可用 calc 验证表达式）
     concurrency: int = 8  # fan-out / 修复 / notes 的统一有界并发
     sections: bool = True  # 章节分隔页插入（fast 档关，省一次规划调用+少几页）
-    media: bool = False  # 封面配图（真调图库/文生图外部服务，默认关——避免每次生成都增加时延/成本）
+    media: bool | str = "auto"  # auto=能力可用但只在规划器选择 media 时调用；True 保留旧封面补图
     record: bool = (
         True  # 记录到 results/ledger.jsonl（能力画像+token+代码指纹，见 app/container.py）
     )
@@ -126,8 +127,30 @@ def _page_brief(scene: dict[str, Any]) -> dict[str, str]:
     return brief
 
 
+def _page_visual_brief(scene: dict[str, Any]) -> dict[str, Any]:
+    """Normalize the design director's page-level intent without inventing media demand."""
+    raw_value = scene.get("visualBrief")
+    raw: dict[str, Any] = raw_value if isinstance(raw_value, dict) else {}
+    capabilities = raw.get("selectedCapabilities")
+    if not isinstance(capabilities, list):
+        capabilities = [
+            str(block.get("type") or "")
+            for block in (scene.get("blocks") or [])
+            if isinstance(block, dict) and block.get("type")
+        ]
+    return {
+        "designIntent": str(raw.get("designIntent") or scene.get("headline") or scene.get("kind") or ""),
+        "selectedCapabilities": [str(value) for value in capabilities if str(value)],
+        "compositionFamily": str(raw.get("compositionFamily") or ""),
+    }
+
+
 def _block_scene_context(
-    scene: dict[str, Any], brief: dict[str, str], placeholders: list[dict[str, Any]]
+    scene: dict[str, Any],
+    brief: dict[str, str],
+    placeholders: list[dict[str, Any]],
+    visual_brief: dict[str, Any] | None = None,
+    design_brief: dict[str, Any] | None = None,
 ) -> str:
     """给 fan-out 子任务共享同一份页契约，避免每块只凭标题各自猜题。"""
     siblings = [
@@ -148,6 +171,8 @@ def _block_scene_context(
             "lead": scene.get("lead"),
         },
         "brief": brief,
+        "visualBrief": visual_brief or {},
+        "designBrief": design_brief or {},
         "siblingPlan": siblings,
     }
     return (
@@ -645,6 +670,143 @@ async def _attach_hero_image(
         hero["image"] = asset.data_uri
 
 
+def _media_enabled(value: bool | str) -> bool:
+    return value is True or str(value).strip().lower() in {"auto", "true", "on", "yes", "1"}
+
+
+async def _generate_media_block(
+    placeholder: dict[str, Any],
+    *,
+    design_brief: dict[str, Any],
+    image_finder: ImageFinder | None,
+    image_generator: ImageGenerator | None,
+    assets: dict[str, dict[str, Any]],
+) -> BlockResult:
+    """Resolve one planner-selected media request; never invent an asset id or force a request."""
+    purpose = str(placeholder.get("purpose") or "")
+    placement = str(placeholder.get("placement") or "")
+    subject = str(placeholder.get("subject") or placeholder.get("intent") or "").strip()
+    relationship = str(placeholder.get("relationshipToContent") or "").strip()
+    fidelity = str(placeholder.get("fidelity") or "conceptual")
+    if purpose not in {"evidence", "explanatory", "narrative", "atmospheric"}:
+        return BlockResult(None, "media 缺合法 purpose")
+    if placement not in {"illustration", "decoration", "background"}:
+        return BlockResult(None, "media 缺合法 placement")
+    if placement == "background" and purpose == "evidence":
+        return BlockResult(None, "evidence 不得作为背景；应改用 illustration")
+    if not subject:
+        return BlockResult(None, "media 缺 subject")
+    if not image_finder and not image_generator:
+        return BlockResult(None, "规划选择了 media，但没有可用的 ImageFinder/ImageGenerator")
+
+    strategy = str(placeholder.get("sourceStrategy") or "").strip()
+    if strategy not in {"search-first", "generate-first"}:
+        strategy = "generate-first" if purpose == "atmospheric" or placement == "decoration" else "search-first"
+    query = subject + (f"；{relationship}" if relationship else "")
+    dna = json.dumps(design_brief.get("designDNA") or {}, ensure_ascii=False)
+    prompt = (
+        f"为课程页面制作一张无文字视觉资产。主体：{subject}。用途：{purpose}；放置：{placement}；"
+        f"保真要求：{fidelity}。与内容关系：{relationship or '支持页面设计意图'}。"
+        f"Design DNA：{dna}。保留原生文字安全区；不要字母、汉字、数字、公式、图表、标签、UI、logo、水印或伪文字。"
+    )
+    asset = None
+    route = ""
+    async def try_finder() -> Any:
+        if image_finder is None:
+            return None
+        try:
+            return await image_finder.find_image(query)
+        except Exception:  # noqa: BLE001 - 单资产失败允许走另一来源
+            return None
+
+    async def try_generator() -> Any:
+        if image_generator is None:
+            return None
+        try:
+            return await image_generator.generate_image(prompt)
+        except Exception:  # noqa: BLE001 - 单资产失败允许走另一来源
+            return None
+
+    if strategy == "search-first":
+        asset = await try_finder()
+        route = "finder" if asset is not None else ""
+        if asset is None:
+            asset = await try_generator()
+            route = "generator" if asset is not None else ""
+    else:
+        asset = await try_generator()
+        route = "generator" if asset is not None else ""
+        if asset is None:
+            asset = await try_finder()
+            route = "finder" if asset is not None else ""
+    if asset is None:
+        return BlockResult(None, f"media 资产获取失败: {subject}")
+
+    raw_id = re.sub(r"[^a-z0-9-]+", "-", str(placeholder.get("id") or "media").lower()).strip("-")
+    asset_id = f"asset-{raw_id or 'media'}"
+    assets[asset_id] = {
+        "id": asset_id,
+        "kind": "photo" if route == "finder" else ("texture" if placement == "decoration" else "generated-art"),
+        "src": asset.data_uri,
+        "alt": "" if placement == "decoration" else subject,
+        "source": asset.source or ("image-finder" if route == "finder" else "generated illustration"),
+        "attribution": asset.attribution,
+        "promptOrQuery": query if route == "finder" else prompt,
+        "focalPoint": placeholder.get("focalPoint") or {"x": 0.5, "y": 0.5},
+    }
+    if asset.width:
+        assets[asset_id]["width"] = asset.width
+    if asset.height:
+        assets[asset_id]["height"] = asset.height
+    if not assets[asset_id].get("attribution"):
+        assets[asset_id].pop("attribution", None)
+    block = {
+        "type": "media",
+        "assetId": asset_id,
+        "purpose": purpose,
+        "placement": placement,
+        "fit": str(placeholder.get("fit") or ("cover" if placement == "background" else "contain")),
+    }
+    if placeholder.get("caption"):
+        block["caption"] = str(placeholder["caption"])
+    for key in ("mask", "safeZone", "overlay", "overlayStrength"):
+        if placeholder.get(key) is not None:
+            block[key] = placeholder[key]
+    return BlockResult(block)
+
+
+def _lower_media_backgrounds(doc: dict[str, Any]) -> list[str]:
+    """Move generated background requests into scene.background after assets exist."""
+    warnings: list[str] = []
+    for scene in doc.get("scenes", []) or []:
+        blocks = list(scene.get("blocks") or [])
+        backgrounds = [
+            block for block in blocks
+            if isinstance(block, dict) and block.get("type") == "media" and block.get("placement") == "background"
+        ]
+        if not backgrounds:
+            continue
+        chosen = backgrounds[0]
+        remaining = [block for block in blocks if block is not chosen]
+        if not remaining:
+            chosen["placement"] = "illustration"
+            warnings.append(f"{scene.get('id')}: background 缺原生内容层，降级为 illustration")
+            continue
+        scene["background"] = {
+            "assetId": chosen["assetId"],
+            "purpose": chosen.get("purpose") or "atmospheric",
+            "fit": chosen.get("fit") or "cover",
+            "overlay": chosen.get("overlay") or "scrim",
+            "overlayStrength": chosen.get("overlayStrength", 0.45),
+            "safeZone": chosen.get("safeZone") or "content-safe",
+        }
+        scene["blocks"] = remaining
+        scene.pop("layout", None)
+        if len(backgrounds) > 1:
+            warnings.append(f"{scene.get('id')}: 多个 background 请求，仅采用第一个")
+    return warnings
+
+
 async def generate_lecture(
     llm: LLMClient,
     *,
@@ -668,6 +830,10 @@ async def generate_lecture(
     # 事件形如 {"type": "stage"|"skeleton"|"block"|"docUpdated"|"done", ...}；回调不得抛异常。
     opts = options or GeneratorOptions()
     registry, planning = load_skill_catalog(skills_dir)
+    media_enabled = _media_enabled(opts.media)
+    planning_surface = (
+        planning if media_enabled else {name: entry for name, entry in planning.items() if name != "media"}
+    )
     tool_kit: dict[str, Tool] | None = {"calc": CalcTool()} if opts.tools else None
 
     mat = await condense_material(llm, material, topic=topic, target_chars=4000) if material else ""
@@ -684,14 +850,16 @@ async def generate_lecture(
         wants=wants,
         extra=extra,
         material=mat,
-        type_menu=plan_menu(registry, planning),
+        type_menu=plan_menu(registry, planning_surface),
         theme_menu=theme_menu(),
-        authoring_rules=AUTHORING_RULES,
+        authoring_rules=AUTHORING_RULES + "\n\n课程级视觉导演规则：\n" + load_design_rules(skills_dir),
         perspectives_n=opts.plan_perspectives,
         sections=opts.sections,
         concurrency=opts.concurrency,
     )
     doc = plan.doc
+    design_brief_value = doc.get("designBrief")
+    design_brief: dict[str, Any] = design_brief_value if isinstance(design_brief_value, dict) else {}
     # 课程级证据义务只在规划/质检阶段存在；最终 LectureDoc 不公开这些内部字段。
     doc["_knowledgeForms"] = list(plan.knowledge_forms)
     doc["_evidenceObligations"] = list(plan.evidence_obligations)
@@ -723,13 +891,19 @@ async def generate_lecture(
     placeholders: list[tuple[dict[str, Any], dict[str, Any]]] = []
     placeholder_specs: dict[str, dict[str, Any]] = {}
     page_briefs: dict[str, dict[str, str]] = {}
+    page_visual_briefs: dict[str, dict[str, Any]] = {}
     used_block_ids: set[str] = set()
     for si, s in enumerate(doc.get("scenes", [])):
         s["id"] = s.get("id") or f"s{si}"  # 稳定 scene id：供进度视图 / 版式引用（与 block id 同规）
         # brief 是规划→生成→讲稿/质检之间的内部契约。先保存，随后从 scene 移除，
         # 避免规划元数据混进最终 LectureDoc 或被 viewer 当成公开内容。
         page_briefs[str(s["id"])] = _page_brief(s)
+        page_visual_briefs[str(s["id"])] = _page_visual_brief(s)
+        composition = page_visual_briefs[str(s["id"])].get("compositionFamily")
+        if composition:
+            s["compositionFamily"] = composition
         s.pop("brief", None)
+        s.pop("visualBrief", None)
         for bi, b in enumerate(s.get("blocks") or []):
             original_id = str(b.get("id") or "")
             block_id = original_id or f"s{si}b{bi}"
@@ -756,6 +930,7 @@ async def generate_lecture(
         log(f"[plan] 页数预算编译移除: {', '.join(str(value) for value in removed_for_budget)}")
     doc.pop("_knowledgeForms", None)
     doc.pop("_evidenceObligations", None)
+    doc.pop("designBrief", None)
 
     assign_layouts(doc)
     log(
@@ -797,11 +972,19 @@ async def generate_lecture(
 
     progress({"type": "stage", "stage": "fanout", "status": "start", "total": len(placeholders)})
     widget_routes: list[dict[str, str]] = []
+    asset_records: dict[str, dict[str, Any]] = {}
 
     async def gen(item: tuple[dict[str, Any], dict[str, Any]], _i: int) -> tuple[str, BlockResult]:
         ph, scene = item
         brief = page_briefs.get(str(scene.get("id")), _page_brief(scene))
-        scene_ctx = _block_scene_context(scene, brief, list(scene.get("blocks") or []))
+        visual_brief = page_visual_briefs.get(str(scene.get("id")), {})
+        scene_ctx = _block_scene_context(
+            scene,
+            brief,
+            list(scene.get("blocks") or []),
+            visual_brief=visual_brief,
+            design_brief=design_brief,
+        )
         progress(
             {"type": "block", "blockId": ph["id"], "sceneId": scene.get("id"), "status": "active"}
         )
@@ -809,6 +992,20 @@ async def generate_lecture(
         if not reg:
             progress({"type": "block", "blockId": ph["id"], "sceneId": scene.get("id"), "status": "err"})
             return ph["id"], BlockResult(None, f"无技能处理 type {ph['type']}")
+        if ph["type"] == "media":
+            if not media_enabled:
+                result = BlockResult(None, "media 能力已禁用")
+            else:
+                result = await _generate_media_block(
+                    ph,
+                    design_brief=design_brief,
+                    image_finder=image_finder,
+                    image_generator=image_generator,
+                    assets=asset_records,
+                )
+            log(f"  {'✗' if result.err else '✓'} {ph['id']} (media:{ph.get('purpose')}/{ph.get('placement')})")
+            _emit_block_done(progress, ph["id"], scene.get("id"), result.err)
+            return ph["id"], result
         if ph["type"] == "sim" and ph.get("engine") == "widget":
             # 逃生舱：直接产 HTML 片段，两阶段（先契约后写码）+ 校验自修，观感钉死 deck 主题。
             profile = str(ph.get("_simProfile") or "state")
@@ -877,7 +1074,13 @@ async def generate_lecture(
         # fill_blocks 会清掉引用失效 block 的 layout；基于剩余真实类型重新分配，避免 anchor/steps 悬空。
         assign_layouts(doc)
     attach_icons(doc)  # 确定性收尾：list 项按关键词自动配本地图标（零 LLM/零网络）
-    if opts.media:
+    if asset_records:
+        doc["assets"] = list(asset_records.values())
+    for warning in _lower_media_backgrounds(doc):
+        log(f"[media] {warning}")
+        plan_quality_warnings.append(warning)
+    assign_layouts(doc)
+    if opts.media is True:
         await _attach_hero_image(doc, topic, image_finder, image_generator)
     for s in doc.get("scenes", []):  # 每页组装完成 → 转绿
         progress({"type": "docUpdated", "sceneId": s.get("id"), "status": "done"})

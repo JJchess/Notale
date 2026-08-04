@@ -6,6 +6,7 @@ from .registry import (
     PlanningEntry,
     SkillEntry,
     default_skills_dir,
+    load_design_rules,
     load_skill_catalog,
     load_skills,
     lower_planning_placeholder,
@@ -20,6 +21,7 @@ __all__ = [
     "default_skills_dir",
     "load_skill_catalog",
     "load_skills",
+    "load_design_rules",
     "lower_planning_placeholder",
     "plan_menu",
 ]

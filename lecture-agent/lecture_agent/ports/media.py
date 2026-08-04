@@ -17,6 +17,10 @@ from typing import Protocol, runtime_checkable
 @dataclass
 class ImageAsset:
     data_uri: str  # data:<mime>;base64,<...>
+    source: str | None = None
+    attribution: str | None = None
+    width: int | None = None
+    height: int | None = None
 
 
 @runtime_checkable

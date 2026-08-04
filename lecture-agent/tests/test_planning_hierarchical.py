@@ -66,8 +66,8 @@ async def test_hierarchical_triggers_and_reaches_target_pages() -> None:
     assert "plan:skeleton" not in purposes  # 没走单次骨架
 
     scenes = res.doc["scenes"]
-    # 远超单次的 ~15 页天花板、且接近目标（6 章 × (分隔+6) + 封面）
-    assert len(scenes) >= 30
+    # 封面 + 每章分隔 + 各章内容预算，确定性达到目标页数。
+    assert len(scenes) == 40
     assert sum(1 for s in scenes if s.get("kind") == "hero") == 1  # 封面唯一
     assert sum(1 for s in scenes if s.get("kind") == "section") == 6  # 每章一分隔页
     # id 已清（交给 engine 统一重编号，避免跨章撞 id）
@@ -93,3 +93,22 @@ async def test_small_pages_stay_single_shot() -> None:
     assert "plan:skeleton" in purposes  # 单次骨架路径
     assert "plan:outline" not in purposes  # 不触发分层
     assert len(res.doc["scenes"]) == 4
+
+
+async def test_fifteen_pages_use_hierarchical_budget_exactly() -> None:
+    outline = json.loads(_OUTLINE)
+    outline["sections"] = outline["sections"][:2]
+    llm = FakeClient(
+        by_purpose={"plan:outline": json.dumps(outline), "plan:section": _SECTION}
+    )
+    res = await plan_lecture(
+        llm,
+        topic="孟德尔遗传",
+        pages=15,
+        type_menu=_TYPE_MENU,
+        theme_menu=_THEME_MENU,
+        authoring_rules="",
+        concurrency=2,
+    )
+    assert len(res.doc["scenes"]) == 15
+    assert [purpose for purpose, _ in llm.calls].count("plan:section") == 2

@@ -16,8 +16,10 @@ from ..ports.llm import LLMClient, Message
 from ..utils.concurrency import pool
 from ..utils.jsonio import parse_json
 
-_HIER_THRESHOLD = 16  # 页数 > 此值走分层规划（单次骨架 ~15 页封顶，靠分章并发才够）
-_PLAN_CALL_TIMEOUT_S = 300.0
+_HIER_THRESHOLD = 12  # 13+ 页走分层规划；15 页单骨架在 live 模型上会反复撞超时
+# The live DeepSeek profiles intentionally allow 600 s for long lecture skeletons. Keeping a
+# shorter domain timeout silently cancelled valid 15-page plans before the provider deadline.
+_PLAN_CALL_TIMEOUT_S = 600.0
 
 _PERSPECTIVE_SCHEMA = (
     '{ "perspectives": [ { "name":"视角名(如 重直觉的入门讲法 / 重推导的理论派 / 重工程实践 / 爱追问的学生)", '
@@ -212,10 +214,11 @@ def _skeleton_spec(
     theme_line = f"用户指定主题: {theme_hint}" if theme_hint else theme_block
     return f"""骨架结构:
 {{ "id":"kebab-id","title":"...","subtitle":"...(可选)","language":"zh-CN","audience":"...","theme":"...(从下方主题菜单里挑一个名字)",
+  "designBrief":{{"audience":{{"stage":"primary|middle|high|university|professional","readingLevel":"...","formality":"playful|instructional|editorial|academic"}},"purpose":"concept-teaching|practice|explanation|research-report","density":"light|medium|dense","designDNA":{{"palette":{{"base":"...","accent":"..."}},"typography":{{"display":"...","body":"..."}},"shapeLanguage":"...","mediaLanguage":"...","texture":"...","motifs":["..."],"compositionRhythm":"..."}},"selectionReason":"根据受众、目的、证据与密度的一句话理由"}},
   "tutor":{{"suggestions":["建议问题"],"kb":[{{"pattern":"关键词|同义词","answer":"本地应答(inline-md)"}}]}},
   "scenes":[
-    {{"id":"cover","kind":"hero","notes":"开场作用一句话","brief":{{"objective":"学生能说出本讲要解决的问题","learningAction":"orient","requiredEvidence":"主题、核心问题与学习承诺","keyClaim":"本讲唯一承诺","misconception":"","visualTask":"封面只建立主题与问题张力","evidencePolicy":"none"}},"blocks":[{{"id":"b_cover","type":"hero","role":"claim","intent":"封面：标题+一句副题","size":"xl"}}]}},
-    {{"id":"...","kind":"content","eyebrow":"小节标签(可选)","headline":"页标题","lead":"一句陈述式导语(可选)","transition":"zoom(可选,只在确有强调/章节切换意图时用)","notes":"本页作用一句话","brief":{{"objective":"学完本页学生能做出的可观察动作","learningAction":"read|inspect|trace|construct|compare|predict|manipulate|implement|run|debug|calculate|explain 中最主要的一项","requiredEvidence":"学生完成目标时必须看到或产出的具体证据","keyClaim":"本页唯一核心结论","misconception":"本页要纠正的一个具体误区","visualTask":"图形/交互必须让学生看见的变量关系或状态变化","evidencePolicy":"derived|provided|synthetic|none"}},"blocks":[{{"id":"b1","type":"list","role":"claim","intent":"这一块要讲清什么(一句)","size":"m"}},{{"id":"b2","type":"callout","role":"support","intent":"...","size":"s"}}]}},
+    {{"id":"cover","kind":"hero","notes":"开场作用一句话","brief":{{"objective":"学生能说出本讲要解决的问题","learningAction":"orient","requiredEvidence":"主题、核心问题与学习承诺","keyClaim":"本讲唯一承诺","misconception":"","visualTask":"封面只建立主题与问题张力","evidencePolicy":"none"}},"visualBrief":{{"designIntent":"建立课题与核心问题的视觉张力","selectedCapabilities":["hero"],"compositionFamily":"full-bleed-hero"}},"blocks":[{{"id":"b_cover","type":"hero","role":"claim","intent":"封面：标题+一句副题","size":"xl"}}]}},
+    {{"id":"...","kind":"content","eyebrow":"小节标签(可选)","headline":"页标题","lead":"一句陈述式导语(可选)","transition":"zoom(可选,只在确有强调/章节切换意图时用)","notes":"本页作用一句话","brief":{{"objective":"学完本页学生能做出的可观察动作","learningAction":"read|inspect|trace|construct|compare|predict|manipulate|implement|run|debug|calculate|explain 中最主要的一项","requiredEvidence":"学生完成目标时必须看到或产出的具体证据","keyClaim":"本页唯一核心结论","misconception":"本页要纠正的一个具体误区","visualTask":"图形/交互必须让学生看见的变量关系或状态变化","evidencePolicy":"derived|provided|synthetic|none"}},"visualBrief":{{"designIntent":"本页空间层级如何支持 objective","selectedCapabilities":["list","diagram"],"compositionFamily":"annotated-specimen"}},"blocks":[{{"id":"b1","type":"list","role":"claim","intent":"这一块要讲清什么(一句)","size":"m"}},{{"id":"b2","type":"callout","role":"support","intent":"...","size":"s"}}]}},
     {{"id":"...","kind":"quiz","headline":"随堂检验","notes":"检验本页目标","brief":{{"objective":"学生能独立完成什么判断/计算","learningAction":"predict|calculate|judge|explain","requiredEvidence":"学生答案、正确性反馈与判定链","keyClaim":"被检验的知识点","misconception":"错误选项针对的误区","visualTask":"作答后能从解释看出判定链条","evidencePolicy":"derived"}},"blocks":[{{"id":"bq","type":"quiz","role":"practice","intent":"考察点","size":"m"}}]}}
   ]}}
 
@@ -227,6 +230,8 @@ def _skeleton_spec(
 - **封面与收尾页的标题/副题必须直接点出课题本身**，严禁写成其它主题或泛泛套话。
 - scene.kind: hero(封面/收尾,一个 hero block) | content(常规) | quiz(含一个 quiz block) | statement(含一个 statement block) | section(章节分隔页,含一个 statement block)。
 - 每页必须有内部规划字段 `brief`：先写 `objective`，再只选一个主要 `learningAction`，并用 `requiredEvidence` 写清学生完成目标时必须看到或产出的具体证据；然后才根据 Skill 菜单声明的 affordances / learner actions / evidence outputs 选择 block。`keyClaim` 只写一个核心结论；`misconception` 只写一个具体错误想法（无则空串）；`visualTask` 描述必须编码的关系；`evidencePolicy` 只能是 `derived|provided|synthetic|none`。这些字段供后续生成与质检使用，不是观众正文。
+- 整份讲义必须写一个内部 `designBrief`，每页必须写 `visualBrief`。先从页面 objective/requiredEvidence 形成 designIntent，再从 Skill 菜单选择 selectedCapabilities，最后选 compositionFamily。整套课保持同一个 Design DNA；页面靠构图与证据变化，不逐页随机换风格。Media 是可选能力，不得按配额调用。
+- 选择 `media` 时，占位 block 除通用字段外必须写 `purpose:evidence|explanatory|narrative|atmospheric`、`placement:illustration|decoration|background`、`subject`、`relationshipToContent`、`fidelity:documentary|scientific|conceptual|atmospheric`、`required:true|false`，可选 `fit:contain|cover`、`safeZone`、`overlay`、`sourceStrategy:search-first|generate-first`。背景必须与至少一个原生内容 block 同页；关键文字、公式、数据和标签不得进入图片像素。
 - **不要从主题名称直接映射组件，也不要按数量配额塞互动**。先比较候选表达是否覆盖 `requiredEvidence`：固定关系、单个最终快照或无需控制的少量状态可用静态图；状态序列/结构变换/逐步执行用 state-sim，可控的定量因果用 model-sim，坐标与空间约束用 geometry-sim，即使 brief 没写“交互/试验”；实现、运行或调试代码必须用 runnable。sim 证明过程状态，runnable 证明代码执行，不能互相冒充；只读代码只能证明“看过”。整套课程若存在适合主动练习的目标，必须至少安排一次可产出学生证据的活动，而不是全程 read/inspect。
 - `implement` 专指编写可执行代码，并且 requiredEvidence 必须包含代码/运行/测试结果；手动画树、手动执行步骤用 `construct` 或 `trace`，不能滥写 implement。若输入的覆盖清单明确要求完整代码实现或调试，必须安排独立 runnable 页面落实该目标，不能用静态伪代码代替或完全漏掉。
 - 每个 block 是占位 {{id(全局唯一), type, role, intent, size}}。`role` 只能是 `claim|evidence|visualization|practice|support`，同页各块必须围绕同一个 brief 分工，不能各讲各的。**type 只能从上方「可选组件」里的名字选，禁止新造类型名**（共 {len(all_types)} 个：{", ".join(all_types)}）。timeline 只用于有明确时间点/阶段的编年序列；无时间标记的简单线性链用 flow。
@@ -431,6 +436,31 @@ def assign_layouts(doc: dict[str, Any]) -> int:
 
     scenes = doc.get("scenes", [])
 
+    # 0. Design director composition families compile to the existing stable layout primitives.
+    directed = 0
+    for scene in scenes:
+        if scene.get("kind") != "content" or scene.get("layout"):
+            continue
+        blocks = scene.get("blocks") or []
+        family = str(scene.get("compositionFamily") or "")
+        if family in {"interactive-stage", "research-figure", "data-evidence"} and len(blocks) == 1:
+            scene["layout"] = {"kind": "full"}
+        elif family in {"cutout-split", "annotated-specimen", "experiment-setup", "proof-equation-stage"} and len(blocks) == 2:
+            anchor = next((b for b in blocks if b.get("type") == "media"), blocks[0])
+            scene["layout"] = {"kind": "split", "anchor": [anchor.get("id")], "ratio": 0.45}
+        elif family in {"poster", "text-over-image", "full-bleed-hero", "focal-object"}:
+            scene["layout"] = {"kind": "flow", "centered": True, "gap": 22}
+        elif family == "process-path" and len(blocks) >= 2:
+            scene["layout"] = {
+                "kind": "index",
+                "steps": [
+                    {"label": label(block.get("intent", ""), i), "blockIds": [block.get("id")]}
+                    for i, block in enumerate(blocks)
+                ],
+            }
+        if scene.get("layout"):
+            directed += 1
+
     # 1. compose/sidenote：2 block，末块 callout（不变，最高优先级）
     side = 0
     for s in scenes:
@@ -532,7 +562,7 @@ def assign_layouts(doc: dict[str, Any]) -> int:
         s["layout"] = {"kind": "compose", "areas": _compose_areas_from_sizes(blocks)}
         computed_n += 1
 
-    return side + full_n + formula_data_n + split_n + used + computed_n
+    return directed + side + full_n + formula_data_n + split_n + used + computed_n
 
 
 def _coverage_text(discovery: CoverageDiscovery) -> str:
@@ -601,12 +631,13 @@ async def _outline(
     coverage: str,
 ) -> dict[str, Any]:
     """分层第一步：出 title/subtitle/theme/tutor + 章节表（每章 pageBudget/mustCover）。"""
-    target = max(4, pages - 2)  # 预留封面 + 收尾
-    n_sec = max(2, round(target / 6))  # 每章 ~6 页，steer 到合适粒度
+    n_sec = max(2, round(max(1, pages - 1) / 6))  # 封面之外，每章约 5–6 个内容/分隔页
+    target = max(n_sec * 3, pages - 1 - n_sec)  # 预留 1 封面 + 每章 1 分隔页
     sys = (
         "你是课程总设计师。为一节较长的讲义先出**顶层大纲**：把课题切成若干连贯递进的章节。"
         f"目标约 {n_sec} 章、每章 4–7 页，各章 pageBudget 之和≈{target}。只输出 JSON：\n"
         '{ "title":"课题标题", "subtitle":"副题(可选)", "theme":"主题名(从下方菜单;不确定给 slate)", '
+        '"designBrief":{"audience":{"stage":"primary|middle|high|university|professional","readingLevel":"...","formality":"playful|instructional|editorial|academic"},"purpose":"...","density":"light|medium|dense","designDNA":{"palette":{},"typography":{},"shapeLanguage":"...","mediaLanguage":"...","texture":"...","motifs":[],"compositionRhythm":"..."},"selectionReason":"..."}, '
         '"tutor":{"suggestions":["建议问题"],"kb":[{"pattern":"关键词|同义词","answer":"本地应答"}]}, '
         '"sections":[ { "title":"章标题", "thesis":"一句话主旨", "pageBudget":6, "mustCover":["本章必讲点"] } ] }'
     )
@@ -631,7 +662,12 @@ async def _outline(
     secs = data.get("sections")
     if not isinstance(secs, list) or len(secs) < 2:
         raise RuntimeError("大纲章节解析失败或过少")
-    budgets = _normalize_budgets([int(s.get("pageBudget", 5) or 5) for s in secs], target)
+    max_sections = max(2, (pages - 1) // 3)
+    secs = secs[:max_sections]
+    content_target = max(len(secs) * 3, pages - 1 - len(secs))
+    budgets = _normalize_budgets(
+        [int(s.get("pageBudget", 5) or 5) for s in secs], content_target
+    )
     for s, b in zip(secs, budgets, strict=False):
         s["pageBudget"] = b
     data["sections"] = secs
@@ -679,7 +715,7 @@ async def _section_skeleton(
     if not isinstance(scenes, list):
         return []
     # 防御：丢掉模型偷塞的封面/hero 页（分章不该有）
-    return [s for s in scenes if s.get("kind") != "hero"]
+    return [s for s in scenes if s.get("kind") != "hero"][:budget]
 
 
 def _stitch(outline: dict[str, Any], section_scenes: list[list[dict[str, Any]]]) -> dict[str, Any]:
@@ -712,6 +748,8 @@ def _stitch(outline: dict[str, Any], section_scenes: list[list[dict[str, Any]]])
     }
     if isinstance(outline.get("tutor"), dict):
         doc["tutor"] = outline["tutor"]
+    if isinstance(outline.get("designBrief"), dict):
+        doc["designBrief"] = outline["designBrief"]
     return doc
 
 

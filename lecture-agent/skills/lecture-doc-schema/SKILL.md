@@ -33,6 +33,7 @@ LectureDoc { schemaVersion:"1.0", id, title, subtitle?, language, audience?, the
 
 - **Content/structure blocks:** `hero` `statement` `list` `agenda` `callout` `formula` `flow` `table` `code` `compare` `grid` → owned by **create-content**.
 - **Interactive blocks:** `quiz` (→ create-quiz), planning capabilities `state-sim|model-sim|geometry-sim` (→ shared final `sim` via create-sim), `runnable` (→ create-code-runtime), `embed` (reserved placeholder — not wired this phase).
+- **Media:** `assets` + `media` blocks + `scene.background` (→ create-media). Media is optional and must declare purpose and placement; it cannot substitute for state, execution, quantitative, relational, or geometric evidence.
 - **Escape hatch:** `freeform` (→ create-freeform) — rare, always-visible, sanctioned.
 
 ## Validate / assemble / verify (deterministic, always run these)

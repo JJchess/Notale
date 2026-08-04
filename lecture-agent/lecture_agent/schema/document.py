@@ -66,6 +66,16 @@ class VideoBlock(_Block):
         return self
 
 
+class MediaBlock(_Block):
+    type: Literal["media"]
+    assetId: str = Field(min_length=1)
+    purpose: Literal["evidence", "explanatory", "narrative", "atmospheric"]
+    placement: Literal["illustration", "decoration"]
+    fit: Literal["contain", "cover"] = "contain"
+    mask: str | None = None
+    caption: str | None = None
+
+
 class ListItem(BaseModel):
     model_config = ConfigDict(extra="allow")
     lead: str | None = None  # 可选：条目粗体小标题，渲染成强调色小字块（给长列表一层可扫读层级）
@@ -420,6 +430,7 @@ Block = Annotated[
     | StatementBlock
     | PullquoteBlock
     | VideoBlock
+    | MediaBlock
     | ListBlock
     | AgendaBlock
     | CalloutBlock
@@ -451,6 +462,36 @@ class Layout(BaseModel):
     kind: Literal["flow", "index", "split", "compose", "full"] | None = None
 
 
+class FocalPoint(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    x: float = Field(ge=0, le=1)
+    y: float = Field(ge=0, le=1)
+
+
+class Asset(BaseModel):
+    model_config = ConfigDict(extra="allow")
+    id: str = Field(pattern=r"^[a-z0-9][a-z0-9-]*$")
+    kind: Literal["photo", "illustration", "cutout", "texture", "icon", "generated-art"]
+    src: str = Field(min_length=1)
+    alt: str
+    source: str | None = None
+    attribution: str | None = None
+    promptOrQuery: str | None = None
+    width: int | None = Field(default=None, gt=0)
+    height: int | None = Field(default=None, gt=0)
+    focalPoint: FocalPoint | None = None
+
+
+class SceneBackground(BaseModel):
+    model_config = ConfigDict(extra="allow")
+    assetId: str = Field(min_length=1)
+    purpose: Literal["explanatory", "narrative", "atmospheric"]
+    fit: Literal["cover", "contain"] = "cover"
+    overlay: Literal["none", "solid", "gradient", "scrim"] = "scrim"
+    overlayStrength: float = Field(default=0.45, ge=0, le=1)
+    safeZone: str | None = None
+
+
 class Scene(BaseModel):
     model_config = ConfigDict(extra="allow")  # decor/layout 视觉字段
     id: str = Field(pattern=r"^[a-z0-9][a-z0-9-]*$")
@@ -460,6 +501,24 @@ class Scene(BaseModel):
     headline: str | None = None
     lead: str | None = None
     layout: Layout | None = None
+    compositionFamily: Literal[
+        "full-bleed-hero",
+        "text-over-image",
+        "cutout-split",
+        "annotated-specimen",
+        "focal-object",
+        "process-path",
+        "before-after",
+        "comparison",
+        "experiment-setup",
+        "proof-equation-stage",
+        "data-evidence",
+        "collage",
+        "poster",
+        "research-figure",
+        "interactive-stage",
+    ] | None = None
+    background: SceneBackground | None = None
     transition: str | None = None  # reveal 单页 data-transition（如 "zoom"/"convex"/"none"）
     autoAnimate: bool | None = None  # 与相邻页配对+复用相同 block id 时触发 reveal auto-animate morph
     blocks: list[Block] = Field(min_length=1)
@@ -485,6 +544,7 @@ class LectureDoc(BaseModel):
     title: str = Field(min_length=1)
     language: str
     theme: Theme | None = None
+    assets: list[Asset] | None = None
     tutor: Tutor | None = None
     scenes: list[Scene] = Field(min_length=1)
 

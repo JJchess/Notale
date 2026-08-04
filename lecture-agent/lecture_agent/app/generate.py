@@ -25,7 +25,7 @@ from ..schema import CodeMarker, Cost, ExperimentRecord
 from ..utils.env import load_env
 from ..utils.logging import get_logger
 from ..utils.seed import seed_everything
-from .build import build_llm, build_options, model_of, usage_of
+from .build import build_llm, build_options, model_of, sim_model_of, usage_of
 from .codeprint import agent_fingerprint, git_dirty, git_rev
 
 
@@ -43,7 +43,7 @@ def build_render_verifier(
 
 
 def build_media(cfg: DictConfig) -> tuple[ImageFinder | None, ImageGenerator | None]:
-    """只在 generator.media=true 时才 instantiate（默认零成本，不建 httpx 客户端不读 key）。"""
+    """只在 media=auto|true 时装配 provider；auto 不等于每页调用。"""
     if not bool(cfg.generator.get("media", False)) or "media" not in cfg:
         return None, None
     finder = instantiate(cfg.media.finder) if cfg.media.get("finder") else None
@@ -68,6 +68,8 @@ async def run_generation(
         raise ValueError("请提供 topic=...（例：uv run python scripts/generate.py topic=梯度下降）")
     log = get_logger()
     llm = build_llm(cfg)
+    if sim_model := sim_model_of(cfg):
+        log.info(f"[llm] create-sim widget:* → {sim_model}")
     options = build_options(cfg)
     image_finder, image_generator = build_media(cfg)
     started = time.perf_counter()

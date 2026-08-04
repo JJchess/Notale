@@ -54,5 +54,8 @@ class GeminiImageProvider:
                 inline = p.get("inlineData")
                 if inline and inline.get("data"):
                     mime = inline.get("mimeType", "image/png")
-                    return ImageAsset(data_uri=f"data:{mime};base64,{inline['data']}")
+                    return ImageAsset(
+                        data_uri=f"data:{mime};base64,{inline['data']}",
+                        source=f"Gemini image generation ({self.model})",
+                    )
             return None

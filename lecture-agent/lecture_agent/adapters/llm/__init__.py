@@ -3,5 +3,6 @@
 from .cassette import CassetteClient
 from .client import HttpxClient
 from .fake import FakeClient
+from .router import PurposeRouterClient
 
-__all__ = ["CassetteClient", "HttpxClient", "FakeClient"]
+__all__ = ["CassetteClient", "HttpxClient", "FakeClient", "PurposeRouterClient"]

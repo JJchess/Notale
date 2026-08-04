@@ -50,6 +50,7 @@ class BlockType(StrEnum):
     FREEFORM = "freeform"
     PULLQUOTE = "pullquote"
     VIDEO = "video"
+    MEDIA = "media"
 
 
 class SimEngine(StrEnum):

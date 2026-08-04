@@ -49,6 +49,37 @@ _BY_PURPOSE = {
     "notes": json.dumps({"note": "本页备注，讲清主线、展开核心直觉与常见误区。"}),
 }
 
+_MEDIA_SKELETON = json.dumps(
+    {
+        "id": "media-demo",
+        "title": "豌豆遗传",
+        "language": "zh-CN",
+        "theme": "slate",
+        "designBrief": {
+            "audience": {"stage": "high", "readingLevel": "高中", "formality": "instructional"},
+            "purpose": "concept-teaching",
+            "density": "medium",
+            "designDNA": {"mediaLanguage": "botanical editorial", "motifs": ["pea flower"]},
+        },
+        "scenes": [
+            {"id": "cover", "kind": "hero", "notes": "开场。", "blocks": [{"id": "b0", "type": "hero", "intent": "封面"}]},
+            {
+                "id": "trait",
+                "kind": "content",
+                "headline": "先观察性状",
+                "notes": "建立观察情境。",
+                "brief": {"objective": "辨认高茎与矮茎", "learningAction": "inspect", "requiredEvidence": "真实外观差异", "keyClaim": "性状可观察", "misconception": "", "visualTask": "看清植株高度差异", "evidencePolicy": "provided"},
+                "visualBrief": {"designIntent": "用植物背景建立情境，原生文字解释", "selectedCapabilities": ["statement", "media"], "compositionFamily": "text-over-image"},
+                "blocks": [
+                    {"id": "claim", "type": "statement", "role": "claim", "intent": "性状是可观察差异", "size": "m"},
+                    {"id": "bg", "type": "media", "role": "visualization", "intent": "豌豆植株背景", "size": "l", "purpose": "atmospheric", "placement": "background", "subject": "高茎与矮茎豌豆植株", "relationshipToContent": "建立真实观察情境", "fidelity": "scientific", "required": False, "safeZone": "left", "overlay": "scrim", "sourceStrategy": "generate-first"},
+                ],
+            },
+        ],
+    },
+    ensure_ascii=False,
+)
+
 
 async def test_end_to_end_with_fake_llm() -> None:
     llm = FakeClient(by_purpose=_BY_PURPOSE)
@@ -182,3 +213,37 @@ async def test_media_falls_back_to_generator_when_finder_misses() -> None:
     hero = result.doc["scenes"][0]["blocks"][0]
     assert hero["image"] == "data:image/png;base64,BBBB"
     assert len(generator.generate_calls) == 1
+
+
+async def test_media_auto_does_not_call_provider_without_planner_selection() -> None:
+    finder = FakeMediaProvider(found=ImageAsset(data_uri="data:image/png;base64,AAAA"))
+    result = await generate_lecture(
+        FakeClient(by_purpose=_BY_PURPOSE),
+        topic="梯度下降",
+        pages=2,
+        options=GeneratorOptions(plan_perspectives=1, media="auto"),
+        image_finder=finder,
+    )
+    assert result.errors == []
+    assert finder.find_calls == []
+
+
+async def test_planner_selected_background_media_resolves_before_final_composition() -> None:
+    responses = dict(_BY_PURPOSE)
+    responses["plan:skeleton"] = _MEDIA_SKELETON
+    generator = FakeMediaProvider(generated=ImageAsset(data_uri="data:image/png;base64,PEAS"))
+    result = await generate_lecture(
+        FakeClient(by_purpose=responses),
+        topic="孟德尔遗传",
+        pages=2,
+        options=GeneratorOptions(plan_perspectives=1, media="auto"),
+        image_generator=generator,
+    )
+    scene = result.doc["scenes"][1]
+    assert result.errors == [] and result.dropped == []
+    assert scene["background"]["assetId"] == "asset-bg"
+    assert scene["background"]["safeZone"] == "left"
+    assert [block["type"] for block in scene["blocks"]] == ["statement"]
+    assert result.doc["assets"][0]["src"] == "data:image/png;base64,PEAS"
+    assert "不要字母、汉字、数字、公式" in generator.generate_calls[0]
+    assert validate_doc(result.doc).errors == []
