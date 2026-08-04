@@ -15,7 +15,7 @@ metadata:
 Read `lecture-doc-schema` first (SPEC §3.3). `freeform` is the long-tail fallback for a **layout/content shape** that isn't in the formal types AND that `graph` / `grid` / `sim.custom` / `sim.widget` also can't express. Before using it, confirm those don't work — the rationale must say specifically why.
 
 **Check `graph` first for anything with edges.** Trees, DAGs, branching flowcharts and dependency
-diagrams are now a first-class block (`create-infographic`), rendered as real layered SVG with
+diagrams are now first-class blocks (`create-diagram`), rendered as real layered SVG with
 computed edge routing. Hand-drawing one of those in freeform is strictly worse: you'd be laying out
 node coordinates by hand with no re-layout when the text changes.
 

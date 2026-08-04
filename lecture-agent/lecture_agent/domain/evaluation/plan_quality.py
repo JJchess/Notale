@@ -13,6 +13,91 @@ from ...utils.jsonio import parse_json
 _PLAN_REVIEW_TIMEOUT_S = 300.0
 _PAGE_REPLAN_TIMEOUT_S = 240.0
 
+_SIM_CAPABILITIES = frozenset({"sim", "state-sim", "model-sim", "geometry-sim"})
+
+
+def _is_sim_type(block_type: Any) -> bool:
+    return str(block_type or "") in _SIM_CAPABILITIES
+
+
+def _sim_type_for(profile: str, allowed_types: set[str]) -> str:
+    preferred = f"{profile}-sim"
+    if preferred in allowed_types:
+        return preferred
+    return "sim" if "sim" in allowed_types else ""
+
+
+def _explicit_sim_profile(brief: dict[str, Any]) -> str | None:
+    text = " ".join(
+        str(brief.get(key) or "").lower()
+        for key in ("objective", "learningAction", "requiredEvidence", "visualTask")
+    )
+    # Structural transitions win even when their stage happens to use coordinates or dragging.
+    # Spatial placement is not geometry evidence (for example, an AVL rotation).
+    if any(
+        token in text
+        for token in (
+            "state sequence", "state transition", "intermediate state", "step-by-step",
+            "structure transformation", "structure mutation", "before and after",
+            "trace", "step through", "play back", "replay", "rotation", "insertion", "deletion",
+            "状态序列", "状态转移", "中间状态", "逐步执行", "每一步",
+            "结构变换", "结构变化", "结构演化", "前后状态", "单步", "回放",
+            "旋转", "插入", "删除",
+        )
+    ):
+        return "state"
+    if any(
+        token in text
+        for token in (
+            "coordinate", "constraint", "contour", "surface", "boundary", "drag",
+            "spatial invariant", "坐标", "约束", "等高线", "曲面", "边界", "拖拽",
+            "几何不变量",
+        )
+    ):
+        return "geometry"
+    if any(
+        token in text
+        for token in (
+            "parameter", "recompute", "quantitative causal", "math model",
+            "参数", "重算", "定量因果", "数学模型",
+        )
+    ):
+        return "model"
+    return None
+
+
+def _sim_profile_for_brief(brief: dict[str, Any]) -> str:
+    explicit = _explicit_sim_profile(brief)
+    if explicit:
+        return explicit
+    return "model"
+
+
+def _normalize_sim_profile_routes(
+    doc: dict[str, Any], allowed_types: set[str]
+) -> list[str]:
+    """Align planner-selected sim capabilities with explicit evidence semantics."""
+    warnings: list[str] = []
+    for scene in doc.get("scenes") or []:
+        brief = scene.get("brief") if isinstance(scene.get("brief"), dict) else {}
+        profile = _explicit_sim_profile(brief)
+        replacement = _sim_type_for(profile, allowed_types) if profile else ""
+        if not replacement:
+            continue
+        for block in scene.get("blocks") or []:
+            current = str(block.get("type") or "")
+            if current not in _SIM_CAPABILITIES or current == replacement:
+                continue
+            block["type"] = replacement
+            if replacement == "sim":
+                block["engine"] = "widget"
+            else:
+                block.pop("engine", None)
+            warnings.append(
+                f"规划能力归一化 {scene.get('id') or '?'}：{current} → {replacement}（依据学习证据）"
+            )
+    return warnings
+
 
 async def refine_plan(
     llm: LLMClient,
@@ -32,12 +117,12 @@ async def refine_plan(
 1. 每页只有一个可观察 objective 和一个 keyClaim；相邻页不重复。
    objective 必须落成一个主要 learningAction 和可观察的 requiredEvidence。先判断证据，再依据 Skill 菜单的
    affordance 选表达能力：固定关系、单个最终快照或无需控制的少量状态可用静态图；状态序列、中间状态、
-   结构变换、逐步执行、回放或改变输入观察因果必须用 sim，即使 brief 没写“交互/试验”；实现/运行/调试用 runnable。
+   结构变换、逐步执行、回放必须用 state-sim；参数改变后的定量因果用 model-sim；坐标/约束操作用 geometry-sim；实现/运行/调试用 runnable。
    sim 证明过程状态，runnable 证明代码执行，不能互相冒充。
    不按主题硬编码组件，也不按配额硬塞互动。跨页还要检查课程是否只有 read/inspect 而没有任何主动产出证据的活动。
 2. 近似直觉、带条件引理、特殊模型结论、一般定理不得偷换。依赖 L-smooth/凸/强凸等条件时标题和目标显式写条件。
    收敛/速率/保证页还要在观众可见的 headline/lead/formula 规划里容纳步长范围等必要假设，不能只写进 notes/brief。
-3. visualTask 必须能由所选 block 真正编码：chart 适合数值趋势/比较并可用 annotations 标点、线段、箭头；标量一阶递推用普通 sim；二维几何/复杂交互才用 widget；装饰 diagram 不表达坐标或梯度。
+3. visualTask 必须能由所选 block 真正编码：chart 适合固定数值趋势/比较；标量一阶递推用 model-sim；二维几何用 geometry-sim；离散算法状态用 state-sim；装饰 diagram 不表达坐标、梯度或状态变化。
 4. 若解释学习率调度，优先画学习率 η(t) 本身；没有可复算模型时不要编造“某调度对应的损失曲线”。
    若 objective 是“比较多个条件/参数”，visualTask 和 block intent 必须要求首帧同时出现各对照；一个滑块一次只显示一条轨迹不算比较。
    若讲鞍点，必须规划二维曲面/等高线或两条正交切片来编码相反曲率；单条一维切片不能承担该目标。
@@ -50,7 +135,7 @@ async def refine_plan(
 8. 一个 quiz block 只有一道题，objective/keyClaim 只能检验一个判定链；不得写成同时覆盖梯度方向、学习率、调度等整章目标。
 
 只输出 JSON：{"revisions":[{"sceneId":"原 id","reason":"为什么必须改","scene":{完整修订 scene}}]}。
-只列确实低于 9.8/10 的页；若全合格返回空 revisions。硬约束：页数/顺序/sceneId/kind 不变；scene 仍是骨架，blocks 只能含 id/type/role/intent/size/可选 engine，不写最终 block 内容；每个修订 scene 必须含 brief、notes、blocks。"""
+只列确实低于 9.8/10 的页；若全合格返回空 revisions。硬约束：页数/顺序/sceneId/kind 不变；scene 仍是骨架，blocks 只能含 id/type/role/intent/size/可选 engine/interactionBrief，不写最终 block 内容；每个修订 scene 必须含 brief、notes、blocks。"""
     for _round in range(rounds):
         deterministic_problems = []
         for scene in doc.get("scenes") or []:
@@ -110,6 +195,8 @@ async def refine_plan(
             changed += 1
         if not changed:
             break
+    warnings.extend(_normalize_sim_profile_routes(doc, allowed_types))
+    warnings.extend(_enforce_course_evidence_obligations(doc, allowed_types))
     warnings.extend(_enforce_evidence_safe_plans(doc, allowed_types))
     warnings.extend(_enforce_geometry_routes(doc, allowed_types))
     warnings.extend(_enforce_learning_evidence_routes(doc, allowed_types))
@@ -185,17 +272,19 @@ def _enforce_learning_evidence_routes(
             )
             scene["blocks"] = [main]
             warnings.append(f"规划证据兜底 {scene.get('id') or '?'}：执行证据路由到 runnable")
-        elif (
-            needs_sim
-            and "sim" in allowed_types
-            and "sim" not in types
-        ):
+        elif needs_sim and not any(_is_sim_type(value) for value in types):
+            sim_type = _sim_type_for(_sim_profile_for_brief(brief), allowed_types)
+            if not sim_type:
+                continue
             main = next(
                 (block for block in blocks if block.get("type") in {"graph", "diagram", "chart", "timeline", "flow"}),
                 blocks[0],
             )
-            main["type"] = "sim"
-            main["engine"] = "widget"
+            main["type"] = sim_type
+            if sim_type == "sim":
+                main["engine"] = "widget"
+            else:
+                main.pop("engine", None)
             main["role"] = "visualization"
             main["size"] = "xl"
             main["intent"] = (
@@ -203,7 +292,131 @@ def _enforce_learning_evidence_routes(
                 + "；首帧已执行一步，提供单步/复位或真实可操作输入，保留前后状态并突出变化"
             )
             scene["blocks"] = [main]
-            warnings.append(f"规划证据兜底 {scene.get('id') or '?'}：过程状态证据路由到 sim.widget")
+            route_label = "sim.widget" if sim_type == "sim" else sim_type
+            warnings.append(
+                f"规划证据兜底 {scene.get('id') or '?'}：过程状态证据路由到 {route_label}"
+            )
+    return warnings
+
+
+def _enforce_course_evidence_obligations(
+    doc: dict[str, Any], allowed_types: set[str]
+) -> list[str]:
+    """Close course-level evidence obligations even when the skeleton omitted the objective."""
+    obligations = doc.get("_evidenceObligations")
+    if not isinstance(obligations, list):
+        return []
+    scenes = [
+        scene
+        for scene in (doc.get("scenes") or [])
+        if scene.get("kind") not in {"hero", "section", "quiz"} and scene.get("blocks")
+    ]
+    used: set[int] = set()
+    warnings: list[str] = []
+
+    def score(scene: dict[str, Any], capability: str) -> int:
+        raw_brief = scene.get("brief")
+        brief: dict[str, Any] = raw_brief if isinstance(raw_brief, dict) else {}
+        text = " ".join(str(value or "").lower() for value in brief.values())
+        if capability == "runnable":
+            return sum(token in text for token in ("implement", "run", "debug", "代码", "实现", "运行", "测试"))
+        if capability == "state-sim":
+            return sum(token in text for token in ("trace", "state", "step", "状态", "逐步", "结构", "旋转"))
+        if capability == "model-sim":
+            return sum(
+                token in text
+                for token in (
+                    "parameter", "model", "quantitative", "formula", "recurrence", "complexity",
+                    "参数", "模型", "定量", "公式", "递推", "复杂度", "高度", "节点数", "计算",
+                )
+            )
+        if capability == "geometry-sim":
+            return sum(token in text for token in ("coordinate", "constraint", "坐标", "约束", "几何"))
+        return sum(
+            token in text
+            for token in (
+                "relation", "structure", "hierarchy", "node", "edge", "tree", "graph",
+                "关系", "结构", "层级", "节点", "边", "树", "图", "依赖",
+            )
+        )
+
+    for raw in obligations:
+        if not isinstance(raw, dict):
+            continue
+        capability = str(raw.get("capability") or "")
+        if capability not in allowed_types:
+            # Legacy registries expose one undifferentiated sim type.
+            if capability.endswith("-sim") and "sim" in allowed_types:
+                effective = "sim"
+            else:
+                continue
+        else:
+            effective = capability
+        knowledge_form = str(raw.get("knowledgeForm") or "")
+        acceptable = {capability, effective}
+        if knowledge_form == "relational-structure":
+            acceptable |= {"diagram", "graph", "flow", "timeline"}
+        elif knowledge_form == "quantitative-model":
+            acceptable |= {"chart", "model-sim"}
+        if any(
+            str(block.get("type") or "") in acceptable
+            for scene in scenes
+            for block in (scene.get("blocks") or [])
+        ):
+            continue
+        candidates = []
+        for i, scene in enumerate(scenes):
+            if i in used:
+                continue
+            raw_brief = scene.get("brief")
+            candidate_brief = raw_brief if isinstance(raw_brief, dict) else {}
+            needs_runnable, needs_sim = _learning_evidence_needs(candidate_brief)
+            existing = {str(block.get("type") or "") for block in (scene.get("blocks") or [])}
+            if capability != "runnable" and (needs_runnable or "runnable" in existing):
+                continue
+            if not capability.endswith("-sim") and (
+                needs_sim or any(_is_sim_type(block_type) for block_type in existing)
+            ):
+                continue
+            candidates.append((i, scene))
+        if not candidates:
+            continue
+        index, scene = max(candidates, key=lambda pair: (score(pair[1], capability), pair[0]))
+        used.add(index)
+        brief = scene.get("brief") if isinstance(scene.get("brief"), dict) else {}
+        scene["brief"] = brief
+        brief["learningAction"] = str(raw.get("learningAction") or brief.get("learningAction") or "inspect")
+        brief["requiredEvidence"] = str(raw.get("requiredEvidence") or brief.get("requiredEvidence") or "可观察证据")
+        if capability == "runnable":
+            brief["objective"] = "学生能实现并运行本页核心可执行过程，通过固定测试验证结果"
+            brief["visualTask"] = "编辑核心实现并同时看到固定输入、stdout 与测试反馈"
+            role = "practice"
+        else:
+            brief.setdefault("objective", "学生能通过可观察证据解释本页核心关系")
+            brief["visualTask"] = str(raw.get("requiredEvidence") or brief.get("visualTask") or "直接编码核心证据")
+            role = "visualization"
+        main = next(
+            (
+                block
+                for block in scene.get("blocks") or []
+                if block.get("type") in {"code", "chart", "graph", "diagram", "flow", "timeline", "list"}
+            ),
+            scene["blocks"][0],
+        )
+        main["type"] = effective
+        main["role"] = role
+        main["size"] = "xl"
+        main["intent"] = (
+            str(raw.get("requiredEvidence") or brief.get("objective") or "完成课程证据义务")
+            + "；直接产出本课程级证据义务要求的可观察结果"
+        )
+        main.pop("engine", None)
+        if effective == "sim":
+            main["engine"] = "widget"
+        scene["blocks"] = [main]
+        warnings.append(
+            f"课程证据义务 {raw.get('knowledgeForm') or '?'}：{scene.get('id') or '?'} 路由到 {effective}"
+        )
     return warnings
 
 
@@ -216,7 +429,8 @@ def _enforce_widget_capacity(doc: dict[str, Any]) -> list[str]:
         widgets = [
             block
             for block in blocks
-            if block.get("type") == "sim" and block.get("engine") == "widget"
+            if block.get("type") in {"state-sim", "geometry-sim"}
+            or (block.get("type") in {"sim", "model-sim"} and block.get("engine") == "widget")
         ]
         if not widgets or len(blocks) <= 2:
             continue
@@ -280,7 +494,8 @@ def _enforce_evidence_safe_plans(doc: dict[str, Any], allowed_types: set[str]) -
 
 def _enforce_geometry_routes(doc: dict[str, Any], allowed_types: set[str]) -> list[str]:
     """二维曲面/等高线不能因规划审查漏修而落回普通 chart/graph。"""
-    if "sim" not in allowed_types:
+    geometry_type = _sim_type_for("geometry", allowed_types)
+    if not geometry_type:
         return []
     warnings: list[str] = []
     for scene in doc.get("scenes") or []:
@@ -289,21 +504,32 @@ def _enforce_geometry_routes(doc: dict[str, Any], allowed_types: set[str]) -> li
         if not any(token in visual_task for token in ("等高线", "损失曲面", "contour", "surface")):
             continue
         blocks = list(scene.get("blocks") or [])
-        if any(block.get("type") == "sim" and block.get("engine") == "widget" for block in blocks):
+        if any(
+            block.get("type") == "geometry-sim"
+            or (block.get("type") == "sim" and block.get("engine") == "widget")
+            for block in blocks
+        ):
             continue
         visual = next(
-            (block for block in blocks if block.get("type") in {"chart", "graph", "sim", "diagram"}),
+            (
+                block
+                for block in blocks
+                if block.get("type") in {"chart", "graph", "sim", "state-sim", "model-sim", "diagram"}
+            ),
             None,
         )
         if visual is None:
             continue
-        visual["type"] = "sim"
-        visual["engine"] = "widget"
+        visual["type"] = geometry_type
+        if geometry_type == "sim":
+            visual["engine"] = "widget"
+        else:
+            visual.pop("engine", None)
         visual["role"] = "visualization"
         visual["size"] = "l"
         visual["intent"] = str(visual.get("intent") or visual_task) + "；真实绘制二维几何与轨迹"
         warnings.append(
-            f"规划几何兜底 {scene.get('id') or '?'}：二维等高线/曲面主视觉路由到 sim.widget"
+            f"规划几何兜底 {scene.get('id') or '?'}：二维等高线/曲面主视觉路由到 {geometry_type}"
         )
     return warnings
 
@@ -369,7 +595,7 @@ def validate_plan_revision(
         if isinstance(b, dict) and b.get("id")
     }
     seen: set[str] = set()
-    placeholder_keys = {"id", "type", "role", "intent", "size", "engine"}
+    placeholder_keys = {"id", "type", "role", "intent", "size", "engine", "interactionBrief"}
     for block in blocks:
         if not isinstance(block, dict):
             return "block 占位必须是对象"
@@ -386,12 +612,17 @@ def validate_plan_revision(
             return f"block {bid} 缺 intent"
         if block.get("size") not in {"s", "m", "l", "xl"}:
             return f"block {bid} size 非法"
+        if "interactionBrief" in block and not isinstance(block.get("interactionBrief"), dict):
+            return f"block {bid} interactionBrief 必须是对象"
     weights = {"s": 1, "m": 2, "l": 3, "xl": 4}
     total_weight = sum(weights[str(block.get("size"))] for block in blocks)
     if total_weight > 7:
         return f"页面视觉重量 {total_weight} 超过 7；删减辅助块或把主体设为独占页"
     widget_blocks = [
-        block for block in blocks if block.get("type") == "sim" and block.get("engine") == "widget"
+        block
+        for block in blocks
+        if block.get("type") in {"state-sim", "geometry-sim"}
+        or (block.get("type") in {"sim", "model-sim"} and block.get("engine") == "widget")
     ]
     if widget_blocks and len(blocks) > 2:
         return "复杂 widget 页最多再配一个短辅助块；quiz/callout/长公式不能与互动舞台同页堆叠"
@@ -410,7 +641,7 @@ def validate_plan_revision(
     needs_runnable, needs_sim = _learning_evidence_needs(brief)
     if needs_runnable and "runnable" not in types:
         return "学习动作要求实现/运行/调试，必须由 runnable 产出执行证据；只读 code 不成立"
-    if needs_sim and "sim" not in types:
+    if needs_sim and not any(_is_sim_type(value) for value in types):
         return "学习证据包含状态序列/结构变换/逐步执行或可控因果，必须使用 sim 呈现过程状态"
     optimizer_names = ("sgd", "adagrad", "rmsprop", "adam", "momentum", "动量")
     optimizer_count = sum(name in visual_task for name in optimizer_names)
@@ -425,10 +656,16 @@ def validate_plan_revision(
         return "优化器性能依赖目标函数与超参数；synthetic loss 曲线不能暗示 SGD/AdaGrad/RMSProp/Adam/动量的固定排名"
     if any(token in visual_task for token in ("等高线", "损失曲面", "contour", "surface")):
         has_geometry_engine = any(
-            b.get("type") == "sim" and b.get("engine") == "widget" for b in blocks
+            b.get("type") == "geometry-sim"
+            or (b.get("type") == "sim" and b.get("engine") == "widget")
+            for b in blocks
         )
         if not has_geometry_engine:
-            return "等高线/曲面 visualTask 必须使用 sim engine=widget 真实编码二维几何"
+            return (
+                "等高线/曲面 visualTask 必须使用 sim engine=widget 真实编码二维几何"
+                if "sim" in allowed_types and "geometry-sim" not in allowed_types
+                else "等高线/曲面 visualTask 必须使用 geometry-sim 真实编码二维几何"
+            )
     if any(token in visual_task for token in ("坐标", "轨迹", "梯度方向")) and set(types) <= {
         "graph",
         "diagram",
@@ -476,7 +713,10 @@ def _normalize_revision_candidate(
         if isinstance(block, dict) and block.get("id")
     }
     valid_roles = {"claim", "evidence", "visualization", "practice", "support"}
-    visual_types = {"chart", "sim", "graph", "diagram", "timeline", "flow"}
+    visual_types = {
+        "chart", "sim", "state-sim", "model-sim", "geometry-sim",
+        "graph", "diagram", "timeline", "flow",
+    }
     size_map = {
         "s": "s", "sm": "s", "small": "s", "half": "m",
         "m": "m", "md": "m", "medium": "m",
@@ -504,7 +744,7 @@ def _normalize_revision_candidate(
             # 规划模型经常正确选择 sim，却漏写唯一能承载二维几何的 engine 字段。
             # 这是宿主能力路由，不改变教学意图；在 validator 前确定性补齐，避免好修订被整页拒绝。
             block["engine"] = "widget"
-        elif block.get("type") != "sim":
+        elif block.get("type") not in _SIM_CAPABILITIES:
             block.pop("engine", None)
     _fit_revision_capacity(candidate, old)
 
@@ -515,10 +755,16 @@ def _fit_revision_capacity(candidate: dict[str, Any], old: dict[str, Any]) -> No
     if not blocks:
         return
     weights = {"s": 1, "m": 2, "l": 3, "xl": 4}
-    brief = candidate.get("brief") if isinstance(candidate.get("brief"), dict) else {}
+    raw_brief = candidate.get("brief")
+    brief: dict[str, Any] = raw_brief if isinstance(raw_brief, dict) else {}
     needs_runnable, needs_sim = _learning_evidence_needs(brief)
     widget = next(
-        (block for block in blocks if block.get("type") == "sim" and block.get("engine") == "widget"),
+        (
+            block
+            for block in blocks
+            if block.get("type") in {"state-sim", "geometry-sim"}
+            or (block.get("type") in {"sim", "model-sim"} and block.get("engine") == "widget")
+        ),
         None,
     )
     if widget is not None:
@@ -540,13 +786,14 @@ def _fit_revision_capacity(candidate: dict[str, Any], old: dict[str, Any]) -> No
         block_type = str(block.get("type") or "")
         if needs_runnable and block_type == "runnable":
             rank = 0
-        elif needs_sim and block_type == "sim":
+        elif needs_sim and _is_sim_type(block_type):
             rank = 0
         elif old.get("kind") == "quiz" and block_type == "quiz":
             rank = 0
         else:
             rank = {
-                "sim": 1, "graph": 2, "chart": 2, "diagram": 2, "formula": 3,
+                "sim": 1, "state-sim": 1, "model-sim": 1, "geometry-sim": 1,
+                "graph": 2, "chart": 2, "diagram": 2, "formula": 3,
                 "quiz": 3, "statement": 4, "callout": 5, "list": 6, "runnable": 7,
             }.get(block_type, 7)
         return rank, weights.get(str(block.get("size")), 2)
@@ -580,10 +827,10 @@ async def replan_page(
     system = """你是课程页重规划器。质量门已证明当前页靠原 block 类型无法修好；请只重做这一页的骨架。
 输出 JSON：{"scene":{完整 scene 骨架}}，不要解释。硬约束：
 - scene id/kind 不变；保留同一教学位置，但可改 headline/lead/brief/notes 和 block 组合。
-    - brief 必须明确一个 learningAction 与 requiredEvidence；先选择能产出该证据的 Skill，再决定 block。固定关系、单个最终快照或无需控制的少量状态可用静态图；状态序列、中间状态、结构变换、逐步执行、回放或改变输入观察因果必须用 sim；实现/运行/调试用 runnable。sim 与 runnable 的证据不可互相替代。
-- blocks 只含 id/type/role/intent/size/可选 engine，不写最终内容；id 全局唯一。
+    - brief 必须明确一个 learningAction 与 requiredEvidence；先选择能产出该证据的 Skill，再决定 block。状态序列/结构变换用 state-sim，参数因果用 model-sim，坐标/约束用 geometry-sim；实现/运行/调试用 runnable。
+- blocks 只含 id/type/role/intent/size/可选 engine/interactionBrief，不写最终内容；id 全局唯一。
 - 每页一个可观察 objective、一个 keyClaim；标题写清所有必要前提。
-- 二维曲面/等高线/几何轨迹用 sim + engine=widget；普通 graph/diagram 只表达概念关系，不能冒充坐标。
+- 二维曲面/等高线/几何轨迹用 geometry-sim；普通 graph/diagram 只表达概念关系，不能冒充坐标。
 - 定量曲线必须由页面给出的公式直接计算，或清楚标为合成示意；不能用随手编的点冒充数学定义。
 - 若现有 objective 本身要求一页塞两件事，可收窄目标；不要增加页数。"""
     payload = {
@@ -614,6 +861,16 @@ async def replan_page(
     if not isinstance(candidate, dict):
         return None, "页级重规划未返回 scene 对象"
     _normalize_revision_candidate(candidate, current_scene, all_scenes)
+    # Accept legacy quality fixtures/models that still answer with an undifferentiated sim, but
+    # normalize it onto the new planner capability before validation.
+    if "sim" not in allowed_types:
+        profile = _sim_profile_for_brief(candidate.get("brief") or brief)
+        replacement = _sim_type_for(profile, allowed_types)
+        if replacement:
+            for block in candidate.get("blocks") or []:
+                if block.get("type") == "sim":
+                    block["type"] = replacement
+                    block.pop("engine", None)
     problem = validate_plan_revision(candidate, current_scene, all_scenes, allowed_types)
     if problem:
         return None, f"页级重规划被拒绝: {problem}"

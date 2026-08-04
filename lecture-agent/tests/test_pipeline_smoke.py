@@ -74,6 +74,21 @@ async def test_end_to_end_with_fake_llm() -> None:
     assert "不得臆测兄弟块会采用的具体衰减因子" in statement_system
 
 
+async def test_duplicate_planner_block_ids_are_normalized_before_fanout() -> None:
+    skeleton = json.loads(_SKELETON)
+    skeleton["scenes"][1]["blocks"][0]["id"] = "b0"
+    responses = dict(_BY_PURPOSE)
+    responses["plan:skeleton"] = json.dumps(skeleton, ensure_ascii=False)
+    result = await generate_lecture(
+        FakeClient(by_purpose=responses),
+        topic="梯度下降",
+        pages=2,
+        options=GeneratorOptions(plan_perspectives=1),
+    )
+    ids = [block["id"] for scene in result.doc["scenes"] for block in scene["blocks"]]
+    assert len(ids) == len(set(ids)) == 2
+
+
 async def test_fanout_retries_one_timed_out_block_once(monkeypatch) -> None:
     class SlowFirstStatement(FakeClient):
         statement_calls = 0

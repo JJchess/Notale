@@ -8,10 +8,13 @@ from __future__ import annotations
 
 from lecture_agent.domain.planning import (
     _compose_areas_from_sizes,
+    _evidence_obligation,
     _skeleton_spec,
+    _validated_knowledge_forms,
     assign_layouts,
+    fit_scene_budget,
 )
-from lecture_agent.domain.skills import load_skills, plan_menu
+from lecture_agent.domain.skills import load_skill_catalog, plan_menu
 from lecture_agent.domain.themes import theme_menu
 
 
@@ -49,13 +52,13 @@ def test_compose_areas_from_sizes_preserves_block_ids() -> None:
 
 
 def test_skeleton_prompt_is_description_driven() -> None:
-    registry, auto_types = load_skills()
-    spec = _skeleton_spec(8, plan_menu(registry), "", theme_menu(), "", "AUTH")
+    registry, planning = load_skill_catalog()
+    spec = _skeleton_spec(8, plan_menu(registry, planning), "", theme_menu(), "", "AUTH")
     # ① 描述菜单在场（组件家族的 description 被真正塞进 plan 提示，而非裸类型名）。
     assert "可选组件" in spec
     assert "Reach for it" in spec  # 来自打磨后的 sim/runnable/chart/quiz 描述
     # ② 每个 auto_type 的名字仍出现（合法性/禁新造那条硬规则的清单）。
-    for t in auto_types:
+    for t in planning:
         assert t in spec
     # 页级教学/视觉/证据契约必须在规划阶段建立，不能留给互不通信的 block 猜。
     for field in ("objective", "keyClaim", "misconception", "visualTask", "evidencePolicy"):
@@ -65,14 +68,74 @@ def test_skeleton_prompt_is_description_driven() -> None:
 
 
 def test_skeleton_prompt_drops_interactive_suppression() -> None:
-    spec = _skeleton_spec(8, plan_menu(load_skills()[0]), "", theme_menu(), "", "AUTH")
+    registry, planning = load_skill_catalog()
+    spec = _skeleton_spec(8, plan_menu(registry, planning), "", theme_menu(), "", "AUTH")
     # 放开：不再有"最低优先级 / 别过量 / 至多 2 个"这类把互动组件劝退的措辞。
     for banned in ("最低优先级", "别过量", "至多 2 个", "0-2 个"):
         assert banned not in spec, f"压制措辞未清除: {banned}"
     # 保留：题材适配护栏(判据式，不点名学科)与 widget 触发机制仍在。
-    assert "没有可量化" in spec
-    assert "人文" not in spec and "艺术" not in spec and "历史" not in spec  # 不再点名学科
-    assert 'engine:"widget"' in spec
+    assert "纯叙述、纯观点" in spec
+    assert "人文学科" not in spec and "艺术学科" not in spec  # 不按学科名称映射能力
+    assert "state-sim|model-sim|geometry-sim" in spec
+    assert "interactionBrief" in spec
+
+
+def test_knowledge_forms_require_evidence_semantics_not_positioned_nodes() -> None:
+    perspectives = [
+        {
+            "focus": "逐步实现树插入与旋转，并用测试验证代码",
+            "mustCover": ["高度与节点数递推", "节点与边的树结构"],
+            "questions": ["旋转后结构如何变化？"],
+        }
+    ]
+    forms = _validated_knowledge_forms(
+        [
+            "dynamic-process",
+            "executable-artifact",
+            "quantitative-model",
+            "spatial-constraint",
+            "relational-structure",
+        ],
+        perspectives,
+    )
+    assert forms == [
+        "dynamic-process",
+        "executable-artifact",
+        "quantitative-model",
+        "relational-structure",
+    ]
+
+
+def test_quantitative_obligation_uses_chart_without_parameter_control() -> None:
+    static = _evidence_obligation(
+        "quantitative-model",
+        [{"focus": "由递推公式计算高度与最少节点数", "mustCover": ["复杂度上界"]}],
+    )
+    interactive = _evidence_obligation(
+        "quantitative-model",
+        [{"focus": "调节参数并观察模型重新计算", "mustCover": ["参数控制"]}],
+    )
+    assert static["capability"] == "chart"
+    assert interactive["capability"] == "model-sim"
+
+
+def test_overfull_skeleton_keeps_evidence_pages_and_hits_exact_budget() -> None:
+    doc = {
+        "scenes": [
+            {"id": "cover", "kind": "hero", "blocks": [{"type": "hero"}]},
+            {"id": "relation", "kind": "content", "blocks": [{"type": "graph"}]},
+            {"id": "summary-table", "kind": "content", "blocks": [{"type": "table"}]},
+            {"id": "state", "kind": "content", "blocks": [{"type": "state-sim"}]},
+            {"id": "comparison-table", "kind": "content", "blocks": [{"type": "table"}]},
+            {"id": "runtime", "kind": "content", "blocks": [{"type": "runnable"}]},
+            {"id": "outro", "kind": "hero", "blocks": [{"type": "hero"}]},
+        ]
+    }
+    removed = fit_scene_budget(doc, 5)
+    assert removed == ["summary-table", "comparison-table"]
+    assert [scene["id"] for scene in doc["scenes"]] == [
+        "cover", "relation", "state", "runtime", "outro"
+    ]
 
 
 def test_single_large_block_gets_full() -> None:

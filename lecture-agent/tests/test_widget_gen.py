@@ -10,7 +10,12 @@ import json
 
 import lecture_agent.domain.generation.widget as widget_module
 from lecture_agent.adapters.llm.fake import FakeClient
-from lecture_agent.domain.generation import generate_widget, load_widget_guidelines, repair_widget
+from lecture_agent.domain.generation import (
+    compile_interaction_brief,
+    generate_widget,
+    load_widget_guidelines,
+    repair_widget,
+)
 from lecture_agent.engine import GeneratorOptions, generate_lecture
 from lecture_agent.schema import validate_doc
 from lecture_agent.schema.validate import validate_block
@@ -80,6 +85,94 @@ async def test_two_stage_produces_valid_widget() -> None:
     # 恰好一次 plan + 一次 build（首轮就干净，不该触发 repair）。
     purposes = [p for p, _ in llm.calls]
     assert purposes == ["widget:plan", "widget:build"]
+
+
+async def test_complete_interaction_brief_skips_widget_plan() -> None:
+    interaction_brief = {
+        "stateModel": [{"name": "step", "type": "int", "range_or_values": "0..3", "initial": 1}],
+        "controls": [
+            {"trigger": "button#step click", "effect": "advance step and recompute the tree"},
+            {"trigger": "button#reset click", "effect": "restore the same initial tree"},
+        ],
+        "update": "single update() derives previous/current tree and changed edges from step",
+        "initialPaint": "the first AVL rotation step is already applied",
+        "visibleEncodings": [
+            {"quantity": "balance factor", "mark": "node label", "where": "each tree node"},
+            {"quantity": "changed edge", "mark": "accent arrow", "where": "tree stage"},
+        ],
+        "history": "previous and current trees remain side by side",
+        "reset": "restore step=1 and the same insertion sequence",
+        "verificationCases": [
+            {"input": "initial step=1", "expected": "first imbalance is highlighted"},
+            {"input": "one step", "expected": "rotation changes the root and preserves order"},
+            {"input": "reset", "expected": "same initial tree and highlight return"},
+        ],
+        "aestheticDirection": "blueprint",
+        "signatureDetail": "the rotating edge keeps a faint previous-position trace",
+    }
+    contract, problem = compile_interaction_brief(
+        interaction_brief,
+        profile="state",
+        core_insight="逐步追踪 AVL 旋转中的结构变化",
+    )
+    assert problem == "" and contract is not None
+    llm = FakeClient(by_purpose={"widget:build": _genui_response(_GOOD_HTML)})
+    result = await generate_widget(
+        llm,
+        intent="逐步追踪 AVL 旋转",
+        theme="lab",
+        preplanned_contract=contract,
+    )
+    assert result.err is None and result.block is not None
+    assert [purpose for purpose, _messages in llm.calls] == ["widget:build"]
+    assert result.block["spec"]["aesthetic_direction"] == "host-calm"
+    assert result.block["spec"]["source_aesthetic_direction"] == "blueprint"
+    assert result.block["spec"]["palette"] == [
+        "var(--bg)", "var(--bg2)", "var(--ink)", "var(--text2)",
+        "var(--accent)", "var(--line)",
+    ]
+
+
+def test_incomplete_geometry_brief_requires_slow_plan() -> None:
+    contract, problem = compile_interaction_brief(
+        {"stateModel": []},
+        profile="geometry",
+        core_insight="拖动点观察约束",
+    )
+    assert contract is None and "interactionBrief 缺" in problem
+
+
+def test_compact_brief_rows_compile_without_slow_plan() -> None:
+    brief = {
+        "stateModel": ["step: 0..2, initial=1"],
+        "controls": ["单步", "复位"],
+        "update": "single update() applies one deterministic tree transition",
+        "initialPaint": "step 1 is visible",
+        "visibleEncodings": ["变化的边以强调色显示", "平衡因子显示在节点旁"],
+        "history": "before and after remain side by side",
+        "reset": "restore step 1",
+        "verificationCases": ["初态→失衡节点高亮", "单步→根节点改变", "复位→恢复同一初态"],
+        "aestheticDirection": "blueprint",
+        "signatureDetail": "旧边保留淡色轨迹",
+    }
+    contract, problem = compile_interaction_brief(
+        brief, profile="state", core_insight="追踪树旋转的结构变化"
+    )
+    assert problem == "" and contract is not None
+    assert contract["visible_encodings"][0]["quantity"] == "变化的边以强调色显示"
+    assert contract["verification_cases"][1] == {"input": "单步", "expected": "根节点改变"}
+
+
+def test_host_palette_lowering_removes_standalone_svg_fallbacks() -> None:
+    html = """<style>
+    .x { color:#fff; background:var(--bg, #F3F1FA); stroke:#E24B4A }
+    </style><svg><circle id='n'/></svg><script>
+    const a=getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#7C3AED';
+    document.getElementById('n').setAttribute('stroke', '#E24B4A');
+    </script>"""
+    compiled = widget_module._compile_host_palette_html(html, render_medium="svg")
+    assert "#" not in compiled
+    assert "var(--bg)" in compiled and "var(--accent)" in compiled and "var(--card)" in compiled
 
 
 async def test_contract_threaded_into_build_prompt() -> None:
@@ -314,3 +407,4 @@ async def test_skeleton_engine_widget_routes_to_subrecipe() -> None:
     # 证明走了子配方（widget:build 被调），没走通用 block:sim。
     purposes = [p for p, _ in llm.calls]
     assert "widget:build" in purposes and "block:sim" not in purposes
+    assert result.widget_routes == [{"blockId": "bw", "profile": "state", "route": "slow-plan"}]

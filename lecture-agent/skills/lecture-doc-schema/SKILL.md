@@ -1,6 +1,6 @@
 ---
 name: lecture-doc-schema
-description: The shared contract for generating a LectureDoc (new-generation interactive courseware / "PPT"). Read this before authoring any lecture or block. Holds the JSON schema, the SPEC (block types, authoring rules, theme guide), and the deterministic validation/assembly/verify scripts. Other skills (generate-lecture, create-sim, create-code-runtime, create-quiz, create-content, create-freeform) all reference this one.
+description: The shared contract for generating a LectureDoc (new-generation interactive courseware / "PPT"). Read this before authoring any lecture or block. Holds the JSON schema, the SPEC, and deterministic validation/assembly/verify scripts. Planning skills such as create-state-sim, create-model-sim, create-geometry-sim, and create-diagram lower to the final block types defined here.
 version: 1.0.0
 license: MIT
 platforms: [linux, macos, windows]
@@ -32,7 +32,7 @@ LectureDoc { schemaVersion:"1.0", id, title, subtitle?, language, audience?, the
 ```
 
 - **Content/structure blocks:** `hero` `statement` `list` `agenda` `callout` `formula` `flow` `table` `code` `compare` `grid` → owned by **create-content**.
-- **Interactive blocks:** `quiz` (→ create-quiz), `sim` (→ create-sim), `runnable` (→ create-code-runtime), `embed` (reserved placeholder — not wired this phase).
+- **Interactive blocks:** `quiz` (→ create-quiz), planning capabilities `state-sim|model-sim|geometry-sim` (→ shared final `sim` via create-sim), `runnable` (→ create-code-runtime), `embed` (reserved placeholder — not wired this phase).
 - **Escape hatch:** `freeform` (→ create-freeform) — rare, always-visible, sanctioned.
 
 ## Validate / assemble / verify (deterministic, always run these)

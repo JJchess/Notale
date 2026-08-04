@@ -16,6 +16,7 @@ from ..domain.assemble import fill_blocks
 from ..domain.evaluation import check_coverage, refine_plan, replan_page, review_page
 from ..domain.generation import (
     BlockResult,
+    compile_interaction_brief,
     condense_material,
     condense_scene,
     enrich_notes,
@@ -26,7 +27,14 @@ from ..domain.generation import (
 )
 from ..domain.media import attach_icons
 from ..domain.planning import assign_layouts, plan_lecture
-from ..domain.skills import AUTHORING_RULES, SkillEntry, load_skills, plan_menu
+from ..domain.skills import (
+    AUTHORING_RULES,
+    PlanningEntry,
+    SkillEntry,
+    load_skill_catalog,
+    lower_planning_placeholder,
+    plan_menu,
+)
 from ..domain.themes import theme_menu
 from ..domain.tools import CalcTool
 from ..ports.llm import LLMClient
@@ -39,10 +47,12 @@ from ..utils.concurrency import pool
 _BLOCK_ERR = re.compile(r"\$\.scenes\[(\d+)\]\.blocks\[(\d+)\]")
 
 
-def _skill_decision_descriptions(registry: dict[str, SkillEntry]) -> dict[str, str]:
+def _skill_decision_descriptions(
+    registry: dict[str, SkillEntry], planning: dict[str, PlanningEntry]
+) -> dict[str, str]:
     """展开家族级 Skill Manifest，供规划审查与页级重新编译使用同一决策面。"""
     descriptions: dict[str, str] = {}
-    for skill, description, types in plan_menu(registry):
+    for skill, description, types in plan_menu(registry, planning):
         for block_type in types:
             descriptions[block_type] = f"{skill}: {description}"
     return descriptions
@@ -67,7 +77,7 @@ class GeneratorOptions:
     evolve: bool = False
     plan_perspectives: int = 3
     tools: bool = False  # 开启后 sim 块生成走 tool-loop（模型可用 calc 验证表达式）
-    concurrency: int = 4  # fan-out / 修复 / notes 的有界并发（fast 档提到 8）
+    concurrency: int = 8  # fan-out / 修复 / notes 的统一有界并发
     sections: bool = True  # 章节分隔页插入（fast 档关，省一次规划调用+少几页）
     media: bool = False  # 封面配图（真调图库/文生图外部服务，默认关——避免每次生成都增加时延/成本）
     record: bool = (
@@ -89,6 +99,9 @@ class GenerateResult:
     perspectives: list[dict[str, Any]] = field(default_factory=list)
     coverage: dict[str, Any] | None = None
     quality: list[dict[str, Any]] = field(default_factory=list)
+    knowledge_forms: list[str] = field(default_factory=list)
+    evidence_obligations: list[dict[str, str]] = field(default_factory=list)
+    widget_routes: list[dict[str, str]] = field(default_factory=list)
 
 
 def _page_brief(scene: dict[str, Any]) -> dict[str, str]:
@@ -287,6 +300,7 @@ async def _quality_repair(
     doc: dict[str, Any],
     *,
     registry: dict[str, SkillEntry],
+    planning: dict[str, PlanningEntry],
     page_briefs: dict[str, dict[str, str]],
     placeholder_specs: dict[str, dict[str, Any]],
     topic: str,
@@ -307,7 +321,7 @@ async def _quality_repair(
     # 只有成功换型才锁定；格式/校验/生成失败不应耗掉该页唯一一次重新编译机会。
     # 总尝试次数仍受 quality rounds 限制，避免无界循环。
     replan_succeeded: set[str] = set()
-    skill_descriptions = _skill_decision_descriptions(registry)
+    skill_descriptions = _skill_decision_descriptions(registry, planning)
 
     def route_page_issues(
         scene: dict[str, Any], issues: list[str], targets: dict[str, list[dict[str, str]]]
@@ -344,7 +358,7 @@ async def _quality_repair(
             topic=topic,
             audience=audience,
             material=material,
-            allowed_types=set(registry),
+            allowed_types=set(planning),
             type_descriptions=skill_descriptions,
             all_scenes=scenes,
         )
@@ -354,7 +368,10 @@ async def _quality_repair(
         new_brief = _page_brief(skeleton)
         skeleton.pop("brief", None)
         assign_layouts({"scenes": [skeleton]})
-        placeholders = [dict(block) for block in (skeleton.get("blocks") or [])]
+        placeholders = [
+            lower_planning_placeholder(dict(block), planning)
+            for block in (skeleton.get("blocks") or [])
+        ]
         scene_ctx = _block_scene_context(skeleton, new_brief, placeholders)
 
         async def generate_one(ph: dict[str, Any], _i: int) -> tuple[dict[str, Any], BlockResult]:
@@ -363,6 +380,16 @@ async def _quality_repair(
                 return ph, BlockResult(None, f"无技能处理 type {ph.get('type')}")
             progress({"type": "block", "blockId": ph.get("id"), "sceneId": sid, "status": "active"})
             if ph.get("type") == "sim" and ph.get("engine") == "widget":
+                profile = str(ph.get("_simProfile") or "state")
+                preplanned, problem = compile_interaction_brief(
+                    ph.get("interactionBrief"),
+                    profile=profile,
+                    core_insight=str(new_brief.get("objective") or ph.get("intent") or "理解核心过程"),
+                )
+                log(
+                    f"  ↳ {ph.get('id')} widget-route={'fast-build' if preplanned else 'slow-plan'} profile={profile}"
+                    + (f" ({problem})" if problem else "")
+                )
                 result = await generate_widget(
                     llm,
                     intent=(
@@ -374,6 +401,7 @@ async def _quality_repair(
                     topic=topic,
                     material=material,
                     guidelines=load_widget_guidelines(reg.dir),
+                    preplanned_contract=preplanned,
                 )
             else:
                 result = await generate_block(
@@ -639,7 +667,7 @@ async def generate_lecture(
     # progress：结构化进度观测点（供 Web App 的进度视图消费；纯观测，不影响生成）。
     # 事件形如 {"type": "stage"|"skeleton"|"block"|"docUpdated"|"done", ...}；回调不得抛异常。
     opts = options or GeneratorOptions()
-    registry, _auto_types = load_skills(skills_dir)
+    registry, planning = load_skill_catalog(skills_dir)
     tool_kit: dict[str, Tool] | None = {"calc": CalcTool()} if opts.tools else None
 
     mat = await condense_material(llm, material, topic=topic, target_chars=4000) if material else ""
@@ -656,7 +684,7 @@ async def generate_lecture(
         wants=wants,
         extra=extra,
         material=mat,
-        type_menu=plan_menu(registry),
+        type_menu=plan_menu(registry, planning),
         theme_menu=theme_menu(),
         authoring_rules=AUTHORING_RULES,
         perspectives_n=opts.plan_perspectives,
@@ -664,22 +692,27 @@ async def generate_lecture(
         concurrency=opts.concurrency,
     )
     doc = plan.doc
+    # 课程级证据义务只在规划/质检阶段存在；最终 LectureDoc 不公开这些内部字段。
+    doc["_knowledgeForms"] = list(plan.knowledge_forms)
+    doc["_evidenceObligations"] = list(plan.evidence_obligations)
     plan_quality_warnings: list[str] = []
+    skill_descriptions = _skill_decision_descriptions(registry, planning)
     if opts.plan_quality_rounds > 0:
         progress({"type": "stage", "stage": "plan-quality", "status": "start"})
-        skill_descriptions = _skill_decision_descriptions(registry)
-        plan_quality_warnings = await refine_plan(
-            llm,
-            doc,
-            topic=topic,
-            audience=audience,
-            material=mat,
-            allowed_types=set(skill_descriptions),
-            type_descriptions=skill_descriptions,
-            rounds=opts.plan_quality_rounds,
-        )
-        for warning in plan_quality_warnings:
-            log(f"[plan-quality] {warning}")
+    # rounds=0 仍运行确定性的证据路由/容量守卫；制度约束不能依赖是否开启额外 LLM 审查。
+    plan_quality_warnings = await refine_plan(
+        llm,
+        doc,
+        topic=topic,
+        audience=audience,
+        material=mat,
+        allowed_types=set(skill_descriptions),
+        type_descriptions=skill_descriptions,
+        rounds=opts.plan_quality_rounds,
+    )
+    for warning in plan_quality_warnings:
+        log(f"[plan-quality] {warning}")
+    if opts.plan_quality_rounds > 0:
         progress({"type": "stage", "stage": "plan-quality", "status": "done"})
     doc["schemaVersion"] = "1.0"
     doc.setdefault("language", "zh-CN")
@@ -690,6 +723,7 @@ async def generate_lecture(
     placeholders: list[tuple[dict[str, Any], dict[str, Any]]] = []
     placeholder_specs: dict[str, dict[str, Any]] = {}
     page_briefs: dict[str, dict[str, str]] = {}
+    used_block_ids: set[str] = set()
     for si, s in enumerate(doc.get("scenes", [])):
         s["id"] = s.get("id") or f"s{si}"  # 稳定 scene id：供进度视图 / 版式引用（与 block id 同规）
         # brief 是规划→生成→讲稿/质检之间的内部契约。先保存，随后从 scene 移除，
@@ -697,12 +731,31 @@ async def generate_lecture(
         page_briefs[str(s["id"])] = _page_brief(s)
         s.pop("brief", None)
         for bi, b in enumerate(s.get("blocks") or []):
-            b["id"] = b.get("id") or f"s{si}b{bi}"
-            if b.get("type") not in registry:  # 防幻觉类型丢内容
+            original_id = str(b.get("id") or "")
+            block_id = original_id or f"s{si}b{bi}"
+            if block_id in used_block_ids:
+                block_id = f"s{si}b{bi}"
+                suffix = 2
+                while block_id in used_block_ids:
+                    block_id = f"s{si}b{bi}-{suffix}"
+                    suffix += 1
+                log(f"[plan] 重复 block id {original_id!r} → {block_id}")
+            b["id"] = block_id
+            used_block_ids.add(block_id)
+            if b.get("type") not in planning and b.get("type") not in registry:  # 防幻觉类型丢内容
                 log(f'[plan] 未知 type "{b.get("type")}"，回退 list')
                 b["type"] = "list"
+            lowered = lower_planning_placeholder(b, planning)
+            b.clear()
+            b.update(lowered)
             placeholder_specs[str(b["id"])] = dict(b)
             placeholders.append((b, s))
+
+    removed_for_budget = doc.pop("_budgetRemovedScenes", None)
+    if removed_for_budget:
+        log(f"[plan] 页数预算编译移除: {', '.join(str(value) for value in removed_for_budget)}")
+    doc.pop("_knowledgeForms", None)
+    doc.pop("_evidenceObligations", None)
 
     assign_layouts(doc)
     log(
@@ -743,6 +796,7 @@ async def generate_lecture(
             widget_guidelines = load_widget_guidelines(sim_reg.dir)
 
     progress({"type": "stage", "stage": "fanout", "status": "start", "total": len(placeholders)})
+    widget_routes: list[dict[str, str]] = []
 
     async def gen(item: tuple[dict[str, Any], dict[str, Any]], _i: int) -> tuple[str, BlockResult]:
         ph, scene = item
@@ -757,6 +811,20 @@ async def generate_lecture(
             return ph["id"], BlockResult(None, f"无技能处理 type {ph['type']}")
         if ph["type"] == "sim" and ph.get("engine") == "widget":
             # 逃生舱：直接产 HTML 片段，两阶段（先契约后写码）+ 校验自修，观感钉死 deck 主题。
+            profile = str(ph.get("_simProfile") or "state")
+            preplanned, contract_problem = compile_interaction_brief(
+                ph.get("interactionBrief"),
+                profile=profile,
+                core_insight=str(brief.get("objective") or ph.get("intent") or "理解核心过程"),
+            )
+            route = "fast-build" if preplanned is not None else "slow-plan"
+            widget_routes.append(
+                {"blockId": str(ph["id"]), "profile": profile, "route": route}
+            )
+            log(
+                f"  ↳ {ph['id']} widget-route={route} profile={profile}"
+                + (f" ({contract_problem})" if contract_problem else "")
+            )
             r = await generate_widget(
                 llm,
                 intent=(
@@ -768,6 +836,7 @@ async def generate_lecture(
                 topic=topic,
                 material=mat,
                 guidelines=widget_guidelines,
+                preplanned_contract=preplanned,
             )
             log(f"  {'✗' if r.err else '✓'} {ph['id']} (sim:widget)")
             _emit_block_done(progress, ph["id"], scene.get("id"), r.err)
@@ -836,6 +905,7 @@ async def generate_lecture(
             llm,
             doc,
             registry=registry,
+            planning=planning,
             page_briefs=page_briefs,
             placeholder_specs=placeholder_specs,
             topic=topic,
@@ -1091,6 +1161,7 @@ async def generate_lecture(
             "dropped": len(dropped),
             "coverage": bool(cov),
             "quality": quality_summary,
+            "widgetRoutes": widget_routes,
             "doc": doc,
         }
     )
@@ -1102,4 +1173,7 @@ async def generate_lecture(
         perspectives=plan.perspectives,
         coverage=cov,
         quality=quality_summary,
+        knowledge_forms=plan.knowledge_forms,
+        evidence_obligations=plan.evidence_obligations,
+        widget_routes=widget_routes,
     )

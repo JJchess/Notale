@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -36,6 +37,23 @@ class SkillEntry:
     limitations: tuple[str, ...] = ()
 
 
+@dataclass
+class PlanningEntry:
+    """Planner-visible capability which deterministically lowers to a generation block type."""
+
+    type: str
+    skill: str
+    dir: str
+    description: str
+    target_type: str
+    profile: str = ""
+    defaults: dict[str, Any] | None = None
+    affordances: tuple[str, ...] = ()
+    learner_actions: tuple[str, ...] = ()
+    evidence_outputs: tuple[str, ...] = ()
+    limitations: tuple[str, ...] = ()
+
+
 def default_skills_dir() -> Path:
     """项目根下的 skills/（lecture_agent/domain/skills/registry.py → 上溯 3 层到项目根）。"""
     return Path(__file__).resolve().parents[3] / "skills"
@@ -58,15 +76,38 @@ def _parse_list(value: str) -> tuple[str, ...]:
     return tuple(part.strip().strip("\"'") for part in raw.split(",") if part.strip())
 
 
-def load_skills(skills_dir: str | Path | None = None) -> tuple[dict[str, SkillEntry], list[str]]:
+def _manifest_list(manifest: dict[str, Any], key: str, fallback: str) -> tuple[str, ...]:
+    value = manifest.get(key)
+    if isinstance(value, list):
+        return tuple(str(item).strip() for item in value if str(item).strip())
+    return _parse_list(fallback)
+
+
+def load_skill_catalog(
+    skills_dir: str | Path | None = None,
+) -> tuple[dict[str, SkillEntry], dict[str, PlanningEntry]]:
+    """Load final block contracts and the separate planner capability surface.
+
+    Skills without ``planning.json`` remain backward compatible: every final contract is exposed
+    one-to-one. A planning manifest may hide those contracts and expose capability aliases which
+    lower to an existing final type.
+    """
     d = Path(skills_dir) if skills_dir else default_skills_dir()
     registry: dict[str, SkillEntry] = {}
+    manifests: list[tuple[Path, dict[str, str], dict[str, Any]]] = []
     for name in sorted(p.name for p in d.iterdir() if p.is_dir()):
         sdir = d / name
         sk = sdir / "SKILL.md"
         if not sk.exists():
             continue
         fm = _parse_frontmatter(sk.read_text(encoding="utf-8"))
+        planning_path = sdir / "planning.json"
+        manifest = (
+            json.loads(planning_path.read_text(encoding="utf-8"))
+            if planning_path.exists()
+            else {}
+        )
+        manifests.append((sdir, fm, manifest))
         cpath = sdir / "contracts.json"
         if cpath.exists():
             contracts = json.loads(cpath.read_text(encoding="utf-8"))
@@ -83,8 +124,77 @@ def load_skills(skills_dir: str | Path | None = None) -> tuple[dict[str, SkillEn
                     evidence_outputs=_parse_list(fm.get("evidence-outputs", "")),
                     limitations=_parse_list(fm.get("limitations", "")),
                 )
-    auto_types = [t for t in registry if t not in AUTO_EXCLUDE]
-    return registry, auto_types
+
+    planning: dict[str, PlanningEntry] = {}
+    for sdir, fm, manifest in manifests:
+        skill_name = fm.get("name", sdir.name)
+        expose_contracts = bool(manifest.get("exposeContracts", True))
+        if expose_contracts:
+            for block_type, entry in registry.items():
+                if entry.dir != str(sdir) or block_type in AUTO_EXCLUDE:
+                    continue
+                planning[block_type] = PlanningEntry(
+                    type=block_type,
+                    skill=entry.skill,
+                    dir=entry.dir,
+                    description=entry.description,
+                    target_type=block_type,
+                    defaults={},
+                    affordances=_manifest_list(manifest, "affordances", fm.get("affordances", "")),
+                    learner_actions=_manifest_list(
+                        manifest, "learnerActions", fm.get("learner-actions", "")
+                    ),
+                    evidence_outputs=_manifest_list(
+                        manifest, "evidenceOutputs", fm.get("evidence-outputs", "")
+                    ),
+                    limitations=_manifest_list(manifest, "limitations", fm.get("limitations", "")),
+                )
+        capabilities = manifest.get("capabilities") or []
+        if not isinstance(capabilities, list):
+            raise ValueError(f"{sdir / 'planning.json'}: capabilities 必须是数组")
+        for raw in capabilities:
+            if not isinstance(raw, dict):
+                raise ValueError(f"{sdir / 'planning.json'}: capability 必须是对象")
+            capability_type = str(raw.get("type") or "").strip()
+            target_type = str(raw.get("targetType") or "").strip()
+            if not capability_type or not target_type:
+                raise ValueError(f"{sdir / 'planning.json'}: capability 缺 type/targetType")
+            if capability_type in planning:
+                raise ValueError(f'规划 capability "{capability_type}" 被多个技能声明')
+            if target_type not in registry:
+                raise ValueError(
+                    f'规划 capability "{capability_type}" 指向未知 block type "{target_type}"'
+                )
+            defaults = raw.get("defaults") or {}
+            if not isinstance(defaults, dict):
+                raise ValueError(f"{sdir / 'planning.json'}: defaults 必须是对象")
+            planning[capability_type] = PlanningEntry(
+                type=capability_type,
+                skill=skill_name,
+                dir=str(sdir),
+                description=fm.get("description", ""),
+                target_type=target_type,
+                profile=str(raw.get("profile") or ""),
+                defaults=dict(defaults),
+                affordances=_manifest_list(manifest, "affordances", fm.get("affordances", "")),
+                learner_actions=_manifest_list(
+                    manifest, "learnerActions", fm.get("learner-actions", "")
+                ),
+                evidence_outputs=_manifest_list(
+                    manifest, "evidenceOutputs", fm.get("evidence-outputs", "")
+                ),
+                limitations=_manifest_list(manifest, "limitations", fm.get("limitations", "")),
+            )
+    return registry, planning
+
+
+def load_skills(skills_dir: str | Path | None = None) -> tuple[dict[str, SkillEntry], list[str]]:
+    """Backward-compatible generation registry API.
+
+    New planner code should use :func:`load_skill_catalog`.
+    """
+    registry, _planning = load_skill_catalog(skills_dir)
+    return registry, [t for t in registry if t not in AUTO_EXCLUDE]
 
 
 _DESC_TAIL = re.compile(r"\s*Produces schema-valid[^.]*\.\s*$")
@@ -95,7 +205,7 @@ def _trim_desc(desc: str) -> str:
     return _DESC_TAIL.sub("", desc).strip()
 
 
-def _decision_description(entry: SkillEntry) -> str:
+def _decision_description(entry: SkillEntry | PlanningEntry) -> str:
     """把 Skill 自声明的能力契约编译进规划菜单，而非在中心 prompt 按学科写特判。"""
     parts = [_trim_desc(entry.description)]
     if entry.affordances:
@@ -109,7 +219,10 @@ def _decision_description(entry: SkillEntry) -> str:
     return " ".join(part for part in parts if part)
 
 
-def plan_menu(registry: dict[str, SkillEntry]) -> list[tuple[str, str, list[str]]]:
+def plan_menu(
+    registry: dict[str, SkillEntry],
+    planning: dict[str, PlanningEntry] | None = None,
+) -> list[tuple[str, str, list[str]]]:
     """把 registry 按 skill 家族分组成规划器的「描述 → 可选类型」菜单。
 
     **描述即路由决策面**：规划器据每个家族自己的 `description` 判断何时调用哪个组件，
@@ -119,11 +232,37 @@ def plan_menu(registry: dict[str, SkillEntry]) -> list[tuple[str, str, list[str]
     """
     acc: dict[str, tuple[str, list[str]]] = {}
     order: list[str] = []
-    for btype, entry in registry.items():
-        if btype in AUTO_EXCLUDE:
+    source: Mapping[str, SkillEntry | PlanningEntry] = (
+        planning if planning is not None else registry
+    )
+    for btype, entry in source.items():
+        if planning is None and btype in AUTO_EXCLUDE:
             continue
         if entry.skill not in acc:
             acc[entry.skill] = (_decision_description(entry), [])
             order.append(entry.skill)
         acc[entry.skill][1].append(btype)
     return [(sk, acc[sk][0], acc[sk][1]) for sk in order]
+
+
+def lower_planning_placeholder(
+    block: dict[str, Any], planning: dict[str, PlanningEntry]
+) -> dict[str, Any]:
+    """Lower one planner capability placeholder to a final generation type.
+
+    The underscored fields are orchestration metadata. ``fill_blocks`` replaces the placeholder,
+    so they never enter the final LectureDoc.
+    """
+    capability_type = str(block.get("type") or "")
+    entry = planning.get(capability_type)
+    if entry is None:
+        return dict(block)
+    lowered = dict(block)
+    lowered["type"] = entry.target_type
+    for key, value in (entry.defaults or {}).items():
+        lowered.setdefault(key, value)
+    if capability_type != entry.target_type:
+        lowered["_planningType"] = capability_type
+    if entry.profile:
+        lowered["_simProfile"] = entry.profile
+    return lowered

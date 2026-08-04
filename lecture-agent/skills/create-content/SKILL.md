@@ -1,6 +1,6 @@
 ---
 name: create-content
-description: Author static content blocks for a LectureDoc lecture page — hero, statement, list, agenda, callout, formula, flow, table, code, compare, grid. Use when a lecture needs prose/narrative/layout (not an interactive sim, quiz, or code runtime). Produces schema-valid block JSON.
+description: Author static prose and layout blocks for a LectureDoc lecture page — hero, statement, list, agenda, callout, formula, table, code, compare, and grid. Use when a lecture needs narrative or nominal lookup rather than a structural diagram, interactive simulation, quiz, or code runtime. Produces schema-valid block JSON.
 affordances: [prose, fixed-comparison, fixed-sequence, exact-values, read-only-code]
 learner-actions: [read, recall, inspect, compare]
 evidence-outputs: [visible-claim, fixed-steps, exact-lookup, code-example]
@@ -28,7 +28,6 @@ Read `lecture-doc-schema` first (schema + SPEC §3, §5). This skill owns the no
 | `agenda` | equal-height labeled rows (prefer over two uneven columns) | `rows[≤12]`:[{`label`, `text`, `fragment?`}] |
 | `callout` | one top-lined summary line | `label`, `text` |
 | `formula` | display formula | `latex`(纯源码，**不带** $/$$ 包裹), `caption?` |
-| `flow` | process nodes | `nodes[2..7]`:[{`title`, `sub?`, `state?`:on\|q}], `loopNote?` |
 | `table` | ledger table | `head[≥2]`, `rows[][]` (cell 可 `{text,hi:true}`) |
 | `code` | static (non-runnable) code card | `filename?`, `language`:python\|javascript\|text, `source`, `caption?` |
 | `compare` | left/right symmetric comparison (e.g. before/after code) | `left`/`right`:{`caption?`, `block`} |

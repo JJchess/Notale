@@ -5,7 +5,8 @@ widget 是唯一让 agent **直接产 HTML/JS** 的 block，故它不走 blocks.
 的错误喂回 ② 自修（≤rounds）。
 
 与 GenUI 的关键分道：
-- **观感钉死在 deck 主题**——片段读运行时注入 iframe 的 `--token`（见 guidelines/interactive.md），
+- **观感钉死在 deck 主题**——片段读取运行时注入 iframe 的 `--token`；完整视觉规则来自
+  `domain/generation/generative_ui/guidelines/fragments/` 的唯一共享核心，
   不像 GenUI 逐组件从 8 项 aesthetic_direction 里选调色板（lecture 要一致性，SPEC §8）。
 - **离线零依赖 vanilla**——禁 CDN/图表库；靠 iframe sandbox 隔离而非净化。
 - 复用本地 `schema.validate.validate_block`（内走 `_check_widget_html` + 反 slop lint），不新写校验器。
@@ -138,6 +139,156 @@ def _normalize_contract(contract: Any) -> Any:
     return normalized
 
 
+def _compile_lecture_host_contract(contract: dict[str, Any]) -> dict[str, Any]:
+    """Lower standalone GenUI art directions onto LectureDoc theme tokens."""
+    compiled = dict(contract)
+    source_direction = str(compiled.get("aesthetic_direction") or "host-calm")
+    compiled["source_aesthetic_direction"] = source_direction
+    compiled["aesthetic_direction"] = "host-calm"
+    compiled["palette"] = [
+        "var(--bg)", "var(--bg2)", "var(--ink)", "var(--text2)",
+        "var(--accent)", "var(--line)",
+    ]
+    compiled["direction_reason"] = (
+        f"LectureDoc host palette; preserve {source_direction} only in layout, motion, and signature detail"
+    )
+    return compiled
+
+
+def compile_interaction_brief(
+    brief: Any,
+    *,
+    profile: str,
+    core_insight: str,
+) -> tuple[dict[str, Any] | None, str]:
+    """Compile the skeleton's compact interaction brief into the full GenUI contract.
+
+    Returning a problem is not fatal: the caller deliberately falls back to ``widget:plan``.
+    """
+    if not isinstance(brief, dict):
+        return None, "interactionBrief 缺失"
+    required = (
+        "stateModel", "controls", "update", "initialPaint", "visibleEncodings",
+        "history", "reset", "verificationCases", "aestheticDirection", "signatureDetail",
+    )
+    missing = [key for key in required if not brief.get(key)]
+    if missing:
+        return None, "interactionBrief 缺 " + ", ".join(missing)
+    state_model = brief.get("stateModel")
+    controls = brief.get("controls")
+    visible = brief.get("visibleEncodings")
+    cases = brief.get("verificationCases")
+    if not isinstance(state_model, list) or not state_model:
+        return None, "stateModel 必须是非空数组"
+    if not isinstance(controls, list) or not controls:
+        return None, "controls 必须是非空数组"
+    if not isinstance(visible, list) or not visible:
+        return None, "visibleEncodings 必须是非空数组"
+    if not isinstance(cases, list) or not cases:
+        return None, "stateModel/controls/visibleEncodings/verificationCases 必须是非空数组"
+    normalized_cases: list[dict[str, str]] = []
+    for index, case in enumerate(cases):
+        if isinstance(case, dict):
+            case_input = str(case.get("input") or "").strip()
+            expected = str(case.get("expected") or "").strip()
+        else:
+            compact = str(case or "").strip()
+            parts = re.split(r"\s*(?:=>|→|:|：)\s*", compact, maxsplit=1)
+            case_input = parts[0] if len(parts) == 2 else f"case {index + 1}"
+            expected = parts[-1]
+        if not case_input or not expected:
+            return None, f"verificationCases[{index}] 缺 input/expected"
+        normalized_cases.append({"input": case_input, "expected": expected})
+    if len(normalized_cases) < 3:
+        return None, "verificationCases 至少含三个 input/expected 用例"
+    interactions: list[dict[str, str]] = []
+    for index, control in enumerate(controls):
+        if isinstance(control, dict):
+            trigger = str(control.get("trigger") or control.get("action") or "").strip()
+            effect = str(control.get("effect") or control.get("update") or brief.get("update") or "").strip()
+        else:
+            trigger, effect = str(control).strip(), str(brief.get("update") or "").strip()
+        if not trigger or not effect:
+            return None, f"controls[{index}] 缺 trigger/effect"
+        interactions.append({"trigger": trigger, "effect": effect})
+    encodings: list[dict[str, str]] = []
+    for index, encoding in enumerate(visible):
+        if isinstance(encoding, dict):
+            normalized = {
+                "quantity": str(encoding.get("quantity") or "").strip(),
+                "mark": str(encoding.get("mark") or "").strip(),
+                "where": str(encoding.get("where") or "").strip(),
+            }
+        else:
+            compact = str(encoding or "").strip()
+            if not compact:
+                return None, f"visibleEncodings[{index}] 为空"
+            normalized = {
+                "quantity": compact,
+                "mark": "由该描述指定的高亮、形状、连线或读数",
+                "where": "主舞台及其相邻读数区",
+            }
+        if not all(normalized.values()):
+            return None, f"visibleEncodings[{index}] 缺 quantity/mark/where"
+        encodings.append(normalized)
+
+    raw_math = brief.get("mathModel")
+    math_raw: dict[str, Any] = raw_math if isinstance(raw_math, dict) else {}
+    formula = str(math_raw.get("formula") or "none")
+    screen_mapping = str(
+        math_raw.get("screenMapping") or math_raw.get("screen_mapping") or "not applicable"
+    )
+    invariants = list(math_raw.get("invariants") or [])
+    math_model: dict[str, Any] = {
+        "formula": formula,
+        "screen_mapping": screen_mapping,
+        "invariants": invariants,
+    }
+    if profile == "geometry":
+        if formula.strip().lower() == "none":
+            return None, "geometry profile 缺 mathModel.formula"
+        if screen_mapping.strip().lower() == "not applicable" or not invariants:
+            return None, "geometry profile 缺 screenMapping/invariants"
+    comparison_states = list(brief.get("comparisonStates") or [])
+    comparison_claim = any(token in core_insight.lower() for token in ("compare", "comparison", "比较", "对比"))
+    if comparison_claim and not comparison_states:
+        return None, "比较目标缺 comparisonStates"
+    render_medium = str(brief.get("renderMedium") or "svg").lower()
+    if profile == "geometry" and render_medium != "svg":
+        return None, "geometry profile 默认必须使用 svg"
+    direction = str(brief.get("aestheticDirection") or "host-calm")
+    contract: dict[str, Any] = {
+        "core_insight": core_insight,
+        "render_medium": render_medium,
+        "render_medium_reason": "由规划阶段的证据形态确定",
+        "aesthetic_direction": direction,
+        "direction_reason": f"{profile} evidence profile",
+        "palette": ["var(--bg)", "var(--ink)", "var(--accent)", "var(--line)"],
+        "signature_detail": str(brief.get("signatureDetail")),
+        "layout_pattern": "stage+readout-row",
+        "layout_skeleton": "title / compact controls / full-width stage / readout row",
+        "state_model": state_model,
+        "interactions": interactions,
+        "render_contract": str(brief.get("update")),
+        "update": str(brief.get("update")),
+        "initial_paint": str(brief.get("initialPaint")),
+        "visible_encodings": encodings,
+        "comparison_states": comparison_states,
+        "interaction_loop": {
+            "action": "; ".join(item["trigger"] for item in interactions),
+            "model_update": str(brief.get("update")),
+            "visible_change": "; ".join(item["quantity"] for item in encodings),
+            "history": str(brief.get("history")),
+            "reset": str(brief.get("reset")),
+        },
+        "math_model": math_model,
+        "verification_cases": normalized_cases,
+        "profile": profile,
+    }
+    problem = _contract_problem(contract)
+    return (None, problem) if problem else (contract, "")
+
+
 def _build_prompt(
     *, intent: str, topic: str, theme: str, language: str, contract: str, guidelines: str
 ) -> str:
@@ -160,7 +311,8 @@ LectureDoc host adapter（与通用 GenUI 规则冲突时，以这里为准）�
 - deck theme 是 `{theme}`。不得实现 GenUI palette 中的十六进制颜色；所有 surface/ink/accent/line 必须映射到
   `var(--bg)`, `var(--bg2)`, `var(--card)`, `var(--ink)`, `var(--text2)`, `var(--accent)`, `var(--line)`。
   canvas 通过 getComputedStyle(document.documentElement) 读取同名 token。aesthetic_direction 只保留结构、字体层级、
-  motion 和 signature_detail，不另起一套配色或 `[data-theme=dark]` register。
+  motion 和 signature_detail，不另起一套配色或 `[data-theme=dark]` register。契约里的
+  `source_aesthetic_direction` 只是结构特征来源；可执行方向已编译为 host-calm，禁止恢复原方向色板。
 - iframe 固定高度且 overflow:hidden：根节点必须 width:100%; height:100%; min-width:0; min-height:0；不得依赖内容撑高，
   不得出现内部滚动条。主舞台优先占据可用高度，控件/读数保持紧凑。
 - 纯离线 vanilla，禁 CDN、import、fetch、Chart.js 及任何外部资源。
@@ -190,6 +342,47 @@ def _extract_fragment(raw: str) -> str:
     return t.strip()
 
 
+def _compile_host_palette_html(fragment: str, *, render_medium: str) -> str:
+    """Lower harmless standalone palette fallbacks and SVG accents to host tokens."""
+    compiled = re.sub(
+        r"var\(\s*(--(?:bg|bg2|card|ink|text2|accent|line))\s*,\s*#[0-9a-fA-F]{3,8}\s*\)",
+        r"var(\1)",
+        fragment,
+        flags=re.I,
+    )
+    compiled = re.sub(
+        r"(getPropertyValue\(\s*['\"]--(?:bg|bg2|card|ink|text2|accent|line)['\"]\s*\)"
+        r"\.trim\(\))\s*\|\|\s*['\"]#[0-9a-fA-F]{3,8}['\"]",
+        r"\1",
+        compiled,
+        flags=re.I,
+    )
+
+    def css_token(match: re.Match[str]) -> str:
+        prop, color = match.group(1), match.group(2).lower()
+        token = "--card" if color in {"fff", "ffffff", "ffffffff"} else "--accent"
+        return f"{prop}:var({token})"
+
+    compiled = re.sub(
+        r"\b(color|background(?:-color)?|fill|stroke)\s*:\s*#([0-9a-fA-F]{3,8})\b",
+        css_token,
+        compiled,
+        flags=re.I,
+    )
+    if render_medium == "svg":
+        def svg_token(match: re.Match[str]) -> str:
+            quote, color = match.group(1), match.group(2).lower()
+            token = "--card" if color in {"fff", "ffffff", "ffffffff"} else "--accent"
+            return f"{quote}var({token}){quote}"
+
+        compiled = re.sub(
+            r"(['\"])#([0-9a-fA-F]{3,8})\1",
+            svg_token,
+            compiled,
+        )
+    return compiled
+
+
 async def generate_widget(
     llm: LLMClient,
     *,
@@ -199,41 +392,53 @@ async def generate_widget(
     topic: str = "",
     material: str = "",
     guidelines: str = "",
+    preplanned_contract: dict[str, Any] | None = None,
     rounds: int = 3,
 ) -> BlockResult:
-    """两阶段生成一个 `sim.widget` block：① 契约 → ②build/③validate/④repair 循环。"""
+    """Generate a widget, skipping ``widget:plan`` when a compiled contract is valid."""
     # ① 契约（先想清楚再写码）。契约是后续质量门的可审计依据，失败不得退化成自由写码。
     contract_str = ""
     contract_obj: dict[str, Any] | None = None
-    plan_messages: list[Message] = [
-        {"role": "system", "content": _PLAN_SYS},
-        {"role": "user", "content": _plan_prompt(intent=intent, topic=topic, material=material)},
-    ]
     last_contract_problem = "未返回契约"
-    for attempt in range(_WIDGET_PLAN_ROUNDS):
-        try:
-            raw = await asyncio.wait_for(
-                llm.complete(plan_messages, json_mode=True, purpose="widget:plan"),
-                timeout=_WIDGET_PLAN_TIMEOUT_S,
-            )
-            contract = _normalize_contract(parse_json(raw))
-            last_contract_problem = _contract_problem(contract)
-            if not last_contract_problem:
-                contract_obj = contract
-                contract_str = json.dumps(contract, ensure_ascii=False, indent=2)
-                break
-        except Exception as exc:  # noqa: BLE001
-            last_contract_problem = str(exc)[:100] or "契约解析失败"
-        if attempt + 1 < _WIDGET_PLAN_ROUNDS:
-            plan_messages.append({"role": "assistant", "content": str(raw) if "raw" in locals() else "{}"})
-            plan_messages.append(
-                {
-                    "role": "user",
-                    "content": f"契约不合格：{last_contract_problem}。补齐字段后只输出完整 JSON 对象。",
-                }
-            )
+    if preplanned_contract is not None:
+        candidate = _normalize_contract(preplanned_contract)
+        last_contract_problem = _contract_problem(candidate)
+        if not last_contract_problem:
+            contract_obj = candidate
+            contract_str = json.dumps(candidate, ensure_ascii=False, indent=2)
+    if contract_obj is None:
+        plan_messages: list[Message] = [
+            {"role": "system", "content": _PLAN_SYS},
+            {"role": "user", "content": _plan_prompt(intent=intent, topic=topic, material=material)},
+        ]
+        for attempt in range(_WIDGET_PLAN_ROUNDS):
+            try:
+                raw = await asyncio.wait_for(
+                    llm.complete(plan_messages, json_mode=True, purpose="widget:plan"),
+                    timeout=_WIDGET_PLAN_TIMEOUT_S,
+                )
+                contract = _normalize_contract(parse_json(raw))
+                last_contract_problem = _contract_problem(contract)
+                if not last_contract_problem:
+                    contract_obj = contract
+                    contract_str = json.dumps(contract, ensure_ascii=False, indent=2)
+                    break
+            except Exception as exc:  # noqa: BLE001
+                last_contract_problem = str(exc)[:100] or "契约解析失败"
+            if attempt + 1 < _WIDGET_PLAN_ROUNDS:
+                plan_messages.append(
+                    {"role": "assistant", "content": str(raw) if "raw" in locals() else "{}"}
+                )
+                plan_messages.append(
+                    {
+                        "role": "user",
+                        "content": f"契约不合格：{last_contract_problem}。补齐字段后只输出完整 JSON 对象。",
+                    }
+                )
     if contract_obj is None:
         return BlockResult(None, f"widget 设计契约失败: {last_contract_problem}")
+    contract_obj = _compile_lecture_host_contract(contract_obj)
+    contract_str = json.dumps(contract_obj, ensure_ascii=False, indent=2)
 
     # ②③④ build → validate → repair
     messages: list[Message] = [
@@ -271,7 +476,10 @@ async def generate_widget(
             continue
 
         payload = parse_split_response(raw)
-        fragment = str(payload.get("widget_code") or _extract_fragment(raw))
+        fragment = _compile_host_palette_html(
+            str(payload.get("widget_code") or _extract_fragment(raw)),
+            render_medium=str(contract_obj.get("render_medium") or "svg"),
+        )
         block: dict[str, Any] = {"type": "sim", "engine": "widget", "html": fragment}
         # 保留设计契约供逐页质量门核对“计划中的状态/交互是否真的接上线”；viewer 忽略该字段。
         block["spec"] = contract_obj

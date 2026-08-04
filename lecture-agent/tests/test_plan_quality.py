@@ -230,6 +230,88 @@ async def test_plan_fallback_routes_state_sequence_to_sim_without_interaction_ke
     assert any("过程状态证据路由到 sim.widget" in warning for warning in warnings)
 
 
+async def test_algorithm_transition_overrides_geometry_capability_choice() -> None:
+    doc = _doc()
+    scene = doc["scenes"][0]
+    scene["brief"].update(
+        {
+            "objective": "学生能逐步追踪 AVL 插入后的结构变换",
+            "learningAction": "trace",
+            "requiredEvidence": "插入前后状态与每一步节点重连",
+            "visualTask": "在坐标化树舞台上高亮本步变化的边",
+        }
+    )
+    scene["blocks"] = [
+        {
+            "id": "w1",
+            "type": "geometry-sim",
+            "role": "visualization",
+            "intent": "拖拽并观察 AVL 插入",
+            "size": "xl",
+        }
+    ]
+    warnings = await refine_plan(
+        FakeClient(),
+        doc,
+        topic="AVL",
+        allowed_types={"state-sim", "model-sim", "geometry-sim"},
+        rounds=0,
+    )
+    assert scene["blocks"][0]["type"] == "state-sim"
+    assert any("geometry-sim → state-sim" in warning for warning in warnings)
+
+
+async def test_relational_obligation_does_not_overwrite_state_transition_page() -> None:
+    transition = _doc()["scenes"][0]
+    transition["brief"].update(
+        {
+            "objective": "逐步追踪双旋转",
+            "learningAction": "trace",
+            "requiredEvidence": "结构变换的状态序列",
+            "visualTask": "保留前后态并高亮重连的边",
+        }
+    )
+    transition["blocks"] = [
+        {"id": "w", "type": "state-sim", "role": "visualization", "intent": "双旋转", "size": "xl"}
+    ]
+    relation = {
+        "id": "relation",
+        "kind": "content",
+        "headline": "树结构",
+        "notes": "固定关系。",
+        "brief": {
+            "objective": "识别节点关系",
+            "keyClaim": "树由节点与边构成",
+            "misconception": "",
+            "visualTask": "固定节点关系",
+            "evidencePolicy": "derived",
+        },
+        "blocks": [
+            {"id": "d", "type": "diagram", "role": "evidence", "intent": "固定结构", "size": "l"}
+        ],
+    }
+    doc = {
+        "scenes": [transition, relation],
+        "_evidenceObligations": [
+            {
+                "knowledgeForm": "relational-structure",
+                "capability": "graph",
+                "learningAction": "inspect",
+                "requiredEvidence": "节点与具名边",
+            }
+        ],
+    }
+    await refine_plan(
+        FakeClient(),
+        doc,
+        topic="树结构",
+        allowed_types={"state-sim", "diagram", "graph"},
+        rounds=0,
+    )
+    assert transition["blocks"][0]["type"] == "state-sim"
+    assert relation["blocks"][0]["type"] == "diagram"
+
+
 def test_complex_widget_page_rejects_four_block_overload() -> None:
     scene = _doc()["scenes"][0]
     scene["brief"]["visualTask"] = "二维鞍点曲面与轨迹"
@@ -452,3 +534,38 @@ async def test_replan_compiles_overloaded_widget_to_minimum_evidence_set() -> No
     assert err is None and candidate is not None
     assert [block["type"] for block in candidate["blocks"]] == ["sim", "statement"]
     assert candidate["blocks"][0]["size"] == "xl"
+
+
+async def test_course_evidence_obligations_cannot_be_omitted_from_skeleton() -> None:
+    first = _doc()["scenes"][0]
+    second = json.loads(json.dumps(first, ensure_ascii=False))
+    second["id"] = "p2"
+    second["headline"] = "实现与验证"
+    second["blocks"][0]["id"] = "b2"
+    doc = {
+        "_evidenceObligations": [
+            {
+                "knowledgeForm": "dynamic-process",
+                "capability": "state-sim",
+                "learningAction": "trace",
+                "requiredEvidence": "逐步观察中间状态与前后态映射",
+            },
+            {
+                "knowledgeForm": "executable-artifact",
+                "capability": "runnable",
+                "learningAction": "implement",
+                "requiredEvidence": "代码、运行输出与固定测试反馈",
+            },
+        ],
+        "scenes": [first, second],
+    }
+    warnings = await refine_plan(
+        FakeClient(),
+        doc,
+        topic="任意可执行动态结构",
+        allowed_types={"state-sim", "runnable", "list"},
+        rounds=0,
+    )
+    planned = {block["type"] for scene in doc["scenes"] for block in scene["blocks"]}
+    assert {"state-sim", "runnable"} <= planned
+    assert sum("课程证据义务" in warning for warning in warnings) == 2

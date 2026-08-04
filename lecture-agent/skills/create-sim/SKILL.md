@@ -1,6 +1,6 @@
 ---
 name: create-sim
-description: "Author a sim block for a LectureDoc lecture — a question-specific inline visual whose HTML/SVG/canvas state updates immediately as the learner steps, plays, drags, selects, or changes an input. Use it whenever understanding depends on seeing a process unfold rather than only seeing its final snapshot: algorithm execution and data-structure mutation, state-machine/protocol transitions, physical or chemical dynamics, geometric construction, parameter sensitivity, or synchronized comparison. A state sequence, intermediate state, structure transformation, invariant-preservation step, or controllable cause→effect relationship MUST route to sim even when the brief never says ‘interactive’ or ‘experiment.’ Prefer a static graph/chart/flow only when all required evidence is fixed and interaction would reveal nothing new; prefer runnable when the evidence is authored code/stdout/tests rather than the process state itself. Engines: dynamics1d/searchCompare for supported declarative line models, custom for computed line series, and widget for discrete state transitions, live SVG/canvas, geometry, and direct manipulation. Produces schema-valid sim block JSON."
+description: "Execute the shared final sim contract for LectureDoc after planning has selected create-state-sim, create-model-sim, or create-geometry-sim. Own dynamics1d/searchCompare/custom/widget engine generation, GenUI build/repair, offline safety, theme-token mapping, and final schema validation. This core is intentionally hidden from the planner so evidence profiles remain explicit."
 affordances: [state-transition, temporal-progression, structure-transformation, parameter-manipulation, causal-exploration, synchronized-comparison, direct-manipulation]
 learner-actions: [step, play, replay, manipulate, predict, experiment, trace, construct, compare]
 evidence-outputs: [state-sequence, intermediate-state, changed-state-highlight, before-after-mapping, parameter-outcome-link, invariant-preservation]
@@ -14,11 +14,15 @@ metadata:
     related_skills: [lecture-doc-schema, generate-lecture, create-code-runtime]
 ---
 
-# create-sim — simulation blocks
+# create-sim — shared simulation execution core
 
 Read `lecture-doc-schema` first (SPEC §3.2 sim, §4 restricted expressions, §8 themes). Produce ONE sim block; self-check with `node <lecture-doc-schema>/scripts/validate.mjs --block <file>`.
 
-## Decision contract — choose by evidence, not by the word “interactive”
+## Profile contract
+
+Receive the evidence decision from `create-state-sim`, `create-model-sim`, or `create-geometry-sim`; do not collapse the planner back to an undifferentiated sim choice. The runtime-owned vendored GenUI fragments are the single visual/interaction source of truth. Do not load or maintain a second guideline copy under this Skill.
+
+## Decision contract — preserve the selected evidence
 
 Claude-style custom visuals are generated for the specific question when a visual explains the idea better than prose, then remain directly manipulable: buttons, sliders, selections, and follow-up changes update the same visual state. Apply that principle to learning evidence:
 

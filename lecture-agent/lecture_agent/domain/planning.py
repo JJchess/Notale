@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import re
 from dataclasses import dataclass, field
 from typing import Any
@@ -20,7 +21,8 @@ _PLAN_CALL_TIMEOUT_S = 300.0
 
 _PERSPECTIVE_SCHEMA = (
     '{ "perspectives": [ { "name":"视角名(如 重直觉的入门讲法 / 重推导的理论派 / 重工程实践 / 爱追问的学生)", '
-    '"focus":"这个视角最在意什么(一句)", "mustCover":["必须讲到的要点"], "questions":["常见疑问/误区"] } ] }'
+    '"focus":"这个视角最在意什么(一句)", "mustCover":["必须讲到的要点"], "questions":["常见疑问/误区"] } ], '
+    '"knowledgeForms":["dynamic-process|executable-artifact|quantitative-model|spatial-constraint|relational-structure"] }'
 )
 
 
@@ -28,14 +30,119 @@ _PERSPECTIVE_SCHEMA = (
 class PlanResult:
     doc: dict[str, Any]
     perspectives: list[dict[str, Any]] = field(default_factory=list)
+    knowledge_forms: list[str] = field(default_factory=list)
+    evidence_obligations: list[dict[str, str]] = field(default_factory=list)
+
+
+@dataclass
+class CoverageDiscovery:
+    perspectives: list[dict[str, Any]] = field(default_factory=list)
+    knowledge_forms: list[str] = field(default_factory=list)
+    evidence_obligations: list[dict[str, str]] = field(default_factory=list)
+
+
+_KNOWLEDGE_FORM_OBLIGATIONS: dict[str, tuple[str, str, str]] = {
+    "dynamic-process": (
+        "state-sim",
+        "trace",
+        "逐步观察中间状态、一次真实转移以及可复位的前后态映射",
+    ),
+    "executable-artifact": (
+        "runnable",
+        "implement",
+        "可编辑实现、固定测试输入、运行输出与正确性反馈",
+    ),
+    "quantitative-model": (
+        "model-sim",
+        "manipulate",
+        "改变真实参数并观察模型重新计算后的定量结果",
+    ),
+    "spatial-constraint": (
+        "geometry-sim",
+        "manipulate",
+        "操作坐标或几何对象并观察约束与不变量是否保持",
+    ),
+    "relational-structure": (
+        "graph",
+        "inspect",
+        "从节点与具名边读出固定的层级、分支或依赖关系",
+    ),
+}
+
+_KNOWLEDGE_FORM_SIGNALS: dict[str, tuple[str, ...]] = {
+    "dynamic-process": (
+        "state transition", "step-by-step", "process", "rotation", "insertion", "deletion",
+        "状态转移", "逐步", "过程", "旋转", "插入", "删除", "回溯", "更新",
+    ),
+    "executable-artifact": (
+        "implement", "code", "program", "run", "debug", "test case",
+        "实现", "代码", "编程", "运行", "调试", "测试",
+    ),
+    "quantitative-model": (
+        "formula", "parameter", "complexity", "recurrence", "quantitative", "calculate",
+        "公式", "参数", "复杂度", "递推", "定量", "计算", "高度与节点数",
+    ),
+    "spatial-constraint": (
+        "coordinate mapping", "geometric constraint", "boundary", "spatial invariant",
+        "坐标映射", "几何约束", "空间边界", "几何不变量",
+    ),
+    "relational-structure": (
+        "hierarchy", "node", "edge", "relation", "dependency", "tree", "graph",
+        "层级", "节点", "边", "关系", "依赖", "树", "图",
+    ),
+}
+
+
+def _evidence_obligation(
+    form: str, perspectives: list[dict[str, Any]]
+) -> dict[str, str]:
+    capability, action, required = _KNOWLEDGE_FORM_OBLIGATIONS[form]
+    evidence = json.dumps(perspectives, ensure_ascii=False).lower()
+    if form == "quantitative-model" and not any(
+        token in evidence
+        for token in (
+            "change parameter", "adjust parameter", "parameter control", "manipulate parameter",
+            "改变参数", "调节参数", "参数控制", "操纵参数",
+        )
+    ):
+        capability = "chart"
+        action = "calculate"
+        required = "由明确公式或给定数据直接复算的定量趋势、比较或边界"
+    return {
+        "knowledgeForm": form,
+        "capability": capability,
+        "learningAction": action,
+        "requiredEvidence": required,
+    }
+
+
+def _validated_knowledge_forms(
+    declared: list[Any], perspectives: list[dict[str, Any]]
+) -> list[str]:
+    """Infer and validate knowledge forms from the described evidence, not topic labels."""
+    evidence = json.dumps(perspectives, ensure_ascii=False).lower()
+    supported = {
+        form
+        for form, signals in _KNOWLEDGE_FORM_SIGNALS.items()
+        if any(signal in evidence for signal in signals)
+    }
+    declared_forms = {
+        str(value or "").strip()
+        for value in declared
+        if str(value or "").strip() in _KNOWLEDGE_FORM_OBLIGATIONS
+    }
+    # Model declarations are advisory: unsupported forms are dropped, supported omissions are
+    # restored. This prevents "positioned nodes" from becoming a geometry obligation.
+    selected = supported | (declared_forms & supported)
+    return [form for form in _KNOWLEDGE_FORM_OBLIGATIONS if form in selected]
 
 
 async def _discover_coverage(
     llm: LLMClient, *, topic: str, audience: str, extra: str, material: str, n: int
-) -> list[dict[str, Any]]:
+) -> CoverageDiscovery:
     """STORM 阶段一：发现互补教学视角 + 每视角的必讲点与常见疑问。"""
     if n <= 1:
-        return []
+        return CoverageDiscovery()
     sys = (
         f"你是课程设计专家。用多视角提问扩大一节讲义的覆盖面：对给定课题，列出 3-4 个**互补**的教学视角，"
         f"每个视角给出必须讲到的要点与学生常见疑问/误区。视角要真的不同，别重复。"
@@ -59,9 +166,19 @@ async def _discover_coverage(
             )
         )
         ps = data.get("perspectives") if isinstance(data, dict) else None
-        return ps[:4] if isinstance(ps, list) else []
+        raw_forms = data.get("knowledgeForms") if isinstance(data, dict) else None
+        perspectives = ps[:4] if isinstance(ps, list) else []
+        forms = _validated_knowledge_forms(
+            raw_forms if isinstance(raw_forms, list) else [], perspectives
+        )
+        obligations = [_evidence_obligation(form, perspectives) for form in forms]
+        return CoverageDiscovery(
+            perspectives=perspectives,
+            knowledge_forms=forms,
+            evidence_obligations=obligations,
+        )
     except Exception:  # noqa: BLE001
-        return []
+        return CoverageDiscovery()
 
 
 def _render_menu(type_menu: list[tuple[str, str, list[str]]]) -> str:
@@ -110,9 +227,10 @@ def _skeleton_spec(
 - **封面与收尾页的标题/副题必须直接点出课题本身**，严禁写成其它主题或泛泛套话。
 - scene.kind: hero(封面/收尾,一个 hero block) | content(常规) | quiz(含一个 quiz block) | statement(含一个 statement block) | section(章节分隔页,含一个 statement block)。
 - 每页必须有内部规划字段 `brief`：先写 `objective`，再只选一个主要 `learningAction`，并用 `requiredEvidence` 写清学生完成目标时必须看到或产出的具体证据；然后才根据 Skill 菜单声明的 affordances / learner actions / evidence outputs 选择 block。`keyClaim` 只写一个核心结论；`misconception` 只写一个具体错误想法（无则空串）；`visualTask` 描述必须编码的关系；`evidencePolicy` 只能是 `derived|provided|synthetic|none`。这些字段供后续生成与质检使用，不是观众正文。
-- **不要从主题名称直接映射组件，也不要按数量配额塞互动**。先比较候选表达是否覆盖 `requiredEvidence`：固定关系、单个最终快照或无需控制的少量状态可用静态图；只要理解依赖状态序列、中间状态、结构变换、逐步执行或可控的因→果，就必须用 sim，即使 brief 没写“交互/试验”；需要学生实现、运行或调试代码时必须用 runnable。sim 证明过程状态，runnable 证明代码执行，不能互相冒充；只读代码只能证明“看过”。整套课程若存在适合主动练习的目标，必须至少安排一次可产出学生证据的活动，而不是全程 read/inspect。
+- **不要从主题名称直接映射组件，也不要按数量配额塞互动**。先比较候选表达是否覆盖 `requiredEvidence`：固定关系、单个最终快照或无需控制的少量状态可用静态图；状态序列/结构变换/逐步执行用 state-sim，可控的定量因果用 model-sim，坐标与空间约束用 geometry-sim，即使 brief 没写“交互/试验”；实现、运行或调试代码必须用 runnable。sim 证明过程状态，runnable 证明代码执行，不能互相冒充；只读代码只能证明“看过”。整套课程若存在适合主动练习的目标，必须至少安排一次可产出学生证据的活动，而不是全程 read/inspect。
 - `implement` 专指编写可执行代码，并且 requiredEvidence 必须包含代码/运行/测试结果；手动画树、手动执行步骤用 `construct` 或 `trace`，不能滥写 implement。若输入的覆盖清单明确要求完整代码实现或调试，必须安排独立 runnable 页面落实该目标，不能用静态伪代码代替或完全漏掉。
-- 每个 block 是占位 {{id(全局唯一), type, role, intent, size}}。`role` 只能是 `claim|evidence|visualization|practice|support`，同页各块必须围绕同一个 brief 分工，不能各讲各的。**type 只能从上方「可选组件」里的名字选，禁止新造类型名**（共 {len(all_types)} 个：{", ".join(all_types)}）。timeline 只用于有明确时间点的编年序列；无时间点的步骤/流程一律用 flow。sim 块**若**要做「活」的动画/交互演示（见下方 sim 规则），额外写 `"engine":"widget"`，如 `{{"id":"bw","type":"sim","engine":"widget","role":"visualization","intent":"...","size":"l"}}`；其余 sim 只写 type、引擎留给后续自动选。
+- 每个 block 是占位 {{id(全局唯一), type, role, intent, size}}。`role` 只能是 `claim|evidence|visualization|practice|support`，同页各块必须围绕同一个 brief 分工，不能各讲各的。**type 只能从上方「可选组件」里的名字选，禁止新造类型名**（共 {len(all_types)} 个：{", ".join(all_types)}）。timeline 只用于有明确时间点/阶段的编年序列；无时间标记的简单线性链用 flow。
+- 选择 `state-sim|model-sim|geometry-sim` 时，block 额外写内部 `interactionBrief`。必须使用这些结构：`stateModel:[{{"name":"step","type":"int","range_or_values":"0..3","initial":1}}]`；`controls:[{{"trigger":"单步按钮","effect":"推进一步并调用 update()"}}]`；`visibleEncodings:[{{"quantity":"本步变化的边","mark":"高亮连线","where":"主舞台"}}]`；`verificationCases:[{{"input":"初态","expected":"确定的可见结果"}},{{"input":"一次操作","expected":"确定的状态转移"}},{{"input":"复位","expected":"恢复同一初态"}}]`。同时写 `update`(统一状态更新规则)、`initialPaint`(已处于中间动作的首帧)、`history`(前态/当前态如何同屏)、`reset`(确定性复位)、`aestheticDirection`(lab-dark|paper-editorial|studio-pop|terminal-data|soft-organic|blueprint|ink-wash|host-calm)、`signatureDetail`(一个服务概念的视觉记忆点)。比较目标加 `comparisonStates`；数学/几何加 `mathModel:{{formula,screenMapping,invariants}}`；确需粒子/连续场才写 `renderMedium:"canvas"`，否则默认 svg。这里只写设计契约，不写 HTML。
 - **每个 block 标一个粗粒度 size：`xl`(几乎独占整页的主体，如封面、复杂大图) / `l`(大块/主体，如复杂图表、大表格、多轮对比、长 timeline) / `m`(默认，一般讲解块) / `s`(小/辅助，如一句注解、次要论点、callout 补充)。不写默认按 m 处理。**
 - **一页配几个 block、配多大由内容真实需要决定，不设死数量上限**——但整页视觉重量要有节奏：粗略按 xl=4/l=3/m=2/s=1 心算一页总重量，大致落在 ~6 上下浮动即可；**不要为了凑够页数而硬拆一个大块，也不要图省事把一页堆成 5-6 个同重量小块**；真正复杂的内容（compare、大 table、>5 事件 timeline）给 l/xl 并考虑独占一页；叙事仍由浅入深。
 - **能用图表表达的定量对比/趋势/相关性优先用 chart（bar/line/area/scatter）而非 table**；纯名目罗列、无需比较数值大小或走势的数据才用 table。
@@ -122,14 +240,14 @@ def _skeleton_spec(
 - **保证必须可见地带条件**：收敛、速率、全局最优等结论所需的光滑性/凸性/强凸性与步长范围，必须能放入观众可见的 headline/lead/formula/caption；只计划写在 notes 或内部 brief 等于没写。
 - **比较必须在首帧成立**：objective 若写“比较 A/B/C”，visualTask 与主视觉 block.intent 必须要求初始画面同时显示 A/B/C（或清楚的并排小多图）；一次只显示滑块当前选中的一条曲线不算完成比较。
 - **鞍点需要二维证据**：要解释鞍点/相反曲率，必须用二维曲面/等高线，或至少两条明确标注的正交切片；单条只向上/只向下的一维曲线不能证明鞍点。
-- **复杂 widget 页最多两个 block**：一个 l/xl 的 sim.widget 主舞台最多搭配一个 s/m 的短公式或短说明。quiz、callout、长公式不得再堆在同页；如果页数预算不允许另起一页，就删掉次要块并让互动本身完成证据链。
+- **复杂 sim 页最多两个 block**：一个 l/xl 的 state-sim/geometry-sim 或 widget 型 model-sim 主舞台最多搭配一个 s/m 的短公式或短说明。quiz、callout、长公式不得再堆在同页；如果页数预算不允许另起一页，就删掉次要块并让互动本身完成证据链。
 - **语言一致**：`language` 决定所有观众可见的 title/headline/lead/caption/控件文案；除数学符号、代码标识符和必要专名外，不得无故中英混排。
 - **quiz 目标必须匹配一道题**：一个 quiz block 只承载一道可复算题，brief.objective/keyClaim 只写这一个判定链；不得声称一道题同时覆盖梯度方向、学习率、调度策略等整章目标。
 - **几个孤立的关键数字（一眼看大小，不是走势/分布）用 stats 数字卡**；有循环/层级/递进/网络等特殊结构关系的内容用 diagram（cycle/pyramid/staircase/snake/arrow-seq/circular-grid/connected-circles，按关系语义选，不要混用，简单 2-3 步线性流程仍用 flow 就够）。
 - **scene 可选 `transition`**（reveal 切场动效名，如 zoom/convex/none）：只在确有强调或大段落切换的意图时用，**不要每页都加**——多数页留空即可。
-- **交互按题材贴合度选**：可量化/可模拟/可交互的过程，该用 sim/widget/runnable 就**大胆用**，别因它"高级"或"重"而回避（互动恰恰是这套讲义相对静态 PPT 的价值所在）；但**没有可量化/可模拟/可交互过程**的题材（纯叙述、纯观点、无参数可调）不要硬塞 sim——sim 里没有真参数可转，就是装饰不是互动。建议每课至少 1 个 quiz。{"用户点名的交互: " + wants if wants else ""}
-- **`sim` + `engine:"widget"`**：当一个过程要靠**实时动画/canvas 波形粒子/几何作图/任意鼠标交互**才讲得清（如排序·查找·图遍历的分步动画、单摆/阻尼振子等二阶运动、向量/边界作图）——注册表引擎(dynamics1d/searchCompare)与声明式 block 都表达不了——就在骨架里给该 sim 标 `engine:"widget"`，通常给 size `l`/`xl` 并独占一页。按"贴不贴题"判断：贴题就用、别套模板、也别回避。
-- **先用声明式 sim 再升级 widget**：只有一个标量状态、形如 `x_(t+1)=g(x_t, 参数)` 的一阶递推及其轨迹，直接用普通 `sim`（不写 engine，后续走 dynamics1d）；不要为了画一个移动点/箭头就升级 widget。只有二维几何、连续场、粒子/canvas、复杂鼠标作图或声明式引擎确实无法编码的状态才写 `engine:"widget"`。widget 每块要额外经历 plan→build→validate，滥用会显著放大延迟与失败面。
+- **交互按证据贴合度选**：确有状态变化、模型参数或空间约束时大胆使用对应 sim；纯叙述、纯观点、无状态/参数/约束的题材不要硬塞。建议每课至少 1 个 quiz。{"用户点名的交互: " + wants if wants else ""}
+- **三类 sim 必须按证据分类**：算法中间状态、逐步执行、树/图/数组结构变换用 state-sim；真实参数→模型重算→定量结果用 model-sim；坐标映射、拖拽、边界与几何约束本身是证据时用 geometry-sim。节点在画面上有位置不等于 geometry：AVL 旋转仍是 state-sim。比较/随机/播放/历史是三类上的 affordance，不另造类型。
+- **声明式优先只适用于 model-sim**：一个标量一阶递推或一维黑箱优化不写 engine，由后续选择 dynamics1d/searchCompare/custom；二维/多状态/连续场等声明式引擎无法表达的 model-sim 才额外写 `engine:"widget"`。state-sim 与 geometry-sim 固定走 widget。interactionBrief 完整时会直接 build，缺失或复杂时才补一次 widget:plan；因此不得故意留空。
 - **runnable**：学生需要**真正改代码、点运行、看结果**时用（如手写实现算法、调参看效果）；纯展示代码用 `code`。一份讲义可有多个 runnable（各自独立、贴题就用）。
 - **主题(theme)只是视觉气质、不承诺任何环节**。{theme_line}
 - 骨架阶段的 `notes` 只写本页在叙事中的作用（一句话），不要提前编推导、数字或讲稿；实际讲者稿会在所有 block 生成后依据最终页面内容重写。
@@ -216,6 +334,56 @@ async def insert_sections(llm: LLMClient, doc: dict[str, Any], budget: int | Non
         )
         n += 1
     return n
+
+
+def fit_scene_budget(doc: dict[str, Any], budget: int) -> list[str]:
+    """Compile an overfull skeleton to the exact page budget by evidence strength."""
+    scenes = doc.get("scenes")
+    if not isinstance(scenes, list) or len(scenes) <= budget:
+        return []
+    protected = {0, len(scenes) - 1}
+    evidence_weight = {
+        "state-sim": 100,
+        "model-sim": 100,
+        "geometry-sim": 100,
+        "sim": 100,
+        "runnable": 100,
+        "quiz": 70,
+        "formula": 45,
+        "graph": 45,
+        "diagram": 40,
+        "chart": 40,
+        "flow": 35,
+        "timeline": 35,
+        "code": 30,
+        "table": 10,
+        "list": 8,
+        "callout": 6,
+        "statement": 4,
+    }
+
+    def strength(index: int, scene: dict[str, Any]) -> tuple[int, int]:
+        if index in protected or scene.get("kind") == "hero":
+            return (10_000, index)
+        if scene.get("kind") == "section":
+            return (-100, index)
+        score = 70 if scene.get("kind") == "quiz" else 0
+        score += sum(
+            evidence_weight.get(str(block.get("type") or ""), 5)
+            for block in (scene.get("blocks") or [])
+            if isinstance(block, dict)
+        )
+        return (score, index)
+
+    excess = len(scenes) - budget
+    removable = sorted(
+        ((strength(index, scene), index) for index, scene in enumerate(scenes)),
+        key=lambda item: item[0],
+    )
+    remove_indices = {index for (_score, index) in removable[:excess]}
+    removed = [str(scene.get("id") or f"page-{i + 1}") for i, scene in enumerate(scenes) if i in remove_indices]
+    doc["scenes"] = [scene for i, scene in enumerate(scenes) if i not in remove_indices]
+    return removed
 
 
 _DATA_TYPES = {"chart", "table", "sim", "grid"}
@@ -367,13 +535,22 @@ def assign_layouts(doc: dict[str, Any]) -> int:
     return side + full_n + formula_data_n + split_n + used + computed_n
 
 
-def _coverage_text(perspectives: list[dict[str, Any]]) -> str:
+def _coverage_text(discovery: CoverageDiscovery) -> str:
     """把 STORM 视角提炼成"覆盖清单"文本（单次/分层两路共用）。"""
-    if not perspectives:
+    if not discovery.perspectives and not discovery.evidence_obligations:
         return ""
-    return "下面是多个教学视角提炼的**覆盖清单**（在骨架里系统覆盖、组织成连贯递进的线）：\n" + "\n".join(
+    perspectives = "\n".join(
         f"【{p.get('name')}·{p.get('focus')}】\n  必讲: {'；'.join(p.get('mustCover') or [])}\n  疑问: {'；'.join(p.get('questions') or [])}"
-        for p in perspectives
+        for p in discovery.perspectives
+    )
+    obligations = "\n".join(
+        f"- {item['knowledgeForm']} → 必须安排 {item['capability']}；学习动作 {item['learningAction']}；证据: {item['requiredEvidence']}"
+        for item in discovery.evidence_obligations
+    )
+    return (
+        "下面是课程设计发现的**覆盖清单**（在骨架里系统覆盖、组织成连贯递进的线）：\n"
+        + perspectives
+        + ("\n\n课程级证据义务（不是配额；每项至少由一页真实完成，禁止省略目标逃避）：\n" + obligations if obligations else "")
     )
 
 
@@ -596,19 +773,23 @@ async def plan_lecture(
 
     大页数（> _HIER_THRESHOLD）走分层规划（大纲→逐章并发生成→拼接），否则单次骨架。
     """
-    perspectives = await _discover_coverage(
+    discovery = await _discover_coverage(
         llm, topic=topic, audience=audience, extra=extra, material=material, n=perspectives_n
     )
-    coverage = _coverage_text(perspectives)
+    perspectives = discovery.perspectives
+    coverage = _coverage_text(discovery)
 
     if pages > _HIER_THRESHOLD:
-        return await _plan_hierarchical(
+        result = await _plan_hierarchical(
             llm,
             topic=topic, pages=pages, theme=theme, audience=audience, wants=wants, extra=extra,
             material=material, type_menu=type_menu, theme_menu=theme_menu,
             authoring_rules=authoring_rules, perspectives=perspectives, coverage=coverage,
             concurrency=concurrency,
         )
+        result.knowledge_forms = discovery.knowledge_forms
+        result.evidence_obligations = discovery.evidence_obligations
+        return result
 
     sys = (
         "你是讲义(LectureDoc)总编排器。只输出一个 JSON 对象(骨架)，不要代码围栏、不要解释。\n"
@@ -634,9 +815,17 @@ async def plan_lecture(
                     timeout=_PLAN_CALL_TIMEOUT_S,
                 )
             )
+            removed_for_budget = fit_scene_budget(doc, pages)
+            if removed_for_budget:
+                doc["_budgetRemovedScenes"] = removed_for_budget
             if sections:
                 await insert_sections(llm, doc, budget=pages)
-            return PlanResult(doc=doc, perspectives=perspectives)
+            return PlanResult(
+                doc=doc,
+                perspectives=perspectives,
+                knowledge_forms=discovery.knowledge_forms,
+                evidence_obligations=discovery.evidence_obligations,
+            )
         except Exception as e:  # noqa: BLE001
             last_err = e
             if isinstance(e, TimeoutError):
