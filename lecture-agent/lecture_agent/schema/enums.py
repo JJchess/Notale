@@ -24,6 +24,7 @@ class LayoutKind(StrEnum):
     SPLIT = "split"
     COMPOSE = "compose"
     FULL = "full"
+    ARTBOARD = "artboard"
 
 
 class BlockType(StrEnum):

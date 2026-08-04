@@ -1,6 +1,6 @@
 # Cross-scenario routing matrix
 
-Choose by audience, learning task, and evidence form together; subject labels are only context.
+Choose by audience, learning task, and evidence form together; subject labels are only context. A scenario suggests a starting combination, never a compulsory page template.
 
 | Scenario | Preferred evidence and composition | Avoid |
 |---|---|---|
@@ -14,7 +14,9 @@ Choose by audience, learning task, and evidence form together; subject labels ar
 | Geography spatial | map, chart, geometry where coordinates matter, data-evidence | generic landscape replacing spatial relations |
 | Language reading | native text hierarchy, marginal annotation, restrained narrative image | image model rendering the passage text |
 | Literature analysis | authentic excerpt, visual motif, text-over-image or collage | atmosphere replacing close reading evidence |
-| University algorithm | state-sim, runnable, graph/diagram, interactive-stage | media replacing state transitions or execution |
-| Academic report | chart/table/research figure, data-evidence, source notes | poster styling that hides methods or uncertainty |
+| University algorithm | state-sim for transitions, runnable for execution, diagram for fixed structure; interactive-stage | media replacing state transitions; code screenshots replacing execution |
+| Academic report | chart/table/research-figure, data-evidence, source and limitation notes | poster styling that hides methods, baselines, or uncertainty |
 
 For introductions use context and focal hierarchy; for mechanisms use explicit state or relation; for practice expose learner action and feedback; for synthesis use comparison or a research figure. Information density should rise with prior knowledge, not with decorative complexity.
+
+Route hybrids by responsibility. A specimen photo may provide appearance evidence while a diagram explains a mechanism; a chart may prove a trend while a short runtime exposes its computation. Give each capability an explicit evidence duty and preserve the dominant one spatially.

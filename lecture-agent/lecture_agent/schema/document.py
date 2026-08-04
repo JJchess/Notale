@@ -66,6 +66,12 @@ class VideoBlock(_Block):
         return self
 
 
+class ObjectPosition(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    x: float = Field(ge=0, le=1)
+    y: float = Field(ge=0, le=1)
+
+
 class MediaBlock(_Block):
     type: Literal["media"]
     assetId: str = Field(min_length=1)
@@ -73,6 +79,11 @@ class MediaBlock(_Block):
     placement: Literal["illustration", "decoration"]
     fit: Literal["contain", "cover"] = "contain"
     mask: str | None = None
+    aspectRatio: float | None = Field(default=None, ge=0.25, le=4)
+    objectPosition: ObjectPosition | None = None
+    treatment: Literal[
+        "none", "frame", "full-bleed", "cutout", "duotone", "soft-mask"
+    ] | None = None
     caption: str | None = None
 
 
@@ -457,9 +468,87 @@ Block = Annotated[
 # ------------------------------------------------------------------ scene / doc
 
 
+class ArtboardArea(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    blockIds: list[str] = Field(min_length=1)
+    # compose 旧文档允许单线号/缺 row；artboard 的严格要求由语义校验层执行。
+    col: list[int] | None = Field(default=None, min_length=1, max_length=2)
+    row: list[int] | None = Field(default=None, min_length=1, max_length=2)
+    role: Literal["main", "aside", "feature", "caption", "quote"] | None = None
+    z: int = Field(default=1, ge=-2, le=8)
+    align: Literal["start", "center", "end", "stretch"] = "stretch"
+    justify: Literal["start", "center", "end", "stretch"] = "stretch"
+    bleed: bool = False
+    clip: bool = False
+    styleRole: Literal[
+        "main", "aside", "feature", "caption", "quote", "evidence", "decoration"
+    ] = "main"
+
+
+class TitleRegion(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    col: list[int] = Field(min_length=2, max_length=2)
+    row: list[int] = Field(min_length=2, max_length=2)
+    align: Literal["start", "center", "end"] = "start"
+    justify: Literal["start", "center", "end"] = "start"
+    maxWidth: float = Field(default=100, ge=20, le=100)
+    z: int = Field(default=3, ge=-2, le=8)
+
+
 class Layout(BaseModel):
-    model_config = ConfigDict(extra="allow")  # kind/steps/anchor/areas/centered/gap…
-    kind: Literal["flow", "index", "split", "compose", "full"] | None = None
+    model_config = ConfigDict(extra="allow")  # legacy layout fields stay compatible
+    kind: Literal["flow", "index", "split", "compose", "full", "artboard"] | None = None
+    columns: int | None = Field(default=None, ge=2, le=12)
+    rows: int | None = Field(default=None, ge=2, le=12)
+    gap: float | None = Field(default=None, ge=0, le=60)
+    titleRegion: TitleRegion | None = None
+    areas: list[ArtboardArea] | None = None
+
+
+class VisualPalette(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    background: str = Field(pattern=r"^#[0-9A-Fa-f]{6}$")
+    surface: str = Field(pattern=r"^#[0-9A-Fa-f]{6}$")
+    surfaceAlt: str = Field(pattern=r"^#[0-9A-Fa-f]{6}$")
+    ink: str = Field(pattern=r"^#[0-9A-Fa-f]{6}$")
+    muted: str = Field(pattern=r"^#[0-9A-Fa-f]{6}$")
+    accent: str = Field(pattern=r"^#[0-9A-Fa-f]{6}$")
+    accent2: str = Field(pattern=r"^#[0-9A-Fa-f]{6}$")
+    line: str = Field(pattern=r"^#[0-9A-Fa-f]{6}$")
+
+
+class VisualTypography(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    display: str = Field(pattern=r"^[a-z][a-z0-9-]{0,31}$")
+    body: str = Field(pattern=r"^[a-z][a-z0-9-]{0,31}$")
+    mono: str = Field(pattern=r"^[a-z][a-z0-9-]{0,31}$")
+    displayWeight: int = Field(default=700, ge=300, le=900)
+    bodyWeight: int = Field(default=400, ge=300, le=700)
+    scale: Literal["compact", "balanced", "editorial", "poster"] = "balanced"
+
+
+class VisualShape(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    radius: float = Field(default=8, ge=0, le=32)
+    borderWidth: float = Field(default=1, ge=0, le=4)
+    shadow: Literal["none", "soft", "hard", "lifted"] = "none"
+
+
+class VisualMotif(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    type: Literal["orb", "wave", "rule", "grid", "corner", "blob"]
+    colorRole: Literal["accent", "accent2", "line", "surfaceAlt"] = "accent"
+    opacity: float = Field(default=0.16, ge=0, le=0.6)
+
+
+class VisualSystem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    palette: VisualPalette
+    typography: VisualTypography
+    shape: VisualShape
+    texture: Literal["none", "paper", "grid", "grain", "soft-gradient"] = "none"
+    motifs: list[VisualMotif] = Field(default_factory=list, max_length=4)
+    rhythm: Literal["quiet", "alternating", "progressive", "editorial"] = "alternating"
 
 
 class FocalPoint(BaseModel):
@@ -544,6 +633,7 @@ class LectureDoc(BaseModel):
     title: str = Field(min_length=1)
     language: str
     theme: Theme | None = None
+    visualSystem: VisualSystem | None = None
     assets: list[Asset] | None = None
     tutor: Tutor | None = None
     scenes: list[Scene] = Field(min_length=1)

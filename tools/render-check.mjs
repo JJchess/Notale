@@ -235,13 +235,54 @@ async function captureShots(cdp, url, pages, outDir) {
   const total = await evalJs('Reveal.getTotalSlides()') || 0;
   const want = pages.length ? pages.filter(p => p >= 0 && p < total) : Array.from({ length: total }, (_, i) => i);
   const saved = [];
+  const captured = [];
   for (const pg of want) {
     await evalJs(`(async()=>{ Reveal.slide(${pg}); await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))); await new Promise(r=>setTimeout(r,300)); })()`);
     const { data } = await cdp.send('Page.captureScreenshot', { format: 'png' }, S);
     const file = path.join(outDir, `page${pg}.png`);
     await writeFile(file, Buffer.from(data, 'base64'));
     saved.push(file);
+    captured.push({ pg, data });
   }
+  // Reveal overview 的画布比 viewport 大，普通截图只会拿到最后一行。使用已经通过
+  // 真机渲染的逐页位图在浏览器 canvas 中合成固定网格，确保 contact sheet 含全部页。
+  const contactImages = captured.map(({ pg, data }) => ({ pg, src: `data:image/png;base64,${data}` }));
+  await evalJs(`(async()=>{
+    const items=${JSON.stringify(contactImages)};
+    const canvas=document.createElement('canvas');
+    canvas.id='lecture-contact-sheet';
+    canvas.width=1400; canvas.height=810;
+    canvas.style.cssText='position:fixed;inset:0;z-index:2147483647;width:100vw;height:100vh;background:#111';
+    document.body.appendChild(canvas);
+    const ctx=canvas.getContext('2d');
+    ctx.fillStyle='#111'; ctx.fillRect(0,0,canvas.width,canvas.height);
+    const columns=5, rows=Math.max(1,Math.ceil(items.length/columns));
+    const gap=12, outer=18;
+    const cellW=(canvas.width-outer*2-gap*(columns-1))/columns;
+    const cellH=(canvas.height-outer*2-gap*(rows-1))/rows;
+    await Promise.all(items.map((item,index)=>new Promise(resolve=>{
+      const img=new Image();
+      img.onload=()=>{
+        const x=outer+(index%columns)*(cellW+gap);
+        const y=outer+Math.floor(index/columns)*(cellH+gap);
+        const scale=Math.min(cellW/img.width,cellH/img.height);
+        const w=img.width*scale,h=img.height*scale;
+        ctx.fillStyle='#fff';ctx.fillRect(x,y,cellW,cellH);
+        ctx.drawImage(img,x+(cellW-w)/2,y+(cellH-h)/2,w,h);
+        ctx.fillStyle='rgba(0,0,0,.78)';ctx.fillRect(x+5,y+5,30,20);
+        ctx.fillStyle='#fff';ctx.font='13px sans-serif';ctx.fillText(String(item.pg+1),x+12,y+20);
+        resolve();
+      };
+      img.onerror=resolve; img.src=item.src;
+    })));
+    await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
+  })()`);
+  const { data: overviewData } = await cdp.send('Page.captureScreenshot', {
+    format: 'png', clip: { x: 0, y: 0, width: 1400, height: 810, scale: 1 }
+  }, S);
+  const overviewFile = path.join(outDir, 'contact-sheet.png');
+  await writeFile(overviewFile, Buffer.from(overviewData, 'base64'));
+  saved.unshift(overviewFile);
   await cdp.send('Target.closeTarget', { targetId }).catch(() => {});
   return saved;
 }

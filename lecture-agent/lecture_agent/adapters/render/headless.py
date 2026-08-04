@@ -36,7 +36,9 @@ class HeadlessVerifier:
     """真机渲染验收。shot_dir 非空时同时截图落盘（回炉证据 / 人工视觉评审）。"""
 
     def __init__(self, shot_dir: str | os.PathLike[str] | None = None, timeout_s: float = _TIMEOUT_S) -> None:
-        self.shot_dir = Path(shot_dir) if shot_dir else None
+        # render-check runs with the repository root as cwd. Resolve at the caller boundary so a
+        # relative experiment path cannot silently land in a different repository directory.
+        self.shot_dir = Path(shot_dir).resolve() if shot_dir else None
         self.timeout_s = timeout_s
 
     async def verify(self, html: str) -> RenderReport:

@@ -44,7 +44,11 @@
      脚本能跑，但取不到 vendor/、发不出网络请求、碰不到父页面——比 sim.custom 的"omission 沙箱"更强的真隔离。
      当前主题 token 序列化注入 iframe 的 :root，片段内 canvas 用 getComputedStyle 读 --token → 主题一致。
      代价：null-origin iframe 加载不到我们 vendored woff2，字体降级到 Georgia/系统栈（sim 以 canvas 绘制为主，可接受）。 */
-  const widgetBuilds = [];   // 每个已挂载 widget 的重建函数；主题变化时全部重跑（refreshThemeColors 内调用）
+  /* 每个已挂载 widget 的重建函数；主题变化时全部重跑（refreshThemeColors 内调用）。
+     按 widgetId 键（镜像下面的 widgetRoots）而非数组：数组版从不清理，同一个 widget 被重渲 N 次
+     就攒下 N 个闭包，其中 N-1 个的 iframe 早已脱离文档，换一次主题就白重建 N-1 次 srcdoc。
+     以前一个会话只重渲几次所以不明显；编辑器会反复对 widget 触发 rerenderBlock，就放大了。 */
+  const widgetBuilds = new Map();
   const widgetRoots = new Map();
   window.addEventListener('message', ev => {
     const data = ev.data;
@@ -55,7 +59,7 @@
     root.dataset.widgetError = message;
     console.error('[widget ' + data.widgetId + '] ' + message);
   });
-  const WIDGET_TOKENS = ['--bg', '--bg2', '--card', '--ink', '--text2', '--accent', '--line', '--serif', '--sans', '--mono', '--radius', '--sel'];
+  const WIDGET_TOKENS = ['--bg', '--bg2', '--card', '--ink', '--text2', '--accent', '--accent2', '--line', '--serif', '--sans', '--mono', '--radius', '--sel'];
   function buildWidgetSrcdoc(fragment, widgetId) {
     const cs = getComputedStyle(document.documentElement);
     const theme = document.documentElement.dataset.theme || 'cartesian';
@@ -203,6 +207,97 @@
      C_* / TONE / PLOT_STYLE 是 let，refreshThemeColors() 在设好 data-theme 后赋值；
      所有 Plot/CodeMirror 渲染在此之后发生，读到的是当前主题的值。 */
   let C_INK, C_LINE, C_TEXT2, C_ACCENT, TONE, PLOT_STYLE;
+  const VISUAL_TOKEN_PROPS = [
+    '--bg', '--cover-bg', '--card', '--panel', '--bg2', '--ink', '--text2', '--accent', '--accent2', '--line',
+    '--serif', '--sans', '--mono', '--display-weight', '--body-weight', '--radius',
+    '--design-border-width', '--design-shadow', '--fs-caption', '--fs-body', '--fs-lead',
+    '--fs-h2', '--fs-h1', '--fs-hero',
+  ];
+  function safeCssColor(value) {
+    const v = typeof value === 'string' ? value.trim() : '';
+    return v && v.length <= 80 && !/[;{}]/.test(v) && !/url|var\s*\(/i.test(v)
+      && (!window.CSS || !CSS.supports || CSS.supports('color', v)) ? v : null;
+  }
+  function safeFontStack(value) {
+    const v = typeof value === 'string' ? value.trim() : '';
+    return v && v.length <= 180 && /^[\w\s,'"\-]+$/.test(v) ? v : null;
+  }
+  const VISUAL_FONT_STACKS = {
+    'display-sans': "Inter,'Noto Sans SC','Microsoft YaHei',sans-serif",
+    'system-sans': "Inter,'Noto Sans SC','Microsoft YaHei',sans-serif",
+    'humanist-sans': "'Hanken Grotesk','Noto Sans SC','Microsoft YaHei',sans-serif",
+    'rounded-sans': "Nunito,'Noto Sans SC','Microsoft YaHei',sans-serif",
+    'editorial-serif': "Newsreader,'Noto Serif SC','Songti SC',SimSun,serif",
+    'technical-mono': "'JetBrains Mono','Cascadia Mono','Noto Sans Mono CJK SC',monospace",
+  };
+  const VISUAL_TYPE_SCALES = {
+    compact: { caption: 12, body: 17, lead: 18, h2: 34, h1: 44, hero: 56 },
+    balanced: { caption: 13, body: 19, lead: 20, h2: 40, h1: 54, hero: 70 },
+    editorial: { caption: 14, body: 20, lead: 22, h2: 44, h1: 60, hero: 80 },
+    poster: { caption: 14, body: 20, lead: 22, h2: 48, h1: 66, hero: 92 },
+  };
+  const VISUAL_SHADOWS = {
+    none: 'none',
+    soft: '0 10px 28px rgba(24,32,38,.10)',
+    hard: '8px 8px 0 rgba(24,32,38,.18)',
+    lifted: '0 18px 42px rgba(24,32,38,.16)',
+  };
+  function safeCssLength(value, min, max) {
+    if (Number.isFinite(+value)) return Math.min(max, Math.max(min, +value)) + 'px';
+    const v = typeof value === 'string' ? value.trim() : '';
+    const match = v.match(/^(\d+(?:\.\d+)?)(px|rem|em)$/);
+    if (!match) return null;
+    const pixels = +match[1] * (match[2] === 'px' ? 1 : 16);
+    return Math.min(max, Math.max(min, pixels)) + 'px';
+  }
+  function safeWeight(value) {
+    const n = parseInt(value, 10);
+    return Number.isFinite(n) && n >= 100 && n <= 900 ? String(Math.round(n / 100) * 100) : null;
+  }
+  /** Compile the optional Design DNA into guarded runtime tokens. Invalid values simply leave the theme token intact. */
+  function applyVisualSystem(visualSystem) {
+    const root = document.documentElement;
+    for (const prop of VISUAL_TOKEN_PROPS) root.style.removeProperty(prop);
+    delete root.dataset.visualTexture;
+    const v = visualSystem && typeof visualSystem === 'object' ? visualSystem : {};
+    const palette = v.palette && typeof v.palette === 'object' ? v.palette : {};
+    const paletteMap = { background: '--bg', surface: '--card', surfaceAlt: '--bg2', ink: '--ink', muted: '--text2', accent: '--accent', accent2: '--accent2', line: '--line' };
+    for (const [key, prop] of Object.entries(paletteMap)) {
+      const color = safeCssColor(palette[key]);
+      if (color) root.style.setProperty(prop, color);
+    }
+    const background = safeCssColor(palette.background), surface = safeCssColor(palette.surface);
+    if (background) root.style.setProperty('--cover-bg', background);
+    if (surface) root.style.setProperty('--panel', surface);
+    const typography = v.typography && typeof v.typography === 'object' ? v.typography : {};
+    const fontMap = { display: '--serif', body: '--sans', mono: '--mono' };
+    for (const [key, prop] of Object.entries(fontMap)) {
+      const font = VISUAL_FONT_STACKS[typography[key]] || safeFontStack(typography[key]);
+      if (font) root.style.setProperty(prop, font);
+    }
+    const dw = safeWeight(typography.displayWeight), bw = safeWeight(typography.bodyWeight);
+    if (dw) root.style.setProperty('--display-weight', dw);
+    if (bw) root.style.setProperty('--body-weight', bw);
+    const scale = VISUAL_TYPE_SCALES[typography.scale]
+      || (typography.scale && typeof typography.scale === 'object' ? typography.scale : {});
+    const scaleMap = { caption: ['--fs-caption', 10, 24], body: ['--fs-body', 12, 34], lead: ['--fs-lead', 12, 38], h2: ['--fs-h2', 22, 80], h1: ['--fs-h1', 28, 100], hero: ['--fs-hero', 32, 124] };
+    for (const [key, [prop, min, max]] of Object.entries(scaleMap)) {
+      const size = safeCssLength(scale[key], min, max);
+      if (size) root.style.setProperty(prop, size);
+    }
+    const shape = v.shape && typeof v.shape === 'object' ? v.shape : {};
+    const radius = safeCssLength(shape.radius, 0, 48), border = safeCssLength(shape.borderWidth, 0, 8);
+    if (radius) root.style.setProperty('--radius', radius);
+    if (border) root.style.setProperty('--design-border-width', border);
+    const shadowName = typeof shape.shadow === 'string' ? shape.shadow.trim() : '';
+    const shadow = VISUAL_SHADOWS[shadowName] || '';
+    if (shadow && shadow.length <= 160 && !/[;{}]|url|var\s*\(/i.test(shadow)
+        && (!window.CSS || !CSS.supports || CSS.supports('box-shadow', shadow))) root.style.setProperty('--design-shadow', shadow);
+    const texture = typeof v.texture === 'string' ? v.texture.trim().toLowerCase() : '';
+    if (['none', 'grid', 'paper', 'grain', 'soft-gradient'].includes(texture)) {
+      root.dataset.visualTexture = texture;
+    }
+  }
   function refreshThemeColors() {
     const cs = getComputedStyle(document.documentElement);
     const g = (n, f) => (cs.getPropertyValue(n).trim() || f);
@@ -210,7 +305,13 @@
     C_TEXT2 = g('--text2', '#5A5A5A'); C_ACCENT = g('--accent', '#8A8178');
     TONE = { line: C_LINE, accent: C_ACCENT, ink: C_INK };
     PLOT_STYLE = { background: 'transparent', color: C_TEXT2, fontSize: '11px', fontFamily: g('--sans', "'Inter',sans-serif") };
-    widgetBuilds.forEach(f => f());   // 主题 token 变了 → 已挂载的 widget iframe 用新 token 重建 srcdoc
+    /* 主题 token 变了 → 已挂载的 widget iframe 用新 token 重建 srcdoc。
+       顺手清掉根节点已脱离文档的条目（块被删/整页换掉时会出现），别对着幽灵重建。 */
+    for (const [id, build] of widgetBuilds) {
+      const root = widgetRoots.get(id);
+      if (root && !root.isConnected) { widgetBuilds.delete(id); widgetRoots.delete(id); continue; }
+      build();
+    }
   }
   refreshThemeColors(); /* 先给默认值兜底；设好 data-theme 后会再刷新一次 */
 
@@ -255,15 +356,26 @@
     media(b) {
       const asset = assetById(b.assetId);
       if (!asset) throw new Error('media 引用未知 asset: ' + b.assetId);
-      const figure = el('figure', 'media-block media-' + (b.placement || 'illustration') + ' media-purpose-' + (b.purpose || 'explanatory'));
+      const placement = b.placement === 'decoration' ? 'decoration' : 'illustration';
+      const treatments = new Set(['frame', 'full-bleed', 'cutout', 'duotone', 'soft-mask', 'none']);
+      const treatment = treatments.has(b.treatment) ? b.treatment : 'none';
+      const figure = el('figure', 'media-block media-' + placement + ' media-purpose-' + (b.purpose || 'explanatory') + ' media-treatment-' + treatment);
       const img = document.createElement('img');
       img.src = asset.src;
-      img.alt = b.placement === 'decoration' ? '' : (asset.alt || '');
+      img.alt = placement === 'decoration' ? '' : (asset.alt || '');
       img.loading = 'eager';
       img.style.objectFit = b.fit === 'cover' ? 'cover' : 'contain';
-      applyAssetFocalPoint(img, asset);
-      if (b.mask) img.dataset.mask = b.mask;
-      if (b.placement === 'decoration') figure.setAttribute('aria-hidden', 'true');
+      const pos = b.objectPosition;
+      if (pos && Number.isFinite(+pos.x) && Number.isFinite(+pos.y)) {
+        img.style.objectPosition = Math.max(0, Math.min(1, +pos.x)) * 100 + '% ' + Math.max(0, Math.min(1, +pos.y)) * 100 + '%';
+      } else applyAssetFocalPoint(img, asset);
+      const ratio = Number.isFinite(+b.aspectRatio) && +b.aspectRatio > 0
+        ? String(Math.min(6, Math.max(0.2, +b.aspectRatio)))
+        : (typeof b.aspectRatio === 'string' && /^\d+(?:\.\d+)?\s*\/\s*\d+(?:\.\d+)?$/.test(b.aspectRatio.trim()) ? b.aspectRatio.trim() : '');
+      if (ratio) figure.style.aspectRatio = ratio;
+      const masks = new Set(['circle', 'rounded', 'arch', 'blob', 'hexagon', 'none']);
+      if (masks.has(b.mask)) figure.dataset.mask = b.mask;
+      if (placement === 'decoration') figure.setAttribute('aria-hidden', 'true');
       figure.appendChild(img);
       if (b.caption) figure.appendChild(el('figcaption', 'media-caption', inlineMd(b.caption)));
       return figure;
@@ -1172,7 +1284,7 @@
         root.removeAttribute('data-widget-error');
         frame.srcdoc = buildWidgetSrcdoc(b.html, widgetId);
       };
-      widgetBuilds.push(build);   // 主题切换时重建
+      widgetBuilds.set(widgetId, build);   // 主题切换时重建；按 id 覆盖，重渲同一块不会攒下陈旧闭包
       ctx.onReady(build);
       return root;
     }
@@ -1404,6 +1516,55 @@
     const e = gridLine(pair[1], 999);
     return e != null && e > s ? s + ' / ' + e : null;   // 不给 end 就交给 grid 自动流
   }
+  function strictGridSpan(pair) {
+    if (!Array.isArray(pair) || pair.length !== 2) return null;
+    const start = Number(pair[0]), end = Number(pair[1]);
+    if (!Number.isInteger(start) || !Number.isInteger(end) || start < 1 || end > 13 || end <= start) return null;
+    return start + ' / ' + end;
+  }
+  /** Resolve an artboard atomically: one bad/missing/duplicate reference rejects the whole layout. */
+  function resolveArtboardLayout(scene, L) {
+    if (!L || L.kind !== 'artboard' || !Array.isArray(L.areas) || !L.areas.length || !L.titleRegion) return null;
+    const titleCol = strictGridSpan(L.titleRegion.col), titleRow = strictGridSpan(L.titleRegion.row);
+    if (!titleCol || !titleRow) return null;
+    const map = blocksById(scene), used = new Set(), areas = [];
+    const aligns = new Set(['start', 'center', 'end', 'stretch']);
+    const justifies = new Set(['start', 'center', 'end', 'stretch']);
+    const roles = new Set(['main', 'aside', 'feature', 'caption', 'quote', 'stage', 'evidence', 'supporting', 'decoration']);
+    for (const area of L.areas) {
+      if (!area || !Array.isArray(area.blockIds) || !area.blockIds.length) return null;
+      const col = strictGridSpan(area.col), row = strictGridSpan(area.row);
+      if (!col || !row) return null;
+      const blks = [];
+      for (const id of area.blockIds) {
+        const key = String(id);
+        if (!map[key] || used.has(key)) return null;
+        used.add(key); blks.push(map[key]);
+      }
+      const role = roles.has(area.styleRole) ? area.styleRole : 'main';
+      const interactive = blks.some(block => block && ['sim', 'runnable'].includes(block.type));
+      const requestedZ = Number.isInteger(+area.z) ? Math.min(8, Math.max(0, +area.z)) : 1;
+      areas.push({
+        blks, col, row,
+        z: interactive ? 10 : (role === 'decoration' ? 0 : requestedZ),
+        align: aligns.has(area.align) ? area.align : 'stretch',
+        justify: justifies.has(area.justify) ? area.justify : 'stretch',
+        bleed: area.bleed === true,
+        clip: area.clip === true,
+        role, interactive,
+      });
+    }
+    const blockIds = (scene.blocks || []).map(b => b && b.id != null ? String(b.id) : null).filter(Boolean);
+    if (blockIds.length !== used.size || blockIds.some(id => !used.has(id))) return null;
+    return {
+      title: { col: titleCol, row: titleRow, z: Number.isInteger(+L.titleRegion.z) ? Math.min(9, Math.max(5, +L.titleRegion.z)) : 5,
+        align: aligns.has(L.titleRegion.align) ? L.titleRegion.align : 'start',
+        justify: justifies.has(L.titleRegion.justify) ? L.titleRegion.justify : 'start',
+        maxWidth: Number.isFinite(+L.titleRegion.maxWidth)
+          ? Math.min(100, Math.max(20, +L.titleRegion.maxWidth)) : 100 },
+      areas,
+    };
+  }
   /* compose preset = 罐装 areas 图（据 scene.blocks 确定性展开）。加一个 preset = 加一种编辑版式。 */
   const composePresets = {
     // sidenote 旁注（← marginalia · DESIGN_RESEARCH T23）：主栏(前面的块) + 右窄侧栏(末块作低对比语境)。需 ≥2 块。
@@ -1423,6 +1584,24 @@
       body.style.gap = (L.gap != null ? L.gap : 18) + 'px';
       if (L.centered) { body.style.justifyContent = 'center'; body.dataset.centered = '1'; }
       for (const blk of scene.blocks) body.appendChild(renderBlock(blk, ctx));
+    },
+
+    artboard(scene, ctx, body, L, resolved) {
+      const layout = resolved || resolveArtboardLayout(scene, L);
+      if (!layout) return false;
+      body.dataset.layout = 'artboard';
+      body.classList.add('layout-artboard');
+      const gap = Number.isFinite(+L.gap) ? Math.min(60, Math.max(0, +L.gap)) : 12;
+      body.style.gap = gap + 'px';
+      body.style.setProperty('--artboard-gap', gap + 'px');
+      for (const area of layout.areas) {
+        const cell = el('div', 'artboard-area role-' + area.role + (area.bleed ? ' is-bleed' : '') + (area.clip ? ' is-clipped' : '') + (area.interactive ? ' has-interaction' : ''));
+        cell.style.gridColumn = area.col; cell.style.gridRow = area.row; cell.style.zIndex = String(area.z);
+        cell.style.alignItems = area.align; cell.style.justifyItems = area.justify;
+        for (const block of area.blks) cell.appendChild(renderLayoutBlock(block, ctx));
+        body.appendChild(cell);
+      }
+      return true;
     },
 
     /* index：片内分节。左目录 + 右 stage（每子节一绝对定位 panel，仅 active 显示）。
@@ -1449,7 +1628,11 @@
       panels.forEach((p, i) => {
         const item = el('div', 'index-item' + (i === 0 ? ' on' : ''));
         item.innerHTML = '<span class="n">' + (i + 1) + '</span><span class="t">' + inlineMd(p.label) + '</span>';
-        item.onclick = () => { const ix = Reveal.getIndices(); Reveal.slide(ix.h, ix.v, i - 1); };   // 跳到该子节
+        /* 跳到该子节。编辑态下不导航——否则点目录项想改它的文字就会翻走。 */
+        item.onclick = () => {
+          if (document.body.classList.contains('deck-editing')) return;
+          const ix = Reveal.getIndices(); Reveal.slide(ix.h, ix.v, i - 1);
+        };
         rail.appendChild(item);
         const panel = el('div', 'step-panel' + (i === 0 ? ' show' : ''));
         for (const b of p.blks) panel.appendChild(renderLayoutBlock(b, ctx));
@@ -1550,6 +1733,30 @@
      所以必须能反查回 doc 上那一个字段（scene 由外层 section[data-scene-id] 定位）。 */
   function editField(node, field) { node.dataset.editField = field; return node; }
 
+  function renderMotifLayer(scene) {
+    const motifs = currentDoc && currentDoc.visualSystem && Array.isArray(currentDoc.visualSystem.motifs)
+      ? currentDoc.visualSystem.motifs : [];
+    if (!motifs.length) return null;
+    const motifClasses = {
+      orb: 'ring', wave: 'wave', rule: 'line', grid: 'grid', corner: 'corner', blob: 'blob',
+    };
+    const colorRoles = { accent: '--accent', accent2: '--accent2', line: '--line', surfaceAlt: '--bg2' };
+    const layer = el('div', 'motif-layer');
+    layer.setAttribute('aria-hidden', 'true');
+    motifs.slice(0, 4).forEach((raw, index) => {
+      const spec = typeof raw === 'string' ? { type: raw } : (raw && typeof raw === 'object' ? raw : {});
+      const motifClass = motifClasses[spec.type];
+      if (!motifClass) return;
+      const mark = el('span', 'motif motif-' + motifClass + ' motif-slot-' + (index + 1));
+      const colorToken = colorRoles[spec.colorRole];
+      if (colorToken) mark.style.color = 'var(' + colorToken + ')';
+      if (Number.isFinite(+spec.opacity)) mark.style.opacity = String(Math.min(0.45, Math.max(0.04, +spec.opacity)));
+      if (Number.isFinite(+spec.scale)) mark.style.setProperty('--motif-scale', String(Math.min(2, Math.max(0.5, +spec.scale))));
+      layer.appendChild(mark);
+    });
+    return layer.childElementCount ? layer : null;
+  }
+
   function renderScene(scene, ctx) {
     const sec = document.createElement('section');
     if (scene.kind === 'hero') sec.className = 'cover';
@@ -1578,6 +1785,8 @@
         sec.appendChild(layer);
       }
     }
+    const motifLayer = renderMotifLayer(scene);
+    if (motifLayer) sec.appendChild(motifLayer);
     /* 装饰环 */
     for (const r of (scene.decor && scene.decor.rings) || []) {
       const g = el('div', 'geo-ring');
@@ -1600,25 +1809,43 @@
          免得改了却写回不到正确字段。要改这类文字请回到那个 statement block。 */
       if (dekText) pad.appendChild(dek ? el('div', 'section-dek', inlineMd(dekText)) : editField(el('div', 'section-dek', inlineMd(dekText)), 'lead'));
     } else {
-      if (scene.eyebrow) pad.appendChild(editField(el('div', 'eyebrow', inlineMd(scene.eyebrow)), 'eyebrow'));
-      if (scene.headline) {
-        const h = el('h2', 'headline', inlineMd(scene.headline));
-        if (scene.headlineSize) h.style.fontSize = scene.headlineSize + 'px';
-        pad.appendChild(editField(h, 'headline'));
-      }
-      if (scene.lead) pad.appendChild(editField(el('div', 'lead', inlineMd(scene.lead)), 'lead'));
-      const body = el('div', 'body');
-      const single = scene.blocks.length === 1 && ['sim', 'runnable'].includes(scene.blocks[0].type);
-      if (single) {
+      const L = scene.layout || {};
+      const artboard = resolveArtboardLayout(scene, L);
+      const appendTitleContent = parent => {
+        if (scene.eyebrow) parent.appendChild(editField(el('div', 'eyebrow', inlineMd(scene.eyebrow)), 'eyebrow'));
+        if (scene.headline) {
+          const h = el('h2', 'headline', inlineMd(scene.headline));
+          if (scene.headlineSize) h.style.fontSize = scene.headlineSize + 'px';
+          parent.appendChild(editField(h, 'headline'));
+        }
+        if (scene.lead) parent.appendChild(editField(el('div', 'lead', inlineMd(scene.lead)), 'lead'));
+      };
+      if (artboard) {
+        pad.classList.add('pad-artboard');
+        const body = el('div', 'body');
+        const title = el('header', 'artboard-title');
+        title.style.gridColumn = artboard.title.col; title.style.gridRow = artboard.title.row;
+        title.style.zIndex = String(artboard.title.z); title.style.alignSelf = artboard.title.align; title.style.justifySelf = artboard.title.justify;
+        title.style.maxWidth = artboard.title.maxWidth + '%';
+        appendTitleContent(title);
+        body.appendChild(title);
+        sceneLayouts.artboard(scene, ctx, body, L, artboard);
+        pad.appendChild(body);
+      } else {
+        appendTitleContent(pad);
+        const body = el('div', 'body');
+        const single = scene.blocks.length === 1 && ['sim', 'runnable'].includes(scene.blocks[0].type);
+        if (single) {
         const rendered = renderBlock(scene.blocks[0], ctx);
         /* sim/runnable 渲染器返回的根节点自带 lab/runlab 网格类 → 直接作为 body */
         rendered.classList.add('body');
         pad.appendChild(rendered);
-      } else {
-        const L = scene.layout || {};
-        const kind = typeof sceneLayouts[L.kind] === 'function' ? L.kind : 'flow';   // 未知 kind → flow，不崩
-        sceneLayouts[kind](scene, ctx, body, L);
-        pad.appendChild(body);
+        } else {
+          /* Invalid artboards fall back to the established flow layout as one atomic unit. */
+          const kind = L.kind === 'artboard' ? 'flow' : (typeof sceneLayouts[L.kind] === 'function' ? L.kind : 'flow');
+          sceneLayouts[kind](scene, ctx, body, L);
+          pad.appendChild(body);
+        }
       }
     }
     sec.appendChild(pad);
@@ -1722,6 +1949,11 @@
     if (sp) { const h = sp.clientHeight; sp.querySelectorAll('.split-col').forEach(c => fitScroll(c, h)); }
     const cp = section.querySelector('.layout-compose');
     if (cp) { const h = cp.clientHeight; cp.querySelectorAll('.compose-area').forEach(c => fitScroll(c, h)); }   // 每区域太高就缩，红线不裁切
+    const art = section.querySelector('.layout-artboard');
+    if (art) {
+      art.querySelectorAll('.artboard-area:not(.role-stage):not(.has-interaction)').forEach(c => fitScroll(c, c.clientHeight, c.clientWidth));
+      const title = art.querySelector('.artboard-title'); if (title) fitScroll(title, title.clientHeight, title.clientWidth);
+    }
   }
   /* index：据 reveal 当前 fragment index 切 active 子节 + 高亮目录（fragment 事件/翻页时调用）。 */
   function syncIndex(section) {
@@ -1777,22 +2009,58 @@
     for (const scene of doc.scenes) for (const b of (scene && scene.blocks) || []) if (b && b.id != null) seen.add(String(b.id));
     for (const [si, scene] of doc.scenes.entries()) {
       if (!scene || !Array.isArray(scene.blocks)) continue;
-      const base = scene.id || ('s' + si);
-      const walk = (blocks, prefix) => {
-        for (const [bi, b] of blocks.entries()) {
-          if (!b || typeof b !== 'object') continue;
-          if (b.id == null) {
-            let id = prefix + '-b' + bi, n = 2;
-            while (seen.has(id)) id = prefix + '-b' + bi + '-' + n++;
-            seen.add(id); b.id = id;
-          }
-          /* 容器块递归：compare 的左右、grid 的格子里也是一等 block，同样需要锚点 */
-          if (b.type === 'compare') for (const side of ['left', 'right']) if (b[side] && b[side].block) walk([b[side].block], String(b.id) + '-' + side);
-          if (b.type === 'grid') walk((b.items || []).map(it => it && it.block).filter(Boolean), String(b.id) + '-i');
+      walkSceneBlocks(scene, (b, at) => {
+        if (b.id == null) {
+          let id = at.prefix + '-b' + at.index, n = 2;
+          while (seen.has(id)) id = at.prefix + '-b' + at.index + '-' + n++;
+          seen.add(id); b.id = id;
         }
-      };
-      walk(scene.blocks, base);
+      }, scene.id || ('s' + si));
     }
+  }
+
+  /** 遍历一个 scene 的全部 block：顶层 + compare/grid 容器内的嵌套块，深度优先、顺序确定。
+   *  visit(block, {prefix, index, top}) 返回非 undefined 即提前结束并把该值透出（findBlock 用）。
+   *  visit 可以就地改 block.id——子块的 prefix 用改完之后的 id 算，ensureBlockIds 依赖这一点。
+   *
+   *  为什么 ensureBlockIds 与 findBlock 必须共用这一个遍历器：容器里的块拿的是派生 id
+   *  （b17-left / b17-i0），这些 id **不在** scene.blocks 里。两处各写一份递归、一旦漂移，
+   *  rerenderBlock 就会在嵌套块上静默 no-op——不报错、只是什么都没发生，极难查。 */
+  function walkSceneBlocks(scene, visit, basePrefix) {
+    const walk = (blocks, prefix, top) => {
+      for (const [i, b] of (blocks || []).entries()) {
+        if (!b || typeof b !== 'object') continue;
+        const hit = visit(b, { prefix, index: i, top });
+        if (hit !== undefined) return hit;
+        if (b.type === 'compare') {
+          for (const side of ['left', 'right']) {
+            if (!b[side] || !b[side].block) continue;
+            const r = walk([b[side].block], String(b.id) + '-' + side, false);
+            if (r !== undefined) return r;
+          }
+        }
+        if (b.type === 'grid') {
+          const r = walk((b.items || []).map(it => it && it.block).filter(Boolean), String(b.id) + '-i', false);
+          if (r !== undefined) return r;
+        }
+      }
+      return undefined;
+    };
+    return walk(scene && scene.blocks, basePrefix != null ? basePrefix : ((scene && scene.id) || 's'), true);
+  }
+
+  /** 在一个 scene 里按 blockId 找块（含嵌套容器内的）。找不到返回 null，不抛。 */
+  function findBlockInScene(scene, blockId) {
+    if (!scene || blockId == null) return null;
+    const want = String(blockId);
+    const hit = walkSceneBlocks(scene, b => (String(b.id) === want ? b : undefined));
+    return hit === undefined ? null : hit;
+  }
+
+  /** 公共面：按 (sceneId, blockId) 从当前 doc 里取块。编辑器解析 DOM 锚点时用。 */
+  function findBlock(sceneId, blockId) {
+    const scene = ((currentDoc && currentDoc.scenes) || []).find(s => s && String(s.id) === String(sceneId));
+    return findBlockInScene(scene, blockId);
   }
 
   /** 全量（重）渲染一整份 doc。首次调用会 Reveal.initialize + 绑 chrome；后续调用仅替换 slides + Reveal.sync()。
@@ -1809,11 +2077,15 @@
     for (const entry of runnableRegistry.values()) entry.portal.remove();
     runnableRegistry.clear();
     activePortals.clear();
+    /* widget 的两张表同理：整份重渲后旧 iframe 全部作废，不清就会在换主题时对幽灵重建 srcdoc。 */
+    widgetBuilds.clear();
+    widgetRoots.clear();
 
     /* 主题：?theme=xxx 仅用于预览/对比（不改内容）；默认用 doc.theme 或 cartesian。
        重渲时尊重 URL override 可让 live 预览也支持 ?theme= 切换对比。 */
     const themeOverride = new URLSearchParams(location.search).get('theme');
     document.documentElement.dataset.theme = themeOverride || doc.theme || 'cartesian';
+    applyVisualSystem(doc.visualSystem);
     refreshThemeColors();
 
     /* AI 助教数据按当前 doc 重新初始化（重渲后词表跟着更新） */
@@ -1900,7 +2172,7 @@
        fragment 而首帧消失。full/flow 走普通 renderBlock。 */
     const body = old.closest('[data-layout]');
     const layoutKind = body ? body.dataset.layout : '';
-    const fresh = ['index', 'split', 'compose'].includes(layoutKind)
+    const fresh = ['index', 'split', 'compose', 'artboard'].includes(layoutKind)
       ? renderLayoutBlock(block, ctx)
       : renderBlock(block, ctx);
     old.replaceWith(fresh);
@@ -1962,8 +2234,11 @@
     }
   }
 
-  /* ---- quiz 判分（事件委托） ---- */
+  /* ---- quiz 判分（事件委托） ----
+     编辑态守卫：判分会置 dataset.done='1'，本次渲染内**不可逆**。没有这道守卫，
+     进编辑态后点一下选项想改它的文案，就把这道题永久判了（还会把正确答案亮出来）。 */
   document.addEventListener('click', e => {
+    if (document.body.classList.contains('deck-editing')) return;
     const ch = e.target.closest('.choice'); if (!ch) return;
     const box = ch.closest('[data-answer]'); if (!box || box.dataset.done) return; box.dataset.done = '1';
     const ok = ch.dataset.c === box.dataset.answer;
@@ -2082,7 +2357,13 @@
     renderDoc, rerenderScene, refreshTheme: refreshThemeColors,
     /* 编辑支撑（deck-edit.js 消费）：三级重渲 + 运行时状态搬运 + 取当前 doc */
     rerenderBlock, relayoutScene, captureRuntimeState, restoreRuntimeState,
-    renderInline: inlineMd,   /* 字段级重绘：改完一行文字只需重跑受限行内 markdown，不必重渲块 */
+    /* 字段级重绘原语：改完一个字段只需重跑对应的渲染函数，不必重渲整块。
+       inlineMd → 受限行内 markdown；displayTex → KaTeX 块级公式；
+       sanitizeFreeformHtml → freeform 白名单净化（注意它有损，只能 doc→DOM 单向用）。 */
+    renderInline: inlineMd,
+    renderDisplayTex: displayTex,
+    sanitizeFreeform: sanitizeFreeformHtml,
+    findBlock,                /* (sceneId, blockId) → block，含 compare/grid 嵌套块 */
     getDoc: () => currentDoc,
   };
 })();

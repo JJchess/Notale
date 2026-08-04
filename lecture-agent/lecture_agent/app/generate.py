@@ -21,6 +21,7 @@ from ..adapters.store import FilesystemStore, LedgerStore
 from ..domain.telemetry import profile_deck
 from ..engine import GenerateResult, generate_lecture
 from ..ports.media import ImageFinder, ImageGenerator
+from ..ports.visual_review import VisualReviewer
 from ..schema import CodeMarker, Cost, ExperimentRecord
 from ..utils.env import load_env
 from ..utils.logging import get_logger
@@ -51,6 +52,16 @@ def build_media(cfg: DictConfig) -> tuple[ImageFinder | None, ImageGenerator | N
     return finder, generator
 
 
+def build_visual_reviewer(cfg: DictConfig) -> VisualReviewer | None:
+    """Full mode gets one screenshot-level review; fast variants keep the zero-cost default."""
+    if int(cfg.generator.get("visual_quality_rounds", 0)) <= 0:
+        return None
+    if "visual_qa" not in cfg or not cfg.visual_qa:
+        return None
+    reviewer: VisualReviewer = instantiate(cfg.visual_qa)
+    return reviewer
+
+
 async def run_generation(
     cfg: DictConfig,
     out_root: str | Path | None = None,
@@ -72,6 +83,9 @@ async def run_generation(
         log.info(f"[llm] create-sim widget:* → {sim_model}")
     options = build_options(cfg)
     image_finder, image_generator = build_media(cfg)
+    output_root = Path(out_root or cfg.get("out_dir", "experiments/corpus"))
+    visual_reviewer = build_visual_reviewer(cfg)
+    shot_dir = output_root / "screenshots" if visual_reviewer is not None else None
     started = time.perf_counter()
     result = await generate_lecture(
         llm,
@@ -85,12 +99,13 @@ async def run_generation(
         options=options,
         image_finder=image_finder,
         image_generator=image_generator,
-        render_verifier=build_render_verifier(cfg),
+        render_verifier=build_render_verifier(cfg, shot_dir=shot_dir),
+        visual_reviewer=visual_reviewer,
         log=log.info,
         progress=progress,
     )
     elapsed_s = time.perf_counter() - started
-    store = FilesystemStore(Path(out_root or cfg.get("out_dir", "experiments/corpus")))
+    store = FilesystemStore(output_root)
     store.save_deck(str(result.doc.get("id", "lecture")), result.doc)
 
     if options.record:

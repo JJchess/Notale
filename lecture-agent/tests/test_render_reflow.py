@@ -102,6 +102,59 @@ async def test_no_verifier_means_stage_skipped() -> None:
     assert len(result.doc["scenes"][1]["blocks"][0]["items"]) == 9, "未注入 verifier 不应触发回炉"
 
 
+async def test_invalid_document_still_gets_one_read_only_browser_diagnostic() -> None:
+    """结构错误不能吞掉截图/像素证据，也不能在非法文档上自动回炉。"""
+
+    invalid_skeleton = json.dumps(
+        {
+            "id": "invalid-render-diagnostic",
+            "title": "诊断",
+            "language": "zh-CN",
+            "theme": "cartesian",
+            "scenes": [
+                {
+                    "id": "section",
+                    "kind": "section",
+                    "notes": "分隔。",
+                    "blocks": [{"id": "b0", "type": "hero", "intent": "错误的分隔页"}],
+                }
+            ],
+        },
+        ensure_ascii=False,
+    )
+
+    class _DiagnosticVerifier:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def verify(self, html: str) -> RenderReport:
+            self.calls += 1
+            return RenderReport(
+                ok=False,
+                overflow_pages=[{"page": 0, "overflowY": 200, "overflowX": 0}],
+                page_metrics=[{"i": 0, "overflowY": 200}],
+                shots=["contact-sheet.png", "page0.png"],
+            )
+
+    verifier = _DiagnosticVerifier()
+    result = await generate_lecture(
+        FakeClient(
+            by_purpose={
+                **_BY_PURPOSE,
+                "plan:skeleton": invalid_skeleton,
+                "block:hero": json.dumps({"type": "hero", "title": ["诊断", ""]}),
+            }
+        ),
+        topic="诊断",
+        pages=1,
+        options=GeneratorOptions(sections=False, revise=False, render_rounds=2),
+        render_verifier=verifier,
+    )
+
+    assert verifier.calls == 1
+    assert any("section" in error for error in result.errors)
+
+
 async def test_persistent_overflow_is_reported_not_hidden() -> None:
     """精简到极限仍溢出时必须如实报 warning，不能假装修好。"""
 

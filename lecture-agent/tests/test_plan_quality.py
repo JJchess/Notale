@@ -499,6 +499,49 @@ async def test_replan_page_normalizes_legacy_brief_role_size_and_colliding_ids()
     assert candidate["blocks"][0]["id"] != "used-elsewhere"
 
 
+async def test_replan_normalizes_object_shaped_role_and_size_without_crashing() -> None:
+    current = _doc()["scenes"][0]
+    response = {
+        "scene": {
+            **current,
+            "blocks": [
+                {
+                    "id": "b1",
+                    "type": "chart",
+                    "role": {"name": "visualization"},
+                    "intent": "显示可复算的数据关系",
+                    "size": {"name": "large"},
+                }
+            ],
+        }
+    }
+    fake = FakeClient(by_purpose={"quality:replan": json.dumps(response, ensure_ascii=False)})
+    candidate, err = await replan_page(
+        fake,
+        current_scene=current,
+        brief=current["brief"],
+        issues=["布局需要重做"],
+        topic="测试",
+        audience="",
+        material="",
+        allowed_types={"chart"},
+        type_descriptions={"chart": "定量证据"},
+        all_scenes=[current],
+    )
+
+    assert err is None and candidate is not None
+    assert candidate["blocks"][0]["role"] == "visualization"
+    assert candidate["blocks"][0]["size"] == "m"
+
+
+def test_validate_plan_revision_rejects_object_shaped_type_and_size_without_crashing() -> None:
+    scene = _doc()["scenes"][0]
+    scene["blocks"][0]["type"] = {"name": "chart"}
+    scene["blocks"][0]["size"] = {"name": "large"}
+
+    assert "非法 block type" in validate_plan_revision(scene, scene, [scene], {"chart"})
+
+
 async def test_replan_compiles_overloaded_widget_to_minimum_evidence_set() -> None:
     current = _doc()["scenes"][0]
     current["brief"].update(

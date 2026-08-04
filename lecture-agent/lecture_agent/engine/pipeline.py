@@ -13,7 +13,9 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from ..domain.assemble import fill_blocks
+from ..domain.design import compile_scene_composition, compile_visual_system
 from ..domain.evaluation import check_coverage, refine_plan, replan_page, review_page
+from ..domain.evaluation.visual_quality import preflight_page_metrics
 from ..domain.generation import (
     BlockResult,
     compile_interaction_brief,
@@ -42,6 +44,7 @@ from ..ports.llm import LLMClient
 from ..ports.media import ImageFinder, ImageGenerator
 from ..ports.renderer import RenderReport, RenderVerifier
 from ..ports.tool import Tool
+from ..ports.visual_review import ImageInput, VisualIssue, VisualReviewer, VisualReviewRequest
 from ..schema.validate import validate_doc
 from ..utils.concurrency import pool
 
@@ -89,6 +92,8 @@ class GeneratorOptions:
     # 逐页六维语义审查→定点回炉轮数；full 配置开启，fast/single-pass 可关以控时延。
     quality_rounds: int = 0
     plan_quality_rounds: int = 0
+    # 最终像素级视觉审查/定点修复轮数；依赖注入 VisualReviewer 与截图型 verifier。
+    visual_quality_rounds: int = 0
 
 
 @dataclass
@@ -103,6 +108,7 @@ class GenerateResult:
     knowledge_forms: list[str] = field(default_factory=list)
     evidence_obligations: list[dict[str, str]] = field(default_factory=list)
     widget_routes: list[dict[str, str]] = field(default_factory=list)
+    visual_quality: dict[str, Any] | None = None
 
 
 def _page_brief(scene: dict[str, Any]) -> dict[str, str]:
@@ -760,13 +766,29 @@ async def _generate_media_block(
         assets[asset_id]["height"] = asset.height
     if not assets[asset_id].get("attribution"):
         assets[asset_id].pop("attribution", None)
-    block = {
+    block: dict[str, Any] = {
         "type": "media",
         "assetId": asset_id,
         "purpose": purpose,
         "placement": placement,
         "fit": str(placeholder.get("fit") or ("cover" if placement == "background" else "contain")),
     }
+    if asset.width and asset.height:
+        block["aspectRatio"] = max(0.25, min(4.0, round(asset.width / asset.height, 4)))
+    focal = placeholder.get("objectPosition") or placeholder.get("focalPoint")
+    if isinstance(focal, dict):
+        block["objectPosition"] = {
+            "x": max(0.0, min(1.0, float(focal.get("x", 0.5)))),
+            "y": max(0.0, min(1.0, float(focal.get("y", 0.5)))),
+        }
+    treatment = str(placeholder.get("treatment") or "")
+    if treatment not in {"none", "frame", "full-bleed", "cutout", "duotone", "soft-mask"}:
+        treatment = (
+            "none" if placement in {"background", "decoration"}
+            else "frame" if route == "finder"
+            else "soft-mask"
+        )
+    block["treatment"] = treatment
     if placeholder.get("caption"):
         block["caption"] = str(placeholder["caption"])
     for key in ("mask", "safeZone", "overlay", "overlayStrength"):
@@ -807,6 +829,159 @@ def _lower_media_backgrounds(doc: dict[str, Any]) -> list[str]:
     return warnings
 
 
+def _compile_page_design(
+    doc: dict[str, Any],
+    *,
+    page_visual_briefs: dict[str, dict[str, Any]],
+    design_brief: dict[str, Any],
+) -> list[str]:
+    """Compile page intent after real blocks/assets exist; preserve specialized hero/section renderers."""
+    warnings: list[str] = []
+    assets = doc.get("assets") or []
+    for scene in doc.get("scenes") or []:
+        if scene.get("kind") in {"hero", "section"}:
+            continue
+        sid = str(scene.get("id") or "?")
+        visual_brief = page_visual_briefs.get(sid, {})
+        try:
+            scene["layout"] = compile_scene_composition(
+                scene,
+                visual_brief=visual_brief,
+                design_brief=design_brief,
+                assets=assets,
+            )
+        except (TypeError, ValueError) as exc:
+            warnings.append(f"{sid}: 设计编译失败，保留兼容布局: {str(exc)[:160]}")
+    return warnings
+
+
+def _visual_report_payload(report: Any) -> dict[str, Any]:
+    return {
+        "available": bool(report.available),
+        "scores": report.scores.as_dict(),
+        "issues": [
+            {
+                "sceneId": issue.scene_id,
+                "route": issue.route,
+                "problem": issue.problem,
+                "instruction": issue.instruction,
+            }
+            for issue in report.issues
+        ],
+        "summary": report.summary,
+        "warnings": list(report.warnings),
+    }
+
+
+def _focus_artboard(scene: dict[str, Any]) -> dict[str, Any]:
+    """Deterministic failed-page repair: enlarge the strongest evidence without changing content."""
+    blocks = [block for block in (scene.get("blocks") or []) if isinstance(block, dict)]
+    priority = {"sim": 0, "runnable": 0, "media": 1, "chart": 1, "diagram": 1, "graph": 1}
+    ranked = sorted(
+        blocks,
+        key=lambda block: (
+            priority.get(str(block.get("type") or ""), 2),
+            {"xl": 0, "l": 1, "m": 2, "s": 3}.get(str(block.get("size") or "m"), 2),
+        ),
+    )
+    main = ranked[0]
+    others = [block for block in blocks if block is not main]
+    areas = [
+        {
+            "blockIds": [str(main.get("id"))],
+            "col": [1, 10 if others else 13],
+            "row": [4, 13],
+            "z": 1,
+            "align": "stretch",
+            "justify": "stretch",
+            "bleed": False,
+            "clip": True,
+            "styleRole": "feature",
+        }
+    ]
+    for index, block in enumerate(others):
+        start = 4 + round(9 * index / len(others))
+        end = 4 + round(9 * (index + 1) / len(others))
+        areas.append(
+            {
+                "blockIds": [str(block.get("id"))],
+                "col": [10, 13],
+                "row": [start, max(start + 1, end)],
+                "z": 1,
+                "align": "stretch",
+                "justify": "stretch",
+                "bleed": False,
+                "clip": True,
+                "styleRole": "aside",
+            }
+        )
+    return {
+        "kind": "artboard",
+        "columns": 12,
+        "rows": 12,
+        "gap": 14,
+        "family": str(scene.get("compositionFamily") or "annotated-specimen"),
+        "variant": "visual-repair-focus",
+        "titleRegion": {
+            "col": [1, 10], "row": [1, 4], "align": "start",
+            "justify": "start", "maxWidth": 86, "z": 3,
+        },
+        "areas": areas,
+    }
+
+
+def _apply_visual_contract_repairs(
+    doc: dict[str, Any], issues: list[VisualIssue]
+) -> tuple[set[str], list[VisualIssue]]:
+    """Apply safe token/composition/media routes; return scenes changed and content routes."""
+    changed: set[str] = set()
+    content_issues: list[VisualIssue] = []
+    by_scene = {str(scene.get("id") or "?"): scene for scene in doc.get("scenes") or []}
+    assets = {str(asset.get("id")): asset for asset in doc.get("assets") or [] if isinstance(asset, dict)}
+    tokens_repaired = False
+    for issue in issues:
+        if issue.route == "tokens":
+            if not tokens_repaired:
+                visual = doc.get("visualSystem")
+                if isinstance(visual, dict):
+                    typography = visual.get("typography")
+                    if isinstance(typography, dict):
+                        typography["scale"] = "editorial"
+                        typography["displayWeight"] = max(700, int(typography.get("displayWeight") or 700))
+                    palette = visual.get("palette")
+                    if isinstance(palette, dict) and palette.get("ink"):
+                        palette["muted"] = str(palette["ink"])
+                tokens_repaired = True
+            changed.update(by_scene)
+            continue
+        scene = by_scene.get(issue.scene_id)
+        if scene is None:
+            continue
+        if issue.route == "composition":
+            if scene.get("kind") not in {"hero", "section"}:
+                scene["layout"] = _focus_artboard(scene)
+                changed.add(issue.scene_id)
+        elif issue.route == "media":
+            background = scene.get("background")
+            if isinstance(background, dict):
+                background["fit"] = "cover"
+                background["overlay"] = "scrim"
+                background["overlayStrength"] = max(0.42, float(background.get("overlayStrength") or 0.45))
+            for block in scene.get("blocks") or []:
+                if not isinstance(block, dict) or block.get("type") != "media":
+                    continue
+                asset = assets.get(str(block.get("assetId") or ""), {})
+                focal = asset.get("focalPoint")
+                if isinstance(focal, dict):
+                    block["objectPosition"] = {"x": focal.get("x", 0.5), "y": focal.get("y", 0.5)}
+                block["fit"] = "cover"
+                block["treatment"] = "cutout" if asset.get("kind") == "cutout" else "frame"
+            changed.add(issue.scene_id)
+        else:
+            content_issues.append(issue)
+    return changed, content_issues
+
+
 async def generate_lecture(
     llm: LLMClient,
     *,
@@ -823,6 +998,7 @@ async def generate_lecture(
     image_finder: ImageFinder | None = None,
     image_generator: ImageGenerator | None = None,
     render_verifier: RenderVerifier | None = None,
+    visual_reviewer: VisualReviewer | None = None,
     log: Callable[[str], None] = lambda _m: None,
     progress: Callable[[dict[str, Any]], None] = lambda _e: None,
 ) -> GenerateResult:
@@ -860,6 +1036,8 @@ async def generate_lecture(
     doc = plan.doc
     design_brief_value = doc.get("designBrief")
     design_brief: dict[str, Any] = design_brief_value if isinstance(design_brief_value, dict) else {}
+    # Design DNA 不再只当 prompt 散文：编译成 Viewer 可执行的闭合 token contract。
+    doc["visualSystem"] = compile_visual_system(design_brief)
     # 课程级证据义务只在规划/质检阶段存在；最终 LectureDoc 不公开这些内部字段。
     doc["_knowledgeForms"] = list(plan.knowledge_forms)
     doc["_evidenceObligations"] = list(plan.evidence_obligations)
@@ -1079,6 +1257,13 @@ async def generate_lecture(
     for warning in _lower_media_backgrounds(doc):
         log(f"[media] {warning}")
         plan_quality_warnings.append(warning)
+    for warning in _compile_page_design(
+        doc,
+        page_visual_briefs=page_visual_briefs,
+        design_brief=design_brief,
+    ):
+        log(f"[design] {warning}")
+        plan_quality_warnings.append(warning)
     assign_layouts(doc)
     if opts.media is True:
         await _attach_hero_image(doc, topic, image_finder, image_generator)
@@ -1132,10 +1317,18 @@ async def generate_lecture(
     render_report = None
     render_hard_errors: list[str] = []
     render_changed_scene_ids: set[str] = set()
-    if render_verifier is not None and opts.render_rounds > 0 and not final.errors:
+    visual_quality_payload: dict[str, Any] | None = None
+    # 即使结构/语义校验已有错误，也至少执行一次只读浏览器诊断并产出截图。
+    # 否则 schema error 会遮蔽真实的溢出、空白或 widget 运行时问题，视觉报告还会
+    # 误写成“浏览器未返回指标”。只有进入本阶段时 schema 已合法，才允许自动回炉。
+    schema_valid_for_render_repairs = not final.errors
+    if render_verifier is not None and opts.render_rounds > 0:
         progress({"type": "stage", "stage": "render", "status": "start"})
         for rnd in range(1, opts.render_rounds + 1):
             render_report = await render_verifier.verify(json.dumps(doc, ensure_ascii=False))
+            if not schema_valid_for_render_repairs:
+                log("[render] 文档校验未通过：已完成只读浏览器诊断，跳过自动回炉")
+                break
             runtime_bad = {
                 int(metric.get("i", -1)): [str(error) for error in metric.get("widgetErrors") or []]
                 for metric in render_report.page_metrics
@@ -1263,9 +1456,198 @@ async def generate_lecture(
 
             await pool(sorted(bad.items()), opts.concurrency, reflow)
             progress({"type": "docUpdated", "doc": doc, "reason": "reflow"})
+
+        # 最终像素级评审：一次看整档截图，按 route 定点修复，然后真机复验。
+        if (
+            visual_reviewer is not None
+            and opts.visual_quality_rounds > 0
+            and render_report is not None
+            and not render_hard_errors
+            and schema_valid_for_render_repairs
+        ):
+            progress({"type": "stage", "stage": "visual-quality", "status": "start"})
+
+            def metrics_with_context(report: RenderReport) -> list[dict[str, Any]]:
+                enriched: list[dict[str, Any]] = []
+                scenes = list(doc.get("scenes") or [])
+                for metric in report.page_metrics:
+                    item = dict(metric)
+                    raw_index = item.get("i")
+                    if raw_index is None:
+                        raw_index = item.get("page", -1)
+                    index = int(raw_index)
+                    if 0 <= index < len(scenes):
+                        scene = scenes[index]
+                        item["sceneId"] = str(scene.get("id") or f"page-{index + 1}")
+                        item["compositionSignature"] = json.dumps(
+                            scene.get("layout") or {}, ensure_ascii=False, sort_keys=True
+                        )
+                    enriched.append(item)
+                return enriched
+
+            preflight = preflight_page_metrics(metrics_with_context(render_report))
+            if preflight.hard_errors:
+                render_hard_errors.extend(preflight.hard_errors)
+            shots = [str(path) for path in render_report.shots]
+            if not shots:
+                final.warnings.append("视觉审查未运行：渲染器未产出逐页截图")
+            elif not render_hard_errors:
+                review_images: list[ImageInput] = []
+                review_images.extend(shots[1:])
+                request = VisualReviewRequest(
+                    # shots[0] 是 Reveal overview contact sheet；其余是逐页高分辨率截图。
+                    contact_sheet=shots[0],
+                    failed_pages=review_images,
+                    deck_context={
+                        "topic": topic,
+                        "language": doc.get("language"),
+                        "scenes": [
+                            {
+                                "sceneId": scene.get("id"),
+                                "headline": scene.get("headline"),
+                                "compositionFamily": scene.get("compositionFamily"),
+                            }
+                            for scene in doc.get("scenes") or []
+                        ],
+                    },
+                )
+                review = await visual_reviewer.review(request)
+                combined_issues = [*preflight.issues, *review.issues]
+                visual_quality_payload = _visual_report_payload(review)
+                visual_quality_payload["preflightIssues"] = [
+                    {
+                        "sceneId": issue.scene_id,
+                        "route": issue.route,
+                        "problem": issue.problem,
+                        "instruction": issue.instruction,
+                    }
+                    for issue in preflight.issues
+                ]
+                if not review.available:
+                    final.warnings.extend(review.warnings)
+                elif combined_issues:
+                    changed, content_issues = _apply_visual_contract_repairs(doc, combined_issues)
+
+                    async def repair_visual_content(issue: VisualIssue, _i: int) -> str | None:
+                        scene = next(
+                            (
+                                candidate
+                                for candidate in doc.get("scenes") or []
+                                if str(candidate.get("id") or "?") == issue.scene_id
+                            ),
+                            None,
+                        )
+                        if scene is None:
+                            return f"{issue.scene_id}: 找不到页"
+                        candidates = [
+                            block
+                            for block in scene.get("blocks") or []
+                            if isinstance(block, dict)
+                            and block.get("type") not in {"sim", "runnable", "media"}
+                        ]
+                        if not candidates:
+                            return f"{issue.scene_id}: 无可定点重生成的静态 block"
+                        current = candidates[0]
+                        reg = registry.get(str(current.get("type") or ""))
+                        if reg is None:
+                            return f"{issue.scene_id}: 无 Skill 处理 {current.get('type')}"
+                        block_id = str(current.get("id") or "")
+                        placeholder = placeholder_specs.get(block_id, {})
+                        result = await generate_block(
+                            llm,
+                            type=str(current.get("type")),
+                            intent=(
+                                str(placeholder.get("intent") or "保持本页核心结论")
+                                + f"\n截图级修复：{issue.instruction}"
+                            ),
+                            scene_ctx=_block_scene_context(
+                                scene,
+                                page_briefs.get(issue.scene_id, _page_brief(scene)),
+                                list(scene.get("blocks") or []),
+                                visual_brief=page_visual_briefs.get(issue.scene_id, {}),
+                                design_brief=design_brief,
+                            ),
+                            contract=reg.contract,
+                            topic=topic,
+                            material=mat,
+                        )
+                        if result.block is None:
+                            return f"{issue.scene_id}: {result.err or 'block 修复失败'}"
+                        repaired = dict(result.block)
+                        repaired["id"] = block_id
+                        for index, block in enumerate(scene.get("blocks") or []):
+                            if block is current:
+                                scene["blocks"][index] = repaired
+                                break
+                        return None
+
+                    failures = [
+                        failure
+                        for failure in await pool(content_issues, opts.concurrency, repair_visual_content)
+                        if failure
+                    ]
+                    if failures:
+                        final.warnings.append("视觉 block 修复未全部完成：" + "；".join(failures[:6]))
+                    changed.update(issue.scene_id for issue in content_issues if issue.scene_id)
+                    render_changed_scene_ids.update(changed)
+                    if changed:
+                        progress({"type": "docUpdated", "doc": doc, "reason": "visual-quality-repair"})
+                        render_report = await render_verifier.verify(
+                            json.dumps(doc, ensure_ascii=False)
+                        )
+                        post_ignored_prefixes = ("D:", "F:", "G:", "I:")
+                        post_render_errors = [
+                            error
+                            for error in render_report.errors
+                            if not error.startswith(post_ignored_prefixes)
+                        ]
+                        postflight = preflight_page_metrics(metrics_with_context(render_report))
+                        render_hard_errors.extend(post_render_errors)
+                        render_hard_errors.extend(postflight.hard_errors)
+                        final_images: list[ImageInput] = [
+                            str(path) for path in render_report.shots[1:]
+                        ]
+                        if not render_hard_errors:
+                            final_review = await visual_reviewer.review(
+                                VisualReviewRequest(
+                                    contact_sheet=str(render_report.shots[0])
+                                    if render_report.shots
+                                    else shots[0],
+                                    failed_pages=final_images,
+                                    deck_context=request.deck_context,
+                                )
+                            )
+                            visual_quality_payload = _visual_report_payload(final_review)
+                            visual_quality_payload["repairedScenes"] = sorted(changed)
+                            if final_review.available:
+                                scores = final_review.scores.as_dict()
+                                visual_quality_payload["pass"] = all(
+                                    score >= 4.0 for score in scores.values()
+                                )
+                                if not visual_quality_payload["pass"]:
+                                    final.warnings.append(
+                                        "视觉质量未达到 4/5 交付线："
+                                        + ", ".join(
+                                            f"{key}={value:.1f}"
+                                            for key, value in scores.items()
+                                        )
+                                    )
+                            else:
+                                final.warnings.extend(final_review.warnings)
+                elif review.available:
+                    visual_quality_payload["pass"] = all(
+                        score >= 4.0 for score in review.scores.as_dict().values()
+                    )
+            progress({"type": "stage", "stage": "visual-quality", "status": "done"})
+
         # 浏览器回炉改过 HTML/文案后，旧的语义分数已经失效。只重审被改页，避免运行时修复
         # 修好了空白却悄悄改坏数学映射；不重复审查未变化页。
-        if render_changed_scene_ids and opts.quality_rounds > 0 and not render_hard_errors:
+        if (
+            schema_valid_for_render_repairs
+            and render_changed_scene_ids
+            and opts.quality_rounds > 0
+            and not render_hard_errors
+        ):
             changed_scenes = [
                 scene
                 for scene in doc.get("scenes") or []
@@ -1286,18 +1668,20 @@ async def generate_lecture(
                 )
 
             by_scene = {str(item.get("sceneId")): item for item in quality_summary}
-            for scene, review in await pool(changed_scenes, opts.concurrency, audit_render_change):
+            for scene, page_review in await pool(
+                changed_scenes, opts.concurrency, audit_render_change
+            ):
                 sid = str(scene.get("id") or "?")
                 by_scene[sid] = {
                     "sceneId": sid,
-                    "score": review.score,
-                    "pass": review.passed,
-                    "blockIssues": review.block_issues,
-                    "pageIssues": review.page_issues,
+                    "score": page_review.score,
+                    "pass": page_review.passed,
+                    "blockIssues": page_review.block_issues,
+                    "pageIssues": page_review.page_issues,
                 }
                 log(
-                    f"[quality] 浏览器回炉后复核 {sid}: {review.score:.1f}/10"
-                    + (" pass" if review.passed else " needs-work")
+                    f"[quality] 浏览器回炉后复核 {sid}: {page_review.score:.1f}/10"
+                    + (" pass" if page_review.passed else " needs-work")
                 )
             quality_summary = list(by_scene.values())
         # 回炉后内容变了，重跑整档校验，避免精简引入的结构错逃逸
@@ -1364,6 +1748,7 @@ async def generate_lecture(
             "dropped": len(dropped),
             "coverage": bool(cov),
             "quality": quality_summary,
+            "visualQuality": visual_quality_payload,
             "widgetRoutes": widget_routes,
             "doc": doc,
         }
@@ -1379,4 +1764,5 @@ async def generate_lecture(
         knowledge_forms=plan.knowledge_forms,
         evidence_obligations=plan.evidence_obligations,
         widget_routes=widget_routes,
+        visual_quality=visual_quality_payload,
     )

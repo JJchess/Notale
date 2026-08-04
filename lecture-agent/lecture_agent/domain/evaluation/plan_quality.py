@@ -644,6 +644,7 @@ def validate_plan_revision(
         "id", "type", "role", "intent", "size", "engine", "interactionBrief",
         "purpose", "placement", "subject", "relationshipToContent", "fidelity", "required",
         "fit", "safeZone", "overlay", "overlayStrength", "sourceStrategy", "focalPoint", "caption", "mask",
+        "aspectRatio", "objectPosition", "treatment",
     }
     for block in blocks:
         if not isinstance(block, dict):
@@ -655,11 +656,13 @@ def validate_plan_revision(
         if not bid or bid in seen or bid in other_ids:
             return f"block id 缺失或重复: {bid or '?'}"
         seen.add(bid)
-        if block.get("type") not in allowed_types:
-            return f"非法 block type: {block.get('type')}"
+        block_type = block.get("type")
+        if not isinstance(block_type, str) or block_type not in allowed_types:
+            return f"非法 block type: {block_type}"
         if not str(block.get("intent") or "").strip():
             return f"block {bid} 缺 intent"
-        if block.get("size") not in {"s", "m", "l", "xl"}:
+        size = block.get("size")
+        if not isinstance(size, str) or size not in {"s", "m", "l", "xl"}:
             return f"block {bid} size 非法"
         if "interactionBrief" in block and not isinstance(block.get("interactionBrief"), dict):
             return f"block {bid} interactionBrief 必须是对象"
@@ -786,14 +789,25 @@ def _normalize_revision_candidate(
             bid = f"{slug}-r{i + 1}"
         block["id"] = bid
         seen.add(bid)
-        if block.get("role") not in valid_roles:
-            block["role"] = "visualization" if block.get("type") in visual_types else ("claim" if i == 0 else "support")
-        block["size"] = size_map.get(str(block.get("size") or "").lower(), block.get("size") or "m")
-        if block.get("type") == "sim" and geometry_task:
+        raw_type = block.get("type")
+        block_type = raw_type if isinstance(raw_type, str) else ""
+        if not isinstance(block.get("role"), str) or block.get("role") not in valid_roles:
+            block["role"] = (
+                "visualization" if block_type in visual_types else ("claim" if i == 0 else "support")
+            )
+        raw_size = block.get("size")
+        size_key = raw_size.lower() if isinstance(raw_size, str) else ""
+        if isinstance(raw_size, str):
+            # 兼容已知同义词；未知字符串仍交给 validator 拒绝，保留下一轮重规划机会。
+            block["size"] = size_map.get(size_key, raw_size)
+        else:
+            # 非字符串是模型结构漂移，先归一成闭合 contract，绝不能因 set membership 崩溃。
+            block["size"] = "xl" if block_type in _SIM_CAPABILITIES | {"runnable"} else "m"
+        if block_type == "sim" and geometry_task:
             # 规划模型经常正确选择 sim，却漏写唯一能承载二维几何的 engine 字段。
             # 这是宿主能力路由，不改变教学意图；在 validator 前确定性补齐，避免好修订被整页拒绝。
             block["engine"] = "widget"
-        elif block.get("type") not in _SIM_CAPABILITIES:
+        elif block_type not in _SIM_CAPABILITIES:
             block.pop("engine", None)
     _fit_revision_capacity(candidate, old)
 

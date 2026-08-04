@@ -566,6 +566,54 @@ def _check_layout(s: dict[str, Any], path: str, r: Result) -> None:
             for bid in a.get("blockIds", []) or []:
                 chk(bid, f"{p}.areas[{i}].blockIds")
 
+    if layout.get("kind") != "artboard":
+        return
+
+    columns = int(layout.get("columns") or 12)
+    rows = int(layout.get("rows") or 12)
+
+    def check_span(value: Any, limit: int, where: str) -> tuple[int, int] | None:
+        if not isinstance(value, list) or len(value) != 2 or not all(isinstance(x, int) for x in value):
+            r.err(where, "artboard 区域必须是 [起始线,结束线]")
+            return None
+        start, end = value
+        if start < 1 or end > limit + 1 or start >= end:
+            r.err(where, f"线号必须满足 1 <= start < end <= {limit + 1}")
+            return None
+        return start, end
+
+    title = layout.get("titleRegion")
+    if not isinstance(title, dict):
+        r.err(f"{p}.titleRegion", "artboard 必须声明标题安全区")
+    else:
+        check_span(title.get("col"), columns, f"{p}.titleRegion.col")
+        check_span(title.get("row"), rows, f"{p}.titleRegion.row")
+
+    referenced: set[str] = set()
+    rects: list[tuple[int, int, int, int, int, str]] = []
+    for i, area in enumerate(layout.get("areas", []) or []):
+        if not isinstance(area, dict):
+            continue
+        col = check_span(area.get("col"), columns, f"{p}.areas[{i}].col")
+        row = check_span(area.get("row"), rows, f"{p}.areas[{i}].row")
+        area_ids = [str(x) for x in (area.get("blockIds") or [])]
+        for bid in area_ids:
+            if bid in referenced:
+                r.err(f"{p}.areas[{i}].blockIds", f"block {bid} 在 artboard 中被重复放置")
+            referenced.add(bid)
+        if col and row:
+            rects.append((*col, *row, int(area.get("z") or 1), f"areas[{i}]"))
+
+    missing = ids - referenced
+    if missing:
+        r.warn(p, "artboard 未放置 block：" + ", ".join(sorted(str(x) for x in missing)))
+
+    for i, first in enumerate(rects):
+        for second in rects[i + 1 :]:
+            overlap = first[0] < second[1] and second[0] < first[1] and first[2] < second[3] and second[2] < first[3]
+            if overlap and first[4] == second[4]:
+                r.warn(p, f"{first[5]} 与 {second[5]} 同层重叠，请确认不会遮挡内容")
+
 
 def validate_doc(doc: dict[str, Any]) -> Result:
     """校验整份 LectureDoc 的语义层（结构层用 document.LectureDoc 先过 pydantic）。"""

@@ -74,6 +74,62 @@ def test_media_asset_block_and_background_are_schema_valid() -> None:
     assert validate_doc(doc).errors == []
 
 
+def test_visual_system_and_artboard_are_schema_valid() -> None:
+    doc = _minimal_doc()
+    doc["visualSystem"] = {
+        "palette": {
+            "background": "#F7F5F0", "surface": "#FFFFFF", "surfaceAlt": "#EEEAE2",
+            "ink": "#171717", "muted": "#68645E", "accent": "#275DFF",
+            "accent2": "#F36B35", "line": "#D9D4CB",
+        },
+        "typography": {"display": "editorial", "body": "humanist", "mono": "technical"},
+        "shape": {"radius": 10, "borderWidth": 1, "shadow": "soft"},
+        "texture": "paper",
+        "motifs": [{"type": "wave", "colorRole": "accent", "opacity": 0.12}],
+        "rhythm": "editorial",
+    }
+    doc["scenes"][1]["layout"] = {
+        "kind": "artboard", "columns": 12, "rows": 12, "gap": 16,
+        "titleRegion": {"col": [1, 6], "row": [1, 4], "maxWidth": 90},
+        "areas": [
+            {
+                "blockIds": ["claim"], "col": [1, 13], "row": [4, 13],
+                "z": 1, "styleRole": "main",
+            }
+        ],
+    }
+    doc["scenes"][1]["blocks"][0]["id"] = "claim"
+    LectureDoc.model_validate(doc)
+    assert validate_doc(doc).errors == []
+
+
+def test_artboard_rejects_invalid_span_and_duplicate_block() -> None:
+    doc = _minimal_doc()
+    doc["scenes"][1]["blocks"][0]["id"] = "claim"
+    doc["scenes"][1]["layout"] = {
+        "kind": "artboard", "columns": 12, "rows": 12,
+        "titleRegion": {"col": [1, 6], "row": [1, 3]},
+        "areas": [
+            {"blockIds": ["claim"], "col": [0, 7], "row": [3, 13]},
+            {"blockIds": ["claim"], "col": [7, 13], "row": [3, 13]},
+        ],
+    }
+    result = validate_doc(doc)
+    assert any("1 <= start" in error for error in result.errors)
+    assert any("重复放置" in error for error in result.errors)
+
+
+def test_media_visual_treatment_is_schema_valid() -> None:
+    block = {
+        "type": "media", "assetId": "asset-a", "purpose": "explanatory",
+        "placement": "illustration", "aspectRatio": 1.5,
+        "objectPosition": {"x": 0.25, "y": 0.6}, "treatment": "cutout",
+    }
+    from lecture_agent.schema.document import MediaBlock
+
+    MediaBlock.model_validate(block)
+
+
 def test_media_rejects_remote_or_unknown_assets() -> None:
     doc = _minimal_doc()
     doc["assets"] = [{"id": "remote", "kind": "photo", "src": "https://example.com/a.png", "alt": ""}]

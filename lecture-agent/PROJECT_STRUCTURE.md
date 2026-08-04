@@ -51,6 +51,7 @@ lecture-agent/
 │   ├── generator/                #   ★消融轴：full / single_pass / tools / fast（关思考+高并发+无章节，≤5min）
 │   ├── media/                     #   finder(Pixabay)+generator(Gemini)；media=auto 只开放能力，
 │   │                             #     planner 真正选择 create-media 后才调用，不做逐页配额
+│   ├── visual_qa/                 #   最终截图级视觉评审模型；full 开启，fast 可关闭
 │   ├── planner/  eval/  theme/
 │   └── experiment/               #   ★一份=一个可复现实验
 │
@@ -74,9 +75,10 @@ lecture-agent/
 │   ├── ports/                    # L1 · 依赖：schema  ── 纯抽象接缝（Protocol，零实现）
 │   │   ├── llm.py                #   LLMClient + ToolCallingLLM —— 真接缝（httpx-live/cassette/fake）
 │   │   ├── tool.py               #   Tool —— function-calling 工具接缝（纯工具/IO 工具/fake）
-│   │   ├── renderer.py           #   RenderVerifier —— 接缝（当前仅 structural；真机 verifier 已归档）
+│   │   ├── renderer.py           #   RenderVerifier —— 结构或真机浏览器验收接缝
 │   │   ├── store.py              #   CorpusStore —— 真接缝（filesystem / in-memory）
-│   │   └── media.py              #   ImageFinder + ImageGenerator —— 真接缝（Pixabay live / Gemini live / fake）
+│   │   ├── media.py              #   ImageFinder + ImageGenerator —— 真接缝（Pixabay live / Gemini live / fake）
+│   │   └── visual_review.py       #   VisualReviewer —— 截图六维评分与定点修复路由接缝
 │   │
 │   ├── domain/                   # L2 · 依赖：schema+ports+utils  ── 纯逻辑，深模块，禁碰 adapters
 │   │   ├── planning.py           #   多视角 STORM 规划（单文件，拍平）  接口: plan_lecture->PlanResult
@@ -87,7 +89,8 @@ lecture-agent/
 │   │   ├── tools/                #   纯工具：calc（AST 安全求值，验 sim 表达式）实现 ports.Tool
 │   │   ├── generation/           #   blocks + material + notes + widget（多文件包）  接口: generate_block
 │   │   │                         #     widget.py: sim.widget 生成子配方(plan→build→repair,借鉴 GenUI,SPEC §7.1)
-│   │   ├── evaluation/           #   ppteval/coverage/diversity + completeness(确定性门,纯函数) + pairwise(去偏成对,judge 经 port)
+│   │   ├── design/               #   Design DNA→visualSystem；15 种构图→12×12 artboard；结构预检/安全降级
+│   │   ├── evaluation/           #   ppteval/coverage/diversity + 视觉像素预检 + pairwise(去偏成对,judge 经 port)
 │   │   ├── skills/               #   registry + authoring（契约注册表；家族契约文件在仓库根 skills/，
 │   │   │                         #     如 skills/create-sim/、skills/create-chart/、skills/create-infographic/
 │   │   │                         #     (stats+7种diagram，CONTENT_TAXONOMY §三-1/3)）
@@ -98,10 +101,11 @@ lecture-agent/
 │   ├── adapters/                 # L3 · 依赖：schema+ports+utils  ── 实现 port，独担 I/O 副作用
 │   │   ├── llm/                  #   httpx OpenAI 客户端 + cassette（live/replay） → LLMClient
 │   │   │   └── prompts/          #     Jinja2 模板（提示词属 LLM adapter 的私有资产，不泄进 domain）
-│   │   ├── render/               #   structural.py：无浏览器结构校验 → RenderVerifier
+│   │   ├── render/               #   structural.py + headless.py：结构与真机截图/溢出验收 → RenderVerifier
 │   │   ├── store/                #   文件系统 corpus/results 读写 → CorpusStore
 │   │   │   └── ledger.py         #     LedgerStore：append-only 写/读 experiments/results/ledger.jsonl（实验账本）
-│   │   └── media/                #   pixabay.py(图库) + gemini_image.py(nano-banana pro 文生图) + fake.py
+│   │   ├── media/                #   pixabay.py(图库) + gemini_image.py(nano-banana pro 文生图) + fake.py
+│   │   └── visual/               #   Gemini 截图级视觉审查 → VisualReviewer
 │   │
 │   ├── engine/                   # L4 · 依赖：schema+ports+domain  ── 确定性建 deck 引擎
 │   │   ├── __init__.py           #   导出 generate_lecture / GeneratorOptions / GenerateResult
@@ -144,7 +148,8 @@ lecture-agent/
 | Port（L1） | 实现（adapters） | 为何是真接缝 | 谁依赖它 |
 |---|---|---|---|
 | `LLMClient` | httpx-live · cassette-replay · in-memory-fake | 生成/评测都要调 LLM；live/replay 是确定性命根子；测试要 fake | domain.generation / planning / evaluation |
-| `RenderVerifier` | structural（结构校验，不起浏览器） | run 产物结构校验要可换、单测要隔离 | run_matrix（真机 verifier 已随外壳归档） |
+| `RenderVerifier` | structural · headless Edge/Chrome | 结构校验与真实像素/溢出验收要可换、单测要隔离 | engine / app.generate |
+| `VisualReviewer` | Gemini screenshot reviewer · fake | 最终像素层判断要与生成模型和浏览器硬门分离 | engine / app.generate |
 | `CorpusStore` | filesystem | run 产物读写要可换 | app.generate / run_matrix |
 
 **不开的接缝（避免过度设计）**：
