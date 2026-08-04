@@ -1,0 +1,988 @@
+{
+  "id": "data-structure-avl",
+  "title": "AVL 树：自平衡二叉搜索树",
+  "subtitle": "从平衡因子到旋转，理解高度平衡的机制与代价",
+  "language": "zh-CN",
+  "audience": "计算机科学本科二年级，已学过二叉搜索树与递归",
+  "theme": "lab",
+  "tutor": {
+    "suggestions": [
+      "插入 3,2,1 到空 AVL 树，画出每一步的平衡因子与旋转",
+      "为什么 AVL 树的高度不超过 1.44 log₂(n)？",
+      "删除一个节点后，如何向上回溯并判断是否需要旋转？",
+      "AVL 树与红黑树在实际工程中如何选择？"
+    ],
+    "kb": [
+      {
+        "pattern": "平衡因子|balance factor|BF",
+        "answer": "节点左子树高度减去右子树高度，取值 -1,0,1 为平衡"
+      },
+      {
+        "pattern": "LL 旋转|右旋|right rotate",
+        "answer": "当插入点在失衡节点的左子树的左子树时，进行一次右旋"
+      },
+      {
+        "pattern": "RR 旋转|左旋|left rotate",
+        "answer": "当插入点在失衡节点的右子树的右子树时，进行一次左旋"
+      },
+      {
+        "pattern": "LR 旋转|左右旋",
+        "answer": "先对左子树左旋，再对失衡节点右旋"
+      },
+      {
+        "pattern": "RL 旋转|右左旋",
+        "answer": "先对右子树右旋，再对失衡节点左旋"
+      },
+      {
+        "pattern": "回溯|backtrack|向上更新",
+        "answer": "插入或删除后，从操作点向上逐节点更新高度并检查平衡因子"
+      }
+    ]
+  },
+  "scenes": [
+    {
+      "id": "cover",
+      "kind": "hero",
+      "notes": "这一页是课程的封面，主要任务是建立课题、核心问题与学习承诺，不承担任何数学证明。请先引导学生注意标题中的‘自平衡’三个字，然后点出本讲要解决的核心矛盾：二叉搜索树在极端输入（如递增序列）下会退化为链表，查找复杂度从 O(log n) 恶化到 O(n)。接着用页面上的‘平衡因子’、‘旋转’和‘最坏情况 O(log n)’三个关键词，预告 AVL 树的解决手段和最终承诺。特别要纠正一个常见误区：平衡树不等于完全二叉树——AVL 只要求左右子树高度差不超过 1，树形可以比完全二叉树更‘松散’。本页的装饰图仅用于建立视觉张力，不要用它推导任何数学结论。下一页将具体展示二叉搜索树退化的过程，为 AVL 树的必要性做铺垫。",
+      "blocks": [
+        {
+          "type": "hero",
+          "title": [
+            "AVL 树",
+            "自平衡二叉搜索树"
+          ],
+          "tag": "数据结构",
+          "sub": "解决二叉搜索树在极端输入下退化为链表的**O(log n)**保证",
+          "facts": "平衡因子 | 旋转 | 最坏情况 O(log n)",
+          "hint": "平衡不是完全二叉树，而是左右子树高度差 ≤ 1",
+          "id": "b_cover"
+        }
+      ]
+    },
+    {
+      "id": "bst-degeneration",
+      "kind": "content",
+      "headline": "二叉搜索树的退化问题",
+      "lead": "按升序插入 1,2,3,4,5 到空 BST，树退化为一条右斜链，查找 5 需要 5 次比较——与链表无异。",
+      "notes": "用一个具体例子展示 BST 退化的严重性，引出平衡的必要性",
+      "blocks": [
+        {
+          "type": "diagram",
+          "diagramType": "arrow-seq",
+          "nodes": [
+            {
+              "title": "1",
+              "sub": "根节点"
+            },
+            {
+              "title": "2",
+              "sub": "右孩子"
+            },
+            {
+              "title": "3",
+              "sub": "右孩子"
+            },
+            {
+              "title": "4",
+              "sub": "右孩子"
+            },
+            {
+              "title": "5",
+              "sub": "右孩子"
+            }
+          ],
+          "id": "b1"
+        },
+        {
+          "type": "callout",
+          "label": "退化代价",
+          "text": "最坏情况下 BST 查找代价为 **O(n)**，与链表相同。",
+          "id": "b2"
+        }
+      ],
+      "layout": {
+        "kind": "compose",
+        "preset": "sidenote"
+      }
+    },
+    {
+      "id": "balance-factor-def",
+      "kind": "content",
+      "headline": "平衡因子：衡量节点平衡的标尺",
+      "lead": "平衡因子 = 左子树高度 - 右子树高度。AVL 树要求每个节点的平衡因子为 -1、0 或 1。",
+      "notes": "定义平衡因子，并用一个简单树示例计算各节点平衡因子",
+      "blocks": [
+        {
+          "type": "diagram",
+          "diagramType": "connected-circles",
+          "nodes": [
+            {
+              "title": "50",
+              "sub": "h=3, BF=0"
+            },
+            {
+              "title": "30",
+              "sub": "h=2, BF=1"
+            },
+            {
+              "title": "70",
+              "sub": "h=1, BF=0"
+            },
+            {
+              "title": "20",
+              "sub": "h=1, BF=0"
+            },
+            {
+              "title": "40",
+              "sub": "h=1, BF=0"
+            },
+            {
+              "title": "60",
+              "sub": "h=0, BF=0"
+            },
+            {
+              "title": "80",
+              "sub": "h=0, BF=0"
+            }
+          ],
+          "id": "s2b0"
+        },
+        {
+          "type": "formula",
+          "latex": "\\text{BF}(\\text{node}) = \\text{height}(\\text{left}) - \\text{height}(\\text{right})",
+          "caption": "平衡因子 BF 的取值范围为 -1、0、1，超出则需旋转调整",
+          "id": "s2b1"
+        }
+      ],
+      "layout": {
+        "kind": "split",
+        "anchor": [
+          "s2b1"
+        ],
+        "ratio": 0.4
+      }
+    },
+    {
+      "id": "ll-rotation",
+      "kind": "content",
+      "headline": "LL 不平衡与右旋",
+      "lead": "插入 3,2,1：节点 3 的平衡因子变为 2（左子树高 2，右子树高 0），触发 LL 型右旋。",
+      "notes": "本页通过插入序列 3→2→1 演示 LL 不平衡的触发与右旋修复。请引导学生观察 step=2 时节点 3 的平衡因子变为 2（左子树高 2、右子树高 0），并用红色脉冲光环标记失衡节点。step=3 执行右旋：节点 2 成为新根，其左子为 1、右子为 3，所有节点平衡因子归零。这里要特别指出常见误区——旋转不会破坏 BST 性质，因为右旋只是将左子提升为根，原根的右子树（此处为空）成为新根的右子树，中序遍历序列 1-2-3 保持不变。与上一页平衡因子定义衔接，下一页将介绍对称的 RR 不平衡与左旋。",
+      "blocks": [
+        {
+          "type": "sim",
+          "engine": "widget",
+          "html": "<style>\n* { margin: 0; padding: 0; box-sizing: border-box; }\nhtml, body { width: 100%; height: 100%; min-width: 0; min-height: 0; overflow: hidden; font-family: var(--font-sans, ui-sans-serif, system-ui, sans-serif); }\n.root { width: 100%; height: 100%; display: flex; flex-direction: column; background: var(--bg); color: var(--ink); }\n.stage { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; position: relative; }\n.stage svg { width: 100%; height: 100%; max-width: 600px; display: block; }\n.controls { display: flex; align-items: center; justify-content: center; gap: 12px; padding: 8px 16px; border-top: 1px solid var(--line, rgba(90,78,128,.15)); }\n.controls button { font-family: inherit; font-size: 13px; padding: 6px 16px; border-radius: 8px; border: 1px solid var(--line, rgba(90,78,128,.25)); background: var(--bg2); color: var(--ink); cursor: pointer; transition: all .15s; }\n.controls button:hover { background: var(--accent); color:var(--card); border-color: var(--accent); }\n.controls button:active { transform: scale(.97); }\n.controls button:disabled { opacity: .4; pointer-events: none; }\n.readout { display: flex; align-items: center; justify-content: center; gap: 16px; padding: 4px 16px 8px; font-size: 13px; color: var(--text2); }\n.readout span { font-variant-numeric: tabular-nums; }\n.pulse { animation: pulseRing 1.2s ease-in-out infinite; }\n@keyframes pulseRing { 0%,100% { stroke-opacity: .6; } 50% { stroke-opacity: 1; } }\n</style>\n<div class=\"root\">\n  <div class=\"stage\" id=\"stage\">\n    <svg viewBox=\"0 0 400 280\" id=\"treeSvg\" style=\"max-width:500px;\">\n      <defs>\n        <marker id=\"arrow\" viewBox=\"0 0 10 10\" refX=\"10\" refY=\"5\" markerWidth=\"6\" markerHeight=\"6\" orient=\"auto\"><path d=\"M0,0 L10,5 L0,10 Z\" fill=\"var(--ink)\"/></marker>\n      </defs>\n      <!-- 连线由 JS 绘制 -->\n      <g id=\"edges\"></g>\n      <!-- 节点由 JS 绘制 -->\n      <g id=\"nodes\"></g>\n      <!-- 平衡因子标签 -->\n      <g id=\"bfLabels\"></g>\n    </svg>\n  </div>\n  <div class=\"controls\">\n    <button id=\"prevBtn\" disabled>← 上一步</button>\n    <button id=\"nextBtn\">下一步 →</button>\n    <button id=\"resetBtn\">重置</button>\n  </div>\n  <div class=\"readout\">\n    <span>步骤: <span id=\"stepDisplay\">0</span> / 3</span>\n    <span id=\"descDisplay\">仅根节点 3</span>\n  </div>\n</div>\n<script>\n(function() {\n  const stepModel = { step: 0 };\n  const maxStep = 3;\n  const svg = document.getElementById('treeSvg');\n  const edgesG = document.getElementById('edges');\n  const nodesG = document.getElementById('nodes');\n  const bfG = document.getElementById('bfLabels');\n  const stepDisplay = document.getElementById('stepDisplay');\n  const descDisplay = document.getElementById('descDisplay');\n  const prevBtn = document.getElementById('prevBtn');\n  const nextBtn = document.getElementById('nextBtn');\n  const resetBtn = document.getElementById('resetBtn');\n\n  const descriptions = [\n    '仅根节点 3',\n    '插入 2，节点 3 平衡因子 = 1',\n    '插入 1，节点 3 平衡因子 = 2（失衡）',\n    '右旋后，根为 2，左 1 右 3，所有平衡因子 = 0'\n  ];\n\n  // 树数据：每个步骤的节点列表和边列表\n  const treeStates = [\n    // step 0: 只有 3\n    { nodes: [{ id: 3, x: 200, y: 60, bf: 0, highlight: false }], edges: [] },\n    // step 1: 3 左 2\n    { nodes: [\n        { id: 3, x: 200, y: 60, bf: 1, highlight: false },\n        { id: 2, x: 120, y: 140, bf: 0, highlight: false }\n      ], edges: [{ from: 3, to: 2, dir: 'left' }] },\n    // step 2: 3 左 2 左 1\n    { nodes: [\n        { id: 3, x: 200, y: 60, bf: 2, highlight: true },\n        { id: 2, x: 120, y: 140, bf: 1, highlight: false },\n        { id: 1, x: 60, y: 220, bf: 0, highlight: false }\n      ], edges: [{ from: 3, to: 2, dir: 'left' }, { from: 2, to: 1, dir: 'left' }] },\n    // step 3: 右旋后 2 为根，左 1 右 3\n    { nodes: [\n        { id: 2, x: 200, y: 60, bf: 0, highlight: false },\n        { id: 1, x: 100, y: 140, bf: 0, highlight: false },\n        { id: 3, x: 300, y: 140, bf: 0, highlight: false }\n      ], edges: [{ from: 2, to: 1, dir: 'left' }, { from: 2, to: 3, dir: 'right' }] }\n  ];\n\n  function getThemeColors() {\n    const root = document.documentElement;\n    const style = getComputedStyle(root);\n    return {\n      ink: style.getPropertyValue('--ink').trim(),\n      text2: style.getPropertyValue('--text2').trim(),\n      accent: style.getPropertyValue('--accent').trim(),\n      line: style.getPropertyValue('--line').trim() || 'rgba(90,78,128,.25)',\n      bg: style.getPropertyValue('--bg').trim(),\n      bg2: style.getPropertyValue('--bg2').trim(),\n      card: style.getPropertyValue('--card').trim()\n    };\n  }\n\n  function drawTree(step) {\n    const colors = getThemeColors();\n    const state = treeStates[step];\n    const nodeRadius = 24;\n\n    // 清空\n    edgesG.innerHTML = '';\n    nodesG.innerHTML = '';\n    bfG.innerHTML = '';\n\n    // 画边\n    state.edges.forEach(e => {\n      const fromNode = state.nodes.find(n => n.id === e.from);\n      const toNode = state.nodes.find(n => n.id === e.to);\n      if (!fromNode || !toNode) return;\n      const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');\n      line.setAttribute('x1', fromNode.x);\n      line.setAttribute('y1', fromNode.y + nodeRadius);\n      line.setAttribute('x2', toNode.x);\n      line.setAttribute('y2', toNode.y - nodeRadius);\n      line.setAttribute('stroke', colors.line);\n      line.setAttribute('stroke-width', '2');\n      line.setAttribute('marker-end', 'url(#arrow)');\n      edgesG.appendChild(line);\n    });\n\n    // 画节点\n    state.nodes.forEach(n => {\n      const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');\n      const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');\n      circle.setAttribute('cx', n.x);\n      circle.setAttribute('cy', n.y);\n      circle.setAttribute('r', nodeRadius);\n      circle.setAttribute('fill', colors.card);\n      circle.setAttribute('stroke', n.highlight ? 'var(--accent)' : colors.line);\n      circle.setAttribute('stroke-width', n.highlight ? '3' : '2');\n      if (n.highlight) {\n        circle.classList.add('pulse');\n        circle.setAttribute('stroke', 'var(--accent)');\n      }\n      g.appendChild(circle);\n\n      const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');\n      text.setAttribute('x', n.x);\n      text.setAttribute('y', n.y + 5);\n      text.setAttribute('text-anchor', 'middle');\n      text.setAttribute('font-size', '16');\n      text.setAttribute('font-weight', '600');\n      text.setAttribute('fill', colors.ink);\n      text.textContent = n.id;\n      g.appendChild(text);\n      nodesG.appendChild(g);\n\n      // 平衡因子标签\n      const bfText = document.createElementNS('http://www.w3.org/2000/svg', 'text');\n      bfText.setAttribute('x', n.x + nodeRadius + 10);\n      bfText.setAttribute('y', n.y - 8);\n      bfText.setAttribute('font-size', '13');\n      bfText.setAttribute('fill', n.highlight ? 'var(--accent)' : colors.text2);\n      bfText.setAttribute('font-weight', n.highlight ? '700' : '400');\n      bfText.textContent = 'BF=' + n.bf;\n      bfG.appendChild(bfText);\n    });\n  }\n\n  function update() {\n    const s = stepModel.step;\n    stepDisplay.textContent = s;\n    descDisplay.textContent = descriptions[s];\n    prevBtn.disabled = s === 0;\n    nextBtn.disabled = s === maxStep;\n    drawTree(s);\n  }\n\n  function next() {\n    if (stepModel.step < maxStep) {\n      stepModel.step++;\n      update();\n    }\n  }\n\n  function prev() {\n    if (stepModel.step > 0) {\n      stepModel.step--;\n      update();\n    }\n  }\n\n  function reset() {\n    stepModel.step = 0;\n    update();\n  }\n\n  nextBtn.addEventListener('click', next);\n  prevBtn.addEventListener('click', prev);\n  resetBtn.addEventListener('click', reset);\n\n  // 验证\n  (function verify() {\n    console.assert(treeStates[0].nodes.length === 1 && treeStates[0].nodes[0].id === 3, 'step0: 仅根节点3');\n    console.assert(treeStates[1].nodes.length === 2 && treeStates[1].nodes[1].id === 2, 'step1: 插入2');\n    console.assert(treeStates[2].nodes.length === 3 && treeStates[2].nodes[0].bf === 2, 'step2: 节点3 BF=2');\n    console.assert(treeStates[3].nodes[0].id === 2 && treeStates[3].nodes[0].bf === 0, 'step3: 右旋后根为2 BF=0');\n    console.assert(treeStates[3].nodes[2].id === 3 && treeStates[3].nodes[2].bf === 0, 'step3: 右旋后节点3 BF=0');\n  })();\n\n  // 首帧\n  update();\n})();\n</script>",
+          "spec": {
+            "core_insight": "学生能识别 LL 不平衡模式，并描述右旋的步骤和结果",
+            "render_medium": "svg",
+            "render_medium_reason": "由规划阶段的证据形态确定",
+            "aesthetic_direction": "host-calm",
+            "direction_reason": "LectureDoc host palette; preserve lab-dark only in layout, motion, and signature detail",
+            "palette": [
+              "var(--bg)",
+              "var(--bg2)",
+              "var(--ink)",
+              "var(--text2)",
+              "var(--accent)",
+              "var(--line)"
+            ],
+            "signature_detail": "失衡节点用红色脉冲光环标记",
+            "layout_pattern": "stage+readout-row",
+            "layout_skeleton": "title / compact controls / full-width stage / readout row",
+            "state_model": [
+              {
+                "name": "step",
+                "type": "int",
+                "range_or_values": "0..3",
+                "initial": 0
+              }
+            ],
+            "interactions": [
+              {
+                "trigger": "单步按钮",
+                "effect": "推进一步并调用 update()"
+              }
+            ],
+            "render_contract": "step 递增时，根据 step 值绘制对应状态的树",
+            "update": "step 递增时，根据 step 值绘制对应状态的树",
+            "initial_paint": "step=0，仅根节点 3",
+            "visible_encodings": [
+              {
+                "quantity": "当前步骤的树结构",
+                "mark": "节点+连线",
+                "where": "主舞台"
+              },
+              {
+                "quantity": "失衡节点的平衡因子",
+                "mark": "红色高亮",
+                "where": "节点旁"
+              }
+            ],
+            "comparison_states": [],
+            "interaction_loop": {
+              "action": "单步按钮",
+              "model_update": "step 递增时，根据 step 值绘制对应状态的树",
+              "visible_change": "当前步骤的树结构; 失衡节点的平衡因子",
+              "history": "不保留前态，每次显示当前状态",
+              "reset": "step 置 0"
+            },
+            "math_model": {
+              "formula": "none",
+              "screen_mapping": "not applicable",
+              "invariants": []
+            },
+            "verification_cases": [
+              {
+                "input": "step=0",
+                "expected": "仅根节点 3"
+              },
+              {
+                "input": "step=1",
+                "expected": "插入 2，节点 3 BF=1"
+              },
+              {
+                "input": "step=2",
+                "expected": "插入 1，节点 3 BF=2（红色）"
+              },
+              {
+                "input": "step=3",
+                "expected": "右旋后，根为 2，左 1 右 3，所有 BF=0"
+              }
+            ],
+            "profile": "state",
+            "source_aesthetic_direction": "lab-dark"
+          },
+          "id": "s3b0"
+        }
+      ],
+      "layout": {
+        "kind": "full"
+      }
+    },
+    {
+      "id": "rr-rotation",
+      "kind": "content",
+      "headline": "RR 不平衡与左旋",
+      "lead": "插入 1,2,3：节点 1 的平衡因子变为 -2，触发 RR 型左旋——与右旋对称。",
+      "notes": "这一页我们用插入1、2、3的序列来演示RR不平衡。注意看互动组件：从只有节点1开始，每按一次按钮插入一个数字。当插入3后，节点1的平衡因子变成-2，并且会显示红色脉冲光环——这就是RR不平衡的标志。此时执行一次左旋：把节点2提为根，节点1变成它的左孩子，节点3变成右孩子，所有平衡因子归零。请对比上一页的LL右旋：左旋和右旋在指针重连方向上是镜像对称的，但操作步骤完全对应，不是两种不同的操作。学生常误以为左旋和右旋是两套独立规则，其实只要理解了一侧，另一侧自然对称。下一页我们会看到当不平衡不是单纯的左-左或右-右时，需要两次旋转来解决。",
+      "blocks": [
+        {
+          "type": "sim",
+          "engine": "widget",
+          "html": "<style>\n* { margin: 0; padding: 0; box-sizing: border-box; }\nhtml, body { width: 100%; height: 100%; min-width: 0; min-height: 0; overflow: hidden; }\nbody { font-family: var(--font-sans, ui-monospace, 'Cascadia Mono', Consolas, monospace); background: var(--bg); color: var(--ink); }\n.widget { width: 100%; height: 100%; display: flex; flex-direction: column; padding: 12px 16px; gap: 8px; }\n.title { font-size: 14px; font-weight: 500; color: var(--text2); letter-spacing: 0.02em; }\n.controls { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }\n.controls button { font-family: inherit; font-size: 13px; padding: 6px 16px; border: 1px solid var(--line, rgba(90,78,128,.25)); border-radius: 8px; background: var(--bg2); color: var(--ink); cursor: pointer; transition: all .15s; }\n.controls button:hover { background: var(--accent); color:var(--card); border-color: var(--accent); }\n.controls button:active { transform: scale(.97); }\n.controls button:disabled { opacity: .4; cursor: default; transform: none; }\n.stage { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; background: var(--bg2); border: 1px solid var(--line, rgba(90,78,128,.10)); border-radius: 12px; position: relative; overflow: hidden; }\n.stage svg { width: 100%; height: 100%; display: block; }\n.readout { display: flex; gap: 16px; flex-wrap: wrap; font-size: 12px; color: var(--text2); padding: 4px 0; }\n.readout span { font-variant-numeric: tabular-nums; }\n.readout .label { color: var(--text2); }\n.readout .value { font-weight: 500; color: var(--ink); }\n.pulse-ring { animation: pulse 1.5s ease-in-out infinite; }\n@keyframes pulse {\n  0%, 100% { opacity: 1; }\n  50% { opacity: .5; }\n}\n</style>\n<div class=\"widget\">\n  <div class=\"title\">RR 不平衡与左旋</div>\n  <div class=\"controls\">\n    <button id=\"stepBtn\" onclick=\"nextStep()\">单步推进</button>\n    <button id=\"resetBtn\" onclick=\"resetStep()\">重置</button>\n  </div>\n  <div class=\"stage\" id=\"stage\">\n    <svg viewBox=\"0 0 400 200\" id=\"treeSvg\"></svg>\n  </div>\n  <div class=\"readout\">\n    <span><span class=\"label\">步骤</span> <span class=\"value\" id=\"stepDisplay\">0</span></span>\n    <span><span class=\"label\">根节点</span> <span class=\"value\" id=\"rootDisplay\">1</span></span>\n    <span><span class=\"label\">平衡因子</span> <span class=\"value\" id=\"bfDisplay\">0</span></span>\n  </div>\n</div>\n<script>\nlet step = 0;\nconst svg = document.getElementById('treeSvg');\nconst stepDisplay = document.getElementById('stepDisplay');\nconst rootDisplay = document.getElementById('rootDisplay');\nconst bfDisplay = document.getElementById('bfDisplay');\nconst stepBtn = document.getElementById('stepBtn');\nconst resetBtn = document.getElementById('resetBtn');\n\nfunction drawTree(s) {\n  svg.innerHTML = '';\n  const ns = 'http://www.w3.org/2000/svg';\n  let nodes = [];\n  let edges = [];\n  let bf = 0;\n  let rootVal = 1;\n  let highlightNode = null;\n\n  if (s === 0) {\n    // 仅根节点 1\n    nodes = [{x:200, y:80, val:1, bf:0}];\n    rootVal = 1;\n    bf = 0;\n  } else if (s === 1) {\n    // 插入 2，节点 1 BF=-1\n    nodes = [\n      {x:200, y:60, val:1, bf:-1},\n      {x:280, y:120, val:2, bf:0}\n    ];\n    edges = [{x1:200, y1:80, x2:280, y2:120}];\n    rootVal = 1;\n    bf = -1;\n  } else if (s === 2) {\n    // 插入 3，节点 1 BF=-2（红色）\n    nodes = [\n      {x:200, y:40, val:1, bf:-2, highlight:true},\n      {x:280, y:100, val:2, bf:-1},\n      {x:340, y:160, val:3, bf:0}\n    ];\n    edges = [\n      {x1:200, y1:60, x2:280, y2:100},\n      {x1:280, y1:120, x2:340, y2:160}\n    ];\n    rootVal = 1;\n    bf = -2;\n    highlightNode = 1;\n  } else if (s === 3) {\n    // 左旋后，根为 2，左 1 右 3，所有 BF=0\n    nodes = [\n      {x:200, y:60, val:2, bf:0},\n      {x:120, y:120, val:1, bf:0},\n      {x:280, y:120, val:3, bf:0}\n    ];\n    edges = [\n      {x1:200, y1:80, x2:120, y2:120},\n      {x1:200, y1:80, x2:280, y2:120}\n    ];\n    rootVal = 2;\n    bf = 0;\n  }\n\n  // 画边\n  for (const e of edges) {\n    const line = document.createElementNS(ns, 'line');\n    line.setAttribute('x1', e.x1);\n    line.setAttribute('y1', e.y1);\n    line.setAttribute('x2', e.x2);\n    line.setAttribute('y2', e.y2);\n    line.setAttribute('stroke', 'var(--line, rgba(90,78,128,.3))');\n    line.setAttribute('stroke-width', '2');\n    svg.appendChild(line);\n  }\n\n  // 画节点\n  for (const n of nodes) {\n    const g = document.createElementNS(ns, 'g');\n    const circle = document.createElementNS(ns, 'circle');\n    circle.setAttribute('cx', n.x);\n    circle.setAttribute('cy', n.y);\n    circle.setAttribute('r', '22');\n    let fill = 'var(--bg2)';\n    let stroke = 'var(--line, rgba(90,78,128,.3))';\n    if (n.highlight) {\n      fill = 'var(--accent)';\n      stroke = 'var(--accent)';\n      circle.setAttribute('stroke-width', '3');\n      circle.classList.add('pulse-ring');\n    }\n    circle.setAttribute('fill', fill);\n    circle.setAttribute('stroke', stroke);\n    circle.setAttribute('stroke-width', '2');\n    g.appendChild(circle);\n\n    const text = document.createElementNS(ns, 'text');\n    text.setAttribute('x', n.x);\n    text.setAttribute('y', n.y + 5);\n    text.setAttribute('text-anchor', 'middle');\n    text.setAttribute('font-size', '16');\n    text.setAttribute('font-weight', '500');\n    text.setAttribute('fill', 'var(--ink)');\n    text.textContent = n.val;\n    g.appendChild(text);\n\n    // 平衡因子标注\n    const bfText = document.createElementNS(ns, 'text');\n    bfText.setAttribute('x', n.x + 30);\n    bfText.setAttribute('y', n.y - 8);\n    bfText.setAttribute('font-size', '12');\n    bfText.setAttribute('fill', n.highlight ? 'var(--accent)' : 'var(--text2)');\n    bfText.setAttribute('font-weight', n.highlight ? '600' : '400');\n    bfText.textContent = 'BF=' + n.bf;\n    g.appendChild(bfText);\n\n    svg.appendChild(g);\n  }\n\n  // 更新读数\n  stepDisplay.textContent = s;\n  rootDisplay.textContent = rootVal;\n  bfDisplay.textContent = bf;\n  if (bf === -2) {\n    bfDisplay.style.color = 'var(--accent)';\n    bfDisplay.style.fontWeight = '600';\n  } else {\n    bfDisplay.style.color = 'var(--ink)';\n    bfDisplay.style.fontWeight = '500';\n  }\n}\n\nfunction nextStep() {\n  if (step < 3) {\n    step++;\n    drawTree(step);\n  }\n  stepBtn.disabled = step >= 3;\n}\n\nfunction resetStep() {\n  step = 0;\n  drawTree(step);\n  stepBtn.disabled = false;\n}\n\n// 初始绘制\ndrawTree(0);\n</script>",
+          "spec": {
+            "core_insight": "学生能识别 RR 不平衡模式，并描述左旋的步骤和结果",
+            "render_medium": "svg",
+            "render_medium_reason": "由规划阶段的证据形态确定",
+            "aesthetic_direction": "host-calm",
+            "direction_reason": "LectureDoc host palette; preserve lab-dark only in layout, motion, and signature detail",
+            "palette": [
+              "var(--bg)",
+              "var(--bg2)",
+              "var(--ink)",
+              "var(--text2)",
+              "var(--accent)",
+              "var(--line)"
+            ],
+            "signature_detail": "失衡节点用红色脉冲光环标记",
+            "layout_pattern": "stage+readout-row",
+            "layout_skeleton": "title / compact controls / full-width stage / readout row",
+            "state_model": [
+              {
+                "name": "step",
+                "type": "int",
+                "range_or_values": "0..3",
+                "initial": 0
+              }
+            ],
+            "interactions": [
+              {
+                "trigger": "单步按钮",
+                "effect": "推进一步并调用 update()"
+              }
+            ],
+            "render_contract": "step 递增时，根据 step 值绘制对应状态的树",
+            "update": "step 递增时，根据 step 值绘制对应状态的树",
+            "initial_paint": "step=0，仅根节点 1",
+            "visible_encodings": [
+              {
+                "quantity": "当前步骤的树结构",
+                "mark": "节点+连线",
+                "where": "主舞台"
+              },
+              {
+                "quantity": "失衡节点的平衡因子",
+                "mark": "红色高亮",
+                "where": "节点旁"
+              }
+            ],
+            "comparison_states": [],
+            "interaction_loop": {
+              "action": "单步按钮",
+              "model_update": "step 递增时，根据 step 值绘制对应状态的树",
+              "visible_change": "当前步骤的树结构; 失衡节点的平衡因子",
+              "history": "不保留前态，每次显示当前状态",
+              "reset": "step 置 0"
+            },
+            "math_model": {
+              "formula": "none",
+              "screen_mapping": "not applicable",
+              "invariants": []
+            },
+            "verification_cases": [
+              {
+                "input": "step=0",
+                "expected": "仅根节点 1"
+              },
+              {
+                "input": "step=1",
+                "expected": "插入 2，节点 1 BF=-1"
+              },
+              {
+                "input": "step=2",
+                "expected": "插入 3，节点 1 BF=-2（红色）"
+              },
+              {
+                "input": "step=3",
+                "expected": "左旋后，根为 2，左 1 右 3，所有 BF=0"
+              }
+            ],
+            "profile": "state",
+            "source_aesthetic_direction": "lab-dark"
+          },
+          "id": "s4b0"
+        }
+      ],
+      "layout": {
+        "kind": "full"
+      }
+    },
+    {
+      "id": "lr-rl-rotations",
+      "kind": "content",
+      "headline": "LR 与 RL：两次旋转解决",
+      "lead": "插入 3,1,2：节点 3 的平衡因子为 2，但插入点在左子树的右子树——先左旋左子树，再右旋失衡节点。",
+      "notes": "请先核对树结构：节点3的平衡因子为2，左子节点1的平衡因子为-1，插入点2在1的右子树，这确实是LR模式。注意图中所有子树T1、T2、T3的高度均为0，这是示意数据，不代表实际高度。关键误区是‘所有不平衡都可以一次旋转解决’——这里必须分两步：先对节点1的左子树做左旋，再对节点3做右旋。与上一页RR单旋对比，强调当插入点在‘左子树的右子树’或‘右子树的左子树’时，单旋无法恢复平衡，必须用双旋转。",
+      "blocks": [
+        {
+          "type": "graph",
+          "graphType": "tree",
+          "orientation": "vertical",
+          "nodes": [
+            {
+              "id": "3",
+              "title": "3",
+              "sub": "bf=2",
+              "state": "q",
+              "shape": "round"
+            },
+            {
+              "id": "1",
+              "title": "1",
+              "sub": "bf=-1",
+              "state": "q",
+              "shape": "round"
+            },
+            {
+              "id": "2",
+              "title": "2",
+              "sub": "bf=0",
+              "state": "on",
+              "shape": "round"
+            },
+            {
+              "id": "T1",
+              "title": "T1",
+              "sub": "h=0",
+              "shape": "box"
+            },
+            {
+              "id": "T2",
+              "title": "T2",
+              "sub": "h=0",
+              "shape": "box"
+            },
+            {
+              "id": "T3",
+              "title": "T3",
+              "sub": "h=0",
+              "shape": "box"
+            }
+          ],
+          "edges": [
+            {
+              "from": "3",
+              "to": "1",
+              "label": "左",
+              "style": "solid"
+            },
+            {
+              "from": "1",
+              "to": "2",
+              "label": "右",
+              "style": "solid"
+            },
+            {
+              "from": "1",
+              "to": "T1",
+              "label": "左",
+              "style": "solid"
+            },
+            {
+              "from": "2",
+              "to": "T2",
+              "label": "左",
+              "style": "solid"
+            },
+            {
+              "from": "2",
+              "to": "T3",
+              "label": "右",
+              "style": "solid"
+            }
+          ],
+          "caption": "插入 2 后，节点 3 失衡（bf=2），插入点在左子树的右子树，构成 LR 模式",
+          "id": "s5b0"
+        }
+      ],
+      "layout": {
+        "kind": "full"
+      }
+    },
+    {
+      "id": "insert-algorithm",
+      "kind": "content",
+      "headline": "插入算法：递归插入 + 回溯调整",
+      "lead": "插入 5,6,3,4,1,2 到空树，观察每一步的递归回溯与旋转。",
+      "notes": "本页通过插入序列 5,6,3,4,1,2 的逐步演示，让学生直观看到递归插入后回溯调整的全过程。注意纠正一个常见误区：插入后并非只检查父节点，而是从插入点向上回溯，沿途更新每个祖先节点的高度并检查平衡因子，直到根节点或遇到第一个失衡节点。以 step=6 插入 2 为例，节点 1 的平衡因子变为 1，节点 3 变为 -2，触发 LR 旋转，这正是回溯检查到祖先节点才发现失衡的典型场景。上一页我们刚学了 LR 和 RR 两种双旋转，本页的 step=6 就是 LR 旋转的实际应用，下一页将分析 AVL 树高度与斐波那契数列的关系。",
+      "blocks": [
+        {
+          "type": "sim",
+          "engine": "widget",
+          "html": "<style>\n  * { margin: 0; padding: 0; box-sizing: border-box; }\n  .root { width:100%; height:100%; min-width:0; min-height:0; display:flex; flex-direction:column; font-family:var(--font-sans, system-ui, sans-serif); background:var(--bg); color:var(--ink); }\n  .ctrl-row { display:flex; align-items:center; gap:12px; padding:8px 12px; flex-shrink:0; border-bottom:1px solid var(--line); }\n  .ctrl-row button { padding:6px 16px; border:1px solid var(--line); border-radius:6px; background:var(--bg2); color:var(--ink); font-size:13px; cursor:pointer; transition:background .12s, transform .12s; }\n  .ctrl-row button:hover { background:var(--accent); color:var(--bg); }\n  .ctrl-row button:active { transform:scale(.97); }\n  .ctrl-row .step-label { font-size:13px; color:var(--text2); margin-left:auto; font-variant-numeric:tabular-nums; }\n  .stage { flex:1; display:flex; align-items:center; justify-content:center; min-height:0; padding:8px; }\n  .stage svg { width:100%; height:100%; max-height:420px; display:block; }\n  .readout { display:flex; gap:16px; padding:6px 12px; border-top:1px solid var(--line); font-size:12px; color:var(--text2); flex-shrink:0; flex-wrap:wrap; }\n  .readout span { white-space:nowrap; }\n  .readout .hl { color:var(--accent); font-weight:500; }\n  .node-circle { transition:fill .2s, stroke .2s; }\n  .node-text { font-size:13px; font-weight:500; font-family:var(--font-mono, monospace); }\n  .bf-text { font-size:11px; font-family:var(--font-mono, monospace); }\n  .edge-line { stroke:var(--line); stroke-width:1.5; }\n</style>\n<div class=\"root\">\n  <div class=\"ctrl-row\">\n    <button id=\"prevBtn\" disabled>← 上一步</button>\n    <button id=\"nextBtn\">下一步 →</button>\n    <button id=\"resetBtn\">重置</button>\n    <span class=\"step-label\" id=\"stepLabel\">步骤 0 / 6</span>\n  </div>\n  <div class=\"stage\" id=\"stage\">\n    <svg viewBox=\"0 0 600 360\" id=\"treeSvg\"></svg>\n  </div>\n  <div class=\"readout\" id=\"readout\">\n    <span>插入序列: <span class=\"hl\">5, 6, 3, 4, 1, 2</span></span>\n    <span id=\"actionMsg\">空树</span>\n  </div>\n</div>\n<script>\n  (function(){\n    const svg = document.getElementById('treeSvg');\n    const stage = document.getElementById('stage');\n    const stepLabel = document.getElementById('stepLabel');\n    const actionMsg = document.getElementById('actionMsg');\n    const prevBtn = document.getElementById('prevBtn');\n    const nextBtn = document.getElementById('nextBtn');\n    const resetBtn = document.getElementById('resetBtn');\n\n    // ---------- math_model: AVL tree states ----------\n    // Each state: { nodes: [{id, val, x, y, bf, highlight, rotateAxis}], edges: [{from, to}] }\n    function buildStates() {\n      const states = [];\n      // step 0: empty\n      states.push({ nodes: [], edges: [], action: '空树' });\n      // step 1: insert 5\n      states.push({\n        nodes: [{id:0, val:5, x:300, y:60, bf:0, highlight:'new', rotateAxis:false}],\n        edges: [],\n        action: '插入 5，根节点'\n      });\n      // step 2: insert 6\n      states.push({\n        nodes: [\n          {id:0, val:5, x:300, y:60, bf:-1, highlight:'', rotateAxis:false},\n          {id:1, val:6, x:420, y:160, bf:0, highlight:'new', rotateAxis:false}\n        ],\n        edges: [{from:0, to:1}],\n        action: '插入 6，节点 5 BF=-1'\n      });\n      // step 3: insert 3\n      states.push({\n        nodes: [\n          {id:0, val:5, x:300, y:60, bf:0, highlight:'', rotateAxis:false},\n          {id:1, val:6, x:420, y:160, bf:0, highlight:'', rotateAxis:false},\n          {id:2, val:3, x:180, y:160, bf:0, highlight:'new', rotateAxis:false}\n        ],\n        edges: [{from:0, to:1}, {from:0, to:2}],\n        action: '插入 3，节点 5 BF=0'\n      });\n      // step 4: insert 4\n      states.push({\n        nodes: [\n          {id:0, val:5, x:300, y:60, bf:-1, highlight:'', rotateAxis:false},\n          {id:1, val:6, x:420, y:160, bf:0, highlight:'', rotateAxis:false},\n          {id:2, val:3, x:180, y:160, bf:-1, highlight:'', rotateAxis:false},\n          {id:3, val:4, x:240, y:260, bf:0, highlight:'new', rotateAxis:false}\n        ],\n        edges: [{from:0, to:1}, {from:0, to:2}, {from:2, to:3}],\n        action: '插入 4，节点 3 BF=-1，节点 5 BF=-1'\n      });\n      // step 5: insert 1\n      states.push({\n        nodes: [\n          {id:0, val:5, x:300, y:60, bf:-1, highlight:'', rotateAxis:false},\n          {id:1, val:6, x:420, y:160, bf:0, highlight:'', rotateAxis:false},\n          {id:2, val:3, x:180, y:160, bf:0, highlight:'', rotateAxis:false},\n          {id:3, val:4, x:240, y:260, bf:0, highlight:'', rotateAxis:false},\n          {id:4, val:1, x:120, y:260, bf:0, highlight:'new', rotateAxis:false}\n        ],\n        edges: [{from:0, to:1}, {from:0, to:2}, {from:2, to:3}, {from:2, to:4}],\n        action: '插入 1，节点 3 BF=0，节点 5 BF=-1'\n      });\n      // step 6: insert 2 → LR rotation\n      states.push({\n        nodes: [\n          {id:0, val:4, x:300, y:60, bf:0, highlight:'', rotateAxis:true},\n          {id:1, val:6, x:420, y:160, bf:0, highlight:'', rotateAxis:false},\n          {id:2, val:3, x:180, y:160, bf:0, highlight:'', rotateAxis:false},\n          {id:3, val:5, x:360, y:160, bf:0, highlight:'', rotateAxis:false},\n          {id:4, val:1, x:120, y:260, bf:0, highlight:'', rotateAxis:false},\n          {id:5, val:2, x:240, y:260, bf:0, highlight:'new', rotateAxis:false}\n        ],\n        edges: [{from:0, to:1}, {from:0, to:2}, {from:1, to:3}, {from:2, to:4}, {from:2, to:5}],\n        action: '插入 2 → LR 旋转，树平衡'\n      });\n      return states;\n    }\n    const states = buildStates();\n\n    // verification\n    (function verify(){\n      console.assert(states.length === 7, 'should have 7 states');\n      console.assert(states[0].nodes.length === 0, 'step0 empty');\n      console.assert(states[1].nodes.length === 1 && states[1].nodes[0].val === 5, 'step1 root 5');\n      console.assert(states[6].nodes.length === 6, 'step6 6 nodes');\n      console.assert(states[6].nodes[0].val === 4, 'step6 root 4 after rotation');\n    })();\n\n    // ---------- render ----------\n    let step = 0;\n\n    function update() {\n      const s = states[step];\n      // clear\n      svg.innerHTML = '';\n      // edges\n      s.edges.forEach(e => {\n        const fromNode = s.nodes.find(n => n.id === e.from);\n        const toNode = s.nodes.find(n => n.id === e.to);\n        if (!fromNode || !toNode) return;\n        const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');\n        line.setAttribute('x1', fromNode.x);\n        line.setAttribute('y1', fromNode.y + 20);\n        line.setAttribute('x2', toNode.x);\n        line.setAttribute('y2', toNode.y - 20);\n        line.setAttribute('class', 'edge-line');\n        svg.appendChild(line);\n      });\n      // nodes\n      s.nodes.forEach(n => {\n        const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');\n        const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');\n        circle.setAttribute('cx', n.x);\n        circle.setAttribute('cy', n.y);\n        circle.setAttribute('r', 20);\n        circle.setAttribute('class', 'node-circle');\n        let fill = 'var(--bg2)';\n        let stroke = 'var(--line)';\n        let strokeWidth = 1.5;\n        if (n.highlight === 'new') {\n          fill = 'var(--accent)';\n          stroke = 'var(--accent)';\n          strokeWidth = 2.5;\n        }\n        if (n.rotateAxis) {\n          stroke = 'var(--accent)';\n          strokeWidth = 3;\n        }\n        circle.setAttribute('fill', fill);\n        circle.setAttribute('stroke', stroke);\n        circle.setAttribute('stroke-width', strokeWidth);\n        g.appendChild(circle);\n        // value text\n        const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');\n        text.setAttribute('x', n.x);\n        text.setAttribute('y', n.y + 4);\n        text.setAttribute('text-anchor', 'middle');\n        text.setAttribute('class', 'node-text');\n        text.setAttribute('fill', n.highlight === 'new' ? 'var(--bg)' : 'var(--ink)');\n        text.textContent = n.val;\n        g.appendChild(text);\n        // bf label\n        const bfText = document.createElementNS('http://www.w3.org/2000/svg', 'text');\n        bfText.setAttribute('x', n.x + 26);\n        bfText.setAttribute('y', n.y - 6);\n        bfText.setAttribute('class', 'bf-text');\n        bfText.setAttribute('fill', n.bf === 2 || n.bf === -2 ? 'var(--accent)' : 'var(--text2)');\n        bfText.textContent = 'BF=' + n.bf;\n        g.appendChild(bfText);\n        svg.appendChild(g);\n      });\n      // step label\n      stepLabel.textContent = `步骤 ${step} / 6`;\n      actionMsg.textContent = s.action;\n      prevBtn.disabled = step === 0;\n      nextBtn.disabled = step === 6;\n    }\n\n    // ---------- interactions ----------\n    function goStep(delta) {\n      const newStep = step + delta;\n      if (newStep < 0 || newStep > 6) return;\n      step = newStep;\n      update();\n    }\n    function reset() { step = 0; update(); }\n\n    nextBtn.addEventListener('click', () => goStep(1));\n    prevBtn.addEventListener('click', () => goStep(-1));\n    resetBtn.addEventListener('click', reset);\n\n    // initial paint\n    update();\n  })();\n</script>",
+          "spec": {
+            "core_insight": "学生能描述 AVL 树插入算法的步骤：递归插入、更新高度、检查平衡、旋转调整",
+            "render_medium": "svg",
+            "render_medium_reason": "由规划阶段的证据形态确定",
+            "aesthetic_direction": "host-calm",
+            "direction_reason": "LectureDoc host palette; preserve lab-dark only in layout, motion, and signature detail",
+            "palette": [
+              "var(--bg)",
+              "var(--bg2)",
+              "var(--ink)",
+              "var(--text2)",
+              "var(--accent)",
+              "var(--line)"
+            ],
+            "signature_detail": "新插入节点用蓝色高亮，旋转轴用金色高亮",
+            "layout_pattern": "stage+readout-row",
+            "layout_skeleton": "title / compact controls / full-width stage / readout row",
+            "state_model": [
+              {
+                "name": "step",
+                "type": "int",
+                "range_or_values": "0..6",
+                "initial": 0
+              }
+            ],
+            "interactions": [
+              {
+                "trigger": "单步按钮",
+                "effect": "推进一步并调用 update()"
+              }
+            ],
+            "render_contract": "step 递增时，根据 step 值绘制对应状态的树",
+            "update": "step 递增时，根据 step 值绘制对应状态的树",
+            "initial_paint": "step=0，空树",
+            "visible_encodings": [
+              {
+                "quantity": "当前步骤的树结构",
+                "mark": "节点+连线",
+                "where": "主舞台"
+              },
+              {
+                "quantity": "每个节点的平衡因子",
+                "mark": "数字标注",
+                "where": "节点旁"
+              },
+              {
+                "quantity": "失衡节点",
+                "mark": "红色高亮",
+                "where": "节点旁"
+              }
+            ],
+            "comparison_states": [],
+            "interaction_loop": {
+              "action": "单步按钮",
+              "model_update": "step 递增时，根据 step 值绘制对应状态的树",
+              "visible_change": "当前步骤的树结构; 每个节点的平衡因子; 失衡节点",
+              "history": "不保留前态，每次显示当前状态",
+              "reset": "step 置 0"
+            },
+            "math_model": {
+              "formula": "none",
+              "screen_mapping": "not applicable",
+              "invariants": []
+            },
+            "verification_cases": [
+              {
+                "input": "step=0",
+                "expected": "空树"
+              },
+              {
+                "input": "step=1",
+                "expected": "插入 5，根节点 5"
+              },
+              {
+                "input": "step=2",
+                "expected": "插入 6，节点 5 BF=-1"
+              },
+              {
+                "input": "step=3",
+                "expected": "插入 3，节点 5 BF=0"
+              },
+              {
+                "input": "step=4",
+                "expected": "插入 4，节点 3 BF=-1，节点 5 BF=-1"
+              },
+              {
+                "input": "step=5",
+                "expected": "插入 1，节点 3 BF=0，节点 5 BF=-1"
+              },
+              {
+                "input": "step=6",
+                "expected": "插入 2，节点 1 BF=1，节点 3 BF=-2（LR 旋转），最终树平衡"
+              }
+            ],
+            "profile": "state",
+            "source_aesthetic_direction": "lab-dark"
+          },
+          "id": "s6b0"
+        }
+      ],
+      "layout": {
+        "kind": "full"
+      }
+    },
+    {
+      "id": "height-analysis",
+      "kind": "content",
+      "headline": "AVL 树的高度：斐波那契关系",
+      "lead": "设 N(h) 为高度 h 的 AVL 树的最少节点数，则 N(h) = N(h-1) + N(h-2) + 1，与斐波那契数列同构。",
+      "notes": "请同学们看这个模拟器。我们设 N(h) 为高度 h 的 AVL 树的最少节点数，递推式是 N(h)=N(h-1)+N(h-2)+1，初值 N(0)=1、N(1)=2。现在默认 h=5，模型算出 N(5)=12。你可以拖动滑块改变 h，观察 N(h) 的增长——它比斐波那契数列略快，因为每步多加了 1。由此可以推导出 N(h) ≥ Fib(h+3)-1，进而得到 n 个节点的 AVL 树高度上界约为 1.44 log₂(n)。注意，这个上界比完全二叉树的 log₂(n) 要宽松，所以 AVL 树并非完全平衡，只是近似平衡。上一页我们刚演示了插入后的回溯调整，下一页将看到删除操作如何破坏平衡并需要更复杂的恢复。",
+      "blocks": [
+        {
+          "type": "sim",
+          "engine": "dynamics1d",
+          "params": [
+            {
+              "name": "h",
+              "label": "高度 h =",
+              "min": 0,
+              "max": 10,
+              "step": 1,
+              "default": 5,
+              "decimals": 0
+            }
+          ],
+          "model": {
+            "stateVar": "N",
+            "init": 1,
+            "steps": 10,
+            "update": "N_prev2 + N_prev1 + 1",
+            "consts": {
+              "N_prev1": 1,
+              "N_prev2": 0
+            }
+          },
+          "regimes": [
+            {
+              "when": "h>=0",
+              "label": "最少节点数 N(h)",
+              "desc": "高度 h 的 AVL 树最少节点数，递推 N(h)=N(h-1)+N(h-2)+1，初值 N(0)=1, N(1)=2",
+              "tone": "accent"
+            }
+          ],
+          "chart": {
+            "xLabel": "高度 h",
+            "yLabel": "最少节点数 N(h)",
+            "targetLine": {
+              "value": 1.44,
+              "label": "1.44 log₂(n) 上界"
+            }
+          },
+          "id": "s7b0"
+        }
+      ],
+      "layout": {
+        "kind": "full"
+      }
+    },
+    {
+      "id": "delete-overview",
+      "kind": "content",
+      "headline": "删除操作：更复杂的平衡恢复",
+      "lead": "删除节点后，可能需要多次回溯旋转——与插入不同，一次删除可能引发多级不平衡。",
+      "notes": "这一页的核心是让学生理解删除操作与插入操作的关键区别：删除后可能需要多次旋转才能恢复平衡。请先引导学生观察互动组件中的初始平衡树（step=0），然后点击单步按钮进入 step=1，演示删除一个叶子节点后部分节点失衡。注意指出，此时失衡节点可能不止一个，且平衡因子变化与插入时不同。进入 step=2，展示第一次旋转后，虽然局部恢复平衡，但更高层的祖先节点仍然失衡，需要第二次旋转（step=3）才能让整树恢复平衡。务必强调，这与插入操作“最多一次旋转”的常见印象不同，从而纠正讲义中提到的误区——删除后可能需要沿路径多次回溯旋转。与上一页（斐波那契关系）衔接：删除的复杂性正是 AVL 树高度保持 O(log n) 的代价之一；下一页将证明这种代价换来的性能保证。",
+      "blocks": [
+        {
+          "type": "sim",
+          "engine": "widget",
+          "html": "<style>\n  * { margin: 0; padding: 0; box-sizing: border-box; }\n  .root { width:100%; height:100%; min-width:0; min-height:0; display:flex; flex-direction:column; font-family:var(--font-sans, ui-sans-serif,system-ui,sans-serif); background:var(--bg); color:var(--ink); }\n  .ctrl-row { display:flex; align-items:center; gap:12px; padding:8px 12px; flex-shrink:0; border-bottom:1px solid var(--line); }\n  .ctrl-row button { padding:6px 16px; border:1px solid var(--line); border-radius:6px; background:var(--bg2); color:var(--ink); font-size:13px; cursor:pointer; transition:background .12s, transform .12s; }\n  .ctrl-row button:hover { background:var(--accent); color:var(--bg); }\n  .ctrl-row button:active { transform:scale(.97); }\n  .ctrl-row .step-label { font-size:12px; color:var(--text2); font-variant-numeric:tabular-nums; }\n  .stage { flex:1; display:flex; align-items:center; justify-content:center; padding:8px; min-height:0; }\n  .stage svg { width:100%; max-width:680px; height:auto; display:block; }\n  .readout { display:flex; gap:16px; padding:6px 12px; border-top:1px solid var(--line); flex-shrink:0; font-size:12px; color:var(--text2); }\n  .readout span { white-space:nowrap; }\n  .readout .hl { color:var(--accent); font-weight:500; }\n  .node circle { stroke-width:2; }\n  .node text { font-size:13px; text-anchor:middle; dominant-baseline:central; }\n  .bf { font-size:11px; text-anchor:middle; dominant-baseline:central; }\n  .edge { stroke:var(--line); stroke-width:1.5; fill:none; }\n  .deleted { stroke-dasharray:4 3; stroke:var(--text2); }\n  .unbalanced .bf { fill:var(--accent); font-weight:600; }\n  .balanced .bf { fill:var(--text2); }\n</style>\n<div class=\"root\">\n  <div class=\"ctrl-row\">\n    <button id=\"prevBtn\" disabled>← 上一步</button>\n    <button id=\"nextBtn\">下一步 →</button>\n    <span class=\"step-label\" id=\"stepLabel\">步骤 0 / 3</span>\n    <button id=\"resetBtn\">重置</button>\n  </div>\n  <div class=\"stage\" id=\"stage\"></div>\n  <div class=\"readout\" id=\"readout\">\n    <span id=\"statusMsg\">初始平衡树</span>\n    <span id=\"rotateMsg\"></span>\n  </div>\n</div>\n<script>\n  (function(){\n    const stepData = [\n      {\n        label: \"初始平衡树\",\n        nodes: [\n          {id:\"n50\", x:340, y:40, val:50, bf:0, cls:\"balanced\"},\n          {id:\"n30\", x:200, y:120, val:30, bf:0, cls:\"balanced\"},\n          {id:\"n70\", x:480, y:120, val:70, bf:1, cls:\"balanced\"},\n          {id:\"n20\", x:100, y:200, val:20, bf:0, cls:\"balanced\"},\n          {id:\"n40\", x:300, y:200, val:40, bf:0, cls:\"balanced\"},\n          {id:\"n60\", x:420, y:200, val:60, bf:0, cls:\"balanced\"},\n          {id:\"n80\", x:560, y:200, val:80, bf:0, cls:\"balanced\"},\n          {id:\"n10\", x:40, y:280, val:10, bf:0, cls:\"balanced\", deleted:false},\n          {id:\"n25\", x:160, y:280, val:25, bf:0, cls:\"balanced\", deleted:false}\n        ],\n        edges: [\n          [\"n50\",\"n30\"],[\"n50\",\"n70\"],\n          [\"n30\",\"n20\"],[\"n30\",\"n40\"],\n          [\"n70\",\"n60\"],[\"n70\",\"n80\"],\n          [\"n20\",\"n10\"],[\"n20\",\"n25\"]\n        ],\n        status:\"初始平衡树\",\n        rotate:\"\"\n      },\n      {\n        label: \"删除节点 10\",\n        nodes: [\n          {id:\"n50\", x:340, y:40, val:50, bf:1, cls:\"balanced\"},\n          {id:\"n30\", x:200, y:120, val:30, bf:1, cls:\"balanced\"},\n          {id:\"n70\", x:480, y:120, val:70, bf:1, cls:\"balanced\"},\n          {id:\"n20\", x:100, y:200, val:20, bf:-1, cls:\"unbalanced\"},\n          {id:\"n40\", x:300, y:200, val:40, bf:0, cls:\"balanced\"},\n          {id:\"n60\", x:420, y:200, val:60, bf:0, cls:\"balanced\"},\n          {id:\"n80\", x:560, y:200, val:80, bf:0, cls:\"balanced\"},\n          {id:\"n10\", x:40, y:280, val:10, bf:0, cls:\"balanced\", deleted:true},\n          {id:\"n25\", x:160, y:280, val:25, bf:0, cls:\"balanced\", deleted:false}\n        ],\n        edges: [\n          [\"n50\",\"n30\"],[\"n50\",\"n70\"],\n          [\"n30\",\"n20\"],[\"n30\",\"n40\"],\n          [\"n70\",\"n60\"],[\"n70\",\"n80\"],\n          [\"n20\",\"n10\"],[\"n20\",\"n25\"]\n        ],\n        status:\"删除节点 10 后，节点 20 失衡 (BF=-1)\",\n        rotate:\"需要旋转\"\n      },\n      {\n        label: \"第一次旋转 (右旋 20)\",\n        nodes: [\n          {id:\"n50\", x:340, y:40, val:50, bf:1, cls:\"balanced\"},\n          {id:\"n30\", x:200, y:120, val:30, bf:1, cls:\"balanced\"},\n          {id:\"n70\", x:480, y:120, val:70, bf:1, cls:\"balanced\"},\n          {id:\"n25\", x:100, y:200, val:25, bf:0, cls:\"balanced\"},\n          {id:\"n40\", x:300, y:200, val:40, bf:0, cls:\"balanced\"},\n          {id:\"n60\", x:420, y:200, val:60, bf:0, cls:\"balanced\"},\n          {id:\"n80\", x:560, y:200, val:80, bf:0, cls:\"balanced\"},\n          {id:\"n20\", x:40, y:280, val:20, bf:0, cls:\"balanced\", deleted:false}\n        ],\n        edges: [\n          [\"n50\",\"n30\"],[\"n50\",\"n70\"],\n          [\"n30\",\"n25\"],[\"n30\",\"n40\"],\n          [\"n70\",\"n60\"],[\"n70\",\"n80\"],\n          [\"n25\",\"n20\"]\n        ],\n        status:\"右旋节点 20 后，节点 30 失衡 (BF=2)\",\n        rotate:\"节点 30 仍失衡，需要第二次旋转\"\n      },\n      {\n        label: \"第二次旋转 (左旋 30)\",\n        nodes: [\n          {id:\"n50\", x:340, y:40, val:50, bf:0, cls:\"balanced\"},\n          {id:\"n40\", x:200, y:120, val:40, bf:0, cls:\"balanced\"},\n          {id:\"n70\", x:480, y:120, val:70, bf:0, cls:\"balanced\"},\n          {id:\"n25\", x:100, y:200, val:25, bf:0, cls:\"balanced\"},\n          {id:\"n30\", x:300, y:200, val:30, bf:0, cls:\"balanced\"},\n          {id:\"n60\", x:420, y:200, val:60, bf:0, cls:\"balanced\"},\n          {id:\"n80\", x:560, y:200, val:80, bf:0, cls:\"balanced\"},\n          {id:\"n20\", x:40, y:280, val:20, bf:0, cls:\"balanced\", deleted:false}\n        ],\n        edges: [\n          [\"n50\",\"n40\"],[\"n50\",\"n70\"],\n          [\"n40\",\"n25\"],[\"n40\",\"n30\"],\n          [\"n70\",\"n60\"],[\"n70\",\"n80\"],\n          [\"n25\",\"n20\"]\n        ],\n        status:\"左旋节点 30 后，整树恢复平衡\",\n        rotate:\"全部平衡\"\n      }\n    ];\n\n    let step = 0;\n    const stage = document.getElementById('stage');\n    const stepLabel = document.getElementById('stepLabel');\n    const statusMsg = document.getElementById('statusMsg');\n    const rotateMsg = document.getElementById('rotateMsg');\n    const prevBtn = document.getElementById('prevBtn');\n    const nextBtn = document.getElementById('nextBtn');\n    const resetBtn = document.getElementById('resetBtn');\n\n    function render(s) {\n      const d = stepData[s];\n      const W = 680, H = 360;\n      let svg = `<svg viewBox=\"0 0 ${W} ${H}\" xmlns=\"http://www.w3.org/2000/svg\">`;\n      // edges\n      d.edges.forEach(e => {\n        const p1 = d.nodes.find(n => n.id===e[0]);\n        const p2 = d.nodes.find(n => n.id===e[1]);\n        if(p1 && p2) {\n          svg += `<line class=\"edge\" x1=\"${p1.x}\" y1=\"${p1.y}\" x2=\"${p2.x}\" y2=\"${p2.y}\"/>`;\n        }\n      });\n      // nodes\n      d.nodes.forEach(n => {\n        const cls = n.deleted ? 'deleted' : '';\n        const fill = n.deleted ? 'var(--bg2)' : 'var(--bg)';\n        const stroke = n.deleted ? 'var(--text2)' : 'var(--accent)';\n        const bfCls = n.cls === 'unbalanced' ? 'unbalanced' : 'balanced';\n        svg += `<g class=\"node ${bfCls}\">`;\n        svg += `<circle cx=\"${n.x}\" cy=\"${n.y}\" r=\"22\" fill=\"${fill}\" stroke=\"${stroke}\" class=\"${cls}\"/>`;\n        svg += `<text x=\"${n.x}\" y=\"${n.y}\" fill=\"var(--ink)\">${n.val}</text>`;\n        svg += `<text class=\"bf\" x=\"${n.x+30}\" y=\"${n.y-8}\" fill=\"var(--text2)\">BF=${n.bf}</text>`;\n        svg += `</g>`;\n      });\n      svg += '</svg>';\n      stage.innerHTML = svg;\n      stepLabel.textContent = `步骤 ${s} / 3`;\n      statusMsg.textContent = d.status;\n      rotateMsg.textContent = d.rotate;\n      prevBtn.disabled = (s === 0);\n      nextBtn.disabled = (s === 3);\n    }\n\n    function update() {\n      render(step);\n    }\n\n    prevBtn.addEventListener('click', function(){\n      if(step > 0) { step--; update(); }\n    });\n    nextBtn.addEventListener('click', function(){\n      if(step < 3) { step++; update(); }\n    });\n    resetBtn.addEventListener('click', function(){\n      step = 0; update();\n    });\n\n    // initial paint\n    render(0);\n\n    // verification\n    console.assert(stepData.length === 4, \"应有4个步骤\");\n    stepData.forEach((d,i) => {\n      console.assert(d.nodes.length > 0, `步骤${i}应有节点`);\n      console.assert(d.edges.length > 0, `步骤${i}应有边`);\n    });\n  })();\n</script>",
+          "spec": {
+            "core_insight": "学生能说出删除操作与插入操作的主要区别：删除后可能需要多次旋转",
+            "render_medium": "svg",
+            "render_medium_reason": "由规划阶段的证据形态确定",
+            "aesthetic_direction": "host-calm",
+            "direction_reason": "LectureDoc host palette; preserve lab-dark only in layout, motion, and signature detail",
+            "palette": [
+              "var(--bg)",
+              "var(--bg2)",
+              "var(--ink)",
+              "var(--text2)",
+              "var(--accent)",
+              "var(--line)"
+            ],
+            "signature_detail": "被删除节点用灰色虚线圈标记",
+            "layout_pattern": "stage+readout-row",
+            "layout_skeleton": "title / compact controls / full-width stage / readout row",
+            "state_model": [
+              {
+                "name": "step",
+                "type": "int",
+                "range_or_values": "0..3",
+                "initial": 0
+              }
+            ],
+            "interactions": [
+              {
+                "trigger": "单步按钮",
+                "effect": "推进一步并调用 update()"
+              }
+            ],
+            "render_contract": "step 递增时，根据 step 值绘制对应状态的树",
+            "update": "step 递增时，根据 step 值绘制对应状态的树",
+            "initial_paint": "step=0，初始平衡树",
+            "visible_encodings": [
+              {
+                "quantity": "当前步骤的树结构",
+                "mark": "节点+连线",
+                "where": "主舞台"
+              },
+              {
+                "quantity": "每个节点的平衡因子",
+                "mark": "数字标注",
+                "where": "节点旁"
+              },
+              {
+                "quantity": "失衡节点",
+                "mark": "红色高亮",
+                "where": "节点旁"
+              }
+            ],
+            "comparison_states": [],
+            "interaction_loop": {
+              "action": "单步按钮",
+              "model_update": "step 递增时，根据 step 值绘制对应状态的树",
+              "visible_change": "当前步骤的树结构; 每个节点的平衡因子; 失衡节点",
+              "history": "不保留前态，每次显示当前状态",
+              "reset": "step 置 0"
+            },
+            "math_model": {
+              "formula": "none",
+              "screen_mapping": "not applicable",
+              "invariants": []
+            },
+            "verification_cases": [
+              {
+                "input": "step=0",
+                "expected": "初始平衡树"
+              },
+              {
+                "input": "step=1",
+                "expected": "删除一个叶子节点，部分节点失衡"
+              },
+              {
+                "input": "step=2",
+                "expected": "第一次旋转后，更高层节点仍失衡"
+              },
+              {
+                "input": "step=3",
+                "expected": "第二次旋转后，整树恢复平衡"
+              }
+            ],
+            "profile": "state",
+            "source_aesthetic_direction": "lab-dark"
+          },
+          "id": "s8b0"
+        }
+      ],
+      "layout": {
+        "kind": "full"
+      }
+    },
+    {
+      "id": "complexity-proof",
+      "kind": "content",
+      "headline": "复杂度证明：O(log n) 的保证",
+      "lead": "由高度上界 1.44 log₂(n) 直接得出查找、插入、删除均为 O(log n)。",
+      "notes": "首先，请确认图表中的数据是示意性的，并非精确计算值——例如当 n=100000 时，1.44 log₂(100000) 约等于 23.9，而图中标为 17，这是为了直观展示趋势而做的简化。核心证明思路是：AVL 树的高度上界约为 1.44 log₂(n)，因此任何从根到叶子的路径长度（即查找、插入、删除所经过的节点数）都是 O(log n)。插入和删除虽然需要额外的旋转来恢复平衡，但旋转次数也受限于路径长度，所以整体复杂度同样是 O(log n)。这里要特别纠正一个常见误区：插入和删除的常数确实比查找大，但它们的渐进复杂度仍然是 O(log n)，而不是 O(n) 或更高。与上一页删除操作的复杂恢复过程衔接，可以强调正是那些旋转操作保证了高度上界，从而让所有操作都维持在 O(log n)。",
+      "blocks": [
+        {
+          "type": "chart",
+          "chartType": "line",
+          "categories": [
+            "1",
+            "10",
+            "100",
+            "1000",
+            "10000",
+            "100000"
+          ],
+          "series": [
+            {
+              "name": "AVL 树",
+              "values": [
+                1,
+                4,
+                7,
+                10,
+                14,
+                17
+              ]
+            },
+            {
+              "name": "BST（最坏）",
+              "values": [
+                1,
+                10,
+                100,
+                1000,
+                10000,
+                100000
+              ]
+            }
+          ],
+          "xLabel": "节点数 n",
+          "yLabel": "比较次数",
+          "caption": "AVL 树查找比较次数 ≈ 1.44 log₂(n)，BST 最坏为 n",
+          "annotations": [
+            {
+              "kind": "point",
+              "x": "100000",
+              "y": 17,
+              "label": "AVL: 17 次",
+              "tone": "accent"
+            },
+            {
+              "kind": "point",
+              "x": "100000",
+              "y": 100000,
+              "label": "BST: 100000 次",
+              "tone": "ink"
+            }
+          ],
+          "id": "s9b0"
+        },
+        {
+          "type": "callout",
+          "label": "结论",
+          "text": "AVL 树查找、插入、删除均为 **O(log n)**，由高度上界 $1.44 \\log_2 n$ 保证。",
+          "id": "s9b1"
+        }
+      ],
+      "layout": {
+        "kind": "compose",
+        "preset": "sidenote"
+      }
+    },
+    {
+      "id": "implement-avl",
+      "kind": "content",
+      "headline": "动手实现：编写 AVL 树插入",
+      "lead": "在下方编辑器中实现 AVL 树的插入函数，包含四种旋转和回溯更新。",
+      "notes": "这一页是动手实现环节，学生需要在编辑器中补全 insert 函数。注意模板已经给出了旋转函数和高度更新函数，但学生容易犯一个典型错误：只关注指针重连而忘记在旋转后调用 update_height 更新高度。请强调旋转函数内部已经包含了高度更新，但学生自己写的插入逻辑中，在递归返回后也必须先更新当前节点高度，再检查平衡因子，最后根据四种不平衡情况调用对应的旋转。测试用例使用了 [10,20,30,40,50,25] 这个序列，它会依次触发右右、右左等旋转，最终得到一棵平衡树。运行结果会打印中序遍历、是否平衡和树高，学生可以据此验证自己的实现是否正确。上一页我们证明了 AVL 树能保证 O(log n) 的查找效率，而这一页就是让这个理论落地——只有正确实现了插入中的旋转和高度回溯，才能在实际代码中兑现那个对数性能的承诺。",
+      "blocks": [
+        {
+          "type": "runnable",
+          "languages": [
+            "python"
+          ],
+          "starter": {
+            "python": "class AVLNode:\n    def __init__(self, key):\n        self.key = key\n        self.left = None\n        self.right = None\n        self.height = 1\n\ndef get_height(node):\n    return node.height if node else 0\n\ndef update_height(node):\n    node.height = 1 + max(get_height(node.left), get_height(node.right))\n\ndef get_balance(node):\n    return get_height(node.left) - get_height(node.right) if node else 0\n\ndef rotate_right(y):\n    x = y.left\n    T2 = x.right\n    x.right = y\n    y.left = T2\n    update_height(y)\n    update_height(x)\n    return x\n\ndef rotate_left(x):\n    y = x.right\n    T2 = y.left\n    y.left = x\n    x.right = T2\n    update_height(x)\n    update_height(y)\n    return y\n\ndef insert(root, key):\n    # 请在此处实现插入逻辑：递归插入、更新高度、检查平衡、执行旋转\n    pass\n\ndef inorder(root, res):\n    if root:\n        inorder(root.left, res)\n        res.append(root.key)\n        inorder(root.right, res)\n\ndef is_balanced(root):\n    if not root:\n        return True\n    if abs(get_balance(root)) > 1:\n        return False\n    return is_balanced(root.left) and is_balanced(root.right)\n\n# 测试用例\nkeys = [10, 20, 30, 40, 50, 25]\nroot = None\nfor k in keys:\n    root = insert(root, k)\n\nresult = []\ninorder(root, result)\nprint(\"中序遍历:\", result)\nprint(\"是否平衡:\", is_balanced(root))\nprint(\"树高:\", get_height(root))"
+          },
+          "env": {
+            "kind": "custom",
+            "output": "console",
+            "resultLabel": "运行结果",
+            "pythonPreamble": "# 提供 AVL 节点类、辅助函数和测试数据，学生需完成 insert 函数"
+          },
+          "hint": "修改代码后点击 Run",
+          "consoleHint": "运行日志与测试结果显示在这里",
+          "id": "s10b0"
+        }
+      ],
+      "layout": {
+        "kind": "full"
+      }
+    },
+    {
+      "id": "history-application",
+      "kind": "content",
+      "headline": "历史与应用",
+      "lead": "1962 年由 Adelson-Velsky 和 Landis 发明，是第一个自平衡二叉搜索树。",
+      "notes": "介绍 AVL 树的发明历史和现代应用",
+      "blocks": [
+        {
+          "type": "timeline",
+          "events": [
+            {
+              "time": "1962",
+              "title": "AVL 树发明",
+              "desc": "Adelson-Velsky 和 Landis 提出首个自平衡二叉搜索树"
+            },
+            {
+              "time": "1978",
+              "title": "红黑树提出",
+              "desc": "Rudolf Bayer 发明红黑树，平衡条件更宽松"
+            },
+            {
+              "time": "1990s",
+              "title": "数据库索引应用",
+              "desc": "AVL 树用于内存中的 B+ 树变体及索引结构"
+            },
+            {
+              "time": "现代",
+              "title": "内存排序与查找",
+              "desc": "用于需要频繁查找且插入删除较少的场景"
+            }
+          ],
+          "id": "s11b0"
+        },
+        {
+          "type": "list",
+          "items": [
+            {
+              "lead": "数据库索引",
+              "text": "MySQL 的 InnoDB 引擎使用 B+ 树，但 AVL 树在内存数据库（如 Redis 的 sorted set）中用于有序集合的快速查找与范围查询。",
+              "icon": "database"
+            },
+            {
+              "lead": "内存排序",
+              "text": "在需要动态维护有序数据集的场景（如实时排行榜、内存中的字典序存储），AVL 树保证每次插入/删除后 $O(\\log n)$ 的平衡调整。",
+              "icon": "database"
+            },
+            {
+              "lead": "频繁查找场景",
+              "text": "相比红黑树，AVL 树更严格的平衡（左右子树高度差 ≤ 1）使得查找性能更优，适合读多写少的应用，如编译器符号表管理。",
+              "icon": "gauge"
+            }
+          ],
+          "id": "s11b1"
+        }
+      ],
+      "layout": {
+        "kind": "index",
+        "steps": [
+          {
+            "label": "展示 AVL 树的发展时间线",
+            "blockIds": [
+              "s11b0"
+            ]
+          },
+          {
+            "label": "列举 AVL 树的应用场景",
+            "blockIds": [
+              "s11b1"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "quiz-rotation",
+      "kind": "quiz",
+      "headline": "随堂检验：判断旋转类型",
+      "notes": "请同学们先自己动手画出插入序列的树形，再对照选项。注意：题目问的是‘最先失衡’的节点，不是最后插入的节点。插入40后，节点30的平衡因子变为+2，但仅凭正号不能直接判定为LL——必须看插入点40位于30的右子树的左子树，这才是LR型的判定链条。选项a正是常见误区：只盯平衡因子符号，忽略了插入方向。上一页我们刚讲过四种旋转的触发条件，这一题就是让你把理论用到具体序列中。下一页会继续考察最大高度计算，请保持对平衡因子符号和插入方向的双重敏感。",
+      "blocks": [
+        {
+          "type": "quiz",
+          "kind": "objective",
+          "stem": "向一棵初始为空的 AVL 树依次插入 50、30、80、20、35、90、10、25、33、40。插入 40 后，哪个节点最先失衡？需要哪种旋转？",
+          "choices": [
+            {
+              "key": "a",
+              "text": "节点 30 失衡，平衡因子 +2，需要 LL 旋转"
+            },
+            {
+              "key": "b",
+              "text": "节点 30 失衡，平衡因子 +2，需要 LR 旋转"
+            },
+            {
+              "key": "c",
+              "text": "节点 50 失衡，平衡因子 -2，需要 RR 旋转"
+            },
+            {
+              "key": "d",
+              "text": "节点 50 失衡，平衡因子 -2，需要 RL 旋转"
+            }
+          ],
+          "answer": "b",
+          "explain": "插入 40 后，节点 30 的平衡因子变为 +2（左子树高度 3，右子树高度 1），且插入点 40 位于 30 的右子树的左子树，属于 LR 型。最像的干扰项 a 只看到平衡因子符号为正就误判为 LL，忽略了插入点在右子树方向这一关键信息。",
+          "id": "bq"
+        }
+      ]
+    },
+    {
+      "id": "quiz-height",
+      "kind": "quiz",
+      "headline": "随堂检验：计算最大高度",
+      "notes": "请同学们看屏幕上的题目：一棵有7个节点的AVL树，最大可能高度是多少？注意根节点高度为0。这里的关键是理解AVL树的最小节点数递推公式：N(0)=1, N(1)=2, N(h)=N(h-1)+N(h-2)+1。计算可得N(2)=4, N(3)=7，所以高度为3时至少需要7个节点，而高度2时最多只能有4个节点。因此7个节点的最大高度是3，对应选项b。很多同学会误选a（高度2），那是把AVL树当成了完全二叉树——完全二叉树7个节点高度确实是2，但AVL树为了保持平衡允许更瘦高的结构。这个递推关系与上一页判断旋转类型时用到的平衡因子一脉相承，下一页我们会看到更极端的例子。",
+      "blocks": [
+        {
+          "type": "quiz",
+          "kind": "objective",
+          "stem": "一棵 AVL 树有 7 个节点，其最大可能高度是多少？（根节点高度为 0）",
+          "choices": [
+            {
+              "key": "a",
+              "text": "2"
+            },
+            {
+              "key": "b",
+              "text": "3"
+            },
+            {
+              "key": "c",
+              "text": "4"
+            }
+          ],
+          "answer": "b",
+          "explain": "AVL 树的最小节点数满足递推：N(0)=1, N(1)=2, N(h)=N(h-1)+N(h-2)+1。计算得 N(2)=4, N(3)=7，因此高度 3 时至少需要 7 个节点，高度 2 时最多 4 个节点，所以 7 个节点最大高度为 3。干扰项 a（高度 2）对应完全二叉树高度，是常见误解。",
+          "id": "s13b0"
+        }
+      ]
+    },
+    {
+      "id": "summary",
+      "kind": "hero",
+      "notes": "这一页是课程的总结页，也是最后一页。请先强调 AVL 树的核心机制：平衡因子只允许 -1、0、+1，一旦超出就通过四种旋转（LL、RR、LR、RL）恢复平衡，从而保证所有操作都是 O(log n)。注意，这里给出的平衡因子范围是严格定义，不要混淆为其他平衡树（如红黑树）的规则。页面上提到的 1962 年提出是历史事实，但不需要展开年份细节。装饰图只用于建立视觉张力，不承担数学证明，所以不要指着图去推导旋转过程。最后，可以点出 AVL 树是理解红黑树、B 树等更复杂平衡结构的基础，为后续课程做铺垫，但不要在本页深入讲解那些结构。",
+      "blocks": [
+        {
+          "type": "hero",
+          "title": [
+            "AVL 树：平衡因子与旋转",
+            "保证 O(log n) 的经典自平衡树"
+          ],
+          "tag": "数据结构",
+          "sub": "**平衡因子** ∈ {−1, 0, +1}，四种旋转（LL、RR、LR、RL）维持平衡，操作复杂度 **O(log n)**",
+          "facts": "1962 年由 Adelson-Velsky 和 Landis 提出，是首个自平衡二叉搜索树",
+          "hint": "理解 AVL 是理解红黑树、B 树等更复杂平衡结构的基础",
+          "id": "b_summary"
+        }
+      ]
+    }
+  ],
+  "schemaVersion": "1.0"
+}
