@@ -114,14 +114,19 @@ def preflight_page_metrics(metrics: list[dict[str, Any]]) -> DeterministicVisual
         subject = _number(metric, "mainSubjectRatio", "main_subject_ratio")
         occupied = _number(metric, "occupiedRatio", "contentAreaRatio", "occupied_ratio")
         whitespace = _number(metric, "whitespaceRatio", "whitespace_ratio")
-        if subject is not None and subject < 0.18:
+        sparse_by_design = str(metric.get("sceneKind") or metric.get("scene_kind") or "") in {
+            "hero",
+            "section",
+        }
+        if not sparse_by_design and subject is not None and subject < 0.18:
             report.issues.append(
                 VisualIssue(
                     scene_id, "composition", "页面主体视觉面积过小。", "放大主视觉并重新分配标题、正文与主体区域。"
                 )
             )
-        if (whitespace is not None and whitespace > 0.62) or (
-            occupied is not None and occupied < 0.38
+        if not sparse_by_design and (
+            (whitespace is not None and whitespace > 0.62)
+            or (occupied is not None and occupied < 0.38)
         ):
             report.issues.append(
                 VisualIssue(

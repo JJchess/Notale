@@ -600,10 +600,37 @@ def _check_scene(
     blocks = s.get("blocks") or []
     if kind == "hero" and (len(blocks) != 1 or blocks[0].get("type") != "hero"):
         r.err(f"{path}.blocks", "hero 页应恰好含一个 hero block")
+    if kind != "hero" and any(
+        isinstance(block, dict) and block.get("type") == "hero" for block in blocks
+    ):
+        r.err(f"{path}.blocks", "hero block 只能用于 hero 页；内容页应使用原生标题和证据 block")
     if kind in _KIND_REQUIRES:
         need_type, msg = _KIND_REQUIRES[kind]
         if not any(isinstance(b, dict) and b.get("type") == need_type for b in blocks):
             r.err(f"{path}.blocks", msg)
+    if kind == "statement" and isinstance(s.get("headline"), str):
+        statement = next(
+            (
+                block.get("statement")
+                for block in blocks
+                if isinstance(block, dict) and block.get("type") == "statement"
+            ),
+            None,
+        )
+        if isinstance(statement, str):
+            def normalize(value: str) -> str:
+                return re.sub(r"[^\w\u3400-\u9fff]+", "", value).lower()
+
+            headline_key = normalize(s["headline"])
+            statement_key = normalize(statement)
+            if headline_key and statement_key and (
+                headline_key == statement_key
+                or (len(headline_key) >= 6 and statement_key.startswith(headline_key))
+            ):
+                r.err(
+                    f"{path}.blocks",
+                    "statement 不得重复页标题；应给出推进论证的一句核心结论",
+                )
     _check_layout(s, path, r)
     for i, b in enumerate(blocks):
         _structural(b, f"{path}.blocks[{i}]", r)  # 结构（pydantic 判别联合）

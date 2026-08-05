@@ -57,6 +57,7 @@ async def generate_block(
     material: str = "",
     rounds: int = 3,
     tools: dict[str, Tool] | None = None,
+    purpose_namespace: str = "",
 ) -> BlockResult:
     """生成并自校验一个 block。初次 + (rounds-1) 次自修。
 
@@ -85,6 +86,8 @@ async def generate_block(
             "content": f"生成一个 {type} block。\n契约:\n{_contract_str(contract)}\n\n{ctx}{mat}\n只输出该 block 的 JSON。",
         },
     ]
+    initial_purpose = f"{purpose_namespace}:block:{type}" if purpose_namespace else f"block:{type}"
+    repair_purpose = f"{purpose_namespace}:repair:{type}" if purpose_namespace else f"repair:{type}"
     for rnd in range(1, rounds + 1):
         last = rnd == rounds
         call_timeout = _BLOCK_INITIAL_TIMEOUT_S if rnd == 1 else _BLOCK_REPAIR_TIMEOUT_S
@@ -96,14 +99,14 @@ async def generate_block(
                         cast(ToolCallingLLM, llm),
                         cast(list[dict[str, Any]], messages),
                         tools or {},
-                        purpose="block:" + type,
+                        purpose=initial_purpose,
                     ),
                     timeout=call_timeout,
                 )
             else:
                 raw = await asyncio.wait_for(
                     llm.complete(
-                        messages, purpose=("block:" if rnd == 1 else "repair:") + type
+                        messages, purpose=initial_purpose if rnd == 1 else repair_purpose
                     ),
                     timeout=call_timeout,
                 )

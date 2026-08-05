@@ -76,13 +76,18 @@
     return (0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2]) / 255 < 0.46
       ? 'dark' : 'light';
   }
-  function buildWidgetSrcdoc(fragment, widgetId) {
+  function buildWidgetSrcdoc(fragment, widgetId, widgetProfile) {
     const cs = getComputedStyle(document.documentElement);
     const theme = document.documentElement.dataset.theme || 'cartesian';
     const colorScheme = widgetColorScheme(cs.getPropertyValue('--bg'));
     const vars = WIDGET_TOKENS.map(t => t + ':' + (cs.getPropertyValue(t).trim() || 'inherit')).join(';');
     return '<!doctype html><html data-theme="' + colorScheme + '" data-deck-theme="' + escapeHtml(theme) + '"><head><meta charset="utf-8"><style>'
-      + ':root{' + vars + '}'
+      + ':root{' + vars
+      + ';--color-background-primary:var(--bg2);--color-background-secondary:var(--card);--color-background-tertiary:var(--bg)'
+      + ';--color-bg:var(--bg);--color-bg-subtle:var(--bg2);--color-bg-muted:var(--card)'
+      + ';--color-text:var(--ink);--color-text-primary:var(--ink);--color-text-secondary:var(--text2);--color-text-tertiary:var(--text2)'
+      + ';--color-border:var(--line);--color-border-primary:var(--line);--color-border-secondary:var(--line);--color-border-tertiary:var(--line)'
+      + ';--color-background-info:var(--accent);--color-text-info:var(--ink);--font-sans:var(--sans);--font-serif:var(--serif);--font-mono:var(--mono);--radius-sm:var(--radius,4px);--border-radius-lg:var(--radius,8px)}'
       + '*{box-sizing:border-box}'
       + 'html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:15px}'
       + 'button{font-family:var(--sans);font-size:13px;color:var(--ink);background:transparent;border:1px solid var(--line);border-radius:var(--radius,0);padding:6px 12px;cursor:pointer;transition:background .15s,border-color .15s,transform .1s}'
@@ -91,6 +96,7 @@
       + '.mono{font-family:var(--mono);font-variant-numeric:tabular-nums}'
       + '</style><script>(function(){'
       + 'const widgetId=' + JSON.stringify(String(widgetId || 'unknown')) + ';'
+      + 'const widgetProfile=' + JSON.stringify(String(widgetProfile || '')) + ';'
       + 'const report=function(message){parent.postMessage({__lectureWidgetError:true,widgetId:widgetId,message:String(message||"unknown")},"*")};'
       + 'addEventListener("error",function(e){report(e.message||e.error||"runtime error")});'
       + 'addEventListener("unhandledrejection",function(e){report(e.reason||"unhandled rejection")});'
@@ -99,16 +105,22 @@
       + 'let canvasPaints=0;try{const proto=CanvasRenderingContext2D.prototype;'
       + '["fill","stroke","fillRect","strokeRect","fillText","strokeText","drawImage","putImageData"].forEach(function(name){'
       + 'const original=proto[name];if(typeof original!=="function")return;proto[name]=function(){canvasPaints++;return original.apply(this,arguments)}})}catch(e){}'
-      + 'function visiblePrimitiveCount(svg){return Array.prototype.filter.call(svg.querySelectorAll("path,line,polyline,polygon,circle,ellipse,rect,text,image,use"),function(node){'
-      + 'if(node.closest("defs"))return false;try{const box=node.getBoundingClientRect();const cs=getComputedStyle(node);return cs.display!=="none"&&cs.visibility!=="hidden"&&box.width>2&&box.height>2}catch(e){return false}}).length}'
+      + 'function visiblePrimitiveCount(svg){return Array.prototype.filter.call(svg.querySelectorAll("path,line,polyline,polygon,circle,ellipse,rect,image,use"),function(node){'
+      + 'if(node.closest("defs,[aria-hidden=true]"))return false;const semantic=((node.getAttribute("class")||"")+" "+(node.getAttribute("id")||"")+" "+((node.parentElement&&node.parentElement.getAttribute("class"))||"")).toLowerCase();'
+      + 'if(/(^|[\\s_-])(grid|background|backdrop|watermark|axis|tick|guide|decoration|ornament)([\\s_-]|$)/.test(semantic))return false;'
+      + 'try{const box=node.getBoundingClientRect();const cs=getComputedStyle(node);return cs.display!=="none"&&cs.visibility!=="hidden"&&Number(cs.opacity||1)>0&&Math.max(box.width,box.height)>4}catch(e){return false}}).length}'
       + 'function primaryStage(){const selectors="[class*=stage],[id*=stage],[class*=canvas],[id*=canvas],[class*=plot],[id*=plot]";'
       + 'return Array.prototype.map.call(document.querySelectorAll(selectors),function(node){const r=node.getBoundingClientRect();return {node:node,area:Math.max(0,r.width)*Math.max(0,r.height)}})'
       + '.filter(function(x){return x.area>innerWidth*innerHeight*.18}).sort(function(a,b){return b.area-a.area})[0]}'
       + 'function auditInitialPaint(){const canvas=document.querySelector("canvas");if(canvas&&canvasPaints===0)'
       + 'report("canvas initial frame produced no paint operations");const candidate=primaryStage();if(!candidate)return;const stage=candidate.node;'
       + 'const svgs=stage.matches("svg")?[stage]:Array.prototype.slice.call(stage.querySelectorAll("svg"));'
-      + 'if(svgs.length&&svgs.reduce(function(sum,svg){return sum+visiblePrimitiveCount(svg)},0)===0)'
-      + 'report("initial frame has an empty primary visualization stage")}'
+      + 'const primitiveCount=svgs.reduce(function(sum,svg){return sum+visiblePrimitiveCount(svg)},0);'
+      + 'if(svgs.length&&primitiveCount===0)'
+      + 'report("initial frame has an empty primary visualization stage");'
+      + 'if(widgetProfile==="state"&&svgs.length&&primitiveCount<3)report("state simulation initial frame has too few evidence marks");'
+      + 'const stageText=(stage.textContent||"").replace(/\\s+/g," ");if(/初始空树|empty[_ -]?tree|无节点|暂无数据|等待.{0,8}开始/i.test(stageText))'
+      + 'report("initial frame exposes an empty data structure instead of inspectable evidence")}'
       + 'addEventListener("message",function(e){if(e.data&&e.data.__lectureWidgetAudit)auditInitialPaint()});'
       + 'addEventListener("load",function(){setTimeout(auditInitialPaint,1200)});'
       + '})();</script></head><body>' + fragment + '</body></html>';
@@ -1351,7 +1363,7 @@
       if (b.caption) root.appendChild(el('div', 'widcap', inlineMd(b.caption)));
       const build = () => {
         root.removeAttribute('data-widget-error');
-        frame.srcdoc = buildWidgetSrcdoc(b.html, widgetId);
+        frame.srcdoc = buildWidgetSrcdoc(b.html, widgetId, b.spec && b.spec.profile);
       };
       widgetBuilds.set(widgetId, build);   // 主题切换时重建；按 id 覆盖，重渲同一块不会攒下陈旧闭包
       ctx.onReady(build);
@@ -1905,6 +1917,14 @@
         title.style.zIndex = String(artboard.title.z); title.style.alignSelf = artboard.title.align; title.style.justifySelf = artboard.title.justify;
         title.style.maxWidth = artboard.title.maxWidth + '%';
         appendTitleContent(title);
+        if (!scene.eyebrow && !scene.headline && !scene.lead) {
+          /* The compiler reserves rows 1–3 for a native title. Some evidence-first pages
+             intentionally put their heading inside a structured block. Collapse those empty
+             rows so the actual evidence uses the full artboard instead of floating at the
+             bottom of a large blank field. */
+          body.classList.add('artboard-without-title');
+          title.setAttribute('aria-hidden', 'true');
+        }
         body.appendChild(title);
         sceneLayouts.artboard(scene, ctx, body, L, artboard);
         pad.appendChild(body);
@@ -1988,7 +2008,10 @@
       if (!k) continue;
       k.style.zoom = '';
       const avail = disp.clientWidth, natural = k.scrollWidth;
-      if (avail && natural > avail + 1) k.style.zoom = Math.max(0.55, avail / natural);
+      // Keep a small safety margin: KaTeX's nested spans round subpixels
+      // differently from the outer scroll box, which otherwise leaves a
+      // repeatable 8–12px clipped tail after an apparently exact fit.
+      if (avail && natural > avail + 1) k.style.zoom = Math.max(0.52, (avail / natural) * 0.96);
     }
   }
   /* 代码卡宽度自适应：codecard 是 overflow:hidden，pre 不换行——窄栏(split/compose)里长代码行会被静默裁掉(丢内容红线)，

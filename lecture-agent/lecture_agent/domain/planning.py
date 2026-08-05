@@ -243,6 +243,7 @@ def _skeleton_spec(
 - **总页数硬约束：恰好 {pages} 页，不允许少一页或多一页**，含封面/收尾/可能的章节分隔页。第一页 kind:hero(封面, 恰含一个 hero block)。页数少(≤4)时省掉回顾/收尾页。
 - **封面与收尾页的标题/副题必须直接点出课题本身**，严禁写成其它主题或泛泛套话。
 - scene.kind: hero(封面/收尾,一个 hero block) | content(常规) | quiz(含一个 quiz block) | statement(含一个 statement block) | section(章节分隔页,含一个 statement block)。
+- `hero` block 只能出现在 kind:hero，不能塞进 content 当大字卡；statement 的正文必须是推进论证的核心结论，不得复述 headline。
 - 每页必须有内部规划字段 `brief`：先写 `objective`，再只选一个主要 `learningAction`，并用 `requiredEvidence` 写清学生完成目标时必须看到或产出的具体证据；然后才根据 Skill 菜单声明的 affordances / learner actions / evidence outputs 选择 block。`keyClaim` 只写一个核心结论；`misconception` 只写一个具体错误想法（无则空串）；`visualTask` 描述必须编码的关系；`evidencePolicy` 只能是 `derived|provided|synthetic|none`。这些字段供后续生成与质检使用，不是观众正文。
 - 整份讲义必须写一个内部 `designBrief`，每页必须写 `visualBrief`。先从页面 objective/requiredEvidence 形成 designIntent，再从 Skill 菜单选择 selectedCapabilities，最后选 compositionFamily。整套课保持同一个 Design DNA；页面靠构图与证据变化，不逐页随机换风格。Media 是可选能力，不得按配额调用。
 - 选择 `media` 时，占位 block 除通用字段外必须写 `purpose:evidence|explanatory|narrative|atmospheric`、`placement:illustration|decoration|background`、`subject`、`relationshipToContent`、`fidelity:documentary|scientific|conceptual|atmospheric`、`required:true|false`，可选 `fit:contain|cover`、`safeZone`、`overlay`、`sourceStrategy:search-first|generate-first`。背景必须与至少一个原生内容 block 同页；关键文字、公式、数据和标签不得进入图片像素。

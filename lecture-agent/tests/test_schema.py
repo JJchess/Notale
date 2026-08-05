@@ -443,3 +443,22 @@ def test_visual_readability_contract_rejects_dense_block_content() -> None:
         "runnable",
     )
     assert any("核心函数全部藏在" in error for error in hidden_algorithm.errors)
+
+
+def test_scene_semantics_reject_hero_inside_content_and_repeated_statement_title() -> None:
+    content_hero = _minimal_doc()
+    content_hero["scenes"][1]["kind"] = "content"
+    content_hero["scenes"][1]["blocks"] = [
+        {"type": "hero", "title": ["伪装成内容卡"]}
+    ]
+    result = validate_doc(content_hero)
+    assert any("hero block 只能用于 hero 页" in error for error in result.errors)
+
+    duplicate = _minimal_doc()
+    duplicate["scenes"][1]["kind"] = "statement"
+    duplicate["scenes"][1]["headline"] = "平衡树的核心"
+    duplicate["scenes"][1]["blocks"] = [
+        {"type": "statement", "statement": "平衡树的核心：平衡树的核心"}
+    ]
+    result = validate_doc(duplicate)
+    assert any("statement 不得重复页标题" in error for error in result.errors)

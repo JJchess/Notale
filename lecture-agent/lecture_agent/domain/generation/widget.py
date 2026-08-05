@@ -331,6 +331,9 @@ LectureDoc host adapter（与通用 GenUI 规则冲突时，以这里为准）�
 - 纯离线 vanilla，禁 CDN、import、fetch、Chart.js 及任何外部资源。
 - 数学/算法视觉必须把 math_model 写成独立纯函数，并用 verification_cases 在初始化时执行 console.assert；
   屏幕映射、箭头方向、曲线变量必须由这些函数生成，不能另画装饰路径。
+- 状态序列中的 expected/prediction/answer 必须由当前画面的同一 state 推导，严禁错读前一项或后一项。
+  对每个 step index 断言“当前可见 invariant/readout → 当前 expected action”，尤其覆盖结构变换前后的相邻两步，
+  防止画面正确但反馈答案 off-by-one。
 - 严格实现 interaction_loop：操作必须修改 state_model 并立即调用统一 update()；同屏保留前态/当前态或 before→after，
   只高亮本步变化；离散过程实现单步与确定性 reset，不能只切换说明文字。
 - 首帧逐项实现 visible_encodings；comparison_states 非空时全部状态必须同时可见并有清楚图例。

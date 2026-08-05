@@ -12,7 +12,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
-from ...ports.llm import LLMClient
+from ...ports.llm import LLMClient, Message
 from ...utils.jsonio import parse_json
 
 _PAGE_REVIEW_TIMEOUT_S = 360.0
@@ -42,7 +42,12 @@ def compact_scene(scene: dict[str, Any]) -> dict[str, Any]:
                 # CSS dominates most generated widgets but contributes little to semantic review.
                 # Removing it preserves the controls, model and final initial-render call; the old
                 # first-10k truncation usually sent only CSS and made the reviewer guess at behavior.
-                semantic = re.sub(r"<style\b[^>]*>[\s\S]*?</style>", "", value, flags=re.I)
+                semantic = re.sub(
+                    r"<style\b[^>]*>[\s\S]*?</style>",
+                    "<!-- STYLE PRESENT IN ORIGINAL; OMITTED ONLY FROM SEMANTIC REVIEW -->",
+                    value,
+                    flags=re.I,
+                )
                 limit = 18000
                 if len(semantic) <= limit:
                     return semantic
@@ -92,6 +97,8 @@ async def review_page(
    合成数据/示意模型只能说明该设定下的现象，不能据此声称普遍性能排名或真实世界事实。
 5) 页面密度与语言：主体有足够视觉面积，文字可扫读，无重复；复杂推导若需要多页应报 pageIssue。
    用户可见的 headline/lead/caption/控件应与 doc language 一致；除标准符号和必要专名外，无故中英混排算问题。
+   artboard 的 col/row 是 CSS Grid 线坐标，不是占用格编号：12 行网格的合法线范围是 1..13，
+   因此 row:[12,13] 合法。不要仅凭布局 JSON 猜测裁切或越界；像素溢出由后续真实浏览器门判断。
 6) 测评：quiz 的答案/解释可由页面内容复算，干扰项对应明确误区。
 
 路由纪律：现有 block 内的数据、公式、caption、HTML/JS、箭头方向、坐标映射、首帧状态或文案能修的问题，
@@ -110,19 +117,41 @@ pass 表示达到可直接授课的 8.5/10：不得有 critical/major 或 pageIs
         "scene": compact_scene(scene),
         "referenceMaterial": material or "[none provided]",
     }
+    messages: list[Message] = [
+        {"role": "system", "content": system},
+        {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
+    ]
     try:
-        raw = parse_json(
-            await asyncio.wait_for(
+        raw_text = await asyncio.wait_for(
+            llm.complete(messages, purpose="quality:page"),
+            timeout=_PAGE_REVIEW_TIMEOUT_S,
+        )
+        try:
+            raw = parse_json(raw_text)
+        except (ValueError, json.JSONDecodeError):
+            # Models occasionally put an unescaped LaTeX backslash in issue
+            # prose. Preserve the judgment and repair only its JSON encoding.
+            repair_messages: list[Message] = [
+                *messages,
+                {"role": "assistant", "content": raw_text},
+                {
+                    "role": "user",
+                    "content": (
+                        "上条不是合法 JSON。保持 score/pass、blockId、severity、问题和修法含义不变，"
+                        "正确转义反斜杠，只输出合法 JSON 对象。"
+                    ),
+                },
+            ]
+            repaired_text = await asyncio.wait_for(
                 llm.complete(
-                    [
-                        {"role": "system", "content": system},
-                        {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
-                    ],
-                    purpose="quality:page",
+                    repair_messages,
+                    purpose="quality:page-json-repair",
                 ),
                 timeout=_PAGE_REVIEW_TIMEOUT_S,
             )
-        )
+            raw = parse_json(repaired_text)
+        if not isinstance(raw, dict) or "score" not in raw:
+            raise ValueError("质量审查 JSON 缺少 score")
     except Exception as exc:  # noqa: BLE001 - 质量门应报告失败，不能拖垮整档生成
         detail = str(exc).strip() or type(exc).__name__
         return PageReview(available=False, failure=f"质量审查失败: {detail[:120]}")

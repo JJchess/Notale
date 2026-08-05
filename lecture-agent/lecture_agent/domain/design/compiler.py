@@ -226,8 +226,15 @@ def _annotated(blocks: list[dict[str, Any]], assets: dict[str, dict[str, Any]], 
         )
         return _title((1, 10, 1, 4), width=88), areas
     main = _rank_blocks(blocks)[0]
-    areas = [_area(main, (4, 10, 4, 12), role="feature", clip=True)]
     rest = [block for block in blocks if block is not main]
+    if len(rest) == 1:
+        # A specimen plus one annotation needs a dominant stage and a narrow explanatory rail.
+        # A centered six-column card leaves unused gutters and reads like a web form.
+        return _title((1, 10, 1, 4), width=88), [
+            _area(main, (1, 10, 4, 13), role="feature", clip=True),
+            _area(rest[0], (10, 13, 4, 13), role="aside", z=2, clip=True),
+        ]
+    areas = [_area(main, (4, 10, 4, 12), role="feature", clip=True)]
     for index, block in enumerate(rest):
         side = (1, 4) if index % 2 == 0 else (10, 13)
         tier = index // 2

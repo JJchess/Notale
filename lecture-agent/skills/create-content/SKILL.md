@@ -30,6 +30,7 @@ Read `lecture-doc-schema` first (schema + SPEC §3, §5). This skill owns the no
 ## Authoring rules (SPEC §5 — hard)
 
 - One clear point per page. `lead`/labels are terse statements, not onboarding copy.
+- `hero` is exclusive to `kind: hero`; never use it as a large text card inside a content page. On `kind: statement`, the statement must advance the argument rather than repeat the page headline.
 - Inline-md only in text fields: `**衬线强调**`, `*em*`, `` `code` ``, `$latex$`. **No raw HTML** (validator rejects it).
 - Multiple points → `list` or `agenda` (equal-height rows). **Don't put two uneven blocks side by side** — use `agenda` or a ledger `table`. `compare` is only for genuinely symmetric halves.
 - Formulas are LaTeX, never Unicode super/subscripts.

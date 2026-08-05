@@ -184,6 +184,10 @@ async def refine_plan(
                 continue
             idx, old = located
             _normalize_revision_candidate(candidate, old, scenes)
+            _enforce_statistical_claim_evidence({"scenes": [candidate]})
+            _enforce_learning_evidence_routes({"scenes": [candidate]}, allowed_types)
+            _enforce_relational_block_routes({"scenes": [candidate]}, allowed_types)
+            _enforce_dense_evidence_capacity({"scenes": [candidate]})
             problem = validate_plan_revision(candidate, old, scenes, allowed_types)
             if problem:
                 warnings.append(f"规划修订 {sid} 被拒绝: {problem}")
@@ -199,8 +203,11 @@ async def refine_plan(
     warnings.extend(_enforce_course_evidence_obligations(doc, allowed_types))
     warnings.extend(_enforce_evidence_safe_plans(doc, allowed_types))
     warnings.extend(_enforce_geometry_routes(doc, allowed_types))
+    warnings.extend(_enforce_statistical_claim_evidence(doc))
     warnings.extend(_enforce_learning_evidence_routes(doc, allowed_types))
+    warnings.extend(_enforce_relational_block_routes(doc, allowed_types))
     warnings.extend(_enforce_media_contracts(doc, allowed_types))
+    warnings.extend(_enforce_dense_evidence_capacity(doc))
     warnings.extend(_enforce_widget_capacity(doc))
     warnings.extend(_enforce_quiz_scope(doc))
     return warnings
@@ -288,6 +295,36 @@ def _learning_evidence_needs(brief: dict[str, Any]) -> tuple[bool, bool]:
     return needs_runnable, explicit_interaction or transition_evidence
 
 
+def _needs_calculation_evidence(brief: dict[str, Any]) -> bool:
+    """Require a visible derivation surface when the learner must calculate.
+
+    This is driven by the learning action, not by a subject keyword. A stats card
+    or comparison prose may state an answer, but it cannot show how to obtain it.
+    """
+    action = str(brief.get("learningAction") or "").strip().lower()
+    objective = str(brief.get("objective") or "").lower()
+    evidence = str(brief.get("requiredEvidence") or "").lower()
+    return action in {"calculate", "compute", "derive", "solve", "计算", "推导", "求解"} or any(
+        token in f"{objective} {evidence}"
+        for token in ("学生能计算", "学生能推导", "计算过程", "推导过程", "worked calculation")
+    )
+
+
+def _needs_learner_response(brief: dict[str, Any]) -> bool:
+    action = str(brief.get("learningAction") or "").strip().lower()
+    evidence = str(brief.get("requiredEvidence") or "").lower()
+    return action in {"answer", "predict", "judge", "submit", "作答", "预测", "判断"} or (
+        action in {"calculate", "compute", "计算"}
+        and any(
+            token in evidence
+            for token in (
+                "学生计算", "学生判断", "学生作答", "learner calculates",
+                "learner answer", "提交答案", "即时反馈", "正确性反馈",
+            )
+        )
+    )
+
+
 def _enforce_learning_evidence_routes(
     doc: dict[str, Any], allowed_types: set[str]
 ) -> list[str]:
@@ -302,6 +339,8 @@ def _enforce_learning_evidence_routes(
             continue
         types = {str(block.get("type") or "") for block in blocks}
         needs_runnable, needs_sim = _learning_evidence_needs(brief)
+        needs_calculation = _needs_calculation_evidence(brief)
+        needs_response = _needs_learner_response(brief)
         if needs_runnable and "runnable" in allowed_types and "runnable" not in types:
             main = next(
                 (block for block in blocks if block.get("type") in {"code", "sim", "graph", "diagram"}),
@@ -317,8 +356,66 @@ def _enforce_learning_evidence_routes(
             )
             scene["blocks"] = [main]
             warnings.append(f"规划证据兜底 {scene.get('id') or '?'}：执行证据路由到 runnable")
+        elif (
+            needs_response
+            and not types.intersection({"quiz", "runnable", "sim", "state-sim", "model-sim", "geometry-sim"})
+            and "quiz" in allowed_types
+        ):
+            target = next(
+                (
+                    block
+                    for block in reversed(blocks)
+                    if block.get("type") in {"formula", "list", "callout", "statement", "stats"}
+                ),
+                blocks[-1],
+            )
+            target["type"] = "quiz"
+            target.pop("engine", None)
+            target["role"] = "practice"
+            target["size"] = "l"
+            target["intent"] = (
+                str(target.get("intent") or brief.get("objective") or "检验计算结果")
+                + "；给出具体输入，要求学习者计算/判断并提交答案，提供可复算解释与即时反馈"
+            )
+            warnings.append(
+                f"规划证据兜底 {scene.get('id') or '?'}：学习者作答证据路由到 quiz"
+            )
+        elif (
+            needs_calculation
+            and not types.intersection({"formula", "table", "runnable", "sim", "model-sim", "quiz"})
+            and ("formula" in allowed_types or "table" in allowed_types)
+        ):
+            visual_task = str(brief.get("visualTask") or "").lower()
+            calculation_type = (
+                "table"
+                if "table" in allowed_types
+                and any(token in visual_task for token in ("table", "表格", "对比", "compare"))
+                else "formula"
+            )
+            if calculation_type not in allowed_types:
+                calculation_type = "table"
+            target = next(
+                (
+                    block
+                    for block in reversed(blocks)
+                    if block.get("type") in {"stats", "callout", "list", "compare", "statement"}
+                ),
+                blocks[-1],
+            )
+            target["type"] = calculation_type
+            target.pop("engine", None)
+            target["role"] = "evidence"
+            target["size"] = "l"
+            target["intent"] = (
+                str(target.get("intent") or brief.get("objective") or "展示计算")
+                + "；给出变量定义、可复算步骤、代入示例与结果解释，不能只陈列结论数值"
+            )
+            warnings.append(
+                f"规划证据兜底 {scene.get('id') or '?'}：计算学习动作路由到 {calculation_type}"
+            )
         elif needs_sim and not any(_is_sim_type(value) for value in types):
-            sim_type = _sim_type_for(_sim_profile_for_brief(brief), allowed_types)
+            profile = _sim_profile_for_brief(brief)
+            sim_type = _sim_type_for(profile, allowed_types)
             if not sim_type:
                 continue
             main = next(
@@ -334,12 +431,113 @@ def _enforce_learning_evidence_routes(
             main["size"] = "xl"
             main["intent"] = (
                 str(main.get("intent") or brief.get("visualTask") or "交互探索")
-                + "；首帧已执行一步，提供单步/复位或真实可操作输入，保留前后状态并突出变化"
+                + "；首帧以最小有效结构完整呈现 step=0 前态，不能用空树、空画布、网格或状态文字代替证据；"
+                "提供单步/复位或真实可操作输入，保留前后状态并突出变化"
             )
+            initial_state = str(brief.get("requiredEvidence") or brief.get("visualTask") or "完整初态")
+            transition = str(brief.get("visualTask") or brief.get("objective") or "一次真实状态转移")
+            main["interactionBrief"] = {
+                "stateModel": [
+                    {"name": "step", "type": "int", "range_or_values": "0..3", "initial": 0}
+                ],
+                "controls": [
+                    {"trigger": "单步", "effect": "将 step 推进一步并调用统一 update()"},
+                    {"trigger": "复位", "effect": "恢复 step=0 的同一初态并调用统一 update()"},
+                ],
+                "update": transition,
+                "initialPaint": (
+                    f"step=0 时完整可见：{initial_state}。必须预载理解下一次转移所需的最小有效结构；"
+                    "结构状态至少包含 3 个有意义的证据标记；树/图/数组必须有足够的带标签实体与关系，"
+                    "旋转前态至少显示三个参与节点及其边。禁止单个占位节点、EMPTY_TREE、空画布，"
+                    "装饰网格、坐标轴、水印和状态文字不算初态证据"
+                ),
+                "visibleEncodings": [
+                    {"quantity": "本步发生变化的状态或结构", "mark": "强调色高亮", "where": "主舞台"}
+                ],
+                "history": "同时保留前态与当前态，或提供清楚的 before/after 映射",
+                "reset": "确定性恢复 step=0 的同一初态",
+                "verificationCases": [
+                    {"input": "初态", "expected": initial_state},
+                    {"input": "单步一次", "expected": transition},
+                    {"input": "复位", "expected": f"恢复：{initial_state}"},
+                ],
+                "aestheticDirection": "paper-editorial",
+                "signatureDetail": "变化处使用单一强调色并保留前态残影",
+            }
+            if profile == "geometry":
+                main["interactionBrief"]["renderMedium"] = "svg"
             scene["blocks"] = [main]
             route_label = "sim.widget" if sim_type == "sim" else sim_type
             warnings.append(
                 f"规划证据兜底 {scene.get('id') or '?'}：过程状态证据路由到 {route_label}"
+            )
+    return warnings
+
+
+def _enforce_statistical_claim_evidence(doc: dict[str, Any]) -> list[str]:
+    """Comparative averages require a population/distribution or actual dataset."""
+    warnings: list[str] = []
+    average_terms = ("average", "mean", "expected", "平均", "均值", "期望", "asl")
+    compare_terms = ("compare", "versus", " vs ", "对比", "比较", "优于", "差异")
+    basis_terms = (
+        "distribution", "sample", "dataset", "population", "fixed instance",
+        "分布", "样本", "数据集", "总体", "给定树", "给定结构", "固定实例", "逐节点求和",
+    )
+    for scene in doc.get("scenes") or []:
+        brief = scene.get("brief") if isinstance(scene.get("brief"), dict) else {}
+        text = " ".join(str(value or "").lower() for value in brief.values())
+        if not (
+            any(term in text for term in average_terms)
+            and any(term in text for term in compare_terms)
+            and not any(term in text for term in basis_terms)
+        ):
+            continue
+        brief["objective"] = "学生能区分平均量与最坏上界，并比较本页可由定义直接推导的保证"
+        brief["learningAction"] = "compare"
+        brief["requiredEvidence"] = (
+            "逐项对齐定义与可复算的最坏上界；平均量必须声明分布、样本或固定实例，"
+            "本页不得给出无数据基础的平均性能常数"
+        )
+        brief["visualTask"] = "用结构化对比表区分最坏上界与需要数据基础的平均量"
+        for block in scene.get("blocks") or []:
+            if block.get("type") in {"compare", "table", "stats", "formula", "chart"}:
+                block["intent"] = (
+                    "比较可由定义直接推导的最坏上界，并明确平均量需要分布/样本；"
+                    "禁止把最坏高度系数写成平均查找长度"
+                )
+        warnings.append(
+            f"规划证据兜底 {scene.get('id') or '?'}：无数据基础的比较平均值改为可推导上界"
+        )
+    return warnings
+
+
+def _enforce_relational_block_routes(
+    doc: dict[str, Any], allowed_types: set[str]
+) -> list[str]:
+    """Fixed node-edge topology belongs to graph, not a decorative diagram layout."""
+    if "graph" not in allowed_types:
+        return []
+    warnings: list[str] = []
+    topology_terms = (
+        "parent-child", "left subtree", "right subtree", "node-edge", "tree topology",
+        "父子", "左子树", "右子树", "节点与边", "树形结构", "树拓扑",
+    )
+    for scene in doc.get("scenes") or []:
+        brief = scene.get("brief") if isinstance(scene.get("brief"), dict) else {}
+        visual_task = str(brief.get("visualTask") or "").lower()
+        if not any(term in visual_task for term in topology_terms):
+            continue
+        for block in scene.get("blocks") or []:
+            if block.get("type") != "diagram":
+                continue
+            block["type"] = "graph"
+            block["role"] = "visualization"
+            block["intent"] = (
+                str(block.get("intent") or visual_task)
+                + "；用显式 nodes/edges 编码父子关系与左右子树，禁止 staircase/process 等装饰布局"
+            )
+            warnings.append(
+                f"规划证据兜底 {scene.get('id') or '?'}：固定节点-边拓扑由 diagram 路由到 graph"
             )
     return warnings
 
@@ -567,6 +765,39 @@ def _enforce_widget_capacity(doc: dict[str, Any]) -> list[str]:
     return warnings
 
 
+def _enforce_dense_evidence_capacity(doc: dict[str, Any]) -> list[str]:
+    """Two dense evidence surfaces already fill a slide; remove a third rail.
+
+    Keeping formula + chart + prose/list on one page repeatedly produced tiny
+    charts, contradictory duplicate definitions, and clipped derivations. This
+    is a capacity rule, independent of subject names or visual style.
+    """
+    dense_types = {
+        "formula", "chart", "table", "diagram", "graph", "flow", "timeline",
+        "sim", "state-sim", "model-sim", "geometry-sim", "runnable", "code",
+    }
+    warnings: list[str] = []
+    for scene in doc.get("scenes") or []:
+        if scene.get("kind") in {"hero", "section", "quiz"}:
+            continue
+        blocks = list(scene.get("blocks") or [])
+        dense = [block for block in blocks if str(block.get("type") or "") in dense_types]
+        if len(dense) < 2 or len(blocks) <= 2:
+            continue
+        kept = dense[:2]
+        removed = [
+            str(block.get("id") or block.get("type") or "?")
+            for block in blocks
+            if block not in kept
+        ]
+        scene["blocks"] = [block for block in blocks if block in kept]
+        warnings.append(
+            f"规划容量兜底 {scene.get('id') or '?'}：双高密度证据页只保留 "
+            f"{kept[0].get('type')} + {kept[1].get('type')}，移除 {', '.join(removed)}"
+        )
+    return warnings
+
+
 def _enforce_evidence_safe_plans(doc: dict[str, Any], allowed_types: set[str]) -> list[str]:
     """不允许未解决的合成优化器排名进入 fan-out；确定性退回机制比较。"""
     warnings: list[str] = []
@@ -752,6 +983,8 @@ def validate_plan_revision(
     types = [b.get("type") for b in blocks]
     if kind == "hero" and types != ["hero"]:
         return "hero 页必须恰好一个 hero block"
+    if kind != "hero" and "hero" in types:
+        return "hero block 只能用于 hero 页；内容页应选择真正承担证据的 block"
     if kind == "quiz" and "quiz" not in types:
         return "quiz 页必须含 quiz block"
     if kind == "quiz":
@@ -761,10 +994,20 @@ def validate_plan_revision(
             return "一个 quiz block 只能检验一个判定链；objective 不得同时覆盖多个章节知识点"
     visual_task = str(brief.get("visualTask") or "").lower()
     needs_runnable, needs_sim = _learning_evidence_needs(brief)
+    needs_calculation = _needs_calculation_evidence(brief)
+    needs_response = _needs_learner_response(brief)
     if needs_runnable and "runnable" not in types:
         return "学习动作要求实现/运行/调试，必须由 runnable 产出执行证据；只读 code 不成立"
     if needs_sim and not any(_is_sim_type(value) for value in types):
         return "学习证据包含状态序列/结构变换/逐步执行或可控因果，必须使用 sim 呈现过程状态"
+    if needs_calculation and not set(types).intersection(
+        {"formula", "table", "runnable", "sim", "model-sim", "quiz"}
+    ):
+        return "学习动作要求计算/推导，必须提供 formula/table/runnable/sim 等可复算证据；compare/stats 只能陈述结果"
+    if needs_response and not set(types).intersection(
+        {"quiz", "runnable", "sim", "state-sim", "model-sim", "geometry-sim"}
+    ):
+        return "学习证据要求学习者提交计算/判断结果，必须提供 quiz/runnable/sim 的作答与反馈闭环"
     optimizer_names = ("sgd", "adagrad", "rmsprop", "adam", "momentum", "动量")
     optimizer_count = sum(name in visual_task for name in optimizer_names)
     evidence_policy = str(brief.get("evidencePolicy") or "").lower()
@@ -894,6 +1137,14 @@ def _normalize_revision_candidate(
             block["engine"] = "widget"
         elif block_type not in _SIM_CAPABILITIES:
             block.pop("engine", None)
+        # Replan models occasionally serialize a prose placeholder instead of
+        # the interactionBrief object. Drop that drift so capability lowering
+        # can route the sim through the validated slow planning path.
+        if "interactionBrief" in block and (
+            block_type not in _SIM_CAPABILITIES
+            or not isinstance(block.get("interactionBrief"), dict)
+        ):
+            block.pop("interactionBrief", None)
     _fit_revision_capacity(candidate, old)
 
 
@@ -975,7 +1226,7 @@ async def replan_page(
     system = """你是课程页重规划器。质量门已证明当前页靠原 block 类型无法修好；请只重做这一页的骨架。
 输出 JSON：{"scene":{完整 scene 骨架}}，不要解释。硬约束：
 - scene id/kind 不变；保留同一教学位置，但可改 headline/lead/brief/notes 和 block 组合。
-    - brief 必须明确一个 learningAction 与 requiredEvidence；先选择能产出该证据的 Skill，再决定 block。状态序列/结构变换用 state-sim，参数因果用 model-sim，坐标/约束用 geometry-sim；实现/运行/调试用 runnable。
+    - brief 必须明确一个 learningAction 与 requiredEvidence；先选择能产出该证据的 Skill，再决定 block。状态序列/结构变换用 state-sim，参数因果用 model-sim，坐标/约束用 geometry-sim；实现/运行/调试用 runnable；计算/推导必须有 formula/table/runnable/sim 等可复算步骤，compare/stats 只能陈述结果。
 - blocks 只含 id/type/role/intent/size/可选 engine/interactionBrief，不写最终内容；id 全局唯一。
 - size 必须且只能是 s/m/l/xl；不要输出 large、full-width 或带解释的尺寸字符串。
 - 每页一个可观察 objective、一个 keyClaim；标题写清所有必要前提。
@@ -1021,6 +1272,10 @@ async def replan_page(
                 if block.get("type") == "sim":
                     block["type"] = replacement
                     block.pop("engine", None)
+    _enforce_statistical_claim_evidence({"scenes": [candidate]})
+    _enforce_learning_evidence_routes({"scenes": [candidate]}, allowed_types)
+    _enforce_relational_block_routes({"scenes": [candidate]}, allowed_types)
+    _enforce_dense_evidence_capacity({"scenes": [candidate]})
     problem = validate_plan_revision(candidate, current_scene, all_scenes, allowed_types)
     if problem:
         return None, f"页级重规划被拒绝: {problem}"

@@ -39,7 +39,7 @@ Every sim must close this loop:
 
 `meaningful first paint → learner action → model recomputation → visible state change → interpretable evidence`
 
-- Start one step in, never with a blank “click to begin” stage.
+- Start at a meaningful pre-transition step 0, never with a blank “click to begin” stage. The primary stage must already contain inspectable evidence marks. Decorative grids, axes, watermarks, status text, and an empty data structure do not satisfy first paint; preload the smallest valid state needed for the learner to predict or inspect the next transition.
 - Every control must change the underlying model, not merely a label or decoration.
 - Keep previous/current or before/after state legible; highlight exactly what changed.
 - For discrete processes provide appropriate `step`, `back/reset`, and optionally `play/pause`; keep replay deterministic.

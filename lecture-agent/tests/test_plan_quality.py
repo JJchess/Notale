@@ -10,6 +10,7 @@ from lecture_agent.domain.evaluation.plan_quality import (
     replan_page,
     validate_plan_revision,
 )
+from lecture_agent.domain.generation.widget import compile_interaction_brief
 
 
 def _doc() -> dict:
@@ -227,6 +228,12 @@ async def test_plan_fallback_routes_state_sequence_to_sim_without_interaction_ke
     )
     assert [block["type"] for block in scene["blocks"]] == ["sim"]
     assert scene["blocks"][0]["engine"] == "widget"
+    interaction = scene["blocks"][0]["interactionBrief"]
+    assert interaction["stateModel"][0]["initial"] == 0
+    compiled, problem = compile_interaction_brief(
+        interaction, profile="state", core_insight="追踪一次树旋转"
+    )
+    assert compiled is not None and problem == ""
     assert any("过程状态证据路由到 sim.widget" in warning for warning in warnings)
 
 
@@ -534,6 +541,47 @@ async def test_replan_normalizes_object_shaped_role_and_size_without_crashing() 
     assert candidate["blocks"][0]["size"] == "m"
 
 
+async def test_replan_drops_non_object_interaction_brief_for_validated_slow_path() -> None:
+    current = _doc()["scenes"][0]
+    current["brief"].update(
+        {
+            "learningAction": "trace",
+            "requiredEvidence": "逐步观察树的状态变化",
+            "visualTask": "追踪 AVL 插入与旋转的前后态",
+        }
+    )
+    response = {
+        "scene": {
+            **current,
+            "blocks": [
+                {
+                    "id": "sim1",
+                    "type": "state-sim",
+                    "role": "visualization",
+                    "intent": "逐步追踪插入与旋转",
+                    "size": "xl",
+                    "interactionBrief": "由 create-state-sim 补全",
+                }
+            ],
+        }
+    }
+    fake = FakeClient(by_purpose={"quality:replan": json.dumps(response, ensure_ascii=False)})
+    candidate, err = await replan_page(
+        fake,
+        current_scene=current,
+        brief=current["brief"],
+        issues=["缺少动态证据"],
+        topic="AVL",
+        audience="",
+        material="",
+        allowed_types={"state-sim"},
+        type_descriptions={"state-sim": "状态序列"},
+        all_scenes=[current],
+    )
+    assert err is None and candidate is not None
+    assert "interactionBrief" not in candidate["blocks"][0]
+
+
 def test_validate_plan_revision_rejects_object_shaped_type_and_size_without_crashing() -> None:
     scene = _doc()["scenes"][0]
     scene["blocks"][0]["type"] = {"name": "chart"}
@@ -612,6 +660,103 @@ async def test_course_evidence_obligations_cannot_be_omitted_from_skeleton() -> 
     planned = {block["type"] for scene in doc["scenes"] for block in scene["blocks"]}
     assert {"state-sim", "runnable"} <= planned
     assert sum("课程证据义务" in warning for warning in warnings) == 2
+
+
+async def test_calculate_action_cannot_be_satisfied_by_compare_and_stats_only() -> None:
+    scene = _doc()["scenes"][0]
+    scene["brief"].update(
+        {
+            "objective": "学生能计算给定结构的平均查找长度",
+            "learningAction": "calculate",
+            "requiredEvidence": "展示代入数据、计算过程和结果解释",
+            "visualTask": "对比两种结构的查找代价",
+        }
+    )
+    scene["blocks"] = [
+        {"id": "cmp", "type": "compare", "role": "evidence", "intent": "对比", "size": "m"},
+        {"id": "stat", "type": "stats", "role": "support", "intent": "结果", "size": "m"},
+    ]
+    warnings = await refine_plan(
+        FakeClient(),
+        {"scenes": [scene]},
+        topic="任意定量课程",
+        allowed_types={"compare", "stats", "formula"},
+        rounds=0,
+    )
+    assert [block["type"] for block in scene["blocks"]] == ["compare", "formula"]
+    assert "代入示例" in scene["blocks"][1]["intent"]
+    assert any("计算学习动作路由到 formula" in warning for warning in warnings)
+
+
+async def test_two_dense_evidence_blocks_remove_redundant_support_rail() -> None:
+    scene = _doc()["scenes"][0]
+    scene["blocks"] = [
+        {"id": "f", "type": "formula", "role": "evidence", "intent": "定义", "size": "m"},
+        {"id": "c", "type": "chart", "role": "evidence", "intent": "曲线", "size": "m"},
+        {"id": "l", "type": "list", "role": "support", "intent": "重复说明", "size": "s"},
+    ]
+    warnings = await refine_plan(
+        FakeClient(),
+        {"scenes": [scene]},
+        topic="任意定量课程",
+        allowed_types={"formula", "chart", "list"},
+        rounds=0,
+    )
+    assert [block["id"] for block in scene["blocks"]] == ["f", "c"]
+    assert any("双高密度证据页" in warning for warning in warnings)
+
+
+async def test_calculation_requiring_student_answer_gets_quiz_feedback_and_graph() -> None:
+    scene = _doc()["scenes"][0]
+    scene["brief"].update(
+        {
+            "objective": "学生能计算每个节点并判断结构是否满足条件",
+            "learningAction": "calculate",
+            "requiredEvidence": "学生计算后提交答案并获得正确性反馈",
+            "visualTask": "在树形结构中读取父子关系、左子树和右子树",
+        }
+    )
+    scene["blocks"] = [
+        {"id": "d", "type": "diagram", "role": "visualization", "intent": "画树", "size": "m"},
+        {"id": "f", "type": "formula", "role": "evidence", "intent": "定义", "size": "m"},
+    ]
+    warnings = await refine_plan(
+        FakeClient(),
+        {"scenes": [scene]},
+        topic="任意树结构",
+        allowed_types={"diagram", "graph", "formula", "quiz"},
+        rounds=0,
+    )
+    assert [block["type"] for block in scene["blocks"]] == ["graph", "quiz"]
+    assert any("学习者作答证据路由到 quiz" in warning for warning in warnings)
+    assert any("节点-边拓扑" in warning for warning in warnings)
+
+
+async def test_comparative_average_without_distribution_is_narrowed_to_derived_bounds() -> None:
+    scene = _doc()["scenes"][0]
+    scene["brief"].update(
+        {
+            "objective": "比较两种方法的平均查找长度",
+            "learningAction": "compare",
+            "requiredEvidence": "给出平均性能常数",
+            "visualTask": "用表格比较平均性能差异",
+            "evidencePolicy": "derived",
+        }
+    )
+    scene["blocks"] = [
+        {"id": "cmp", "type": "compare", "role": "evidence", "intent": "比较", "size": "m"},
+        {"id": "tbl", "type": "table", "role": "evidence", "intent": "平均值", "size": "m"},
+    ]
+    warnings = await refine_plan(
+        FakeClient(),
+        {"scenes": [scene]},
+        topic="任意算法比较",
+        allowed_types={"compare", "table"},
+        rounds=0,
+    )
+    assert "区分平均量与最坏上界" in scene["brief"]["objective"]
+    assert all("禁止把最坏高度系数" in block["intent"] for block in scene["blocks"])
+    assert any("无数据基础的比较平均值" in warning for warning in warnings)
 
 
 async def test_observational_obligation_adds_evidence_media_without_replacing_native_labels() -> None:

@@ -54,7 +54,7 @@ _BY_PURPOSE = {
     "block:hero": json.dumps({"type": "hero", "title": ["示例讲义", "副标题"]}),
     "block:list": _LONG_LIST,
     "notes": json.dumps({"note": "本页备注，讲清主线、展开核心直觉与常见误区。"}),
-    "reflow": _SHORT_SCENE,
+    "quality:reflow": _SHORT_SCENE,
 }
 
 
@@ -317,6 +317,6 @@ async def test_condense_scene_rejects_block_id_tampering() -> None:
     scene = {"id": "p1", "kind": "content", "blocks": [{"id": "b1", "type": "statement", "statement": "原文。"}]}
     tampered = json.dumps({"id": "p1", "kind": "content", "blocks": [{"id": "ZZZ", "type": "statement", "statement": "短。"}]})
     r = await condense_scene(
-        FakeClient(by_purpose={"reflow": tampered}), scene, overflow_px=200, rounds=1
+        FakeClient(by_purpose={"quality:reflow": tampered}), scene, overflow_px=200, rounds=1
     )
     assert r.scene is None and r.err and "id" in r.err

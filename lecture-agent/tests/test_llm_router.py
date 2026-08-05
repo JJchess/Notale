@@ -30,3 +30,30 @@ async def test_quality_purposes_use_dedicated_client() -> None:
     assert await router.complete([], purpose="quality:replan") == "replan"
     assert await router.complete([], purpose="block:chart") == "default"
     assert [purpose for purpose, _ in quality.calls] == ["quality:page", "quality:replan"]
+
+
+async def test_structured_visual_purposes_use_dedicated_client() -> None:
+    default = FakeClient(queue=["content"])
+    visual = FakeClient(queue=["diagram", "chart-repair", "formula"])
+    router = PurposeRouterClient(
+        default=default,
+        routes={"block:diagram": visual, "repair:chart": visual, "block:formula": visual},
+    )
+
+    assert await router.complete([], purpose="block:diagram") == "diagram"
+    assert await router.complete([], purpose="repair:chart") == "chart-repair"
+    assert await router.complete([], purpose="block:formula") == "formula"
+    assert await router.complete([], purpose="block:statement") == "content"
+
+
+async def test_runnable_purposes_use_dedicated_client() -> None:
+    default = FakeClient(queue=["content"])
+    runtime = FakeClient(queue=["runtime", "runtime-repair"])
+    router = PurposeRouterClient(
+        default=default,
+        routes={"block:runnable": runtime, "repair:runnable": runtime},
+    )
+
+    assert await router.complete([], purpose="block:runnable") == "runtime"
+    assert await router.complete([], purpose="repair:runnable") == "runtime-repair"
+    assert await router.complete([], purpose="block:list") == "content"

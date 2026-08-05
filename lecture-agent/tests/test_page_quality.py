@@ -130,11 +130,41 @@ async def test_page_review_failure_is_unavailable_not_a_replan_instruction() -> 
     assert review.page_issues == []
 
 
+async def test_page_review_repairs_invalid_latex_json_escape() -> None:
+    repaired = json.dumps(
+        {
+            "score": 7,
+            "pass": False,
+            "blockIssues": [],
+            "pageIssues": ["公式中的反斜杠已正确转义"],
+        },
+        ensure_ascii=False,
+    )
+    fake = FakeClient(
+        by_purpose={
+            "quality:page": r'{"score":7,"pageIssues":["bad \q"]}',
+            "quality:page-json-repair": repaired,
+        }
+    )
+    review = await review_page(
+        fake,
+        topic="AVL",
+        scene={"id": "p1", "kind": "content", "blocks": []},
+        brief={"objective": "理解递推"},
+    )
+    assert review.available and review.score == 7
+    assert [purpose for purpose, _ in fake.calls] == [
+        "quality:page",
+        "quality:page-json-repair",
+    ]
+
+
 def test_compact_scene_removes_widget_css_but_preserves_model_tail() -> None:
     html = "<style>" + (".x{color:red}" * 2000) + "</style><div id='stage'></div><script>const model=1;render();</script>"
     compacted = compact_scene({"blocks": [{"type": "sim", "html": html}]})
     widget = compacted["blocks"][0]["html"]
     assert "color:red" not in widget
+    assert "STYLE PRESENT IN ORIGINAL" in widget
     assert "id='stage'" in widget
     assert "render();" in widget
 
@@ -203,7 +233,7 @@ async def test_pipeline_routes_quality_issue_back_to_exact_block() -> None:
                 self.calls.append((purpose, messages))
                 self.quality_calls += 1
                 return review if self.quality_calls == 1 else clean_review
-            if purpose == "block:statement":
+            if purpose in {"block:statement", "quality:block:statement"}:
                 self.calls.append((purpose, messages))
                 self.statement_calls += 1
                 text = "梯度只给方向。" if self.statement_calls == 1 else "更新范数等于学习率乘梯度范数。"
@@ -363,8 +393,9 @@ async def test_page_issue_can_replan_block_type_and_regenerate_whole_page() -> N
                 by_purpose={
                     "plan:skeleton": skeleton,
                     "block:statement": '{"type":"statement","statement":"普通风险。"}',
-                    "quality:replan": replanned,
-                    "block:callout": '{"type":"callout","label":"风险","text":"必须醒目标出。"}',
+                        "quality:replan": replanned,
+                        "block:callout": '{"type":"callout","label":"风险","text":"必须醒目标出。"}',
+                        "quality:block:callout": '{"type":"callout","label":"风险","text":"必须醒目标出。"}',
                     "notes": '{"note":"指出风险视觉层级。"}',
                 }
             )
@@ -450,7 +481,8 @@ async def test_descriptive_replan_size_is_normalized_without_wasting_a_round() -
                 by_purpose={
                     "plan:skeleton": skeleton,
                     "block:statement": '{"type":"statement","statement":"普通风险。"}',
-                    "block:callout": '{"type":"callout","label":"风险","text":"必须醒目标出。"}',
+                        "block:callout": '{"type":"callout","label":"风险","text":"必须醒目标出。"}',
+                        "quality:block:callout": '{"type":"callout","label":"风险","text":"必须醒目标出。"}',
                     "notes": '{"note":"指出风险视觉层级。"}',
                 }
             )

@@ -183,10 +183,37 @@ async function verifyScene(cdp, url, label) {
           const cs = getComputedStyle(e); return cs.display !== 'none' && cs.visibility !== 'hidden' && +cs.opacity !== 0;
         }).map(e => parseFloat(getComputedStyle(e).fontSize)).filter(Number.isFinite);
         const minTextPx = textSizes.length ? +Math.min(...textSizes).toFixed(2) : null;
+        // Screenshot-independent composition geometry. Measure the union of actual content
+        // cells, not the full-size .body container, so a tiny centered card cannot masquerade
+        // as a well-used slide merely because its parent fills the viewport.
+        const padRect = pad.getBoundingClientRect();
+        let visualCells = [];
+        if (body && body.dataset.layout === 'artboard') {
+          visualCells = [...body.children].filter(e => !e.classList.contains('artboard-title') || (e.textContent || '').trim());
+        } else if (body && body.dataset.layout === 'index') {
+          visualCells = [...body.querySelectorAll('.scene-index,.step-panel.show')];
+        } else if (body) {
+          visualCells = [...body.children];
+        }
+        visualCells.push(...[...pad.children].filter(e => e !== body && !e.classList.contains('body')));
+        const rects = visualCells.map(e => e.getBoundingClientRect()).filter(r => r.width > 2 && r.height > 2)
+          .map(r => ({ left: Math.max(padRect.left,r.left), top: Math.max(padRect.top,r.top), right: Math.min(padRect.right,r.right), bottom: Math.min(padRect.bottom,r.bottom) }))
+          .filter(r => r.right > r.left && r.bottom > r.top);
+        const padArea = Math.max(1, padRect.width * padRect.height);
+        let occupiedRatio = null, mainSubjectRatio = null, whitespaceRatio = null;
+        if (rects.length) {
+          const union = {
+            left: Math.min(...rects.map(r => r.left)), top: Math.min(...rects.map(r => r.top)),
+            right: Math.max(...rects.map(r => r.right)), bottom: Math.max(...rects.map(r => r.bottom)),
+          };
+          occupiedRatio = +(((union.right-union.left)*(union.bottom-union.top))/padArea).toFixed(3);
+          mainSubjectRatio = +(Math.max(...rects.map(r => (r.right-r.left)*(r.bottom-r.top)))/padArea).toFixed(3);
+          whitespaceRatio = +(1 - Math.min(1, occupiedRatio)).toFixed(3);
+        }
         out.push({ i, overflowX: Math.round(overflowX), overflowY: Math.round(overflowY), mblockClip, corrupt, expectCenter, actualCenter, layoutClip, layoutDebug, dynamicBlank, widgetErrors, plotWarnings,
           chartMinWidthUse: chartWidthUse.length ? Math.min(...chartWidthUse) : null,
           widgetMinHeight: widgetHeights.length ? Math.min(...widgetHeights) : null,
-          minTextPx });
+          minTextPx, occupiedRatio, mainSubjectRatio, whitespaceRatio });
       }
       return out;
     })()`);

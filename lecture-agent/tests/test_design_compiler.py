@@ -137,6 +137,22 @@ def test_wide_evidence_never_enters_annotated_caption_rail() -> None:
         assert by_id[block_id]["styleRole"] == "evidence"
 
 
+def test_annotated_specimen_with_one_note_uses_dominant_stage() -> None:
+    scene = _scene("graph", "callout")
+    layout = compile_scene_composition(
+        scene, {"compositionFamily": "annotated-specimen"}, {"density": "medium"}, []
+    )
+    by_id = {
+        block_id: area
+        for area in layout["areas"]
+        for block_id in area["blockIds"]
+    }
+    assert by_id["block-0"]["col"] == [1, 10]
+    assert by_id["block-0"]["row"] == [4, 13]
+    assert by_id["block-1"]["col"] == [10, 13]
+    assert by_id["block-1"]["styleRole"] == "aside"
+
+
 def test_data_page_balances_two_visual_evidence_blocks() -> None:
     scene = _scene("chart", "diagram")
     scene["blocks"][1]["nodes"] = [{"title": str(index)} for index in range(5)]

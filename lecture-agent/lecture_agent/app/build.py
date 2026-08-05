@@ -30,6 +30,19 @@ def build_llm(cfg: DictConfig) -> LLMClient:
         with open_dict(cfg):
             cfg.quality_llm.pop("fast_extra_body", None)
         routes["quality:"] = instantiate(cfg.quality_llm)
+    if "visual_llm" in cfg and cfg.visual_llm:
+        with open_dict(cfg):
+            cfg.visual_llm.pop("fast_extra_body", None)
+        visual: LLMClient = instantiate(cfg.visual_llm)
+        for block_type in ("chart", "diagram", "graph", "flow", "timeline", "formula"):
+            routes[f"block:{block_type}"] = visual
+            routes[f"repair:{block_type}"] = visual
+    if "runtime_llm" in cfg and cfg.runtime_llm:
+        with open_dict(cfg):
+            cfg.runtime_llm.pop("fast_extra_body", None)
+        runtime: LLMClient = instantiate(cfg.runtime_llm)
+        routes["block:runnable"] = runtime
+        routes["repair:runnable"] = runtime
     if not routes:
         return llm
     return PurposeRouterClient(default=llm, routes=routes)
@@ -64,6 +77,24 @@ def quality_model_of(cfg: DictConfig) -> str | None:
         return None
     inner = cfg.quality_llm.get("inner")
     model = (inner.get("model") if inner else None) or cfg.quality_llm.get("model")
+    return str(model) if model else None
+
+
+def visual_model_of(cfg: DictConfig) -> str | None:
+    """Return the dedicated structured-visual model, when configured."""
+    if "visual_llm" not in cfg or not cfg.visual_llm:
+        return None
+    inner = cfg.visual_llm.get("inner")
+    model = (inner.get("model") if inner else None) or cfg.visual_llm.get("model")
+    return str(model) if model else None
+
+
+def runtime_model_of(cfg: DictConfig) -> str | None:
+    """Return the dedicated runnable evidence model, when configured."""
+    if "runtime_llm" not in cfg or not cfg.runtime_llm:
+        return None
+    inner = cfg.runtime_llm.get("inner")
+    model = (inner.get("model") if inner else None) or cfg.runtime_llm.get("model")
     return str(model) if model else None
 
 

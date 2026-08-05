@@ -469,6 +469,7 @@ async def _quality_repair(
                     topic=topic,
                     material=material,
                     tools=tools if ph.get("type") == "sim" else None,
+                    purpose_namespace="quality",
                 )
             _emit_block_done(progress, str(ph.get("id") or "?"), sid, result.err)
             return ph, result
@@ -634,6 +635,7 @@ async def _quality_repair(
                     topic=topic,
                     material=material,
                     tools=tools if block_type == "sim" else None,
+                    purpose_namespace="quality",
                 )
             if result.block:
                 result.block["id"] = block_id
@@ -1030,11 +1032,13 @@ def _apply_visual_contract_repairs(
                 scene["layout"] = _focus_artboard(scene)
                 changed.add(issue.scene_id)
         elif issue.route == "media":
+            touched = False
             background = scene.get("background")
             if isinstance(background, dict):
                 background["fit"] = "cover"
                 background["overlay"] = "scrim"
                 background["overlayStrength"] = max(0.42, float(background.get("overlayStrength") or 0.45))
+                touched = True
             for block in scene.get("blocks") or []:
                 if not isinstance(block, dict) or block.get("type") != "media":
                     continue
@@ -1044,7 +1048,21 @@ def _apply_visual_contract_repairs(
                     block["objectPosition"] = {"x": focal.get("x", 0.5), "y": focal.get("y", 0.5)}
                 block["fit"] = "cover"
                 block["treatment"] = "cutout" if asset.get("kind") == "cutout" else "frame"
-            changed.add(issue.scene_id)
+                touched = True
+            if touched:
+                changed.add(issue.scene_id)
+            else:
+                # A screenshot reviewer may mislabel a broken widget/diagram as
+                # media. Without an actual asset there is nothing to crop; route
+                # the evidence block back to content repair instead of fake-green.
+                content_issues.append(
+                    VisualIssue(
+                        issue.scene_id,
+                        "blockContent",
+                        issue.problem,
+                        issue.instruction,
+                    )
+                )
         else:
             content_issues.append(issue)
     return changed, content_issues
@@ -1460,7 +1478,8 @@ async def generate_lecture(
                             llm,
                             current=current,
                             issues=(
-                                "真实浏览器执行失败，必须修正后保持首帧非空：\n- "
+                                "真实浏览器执行失败，必须修正后保持首帧非空。不得删除、注释或放宽断言来消音；"
+                                "应修正实现，只有断言本身与页级公式/契约冲突时才修正 expected：\n- "
                                 + "\n- ".join(errors)
                             ),
                             theme=str(doc.get("theme") or "cartesian"),
@@ -1509,11 +1528,97 @@ async def generate_lecture(
                     and 0 <= int(metric.get("i", -1)) < len(doc.get("scenes") or [])
                 }
                 if runtime_bad:
+                    if rnd < opts.render_rounds:
+                        log(
+                            f"[render] 第 {rnd} 轮 widget 修复后仍失败，"
+                            "保留真实错误并进入下一轮浏览器驱动修复"
+                        )
+                        continue
                     render_hard_errors = [
                         "widget 运行时修复后复验仍失败："
                         + "；".join(
                             f"#{idx}: {', '.join(errors)}"
                             for idx, errors in sorted(runtime_bad.items())
+                        )
+                    ]
+                    break
+            plot_bad = {
+                int(metric.get("i", -1)): int(metric.get("plotWarnings") or 0)
+                for metric in render_report.page_metrics
+                if int(metric.get("plotWarnings") or 0) > 0
+                and 0 <= int(metric.get("i", -1)) < len(doc.get("scenes") or [])
+            }
+            if plot_bad:
+                log(f"[render] 第 {rnd} 轮: {len(plot_bad)} 页 Plot 警告，定点重生成 chart")
+
+                async def fix_plot_chart(
+                    item: tuple[int, int], _i: int
+                ) -> tuple[int, str | None]:
+                    idx, warning_count = item
+                    scene = doc["scenes"][idx]
+                    charts = [
+                        (bi, block)
+                        for bi, block in enumerate(scene.get("blocks") or [])
+                        if isinstance(block, dict) and block.get("type") == "chart"
+                    ]
+                    if not charts:
+                        return idx, "浏览器报告 Plot 警告，但页面中找不到 chart block"
+                    reg = registry.get("chart")
+                    if reg is None:
+                        return idx, "registry 中没有 chart Skill"
+                    for bi, current in charts:
+                        block_id = str(current.get("id") or "")
+                        placeholder = placeholder_specs.get(block_id, {})
+                        result = await generate_block(
+                            llm,
+                            type="chart",
+                            intent=(
+                                str(placeholder.get("intent") or "保持原图表的定量论证")
+                                + f"\n真实浏览器发现 {warning_count} 个 Observable Plot 警告。"
+                                "重新生成 schema-valid chart；序数轴标注必须使用 categories 中的原始值，"
+                                "annotation 的 x/x2 与轴类型一致，且保留可复算的原数据与结论。"
+                            ),
+                            scene_ctx=_block_scene_context(
+                                scene,
+                                page_briefs.get(str(scene.get("id") or "?"), _page_brief(scene)),
+                                list(scene.get("blocks") or []),
+                                visual_brief=page_visual_briefs.get(str(scene.get("id") or "?"), {}),
+                                design_brief=design_brief,
+                            ),
+                            contract=reg.contract,
+                            topic=topic,
+                            material=mat,
+                            purpose_namespace="quality",
+                        )
+                        if result.block is None:
+                            return idx, result.err or "chart 重生成失败"
+                        repaired = dict(result.block)
+                        repaired["id"] = block_id
+                        scene["blocks"][bi] = repaired
+                        render_changed_scene_ids.add(str(scene.get("id") or "?"))
+                    return idx, None
+
+                plot_results = await pool(
+                    sorted(plot_bad.items()), opts.concurrency, fix_plot_chart
+                )
+                plot_failures = [
+                    f"#{idx}: {error}" for idx, error in plot_results if error is not None
+                ]
+                if plot_failures:
+                    render_hard_errors = ["Plot 图表修复失败：" + "；".join(plot_failures)]
+                    break
+                progress({"type": "docUpdated", "doc": doc, "reason": "plot-warning-repair"})
+                render_report = await render_verifier.verify(json.dumps(doc, ensure_ascii=False))
+                remaining_plot_bad = {
+                    int(metric.get("i", -1)): int(metric.get("plotWarnings") or 0)
+                    for metric in render_report.page_metrics
+                    if int(metric.get("plotWarnings") or 0) > 0
+                }
+                if remaining_plot_bad:
+                    render_hard_errors = [
+                        "Plot 图表修复后复验仍失败："
+                        + "；".join(
+                            f"#{idx}: {count}" for idx, count in sorted(remaining_plot_bad.items())
                         )
                     ]
                     break
@@ -1553,6 +1658,11 @@ async def generate_lecture(
 
             await pool(sorted(bad.items()), opts.concurrency, reflow)
             progress({"type": "docUpdated", "doc": doc, "reason": "reflow"})
+            # The next loop iteration normally performs the browser recheck.
+            # On the final allowed round there is no next iteration, so verify
+            # once here rather than reporting the stale pre-reflow screenshot.
+            if rnd == opts.render_rounds:
+                render_report = await render_verifier.verify(json.dumps(doc, ensure_ascii=False))
 
         # 最终像素级评审：一次看整档截图，按 route 定点修复，然后真机复验。
         if (
@@ -1576,13 +1686,25 @@ async def generate_lecture(
                     if 0 <= index < len(scenes):
                         scene = scenes[index]
                         item["sceneId"] = str(scene.get("id") or f"page-{index + 1}")
+                        item["sceneKind"] = str(scene.get("kind") or "content")
                         item["compositionSignature"] = json.dumps(
                             scene.get("layout") or {}, ensure_ascii=False, sort_keys=True
                         )
                     enriched.append(item)
                 return enriched
 
-            preflight = preflight_page_metrics(metrics_with_context(render_report))
+            contextual_metrics = metrics_with_context(render_report)
+            preflight = preflight_page_metrics(contextual_metrics)
+            hard_scene_ids = {
+                str(metric.get("sceneId") or "")
+                for metric in contextual_metrics
+                if metric.get("widgetErrors")
+                or metric.get("corrupt")
+                or int(metric.get("overflowX") or 0) > 1
+                or int(metric.get("overflowY") or 0) > 4
+                or int(metric.get("layoutClip") or 0) > 4
+                or int(metric.get("mblockClip") or 0) > 4
+            }
             if preflight.hard_errors:
                 render_hard_errors.extend(preflight.hard_errors)
             shots = [str(path) for path in render_report.shots]
@@ -1610,6 +1732,9 @@ async def generate_lecture(
                 )
                 review = await visual_reviewer.review(request)
                 combined_issues = [*preflight.issues, *review.issues]
+                repairable_issues = [
+                    issue for issue in combined_issues if issue.scene_id not in hard_scene_ids
+                ]
                 visual_quality_payload = _visual_report_payload(review)
                 visual_quality_payload["preflightIssues"] = [
                     {
@@ -1622,8 +1747,10 @@ async def generate_lecture(
                 ]
                 if not review.available:
                     final.warnings.extend(review.warnings)
-                elif combined_issues and not render_hard_errors:
-                    changed, content_issues = _apply_visual_contract_repairs(doc, combined_issues)
+                elif repairable_issues:
+                    changed, content_issues = _apply_visual_contract_repairs(
+                        doc, repairable_issues
+                    )
 
                     async def repair_visual_content(issue: VisualIssue, _i: int) -> str | None:
                         scene = next(
@@ -1636,6 +1763,41 @@ async def generate_lecture(
                         )
                         if scene is None:
                             return f"{issue.scene_id}: 找不到页"
+                        widget = next(
+                            (
+                                block
+                                for block in scene.get("blocks") or []
+                                if isinstance(block, dict)
+                                and block.get("type") == "sim"
+                                and block.get("engine") == "widget"
+                            ),
+                            None,
+                        )
+                        if widget is not None:
+                            result = await repair_widget(
+                                llm,
+                                current=widget,
+                                issues=(
+                                    "截图级视觉证据失败："
+                                    + issue.problem
+                                    + "\n必须修正："
+                                    + issue.instruction
+                                ),
+                                theme=str(doc.get("theme") or "cartesian"),
+                                language=str(doc.get("language") or "zh-CN"),
+                                topic=topic,
+                                guidelines=widget_guidelines,
+                                rounds=1,
+                            )
+                            if result.block is None:
+                                return f"{issue.scene_id}: {result.err or 'widget 视觉修复失败'}"
+                            repaired_widget = dict(result.block)
+                            repaired_widget["id"] = widget.get("id")
+                            for index, block in enumerate(scene.get("blocks") or []):
+                                if block is widget:
+                                    scene["blocks"][index] = repaired_widget
+                                    break
+                            return None
                         candidates = [
                             block
                             for block in scene.get("blocks") or []
@@ -1667,6 +1829,7 @@ async def generate_lecture(
                             contract=reg.contract,
                             topic=topic,
                             material=mat,
+                            purpose_namespace="quality",
                         )
                         if result.block is None:
                             return f"{issue.scene_id}: {result.err or 'block 修复失败'}"

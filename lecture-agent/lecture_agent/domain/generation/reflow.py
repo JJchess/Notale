@@ -28,7 +28,9 @@ _SYS = (
     "（版式 layout 按 id 引用它们，动了会散架）。\n"
     "2) 优先做：合并啰嗦句、砍掉重复例子、缩短 list 条目文字、删掉最不关键的 1-2 个 list/timeline 条目。\n"
     "3) 禁止：删掉整个论点、把正文换成占位符、用省略号糊弄、改小字号类字段（titleSize/latexSize 等）。\n"
-    "4) 讲授完整性优先于字数：宁可删一个次要条目，也不要把每条都砍成半句话。"
+    "4) 若是公式横向裁切，保持数学等价，但把过长 latex 改写成 aligned/gathered 多行推导或更紧凑的等价式；"
+    "不能仅删解释文字，因为那不会改变公式宽度。\n"
+    "5) 讲授完整性优先于字数：宁可删一个次要条目，也不要把每条都砍成半句话。"
 )
 
 
@@ -68,7 +70,7 @@ async def condense_scene(
         if rnd:
             msgs.append(Message(role="user", content=f"上一轮不合格：{last_err}。请重新输出该 scene。"))
         try:
-            raw = await llm.complete(msgs, purpose="reflow")
+            raw = await llm.complete(msgs, purpose="quality:reflow")
         except Exception as e:  # noqa: BLE001
             return ReflowResult(None, f"LLM 调用失败: {e}")
         try:

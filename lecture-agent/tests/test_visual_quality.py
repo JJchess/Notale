@@ -90,6 +90,28 @@ def test_deterministic_preflight_reads_browser_min_text_metric() -> None:
     assert [(issue.scene_id, issue.route) for issue in report.issues] == [("s1", "tokens")]
 
 
+def test_deterministic_preflight_allows_intentional_sparse_navigation_pages() -> None:
+    report = preflight_page_metrics(
+        [
+            {
+                "sceneId": "cover",
+                "sceneKind": "hero",
+                "occupiedRatio": 0.2,
+                "mainSubjectRatio": 0.1,
+                "whitespaceRatio": 0.8,
+            },
+            {
+                "sceneId": "section",
+                "sceneKind": "section",
+                "occupiedRatio": 0.2,
+                "mainSubjectRatio": 0.1,
+                "whitespaceRatio": 0.8,
+            },
+        ]
+    )
+    assert report.issues == []
+
+
 @pytest.mark.asyncio
 async def test_gemini_adapter_no_key_is_fail_open(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
@@ -129,6 +151,8 @@ async def test_gemini_adapter_builds_multimodal_request(monkeypatch: pytest.Monk
     assert captured["reasoning_effort"] == "low"
     messages = captured["messages"]
     assert isinstance(messages, list)
+    assert "sim/widget" in messages[0]["content"]  # type: ignore[index]
+    assert "必须 route=`blockContent`" in messages[0]["content"]  # type: ignore[index]
     assert len(messages[1]["content"]) == 3  # type: ignore[index]
 
 
