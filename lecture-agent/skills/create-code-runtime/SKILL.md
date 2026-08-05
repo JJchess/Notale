@@ -1,13 +1,7 @@
 ---
 name: create-code-runtime
-description: Author a runnable (edit → Run) code cell block for a LectureDoc lecture — an in-browser Python (Pyodide) + JavaScript editor with a console and a result chart. Reach for it whenever the student should learn by writing/modifying and actually executing code themselves: implementing an algorithm by hand, tuning parameters and seeing the effect, exploratory what-if coding. Use a plain `code` block instead for read-only display the student will not run. Produces schema-valid runnable block JSON.
-affordances: [editable-code, code-execution, console-output, result-visualization]
-learner-actions: [implement, run, debug, modify]
-evidence-outputs: [stdout, execution-result, test-result]
-limitations: [requires self-contained browser-safe code]
-version: 1.0.0
+description: "Author a runnable (edit → Run) code cell block for a LectureDoc lecture — an in-browser Python (Pyodide) + JavaScript editor with a console and a result chart. Reach for it whenever the student should learn by writing/modifying and actually executing code themselves: implementing an algorithm by hand, tuning parameters and seeing the effect, exploratory what-if coding. Use a plain `code` block instead for read-only display the student will not run. Produces schema-valid runnable block JSON."
 license: MIT
-platforms: [linux, macos, windows]
 metadata:
   hermes:
     tags: [Courseware, LectureDoc, Runnable, Pyodide, CodeRuntime]
@@ -46,5 +40,9 @@ A lecture can contain **more than one** runnable block — each gets its own edi
 
 ## Rules
 - Prefer nothing heavier than pure Python (no numpy/matplotlib — Pyodide core only). Put helper machinery in the preamble/env; the student edits the short, conceptual part.
+- Keep each visible `starter` within 60 lines and roughly 2400 characters. Put data fixtures, test harnesses, tree builders, plotting adapters, and other scaffolding in `env.pythonPreamble` / `env.jsPreamble`; the editor should expose only the algorithmic decision the learner is meant to change.
+- **The preamble is scaffolding, not a concept vault.** If the scene objective says implement/write/complete/debug an algorithm, the visible `starter` must contain that algorithm's core branch, recurrence, update rule, invariant check, or deliberately incomplete function. Never put the finished target implementation in the preamble and leave only an input list or parameter knob in the editor. For an AVL lesson, `Node` fixtures and a tree printer may be preamble; `insert`, balance-case selection, and rotations belong in the visible starter (or the objective must honestly say “run/inspect,” not “implement”).
+- Start the editor at the first meaningful edit, not with a screen of imports, comments, or completed reference implementation. A runnable is an activity stage, not a code appendix.
+- Prefer `env.output:"console"` when the evidence is test output, invariants, traversal order, or debugging. Do not reserve a blank result chart for non-quantitative programs.
 - No "点 Run 查看结果" onboarding copy on-slide (SPEC §5); the UI is self-evident. Teaching detail → scene `notes`.
 - The `objective` expression must pass the SPEC §4 whitelist (identifiers = `x` + math fns; no arbitrary JS). If you need real programming, that's what this block already is — don't smuggle it into a sim expression.

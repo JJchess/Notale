@@ -12,6 +12,7 @@ from lecture_agent.domain.planning import (
     _skeleton_spec,
     _validated_knowledge_forms,
     assign_layouts,
+    fill_scene_budget,
     fit_scene_budget,
 )
 from lecture_agent.domain.skills import load_skill_catalog, plan_menu
@@ -65,6 +66,8 @@ def test_skeleton_prompt_is_description_driven() -> None:
         assert field in spec
     assert "禁止凭空写论文名+年份" in spec
     assert "装饰模板冒充数学图" in spec
+    assert '"initial":0' in spec
+    assert "纯文字不能冒充视觉证据" in spec
 
 
 def test_skeleton_prompt_drops_interactive_suppression() -> None:
@@ -151,6 +154,35 @@ def test_overfull_skeleton_keeps_evidence_pages_and_hits_exact_budget() -> None:
     assert [scene["id"] for scene in doc["scenes"]] == [
         "cover", "relation", "state", "runtime", "outro"
     ]
+
+
+def test_underfull_skeleton_splits_real_evidence_to_hit_exact_budget() -> None:
+    doc = {
+        "title": "AVL",
+        "scenes": [
+            {"id": "cover", "kind": "hero", "blocks": [{"type": "hero"}]},
+            {
+                "id": "dense",
+                "kind": "content",
+                "headline": "旋转与不变量",
+                "brief": {"misconception": "旋转改变顺序", "evidencePolicy": "derived"},
+                "blocks": [
+                    {"type": "state-sim", "intent": "追踪一次右旋"},
+                    {"type": "formula", "intent": "验证中序序列不变"},
+                    {"type": "quiz", "intent": "判断旋转后的根"},
+                ],
+            },
+            {"id": "outro", "kind": "statement", "blocks": [{"type": "statement"}]},
+        ],
+    }
+    inserted = fill_scene_budget(doc, 4)
+    assert inserted == ["dense"]
+    assert len(doc["scenes"]) == 4
+    assert [block["type"] for block in doc["scenes"][1]["blocks"]] == ["state-sim", "formula"]
+    continuation = doc["scenes"][2]
+    assert continuation["kind"] == "quiz"
+    assert continuation["blocks"] == [{"type": "quiz", "intent": "判断旋转后的根"}]
+    assert continuation["brief"]["requiredEvidence"] == "判断旋转后的根"
 
 
 def test_single_large_block_gets_full() -> None:

@@ -137,6 +137,37 @@ def test_wide_evidence_never_enters_annotated_caption_rail() -> None:
         assert by_id[block_id]["styleRole"] == "evidence"
 
 
+def test_data_page_balances_two_visual_evidence_blocks() -> None:
+    scene = _scene("chart", "diagram")
+    scene["blocks"][1]["nodes"] = [{"title": str(index)} for index in range(5)]
+    layout = compile_scene_composition(
+        scene, {"compositionFamily": "data-evidence"}, {"density": "medium"}, []
+    )
+    assert [area["col"][1] - area["col"][0] for area in layout["areas"]] == [6, 6]
+
+
+def test_dense_quiz_uses_ten_column_focal_stage() -> None:
+    scene = _scene("quiz")
+    scene["blocks"][0]["stem"] = "long question " * 50
+    layout = compile_scene_composition(
+        scene, {"compositionFamily": "focal-object"}, {"density": "medium"}, []
+    )
+    assert layout["areas"][0]["col"] == [2, 12]
+    assert layout["areas"][0]["row"] == [4, 13]
+
+
+def test_dense_table_dominates_light_diagram_in_comparison() -> None:
+    scene = _scene("table", "diagram")
+    scene["blocks"][0]["head"] = ["a", "b", "c", "d", "e", "f"]
+    scene["blocks"][0]["rows"] = [[1, 2, 3, 4, 5, 6]]
+    scene["blocks"][1]["nodes"] = [{"title": "left"}, {"title": "right"}]
+    layout = compile_scene_composition(
+        scene, {"compositionFamily": "comparison"}, {"density": "medium"}, []
+    )
+    assert layout["areas"][0]["col"] == [1, 9]
+    assert layout["areas"][1]["col"] == [9, 13]
+
+
 def test_text_only_poster_centers_claim_instead_of_reserving_fake_media_space() -> None:
     scene = _scene("statement", "callout")
     layout = compile_scene_composition(

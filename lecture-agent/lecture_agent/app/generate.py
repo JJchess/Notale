@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import json
 import time
 import uuid
 from collections.abc import Callable
@@ -26,7 +27,7 @@ from ..schema import CodeMarker, Cost, ExperimentRecord
 from ..utils.env import load_env
 from ..utils.logging import get_logger
 from ..utils.seed import seed_everything
-from .build import build_llm, build_options, model_of, sim_model_of, usage_of
+from .build import build_llm, build_options, model_of, quality_model_of, sim_model_of, usage_of
 from .codeprint import agent_fingerprint, git_dirty, git_rev
 
 
@@ -81,6 +82,8 @@ async def run_generation(
     llm = build_llm(cfg)
     if sim_model := sim_model_of(cfg):
         log.info(f"[llm] create-sim widget:* → {sim_model}")
+    if quality_model := quality_model_of(cfg):
+        log.info(f"[llm] page-quality quality:* → {quality_model}")
     options = build_options(cfg)
     image_finder, image_generator = build_media(cfg)
     output_root = Path(out_root or cfg.get("out_dir", "experiments/corpus"))
@@ -107,6 +110,25 @@ async def run_generation(
     elapsed_s = time.perf_counter() - started
     store = FilesystemStore(output_root)
     store.save_deck(str(result.doc.get("id", "lecture")), result.doc)
+    output_root.mkdir(parents=True, exist_ok=True)
+    (output_root / "generation-report.json").write_text(
+        json.dumps(
+            {
+                "elapsedSeconds": round(elapsed_s, 3),
+                "errors": result.errors,
+                "warnings": result.warnings,
+                "dropped": result.dropped,
+                "quality": result.quality,
+                "visualQuality": result.visual_quality,
+                "widgetRoutes": result.widget_routes,
+                "knowledgeForms": result.knowledge_forms,
+                "evidenceObligations": result.evidence_obligations,
+            },
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
 
     if options.record:
         _record_experiment(cfg, result, elapsed_s, usage_of(llm))

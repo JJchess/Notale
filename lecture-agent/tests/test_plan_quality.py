@@ -473,7 +473,7 @@ async def test_replan_page_normalizes_legacy_brief_role_size_and_colliding_ids()
                     "engine": "widget",
                     "role": "interactive-demonstration",
                     "intent": "画二维等高线与真实更新轨迹",
-                    "size": "lg",
+                    "size": "large / main",
                 }
             ],
         }

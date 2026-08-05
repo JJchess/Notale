@@ -5,6 +5,6 @@ description: Plan a discrete state simulation for a LectureDoc lecture. Use when
 
 # Create a state simulation plan
 
-Require a meaningful mid-action first frame, a real single-step transition, visible highlighting of what changed, preserved previous/current state, and deterministic reset. Add play/pause only when repeated stepping helps.
+Require a complete, meaningful initial state on the first paint, a real single-step transition, visible highlighting of what changed, preserved previous/current state, and deterministic reset. The initial step is `0`; reset must return to that exact pre-transition state. A widget must never initialize at step 1 or at an already-completed transformation merely to make the first frame look active. Add play/pause only when repeated stepping helps.
 
 Describe state and transition evidence in `interactionBrief`; do not write HTML. The shared `create-sim` execution core compiles the brief and builds the final widget.

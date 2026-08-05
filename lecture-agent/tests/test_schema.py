@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import pytest
-from lecture_agent.schema import LectureDoc, validate_doc
+from lecture_agent.schema import LectureDoc, validate_block, validate_doc
 from pydantic import ValidationError
 
 
@@ -384,3 +384,62 @@ def test_semantic_expr_whitelist_blocks_unknown_ident() -> None:
     ]
     res = validate_doc(doc)
     assert any("白名单" in e for e in res.errors)
+
+
+def test_visual_readability_contract_rejects_dense_block_content() -> None:
+    formula = validate_block({"type": "formula", "latex": r"\[x^2\]"}, "formula")
+    assert any("display math" in error for error in formula.errors)
+
+    diagram = validate_block(
+        {
+            "type": "diagram",
+            "diagramType": "arrow-seq",
+            "nodes": [{"title": "A", "sub": "paragraph " * 12}, {"title": "B"}],
+        },
+        "diagram",
+    )
+    assert any("节点文字过长" in error for error in diagram.errors)
+
+    chart = validate_block(
+        {
+            "type": "chart",
+            "chartType": "scatter",
+            "points": [{"x": index, "y": index, "label": str(index)} for index in range(7)],
+            "caption": "caption " * 40,
+        },
+        "chart",
+    )
+    assert any("caption 超过" in error for error in chart.errors)
+    assert any("标签超过" in error for error in chart.errors)
+
+    runnable = validate_block(
+        {
+            "type": "runnable",
+            "languages": ["python"],
+            "starter": {"python": "\n".join("pass" for _ in range(61))},
+            "env": {"kind": "custom", "pythonPreamble": "x = 1"},
+        },
+        "runnable",
+    )
+    assert any("60 行" in error for error in runnable.errors)
+
+    hidden_algorithm = validate_block(
+        {
+            "type": "runnable",
+            "languages": ["python"],
+            "headline": "实现 AVL 插入与旋转",
+            "description": "补全并运行核心算法",
+            "starter": {"python": "keys = [3, 2, 1]\nprint(run(keys))"},
+            "env": {
+                "kind": "custom",
+                "pythonPreamble": (
+                    "class Node: pass\n"
+                    "def rotate_left(x): return x\n"
+                    "def rotate_right(x): return x\n"
+                    "def insert(root, key): return root\n"
+                ),
+            },
+        },
+        "runnable",
+    )
+    assert any("核心函数全部藏在" in error for error in hidden_algorithm.errors)

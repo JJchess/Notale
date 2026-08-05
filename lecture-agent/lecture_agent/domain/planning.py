@@ -20,6 +20,7 @@ _HIER_THRESHOLD = 12  # 13+ 页走分层规划；15 页单骨架在 live 模型�
 # The live DeepSeek profiles intentionally allow 600 s for long lecture skeletons. Keeping a
 # shorter domain timeout silently cancelled valid 15-page plans before the provider deadline.
 _PLAN_CALL_TIMEOUT_S = 600.0
+_SIM_CAPABILITIES = {"sim", "state-sim", "model-sim", "geometry-sim"}
 
 _PERSPECTIVE_SCHEMA = (
     '{ "perspectives": [ { "name":"视角名(如 重直觉的入门讲法 / 重推导的理论派 / 重工程实践 / 爱追问的学生)", '
@@ -239,7 +240,7 @@ def _skeleton_spec(
 {_render_menu(type_menu)}
 
 规则:
-- **总页数硬约束：恰好 {pages} 页（可 {pages}−1，绝不少于 {pages}−2、绝不多于 {pages}）**，含封面/收尾/可能的章节分隔页。第一页 kind:hero(封面, 恰含一个 hero block)。页数少(≤4)时省掉回顾/收尾页。
+- **总页数硬约束：恰好 {pages} 页，不允许少一页或多一页**，含封面/收尾/可能的章节分隔页。第一页 kind:hero(封面, 恰含一个 hero block)。页数少(≤4)时省掉回顾/收尾页。
 - **封面与收尾页的标题/副题必须直接点出课题本身**，严禁写成其它主题或泛泛套话。
 - scene.kind: hero(封面/收尾,一个 hero block) | content(常规) | quiz(含一个 quiz block) | statement(含一个 statement block) | section(章节分隔页,含一个 statement block)。
 - 每页必须有内部规划字段 `brief`：先写 `objective`，再只选一个主要 `learningAction`，并用 `requiredEvidence` 写清学生完成目标时必须看到或产出的具体证据；然后才根据 Skill 菜单声明的 affordances / learner actions / evidence outputs 选择 block。`keyClaim` 只写一个核心结论；`misconception` 只写一个具体错误想法（无则空串）；`visualTask` 描述必须编码的关系；`evidencePolicy` 只能是 `derived|provided|synthetic|none`。这些字段供后续生成与质检使用，不是观众正文。
@@ -248,11 +249,12 @@ def _skeleton_spec(
 - **不要从主题名称直接映射组件，也不要按数量配额塞互动**。先比较候选表达是否覆盖 `requiredEvidence`：固定关系、单个最终快照或无需控制的少量状态可用静态图；状态序列/结构变换/逐步执行用 state-sim，可控的定量因果用 model-sim，坐标与空间约束用 geometry-sim，即使 brief 没写“交互/试验”；实现、运行或调试代码必须用 runnable。sim 证明过程状态，runnable 证明代码执行，不能互相冒充；只读代码只能证明“看过”。整套课程若存在适合主动练习的目标，必须至少安排一次可产出学生证据的活动，而不是全程 read/inspect。
 - `implement` 专指编写可执行代码，并且 requiredEvidence 必须包含代码/运行/测试结果；手动画树、手动执行步骤用 `construct` 或 `trace`，不能滥写 implement。若输入的覆盖清单明确要求完整代码实现或调试，必须安排独立 runnable 页面落实该目标，不能用静态伪代码代替或完全漏掉。
 - 每个 block 是占位 {{id(全局唯一), type, role, intent, size}}。`role` 只能是 `claim|evidence|visualization|practice|support`，同页各块必须围绕同一个 brief 分工，不能各讲各的。**type 只能从上方「可选组件」里的名字选，禁止新造类型名**（共 {len(all_types)} 个：{", ".join(all_types)}）。timeline 只用于有明确时间点/阶段的编年序列；无时间标记的简单线性链用 flow。
-- 选择 `state-sim|model-sim|geometry-sim` 时，block 额外写内部 `interactionBrief`。必须使用这些结构：`stateModel:[{{"name":"step","type":"int","range_or_values":"0..3","initial":1}}]`；`controls:[{{"trigger":"单步按钮","effect":"推进一步并调用 update()"}}]`；`visibleEncodings:[{{"quantity":"本步变化的边","mark":"高亮连线","where":"主舞台"}}]`；`verificationCases:[{{"input":"初态","expected":"确定的可见结果"}},{{"input":"一次操作","expected":"确定的状态转移"}},{{"input":"复位","expected":"恢复同一初态"}}]`。同时写 `update`(统一状态更新规则)、`initialPaint`(已处于中间动作的首帧)、`history`(前态/当前态如何同屏)、`reset`(确定性复位)、`aestheticDirection`(lab-dark|paper-editorial|studio-pop|terminal-data|soft-organic|blueprint|ink-wash|host-calm)、`signatureDetail`(一个服务概念的视觉记忆点)。比较目标加 `comparisonStates`；数学/几何加 `mathModel:{{formula,screenMapping,invariants}}`；确需粒子/连续场才写 `renderMedium:"canvas"`，否则默认 svg。这里只写设计契约，不写 HTML。
+- 选择 `state-sim|model-sim|geometry-sim` 时，block 额外写内部 `interactionBrief`。必须使用这些结构：`stateModel:[{{"name":"step","type":"int","range_or_values":"0..3","initial":0}}]`；`controls:[{{"trigger":"单步按钮","effect":"推进一步并调用 update()"}}]`；`visibleEncodings:[{{"quantity":"本步变化的边","mark":"高亮连线","where":"主舞台"}}]`；`verificationCases:[{{"input":"初态","expected":"确定的可见结果"}},{{"input":"一次操作","expected":"确定的状态转移"}},{{"input":"复位","expected":"恢复同一初态"}}]`。同时写 `update`(统一状态更新规则)、`initialPaint`(初态本身完整可见，不用先点一次才出现)、`history`(前态/当前态如何同屏)、`reset`(必须回到 initial=0 的同一初态)、`aestheticDirection`(lab-dark|paper-editorial|studio-pop|terminal-data|soft-organic|blueprint|ink-wash|host-calm)、`signatureDetail`(一个服务概念的视觉记忆点)。比较目标加 `comparisonStates`；数学/几何加 `mathModel:{{formula,screenMapping,invariants}}`；确需粒子/连续场才写 `renderMedium:"canvas"`，否则默认 svg。这里只写设计契约，不写 HTML。
 - **每个 block 标一个粗粒度 size：`xl`(几乎独占整页的主体，如封面、复杂大图) / `l`(大块/主体，如复杂图表、大表格、多轮对比、长 timeline) / `m`(默认，一般讲解块) / `s`(小/辅助，如一句注解、次要论点、callout 补充)。不写默认按 m 处理。**
 - **一页配几个 block、配多大由内容真实需要决定，不设死数量上限**——但整页视觉重量要有节奏：粗略按 xl=4/l=3/m=2/s=1 心算一页总重量，大致落在 ~6 上下浮动即可；**不要为了凑够页数而硬拆一个大块，也不要图省事把一页堆成 5-6 个同重量小块**；真正复杂的内容（compare、大 table、>5 事件 timeline）给 l/xl 并考虑独占一页；叙事仍由浅入深。
 - **能用图表表达的定量对比/趋势/相关性优先用 chart（bar/line/area/scatter）而非 table**；纯名目罗列、无需比较数值大小或走势的数据才用 table。
 - **视觉语法必须服从 `brief.visualTask`**：坐标位置、轨迹、梯度、边界等几何关系必须用 chart/scatter/line 或 sim 真实编码坐标，不能拿 connected-circles、蛇形卡片等装饰模板冒充数学图；diagram 只用于它的形状确实表达了循环/层级/步骤/网络关系时。若视觉不能让学生仅凭图形读出目标关系，宁可换组件。
+- **视觉任务必须有视觉载体**：除 hero/section 外，只要 `visualTask` 要求读出结构、状态、路径、趋势、空间或对象外观，本页就必须至少有一个真正编码该关系的 diagram/graph/chart/sim/runnable/media 等证据 block；statement/list/callout/compare 里的纯文字不能冒充视觉证据。若本页只需要一句过渡，则把 learningAction 设为 orient、evidencePolicy 设为 none，并明确 visualTask 只承担导航节奏。
 - **证据纪律**：没有参考素材时，禁止凭空写论文名+年份、人物原话、调查比例、精确行业数字。定量内容只能来自可展示的推导，或明确标为「示意/合成数据」；需要外部来源而当前没有素材的事实，应改写为不依赖精确数字的定性结论，不能先编一个数再让后续补引用。
 - **数学层级不能偷换**：近似/直觉、带条件引理、特殊模型精确结论、一般定理要分别命名并写清前提。不能用“一阶 Taylor 近似”直接宣称全局下降保证；若保证依赖光滑性、凸性、强凸性等条件，页目标和标题必须显式写条件。一个页面若需要跨越两层以上（如近似→下降引理→谱条件→收敛率），必须拆开，不准压成公式拼盘。
 - **保证必须可见地带条件**：收敛、速率、全局最优等结论所需的光滑性/凸性/强凸性与步长范围，必须能放入观众可见的 headline/lead/formula/caption；只计划写在 notes 或内部 brief 等于没写。
@@ -334,6 +336,10 @@ async def insert_sections(llm: LLMClient, doc: dict[str, Any], budget: int | Non
         targets = sorted(targets, key=lambda t: t[0])[: max(0, room)]
     n = 0
     for scene_index, title, thesis in sorted(targets, key=lambda t: -t[0]):  # 降序插入避免错位
+        # Avoid two consecutive title cards with the same narrative job.
+        previous = scenes[scene_index - 1] if scene_index > 0 else None
+        if isinstance(previous, dict) and previous.get("kind") in {"statement", "section"}:
+            continue
         scenes.insert(
             scene_index,
             {
@@ -402,6 +408,79 @@ def fit_scene_budget(doc: dict[str, Any], budget: int) -> list[str]:
     removed = [str(scene.get("id") or f"page-{i + 1}") for i, scene in enumerate(scenes) if i in remove_indices]
     doc["scenes"] = [scene for i, scene in enumerate(scenes) if i not in remove_indices]
     return removed
+
+
+def fill_scene_budget(doc: dict[str, Any], budget: int) -> list[str]:
+    """Deterministically split dense planned pages until the requested count is exact.
+
+    The planner is occasionally one page short even after being told an exact count.  Padding
+    with a generic recap would violate evidence-first planning, so the fallback separates a
+    real sibling block from the densest content page and turns its existing intent into the
+    continuation page's observable objective.  Generated block content is not copied.
+    """
+    scenes = doc.get("scenes")
+    if not isinstance(scenes, list) or len(scenes) >= budget:
+        return []
+    inserted: list[str] = []
+
+    def candidate(index: int, scene: Any) -> tuple[int, int, int]:
+        if not isinstance(scene, dict) or scene.get("kind") in {"hero", "section"}:
+            return (-1, -1, -index)
+        blocks = scene.get("blocks")
+        if not isinstance(blocks, list) or len(blocks) < 2:
+            return (-1, -1, -index)
+        # Prefer genuinely dense pages; avoid splitting a stage+single-caption pair when a
+        # three-block explanatory page is available.
+        return (
+            len(blocks),
+            sum(len(json.dumps(block, ensure_ascii=False, default=str)) for block in blocks),
+            -index,
+        )
+
+    while len(scenes) < budget:
+        ranked = sorted(
+            ((candidate(index, scene), index) for index, scene in enumerate(scenes)),
+            reverse=True,
+        )
+        if not ranked or ranked[0][0][0] < 2:
+            break
+        index = ranked[0][1]
+        source = scenes[index]
+        blocks = source.get("blocks") or []
+        moved = blocks.pop()
+        intent = str(moved.get("intent") or source.get("headline") or "应用已有结论")
+        brief = source.get("brief") if isinstance(source.get("brief"), dict) else {}
+        block_type = str(moved.get("type") or "")
+        action = (
+            "run" if block_type == "runnable" else
+            "manipulate" if block_type in _SIM_CAPABILITIES else
+            "predict" if block_type == "quiz" else
+            "inspect"
+        )
+        continuation = {
+            "kind": "quiz" if block_type == "quiz" else "content",
+            "eyebrow": source.get("eyebrow") or "深入",
+            "headline": f"{source.get('headline') or doc.get('title') or '主题'}：{intent[:24]}",
+            "notes": f"从上一页展开独立证据：{intent}",
+            "brief": {
+                "objective": intent,
+                "learningAction": action,
+                "requiredEvidence": intent,
+                "keyClaim": intent,
+                "misconception": str(brief.get("misconception") or ""),
+                "visualTask": intent,
+                "evidencePolicy": str(brief.get("evidencePolicy") or "none"),
+            },
+            "visualBrief": {
+                "designIntent": f"给「{intent}」独立的可读证据舞台",
+                "selectedCapabilities": [block_type] if block_type else [],
+                "compositionFamily": "interactive-stage" if block_type in _SIM_CAPABILITIES | {"runnable"} else "focal-object",
+            },
+            "blocks": [moved],
+        }
+        scenes.insert(index + 1, continuation)
+        inserted.append(str(source.get("id") or f"page-{index + 1}"))
+    return inserted
 
 
 _DATA_TYPES = {"chart", "table", "sim", "grid"}
@@ -800,6 +879,14 @@ async def _plan_hierarchical(
     if theme:
         outline["theme"] = theme  # 用户显式指定主题优先
     doc = _stitch(outline, section_scenes)
+    removed_for_budget = fit_scene_budget(doc, pages)
+    inserted_for_budget = fill_scene_budget(doc, pages)
+    if len(doc.get("scenes") or []) != pages:
+        raise RuntimeError(f"分层规划无法确定性收敛到 {pages} 页")
+    if removed_for_budget:
+        doc["_budgetRemovedScenes"] = removed_for_budget
+    if inserted_for_budget:
+        doc["_budgetSplitScenes"] = inserted_for_budget
     return PlanResult(doc=doc, perspectives=perspectives)
 
 
@@ -871,6 +958,11 @@ async def plan_lecture(
                 doc["_budgetRemovedScenes"] = removed_for_budget
             if sections:
                 await insert_sections(llm, doc, budget=pages)
+            inserted_for_budget = fill_scene_budget(doc, pages)
+            if len(doc.get("scenes") or []) != pages:
+                raise RuntimeError(f"骨架页数无法确定性收敛到 {pages} 页")
+            if inserted_for_budget:
+                doc["_budgetSplitScenes"] = inserted_for_budget
             return PlanResult(
                 doc=doc,
                 perspectives=perspectives,

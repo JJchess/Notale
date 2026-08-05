@@ -68,4 +68,24 @@ test('widget iframe receives a light-dark register separate from the deck theme 
   assert.match(runtime, /function widgetColorScheme\(/);
   assert.match(runtime, /data-theme="' \+ colorScheme/);
   assert.match(runtime, /data-deck-theme="' \+ escapeHtml\(theme\)/);
+  assert.match(runtime, /initial frame has an empty primary visualization stage/);
+  assert.match(runtime, /function visiblePrimitiveCount\(svg\)/);
+});
+
+test('index layout fits every reachable panel before navigation', () => {
+  assert.match(runtime, /stage\.querySelectorAll\('\.step-panel'\)\.forEach/);
+  assert.doesNotMatch(runtime, /querySelector\('\.step-panel\.show'\).*fitScroll/s);
+  assert.match(styles, /\.composition-comparison \.body:not\(\[data-layout\]\)/);
+  assert.doesNotMatch(styles, /\.composition-comparison:not\(:has\(\.layout-artboard\)\) \.body/);
+});
+
+test('evidence blocks preserve semantic content and readable scale', () => {
+  assert.match(runtime, /function richProse\(/);
+  assert.match(runtime, /prose-table/);
+  assert.match(runtime, /stripDisplayDelimiters/);
+  assert.match(runtime, /fontSize:\s*'15px'/);
+  assert.match(runtime, /plotwrap\.clientHeight/);
+  assert.match(styles, /\.chart-block\{[^}]*height:100%/s);
+  assert.match(styles, /\.quiz-context \.prose-table/);
+  assert.match(styles, /\.graph-node \.gn-title\{[^}]*font-size:18px/s);
 });

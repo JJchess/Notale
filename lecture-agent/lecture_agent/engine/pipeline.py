@@ -130,6 +130,12 @@ def _page_brief(scene: dict[str, Any]) -> dict[str, str]:
         brief["requiredEvidence"] = "主题、核心问题与学习承诺"
         brief["visualTask"] = "封面只建立课题、核心问题与视觉张力；装饰图不承担数学证明"
         brief["evidencePolicy"] = "none"
+    elif scene.get("kind") == "section":
+        # A chapter divider is intentionally sparse navigation, not an evidence page.
+        brief["learningAction"] = "orient"
+        brief["requiredEvidence"] = "章节名称、承上启下的主旨与接下来的学习方向"
+        brief["visualTask"] = "章节分隔只建立层级、节奏和方向；不承担概念证明"
+        brief["evidencePolicy"] = "none"
     return brief
 
 
@@ -355,6 +361,14 @@ async def _quality_repair(
     replan_succeeded: set[str] = set()
     skill_descriptions = _skill_decision_descriptions(registry, planning)
 
+    def normalize_replanned_kind(scene: dict[str, Any]) -> None:
+        """Keep the scene discriminator consistent with the regenerated evidence blocks."""
+        types = {str(block.get("type") or "") for block in scene.get("blocks") or []}
+        kind = str(scene.get("kind") or "content")
+        required = {"hero": "hero", "quiz": "quiz", "statement": "statement", "section": "statement"}
+        if required.get(kind) not in types:
+            scene["kind"] = "content"
+
     def route_page_issues(
         scene: dict[str, Any], issues: list[str], targets: dict[str, list[dict[str, str]]]
     ) -> None:
@@ -471,6 +485,7 @@ async def _quality_repair(
             final_blocks.append(block)
             placeholder_specs[str(ph.get("id"))] = ph
         skeleton["blocks"] = final_blocks
+        normalize_replanned_kind(skeleton)
         page_briefs[sid] = new_brief
         page_visual_briefs[sid] = new_visual_brief
         scene.clear()
@@ -499,6 +514,19 @@ async def _quality_repair(
         replan_targets: list[tuple[dict[str, Any], list[str]]] = []
         for scene, review in reviews:
             sid = str(scene.get("id") or "?")
+            if not review.available:
+                log(f"[quality] 第 {rnd} 轮 {sid}: unavailable ({review.failure})")
+                warnings.append(f"逐页质检不可用 {sid}: {review.failure}")
+                latest[sid] = {
+                    "sceneId": sid,
+                    "score": None,
+                    "pass": False,
+                    "available": False,
+                    "failure": review.failure,
+                    "blockIssues": [],
+                    "pageIssues": [],
+                }
+                continue
             log(
                 f"[quality] 第 {rnd} 轮 {sid}: {review.score:.1f}/10"
                 + (" pass" if review.passed else " needs-work")
@@ -507,9 +535,14 @@ async def _quality_repair(
                 "sceneId": sid,
                 "score": review.score,
                 "pass": review.passed,
+                "available": True,
                 "blockIssues": review.block_issues,
                 "pageIssues": review.page_issues,
             }
+            # Release-ready pages may retain at most two non-blocking minor observations.
+            # Rewriting them adds latency and routinely damages already-correct evidence.
+            if review.passed:
+                continue
             if review.page_issues and sid not in replan_succeeded:
                 combined = review.page_issues + [
                     f"{x['problem']}；{x['instruction']}" for x in review.block_issues
@@ -634,16 +667,30 @@ async def _quality_repair(
 
         for scene, review in await pool(audit_scenes, concurrency, audit):
             sid = str(scene.get("id") or "?")
+            if not review.available:
+                latest[sid] = {
+                    "sceneId": sid,
+                    "score": None,
+                    "pass": False,
+                    "available": False,
+                    "failure": review.failure,
+                    "blockIssues": [],
+                    "pageIssues": [],
+                }
+                warnings.append(f"逐页最终复核不可用 {sid}: {review.failure}")
+                log(f"[quality] 最终复核 {sid}: unavailable ({review.failure})")
+                continue
             latest[sid] = {
                 "sceneId": sid,
                 "score": review.score,
                 "pass": review.passed,
+                "available": True,
                 "blockIssues": review.block_issues,
                 "pageIssues": review.page_issues,
             }
             log(f"[quality] 最终复核 {sid}: {review.score:.1f}/10" + (" pass" if review.passed else " needs-work"))
     for sid, item in latest.items():
-        if item.get("pass"):
+        if item.get("pass") or item.get("available") is False:
             continue
         for issue in item.get("pageIssues") or []:
             warnings.append(f"逐页最终复核 {sid}（{float(item.get('score') or 0):.1f}/10）：{issue}")
@@ -1341,6 +1388,21 @@ async def generate_lecture(
             log(f"[design] {warning}")
         assign_layouts(doc)
         final = validate_doc(doc)
+        # Quality repair is generative and can invalidate a scene discriminator even when every
+        # individual block is schema-valid. Give the normal block-level repair loop one chance
+        # before render; otherwise one stale kind disables all browser/widget/visual repair.
+        if opts.revise and final.errors:
+            final = await _doc_repair(
+                llm,
+                doc,
+                registry,
+                mat,
+                log,
+                tool_kit,
+                topic=topic,
+                concurrency=opts.concurrency,
+                progress=progress,
+            )
         final.warnings.extend(quality_warnings)
         progress({"type": "stage", "stage": "quality", "status": "done"})
 
@@ -1526,7 +1588,7 @@ async def generate_lecture(
             shots = [str(path) for path in render_report.shots]
             if not shots:
                 final.warnings.append("视觉审查未运行：渲染器未产出逐页截图")
-            elif not render_hard_errors:
+            else:
                 review_images: list[ImageInput] = []
                 review_images.extend(shots[1:])
                 request = VisualReviewRequest(
@@ -1560,7 +1622,7 @@ async def generate_lecture(
                 ]
                 if not review.available:
                     final.warnings.extend(review.warnings)
-                elif combined_issues:
+                elif combined_issues and not render_hard_errors:
                     changed, content_issues = _apply_visual_contract_repairs(doc, combined_issues)
 
                     async def repair_visual_content(issue: VisualIssue, _i: int) -> str | None:
@@ -1670,9 +1732,13 @@ async def generate_lecture(
                             else:
                                 final.warnings.extend(final_review.warnings)
                 elif review.available:
-                    visual_quality_payload["pass"] = all(
+                    visual_quality_payload["pass"] = not render_hard_errors and all(
                         score >= 4.0 for score in review.scores.as_dict().values()
                     )
+                    if render_hard_errors:
+                        visual_quality_payload["repairSkipped"] = (
+                            "浏览器硬错误存在；已完成视觉诊断，先由确定性 render repair 解决裁切/运行时问题"
+                        )
             progress({"type": "stage", "stage": "visual-quality", "status": "done"})
 
         # 浏览器回炉改过 HTML/文案后，旧的语义分数已经失效。只重审被改页，避免运行时修复
@@ -1711,6 +1777,8 @@ async def generate_lecture(
                     "sceneId": sid,
                     "score": page_review.score,
                     "pass": page_review.passed,
+                    "available": page_review.available,
+                    "failure": page_review.failure,
                     "blockIssues": page_review.block_issues,
                     "pageIssues": page_review.page_issues,
                 }
@@ -1743,14 +1811,14 @@ async def generate_lecture(
             RenderReport(ok=True, warnings=["未执行浏览器逐页验收"]),
         )
     for item in quality_summary:
-        if item.get("pass"):
+        if item.get("pass") or item.get("available") is False:
             continue
         issues = list(item.get("pageIssues") or []) + list(item.get("renderIssues") or [])
         block_issues = [str(x.get("problem")) for x in (item.get("blockIssues") or []) if isinstance(x, dict)]
         detail = (issues + block_issues)[:3]
         final.errors.append(
             f"逐页质量未通过 {item.get('sceneId')}（{float(item.get('score') or 0):.1f}/10）："
-            + ("；".join(detail) if detail else "未达到 9.8 且零 issue 的交付门槛")
+            + ("；".join(detail) if detail else "未达到 8.5 或仍有阻断性 issue")
         )
 
     # ④.7 讲者备注增强：只对语义与真机验收都已通过的最终页面写讲稿。

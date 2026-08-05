@@ -868,8 +868,23 @@ def _normalize_revision_candidate(
         raw_size = block.get("size")
         size_key = raw_size.lower() if isinstance(raw_size, str) else ""
         if isinstance(raw_size, str):
-            # 兼容已知同义词；未知字符串仍交给 validator 拒绝，保留下一轮重规划机会。
-            block["size"] = size_map.get(size_key, raw_size)
+            # Size is a coarse hint. Normalize descriptive drift such as "large/main"
+            # instead of rejecting an otherwise useful evidence-type correction.
+            normalized_size = size_map.get(size_key)
+            if normalized_size is None:
+                normalized_size = next(
+                    (
+                        mapped
+                        for alias, mapped in sorted(
+                            size_map.items(), key=lambda item: len(item[0]), reverse=True
+                        )
+                        if re.search(rf"(^|[^a-z]){re.escape(alias)}([^a-z]|$)", size_key)
+                    ),
+                    None,
+                )
+            block["size"] = normalized_size or (
+                "xl" if block_type in _SIM_CAPABILITIES | {"runnable"} else "m"
+            )
         else:
             # 非字符串是模型结构漂移，先归一成闭合 contract，绝不能因 set membership 崩溃。
             block["size"] = "xl" if block_type in _SIM_CAPABILITIES | {"runnable"} else "m"
@@ -962,7 +977,9 @@ async def replan_page(
 - scene id/kind 不变；保留同一教学位置，但可改 headline/lead/brief/notes 和 block 组合。
     - brief 必须明确一个 learningAction 与 requiredEvidence；先选择能产出该证据的 Skill，再决定 block。状态序列/结构变换用 state-sim，参数因果用 model-sim，坐标/约束用 geometry-sim；实现/运行/调试用 runnable。
 - blocks 只含 id/type/role/intent/size/可选 engine/interactionBrief，不写最终内容；id 全局唯一。
+- size 必须且只能是 s/m/l/xl；不要输出 large、full-width 或带解释的尺寸字符串。
 - 每页一个可观察 objective、一个 keyClaim；标题写清所有必要前提。
+- 除 hero/section 外，只要 visualTask 要求读出结构、状态、路径、趋势、空间或对象外观，就必须至少选择一个真正编码该关系的 diagram/graph/chart/sim/runnable/media 等证据 block；纯 statement/list/callout/compare 不算视觉证据。
 - 二维曲面/等高线/几何轨迹用 geometry-sim；普通 graph/diagram 只表达概念关系，不能冒充坐标。
 - 定量曲线必须由页面给出的公式直接计算，或清楚标为合成示意；不能用随手编的点冒充数学定义。
 - 若现有 objective 本身要求一页塞两件事，可收窄目标；不要增加页数。"""

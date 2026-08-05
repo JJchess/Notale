@@ -125,10 +125,17 @@ def load_skill_catalog(
                     dir=str(sdir),
                     description=fm.get("description", ""),
                     contract=contract,
-                    affordances=_parse_list(fm.get("affordances", "")),
-                    learner_actions=_parse_list(fm.get("learner-actions", "")),
-                    evidence_outputs=_parse_list(fm.get("evidence-outputs", "")),
-                    limitations=_parse_list(fm.get("limitations", "")),
+                    # planning.json is now the canonical capability manifest. Keep the
+                    # generation entry equally expressive because legacy callers and quality
+                    # routing still inspect SkillEntry directly.
+                    affordances=_manifest_list(manifest, "affordances", fm.get("affordances", "")),
+                    learner_actions=_manifest_list(
+                        manifest, "learnerActions", fm.get("learner-actions", "")
+                    ),
+                    evidence_outputs=_manifest_list(
+                        manifest, "evidenceOutputs", fm.get("evidence-outputs", "")
+                    ),
+                    limitations=_manifest_list(manifest, "limitations", fm.get("limitations", "")),
                     purposes=_manifest_list(manifest, "purposes", ""),
                     placements=_manifest_list(manifest, "placements", ""),
                     anti_capabilities=_manifest_list(manifest, "antiCapabilities", ""),

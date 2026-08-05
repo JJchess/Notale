@@ -1,14 +1,10 @@
 ---
 name: create-sim
 description: "Execute the shared final sim contract for LectureDoc after planning has selected create-state-sim, create-model-sim, or create-geometry-sim. Own dynamics1d/searchCompare/custom/widget engine generation, GenUI build/repair, offline safety, theme-token mapping, and final schema validation. This core is intentionally hidden from the planner so evidence profiles remain explicit."
-affordances: [state-transition, temporal-progression, structure-transformation, parameter-manipulation, causal-exploration, synchronized-comparison, direct-manipulation]
-learner-actions: [step, play, replay, manipulate, predict, experiment, trace, construct, compare]
-evidence-outputs: [state-sequence, intermediate-state, changed-state-highlight, before-after-mapping, parameter-outcome-link, invariant-preservation]
-limitations: [requires meaningful changing state or controllable cause, not for a fixed read-only snapshot, not a substitute for code execution evidence]
-version: 1.1.0
 license: MIT
-platforms: [linux, macos, windows]
 metadata:
+  version: 1.1.0
+  platforms: [linux, macos, windows]
   hermes:
     tags: [Courseware, LectureDoc, Simulation, Canvas, Physics]
     related_skills: [lecture-doc-schema, generate-lecture, create-code-runtime]

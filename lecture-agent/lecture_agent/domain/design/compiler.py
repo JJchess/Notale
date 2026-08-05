@@ -31,7 +31,32 @@ _STAGE_TYPES = {"sim", "runnable"}
 _MEDIA_TYPES = {"media", "video"}
 _DATA_TYPES = {"chart", "table", "stats"}
 _VISUAL_TYPES = _MEDIA_TYPES | _DATA_TYPES | {"diagram", "graph", "flow", "timeline"}
-_WIDE_EVIDENCE_TYPES = _STAGE_TYPES | _DATA_TYPES | {"formula", "diagram", "graph", "runnable"}
+_WIDE_EVIDENCE_TYPES = _STAGE_TYPES | _DATA_TYPES | {"formula", "diagram", "graph", "grid", "runnable"}
+
+
+def _is_dense_block(block: dict[str, Any]) -> bool:
+    """Return whether a block needs substantially more than a narrow supporting rail.
+
+    Block type alone is not enough: a two-column table and a six-column table are both
+    ``table`` blocks, while only the latter becomes illegible in half a slide.
+    """
+    block_type = str(block.get("type") or "")
+    if block_type == "table":
+        return len(block.get("head") or []) >= 5 or len(block.get("rows") or []) >= 7
+    if block_type == "formula":
+        return len(str(block.get("latex") or "")) >= 72
+    if block_type == "diagram":
+        nodes = block.get("nodes") or []
+        return len(nodes) >= 4 or sum(_text_length(node) for node in nodes) >= 180
+    if block_type == "graph":
+        return len(block.get("nodes") or []) >= 6
+    if block_type == "chart":
+        return True
+    if block_type == "quiz":
+        return _text_length(block) >= 520
+    if block_type in {"code", "runnable"}:
+        return True
+    return _text_length(block) >= 420
 
 
 def _text_length(value: Any) -> int:
@@ -176,16 +201,26 @@ def _cutout_split(blocks: list[dict[str, Any]], assets: dict[str, dict[str, Any]
 
 
 def _annotated(blocks: list[dict[str, Any]], assets: dict[str, dict[str, Any]], _dense: bool) -> tuple[dict[str, Any], list[dict[str, Any]]]:
-    wide = [block for block in _rank_blocks(blocks) if block.get("type") in _WIDE_EVIDENCE_TYPES]
+    wide = [
+        block
+        for block in _rank_blocks(blocks)
+        if block.get("type") in _WIDE_EVIDENCE_TYPES or _is_dense_block(block)
+    ]
     if len(wide) >= 2:
+        first_dense, second_dense = _is_dense_block(wide[0]), _is_dense_block(wide[1])
+        split = 7
+        if first_dense and not second_dense:
+            split = 8
+        elif second_dense and not first_dense:
+            split = 6
         areas = [
-            _area(wide[0], (1, 7, 4, 10), role="evidence", clip=True),
-            _area(wide[1], (7, 13, 4, 10), role="evidence", clip=True),
+            _area(wide[0], (1, split, 4, 11), role="evidence", clip=True),
+            _area(wide[1], (split, 13, 4, 11), role="evidence", clip=True),
         ]
         areas.extend(
             _remaining_stack(
                 [block for block in blocks if block not in wide[:2]],
-                (2, 12, 10, 13),
+                (2, 12, 11, 13),
                 role="caption",
             )
         )
@@ -203,12 +238,26 @@ def _annotated(blocks: list[dict[str, Any]], assets: dict[str, dict[str, Any]], 
 
 def _focal(blocks: list[dict[str, Any]], assets: dict[str, dict[str, Any]], _dense: bool) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     main = _rank_blocks(blocks)[0]
-    areas = [_area(main, (4, 11, 4, 12), role="feature", clip=True)]
-    areas.extend(_remaining_stack([block for block in blocks if block is not main], (1, 4, 5, 12), role="aside"))
+    main_rect = (2, 12, 4, 13) if _is_dense_block(main) else (4, 11, 4, 12)
+    areas = [_area(main, main_rect, role="feature", clip=True)]
+    if not _is_dense_block(main):
+        areas.extend(_remaining_stack([block for block in blocks if block is not main], (1, 4, 5, 12), role="aside"))
+    else:
+        areas.extend(_remaining_stack([block for block in blocks if block is not main], (2, 12, 11, 13), role="caption"))
     return _title((2, 12, 1, 4), align="center", justify="center", width=80), areas
 
 
 def _process(blocks: list[dict[str, Any]], assets: dict[str, dict[str, Any]], _dense: bool) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    if len(blocks) == 2 and _is_dense_block(blocks[0]) != _is_dense_block(blocks[1]):
+        main_index = 0 if _is_dense_block(blocks[0]) else 1
+        split = 9
+        rects = [(1, split, 4, 12), (split, 13, 5, 12)]
+        if main_index == 1:
+            rects.reverse()
+        return _title((1, 9, 1, 4), width=82), [
+            _area(block, rects[index], role="evidence" if index == main_index else "aside", clip=True)
+            for index, block in enumerate(blocks)
+        ]
     areas: list[dict[str, Any]] = []
     for index, block in enumerate(blocks):
         start = 1 + round(12 * index / len(blocks))
@@ -220,8 +269,15 @@ def _process(blocks: list[dict[str, Any]], assets: dict[str, dict[str, Any]], _d
 
 def _paired(blocks: list[dict[str, Any]], assets: dict[str, dict[str, Any]], _dense: bool, *, stagger: bool = False) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     areas: list[dict[str, Any]] = []
+    first_dense = bool(blocks) and _is_dense_block(blocks[0])
+    second_dense = len(blocks) > 1 and _is_dense_block(blocks[1])
+    split = 7
+    if first_dense and not second_dense:
+        split = 9
+    elif second_dense and not first_dense:
+        split = 5
     for index, block in enumerate(blocks[:2]):
-        c1, c2 = (1, 7) if index == 0 else (7, 13)
+        c1, c2 = (1, split) if index == 0 else (split, 13)
         r1, r2 = ((4, 11) if index == 0 or not stagger else (5, 12))
         areas.append(_area(block, (c1, c2, r1, r2), role="evidence", clip=True))
     areas.extend(_remaining_stack(blocks[2:], (3, 11, 11, 13), role="caption"))
@@ -244,8 +300,15 @@ def _proof(blocks: list[dict[str, Any]], assets: dict[str, dict[str, Any]], _den
 
 def _data(blocks: list[dict[str, Any]], assets: dict[str, dict[str, Any]], _dense: bool) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     datum = next((block for block in blocks if block.get("type") in _DATA_TYPES), _rank_blocks(blocks)[0])
+    rest = [block for block in blocks if block is not datum]
+    if rest and rest[0].get("type") in _WIDE_EVIDENCE_TYPES:
+        return _title((1, 9, 1, 4), width=84), [
+            _area(datum, (1, 7, 4, 12), role="evidence", clip=True),
+            _area(rest[0], (7, 13, 4, 12), role="evidence", clip=True),
+            *_remaining_stack(rest[1:], (3, 11, 11, 13), role="caption"),
+        ]
     areas = [_area(datum, (1, 10, 4, 12), role="evidence", clip=True)]
-    areas.extend(_remaining_stack([block for block in blocks if block is not datum], (10, 13, 4, 12), role="aside"))
+    areas.extend(_remaining_stack(rest, (10, 13, 4, 12), role="aside"))
     return _title((1, 9, 1, 4), width=84), areas
 
 

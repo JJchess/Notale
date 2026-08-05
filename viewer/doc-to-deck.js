@@ -56,6 +56,7 @@
     const root = widgetRoots.get(String(data.widgetId));
     if (!root) return;
     const message = String(data.message || 'unknown widget runtime error').slice(0, 500);
+    if (root.dataset.widgetError === message) return;
     root.dataset.widgetError = message;
     console.error('[widget ' + data.widgetId + '] ' + message);
   });
@@ -98,8 +99,18 @@
       + 'let canvasPaints=0;try{const proto=CanvasRenderingContext2D.prototype;'
       + '["fill","stroke","fillRect","strokeRect","fillText","strokeText","drawImage","putImageData"].forEach(function(name){'
       + 'const original=proto[name];if(typeof original!=="function")return;proto[name]=function(){canvasPaints++;return original.apply(this,arguments)}})}catch(e){}'
-      + 'addEventListener("load",function(){setTimeout(function(){if(document.querySelector("canvas")&&canvasPaints===0)'
-      + 'report("canvas initial frame produced no paint operations")},1200)});'
+      + 'function visiblePrimitiveCount(svg){return Array.prototype.filter.call(svg.querySelectorAll("path,line,polyline,polygon,circle,ellipse,rect,text,image,use"),function(node){'
+      + 'if(node.closest("defs"))return false;try{const box=node.getBoundingClientRect();const cs=getComputedStyle(node);return cs.display!=="none"&&cs.visibility!=="hidden"&&box.width>2&&box.height>2}catch(e){return false}}).length}'
+      + 'function primaryStage(){const selectors="[class*=stage],[id*=stage],[class*=canvas],[id*=canvas],[class*=plot],[id*=plot]";'
+      + 'return Array.prototype.map.call(document.querySelectorAll(selectors),function(node){const r=node.getBoundingClientRect();return {node:node,area:Math.max(0,r.width)*Math.max(0,r.height)}})'
+      + '.filter(function(x){return x.area>innerWidth*innerHeight*.18}).sort(function(a,b){return b.area-a.area})[0]}'
+      + 'function auditInitialPaint(){const canvas=document.querySelector("canvas");if(canvas&&canvasPaints===0)'
+      + 'report("canvas initial frame produced no paint operations");const candidate=primaryStage();if(!candidate)return;const stage=candidate.node;'
+      + 'const svgs=stage.matches("svg")?[stage]:Array.prototype.slice.call(stage.querySelectorAll("svg"));'
+      + 'if(svgs.length&&svgs.reduce(function(sum,svg){return sum+visiblePrimitiveCount(svg)},0)===0)'
+      + 'report("initial frame has an empty primary visualization stage")}'
+      + 'addEventListener("message",function(e){if(e.data&&e.data.__lectureWidgetAudit)auditInitialPaint()});'
+      + 'addEventListener("load",function(){setTimeout(auditInitialPaint,1200)});'
       + '})();</script></head><body>' + fragment + '</body></html>';
   }
 
@@ -196,8 +207,49 @@
     return s.replace(/(\d+)/g, (_, i) => stash[+i]);
   }
   /* latex 字段应是纯 LaTeX 源码；防御性剥掉误加的 $…$ / $$…$$ 包裹（否则 KaTeX 把 $ 当非法字符、整串标红回退）。 */
-  const stripDollar = (t) => String(t).trim().replace(/^\${1,2}/, '').replace(/\${1,2}$/, '').trim();
-  const displayTex = (tex) => katex.renderToString(stripDollar(tex), { throwOnError: false, output: 'html', displayMode: true });
+  const stripDisplayDelimiters = (t) => {
+    let value = String(t).trim().replace(/^\${1,2}/, '').replace(/\${1,2}$/, '').trim();
+    if ((value.startsWith('\\[') && value.endsWith('\\]')) || (value.startsWith('\\(') && value.endsWith('\\)'))) {
+      value = value.slice(2, -2).trim();
+    }
+    return value;
+  };
+  const displayTex = (tex) => katex.renderToString(stripDisplayDelimiters(tex), { throwOnError: false, output: 'html', displayMode: true });
+
+  /* Rich prose remains intentionally small: inline markdown plus GFM-style tables.  Models often place a
+     Punnett square or comparison matrix in a quiz stem; treating the pipes as prose destroys the evidence. */
+  function richProse(src, className) {
+    const root = el('div', className || null);
+    const lines = String(src == null ? '' : src).split(/\r?\n/);
+    const paragraph = [];
+    const flush = () => {
+      const text = paragraph.splice(0).join('\n').trim();
+      if (text) root.appendChild(el('p', null, inlineMd(text).replace(/\n/g, '<br>')));
+    };
+    const cells = line => line.trim().replace(/^\||\|$/g, '').split('|').map(cell => cell.trim());
+    for (let i = 0; i < lines.length;) {
+      const header = lines[i];
+      const rule = lines[i + 1] || '';
+      if (header.includes('|') && /^\s*\|?\s*:?-{3,}/.test(rule) && rule.includes('|')) {
+        flush();
+        const table = el('table', 'tbl prose-table');
+        const head = cells(header);
+        table.appendChild(el('thead', null, '<tr>' + head.map(cell => '<th>' + inlineMd(cell) + '</th>').join('') + '</tr>'));
+        const body = el('tbody');
+        i += 2;
+        while (i < lines.length && lines[i].includes('|') && lines[i].trim()) {
+          const row = cells(lines[i]);
+          body.appendChild(el('tr', null, row.map(cell => '<td>' + inlineMd(cell) + '</td>').join('')));
+          i++;
+        }
+        table.appendChild(body); root.appendChild(table);
+        continue;
+      }
+      paragraph.push(lines[i]); i++;
+    }
+    flush();
+    return root;
+  }
 
   /* ---------------- 受限表达式编译（SPEC §4） ----------------
      仅允许白名单标识符与数学字符；不是任意 JS。 */
@@ -320,7 +372,7 @@
     C_INK = g('--ink', '#1A1A1A'); C_LINE = g('--line', '#B8B0A4');
     C_TEXT2 = g('--text2', '#5A5A5A'); C_ACCENT = g('--accent', '#8A8178');
     TONE = { line: C_LINE, accent: C_ACCENT, ink: C_INK };
-    PLOT_STYLE = { background: 'transparent', color: C_TEXT2, fontSize: '11px', fontFamily: g('--sans', "'Inter',sans-serif") };
+    PLOT_STYLE = { background: 'transparent', color: C_TEXT2, fontSize: '15px', fontFamily: g('--sans', "'Inter',sans-serif") };
     /* 主题 token 变了 → 已挂载的 widget iframe 用新 token 重建 srcdoc。
        顺手清掉根节点已脱离文档的条目（块被删/整页换掉时会出现），别对着幽灵重建。 */
     for (const [id, build] of widgetBuilds) {
@@ -539,11 +591,12 @@
         }));
         if (labels.length) marks.push(Plot.text(labels, {
           x: 'labelX', y: 'labelY', text: 'label', dx: 8, dy: -9,
-          textAnchor: 'start', fill: C_INK, fontSize: 12,
+          textAnchor: 'start', fill: C_INK, fontSize: 14,
         }));
         const plotWidth = Math.max(420, Math.min(1600, Math.round(plotwrap.clientWidth || 700)));
+        const plotHeight = Math.max(300, Math.min(680, Math.round(plotwrap.clientHeight || 380)));
         plotwrap.appendChild(Plot.plot({
-          width: plotWidth, height: 380, marginLeft: 52, marginBottom: 44, marginTop: 32, marginRight: 20,
+          width: plotWidth, height: plotHeight, marginLeft: 68, marginBottom: 58, marginTop: 44, marginRight: 72,
           style: PLOT_STYLE,
           /* categories 常是"2021"这种数字形字符串——不显式声明 band/point 序数刻度，Plot 会当成误传数字
              警告并画出角标感叹号；scatter 走真数值 x，留给 Plot 自动推断线性刻度。
@@ -629,7 +682,7 @@
       if (b.kind === 'objective') {
         wrap.dataset.answer = b.answer;
         const stem = b.stem || b.context;   // stem 是 create-quiz 契约/生成侧的题干字段名；context 为兼容基线的旧别名
-        if (stem) wrap.appendChild(el('p', 'quiz-context', inlineMd(stem)));
+        if (stem) wrap.appendChild(richProse(stem, 'quiz-context'));
         for (const c of b.choices) {
           const ch = el('div', 'choice', '<span class="k">' + inlineMd(String(c.key).toUpperCase()) + '</span><span>' + inlineMd(c.text) + '</span>');
           ch.dataset.c = c.key;
@@ -736,8 +789,8 @@
     return _measureCtx.measureText(String(text == null ? '' : text)).width;
   }
 
-  const G_PAD_X = 14, G_PAD_Y = 10, G_MIN_W = 76, G_MAX_W = 190;
-  const G_GAP_X = 26, G_GAP_Y = 54;
+  const G_PAD_X = 18, G_PAD_Y = 12, G_MIN_W = 96, G_MAX_W = 230;
+  const G_GAP_X = 34, G_GAP_Y = 64;
 
   /** 纯文本长度（去掉 **粗体** / `code` / $math$ 记号），用于量宽——量到记号会把盒子撑歪。 */
   function graphPlainText(s) {
@@ -759,8 +812,8 @@
     const inner = Math.max(24, w / slack - G_PAD_X * 2);
     const tLines = Math.max(1, Math.ceil(tW / inner));
     const sLines = node.sub ? Math.max(1, Math.ceil(sW / inner)) : 0;
-    const h = G_PAD_Y * 2 + tLines * 20 + (sLines ? sLines * 15 + 3 : 0);
-    return { w, h: Math.max(diamond ? 64 : 44, diamond ? h * 1.7 : h) };
+    const h = G_PAD_Y * 2 + tLines * 23 + (sLines ? sLines * 18 + 4 : 0);
+    return { w, h: Math.max(diamond ? 76 : 52, diamond ? h * 1.7 : h) };
   }
 
   /** 最长路径分层。**dashed 边不参与分层**——它们按契约就是回边，算进去会让含环的
@@ -858,7 +911,7 @@
     wrap.appendChild(probe);
     const cs = getComputedStyle(probe);
     const family = cs.fontFamily || 'sans-serif';
-    const fonts = { title: `600 15px ${family}`, sub: `400 12px ${family}` };
+    const fonts = { title: `600 18px ${family}`, sub: `400 14px ${family}` };
 
     const size = new Map(nodes.map(n => [n.id, graphNodeSize(n, fonts)]));
     const layer = graphLayers(nodes, edges);
@@ -1945,7 +1998,7 @@
     for (const code of section.querySelectorAll('.codecard code')) {
       code.style.zoom = '';
       const avail = code.clientWidth, natural = code.scrollWidth;
-      if (avail && natural > avail + 1) code.style.zoom = Math.max(0.6, avail / natural);
+      if (avail && natural > avail + 1) code.style.zoom = Math.max(0.78, avail / natural);
     }
   }
   /* 自定义版式(index/split)的高度自适应：balanceScene 只管默认竖排，这里管 index 的 active panel 与 split 的分栏列。
@@ -1968,7 +2021,15 @@
   function fitCustomLayout(section) {
     if (!section) return;
     const idx = section.querySelector('.layout-index');
-    if (idx) { const stage = idx.querySelector('.step-stage'); const active = stage && stage.querySelector('.step-panel.show'); if (stage && active) fitScroll(active, stage.clientHeight, stage.clientWidth); }
+    if (idx) {
+      const stage = idx.querySelector('.step-stage');
+      /* 每个 index panel 都是可到达的页面状态。只 fit 当前 .show 会让隐藏的宽图/长表
+         逃过布局，render-check 随后正确地把它判成裁切；用户切到该步时也会先看到一次坏帧。
+         visibility:hidden 仍参与尺寸计算，因此可在首帧一次性把全部 panel 适配好。 */
+      if (stage) stage.querySelectorAll('.step-panel').forEach(panel => {
+        fitScroll(panel, stage.clientHeight, stage.clientWidth);
+      });
+    }
     const sp = section.querySelector('.layout-split');
     if (sp) { const h = sp.clientHeight; sp.querySelectorAll('.split-col').forEach(c => fitScroll(c, h)); }
     const cp = section.querySelector('.layout-compose');
@@ -2388,6 +2449,11 @@
     renderDisplayTex: displayTex,
     sanitizeFreeform: sanitizeFreeformHtml,
     findBlock,                /* (sceneId, blockId) → block，含 compare/grid 嵌套块 */
+    /* artboard 版面的判据。给 deck-frame.js 在写回 doc 后**复验**用：
+       resolveArtboardLayout 是全有全无的（任一 area 越界/重复/漏块 → 返回 null → 整页静默回落 flow），
+       所以编辑器必须能问渲染器"这样改还成立吗"，而不是自己重写一份判据——重写必然漂移，
+       漂移的后果正是"编辑器认为合法、渲染器却把整页降级"这种最难查的错。 */
+    resolveArtboard: resolveArtboardLayout,
     getDoc: () => currentDoc,
   };
 })();

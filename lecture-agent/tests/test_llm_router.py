@@ -19,3 +19,14 @@ async def test_widget_purposes_use_dedicated_client() -> None:
         "widget:quality-repair",
     ]
     assert [purpose for purpose, _ in default.calls] == ["block:statement"]
+
+
+async def test_quality_purposes_use_dedicated_client() -> None:
+    default = FakeClient(queue=["default"])
+    quality = FakeClient(queue=["review", "replan"])
+    router = PurposeRouterClient(default=default, routes={"quality:": quality})
+
+    assert await router.complete([], purpose="quality:page") == "review"
+    assert await router.complete([], purpose="quality:replan") == "replan"
+    assert await router.complete([], purpose="block:chart") == "default"
+    assert [purpose for purpose, _ in quality.calls] == ["quality:page", "quality:replan"]

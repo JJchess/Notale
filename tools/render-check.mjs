@@ -105,6 +105,12 @@ async function verifyScene(cdp, url, label) {
       for (let i = 0; i < total; i++) {
         Reveal.slide(i); await raf(); await new Promise(r => setTimeout(r, 30)); await raf();
         const sec = Reveal.getCurrentSlide();
+        /* 隐藏 slide 的 iframe 在初次 load 时尺寸为 0，不能判断主舞台是否真的首帧有内容。
+           页面进入可见态后显式请求一次 iframe 内审计，再读取 data-widget-error。 */
+        sec.querySelectorAll('iframe.widframe').forEach(frame => {
+          if (frame.contentWindow) frame.contentWindow.postMessage({ __lectureWidgetAudit: true }, '*');
+        });
+        await new Promise(r => setTimeout(r, 60));
         const pad = sec.querySelector('.pad') || sec;
         const overflowX = pad.scrollWidth - pad.clientWidth;
         const overflowY = pad.scrollHeight - pad.clientHeight;   // pad height:100% + body overflow:hidden → 纵向超出即被裁掉看不见
@@ -134,12 +140,18 @@ async function verifyScene(cdp, url, label) {
         // 自定义版式(index/split)：active panel 是 position:absolute，不会撑大 .pad，F 抓不到其裁切 → 单独测
         // index 量当前显示的 .step-panel vs .step-stage；split 量每个 .split-col。两轴取最大溢出。
         let layoutClip = 0;
+        let layoutDebug = null;
         // 注意坐标系：元素设了 CSS zoom 后 scrollWidth/Height 是内坐标，须 ×zoom 换算成外坐标再与容器比（iter81 修，此前虚报 3× 溢出）
         const eff = (el, prop) => (el[prop] || 0) * (parseFloat(el.style.zoom) || 1);
         if (body && body.dataset.layout === 'index') {
           const stage = body.querySelector('.step-stage');
           const active = stage && stage.querySelector('.step-panel.show');
-          if (stage && active) layoutClip = Math.max(eff(active,'scrollHeight') - stage.clientHeight, eff(active,'scrollWidth') - stage.clientWidth);
+          if (stage && active) {
+            layoutClip = Math.max(eff(active,'scrollHeight') - stage.clientHeight, eff(active,'scrollWidth') - stage.clientWidth);
+            layoutDebug = { stageW: stage.clientWidth, stageH: stage.clientHeight,
+              contentW: active.scrollWidth, contentH: active.scrollHeight,
+              zoom: +(parseFloat(active.style.zoom) || 1).toFixed(3) };
+          }
         } else if (body && body.dataset.layout === 'split') {
           // 同元素 scrollH/W vs clientH/W：同处内坐标，直接比即一致（勿再乘 zoom）
           for (const c of body.querySelectorAll('.split-col')) layoutClip = Math.max(layoutClip, c.scrollHeight - c.clientHeight, c.scrollWidth - c.clientWidth);
@@ -171,7 +183,7 @@ async function verifyScene(cdp, url, label) {
           const cs = getComputedStyle(e); return cs.display !== 'none' && cs.visibility !== 'hidden' && +cs.opacity !== 0;
         }).map(e => parseFloat(getComputedStyle(e).fontSize)).filter(Number.isFinite);
         const minTextPx = textSizes.length ? +Math.min(...textSizes).toFixed(2) : null;
-        out.push({ i, overflowX: Math.round(overflowX), overflowY: Math.round(overflowY), mblockClip, corrupt, expectCenter, actualCenter, layoutClip, dynamicBlank, widgetErrors, plotWarnings,
+        out.push({ i, overflowX: Math.round(overflowX), overflowY: Math.round(overflowY), mblockClip, corrupt, expectCenter, actualCenter, layoutClip, layoutDebug, dynamicBlank, widgetErrors, plotWarnings,
           chartMinWidthUse: chartWidthUse.length ? Math.min(...chartWidthUse) : null,
           widgetMinHeight: widgetHeights.length ? Math.min(...widgetHeights) : null,
           minTextPx });

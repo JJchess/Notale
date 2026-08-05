@@ -80,7 +80,12 @@ async def test_hierarchical_triggers_and_reaches_target_pages() -> None:
 
 async def test_small_pages_stay_single_shot() -> None:
     assert 12 <= _HIER_THRESHOLD  # 12 页应在阈值内
-    llm = FakeClient(by_purpose={"plan:skeleton": _SKELETON})
+    skeleton = json.loads(_SKELETON)
+    skeleton["scenes"].extend(
+        {"kind": "content", "headline": f"补充 {i}", "blocks": [{"type": "list", "intent": "x"}]}
+        for i in range(8)
+    )
+    llm = FakeClient(by_purpose={"plan:skeleton": json.dumps(skeleton)})
     res = await plan_lecture(
         llm,
         topic="演示",
@@ -92,7 +97,7 @@ async def test_small_pages_stay_single_shot() -> None:
     purposes = [p for p, _ in llm.calls]
     assert "plan:skeleton" in purposes  # 单次骨架路径
     assert "plan:outline" not in purposes  # 不触发分层
-    assert len(res.doc["scenes"]) == 4
+    assert len(res.doc["scenes"]) == 12
 
 
 async def test_fifteen_pages_use_hierarchical_budget_exactly() -> None:

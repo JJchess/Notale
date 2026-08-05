@@ -21,12 +21,18 @@ def build_llm(cfg: DictConfig) -> LLMClient:
     with open_dict(cfg):
         cfg.llm.pop("fast_extra_body", None)
     llm: LLMClient = instantiate(cfg.llm)
-    if "sim_llm" not in cfg or not cfg.sim_llm:
+    routes: dict[str, LLMClient] = {}
+    if "sim_llm" in cfg and cfg.sim_llm:
+        with open_dict(cfg):
+            cfg.sim_llm.pop("fast_extra_body", None)
+        routes["widget:"] = instantiate(cfg.sim_llm)
+    if "quality_llm" in cfg and cfg.quality_llm:
+        with open_dict(cfg):
+            cfg.quality_llm.pop("fast_extra_body", None)
+        routes["quality:"] = instantiate(cfg.quality_llm)
+    if not routes:
         return llm
-    with open_dict(cfg):
-        cfg.sim_llm.pop("fast_extra_body", None)
-    sim_llm: LLMClient = instantiate(cfg.sim_llm)
-    return PurposeRouterClient(default=llm, routes={"widget:": sim_llm})
+    return PurposeRouterClient(default=llm, routes=routes)
 
 
 def build_options(cfg: DictConfig) -> GeneratorOptions:
@@ -49,6 +55,15 @@ def sim_model_of(cfg: DictConfig) -> str | None:
         return None
     inner = cfg.sim_llm.get("inner")
     model = (inner.get("model") if inner else None) or cfg.sim_llm.get("model")
+    return str(model) if model else None
+
+
+def quality_model_of(cfg: DictConfig) -> str | None:
+    """Return the dedicated page-quality model, when purpose routing is configured."""
+    if "quality_llm" not in cfg or not cfg.quality_llm:
+        return None
+    inner = cfg.quality_llm.get("inner")
+    model = (inner.get("model") if inner else None) or cfg.quality_llm.get("model")
     return str(model) if model else None
 
 

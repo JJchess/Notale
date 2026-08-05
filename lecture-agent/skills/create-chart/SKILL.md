@@ -1,9 +1,7 @@
 ---
 name: create-chart
 description: Author a chart block for a LectureDoc lecture — a data chart (bar/line/area/scatter) rendered via Observable Plot, theme-aware. Reach for it whenever a page shows numeric comparison, trend over time, share/composition, or correlation — anything where seeing the shape of the numbers beats reading them. Prefer a chart over a table when magnitude/trend/relationship is the point; use a table only for exact nominal lookup where values are not being compared. Produces schema-valid chart block JSON.
-version: 1.0.0
 license: MIT
-platforms: [linux, macos, windows]
 metadata:
   hermes:
     tags: [Courseware, LectureDoc, Chart, DataViz]
@@ -60,6 +58,9 @@ Before emitting JSON, audit the chart as evidence, not decoration:
 4. A coordinate, trajectory, gradient, boundary, or loss surface is quantitative geometry: encode it with scatter/line/series (or a sim when interaction matters), never substitute a decorative diagram.
 5. Use optional `annotations` for a few pedagogical points/segments/arrows; never fake a point or tangent by adding a mostly-zero line series. Scatter annotations use numeric coordinates, e.g. `{"kind":"point","x":1.5,"y":2.25,"label":"当前点","tone":"accent"}` or `{"kind":"arrow","x":1.5,"y":2.25,"x2":0.5,"y2":0.25,"label":"更新"}`. Category charts use category strings that already exist in `categories`. `line`/`arrow` require `x2` and `y2`.
 6. Plot the quantity the page claims to explain. For a learning-rate schedule, plot $\eta_t$ versus step. Do not invent downstream loss/accuracy curves and present them as if the schedule formula determined those values.
+7. Budget the visible labels. Keep at most six point/annotation labels and label only endpoints, thresholds, anomalies, or the exact comparison needed for the claim. Do not copy every row's prose into the plot.
+8. Keep `caption` to source/measurement basis plus one interpretive sentence (at most 240 characters). Put calculation tasks, multi-step instructions, and extended interpretation in scene notes or a sibling block.
+9. Make the chart self-reading: units belong on axes, categories stay short, and a series name identifies the measure rather than repeating the page title. If labels need paragraphs, the page needs a table or a split, not smaller chart type.
 
 ## Visual craft translated from GenUI chart guidance
 

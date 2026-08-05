@@ -6,11 +6,25 @@ import json
 from typing import Any
 
 from lecture_agent.adapters.llm.fake import FakeClient
-from lecture_agent.domain.evaluation.page_quality import review_page
+from lecture_agent.domain.evaluation.page_quality import compact_scene, review_page
 from lecture_agent.engine import GeneratorOptions, generate_lecture
-from lecture_agent.engine.pipeline import _merge_render_quality
+from lecture_agent.engine.pipeline import _merge_render_quality, _page_brief
 from lecture_agent.ports.llm import Message
 from lecture_agent.ports.renderer import RenderReport
+
+
+def test_section_brief_is_navigation_not_visual_evidence() -> None:
+    brief = _page_brief(
+        {
+            "id": "section-1",
+            "kind": "section",
+            "headline": "进入旋转",
+            "blocks": [{"id": "s", "type": "statement", "statement": "从失衡到恢复"}],
+        }
+    )
+    assert brief["learningAction"] == "orient"
+    assert brief["evidencePolicy"] == "none"
+    assert "不承担概念证明" in brief["visualTask"]
 
 
 async def test_page_review_keeps_chart_values_and_routes_block_issue() -> None:
@@ -64,18 +78,15 @@ async def test_page_review_keeps_chart_values_and_routes_block_issue() -> None:
     assert '"values": [5, 20, 0]' in prompt
     assert "学习率从 5 增至 50" in prompt
     assert "读出起点、峰值、终点" in prompt
-    assert "更新位移与梯度的点积必须 < 0" in system_prompt
-    assert "只显示一个选中状态不算比较" in system_prompt
-    assert "loss/accuracy 不能代替学习率" in system_prompt
-    assert "一维切片不能证明鞍点" in system_prompt
-    assert "初始值、最小值、最大值" in system_prompt
+    assert "核心算法完整藏进" in system_prompt
+    assert "状态序列/结构变换必须由 state-sim" in system_prompt
+    assert "media 不能替代这些证据能力" in system_prompt
+    assert "像素裁切、空首帧、控件失效由后续真实浏览器门负责" in system_prompt
     assert "无故中英混排算问题" in system_prompt
-    assert "不能据此宣称某方法普遍更快" in system_prompt
-    assert "不得为了配合下山叙事把非极值点改名为山顶" in system_prompt
-    assert "不能表述成保证逃离任意局部极小值" in system_prompt
+    assert "合成数据/示意模型" in system_prompt
 
 
-async def test_page_review_rejects_minor_issue_even_when_model_says_pass() -> None:
+async def test_page_review_allows_two_non_blocking_minor_issues() -> None:
     fake = FakeClient(
         by_purpose={
             "quality:page": json.dumps(
@@ -102,8 +113,30 @@ async def test_page_review_rejects_minor_issue_even_when_model_says_pass() -> No
         scene={"id": "p1", "kind": "statement", "blocks": [{"id": "b1", "type": "statement", "statement": "结论"}]},
         brief={"objective": "学生能复述结论", "keyClaim": "结论", "misconception": "", "visualTask": "突出结论", "evidencePolicy": "none"},
     )
-    assert not review.passed
+    assert review.passed
     assert review.block_issues[0]["severity"] == "minor"
+
+
+async def test_page_review_failure_is_unavailable_not_a_replan_instruction() -> None:
+    fake = FakeClient(by_purpose={"quality:page": "not json"})
+    review = await review_page(
+        fake,
+        topic="AVL",
+        scene={"id": "p1", "kind": "content", "blocks": []},
+        brief={"objective": "理解旋转"},
+    )
+    assert not review.available
+    assert review.failure.startswith("质量审查失败")
+    assert review.page_issues == []
+
+
+def test_compact_scene_removes_widget_css_but_preserves_model_tail() -> None:
+    html = "<style>" + (".x{color:red}" * 2000) + "</style><div id='stage'></div><script>const model=1;render();</script>"
+    compacted = compact_scene({"blocks": [{"type": "sim", "html": html}]})
+    widget = compacted["blocks"][0]["html"]
+    assert "color:red" not in widget
+    assert "id='stage'" in widget
+    assert "render();" in widget
 
 
 async def test_pipeline_routes_quality_issue_back_to_exact_block() -> None:
@@ -272,7 +305,7 @@ async def test_page_issue_can_replan_block_type_and_regenerate_whole_page() -> N
             "scenes": [
                 {
                     "id": "p1",
-                    "kind": "content",
+                    "kind": "statement",
                     "headline": "旧标题",
                     "notes": "旧规划。",
                     "brief": {
@@ -294,7 +327,7 @@ async def test_page_issue_can_replan_block_type_and_regenerate_whole_page() -> N
         {
             "scene": {
                 "id": "p1",
-                "kind": "content",
+                "kind": "statement",
                 "headline": "风险提示",
                 "notes": "用醒目提示完成目标。",
                 "brief": {
@@ -354,12 +387,13 @@ async def test_page_issue_can_replan_block_type_and_regenerate_whole_page() -> N
         options=GeneratorOptions(plan_perspectives=1, sections=False, quality_rounds=2),
     )
     assert result.doc["scenes"][0]["headline"] == "风险提示"
+    assert result.doc["scenes"][0]["kind"] == "content"
     assert result.doc["scenes"][0]["blocks"][0]["type"] == "callout"
     assert result.quality[0]["semanticScore"] == 9.8
     assert result.quality[0]["renderVerified"] is False
 
 
-async def test_rejected_replan_does_not_lock_wrong_block_type() -> None:
+async def test_descriptive_replan_size_is_normalized_without_wasting_a_round() -> None:
     brief = {
         "objective": "学生能识别风险",
         "learningAction": "inspect",
@@ -443,7 +477,7 @@ async def test_rejected_replan_does_not_lock_wrong_block_type() -> None:
         pages=1,
         options=GeneratorOptions(plan_perspectives=1, sections=False, quality_rounds=3),
     )
-    assert fake.replans == 2
+    assert fake.replans == 1
     assert result.doc["scenes"][0]["blocks"][0]["type"] == "callout"
     assert result.quality[0]["semanticScore"] == 9.8
 

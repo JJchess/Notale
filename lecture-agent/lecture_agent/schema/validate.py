@@ -277,6 +277,13 @@ def _check_graph(b: dict[str, Any], path: str, r: Result) -> None:
         _check_inline(n.get("title"), f"{path}.nodes[{i}].title", r)
         if n.get("sub"):
             _check_inline(n["sub"], f"{path}.nodes[{i}].sub", r)
+        title = str(n.get("title") or "")
+        sub = str(n.get("sub") or "")
+        if len(title) > 28 or len(sub) > 72 or len(title) + len(sub) > 88:
+            r.err(
+                f"{path}.nodes[{i}]",
+                "graph 节点文字过长（title≤28、sub≤72、合计≤88 字符）；节点只命名实体/关系，解释移到 caption",
+            )
     if len(ids) < 2:
         return
 
@@ -409,10 +416,17 @@ def _check_block(b: dict[str, Any], path: str, r: Result, state: dict[str, Any])
                 if e.get("desc"):
                     _check_inline(e["desc"], f"{path}.events[{i}].desc", r)
     elif t == "formula":
-        if isinstance(b.get("latex"), str) and "$" in b["latex"]:
-            r.err(
-                f"{path}.latex", "latex 是纯 LaTeX 源码，不要用 $ 或 $$ 包裹（$ 会被 KaTeX 标红）"
-            )
+        latex = b.get("latex")
+        if isinstance(latex, str):
+            stripped = latex.strip()
+            if "$" in latex:
+                r.err(
+                    f"{path}.latex", "latex 是纯 LaTeX 源码，不要用 $ 或 $$ 包裹（$ 会被 KaTeX 标红）"
+                )
+            if (stripped.startswith(r"\[") and stripped.endswith(r"\]")) or (
+                stripped.startswith(r"\(") and stripped.endswith(r"\)")
+            ):
+                r.err(f"{path}.latex", r"latex 不要再包 \[...\] 或 \(...\)；formula 已是 display math")
         # caption 是散文字段，走 inlineMd —— 里面的数学必须自带 $…$，否则原样印出
         if b.get("caption"):
             _check_inline(b["caption"], f"{path}.caption", r)
@@ -421,9 +435,27 @@ def _check_block(b: dict[str, Any], path: str, r: Result, state: dict[str, Any])
         for k in ("filename", "caption"):
             if b.get(k):
                 _check_inline(b[k], f"{path}.{k}", r)
+        source = b.get("source")
+        if isinstance(source, str) and (len(source) > 2400 or source.count("\n") + 1 > 42):
+            r.err(
+                f"{path}.source",
+                "静态代码超过单页可读预算（最多 42 行且约 2400 字符）；保留关键片段，完整实现移到 runnable/preamble",
+            )
     elif t == "chart":
         if b.get("caption"):
             _check_inline(b["caption"], f"{path}.caption", r)
+            if len(str(b["caption"])) > 240:
+                r.err(
+                    f"{path}.caption",
+                    "chart caption 超过 240 字符；只保留来源/口径/一句结论，任务说明与推导移到 notes 或兄弟 block",
+                )
+        labels = [p.get("label") for p in (b.get("points") or []) if isinstance(p, dict) and p.get("label")]
+        labels += [a.get("label") for a in (b.get("annotations") or []) if isinstance(a, dict) and a.get("label")]
+        if len(labels) > 6:
+            r.err(
+                f"{path}.annotations",
+                "图中可见标签超过 6 个，会遮挡数据；只标关键端点/阈值，其余信息放轴标签或 caption",
+            )
     elif t == "table":
         for i, h in enumerate(b.get("head") or []):
             _check_inline(h, f"{path}.head[{i}]", r)
@@ -437,6 +469,13 @@ def _check_block(b: dict[str, Any], path: str, r: Result, state: dict[str, Any])
                 _check_inline(n.get("title"), f"{path}.nodes[{i}].title", r)
                 if n.get("sub"):
                     _check_inline(n["sub"], f"{path}.nodes[{i}].sub", r)
+                title = str(n.get("title") or "")
+                sub = str(n.get("sub") or "")
+                if len(title) > 28 or len(sub) > 72 or len(title) + len(sub) > 88:
+                    r.err(
+                        f"{path}.nodes[{i}]",
+                        "结构节点文字过长（title≤28、sub≤72、合计≤88 字符）；节点只命名状态/关系，解释移到 caption/callout",
+                    )
     elif t == "graph":
         _check_graph(b, path, r)
     elif t == "quiz":
@@ -458,6 +497,34 @@ def _check_block(b: dict[str, Any], path: str, r: Result, state: dict[str, Any])
                 env.get("jsPreamble"), str
             ):
                 r.err(f"{path}.env", "custom 环境需 pythonPreamble 或 jsPreamble 至少一个")
+        for lang, source in (b.get("starter") or {}).items():
+            if isinstance(source, str) and (len(source) > 2400 or source.count("\n") + 1 > 60):
+                r.err(
+                    f"{path}.starter.{lang}",
+                    "starter 超过可编辑舞台预算（最多 60 行且约 2400 字符）；把脚手架移入 env preamble，只留下学习者要改的核心",
+                )
+        # “实现/编写/调试”页面的学习证据必须出现在编辑器里。把完整算法塞进
+        # preamble、starter 只改输入数组虽然能运行，却没有让学习者实现任何东西。
+        focus = " ".join(str(b.get(k) or "") for k in ("headline", "description", "hint"))
+        implementation_task = bool(re.search(r"实现|编写|补全|调试|implement|debug", focus, re.I))
+        if implementation_task and isinstance(env, dict) and env.get("kind") == "custom":
+            starters = b.get("starter") or {}
+            for lang, preamble_key in (("python", "pythonPreamble"), ("js", "jsPreamble")):
+                starter = starters.get(lang)
+                preamble = env.get(preamble_key)
+                if not isinstance(starter, str) or not isinstance(preamble, str):
+                    continue
+                starter_defs = len(
+                    re.findall(r"(?:^|\n)\s*(?:def|class|function)\s+[A-Za-z_$][\w$]*", starter)
+                )
+                preamble_defs = len(
+                    re.findall(r"(?:^|\n)\s*(?:def|class|function)\s+[A-Za-z_$][\w$]*", preamble)
+                )
+                if preamble_defs >= 3 and starter_defs == 0:
+                    r.err(
+                        f"{path}.starter.{lang}",
+                        "本页声称实现/编写/调试，但核心函数全部藏在 env preamble；preamble 只放 I/O、数据与绘图脚手架，把学习目标对应的算法决策移到可见 starter",
+                    )
     elif t == "sim":
         _check_sim(b, path, r)
     elif t == "compare":
