@@ -101,7 +101,9 @@ def test_interactive_stage_is_the_largest_uninterrupted_area() -> None:
     width = stage["col"][1] - stage["col"][0]
     height = stage["row"][1] - stage["row"][0]
 
-    assert width * height == 81
+    assert width * height == 72
+    assert stage["col"] == [1, 13]
+    assert stage["row"] == [4, 10]
     assert stage["styleRole"] == "stage"
     assert stage["clip"] is False
     assert not validate_scene_composition(scene, layout)
@@ -115,9 +117,55 @@ def test_stage_evidence_overrides_incompatible_requested_family() -> None:
     stage = next(area for area in layout["areas"] if area["blockIds"] == ["block-0"])
 
     assert scene["compositionFamily"] == "interactive-stage"
-    assert stage["col"] == [1, 10]
-    assert stage["row"] == [4, 13]
+    assert stage["col"] == [1, 13]
+    assert stage["row"] == [4, 11]
     assert stage["styleRole"] == "stage"
+
+
+def test_long_statement_beside_interaction_gets_three_support_rows() -> None:
+    scene = _scene("sim", "statement")
+    scene["blocks"][1]["statement"] = "同时验证固定结构关系与全局不变量。" * 12
+    layout = compile_scene_composition(
+        scene, {"compositionFamily": "interactive-stage"}, {"density": "medium"}, []
+    )
+    by_id = {
+        block_id: area for area in layout["areas"] for block_id in area["blockIds"]
+    }
+    assert by_id["block-0"]["row"] == [4, 10]
+    assert by_id["block-1"]["row"] == [10, 13]
+
+
+def test_single_interactive_stage_uses_full_artboard_width() -> None:
+    scene = _scene("sim")
+    layout = compile_scene_composition(
+        scene, {"compositionFamily": "interactive-stage"}, {"density": "medium"}, []
+    )
+
+    assert layout["areas"][0]["col"] == [1, 13]
+    assert layout["areas"][0]["row"] == [4, 13]
+
+
+@pytest.mark.parametrize("family", ["annotated-specimen", "proof-equation-stage", "data-evidence"])
+def test_formula_and_visual_stack_at_full_width_instead_of_using_narrow_rail(
+    family: str,
+) -> None:
+    scene = _scene("formula", "chart")
+    scene["blocks"][0]["latex"] = r"h < 1.4404\log_2(n+2)-1.328"
+    layout = compile_scene_composition(
+        scene, {"compositionFamily": family}, {"density": "dense"}, []
+    )
+    by_id = {
+        block_id: area for area in layout["areas"] for block_id in area["blockIds"]
+    }
+
+    assert by_id["block-0"]["col"] == [1, 13]
+    assert by_id["block-1"]["col"] == [1, 13]
+    formula_row = by_id["block-0"]["row"]
+    chart_row = by_id["block-1"]["row"]
+    expected = (4, 6) if family == "annotated-specimen" else (5, 5)
+    assert formula_row[1] - formula_row[0] == expected[0]
+    assert chart_row[1] - chart_row[0] == expected[1]
+    assert formula_row[1] <= chart_row[0] or chart_row[1] <= formula_row[0]
 
 
 def test_wide_evidence_never_enters_annotated_caption_rail() -> None:

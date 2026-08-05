@@ -202,6 +202,21 @@ def _aesthetic_lint(html: str, path: str, r: Result, *, require_motion: bool) ->
         r.warn(path, "用了样例桩色 #4fc3f7——请从主题 token 取色")
 
 
+_WIDGET_HOST_TOKENS = frozenset(
+    {
+        "--bg", "--bg2", "--card", "--ink", "--text2", "--accent", "--accent2",
+        "--line", "--serif", "--sans", "--mono", "--radius", "--sel",
+        "--color-background-primary", "--color-background-secondary",
+        "--color-background-tertiary", "--color-bg", "--color-bg-subtle",
+        "--color-bg-muted", "--color-text", "--color-text-primary",
+        "--color-text-secondary", "--color-text-tertiary", "--color-border",
+        "--color-border-primary", "--color-border-secondary", "--color-border-tertiary",
+        "--color-background-info", "--color-text-info", "--font-sans", "--font-serif",
+        "--font-mono", "--radius-sm", "--border-radius-lg",
+    }
+)
+
+
 def _check_widget_html(html: Any, path: str, r: Result, spec: Any = None) -> None:
     if not isinstance(html, str) or len(html) < 40:
         r.err(path, "片段过短或缺失（应是自包含 HTML 片段）")
@@ -226,12 +241,75 @@ def _check_widget_html(html: Any, path: str, r: Result, spec: Any = None) -> Non
     )
     if hard_colors:
         r.err(path, "widget 含硬编码颜色；必须读取 --ink/--accent/--line/--bg 等主题 token")
+    defined_tokens = set(re.findall(r"(--[a-zA-Z0-9_-]+)\s*:", html))
+    fallback_tokens = set(
+        re.findall(r"var\(\s*(--[a-zA-Z0-9_-]+)\s*,", html, re.I)
+    )
+    referenced_tokens = set(
+        re.findall(r"var\(\s*(--[a-zA-Z0-9_-]+)", html, re.I)
+    )
+    unresolved_tokens = sorted(
+        referenced_tokens - defined_tokens - _WIDGET_HOST_TOKENS - fallback_tokens
+    )
+    if unresolved_tokens:
+        r.err(
+            path,
+            "widget 引用了宿主未提供且自身未定义的 CSS token："
+            + ", ".join(unresolved_tokens)
+            + "；这会让 SVG fill/text 回落成同色或透明",
+        )
+    small_css = [
+        int(float(value))
+        for value in re.findall(r"font-size\s*:\s*(\d+(?:\.\d+)?)px", html, re.I)
+        if float(value) < 12
+    ]
+    small_svg = [
+        int(float(value))
+        for value in re.findall(r"font-size\s*=\s*[\"'](\d+(?:\.\d+)?)(?:px)?[\"']", html, re.I)
+        if float(value) < 12
+    ]
+    if small_css or small_svg:
+        r.err(
+            path,
+            "widget 含小于 12px 的可见文字；投影证据标签至少 12px，控件至少 13px，核心状态至少 14px",
+        )
     if isinstance(spec, dict):
         math_model = spec.get("math_model")
         formula = math_model.get("formula") if isinstance(math_model, dict) else None
         if formula and str(formula).strip().lower() != "none" and "console.assert" not in low:
             r.err(path, "数学 widget 有 math_model 但缺 console.assert 验证例；坐标/方向错误无法自动暴露")
     _aesthetic_lint(html, path, r, require_motion=True)
+
+
+def _runnable_focus(block: dict[str, Any]) -> str:
+    return " ".join(str(block.get(key) or "") for key in ("headline", "description", "hint"))
+
+
+def _check_runnable_learning_surface(
+    block: dict[str, Any], path: str, r: Result, *, focus: str
+) -> None:
+    if not re.search(r"实现|编写|补全|调试|implement|debug", focus, re.I):
+        return
+    env = block.get("env")
+    if not isinstance(env, dict) or env.get("kind") != "custom":
+        return
+    starters = block.get("starter") or {}
+    for lang, preamble_key in (("python", "pythonPreamble"), ("js", "jsPreamble")):
+        starter = starters.get(lang)
+        preamble = env.get(preamble_key)
+        if not isinstance(starter, str) or not isinstance(preamble, str):
+            continue
+        starter_defs = len(
+            re.findall(r"(?:^|\n)\s*(?:def|class|function)\s+[A-Za-z_$][\w$]*", starter)
+        )
+        preamble_defs = len(
+            re.findall(r"(?:^|\n)\s*(?:def|class|function)\s+[A-Za-z_$][\w$]*", preamble)
+        )
+        if preamble_defs >= 3 and starter_defs == 0:
+            r.err(
+                f"{path}.starter.{lang}",
+                "本页声称实现/编写/调试，但核心函数全部藏在 env preamble；preamble 只放 I/O、数据与绘图脚手架，把学习目标对应的算法决策移到可见 starter",
+            )
 
 
 def _acyclic_without_dashed(edges: list[Any], ids: set[str]) -> bool:
@@ -325,6 +403,50 @@ def _check_graph(b: dict[str, Any], path: str, r: Result) -> None:
         roots = sorted(k for k, d in indeg.items() if d == 0)
         if len(roots) != 1:
             r.err(f"{path}.edges", f"tree 应恰好一个根（入度 0），实得 {len(roots)} 个: {', '.join(roots) or '无'}")
+
+        # When a tree publishes both child heights and a balance factor, those
+        # labels are executable evidence rather than decoration. Check the
+        # convention-independent invariant |BF| = |h(left)-h(right)|.
+        height_by_id: dict[str, int] = {}
+        bf_by_id: dict[str, int] = {}
+        for node in nodes:
+            if not isinstance(node, dict) or not isinstance(node.get("id"), str):
+                continue
+            annotation = f"{node.get('title') or ''} {node.get('sub') or ''}"
+            height_match = re.search(r"(?:\bh(?:eight)?|高度)\s*[=:：]\s*(-?\d+)", annotation, re.I)
+            bf_match = re.search(r"\bBF\s*[=:：]\s*([+-]?\d+)", annotation, re.I)
+            if height_match:
+                height_by_id[node["id"]] = int(height_match.group(1))
+            if bf_match:
+                bf_by_id[node["id"]] = int(bf_match.group(1))
+
+        children: dict[str, dict[str, str]] = {}
+        for edge in edges:
+            if not isinstance(edge, dict):
+                continue
+            src, dst = edge.get("from"), edge.get("to")
+            if src not in ids or dst not in ids:
+                continue
+            label = str(edge.get("label") or "").strip().lower()
+            side = "left" if re.match(r"^(?:l\b|left\b|左)", label) else (
+                "right" if re.match(r"^(?:r\b|right\b|右)", label) else ""
+            )
+            if side:
+                children.setdefault(str(src), {})[side] = str(dst)
+
+        for node_id, published_bf in bf_by_id.items():
+            sides = children.get(node_id) or {}
+            left_h = height_by_id.get(sides.get("left", ""))
+            right_h = height_by_id.get(sides.get("right", ""))
+            if left_h is None or right_h is None:
+                continue
+            expected = abs(left_h - right_h)
+            if abs(published_bf) != expected:
+                r.err(
+                    f"{path}.nodes",
+                    f"节点 {node_id} 的 BF 标注与子树高度矛盾："
+                    f"|BF|={abs(published_bf)}，但 |{left_h}-{right_h}|={expected}",
+                )
 
     # 环检测（Kahn）
     deg = dict(indeg)
@@ -503,28 +625,9 @@ def _check_block(b: dict[str, Any], path: str, r: Result, state: dict[str, Any])
                     f"{path}.starter.{lang}",
                     "starter 超过可编辑舞台预算（最多 60 行且约 2400 字符）；把脚手架移入 env preamble，只留下学习者要改的核心",
                 )
-        # “实现/编写/调试”页面的学习证据必须出现在编辑器里。把完整算法塞进
-        # preamble、starter 只改输入数组虽然能运行，却没有让学习者实现任何东西。
-        focus = " ".join(str(b.get(k) or "") for k in ("headline", "description", "hint"))
-        implementation_task = bool(re.search(r"实现|编写|补全|调试|implement|debug", focus, re.I))
-        if implementation_task and isinstance(env, dict) and env.get("kind") == "custom":
-            starters = b.get("starter") or {}
-            for lang, preamble_key in (("python", "pythonPreamble"), ("js", "jsPreamble")):
-                starter = starters.get(lang)
-                preamble = env.get(preamble_key)
-                if not isinstance(starter, str) or not isinstance(preamble, str):
-                    continue
-                starter_defs = len(
-                    re.findall(r"(?:^|\n)\s*(?:def|class|function)\s+[A-Za-z_$][\w$]*", starter)
-                )
-                preamble_defs = len(
-                    re.findall(r"(?:^|\n)\s*(?:def|class|function)\s+[A-Za-z_$][\w$]*", preamble)
-                )
-                if preamble_defs >= 3 and starter_defs == 0:
-                    r.err(
-                        f"{path}.starter.{lang}",
-                        "本页声称实现/编写/调试，但核心函数全部藏在 env preamble；preamble 只放 I/O、数据与绘图脚手架，把学习目标对应的算法决策移到可见 starter",
-                    )
+        # “实现/编写/调试”页面的学习证据必须出现在编辑器里。块级校验处理
+        # hint/description；scene 级校验再把页标题与导语纳入，防止语义在外层时漏判。
+        _check_runnable_learning_surface(b, path, r, focus=_runnable_focus(b))
     elif t == "sim":
         _check_sim(b, path, r)
     elif t == "compare":
@@ -635,6 +738,16 @@ def _check_scene(
     for i, b in enumerate(blocks):
         _structural(b, f"{path}.blocks[{i}]", r)  # 结构（pydantic 判别联合）
         _check_block(b, f"{path}.blocks[{i}]", r, state)  # 语义
+        if isinstance(b, dict) and b.get("type") == "runnable":
+            block_focus = _runnable_focus(b)
+            scene_focus = " ".join(
+                str(value or "")
+                for value in (s.get("headline"), s.get("lead"), s.get("notes"), block_focus)
+            )
+            if not re.search(r"实现|编写|补全|调试|implement|debug", block_focus, re.I):
+                _check_runnable_learning_surface(
+                    b, f"{path}.blocks[{i}]", r, focus=scene_focus
+                )
 
 
 def _check_layout(s: dict[str, Any], path: str, r: Result) -> None:

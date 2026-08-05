@@ -107,19 +107,56 @@
       + 'const original=proto[name];if(typeof original!=="function")return;proto[name]=function(){canvasPaints++;return original.apply(this,arguments)}})}catch(e){}'
       + 'function visiblePrimitiveCount(svg){return Array.prototype.filter.call(svg.querySelectorAll("path,line,polyline,polygon,circle,ellipse,rect,image,use"),function(node){'
       + 'if(node.closest("defs,[aria-hidden=true]"))return false;const semantic=((node.getAttribute("class")||"")+" "+(node.getAttribute("id")||"")+" "+((node.parentElement&&node.parentElement.getAttribute("class"))||"")).toLowerCase();'
-      + 'if(/(^|[\\s_-])(grid|background|backdrop|watermark|axis|tick|guide|decoration|ornament)([\\s_-]|$)/.test(semantic))return false;'
+      + 'if(/(^|[\\s_-])(grid|background|backdrop|watermark|axis|tick|guide|decoration|ornament|placeholder|skeleton|ghost)([\\s_-]|$)/.test(semantic))return false;'
       + 'try{const box=node.getBoundingClientRect();const cs=getComputedStyle(node);return cs.display!=="none"&&cs.visibility!=="hidden"&&Number(cs.opacity||1)>0&&Math.max(box.width,box.height)>4}catch(e){return false}}).length}'
-      + 'function primaryStage(){const selectors="[class*=stage],[id*=stage],[class*=canvas],[id*=canvas],[class*=plot],[id*=plot]";'
-      + 'return Array.prototype.map.call(document.querySelectorAll(selectors),function(node){const r=node.getBoundingClientRect();return {node:node,area:Math.max(0,r.width)*Math.max(0,r.height)}})'
+      + 'function visibleEntityCount(svg){const root=svg.getBoundingClientRect();const rootArea=Math.max(1,root.width*root.height);'
+      + 'return Array.prototype.filter.call(svg.querySelectorAll("circle,ellipse,rect,polygon,image,use"),function(node){'
+      + 'if(node.closest("defs,[aria-hidden=true]"))return false;const semantic=((node.getAttribute("class")||"")+" "+(node.getAttribute("id")||"")+" "+((node.parentElement&&node.parentElement.getAttribute("class"))||"")).toLowerCase();'
+      + 'if(/(^|[\\s_-])(grid|background|backdrop|watermark|axis|tick|guide|decoration|ornament|placeholder|skeleton|ghost)([\\s_-]|$)/.test(semantic))return false;'
+      + 'try{const box=node.getBoundingClientRect();const cs=getComputedStyle(node);const area=Math.max(0,box.width)*Math.max(0,box.height);'
+      + 'return cs.display!=="none"&&cs.visibility!=="hidden"&&Number(cs.opacity||1)>0&&box.width>6&&box.height>6&&area<rootArea*.45}catch(e){return false}}).length}'
+      + 'function visibleEntityArea(svg){const root=svg.getBoundingClientRect();const rootArea=Math.max(1,root.width*root.height);let area=0;'
+      + 'Array.prototype.forEach.call(svg.querySelectorAll("circle,ellipse,rect,polygon,image,use"),function(node){if(node.closest("defs,[aria-hidden=true]"))return;'
+      + 'try{const box=node.getBoundingClientRect();const cs=getComputedStyle(node);const value=Math.max(0,box.width)*Math.max(0,box.height);'
+      + 'if(cs.display!=="none"&&cs.visibility!=="hidden"&&Number(cs.opacity||1)>0&&value<rootArea*.45)area+=value}catch(e){}});return area/rootArea}'
+      + 'function lowContrastEntityLabels(svg){return Array.prototype.some.call(svg.querySelectorAll("g"),function(group){const shape=group.querySelector("circle,ellipse,rect,polygon");const label=group.querySelector("text");'
+      + 'if(!shape||!label||!(label.textContent||"").trim())return false;try{const a=getComputedStyle(shape).fill.replace(/\\s/g,"");const b=getComputedStyle(label).fill.replace(/\\s/g,"");'
+      + 'return a&&b&&a!=="none"&&a!=="transparent"&&a===b}catch(e){return false}})}'
+      + 'function labeledEntityCount(svg){return Array.prototype.filter.call(svg.querySelectorAll("g"),function(group){const shape=group.querySelector(":scope>circle,:scope>ellipse,:scope>rect,:scope>polygon");const labels=Array.prototype.filter.call(group.querySelectorAll(":scope>text"),function(text){return (text.textContent||"").trim()});'
+      + 'if(!shape||!labels.length)return false;try{const box=shape.getBoundingClientRect();const cs=getComputedStyle(shape);return cs.display!=="none"&&cs.visibility!=="hidden"&&box.width>6&&box.height>6}catch(e){return false}}).length}'
+      + 'function substantialLabeledEntityCount(svg){const root=svg.getBoundingClientRect(),rootArea=Math.max(1,root.width*root.height);return Array.prototype.filter.call(svg.querySelectorAll("g"),function(group){const shape=group.querySelector(":scope>circle,:scope>ellipse,:scope>rect,:scope>polygon");const label=group.querySelector(":scope>text");if(!shape||!label||!(label.textContent||"").trim())return false;try{const box=shape.getBoundingClientRect(),cs=getComputedStyle(shape);return cs.display!=="none"&&cs.visibility!=="hidden"&&box.width*box.height>=rootArea*.0015}catch(e){return false}}).length}'
+      + 'function undersizedLabeledEntities(svg){const bad=[];Array.prototype.forEach.call(svg.querySelectorAll("g"),function(group){const shape=group.querySelector(":scope>circle,:scope>ellipse,:scope>rect,:scope>polygon");const labels=Array.prototype.filter.call(group.querySelectorAll(":scope>text"),function(text){return (text.textContent||"").trim()});'
+      + 'if(!shape||!labels.length)return;const sizes=labels.map(function(text){return parseFloat(getComputedStyle(text).fontSize)||0});const largest=Math.max.apply(Math,sizes);if(largest<13.5)bad.push(labels.map(function(text){return (text.textContent||"").trim()}).join("/")+" ("+largest+"px)")});return bad}'
+      + 'function normalizeLabeledEntityText(svg){Array.prototype.forEach.call(svg.querySelectorAll("g"),function(group){const shape=group.querySelector(":scope>circle,:scope>ellipse,:scope>rect,:scope>polygon");const labels=Array.prototype.filter.call(group.querySelectorAll(":scope>text"),function(text){return (text.textContent||"").trim()});if(!shape||!labels.length)return;'
+      + 'const largest=Math.max.apply(Math,labels.map(function(text){return parseFloat(getComputedStyle(text).fontSize)||0}));if(largest<13.5)labels.forEach(function(text){text.style.fontSize="14px"})})}'
+      + 'function overlappingSvgLabels(svg){const labels=Array.prototype.filter.call(svg.querySelectorAll("text"),function(text){try{const r=text.getBoundingClientRect();const cs=getComputedStyle(text);return (text.textContent||"").trim()&&cs.display!=="none"&&cs.visibility!=="hidden"&&r.width>2&&r.height>2}catch(e){return false}});'
+      + 'for(let i=0;i<labels.length;i++)for(let j=i+1;j<labels.length;j++){const a=labels[i].getBoundingClientRect(),b=labels[j].getBoundingClientRect();const w=Math.max(0,Math.min(a.right,b.right)-Math.max(a.left,b.left)),h=Math.max(0,Math.min(a.bottom,b.bottom)-Math.max(a.top,b.top));'
+      + 'const overlap=w*h,smaller=Math.max(1,Math.min(a.width*a.height,b.width*b.height));if(overlap/smaller>.08)return true;const sameGroup=labels[i].parentElement===labels[j].parentElement;'
+      + 'const gapX=Math.max(0,Math.max(a.left,b.left)-Math.min(a.right,b.right)),gapY=Math.max(0,Math.max(a.top,b.top)-Math.min(a.bottom,b.bottom));if(sameGroup&&gapX<2&&gapY<2)return true}return false}'
+      + 'function primaryStage(){const selectors="[class*=stage],[id*=stage],[class*=canvas],[id*=canvas],[class*=plot],[id*=plot]";let nodes=Array.prototype.slice.call(document.querySelectorAll(selectors));'
+      + 'if(!nodes.length)nodes=Array.prototype.slice.call(document.querySelectorAll("svg,canvas"));return nodes.map(function(node){const r=node.getBoundingClientRect();return {node:node,area:Math.max(0,r.width)*Math.max(0,r.height)}})'
       + '.filter(function(x){return x.area>innerWidth*innerHeight*.18}).sort(function(a,b){return b.area-a.area})[0]}'
       + 'function auditInitialPaint(){const canvas=document.querySelector("canvas");if(canvas&&canvasPaints===0)'
-      + 'report("canvas initial frame produced no paint operations");const candidate=primaryStage();if(!candidate)return;const stage=candidate.node;'
+      + 'report("canvas initial frame produced no paint operations");if(Math.max(document.documentElement.scrollHeight,document.body.scrollHeight)>innerHeight+3||Math.max(document.documentElement.scrollWidth,document.body.scrollWidth)>innerWidth+3)'
+      + 'report("widget content exceeds the fixed iframe viewport and is clipped");const candidate=primaryStage();if(!candidate)return;const stage=candidate.node;'
       + 'const svgs=stage.matches("svg")?[stage]:Array.prototype.slice.call(stage.querySelectorAll("svg"));'
+      + 'if(widgetProfile==="state")svgs.forEach(normalizeLabeledEntityText);'
       + 'const primitiveCount=svgs.reduce(function(sum,svg){return sum+visiblePrimitiveCount(svg)},0);'
+      + 'const entityCount=svgs.reduce(function(sum,svg){return sum+visibleEntityCount(svg)},0);'
+      + 'const entityArea=svgs.reduce(function(sum,svg){return sum+visibleEntityArea(svg)},0);'
+      + 'const labeledEntities=svgs.reduce(function(sum,svg){return sum+labeledEntityCount(svg)},0);'
+      + 'const substantialEntities=svgs.reduce(function(sum,svg){return sum+substantialLabeledEntityCount(svg)},0);'
       + 'if(svgs.length&&primitiveCount===0)'
       + 'report("initial frame has an empty primary visualization stage");'
-      + 'if(widgetProfile==="state"&&svgs.length&&primitiveCount<3)report("state simulation initial frame has too few evidence marks");'
-      + 'const stageText=(stage.textContent||"").replace(/\\s+/g," ");if(/初始空树|empty[_ -]?tree|无节点|暂无数据|等待.{0,8}开始/i.test(stageText))'
+      + 'if(widgetProfile==="state"&&svgs.length&&entityCount<3)report("state simulation initial frame has fewer than three visible state entities");'
+      + 'if(widgetProfile==="state"&&svgs.length&&entityArea<.006)report("state simulation entities occupy too little of the primary stage to be legible");'
+      + 'if(widgetProfile==="state"&&svgs.length&&labeledEntities>0&&labeledEntities<3)report("state simulation initial frame must show at least three distinct labeled state entities; decorative rings do not count");'
+      + 'if(widgetProfile==="state"&&svgs.length&&substantialEntities<3)report("state simulation initial frame must show at least three substantial labeled entities in the primary structure; toolbar, queue, legend, and decorative markers do not count");'
+      + 'const stageRect=stage.getBoundingClientRect();if(widgetProfile==="state"&&stageRect.width<innerWidth*.6)report("state simulation primary stage uses less than 60% of the available frame width; expand the interface instead of centering a narrow dashboard card");'
+      + 'const undersizedLabels=[].concat.apply([],svgs.map(undersizedLabeledEntities));if(widgetProfile==="state"&&undersizedLabels.length)report("state simulation labeled entities use text smaller than 14px; enlarge these core node or state values: "+undersizedLabels.slice(0,6).join(", "));'
+      + 'if(widgetProfile==="state"&&svgs.some(lowContrastEntityLabels))report("state simulation has entity labels with the same fill as their shapes");'
+      + 'if(widgetProfile==="state"&&svgs.some(overlappingSvgLabels))report("state simulation has overlapping SVG text labels; separate node values, balance factors, and height annotations");'
+      + 'const stageText=(stage.textContent||"").replace(/\\s+/g," ");if(/初始空树|empty[_ -]?tree|无节点|暂无数据|等待.{0,8}开始|点击.{0,12}(开始|构建)|开始逐步构建/i.test(stageText))'
       + 'report("initial frame exposes an empty data structure instead of inspectable evidence")}'
       + 'addEventListener("message",function(e){if(e.data&&e.data.__lectureWidgetAudit)auditInitialPaint()});'
       + 'addEventListener("load",function(){setTimeout(auditInitialPaint,1200)});'
@@ -525,7 +562,12 @@
     formula(b) {
       const m = el('div', 'mblock', displayTex(b.latex));
       if (b.size) m.style.fontSize = b.size + 'px';
-      if (b.caption) { const w = el('div'); w.appendChild(m); w.appendChild(el('div', 'cite', inlineMd(b.caption))); return w; }
+      if (b.caption) {
+        const dense = /\\\\|\\begin\{(?:aligned|align|gather|array|cases)\}/.test(String(b.latex || ''))
+          || String(b.latex || '').length > 150;
+        const w = el('div', 'formula-block' + (dense ? ' is-dense-formula' : ''));
+        w.appendChild(m); w.appendChild(el('div', 'cite', inlineMd(b.caption))); return w;
+      }
       return m;
     },
     flow(b) {

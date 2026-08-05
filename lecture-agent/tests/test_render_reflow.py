@@ -12,7 +12,12 @@ import json
 from lecture_agent.adapters.llm.fake import FakeClient
 from lecture_agent.domain.generation import condense_scene
 from lecture_agent.engine import GeneratorOptions, generate_lecture
+from lecture_agent.engine.pipeline import (
+    _reconcile_final_dropped,
+    _visual_issue_is_layout_only_for,
+)
 from lecture_agent.ports.renderer import RenderReport
+from lecture_agent.ports.visual_review import VisualIssue
 
 _SKELETON = json.dumps(
     {
@@ -56,6 +61,36 @@ _BY_PURPOSE = {
     "notes": json.dumps({"note": "本页备注，讲清主线、展开核心直觉与常见误区。"}),
     "quality:reflow": _SHORT_SCENE,
 }
+
+
+def test_formula_layout_issue_never_authorizes_semantic_regeneration() -> None:
+    issue = VisualIssue(
+        "s9",
+        "blockContent",
+        "公式与说明文字重叠并被裁切",
+        "增加公式容器高度和 padding-bottom",
+    )
+    assert _visual_issue_is_layout_only_for(issue, "formula")
+    assert not _visual_issue_is_layout_only_for(issue, "runnable")
+
+
+def test_recovered_page_is_not_reported_as_final_dropped_block() -> None:
+    dropped = _reconcile_final_dropped(
+        ["s6b0(runnable)", "s7b0(chart)"],
+        placeholder_scene_by_id={"s6b0": "s6", "s7b0": "s7"},
+        doc={
+            "scenes": [
+                {"id": "s6", "blocks": [{"id": "replacement", "type": "runnable"}]},
+                {
+                    "id": "s7",
+                    "blocks": [
+                        {"type": "callout", "label": "待补", "text": "本页 block 生成失败，需重跑"}
+                    ],
+                },
+            ]
+        },
+    )
+    assert dropped == ["s7b0(chart)"]
 
 
 class _FlakyVerifier:

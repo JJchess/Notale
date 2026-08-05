@@ -14,6 +14,13 @@ Choose the smallest visual grammar that preserves the evidence:
 
 Keep one dominant reading path, short node titles, consistent alignment, and sufficient whitespace. Labels explain relationships; decoration must not compete with topology. Never use a diagram to fake coordinates, quantitative trends, algorithm animation, or before/after state evidence. Route those to chart or the appropriate sim profile.
 
+Keep topology and chronology as separate evidence grammars:
+
+- A `graph` edge states one invariant relationship in the visible structure, such as parent/child, L/R, dependency, or yes/no. It must not simultaneously mean "insert next", "rotate", "becomes", or another action over time.
+- A tree snapshot uses `graphType: "tree"` and normally `orientation: "vertical"`. Do not switch to `dag` merely to place two unrelated tree roots in one block.
+- Comparing structures produced by the same algorithm input is before/after state evidence. Use `state-sim` with explicit states or put independent snapshots on separate pages; never join the snapshots into a synthetic DAG.
+- Use `timeline` for dated or named chronological stages that do not require reconstructing algorithm state. Use `state-sim` when a learner must see what changed inside the structure.
+
 Treat each node as a visual label, never as a paragraph:
 
 - Keep `title` at most 28 characters, `sub` at most 72, and their total at most 88. Move explanation, conditions, and examples to a caption/callout or another page.

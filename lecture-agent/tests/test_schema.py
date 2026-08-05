@@ -444,6 +444,34 @@ def test_visual_readability_contract_rejects_dense_block_content() -> None:
     )
     assert any("核心函数全部藏在" in error for error in hidden_algorithm.errors)
 
+    unresolved_widget_token = validate_block(
+        {
+            "type": "sim",
+            "engine": "widget",
+            "html": (
+                "<style>.stage{background:var(--card-bg);transition:opacity .2s}"
+                ".label{color:var(--ink);font-size:14px}</style>"
+                "<div class='stage'><span class='label'>30</span></div>"
+            ),
+        },
+        "sim",
+    )
+    assert any("宿主未提供" in error and "--card-bg" in error for error in unresolved_widget_token.errors)
+
+    tiny_widget_text = validate_block(
+        {
+            "type": "sim",
+            "engine": "widget",
+            "html": (
+                "<style>.stage{background:var(--card);transition:opacity .2s}"
+                ".label{color:var(--ink);font-size:10px}</style>"
+                "<div class='stage'><span class='label'>BF=1</span></div>"
+            ),
+        },
+        "sim",
+    )
+    assert any("小于 12px" in error for error in tiny_widget_text.errors)
+
 
 def test_scene_semantics_reject_hero_inside_content_and_repeated_statement_title() -> None:
     content_hero = _minimal_doc()
@@ -462,3 +490,74 @@ def test_scene_semantics_reject_hero_inside_content_and_repeated_statement_title
     ]
     result = validate_doc(duplicate)
     assert any("statement 不得重复页标题" in error for error in result.errors)
+
+
+def test_scene_headline_exposes_hidden_runnable_algorithm() -> None:
+    doc = _minimal_doc()
+    doc["scenes"][1] = {
+        "id": "s1",
+        "kind": "content",
+        "headline": "实现 AVL 插入与旋转",
+        "lead": "运行并调试核心算法。",
+        "notes": "学习者应修改实现。",
+        "blocks": [
+            {
+                "type": "runnable",
+                "languages": ["python"],
+                "starter": {"python": "keys = [3, 2, 1]\nprint(run(keys))"},
+                "env": {
+                    "kind": "custom",
+                    "pythonPreamble": (
+                        "class Node: pass\n"
+                        "def rotate_left(x): return x\n"
+                        "def rotate_right(x): return x\n"
+                        "def insert(root, key): return root\n"
+                    ),
+                },
+            }
+        ],
+    }
+    result = validate_doc(doc)
+    assert any("核心函数全部藏在" in error for error in result.errors)
+
+
+def test_tree_graph_rejects_balance_factor_inconsistent_with_child_heights() -> None:
+    graph = validate_block(
+        {
+            "type": "graph",
+            "graphType": "tree",
+            "orientation": "vertical",
+            "nodes": [
+                {"id": "p", "title": "20", "sub": "h=2, BF=+1"},
+                {"id": "l", "title": "10", "sub": "h=1, BF=0"},
+                {"id": "r", "title": "25", "sub": "h=1, BF=0"},
+            ],
+            "edges": [
+                {"from": "p", "to": "l", "label": "L (h=1)"},
+                {"from": "p", "to": "r", "label": "R (h=1)"},
+            ],
+        },
+        "graph",
+    )
+    assert any("BF 标注与子树高度矛盾" in error for error in graph.errors)
+
+
+def test_tree_graph_accepts_either_balance_factor_sign_convention() -> None:
+    graph = validate_block(
+        {
+            "type": "graph",
+            "graphType": "tree",
+            "orientation": "vertical",
+            "nodes": [
+                {"id": "p", "title": "20", "sub": "h=2, BF=-1"},
+                {"id": "l", "title": "10", "sub": "h=1, BF=0"},
+                {"id": "r", "title": "NIL", "sub": "h=0"},
+            ],
+            "edges": [
+                {"from": "p", "to": "l", "label": "L"},
+                {"from": "p", "to": "r", "label": "R"},
+            ],
+        },
+        "graph",
+    )
+    assert not any("BF 标注与子树高度矛盾" in error for error in graph.errors)

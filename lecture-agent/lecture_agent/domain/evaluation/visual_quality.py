@@ -102,13 +102,18 @@ def preflight_page_metrics(metrics: list[dict[str, Any]]) -> DeterministicVisual
             or metric.get("widgetErrors")
             or []
         )
-        if overflow_x > 0 or overflow_y > 0:
+        # Match the browser verifier's subpixel tolerances. A 1–4px rounding
+        # residue is not clipped content and must not survive as a stale hard
+        # error after the final browser pass succeeds.
+        if overflow_x > 1 or overflow_y > 4:
             report.hard_errors.append(
                 f"{scene_id}: browser overflow x={overflow_x:g}, y={overflow_y:g}"
             )
         if runtime_errors:
             report.hard_errors.append(f"{scene_id}: runtime error: {runtime_errors}")
-        if metric.get("corrupt") or metric.get("layoutClip") or metric.get("mblockClip"):
+        layout_clip = _number(metric, "layoutClip", "layout_clip") or 0.0
+        math_clip = _number(metric, "mblockClip", "mblock_clip") or 0.0
+        if metric.get("corrupt") or layout_clip > 4 or math_clip > 4:
             report.hard_errors.append(f"{scene_id}: browser detected corrupt or clipped content")
 
         subject = _number(metric, "mainSubjectRatio", "main_subject_ratio")
@@ -117,6 +122,7 @@ def preflight_page_metrics(metrics: list[dict[str, Any]]) -> DeterministicVisual
         sparse_by_design = str(metric.get("sceneKind") or metric.get("scene_kind") or "") in {
             "hero",
             "section",
+            "quiz",
         }
         if not sparse_by_design and subject is not None and subject < 0.18:
             report.issues.append(

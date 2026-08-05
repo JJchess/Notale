@@ -77,12 +77,32 @@ test('widget iframe receives a light-dark register separate from the deck theme 
   assert.match(runtime, /data-deck-theme="' \+ escapeHtml\(theme\)/);
   assert.match(runtime, /initial frame has an empty primary visualization stage/);
   assert.match(runtime, /function visiblePrimitiveCount\(svg\)/);
-  assert.match(runtime, /grid\|background\|backdrop\|watermark\|axis\|tick\|guide\|decoration\|ornament/);
+  assert.match(runtime, /grid\|background\|backdrop\|watermark\|axis\|tick\|guide\|decoration\|ornament\|placeholder\|skeleton\|ghost/);
   assert.doesNotMatch(runtime, /querySelectorAll\("path,line,polyline,polygon,circle,ellipse,rect,text,image,use"\)/);
   assert.match(runtime, /initial frame exposes an empty data structure instead of inspectable evidence/);
-  assert.match(runtime, /state simulation initial frame has too few evidence marks/);
+  assert.match(runtime, /state simulation initial frame has fewer than three visible state entities/);
+  assert.match(runtime, /function visibleEntityCount\(svg\)/);
+  assert.match(runtime, /function visibleEntityArea\(svg\)/);
+  assert.match(runtime, /function lowContrastEntityLabels\(svg\)/);
+  assert.match(runtime, /function labeledEntityCount\(svg\)/);
+  assert.match(runtime, /function substantialLabeledEntityCount\(svg\)/);
+  assert.match(runtime, /function undersizedLabeledEntities\(svg\)/);
+  assert.match(runtime, /function normalizeLabeledEntityText\(svg\)/);
+  assert.match(runtime, /svgs\.forEach\(normalizeLabeledEntityText\)/);
+  assert.match(runtime, /function overlappingSvgLabels\(svg\)/);
+  assert.match(runtime, /state simulation entities occupy too little/);
+  assert.match(runtime, /at least three distinct labeled state entities/);
+  assert.match(runtime, /at least three substantial labeled entities in the primary structure/);
+  assert.match(runtime, /primary stage uses less than 60%/);
+  assert.match(runtime, /text smaller than 14px/);
+  assert.match(runtime, /overlapping SVG text labels/);
+  assert.match(runtime, /entity labels with the same fill/);
+  assert.match(runtime, /widget content exceeds the fixed iframe viewport and is clipped/);
   assert.match(runtime, /b\.spec && b\.spec\.profile/);
   assert.match(runtime, /--color-border:var\(--line\)/);
+  assert.match(renderAudit, /body\.dataset\.layout === 'artboard'/);
+  assert.match(renderAudit, /body\.querySelectorAll\('\.artboard-area'\)/);
+  assert.match(renderAudit, /rect\.bottom - frame\.bottom/);
 });
 
 test('index layout fits every reachable panel before navigation', () => {
@@ -101,6 +121,14 @@ test('evidence blocks preserve semantic content and readable scale', () => {
   assert.match(styles, /\.chart-block\{[^}]*height:100%/s);
   assert.match(styles, /\.quiz-context \.prose-table/);
   assert.match(styles, /\.graph-node \.gn-title\{[^}]*font-size:18px/s);
+});
+
+test('formula captions use a bounded flex wrapper inside artboards', () => {
+  assert.match(runtime, /'formula-block' \+ \(dense \? ' is-dense-formula'/);
+  assert.match(styles, /\.formula-block\{ display:flex; flex-direction:column;/);
+  assert.match(styles, /\.formula-block>\.cite\{/);
+  assert.match(styles, /\.artboard-area \.formula-block\.is-dense-formula>\.mblock\{ font-size:22px/);
+  assert.match(styles, /\.artboard-area \.chart-block \.plotwrap\{ min-height:0/);
 });
 
 test('render audit reports actual content occupancy rather than parent size', () => {

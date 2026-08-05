@@ -30,6 +30,8 @@ assetIntegration 评估“被选择的资产是否整合得好”，不是图片
 `media` 只用于 photo/illustration/video/background 等真实资产。sim/widget、diagram、graph、chart、
 runnable、formula 内部缺节点、边、标签、代码样式或绘图内容，必须 route=`blockContent`，绝不能写成 media。
 若画面只有空坐标、问号占位、黑圆点而缺少题目要求的节点标签/连线/状态，这属于 blockContent 硬问题。
+对 runnable，运行前的 console 提示区是合法状态；只要可见 starter 暴露了学习目标对应的核心逻辑、固定输入/
+断言与明确的运行反馈，就不要要求额外添加 SVG/Canvas 或把 runtime 改造成 sim。只有页面契约明确要求图形输出而结果区仍是占位时，才报告缺少可视化。
 
 overflow、runtime error、控件失效等浏览器硬错误不由你放行或覆盖。
 只输出 JSON：

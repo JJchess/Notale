@@ -943,9 +943,71 @@ def _visual_report_payload(report: Any) -> dict[str, Any]:
     }
 
 
+def _visual_issue_is_layout_only_for(
+    issue: VisualIssue, block_type: str
+) -> bool:
+    """Return whether a screenshot issue points to geometry, not block semantics.
+
+    Visual reviewers correctly notice formula/runtime clipping but cannot safely rewrite the
+    mathematical or executable content.  Those issues must stay on the deterministic layout
+    path; otherwise a padding complaint can silently mutate a theorem or widget algorithm.
+    """
+    text = f"{issue.problem} {issue.instruction}".lower()
+    type_terms = {
+        "formula": ("formula", "latex", "equation", "公式", "方程"),
+        "runnable": ("runnable", "runtime", "code editor", "console", "代码", "控制台"),
+    }
+    layout_terms = (
+        "overlap", "clip", "crop", "overflow", "padding", "margin", "height", "width",
+        "font size", "line height", "重叠", "裁切", "截断", "遮挡", "溢出", "边距",
+        "高度", "宽度", "字号", "行高", "布局",
+    )
+    return any(term in text for term in type_terms.get(block_type, ())) and any(
+        term in text for term in layout_terms
+    )
+
+
+def _reconcile_final_dropped(
+    dropped: list[str],
+    *,
+    placeholder_scene_by_id: dict[str, str],
+    doc: dict[str, Any],
+) -> list[str]:
+    """Report final evidence loss, not transient fan-out failures recovered by page replan."""
+    scenes = {
+        str(scene.get("id") or "?"): scene for scene in doc.get("scenes") or []
+    }
+    remaining: list[str] = []
+    for item in dropped:
+        block_id = item.split("(", 1)[0]
+        scene = scenes.get(placeholder_scene_by_id.get(block_id, ""))
+        blocks = list(scene.get("blocks") or []) if isinstance(scene, dict) else []
+        has_failure_placeholder = any(
+            block.get("type") == "callout"
+            and (
+                str(block.get("label") or "") == "待补"
+                or "block 生成失败" in str(block.get("text") or "")
+            )
+            for block in blocks
+            if isinstance(block, dict)
+        )
+        if not blocks or has_failure_placeholder:
+            remaining.append(item)
+    return remaining
+
+
 def _focus_artboard(scene: dict[str, Any]) -> dict[str, Any]:
     """Deterministic failed-page repair: enlarge the strongest evidence without changing content."""
     blocks = [block for block in (scene.get("blocks") or []) if isinstance(block, dict)]
+    # Reuse the design compiler for interactive stages.  Its full-width stage/readout contract
+    # is safer than placing a second dense block into a three-column rail.
+    if any(block.get("type") in {"sim", "runnable"} for block in blocks):
+        return compile_scene_composition(
+            scene,
+            visual_brief={"compositionFamily": "interactive-stage"},
+            design_brief={"density": "dense"},
+            assets=[],
+        )
     priority = {"sim": 0, "runnable": 0, "media": 1, "chart": 1, "diagram": 1, "graph": 1}
     ranked = sorted(
         blocks,
@@ -956,6 +1018,37 @@ def _focus_artboard(scene: dict[str, Any]) -> dict[str, Any]:
     )
     main = ranked[0]
     others = [block for block in blocks if block is not main]
+    wide_types = {"chart", "table", "formula", "diagram", "graph", "flow", "timeline", "code"}
+    if len(blocks) == 2 and all(block.get("type") in wide_types for block in blocks):
+        formula = next((block for block in blocks if block.get("type") == "formula"), None)
+        visual = next((block for block in blocks if block is not formula), None)
+        if formula is not None and visual is not None:
+            return {
+                "kind": "artboard",
+                "columns": 12,
+                "rows": 12,
+                "gap": 14,
+                "family": str(scene.get("compositionFamily") or "annotated-specimen"),
+                "variant": "visual-repair-stack",
+                "titleRegion": {
+                    "col": [1, 11], "row": [1, 4], "align": "start",
+                    "justify": "start", "maxWidth": 92, "z": 3,
+                },
+                "areas": [
+                    {
+                        "blockIds": [str(formula.get("id"))],
+                        "col": [1, 13], "row": [4, 8], "z": 1,
+                        "align": "stretch", "justify": "stretch", "bleed": False,
+                        "clip": True, "styleRole": "caption",
+                    },
+                    {
+                        "blockIds": [str(visual.get("id"))],
+                        "col": [1, 13], "row": [8, 13], "z": 1,
+                        "align": "stretch", "justify": "stretch", "bleed": False,
+                        "clip": True, "styleRole": "evidence",
+                    },
+                ],
+            }
     areas = [
         {
             "blockIds": [str(main.get("id"))],
@@ -1154,6 +1247,7 @@ async def generate_lecture(
 
     placeholders: list[tuple[dict[str, Any], dict[str, Any]]] = []
     placeholder_specs: dict[str, dict[str, Any]] = {}
+    placeholder_scene_by_id: dict[str, str] = {}
     page_briefs: dict[str, dict[str, str]] = {}
     page_visual_briefs: dict[str, dict[str, Any]] = {}
     used_block_ids: set[str] = set()
@@ -1187,6 +1281,7 @@ async def generate_lecture(
             b.clear()
             b.update(lowered)
             placeholder_specs[str(b["id"])] = dict(b)
+            placeholder_scene_by_id[str(b["id"])] = str(s["id"])
             placeholders.append((b, s))
 
     removed_for_budget = doc.pop("_budgetRemovedScenes", None)
@@ -1486,9 +1581,9 @@ async def generate_lecture(
                             language=str(doc.get("language") or "zh-CN"),
                             topic=topic,
                             guidelines=widget_guidelines,
-                            # 浏览器会立即复验；这里只做一次针对错误信息的代码修复，
-                            # 避免非致命静态 warning 再触发一轮昂贵调用。
-                            rounds=1,
+                            # 第一轮按浏览器错误修代码；若新 HTML 触发静态硬门，第二轮把
+                            # 精确校验错误反馈给模型。只对未收敛结果增加调用，普通页仍是一轮。
+                            rounds=2,
                         )
                         if result.block is None:
                             return idx, result.err or "widget 运行时修复失败"
@@ -1657,6 +1752,16 @@ async def generate_lecture(
                     log(f"[render] 第 {idx} 页精简失败: {r.err}")
 
             await pool(sorted(bad.items()), opts.concurrency, reflow)
+            # Reflow changes block content and may replace the whole scene.  Never keep a stale
+            # three-column rail around a newly widened formula, chart, or runtime surface.
+            for warning in _compile_page_design(
+                doc,
+                page_visual_briefs=page_visual_briefs,
+                design_brief=design_brief,
+            ):
+                final.warnings.append(warning)
+                log(f"[design] {warning}")
+            assign_layouts(doc)
             progress({"type": "docUpdated", "doc": doc, "reason": "reflow"})
             # The next loop iteration normally performs the browser recheck.
             # On the final allowed round there is no next iteration, so verify
@@ -1763,6 +1868,18 @@ async def generate_lecture(
                         )
                         if scene is None:
                             return f"{issue.scene_id}: 找不到页"
+                        if any(
+                            isinstance(block, dict) and block.get("type") == "formula"
+                            for block in scene.get("blocks") or []
+                        ) and _visual_issue_is_layout_only_for(issue, "formula"):
+                            scene["layout"] = _focus_artboard(scene)
+                            return None
+                        if any(
+                            isinstance(block, dict) and block.get("type") == "runnable"
+                            for block in scene.get("blocks") or []
+                        ) and _visual_issue_is_layout_only_for(issue, "runnable"):
+                            scene["layout"] = _focus_artboard(scene)
+                            return None
                         widget = next(
                             (
                                 block
@@ -1797,7 +1914,13 @@ async def generate_lecture(
                                 if block is widget:
                                     scene["blocks"][index] = repaired_widget
                                     break
+                            scene["layout"] = _focus_artboard(scene)
                             return None
+                        issue_text = f"{issue.problem} {issue.instruction}".lower()
+                        formula_targeted = any(
+                            term in issue_text
+                            for term in ("formula", "latex", "equation", "公式", "方程")
+                        )
                         candidates = [
                             block
                             for block in scene.get("blocks") or []
@@ -1806,7 +1929,14 @@ async def generate_lecture(
                         ]
                         if not candidates:
                             return f"{issue.scene_id}: 无可定点重生成的静态 block"
-                        current = candidates[0]
+                        current = (
+                            next(
+                                (block for block in candidates if block.get("type") == "formula"),
+                                None,
+                            )
+                            if formula_targeted
+                            else None
+                        ) or candidates[0]
                         reg = registry.get(str(current.get("type") or ""))
                         if reg is None:
                             return f"{issue.scene_id}: 无 Skill 处理 {current.get('type')}"
@@ -1839,6 +1969,7 @@ async def generate_lecture(
                             if block is current:
                                 scene["blocks"][index] = repaired
                                 break
+                        scene["layout"] = _focus_artboard(scene)
                         return None
 
                     failures = [
@@ -1983,6 +2114,12 @@ async def generate_lecture(
             f"逐页质量未通过 {item.get('sceneId')}（{float(item.get('score') or 0):.1f}/10）："
             + ("；".join(detail) if detail else "未达到 8.5 或仍有阻断性 issue")
         )
+
+    dropped = _reconcile_final_dropped(
+        dropped,
+        placeholder_scene_by_id=placeholder_scene_by_id,
+        doc=doc,
+    )
 
     # ④.7 讲者备注增强：只对语义与真机验收都已通过的最终页面写讲稿。
     # 旧顺序在 render/reflow 之前写 notes，既会让讲稿依据旧内容，也会为已知失败 deck 白花调用。

@@ -316,7 +316,7 @@ async def test_relational_obligation_does_not_overwrite_state_transition_page() 
         rounds=0,
     )
     assert transition["blocks"][0]["type"] == "state-sim"
-    assert relation["blocks"][0]["type"] == "diagram"
+    assert relation["blocks"][0]["type"] == "graph"
 
 
 def test_complex_widget_page_rejects_four_block_overload() -> None:
@@ -706,6 +706,26 @@ async def test_two_dense_evidence_blocks_remove_redundant_support_rail() -> None
     assert any("双高密度证据页" in warning for warning in warnings)
 
 
+async def test_runnable_absorbs_quiz_as_inputs_and_assertions() -> None:
+    scene = _doc()["scenes"][0]
+    scene["blocks"] = [
+        {"id": "run", "type": "runnable", "role": "practice", "intent": "实现 AVL 插入", "size": "xl"},
+        {"id": "quiz", "type": "quiz", "role": "practice", "intent": "判断应触发哪种旋转", "size": "l"},
+    ]
+
+    warnings = await refine_plan(
+        FakeClient(),
+        {"scenes": [scene]},
+        topic="任意可执行课程",
+        allowed_types={"runnable", "quiz"},
+        rounds=0,
+    )
+
+    assert [block["type"] for block in scene["blocks"]] == ["runnable"]
+    assert "固定测试断言" in scene["blocks"][0]["intent"]
+    assert any("runnable 吸收 quiz" in warning for warning in warnings)
+
+
 async def test_calculation_requiring_student_answer_gets_quiz_feedback_and_graph() -> None:
     scene = _doc()["scenes"][0]
     scene["brief"].update(
@@ -730,6 +750,92 @@ async def test_calculation_requiring_student_answer_gets_quiz_feedback_and_graph
     assert [block["type"] for block in scene["blocks"]] == ["graph", "quiz"]
     assert any("学习者作答证据路由到 quiz" in warning for warning in warnings)
     assert any("节点-边拓扑" in warning for warning in warnings)
+
+
+async def test_tree_topology_route_reads_whole_scene_not_only_visual_task() -> None:
+    scene = _doc()["scenes"][0]
+    scene["headline"] = "手算 AVL 节点的平衡因子"
+    scene["lead"] = "比较每个节点的左、右子树高度"
+    scene["brief"].update(
+        {
+            "objective": "学生能根据给定树计算平衡因子",
+            "learningAction": "explain",
+            "requiredEvidence": "逐节点高度标注",
+            "visualTask": "呈现用于计算的固定结构",
+        }
+    )
+    scene["blocks"] = [
+        {"id": "d", "type": "diagram", "role": "visualization", "intent": "画出 AVL 树", "size": "l"},
+        {"id": "f", "type": "formula", "role": "evidence", "intent": "平衡因子定义", "size": "m"},
+    ]
+
+    warnings = await refine_plan(
+        FakeClient(),
+        {"scenes": [scene]},
+        topic="任意树结构",
+        allowed_types={"diagram", "graph", "formula"},
+        rounds=0,
+    )
+
+    assert scene["blocks"][0]["type"] == "graph"
+    assert any("节点-边拓扑" in warning for warning in warnings)
+
+
+async def test_algorithm_structure_before_after_routes_to_state_sim() -> None:
+    scene = _doc()["scenes"][0]
+    scene["headline"] = "为什么需要平衡？"
+    scene["lead"] = "有序插入时普通树退化为链，而平衡操作形成更低的树。"
+    scene["brief"].update(
+        {
+            "objective": "比较同一输入得到的两种结构",
+            "learningAction": "compare",
+            "requiredEvidence": "观察结构如何变化",
+            "visualTask": "比较退化结构与平衡结构",
+        }
+    )
+    scene["blocks"] = [
+        {"id": "g", "type": "graph", "role": "visualization", "intent": "结构对比", "size": "l"},
+        {"id": "c", "type": "callout", "role": "evidence", "intent": "复杂度结论", "size": "s"},
+    ]
+
+    warnings = await refine_plan(
+        FakeClient(),
+        {"scenes": [scene]},
+        topic="任意结构算法",
+        allowed_types={"graph", "callout", "state-sim", "sim"},
+        rounds=0,
+    )
+
+    assert [block["type"] for block in scene["blocks"]] == ["state-sim"]
+    assert "前后状态" in scene["blocks"][0]["intent"]
+    assert any("过程状态证据路由到 state-sim" in warning for warning in warnings)
+
+
+async def test_existing_runnable_obligation_is_not_overwritten_by_state_sim() -> None:
+    scene = _doc()["scenes"][0]
+    scene["headline"] = "实现插入并观察结构变化"
+    scene["lead"] = "运行固定测试，观察插入后树结构如何变化。"
+    scene["brief"].update(
+        {
+            "objective": "实现并运行核心过程",
+            "learningAction": "implement",
+            "requiredEvidence": "可编辑实现、固定测试、运行输出与测试反馈",
+            "visualTask": "编辑代码并观察插入后的状态变化",
+        }
+    )
+    scene["blocks"] = [
+        {"id": "r", "type": "runnable", "role": "practice", "intent": "实现与运行", "size": "xl"}
+    ]
+
+    await refine_plan(
+        FakeClient(),
+        {"scenes": [scene]},
+        topic="任意可执行过程",
+        allowed_types={"runnable", "state-sim", "sim"},
+        rounds=0,
+    )
+
+    assert [block["type"] for block in scene["blocks"]] == ["runnable"]
 
 
 async def test_comparative_average_without_distribution_is_narrowed_to_derived_bounds() -> None:

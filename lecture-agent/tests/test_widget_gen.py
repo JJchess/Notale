@@ -263,6 +263,31 @@ async def test_quality_repair_keeps_selected_direction_guidance() -> None:
     assert "不得把不同状态全部改成 --accent" in prompt
 
 
+async def test_quality_repair_uses_second_round_for_new_static_gate_error() -> None:
+    too_small = _GOOD_HTML.replace(
+        "<style>.w{", "<style>.meta{font-size:10px}.w{"
+    )
+    llm = FakeClient(
+        by_purpose={
+            "widget:quality-repair": too_small,
+            "widget:repair": _GOOD_HTML,
+        }
+    )
+    result = await repair_widget(
+        llm,
+        current={"type": "sim", "engine": "widget", "html": _GOOD_HTML},
+        issues="首帧为空",
+        theme="slate",
+        rounds=2,
+    )
+    assert result.err is None and result.block is not None
+    assert result.block["html"] == _GOOD_HTML
+    assert [purpose for purpose, _messages in llm.calls] == [
+        "widget:quality-repair",
+        "widget:repair",
+    ]
+
+
 async def test_all_rounds_bad_returns_error_not_block() -> None:
     # 每轮都返回硬错误片段 → 末轮应干净失败（block=None + err），不硬塞坏块。
     llm = FakeClient(

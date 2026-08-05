@@ -42,6 +42,9 @@ Every sim must close this loop:
 - Start at a meaningful pre-transition step 0, never with a blank “click to begin” stage. The primary stage must already contain inspectable evidence marks. Decorative grids, axes, watermarks, status text, and an empty data structure do not satisfy first paint; preload the smallest valid state needed for the learner to predict or inspect the next transition.
 - Every control must change the underlying model, not merely a label or decoration.
 - Keep previous/current or before/after state legible; highlight exactly what changed.
+- Design for a projected 16:9 lecture canvas, not a desktop dashboard. Use at least 13px for controls and explanatory text, 14px for values or labels that carry learning evidence, and 12px only for genuinely secondary metadata. No meaningful node, axis, state, or verification label may be 10–11px.
+- Make the primary interaction stage use at least 60% of the available frame width. Toolbar controls, pending-input queues, legends, grids, and decorative marks never count toward the minimum structural evidence state.
+- Use only host tokens `--bg`, `--bg2`, `--card`, `--ink`, `--text2`, `--accent`, `--accent2`, and `--line`, or define a scoped variable with an explicit fallback. An unresolved CSS variable is a hard failure because SVG fill/text may silently fall back to the same black paint.
 - For discrete processes provide appropriate `step`, `back/reset`, and optionally `play/pause`; keep replay deterministic.
 - Put phase, invariant, comparison, or key readout on the stage so the learner can explain the consequence.
 - Define reproducible verification cases for initial state, at least one transition, reset, and boundary input.

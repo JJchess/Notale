@@ -84,6 +84,13 @@ def test_deterministic_preflight_accepts_real_headless_clip_metric() -> None:
     assert len(report.hard_errors) == 2
 
 
+def test_deterministic_preflight_uses_browser_subpixel_tolerances() -> None:
+    report = preflight_page_metrics(
+        [{"sceneId": "s0", "overflowX": 1, "overflowY": 4, "layoutClip": 4, "mblockClip": 4}]
+    )
+    assert report.hard_errors == []
+
+
 def test_deterministic_preflight_reads_browser_min_text_metric() -> None:
     report = preflight_page_metrics([{"sceneId": "s1", "minTextPx": 11}])
 
@@ -106,6 +113,13 @@ def test_deterministic_preflight_allows_intentional_sparse_navigation_pages() ->
                 "occupiedRatio": 0.2,
                 "mainSubjectRatio": 0.1,
                 "whitespaceRatio": 0.8,
+            },
+            {
+                "sceneId": "quiz",
+                "sceneKind": "quiz",
+                "occupiedRatio": 0.3,
+                "mainSubjectRatio": 0.15,
+                "whitespaceRatio": 0.7,
             },
         ]
     )

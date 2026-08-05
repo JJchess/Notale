@@ -207,6 +207,36 @@ def _annotated(blocks: list[dict[str, Any]], assets: dict[str, dict[str, Any]], 
         if block.get("type") in _WIDE_EVIDENCE_TYPES or _is_dense_block(block)
     ]
     if len(wide) >= 2:
+        # Equations need horizontal measure, while diagrams/graphs need vertical stage area.
+        # Putting both into six-column cards repeatedly forced KaTeX below the legibility floor.
+        # A full-width evidence stack preserves both kinds of evidence without treating either
+        # as a narrow explanatory rail.
+        formula = next((block for block in wide[:2] if block.get("type") == "formula"), None)
+        structural = next(
+            (
+                block
+                for block in wide[:2]
+                if block.get("type") in {"diagram", "graph", "flow", "timeline", "chart"}
+            ),
+            None,
+        )
+        if formula is not None and structural is not None:
+            return _title((1, 11, 1, 3), width=92), [
+                # Relationship diagrams need room for both the topology and their
+                # source/caption.  A symmetric 5/5 split repeatedly clipped the
+                # graph caption while leaving a short formula with excess space.
+                _area(structural, (1, 13, 3, 9), role="evidence", clip=True),
+                _area(formula, (1, 13, 9, 13), role="caption", clip=True),
+                *_remaining_stack(
+                    [
+                        block
+                        for block in blocks
+                        if block is not formula and block is not structural
+                    ],
+                    (10, 13, 3, 8),
+                    role="aside",
+                ),
+            ]
         first_dense, second_dense = _is_dense_block(wide[0]), _is_dense_block(wide[1])
         split = 7
         if first_dense and not second_dense:
@@ -300,6 +330,21 @@ def _experiment(blocks: list[dict[str, Any]], assets: dict[str, dict[str, Any]],
 
 def _proof(blocks: list[dict[str, Any]], assets: dict[str, dict[str, Any]], _dense: bool) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     formula = next((block for block in blocks if block.get("type") == "formula"), _rank_blocks(blocks)[0])
+    visual = next(
+        (
+            block
+            for block in blocks
+            if block is not formula and block.get("type") in _VISUAL_TYPES
+        ),
+        None,
+    )
+    if visual is not None:
+        rest = [block for block in blocks if block is not formula and block is not visual]
+        return _title((1, 11, 1, 3), width=92), [
+            _area(formula, (1, 13, 3, 8), role="caption", clip=True),
+            _area(visual, (1, 13, 8, 13), role="evidence", clip=True),
+            *_remaining_stack(rest, (10, 13, 8, 13), role="aside"),
+        ]
     areas = [_area(formula, (2, 13, 4, 10), role="feature", clip=True)]
     areas.extend(_remaining_stack([block for block in blocks if block is not formula], (6, 13, 10, 13), role="caption"))
     return _title((1, 8, 1, 4), width=78), areas
@@ -308,6 +353,17 @@ def _proof(blocks: list[dict[str, Any]], assets: dict[str, dict[str, Any]], _den
 def _data(blocks: list[dict[str, Any]], assets: dict[str, dict[str, Any]], _dense: bool) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     datum = next((block for block in blocks if block.get("type") in _DATA_TYPES), _rank_blocks(blocks)[0])
     rest = [block for block in blocks if block is not datum]
+    formula = next((block for block in rest if block.get("type") == "formula"), None)
+    if formula is not None:
+        return _title((1, 11, 1, 3), width=92), [
+            _area(formula, (1, 13, 3, 8), role="caption", clip=True),
+            _area(datum, (1, 13, 8, 13), role="evidence", clip=True),
+            *_remaining_stack(
+                [block for block in rest if block is not formula],
+                (10, 13, 8, 13),
+                role="aside",
+            ),
+        ]
     if rest and rest[0].get("type") in _WIDE_EVIDENCE_TYPES:
         return _title((1, 9, 1, 4), width=84), [
             _area(datum, (1, 7, 4, 12), role="evidence", clip=True),
@@ -349,9 +405,34 @@ def _research(blocks: list[dict[str, Any]], assets: dict[str, dict[str, Any]], _
 
 def _interactive(blocks: list[dict[str, Any]], assets: dict[str, dict[str, Any]], _dense: bool) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     stage = next((block for block in blocks if block.get("type") in _STAGE_TYPES), _rank_blocks(blocks)[0])
+    rest = [block for block in blocks if block is not stage]
+    if not rest:
+        return _title((1, 11, 1, 4), width=92), [
+            _area(stage, (1, 13, 4, 13), role="stage", clip=False)
+        ]
+    if len(rest) == 1:
+        support = rest[0]
+        support_type = str(support.get("type") or "")
+        support_text = json.dumps(support, ensure_ascii=False, default=str)
+        if support_type == "formula":
+            # Interaction is the primary evidence. Keep at least six grid rows
+            # for it; dense formulas fit the three-row support band.
+            split = 10
+        elif support_type == "statement" and len(support_text) > 120:
+            split = 10
+        elif _is_dense_block(support) or support_type in {
+            "quiz", "runnable", "code", "chart", "table",
+        }:
+            split = 10
+        else:
+            split = 11
+        return _title((1, 11, 1, 4), width=92), [
+            _area(stage, (1, 13, 4, split), role="stage", clip=False),
+            _area(support, (1, 13, split, 13), role="caption", clip=True),
+        ]
     areas = [_area(stage, (1, 10, 4, 13), role="stage", clip=False)]
-    areas.extend(_remaining_stack([block for block in blocks if block is not stage], (10, 13, 4, 13), role="aside"))
-    return _title((1, 9, 1, 4), width=88), areas
+    areas.extend(_remaining_stack(rest, (10, 13, 4, 13), role="aside"))
+    return _title((1, 10, 1, 4), width=90), areas
 
 
 _BUILDERS: dict[str, Callable[[list[dict[str, Any]], dict[str, dict[str, Any]], bool], tuple[dict[str, Any], list[dict[str, Any]]]]] = {
@@ -384,9 +465,7 @@ def _safe_family_layout(family: str, blocks: list[dict[str, Any]]) -> dict[str, 
     """Keep the selected family's spatial axis while removing overlap and fragile ornament."""
     stage = next((block for block in blocks if block.get("type") in _STAGE_TYPES), None)
     if stage:
-        title = _title((1, 9, 1, 4), width=86)
-        areas = [_area(stage, (1, 10, 4, 13), role="stage", clip=False)]
-        areas.extend(_remaining_stack([block for block in blocks if block is not stage], (10, 13, 4, 13)))
+        title, areas = _interactive(blocks, {}, False)
     elif family in {"comparison", "before-after", "process-path"}:
         title, areas = _paired(blocks, {}, False, stagger=family == "before-after")
     elif family in {"full-bleed-hero", "poster", "text-over-image"}:

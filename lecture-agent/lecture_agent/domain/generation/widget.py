@@ -539,7 +539,10 @@ async def repair_widget(
 LectureDoc 宿主硬约束：保持自包含 HTML 片段；零依赖、禁网络/CDN/import/fetch；根 surface、正文 ink、
 弱化文字和普通边线跟随 host token；direction accent 与状态色使用 widget 根节点 scoped CSS variables，
 不得把不同状态全部改成 --accent。根节点填满固定高度 iframe 且无内部滚动。首帧和每个控件的
-初始/最小/最大状态均须 finite、非空、可读。
+初始/最小/最大状态均须 finite、非空、可读。只能引用宿主提供的 --bg/--bg2/--card/--ink/--text2/
+--accent/--accent2/--line 等 token，其他 CSS 变量必须在 widget 内定义或提供 var() fallback；禁止未定义
+token 使 SVG 形状与文字一起回落成黑色。可见文字不得小于 12px，控件至少 13px，核心状态标签至少
+14px。修复后逐项自查原问题确实从 DOM/CSS/JS 中消失，不能只改说明文案。
 
 调用方额外规范（若有）：
 {guidelines}

@@ -122,7 +122,7 @@ async def refine_plan(
    不按主题硬编码组件，也不按配额硬塞互动。跨页还要检查课程是否只有 read/inspect 而没有任何主动产出证据的活动。
 2. 近似直觉、带条件引理、特殊模型结论、一般定理不得偷换。依赖 L-smooth/凸/强凸等条件时标题和目标显式写条件。
    收敛/速率/保证页还要在观众可见的 headline/lead/formula 规划里容纳步长范围等必要假设，不能只写进 notes/brief。
-3. visualTask 必须能由所选 block 真正编码：chart 适合固定数值趋势/比较；标量一阶递推用 model-sim；二维几何用 geometry-sim；离散算法状态用 state-sim；装饰 diagram 不表达坐标、梯度或状态变化。
+3. visualTask 必须能由所选 block 真正编码：chart 适合固定数值趋势/比较；标量一阶递推用 model-sim；二维几何用 geometry-sim；离散算法状态用 state-sim；装饰 diagram 不表达坐标、梯度或状态变化。同一算法输入在操作前后形成不同结构时，即使目标写成“比较”，证据仍是状态转移，必须用 state-sim；不得把父子拓扑边和插入/旋转等时间演进边混在一张 graph 中。
 4. 若解释学习率调度，优先画学习率 η(t) 本身；没有可复算模型时不要编造“某调度对应的损失曲线”。
    若 objective 是“比较多个条件/参数”，visualTask 和 block intent 必须要求首帧同时出现各对照；一个滑块一次只显示一条轨迹不算比较。
    若讲鞍点，必须规划二维曲面/等高线或两条正交切片来编码相反曲率；单条一维切片不能承担该目标。
@@ -187,6 +187,7 @@ async def refine_plan(
             _enforce_statistical_claim_evidence({"scenes": [candidate]})
             _enforce_learning_evidence_routes({"scenes": [candidate]}, allowed_types)
             _enforce_relational_block_routes({"scenes": [candidate]}, allowed_types)
+            _enforce_runtime_capacity({"scenes": [candidate]})
             _enforce_dense_evidence_capacity({"scenes": [candidate]})
             problem = validate_plan_revision(candidate, old, scenes, allowed_types)
             if problem:
@@ -207,6 +208,7 @@ async def refine_plan(
     warnings.extend(_enforce_learning_evidence_routes(doc, allowed_types))
     warnings.extend(_enforce_relational_block_routes(doc, allowed_types))
     warnings.extend(_enforce_media_contracts(doc, allowed_types))
+    warnings.extend(_enforce_runtime_capacity(doc))
     warnings.extend(_enforce_dense_evidence_capacity(doc))
     warnings.extend(_enforce_widget_capacity(doc))
     warnings.extend(_enforce_quiz_scope(doc))
@@ -257,13 +259,31 @@ def _enforce_media_contracts(doc: dict[str, Any], allowed_types: set[str]) -> li
     return warnings
 
 
-def _learning_evidence_needs(brief: dict[str, Any]) -> tuple[bool, bool]:
+def _scene_evidence_context(scene: dict[str, Any]) -> str:
+    return " ".join(
+        (
+            str(scene.get("headline") or ""),
+            str(scene.get("lead") or ""),
+            str(scene.get("notes") or ""),
+            " ".join(
+                str(block.get("intent") or "")
+                for block in (scene.get("blocks") or [])
+                if isinstance(block, dict)
+            ),
+        )
+    ).lower()
+
+
+def _learning_evidence_needs(
+    brief: dict[str, Any], scene: dict[str, Any] | None = None
+) -> tuple[bool, bool]:
     """从显式学习契约判定能力需求；不按课题或学科名称做映射。"""
     action = str(brief.get("learningAction") or "").lower()
     evidence = str(brief.get("requiredEvidence") or "").lower()
     objective = str(brief.get("objective") or "").lower()
     visual_task = str(brief.get("visualTask") or "").lower()
-    text = " ".join((action, evidence, objective, visual_task))
+    scene_context = _scene_evidence_context(scene or {})
+    text = " ".join((action, evidence, objective, visual_task, scene_context))
     code_evidence = any(
         token in text
         for token in (
@@ -271,10 +291,20 @@ def _learning_evidence_needs(brief: dict[str, Any]) -> tuple[bool, bool]:
             "代码", "程序", "函数", "运行结果", "测试结果",
         )
     )
-    needs_runnable = code_evidence and any(
+    execution_action = action in {
+        "implement", "debug", "run", "execute", "实现", "调试", "运行", "执行",
+    }
+    executable_evidence = any(
+        token in text
+        for token in (
+            "editable implementation", "fixed test", "pass/fail", "stdout",
+            "可编辑实现", "固定测试", "通过/失败", "测试反馈", "运行输出",
+        )
+    )
+    needs_runnable = (code_evidence and any(
         token in text
         for token in ("implement", "debug", "run", "execute", "实现", "调试", "运行", "执行")
-    )
+    )) or (execution_action and executable_evidence)
     explicit_interaction = any(
         token in text
         for token in (
@@ -283,14 +313,32 @@ def _learning_evidence_needs(brief: dict[str, Any]) -> tuple[bool, bool]:
             "操纵", "试验", "改变输入", "调参", "单步", "回放",
         )
     )
-    transition_evidence = action in {"trace", "step", "play", "replay"} or any(
+    direct_transition_evidence = action in {"trace", "step", "play", "replay"} or any(
         token in text
         for token in (
             "state sequence", "state transition", "intermediate state", "step-by-step",
             "structure transformation", "structure mutation", "before and after",
             "状态序列", "状态转移", "中间状态", "逐步执行", "每一步",
-            "结构变换", "结构变化", "结构演化", "前后状态", "演化过程",
+            "结构变换", "结构变化", "结构演化", "前后状态", "演化过程", "前后对比",
         )
+    )
+    algorithm_operation = any(
+        token in text
+        for token in (
+            "insert", "delete", "rotate", "rebalance", "partition", "swap", "relax",
+            "插入", "删除", "旋转", "再平衡", "划分", "交换", "松弛",
+        )
+    )
+    observable_mutation = any(
+        token in text
+        for token in (
+            "becomes", "changes", "degenerates", "forms", "maintains balance",
+            "before", "after", "process", "step", "transition", "mutation",
+            "变为", "变化", "退化", "形成", "保持平衡", "前态", "后态", "过程", "步骤", "演进",
+        )
+    )
+    transition_evidence = direct_transition_evidence or (
+        algorithm_operation and observable_mutation
     )
     return needs_runnable, explicit_interaction or transition_evidence
 
@@ -338,7 +386,7 @@ def _enforce_learning_evidence_routes(
         if not blocks:
             continue
         types = {str(block.get("type") or "") for block in blocks}
-        needs_runnable, needs_sim = _learning_evidence_needs(brief)
+        needs_runnable, needs_sim = _learning_evidence_needs(brief, scene)
         needs_calculation = _needs_calculation_evidence(brief)
         needs_response = _needs_learner_response(brief)
         if needs_runnable and "runnable" in allowed_types and "runnable" not in types:
@@ -413,8 +461,18 @@ def _enforce_learning_evidence_routes(
             warnings.append(
                 f"规划证据兜底 {scene.get('id') or '?'}：计算学习动作路由到 {calculation_type}"
             )
-        elif needs_sim and not any(_is_sim_type(value) for value in types):
-            profile = _sim_profile_for_brief(brief)
+        elif (
+            needs_sim
+            and "runnable" not in types
+            and not any(_is_sim_type(value) for value in types)
+        ):
+            profile_brief = dict(brief)
+            profile_brief["visualTask"] = (
+                str(profile_brief.get("visualTask") or "")
+                + " "
+                + _scene_evidence_context(scene)
+            )
+            profile = _sim_profile_for_brief(profile_brief)
             sim_type = _sim_type_for(profile, allowed_types)
             if not sim_type:
                 continue
@@ -518,14 +576,34 @@ def _enforce_relational_block_routes(
     if "graph" not in allowed_types:
         return []
     warnings: list[str] = []
-    topology_terms = (
+    explicit_topology_terms = (
         "parent-child", "left subtree", "right subtree", "node-edge", "tree topology",
         "父子", "左子树", "右子树", "节点与边", "树形结构", "树拓扑",
     )
+    tree_terms = ("tree", "bst", "avl", "树", "层级")
+    relation_terms = (
+        "parent", "child", "subtree", "node", "edge", "left", "right",
+        "父", "子", "节点", "边", "左", "右", "高度",
+    )
     for scene in doc.get("scenes") or []:
         brief = scene.get("brief") if isinstance(scene.get("brief"), dict) else {}
-        visual_task = str(brief.get("visualTask") or "").lower()
-        if not any(term in visual_task for term in topology_terms):
+        context = json.dumps(
+            {
+                "headline": scene.get("headline"),
+                "lead": scene.get("lead"),
+                "notes": scene.get("notes"),
+                "brief": brief,
+                "blockIntents": [
+                    block.get("intent") for block in scene.get("blocks") or []
+                ],
+            },
+            ensure_ascii=False,
+        ).lower()
+        is_topology = any(term in context for term in explicit_topology_terms) or (
+            any(term in context for term in tree_terms)
+            and any(term in context for term in relation_terms)
+        )
+        if not is_topology:
             continue
         for block in scene.get("blocks") or []:
             if block.get("type") != "diagram":
@@ -533,7 +611,7 @@ def _enforce_relational_block_routes(
             block["type"] = "graph"
             block["role"] = "visualization"
             block["intent"] = (
-                str(block.get("intent") or visual_task)
+                str(block.get("intent") or brief.get("visualTask") or scene.get("headline") or context)
                 + "；用显式 nodes/edges 编码父子关系与左右子树，禁止 staircase/process 等装饰布局"
             )
             warnings.append(
@@ -794,6 +872,34 @@ def _enforce_dense_evidence_capacity(doc: dict[str, Any]) -> list[str]:
         warnings.append(
             f"规划容量兜底 {scene.get('id') or '?'}：双高密度证据页只保留 "
             f"{kept[0].get('type')} + {kept[1].get('type')}，移除 {', '.join(removed)}"
+        )
+    return warnings
+
+
+def _enforce_runtime_capacity(doc: dict[str, Any]) -> list[str]:
+    """A runnable already owns editing, execution, output, and verification affordances.
+
+    A second full quiz on the same page repeatedly collapsed into an unreadable rail/caption.
+    Preserve its learning action by compiling the prediction or judgment into the runnable's
+    fixed inputs and assertions instead of keeping a competing response surface.
+    """
+    warnings: list[str] = []
+    for scene in doc.get("scenes") or []:
+        blocks = list(scene.get("blocks") or [])
+        runnable = next((block for block in blocks if block.get("type") == "runnable"), None)
+        quizzes = [block for block in blocks if block.get("type") == "quiz"]
+        if runnable is None or not quizzes:
+            continue
+        quiz_intent = "；".join(str(block.get("intent") or "") for block in quizzes).strip("；")
+        runnable["intent"] = (
+            str(runnable.get("intent") or "实现并运行代码")
+            + "；将学习者的预测或判断编译为运行前输入、固定测试断言和可见 pass/fail，"
+            "由同一 runnable 完成作答与反馈"
+            + (f"；原练习目标：{quiz_intent}" if quiz_intent else "")
+        )
+        scene["blocks"] = [block for block in blocks if block not in quizzes]
+        warnings.append(
+            f"规划容量兜底 {scene.get('id') or '?'}：runnable 吸收 quiz 的作答与反馈，移除竞争交互面"
         )
     return warnings
 
@@ -1275,6 +1381,7 @@ async def replan_page(
     _enforce_statistical_claim_evidence({"scenes": [candidate]})
     _enforce_learning_evidence_routes({"scenes": [candidate]}, allowed_types)
     _enforce_relational_block_routes({"scenes": [candidate]}, allowed_types)
+    _enforce_runtime_capacity({"scenes": [candidate]})
     _enforce_dense_evidence_capacity({"scenes": [candidate]})
     problem = validate_plan_revision(candidate, current_scene, all_scenes, allowed_types)
     if problem:

@@ -157,6 +157,42 @@ async function verifyScene(cdp, url, label) {
           for (const c of body.querySelectorAll('.split-col')) layoutClip = Math.max(layoutClip, c.scrollHeight - c.clientHeight, c.scrollWidth - c.clientWidth);
         } else if (body && body.dataset.layout === 'compose') {
           for (const c of body.querySelectorAll('.compose-area')) layoutClip = Math.max(layoutClip, c.scrollHeight - c.clientHeight, c.scrollWidth - c.clientWidth);
+        } else if (body && body.dataset.layout === 'artboard') {
+          // artboard areas are fixed grid cells with clip:true. A child can overflow only inside
+          // its cell while .pad itself remains perfectly within 720px, so the page-level F gate
+          // cannot see it. Measure every cell directly on both axes.
+          for (const c of body.querySelectorAll('.artboard-area')) {
+            let areaClip = Math.max(c.scrollHeight - c.clientHeight, c.scrollWidth - c.clientWidth);
+            let offender = areaClip > 0 ? 'cell-scroll' : null;
+            const frame = c.getBoundingClientRect();
+            for (const child of c.querySelectorAll('*')) {
+              if (child.closest('iframe,.katex-mathml,[aria-hidden="true"],defs,style,script,noscript,template')) continue;
+              const cs = getComputedStyle(child);
+              if (cs.display === 'none' || cs.visibility === 'hidden' || +cs.opacity === 0) continue;
+              const rect = child.getBoundingClientRect();
+              // Horizontal overflow is already covered by scrollWidth/clientWidth. Descendant
+              // geometry is needed for vertical visual spill (KaTeX/SVG may paint outside without
+              // increasing scrollHeight); using descendant x-extents would count intentional SVG
+              // coordinate geometry and hidden formula layers as thousands of fake pixels.
+              const childClip = Math.max(rect.bottom - frame.bottom, frame.top - rect.top);
+              if (childClip > areaClip) {
+                areaClip = childClip;
+                offender = child.tagName.toLowerCase() + (child.className && typeof child.className === 'string'
+                  ? '.' + child.className.trim().replace(/\s+/g, '.') : '');
+              }
+            }
+            if (areaClip > layoutClip) {
+              layoutClip = areaClip;
+              layoutDebug = {
+                area: c.dataset.blockId || c.getAttribute('data-block-id') || c.className,
+                offender,
+                cellW: Math.round(frame.width), cellH: Math.round(frame.height),
+                clientW: c.clientWidth, clientH: c.clientHeight,
+                scrollW: c.scrollWidth, scrollH: c.scrollHeight,
+                zoom: +(parseFloat(c.style.zoom) || 1).toFixed(3),
+              };
+            }
+          }
         }
         layoutClip = Math.round(Math.max(0, layoutClip));
         // 动态块不能只占一个空容器：chart/sim 至少应产出 SVG（或显式数据错误提示），
