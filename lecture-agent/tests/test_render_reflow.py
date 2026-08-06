@@ -119,7 +119,7 @@ async def test_overflow_page_is_reflowed_until_clean() -> None:
         options=GeneratorOptions(sections=False, render_rounds=2),
         render_verifier=verifier,
     )
-    assert verifier.calls == 2, "应在回炉后再验收一次"
+    assert verifier.calls == 3, "精简后必须重新求解，并对 Director 写入的最终几何再验收一次"
     items = result.doc["scenes"][1]["blocks"][0]["items"]
     assert len(items) == 3, f"溢出页应已被精简，实得 {len(items)} 条"
     assert not result.errors
@@ -135,6 +135,103 @@ async def test_no_verifier_means_stage_skipped() -> None:
         options=GeneratorOptions(sections=False),
     )
     assert len(result.doc["scenes"][1]["blocks"][0]["items"]) == 9, "未注入 verifier 不应触发回炉"
+
+
+async def test_browser_measurements_trigger_relayout_then_split_without_llm_rewrite() -> None:
+    skeleton = json.dumps(
+        {
+            "id": "layout-loop",
+            "title": "布局闭环",
+            "language": "zh-CN",
+            "theme": "cartesian",
+            "scenes": [
+                {"id": "cover", "kind": "hero", "notes": "开场。", "blocks": [{"id": "h", "type": "hero", "intent": "封面"}]},
+                {"id": "p1", "kind": "content", "notes": "证据。", "blocks": [
+                    {"id": "b1", "type": "list", "intent": "主证据"},
+                    {"id": "b2", "type": "callout", "intent": "辅助证据"},
+                ]},
+            ],
+        },
+        ensure_ascii=False,
+    )
+
+    class _MeasuredVerifier:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def verify(self, html: str) -> RenderReport:
+            self.calls += 1
+            doc = json.loads(html)
+            if self.calls <= 2:
+                return RenderReport(
+                    ok=False,
+                    errors=["I: fixed cell is infeasible"],
+                    overflow_pages=[{"page": 1, "layoutClip": 180}],
+                    page_metrics=[
+                        {"i": 0, "scaleFloor": 1},
+                        {
+                            "i": 1,
+                            "layoutClip": 180,
+                            "scaleFloor": 0.9,
+                            "blockMeasurements": [
+                                {"blockIds": ["b1"], "naturalHeight": 600, "widthProfiles": {"6": 600, "12": 520}},
+                                {"blockIds": ["b2"], "naturalHeight": 500, "widthProfiles": {"6": 500, "12": 420}},
+                            ],
+                        },
+                    ],
+                )
+            assert len(doc["scenes"]) == 3
+            return RenderReport(ok=True, page_metrics=[{"i": i, "scaleFloor": 1} for i in range(3)])
+
+    verifier = _MeasuredVerifier()
+    fake = FakeClient(
+        by_purpose={
+            **_BY_PURPOSE,
+            "plan:skeleton": skeleton,
+            "block:hero": json.dumps({"type": "hero", "title": ["布局闭环", ""]}),
+            "block:callout": json.dumps({"type": "callout", "label": "提示", "text": "辅助证据"}, ensure_ascii=False),
+        }
+    )
+    result = await generate_lecture(
+        fake,
+        topic="布局闭环",
+        pages=2,
+        options=GeneratorOptions(sections=False, render_rounds=2),
+        render_verifier=verifier,
+    )
+    assert verifier.calls == 4, "拆页后必须重新测量、Director 重排并进行最终签名对应的复验"
+    assert len(result.doc["scenes"]) == 3
+    assert [scene["blocks"][0]["id"] for scene in result.doc["scenes"][1:]] == ["b1", "b2"]
+    assert not any(purpose == "quality:reflow" for purpose, _messages in fake.calls)
+    assert not result.errors
+
+
+async def test_native_small_type_blocks_release_without_condense_or_split() -> None:
+    class _SmallTypeVerifier:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def verify(self, html: str) -> RenderReport:
+            self.calls += 1
+            return RenderReport(
+                ok=False,
+                errors=["M: visible text below 14px"],
+                page_metrics=[{"i": 0, "scaleFloor": 1}, {"i": 1, "minTextPx": 12, "scaleFloor": 1}],
+            )
+
+    verifier = _SmallTypeVerifier()
+    fake = FakeClient(by_purpose=_BY_PURPOSE)
+    result = await generate_lecture(
+        fake,
+        topic="数据结构",
+        pages=2,
+        options=GeneratorOptions(sections=False, render_rounds=2),
+        render_verifier=verifier,
+    )
+    assert verifier.calls == 2
+    assert len(result.doc["scenes"]) == 2
+    assert not any(purpose == "quality:reflow" for purpose, _messages in fake.calls)
+    assert any("Layout Director" in error for error in result.errors)
 
 
 async def test_invalid_document_still_gets_one_read_only_browser_diagnostic() -> None:
@@ -190,8 +287,8 @@ async def test_invalid_document_still_gets_one_read_only_browser_diagnostic() ->
     assert any("section" in error for error in result.errors)
 
 
-async def test_persistent_overflow_is_reported_not_hidden() -> None:
-    """精简到极限仍溢出时必须如实报 warning，不能假装修好。"""
+async def test_persistent_overflow_is_a_release_error_not_hidden() -> None:
+    """精简到极限仍溢出时必须阻断发布，不能降级为可忽略 warning。"""
 
     class _AlwaysBad:
         async def verify(self, html: str) -> RenderReport:
@@ -208,7 +305,7 @@ async def test_persistent_overflow_is_reported_not_hidden() -> None:
         options=GeneratorOptions(sections=False, render_rounds=2),
         render_verifier=_AlwaysBad(),
     )
-    assert any("溢出" in w for w in result.warnings), "残留溢出必须出现在 warnings 里"
+    assert result.errors, "残留布局错误必须阻断发布"
 
 
 async def test_formula_clip_is_routed_to_reflow() -> None:
@@ -244,7 +341,7 @@ async def test_formula_clip_is_routed_to_reflow() -> None:
         options=GeneratorOptions(sections=False, render_rounds=2),
         render_verifier=verifier,
     )
-    assert verifier.calls == 2
+    assert verifier.calls == 3
     assert len(result.doc["scenes"][1]["blocks"][0]["items"]) == 3
     assert not result.errors
 
@@ -340,7 +437,7 @@ async def test_widget_runtime_error_is_repaired_and_reverified() -> None:
         options=GeneratorOptions(sections=False, render_rounds=2, quality_rounds=1),
         render_verifier=verifier,
     )
-    assert verifier.calls == 2
+    assert verifier.calls == 3, "widget 修复改变内在尺寸后必须测量、Director 重排并复验"
     assert result.doc["scenes"][1]["blocks"][0]["html"] == fixed_html
     # 初审两页 + 浏览器修复后只复核变更的 widget 页；旧语义分数不能沿用。
     assert [purpose for purpose, _messages in fake.calls].count("quality:page") == 3

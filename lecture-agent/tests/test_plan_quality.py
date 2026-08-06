@@ -582,6 +582,44 @@ async def test_replan_drops_non_object_interaction_brief_for_validated_slow_path
     assert "interactionBrief" not in candidate["blocks"][0]
 
 
+async def test_replan_routes_continuous_quantitative_motion_to_model_sim() -> None:
+    current = _doc()["scenes"][0]
+    current["brief"].update(
+        {
+            "objective": "学生能观察位移、速度与力随时间连续变化",
+            "learningAction": "manipulate",
+            "requiredEvidence": "时间或相位控制，以及同一坐标轴上的位置、速度和力矢量",
+            "visualTask": "控制相位，观察连续运动和四个典型状态",
+        }
+    )
+    response = {
+        "scene": {
+            **current,
+            "blocks": [
+                {"id": "wrong-cycle", "type": "diagram", "role": "visualization", "intent": "四阶段循环", "size": "l"}
+            ],
+        }
+    }
+    fake = FakeClient(by_purpose={"quality:replan": json.dumps(response, ensure_ascii=False)})
+    candidate, err = await replan_page(
+        fake,
+        current_scene=current,
+        brief=current["brief"],
+        issues=["cycle diagram 无法表达实体运动、方向矢量和连续定量变化"],
+        topic="连续动力系统",
+        audience="",
+        material="",
+        allowed_types={"diagram", "model-sim", "state-sim", "geometry-sim"},
+        type_descriptions={"diagram": "静态关系", "model-sim": "参数模型"},
+        all_scenes=[current],
+    )
+    assert err is None and candidate is not None
+    block = candidate["blocks"][0]
+    assert block["type"] == "model-sim"
+    assert block["interactionBrief"]["stateModel"][0]["name"] == "phase"
+    assert "mathModel" in block["interactionBrief"]
+
+
 def test_validate_plan_revision_rejects_object_shaped_type_and_size_without_crashing() -> None:
     scene = _doc()["scenes"][0]
     scene["blocks"][0]["type"] = {"name": "chart"}

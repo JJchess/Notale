@@ -32,6 +32,23 @@ def _explicit_sim_profile(brief: dict[str, Any]) -> str | None:
         str(brief.get(key) or "").lower()
         for key in ("objective", "learningAction", "requiredEvidence", "visualTask")
     )
+    physical_quantities = sum(
+        any(token in text for token in group)
+        for group in (
+            ("position", "displacement", "位移", "位置"),
+            ("velocity", "speed", "速度"),
+            ("restoring force", "force vector", "回复力", "力矢量"),
+        )
+    )
+    coupled_continuous_state = physical_quantities >= 2 and any(
+        token in text
+        for token in (
+            "state", "extreme", "equilibrium", "direction", "change", "compare",
+            "状态", "极值", "极点", "平衡位置", "方向", "变化", "比较",
+        )
+    )
+    if coupled_continuous_state:
+        return "model"
     # Structural transitions win even when their stage happens to use coordinates or dragging.
     # Spatial placement is not geometry evidence (for example, an AVL rotation).
     if any(
@@ -46,6 +63,20 @@ def _explicit_sim_profile(brief: dict[str, Any]) -> str | None:
         )
     ):
         return "state"
+    # Continuous evolution is a quantitative model even when authors describe snapshots as
+    # "states". The evidence is the recomputed relationship among time/phase/parameters and
+    # visible quantities, not a discrete next-state operation.
+    if any(
+        token in text
+        for token in (
+            "continuous motion", "continuous change", "over time", "time control",
+            "phase control", "time evolution", "trajectory", "velocity vector", "force vector",
+            "as time changes", "as phase changes", "parameter", "recompute", "quantitative causal",
+            "连续运动", "连续变化", "随时间", "时间控制", "相位控制", "随相位",
+            "时间演化", "轨迹", "速度矢量", "力矢量", "参数", "重算", "定量因果",
+        )
+    ):
+        return "model"
     if any(
         token in text
         for token in (
@@ -313,6 +344,35 @@ def _learning_evidence_needs(
             "操纵", "试验", "改变输入", "调参", "单步", "回放",
         )
     )
+    continuous_model_evidence = any(
+        token in text
+        for token in (
+            "continuous motion", "continuous change", "over time", "time evolution",
+            "time control", "phase control", "as time changes", "as phase changes",
+            "velocity vector", "force vector", "连续运动", "连续变化", "随时间",
+            "时间演化", "时间控制", "相位控制", "随相位", "速度矢量", "力矢量",
+        )
+    ) and any(
+        token in text
+        for token in (
+            "observe", "inspect", "compare", "trace", "manipulate", "观察", "比较",
+            "追踪", "操纵", "位移", "速度", "力", "trajectory", "position", "velocity", "force",
+        )
+    )
+    coupled_quantity_evidence = sum(
+        any(token in text for token in group)
+        for group in (
+            ("position", "displacement", "位移", "位置"),
+            ("velocity", "speed", "速度"),
+            ("restoring force", "force vector", "回复力", "力矢量"),
+        )
+    ) >= 2 and any(
+        token in text
+        for token in (
+            "state", "extreme", "equilibrium", "direction", "change", "compare",
+            "状态", "极值", "极点", "平衡位置", "方向", "变化", "比较",
+        )
+    )
     direct_transition_evidence = action in {"trace", "step", "play", "replay"} or any(
         token in text
         for token in (
@@ -340,7 +400,11 @@ def _learning_evidence_needs(
     transition_evidence = direct_transition_evidence or (
         algorithm_operation and observable_mutation
     )
-    return needs_runnable, explicit_interaction or transition_evidence
+    return (
+        needs_runnable,
+        explicit_interaction or transition_evidence or continuous_model_evidence
+        or coupled_quantity_evidence,
+    )
 
 
 def _needs_calculation_evidence(brief: dict[str, Any]) -> bool:
@@ -494,34 +558,66 @@ def _enforce_learning_evidence_routes(
             )
             initial_state = str(brief.get("requiredEvidence") or brief.get("visualTask") or "完整初态")
             transition = str(brief.get("visualTask") or brief.get("objective") or "一次真实状态转移")
-            main["interactionBrief"] = {
-                "stateModel": [
-                    {"name": "step", "type": "int", "range_or_values": "0..3", "initial": 0}
-                ],
-                "controls": [
-                    {"trigger": "单步", "effect": "将 step 推进一步并调用统一 update()"},
-                    {"trigger": "复位", "effect": "恢复 step=0 的同一初态并调用统一 update()"},
-                ],
-                "update": transition,
-                "initialPaint": (
-                    f"step=0 时完整可见：{initial_state}。必须预载理解下一次转移所需的最小有效结构；"
-                    "结构状态至少包含 3 个有意义的证据标记；树/图/数组必须有足够的带标签实体与关系，"
-                    "旋转前态至少显示三个参与节点及其边。禁止单个占位节点、EMPTY_TREE、空画布，"
-                    "装饰网格、坐标轴、水印和状态文字不算初态证据"
-                ),
-                "visibleEncodings": [
-                    {"quantity": "本步发生变化的状态或结构", "mark": "强调色高亮", "where": "主舞台"}
-                ],
-                "history": "同时保留前态与当前态，或提供清楚的 before/after 映射",
-                "reset": "确定性恢复 step=0 的同一初态",
-                "verificationCases": [
-                    {"input": "初态", "expected": initial_state},
-                    {"input": "单步一次", "expected": transition},
-                    {"input": "复位", "expected": f"恢复：{initial_state}"},
-                ],
-                "aestheticDirection": "paper-editorial",
-                "signatureDetail": "变化处使用单一强调色并保留前态残影",
-            }
+            if profile == "model":
+                main["interactionBrief"] = {
+                    "stateModel": [
+                        {"name": "phase", "type": "number", "range_or_values": "0..6.283", "initial": 0}
+                    ],
+                    "controls": [
+                        {"trigger": "时间/相位滑块", "effect": "改变 phase 并调用统一 update()"},
+                        {"trigger": "复位", "effect": "恢复 phase=0 并调用统一 update()"},
+                    ],
+                    "update": f"由页面声明的数学关系重新计算全部可见量：{transition}",
+                    "initialPaint": f"phase=0 时完整显示对象、参考轴与全部关键量：{initial_state}",
+                    "visibleEncodings": [
+                        {"quantity": "随控制变量连续变化的关键量", "mark": "位置、轨迹或有向矢量", "where": "主舞台"},
+                        {"quantity": "四个典型取值", "mark": "可见状态标记", "where": "同一坐标系"},
+                    ],
+                    "history": "保留轨迹或四个典型状态，使变化方向和极值可比较",
+                    "reset": "确定性恢复 phase=0 的同一初态",
+                    "verificationCases": [
+                        {"input": "phase=0", "expected": initial_state},
+                        {"input": "phase 改变一次", "expected": transition},
+                        {"input": "复位", "expected": f"恢复：{initial_state}"},
+                    ],
+                    "mathModel": {
+                        "formula": str(brief.get("visualTask") or brief.get("requiredEvidence") or "由声明公式计算"),
+                        "screenMapping": "所有数量映射到同一参考轴或同一坐标系",
+                        "invariants": "复位确定；同一输入始终得到同一可见输出",
+                    },
+                    "renderMedium": "svg",
+                    "aestheticDirection": "paper-editorial",
+                    "signatureDetail": "控制量、对象状态与矢量使用一致的颜色映射",
+                }
+            else:
+                main["interactionBrief"] = {
+                    "stateModel": [
+                        {"name": "step", "type": "int", "range_or_values": "0..3", "initial": 0}
+                    ],
+                    "controls": [
+                        {"trigger": "单步", "effect": "将 step 推进一步并调用统一 update()"},
+                        {"trigger": "复位", "effect": "恢复 step=0 的同一初态并调用统一 update()"},
+                    ],
+                    "update": transition,
+                    "initialPaint": (
+                        f"step=0 时完整可见：{initial_state}。必须预载理解下一次转移所需的最小有效结构；"
+                        "结构状态至少包含 3 个有意义的证据标记；树/图/数组必须有足够的带标签实体与关系，"
+                        "旋转前态至少显示三个参与节点及其边。禁止单个占位节点、EMPTY_TREE、空画布，"
+                        "装饰网格、坐标轴、水印和状态文字不算初态证据"
+                    ),
+                    "visibleEncodings": [
+                        {"quantity": "本步发生变化的状态或结构", "mark": "强调色高亮", "where": "主舞台"}
+                    ],
+                    "history": "同时保留前态与当前态，或提供清楚的 before/after 映射",
+                    "reset": "确定性恢复 step=0 的同一初态",
+                    "verificationCases": [
+                        {"input": "初态", "expected": initial_state},
+                        {"input": "单步一次", "expected": transition},
+                        {"input": "复位", "expected": f"恢复：{initial_state}"},
+                    ],
+                    "aestheticDirection": "paper-editorial",
+                    "signatureDetail": "变化处使用单一强调色并保留前态残影",
+                }
             if profile == "geometry":
                 main["interactionBrief"]["renderMedium"] = "svg"
             scene["blocks"] = [main]
@@ -1338,6 +1434,7 @@ async def replan_page(
 - 每页一个可观察 objective、一个 keyClaim；标题写清所有必要前提。
 - 除 hero/section 外，只要 visualTask 要求读出结构、状态、路径、趋势、空间或对象外观，就必须至少选择一个真正编码该关系的 diagram/graph/chart/sim/runnable/media 等证据 block；纯 statement/list/callout/compare 不算视觉证据。
 - 二维曲面/等高线/几何轨迹用 geometry-sim；普通 graph/diagram 只表达概念关系，不能冒充坐标。
+- 连续运动以及位移/速度/力等数量随时间、相位或参数重算时必须用 model-sim；cycle diagram 只用于抽象阶段循环，不能承担实体运动、方向矢量或连续定量变化证据。
 - 定量曲线必须由页面给出的公式直接计算，或清楚标为合成示意；不能用随手编的点冒充数学定义。
 - 若现有 objective 本身要求一页塞两件事，可收窄目标；不要增加页数。"""
     payload = {

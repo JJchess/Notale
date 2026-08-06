@@ -13,7 +13,15 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from ..domain.assemble import fill_blocks
-from ..domain.design import compile_scene_composition, compile_visual_system
+from ..domain.design import (
+    compile_scene_composition,
+    compile_visual_system,
+    hard_layout_failures,
+    layout_signature,
+    pagination_failures,
+    solve_document_layouts,
+    split_failed_scenes,
+)
 from ..domain.evaluation import check_coverage, refine_plan, replan_page, review_page
 from ..domain.evaluation.visual_quality import preflight_page_metrics
 from ..domain.generation import (
@@ -109,6 +117,9 @@ class GenerateResult:
     evidence_obligations: list[dict[str, str]] = field(default_factory=list)
     widget_routes: list[dict[str, str]] = field(default_factory=list)
     visual_quality: dict[str, Any] | None = None
+    layout_diagnostics: list[dict[str, Any]] = field(default_factory=list)
+    layout_decisions: list[dict[str, Any]] = field(default_factory=list)
+    layout_splits: list[dict[str, Any]] = field(default_factory=list)
 
 
 def _page_brief(scene: dict[str, Any]) -> dict[str, str]:
@@ -598,6 +609,16 @@ async def _quality_repair(
             scene, bi, current = located
             spec = placeholder_specs.get(block_id, {})
             block_type = str(current.get("type") or spec.get("type") or "")
+            if block_type == "media":
+                # A media block is an asset reference, not a generative JSON surface. Sending it
+                # through create-block lets the model invent assetId="placeholder", breaking the
+                # document after a perfectly valid search/generation result. Asset replacement
+                # must go back through create-media providers; until that route is available,
+                # preserve the real asset and report the unresolved visual issue truthfully.
+                warnings.append(
+                    f"逐页质检保留真实 media 资产 {block_id}：不允许通用 block 修复伪造 assetId"
+                )
+                return
             reg = registry.get(block_type)
             if not reg:
                 warnings.append(f"逐页质检无法回炉未知 block 类型: {block_id}/{block_type}")
@@ -912,7 +933,7 @@ def _compile_page_design(
         if scene.get("kind") in {"hero", "section"}:
             continue
         sid = str(scene.get("id") or "?")
-        visual_brief = page_visual_briefs.get(sid, {})
+        visual_brief = page_visual_briefs.get(sid) or _page_visual_brief(scene)
         try:
             scene["layout"] = compile_scene_composition(
                 scene,
@@ -1527,7 +1548,34 @@ async def generate_lecture(
     render_report = None
     render_hard_errors: list[str] = []
     render_changed_scene_ids: set[str] = set()
+    layout_decisions: list[dict[str, Any]] = []
+    layout_splits: list[dict[str, Any]] = []
+    latest_layout_signatures: dict[str, str] = {}
+    layout_dirty_scene_ids: set[str] = set()
     visual_quality_payload: dict[str, Any] | None = None
+
+    def mark_layout_dirty(*scene_ids: str) -> None:
+        layout_dirty_scene_ids.update(scene_id for scene_id in scene_ids if scene_id)
+
+    def direct_layouts(metrics: list[dict[str, Any]], *, round_no: int, reason: str) -> None:
+        decisions = solve_document_layouts(doc, metrics)
+        for item in decisions:
+            latest_layout_signatures[item.scene_id] = item.decision_signature
+            layout_decisions.append(
+                {
+                    "sceneId": item.scene_id,
+                    "candidate": item.candidate,
+                    "score": item.score,
+                    "reason": item.reason,
+                    "round": round_no,
+                    "route": reason,
+                    "decisionSignature": item.decision_signature,
+                    "feasible": item.feasible,
+                    "requiredHeight": item.required_height,
+                    "availableHeight": item.available_height,
+                }
+            )
+            layout_dirty_scene_ids.discard(item.scene_id)
     # 即使结构/语义校验已有错误，也至少执行一次只读浏览器诊断并产出截图。
     # 否则 schema error 会遮蔽真实的溢出、空白或 widget 运行时问题，视觉报告还会
     # 误写成“浏览器未返回指标”。只有进入本阶段时 schema 已合法，才允许自动回炉。
@@ -1608,9 +1656,10 @@ async def generate_lecture(
                     f"#{idx}: {error}" for idx, error in runtime_results if error is not None
                 ]
                 if runtime_failures:
-                    render_hard_errors = ["widget 运行时修复失败：" + "；".join(runtime_failures)]
-                    break
-                progress({"type": "docUpdated", "doc": doc, "reason": "widget-runtime-repair"})
+                    render_hard_errors.append("widget 运行时修复失败：" + "；".join(runtime_failures))
+                    log("[render] widget 修复失败已记为硬错误；继续执行 Layout Director，避免运行时错误遮蔽几何诊断")
+                else:
+                    progress({"type": "docUpdated", "doc": doc, "reason": "widget-runtime-repair"})
                 # 运行时修复必须在同一轮真实复验。否则错误若发生在最后一轮，
                 # 旧报告可能被当成已解决，形成新的 fake-green。
                 render_report = await render_verifier.verify(json.dumps(doc, ensure_ascii=False))
@@ -1626,17 +1675,16 @@ async def generate_lecture(
                     if rnd < opts.render_rounds:
                         log(
                             f"[render] 第 {rnd} 轮 widget 修复后仍失败，"
-                            "保留真实错误并进入下一轮浏览器驱动修复"
+                            "保留真实错误，同时继续全页布局求解"
                         )
-                        continue
-                    render_hard_errors = [
+                    else:
+                        render_hard_errors.append(
                         "widget 运行时修复后复验仍失败："
                         + "；".join(
                             f"#{idx}: {', '.join(errors)}"
                             for idx, errors in sorted(runtime_bad.items())
                         )
-                    ]
-                    break
+                        )
             plot_bad = {
                 int(metric.get("i", -1)): int(metric.get("plotWarnings") or 0)
                 for metric in render_report.page_metrics
@@ -1728,16 +1776,72 @@ async def generate_lecture(
                 for p in render_report.overflow_pages
                 if 0 <= int(p["page"]) < len(doc.get("scenes") or [])
             }
-            ignored_prefixes = ("D:", "F:", "G:", "I:", "O:")
+            ignored_prefixes: tuple[str, ...] = (
+                "D:", "F:", "G:", "I:", "K:", "L:", "M:", "O:",
+                "P:", "Q:", "R:", "S:", "T:", "U:",
+            )
+            if runtime_bad or any("widget" in error.lower() for error in render_hard_errors):
+                ignored_prefixes = (*ignored_prefixes, "B:")
             non_overflow_errors = [e for e in render_report.errors if not e.startswith(ignored_prefixes)]
             if non_overflow_errors:
                 render_hard_errors = non_overflow_errors
                 log(f"[render] 第 {rnd} 轮: 运行时硬失败 → {non_overflow_errors[:3]}")
                 break
+            layout_bad = hard_layout_failures(render_report.page_metrics)
+            bad.update({index: max(1, bad.get(index, 1)) for index in layout_bad})
+            # The Director runs even when the inherited/template layout happens to pass. Passing
+            # geometry is not proof that the final owner is correct. This is also the only place
+            # that creates the signature later checked at publication.
+            if render_report.page_metrics:
+                direct_layouts(render_report.page_metrics, round_no=rnd, reason="browser-measurement")
+                progress({"type": "docUpdated", "doc": doc, "reason": "layout-director"})
+                render_report = await render_verifier.verify(json.dumps(doc, ensure_ascii=False))
+                layout_bad = hard_layout_failures(render_report.page_metrics)
+                if not layout_bad:
+                    log(f"[layout] 第 {rnd} 轮: 全页重排后零裁切")
+                    break
+
+                # If geometry still has no feasible fit, paginate.  Generated blocks are moved,
+                # never rewritten, so the split cannot damage knowledge content.
+                splits = split_failed_scenes(doc, pagination_failures(render_report.page_metrics))
+                if splits:
+                    layout_splits.extend(splits)
+                    log(f"[layout] 第 {rnd} 轮: 无可行单页布局，自动新增 {len(splits)} 个连续证据页")
+                    for scene in doc.get("scenes") or []:
+                        sid = str(scene.get("id") or "?")
+                        if sid not in page_visual_briefs:
+                            page_visual_briefs[sid] = _page_visual_brief(scene)
+                            page_briefs[sid] = _page_brief(scene)
+                    mark_layout_dirty(*(
+                        str(scene.get("id") or "?")
+                        for scene in doc.get("scenes") or []
+                        if scene.get("kind") not in {"hero", "section"} and scene.get("blocks")
+                    ))
+                    direct_layouts([], round_no=rnd, reason="layout-split-bootstrap")
+                    progress({"type": "docUpdated", "doc": doc, "reason": "layout-split"})
+                    render_report = await render_verifier.verify(json.dumps(doc, ensure_ascii=False))
+                    direct_layouts(render_report.page_metrics, round_no=rnd, reason="layout-split-measured")
+                    progress({"type": "docUpdated", "doc": doc, "reason": "layout-split-director"})
+                    render_report = await render_verifier.verify(json.dumps(doc, ensure_ascii=False))
+                    layout_bad = hard_layout_failures(render_report.page_metrics)
+                    if not layout_bad:
+                        log(f"[layout] 第 {rnd} 轮: 自动拆页后零裁切（新增 {len(splits)} 页）")
+                        break
+
+                remaining_geometry = pagination_failures(render_report.page_metrics)
+                bad = {
+                    index: max(
+                        1,
+                        int((render_report.page_metrics[index] if index < len(render_report.page_metrics) else {}).get("layoutClip") or 0),
+                    )
+                    for index in remaining_geometry
+                    if 0 <= index < len(doc.get("scenes") or [])
+                }
             if not bad:
-                log(f"[render] 第 {rnd} 轮: 0 溢出，验收通过")
+                if layout_bad:
+                    log(f"[layout] 第 {rnd} 轮: 几何已稳定；{len(layout_bad)} 页非几何硬门留待发布阻断，不做无效拆页/精简")
                 break
-            log(f"[render] 第 {rnd} 轮: {len(bad)} 页溢出，回炉精简 → {sorted(bad)}")
+            log(f"[render] 第 {rnd} 轮: {len(bad)} 个单块页面仍失败，最后尝试组件结构/文字精简 → {sorted(bad)}")
 
             async def reflow(item: tuple[int, int], _i: int) -> None:
                 idx, px = item
@@ -1746,28 +1850,28 @@ async def generate_lecture(
                 r = await condense_scene(llm, scene, overflow_px=px, topic=topic)
                 if r.scene is not None:
                     doc["scenes"][idx] = r.scene
-                    render_changed_scene_ids.add(str(r.scene.get("id") or "?"))
+                    changed_id = str(r.scene.get("id") or "?")
+                    render_changed_scene_ids.add(changed_id)
+                    mark_layout_dirty(changed_id)
                     progress({"type": "docUpdated", "sceneId": r.scene.get("id"), "status": "done"})
                 else:
                     log(f"[render] 第 {idx} 页精简失败: {r.err}")
 
             await pool(sorted(bad.items()), opts.concurrency, reflow)
-            # Reflow changes block content and may replace the whole scene.  Never keep a stale
-            # three-column rail around a newly widened formula, chart, or runtime surface.
-            for warning in _compile_page_design(
-                doc,
-                page_visual_briefs=page_visual_briefs,
-                design_brief=design_brief,
-            ):
-                final.warnings.append(warning)
-                log(f"[design] {warning}")
-            assign_layouts(doc)
-            progress({"type": "docUpdated", "doc": doc, "reason": "reflow"})
-            # The next loop iteration normally performs the browser recheck.
-            # On the final allowed round there is no next iteration, so verify
-            # once here rather than reporting the stale pre-reflow screenshot.
-            if rnd == opts.render_rounds:
-                render_report = await render_verifier.verify(json.dumps(doc, ensure_ascii=False))
+            # Content changed: measure it as rendered, then let the Director write final geometry.
+            # The old composition compiler must never run after this point.
+            progress({"type": "docUpdated", "doc": doc, "reason": "reflow-layout-dirty"})
+            render_report = await render_verifier.verify(json.dumps(doc, ensure_ascii=False))
+            direct_layouts(
+                render_report.page_metrics,
+                round_no=rnd,
+                reason="post-reflow" if render_report.page_metrics else "post-reflow-fallback",
+            )
+            progress({"type": "docUpdated", "doc": doc, "reason": "reflow-layout-director"})
+            render_report = await render_verifier.verify(json.dumps(doc, ensure_ascii=False))
+            if not hard_layout_failures(render_report.page_metrics) and not render_report.overflow_pages:
+                log(f"[layout] 第 {rnd} 轮: 组件修复后由 Director 复验通过")
+                break
 
         # 最终像素级评审：一次看整档截图，按 route 定点修复，然后真机复验。
         if (
@@ -1982,11 +2086,47 @@ async def generate_lecture(
                     changed.update(issue.scene_id for issue in content_issues if issue.scene_id)
                     render_changed_scene_ids.update(changed)
                     if changed:
-                        progress({"type": "docUpdated", "doc": doc, "reason": "visual-quality-repair"})
+                        mark_layout_dirty(*changed)
+                        progress({"type": "docUpdated", "doc": doc, "reason": "visual-quality-layout-dirty"})
+                        # First pass measures repaired DOM. Only then may the Director solve it.
                         render_report = await render_verifier.verify(
                             json.dumps(doc, ensure_ascii=False)
                         )
-                        post_ignored_prefixes = ("D:", "F:", "G:", "I:")
+                        direct_layouts(
+                            render_report.page_metrics,
+                            round_no=opts.render_rounds + 1,
+                            reason="visual-quality-repair",
+                        )
+                        progress({"type": "docUpdated", "doc": doc, "reason": "visual-quality-layout-director"})
+                        render_report = await render_verifier.verify(
+                            json.dumps(doc, ensure_ascii=False)
+                        )
+                        post_layout_bad = pagination_failures(render_report.page_metrics)
+                        post_splits = split_failed_scenes(doc, post_layout_bad)
+                        if post_splits:
+                            layout_splits.extend(post_splits)
+                            mark_layout_dirty(*(
+                                str(scene.get("id") or "?")
+                                for scene in doc.get("scenes") or []
+                                if scene.get("kind") not in {"hero", "section"} and scene.get("blocks")
+                            ))
+                            direct_layouts([], round_no=opts.render_rounds + 1, reason="visual-split-bootstrap")
+                            progress({"type": "docUpdated", "doc": doc, "reason": "visual-quality-layout-split"})
+                            render_report = await render_verifier.verify(
+                                json.dumps(doc, ensure_ascii=False)
+                            )
+                            direct_layouts(
+                                render_report.page_metrics,
+                                round_no=opts.render_rounds + 1,
+                                reason="visual-split-measured",
+                            )
+                            render_report = await render_verifier.verify(
+                                json.dumps(doc, ensure_ascii=False)
+                            )
+                        post_ignored_prefixes = (
+                            "D:", "F:", "G:", "I:", "K:", "L:", "M:", "P:",
+                            "Q:", "R:", "S:", "T:", "U:",
+                        )
                         post_render_errors = [
                             error
                             for error in render_report.errors
@@ -2086,14 +2226,40 @@ async def generate_lecture(
         final = validate_doc(doc)
         final.warnings = prior_warnings + final.warnings
         final.errors.extend(render_hard_errors)
-        if render_report is not None and render_report.overflow_pages:
-            final.warnings.append(
-                f"真机渲染仍有 {len(render_report.overflow_pages)} 页溢出（已尽力精简）："
-                + ", ".join(
-                    f"#{p['page']}({max(int(p.get('overflowY') or 0), int(p.get('mblockClip') or 0), int(p.get('layoutClip') or 0))}px)"
-                    for p in render_report.overflow_pages[:8]
+        if render_report is not None:
+            signature_mismatches: list[str] = []
+            for index, scene in enumerate(doc.get("scenes") or []):
+                sid = str(scene.get("id") or f"page-{index + 1}")
+                final_signature = layout_signature(scene.get("layout"))
+                decision_signature = latest_layout_signatures.get(sid)
+                if index < len(render_report.page_metrics):
+                    render_report.page_metrics[index]["decisionSignature"] = decision_signature
+                    render_report.page_metrics[index]["finalLayoutSignature"] = final_signature
+                    render_report.page_metrics[index]["layoutDirty"] = sid in layout_dirty_scene_ids
+                if decision_signature and decision_signature != final_signature:
+                    signature_mismatches.append(sid)
+            if layout_dirty_scene_ids:
+                final.errors.append(
+                    "Layout Director 发布硬门失败：存在未重新求解的 dirty 页面 "
+                    + ", ".join(sorted(layout_dirty_scene_ids)[:12])
                 )
-            )
+            if signature_mismatches:
+                final.errors.append(
+                    "Layout Director 几何签名不一致：" + ", ".join(signature_mismatches[:12])
+                )
+            remaining_layout_failures = hard_layout_failures(render_report.page_metrics)
+            if remaining_layout_failures:
+                final.errors.append(
+                    "Layout Director 发布硬门失败：" + ", ".join(
+                        f"#{index}" for index in sorted(remaining_layout_failures)[:12]
+                    )
+                )
+            elif render_report.overflow_pages:
+                final.errors.append(
+                    "Layout Director 发布硬门失败：" + ", ".join(
+                        f"#{int(page.get('page', -1))}" for page in render_report.overflow_pages[:12]
+                    )
+                )
         if render_report is not None and quality_summary:
             _merge_render_quality(quality_summary, list(doc.get("scenes") or []), render_report)
         progress({"type": "stage", "stage": "render", "status": "done"})
@@ -2153,6 +2319,9 @@ async def generate_lecture(
             "quality": quality_summary,
             "visualQuality": visual_quality_payload,
             "widgetRoutes": widget_routes,
+            "layoutDiagnostics": list(render_report.page_metrics) if render_report else [],
+            "layoutDecisions": layout_decisions,
+            "layoutSplits": layout_splits,
             "doc": doc,
         }
     )
@@ -2168,4 +2337,7 @@ async def generate_lecture(
         evidence_obligations=plan.evidence_obligations,
         widget_routes=widget_routes,
         visual_quality=visual_quality_payload,
+        layout_diagnostics=list(render_report.page_metrics) if render_report else [],
+        layout_decisions=layout_decisions,
+        layout_splits=layout_splits,
     )

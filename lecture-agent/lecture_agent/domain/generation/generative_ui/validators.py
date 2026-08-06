@@ -119,6 +119,7 @@ _MOTION_TOKENS = ("transition", "animation", "@keyframes", "requestanimationfram
 _INTERACTIVE_WIDGET_TYPES = ("interactive", "chart_interactive", "art_interactive")
 
 _INSTRUCTION_PILL_RE = re.compile(r"(提示\s*[:：]|小贴士\s*[:：]|tips?\s*:)", re.IGNORECASE)
+_RAW_TEX_RE = re.compile(r"(?:\$[^$\n<>]{1,48}\$|\\\([^\n<>]{1,80}\\\))")
 
 # Flat CSS rule: capture "selector { body }" (widget CSS is non-nested; @media/@keyframes skipped).
 _CSS_RULE_RE = re.compile(r"([^{}]*)\{([^{}]*)\}")
@@ -168,6 +169,14 @@ def _aesthetic_quality_errors(widget_type: str, normalized_code: str) -> List[st
     if _INSTRUCTION_PILL_RE.search(normalized_code):
         errors.append(
             "widget_code contains an instruction pill ('提示:'/'Tip:') — express affordances through design (cursor styles, hover preview) instead of a sticker explaining the UI."
+        )
+    visible_markup = re.sub(r"<(style|script)\b[^>]*>[\s\S]*?</\1>", "", normalized_code)
+    visible_text = re.sub(r"<[^>]+>", " ", visible_markup)
+    if _RAW_TEX_RE.search(visible_text):
+        errors.append(
+            "widget_code exposes raw TeX delimiters such as '$x$' or '\\(...\\)' in visible HTML. "
+            "Widgets do not run the deck Markdown/KaTeX renderer: use plain Unicode labels (x, F, ω, x₀) "
+            "or render the formula explicitly; never show delimiter characters to learners."
         )
     if "prefers-color-scheme" in normalized_code:
         errors.append(

@@ -112,6 +112,17 @@ def _evidence_obligation(
 ) -> dict[str, str]:
     capability, action, required = _KNOWLEDGE_FORM_OBLIGATIONS[form]
     evidence = json.dumps(perspectives, ensure_ascii=False).lower()
+    if form == "dynamic-process" and any(
+        token in evidence
+        for token in (
+            "continuous motion", "continuous change", "over time", "time evolution",
+            "phase", "velocity", "force vector", "trajectory", "连续运动", "连续变化",
+            "随时间", "时间演化", "相位", "速度", "力矢量", "轨迹",
+        )
+    ):
+        capability = "model-sim"
+        action = "manipulate"
+        required = "控制时间、相位或真实参数，并观察实体状态与定量输出在同一模型中连续重算"
     if form == "quantitative-model" and not any(
         token in evidence
         for token in (

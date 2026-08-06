@@ -102,10 +102,7 @@ def preflight_page_metrics(metrics: list[dict[str, Any]]) -> DeterministicVisual
             or metric.get("widgetErrors")
             or []
         )
-        # Match the browser verifier's subpixel tolerances. A 1–4px rounding
-        # residue is not clipped content and must not survive as a stale hard
-        # error after the final browser pass succeeds.
-        if overflow_x > 1 or overflow_y > 4:
+        if overflow_x > 0 or overflow_y > 0:
             report.hard_errors.append(
                 f"{scene_id}: browser overflow x={overflow_x:g}, y={overflow_y:g}"
             )
@@ -113,8 +110,16 @@ def preflight_page_metrics(metrics: list[dict[str, Any]]) -> DeterministicVisual
             report.hard_errors.append(f"{scene_id}: runtime error: {runtime_errors}")
         layout_clip = _number(metric, "layoutClip", "layout_clip") or 0.0
         math_clip = _number(metric, "mblockClip", "mblock_clip") or 0.0
-        if metric.get("corrupt") or layout_clip > 4 or math_clip > 4:
+        if metric.get("corrupt") or layout_clip > 0 or math_clip > 0:
             report.hard_errors.append(f"{scene_id}: browser detected corrupt or clipped content")
+        if (
+            (_number(metric, "overlapCount") or 0) > 0
+            or (_number(metric, "hiddenContentCount") or 0) > 0
+            or (_number(metric, "scaleFloor") or 1) < 0.9
+            or metric.get("titleFit") is False
+            or metric.get("widgetViewportFit") is False
+        ):
+            report.hard_errors.append(f"{scene_id}: Layout Director hard gate failed")
 
         subject = _number(metric, "mainSubjectRatio", "main_subject_ratio")
         occupied = _number(metric, "occupiedRatio", "contentAreaRatio", "occupied_ratio")
@@ -148,15 +153,14 @@ def preflight_page_metrics(metrics: list[dict[str, Any]]) -> DeterministicVisual
                 )
             )
         font_size = _number(metric, "minTextPx", "minFontSize", "min_font_size")
-        if font_size is not None and font_size < 12:
-            report.issues.append(
-                VisualIssue(
-                    scene_id,
-                    "tokens",
-                    f"最小可见文字仅 {font_size:g}px。",
-                    "提高字体 token 或减少内容，使教学标签和图注不小于 12px。",
-                )
-            )
+        body_size = _number(metric, "minBodyTextPx")
+        aux_size = _number(metric, "minAuxTextPx")
+        if font_size is not None and font_size < 14:
+            report.hard_errors.append(f"{scene_id}: visible text below 14px ({font_size:g}px)")
+        if body_size is not None and body_size < 16:
+            report.hard_errors.append(f"{scene_id}: body text below 16px ({body_size:g}px)")
+        if aux_size is not None and aux_size < 14:
+            report.hard_errors.append(f"{scene_id}: annotation/control text below 14px ({aux_size:g}px)")
 
         signature = str(metric.get("compositionSignature") or "").strip()
         if signature:

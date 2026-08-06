@@ -32,6 +32,7 @@ _MEDIA_TYPES = {"media", "video"}
 _DATA_TYPES = {"chart", "table", "stats"}
 _VISUAL_TYPES = _MEDIA_TYPES | _DATA_TYPES | {"diagram", "graph", "flow", "timeline"}
 _WIDE_EVIDENCE_TYPES = _STAGE_TYPES | _DATA_TYPES | {"formula", "diagram", "graph", "grid", "runnable"}
+_CLIPPABLE_TYPES = _MEDIA_TYPES
 
 
 def _is_dense_block(block: dict[str, Any]) -> bool:
@@ -108,6 +109,10 @@ def _area(
     align: str = "stretch",
     justify: str = "stretch",
 ) -> dict[str, Any]:
+    # Clipping is an asset treatment, never a layout repair.  Reading/evidence blocks must
+    # remain visible so the browser verifier can reject an infeasible composition instead of
+    # silently hiding its bottom or right edge.
+    clip = bool(clip and (str(block.get("type") or "") in _CLIPPABLE_TYPES or role == "decoration"))
     return {
         "blockIds": [str(block["id"])],
         "col": [rect[0], rect[1]],
@@ -140,11 +145,36 @@ def _remaining_stack(blocks: list[dict[str, Any]], rect: Rect, *, role: str = "a
         return []
     height = rect[3] - rect[2]
     areas: list[dict[str, Any]] = []
+    weights = [max(1, _block_demand(block)) for block in blocks]
+    total = sum(weights)
+    cursor = 0
     for index, block in enumerate(blocks):
-        start = rect[2] + round(height * index / len(blocks))
-        end = rect[2] + round(height * (index + 1) / len(blocks))
+        start = rect[2] + round(height * cursor / total)
+        cursor += weights[index]
+        end = rect[2] + round(height * cursor / total)
         areas.append(_area(block, (rect[0], rect[1], start, max(start + 1, end)), role=role, clip=True))
     return areas
+
+
+def _block_demand(block: dict[str, Any]) -> int:
+    """Coarse intrinsic-height demand used only before browser measurements exist."""
+    block_type = str(block.get("type") or "")
+    base = {
+        "sim": 10,
+        "runnable": 10,
+        "chart": 8,
+        "diagram": 7,
+        "graph": 7,
+        "table": 7,
+        "quiz": 6,
+        "formula": 5,
+        "media": 6,
+        "video": 6,
+        "code": 7,
+        "statement": 3,
+        "callout": 2,
+    }.get(block_type, 4)
+    return base + min(6, _text_length(block) // 220)
 
 
 def _hero(blocks: list[dict[str, Any]], assets: dict[str, dict[str, Any]], _dense: bool) -> tuple[dict[str, Any], list[dict[str, Any]]]:

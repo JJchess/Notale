@@ -72,7 +72,7 @@ def test_deterministic_preflight_keeps_hard_errors_separate() -> None:
         },
     ]
     report = preflight_page_metrics(metrics)
-    assert len(report.hard_errors) == 2
+    assert len(report.hard_errors) == 3
     assert {issue.route for issue in report.issues} == {"composition", "tokens"}
     assert any(issue.scene_id == "s3" and "重复构图" in issue.problem for issue in report.issues)
 
@@ -84,17 +84,18 @@ def test_deterministic_preflight_accepts_real_headless_clip_metric() -> None:
     assert len(report.hard_errors) == 2
 
 
-def test_deterministic_preflight_uses_browser_subpixel_tolerances() -> None:
+def test_deterministic_preflight_uses_zero_tolerance_release_gate() -> None:
     report = preflight_page_metrics(
         [{"sceneId": "s0", "overflowX": 1, "overflowY": 4, "layoutClip": 4, "mblockClip": 4}]
     )
-    assert report.hard_errors == []
+    assert len(report.hard_errors) == 2
 
 
 def test_deterministic_preflight_reads_browser_min_text_metric() -> None:
     report = preflight_page_metrics([{"sceneId": "s1", "minTextPx": 11}])
 
-    assert [(issue.scene_id, issue.route) for issue in report.issues] == [("s1", "tokens")]
+    assert report.issues == []
+    assert report.hard_errors == ["s1: visible text below 14px (11px)"]
 
 
 def test_deterministic_preflight_allows_intentional_sparse_navigation_pages() -> None:

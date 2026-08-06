@@ -89,8 +89,8 @@
       + ';--color-border:var(--line);--color-border-primary:var(--line);--color-border-secondary:var(--line);--color-border-tertiary:var(--line)'
       + ';--color-background-info:var(--accent);--color-text-info:var(--ink);--font-sans:var(--sans);--font-serif:var(--serif);--font-mono:var(--mono);--radius-sm:var(--radius,4px);--border-radius-lg:var(--radius,8px)}'
       + '*{box-sizing:border-box}'
-      + 'html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:15px}'
-      + 'button{font-family:var(--sans);font-size:13px;color:var(--ink);background:transparent;border:1px solid var(--line);border-radius:var(--radius,0);padding:6px 12px;cursor:pointer;transition:background .15s,border-color .15s,transform .1s}'
+      + 'html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:16px}'
+      + 'button{font-family:var(--sans);font-size:14px;color:var(--ink);background:transparent;border:1px solid var(--line);border-radius:var(--radius,0);padding:6px 12px;cursor:pointer;transition:background .15s,border-color .15s,transform .1s}'
       + 'button:hover{border-color:var(--ink)}button:active{transform:scale(.97)}'
       + 'input[type=range]{accent-color:var(--ink)}'
       + '.mono{font-family:var(--mono);font-variant-numeric:tabular-nums}'
@@ -1094,54 +1094,74 @@
   function diagramRadial(nodes, connect) {
     const n = nodes.length;
     const wrap = el('div', 'diagram-radial');
+    wrap.dataset.nodeCount = String(n);
+    wrap.dataset.connection = connect;
     const svgNS = 'http://www.w3.org/2000/svg';
     const svg = document.createElementNS(svgNS, 'svg');
     svg.setAttribute('viewBox', '0 0 100 100');
     svg.classList.add('diagram-radial-svg');
-    const cx = 50, cy = 50, r = 34;
-    const pts = Array.from({ length: n }, (_, i) => {
-      const a = -Math.PI / 2 + i * (2 * Math.PI / Math.max(1, n));
-      return { x: cx + r * Math.cos(a), y: cy + r * Math.sin(a) };
-    });
+    let pts = [];
+    const lines = [];
+    const markerId = 'dia-arrow-' + Math.random().toString(36).slice(2, 9);
     if (connect === 'ring') {
       const defs = document.createElementNS(svgNS, 'defs');
       const marker = document.createElementNS(svgNS, 'marker');
-      marker.setAttribute('id', 'dia-arrow'); marker.setAttribute('viewBox', '0 0 10 10');
+      marker.setAttribute('id', markerId); marker.setAttribute('viewBox', '0 0 10 10');
       marker.setAttribute('refX', '8'); marker.setAttribute('refY', '5');
       marker.setAttribute('markerWidth', '5'); marker.setAttribute('markerHeight', '5'); marker.setAttribute('orient', 'auto-start-reverse');
       const path = document.createElementNS(svgNS, 'path');
       path.setAttribute('d', 'M0,0 L10,5 L0,10 Z'); path.setAttribute('fill', 'var(--accent)');
       marker.appendChild(path); defs.appendChild(marker); svg.appendChild(defs);
       for (let i = 0; i < n; i++) {
-        const a = pts[i], bpt = pts[(i + 1) % n];
         const line = document.createElementNS(svgNS, 'line');
-        line.setAttribute('x1', a.x); line.setAttribute('y1', a.y);
-        line.setAttribute('x2', bpt.x); line.setAttribute('y2', bpt.y);
         line.setAttribute('stroke', 'var(--accent)'); line.setAttribute('stroke-width', '1');
         line.setAttribute('vector-effect', 'non-scaling-stroke');
-        line.setAttribute('marker-end', 'url(#dia-arrow)');
-        svg.appendChild(line);
+        line.setAttribute('marker-end', `url(#${markerId})`);
+        svg.appendChild(line); lines.push([line, i, (i + 1) % n]);
       }
     } else if (connect === 'mesh') {
       for (let i = 0; i < n; i++) {
         for (let j = i + 1; j < n; j++) {
           const line = document.createElementNS(svgNS, 'line');
-          line.setAttribute('x1', pts[i].x); line.setAttribute('y1', pts[i].y);
-          line.setAttribute('x2', pts[j].x); line.setAttribute('y2', pts[j].y);
           line.setAttribute('stroke', 'var(--line)'); line.setAttribute('stroke-width', '0.6');
           line.setAttribute('vector-effect', 'non-scaling-stroke');
-          svg.appendChild(line);
+          svg.appendChild(line); lines.push([line, i, j]);
         }
       }
     }
     wrap.appendChild(svg);
-    nodes.forEach((node, i) => {
+    const boxes = nodes.map((node, i) => {
       const box = diagNodeBox(node);
       box.classList.add('diagram-radial-node');
-      box.style.left = pts[i].x + '%';
-      box.style.top = pts[i].y + '%';
       wrap.appendChild(box);
+      return box;
     });
+    const position = () => {
+      const width = wrap.getBoundingClientRect().width || 520;
+      if (width < 430 && n > 1) {
+        pts = Array.from({ length:n }, (_, i) => ({ x:50, y:10 + i * (80 / Math.max(1,n-1)) }));
+        wrap.classList.add('is-vertical');
+      } else if (n === 4) {
+        pts = [{x:27,y:24},{x:73,y:24},{x:73,y:76},{x:27,y:76}];
+        wrap.classList.remove('is-vertical');
+      } else {
+        const radius = width >= 760 ? 38 : 34;
+        pts = Array.from({ length:n }, (_, i) => {
+          const a = -Math.PI/2 + i*(2*Math.PI/Math.max(1,n));
+          return {x:50+radius*Math.cos(a),y:50+radius*Math.sin(a)};
+        });
+        wrap.classList.remove('is-vertical');
+      }
+      boxes.forEach((box,i) => { box.style.left=pts[i].x+'%'; box.style.top=pts[i].y+'%'; });
+      lines.forEach(([line,a,b]) => {
+        line.setAttribute('x1',pts[a].x); line.setAttribute('y1',pts[a].y);
+        line.setAttribute('x2',pts[b].x); line.setAttribute('y2',pts[b].y);
+      });
+    };
+    position();
+    if (window.ResizeObserver) {
+      const observer = new ResizeObserver(position); observer.observe(wrap);
+    }
     return wrap;
   }
 
@@ -1666,6 +1686,7 @@
       }
       const role = roles.has(area.styleRole) ? area.styleRole : 'main';
       const interactive = blks.some(block => block && ['sim', 'runnable'].includes(block.type));
+      const clipSafe = role === 'decoration' || blks.every(block => block && ['media', 'video'].includes(block.type));
       const requestedZ = Number.isInteger(+area.z) ? Math.min(8, Math.max(0, +area.z)) : 1;
       areas.push({
         blks, col, row,
@@ -1673,7 +1694,7 @@
         align: aligns.has(area.align) ? area.align : 'stretch',
         justify: justifies.has(area.justify) ? area.justify : 'stretch',
         bleed: area.bleed === true,
-        clip: area.clip === true,
+        clip: area.clip === true && clipSafe,
         role, interactive,
       });
     }
@@ -1719,6 +1740,8 @@
       body.style.setProperty('--artboard-gap', gap + 'px');
       for (const area of layout.areas) {
         const cell = el('div', 'artboard-area role-' + area.role + (area.bleed ? ' is-bleed' : '') + (area.clip ? ' is-clipped' : '') + (area.interactive ? ' has-interaction' : ''));
+        cell.dataset.blockIds = area.blks.map(block => String(block.id)).join(',');
+        if (area.blks.length === 1) cell.dataset.blockId = String(area.blks[0].id);
         cell.style.gridColumn = area.col; cell.style.gridRow = area.row; cell.style.zIndex = String(area.z);
         cell.style.alignItems = area.align; cell.style.justifyItems = area.justify;
         for (const block of area.blks) cell.appendChild(renderLayoutBlock(block, ctx));
@@ -2014,7 +2037,7 @@
       const availCustom = body.clientHeight;
       const totalCustom = body.scrollHeight;
       if (availCustom && totalCustom > availCustom + 4) {
-        body.style.zoom = Math.max(0.72, availCustom / totalCustom);
+        body.style.zoom = Math.max(0.9, availCustom / totalCustom);
       }
       return;
     }
@@ -2035,7 +2058,7 @@
          下限 0.72：红线"不丢内容"高于"可读性下限"偏好——内容略超(如 compare+长 timeline 同页)时宁可缩到 0.72 也不裁掉尾部；
          触底(0.72)仍溢出才说明内容确实过多，交给 render-check 断言 F 告警、生成侧收敛。
          lab/runlab/widlab(sim/代码/CodeMirror 子树)已在上面提前 return，不受 zoom 影响（避 FE-48）。 */
-      body.style.zoom = Math.max(0.72, avail / contentH);
+      body.style.zoom = Math.max(0.9, avail / contentH);
     }
   }
 
@@ -2053,7 +2076,7 @@
       // Keep a small safety margin: KaTeX's nested spans round subpixels
       // differently from the outer scroll box, which otherwise leaves a
       // repeatable 8–12px clipped tail after an apparently exact fit.
-      if (avail && natural > avail + 1) k.style.zoom = Math.max(0.52, (avail / natural) * 0.96);
+      if (avail && natural > avail + 1) k.style.zoom = Math.max(0.9, (avail / natural) * 0.96);
     }
   }
   /* 代码卡宽度自适应：codecard 是 overflow:hidden，pre 不换行——窄栏(split/compose)里长代码行会被静默裁掉(丢内容红线)，
@@ -2063,7 +2086,7 @@
     for (const code of section.querySelectorAll('.codecard code')) {
       code.style.zoom = '';
       const avail = code.clientWidth, natural = code.scrollWidth;
-      if (avail && natural > avail + 1) code.style.zoom = Math.max(0.78, avail / natural);
+      if (avail && natural > avail + 1) code.style.zoom = Math.max(0.9, avail / natural);
     }
   }
   /* 自定义版式(index/split)的高度自适应：balanceScene 只管默认竖排，这里管 index 的 active panel 与 split 的分栏列。
@@ -2080,7 +2103,7 @@
       const needH = box.scrollHeight * z, needW = box.scrollWidth * z;   // 内坐标 → 外坐标
       if (needH <= availH + 4 && (!availW || needW <= availW + 4)) return;
       const target = Math.min(availH / (box.scrollHeight || 1), availW ? availW / (box.scrollWidth || 1) : 1);
-      box.style.zoom = Math.max(0.6, Math.min(1, target));
+      box.style.zoom = Math.max(0.9, Math.min(1, target));
     }
   }
   function fitCustomLayout(section) {

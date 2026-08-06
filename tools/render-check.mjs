@@ -219,6 +219,149 @@ async function verifyScene(cdp, url, label) {
           const cs = getComputedStyle(e); return cs.display !== 'none' && cs.visibility !== 'hidden' && +cs.opacity !== 0;
         }).map(e => parseFloat(getComputedStyle(e).fontSize)).filter(Number.isFinite);
         const minTextPx = textSizes.length ? +Math.min(...textSizes).toFixed(2) : null;
+        const bodyTextSizes = [...sec.querySelectorAll('.pad p,.pad li,.pad td,.pad th,.pad .statement,.pad .callout')].filter(e => {
+          if (e.closest('svg,pre,code,iframe,aside,.katex') || !(e.textContent || '').trim()) return false;
+          const cs = getComputedStyle(e); return cs.display !== 'none' && cs.visibility !== 'hidden';
+        }).map(e => parseFloat(getComputedStyle(e).fontSize)).filter(Number.isFinite);
+        const auxTextSizes = [...sec.querySelectorAll('button,label,figcaption,.caption,.note,.axis-label')].filter(e => {
+          const cs = getComputedStyle(e); return cs.display !== 'none' && cs.visibility !== 'hidden' && (e.textContent || '').trim();
+        }).map(e => parseFloat(getComputedStyle(e).fontSize)).filter(Number.isFinite);
+        const minBodyTextPx = bodyTextSizes.length ? +Math.min(...bodyTextSizes).toFixed(2) : null;
+        const minAuxTextPx = auxTextSizes.length ? +Math.min(...auxTextSizes).toFixed(2) : null;
+        const scaled = [...sec.querySelectorAll('.pad,.pad *')].map(e => parseFloat(e.style.zoom)).filter(v => Number.isFinite(v) && v > 0);
+        const scaleFloor = +(scaled.length ? Math.min(1, ...scaled) : 1).toFixed(3);
+
+        const titleEl = body && body.dataset.layout === 'artboard' ? body.querySelector('.artboard-title') : null;
+        const titleFit = !titleEl || (titleEl.scrollWidth <= titleEl.clientWidth + 1 && titleEl.scrollHeight <= titleEl.clientHeight + 1);
+        const titleNaturalHeight = titleEl ? Math.round(titleEl.scrollHeight * (parseFloat(titleEl.style.zoom) || 1)) : null;
+
+        const blockMeasurements = [];
+        const areas = body && body.dataset.layout === 'artboard' ? [...body.querySelectorAll(':scope > .artboard-area')] : [];
+        const gridWidth = body ? body.clientWidth : 0;
+        const gridHeight = body ? body.clientHeight : 0;
+        const gridStyle = body ? getComputedStyle(body) : null;
+        const gridGap = gridStyle ? (parseFloat(gridStyle.columnGap) || parseFloat(gridStyle.gap) || 14) : 14;
+        const exactGridWidth = cols => {
+          const unit = Math.max(1, (gridWidth - gridGap * 11) / 12);
+          return unit * cols + gridGap * Math.max(0, cols - 1);
+        };
+        for (const area of areas) {
+          const frame = area.getBoundingClientRect();
+          const z = parseFloat(area.style.zoom) || 1;
+          const colText = area.style.gridColumn || '';
+          const rowText = area.style.gridRow || '';
+          const nums = value => (value.match(/\\d+/g) || []).map(Number);
+          const colLines = nums(colText), rowLines = nums(rowText);
+          const colSpan = colLines.length > 1 ? colLines[1] - colLines[0] : 12;
+          const rowSpan = rowLines.length > 1 ? rowLines[1] - rowLines[0] : 1;
+          const occupied = [...area.children].map(e => e.getBoundingClientRect()).filter(r => r.width > 1 && r.height > 1);
+          const occupiedArea = occupied.reduce((sum, r) => sum + Math.min(frame.width, r.width) * Math.min(frame.height, r.height), 0);
+          const utilization = +(Math.min(1, occupiedArea / Math.max(1, frame.width * frame.height))).toFixed(3);
+          const widthProfiles = {};
+          let measurementInvalid = false;
+          let iframeIntrinsic = null;
+          if (!area.classList.contains('has-interaction')) {
+            for (const cols of [3,4,6,8,9,12]) {
+              // Measure freshly in an independent off-screen surface. Cloning the grid cell
+              // itself preserved grid-row, fixed height, stretch and overflow, making every
+              // width profile return the same clipped height.
+              const stage = document.createElement('div');
+              stage.dataset.lectureMeasurementStage = 'true';
+              stage.style.cssText = [
+                'position:fixed','left:-30000px','top:0','display:block','box-sizing:border-box',
+                'height:auto','min-height:0','max-height:none','overflow:visible','zoom:1',
+                'visibility:hidden','pointer-events:none','contain:none','transform:none',
+                'align-self:auto','justify-self:auto'
+              ].join(';');
+              stage.style.width = Math.max(80, exactGridWidth(cols)) + 'px';
+              for (const child of area.children) {
+                const clone = child.cloneNode(true);
+                clone.querySelectorAll('iframe,script,style,.fragment').forEach(e => e.remove());
+                clone.classList.remove('fragment');
+                for (const node of [clone, ...clone.querySelectorAll('*')]) {
+                  node.style.removeProperty('grid-row');
+                  node.style.removeProperty('grid-column');
+                  node.style.removeProperty('zoom');
+                  if (node === clone) {
+                    node.style.removeProperty('height');
+                    node.style.removeProperty('min-height');
+                    node.style.removeProperty('max-height');
+                    node.style.removeProperty('overflow');
+                    node.style.removeProperty('overflow-x');
+                    node.style.removeProperty('overflow-y');
+                    node.style.width = '100%';
+                    node.style.position = 'relative';
+                  }
+                }
+                stage.appendChild(clone);
+              }
+              document.body.appendChild(stage);
+              widthProfiles[String(cols)] = Math.round(Math.max(stage.scrollHeight, stage.getBoundingClientRect().height));
+              stage.remove();
+            }
+            const profileValues = Object.values(widthProfiles).filter(Number.isFinite);
+            measurementInvalid = profileValues.length > 1 && Math.max(...profileValues) - Math.min(...profileValues) <= 1;
+          } else {
+            const frameEl = area.querySelector('iframe.widframe');
+            if (frameEl) {
+              try {
+                const root = frameEl.contentDocument && frameEl.contentDocument.documentElement;
+                const controls = frameEl.contentDocument && frameEl.contentDocument.querySelector('[data-controls],.controls,.control-panel');
+                const evidence = frameEl.contentDocument && frameEl.contentDocument.querySelector('[data-evidence],svg,canvas,.stage,.plot');
+                iframeIntrinsic = root ? {
+                  scrollWidth: Math.round(root.scrollWidth), scrollHeight: Math.round(root.scrollHeight),
+                  controls: controls ? Math.round(controls.getBoundingClientRect().height) : null,
+                  evidence: evidence ? {
+                    width: Math.round(evidence.getBoundingClientRect().width),
+                    height: Math.round(evidence.getBoundingClientRect().height),
+                  } : null,
+                } : null;
+              } catch { iframeIntrinsic = null; }
+            }
+          }
+          blockMeasurements.push({
+            blockIds: String(area.dataset.blockIds || area.dataset.blockId || '').split(',').filter(Boolean),
+            colSpan, rowSpan, clientWidth: area.clientWidth, clientHeight: area.clientHeight,
+            naturalWidth: Math.round(area.scrollWidth * z), naturalHeight: Math.round(area.scrollHeight * z),
+            scale: +z.toFixed(3), utilization, widthProfiles, measurementInvalid, iframeIntrinsic,
+          });
+        }
+
+        // Use painted bounds (cell plus intrinsic scroll extent) so spill from one fixed grid
+        // cell into another is counted even though the abstract 12x12 rectangles do not overlap.
+        const painted = areas.map(area => {
+          const r = area.getBoundingClientRect(), z = parseFloat(area.style.zoom) || 1;
+          return { area, left:r.left, top:r.top, right:Math.max(r.right, r.left + area.scrollWidth*z), bottom:Math.max(r.bottom, r.top + area.scrollHeight*z) };
+        });
+        let overlapCount = 0;
+        for (let a = 0; a < painted.length; a++) for (let b = a + 1; b < painted.length; b++) {
+          const x = Math.min(painted[a].right,painted[b].right)-Math.max(painted[a].left,painted[b].left);
+          const y = Math.min(painted[a].bottom,painted[b].bottom)-Math.max(painted[a].top,painted[b].top);
+          if (x > 1 && y > 1) overlapCount++;
+        }
+        if (titleEl) {
+          const t = titleEl.getBoundingClientRect();
+          for (const p of painted) {
+            const x=Math.min(t.right,p.right)-Math.max(t.left,p.left), y=Math.min(t.bottom,p.bottom)-Math.max(t.top,p.top);
+            if (x > 1 && y > 1) overlapCount++;
+          }
+        }
+        let hiddenContentCount = 0;
+        for (const area of areas) {
+          const cs = getComputedStyle(area);
+          if (/(hidden|clip)/.test(cs.overflow + cs.overflowX + cs.overflowY) && (area.scrollWidth > area.clientWidth + 1 || area.scrollHeight > area.clientHeight + 1)) hiddenContentCount++;
+        }
+        const widgetViewportFit = [...sec.querySelectorAll('iframe.widframe')].every(frame => {
+          try {
+            const root = frame.contentDocument && frame.contentDocument.documentElement;
+            return !!root && root.scrollWidth <= frame.clientWidth + 1 && root.scrollHeight <= frame.clientHeight + 1;
+          } catch { return false; }
+        });
+        const areaValues = blockMeasurements.map(item => item.utilization);
+        const areaUtilization = areaValues.length ? {
+          min:+Math.min(...areaValues).toFixed(3), max:+Math.max(...areaValues).toFixed(3),
+          mean:+(areaValues.reduce((a,b)=>a+b,0)/areaValues.length).toFixed(3),
+        } : null;
         // Screenshot-independent composition geometry. Measure the union of actual content
         // cells, not the full-size .body container, so a tiny centered card cannot masquerade
         // as a well-used slide merely because its parent fills the viewport.
@@ -249,7 +392,10 @@ async function verifyScene(cdp, url, label) {
         out.push({ i, overflowX: Math.round(overflowX), overflowY: Math.round(overflowY), mblockClip, corrupt, expectCenter, actualCenter, layoutClip, layoutDebug, dynamicBlank, widgetErrors, plotWarnings,
           chartMinWidthUse: chartWidthUse.length ? Math.min(...chartWidthUse) : null,
           widgetMinHeight: widgetHeights.length ? Math.min(...widgetHeights) : null,
-          minTextPx, occupiedRatio, mainSubjectRatio, whitespaceRatio });
+          minTextPx, minBodyTextPx, minAuxTextPx, scaleFloor, titleFit, titleNaturalHeight,
+          overlapCount, hiddenContentCount, widgetViewportFit, blockMeasurements, areaUtilization,
+          layoutViewport: { width:gridWidth, height:gridHeight, gap:gridGap },
+          occupiedRatio, mainSubjectRatio, whitespaceRatio });
       }
       return out;
     })()`);
@@ -276,12 +422,24 @@ async function verifyScene(cdp, url, label) {
     if (narrowCharts.length) fails.push(`K: ${narrowCharts.length} 页图表未利用可用宽度 → ` + narrowCharts.map(s => `#${s.i}(${Math.round(s.chartMinWidthUse*100)}%)`).join(', '));
     const shortWidgets = perSlide.filter(s => s.widgetMinHeight != null && s.widgetMinHeight < 260);
     if (shortWidgets.length) fails.push(`L: ${shortWidgets.length} 页互动区域过矮 → ` + shortWidgets.map(s => `#${s.i}(${s.widgetMinHeight}px)`).join(', '));
-    const tinyText = perSlide.filter(s => s.minTextPx != null && s.minTextPx < 12);
-    if (tinyText.length) fails.push(`M: ${tinyText.length} 页正文最小字号低于 12px → ` + tinyText.map(s => `#${s.i}(${s.minTextPx}px)`).join(', '));
+    const tinyText = perSlide.filter(s => s.minTextPx != null && s.minTextPx < 14);
+    if (tinyText.length) fails.push(`M: ${tinyText.length} 页可见文字小于 14px → ` + tinyText.map(s => `#${s.i}(${s.minTextPx}px)`).join(', '));
+    const tinyBody = perSlide.filter(s => s.minBodyTextPx != null && s.minBodyTextPx < 16);
+    if (tinyBody.length) fails.push(`U: ${tinyBody.length} 页正文小于 16px → ` + tinyBody.map(s => `#${s.i}(${s.minBodyTextPx}px)`).join(', '));
     const plotWarnings = perSlide.filter(s => s.plotWarnings > 0);
     if (plotWarnings.length) fails.push(`N: ${plotWarnings.length} 页图表含 Plot 警告标记 → ` + plotWarnings.map(s => `#${s.i}(${s.plotWarnings})`).join(', '));
     const widgetErrors = perSlide.filter(s => s.widgetErrors?.length);
     if (widgetErrors.length) fails.push(`O: ${widgetErrors.length} 页 widget 运行时错误 → ` + widgetErrors.map(s => `#${s.i}(${s.widgetErrors.join(' | ')})`).join(', '));
+    const overlaps = perSlide.filter(s => s.overlapCount > 0);
+    if (overlaps.length) fails.push(`P: ${overlaps.length} 页真实 DOM 重叠 → ` + overlaps.map(s => `#${s.i}(${s.overlapCount})`).join(', '));
+    const hidden = perSlide.filter(s => s.hiddenContentCount > 0);
+    if (hidden.length) fails.push(`Q: ${hidden.length} 页存在隐藏阅读内容 → ` + hidden.map(s => `#${s.i}(${s.hiddenContentCount})`).join(', '));
+    const underscaled = perSlide.filter(s => s.scaleFloor < 0.9);
+    if (underscaled.length) fails.push(`R: ${underscaled.length} 页缩放低于 90% → ` + underscaled.map(s => `#${s.i}(${s.scaleFloor})`).join(', '));
+    const titleBad = perSlide.filter(s => s.titleFit === false);
+    if (titleBad.length) fails.push(`S: ${titleBad.length} 页标题安全区失败 → ` + titleBad.map(s => `#${s.i}`).join(', '));
+    const widgetFitBad = perSlide.filter(s => s.widgetViewportFit === false);
+    if (widgetFitBad.length) fails.push(`T: ${widgetFitBad.length} 页 widget 视口裁切 → ` + widgetFitBad.map(s => `#${s.i}`).join(', '));
     ready.centered = perSlide.filter(s => s.actualCenter).length;
     slideStats = perSlide;   // 交给 --json：Python 侧据此知道「哪几页」溢出，才能定点回炉
 
@@ -480,8 +638,11 @@ async function main() {
         slides: r.ready ? r.ready.slides : null,
         theme: r.ready ? r.ready.theme : null,
         fontsStatus: r.ready ? r.ready.fontsStatus : null,
-        overflowPages: (r.slides || []).filter(s => s.overflowY > 4 || s.overflowX > 1 || s.layoutClip > 4 || s.mblockClip > 4)
-          .map(s => ({ page: s.i, overflowY: s.overflowY, overflowX: s.overflowX, layoutClip: s.layoutClip, mblockClip: s.mblockClip })),
+        overflowPages: (r.slides || []).filter(s => s.overflowY > 0 || s.overflowX > 0 || s.layoutClip > 0 || s.mblockClip > 0 ||
+          s.overlapCount > 0 || s.hiddenContentCount > 0 || s.scaleFloor < 0.9 || s.titleFit === false || s.widgetViewportFit === false)
+          .map(s => ({ page: s.i, overflowY: s.overflowY, overflowX: s.overflowX, layoutClip: s.layoutClip, mblockClip: s.mblockClip,
+            overlapCount:s.overlapCount, hiddenContentCount:s.hiddenContentCount, scaleFloor:s.scaleFloor,
+            titleFit:s.titleFit, widgetViewportFit:s.widgetViewportFit })),
         corruptPages: (r.slides || []).filter(s => s.corrupt).map(s => ({ page: s.i, marker: s.corrupt })),
         pageMetrics: r.slides || [],
       })),

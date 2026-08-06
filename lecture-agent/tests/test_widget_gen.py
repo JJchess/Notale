@@ -16,6 +16,7 @@ from lecture_agent.domain.generation import (
     load_widget_guidelines,
     repair_widget,
 )
+from lecture_agent.domain.generation.generative_ui.validators import payload_validation_errors
 from lecture_agent.engine import GeneratorOptions, generate_lecture
 from lecture_agent.schema import validate_doc
 from lecture_agent.schema.validate import validate_block
@@ -34,6 +35,19 @@ _GOOD_HTML = (
 _H1_HTML = "<style>.w{color:var(--ink)}</style><h1>正弦波交互式演示</h1>" + _GOOD_HTML
 # 硬错误：写了整页文档结构（doctype/html/head/body）——校验器给 error。
 _DOCTYPE_HTML = "<!doctype html><html><body><canvas></canvas></body></html>"
+
+
+def test_visible_raw_tex_delimiters_are_rejected_from_widget_labels() -> None:
+    html = _GOOD_HTML.replace("<button id=go>播放</button>", "<button id=go>位移 $x$ / 回复力 $F$</button>")
+    errors = payload_validation_errors(
+        {
+            "title": "物理模型",
+            "widget_type": "interactive",
+            "assistant_text": "拖动滑块。",
+            "widget_code": html,
+        }
+    )
+    assert any("raw TeX delimiters" in error for error in errors)
 
 
 def test_legacy_widget_guidance_is_not_double_injected() -> None:
