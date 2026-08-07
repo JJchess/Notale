@@ -34,6 +34,25 @@ def layout_signature(layout: dict[str, Any] | None) -> str:
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16]
 
 
+def frame_layout_signature(layout: dict[str, Any] | None) -> str:
+    """Stable signature of planner-owned absolute geometry (diagnostic fields excluded)."""
+    raw = layout if isinstance(layout, dict) else {}
+    payload = {
+        "kind": raw.get("kind"),
+        "canvas": raw.get("canvas"),
+        "titleFrame": raw.get("titleFrame"),
+        "frames": sorted(
+            [
+                {key: frame.get(key) for key in ("blockId", "x", "y", "w", "h", "z", "role", "clip")}
+                for frame in (raw.get("frames") or []) if isinstance(frame, dict)
+            ],
+            key=lambda item: str(item.get("blockId") or ""),
+        ),
+    }
+    encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()[:16]
+
+
 def _title(rows: int = 3) -> dict[str, Any]:
     return {
         "col": [1, 13], "row": [1, rows + 1], "z": 5,
@@ -231,6 +250,8 @@ def solve_document_layouts(doc: dict[str, Any], page_metrics: list[dict[str, Any
     for index, scene in enumerate(doc.get("scenes") or []):
         if not isinstance(scene, dict) or scene.get("kind") in {"hero", "section"} or not scene.get("blocks"):
             continue
+        if isinstance(scene.get("layout"), dict) and scene["layout"].get("kind") == "frames":
+            continue
         sid = str(scene.get("id") or f"scene-{index + 1}")
         for block_index, block in enumerate(scene.get("blocks") or []):
             if not isinstance(block, dict):
@@ -260,6 +281,8 @@ def split_failed_scenes(doc: dict[str, Any], failed_pages: set[int]) -> list[dic
         if index < 0 or index >= len(scenes):
             continue
         scene = scenes[index]
+        if isinstance(scene.get("layout"), dict) and scene["layout"].get("kind") == "frames":
+            continue
         blocks = [block for block in (scene.get("blocks") or []) if isinstance(block, dict)]
         if len(blocks) < 2 or scene.get("kind") in {"hero", "section"}:
             continue
@@ -301,6 +324,8 @@ def hard_layout_failures(page_metrics: list[dict[str, Any]]) -> set[int]:
             continue
         if any([
             int(metric.get("overlapCount") or 0) > 0,
+            int(metric.get("titleOverlapCount") or 0) > 0,
+            int(metric.get("outOfBoundsCount") or 0) > 0,
             int(metric.get("hiddenContentCount") or 0) > 0,
             int(metric.get("layoutClip") or 0) > 0,
             int(metric.get("overflowX") or 0) > 0,
@@ -330,6 +355,8 @@ def pagination_failures(page_metrics: list[dict[str, Any]]) -> set[int]:
         scale = metric.get("scaleFloor")
         if any([
             int(metric.get("overlapCount") or 0) > 0,
+            int(metric.get("titleOverlapCount") or 0) > 0,
+            int(metric.get("outOfBoundsCount") or 0) > 0,
             int(metric.get("hiddenContentCount") or 0) > 0,
             int(metric.get("layoutClip") or 0) > 0,
             int(metric.get("overflowX") or 0) > 0,

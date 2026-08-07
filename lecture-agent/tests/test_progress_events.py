@@ -48,7 +48,7 @@ async def test_progress_event_stream_shape() -> None:
         topic="梯度下降",
         pages=2,
         theme="cartesian",
-        options=GeneratorOptions(plan_perspectives=1),
+        options=GeneratorOptions(plan_perspectives=1, absolute_frames=False),
         progress=events.append,
     )
     assert result.errors == []

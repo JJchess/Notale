@@ -495,14 +495,45 @@ class TitleRegion(BaseModel):
     z: int = Field(default=3, ge=-2, le=8)
 
 
+class FrameCanvas(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    width: Literal[1280] = 1280
+    height: Literal[720] = 720
+
+
+class AbsoluteTitleFrame(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    x: float = Field(ge=0)
+    y: float = Field(ge=0)
+    w: float = Field(gt=0)
+    h: float = Field(gt=0)
+    z: int = Field(default=5, ge=-2, le=20)
+
+
+class AbsoluteBlockFrame(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    blockId: str = Field(min_length=1)
+    x: float = Field(ge=0)
+    y: float = Field(ge=0)
+    w: float = Field(gt=0)
+    h: float = Field(gt=0)
+    z: int = Field(default=1, ge=-2, le=20)
+    role: Literal["primary", "support", "practice", "decoration"] = "support"
+    clip: bool = False
+
+
 class Layout(BaseModel):
     model_config = ConfigDict(extra="allow")  # legacy layout fields stay compatible
-    kind: Literal["flow", "index", "split", "compose", "full", "artboard"] | None = None
+    kind: Literal["flow", "index", "split", "compose", "full", "artboard", "frames"] | None = None
     columns: int | None = Field(default=None, ge=2, le=12)
     rows: int | None = Field(default=None, ge=2, le=12)
     gap: float | None = Field(default=None, ge=0, le=60)
     titleRegion: TitleRegion | None = None
     areas: list[ArtboardArea] | None = None
+    canvas: FrameCanvas | None = None
+    titleFrame: AbsoluteTitleFrame | None = None
+    frames: list[AbsoluteBlockFrame] | None = None
+    plannedFrameSignature: str | None = None
 
 
 class VisualPalette(BaseModel):

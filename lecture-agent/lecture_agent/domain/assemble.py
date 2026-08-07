@@ -13,6 +13,10 @@ def fill_blocks(doc: dict[str, Any], blocks_by_id: dict[str, dict[str, Any] | No
     """就地把 doc.scenes[].blocks 的占位块替换为生成结果；返回 dropped 描述列表。"""
     dropped: list[str] = []
     for s in doc.get("scenes", []):
+        frames_owned = (
+            isinstance(s.get("layout"), dict)
+            and s["layout"].get("kind") == "frames"
+        )
         kept: list[dict[str, Any]] = []
         scene_dropped = False
         for ph in s.get("blocks", []):
@@ -24,9 +28,19 @@ def fill_blocks(doc: dict[str, Any], blocks_by_id: dict[str, dict[str, Any] | No
             else:
                 dropped.append(f"{bid}({ph.get('type')})")
                 scene_dropped = True
+                if frames_owned and bid:
+                    # Keep the planner's one-frame/one-block mapping observable.  A failed
+                    # generator becomes an explicit in-frame failure surface; deleting it and
+                    # clearing layout would silently hand geometry back to the legacy compiler.
+                    kept.append({
+                        "id": bid,
+                        "type": "callout",
+                        "label": "生成失败",
+                        "text": f"{ph.get('type') or 'block'} 未生成；保留原 frame 供实验诊断。",
+                    })
         if not kept:
             kept.append({"type": "callout", "label": "待补", "text": "本页 block 生成失败，需重跑"})
         s["blocks"] = kept
-        if scene_dropped:
+        if scene_dropped and not frames_owned:
             s.pop("layout", None)
     return dropped

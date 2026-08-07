@@ -18,7 +18,7 @@
 
 const SCENE_KINDS = ['hero', 'content', 'quiz', 'statement', 'section'];
 
-const LAYOUT_KINDS = ['flow', 'index', 'split', 'compose', 'full', 'artboard'];
+const LAYOUT_KINDS = ['flow', 'index', 'split', 'compose', 'full', 'artboard', 'frames'];
 
 const BLOCK_TYPES = ['hero', 'statement', 'list', 'agenda', 'callout', 'timeline', 'formula', 'flow', 'table', 'code', 'compare', 'grid', 'quiz', 'sim', 'chart', 'stats', 'diagram', 'graph', 'runnable', 'embed', 'freeform', 'pullquote', 'video', 'media'];
 

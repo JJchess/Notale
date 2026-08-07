@@ -65,3 +65,5 @@ Before emitting JSON, audit the chart as evidence, not decoration:
 ## Visual craft translated from GenUI chart guidance
 
 Keep the structured Observable Plot block as the rendering interface; do not emit HTML, Chart.js, CDN dependencies, ornamental dashboards, or fake controls. Establish one dominant quantitative question, make axis labels and units explicit, keep series names short and distinguishable, and use annotations only for the few values that complete the teaching argument. Prefer direct visual comparison over legends that force memory, but never overload the plot with labels. A chart must remain legible as a fixed lecture frame; if changing a parameter is necessary to reveal the claim, route to `create-model-sim` instead.
+
+If `viewport` is present, it is the immutable Plot container, not a suggestion. The renderer must use the container's measured width and height (and redraw through `ResizeObserver`) rather than a fixed 744×418 canvas. Reduce annotation count and choose margins appropriate to the available height; never introduce scrolling, clipping, or sub-14px text to preserve a crowded chart.

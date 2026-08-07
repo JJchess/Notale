@@ -845,7 +845,8 @@ async def test_algorithm_structure_before_after_routes_to_state_sim() -> None:
     )
 
     assert [block["type"] for block in scene["blocks"]] == ["state-sim"]
-    assert "前后状态" in scene["blocks"][0]["intent"]
+    assert "确定性复位" in scene["blocks"][0]["intent"]
+    assert "树/图/数组" not in scene["blocks"][0]["interactionBrief"]["initialPaint"]
     assert any("过程状态证据路由到 state-sim" in warning for warning in warnings)
 
 

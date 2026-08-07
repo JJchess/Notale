@@ -245,7 +245,7 @@ async def test_pipeline_routes_quality_issue_back_to_exact_block() -> None:
         fake,
         topic="学习率",
         pages=1,
-        options=GeneratorOptions(plan_perspectives=1, sections=False, quality_rounds=1),
+        options=GeneratorOptions(plan_perspectives=1, sections=False, quality_rounds=1, absolute_frames=False),
     )
 
     assert fake.statement_calls == 2
@@ -415,7 +415,7 @@ async def test_page_issue_can_replan_block_type_and_regenerate_whole_page() -> N
         fake,
         topic="风险",
         pages=1,
-        options=GeneratorOptions(plan_perspectives=1, sections=False, quality_rounds=2),
+        options=GeneratorOptions(plan_perspectives=1, sections=False, quality_rounds=2, absolute_frames=False),
     )
     assert result.doc["scenes"][0]["headline"] == "风险提示"
     assert result.doc["scenes"][0]["kind"] == "content"
@@ -507,7 +507,7 @@ async def test_descriptive_replan_size_is_normalized_without_wasting_a_round() -
         fake,
         topic="风险",
         pages=1,
-        options=GeneratorOptions(plan_perspectives=1, sections=False, quality_rounds=3),
+        options=GeneratorOptions(plan_perspectives=1, sections=False, quality_rounds=3, absolute_frames=False),
     )
     assert fake.replans == 1
     assert result.doc["scenes"][0]["blocks"][0]["type"] == "callout"
@@ -625,7 +625,7 @@ async def test_same_page_replans_once_then_repairs_existing_widget() -> None:
         fake,
         topic="负梯度",
         pages=1,
-        options=GeneratorOptions(plan_perspectives=1, sections=False, quality_rounds=2),
+        options=GeneratorOptions(plan_perspectives=1, sections=False, quality_rounds=2, absolute_frames=False),
     )
     purposes = [purpose for purpose, _messages in fake.calls]
     assert purposes.count("quality:replan") == 1

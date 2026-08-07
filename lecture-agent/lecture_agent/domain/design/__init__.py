@@ -3,6 +3,7 @@
 from .compiler import compile_scene_composition
 from .director import (
     LayoutDecision,
+    frame_layout_signature,
     hard_layout_failures,
     layout_signature,
     pagination_failures,
@@ -20,6 +21,7 @@ __all__ = [
     "LayoutDecision",
     "hard_layout_failures",
     "layout_signature",
+    "frame_layout_signature",
     "pagination_failures",
     "solve_document_layouts",
     "solve_scene_layout",

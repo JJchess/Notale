@@ -116,7 +116,7 @@ async def test_overflow_page_is_reflowed_until_clean() -> None:
         FakeClient(by_purpose=_BY_PURPOSE),
         topic="数据结构",
         pages=2,
-        options=GeneratorOptions(sections=False, render_rounds=2),
+        options=GeneratorOptions(sections=False, render_rounds=2, absolute_frames=False),
         render_verifier=verifier,
     )
     assert verifier.calls == 3, "精简后必须重新求解，并对 Director 写入的最终几何再验收一次"
@@ -132,7 +132,7 @@ async def test_no_verifier_means_stage_skipped() -> None:
         FakeClient(by_purpose=_BY_PURPOSE),
         topic="数据结构",
         pages=2,
-        options=GeneratorOptions(sections=False),
+        options=GeneratorOptions(sections=False, absolute_frames=False),
     )
     assert len(result.doc["scenes"][1]["blocks"][0]["items"]) == 9, "未注入 verifier 不应触发回炉"
 
@@ -196,7 +196,7 @@ async def test_browser_measurements_trigger_relayout_then_split_without_llm_rewr
         fake,
         topic="布局闭环",
         pages=2,
-        options=GeneratorOptions(sections=False, render_rounds=2),
+        options=GeneratorOptions(sections=False, render_rounds=2, absolute_frames=False),
         render_verifier=verifier,
     )
     assert verifier.calls == 4, "拆页后必须重新测量、Director 重排并进行最终签名对应的复验"
@@ -225,7 +225,7 @@ async def test_native_small_type_blocks_release_without_condense_or_split() -> N
         fake,
         topic="数据结构",
         pages=2,
-        options=GeneratorOptions(sections=False, render_rounds=2),
+        options=GeneratorOptions(sections=False, render_rounds=2, absolute_frames=False),
         render_verifier=verifier,
     )
     assert verifier.calls == 2
@@ -279,7 +279,7 @@ async def test_invalid_document_still_gets_one_read_only_browser_diagnostic() ->
         ),
         topic="诊断",
         pages=1,
-        options=GeneratorOptions(sections=False, revise=False, render_rounds=2),
+        options=GeneratorOptions(sections=False, revise=False, render_rounds=2, absolute_frames=False),
         render_verifier=verifier,
     )
 
@@ -302,7 +302,7 @@ async def test_persistent_overflow_is_a_release_error_not_hidden() -> None:
         FakeClient(by_purpose=_BY_PURPOSE),
         topic="数据结构",
         pages=2,
-        options=GeneratorOptions(sections=False, render_rounds=2),
+        options=GeneratorOptions(sections=False, render_rounds=2, absolute_frames=False),
         render_verifier=_AlwaysBad(),
     )
     assert result.errors, "残留布局错误必须阻断发布"
@@ -338,7 +338,7 @@ async def test_formula_clip_is_routed_to_reflow() -> None:
         FakeClient(by_purpose=_BY_PURPOSE),
         topic="数据结构",
         pages=2,
-        options=GeneratorOptions(sections=False, render_rounds=2),
+        options=GeneratorOptions(sections=False, render_rounds=2, absolute_frames=False),
         render_verifier=verifier,
     )
     assert verifier.calls == 3
@@ -434,7 +434,7 @@ async def test_widget_runtime_error_is_repaired_and_reverified() -> None:
         fake,
         topic="运行时",
         pages=2,
-        options=GeneratorOptions(sections=False, render_rounds=2, quality_rounds=1),
+        options=GeneratorOptions(sections=False, render_rounds=2, quality_rounds=1, absolute_frames=False),
         render_verifier=verifier,
     )
     assert verifier.calls == 3, "widget 修复改变内在尺寸后必须测量、Director 重排并复验"

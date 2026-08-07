@@ -157,11 +157,11 @@ async function verifyScene(cdp, url, label) {
           for (const c of body.querySelectorAll('.split-col')) layoutClip = Math.max(layoutClip, c.scrollHeight - c.clientHeight, c.scrollWidth - c.clientWidth);
         } else if (body && body.dataset.layout === 'compose') {
           for (const c of body.querySelectorAll('.compose-area')) layoutClip = Math.max(layoutClip, c.scrollHeight - c.clientHeight, c.scrollWidth - c.clientWidth);
-        } else if (body && body.dataset.layout === 'artboard') {
+        } else if (body && ['artboard','frames'].includes(body.dataset.layout)) {
           // artboard areas are fixed grid cells with clip:true. A child can overflow only inside
           // its cell while .pad itself remains perfectly within 720px, so the page-level F gate
           // cannot see it. Measure every cell directly on both axes.
-          for (const c of body.querySelectorAll('.artboard-area')) {
+          for (const c of body.querySelectorAll('.artboard-area,.frame-area')) {
             let areaClip = Math.max(c.scrollHeight - c.clientHeight, c.scrollWidth - c.clientWidth);
             let offender = areaClip > 0 ? 'cell-scroll' : null;
             const frame = c.getBoundingClientRect();
@@ -195,6 +195,7 @@ async function verifyScene(cdp, url, label) {
           }
         }
         layoutClip = Math.round(Math.max(0, layoutClip));
+        if (layoutClip <= 1) layoutClip = 0;
         // 动态块不能只占一个空容器：chart/sim 至少应产出 SVG（或显式数据错误提示），
         // widget 的 srcdoc 必须已由 ready 回调写入。此前二次 render 后回调未执行，结构/溢出全绿但页面是空的。
         const dynamicBlank = [];
@@ -231,12 +232,12 @@ async function verifyScene(cdp, url, label) {
         const scaled = [...sec.querySelectorAll('.pad,.pad *')].map(e => parseFloat(e.style.zoom)).filter(v => Number.isFinite(v) && v > 0);
         const scaleFloor = +(scaled.length ? Math.min(1, ...scaled) : 1).toFixed(3);
 
-        const titleEl = body && body.dataset.layout === 'artboard' ? body.querySelector('.artboard-title') : null;
+        const titleEl = body && ['artboard','frames'].includes(body.dataset.layout) ? body.querySelector('.artboard-title,.frame-title') : null;
         const titleFit = !titleEl || (titleEl.scrollWidth <= titleEl.clientWidth + 1 && titleEl.scrollHeight <= titleEl.clientHeight + 1);
         const titleNaturalHeight = titleEl ? Math.round(titleEl.scrollHeight * (parseFloat(titleEl.style.zoom) || 1)) : null;
 
         const blockMeasurements = [];
-        const areas = body && body.dataset.layout === 'artboard' ? [...body.querySelectorAll(':scope > .artboard-area')] : [];
+        const areas = body && ['artboard','frames'].includes(body.dataset.layout) ? [...body.querySelectorAll(':scope > .artboard-area,:scope > .frame-area')] : [];
         const gridWidth = body ? body.clientWidth : 0;
         const gridHeight = body ? body.clientHeight : 0;
         const gridStyle = body ? getComputedStyle(body) : null;
@@ -244,6 +245,19 @@ async function verifyScene(cdp, url, label) {
         const exactGridWidth = cols => {
           const unit = Math.max(1, (gridWidth - gridGap * 11) / 12);
           return unit * cols + gridGap * Math.max(0, cols - 1);
+        };
+        const visibleTextRects = root => {
+          const rects=[];
+          const walker=document.createTreeWalker(root,NodeFilter.SHOW_TEXT);
+          while(walker.nextNode()){
+            const node=walker.currentNode;
+            if(!(node.nodeValue||'').trim()) continue;
+            const parent=node.parentElement,cs=parent&&getComputedStyle(parent);
+            if(!parent||cs.display==='none'||cs.visibility==='hidden'||parent.closest('svg,script,style')) continue;
+            const range=document.createRange();range.selectNodeContents(node);
+            for(const rect of range.getClientRects()) if(rect.width>1&&rect.height>1) rects.push(rect);
+          }
+          return rects;
         };
         for (const area of areas) {
           const frame = area.getBoundingClientRect();
@@ -260,6 +274,10 @@ async function verifyScene(cdp, url, label) {
           const widthProfiles = {};
           let measurementInvalid = false;
           let iframeIntrinsic = null;
+          let blockMinTextPx = null;
+          let contentUtilization = utilization;
+          let stageFit = true;
+          let topOnly = false;
           if (!area.classList.contains('has-interaction')) {
             for (const cols of [3,4,6,8,9,12]) {
               // Measure freshly in an independent off-screen surface. Cloning the grid cell
@@ -316,14 +334,51 @@ async function verifyScene(cdp, url, label) {
                     height: Math.round(evidence.getBoundingClientRect().height),
                   } : null,
                 } : null;
+                if (root) {
+                  const doc = frameEl.contentDocument;
+                  const textNodes = [...doc.querySelectorAll('body *')].filter(e => {
+                    const cs = getComputedStyle(e);
+                    return (e.textContent || '').trim() && !e.children.length && cs.display !== 'none' && cs.visibility !== 'hidden';
+                  });
+                  const sizes = textNodes.map(e => parseFloat(getComputedStyle(e).fontSize)).filter(Number.isFinite);
+                  blockMinTextPx = sizes.length ? +Math.min(...sizes).toFixed(2) : null;
+                  const vr = root.getBoundingClientRect();
+                  const meaningful = [...doc.querySelectorAll('[data-evidence],svg,canvas,img,table,pre,button,input,[role=button],p,h1,h2,h3,h4,li,.stage,.plot')]
+                    .filter(e => { const r=e.getBoundingClientRect(),cs=getComputedStyle(e); return r.width>2&&r.height>2&&cs.display!=='none'&&cs.visibility!=='hidden'; });
+                  const boxes = meaningful.map(e=>e.getBoundingClientRect());
+                  if (boxes.length) {
+                    const union={left:Math.min(...boxes.map(r=>r.left)),top:Math.min(...boxes.map(r=>r.top)),right:Math.max(...boxes.map(r=>r.right)),bottom:Math.max(...boxes.map(r=>r.bottom))};
+                    contentUtilization=+Math.min(1,((union.right-union.left)*(union.bottom-union.top))/Math.max(1,vr.width*vr.height)).toFixed(3);
+                    topOnly=union.bottom < vr.top + vr.height*.42 && contentUtilization < .45;
+                  }
+                  stageFit = root.scrollWidth <= frameEl.clientWidth + 1 && root.scrollHeight <= frameEl.clientHeight + 1;
+                }
               } catch { iframeIntrinsic = null; }
             }
           }
+          if (!blockMinTextPx) {
+            const textNodes=[...area.querySelectorAll('*')].filter(e=>{
+              const cs=getComputedStyle(e),r=e.getBoundingClientRect();return (e.textContent||'').trim()&&!e.children.length&&cs.display!=='none'&&cs.visibility!=='hidden'&&Number(cs.opacity||1)>.1&&r.width>2&&r.height>2&&!e.closest('script,style,.katex-mathml,[aria-hidden=true]');
+            });
+            const sizes=textNodes.map(e=>parseFloat(getComputedStyle(e).fontSize)).filter(Number.isFinite);
+            blockMinTextPx=sizes.length?+Math.min(...sizes).toFixed(2):null;
+            const meaningful=[...area.querySelectorAll('table,svg,canvas,img,pre,button,.quiz,.diagram,.chart-block')]
+              .filter(e=>{const r=e.getBoundingClientRect(),cs=getComputedStyle(e);return r.width>2&&r.height>2&&cs.display!=='none'&&cs.visibility!=='hidden';});
+            const boxes=[...meaningful.map(e=>e.getBoundingClientRect()),...visibleTextRects(area)];
+            if(boxes.length){const union={left:Math.min(...boxes.map(r=>r.left)),top:Math.min(...boxes.map(r=>r.top)),right:Math.max(...boxes.map(r=>r.right)),bottom:Math.max(...boxes.map(r=>r.bottom))};contentUtilization=+Math.min(1,((union.right-union.left)*(union.bottom-union.top))/Math.max(1,frame.width*frame.height)).toFixed(3);topOnly=union.bottom<frame.top+frame.height*.42&&contentUtilization<.45;}
+          }
+          const blockOverflowX=Math.max(0,Math.round(area.scrollWidth-area.clientWidth));
+          const blockOverflowY=Math.max(0,Math.round(area.scrollHeight-area.clientHeight));
+          const areaStyle=getComputedStyle(area);
+          const blockHiddenContentCount=/(hidden|clip)/.test(areaStyle.overflow+areaStyle.overflowX+areaStyle.overflowY)&&(blockOverflowX>1||blockOverflowY>1)?1:0;
           blockMeasurements.push({
             blockIds: String(area.dataset.blockIds || area.dataset.blockId || '').split(',').filter(Boolean),
             colSpan, rowSpan, clientWidth: area.clientWidth, clientHeight: area.clientHeight,
             naturalWidth: Math.round(area.scrollWidth * z), naturalHeight: Math.round(area.scrollHeight * z),
-            scale: +z.toFixed(3), utilization, widthProfiles, measurementInvalid, iframeIntrinsic,
+            scale: +z.toFixed(3), utilization, contentUtilization, topOnly,
+            overflowX:blockOverflowX, overflowY:blockOverflowY,
+            hiddenContentCount:blockHiddenContentCount, minTextPx:blockMinTextPx,
+            stageFit, widthProfiles, measurementInvalid, iframeIntrinsic,
           });
         }
 
@@ -334,6 +389,7 @@ async function verifyScene(cdp, url, label) {
           return { area, left:r.left, top:r.top, right:Math.max(r.right, r.left + area.scrollWidth*z), bottom:Math.max(r.bottom, r.top + area.scrollHeight*z) };
         });
         let overlapCount = 0;
+        let titleOverlapCount = 0;
         for (let a = 0; a < painted.length; a++) for (let b = a + 1; b < painted.length; b++) {
           const x = Math.min(painted[a].right,painted[b].right)-Math.max(painted[a].left,painted[b].left);
           const y = Math.min(painted[a].bottom,painted[b].bottom)-Math.max(painted[a].top,painted[b].top);
@@ -343,7 +399,7 @@ async function verifyScene(cdp, url, label) {
           const t = titleEl.getBoundingClientRect();
           for (const p of painted) {
             const x=Math.min(t.right,p.right)-Math.max(t.left,p.left), y=Math.min(t.bottom,p.bottom)-Math.max(t.top,p.top);
-            if (x > 1 && y > 1) overlapCount++;
+            if (x > 1 && y > 1) { overlapCount++; titleOverlapCount++; }
           }
         }
         let hiddenContentCount = 0;
@@ -367,7 +423,7 @@ async function verifyScene(cdp, url, label) {
         // as a well-used slide merely because its parent fills the viewport.
         const padRect = pad.getBoundingClientRect();
         let visualCells = [];
-        if (body && body.dataset.layout === 'artboard') {
+        if (body && ['artboard','frames'].includes(body.dataset.layout)) {
           visualCells = [...body.children].filter(e => !e.classList.contains('artboard-title') || (e.textContent || '').trim());
         } else if (body && body.dataset.layout === 'index') {
           visualCells = [...body.querySelectorAll('.scene-index,.step-panel.show')];
@@ -389,11 +445,21 @@ async function verifyScene(cdp, url, label) {
           mainSubjectRatio = +(Math.max(...rects.map(r => (r.right-r.left)*(r.bottom-r.top)))/padArea).toFixed(3);
           whitespaceRatio = +(1 - Math.min(1, occupiedRatio)).toFixed(3);
         }
+        const frameMeasurements = body && body.dataset.layout === 'frames' ? [...body.querySelectorAll(':scope > .frame-area,:scope > .frame-title')].map(area => {
+          const r=area.getBoundingClientRect(), base=body.getBoundingClientRect();
+          const scale=base.width/1280 || 1;
+          const planned={x:+area.dataset.plannedX,y:+area.dataset.plannedY,w:+area.dataset.plannedW,h:+area.dataset.plannedH};
+          const actual={x:+((r.left-base.left)/scale).toFixed(2),y:+((r.top-base.top)/scale).toFixed(2),w:+(r.width/scale).toFixed(2),h:+(r.height/scale).toFixed(2)};
+          return {kind:area.classList.contains('frame-title')?'title':'block',blockId:area.dataset.blockId||null,planned,actual,delta:{x:+(actual.x-planned.x).toFixed(2),y:+(actual.y-planned.y).toFixed(2),w:+(actual.w-planned.w).toFixed(2),h:+(actual.h-planned.h).toFixed(2)}};
+        }) : [];
+        const outOfBoundsCount = body && body.dataset.layout === 'frames' ? frameMeasurements.filter(m => m.planned.x < 0 || m.planned.y < 0 || m.planned.x+m.planned.w > 1280 || m.planned.y+m.planned.h > 720).length : 0;
+        const primaryFrames = body && body.dataset.layout === 'frames' ? [...body.querySelectorAll(':scope > .frame-area.role-primary')] : [];
+        const primaryAreaRatio = primaryFrames.length ? +(Math.max(...primaryFrames.map(e=>{const r=e.getBoundingClientRect();return r.width*r.height;}))/(1280*720)).toFixed(3) : null;
         out.push({ i, overflowX: Math.round(overflowX), overflowY: Math.round(overflowY), mblockClip, corrupt, expectCenter, actualCenter, layoutClip, layoutDebug, dynamicBlank, widgetErrors, plotWarnings,
           chartMinWidthUse: chartWidthUse.length ? Math.min(...chartWidthUse) : null,
           widgetMinHeight: widgetHeights.length ? Math.min(...widgetHeights) : null,
           minTextPx, minBodyTextPx, minAuxTextPx, scaleFloor, titleFit, titleNaturalHeight,
-          overlapCount, hiddenContentCount, widgetViewportFit, blockMeasurements, areaUtilization,
+          overlapCount, titleOverlapCount, outOfBoundsCount, hiddenContentCount, widgetViewportFit, blockMeasurements, frameMeasurements, areaUtilization, primaryAreaRatio,
           layoutViewport: { width:gridWidth, height:gridHeight, gap:gridGap },
           occupiedRatio, mainSubjectRatio, whitespaceRatio });
       }
@@ -432,6 +498,10 @@ async function verifyScene(cdp, url, label) {
     if (widgetErrors.length) fails.push(`O: ${widgetErrors.length} 页 widget 运行时错误 → ` + widgetErrors.map(s => `#${s.i}(${s.widgetErrors.join(' | ')})`).join(', '));
     const overlaps = perSlide.filter(s => s.overlapCount > 0);
     if (overlaps.length) fails.push(`P: ${overlaps.length} 页真实 DOM 重叠 → ` + overlaps.map(s => `#${s.i}(${s.overlapCount})`).join(', '));
+    const frameBounds = perSlide.filter(s => s.outOfBoundsCount > 0);
+    if (frameBounds.length) fails.push(`V: ${frameBounds.length} 页规划 frame 越界 → ` + frameBounds.map(s => `#${s.i}(${s.outOfBoundsCount})`).join(', '));
+    const titleOverlaps = perSlide.filter(s => s.titleOverlapCount > 0);
+    if (titleOverlaps.length) fails.push(`W: ${titleOverlaps.length} 页标题与内容 frame 重叠 → ` + titleOverlaps.map(s => `#${s.i}(${s.titleOverlapCount})`).join(', '));
     const hidden = perSlide.filter(s => s.hiddenContentCount > 0);
     if (hidden.length) fails.push(`Q: ${hidden.length} 页存在隐藏阅读内容 → ` + hidden.map(s => `#${s.i}(${s.hiddenContentCount})`).join(', '));
     const underscaled = perSlide.filter(s => s.scaleFloor < 0.9);
@@ -639,9 +709,9 @@ async function main() {
         theme: r.ready ? r.ready.theme : null,
         fontsStatus: r.ready ? r.ready.fontsStatus : null,
         overflowPages: (r.slides || []).filter(s => s.overflowY > 0 || s.overflowX > 0 || s.layoutClip > 0 || s.mblockClip > 0 ||
-          s.overlapCount > 0 || s.hiddenContentCount > 0 || s.scaleFloor < 0.9 || s.titleFit === false || s.widgetViewportFit === false)
+          s.overlapCount > 0 || s.titleOverlapCount > 0 || s.outOfBoundsCount > 0 || s.hiddenContentCount > 0 || s.scaleFloor < 0.9 || s.titleFit === false || s.widgetViewportFit === false)
           .map(s => ({ page: s.i, overflowY: s.overflowY, overflowX: s.overflowX, layoutClip: s.layoutClip, mblockClip: s.mblockClip,
-            overlapCount:s.overlapCount, hiddenContentCount:s.hiddenContentCount, scaleFloor:s.scaleFloor,
+            overlapCount:s.overlapCount, titleOverlapCount:s.titleOverlapCount, outOfBoundsCount:s.outOfBoundsCount, hiddenContentCount:s.hiddenContentCount, scaleFloor:s.scaleFloor,
             titleFit:s.titleFit, widgetViewportFit:s.widgetViewportFit })),
         corruptPages: (r.slides || []).filter(s => s.corrupt).map(s => ({ page: s.i, marker: s.corrupt })),
         pageMetrics: r.slides || [],

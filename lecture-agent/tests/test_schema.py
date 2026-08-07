@@ -103,6 +103,39 @@ def test_visual_system_and_artboard_are_schema_valid() -> None:
     assert validate_doc(doc).errors == []
 
 
+def test_absolute_frames_are_typed_and_structurally_valid() -> None:
+    doc = _minimal_doc()
+    scene = doc["scenes"][1]
+    scene["blocks"][0]["id"] = "claim"
+    scene["layout"] = {
+        "kind": "frames", "canvas": {"width": 1280, "height": 720},
+        "titleFrame": {"x": 64, "y": 40, "w": 1152, "h": 104, "z": 5},
+        "frames": [
+            {"blockId": "claim", "x": 64, "y": 168, "w": 1152, "h": 488,
+             "z": 1, "role": "primary", "clip": False}
+        ],
+    }
+    LectureDoc.model_validate(doc)
+    assert validate_doc(doc).errors == []
+
+
+def test_absolute_frames_report_geometry_but_reject_bad_mapping_and_clip() -> None:
+    doc = _minimal_doc()
+    scene = doc["scenes"][1]
+    scene["blocks"][0]["id"] = "claim"
+    scene["layout"] = {
+        "kind": "frames", "canvas": {"width": 1280, "height": 720},
+        "titleFrame": {"x": 64, "y": 40, "w": 1152, "h": 104, "z": 5},
+        "frames": [
+            {"blockId": "claim", "x": 1200, "y": 168, "w": 300, "h": 488,
+             "z": 1, "role": "primary", "clip": True}
+        ],
+    }
+    result = validate_doc(doc)
+    assert any("clip:true" in error for error in result.errors)
+    assert any("超出 1280×720" in warning for warning in result.warnings)
+
+
 def test_artboard_rejects_invalid_span_and_duplicate_block() -> None:
     doc = _minimal_doc()
     doc["scenes"][1]["blocks"][0]["id"] = "claim"

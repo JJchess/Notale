@@ -78,6 +78,7 @@ def test_planning_sim_capabilities_lower_to_one_final_owner() -> None:
         planning[name].target_type for name in ("state-sim", "model-sim", "geometry-sim")
     } == {"sim"}
     assert planning["state-sim"].defaults == {"engine": "widget"}
+    assert planning["model-sim"].defaults == {"engine": "widget"}
     assert planning["geometry-sim"].defaults == {"engine": "widget"}
     lowered = lower_planning_placeholder(
         {"id": "avl", "type": "state-sim", "interactionBrief": {"stateModel": []}},

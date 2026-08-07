@@ -3,6 +3,7 @@ from __future__ import annotations
 import random
 
 from lecture_agent.domain.design import (
+    frame_layout_signature,
     hard_layout_failures,
     layout_signature,
     pagination_failures,
@@ -85,6 +86,23 @@ def test_document_director_repairs_missing_and_duplicate_block_ids_deterministic
     ids = [block["id"] for scene in doc["scenes"] for block in scene["blocks"]]
     assert ids == ["p1-layout-b1", "same", "p2-layout-b1"]
     assert len(decisions) == 2
+
+
+def test_absolute_frames_bypass_director_and_split_and_have_stable_signature() -> None:
+    scene = _scene("diagram", "callout")
+    scene["layout"] = {
+        "kind": "frames", "canvas": {"width": 1280, "height": 720},
+        "titleFrame": {"x": 64, "y": 40, "w": 1152, "h": 100, "z": 5},
+        "frames": [
+            {"blockId": "b0", "x": 64, "y": 160, "w": 760, "h": 496, "z": 1, "role": "primary", "clip": False},
+            {"blockId": "b1", "x": 848, "y": 160, "w": 368, "h": 220, "z": 1, "role": "support", "clip": False},
+        ],
+    }
+    before = frame_layout_signature(scene["layout"])
+    doc = {"scenes": [scene]}
+    assert solve_document_layouts(doc, []) == []
+    assert split_failed_scenes(doc, {0}) == []
+    assert frame_layout_signature(scene["layout"]) == before
 
 
 def test_stage_and_support_split_into_contiguous_pages() -> None:

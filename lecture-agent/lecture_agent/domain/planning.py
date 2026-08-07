@@ -15,8 +15,9 @@ from typing import Any
 from ..ports.llm import LLMClient, Message
 from ..utils.concurrency import pool
 from ..utils.jsonio import parse_json
+from .plan_validation import validate_absolute_frame_plan
 
-_HIER_THRESHOLD = 12  # 13+ 页走分层规划；15 页单骨架在 live 模型上会反复撞超时
+_HIER_THRESHOLD = 12  # 13+ 页默认走分层规划；absolute-frames 实验显式改走全局单骨架
 # The live DeepSeek profiles intentionally allow 600 s for long lecture skeletons. Keeping a
 # shorter domain timeout silently cancelled valid 15-page plans before the provider deadline.
 _PLAN_CALL_TIMEOUT_S = 600.0
@@ -42,6 +43,22 @@ class CoverageDiscovery:
     perspectives: list[dict[str, Any]] = field(default_factory=list)
     knowledge_forms: list[str] = field(default_factory=list)
     evidence_obligations: list[dict[str, str]] = field(default_factory=list)
+
+
+class PlanValidationError(RuntimeError):
+    """The planner exhausted its own repair loop without producing a valid full plan."""
+
+    def __init__(
+        self,
+        errors: list[str],
+        doc: dict[str, Any] | None,
+        *,
+        attempts: int,
+    ) -> None:
+        self.errors = list(errors)
+        self.doc = doc
+        self.attempts = attempts
+        super().__init__("；".join(self.errors))
 
 
 _KNOWLEDGE_FORM_OBLIGATIONS: dict[str, tuple[str, str, str]] = {
@@ -228,6 +245,8 @@ def _skeleton_spec(
     theme_menu: list[tuple[str, str]],
     wants: str,
     authoring_rules: str,
+    *,
+    absolute_frames: bool = False,
 ) -> str:
     all_types = [t for _s, _d, types in type_menu for t in types]
     # 主题选单指引:纯视觉/情绪、零方向驱动。用户显式指定则优先(既有行为)。
@@ -237,21 +256,54 @@ def _skeleton_spec(
         "(纯凭观感自行判断,不必默认某个、也不必刻意求新):\n" + _render_theme_menu(theme_menu)
     )
     theme_line = f"用户指定主题: {theme_hint}" if theme_hint else theme_block
+    hero_layout = (
+        ',"layout":{"kind":"frames","canvas":{"width":1280,"height":720},'
+        '"titleFrame":null,"frames":[{"blockId":"b_cover","x":64,"y":48,'
+        '"w":1152,"h":624,"z":1,"role":"primary","clip":false}]}'
+        if absolute_frames else ""
+    )
+    content_layout = (
+        ',"layout":{"kind":"frames","canvas":{"width":1280,"height":720},'
+        '"titleFrame":{"x":64,"y":32,"w":1152,"h":128,"z":5},'
+        '"frames":[{"blockId":"b1","x":64,"y":184,"w":760,"h":472,"z":1,'
+        '"role":"primary","clip":false},{"blockId":"b2","x":848,"y":184,'
+        '"w":368,"h":240,"z":1,"role":"support","clip":false}]}'
+        if absolute_frames else ""
+    )
+    quiz_layout = (
+        ',"layout":{"kind":"frames","canvas":{"width":1280,"height":720},'
+        '"titleFrame":{"x":64,"y":32,"w":1152,"h":96,"z":5},'
+        '"frames":[{"blockId":"bq","x":160,"y":152,"w":960,"h":504,"z":1,'
+        '"role":"practice","clip":false}]}'
+        if absolute_frames else ""
+    )
+    size_xl = '' if absolute_frames else ',"size":"xl"'
+    size_m = '' if absolute_frames else ',"size":"m"'
+    size_s = '' if absolute_frames else ',"size":"s"'
+    frame_rules = "" if not absolute_frames else """
+- **每页必须直接输出 `layout.kind:\"frames\"`**，使用固定 1280×720 CSS px 作者坐标系，左上角为 (0,0)。所有可见顶层 block 各有且仅有一个 frame。content/quiz/statement 必须有 `titleFrame`；hero/section 必须为 `titleFrame:null`。`compositionFamily` 只作诊断标签。
+- frame 必须写 `x/y/w/h/z/role/clip`；`x/y/w/h` 是唯一尺寸真相。**frames 模式禁止输出任何第二套粗粒度尺寸字段。**
+- sim/runtime 必须是 primary 主舞台且至少 760×420；标题区通常需要 120–140px。先确定证据能力，再同时规划全部 block 和 frames。禁止负值、越界、非装饰重叠和用裁切掩盖内容。规划完成后没有系统替你改类型或坐标；不合法时你将收到完整验证错误并重做整份骨架。
+"""
+    size_rules = "" if absolute_frames else """
+- 每个 block 标一个粗粒度 `size`：`xl|l|m|s`。旧布局编译器据此分配空间；不写默认按 m。
+"""
     return f"""骨架结构:
 {{ "id":"kebab-id","title":"...","subtitle":"...(可选)","language":"zh-CN","audience":"...","theme":"...(从下方主题菜单里挑一个名字)",
   "designBrief":{{"audience":{{"stage":"primary|middle|high|university|professional","readingLevel":"...","formality":"playful|instructional|editorial|academic"}},"purpose":"concept-teaching|practice|explanation|research-report","density":"light|medium|dense","designDNA":{{"palette":{{"base":"...","accent":"..."}},"typography":{{"display":"...","body":"..."}},"shapeLanguage":"...","mediaLanguage":"...","texture":"...","motifs":["..."],"compositionRhythm":"..."}},"selectionReason":"根据受众、目的、证据与密度的一句话理由"}},
   "tutor":{{"suggestions":["建议问题"],"kb":[{{"pattern":"关键词|同义词","answer":"本地应答(inline-md)"}}]}},
   "scenes":[
-    {{"id":"cover","kind":"hero","notes":"开场作用一句话","brief":{{"objective":"学生能说出本讲要解决的问题","learningAction":"orient","requiredEvidence":"主题、核心问题与学习承诺","keyClaim":"本讲唯一承诺","misconception":"","visualTask":"封面只建立主题与问题张力","evidencePolicy":"none"}},"visualBrief":{{"designIntent":"建立课题与核心问题的视觉张力","selectedCapabilities":["hero"],"compositionFamily":"full-bleed-hero"}},"blocks":[{{"id":"b_cover","type":"hero","role":"claim","intent":"封面：标题+一句副题","size":"xl"}}]}},
-    {{"id":"...","kind":"content","eyebrow":"小节标签(可选)","headline":"页标题","lead":"一句陈述式导语(可选)","transition":"zoom(可选,只在确有强调/章节切换意图时用)","notes":"本页作用一句话","brief":{{"objective":"学完本页学生能做出的可观察动作","learningAction":"read|inspect|trace|construct|compare|predict|manipulate|implement|run|debug|calculate|explain 中最主要的一项","requiredEvidence":"学生完成目标时必须看到或产出的具体证据","keyClaim":"本页唯一核心结论","misconception":"本页要纠正的一个具体误区","visualTask":"图形/交互必须让学生看见的变量关系或状态变化","evidencePolicy":"derived|provided|synthetic|none"}},"visualBrief":{{"designIntent":"本页空间层级如何支持 objective","selectedCapabilities":["list","diagram"],"compositionFamily":"annotated-specimen"}},"blocks":[{{"id":"b1","type":"list","role":"claim","intent":"这一块要讲清什么(一句)","size":"m"}},{{"id":"b2","type":"callout","role":"support","intent":"...","size":"s"}}]}},
-    {{"id":"...","kind":"quiz","headline":"随堂检验","notes":"检验本页目标","brief":{{"objective":"学生能独立完成什么判断/计算","learningAction":"predict|calculate|judge|explain","requiredEvidence":"学生答案、正确性反馈与判定链","keyClaim":"被检验的知识点","misconception":"错误选项针对的误区","visualTask":"作答后能从解释看出判定链条","evidencePolicy":"derived"}},"blocks":[{{"id":"bq","type":"quiz","role":"practice","intent":"考察点","size":"m"}}]}}
+    {{"id":"cover","kind":"hero","notes":"开场作用一句话","brief":{{"objective":"学生能说出本讲要解决的问题","learningAction":"orient","requiredEvidence":"主题、核心问题与学习承诺","keyClaim":"本讲唯一承诺","misconception":"","visualTask":"封面只建立主题与问题张力","evidencePolicy":"none"}},"visualBrief":{{"designIntent":"建立课题与核心问题的视觉张力","selectedCapabilities":["hero"],"compositionFamily":"full-bleed-hero"}}{hero_layout},"blocks":[{{"id":"b_cover","type":"hero","role":"claim","intent":"封面：标题+一句副题"{size_xl}}}]}},
+    {{"id":"...","kind":"content","eyebrow":"小节标签(可选)","headline":"页标题","lead":"一句陈述式导语(可选)","transition":"zoom(可选,只在确有强调/章节切换意图时用)","notes":"本页作用一句话","brief":{{"objective":"学完本页学生能做出的可观察动作","learningAction":"read|inspect|trace|construct|compare|predict|manipulate|implement|run|debug|calculate|explain 中最主要的一项","requiredEvidence":"学生完成目标时必须看到或产出的具体证据","keyClaim":"本页唯一核心结论","misconception":"本页要纠正的一个具体误区","visualTask":"图形/交互必须让学生看见的变量关系或状态变化","evidencePolicy":"derived|provided|synthetic|none"}},"visualBrief":{{"designIntent":"本页空间层级如何支持 objective","selectedCapabilities":["list","diagram"],"compositionFamily":"annotated-specimen"}}{content_layout},"blocks":[{{"id":"b1","type":"list","role":"claim","intent":"这一块要讲清什么(一句)"{size_m}}},{{"id":"b2","type":"callout","role":"support","intent":"..."{size_s}}}]}},
+    {{"id":"...","kind":"quiz","headline":"随堂检验","notes":"检验本页目标","brief":{{"objective":"学生能独立完成什么判断/计算","learningAction":"predict|calculate|judge|explain","requiredEvidence":"学生答案、正确性反馈与判定链","keyClaim":"被检验的知识点","misconception":"错误选项针对的误区","visualTask":"作答后能从解释看出判定链条","evidencePolicy":"derived"}},"visualBrief":{{"designIntent":"让作答与反馈成为唯一焦点","selectedCapabilities":["quiz"],"compositionFamily":"interactive-stage"}}{quiz_layout},"blocks":[{{"id":"bq","type":"quiz","role":"practice","intent":"考察点"{size_m}}}]}}
   ]}}
 
 可选组件（**描述即选择依据：按每个家族的描述判断这一页/这一块内容最贴哪个就选哪个；别被"高级/低级""稀有出口"之类预设吓退，也别硬塞不贴题的**。type 只能从下面出现的名字里选、禁止新造）：
 {_render_menu(type_menu)}
 
 规则:
-- **总页数硬约束：恰好 {pages} 页，不允许少一页或多一页**，含封面/收尾/可能的章节分隔页。第一页 kind:hero(封面, 恰含一个 hero block)。页数少(≤4)时省掉回顾/收尾页。
+- **总页数硬约束：`scenes` 数组恰好 {pages} 项，不允许少一项或多一项**，封面、收尾和章节分隔均计入。输出前在内部按 1…{pages} 逐项计数，但不要把序号写进 JSON。第一页 kind:hero(封面, 恰含一个 hero block)。页数少(≤4)时省掉回顾/收尾页。
+{frame_rules}{size_rules}
 - **封面与收尾页的标题/副题必须直接点出课题本身**，严禁写成其它主题或泛泛套话。
 - scene.kind: hero(封面/收尾,一个 hero block) | content(常规) | quiz(含一个 quiz block) | statement(含一个 statement block) | section(章节分隔页,含一个 statement block)。
 - `hero` block 只能出现在 kind:hero，不能塞进 content 当大字卡；statement 的正文必须是推进论证的核心结论，不得复述 headline。
@@ -260,10 +312,9 @@ def _skeleton_spec(
 - 选择 `media` 时，占位 block 除通用字段外必须写 `purpose:evidence|explanatory|narrative|atmospheric`、`placement:illustration|decoration|background`、`subject`、`relationshipToContent`、`fidelity:documentary|scientific|conceptual|atmospheric`、`required:true|false`，可选 `fit:contain|cover`、`safeZone`、`overlay`、`sourceStrategy:search-first|generate-first`。背景必须与至少一个原生内容 block 同页；关键文字、公式、数据和标签不得进入图片像素。
 - **不要从主题名称直接映射组件，也不要按数量配额塞互动**。先比较候选表达是否覆盖 `requiredEvidence`：固定关系、单个最终快照或无需控制的少量状态可用静态图；状态序列/结构变换/逐步执行用 state-sim，可控的定量因果用 model-sim，坐标与空间约束用 geometry-sim，即使 brief 没写“交互/试验”；实现、运行或调试代码必须用 runnable。sim 证明过程状态，runnable 证明代码执行，不能互相冒充；只读代码只能证明“看过”。整套课程若存在适合主动练习的目标，必须至少安排一次可产出学生证据的活动，而不是全程 read/inspect。
 - `implement` 专指编写可执行代码，并且 requiredEvidence 必须包含代码/运行/测试结果；手动画树、手动执行步骤用 `construct` 或 `trace`，不能滥写 implement。若输入的覆盖清单明确要求完整代码实现或调试，必须安排独立 runnable 页面落实该目标，不能用静态伪代码代替或完全漏掉。
-- 每个 block 是占位 {{id(全局唯一), type, role, intent, size}}。`role` 只能是 `claim|evidence|visualization|practice|support`，同页各块必须围绕同一个 brief 分工，不能各讲各的。**type 只能从上方「可选组件」里的名字选，禁止新造类型名**（共 {len(all_types)} 个：{", ".join(all_types)}）。timeline 只用于有明确时间点/阶段的编年序列；无时间标记的简单线性链用 flow。
+- 每个 block 是占位 {{id(全局唯一), type, role, intent}}。`role` 只能是 `claim|evidence|visualization|practice|support`，同页各块必须围绕同一个 brief 分工，不能各讲各的。**type 只能从上方「可选组件」里的名字选，禁止新造类型名**（共 {len(all_types)} 个：{", ".join(all_types)}）。timeline 只用于有明确时间点/阶段的编年序列；无时间标记的简单线性链用 flow。
 - 选择 `state-sim|model-sim|geometry-sim` 时，block 额外写内部 `interactionBrief`。必须使用这些结构：`stateModel:[{{"name":"step","type":"int","range_or_values":"0..3","initial":0}}]`；`controls:[{{"trigger":"单步按钮","effect":"推进一步并调用 update()"}}]`；`visibleEncodings:[{{"quantity":"本步变化的边","mark":"高亮连线","where":"主舞台"}}]`；`verificationCases:[{{"input":"初态","expected":"确定的可见结果"}},{{"input":"一次操作","expected":"确定的状态转移"}},{{"input":"复位","expected":"恢复同一初态"}}]`。同时写 `update`(统一状态更新规则)、`initialPaint`(初态本身完整可见，不用先点一次才出现)、`history`(前态/当前态如何同屏)、`reset`(必须回到 initial=0 的同一初态)、`aestheticDirection`(lab-dark|paper-editorial|studio-pop|terminal-data|soft-organic|blueprint|ink-wash|host-calm)、`signatureDetail`(一个服务概念的视觉记忆点)。比较目标加 `comparisonStates`；数学/几何加 `mathModel:{{formula,screenMapping,invariants}}`；确需粒子/连续场才写 `renderMedium:"canvas"`，否则默认 svg。这里只写设计契约，不写 HTML。
-- **每个 block 标一个粗粒度 size：`xl`(几乎独占整页的主体，如封面、复杂大图) / `l`(大块/主体，如复杂图表、大表格、多轮对比、长 timeline) / `m`(默认，一般讲解块) / `s`(小/辅助，如一句注解、次要论点、callout 补充)。不写默认按 m 处理。**
-- **一页配几个 block、配多大由内容真实需要决定，不设死数量上限**——但整页视觉重量要有节奏：粗略按 xl=4/l=3/m=2/s=1 心算一页总重量，大致落在 ~6 上下浮动即可；**不要为了凑够页数而硬拆一个大块，也不要图省事把一页堆成 5-6 个同重量小块**；真正复杂的内容（compare、大 table、>5 事件 timeline）给 l/xl 并考虑独占一页；叙事仍由浅入深。
+- **一页配几个 block、各占多少真实像素由内容需要决定，不设数量配额**；不要为了凑页数硬拆，也不要把一页堆成许多同重量小块。
 - **能用图表表达的定量对比/趋势/相关性优先用 chart（bar/line/area/scatter）而非 table**；纯名目罗列、无需比较数值大小或走势的数据才用 table。
 - **视觉语法必须服从 `brief.visualTask`**：坐标位置、轨迹、梯度、边界等几何关系必须用 chart/scatter/line 或 sim 真实编码坐标，不能拿 connected-circles、蛇形卡片等装饰模板冒充数学图；diagram 只用于它的形状确实表达了循环/层级/步骤/网络关系时。若视觉不能让学生仅凭图形读出目标关系，宁可换组件。
 - **视觉任务必须有视觉载体**：除 hero/section 外，只要 `visualTask` 要求读出结构、状态、路径、趋势、空间或对象外观，本页就必须至少有一个真正编码该关系的 diagram/graph/chart/sim/runnable/media 等证据 block；statement/list/callout/compare 里的纯文字不能冒充视觉证据。若本页只需要一句过渡，则把 learningAction 设为 orient、evidencePolicy 设为 none，并明确 visualTask 只承担导航节奏。
@@ -272,14 +323,14 @@ def _skeleton_spec(
 - **保证必须可见地带条件**：收敛、速率、全局最优等结论所需的光滑性/凸性/强凸性与步长范围，必须能放入观众可见的 headline/lead/formula/caption；只计划写在 notes 或内部 brief 等于没写。
 - **比较必须在首帧成立**：objective 若写“比较 A/B/C”，visualTask 与主视觉 block.intent 必须要求初始画面同时显示 A/B/C（或清楚的并排小多图）；一次只显示滑块当前选中的一条曲线不算完成比较。
 - **鞍点需要二维证据**：要解释鞍点/相反曲率，必须用二维曲面/等高线，或至少两条明确标注的正交切片；单条只向上/只向下的一维曲线不能证明鞍点。
-- **复杂 sim 页最多两个 block**：一个 l/xl 的 state-sim/geometry-sim 或 widget 型 model-sim 主舞台最多搭配一个 s/m 的短公式或短说明。quiz、callout、长公式不得再堆在同页；如果页数预算不允许另起一页，就删掉次要块并让互动本身完成证据链。
+- **复杂 sim 页最多两个 block**：一个占据 primary frame 的 sim 主舞台最多搭配一个紧凑短公式或短说明。quiz、callout、长公式不得再堆在同页；如果页数预算不允许另起一页，就删掉次要块并让互动本身完成证据链。
 - **语言一致**：`language` 决定所有观众可见的 title/headline/lead/caption/控件文案；除数学符号、代码标识符和必要专名外，不得无故中英混排。
 - **quiz 目标必须匹配一道题**：一个 quiz block 只承载一道可复算题，brief.objective/keyClaim 只写这一个判定链；不得声称一道题同时覆盖梯度方向、学习率、调度策略等整章目标。
 - **几个孤立的关键数字（一眼看大小，不是走势/分布）用 stats 数字卡**；有循环/层级/递进/网络等特殊结构关系的内容用 diagram（cycle/pyramid/staircase/snake/arrow-seq/circular-grid/connected-circles，按关系语义选，不要混用，简单 2-3 步线性流程仍用 flow 就够）。
 - **scene 可选 `transition`**（reveal 切场动效名，如 zoom/convex/none）：只在确有强调或大段落切换的意图时用，**不要每页都加**——多数页留空即可。
 - **交互按证据贴合度选**：确有状态变化、模型参数或空间约束时大胆使用对应 sim；纯叙述、纯观点、无状态/参数/约束的题材不要硬塞。建议每课至少 1 个 quiz。{"用户点名的交互: " + wants if wants else ""}
 - **三类 sim 必须按证据分类**：算法中间状态、逐步执行、树/图/数组结构变换用 state-sim；真实参数→模型重算→定量结果用 model-sim；坐标映射、拖拽、边界与几何约束本身是证据时用 geometry-sim。节点在画面上有位置不等于 geometry：AVL 旋转仍是 state-sim。比较/随机/播放/历史是三类上的 affordance，不另造类型。
-- **声明式优先只适用于 model-sim**：一个标量一阶递推或一维黑箱优化不写 engine，由后续选择 dynamics1d/searchCompare/custom；二维/多状态/连续场等声明式引擎无法表达的 model-sim 才额外写 `engine:"widget"`。state-sim 与 geometry-sim 固定走 widget。interactionBrief 完整时会直接 build，缺失或复杂时才补一次 widget:plan；因此不得故意留空。
+- **三类 sim 都由共享 widget 执行核心生成**。规划器只选择 state/model/geometry profile 并写完整 interactionBrief；不得选择生成 engine。interactionBrief 完整时直接 build，缺失或复杂时才补一次 widget:plan，因此不得故意留空。
 - **runnable**：学生需要**真正改代码、点运行、看结果**时用（如手写实现算法、调参看效果）；纯展示代码用 `code`。一份讲义可有多个 runnable（各自独立、贴题就用）。
 - **主题(theme)只是视觉气质、不承诺任何环节**。{theme_line}
 - 骨架阶段的 `notes` 只写本页在叙事中的作用（一句话），不要提前编推导、数字或讲稿；实际讲者稿会在所有 block 生成后依据最终页面内容重写。
@@ -532,6 +583,16 @@ def assign_layouts(doc: dict[str, Any]) -> int:
     flow，产生可预测的溢出。size/role 是骨架阶段的临时信号，在 fill_blocks 替换占位符前读取。
     渲染器对失效引用有回落。
     """
+
+    if any(
+        isinstance(scene, dict)
+        and isinstance(scene.get("layout"), dict)
+        and scene["layout"].get("kind") == "frames"
+        for scene in (doc.get("scenes") or [])
+    ):
+        # Absolute-frames ownership is all-or-nothing. Filling only missing pages with legacy
+        # layouts would make a structurally broken experiment look partially successful.
+        return 0
 
     def label(intent: str, i: int) -> str:
         first = re.split(r"[：:（(，,。、\n]", str(intent))[0].strip()
@@ -918,6 +979,7 @@ async def plan_lecture(
     perspectives_n: int = 3,
     sections: bool = True,
     concurrency: int = 4,
+    absolute_frames: bool = False,
 ) -> PlanResult:
     """STORM 两阶段：多视角覆盖 → 综合连贯递进的 skeleton。骨架单点失败重试 2 次。
 
@@ -929,7 +991,7 @@ async def plan_lecture(
     perspectives = discovery.perspectives
     coverage = _coverage_text(discovery)
 
-    if pages > _HIER_THRESHOLD:
+    if pages > _HIER_THRESHOLD and not absolute_frames:
         result = await _plan_hierarchical(
             llm,
             topic=topic, pages=pages, theme=theme, audience=audience, wants=wants, extra=extra,
@@ -943,7 +1005,15 @@ async def plan_lecture(
 
     sys = (
         "你是讲义(LectureDoc)总编排器。只输出一个 JSON 对象(骨架)，不要代码围栏、不要解释。\n"
-        + _skeleton_spec(pages, type_menu, theme, theme_menu, wants, authoring_rules)
+        + _skeleton_spec(
+            pages,
+            type_menu,
+            theme,
+            theme_menu,
+            wants,
+            authoring_rules,
+            absolute_frames=absolute_frames,
+        )
     )
     user = (
         f"课题: {topic}"
@@ -955,16 +1025,62 @@ async def plan_lecture(
         + f"\n\n{coverage}\n\n产出骨架 JSON。"
     )
     msgs: list[Message] = [{"role": "system", "content": sys}, {"role": "user", "content": user}]
+    allowed_types = {block_type for _skill, _description, types in type_menu for block_type in types}
 
     last_err: Exception | None = None
+    last_doc: dict[str, Any] | None = None
+    last_validation_errors: list[str] = []
     for attempt in range(1, 4):
         try:
-            doc = parse_json(
-                await asyncio.wait_for(
-                    llm.complete(msgs, purpose="plan:skeleton"),
-                    timeout=_PLAN_CALL_TIMEOUT_S,
-                )
+            raw = await asyncio.wait_for(
+                llm.complete(msgs, purpose="plan:skeleton"),
+                timeout=_PLAN_CALL_TIMEOUT_S,
             )
+            doc = parse_json(raw)
+            last_doc = doc
+            if absolute_frames:
+                validation_errors = validate_absolute_frame_plan(
+                    doc,
+                    pages=pages,
+                    allowed_types=allowed_types,
+                    evidence_obligations=discovery.evidence_obligations,
+                )
+                if validation_errors:
+                    last_validation_errors = validation_errors
+                    last_err = RuntimeError("；".join(validation_errors))
+                    if attempt >= 3:
+                        break
+                    # Keep the complete plan and all preceding coverage/design context in the same
+                    # conversation.  The planner owns both capability selection and geometry, so a
+                    # failed page is never patched by a second agent or deterministic mutator.
+                    repair_payload = {
+                        "validationAttempt": attempt,
+                        "validationErrors": validation_errors,
+                        "previousPlan": doc,
+                        "instruction": (
+                            f"返回完整修正版 LectureDoc skeleton，不得只返回 patch。scenes 数组必须恰好"
+                            f" {pages} 项，封面和收尾均计入；输出前在内部逐项计数但不要输出编号。"
+                            "同时修正 capability、interactionBrief 与全部受影响 frames；"
+                            "不要输出任何粗粒度尺寸字段。"
+                        ),
+                    }
+                    # Keep the original system/user context plus only the newest failed plan.  The
+                    # previous implementation duplicated the same 15-page JSON as both assistant
+                    # content and previousPlan on every round, inflating the third request beyond
+                    # 200 KB and encouraging verbatim repetition instead of correction.
+                    msgs = [
+                        msgs[0],
+                        msgs[1],
+                        {"role": "user", "content": json.dumps(repair_payload, ensure_ascii=False)},
+                    ]
+                    continue
+                return PlanResult(
+                    doc=doc,
+                    perspectives=perspectives,
+                    knowledge_forms=discovery.knowledge_forms,
+                    evidence_obligations=discovery.evidence_obligations,
+                )
+
             removed_for_budget = fit_scene_budget(doc, pages)
             if removed_for_budget:
                 doc["_budgetRemovedScenes"] = removed_for_budget
@@ -984,7 +1100,12 @@ async def plan_lecture(
         except Exception as e:  # noqa: BLE001
             last_err = e
             if isinstance(e, TimeoutError):
+                last_err = RuntimeError(f"plan:skeleton 主规划调用超过 {_PLAN_CALL_TIMEOUT_S:.0f}s")
                 break
             if attempt < 3:
                 await asyncio.sleep(3.0 * attempt)
+    if absolute_frames:
+        if last_validation_errors:
+            raise PlanValidationError(last_validation_errors, last_doc, attempts=3)
+        raise RuntimeError(f"Absolute frames 规划验证失败: {str(last_err)[:1000]}")
     raise RuntimeError(f"骨架生成失败（网络/限流/解析）: {str(last_err)[:100]}")

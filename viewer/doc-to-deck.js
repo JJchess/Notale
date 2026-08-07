@@ -90,6 +90,8 @@
       + ';--color-background-info:var(--accent);--color-text-info:var(--ink);--font-sans:var(--sans);--font-serif:var(--serif);--font-mono:var(--mono);--radius-sm:var(--radius,4px);--border-radius-lg:var(--radius,8px)}'
       + '*{box-sizing:border-box}'
       + 'html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:16px}'
+      + 'body{width:100%;min-width:0;min-height:0}body>:first-child{width:100%!important;height:100%!important;min-width:0!important;min-height:0!important;max-width:100%!important;max-height:100%!important;overflow:hidden!important}'
+      + 'svg{max-width:100%;max-height:100%}canvas{max-width:100%;max-height:100%}'
       + 'button{font-family:var(--sans);font-size:14px;color:var(--ink);background:transparent;border:1px solid var(--line);border-radius:var(--radius,0);padding:6px 12px;cursor:pointer;transition:background .15s,border-color .15s,transform .1s}'
       + 'button:hover{border-color:var(--ink)}button:active{transform:scale(.97)}'
       + 'input[type=range]{accent-color:var(--ink)}'
@@ -439,6 +441,17 @@
   /* sim 图表是异步渲染（needPlot 重试等 Plot 到位）——若晚于 fitCustomLayout 的量高，所在 index/split/compose 面板会事后长高被裁
      （iter81 大验证实测 67px）。画完后重 fit 所在 section 一次，闭掉这个时序缺口。 */
   function refitAfterChart(elInside) { const sec = elInside && elInside.closest && elInside.closest('section'); if (sec) requestAnimationFrame(() => fitCustomLayout(sec)); }
+  function observePlotSize(container, render) {
+    if (!window.ResizeObserver) return;
+    let lastWidth = 0, lastHeight = 0;
+    const observer = new ResizeObserver(() => {
+      const width = Math.round(container.clientWidth || 0), height = Math.round(container.clientHeight || 0);
+      if (width > 0 && height > 0 && (Math.abs(width-lastWidth) > 8 || Math.abs(height-lastHeight) > 8)) {
+        lastWidth = width; lastHeight = height; requestAnimationFrame(render);
+      }
+    });
+    observer.observe(container);
+  }
 
   /* ================= Block 渲染器 ================= */
   function assetById(id) {
@@ -647,8 +660,8 @@
           x: 'labelX', y: 'labelY', text: 'label', dx: 8, dy: -9,
           textAnchor: 'start', fill: C_INK, fontSize: 14,
         }));
-        const plotWidth = Math.max(420, Math.min(1600, Math.round(plotwrap.clientWidth || 700)));
-        const plotHeight = Math.max(300, Math.min(680, Math.round(plotwrap.clientHeight || 380)));
+        const plotWidth = Math.max(160, Math.min(1600, Math.round(plotwrap.clientWidth || 700)));
+        const plotHeight = Math.max(120, Math.min(680, Math.round(plotwrap.clientHeight || 380)));
         plotwrap.appendChild(Plot.plot({
           width: plotWidth, height: plotHeight, marginLeft: 68, marginBottom: 58, marginTop: 44, marginRight: 72,
           style: PLOT_STYLE,
@@ -671,7 +684,7 @@
       if (window.ResizeObserver) {
         const ro = new ResizeObserver(() => {
           const width = Math.round(plotwrap.clientWidth || 0);
-          const desired = Math.max(420, Math.min(1600, width));
+          const desired = Math.max(160, Math.min(1600, width));
           if (width > 0 && Math.abs(desired - lastPlotWidth) > 12) requestAnimationFrame(render);
         });
         ro.observe(plotwrap);
@@ -1272,9 +1285,9 @@
         return X.map((x, i) => ({ x, y: Y[i] }));
       }
       const STRATS = { grid: { color: C_LINE, pts: n => gridPts(n) }, random: { color: C_ACCENT, pts: n => randomPts(n, seed) }, bayes: { color: C_INK, pts: n => bayesPts(n, seed) } };
-      function miniChart(pts, color) {
+      function miniChart(pts, color, width, height) {
         const best = pts.reduce((a, b2) => b2.y < a.y ? b2 : a, pts[0]);
-        return Plot.plot({ width: 352, height: 296, marginLeft: 42, marginBottom: 34, marginTop: 8, marginRight: 14, style: PLOT_STYLE,
+        return Plot.plot({ width, height, marginLeft: 42, marginBottom: 34, marginTop: 8, marginRight: 14, style: PLOT_STYLE,
           x: { domain: M.domain, label: 'λ →', ticks: 5 }, y: { domain: M.yDomain, label: '↓ f(λ)', grid: true, ticks: 5 },
           marks: [
             Plot.line(dense, { x: 'x', y: 'y', stroke: C_LINE, strokeWidth: 1.4 }),
@@ -1296,14 +1309,17 @@
         const n = Math.round(values[M.budgetParam]);
         const results = M.strategies.map(sname => { const pts = STRATS[sname].pts(n); return { sname, pts, best: Math.min(...pts.map(p => p.y)) }; });
         const winner = results.reduce((a, r) => r.best < a.best ? r : a, results[0]);
+        const gap = 20, miniWidth = Math.max(160, Math.round(((row.clientWidth || 1116) - gap * Math.max(0, results.length - 1)) / Math.max(1, results.length)));
+        const miniHeight = Math.max(120, Math.round((row.clientHeight || 332) - 36));
         for (const r of results) {
           const box = el('div', 'mini' + (r === winner ? ' win' : ''));
           box.appendChild(el('div', 'mtitle', '<span>' + escapeHtml((b.labels || {})[r.sname] || r.sname) + '</span><b>' + r.best.toFixed(2) + '</b>'));
-          box.appendChild(miniChart(r.pts, STRATS[r.sname].color));
+          box.appendChild(miniChart(r.pts, STRATS[r.sname].color, miniWidth, miniHeight));
           row.appendChild(box);
         }
         refitAfterChart(row);
       }
+      observePlotSize(row, render);
       ctx.onReady(render);
       return root;
     },
@@ -1367,12 +1383,14 @@
         }
         marks.push(Plot.line(data, { x: 't', y: 'c', stroke: color, strokeWidth: 2.4, strokeDasharray: dash, curve: 'catmull-rom' }));
         marks.push(Plot.dot(data, { x: 't', y: 'c', fill: color, r: 2.4 }));
-        plotwrap.appendChild(Plot.plot({ width: 744, height: 418, marginLeft: 52, marginBottom: 44, marginTop: 14, marginRight: 20, style: PLOT_STYLE,
+        const pw=Math.max(160,Math.round(plotwrap.clientWidth||744)), ph=Math.max(120,Math.round(plotwrap.clientHeight||418));
+        plotwrap.appendChild(Plot.plot({ width: pw, height: ph, marginLeft: 52, marginBottom: 44, marginTop: 14, marginRight: 20, style: PLOT_STYLE,
           x: { domain: [0, M.steps], label: (b.chart || {}).xLabel, ticks: 8 },
           y: { domain: [lo, hi], label: (b.chart || {}).yLabel, grid: true },
           marks }));
         refitAfterChart(plotwrap);
       }
+      observePlotSize(plotwrap, render);
       ctx.onReady(render);
       return root;
     },
@@ -1401,11 +1419,13 @@
             Plot.line(s.points, { x: 'x', y: 'y', stroke: TONE[s.tone || 'ink'], strokeWidth: 2.2, strokeDasharray: s.dash && s.dash !== 'solid' ? s.dash : null }),
           ]);
           const ch = b.chart || {};
-          plotwrap.appendChild(Plot.plot({ width: 744, height: 418, marginLeft: 52, marginBottom: 44, marginTop: 14, marginRight: 20, style: PLOT_STYLE,
+          const pw=Math.max(160,Math.round(plotwrap.clientWidth||744)), ph=Math.max(120,Math.round(plotwrap.clientHeight||418));
+          plotwrap.appendChild(Plot.plot({ width: pw, height: ph, marginLeft: 52, marginBottom: 44, marginTop: 14, marginRight: 20, style: PLOT_STYLE,
             x: { label: ch.xLabel, domain: ch.xDomain }, y: { label: ch.yLabel, domain: ch.yDomain, grid: true }, marks }));
         } catch (e) { note.innerHTML = '<span class="rt">计算出错</span>' + escapeHtml(e.message || String(e)); }
         refitAfterChart(plotwrap);
       }
+      observePlotSize(plotwrap, render);
       ctx.onReady(render);
       return root;
     },
@@ -1567,7 +1587,7 @@
       marks.push(Plot.dot(wo, { x: 'x', y: 'y', fill: 'i', r: 5.5, stroke: C_INK, strokeWidth: 0.6 }));
       marks.push(Plot.dot([best], { x: 'x', y: 'y', r: 10, stroke: C_INK, strokeWidth: 2, fill: 'none', strokeDasharray: '3,2' }));
       marks.push(Plot.text(wo, { x: 'x', y: 'y', text: d => d.i + 1, dy: -11, fontSize: 9, fill: C_TEXT2 }));
-      plotBox.appendChild(Plot.plot({ width: 500, height: 288, marginLeft: 44, marginBottom: 38, marginTop: 12, marginRight: 16, style: PLOT_STYLE,
+      plotBox.appendChild(Plot.plot({ width: Math.max(160,Math.round(plotBox.clientWidth||500)), height: Math.max(120,Math.round(plotBox.clientHeight||288)), marginLeft: 44, marginBottom: 38, marginTop: 12, marginRight: 16, style: PLOT_STYLE,
         x: { domain: resultChartCfg ? resultChartCfg.domain : undefined, label: 'λ →', ticks: 6 },
         y: { domain: resultChartCfg ? resultChartCfg.yDomain : undefined, label: '↓ f(λ)', grid: true, ticks: 6 },
         color: { type: 'linear', range: ['#D8D2C6', C_INK], domain: [0, wo.length] },
@@ -1709,6 +1729,34 @@
       areas,
     };
   }
+  /** Resolve planner-owned 1280×720 absolute frames without clamping geometry. */
+  function resolveFrameLayout(scene, L) {
+    if (!L || L.kind !== 'frames' || !L.canvas || +L.canvas.width !== 1280 || +L.canvas.height !== 720 || !Array.isArray(L.frames)) return null;
+    const map = blocksById(scene), used = new Set(), frames = [];
+    const roles = new Set(['primary', 'support', 'practice', 'decoration']);
+    const finiteRect = value => value && ['x','y','w','h'].every(k => Number.isFinite(+value[k])) && +value.x >= 0 && +value.y >= 0 && +value.w > 0 && +value.h > 0;
+    const needsTitle = ['content','quiz','statement'].includes(scene.kind);
+    if (needsTitle && !finiteRect(L.titleFrame)) return null;
+    if (['hero','section'].includes(scene.kind) && L.titleFrame != null) return null;
+    for (const raw of L.frames) {
+      const id = raw && raw.blockId != null ? String(raw.blockId) : '';
+      if (!id || !map[id] || used.has(id) || !finiteRect(raw)) return null;
+      used.add(id);
+      const block = map[id], role = roles.has(raw.role) ? raw.role : 'support';
+      const interactive = ['sim','runnable'].includes(block.type);
+      const clipSafe = role === 'decoration' || ['media','video'].includes(block.type);
+      frames.push({
+        block, role, interactive,
+        x:+raw.x, y:+raw.y, w:+raw.w, h:+raw.h,
+        z:Number.isInteger(+raw.z) ? +raw.z : 1,
+        clip:raw.clip === true && clipSafe,
+      });
+    }
+    const ids = (scene.blocks || []).map(b => b && b.id != null ? String(b.id) : '').filter(Boolean);
+    if (ids.length !== used.size || ids.some(id => !used.has(id))) return null;
+    const t = L.titleFrame;
+    return { title:t ? {x:+t.x,y:+t.y,w:+t.w,h:+t.h,z:Number.isInteger(+t.z)?+t.z:5} : null, frames };
+  }
   /* compose preset = 罐装 areas 图（据 scene.blocks 确定性展开）。加一个 preset = 加一种编辑版式。 */
   const composePresets = {
     // sidenote 旁注（← marginalia · DESIGN_RESEARCH T23）：主栏(前面的块) + 右窄侧栏(末块作低对比语境)。需 ≥2 块。
@@ -1745,6 +1793,23 @@
         cell.style.gridColumn = area.col; cell.style.gridRow = area.row; cell.style.zIndex = String(area.z);
         cell.style.alignItems = area.align; cell.style.justifyItems = area.justify;
         for (const block of area.blks) cell.appendChild(renderLayoutBlock(block, ctx));
+        body.appendChild(cell);
+      }
+      return true;
+    },
+
+    frames(scene, ctx, body, L, resolved) {
+      const layout = resolved || resolveFrameLayout(scene, L);
+      if (!layout) return false;
+      body.dataset.layout = 'frames';
+      body.classList.add('layout-frames');
+      for (const frame of layout.frames) {
+        const cell = el('div', 'frame-area role-' + frame.role + ' block-' + String(frame.block.type || 'unknown') + (frame.clip ? ' is-clipped' : '') + (frame.interactive ? ' has-interaction' : ''));
+        cell.dataset.blockId = String(frame.block.id);
+        cell.dataset.plannedX = String(frame.x); cell.dataset.plannedY = String(frame.y);
+        cell.dataset.plannedW = String(frame.w); cell.dataset.plannedH = String(frame.h);
+        cell.style.left=frame.x+'px'; cell.style.top=frame.y+'px'; cell.style.width=frame.w+'px'; cell.style.height=frame.h+'px'; cell.style.zIndex=String(frame.z);
+        cell.appendChild(renderLayoutBlock(frame.block, ctx));
         body.appendChild(cell);
       }
       return true;
@@ -1949,7 +2014,30 @@
       sec.appendChild(g);
     }
     const pad = el('div', 'pad');
-    if (scene.kind === 'hero') {
+    const L = scene.layout || {};
+    const frames = resolveFrameLayout(scene, L);
+    const appendTitleContent = parent => {
+      if (scene.eyebrow) parent.appendChild(editField(el('div', 'eyebrow', inlineMd(scene.eyebrow)), 'eyebrow'));
+      if (scene.headline) {
+        const h = el('h2', 'headline', inlineMd(scene.headline));
+        if (scene.headlineSize) h.style.fontSize = scene.headlineSize + 'px';
+        parent.appendChild(editField(h, 'headline'));
+      }
+      if (scene.lead) parent.appendChild(editField(el('div', 'lead', inlineMd(scene.lead)), 'lead'));
+    };
+    if (frames) {
+      pad.classList.add('pad-frames');
+      const body = el('div', 'body');
+      if (frames.title) {
+        const title = el('header', 'frame-title');
+        title.dataset.plannedX=String(frames.title.x); title.dataset.plannedY=String(frames.title.y);
+        title.dataset.plannedW=String(frames.title.w); title.dataset.plannedH=String(frames.title.h);
+        title.style.left=frames.title.x+'px'; title.style.top=frames.title.y+'px'; title.style.width=frames.title.w+'px'; title.style.height=frames.title.h+'px'; title.style.zIndex=String(frames.title.z);
+        appendTitleContent(title); body.appendChild(title);
+      }
+      sceneLayouts.frames(scene, ctx, body, L, frames);
+      pad.appendChild(body);
+    } else if (scene.kind === 'hero') {
       pad.appendChild(renderBlock(scene.blocks[0], ctx));
     } else if (scene.kind === 'section') {
       /* 章节分隔页：章节序号 + 章节名 + 一句主旨(statement block)——给讲义打节拍、破"每页一个样"的单调。
@@ -1963,17 +2051,7 @@
          免得改了却写回不到正确字段。要改这类文字请回到那个 statement block。 */
       if (dekText) pad.appendChild(dek ? el('div', 'section-dek', inlineMd(dekText)) : editField(el('div', 'section-dek', inlineMd(dekText)), 'lead'));
     } else {
-      const L = scene.layout || {};
       const artboard = resolveArtboardLayout(scene, L);
-      const appendTitleContent = parent => {
-        if (scene.eyebrow) parent.appendChild(editField(el('div', 'eyebrow', inlineMd(scene.eyebrow)), 'eyebrow'));
-        if (scene.headline) {
-          const h = el('h2', 'headline', inlineMd(scene.headline));
-          if (scene.headlineSize) h.style.fontSize = scene.headlineSize + 'px';
-          parent.appendChild(editField(h, 'headline'));
-        }
-        if (scene.lead) parent.appendChild(editField(el('div', 'lead', inlineMd(scene.lead)), 'lead'));
-      };
       if (artboard) {
         pad.classList.add('pad-artboard');
         const body = el('div', 'body');
@@ -2028,6 +2106,7 @@
     /* sim/runnable/widget 的 body 按设计填满，作者显式 centered 也别覆盖 */
     if (['lab', 'runlab', 'widlab'].some(c => body.classList.contains(c))) return;
     if (body.dataset.layout) {
+      if (body.dataset.layout === 'frames') return;
       /* index/split/compose/full 等自定义版式不走下面"逐子元素求和"的测高(那套假设纵向单栏堆叠，
          compose 是二维 grid，子项可能同行并排，求和会重复计入)。但仍需要溢出保护——尤其 compose：
          chart/table 类块高度不随列宽收缩，size 换行到第二行时总高度可能超出可视区却没有任何裁切/警告，

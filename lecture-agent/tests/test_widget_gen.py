@@ -35,6 +35,10 @@ _GOOD_HTML = (
 _H1_HTML = "<style>.w{color:var(--ink)}</style><h1>正弦波交互式演示</h1>" + _GOOD_HTML
 # 硬错误：写了整页文档结构（doctype/html/head/body）——校验器给 error。
 _DOCTYPE_HTML = "<!doctype html><html><body><canvas></canvas></body></html>"
+_MODEL_HTML = _GOOD_HTML.replace(
+    "requestAnimationFrame(u);</script>",
+    "console.assert(1-0.1*2 < 1, 'damping reduces amplitude');requestAnimationFrame(u);</script>",
+)
 
 
 def test_visible_raw_tex_delimiters_are_rejected_from_widget_labels() -> None:
@@ -99,6 +103,23 @@ async def test_two_stage_produces_valid_widget() -> None:
     # 恰好一次 plan + 一次 build（首轮就干净，不该触发 repair）。
     purposes = [p for p, _ in llm.calls]
     assert purposes == ["widget:plan", "widget:build"]
+
+
+async def test_widget_build_receives_exact_external_viewport() -> None:
+    llm = FakeClient(by_purpose={"widget:plan": _CONTRACT, "widget:build": _genui_response(_GOOD_HTML)})
+    result = await generate_widget(
+        llm,
+        intent="演示阻尼单摆",
+        theme="lab",
+        topic="振动",
+        viewport={"width": 760, "height": 472, "aspectRatio": 1.61},
+    )
+    assert result.block is not None
+    build_messages = next(messages for purpose, messages in llm.calls if purpose == "widget:build")
+    prompt = build_messages[-1]["content"]
+    assert "760×472px" in prompt
+    assert "ResizeObserver" in prompt
+    assert "不得修改或建议修改外部 frame" in prompt
 
 
 async def test_complete_interaction_brief_skips_widget_plan() -> None:
@@ -412,25 +433,44 @@ _SKELETON_WIDGET = json.dumps(
         "title": "简谐振动",
         "language": "zh-CN",
         "theme": "lab",
+        "designBrief": {"audience": {"stage": "university"}, "purpose": "explanation", "density": "medium", "designDNA": {}},
         "scenes": [
             {
                 "id": "cover",
                 "kind": "hero",
                 "notes": "开场。",
-                "blocks": [{"id": "b0", "type": "hero", "intent": "封面"}],
+                "brief": {"objective": "进入主题", "learningAction": "orient", "requiredEvidence": "主题", "keyClaim": "主题", "misconception": "", "visualTask": "建立主题", "evidencePolicy": "none"},
+                "visualBrief": {"designIntent": "封面", "selectedCapabilities": ["hero"], "compositionFamily": "full-bleed-hero"},
+                "layout": {"kind": "frames", "canvas": {"width": 1280, "height": 720}, "titleFrame": None, "frames": [{"blockId": "b0", "x": 64, "y": 48, "w": 1152, "h": 624, "z": 1, "role": "primary", "clip": False}]},
+                "blocks": [{"id": "b0", "type": "hero", "role": "claim", "intent": "封面"}],
             },
             {
                 "id": "p1",
                 "kind": "content",
                 "headline": "阻尼单摆",
                 "notes": "演示。",
+                "brief": {"objective": "操纵阻尼并观察振幅", "learningAction": "manipulate", "requiredEvidence": "阻尼参数改变后轨迹连续重算", "keyClaim": "阻尼改变衰减", "misconception": "", "visualTask": "同屏显示单摆和振幅轨迹", "evidencePolicy": "derived"},
+                "visualBrief": {"designIntent": "交互主舞台", "selectedCapabilities": ["model-sim"], "compositionFamily": "interactive-stage"},
+                "layout": {"kind": "frames", "canvas": {"width": 1280, "height": 720}, "titleFrame": {"x": 64, "y": 32, "w": 1152, "h": 112, "z": 5}, "frames": [{"blockId": "bw", "x": 64, "y": 168, "w": 1152, "h": 488, "z": 1, "role": "primary", "clip": False}]},
                 "blocks": [
                     {
                         "id": "bw",
-                        "type": "sim",
-                        "engine": "widget",
+                        "type": "model-sim",
+                        "role": "visualization",
                         "intent": "演示阻尼单摆",
-                        "size": "xl",
+                        "interactionBrief": {
+                            "stateModel": [{"name": "damping", "type": "number", "range_or_values": "0..1", "initial": 0.1}],
+                            "controls": [{"trigger": "阻尼滑块", "effect": "重算轨迹"}],
+                            "update": "按阻尼参数重算位置和速度",
+                            "initialPaint": "显示单摆和初始轨迹",
+                            "visibleEncodings": [{"quantity": "振幅", "mark": "轨迹", "where": "主舞台"}],
+                            "history": "保留参考轨迹",
+                            "reset": "恢复 damping=0.1",
+                            "verificationCases": [{"input": "初态", "expected": "初始轨迹"}, {"input": "改变阻尼", "expected": "衰减改变"}, {"input": "复位", "expected": "恢复初态"}],
+                            "mathModel": {"formula": "x''+2ζωx'+ω²x=0", "screenMapping": "位置映射到摆角", "invariants": "同输入同输出"},
+                            "aestheticDirection": "lab-dark",
+                            "signatureDetail": "轨迹残影"
+                        },
                     }
                 ],
             },
@@ -445,7 +485,7 @@ async def test_skeleton_engine_widget_routes_to_subrecipe() -> None:
             "plan:skeleton": _SKELETON_WIDGET,
             "block:hero": json.dumps({"type": "hero", "title": ["简谐振动", "副题"]}),
             "widget:plan": _CONTRACT,
-            "widget:build": _genui_response(_GOOD_HTML),
+            "widget:build": _genui_response(_MODEL_HTML),
             "notes": json.dumps(
                 {"note": "本页演示阻尼对摆幅衰减的影响，注意二阶系统需两个状态变量。"}
             ),
@@ -463,4 +503,4 @@ async def test_skeleton_engine_widget_routes_to_subrecipe() -> None:
     # 证明走了子配方（widget:build 被调），没走通用 block:sim。
     purposes = [p for p, _ in llm.calls]
     assert "widget:build" in purposes and "block:sim" not in purposes
-    assert result.widget_routes == [{"blockId": "bw", "profile": "state", "route": "slow-plan"}]
+    assert result.widget_routes == [{"blockId": "bw", "profile": "model", "route": "fast-build"}]

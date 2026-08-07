@@ -553,8 +553,7 @@ def _enforce_learning_evidence_routes(
             main["size"] = "xl"
             main["intent"] = (
                 str(main.get("intent") or brief.get("visualTask") or "交互探索")
-                + "；首帧以最小有效结构完整呈现 step=0 前态，不能用空树、空画布、网格或状态文字代替证据；"
-                "提供单步/复位或真实可操作输入，保留前后状态并突出变化"
+                + "；首帧完整呈现本页 requiredEvidence；提供与本页模型一致的真实操作和确定性复位"
             )
             initial_state = str(brief.get("requiredEvidence") or brief.get("visualTask") or "完整初态")
             transition = str(brief.get("visualTask") or brief.get("objective") or "一次真实状态转移")
@@ -600,10 +599,8 @@ def _enforce_learning_evidence_routes(
                     ],
                     "update": transition,
                     "initialPaint": (
-                        f"step=0 时完整可见：{initial_state}。必须预载理解下一次转移所需的最小有效结构；"
-                        "结构状态至少包含 3 个有意义的证据标记；树/图/数组必须有足够的带标签实体与关系，"
-                        "旋转前态至少显示三个参与节点及其边。禁止单个占位节点、EMPTY_TREE、空画布，"
-                        "装饰网格、坐标轴、水印和状态文字不算初态证据"
+                        f"step=0 时完整可见本页声明的初态证据：{initial_state}。"
+                        "具体实体、关系与不变量只能来自当前页面 brief，禁止注入其它学科的结构模板"
                     ),
                     "visibleEncodings": [
                         {"quantity": "本步发生变化的状态或结构", "mark": "强调色高亮", "where": "主舞台"}

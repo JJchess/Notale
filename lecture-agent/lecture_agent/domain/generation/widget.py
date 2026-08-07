@@ -300,7 +300,8 @@ def compile_interaction_brief(
 
 
 def _build_prompt(
-    *, intent: str, topic: str, theme: str, language: str, contract: str, guidelines: str
+    *, intent: str, topic: str, theme: str, language: str, contract: str, guidelines: str,
+    viewport: dict[str, Any] | None = None,
 ) -> str:
     anchor = f"所在讲义课题：「{topic}」。" if topic else ""
     query = f"{anchor}本互动组件的教学意图：{intent}。用户可见文案语言：{language}。"
@@ -313,6 +314,17 @@ def _build_prompt(
         recent_context="",
         plan=contract,
     )
+    viewport_text = ""
+    if viewport:
+        width = float(viewport.get("width") or 0)
+        height = float(viewport.get("height") or 0)
+        viewport_text = f"""
+- 本组件的外部 viewport 是不可修改的 `{width:g}×{height:g}px`（aspect ratio {width / height:.3f}）。
+  这是生成硬契约，不是建议尺寸。根节点必须精确填满它；内部优先使用 CSS grid/flex 的
+  `auto minmax(0,1fr) auto`，主舞台吸收剩余空间。SVG 使用响应式 viewBox；canvas 使用父容器
+  实测尺寸与 devicePixelRatio，并通过 ResizeObserver 重绘。禁止固定 canvas/SVG/Plot 宽高、固定
+  min-height、内部滚动、裁切和通过缩小字号塞入内容；可见文字不得小于 14px。
+"""
     return base + f"""
 
 ---
@@ -328,6 +340,9 @@ LectureDoc host adapter（与通用 GenUI 规则冲突时，以这里为准）�
   大面积页面底色仍跟随 host token。禁止全局 CSS、禁止污染 LectureDoc 主题。
 - iframe 固定高度且 overflow:hidden：根节点必须 width:100%; height:100%; min-width:0; min-height:0；不得依赖内容撑高，
   不得出现内部滚动条。主舞台优先占据可用高度，控件/读数保持紧凑。
+{viewport_text}
+- 通用 GenUI 中“iframe 由内容撑高 / 让高度随内容增长”的假设不适用于 Lecture host；发生冲突时，必须服从
+  上述固定外部 viewport。不得修改或建议修改外部 frame。
 - 纯离线 vanilla，禁 CDN、import、fetch、Chart.js 及任何外部资源。
 - 数学/算法视觉必须把 math_model 写成独立纯函数，并用 verification_cases 在初始化时执行 console.assert；
   屏幕映射、箭头方向、曲线变量必须由这些函数生成，不能另画装饰路径。
@@ -381,6 +396,7 @@ async def generate_widget(
     material: str = "",
     guidelines: str = "",
     preplanned_contract: dict[str, Any] | None = None,
+    viewport: dict[str, Any] | None = None,
     rounds: int = 3,
 ) -> BlockResult:
     """Generate a widget, skipping ``widget:plan`` when a compiled contract is valid."""
@@ -440,6 +456,7 @@ async def generate_widget(
                 language=language,
                 contract=contract_str,
                 guidelines=guidelines,
+                viewport=viewport,
             ),
         },
     ]
@@ -509,6 +526,7 @@ async def repair_widget(
     language: str = "zh-CN",
     topic: str = "",
     guidelines: str = "",
+    viewport: dict[str, Any] | None = None,
     rounds: int = 2,
 ) -> BlockResult:
     """质量门针对现有 widget 的代码级修复；复用 spec，避免再次 plan→build 整页重做。"""
@@ -518,6 +536,15 @@ async def repair_widget(
     direction = str(spec.get("aesthetic_direction") or "host-calm")
     direction_key = direction if direction in DIRECTIONS else "host-calm"
     direction_guidance = DIRECTIONS[direction_key].spec_block
+    viewport_text = ""
+    if viewport:
+        width = float(viewport.get("width") or 0)
+        height = float(viewport.get("height") or 0)
+        viewport_text = (
+            f"目标外部 viewport 为不可修改的 {width:g}×{height:g}px（aspect ratio "
+            f"{width / height:.3f}）。根节点必须 width:100%;height:100%；主舞台使用剩余空间；"
+            "SVG/canvas 必须根据容器实测尺寸响应式重绘，禁止固定尺寸、滚动、裁切或改 frame。"
+        )
     prompt = f"""所在讲义课题：「{topic}」。用户可见文案语言：{language}；主题：{theme}。
 下面是已生成 widget 的设计契约、HTML 与逐页质量门问题。保持核心教学目标和现有控件，不重新规划页面；
 直接修正代码/文案/数学映射。所有颜色继续读取 --token。数学问题必须增加或修正纯函数与 console.assert 验证例。
@@ -533,6 +560,9 @@ async def repair_widget(
 必须修正：
 {issues}
 
+尺寸硬契约：
+{viewport_text}
+
 现有 HTML：
 {fragment}
 
@@ -542,7 +572,7 @@ LectureDoc 宿主硬约束：保持自包含 HTML 片段；零依赖、禁网络
 初始/最小/最大状态均须 finite、非空、可读。只能引用宿主提供的 --bg/--bg2/--card/--ink/--text2/
 --accent/--accent2/--line 等 token，其他 CSS 变量必须在 widget 内定义或提供 var() fallback；禁止未定义
 token 使 SVG 形状与文字一起回落成黑色。可见文字不得小于 12px，控件至少 13px，核心状态标签至少
-14px。修复后逐项自查原问题确实从 DOM/CSS/JS 中消失，不能只改说明文案。
+14px。通用 GenUI 的内容撑高 iframe 假设在此无效。修复后逐项自查原问题确实从 DOM/CSS/JS 中消失，不能只改说明文案。
 
 调用方额外规范（若有）：
 {guidelines}

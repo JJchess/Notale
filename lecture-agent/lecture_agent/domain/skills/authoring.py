@@ -14,6 +14,7 @@ AUTHORING_RULES = """硬规则(违反会被校验/打回)：
 - 中文排版：中文句全角标点；汉字与拉丁/数字间空格(如 2026 年、AI 产品)；中文标签不做 uppercase。
 - 多个并列要点用 agenda(逐行等高)，别把两个不等高的块并排；compare 只用于左右天然对称内容。
 - **可读性预算是 contract，不靠 viewer 缩小补救**：diagram/graph 节点只写短标签，不塞段落；chart 图内最多 6 个标签、caption 只留来源/口径/一句结论；静态 code≤42 行，runnable 可见 starter≤60 行，脚手架移入 preamble。
+- **frames viewport 是生成硬契约**：页级上下文给出 currentBlockId/viewport/constraints 时，block 必须针对精确 width×height 组织内部内容。外部 frame 不可修改；禁止固定画布尺寸、滚动、裁切或等待 Viewer 缩放。primary block 的主证据应使用主体区域，不能只挤在顶部。SVG/图表按长宽比响应式布局；表格、公式、测验按可用高度控制内容密度，可见文字不得小于 constraints.minTextPx。
 - formula.latex 已是 display math，禁止再包 $/$$、\\[...\\] 或 \\(...\\)；多行推导用 aligned/gathered。
 - sim 优先 dynamics1d/searchCompare；表达式只能用白名单标识符+数学函数。
 - **动效克制使用**：block 可选 `"fragment"`（`true` 或 reveal 类型名如 `"fade-up"`/`"highlight-red"`/`"grow"`），\

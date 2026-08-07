@@ -54,7 +54,9 @@ def test_compose_areas_from_sizes_preserves_block_ids() -> None:
 
 def test_skeleton_prompt_is_description_driven() -> None:
     registry, planning = load_skill_catalog()
-    spec = _skeleton_spec(8, plan_menu(registry, planning), "", theme_menu(), "", "AUTH")
+    spec = _skeleton_spec(
+        8, plan_menu(registry, planning), "", theme_menu(), "", "AUTH", absolute_frames=True
+    )
     # ① 描述菜单在场（组件家族的 description 被真正塞进 plan 提示，而非裸类型名）。
     assert "可选组件" in spec
     assert "Reach for it" in spec  # 来自打磨后的 sim/runnable/chart/quiz 描述
@@ -68,6 +70,29 @@ def test_skeleton_prompt_is_description_driven() -> None:
     assert "装饰模板冒充数学图" in spec
     assert '"initial":0' in spec
     assert "纯文字不能冒充视觉证据" in spec
+    assert 'layout.kind:"frames"' in spec
+    assert "1280×720" in spec
+    assert "x/y/w/h/z/role/clip" in spec
+    assert '"size"' not in spec
+    assert "xl" not in spec
+
+
+def test_assign_layouts_never_mixes_legacy_geometry_into_frames_document() -> None:
+    doc = {
+        "scenes": [
+            {
+                "id": "p1", "kind": "content", "blocks": [_block("a")],
+                "layout": {
+                    "kind": "frames", "canvas": {"width": 1280, "height": 720},
+                    "titleFrame": {"x": 64, "y": 40, "w": 1152, "h": 100, "z": 5},
+                    "frames": [{"blockId": "a", "x": 64, "y": 160, "w": 1152, "h": 496, "z": 1, "role": "primary", "clip": False}],
+                },
+            },
+            {"id": "p2", "kind": "content", "blocks": [_block("b")]},
+        ]
+    }
+    assert assign_layouts(doc) == 0
+    assert "layout" not in doc["scenes"][1]
 
 
 def test_skeleton_prompt_drops_interactive_suppression() -> None:

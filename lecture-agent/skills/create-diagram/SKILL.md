@@ -14,6 +14,8 @@ Choose the smallest visual grammar that preserves the evidence:
 
 Keep one dominant reading path, short node titles, consistent alignment, and sufficient whitespace. Labels explain relationships; decoration must not compete with topology. Never use a diagram to fake coordinates, quantitative trends, algorithm animation, or before/after state evidence. Route those to chart or the appropriate sim profile.
 
+When the page context includes an exact `viewport`, treat it as immutable. Select the internal direction from its aspect ratio: wide frames favor horizontal flow or shallow hierarchy; near-square frames favor 2×2/cycle/center-surround; narrow frames favor vertical flow or hierarchy. SVG-based renderers must derive their viewBox from the allocated width and height, keep all nodes and arrowheads inside it, and avoid fixed pixel canvases. Do not ask the host to resize the frame.
+
 Keep topology and chronology as separate evidence grammars:
 
 - A `graph` edge states one invariant relationship in the visible structure, such as parent/child, L/R, dependency, or yes/no. It must not simultaneously mean "insert next", "rotate", "becomes", or another action over time.

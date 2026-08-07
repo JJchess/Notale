@@ -480,6 +480,29 @@ function checkLayout(s, path) {
   if (Array.isArray(L.steps)) L.steps.forEach((st, i) => { if (isObj(st) && Array.isArray(st.blockIds)) st.blockIds.forEach(id => chk(id, p + `.steps[${i}].blockIds`)); });
   if (Array.isArray(L.anchor)) L.anchor.forEach(id => chk(id, p + '.anchor'));
   if (Array.isArray(L.areas)) L.areas.forEach((a, i) => { if (isObj(a) && Array.isArray(a.blockIds)) a.blockIds.forEach(id => chk(id, p + `.areas[${i}].blockIds`)); });
+  if (L.kind === 'frames') {
+    if (!isObj(L.canvas) || L.canvas.width !== 1280 || L.canvas.height !== 720) err(p + '.canvas', 'frames 画布必须固定为 1280×720');
+    const needsTitle = ['content', 'quiz', 'statement'].includes(s.kind);
+    if (needsTitle && !isObj(L.titleFrame)) err(p + '.titleFrame', 'content/quiz/statement 的 frames 布局必须声明 titleFrame');
+    if (['hero', 'section'].includes(s.kind) && L.titleFrame != null) err(p + '.titleFrame', 'hero/section 的 titleFrame 必须为空');
+    const finiteRect = v => isObj(v) && ['x','y','w','h'].every(k => Number.isFinite(v[k])) && v.x >= 0 && v.y >= 0 && v.w > 0 && v.h > 0;
+    if (L.titleFrame != null && !finiteRect(L.titleFrame)) err(p + '.titleFrame', 'x/y/w/h 必须有限，且 x/y >= 0、w/h > 0');
+    const used = new Set();
+    for (const [i, frame] of (Array.isArray(L.frames) ? L.frames : []).entries()) {
+      const fp = p + `.frames[${i}]`;
+      if (!isObj(frame) || !finiteRect(frame)) { err(fp, 'frame 必须声明合法 x/y/w/h'); continue; }
+      if (!ids.has(frame.blockId)) err(fp + '.blockId', '引用了不存在的 block id: ' + frame.blockId);
+      if (used.has(frame.blockId)) err(fp + '.blockId', 'block 被重复放置: ' + frame.blockId);
+      used.add(frame.blockId);
+      const block = (s.blocks || []).find(b => b && b.id === frame.blockId) || {};
+      if (frame.clip === true && frame.role !== 'decoration' && !['media','video'].includes(block.type)) err(fp + '.clip', 'clip:true 只允许 media、video 或 decoration');
+      if (frame.x + frame.w > 1280 || frame.y + frame.h > 720) warn(fp, 'frame 超出 1280×720；预览保留该失败');
+    }
+    if (!Array.isArray(L.frames)) err(p + '.frames', 'frames 必须是数组');
+    const missing = [...ids].filter(id => !used.has(id));
+    if (missing.length) err(p, 'frames 未放置 block：' + missing.join(', '));
+    return;
+  }
   if (L.kind !== 'artboard') return;
   const cols = Number.isInteger(L.columns) ? L.columns : 12;
   const rows = Number.isInteger(L.rows) ? L.rows : 12;

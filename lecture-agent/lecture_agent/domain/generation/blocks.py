@@ -25,7 +25,11 @@ _SYS = (
     "或明确标注为「示意/合成数据」。禁止为了显得具体而编造来源。图形类型必须真实编码 visualTask 的关系，"
     "不能用装饰形状冒充坐标、轨迹、梯度或因果关系。同页 sibling blocks 是并发生成的："
     "不得臆测兄弟块会采用的具体衰减因子、阈值、步数或数据；若共享数值未在页 brief/intent 明定，"
-    f"就使用符号描述或不举数值例子，避免跨块互相矛盾。\n{AUTHORING_RULES}"
+    "就使用符号描述或不举数值例子，避免跨块互相矛盾。若页级契约包含 currentBlockId、viewport 与 "
+    "constraints，它们是不可修改的外部几何硬契约：输出内容必须为该精确宽高设计，填满可用区域，禁止滚动、"
+    "裁切、固定画布尺寸或假设由内容撑高；不得修改 frame，也不得把尺寸问题推给 Viewer。primary block 应让"
+    "核心证据占据主体区域，避免只在顶部堆一小段内容。图表、SVG、表格、公式和测验都要按 viewport 长宽比"
+    f"选择内部结构并保证可见文字不小于 constraints.minTextPx。\n{AUTHORING_RULES}"
 )
 _BLOCK_INITIAL_TIMEOUT_S = 360.0
 _BLOCK_REPAIR_TIMEOUT_S = 240.0
@@ -58,6 +62,7 @@ async def generate_block(
     rounds: int = 3,
     tools: dict[str, Tool] | None = None,
     purpose_namespace: str = "",
+    timeout_s: float | None = None,
 ) -> BlockResult:
     """生成并自校验一个 block。初次 + (rounds-1) 次自修。
 
@@ -91,6 +96,8 @@ async def generate_block(
     for rnd in range(1, rounds + 1):
         last = rnd == rounds
         call_timeout = _BLOCK_INITIAL_TIMEOUT_S if rnd == 1 else _BLOCK_REPAIR_TIMEOUT_S
+        if timeout_s is not None:
+            call_timeout = min(call_timeout, max(1.0, float(timeout_s)))
         try:
             use_tools = rnd == 1 and tools and isinstance(llm, ToolCallingLLM)
             if use_tools:

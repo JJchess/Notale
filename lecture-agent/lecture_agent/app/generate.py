@@ -19,6 +19,7 @@ from omegaconf import DictConfig, OmegaConf
 
 from ..adapters.render import HeadlessVerifier
 from ..adapters.store import FilesystemStore, LedgerStore
+from ..domain.planning import PlanValidationError
 from ..domain.telemetry import profile_deck
 from ..engine import GenerateResult, generate_lecture
 from ..ports.media import ImageFinder, ImageGenerator
@@ -105,23 +106,41 @@ async def run_generation(
     visual_reviewer = build_visual_reviewer(cfg)
     shot_dir = output_root / "screenshots" if visual_reviewer is not None else None
     started = time.perf_counter()
-    result = await generate_lecture(
-        llm,
-        topic=str(topic),
-        pages=int(cfg.get("pages", 8)),
-        theme=str(cfg.get("theme", "") or ""),
-        audience=str(cfg.get("audience", "") or ""),
-        wants=str(cfg.get("wants", "") or ""),
-        extra=str(cfg.get("extra", "") or ""),
-        coverage=bool(cfg.get("coverage", False)),
-        options=options,
-        image_finder=image_finder,
-        image_generator=image_generator,
-        render_verifier=build_render_verifier(cfg, shot_dir=shot_dir),
-        visual_reviewer=visual_reviewer,
-        log=log.info,
-        progress=progress,
-    )
+    try:
+        result = await generate_lecture(
+            llm,
+            topic=str(topic),
+            pages=int(cfg.get("pages", 8)),
+            theme=str(cfg.get("theme", "") or ""),
+            audience=str(cfg.get("audience", "") or ""),
+            wants=str(cfg.get("wants", "") or ""),
+            extra=str(cfg.get("extra", "") or ""),
+            coverage=bool(cfg.get("coverage", False)),
+            options=options,
+            image_finder=image_finder,
+            image_generator=image_generator,
+            render_verifier=build_render_verifier(cfg, shot_dir=shot_dir),
+            visual_reviewer=visual_reviewer,
+            log=log.info,
+            progress=progress,
+        )
+    except PlanValidationError as exc:
+        output_root.mkdir(parents=True, exist_ok=True)
+        (output_root / "planning-failure.json").write_text(
+            json.dumps(
+                {
+                    "topic": str(topic),
+                    "pagesTarget": int(cfg.get("pages", 8)),
+                    "attempts": exc.attempts,
+                    "validationErrors": exc.errors,
+                    "lastPlan": exc.doc,
+                },
+                ensure_ascii=False,
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+        raise
     elapsed_s = time.perf_counter() - started
     store = FilesystemStore(output_root)
     store.save_deck(str(result.doc.get("id", "lecture")), result.doc)
@@ -141,12 +160,20 @@ async def run_generation(
                 "layoutDiagnostics": result.layout_diagnostics,
                 "layoutDecisions": result.layout_decisions,
                 "layoutSplits": result.layout_splits,
+                "viewportDiagnostics": result.viewport_diagnostics,
+                "viewportFailures": result.viewport_failures,
+                "plannedSkeletonSignature": result.planned_skeleton_signature,
             },
             ensure_ascii=False,
             indent=2,
         ),
         encoding="utf-8",
     )
+    if result.planned_skeleton is not None:
+        (output_root / "planning.json").write_text(
+            json.dumps(result.planned_skeleton, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
 
     if options.record:
         _record_experiment(cfg, result, elapsed_s, usage_of(llm))

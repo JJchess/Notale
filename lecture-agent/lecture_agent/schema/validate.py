@@ -773,6 +773,68 @@ def _check_layout(s: dict[str, Any], path: str, r: Result) -> None:
             for bid in a.get("blockIds", []) or []:
                 chk(bid, f"{p}.areas[{i}].blockIds")
 
+    if layout.get("kind") == "frames":
+        canvas = layout.get("canvas")
+        if not isinstance(canvas, dict) or canvas.get("width") != 1280 or canvas.get("height") != 720:
+            r.err(f"{p}.canvas", "frames 画布必须固定为 1280×720")
+        title = layout.get("titleFrame")
+        needs_title = s.get("kind") in {"content", "quiz", "statement"}
+        if needs_title and not isinstance(title, dict):
+            r.err(f"{p}.titleFrame", "content/quiz/statement 的 frames 布局必须声明 titleFrame")
+        if s.get("kind") in {"hero", "section"} and title is not None:
+            r.err(f"{p}.titleFrame", "hero/section 的标题由唯一 block 承载，titleFrame 必须为空")
+
+        block_map = {
+            str(b.get("id")): b for b in (s.get("blocks") or [])
+            if isinstance(b, dict) and b.get("id") is not None
+        }
+        referenced: set[str] = set()
+        rects: list[tuple[float, float, float, float, int, str, str]] = []
+        frames = layout.get("frames")
+        if not isinstance(frames, list):
+            r.err(f"{p}.frames", "frames 必须是数组")
+            frames = []
+        import math
+        for i, frame in enumerate(frames):
+            fp = f"{p}.frames[{i}]"
+            if not isinstance(frame, dict):
+                r.err(fp, "frame 必须是对象")
+                continue
+            bid = str(frame.get("blockId") or "")
+            if bid not in block_map:
+                r.err(f"{fp}.blockId", f"引用了不存在的 block id: {bid}")
+            elif bid in referenced:
+                r.err(f"{fp}.blockId", f"block {bid} 被重复放置")
+            referenced.add(bid)
+            values = [frame.get(k) for k in ("x", "y", "w", "h")]
+            if not all(isinstance(v, (int, float)) and math.isfinite(float(v)) for v in values):
+                r.err(fp, "x/y/w/h 必须是有限数值")
+                continue
+            x, y, w, h = (float(v) for v in values)
+            if x < 0 or y < 0 or w <= 0 or h <= 0:
+                r.err(fp, "必须满足 x/y >= 0 且 w/h > 0")
+                continue
+            block = block_map.get(bid) or {}
+            role = str(frame.get("role") or "support")
+            if frame.get("clip") is True and role != "decoration" and block.get("type") not in {"media", "video"}:
+                r.err(f"{fp}.clip", "clip:true 只允许 media、video 或 decoration")
+            if x + w > 1280 or y + h > 720:
+                r.warn(fp, "frame 超出 1280×720 画布；实验将保留并在浏览器中显示失败")
+            rects.append((x, y, x + w, y + h, int(frame.get("z") or 1), role, bid))
+        missing = set(block_map) - referenced
+        if missing:
+            r.err(p, "frames 未放置 block：" + ", ".join(sorted(missing)))
+        for i, first in enumerate(rects):
+            if first[5] == "decoration":
+                continue
+            for second in rects[i + 1:]:
+                if second[5] == "decoration":
+                    continue
+                overlap = first[0] < second[2] and second[0] < first[2] and first[1] < second[3] and second[1] < first[3]
+                if overlap:
+                    r.warn(p, f"frame {first[6]} 与 {second[6]} 重叠；实验将保留该失败")
+        return
+
     if layout.get("kind") != "artboard":
         return
 

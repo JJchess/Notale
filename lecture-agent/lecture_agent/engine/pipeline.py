@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import re
 from collections.abc import Callable
+from copy import deepcopy
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -16,13 +17,14 @@ from ..domain.assemble import fill_blocks
 from ..domain.design import (
     compile_scene_composition,
     compile_visual_system,
+    frame_layout_signature,
     hard_layout_failures,
     layout_signature,
     pagination_failures,
     solve_document_layouts,
     split_failed_scenes,
 )
-from ..domain.evaluation import check_coverage, refine_plan, replan_page, review_page
+from ..domain.evaluation import check_coverage, replan_page, review_page
 from ..domain.evaluation.visual_quality import preflight_page_metrics
 from ..domain.generation import (
     BlockResult,
@@ -36,6 +38,7 @@ from ..domain.generation import (
     repair_widget,
 )
 from ..domain.media import attach_icons
+from ..domain.plan_validation import plan_skeleton_signature
 from ..domain.planning import assign_layouts, plan_lecture
 from ..domain.skills import (
     AUTHORING_RULES,
@@ -57,6 +60,64 @@ from ..schema.validate import validate_doc
 from ..utils.concurrency import pool
 
 _BLOCK_ERR = re.compile(r"\$\.scenes\[(\d+)\]\.blocks\[(\d+)\]")
+
+
+def _frame_structure_problems(doc: dict[str, Any]) -> list[str]:
+    problems: list[str] = []
+    if not any(
+        isinstance(scene, dict)
+        and isinstance(scene.get("layout"), dict)
+        and scene["layout"].get("kind") == "frames"
+        for scene in (doc.get("scenes") or [])
+    ):
+        return problems
+    for index, scene in enumerate(doc.get("scenes") or []):
+        if not isinstance(scene, dict):
+            continue
+        sid = str(scene.get("id") or f"page-{index + 1}")
+        layout = scene.get("layout")
+        if not isinstance(layout, dict) or layout.get("kind") != "frames":
+            problems.append(f"{sid}: 缺 layout.kind=frames")
+            continue
+        ids = [str(block.get("id") or "") for block in (scene.get("blocks") or []) if isinstance(block, dict)]
+        refs = [str(frame.get("blockId") or "") for frame in (layout.get("frames") or []) if isinstance(frame, dict)]
+        if len(refs) != len(ids) or sorted(refs) != sorted(ids) or len(set(refs)) != len(refs):
+            problems.append(f"{sid}: frame/block ID 映射不完整或重复 blocks={ids} frames={refs}")
+        needs_title = scene.get("kind") in {"content", "quiz", "statement"}
+        if needs_title != isinstance(layout.get("titleFrame"), dict):
+            problems.append(f"{sid}: titleFrame 与 scene kind 不匹配")
+        canvas = layout.get("canvas")
+        if not isinstance(canvas, dict) or canvas.get("width") != 1280 or canvas.get("height") != 720:
+            problems.append(f"{sid}: canvas 不是 1280x720")
+    return problems
+
+
+def _planning_ownership_problems(
+    doc: dict[str, Any], placeholder_specs: dict[str, dict[str, Any]]
+) -> list[str]:
+    """Detect post-freeze block additions, removals, or type substitutions."""
+
+    current = {
+        str(block.get("id") or ""): block
+        for scene in (doc.get("scenes") or [])
+        if isinstance(scene, dict)
+        for block in (scene.get("blocks") or [])
+        if isinstance(block, dict) and block.get("id")
+    }
+    expected_ids = set(placeholder_specs)
+    current_ids = set(current)
+    problems: list[str] = []
+    if current_ids != expected_ids:
+        problems.append(
+            f"block ID 集合改变 missing={sorted(expected_ids - current_ids)} "
+            f"added={sorted(current_ids - expected_ids)}"
+        )
+    for block_id in sorted(expected_ids & current_ids):
+        expected_type = str(placeholder_specs[block_id].get("type") or "")
+        current_type = str(current[block_id].get("type") or "")
+        if current_type != expected_type:
+            problems.append(f"{block_id}: block type 被改写 {expected_type} -> {current_type}")
+    return problems
 
 
 def _skill_decision_descriptions(
@@ -99,9 +160,11 @@ class GeneratorOptions:
     render_rounds: int = 2
     # 逐页六维语义审查→定点回炉轮数；full 配置开启，fast/single-pass 可关以控时延。
     quality_rounds: int = 0
-    plan_quality_rounds: int = 0
+    plan_quality_rounds: int = 0  # deprecated: absolute-frame planning validates in-context
     # 最终像素级视觉审查/定点修复轮数；依赖注入 VisualReviewer 与截图型 verifier。
     visual_quality_rounds: int = 0
+    # New authoring path.  False is retained only for rendering/testing legacy non-frame docs.
+    absolute_frames: bool = True
 
 
 @dataclass
@@ -120,6 +183,10 @@ class GenerateResult:
     layout_diagnostics: list[dict[str, Any]] = field(default_factory=list)
     layout_decisions: list[dict[str, Any]] = field(default_factory=list)
     layout_splits: list[dict[str, Any]] = field(default_factory=list)
+    planned_skeleton: dict[str, Any] | None = None
+    viewport_diagnostics: list[dict[str, Any]] = field(default_factory=list)
+    viewport_failures: list[dict[str, Any]] = field(default_factory=list)
+    planned_skeleton_signature: str = ""
 
 
 def _page_brief(scene: dict[str, Any]) -> dict[str, str]:
@@ -168,12 +235,36 @@ def _page_visual_brief(scene: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _block_viewport(scene: dict[str, Any], block_id: str) -> dict[str, Any] | None:
+    layout_value = scene.get("layout")
+    layout = layout_value if isinstance(layout_value, dict) else {}
+    if layout.get("kind") != "frames":
+        return None
+    frame = next(
+        (
+            item for item in (layout.get("frames") or [])
+            if isinstance(item, dict) and str(item.get("blockId") or "") == block_id
+        ),
+        None,
+    )
+    if frame is None:
+        return None
+    width = float(frame.get("w") or 0)
+    height = float(frame.get("h") or 0)
+    return {
+        "width": width,
+        "height": height,
+        "aspectRatio": round(width / height, 4) if height > 0 else None,
+    }
+
+
 def _block_scene_context(
     scene: dict[str, Any],
     brief: dict[str, str],
     placeholders: list[dict[str, Any]],
     visual_brief: dict[str, Any] | None = None,
     design_brief: dict[str, Any] | None = None,
+    current_block_id: str | None = None,
 ) -> str:
     """给 fan-out 子任务共享同一份页契约，避免每块只凭标题各自猜题。"""
     siblings = [
@@ -182,10 +273,42 @@ def _block_scene_context(
             "type": b.get("type"),
             "role": b.get("role") or "support",
             "intent": b.get("intent") or "",
-            "size": b.get("size") or "m",
         }
         for b in placeholders
     ]
+    layout_value = scene.get("layout")
+    layout = layout_value if isinstance(layout_value, dict) else {}
+    frames = list(layout.get("frames") or []) if layout.get("kind") == "frames" else []
+    current_id = str(current_block_id or (placeholders[0].get("id") if len(placeholders) == 1 else ""))
+    current_placeholder = next(
+        (block for block in placeholders if str(block.get("id") or "") == current_id), {}
+    )
+    current_frame = next(
+        (frame for frame in frames if isinstance(frame, dict) and str(frame.get("blockId") or "") == current_id),
+        None,
+    )
+    viewport = None
+    frame_role = str(current_placeholder.get("role") or "support")
+    constraints = None
+    if current_frame is not None:
+        width = float(current_frame.get("w") or 0)
+        height = float(current_frame.get("h") or 0)
+        frame_role = str(current_frame.get("role") or frame_role)
+        allow_clip = bool(current_frame.get("clip")) and str(current_placeholder.get("type") or "") in {
+            "media", "video", "decoration"
+        }
+        viewport = {
+            "width": width,
+            "height": height,
+            "aspectRatio": round(width / height, 4) if height > 0 else None,
+        }
+        constraints = {
+            "fillWidth": True,
+            "fillHeight": True,
+            "allowScroll": False,
+            "allowClip": allow_clip,
+            "minTextPx": 14,
+        }
     payload = {
         "page": {
             "kind": scene.get("kind"),
@@ -196,6 +319,17 @@ def _block_scene_context(
         "brief": brief,
         "visualBrief": visual_brief or {},
         "designBrief": design_brief or {},
+        "currentBlockId": current_id or None,
+        "viewport": viewport,
+        "frameRole": frame_role,
+        "constraints": constraints,
+        "frame": current_frame,
+        "siblingFrames": [
+            {key: frame.get(key) for key in ("blockId", "x", "y", "w", "h", "z", "role", "clip")}
+            for frame in frames
+            if isinstance(frame, dict) and str(frame.get("blockId") or "") != current_id
+        ],
+        "frames": frames,
         "siblingPlan": siblings,
     }
     return (
@@ -318,6 +452,7 @@ async def _doc_repair(
                     topic=topic,
                     material=material,
                     guidelines=load_widget_guidelines(reg.dir),
+                    viewport=_block_viewport(doc["scenes"][si], str(cur.get("id") or "")),
                 )
                 if r.block:
                     r.block["id"] = cur.get("id")
@@ -364,7 +499,14 @@ async def _quality_repair(
     """逐页完整审查：块内错误定点修；类型/布局错误整页重规划后重生。"""
     warnings: list[str] = []
     latest: dict[str, dict[str, Any]] = {}
-    scenes = doc.get("scenes") or []
+    scenes = [
+        scene for scene in (doc.get("scenes") or [])
+        if not (
+            isinstance(scene, dict)
+            and isinstance(scene.get("layout"), dict)
+            and scene["layout"].get("kind") == "frames"
+        )
+    ]
     active_scene_ids = {str(scene.get("id") or "?") for scene in scenes}
     last_changed: set[str] = set()
     # 只有成功换型才锁定；格式/校验/生成失败不应耗掉该页唯一一次重新编译机会。
@@ -434,18 +576,18 @@ async def _quality_repair(
             lower_planning_placeholder(dict(block), planning)
             for block in (skeleton.get("blocks") or [])
         ]
-        scene_ctx = _block_scene_context(
-            skeleton,
-            new_brief,
-            placeholders,
-            visual_brief=new_visual_brief,
-        )
-
         async def generate_one(ph: dict[str, Any], _i: int) -> tuple[dict[str, Any], BlockResult]:
             reg = registry.get(str(ph.get("type") or ""))
             if reg is None:
                 return ph, BlockResult(None, f"无技能处理 type {ph.get('type')}")
             progress({"type": "block", "blockId": ph.get("id"), "sceneId": sid, "status": "active"})
+            scene_ctx = _block_scene_context(
+                skeleton,
+                new_brief,
+                placeholders,
+                visual_brief=new_visual_brief,
+                current_block_id=str(ph.get("id") or ""),
+            )
             if ph.get("type") == "sim" and ph.get("engine") == "widget":
                 profile = str(ph.get("_simProfile") or "state")
                 preplanned, problem = compile_interaction_brief(
@@ -469,6 +611,7 @@ async def _quality_repair(
                     material=material,
                     guidelines=load_widget_guidelines(reg.dir),
                     preplanned_contract=preplanned,
+                    viewport=_block_viewport(skeleton, str(ph.get("id") or "")),
                 )
             else:
                 result = await generate_block(
@@ -627,7 +770,9 @@ async def _quality_repair(
                 f"- [{x['severity']}] {x['problem']}；修法：{x['instruction']}" for x in issues
             )
             brief = page_briefs.get(str(scene.get("id")), _page_brief(scene))
-            scene_ctx = _block_scene_context(scene, brief, list(scene.get("blocks") or []))
+            scene_ctx = _block_scene_context(
+                scene, brief, list(scene.get("blocks") or []), current_block_id=block_id
+            )
             scene_ctx += "\n当前整页真实内容：\n" + json.dumps(scene, ensure_ascii=False)
             intent = (
                 str(spec.get("intent") or "保持原教学意图")
@@ -645,6 +790,7 @@ async def _quality_repair(
                     language=str(doc.get("language") or "zh-CN"),
                     topic=topic,
                     guidelines=load_widget_guidelines(reg.dir),
+                    viewport=_block_viewport(scene, block_id),
                 )
             else:
                 result = await generate_block(
@@ -899,6 +1045,13 @@ def _lower_media_backgrounds(doc: dict[str, Any]) -> list[str]:
         ]
         if not backgrounds:
             continue
+        if isinstance(scene.get("layout"), dict) and scene["layout"].get("kind") == "frames":
+            for block in backgrounds:
+                block["placement"] = "illustration"
+            warnings.append(
+                f"{scene.get('id')}: frames 实验保留 block/frame 一一映射，background 以 illustration 原位渲染"
+            )
+            continue
         chosen = backgrounds[0]
         remaining = [block for block in blocks if block is not chosen]
         if not remaining:
@@ -929,7 +1082,20 @@ def _compile_page_design(
     """Compile page intent after real blocks/assets exist; preserve specialized hero/section renderers."""
     warnings: list[str] = []
     assets = doc.get("assets") or []
+    frames_document = any(
+        isinstance(scene, dict)
+        and isinstance(scene.get("layout"), dict)
+        and scene["layout"].get("kind") == "frames"
+        for scene in (doc.get("scenes") or [])
+    )
     for scene in doc.get("scenes") or []:
+        if isinstance(scene.get("layout"), dict) and scene["layout"].get("kind") == "frames":
+            continue
+        if frames_document:
+            warnings.append(
+                f"{scene.get('id')}: frames 文档缺少 planner geometry；禁止旧 composition compiler 介入"
+            )
+            continue
         if scene.get("kind") in {"hero", "section"}:
             continue
         sid = str(scene.get("id") or "?")
@@ -1006,8 +1172,9 @@ def _reconcile_final_dropped(
         has_failure_placeholder = any(
             block.get("type") == "callout"
             and (
-                str(block.get("label") or "") == "待补"
+                str(block.get("label") or "") in {"待补", "生成失败"}
                 or "block 生成失败" in str(block.get("text") or "")
+                or "未生成；保留原 frame" in str(block.get("text") or "")
             )
             for block in blocks
             if isinstance(block, dict)
@@ -1141,6 +1308,10 @@ def _apply_visual_contract_repairs(
         scene = by_scene.get(issue.scene_id)
         if scene is None:
             continue
+        if isinstance(scene.get("layout"), dict) and scene["layout"].get("kind") == "frames":
+            # Absolute-frames experiment: browser review is observational only.  Neither
+            # composition nor block content may be rewritten after the first real render.
+            continue
         if issue.route == "composition":
             if scene.get("kind") not in {"hero", "section"}:
                 scene["layout"] = _focus_artboard(scene)
@@ -1232,34 +1403,16 @@ async def generate_lecture(
         perspectives_n=opts.plan_perspectives,
         sections=opts.sections,
         concurrency=opts.concurrency,
+        absolute_frames=opts.absolute_frames,
     )
     doc = plan.doc
+    frames_mode = opts.absolute_frames
+    planned_skeleton_signature = plan_skeleton_signature(doc) if frames_mode else ""
     design_brief_value = doc.get("designBrief")
     design_brief: dict[str, Any] = design_brief_value if isinstance(design_brief_value, dict) else {}
     # Design DNA 不再只当 prompt 散文：编译成 Viewer 可执行的闭合 token contract。
     doc["visualSystem"] = compile_visual_system(design_brief)
-    # 课程级证据义务只在规划/质检阶段存在；最终 LectureDoc 不公开这些内部字段。
-    doc["_knowledgeForms"] = list(plan.knowledge_forms)
-    doc["_evidenceObligations"] = list(plan.evidence_obligations)
-    plan_quality_warnings: list[str] = []
-    skill_descriptions = _skill_decision_descriptions(registry, planning_surface)
-    if opts.plan_quality_rounds > 0:
-        progress({"type": "stage", "stage": "plan-quality", "status": "start"})
-    # rounds=0 仍运行确定性的证据路由/容量守卫；制度约束不能依赖是否开启额外 LLM 审查。
-    plan_quality_warnings = await refine_plan(
-        llm,
-        doc,
-        topic=topic,
-        audience=audience,
-        material=mat,
-        allowed_types=set(skill_descriptions),
-        type_descriptions=skill_descriptions,
-        rounds=opts.plan_quality_rounds,
-    )
-    for warning in plan_quality_warnings:
-        log(f"[plan-quality] {warning}")
-    if opts.plan_quality_rounds > 0:
-        progress({"type": "stage", "stage": "plan-quality", "status": "done"})
+    pipeline_warnings: list[str] = []
     doc["schemaVersion"] = "1.0"
     doc.setdefault("language", "zh-CN")
     if theme:
@@ -1272,8 +1425,11 @@ async def generate_lecture(
     page_briefs: dict[str, dict[str, str]] = {}
     page_visual_briefs: dict[str, dict[str, Any]] = {}
     used_block_ids: set[str] = set()
+    planned_skeleton: dict[str, Any] | None = None
     for si, s in enumerate(doc.get("scenes", [])):
-        s["id"] = s.get("id") or f"s{si}"  # 稳定 scene id：供进度视图 / 版式引用（与 block id 同规）
+        if frames_mode and not s.get("id"):
+            raise RuntimeError(f"Absolute frames 所有权错误：第 {si + 1} 页缺 scene id")
+        s["id"] = s.get("id") or f"s{si}"
         # brief 是规划→生成→讲稿/质检之间的内部契约。先保存，随后从 scene 移除，
         # 避免规划元数据混进最终 LectureDoc 或被 viewer 当成公开内容。
         page_briefs[str(s["id"])] = _page_brief(s)
@@ -1285,34 +1441,55 @@ async def generate_lecture(
         s.pop("visualBrief", None)
         for bi, b in enumerate(s.get("blocks") or []):
             original_id = str(b.get("id") or "")
+            if frames_mode and not original_id:
+                raise RuntimeError(f"Absolute frames 所有权错误：{s['id']} 第 {bi + 1} 个 block 缺 id")
             block_id = original_id or f"s{si}b{bi}"
             if block_id in used_block_ids:
+                if frames_mode:
+                    raise RuntimeError(f"Absolute frames 所有权错误：重复 block id {block_id!r}")
                 block_id = f"s{si}b{bi}"
                 suffix = 2
                 while block_id in used_block_ids:
                     block_id = f"s{si}b{bi}-{suffix}"
                     suffix += 1
-                log(f"[plan] 重复 block id {original_id!r} → {block_id}")
+                log(f"[plan] legacy 重复 block id {original_id!r} → {block_id}")
             b["id"] = block_id
             used_block_ids.add(block_id)
-            if b.get("type") not in planning and b.get("type") not in registry:  # 防幻觉类型丢内容
-                log(f'[plan] 未知 type "{b.get("type")}"，回退 list')
+            if b.get("type") not in planning_surface and b.get("type") not in registry:
+                if frames_mode:
+                    raise RuntimeError(f'Absolute frames 所有权错误：未知 type "{b.get("type")}"')
+                log(f'[plan] legacy 未知 type "{b.get("type")}"，回退 list')
                 b["type"] = "list"
-            lowered = lower_planning_placeholder(b, planning)
+            lowered = lower_planning_placeholder(b, planning_surface)
             b.clear()
             b.update(lowered)
             placeholder_specs[str(b["id"])] = dict(b)
             placeholder_scene_by_id[str(b["id"])] = str(s["id"])
             placeholders.append((b, s))
 
-    removed_for_budget = doc.pop("_budgetRemovedScenes", None)
-    if removed_for_budget:
-        log(f"[plan] 页数预算编译移除: {', '.join(str(value) for value in removed_for_budget)}")
-    doc.pop("_knowledgeForms", None)
-    doc.pop("_evidenceObligations", None)
+    lowered_signature = plan_skeleton_signature(doc) if frames_mode else ""
+    if frames_mode and lowered_signature != planned_skeleton_signature:
+        raise RuntimeError(
+            "Absolute frames 所有权错误：mechanical lowering 改变了 block/frame 规划签名 "
+            f"{planned_skeleton_signature} != {lowered_signature}"
+        )
+    for s in doc.get("scenes") or []:
+        layout = s.get("layout") if isinstance(s, dict) else None
+        if isinstance(layout, dict) and layout.get("kind") == "frames":
+            layout["plannedFrameSignature"] = frame_layout_signature(layout)
+    planned_skeleton = deepcopy(doc)
+
     doc.pop("designBrief", None)
 
-    assign_layouts(doc)
+    # A frames experiment must never silently fall back to the legacy compiler.  Legacy
+    # assignment remains available only when the planner produced no frames at all.
+    if frames_mode and any(
+        not isinstance(scene.get("layout"), dict) or scene["layout"].get("kind") != "frames"
+        for scene in (doc.get("scenes") or []) if isinstance(scene, dict)
+    ):
+        raise RuntimeError("Absolute frames 所有权错误：验证后出现非 frames 页面")
+    if not frames_mode:
+        assign_layouts(doc)
     log(
         f"[plan] {len(doc.get('scenes', []))} 页 / {len(placeholders)} block；theme={doc.get('theme')}"
     )
@@ -1364,6 +1541,7 @@ async def generate_lecture(
             list(scene.get("blocks") or []),
             visual_brief=visual_brief,
             design_brief=design_brief,
+            current_block_id=str(ph.get("id") or ""),
         )
         progress(
             {"type": "block", "blockId": ph["id"], "sceneId": scene.get("id"), "status": "active"}
@@ -1414,6 +1592,7 @@ async def generate_lecture(
                 material=mat,
                 guidelines=widget_guidelines,
                 preplanned_contract=preplanned,
+                viewport=_block_viewport(scene, str(ph.get("id") or "")),
             )
             log(f"  {'✗' if r.err else '✓'} {ph['id']} (sim:widget)")
             _emit_block_done(progress, ph["id"], scene.get("id"), r.err)
@@ -1458,14 +1637,14 @@ async def generate_lecture(
         doc["assets"] = list(asset_records.values())
     for warning in _lower_media_backgrounds(doc):
         log(f"[media] {warning}")
-        plan_quality_warnings.append(warning)
+        pipeline_warnings.append(warning)
     for warning in _compile_page_design(
         doc,
         page_visual_briefs=page_visual_briefs,
         design_brief=design_brief,
     ):
         log(f"[design] {warning}")
-        plan_quality_warnings.append(warning)
+        pipeline_warnings.append(warning)
     assign_layouts(doc)
     if opts.media is True:
         await _attach_hero_image(doc, topic, image_finder, image_generator)
@@ -1482,8 +1661,16 @@ async def generate_lecture(
         )
     else:
         final = validate_doc(doc)
+    final.errors.extend(
+        "Absolute frames 结构硬错误：" + problem for problem in _frame_structure_problems(doc)
+    )
+    final.errors.extend(
+        "Absolute frames 所有权硬错误：" + problem
+        for problem in _planning_ownership_problems(doc, placeholder_specs)
+        if frames_mode
+    )
     quality_summary: list[dict[str, Any]] = []
-    final.warnings.extend(plan_quality_warnings)
+    final.warnings.extend(pipeline_warnings)
     progress({"type": "docUpdated", "doc": doc, "reason": "validate"})
     progress({"type": "stage", "stage": "validate", "status": "done"})
 
@@ -1522,6 +1709,14 @@ async def generate_lecture(
             log(f"[design] {warning}")
         assign_layouts(doc)
         final = validate_doc(doc)
+        final.errors.extend(
+            "Absolute frames 结构硬错误：" + problem for problem in _frame_structure_problems(doc)
+        )
+        final.errors.extend(
+            "Absolute frames 所有权硬错误：" + problem
+            for problem in _planning_ownership_problems(doc, placeholder_specs)
+            if frames_mode
+        )
         # Quality repair is generative and can invalidate a scene discriminator even when every
         # individual block is schema-valid. Give the normal block-level repair loop one chance
         # before render; otherwise one stale kind disables all browser/widget/visual repair.
@@ -1553,6 +1748,16 @@ async def generate_lecture(
     latest_layout_signatures: dict[str, str] = {}
     layout_dirty_scene_ids: set[str] = set()
     visual_quality_payload: dict[str, Any] | None = None
+    viewport_diagnostics: list[dict[str, Any]] = []
+    viewport_failures: list[dict[str, Any]] = []
+
+    def frame_page_indices() -> set[int]:
+        return {
+            index for index, scene in enumerate(doc.get("scenes") or [])
+            if isinstance(scene, dict)
+            and isinstance(scene.get("layout"), dict)
+            and scene["layout"].get("kind") == "frames"
+        }
 
     def mark_layout_dirty(*scene_ids: str) -> None:
         layout_dirty_scene_ids.update(scene_id for scene_id in scene_ids if scene_id)
@@ -1576,6 +1781,183 @@ async def generate_lecture(
                 }
             )
             layout_dirty_scene_ids.discard(item.scene_id)
+
+    def viewport_issues(report: RenderReport) -> dict[str, list[str]]:
+        failures: dict[str, list[str]] = {}
+        scenes = list(doc.get("scenes") or [])
+        for metric in report.page_metrics:
+            page_index = int(metric.get("i", metric.get("page", -1)))
+            if not 0 <= page_index < len(scenes):
+                continue
+            scene = scenes[page_index]
+            layout = scene.get("layout") if isinstance(scene.get("layout"), dict) else {}
+            if layout.get("kind") != "frames":
+                continue
+            blocks = {
+                str(block.get("id") or ""): block
+                for block in (scene.get("blocks") or []) if isinstance(block, dict)
+            }
+            frames = {
+                str(frame.get("blockId") or ""): frame
+                for frame in (layout.get("frames") or []) if isinstance(frame, dict)
+            }
+            for measured in metric.get("blockMeasurements") or []:
+                for block_id in measured.get("blockIds") or []:
+                    current = blocks.get(str(block_id))
+                    if current is None:
+                        continue
+                    problems: list[str] = []
+                    if int(measured.get("overflowX") or 0) > 1:
+                        problems.append(f"横向溢出 {int(measured.get('overflowX') or 0)}px")
+                    if int(measured.get("overflowY") or 0) > 1:
+                        problems.append(f"纵向溢出 {int(measured.get('overflowY') or 0)}px")
+                    if int(measured.get("hiddenContentCount") or 0) > 0:
+                        problems.append("存在被 overflow/clip 隐藏的内容")
+                    min_text = measured.get("minTextPx")
+                    if min_text is not None and float(min_text) < 14:
+                        problems.append(f"最小可见字号 {float(min_text):g}px，小于 14px")
+                    if not bool(measured.get("stageFit", True)):
+                        problems.append("Widget/SVG 主舞台未完整装入指定 viewport")
+                    frame = frames.get(str(block_id)) or {}
+                    role = str(frame.get("role") or "support")
+                    utilization = float(measured.get("contentUtilization", measured.get("utilization") or 0))
+                    atmospheric = (
+                        scene.get("kind") in {"hero", "section"}
+                        or current.get("purpose") == "atmospheric"
+                        or role == "decoration"
+                    )
+                    area_evidence_types = {
+                        "sim", "diagram", "graph", "flow", "timeline", "chart",
+                        "runnable", "media", "video", "table",
+                    }
+                    if (
+                        role == "primary"
+                        and not atmospheric
+                        and str(current.get("type") or "") in area_evidence_types
+                        and utilization < 0.35
+                    ):
+                        problems.append(f"主证据内容利用率 {utilization:.1%}，低于 35%（45% 是建议目标）")
+                    if measured.get("topOnly") and not atmospheric:
+                        problems.append("内容只堆在 viewport 顶部，下半区未参与构图")
+                    if problems:
+                        failures.setdefault(str(block_id), []).extend(problems)
+            for measured in metric.get("frameMeasurements") or []:
+                if measured.get("kind") != "block" or not measured.get("blockId"):
+                    continue
+                delta = measured.get("delta") or {}
+                if any(abs(float(delta.get(axis) or 0)) > 1 for axis in ("x", "y", "w", "h")):
+                    failures.setdefault(str(measured["blockId"]), []).append(
+                        "计划 frame 与真实 DOM 外框误差超过 1px"
+                    )
+            if metric.get("widgetErrors"):
+                for block_id, block in blocks.items():
+                    if block.get("type") == "sim" and block.get("engine") == "widget":
+                        failures.setdefault(block_id, []).extend(
+                            "Widget 运行时错误：" + str(error)
+                            for error in (metric.get("widgetErrors") or [])
+                        )
+        return failures
+
+    # Frames 的外部几何不可改；浏览器只测组件内部，并把精确失败反馈给同一 block 上下文。
+    # 为避免每个 fan-out 节点各启动一次浏览器，所有 block 的检查按轮次批量执行，但修复仍逐块并发。
+    if render_verifier is not None and frame_page_indices():
+        progress({"type": "stage", "stage": "viewport-fit", "status": "start"})
+        for viewport_round in range(1, 3):
+            probe = await render_verifier.verify(json.dumps(doc, ensure_ascii=False))
+            viewport_diagnostics = list(probe.page_metrics)
+            failures = viewport_issues(probe)
+            if not failures:
+                log(f"[viewport-fit] 第 {viewport_round} 轮：所有 frames block 通过")
+                break
+            log(f"[viewport-fit] 第 {viewport_round} 轮：{len(failures)} 个 block 需要内部响应式修复")
+            locations = {
+                str(block.get("id") or ""): (scene, index, block)
+                for scene in (doc.get("scenes") or [])
+                for index, block in enumerate(scene.get("blocks") or [])
+                if isinstance(block, dict) and block.get("id")
+            }
+
+            async def repair_viewport(
+                item: tuple[str, list[str]],
+                _i: int,
+                current_locations: dict[str, tuple[dict[str, Any], int, dict[str, Any]]] = locations,
+            ) -> tuple[str, str | None]:
+                block_id, problems = item
+                located = current_locations.get(block_id)
+                if located is None:
+                    return block_id, "找不到当前 block"
+                scene, block_index, current = located
+                if current.get("type") in {"media", "video"}:
+                    return block_id, "资产 block 只能由响应式 renderer 处理，未调用 LLM"
+                spec = placeholder_specs.get(block_id, {})
+                block_type = str(current.get("type") or spec.get("type") or "")
+                reg = registry.get(block_type)
+                if reg is None:
+                    return block_id, f"无技能处理 {block_type}"
+                viewport = _block_viewport(scene, block_id)
+                brief = page_briefs.get(str(scene.get("id")), _page_brief(scene))
+                scene_ctx = _block_scene_context(
+                    scene,
+                    brief,
+                    list(scene.get("blocks") or []),
+                    visual_brief=page_visual_briefs.get(str(scene.get("id")), {}),
+                    design_brief=design_brief,
+                    current_block_id=block_id,
+                )
+                issue_text = (
+                    "真实浏览器按规划 viewport 渲染后发现以下问题：\n- "
+                    + "\n- ".join(dict.fromkeys(problems))
+                    + "\n只能修改 block 内部结构；保持 block id/type/教学证据，禁止修改、建议修改或绕过外部 frame。"
+                )
+                progress({"type": "block", "blockId": block_id, "sceneId": scene.get("id"), "status": "err"})
+                if block_type == "sim" and current.get("engine") == "widget":
+                    result = await repair_widget(
+                        llm,
+                        current=current,
+                        issues=issue_text + "\n" + scene_ctx,
+                        theme=str(doc.get("theme") or "cartesian"),
+                        language=str(doc.get("language") or "zh-CN"),
+                        topic=topic,
+                        guidelines=widget_guidelines,
+                        viewport=viewport,
+                        rounds=1,
+                    )
+                else:
+                    result = await generate_block(
+                        llm,
+                        type=block_type,
+                        intent=str(spec.get("intent") or "保持现有教学意图") + "\n" + issue_text,
+                        scene_ctx=scene_ctx,
+                        contract=reg.contract,
+                        topic=topic,
+                        material=mat,
+                        tools=tool_kit if block_type == "sim" else None,
+                        purpose_namespace="viewport-fit",
+                        rounds=1,
+                        timeout_s=150,
+                    )
+                if result.block is None:
+                    return block_id, result.err or "修复未返回 block"
+                result.block["id"] = block_id
+                scene["blocks"][block_index] = result.block
+                render_changed_scene_ids.add(str(scene.get("id") or "?"))
+                progress({"type": "block", "blockId": block_id, "sceneId": scene.get("id"), "status": "done"})
+                return block_id, None
+
+            outcomes = await pool(list(failures.items()), opts.concurrency, repair_viewport)
+            for block_id, problem in outcomes:
+                if problem:
+                    log(f"[viewport-fit] {block_id} 修复未完成：{problem}")
+        final_probe = await render_verifier.verify(json.dumps(doc, ensure_ascii=False))
+        viewport_diagnostics = list(final_probe.page_metrics)
+        unresolved = viewport_issues(final_probe)
+        viewport_failures = [
+            {"blockId": block_id, "issues": list(dict.fromkeys(problems))}
+            for block_id, problems in sorted(unresolved.items())
+        ]
+        if viewport_failures:
+            log(f"[viewport-fit] 两轮后仍有 {len(viewport_failures)} 个显式失败；保留原 frame 和当前 block")
+        progress({"type": "stage", "stage": "viewport-fit", "status": "done", "failed": len(viewport_failures)})
     # 即使结构/语义校验已有错误，也至少执行一次只读浏览器诊断并产出截图。
     # 否则 schema error 会遮蔽真实的溢出、空白或 widget 运行时问题，视觉报告还会
     # 误写成“浏览器未返回指标”。只有进入本阶段时 schema 已合法，才允许自动回炉。
@@ -1592,6 +1974,7 @@ async def generate_lecture(
                 for metric in render_report.page_metrics
                 if metric.get("widgetErrors")
                 and 0 <= int(metric.get("i", -1)) < len(doc.get("scenes") or [])
+                and int(metric.get("i", -1)) not in frame_page_indices()
             }
             if runtime_bad:
                 log(f"[render] 第 {rnd} 轮: {len(runtime_bad)} 页 widget 运行时错误，定点修复")
@@ -1629,6 +2012,7 @@ async def generate_lecture(
                             language=str(doc.get("language") or "zh-CN"),
                             topic=topic,
                             guidelines=widget_guidelines,
+                            viewport=_block_viewport(scene, str(current.get("id") or "")),
                             # 第一轮按浏览器错误修代码；若新 HTML 触发静态硬门，第二轮把
                             # 精确校验错误反馈给模型。只对未收敛结果增加调用，普通页仍是一轮。
                             rounds=2,
@@ -1670,6 +2054,7 @@ async def generate_lecture(
                     for metric in render_report.page_metrics
                     if metric.get("widgetErrors")
                     and 0 <= int(metric.get("i", -1)) < len(doc.get("scenes") or [])
+                    and int(metric.get("i", -1)) not in frame_page_indices()
                 }
                 if runtime_bad:
                     if rnd < opts.render_rounds:
@@ -1690,6 +2075,7 @@ async def generate_lecture(
                 for metric in render_report.page_metrics
                 if int(metric.get("plotWarnings") or 0) > 0
                 and 0 <= int(metric.get("i", -1)) < len(doc.get("scenes") or [])
+                and int(metric.get("i", -1)) not in frame_page_indices()
             }
             if plot_bad:
                 log(f"[render] 第 {rnd} 轮: {len(plot_bad)} 页 Plot 警告，定点重生成 chart")
@@ -1775,6 +2161,7 @@ async def generate_lecture(
                 )
                 for p in render_report.overflow_pages
                 if 0 <= int(p["page"]) < len(doc.get("scenes") or [])
+                and int(p["page"]) not in frame_page_indices()
             }
             ignored_prefixes: tuple[str, ...] = (
                 "D:", "F:", "G:", "I:", "K:", "L:", "M:", "O:",
@@ -1797,13 +2184,16 @@ async def generate_lecture(
                 progress({"type": "docUpdated", "doc": doc, "reason": "layout-director"})
                 render_report = await render_verifier.verify(json.dumps(doc, ensure_ascii=False))
                 layout_bad = hard_layout_failures(render_report.page_metrics)
-                if not layout_bad:
+                actionable_layout_bad = layout_bad - frame_page_indices()
+                if not actionable_layout_bad:
                     log(f"[layout] 第 {rnd} 轮: 全页重排后零裁切")
                     break
 
                 # If geometry still has no feasible fit, paginate.  Generated blocks are moved,
                 # never rewritten, so the split cannot damage knowledge content.
-                splits = split_failed_scenes(doc, pagination_failures(render_report.page_metrics))
+                splits = split_failed_scenes(
+                    doc, pagination_failures(render_report.page_metrics) - frame_page_indices()
+                )
                 if splits:
                     layout_splits.extend(splits)
                     log(f"[layout] 第 {rnd} 轮: 无可行单页布局，自动新增 {len(splits)} 个连续证据页")
@@ -1829,6 +2219,7 @@ async def generate_lecture(
                         break
 
                 remaining_geometry = pagination_failures(render_report.page_metrics)
+                remaining_geometry -= frame_page_indices()
                 bad = {
                     index: max(
                         1,
@@ -1836,6 +2227,7 @@ async def generate_lecture(
                     )
                     for index in remaining_geometry
                     if 0 <= index < len(doc.get("scenes") or [])
+                    and index not in frame_page_indices()
                 }
             if not bad:
                 if layout_bad:
@@ -1976,7 +2368,11 @@ async def generate_lecture(
                             isinstance(block, dict) and block.get("type") == "formula"
                             for block in scene.get("blocks") or []
                         ) and _visual_issue_is_layout_only_for(issue, "formula"):
-                            scene["layout"] = _focus_artboard(scene)
+                            if not (
+                                isinstance(scene.get("layout"), dict)
+                                and scene["layout"].get("kind") == "frames"
+                            ):
+                                scene["layout"] = _focus_artboard(scene)
                             return None
                         if any(
                             isinstance(block, dict) and block.get("type") == "runnable"
@@ -2008,6 +2404,7 @@ async def generate_lecture(
                                 language=str(doc.get("language") or "zh-CN"),
                                 topic=topic,
                                 guidelines=widget_guidelines,
+                                viewport=_block_viewport(scene, str(widget.get("id") or "")),
                                 rounds=1,
                             )
                             if result.block is None:
@@ -2076,13 +2473,15 @@ async def generate_lecture(
                         scene["layout"] = _focus_artboard(scene)
                         return None
 
-                    failures = [
+                    visual_failures = [
                         failure
                         for failure in await pool(content_issues, opts.concurrency, repair_visual_content)
                         if failure
                     ]
-                    if failures:
-                        final.warnings.append("视觉 block 修复未全部完成：" + "；".join(failures[:6]))
+                    if visual_failures:
+                        final.warnings.append(
+                            "视觉 block 修复未全部完成：" + "；".join(visual_failures[:6])
+                        )
                     changed.update(issue.scene_id for issue in content_issues if issue.scene_id)
                     render_changed_scene_ids.update(changed)
                     if changed:
@@ -2224,17 +2623,46 @@ async def generate_lecture(
         # 回炉后内容变了，重跑整档校验，避免精简引入的结构错逃逸
         prior_warnings = list(final.warnings)
         final = validate_doc(doc)
+        final.errors.extend(
+            "Absolute frames 结构硬错误：" + problem for problem in _frame_structure_problems(doc)
+        )
+        final.errors.extend(
+            "Absolute frames 所有权硬错误：" + problem
+            for problem in _planning_ownership_problems(doc, placeholder_specs)
+            if frames_mode
+        )
         final.warnings = prior_warnings + final.warnings
         final.errors.extend(render_hard_errors)
+        if render_report is not None:
+            # The normal final render happens after the block-local probe. Reconcile the public
+            # viewport report with this newest DOM state so transient async chart/table overflow
+            # that disappeared on the delivery render is not published as a stale hard failure.
+            viewport_diagnostics = list(render_report.page_metrics)
+            final_viewport_issue_map = viewport_issues(render_report)
+            viewport_failures = [
+                {"blockId": block_id, "issues": list(dict.fromkeys(problems))}
+                for block_id, problems in sorted(final_viewport_issue_map.items())
+            ]
+        final.errors.extend(
+            "Frame viewport 硬错误 " + str(item.get("blockId")) + "：" + "；".join(item.get("issues") or [])
+            for item in viewport_failures
+        )
         if render_report is not None:
             signature_mismatches: list[str] = []
             for index, scene in enumerate(doc.get("scenes") or []):
                 sid = str(scene.get("id") or f"page-{index + 1}")
-                final_signature = layout_signature(scene.get("layout"))
-                decision_signature = latest_layout_signatures.get(sid)
+                is_frames = isinstance(scene.get("layout"), dict) and scene["layout"].get("kind") == "frames"
+                final_signature = frame_layout_signature(scene.get("layout")) if is_frames else layout_signature(scene.get("layout"))
+                decision_signature = (
+                    scene["layout"].get("plannedFrameSignature") if is_frames
+                    else latest_layout_signatures.get(sid)
+                )
                 if index < len(render_report.page_metrics):
                     render_report.page_metrics[index]["decisionSignature"] = decision_signature
                     render_report.page_metrics[index]["finalLayoutSignature"] = final_signature
+                    if is_frames:
+                        render_report.page_metrics[index]["plannedFrameSignature"] = decision_signature
+                        render_report.page_metrics[index]["finalFrameSignature"] = final_signature
                     render_report.page_metrics[index]["layoutDirty"] = sid in layout_dirty_scene_ids
                 if decision_signature and decision_signature != final_signature:
                     signature_mismatches.append(sid)
@@ -2288,6 +2716,16 @@ async def generate_lecture(
     )
 
     # ④.7 讲者备注增强：只对语义与真机验收都已通过的最终页面写讲稿。
+    existing_viewport_errors = {error for error in final.errors if error.startswith("Frame viewport 硬错误 ")}
+    final.errors.extend(
+        error
+        for item in viewport_failures
+        for error in [
+            "Frame viewport 硬错误 " + str(item.get("blockId")) + "：" + "；".join(item.get("issues") or [])
+        ]
+        if error not in existing_viewport_errors
+    )
+
     # 旧顺序在 render/reflow 之前写 notes，既会让讲稿依据旧内容，也会为已知失败 deck 白花调用。
     if not final.errors:
         progress({"type": "stage", "stage": "notes", "status": "start"})
@@ -2322,6 +2760,10 @@ async def generate_lecture(
             "layoutDiagnostics": list(render_report.page_metrics) if render_report else [],
             "layoutDecisions": layout_decisions,
             "layoutSplits": layout_splits,
+            "viewportDiagnostics": viewport_diagnostics,
+            "viewportFailures": viewport_failures,
+            "plannedSkeleton": planned_skeleton,
+            "plannedSkeletonSignature": planned_skeleton_signature,
             "doc": doc,
         }
     )
@@ -2340,4 +2782,8 @@ async def generate_lecture(
         layout_diagnostics=list(render_report.page_metrics) if render_report else [],
         layout_decisions=layout_decisions,
         layout_splits=layout_splits,
+        planned_skeleton=planned_skeleton,
+        viewport_diagnostics=viewport_diagnostics,
+        viewport_failures=viewport_failures,
+        planned_skeleton_signature=planned_skeleton_signature,
     )

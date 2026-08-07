@@ -207,6 +207,17 @@ def load_skill_catalog(
                 placements=_manifest_list(manifest, "placements", ""),
                 anti_capabilities=_manifest_list(manifest, "antiCapabilities", ""),
             )
+    for capability_type, planning_entry in planning.items():
+        if planning_entry.target_type != "sim":
+            continue
+        if not planning_entry.profile:
+            raise ValueError(
+                f'规划 capability "{capability_type}" 指向 sim 但没有 profile，无法机械 lowering'
+            )
+        if (planning_entry.defaults or {}).get("engine") != "widget":
+            raise ValueError(
+                f'规划 capability "{capability_type}" 指向 sim 时必须声明 defaults.engine=widget'
+            )
     return registry, planning
 
 
