@@ -7,31 +7,36 @@
 from __future__ import annotations
 
 from notale.core.models import PageType
+from notale.utils.config import get_config
+
+_CONFIG = get_config()
+_DURATION = _CONFIG.duration_model
 
 # 各页型的分钟成本（讲授时长的一等公民：交互组件有自己的时间成本）
 PAGE_TYPE_MINUTES: dict[PageType, float] = {
-    PageType.SECTION_BREAK: 0.5,
-    PageType.NARRATIVE_SCENE: 1.5,
-    PageType.WORKED_EXAMPLE: 2.0,
-    PageType.FORMULA_DERIVATION: 2.0,
-    PageType.CODE_RUNNABLE: 2.5,
-    PageType.QUIZ_CHECK: 1.5,
-    PageType.SIM_EXPLORABLE: 3.5,
+    page_type: float(_DURATION.page_type_minutes[page_type.value]) for page_type in PageType
 }
 
 
 def page_count(duration_min: int) -> tuple[int, int]:
     """时长 → 页数区间。60min → (30, 40)；10min → (5, 7)；25min → (13, 17)。"""
-    lo = max(3, round(duration_min * 0.5))
-    hi = max(lo + 1, round(duration_min * 0.65))
-    return lo, min(hi, 80)
+    lo = max(_DURATION.page_count_minimum,
+             round(duration_min * _DURATION.page_count_low_per_minute))
+    hi = max(lo + 1, round(duration_min * _DURATION.page_count_high_per_minute))
+    return lo, min(hi, _CONFIG.pipeline.maximum_page_count)
 
 
 def chapter_count(duration_min: int) -> int:
     lo, hi = page_count(duration_min)
-    return max(2, min(10, round((lo + hi) / 2 / 5)))
+    return max(
+        _DURATION.chapter_count_minimum,
+        min(
+            _DURATION.chapter_count_maximum,
+            round((lo + hi) / 2 / _DURATION.pages_per_chapter),
+        ),
+    )
 
 
 def time_budget_sec(page_type: PageType, scale: float = 1.0) -> int:
     """页型 → 每页时间预算（秒）。scale 用于总时长与预算对齐时整体缩放。"""
-    return round(PAGE_TYPE_MINUTES[page_type] * 60 * scale)
+    return round(PAGE_TYPE_MINUTES[page_type] * _DURATION.seconds_per_minute * scale)

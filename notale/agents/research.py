@@ -1,8 +1,9 @@
-"""[1] Research fan-out —— 多 agent 并联（宽→窄检索），提取即绑定出处。
+"""[1] Research fan-out —— 配置驱动的多 agent 并联，提取即绑定出处。
 
-四路 agent：教学序列 / 例题与反例 / 常见误解 / 素材·史料·数据。
+每个启用的 research.branches 配置项创建一个独立 worker；专能、skills 与安全工具均由
+配置装配，下游统一消费 notes / records / pedagogy。
 机制要点（PREP §2.1，OpenHarness 迁移后更彻底）：
-- 每路是一个 AgentBase(RESEARCH) 实例（独立上下文），模型自己调 fetch_web 工具抓 url；
+- 每路是一个 AgentBase(RESEARCH) 实例（独立上下文），按该路权限调用研究工具；
 - 每次抓取 harness 侧自动落 FetchRecord（FetchWebTool.records，模型摸不到）；
 - 引文 {url, quotedSpan} 必须对应该 agent 真实抓过的记录，harness 做字面子串校验，
   通过才绑进 evidence——模型没有"贴出处"这个动作，没抓过的 url 在结构上无法变成出处；
@@ -13,30 +14,52 @@
 from __future__ import annotations
 
 import asyncio
-import dataclasses
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Callable
 
-from notale.agents.runtime import AgentBase
-from notale.tools.fetch_web import FetchWebTool
+from notale.agents.managed import ManagedAgent
+from notale.tools.fetch_web import FetchWebTool, SearchWebTool
 from notale.roles.profiles import RESEARCH
-from notale.core.models import Branch, CourseBrief, PedagogyNote, PrepRecord, ReferenceSource, ResearchNote
+from notale.core.models import (
+    Branch,
+    CourseBrief,
+    PedagogyNote,
+    PrepRecord,
+    PrepRecordOrigin,
+    ReferenceSource,
+    ResearchNote,
+)
 from notale.core.evidence import EvidenceBindingError, FetchRecord, bind_evidence
 from pydantic import BaseModel, Field
 from notale.tools.retriever import Retriever
-from notale.utils.parsing import extract_json
+from notale.core.observability import ExperimentLogger
+from notale.utils.config import ResearchBranchConfig, get_config
 
-AGENTS = ["教学序列", "例题与反例", "常见误解", "素材史料数据"]
+_CONFIG = get_config()
+_RESEARCH_CONFIG = _CONFIG.research
+_RUNTIME_CONFIG = _CONFIG.runtime
+_SAFE_SPECIAL_TOOLS = frozenset({"web_search", "fetch_web"})
+_COMMON_ALLOWED_TOOLS = [
+    name
+    for name in RESEARCH.allowed_tools
+    if name not in _SAFE_SPECIAL_TOOLS and name != "submit_research"
+]
 
-_PROMPT = """你是备课研究员，负责「{agent}」方向。为这门课查备课资料：
+_PROMPT = """你是备课研究员，本 worker 的专能是：
+{focus}
+
+先用 skill_read 加载本 worker 已分配的 skills：{skills}。再用 artifact_read 读取
+course-brief.json，必要时读取完整 input/material.txt。围绕本专能为这门课查备课资料：
 
 课题：{topic}｜受众：{audience}｜时长：{durationMin} 分钟｜先验：{priorKnowledge}
 {material}
 
-需要引用网络事实时，先用 fetch_web 工具抓取来源页，再从抓回原文里引用。
+本 worker 可用的专能工具：{tools}。
+{network_instructions}
 
-输出一个 JSON 对象：
+最多提交 {notes_max} 条 notes、{records_max} 条 records、{pedagogy_max} 条 pedagogy；保持内容紧凑。不要先把 JSON 作为自然语言
+打印一遍，直接调用 submit_research。提交对象为：
 {{
   "notes": [{{"id": "note-1", "rawContent": "研究笔记原文"}}],
   "records": [
@@ -48,22 +71,26 @@ _PROMPT = """你是备课研究员，负责「{agent}」方向。为这门课查
       "invariants": ["运行时必须一直成立的自检条件"],
       "validRange": "有效参数区间与失效边界",
       "knownInaccuracies": ["主动声明的已知不准确处"],
-      "quote": {{"url": "来源页", "quotedSpan": "该页原文片段（逐字）"}}  // 仅 checkable 事实类必须给
+      "quote": {{"url": "来源页", "quotedSpan": "该页原文片段（逐字）"}}  // 有已抓取原文时给，否则省略
     }}
   ],
   "pedagogy": [{{"id": "ped-1", "type": "sequence|mechanism|misconception", "content": "教法笔记"}}]
 }}
 
-纪律：凡 quote 给的 url 必须是你本轮用 fetch_web 工具真实抓取过的页面，quotedSpan 必须是抓回原文的
-逐字片段——harness 会对照工具抓取记录做字面子串校验，对不上或没抓过该 url 整条记录作废。
-不确定出处的事实不要编 quote，如实留空（会被标注"未核实"）。
-只输出 JSON。"""
+{evidence_discipline}
+通过 submit_research 工具提交上述结构；Harness 自动维护 task ledger，自然语言终稿不算提交。"""
 
 
 class _AgentResult(BaseModel):
-    notes: list[dict] = Field(default_factory=list)
-    records: list[dict] = Field(default_factory=list)
-    pedagogy: list[dict] = Field(default_factory=list)
+    notes: list[dict] = Field(
+        default_factory=list, max_length=_RESEARCH_CONFIG.max_notes_per_branch
+    )
+    records: list[dict] = Field(
+        default_factory=list, max_length=_RESEARCH_CONFIG.max_records_per_branch
+    )
+    pedagogy: list[dict] = Field(
+        default_factory=list, max_length=_RESEARCH_CONFIG.max_pedagogy_per_branch
+    )
 
 
 @dataclass
@@ -78,71 +105,212 @@ class ResearchOutput:
 ClientFactory = Callable[[str], object]
 
 
+def _role_for(branch: ResearchBranchConfig):
+    """Clone the shared Research governance with this specialization's capabilities."""
+
+    unknown = sorted(set(branch.tools) - _SAFE_SPECIAL_TOOLS)
+    if unknown:  # Config typing rejects this; keep the runtime boundary fail-closed too.
+        raise ValueError(f"research branch {branch.id} requests unsafe tools: {unknown}")
+    return replace(
+        RESEARCH,
+        allowed_tools=[*_COMMON_ALLOWED_TOOLS, *branch.tools, "submit_research"],
+        skills=list(branch.skills),
+    )
+
+
+def _network_instructions(branch: ResearchBranchConfig) -> tuple[str, str]:
+    tools = set(branch.tools)
+    if {"web_search", "fetch_web"} <= tools:
+        return (
+            "需要引用网络事实时，先用 web_search 发现真实 URL，再用 fetch_web(url, query) "
+            "抓取来源页相关片段，最后从抓回原文里引用。不得凭记忆猜 URL。每个分支最多搜索 "
+            f"{_RESEARCH_CONFIG.web_search_max_requests_per_branch} 次、尝试抓取 "
+            f"{_RESEARCH_CONFIG.fetch_max_requests_per_branch} 次（失败也计数）；额度耗尽后整理已有证据并提交。",
+            "纪律：凡 quote 给的 url 必须是你本轮用 fetch_web 真实抓取过的页面，quotedSpan "
+            "必须是抓回原文的逐字片段。Harness 会做字面子串校验，对不上或没抓过该 URL，"
+            "整条记录作废。不确定出处的事实不要编 quote，如实留空。",
+        )
+    if "fetch_web" in tools:
+        return (
+            "只可抓取课程材料中已经明确给出的真实 URL，不得凭记忆猜 URL；最多尝试抓取 "
+            f"{_RESEARCH_CONFIG.fetch_max_requests_per_branch} 次（失败也计数）。",
+            "凡 quote 给出的 url 必须由本 worker 用 fetch_web 真实抓取，quotedSpan 必须逐字"
+            "来自抓回原文；否则整条记录作废。",
+        )
+    if "web_search" in tools:
+        return (
+            "web_search 只能用于发现候选来源；本 worker 没有 fetch_web，不能把搜索摘要作为"
+            "引文，也不要提交 quote。最多搜索 "
+            f"{_RESEARCH_CONFIG.web_search_max_requests_per_branch} 次。",
+            "本 worker 无法绑定网络原文证据；所有 quote 必须留空，无法核实的事实应主动声明。",
+        )
+    return (
+        "本 worker 未分配联网工具，只能依据课程简报、上传材料和已分配 skills 研究；不要猜测"
+        "或伪造网络来源。",
+        "本 worker 不得提交 quote；无法核实的事实应主动声明。",
+    )
+
+
 async def _run_agent(
+    llm,
     brief: CourseBrief,
-    agent: str,
-    material: str,
+    branch: ResearchBranchConfig,
     retriever: Retriever,
     client_factory: ClientFactory | None,
     workspace: Path,
-) -> tuple[str, _AgentResult, list[FetchRecord]]:
-    fetch_tool = FetchWebTool(retriever)  # 每路独立实例：抓取记录只进这路的 .records
-    profile = dataclasses.replace(RESEARCH, tools=[fetch_tool])
-    client = client_factory(agent) if client_factory else None
-    base = AgentBase(profile, client=client, workspace=workspace)
-    result = await base.run(
+    logger: ExperimentLogger | None,
+) -> tuple[str, str, _AgentResult, list[FetchRecord]]:
+    worker_id = branch.id
+    worker_dir = workspace / "agents" / "research" / worker_id
+    fetch_tool = None
+    extra_tools = []
+    for tool_name in branch.tools:
+        if tool_name == "web_search":
+            extra_tools.append(
+                SearchWebTool(
+                    state_path=worker_dir / "tool-state.json",
+                    max_requests=_RESEARCH_CONFIG.web_search_max_requests_per_branch,
+                )
+            )
+        elif tool_name == "fetch_web":
+            fetch_tool = FetchWebTool(
+                retriever,
+                state_path=worker_dir / "tool-state.json",
+                cache_dir=workspace / "cache" / "fetch-web",
+                max_chars=_RESEARCH_CONFIG.fetch_excerpt_chars,
+                max_requests=_RESEARCH_CONFIG.fetch_max_requests_per_branch,
+            )
+            extra_tools.append(fetch_tool)
+    client = client_factory(branch.focus) if client_factory else llm
+    network_instructions, evidence_discipline = _network_instructions(branch)
+    if logger:
+        from notale.core.observability import now
+        logger.append("agent-traces.jsonl", {
+            "ts": now(),
+            "kind": "research-branch-configured",
+            "agent": f"research:{branch.id}",
+            "focus": branch.focus,
+            "skills": list(branch.skills),
+            "tools": list(branch.tools),
+        })
+    managed = ManagedAgent(
+        run_dir=workspace,
+        stage="research",
+        worker_id=worker_id,
+        role=_role_for(branch),
+        objective=f"研究备课专能：{branch.focus}。",
+        acceptance_criteria=[
+            "若提交引文，只能来自本 worker 的 fetch_web 记录。",
+            "结果包含 notes、records、pedagogy 三个列表。",
+            "结构化结果通过 submit_research 提交。",
+        ],
+        steps=[
+            ("inspect-sources", "读取课程简报、完整材料与 skill。"),
+            ("collect-evidence", "按本 worker 的专能和工具权限完成研究。"),
+            ("submit-research", "提交本分支的结构化研究产物。"),
+        ],
+        submit_tool="submit_research",
+        submit_validator=_AgentResult.model_validate,
+        llm=client,
+        logger=logger,
+        extra_tools=extra_tools,
+        purpose=f"research:{branch.id}",
+    )
+    submission = await managed.run_task(
         _PROMPT.format(
-            agent=agent,
+            focus=branch.focus,
+            skills="、".join(branch.skills) or "无专用 skill",
+            tools="、".join(branch.tools) or "无专用工具",
+            network_instructions=network_instructions,
+            evidence_discipline=evidence_discipline,
             topic=brief.topic,
             audience=brief.audience,
             durationMin=brief.durationMin,
             priorKnowledge=brief.priorKnowledge,
-            material=material,
+            notes_max=_RESEARCH_CONFIG.max_notes_per_branch,
+            records_max=_RESEARCH_CONFIG.max_records_per_branch,
+            pedagogy_max=_RESEARCH_CONFIG.max_pedagogy_per_branch,
+            material=(
+                "存在上传材料：完整读取 input/material.txt。"
+                if (workspace / "input/material.txt").is_file()
+                else "本次没有上传材料，不要读取 input/material.txt。"
+            ),
         )
     )
-    return agent, _AgentResult.model_validate(extract_json(result.text)), fetch_tool.records
+    return (
+        worker_id,
+        branch.focus,
+        _AgentResult.model_validate(submission),
+        fetch_tool.records if fetch_tool is not None else [],
+    )
 
 
 async def research(
+    llm,
     brief: CourseBrief,
     retriever: Retriever,
     uploaded_material: str | None = None,
     *,
     client_factory: ClientFactory | None = None,
     workspace: Path | None = None,
+    logger: ExperimentLogger | None = None,
 ) -> ResearchOutput:
-    material = f"\n上传材料（节选）：\n{uploaded_material[:4000]}" if uploaded_material else ""
+    del uploaded_material
     ws = workspace or Path.cwd()
+    active_branches = [branch for branch in _RESEARCH_CONFIG.branches if branch.enabled]
     gathered = await asyncio.gather(
-        *[_run_agent(brief, a, material, retriever, client_factory, ws) for a in AGENTS],
+        *[
+            _run_agent(llm, brief, branch, retriever, client_factory, ws, logger)
+            for branch in active_branches
+        ],
         return_exceptions=True,  # 一路失败只丢那一路（记事件如实标注），不拖垮整个 research
     )
 
     output = ResearchOutput()
-    results: list[tuple[str, _AgentResult, list[FetchRecord]]] = []
-    for agent, res in zip(AGENTS, gathered):
+    results: list[tuple[str, str, _AgentResult, list[FetchRecord]]] = []
+    for branch, res in zip(active_branches, gathered):
         if isinstance(res, BaseException):
+            from notale.core.observability import RunEmergencyLimitExceeded
+            if isinstance(res, RunEmergencyLimitExceeded):
+                raise res
+            if logger:
+                import traceback
+                from notale.core.observability import now
+                logger.metrics["errors"] += 1
+                logger.append("agent-traces.jsonl", {
+                    "ts": now(), "kind": "agent-error", "agent": f"research:{branch.id}",
+                    "focus": branch.focus,
+                    "error": {"type": type(res).__name__, "message": str(res),
+                              "traceback": "".join(traceback.format_exception(res))},
+                })
             output.events.append(
-                {"kind": "agent-failed", "agent": agent, "reason": f"{type(res).__name__}: {res}"[:300]}
+                {
+                    "kind": "agent-failed",
+                    "agent": branch.focus,
+                    "workerId": branch.id,
+                    "reason": f"{type(res).__name__}: {res}"[
+                        : _RUNTIME_CONFIG.agent_failure_reason_max_chars
+                    ],
+                }
             )
             continue
         results.append(res)
     seen_ids: set[str] = set()
 
-    for agent, res, fetch_records in results:
+    for worker_id, agent, res, fetch_records in results:
         fetched = {r.url: r for r in fetch_records}  # 这路 agent 真实抓过的 url（harness 侧事实）
-        for n in res.notes:
+        for note_index, n in enumerate(res.notes, 1):
             output.research_notes.append(
                 ResearchNote(
-                    id=str(n.get("id", f"note-{len(output.research_notes)+1}")),
+                    id=f"{worker_id}-note-{note_index}",
                     sourceAgent=agent,
                     rawContent=str(n.get("rawContent", "")),
                 )
             )
-        for p in res.pedagogy:
+        for pedagogy_index, p in enumerate(res.pedagogy, 1):
             output.pedagogy_notes.append(
                 PedagogyNote(
-                    id=str(p.get("id", f"ped-{len(output.pedagogy_notes)+1}")),
+                    id=f"{worker_id}-ped-{pedagogy_index}",
                     type=p.get("type", "mechanism"),
                     content=str(p.get("content", "")),
                 )
@@ -181,6 +349,7 @@ async def research(
 
             record = PrepRecord(
                 recordId=rid,
+                origin=PrepRecordOrigin.RESEARCH,
                 branch=[Branch(b) for b in r.get("branch", [Branch.NEITHER])],
                 referenceSource=ReferenceSource(r.get("referenceSource", "none")),
                 content=r.get("content") or {},

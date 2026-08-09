@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>lectureAgent Pipeline · 全流程数据 Schema</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #0D1117; --surface: #161B22; --surface2: #1C2330; --border: #2D3748;
+    --text: #CDD9E5; --muted: #8B949E; --dim: #636E7B;
+    --agent: #4DD0B1;  /* 阶段/处理 */
+    --artifact: #E8B04B;  /* artifact 名 */
+    --truth: #FF7B5A;  /* 备课资料相关 */
+    --loop: #7A9CC6;  /* 回路/校验 */
+    --gate: #C77DBB;  /* 验收 */
+    --human: #7FC97F;  /* 人在环 */
+    --mono: 'JetBrains Mono','Cascadia Code','Fira Code',Consolas,monospace;
+    --sans: 'Segoe UI',system-ui,-apple-system,'Noto Sans CJK SC','Source Han Sans SC','PingFang SC','Microsoft YaHei',sans-serif;
+  }
+  body { background: var(--bg); color: var(--text); font-family: var(--sans); padding: 26px 20px 60px; }
+  header { max-width: 1600px; margin: 0 auto 20px; }
+  h1 { font-size: 21px; font-weight: 600; }
+  .sub { color: var(--muted); font-size: 13.5px; margin-top: 8px; line-height: 1.8; }
+  .sub code { font-family: var(--mono); color: var(--agent); font-size: 12.5px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 12px; font-size: 12px; color: var(--muted); }
+  .legend span.sw { display: inline-block; width: 11px; height: 11px; border-radius: 3px; margin-right: 5px; vertical-align: -1px; }
+
+  .board-wrap { max-width: 1600px; margin: 0 auto; overflow-x: auto; padding-bottom: 12px; }
+  .board { display: flex; gap: 0; align-items: stretch; min-width: max-content; }
+
+  .stage {
+    flex: 0 0 300px; width: 300px; display: flex; flex-direction: column;
+    border-right: 1px dashed var(--border); padding: 0 16px;
+  }
+  .stage:first-child { padding-left: 0; }
+  .stage:last-child { border-right: none; }
+
+  .stage-head { padding: 10px 0 14px; border-bottom: 2px solid var(--agent); margin-bottom: 14px; }
+  .stage-idx { font-family: var(--mono); font-size: 11px; color: var(--agent); font-weight: 700; letter-spacing: .04em; }
+  .stage-name { font-size: 15px; font-weight: 600; color: var(--text); margin-top: 2px; }
+  .stage-note { font-size: 11.5px; color: var(--dim); margin-top: 4px; line-height: 1.5; }
+
+  .io-label {
+    font-size: 10.5px; font-weight: 700; letter-spacing: .08em; color: var(--muted);
+    margin: 14px 0 8px; text-transform: uppercase;
+  }
+  .io-label.out { color: var(--artifact); }
+
+  .artifact {
+    background: var(--surface2); border: 1px solid var(--border); border-radius: 8px;
+    margin-bottom: 10px; overflow: hidden;
+  }
+  .artifact.output { border-color: rgba(232,176,75,.55); }
+  .artifact.truth { border-color: rgba(255,123,90,.6); background: #1a1310; }
+  .artifact.human { border-color: rgba(127,201,127,.55); background: #18241a; }
+
+  .artifact-title {
+    font-family: var(--mono); font-size: 12.5px; font-weight: 700; color: var(--artifact);
+    padding: 7px 10px; border-bottom: 1px solid var(--border); background: rgba(0,0,0,.15);
+  }
+  .artifact.truth .artifact-title { color: var(--truth); }
+  .artifact.human .artifact-title { color: var(--human); }
+  .artifact-title .mult { color: var(--dim); font-weight: 400; margin-left: 4px; }
+
+  .fields { width: 100%; border-collapse: collapse; }
+  .fields tr { border-bottom: 1px solid rgba(45,55,72,.5); }
+  .fields tr:last-child { border-bottom: none; }
+  .fields tr.group-head td { padding-top: 8px; }
+  .fields tr.group-head td.fdesc { font-size: 10.5px; font-weight: 700; letter-spacing: .04em; color: var(--dim); text-transform: uppercase; }
+  .fields td { padding: 5px 10px; font-size: 12px; vertical-align: top; overflow-wrap: break-word; word-break: break-word; }
+  .fields td.fname { font-family: var(--mono); color: #8ecfc0; white-space: nowrap; font-weight: 600; width: 1%; }
+  .fields td.fdesc { color: var(--muted); line-height: 1.5; }
+  .fields td.fdesc b { color: var(--text); font-weight: 600; }
+  .fields td.fdesc code { overflow-wrap: break-word; word-break: break-word; }
+
+  .chain-note { font-size: 11px; color: var(--dim); line-height: 1.5; padding: 6px 10px 8px; font-style: italic; }
+  .chain-note code { font-family: var(--mono); color: #8ecfc0; font-style: normal; }
+
+  .connector { flex: 0 0 30px; width: 30px; display: flex; align-items: center; justify-content: center; position: relative; }
+  .connector::after {
+    content: "▶"; color: var(--dim); font-size: 13px; margin-top: 46px;
+  }
+
+  footer { max-width: 1600px; margin: 22px auto 0; font-size: 12px; color: var(--dim); line-height: 1.8; }
+  footer a { color: var(--agent); }
+</style>
+</head>
+<body>
+<header>
+  <h1>lectureAgent Pipeline · 全流程数据 Schema</h1>
+  <p class="sub">
+    <code>methodology/HARNESS.md</code> §2 架构图的字段级放大——七个阶段横向排列，每列上半是输入
+    artifact、下半是输出 artifact，格式统一为 <code>字段名：中文描述</code>。字段抽自
+    <code>HARNESS.md</code> / <code>PREP.md</code> / <code>VERIFY-EXEC.md</code>，出处不在每行重复标注，
+    只在本页一次性说明；细节请回读那三份文档。
+  </p>
+  <div class="legend">
+    <span><span class="sw" style="background:var(--agent)"></span>阶段 / 处理</span>
+    <span><span class="sw" style="background:var(--artifact)"></span>输出 artifact</span>
+    <span><span class="sw" style="background:var(--truth)"></span>备课资料相关（唯一知识来源）</span>
+    <span><span class="sw" style="background:var(--gate)"></span>交付产物</span>
+  </div>
+</header>
+
+<div class="board-wrap">
+<div class="board">
+
+  <!-- ============ [0] Intake & Clarify ============ -->
+  <div class="stage">
+    <div class="stage-head">
+      <div class="stage-idx">[0]</div>
+      <div class="stage-name">Intake &amp; Clarify</div>
+      <div class="stage-note">单线程。把用户一句话变成结构化课程简报</div>
+    </div>
+
+    <div class="io-label">输入</div>
+    <div class="artifact">
+      <div class="artifact-title">user-query</div>
+      <table class="fields">
+        <tr><td class="fname">query</td><td class="fdesc">用户原始请求</td></tr>
+        <tr><td class="fname">uploadedMaterial</td><td class="fdesc">上传材料（可选）</td></tr>
+      </table>
+    </div>
+
+    <div class="io-label out">输出</div>
+    <div class="artifact output">
+      <div class="artifact-title">course-brief</div>
+      <table class="fields">
+        <tr><td class="fname">topic</td><td class="fdesc">课题</td></tr>
+        <tr><td class="fname">audience</td><td class="fdesc">受众（年级 / 背景）</td></tr>
+        <tr><td class="fname">priorKnowledge</td><td class="fdesc">先验知识假设</td></tr>
+        <tr><td class="fname">durationMin</td><td class="fdesc">课堂时长（分钟）</td></tr>
+        <tr><td class="fname">intensity</td><td class="fdesc">强度档位：速览 / 标准 / 深挖</td></tr>
+        <tr><td class="fname">language</td><td class="fdesc">语言</td></tr>
+        <tr><td class="fname">interactivityAsk</td><td class="fdesc">对交互性的显式要求</td></tr>
+        <tr><td class="fname">rawQuery</td><td class="fdesc">原始输入（可追溯）</td></tr>
+      </table>
+    </div>
+  </div>
+
+  <div class="connector"></div>
+
+  <!-- ============ [1] Research fan-out ============ -->
+  <div class="stage">
+    <div class="stage-head">
+      <div class="stage-idx">[1]</div>
+      <div class="stage-name">Research fan-out</div>
+      <div class="stage-note">多 agent 并联宽→窄检索；出处提取即绑定</div>
+    </div>
+
+    <div class="io-label">输入</div>
+    <div class="artifact">
+      <div class="artifact-title">course-brief</div>
+      <table class="fields"><tr><td class="fdesc" colspan="2">同 [0] 输出</td></tr></table>
+    </div>
+
+    <div class="io-label out">中间产物</div>
+    <div class="artifact">
+      <div class="artifact-title">research-note <span class="mult">× 多条</span></div>
+      <table class="fields">
+        <tr><td class="fname">id</td><td class="fdesc">笔记 ID</td></tr>
+        <tr><td class="fname">sourceAgent</td><td class="fdesc">产出它的 agent（教学序列/例题反例/常见误解/素材）</td></tr>
+        <tr><td class="fname">rawContent</td><td class="fdesc">原始内容</td></tr>
+        <tr><td class="fname">provenanceLink</td><td class="fdesc">指回原始检索调用</td></tr>
+      </table>
+    </div>
+
+    <div class="io-label out">输出 A</div>
+    <div class="artifact truth">
+      <div class="artifact-title">prep-record <span class="mult">× N（备课资料条目）</span></div>
+      <table class="fields">
+        <tr><td class="fname">recordId</td><td class="fdesc">唯一 ID（同一知识点只存一份）</td></tr>
+        <tr><td class="fname">branch</td><td class="fdesc">分支：①可构造 / ②可核 / ③皆无（可多选）</td></tr>
+        <tr><td class="fname">referenceSource</td><td class="fdesc">参照物来源：闭式解/独立参考实现/声明的规格/学科定律/变换不变性/自身更细步长/自身上次运行/通用页面性质/无</td></tr>
+        <tr><td class="fname">content</td><td class="fdesc">内容本体（结构随 branch 变化）</td></tr>
+        <tr><td class="fname">invariants</td><td class="fdesc">自检条件（按系统类别）</td></tr>
+        <tr><td class="fname">validRange</td><td class="fdesc">有效参数区间与失效边界</td></tr>
+        <tr><td class="fname">knownInaccuracies</td><td class="fdesc">已知不准确处</td></tr>
+        <tr><td class="fname">nonPhysicalVisualMappings</td><td class="fdesc">不对应物理单位的视觉量</td></tr>
+        <tr><td class="fname">evidence</td><td class="fdesc">出处：<code>{url, quotedSpan, fetchedAt}</code>（工具自动写入）</td></tr>
+        <tr><td class="fname">provenanceLink</td><td class="fdesc">回指 research-note</td></tr>
+      </table>
+    </div>
+
+    <div class="io-label out">输出 B</div>
+    <div class="artifact output">
+      <div class="artifact-title">pedagogy-note <span class="mult">× N（教法笔记）</span></div>
+      <table class="fields">
+        <tr><td class="fname">id</td><td class="fdesc">笔记 ID</td></tr>
+        <tr><td class="fname">type</td><td class="fdesc">讲授顺序 / 教法机制 / 常见误解</td></tr>
+        <tr><td class="fname">content</td><td class="fdesc">内容本体</td></tr>
+        <tr><td class="fname">evidence</td><td class="fdesc">出处（如有）</td></tr>
+        <tr><td class="fname">consumer</td><td class="fdesc">固定值 <code>"planner"</code></td></tr>
+      </table>
+    </div>
+  </div>
+
+  <div class="connector"></div>
+
+  <!-- ============ [2] Curriculum Contract ============ -->
+  <div class="stage">
+    <div class="stage-head">
+      <div class="stage-idx">[2] 🔒</div>
+      <div class="stage-name">Curriculum Contract</div>
+      <div class="stage-note">★单线程锁定 + 人在环确认</div>
+    </div>
+
+    <div class="io-label">输入</div>
+    <div class="artifact truth">
+      <div class="artifact-title">prep-record[] + pedagogy-note[]</div>
+      <table class="fields"><tr><td class="fdesc" colspan="2">[1] 的全部输出</td></tr></table>
+    </div>
+
+    <div class="io-label out">输出</div>
+    <div class="artifact output">
+      <div class="artifact-title">outline</div>
+      <table class="fields">
+        <tr><td class="fname">chapters</td><td class="fdesc">章节列表 <code>{title, pageRange, rationale}</code>（rationale 回指 pedagogy-note）</td></tr>
+        <tr><td class="fname">durationBudget</td><td class="fdesc">总时长 <code>{totalMin}</code></td></tr>
+        <tr><td class="fname">confirmedAt</td><td class="fdesc">人工确认时间</td></tr>
+        <tr><td class="fname">revisionNotes</td><td class="fdesc">人工修改意见（如有）</td></tr>
+      </table>
+    </div>
+    <div class="artifact output">
+      <div class="artifact-title">globals</div>
+      <table class="fields">
+        <tr><td class="fname">terminology</td><td class="fdesc">术语表</td></tr>
+        <tr><td class="fname">notation</td><td class="fdesc">符号约定</td></tr>
+        <tr><td class="fname">styleTokens</td><td class="fdesc">风格 token（配色 / 字体…）</td></tr>
+        <tr><td class="fname">componentAPI</td><td class="fdesc">批准使用的组件清单</td></tr>
+        <tr><td class="fname">artDirection</td><td class="fdesc">视觉风格采样结果</td></tr>
+      </table>
+    </div>
+    <div class="artifact output">
+      <div class="artifact-title">page-spec <span class="mult">× N</span></div>
+      <table class="fields">
+        <tr><td class="fname">pageId</td><td class="fdesc">页 ID</td></tr>
+        <tr><td class="fname">pageType</td><td class="fdesc">页型（公式推导/仿真探索/代码运行/测验…）</td></tr>
+        <tr><td class="fname">centralMessage</td><td class="fdesc">唯一中心信息</td></tr>
+        <tr><td class="fname">learningAction</td><td class="fdesc">学生完成的认知动作（比较 / 预测 / 追踪 / 解释），不是界面操作</td></tr>
+        <tr><td class="fname">timeBudgetSec</td><td class="fdesc">时间预算（秒）</td></tr>
+        <tr><td class="fname">boundPrepRecords</td><td class="fdesc">计划绑定的 prep-record ID 列表</td></tr>
+      </table>
+      <div class="chain-note">Planner 只锁定知识结构与资料绑定；标题、副标题、视觉对象、构图、媒体和交互形式由 Builder 决定。</div>
+      <div class="chain-note"><code>boundPrepRecords</code>（计划）→
+        <code>page-context.relevantPrepRecords</code>（[3] 解析全文）→
+        <code>page-artifact.boundReferences</code>（[3] 实际使用）——三阶段各自角色，非重复存储。</div>
+    </div>
+  </div>
+
+  <div class="connector"></div>
+
+  <!-- ============ [3] Per-page fan-out ============ -->
+  <div class="stage">
+    <div class="stage-head">
+      <div class="stage-idx">[3]</div>
+      <div class="stage-name">Per-page fan-out</div>
+      <div class="stage-note">一页一 agent 并联；只写自己那一页</div>
+    </div>
+
+    <div class="io-label">输入</div>
+    <div class="artifact">
+      <div class="artifact-title">page-context</div>
+      <table class="fields">
+        <tr><td class="fname">pageSpec</td><td class="fdesc">自己那一页的 page-spec</td></tr>
+        <tr><td class="fname">globals</td><td class="fdesc">契约 globals</td></tr>
+        <tr><td class="fname">neighborSummary</td><td class="fdesc">邻页摘要 <code>{prev, next}</code></td></tr>
+        <tr><td class="fname">coveredConcepts</td><td class="fdesc">已覆盖概念</td></tr>
+        <tr><td class="fname">relevantPrepRecords</td><td class="fdesc">绑定的 prep-record 全文</td></tr>
+        <tr><td class="fname">availableSkills</td><td class="fdesc">按需加载的 skill</td></tr>
+      </table>
+      <div class="chain-note">Builder 由 Harness 强制注入版本化 <code>lecture-authoring</code> system profile；profile 不通过 skill_read 加载，Planner 只锁定学习结构与证据路由。</div>
+    </div>
+
+    <div class="io-label out">输出</div>
+    <div class="artifact output">
+      <div class="artifact-title">page-artifact</div>
+      <table class="fields">
+        <tr><td class="fname">pageId</td><td class="fdesc">页 ID</td></tr>
+        <tr><td class="fname">designSpec</td><td class="fdesc">版面设计规格</td></tr>
+        <tr><td class="fname">html</td><td class="fdesc">实现产物</td></tr>
+        <tr><td class="fname">boundReferences</td><td class="fdesc">实际绑定的 recordId 列表</td></tr>
+        <tr><td class="fname">status</td><td class="fdesc"><code>completed</code> / <code>degraded</code></td></tr>
+      </table>
+      <div class="chain-note">教学性交互遵循 <code>input/action → domain engine → trace/result → render</code>。算法、方程、状态机、判定器或数据变换是唯一教学状态源；界面只投影实际计算结果。</div>
+    </div>
+    <div class="artifact output">
+      <div class="artifact-title">asset-manifest（按需）</div>
+      <table class="fields">
+        <tr><td class="fname">assetId / pageId</td><td class="fdesc">素材 ID 与所属页面</td></tr>
+        <tr><td class="fname">sourceType</td><td class="fdesc">Wikimedia Commons 真实素材或 generated-editorial</td></tr>
+        <tr><td class="fname">sourceUrl / license</td><td class="fdesc">来源和授权；生成素材记录模型与 prompt hash</td></tr>
+        <tr><td class="fname">localPath / sha256</td><td class="fdesc">run 内本地文件与内容哈希</td></tr>
+      </table>
+      <div class="chain-note">Builder 使用 <code>acquire_media</code> / <code>generate_media</code>；最终 HTML 只绑定已登记的本地素材。</div>
+    </div>
+  </div>
+
+  <div class="connector"></div>
+
+  <!-- ============ [4] Assemble & Global pass ============ -->
+  <div class="stage">
+    <div class="stage-head">
+      <div class="stage-idx">[4]</div>
+      <div class="stage-name">Assemble &amp; Global pass</div>
+      <div class="stage-note">单线程。拼装 + 跨页一致性</div>
+    </div>
+
+    <div class="io-label">输入</div>
+    <div class="artifact">
+      <div class="artifact-title">terminal page-artifact[] + globals</div>
+      <table class="fields"><tr><td class="fdesc" colspan="2">全部 <code>status=completed/degraded</code> 的页 + notation ledger</td></tr></table>
+    </div>
+
+    <div class="io-label out">输出</div>
+    <div class="artifact output">
+      <div class="artifact-title">assembled-deck</div>
+      <table class="fields">
+        <tr><td class="fname">pages</td><td class="fdesc">拼装后的页序列</td></tr>
+        <tr><td class="fname">totalDurationEstimate</td><td class="fdesc">总讲授时长估计（成品实际值）</td></tr>
+      </table>
+    </div>
+    <div class="artifact output">
+      <div class="artifact-title">consistency-report</div>
+      <table class="fields">
+        <tr><td class="fname">terminologyConsistent</td><td class="fdesc">术语是否全篇统一</td></tr>
+        <tr><td class="fname">notationConsistent</td><td class="fdesc">符号是否全篇统一</td></tr>
+        <tr><td class="fname">difficultyProgression</td><td class="fdesc">难度是否递进</td></tr>
+        <tr><td class="fname">duplicateContentFlags</td><td class="fdesc">重复内容标记</td></tr>
+        <tr><td class="fname">dirtyPages</td><td class="fdesc">globals 变更后待重跑的页</td></tr>
+        <tr><td class="fname">planCoverage</td><td class="fdesc">计划主题是否全部覆盖</td></tr>
+      </table>
+    </div>
+  </div>
+
+  <div class="connector"></div>
+
+  <!-- ============ [5] Delivery report ============ -->
+  <div class="stage">
+    <div class="stage-head">
+      <div class="stage-idx">[5]</div>
+      <div class="stage-name">Delivery report</div>
+      <div class="stage-note">只陈述本次交付状态；不自动沉淀经验</div>
+    </div>
+
+    <div class="io-label">输入</div>
+    <div class="artifact">
+      <div class="artifact-title">manifest + consistency-report</div>
+      <table class="fields"><tr><td class="fdesc" colspan="2">终态页面列表与跨页装配结果</td></tr></table>
+    </div>
+
+    <div class="io-label out">输出</div>
+    <div class="artifact output" style="border-color:rgba(199,125,187,.55)">
+      <div class="artifact-title" style="color:var(--gate)">quality-report <span class="mult">（最终交付）</span></div>
+      <table class="fields">
+        <tr><td class="fname">deck</td><td class="fdesc">互动讲义</td></tr>
+        <tr><td class="fname">completedPages</td><td class="fdesc">通过 Builder 本地交付检查并提交的页面</td></tr>
+        <tr><td class="fname">degradedPages</td><td class="fdesc">Builder 未能提交后生成静态安全页的页面</td></tr>
+        <tr><td class="fname">note</td><td class="fdesc">跨页重复与计划覆盖提示</td></tr>
+      </table>
+      <div class="chain-note">经验沉淀由用户监督，在实验日志诊断之后另行完成，不是每次 run 的自动阶段。</div>
+    </div>
+  </div>
+
+</div>
+</div>
+
+<footer>
+  配套阅读：架构总图 <a href="./harness-architecture.html">harness-architecture.html</a> ·
+  正确性中枢 <a href="./PREP.md">PREP.md</a> ·
+  可执行物验证 <a href="./VERIFY-EXEC.md">VERIFY-EXEC.md</a> ·
+  设计哲学与十八问 <a href="./HARNESS.md">HARNESS.md</a><br>
+  这是字段级形式化，不是新设计。只做 <code>字段名: 中文描述</code>，不做带类型/校验的完整 JSON Schema。
+  命名规则：字段名会被别的 artifact 按同名引用（如 pageId / recordId）时保留类型前缀，
+  否则收成裸 <code>id</code>。<br><br>
+  <b style="color:var(--muted)">边界</b>：本页描述当前生成内循环的数据契约。
+  <code>check_page</code> 只检查可交付性，不把 DOM 变化冒充交互正确性；未来若接入独立 oracle，
+  其评估产物属于实验评估链，不能复制一套 Builder 返工状态机。
+</footer>
+
+</body>
+</html>

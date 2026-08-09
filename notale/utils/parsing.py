@@ -5,6 +5,10 @@ from __future__ import annotations
 import json
 import re
 from typing import Any
+from notale.utils.config import get_config
+
+
+_CONFIG = get_config()
 
 
 def extract_json(text: str) -> Any:
@@ -17,7 +21,9 @@ def extract_json(text: str) -> Any:
             start = i
             break
     if start is None:
-        raise ValueError(f"输出中找不到 JSON：{text[:200]}")
+        raise ValueError(
+            f"输出中找不到 JSON：{text[: _CONFIG.runtime.parsing_error_preview_chars]}"
+        )
     opener = candidate[start]
     closer = "}" if opener == "{" else "]"
     depth = 0
@@ -41,7 +47,7 @@ def extract_json(text: str) -> Any:
             depth -= 1
             if depth == 0:
                 return json.loads(candidate[start : j + 1])
-    raise ValueError(f"JSON 未闭合：{text[:200]}")
+    raise ValueError(f"JSON 未闭合：{text[: _CONFIG.runtime.parsing_error_preview_chars]}")
 
 
 _TAG = re.compile(r"<[^>]+>")
@@ -55,7 +61,7 @@ def visible_text(html: str) -> str:
     return re.sub(r"\s+", " ", body).strip()
 
 
-def shingles(text: str, n: int = 5) -> set[str]:
+def shingles(text: str, n: int = _CONFIG.deck.duplicate_shingle_size) -> set[str]:
     """字符级 n-gram 集合（中文按字、英文按词混在一起也够用）。"""
     compact = re.sub(r"\s+", "", text)
     if len(compact) < n:

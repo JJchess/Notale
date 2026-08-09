@@ -3,10 +3,11 @@
 import pytest
 
 from notale.utils import llm
+from notale.utils.config import get_config
 
 
 def test_signature_format():
-    assert llm.HttpxClient().signature == "deepseek-ai/DeepSeek-V4-Flash@t0.0@s0"
+    assert llm.HttpxClient().signature == f"{get_config().model.name}@t0.0@s0"
     assert llm.HttpxClient(model="m", temperature=0.7, seed=None).signature == "m@t0.7@sNone"
 
 
@@ -20,6 +21,7 @@ async def test_fake_client_queue_and_purpose():
 
 async def test_missing_api_key_raises_before_any_network(monkeypatch):
     monkeypatch.delenv("SILICONFLOW_API_KEY", raising=False)
+    monkeypatch.delenv(get_config().model.api_key_env, raising=False)
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     client = llm.HttpxClient()
     with pytest.raises(RuntimeError, match="缺 API key"):

@@ -1,6 +1,7 @@
 ---
 name: frontend-design
 description: Guidance for distinctive, intentional visual design when building new UI or reshaping an existing one. Helps with aesthetic direction, typography, and making choices that don't read as templated defaults.
+required_tools: [page_write, page_read, page_search, page_patch, check_page]
 license: Complete terms in LICENSE.txt
 ---
 

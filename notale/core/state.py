@@ -3,10 +3,10 @@
 每次运行一个 run 目录：
     runs/<date>-<id>/
     ├── manifest.json    # 页状态机现状（每页 status/attempts）
-    └── events.jsonl     # 事件日志，append-only（一次操作 = 状态转移 + 验收回执 + 台账）
+    └── events.jsonl     # 事件日志，append-only
 
-resume 语义：加载 manifest，只重做非终态（pending / returned-for-repair）的页；
-verified 与 degraded 页原样保留——修一页不重跑整本。
+resume 语义：加载 manifest，只继续非终态（pending / drafted）的页；
+completed 与 degraded 页原样保留——续跑一页不重跑整本。
 """
 
 from __future__ import annotations
@@ -17,18 +17,18 @@ import uuid
 from pathlib import Path
 
 from notale.core.models import PageStatus
+from notale.utils.config import get_config
 from pydantic import BaseModel, Field
 
 # 合法状态转移（非法转移是 bug，直接抛）
 _TRANSITIONS: dict[PageStatus, set[PageStatus]] = {
     PageStatus.PENDING: {PageStatus.DRAFTED, PageStatus.DEGRADED},
-    PageStatus.DRAFTED: {PageStatus.VERIFIED, PageStatus.RETURNED_FOR_REPAIR},
-    PageStatus.RETURNED_FOR_REPAIR: {PageStatus.DRAFTED, PageStatus.DEGRADED},
-    PageStatus.VERIFIED: set(),  # 终态
+    PageStatus.DRAFTED: {PageStatus.COMPLETED, PageStatus.DEGRADED},
+    PageStatus.COMPLETED: set(),  # 终态
     PageStatus.DEGRADED: set(),  # 终态（降级页不回炉，待人审）
 }
 
-TERMINAL = {PageStatus.VERIFIED, PageStatus.DEGRADED}
+TERMINAL = {PageStatus.COMPLETED, PageStatus.DEGRADED}
 
 
 class PageState(BaseModel):
@@ -60,7 +60,8 @@ class Manifest:
 
     @classmethod
     def create(cls, out_root: Path, query: str) -> Manifest:
-        run_id = f"{datetime.date.today().isoformat()}-{uuid.uuid4().hex[:6]}"
+        suffix_chars = get_config().runtime.run_id_suffix_chars
+        run_id = f"{datetime.date.today().isoformat()}-{uuid.uuid4().hex[:suffix_chars]}"
         run_dir = out_root / run_id
         run_dir.mkdir(parents=True, exist_ok=False)
         m = cls(run_dir, RunManifest(runId=run_id, query=query, createdAt=_now()))

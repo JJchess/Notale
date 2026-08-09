@@ -1,9 +1,16 @@
 ---
 name: frontend-slides
-description: Create stunning, animation-rich HTML presentations from scratch or by converting PowerPoint files. Use when the user wants to build a presentation, convert a PPT/PPTX to web, or create slides for a talk/pitch. Helps non-designers discover their aesthetic through visual exploration rather than abstract choices.
+description: Create distinctive HTML presentation decks, or compose one fixed Notale lecture page through the explicitly assigned notale-page entrypoint. Use for presentation design, PPT/PPTX conversion, talk or pitch decks, and content-led single-page lecture composition.
+allowed-tools: [context_read, page_write, page_read, page_search, page_patch, check_page, submit_page]
+metadata:
+  default-entrypoint: full-deck
 ---
 
 # Frontend Slides
+
+This file is the default `full-deck` entrypoint. When Notale assigns
+`frontend-slides:notale-page`, follow only `entrypoints/notale-page.md`; do not import this deck
+workflow, its discovery questions, previews, navigation, export, or deployment steps.
 
 Create zero-dependency, animation-rich HTML presentations that run entirely in the browser.
 

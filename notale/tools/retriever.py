@@ -9,10 +9,13 @@ from __future__ import annotations
 import re
 from typing import Protocol
 
-import httpx
+from openharness.tools.web_fetch_tool import USER_AGENT
+from openharness.utils.network_guard import fetch_public_http_response
+from notale.utils.config import get_config
 
 _TAG = re.compile(r"<[^>]+>")
 _SCRIPT_STYLE = re.compile(r"<(script|style)[^>]*>.*?</\1>", re.S | re.I)
+_TOOLS_CONFIG = get_config().tools
 
 
 class Retriever(Protocol):
@@ -20,16 +23,24 @@ class Retriever(Protocol):
 
 
 class FetchTool:
-    def __init__(self, timeout: float = 30.0, max_chars: int = 20000) -> None:
+    def __init__(
+        self,
+        timeout: float = _TOOLS_CONFIG.retriever_timeout_sec,
+        max_chars: int = _TOOLS_CONFIG.retriever_max_chars,
+    ) -> None:
         self.timeout = timeout
         self.max_chars = max_chars
 
     async def fetch(self, url: str) -> str:
-        async with httpx.AsyncClient(timeout=self.timeout, follow_redirects=True) as client:
-            resp = await client.get(url)
-            resp.raise_for_status()
+        resp = await fetch_public_http_response(
+            url,
+            headers={"User-Agent": USER_AGENT},
+            timeout=self.timeout,
+            max_redirects=_TOOLS_CONFIG.retriever_max_redirects,
+        )
+        resp.raise_for_status()
         text = resp.text
-        if "<html" in text[:2000].lower():
+        if "<html" in text[: _TOOLS_CONFIG.retriever_html_detection_prefix_chars].lower():
             text = _SCRIPT_STYLE.sub(" ", text)
             text = _TAG.sub(" ", text)
         return re.sub(r"\s+", " ", text).strip()[: self.max_chars]

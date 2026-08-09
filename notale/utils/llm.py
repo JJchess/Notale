@@ -18,6 +18,12 @@ from collections import deque
 from typing import Any, Protocol, TypedDict, runtime_checkable
 
 import httpx
+from notale.core.observability import CURRENT_CALL
+from notale.utils.config import get_config
+
+
+_MODEL_CONFIG = get_config().model
+_RUNTIME_CONFIG = get_config().runtime
 
 # ---------------------------------------------------------------------------
 # 类型与接口
@@ -58,14 +64,14 @@ class HttpxClient:
     def __init__(
         self,
         *,
-        base_url: str = "https://api.siliconflow.cn/v1",
-        model: str = "deepseek-ai/DeepSeek-V4-Flash",
-        temperature: float = 0.0,
-        seed: int | None = 0,
-        api_key_env: str = "SILICONFLOW_API_KEY",
-        attempts: int = 4,
-        timeout: float = 600.0,  # reasoning 模型单调用可能 >120s（沿用 lecture-agent 对该模型的 pin）
-        proxy: str | None = None,
+        base_url: str = _MODEL_CONFIG.base_url,
+        model: str = _MODEL_CONFIG.name,
+        temperature: float = _MODEL_CONFIG.temperature,
+        seed: int | None = _MODEL_CONFIG.seed,
+        api_key_env: str = _MODEL_CONFIG.api_key_env,
+        attempts: int = _MODEL_CONFIG.http_attempts,
+        timeout: float = _MODEL_CONFIG.http_timeout_sec,
+        proxy: str | None = _MODEL_CONFIG.proxy,
         extra_body: dict[str, Any] | None = None,
     ) -> None:
         self.base_url = base_url.rstrip("/")
@@ -79,7 +85,7 @@ class HttpxClient:
         self.proxy = proxy
         # 任意 OpenAI 兼容额外参数透传（enable_thinking / thinking / reasoning_effort / max_tokens …）。
         # 普适："关思考"等 per-model 差异全交配置，不进代码。
-        self.extra_body = dict(extra_body or {})
+        self.extra_body = dict(_MODEL_CONFIG.extra_body if extra_body is None else extra_body)
         # 累计 token（供实验 harness 归因；仅真调计数，命中缓存的调用不计）
         self.usage: dict[str, int] = {
             "prompt_tokens": 0,
@@ -88,6 +94,8 @@ class HttpxClient:
             "total_tokens": 0,
             "calls": 0,
         }
+        self.last_usage: dict[str, int] = {}
+        self.last_raw_response: dict[str, Any] | None = None
 
     @property
     def signature(self) -> str:
@@ -115,15 +123,44 @@ class HttpxClient:
                         f"{self.base_url}/chat/completions", headers=headers, json=body
                     )
                     if resp.status_code != 200:
-                        raise RuntimeError(f"HTTP {resp.status_code} {resp.text[:200]}")
+                        raise RuntimeError(
+                            f"HTTP {resp.status_code} "
+                            f"{resp.text[: _RUNTIME_CONFIG.llm_error_preview_chars]}"
+                        )
                     data = resp.json()
-                    self._record_usage(data.get("usage"))
+                    self.last_raw_response = data
+                    raw_usage = data.get("usage") or {}
+                    details = raw_usage.get("completion_tokens_details") or {}
+                    self.last_usage = {
+                        "prompt_tokens": int(raw_usage.get("prompt_tokens", 0) or 0),
+                        "completion_tokens": int(raw_usage.get("completion_tokens", 0) or 0),
+                        "reasoning_tokens": int(details.get("reasoning_tokens", 0) or 0),
+                        "total_tokens": int(raw_usage.get("total_tokens", 0) or 0),
+                    }
+                    self._record_usage(raw_usage)
+                    current = CURRENT_CALL.get()
+                    if current:
+                        current[0].http_attempt(
+                            current[1], attempt=attempt, status="success",
+                            httpStatus=resp.status_code,
+                        )
                     message: dict[str, Any] = data.get("choices", [{}])[0].get("message", {})
                     return message
                 except Exception as e:  # noqa: BLE001 - 统一重试
                     last_err = e
+                    current = CURRENT_CALL.get()
+                    if current:
+                        current[0].http_attempt(
+                            current[1], attempt=attempt, status="error",
+                            error={"type": type(e).__name__, "message": str(e)},
+                        )
                     if attempt < self.attempts:
-                        backoff = (4.0 if _RATE_LIMIT.search(str(e)) else 1.0) * attempt
+                        base_backoff = (
+                            _MODEL_CONFIG.rate_limit_retry_backoff_sec
+                            if _RATE_LIMIT.search(str(e))
+                            else _MODEL_CONFIG.normal_retry_backoff_sec
+                        )
+                        backoff = base_backoff * attempt
                         await asyncio.sleep(backoff)
         assert last_err is not None
         raise last_err

@@ -4,19 +4,16 @@ import pytest
 
 from notale.core.models import (
     Branch,
-    CounterexampleLedger,
     CourseBrief,
     Evidence,
     Globals,
-    LedgerEntry,
+    PageArtifact,
     PageSpec,
     PageStatus,
     PageType,
     PrepRecord,
     QualityReport,
     ReferenceSource,
-    VerificationReport,
-    VerifyStatus,
 )
 from notale.core.evidence import EvidenceBindingError, bind_evidence, new_fetch_record
 
@@ -55,29 +52,26 @@ def test_evidence_binding_tolerates_whitespace_drift():
     assert isinstance(ev, Evidence)
 
 
-def test_counterexample_ledger_active_constraints():
-    ledger = CounterexampleLedger(pageId="p1", attemptCount=2)
-    ledger.entries.append(LedgerEntry(attemptNo=1, failedAssertion=["出现占位文本"], timestamp="t1"))
-    ledger.entries.append(LedgerEntry(attemptNo=2, referenceMismatch=["r1 比对失败"], timestamp="t2"))
-    assert ledger.activeConstraints == ["出现占位文本", "r1 比对失败"]
+def test_page_artifact_has_no_interaction_metadata_claim():
+    page = PageArtifact.model_validate({
+        "pageId": "p1",
+        "html": "<p>内容</p>",
+        "interactionParams": {"stateModel": "handwritten frames"},
+    })
+    assert "interactionParams" not in page.model_dump()
 
 
-def test_verification_report_shapes():
-    rep = VerificationReport(pageId="p1", status=VerifyStatus.RETURNED_FOR_REPAIR, newFailure=["f"])
-    assert rep.humanReviewQueue is False
-    rep2 = VerificationReport(
-        pageId="p2", status=VerifyStatus.DEGRADED, fallbackHtml="<div>safe</div>", reason="超限", humanReviewQueue=True
-    )
-    assert rep2.fallbackHtml
-
-
-def test_quality_report_honest_defaults():
-    qr = QualityReport(unimplementedLayers=["L1", "L2", "L3", "L4", "L5", "L6"])
-    assert qr.canaryLeakageSummary is None  # 掺沙未建，如实 None
+def test_quality_report_describes_delivery_only():
+    qr = QualityReport(completedPages=["p1"], degradedPages=["p2"])
+    assert qr.completedPages == ["p1"]
+    assert "unimplementedLayers" not in qr.model_dump()
 
 
 def test_page_spec_typing():
     spec = PageSpec(pageId="p1", pageType=PageType.SIM_EXPLORABLE, centralMessage="单摆周期与振幅无关")
     assert spec.timeBudgetSec == 90
+    assert "visualSubject" not in spec.model_dump()
     assert Globals().componentAPI == []
     assert PageStatus.PENDING.value == "pending"
+    assert PageStatus("verified") == PageStatus.COMPLETED
+    assert PageStatus("returned-for-repair") == PageStatus.DRAFTED

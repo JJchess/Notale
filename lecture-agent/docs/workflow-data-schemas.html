@@ -1,0 +1,597 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>lecture-agent Workflow 数据传输全景 — 各阶段 I/O Schema</title>
+<style>
+  :root {
+    --bg: #f5f6f8;
+    --card: #ffffff;
+    --ink: #1f2430;
+    --muted: #6b7280;
+    --line: #e3e6eb;
+    --in-bg: #eef4ff;
+    --in-border: #c3d7f7;
+    --in-accent: #2f6fdd;
+    --out-bg: #effaf1;
+    --out-border: #bfe6c8;
+    --out-accent: #1e8e4a;
+    --field: #b31d8c;
+    --arrow: #9aa3b2;
+    --badge-llm: #7c3aed;
+    --badge-browser: #d97706;
+    --badge-det: #0e7490;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 32px 24px 64px;
+    background: var(--bg); color: var(--ink);
+    font-family: -apple-system, "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif;
+    font-size: 14px; line-height: 1.55;
+  }
+  header.page { max-width: 1400px; margin: 0 auto 28px; }
+  header.page h1 { font-size: 22px; margin: 0 0 8px; }
+  header.page p { margin: 4px 0; color: var(--muted); }
+  header.page code { background: #eceff3; padding: 1px 6px; border-radius: 4px; font-size: 12.5px; }
+
+  .flow {
+    display: flex; align-items: stretch; gap: 0;
+    overflow-x: auto; padding: 8px 4px 24px;
+  }
+  .card {
+    flex: 0 0 360px; width: 360px;
+    background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+    padding: 16px 16px 12px; box-shadow: 0 1px 3px rgba(20,30,50,.06);
+    display: flex; flex-direction: column;
+  }
+  .arrow {
+    flex: 0 0 auto; align-self: center; padding: 0 10px;
+    color: var(--arrow); font-size: 22px; font-weight: 700;
+    writing-mode: horizontal-tb;
+  }
+  .card h2 { font-size: 15px; margin: 0 0 2px; }
+  .card h2 .idx {
+    display: inline-block; min-width: 26px; text-align: center;
+    background: var(--ink); color: #fff; border-radius: 6px;
+    font-size: 12px; padding: 1px 6px; margin-right: 6px;
+  }
+  .impl { font-size: 11.5px; color: var(--muted); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; margin: 0 0 8px; word-break: break-all; }
+  .badges { margin: 0 0 10px; }
+  .badge {
+    display: inline-block; font-size: 11px; border-radius: 999px;
+    padding: 1px 8px; margin-right: 6px; color: #fff;
+  }
+  .badge.llm { background: var(--badge-llm); }
+  .badge.browser { background: var(--badge-browser); }
+  .badge.det { background: var(--badge-det); }
+
+  .schema { border-radius: 8px; padding: 10px 12px; margin: 0 0 10px; border: 1px solid; }
+  .schema.in  { background: var(--in-bg);  border-color: var(--in-border); }
+  .schema.out { background: var(--out-bg); border-color: var(--out-border); }
+  .schema h3 { margin: 0 0 6px; font-size: 12px; letter-spacing: .5px; }
+  .schema.in h3  { color: var(--in-accent); }
+  .schema.out h3 { color: var(--out-accent); }
+  .schema ul { list-style: none; margin: 0; padding: 0; }
+  .schema li { padding: 1.5px 0; font-size: 12.5px; }
+  .schema li .f {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    color: var(--field); font-weight: 600; font-size: 12px;
+  }
+  .schema li .t { color: var(--muted); font-size: 11.5px; font-family: ui-monospace, Menlo, monospace; }
+  .schema li.lv1 { padding-left: 16px; }
+  .schema li.lv2 { padding-left: 32px; }
+  .schema .grp { color: var(--ink); font-weight: 600; font-size: 12.5px; padding-top: 6px; }
+  .note { font-size: 12px; color: var(--muted); margin: auto 0 0; border-top: 1px dashed var(--line); padding-top: 8px; }
+
+  section.appendix { max-width: 1400px; margin: 36px auto 0; }
+  section.appendix h2 { font-size: 18px; }
+  details {
+    background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+    padding: 12px 16px; margin: 0 0 14px;
+  }
+  details summary { cursor: pointer; font-weight: 600; font-size: 14px; }
+  details .schema { margin-top: 10px; }
+  .cols { display: grid; grid-template-columns: repeat(auto-fill, minmax(420px, 1fr)); gap: 14px; margin-top: 10px; }
+  .blk { border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; background: #fbfbfc; }
+  .blk h4 { margin: 0 0 4px; font-size: 12.5px; font-family: ui-monospace, Menlo, monospace; color: var(--in-accent); }
+  .blk ul { list-style: none; margin: 0; padding: 0; }
+  .blk li { font-size: 12px; padding: 1px 0; }
+</style>
+</head>
+<body>
+
+<header class="page">
+  <h1>lecture-agent Workflow 数据传输全景</h1>
+  <p>入口链:<code>scripts/generate.py</code> → <code>app/generate.py::run_generation</code> → <code>engine/pipeline.py::generate_lecture(llm, …)</code> → 返回 <code>GenerateResult</code>。</p>
+  <p>数据主干:<strong>一个可变的 <code>doc: dict</code></strong> 从 plan 阶段的「占位骨架」逐阶段被原地填充,最终成为完整 LectureDoc;旁路(side-channel)字典按 scene/block id 携带规划元数据(<code>page_briefs</code>、<code>placeholder_specs</code>、<code>planned_skeleton</code> 等);仅在浏览器验证时序列化为 JSON。</p>
+  <p>横向滚动查看各阶段 →</p>
+</header>
+
+<div class="flow">
+
+  <!-- ========== 管道输入 ========== -->
+  <div class="card">
+    <h2><span class="idx">IN</span>管道输入 generate_lecture(...)</h2>
+    <p class="impl">engine/pipeline.py:1356 · app/build.py::build_options</p>
+    <div class="badges"><span class="badge det">配置装配</span></div>
+    <div class="schema in">
+      <h3>输入 SCHEMA</h3>
+      <ul>
+        <li><span class="f">"topic"</span>: <span class="t">str</span> 讲座主题(必填)</li>
+        <li><span class="f">"pages"</span>: <span class="t">int=12</span> 目标页数(硬约束)</li>
+        <li><span class="f">"theme"</span>: <span class="t">str</span> 强制主题 id,空则由规划器自选</li>
+        <li><span class="f">"audience"</span>: <span class="t">str</span> 目标受众描述</li>
+        <li><span class="f">"wants"</span>: <span class="t">str</span> 期望的交互形式</li>
+        <li><span class="f">"extra"</span>: <span class="t">str</span> 额外要求</li>
+        <li><span class="f">"material"</span>: <span class="t">str</span> 参考素材原文</li>
+        <li><span class="f">"coverage"</span>: <span class="t">bool</span> 是否运行覆盖度检查(阶段5)</li>
+        <li class="grp">options: GeneratorOptions(pipeline.py:147)</li>
+        <li class="lv1"><span class="f">"fanout"</span>: <span class="t">bool</span> 是否逐块并发生成</li>
+        <li class="lv1"><span class="f">"revise" / "evolve"</span>: <span class="t">bool</span> 修订/演化开关(现行管道基本不生效)</li>
+        <li class="lv1"><span class="f">"plan_perspectives"</span>: <span class="t">int</span> STORM 视角数量</li>
+        <li class="lv1"><span class="f">"tools"</span>: <span class="t">bool</span> 是否启用工具调用 LLM</li>
+        <li class="lv1"><span class="f">"concurrency"</span>: <span class="t">int</span> 并发度</li>
+        <li class="lv1"><span class="f">"sections"</span>: <span class="t">bool</span> 大页数时启用分层大纲</li>
+        <li class="lv1"><span class="f">"media"</span>: <span class="t">bool|str</span> 媒体生成策略</li>
+        <li class="lv1"><span class="f">"record"</span>: <span class="t">bool</span> 是否记录实验台账</li>
+        <li class="lv1"><span class="f">"render_rounds"</span>: <span class="t">int</span> 渲染验证轮数</li>
+        <li class="lv1"><span class="f">"quality_rounds"</span>: <span class="t">int</span> 质量评审轮数(full 预设=3)</li>
+        <li class="lv1"><span class="f">"visual_quality_rounds"</span>: <span class="t">int</span> 视觉评审轮数(full 预设=1)</li>
+        <li class="lv1"><span class="f">"absolute_frames"</span>: <span class="t">bool=True</span> 绝对帧布局模式</li>
+        <li class="grp">注入端口(依赖注入)</li>
+        <li class="lv1"><span class="f">"llm"</span>: <span class="t">LLMClient</span> 大模型客户端</li>
+        <li class="lv1"><span class="f">"image_finder" / "image_generator"</span>: 图像检索/生成端口</li>
+        <li class="lv1"><span class="f">"render_verifier"</span>: <span class="t">RenderVerifier</span> 浏览器渲染验证端口</li>
+        <li class="lv1"><span class="f">"visual_reviewer"</span>: <span class="t">VisualReviewer</span> 视觉评审端口</li>
+      </ul>
+    </div>
+    <p class="note">配置预设:configs/generator/{full, fast, single_pass, tools}.yaml</p>
+  </div>
+
+  <div class="arrow">→</div>
+
+  <!-- ========== 阶段 0 ========== -->
+  <div class="card">
+    <h2><span class="idx">0</span>素材压缩 condense_material</h2>
+    <p class="impl">domain/generation/material.py::condense_material(pipeline.py:1386 调用)</p>
+    <div class="badges"><span class="badge llm">LLM</span></div>
+    <div class="schema in">
+      <h3>输入 SCHEMA</h3>
+      <ul>
+        <li><span class="f">"material"</span>: <span class="t">str</span> 参考素材原文</li>
+        <li><span class="f">"topic"</span>: <span class="t">str</span> 讲座主题</li>
+        <li><span class="f">"target_chars"</span>: <span class="t">int=4000</span> 目标压缩长度</li>
+      </ul>
+    </div>
+    <div class="schema out">
+      <h3>输出 SCHEMA</h3>
+      <ul>
+        <li><span class="f">"mat"</span>: <span class="t">str</span> 保真压缩后的素材摘要(≤约4000字;失败时退化为截断)</li>
+      </ul>
+    </div>
+    <p class="note">纯字符串进、纯字符串出,无结构化 schema。</p>
+  </div>
+
+  <div class="arrow">→</div>
+
+  <!-- ========== 阶段 1 plan ========== -->
+  <div class="card">
+    <h2><span class="idx">1</span>规划 plan</h2>
+    <p class="impl">domain/planning.py::plan_lecture → PlanResult(planning.py:33)</p>
+    <div class="badges"><span class="badge llm">LLM</span><span class="badge det">确定性子步骤</span></div>
+    <div class="schema in">
+      <h3>输入 SCHEMA</h3>
+      <ul>
+        <li><span class="f">"topic" / "pages" / "theme" / "audience" / "wants" / "extra" / "mat"</span>: 管道输入透传</li>
+        <li><span class="f">"type_menu"</span>: <span class="t">list[(skill, description, types)]</span> 技能菜单(来自 plan_menu)</li>
+        <li><span class="f">"theme_menu"</span>: <span class="t">list[(name, desc)]</span> 主题菜单</li>
+        <li><span class="f">"authoring_rules"</span>: <span class="t">str</span> 作者规则文本</li>
+        <li><span class="f">"perspectives_n"</span>: <span class="t">int</span> 视角数</li>
+        <li><span class="f">"sections"</span>: <span class="t">bool</span> 是否分层大纲(pages&gt;12 时 _outline→_section_skeleton×N→_stitch)</li>
+        <li><span class="f">"absolute_frames"</span>: <span class="t">bool</span> 绝对帧模式(带 ≤3 轮校验修复,plan_validation.py)</li>
+      </ul>
+    </div>
+    <div class="schema out">
+      <h3>中间产物(STORM 视角发现)</h3>
+      <ul>
+        <li><span class="f">"perspectives"</span>: <span class="t">[{name, focus, mustCover:[str], questions:[str]}]</span> 调研视角</li>
+        <li><span class="f">"knowledgeForms"</span>: <span class="t">[str]</span> 知识形态列表</li>
+        <li><span class="f">"evidence_obligations"</span>: <span class="t">[{knowledgeForm, capability, learningAction, requiredEvidence}]</span> 证据义务</li>
+      </ul>
+    </div>
+    <div class="schema out">
+      <h3>输出 SCHEMA:PlanResult</h3>
+      <ul>
+        <li><span class="f">"doc"</span>: <span class="t">dict</span> <strong>骨架 LectureDoc</strong>(块全为占位符)</li>
+        <li class="lv1"><span class="f">"id" / "title" / "subtitle" / "language" / "theme"</span>: 文档级元信息</li>
+        <li class="lv1"><span class="f">"designBrief"</span>: 设计简报(fanout 前弹出,编译为 visualSystem)</li>
+        <li class="lv2"><span class="f">"audience"</span>: <span class="t">{stage, readingLevel, formality}</span> 受众画像</li>
+        <li class="lv2"><span class="f">"purpose" / "density"</span>: 目的 / 信息密度</li>
+        <li class="lv2"><span class="f">"designDNA"</span>: <span class="t">{palette, typography, shapeLanguage, mediaLanguage, texture, motifs, compositionRhythm}</span> 设计基因</li>
+        <li class="lv2"><span class="f">"selectionReason"</span>: <span class="t">str</span> 主题选择理由</li>
+        <li class="lv1"><span class="f">"tutor"</span>: <span class="t">{suggestions:[str], kb:[{pattern, answer}]}</span> 助教预设问答</li>
+        <li class="lv1"><span class="f">"scenes"</span>: <span class="t">[Scene骨架]</span> 见下方缩进</li>
+        <li class="lv2"><span class="f">"id" / "kind"</span>: 场景 id 与类型(hero|content|quiz|statement|section)</li>
+        <li class="lv2"><span class="f">"eyebrow" / "headline" / "lead" / "transition"</span>: 页面文案</li>
+        <li class="lv2"><span class="f">"notes"</span>: <span class="t">str</span> 单行占位讲稿</li>
+        <li class="lv2"><span class="f">"layout"</span>: 帧模式为 <span class="t">{kind:"frames", canvas:{width:1280,height:720}, titleFrame:{x,y,w,h,z}|null, frames:[{blockId,x,y,w,h,z,role:primary|support|practice|decoration,clip:bool}]}</span></li>
+        <li class="lv2"><span class="f">"brief"</span>: <span class="t">{objective, learningAction, requiredEvidence, keyClaim, misconception, visualTask, evidencePolicy: derived|provided|synthetic|none}</span> 教学契约</li>
+        <li class="lv2"><span class="f">"visualBrief"</span>: <span class="t">{designIntent, selectedCapabilities:[str], compositionFamily}</span> 视觉简报</li>
+        <li class="lv2"><span class="f">"blocks"</span>: <span class="t">[占位块]</span> 见下</li>
+        <li class="grp">占位块字段(白名单校验)</li>
+        <li class="lv2"><span class="f">"id" / "type"</span>: 块 id 与目标类型</li>
+        <li class="lv2"><span class="f">"role"</span>: <span class="t">claim|evidence|visualization|practice|support</span> 教学角色</li>
+        <li class="lv2"><span class="f">"intent"</span>: <span class="t">str</span> 生成意图(给块生成器的指令)</li>
+        <li class="lv2"><span class="f">"size"</span>: <span class="t">s|m|l|xl</span> 尺寸(旧版布局)</li>
+        <li class="lv2"><span class="f">"engine" / "_planningType" / "_simProfile"</span>: 仿真引擎与规划期类型</li>
+        <li class="lv2"><span class="f">"interactionBrief"</span>: 交互简报(stateModel/controls/update/initialPaint/visibleEncodings/history/reset/verificationCases/mathModel/renderMedium/aestheticDirection/signatureDetail)</li>
+        <li class="lv2"><span class="f">媒体占位附加</span>: purpose / placement / subject / relationshipToContent / fidelity / required / fit / safeZone / overlay / sourceStrategy / focalPoint / caption / aspectRatio / treatment …</li>
+        <li><span class="f">"perspectives" / "knowledge_forms" / "evidence_obligations"</span>: 中间产物透传至结果</li>
+      </ul>
+    </div>
+    <p class="note">确定性子步骤:tokens.py::compile_visual_system(designBrief)→doc["visualSystem"];registry.py::lower_planning_placeholder 把规划能力(如 state-sim)降级为最终类型。</p>
+  </div>
+
+  <div class="arrow">→</div>
+
+  <!-- ========== 阶段 2 fanout ========== -->
+  <div class="card">
+    <h2><span class="idx">2</span>并发生成 fanout</h2>
+    <p class="impl">engine/pipeline.py::gen(pipeline.py:1534)经 utils/concurrency.py::pool 遍历所有占位块;路由:media→_generate_media_block(911);widget→domain/generation/widget.py::generate_widget;其余→domain/generation/blocks.py::generate_block</p>
+    <div class="badges"><span class="badge llm">LLM</span></div>
+    <div class="schema in">
+      <h3>输入 SCHEMA(每块的页面契约 _block_scene_context)</h3>
+      <ul>
+        <li><span class="f">"page"</span>: <span class="t">{kind, eyebrow, headline, lead}</span> 所在页信息</li>
+        <li><span class="f">"brief" / "visualBrief" / "designBrief"</span>: 教学契约 / 视觉简报 / 设计简报</li>
+        <li><span class="f">"currentBlockId"</span>: <span class="t">str</span> 当前块 id</li>
+        <li><span class="f">"viewport"</span>: <span class="t">{width, height, aspectRatio}</span> 画布视口</li>
+        <li><span class="f">"frameRole"</span>: 块在帧布局中的角色</li>
+        <li><span class="f">"constraints"</span>: <span class="t">{fillWidth, fillHeight, allowScroll, allowClip, minTextPx}</span> 填充约束</li>
+        <li><span class="f">"frame" / "siblingFrames" / "frames"</span>: 当前帧 / 兄弟帧几何</li>
+        <li><span class="f">"siblingPlan"</span>: <span class="t">[{id, type, role, intent}]</span> 同页其他块计划</li>
+        <li><span class="f">"contract"</span>: <span class="t">str</span> 技能族字符串契约(skills/&lt;family&gt;/contracts.json)</li>
+      </ul>
+    </div>
+    <div class="schema out">
+      <h3>输出 SCHEMA:BlockResult(blocks.py:39)</h3>
+      <ul>
+        <li><span class="f">"block"</span>: <span class="t">dict|null</span> 一个最终 Block(LectureDoc 联合类型,见附录;失败为 null)</li>
+        <li><span class="f">"err"</span>: <span class="t">str|null</span> 错误信息</li>
+        <li><span class="f">"warns"</span>: <span class="t">[str]|null</span> 警告列表</li>
+        <li class="grp">widget 路的 block 形态</li>
+        <li class="lv1"><span class="f">"type"="sim", "engine"="widget"</span></li>
+        <li class="lv1"><span class="f">"html"</span>: <span class="t">str</span> 自包含交互组件 HTML 片段</li>
+        <li class="lv1"><span class="f">"spec"</span>: <span class="t">dict</span> 经审计的设计契约</li>
+        <li class="grp">media 路的 block 形态</li>
+        <li class="lv1"><span class="f">"type"="media"</span>, <span class="f">"assetId" / "purpose" / "placement" / "fit" / "aspectRatio" / "objectPosition" / "treatment" / "caption"</span></li>
+        <li class="lv1"><span class="f">副作用</span>: 填充 doc["assets"][assetId] = <span class="t">{id, kind, src(data URI), alt, source, attribution, promptOrQuery, focalPoint, width, height}</span></li>
+      </ul>
+    </div>
+    <p class="note">每块:生成 + 校验 + ≤3 轮自修复;全部完成后对失败块再做一轮有界重试。</p>
+  </div>
+
+  <div class="arrow">→</div>
+
+  <!-- ========== 阶段 3 assemble ========== -->
+  <div class="card">
+    <h2><span class="idx">3</span>装配 assemble</h2>
+    <p class="impl">domain/assemble.py::fill_blocks;icons.py::attach_icons;pipeline._lower_media_backgrounds;design/compiler.py::compile_scene_composition(旧版);可选 _attach_hero_image</p>
+    <div class="badges"><span class="badge det">确定性</span></div>
+    <div class="schema in">
+      <h3>输入 SCHEMA</h3>
+      <ul>
+        <li><span class="f">"doc"</span>: <span class="t">dict</span> 骨架 LectureDoc(占位块)</li>
+        <li><span class="f">"blocks_by_id"</span>: <span class="t">dict[str, dict|null]</span> fanout 产物按块 id 索引</li>
+      </ul>
+    </div>
+    <div class="schema out">
+      <h3>输出 SCHEMA</h3>
+      <ul>
+        <li><span class="f">"doc"</span>: <span class="t">dict</span> 完整 LectureDoc(原地回填)+ doc["assets"] 资源表</li>
+        <li><span class="f">"dropped"</span>: <span class="t">[str]</span> 被丢弃块列表,形如 "s0b1(chart)";帧模式下失败块替换为 {type:"callout", label:"生成失败", text:…}</li>
+      </ul>
+    </div>
+    <p class="note">附加确定性收尾:图标挂载、媒体背景降级、场景排版编译、可选首屏主图。</p>
+  </div>
+
+  <div class="arrow">→</div>
+
+  <!-- ========== 阶段 4 validate ========== -->
+  <div class="card">
+    <h2><span class="idx">4</span>校验 validate</h2>
+    <p class="impl">schema/validate.py::validate_doc + pipeline._doc_repair(块级错误回送 generate_block/generate_widget,≤2 轮)</p>
+    <div class="badges"><span class="badge det">确定性校验</span><span class="badge llm">LLM 仅修复</span></div>
+    <div class="schema in">
+      <h3>输入 SCHEMA</h3>
+      <ul>
+        <li><span class="f">"doc"</span>: <span class="t">dict</span> 装配后的完整 LectureDoc</li>
+      </ul>
+    </div>
+    <div class="schema out">
+      <h3>输出 SCHEMA:Result(validate.py)</h3>
+      <ul>
+        <li><span class="f">"errors"</span>: <span class="t">[str]</span> 错误,形如 "$.scenes[i].blocks[j].field — 说明"</li>
+        <li><span class="f">"warnings"</span>: <span class="t">[str]</span> 警告</li>
+        <li><span class="f">"freeform_uses"</span>: <span class="t">[{…}]</span> 自由块使用记录</li>
+        <li class="grp">硬门禁</li>
+        <li class="lv1"><span class="f">"_frame_structure_problems"</span>: 帧结构问题</li>
+        <li class="lv1"><span class="f">"_planning_ownership_problems"</span>: 规划归属问题</li>
+      </ul>
+    </div>
+    <p class="note">修复循环直至零错误或达到轮数上限。</p>
+  </div>
+
+  <div class="arrow">→</div>
+
+  <!-- ========== 阶段 4.3 quality ========== -->
+  <div class="card">
+    <h2><span class="idx">4.3</span>质量评审 quality</h2>
+    <p class="impl">pipeline._quality_repair → domain/evaluation/page_quality.py::review_page;页级问题 → plan_quality.py::replan_page 整页重规划并重生成</p>
+    <div class="badges"><span class="badge llm">LLM</span></div>
+    <div class="schema in">
+      <h3>输入 SCHEMA(review_page)</h3>
+      <ul>
+        <li><span class="f">"topic"</span>: <span class="t">str</span> 主题</li>
+        <li><span class="f">"scene"</span>: <span class="t">dict</span> 待评审页面</li>
+        <li><span class="f">"brief"</span>: <span class="t">dict</span> 教学契约</li>
+        <li><span class="f">"audience" / "material"</span>: 受众 / 素材摘要</li>
+      </ul>
+    </div>
+    <div class="schema out">
+      <h3>输出 SCHEMA:PageReview(page_quality.py:23)</h3>
+      <ul>
+        <li><span class="f">"score"</span>: <span class="t">float 0-10</span> 质量分</li>
+        <li><span class="f">"passed"</span>: <span class="t">bool</span> 通过(≥8.5 且无 critical/major、minor≤2)</li>
+        <li><span class="f">"available"</span>: <span class="t">bool</span> 评审是否可用</li>
+        <li><span class="f">"failure"</span>: <span class="t">str</span> 失败原因</li>
+        <li><span class="f">"block_issues"</span>: <span class="t">[{blockId, severity: critical|major|minor, problem, instruction}]</span> 块级问题→回送修复</li>
+        <li><span class="f">"page_issues"</span>: <span class="t">[str]</span> 页级问题→整页重规划</li>
+        <li class="grp">replan_page 输出</li>
+        <li class="lv1"><span class="f">"skeleton_scene|null, err|null"</span>: 新占位骨架页(同 id/kind)</li>
+      </ul>
+    </div>
+    <p class="note">汇总存入 GenerateResult.quality:{sceneId, score, pass, available, failure, blockIssues, pageIssues},后续与渲染指标合并。</p>
+  </div>
+
+  <div class="arrow">→</div>
+
+  <!-- ========== 阶段 4.5 viewport-fit / render ========== -->
+  <div class="card">
+    <h2><span class="idx">4.5</span>渲染验证 viewport-fit / render</h2>
+    <p class="impl">ports/renderer.py::RenderVerifier.verify(json.dumps(doc));布局修复:design/director.py::solve_document_layouts → split_failed_scenes → generation/reflow.py::condense_scene</p>
+    <div class="badges"><span class="badge browser">浏览器</span><span class="badge llm">LLM 修复</span></div>
+    <div class="schema in">
+      <h3>输入 SCHEMA</h3>
+      <ul>
+        <li><span class="f">"doc_json"</span>: <span class="t">str</span> 整份文档序列化 JSON(唯一一次序列化边界)</li>
+      </ul>
+    </div>
+    <div class="schema out">
+      <h3>输出 SCHEMA:RenderReport(renderer.py:18)</h3>
+      <ul>
+        <li><span class="f">"ok"</span>: <span class="t">bool</span> 整体是否通过</li>
+        <li><span class="f">"errors" / "warnings"</span>: <span class="t">[str]</span> 运行错误 / 警告</li>
+        <li><span class="f">"overflow_pages"</span>: <span class="t">[{page, overflowY, overflowX, layoutClip, …}]</span> 溢出页</li>
+        <li><span class="f">"corrupt_pages"</span>: <span class="t">[dict]</span> 渲染损坏页</li>
+        <li><span class="f">"page_metrics"</span>: <span class="t">[dict]</span> 逐页指标,字段:i/page, overflowX, overflowY, layoutClip, mblockClip, widgetErrors:[str], plotWarnings:int, corrupt, dynamicBlank:[str], chartMinWidthUse, widgetMinHeight, minTextPx</li>
+        <li class="lv1"><span class="f">"blockMeasurements"</span>: <span class="t">[{blockIds, overflowX, overflowY, hiddenContentCount, minTextPx, stageFit, contentUtilization, topOnly, widthProfiles, naturalHeight, colSpan, measurementInvalid}]</span></li>
+        <li class="lv1"><span class="f">"frameMeasurements"</span>: <span class="t">[{kind, blockId, delta:{x,y,w,h}}]</span> 帧偏移</li>
+        <li class="lv1"><span class="f">"layoutViewport"</span>: <span class="t">{width, height, gap}</span>; <span class="f">"titleNaturalHeight"</span></li>
+        <li><span class="f">"shots"</span>: <span class="t">[str]</span> 截图 PNG 路径</li>
+        <li class="grp">布局总监输出:LayoutDecision(director.py:20)</li>
+        <li class="lv1"><span class="f">"scene_id" / "candidate" / "score" / "reason" / "decision_signature"</span></li>
+        <li class="lv1"><span class="f">"feasible" / "required_height" / "available_height"</span>: 可行性与高度预算</li>
+        <li class="lv1">副作用:原地改写 scene["layout"];split_failed_scenes → 拆分记录存入 layout_splits</li>
+      </ul>
+    </div>
+    <p class="note">修复路由:widget 运行错误→repair_widget;Plot 警告→重生成图表;溢出→布局求解→分页拆分→内容压缩。发布前有布局签名硬门禁。</p>
+  </div>
+
+  <div class="arrow">→</div>
+
+  <!-- ========== 阶段 4.6 visual-quality ========== -->
+  <div class="card">
+    <h2><span class="idx">4.6</span>视觉评审 visual-quality</h2>
+    <p class="impl">domain/evaluation/visual_quality.py::preflight_page_metrics + ports/visual_review.py::VisualReviewer.review → _apply_visual_contract_repairs / repair_visual_content</p>
+    <div class="badges"><span class="badge llm">视觉模型</span></div>
+    <div class="schema in">
+      <h3>输入 SCHEMA:VisualReviewRequest(visual_review.py:18)</h3>
+      <ul>
+        <li><span class="f">"contact_sheet"</span>: <span class="t">ImageInput</span> 全篇缩略拼图</li>
+        <li><span class="f">"failed_pages"</span>: <span class="t">[ImageInput]</span> 问题页截图</li>
+        <li><span class="f">"deck_context"</span>: <span class="t">{topic, language, scenes:[{sceneId, headline, compositionFamily}]}</span> 文档上下文</li>
+      </ul>
+    </div>
+    <div class="schema out">
+      <h3>输出 SCHEMA:VisualReviewReport</h3>
+      <ul>
+        <li><span class="f">"scores"</span>: <span class="t">VisualScores 0-5</span> 六维评分:visual_hierarchy(视觉层级), composition(构图), asset_integration(资源融合), information_density(信息密度), legibility(可读性), cross_page_rhythm(跨页节奏)(导出为 camelCase)</li>
+        <li><span class="f">"issues"</span>: <span class="t">[{scene_id, route: tokens|composition|media|blockContent, problem, instruction}]</span> 按路由分派修复</li>
+        <li><span class="f">"summary"</span>: <span class="t">str</span> 总结</li>
+        <li><span class="f">"available"</span>: <span class="t">bool</span> 评审是否可用</li>
+        <li><span class="f">"warnings"</span>: <span class="t">[str]</span> 警告</li>
+      </ul>
+    </div>
+    <p class="note">tokens/composition/media 三路走契约修复;blockContent 路走 repair_visual_content。</p>
+  </div>
+
+  <div class="arrow">→</div>
+
+  <!-- ========== 阶段 4.7 notes ========== -->
+  <div class="card">
+    <h2><span class="idx">4.7</span>讲稿 notes</h2>
+    <p class="impl">domain/generation/notes.py::enrich_notes(仅当最终零错误时运行,逐页并行)</p>
+    <div class="badges"><span class="badge llm">LLM</span></div>
+    <div class="schema in">
+      <h3>输入 SCHEMA(每页 LLM 载荷)</h3>
+      <ul>
+        <li><span class="f">"brief"</span>: <span class="t">dict</span> 教学契约</li>
+        <li><span class="f">"headline" / "lead"</span>: 页面标题 / 导语</li>
+        <li><span class="f">"blocks"</span>: <span class="t">[压缩后的块]</span> 页面块内容摘要</li>
+      </ul>
+    </div>
+    <div class="schema out">
+      <h3>输出 SCHEMA</h3>
+      <ul>
+        <li><span class="f">"note"</span>: <span class="t">str</span> 3-5 句演讲者讲稿,原地替换 scene["notes"]</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="arrow">→</div>
+
+  <!-- ========== 阶段 5 coverage ========== -->
+  <div class="card">
+    <h2><span class="idx">5</span>覆盖度 coverage(可选)</h2>
+    <p class="impl">domain/evaluation/coverage.py::check_coverage(llm, doc, perspectives)</p>
+    <div class="badges"><span class="badge llm">LLM</span></div>
+    <div class="schema in">
+      <h3>输入 SCHEMA</h3>
+      <ul>
+        <li><span class="f">"doc"</span>: <span class="t">dict</span> 最终文档</li>
+        <li><span class="f">"perspectives"</span>: plan 阶段视角的 mustCover 清单</li>
+      </ul>
+    </div>
+    <div class="schema out">
+      <h3>输出 SCHEMA</h3>
+      <ul>
+        <li><span class="f">"total"</span>: <span class="t">int</span> 应覆盖知识点总数</li>
+        <li><span class="f">"covered"</span>: <span class="t">int</span> 已覆盖数</li>
+        <li><span class="f">"missing"</span>: <span class="t">[{point, why}]</span> 缺失点及原因</li>
+        <li><span class="f">"ratio"</span>: <span class="t">float</span> 覆盖率</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="arrow">→</div>
+
+  <!-- ========== 输出 ========== -->
+  <div class="card">
+    <h2><span class="idx">OUT</span>管道输出 GenerateResult(pipeline.py:171)</h2>
+    <p class="impl">app/generate.py::run_generation 负责落盘:deck JSON、generation-report.json、planning.json、planning-failure.json、experiments/results/ledger.jsonl</p>
+    <div class="badges"><span class="badge det">持久化</span></div>
+    <div class="schema out">
+      <h3>输出 SCHEMA:GenerateResult</h3>
+      <ul>
+        <li><span class="f">"doc"</span>: <span class="t">dict</span> 最终 LectureDoc(见附录)</li>
+        <li><span class="f">"errors" / "warnings" / "dropped"</span>: <span class="t">[str]</span> 残余错误/警告/弃块</li>
+        <li><span class="f">"perspectives"</span>: <span class="t">[dict]</span> 规划视角</li>
+        <li><span class="f">"coverage"</span>: <span class="t">dict|null</span> 阶段5结果</li>
+        <li><span class="f">"quality"</span>: <span class="t">[dict]</span> 逐页质量记录(合并渲染指标 semanticScore/renderVerified/renderPass/renderIssues/renderMetrics)</li>
+        <li><span class="f">"visual_quality"</span>: <span class="t">dict|null</span> {available, scores, issues:[{sceneId,route,problem,instruction}], summary, warnings, preflightIssues, pass, repairedScenes}</li>
+        <li><span class="f">"knowledge_forms" / "evidence_obligations"</span>: 知识形态 / 证据义务</li>
+        <li><span class="f">"widget_routes"</span>: <span class="t">[{blockId, profile: state|model|geometry, route: fast-build|slow-plan}]</span></li>
+        <li><span class="f">"layout_diagnostics"</span>: <span class="t">[dict]</span> 渲染逐页指标(page_metrics)</li>
+        <li><span class="f">"layout_decisions"</span>: <span class="t">[{sceneId, candidate, score, reason, round, route, decisionSignature, feasible, requiredHeight, availableHeight}]</span></li>
+        <li><span class="f">"layout_splits"</span>: <span class="t">[dict]</span> 分页拆分记录</li>
+        <li><span class="f">"planned_skeleton" / "planned_skeleton_signature"</span>: 规划骨架快照与签名</li>
+        <li><span class="f">"viewport_diagnostics" / "viewport_failures"</span>: 视口诊断 / {blockId, issues:[str]}</li>
+      </ul>
+    </div>
+    <p class="note">进度事件(仅观测):progress({type:"stage"|"skeleton"|"block"|"docUpdated"|"done", …}),最终 done 事件携带完整结果。</p>
+  </div>
+
+</div><!-- /flow -->
+
+<!-- ========== 附录 ========== -->
+<section class="appendix">
+  <h2>附录:核心数据结构(schema/document.py,pydantic)</h2>
+
+  <details open>
+    <summary>LectureDoc / Scene / Layout / VisualSystem / Asset 内核 schema</summary>
+    <div class="schema in">
+      <h3>LectureDoc</h3>
+      <ul>
+        <li><span class="f">"schemaVersion"</span>: <span class="t">"1.0"</span> 模式版本</li>
+        <li><span class="f">"id" / "title" / "language"</span>: 文档 id / 标题 / 语言</li>
+        <li><span class="f">"theme"</span>: <span class="t">str?</span> 主题(15 个候选,见 schema/enums.py)</li>
+        <li><span class="f">"visualSystem"</span>: 编译后的视觉系统(见下)</li>
+        <li><span class="f">"assets"</span>: <span class="t">{assetId: Asset}</span> 媒体资源表</li>
+        <li><span class="f">"tutor"</span>: <span class="t">{suggestions?, kb:[{pattern, answer, flags?}]}</span> 助教</li>
+        <li><span class="f">"scenes"</span>: <span class="t">[Scene]</span> 页面列表</li>
+      </ul>
+      <h3 style="margin-top:10px">Scene</h3>
+      <ul>
+        <li><span class="f">"id" / "kind"</span>: 场景 id / hero|content|quiz|statement|section</li>
+        <li><span class="f">"notes"</span>: <span class="t">str</span> 演讲者讲稿</li>
+        <li><span class="f">"eyebrow" / "headline" / "lead" / "transition" / "autoAnimate" / "background"</span>: 文案与转场、场景背景 {assetId, purpose, fit, overlay, overlayStrength, safeZone}</li>
+        <li><span class="f">"layout"</span>: 布局(见下)</li>
+        <li><span class="f">"compositionFamily"</span>: 构图族</li>
+        <li><span class="f">"blocks"</span>: <span class="t">[Block]</span> 内容块(24 种联合类型,见下节)</li>
+      </ul>
+      <h3 style="margin-top:10px">Layout</h3>
+      <ul>
+        <li><span class="f">"kind"</span>: <span class="t">flow|index|split|compose|full|artboard|frames</span></li>
+        <li><span class="f">"columns" / "rows" / "gap" / "titleRegion" / "areas"</span>: 栅格布局参数(titleRegion:{col,row,align,justify,maxWidth,z};areas:[{blockIds,col,row,role,z,align,justify,bleed,clip,styleRole}])</li>
+        <li><span class="f">"canvas"</span>: <span class="t">{width:1280, height:720}</span> 帧模式画布</li>
+        <li><span class="f">"titleFrame"</span>: <span class="t">{x,y,w,h,z}</span> 绝对标题帧</li>
+        <li><span class="f">"frames"</span>: <span class="t">[{blockId, x,y,w,h,z, role, clip}]</span> 绝对块帧</li>
+        <li><span class="f">"plannedFrameSignature"</span>: 规划帧签名(用于漂移检测)</li>
+      </ul>
+      <h3 style="margin-top:10px">VisualSystem</h3>
+      <ul>
+        <li><span class="f">"palette"</span>: <span class="t">{background, surface, surfaceAlt, ink, muted, accent, accent2, line}</span> 色板</li>
+        <li><span class="f">"typography"</span>: <span class="t">{display, body, mono, displayWeight, bodyWeight, scale}</span> 字体系统</li>
+        <li><span class="f">"shape"</span>: <span class="t">{radius, borderWidth, shadow}</span> 形状语言</li>
+        <li><span class="f">"texture" / "rhythm"</span>: 质感 / 节奏</li>
+        <li><span class="f">"motifs"</span>: <span class="t">[{type, colorRole, opacity}]</span> 母题</li>
+      </ul>
+      <h3 style="margin-top:10px">Asset</h3>
+      <ul>
+        <li><span class="f">"id" / "kind" / "src" / "alt"</span>: 资源 id / 类型 / 内容(data URI)/ 替代文本</li>
+        <li><span class="f">"source" / "attribution" / "promptOrQuery" / "width" / "height" / "focalPoint"</span>: 来源 / 署名 / 检索词或提示词 / 尺寸 / 焦点</li>
+      </ul>
+    </div>
+  </details>
+
+  <details>
+    <summary>Block 联合类型一览(24 种,type 判别;公共基座 id? / status? / fragment?)</summary>
+    <div class="cols">
+      <div class="blk"><h4>HeroBlock</h4><ul><li>"title":[str]1-3 主标题行; "tag" 标签; "sub" 副题; "facts" 事实条; "hint" 提示; "image" 配图</li></ul></div>
+      <div class="blk"><h4>StatementBlock</h4><ul><li>"statement": 陈述金句</li></ul></div>
+      <div class="blk"><h4>PullquoteBlock</h4><ul><li>"text": 引文; "cite"?: 出处</li></ul></div>
+      <div class="blk"><h4>VideoBlock</h4><ul><li>"src"? 视频源; "poster"? 封面; "captions"? 字幕; "caption"? 说明; "loop"? 循环</li></ul></div>
+      <div class="blk"><h4>MediaBlock</h4><ul><li>"assetId" 资源引用; "purpose" 用途; "placement" 位置; "fit" 适配; "mask"? 蒙版; "aspectRatio"?; "objectPosition"?; "treatment"? 处理; "caption"? 说明</li></ul></div>
+      <div class="blk"><h4>ListBlock</h4><ul><li>"items":[{lead? 引导词, text 正文, icon? 图标}]</li></ul></div>
+      <div class="blk"><h4>AgendaBlock</h4><ul><li>"rows":[{label 标签, text 内容}]</li></ul></div>
+      <div class="blk"><h4>CalloutBlock</h4><ul><li>"label" 标注; "text" 正文</li></ul></div>
+      <div class="blk"><h4>TimelineBlock</h4><ul><li>"events":[{time 时间, title 标题, desc? 描述}]</li></ul></div>
+      <div class="blk"><h4>FormulaBlock</h4><ul><li>"latex": LaTeX 公式</li></ul></div>
+      <div class="blk"><h4>FlowBlock</h4><ul><li>"nodes":[{title, sub?, state?}] 流程节点</li></ul></div>
+      <div class="blk"><h4>TableBlock</h4><ul><li>"head":[str] 表头; "rows":[[Any]] 数据行</li></ul></div>
+      <div class="blk"><h4>ChartBlock</h4><ul><li>"chartType" 图表类型; "categories"? 类目; "series"?[{name, values}]; "points"?[{x,y,label?}]; "annotations"?[{kind,x,y,x2?,y2?,label?,tone?}]; "xLabel"?/"yLabel"?/"caption"?</li></ul></div>
+      <div class="blk"><h4>StatsBlock</h4><ul><li>"items":[{value 数值, label 标签, delta? 变化}]</li></ul></div>
+      <div class="blk"><h4>DiagramBlock</h4><ul><li>"diagramType" 图解类型; "nodes":[{title, sub?}]</li></ul></div>
+      <div class="blk"><h4>GraphBlock</h4><ul><li>"graphType" 图类型; "orientation"? 方向; "nodes":[{id,title,sub?,state?,shape?}]; "edges":[{from,to,label?,style?}]; "caption"?</li></ul></div>
+      <div class="blk"><h4>CodeBlock</h4><ul><li>"language" 语言; "source" 源码</li></ul></div>
+      <div class="blk"><h4>CompareBlock</h4><ul><li>"left"/"right": {caption?, block} 左右对比(嵌套块)</li></ul></div>
+      <div class="blk"><h4>GridBlock</h4><ul><li>"columns" 列数; "items":[{block, span?}] 栅格项(嵌套块)</li></ul></div>
+      <div class="blk"><h4>QuizBlock</h4><ul><li>"kind" 题型; "choices"?[{key,text}]; "answer"? 答案; "explain"? 解析; "prompt"? 题干</li></ul></div>
+      <div class="blk"><h4>SimBlock</h4><ul><li>"engine": dynamics1d|searchCompare|custom|widget; "params"?[{name,label,min,max,step,default}]; 引擎专属扩展(html/spec/model/regimes/computeJs/chart…)</li></ul></div>
+      <div class="blk"><h4>RunnableBlock</h4><ul><li>"languages" 语言集; "starter":{lang:code} 起始代码; "env":{kind, objective?, domain?, output?, pythonPreamble?, jsPreamble?} 运行环境</li></ul></div>
+      <div class="blk"><h4>EmbedBlock</h4><ul><li>"product": 嵌入产品标识</li></ul></div>
+      <div class="blk"><h4>FreeformBlock</h4><ul><li>"html" 自由 HTML; "rationale" 使用理由</li></ul></div>
+    </div>
+  </details>
+
+  <details>
+    <summary>落盘产物(schema/experiment.py 等)</summary>
+    <div class="schema out">
+      <h3>磁盘边界产物</h3>
+      <ul>
+        <li><span class="f">"deck JSON"</span>: 最终 LectureDoc,经 adapters/store/filesystem.py::FilesystemStore.save_deck 保存</li>
+        <li><span class="f">"generation-report.json"</span>: 生成报告(错误/警告/质量/布局诊断汇总)</li>
+        <li><span class="f">"planning.json"</span>: 规划骨架快照;失败时写 "planning-failure.json"(PlanValidationError)</li>
+        <li><span class="f">"ledger.jsonl"</span>: 实验台账,每行一条 ExperimentRecord{identity, code(CodeMarker), knobs, outcome, cost(Cost), profile(CapabilityProfile)}(schema/experiment.py)</li>
+        <li><span class="f">"screenshots/"</span>: 渲染验证截图</li>
+      </ul>
+    </div>
+  </details>
+
+  <p style="color:var(--muted);font-size:12px">数据来源:lecture_agent/engine/pipeline.py、domain/planning.py、domain/generation/*、domain/evaluation/*、domain/design/*、ports/*、schema/document.py。旧版阶段图见 docs/agent-architecture.html(未含 quality / viewport-fit / visual-quality 阶段)。</p>
+</section>
+
+</body>
+</html>

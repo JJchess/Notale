@@ -18,9 +18,11 @@ from notale.utils.llm import HttpxClient
 from notale.core.workflow import generate
 from notale.tools.retriever import FetchTool
 from notale.web.preview import serve
+from notale.utils.config import get_config
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+_CONFIG = get_config()
 
 
 def load_cli_env(root: Path = PROJECT_ROOT) -> None:
@@ -36,7 +38,11 @@ async def _cli_confirm(outline: Outline, globals_: Globals, specs: list[PageSpec
         print(f"  第{i}章 {ch.title}  页 {ch.pageRange[0]}–{ch.pageRange[1]}  依据: {ch.rationale}")
     print(f"  共 {len(specs)} 页；术语 {len(globals_.terminology)} 条；符号 {len(globals_.notation)} 条")
     for s in specs:
-        print(f"    {s.pageId} [{s.pageType.value}] {s.centralMessage[:50]} ({s.timeBudgetSec}s)")
+        print(
+            f"    {s.pageId} [{s.pageType.value}] "
+            f"{s.centralMessage[: _CONFIG.runtime.cli_message_preview_chars]} "
+            f"({s.timeBudgetSec}s)"
+        )
     ans = input("\n确认？[Y/n/修改意见] ").strip()
     if ans in ("", "y", "Y"):
         return True, ""
@@ -61,8 +67,8 @@ def main() -> None:
         help="run 输出根目录（默认 notale/runs/）",
     )
     preview = sub.add_parser("serve", help="预览最新生成的讲义")
-    preview.add_argument("--host", default="0.0.0.0")
-    preview.add_argument("--port", default=3002, type=int)
+    preview.add_argument("--host", default=_CONFIG.preview.host)
+    preview.add_argument("--port", default=_CONFIG.preview.port, type=int)
     args = parser.parse_args()
 
     if args.cmd == "serve":
@@ -90,7 +96,7 @@ def main() -> None:
     )
     print(f"\n✔ run 目录: {result.run_dir}")
     print(f"✔ deck: {result.deck_path}")
-    print(f"  verified {len(result.verified)} 页 / degraded {len(result.degraded)} 页")
+    print(f"  completed {len(result.completed)} 页 / degraded {len(result.degraded)} 页")
     print(f"  token 用量: {llm.usage}")
 
 

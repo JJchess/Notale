@@ -6,10 +6,15 @@
 
 from __future__ import annotations
 
+import re
 from enum import Enum
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
+from notale.utils.config import get_config
+
+
+_CONFIG = get_config()
 
 
 # ---------------------------------------------------------------------------
@@ -45,6 +50,13 @@ class ReferenceSource(str, Enum):
     NONE = "none"  # 无——绑不到外生参照物 → 降级为静态图并标注
 
 
+class PrepRecordOrigin(str, Enum):
+    """Which pipeline stage authored a knowledge record."""
+
+    RESEARCH = "research"
+    PLANNER_GENERATED = "planner-generated"
+
+
 EXOGENOUS_SOURCES = {
     ReferenceSource.CLOSED_FORM,
     ReferenceSource.INDEPENDENT_IMPL,
@@ -55,19 +67,21 @@ EXOGENOUS_SOURCES = {
 
 
 class PageStatus(str, Enum):
-    """页状态机（HARNESS P4）：pending→drafted→verified | returned-for-repair→degraded。"""
+    """页状态机：pending → drafted → completed | degraded。"""
 
     PENDING = "pending"
     DRAFTED = "drafted"
-    VERIFIED = "verified"
-    RETURNED_FOR_REPAIR = "returned-for-repair"
+    COMPLETED = "completed"
     DEGRADED = "degraded"
 
-
-class VerifyStatus(str, Enum):
-    VERIFIED = "verified"
-    RETURNED_FOR_REPAIR = "returned-for-repair"
-    DEGRADED = "degraded"
+    @classmethod
+    def _missing_(cls, value: object) -> "PageStatus | None":
+        """Normalize statuses written by the retired outer verifier."""
+        if value == "verified":
+            return cls.COMPLETED
+        if value == "returned-for-repair":
+            return cls.DRAFTED
+        return None
 
 
 class PageType(str, Enum):
@@ -80,6 +94,16 @@ class PageType(str, Enum):
     NARRATIVE_SCENE = "narrative-scene"  # 叙事场景
 
 
+class NarrativeRelation(str, Enum):
+    """A deliberate relationship between two pages in the deck-wide argument."""
+
+    BUILDS_ON = "builds-on"
+    CONTRASTS_WITH = "contrasts-with"
+    RETURNS_TO = "returns-to"
+    SETS_UP = "sets-up"
+    SYNTHESIZES = "synthesizes"
+
+
 # ---------------------------------------------------------------------------
 # [0] Intake & Clarify
 # ---------------------------------------------------------------------------
@@ -90,6 +114,9 @@ class CourseBrief(BaseModel):
     audience: str  # 受众（年级/背景）
     priorKnowledge: str = ""  # 先验知识假设
     durationMin: int  # 课堂时长（分钟）
+    requestedPageCount: int | None = Field(
+        default=None, ge=1, le=_CONFIG.pipeline.maximum_page_count
+    )  # 用户显式要求的页数
     intensity: Intensity = Intensity.STANDARD  # 强度档位
     language: str = "zh"  # 语言
     interactivityAsk: str = ""  # 对交互性的显式要求
@@ -117,9 +144,10 @@ class Evidence(BaseModel):
 
 
 class PrepRecord(BaseModel):
-    """备课资料条目——唯一的知识来源。页面上的东西在这里找不到出处 = 编的。"""
+    """Auditable knowledge supplied to page builders by the curriculum contract."""
 
     recordId: str  # 唯一 ID（同一知识点只存一份）
+    origin: PrepRecordOrigin = PrepRecordOrigin.RESEARCH
     branch: list[Branch]  # ①②③ 可多选
     referenceSource: ReferenceSource = ReferenceSource.NONE  # 参照物来源
     content: dict[str, Any] = Field(default_factory=dict)  # 内容本体（结构随 branch 变化）
@@ -128,7 +156,7 @@ class PrepRecord(BaseModel):
     knownInaccuracies: list[str] = Field(default_factory=list)  # 主动声明的已知不准确处
     nonPhysicalVisualMappings: list[str] = Field(default_factory=list)  # 不对应物理单位的视觉量
     evidence: Evidence | None = None  # 出处（harness 绑定；无 = 未核实，如实标注）
-    provenanceLink: str = ""  # 回指 research-note
+    provenanceLink: str = ""  # 回指 research-note 或 planner contract worker
 
 
 class PedagogyNote(BaseModel):
@@ -150,10 +178,13 @@ class Chapter(BaseModel):
     title: str
     pageRange: tuple[int, int]  # [起页, 止页]，1-based 闭区间
     rationale: str = ""  # 回指 pedagogy-note 的依据
+    pedagogyNoteIds: list[str] = Field(default_factory=list)
+    narrativeGoal: str = ""  # 本章在整本讲义主线中的推进目标
 
 
 class Outline(BaseModel):
     chapters: list[Chapter]
+    throughline: str = ""  # 整本讲义贯穿始终的一句话叙事主线
     durationBudget: dict[str, int] = Field(default_factory=dict)  # {totalMin}
     confirmedAt: str = ""  # 人工确认时间（空 = 未确认）
     revisionNotes: str = ""  # 人工修改意见
@@ -165,29 +196,119 @@ class Globals(BaseModel):
     terminology: dict[str, str] = Field(default_factory=dict)  # 术语表 {术语: 定义}
     notation: dict[str, str] = Field(default_factory=dict)  # 符号约定 {符号: 含义}
     styleTokens: dict[str, str] = Field(default_factory=dict)  # 风格 token（配色/字体…）
-    componentAPI: list[str] = Field(default_factory=list)  # 批准使用的组件清单
+    componentAPI: list[str] = Field(default_factory=list)  # 旧 run 兼容；不再交给 Builder
     artDirection: str = ""  # 视觉风格采样结果
+    visualMotif: str = ""  # 跨页反复使用的视觉编码或构图母题
+
+
+class ContinuityLink(BaseModel):
+    pageId: str
+    relation: NarrativeRelation
+    cue: str
 
 
 class PageSpec(BaseModel):
     pageId: str
     pageType: PageType
     centralMessage: str  # 唯一中心信息（CLT 硬约束）
-    learningAction: str = ""  # 学习动作
-    visualSubject: str = ""  # 视觉主体（学生第一眼看什么）
-    timeBudgetSec: int = 90  # 时间预算（秒）
+    learningAction: str = ""  # 学生完成的认知动作，不是界面操作
+    timeBudgetSec: int = _CONFIG.pipeline.default_page_time_budget_sec
     boundPrepRecords: list[str] = Field(default_factory=list)  # 计划绑定的 recordId（⊆ 资料库）
+    narrativeRole: str = ""  # 本页怎样推进整本讲义的主线
+    continuity: list[ContinuityLink] = Field(default_factory=list)
+
+
+class BuilderPageBrief(BaseModel):
+    id: str
+    type: PageType
+    claim: str
+    learningAction: str = ""
+    terminology: dict[str, str] = Field(default_factory=dict)
+    notation: dict[str, str] = Field(default_factory=dict)
+
+
+class NarrativeChapterContext(BaseModel):
+    title: str = ""
+    goal: str = ""
+
+
+class BuilderNarrativeContext(BaseModel):
+    throughline: str = ""
+    chapter: NarrativeChapterContext = Field(default_factory=NarrativeChapterContext)
+    pageRole: str = ""
+    links: list[ContinuityLink] = Field(default_factory=list)
+
+
+class VisualContract(BaseModel):
+    direction: str = ""
+    motif: str = ""
+    tokens: dict[str, str] = Field(default_factory=dict)
+
+
+class SourceGuardrails(BaseModel):
+    invariants: list[str] = Field(default_factory=list)
+    validRange: str = ""
+    limitations: list[str] = Field(default_factory=list)
+    visualMappings: list[str] = Field(default_factory=list)
+
+
+class BuilderSource(BaseModel):
+    id: str
+    content: dict[str, Any] = Field(default_factory=dict)
+    guardrails: SourceGuardrails = Field(default_factory=SourceGuardrails)
+    citationUrl: str | None = None
+
+
+class AssignedSkill(BaseModel):
+    name: str
+    entrypoint: str | None = None
 
 
 class PageContext(BaseModel):
-    """上下文编译器产物：每个 worker 的最小上下文，不多不少。"""
+    """Builder-only projection; full planning and evidence artifacts stay outside it."""
 
-    pageSpec: PageSpec
-    globals: Globals
-    neighborSummary: dict[str, str] = Field(default_factory=dict)  # {prev, next}
-    coveredConcepts: list[str] = Field(default_factory=list)  # 已覆盖概念
-    relevantPrepRecords: list[PrepRecord] = Field(default_factory=list)  # 绑定资料全文
-    availableSkills: list[str] = Field(default_factory=list)  # 按需加载的 skill
+    page: BuilderPageBrief
+    narrative: BuilderNarrativeContext
+    visualContract: VisualContract
+    sources: list[BuilderSource] = Field(default_factory=list)
+    skills: list[AssignedSkill] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_skill_manifest(self) -> "PageContext":
+        names = [skill.name for skill in self.skills]
+        if len(names) != len(set(names)):
+            raise ValueError("skills contains duplicate names")
+        invalid_names = sorted(
+            name for name in names
+            if re.fullmatch(r"[a-z0-9][a-z0-9-]*", name) is None
+        )
+        if invalid_names:
+            raise ValueError(f"skills contains invalid names: {invalid_names}")
+        invalid = sorted(
+            skill.entrypoint
+            for skill in self.skills
+            if skill.entrypoint is not None
+            and re.fullmatch(r"[a-z0-9][a-z0-9-]*", skill.entrypoint) is None
+        )
+        if invalid:
+            raise ValueError(f"skills contains invalid entrypoints: {invalid}")
+        return self
+
+    @property
+    def source_ids(self) -> set[str]:
+        return {source.id for source in self.sources}
+
+    @property
+    def skill_names(self) -> list[str]:
+        return [skill.name for skill in self.skills]
+
+    @property
+    def skill_entrypoints(self) -> dict[str, str]:
+        return {
+            skill.name: skill.entrypoint
+            for skill in self.skills
+            if skill.entrypoint is not None
+        }
 
 
 # ---------------------------------------------------------------------------
@@ -198,73 +319,65 @@ class PageContext(BaseModel):
 class PageArtifact(BaseModel):
     pageId: str
     designSpec: dict[str, Any] = Field(default_factory=dict)  # 版面设计规格
-    html: str  # 实现产物（自包含片段；组件库接管前由 builder 直写）
-    interactionParams: dict[str, Any] = Field(default_factory=dict)  # 对绑定组件模板的参数取值
+    html: str  # Builder 生成的自包含 HTML-native 页面片段
     boundReferences: list[str] = Field(default_factory=list)  # 实际使用的 recordId
     speakerNotes: str = ""  # 讲稿素材（多形态输出的同源内容层）
     status: PageStatus = PageStatus.DRAFTED
 
 
 # ---------------------------------------------------------------------------
-# [4] Verifier 栈
+# Agent runtime governance (run-local, checkpointed per worker)
 # ---------------------------------------------------------------------------
 
 
-class LayerResult(BaseModel):
-    layer: str  # L0..L6
-    implemented: bool  # False = 未实现，如实标注（fail-closed：不算过，也不算跑过）
-    passed: bool = False
-    failures: list[str] = Field(default_factory=list)  # 失败断言
-    note: str = ""
+class AgentTaskStep(BaseModel):
+    id: str
+    description: str
+    status: Literal["pending", "in_progress", "completed", "blocked"] = "pending"
+    evidence: str = ""
+    updatedAt: str = ""
 
 
-class ReferenceComparison(BaseModel):
-    recordId: str
-    referenceSource: ReferenceSource
-    result: str  # pass / fail / not-implemented
-    margin: str = ""
+class AgentTaskState(BaseModel):
+    workerId: str
+    role: str
+    objective: str
+    acceptanceCriteria: list[str] = Field(default_factory=list)
+    steps: list[AgentTaskStep] = Field(default_factory=list)
+    status: Literal[
+        "pending", "in_progress", "completed", "blocked", "stalled", "failed"
+    ] = "pending"
+    submittedArtifact: str = ""
+    totalTurns: int = 0
+    elapsedSec: float = 0.0
+    startedAt: str = ""
+    updatedAt: str = ""
 
 
-class VerificationReport(BaseModel):
-    pageId: str
-    layers: list[LayerResult] = Field(default_factory=list)
-    referenceComparison: list[ReferenceComparison] = Field(default_factory=list)
-    status: VerifyStatus
-    # 仅 status=returned-for-repair
-    newFailure: list[str] = Field(default_factory=list)  # 本轮新增失败断言
-    ledgerRef: str = ""  # 指向 counterexample-ledger
-    # 仅 status=degraded
-    fallbackHtml: str = ""
-    reason: str = ""
-    humanReviewQueue: bool = False
-
-
-class LedgerEntry(BaseModel):
-    attemptNo: int
-    failedAssertion: list[str] = Field(default_factory=list)
-    referenceMismatch: list[str] = Field(default_factory=list)
-    timestamp: str
-
-
-class CounterexampleLedger(BaseModel):
-    """反例台账——跨轮次只增不减。返工不是重试：带全部历史反例重生成。"""
-
-    pageId: str
-    entries: list[LedgerEntry] = Field(default_factory=list)  # 只追加
-    attemptCount: int = 0
-
-    @property
-    def activeConstraints(self) -> list[str]:
-        """全部历史反例——下一轮生成的强约束输入。"""
-        out: list[str] = []
-        for e in self.entries:
-            out.extend(e.failedAssertion)
-            out.extend(e.referenceMismatch)
-        return out
+class AgentCheckpoint(BaseModel):
+    workerId: str
+    role: str
+    roleVersion: str
+    checkpointId: str
+    messages: list[dict[str, Any]] = Field(default_factory=list)
+    usage: dict[str, int] = Field(default_factory=dict)
+    toolMetadata: dict[str, Any] = Field(default_factory=dict)
+    totalTurns: int = 0
+    compactCount: int = 0
+    progressSnapshot: dict[str, Any] = Field(default_factory=dict)
+    lastProgressTurn: int = 0
+    noProgressTurns: int = 0
+    proseOnlyTurns: int = 0
+    lastToolErrorSignature: str = ""
+    repeatedToolErrorCount: int = 0
+    lastValidationSignature: str = ""
+    repeatedValidationErrorCount: int = 0
+    stalledReason: str = ""
+    updatedAt: str
 
 
 # ---------------------------------------------------------------------------
-# [5] Assemble & Global pass
+# [4] Assemble & Global pass
 # ---------------------------------------------------------------------------
 
 
@@ -285,26 +398,10 @@ class ConsistencyReport(BaseModel):
     planCoverage: list[str] = Field(default_factory=list)  # 未被任何页认领的章节
 
 
-# ---------------------------------------------------------------------------
-# [6] Reflect & Accrete
-# ---------------------------------------------------------------------------
-
-
-class LibraryDelta(BaseModel):
-    newComponents: list[str] = Field(default_factory=list)  # 新入库的已验证组件
-    pitfallEntries: list[str] = Field(default_factory=list)  # 新发现的坑（工程向）
-    misconceptionEntries: list[str] = Field(default_factory=list)  # 新增常见误解（内容向）
-
-
 class QualityReport(BaseModel):
-    """最终交付——达标是证明不是声称。未跑的检查如实列出，不冒充已核实。"""
+    """Run-level delivery summary; it makes no semantic-correctness claim."""
 
     deck: str = ""  # 互动讲义路径
-    script: str | None = None  # 讲稿（未实现=None）
-    exercises: str | None = None  # 习题（未实现=None）
-    mindMap: str | None = None  # 知识导图（未实现=None）
-    canaryLeakageSummary: str | None = None  # 掺沙漏检率（掺沙库未建=None）
-    unimplementedLayers: list[str] = Field(default_factory=list)  # 未实现的验证层
-    verifiedPages: list[str] = Field(default_factory=list)
+    completedPages: list[str] = Field(default_factory=list)
     degradedPages: list[str] = Field(default_factory=list)
     note: str = ""

@@ -1,6 +1,6 @@
 """[5] Assemble & Global pass —— 单线程。拼装 + 跨页一致性。
 
-WIP 门禁：只有 verified / degraded 页进成品（orchestrator 保证传入的就是这两类）。
+WIP 门禁：只有 completed / degraded 页进成品（orchestrator 保证传入的就是这两类）。
 每个 PageArtifact.html 保持 Notale 的权威页产物，落成独立 slides/<pageId>.html，再由
 Reveal.js 外壳通过 sandbox iframe 整页嵌入。页面间 CSS/JS/ID 互不污染。
 一致性 v0 全是确定性算法：术语/符号出现形态校验、shingle 近重复、plan 覆盖。
@@ -23,8 +23,10 @@ from notale.core.models import (
     PageSpec,
 )
 from notale.utils.parsing import jaccard, shingles, visible_text
+from notale.utils.config import get_config
 
-_DUP_THRESHOLD = 0.6  # shingle Jaccard 阈值：超过判近重复
+_DECK_CONFIG = get_config().deck
+_DUP_THRESHOLD = _DECK_CONFIG.duplicate_similarity_threshold
 
 _SAFE_PAGE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$")
 
@@ -41,6 +43,21 @@ _DECK_TEMPLATE = """<!doctype html>
   <div class="reveal">
     <div class="slides">
 {slides}
+    </div>
+  </div>
+  <div class="deck-overview" data-deck-overview role="dialog" aria-modal="true"
+       aria-labelledby="deck-overview-title" hidden>
+    <header class="deck-overview-header">
+      <div>
+        <h2 id="deck-overview-title">总览</h2>
+        <p>选择页面继续讲义</p>
+      </div>
+      <output data-deck-overview-count aria-live="polite"></output>
+      <button class="deck-overview-close" type="button" data-deck-action="close-overview"
+              title="关闭总览 (Esc)" aria-label="关闭总览">×</button>
+    </header>
+    <div class="deck-overview-scroll" data-deck-overview-scroll>
+      <div class="deck-overview-grid" data-deck-overview-grid role="list"></div>
     </div>
   </div>
   <nav class="ppt-bar" aria-label="讲义操作">
@@ -60,6 +77,7 @@ _SLIDE_DOCUMENT = """<!doctype html>
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="../runtime/global.css">
   <style>
     html, body {{ width:100%; height:100%; margin:0; overflow:hidden; }}
     *, *::before, *::after {{ box-sizing:border-box; }}
@@ -129,7 +147,29 @@ def assemble_deck(
     return AssembledDeck(pages=[p.pageId for p in ordered], totalDurationEstimate=total), deck_html
 
 
-def _copy_runtime(run_dir: Path) -> None:
+def _safe_style_tokens(globals_: Globals | None) -> str:
+    if globals_ is None:
+        return ""
+    allowed = {
+        "bg", "surface", "ink", "muted", "accent", "accent-2", "line", "font", "mono",
+    }
+    aliases = {"primary": "accent", "secondary": "accent-2", "neutral": "ink"}
+    declarations: list[str] = []
+    for raw_key, raw_value in sorted(globals_.styleTokens.items()):
+        key = re.sub(r"[^a-z0-9-]+", "-", str(raw_key).strip().lower()).strip("-")
+        key = aliases.get(key, key)
+        value = str(raw_value).strip()
+        if (
+            key not in allowed
+            or not value
+            or re.search(r"[{};<>]|url\s*\(", value, flags=re.I)
+        ):
+            continue
+        declarations.append(f"  --notale-{key}: {value};")
+    return "\n:root {\n" + "\n".join(declarations) + "\n}\n" if declarations else ""
+
+
+def _copy_runtime(run_dir: Path, globals_: Globals | None = None) -> None:
     """复制包内固定 Reveal vendor 与 Notale 薄外壳。"""
     reveal_source = Path(__file__).resolve().parent / "vendor" / "reveal"
     shell_source = Path(__file__).resolve().parent / "runtime"
@@ -140,6 +180,7 @@ def _copy_runtime(run_dir: Path) -> None:
         reveal_source / "plugin" / "notes.html",
         shell_source / "deck-shell.css",
         shell_source / "deck-shell.js",
+        shell_source / "global.css",
     ]
     missing = [str(path) for path in required if not path.is_file()]
     if missing:
@@ -153,6 +194,10 @@ def _copy_runtime(run_dir: Path) -> None:
     shutil.copy2(reveal_source / "plugin" / "notes.html", target / "reveal" / "plugin" / "notes.html")
     shutil.copy2(shell_source / "deck-shell.css", target / "deck-shell.css")
     shutil.copy2(shell_source / "deck-shell.js", target / "deck-shell.js")
+    base_css = (shell_source / "global.css").read_text(encoding="utf-8")
+    (target / "global.css").write_text(
+        base_css.rstrip() + "\n" + _safe_style_tokens(globals_), encoding="utf-8"
+    )
 
 
 def write_deck_package(
@@ -162,12 +207,13 @@ def write_deck_package(
     title: str,
     *,
     language: str = "zh",
+    globals_: Globals | None = None,
 ) -> tuple[AssembledDeck, str]:
     """写出可离线交付的 Reveal.js 目录包。"""
     deck, deck_html = assemble_deck(pages, specs, title)
     slides_dir = run_dir / "slides"
     slides_dir.mkdir(parents=True, exist_ok=True)
-    _copy_runtime(run_dir)
+    _copy_runtime(run_dir, globals_)
     for page in pages:
         document = _SLIDE_DOCUMENT.format(
             language=html_mod.escape(language, quote=True),
@@ -204,7 +250,9 @@ def consistency_report(
             break
 
     # 近重复页（shingle Jaccard）
-    shingle_map = {pid: shingles(t) for pid, t in texts.items()}
+    shingle_map = {
+        pid: shingles(t, n=_DECK_CONFIG.duplicate_shingle_size) for pid, t in texts.items()
+    }
     dups: list[str] = []
     ids = list(texts)
     for i in range(len(ids)):
