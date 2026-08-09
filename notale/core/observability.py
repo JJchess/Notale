@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import contextvars
 import datetime as dt
 import json
 import sys
@@ -22,11 +21,6 @@ class RunEmergencyLimitExceeded(RuntimeError):
 
 def now() -> str:
     return dt.datetime.now(dt.timezone.utc).isoformat()
-
-
-CURRENT_CALL: contextvars.ContextVar[tuple["ExperimentLogger", str] | None] = (
-    contextvars.ContextVar("notale_current_call", default=None)
-)
 
 
 class ExperimentLogger:
@@ -145,13 +139,6 @@ class ExperimentLogger:
                     handle.write(line + "\n")
         except Exception as exc:
             self._fail(exc)
-
-    def http_attempt(self, call_id: str, **fields: Any) -> None:
-        if int(fields.get("attempt", 1)) > 1:
-            self.metrics["retries"] += 1
-        self.append("llm-calls.jsonl", {
-            "ts": now(), "kind": "http-attempt", "callId": call_id, **fields,
-        })
 
     def provider_call_started(self, agent: str, role: str) -> None:
         self.metrics["providerCalls"] += 1
@@ -307,56 +294,3 @@ class ExperimentLogger:
             self._fail(exc)
         self.summary("run", status, durationSec=duration, tokens=self.metrics["totalTokens"],
                      auditComplete=self.audit_complete)
-
-
-class LoggedLLMClient:
-    """Transparent legacy-client logger using hashes instead of quadratic snapshots."""
-
-    def __init__(self, inner: Any, logger: ExperimentLogger) -> None:
-        self.inner = inner
-        self.logger = logger
-
-    @property
-    def usage(self):
-        return getattr(self.inner, "usage", {})
-
-    async def complete(self, messages, *, json_mode: bool = True, purpose: str = "chat") -> str:
-        call_id = uuid.uuid4().hex
-        started_at = now()
-        started = time.monotonic()
-        model = getattr(self.inner, "model", None)
-        token = CURRENT_CALL.set((self.logger, call_id))
-        try:
-            response = await self.inner.complete(messages, json_mode=json_mode, purpose=purpose)
-            duration = round(time.monotonic() - started, 3)
-            usage = dict(getattr(self.inner, "last_usage", {}) or {})
-            self.logger.add_usage(usage)
-            self.logger.append("llm-calls.jsonl", {
-                "ts": now(), "kind": "llm-call", "callId": call_id, "status": "success",
-                "startedAt": started_at, "durationSec": duration, "purpose": purpose,
-                "model": model, "jsonMode": json_mode, "messageCount": len(messages),
-                "contextHash": __import__("hashlib").sha256(
-                    json.dumps(messages, ensure_ascii=False, default=str).encode("utf-8")
-                ).hexdigest(),
-                "responseChars": len(response),
-                "usage": usage,
-            })
-            self.logger.summary(purpose, "llm complete", durationSec=duration,
-                                tokens=usage.get("total_tokens", "?"))
-            return response
-        except Exception as exc:
-            self.logger.metrics["errors"] += 1
-            self.logger.append("llm-calls.jsonl", {
-                "ts": now(), "kind": "llm-call", "callId": call_id, "status": "error",
-                "startedAt": started_at, "durationSec": round(time.monotonic() - started, 3),
-                "purpose": purpose, "model": model, "jsonMode": json_mode,
-                "messageCount": len(messages),
-                "contextHash": __import__("hashlib").sha256(
-                    json.dumps(messages, ensure_ascii=False, default=str).encode("utf-8")
-                ).hexdigest(),
-                "error": {"type": type(exc).__name__, "message": str(exc),
-                          "traceback": "".join(traceback.format_exception(exc))},
-            })
-            raise
-        finally:
-            CURRENT_CALL.reset(token)

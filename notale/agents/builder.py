@@ -25,7 +25,7 @@ from notale.core.models import (
     VisualContract,
 )
 from notale.core.observability import ExperimentLogger
-from notale.roles.profiles import BUILDER, builder_profile
+from notale.roles.profiles import BUILDER
 from notale.utils.config import get_config
 
 
@@ -219,7 +219,7 @@ class BuilderWorker:
     ) -> None:
         self.context = context
         page_brief = context.page
-        role = builder_profile(page_brief.type)
+        role = BUILDER
         valid_ids = context.source_ids
 
         def validate(payload: dict) -> PageArtifact:

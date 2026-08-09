@@ -13,7 +13,7 @@ HTML-native 讲义。每页保持完整 HTML 产物，通过 sandbox iframe 嵌�
 - `roles/`：版本化 system profile、角色职责与工具/skill 权限声明。
 - `skills/`：可注入 Agent 的能力说明。
 - `tools/`：Agent 可调用工具及其测试替身。
-- `utils/`：LLM 客户端、解析等公共基础设施。
+- `utils/`：严格配置、解析等公共基础设施。
 - `web/`：Reveal.js 组装、包内离线 runtime 与预览服务。
 - `tests/`：全离线测试。
 
@@ -25,10 +25,10 @@ HTML-native 讲义。每页保持完整 HTML 产物，通过 sandbox iframe 嵌�
 - `model`、`model_capabilities`：模型连接参数，以及 context/output 的技术能力边界；
 - `governance`：进展判定、重复错误与 prose-only 停滞检测，以及只用于异常失控的
   run/query/worker 高位熔断；
-- `agents`：角色 compact 阈值、版本和 Builder skills；不再按页型设置日常 token/turn/time
-  预算；
+- `agents`：角色 compact 阈值和 Builder skills；agent protocol 版本由 `versions` 唯一声明，
+  不再按页型设置日常 token/turn/time 预算；
 - `runtime`、`pipeline`：compact 安全余量、页面并发、默认课时和日志截断参数；
-- `research`、`tools`：Research 分支、搜索/抓取额度、chunk 大小、JS 检查与网页读取限制；
+- `research`、`tools`：Research 总开关与分支、搜索/抓取额度、chunk 大小、JS 检查与网页读取限制；
 - `media`：真实/生成素材 provider 与单页、单次运行的素材预算；
 - `duration_model`、`deck`、`preview`：页数/章节/页型时长模型、跨页去重和预览地址。
 
@@ -81,9 +81,8 @@ Intake、配置中启用的每路 Research、Planner 以及每页 Builder 都是
 counterexample ledger。成功页记为 `completed`，Builder stalled/failed 时生成静态 `degraded` 页。
 
 Builder 的正式产物固定为 `workspace/page.html`。`page_*` 工具负责读写、搜索、修补、
-检查与提交；通过检查的 hash 候选不能再被无意义重读。受限 `scratch_*` 基础设施仍保留，
-但真实小样证明它会诱发页面副本和额外长输出，因此 Notale Builder profile 不再授予这些工具。
-每个 iframe
+检查与提交；通过检查的 hash 候选不能再被无意义重读。私有 scratch 目录只供 harness 做
+inline JavaScript 语法检查，不作为 agent 工具暴露。每个 iframe
 由 runtime 注入 `global.css`，页面仍保留自己的 HTML、CSS 与 JavaScript。
 
 Research 分支不是四个固定槽位。`research.branches` 可以声明任意数量的专能；`id` 是日志和
@@ -91,6 +90,7 @@ Research 分支不是四个固定槽位。`research.branches` 可以声明任意
 
 ```yaml
 research:
+  enabled: true
   branches:
     - id: r1
       enabled: true
@@ -104,8 +104,11 @@ research:
       tools: [web_search, fetch_web]
 ```
 
-删除配置项或设为 `enabled: false` 都不会启动该路；也允许不启用任何 Research。所有专能仍提交
-统一的 `notes / records / pedagogy`，因此无需修改 Planner。修改分支配置只对新实验生效；恢复
+顶层 `enabled: false` 会真正跳过整个 Research stage：不启动 agent，不调用模型或联网工具，
+并为下游落盘空的 `notes / records / pedagogy` artifact。当总开关为 `true` 时，Research agent
+数量等于 `enabled: true` 的分支数；若为 0，同样跳过整个 stage。此时 Planner 必须用
+`planner-*` 补充记录建立页面事实基础，章节 `pedagogyNoteIds` 留空，并在 `rationale` 中自洽说明排序理由。
+修改分支配置只对新实验生效；恢复
 已有实验时继续使用已落盘产物。新增 skill 必须位于 `skills/`，其所需工具必须包含在该分支的
 `tools` 中。
 
@@ -115,7 +118,7 @@ research:
 runs/<run-id>/agents/<stage>/<worker-id>/
 ├── workspace/
 │   ├── page.html          # Builder 的唯一正式页面源
-│   └── scratch/           # 可观测的临时逃生空间
+│   └── scratch/           # Harness 临时检查目录，不暴露给 agent
 ├── candidate.json         # check_page 通过后保存的 hash 绑定候选
 ├── session.json
 ├── task.json

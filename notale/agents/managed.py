@@ -7,7 +7,9 @@ import hashlib
 import json
 import os
 import time
+import traceback
 import uuid
+from collections import defaultdict, deque
 from dataclasses import replace
 from pathlib import Path
 from typing import Any, Callable
@@ -15,41 +17,40 @@ from typing import Any, Callable
 from openharness.api.client import ApiMessageCompleteEvent
 from openharness.api.openai_client import OpenAICompatibleClient
 from openharness.api.usage import UsageSnapshot
+from openharness.config.settings import PermissionSettings
 from openharness.engine.messages import ConversationMessage, TextBlock, ToolUseBlock
+from openharness.engine.query import MaxTurnsExceeded
+from openharness.engine.query_engine import QueryEngine
+from openharness.engine.stream_events import (
+    AssistantTurnComplete,
+    CompactProgressEvent,
+    ErrorEvent,
+    StatusEvent,
+    ToolExecutionCompleted,
+    ToolExecutionStarted,
+)
+from openharness.permissions.checker import PermissionChecker
+from openharness.permissions.modes import PermissionMode
+from openharness.services.token_estimation import estimate_tokens
+from openharness.tools.base import ToolRegistry
 from pydantic import BaseModel
 
-from notale.agents.runtime import AgentBase
 from notale.core.models import AgentCheckpoint, AgentTaskState, AgentTaskStep
 from notale.core.observability import ExperimentLogger, now
 from notale.roles.base import RoleSpec
 from notale.tools.agent_tools import (
-    ArtifactReadTool,
-    ArtifactSearchTool,
-    AssignedSkillTool,
-    CheckPageTool,
-    ContextReadTool,
-    DictSubmitInput,
     ManagedToolState,
-    PagePatchTool,
-    PageReadTool,
-    PageSearchTool,
-    PageWriteTool,
-    ReportBlockerTool,
-    ScratchPatchTool,
-    ScratchReadTool,
-    ScratchSearchTool,
-    ScratchWriteTool,
-    SubmitArtifactTool,
-    SubmitPageTool,
+    build_managed_tools,
     load_assigned_skills,
 )
-from notale.tools.media import AcquireMediaTool, GenerateMediaTool
 from notale.utils.config import get_config
 from notale.utils.parsing import extract_json
 
 
 SKILLS_ROOT = Path(__file__).resolve().parent.parent / "skills"
-_PROGRESS_CONFIG = get_config().governance.progress
+_CONFIG = get_config()
+_PROGRESS_CONFIG = _CONFIG.governance.progress
+_RUNTIME_CONFIG = _CONFIG.runtime
 
 
 class ManagedAgentBudgetExceeded(RuntimeError):
@@ -102,6 +103,7 @@ class _ObservedStreamingClient:
                 "maxAttempts": self.role.max_provider_attempts,
             }
             if self.logger:
+                self.logger.metrics["retries"] += int(attempt > 1)
                 self.logger.provider_call_started(self.identity, self.role.name)
                 self.logger.append("llm-calls.jsonl", {
                     "ts": now(), "kind": "provider-call-start", **fields,
@@ -267,24 +269,20 @@ class _CompletionClientAdapter:
         )
 
 
-def _atomic_json(path: Path, value: BaseModel | dict[str, Any]) -> None:
+def _atomic_json(path: Path, value: BaseModel) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    if isinstance(value, BaseModel):
-        text = value.model_dump_json(indent=2)
-    else:
-        text = json.dumps(value, ensure_ascii=False, indent=2, default=str)
     tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(text, encoding="utf-8")
+    tmp.write_text(value.model_dump_json(indent=2), encoding="utf-8")
     tmp.replace(path)
 
 
 def _native_client(llm: Any, profile: RoleSpec) -> tuple[Any, RoleSpec]:
     """Resolve one model config into an OpenHarness streaming client and role."""
-    if hasattr(llm, "stream_message"):
+    if llm is not None and hasattr(llm, "stream_message"):
         return llm, profile
-    inner = getattr(llm, "inner", llm)
+    inner = getattr(llm, "inner", llm) if llm is not None else None
     # FakeClient and compatible fixtures are intentionally completed by the test bridge.
-    if any(cls.__name__ == "FakeClient" for cls in type(inner).__mro__):
+    if inner is not None and any(cls.__name__ == "FakeClient" for cls in type(inner).__mro__):
         return inner, profile
     base_url = getattr(inner, "base_url", profile.base_url)
     model = getattr(inner, "model", profile.model)
@@ -292,12 +290,8 @@ def _native_client(llm: Any, profile: RoleSpec) -> tuple[Any, RoleSpec]:
     api_key = (os.environ.get(api_key_env) or os.environ.get("OPENAI_API_KEY") or "").strip()
     if not api_key:
         raise RuntimeError(f"缺 API key：设环境变量 {api_key_env} 或 OPENAI_API_KEY")
-    configured_timeout = getattr(inner, "timeout", None)
-    timeout = (
-        min(float(configured_timeout), profile.request_timeout_sec)
-        if configured_timeout
-        else profile.request_timeout_sec
-    )
+    configured_timeout = getattr(inner, "timeout", _CONFIG.model.http_timeout_sec)
+    timeout = min(float(configured_timeout), profile.request_timeout_sec)
     native = OpenAICompatibleClient(api_key, base_url=base_url, timeout=timeout)
     return native, replace(profile, model=model, base_url=base_url, api_key_env=api_key_env)
 
@@ -337,17 +331,6 @@ class ManagedAgent:
         self.submit_tool = submit_tool
         self.submit_validator = submit_validator
         self.checkpoint_path = self.worker_dir / "session.json"
-        self._compact_count = 0
-        self._checkpoint_id = uuid.uuid4().hex
-        self._progress_snapshot: dict[str, Any] = {}
-        self._last_progress_turn = 0
-        self._no_progress_turns = 0
-        self._prose_only_turns = 0
-        self._last_tool_error_signature = ""
-        self._repeated_tool_error_count = 0
-        self._last_validation_signature = ""
-        self._repeated_validation_error_count = 0
-        self._stalled_reason = ""
 
         task_path = self.worker_dir / "task.json"
         if task_path.exists():
@@ -415,7 +398,7 @@ class ManagedAgent:
         )
         self.state.save_task()
         self.state.save_tool_state()
-        self._progress_snapshot = self._capture_progress_snapshot()
+        progress_snapshot = self._capture_progress_snapshot()
         if (self.worker_dir / "submission.json").exists():
             saved = json.loads((self.worker_dir / "submission.json").read_text(encoding="utf-8"))
             self.state.submission = submit_validator(saved)
@@ -424,35 +407,13 @@ class ManagedAgent:
                 task.submittedArtifact = "submission.json"
                 self.state.save_task()
 
-        available: dict[str, Any] = {
-            "skill_read": AssignedSkillTool(self.state),
-            "artifact_read": ArtifactReadTool(self.state),
-            "artifact_search": ArtifactSearchTool(self.state),
-            "context_read": ContextReadTool(self.state),
-            "acquire_media": AcquireMediaTool(self.state),
-            "generate_media": GenerateMediaTool(self.state),
-            "page_write": PageWriteTool(self.state),
-            "page_read": PageReadTool(self.state),
-            "page_search": PageSearchTool(self.state),
-            "page_patch": PagePatchTool(self.state),
-            "scratch_read": ScratchReadTool(self.state),
-            "scratch_write": ScratchWriteTool(self.state),
-            "scratch_search": ScratchSearchTool(self.state),
-            "scratch_patch": ScratchPatchTool(self.state),
-            "check_page": CheckPageTool(self.state),
-            "report_blocker": ReportBlockerTool(self.state),
-        }
-        available[submit_tool] = (
-            SubmitPageTool(self.state)
-            if submit_tool == "submit_page"
-            else SubmitArtifactTool(self.state, submit_tool)
+        tools = build_managed_tools(
+            self.state,
+            role.allowed_tools,
+            submit_tool=submit_tool,
+            role_name=role.name,
+            extra_tools=extra_tools,
         )
-        for tool in extra_tools or []:
-            available[tool.name] = tool
-        unknown = sorted(allowed - set(available))
-        if unknown:
-            raise ValueError(f"role {role.name} declares unavailable tools: {unknown}")
-        tools = [available[name] for name in role.allowed_tools]
 
         native, effective_role = _native_client(llm, role)
         if any(cls.__name__ == "FakeClient" for cls in type(native).__mro__):
@@ -464,24 +425,54 @@ class ManagedAgent:
         )
         self.client = native
         self.role = effective_role
-        self.base = AgentBase(
-            effective_role,
-            client=native,
-            workspace=self.state.workspace,
-            logger=logger,
-            identity=identity,
-            tools=tools,
-            inline_skills=False,
-            checkpoint_callback=self._save_checkpoint,
-            tool_result_callback=self._record_tool_result,
-            tool_metadata={
-                "stage": stage,
-                "workerId": worker_id,
-                "roleVersion": role.version,
-                "pageType": (validation_context or {}).get("page_type"),
-            },
-            return_on_max_turns=True,
-            terminal_tools={submit_tool},
+        self.identity = identity
+        self.tools = tools
+        registry = ToolRegistry()
+        for tool in tools:
+            registry.register(tool)
+        self.system_prompt = effective_role.rendered_system_prompt()
+        tool_schema = json.dumps(registry.to_api_schema(), ensure_ascii=False, default=str)
+        self.context_overhead_tokens = int(
+            _RUNTIME_CONFIG.context_token_safety_factor
+            * (estimate_tokens(self.system_prompt) + estimate_tokens(tool_schema))
+        )
+        compact_threshold = max(
+            _RUNTIME_CONFIG.minimum_message_compact_threshold_tokens,
+            effective_role.auto_compact_threshold_tokens - self.context_overhead_tokens,
+        )
+        tool_metadata = {
+            "stage": stage,
+            "workerId": worker_id,
+            "roleVersion": effective_role.version,
+            "pageType": (validation_context or {}).get("page_type"),
+        }
+        self.engine = QueryEngine(
+            api_client=native,
+            tool_registry=registry,
+            permission_checker=PermissionChecker(
+                PermissionSettings(mode=PermissionMode.FULL_AUTO)
+            ),
+            cwd=self.state.workspace,
+            model=effective_role.model,
+            system_prompt=self.system_prompt,
+            max_turns=effective_role.max_turns,
+            max_tokens=effective_role.max_tokens,
+            context_window_tokens=effective_role.context_window_tokens,
+            auto_compact_threshold_tokens=compact_threshold,
+            permission_prompt=None,
+            ask_user_prompt=None,
+            tool_metadata=tool_metadata,
+        )
+        self._compact_metadata_cursor = 0
+        self.last_turn_had_tools = False
+        self.checkpoint = AgentCheckpoint(
+            workerId=worker_id,
+            role=effective_role.name,
+            roleVersion=effective_role.version,
+            checkpointId=uuid.uuid4().hex,
+            progressSnapshot=progress_snapshot,
+            toolMetadata=tool_metadata,
+            updatedAt=now(),
         )
         self._restore_checkpoint()
         if logger:
@@ -492,6 +483,204 @@ class ManagedAgent:
                 "allowedTools": role.allowed_tools,
                 "systemProfiles": role.system_profile_metadata(),
             })
+
+    def _record_hidden_compactions(self) -> None:
+        """Promote OpenHarness microcompact metadata into Notale's audit stream."""
+        checkpoints = self.engine.tool_metadata.get("compact_checkpoints", [])
+        if not isinstance(checkpoints, list):
+            return
+        new = checkpoints[self._compact_metadata_cursor :]
+        self._compact_metadata_cursor = len(checkpoints)
+        for entry in new:
+            if (
+                not isinstance(entry, dict)
+                or entry.get("checkpoint") != "query_microcompact_end"
+                or int(entry.get("tokens_freed", 0) or 0) <= 0
+            ):
+                continue
+            if self.logger:
+                self.logger.record_control_event(self.identity, self.role.name, "compact")
+                self.logger.append("agent-traces.jsonl", {
+                    "ts": now(), "kind": "compact", "agent": self.identity,
+                    "event": {"phase": "microcompact_end", **entry},
+                })
+            self._save_checkpoint("compact:microcompact_end")
+
+    async def _run_query(self, prompt: str) -> str:
+        """Run one QueryEngine invocation inside this persistent worker."""
+        pending_inputs: dict[str, deque[dict[str, Any]]] = defaultdict(deque)
+        receipts: list[dict[str, Any]] = []
+        text = ""
+        turns = 0
+        terminal_error: str | None = None
+        turn_started = time.monotonic()
+        if self.logger:
+            self.logger.append("agent-traces.jsonl", {
+                "ts": now(), "kind": "agent-start", "agent": self.identity,
+                "role": self.role.name, "model": self.role.model,
+                "baseUrl": self.role.base_url, "maxTurns": self.role.max_turns,
+                "maxTokens": self.role.max_tokens,
+                "systemPrompt": self.system_prompt, "prompt": prompt,
+            })
+            self.logger.summary(self.identity, "agent started", model=self.role.model)
+        try:
+            async for event in self.engine.submit_message(prompt):
+                self._record_hidden_compactions()
+                if isinstance(event, ToolExecutionStarted):
+                    pending_inputs[event.tool_name].append(dict(event.tool_input))
+                    if self.logger:
+                        self.logger.append("agent-traces.jsonl", {
+                            "ts": now(), "kind": "tool-start", "agent": self.identity,
+                            "tool": event.tool_name, "input": event.tool_input,
+                        })
+                elif isinstance(event, ToolExecutionCompleted):
+                    tool_input = (
+                        pending_inputs[event.tool_name].popleft()
+                        if pending_inputs[event.tool_name]
+                        else {}
+                    )
+                    receipts.append({
+                        "name": event.tool_name,
+                        "args": tool_input,
+                        "output": str(event.output)[: _RUNTIME_CONFIG.tool_receipt_preview_chars],
+                        "is_error": event.is_error,
+                    })
+                    if self.logger:
+                        self.logger.record_tool(
+                            self.identity,
+                            self.role.name,
+                            event.tool_name,
+                            is_error=event.is_error,
+                            error_kind=(
+                                "external"
+                                if event.tool_name in {
+                                    "web_search", "fetch_web", "acquire_media", "generate_media"
+                                }
+                                else "validation"
+                                if event.tool_name == "check_page"
+                                else "protocol"
+                            ),
+                        )
+                        self.logger.append("agent-traces.jsonl", {
+                            "ts": now(), "kind": "tool-end", "agent": self.identity,
+                            "tool": event.tool_name, "output": event.output,
+                            "isError": event.is_error,
+                        })
+                    self._record_tool_result(
+                        event.tool_name, tool_input, event.output, event.is_error
+                    )
+                    self._save_checkpoint("tool-execution")
+                    turn_started = time.monotonic()
+                    if event.tool_name == self.submit_tool and not event.is_error:
+                        break
+                elif isinstance(event, AssistantTurnComplete):
+                    turns += 1
+                    self.last_turn_had_tools = bool(event.message.tool_uses)
+                    if event.message.text:
+                        text = event.message.text
+                    if self.logger:
+                        message = (
+                            event.message.model_dump(mode="json")
+                            if hasattr(event.message, "model_dump")
+                            else str(event.message)
+                        )
+                        usage = {
+                            "input_tokens": event.usage.input_tokens,
+                            "output_tokens": event.usage.output_tokens,
+                        }
+                        duration_sec = round(time.monotonic() - turn_started, 3)
+                        context_tokens = event.usage.input_tokens
+                        page_type = str(self.engine.tool_metadata.get("pageType") or "") or None
+                        self.logger.record_turn(
+                            self.identity,
+                            self.role.name,
+                            usage,
+                            duration_sec=duration_sec,
+                            context_tokens=context_tokens,
+                            page_type=page_type,
+                        )
+                        self.logger.append("agent-traces.jsonl", {
+                            "ts": now(), "kind": "assistant-turn", "agent": self.identity,
+                            "turn": turns, "message": message, "usage": usage,
+                        })
+                        context = [
+                            item.model_dump(mode="json") for item in self.engine.messages
+                        ]
+                        self.logger.append("llm-calls.jsonl", {
+                            "ts": now(), "kind": "openharness-turn", "agent": self.identity,
+                            "role": self.role.name, "model": self.role.model,
+                            "baseUrl": self.role.base_url, "turn": turns,
+                            "durationSec": duration_sec,
+                            "messageCount": len(context),
+                            "contextHash": hashlib.sha256(json.dumps(
+                                context, ensure_ascii=False, separators=(",", ":")
+                            ).encode("utf-8")).hexdigest(),
+                            "contextOverheadTokens": self.context_overhead_tokens,
+                            "contextTokens": context_tokens,
+                            "usage": usage,
+                        })
+                    self._save_checkpoint("assistant-turn")
+                    turn_started = time.monotonic()
+                elif isinstance(event, CompactProgressEvent):
+                    if self.logger:
+                        if event.phase in {
+                            "compact_end", "context_collapse_end", "session_memory_end"
+                        }:
+                            self.logger.record_control_event(
+                                self.identity, self.role.name, "compact"
+                            )
+                        self.logger.append("agent-traces.jsonl", {
+                            "ts": now(), "kind": "compact", "agent": self.identity,
+                            "event": event.__dict__,
+                        })
+                    self._save_checkpoint(f"compact:{event.phase}")
+                elif isinstance(event, (ErrorEvent, StatusEvent)):
+                    if isinstance(event, ErrorEvent):
+                        terminal_error = event.message
+                    if self.logger:
+                        self.logger.append("agent-traces.jsonl", {
+                            "ts": now(), "kind": type(event).__name__,
+                            "agent": self.identity, "event": event.__dict__,
+                        })
+            self._record_hidden_compactions()
+        except MaxTurnsExceeded:
+            if self.logger:
+                self.logger.record_control_event(self.identity, self.role.name, "max-turns")
+                self.logger.append("agent-traces.jsonl", {
+                    "ts": now(), "kind": "max-turns", "agent": self.identity,
+                    "turns": turns, "partialResponse": text,
+                })
+        except BaseException as exc:
+            if self.logger:
+                self.logger.metrics["errors"] += 1
+                self.logger.append("agent-traces.jsonl", {
+                    "ts": now(), "kind": "agent-error", "agent": self.identity,
+                    "error": {
+                        "type": type(exc).__name__,
+                        "message": str(exc),
+                        "traceback": "".join(traceback.format_exception(exc)),
+                    },
+                })
+            raise
+        if terminal_error is not None and turns == 0:
+            raise RuntimeError(
+                f"OpenHarness query failed before an assistant turn: {terminal_error}"
+            )
+        usage = self.engine.total_usage
+        if self.logger:
+            self.logger.append("agent-traces.jsonl", {
+                "ts": now(), "kind": "agent-end", "agent": self.identity,
+                "turns": turns, "inputTokens": usage.input_tokens,
+                "outputTokens": usage.output_tokens, "response": text,
+                "toolReceipts": receipts,
+            })
+            self.logger.summary(
+                self.identity,
+                "agent complete",
+                turns=turns,
+                tokens=usage.input_tokens + usage.output_tokens,
+            )
+        return text
 
     @staticmethod
     def _signature(value: Any) -> str:
@@ -529,23 +718,23 @@ class ManagedAgent:
         }
 
     def _mark_stalled(self, reason: str) -> None:
-        if self._stalled_reason:
+        if self.checkpoint.stalledReason:
             return
-        self._stalled_reason = reason
+        self.checkpoint.stalledReason = reason
         self.state.task.status = "stalled"
         self.state.tool_state["governance"] = {
             "status": "stalled",
             "reason": reason,
             "turn": self.state.task.totalTurns,
-            "noProgressTurns": self._no_progress_turns,
-            "proseOnlyTurns": self._prose_only_turns,
-            "repeatedToolErrorCount": self._repeated_tool_error_count,
-            "repeatedValidationErrorCount": self._repeated_validation_error_count,
+            "noProgressTurns": self.checkpoint.noProgressTurns,
+            "proseOnlyTurns": self.checkpoint.proseOnlyTurns,
+            "repeatedToolErrorCount": self.checkpoint.repeatedToolErrorCount,
+            "repeatedValidationErrorCount": self.checkpoint.repeatedValidationErrorCount,
         }
         self.state.save_task()
         self.state.save_tool_state()
         if self.logger:
-            self.logger.record_stalled(self.base.identity, self.role.name, reason)
+            self.logger.record_stalled(self.identity, self.role.name, reason)
 
     def _record_tool_result(
         self, tool: str, arguments: dict[str, Any], output: str, is_error: bool
@@ -564,14 +753,14 @@ class ManagedAgent:
                 "arguments": arguments,
                 "output": " ".join(output.split()),
             })
-            if signature == self._last_tool_error_signature:
-                self._repeated_tool_error_count += 1
+            if signature == self.checkpoint.lastToolErrorSignature:
+                self.checkpoint.repeatedToolErrorCount += 1
             else:
-                self._last_tool_error_signature = signature
-                self._repeated_tool_error_count = 1
+                self.checkpoint.lastToolErrorSignature = signature
+                self.checkpoint.repeatedToolErrorCount = 1
         else:
-            self._last_tool_error_signature = ""
-            self._repeated_tool_error_count = 0
+            self.checkpoint.lastToolErrorSignature = ""
+            self.checkpoint.repeatedToolErrorCount = 0
 
         if tool == "check_page":
             if is_error:
@@ -581,32 +770,36 @@ class ManagedAgent:
                 except (json.JSONDecodeError, TypeError, AttributeError):
                     failures = output
                 validation_signature = self._signature(failures)
-                if validation_signature == self._last_validation_signature:
-                    self._repeated_validation_error_count += 1
+                if validation_signature == self.checkpoint.lastValidationSignature:
+                    self.checkpoint.repeatedValidationErrorCount += 1
                 else:
-                    self._last_validation_signature = validation_signature
-                    self._repeated_validation_error_count = 1
+                    self.checkpoint.lastValidationSignature = validation_signature
+                    self.checkpoint.repeatedValidationErrorCount = 1
             else:
-                self._last_validation_signature = ""
-                self._repeated_validation_error_count = 0
+                self.checkpoint.lastValidationSignature = ""
+                self.checkpoint.repeatedValidationErrorCount = 0
 
         reason = ""
-        if self._repeated_tool_error_count >= _PROGRESS_CONFIG.repeated_tool_error_limit:
+        if (
+            self.checkpoint.repeatedToolErrorCount
+            >= _PROGRESS_CONFIG.repeated_tool_error_limit
+        ):
             reason = (
-                f"same tool failure repeated {self._repeated_tool_error_count} times: {tool}"
+                "same tool failure repeated "
+                f"{self.checkpoint.repeatedToolErrorCount} times: {tool}"
             )
         elif (
-            self._repeated_validation_error_count
+            self.checkpoint.repeatedValidationErrorCount
             >= _PROGRESS_CONFIG.repeated_validation_error_limit
         ):
             reason = (
                 "same validation failure repeated "
-                f"{self._repeated_validation_error_count} times"
+                f"{self.checkpoint.repeatedValidationErrorCount} times"
             )
         if reason:
             self._mark_stalled(reason)
             self._save_checkpoint("stalled:repeated-error")
-            raise ManagedAgentStalled(f"{self.base.identity} stalled: {reason}")
+            raise ManagedAgentStalled(f"{self.identity} stalled: {reason}")
 
     def _restore_checkpoint(self) -> None:
         if not self.checkpoint_path.exists():
@@ -634,7 +827,7 @@ class ManagedAgent:
                 self.logger.append("agent-traces.jsonl", {
                     "ts": now(),
                     "kind": "checkpoint-protocol-restart",
-                    "agent": self.base.identity,
+                    "agent": self.identity,
                     "savedRoleVersion": saved.roleVersion,
                     "currentRoleVersion": self.role.version,
                     "preservedTotalTurns": self.state.task.totalTurns,
@@ -642,21 +835,13 @@ class ManagedAgent:
             return
         messages = [ConversationMessage.model_validate(message) for message in saved.messages]
         if messages:
-            self.base.load_messages(messages)
-        self._compact_count = saved.compactCount
-        self._checkpoint_id = saved.checkpointId
-        self._progress_snapshot = saved.progressSnapshot or self._capture_progress_snapshot()
-        self._last_progress_turn = saved.lastProgressTurn
-        self._no_progress_turns = saved.noProgressTurns
-        self._prose_only_turns = saved.proseOnlyTurns
-        self._last_tool_error_signature = saved.lastToolErrorSignature
-        self._repeated_tool_error_count = saved.repeatedToolErrorCount
-        self._last_validation_signature = saved.lastValidationSignature
-        self._repeated_validation_error_count = saved.repeatedValidationErrorCount
-        self._stalled_reason = saved.stalledReason
+            self.engine.load_messages(messages)
+        if not saved.progressSnapshot:
+            saved.progressSnapshot = self._capture_progress_snapshot()
+        self.checkpoint = saved
         if self.logger:
             self.logger.append("agent-traces.jsonl", {
-                "ts": now(), "kind": "checkpoint-restored", "agent": self.base.identity,
+                "ts": now(), "kind": "checkpoint-restored", "agent": self.identity,
                 "messages": len(messages), "totalTurns": self.state.task.totalTurns,
             })
 
@@ -669,88 +854,84 @@ class ManagedAgent:
             current = self._capture_progress_snapshot()
             changed = [
                 key for key in current
-                if current.get(key) != self._progress_snapshot.get(key)
+                if current.get(key) != self.checkpoint.progressSnapshot.get(key)
             ]
             if changed:
-                self._last_progress_turn = self.state.task.totalTurns
-                self._no_progress_turns = 0
-                self._progress_snapshot = current
+                self.checkpoint.lastProgressTurn = self.state.task.totalTurns
+                self.checkpoint.noProgressTurns = 0
+                self.checkpoint.progressSnapshot = current
                 if self.logger:
                     self.logger.record_progress(
-                        self.base.identity, self.role.name,
+                        self.identity, self.role.name,
                         progressed=True, reason="changed:" + ",".join(changed),
                     )
             else:
-                self._no_progress_turns += 1
+                self.checkpoint.noProgressTurns += 1
                 if self.logger:
                     self.logger.record_progress(
-                        self.base.identity, self.role.name,
+                        self.identity, self.role.name,
                         progressed=False,
-                        reason=f"no observable change for {self._no_progress_turns} turns",
+                        reason=(
+                            "no observable change for "
+                            f"{self.checkpoint.noProgressTurns} turns"
+                        ),
                     )
-            if self.base.last_turn_had_tools:
-                self._prose_only_turns = 0
+            if self.last_turn_had_tools:
+                self.checkpoint.proseOnlyTurns = 0
             else:
-                self._prose_only_turns += 1
+                self.checkpoint.proseOnlyTurns += 1
         if reason in {
             "compact:microcompact_end", "compact:compact_end",
             "compact:context_collapse_end", "compact:session_memory_end",
         }:
-            self._compact_count += 1
-            self.state.tool_state["skillReloadEpoch"] = self._compact_count
+            self.checkpoint.compactCount += 1
+            self.state.tool_state["skillReloadEpoch"] = self.checkpoint.compactCount
             self.state.tool_state["loadedSkills"] = []
             self.state.tool_state["loadedSkillEntrypoints"] = {}
             self.state.tool_state["skillReadProgress"] = {}
             self.state.save_tool_state()
-        usage = self.base.engine.total_usage
-        checkpoint = AgentCheckpoint(
-            workerId=self.state.task.workerId,
-            role=self.role.name,
-            roleVersion=self.role.version,
-            checkpointId=self._checkpoint_id,
-            messages=[message.model_dump(mode="json") for message in self.base.engine.messages],
-            usage={"inputTokens": usage.input_tokens, "outputTokens": usage.output_tokens},
-            toolMetadata=dict(self.base.engine.tool_metadata),
-            totalTurns=self.state.task.totalTurns,
-            compactCount=self._compact_count,
-            progressSnapshot=self._progress_snapshot,
-            lastProgressTurn=self._last_progress_turn,
-            noProgressTurns=self._no_progress_turns,
-            proseOnlyTurns=self._prose_only_turns,
-            lastToolErrorSignature=self._last_tool_error_signature,
-            repeatedToolErrorCount=self._repeated_tool_error_count,
-            lastValidationSignature=self._last_validation_signature,
-            repeatedValidationErrorCount=self._repeated_validation_error_count,
-            stalledReason=self._stalled_reason,
-            updatedAt=now(),
-        )
-        _atomic_json(self.checkpoint_path, checkpoint)
+        usage = self.engine.total_usage
+        self.checkpoint.messages = [
+            message.model_dump(mode="json") for message in self.engine.messages
+        ]
+        self.checkpoint.usage = {
+            "inputTokens": usage.input_tokens,
+            "outputTokens": usage.output_tokens,
+        }
+        self.checkpoint.toolMetadata = dict(self.engine.tool_metadata)
+        self.checkpoint.totalTurns = self.state.task.totalTurns
+        self.checkpoint.updatedAt = now()
+        _atomic_json(self.checkpoint_path, self.checkpoint)
         if self.logger:
             self.logger.append("agent-traces.jsonl", {
-                "ts": now(), "kind": "checkpoint", "agent": self.base.identity,
-                "reason": reason, "messages": len(checkpoint.messages),
-                "totalTurns": checkpoint.totalTurns, "compactCount": checkpoint.compactCount,
+                "ts": now(), "kind": "checkpoint", "agent": self.identity,
+                "reason": reason, "messages": len(self.checkpoint.messages),
+                "totalTurns": self.checkpoint.totalTurns,
+                "compactCount": self.checkpoint.compactCount,
             })
         if reason == "assistant-turn" and self.state.submission is None:
             stall_reason = ""
-            if self._no_progress_turns >= _PROGRESS_CONFIG.no_progress_turns:
-                stall_reason = f"no observable progress for {self._no_progress_turns} turns"
-            elif self._prose_only_turns >= _PROGRESS_CONFIG.prose_only_turns:
-                stall_reason = f"no tool use for {self._prose_only_turns} consecutive turns"
+            if self.checkpoint.noProgressTurns >= _PROGRESS_CONFIG.no_progress_turns:
+                stall_reason = (
+                    f"no observable progress for {self.checkpoint.noProgressTurns} turns"
+                )
+            elif self.checkpoint.proseOnlyTurns >= _PROGRESS_CONFIG.prose_only_turns:
+                stall_reason = (
+                    f"no tool use for {self.checkpoint.proseOnlyTurns} consecutive turns"
+                )
             if stall_reason:
                 self._mark_stalled(stall_reason)
                 # Persist the stalled flag after the regular checkpoint written above.
-                checkpoint.stalledReason = self._stalled_reason
-                _atomic_json(self.checkpoint_path, checkpoint)
+                _atomic_json(self.checkpoint_path, self.checkpoint)
                 raise ManagedAgentStalled(
-                    f"{self.base.identity} stalled: {self._stalled_reason}"
+                    f"{self.identity} stalled: {self.checkpoint.stalledReason}"
                 )
             used_tokens = usage.input_tokens + usage.output_tokens
             if used_tokens >= self.role.max_total_tokens:
                 self.state.task.status = "failed"
                 self.state.save_task()
                 raise ManagedAgentBudgetExceeded(
-                    f"{self.base.identity} exhausted token budget after turn "
+                    f"{self.identity} exhausted token budget after turn "
                     f"{self.state.task.totalTurns}: tokens={used_tokens}/{self.role.max_total_tokens}"
                 )
             if self.logger:
@@ -759,9 +940,9 @@ class ManagedAgent:
     async def run_task(self, prompt: str) -> Any:
         if self.state.submission is not None:
             return self.state.submission
-        if self._stalled_reason:
+        if self.checkpoint.stalledReason:
             raise ManagedAgentStalled(
-                f"{self.base.identity} remains stalled: {self._stalled_reason}"
+                f"{self.identity} remains stalled: {self.checkpoint.stalledReason}"
             )
         self.state.task.status = "in_progress"
         self.state.save_task()
@@ -781,7 +962,7 @@ class ManagedAgent:
                 self.logger.enforce_run_limits()
             remaining_turns = self.role.max_total_turns - self.state.task.totalTurns
             remaining_time = self.role.max_duration_sec - self.state.task.elapsedSec
-            usage = self.base.engine.total_usage
+            usage = self.engine.total_usage
             used_tokens = usage.input_tokens + usage.output_tokens
             remaining_tokens = self.role.max_total_tokens - used_tokens
             if remaining_turns <= 0 or remaining_time <= 0 or remaining_tokens <= 0:
@@ -789,15 +970,15 @@ class ManagedAgent:
                 self.state.save_task()
                 self._save_checkpoint("budget-exhausted")
                 raise ManagedAgentBudgetExceeded(
-                    f"{self.base.identity} exhausted budget: turns={self.state.task.totalTurns}/"
+                    f"{self.identity} exhausted budget: turns={self.state.task.totalTurns}/"
                     f"{self.role.max_total_turns}, activeSec={self.state.task.elapsedSec:.1f}/"
                     f"{self.role.max_duration_sec}, tokens={used_tokens}/{self.role.max_total_tokens}"
                 )
-            self.base.set_max_turns(min(self.role.max_turns, remaining_turns))
+            self.engine.set_max_turns(min(self.role.max_turns, remaining_turns))
             try:
                 query_timeout = min(remaining_time, self.role.max_query_duration_sec)
                 async with asyncio.timeout(query_timeout):
-                    result = await self.base.run(next_prompt)
+                    await self._run_query(next_prompt)
             except BaseException as exc:
                 self.state.task.elapsedSec += time.monotonic() - started
                 self.state.task.status = (
@@ -812,7 +993,7 @@ class ManagedAgent:
             self.state.save_task()
             self._save_checkpoint("query-complete")
             if self.state.task.status == "blocked":
-                raise ManagedAgentBlocked(f"{self.base.identity} reported a blocker")
+                raise ManagedAgentBlocked(f"{self.identity} reported a blocker")
             if self.state.submission is None:
                 pending = [step.id for step in self.state.task.steps if step.status != "completed"]
                 next_prompt = (

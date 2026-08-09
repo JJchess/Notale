@@ -26,8 +26,11 @@ required_tools: [skill_read, artifact_read, artifact_search, submit_contract]
    contrasts, callbacks, setups, or synthesis—not as a mechanical neighbor list. Every chapter after
    the first must include a non-adjacent callback to an earlier chapter so the deck remains coherent
    beyond local page transitions.
-7. Cite one or more exact `pedagogyNoteIds` for every chapter and explain the choice in `rationale`.
-   Decide terminology and notation once for the deck. Use the assigned deck-visual skill for the shared
+7. When pedagogy notes are available, cite one or more exact `pedagogyNoteIds` for every chapter and
+   explain the choice in `rationale`. When Research is disabled and no pedagogy notes are available,
+   leave every chapter's `pedagogyNoteIds` empty and make `rationale` self-contained from the audience,
+   prior knowledge, course goal, and duration. Decide terminology and notation once for the deck. Use
+   the assigned deck-visual skill for the shared
    art direction, semantic tokens, and recurring motif. Never output component or library names as a
    visual contract, and leave each page's visual object, layout, title, subtitle, controls, and
    interaction implementation to its Builder.

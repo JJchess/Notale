@@ -3,7 +3,7 @@
 每个启用的 research.branches 配置项创建一个独立 worker；专能、skills 与安全工具均由
 配置装配，下游统一消费 notes / records / pedagogy。
 机制要点（PREP §2.1，OpenHarness 迁移后更彻底）：
-- 每路是一个 AgentBase(RESEARCH) 实例（独立上下文），按该路权限调用研究工具；
+- 每路是一个 ManagedAgent(RESEARCH) 实例（独立上下文），按该路权限调用研究工具；
 - 每次抓取 harness 侧自动落 FetchRecord（FetchWebTool.records，模型摸不到）；
 - 引文 {url, quotedSpan} 必须对应该 agent 真实抓过的记录，harness 做字面子串校验，
   通过才绑进 evidence——模型没有"贴出处"这个动作，没抓过的 url 在结构上无法变成出处；
@@ -101,7 +101,7 @@ class ResearchOutput:
     events: list[dict] = field(default_factory=list)  # 交 orchestrator 落事件日志（单写者）
 
 
-# client_factory(agent 方向名) → SupportsStreamingMessages；None 时 AgentBase 按画像构造真 client。
+# client_factory(agent 方向名) → SupportsStreamingMessages；None 时 ManagedAgent 按画像构造真 client。
 ClientFactory = Callable[[str], object]
 
 

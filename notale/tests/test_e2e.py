@@ -4,8 +4,9 @@ import json
 
 import pytest
 
+import notale.core.workflow as workflow_module
 from notale.core.models import PageStatus
-from notale.utils.llm import FakeClient
+from oh_fake import FakeClient
 from notale.core.state import Manifest
 from oh_fake import ScriptedClient, no_network, text_msg, tool_call_msg
 from notale.core.workflow import generate
@@ -138,6 +139,66 @@ def _research_factory(log: list[str] | None = None):
     return factory
 
 
+@pytest.mark.parametrize(
+    ("disable_mode", "reason"),
+    [
+        ("switch", "disabled-by-config"),
+        ("zero-agents", "no-enabled-branches"),
+    ],
+)
+async def test_research_stage_can_be_disabled_without_launching_agents(
+    monkeypatch, tmp_path, disable_mode, reason
+):
+    if disable_mode == "switch":
+        monkeypatch.setattr(workflow_module._CONFIG.research, "enabled", False)
+    else:
+        monkeypatch.setattr(workflow_module._CONFIG.research, "enabled", True)
+        monkeypatch.setattr(workflow_module._CONFIG.research, "branches", [])
+
+    async def forbidden_research(*args, **kwargs):
+        raise AssertionError("Research must not launch when its agent count is zero")
+
+    class ReachedPlanner(RuntimeError):
+        pass
+
+    async def stop_at_planner(*args, **kwargs):
+        assert args[2] == []
+        assert args[3] == []
+        raise ReachedPlanner
+
+    monkeypatch.setattr(workflow_module, "research", forbidden_research)
+    monkeypatch.setattr(workflow_module, "contract", stop_at_planner)
+
+    with pytest.raises(ReachedPlanner), no_network():
+        await workflow_module.generate(
+            _client(), FakeRetriever({}), "10 分钟排序课", out_root=tmp_path
+        )
+
+    run = next(tmp_path.iterdir())
+    for name in ("prep-records.json", "pedagogy-notes.json", "research-notes.json"):
+        assert json.loads((run / name).read_text()) == []
+    events = [json.loads(line) for line in (run / "events.jsonl").read_text().splitlines()]
+    assert any(
+        event["kind"] == "stage-skipped"
+        and event["stage"] == "research"
+        and event["reason"] == reason
+        and event["agents"] == 0
+        for event in events
+    )
+    sessions = [
+        json.loads(line) for line in (run / "logs/sessions.jsonl").read_text().splitlines()
+    ]
+    session_start = next(record for record in sessions if record["kind"] == "session-start")
+    assert session_start["config"]["effectivePolicy"]["research"]["agentCount"] == 0
+    research_end = next(
+        record
+        for record in sessions
+        if record["kind"] == "stage-end" and record["stage"] == "research"
+    )
+    assert research_end["status"] == "skipped" and research_end["reason"] == reason
+    assert not (run / "agents/research").exists()
+
+
 async def test_full_run_offline(tmp_path):
     with no_network():
         result = await generate(
@@ -167,6 +228,8 @@ async def test_full_run_offline(tmp_path):
 
     summary = json.loads((run / "logs/summary.json").read_text())
     assert summary["status"] == "completed" and summary["auditComplete"] is True
+    assert result.usage["total_tokens"] == summary["metrics"]["totalTokens"]
+    assert result.usage["calls"] == summary["metrics"]["calls"]
     assert summary["metrics"]["agents"]["builder:p1"]["contextPeakTokens"] > 0
     assert "toolErrors" in summary["metrics"] and "roles" in summary["metrics"]
     assert summary["metrics"]["toolErrorKinds"]["external"] == 0

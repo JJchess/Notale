@@ -10,25 +10,6 @@ from notale.utils.config import get_config
 _CONFIG = get_config()
 
 
-def _budget_kwargs(name: str) -> dict[str, int | float | str]:
-    role = _CONFIG.agents.role_for(name)
-    emergency = _CONFIG.governance.emergency_limits
-    capabilities = _CONFIG.model_capabilities
-    return {
-        "max_turns": emergency.query_max_turns,
-        "max_tokens": capabilities.max_output_tokens,
-        "context_window_tokens": capabilities.context_window_tokens,
-        "auto_compact_threshold_tokens": role.auto_compact_threshold_tokens,
-        "max_total_turns": emergency.worker_max_turns,
-        "max_duration_sec": emergency.worker_max_duration_sec,
-        "max_total_tokens": emergency.worker_max_total_tokens,
-        "request_timeout_sec": emergency.provider_timeout_sec,
-        "max_query_duration_sec": emergency.query_max_duration_sec,
-        "max_provider_attempts": emergency.provider_max_attempts,
-        "version": role.version or _CONFIG.agents.defaults.version,
-    }
-
-
 _COMMON = ["skill_read", "artifact_read", "artifact_search", "report_blocker"]
 
 
@@ -47,7 +28,7 @@ INTAKE = RoleSpec(
     ),
     allowed_tools=[*_COMMON, "submit_course_brief"],
     skills=["course-intake"],
-    **_budget_kwargs("intake"),
+    auto_compact_threshold_tokens=_CONFIG.agents.role_for("intake").auto_compact_threshold_tokens,
 )
 
 RESEARCH = RoleSpec(
@@ -60,7 +41,7 @@ RESEARCH = RoleSpec(
     ),
     allowed_tools=[*_COMMON, "web_search", "fetch_web", "submit_research"],
     skills=["research-evidence", "web-access"],
-    **_budget_kwargs("research"),
+    auto_compact_threshold_tokens=_CONFIG.agents.role_for("research").auto_compact_threshold_tokens,
 )
 
 PLANNER = RoleSpec(
@@ -79,16 +60,8 @@ PLANNER = RoleSpec(
     ),
     allowed_tools=[*_COMMON, "submit_contract"],
     skills=_planner_skills(),
-    **_budget_kwargs("planner"),
+    auto_compact_threshold_tokens=_CONFIG.agents.role_for("planner").auto_compact_threshold_tokens,
 )
-
-
-def planner_profile(page_count: int) -> RoleSpec:
-    """Keep the signature stable; page count scales work, not the emergency output ceiling."""
-    del page_count
-    return PLANNER
-
-_BUILDER_SKILLS_ALL = list(_CONFIG.agents.builder_skills)
 
 
 _PAGE_TOOLS = [
@@ -116,12 +89,7 @@ BUILDER = RoleSpec(
         "check_page 通过后 submit_page。Harness 自动维护任务台账。"
     ),
     allowed_tools=_PAGE_TOOLS,
-    skills=list(_BUILDER_SKILLS_ALL),
+    skills=list(_CONFIG.agents.builder_skills),
     system_profiles=(LECTURE_AUTHORING,),
-    **_budget_kwargs("builder"),
+    auto_compact_threshold_tokens=_CONFIG.agents.role_for("builder").auto_compact_threshold_tokens,
 )
-
-def builder_profile(page_type: object) -> RoleSpec:
-    """Page type scales worker count and experience labels, not normal completion budgets."""
-    del page_type
-    return BUILDER

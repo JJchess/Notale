@@ -177,7 +177,7 @@ class PedagogyNote(BaseModel):
 class Chapter(BaseModel):
     title: str
     pageRange: tuple[int, int]  # [起页, 止页]，1-based 闭区间
-    rationale: str = ""  # 回指 pedagogy-note 的依据
+    rationale: str = ""  # 有 Research 时回指 pedagogy-note；无 Research 时自证排序理由
     pedagogyNoteIds: list[str] = Field(default_factory=list)
     narrativeGoal: str = ""  # 本章在整本讲义主线中的推进目标
 

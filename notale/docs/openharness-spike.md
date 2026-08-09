@@ -59,6 +59,6 @@
 
 ## 落地建议
 
-- 走 `agents/runtime.py` 薄封装：QueryEngine + FULL_AUTO PermissionChecker + 自家 ToolRegistry（只注册 Notale 需要的工具）+ ScriptedClient 风格的 fake 进测试。
+- 当前实现已把这条窄路径收进 `agents/managed.py`：QueryEngine + FULL_AUTO PermissionChecker + 仅按角色白名单实例化的 ToolRegistry；ScriptedClient 只存在于测试。
 - LLM 端用 `OpenAICompatibleClient` 直连（SiliconFlow 已验证），不必接 registry/profile 那套检测逻辑。
 - skill/knowledge 文本由 Notale 自己拼 system prompt，不用 SkillTool。

@@ -18,7 +18,7 @@ from notale.core.models import (
     PrepRecord,
     PrepRecordOrigin,
 )
-from notale.utils.llm import FakeClient
+from oh_fake import FakeClient
 from oh_fake import ScriptedClient, no_network, text_msg, tool_call_msg
 from notale.web.deck import assemble_deck, consistency_report, write_deck_package
 from notale.agents.builder import BuilderWorker, build_page, compile_context
@@ -316,6 +316,58 @@ async def test_contract_validates_bindings_and_budgets(tmp_path):
     total = sum(s.timeBudgetSec for s in out.page_specs)
     assert abs(total - BRIEF.durationMin * 60) < len(out.page_specs)  # 缩放后 ≈ 总时长
     assert out.outline.confirmedAt  # auto_confirm 批准
+
+
+async def test_contract_supports_planner_records_without_research(tmp_path):
+    payload = _complete_contract_payload({
+        "chapters": [
+            {
+                "title": "基础",
+                "pageRange": [1, 3],
+                "rationale": "受众需先建立可观察的状态变化",
+                "pedagogyNoteIds": [],
+            },
+            {
+                "title": "应用",
+                "pageRange": [4, 5],
+                "rationale": "在有限时长内把状态规律迁移到边界判断",
+                "pedagogyNoteIds": [],
+            },
+        ],
+        "globals": {},
+        "supplementalPrepRecords": [{
+            "recordId": "planner-sorting-foundation",
+            "branch": ["constructible"],
+            "referenceSource": "declared-spec",
+            "content": {"claim": "排序算法将有限可比序列转换为非降序列"},
+            "invariants": ["输出是输入的置换"],
+            "validRange": "有限且元素可比的序列",
+        }],
+        "pages": [
+            {
+                "pageId": f"p{i}",
+                "pageType": "worked-example",
+                "centralMessage": f"排序状态 {i}",
+                "learningAction": f"解释状态 {i}",
+                "boundPrepRecords": ["planner-sorting-foundation"],
+            }
+            for i in range(1, 6)
+        ],
+    })
+    llm = FakeClient(by_purpose={"contract": json.dumps(payload, ensure_ascii=False)})
+
+    out = await contract(llm, BRIEF, [], [], run_dir=tmp_path)
+
+    assert all(chapter.pedagogyNoteIds == [] for chapter in out.outline.chapters)
+    assert {record.recordId for record in out.supplemental_prep_records} == {
+        "planner-sorting-foundation"
+    }
+    assert all(
+        page.boundPrepRecords == ["planner-sorting-foundation"]
+        for page in out.page_specs
+    )
+    prompt = llm.calls[0][1][-1]["content"]
+    assert "pedagogyNoteIds 必须为 []" in prompt
 
 
 async def test_contract_rejects_forged_planner_evidence_then_accepts_clean_record(tmp_path):

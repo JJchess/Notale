@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
 
 from notale.utils.config import get_config
 from notale.roles.authoring import SystemProfile
@@ -19,7 +18,6 @@ _EMERGENCY = _CONFIG.governance.emergency_limits
 class RoleSpec:
     name: str
     system_prompt: str
-    tools: list[Any] = field(default_factory=list)
     allowed_tools: list[str] = field(default_factory=list)
     skills: list[str] = field(default_factory=list)
     system_profiles: tuple[SystemProfile, ...] = ()
@@ -38,7 +36,7 @@ class RoleSpec:
     request_timeout_sec: float = _EMERGENCY.provider_timeout_sec
     max_query_duration_sec: float = _EMERGENCY.query_max_duration_sec
     max_provider_attempts: int = _EMERGENCY.provider_max_attempts
-    version: str = _CONFIG.agents.defaults.version
+    version: str = _CONFIG.versions.agent_protocol
 
     def rendered_system_prompt(self) -> str:
         blocks = [profile.content.strip() for profile in self.system_profiles]

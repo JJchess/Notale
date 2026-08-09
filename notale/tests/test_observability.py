@@ -4,28 +4,7 @@ import json
 
 import pytest
 
-from notale.core.observability import ExperimentLogger, LoggedLLMClient
-from notale.utils.llm import FakeClient
-
-
-async def test_logged_llm_records_hash_without_quadratic_request_snapshot(tmp_path):
-    logger = ExperimentLogger(tmp_path, config={"model": "fake"})
-    client = LoggedLLMClient(FakeClient(default='{"answer": 42}'), logger)
-
-    answer = await client.complete(
-        [{"role": "user", "content": "完整问题"}], purpose="intake"
-    )
-    logger.finish("completed")
-
-    assert answer == '{"answer": 42}'
-    records = [json.loads(line) for line in (tmp_path / "logs/llm-calls.jsonl").read_text().splitlines()]
-    call = next(record for record in records if record["kind"] == "llm-call")
-    assert call["messageCount"] == 1 and len(call["contextHash"]) == 64
-    assert call["responseChars"] == len('{"answer": 42}')
-    assert "messages" not in call and "response" not in call
-    assert call["purpose"] == "intake" and call["callId"]
-    summary = json.loads((tmp_path / "logs/summary.json").read_text())
-    assert summary["status"] == "completed" and summary["auditComplete"] is True
+from notale.core.observability import ExperimentLogger
 
 
 def test_logging_failure_is_fail_open(tmp_path, capsys):

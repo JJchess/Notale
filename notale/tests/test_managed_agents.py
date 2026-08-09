@@ -23,10 +23,9 @@ from notale.tools.agent_tools import (
     PagePatchInput,
     PageReadInput,
     PageWriteInput,
-    ScratchWriteInput,
     SkillReadInput,
 )
-from notale.utils.llm import FakeClient
+from oh_fake import FakeClient
 
 
 def _role(**overrides) -> RoleSpec:
@@ -62,7 +61,7 @@ def _agent(tmp_path: Path, *, llm=None, role=None) -> ManagedAgent:
 
 
 async def _load_all_assigned_skills(agent: ManagedAgent) -> None:
-    reader = next(tool for tool in agent.base.tools if tool.name == "skill_read")
+    reader = next(tool for tool in agent.tools if tool.name == "skill_read")
     for name, assigned in agent.state.allowed_skills.items():
         offset = 0
         while True:
@@ -80,13 +79,25 @@ async def _load_all_assigned_skills(agent: ManagedAgent) -> None:
 
 async def test_valid_submission_is_authoritative_task_evidence(tmp_path):
     agent = _agent(tmp_path)
-    submit = next(tool for tool in agent.base.tools if tool.name == "submit_research")
+    submit = next(tool for tool in agent.tools if tool.name == "submit_research")
     result = await submit.execute(DictSubmitInput(payload={"ok": True}), None)  # type: ignore[arg-type]
     assert not result.is_error
     task = json.loads((agent.worker_dir / "task.json").read_text())
     assert task["status"] == "completed"
     assert all(step["status"] == "completed" for step in task["steps"])
     assert all("validated structured submission" in step["evidence"] for step in task["steps"])
+
+
+def test_tool_catalog_matches_whitelist_order_and_fails_closed(tmp_path):
+    agent = _agent(tmp_path / "valid")
+    assert [tool.name for tool in agent.tools] == [
+        "report_blocker", "submit_research",
+    ]
+    with pytest.raises(ValueError, match="unavailable tool: unknown_tool"):
+        _agent(
+            tmp_path / "invalid",
+            role=_role(allowed_tools=["unknown_tool", "submit_research"]),
+        )
 
 
 def test_skill_required_tools_fail_closed(tmp_path):
@@ -124,35 +135,17 @@ def test_standard_allowed_tools_skill_metadata_fail_closed(tmp_path):
         _agent(tmp_path, role=role)
 
 
-async def test_scratch_is_worker_scoped_and_instrumented(tmp_path):
-    role = _role(allowed_tools=["scratch_write", "submit_research"])
-    agent = _agent(tmp_path, role=role)
-    writer = next(tool for tool in agent.base.tools if tool.name == "scratch_write")
-    escaped = await writer.execute(
-        ScratchWriteInput(path="../escape.txt", content="bad"), None  # type: ignore[arg-type]
-    )
-    assert escaped.is_error and not (agent.worker_dir / "workspace/escape.txt").exists()
-    written = await writer.execute(
-        ScratchWriteInput(path="notes/idea.txt", content="safe"), None  # type: ignore[arg-type]
-    )
-    assert not written.is_error
-    state = json.loads((agent.worker_dir / "tool-state.json").read_text())
-    assert state["scratchUsage"] == {
-        "calls": 2, "errors": 1, "tools": {"scratch_write": 2}
-    }
-
-
 async def test_long_artifact_supports_offsets_and_full_search(tmp_path):
     (tmp_path / "input").mkdir()
     (tmp_path / "input/material.txt").write_text("A" * 120000 + "\nTAIL-NEEDLE\n")
     role = _role(allowed_tools=["artifact_read", "artifact_search", "submit_research"])
     agent = _agent(tmp_path, role=role)
-    reader = next(tool for tool in agent.base.tools if tool.name == "artifact_read")
+    reader = next(tool for tool in agent.tools if tool.name == "artifact_read")
     chunk = await reader.execute(
         ArtifactReadInput(path="input/material.txt", offset=110000, limit=12000), None  # type: ignore[arg-type]
     )
     assert not chunk.is_error and "totalChars=120013" in chunk.output and "TAIL-NEEDLE" in chunk.output
-    search = next(tool for tool in agent.base.tools if tool.name == "artifact_search")
+    search = next(tool for tool in agent.tools if tool.name == "artifact_search")
     found = await search.execute(
         ArtifactSearchInput(path="input/material.txt", query="TAIL-NEEDLE"), None  # type: ignore[arg-type]
     )
@@ -173,7 +166,7 @@ async def test_large_skill_is_read_in_complete_bounded_chunks(tmp_path):
         llm=FakeClient(by_purpose={"test-worker": '{"html":"<p>x</p>"}'}),
         validation_context={"page_id": "p1", "context_path": "context.json"},
     )
-    skill = next(tool for tool in agent.base.tools if tool.name == "skill_read")
+    skill = next(tool for tool in agent.tools if tool.name == "skill_read")
     first = await skill.execute(SkillReadInput(name="page-builder-core", limit=256), None)  # type: ignore[arg-type]
     assert not first.is_error and "totalChars=" in first.output and "nextOffset=256" in first.output
     assert agent.state.tool_state.get("loadedSkills") in (None, [])
@@ -228,7 +221,7 @@ async def test_frontend_slides_entrypoint_is_locked_and_auditable(tmp_path):
         assigned_skill_entrypoints={"frontend-slides": "notale-page"},
         logger=logger,
     )
-    skill = next(tool for tool in agent.base.tools if tool.name == "skill_read")
+    skill = next(tool for tool in agent.tools if tool.name == "skill_read")
     missing = await skill.execute(
         SkillReadInput(name="frontend-slides"), None  # type: ignore[arg-type]
     )
@@ -269,7 +262,7 @@ async def test_frontend_slides_entrypoint_is_locked_and_auditable(tmp_path):
         llm=FakeClient(by_purpose={"test-worker": '{"html":"<p>x</p>"}'}),
         validation_context={"page_id": "p2", "context_path": "context.json"},
     )
-    full_deck_skill = next(tool for tool in full_deck.base.tools if tool.name == "skill_read")
+    full_deck_skill = next(tool for tool in full_deck.tools if tool.name == "skill_read")
     default = await full_deck_skill.execute(
         SkillReadInput(name="frontend-slides"), None  # type: ignore[arg-type]
     )
@@ -298,7 +291,7 @@ async def test_frontend_slides_planner_entrypoint_uses_planner_tool_contract(tmp
         llm=FakeClient(by_purpose={"test-worker": '{"ok":true}'}),
         assigned_skill_entrypoints={"frontend-slides": "planner-contract"},
     )
-    reader = next(tool for tool in agent.base.tools if tool.name == "skill_read")
+    reader = next(tool for tool in agent.tools if tool.name == "skill_read")
     loaded = await reader.execute(
         SkillReadInput(name="frontend-slides", entrypoint="planner-contract"),
         None,  # type: ignore[arg-type]
@@ -321,10 +314,10 @@ async def test_page_candidate_is_hash_bound_and_submit_carries_no_html(tmp_path)
         llm=FakeClient(by_purpose={"build:p1": '{"html":"<section data-notale-page><p>partition</p></section>"}'}),
         run_dir=tmp_path, context=context,
     )
-    writer = next(tool for tool in worker.agent.base.tools if tool.name == "page_write")
-    context_reader = next(tool for tool in worker.agent.base.tools if tool.name == "context_read")
-    checker = next(tool for tool in worker.agent.base.tools if tool.name == "check_page")
-    submitter = next(tool for tool in worker.agent.base.tools if tool.name == "submit_page")
+    writer = next(tool for tool in worker.agent.tools if tool.name == "page_write")
+    context_reader = next(tool for tool in worker.agent.tools if tool.name == "context_read")
+    checker = next(tool for tool in worker.agent.tools if tool.name == "check_page")
+    submitter = next(tool for tool in worker.agent.tools if tool.name == "submit_page")
     await context_reader.execute(ContextReadInput(), None)  # type: ignore[arg-type]
     blocked = await writer.execute(
         PageWriteInput(html="<section data-notale-page><p>partition</p></section>"),
@@ -337,14 +330,14 @@ async def test_page_candidate_is_hash_bound_and_submit_carries_no_html(tmp_path)
         PageCandidateInput(boundReferences=["r1"], speakerNotes="explain"), None  # type: ignore[arg-type]
     )
     assert not checked.is_error
-    patched = next(tool for tool in worker.agent.base.tools if tool.name == "page_patch")
+    patched = next(tool for tool in worker.agent.tools if tool.name == "page_patch")
     await patched.execute(PagePatchInput(old="partition", new="partition invariant"), None)  # type: ignore[arg-type]
     stale = await submitter.execute(EmptyInput(), None)  # type: ignore[arg-type]
     assert stale.is_error and "check_page" in stale.output
     await checker.execute(
         PageCandidateInput(boundReferences=["r1"], speakerNotes="explain"), None  # type: ignore[arg-type]
     )
-    reader = next(tool for tool in worker.agent.base.tools if tool.name == "page_read")
+    reader = next(tool for tool in worker.agent.tools if tool.name == "page_read")
     skipped = await reader.execute(PageReadInput(), None)  # type: ignore[arg-type]
     assert not skipped.is_error and "Call submit_page now" in skipped.output
     accepted = await submitter.execute(EmptyInput(), None)  # type: ignore[arg-type]
@@ -361,8 +354,8 @@ async def test_page_write_normalizes_document_shell_before_check(tmp_path):
         llm=FakeClient(by_purpose={"build:p1": '{"html":"<p>partition</p>"}'}),
         run_dir=tmp_path, context=context,
     )
-    writer = next(tool for tool in worker.agent.base.tools if tool.name == "page_write")
-    checker = next(tool for tool in worker.agent.base.tools if tool.name == "check_page")
+    writer = next(tool for tool in worker.agent.tools if tool.name == "page_write")
+    checker = next(tool for tool in worker.agent.tools if tool.name == "check_page")
     await _load_all_assigned_skills(worker.agent)
     result = await writer.execute(PageWriteInput(html=(
         "<!doctype html><html><head><style>.x{color:red}</style></head>"
@@ -389,7 +382,7 @@ async def test_completed_skill_overshoot_is_idempotent(tmp_path):
         llm=FakeClient(by_purpose={"test-worker": '{"html":"<p>x</p>"}'}),
         validation_context={"page_id": "p1", "context_path": "context.json"},
     )
-    skill = next(tool for tool in agent.base.tools if tool.name == "skill_read")
+    skill = next(tool for tool in agent.tools if tool.name == "skill_read")
     await skill.execute(SkillReadInput(name="page-builder-core"), None)  # type: ignore[arg-type]
     repeated = await skill.execute(
         SkillReadInput(name="page-builder-core", offset=12000), None  # type: ignore[arg-type]
@@ -412,7 +405,66 @@ async def test_checkpoint_and_submission_restore_without_recalling_model(tmp_pat
     artifact2 = await restored.run_task("must not run")
     assert artifact2 == {"ok": True}
     assert second_client.calls == []
-    assert len(restored.base.engine.messages) == len(checkpoint["messages"])
+    assert len(restored.engine.messages) == len(checkpoint["messages"])
+
+
+async def test_protocol_8_unfinished_checkpoint_resumes_without_migration(tmp_path):
+    """A hand-authored v8 worker fixture protects existing half-finished runs."""
+    worker = tmp_path / "agents/test/w1"
+    (worker / "workspace/scratch").mkdir(parents=True)
+    (worker / "task.json").write_text(json.dumps({
+        "workerId": "w1",
+        "role": "test-worker",
+        "objective": "Produce one test artifact.",
+        "acceptanceCriteria": ["payload accepted"],
+        "steps": [
+            {"id": "inspect", "description": "inspect input", "status": "completed"},
+            {"id": "finish", "description": "finish work", "status": "pending"},
+        ],
+        "status": "in_progress",
+        "totalTurns": 3,
+        "elapsedSec": 1.5,
+        "startedAt": "2026-01-01T00:00:00+00:00",
+        "updatedAt": "2026-01-01T00:00:01+00:00",
+    }), encoding="utf-8")
+    (worker / "tool-state.json").write_text("{}", encoding="utf-8")
+    (worker / "session.json").write_text(json.dumps({
+        "workerId": "w1",
+        "role": "test-worker",
+        "roleVersion": "8",
+        "checkpointId": "protocol-8-fixture",
+        "messages": [{
+            "role": "user",
+            "content": [{"type": "text", "text": "saved unfinished request"}],
+        }],
+        "usage": {"inputTokens": 11, "outputTokens": 7},
+        "toolMetadata": {
+            "stage": "test", "workerId": "w1", "roleVersion": "8",
+            "pageType": None,
+        },
+        "totalTurns": 3,
+        "compactCount": 1,
+        "progressSnapshot": {"fixture": True},
+        "lastProgressTurn": 2,
+        "noProgressTurns": 1,
+        "proseOnlyTurns": 0,
+        "lastToolErrorSignature": "",
+        "repeatedToolErrorCount": 0,
+        "lastValidationSignature": "",
+        "repeatedValidationErrorCount": 0,
+        "stalledReason": "",
+        "updatedAt": "2026-01-01T00:00:01+00:00",
+    }), encoding="utf-8")
+
+    client = FakeClient(by_purpose={"test": '{"resumed": true}'})
+    agent = _agent(tmp_path, role=_role(version="8"), llm=client)
+
+    assert agent.checkpoint.checkpointId == "protocol-8-fixture"
+    assert agent.checkpoint.compactCount == 1
+    assert agent.state.task.totalTurns == 3
+    assert len(agent.engine.messages) == 1
+    assert await agent.run_task("continue") == {"resumed": True}
+    assert agent.state.task.totalTurns == 4
 
 
 async def test_builder_crosses_query_cap_and_continues_same_session(tmp_path):
@@ -469,9 +521,9 @@ async def test_completed_builder_is_not_reopened_by_an_outer_repair_loop(tmp_pat
 
 def test_context_budget_reserves_system_and_tool_schema(tmp_path):
     agent = _agent(tmp_path)
-    assert agent.base.engine._context_window_tokens == 1000000
-    assert agent.base.context_overhead_tokens > 0
-    assert agent.base.engine._auto_compact_threshold_tokens < agent.role.auto_compact_threshold_tokens
+    assert agent.engine._context_window_tokens == 1000000
+    assert agent.context_overhead_tokens > 0
+    assert agent.engine._auto_compact_threshold_tokens < agent.role.auto_compact_threshold_tokens
     assert agent.role.max_total_tokens == 100_000
 
 
@@ -604,6 +656,7 @@ async def test_provider_stall_before_first_event_retries_once(tmp_path):
     summary = json.loads((tmp_path / "logs/summary.json").read_text())
     assert summary["metrics"]["providerCalls"] == 2
     assert summary["metrics"]["providerTimeouts"] == 1
+    assert summary["metrics"]["retries"] == 1
 
 
 async def test_prose_only_worker_is_stalled_and_checkpointed(tmp_path):

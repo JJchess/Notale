@@ -10,7 +10,7 @@ from __future__ import annotations
 import socket
 from collections import deque
 from contextlib import contextmanager
-from typing import AsyncIterator
+from typing import AsyncIterator, TypedDict
 
 from openharness.api.client import (
     ApiMessageCompleteEvent,
@@ -20,6 +20,41 @@ from openharness.api.client import (
 )
 from openharness.api.usage import UsageSnapshot
 from openharness.engine.messages import ConversationMessage, TextBlock, ToolUseBlock
+
+
+class Message(TypedDict):
+    role: str
+    content: str
+
+
+class FakeClient:
+    """Legacy completion-shaped fixture used only by offline workflow tests."""
+
+    def __init__(
+        self,
+        queue: list[str] | None = None,
+        by_purpose: dict[str, str] | None = None,
+        default: str = "{}",
+    ) -> None:
+        self._queue: deque[str] = deque(queue or [])
+        self._by_purpose = by_purpose or {}
+        self._default = default
+        self.calls: list[tuple[str, list[Message]]] = []
+
+    async def complete(
+        self,
+        messages: list[Message],
+        *,
+        json_mode: bool = True,
+        purpose: str = "chat",
+    ) -> str:
+        del json_mode
+        self.calls.append((purpose, messages))
+        if purpose in self._by_purpose:
+            return self._by_purpose[purpose]
+        if self._queue:
+            return self._queue.popleft()
+        return self._default
 
 
 @contextmanager

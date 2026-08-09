@@ -2,8 +2,8 @@
 
 The builder surface is intentionally semantic and file-backed: a model emits the page
 HTML once into ``workspace/page.html``; checking and submission subsequently pass only
-small metadata and a content hash.  Scratch files remain available as an instrumented,
-private escape hatch but can never become the submitted artifact.
+small metadata and a content hash. The private scratch directory is reserved for
+deterministic harness checks and is not exposed to the model as a tool surface.
 """
 
 from __future__ import annotations
@@ -174,17 +174,6 @@ class ManagedToolState:
             return candidate.get("sha256") == _sha256(self.page_path.read_text(encoding="utf-8"))
         except (OSError, ValueError, TypeError):
             return False
-
-    def record_scratch(self, tool: str, *, is_error: bool) -> None:
-        usage = self.tool_state.setdefault("scratchUsage", {"calls": 0, "errors": 0, "tools": {}})
-        usage["calls"] = int(usage.get("calls", 0)) + 1
-        if is_error:
-            usage["errors"] = int(usage.get("errors", 0)) + 1
-        tools = usage.setdefault("tools", {})
-        tools[tool] = int(tools.get(tool, 0)) + 1
-        self.save_tool_state()
-        self.event("scratch-used", tool=tool, isError=is_error)
-
 
 _SKILL_TOKEN = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 
@@ -709,119 +698,6 @@ class PagePatchTool(BaseTool):
         ))
 
 
-class ScratchPathInput(BaseModel):
-    path: str
-    offset: int = Field(default=0, ge=0)
-    limit: int = Field(
-        default=_TOOLS_CONFIG.scratch_read_default_chars,
-        ge=1,
-        le=_TOOLS_CONFIG.chunk_max_chars,
-    )
-
-
-class ScratchWriteInput(BaseModel):
-    path: str
-    content: str
-
-
-class ScratchPatchInput(BaseModel):
-    path: str
-    old: str = Field(min_length=1)
-    new: str
-
-
-class ScratchSearchInput(BaseModel):
-    path: str
-    query: str = Field(min_length=1)
-    max_results: int = Field(
-        default=_TOOLS_CONFIG.search_default_results,
-        ge=1,
-        le=_TOOLS_CONFIG.search_max_results,
-    )
-
-
-class ScratchReadTool(BaseTool):
-    name = "scratch_read"
-    description = "Read a bounded chunk of a private scratch file; scratch cannot be submitted."
-    input_model = ScratchPathInput
-
-    def __init__(self, state: ManagedToolState) -> None: self.state = state
-    def is_read_only(self, arguments: ScratchPathInput) -> bool: return True
-
-    async def execute(self, arguments: ScratchPathInput, context: ToolExecutionContext) -> ToolResult:
-        del context
-        try:
-            text = _inside(self.state.scratch, arguments.path).read_text(encoding="utf-8")
-            output = text[arguments.offset : arguments.offset + arguments.limit]
-            self.state.record_scratch(self.name, is_error=False)
-            return ToolResult(output=output)
-        except Exception as exc:
-            self.state.record_scratch(self.name, is_error=True)
-            return ToolResult(output=str(exc), is_error=True)
-
-
-class ScratchWriteTool(BaseTool):
-    name = "scratch_write"
-    description = "Write a private scratch file; scratch cannot be submitted."
-    input_model = ScratchWriteInput
-
-    def __init__(self, state: ManagedToolState) -> None: self.state = state
-
-    async def execute(self, arguments: ScratchWriteInput, context: ToolExecutionContext) -> ToolResult:
-        del context
-        try:
-            path = _inside(self.state.scratch, arguments.path)
-            _atomic_write(path, arguments.content)
-            self.state.record_scratch(self.name, is_error=False)
-            return ToolResult(output=f"scratch/{arguments.path} written")
-        except Exception as exc:
-            self.state.record_scratch(self.name, is_error=True)
-            return ToolResult(output=str(exc), is_error=True)
-
-
-class ScratchPatchTool(BaseTool):
-    name = "scratch_patch"
-    description = "Replace one exact occurrence in a private scratch file."
-    input_model = ScratchPatchInput
-
-    def __init__(self, state: ManagedToolState) -> None: self.state = state
-
-    async def execute(self, arguments: ScratchPatchInput, context: ToolExecutionContext) -> ToolResult:
-        del context
-        try:
-            path = _inside(self.state.scratch, arguments.path)
-            text = path.read_text(encoding="utf-8")
-            if text.count(arguments.old) != 1:
-                raise ValueError(f"old string must occur exactly once; occurrences={text.count(arguments.old)}")
-            _atomic_write(path, text.replace(arguments.old, arguments.new, 1))
-            self.state.record_scratch(self.name, is_error=False)
-            return ToolResult(output=f"scratch/{arguments.path} patched")
-        except Exception as exc:
-            self.state.record_scratch(self.name, is_error=True)
-            return ToolResult(output=str(exc), is_error=True)
-
-
-class ScratchSearchTool(BaseTool):
-    name = "scratch_search"
-    description = "Search literal text in a private scratch file."
-    input_model = ScratchSearchInput
-
-    def __init__(self, state: ManagedToolState) -> None: self.state = state
-    def is_read_only(self, arguments: ScratchSearchInput) -> bool: return True
-
-    async def execute(self, arguments: ScratchSearchInput, context: ToolExecutionContext) -> ToolResult:
-        del context
-        try:
-            text = _inside(self.state.scratch, arguments.path).read_text(encoding="utf-8")
-            matches = [f"{number}: {line}" for number, line in enumerate(text.splitlines(), 1)
-                       if arguments.query.lower() in line.lower()][: arguments.max_results]
-            self.state.record_scratch(self.name, is_error=False)
-            return ToolResult(output="\n".join(matches) or "(no matches)")
-        except Exception as exc:
-            self.state.record_scratch(self.name, is_error=True)
-            return ToolResult(output=str(exc), is_error=True)
-
-
 class DictSubmitInput(BaseModel):
     payload: dict[str, Any]
 
@@ -1001,3 +877,52 @@ class ReportBlockerTool(BaseTool):
         self.state.save_task()
         self.state.event("task-blocked", reason=arguments.reason, evidence=arguments.evidence)
         return ToolResult(output="blocker recorded; stop work and return")
+
+
+def build_managed_tools(
+    state: ManagedToolState,
+    allowed_names: list[str],
+    *,
+    submit_tool: str,
+    role_name: str,
+    extra_tools: list[BaseTool] | None = None,
+) -> list[BaseTool]:
+    """Instantiate exactly the authorized tools, preserving whitelist order."""
+    extras = {tool.name: tool for tool in extra_tools or []}
+    factories: dict[str, Callable[[], BaseTool]] = {
+        "skill_read": lambda: AssignedSkillTool(state),
+        "artifact_read": lambda: ArtifactReadTool(state),
+        "artifact_search": lambda: ArtifactSearchTool(state),
+        "context_read": lambda: ContextReadTool(state),
+        "page_write": lambda: PageWriteTool(state),
+        "page_read": lambda: PageReadTool(state),
+        "page_search": lambda: PageSearchTool(state),
+        "page_patch": lambda: PagePatchTool(state),
+        "check_page": lambda: CheckPageTool(state),
+        "report_blocker": lambda: ReportBlockerTool(state),
+    }
+    if {"acquire_media", "generate_media"} & set(allowed_names):
+        from notale.tools.media import AcquireMediaTool, GenerateMediaTool
+
+        factories.update({
+            "acquire_media": lambda: AcquireMediaTool(state),
+            "generate_media": lambda: GenerateMediaTool(state),
+        })
+
+    tools: list[BaseTool] = []
+    for name in allowed_names:
+        if name in extras:
+            tool = extras[name]
+        elif name == submit_tool:
+            tool = (
+                SubmitPageTool(state)
+                if name == "submit_page"
+                else SubmitArtifactTool(state, name)
+            )
+        else:
+            factory = factories.get(name)
+            tool = factory() if factory else None
+        if tool is None:
+            raise ValueError(f"role {role_name} declares unavailable tool: {name}")
+        tools.append(tool)
+    return tools

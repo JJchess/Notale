@@ -13,11 +13,19 @@ from notale.utils.config import CONFIG_PATH, get_config, load_config
 
 def test_checked_in_config_loads_and_covers_all_roles_and_page_types():
     config = get_config()
-    assert CONFIG_PATH.name == "config.yaml" and config.schema_version == 8
+    assert CONFIG_PATH.name == "config.yaml" and config.schema_version == 10
+    assert config.versions.agent_protocol == "8"
+    assert config.versions.logging_schema == "6"
     assert set(config.agents.roles) == {"intake", "research", "planner", "builder"}
     assert config.model.base_url == "https://llmapi.paratera.com/v1"
     assert config.model.name == "Claude-Sonnet-5"
     assert config.model.api_key_env == "PARATERA_API_KEY"
+    assert set(config.model.model_dump()) == {
+        "base_url", "name", "api_key_env", "http_timeout_sec",
+    }
+    assert "version" not in config.agents.defaults.model_dump()
+    assert "llm_error_preview_chars" not in config.runtime.model_dump()
+    assert "scratch_read_default_chars" not in config.tools.model_dump()
     assert config.model_capabilities.context_window_tokens == 1_000_000
     assert config.model_capabilities.max_output_tokens == 128_000
     assert config.governance.emergency_limits.worker_max_turns == 128
@@ -28,6 +36,7 @@ def test_checked_in_config_loads_and_covers_all_roles_and_page_types():
     )
     assert config.media.generation_api_key_env == "PARATERA_API_KEY"
     assert config.media.generation_model == "Doubao-Seedream-4.0"
+    assert config.research.enabled is True
     assert [(branch.id, branch.focus) for branch in config.research.branches] == [
         ("r1", "教学序列"),
         ("r2", "例题与反例"),
@@ -128,6 +137,19 @@ def test_config_accepts_arbitrary_research_specializations(tmp_path: Path):
         "case-library", "disabled-history"
     ]
     assert config.research.branches[1].enabled is False
+
+
+def test_config_allows_research_stage_to_be_disabled(tmp_path: Path):
+    raw = yaml.safe_load(CONFIG_PATH.read_text(encoding="utf-8"))
+    raw["research"]["enabled"] = False
+    raw["research"]["branches"] = []
+    path = tmp_path / "config.yaml"
+    path.write_text(yaml.safe_dump(raw, allow_unicode=True), encoding="utf-8")
+
+    config = load_config(path)
+
+    assert config.research.enabled is False
+    assert config.research.branches == []
 
 
 @pytest.mark.parametrize(

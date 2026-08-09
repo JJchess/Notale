@@ -1,7 +1,7 @@
 """[2] Curriculum Contract —— ★单线程锁定：全局隐含决策只决定一次 + 人在环确认。
 
-大纲照着教法笔记生成，页面照着备课资料生成；大纲上任何结构性决定说不出依据 = 临场偏好
-（rationale 必须回指 pedagogy-note）。
+大纲优先根据教法笔记生成，页面优先根据备课资料生成；禁用 Research 时，Planner
+必须把事实基础写成 planner-generated 记录，并在 rationale 中自证结构理由。
 时长→页数由 duration 模型（确定性）定，模型只在预算内排布；时间预算由 harness 按页型
 权重缩放分配，不信模型自报。
 """
@@ -31,7 +31,7 @@ from notale.core.models import (
 )
 from notale.core.duration import chapter_count, page_count, time_budget_sec
 from notale.core.observability import ExperimentLogger
-from notale.roles.profiles import planner_profile
+from notale.roles.profiles import PLANNER
 from notale.utils.config import get_config
 
 _CONFIG = get_config()
@@ -90,7 +90,7 @@ pedagogy-notes.json 的完整内容，为这门课锁定课程契约。
   supplementalPrepRecords，再通过 planner-* recordId 绑定到使用它的页面；
 - boundPrepRecords 必须覆盖 Builder 所需的全部事实基础。不要用仅仅主题相关的宽泛资料给额外命题背书；
 - Builder 可以从绑定资料机械构造例子、状态和计算结果，但不能增加资料未表达的新学科结论；
-- 每章 pedagogyNoteIds 必须引用真实教法笔记，rationale 解释采用理由；
+- {pedagogy_constraint}
 - 全局视觉只输出 artDirection、visualMotif 和固定语义 styleTokens，不输出组件或页面模板。
 
 已有 Research record IDs：{prep_ids}
@@ -106,8 +106,8 @@ invariants、validRange 与 knownInaccuracies 中写清假设或推导。主动�
   "chapters": [{{
     "title": "章名",
     "pageRange": [起页, 止页],
-    "rationale": "采用这些教法笔记的原因",
-    "pedagogyNoteIds": ["r1-ped-1"],
+    "rationale": "本章内容排序的依据",
+    "pedagogyNoteIds": {pedagogy_example},
     "narrativeGoal": "本章怎样推进主线"
   }}],
   "globals": {{
@@ -327,8 +327,12 @@ async def contract(
         chapter_ranges: list[tuple[int, int]] = []
         for index, chapter in enumerate(candidate.chapters, 1):
             refs = [str(note_id).strip() for note_id in chapter.get("pedagogyNoteIds", [])]
-            if not refs:
+            if valid_pedagogy_ids and not refs:
                 raise ValueError(f"chapter {index} must cite at least one pedagogy note")
+            if not valid_pedagogy_ids and refs:
+                raise ValueError(
+                    f"chapter {index} cannot cite pedagogy notes when none are available"
+                )
             if len(refs) != len(set(refs)):
                 raise ValueError(f"chapter {index} cites duplicate pedagogy notes")
             unknown_refs = sorted(set(refs) - valid_pedagogy_ids)
@@ -390,13 +394,17 @@ async def contract(
         run_dir=run_dir,
         stage="planner",
         worker_id="main",
-        role=planner_profile(n_pages),
+        role=PLANNER,
         objective="在确定性预算内锁定学习序列、证据路由与全局课程契约。",
         acceptance_criteria=[
             f"恰好 {n_pages} 页、{n_chapters} 章。",
             "每页都有一个知识命题、一个认知行动和完整的资料绑定。",
             "Research 与 planner-generated 记录可追踪，补充记录不伪造 evidence。",
-            "每章引用存在且唯一的 pedagogy-note ID。",
+            (
+                "每章引用存在且唯一的 pedagogy-note ID。"
+                if pedagogy_ids
+                else "无 Research 教法笔记时，每章 pedagogyNoteIds 为空且 rationale 自洽。"
+            ),
             "全书主线、章节目标和选择性跨页关系形成完整叙事。",
             "全局术语、符号和语义视觉契约只决定一次。",
         ],
@@ -426,6 +434,14 @@ async def contract(
         page_types="|".join(t.value for t in PageType),
         prep_ids="、".join(research_ids) or "（无）",
         pedagogy_ids="、".join(pedagogy_ids) or "（无）",
+        pedagogy_constraint=(
+            "每章 pedagogyNoteIds 必须引用真实教法笔记，"
+            "rationale 解释采用理由；"
+            if pedagogy_ids
+            else "本次没有 Research 教法笔记：每章 pedagogyNoteIds 必须为 []，"
+            "rationale 直接根据受众、先验、目标与时长说明排序理由；"
+        ),
+        pedagogy_example='["r1-ped-1"]' if pedagogy_ids else "[]",
     ))
     data = _ContractCandidate.model_validate(candidate).model_dump(mode="json")
     events: list[dict] = []

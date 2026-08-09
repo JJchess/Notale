@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Literal
+from typing import Literal
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, PositiveFloat, PositiveInt, model_validator
@@ -28,14 +28,7 @@ class ModelConfig(StrictModel):
     base_url: str
     name: str
     api_key_env: str
-    temperature: float
-    seed: int | None
-    http_attempts: PositiveInt
     http_timeout_sec: PositiveFloat
-    normal_retry_backoff_sec: PositiveFloat
-    rate_limit_retry_backoff_sec: PositiveFloat
-    proxy: str | None = None
-    extra_body: dict[str, Any] = Field(default_factory=dict)
 
 
 class ModelCapabilitiesConfig(StrictModel):
@@ -45,12 +38,10 @@ class ModelCapabilitiesConfig(StrictModel):
 
 class AgentDefaultsConfig(StrictModel):
     auto_compact_threshold_tokens: PositiveInt
-    version: str
 
 
 class AgentRoleConfig(StrictModel):
     auto_compact_threshold_tokens: PositiveInt
-    version: str | None = None
 
 
 class BuilderPageDesignConfig(StrictModel):
@@ -106,7 +97,6 @@ class AgentsConfig(StrictModel):
             return configured
         return AgentRoleConfig(
             auto_compact_threshold_tokens=self.defaults.auto_compact_threshold_tokens,
-            version=self.defaults.version,
         )
 
 
@@ -114,7 +104,6 @@ class RuntimeConfig(StrictModel):
     context_token_safety_factor: PositiveFloat
     minimum_message_compact_threshold_tokens: PositiveInt
     tool_receipt_preview_chars: PositiveInt
-    llm_error_preview_chars: PositiveInt
     parsing_error_preview_chars: PositiveInt
     agent_failure_reason_max_chars: PositiveInt
     cli_message_preview_chars: PositiveInt
@@ -158,6 +147,7 @@ class ResearchBranchConfig(StrictModel):
 
 
 class ResearchConfig(StrictModel):
+    enabled: bool
     branches: list[ResearchBranchConfig]
     web_search_max_requests_per_branch: PositiveInt
     fetch_max_requests_per_branch: PositiveInt
@@ -175,7 +165,6 @@ class ToolsConfig(StrictModel):
     context_chunk_default_chars: PositiveInt
     context_chunk_min_chars: PositiveInt
     page_read_default_chars: PositiveInt
-    scratch_read_default_chars: PositiveInt
     search_default_results: PositiveInt
     search_max_results: PositiveInt
     web_search_default_results: PositiveInt
@@ -270,7 +259,6 @@ class NotaleConfig(StrictModel):
             tools.artifact_chunk_default_chars,
             tools.context_chunk_default_chars,
             tools.page_read_default_chars,
-            tools.scratch_read_default_chars,
         )
         if any(value > tools.chunk_max_chars for value in chunk_defaults):
             raise ValueError("a tool chunk default exceeds tools.chunk_max_chars")

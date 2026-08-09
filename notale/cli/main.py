@@ -14,7 +14,6 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 from notale.core.models import Globals, Outline, PageSpec
-from notale.utils.llm import HttpxClient
 from notale.core.workflow import generate
 from notale.tools.retriever import FetchTool
 from notale.web.preview import serve
@@ -80,12 +79,11 @@ def main() -> None:
     from notale.core.stages.contract import auto_confirm
 
     confirm = auto_confirm if args.yes else _cli_confirm
-    llm = HttpxClient()
     retriever = FetchTool()
 
     result = asyncio.run(
         generate(
-            llm,
+            None,
             retriever,
             args.topic,
             out_root=Path(args.out),
@@ -97,7 +95,7 @@ def main() -> None:
     print(f"\n✔ run 目录: {result.run_dir}")
     print(f"✔ deck: {result.deck_path}")
     print(f"  completed {len(result.completed)} 页 / degraded {len(result.degraded)} 页")
-    print(f"  token 用量: {llm.usage}")
+    print(f"  token 用量: {result.usage}")
 
 
 if __name__ == "__main__":

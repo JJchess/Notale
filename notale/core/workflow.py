@@ -15,8 +15,10 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
+
 from notale import __version__
 
 from notale.core.models import (
@@ -31,7 +33,6 @@ from notale.core.models import (
     PrepRecord,
     PrepRecordOrigin,
 )
-from notale.utils.llm import LLMClient
 from notale.core.state import Manifest
 from notale.web import deck as assemble_stage
 from notale.core.stages import report as report_stage
@@ -43,7 +44,7 @@ from notale.core.stages.page_check import make_fallback_page
 from notale.tools.retriever import Retriever
 from notale.tools.media import ensure_asset_manifest, ensure_media_budget
 from notale.core.observability import ExperimentLogger, RunEmergencyLimitExceeded
-from notale.roles.profiles import BUILDER, INTAKE, PLANNER, RESEARCH, builder_profile
+from notale.roles.profiles import BUILDER, INTAKE, PLANNER, RESEARCH
 from notale.utils.config import CONFIG_PATH, get_config
 
 _CONFIG = get_config()
@@ -58,6 +59,13 @@ _PAGE_PRIORITY = {
     PageType.QUIZ_CHECK: 3,
     PageType.SECTION_BREAK: 4,
 }
+
+
+def _research_agent_count() -> int:
+    """Return the number of Research workers that this process would launch."""
+    if not _CONFIG.research.enabled:
+        return 0
+    return sum(branch.enabled for branch in _CONFIG.research.branches)
 
 
 def _prioritized_page_ids(todo: list[str], specs: list[PageSpec]) -> list[str]:
@@ -94,10 +102,11 @@ class GenerateResult:
     deck_path: Path
     completed: list[str]
     degraded: list[str]
+    usage: dict[str, int] = field(default_factory=dict)
 
 
 async def _build_page(
-    llm: LLMClient,
+    llm: Any | None,
     spec: PageSpec,
     context,
     prep_store: dict[str, PrepRecord],
@@ -146,7 +155,7 @@ async def _build_page(
 
 
 async def _generate_session(
-    llm: LLMClient,
+    llm: Any | None,
     retriever: Retriever,
     query: str,
     *,
@@ -188,6 +197,23 @@ async def _generate_session(
             for p in json.loads((run_dir / "pedagogy-notes.json").read_text())
         ]
         logger.stage_end("research", status="skipped")
+    elif _research_agent_count() == 0:
+        prep_records = []
+        pedagogy_notes = []
+        _dump(run_dir, "prep-records.json", prep_records)
+        _dump(run_dir, "pedagogy-notes.json", pedagogy_notes)
+        _dump(run_dir, "research-notes.json", [])
+        reason = (
+            "disabled-by-config"
+            if not _CONFIG.research.enabled
+            else "no-enabled-branches"
+        )
+        manifest.event(
+            "stage-skipped", stage="research", reason=reason, agents=0
+        )
+        logger.stage_end(
+            "research", status="skipped", reason=reason, agents=0
+        )
     else:
         res = await research(
             llm, brief, retriever, uploaded_material,
@@ -200,8 +226,15 @@ async def _generate_session(
         _dump(run_dir, "prep-records.json", prep_records)
         _dump(run_dir, "pedagogy-notes.json", pedagogy_notes)
         _dump(run_dir, "research-notes.json", res.research_notes)
-        manifest.event("stage-done", stage="research", records=len(prep_records))
-        logger.stage_end("research", records=len(prep_records))
+        manifest.event(
+            "stage-done",
+            stage="research",
+            records=len(prep_records),
+            agents=_research_agent_count(),
+        )
+        logger.stage_end(
+            "research", records=len(prep_records), agents=_research_agent_count()
+        )
 
     # ---- [2] Curriculum Contract（人在环）----
     logger.stage_start("contract")
@@ -330,7 +363,7 @@ async def _generate_session(
 
 
 async def generate(
-    llm: LLMClient,
+    llm: Any | None,
     retriever: Retriever,
     query: str,
     *,
@@ -357,19 +390,25 @@ async def generate(
         "effectivePolicy": {
             "modelCapabilities": _CONFIG.model_capabilities.model_dump(mode="json"),
             "governance": _CONFIG.governance.model_dump(mode="json"),
+            "research": {
+                "enabled": _CONFIG.research.enabled,
+                "agentCount": _research_agent_count(),
+                "enabledBranches": [
+                    branch.id
+                    for branch in _CONFIG.research.branches
+                    if _CONFIG.research.enabled and branch.enabled
+                ],
+            },
             "roleCompaction": {
                 name: _CONFIG.agents.role_for(name).auto_compact_threshold_tokens
                 for name in ("intake", "research", "planner", "builder")
             },
         },
         "llm": {
-            "model": getattr(llm, "model", type(llm).__name__),
-            "baseUrl": getattr(llm, "base_url", None),
-            "temperature": getattr(llm, "temperature", None),
-            "seed": getattr(llm, "seed", None),
-            "timeoutSec": getattr(llm, "timeout", None),
-            "maxAttempts": getattr(llm, "attempts", None),
-            "apiKeyEnv": getattr(llm, "api_key_env", None),
+            "model": getattr(llm, "model", _CONFIG.model.name),
+            "baseUrl": getattr(llm, "base_url", _CONFIG.model.base_url),
+            "timeoutSec": getattr(llm, "timeout", _CONFIG.model.http_timeout_sec),
+            "apiKeyEnv": getattr(llm, "api_key_env", _CONFIG.model.api_key_env),
         },
         "agentRoles": {
             role.name: {
@@ -392,22 +431,6 @@ async def generate(
             }
             for role in (INTAKE, RESEARCH, PLANNER, BUILDER)
         },
-        "builderPageProfiles": {
-            page_type.value: {
-                "maxTurnsPerQuery": builder_profile(page_type).max_turns,
-                "maxOutputTokensPerCall": builder_profile(page_type).max_tokens,
-                "maxTotalTurns": builder_profile(page_type).max_total_turns,
-                "maxDurationSec": builder_profile(page_type).max_duration_sec,
-                "maxTotalTokens": builder_profile(page_type).max_total_tokens,
-                "requestTimeoutSec": builder_profile(page_type).request_timeout_sec,
-                "maxQueryDurationSec": builder_profile(page_type).max_query_duration_sec,
-                "maxProviderAttempts": builder_profile(page_type).max_provider_attempts,
-                "autoCompactRequestTargetTokens": (
-                    builder_profile(page_type).auto_compact_threshold_tokens
-                ),
-            }
-            for page_type in PageType
-        },
     }
     logger = ExperimentLogger(manifest.run_dir, config=config)
     try:
@@ -420,13 +443,11 @@ async def generate(
         logger.finish("failed", error=exc)
         raise
     logger.finish("completed")
-    usage = getattr(llm, "usage", None)
-    if isinstance(usage, dict):
-        usage.update({
-            "prompt_tokens": logger.metrics["promptTokens"],
-            "completion_tokens": logger.metrics["completionTokens"],
-            "reasoning_tokens": logger.metrics["reasoningTokens"],
-            "total_tokens": logger.metrics["totalTokens"],
-            "calls": logger.metrics["calls"],
-        })
+    result.usage = {
+        "prompt_tokens": logger.metrics["promptTokens"],
+        "completion_tokens": logger.metrics["completionTokens"],
+        "reasoning_tokens": logger.metrics["reasoningTokens"],
+        "total_tokens": logger.metrics["totalTokens"],
+        "calls": logger.metrics["calls"],
+    }
     return result
