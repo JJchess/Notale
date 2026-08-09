@@ -80,7 +80,10 @@ async def _load_all_assigned_skills(agent: ManagedAgent) -> None:
 async def test_valid_submission_is_authoritative_task_evidence(tmp_path):
     agent = _agent(tmp_path)
     submit = next(tool for tool in agent.tools if tool.name == "submit_research")
-    result = await submit.execute(DictSubmitInput(payload={"ok": True}), None)  # type: ignore[arg-type]
+    direct = DictSubmitInput.model_validate({"ok": True})
+    assert direct.payload == {"ok": True}
+    assert DictSubmitInput(payload={"legacy": True}).payload == {"legacy": True}
+    result = await submit.execute(direct, None)  # type: ignore[arg-type]
     assert not result.is_error
     task = json.loads((agent.worker_dir / "task.json").read_text())
     assert task["status"] == "completed"

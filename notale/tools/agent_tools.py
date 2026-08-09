@@ -19,7 +19,7 @@ from typing import Any, Callable
 
 import yaml
 from openharness.tools.base import BaseTool, ToolExecutionContext, ToolResult
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from notale.core.models import AgentTaskState, PageArtifact, PageStatus
 from notale.utils.config import get_config
@@ -699,7 +699,16 @@ class PagePatchTool(BaseTool):
 
 
 class DictSubmitInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     payload: dict[str, Any]
+
+    @model_validator(mode="before")
+    @classmethod
+    def accept_direct_artifact(cls, value: Any) -> Any:
+        """Accept native tool calls while retaining the legacy payload envelope."""
+        if isinstance(value, dict) and "payload" not in value:
+            return {"payload": value}
+        return value
 
 
 class SubmitArtifactTool(BaseTool):
