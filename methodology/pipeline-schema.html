@@ -216,7 +216,8 @@
     <div class="artifact output">
       <div class="artifact-title">outline</div>
       <table class="fields">
-        <tr><td class="fname">chapters</td><td class="fdesc">章节列表 <code>{title, pageRange, rationale}</code>（rationale 回指 pedagogy-note）</td></tr>
+        <tr><td class="fname">chapters</td><td class="fdesc">章节列表 <code>{title, pageRange, rationale, pedagogyNoteIds, narrativeGoal}</code></td></tr>
+        <tr><td class="fname">throughline</td><td class="fdesc">全书论证主线</td></tr>
         <tr><td class="fname">durationBudget</td><td class="fdesc">总时长 <code>{totalMin}</code></td></tr>
         <tr><td class="fname">confirmedAt</td><td class="fdesc">人工确认时间</td></tr>
         <tr><td class="fname">revisionNotes</td><td class="fdesc">人工修改意见（如有）</td></tr>
@@ -227,10 +228,18 @@
       <table class="fields">
         <tr><td class="fname">terminology</td><td class="fdesc">术语表</td></tr>
         <tr><td class="fname">notation</td><td class="fdesc">符号约定</td></tr>
-        <tr><td class="fname">styleTokens</td><td class="fdesc">风格 token（配色 / 字体…）</td></tr>
-        <tr><td class="fname">componentAPI</td><td class="fdesc">批准使用的组件清单</td></tr>
-        <tr><td class="fname">artDirection</td><td class="fdesc">视觉风格采样结果</td></tr>
       </table>
+      <div class="chain-note">课程领域 artifact：不因新增 Builder skill、profile 或工具而扩字段。</div>
+    </div>
+    <div class="artifact output">
+      <div class="artifact-title">builder-plan <span class="mult">（Agent 控制面）</span></div>
+      <table class="fields">
+        <tr><td class="fname">schemaVersion</td><td class="fdesc">固定为 BuilderPlan v2</td></tr>
+        <tr><td class="fname">sharedSkills</td><td class="fdesc">全书共享的可选 <code>SkillAssignment[]</code></td></tr>
+        <tr><td class="fname">pageSkills</td><td class="fdesc"><code>{pageId: SkillAssignment[]}</code> 逐页增量能力</td></tr>
+        <tr><td class="fname">SkillAssignment</td><td class="fdesc"><code>{name, profile?, instruction}</code>；profile 必须属于该 skill</td></tr>
+      </table>
+      <div class="chain-note">Builder 常驻流程来自角色契约；Planner 只选择可选能力，Harness 校验 catalog 并执行。<code>pageType</code> 不自动映射 skill。</div>
     </div>
     <div class="artifact output">
       <div class="artifact-title">page-spec <span class="mult">× N</span></div>
@@ -244,7 +253,7 @@
       </table>
       <div class="chain-note">Planner 只锁定知识结构与资料绑定；标题、副标题、视觉对象、构图、媒体和交互形式由 Builder 决定。</div>
       <div class="chain-note"><code>boundPrepRecords</code>（计划）→
-        <code>page-context.relevantPrepRecords</code>（[3] 解析全文）→
+        <code>page-context.sources</code>（[3] 最小投影）→
         <code>page-artifact.boundReferences</code>（[3] 实际使用）——三阶段各自角色，非重复存储。</div>
     </div>
   </div>
@@ -263,14 +272,12 @@
     <div class="artifact">
       <div class="artifact-title">page-context</div>
       <table class="fields">
-        <tr><td class="fname">pageSpec</td><td class="fdesc">自己那一页的 page-spec</td></tr>
-        <tr><td class="fname">globals</td><td class="fdesc">契约 globals</td></tr>
-        <tr><td class="fname">neighborSummary</td><td class="fdesc">邻页摘要 <code>{prev, next}</code></td></tr>
-        <tr><td class="fname">coveredConcepts</td><td class="fdesc">已覆盖概念</td></tr>
-        <tr><td class="fname">relevantPrepRecords</td><td class="fdesc">绑定的 prep-record 全文</td></tr>
-        <tr><td class="fname">availableSkills</td><td class="fdesc">按需加载的 skill</td></tr>
+        <tr><td class="fname">page</td><td class="fdesc">当前页 brief：ID、页型、命题、认知动作及相关术语/符号</td></tr>
+        <tr><td class="fname">narrative</td><td class="fdesc">全书主线、当前章节目标、本页角色与选择性 continuity</td></tr>
+        <tr><td class="fname">sources</td><td class="fdesc">绑定资料的内容、guardrails 与可用引用 URL 投影</td></tr>
+        <tr><td class="fname">skills</td><td class="fdesc">按 <code>sharedSkills + pageSkills[pageId]</code> 合成的精确 assignment 列表</td></tr>
       </table>
-      <div class="chain-note">Builder 由 Harness 强制注入版本化 <code>lecture-authoring</code> system profile；profile 不通过 skill_read 加载，Planner 只锁定学习结构与证据路由。</div>
+      <div class="chain-note">Builder 固定加载带哈希的 <code>roles/builder.md</code>；只有实际 assigned 的可选 skill 通过 <code>skill_read</code> 加载，带 profile 的 skill 只加载被选中的 reference。</div>
     </div>
 
     <div class="io-label out">输出</div>
@@ -309,8 +316,8 @@
 
     <div class="io-label">输入</div>
     <div class="artifact">
-      <div class="artifact-title">terminal page-artifact[] + globals</div>
-      <table class="fields"><tr><td class="fdesc" colspan="2">全部 <code>status=completed/degraded</code> 的页 + notation ledger</td></tr></table>
+      <div class="artifact-title">terminal page-artifact[] + globals + builder-plan</div>
+      <table class="fields"><tr><td class="fdesc" colspan="2">终态页 + 术语/符号 ledger + 已选共享 profile 的安全 token 覆盖</td></tr></table>
     </div>
 
     <div class="io-label out">输出</div>
@@ -375,7 +382,7 @@
   命名规则：字段名会被别的 artifact 按同名引用（如 pageId / recordId）时保留类型前缀，
   否则收成裸 <code>id</code>。<br><br>
   <b style="color:var(--muted)">边界</b>：本页描述当前生成内循环的数据契约。
-  <code>check_page</code> 只检查可交付性，不把 DOM 变化冒充交互正确性；未来若接入独立 oracle，
+  <code>submit_page</code> 内的确定性检查只判断可交付性，不把 DOM 变化冒充交互正确性；未来若接入独立 oracle，
   其评估产物属于实验评估链，不能复制一套 Builder 返工状态机。
 </footer>
 

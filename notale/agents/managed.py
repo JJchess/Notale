@@ -35,7 +35,12 @@ from openharness.services.token_estimation import estimate_tokens
 from openharness.tools.base import ToolRegistry
 from pydantic import BaseModel
 
-from notale.core.models import AgentCheckpoint, AgentTaskState, AgentTaskStep
+from notale.core.models import (
+    AgentCheckpoint,
+    AgentTaskState,
+    AgentTaskStep,
+    SkillAssignment,
+)
 from notale.core.observability import ExperimentLogger, now
 from notale.roles.base import RoleSpec
 from notale.tools.agent_tools import (
@@ -208,8 +213,6 @@ class _CompletionClientAdapter:
                 if progress.get("reloadEpoch") == epoch:
                     offset = int(progress.get("nextOffset") or 0)
                 tool_input: dict[str, Any] = {"name": name, "offset": offset}
-                if skill.get("locked_entrypoint") is not None:
-                    tool_input["entrypoint"] = skill["locked_entrypoint"]
                 message = ConversationMessage(
                     role="assistant",
                     content=[ToolUseBlock(name="skill_read", input=tool_input)],
@@ -226,29 +229,16 @@ class _CompletionClientAdapter:
                     [{"role": "user", "content": content}], purpose=self.purpose
                 )
                 self._fixture_page = dict(extract_json(raw))
-            if not self.state.page_path.is_file():
-                message = ConversationMessage(
-                    role="assistant",
-                    content=[ToolUseBlock(
-                        name="page_write", input={"html": str(self._fixture_page.get("html", ""))}
-                    )],
+            submission = {
+                key: self._fixture_page.get(key, default)
+                for key, default in (
+                    ("html", ""), ("designSpec", {}),
+                    ("boundReferences", []), ("speakerNotes", ""),
                 )
-            elif not self.state.candidate_path.is_file():
-                metadata = {
-                    key: self._fixture_page.get(key, default)
-                    for key, default in (
-                        ("designSpec", {}),
-                        ("boundReferences", []), ("speakerNotes", ""),
-                    )
-                }
-                message = ConversationMessage(
-                    role="assistant",
-                    content=[ToolUseBlock(name="check_page", input=metadata)],
-                )
-            else:
-                message = ConversationMessage(
-                    role="assistant", content=[ToolUseBlock(name="submit_page", input={})]
-                )
+            }
+            message = ConversationMessage(
+                role="assistant", content=[ToolUseBlock(name="submit_page", input=submission)]
+            )
         elif self.state.submission is None:
             content = "\n\n".join(self.prompts)
             raw = await self.inner.complete(
@@ -316,8 +306,7 @@ class ManagedAgent:
         extra_tools: list[Any] | None = None,
         validation_context: dict[str, Any] | None = None,
         purpose: str | None = None,
-        assigned_skills: list[str] | None = None,
-        assigned_skill_entrypoints: dict[str, str] | None = None,
+        assigned_skills: list[str | SkillAssignment] | None = None,
     ) -> None:
         if not worker_id or any(x in worker_id for x in ("/", "\\", "..")):
             raise ValueError(f"unsafe worker id: {worker_id!r}")
@@ -349,34 +338,38 @@ class ManagedAgent:
                 updatedAt=now(),
             )
 
-        skill_names = assigned_skills if assigned_skills is not None else role.skills
-        unauthorized_skills = sorted(set(skill_names) - set(role.skills))
+        raw_assignments = assigned_skills if assigned_skills is not None else []
+        assignments = [
+            item if isinstance(item, SkillAssignment) else SkillAssignment(name=item)
+            for item in raw_assignments
+        ]
+        skill_names = [item.name for item in assignments]
+        if len(skill_names) != len(set(skill_names)):
+            raise ValueError("assigned skills contain duplicate names")
+        unauthorized_skills = sorted(set(skill_names) - set(role.authorized_skills))
         if unauthorized_skills:
             raise ValueError(
                 f"role {role.name} does not permit assigned skills: {unauthorized_skills}"
             )
-        skill_entrypoints = dict(assigned_skill_entrypoints or {})
-        skills = load_assigned_skills(SKILLS_ROOT, skill_names, skill_entrypoints)
-        allowed = set(role.allowed_tools)
-        for name, skill in skills.items():
-            metadata = skill["metadata"]
-            required = set(
-                metadata.get("required_tools") or metadata.get("allowed-tools") or []
-            )
-            denied = sorted(required - allowed)
-            if denied:
-                raise ValueError(f"skill {name} requires tools denied by role {role.name}: {denied}")
+        skills = load_assigned_skills(SKILLS_ROOT, assignments)
 
         tool_state_path = self.worker_dir / "tool-state.json"
         tool_state = (
             json.loads(tool_state_path.read_text(encoding="utf-8"))
             if tool_state_path.exists() else {}
         )
+        tool_state.pop("assignedSkillEntrypoints", None)
+        tool_state.pop("loadedSkillEntrypoints", None)
+        tool_state.pop("systemProfiles", None)
+        if submit_tool == "submit_page":
+            tool_state.pop("pageCandidate", None)
+            (self.worker_dir / "candidate.json").unlink(missing_ok=True)
         tool_state.update({
             "assignedSkills": skill_names,
-            "assignedSkillEntrypoints": skill_entrypoints,
+            "skillAssignments": [item.model_dump(mode="json") for item in assignments],
             "allowedTools": role.allowed_tools,
-            "systemProfiles": role.system_profile_metadata(),
+            "skillPolicy": role.skill_policy.metadata(),
+            "roleDocument": role.document_metadata(),
         })
         identity = f"{stage}:{worker_id}"
 
@@ -479,9 +472,10 @@ class ManagedAgent:
             logger.append("agent-traces.jsonl", {
                 "ts": now(), "kind": "skills-assigned", "agent": f"{stage}:{worker_id}",
                 "skills": skill_names,
-                "skillEntrypoints": skill_entrypoints,
+                "assignments": [item.model_dump(mode="json") for item in assignments],
                 "allowedTools": role.allowed_tools,
-                "systemProfiles": role.system_profile_metadata(),
+                "skillPolicy": role.skill_policy.metadata(),
+                "roleDocument": role.document_metadata(),
             })
 
     def _record_hidden_compactions(self) -> None:
@@ -546,6 +540,16 @@ class ManagedAgent:
                         "is_error": event.is_error,
                     })
                     if self.logger:
+                        validation_failure = False
+                        if event.is_error and event.tool_name in {"submit_page", "page_patch"}:
+                            try:
+                                parsed_output = json.loads(str(event.output))
+                                validation_failure = (
+                                    isinstance(parsed_output, dict)
+                                    and isinstance(parsed_output.get("failures"), list)
+                                )
+                            except (json.JSONDecodeError, TypeError):
+                                pass
                         self.logger.record_tool(
                             self.identity,
                             self.role.name,
@@ -557,7 +561,7 @@ class ManagedAgent:
                                     "web_search", "fetch_web", "acquire_media", "generate_media"
                                 }
                                 else "validation"
-                                if event.tool_name == "check_page"
+                                if validation_failure
                                 else "protocol"
                             ),
                         )
@@ -571,7 +575,7 @@ class ManagedAgent:
                     )
                     self._save_checkpoint("tool-execution")
                     turn_started = time.monotonic()
-                    if event.tool_name == self.submit_tool and not event.is_error:
+                    if self.state.submission is not None:
                         break
                 elif isinstance(event, AssistantTurnComplete):
                     turns += 1
@@ -708,13 +712,15 @@ class ManagedAgent:
             "submissionAccepted": self.state.submission is not None,
             "workspaceFiles": workspace_files,
             "loadedSkills": sorted(set(self.state.tool_state.get("loadedSkills") or [])),
-            "loadedSkillEntrypoints": dict(
-                self.state.tool_state.get("loadedSkillEntrypoints") or {}
-            ),
             "skillReadProgress": dict(self.state.tool_state.get("skillReadProgress") or {}),
             "uniqueReads": len(self.state.tool_state.get("governanceReads") or []),
             "fetchRecordCount": len(fetch_records),
-            "candidate": dict(self.state.tool_state.get("pageCandidate") or {}),
+            "toolErrorSignature": getattr(
+                getattr(self, "checkpoint", None), "lastToolErrorSignature", ""
+            ),
+            "pageSubmissionReady": isinstance(
+                self.state.tool_state.get("pageSubmission"), dict
+            ),
         }
 
     def _mark_stalled(self, reason: str) -> None:
@@ -762,20 +768,23 @@ class ManagedAgent:
             self.checkpoint.lastToolErrorSignature = ""
             self.checkpoint.repeatedToolErrorCount = 0
 
-        if tool == "check_page":
+        if tool in {"submit_page", "page_patch"}:
+            failures: Any | None = None
             if is_error:
                 try:
                     parsed = json.loads(output)
-                    failures = parsed.get("failures", output)
+                    if isinstance(parsed, dict):
+                        failures = parsed.get("failures")
                 except (json.JSONDecodeError, TypeError, AttributeError):
-                    failures = output
+                    pass
+            if failures is not None:
                 validation_signature = self._signature(failures)
                 if validation_signature == self.checkpoint.lastValidationSignature:
                     self.checkpoint.repeatedValidationErrorCount += 1
                 else:
                     self.checkpoint.lastValidationSignature = validation_signature
                     self.checkpoint.repeatedValidationErrorCount = 1
-            else:
+            elif not is_error:
                 self.checkpoint.lastValidationSignature = ""
                 self.checkpoint.repeatedValidationErrorCount = 0
 
@@ -818,7 +827,6 @@ class ManagedAgent:
             self.state.save_task()
             self.state.tool_state.update({
                 "loadedSkills": [],
-                "loadedSkillEntrypoints": {},
                 "skillReadProgress": {},
                 "governanceReads": [],
             })
@@ -887,7 +895,6 @@ class ManagedAgent:
             self.checkpoint.compactCount += 1
             self.state.tool_state["skillReloadEpoch"] = self.checkpoint.compactCount
             self.state.tool_state["loadedSkills"] = []
-            self.state.tool_state["loadedSkillEntrypoints"] = {}
             self.state.tool_state["skillReadProgress"] = {}
             self.state.save_tool_state()
         usage = self.engine.total_usage

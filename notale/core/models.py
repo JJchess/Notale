@@ -195,10 +195,6 @@ class Globals(BaseModel):
 
     terminology: dict[str, str] = Field(default_factory=dict)  # 术语表 {术语: 定义}
     notation: dict[str, str] = Field(default_factory=dict)  # 符号约定 {符号: 含义}
-    styleTokens: dict[str, str] = Field(default_factory=dict)  # 风格 token（配色/字体…）
-    componentAPI: list[str] = Field(default_factory=list)  # 旧 run 兼容；不再交给 Builder
-    artDirection: str = ""  # 视觉风格采样结果
-    visualMotif: str = ""  # 跨页反复使用的视觉编码或构图母题
 
 
 class ContinuityLink(BaseModel):
@@ -239,12 +235,6 @@ class BuilderNarrativeContext(BaseModel):
     links: list[ContinuityLink] = Field(default_factory=list)
 
 
-class VisualContract(BaseModel):
-    direction: str = ""
-    motif: str = ""
-    tokens: dict[str, str] = Field(default_factory=dict)
-
-
 class SourceGuardrails(BaseModel):
     invariants: list[str] = Field(default_factory=list)
     validRange: str = ""
@@ -259,9 +249,56 @@ class BuilderSource(BaseModel):
     citationUrl: str | None = None
 
 
-class AssignedSkill(BaseModel):
+class SkillAssignment(BaseModel):
     name: str
-    entrypoint: str | None = None
+    profile: str | None = None
+    instruction: str = ""
+
+    @model_validator(mode="after")
+    def validate_assignment(self) -> "SkillAssignment":
+        if re.fullmatch(r"[a-z0-9][a-z0-9-]*", self.name) is None:
+            raise ValueError(f"invalid skill name: {self.name!r}")
+        if self.profile is not None and re.fullmatch(
+            r"[a-z0-9][a-z0-9-]*", self.profile
+        ) is None:
+            raise ValueError(f"invalid skill profile: {self.profile!r}")
+        self.instruction = self.instruction.strip()
+        return self
+
+
+class BuilderPlan(BaseModel):
+    """Run-local control plane; never part of the curriculum domain contract."""
+
+    schemaVersion: Literal[2] = 2
+    sharedSkills: list[SkillAssignment] = Field(default_factory=list)
+    pageSkills: dict[str, list[SkillAssignment]] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def validate_assignments(self) -> "BuilderPlan":
+        shared_names = [item.name for item in self.sharedSkills]
+        if len(shared_names) != len(set(shared_names)):
+            raise ValueError("builder plan sharedSkills contains duplicate names")
+        invalid_pages = sorted(
+            page_id for page_id in self.pageSkills
+            if re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,79}", page_id) is None
+        )
+        if invalid_pages:
+            raise ValueError(f"builder plan contains invalid page IDs: {invalid_pages}")
+        for page_id, assignments in self.pageSkills.items():
+            names = [item.name for item in assignments]
+            if len(names) != len(set(names)):
+                raise ValueError(
+                    f"builder plan page {page_id} contains duplicate skill names"
+                )
+            overlap = sorted(set(names) & set(shared_names))
+            if overlap:
+                raise ValueError(
+                    f"builder plan page {page_id} repeats shared skills: {overlap}"
+                )
+        return self
+
+    def assignments_for(self, page_id: str) -> list[SkillAssignment]:
+        return [*self.sharedSkills, *self.pageSkills.get(page_id, [])]
 
 
 class PageContext(BaseModel):
@@ -269,9 +306,8 @@ class PageContext(BaseModel):
 
     page: BuilderPageBrief
     narrative: BuilderNarrativeContext
-    visualContract: VisualContract
     sources: list[BuilderSource] = Field(default_factory=list)
-    skills: list[AssignedSkill] = Field(default_factory=list)
+    skills: list[SkillAssignment] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def validate_skill_manifest(self) -> "PageContext":
@@ -284,14 +320,6 @@ class PageContext(BaseModel):
         )
         if invalid_names:
             raise ValueError(f"skills contains invalid names: {invalid_names}")
-        invalid = sorted(
-            skill.entrypoint
-            for skill in self.skills
-            if skill.entrypoint is not None
-            and re.fullmatch(r"[a-z0-9][a-z0-9-]*", skill.entrypoint) is None
-        )
-        if invalid:
-            raise ValueError(f"skills contains invalid entrypoints: {invalid}")
         return self
 
     @property
@@ -301,15 +329,6 @@ class PageContext(BaseModel):
     @property
     def skill_names(self) -> list[str]:
         return [skill.name for skill in self.skills]
-
-    @property
-    def skill_entrypoints(self) -> dict[str, str]:
-        return {
-            skill.name: skill.entrypoint
-            for skill in self.skills
-            if skill.entrypoint is not None
-        }
-
 
 # ---------------------------------------------------------------------------
 # [3] Per-page fan-out

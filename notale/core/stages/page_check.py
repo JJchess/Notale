@@ -1,4 +1,4 @@
-"""Deterministic delivery checks used by the Builder's ``check_page`` tool.
+"""Deterministic delivery checks used inside the Builder's ``submit_page`` tool.
 
 These checks cover artifact shape, offline delivery, local assets, references, and
 visible runtime leaks. They deliberately make no claim about whether an interactive
@@ -69,7 +69,7 @@ def _asset_failures(page: PageArtifact, run_dir: Path | None) -> list[str]:
     if not parser.images and not local_refs:
         return []
     if run_dir is None:
-        return ["页面使用了图片，但 check_page 没有收到 run 目录，无法核对 asset manifest"]
+        return ["页面使用了图片，但 submit_page 没有收到 run 目录，无法核对 asset manifest"]
     try:
         manifest = load_asset_manifest(run_dir)
     except ValueError as exc:

@@ -10,8 +10,8 @@ HTML-native 讲义。每页保持完整 HTML 产物，通过 sandbox iframe 嵌�
 - `cli/`：统一命令行入口。
 - `core/`：artifact schema、状态、时长模型与确定性工作流。
 - `docker/`：可运行的隔离环境；不承担逐 agent 的容器调度。
-- `roles/`：版本化 system profile、角色职责与工具/skill 权限声明。
-- `skills/`：可注入 Agent 的能力说明。
+- `roles/`：四份 Markdown 角色契约；正文是常驻职责，frontmatter 声明工具白名单与可选 skill 权限。
+- `skills/`：按任务显式分配的可选能力，不承载角色常驻流程。
 - `tools/`：Agent 可调用工具及其测试替身。
 - `utils/`：严格配置、解析等公共基础设施。
 - `web/`：Reveal.js 组装、包内离线 runtime 与预览服务。
@@ -25,7 +25,7 @@ HTML-native 讲义。每页保持完整 HTML 产物，通过 sandbox iframe 嵌�
 - `model`、`model_capabilities`：模型连接参数，以及 context/output 的技术能力边界；
 - `governance`：进展判定、重复错误与 prose-only 停滞检测，以及只用于异常失控的
   run/query/worker 高位熔断；
-- `agents`：角色 compact 阈值和 Builder skills；agent protocol 版本由 `versions` 唯一声明，
+- `agents`：各角色 compact 阈值；agent protocol 版本由 `versions` 唯一声明，
   不再按页型设置日常 token/turn/time 预算；
 - `runtime`、`pipeline`：compact 安全余量、页面并发、默认课时和日志截断参数；
 - `research`、`tools`：Research 总开关与分支、搜索/抓取额度、chunk 大小、JS 检查与网页读取限制；
@@ -49,21 +49,30 @@ Intake、配置中启用的每路 Research、Planner 以及每页 Builder 都是
 
 - 独立 QueryEngine 会话，context window 及 compact 阈值由 `config.yaml` 控制；compact
   会预留 system prompt 与 tool schema；
-- 角色级 tool 白名单，以及可分块完整读取的 skill；
-- Planner 负责学习序列、证据路由、全书叙事主线与共享视觉契约，并通过
-  `frontend-slides:planner-contract` 只锁定语义 token、视觉方向和贯穿 motif，不决定单页布局；
-  全部 Builder 固定注入同一版本的 `lecture-authoring` system profile，其名称、版本和哈希写入日志；
+- 每个角色从 `roles/intake.md`、`research.md`、`planner.md` 或 `builder.md` 加载完整常驻契约；
+  frontmatter 是 tool 白名单与可选 skill 授权的唯一来源，正文是静态 system prompt。文档路径、哈希和
+  实际分配的 skills 写入日志；角色文档变化会使未完成 worker 的旧 checkpoint 失效，但保留累计预算；
+- Intake 与 Planner 没有常驻或可选 skill，也没有 `skill_read`。课程需求分析、课程规划、证据路由和
+  Builder 能力编排已经写入各自角色正文，不再通过 resident skill 重复注入；
+- Planner 只从 Builder 角色授权的 catalog 选择可选能力，结果以 BuilderPlan v2 单独落盘为
+  `builder-plan.json`。`narrative-keynote` 是可选的全书表达 skill；`create-sim` 与
+  `create-code-runtime` 是显式分配的逐页能力。Builder 的页面构建、出版编辑和真实计算交互规范
+  已常驻 `builder.md`，不出现在 BuilderPlan；`pageType` 不触发自动装配；
+- style profile 属于定义它的 skill。Planner 只能选择 catalog 中的 profile；Builder 只读取
+  被选中的 `profile-*.md`，不会加载同一 skill 的其他 profile。profile token 是对固定
+  `global.css` 默认值的安全覆盖，不进入 PageContext 的课程字段；
 - Planner 优先路由 Research 的 `PrepRecord`；缺少稳定教材知识时，可提交 harness 标记为
   `planner-generated` 且无外部 evidence 的补充记录。补充记录单独落盘，逐页绑定后才会进入
-  Builder 的最小 PageContext。Context 只含当前页 brief、全局/章节叙事切片、选择性跨页关系、
-  视觉契约、绑定资料的事实与 guardrails 投影，以及精确 skill 清单；不会累积此前所有页面命题，
+  Builder 的最小 PageContext。Context 只含当前页 brief、章节/全书叙事切片、选择性跨页关系、
+  绑定资料的事实与 guardrails 投影，以及精确的 `SkillAssignment[]`；不会累积此前所有页面命题，
   完整 evidence 与 provenance 仍留在独立审计 artifact；
 - 每个 Research worker 从 `config.yaml` 独立获得研究方向、skills 和 Research 安全工具；
   当前安全工具表包含 `web_search` 与 `fetch_web`。搜索/抓取失败同样消耗次数预算，避免
   模型猜 URL 或无限重试；
 - Harness 根据真实工具事件维护 objective / acceptance criteria / steps 任务台账；
 - 只读 run artifacts 和私有 workspace，不能读取其他 worker 的状态；
-- Builder 只把整页 HTML 写入一次，检查与提交通过文件 hash 绑定，不在对话中重复传输；
+- Builder 完成整页后用一次原子 `submit_page` 传入 HTML 与小型元数据；Harness 在同一工具执行中
+  写入页面、规范化 document shell、检查并直接提交，不再用多轮工具握手；
 - 教学性交互必须由真实的算法、方程、状态机、规则判定器或数据变换产生状态：控件只提交
   输入/动作或移动 trace 游标，DOM/SVG/Canvas 只投影计算结果，不能用手写帧伪造状态变化；
 - Builder 自主决定标题、视觉对象和交互表达，可用 `acquire_media` 获取 Wikimedia Commons
@@ -75,13 +84,14 @@ Intake、配置中启用的每路 Research、Planner 以及每页 Builder 都是
 - query continuation、单次 provider 超时以及 worker/run 的 turn/时间/token 高位熔断、
   首事件前受控重试、原子 checkpoint、断点恢复和同会话页面返工。
 
-`check_page` 只负责 schema、离线依赖、本地素材、引用绑定和 inline JavaScript 语法等
-可交付性检查，并将候选 HTML 与 hash 绑定。它不启动浏览器点击控件，也不把“DOM 发生变化”
-冒充交互语义正确。检查失败由当前 Builder loop 直接修复；提交之后没有第二套 verifier 或
-counterexample ledger。成功页记为 `completed`，Builder stalled/failed 时生成静态 `degraded` 页。
+`submit_page` 内部只负责 schema、离线依赖、本地素材、引用绑定和 inline JavaScript 语法等
+可交付性检查。它不启动浏览器点击控件，也不把“DOM 发生变化”冒充交互语义正确。检查失败会
+保留 `workspace/page.html` 和提交元数据；当前 Builder 用 `page_patch` 修复后，Harness 自动复检
+并直接提交。提交之后没有第二套 verifier 或 counterexample ledger。成功页记为 `completed`，
+Builder stalled/failed 时生成静态 `degraded` 页。
 
-Builder 的正式产物固定为 `workspace/page.html`。`page_*` 工具负责读写、搜索、修补、
-检查与提交；通过检查的 hash 候选不能再被无意义重读。私有 scratch 目录只供 harness 做
+Builder 的正式产物固定为 `workspace/page.html`。`submit_page` 负责首次写入、检查和提交；
+`page_read`、`page_search`、`page_patch` 只供失败后的定点恢复。私有 scratch 目录只供 harness 做
 inline JavaScript 语法检查，不作为 agent 工具暴露。每个 iframe
 由 runtime 注入 `global.css`，页面仍保留自己的 HTML、CSS 与 JavaScript。
 
@@ -95,12 +105,12 @@ research:
     - id: r1
       enabled: true
       focus: 教学序列
-      skills: [research-evidence, web-access]
+      skills: [web-access]
       tools: [web_search, fetch_web]
     - id: case-library
       enabled: false
       focus: 寻找可用于课堂推演的真实案例
-      skills: [research-evidence]
+      skills: []
       tools: [web_search, fetch_web]
 ```
 
@@ -109,8 +119,8 @@ research:
 数量等于 `enabled: true` 的分支数；若为 0，同样跳过整个 stage。此时 Planner 必须用
 `planner-*` 补充记录建立页面事实基础，章节 `pedagogyNoteIds` 留空，并在 `rationale` 中自洽说明排序理由。
 修改分支配置只对新实验生效；恢复
-已有实验时继续使用已落盘产物。新增 skill 必须位于 `skills/`，其所需工具必须包含在该分支的
-`tools` 中。
+已有实验时继续使用已落盘产物。分支 skill 必须同时位于 `skills/` 且获得 `research.md` 的
+`skills.assignable` 授权；其所需工具必须包含在该分支的 `tools` 中。
 
 每个 worker 的持久状态位于：
 
@@ -119,7 +129,6 @@ runs/<run-id>/agents/<stage>/<worker-id>/
 ├── workspace/
 │   ├── page.html          # Builder 的唯一正式页面源
 │   └── scratch/           # Harness 临时检查目录，不暴露给 agent
-├── candidate.json         # check_page 通过后保存的 hash 绑定候选
 ├── session.json
 ├── task.json
 ├── tool-state.json
@@ -142,10 +151,14 @@ notale generate --topic "你的讲义需求" --yes
 ```
 
 产物写入 `notale/runs/<date>-<id>/`，包括阶段 artifacts（含独立的
-`planner-prep-records.json`）、`deck.html`、
+`planner-prep-records.json` 与 `builder-plan.json`）、`deck.html`、
 `slides/*.html`、`assets/`、`asset-manifest.json`、`media-budget.json`、离线 Reveal runtime、
 只陈述 completed/degraded 状态的质量报告，以及完整实验日志。Harness 不生成
 `verification/`、`ledger/` 或自动 `library-delta.json`。
+
+断点续跑会复用已落盘的 `builder-plan.json`。BuilderPlan v1 会在内存中确定性移除旧的
+`page-builder-core` 项并升级为 v2，原 artifact 不重写且迁移写入日志。旧 run 的成品
+`deck.html` 不受影响；未完成的旧 run 若没有该控制面 artifact，会明确拒绝续跑，需新开实验。
 
 ### 实验日志
 
@@ -154,17 +167,18 @@ notale generate --topic "你的讲义需求" --yes
 - `sessions.jsonl`：每次运行或断点续跑的配置、模型、起止时间和终态；
 - `llm-calls.jsonl`：provider 请求开始、首个流事件、成功/超时/异常，以及每回合的模型、
   延迟、token、context hash/峰值和消息序号；不重复完整历史；
-- `agent-traces.jsonl`：逐轮回复、skill 加载、task 更新、工具输入输出、submit、checkpoint、compact/error 事件；
+- `agent-traces.jsonl`：逐轮回复、Builder plan 与 catalog hash、skill assignment/profile/hash、
+  task 更新、工具输入输出、submit、checkpoint、compact/error 事件；
 - `runtime.log`：与终端一致的实时阶段摘要；
 - `summary.json`：按 role/agent/pageType 汇总调用量、token、延迟、context peak、provider
   超时、工具错误、progress/stalled 与 compact。
 
 run 根目录还会生成：
 
-- `profile-snapshot.json`：本次实验实际使用的 role、prompt、skills/tools、schema、pipeline
-  和治理配置。
+- `profile-snapshot.json`：本次实验实际使用的角色文档路径与哈希、prompt、可选 skill policy、
+  实际 tools、schema、pipeline 和治理配置。
 
-Harness 不会自动生成经验报告或经验候选，也不会自行修改 role profile、loop、context policy、
+Harness 不会自动生成经验报告或经验候选，也不会自行修改 role contract、loop、context policy、
 pipeline、schema、skill 或 tool。实验完成后，由开发协作者在用户监督下读取上述日志和 artifacts、
 提出诊断与沉淀候选；只有得到用户明确确认后，才修改正式代码或配置。
 

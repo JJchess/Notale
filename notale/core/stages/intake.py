@@ -14,14 +14,9 @@ from notale.utils.config import get_config
 _CONFIG = get_config()
 
 
-_PROMPT = """Run the course-intake task. First load the `course-intake` skill with skill_read, inspect
-`input/query.txt` with artifact_read. {material_instruction}
-Do not silently truncate the material. Submit a course brief with topic, audience,
-priorKnowledge, durationMin, intensity (skim|standard|deep), language,
-interactivityAsk, requestedPageCount, and rawQuery through submit_course_brief.
-An explicit `N页` is a page-count constraint, never a duration. If the request gives no
-duration, use 45 minutes. Do not infer minutes from the page count. Harness tool events
-maintain the task ledger automatically; submit as soon as the validated brief is ready."""
+_PROMPT = """Inspect the complete `input/query.txt` with artifact_read. {material_instruction}
+Submit topic, audience, priorKnowledge, durationMin, intensity (skim|standard|deep), language,
+interactivityAsk, requestedPageCount, and rawQuery through submit_course_brief."""
 
 
 _PAGE_COUNT = re.compile(r"(?<!\d)(\d{1,3})\s*(?:页|pages?\b)", re.IGNORECASE)

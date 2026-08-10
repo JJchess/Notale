@@ -13,7 +13,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-from notale.core.models import Globals, Outline, PageSpec
+from notale.core.models import BuilderPlan, Globals, Outline, PageSpec
 from notale.core.workflow import generate
 from notale.tools.retriever import FetchTool
 from notale.web.preview import serve
@@ -30,17 +30,35 @@ def load_cli_env(root: Path = PROJECT_ROOT) -> None:
     load_dotenv(root / ".env", override=False)
 
 
-async def _cli_confirm(outline: Outline, globals_: Globals, specs: list[PageSpec]) -> tuple[bool, str]:
+async def _cli_confirm(
+    outline: Outline,
+    globals_: Globals,
+    specs: list[PageSpec],
+    builder_plan: BuilderPlan,
+) -> tuple[bool, str]:
     """人在环确认契约——走错方向返工成本最高的点。"""
     print("\n=== 课程契约（待确认）===")
     for i, ch in enumerate(outline.chapters, 1):
         print(f"  第{i}章 {ch.title}  页 {ch.pageRange[0]}–{ch.pageRange[1]}  依据: {ch.rationale}")
     print(f"  共 {len(specs)} 页；术语 {len(globals_.terminology)} 条；符号 {len(globals_.notation)} 条")
+    shared = ", ".join(
+        assignment.name
+        + (f"/{assignment.profile}" if assignment.profile else "")
+        for assignment in builder_plan.sharedSkills
+    )
+    print(f"  Builder 全局 skills: {shared or '无'}")
     for s in specs:
+        additions = builder_plan.pageSkills.get(s.pageId, [])
+        addition_text = ", ".join(
+            assignment.name
+            + (f"/{assignment.profile}" if assignment.profile else "")
+            for assignment in additions
+        )
         print(
             f"    {s.pageId} [{s.pageType.value}] "
             f"{s.centralMessage[: _CONFIG.runtime.cli_message_preview_chars]} "
             f"({s.timeBudgetSec}s)"
+            + (f"  +skills: {addition_text}" if addition_text else "")
         )
     ans = input("\n确认？[Y/n/修改意见] ").strip()
     if ans in ("", "y", "Y"):

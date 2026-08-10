@@ -44,22 +44,6 @@ class AgentRoleConfig(StrictModel):
     auto_compact_threshold_tokens: PositiveInt
 
 
-class BuilderPageDesignConfig(StrictModel):
-    """Configurable per-page composition skill assigned to every Builder."""
-
-    enabled: bool
-    skill: str = Field(min_length=1, pattern=r"^[a-z0-9][a-z0-9-]*$")
-    entrypoint: str = Field(min_length=1, pattern=r"^[a-z0-9][a-z0-9-]*$")
-
-
-class PlannerDeckDesignConfig(StrictModel):
-    """Deck-level visual-contract skill assigned to the Planner."""
-
-    enabled: bool
-    skill: str = Field(min_length=1, pattern=r"^[a-z0-9][a-z0-9-]*$")
-    entrypoint: str = Field(min_length=1, pattern=r"^[a-z0-9][a-z0-9-]*$")
-
-
 class ProgressGovernanceConfig(StrictModel):
     no_progress_turns: PositiveInt
     repeated_tool_error_limit: PositiveInt
@@ -87,9 +71,6 @@ class GovernanceConfig(StrictModel):
 class AgentsConfig(StrictModel):
     defaults: AgentDefaultsConfig
     roles: dict[str, AgentRoleConfig]
-    planner_deck_design: PlannerDeckDesignConfig
-    builder_page_design: BuilderPageDesignConfig
-    builder_skills: list[str]
 
     def role_for(self, role: str) -> AgentRoleConfig:
         configured = self.roles.get(role)
@@ -269,22 +250,6 @@ class NotaleConfig(StrictModel):
         branch_ids = [branch.id for branch in self.research.branches]
         if len(branch_ids) != len(set(branch_ids)):
             raise ValueError("research.branches contains duplicate IDs")
-        if len(self.agents.builder_skills) != len(set(self.agents.builder_skills)):
-            raise ValueError("agents.builder_skills contains duplicates")
-        page_design = self.agents.builder_page_design
-        if page_design.skill not in self.agents.builder_skills:
-            raise ValueError(
-                "agents.builder_page_design.skill must be authorized by agents.builder_skills"
-            )
-        if page_design.skill == "page-builder-core":
-            raise ValueError(
-                "agents.builder_page_design.skill must be separate from page-builder-core"
-            )
-        planner_design = self.agents.planner_deck_design
-        if planner_design.skill == "curriculum-planning":
-            raise ValueError(
-                "agents.planner_deck_design.skill must be separate from curriculum-planning"
-            )
         if self.media.maximum_acquisitions_per_page > self.media.maximum_acquisitions_per_run:
             raise ValueError("media per-page acquisition budget exceeds the run budget")
         if self.media.maximum_generations_per_page > self.media.maximum_generations_per_run:
@@ -310,21 +275,6 @@ def load_config(path: Path = CONFIG_PATH) -> NotaleConfig:
                 raise ValueError(
                     f"research branch {branch.id} skill does not exist: {skill}"
                 )
-    skill_slots = {
-        "agents.planner_deck_design": config.agents.planner_deck_design,
-        "agents.builder_page_design": config.agents.builder_page_design,
-    }
-    for label, slot in skill_slots.items():
-        skill_root = SKILLS_PATH / slot.skill
-        entrypoint_path = (
-            skill_root / "SKILL.md"
-            if slot.entrypoint in {"default", "full-deck"}
-            else skill_root / "entrypoints" / f"{slot.entrypoint}.md"
-        )
-        if not entrypoint_path.is_file():
-            raise ValueError(
-                f"{label} entrypoint does not exist: {slot.skill}:{slot.entrypoint}"
-            )
     return config
 
 

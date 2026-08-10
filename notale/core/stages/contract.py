@@ -17,6 +17,7 @@ from pydantic import BaseModel, Field
 
 from notale.agents.managed import ManagedAgent
 from notale.core.models import (
+    BuilderPlan,
     Chapter,
     ContinuityLink,
     CourseBrief,
@@ -31,31 +32,36 @@ from notale.core.models import (
 )
 from notale.core.duration import chapter_count, page_count, time_budget_sec
 from notale.core.observability import ExperimentLogger
-from notale.roles.profiles import PLANNER
-from notale.utils.config import get_config
+from notale.roles.profiles import BUILDER, PLANNER
+from notale.utils.config import SKILLS_PATH, get_config
+from notale.utils.skill_catalog import load_skill_catalog
 
 _CONFIG = get_config()
 _DURATION_CONFIG = _CONFIG.duration_model
-_VISUAL_TOKEN_KEYS = {
-    "bg", "surface", "ink", "muted", "accent", "accent-2", "line", "font", "mono",
-}
+_SKILL_CATALOG = load_skill_catalog(BUILDER, SKILLS_PATH)
 _PAST_RELATIONS = {
     NarrativeRelation.BUILDS_ON,
     NarrativeRelation.CONTRASTS_WITH,
     NarrativeRelation.RETURNS_TO,
     NarrativeRelation.SYNTHESIZES,
 }
-_UNSAFE_CSS_VALUE = re.compile(r"[{};<>]|url\s*\(", re.I)
 
 # 人在环确认：返回 (是否批准, 修改意见)。走错方向返工成本最高的点，值得一次确认。
-ConfirmHook = Callable[[Outline, Globals, list[PageSpec]], Awaitable[tuple[bool, str]]]
+ConfirmHook = Callable[
+    [Outline, Globals, list[PageSpec], BuilderPlan], Awaitable[tuple[bool, str]]
+]
 
 
 class ContractRejected(RuntimeError):
     """人在环未批准契约；编排必须停止，不能带着未确认契约继续。"""
 
 
-async def auto_confirm(outline: Outline, globals_: Globals, specs: list[PageSpec]) -> tuple[bool, str]:
+async def auto_confirm(
+    outline: Outline,
+    globals_: Globals,
+    specs: list[PageSpec],
+    builder_plan: BuilderPlan,
+) -> tuple[bool, str]:
     return True, ""
 
 
@@ -64,41 +70,26 @@ class ContractOutput:
     outline: Outline
     globals: Globals
     page_specs: list[PageSpec]
+    builder_plan: BuilderPlan
     supplemental_prep_records: list[PrepRecord] = field(default_factory=list)
     events: list[dict] = field(default_factory=list)
 
 
-_PROMPT = """你是课程规划师（planner）。先用 skill_read 加载 `curriculum-planning` skill，
-{design_skill_instruction}
-再用 artifact_read / artifact_search 读取 course-brief.json、prep-records.json 和
-pedagogy-notes.json 的完整内容，为这门课锁定课程契约。
+_PROMPT = """用 artifact_read / artifact_search 读取 course-brief.json、prep-records.json 和
+pedagogy-notes.json 的完整内容，为本次运行提交课程契约。
 
 课题：{topic}｜受众：{audience}｜先验：{priorKnowledge}
 时长：{durationMin} 分钟｜强度：{intensity}
 语言：{language}｜交互要求：{interactivityAsk}
 
-硬约束：
-- 整本讲义必须恰好 {n_pages} 页、{n_chapters} 章（时长模型解出，不许改）；
-- 每页恰好一个中心信息和一个认知学习动作；每页 pageType 只能是：{page_types}；
-- centralMessage 只能写知识命题；learningAction 只能写学生的认知动作（比较、预测、追踪、解释等）；
-- throughline 用一句话锁定整本讲义的论证主线；每章 narrativeGoal 与每页 narrativeRole 都必须说明
-  它怎样推进这条主线，而不是复述标题或命题；
-- continuity 只记录真正有用的跨页依赖、对照、回扣、铺垫或综合，每页最多 3 条，不要机械记录邻页；
-  builds-on / contrasts-with / returns-to / synthesizes 只能指向前页，sets-up 只能指向后页；
-- 不规划视觉对象、布局、标题、副标题或界面操作，这些属于单页 Builder；
-- 优先使用 Research 资料。允许补充稳定、通用、无争议的教材知识，但必须先写入
-  supplementalPrepRecords，再通过 planner-* recordId 绑定到使用它的页面；
-- boundPrepRecords 必须覆盖 Builder 所需的全部事实基础。不要用仅仅主题相关的宽泛资料给额外命题背书；
-- Builder 可以从绑定资料机械构造例子、状态和计算结果，但不能增加资料未表达的新学科结论；
-- {pedagogy_constraint}
-- 全局视觉只输出 artDirection、visualMotif 和固定语义 styleTokens，不输出组件或页面模板。
+本次确定性约束：恰好 {n_pages} 页、{n_chapters} 章；pageType 只能是 {page_types}。
+{pedagogy_constraint}
+
+可选 Builder skill catalog：
+{skill_catalog}
 
 已有 Research record IDs：{prep_ids}
 可引用 PedagogyNote IDs：{pedagogy_ids}
-
-补充记录不得伪造 evidence。涉及实现差异、精确等价、绝对量词或适用边界时，必须在 content、
-invariants、validRange 与 knownInaccuracies 中写清假设或推导。主动提取、间隔、交错和迁移只是
-按课程目标与预算选用的规划参考，不是固定页面配额。
 
 输出 JSON：
 {{
@@ -112,14 +103,7 @@ invariants、validRange 与 knownInaccuracies 中写清假设或推导。主动�
   }}],
   "globals": {{
     "terminology": {{"术语": "定义"}},
-    "notation": {{"符号": "含义"}},
-    "styleTokens": {{
-      "bg": "#hex", "surface": "#hex", "ink": "#hex", "muted": "#hex",
-      "accent": "#hex", "accent-2": "#hex", "line": "CSS color",
-      "font": "本地字体栈", "mono": "本地等宽字体栈"
-    }},
-    "artDirection": "视觉风格方向",
-    "visualMotif": "跨页反复使用的学科视觉编码"
+    "notation": {{"符号": "含义"}}
   }},
   "supplementalPrepRecords": [
     {{
@@ -144,9 +128,22 @@ invariants、validRange 与 knownInaccuracies 中写清假设或推导。主动�
         {{"pageId": "p1", "relation": "returns-to", "cue": "回收的具体概念"}}
       ]
     }}
-  ]
+  ],
+  "builderPlan": {{
+    "schemaVersion": 2,
+    "sharedSkills": [
+      {{
+        "name": "可选 catalog 中的全书表达 skill",
+        "profile": "该 skill 自有 profile",
+        "instruction": "简短的主题化视觉方向与贯穿母题"
+      }}
+    ],
+    "pageSkills": {{
+      "p7": [{{"name": "create-sim", "instruction": ""}}]
+    }}
+  }}
 }}
-通过 submit_contract 工具提交；Harness 自动维护 task ledger，自然语言终稿不算提交。"""
+通过 submit_contract 工具提交。"""
 
 
 class _ContractCandidate(BaseModel):
@@ -155,6 +152,7 @@ class _ContractCandidate(BaseModel):
     globals: dict = Field(default_factory=dict)
     supplementalPrepRecords: list[dict] = Field(default_factory=list)
     pages: list[dict] = Field(default_factory=list)
+    builderPlan: dict = Field(default_factory=dict)
 
 
 async def contract(
@@ -234,24 +232,15 @@ async def contract(
             raise ValueError("contract must contain a deck throughline")
 
         raw_globals = candidate.globals
-        if not str(raw_globals.get("artDirection", "")).strip():
-            raise ValueError("globals.artDirection must not be blank")
-        if not str(raw_globals.get("visualMotif", "")).strip():
-            raise ValueError("globals.visualMotif must not be blank")
-        if raw_globals.get("componentAPI"):
-            raise ValueError("globals.componentAPI is retired; skills are assigned by the harness")
-        style_tokens = raw_globals.get("styleTokens")
-        if not isinstance(style_tokens, dict) or set(style_tokens) != _VISUAL_TOKEN_KEYS:
-            raise ValueError(
-                "globals.styleTokens must contain exactly: "
-                + ", ".join(sorted(_VISUAL_TOKEN_KEYS))
-            )
-        unsafe_tokens = sorted(
-            key for key, value in style_tokens.items()
-            if not str(value).strip() or _UNSAFE_CSS_VALUE.search(str(value))
+        unknown_global_fields = sorted(
+            set(raw_globals) - {"terminology", "notation"}
         )
-        if unsafe_tokens:
-            raise ValueError(f"globals.styleTokens contains unsafe values: {unsafe_tokens}")
+        if unknown_global_fields:
+            raise ValueError(
+                "course globals may only contain terminology and notation: "
+                + ", ".join(unknown_global_fields)
+            )
+        Globals.model_validate(raw_globals)
 
         supplements = generated_records(candidate.supplementalPrepRecords)
         valid_ids = set(research_ids) | {record.recordId for record in supplements}
@@ -277,6 +266,13 @@ async def contract(
             if len(bound) != len(set(bound)):
                 raise ValueError(f"page {page_id} binds duplicate prep records")
             used_ids.update(bound)
+
+        builder_plan = _SKILL_CATALOG.normalize_plan(
+            BuilderPlan.model_validate(candidate.builderPlan), page_ids
+        )
+        candidate = candidate.model_copy(
+            update={"builderPlan": builder_plan.model_dump(mode="json")}
+        )
 
         links_by_source: dict[str, list[ContinuityLink]] = {}
         for index, page in enumerate(candidate.pages, 1):
@@ -378,18 +374,6 @@ async def contract(
             ]
         })
 
-    planner_design = _CONFIG.agents.planner_deck_design
-    design_entrypoints = (
-        {planner_design.skill: planner_design.entrypoint}
-        if planner_design.enabled
-        else {}
-    )
-    design_skill_instruction = (
-        f"再加载 `{planner_design.skill}` skill，并在每个 skill_read 分块传入 "
-        f"entrypoint=`{planner_design.entrypoint}`；"
-        if planner_design.enabled
-        else ""
-    )
     agent = ManagedAgent(
         run_dir=run_dir,
         stage="planner",
@@ -406,11 +390,11 @@ async def contract(
                 else "无 Research 教法笔记时，每章 pedagogyNoteIds 为空且 rationale 自洽。"
             ),
             "全书主线、章节目标和选择性跨页关系形成完整叙事。",
-            "全局术语、符号和语义视觉契约只决定一次。",
+            "课程 globals 与 Builder skill control plane 严格分离。",
         ],
         steps=[
-            ("inspect-sources", "读取完整简报、备课资料、教法笔记和 skill。"),
-            ("lock-contract", "锁定学习序列、资料路由、必要的补充记录和 globals。"),
+            ("inspect-sources", "读取完整简报、备课资料和教法笔记。"),
+            ("lock-contract", "锁定课程契约与独立 Builder skill plan。"),
             ("submit-contract", "提交结构化课程契约。"),
         ],
         submit_tool="submit_contract",
@@ -418,10 +402,8 @@ async def contract(
         llm=llm,
         logger=logger,
         purpose="contract",
-        assigned_skill_entrypoints=design_entrypoints,
     )
     candidate = await agent.run_task(_PROMPT.format(
-        design_skill_instruction=design_skill_instruction,
         topic=brief.topic,
         audience=brief.audience,
         priorKnowledge=brief.priorKnowledge or "（未声明）",
@@ -442,6 +424,7 @@ async def contract(
             "rationale 直接根据受众、先验、目标与时长说明排序理由；"
         ),
         pedagogy_example='["r1-ped-1"]' if pedagogy_ids else "[]",
+        skill_catalog=_SKILL_CATALOG.planner_menu(),
     ))
     data = _ContractCandidate.model_validate(candidate).model_dump(mode="json")
     events: list[dict] = []
@@ -493,8 +476,9 @@ async def contract(
         durationBudget={"totalMin": brief.durationMin},
     )
     globals_ = Globals.model_validate(data.get("globals") or {})
+    builder_plan = BuilderPlan.model_validate(data.get("builderPlan") or {})
 
-    approved, notes = await confirm(outline, globals_, specs)
+    approved, notes = await confirm(outline, globals_, specs, builder_plan)
     if not approved:
         raise ContractRejected(notes or "课程契约未获批准")
 
@@ -503,11 +487,17 @@ async def contract(
     outline.confirmedAt = datetime.datetime.now(datetime.timezone.utc).isoformat()
     outline.revisionNotes = notes
     events.append({"kind": "contract-confirmed", "notes": notes})
+    events.append({
+        "kind": "builder-plan-selected",
+        "builderPlan": builder_plan.model_dump(mode="json"),
+        "skillCatalogSha256": _SKILL_CATALOG.sha256,
+    })
 
     return ContractOutput(
         outline=outline,
         globals=globals_,
         page_specs=specs,
+        builder_plan=builder_plan,
         supplemental_prep_records=supplemental_records,
         events=events,
     )

@@ -7,6 +7,7 @@ import pytest
 import notale.agents.research as research_module
 from notale.core.models import (
     Branch,
+    BuilderPlan,
     Chapter,
     CourseBrief,
     Globals,
@@ -17,6 +18,7 @@ from notale.core.models import (
     PedagogyNote,
     PrepRecord,
     PrepRecordOrigin,
+    SkillAssignment,
 )
 from oh_fake import FakeClient
 from oh_fake import ScriptedClient, no_network, text_msg, tool_call_msg
@@ -34,35 +36,18 @@ BRIEF = CourseBrief(topic="排序", audience="大二", durationMin=10, rawQuery=
 PEDAGOGY = [
     PedagogyNote(id="r1-ped-1", type="sequence", content="先建立概念，再进行应用。")
 ]
-VISUAL_GLOBALS = {
-    "styleTokens": {
-        "bg": "#0b0e14",
-        "surface": "#141923",
-        "ink": "#f3f5f7",
-        "muted": "#9ba6b5",
-        "accent": "#69a8ff",
-        "accent-2": "#f0b429",
-        "line": "rgba(243, 245, 247, 0.16)",
-        "font": '"Noto Sans SC", system-ui, sans-serif',
-        "mono": '"SFMono-Regular", Consolas, monospace',
-    },
-    "artDirection": "以清晰的数据状态和克制的对比建立统一技术叙事",
-    "visualMotif": "用同一条状态轨道表现算法推进与不变量",
-}
+CORE_PLAN = BuilderPlan()
 
 
 def _complete_contract_payload(payload):
     payload = json.loads(json.dumps(payload, ensure_ascii=False))
     payload.setdefault("throughline", "从可观察的状态变化建立算法选择依据")
-    globals_ = dict(VISUAL_GLOBALS)
-    globals_.update(payload.get("globals") or {})
-    globals_["styleTokens"] = dict(VISUAL_GLOBALS["styleTokens"])
-    globals_.pop("componentAPI", None)
-    if not globals_.get("artDirection"):
-        globals_["artDirection"] = VISUAL_GLOBALS["artDirection"]
-    if not globals_.get("visualMotif"):
-        globals_["visualMotif"] = VISUAL_GLOBALS["visualMotif"]
-    payload["globals"] = globals_
+    payload["globals"] = payload.get("globals") or {}
+    payload.setdefault("builderPlan", {
+        "schemaVersion": 2,
+        "sharedSkills": [],
+        "pageSkills": {},
+    })
     pages = payload.get("pages", [])
     for index, page in enumerate(pages, 1):
         page.setdefault("narrativeRole", f"推进第 {index} 个论证节点")
@@ -107,7 +92,7 @@ def _research_payload(records, pedagogy=None, notes=None):
 def _research_client(payload: str, fetch_url: str = "https://ref/sort") -> ScriptedClient:
     """研究 agent 脚本：走 skill/fetch/submit，task 由 Harness 自动维护。"""
     return ScriptedClient([
-        tool_call_msg("skill_read", {"name": "research-evidence"}),
+        tool_call_msg("skill_read", {"name": "web-access"}),
         tool_call_msg("fetch_web", {"url": fetch_url, "query": "排序"}),
         tool_call_msg("submit_research", {"payload": json.loads(payload)}),
         text_msg("submitted"),
@@ -211,7 +196,7 @@ async def test_research_fanout_uses_enabled_configured_specializations(monkeypat
         ResearchBranchConfig(
             id="case-library",
             focus="真实案例库",
-            skills=["research-evidence"],
+            skills=["web-access"],
             tools=["web_search", "fetch_web"],
         ),
         ResearchBranchConfig(
@@ -257,7 +242,7 @@ async def test_research_fanout_uses_enabled_configured_specializations(monkeypat
     proof_state = json.loads(
         (tmp_path / "agents/research/proof-path/tool-state.json").read_text()
     )
-    assert case_state["assignedSkills"] == ["research-evidence"]
+    assert case_state["assignedSkills"] == ["web-access"]
     assert {"web_search", "fetch_web"} <= set(case_state["allowedTools"])
     assert "web_search" not in proof_state["allowedTools"]
 
@@ -285,7 +270,7 @@ async def test_contract_validates_bindings_and_budgets(tmp_path):
                 {"title": "基础", "pageRange": [1, 3], "rationale": "先建立概念", "pedagogyNoteIds": ["r1-ped-1"]},
                 {"title": "进阶", "pageRange": [4, 5], "rationale": "再进行应用", "pedagogyNoteIds": ["r1-ped-1"]},
             ],
-            "globals": {"terminology": {"排序": "sort"}, "notation": {}, "styleTokens": {}, "componentAPI": [], "artDirection": ""},
+            "globals": {"terminology": {"排序": "sort"}, "notation": {}},
             "supplementalPrepRecords": [{
                 "recordId": "planner-quiz-check",
                 "branch": ["neither"],
@@ -404,11 +389,6 @@ async def test_contract_rejects_forged_planner_evidence_then_accepts_clean_recor
         json.dumps([PEDAGOGY[0].model_dump(mode="json")])
     )
     client = ScriptedClient([
-        tool_call_msg("skill_read", {"name": "curriculum-planning"}),
-        tool_call_msg(
-            "skill_read",
-            {"name": "frontend-slides", "entrypoint": "planner-contract"},
-        ),
         tool_call_msg("artifact_read", {"path": "course-brief.json"}),
         tool_call_msg("artifact_read", {"path": "prep-records.json"}),
         tool_call_msg("artifact_read", {"path": "pedagogy-notes.json"}),
@@ -444,21 +424,17 @@ async def test_contract_rejects_misdirected_continuity_then_accepts_repair(tmp_p
     invalid["pages"][3]["continuity"] = [{
         "pageId": "p5", "relation": "returns-to", "cue": "错误地指向后页",
     }]
-    invalid_visual = json.loads(json.dumps(valid))
-    invalid_visual["globals"]["styleTokens"].pop("mono")
+    invalid_control_plane = json.loads(json.dumps(valid))
+    invalid_control_plane["globals"]["builderSkill"] = "narrative-keynote"
     client = ScriptedClient([
-        tool_call_msg("skill_read", {"name": "curriculum-planning"}),
-        tool_call_msg(
-            "skill_read", {"name": "frontend-slides", "entrypoint": "planner-contract"}
-        ),
-        tool_call_msg("submit_contract", {"payload": invalid_visual}),
+        tool_call_msg("submit_contract", {"payload": invalid_control_plane}),
         tool_call_msg("submit_contract", {"payload": invalid}),
         tool_call_msg("submit_contract", {"payload": valid}),
     ])
     out = await contract(client, BRIEF, [prep], PEDAGOGY, run_dir=tmp_path)
     assert out.page_specs[3].continuity[0].pageId == "p1"
     session = (tmp_path / "agents/planner/main/session.json").read_text()
-    assert "styleTokens must contain exactly" in session
+    assert "course globals may only contain terminology and notation" in session
     assert "must target an earlier page" in session
 
 
@@ -513,7 +489,7 @@ async def test_contract_honors_explicit_thirty_page_budget(tmp_path):
 
 
 async def test_contract_rejection_stops_pipeline(tmp_path):
-    async def reject(outline, globals_, specs):
+    async def reject(outline, globals_, specs, builder_plan):
         return False, "第二章需要调整"
 
     payload = json.dumps(
@@ -557,7 +533,7 @@ async def test_build_page_uses_lazy_assigned_skills_and_task_state(tmp_path):
         pageId="p1", pageType=PageType.WORKED_EXAMPLE, centralMessage="快排",
         learningAction="解释划分", boundPrepRecords=["r1"],
     )
-    context = compile_context(spec, Globals(), [spec], {"r1": prep})
+    context = compile_context(spec, Globals(), [spec], {"r1": prep}, CORE_PLAN)
     llm = FakeClient(by_purpose={
         "build:p1": json.dumps(
             {
@@ -576,38 +552,32 @@ async def test_build_page_uses_lazy_assigned_skills_and_task_state(tmp_path):
     assert "context_read" in prompt
     assert "## skill:" not in prompt  # skill 按需通过工具加载，不再全量塞 prompt
     task = json.loads((tmp_path / "agents/builder/p1/task.json").read_text())
-    assert task["status"] == "completed" and task["totalTurns"] == 6
+    assert task["status"] == "completed" and task["totalTurns"] == 2
     tool_state = json.loads((tmp_path / "agents/builder/p1/tool-state.json").read_text())
-    assert tool_state["systemProfiles"][0]["name"] == "lecture-authoring"
-    assert len(tool_state["systemProfiles"][0]["sha256"]) == 64
-    assert context.skill_names == ["page-builder-core", "frontend-slides"]
-    assert context.skill_entrypoints == {"frontend-slides": "notale-page"}
-    assert tool_state["loadedSkills"] == ["page-builder-core", "frontend-slides"]
-    assert tool_state["loadedSkillEntrypoints"] == {
-        "page-builder-core": "default",
-        "frontend-slides": "notale-page",
-    }
+    assert len(tool_state["roleDocument"]["sha256"]) == 64
+    assert tool_state["skillPolicy"]["shared"] == ["narrative-keynote"]
+    assert context.skill_names == []
+    assert tool_state.get("loadedSkills", []) == []
+    assert "loadedSkillEntrypoints" not in tool_state
 
 
-def test_builder_page_design_slot_can_be_unplugged_with_one_flag(monkeypatch):
-    import notale.agents.builder as builder_module
-
-    page_design = builder_module._CONFIG.agents.builder_page_design.model_copy(
-        update={"enabled": False}
-    )
-    agents = builder_module._CONFIG.agents.model_copy(
-        update={"builder_page_design": page_design}
-    )
-    disabled = builder_module._CONFIG.model_copy(update={"agents": agents})
-    monkeypatch.setattr(builder_module, "_CONFIG", disabled)
+def test_specialized_builder_skill_is_selected_once_for_the_deck():
     spec = PageSpec(
         pageId="p1", pageType=PageType.WORKED_EXAMPLE, centralMessage="partition"
     )
+    plan = BuilderPlan(sharedSkills=[
+        SkillAssignment(
+            name="narrative-keynote",
+            profile="paper-and-ink",
+            instruction="用分区轴作为贯穿母题",
+        ),
+    ])
 
-    context = builder_module.compile_context(spec, Globals(), [spec], {})
+    context = compile_context(spec, Globals(), [spec], {}, plan)
 
-    assert context.skill_names == ["page-builder-core"]
-    assert context.skill_entrypoints == {}
+    assert context.skill_names == ["narrative-keynote"]
+    assert context.skills[0].profile == "paper-and-ink"
+    assert context.skills[0].instruction == "用分区轴作为贯穿母题"
 
 
 @pytest.mark.parametrize(
@@ -617,17 +587,19 @@ def test_builder_page_design_slot_can_be_unplugged_with_one_flag(monkeypatch):
         (PageType.CODE_RUNNABLE, "create-code-runtime"),
     ],
 )
-def test_page_design_precedes_page_type_skill(page_type, type_skill):
+def test_page_type_does_not_install_capability_without_planner_assignment(page_type, type_skill):
     spec = PageSpec(pageId="p1", pageType=page_type, centralMessage="partition")
 
-    context = compile_context(spec, Globals(), [spec], {})
+    context = compile_context(spec, Globals(), [spec], {}, CORE_PLAN)
 
-    assert context.skill_names == [
-        "page-builder-core",
-        "frontend-slides",
-        type_skill,
-    ]
-    assert context.skill_entrypoints == {"frontend-slides": "notale-page"}
+    assert context.skill_names == []
+
+    plan = BuilderPlan(
+        pageSkills={"p1": [SkillAssignment(name=type_skill)]},
+    )
+    context = compile_context(spec, Globals(), [spec], {}, plan)
+
+    assert context.skill_names == [type_skill]
 
 
 def test_context_is_a_thin_page_projection_without_cumulative_history():
@@ -652,9 +624,6 @@ def test_context_is_a_thin_page_projection_without_cumulative_history():
     globals_ = Globals(
         terminology={"快速排序": "quicksort", "归并排序": "mergesort"},
         notation={"n": "元素个数", "k": "值域大小"},
-        styleTokens={"primary": "#2563eb", "font": "system-ui"},
-        artDirection="克制的数据编辑风",
-        visualMotif="用一条分区轴贯穿状态变化",
     )
     outline = Outline(
         throughline="从状态变化建立算法判断",
@@ -662,7 +631,9 @@ def test_context_is_a_thin_page_projection_without_cumulative_history():
             title="机制", pageRange=(1, 80), narrativeGoal="理解 partition",
         )],
     )
-    short = compile_context(spec, globals_, [spec], {"r1": prep}, outline=outline)
+    short = compile_context(
+        spec, globals_, [spec], {"r1": prep}, CORE_PLAN, outline=outline
+    )
     prefix = [
         PageSpec(
             pageId=f"p{i}", pageType=PageType.WORKED_EXAMPLE,
@@ -670,36 +641,32 @@ def test_context_is_a_thin_page_projection_without_cumulative_history():
         )
         for i in range(1, 80)
     ]
-    late = compile_context(spec, globals_, [*prefix, spec], {"r1": prep}, outline=outline)
+    late = compile_context(
+        spec, globals_, [*prefix, spec], {"r1": prep}, CORE_PLAN, outline=outline
+    )
 
     payload = short.model_dump(mode="json")
-    assert set(payload) == {"page", "narrative", "visualContract", "sources", "skills"}
+    assert set(payload) == {"page", "narrative", "sources", "skills"}
     assert not ({"pageSpec", "globals", "neighborSummary", "coveredConcepts"} & set(payload))
     assert payload["page"]["terminology"] == {"快速排序": "quicksort"}
     assert payload["page"]["notation"] == {"n": "元素个数"}
     assert payload["sources"][0]["guardrails"]["limitations"] == ["未规定 pivot 策略"]
     assert "provenanceLink" not in payload["sources"][0]
-    assert short.visualContract.tokens["accent"] == "#2563eb"
     assert len(late.model_dump_json()) == len(short.model_dump_json())
 
 
-def test_old_planning_artifacts_compile_into_the_new_context_shape():
+def test_context_requires_an_explicit_normalized_builder_plan():
     spec = PageSpec.model_validate({
         "pageId": "p1", "pageType": "worked-example",
         "centralMessage": "旧命题", "boundPrepRecords": [],
     })
-    globals_ = Globals.model_validate({
-        "styleTokens": {"primary": "#123456", "secondary": "#abcdef"},
-        "componentAPI": ["legacy-widget"],
-        "artDirection": "旧视觉方向",
-    })
+    globals_ = Globals()
     outline = Outline.model_validate({
         "chapters": [{"title": "旧章", "pageRange": [1, 1]}],
     })
-    context = compile_context(spec, globals_, [spec], {}, outline=outline)
+    context = compile_context(spec, globals_, [spec], {}, CORE_PLAN, outline=outline)
     assert context.page.claim == "旧命题"
-    assert context.visualContract.tokens["accent"] == "#123456"
-    assert context.visualContract.tokens["accent-2"] == "#abcdef"
+    assert context.skill_names == []
     assert context.narrative.pageRole.startswith("推进本页命题")
 
 
@@ -807,8 +774,13 @@ def test_write_deck_package_is_offline_and_isolates_pages(tmp_path):
         PageArtifact(pageId="p2", html="<style>body{background:blue}</style><div id='same'>乙</div>", speakerNotes="提问后停顿"),
     ]
 
-    globals_ = Globals(styleTokens={"primary": "#ff5500", "bad": "red; display:none"})
-    deck, html = write_deck_package(tmp_path, pages, specs, "隔离测试", globals_=globals_)
+    deck, html = write_deck_package(
+        tmp_path,
+        pages,
+        specs,
+        "隔离测试",
+        style_tokens={"accent": "#ff5500", "bad": "red; display:none"},
+    )
 
     assert deck.format == "reveal-html-native"
     assert (tmp_path / "deck.html").read_text() == html

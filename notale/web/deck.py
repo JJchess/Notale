@@ -147,17 +147,15 @@ def assemble_deck(
     return AssembledDeck(pages=[p.pageId for p in ordered], totalDurationEstimate=total), deck_html
 
 
-def _safe_style_tokens(globals_: Globals | None) -> str:
-    if globals_ is None:
+def _safe_style_tokens(style_tokens: dict[str, str] | None) -> str:
+    if not style_tokens:
         return ""
     allowed = {
         "bg", "surface", "ink", "muted", "accent", "accent-2", "line", "font", "mono",
     }
-    aliases = {"primary": "accent", "secondary": "accent-2", "neutral": "ink"}
     declarations: list[str] = []
-    for raw_key, raw_value in sorted(globals_.styleTokens.items()):
+    for raw_key, raw_value in sorted(style_tokens.items()):
         key = re.sub(r"[^a-z0-9-]+", "-", str(raw_key).strip().lower()).strip("-")
-        key = aliases.get(key, key)
         value = str(raw_value).strip()
         if (
             key not in allowed
@@ -169,7 +167,7 @@ def _safe_style_tokens(globals_: Globals | None) -> str:
     return "\n:root {\n" + "\n".join(declarations) + "\n}\n" if declarations else ""
 
 
-def _copy_runtime(run_dir: Path, globals_: Globals | None = None) -> None:
+def _copy_runtime(run_dir: Path, style_tokens: dict[str, str] | None = None) -> None:
     """复制包内固定 Reveal vendor 与 Notale 薄外壳。"""
     reveal_source = Path(__file__).resolve().parent / "vendor" / "reveal"
     shell_source = Path(__file__).resolve().parent / "runtime"
@@ -196,7 +194,7 @@ def _copy_runtime(run_dir: Path, globals_: Globals | None = None) -> None:
     shutil.copy2(shell_source / "deck-shell.js", target / "deck-shell.js")
     base_css = (shell_source / "global.css").read_text(encoding="utf-8")
     (target / "global.css").write_text(
-        base_css.rstrip() + "\n" + _safe_style_tokens(globals_), encoding="utf-8"
+        base_css.rstrip() + "\n" + _safe_style_tokens(style_tokens), encoding="utf-8"
     )
 
 
@@ -207,13 +205,13 @@ def write_deck_package(
     title: str,
     *,
     language: str = "zh",
-    globals_: Globals | None = None,
+    style_tokens: dict[str, str] | None = None,
 ) -> tuple[AssembledDeck, str]:
     """写出可离线交付的 Reveal.js 目录包。"""
     deck, deck_html = assemble_deck(pages, specs, title)
     slides_dir = run_dir / "slides"
     slides_dir.mkdir(parents=True, exist_ok=True)
-    _copy_runtime(run_dir, globals_)
+    _copy_runtime(run_dir, style_tokens)
     for page in pages:
         document = _SLIDE_DOCUMENT.format(
             language=html_mod.escape(language, quote=True),

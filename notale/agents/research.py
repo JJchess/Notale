@@ -46,11 +46,11 @@ _COMMON_ALLOWED_TOOLS = [
     if name not in _SAFE_SPECIAL_TOOLS and name != "submit_research"
 ]
 
-_PROMPT = """你是备课研究员，本 worker 的专能是：
+_PROMPT = """本 worker 的研究专能是：
 {focus}
 
-先用 skill_read 加载本 worker 已分配的 skills：{skills}。再用 artifact_read 读取
-course-brief.json，必要时读取完整 input/material.txt。围绕本专能为这门课查备课资料：
+{skill_instruction}再用 artifact_read 读取 course-brief.json，必要时读取完整
+input/material.txt。围绕本专能为这门课查备课资料：
 
 课题：{topic}｜受众：{audience}｜时长：{durationMin} 分钟｜先验：{priorKnowledge}
 {material}
@@ -111,10 +111,16 @@ def _role_for(branch: ResearchBranchConfig):
     unknown = sorted(set(branch.tools) - _SAFE_SPECIAL_TOOLS)
     if unknown:  # Config typing rejects this; keep the runtime boundary fail-closed too.
         raise ValueError(f"research branch {branch.id} requests unsafe tools: {unknown}")
+    unknown_skills = sorted(
+        set(branch.skills) - set(RESEARCH.skill_policy.assignable)
+    )
+    if unknown_skills:
+        raise ValueError(
+            f"research branch {branch.id} requests unauthorized skills: {unknown_skills}"
+        )
     return replace(
         RESEARCH,
         allowed_tools=[*_COMMON_ALLOWED_TOOLS, *branch.tools, "submit_research"],
-        skills=list(branch.skills),
     )
 
 
@@ -215,11 +221,17 @@ async def _run_agent(
         logger=logger,
         extra_tools=extra_tools,
         purpose=f"research:{branch.id}",
+        assigned_skills=list(branch.skills),
     )
     submission = await managed.run_task(
         _PROMPT.format(
             focus=branch.focus,
-            skills="、".join(branch.skills) or "无专用 skill",
+            skill_instruction=(
+                "先用 skill_read 把已分配的可选 skills 读到 EOF："
+                + "、".join(branch.skills)
+                + "。"
+                if branch.skills else "本 worker 没有分配可选 skill。"
+            ),
             tools="、".join(branch.tools) or "无专用工具",
             network_instructions=network_instructions,
             evidence_discipline=evidence_discipline,

@@ -1,9 +1,10 @@
 """Run-scoped tools for independently governed Notale workers.
 
-The builder surface is intentionally semantic and file-backed: a model emits the page
-HTML once into ``workspace/page.html``; checking and submission subsequently pass only
-small metadata and a content hash. The private scratch directory is reserved for
-deterministic harness checks and is not exposed to the model as a tool surface.
+The builder surface is intentionally semantic and file-backed: one ``submit_page``
+call writes the page, performs deterministic delivery checks, and accepts the final
+artifact. Failed pages remain in ``workspace/page.html`` for targeted repair. The
+private scratch directory is reserved for harness checks and is not exposed to the
+model as a tool surface.
 """
 
 from __future__ import annotations
@@ -17,12 +18,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
 
-import yaml
 from openharness.tools.base import BaseTool, ToolExecutionContext, ToolResult
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
-from notale.core.models import AgentTaskState, PageArtifact, PageStatus
+from notale.core.models import AgentTaskState, PageArtifact, PageStatus, SkillAssignment
 from notale.utils.config import get_config
+from notale.utils.skill_catalog import load_skill_descriptor
 
 
 _TOOLS_CONFIG = get_config().tools
@@ -53,10 +54,6 @@ def _sha256(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
-class EmptyInput(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-
 @dataclass
 class ManagedToolState:
     run_dir: Path
@@ -80,10 +77,6 @@ class ManagedToolState:
     @property
     def page_path(self) -> Path:
         return self.workspace / "page.html"
-
-    @property
-    def candidate_path(self) -> Path:
-        return self.worker_dir / "candidate.json"
 
     @property
     def task_path(self) -> Path:
@@ -112,8 +105,7 @@ class ManagedToolState:
             self.event_callback(kind, fields)
 
     def skill_progress_key(self, name: str) -> str:
-        skill = self.allowed_skills[name]
-        return f"{name}::{skill['entrypoint']}"
+        return name
 
     def skill_is_loaded(self, name: str) -> bool:
         if name not in self.allowed_skills:
@@ -121,20 +113,17 @@ class ManagedToolState:
         key = self.skill_progress_key(name)
         epoch = int(self.tool_state.get("skillReloadEpoch", 0) or 0)
         loaded_epochs = self.tool_state.get("skillLoadedEpochs") or {}
-        loaded_entrypoints = self.tool_state.get("loadedSkillEntrypoints") or {}
         return (
             name in (self.tool_state.get("loadedSkills") or [])
-            and loaded_entrypoints.get(name) == self.allowed_skills[name]["entrypoint"]
             and loaded_epochs.get(key) == epoch
         )
 
     def missing_loaded_skills(self) -> list[str]:
         missing: list[str] = []
-        for name, skill in self.allowed_skills.items():
+        for name in self.allowed_skills:
             if self.skill_is_loaded(name):
                 continue
-            locked = skill.get("locked_entrypoint")
-            missing.append(f"{name}:{locked}" if locked else name)
+            missing.append(name)
         return missing
 
     def complete_step(self, step_id: str, evidence: str) -> None:
@@ -159,110 +148,43 @@ class ManagedToolState:
                            evidence=evidence, source="harness")
         self.save_task()
 
-    def invalidate_candidate(self, reason: str) -> None:
-        if self.candidate_path.exists():
-            self.candidate_path.unlink()
-        self.tool_state.pop("pageCandidate", None)
-        self.save_tool_state()
-        self.event("page-candidate-invalidated", reason=reason)
-
-    def has_current_candidate(self) -> bool:
-        if not self.page_path.is_file() or not self.candidate_path.is_file():
-            return False
-        try:
-            candidate = json.loads(self.candidate_path.read_text(encoding="utf-8"))
-            return candidate.get("sha256") == _sha256(self.page_path.read_text(encoding="utf-8"))
-        except (OSError, ValueError, TypeError):
-            return False
-
-_SKILL_TOKEN = re.compile(r"^[a-z0-9][a-z0-9-]*$")
-
-
-def _parse_skill_document(text: str) -> tuple[dict[str, Any], str]:
-    metadata: dict[str, Any] = {}
-    body = text
-    if text.startswith("---\n"):
-        marker = text.find("\n---\n", 4)
-        if marker >= 0:
-            metadata = yaml.safe_load(text[4:marker]) or {}
-            body = text[marker + 5 :]
-    return metadata, body.strip()
-
-
 def load_assigned_skills(
     skills_root: Path,
-    names: list[str],
-    entrypoints: dict[str, str] | None = None,
+    assignments: list[SkillAssignment],
 ) -> dict[str, dict[str, Any]]:
-    """Load one authorized entrypoint per skill without exposing sibling resources."""
-
-    locked_entrypoints = dict(entrypoints or {})
-    unknown = sorted(set(locked_entrypoints) - set(names))
-    if unknown:
-        raise ValueError(f"skill entrypoints name unassigned skills: {unknown}")
+    """Load each assigned skill plus only its selected profile and local instruction."""
     assigned: dict[str, dict[str, Any]] = {}
-    for name in names:
-        if _SKILL_TOKEN.fullmatch(name) is None:
-            raise ValueError(f"invalid assigned skill name: {name!r}")
-        path = skills_root / name / "SKILL.md"
-        if not path.is_file():
-            raise ValueError(f"assigned skill not found: {name}")
-        text = path.read_text(encoding="utf-8")
-        metadata, body = _parse_skill_document(text)
-        declared = str(metadata.get("name", name))
-        if declared != name:
-            raise ValueError(f"skill directory/name mismatch: {name} != {declared}")
-        entrypoint_dir = path.parent / "entrypoints"
-        locked = locked_entrypoints.get(name)
-        if locked is not None and _SKILL_TOKEN.fullmatch(locked) is None:
-            raise ValueError(f"invalid skill entrypoint for {name}: {locked!r}")
-        skill_metadata = metadata.get("metadata") or {}
-        if not isinstance(skill_metadata, dict):
-            raise ValueError(f"skill metadata must be a mapping: {name}")
-        default_entrypoint = str(skill_metadata.get("default-entrypoint") or "default")
-        if _SKILL_TOKEN.fullmatch(default_entrypoint) is None:
-            raise ValueError(
-                f"invalid default skill entrypoint for {name}: {default_entrypoint!r}"
-            )
-        resolved_entrypoint = locked or default_entrypoint
-        selected_path = path
-        selected_metadata = metadata
-        selected_body = body
-        if resolved_entrypoint != default_entrypoint:
-            selected_path = entrypoint_dir / f"{resolved_entrypoint}.md"
-            if not selected_path.is_file():
+    for assignment in assignments:
+        descriptor = load_skill_descriptor(skills_root, assignment.name)
+        parts = [descriptor.body]
+        if assignment.profile is not None:
+            if assignment.profile not in descriptor.profiles:
                 raise ValueError(
-                    f"assigned skill entrypoint not found: {name}:{resolved_entrypoint}"
+                    f"profile does not belong to skill: "
+                    f"{assignment.name}:{assignment.profile}"
                 )
-            entrypoint_metadata, selected_body = _parse_skill_document(
-                selected_path.read_text(encoding="utf-8")
-            )
-            if entrypoint_metadata:
-                entrypoint_name = str(entrypoint_metadata.get("name", name))
-                if entrypoint_name != name:
-                    raise ValueError(
-                        f"skill entrypoint name mismatch: {name} != {entrypoint_name}"
-                    )
-                selected_metadata = {**metadata, **entrypoint_metadata}
-        if not selected_body:
-            raise ValueError(f"assigned skill entrypoint is empty: {name}:{resolved_entrypoint}")
-        assigned[name] = {
-            "metadata": selected_metadata,
-            "content": selected_body,
-            "path": str(selected_path),
-            "entrypoint": resolved_entrypoint,
-            "locked_entrypoint": locked,
+            parts.append(descriptor.profile_references[assignment.profile])
+        elif descriptor.profiles:
+            raise ValueError(f"skill requires one profile: {assignment.name}")
+        if assignment.instruction:
+            parts.append("# Assignment Instruction\n\n" + assignment.instruction)
+        content = "\n\n".join(parts)
+        assigned[assignment.name] = {
+            "metadata": {
+                "name": descriptor.name,
+                "description": descriptor.description,
+            },
+            "content": content,
+            "path": str(skills_root / assignment.name / "SKILL.md"),
+            "assignment": assignment.model_dump(mode="json"),
+            "sha256": _sha256(content),
+            "catalogSha256": descriptor.sha256,
         }
     return assigned
 
 
 class SkillReadInput(BaseModel):
     name: str
-    entrypoint: str | None = Field(
-        default=None,
-        pattern=r"^[a-z0-9][a-z0-9-]*$",
-        description="Exact entrypoint from the assigned PageContext.skills item",
-    )
     offset: int = Field(default=0, ge=0)
     limit: int = Field(
         default=_TOOLS_CONFIG.skill_chunk_default_chars,
@@ -278,9 +200,8 @@ class SkillReadInput(BaseModel):
 class AssignedSkillTool(BaseTool):
     name = "skill_read"
     description = (
-        "Read an assigned skill entrypoint sequentially in bounded chunks until nextOffset=EOF. "
-        "Use the exact entrypoint from PageContext.skills when present; unassigned skills and "
-        "entrypoints are denied."
+        "Read an assigned skill sequentially in bounded chunks until nextOffset=EOF. "
+        "Unassigned skills are denied."
     )
     input_model = SkillReadInput
 
@@ -296,43 +217,17 @@ class AssignedSkillTool(BaseTool):
         if skill is None:
             return ToolResult(output=f"skill is not assigned: {arguments.name}", is_error=True)
         content = str(skill["content"])
-        resolved_entrypoint = str(skill["entrypoint"])
-        locked_entrypoint = skill.get("locked_entrypoint")
-        if locked_entrypoint is not None and arguments.entrypoint != locked_entrypoint:
-            return ToolResult(
-                output=(
-                    f"skill entrypoint mismatch for {arguments.name}: pass "
-                    f"entrypoint={locked_entrypoint!r} exactly as assigned in PageContext"
-                ),
-                is_error=True,
-                metadata={
-                    "skill": arguments.name,
-                    "expectedEntrypoint": locked_entrypoint,
-                },
-            )
-        if locked_entrypoint is None and arguments.entrypoint not in (
-            None,
-            resolved_entrypoint,
-        ):
-            return ToolResult(
-                output=(
-                    f"skill entrypoint is not assigned: "
-                    f"{arguments.name}:{arguments.entrypoint}"
-                ),
-                is_error=True,
-            )
         loaded = self.state.tool_state.setdefault("loadedSkills", [])
         epoch = int(self.state.tool_state.get("skillReloadEpoch", 0) or 0)
         loaded_epochs = self.state.tool_state.setdefault("skillLoadedEpochs", {})
         key = self.state.skill_progress_key(arguments.name)
         if self.state.skill_is_loaded(arguments.name):
             return ToolResult(output=(
-                f"skill {arguments.name!r} entrypoint {resolved_entrypoint!r} is already loaded "
+                f"skill {arguments.name!r} is already loaded "
                 "in full and no compact has occurred; "
                 "continue directly with the task. Model-supplied reload cannot override the harness."
             ), metadata={
                 "skill": arguments.name,
-                "entrypoint": resolved_entrypoint,
                 "alreadyLoaded": True,
                 "reloadEpoch": epoch,
             })
@@ -347,13 +242,12 @@ class AssignedSkillTool(BaseTool):
         if arguments.offset != expected_offset:
             return ToolResult(
                 output=(
-                    f"skill {arguments.name!r} entrypoint {resolved_entrypoint!r} must be read "
+                    f"skill {arguments.name!r} must be read "
                     f"sequentially; continue with offset={expected_offset}"
                 ),
                 is_error=True,
                 metadata={
                     "skill": arguments.name,
-                    "entrypoint": resolved_entrypoint,
                     "expectedOffset": expected_offset,
                     "reloadEpoch": epoch,
                 },
@@ -363,7 +257,6 @@ class AssignedSkillTool(BaseTool):
         complete = next_offset >= len(content)
         progress_store[key] = {
             "skill": arguments.name,
-            "entrypoint": resolved_entrypoint,
             "reloadEpoch": epoch,
             "totalChars": len(content),
             "nextOffset": None if complete else next_offset,
@@ -373,15 +266,15 @@ class AssignedSkillTool(BaseTool):
         if complete:
             if arguments.name not in loaded:
                 loaded.append(arguments.name)
-            loaded_entrypoints = self.state.tool_state.setdefault("loadedSkillEntrypoints", {})
-            loaded_entrypoints[arguments.name] = resolved_entrypoint
             loaded_epochs[key] = epoch
             event_kind = "skill-loaded"
         self.state.save_tool_state()
         self.state.event(
             event_kind,
             skill=arguments.name,
-            entrypoint=resolved_entrypoint,
+            profile=skill["assignment"].get("profile"),
+            skillSha256=skill["sha256"],
+            catalogSkillSha256=skill["catalogSha256"],
             offset=arguments.offset,
             returnedChars=len(chunk),
             totalChars=len(content),
@@ -389,14 +282,15 @@ class AssignedSkillTool(BaseTool):
             reloadEpoch=epoch,
         )
         header = (
-            f"[skill name={arguments.name!r} entrypoint={resolved_entrypoint!r} "
-            f"offset={arguments.offset} "
+            f"[skill name={arguments.name!r} offset={arguments.offset} "
             f"returnedChars={len(chunk)} totalChars={len(content)} "
             f"nextOffset={next_offset if not complete else 'EOF'}]\n"
         )
         return ToolResult(output=header + chunk, metadata={
             "skill": arguments.name,
-            "entrypoint": resolved_entrypoint,
+            "profile": skill["assignment"].get("profile"),
+            "skillSha256": skill["sha256"],
+            "catalogSkillSha256": skill["catalogSha256"],
             "totalChars": len(content),
             "nextOffset": None if complete else next_offset,
             "complete": complete,
@@ -526,8 +420,31 @@ class ContextReadTool(BaseTool):
         })
 
 
-class PageWriteInput(BaseModel):
+class SubmitPageInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     html: str = Field(min_length=1)
+    designSpec: dict[str, Any] = Field(default_factory=dict)
+    boundReferences: list[str] = Field(default_factory=list)
+    speakerNotes: str = ""
+
+    @model_validator(mode="before")
+    @classmethod
+    def accept_json_encoded_metadata(cls, value: Any) -> Any:
+        """Tolerate providers that stringify structured tool arguments."""
+        if not isinstance(value, dict):
+            return value
+        normalized = dict(value)
+        for key in ("designSpec", "boundReferences"):
+            raw = normalized.get(key)
+            if not isinstance(raw, str):
+                continue
+            try:
+                normalized[key] = json.loads(raw)
+            except json.JSONDecodeError:
+                if key == "boundReferences" and raw.strip():
+                    normalized[key] = [raw.strip()]
+        return normalized
 
 
 _DOCUMENT_SHELL = re.compile(
@@ -546,52 +463,6 @@ def _normalize_page_fragment(html: str) -> tuple[str, int]:
     """
     normalized, removed = _DOCUMENT_SHELL.subn("", html)
     return normalized.strip(), removed
-
-
-class PageWriteTool(BaseTool):
-    name = "page_write"
-    description = (
-        "Create or fully replace the assigned workspace/page.html fragment. "
-        "Harmless doctype/html/head/body wrapper tags are removed automatically."
-    )
-    input_model = PageWriteInput
-
-    def __init__(self, state: ManagedToolState) -> None:
-        self.state = state
-
-    async def execute(self, arguments: PageWriteInput, context: ToolExecutionContext) -> ToolResult:
-        del context
-        missing_skills = self.state.missing_loaded_skills()
-        if missing_skills:
-            return ToolResult(
-                output=(
-                    "page_write blocked: read every assigned skill to nextOffset=EOF first; "
-                    f"missing={missing_skills}"
-                ),
-                is_error=True,
-                metadata={"missingSkills": missing_skills},
-            )
-        html, removed_shell_tags = _normalize_page_fragment(arguments.html)
-        if not html:
-            return ToolResult(output="page fragment is empty after document-shell normalization",
-                              is_error=True)
-        self.state.page_path.parent.mkdir(parents=True, exist_ok=True)
-        _atomic_write(self.state.page_path, html)
-        self.state.invalidate_candidate("page_write")
-        digest = _sha256(html)
-        self.state.event(
-            "page-written", chars=len(html), sha256=digest,
-            normalizedDocumentShellTags=removed_shell_tags,
-        )
-        normalization = (
-            f" normalizedDocumentShellTags={removed_shell_tags}."
-            if removed_shell_tags else ""
-        )
-        return ToolResult(output=(
-            f"page.html written chars={len(html)} sha256={digest}.{normalization} "
-            "Next required action: call check_page now. Do not reread page.html unless "
-            "check_page reports a concrete failure."
-        ), metadata={"sha256": digest, "normalizedDocumentShellTags": removed_shell_tags})
 
 
 class PageReadInput(BaseModel):
@@ -618,16 +489,11 @@ class PageReadTool(BaseTool):
         del context
         if not self.state.page_path.is_file():
             return ToolResult(output="page.html does not exist", is_error=True)
-        if self.state.has_current_candidate():
-            return ToolResult(output=(
-                "page_read skipped: the current page already passed check_page. "
-                "Call submit_page now."
-            ), metadata={"candidateReady": True})
         text = self.state.page_path.read_text(encoding="utf-8")
         chunk = text[arguments.offset : arguments.offset + arguments.limit]
         return ToolResult(output=(f"[page.html recovery-read offset={arguments.offset} "
                                   f"returnedChars={len(chunk)} totalChars={len(text)}; "
-                                  "do not scan the whole file; call check_page]\n" + chunk))
+                                  "use only for targeted recovery]\n" + chunk))
 
 
 class PageSearchInput(BaseModel):
@@ -654,11 +520,6 @@ class PageSearchTool(BaseTool):
         del context
         if not self.state.page_path.is_file():
             return ToolResult(output="page.html does not exist", is_error=True)
-        if self.state.has_current_candidate():
-            return ToolResult(output=(
-                "page_search skipped: the current page already passed check_page. "
-                "Call submit_page now."
-            ), metadata={"candidateReady": True})
         text = self.state.page_path.read_text(encoding="utf-8")
         matches = [f"{number}: {line}" for number, line in enumerate(text.splitlines(), 1)
                    if arguments.query.lower() in line.lower()][: arguments.max_results]
@@ -672,7 +533,10 @@ class PagePatchInput(BaseModel):
 
 class PagePatchTool(BaseTool):
     name = "page_patch"
-    description = "Replace one exact occurrence in workspace/page.html; use page_write as fallback."
+    description = (
+        "Repair one exact occurrence in the page retained after a failed submit_page; "
+        "the harness automatically rechecks and submits the repaired page."
+    )
     input_model = PagePatchInput
 
     def __init__(self, state: ManagedToolState) -> None:
@@ -680,8 +544,27 @@ class PagePatchTool(BaseTool):
 
     async def execute(self, arguments: PagePatchInput, context: ToolExecutionContext) -> ToolResult:
         del context
+        missing_skills = self.state.missing_loaded_skills()
+        if missing_skills:
+            return ToolResult(
+                output=(
+                    "page_patch blocked: read every assigned skill to nextOffset=EOF first; "
+                    f"missing={missing_skills}"
+                ),
+                is_error=True,
+                metadata={"missingSkills": missing_skills},
+            )
         if not self.state.page_path.is_file():
             return ToolResult(output="page.html does not exist", is_error=True)
+        metadata = self.state.tool_state.get("pageSubmission")
+        if not isinstance(metadata, dict):
+            return ToolResult(
+                output=(
+                    "page_patch is available only after submit_page retained a failed page; "
+                    "call submit_page with the complete HTML and metadata"
+                ),
+                is_error=True,
+            )
         text = self.state.page_path.read_text(encoding="utf-8")
         count = text.count(arguments.old)
         if count != 1:
@@ -689,13 +572,9 @@ class PagePatchTool(BaseTool):
                               is_error=True)
         updated = text.replace(arguments.old, arguments.new, 1)
         _atomic_write(self.state.page_path, updated)
-        self.state.invalidate_candidate("page_patch")
         digest = _sha256(updated)
         self.state.event("page-patched", chars=len(updated), sha256=digest)
-        return ToolResult(output=(
-            f"page.html patched chars={len(updated)} sha256={digest}. "
-            "Call check_page now; do not reread unless that check fails."
-        ))
+        return _validate_and_accept_page(self.state, metadata)
 
 
 class DictSubmitInput(BaseModel):
@@ -705,10 +584,30 @@ class DictSubmitInput(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def accept_direct_artifact(cls, value: Any) -> Any:
-        """Accept native tool calls while retaining the legacy payload envelope."""
-        if isinstance(value, dict) and "payload" not in value:
-            return {"payload": value}
-        return value
+        """Normalize native tool calls and provider-stringified structured fields."""
+        if not isinstance(value, dict):
+            return value
+        payload = value.get("payload") if "payload" in value else value
+        if isinstance(payload, str) and payload.strip().startswith("{"):
+            try:
+                decoded_payload = json.loads(payload)
+            except json.JSONDecodeError:
+                decoded_payload = None
+            if isinstance(decoded_payload, dict):
+                payload = decoded_payload
+        if not isinstance(payload, dict):
+            return value
+        normalized = dict(payload)
+        for key, raw in normalized.items():
+            if not isinstance(raw, str) or not raw.strip().startswith(("[", "{")):
+                continue
+            try:
+                decoded = json.loads(raw)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(decoded, (list, dict)):
+                normalized[key] = decoded
+        return {"payload": normalized}
 
 
 class SubmitArtifactTool(BaseTool):
@@ -738,128 +637,153 @@ class SubmitArtifactTool(BaseTool):
         return ToolResult(output="submission accepted", metadata={"accepted": True})
 
 
-class PageCandidateInput(BaseModel):
-    designSpec: dict[str, Any] = Field(default_factory=dict)
-    boundReferences: list[str] = Field(default_factory=list)
-    speakerNotes: str = ""
-
-
 _SCRIPT = re.compile(r"<script\b[^>]*>(.*?)</script\s*>", re.I | re.S)
 
 
-class CheckPageTool(BaseTool):
-    name = "check_page"
-    description = (
-        "Check workspace/page.html with schema, offline-delivery and inline-JS syntax rules; "
-        "store a hash-bound candidate for submit_page."
+def _page_failure(
+    state: ManagedToolState,
+    html: str,
+    failures: list[str],
+    *,
+    scripts: int = 0,
+) -> ToolResult:
+    state.event("page-checked", passed=False, htmlChars=len(html), failures=failures)
+    return ToolResult(
+        output=json.dumps({
+            "passed": False,
+            "failures": failures,
+            "htmlChars": len(html),
+            "inlineScripts": scripts,
+        }, ensure_ascii=False, indent=2),
+        is_error=True,
+        metadata={"validationFailed": True},
     )
-    input_model = PageCandidateInput
 
-    def __init__(self, state: ManagedToolState) -> None:
-        self.state = state
 
-    async def execute(self, arguments: PageCandidateInput, context: ToolExecutionContext) -> ToolResult:
-        del context
-        from notale.core.stages.page_check import page_delivery_failures
+def _validate_and_accept_page(
+    state: ManagedToolState,
+    metadata: dict[str, Any],
+) -> ToolResult:
+    """Run the deterministic page gate and persist an accepted submission."""
+    from notale.core.stages.page_check import page_delivery_failures
 
-        if not self.state.page_path.is_file():
-            return ToolResult(output="page.html does not exist; call page_write first", is_error=True)
-        html = self.state.page_path.read_text(encoding="utf-8")
-        payload = arguments.model_dump(mode="json")
-        payload.update({
-            "pageId": str(self.state.validation_context.get("page_id", self.state.task.workerId)),
-            "html": html,
-            "status": PageStatus.DRAFTED.value,
-        })
+    if not state.page_path.is_file():
+        return ToolResult(output="workspace/page.html does not exist", is_error=True)
+    html = state.page_path.read_text(encoding="utf-8")
+    payload = dict(metadata)
+    payload.update({
+        "pageId": str(state.validation_context.get("page_id", state.task.workerId)),
+        "html": html,
+        "status": PageStatus.DRAFTED.value,
+    })
+    try:
+        page = PageArtifact.model_validate(payload)
+    except ValidationError as exc:
+        return _page_failure(state, html, [f"page schema rejected: {exc}"])
+
+    failures = page_delivery_failures(
+        page,
+        set(state.validation_context.get("valid_record_ids", [])),
+        run_dir=state.run_dir,
+    )
+    scripts = _SCRIPT.findall(html)
+    if scripts:
+        check_file = state.scratch / ".inline-page-check.js"
+        check_file.parent.mkdir(parents=True, exist_ok=True)
+        _atomic_write(check_file, "\n;\n".join(scripts))
         try:
-            page = PageArtifact.model_validate(payload)
-        except ValidationError as exc:
-            return ToolResult(output=f"page schema rejected: {exc}", is_error=True)
-        failures = page_delivery_failures(
-            page,
-            set(self.state.validation_context.get("valid_record_ids", [])),
-            run_dir=self.state.run_dir,
-        )
-        scripts = _SCRIPT.findall(html)
-        if scripts:
-            check_file = self.state.scratch / ".inline-page-check.js"
-            check_file.parent.mkdir(parents=True, exist_ok=True)
-            _atomic_write(check_file, "\n;\n".join(scripts))
-            try:
-                checked = subprocess.run(
-                    ["node", "--check", check_file.name], cwd=check_file.parent,
-                    capture_output=True, text=True,
-                    timeout=_TOOLS_CONFIG.inline_js_check_timeout_sec, check=False,
+            checked = subprocess.run(
+                ["node", "--check", check_file.name], cwd=check_file.parent,
+                capture_output=True, text=True,
+                timeout=_TOOLS_CONFIG.inline_js_check_timeout_sec, check=False,
+            )
+            if checked.returncode != 0:
+                failures.append(
+                    "inline JS syntax error: "
+                    + checked.stderr.strip()[: _TOOLS_CONFIG.inline_js_error_max_chars]
                 )
-                if checked.returncode != 0:
-                    failures.append(
-                        "inline JS syntax error: "
-                        + checked.stderr.strip()[: _TOOLS_CONFIG.inline_js_error_max_chars]
-                    )
-            except (OSError, subprocess.SubprocessError) as exc:
-                failures.append(f"inline JS syntax check unavailable: {exc}")
-        if failures:
-            self.state.invalidate_candidate("check_page_failed")
-            return ToolResult(output=json.dumps({
-                "passed": False, "failures": failures, "htmlChars": len(html),
-            }, ensure_ascii=False, indent=2), is_error=True)
-        digest = _sha256(html)
-        candidate = {
+        except (OSError, subprocess.SubprocessError) as exc:
+            failures.append(f"inline JS syntax check unavailable: {exc}")
+
+    pending = [
+        step.id for step in state.task.steps
+        if step.id not in {"implement-check", "submit-page"} and step.status != "completed"
+    ]
+    if pending:
+        failures.append(f"required harness events are missing before submission: {pending}")
+    if failures:
+        return _page_failure(state, html, failures, scripts=len(scripts))
+
+    try:
+        validated = state.submit_validator(page.model_dump(mode="json"))
+    except (ValidationError, ValueError, TypeError) as exc:
+        return _page_failure(state, html, [f"submission rejected: {exc}"], scripts=len(scripts))
+
+    digest = _sha256(html)
+    state.complete_step("implement-check", f"page checks passed sha256={digest}")
+    state.event("page-checked", passed=True, sha256=digest, htmlChars=len(html))
+    state.submission = validated
+    state.save_submission()
+    state.complete_step("submit-page", f"submission.json sha256={digest}")
+    state.complete_all_steps(f"validated page accepted sha256={digest}")
+    state.task.status = "completed"
+    state.task.submittedArtifact = "submission.json"
+    state.save_task()
+    state.event("submission-accepted", artifact="submission.json", sha256=digest)
+    return ToolResult(
+        output=json.dumps({
+            "passed": True,
+            "accepted": True,
             "sha256": digest,
-            "page": page.model_dump(mode="json"),
-            "checkedAt": _now(),
-        }
-        _atomic_write(self.state.candidate_path, json.dumps(candidate, ensure_ascii=False, indent=2))
-        self.state.tool_state["pageCandidate"] = {"sha256": digest, "checkedAt": candidate["checkedAt"]}
-        self.state.save_tool_state()
-        self.state.complete_step("implement-check", f"check_page passed sha256={digest}")
-        self.state.event("page-checked", passed=True, sha256=digest, htmlChars=len(html))
-        return ToolResult(output=json.dumps({
-            "passed": True, "sha256": digest, "htmlChars": len(html),
+            "htmlChars": len(html),
             "inlineScripts": len(scripts),
-        }, ensure_ascii=False), metadata={"candidateSha256": digest})
+        }, ensure_ascii=False),
+        metadata={"accepted": True, "sha256": digest},
+    )
 
 
 class SubmitPageTool(BaseTool):
     name = "submit_page"
-    description = "Submit the last passing hash-bound page candidate. Takes no HTML and no metadata."
-    input_model = EmptyInput
+    description = (
+        "Write the complete HTML fragment and page metadata, run schema/offline/reference/inline-JS "
+        "checks, and atomically accept the page when all checks pass."
+    )
+    input_model = SubmitPageInput
 
     def __init__(self, state: ManagedToolState) -> None:
         self.state = state
 
-    async def execute(self, arguments: EmptyInput, context: ToolExecutionContext) -> ToolResult:
-        del arguments, context
-        if not self.state.page_path.is_file() or not self.state.candidate_path.is_file():
-            return ToolResult(output="no passing page candidate; call check_page first", is_error=True)
-        html = self.state.page_path.read_text(encoding="utf-8")
-        candidate = json.loads(self.state.candidate_path.read_text(encoding="utf-8"))
-        digest = _sha256(html)
-        if digest != candidate.get("sha256"):
-            self.state.invalidate_candidate("stale_candidate")
-            return ToolResult(output="page.html changed after check_page; check again", is_error=True)
-        pending = [
-            step.id for step in self.state.task.steps
-            if step.id != "submit-page" and step.status != "completed"
-        ]
-        if pending:
+    async def execute(self, arguments: SubmitPageInput, context: ToolExecutionContext) -> ToolResult:
+        del context
+        missing_skills = self.state.missing_loaded_skills()
+        if missing_skills:
             return ToolResult(
-                output=f"required harness events are missing before submission: {pending}",
+                output=(
+                    "submit_page blocked: read every assigned skill to nextOffset=EOF first; "
+                    f"missing={missing_skills}"
+                ),
+                is_error=True,
+                metadata={"missingSkills": missing_skills},
+            )
+        html, removed_shell_tags = _normalize_page_fragment(arguments.html)
+        if not html:
+            return ToolResult(
+                output="page fragment is empty after document-shell normalization",
                 is_error=True,
             )
-        try:
-            validated = self.state.submit_validator(candidate["page"])
-        except (ValidationError, ValueError, TypeError) as exc:
-            return ToolResult(output=f"submission rejected: {exc}", is_error=True)
-        self.state.submission = validated
-        self.state.save_submission()
-        self.state.complete_step("submit-page", f"submission.json sha256={digest}")
-        self.state.complete_all_steps(f"accepted page candidate sha256={digest}")
-        self.state.task.status = "completed"
-        self.state.task.submittedArtifact = "submission.json"
-        self.state.save_task()
-        self.state.event("submission-accepted", artifact="submission.json", sha256=digest)
-        return ToolResult(output="submission accepted", metadata={"accepted": True, "sha256": digest})
+        metadata = arguments.model_dump(mode="json", exclude={"html"})
+        self.state.page_path.parent.mkdir(parents=True, exist_ok=True)
+        _atomic_write(self.state.page_path, html)
+        self.state.tool_state["pageSubmission"] = metadata
+        self.state.save_tool_state()
+        digest = _sha256(html)
+        self.state.event(
+            "page-written", chars=len(html), sha256=digest,
+            normalizedDocumentShellTags=removed_shell_tags,
+        )
+        result = _validate_and_accept_page(self.state, metadata)
+        result.metadata["normalizedDocumentShellTags"] = removed_shell_tags
+        return result
 
 
 class ReportBlockerInput(BaseModel):
@@ -903,11 +827,9 @@ def build_managed_tools(
         "artifact_read": lambda: ArtifactReadTool(state),
         "artifact_search": lambda: ArtifactSearchTool(state),
         "context_read": lambda: ContextReadTool(state),
-        "page_write": lambda: PageWriteTool(state),
         "page_read": lambda: PageReadTool(state),
         "page_search": lambda: PageSearchTool(state),
         "page_patch": lambda: PagePatchTool(state),
-        "check_page": lambda: CheckPageTool(state),
         "report_blocker": lambda: ReportBlockerTool(state),
     }
     if {"acquire_media", "generate_media"} & set(allowed_names):

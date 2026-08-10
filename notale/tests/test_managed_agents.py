@@ -11,29 +11,39 @@ import pytest
 from notale.agents.builder import BuilderWorker, compile_context
 from notale.agents.managed import ManagedAgent, ManagedAgentStalled
 from notale.core.observability import ExperimentLogger
-from notale.core.models import Branch, Globals, PageSpec, PageType, PrepRecord
-from notale.roles.base import RoleSpec
+from notale.core.models import (
+    Branch,
+    BuilderPlan,
+    Globals,
+    PageSpec,
+    PageType,
+    PrepRecord,
+    SkillAssignment,
+)
+from notale.roles.base import RoleSkillPolicy, RoleSpec
 from notale.tools.agent_tools import (
     ArtifactReadInput,
     ArtifactSearchInput,
     DictSubmitInput,
     ContextReadInput,
-    EmptyInput,
-    PageCandidateInput,
     PagePatchInput,
     PageReadInput,
-    PageWriteInput,
     SkillReadInput,
+    SubmitPageInput,
 )
 from oh_fake import FakeClient
 
 
+CORE_PLAN = BuilderPlan()
+
+
 def _role(**overrides) -> RoleSpec:
+    authorized = tuple(overrides.pop("skills", []))
     values = {
         "name": "test-worker",
         "system_prompt": "Use tools and submit.",
         "allowed_tools": ["report_blocker", "submit_research"],
-        "skills": [],
+        "skill_policy": RoleSkillPolicy(assignable=authorized),
         "max_turns": 12,
         "max_total_turns": 20,
         "max_duration_sec": 60,
@@ -62,12 +72,11 @@ def _agent(tmp_path: Path, *, llm=None, role=None) -> ManagedAgent:
 
 async def _load_all_assigned_skills(agent: ManagedAgent) -> None:
     reader = next(tool for tool in agent.tools if tool.name == "skill_read")
-    for name, assigned in agent.state.allowed_skills.items():
+    for name in agent.state.allowed_skills:
         offset = 0
         while True:
-            entrypoint = assigned.get("locked_entrypoint")
             result = await reader.execute(
-                SkillReadInput(name=name, entrypoint=entrypoint, offset=offset),
+                SkillReadInput(name=name, offset=offset),
                 None,  # type: ignore[arg-type]
             )
             assert not result.is_error
@@ -83,6 +92,22 @@ async def test_valid_submission_is_authoritative_task_evidence(tmp_path):
     direct = DictSubmitInput.model_validate({"ok": True})
     assert direct.payload == {"ok": True}
     assert DictSubmitInput(payload={"legacy": True}).payload == {"legacy": True}
+    encoded = DictSubmitInput.model_validate({
+        "items": '[{"id":"r1"}]',
+        "settings": '{"mode":"strict"}',
+        "literal": "[not valid JSON",
+    })
+    assert encoded.payload == {
+        "items": [{"id": "r1"}],
+        "settings": {"mode": "strict"},
+        "literal": "[not valid JSON",
+    }
+    whole_payload = DictSubmitInput.model_validate({
+        "payload": '{"items":[{"id":"r1"}],"mode":"strict"}',
+    })
+    assert whole_payload.payload == {
+        "items": [{"id": "r1"}], "mode": "strict",
+    }
     result = await submit.execute(direct, None)  # type: ignore[arg-type]
     assert not result.is_error
     task = json.loads((agent.worker_dir / "task.json").read_text())
@@ -103,13 +128,14 @@ def test_tool_catalog_matches_whitelist_order_and_fails_closed(tmp_path):
         )
 
 
-def test_skill_required_tools_fail_closed(tmp_path):
+def test_skill_metadata_does_not_expand_role_permissions(tmp_path):
     role = _role(
         allowed_tools=["skill_read", "submit_research"],
-        skills=["course-intake"],
+        skills=["web-access"],
     )
-    with pytest.raises(ValueError, match="requires tools denied"):
-        _agent(tmp_path, role=role)
+    agent = _agent(tmp_path, role=role)
+    assert [tool.name for tool in agent.tools] == ["skill_read", "submit_research"]
+    assert agent.state.tool_state["assignedSkills"] == []
 
 
 def test_role_upgrade_restarts_unfinished_checkpoint_but_preserves_budget(tmp_path):
@@ -129,13 +155,13 @@ def test_role_upgrade_restarts_unfinished_checkpoint_but_preserves_budget(tmp_pa
     assert upgraded.state.tool_state["governanceReads"] == []
 
 
-def test_standard_allowed_tools_skill_metadata_fail_closed(tmp_path):
+def test_builder_skill_cannot_expand_role_permissions(tmp_path):
     role = _role(
         allowed_tools=["skill_read", "submit_research"],
         skills=["create-sim"],
     )
-    with pytest.raises(ValueError, match="requires tools denied"):
-        _agent(tmp_path, role=role)
+    agent = _agent(tmp_path, role=role)
+    assert [tool.name for tool in agent.tools] == ["skill_read", "submit_research"]
 
 
 async def test_long_artifact_supports_offsets_and_full_search(tmp_path):
@@ -158,9 +184,8 @@ async def test_long_artifact_supports_offsets_and_full_search(tmp_path):
 async def test_large_skill_is_read_in_complete_bounded_chunks(tmp_path):
     role = _role(
         allowed_tools=["skill_read", "context_read", "acquire_media", "generate_media",
-                       "page_write", "page_read", "page_search",
-                       "page_patch", "check_page", "submit_page"],
-        skills=["page-builder-core"],
+                       "submit_page", "page_read", "page_search", "page_patch"],
+        skills=["narrative-keynote"],
     )
     agent = ManagedAgent(
         run_dir=tmp_path, stage="builder", worker_id="p1", role=role,
@@ -168,17 +193,20 @@ async def test_large_skill_is_read_in_complete_bounded_chunks(tmp_path):
         submit_tool="submit_page", submit_validator=lambda payload: payload,
         llm=FakeClient(by_purpose={"test-worker": '{"html":"<p>x</p>"}'}),
         validation_context={"page_id": "p1", "context_path": "context.json"},
+        assigned_skills=[SkillAssignment(
+            name="narrative-keynote", profile="paper-and-ink"
+        )],
     )
     skill = next(tool for tool in agent.tools if tool.name == "skill_read")
-    first = await skill.execute(SkillReadInput(name="page-builder-core", limit=256), None)  # type: ignore[arg-type]
+    first = await skill.execute(SkillReadInput(name="narrative-keynote", limit=256), None)  # type: ignore[arg-type]
     assert not first.is_error and "totalChars=" in first.output and "nextOffset=256" in first.output
     assert agent.state.tool_state.get("loadedSkills") in (None, [])
-    repeated = await skill.execute(SkillReadInput(name="page-builder-core", limit=256), None)  # type: ignore[arg-type]
+    repeated = await skill.execute(SkillReadInput(name="narrative-keynote", limit=256), None)  # type: ignore[arg-type]
     assert repeated.is_error and repeated.metadata["expectedOffset"] == 256
     offset = 256
     while True:
         chunk = await skill.execute(
-            SkillReadInput(name="page-builder-core", offset=offset, limit=256),
+            SkillReadInput(name="narrative-keynote", offset=offset, limit=256),
             None,  # type: ignore[arg-type]
         )
         assert not chunk.is_error
@@ -186,33 +214,31 @@ async def test_large_skill_is_read_in_complete_bounded_chunks(tmp_path):
         if next_offset is None:
             break
         offset = int(next_offset)
-    assert agent.state.tool_state["loadedSkills"] == ["page-builder-core"]
-    assert agent.state.tool_state["loadedSkillEntrypoints"] == {
-        "page-builder-core": "default"
-    }
+    assert agent.state.tool_state["loadedSkills"] == ["narrative-keynote"]
+    assert "loadedSkillEntrypoints" not in agent.state.tool_state
     denied = await skill.execute(
-        SkillReadInput(name="page-builder-core", limit=256, reload=True), None  # type: ignore[arg-type]
+        SkillReadInput(name="narrative-keynote", limit=256, reload=True), None  # type: ignore[arg-type]
     )
     assert not denied.is_error and "cannot override the harness" in denied.output
     agent.state.tool_state["skillReloadEpoch"] = 1
     agent.state.save_tool_state()
     reloaded = await skill.execute(
-        SkillReadInput(name="page-builder-core", limit=256, reload=True), None  # type: ignore[arg-type]
+        SkillReadInput(name="narrative-keynote", limit=256, reload=True), None  # type: ignore[arg-type]
     )
     assert "nextOffset=256" in reloaded.output
 
 
-async def test_frontend_slides_entrypoint_is_locked_and_auditable(tmp_path):
+async def test_single_skill_document_is_loaded_and_auditable(tmp_path):
     tools = [
         "skill_read", "context_read", "acquire_media", "generate_media",
-        "page_write", "page_read", "page_search", "page_patch", "check_page", "submit_page",
+        "submit_page", "page_read", "page_search", "page_patch",
     ]
-    role = _role(allowed_tools=tools, skills=["frontend-slides"])
+    role = _role(allowed_tools=tools, skills=["narrative-keynote"])
     logger = ExperimentLogger(tmp_path, config={})
     agent = ManagedAgent(
         run_dir=tmp_path,
         stage="builder",
-        worker_id="notale-page",
+        worker_id="narrative",
         role=role,
         objective="page",
         acceptance_criteria=["valid"],
@@ -221,162 +247,170 @@ async def test_frontend_slides_entrypoint_is_locked_and_auditable(tmp_path):
         submit_validator=lambda payload: payload,
         llm=FakeClient(by_purpose={"test-worker": '{"html":"<p>x</p>"}'}),
         validation_context={"page_id": "p1", "context_path": "context.json"},
-        assigned_skill_entrypoints={"frontend-slides": "notale-page"},
         logger=logger,
+        assigned_skills=[SkillAssignment(
+            name="narrative-keynote", profile="paper-and-ink"
+        )],
     )
     skill = next(tool for tool in agent.tools if tool.name == "skill_read")
-    missing = await skill.execute(
-        SkillReadInput(name="frontend-slides"), None  # type: ignore[arg-type]
-    )
-    wrong = await skill.execute(
-        SkillReadInput(name="frontend-slides", entrypoint="full-deck"),
-        None,  # type: ignore[arg-type]
-    )
-    assert missing.is_error and wrong.is_error
     loaded = await skill.execute(
-        SkillReadInput(name="frontend-slides", entrypoint="notale-page"),
+        SkillReadInput(name="narrative-keynote"),
         None,  # type: ignore[arg-type]
     )
     assert not loaded.is_error and loaded.metadata["nextOffset"] is None
-    assert "# Notale Page Composition" in loaded.output
-    assert "# Frontend Slides" not in loaded.output
+    assert "# Narrative Keynote" in loaded.output
+    assert "# Paper and Ink" in loaded.output
+    assert "# Neon Cyber" not in loaded.output
     state = json.loads((agent.worker_dir / "tool-state.json").read_text())
-    assert state["assignedSkillEntrypoints"] == {"frontend-slides": "notale-page"}
-    assert state["loadedSkillEntrypoints"] == {"frontend-slides": "notale-page"}
+    assert "assignedSkillEntrypoints" not in state
+    assert "loadedSkillEntrypoints" not in state
     trace = [
         json.loads(line)
         for line in (tmp_path / "logs/agent-traces.jsonl").read_text().splitlines()
     ]
     loaded_event = next(record for record in trace if record["kind"] == "skill-loaded")
-    assert loaded_event["skill"] == "frontend-slides"
-    assert loaded_event["entrypoint"] == "notale-page"
+    assert loaded_event["skill"] == "narrative-keynote"
+    assert "entrypoint" not in loaded_event
     assert loaded_event["nextOffset"] is None
 
-    full_deck = ManagedAgent(
-        run_dir=tmp_path,
-        stage="builder",
-        worker_id="full-deck",
-        role=role,
-        objective="deck",
-        acceptance_criteria=["valid"],
-        steps=[],
-        submit_tool="submit_page",
-        submit_validator=lambda payload: payload,
-        llm=FakeClient(by_purpose={"test-worker": '{"html":"<p>x</p>"}'}),
-        validation_context={"page_id": "p2", "context_path": "context.json"},
-    )
-    full_deck_skill = next(tool for tool in full_deck.tools if tool.name == "skill_read")
-    default = await full_deck_skill.execute(
-        SkillReadInput(name="frontend-slides"), None  # type: ignore[arg-type]
-    )
-    assert not default.is_error and default.metadata["entrypoint"] == "full-deck"
-    assert "# Frontend Slides" in default.output
 
-
-async def test_frontend_slides_planner_entrypoint_uses_planner_tool_contract(tmp_path):
-    role = _role(
-        name="planner",
-        allowed_tools=[
-            "skill_read", "artifact_read", "artifact_search", "submit_contract",
-        ],
-        skills=["frontend-slides"],
-    )
-    agent = ManagedAgent(
-        run_dir=tmp_path,
-        stage="planner",
-        worker_id="main",
-        role=role,
-        objective="visual contract",
-        acceptance_criteria=["valid"],
-        steps=[],
-        submit_tool="submit_contract",
-        submit_validator=lambda payload: payload,
-        llm=FakeClient(by_purpose={"test-worker": '{"ok":true}'}),
-        assigned_skill_entrypoints={"frontend-slides": "planner-contract"},
-    )
-    reader = next(tool for tool in agent.tools if tool.name == "skill_read")
-    loaded = await reader.execute(
-        SkillReadInput(name="frontend-slides", entrypoint="planner-contract"),
-        None,  # type: ignore[arg-type]
-    )
-    assert not loaded.is_error
-    assert "# Notale Deck Visual Contract" in loaded.output
-    assert "page_write" not in agent.role.allowed_tools
-
-
-async def test_page_candidate_is_hash_bound_and_submit_carries_no_html(tmp_path):
+async def test_atomic_submit_retains_failure_and_patch_auto_submits(tmp_path):
     prep = PrepRecord(recordId="r1", branch=[Branch.NEITHER], content={"claim": "partition"})
     spec = PageSpec(
         pageId="p1", pageType=PageType.WORKED_EXAMPLE, centralMessage="partition",
         learningAction="trace partition", boundPrepRecords=["r1"],
     )
-    context = compile_context(spec, Globals(), [spec], {"r1": prep})
+    context = compile_context(spec, Globals(), [spec], {"r1": prep}, CORE_PLAN)
     (tmp_path / "page-contexts").mkdir()
     (tmp_path / "page-contexts/p1.json").write_text(context.model_dump_json())
     worker = BuilderWorker(
         llm=FakeClient(by_purpose={"build:p1": '{"html":"<section data-notale-page><p>partition</p></section>"}'}),
         run_dir=tmp_path, context=context,
     )
-    writer = next(tool for tool in worker.agent.tools if tool.name == "page_write")
     context_reader = next(tool for tool in worker.agent.tools if tool.name == "context_read")
-    checker = next(tool for tool in worker.agent.tools if tool.name == "check_page")
     submitter = next(tool for tool in worker.agent.tools if tool.name == "submit_page")
     await context_reader.execute(ContextReadInput(), None)  # type: ignore[arg-type]
-    blocked = await writer.execute(
-        PageWriteInput(html="<section data-notale-page><p>partition</p></section>"),
+    rejected = await submitter.execute(
+        SubmitPageInput(
+            html="<section data-notale-page><p>partition TODO</p></section>",
+            boundReferences=["r1"], speakerNotes="explain",
+        ),
         None,  # type: ignore[arg-type]
     )
-    assert blocked.is_error and "frontend-slides:notale-page" in blocked.output
-    await _load_all_assigned_skills(worker.agent)
-    await writer.execute(PageWriteInput(html="<section data-notale-page><p>partition</p></section>"), None)  # type: ignore[arg-type]
-    checked = await checker.execute(
-        PageCandidateInput(boundReferences=["r1"], speakerNotes="explain"), None  # type: ignore[arg-type]
-    )
-    assert not checked.is_error
+    assert rejected.is_error and "TODO" in rejected.output
+    assert worker.agent.state.submission is None
+    assert (worker.agent.worker_dir / "workspace/page.html").is_file()
     patched = next(tool for tool in worker.agent.tools if tool.name == "page_patch")
-    await patched.execute(PagePatchInput(old="partition", new="partition invariant"), None)  # type: ignore[arg-type]
-    stale = await submitter.execute(EmptyInput(), None)  # type: ignore[arg-type]
-    assert stale.is_error and "check_page" in stale.output
-    await checker.execute(
-        PageCandidateInput(boundReferences=["r1"], speakerNotes="explain"), None  # type: ignore[arg-type]
+    accepted = await patched.execute(
+        PagePatchInput(old="partition TODO", new="partition invariant"),
+        None,  # type: ignore[arg-type]
     )
+    assert not accepted.is_error and accepted.metadata["accepted"] is True
+    assert worker.agent.state.submission is not None
     reader = next(tool for tool in worker.agent.tools if tool.name == "page_read")
-    skipped = await reader.execute(PageReadInput(), None)  # type: ignore[arg-type]
-    assert not skipped.is_error and "Call submit_page now" in skipped.output
-    accepted = await submitter.execute(EmptyInput(), None)  # type: ignore[arg-type]
-    assert not accepted.is_error
-    assert "html" not in submitter.input_model.model_json_schema().get("properties", {})
+    recovered = await reader.execute(PageReadInput(), None)  # type: ignore[arg-type]
+    assert not recovered.is_error and "partition invariant" in recovered.output
+    assert set(submitter.input_model.model_json_schema()["properties"]) == {
+        "html", "designSpec", "boundReferences", "speakerNotes",
+    }
+    assert not (worker.agent.worker_dir / "candidate.json").exists()
 
 
-async def test_page_write_normalizes_document_shell_before_check(tmp_path):
-    spec = PageSpec(pageId="p1", pageType=PageType.WORKED_EXAMPLE, centralMessage="partition")
-    context = compile_context(spec, Globals(), [spec], {})
+async def test_atomic_submit_normalizes_document_shell_before_check(tmp_path):
+    prep = PrepRecord(recordId="r1", branch=[Branch.NEITHER], content={"claim": "partition"})
+    spec = PageSpec(
+        pageId="p1", pageType=PageType.WORKED_EXAMPLE, centralMessage="partition",
+        boundPrepRecords=["r1"],
+    )
+    context = compile_context(spec, Globals(), [spec], {"r1": prep}, CORE_PLAN)
     (tmp_path / "page-contexts").mkdir()
     (tmp_path / "page-contexts/p1.json").write_text(context.model_dump_json())
     worker = BuilderWorker(
         llm=FakeClient(by_purpose={"build:p1": '{"html":"<p>partition</p>"}'}),
         run_dir=tmp_path, context=context,
     )
-    writer = next(tool for tool in worker.agent.tools if tool.name == "page_write")
-    checker = next(tool for tool in worker.agent.tools if tool.name == "check_page")
+    context_reader = next(tool for tool in worker.agent.tools if tool.name == "context_read")
+    submitter = next(tool for tool in worker.agent.tools if tool.name == "submit_page")
+    await context_reader.execute(ContextReadInput(), None)  # type: ignore[arg-type]
     await _load_all_assigned_skills(worker.agent)
-    result = await writer.execute(PageWriteInput(html=(
-        "<!doctype html><html><head><style>.x{color:red}</style></head>"
+    result = await submitter.execute(SubmitPageInput(
+        html=("<!doctype html><html><head><style>.x{color:red}</style></head>"
             "<body><section data-notale-page><p>partition</p></section></body></html>"
-    )), None)  # type: ignore[arg-type]
+        ),
+        boundReferences=["r1"], speakerNotes="explain",
+    ), None)  # type: ignore[arg-type]
     saved = (worker.agent.worker_dir / "workspace/page.html").read_text()
     assert not result.is_error and result.metadata["normalizedDocumentShellTags"] == 7
     assert "<body" not in saved.lower() and "<html" not in saved.lower()
-    checked = await checker.execute(PageCandidateInput(speakerNotes="explain"), None)  # type: ignore[arg-type]
-    assert not checked.is_error
+
+
+def test_submit_page_accepts_json_encoded_metadata():
+    parsed = SubmitPageInput.model_validate({
+        "html": "<section data-notale-page><p>x</p></section>",
+        "designSpec": '{"layout":"split"}',
+        "boundReferences": '["r1"]',
+        "speakerNotes": "explain",
+    })
+    assert parsed.designSpec == {"layout": "split"}
+    assert parsed.boundReferences == ["r1"]
+
+
+async def test_successful_page_patch_ends_agent_loop_without_submit_round_trip(tmp_path):
+    from openharness.api.client import ApiMessageCompleteEvent
+    from openharness.api.usage import UsageSnapshot
+    from openharness.engine.messages import ConversationMessage, ToolUseBlock
+
+    class RepairClient:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def stream_message(self, request):
+            del request
+            self.calls += 1
+            tool = (
+                ToolUseBlock(name="submit_page", input={
+                    "html": "<section data-notale-page><p>partition TODO</p></section>",
+                    "designSpec": {}, "boundReferences": [], "speakerNotes": "",
+                })
+                if self.calls == 1
+                else ToolUseBlock(name="page_patch", input={
+                    "old": "partition TODO", "new": "partition invariant",
+                })
+            )
+            yield ApiMessageCompleteEvent(
+                message=ConversationMessage(role="assistant", content=[tool]),
+                usage=UsageSnapshot(input_tokens=1, output_tokens=1),
+                stop_reason="tool_use",
+            )
+
+    client = RepairClient()
+    role = _role(
+        name="builder",
+        allowed_tools=["submit_page", "page_patch", "report_blocker"],
+    )
+    agent = ManagedAgent(
+        run_dir=tmp_path, stage="builder", worker_id="p1", role=role,
+        objective="page", acceptance_criteria=["valid"],
+        steps=[("implement-check", "check"), ("submit-page", "submit")],
+        submit_tool="submit_page", submit_validator=lambda value: value,
+        llm=client, purpose="build:p1",
+        validation_context={"page_id": "p1", "valid_record_ids": []},
+    )
+
+    artifact = await agent.run_task("build and repair")
+
+    assert client.calls == 2
+    assert artifact["html"] == (
+        "<section data-notale-page><p>partition invariant</p></section>"
+    )
+    assert agent.state.task.status == "completed"
 
 
 async def test_completed_skill_overshoot_is_idempotent(tmp_path):
     role = _role(
         allowed_tools=["skill_read", "context_read", "acquire_media", "generate_media",
-                       "page_write", "page_read", "page_search",
-                       "page_patch", "check_page", "submit_page"],
-        skills=["page-builder-core"],
+                       "submit_page", "page_read", "page_search", "page_patch"],
+        skills=["create-sim"],
     )
     agent = ManagedAgent(
         run_dir=tmp_path, stage="builder", worker_id="p1", role=role,
@@ -384,11 +418,12 @@ async def test_completed_skill_overshoot_is_idempotent(tmp_path):
         submit_tool="submit_page", submit_validator=lambda payload: payload,
         llm=FakeClient(by_purpose={"test-worker": '{"html":"<p>x</p>"}'}),
         validation_context={"page_id": "p1", "context_path": "context.json"},
+        assigned_skills=["create-sim"],
     )
     skill = next(tool for tool in agent.tools if tool.name == "skill_read")
-    await skill.execute(SkillReadInput(name="page-builder-core"), None)  # type: ignore[arg-type]
+    await skill.execute(SkillReadInput(name="create-sim"), None)  # type: ignore[arg-type]
     repeated = await skill.execute(
-        SkillReadInput(name="page-builder-core", offset=12000), None  # type: ignore[arg-type]
+        SkillReadInput(name="create-sim", offset=12000), None  # type: ignore[arg-type]
     )
     assert not repeated.is_error and "already loaded in full" in repeated.output
 
@@ -470,10 +505,10 @@ async def test_protocol_8_unfinished_checkpoint_resumes_without_migration(tmp_pa
     assert agent.state.task.totalTurns == 4
 
 
-async def test_builder_crosses_query_cap_and_continues_same_session(tmp_path):
+async def test_builder_atomic_submit_completes_in_one_model_turn(tmp_path):
     role = _role(
         name="builder", max_turns=2, max_total_turns=6,
-        allowed_tools=["page_write", "check_page", "submit_page", "report_blocker"],
+        allowed_tools=["submit_page", "page_patch", "report_blocker"],
     )
     payload = json.dumps({"html": "<section data-notale-page><p>partition</p></section>"})
     agent = ManagedAgent(
@@ -488,8 +523,8 @@ async def test_builder_crosses_query_cap_and_continues_same_session(tmp_path):
     task = json.loads((agent.worker_dir / "task.json").read_text())
     session = json.loads((agent.worker_dir / "session.json").read_text())
     assert artifact["html"].startswith("<section")
-    assert task["status"] == "completed" and task["totalTurns"] == 3
-    assert len(session["messages"]) == 6
+    assert task["status"] == "completed" and task["totalTurns"] == 1
+    assert len(session["messages"]) == 2
 
 
 async def test_completed_builder_is_not_reopened_by_an_outer_repair_loop(tmp_path):
@@ -501,7 +536,7 @@ async def test_completed_builder_is_not_reopened_by_an_outer_repair_loop(tmp_pat
         centralMessage="partition invariant", learningAction="explain invariant",
         boundPrepRecords=["r1"],
     )
-    context = compile_context(spec, Globals(), [spec], {"r1": prep})
+    context = compile_context(spec, Globals(), [spec], {"r1": prep}, CORE_PLAN)
     (tmp_path / "page-contexts").mkdir()
     (tmp_path / "page-contexts/p1.json").write_text(context.model_dump_json(), encoding="utf-8")
     page = json.dumps({

@@ -1,11 +1,11 @@
-"""Declarative role contracts consumed by the agent runtime."""
+"""Runtime representation of one Markdown-backed agent role contract."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from pathlib import Path
 
 from notale.utils.config import get_config
-from notale.roles.authoring import SystemProfile
 
 
 _CONFIG = get_config()
@@ -15,12 +15,33 @@ _EMERGENCY = _CONFIG.governance.emergency_limits
 
 
 @dataclass(frozen=True)
+class RoleSkillPolicy:
+    """Optional skill capabilities authorized by a role document."""
+
+    assignable: tuple[str, ...] = ()
+    shared: tuple[str, ...] = ()
+    page: tuple[str, ...] = ()
+
+    @property
+    def authorized(self) -> list[str]:
+        return list(dict.fromkeys((*self.assignable, *self.shared, *self.page)))
+
+    def metadata(self) -> dict[str, list[str]]:
+        return {
+            "assignable": list(self.assignable),
+            "shared": list(self.shared),
+            "page": list(self.page),
+        }
+
+
+@dataclass(frozen=True)
 class RoleSpec:
     name: str
     system_prompt: str
     allowed_tools: list[str] = field(default_factory=list)
-    skills: list[str] = field(default_factory=list)
-    system_profiles: tuple[SystemProfile, ...] = ()
+    skill_policy: RoleSkillPolicy = field(default_factory=RoleSkillPolicy)
+    document_path: Path | None = None
+    document_sha256: str = ""
     max_turns: int = _EMERGENCY.query_max_turns
     max_tokens: int = _CAPABILITIES.max_output_tokens
     base_url: str = _MODEL.base_url
@@ -39,9 +60,14 @@ class RoleSpec:
     version: str = _CONFIG.versions.agent_protocol
 
     def rendered_system_prompt(self) -> str:
-        blocks = [profile.content.strip() for profile in self.system_profiles]
-        blocks.append(self.system_prompt.strip())
-        return "\n\n".join(block for block in blocks if block)
+        return self.system_prompt.strip()
 
-    def system_profile_metadata(self) -> list[dict[str, str]]:
-        return [profile.metadata() for profile in self.system_profiles]
+    @property
+    def authorized_skills(self) -> list[str]:
+        return self.skill_policy.authorized
+
+    def document_metadata(self) -> dict[str, str]:
+        return {
+            "path": str(self.document_path) if self.document_path else "",
+            "sha256": self.document_sha256,
+        }

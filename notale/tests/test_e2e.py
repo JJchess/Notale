@@ -55,15 +55,11 @@ _CONTRACT = json.dumps(
         "globals": {
             "terminology": {"排序": "sort"},
             "notation": {"n": "元素个数"},
-            "styleTokens": {
-                "bg": "#08130f", "surface": "#10231b", "ink": "#eefbf5",
-                "muted": "#9ab8aa", "accent": "#1a7f5a", "accent-2": "#e0a229",
-                "line": "rgba(238, 251, 245, 0.18)",
-                "font": '"Noto Sans SC", system-ui, sans-serif',
-                "mono": '"SFMono-Regular", Consolas, monospace',
-            },
-            "artDirection": "克制编辑风",
-            "visualMotif": "以贯穿页面的分区轴表示状态边界",
+        },
+        "builderPlan": {
+            "schemaVersion": 2,
+            "sharedSkills": [],
+            "pageSkills": {},
         },
         "supplementalPrepRecords": [{
             "recordId": "planner-recursion-structure",
@@ -131,7 +127,7 @@ def _research_factory(log: list[str] | None = None):
         if log is not None:
             log.append(agent)
         return ScriptedClient([
-            tool_call_msg("skill_read", {"name": "research-evidence"}),
+            tool_call_msg("skill_read", {"name": "web-access"}),
             tool_call_msg("fetch_web", {"url": "https://ref/sort", "query": "排序"}),
             tool_call_msg("submit_research", {"payload": json.loads(_RESEARCH)}),
             text_msg("submitted"),
@@ -213,7 +209,8 @@ async def test_full_run_offline(tmp_path):
     # 产物齐全
     for name in (
         "course-brief.json", "prep-records.json", "pedagogy-notes.json", "research-notes.json",
-        "outline.json", "globals.json", "page-specs.json", "planner-prep-records.json",
+        "outline.json", "globals.json", "page-specs.json", "builder-plan.json",
+        "planner-prep-records.json",
         "manifest.json", "events.jsonl",
         "assembled-deck.json", "consistency-report.json",
         "quality-report.json", "profile-snapshot.json", "asset-manifest.json",
@@ -244,28 +241,35 @@ async def test_full_run_offline(tmp_path):
         "emergency_limits"
     ]["worker_max_turns"] == 128
     builder_profile = session_start["config"]["agentRoles"]["builder"]
-    assert builder_profile["systemProfiles"][0]["name"] == "lecture-authoring"
+    assert len(builder_profile["roleDocument"]["sha256"]) == 64
+    assert builder_profile["skillPolicy"]["shared"] == ["narrative-keynote"]
     assert "正式讲义" in builder_profile["systemPrompt"]
+    assert "systemProfiles" not in json.dumps(session_start, ensure_ascii=False)
     call_records = [
         json.loads(line) for line in (run / "logs/llm-calls.jsonl").read_text().splitlines()
         if '"kind": "openharness-turn"' in line
     ]
     assert call_records and all("messages" not in record for record in call_records)
     traces = [json.loads(line) for line in (run / "logs/agent-traces.jsonl").read_text().splitlines()]
+    assert all("systemProfiles" not in record for record in traces)
     assert any(r["kind"] == "tool-start" and r["tool"] == "fetch_web" for r in traces)
     assert any(r["kind"] == "assistant-turn" and r["message"] for r in traces)
     assert any(
         r["kind"] == "skills-assigned"
-        and any(
-            profile.get("name") == "lecture-authoring"
-            for profile in r.get("systemProfiles", [])
-        )
+        and r.get("agent") == "builder:p1"
+        and len(r.get("roleDocument", {}).get("sha256", "")) == 64
         for r in traces
     )
     assert any(
         r["kind"] == "skills-assigned"
         and r.get("agent") == "planner:main"
-        and r.get("skillEntrypoints") == {"frontend-slides": "planner-contract"}
+        and r.get("skills") == []
+        for r in traces
+    )
+    assert any(
+        r["kind"] == "builder-plan-selected"
+        and r.get("builderPlan", {}).get("schemaVersion") == 2
+        and r.get("builderPlan", {}).get("sharedSkills") == []
         for r in traces
     )
     planner_records = json.loads((run / "planner-prep-records.json").read_text())
@@ -274,7 +278,8 @@ async def test_full_run_offline(tmp_path):
     assert planner_records[0]["origin"] == "planner-generated"
     assert planner_records[0]["evidence"] is None
     p5_context = json.loads((run / "page-contexts/p5.json").read_text())
-    assert set(p5_context) == {"page", "narrative", "visualContract", "sources", "skills"}
+    assert set(p5_context) == {"page", "narrative", "sources", "skills"}
+    assert p5_context["skills"] == []
     assert [record["id"] for record in p5_context["sources"]] == [
         "planner-recursion-structure"
     ]
@@ -295,7 +300,7 @@ async def test_full_run_offline(tmp_path):
     assert 'src="slides/p2.html"' in deck_html
     assert "降级安全页" in (run / "slides/p2.html").read_text()
 
-    # check_page 的失败留在同一 Builder 会话；没有第二套 verifier/ledger/自动经验产物。
+    # submit_page 内部检查失败留在同一 Builder 会话；没有第二套 verifier/ledger/自动经验产物。
     assert not (run / "verification").exists()
     assert not (run / "ledger").exists()
     assert not (run / "library-delta.json").exists()
@@ -304,7 +309,7 @@ async def test_full_run_offline(tmp_path):
         event for event in events
         if event["kind"] == "builder-failed" and event["pageId"] == "p2"
     )
-    assert "ManagedAgentStalled" in failure["reason"] and "check_page" in failure["reason"]
+    assert "ManagedAgentStalled" in failure["reason"] and "submit_page" in failure["reason"]
 
     # quality-report 只陈述交付状态，不声称未运行的语义验证。
     qr = json.loads((run / "quality-report.json").read_text())
@@ -329,7 +334,7 @@ async def test_preflight_failure_is_bounded_without_regenerating_payload(tmp_pat
     assert len(p2_calls) == 1  # 同一持久会话内检查，Harness 不做裸重生成
     run = next(tmp_path.iterdir())
     task = json.loads((run / "agents/builder/p2/task.json").read_text())
-    assert task["status"] == "stalled" and task["totalTurns"] == 7
+    assert task["status"] == "stalled" and task["totalTurns"] == 4
     checkpoint = json.loads((run / "agents/builder/p2/session.json").read_text())
     assert checkpoint["stalledReason"].startswith("same tool failure repeated")
 
@@ -384,6 +389,46 @@ async def test_resume_skips_finished_stages_and_pages(tmp_path):
         )
     assert "contract" not in [purpose for purpose, _ in client3.calls]
     assert sorted(resumed.completed) == ["p1", "p3", "p4", "p5"]
+    traces = [
+        json.loads(line)
+        for line in (run_dir / "logs/agent-traces.jsonl").read_text().splitlines()
+    ]
+    effective = [
+        record for record in traces if record["kind"] == "builder-plan-effective"
+    ]
+    assert effective[-1]["source"] == "resume"
+    assert len(effective[-1]["builderPlanSha256"]) == 64
+
+    saved_builder_plan = (run_dir / "builder-plan.json").read_text()
+    legacy_plan = json.loads(saved_builder_plan)
+    legacy_plan["schemaVersion"] = 1
+    legacy_plan["sharedSkills"].insert(0, {"name": "page-builder-core"})
+    legacy_text = json.dumps(legacy_plan, ensure_ascii=False, indent=2)
+    (run_dir / "builder-plan.json").write_text(legacy_text)
+    with no_network():
+        await generate(
+            _client(), retriever, "q", out_root=tmp_path, resume_dir=run_dir,
+            research_client_factory=_research_factory(),
+        )
+    assert (run_dir / "builder-plan.json").read_text() == legacy_text
+    migrated_traces = [
+        json.loads(line)
+        for line in (run_dir / "logs/agent-traces.jsonl").read_text().splitlines()
+    ]
+    assert any(
+        record["kind"] == "builder-plan-migrated"
+        and record["persistedArtifactRewritten"] is False
+        for record in migrated_traces
+    )
+    (run_dir / "builder-plan.json").write_text(saved_builder_plan)
+
+    (run_dir / "builder-plan.json").unlink()
+    with pytest.raises(ValueError, match="legacy unfinished run lacks builder-plan"), no_network():
+        await generate(
+            _client(), retriever, "q", out_root=tmp_path, resume_dir=run_dir,
+            research_client_factory=_research_factory(),
+        )
+    (run_dir / "builder-plan.json").write_text(saved_builder_plan)
 
     (run_dir / "planner-prep-records.json").unlink()
     with pytest.raises(ValueError, match="cannot resume safely"), no_network():

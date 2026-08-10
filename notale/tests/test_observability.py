@@ -35,7 +35,7 @@ def test_finish_writes_profile_without_automatic_experience_artifacts(tmp_path):
     })
     logger.append("agent-traces.jsonl", {
         "ts": "now", "kind": "skills-assigned", "agent": "research:r1",
-        "skills": ["research-evidence", "web-access"],
+        "skills": ["web-access"],
         "allowedTools": ["web_search", "fetch_web"],
     })
     logger.append("agent-traces.jsonl", {
@@ -65,7 +65,7 @@ def test_tool_errors_are_classified_for_gate_diagnostics(tmp_path):
     logger = ExperimentLogger(tmp_path, config={})
     logger.record_tool("research:r1", "research", "fetch_web", is_error=True,
                        error_kind="external")
-    logger.record_tool("builder:p1", "builder", "check_page", is_error=True,
+    logger.record_tool("builder:p1", "builder", "submit_page", is_error=True,
                        error_kind="validation")
     logger.record_tool("builder:p1", "builder", "page_patch", is_error=True,
                        error_kind="protocol")

@@ -13,9 +13,9 @@ from notale.utils.config import CONFIG_PATH, get_config, load_config
 
 def test_checked_in_config_loads_and_covers_all_roles_and_page_types():
     config = get_config()
-    assert CONFIG_PATH.name == "config.yaml" and config.schema_version == 10
-    assert config.versions.agent_protocol == "8"
-    assert config.versions.logging_schema == "6"
+    assert CONFIG_PATH.name == "config.yaml" and config.schema_version == 13
+    assert config.versions.agent_protocol == "12"
+    assert config.versions.logging_schema == "9"
     assert set(config.agents.roles) == {"intake", "research", "planner", "builder"}
     assert config.model.base_url == "https://llmapi.paratera.com/v1"
     assert config.model.name == "Claude-Sonnet-5"
@@ -44,32 +44,8 @@ def test_checked_in_config_loads_and_covers_all_roles_and_page_types():
         ("r4", "素材史料数据"),
     ]
     assert "interaction_probe" not in config.model_dump()
-    assert config.agents.planner_deck_design.model_dump() == {
-        "enabled": True,
-        "skill": "frontend-slides",
-        "entrypoint": "planner-contract",
-    }
-    assert config.agents.builder_page_design.model_dump() == {
-        "enabled": True,
-        "skill": "frontend-slides",
-        "entrypoint": "notale-page",
-    }
-    entrypoint = (
-        CONFIG_PATH.parent
-        / "skills"
-        / config.agents.builder_page_design.skill
-        / "entrypoints"
-        / f"{config.agents.builder_page_design.entrypoint}.md"
-    )
-    assert entrypoint.is_file() and entrypoint.stat().st_size <= config.tools.chunk_max_chars
-    planner_entrypoint = (
-        CONFIG_PATH.parent
-        / "skills"
-        / config.agents.planner_deck_design.skill
-        / "entrypoints"
-        / f"{config.agents.planner_deck_design.entrypoint}.md"
-    )
-    assert planner_entrypoint.is_file()
+    assert "workflow" not in config.model_dump()
+    assert all(branch.skills == ["web-access"] for branch in config.research.branches)
 
 
 def test_config_rejects_unknown_fields(tmp_path: Path):
@@ -81,32 +57,13 @@ def test_config_rejects_unknown_fields(tmp_path: Path):
         load_config(path)
 
 
-def test_config_rejects_unauthorized_page_design_skill(tmp_path: Path):
+def test_config_rejects_removed_workflow_block(tmp_path: Path):
     raw = yaml.safe_load(CONFIG_PATH.read_text(encoding="utf-8"))
-    raw["agents"]["builder_skills"].remove("frontend-slides")
+    raw["workflow"] = {"builder": {"required_skills": ["page-builder-core"]}}
     path = tmp_path / "config.yaml"
     path.write_text(yaml.safe_dump(raw, allow_unicode=True), encoding="utf-8")
 
-    with pytest.raises(ValidationError, match="must be authorized"):
-        load_config(path)
-
-
-def test_config_rejects_missing_page_design_entrypoint(tmp_path: Path):
-    raw = yaml.safe_load(CONFIG_PATH.read_text(encoding="utf-8"))
-    raw["agents"]["builder_page_design"]["entrypoint"] = "missing-entrypoint"
-    path = tmp_path / "config.yaml"
-    path.write_text(yaml.safe_dump(raw, allow_unicode=True), encoding="utf-8")
-
-    with pytest.raises(ValueError, match="entrypoint does not exist"):
-        load_config(path)
-
-
-def test_config_rejects_missing_planner_design_entrypoint(tmp_path: Path):
-    raw = yaml.safe_load(CONFIG_PATH.read_text(encoding="utf-8"))
-    raw["agents"]["planner_deck_design"]["entrypoint"] = "missing-entrypoint"
-    path = tmp_path / "config.yaml"
-    path.write_text(yaml.safe_dump(raw, allow_unicode=True), encoding="utf-8")
-    with pytest.raises(ValueError, match="planner_deck_design entrypoint does not exist"):
+    with pytest.raises(ValidationError, match="workflow"):
         load_config(path)
 
 
@@ -117,7 +74,7 @@ def test_config_accepts_arbitrary_research_specializations(tmp_path: Path):
             "id": "case-library",
             "enabled": True,
             "focus": "寻找可用于课堂推演的真实案例",
-            "skills": ["research-evidence"],
+            "skills": ["web-access"],
             "tools": ["web_search", "fetch_web"],
         },
         {
@@ -173,7 +130,7 @@ def test_config_allows_research_stage_to_be_disabled(tmp_path: Path):
         ),
         (
             lambda branches: branches[0].update(
-                {"skills": ["research-evidence", "research-evidence"]}
+                {"skills": ["web-access", "web-access"]}
             ),
             "duplicate skills",
         ),

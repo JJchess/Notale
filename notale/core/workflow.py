@@ -22,6 +22,7 @@ from typing import Any
 from notale import __version__
 
 from notale.core.models import (
+    BuilderPlan,
     CourseBrief,
     Globals,
     Outline,
@@ -43,11 +44,13 @@ from notale.agents.research import research
 from notale.core.stages.page_check import make_fallback_page
 from notale.tools.retriever import Retriever
 from notale.tools.media import ensure_asset_manifest, ensure_media_budget
-from notale.core.observability import ExperimentLogger, RunEmergencyLimitExceeded
+from notale.core.observability import ExperimentLogger, RunEmergencyLimitExceeded, now
 from notale.roles.profiles import BUILDER, INTAKE, PLANNER, RESEARCH
-from notale.utils.config import CONFIG_PATH, get_config
+from notale.utils.config import CONFIG_PATH, SKILLS_PATH, get_config
+from notale.utils.skill_catalog import load_skill_catalog, migrate_builder_plan
 
 _CONFIG = get_config()
+_SKILL_CATALOG = load_skill_catalog(BUILDER, SKILLS_PATH)
 CONCURRENCY = _CONFIG.pipeline.page_concurrency
 
 _PAGE_PRIORITY = {
@@ -238,10 +241,31 @@ async def _generate_session(
 
     # ---- [2] Curriculum Contract（人在环）----
     logger.stage_start("contract")
-    if (run_dir / "page-specs.json").exists():
+    contract_resumed = (run_dir / "page-specs.json").exists()
+    if contract_resumed:
         outline = Outline.model_validate_json((run_dir / "outline.json").read_text())
         globals_ = Globals.model_validate_json((run_dir / "globals.json").read_text())
         specs = [PageSpec.model_validate(s) for s in json.loads((run_dir / "page-specs.json").read_text())]
+        builder_plan_path = run_dir / "builder-plan.json"
+        if not builder_plan_path.exists():
+            raise ValueError(
+                "legacy unfinished run lacks builder-plan.json; start a new experiment"
+            )
+        persisted_builder_plan = json.loads(builder_plan_path.read_text())
+        builder_plan, migrated = migrate_builder_plan(persisted_builder_plan)
+        builder_plan = _SKILL_CATALOG.normalize_plan(
+            builder_plan, {spec.pageId for spec in specs}
+        )
+        if migrated:
+            migration_event = {
+                "kind": "builder-plan-migrated",
+                "fromSchemaVersion": 1,
+                "toSchemaVersion": 2,
+                "source": "builder-plan.json",
+                "persistedArtifactRewritten": False,
+            }
+            manifest.event(**migration_event)
+            logger.append("agent-traces.jsonl", {"ts": now(), **migration_event})
         planner_records_path = run_dir / "planner-prep-records.json"
         planner_prep_records = (
             [
@@ -259,15 +283,35 @@ async def _generate_session(
         )
         for e in c.events:
             manifest.event(**e)
-        outline, globals_, specs = c.outline, c.globals, c.page_specs
+            if e.get("kind") == "builder-plan-selected":
+                logger.append("agent-traces.jsonl", {"ts": now(), **e})
+        outline, globals_, specs, builder_plan = (
+            c.outline, c.globals, c.page_specs, c.builder_plan
+        )
         planner_prep_records = c.supplemental_prep_records
         _dump(run_dir, "outline.json", outline)
         _dump(run_dir, "globals.json", globals_)
         _dump(run_dir, "page-specs.json", specs)
+        _dump(run_dir, "builder-plan.json", builder_plan)
         _dump(run_dir, "planner-prep-records.json", planner_prep_records)
         manifest.register_pages([s.pageId for s in specs])
         manifest.event("stage-done", stage="contract", pages=len(specs))
         logger.stage_end("contract", pages=len(specs))
+
+    effective_builder_plan = builder_plan.model_dump(mode="json")
+    logger.append("agent-traces.jsonl", {
+        "ts": now(),
+        "kind": "builder-plan-effective",
+        "source": "resume" if contract_resumed else "contract",
+        "builderPlan": effective_builder_plan,
+        "builderPlanSha256": hashlib.sha256(json.dumps(
+            effective_builder_plan,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")).hexdigest(),
+        "skillCatalogSha256": _SKILL_CATALOG.sha256,
+    })
 
     invalid_planner_records = [
         record.recordId
@@ -306,7 +350,9 @@ async def _generate_session(
 
     async def one_page(pid: str):
         spec = spec_by_id[pid]
-        context = compile_context(spec, globals_, specs, prep_store, outline=outline)
+        context = compile_context(
+            spec, globals_, specs, prep_store, builder_plan, outline=outline
+        )
         _write(
             run_dir,
             f"page-contexts/{pid}.json",
@@ -334,7 +380,12 @@ async def _generate_session(
     # ---- [4] Assemble & Global pass ----
     logger.stage_start("assemble")
     deck, _ = assemble_stage.write_deck_package(
-        run_dir, pages, specs, brief.topic, language=brief.language, globals_=globals_
+        run_dir,
+        pages,
+        specs,
+        brief.topic,
+        language=brief.language,
+        style_tokens=_SKILL_CATALOG.resolved_style_tokens(builder_plan),
     )
     deck_path = run_dir / "deck.html"
     consistency = assemble_stage.consistency_report(pages, specs, globals_, outline)
@@ -424,9 +475,9 @@ async def generate(
                 "maxProviderAttempts": role.max_provider_attempts,
                 "contextWindowTokens": role.context_window_tokens,
                 "autoCompactThresholdTokens": role.auto_compact_threshold_tokens,
-                "skills": role.skills,
+                "skillPolicy": role.skill_policy.metadata(),
                 "allowedTools": role.allowed_tools,
-                "systemProfiles": role.system_profile_metadata(),
+                "roleDocument": role.document_metadata(),
                 "systemPrompt": role.rendered_system_prompt(),
             }
             for role in (INTAKE, RESEARCH, PLANNER, BUILDER)

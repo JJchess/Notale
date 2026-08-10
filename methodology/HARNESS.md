@@ -73,17 +73,17 @@
 
 **P2 交互正确性来自构造关系，不来自界面表演。** 页面先执行真实的算法、方程、状态机、判定器或数据变换，产生 trace/result，再由界面投影；输入与操作只能改变领域模型的输入、动作或回放游标。手写逐帧数组、预制步骤状态和直接修改 DOM 都不能代替领域计算。事实内容仍遵循**先查资料，再生成页面**（见 [`PREP.md`](./PREP.md)）。〔证据：AlphaProof/FunSearch 固定骨架+可变槽位；PDE-grounded intent verification〕→ 救正确性（E1）。
 
-**P3 全局隐含决策单线程锁定，无冲突的工作才 fan-out。** 判据只有一条：子任务之间是否共享隐含设计决策。大纲、术语、符号、风格 token、组件 API 是全局隐含决策的来源——**必须单线程决定一次、落盘成契约**；页面生成在锁定契约下相互独立——放心并行。写操作单线程：worker 只写自己那一页，共享文件只有编排者写。〔证据：Anthropic orchestrator-worker +90.2% vs Cognition Flappy Bird 陷阱——两者不矛盾，是同一判据的两侧〕→ 救长程一致性与风格一致性。
+**P3 全局隐含决策单线程锁定，无冲突的工作才 fan-out。** 判据只有一条：子任务之间是否共享隐含决策。大纲、术语、符号与证据路由落成稳定的课程领域契约；全书共享/逐页增量的 Builder skill 和 profile 另落成 `builder-plan` 控制面。二者由 Planner 同轮决定，但不混用 schema：增加 skill 不得迫使课程 artifact 扩字段。页面生成在这两份锁定物下相互独立——放心并行。写操作单线程：worker 只写自己那一页，共享文件只有编排者写。〔证据：Anthropic orchestrator-worker +90.2% vs Cognition Flappy Bird 陷阱——两者不矛盾，是同一判据的两侧〕→ 救长程一致性与风格一致性。
 
 **P4 Artifacts > compaction：落盘状态机是长程的脊柱。** 60 分钟讲义是多小时级长跑，跨越多个 context window。靠上下文压缩续命不够；靠结构化 artifact 才鲁棒：每页 `pending → drafted → completed/degraded`，agent task/checkpoint/compaction 与页产物持续落盘，写路径幂等，失败后从 manifest 续跑。主编排上下文里**永远不出现任何一页的完整 HTML**，只有状态摘要。〔证据：Anthropic long-running harness；Temporal durable execution；context rot 实测〕→ 救长程（E2/D1）。
 
-**P5 规则只判断它真正能判断的事。** `check_page` 负责 schema、离线依赖、素材与引用、占位符、inline JavaScript 语法和提交 hash；它不从“DOM 发生变化”推断学科或交互语义正确。符号计算、执行对拍、视觉审阅等更强 oracle 属于用户监督的实验评估，接入前必须有独立信息优势，不能用同一个模型换 prompt 伪造 generator-verifier gap。〔证据：AeSlides；Nine Judges；weak-verifiers 组合〕→ 救正确性（E1/E5）。
+**P5 规则只判断它真正能判断的事。** 原子 `submit_page` 内的确定性检查负责 schema、离线依赖、素材与引用、占位符和 inline JavaScript 语法；它不从“DOM 发生变化”推断学科或交互语义正确。符号计算、执行对拍、视觉审阅等更强 oracle 属于用户监督的实验评估，接入前必须有独立信息优势，不能用同一个模型换 prompt 伪造 generator-verifier gap。〔证据：AeSlides；Nine Judges；weak-verifiers 组合〕→ 救正确性（E1/E5）。
 
-**P6 修复留在产生页面的 Builder loop 内，并由工具信号驱动。** Builder 写页后调用 `check_page`；失败时根据具体错误在同一持久会话中 patch 并重查，hash 绑定后才 `submit_page`。提交后不再启动第二套 verifier/repair 状态机。更深的语义问题由实验日志、源码、真实领域执行和用户审阅形成诊断，用户确认后再修改 profile/skill/harness。〔证据：LLMs Cannot Self-Correct（ICLR 2024）；DeepPresenter；Reflexion〕→ 救修复有效性与长任务治理。
+**P6 修复留在产生页面的 Builder loop 内，并由工具信号驱动。** Builder 用一次 `submit_page(html, metadata)` 让 Harness 写入、检查并提交同一份页面；失败时根据具体错误在同一持久会话中 `page_patch`，Harness 自动复检并提交。提交后不再启动第二套 verifier/repair 状态机。更深的语义问题由实验日志、源码、真实领域执行和用户审阅形成诊断，用户确认后再修改 profile/skill/harness。〔证据：LLMs Cannot Self-Correct（ICLR 2024）；DeepPresenter；Reflexion〕→ 救修复有效性与长任务治理。
 
 **P7 Builder 可以写页面实现，但不能伪造教学状态。** 固定的 Reveal 外壳、`global.css`、成熟组件和领域引擎优先复用；遇到长尾内容，Builder 可实现新的领域函数与渲染器，但二者必须分层：模型输入/动作 → domain engine → trace/result → renderer。这样既保留 HTML-native 的表达自由，也让交互状态具有可追踪的计算来源。〔证据：AutoPresent SlidesLib；SlideBot figure 宏；PPTAgent〕→ 救单薄与正确性。
 
-**P8 风格是显式库中的离散采样，不是模型的自由发挥。** AI 味的本质是分布塌缩（RCT 实证：个体创造力↑、集体新颖性↓），根源是让模型自由选风格（mode collapse 落在紫渐变/圆角卡片海上）。解法：art direction 库（配色角色表+字体配对+网格+图形语汇+**禁用清单**），模型**选择**而非**发明**；Vendi(DINOv2) 区间门禁——**视觉语汇要低多样（一致性），页面结构要高多样（丰满感），两个特征空间分别测**；改风格用 masked-infill 局部替换而非整页重生成；任何美学优化必须带熵约束（去 KL 即熵塌缩退化成模板）。〔证据：Science Advances 2024；AeSlides；CPT；Vendi 0.79 vs 模板 0.17–0.35〕→ 救多样性（E4）。
+**P8 风格属于表达 skill，而不是课程 schema。** AI 味的本质是分布塌缩（RCT 实证：个体创造力↑、集体新颖性↓），根源是让模型自由发明风格。每个表达 skill 维护自己适用的 profile 集合：Planner 先选 skill，再从该集合离散选择 profile；Builder 只加载被选中的 profile reference，Harness 只把其安全 token 覆盖写入共享 runtime。不同表达系统今后通过增加 skill 扩展，不向 `Globals` 或 `PageSpec` 添字段。视觉语汇要低多样（一致性），页面结构要高多样（丰满感），两个特征空间应分别评估。〔证据：Science Advances 2024；AeSlides；CPT；Vendi 0.79 vs 模板 0.17–0.35〕→ 救多样性（E4）。
 
 **P9 一份统一内容层生成所有形态；时间是一等公民。** 先做一份已按受众分好难度、换好例子的统一内容层，再由它生成 deck/讲稿/习题/导图/三档强度——跨形态一致且个性化只做一次（RCT：保持测验 +11pp）。规划器输出**带 per-node 时间预算的逻辑链**，生成循环里 pacing check 显式决策 refine/expand/stop；**交互组件有自己的时间成本模型**（一个 sim≈3–4 分钟探索，一道 quiz≈1–2 分钟）——时长模型不能只按字数。时间预算同时是对抗"每页塞满"的最好杠杆。〔证据：Learn Your Way；DeepSlide dual-scoreboard；AgentWrite 配额机制；金样本拟合 60min≈35–45 页〕→ 救长程（E2）。
 
@@ -114,13 +114,13 @@
 ║   └─────────────────┘      / 交互(状态机+自检条件)。页面照着它生成。                    ║
 ║        ↓                                                                           ║
 ║  [2] Curriculum Contract ─ ★单线程。锁定物：逻辑链+每页 spec（中心信息/认知动作/          ║
-║        ↓                    页型/时间预算/资料绑定）+ 术语/符号/风格 token/组件 API       ║
-║        ↓                    + 页型 schema + art direction 采样 → 用户确认一轮           ║
+║        ↓                    页型/时间预算/资料绑定）+ 术语/符号 → 课程领域契约            ║
+║        ↓                    + shared/page Builder skills → 独立 builder-plan → 用户确认 ║
 ║  [3] Per-page fan-out ──── 一页一持久 agent loop，prompt 自包含                         ║
-║        ↓                    （页 spec + globals + 邻页摘要 + 按需 skill）；             ║
-║        ↓                    统一 authoring profile + role tools + 按需 skills；         ║
+║        ↓                    （page + narrative + sources + 精确 SkillAssignment[]）；   ║
+║        ↓                    authoring profile + role tools + Planner 路由的 skills；    ║
 ║        ↓                    交互=真实 domain engine → trace/result → render；           ║
-║        ↓                    page_write → check_page → 同会话修复 → submit_page；        ║
+║        ↓                    submit_page 原子写入/检查/提交；失败 page_patch 自动复检；  ║
 ║        ↓                    stalled/failed → 静态降级页，绝不卡死整本                    ║
 ║  [4] Assemble & Global ─── 单线程。拼装 + 跨页一致性（术语/符号/难度递进/重复/总时长）     ║
 ║        ↓                                                                           ║
@@ -133,11 +133,11 @@
 
 | 位置 | 管什么 | 信号来源 | 失败后果 |
 |---|---|---|---|
-| **Builder / check_page** | schema、placeholder、运行时值泄漏、离线依赖、资料绑定、本地素材、inline JS 语法、HTML hash | 确定性程序 | 当前 Builder loop 内修复；持续失败则 stalled/degraded |
+| **Builder / submit_page** | 原子写入并检查 schema、placeholder、运行时值泄漏、离线依赖、资料绑定、本地素材和 inline JS 语法 | 确定性程序 | 当前 Builder loop 内定点修复；持续失败则 stalled/degraded |
 | **Builder skills** | 教学状态必须来自真实算法、方程、状态机、判定器或数据变换；界面只投影其 trace/result | 构造纪律 | 不满足就不应生成该交互；不能由“DOM 动了”补票 |
 | **实验评估** | 学科正确性、交互教学价值、视觉质量与跨样本趋势 | 用户监督下读取日志、源码、浏览器效果和必要 oracle | 形成诊断；用户确认后才修改 skill/profile/harness |
 
-`check_page` 是交付门，不是语义验证器。浏览器随机点击只能证明控件能改变页面，无法区分真实
+`submit_page` 内的检查是交付门，不是语义验证器。浏览器随机点击只能证明控件能改变页面，无法区分真实
 计算与手写帧，因此不进入生成内循环。将来接入独立 oracle 时，它属于实验评估链，不能复制一套
 提交后的页面状态机或重新打开已经完成的 Builder task。
 
@@ -145,25 +145,25 @@
 
 | 组件 | 职责 | 回答 |
 |---|---|---|
-| **层级链**（brief→备课资料→契约→页 spec→page artifact→deck/report） | 每层一个落盘文件，明确归谁所有；上层是下层的唯一输入 | **A1** |
+| **层级链**（brief→备课资料→课程契约 + builder-plan→page context→page artifact→deck/report） | 领域 artifact 与 Agent 控制面分别落盘，明确归谁所有；上层是下层的唯一输入 | **A1** |
 | **系统本体** | 角色：Researcher / Planner / Builder / 人。对象：备课资料、契约、页、素材、manifest、agent task/checkpoint 与实验日志。**权限：只有一处能写**（globals 只有 Planner 能改，Builder 只能写自己那一页）。异常：Builder stalled、预算耗尽、资料缺失都有明确降级或续跑路径 | **A2** |
 | **备课资料** | 唯一的知识来源；成品上任何东西（数字/代码/水位线/滑块反应）都要能在资料里找到出处，**找不到 = 编的**。它内部躺着两种生命周期不同的东西：**规格**（分叉①，构造器的输入）与**已核事实**（分叉②，独立核对的产物）——接口层面应当分开 | **B1, E1** |
 | **出处的确定性绑定** | 出处不是模型填的字段，是**工具调用记录自动带出来的**（URL + 原文片段 + 抓取时间），并机器校验引文是抓回文档的字面子串。**让"事后补出处"在结构上不可能发生**，而不是事后去检测它；残差（引文真但概括错）退化为一个无状态的两串文本蕴含判断（PREP §2.1） | **B1, E1** |
 | **教法笔记**（备课资料的姊妹通道） | **页面照着备课资料生成，大纲照着教法笔记生成**。收讲授顺序、能搬走的教法、常见误解库；给排大纲的用，不给写页面的用。**大纲上任何结构性决定说不出依据 = 临场偏好**。总原则：并行查回来的每份东西，要么进一条说得出谁要用的记录，要么明确丢弃并写下原因——不许悄悄蒸发 | **B1, E3** |
-| **notation ledger 反向索引** | globals 变更（术语/符号/token）→ 依赖页全部转 dirty；没有它，跨页一致性只是祈祷 | **B2** |
-| **页型契约**（formula-derivation / sim-explorable / code-runnable / quiz-check / worked-example / section-break / narrative-scene…） | 每型定义槽位、允许的交互组件、密度上限；多形态（deck/讲稿/习题/导图/三档强度）都由同一份统一内容层生成 | **C1** |
+| **notation ledger 反向索引** | globals 变更（术语/符号）→ 依赖页全部转 dirty；没有它，跨页一致性只是祈祷 | **B2** |
+| **页型契约**（formula-derivation / sim-explorable / code-runnable / quiz-check / worked-example / section-break / narrative-scene…） | 描述该页的教学形态与时间权重，不等同于 skill 路由或组件名；多形态由同一内容层生成 | **C1** |
 | **页 spec 的职责声明** | 强制字段：唯一中心信息（CLT 硬约束）、认知动作、页型、时间预算和资料绑定。标题、视觉对象、媒体与交互实现属于 Builder | **C2, E2** |
-| **上下文编译器** | 为每个 worker 编译最小上下文：自身 spec + 锁定物 + 邻页一句话摘要 + 已覆盖概念列表 + 按需加载的 skill。不多（防 context rot、防 worker 私改全局）不少（subagent 上下文完全干净，缺的就是没有的） | **C3** |
-| **能力匹配器** | 知识类型→必须配的能力→组件选择（动态过程→仿真、可执行→可运行代码、需实物观察→媒体…） | **C4** |
+| **上下文编译器** | 为每个 worker 编译最小投影：当前页 brief + narrative + sources/guardrails + `builder-plan` 合成的精确 SkillAssignment 列表。不累积前页全文，不允许 worker 私改全局 | **C3** |
+| **Builder skill 路由** | Builder 的常驻流程固定在角色契约；Planner 只从角色授权 catalog 显式选择全书共享与逐页增量的可选能力，Harness 校验从属关系并执行，绝不按 pageType 猜测 | **C4** |
 | **参照物绑定** | 每个会跑的东西（仿真/动画/代码/交互）必须绑至少一个**外生**参照物——闭式解 / 独立参考实现 / 声明的规格 / 学科定律 / 变换不变性。绑不到 → 降级为静态图并标注。**正确 = 与外生参照物一致**（[`VERIFY-EXEC.md`](./VERIFY-EXEC.md)） | **E1, D4** |
 | **页状态机 + agent task ledger** | `pending → drafted → completed/degraded`；task/checkpoint/compaction、页文件和 manifest 共同支持断点续跑与幂等提交 | **D1** |
 | **能力与组件库** | skills 定义工作方法，tools 提供可执行动作；成熟领域引擎/组件优先复用，缺口由实验复盘后在人监督下补齐 | **D2, C4** |
 | **WIP 门禁** | 只有 `completed` / `degraded` 页并入成品；草稿即使已经落盘也不能混入 | **D3** |
-| **hash-bound submit** | `check_page` 通过后生成 candidate hash；`submit_page` 只接受未变化的同一份 HTML，防止“检查 A、提交 B” | **D4** |
+| **原子 submit** | 同一次 `submit_page` 工具执行写入、检查并接受 HTML；失败页保留为唯一 workspace，`page_patch` 后自动复检，结构上消除“检查 A、提交 B” | **D4** |
 | **评估边界** | 交付门只报告确定性可交付条件；语义、教学价值和视觉质量在用户监督的实验评估中诊断，不能伪装成自动证明 | **D5, E5** |
 | **时长模型 + pacing 决策** | 分钟→章→页→每页密度与交互时间成本；循环内 refine/expand/stop | **E2** |
 | **DeckQuiz + RCT 协议** | 教学有效性的代理与慢验证（60 人/40 分钟/即时+保持测验的轻量 RCT 可复制） | **E3** |
-| **art direction 库 + Vendi 门禁** | 受控多样的两半：采样保证"不同 deck 不同"，区间门禁保证"同 deck 内语汇一致而结构丰富" | **E4** |
+| **skill-owned profile 库 + 实验评估** | Planner 只能从所选表达 skill 自有 profile 中选择；同 deck 共享语汇、单页保持构图自由，跨样本多样性由实验评估 | **E4** |
 | **人工监督的实验复盘** | 读取日志与 artifacts，用户确认后才把经验沉淀到 profile / skill / tool / component / harness | **D2, E3** |
 
 ## §3 关键取舍

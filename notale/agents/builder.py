@@ -8,7 +8,7 @@ from pathlib import Path
 
 from notale.agents.managed import ManagedAgent
 from notale.core.models import (
-    AssignedSkill,
+    BuilderPlan,
     BuilderNarrativeContext,
     BuilderPageBrief,
     BuilderSource,
@@ -22,27 +22,9 @@ from notale.core.models import (
     PageType,
     PrepRecord,
     SourceGuardrails,
-    VisualContract,
 )
 from notale.core.observability import ExperimentLogger
 from notale.roles.profiles import BUILDER
-from notale.utils.config import get_config
-
-
-_BASE_SKILLS = ["page-builder-core"]
-_CONFIG = get_config()
-_DEFAULT_STYLE_TOKENS = {
-    "bg": "#0b0e14",
-    "surface": "#141923",
-    "ink": "#f3f5f7",
-    "muted": "#9ba6b5",
-    "accent": "#69a8ff",
-    "accent-2": "#f0b429",
-    "line": "rgba(243, 245, 247, 0.16)",
-    "font": '"Noto Sans SC", system-ui, sans-serif',
-    "mono": '"SFMono-Regular", Consolas, monospace',
-}
-_VISUAL_TOKEN_KEYS = set(_DEFAULT_STYLE_TOKENS)
 
 
 def _mentions(text: str, key: str) -> bool:
@@ -56,45 +38,21 @@ def _mentions(text: str, key: str) -> bool:
     return key.lower() in text.lower()
 
 
-def _visual_tokens(globals_: Globals) -> dict[str, str]:
-    """Normalize old flat token names while keeping the Builder contract fixed."""
-    raw = {str(key): str(value) for key, value in globals_.styleTokens.items()}
-    aliases = {
-        "primary": "accent",
-        "secondary": "accent-2",
-        "neutral": "ink",
-    }
-    normalized = dict(_DEFAULT_STYLE_TOKENS)
-    for key, value in raw.items():
-        target = aliases.get(key, key)
-        if target in _VISUAL_TOKEN_KEYS and value.strip():
-            normalized[target] = value.strip()
-    return normalized
-
-
 def compile_context(
     spec: PageSpec,
     globals_: Globals,
     all_specs: list[PageSpec],
     prep_store: dict[str, PrepRecord],
+    builder_plan: BuilderPlan,
     outline: Outline | None = None,
 ) -> PageContext:
     idx = next(i for i, item in enumerate(all_specs) if item.pageId == spec.pageId)
-    catalog = set(BUILDER.skills)
-    skills = [name for name in _BASE_SKILLS if name in catalog]
-    skill_entrypoints: dict[str, str] = {}
-    page_design = _CONFIG.agents.builder_page_design
-    if page_design.enabled:
-        if page_design.skill not in catalog:
-            raise ValueError(
-                f"configured Builder page-design skill is not authorized: {page_design.skill}"
-            )
-        skills.append(page_design.skill)
-        skill_entrypoints[page_design.skill] = page_design.entrypoint
-    if spec.pageType == PageType.SIM_EXPLORABLE and "create-sim" in catalog:
-        skills.append("create-sim")
-    if spec.pageType == PageType.CODE_RUNNABLE and "create-code-runtime" in catalog:
-        skills.append("create-code-runtime")
+    skills = builder_plan.assignments_for(spec.pageId)
+    unauthorized = sorted(
+        {item.name for item in skills} - set(BUILDER.authorized_skills)
+    )
+    if unauthorized:
+        raise ValueError(f"Builder plan contains unauthorized skills: {unauthorized}")
     records = [prep_store[rid] for rid in spec.boundPrepRecords if rid in prep_store]
     source_text = json.dumps(
         [
@@ -155,11 +113,6 @@ def compile_context(
             pageRole=spec.narrativeRole or f"推进本页命题：{spec.centralMessage}",
             links=spec.continuity,
         ),
-        visualContract=VisualContract(
-            direction=globals_.artDirection,
-            motif=globals_.visualMotif,
-            tokens=_visual_tokens(globals_),
-        ),
         sources=[
             BuilderSource(
                 id=record.recordId,
@@ -174,36 +127,28 @@ def compile_context(
             )
             for record in records
         ],
-        skills=[
-            AssignedSkill(name=name, entrypoint=skill_entrypoints.get(name))
-            for name in skills
-        ],
+        skills=skills,
     )
 
 
 _PROMPT = """Build only page {page_id}. Call context_read until nextOffset=EOF for the complete compiled context.
-The context field `skills` is the complete and exact skill assignment for this worker. For each item
-in order, call skill_read until nextOffset=EOF before writing the page. When an item contains an
-`entrypoint`, pass that exact value on every chunk. Never derive, guess, or invent a skill name or
-entrypoint from the page type.
-Preserve `page.claim`, the page-local conventions, `narrative`, and `visualContract`. Narrative links
+The context field `skills` is the complete and exact optional skill assignment for this worker. It may
+be empty. When it is not empty, read every item in order with skill_read until nextOffset=EOF. Never
+derive, guess, or invent another skill name from the page type.
+Preserve `page.claim`, the page-local conventions, `narrative`, and `sources`. Skill profile and
+assignment instruction are internal composition constraints, never visible page copy. Narrative links
 are internal continuity constraints: do not expose page IDs, relation names, or planning cues as
 visible copy. Write one self-contained 1280x720 fragment whose single root has `data-notale-page`.
 Use the locked `--notale-*` visual tokens supplied by the shared runtime; do not redefine them.
-Call page_write once; use page_patch only for targeted repair. The page file itself is
-the workspace, so do not create a second planning or HTML copy.
-Use `sources` as the complete factual basis for the page and preserve every source guardrail. You may
-mechanically derive examples, states, and computed results from them, but do not add a new
-subject-matter conclusion.
-If the page contains a teaching interaction, its instructional state must come from an actually
-executed domain model (algorithm, equation, state machine, evaluator, or data transform). Controls
-may submit inputs or move a trace cursor; DOM/SVG/Canvas may only project model output. Never handwrite
-successive frames or directly mutate displayed teaching state to imitate computation.
-After page_write, call check_page immediately; do not reread the page unless check_page returns a
-specific failure. The fragment may contain inline CSS/native JS but no document shell,
-CDN, remote font/image, fetch/import, placeholder, NaN, or undefined. Call check_page with
-the small metadata fields, then call submit_page with no arguments. Harness events maintain
-the task ledger. Prose is not a submission."""
+When the complete page is ready, call submit_page once with `html`, `designSpec`,
+`boundReferences`, and `speakerNotes`. The harness writes and checks the page, then accepts it in
+the same tool execution. The page file itself is the workspace, so do not create a second planning
+or HTML copy. Use `sources` as the complete factual basis and preserve every source guardrail.
+The fragment may contain inline CSS/native JS but no document shell, CDN, remote font/image,
+fetch/import, placeholder, NaN, or undefined. If submit_page returns a concrete validation failure,
+use page_patch for the smallest exact repair; the patch is automatically rechecked and submitted.
+Use page_read or page_search only when the failure location is unknown. Harness events maintain the
+task ledger. Prose is not a submission."""
 
 
 class BuilderWorker:
@@ -245,14 +190,14 @@ class BuilderWorker:
             objective=f"构建讲义单页 {page_brief.id}：{page_brief.claim}",
             acceptance_criteria=[
                 "仅实现本页的唯一中心信息。",
-                "遵守锁定的视觉、叙事、资料边界与离线运行约束。",
+                "遵守已装配 skills、叙事、资料边界与离线运行约束。",
                 "若含教学性交互，状态由真实领域模型执行产生，界面只投影模型结果。",
                 "页面 schema 有效，并通过 submit_page 提交。",
             ],
             steps=[
                 ("load-context", "读取完整页面上下文并加载需要的 skill。"),
-                ("implement-check", "实现页面，必要时在私有 workspace 中检查。"),
-                ("submit-page", "通过结构化工具提交页面。"),
+                ("implement-check", "实现页面，由 Harness 执行确定性可交付性检查。"),
+                ("submit-page", "通过原子 submit_page 写入、检查并提交页面。"),
             ],
             submit_tool="submit_page",
             submit_validator=validate,
@@ -265,8 +210,7 @@ class BuilderWorker:
                 "context_path": f"page-contexts/{page_brief.id}.json",
             },
             purpose=f"build:{page_brief.id}",
-            assigned_skills=context.skill_names,
-            assigned_skill_entrypoints=context.skill_entrypoints,
+            assigned_skills=context.skills,
         )
 
     async def build(self) -> PageArtifact:

@@ -4,6 +4,7 @@ import pytest
 
 from notale.core.models import (
     Branch,
+    BuilderPlan,
     CourseBrief,
     Evidence,
     Globals,
@@ -14,6 +15,7 @@ from notale.core.models import (
     PrepRecord,
     QualityReport,
     ReferenceSource,
+    SkillAssignment,
 )
 from notale.core.evidence import EvidenceBindingError, bind_evidence, new_fetch_record
 
@@ -71,7 +73,23 @@ def test_page_spec_typing():
     spec = PageSpec(pageId="p1", pageType=PageType.SIM_EXPLORABLE, centralMessage="单摆周期与振幅无关")
     assert spec.timeBudgetSec == 90
     assert "visualSubject" not in spec.model_dump()
-    assert Globals().componentAPI == []
+    assert set(Globals().model_dump()) == {"terminology", "notation"}
     assert PageStatus.PENDING.value == "pending"
     assert PageStatus("verified") == PageStatus.COMPLETED
     assert PageStatus("returned-for-repair") == PageStatus.DRAFTED
+
+
+def test_builder_plan_is_a_separate_control_plane():
+    plan = BuilderPlan(
+        sharedSkills=[SkillAssignment(
+            name="narrative-keynote", profile="paper-and-ink"
+        )],
+        pageSkills={"p2": [SkillAssignment(name="create-sim")]},
+    )
+    assert plan.schemaVersion == 2
+    assert [item.name for item in plan.assignments_for("p1")] == [
+        "narrative-keynote"
+    ]
+    assert [item.name for item in plan.assignments_for("p2")] == [
+        "narrative-keynote", "create-sim"
+    ]
