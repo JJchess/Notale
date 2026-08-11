@@ -40,16 +40,16 @@
 
 | 文件 | 是什么 |
 |---|---|
-| [`HARNESS.md`](./HARNESS.md) | **lectureAgent 终局架构图景**：必答十八问骨架、十条设计哲学、内循环架构草图（Verifier 栈 L0–L6）、关键取舍表。纯终局设想，不锚定现有代码；主干 ADR 判决的"候选 C"具象化参照 |
-| [`harness-architecture.html`](./harness-architecture.html) | HARNESS 的**数据流图**（单文件离线 SVG，双击即开）：并联 fan-out、三个回路、备课资料的取料与比对线。沿用 `docs/*.html` 的单文件图惯例 |
-| [`pipeline-schema.html`](./pipeline-schema.html) | HARNESS §2 架构图的**字段级放大**：七阶段横向排列，每阶段输入/输出 artifact 的具体字段（`字段名: 中文描述`）。形式化不新设计，字段全部抽自 HARNESS/PREP/VERIFY-EXEC |
+| [`HARNESS.md`](./HARNESS.md) | **Notale 当前内循环**：单 Planner、并发 Builder、页面 revision 事务、fallback、恢复和统一日志 |
+| [`harness-architecture.html`](./harness-architecture.html) | Harness 数据流图；应与 `HARNESS.md` 的 Planner → parallel Builders 主链同步维护 |
+| [`pipeline-schema.html`](./pipeline-schema.html) | 字段图；当前权威 schema 只有 `plan.json`、`run.json` 与 `{html, notes}` 页面产物 |
 | [`VERIFY-EXEC.md`](./VERIFY-EXEC.md) | **可执行物怎么验**：一个原则（正确=与外生参照物一致）+ 参照物来源表 + 三条被数据证伪的红线 + 三处修正。仿真/动画/代码/交互的验证归它管；事实类归 PREP §2.1 |
 | `research/survey-interactive-correctness.md` | 前沿+经典调研：形式化与运行时验证 / 工业无限空间 QA / 科学计算 V&V / 教育仿真 / LLM 生成物（约 120 条来源） |
 | `research/survey-agent-orchestration.md` | 前沿调研：编排架构/长程技术/多智能体成败/Skill 库（2024–2026，一手来源） |
 | `research/survey-verified-generation.md` | 前沿调研：验证优先生成/judge 可靠性/引证/视觉验证/仿真接地/叙事一致性 |
 | `research/survey-presentation-generation.md` | 前沿调研：演示与教育内容生成/image-first/多样性/交互生成/时长课程 |
 
-分工：CHARTER+EVAL = 外循环（怎么进化）；HARNESS = 内循环与本体（长什么样）；PREP = 中枢数据（备课资料）。
+分工：CHARTER+EVAL = 外循环；HARNESS = 当前运行时；PREP/VERIFY-EXEC/research = 方法论与实验参考，不进入当前 Agent 或 schema。
 
 ## 第五代：v3/ 独立新线（2026-08-08）
 

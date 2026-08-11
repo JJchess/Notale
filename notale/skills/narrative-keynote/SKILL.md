@@ -5,18 +5,15 @@ description: Compose one visually led narrative lecture page for humanities, gen
 
 # Narrative Keynote
 
-Compose exactly one 1280×720 HTML-native lecture page. This is a narrative-expression system, not a
-general-purpose dashboard or a miniature deck workflow. Do not ask questions, generate style previews,
-build navigation, deploy, or export.
+Compose a visually led narrative page around one proposition and the evidence that makes it believable.
+This is an editorial and keynote expression system, not a general-purpose dashboard aesthetic.
 
-## Respect ownership
+## Apply the assigned direction
 
-- Preserve `page.claim`, `page.learningAction`, terminology, notation, sources, narrative continuity,
-  and the selected profile reference. Do not expose those internal fields as visible copy.
 - Apply only the assigned profile and topic-specific instruction. Do not blend profiles or replace the
-  locked `--notale-*` variables.
+  selected direction with another house style.
 - Choose the final title, optional subtitle, visual subject, composition, proportions, media treatment,
-  and controls for this page. The Planner owns sequence and deck-wide continuity, not page layout.
+  and controls for this page.
 
 ## Build a narrative composition
 
@@ -28,15 +25,6 @@ a uniform grid of cards.
 - Use deliberate outer margins, strong typographic hierarchy, and one controlled accent.
 - Write a title that advances the proposition. Omit subtitles, eyebrows, chips, badges, and operating
   instructions unless they carry indispensable information.
-- For identifiable people, documents, places, and events, acquire authentic media. Do not replace a
-  discoverable portrait or historical artifact with decorative CSS.
-- Use motion to reveal sequence, emphasis, or transformation. Keep essential content visible in the
-  first frame and respect reduced motion.
+- Use motion to reveal sequence, emphasis, or transformation rather than decorating the page.
 - Avoid dashboards, KPI strips, equal feature grids, glassmorphism, repeated rounded panels, generic
   title-plus-bullets layouts, and decoration without narrative purpose.
-
-## Preflight
-
-Before `submit_page`, confirm one proposition, one dominant anchor, one obvious reading path, a
-meaningful first frame, the assigned profile, no clipping or tiny dense text, and no visible workflow
-metadata. Then follow the Builder role's submit workflow.

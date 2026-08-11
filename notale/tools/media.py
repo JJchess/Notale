@@ -16,9 +16,9 @@ from pathlib import Path
 from typing import Any
 
 import httpx
-from openharness.tools.base import BaseTool, ToolExecutionContext, ToolResult
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
+from notale.tools.base import BaseTool, ToolContext, ToolResult
 from notale.utils.config import get_config
 
 
@@ -41,16 +41,18 @@ class GeneratedRole(str, Enum):
     TEXTURE = "texture"
 
 
-class AcquireMediaInput(BaseModel):
+class FindImageInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     query: str = Field(min_length=2, max_length=240)
     kind: DocumentaryKind
-    alt_text: str = Field(min_length=2, max_length=240)
+    alt: str = Field(min_length=2, max_length=240)
 
 
-class GenerateMediaInput(BaseModel):
+class MakeImageInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     prompt: str = Field(min_length=8, max_length=3000)
     role: GeneratedRole = GeneratedRole.EDITORIAL_ILLUSTRATION
-    alt_text: str = Field(min_length=2, max_length=240)
+    alt: str = Field(min_length=2, max_length=240)
 
 
 def _now() -> str:
@@ -73,25 +75,19 @@ def _atomic_json(path: Path, value: dict[str, Any]) -> None:
 
 
 def ensure_asset_manifest(run_dir: Path) -> Path:
-    """Create the shared empty manifest once; safe under concurrent page workers."""
-    path = Path(run_dir) / "asset-manifest.json"
+    """Create the shared manifest only when a media tool is actually used."""
+    path = Path(run_dir) / "assets" / "manifest.json"
     with _MANIFEST_LOCK:
         if not path.exists():
-            _atomic_json(path, {"schemaVersion": 1, "assets": []})
+            _atomic_json(path, {"assets": [], "attempts": {"find": 0, "make": 0}})
     (Path(run_dir) / "assets").mkdir(parents=True, exist_ok=True)
     return path
 
 
-def ensure_media_budget(run_dir: Path) -> Path:
-    path = Path(run_dir) / "media-budget.json"
-    with _MANIFEST_LOCK:
-        if not path.exists():
-            _atomic_json(path, {"schemaVersion": 1, "attempts": {"acquire": 0, "generate": 0}})
-    return path
-
-
-def load_asset_manifest(run_dir: Path) -> dict[str, Any]:
-    path = ensure_asset_manifest(run_dir)
+def load_asset_manifest(run_dir: Path, *, create: bool = True) -> dict[str, Any]:
+    path = ensure_asset_manifest(run_dir) if create else Path(run_dir) / "assets" / "manifest.json"
+    if not path.is_file():
+        raise ValueError("asset manifest does not exist")
     try:
         value = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError) as exc:
@@ -107,7 +103,7 @@ def _record_asset(run_dir: Path, record: dict[str, Any]) -> dict[str, Any]:
         manifest = json.loads(path.read_text(encoding="utf-8"))
         assets = manifest.setdefault("assets", [])
         existing = next(
-            (item for item in assets if item.get("assetId") == record["assetId"]), None
+            (item for item in assets if item.get("asset_id") == record["asset_id"]), None
         )
         if existing is None:
             assets.append(record)
@@ -203,11 +199,11 @@ def _asset_id(page_id: str, source: str, seed: str) -> str:
 def _tool_output(record: dict[str, Any]) -> str:
     return json.dumps(
         {
-            "assetId": record["assetId"],
-            "htmlSrc": "../" + record["localPath"],
+            "asset_id": record["asset_id"],
+            "html_src": "../" + record["local_path"],
             "alt": record["alt"],
-            "sourceType": record["sourceType"],
-            "sourceUrl": record.get("sourceUrl", ""),
+            "source_type": record["source_type"],
+            "source_url": record.get("source_url", ""),
             "license": record.get("license", ""),
         },
         ensure_ascii=False,
@@ -221,55 +217,55 @@ def _consume_budget(
     page_limit: int,
     run_limit: int,
 ) -> tuple[bool, dict[str, int]]:
-    attempts = state.tool_state.setdefault("mediaAttempts", {})
+    attempts = state.tool_state.setdefault("media_attempts", {})
     used = int(attempts.get(kind, 0))
     if used >= page_limit:
-        return False, {"pageRemaining": 0, "runRemaining": -1}
-    budget_path = ensure_media_budget(state.run_dir)
+        return False, {"page_remaining": 0, "run_remaining": -1}
+    budget_path = ensure_asset_manifest(state.run_dir)
     with _MANIFEST_LOCK:
         budget = json.loads(budget_path.read_text(encoding="utf-8"))
         run_attempts = budget.setdefault("attempts", {})
         run_used = int(run_attempts.get(kind, 0))
         if run_used >= run_limit:
-            return False, {"pageRemaining": page_limit - used, "runRemaining": 0}
+            return False, {"page_remaining": page_limit - used, "run_remaining": 0}
         run_attempts[kind] = run_used + 1
         _atomic_json(budget_path, budget)
     attempts[kind] = used + 1
     state.save_tool_state()
     remaining = {
-        "pageRemaining": page_limit - used - 1,
-        "runRemaining": run_limit - run_used - 1,
+        "page_remaining": page_limit - used - 1,
+        "run_remaining": run_limit - run_used - 1,
     }
-    state.event("media-attempt", mediaTool=kind, attempt=used + 1, **remaining)
+    state.event("media.attempt", media_tool=kind, attempt=used + 1, **remaining)
     return True, remaining
 
 
-class AcquireMediaTool(BaseTool):
-    name = "acquire_media"
+class FindImageTool(BaseTool):
+    name = "find_image"
     description = (
         "Find and download a real documentary raster asset from Wikimedia Commons. "
         "Use for identifiable people, documents, places, artifacts, and historical events. "
         "Returns an exact local htmlSrc and records provenance automatically."
     )
-    input_model = AcquireMediaInput
+    input_model = FindImageInput
 
     def __init__(self, state: Any, client_factory: Any = httpx.AsyncClient) -> None:
         self.state = state
         self.client_factory = client_factory
 
     async def execute(
-        self, arguments: AcquireMediaInput, context: ToolExecutionContext
+        self, arguments: FindImageInput, context: ToolContext
     ) -> ToolResult:
         del context
         allowed, _ = _consume_budget(
             self.state,
-            "acquire",
-            _CONFIG.maximum_acquisitions_per_page,
-            _CONFIG.maximum_acquisitions_per_run,
+            "find",
+            _CONFIG.maximum_find_per_page,
+            _CONFIG.maximum_find_per_run,
         )
         if not allowed:
-            return ToolResult(output="acquire_media per-page request budget exhausted", is_error=True)
-        page_id = str(self.state.validation_context.get("page_id", self.state.task.workerId))
+            return ToolResult(output="find_image per-page request budget exhausted", is_error=True)
+        page_id = f"p{self.state.page}"
         params = {
             "action": "query",
             "format": "json",
@@ -321,71 +317,71 @@ class AcquireMediaTool(BaseTool):
             _atomic_bytes(self.state.run_dir / relative, binary)
             metadata = info.get("extmetadata") or {}
             record = {
-                "assetId": asset_id,
-                "pageId": page_id,
+                "asset_id": asset_id,
+                "page": self.state.page,
                 "kind": arguments.kind.value,
-                "alt": arguments.alt_text,
-                "sourceType": "wikimedia-commons",
-                "sourceUrl": source_url,
-                "downloadUrl": download_url,
+                "alt": arguments.alt,
+                "source_type": "wikimedia-commons",
+                "source_url": source_url,
+                "download_url": download_url,
                 "title": str(source_page.get("title", "")),
                 "creator": _clean_metadata(metadata.get("Artist")),
                 "credit": _clean_metadata(metadata.get("Credit")),
                 "license": _clean_metadata(metadata.get("LicenseShortName")),
-                "licenseUrl": _clean_metadata(metadata.get("LicenseUrl")),
-                "localPath": relative,
-                "mimeType": mime,
+                "license_url": _clean_metadata(metadata.get("LicenseUrl")),
+                "local_path": relative,
+                "mime_type": mime,
                 "width": width,
                 "height": height,
                 "bytes": len(binary),
                 "sha256": hashlib.sha256(binary).hexdigest(),
                 "query": arguments.query,
-                "acquiredAt": _now(),
+                "created_at": _now(),
             }
             record = _record_asset(self.state.run_dir, record)
             media_assets = self.state.tool_state.setdefault("mediaAssets", [])
-            if record["assetId"] not in media_assets:
-                media_assets.append(record["assetId"])
+            if record["asset_id"] not in media_assets:
+                media_assets.append(record["asset_id"])
             self.state.save_tool_state()
             self.state.event(
-                "media-acquired", assetId=record["assetId"], sourceType=record["sourceType"]
+                "media.found", asset_id=record["asset_id"], source_type=record["source_type"]
             )
-            return ToolResult(output=_tool_output(record), metadata={"assetId": record["assetId"]})
+            return ToolResult(output=_tool_output(record), metadata={"asset_id": record["asset_id"]})
         except Exception as exc:
             return ToolResult(output=f"media acquisition failed: {exc}", is_error=True)
 
 
-class GenerateMediaTool(BaseTool):
-    name = "generate_media"
+class MakeImageTool(BaseTool):
+    name = "make_image"
     description = (
-        "Generate a clearly non-documentary editorial illustration with ParaTera Seedream 4.0. "
+        "Generate a clearly non-documentary editorial illustration with the configured image model. "
         "Never use it as evidence, an archival portrait, a manuscript, or a historical photograph. "
         "Returns an exact local htmlSrc and records model/prompt provenance automatically."
     )
-    input_model = GenerateMediaInput
+    input_model = MakeImageInput
 
     def __init__(self, state: Any, client_factory: Any = httpx.AsyncClient) -> None:
         self.state = state
         self.client_factory = client_factory
 
     async def execute(
-        self, arguments: GenerateMediaInput, context: ToolExecutionContext
+        self, arguments: MakeImageInput, context: ToolContext
     ) -> ToolResult:
         del context
         allowed, _ = _consume_budget(
             self.state,
-            "generate",
-            _CONFIG.maximum_generations_per_page,
-            _CONFIG.maximum_generations_per_run,
+            "make",
+            _CONFIG.maximum_make_per_page,
+            _CONFIG.maximum_make_per_run,
         )
         if not allowed:
-            return ToolResult(output="generate_media per-page request budget exhausted", is_error=True)
+            return ToolResult(output="make_image per-page request budget exhausted", is_error=True)
         key = os.environ.get(_CONFIG.generation_api_key_env, "").strip()
         if not key:
             return ToolResult(
                 output=f"missing media API key in {_CONFIG.generation_api_key_env}", is_error=True
             )
-        page_id = str(self.state.validation_context.get("page_id", self.state.task.workerId))
+        page_id = f"p{self.state.page}"
         prompt = (
             "Create a clearly non-documentary editorial illustration for an educational lecture. "
             "It must not resemble an archival photograph, documentary portrait, manuscript, or "
@@ -422,33 +418,33 @@ class GenerateMediaTool(BaseTool):
             relative = f"assets/{asset_id}.{extension}"
             _atomic_bytes(self.state.run_dir / relative, binary)
             record = {
-                "assetId": asset_id,
-                "pageId": page_id,
+                "asset_id": asset_id,
+                "page": self.state.page,
                 "kind": arguments.role.value,
-                "alt": arguments.alt_text,
-                "sourceType": "generated-editorial",
-                "sourceUrl": "",
+                "alt": arguments.alt,
+                "source_type": "generated-editorial",
+                "source_url": "",
                 "license": "model-output",
-                "localPath": relative,
-                "mimeType": mime,
+                "local_path": relative,
+                "mime_type": mime,
                 "width": width,
                 "height": height,
                 "bytes": len(binary),
                 "sha256": hashlib.sha256(binary).hexdigest(),
                 "model": _CONFIG.generation_model,
                 "prompt": prompt,
-                "promptSha256": prompt_hash,
+                "prompt_sha256": prompt_hash,
                 "usage": body.get("usage") or {},
-                "acquiredAt": _now(),
+                "created_at": _now(),
             }
             record = _record_asset(self.state.run_dir, record)
             media_assets = self.state.tool_state.setdefault("mediaAssets", [])
-            if record["assetId"] not in media_assets:
-                media_assets.append(record["assetId"])
+            if record["asset_id"] not in media_assets:
+                media_assets.append(record["asset_id"])
             self.state.save_tool_state()
             self.state.event(
-                "media-generated", assetId=record["assetId"], model=_CONFIG.generation_model
+                "media.made", asset_id=record["asset_id"], model=_CONFIG.generation_model
             )
-            return ToolResult(output=_tool_output(record), metadata={"assetId": record["assetId"]})
+            return ToolResult(output=_tool_output(record), metadata={"asset_id": record["asset_id"]})
         except Exception as exc:
             return ToolResult(output=f"media generation failed: {exc}", is_error=True)

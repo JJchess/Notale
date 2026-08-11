@@ -1,11 +1,4 @@
-"""[5] Assemble & Global pass —— 单线程。拼装 + 跨页一致性。
-
-WIP 门禁：只有 completed / degraded 页进成品（orchestrator 保证传入的就是这两类）。
-每个 PageArtifact.html 保持 Notale 的权威页产物，落成独立 slides/<pageId>.html，再由
-Reveal.js 外壳通过 sandbox iframe 整页嵌入。页面间 CSS/JS/ID 互不污染。
-一致性 v0 全是确定性算法：术语/符号出现形态校验、shingle 近重复、plan 覆盖。
-difficultyProgression 未实现 → None，如实标注。
-"""
+"""Deterministically package ordered page artifacts as an offline Reveal deck."""
 
 from __future__ import annotations
 
@@ -14,24 +7,12 @@ import re
 import shutil
 from pathlib import Path
 
-from notale.core.models import (
-    AssembledDeck,
-    ConsistencyReport,
-    Globals,
-    Outline,
-    PageArtifact,
-    PageSpec,
-)
-from notale.utils.parsing import jaccard, shingles, visible_text
-from notale.utils.config import get_config
+from notale.core.models import PageArtifact
+from notale.utils.skill_catalog import STYLE_TOKEN_KEYS, is_safe_style_value
 
-_DECK_CONFIG = get_config().deck
-_DUP_THRESHOLD = _DECK_CONFIG.duplicate_similarity_threshold
 
-_SAFE_PAGE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$")
-
-_DECK_TEMPLATE = """<!doctype html>
-<html lang="zh">
+_DECK = """<!doctype html>
+<html lang="{language}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -40,18 +21,13 @@ _DECK_TEMPLATE = """<!doctype html>
   <link rel="stylesheet" href="runtime/deck-shell.css">
 </head>
 <body>
-  <div class="reveal">
-    <div class="slides">
+  <div class="reveal"><div class="slides">
 {slides}
-    </div>
-  </div>
+  </div></div>
   <div class="deck-overview" data-deck-overview role="dialog" aria-modal="true"
        aria-labelledby="deck-overview-title" hidden>
     <header class="deck-overview-header">
-      <div>
-        <h2 id="deck-overview-title">总览</h2>
-        <p>选择页面继续讲义</p>
-      </div>
+      <div><h2 id="deck-overview-title">总览</h2><p>选择页面继续讲义</p></div>
       <output data-deck-overview-count aria-live="polite"></output>
       <button class="deck-overview-close" type="button" data-deck-action="close-overview"
               title="关闭总览 (Esc)" aria-label="关闭总览">×</button>
@@ -72,39 +48,33 @@ _DECK_TEMPLATE = """<!doctype html>
 </body>
 </html>"""
 
-_SLIDE_DOCUMENT = """<!doctype html>
+_SLIDE = """<!doctype html>
 <html lang="{language}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <link rel="stylesheet" href="../runtime/global.css">
-  <style>
-    html, body {{ width:100%; height:100%; margin:0; overflow:hidden; }}
-    *, *::before, *::after {{ box-sizing:border-box; }}
-  </style>
+  <style>html,body{{width:100%;height:100%;margin:0;overflow:hidden}}*,*::before,*::after{{box-sizing:border-box}}</style>
 </head>
-<body data-page-id="{page_id}">
+<body data-page="{page}">
 {content}
 <script>
-(function () {{
+(() => {{
   "use strict";
-  addEventListener("message", function (event) {{
-    var data = event.data || {{}};
+  addEventListener("message", event => {{
+    const data = event.data || {{}};
     if (data.source !== "notale-deck" || !String(data.type || "").startsWith("notale:")) return;
-    document.dispatchEvent(new CustomEvent(data.type, {{ detail: data.detail || {{}} }}));
+    document.dispatchEvent(new CustomEvent(data.type, {{detail:data.detail || {{}}}}));
   }});
-  addEventListener("keydown", function (event) {{
-    var target = event.target;
-    var editable = target && (target.matches("input, textarea, select, [contenteditable=true]") || target.closest("[contenteditable=true]"));
+  addEventListener("keydown", event => {{
+    const target = event.target;
+    const editable = target && (target.matches("input,textarea,select,[contenteditable=true]") || target.closest("[contenteditable=true]"));
     if (editable || event.altKey || event.ctrlKey || event.metaKey) return;
-    var prev = event.key === "ArrowLeft" || event.key === "ArrowUp" || event.key === "PageUp";
-    var next = event.key === "ArrowRight" || event.key === "ArrowDown" || event.key === "PageDown" || event.key === " ";
-    if (!prev && !next) return;
+    const previous = ["ArrowLeft","ArrowUp","PageUp"].includes(event.key);
+    const next = ["ArrowRight","ArrowDown","PageDown"," "].includes(event.key);
+    if (!previous && !next) return;
     event.preventDefault();
-    parent.postMessage({{ source: "notale-slide", type: "notale:navigate", direction: prev ? "prev" : "next" }}, "*");
-  }});
-  addEventListener("error", function (event) {{
-    parent.postMessage({{ source: "notale-slide", type: "notale:error", message: event.message || "page runtime error" }}, "*");
+    parent.postMessage({{source:"notale-slide",type:"notale:navigate",direction:previous?"prev":"next"}}, "*");
   }});
 }})();
 </script>
@@ -112,165 +82,75 @@ _SLIDE_DOCUMENT = """<!doctype html>
 </html>"""
 
 
-def assemble_deck(
-    pages: list[PageArtifact], specs: list[PageSpec], title: str
-) -> tuple[AssembledDeck, str]:
-    """编译 Reveal.js 外壳。页面正文另由 write_deck_package 写入 slides/。"""
-    ordered = list(pages)  # 调用方按 specs 顺序传入
-    seen: set[str] = set()
-    for page in ordered:
-        if not _SAFE_PAGE_ID.fullmatch(page.pageId):
-            raise ValueError(f"不安全的 pageId，不能用作离线文件名：{page.pageId!r}")
-        if page.pageId in seen:
-            raise ValueError(f"重复 pageId：{page.pageId}")
-        seen.add(page.pageId)
-
-    slides = []
-    for page in ordered:
-        notes = html_mod.escape(page.speakerNotes)
-        slides.append(
-            '      <section data-page-id="{pid}">\n'
-            '        <iframe class="notale-slide-frame" data-page-id="{pid}" '
-            'src="slides/{pid}.html" title="{label}" sandbox="allow-scripts"></iframe>\n'
-            '        <aside class="notes">{notes}</aside>\n'
-            "      </section>".format(
-                pid=html_mod.escape(page.pageId, quote=True),
-                label=html_mod.escape(f"讲义页面 {page.pageId}", quote=True),
-                notes=notes,
-            )
-        )
-    deck_html = _DECK_TEMPLATE.format(
-        title=html_mod.escape(title), slides="\n".join(slides)
-    )
-    spec_by_id = {s.pageId: s for s in specs}
-    total = sum(spec_by_id[p.pageId].timeBudgetSec for p in ordered if p.pageId in spec_by_id)
-    return AssembledDeck(pages=[p.pageId for p in ordered], totalDurationEstimate=total), deck_html
-
-
-def _safe_style_tokens(style_tokens: dict[str, str] | None) -> str:
-    if not style_tokens:
+def _safe_style_tokens(tokens: dict[str, str] | None) -> str:
+    if not tokens:
         return ""
-    allowed = {
-        "bg", "surface", "ink", "muted", "accent", "accent-2", "line", "font", "mono",
-    }
     declarations: list[str] = []
-    for raw_key, raw_value in sorted(style_tokens.items()):
-        key = re.sub(r"[^a-z0-9-]+", "-", str(raw_key).strip().lower()).strip("-")
+    for raw_key, raw_value in sorted(tokens.items()):
+        key = re.sub(r"[^a-z0-9-]+", "-", str(raw_key).lower()).strip("-")
         value = str(raw_value).strip()
-        if (
-            key not in allowed
-            or not value
-            or re.search(r"[{};<>]|url\s*\(", value, flags=re.I)
-        ):
-            continue
-        declarations.append(f"  --notale-{key}: {value};")
+        if key in STYLE_TOKEN_KEYS and is_safe_style_value(value):
+            declarations.append(f"  --notale-{key}: {value};")
     return "\n:root {\n" + "\n".join(declarations) + "\n}\n" if declarations else ""
 
 
-def _copy_runtime(run_dir: Path, style_tokens: dict[str, str] | None = None) -> None:
-    """复制包内固定 Reveal vendor 与 Notale 薄外壳。"""
-    reveal_source = Path(__file__).resolve().parent / "vendor" / "reveal"
-    shell_source = Path(__file__).resolve().parent / "runtime"
+def _copy_runtime(run_dir: Path, style_tokens: dict[str, str] | None) -> None:
+    root = Path(__file__).resolve().parent
+    reveal = root / "vendor" / "reveal"
+    shell = root / "runtime"
     required = [
-        reveal_source / "reveal.css",
-        reveal_source / "reveal.js",
-        reveal_source / "plugin" / "notes.js",
-        reveal_source / "plugin" / "notes.html",
-        shell_source / "deck-shell.css",
-        shell_source / "deck-shell.js",
-        shell_source / "global.css",
+        reveal / "reveal.css", reveal / "reveal.js", reveal / "plugin" / "notes.js",
+        reveal / "plugin" / "notes.html", shell / "deck-shell.css",
+        shell / "deck-shell.js", shell / "global.css",
     ]
     missing = [str(path) for path in required if not path.is_file()]
     if missing:
-        raise FileNotFoundError(f"Reveal 离线运行时不完整：{missing}")
-
+        raise FileNotFoundError(f"offline deck runtime is incomplete: {missing}")
     target = run_dir / "runtime"
     (target / "reveal" / "plugin").mkdir(parents=True, exist_ok=True)
-    shutil.copy2(reveal_source / "reveal.css", target / "reveal" / "reveal.css")
-    shutil.copy2(reveal_source / "reveal.js", target / "reveal" / "reveal.js")
-    shutil.copy2(reveal_source / "plugin" / "notes.js", target / "reveal" / "plugin" / "notes.js")
-    shutil.copy2(reveal_source / "plugin" / "notes.html", target / "reveal" / "plugin" / "notes.html")
-    shutil.copy2(shell_source / "deck-shell.css", target / "deck-shell.css")
-    shutil.copy2(shell_source / "deck-shell.js", target / "deck-shell.js")
-    base_css = (shell_source / "global.css").read_text(encoding="utf-8")
-    (target / "global.css").write_text(
-        base_css.rstrip() + "\n" + _safe_style_tokens(style_tokens), encoding="utf-8"
-    )
+    shutil.copy2(reveal / "reveal.css", target / "reveal" / "reveal.css")
+    shutil.copy2(reveal / "reveal.js", target / "reveal" / "reveal.js")
+    shutil.copy2(reveal / "plugin" / "notes.js", target / "reveal" / "plugin" / "notes.js")
+    shutil.copy2(reveal / "plugin" / "notes.html", target / "reveal" / "plugin" / "notes.html")
+    shutil.copy2(shell / "deck-shell.css", target / "deck-shell.css")
+    shutil.copy2(shell / "deck-shell.js", target / "deck-shell.js")
+    css = (shell / "global.css").read_text(encoding="utf-8")
+    (target / "global.css").write_text(css.rstrip() + "\n" + _safe_style_tokens(style_tokens), encoding="utf-8")
 
 
 def write_deck_package(
     run_dir: Path,
     pages: list[PageArtifact],
-    specs: list[PageSpec],
     title: str,
     *,
     language: str = "zh",
     style_tokens: dict[str, str] | None = None,
-) -> tuple[AssembledDeck, str]:
-    """写出可离线交付的 Reveal.js 目录包。"""
-    deck, deck_html = assemble_deck(pages, specs, title)
+) -> Path:
+    run_dir = Path(run_dir)
     slides_dir = run_dir / "slides"
     slides_dir.mkdir(parents=True, exist_ok=True)
     _copy_runtime(run_dir, style_tokens)
-    for page in pages:
-        document = _SLIDE_DOCUMENT.format(
+    sections: list[str] = []
+    for number, artifact in enumerate(pages, 1):
+        page_id = f"p{number}"
+        document = _SLIDE.format(
             language=html_mod.escape(language, quote=True),
-            page_id=html_mod.escape(page.pageId, quote=True),
-            content=page.html,
+            page=number,
+            content=artifact.html,
         )
-        (slides_dir / f"{page.pageId}.html").write_text(document, encoding="utf-8")
-    (run_dir / "deck.html").write_text(deck_html, encoding="utf-8")
-    deck.path = str(run_dir / "deck.html")
-    return deck, deck_html
-
-
-def _term_variants(text: str, term: str) -> set[str]:
-    """术语的出现形态（大小写/全半角差异算变体）。"""
-    return set(re.findall(re.escape(term), text, flags=re.I))
-
-
-def consistency_report(
-    pages: list[PageArtifact],
-    specs: list[PageSpec],
-    globals_: Globals,
-    outline: Outline,
-) -> ConsistencyReport:
-    texts = {p.pageId: visible_text(p.html) + " " + p.speakerNotes for p in pages}
-
-    # 术语/符号：同一术语在全篇出现形态应一致（v0 启发式：变体>1 即不一致）
-    term_ok = True
-    for term in globals_.terminology:
-        variants: set[str] = set()
-        for t in texts.values():
-            variants |= _term_variants(t, term)
-        if len(variants) > 1:
-            term_ok = False
-            break
-
-    # 近重复页（shingle Jaccard）
-    shingle_map = {
-        pid: shingles(t, n=_DECK_CONFIG.duplicate_shingle_size) for pid, t in texts.items()
-    }
-    dups: list[str] = []
-    ids = list(texts)
-    for i in range(len(ids)):
-        for j in range(i + 1, len(ids)):
-            if jaccard(shingle_map[ids[i]], shingle_map[ids[j]]) >= _DUP_THRESHOLD:
-                dups.append(f"{ids[i]}≈{ids[j]}")
-
-    # plan 覆盖：每章 pageRange 内至少有一页真实存在（按 specs 序号区间映射，不假设 pageId 命名）
-    have = {p.pageId for p in pages}
-    uncovered = []
-    for ch in outline.chapters:
-        lo, hi = ch.pageRange
-        chapter_pages = {s.pageId for s in specs[max(0, lo - 1) : hi]}
-        if not chapter_pages & have:
-            uncovered.append(ch.title)
-
-    return ConsistencyReport(
-        terminologyConsistent=term_ok,
-        notationConsistent=None,  # 符号一致性 v0 未实现，如实 None
-        difficultyProgression=None,  # 未实现，如实 None
-        duplicateContentFlags=dups,
-        planCoverage=uncovered,
+        (slides_dir / f"{page_id}.html").write_text(document, encoding="utf-8")
+        sections.append(
+            f'    <section data-page-id="{page_id}">\n'
+            f'      <iframe class="notale-slide-frame" data-page-id="{page_id}" src="slides/{page_id}.html" '
+            f'title="讲义页面 {number}" sandbox="allow-scripts"></iframe>\n'
+            f'      <aside class="notes">{html_mod.escape(artifact.notes)}</aside>\n'
+            "    </section>"
+        )
+    deck = _DECK.format(
+        language=html_mod.escape(language, quote=True),
+        title=html_mod.escape(title),
+        slides="\n".join(sections),
     )
+    path = run_dir / "deck.html"
+    path.write_text(deck, encoding="utf-8")
+    return path

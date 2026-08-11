@@ -10,7 +10,7 @@ import yaml
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from notale.roles.base import RoleSkillPolicy, RoleSpec
-from notale.utils.config import SKILLS_PATH, get_config
+from notale.utils.config import SKILLS_PATH
 
 
 _ROLE_NAME = re.compile(r"^[a-z][a-z0-9-]*$")
@@ -23,14 +23,12 @@ class _StrictModel(BaseModel):
 
 
 class _SkillPolicyDocument(_StrictModel):
-    assignable: list[str] = Field(default_factory=list)
     shared: list[str] = Field(default_factory=list)
     page: list[str] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def validate_groups(self) -> "_SkillPolicyDocument":
         groups = {
-            "assignable": self.assignable,
             "shared": self.shared,
             "page": self.page,
         }
@@ -40,11 +38,7 @@ class _SkillPolicyDocument(_StrictModel):
             invalid = sorted(name for name in names if _SKILL_NAME.fullmatch(name) is None)
             if invalid:
                 raise ValueError(f"role skills.{label} contains invalid names: {invalid}")
-        overlap = (
-            set(self.assignable) & set(self.shared)
-            | set(self.assignable) & set(self.page)
-            | set(self.shared) & set(self.page)
-        )
+        overlap = set(self.shared) & set(self.page)
         if overlap:
             raise ValueError(f"role skill groups overlap: {sorted(overlap)}")
         return self
@@ -64,13 +58,6 @@ class _RoleDocument(_StrictModel):
         invalid = sorted(tool for tool in self.tools if _TOOL_NAME.fullmatch(tool) is None)
         if invalid:
             raise ValueError(f"role contains invalid tool names: {invalid}")
-        has_optional_skills = any(
-            (self.skills.assignable, self.skills.shared, self.skills.page)
-        )
-        if has_optional_skills != ("skill_read" in self.tools):
-            raise ValueError(
-                "skill_read must be present exactly when the role authorizes optional skills"
-            )
         return self
 
 
@@ -101,7 +88,6 @@ def load_role(path: Path, *, skills_root: Path = SKILLS_PATH) -> RoleSpec:
             f"role filename/name mismatch: {path.stem!r} != {document.name!r}"
         )
     policy = RoleSkillPolicy(
-        assignable=tuple(document.skills.assignable),
         shared=tuple(document.skills.shared),
         page=tuple(document.skills.page),
     )
@@ -109,7 +95,6 @@ def load_role(path: Path, *, skills_root: Path = SKILLS_PATH) -> RoleSpec:
         if not (Path(skills_root) / skill / "SKILL.md").is_file():
             raise ValueError(f"role {document.name} skill does not exist: {skill}")
 
-    config = get_config()
     digest = hashlib.sha256(raw).hexdigest()
     return RoleSpec(
         name=document.name,
@@ -118,8 +103,4 @@ def load_role(path: Path, *, skills_root: Path = SKILLS_PATH) -> RoleSpec:
         skill_policy=policy,
         document_path=path,
         document_sha256=digest,
-        auto_compact_threshold_tokens=(
-            config.agents.role_for(document.name).auto_compact_threshold_tokens
-        ),
-        version=f"{config.versions.agent_protocol}:{digest[:16]}",
     )

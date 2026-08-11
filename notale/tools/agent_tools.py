@@ -1,859 +1,694 @@
-"""Run-scoped tools for independently governed Notale workers.
-
-The builder surface is intentionally semantic and file-backed: one ``submit_page``
-call writes the page, performs deterministic delivery checks, and accepts the final
-artifact. Failed pages remain in ``workspace/page.html`` for targeted repair. The
-private scratch directory is reserved for harness checks and is not exposed to the
-model as a tool surface.
-"""
+"""The complete Notale tool surface: Planner draft tools and page transaction tools."""
 
 from __future__ import annotations
 
-import datetime as dt
-import hashlib
+import asyncio
 import json
 import re
-import subprocess
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Literal
 
-from openharness.tools.base import BaseTool, ToolExecutionContext, ToolResult
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from notale.core.models import AgentTaskState, PageArtifact, PageStatus, SkillAssignment
-from notale.utils.config import get_config
-from notale.utils.skill_catalog import load_skill_descriptor
+from notale.core.models import (
+    Chapter,
+    DesignSkillRef,
+    LecturePlan,
+    NarrativeRelation,
+    PageArtifact,
+    PageLink,
+    PagePlan,
+    PageType,
+    SkillAssignment,
+)
+from notale.core.observability import EventLog
+from notale.core.stages.page_check import clean_fragment, page_delivery_failures
+from notale.tools.base import BaseTool, ToolContext, ToolResult
+from notale.utils.config import SKILLS_PATH, get_config
+from notale.utils.skill_catalog import (
+    GeneratedDesignSkill,
+    SkillCatalog,
+    create_generated_style,
+    write_generated_style,
+)
 
 
-_TOOLS_CONFIG = get_config().tools
+_CONFIG = get_config()
+OPTIONAL_PAGE_TOOLS = {"run_js", "find_image", "make_image"}
 
 
-def _now() -> str:
-    return dt.datetime.now(dt.timezone.utc).isoformat()
-
-
-def _atomic_write(path: Path, text: str) -> None:
+def _atomic_text(path: Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(path.suffix + ".tmp")
     tmp.write_text(text, encoding="utf-8")
     tmp.replace(path)
 
 
-def _inside(root: Path, candidate: str) -> Path:
-    if not candidate or Path(candidate).is_absolute():
-        raise ValueError("path must be a non-empty relative path")
-    resolved = (root / candidate).resolve()
-    root = root.resolve()
-    if resolved != root and root not in resolved.parents:
-        raise ValueError("path escapes the allowed workspace")
-    return resolved
+class ToolInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    @model_validator(mode="before")
+    @classmethod
+    def decode_json_fields(cls, value: Any) -> Any:
+        if not isinstance(value, dict):
+            return value
+        result = dict(value)
+        for key, item in result.items():
+            if isinstance(item, str) and item.strip().startswith(("[", "{")):
+                try:
+                    result[key] = json.loads(item)
+                except json.JSONDecodeError:
+                    pass
+        return result
 
 
-def _sha256(text: str) -> str:
-    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+class PlanChapter(ToolInput):
+    id: str = Field(pattern=r"^[a-z0-9][a-z0-9-]*$")
+    title: str = Field(min_length=1)
+    goal: str = Field(min_length=1)
+    entry: str = Field(min_length=1)
+    payoff: str = Field(min_length=1)
+    pages: int = Field(ge=1)
+
+
+class SymbolicLink(ToolInput):
+    chapter: str = Field(pattern=r"^[a-z0-9][a-z0-9-]*$")
+    anchor: Literal["entry", "exit"]
+    relation: NarrativeRelation
+    cue: str = Field(min_length=1)
+
+
+class DraftPage(ToolInput):
+    type: PageType
+    claim: str = Field(min_length=1)
+    learning_action: str = Field(min_length=1)
+    narrative_role: str = Field(min_length=1)
+    links: list[SymbolicLink] = Field(default_factory=list, max_length=3)
+    skills: list[SkillAssignment] = Field(default_factory=list)
+    tools: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_capabilities(self) -> "DraftPage":
+        skill_names = [item.name for item in self.skills]
+        if len(skill_names) != len(set(skill_names)):
+            raise ValueError("page skills contain duplicate names")
+        if len(self.tools) != len(set(self.tools)):
+            raise ValueError("page tools contain duplicate names")
+        invalid = sorted(
+            name for name in self.tools if re.fullmatch(r"[a-z][a-z0-9_]*", name) is None
+        )
+        if invalid:
+            raise ValueError(f"invalid tool names: {invalid}")
+        return self
+
+
+class ChapterPages(ToolInput):
+    id: str = Field(pattern=r"^[a-z0-9][a-z0-9-]*$")
+    pages: list[DraftPage] = Field(min_length=1)
+
+
+def _validate_draft_structure(
+    chapters: list[PlanChapter], chapter_pages: list[ChapterPages]
+) -> None:
+    chapter_ids = [chapter.id for chapter in chapters]
+    if len(chapter_ids) != len(set(chapter_ids)):
+        raise ValueError("chapter ids must be unique")
+    positions = {chapter_id: index for index, chapter_id in enumerate(chapter_ids)}
+
+    outline = {chapter.id: chapter for chapter in chapters}
+    for item in chapter_pages:
+        source_position = positions.get(item.id)
+        if source_position is None:
+            raise ValueError(f"unknown source chapter: {item.id}")
+        backward_link = False
+        for page_offset, page in enumerate(item.pages):
+            keys = [
+                (link.chapter, link.anchor, link.relation) for link in page.links
+            ]
+            if len(keys) != len(set(keys)):
+                raise ValueError(f"chapter {item.id} contains duplicate page links")
+            for link in page.links:
+                if link.chapter not in outline:
+                    raise ValueError(f"unknown link chapter: {link.chapter}")
+                target_position = positions[link.chapter]
+                if target_position == source_position:
+                    target_offset = 0 if link.anchor == "entry" else len(item.pages) - 1
+                    if target_offset == page_offset:
+                        raise ValueError("a page link cannot target itself")
+                    if (
+                        link.relation == NarrativeRelation.SETS_UP
+                        and target_offset < page_offset
+                    ):
+                        raise ValueError("sets-up must target a later page")
+                    if (
+                        link.relation != NarrativeRelation.SETS_UP
+                        and target_offset > page_offset
+                    ):
+                        raise ValueError(
+                            f"{link.relation.value} must target an earlier page"
+                        )
+                    continue
+                if (
+                    link.relation == NarrativeRelation.SETS_UP
+                    and target_position <= source_position
+                ):
+                    raise ValueError("sets-up must target a later chapter")
+                if (
+                    link.relation != NarrativeRelation.SETS_UP
+                    and target_position >= source_position
+                ):
+                    raise ValueError(
+                        f"{link.relation.value} must target an earlier chapter"
+                    )
+                if target_position < source_position:
+                    backward_link = True
+        if source_position and not backward_link:
+            raise ValueError(
+                f"chapter {item.id} needs a page link to an earlier chapter"
+            )
+
+
+class PlanInput(ToolInput):
+    title: str = Field(min_length=1)
+    language: str = Field(min_length=1)
+    audience: str = Field(min_length=1)
+    throughline: str = Field(min_length=1)
+    chapters: list[PlanChapter] = Field(min_length=1)
+    chapter_pages: list[ChapterPages] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_shape(self) -> "PlanInput":
+        chapter_ids = [chapter.id for chapter in self.chapters]
+        page_ids = [chapter.id for chapter in self.chapter_pages]
+        if page_ids and page_ids != chapter_ids:
+            raise ValueError(
+                "chapter_pages must include every chapter in order or be empty"
+            )
+        _validate_draft_structure(self.chapters, self.chapter_pages)
+        return self
+
+
+class PagesInput(ToolInput):
+    chapters: list[ChapterPages] = Field(min_length=1)
+
+
+class StyleInput(ToolInput):
+    name: str = Field(pattern=r"^[a-z0-9][a-z0-9-]*$")
+    description: str = Field(min_length=1)
+    body: str = Field(min_length=1)
+    tokens: dict[str, str]
+
+
+class BlockInput(ToolInput):
+    reason: str = Field(min_length=1, max_length=_CONFIG.tools.block_reason_max_chars)
 
 
 @dataclass
-class ManagedToolState:
+class PlannerRootState:
     run_dir: Path
-    worker_dir: Path
-    task: AgentTaskState
-    allowed_skills: dict[str, dict[str, Any]]
-    submit_validator: Callable[[dict[str, Any]], Any]
-    validation_context: dict[str, Any] = field(default_factory=dict)
+    catalog: SkillCatalog
+    logger: EventLog
+    submission: PlanInput | None = None
+    style: GeneratedDesignSkill | None = None
+    style_turn: int | None = None
+    blocked: str = ""
+
+    def __post_init__(self) -> None:
+        self.workspace = self.run_dir / ".work" / "planner" / "root"
+        self.workspace.mkdir(parents=True, exist_ok=True)
+
+
+@dataclass
+class PlannerGroupState:
+    run_dir: Path
+    group: int
+    chapters: tuple[PlanChapter, ...]
+    all_chapters: tuple[PlanChapter, ...]
+    catalog: SkillCatalog
+    logger: EventLog
+    submission: PagesInput | None = None
+    blocked: str = ""
+
+    def __post_init__(self) -> None:
+        self.workspace = self.run_dir / ".work" / "planner" / f"g{self.group}"
+        self.workspace.mkdir(parents=True, exist_ok=True)
+
+
+def _validate_page_capabilities(
+    chapter_pages: list[ChapterPages], catalog: SkillCatalog
+) -> None:
+    for chapter in chapter_pages:
+        for offset, page in enumerate(chapter.pages, 1):
+            label = f"{chapter.id}:{offset}"
+            for skill in page.skills:
+                if skill.name not in catalog.role.skill_policy.page:
+                    raise ValueError(f"page {label} has disallowed skill: {skill.name}")
+                catalog.validate_assignment(skill)
+            unknown = sorted(set(page.tools) - OPTIONAL_PAGE_TOOLS)
+            if unknown:
+                raise ValueError(f"page {label} has unknown tools: {unknown}")
+
+
+class PlanTool(BaseTool):
+    name = "plan"
+    description = (
+        "Submit either the complete chapter-and-page plan or a chapter outline for "
+        "parallel expansion. This finishes the root Planner."
+    )
+    input_model = PlanInput
+
+    def __init__(self, state: PlannerRootState) -> None:
+        self.state = state
+
+    async def execute(self, arguments: PlanInput, context: ToolContext) -> ToolResult:
+        turn = int(context.metadata.get("turn", 0))
+        if self.state.style is None:
+            return ToolResult(
+                output="create the run design Skill with style before submitting plan",
+                is_error=True,
+            )
+        if self.state.style_turn is not None and turn <= self.state.style_turn:
+            return ToolResult(
+                output="submit plan in a new model turn after receiving the style result",
+                is_error=True,
+            )
+        try:
+            _validate_page_capabilities(arguments.chapter_pages, self.state.catalog)
+        except ValueError as exc:
+            return ToolResult(output=str(exc), is_error=True)
+        _atomic_text(
+            self.state.workspace / "plan.json", arguments.model_dump_json(indent=2)
+        )
+        self.state.submission = arguments
+        return ToolResult(
+            output=json.dumps(
+                {
+                    "grouped": not bool(arguments.chapter_pages),
+                    "chapters": len(arguments.chapters),
+                    "estimated_pages": sum(item.pages for item in arguments.chapters),
+                    "pages": sum(len(item.pages) for item in arguments.chapter_pages),
+                }
+            )
+        )
+
+
+class StyleTool(BaseTool):
+    name = "style"
+    description = (
+        "Create the one concrete, run-local design Skill that all Builders will use. "
+        "Call this before plan and wait for its result."
+    )
+    input_model = StyleInput
+
+    def __init__(self, state: PlannerRootState) -> None:
+        self.state = state
+
+    async def execute(self, arguments: StyleInput, context: ToolContext) -> ToolResult:
+        started = time.monotonic()
+        if self.state.style is not None:
+            return ToolResult(output="the run design Skill already exists", is_error=True)
+        if (SKILLS_PATH / arguments.name).exists():
+            return ToolResult(
+                output=f"generated style name collides with a packaged Skill: {arguments.name}",
+                is_error=True,
+            )
+        if (self.state.run_dir / "skills" / arguments.name).exists():
+            return ToolResult(
+                output=f"generated style name collides with a run artifact: {arguments.name}",
+                is_error=True,
+            )
+        try:
+            style = create_generated_style(**arguments.model_dump())
+            write_generated_style(self.state.workspace / "skills", style)
+        except ValueError as exc:
+            return ToolResult(output=str(exc), is_error=True)
+        self.state.style = style
+        self.state.style_turn = int(context.metadata.get("turn", 0))
+        duration_ms = round((time.monotonic() - started) * 1000)
+        self.state.logger.emit(
+            "planner.style.created",
+            agent_id="planner",
+            name=style.name,
+            sha256=style.sha256,
+            description=style.description,
+            body_chars=len(style.body),
+            token_keys=sorted(style.tokens),
+            duration_ms=duration_ms,
+        )
+        return ToolResult(
+            output=json.dumps(
+                {
+                    "name": style.name,
+                    "sha256": style.sha256,
+                    "body_chars": len(style.body),
+                    "token_keys": sorted(style.tokens),
+                    "next": "submit plan in the next model turn",
+                },
+                ensure_ascii=False,
+            )
+        )
+
+
+class PagesTool(BaseTool):
+    name = "pages"
+    description = (
+        "Submit all page plans for the assigned whole chapters. Counts may differ "
+        "from their page hints. This finishes the group Planner."
+    )
+    input_model = PagesInput
+
+    def __init__(self, state: PlannerGroupState) -> None:
+        self.state = state
+
+    async def execute(self, arguments: PagesInput, context: ToolContext) -> ToolResult:
+        del context
+        expected = [chapter.id for chapter in self.state.chapters]
+        actual = [chapter.id for chapter in arguments.chapters]
+        if actual != expected:
+            return ToolResult(
+                output=f"expected assigned chapters in order: {expected}; got {actual}",
+                is_error=True,
+            )
+        try:
+            _validate_draft_structure(
+                list(self.state.all_chapters), arguments.chapters
+            )
+            _validate_page_capabilities(arguments.chapters, self.state.catalog)
+        except ValueError as exc:
+            return ToolResult(output=str(exc), is_error=True)
+        _atomic_text(
+            self.state.workspace / "pages.json", arguments.model_dump_json(indent=2)
+        )
+        self.state.submission = arguments
+        return ToolResult(
+            output=json.dumps(
+                {
+                    "chapters": actual,
+                    "pages": sum(len(item.pages) for item in arguments.chapters),
+                }
+            )
+        )
+
+
+def assemble_plan(
+    root: PlanInput,
+    chapter_pages: list[ChapterPages],
+    catalog: SkillCatalog,
+    design: DesignSkillRef,
+) -> LecturePlan:
+    expected = [chapter.id for chapter in root.chapters]
+    actual = [chapter.id for chapter in chapter_pages]
+    if actual != expected:
+        raise ValueError(f"chapter page drafts must follow outline order: {expected}")
+    _validate_draft_structure(root.chapters, chapter_pages)
+    _validate_page_capabilities(chapter_pages, catalog)
+
+    ranges: dict[str, tuple[int, int]] = {}
+    chapters: list[Chapter] = []
+    cursor = 1
+    for outline, drafted in zip(root.chapters, chapter_pages):
+        start = cursor
+        end = start + len(drafted.pages) - 1
+        ranges[outline.id] = (start, end)
+        chapters.append(
+            Chapter(
+                id=outline.id,
+                title=outline.title,
+                pages=len(drafted.pages),
+                goal=outline.goal,
+                entry=outline.entry,
+                payoff=outline.payoff,
+            )
+        )
+        cursor = end + 1
+
+    pages: list[PagePlan] = []
+    for drafted in chapter_pages:
+        for page in drafted.pages:
+            links = [
+                PageLink(
+                    target=ranges[link.chapter][0 if link.anchor == "entry" else 1],
+                    relation=link.relation,
+                    cue=link.cue,
+                )
+                for link in page.links
+            ]
+            pages.append(
+                PagePlan(
+                    type=page.type,
+                    claim=page.claim,
+                    learning_action=page.learning_action,
+                    narrative_role=page.narrative_role,
+                    links=links,
+                    skills=page.skills,
+                    tools=page.tools,
+                )
+            )
+
+    plan = LecturePlan(
+        title=root.title,
+        language=root.language,
+        audience=root.audience,
+        throughline=root.throughline,
+        chapters=chapters,
+        design=design,
+        pages=pages,
+    )
+    return catalog.validate_plan(plan, OPTIONAL_PAGE_TOOLS)
+
+
+class BlockTool(BaseTool):
+    name = "block"
+    description = "Stop this agent because a real blocker prevents completion."
+    input_model = BlockInput
+
+    def __init__(self, state: Any) -> None:
+        self.state = state
+
+    async def execute(self, arguments: BlockInput, context: ToolContext) -> ToolResult:
+        del context
+        self.state.blocked = arguments.reason
+        return ToolResult(output="blocked")
+
+
+@dataclass
+class PageToolState:
+    run_dir: Path
+    page: int
+    logger: EventLog
+    revision: int = 0
+    submission: PageArtifact | None = None
+    blocked: str = ""
     tool_state: dict[str, Any] = field(default_factory=dict)
-    event_callback: Callable[[str, dict[str, Any]], None] | None = None
-    submission: Any | None = None
+    lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
-    @property
-    def workspace(self) -> Path:
-        return self.worker_dir / "workspace"
-
-    @property
-    def scratch(self) -> Path:
-        return self.workspace / "scratch"
-
-    @property
-    def page_path(self) -> Path:
-        return self.workspace / "page.html"
-
-    @property
-    def task_path(self) -> Path:
-        return self.worker_dir / "task.json"
-
-    def save_task(self) -> None:
-        self.task.updatedAt = _now()
-        _atomic_write(self.task_path, self.task.model_dump_json(indent=2))
-
-    def save_submission(self) -> None:
-        value = self.submission
-        if hasattr(value, "model_dump_json"):
-            text = value.model_dump_json(indent=2)
-        else:
-            text = json.dumps(value, ensure_ascii=False, indent=2, default=str)
-        _atomic_write(self.worker_dir / "submission.json", text)
+    def __post_init__(self) -> None:
+        self.workspace = self.run_dir / ".work" / f"p{self.page}"
+        self.workspace.mkdir(parents=True, exist_ok=True)
+        self.page_path = self.workspace / "page.html"
 
     def save_tool_state(self) -> None:
-        _atomic_write(
-            self.worker_dir / "tool-state.json",
-            json.dumps(self.tool_state, ensure_ascii=False, indent=2, default=str),
-        )
+        return
 
     def event(self, kind: str, **fields: Any) -> None:
-        if self.event_callback is not None:
-            self.event_callback(kind, fields)
-
-    def skill_progress_key(self, name: str) -> str:
-        return name
-
-    def skill_is_loaded(self, name: str) -> bool:
-        if name not in self.allowed_skills:
-            return False
-        key = self.skill_progress_key(name)
-        epoch = int(self.tool_state.get("skillReloadEpoch", 0) or 0)
-        loaded_epochs = self.tool_state.get("skillLoadedEpochs") or {}
-        return (
-            name in (self.tool_state.get("loadedSkills") or [])
-            and loaded_epochs.get(key) == epoch
-        )
-
-    def missing_loaded_skills(self) -> list[str]:
-        missing: list[str] = []
-        for name in self.allowed_skills:
-            if self.skill_is_loaded(name):
-                continue
-            missing.append(name)
-        return missing
-
-    def complete_step(self, step_id: str, evidence: str) -> None:
-        step = next((item for item in self.task.steps if item.id == step_id), None)
-        if step is None or step.status == "completed":
-            return
-        step.status = "completed"
-        step.evidence = evidence
-        step.updatedAt = _now()
-        self.task.status = "in_progress"
-        self.save_task()
-        self.event("task-updated", stepId=step.id, status="completed", evidence=evidence,
-                   source="harness")
-
-    def complete_all_steps(self, evidence: str) -> None:
-        for step in self.task.steps:
-            if step.status != "completed":
-                step.status = "completed"
-                step.evidence = evidence
-                step.updatedAt = _now()
-                self.event("task-updated", stepId=step.id, status="completed",
-                           evidence=evidence, source="harness")
-        self.save_task()
-
-def load_assigned_skills(
-    skills_root: Path,
-    assignments: list[SkillAssignment],
-) -> dict[str, dict[str, Any]]:
-    """Load each assigned skill plus only its selected profile and local instruction."""
-    assigned: dict[str, dict[str, Any]] = {}
-    for assignment in assignments:
-        descriptor = load_skill_descriptor(skills_root, assignment.name)
-        parts = [descriptor.body]
-        if assignment.profile is not None:
-            if assignment.profile not in descriptor.profiles:
-                raise ValueError(
-                    f"profile does not belong to skill: "
-                    f"{assignment.name}:{assignment.profile}"
-                )
-            parts.append(descriptor.profile_references[assignment.profile])
-        elif descriptor.profiles:
-            raise ValueError(f"skill requires one profile: {assignment.name}")
-        if assignment.instruction:
-            parts.append("# Assignment Instruction\n\n" + assignment.instruction)
-        content = "\n\n".join(parts)
-        assigned[assignment.name] = {
-            "metadata": {
-                "name": descriptor.name,
-                "description": descriptor.description,
-            },
-            "content": content,
-            "path": str(skills_root / assignment.name / "SKILL.md"),
-            "assignment": assignment.model_dump(mode="json"),
-            "sha256": _sha256(content),
-            "catalogSha256": descriptor.sha256,
-        }
-    return assigned
+        self.logger.emit(kind, agent_id=f"builder:p{self.page}", page=self.page, **fields)
 
 
-class SkillReadInput(BaseModel):
-    name: str
+class ReadPageInput(ToolInput):
     offset: int = Field(default=0, ge=0)
     limit: int = Field(
-        default=_TOOLS_CONFIG.skill_chunk_default_chars,
-        ge=_TOOLS_CONFIG.skill_chunk_min_chars,
-        le=_TOOLS_CONFIG.chunk_max_chars,
-    )
-    reload: bool = Field(
-        default=False,
-        description="Compatibility hint; only a harness-recorded compact opens a reload epoch",
-    )
-
-
-class AssignedSkillTool(BaseTool):
-    name = "skill_read"
-    description = (
-        "Read an assigned skill sequentially in bounded chunks until nextOffset=EOF. "
-        "Unassigned skills are denied."
-    )
-    input_model = SkillReadInput
-
-    def __init__(self, state: ManagedToolState) -> None:
-        self.state = state
-
-    def is_read_only(self, arguments: SkillReadInput) -> bool:
-        return True
-
-    async def execute(self, arguments: SkillReadInput, context: ToolExecutionContext) -> ToolResult:
-        del context
-        skill = self.state.allowed_skills.get(arguments.name)
-        if skill is None:
-            return ToolResult(output=f"skill is not assigned: {arguments.name}", is_error=True)
-        content = str(skill["content"])
-        loaded = self.state.tool_state.setdefault("loadedSkills", [])
-        epoch = int(self.state.tool_state.get("skillReloadEpoch", 0) or 0)
-        loaded_epochs = self.state.tool_state.setdefault("skillLoadedEpochs", {})
-        key = self.state.skill_progress_key(arguments.name)
-        if self.state.skill_is_loaded(arguments.name):
-            return ToolResult(output=(
-                f"skill {arguments.name!r} is already loaded "
-                "in full and no compact has occurred; "
-                "continue directly with the task. Model-supplied reload cannot override the harness."
-            ), metadata={
-                "skill": arguments.name,
-                "alreadyLoaded": True,
-                "reloadEpoch": epoch,
-            })
-        progress_store = self.state.tool_state.setdefault("skillReadProgress", {})
-        progress = progress_store.get(key) or {}
-        expected_offset = 0
-        if (
-            progress.get("reloadEpoch") == epoch
-            and progress.get("totalChars") == len(content)
-        ):
-            expected_offset = int(progress.get("nextOffset") or 0)
-        if arguments.offset != expected_offset:
-            return ToolResult(
-                output=(
-                    f"skill {arguments.name!r} must be read "
-                    f"sequentially; continue with offset={expected_offset}"
-                ),
-                is_error=True,
-                metadata={
-                    "skill": arguments.name,
-                    "expectedOffset": expected_offset,
-                    "reloadEpoch": epoch,
-                },
-            )
-        chunk = content[arguments.offset : arguments.offset + arguments.limit]
-        next_offset = arguments.offset + len(chunk)
-        complete = next_offset >= len(content)
-        progress_store[key] = {
-            "skill": arguments.name,
-            "reloadEpoch": epoch,
-            "totalChars": len(content),
-            "nextOffset": None if complete else next_offset,
-            "complete": complete,
-        }
-        event_kind = "skill-chunk-read"
-        if complete:
-            if arguments.name not in loaded:
-                loaded.append(arguments.name)
-            loaded_epochs[key] = epoch
-            event_kind = "skill-loaded"
-        self.state.save_tool_state()
-        self.state.event(
-            event_kind,
-            skill=arguments.name,
-            profile=skill["assignment"].get("profile"),
-            skillSha256=skill["sha256"],
-            catalogSkillSha256=skill["catalogSha256"],
-            offset=arguments.offset,
-            returnedChars=len(chunk),
-            totalChars=len(content),
-            nextOffset=None if complete else next_offset,
-            reloadEpoch=epoch,
-        )
-        header = (
-            f"[skill name={arguments.name!r} offset={arguments.offset} "
-            f"returnedChars={len(chunk)} totalChars={len(content)} "
-            f"nextOffset={next_offset if not complete else 'EOF'}]\n"
-        )
-        return ToolResult(output=header + chunk, metadata={
-            "skill": arguments.name,
-            "profile": skill["assignment"].get("profile"),
-            "skillSha256": skill["sha256"],
-            "catalogSkillSha256": skill["catalogSha256"],
-            "totalChars": len(content),
-            "nextOffset": None if complete else next_offset,
-            "complete": complete,
-        })
-
-
-class ArtifactReadInput(BaseModel):
-    path: str
-    offset: int = Field(default=0, ge=0)
-    limit: int = Field(
-        default=_TOOLS_CONFIG.artifact_chunk_default_chars,
+        default=_CONFIG.tools.page_read_default_chars,
         ge=1,
-        le=_TOOLS_CONFIG.chunk_max_chars,
+        le=_CONFIG.tools.page_read_max_chars,
     )
+    find: str = ""
 
 
-class ArtifactReadTool(BaseTool):
-    name = "artifact_read"
-    description = "Read a shared run artifact by relative path with offset/limit. Agent state is private."
-    input_model = ArtifactReadInput
+class ReadPageTool(BaseTool):
+    name = "read_page"
+    description = "Read the current page HTML and revision, optionally locating exact text."
+    input_model = ReadPageInput
 
-    def __init__(self, state: ManagedToolState) -> None:
+    def __init__(self, state: PageToolState) -> None:
         self.state = state
 
-    def is_read_only(self, arguments: ArtifactReadInput) -> bool:
-        return True
-
-    async def execute(self, arguments: ArtifactReadInput, context: ToolExecutionContext) -> ToolResult:
+    async def execute(self, arguments: ReadPageInput, context: ToolContext) -> ToolResult:
         del context
-        try:
-            path = _inside(self.state.run_dir, arguments.path)
-            if path == self.state.run_dir / "agents" or (self.state.run_dir / "agents") in path.parents:
-                raise ValueError("other agent state is private")
-            text = path.read_text(encoding="utf-8")
-        except Exception as exc:
-            return ToolResult(output=str(exc), is_error=True)
-        chunk = text[arguments.offset : arguments.offset + arguments.limit]
-        return ToolResult(
-            output=(f"[artifact path={arguments.path!r} offset={arguments.offset} "
-                    f"returnedChars={len(chunk)} totalChars={len(text)}]\n" + chunk),
-            metadata={"path": arguments.path, "totalChars": len(text)},
-        )
+        async with self.state.lock:
+            html = self.state.page_path.read_text(encoding="utf-8") if self.state.page_path.is_file() else ""
+            if arguments.find:
+                positions: list[int] = []
+                cursor = 0
+                while True:
+                    cursor = html.find(arguments.find, cursor)
+                    if cursor < 0:
+                        break
+                    positions.append(cursor)
+                    cursor += max(1, len(arguments.find))
+                output = {"revision": self.state.revision, "positions": positions}
+            else:
+                output = {
+                    "revision": self.state.revision,
+                    "offset": arguments.offset,
+                    "html": html[arguments.offset : arguments.offset + arguments.limit],
+                    "total_chars": len(html),
+                }
+        return ToolResult(output=json.dumps(output, ensure_ascii=False))
 
 
-class ArtifactSearchInput(BaseModel):
-    path: str
-    query: str
-    max_results: int = Field(
-        default=_TOOLS_CONFIG.search_default_results,
-        ge=1,
-        le=_TOOLS_CONFIG.search_max_results,
-    )
+class EditPageInput(ToolInput):
+    mode: Literal["replace", "patch"]
+    revision: int = Field(ge=0)
+    html: str = ""
+    find: str = ""
+    replace: str = ""
 
 
-class ArtifactSearchTool(BaseTool):
-    name = "artifact_search"
-    description = "Search literal text in a shared run artifact and return matching lines."
-    input_model = ArtifactSearchInput
+class EditPageTool(BaseTool):
+    name = "edit_page"
+    description = "Replace the whole page or patch one exact text occurrence at a known revision."
+    input_model = EditPageInput
 
-    def __init__(self, state: ManagedToolState) -> None:
+    def __init__(self, state: PageToolState) -> None:
         self.state = state
 
-    def is_read_only(self, arguments: ArtifactSearchInput) -> bool:
-        return True
-
-    async def execute(self, arguments: ArtifactSearchInput, context: ToolExecutionContext) -> ToolResult:
+    async def execute(self, arguments: EditPageInput, context: ToolContext) -> ToolResult:
         del context
-        try:
-            path = _inside(self.state.run_dir, arguments.path)
-            if path == self.state.run_dir / "agents" or (self.state.run_dir / "agents") in path.parents:
-                raise ValueError("other agent state is private")
-            text = path.read_text(encoding="utf-8")
-        except Exception as exc:
-            return ToolResult(output=str(exc), is_error=True)
-        matches = [
-            f"{number}: {line}" for number, line in enumerate(text.splitlines(), 1)
-            if arguments.query.lower() in line.lower()
-        ][: arguments.max_results]
-        return ToolResult(output="\n".join(matches) or "(no matches)")
+        async with self.state.lock:
+            if self.state.submission is not None:
+                return ToolResult(output="page is already submitted", is_error=True)
+            if arguments.revision != self.state.revision:
+                return ToolResult(output=f"revision conflict: current revision is {self.state.revision}", is_error=True)
+            current = self.state.page_path.read_text(encoding="utf-8") if self.state.page_path.is_file() else ""
+            if arguments.mode == "replace":
+                if not arguments.html.strip():
+                    return ToolResult(output="html must not be blank", is_error=True)
+                updated = arguments.html
+            else:
+                if not arguments.find:
+                    return ToolResult(output="find must not be blank in patch mode", is_error=True)
+                count = current.count(arguments.find)
+                if count != 1:
+                    return ToolResult(output=f"patch requires exactly one match; found {count}", is_error=True)
+                updated = current.replace(arguments.find, arguments.replace, 1)
+            _atomic_text(self.state.page_path, updated)
+            self.state.revision += 1
+            return ToolResult(output=json.dumps({"revision": self.state.revision, "chars": len(updated)}))
 
 
-class ContextReadInput(BaseModel):
-    offset: int = Field(default=0, ge=0)
-    limit: int = Field(
-        default=_TOOLS_CONFIG.context_chunk_default_chars,
-        ge=_TOOLS_CONFIG.context_chunk_min_chars,
-        le=_TOOLS_CONFIG.chunk_max_chars,
-    )
-
-
-class ContextReadTool(BaseTool):
-    name = "context_read"
-    description = (
-        "Read the PageContext assigned to this builder in bounded chunks. Takes no path; "
-        "continue at nextOffset until EOF."
-    )
-    input_model = ContextReadInput
-
-    def __init__(self, state: ManagedToolState) -> None:
-        self.state = state
-
-    def is_read_only(self, arguments: ContextReadInput) -> bool:
-        return True
-
-    async def execute(self, arguments: ContextReadInput, context: ToolExecutionContext) -> ToolResult:
-        del context
-        relative = str(self.state.validation_context.get("context_path", ""))
-        try:
-            path = _inside(self.state.run_dir, relative)
-            text = path.read_text(encoding="utf-8")
-        except Exception as exc:
-            return ToolResult(output=str(exc), is_error=True)
-        if arguments.offset >= len(text) and text:
-            return ToolResult(output=f"offset {arguments.offset} exceeds totalChars={len(text)}",
-                              is_error=True)
-        chunk = text[arguments.offset : arguments.offset + arguments.limit]
-        next_offset = arguments.offset + len(chunk)
-        if next_offset >= len(text):
-            self.state.complete_step("load-context", f"read {relative} sha256={_sha256(text)}")
-        header = (
-            f"[context offset={arguments.offset} returnedChars={len(chunk)} totalChars={len(text)} "
-            f"nextOffset={next_offset if next_offset < len(text) else 'EOF'}]\n"
-        )
-        return ToolResult(output=header + chunk, metadata={
-            "path": relative, "sha256": _sha256(text),
-            "nextOffset": next_offset if next_offset < len(text) else None,
-        })
-
-
-class SubmitPageInput(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    html: str = Field(min_length=1)
-    designSpec: dict[str, Any] = Field(default_factory=dict)
-    boundReferences: list[str] = Field(default_factory=list)
-    speakerNotes: str = ""
-
-    @model_validator(mode="before")
-    @classmethod
-    def accept_json_encoded_metadata(cls, value: Any) -> Any:
-        """Tolerate providers that stringify structured tool arguments."""
-        if not isinstance(value, dict):
-            return value
-        normalized = dict(value)
-        for key in ("designSpec", "boundReferences"):
-            raw = normalized.get(key)
-            if not isinstance(raw, str):
-                continue
-            try:
-                normalized[key] = json.loads(raw)
-            except json.JSONDecodeError:
-                if key == "boundReferences" and raw.strip():
-                    normalized[key] = [raw.strip()]
-        return normalized
-
-
-_DOCUMENT_SHELL = re.compile(
-    r"<!doctype\b[^>]*>|</?\s*(?:html|head|body)\b[^>]*>",
-    re.I,
-)
-
-
-def _normalize_page_fragment(html: str) -> tuple[str, int]:
-    """Remove a document shell while preserving all page-owned content.
-
-    The assembled slide supplies the outer document and embeds this fragment in an
-    iframe. Models occasionally emit harmless ``html/head/body`` wrappers despite
-    that contract. Repairing those wrappers is deterministic infrastructure work,
-    not a reason to spend another agent turn rereading and rewriting the page.
-    """
-    normalized, removed = _DOCUMENT_SHELL.subn("", html)
-    return normalized.strip(), removed
-
-
-class PageReadInput(BaseModel):
-    offset: int = Field(default=0, ge=0)
-    limit: int = Field(
-        default=_TOOLS_CONFIG.page_read_default_chars,
-        ge=1,
-        le=_TOOLS_CONFIG.chunk_max_chars,
-    )
-
-
-class PageReadTool(BaseTool):
-    name = "page_read"
-    description = "Read a bounded chunk of workspace/page.html for recovery or inspection."
-    input_model = PageReadInput
-
-    def __init__(self, state: ManagedToolState) -> None:
-        self.state = state
-
-    def is_read_only(self, arguments: PageReadInput) -> bool:
-        return True
-
-    async def execute(self, arguments: PageReadInput, context: ToolExecutionContext) -> ToolResult:
-        del context
-        if not self.state.page_path.is_file():
-            return ToolResult(output="page.html does not exist", is_error=True)
-        text = self.state.page_path.read_text(encoding="utf-8")
-        chunk = text[arguments.offset : arguments.offset + arguments.limit]
-        return ToolResult(output=(f"[page.html recovery-read offset={arguments.offset} "
-                                  f"returnedChars={len(chunk)} totalChars={len(text)}; "
-                                  "use only for targeted recovery]\n" + chunk))
-
-
-class PageSearchInput(BaseModel):
-    query: str = Field(min_length=1)
-    max_results: int = Field(
-        default=_TOOLS_CONFIG.search_default_results,
-        ge=1,
-        le=_TOOLS_CONFIG.search_max_results,
-    )
-
-
-class PageSearchTool(BaseTool):
-    name = "page_search"
-    description = "Search literal text in workspace/page.html and return matching line numbers."
-    input_model = PageSearchInput
-
-    def __init__(self, state: ManagedToolState) -> None:
-        self.state = state
-
-    def is_read_only(self, arguments: PageSearchInput) -> bool:
-        return True
-
-    async def execute(self, arguments: PageSearchInput, context: ToolExecutionContext) -> ToolResult:
-        del context
-        if not self.state.page_path.is_file():
-            return ToolResult(output="page.html does not exist", is_error=True)
-        text = self.state.page_path.read_text(encoding="utf-8")
-        matches = [f"{number}: {line}" for number, line in enumerate(text.splitlines(), 1)
-                   if arguments.query.lower() in line.lower()][: arguments.max_results]
-        return ToolResult(output="\n".join(matches) or "(no matches)")
-
-
-class PagePatchInput(BaseModel):
-    old: str = Field(min_length=1)
-    new: str
-
-
-class PagePatchTool(BaseTool):
-    name = "page_patch"
-    description = (
-        "Repair one exact occurrence in the page retained after a failed submit_page; "
-        "the harness automatically rechecks and submits the repaired page."
-    )
-    input_model = PagePatchInput
-
-    def __init__(self, state: ManagedToolState) -> None:
-        self.state = state
-
-    async def execute(self, arguments: PagePatchInput, context: ToolExecutionContext) -> ToolResult:
-        del context
-        missing_skills = self.state.missing_loaded_skills()
-        if missing_skills:
-            return ToolResult(
-                output=(
-                    "page_patch blocked: read every assigned skill to nextOffset=EOF first; "
-                    f"missing={missing_skills}"
-                ),
-                is_error=True,
-                metadata={"missingSkills": missing_skills},
-            )
-        if not self.state.page_path.is_file():
-            return ToolResult(output="page.html does not exist", is_error=True)
-        metadata = self.state.tool_state.get("pageSubmission")
-        if not isinstance(metadata, dict):
-            return ToolResult(
-                output=(
-                    "page_patch is available only after submit_page retained a failed page; "
-                    "call submit_page with the complete HTML and metadata"
-                ),
-                is_error=True,
-            )
-        text = self.state.page_path.read_text(encoding="utf-8")
-        count = text.count(arguments.old)
-        if count != 1:
-            return ToolResult(output=f"old string must occur exactly once; occurrences={count}",
-                              is_error=True)
-        updated = text.replace(arguments.old, arguments.new, 1)
-        _atomic_write(self.state.page_path, updated)
-        digest = _sha256(updated)
-        self.state.event("page-patched", chars=len(updated), sha256=digest)
-        return _validate_and_accept_page(self.state, metadata)
-
-
-class DictSubmitInput(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    payload: dict[str, Any]
-
-    @model_validator(mode="before")
-    @classmethod
-    def accept_direct_artifact(cls, value: Any) -> Any:
-        """Normalize native tool calls and provider-stringified structured fields."""
-        if not isinstance(value, dict):
-            return value
-        payload = value.get("payload") if "payload" in value else value
-        if isinstance(payload, str) and payload.strip().startswith("{"):
-            try:
-                decoded_payload = json.loads(payload)
-            except json.JSONDecodeError:
-                decoded_payload = None
-            if isinstance(decoded_payload, dict):
-                payload = decoded_payload
-        if not isinstance(payload, dict):
-            return value
-        normalized = dict(payload)
-        for key, raw in normalized.items():
-            if not isinstance(raw, str) or not raw.strip().startswith(("[", "{")):
-                continue
-            try:
-                decoded = json.loads(raw)
-            except json.JSONDecodeError:
-                continue
-            if isinstance(decoded, (list, dict)):
-                normalized[key] = decoded
-        return {"payload": normalized}
-
-
-class SubmitArtifactTool(BaseTool):
-    description = "Submit the validated structured artifact; accepted submission proves task completion."
-
-    def __init__(self, state: ManagedToolState, name: str) -> None:
-        self.state = state
-        self.name = name
-        self.input_model = DictSubmitInput
-
-    async def execute(self, arguments: DictSubmitInput, context: ToolExecutionContext) -> ToolResult:
-        del context
-        payload: Any = arguments.payload
-        if hasattr(payload, "model_dump"):
-            payload = payload.model_dump(mode="json")
-        try:
-            validated = self.state.submit_validator(payload)
-        except (ValidationError, ValueError, TypeError) as exc:
-            return ToolResult(output=f"submission rejected: {exc}", is_error=True)
-        self.state.submission = validated
-        self.state.save_submission()
-        self.state.complete_all_steps("validated structured submission accepted")
-        self.state.task.status = "completed"
-        self.state.task.submittedArtifact = "submission.json"
-        self.state.save_task()
-        self.state.event("submission-accepted", artifact="submission.json")
-        return ToolResult(output="submission accepted", metadata={"accepted": True})
-
-
-_SCRIPT = re.compile(r"<script\b[^>]*>(.*?)</script\s*>", re.I | re.S)
-
-
-def _page_failure(
-    state: ManagedToolState,
-    html: str,
-    failures: list[str],
-    *,
-    scripts: int = 0,
-) -> ToolResult:
-    state.event("page-checked", passed=False, htmlChars=len(html), failures=failures)
-    return ToolResult(
-        output=json.dumps({
-            "passed": False,
-            "failures": failures,
-            "htmlChars": len(html),
-            "inlineScripts": scripts,
-        }, ensure_ascii=False, indent=2),
-        is_error=True,
-        metadata={"validationFailed": True},
-    )
-
-
-def _validate_and_accept_page(
-    state: ManagedToolState,
-    metadata: dict[str, Any],
-) -> ToolResult:
-    """Run the deterministic page gate and persist an accepted submission."""
-    from notale.core.stages.page_check import page_delivery_failures
-
-    if not state.page_path.is_file():
-        return ToolResult(output="workspace/page.html does not exist", is_error=True)
-    html = state.page_path.read_text(encoding="utf-8")
-    payload = dict(metadata)
-    payload.update({
-        "pageId": str(state.validation_context.get("page_id", state.task.workerId)),
-        "html": html,
-        "status": PageStatus.DRAFTED.value,
-    })
-    try:
-        page = PageArtifact.model_validate(payload)
-    except ValidationError as exc:
-        return _page_failure(state, html, [f"page schema rejected: {exc}"])
-
-    failures = page_delivery_failures(
-        page,
-        set(state.validation_context.get("valid_record_ids", [])),
-        run_dir=state.run_dir,
-    )
-    scripts = _SCRIPT.findall(html)
-    if scripts:
-        check_file = state.scratch / ".inline-page-check.js"
-        check_file.parent.mkdir(parents=True, exist_ok=True)
-        _atomic_write(check_file, "\n;\n".join(scripts))
-        try:
-            checked = subprocess.run(
-                ["node", "--check", check_file.name], cwd=check_file.parent,
-                capture_output=True, text=True,
-                timeout=_TOOLS_CONFIG.inline_js_check_timeout_sec, check=False,
-            )
-            if checked.returncode != 0:
-                failures.append(
-                    "inline JS syntax error: "
-                    + checked.stderr.strip()[: _TOOLS_CONFIG.inline_js_error_max_chars]
-                )
-        except (OSError, subprocess.SubprocessError) as exc:
-            failures.append(f"inline JS syntax check unavailable: {exc}")
-
-    pending = [
-        step.id for step in state.task.steps
-        if step.id not in {"implement-check", "submit-page"} and step.status != "completed"
-    ]
-    if pending:
-        failures.append(f"required harness events are missing before submission: {pending}")
-    if failures:
-        return _page_failure(state, html, failures, scripts=len(scripts))
-
-    try:
-        validated = state.submit_validator(page.model_dump(mode="json"))
-    except (ValidationError, ValueError, TypeError) as exc:
-        return _page_failure(state, html, [f"submission rejected: {exc}"], scripts=len(scripts))
-
-    digest = _sha256(html)
-    state.complete_step("implement-check", f"page checks passed sha256={digest}")
-    state.event("page-checked", passed=True, sha256=digest, htmlChars=len(html))
-    state.submission = validated
-    state.save_submission()
-    state.complete_step("submit-page", f"submission.json sha256={digest}")
-    state.complete_all_steps(f"validated page accepted sha256={digest}")
-    state.task.status = "completed"
-    state.task.submittedArtifact = "submission.json"
-    state.save_task()
-    state.event("submission-accepted", artifact="submission.json", sha256=digest)
-    return ToolResult(
-        output=json.dumps({
-            "passed": True,
-            "accepted": True,
-            "sha256": digest,
-            "htmlChars": len(html),
-            "inlineScripts": len(scripts),
-        }, ensure_ascii=False),
-        metadata={"accepted": True, "sha256": digest},
-    )
+class SubmitPageInput(ToolInput):
+    revision: int = Field(ge=0)
+    notes: str = ""
 
 
 class SubmitPageTool(BaseTool):
     name = "submit_page"
-    description = (
-        "Write the complete HTML fragment and page metadata, run schema/offline/reference/inline-JS "
-        "checks, and atomically accept the page when all checks pass."
-    )
+    description = "Validate and submit the current page revision. This finishes Builder."
     input_model = SubmitPageInput
 
-    def __init__(self, state: ManagedToolState) -> None:
+    def __init__(self, state: PageToolState) -> None:
         self.state = state
 
-    async def execute(self, arguments: SubmitPageInput, context: ToolExecutionContext) -> ToolResult:
+    async def execute(self, arguments: SubmitPageInput, context: ToolContext) -> ToolResult:
         del context
-        missing_skills = self.state.missing_loaded_skills()
-        if missing_skills:
-            return ToolResult(
-                output=(
-                    "submit_page blocked: read every assigned skill to nextOffset=EOF first; "
-                    f"missing={missing_skills}"
-                ),
-                is_error=True,
-                metadata={"missingSkills": missing_skills},
+        async with self.state.lock:
+            if arguments.revision != self.state.revision:
+                return ToolResult(output=f"revision conflict: current revision is {self.state.revision}", is_error=True)
+            if not self.state.page_path.is_file():
+                return ToolResult(output="page is empty; call edit_page first", is_error=True)
+            artifact = PageArtifact(
+                html=clean_fragment(self.state.page_path.read_text(encoding="utf-8")),
+                notes=arguments.notes,
             )
-        html, removed_shell_tags = _normalize_page_fragment(arguments.html)
-        if not html:
-            return ToolResult(
-                output="page fragment is empty after document-shell normalization",
-                is_error=True,
+            failures = await page_delivery_failures(
+                artifact,
+                page=self.state.page,
+                run_dir=self.state.run_dir,
             )
-        metadata = arguments.model_dump(mode="json", exclude={"html"})
-        self.state.page_path.parent.mkdir(parents=True, exist_ok=True)
-        _atomic_write(self.state.page_path, html)
-        self.state.tool_state["pageSubmission"] = metadata
-        self.state.save_tool_state()
-        digest = _sha256(html)
-        self.state.event(
-            "page-written", chars=len(html), sha256=digest,
-            normalizedDocumentShellTags=removed_shell_tags,
-        )
-        result = _validate_and_accept_page(self.state, metadata)
-        result.metadata["normalizedDocumentShellTags"] = removed_shell_tags
-        return result
+            if failures:
+                return ToolResult(output=json.dumps({"failures": failures}, ensure_ascii=False), is_error=True)
+            path = self.state.run_dir / "pages" / f"p{self.state.page}.json"
+            _atomic_text(path, artifact.model_dump_json(indent=2))
+            _atomic_text(self.state.page_path, artifact.html)
+            self.state.submission = artifact
+            return ToolResult(output=f"submitted p{self.state.page}")
 
 
-class ReportBlockerInput(BaseModel):
-    reason: str = Field(min_length=1, max_length=_TOOLS_CONFIG.blocker_reason_max_chars)
-    evidence: str = Field(default="", max_length=_TOOLS_CONFIG.blocker_evidence_max_chars)
+class RunJsInput(ToolInput):
+    code: str = Field(min_length=1, max_length=_CONFIG.tools.run_js_max_source_chars)
 
 
-class ReportBlockerTool(BaseTool):
-    name = "report_blocker"
-    description = "Stop this worker as genuinely blocked with a concise reason and evidence."
-    input_model = ReportBlockerInput
+class RunJsTool(BaseTool):
+    name = "run_js"
+    description = "Run JavaScript in an isolated VM with console output and no host capabilities."
+    input_model = RunJsInput
 
-    def __init__(self, state: ManagedToolState) -> None:
+    def __init__(self, state: PageToolState) -> None:
         self.state = state
 
-    async def execute(self, arguments: ReportBlockerInput, context: ToolExecutionContext) -> ToolResult:
+    async def execute(self, arguments: RunJsInput, context: ToolContext) -> ToolResult:
         del context
-        self.state.task.status = "blocked"
-        for step in self.state.task.steps:
-            if step.status != "completed":
-                step.status = "blocked"
-                step.evidence = arguments.evidence or arguments.reason
-                step.updatedAt = _now()
-        self.state.save_task()
-        self.state.event("task-blocked", reason=arguments.reason, evidence=arguments.evidence)
-        return ToolResult(output="blocker recorded; stop work and return")
-
-
-def build_managed_tools(
-    state: ManagedToolState,
-    allowed_names: list[str],
-    *,
-    submit_tool: str,
-    role_name: str,
-    extra_tools: list[BaseTool] | None = None,
-) -> list[BaseTool]:
-    """Instantiate exactly the authorized tools, preserving whitelist order."""
-    extras = {tool.name: tool for tool in extra_tools or []}
-    factories: dict[str, Callable[[], BaseTool]] = {
-        "skill_read": lambda: AssignedSkillTool(state),
-        "artifact_read": lambda: ArtifactReadTool(state),
-        "artifact_search": lambda: ArtifactSearchTool(state),
-        "context_read": lambda: ContextReadTool(state),
-        "page_read": lambda: PageReadTool(state),
-        "page_search": lambda: PageSearchTool(state),
-        "page_patch": lambda: PagePatchTool(state),
-        "report_blocker": lambda: ReportBlockerTool(state),
-    }
-    if {"acquire_media", "generate_media"} & set(allowed_names):
-        from notale.tools.media import AcquireMediaTool, GenerateMediaTool
-
-        factories.update({
-            "acquire_media": lambda: AcquireMediaTool(state),
-            "generate_media": lambda: GenerateMediaTool(state),
-        })
-
-    tools: list[BaseTool] = []
-    for name in allowed_names:
-        if name in extras:
-            tool = extras[name]
-        elif name == submit_tool:
-            tool = (
-                SubmitPageTool(state)
-                if name == "submit_page"
-                else SubmitArtifactTool(state, name)
+        used = int(self.state.tool_state.get("run_js_calls", 0))
+        if used >= _CONFIG.tools.run_js_max_calls:
+            return ToolResult(output="run_js call budget exhausted", is_error=True)
+        self.state.tool_state["run_js_calls"] = used + 1
+        wrapper = """'use strict';
+const vm = require('node:vm');
+const source = %s;
+const output = [];
+const sandbox = Object.create(null);
+sandbox.console = Object.freeze({log: (...xs) => { output.push(xs.map(String).join(' ')); }});
+const context = vm.createContext(sandbox, {codeGeneration: {strings: false, wasm: false}});
+(async () => {
+  const script = new vm.Script(source);
+  const value = await Promise.resolve(script.runInContext(context, {timeout: %d}));
+  if (value !== undefined) output.push(typeof value === 'string' ? value : JSON.stringify(value));
+  process.stdout.write(output.join('\\n'));
+})().catch(error => { process.stderr.write(String(error && error.stack || error)); process.exitCode = 1; });
+""" % (json.dumps(arguments.code), int(_CONFIG.tools.run_js_timeout_sec * 1000))
+        script = self.state.workspace / f"run-{used + 1}.cjs"
+        _atomic_text(script, wrapper)
+        try:
+            process = await asyncio.create_subprocess_exec(
+                "node", str(script),
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                cwd=self.state.workspace,
             )
-        else:
-            factory = factories.get(name)
-            tool = factory() if factory else None
-        if tool is None:
-            raise ValueError(f"role {role_name} declares unavailable tool: {name}")
-        tools.append(tool)
+            stdout, stderr = await asyncio.wait_for(
+                process.communicate(), timeout=_CONFIG.tools.run_js_timeout_sec
+            )
+        except TimeoutError:
+            return ToolResult(output="run_js timed out", is_error=True)
+        text = (stdout + stderr).decode("utf-8", errors="replace")
+        text = text[: _CONFIG.tools.run_js_max_output_chars]
+        return ToolResult(output=text or "(no output)", is_error=process.returncode != 0)
+
+
+def root_planner_tools(state: PlannerRootState) -> list[BaseTool]:
+    return [StyleTool(state), PlanTool(state), BlockTool(state)]
+
+
+def group_planner_tools(state: PlannerGroupState) -> list[BaseTool]:
+    return [PagesTool(state), BlockTool(state)]
+
+
+def builder_tools(state: PageToolState, optional: set[str]) -> list[BaseTool]:
+    unknown = sorted(optional - OPTIONAL_PAGE_TOOLS)
+    if unknown:
+        raise ValueError(f"unknown Builder tools: {unknown}")
+    tools: list[BaseTool] = [
+        ReadPageTool(state), EditPageTool(state), SubmitPageTool(state), BlockTool(state)
+    ]
+    if "run_js" in optional:
+        tools.append(RunJsTool(state))
+    if {"find_image", "make_image"} & optional:
+        from notale.tools.media import FindImageTool, MakeImageTool
+
+        if "find_image" in optional:
+            tools.append(FindImageTool(state))
+        if "make_image" in optional:
+            tools.append(MakeImageTool(state))
     return tools

@@ -1,16 +1,10 @@
-"""小工具：LLM 输出的 JSON 提取、HTML 可见文本剥离、shingle 近重复。"""
+"""Small JSON and visible-HTML text helpers."""
 
 from __future__ import annotations
 
 import json
 import re
 from typing import Any
-from notale.utils.config import get_config
-
-
-_CONFIG = get_config()
-
-
 def extract_json(text: str) -> Any:
     """从 LLM 输出里提取第一个 JSON 对象/数组（容忍前后散文与 ```json 围栏）。"""
     m = re.search(r"```(?:json)?\s*(.*?)\s*```", text, re.S)
@@ -22,7 +16,7 @@ def extract_json(text: str) -> Any:
             break
     if start is None:
         raise ValueError(
-            f"输出中找不到 JSON：{text[: _CONFIG.runtime.parsing_error_preview_chars]}"
+            f"输出中找不到 JSON：{text[:200]}"
         )
     opener = candidate[start]
     closer = "}" if opener == "{" else "]"
@@ -47,7 +41,7 @@ def extract_json(text: str) -> Any:
             depth -= 1
             if depth == 0:
                 return json.loads(candidate[start : j + 1])
-    raise ValueError(f"JSON 未闭合：{text[: _CONFIG.runtime.parsing_error_preview_chars]}")
+    raise ValueError(f"JSON 未闭合：{text[:200]}")
 
 
 _TAG = re.compile(r"<[^>]+>")
@@ -59,17 +53,3 @@ def visible_text(html: str) -> str:
     body = _SCRIPT_STYLE.sub(" ", html)
     body = _TAG.sub(" ", body)
     return re.sub(r"\s+", " ", body).strip()
-
-
-def shingles(text: str, n: int = _CONFIG.deck.duplicate_shingle_size) -> set[str]:
-    """字符级 n-gram 集合（中文按字、英文按词混在一起也够用）。"""
-    compact = re.sub(r"\s+", "", text)
-    if len(compact) < n:
-        return {compact} if compact else set()
-    return {compact[i : i + n] for i in range(len(compact) - n + 1)}
-
-
-def jaccard(a: set[str], b: set[str]) -> float:
-    if not a or not b:
-        return 0.0
-    return len(a & b) / len(a | b)

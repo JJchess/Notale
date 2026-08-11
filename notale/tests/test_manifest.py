@@ -1,62 +1,24 @@
-"""页状态机 + 断点续跑。"""
-
-import json
+from pathlib import Path
 
 import pytest
 
-from notale.core.models import PageStatus
-from notale.core.state import Manifest
+from notale.core.models import PageRunStatus
+from notale.core.state import RunStore
 
 
-def test_state_machine_legal_and_illegal(tmp_path):
-    m = Manifest.create(tmp_path, "q")
-    m.register_pages(["p1", "p2"])
-    m.transition("p1", PageStatus.DRAFTED)
-    m.transition("p1", PageStatus.COMPLETED)
-    with pytest.raises(ValueError):
-        m.transition("p1", PageStatus.DRAFTED)  # completed 是终态
-    with pytest.raises(ValueError):
-        m.transition("p2", PageStatus.COMPLETED)  # 不能跳过 drafted
+def test_current_run_state_and_resume_reset(tmp_path: Path):
+    store = RunStore.create(tmp_path, "topic", "hash")
+    store.register_plan(2)
+    store.start_page(1)
+    loaded = RunStore.load(store.run_dir)
+    assert loaded.reset_running() == [1]
+    assert loaded.pending_pages() == [1, 2]
+    loaded.start_page(1)
+    loaded.finish_page(1, PageRunStatus.COMPLETED)
+    assert loaded.pages_with(PageRunStatus.COMPLETED) == ["p1"]
 
 
-def test_attempts_counted_on_draft(tmp_path):
-    m = Manifest.create(tmp_path, "q")
-    m.register_pages(["p1"])
-    m.transition("p1", PageStatus.DRAFTED)
-    assert m.data.pages["p1"].attempts == 1
-
-
-def test_resume_only_redoes_non_terminal(tmp_path):
-    m = Manifest.create(tmp_path, "q")
-    m.register_pages(["p1", "p2", "p3"])
-    m.transition("p1", PageStatus.DRAFTED)
-    m.transition("p1", PageStatus.COMPLETED)
-    m.transition("p2", PageStatus.DRAFTED)
-    m.transition("p3", PageStatus.DEGRADED)  # pending → degraded 合法（编排强制降级）
-    # 重开（模拟进程重启）
-    m2 = Manifest.load(m.run_dir)
-    assert m2.todo_pages() == ["p2"]
-    assert m2.pages_by_status(PageStatus.COMPLETED) == ["p1"]
-    assert m2.pages_by_status(PageStatus.DEGRADED) == ["p3"]
-
-
-def test_load_normalizes_retired_verifier_statuses(tmp_path):
-    m = Manifest.create(tmp_path, "q")
-    m.register_pages(["p1", "p2"])
-    raw = json.loads((m.run_dir / "manifest.json").read_text())
-    raw["pages"]["p1"]["status"] = "verified"
-    raw["pages"]["p2"]["status"] = "returned-for-repair"
-    (m.run_dir / "manifest.json").write_text(json.dumps(raw))
-
-    loaded = Manifest.load(m.run_dir)
-    assert loaded.data.pages["p1"].status == PageStatus.COMPLETED
-    assert loaded.data.pages["p2"].status == PageStatus.DRAFTED
-    assert loaded.todo_pages() == ["p2"]
-
-
-def test_events_append_only(tmp_path):
-    m = Manifest.create(tmp_path, "q")
-    m.register_pages(["p1"])
-    m.transition("p1", PageStatus.DRAFTED, note="first")
-    lines = (m.run_dir / "events.jsonl").read_text().strip().split("\n")
-    assert len(lines) == 2  # run-created + page-transition
+def test_old_manifest_is_not_resumable(tmp_path: Path):
+    (tmp_path / "manifest.json").write_text("{}")
+    with pytest.raises(ValueError, match="run.json"):
+        RunStore.load(tmp_path)

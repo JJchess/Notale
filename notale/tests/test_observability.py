@@ -1,79 +1,38 @@
-"""Structured experiment logging stays complete, append-only, and fail-open."""
-
 import json
+from pathlib import Path
 
-import pytest
-
-from notale.core.observability import ExperimentLogger
-
-
-def test_logging_failure_is_fail_open(tmp_path, capsys):
-    logger = ExperimentLogger(tmp_path, config={})
-    logger.logs_dir = tmp_path / "not-a-directory"
-    logger.logs_dir.write_text("occupied", encoding="utf-8")
-
-    logger.append("events.jsonl", {"kind": "still-running"})
-
-    assert logger.audit_complete is False
-    assert "LOG WARNING" in capsys.readouterr().err
+from notale.core.models import PageRun, PageRunStatus, RunState
+from notale.core.observability import EventLog, build_summary
 
 
-def test_sessions_are_append_only(tmp_path):
-    first = ExperimentLogger(tmp_path, config={"run": 1})
-    first.finish("completed")
-    second = ExperimentLogger(tmp_path, config={"run": 2})
-    second.finish("completed")
+def test_event_stream_is_ordered_redacted_and_summarizable(tmp_path: Path):
+    log = EventLog(tmp_path)
+    log.emit("run.started", api_key="secret", input_tokens=12)
+    log.emit("builder.started", agent_id="builder:p1", page=1)
+    log.emit("llm.call.started", agent_id="builder:p1", page=1)
+    log.emit("llm.call.completed", agent_id="builder:p1", page=1, duration_ms=10)
+    log.emit("agent.turn", agent_id="builder:p1", page=1, input_tokens=8, output_tokens=3)
+    log.emit("tool.completed", agent_id="builder:p1", page=1, tool="edit_page", is_error=False)
+    log.emit("builder.completed", agent_id="builder:p1", page=1)
+    records = [json.loads(line) for line in (tmp_path / "events.jsonl").read_text().splitlines()]
+    assert [item["seq"] for item in records] == list(range(1, 8))
+    assert records[0]["payload"]["api_key"] == "[redacted]"
+    assert records[0]["payload"]["input_tokens"] == 12
 
-    records = [json.loads(line) for line in (tmp_path / "logs/sessions.jsonl").read_text().splitlines()]
-    assert len(records) == 4
-    assert records[0]["sessionId"] != records[2]["sessionId"]
-
-
-def test_finish_writes_profile_without_automatic_experience_artifacts(tmp_path):
-    logger = ExperimentLogger(tmp_path, config={
-        "effectivePolicy": {"governance": {"progress": {"noProgressTurns": 8}}}
-    })
-    logger.append("agent-traces.jsonl", {
-        "ts": "now", "kind": "skills-assigned", "agent": "research:r1",
-        "skills": ["web-access"],
-        "allowedTools": ["web_search", "fetch_web"],
-    })
-    logger.append("agent-traces.jsonl", {
-        "ts": "now", "kind": "skill-loaded", "agent": "research:r1",
-        "skill": "web-access",
-    })
-    logger.finish("completed")
-
-    profile = json.loads((tmp_path / "profile-snapshot.json").read_text())
-    assert profile["sessionId"] == logger.session_id
-    assert not (tmp_path / "experience-report.json").exists()
-    assert not (tmp_path / "experience-candidates.json").exists()
-
-
-def test_run_emergency_limits_are_high_but_enforced(tmp_path):
-    from notale.core.observability import RunEmergencyLimitExceeded
-
-    logger = ExperimentLogger(
-        tmp_path, config={}, run_max_duration_sec=60, run_max_total_tokens=10
+    state = RunState(
+        run_id="r", topic="t", contract_hash="h", created_at="now",
+        plan_status="completed", pages=[PageRun(status=PageRunStatus.COMPLETED)],
     )
-    logger.metrics["totalTokens"] = 10
-    with pytest.raises(RunEmergencyLimitExceeded, match="run tokens"):
-        logger.enforce_run_limits()
+    summary = build_summary(tmp_path, state, "completed")
+    assert summary["model_calls"] == 1
+    assert summary["total_tokens"] == 11
+    assert summary["tool_calls"] == 1
+    assert summary["peak_builder_concurrency"] == 1
 
 
-def test_tool_errors_are_classified_for_gate_diagnostics(tmp_path):
-    logger = ExperimentLogger(tmp_path, config={})
-    logger.record_tool("research:r1", "research", "fetch_web", is_error=True,
-                       error_kind="external")
-    logger.record_tool("builder:p1", "builder", "submit_page", is_error=True,
-                       error_kind="validation")
-    logger.record_tool("builder:p1", "builder", "page_patch", is_error=True,
-                       error_kind="protocol")
-    logger.finish("completed")
-
-    metrics = json.loads((tmp_path / "logs/summary.json").read_text())["metrics"]
-    assert metrics["toolErrors"] == 3
-    assert metrics["toolErrorKinds"] == {
-        "external": 1, "validation": 1, "protocol": 1,
-    }
-    assert metrics["roles"]["builder"]["toolErrorKinds"]["protocol"] == 1
+def test_large_tool_payload_is_hashed_not_duplicated(tmp_path: Path):
+    log = EventLog(tmp_path)
+    log.emit("tool.completed", html="x" * 20000)
+    payload = json.loads((tmp_path / "events.jsonl").read_text())["payload"]["html"]
+    assert payload["chars"] == 20000
+    assert len(payload["sha256"]) == 64

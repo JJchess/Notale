@@ -1,8 +1,11 @@
 """Markdown-backed agent roles and capability policies."""
 
 from notale.roles.base import RoleSkillPolicy, RoleSpec
-from notale.roles.profiles import BUILDER, INTAKE, PLANNER, RESEARCH
+from notale.roles.profiles import BUILDER, PLANNER
 
 __all__ = [
-    "BUILDER", "INTAKE", "PLANNER", "RESEARCH", "RoleSkillPolicy", "RoleSpec",
+    "BUILDER",
+    "PLANNER",
+    "RoleSkillPolicy",
+    "RoleSpec",
 ]

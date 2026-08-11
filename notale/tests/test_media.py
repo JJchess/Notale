@@ -1,165 +1,92 @@
-"""Documentary/generated media tools and manifest-bound page checks."""
-
-from __future__ import annotations
-
 import json
 import struct
-from types import SimpleNamespace
+from pathlib import Path
 
 import httpx
+import pytest
 
-from notale.core.models import PageArtifact
-from notale.core.stages.page_check import page_delivery_failures
+from notale.core.observability import EventLog
+from notale.tools.agent_tools import PageToolState
 from notale.tools.media import (
-    AcquireMediaInput,
-    AcquireMediaTool,
-    GenerateMediaInput,
-    GenerateMediaTool,
+    FindImageInput,
+    FindImageTool,
+    MakeImageInput,
+    MakeImageTool,
+    ensure_asset_manifest,
+    inspect_image,
+    load_asset_manifest,
 )
-from notale.utils.config import get_config
 
 
-def _png(width: int = 640, height: int = 360) -> bytes:
-    header = b"\x89PNG\r\n\x1a\n" + b"\x00\x00\x00\rIHDR" + struct.pack(">II", width, height)
-    return header + b"\x08\x06\x00\x00\x00" + bytes(2048)
+def test_media_tools_have_plain_names_and_arguments(tmp_path: Path):
+    state = PageToolState(tmp_path, 1, EventLog(tmp_path))
+    assert FindImageTool(state).name == "find_image"
+    assert MakeImageTool(state).name == "make_image"
+    assert FindImageInput(query="Paris", kind="place", alt="巴黎").alt == "巴黎"
+    assert MakeImageInput(prompt="an abstract path planning field", alt="路径插画").alt == "路径插画"
 
 
-class _State:
-    def __init__(self, run_dir):
-        self.run_dir = run_dir
-        self.validation_context = {"page_id": "p15"}
-        self.task = SimpleNamespace(workerId="p15")
-        self.tool_state = {}
-        self.events = []
-
-    def save_tool_state(self):
-        pass
-
-    def event(self, kind, **fields):
-        self.events.append({"kind": kind, **fields})
+def test_manifest_is_created_only_on_demand_and_has_no_version(tmp_path: Path):
+    with pytest.raises(ValueError, match="does not exist"):
+        load_asset_manifest(tmp_path, create=False)
+    path = ensure_asset_manifest(tmp_path)
+    assert path == tmp_path / "assets" / "manifest.json"
+    value = load_asset_manifest(tmp_path, create=False)
+    assert value == {"assets": [], "attempts": {"find": 0, "make": 0}}
+    assert "schemaVersion" not in value
 
 
-def _factory(transport):
-    def create(**kwargs):
-        return httpx.AsyncClient(transport=transport, **kwargs)
-    return create
+def test_image_probe_accepts_png():
+    data = b"\x89PNG\r\n\x1a\n" + b"\0" * 8 + struct.pack(">II", 640, 480) + b"\0" * 1100
+    assert inspect_image(data) == ("image/png", "png", 640, 480)
 
 
-async def test_acquire_media_downloads_commons_asset_and_binds_manifest(tmp_path):
-    image = _png()
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        if request.url.host == "commons.wikimedia.org":
-            return httpx.Response(200, json={
-                "query": {"pages": [{
-                    "title": "File:John von Neumann.jpg",
-                    "imageinfo": [{
-                        "mime": "image/jpeg",
-                        "thumburl": "https://upload.test/neumann.png",
-                        "thumbwidth": 640,
-                        "thumbheight": 360,
-                        "descriptionurl": "https://commons.wikimedia.org/wiki/File:John_von_Neumann.jpg",
-                        "extmetadata": {
-                            "Artist": {"value": "<b>Los Alamos</b>"},
-                            "LicenseShortName": {"value": "Public domain"},
-                            "LicenseUrl": {"value": "https://creativecommons.org/publicdomain/mark/1.0/"},
-                        },
-                    }],
-                }]},
-            })
-        if request.url.host == "upload.test":
-            return httpx.Response(200, content=image, headers={"content-type": "image/png"})
-        return httpx.Response(404)
-
-    state = _State(tmp_path)
-    tool = AcquireMediaTool(state, _factory(httpx.MockTransport(handler)))
-    result = await tool.execute(AcquireMediaInput(
-        query="John von Neumann portrait", kind="person", alt_text="冯·诺依曼肖像"
-    ), None)  # type: ignore[arg-type]
-    assert not result.is_error
-    output = json.loads(result.output)
-    assert output["htmlSrc"].startswith("../assets/")
-    manifest = json.loads((tmp_path / "asset-manifest.json").read_text())
-    record = manifest["assets"][0]
-    assert record["pageId"] == "p15" and record["sourceType"] == "wikimedia-commons"
-    assert record["license"] == "Public domain" and record["creator"] == "Los Alamos"
-    assert (tmp_path / record["localPath"]).read_bytes() == image
-
-    page = PageArtifact(
-        pageId="p15",
-        html=(f'<section data-notale-page><figure><img src="{output["htmlSrc"]}" alt="{output["alt"]}">'
-              '<figcaption>1945 年的算法研究背景</figcaption></figure></section>'),
+@pytest.mark.asyncio
+async def test_make_image_missing_key_fails_without_network(tmp_path: Path, monkeypatch):
+    monkeypatch.delenv("PARATERA_API_KEY", raising=False)
+    state = PageToolState(tmp_path, 1, EventLog(tmp_path))
+    result = await MakeImageTool(state).execute(
+        MakeImageInput(prompt="an abstract path planning field", alt="路径插画"), None
     )
-    checked = page_delivery_failures(page, set(), run_dir=tmp_path)
-    assert checked == []
-
-    missing_alt = PageArtifact(pageId="p15", html=f'<img src="{output["htmlSrc"]}" alt="">')
-    assert any(
-        "alt" in failure
-        for failure in page_delivery_failures(missing_alt, set(), run_dir=tmp_path)
-    )
+    assert result.is_error
+    assert "missing media API key" in result.output
 
 
-async def test_generate_media_uses_paratera_seedream_and_records_prompt(tmp_path, monkeypatch):
-    image = _png(1280, 720)
-    requests = []
+@pytest.mark.asyncio
+async def test_make_image_uses_paratera_seedream(tmp_path: Path, monkeypatch):
+    image = b"\x89PNG\r\n\x1a\n" + b"\0" * 8 + struct.pack(">II", 1280, 720) + b"\0" * 1100
+    requests: list[httpx.Request] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
         requests.append(request)
         if request.url.host == "llmapi.paratera.com":
-            return httpx.Response(200, json={
-                "data": [{"url": "https://seedream-output.test/generated.png"}],
-                "usage": {"generated_images": 1},
-            })
+            return httpx.Response(
+                200,
+                json={
+                    "data": [{"url": "https://seedream-output.test/generated.png"}],
+                    "usage": {"generated_images": 1},
+                },
+            )
         if request.url.host == "seedream-output.test":
             return httpx.Response(200, content=image, headers={"content-type": "image/png"})
         return httpx.Response(404)
 
+    def client_factory(**kwargs):
+        return httpx.AsyncClient(transport=httpx.MockTransport(handler), **kwargs)
+
     monkeypatch.setenv("PARATERA_API_KEY", "test-secret")
-    state = _State(tmp_path)
-    tool = GenerateMediaTool(state, _factory(httpx.MockTransport(handler)))
-    result = await tool.execute(GenerateMediaInput(
-        prompt="Abstract array cells separating around a pivot, editorial paper-cut style",
-        role="editorial-illustration",
-        alt_text="围绕枢轴分开的数组",
-    ), None)  # type: ignore[arg-type]
+    state = PageToolState(tmp_path, 1, EventLog(tmp_path))
+    result = await MakeImageTool(state, client_factory).execute(
+        MakeImageInput(prompt="an abstract path planning field", alt="路径插画"), None
+    )
+
     assert not result.is_error
     assert requests[0].url == "https://llmapi.paratera.com/v1/images/generations"
-    body = json.loads(requests[0].content)
-    assert set(body) == {"model", "prompt"}
-    assert body["model"] == "Doubao-Seedream-4.0"
-    assert "non-documentary editorial illustration" in body["prompt"]
-    manifest_text = (tmp_path / "asset-manifest.json").read_text()
-    assert "test-secret" not in manifest_text
-    record = json.loads(manifest_text)["assets"][0]
-    assert record["sourceType"] == "generated-editorial"
-    assert record["promptSha256"] and record["usage"]["generated_images"] == 1
-
-
-def test_unmanifested_image_fails_l0(tmp_path):
-    page = PageArtifact(pageId="p1", html='<img src="../assets/ghost.png" alt="缺失素材">')
-    result = page_delivery_failures(page, set(), run_dir=tmp_path)
-    assert any("未登记" in failure for failure in result)
-
-    background = PageArtifact(
-        pageId="p1", html='<p style="background:url(../assets/ghost.png)">内容</p>'
-    )
-    result2 = page_delivery_failures(background, set(), run_dir=tmp_path)
-    assert any("带 alt 的 img" in failure for failure in result2)
-
-
-async def test_media_request_budget_prevents_provider_call(tmp_path):
-    state = _State(tmp_path)
-    state.tool_state["mediaAttempts"] = {
-        "acquire": get_config().media.maximum_acquisitions_per_page,
-    }
-
-    def forbidden(**kwargs):
-        del kwargs
-        raise AssertionError("provider must not be called after budget exhaustion")
-
-    tool = AcquireMediaTool(state, forbidden)
-    result = await tool.execute(AcquireMediaInput(
-        query="Ada Lovelace portrait", kind="person", alt_text="阿达·洛芙莱斯肖像"
-    ), None)  # type: ignore[arg-type]
-    assert result.is_error and "budget exhausted" in result.output
+    payload = json.loads(requests[0].content)
+    assert payload["model"] == "Doubao-Seedream-4.0"
+    assert set(payload) == {"model", "prompt"}
+    manifest = load_asset_manifest(tmp_path, create=False)
+    record = manifest["assets"][0]
+    assert record["model"] == "Doubao-Seedream-4.0"
+    assert record["usage"] == {"generated_images": 1}
+    assert "test-secret" not in json.dumps(manifest)
