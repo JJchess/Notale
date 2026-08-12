@@ -5,8 +5,9 @@ import pytest
 
 from notale.core.observability import EventLog
 from notale.core.stages.contract import group_chapters, plan_lecture
-from notale.tests.fake_llm import FakeClient
+from notale.tests.fake_llm import FakeClient, _default_style
 from notale.tools.agent_tools import PlanChapter
+from notale.utils.skill_catalog import create_generated_style
 
 
 def _page(
@@ -73,13 +74,12 @@ async def test_page_request_is_only_a_hint_without_limit(
         "请做一份20页讲义",
         run_dir=run_dir,
         logger=EventLog(run_dir),
+        style=create_generated_style(**_default_style()),
     )
 
     assert len(plan.pages) == actual_pages
     assert plan.chapters[0].pages == actual_pages
     assert len(client.calls) == 1
-    assert (run_dir / "skills" / plan.design.name / "SKILL.md").is_file()
-    assert (run_dir / "skills" / plan.design.name / "tokens.json").is_file()
     assert not (run_dir / "llm-requests" / "planner-g1").exists()
 
 
@@ -174,6 +174,7 @@ async def test_hierarchical_groups_run_in_parallel_and_merge_symbolic_links(
         "一份很长、适合分级规划的讲义",
         run_dir=tmp_path,
         logger=EventLog(tmp_path),
+        style=create_generated_style(**_default_style()),
     )
 
     assert client.peak_active == 3
@@ -185,7 +186,7 @@ async def test_hierarchical_groups_run_in_parallel_and_merge_symbolic_links(
     assert (tmp_path / "plan.json").is_file()
     for agent in ("planner", "planner-g1", "planner-g2", "planner-g3"):
         assert (tmp_path / "llm-requests" / agent / "turn-0001.json").is_file()
-    assert (tmp_path / "llm-requests" / "planner" / "turn-0002.json").is_file()
+    assert not (tmp_path / "llm-requests" / "planner" / "turn-0002.json").exists()
     group_request = json.loads(
         (tmp_path / "llm-requests" / "planner-g1" / "turn-0001.json").read_text()
     )

@@ -24,7 +24,7 @@ def test_active_providers_are_configured():
     assert config.model.base_url == "https://openrouter.ai/api/v1"
     assert config.model.name == "anthropic/claude-sonnet-5"
     assert config.model.api_key_env == "OPENROUTER_API_KEY"
-    assert config.model.reasoning_effort == "low"
+    assert config.model.reasoning_effort == "medium"
     assert config.pipeline.page_concurrency == 25
     assert config.media.generation_endpoint == "https://llmapi.paratera.com/v1/images/generations"
     assert config.media.generation_api_key_env == "PARATERA_API_KEY"

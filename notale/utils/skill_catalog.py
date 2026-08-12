@@ -5,6 +5,8 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import shutil
+import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -96,6 +98,17 @@ class GeneratedDesignSkill:
         return text + f"\n\n## {label}\n\n```json\n" + json.dumps(
             payload, ensure_ascii=False, indent=2
         ) + "\n```"
+
+    def render_for_planner(self) -> str:
+        """Expose only the planning-relevant projection of this Style."""
+
+        payload = [item.model_dump(mode="json") for item in self.compositions]
+        return (
+            f"# Accepted run Style: {self.name}\n\n{self.description}\n\n"
+            "## Composition catalog\n\n```json\n"
+            + json.dumps(payload, ensure_ascii=False, indent=2)
+            + "\n```"
+        )
 
     def composition(self, composition: str) -> CompositionSpec:
         for item in self.compositions:
@@ -344,13 +357,21 @@ def write_generated_style(root: Path, style: GeneratedDesignSkill) -> Path:
         raise ValueError(
             f"generated style object hash mismatch: expected {style.sha256}, got {actual}"
         )
-    directory = Path(root) / style.name
+    root = Path(root)
+    directory = root / style.name
     if directory.exists():
         raise ValueError(f"generated style destination already exists: {directory}")
-    directory.mkdir(parents=True)
-    (directory / "SKILL.md").write_bytes(skill_raw)
-    (directory / "tokens.json").write_bytes(token_raw)
-    (directory / "compositions.json").write_bytes(composition_raw)
+    root.mkdir(parents=True, exist_ok=True)
+    temporary = root / f".{style.name}.tmp-{uuid.uuid4().hex}"
+    temporary.mkdir()
+    try:
+        (temporary / "SKILL.md").write_bytes(skill_raw)
+        (temporary / "tokens.json").write_bytes(token_raw)
+        (temporary / "compositions.json").write_bytes(composition_raw)
+        temporary.replace(directory)
+    except BaseException:
+        shutil.rmtree(temporary, ignore_errors=True)
+        raise
     return directory
 
 

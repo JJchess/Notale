@@ -1,0 +1,327 @@
+const GAME_TITLE = __TITLE_JSON__;
+
+const componentTemplate = document.createElement("template");
+componentTemplate.innerHTML = `
+  <style>
+    :host {
+      --game-bg: #151817;
+      --game-surface: #202422;
+      --game-line: #48504b;
+      --game-text: #f0eee7;
+      --game-muted: #adb3ae;
+      --game-accent: #e8da55;
+      display: block;
+      min-width: 280px;
+      min-height: 100dvh;
+      color: var(--game-text);
+      background: var(--game-bg);
+      font-family: Arial, "Helvetica Neue", sans-serif;
+      color-scheme: dark;
+    }
+
+    * { box-sizing: border-box; }
+
+    button { font: inherit; }
+
+    button:focus-visible,
+    [tabindex]:focus-visible {
+      outline: 3px solid var(--game-accent);
+      outline-offset: 3px;
+    }
+
+    .shell {
+      width: min(100% - 32px, 720px);
+      margin: 0 auto;
+      padding: clamp(32px, 7vw, 72px) 0;
+    }
+
+    header { margin-bottom: 28px; }
+
+    h1 {
+      max-width: 16ch;
+      margin: 0 0 14px;
+      font-size: clamp(36px, 7vw, 68px);
+      font-weight: 500;
+      letter-spacing: -0.045em;
+      line-height: 0.98;
+    }
+
+    .brief {
+      max-width: 54ch;
+      margin: 0;
+      color: var(--game-muted);
+      font-size: 16px;
+      line-height: 1.55;
+    }
+
+    .status-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 9px;
+      color: var(--game-muted);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+    }
+
+    .playfield {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+      aspect-ratio: 1;
+      padding: 12px;
+      border: 1px solid var(--game-line);
+      background: var(--game-surface);
+    }
+
+    .cell {
+      border: 1px solid var(--game-line);
+      border-radius: 0;
+      background: #2a302d;
+      color: var(--game-text);
+      cursor: pointer;
+      font-size: clamp(22px, 6vw, 40px);
+      transition: background 140ms ease, color 140ms ease, transform 120ms ease;
+    }
+
+    .cell:hover:not(:disabled) { background: #373e3a; }
+
+    .cell:active:not(:disabled) { transform: scale(0.97); }
+
+    .cell[data-target="true"] {
+      background: var(--game-accent);
+      color: #222216;
+    }
+
+    .cell:disabled { cursor: default; }
+
+    .actions {
+      display: flex;
+      justify-content: center;
+      margin-top: 20px;
+    }
+
+    .primary {
+      min-height: 42px;
+      padding: 0 22px;
+      border: 0;
+      border-radius: 0;
+      background: var(--game-text);
+      color: #202220;
+      cursor: pointer;
+      font-weight: 800;
+      letter-spacing: 0.04em;
+    }
+
+    .primary:hover { background: var(--game-accent); }
+
+    .primary:active { transform: translateY(1px); }
+
+    .message {
+      min-height: 1.5em;
+      margin: 15px 0 0;
+      color: var(--game-text);
+      line-height: 1.5;
+      text-align: center;
+    }
+
+    @media (max-width: 520px) {
+      .shell { width: min(100% - 24px, 720px); padding-top: 28px; }
+      .playfield { gap: 6px; padding: 8px; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+      }
+    }
+  </style>
+
+  <main class="shell">
+    <header>
+      <h1></h1>
+      <p class="brief">Find the highlighted signal five times. Wrong choices still consume a move.</p>
+    </header>
+
+    <section aria-label="Mini-game playfield">
+      <div class="status-row">
+        <span data-score>Score 0 / 5</span>
+        <span data-moves>0 moves</span>
+      </div>
+      <div class="playfield" tabindex="0" role="group" aria-label="Nine selectable cells"></div>
+      <p class="message" data-message aria-live="polite"></p>
+      <div class="actions">
+        <button class="primary" type="button" data-primary>Start</button>
+      </div>
+    </section>
+  </main>
+`;
+
+function initialState() {
+  return {
+    phase: "idle",
+    score: 0,
+    moves: 0,
+    target: 0,
+    message: "Press Start when you are ready.",
+    trace: [],
+  };
+}
+
+function nextTarget(currentTarget, moves) {
+  return (currentTarget * 5 + moves * 3 + 4) % 9;
+}
+
+function transition(state, action) {
+  if (action.type === "start" && state.phase === "idle") {
+    return { ...state, phase: "active", message: "Choose the highlighted signal." };
+  }
+
+  if (action.type !== "choose" || state.phase !== "active") return state;
+
+  const hit = action.index === state.target;
+  const moves = state.moves + 1;
+  const score = state.score + (hit ? 1 : 0);
+  const complete = score >= 5;
+  const traceEntry = { move: moves, index: action.index, target: state.target, hit };
+
+  return {
+    ...state,
+    phase: complete ? "complete" : "active",
+    score,
+    moves,
+    target: complete ? state.target : nextTarget(state.target, moves),
+    message: complete
+      ? `Complete in ${moves} moves.`
+      : (hit ? "Signal found. Keep going." : "That cell was quiet. Try the new signal."),
+    trace: [...state.trace, traceEntry],
+  };
+}
+
+class __CLASS_NAME__ extends HTMLElement {
+  constructor() {
+    super();
+    this.attachShadow({ mode: "open" });
+    this.shadowRoot.append(componentTemplate.content.cloneNode(true));
+    this._state = initialState();
+    this._mounted = false;
+    this._onClick = this._onClick.bind(this);
+    this._onKeyDown = this._onKeyDown.bind(this);
+  }
+
+  connectedCallback() {
+    if (this._mounted) return;
+    this._mounted = true;
+    this.shadowRoot.addEventListener("click", this._onClick);
+    this.shadowRoot.querySelector(".playfield").addEventListener("keydown", this._onKeyDown);
+    this._render();
+  }
+
+  disconnectedCallback() {
+    if (!this._mounted) return;
+    this.shadowRoot.removeEventListener("click", this._onClick);
+    this.shadowRoot.querySelector(".playfield").removeEventListener("keydown", this._onKeyDown);
+    this._mounted = false;
+  }
+
+  start() {
+    if (this._state.phase !== "idle") return;
+    this._state = transition(this._state, { type: "start" });
+    this._render();
+    this.shadowRoot.querySelector("[data-cell]")?.focus();
+    this._emit("game-start", { state: this.getState() });
+  }
+
+  reset() {
+    this._state = initialState();
+    this._render();
+    this._emit("game-reset", { state: this.getState() });
+  }
+
+  getState() {
+    return JSON.parse(JSON.stringify(this._state));
+  }
+
+  _choose(index) {
+    if (this._state.phase !== "active") return;
+    const action = { type: "choose", index };
+    const previous = this._state;
+    this._state = transition(previous, action);
+    if (this._state === previous) return;
+    this._render();
+
+    const metrics = { score: this._state.score, moves: this._state.moves };
+    this._emit("game-progress", { state: this.getState(), action, metrics });
+    if (this._state.phase === "active") {
+      this.shadowRoot.querySelector(`[data-cell="${index}"]`)?.focus();
+    }
+    if (this._state.phase === "complete") {
+      this._emit("game-complete", {
+        score: this._state.score,
+        metrics,
+        trace: this.getState().trace,
+      });
+    }
+  }
+
+  _onClick(event) {
+    const cell = event.target.closest("[data-cell]");
+    if (cell) {
+      this._choose(Number(cell.dataset.cell));
+      return;
+    }
+
+    if (!event.target.closest("[data-primary]")) return;
+    if (this._state.phase === "complete") this.reset();
+    this.start();
+  }
+
+  _onKeyDown(event) {
+    if (this._state.phase !== "active") return;
+    const cells = [...this.shadowRoot.querySelectorAll("[data-cell]")];
+    const current = Math.max(0, cells.indexOf(this.shadowRoot.activeElement));
+    const columns = 3;
+    const offsets = {
+      ArrowLeft: -1,
+      ArrowRight: 1,
+      ArrowUp: -columns,
+      ArrowDown: columns,
+    };
+    if (!(event.key in offsets)) return;
+    event.preventDefault();
+    const next = Math.max(0, Math.min(cells.length - 1, current + offsets[event.key]));
+    cells[next].focus();
+  }
+
+  _emit(type, detail) {
+    this.dispatchEvent(new CustomEvent(type, { detail, bubbles: true, composed: true }));
+  }
+
+  _render() {
+    this.shadowRoot.querySelector("h1").textContent = GAME_TITLE;
+    this.shadowRoot.querySelector("[data-score]").textContent = `Score ${this._state.score} / 5`;
+    this.shadowRoot.querySelector("[data-moves]").textContent = `${this._state.moves} moves`;
+    this.shadowRoot.querySelector("[data-message]").textContent = this._state.message;
+
+    const playfield = this.shadowRoot.querySelector(".playfield");
+    playfield.innerHTML = Array.from({ length: 9 }, (_, index) => `
+      <button
+        class="cell"
+        type="button"
+        data-cell="${index}"
+        data-target="${this._state.phase === "active" && index === this._state.target}"
+        aria-label="Cell ${index + 1}${this._state.phase === "active" && index === this._state.target ? ", highlighted signal" : ""}"
+        ${this._state.phase === "active" ? "" : "disabled"}
+      >${this._state.phase === "active" && index === this._state.target ? "•" : ""}</button>
+    `).join("");
+
+    const primary = this.shadowRoot.querySelector("[data-primary]");
+    primary.textContent = this._state.phase === "complete" ? "Play again" : "Start";
+    primary.hidden = this._state.phase === "active";
+  }
+}
+
+customElements.define("__TAG_NAME__", __CLASS_NAME__);

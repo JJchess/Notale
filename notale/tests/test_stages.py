@@ -21,28 +21,22 @@ from notale.tools.agent_tools import (
     RunJsTool,
     SubmitPageInput,
     SubmitPageTool,
-    StyleInput,
-    StyleTool,
     assemble_plan,
 )
 from notale.tests.fake_llm import _default_style, _final_plan_to_root
 from notale.tools.base import ToolContext
+from notale.utils.skill_catalog import create_generated_style
 from notale.web.deck import write_deck_package
 
 
 @pytest.mark.asyncio
 async def test_root_plan_tool_and_deterministic_assembly(tmp_path: Path, plan_data):
-    state = PlannerRootState(tmp_path, SKILL_CATALOG, EventLog(tmp_path))
+    style = create_generated_style(**_default_style())
+    state = PlannerRootState(tmp_path, SKILL_CATALOG, EventLog(tmp_path), style)
     draft = PlanInput.model_validate(_final_plan_to_root(plan_data))
     context1 = ToolContext(state.workspace, {"turn": 1})
-    before = await PlanTool(state).execute(draft, context1)
-    assert before.is_error
-    styled = await StyleTool(state).execute(
-        StyleInput.model_validate(_default_style()), context1
-    )
-    assert not styled.is_error
     result = await PlanTool(state).execute(
-        draft, ToolContext(state.workspace, {"turn": 2})
+        draft, context1
     )
     assert not result.is_error
     assert state.submission == draft

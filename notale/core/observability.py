@@ -107,6 +107,7 @@ def build_summary(run_dir: Path, state: RunState, status: str, error: str = "") 
     page_metrics: dict[int, dict[str, Any]] = {}
     model: dict[str, Any] = {}
     planner: dict[str, Any] = {"groups": 0, "peak_group_concurrency": 0}
+    style: dict[str, Any] = {}
     active_planner_groups = 0
     if path.is_file():
         for line in path.read_text(encoding="utf-8").splitlines():
@@ -176,8 +177,8 @@ def build_summary(run_dir: Path, state: RunState, status: str, error: str = "") 
                 )
             elif kind in {"planner.group.completed", "planner.group.failed"}:
                 active_planner_groups = max(0, active_planner_groups - 1)
-            elif kind == "planner.style.created":
-                planner["style"] = {
+            elif kind == "style.created":
+                style.update({
                     "name": payload.get("name", ""),
                     "sha256": payload.get("sha256", ""),
                     "description": payload.get("description", ""),
@@ -185,7 +186,9 @@ def build_summary(run_dir: Path, state: RunState, status: str, error: str = "") 
                     "token_keys": payload.get("token_keys", []),
                     "compositions": payload.get("compositions", []),
                     "duration_ms": int(event.get("duration_ms", 0) or 0),
-                }
+                })
+            elif kind == "style.started":
+                style["request_bytes"] = int(payload.get("request_bytes", 0) or 0)
             elif kind == "planner.plan.completed":
                 planner.update(payload)
             elif kind == "stage.completed":
@@ -232,6 +235,7 @@ def build_summary(run_dir: Path, state: RunState, status: str, error: str = "") 
         "tool_calls": tool_calls,
         "peak_builder_concurrency": peak,
         "planner": planner,
+        "style": style,
         "stages_ms": stages,
         "agents": agents,
         "pages": pages,

@@ -10,10 +10,11 @@ from notale.core.stages.contract import SKILL_CATALOG
 from notale.roles.profiles import BUILDER, PLANNER
 from notale.tests.fake_llm import (
     ScriptedClient,
-    _default_style,
     text_msg,
     tool_call_msg,
 )
+from notale.tests.fake_llm import _default_style
+from notale.utils.skill_catalog import create_generated_style
 from notale.tools.agent_tools import (
     PageToolState,
     builder_tools,
@@ -94,10 +95,10 @@ async def test_agent_does_not_issue_recovery_query_without_terminal_tool(tmp_pat
 
 
 @pytest.mark.asyncio
-async def test_planner_creates_style_then_finishes_with_plan(tmp_path: Path, plan_data):
-    state = PlannerRootState(tmp_path, SKILL_CATALOG, EventLog(tmp_path))
+async def test_planner_finishes_with_plan_from_accepted_style(tmp_path: Path, plan_data):
+    style = create_generated_style(**_default_style())
+    state = PlannerRootState(tmp_path, SKILL_CATALOG, EventLog(tmp_path), style)
     client = ScriptedClient([
-        tool_call_msg("style", _default_style()),
         tool_call_msg("plan", _final_plan_to_root(plan_data))
     ])
     agent = AgentLoop(
@@ -113,7 +114,7 @@ async def test_planner_creates_style_then_finishes_with_plan(tmp_path: Path, pla
     plan = await agent.run("plan")
 
     assert plan == state.submission
-    assert len(client.requests) == 2
+    assert len(client.requests) == 1
     events = [json.loads(line) for line in (tmp_path / "events.jsonl").read_text().splitlines()]
     completed = [event for event in events if event["kind"] == "tool.completed"][-1]
     assert completed["payload"]["tool"] == "plan"

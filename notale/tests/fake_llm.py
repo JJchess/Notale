@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import socket
 from collections import deque
 from contextlib import contextmanager
@@ -91,18 +92,16 @@ class _FixtureAdapter:
             if self.inner.delay:
                 await asyncio.sleep(self.inner.delay)
             fixture = await self._load()
-            if self.terminal_tool == "plan":
-                if self.state.style is None:
-                    message = tool_call_msg(
-                        "style", fixture.get("style") or _default_style()
-                    )
-                else:
-                    payload = (
-                        {key: value for key, value in fixture.items() if key != "style"}
-                        if "chapter_pages" in fixture
-                        else _final_plan_to_root(fixture)
-                    )
-                    message = tool_call_msg("plan", payload)
+            if self.purpose == "style":
+                payload = fixture if fixture.get("name") else _default_style()
+                message = text_msg(json.dumps(payload, ensure_ascii=False))
+            elif self.terminal_tool == "plan":
+                payload = (
+                    {key: value for key, value in fixture.items() if key != "style"}
+                    if "chapter_pages" in fixture
+                    else _final_plan_to_root(fixture)
+                )
+                message = tool_call_msg("plan", payload)
             elif self.terminal_tool == "pages":
                 message = tool_call_msg("pages", fixture)
             elif self.terminal_tool == "submit_page":

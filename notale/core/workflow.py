@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from notale.agents.builder import BuilderWorker, build_page
+from notale.agents.style import generate_run_style
 from notale.agents.loop import AgentBlocked
 from notale.core.models import LecturePlan, PageArtifact, PageRunStatus
 from notale.core.observability import EventLog, build_summary, write_summary
@@ -20,6 +21,7 @@ from notale.core.state import RunStore
 from notale.core.stages.contract import (
     PLANNER_SKILL_CATALOG,
     SKILL_CATALOG,
+    STYLE_STUDIO,
     plan_lecture,
 )
 from notale.core.stages.page_check import make_fallback_page
@@ -57,10 +59,12 @@ def _contract_hash() -> str:
         PLANNER.document_path,
         BUILDER.document_path,
         root / "core" / "models.py",
+        root / "core" / "state.py",
         root / "core" / "stages" / "contract.py",
         root / "core" / "stages" / "page_check.py",
         root / "agents" / "loop.py",
         root / "agents" / "builder.py",
+        root / "agents" / "style.py",
         root / "tools" / "base.py",
         root / "tools" / "agent_tools.py",
         root / "tools" / "media.py",
@@ -70,6 +74,7 @@ def _contract_hash() -> str:
             digest.update(Path(path).read_bytes())
     digest.update(SKILL_CATALOG.sha256.encode())
     digest.update(PLANNER_SKILL_CATALOG.sha256.encode())
+    digest.update(STYLE_STUDIO.sha256.encode())
     return digest.hexdigest()
 
 
@@ -110,6 +115,12 @@ def _snapshot(logger: EventLog, llm: Any, contract_hash: str) -> None:
             for role in (PLANNER, BUILDER)
         },
         skills={
+            "style": {
+                STYLE_STUDIO.name: {
+                    "sha256": STYLE_STUDIO.sha256,
+                    "description": STYLE_STUDIO.description,
+                }
+            },
             "planner": PLANNER_SKILL_CATALOG.snapshot(),
             "builder": SKILL_CATALOG.snapshot(),
         },
@@ -150,10 +161,54 @@ async def _session(llm: Any, store: RunStore, logger: EventLog) -> GenerateResul
             style={"name": style.name, "sha256": style.sha256},
         )
     else:
+        if store.state.style_status == "completed":
+            if store.state.style is None:
+                raise ValueError("run says style completed but has no Style reference")
+            style = load_generated_style(run_dir / "skills", store.state.style)
+            logger.emit(
+                "style.reused", name=style.name, sha256=style.sha256
+            )
+        elif store.state.style_status == "pending":
+            store.start_style()
+            style_started = time.monotonic()
+            logger.emit("stage.started", stage="style")
+            try:
+                style = await generate_run_style(
+                    llm,
+                    store.state.topic,
+                    run_dir=run_dir,
+                    logger=logger,
+                    skill_text=STYLE_STUDIO.body,
+                )
+            except BaseException as exc:
+                store.fail_style(f"{type(exc).__name__}: {exc}")
+                raise
+            store.finish_style(style.reference)
+            logger.emit(
+                "stage.completed",
+                stage="style",
+                duration_ms=round((time.monotonic() - style_started) * 1000),
+            )
+        elif store.state.style_status == "failed":
+            raise RuntimeError(
+                "Style generation previously failed; start a new run: "
+                + store.state.style_error
+            )
+        else:
+            raise RuntimeError(
+                "Style generation has an unknown outcome and will not be replayed"
+            )
+
         started = time.monotonic()
         logger.emit("stage.started", stage="planner")
         try:
-            plan = await plan_lecture(llm, store.state.topic, run_dir=run_dir, logger=logger)
+            plan = await plan_lecture(
+                llm,
+                store.state.topic,
+                run_dir=run_dir,
+                logger=logger,
+                style=style,
+            )
         except Exception as exc:
             logger.emit("planner.failed", error=f"{type(exc).__name__}: {exc}")
             raise

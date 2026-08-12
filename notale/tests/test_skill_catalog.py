@@ -3,7 +3,7 @@ from copy import deepcopy
 import pytest
 
 from notale.core.models import LecturePlan, SkillAssignment
-from notale.core.stages.contract import PLANNER_SKILL_CATALOG, SKILL_CATALOG
+from notale.core.stages.contract import PLANNER_SKILL_CATALOG, SKILL_CATALOG, STYLE_STUDIO
 from notale.tools.agent_tools import OPTIONAL_PAGE_TOOLS
 from notale.utils.skill_catalog import (
     create_generated_style,
@@ -20,24 +20,24 @@ def test_catalog_validates_and_renders_selected_skills(plan_data):
     assert "Skill: create-sim" in rendered
     assert "narrative-keynote" not in SKILL_CATALOG.skills
     assert "pudding-playable-visual-essay" not in SKILL_CATALOG.skills
-    assert "style-studio" in PLANNER_SKILL_CATALOG.skills
+    assert "style-studio" not in PLANNER_SKILL_CATALOG.skills
     assert "profile" not in SkillAssignment.model_json_schema()["properties"]
 
 
 def test_style_studio_preserves_builder_page_and_media_contract():
-    body = PLANNER_SKILL_CATALOG.skills["style-studio"].body
+    body = STYLE_STUDIO.body
     for required in (
         "1280×720",
         "data-notale-page",
         "--notale-*",
         "real algorithm, equation, rule, dataset, or state machine",
-        "Never require an unassigned tool",
-        "Do not select, request, recommend, or assume `find_image`, `make_image`",
-        "Identifiable people, documents, places, and historical events",
-        "5–7 topic-specific composition families",
+        "Treat assigned tools as a hard capability boundary",
+        "never allocate tools or providers",
+        "identifiable people, documents, places, and historical events",
+        "Create exactly 5–7 structurally distinct, topic-specific families",
         "focal-object",
         "interactive-workbench",
-        "Collectively cover all seven page types",
+        "Collectively support all page types",
     ):
         assert required in body
 

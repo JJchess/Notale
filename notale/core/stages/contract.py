@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from notale.agents.loop import AgentLoop
-from notale.core.models import LecturePlan, SkillAssignment
+from notale.core.models import LecturePlan
 from notale.core.observability import EventLog
 from notale.roles.profiles import BUILDER, PLANNER
 from notale.tools.agent_tools import (
@@ -27,13 +27,14 @@ from notale.utils.config import SKILLS_PATH
 from notale.utils.skill_catalog import (
     GeneratedDesignSkill,
     SkillCatalog,
+    load_skill_descriptor,
     load_skill_catalog,
-    write_generated_style,
 )
 
 
 SKILL_CATALOG = load_skill_catalog(BUILDER, SKILLS_PATH)
 PLANNER_SKILL_CATALOG = load_skill_catalog(PLANNER, SKILLS_PATH)
+STYLE_STUDIO = load_skill_descriptor(SKILLS_PATH, "style-studio")
 GROUP_PAGE_TARGET = 20
 
 
@@ -162,11 +163,13 @@ async def plan_lecture(
     *,
     run_dir: Path,
     logger: EventLog,
+    style: GeneratedDesignSkill,
     catalog: SkillCatalog = SKILL_CATALOG,
-    planner_catalog: SkillCatalog = PLANNER_SKILL_CATALOG,
 ) -> LecturePlan:
     menu = catalog.planner_menu(OPTIONAL_PAGE_TOOLS)
-    state = PlannerRootState(run_dir=run_dir, catalog=catalog, logger=logger)
+    state = PlannerRootState(
+        run_dir=run_dir, catalog=catalog, logger=logger, style=style
+    )
     task = f"""Plan one coherent lecture deck for this request:
 
 {topic}
@@ -176,9 +179,8 @@ Available Builder capabilities:
 {menu}
 ```
 
-First derive one concrete visual system for this topic and audience, then call `style` exactly
-once. Wait for its success result. On the next model turn call `plan` exactly once; `plan` has no
-design field because the system binds the accepted run Skill. Include complete `chapter_pages` when
+The run Style has already been accepted and is included in your context. Call `plan` exactly once;
+`plan` has no design field because the system binds that Style. Include complete `chapter_pages` when
 the whole plan fits comfortably in this call—around twenty pages normally does. Leave
 `chapter_pages` empty only when a substantially larger lecture benefits from parallel chapter
 expansion. This is your semantic decision; there is no code-side page threshold. Any page count in
@@ -198,12 +200,9 @@ from the accepted Style catalog and obey its diversity constraints. Do not print
         logger=logger,
         agent_id="planner",
         purpose="plan",
-        skill_text=planner_catalog.render([SkillAssignment(name="style-studio")]),
+        skill_text=style.render_for_planner(),
     )
     root = await root_agent.run(task)
-    style = state.style
-    if style is None:
-        raise RuntimeError("Planner completed without creating a run design Skill")
     grouped = not bool(root.chapter_pages)
     root_ms = round((time.monotonic() - root_started) * 1000)
     logger.emit(
@@ -250,7 +249,6 @@ from the accepted Style catalog and obey its diversity constraints. Do not print
         chapter_pages = root.chapter_pages
 
     plan = assemble_plan(root, chapter_pages, catalog, style)
-    write_generated_style(run_dir / "skills", style)
     _save_plan(run_dir, plan)
     logger.emit(
         "planner.plan.completed",

@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import json
 import re
-import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
@@ -27,12 +26,10 @@ from notale.core.models import (
 from notale.core.observability import EventLog
 from notale.core.stages.page_check import clean_fragment, page_delivery_failures
 from notale.tools.base import BaseTool, ToolContext, ToolResult
-from notale.utils.config import SKILLS_PATH, get_config
+from notale.utils.config import get_config
 from notale.utils.skill_catalog import (
     GeneratedDesignSkill,
     SkillCatalog,
-    create_generated_style,
-    write_generated_style,
 )
 
 
@@ -196,14 +193,6 @@ class PagesInput(ToolInput):
     chapters: list[ChapterPages] = Field(min_length=1)
 
 
-class StyleInput(ToolInput):
-    name: str = Field(pattern=r"^[a-z0-9][a-z0-9-]*$")
-    description: str = Field(min_length=1)
-    body: str = Field(min_length=1)
-    tokens: dict[str, str]
-    compositions: list[CompositionSpec]
-
-
 class BlockInput(ToolInput):
     reason: str = Field(min_length=1, max_length=_CONFIG.tools.block_reason_max_chars)
 
@@ -213,9 +202,8 @@ class PlannerRootState:
     run_dir: Path
     catalog: SkillCatalog
     logger: EventLog
+    style: GeneratedDesignSkill
     submission: PlanInput | None = None
-    style: GeneratedDesignSkill | None = None
-    style_turn: int | None = None
     blocked: str = ""
 
     def __post_init__(self) -> None:
@@ -300,17 +288,7 @@ class PlanTool(BaseTool):
         self.state = state
 
     async def execute(self, arguments: PlanInput, context: ToolContext) -> ToolResult:
-        turn = int(context.metadata.get("turn", 0))
-        if self.state.style is None:
-            return ToolResult(
-                output="create the run design Skill with style before submitting plan",
-                is_error=True,
-            )
-        if self.state.style_turn is not None and turn <= self.state.style_turn:
-            return ToolResult(
-                output="submit plan in a new model turn after receiving the style result",
-                is_error=True,
-            )
+        del context
         try:
             _validate_page_capabilities(arguments.chapter_pages, self.state.catalog)
             _validate_page_compositions(arguments.chapter_pages, self.state.style)
@@ -328,66 +306,6 @@ class PlanTool(BaseTool):
                     "estimated_pages": sum(item.pages for item in arguments.chapters),
                     "pages": sum(len(item.pages) for item in arguments.chapter_pages),
                 }
-            )
-        )
-
-
-class StyleTool(BaseTool):
-    name = "style"
-    description = (
-        "Create the one concrete, run-local design Skill and its 5-7 fixed-canvas "
-        "composition families that all Builders will use. "
-        "Call this before plan and wait for its result."
-    )
-    input_model = StyleInput
-
-    def __init__(self, state: PlannerRootState) -> None:
-        self.state = state
-
-    async def execute(self, arguments: StyleInput, context: ToolContext) -> ToolResult:
-        started = time.monotonic()
-        if self.state.style is not None:
-            return ToolResult(output="the run design Skill already exists", is_error=True)
-        if (SKILLS_PATH / arguments.name).exists():
-            return ToolResult(
-                output=f"generated style name collides with a packaged Skill: {arguments.name}",
-                is_error=True,
-            )
-        if (self.state.run_dir / "skills" / arguments.name).exists():
-            return ToolResult(
-                output=f"generated style name collides with a run artifact: {arguments.name}",
-                is_error=True,
-            )
-        try:
-            style = create_generated_style(**arguments.model_dump())
-            write_generated_style(self.state.workspace / "skills", style)
-        except ValueError as exc:
-            return ToolResult(output=str(exc), is_error=True)
-        self.state.style = style
-        self.state.style_turn = int(context.metadata.get("turn", 0))
-        duration_ms = round((time.monotonic() - started) * 1000)
-        self.state.logger.emit(
-            "planner.style.created",
-            agent_id="planner",
-            name=style.name,
-            sha256=style.sha256,
-            description=style.description,
-            body_chars=len(style.body),
-            token_keys=sorted(style.tokens),
-            compositions=[item.id for item in style.compositions],
-            duration_ms=duration_ms,
-        )
-        return ToolResult(
-            output=json.dumps(
-                {
-                    "name": style.name,
-                    "sha256": style.sha256,
-                    "body_chars": len(style.body),
-                    "token_keys": sorted(style.tokens),
-                    "compositions": [item.id for item in style.compositions],
-                    "next": "submit plan in the next model turn",
-                },
-                ensure_ascii=False,
             )
         )
 
@@ -713,7 +631,7 @@ const context = vm.createContext(sandbox, {codeGeneration: {strings: false, wasm
 
 
 def root_planner_tools(state: PlannerRootState) -> list[BaseTool]:
-    return [StyleTool(state), PlanTool(state), BlockTool(state)]
+    return [PlanTool(state), BlockTool(state)]
 
 
 def group_planner_tools(state: PlannerGroupState) -> list[BaseTool]:

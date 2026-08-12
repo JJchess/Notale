@@ -56,7 +56,7 @@ async def test_planner_then_parallel_builders_with_complete_logs(tmp_path: Path,
     events = [json.loads(line) for line in (result.run_dir / "events.jsonl").read_text().splitlines()]
     kinds = [event["kind"] for event in events]
     snapshot = next(event for event in events if event["kind"] == "run.snapshot")
-    assert "style-studio" in snapshot["payload"]["skills"]["planner"]
+    assert "style-studio" in snapshot["payload"]["skills"]["style"]
     assert kinds.index("planner.completed") < kinds.index("builder.started")
     assert [event["seq"] for event in events] == list(range(1, len(events) + 1))
     summary = json.loads((result.run_dir / "summary.json").read_text())
@@ -66,7 +66,7 @@ async def test_planner_then_parallel_builders_with_complete_logs(tmp_path: Path,
     assert summary["total_tokens"] > 0
     assert summary["planner"]["grouped"] is False
     assert summary["planner"]["pages"] == 4
-    assert summary["planner"]["style"]["name"] == plan["design"]["name"]
+    assert summary["style"]["name"] == plan["design"]["name"]
 
 
 @pytest.mark.asyncio
@@ -120,3 +120,45 @@ async def test_resume_rejects_old_or_changed_contract(tmp_path: Path, plan_data)
     (result.run_dir / "run.json").write_text(json.dumps(run))
     with pytest.raises(ValueError, match="contract changed"):
         await generate(FakeClient(), "topic", resume_dir=result.run_dir)
+
+
+@pytest.mark.asyncio
+async def test_style_failure_is_terminal_and_never_starts_planner(tmp_path: Path):
+    from notale.tests.fake_llm import _default_style
+
+    invalid = _default_style()
+    invalid["tokens"] = {
+        **invalid["tokens"], "bg": "#111111", "ink": "#222222"
+    }
+    client = FakeClient(by_purpose={"style": json.dumps(invalid)})
+    with pytest.raises(ValueError, match="contrast"):
+        await generate(client, "topic", out_root=tmp_path)
+
+    assert [purpose for purpose, _ in client.calls] == ["style"]
+    run_dir = next(path for path in tmp_path.iterdir() if path.is_dir())
+    state = json.loads((run_dir / "run.json").read_text())
+    assert state["style_status"] == "failed"
+
+    resumed = FakeClient()
+    with pytest.raises(RuntimeError, match="previously failed"):
+        await generate(resumed, "topic", resume_dir=run_dir)
+    assert resumed.calls == []
+
+
+@pytest.mark.asyncio
+async def test_resume_after_planner_failure_reuses_completed_style(
+    tmp_path: Path, plan_data
+):
+    failed = FakeClient()
+    with pytest.raises(KeyError):
+        await generate(failed, "topic", out_root=tmp_path)
+    assert [purpose for purpose, _ in failed.calls] == ["style", "plan"]
+
+    run_dir = next(path for path in tmp_path.iterdir() if path.is_dir())
+    fixtures = {"plan": json.dumps(plan_data, ensure_ascii=False)}
+    fixtures.update({f"build:p{number}": page_fixture(number) for number in range(1, 5)})
+    resumed = FakeClient(by_purpose=fixtures)
+    result = await generate(resumed, "topic", resume_dir=run_dir)
+
+    assert result.deck_path.is_file()
+    assert "style" not in [purpose for purpose, _ in resumed.calls]

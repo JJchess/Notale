@@ -1,49 +1,40 @@
 ---
 name: style-studio
-description: Generate one concrete, run-local design Skill for an HTML-native lecture deck before planning its pages. Use when the root Planner must turn a topic, audience, and narrative intention into a coherent visual system that independent Builders can apply without relying on a preset style category.
+description: Generate one concrete, topic-derived design system and fixed-canvas composition vocabulary for an HTML-native lecture deck. Use before lecture planning so independent page Builders share a coherent visual world without relying on a preset theme.
 ---
 
 # Style Studio
 
-Create the design source of truth for this run. Do not select a packaged theme and do not design
-individual pages. Produce a new Skill whose decisions are specific enough that many independent
-Builders will create pages from the same visual world while retaining freedom to compose each page
-around its own claim.
+Create one run-local design source of truth for the supplied lecture request. Derive it from the
+subject, audience, language, and intended learning journey. Do not select a packaged theme and do
+not design individual pages.
 
-Complete this work before page planning:
+Assume the structured response schema is authoritative for field names, types, required values,
+and composition count. Concentrate on design decisions the schema cannot express.
 
-1. Infer a visual thesis from the subject, audience, language, and intended learning journey.
-2. Derive a coherent design grammar from meaningful structures inside the subject.
-3. Derive a small composition vocabulary for the fixed canvas.
-4. Write the Builder-facing Skill described below.
-5. Call `style` exactly once with the Skill, tokens, and composition vocabulary.
-6. Wait for the successful tool result. Only then plan the lecture in the next model turn.
+## Derive, do not categorize
 
-## Treat the Skill as source, not decoration
+Start from relationships that matter in the subject: causality, conflict, sequence, uncertainty,
+scale, transformation, material evidence, spatial movement, comparison, or accumulation. Convert
+those relationships into visual behavior. Make the visual thesis meaningfully wrong for an
+unrelated lecture.
 
-The generated Skill is the source of truth. Its CSS tokens are only a small executable projection of
-that source. A palette cannot carry the design by itself. The Skill must also control typography,
-spatial rhythm, hierarchy, semantic encodings, recurring motifs, media treatment, interaction, and
+Do not use labels such as “modern,” “editorial,” “technical,” “playful,” or “archival” as reasons
+for decisions. Such words may summarize a result, but concrete choices must establish typography,
+spatial rhythm, hierarchy, semantic encoding, recurring motifs, media treatment, interaction, and
 the boundary between continuity and variation.
 
-Keep style and content separate:
+When references are supplied, extract relationships rather than copying surfaces: palette
+balance, type hierarchy, geometry, spacing rhythm, image handling, material qualities, and motion
+logic. Never copy reference text, branding, lesson-specific imagery, or signature composition.
 
-- The Skill defines how this deck consistently makes visual decisions.
-- The lecture plan defines claims, learning actions, and narrative relationships.
-- Content assets provide evidence; they do not define the style merely by being present.
-- Builders choose page-specific compositions after receiving both contracts.
+## Build a fixed-canvas composition vocabulary
 
-Never put page copy, exact page layouts, HTML, page numbers, or chapter-by-chapter art direction in
-the Skill. Never describe a layout template that every Builder should repeat.
+Create exactly 5–7 structurally distinct, topic-specific families for a 1280×720 canvas. Each family must
+define its dominant visual carrier, reading path, spatial balance, and supporting role for text.
+Changing only color, font, texture, ornament, or motif does not create a new family.
 
-## Derive a fixed-canvas composition vocabulary
-
-Before writing the Builder-facing Skill, derive 5–7 topic-specific composition families. They are
-the bridge between the visual thesis and materially different 1280×720 page structures. A family
-must define a visual carrier, reading path, spatial balance, and role for text; changing only color,
-font, texture, ornament, or motif does not create a new family.
-
-Build each family from one primary structural primitive and at most one different secondary:
+Use one primary structural primitive and at most one different secondary:
 
 - `focal-object`: one object owns the field; annotation orbits it.
 - `asymmetric-split`: unequal regions create tension between claim and evidence.
@@ -58,170 +49,115 @@ Build each family from one primary structural primitive and at most one differen
 - `typographic-statement`: one short proposition and a supporting mark own the field.
 - `layered-reveal`: successive states expose hidden structure without changing the core object.
 
-Treat these as neutral structural materials, never as packaged themes. Translate them through the
-subject: names and spatial logic must become meaningfully wrong for an unrelated lecture. Combine
-primitives only when one carrier remains dominant. Do not derive several families from the same
-top-title / middle-content / bottom-controls skeleton.
+Translate primitives through the subject. Give families topic-derived names and spatial logic, not
+generic template names. Keep one carrier dominant when combining primitives. Avoid deriving
+several families from the same top-title / middle-content / bottom-controls skeleton.
 
-Submit each family as a `compositions` item with:
+Across the catalog use at least four different primaries and unique primary/secondary signatures.
+Collectively support all page types: `formula-derivation`, `sim-explorable`, `code-runnable`,
+`quiz-check`, `worked-example`, `section-break`, and `narrative-scene`. Make `use_when`,
+`spatial_logic`, `dominant_carrier`, `text_role`, `variation`, and `avoid` concrete enough that a
+Planner can match a claim to a family and a Builder can recognize when a page falsifies it.
 
-- `id`, a stable lowercase slug, and a concise topic-derived `name`.
-- `primary` and optional `secondary` from the vocabulary above.
-- `page_types`, listing every compatible page type.
-- `use_when`, the claim or learning condition that warrants it.
-- `spatial_logic`, the reading path and balance within the fixed canvas.
-- `dominant_carrier`, what must visually own the page.
-- `text_role`, where and how much text supports the carrier.
-- `variation`, the limited changes Builders may make without losing the fingerprint.
-- `avoid`, the specific fallback structure that would falsify this family.
+## Author the Builder-facing Skill body
 
-Across the catalog use at least four different primary primitives and unique primary/secondary
-signatures. Collectively cover all seven page types: `formula-derivation`, `sim-explorable`,
-`code-runnable`, `quiz-check`, `worked-example`, `section-break`, and `narrative-scene`. The
-Builder-facing Skill describes shared visual law only; do not duplicate the catalog in its body.
+Write the body as direct instructions to independent Builders. Keep it self-contained; Builders
+will not receive this meta-Skill or private reasoning. Define shared visual law without duplicating
+the composition catalog, prescribing exact page layouts, or including page copy.
 
-## Derive rather than categorize
-
-Start from relationships that matter in the subject: causality, conflict, sequence, uncertainty,
-scale, transformation, material evidence, spatial movement, comparison, or accumulation. Convert
-those relationships into visual behavior. The resulting thesis should become meaningfully wrong if
-copied unchanged to an unrelated lecture.
-
-Avoid preset labels such as "modern", "editorial", "technical", "playful", or "archival" as the
-reason for a decision. Such words may summarize a result, but must never replace concrete choices.
-Do not combine recognizable styles merely for variety. Build one system with controlled range.
-
-When references are present, extract relationships rather than copying surfaces: palette balance,
-type hierarchy, geometry, spacing rhythm, image handling, material qualities, and motion logic.
-Never copy their text, branding, lesson-specific imagery, or signature composition.
-
-## Author the concrete Builder Skill
-
-Give it a short topic-derived slug and a one-sentence description. Write its body as direct
-instructions to a Builder. Make it self-contained: the Builder will receive this body but not this
-meta-Skill, private Planner reasoning, profiles, or supporting reference files.
-
-The generated Skill specializes the Builder profile; it never replaces or weakens it. Include the
-following non-negotiable page contract in the Builder-facing body, expressed concisely and without
-turning it into a generic implementation tutorial:
-
-- Build one self-contained 1280×720 HTML fragment with exactly one `data-notale-page` root.
-- Use injected `--notale-*` tokens and never redefine reserved tokens.
-- Keep the page fully offline. Require no CDN, remote font, remote image, fetch, remote import,
-  placeholder asset, or undeclared third-party global. Choose system/local-safe font stacks only.
-- Make interaction project state from a real algorithm, equation, rule, dataset, or state machine.
-  Keep the page static when interaction would not improve the learning action.
-- Treat the task's available tools as a hard capability boundary. Never require an unassigned tool.
-- Keep visible content limited to subject knowledge and learning feedback. Never expose page numbers,
-  Skill names, implementation instructions, or Agent work records.
-
-If a design choice conflicts with this contract, change the design choice. Never reinterpret these
-constraints as optional aesthetic guidance.
-
-Use the following sections. Replace the labels with concrete decisions rather than explaining the
-framework.
+Use these sections with concrete decisions:
 
 ### Visual thesis
 
-State in one sentence how the subject becomes a visual world. Name the tension, rhythm, material, or
-point of view that unifies the deck.
+State in one sentence how the subject becomes a visual world. Name the tension, rhythm, material,
+or point of view that unifies the deck.
 
 ### Identity
 
-Specify the typographic voice, weights, scale contrast, material qualities, line behavior, edge
-treatment, depth, and texture. Use offline-safe font stacks. Explain what carries authority and what
-feels provisional, active, historical, computed, or observed when those distinctions matter.
+Specify typographic voice, weights, scale contrast, material qualities, line behavior, edge
+treatment, depth, and texture. Use offline-safe system font stacks. Explain what carries authority
+and what feels provisional, active, historical, computed, or observed when those distinctions
+matter.
 
 ### Spatial grammar
 
 Define outer breathing room, alignment logic, density, focal scale, reading order, and the
-relationship between text and the dominant evidence. State reusable principles, not fixed grids or
-slide templates. Require one clear visual carrier rather than generic cards or dashboard chrome.
+relationship between text and dominant evidence. Require one clear visual carrier instead of
+generic cards or dashboard chrome. State reusable principles, not a fixed grid.
 
 ### Semantic encoding
 
-Assign stable meanings to the smallest useful set of colors, shapes, line styles, scale changes, or
-motion behaviors. Encoding must help interpretation, not merely decorate. Say where an encoding must
-remain invariant across pages.
+Assign stable meanings to the smallest useful set of colors, shapes, line styles, scale changes,
+or motion behaviors. Keep meanings invariant where ambiguity would harm interpretation.
 
 ### Recurring motif
 
-Choose one subject-derived object, trace, geometry, or material gesture. Explain how it can recur and
-evolve when the argument advances, reverses, accumulates evidence, or returns to an earlier idea.
-Keep it flexible enough for different page types.
+Choose one subject-derived object, trace, geometry, or material gesture. Explain how it evolves
+when the argument advances, reverses, accumulates evidence, or returns to an earlier idea. Keep it
+flexible across page types.
 
 ### Media treatment
 
-Explain how photographs, historical artifacts, generated illustrations, diagrams, charts,
-equations, quotations, and code enter the same visual world when used. Preserve evidentiary integrity:
-style may frame or annotate an artifact but must not falsify it.
+Unify photographs, historical artifacts, illustrations, diagrams, charts, equations, quotations,
+and code without falsifying evidence. Describe treatment only; never allocate tools or providers.
 
-Limit this section to visual treatment of media that the page task and assigned tools already make
-available. Do not select, request, recommend, or assume `find_image`, `make_image`, or any provider;
-tool allocation belongs to the Planner and the Builder profile. Preserve these media boundaries in
-the generated Skill:
+Preserve these boundaries:
 
-- Identifiable people, documents, places, and historical events may use only an assigned
-  `find_image` capability.
-- `make_image` may be used only when already assigned and only for clearly non-documentary editorial
-  illustration; it must not fabricate recognizable historical evidence.
-- Without an assigned media tool, use no remote asset, invented local path, or placeholder.
-- Styling may crop, frame, label, or annotate evidence only when its meaning remains intact.
+- Use identifiable people, documents, places, and historical events only when a Builder has an
+  assigned evidence-search capability.
+- Use generated imagery only when already assigned and only for clearly non-documentary editorial
+  illustration; never fabricate recognizable historical evidence.
+- Without an assigned media capability, require no remote asset, invented local path, or
+  placeholder.
+- Crop, frame, label, or annotate evidence only when its meaning remains intact.
 
 ### Motion and interaction
 
 Define a small vocabulary of information-bearing actions such as trace, reveal, isolate, reorder,
-compare, accumulate, or return. Tie each action to a semantic change. Require the interface to
-project the state of a real algorithm, equation, rule, dataset, or state machine. Static content
-should remain static when action adds no learning value.
+compare, accumulate, or return. Tie each action to a semantic state change. Keep content static
+when action adds no learning value.
 
 ### Continuity and controlled variation
 
-List the invariants that make blurred pages recognizable as one deck. Then specify the limited axes
-Builders may vary for chapter transitions, narrative scenes, worked examples, code, simulations, or
-synthesis. Repeat the decision system, not a single composition.
+List invariants that make blurred pages recognizable as one deck. Then define limited variation
+for chapter transitions, narrative scenes, worked examples, code, simulations, and synthesis.
+Repeat the decision system, not one composition.
+
+### Page contract
+
+Require every Builder to:
+
+- Build one self-contained 1280×720 HTML fragment with exactly one `data-notale-page` root.
+- Use injected `--notale-*` tokens and never redefine reserved tokens.
+- Stay fully offline: no CDN, remote font, remote image, fetch, remote import, placeholder asset,
+  or undeclared third-party global.
+- Make interaction project state from a real algorithm, equation, rule, dataset, or state machine.
+- Treat assigned tools as a hard capability boundary.
+- Keep visible content limited to subject knowledge and learning feedback; expose no page numbers,
+  Skill names, implementation instructions, or Agent work records.
 
 ### Avoid
 
-Ban the likely failure modes for this particular subject. Include generic presentation furniture,
-irrelevant decoration, ambiguous color reuse, motif overuse, style drift, and any visual effect that
-would weaken the subject's credibility.
+Ban failure modes specific to this subject plus generic presentation furniture, irrelevant
+decoration, ambiguous color reuse, motif overuse, style drift, and effects that weaken credibility.
 
 ## Define executable tokens
 
-Submit exactly these required string tokens, with optional `mono`:
+Choose literal CSS-compatible values. Use offline-safe font stacks. Give both accents stable
+semantic meanings in the body. Ensure primary ink reaches at least 4.5:1 contrast against both the
+dominant field and embedded surface. Never use braces, semicolons, angle brackets, `url()`, remote
+fonts, CSS declarations, or variable names in token values.
 
-- `bg`: dominant deck field
-- `surface`: contrasting embedded surface
-- `ink`: primary text and high-authority marks
-- `muted`: secondary text and low-emphasis marks
-- `accent`: primary semantic emphasis
-- `accent-2`: distinct secondary semantic emphasis
-- `line`: dividers, axes, and structural strokes
-- `font`: offline-safe body/display CSS font stack
-- `mono`: optional offline-safe code/data CSS font stack
+## Preflight once
 
-Use literal CSS-compatible values. Do not include braces, semicolons, angle brackets, `url()`, remote
-fonts, CSS declarations, or variable names. Ensure `ink` reaches at least 4.5:1 contrast against
-both `bg` and `surface`; Builders use it as primary text on either field. The body must
-explain what the accents mean; tokens without semantics are incomplete.
+Before returning the structured response, verify that:
 
-## Preflight the Skill
+- The thesis, motif, grammar, and family names are unmistakably derived from the topic.
+- Decisions are executable rather than mood-board adjectives.
+- Independent Builders will produce coherence without repeating one layout.
+- Families differ in carrier, reading path, and balance, cover every page type, and obey the schema.
+- The body contains no page copy, exact layout, HTML, hidden dependency, or tool allocation.
+- Media boundaries and the immutable page contract remain intact.
+- Tokens are safe, semantically explained, offline-compatible, and sufficiently contrasted.
 
-Before calling `style`, verify all of the following:
-
-- It is clearly derived from this topic and audience.
-- It gives Builders decisions they can execute, not mood-board adjectives.
-- It establishes both invariants and meaningful variation.
-- It defines 5–7 structurally distinct, topic-derived compositions using at least four primaries.
-- Composition names differ in carrier, reading path, and balance rather than surface treatment.
-- Composition compatibility covers every page type without forcing one family onto every page.
-- It contains no exact page layout, page copy, HTML, or hidden dependency.
-- It includes the immutable Builder page contract and does not weaken any role constraint.
-- Its motif and encodings carry meaning across the whole narrative.
-- Its media section describes treatment only, never allocates tools or providers.
-- Its token values are complete, safe, offline-compatible, and consistent with the prose.
-- It would produce coherence even if every page were built independently.
-
-If any check fails, revise the Skill before submission. A successful `style` result fixes the design
-contract for the run; do not create a second style or silently replace it during planning.
+Return the final design once. Do not narrate the process or wrap the JSON in Markdown.

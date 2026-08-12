@@ -3,7 +3,7 @@
 Notale 使用一套面向本项目的精简 AgentLoop，生成离线 HTML-native 互动讲义。
 
 ```text
-topic → Planner(style → plan) → parallel Builders → deck.html
+topic → one-shot Style → Planner → parallel Builders → deck.html
 ```
 
 ## 运行
@@ -24,14 +24,15 @@ python -m notale generate --topic "原 topic" --resume runs/<run-id>
 
 ## Agent 与工具
 
-Root Planner 先按主题与受众生成一个本次 run 专用的具体设计 Skill，再负责全书叙事、章节和页面能力分配：
+独立 Style 阶段先按主题与受众生成一个本次 run 专用的具体设计 Skill。它没有工具或对话重试，
+只进行一次严格 JSON Schema 输出；程序随后校验、计算 hash 并原子落盘。Root Planner 在全新上下文中
+接收已固化 Style 的描述与构图目录，再负责全书叙事、章节和页面能力分配：
 
 ```text
-style · plan · block
+plan · block
 ```
 
-`style` 与 `plan` 是两个明确的模型回合：Planner 必须先收到 `style` 的确定性校验结果，下一回合才可
-提交 `plan`。设计 Skill 不是预设主题名，而是一份完整的 Builder 指令，包含视觉论点、空间语法、
+Style 与 Planner 是两个独立阶段，不共享消息历史。设计 Skill 不是预设主题名，而是一份完整的 Builder 指令，包含视觉论点、空间语法、
 语义编码、贯穿母题、媒体/交互处理、连续性边界及一组安全 CSS tokens。
 
 适合一次表达的讲义由 `plan` 直接提交完整 `chapter_pages`。明显更大的讲义将
@@ -80,23 +81,25 @@ run.json
 plan.json
 skills/<generated-name>/SKILL.md
 skills/<generated-name>/tokens.json
+skills/<generated-name>/compositions.json
 pages/pN.json
 assets/manifest.json   # 仅使用媒体时创建
 deck.html
 slides/pN.html
 runtime/
 llm-requests/<agent>/turn-N.json
+llm-responses/style/turn-0001.json
 events.jsonl
 summary.json
 ```
 
 ## 日志
 
-`events.jsonl` 是权威事件流，记录 `planner.style.created`、root/group Planner、模型调用、工具调用、revision、Skill/Tool 分配、并发时序、
+`events.jsonl` 是权威事件流，记录独立的 `style.*` 阶段、root/group Planner、模型调用、工具调用、revision、Skill/Tool 分配、并发时序、
 fallback、耗时、tokens、artifact hash 和脱敏环境快照。`llm-requests/` 保存每轮实际发送的完整请求
 body（不含密钥或 HTTP header）。每条事件都有递增 `seq`，并发写入仍可还原顺序。
 
-`summary.json` 完全由事件流派生，汇总阶段耗时、模型延迟、tokens、每页 turn/tool、峰值并发和错误。
+`summary.json` 完全由事件流派生，分别汇总 Style、Planner、Build 的阶段耗时、模型延迟、tokens、每页 turn/tool、峰值并发和错误。
 `run.json` 只承担恢复状态，不重复存储 trace。
 
 ## 配置与测试

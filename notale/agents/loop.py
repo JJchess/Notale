@@ -111,6 +111,8 @@ class ModelRequest:
     max_tokens: int
     reasoning_effort: str
     tools: list[dict[str, Any]]
+    response_schema: dict[str, Any] | None = None
+    require_parameters: bool = False
 
     def to_openai_body(self) -> dict[str, Any]:
         body: dict[str, Any] = {
@@ -121,9 +123,21 @@ class ModelRequest:
             "stream": True,
         }
         body.update(_token_limit_param(self.model, self.max_tokens))
-        body["extra_body"] = {
+        extra_body: dict[str, Any] = {
             "reasoning": {"effort": self.reasoning_effort},
         }
+        if self.require_parameters:
+            extra_body["provider"] = {"require_parameters": True}
+        body["extra_body"] = extra_body
+        if self.response_schema is not None:
+            body["response_format"] = {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "notale_style",
+                    "strict": True,
+                    "schema": self.response_schema,
+                },
+            }
         if self.tools:
             body["tools"] = _convert_tools_to_openai(self.tools)
         else:
@@ -369,6 +383,12 @@ def _client(llm: Any) -> tuple[Any, str, bool]:
     )
 
 
+def resolve_client(llm: Any) -> tuple[Any, str, bool]:
+    """Resolve the configured transport for one non-agent model call."""
+
+    return _client(llm)
+
+
 class AgentLoop:
     """One autonomous Planner or Builder loop ending at a terminal tool."""
 
@@ -558,7 +578,7 @@ class AgentLoop:
                 tool=call.name,
                 arguments=call.input,
             )
-        serial = any(call.name in {"style", "plan"} for call in calls)
+        serial = any(call.name == "plan" for call in calls)
         if len(calls) == 1 or serial:
             results = []
             for call in calls:

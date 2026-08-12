@@ -7,6 +7,7 @@ import uuid
 from pathlib import Path
 
 from notale.core.models import PageRun, PageRunStatus, RunState
+from notale.core.models import DesignSkillRef
 
 
 def now() -> str:
@@ -59,6 +60,28 @@ class RunStore:
         if not self.state.pages:
             self.state.pages = [PageRun() for _ in range(page_count)]
         self.state.plan_status = "completed"
+        self.save()
+
+    def start_style(self) -> None:
+        if self.state.style_status != "pending":
+            raise ValueError(f"style is not pending: {self.state.style_status}")
+        self.state.style_status = "running"
+        self.state.style_error = ""
+        self.save()
+
+    def finish_style(self, reference: DesignSkillRef) -> None:
+        if self.state.style_status != "running":
+            raise ValueError(f"style is not running: {self.state.style_status}")
+        self.state.style_status = "completed"
+        self.state.style = reference
+        self.state.style_error = ""
+        self.save()
+
+    def fail_style(self, error: str) -> None:
+        if self.state.style_status != "running":
+            raise ValueError(f"style is not running: {self.state.style_status}")
+        self.state.style_status = "failed"
+        self.state.style_error = error
         self.save()
 
     def reset_running(self) -> list[int]:

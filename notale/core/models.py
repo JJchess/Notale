@@ -99,6 +99,43 @@ class CompositionSpec(StrictModel):
         return self
 
 
+class StyleTokens(StrictModel):
+    """Strict structured-output projection of executable Style tokens."""
+
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    bg: str
+    surface: str
+    ink: str
+    muted: str
+    accent: str
+    accent_2: str = Field(alias="accent-2")
+    line: str
+    font: str
+    mono: str | None
+
+
+class StyleOutput(StrictModel):
+    """The sole model output of the run-local Style stage."""
+
+    name: str = Field(pattern=r"^[a-z0-9][a-z0-9-]*$")
+    description: str = Field(min_length=1)
+    body: str = Field(min_length=1)
+    tokens: StyleTokens
+    compositions: list[CompositionSpec] = Field(
+        min_length=5,
+        max_length=7,
+        description="Return exactly 5 to 7 composition families.",
+    )
+
+    def generated_style_arguments(self) -> dict[str, object]:
+        payload = self.model_dump(mode="json", by_alias=True)
+        tokens = payload["tokens"]
+        if isinstance(tokens, dict) and tokens.get("mono") is None:
+            del tokens["mono"]
+        return payload
+
+
 class Chapter(StrictModel):
     id: str
     title: str = Field(min_length=1)
@@ -219,5 +256,10 @@ class RunState(StrictModel):
     topic: str = Field(min_length=1)
     contract_hash: str = Field(min_length=1)
     created_at: str
+    style_status: str = Field(
+        default="pending", pattern=r"^(pending|running|completed|failed)$"
+    )
+    style: DesignSkillRef | None = None
+    style_error: str = ""
     plan_status: str = Field(default="pending", pattern=r"^(pending|completed)$")
     pages: list[PageRun] = Field(default_factory=list)
