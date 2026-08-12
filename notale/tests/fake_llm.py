@@ -233,7 +233,37 @@ Avoid generic card grids, decorative gradients, ambiguous accents, and ornamenta
             "font": "Inter, Arial, sans-serif",
             "mono": "ui-monospace, SFMono-Regular, monospace",
         },
+        "compositions": _default_compositions(),
     }
+
+
+def _default_compositions() -> list[dict[str, Any]]:
+    all_types = [
+        "formula-derivation", "sim-explorable", "code-runnable", "quiz-check",
+        "worked-example", "section-break", "narrative-scene",
+    ]
+    common = {
+        "use_when": "The claim needs this carrier and reading path.",
+        "spatial_logic": "Use the full fixed canvas with one deliberate reading path.",
+        "dominant_carrier": "One subject-specific visual object.",
+        "text_role": "Concise labels support rather than surround the carrier.",
+        "variation": "Scale and orientation may change while the carrier stays dominant.",
+        "avoid": "Do not fall back to a title bar, generic content panel, and bottom controls.",
+    }
+    return [
+        {"id": "route-field", "name": "Route Field", "primary": "focal-object",
+         "secondary": "process-path", "page_types": list(all_types), **common},
+        {"id": "forked-ledger", "name": "Forked Ledger", "primary": "asymmetric-split",
+         "secondary": "comparison", "page_types": list(all_types), **common},
+        {"id": "evidence-sheet", "name": "Evidence Sheet", "primary": "document-led",
+         "secondary": None, "page_types": list(all_types), **common},
+        {"id": "decision-bench", "name": "Decision Bench", "primary": "interactive-workbench",
+         "secondary": "layered-reveal", "page_types": list(all_types), **common},
+        {"id": "system-map", "name": "System Map", "primary": "spatial-map",
+         "secondary": None, "page_types": list(all_types), **common},
+        {"id": "threshold-data", "name": "Threshold Data", "primary": "data-led",
+         "secondary": None, "page_types": list(all_types), **common},
+    ]
 
 
 @contextmanager

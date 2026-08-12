@@ -124,6 +124,7 @@ def _load_plan(store: RunStore) -> tuple[LecturePlan, GeneratedDesignSkill]:
     plan = LecturePlan.model_validate_json(path.read_text(encoding="utf-8"))
     plan = SKILL_CATALOG.validate_plan(plan, OPTIONAL_PAGE_TOOLS)
     style = load_generated_style(store.run_dir / "skills", plan.design)
+    style.validate_plan(plan)
     return plan, style
 
 
@@ -207,6 +208,7 @@ async def _session(llm: Any, store: RunStore, logger: EventLog) -> GenerateResul
                 skills=skills,
                 tools=tools,
                 page_type=spec.type.value,
+                composition=spec.composition,
             )
             try:
                 artifact = await build_page(

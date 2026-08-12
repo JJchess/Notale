@@ -28,6 +28,7 @@ def compile_context(plan: LecturePlan, number: int) -> dict[str, Any]:
         "page": {
             "number": number,
             "type": page.type.value,
+            "composition": page.composition,
             "claim": page.claim,
             "learning_action": page.learning_action,
         },
@@ -63,7 +64,7 @@ class BuilderWorker:
         spec = plan.pages[page - 1]
         self.context = compile_context(plan, page)
         capability_text = catalog.render(spec.skills)
-        skill_text = style.render()
+        skill_text = style.render(spec.composition)
         if capability_text:
             skill_text += "\n\n---\n\n" + capability_text
         optional_tools = set(spec.tools)

@@ -83,6 +83,7 @@ async def _plan_group(
         chapters=tuple(assigned),
         all_chapters=tuple(root.chapters),
         catalog=catalog,
+        style=style,
         logger=logger,
     )
     outline = root.model_dump(mode="json", exclude={"chapter_pages"})
@@ -106,7 +107,9 @@ Available Builder capabilities:
 Call `pages` once with every assigned chapter. Give each chapter at least one page, but treat
 `pages` only as a soft workload estimate: use the page count the content actually needs. Use
 symbolic chapter entry/exit links; do not invent numeric page positions. Preserve the root
-throughline, chapter entry/payoff, and cross-chapter links. Do not print the plan as prose."""
+throughline, chapter entry/payoff, and cross-chapter links. Assign every page a compatible
+composition from the run Style catalog and obey its diversity constraints. Do not print the plan
+as prose."""
     estimates = {chapter.id: chapter.pages for chapter in assigned}
     started = time.monotonic()
     logger.emit(
@@ -182,7 +185,8 @@ expansion. This is your semantic decision; there is no code-side page threshold.
 the request is a flexible scope hint, never an acceptance target.
 Keep chapters whole, give each a stable id plus goal/entry/payoff contract, and use
 symbolic chapter entry/exit links rather than numeric page positions. Every chapter after the first
-must contain at least one page link to an earlier chapter. Do not print the plan as prose."""
+must contain at least one page link to an earlier chapter. Assign every page a compatible composition
+from the accepted Style catalog and obey its diversity constraints. Do not print the plan as prose."""
     root_started = time.monotonic()
     logger.emit("planner.root.started", agent_id="planner")
     root_agent = AgentLoop(
@@ -245,7 +249,7 @@ must contain at least one page link to an earlier chapter. Do not print the plan
     else:
         chapter_pages = root.chapter_pages
 
-    plan = assemble_plan(root, chapter_pages, catalog, style.reference)
+    plan = assemble_plan(root, chapter_pages, catalog, style)
     write_generated_style(run_dir / "skills", style)
     _save_plan(run_dir, plan)
     logger.emit(

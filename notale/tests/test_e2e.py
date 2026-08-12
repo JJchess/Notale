@@ -38,11 +38,16 @@ async def test_planner_then_parallel_builders_with_complete_logs(tmp_path: Path,
     style_dir = result.run_dir / "skills" / plan["design"]["name"]
     assert (style_dir / "SKILL.md").is_file()
     assert (style_dir / "tokens.json").is_file()
+    assert (style_dir / "compositions.json").is_file()
     builder_request = json.loads(
         (result.run_dir / "llm-requests" / "builder-p1" / "turn-0001.json").read_text()
     )
     builder_system = builder_request["request"]["messages"][0]["content"]
     assert "Run design Skill: pathways-field-guide" in builder_system
+    assert "Assigned page composition" in builder_system
+    assert '\"id\": \"route-field\"' in builder_system
+    assert '\"id\": \"forked-ledger\"' not in builder_system
+    assert "Available composition catalog" not in builder_system
     assert "narrative-keynote" not in builder_system
     assert "--notale-accent: #176b87" in (
         result.run_dir / "runtime" / "global.css"

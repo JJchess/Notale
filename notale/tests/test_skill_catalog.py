@@ -1,3 +1,5 @@
+from copy import deepcopy
+
 import pytest
 
 from notale.core.models import LecturePlan, SkillAssignment
@@ -8,6 +10,7 @@ from notale.utils.skill_catalog import (
     load_generated_style,
     write_generated_style,
 )
+from notale.tests.fake_llm import _default_compositions
 
 
 def test_catalog_validates_and_renders_selected_skills(plan_data):
@@ -31,6 +34,10 @@ def test_style_studio_preserves_builder_page_and_media_contract():
         "Never require an unassigned tool",
         "Do not select, request, recommend, or assume `find_image`, `make_image`",
         "Identifiable people, documents, places, and historical events",
+        "5–7 topic-specific composition families",
+        "focal-object",
+        "interactive-workbench",
+        "Collectively cover all seven page types",
     ):
         assert required in body
 
@@ -45,13 +52,46 @@ def test_generated_style_round_trips_and_detects_tampering(tmp_path):
             "muted": "#756b63", "accent": "#a52a2a", "accent-2": "#1f5d73",
             "line": "#b7aa99", "font": "Georgia, serif",
         },
+        compositions=_default_compositions(),
     )
     write_generated_style(tmp_path, style)
     assert load_generated_style(tmp_path, style.reference) == style
+    assert (tmp_path / style.name / "compositions.json").is_file()
     token_path = tmp_path / style.name / "tokens.json"
     token_path.write_text(token_path.read_text().replace("#a52a2a", "#000000"))
     with pytest.raises(ValueError, match="hash mismatch"):
         load_generated_style(tmp_path, style.reference)
+
+
+def test_generated_style_rejects_weak_composition_catalogs():
+    base = {
+        "name": "composition-test",
+        "description": "A composition validation fixture.",
+        "body": "# Composition test\n\nA complete shared visual law.",
+        "tokens": {
+            "bg": "#f4eedf", "surface": "#fffaf0", "ink": "#201a17",
+            "muted": "#756b63", "accent": "#a52a2a", "accent-2": "#1f5d73",
+            "line": "#b7aa99", "font": "Georgia, serif",
+        },
+        "compositions": _default_compositions(),
+    }
+
+    too_few = deepcopy(base)
+    too_few["compositions"] = too_few["compositions"][:4]
+    with pytest.raises(ValueError, match="5 to 7"):
+        create_generated_style(**too_few)
+
+    repeated = deepcopy(base)
+    repeated["compositions"][1]["primary"] = "focal-object"
+    repeated["compositions"][1]["secondary"] = "process-path"
+    with pytest.raises(ValueError, match="signatures"):
+        create_generated_style(**repeated)
+
+    uncovered = deepcopy(base)
+    for item in uncovered["compositions"]:
+        item["page_types"] = ["narrative-scene"]
+    with pytest.raises(ValueError, match="do not cover page types"):
+        create_generated_style(**uncovered)
 
 
 def test_plan_rejects_unassigned_tools(plan_data):

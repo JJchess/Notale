@@ -9,9 +9,15 @@ from notale.tests.fake_llm import FakeClient
 from notale.tools.agent_tools import PlanChapter
 
 
-def _page(*, claim: str = "一个知识动作", links: list[dict] | None = None) -> dict:
+def _page(
+    *,
+    claim: str = "一个知识动作",
+    composition: str = "route-field",
+    links: list[dict] | None = None,
+) -> dict:
     return {
         "type": "narrative-scene",
+        "composition": composition,
         "claim": claim,
         "learning_action": "解释这个动作",
         "narrative_role": "推进主线",
@@ -47,7 +53,16 @@ async def test_page_request_is_only_a_hint_without_limit(
     }]
     fixture = _root(
         chapters,
-        [{"id": "whole", "pages": [_page(claim=f"动作 {i}") for i in range(actual_pages)]}],
+        [{"id": "whole", "pages": [
+            _page(
+                claim=f"动作 {i}",
+                composition=(
+                    "route-field", "forked-ledger", "evidence-sheet",
+                    "decision-bench", "system-map", "threshold-data",
+                )[i % 6],
+            )
+            for i in range(actual_pages)
+        ]}],
     )
     client = FakeClient(by_purpose={"plan": json.dumps(fixture)})
     run_dir = tmp_path / str(actual_pages)
@@ -126,26 +141,29 @@ async def test_hierarchical_groups_run_in_parallel_and_merge_symbolic_links(
     fixtures = {
         "plan": json.dumps(root, ensure_ascii=False),
         "plan:g1": json.dumps({"chapters": [
-            {"id": "c1", "pages": [_page(claim="基线一"), _page(claim="基线二")]},
+            {"id": "c1", "pages": [
+                _page(claim="基线一", composition="route-field"),
+                _page(claim="基线二", composition="forked-ledger"),
+            ]},
             {"id": "c2", "pages": [
-                _page(claim="机制一", links=back_c1),
-                _page(claim="机制二"),
-                _page(claim="机制三"),
+                _page(claim="机制一", composition="evidence-sheet", links=back_c1),
+                _page(claim="机制二", composition="decision-bench"),
+                _page(claim="机制三", composition="system-map"),
             ]},
         ]}, ensure_ascii=False),
         "plan:g2": json.dumps({"chapters": [
-            {"id": "c3", "pages": [_page(claim="边界", links=[{
+            {"id": "c3", "pages": [_page(claim="边界", composition="threshold-data", links=[{
                 "chapter": "c1", "anchor": "exit", "relation": "contrasts-with",
                 "cue": "对照第一章结论",
             }])]},
         ]}, ensure_ascii=False),
         "plan:g3": json.dumps({"chapters": [
             {"id": "c4", "pages": [
-                _page(claim="迁移一", links=[{
+                _page(claim="迁移一", composition="route-field", links=[{
                     "chapter": "c2", "anchor": "entry", "relation": "returns-to",
                     "cue": "复用第二章机制",
                 }]),
-                _page(claim="迁移二"),
+                _page(claim="迁移二", composition="forked-ledger"),
             ]},
         ]}, ensure_ascii=False),
     }

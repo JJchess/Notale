@@ -29,6 +29,7 @@ def plan_data() -> dict:
         "pages": [
             {
                 "type": "section-break",
+                "composition": "route-field",
                 "claim": "局部动作构成路径",
                 "learning_action": "识别状态与动作",
                 "narrative_role": "提出问题",
@@ -36,6 +37,7 @@ def plan_data() -> dict:
             },
             {
                 "type": "worked-example",
+                "composition": "evidence-sheet",
                 "claim": "排序暴露局部决策",
                 "learning_action": "跟踪一次交换",
                 "narrative_role": "建立局部模型",
@@ -44,6 +46,7 @@ def plan_data() -> dict:
             },
             {
                 "type": "sim-explorable",
+                "composition": "decision-bench",
                 "claim": "路径质量取决于全局顺序",
                 "learning_action": "比较两条路径",
                 "narrative_role": "跨章提升",
@@ -53,6 +56,7 @@ def plan_data() -> dict:
             },
             {
                 "type": "narrative-scene",
+                "composition": "system-map",
                 "claim": "规划把局部动作组织为策略",
                 "learning_action": "解释策略差异",
                 "narrative_role": "综合全书",

@@ -160,6 +160,7 @@ def build_summary(run_dir: Path, state: RunState, status: str, error: str = "") 
                     "skills": payload.get("skills", []),
                     "tools": payload.get("tools", []),
                     "page_type": payload.get("page_type", ""),
+                    "composition": payload.get("composition", ""),
                 })
             elif kind in {"builder.completed", "builder.degraded"}:
                 active = max(0, active - 1)
@@ -182,6 +183,7 @@ def build_summary(run_dir: Path, state: RunState, status: str, error: str = "") 
                     "description": payload.get("description", ""),
                     "body_chars": int(payload.get("body_chars", 0) or 0),
                     "token_keys": payload.get("token_keys", []),
+                    "compositions": payload.get("compositions", []),
                     "duration_ms": int(event.get("duration_ms", 0) or 0),
                 }
             elif kind == "planner.plan.completed":

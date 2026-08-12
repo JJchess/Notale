@@ -48,7 +48,7 @@ async def test_root_plan_tool_and_deterministic_assembly(tmp_path: Path, plan_da
     assert state.submission == draft
     assert state.style is not None
     plan = assemble_plan(
-        draft, draft.chapter_pages, SKILL_CATALOG, state.style.reference
+        draft, draft.chapter_pages, SKILL_CATALOG, state.style
     )
     assert plan.design == state.style.reference
     assert len(plan.pages) == len(plan_data["pages"])

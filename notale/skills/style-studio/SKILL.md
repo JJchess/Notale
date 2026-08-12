@@ -14,9 +14,10 @@ Complete this work before page planning:
 
 1. Infer a visual thesis from the subject, audience, language, and intended learning journey.
 2. Derive a coherent design grammar from meaningful structures inside the subject.
-3. Write the Builder-facing Skill described below.
-4. Call `style` exactly once with the Skill and its tokens.
-5. Wait for the successful tool result. Only then plan the lecture in the next model turn.
+3. Derive a small composition vocabulary for the fixed canvas.
+4. Write the Builder-facing Skill described below.
+5. Call `style` exactly once with the Skill, tokens, and composition vocabulary.
+6. Wait for the successful tool result. Only then plan the lecture in the next model turn.
 
 ## Treat the Skill as source, not decoration
 
@@ -34,6 +35,50 @@ Keep style and content separate:
 
 Never put page copy, exact page layouts, HTML, page numbers, or chapter-by-chapter art direction in
 the Skill. Never describe a layout template that every Builder should repeat.
+
+## Derive a fixed-canvas composition vocabulary
+
+Before writing the Builder-facing Skill, derive 5–7 topic-specific composition families. They are
+the bridge between the visual thesis and materially different 1280×720 page structures. A family
+must define a visual carrier, reading path, spatial balance, and role for text; changing only color,
+font, texture, ornament, or motif does not create a new family.
+
+Build each family from one primary structural primitive and at most one different secondary:
+
+- `focal-object`: one object owns the field; annotation orbits it.
+- `asymmetric-split`: unequal regions create tension between claim and evidence.
+- `full-bleed-evidence`: an image, artifact, or visual field reaches the canvas edge.
+- `spatial-map`: position and connection carry the explanation.
+- `process-path`: sequence or causality creates the reading route.
+- `comparison`: a shared axis makes differences observable.
+- `data-led`: one quantitative pattern determines hierarchy.
+- `document-led`: a quotation, source, equation, or code artifact is the page.
+- `matrix`: repeated cells expose a meaningful two-dimensional system.
+- `interactive-workbench`: controls directly manipulate one dominant model.
+- `typographic-statement`: one short proposition and a supporting mark own the field.
+- `layered-reveal`: successive states expose hidden structure without changing the core object.
+
+Treat these as neutral structural materials, never as packaged themes. Translate them through the
+subject: names and spatial logic must become meaningfully wrong for an unrelated lecture. Combine
+primitives only when one carrier remains dominant. Do not derive several families from the same
+top-title / middle-content / bottom-controls skeleton.
+
+Submit each family as a `compositions` item with:
+
+- `id`, a stable lowercase slug, and a concise topic-derived `name`.
+- `primary` and optional `secondary` from the vocabulary above.
+- `page_types`, listing every compatible page type.
+- `use_when`, the claim or learning condition that warrants it.
+- `spatial_logic`, the reading path and balance within the fixed canvas.
+- `dominant_carrier`, what must visually own the page.
+- `text_role`, where and how much text supports the carrier.
+- `variation`, the limited changes Builders may make without losing the fingerprint.
+- `avoid`, the specific fallback structure that would falsify this family.
+
+Across the catalog use at least four different primary primitives and unique primary/secondary
+signatures. Collectively cover all seven page types: `formula-derivation`, `sim-explorable`,
+`code-runnable`, `quiz-check`, `worked-example`, `section-break`, and `narrative-scene`. The
+Builder-facing Skill describes shared visual law only; do not duplicate the catalog in its body.
 
 ## Derive rather than categorize
 
@@ -157,7 +202,8 @@ Submit exactly these required string tokens, with optional `mono`:
 - `mono`: optional offline-safe code/data CSS font stack
 
 Use literal CSS-compatible values. Do not include braces, semicolons, angle brackets, `url()`, remote
-fonts, CSS declarations, or variable names. Keep contrast usable on the dominant field. The body must
+fonts, CSS declarations, or variable names. Ensure `ink` reaches at least 4.5:1 contrast against
+both `bg` and `surface`; Builders use it as primary text on either field. The body must
 explain what the accents mean; tokens without semantics are incomplete.
 
 ## Preflight the Skill
@@ -167,6 +213,9 @@ Before calling `style`, verify all of the following:
 - It is clearly derived from this topic and audience.
 - It gives Builders decisions they can execute, not mood-board adjectives.
 - It establishes both invariants and meaningful variation.
+- It defines 5–7 structurally distinct, topic-derived compositions using at least four primaries.
+- Composition names differ in carrier, reading path, and balance rather than surface treatment.
+- Composition compatibility covers every page type without forcing one family onto every page.
 - It contains no exact page layout, page copy, HTML, or hidden dependency.
 - It includes the immutable Builder page contract and does not weaken any role constraint.
 - Its motif and encodings carry meaning across the whole narrative.

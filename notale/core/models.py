@@ -25,6 +25,21 @@ class PageType(str, Enum):
     NARRATIVE_SCENE = "narrative-scene"
 
 
+class CompositionPrimitive(str, Enum):
+    FOCAL_OBJECT = "focal-object"
+    ASYMMETRIC_SPLIT = "asymmetric-split"
+    FULL_BLEED_EVIDENCE = "full-bleed-evidence"
+    SPATIAL_MAP = "spatial-map"
+    PROCESS_PATH = "process-path"
+    COMPARISON = "comparison"
+    DATA_LED = "data-led"
+    DOCUMENT_LED = "document-led"
+    MATRIX = "matrix"
+    INTERACTIVE_WORKBENCH = "interactive-workbench"
+    TYPOGRAPHIC_STATEMENT = "typographic-statement"
+    LAYERED_REVEAL = "layered-reveal"
+
+
 class NarrativeRelation(str, Enum):
     BUILDS_ON = "builds-on"
     CONTRASTS_WITH = "contrasts-with"
@@ -58,6 +73,32 @@ class DesignSkillRef(StrictModel):
         return self
 
 
+class CompositionSpec(StrictModel):
+    """One topic-derived fixed-canvas composition available to page Planners."""
+
+    id: str
+    name: str = Field(min_length=1)
+    primary: CompositionPrimitive
+    secondary: CompositionPrimitive | None = None
+    page_types: list[PageType] = Field(min_length=1)
+    use_when: str = Field(min_length=1)
+    spatial_logic: str = Field(min_length=1)
+    dominant_carrier: str = Field(min_length=1)
+    text_role: str = Field(min_length=1)
+    variation: str = Field(min_length=1)
+    avoid: str = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def validate_composition(self) -> "CompositionSpec":
+        if _NAME.fullmatch(self.id) is None:
+            raise ValueError(f"invalid composition id: {self.id!r}")
+        if self.secondary == self.primary:
+            raise ValueError("composition primary and secondary primitives must differ")
+        if len(self.page_types) != len(set(self.page_types)):
+            raise ValueError("composition page_types contain duplicates")
+        return self
+
+
 class Chapter(StrictModel):
     id: str
     title: str = Field(min_length=1)
@@ -81,6 +122,7 @@ class PageLink(StrictModel):
 
 class PagePlan(StrictModel):
     type: PageType
+    composition: str
     claim: str = Field(min_length=1)
     learning_action: str = Field(min_length=1)
     narrative_role: str = Field(min_length=1)
@@ -90,6 +132,8 @@ class PagePlan(StrictModel):
 
     @model_validator(mode="after")
     def validate_capabilities(self) -> "PagePlan":
+        if _NAME.fullmatch(self.composition) is None:
+            raise ValueError(f"invalid composition id: {self.composition!r}")
         names = [item.name for item in self.skills]
         if len(names) != len(set(names)):
             raise ValueError("page skills contain duplicate names")

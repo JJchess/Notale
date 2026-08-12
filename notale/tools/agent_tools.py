@@ -14,6 +14,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from notale.core.models import (
     Chapter,
+    CompositionSpec,
     DesignSkillRef,
     LecturePlan,
     NarrativeRelation,
@@ -82,6 +83,7 @@ class SymbolicLink(ToolInput):
 
 class DraftPage(ToolInput):
     type: PageType
+    composition: str = Field(pattern=r"^[a-z0-9][a-z0-9-]*$")
     claim: str = Field(min_length=1)
     learning_action: str = Field(min_length=1)
     narrative_role: str = Field(min_length=1)
@@ -199,6 +201,7 @@ class StyleInput(ToolInput):
     description: str = Field(min_length=1)
     body: str = Field(min_length=1)
     tokens: dict[str, str]
+    compositions: list[CompositionSpec]
 
 
 class BlockInput(ToolInput):
@@ -227,6 +230,7 @@ class PlannerGroupState:
     chapters: tuple[PlanChapter, ...]
     all_chapters: tuple[PlanChapter, ...]
     catalog: SkillCatalog
+    style: GeneratedDesignSkill
     logger: EventLog
     submission: PagesInput | None = None
     blocked: str = ""
@@ -249,6 +253,39 @@ def _validate_page_capabilities(
             unknown = sorted(set(page.tools) - OPTIONAL_PAGE_TOOLS)
             if unknown:
                 raise ValueError(f"page {label} has unknown tools: {unknown}")
+
+
+def _validate_page_compositions(
+    chapter_pages: list[ChapterPages], style: GeneratedDesignSkill
+) -> None:
+    catalog = {item.id: item for item in style.compositions}
+    all_ids: list[str] = []
+    for chapter in chapter_pages:
+        ids: list[str] = []
+        for offset, page in enumerate(chapter.pages, 1):
+            composition = catalog.get(page.composition)
+            if composition is None:
+                raise ValueError(
+                    f"page {chapter.id}:{offset} has unknown composition: {page.composition}"
+                )
+            if page.type not in composition.page_types:
+                raise ValueError(
+                    f"page {chapter.id}:{offset} composition {page.composition} "
+                    f"does not support {page.type.value}"
+                )
+            ids.append(page.composition)
+        for left, right in zip(ids, ids[1:]):
+            if left == right:
+                raise ValueError(
+                    f"chapter {chapter.id} has adjacent pages with composition {left}"
+                )
+        if len(ids) >= 3 and len(set(ids)) < 3:
+            raise ValueError(
+                f"chapter {chapter.id} needs at least three compositions"
+            )
+        all_ids.extend(ids)
+    if len(all_ids) >= 6 and len(set(all_ids)) < 4:
+        raise ValueError("a plan with at least six pages needs at least four compositions")
 
 
 class PlanTool(BaseTool):
@@ -276,6 +313,7 @@ class PlanTool(BaseTool):
             )
         try:
             _validate_page_capabilities(arguments.chapter_pages, self.state.catalog)
+            _validate_page_compositions(arguments.chapter_pages, self.state.style)
         except ValueError as exc:
             return ToolResult(output=str(exc), is_error=True)
         _atomic_text(
@@ -297,7 +335,8 @@ class PlanTool(BaseTool):
 class StyleTool(BaseTool):
     name = "style"
     description = (
-        "Create the one concrete, run-local design Skill that all Builders will use. "
+        "Create the one concrete, run-local design Skill and its 5-7 fixed-canvas "
+        "composition families that all Builders will use. "
         "Call this before plan and wait for its result."
     )
     input_model = StyleInput
@@ -335,6 +374,7 @@ class StyleTool(BaseTool):
             description=style.description,
             body_chars=len(style.body),
             token_keys=sorted(style.tokens),
+            compositions=[item.id for item in style.compositions],
             duration_ms=duration_ms,
         )
         return ToolResult(
@@ -344,6 +384,7 @@ class StyleTool(BaseTool):
                     "sha256": style.sha256,
                     "body_chars": len(style.body),
                     "token_keys": sorted(style.tokens),
+                    "compositions": [item.id for item in style.compositions],
                     "next": "submit plan in the next model turn",
                 },
                 ensure_ascii=False,
@@ -376,6 +417,7 @@ class PagesTool(BaseTool):
                 list(self.state.all_chapters), arguments.chapters
             )
             _validate_page_capabilities(arguments.chapters, self.state.catalog)
+            _validate_page_compositions(arguments.chapters, self.state.style)
         except ValueError as exc:
             return ToolResult(output=str(exc), is_error=True)
         _atomic_text(
@@ -396,7 +438,7 @@ def assemble_plan(
     root: PlanInput,
     chapter_pages: list[ChapterPages],
     catalog: SkillCatalog,
-    design: DesignSkillRef,
+    style: GeneratedDesignSkill,
 ) -> LecturePlan:
     expected = [chapter.id for chapter in root.chapters]
     actual = [chapter.id for chapter in chapter_pages]
@@ -404,6 +446,7 @@ def assemble_plan(
         raise ValueError(f"chapter page drafts must follow outline order: {expected}")
     _validate_draft_structure(root.chapters, chapter_pages)
     _validate_page_capabilities(chapter_pages, catalog)
+    _validate_page_compositions(chapter_pages, style)
 
     ranges: dict[str, tuple[int, int]] = {}
     chapters: list[Chapter] = []
@@ -438,6 +481,7 @@ def assemble_plan(
             pages.append(
                 PagePlan(
                     type=page.type,
+                    composition=page.composition,
                     claim=page.claim,
                     learning_action=page.learning_action,
                     narrative_role=page.narrative_role,
@@ -453,9 +497,10 @@ def assemble_plan(
         audience=root.audience,
         throughline=root.throughline,
         chapters=chapters,
-        design=design,
+        design=style.reference,
         pages=pages,
     )
+    style.validate_plan(plan)
     return catalog.validate_plan(plan, OPTIONAL_PAGE_TOOLS)
 
 
