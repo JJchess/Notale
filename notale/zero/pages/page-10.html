@@ -1,0 +1,442 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>轨道家族 —— 不同的轨道，不同的工作</title>
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  .page-body{
+    position:absolute; left:52px; right:52px; top:100px; bottom:66px;
+    z-index:2; display:flex; gap:var(--sp-4);
+  }
+
+  /* --- 左：三维地球 ------------------------------------------------------ */
+  .globe-panel{
+    position:relative; flex:1.62 1 0; min-width:0; min-height:0;
+    padding:0; overflow:hidden;
+  }
+  #globeViz{ position:absolute; inset:0; width:100%; height:100%; }
+  #globeViz canvas{ display:block; }
+
+  .globe-caption{
+    position:absolute; left:var(--sp-3); top:var(--sp-3); z-index:2;
+    display:flex; align-items:center; gap:8px;
+    font:500 var(--fs-label)/1.3 var(--font-sans); color:var(--text-dim);
+    background:rgba(6,8,18,.55); border:1px solid var(--line-soft);
+    border-radius:6px; padding:6px 10px; pointer-events:none;
+  }
+  .globe-caption b{ color:var(--accent-2); font-weight:600; }
+
+  .globe-scale-note{
+    position:absolute; right:var(--sp-3); bottom:var(--sp-3); z-index:2;
+    font:500 var(--fs-num)/1.3 var(--font-mono); color:var(--text-faint);
+    background:rgba(6,8,18,.55); border:1px solid var(--line-soft);
+    border-radius:6px; padding:5px 8px; pointer-events:none; max-width:260px;
+  }
+
+  /* --- 右：图例 + 说明 ----------------------------------------------------- */
+  .side-col{
+    flex:1 1 0; min-width:0; min-height:0;
+    display:flex; flex-direction:column; gap:var(--sp-3);
+  }
+
+  .legend-panel{ flex:none; }
+  .legend-title{ font:700 var(--fs-h3)/1.25 var(--font-sans); color:var(--text); margin-bottom:var(--sp-2); }
+
+  .fam-chip{
+    display:flex; align-items:center; gap:10px; width:100%;
+    background:var(--bg3); border:1px solid var(--line);
+    border-radius:7px; padding:8px 12px; margin-bottom:8px;
+    cursor:pointer; text-align:left; font-family:var(--font-sans);
+    transition:background .15s, border-color .15s, opacity .15s;
+  }
+  .fam-chip:last-child{ margin-bottom:0; }
+  .fam-chip:hover{ background:rgba(150,175,220,.12); }
+  .fam-chip .dot{
+    width:13px; height:13px; border-radius:50%; flex:none;
+    box-shadow:0 0 6px 1px currentColor;
+  }
+  .fam-chip .fam-name{ font:600 var(--fs-body)/1.3 var(--font-sans); color:var(--text); }
+  .fam-chip .fam-sub{ font:500 var(--fs-num)/1.3 var(--font-mono); color:var(--text-faint); }
+  .fam-chip .fam-text{ flex:1 1 auto; min-width:0; }
+  .fam-chip .fam-state{
+    flex:none; font:600 var(--fs-num)/1 var(--font-mono);
+    color:var(--text-faint); letter-spacing:.05em;
+    border:1px solid var(--line); border-radius:4px; padding:3px 7px;
+  }
+  .fam-chip.off{ opacity:.5; }
+  .fam-chip.selected{ border-color:var(--fc); background:rgba(150,175,220,.10); }
+  .fam-chip.selected .fam-state{ color:#12100c; background:var(--fc); border-color:var(--fc); }
+
+  .legend-note{
+    margin-top:var(--sp-2); font:500 var(--fs-num)/1.4 var(--font-mono);
+    color:var(--text-faint);
+  }
+
+  .info-panel{ flex:1 1 0; min-height:0; display:flex; flex-direction:column; }
+
+  /* 概览表(默认态) */
+  #overviewView{ display:flex; flex-direction:column; height:100%; }
+  .ov-title{ font:700 var(--fs-h3)/1.25 var(--font-sans); color:var(--text); margin-bottom:var(--sp-2); }
+  .ov-row{
+    display:flex; align-items:baseline; gap:10px; padding:7px 0;
+    border-bottom:1px solid var(--line-soft);
+  }
+  .ov-row:last-of-type{ border-bottom:none; }
+  .ov-dot{ width:10px; height:10px; border-radius:50%; flex:none; box-shadow:0 0 5px currentColor; }
+  .ov-name{ font:600 var(--fs-body)/1.3 var(--font-sans); color:var(--text); flex:0 0 auto; }
+  .ov-stats{ font:500 var(--fs-label)/1.3 var(--font-mono); color:var(--text-dim); margin-left:auto; text-align:right; }
+  .ov-callout{ margin-top:var(--sp-3); }
+  .ov-hint{
+    margin-top:auto; font:500 var(--fs-label)/1.4 var(--font-sans); color:var(--text-faint);
+    display:flex; align-items:center; gap:6px;
+  }
+  .ov-hint b{ color:var(--accent-2); }
+
+  /* 详情态 */
+  #detailView{ display:none; flex-direction:column; height:100%; }
+  #detailView.show{ display:flex; }
+  .dt-title{ font:700 var(--fs-h3)/1.25 var(--font-sans); margin-bottom:var(--sp-3); }
+  .dt-stats{
+    display:grid; grid-template-columns:1fr 1fr; gap:8px 14px;
+    margin-bottom:var(--sp-3);
+  }
+  .dt-stat{
+    background:var(--bg3); border:1px solid var(--line); border-radius:6px;
+    padding:8px 10px;
+  }
+  .dt-stat .k{ font:600 var(--fs-label)/1.3 var(--font-sans); color:var(--text-dim); display:block; }
+  .dt-stat .v{ font:700 22px/1.3 var(--font-mono); font-variant-numeric:tabular-nums; }
+  .dt-use{ font:400 var(--fs-body)/1.5 var(--font-sans); color:var(--text-dim); flex:1 1 auto; }
+  .dt-use b{ color:var(--text); font-weight:600; }
+  .dt-back{
+    margin-top:var(--sp-2); align-self:flex-start;
+  }
+</style>
+</head>
+<body data-page="10" data-total="14">
+<div id="stage">
+  <div class="starfield"></div>
+
+  <div class="pg-head">
+    <div><span class="pg-kicker">MODULE 3 · 轨道</span><span class="pg-title">不同的轨道，不同的工作</span></div>
+    <div class="pg-index">10 / 14</div>
+  </div>
+
+  <div class="page-body">
+    <div class="panel globe-panel">
+      <div id="globeViz"></div>
+      <div class="globe-caption">🌍 拖拽 = 转视角 · 滚轮 = 缩放 · 点击 <b>轨道环</b> = 查看用途</div>
+      <div class="globe-scale-note">环与地球的相对距离经过压缩以便同屏显示，不是真实比例；三种轨道的高度/速度/周期数字本身是真实值。</div>
+    </div>
+
+    <div class="side-col">
+      <div class="panel legend-panel">
+        <div class="legend-title">轨道家族图例</div>
+        <button type="button" class="fam-chip selected" data-fam="leo" style="color:var(--accent-2);--fc:var(--accent-2)">
+          <span class="dot" style="background:var(--accent-2)"></span>
+          <span class="fam-text"><span class="fam-name">近地轨道 LEO</span> <span class="fam-sub">400km · 92.7min</span></span>
+          <span class="fam-state">显示</span>
+        </button>
+        <button type="button" class="fam-chip" data-fam="geo" style="color:var(--accent);--fc:var(--accent)">
+          <span class="dot" style="background:var(--accent)"></span>
+          <span class="fam-text"><span class="fam-name">地球同步轨道 GEO</span> <span class="fam-sub">35786km · 23h56m</span></span>
+          <span class="fam-state">显示</span>
+        </button>
+        <button type="button" class="fam-chip" data-fam="sso" style="color:var(--accent-3);--fc:var(--accent-3)">
+          <span class="dot" style="background:var(--accent-3)"></span>
+          <span class="fam-text"><span class="fam-name">极轨 / 太阳同步</span> <span class="fam-sub">~700km · ~99min</span></span>
+          <span class="fam-state">显示</span>
+        </button>
+        <div class="legend-note">再点一次卡片可以隐藏这条轨道环；隐藏后地球上就少一条环。</div>
+      </div>
+
+      <div class="panel info-panel scroll-y">
+        <div id="overviewView">
+          <div class="ov-title">三种轨道，一眼对比</div>
+          <div class="ov-row">
+            <span class="ov-dot" style="background:var(--accent-2);color:var(--accent-2)"></span>
+            <span class="ov-name">LEO</span>
+            <span class="ov-stats">400km · 7.66km/s · 92.7min</span>
+          </div>
+          <div class="ov-row">
+            <span class="ov-dot" style="background:var(--accent);color:var(--accent)"></span>
+            <span class="ov-name">GEO</span>
+            <span class="ov-stats">35786km · 3.07km/s · 23h56m</span>
+          </div>
+          <div class="ov-row">
+            <span class="ov-dot" style="background:var(--accent-3);color:var(--accent-3)"></span>
+            <span class="ov-name">极轨/SSO</span>
+            <span class="ov-stats">~700km · ~7.5km/s · ~99min</span>
+          </div>
+          <div class="callout cool ov-callout">GEO 的周期恰好等于地球自转一天（23h56m），所以从地面看它像挂在天上不动——这正是通信/气象卫星专挑它的原因。</div>
+          <div class="ov-hint">💡 点击上方<b>图例卡片</b>或地球上的<b>轨道环</b>，看看每种轨道具体是干什么用的。</div>
+        </div>
+
+        <div id="detailView">
+          <div class="dt-title" id="dtTitle"></div>
+          <div class="dt-stats">
+            <div class="dt-stat"><span class="k">高度</span><span class="v" id="dtAlt"></span></div>
+            <div class="dt-stat"><span class="k">轨道速度</span><span class="v" id="dtSpeed"></span></div>
+            <div class="dt-stat"><span class="k">周期</span><span class="v" id="dtPeriod"></span></div>
+            <div class="dt-stat"><span class="k">轨道倾角</span><span class="v" id="dtIncl"></span></div>
+          </div>
+          <div class="dt-use" id="dtUse"></div>
+          <button type="button" class="btn dt-back" id="dtBack">‹ 返回总览</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="pg-hint">💡 <b>怎么玩</b>：拖拽地球看轨道的空间关系，点击图例卡片或轨道环本身，了解它是做什么用的。</div>
+</div>
+
+<script src="assets/base.js"></script>
+<script src="assets/lib/three.min.js"></script>
+<script src="assets/lib/globe.gl.min.js"></script>
+<script>
+(function(){
+  'use strict';
+
+  var FAMILIES = {
+    leo: {
+      name:'近地轨道 LEO', colorTok:'--accent-2',
+      altitude:'400 km', speed:'7.66 km/s', period:'92.7 分钟', incl:'51.6°',
+      inclDeg:51.6, raanDeg:15, ringMul:1.12, demoLap:5200,
+      use:'<b>载人空间站、对地观测卫星。</b>离地面近，看地表看得最清楚，但覆盖范围小、飞得快——每天绕地球约 15 圈，一个地面站每次能看到卫星经过的时间只有几分钟。'
+    },
+    geo: {
+      name:'地球同步轨道 GEO', colorTok:'--accent',
+      altitude:'35786 km', speed:'3.07 km/s', period:'23h56m(≈24h)', incl:'0°',
+      inclDeg:0, raanDeg:0, ringMul:1.9, demoLap:24000,
+      use:'<b>通信卫星、气象卫星。</b>周期和地球自转同步，从地面抬头看它固定挂在天上同一个位置——地面天线不用追踪，适合持续盯着同一片区域做通信中转或云图监测。'
+    },
+    sso: {
+      name:'极轨 / 太阳同步轨道', colorTok:'--accent-3',
+      altitude:'~700 km（教学参考值）', speed:'~7.51 km/s', period:'~99 分钟', incl:'~90°',
+      inclDeg:90, raanDeg:70, ringMul:1.28, demoLap:5350,
+      use:'<b>对地测绘、遥感、侦察卫星。</b>轨道面几乎经过南北两极上空，且相对太阳方向基本不转——卫星每天在当地同一钟点经过同一纬度、光照角度一致，适合长期对比同一地点的变化。'
+    }
+  };
+
+  var els = {
+    globe: document.getElementById('globeViz'),
+    overview: document.getElementById('overviewView'),
+    detail: document.getElementById('detailView'),
+    dtTitle: document.getElementById('dtTitle'),
+    dtAlt: document.getElementById('dtAlt'),
+    dtSpeed: document.getElementById('dtSpeed'),
+    dtPeriod: document.getElementById('dtPeriod'),
+    dtIncl: document.getElementById('dtIncl'),
+    dtUse: document.getElementById('dtUse'),
+    dtBack: document.getElementById('dtBack'),
+    chips: Array.prototype.slice.call(document.querySelectorAll('.fam-chip'))
+  };
+
+  var selected = 'leo';
+
+  function showOverview(){
+    selected = null;
+    els.detail.classList.remove('show');
+    els.overview.style.display = 'flex';
+    syncChips();
+    refreshRingStyles();
+  }
+
+  function showDetail(key){
+    selected = key;
+    var f = FAMILIES[key];
+    els.dtTitle.textContent = f.name;
+    els.dtTitle.style.color = 'var(' + f.colorTok + ')';
+    els.dtAlt.textContent = f.altitude;
+    els.dtAlt.style.color = 'var(' + f.colorTok + ')';
+    els.dtSpeed.textContent = f.speed;
+    els.dtSpeed.style.color = 'var(' + f.colorTok + ')';
+    els.dtPeriod.textContent = f.period;
+    els.dtPeriod.style.color = 'var(' + f.colorTok + ')';
+    els.dtIncl.textContent = f.incl;
+    els.dtIncl.style.color = 'var(' + f.colorTok + ')';
+    els.dtUse.innerHTML = f.use;
+    els.overview.style.display = 'none';
+    els.detail.classList.add('show');
+    syncChips();
+    refreshRingStyles();
+  }
+
+  function syncChips(){
+    els.chips.forEach(function(chip){
+      var key = chip.getAttribute('data-fam');
+      var f = FAMILIES[key];
+      var visible = f.mesh ? f.mesh.visible : true;
+      chip.classList.toggle('off', !visible);
+      chip.classList.toggle('selected', selected === key);
+      chip.querySelector('.fam-state').textContent = visible ? (selected === key ? '查看中' : '显示') : '已隐藏';
+    });
+  }
+
+  function toggleFamily(key){
+    var f = FAMILIES[key];
+    if (!f.mesh) return;
+    if (!f.mesh.visible){
+      f.mesh.visible = true;
+      showDetail(key);
+    } else if (selected !== key){
+      showDetail(key);
+    } else {
+      f.mesh.visible = false;
+      showOverview();
+    }
+  }
+
+  els.chips.forEach(function(chip){
+    chip.addEventListener('click', function(){
+      toggleFamily(chip.getAttribute('data-fam'));
+    });
+  });
+  els.dtBack.addEventListener('click', showOverview);
+
+  /* ---------------------------------------------------------------------
+     三维地球 + 手写轨道环(globe.gl 只负责地球本体,轨道环直接挂到它的
+     three.js scene 上,用参数方程画出带倾角的圆,而不是用 ringsData 这种
+     贴地表面纹路 —— 那个是给"雷达波纹"用的,不是给空间中的轨道环用的)
+     --------------------------------------------------------------------- */
+  var W = els.globe.clientWidth || 900, H = els.globe.clientHeight || 700;
+
+  var globe = Globe()(els.globe)
+    .width(W).height(H)
+    .backgroundColor('rgba(0,0,0,0)')
+    .showAtmosphere(true)
+    .atmosphereColor(Deck.token('--accent-2') || '#47e0ff')
+    .atmosphereAltitude(0.16)
+    .showGraticules(true)
+    .globeMaterial(new THREE.MeshPhongMaterial({
+      color: new THREE.Color(Deck.token('--bg3') || '#10182c'),
+      emissive: new THREE.Color(Deck.token('--accent-2') || '#47e0ff'),
+      emissiveIntensity: 0.05,
+      shininess: 8
+    }));
+
+  globe.pointOfView({ lat: 18, lng: 20, altitude: 4.1 }, 0);
+
+  var controls = globe.controls();
+  controls.autoRotate = true;
+  controls.autoRotateSpeed = 0.55;
+  controls.enableZoom = true;
+  controls.minDistance = 140;
+  controls.maxDistance = 900;
+
+  try { globe.renderer().setPixelRatio(Deck.ratio()); } catch (e) {}
+
+  var R = globe.getGlobeRadius ? globe.getGlobeRadius() : 100;
+  var scene = globe.scene();
+
+  function ringPoints(radius, inclDeg, raanDeg, segments){
+    var incl = inclDeg * Math.PI / 180, raan = raanDeg * Math.PI / 180;
+    var pts = [];
+    for (var i = 0; i < segments; i++){
+      var a = (i / segments) * Math.PI * 2;
+      var x = radius * Math.cos(a);
+      var y = radius * Math.sin(a) * Math.sin(incl);
+      var z = radius * Math.sin(a) * Math.cos(incl);
+      var xr = x * Math.cos(raan) - z * Math.sin(raan);
+      var zr = x * Math.sin(raan) + z * Math.cos(raan);
+      pts.push(new THREE.Vector3(xr, y, zr));
+    }
+    return pts;
+  }
+
+  var pickable = [];
+
+  Object.keys(FAMILIES).forEach(function(key){
+    var f = FAMILIES[key];
+    var radius = R * f.ringMul;
+    var pts = ringPoints(radius, f.inclDeg, f.raanDeg, 140);
+    var curve = new THREE.CatmullRomCurve3(pts, true);
+    var tube = R * 0.006;
+    var geo = new THREE.TubeGeometry(curve, 220, tube, 8, true);
+    var colorHex = Deck.token(f.colorTok) || '#47e0ff';
+    var mat = new THREE.MeshBasicMaterial({
+      color: new THREE.Color(colorHex),
+      transparent: true,
+      opacity: 0.55
+    });
+    var mesh = new THREE.Mesh(geo, mat);
+    mesh.userData.famKey = key;
+    scene.add(mesh);
+    f.mesh = mesh;
+    f.curve = curve;
+    f.baseTube = tube;
+    pickable.push(mesh);
+
+    var sat = new THREE.Mesh(
+      new THREE.SphereGeometry(R * 0.018, 12, 12),
+      new THREE.MeshBasicMaterial({ color: new THREE.Color(colorHex) })
+    );
+    scene.add(sat);
+    f.sat = sat;
+  });
+
+  function refreshRingStyles(){
+    Object.keys(FAMILIES).forEach(function(key){
+      var f = FAMILIES[key];
+      var isSel = selected === key;
+      f.mesh.material.opacity = f.mesh.visible ? (isSel ? 1 : 0.5) : 0;
+      f.sat.visible = f.mesh.visible;
+      var s = isSel ? 1.7 : 1;
+      f.mesh.scale.set(s, s, s);
+    });
+  }
+
+  /* 卫星沿环缓慢移动,周期按各自 demoLap(演示用的秒数,不是真实周期)
+     直观呈现"LEO 快、GEO 慢" —— 数字面板里的真实周期在事实表里已给出。*/
+  Deck.loop(function(t){
+    Object.keys(FAMILIES).forEach(function(key){
+      var f = FAMILIES[key];
+      if (!f.sat.visible) return;
+      var frac = (t % f.demoLap) / f.demoLap;
+      var p = f.curve.getPointAt(frac);
+      f.sat.position.copy(p);
+    });
+  });
+
+  /* 点击(而非拖拽)命中某条轨道环 -> 选中它 */
+  var raycaster = new THREE.Raycaster();
+  var downPos = null;
+  var canvasEl = globe.renderer().domElement;
+
+  canvasEl.addEventListener('pointerdown', function(e){
+    downPos = [e.clientX, e.clientY];
+  });
+  canvasEl.addEventListener('pointerup', function(e){
+    var moved = downPos ? Math.hypot(e.clientX - downPos[0], e.clientY - downPos[1]) : 999;
+    downPos = null;
+    if (moved > 6) return;
+    var rect = canvasEl.getBoundingClientRect();
+    var mouse = new THREE.Vector2(
+      ((e.clientX - rect.left) / rect.width) * 2 - 1,
+      -((e.clientY - rect.top) / rect.height) * 2 + 1
+    );
+    raycaster.setFromCamera(mouse, globe.camera());
+    var visiblePickable = pickable.filter(function(m){ return m.visible; });
+    var hits = raycaster.intersectObjects(visiblePickable, false);
+    if (hits.length){
+      toggleFamilySelectOnly(hits[0].object.userData.famKey);
+    }
+  });
+
+  function toggleFamilySelectOnly(key){
+    /* 直接点 3D 环:确保它可见并显示说明(不做隐藏切换,隐藏只通过图例卡片) */
+    FAMILIES[key].mesh.visible = true;
+    showDetail(key);
+  }
+
+  refreshRingStyles();
+  showDetail('leo');
+
+  Deck.init({ index: 10, total: 14, title: '轨道家族 —— 火箭与轨道' });
+})();
+</script>
+</body>
+</html>

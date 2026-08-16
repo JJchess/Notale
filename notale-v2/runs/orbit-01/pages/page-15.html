@@ -1,0 +1,482 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+</head>
+<body data-page="15" data-total="20">
+<div id="stage">
+  <main class="page">
+    <header id="lec-header"></header>
+    <section class="page-body split min0" aria-label="轨道交会实验">
+      <figure class="visual-shell min0" aria-labelledby="sim-title">
+        <canvas id="orbit-canvas" class="cv-fill no-pan" role="img" aria-label="可拖动目标卫星相位的双卫星轨道模拟；目标和追赶者均按地心二体动力学运动"></canvas>
+      </figure>
+
+      <aside class="panel control-panel min0" aria-labelledby="sim-title">
+        <div class="panel-heading">
+          <span class="panel-kicker">PHASE LAB</span>
+          <h2 id="sim-title" class="panel-title">先猜目标该在前，还是在后</h2>
+          <p class="panel-description">拖动目标卫星设定初始相位，再选择一次行动。降低轨道会缩短周期，因此“绕得更低”反而可能追得更快。</p>
+        </div>
+
+        <div class="control-group">
+          <label class="control-label" for="phase-range"><span class="caption">目标初始相位</span> <span class="control-value"><span id="phase-prediction" class="caption"></span></span></label>
+          <input id="phase-range" type="range" aria-describedby="phase-hint">
+          <p id="phase-hint" class="control-hint"><span class="caption">也可直接在左图拖动目标；键盘方向键可精调。</span></p>
+        </div>
+
+        <div class="readout-grid">
+          <div class="readout">
+            <span class="readout-label"><span class="caption">实时相位差</span></span>
+            <strong id="phase-value" class="readout-value"></strong>
+          </div>
+          <div class="readout is-blue">
+            <span class="readout-label"><span class="caption">两者距离</span></span>
+            <strong id="distance-value" class="readout-value"></strong>
+          </div>
+          <div class="readout is-warm">
+            <span class="readout-label"><span class="caption">追赶者周期</span></span>
+            <strong id="period-value" class="readout-value"></strong>
+          </div>
+          <div class="readout">
+            <span class="readout-label"><span class="caption">任务时钟</span></span>
+            <strong id="time-value" class="readout-value"></strong>
+          </div>
+        </div>
+
+        <div class="control-group">
+          <span class="control-label"><span class="caption">选择行动</span></span>
+          <div class="cluster">
+            <button id="accelerate-btn" type="button"><span class="caption">现在加速</span></button>
+            <button id="wait-btn" type="button"><span class="caption">先等待一段弧</span></button>
+            <button id="lower-btn" type="button" class="is-primary"><span class="caption">进入低轨后等待</span></button>
+            <button id="reset-btn" type="button" class="is-quiet"><span class="caption">重置</span></button>
+          </div>
+        </div>
+
+        <div id="status-box" class="callout" aria-live="polite">
+          <strong class="callout-title"><span id="status-title" class="caption">等待预测</span></strong>
+          <p id="status-text">先摆好目标位置。交会要求同一时刻到达同一位置，而不是朝目标直线冲过去。</p>
+        </div>
+      </aside>
+    </section>
+    <footer id="lec-footer"></footer>
+  </main>
+
+  <script>
+  document.addEventListener('DOMContentLoaded', function () {
+    'use strict';
+
+    Lec.mount({
+      index: 15,
+      kicker: `RENDEZVOUS`,
+      title: `为什么追赶卫星时，不能只把发动机开到最大`,
+      take: `轨道交会首先是时间问题：追赶者要在正确的相位到达同一个位置。`
+    });
+
+    var header = document.getElementById('lec-header');
+    var footer = document.getElementById('lec-footer');
+    header.classList.add('page-header');
+    footer.classList.add('page-footer');
+    header.querySelector('.lec-header__kicker').classList.add('kicker');
+    header.querySelector('.lec-header__title').classList.add('page-title');
+    footer.querySelector('.lec-footer__take').classList.add('take');
+    footer.querySelector('.lec-footer__topic').classList.add('footer-meta');
+
+    var K = Lec.K;
+    var P = Lec.P;
+    var cv = document.getElementById('orbit-canvas');
+    var range = document.getElementById('phase-range');
+    var phasePrediction = document.getElementById('phase-prediction');
+    var phaseValue = document.getElementById('phase-value');
+    var distanceValue = document.getElementById('distance-value');
+    var periodValue = document.getElementById('period-value');
+    var timeValue = document.getElementById('time-value');
+    var statusBox = document.getElementById('status-box');
+    var statusTitle = document.getElementById('status-title');
+    var statusText = document.getElementById('status-text');
+    var accelerateBtn = document.getElementById('accelerate-btn');
+    var waitBtn = document.getElementById('wait-btn');
+    var lowerBtn = document.getElementById('lower-btn');
+    var resetBtn = document.getElementById('reset-btn');
+    var actionButtons = [accelerateBtn, waitBtn, lowerBtn];
+
+    var targetAltitude = K.ISS_ALTITUDE;
+    var lowerAltitude = K.LOW_EARTH_ORBIT_ALTITUDE;
+    var upperAltitude = targetAltitude + lowerAltitude;
+    var targetRadius = P.radiusAtAltitude(targetAltitude);
+    var lowerRadius = P.radiusAtAltitude(lowerAltitude);
+    var targetPeriod = P.orbitalPeriodAtAltitude(targetAltitude);
+    var targetMeanMotion = P.meanMotion(targetRadius, K.MU_EARTH);
+    var rendezvousRange = targetAltitude / K.HUNDRED;
+    var integrationStep = targetPeriod / K.THOUSAND;
+    var initialAngle = K.HALF_PI / K.TWO;
+    var target;
+    var chaser;
+    var elapsed;
+    var running;
+    var mode;
+    var phaseStep;
+    var phaseEnd;
+    var trail;
+    var dragging = false;
+    var ctx = null;
+    var cw = K.ZERO;
+    var ch = K.ZERO;
+
+    range.min = P.formatNumber(-P.radiansToDegrees(K.HALF_PI), K.ZERO);
+    range.max = P.formatNumber(P.radiansToDegrees(K.HALF_PI), K.ZERO);
+    range.step = P.formatNumber(K.ONE, K.ZERO);
+    range.value = P.formatNumber(P.radiansToDegrees(initialAngle), K.ZERO);
+
+    function circularState(radius, angle) {
+      var speed = P.circularVelocity(radius, K.MU_EARTH);
+      return {
+        x: radius * Math.cos(angle),
+        y: radius * Math.sin(angle),
+        vx: -speed * Math.sin(angle),
+        vy: speed * Math.cos(angle)
+      };
+    }
+
+    function acceleration(x, y) {
+      var radius = Math.sqrt(x * x + y * y);
+      var factor = -K.MU_EARTH / (radius * radius * radius);
+      return { x: factor * x, y: factor * y };
+    }
+
+    function rk4(body, dt) {
+      var a1 = acceleration(body.x, body.y);
+      var x2 = body.x + body.vx * dt * K.HALF;
+      var y2 = body.y + body.vy * dt * K.HALF;
+      var vx2 = body.vx + a1.x * dt * K.HALF;
+      var vy2 = body.vy + a1.y * dt * K.HALF;
+      var a2 = acceleration(x2, y2);
+      var x3 = body.x + vx2 * dt * K.HALF;
+      var y3 = body.y + vy2 * dt * K.HALF;
+      var vx3 = body.vx + a2.x * dt * K.HALF;
+      var vy3 = body.vy + a2.y * dt * K.HALF;
+      var a3 = acceleration(x3, y3);
+      var x4 = body.x + vx3 * dt;
+      var y4 = body.y + vy3 * dt;
+      var vx4 = body.vx + a3.x * dt;
+      var vy4 = body.vy + a3.y * dt;
+      var a4 = acceleration(x4, y4);
+      body.x += dt * (body.vx + K.TWO * vx2 + K.TWO * vx3 + vx4) / K.SIX;
+      body.y += dt * (body.vy + K.TWO * vy2 + K.TWO * vy3 + vy4) / K.SIX;
+      body.vx += dt * (a1.x + K.TWO * a2.x + K.TWO * a3.x + a4.x) / K.SIX;
+      body.vy += dt * (a1.y + K.TWO * a2.y + K.TWO * a3.y + a4.y) / K.SIX;
+    }
+
+    function angleOf(body) {
+      return Math.atan2(body.y, body.x);
+    }
+
+    function wrap(angle) {
+      while (angle > K.PI) { angle -= K.TWO_PI; }
+      while (angle < -K.PI) { angle += K.TWO_PI; }
+      return angle;
+    }
+
+    function separation() {
+      var dx = target.x - chaser.x;
+      var dy = target.y - chaser.y;
+      return Math.sqrt(dx * dx + dy * dy);
+    }
+
+    function relativeSpeed() {
+      var dvx = target.vx - chaser.vx;
+      var dvy = target.vy - chaser.vy;
+      return Math.sqrt(dvx * dvx + dvy * dvy);
+    }
+
+    function setTangentialSpeed(body, speed) {
+      var angle = angleOf(body);
+      body.vx = -speed * Math.sin(angle);
+      body.vy = speed * Math.cos(angle);
+    }
+
+    function setStatus(title, text, kind) {
+      statusTitle.textContent = title;
+      statusText.textContent = text;
+      statusBox.className = 'callout' + (kind ? ' ' + kind : '');
+    }
+
+    function setControls(active) {
+      actionButtons.forEach(function (button) { button.disabled = active; });
+      range.disabled = active;
+    }
+
+    function updateReadouts() {
+      var phase = wrap(angleOf(target) - angleOf(chaser));
+      var radius = Math.sqrt(chaser.x * chaser.x + chaser.y * chaser.y);
+      var altitude = Math.max(K.ZERO, P.altitudeFromRadius(radius));
+      var period = P.orbitalPeriodAtAltitude(altitude);
+      var degrees = P.radiansToDegrees(phase);
+      phaseValue.textContent = P.formatNumber(degrees) + '°';
+      distanceValue.textContent = P.formatDistance(separation());
+      periodValue.textContent = P.formatTime(period);
+      timeValue.textContent = P.formatTime(elapsed);
+      var predicted = Number(range.value);
+      phasePrediction.textContent = (predicted >= K.ZERO ? '在前 ' : '在后 ') + P.formatNumber(Math.abs(predicted)) + '°';
+    }
+
+    function reset() {
+      var angle = P.degreesToRadians(Number(range.value));
+      target = circularState(targetRadius, angle);
+      chaser = circularState(targetRadius, K.ZERO);
+      elapsed = K.ZERO;
+      running = false;
+      mode = 'idle';
+      phaseStep = 'idle';
+      phaseEnd = K.ZERO;
+      trail = [];
+      setControls(false);
+      setStatus('等待点火', '先做预测，再比较三种行动。关键不是朝哪边冲，而是谁先走完各自的轨道弧。', '');
+      updateReadouts();
+      draw();
+    }
+
+    function begin(modeName) {
+      reset();
+      running = true;
+      mode = modeName;
+      setControls(true);
+      if (mode === 'accelerate') {
+        var highTransfer = P.hohmannTransferFromAltitudes(targetAltitude, upperAltitude);
+        setTangentialSpeed(chaser, highTransfer.transferSpeedAtInitial);
+        phaseStep = 'higher-transfer';
+        phaseEnd = highTransfer.transferTime;
+        setStatus('加速已执行', '追赶者先抬高远端；它的平均角速度随之降低，目标可能继续拉开。', 'is-warm');
+      } else if (mode === 'wait') {
+        phaseStep = 'same-orbit-wait';
+        phaseEnd = targetPeriod / K.FOUR;
+        setStatus('同轨等待', '两者处在同一圆轨道，周期相同；只等一段时间不会改变相位差。', '');
+      } else {
+        var downTransfer = P.hohmannTransferFromAltitudes(targetAltitude, lowerAltitude);
+        setTangentialSpeed(chaser, downTransfer.transferSpeedAtInitial);
+        phaseStep = 'down-transfer';
+        phaseEnd = downTransfer.transferTime;
+        setStatus('正在进入低轨', '追赶者先降低轨道；到达低轨后，它将以更短周期逐圈改变相位。', '');
+      }
+      if (Deck.reduced()) {
+        runReduced();
+      }
+    }
+
+    function finish(title, text, kind) {
+      running = false;
+      phaseStep = 'done';
+      setControls(false);
+      setStatus(title, text, kind);
+      updateReadouts();
+      draw();
+    }
+
+    function encounter() {
+      var phase = wrap(angleOf(target) - angleOf(chaser));
+      finish(
+        '进入交会范围',
+        '到达 ' + P.formatTime(elapsed) + ' · 相对速度 ' + P.formatVelocity(relativeSpeed()) + ' · 相位差 ' + P.formatNumber(P.radiansToDegrees(phase)) + '°',
+        ''
+      );
+    }
+
+    function transitionIfNeeded() {
+      if (phaseStep === 'same-orbit-wait' && elapsed >= phaseEnd) {
+        finish('相位没有缩小', '等待了 ' + P.formatTime(elapsed) + '，两者周期相同，所以角位置差几乎保持不变。', 'is-warm');
+      } else if (phaseStep === 'higher-transfer' && elapsed >= phaseEnd) {
+        var highRadius = P.radiusAtAltitude(upperAltitude);
+        setTangentialSpeed(chaser, P.circularVelocity(highRadius, K.MU_EARTH));
+        finish('加速没有直接追上', '追赶者进入更高、周期更长的轨道；当前距离 ' + P.formatDistance(separation()) + '。', 'is-warm');
+      } else if (phaseStep === 'down-transfer' && elapsed >= phaseEnd) {
+        setTangentialSpeed(chaser, P.circularVelocity(lowerRadius, K.MU_EARTH));
+        phaseStep = 'lower-wait';
+        phaseEnd = elapsed + targetPeriod * K.TEN * K.FOUR;
+        setStatus('低轨等待中', '更低轨道的平均角速度更大。系统只等待正确的上升转移窗口。', '');
+      } else if (phaseStep === 'lower-wait') {
+        var upTransfer = P.hohmannTransferFromAltitudes(lowerAltitude, targetAltitude);
+        var departurePhase = wrap(K.PI - targetMeanMotion * upTransfer.transferTime);
+        var currentPhase = wrap(angleOf(target) - angleOf(chaser));
+        var lowerMeanMotion = P.meanMotion(lowerRadius, K.MU_EARTH);
+        var tolerance = Math.abs((lowerMeanMotion - targetMeanMotion) * integrationStep * K.TWO);
+        if (Math.abs(wrap(currentPhase - departurePhase)) <= tolerance) {
+          setTangentialSpeed(chaser, upTransfer.transferSpeedAtInitial);
+          phaseStep = 'up-transfer';
+          phaseEnd = elapsed + upTransfer.transferTime;
+          setStatus('窗口到达，开始上升', '等待把相位排到正确位置；现在只调用一次高度转移工具完成接近。', '');
+        } else if (elapsed >= phaseEnd) {
+          finish('窗口未命中', '本次预测没有在等待上限内形成上升窗口；拖动目标相位后再试。', 'is-danger');
+        }
+      } else if (phaseStep === 'up-transfer' && elapsed >= phaseEnd) {
+        setTangentialSpeed(chaser, P.circularVelocity(targetRadius, K.MU_EARTH));
+        if (separation() <= rendezvousRange * K.TWO) {
+          encounter();
+        } else {
+          finish('接近但未交会', '到达目标轨道时距离仍有 ' + P.formatDistance(separation()) + '；初始相位决定了到达时机。', 'is-warm');
+        }
+      }
+    }
+
+    function integrate(duration) {
+      var remaining = duration;
+      while (remaining > K.ZERO && running) {
+        var step = Math.min(integrationStep, remaining);
+        rk4(target, step);
+        rk4(chaser, step);
+        elapsed += step;
+        remaining -= step;
+        if (separation() <= rendezvousRange) {
+          encounter();
+          break;
+        }
+        transitionIfNeeded();
+      }
+    }
+
+    function runReduced() {
+      var guard = K.ZERO;
+      var limit = K.THOUSAND * K.HUNDRED;
+      while (running && guard < limit) {
+        integrate(integrationStep);
+        guard += K.ONE;
+      }
+      updateReadouts();
+      draw();
+    }
+
+    function drawOrbit(radius, color, dash) {
+      var scale = (Math.min(cw, ch) * (K.ONE_THIRD - K.ONE / K.TEN)) / targetRadius;
+      var cx = cw * K.HALF;
+      var cy = ch * K.HALF;
+      ctx.save();
+      ctx.strokeStyle = color;
+      ctx.lineWidth = K.ONE;
+      ctx.setLineDash(dash ? [K.EIGHT, K.EIGHT] : []);
+      ctx.beginPath();
+      ctx.arc(cx, cy, radius * scale, K.ZERO, K.TWO_PI);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    function drawSatellite(body, color, label) {
+      var scale = (Math.min(cw, ch) * (K.ONE_THIRD - K.ONE / K.TEN)) / targetRadius;
+      var x = cw * K.HALF + body.x * scale;
+      var y = ch * K.HALF - body.y * scale;
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.arc(x, y, K.EIGHT, K.ZERO, K.TWO_PI);
+      ctx.fill();
+      ctx.strokeStyle = Deck.rgba('bg', K.ONE);
+      ctx.lineWidth = K.TWO;
+      ctx.stroke();
+      ctx.fillStyle = Deck.rgba('ink-strong', K.ONE);
+      ctx.font = Deck.token('weight-semibold') + ' ' + Deck.token('type-label') + ' ' + Deck.token('font-sans');
+      ctx.fillText(label, x + K.TEN + K.TWO, y - K.TEN);
+    }
+
+    function draw() {
+      if (!ctx || !target || !chaser) { return; }
+      ctx.clearRect(K.ZERO, K.ZERO, cw, ch);
+      var cx = cw * K.HALF;
+      var cy = ch * K.HALF;
+      var scale = (Math.min(cw, ch) * (K.ONE_THIRD - K.ONE / K.TEN)) / targetRadius;
+      var earthRadius = K.R_EARTH * scale;
+      var targetAngle = angleOf(target);
+      var chaserAngle = angleOf(chaser);
+      var phaseRadius = targetRadius * scale * (K.HALF + K.ONE / K.TEN);
+
+      drawOrbit(targetRadius, Deck.rgba('accent-blue', K.HALF), false);
+      drawOrbit(lowerRadius, Deck.rgba('accent', K.ONE_THIRD), true);
+
+      ctx.fillStyle = Deck.rgba('surface-2', K.ONE);
+      ctx.strokeStyle = Deck.rgba('line-strong', K.ONE);
+      ctx.lineWidth = K.TWO;
+      ctx.beginPath();
+      ctx.arc(cx, cy, earthRadius, K.ZERO, K.TWO_PI);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.strokeStyle = Deck.rgba('accent-warm', K.HALF + K.ONE_THIRD);
+      ctx.lineWidth = K.THREE;
+      ctx.beginPath();
+      ctx.arc(cx, cy, phaseRadius, -chaserAngle, -targetAngle, targetAngle < chaserAngle);
+      ctx.stroke();
+
+      if (trail.length > K.ONE) {
+        ctx.strokeStyle = Deck.rgba('accent', K.HALF);
+        ctx.lineWidth = K.TWO;
+        ctx.beginPath();
+        trail.forEach(function (point, index) {
+          var x = cx + point.x * scale;
+          var y = cy - point.y * scale;
+          if (index === K.ZERO) { ctx.moveTo(x, y); } else { ctx.lineTo(x, y); }
+        });
+        ctx.stroke();
+      }
+
+      drawSatellite(target, Deck.rgba('accent-blue', K.ONE), '目标');
+      drawSatellite(chaser, Deck.rgba('accent', K.ONE), '追赶者');
+
+      ctx.fillStyle = Deck.rgba('ink-muted', K.ONE);
+      ctx.font = Deck.token('type-label') + ' ' + Deck.token('font-sans');
+      ctx.fillText('实线：目标轨道', K.TEN + K.SIX, ch - (K.TEN + K.SIX));
+      ctx.fillText('虚线：低轨等待轨道', K.TEN * K.TEN * K.TWO, ch - (K.TEN + K.SIX));
+    }
+
+    var fitted = Deck.autofit(cv, function (context, width, height) {
+      ctx = context;
+      cw = width;
+      ch = height;
+      draw();
+    });
+
+    function setPhaseFromAngle(angle) {
+      if (running) { return; }
+      var bounded = P.clamp(wrap(angle), -K.HALF_PI, K.HALF_PI);
+      range.value = P.formatNumber(P.radiansToDegrees(bounded), K.ZERO);
+      reset();
+    }
+
+    cv.addEventListener('pointerdown', function (event) {
+      if (running) { return; }
+      dragging = true;
+      cv.setPointerCapture(event.pointerId);
+      var point = Deck.pt(cv, event);
+      setPhaseFromAngle(Math.atan2(ch * K.HALF - point.y, point.x - cw * K.HALF));
+    });
+    cv.addEventListener('pointermove', function (event) {
+      if (!dragging || running) { return; }
+      var point = Deck.pt(cv, event);
+      setPhaseFromAngle(Math.atan2(ch * K.HALF - point.y, point.x - cw * K.HALF));
+    });
+    cv.addEventListener('pointerup', function () { dragging = false; });
+    cv.addEventListener('pointercancel', function () { dragging = false; });
+
+    range.addEventListener('input', reset);
+    accelerateBtn.addEventListener('click', function () { begin('accelerate'); });
+    waitBtn.addEventListener('click', function () { begin('wait'); });
+    lowerBtn.addEventListener('click', function () { begin('lower'); });
+    resetBtn.addEventListener('click', reset);
+
+    reset();
+
+    Deck.loop(function (time, dt) {
+      if (running) {
+        var rate = phaseStep === 'lower-wait' ? targetPeriod * K.TEN : targetPeriod * K.HALF;
+        integrate(dt / K.THOUSAND * rate);
+        trail.push({ x: chaser.x, y: chaser.y });
+        if (trail.length > K.HUNDRED) { trail.shift(); }
+        updateReadouts();
+      }
+      draw();
+    }, { still: targetPeriod });
+  });
+  </script>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+</body>
+</html>

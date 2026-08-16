@@ -1,0 +1,396 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>椭圆轨道与开普勒第二定律</title>
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  /* ---- 本页专属:主体版式 —— 左侧椭圆轨道画布 + 右侧数据/说明面板 ---- */
+  .body-wrap{
+    position:absolute; left:52px; right:52px; top:96px; bottom:100px;
+    z-index:2; display:flex; gap:var(--sp-4);
+  }
+
+  .orbit-panel{
+    flex:0 0 920px; position:relative;
+  }
+  .orbit-panel canvas{ cursor:default; }
+
+  .info-panel{
+    flex:1 1 auto; min-width:0; display:flex; flex-direction:column; gap:var(--sp-3);
+    overflow:hidden;
+  }
+
+  .sec-label{
+    font:700 var(--fs-label)/1.3 var(--font-sans); letter-spacing:.03em;
+    color:var(--text-dim); text-transform:uppercase;
+  }
+
+  .stat-grid{
+    display:grid; grid-template-columns:1fr 1fr; gap:var(--sp-2);
+  }
+  .stat-tile{
+    background:var(--bg3); border:1px solid var(--line);
+    border-radius:6px; padding:8px 10px;
+  }
+  .stat-tile .k{
+    font:600 var(--fs-label)/1.3 var(--font-sans); color:var(--text-faint);
+  }
+  .stat-tile .v{
+    font:700 22px/1.25 var(--font-mono); color:var(--text);
+    font-variant-numeric:tabular-nums; margin-top:2px;
+  }
+  .stat-tile.live .v{ color:var(--accent-2); }
+  .stat-tile.hi .v{ color:var(--accent-2); }
+
+  .live-row{ display:grid; grid-template-columns:1fr 1fr; gap:var(--sp-2); }
+
+  .row-btn{ display:flex; justify-content:flex-start; }
+
+  .legend-row{
+    display:flex; flex-wrap:wrap; gap:var(--sp-3);
+    font:500 var(--fs-label)/1.3 var(--font-sans); color:var(--text-dim);
+  }
+  .legend-row span{ display:inline-flex; align-items:center; gap:6px; }
+  .dot{ width:10px; height:10px; border-radius:50%; display:inline-block; flex:none; }
+  .dot.orbit{ background:var(--accent-2); }
+  .dot.grab{ background:var(--accent-3); }
+  .dot.earth{ background:var(--text-faint); }
+</style>
+</head>
+<body data-page="09" data-total="14">
+<div id="stage">
+  <div class="starfield"></div>
+
+  <div class="pg-head">
+    <div><span class="pg-kicker">MODULE 3 · 轨道</span><span class="pg-title">椭圆轨道——离得近的时候跑得快</span></div>
+    <div class="pg-index">9 / 14</div>
+  </div>
+
+  <div class="body-wrap">
+    <div class="orbit-panel panel min0">
+      <canvas id="orbitCv" class="cv-fill no-pan"></canvas>
+    </div>
+
+    <div class="info-panel">
+      <div class="panel" style="flex:0 0 auto;">
+        <div class="sec-label">轨道参数（拖动画布里的两个手柄改变）</div>
+        <div class="stat-grid" style="margin-top:8px;">
+          <div class="stat-tile"><div class="k">近地点高度</div><div class="v" id="rpAltVal">400 km</div></div>
+          <div class="stat-tile"><div class="k">远地点高度</div><div class="v" id="raAltVal">20000 km</div></div>
+          <div class="stat-tile"><div class="k">偏心率 e</div><div class="v" id="eccVal">0.00</div></div>
+          <div class="stat-tile"><div class="k">半长轴 a</div><div class="v" id="aVal">0 km</div></div>
+          <div class="stat-tile hi"><div class="k">近地点速度 v_p</div><div class="v" id="vpVal">0.00 km/s</div></div>
+          <div class="stat-tile hi"><div class="k">远地点速度 v_a</div><div class="v" id="vaVal">0.00 km/s</div></div>
+        </div>
+      </div>
+
+      <div class="panel" style="flex:0 0 auto;">
+        <div class="sec-label">此刻</div>
+        <div class="live-row" style="margin-top:8px;">
+          <div class="stat-tile live"><div class="k">当前高度</div><div class="v" id="rNowVal">— km</div></div>
+          <div class="stat-tile live"><div class="k">当前速度</div><div class="v" id="vNowVal">— km/s</div></div>
+        </div>
+        <div class="row-btn" style="margin-top:10px;">
+          <button class="btn primary" id="circleBtn">设为正圆轨道（近=远地点）</button>
+        </div>
+      </div>
+
+      <div class="callout cool" style="flex:0 0 auto;">
+        <b>开普勒第二定律</b>：相同时间里，卫星与地球的连线扫过的<b>面积相等</b>——离地球近时
+        转得快（角速度大），离地球远时转得慢，两块黄色扇形代表同样长的一段时间，面积
+        看起来一样大。这就是"面积速度守恒"。
+      </div>
+
+      <div class="callout" style="flex:0 0 auto;">
+        圆轨道并不特殊——它只是<b>近地点距离＝远地点距离</b>（e=0）时的椭圆。试着把两个
+        手柄拖到同一距离，或点右上角按钮看看。
+      </div>
+
+      <div class="legend-row" style="flex:0 0 auto;">
+        <span><i class="dot orbit"></i>轨道 / 卫星</span>
+        <span><i class="dot grab"></i>可拖拽手柄 / 等时扇形</span>
+        <span><i class="dot earth"></i>地球（在椭圆的一个焦点上）</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="pg-hint">💡 <b>怎么玩</b>：拖动画布里近地点/远地点两个圆点手柄改变椭圆形状，看卫星在近地点冲刺、
+  远地点放慢——两块黄色扇形代表相同的时间，面积却始终相等。</div>
+</div>
+
+<script src="assets/base.js"></script>
+<script>
+(function(){
+  'use strict';
+
+  var R_EARTH = 6371;      // km，全局事实表
+  var MU = 398600;         // km^3/s^2，全局事实表
+  var ANIM_PERIOD = 9;     // 秒——不论轨道形状如何，动画统一压缩到这个时长转一整圈
+
+  var state = {
+    rpAlt: 400,     // 近地点高度 km（呼应 LEO 参考高度）
+    raAlt: 20000,   // 远地点高度 km
+    theta: 0        // 当前真近点角 rad，0 = 近地点
+  };
+  var LIMITS = { rpMin:200, rpMax:20000, raMin:200, raMax:40000 };
+
+  var trail = [];
+  var TRAIL_LEN = 22;
+
+  var cv = document.getElementById('orbitCv');
+  var ctx = null;
+  function refit(){ ctx = Deck.fit(cv); }
+  refit();
+  Deck.onResize(refit);
+
+  var lastGeom = null;
+
+  function polarPoint(earthX, earthY, scale, p, e, theta){
+    var r = p / (1 + e * Math.cos(theta));
+    return { x: earthX + r * Math.cos(theta) * scale, y: earthY + r * Math.sin(theta) * scale, r: r };
+  }
+
+  function sectorPath(ctx, earthX, earthY, scale, p, e, t0, t1){
+    var N = 14;
+    ctx.beginPath();
+    ctx.moveTo(earthX, earthY);
+    for (var i = 0; i <= N; i++){
+      var th = t0 + (t1 - t0) * (i / N);
+      var pt = polarPoint(earthX, earthY, scale, p, e, th);
+      ctx.lineTo(pt.x, pt.y);
+    }
+    ctx.closePath();
+  }
+
+  function draw(w, h){
+    ctx.clearRect(0, 0, w, h);
+
+    var rp = R_EARTH + state.rpAlt, ra = R_EARTH + state.raAlt;
+    var a = (rp + ra) / 2, c = (ra - rp) / 2, e = (ra - rp) / (ra + rp);
+    var b = Math.sqrt(rp * ra), p = (b * b) / a;
+
+    var earthX = w * 0.68, earthY = h * 0.53;
+    var marginL = 50, marginR = 44, marginT = 64, marginB = 56;
+    var scale = Math.min(
+      (earthX - marginL) / ra,
+      (w - marginR - earthX) / rp,
+      (earthY - marginT) / b,
+      (h - marginB - earthY) / b
+    );
+    if (!isFinite(scale) || scale <= 0) scale = 0.001;
+    var cx = earthX - c * scale, cy = earthY;
+
+    var peri = polarPoint(earthX, earthY, scale, p, e, 0);
+    var apo  = polarPoint(earthX, earthY, scale, p, e, Math.PI);
+
+    var period = 2 * Math.PI * Math.sqrt(Math.pow(a, 3) / MU);
+    var hAng = Math.sqrt(MU * p);
+    var dtDisplay = period / 40;
+    var dThPeri = (hAng / (rp * rp)) * dtDisplay;
+    var dThApo  = (hAng / (ra * ra)) * dtDisplay;
+    var areaVal = 0.5 * hAng * dtDisplay; // km^2，两个扇形应当相等
+
+    lastGeom = { earthX: earthX, earthY: earthY, scale: scale, p: p, e: e, peri: peri, apo: apo };
+
+    // 椭圆轨道路径
+    ctx.save();
+    ctx.strokeStyle = Deck.rgba('accent-2', 0.55);
+    ctx.lineWidth = 2;
+    ctx.setLineDash([7, 6]);
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, Math.max(1, a * scale), Math.max(1, b * scale), 0, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+
+    // 两块等时扇形（开普勒第二定律核心可视化）
+    ctx.save();
+    ctx.fillStyle = Deck.rgba('accent-3', 0.28);
+    ctx.strokeStyle = Deck.rgba('accent-3', 0.85);
+    ctx.lineWidth = 1.5;
+    sectorPath(ctx, earthX, earthY, scale, p, e, -dThPeri / 2, dThPeri / 2);
+    ctx.fill(); ctx.stroke();
+    sectorPath(ctx, earthX, earthY, scale, p, e, Math.PI - dThApo / 2, Math.PI + dThApo / 2);
+    ctx.fill(); ctx.stroke();
+    ctx.restore();
+
+    // 扇形标注：同样的时间、同样的面积
+    ctx.save();
+    ctx.font = '600 14px ' + getComputedStyle(document.documentElement).getPropertyValue('--font-sans');
+    ctx.fillStyle = Deck.rgba('accent-3', 0.95);
+    ctx.textAlign = 'center';
+    var areaLbl = '面积≈' + (areaVal / 1e6).toFixed(2) + '×10⁶km²';
+    ctx.fillText('Δt 相同', peri.x + 26, peri.y - 34);
+    ctx.fillText(areaLbl, peri.x + 26, peri.y - 16);
+    ctx.fillText('Δt 相同', apo.x, apo.y - 34);
+    ctx.fillText(areaLbl, apo.x, apo.y - 16);
+    ctx.restore();
+
+    // 地球（在焦点上）
+    var earthR = Math.max(11, R_EARTH * scale);
+    var grad = ctx.createRadialGradient(earthX - earthR * 0.3, earthY - earthR * 0.3, earthR * 0.1, earthX, earthY, earthR);
+    grad.addColorStop(0, '#5f86c9');
+    grad.addColorStop(1, '#16233f');
+    ctx.beginPath();
+    ctx.fillStyle = grad;
+    ctx.arc(earthX, earthY, earthR, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = Deck.rgba('line', 1);
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.font = '600 14px ' + getComputedStyle(document.documentElement).getPropertyValue('--font-sans');
+    ctx.fillStyle = Deck.rgba('text-dim', 1);
+    ctx.textAlign = 'center';
+    ctx.fillText('地球（焦点）', earthX, earthY + earthR + 20);
+
+    // 运动轨迹（渐隐拖尾——同样的时间间隔，近地点尾巴长、远地点尾巴短）
+    ctx.save();
+    for (var i = 0; i < trail.length; i++){
+      var pt = polarPoint(earthX, earthY, scale, p, e, trail[i]);
+      var alpha = (i / trail.length) * 0.55;
+      ctx.beginPath();
+      ctx.fillStyle = Deck.rgba('accent-2', alpha);
+      ctx.arc(pt.x, pt.y, 3, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+
+    // 卫星当前位置
+    var sp = polarPoint(earthX, earthY, scale, p, e, state.theta);
+    ctx.save();
+    ctx.shadowColor = Deck.rgba('accent-2', 0.9);
+    ctx.shadowBlur = 12;
+    ctx.beginPath();
+    ctx.fillStyle = Deck.rgba('accent-2', 1);
+    ctx.arc(sp.x, sp.y, 7, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+
+    // 近/远地点手柄
+    drawHandle(peri.x, peri.y, '近地点');
+    drawHandle(apo.x, apo.y, '远地点');
+
+    function drawHandle(x, y, label){
+      ctx.save();
+      ctx.beginPath();
+      ctx.fillStyle = Deck.rgba('accent-3', 1);
+      ctx.arc(x, y, 9, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = '#fff';
+      ctx.stroke();
+      ctx.font = '600 14px ' + getComputedStyle(document.documentElement).getPropertyValue('--font-sans');
+      ctx.fillStyle = Deck.rgba('text', 1);
+      ctx.textAlign = 'center';
+      var dy = (y > earthY) ? 26 : -18;
+      ctx.fillText(label, x, y + dy);
+      ctx.restore();
+    }
+
+    return { rp: rp, ra: ra, a: a, e: e, p: p };
+  }
+
+  function fmtInt(v){ return Math.round(v).toLocaleString('en-US'); }
+
+  function updateStats(g){
+    document.getElementById('rpAltVal').textContent = fmtInt(state.rpAlt) + ' km';
+    document.getElementById('raAltVal').textContent = fmtInt(state.raAlt) + ' km';
+    document.getElementById('eccVal').textContent = g.e.toFixed(2);
+    document.getElementById('aVal').textContent = fmtInt(g.a) + ' km';
+    var vp = Math.sqrt(MU * (2 / g.rp - 1 / g.a));
+    var va = Math.sqrt(MU * (2 / g.ra - 1 / g.a));
+    document.getElementById('vpVal').textContent = vp.toFixed(2) + ' km/s';
+    document.getElementById('vaVal').textContent = va.toFixed(2) + ' km/s';
+    return { vp: vp, va: va };
+  }
+
+  function updateLive(g){
+    var r = g.p / (1 + g.e * Math.cos(state.theta));
+    var v = Math.sqrt(MU * (2 / r - 1 / g.a));
+    document.getElementById('rNowVal').textContent = fmtInt(r - R_EARTH) + ' km';
+    document.getElementById('vNowVal').textContent = v.toFixed(2) + ' km/s';
+  }
+
+  var trailAcc = 0;
+
+  Deck.loop(function(t, dt){
+    if (!ctx) return;
+    var rp = R_EARTH + state.rpAlt, ra = R_EARTH + state.raAlt;
+    var a = (rp + ra) / 2, b = Math.sqrt(rp * ra), p = (b * b) / a;
+    var e = (ra - rp) / (ra + rp);
+    var period = 2 * Math.PI * Math.sqrt(Math.pow(a, 3) / MU);
+    var hAng = Math.sqrt(MU * p);
+    var r_now = p / (1 + e * Math.cos(state.theta));
+    var SF = period / ANIM_PERIOD;
+    var dThetaReal = (hAng / (r_now * r_now)) * (dt / 1000) * SF;
+    if (isFinite(dThetaReal)) state.theta += dThetaReal;
+    state.theta = state.theta % (Math.PI * 2);
+    if (state.theta < 0) state.theta += Math.PI * 2;
+
+    trailAcc += dt;
+    if (trailAcc > 70){
+      trailAcc = 0;
+      trail.push(state.theta);
+      if (trail.length > TRAIL_LEN) trail.shift();
+    }
+
+    var g = draw(cv.__w, cv.__h);
+    var vv = updateStats(g);
+    updateLive(g);
+  }, { still: 2500 });
+
+  // ---- 拖拽近地点 / 远地点手柄 -------------------------------------------
+  var dragging = null;
+
+  function hit(pt, target){ return Math.hypot(pt.x - target.x, pt.y - target.y); }
+
+  cv.addEventListener('pointerdown', function(e){
+    if (!lastGeom) return;
+    var pt = Deck.pt(cv, e);
+    var dp = hit(pt, lastGeom.peri), da = hit(pt, lastGeom.apo);
+    var HITR = 26;
+    if (dp <= HITR && dp <= da) dragging = 'peri';
+    else if (da <= HITR) dragging = 'apo';
+    if (dragging){
+      try { cv.setPointerCapture(e.pointerId); } catch (err) {}
+      e.preventDefault();
+    }
+  });
+
+  cv.addEventListener('pointermove', function(e){
+    if (!lastGeom) return;
+    var pt = Deck.pt(cv, e);
+    if (!dragging){
+      var dp = hit(pt, lastGeom.peri), da = hit(pt, lastGeom.apo);
+      cv.style.cursor = (Math.min(dp, da) <= 26) ? 'grab' : 'default';
+      return;
+    }
+    cv.style.cursor = 'grabbing';
+    e.preventDefault();
+    if (dragging === 'peri'){
+      var rpKm = (pt.x - lastGeom.earthX) / lastGeom.scale;
+      var alt = Deck.clamp(rpKm - R_EARTH, LIMITS.rpMin, Math.min(LIMITS.rpMax, state.raAlt));
+      state.rpAlt = alt;
+    } else if (dragging === 'apo'){
+      var raKm = (lastGeom.earthX - pt.x) / lastGeom.scale;
+      var altA = Deck.clamp(raKm - R_EARTH, Math.max(LIMITS.raMin, state.rpAlt), LIMITS.raMax);
+      state.raAlt = altA;
+    }
+  });
+
+  function endDrag(){ dragging = null; cv.style.cursor = 'default'; }
+  cv.addEventListener('pointerup', endDrag);
+  cv.addEventListener('pointercancel', endDrag);
+
+  document.getElementById('circleBtn').addEventListener('click', function(){
+    var mid = (state.rpAlt + state.raAlt) / 2;
+    state.rpAlt = mid; state.raAlt = mid;
+  });
+
+  Deck.init({ index: 9, total: 14, title: '椭圆轨道与开普勒第二定律' });
+})();
+</script>
+</body>
+</html>

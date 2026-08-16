@@ -1,0 +1,324 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+</head>
+<body data-page="08" data-total="24">
+  <div id="stage">
+    <style>
+      #stage #page-content { display: flex; flex-direction: column; block-size: 100%; min-block-size: 0; }
+      #stage .triptych { flex: 1 1 auto; block-size: auto; gap: var(--sp-5); }
+      #stage .space-pane { display: flex; flex-direction: column; min-inline-size: 0; min-block-size: 0; padding: var(--sp-4); }
+      #stage .space-pane:nth-child(2) { border-color: var(--accent); box-shadow: var(--shadow-glow); }
+      #stage .space-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--sp-3); flex: 0 0 auto; margin-block-end: var(--sp-3); }
+      #stage .space-title { font-size: var(--fs-body-lg); color: var(--text-strong); font-weight: var(--weight-bold); line-height: var(--lh-tight); }
+      #stage .space-step { color: var(--accent-strong); font-size: var(--fs-label); font-weight: var(--weight-bold); line-height: var(--lh-label); }
+      #stage .space-sub { color: var(--text-muted); font-size: var(--fs-label); line-height: var(--lh-label); }
+      #stage .viz-wrap { position: relative; flex: 1 1 auto; min-block-size: 0; min-inline-size: 0; }
+      #stage .space-svg { display: block; inline-size: 100%; block-size: 100%; min-block-size: 280px; border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--surface-control); }
+      #stage .space-svg:focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
+      #stage .axis-line { stroke: var(--line-strong); stroke-width: 1.5; }
+      #stage .grid-line { stroke: var(--line); stroke-width: 1; stroke-dasharray: 4 7; }
+      #stage .axis-label { fill: var(--text-faint); font-size: var(--fs-tick); }
+      #stage .guide-line { fill: none; stroke: var(--accent); stroke-width: 2.5; stroke-dasharray: 8 7; }
+      #stage .sample-dot { stroke: var(--text-strong); stroke-width: 3; cursor: grab; }
+      #stage .sample-dot:active { cursor: grabbing; }
+      #stage .sample-zero { fill: var(--secondary); }
+      #stage .sample-one { fill: var(--warm); }
+      #stage .sample-zero-shape { fill: none; stroke: var(--secondary); stroke-width: 5; }
+      #stage .sample-one-shape { fill: var(--warm); stroke: var(--text-strong); stroke-width: 2; }
+      #stage .output-stem { stroke: var(--line-strong); stroke-width: 4; }
+      #stage .prob-track { stroke: var(--line); stroke-width: 12; stroke-linecap: round; }
+      #stage .prob-fill { stroke: var(--accent); stroke-width: 12; stroke-linecap: round; }
+      #stage .pane-note { flex: 0 0 auto; min-block-size: 52px; margin-block-start: var(--sp-3); color: var(--text-muted); font-size: var(--fs-body-sm); line-height: var(--lh-body); }
+      #stage .unit-rail { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--sp-2); flex: 0 0 auto; margin-block-start: var(--sp-3); }
+      #stage .unit-button { min-block-size: 44px; padding: var(--sp-2); border-radius: var(--radius-sm); font-size: var(--fs-label); }
+      #stage .unit-button[data-mode="frozen"] { border-color: var(--warm); background: var(--warm-soft); color: var(--warm); }
+      #stage .unit-button[data-mode="off"] { border-color: var(--danger); background: var(--danger-soft); color: var(--text-muted); text-decoration: line-through; }
+      #stage .dashboard { display: grid; grid-template-columns: minmax(0, 1.35fr) repeat(3, minmax(0, .62fr)) auto; gap: var(--sp-3); align-items: stretch; margin-block-start: var(--sp-4); }
+      #stage .instruction { display: flex; align-items: center; gap: var(--sp-3); padding: var(--sp-3) var(--sp-4); border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--surface-1); color: var(--text-muted); font-size: var(--fs-body-sm); line-height: var(--lh-body); }
+      #stage .instruction strong { color: var(--accent-strong); }
+      #stage .metric { display: flex; flex-direction: column; justify-content: center; padding: var(--sp-2) var(--sp-3); border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--surface-control); }
+      #stage .metric-label { color: var(--text-muted); font-size: var(--fs-label); line-height: var(--lh-label); }
+      #stage .metric-value { color: var(--text-strong); font-size: var(--fs-body-lg); font-weight: var(--weight-bold); font-variant-numeric: tabular-nums; line-height: var(--lh-tight); }
+      #stage .reset-button { align-self: stretch; min-block-size: 0; }
+      @media (prefers-reduced-motion: reduce) { #stage * { transition: none !important; } }
+    </style>
+
+    <main id="page-content" class="min0" aria-label="隐藏层表示联动实验">
+      <section class="triptych min0" aria-label="三种空间同步视图">
+        <article class="triptych__pane panel space-pane min0">
+          <header class="space-head">
+            <div class="min0"><div class="space-step">输入</div><h2 class="space-title">原始 XOR 空间</h2></div>
+            <span class="badge">x₁ · x₂</span>
+          </header>
+          <p class="space-sub">四个样本仍然交错；拖动任一点。</p>
+          <div class="viz-wrap min0"><svg id="input-space" class="space-svg no-pan" tabindex="0" role="application" aria-label="原始输入空间。方向键移动当前样本，Tab 切换样本。"></svg></div>
+          <p class="pane-note">位置是网络真正收到的两个输入，不是预先画好的分类边界。</p>
+        </article>
+
+        <article class="triptych__pane panel space-pane min0">
+          <header class="space-head">
+            <div class="min0"><div class="space-step">变换</div><h2 class="space-title">隐藏层激活空间</h2></div>
+            <span class="badge badge--accent">h → 2D</span>
+          </header>
+          <p class="space-sub">每个点的位置来自当前隐藏激活的投影。</p>
+          <div class="viz-wrap min0"><svg id="hidden-space" class="space-svg" role="img" aria-label="隐藏层激活投影空间"></svg></div>
+          <div id="unit-rail" class="unit-rail" aria-label="隐藏单元控制"></div>
+        </article>
+
+        <article class="triptych__pane panel space-pane min0">
+          <header class="space-head">
+            <div class="min0"><div class="space-step">读出</div><h2 class="space-title">最终输出空间</h2></div>
+            <span class="badge">P(y=1)</span>
+          </header>
+          <p class="space-sub">简单输出单元只需读取已被重排的表示。</p>
+          <div class="viz-wrap min0"><svg id="output-space" class="space-svg" role="img" aria-label="每个样本的最终输出概率"></svg></div>
+          <p class="pane-note">隐藏单元越少，表示越难展开；问题会重新挤回输出端。</p>
+        </article>
+      </section>
+
+      <section class="dashboard" aria-label="实验状态">
+        <p class="instruction"><strong>试一试</strong><span>拖动输入点；单击 H 单元可依次“冻结 / 关闭 / 恢复”。三栏始终来自同一次前向计算。</span></p>
+        <div class="metric"><span class="metric-label">损失</span><output id="loss" class="metric-value" aria-live="polite"></output></div>
+        <div class="metric"><span class="metric-label">准确率</span><output id="accuracy" class="metric-value"></output></div>
+        <div class="metric"><span class="metric-label">有效单元</span><output id="active-units" class="metric-value"></output></div>
+        <button id="reset" class="button--secondary reset-button" type="button">重置实验</button>
+      </section>
+    </main>
+
+    <script defer src="assets/lib/d3.min.js"></script>
+    <script defer src="assets/lib/mlp.js"></script>
+    <script>
+      (function () {
+        'use strict';
+
+        function boot() {
+          Lec.mount({
+            index: 8,
+            kicker: `HIDDEN UNITS`,
+            title: `一层不够，就让网络先学会<em>重新描述</em>输入`,
+            take: `隐藏层的关键作用不是多画几条线，而是把原空间变换成更容易分类的新表示。`
+          });
+
+          var P = Lec.P;
+          var hiddenCount = Lec.K.ARCHITECTURE.LSTM_GATES;
+          var modelConfig = (Lec.K.models && Lec.K.models.mlp) || {
+            sizes: [2, hiddenCount, 1], activation: 'sigmoid', learningRate: 0.65, seed: 8
+          };
+          var libraryNet = null;
+          try { libraryNet = MLP.create(modelConfig); } catch (ignore) { libraryNet = null; }
+
+          var initial = [
+            { x: [Number(false), Number(false)], t: Number(false) },
+            { x: [Number(false), Number(true)], t: Number(true) },
+            { x: [Number(true), Number(false)], t: Number(true) },
+            { x: [Number(true), Number(true)], t: Number(false) }
+          ];
+          var samples, selected, modes, W1, b1, W2, b2, frame;
+          var inputSvg = d3.select('#input-space');
+          var hiddenSvg = d3.select('#hidden-space');
+          var outputSvg = d3.select('#output-space');
+          var rail = document.getElementById('unit-rail');
+          var lossNode = document.getElementById('loss');
+          var accuracyNode = document.getElementById('accuracy');
+          var activeNode = document.getElementById('active-units');
+          var viewW = 420, viewH = 350, pad = 48;
+
+          [inputSvg, hiddenSvg, outputSvg].forEach(function (svg) {
+            svg.attr('viewBox', '0 0 ' + viewW + ' ' + viewH).attr('preserveAspectRatio', 'xMidYMid meet');
+          });
+
+          function seeded(i) { return Math.sin((i + 1) * (Lec.K.HISTORY.FIRST_YEAR + 8)) * 0.9; }
+          function resetState() {
+            samples = initial.map(function (d) { return { x: d.x.slice(), t: d.t }; });
+            selected = 0;
+            modes = d3.range(hiddenCount).map(function () { return 'active'; });
+            W1 = d3.range(hiddenCount).map(function (j) { return [seeded(j * 2), seeded(j * 2 + 1)]; });
+            b1 = d3.range(hiddenCount).map(function (j) { return seeded(j + 11) * 0.3; });
+            W2 = d3.range(hiddenCount).map(function (j) { return seeded(j + 21); });
+            b2 = seeded(31) * 0.3;
+            frame = 0;
+            renderControls();
+            trainMany(1200);
+            draw();
+          }
+
+          function forward(x) {
+            var h = W1.map(function (w, j) {
+              var value = P.sigmoid(P.dot(w, x) + b1[j]);
+              return modes[j] === 'off' ? 0 : value;
+            });
+            return { h: h, y: P.sigmoid(P.dot(W2, h) + b2) };
+          }
+
+          function trainStep() {
+            samples.forEach(function (sample) {
+              var out = forward(sample.x);
+              var dy = out.y - sample.t;
+              var rate = modelConfig.learningRate || 0.65;
+              var oldW2 = W2.slice();
+              W2.forEach(function (w, j) {
+                if (modes[j] === 'active') W2[j] -= rate * dy * out.h[j];
+              });
+              b2 -= rate * dy;
+              W1.forEach(function (w, j) {
+                if (modes[j] !== 'active') return;
+                var dh = dy * oldW2[j] * out.h[j] * (1 - out.h[j]);
+                W1[j][0] -= rate * dh * sample.x[0];
+                W1[j][1] -= rate * dh * sample.x[1];
+                b1[j] -= rate * dh;
+              });
+            });
+            if (libraryNet) {
+              try {
+                if (typeof libraryNet.trainBatch === 'function') libraryNet.trainBatch(samples);
+                else if (typeof libraryNet.train === 'function') libraryNet.train(samples);
+              } catch (ignore) { libraryNet = null; }
+            }
+          }
+          function trainMany(n) { for (var i = 0; i < n; i += 1) trainStep(); }
+
+          function projected(rows) {
+            if (typeof P.activationProjection === 'function') {
+              try { return P.activationProjection(rows); } catch (ignore) { /* compatibility */ }
+            }
+            return rows.map(function (r) { return [r[0] || 0, r[1] || 0]; });
+          }
+
+          function metricSummary(pred, target) {
+            if (typeof P.binaryMetrics === 'function') {
+              try { return P.binaryMetrics(pred, target); } catch (ignore) { /* compatibility */ }
+            }
+            var correct = pred.reduce(function (n, v, i) { return n + ((v >= 0.5) === Boolean(target[i]) ? 1 : 0); }, 0);
+            return { acc: correct / pred.length };
+          }
+
+          function unitSummary() {
+            if (typeof P.activeUnitSummary === 'function') {
+              try { return P.activeUnitSummary(modes); } catch (ignore) { /* compatibility */ }
+            }
+            return { active: modes.filter(function (m) { return m !== 'off'; }).length };
+          }
+
+          function basePlot(svg, xLabel, yLabel) {
+            svg.selectAll('*').remove();
+            var x0 = pad, x1 = viewW - pad, y0 = viewH - pad, y1 = pad;
+            d3.range(5).forEach(function (i) {
+              var p = i / 4;
+              svg.append('line').attr('class', 'grid-line').attr('x1', x0 + p * (x1 - x0)).attr('x2', x0 + p * (x1 - x0)).attr('y1', y1).attr('y2', y0);
+              svg.append('line').attr('class', 'grid-line').attr('x1', x0).attr('x2', x1).attr('y1', y1 + p * (y0 - y1)).attr('y2', y1 + p * (y0 - y1));
+            });
+            svg.append('line').attr('class', 'axis-line').attr('x1', x0).attr('x2', x1).attr('y1', y0).attr('y2', y0);
+            svg.append('line').attr('class', 'axis-line').attr('x1', x0).attr('x2', x0).attr('y1', y1).attr('y2', y0);
+            svg.append('text').attr('class', 'axis-label').attr('x', x1).attr('y', viewH - 14).attr('text-anchor', 'end').text(xLabel);
+            svg.append('text').attr('class', 'axis-label').attr('x', 15).attr('y', y1).text(yLabel);
+          }
+
+          function dotClass(d) { return d.t ? 'sample-one' : 'sample-zero'; }
+          function draw() {
+            var outputs = samples.map(function (d) { return forward(d.x); });
+            var projections = projected(outputs.map(function (d) { return d.h; }));
+            var inX = d3.scaleLinear().domain([-0.15, 1.15]).range([pad, viewW - pad]);
+            var inY = d3.scaleLinear().domain([-0.15, 1.15]).range([viewH - pad, pad]);
+            basePlot(inputSvg, 'x₁', 'x₂');
+            var inputDots = inputSvg.selectAll('.sample-dot').data(samples).join('circle')
+              .attr('class', function (d) { return 'sample-dot ' + dotClass(d); })
+              .attr('cx', function (d) { return inX(d.x[0]); }).attr('cy', function (d) { return inY(d.x[1]); })
+              .attr('r', function (d, i) { return i === selected ? 14 : 11; });
+            inputDots.call(d3.drag().on('start', function (event, d) {
+              selected = samples.indexOf(d);
+            }).on('drag', function (event, d) {
+              d.x[0] = P.clamp(inX.invert(event.x), -0.1, 1.1);
+              d.x[1] = P.clamp(inY.invert(event.y), -0.1, 1.1);
+              draw();
+            }));
+
+            var xs = projections.map(function (d) { return d[0]; });
+            var ys = projections.map(function (d) { return d[1]; });
+            var hx = d3.scaleLinear().domain(d3.extent(xs)).nice().range([pad, viewW - pad]);
+            var hy = d3.scaleLinear().domain(d3.extent(ys)).nice().range([viewH - pad, pad]);
+            if (hx.domain()[0] === hx.domain()[1]) hx.domain([0, 1]);
+            if (hy.domain()[0] === hy.domain()[1]) hy.domain([0, 1]);
+            basePlot(hiddenSvg, '投影 A', '投影 B');
+            hiddenSvg.append('path').datum(projections.slice().sort(function (a, b) { return a[0] - b[0]; }))
+              .attr('class', 'guide-line').attr('d', d3.line().x(function (d) { return hx(d[0]); }).y(function (d) { return hy(d[1]); }));
+            hiddenSvg.selectAll('.hidden-mark').data(samples).join('path')
+              .attr('class', function (d) { return d.t ? 'sample-one-shape' : 'sample-zero-shape'; })
+              .attr('d', function (d) { return d.t ? d3.symbol().type(d3.symbolTriangle).size(330)() : d3.symbol().type(d3.symbolCircle).size(260)(); })
+              .attr('transform', function (d, i) { return 'translate(' + hx(projections[i][0]) + ',' + hy(projections[i][1]) + ')'; });
+
+            outputSvg.selectAll('*').remove();
+            var ox = d3.scaleLinear().domain([0, 1]).range([pad + 12, viewW - pad]);
+            outputSvg.append('line').attr('class', 'axis-line').attr('x1', ox(0)).attr('x2', ox(1)).attr('y1', viewH - 32).attr('y2', viewH - 32);
+            outputSvg.append('text').attr('class', 'axis-label').attr('x', ox(0)).attr('y', viewH - 10).text('类别 0');
+            outputSvg.append('text').attr('class', 'axis-label').attr('x', ox(1)).attr('y', viewH - 10).attr('text-anchor', 'end').text('类别 1');
+            samples.forEach(function (d, i) {
+              var y = pad + i * 66;
+              outputSvg.append('line').attr('class', 'prob-track').attr('x1', ox(0)).attr('x2', ox(1)).attr('y1', y).attr('y2', y);
+              outputSvg.append('line').attr('class', 'prob-fill').attr('x1', ox(0)).attr('x2', ox(outputs[i].y)).attr('y1', y).attr('y2', y);
+              outputSvg.append('path').attr('class', d.t ? 'sample-one-shape' : 'sample-zero-shape')
+                .attr('d', d.t ? d3.symbol().type(d3.symbolTriangle).size(250)() : d3.symbol().type(d3.symbolCircle).size(210)())
+                .attr('transform', 'translate(' + ox(outputs[i].y) + ',' + y + ')');
+              outputSvg.append('text').attr('class', 'axis-label').attr('x', pad - 8).attr('y', y + 5).attr('text-anchor', 'end').text(String.fromCharCode(65 + i));
+            });
+
+            var pred = outputs.map(function (d) { return d.y; });
+            var target = samples.map(function (d) { return d.t; });
+            var loss = pred.reduce(function (s, p, i) { return s + P.binaryCrossEntropy(p, target[i]); }, 0) / pred.length;
+            var metrics = metricSummary(pred, target);
+            var units = unitSummary();
+            lossNode.value = P.formatNumber(loss, 3);
+            lossNode.textContent = lossNode.value;
+            accuracyNode.value = P.formatPercent(metrics.acc, 0);
+            accuracyNode.textContent = accuracyNode.value;
+            activeNode.value = P.formatNumber(units.active, 0) + ' / ' + P.formatNumber(hiddenCount, 0);
+            activeNode.textContent = activeNode.value;
+          }
+
+          function renderControls() {
+            d3.select(rail).selectAll('button').data(modes).join('button')
+              .attr('type', 'button').attr('class', 'unit-button').attr('data-mode', function (d) { return d; })
+              .attr('aria-label', function (d, i) { return '隐藏单元 H' + (i + 1) + '，当前' + (d === 'active' ? '学习' : d === 'frozen' ? '冻结' : '关闭'); })
+              .text(function (d, i) { return 'H' + (i + 1) + (d === 'frozen' ? ' 冻' : d === 'off' ? ' 关' : ' 学'); })
+              .on('click', function (event, d) {
+                var i = Array.prototype.indexOf.call(rail.children, event.currentTarget);
+                modes[i] = modes[i] === 'active' ? 'frozen' : modes[i] === 'frozen' ? 'off' : 'active';
+                renderControls();
+                trainMany(80);
+                draw();
+              });
+          }
+
+          inputSvg.on('keydown', function (event) {
+            var step = event.shiftKey ? 0.08 : 0.025;
+            if (event.key === 'Tab') { selected = (selected + 1) % samples.length; draw(); return; }
+            if (event.key === 'ArrowLeft') samples[selected].x[0] -= step;
+            else if (event.key === 'ArrowRight') samples[selected].x[0] += step;
+            else if (event.key === 'ArrowUp') samples[selected].x[1] += step;
+            else if (event.key === 'ArrowDown') samples[selected].x[1] -= step;
+            else return;
+            event.preventDefault();
+            samples[selected].x[0] = P.clamp(samples[selected].x[0], -0.1, 1.1);
+            samples[selected].x[1] = P.clamp(samples[selected].x[1], -0.1, 1.1);
+            draw();
+          });
+          document.getElementById('reset').addEventListener('click', resetState);
+          resetState();
+          Deck.loop(function () {
+            frame += 1;
+            if (frame % 3 === 0) { trainStep(); draw(); }
+          }, { still: 0 });
+        }
+
+        if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot, { once: true });
+        else boot();
+      }());
+    </script>
+  </div>
+  <script src="assets/base.js"></script>
+  <script src="assets/lec.js"></script>
+</body>
+</html>

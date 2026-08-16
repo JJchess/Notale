@@ -10,7 +10,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel
 
@@ -22,10 +22,19 @@ class ToolContext:
 
 
 @dataclass(frozen=True)
+class ToolImage:
+    """One image attachment returned to the calling model with a tool result."""
+
+    image_url: str
+    detail: Literal["auto", "low", "high"] = "high"
+
+
+@dataclass(frozen=True)
 class ToolResult:
     output: str
     is_error: bool = False
     metadata: dict[str, Any] = field(default_factory=dict)
+    images: tuple[ToolImage, ...] = ()
 
 
 class BaseTool(ABC):

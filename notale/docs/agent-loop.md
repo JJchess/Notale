@@ -16,21 +16,38 @@ For each Planner or Builder, `agents/loop.py`:
 5. enforces turn and duration limits while emitting the existing run events and token usage;
 6. saves the exact request body for every model turn under `llm-requests/`.
 
-Planner and Builder use the same `AgentLoop`. Profiles, Skills, Tools, the deterministic Planner-to-Builder
-workflow, and artifact validation remain separate Notale concerns.
+Planner and Builder use the same `AgentLoop`. The one-shot Style stage and managed component calls use the
+same transport and request/event contracts without inheriting Planner/Builder conversations or tool schemas.
+`create_widget` performs focused plan/build calls; `create_code_runtime` performs one structured specification
+call and compiles the executable UI deterministically. Component source never enters Builder history.
 
-The root Planner is intentionally a two-turn protocol: its run-scoped `style` tool creates and validates a
-concrete Builder Skill, then `plan` may terminate only on a later model turn. The loop serializes these two
-tool names if a model emits both together, so a plan can never bypass the accepted style result.
+`inspect_page` is an ordinary tool inside the existing Builder conversation. It renders the current fragment
+through the exact final slide document, global CSS, assets, and hydrated components in Chromium with a CDP
+device viewport of 1280×720. The tool then makes exactly one isolated multimodal model call containing only a
+short review protocol, the full run Style plus assigned composition and tokens, the current complete fragment,
+and that screenshot. The call has no Builder profile, Builder history, prior screenshots, Planner task, or tool
+schemas, and it does not run a geometry/overflow/console audit.
+
+The isolated call returns structured `success` or `revise`. It may freely rewrite, reduce, or remove the draft's
+content and UI while redesigning the page. On `revise`, `inspect_page` validates only the normal delivery
+contract, writes the complete replacement atomically, increments the page revision, and returns only the new
+revision to the Builder; the Builder must call `inspect_page` again. On `success`, the tool marks that exact
+revision visually accepted and returns only compact status. Inspector-authored changes are capped at four per
+page, while a later success-only review remains allowed. `submit_page` still terminates the outer Builder and
+accepts only the exact accepted revision in a later Builder turn.
 
 ## Deliberately absent
 
 There is no MCP, permission prompt, hook system, coordinator, subagent runtime, persistent conversation,
-generic shell/file toolkit, image-message preprocessing, or automatic conversation compaction. Resuming a
-run reuses terminal artifacts and restarts interrupted agents; it does not resume an in-memory conversation.
+generic shell/file toolkit, generic image-message preprocessing, or automatic conversation compaction. The
+inspection screenshot is consumed only by the isolated internal review request and is not replayed into the
+outer Builder history. Resuming a run reuses terminal artifacts and restarts interrupted agents; it does not
+resume an in-memory conversation.
 
-OpenRouter is accessed through its OpenAI-compatible Chat Completions endpoint. The SDK owns HTTP, SSE parsing,
-and bounded retries; Notale owns message history, tool execution, terminal conditions, logging, and artifacts.
+The active Parallel Cloud model is accessed through its OpenAI-compatible Responses endpoint with
+`store: false`. Notale can replay encrypted reasoning items when the provider supplies them. The transport also
+retains Chat Completions compatibility for future providers. The SDK owns HTTP, SSE parsing, and bounded
+retries; Notale owns message history, tool execution, terminal conditions, logging, and artifacts.
 
 ## Request trace
 

@@ -1,0 +1,325 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+</head>
+<body data-page="11" data-total="20">
+<div id="stage">
+  <main class="page">
+    <header id="lec-header" class="page-header"></header>
+    <section class="page-body split min0" aria-label="单级火箭质量比实验">
+      <figure class="visual-shell min0" aria-label="可拖动推进剂块的质量秤、速度曲线，以及轻重结构火箭比较">
+        <canvas id="mass-canvas" class="cv-fill no-pan" aria-label="拖动上方推进剂质量尺可改变推进剂质量；下方曲线实时显示可获得速度"></canvas>
+      </figure>
+
+      <aside class="panel control-panel min0" aria-label="质量与发动机设置">
+        <div class="panel-heading">
+          <span class="panel-kicker">单级质量秤</span>
+          <h2 class="panel-title">把质量放上去，再看速度</h2>
+          <p class="panel-description">拖动左侧橙色燃料块，或使用下方滑块。燃料会增大起始质量，却不会留在燃烧后的末质量里。</p>
+        </div>
+
+        <div class="control-group">
+          <label class="control-label" for="structure">结构质量 <span id="structure-out" class="control-value"></span></label>
+          <input id="structure" type="range">
+        </div>
+        <div class="control-group">
+          <label class="control-label" for="payload">载荷质量 <span id="payload-out" class="control-value"></span></label>
+          <input id="payload" type="range">
+        </div>
+        <div class="control-group">
+          <label class="control-label" for="fuel">推进剂质量 <span id="fuel-out" class="control-value"></span></label>
+          <input id="fuel" type="range">
+        </div>
+        <div class="control-group">
+          <label class="control-label" for="isp">比冲 <span id="isp-out" class="control-value"></span></label>
+          <input id="isp" type="range">
+        </div>
+        <div class="control-group">
+          <label class="control-label" for="target">反向挑战：目标速度 <span id="target-out" class="control-value"></span></label>
+          <input id="target" type="range">
+        </div>
+
+        <div class="callout is-warm" aria-live="polite">
+          <span class="callout-title">反推所需质量</span>
+          <p id="challenge-result"></p>
+        </div>
+      </aside>
+    </section>
+    <footer id="lec-footer" class="page-footer"></footer>
+  </main>
+
+  <script>
+  document.addEventListener('DOMContentLoaded', function () {
+    'use strict';
+
+    Lec.mount({
+      index: 11,
+      kicker: `ROCKET EQUATION`,
+      title: `为什么多装一点燃料，反而会让火箭更难加速`,
+      take: `火箭获得的速度取决于质量比，燃料既提供速度，也成为需要加速的负担。`
+    });
+
+    var K = Lec.K;
+    var P = Lec.P;
+    var stage = document.getElementById('stage');
+    var header = stage.querySelector('#lec-header');
+    var footer = stage.querySelector('#lec-footer');
+    header.className = 'page-header';
+    footer.className = 'page-footer';
+    header.querySelector('.lec-header__top').className = 'cluster';
+    header.querySelector('.lec-header__kicker').className = 'kicker';
+    header.querySelector('.lec-header__index').className = 'page-number';
+    header.querySelector('.lec-header__title').className = 'page-title';
+    footer.querySelector('.lec-footer__take').className = 'accent';
+    footer.querySelector('.lec-footer__topic').className = 'footer-meta';
+
+    var cv = stage.querySelector('#mass-canvas');
+    var inputs = {
+      structure: stage.querySelector('#structure'),
+      payload: stage.querySelector('#payload'),
+      fuel: stage.querySelector('#fuel'),
+      isp: stage.querySelector('#isp'),
+      target: stage.querySelector('#target')
+    };
+    var outputs = {
+      structure: stage.querySelector('#structure-out'),
+      payload: stage.querySelector('#payload-out'),
+      fuel: stage.querySelector('#fuel-out'),
+      isp: stage.querySelector('#isp-out'),
+      target: stage.querySelector('#target-out')
+    };
+    var challenge = stage.querySelector('#challenge-result');
+
+    var massStep = K.TWO * K.TONNE;
+    var fuelMax = K.HUNDRED * K.TONNE;
+    var settings = {
+      structure: [K.TONNE, K.TEN * K.TONNE, K.TONNE, K.FOUR * K.TONNE],
+      payload: [K.TONNE, K.SIX * K.TONNE, K.TONNE, K.TWO * K.TONNE],
+      fuel: [K.ZERO, fuelMax, massStep, K.FOUR * K.TEN * K.TONNE],
+      isp: [K.HUNDRED, K.SIX * K.HUNDRED, K.TEN, K.FOUR * K.HUNDRED],
+      target: [K.THOUSAND, K.TEN * K.THOUSAND, K.HUNDRED, K.SIX * K.THOUSAND]
+    };
+
+    Object.keys(inputs).forEach(function (name) {
+      var cfg = settings[name];
+      inputs[name].min = cfg[K.ZERO];
+      inputs[name].max = cfg[K.ONE];
+      inputs[name].step = cfg[K.TWO];
+      inputs[name].value = cfg[K.THREE];
+    });
+
+    var fit = Deck.autofit(cv, draw);
+    var dragging = false;
+
+    function state() {
+      var structure = Number(inputs.structure.value);
+      var payload = Number(inputs.payload.value);
+      var fuel = Number(inputs.fuel.value);
+      var isp = Number(inputs.isp.value);
+      var target = Number(inputs.target.value);
+      var finalMass = structure + payload;
+      var initialMass = finalMass + fuel;
+      var exhaust = P.rocketExhaustVelocity(isp, K.G0);
+      var dv = P.rocketDeltaV(isp, initialMass, finalMass, K.G0);
+      return {
+        structure: structure,
+        payload: payload,
+        fuel: fuel,
+        isp: isp,
+        target: target,
+        finalMass: finalMass,
+        initialMass: initialMass,
+        exhaust: exhaust,
+        ratio: initialMass / finalMass,
+        dv: dv
+      };
+    }
+
+    function update() {
+      var s = state();
+      outputs.structure.textContent = P.formatMass(s.structure);
+      outputs.payload.textContent = P.formatMass(s.payload);
+      outputs.fuel.textContent = P.formatMass(s.fuel);
+      outputs.isp.textContent = P.formatNumber(s.isp) + ' s';
+      outputs.target.textContent = P.formatVelocity(s.target);
+
+      var neededRatio = P.massRatioFromDeltaV(s.target, s.isp, K.G0);
+      var requiredInitial = s.finalMass * neededRatio;
+      var reverseFinal = P.finalMassForDeltaV(requiredInitial, s.target, s.isp, K.G0);
+      var requiredFuel = P.propellantMassForDeltaV(requiredInitial, s.target, s.isp, K.G0);
+      var gap = requiredFuel - s.fuel;
+      var relation = gap > massStep * K.HALF ? '还差 ' + P.formatMass(gap) :
+        gap < -massStep * K.HALF ? '已多出 ' + P.formatMass(Math.abs(gap)) : '已经很接近目标';
+      challenge.textContent = '目标质量比 ' + P.formatNumber(neededRatio) + '；末质量 ' +
+        P.formatMass(reverseFinal) + ' 时需推进剂 ' + P.formatMass(requiredFuel) + '。' + relation + '。';
+      fit.redraw();
+    }
+
+    Object.keys(inputs).forEach(function (name) {
+      inputs[name].addEventListener('input', update);
+    });
+
+    function fuelFromPoint(e) {
+      var p = Deck.pt(cv, e);
+      var w = cv.__w || cv.offsetWidth;
+      var left = w * 0.08;
+      var right = w * 0.60;
+      var raw = P.clamp((p.x - left) / (right - left), K.ZERO, K.ONE) * fuelMax;
+      inputs.fuel.value = Math.round(raw / massStep) * massStep;
+      update();
+    }
+
+    cv.addEventListener('pointerdown', function (e) {
+      var p = Deck.pt(cv, e);
+      var h = cv.__h || cv.offsetHeight;
+      if (p.y > h * 0.25 && p.y < h * 0.47) {
+        dragging = true;
+        cv.setPointerCapture(e.pointerId);
+        fuelFromPoint(e);
+      }
+    });
+    cv.addEventListener('pointermove', function (e) {
+      if (dragging) fuelFromPoint(e);
+    });
+    cv.addEventListener('pointerup', function () { dragging = false; });
+    cv.addEventListener('pointercancel', function () { dragging = false; });
+
+    function draw(ctx, w, h) {
+      var s = state();
+      var ink = Deck.token('ink-strong');
+      var muted = Deck.token('ink-muted');
+      var faint = Deck.token('ink-faint');
+      var line = Deck.token('line');
+      var soft = Deck.token('line-soft');
+      var surface = Deck.token('surface-2');
+      var inset = Deck.token('surface-inset');
+      var accent = Deck.token('accent');
+      var warm = Deck.token('accent-warm');
+      var blue = Deck.token('accent-blue');
+      var fontSans = Deck.token('font-sans');
+      var fontMono = Deck.token('font-mono');
+      var pad = w * 0.045;
+
+      ctx.clearRect(K.ZERO, K.ZERO, w, h);
+      ctx.fillStyle = inset;
+      ctx.fillRect(K.ZERO, K.ZERO, w, h);
+
+      function box(x, y, bw, bh, label, value, color) {
+        ctx.fillStyle = surface;
+        ctx.strokeStyle = soft;
+        ctx.lineWidth = K.ONE;
+        Deck.rr(ctx, x, y, bw, bh, 10);
+        ctx.fill(); ctx.stroke();
+        ctx.fillStyle = muted;
+        ctx.font = '14px ' + fontSans;
+        ctx.fillText(label, x + 14, y + 24);
+        ctx.fillStyle = color;
+        ctx.font = '600 22px ' + fontMono;
+        ctx.fillText(value, x + 14, y + 54);
+      }
+
+      var gap = 10;
+      var boxW = (w - pad * K.TWO - gap * K.THREE) / K.FOUR;
+      box(pad, 18, boxW, 68, '起始质量', P.formatMass(s.initialMass), accent);
+      box(pad + (boxW + gap), 18, boxW, 68, '末质量', P.formatMass(s.finalMass), blue);
+      box(pad + (boxW + gap) * K.TWO, 18, boxW, 68, '质量比', P.formatNumber(s.ratio), ink);
+      box(pad + (boxW + gap) * K.THREE, 18, boxW, 68, '可获得速度', P.formatVelocity(s.dv), warm);
+
+      var trackL = w * 0.08;
+      var trackR = w * 0.60;
+      var trackY = h * 0.34;
+      var fuelX = trackL + (trackR - trackL) * s.fuel / fuelMax;
+      ctx.fillStyle = muted;
+      ctx.font = '600 14px ' + fontSans;
+      ctx.fillText('拖动推进剂块', trackL, trackY - 38);
+      ctx.fillStyle = faint;
+      ctx.font = '12px ' + fontMono;
+      ctx.fillText(P.formatMass(K.ZERO), trackL, trackY + 34);
+      ctx.textAlign = 'right';
+      ctx.fillText(P.formatMass(fuelMax), trackR, trackY + 34);
+      ctx.textAlign = 'left';
+      ctx.strokeStyle = line;
+      ctx.lineWidth = 8;
+      ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.moveTo(trackL, trackY); ctx.lineTo(trackR, trackY); ctx.stroke();
+      ctx.strokeStyle = warm;
+      ctx.beginPath(); ctx.moveTo(trackL, trackY); ctx.lineTo(fuelX, trackY); ctx.stroke();
+      ctx.fillStyle = warm;
+      Deck.rr(ctx, fuelX - 14, trackY - 20, 28, 40, 6); ctx.fill();
+      ctx.lineCap = 'butt';
+
+      var lightDv = s.dv;
+      var heavyFinal = s.structure * K.TWO + s.payload;
+      var heavyDv = P.rocketDeltaV(s.isp, heavyFinal + s.fuel, heavyFinal, K.G0);
+      var compareX = w * 0.67;
+      ctx.fillStyle = muted;
+      ctx.font = '600 14px ' + fontSans;
+      ctx.fillText('同样燃料，不同结构', compareX, trackY - 38);
+      ctx.fillStyle = accent;
+      ctx.fillRect(compareX, trackY - 12, Math.max(4, (w * 0.25) * lightDv / Math.max(lightDv, heavyDv)), 12);
+      ctx.fillStyle = ink;
+      ctx.font = '14px ' + fontSans;
+      ctx.fillText('轻结构  ' + P.formatVelocity(lightDv), compareX, trackY + 20);
+      ctx.fillStyle = blue;
+      ctx.fillRect(compareX, trackY + 38, Math.max(4, (w * 0.25) * heavyDv / Math.max(lightDv, heavyDv)), 12);
+      ctx.fillStyle = ink;
+      ctx.fillText('重结构  ' + P.formatVelocity(heavyDv), compareX, trackY + 70);
+
+      var x0 = pad + 42;
+      var x1 = w - pad - 18;
+      var y0 = h - 36;
+      var y1 = h * 0.56;
+      var maxDv = P.rocketDeltaV(s.isp, s.finalMass + fuelMax, s.finalMass, K.G0);
+      ctx.strokeStyle = line;
+      ctx.lineWidth = K.ONE;
+      ctx.beginPath(); ctx.moveTo(x0, y1); ctx.lineTo(x0, y0); ctx.lineTo(x1, y0); ctx.stroke();
+      ctx.fillStyle = muted;
+      ctx.font = '14px ' + fontSans;
+      ctx.fillText('推进剂增加时，可获得速度逐渐“变平”', x0, y1 - 14);
+      ctx.fillStyle = faint;
+      ctx.font = '12px ' + fontMono;
+      ctx.fillText(P.formatMass(K.ZERO), x0, y0 + 20);
+      ctx.textAlign = 'right';
+      ctx.fillText(P.formatMass(fuelMax), x1, y0 + 20);
+      ctx.fillText(P.formatVelocity(maxDv), x0 - 8, y1 + 5);
+      ctx.textAlign = 'left';
+
+      ctx.strokeStyle = Deck.rgba('accent-warm', 0.45);
+      var targetY = y0 - (y0 - y1) * P.clamp(s.target / maxDv, K.ZERO, K.ONE);
+      ctx.setLineDash([6, 6]);
+      ctx.beginPath(); ctx.moveTo(x0, targetY); ctx.lineTo(x1, targetY); ctx.stroke();
+      ctx.setLineDash([]);
+
+      ctx.strokeStyle = accent;
+      ctx.lineWidth = K.THREE;
+      ctx.beginPath();
+      var samples = K.HUNDRED;
+      for (var i = K.ZERO; i <= samples; i += K.ONE) {
+        var f = fuelMax * i / samples;
+        var d = P.rocketDeltaV(s.isp, s.finalMass + f, s.finalMass, K.G0);
+        var px = x0 + (x1 - x0) * i / samples;
+        var py = y0 - (y0 - y1) * d / maxDv;
+        if (i === K.ZERO) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+      }
+      ctx.stroke();
+      var cx = x0 + (x1 - x0) * s.fuel / fuelMax;
+      var cy = y0 - (y0 - y1) * s.dv / maxDv;
+      ctx.fillStyle = warm;
+      ctx.beginPath(); ctx.arc(cx, cy, 7, K.ZERO, K.TWO_PI); ctx.fill();
+
+      ctx.fillStyle = faint;
+      ctx.font = '12px ' + fontMono;
+      ctx.fillText('排气速度 ' + P.formatVelocity(s.exhaust), x0 + 8, y1 + 18);
+    }
+
+    update();
+  });
+  </script>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+</body>
+</html>

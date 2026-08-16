@@ -1,0 +1,382 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+</head>
+<body data-page="17" data-total="24">
+<div id="stage">
+  <style>
+    #stage #page-content { inline-size: 100%; block-size: 100%; }
+    #stage .repr-map { position: relative; }
+    #stage .repr-surface { inline-size: 100%; block-size: 100%; border: 1px solid var(--line); border-radius: var(--radius-xl); background: var(--surface-control); box-shadow: var(--shadow-md); }
+    #stage .repr-overlay { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; padding: var(--sp-4); gap: var(--sp-3); }
+    #stage .repr-top { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--sp-5); }
+    #stage .repr-intro { max-inline-size: 560px; padding: var(--sp-3) var(--sp-4); border-inline-start: 5px solid var(--accent); background: var(--surface-1); border-radius: var(--radius-md); box-shadow: var(--shadow-sm); }
+    #stage .repr-intro strong { display: block; font-size: var(--fs-body); }
+    #stage .repr-intro span { display: block; color: var(--text-muted); font-size: var(--fs-body-sm); line-height: var(--lh-body); }
+    #stage .repr-controls { display: flex; align-items: center; gap: var(--sp-3); padding: var(--sp-3) var(--sp-4); border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--surface-1); box-shadow: var(--shadow-sm); }
+    #stage .repr-controls .switch { min-block-size: var(--control-h); }
+    #stage .repr-controls button { padding-inline: var(--sp-4); }
+    #stage .repr-spacer { min-block-size: 0; }
+    #stage .repr-status { display: grid; grid-template-columns: minmax(240px, 1.15fr) repeat(3, minmax(160px, .72fr)); gap: var(--sp-3); align-items: stretch; }
+    #stage .repr-status-note { display: flex; align-items: center; gap: var(--sp-3); padding: var(--sp-3) var(--sp-4); border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--surface-1); color: var(--text-muted); font-size: var(--fs-body-sm); line-height: var(--lh-body); }
+    #stage .repr-status-note::before { content: "↗"; color: var(--accent-strong); font-size: var(--fs-h3); font-weight: var(--weight-bold); }
+    #stage .repr-metric { display: grid; grid-template-columns: auto 1fr; align-items: center; gap: var(--sp-2) var(--sp-3); padding: var(--sp-3) var(--sp-4); border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--surface-1); }
+    #stage .repr-metric span { color: var(--text-muted); font-size: var(--fs-label); }
+    #stage .repr-metric output { color: var(--text-strong); font-size: var(--fs-body-lg); font-weight: var(--weight-bold); font-variant-numeric: tabular-nums; justify-self: end; }
+    #stage .repr-metric i { grid-column: 1 / -1; block-size: 5px; border-radius: var(--radius-pill); background: var(--surface-3); overflow: hidden; }
+    #stage .repr-metric i::after { content: ""; display: block; inline-size: var(--meter); block-size: 100%; background: var(--accent); border-radius: inherit; }
+    #stage .repr-surface:focus-visible { outline: 4px solid var(--focus); outline-offset: 3px; }
+    #stage .map-panel { fill: var(--surface-1); stroke: var(--line); stroke-width: 1.5; }
+    #stage .map-panel.off { fill: var(--surface-control); stroke-dasharray: 8 7; opacity: .72; }
+    #stage .map-grid { stroke: var(--line); stroke-width: 1; opacity: .42; }
+    #stage .map-title { fill: var(--text-strong); font-size: var(--fs-body); font-weight: var(--weight-bold); }
+    #stage .map-subtitle { fill: var(--text-muted); font-size: var(--fs-label); }
+    #stage .map-off-label { fill: var(--warm); font-size: var(--fs-label); font-weight: var(--weight-semibold); }
+    #stage .class-a { fill: var(--accent); stroke: var(--text-strong); }
+    #stage .class-b { fill: var(--secondary); stroke: var(--text-strong); }
+    #stage .sample { stroke-width: 1.5; opacity: .82; }
+    #stage .sample.selected { stroke: var(--focus); stroke-width: 4; opacity: 1; }
+    #stage .journey { fill: none; stroke: var(--focus); stroke-width: 2.5; stroke-dasharray: 7 6; opacity: .8; }
+    #stage .journey-node { fill: var(--focus); stroke: var(--bg); stroke-width: 3; }
+    #stage .drag-halo { fill: none; stroke: var(--focus); stroke-width: 2; opacity: .65; }
+    #stage .boundary { stroke: var(--warm); stroke-width: 2; stroke-dasharray: 9 6; opacity: .8; }
+    @media (prefers-reduced-motion: reduce) {
+      #stage * { transition: none !important; animation: none !important; }
+    }
+  </style>
+
+  <main id="page-content" class="min0" aria-label="逐层表示空间实验">
+    <section class="canvas-full repr-map" aria-label="可穿行各层表示空间的全幅数据地图">
+      <svg id="repr-svg" class="canvas-full__surface repr-surface no-pan" tabindex="0" role="application" aria-label="四个联动点云。点击或拖动原空间中的样本；聚焦后用方向键移动当前样本，回车选择下一个样本。"></svg>
+      <div class="canvas-full__overlay repr-overlay">
+        <div class="repr-top">
+          <div class="repr-intro">
+            <strong>不是手工规定特征，而是让网络学习新的坐标。</strong>
+            <span>拖动原空间中的任一点，沿虚线路径追踪它被逐层重排的位置。</span>
+          </div>
+          <div class="repr-controls" aria-label="表示层控制">
+            <label class="switch"><input id="layer-1" type="checkbox" checked><span class="switch__track" aria-hidden="true"></span><span>层 A</span></label>
+            <label class="switch"><input id="layer-2" type="checkbox" checked><span class="switch__track" aria-hidden="true"></span><span>层 B</span></label>
+            <label class="switch"><input id="layer-3" type="checkbox" checked><span class="switch__track" aria-hidden="true"></span><span>层 C</span></label>
+            <button id="pause" class="button--secondary" type="button">暂停训练</button>
+            <button id="reset" class="button--ghost" type="button">重置</button>
+          </div>
+        </div>
+        <div class="repr-spacer" aria-hidden="true"></div>
+        <div class="repr-status" aria-live="polite">
+          <div class="repr-status-note" id="status-note">网络正在重排空间；关闭任一层，比较最终表示是否仍易于线性读出。</div>
+          <div class="repr-metric"><span>类内距离</span><output id="within">—</output><i id="within-meter"></i></div>
+          <div class="repr-metric"><span>类间距离</span><output id="between">—</output><i id="between-meter"></i></div>
+          <div class="repr-metric"><span>线性可分度</span><output id="separable">—</output><i id="sep-meter"></i></div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script defer src="assets/lib/d3.min.js"></script>
+  <script>
+    (function () {
+      'use strict';
+
+      function boot() {
+        Lec.mount({
+          index: 17,
+          kicker: `LEARNED REPRESENTATIONS`,
+          title: `深度学习真正擅长的，是改变问题所在的<em>空间</em>`,
+          take: `层层表示学习把原本纠缠的数据逐步重排，使简单读出器也能完成复杂任务。`
+        });
+
+        var title = document.querySelector('.lec-header__title');
+        if (title) { title.innerHTML = `深度学习真正擅长的，是改变问题所在的<em>空间</em>`; }
+
+        var svg = d3.select('#repr-svg');
+        var node = svg.node();
+        var checks = [document.getElementById('layer-1'), document.getElementById('layer-2'), document.getElementById('layer-3')];
+        var pauseButton = document.getElementById('pause');
+        var resetButton = document.getElementById('reset');
+        var outputs = {
+          within: document.getElementById('within'),
+          between: document.getElementById('between'),
+          separable: document.getElementById('separable'),
+          withinMeter: document.getElementById('within-meter'),
+          betweenMeter: document.getElementById('between-meter'),
+          sepMeter: document.getElementById('sep-meter'),
+          note: document.getElementById('status-note')
+        };
+        var samples = [];
+        var weights;
+        var biases;
+        var selected = 0;
+        var paused = false;
+        var dragging = false;
+        var width = 0;
+        var height = 0;
+        var panels = [];
+        var stepCount = 0;
+        var lastDraw = 0;
+        var seedYear = Lec.K.TIMELINE[0].year;
+        var sampleCount = Lec.K.TIMELINE.length * 2;
+        var rate = Lec.K.TRAINING.DEFAULT_LEARNING_RATE * Lec.K.UNITS.SECOND_PER_MINUTE;
+
+        function seeded(i) {
+          var x = Math.sin((i + 1) * seedYear) * 10000;
+          return x - Math.floor(x);
+        }
+
+        function makeSamples() {
+          var result = [];
+          var half = sampleCount / 2;
+          var i;
+          var t;
+          var cls;
+          for (i = 0; i < sampleCount; i += 1) {
+            cls = i < half ? 0 : 1;
+            t = (i % half) / Math.max(1, half - 1) * Math.PI;
+            result.push({
+              id: i,
+              t: cls,
+              x: [
+                (cls ? 0.35 - Math.cos(t) : Math.cos(t) - 0.35) + (seeded(i) - 0.5) * 0.18,
+                (cls ? -Math.sin(t) + 0.42 : Math.sin(t) - 0.42) + (seeded(i + sampleCount) - 0.5) * 0.18
+              ]
+            });
+          }
+          return result;
+        }
+
+        function initModel() {
+          var l;
+          var r;
+          var c;
+          weights = [];
+          biases = [];
+          for (l = 0; l < 3; l += 1) {
+            weights[l] = [];
+            biases[l] = [0, 0];
+            for (r = 0; r < 2; r += 1) {
+              weights[l][r] = [];
+              for (c = 0; c < 2; c += 1) {
+                weights[l][r][c] = (seeded(l * 8 + r * 2 + c) - 0.5) * 1.4 + (r === c ? 0.55 : 0);
+              }
+            }
+          }
+          weights[3] = [[(seeded(31) - 0.5) * 1.2], [(seeded(32) - 0.5) * 1.2]];
+          biases[3] = [0];
+          stepCount = 0;
+        }
+
+        function forward(x) {
+          var activations = [[x[0], x[1]]];
+          var pre = [];
+          var a = activations[0];
+          var l;
+          var z;
+          for (l = 0; l < 3; l += 1) {
+            if (checks[l].checked) {
+              z = [
+                a[0] * weights[l][0][0] + a[1] * weights[l][1][0] + biases[l][0],
+                a[0] * weights[l][0][1] + a[1] * weights[l][1][1] + biases[l][1]
+              ];
+              pre[l] = z;
+              a = [Math.tanh(z[0]), Math.tanh(z[1])];
+            } else {
+              pre[l] = [a[0], a[1]];
+              a = [a[0], a[1]];
+            }
+            activations.push(a);
+          }
+          z = a[0] * weights[3][0][0] + a[1] * weights[3][1][0] + biases[3][0];
+          return { a: activations, y: Lec.P.sigmoid(z) };
+        }
+
+        function trainOne(sample) {
+          var pass = forward(sample.x);
+          var delta = pass.y - sample.t;
+          var l;
+          var i;
+          var j;
+          var next;
+          var a;
+          weights[3][0][0] -= rate * delta * pass.a[3][0];
+          weights[3][1][0] -= rate * delta * pass.a[3][1];
+          biases[3][0] -= rate * delta;
+          next = [delta * weights[3][0][0], delta * weights[3][1][0]];
+          for (l = 2; l >= 0; l -= 1) {
+            if (!checks[l].checked) { continue; }
+            delta = [next[0] * (1 - pass.a[l + 1][0] * pass.a[l + 1][0]), next[1] * (1 - pass.a[l + 1][1] * pass.a[l + 1][1])];
+            a = pass.a[l];
+            next = [
+              delta[0] * weights[l][0][0] + delta[1] * weights[l][0][1],
+              delta[0] * weights[l][1][0] + delta[1] * weights[l][1][1]
+            ];
+            for (i = 0; i < 2; i += 1) {
+              for (j = 0; j < 2; j += 1) { weights[l][i][j] -= rate * a[i] * delta[j]; }
+            }
+            biases[l][0] -= rate * delta[0];
+            biases[l][1] -= rate * delta[1];
+          }
+          stepCount += 1;
+        }
+
+        function fallbackProjection(matrix) {
+          return matrix.map(function (v) { return { x: v[0], y: v[1] }; });
+        }
+
+        function projection(matrix) {
+          return typeof Lec.P.activationProjection === 'function' ? Lec.P.activationProjection(matrix) : fallbackProjection(matrix);
+        }
+
+        function fallbackSummary(points, labels) {
+          var groups = [[], []];
+          var centers;
+          var within = 0;
+          var between;
+          var correctA = 0;
+          var correctB = 0;
+          var i;
+          points.forEach(function (p, k) { groups[labels[k]].push(p); });
+          centers = groups.map(function (g) {
+            return { x: d3.mean(g, function (p) { return p.x; }), y: d3.mean(g, function (p) { return p.y; }) };
+          });
+          groups.forEach(function (g, cls) { g.forEach(function (p) { within += Math.hypot(p.x - centers[cls].x, p.y - centers[cls].y); }); });
+          within /= points.length;
+          between = Math.hypot(centers[0].x - centers[1].x, centers[0].y - centers[1].y);
+          points.forEach(function (p, k) {
+            var da = Math.hypot(p.x - centers[0].x, p.y - centers[0].y);
+            var db = Math.hypot(p.x - centers[1].x, p.y - centers[1].y);
+            if ((da <= db ? 0 : 1) === labels[k]) { correctA += 1; }
+            if ((p.x * (centers[1].x - centers[0].x) + p.y * (centers[1].y - centers[0].y)) > ((centers[1].x * centers[1].x + centers[1].y * centers[1].y) - (centers[0].x * centers[0].x + centers[0].y * centers[0].y)) / 2 ? labels[k] === 1 : labels[k] === 0) { correctB += 1; }
+          });
+          return { within: within, between: between, separability: Math.max(correctA, correctB) / points.length };
+        }
+
+        function summary(points, labels) {
+          return typeof Lec.P.representationSummary === 'function' ? Lec.P.representationSummary(points, labels) : fallbackSummary(points, labels);
+        }
+
+        function layout() {
+          var box = node.getBoundingClientRect();
+          width = box.width / Deck.s;
+          height = box.height / Deck.s;
+          svg.attr('viewBox', '0 0 ' + width + ' ' + height);
+          var left = 26;
+          var right = 26;
+          var gap = 18;
+          var top = 132;
+          var bottom = 118;
+          var panelW = (width - left - right - gap * 3) / 4;
+          var panelH = height - top - bottom;
+          panels = d3.range(4).map(function (i) { return { x: left + i * (panelW + gap), y: top, w: panelW, h: panelH }; });
+        }
+
+        function draw() {
+          if (!width || !height) { layout(); }
+          var states = samples.map(function (s) { return forward(s.x); });
+          var labels = samples.map(function (s) { return s.t; });
+          var projected = d3.range(4).map(function (layer) { return projection(states.map(function (s) { return s.a[layer]; })); });
+          var root = svg.selectAll('g.scene').data([null]).join('g').attr('class', 'scene');
+          var defs = svg.selectAll('defs').data([null]).join('defs');
+          defs.selectAll('clipPath').data(panels).join('clipPath').attr('id', function (d, i) { return 'clip-repr-' + i; }).selectAll('rect').data(function (d) { return [d]; }).join('rect').attr('x', function (d) { return d.x + 1; }).attr('y', function (d) { return d.y + 1; }).attr('width', function (d) { return d.w - 2; }).attr('height', function (d) { return d.h - 2; }).attr('rx', 18);
+          root.selectAll('rect.map-panel').data(panels).join('rect').attr('class', function (d, i) { return 'map-panel' + (i > 0 && !checks[i - 1].checked ? ' off' : ''); }).attr('x', function (d) { return d.x; }).attr('y', function (d) { return d.y; }).attr('width', function (d) { return d.w; }).attr('height', function (d) { return d.h; }).attr('rx', 18);
+
+          var names = ['原空间', '表示 A', '表示 B', '表示 C'];
+          root.selectAll('text.map-title').data(panels).join('text').attr('class', 'map-title').attr('x', function (d) { return d.x + 18; }).attr('y', function (d) { return d.y + 30; }).text(function (d, i) { return names[i]; });
+          root.selectAll('text.map-subtitle').data(panels).join('text').attr('class', 'map-subtitle').attr('x', function (d) { return d.x + 18; }).attr('y', function (d) { return d.y + 55; }).text(function (d, i) { return i ? (checks[i - 1].checked ? '当前激活的二维投影' : '已旁路：坐标保持不变') : '拖动样本，改变网络的输入'; });
+
+          var scales = projected.map(function (pts, i) {
+            var xs = pts.map(function (p) { return p.x; });
+            var ys = pts.map(function (p) { return p.y; });
+            var p = panels[i];
+            var xExtent = d3.extent(xs);
+            var yExtent = d3.extent(ys);
+            var xPad = Math.max(0.2, (xExtent[1] - xExtent[0]) * 0.18);
+            var yPad = Math.max(0.2, (yExtent[1] - yExtent[0]) * 0.18);
+            return {
+              x: d3.scaleLinear().domain([xExtent[0] - xPad, xExtent[1] + xPad]).range([p.x + 20, p.x + p.w - 20]),
+              y: d3.scaleLinear().domain([yExtent[0] - yPad, yExtent[1] + yPad]).range([p.y + p.h - 20, p.y + 76])
+            };
+          });
+
+          var points = [];
+          projected.forEach(function (layerPoints, layer) { layerPoints.forEach(function (p, i) { points.push({ layer: layer, i: i, t: samples[i].t, x: scales[layer].x(p.x), y: scales[layer].y(p.y) }); }); });
+          var selectedPath = points.filter(function (p) { return p.i === selected; }).sort(function (a, b) { return a.layer - b.layer; });
+          var line = d3.line().x(function (d) { return d.x; }).y(function (d) { return d.y; }).curve(d3.curveCatmullRom.alpha(0.5));
+          root.selectAll('path.journey').data([selectedPath]).join('path').attr('class', 'journey').attr('d', line);
+          root.selectAll('circle.journey-node').data(selectedPath).join('circle').attr('class', 'journey-node').attr('cx', function (d) { return d.x; }).attr('cy', function (d) { return d.y; }).attr('r', 6);
+
+          var circles = root.selectAll('circle.sample').data(points, function (d) { return d.layer + '-' + d.i; }).join('circle').attr('class', function (d) { return 'sample ' + (d.t ? 'class-b' : 'class-a') + (d.i === selected ? ' selected' : ''); }).attr('clip-path', function (d) { return 'url(#clip-repr-' + d.layer + ')'; }).attr('cx', function (d) { return d.x; }).attr('cy', function (d) { return d.y; }).attr('r', function (d) { return d.i === selected ? 7 : 4.5; });
+          circles.filter(function (d) { return d.layer === 0; }).style('cursor', 'grab').on('pointerdown', function (event, d) { selected = d.i; dragging = true; node.setPointerCapture(event.pointerId); event.preventDefault(); draw(); });
+
+          var finalSummary = summary(projected[3], labels);
+          outputs.within.textContent = Lec.P.formatNumber(finalSummary.within, 2);
+          outputs.between.textContent = Lec.P.formatNumber(finalSummary.between, 2);
+          outputs.separable.textContent = Lec.P.formatPercent(finalSummary.separability, 0, false);
+          outputs.withinMeter.style.setProperty('--meter', Math.min(100, finalSummary.within * 45) + '%');
+          outputs.betweenMeter.style.setProperty('--meter', Math.min(100, finalSummary.between * 36) + '%');
+          outputs.sepMeter.style.setProperty('--meter', Math.min(100, finalSummary.separability * 100) + '%');
+          outputs.note.textContent = checks.every(function (c) { return c.checked; }) ? '网络正在重排空间；关闭任一层，比较最终表示是否仍易于线性读出。' : '层被旁路后，后续坐标与三项质量指标已立即重算。';
+        }
+
+        function moveSelected(dx, dy) {
+          samples[selected].x[0] = Math.max(-1.6, Math.min(1.6, samples[selected].x[0] + dx));
+          samples[selected].x[1] = Math.max(-1.6, Math.min(1.6, samples[selected].x[1] + dy));
+          draw();
+        }
+
+        node.addEventListener('pointermove', function (event) {
+          if (!dragging) { return; }
+          var pt = Deck.pt(node, event);
+          var p = panels[0];
+          var x = (pt.x - (p.x + 20)) / (p.w - 40) * 3.2 - 1.6;
+          var y = 1.6 - (pt.y - (p.y + 76)) / (p.h - 96) * 3.2;
+          samples[selected].x[0] = Math.max(-1.6, Math.min(1.6, x));
+          samples[selected].x[1] = Math.max(-1.6, Math.min(1.6, y));
+          draw();
+        });
+        function endDrag(event) { if (dragging) { dragging = false; if (node.hasPointerCapture(event.pointerId)) { node.releasePointerCapture(event.pointerId); } } }
+        node.addEventListener('pointerup', endDrag);
+        node.addEventListener('pointercancel', endDrag);
+        node.addEventListener('keydown', function (event) {
+          var step = event.shiftKey ? 0.12 : 0.04;
+          if (event.key === 'ArrowLeft') { moveSelected(-step, 0); }
+          else if (event.key === 'ArrowRight') { moveSelected(step, 0); }
+          else if (event.key === 'ArrowUp') { moveSelected(0, step); }
+          else if (event.key === 'ArrowDown') { moveSelected(0, -step); }
+          else if (event.key === 'Enter' || event.key === ' ') { selected = (selected + 1) % samples.length; draw(); }
+          else { return; }
+          event.preventDefault();
+        });
+
+        checks.forEach(function (check) { check.addEventListener('change', function () { draw(); }); });
+        pauseButton.addEventListener('click', function () { paused = !paused; pauseButton.textContent = paused ? '继续训练' : '暂停训练'; pauseButton.setAttribute('aria-pressed', String(paused)); });
+        resetButton.addEventListener('click', function () { samples = makeSamples(); selected = 0; initModel(); paused = false; pauseButton.textContent = '暂停训练'; pauseButton.setAttribute('aria-pressed', 'false'); draw(); });
+
+        samples = makeSamples();
+        initModel();
+        layout();
+        draw();
+        Deck.onResize(function () { layout(); draw(); });
+        Deck.loop(function (time) {
+          var k;
+          if (!paused && !dragging) {
+            for (k = 0; k < 10; k += 1) { trainOne(samples[(stepCount + k * 7) % samples.length]); }
+          }
+          if (time - lastDraw > 90 || Deck.reduced()) { draw(); lastDraw = time; }
+        }, { still: 0 });
+      }
+
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', boot, { once: true });
+      } else {
+        boot();
+      }
+    }());
+  </script>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+</body>
+</html>

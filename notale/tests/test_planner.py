@@ -23,7 +23,6 @@ def _page(
         "learning_action": "解释这个动作",
         "narrative_role": "推进主线",
         "links": links or [],
-        "skills": [],
         "tools": [],
     }
 

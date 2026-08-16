@@ -7,7 +7,7 @@ import uuid
 from pathlib import Path
 
 from notale.core.models import PageRun, PageRunStatus, RunState
-from notale.core.models import DesignSkillRef
+from notale.core.models import DesignSkillRef, StylePackRef
 
 
 def now() -> str:
@@ -69,11 +69,16 @@ class RunStore:
         self.state.style_error = ""
         self.save()
 
-    def finish_style(self, reference: DesignSkillRef) -> None:
+    def finish_style(
+        self,
+        reference: DesignSkillRef,
+        pack: StylePackRef | None = None,
+    ) -> None:
         if self.state.style_status != "running":
             raise ValueError(f"style is not running: {self.state.style_status}")
         self.state.style_status = "completed"
         self.state.style = reference
+        self.state.style_pack = pack
         self.state.style_error = ""
         self.save()
 

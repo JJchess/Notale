@@ -1,0 +1,449 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+</head>
+<body data-page="16" data-total="20">
+<div id="stage">
+  <main class="page">
+    <header id="lec-header" class="page-header"></header>
+
+    <section class="page-body split min0" aria-label="地球静止轨道实验">
+      <figure class="visual-shell min0" aria-label="可旋转的地球、地面站、卫星轨道和地面投影轨迹">
+        <canvas id="geo-view" class="cv-fill no-pan" tabindex="0" aria-label="三维地球场景。拖动可旋转视角，也可使用右侧按钮切换视角。"></canvas>
+      </figure>
+
+      <aside class="panel control-panel min0" aria-label="轨道参数与观测结果">
+        <div class="panel-heading">
+          <p class="panel-kicker">GROUND TRACK LAB</p>
+          <h2 class="panel-title">让投影钉在地面站上</h2>
+          <p class="panel-description">先把周期调到与地球自转相同，再分别加入倾角与偏心率。看见周期相同，只说明每天回到原处；投影未必一直不动。</p>
+        </div>
+
+        <div class="readout-grid">
+          <div class="readout">
+            <span class="readout-label">卫星周期</span>
+            <strong id="orbit-period" class="readout-value">—</strong>
+          </div>
+          <div class="readout is-blue">
+            <span class="readout-label">地球恒星日</span>
+            <strong id="earth-period" class="readout-value">—</strong>
+          </div>
+        </div>
+
+        <div class="control-group">
+          <div class="control-row">
+            <label class="control-label" for="altitude">轨道高度</label>
+            <input id="altitude" type="range" aria-describedby="altitude-hint">
+            <output id="altitude-value" class="control-value" for="altitude">—</output>
+          </div>
+          <p id="altitude-hint" class="control-hint">同步高度标记来自当前地球参数</p>
+        </div>
+
+        <div class="control-group">
+          <div class="control-row">
+            <label class="control-label" for="inclination">轨道倾角</label>
+            <input id="inclination" type="range">
+            <output id="inclination-value" class="control-value" for="inclination">—</output>
+          </div>
+        </div>
+
+        <div class="control-group">
+          <div class="control-row">
+            <label class="control-label" for="eccentricity">偏心率</label>
+            <input id="eccentricity" type="range">
+            <output id="eccentricity-value" class="control-value" for="eccentricity">—</output>
+          </div>
+        </div>
+
+        <button id="view-button" type="button">换个视角观察轨道面</button>
+
+        <div id="verdict" class="callout" aria-live="polite">
+          <strong id="verdict-title" class="callout-title">—</strong>
+          <p id="verdict-copy">—</p>
+        </div>
+      </aside>
+    </section>
+
+    <footer id="lec-footer" class="page-footer"></footer>
+  </main>
+
+  <script src="assets/lib/three.min.js"></script>
+  <script>
+  document.addEventListener("DOMContentLoaded", function () {
+    "use strict";
+
+    Lec.mount({
+      index: 16,
+      kicker: `GEOSTATIONARY`,
+      title: `怎样让卫星一直停在同一片天空`,
+      take: `“固定在天空”不是停止运动，而是让卫星周期与地球自转周期匹配。`
+    });
+
+    var K = Lec.K;
+    var P = Lec.P;
+    var stage = document.getElementById("stage");
+    var header = stage.querySelector("#lec-header");
+    var footer = stage.querySelector("#lec-footer");
+    header.classList.add("page-header");
+    footer.classList.add("page-footer");
+    header.querySelector(".lec-header__kicker").classList.add("kicker");
+    header.querySelector(".lec-header__title").classList.add("page-title");
+    header.querySelector(".lec-header__top").classList.add("cluster");
+    header.querySelector(".lec-header__index").classList.add("page-number");
+    footer.querySelector(".lec-footer__topic").classList.add("footer-meta");
+
+    var canvas = stage.querySelector("#geo-view");
+    var shell = canvas.parentElement;
+    var altitudeInput = stage.querySelector("#altitude");
+    var inclinationInput = stage.querySelector("#inclination");
+    var eccentricityInput = stage.querySelector("#eccentricity");
+    var altitudeValue = stage.querySelector("#altitude-value");
+    var inclinationValue = stage.querySelector("#inclination-value");
+    var eccentricityValue = stage.querySelector("#eccentricity-value");
+    var orbitPeriod = stage.querySelector("#orbit-period");
+    var earthPeriod = stage.querySelector("#earth-period");
+    var verdict = stage.querySelector("#verdict");
+    var verdictTitle = stage.querySelector("#verdict-title");
+    var verdictCopy = stage.querySelector("#verdict-copy");
+    var viewButton = stage.querySelector("#view-button");
+
+    var geoAltitude = P.geostationaryAltitude(null, K.SIDEREAL_DAY);
+    var geoRadius = P.geostationaryRadius(K.MU_EARTH, K.SIDEREAL_DAY);
+    var radiusCheck = P.orbitalRadiusForPeriod(K.SIDEREAL_DAY, K.MU_EARTH);
+    var altitudeMin = geoAltitude * K.HALF;
+    var altitudeMax = geoAltitude * (K.ONE + K.HALF);
+    var altitudeStep = geoAltitude / K.HUNDRED;
+    var inclinationMax = P.radiansToDegrees(K.HALF_PI);
+    var eccentricityMax = K.ONE_THIRD;
+    var eccentricityStep = K.ONE / K.HUNDRED;
+
+    altitudeInput.min = String(altitudeMin);
+    altitudeInput.max = String(altitudeMax);
+    altitudeInput.step = String(altitudeStep);
+    altitudeInput.value = String(geoAltitude);
+    inclinationInput.min = String(K.ZERO);
+    inclinationInput.max = String(inclinationMax);
+    inclinationInput.step = String(K.ONE);
+    inclinationInput.value = String(K.ZERO);
+    eccentricityInput.min = String(K.ZERO);
+    eccentricityInput.max = String(eccentricityMax);
+    eccentricityInput.step = String(eccentricityStep);
+    eccentricityInput.value = String(K.ZERO);
+
+    function themeColor(name) {
+      var c = Deck.rgb(name);
+      return new THREE.Color("rgb(" + c.join(",") + ")");
+    }
+
+    function durationText(seconds) {
+      var d = P.formatDuration(seconds);
+      if (d.days > K.ZERO) {
+        return d.days + " d " + d.hours + " h";
+      }
+      return d.hours + " h " + d.minutes + " min";
+    }
+
+    var scene = new THREE.Scene();
+    scene.background = themeColor("surface-inset");
+    var camera = new THREE.PerspectiveCamera(
+      P.radiansToDegrees(K.PI / K.FOUR),
+      K.ONE,
+      K.ONE / K.HUNDRED,
+      K.HUNDRED
+    );
+    var renderer = new THREE.WebGLRenderer({canvas: canvas, antialias: true, alpha: false});
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.setPixelRatio(Deck.ratio());
+
+    scene.add(new THREE.HemisphereLight(themeColor("accent-blue"), themeColor("surface-0"), K.ONE));
+    var keyLight = new THREE.DirectionalLight(themeColor("ink-strong"), K.TWO);
+    keyLight.position.set(K.FOUR, K.SIX, K.EIGHT);
+    scene.add(keyLight);
+
+    var earthGroup = new THREE.Group();
+    scene.add(earthGroup);
+    var earth = new THREE.Mesh(
+      new THREE.SphereGeometry(K.ONE, K.HUNDRED / K.TWO, K.HUNDRED / K.FOUR),
+      new THREE.MeshStandardMaterial({
+        color: themeColor("surface-3"),
+        emissive: themeColor("surface-1"),
+        roughness: K.ONE,
+        metalness: K.ZERO
+      })
+    );
+    earthGroup.add(earth);
+
+    var wire = new THREE.LineSegments(
+      new THREE.WireframeGeometry(new THREE.SphereGeometry(K.ONE * (K.ONE + K.ONE / K.HUNDRED), K.HUNDRED / K.FOUR, K.HUNDRED / K.EIGHT)),
+      new THREE.LineBasicMaterial({color: themeColor("line-strong"), transparent: true, opacity: K.HALF})
+    );
+    earthGroup.add(wire);
+
+    var equatorPoints = [];
+    var sampleCount = K.HUNDRED;
+    var j;
+    for (j = K.ZERO; j <= sampleCount; j += K.ONE) {
+      var ea = K.TWO_PI * j / sampleCount;
+      equatorPoints.push(new THREE.Vector3(Math.cos(ea) * (K.ONE + K.ONE / K.HUNDRED), K.ZERO, Math.sin(ea) * (K.ONE + K.ONE / K.HUNDRED)));
+    }
+    earthGroup.add(new THREE.Line(
+      new THREE.BufferGeometry().setFromPoints(equatorPoints),
+      new THREE.LineBasicMaterial({color: themeColor("accent-blue"), transparent: true, opacity: K.HALF})
+    ));
+
+    var station = new THREE.Group();
+    var stationMast = new THREE.Mesh(
+      new THREE.CylinderGeometry(K.ONE / K.HUNDRED, K.ONE / (K.HUNDRED / K.TWO), K.ONE / K.TEN, K.EIGHT),
+      new THREE.MeshStandardMaterial({color: themeColor("accent-warm"), emissive: themeColor("accent-warm")})
+    );
+    stationMast.rotation.z = -K.HALF_PI;
+    stationMast.position.x = K.ONE + K.ONE / (K.HUNDRED / K.TEN);
+    station.add(stationMast);
+    var stationRing = new THREE.Mesh(
+      new THREE.TorusGeometry(K.ONE / (K.HUNDRED / K.FOUR), K.ONE / K.HUNDRED, K.EIGHT, K.HUNDRED / K.FOUR),
+      new THREE.MeshBasicMaterial({color: themeColor("accent-warm")})
+    );
+    stationRing.rotation.y = K.HALF_PI;
+    stationRing.position.x = K.ONE + K.ONE / K.TEN;
+    station.add(stationRing);
+    earthGroup.add(station);
+
+    var subpoint = new THREE.Mesh(
+      new THREE.SphereGeometry(K.ONE / (K.HUNDRED / K.THREE), K.TEN, K.EIGHT),
+      new THREE.MeshBasicMaterial({color: themeColor("accent")})
+    );
+    earthGroup.add(subpoint);
+
+    var satellite = new THREE.Group();
+    var satBody = new THREE.Mesh(
+      new THREE.BoxGeometry(K.ONE / K.TEN, K.ONE / K.TEN, K.ONE / K.TEN),
+      new THREE.MeshStandardMaterial({color: themeColor("ink-strong"), metalness: K.HALF, roughness: K.HALF})
+    );
+    satellite.add(satBody);
+    var panelGeometry = new THREE.BoxGeometry(K.HALF, K.ONE / K.HUNDRED, K.ONE / K.TEN);
+    var panelMaterial = new THREE.MeshStandardMaterial({color: themeColor("accent-blue"), emissive: themeColor("accent-blue")});
+    satellite.add(new THREE.Mesh(panelGeometry, panelMaterial));
+    scene.add(satellite);
+
+    var orbitLine = new THREE.Line(
+      new THREE.BufferGeometry(),
+      new THREE.LineBasicMaterial({color: themeColor("accent-blue"), transparent: true, opacity: K.HALF})
+    );
+    scene.add(orbitLine);
+    var trackLine = new THREE.Line(
+      new THREE.BufferGeometry(),
+      new THREE.LineBasicMaterial({color: themeColor("accent"), transparent: true, opacity: K.ONE})
+    );
+    earthGroup.add(trackLine);
+    var projectionLine = new THREE.Line(
+      new THREE.BufferGeometry(),
+      new THREE.LineDashedMaterial({color: themeColor("accent"), dashSize: K.ONE / K.TEN, gapSize: K.ONE / K.TEN})
+    );
+    scene.add(projectionLine);
+
+    var state = {
+      altitude: geoAltitude,
+      inclination: K.ZERO,
+      eccentricity: K.ZERO,
+      time: K.ZERO,
+      r: new THREE.Vector3(),
+      v: new THREE.Vector3(),
+      track: []
+    };
+    var yaw = K.PI / K.FOUR;
+    var pitch = K.PI / K.SIX;
+    var cameraDistance = K.TEN + K.TWO;
+
+    function setCamera() {
+      var cp = Math.cos(pitch);
+      camera.position.set(
+        cameraDistance * Math.sin(yaw) * cp,
+        cameraDistance * Math.sin(pitch),
+        cameraDistance * Math.cos(yaw) * cp
+      );
+      camera.lookAt(K.ZERO, K.ZERO, K.ZERO);
+    }
+
+    function updateOrbitGuide() {
+      var a = P.radiusAtAltitude(state.altitude) / K.R_EARTH;
+      var e = state.eccentricity;
+      var inc = state.inclination;
+      var points = [];
+      for (var n = K.ZERO; n <= sampleCount; n += K.ONE) {
+        var nu = K.TWO_PI * n / sampleCount;
+        var rr = a * (K.ONE - e * e) / (K.ONE + e * Math.cos(nu));
+        var x = rr * Math.cos(nu);
+        var z0 = rr * Math.sin(nu);
+        points.push(new THREE.Vector3(x, z0 * Math.sin(inc), z0 * Math.cos(inc)));
+      }
+      orbitLine.geometry.dispose();
+      orbitLine.geometry = new THREE.BufferGeometry().setFromPoints(points);
+    }
+
+    function resetOrbit() {
+      state.altitude = P.clamp(Number(altitudeInput.value), altitudeMin, altitudeMax);
+      state.inclination = P.degreesToRadians(P.clamp(Number(inclinationInput.value), K.ZERO, inclinationMax));
+      state.eccentricity = P.clamp(Number(eccentricityInput.value), K.ZERO, eccentricityMax);
+      state.time = K.ZERO;
+      state.track = [];
+
+      var semiMajor = P.radiusAtAltitude(state.altitude);
+      var periapsis = P.periapsisFromApsis(semiMajor, state.eccentricity);
+      var speed = P.visVivaVelocity(periapsis, semiMajor, K.MU_EARTH);
+      state.r.set(periapsis, K.ZERO, K.ZERO);
+      state.v.set(K.ZERO, speed * Math.sin(state.inclination), speed * Math.cos(state.inclination));
+      updateOrbitGuide();
+      updateReadouts();
+      updateObjects(true);
+      renderScene();
+    }
+
+    function acceleration(position) {
+      var len = position.length();
+      return position.clone().multiplyScalar(-K.MU_EARTH / (len * len * len));
+    }
+
+    function integrate(seconds) {
+      var steps = K.SIX;
+      var h = seconds / steps;
+      for (var s = K.ZERO; s < steps; s += K.ONE) {
+        var a0 = acceleration(state.r);
+        state.r.addScaledVector(state.v, h).addScaledVector(a0, K.HALF * h * h);
+        var a1 = acceleration(state.r);
+        state.v.addScaledVector(a0.add(a1), K.HALF * h);
+      }
+      state.time += seconds;
+    }
+
+    function updateObjects(forceTrack) {
+      var earthAngle = K.OMEGA_EARTH * state.time;
+      earthGroup.rotation.y = earthAngle;
+      satellite.position.copy(state.r).divideScalar(K.R_EARTH);
+
+      var bodyPoint = state.r.clone().normalize();
+      bodyPoint.applyAxisAngle(new THREE.Vector3(K.ZERO, K.ONE, K.ZERO), -earthAngle);
+      bodyPoint.multiplyScalar(K.ONE + K.ONE / (K.HUNDRED / K.TWO));
+      subpoint.position.copy(bodyPoint);
+
+      if (forceTrack || state.track.length === K.ZERO || state.track[state.track.length - K.ONE].distanceTo(bodyPoint) > K.ONE / K.HUNDRED) {
+        state.track.push(bodyPoint.clone());
+        var maxTrack = K.HUNDRED * K.TWO;
+        if (state.track.length > maxTrack) {
+          state.track.shift();
+        }
+        trackLine.geometry.dispose();
+        trackLine.geometry = new THREE.BufferGeometry().setFromPoints(state.track);
+      }
+
+      var worldSubpoint = bodyPoint.clone().applyAxisAngle(new THREE.Vector3(K.ZERO, K.ONE, K.ZERO), earthAngle);
+      projectionLine.geometry.dispose();
+      projectionLine.geometry = new THREE.BufferGeometry().setFromPoints([worldSubpoint, satellite.position.clone()]);
+      projectionLine.computeLineDistances();
+    }
+
+    function updateReadouts() {
+      var period = P.orbitalPeriodAtAltitude(state.altitude);
+      var periodError = Math.abs(period - K.SIDEREAL_ROTATION_PERIOD) / K.SIDEREAL_ROTATION_PERIOD;
+      var periodMatched = periodError <= K.ONE / K.HUNDRED;
+      var planeMatched = Math.abs(state.inclination) <= P.degreesToRadians(K.ONE / K.HUNDRED);
+      var circleMatched = state.eccentricity <= K.ONE / K.HUNDRED;
+
+      altitudeValue.textContent = P.formatDistance(state.altitude);
+      inclinationValue.textContent = P.formatNumber(P.radiansToDegrees(state.inclination)) + "°";
+      eccentricityValue.textContent = P.formatNumber(state.eccentricity);
+      orbitPeriod.textContent = durationText(period);
+      earthPeriod.textContent = durationText(K.SIDEREAL_DAY);
+      stage.querySelector("#altitude-hint").textContent = "同步高度：" + P.formatDistance(geoAltitude) + " · 半径校验：" + P.formatDistance(radiusCheck);
+
+      verdict.className = "callout";
+      if (periodMatched && planeMatched && circleMatched) {
+        verdictTitle.textContent = "地球静止条件同时满足";
+        verdictCopy.textContent = "周期匹配、轨道在赤道面内且为圆形；投影会留在地面站附近。卫星仍在高速绕行。";
+      } else if (periodMatched) {
+        verdict.classList.add("is-warm");
+        verdictTitle.textContent = "同步，但不静止";
+        verdictCopy.textContent = "周期已经匹配；倾角会让投影南北摆动，偏心率会让投影东西往返。";
+      } else {
+        verdict.classList.add("is-danger");
+        verdictTitle.textContent = "投影持续漂移";
+        verdictCopy.textContent = "卫星周期与恒星日不同，地球每转一圈后，它不会回到同一经度。";
+      }
+    }
+
+    function resizeRenderer() {
+      var w = shell.offsetWidth;
+      var h = shell.offsetHeight;
+      if (!w || !h) {
+        return;
+      }
+      renderer.setPixelRatio(Deck.ratio());
+      renderer.setSize(w, h, false);
+      camera.aspect = w / h;
+      camera.updateProjectionMatrix();
+      renderScene();
+    }
+
+    function renderScene() {
+      setCamera();
+      renderer.render(scene, camera);
+    }
+
+    [altitudeInput, inclinationInput, eccentricityInput].forEach(function (input) {
+      input.addEventListener("input", resetOrbit);
+    });
+
+    viewButton.addEventListener("click", function () {
+      yaw += K.PI / K.FOUR;
+      pitch = pitch > K.ZERO ? -K.PI / K.SIX : K.PI / K.SIX;
+      renderScene();
+    });
+
+    var dragging = false;
+    var lastPoint = null;
+    canvas.addEventListener("pointerdown", function (event) {
+      dragging = true;
+      lastPoint = Deck.pt(canvas, event);
+      canvas.setPointerCapture(event.pointerId);
+    });
+    canvas.addEventListener("pointermove", function (event) {
+      if (!dragging) {
+        return;
+      }
+      var point = Deck.pt(canvas, event);
+      yaw -= (point.x - lastPoint.x) / canvas.offsetWidth * K.TWO_PI;
+      pitch = P.clamp(pitch + (point.y - lastPoint.y) / canvas.offsetHeight * K.PI, -K.PI / K.THREE, K.PI / K.THREE);
+      lastPoint = point;
+      renderScene();
+    });
+    canvas.addEventListener("pointerup", function (event) {
+      dragging = false;
+      lastPoint = null;
+      canvas.releasePointerCapture(event.pointerId);
+    });
+    canvas.addEventListener("pointercancel", function () {
+      dragging = false;
+      lastPoint = null;
+    });
+
+    Deck.onResize(resizeRenderer);
+    resizeRenderer();
+    resetOrbit();
+
+    Deck.loop(function (elapsed, dt) {
+      if (dt > K.ZERO) {
+        var simulatedSeconds = dt / K.THOUSAND * (K.SIDEREAL_DAY / K.MINUTE);
+        integrate(simulatedSeconds);
+        updateObjects(false);
+      }
+      renderScene();
+    }, {still: K.ZERO});
+  });
+  </script>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+</body>
+</html>

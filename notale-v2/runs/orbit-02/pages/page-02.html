@@ -1,0 +1,575 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+</head>
+<body data-page="02" data-total="20">
+<div id="stage">
+<style>
+  .orbit-page {
+    grid-template-rows: minmax(0, 1fr);
+    grid-template-areas: "main";
+  }
+  .orbit-page .orbit-lab {
+    position: relative;
+    block-size: 100%;
+    min-block-size: 0;
+    overflow: hidden;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-lg);
+    background:
+      radial-gradient(circle at 36% 48%, var(--accent-2-soft), transparent 38%),
+      linear-gradient(145deg, var(--surface-inset), var(--surface-1));
+    box-shadow: var(--shadow-panel);
+    isolation: isolate;
+  }
+  .orbit-page .webgl-host,
+  .orbit-page .webgl-host canvas {
+    position: absolute;
+    inset: 0;
+    inline-size: 100%;
+    block-size: 100%;
+  }
+  .orbit-page .webgl-host canvas {
+    display: block;
+    cursor: grab;
+  }
+  .orbit-page .webgl-host canvas:active { cursor: grabbing; }
+  .orbit-page .webgl-host canvas:focus-visible {
+    outline: 3px solid var(--focus);
+    outline-offset: -5px;
+  }
+  .orbit-page .scene-guide {
+    position: absolute;
+    inset-block-start: var(--space-5);
+    inset-inline-start: var(--space-5);
+    z-index: 2;
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    max-inline-size: 46ch;
+    margin: 0;
+    padding: var(--space-3) var(--space-4);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-md);
+    color: var(--text-muted);
+    background: var(--surface-glass);
+    font-size: var(--fs-small);
+    line-height: var(--lh-body);
+    pointer-events: none;
+  }
+  .orbit-page .guide-mark {
+    inline-size: 12px;
+    block-size: 12px;
+    flex: 0 0 auto;
+    border: 2px solid var(--accent-strong);
+    border-radius: 50%;
+    box-shadow: 0 0 0 5px var(--accent-soft);
+  }
+  .orbit-page .shell-key {
+    position: absolute;
+    inset-block-start: var(--space-5);
+    inset-inline-end: var(--space-5);
+    z-index: 2;
+    display: grid;
+    gap: var(--space-2);
+    padding: var(--space-3) var(--space-4);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-md);
+    background: var(--surface-glass);
+    pointer-events: none;
+  }
+  .orbit-page .shell-item {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    color: var(--text-muted);
+    font-size: var(--fs-caption);
+    line-height: var(--lh-tight);
+  }
+  .orbit-page .shell-line {
+    inline-size: 24px;
+    block-size: 0;
+    border-block-start: 2px solid var(--accent);
+  }
+  .orbit-page .shell-item:last-child .shell-line {
+    border-block-start-color: var(--accent-2);
+    border-block-start-style: dashed;
+  }
+  .orbit-page .hud {
+    position: absolute;
+    inset-inline: var(--space-5);
+    inset-block-end: var(--space-5);
+    z-index: 3;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: var(--space-4);
+    align-items: end;
+  }
+  .orbit-page .measurements {
+    --readout-cols: 4;
+    min-inline-size: 0;
+    padding: var(--space-3);
+    background: var(--surface-glass);
+  }
+  .orbit-page .measurements .readout {
+    min-block-size: 88px;
+    padding: var(--space-3) var(--space-4);
+  }
+  .orbit-page .measurements .readout-value {
+    font-size: var(--fs-h3);
+  }
+  .orbit-page .mode-card {
+    display: grid;
+    gap: var(--space-3);
+    min-inline-size: 374px;
+    padding: var(--space-4);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-lg);
+    background: var(--surface-glass);
+    box-shadow: var(--shadow-panel);
+  }
+  .orbit-page .mode-card__top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-4);
+  }
+  .orbit-page .mode-card .segmented { inline-size: 100%; }
+  .orbit-page .mode-card .segmented button {
+    min-inline-size: 0;
+    padding-inline: var(--space-3);
+    font-size: var(--fs-label);
+  }
+  .orbit-page .mode-explain {
+    margin: 0;
+    color: var(--text-muted);
+    font-size: var(--fs-small);
+    line-height: var(--lh-body);
+  }
+  .orbit-page .reset-button {
+    min-block-size: 40px;
+    padding: var(--space-2) var(--space-4);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .orbit-page * { scroll-behavior: auto; transition-duration: 0.01ms; }
+  }
+</style>
+
+<main class="focus orbit-page" aria-label="太空边界与重力实验">
+  <section class="layout-main orbit-lab min0" aria-label="沿地球径向移动飞船并比较重力与支持力">
+    <div id="webglHost" class="webgl-host no-pan"></div>
+    <p id="sceneGuide" class="scene-guide"><span class="guide-mark" aria-hidden="true"></span>拖动飞船改变高度；拖动地球可旋转观察。键盘方向键也可操作。</p>
+    <div class="shell-key" aria-label="参照高度壳层">
+      <div class="shell-item"><span class="shell-line" aria-hidden="true"></span><span id="karmanLabel">卡门线</span></div>
+      <div class="shell-item"><span class="shell-line" aria-hidden="true"></span><span id="issLabel">近地轨道参照</span></div>
+    </div>
+
+    <div class="hud">
+      <div class="readout-panel measurements" aria-live="polite">
+        <div class="readout readout--accent">
+          <span class="readout-label">距地表高度</span>
+          <strong id="altitudeOut" class="readout-value">—</strong>
+        </div>
+        <div class="readout">
+          <span class="readout-label">当地重力 g</span>
+          <strong id="gravityOut" class="readout-value">—</strong>
+          <span id="gravityRatio" class="readout-unit">—</span>
+        </div>
+        <div class="readout">
+          <span class="readout-label">单位质量物体的重量</span>
+          <strong id="weightOut" class="readout-value">—</strong>
+        </div>
+        <div class="readout">
+          <span class="readout-label">秤的支持力读数</span>
+          <strong id="supportOut" class="readout-value">—</strong>
+          <span id="stateBadge" class="readout-unit">—</span>
+        </div>
+      </div>
+
+      <div class="mode-card">
+        <div class="mode-card__top">
+          <span class="control-label">怎样测“重量”？</span>
+          <button id="resetBtn" class="button--quiet reset-button" type="button">复位</button>
+        </div>
+        <div class="segmented" aria-label="测量状态">
+          <button id="supportBtn" type="button" aria-pressed="true">站在支架上</button>
+          <button id="fallBtn" type="button" aria-pressed="false">一起自由下落</button>
+        </div>
+        <p id="modeExplain" class="mode-explain">支架推住物体：秤读数等于重量。</p>
+      </div>
+    </div>
+  </section>
+</main>
+
+<script src="assets/lib/three.min.js"></script>
+<script>
+window.addEventListener('DOMContentLoaded', function () {
+  'use strict';
+
+  Lec.mount({
+    index: 2,
+    kicker: `NOT-ZERO-G`,
+    title: `越过“太空边界”，重力不会突然<em>关机</em>`,
+    take: `进入太空主要意味着离开稠密大气，不意味着离开地球引力。`
+  });
+  const mountedTitle = document.querySelector('#lec-header .lec-header__title');
+  if (mountedTitle) mountedTitle.innerHTML = mountedTitle.textContent;
+
+  const host = document.getElementById('webglHost');
+  const supportBtn = document.getElementById('supportBtn');
+  const fallBtn = document.getElementById('fallBtn');
+  const resetBtn = document.getElementById('resetBtn');
+  const altitudeOut = document.getElementById('altitudeOut');
+  const gravityOut = document.getElementById('gravityOut');
+  const gravityRatio = document.getElementById('gravityRatio');
+  const weightOut = document.getElementById('weightOut');
+  const supportOut = document.getElementById('supportOut');
+  const stateBadge = document.getElementById('stateBadge');
+  const modeExplain = document.getElementById('modeExplain');
+
+  document.getElementById('karmanLabel').textContent =
+    '卡门线 · ' + Lec.P.formatDistance(Lec.K.KARMAN_ALTITUDE, 0);
+  document.getElementById('issLabel').textContent =
+    '近地轨道参照 · ' + Lec.P.formatDistance(Lec.K.ISS_ALTITUDE, 0);
+
+  function themeColor(name) {
+    const rgb = Deck.rgb(name);
+    return new THREE.Color(rgb[0] / 255, rgb[1] / 255, rgb[2] / 255);
+  }
+
+  const colors = {
+    bg: themeColor('surface-inset'),
+    earth: themeColor('accent-2'),
+    ocean: themeColor('surface-3'),
+    core: themeColor('warm'),
+    mantle: themeColor('danger'),
+    crust: themeColor('accent-2'),
+    line: themeColor('line-strong'),
+    karman: themeColor('accent'),
+    iss: themeColor('accent-2'),
+    ship: themeColor('text-strong'),
+    gravity: themeColor('warm'),
+    support: themeColor('success')
+  };
+
+  const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+  renderer.setClearColor(colors.bg, 0);
+  host.appendChild(renderer.domElement);
+
+  const canvas = renderer.domElement;
+  canvas.tabIndex = 0;
+  canvas.setAttribute('role', 'slider');
+  canvas.setAttribute('aria-label', '飞船径向高度；上下键改变高度，Shift 加左右键旋转地球');
+  canvas.setAttribute('aria-describedby', 'sceneGuide');
+
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(36, 1, 0.1, 100);
+  camera.position.set(0, 0.1, 12.5);
+  camera.lookAt(0, 0, 0);
+
+  scene.add(new THREE.HemisphereLight(colors.ship, colors.bg, 1.7));
+  const keyLight = new THREE.DirectionalLight(colors.ship, 2.6);
+  keyLight.position.set(5, 6, 8);
+  scene.add(keyLight);
+  const rimLight = new THREE.DirectionalLight(colors.karman, 1.5);
+  rimLight.position.set(-6, 1, 3);
+  scene.add(rimLight);
+
+  const world = new THREE.Group();
+  world.position.set(-1.15, 0.15, 0);
+  world.rotation.x = -0.12;
+  world.rotation.y = -0.2;
+  scene.add(world);
+
+  const visualEarthRadius = 3;
+  const radiusScale = visualEarthRadius / Lec.K.EARTH_RADIUS;
+  const maxAltitude = Lec.K.ISS_ALTITUDE * 1.34;
+  const defaultAltitude = Lec.K.KARMAN_ALTITUDE * 0.56;
+  const radialAngle = Math.PI * 0.2;
+  const unitMass = Lec.K.EARTH_MASS / Lec.K.EARTH_MASS;
+  const surfaceAltitude = Lec.P.altitudeFromRadius(Lec.K.EARTH_RADIUS);
+  const surfaceGravity = Lec.P.gravityAtAltitude(surfaceAltitude);
+
+  const earth = new THREE.Mesh(
+    new THREE.SphereGeometry(visualEarthRadius, 64, 40),
+    new THREE.MeshStandardMaterial({
+      color: colors.ocean,
+      roughness: 0.7,
+      metalness: 0.08,
+      transparent: true,
+      opacity: 0.94
+    })
+  );
+  world.add(earth);
+
+  const grid = new THREE.LineSegments(
+    new THREE.WireframeGeometry(new THREE.SphereGeometry(visualEarthRadius * 1.004, 24, 14)),
+    new THREE.LineBasicMaterial({ color: colors.line, transparent: true, opacity: 0.34 })
+  );
+  world.add(grid);
+
+  function halfDisc(radius, color, z) {
+    const shape = new THREE.Shape();
+    shape.moveTo(0, -radius);
+    shape.absarc(0, 0, radius, -Math.PI / 2, Math.PI / 2, false);
+    shape.lineTo(0, -radius);
+    const mesh = new THREE.Mesh(
+      new THREE.ShapeGeometry(shape, 48),
+      new THREE.MeshStandardMaterial({ color: color, roughness: 0.8, side: THREE.DoubleSide })
+    );
+    mesh.position.z = z;
+    return mesh;
+  }
+  world.add(halfDisc(visualEarthRadius * 0.995, colors.crust, 2.25));
+  world.add(halfDisc(visualEarthRadius * 0.72, colors.mantle, 2.28));
+  world.add(halfDisc(visualEarthRadius * 0.38, colors.core, 2.31));
+
+  function shellForAltitude(altitude, color, dashed) {
+    const radius = (Lec.K.EARTH_RADIUS + altitude) * radiusScale;
+    const material = new THREE.LineDashedMaterial({
+      color: color,
+      transparent: true,
+      opacity: dashed ? 0.78 : 0.9,
+      dashSize: dashed ? 0.1 : 100,
+      gapSize: dashed ? 0.065 : 0
+    });
+    const shell = new THREE.LineSegments(
+      new THREE.EdgesGeometry(new THREE.SphereGeometry(radius, 36, 20)),
+      material
+    );
+    if (dashed) shell.computeLineDistances();
+    world.add(shell);
+    return shell;
+  }
+  shellForAltitude(Lec.K.KARMAN_ALTITUDE, colors.karman, false);
+  shellForAltitude(Lec.K.ISS_ALTITUDE, colors.iss, true);
+
+  const radialGeometry = new THREE.BufferGeometry().setFromPoints([
+    new THREE.Vector3(visualEarthRadius * Math.cos(radialAngle), visualEarthRadius * Math.sin(radialAngle), 0),
+    new THREE.Vector3((Lec.K.EARTH_RADIUS + maxAltitude) * radiusScale * Math.cos(radialAngle), (Lec.K.EARTH_RADIUS + maxAltitude) * radiusScale * Math.sin(radialAngle), 0)
+  ]);
+  world.add(new THREE.Line(radialGeometry, new THREE.LineBasicMaterial({ color: colors.line, transparent: true, opacity: 0.72 })));
+
+  const ship = new THREE.Group();
+  const body = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.075, 0.105, 0.34, 16),
+    new THREE.MeshStandardMaterial({ color: colors.ship, metalness: 0.55, roughness: 0.28 })
+  );
+  const nose = new THREE.Mesh(
+    new THREE.ConeGeometry(0.105, 0.19, 16),
+    new THREE.MeshStandardMaterial({ color: colors.karman, metalness: 0.4, roughness: 0.3 })
+  );
+  nose.position.y = 0.265;
+  const wingGeometry = new THREE.BoxGeometry(0.34, 0.04, 0.12);
+  const wing = new THREE.Mesh(wingGeometry, new THREE.MeshStandardMaterial({ color: colors.iss, metalness: 0.45, roughness: 0.35 }));
+  wing.position.y = -0.04;
+  ship.add(body, nose, wing);
+  ship.rotation.z = radialAngle - Math.PI / 2;
+  world.add(ship);
+
+  const strut = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.018, 0.018, 1, 8),
+    new THREE.MeshStandardMaterial({ color: colors.support, metalness: 0.4, roughness: 0.5 })
+  );
+  world.add(strut);
+
+  const gravityArrow = new THREE.ArrowHelper(
+    new THREE.Vector3(-Math.cos(radialAngle), -Math.sin(radialAngle), 0),
+    new THREE.Vector3(), 0.56, colors.gravity, 0.15, 0.08
+  );
+  world.add(gravityArrow);
+  const supportArrow = new THREE.ArrowHelper(
+    new THREE.Vector3(Math.cos(radialAngle), Math.sin(radialAngle), 0),
+    new THREE.Vector3(), 0.56, colors.support, 0.15, 0.08
+  );
+  world.add(supportArrow);
+
+  const state = {
+    altitude: defaultAltitude,
+    mode: 'support',
+    action: '',
+    pointerId: null,
+    lastX: 0,
+    lastY: 0,
+    dirty: true,
+    width: 1,
+    height: 1,
+    shipScreen: new THREE.Vector2()
+  };
+
+  function localPoint(radius) {
+    return new THREE.Vector3(radius * Math.cos(radialAngle), radius * Math.sin(radialAngle), 0);
+  }
+
+  function projectLocal(point) {
+    const projected = world.localToWorld(point.clone()).project(camera);
+    return new THREE.Vector2(
+      (projected.x + 1) * state.width / 2,
+      (1 - projected.y) * state.height / 2
+    );
+  }
+
+  function updateModel() {
+    const orbitalRadius = Lec.K.EARTH_RADIUS + state.altitude;
+    const displayRadius = orbitalRadius * radiusScale;
+    const p = localPoint(displayRadius);
+    ship.position.copy(p);
+
+    const gravityOrigin = localPoint(displayRadius + 0.34);
+    gravityArrow.position.copy(gravityOrigin);
+    supportArrow.position.copy(localPoint(displayRadius + 0.12));
+    supportArrow.visible = state.mode === 'support';
+
+    const strutLength = Math.max(0.03, displayRadius - visualEarthRadius - 0.14);
+    const midpoint = localPoint(visualEarthRadius + strutLength / 2);
+    strut.visible = state.mode === 'support';
+    strut.position.copy(midpoint);
+    strut.scale.y = strutLength;
+    strut.rotation.z = radialAngle - Math.PI / 2;
+
+    const measuredAltitude = Lec.P.altitudeFromRadius(orbitalRadius);
+    const gravity = Lec.P.gravityAtAltitude(measuredAltitude);
+    const weight = Lec.P.weight(unitMass, measuredAltitude);
+    const support = state.mode === 'support' ? weight : weight - weight;
+
+    altitudeOut.textContent = Lec.P.formatDistance(measuredAltitude, 1);
+    gravityOut.textContent = Lec.P.formatSI(gravity, 'm/s²', 2);
+    gravityRatio.textContent = Lec.P.formatPercent(gravity / surfaceGravity, 1) + ' 地表重力';
+    weightOut.textContent = Lec.P.formatSI(weight, 'N', 2);
+    supportOut.textContent = Lec.P.formatSI(support, 'N', 2);
+    stateBadge.textContent = state.mode === 'support' ? '有支持力' : '失重 ≠ 无重力';
+    modeExplain.textContent = state.mode === 'support'
+      ? '支架推住物体：秤读数等于重量。'
+      : '自由下落：秤读数归零，但当地重力仍然存在。';
+
+    supportBtn.setAttribute('aria-pressed', String(state.mode === 'support'));
+    fallBtn.setAttribute('aria-pressed', String(state.mode === 'fall'));
+    canvas.setAttribute('aria-valuemin', String(surfaceAltitude));
+    canvas.setAttribute('aria-valuemax', String(maxAltitude));
+    canvas.setAttribute('aria-valuenow', String(Math.round(measuredAltitude)));
+    canvas.setAttribute('aria-valuetext', Lec.P.formatDistance(measuredAltitude, 1));
+    canvas.setAttribute('aria-label', '飞船高度 ' + Lec.P.formatDistance(measuredAltitude, 1) +
+      '，当地重力 ' + Lec.P.formatSI(gravity, 'm/s²', 2) +
+      '；上下键改变高度，Shift 加左右键旋转地球');
+    state.dirty = true;
+  }
+
+  function setMode(mode) {
+    state.mode = mode;
+    updateModel();
+  }
+
+  function resizeScene() {
+    state.width = Math.max(1, host.clientWidth);
+    state.height = Math.max(1, host.clientHeight);
+    renderer.setSize(state.width, state.height, false);
+    camera.aspect = state.width / state.height;
+    camera.updateProjectionMatrix();
+    state.dirty = true;
+  }
+
+  function setAltitudeFromPointer(point) {
+    const start = projectLocal(localPoint(visualEarthRadius));
+    const end = projectLocal(localPoint((Lec.K.EARTH_RADIUS + maxAltitude) * radiusScale));
+    const dx = end.x - start.x;
+    const dy = end.y - start.y;
+    const denom = dx * dx + dy * dy;
+    const t = denom > 0 ? Lec.P.clamp(((point.x - start.x) * dx + (point.y - start.y) * dy) / denom, 0, 1) : 0;
+    const radius = Lec.P.lerp(Lec.K.EARTH_RADIUS, Lec.K.EARTH_RADIUS + maxAltitude, t);
+    state.altitude = Lec.P.altitudeFromRadius(radius);
+    updateModel();
+  }
+
+  function finishPointer(event) {
+    if (state.pointerId === event.pointerId) {
+      try { canvas.releasePointerCapture(event.pointerId); } catch (ignore) {}
+      state.pointerId = null;
+      state.action = '';
+    }
+  }
+
+  canvas.addEventListener('pointerdown', function (event) {
+    const point = Deck.pt(canvas, event);
+    const distance = Math.hypot(point.x - state.shipScreen.x, point.y - state.shipScreen.y);
+    state.action = distance <= 34 ? 'altitude' : 'rotate';
+    state.pointerId = event.pointerId;
+    state.lastX = point.x;
+    state.lastY = point.y;
+    canvas.setPointerCapture(event.pointerId);
+    if (state.action === 'altitude') setAltitudeFromPointer(point);
+  });
+
+  canvas.addEventListener('pointermove', function (event) {
+    if (state.pointerId !== event.pointerId) return;
+    const point = Deck.pt(canvas, event);
+    if (state.action === 'altitude') {
+      setAltitudeFromPointer(point);
+    } else {
+      world.rotation.y += (point.x - state.lastX) * 0.007;
+      world.rotation.x = Lec.P.clamp(world.rotation.x + (point.y - state.lastY) * 0.004, -0.55, 0.4);
+      state.lastX = point.x;
+      state.lastY = point.y;
+      state.dirty = true;
+    }
+  });
+  canvas.addEventListener('pointerup', finishPointer);
+  canvas.addEventListener('pointercancel', finishPointer);
+  canvas.addEventListener('lostpointercapture', function () {
+    state.pointerId = null;
+    state.action = '';
+  });
+
+  canvas.addEventListener('keydown', function (event) {
+    const altitudeStep = Lec.K.KARMAN_ALTITUDE * 0.05;
+    let handled = true;
+    if (event.shiftKey && (event.key === 'ArrowLeft' || event.key === 'ArrowRight')) {
+      world.rotation.y += event.key === 'ArrowLeft' ? -0.08 : 0.08;
+      state.dirty = true;
+    } else if (event.key === 'ArrowUp' || event.key === 'ArrowRight') {
+      state.altitude = Lec.P.clamp(state.altitude + altitudeStep, surfaceAltitude, maxAltitude);
+      updateModel();
+    } else if (event.key === 'ArrowDown' || event.key === 'ArrowLeft') {
+      state.altitude = Lec.P.clamp(state.altitude - altitudeStep, surfaceAltitude, maxAltitude);
+      updateModel();
+    } else if (event.key === 'Home') {
+      state.altitude = surfaceAltitude;
+      updateModel();
+    } else if (event.key === 'End') {
+      state.altitude = maxAltitude;
+      updateModel();
+    } else {
+      handled = false;
+    }
+    if (handled) event.preventDefault();
+  });
+
+  supportBtn.addEventListener('click', function () { setMode('support'); });
+  fallBtn.addEventListener('click', function () { setMode('fall'); });
+  resetBtn.addEventListener('click', function () {
+    state.altitude = defaultAltitude;
+    state.mode = 'support';
+    world.rotation.set(-0.12, -0.2, 0);
+    updateModel();
+    canvas.focus();
+  });
+
+  resizeScene();
+  updateModel();
+  Deck.onResize(resizeScene);
+  Deck.loop(function () {
+    if (!state.dirty) return;
+    renderer.render(scene, camera);
+    state.shipScreen.copy(projectLocal(ship.position));
+    state.dirty = false;
+  }, { still: 0 });
+});
+</script>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+</body>
+</html>

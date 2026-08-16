@@ -1,0 +1,421 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>轨道会“漏气”——阻力与维持</title>
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  .content{
+    position:absolute; left:var(--sp-6); right:var(--sp-6);
+    top:96px; bottom:60px;
+    display:flex; flex-direction:column; gap:var(--sp-3);
+  }
+  .row-top{ flex:0 0 520px; display:flex; gap:var(--sp-3); min-height:0; }
+  .row-bottom{ flex:1; display:flex; gap:var(--sp-3); min-height:0; }
+
+  .vpanel{ flex:1; display:flex; flex-direction:column; min-width:0; min-height:0; }
+  .vpanel-head{
+    display:flex; align-items:baseline; justify-content:space-between;
+    gap:var(--sp-2); margin-bottom:var(--sp-2); flex:0 0 auto;
+  }
+  .vpanel-title{ font:600 var(--fs-label)/1.3 var(--font-sans); color:var(--text); }
+  .vpanel-sub{ font:500 var(--fs-num)/1.3 var(--font-mono); color:var(--text-faint); }
+  .canvas-wrap{ position:relative; flex:1; min-height:0; border-radius:6px; overflow:hidden; background:rgba(0,0,0,.18); }
+
+  .legend{ display:flex; gap:var(--sp-3); }
+  .legend-item{ display:flex; align-items:center; gap:6px; font:600 var(--fs-num)/1 var(--font-mono); color:var(--text-dim); }
+  .legend-dot{ width:9px; height:9px; border-radius:50%; display:inline-block; }
+
+  .control-panel{ flex:0 0 440px; display:flex; flex-direction:column; justify-content:center; gap:var(--sp-3); min-height:0; }
+  .status-row{ display:flex; align-items:center; justify-content:space-between; gap:var(--sp-3); }
+  .status-left{ display:flex; align-items:baseline; gap:10px; }
+  .status-unit{ font:600 var(--fs-label)/1 var(--font-mono); color:var(--text-dim); }
+  .status-badge{
+    font:700 var(--fs-label)/1 var(--font-sans); padding:6px 12px; border-radius:5px;
+    white-space:nowrap;
+  }
+  .status-badge.ok{ color:var(--good); background:rgba(74,222,128,.14); border:1px solid rgba(74,222,128,.4); }
+  .status-badge.warn{ color:var(--accent-3); background:rgba(255,209,102,.14); border:1px solid rgba(255,209,102,.4); }
+  .status-badge.bad{ color:var(--bad); background:rgba(255,84,112,.16); border:1px solid rgba(255,84,112,.45); }
+
+  .stat-grid{ display:flex; gap:var(--sp-4); }
+  .stat-item{ flex:1; }
+  .stat-name{ font:600 var(--fs-label)/1.3 var(--font-sans); color:var(--text-faint); }
+  .stat-value{ font:700 20px/1.2 var(--font-mono); color:var(--text); font-variant-numeric:tabular-nums; }
+  .stat-value b{ color:var(--accent-2); }
+
+  .act-row{ display:flex; align-items:center; gap:var(--sp-3); }
+  .act-row .btn{ flex:1; text-align:center; }
+  .cooldown-note{ font:500 var(--fs-num)/1.3 var(--font-mono); color:var(--text-faint); white-space:nowrap; min-width:64px; }
+
+  .callouts-col{ flex:1; display:flex; flex-direction:column; gap:var(--sp-2); justify-content:center; min-height:0; }
+  .callouts-col .callout{ font-size:var(--fs-body); }
+</style>
+</head>
+<body data-page="12" data-total="14">
+<div id="stage">
+  <div class="starfield"></div>
+
+  <div class="pg-head">
+    <div><span class="pg-kicker">MODULE 4 · 机动与归来</span><span class="pg-title">轨道会“漏气”——阻力与维持</span></div>
+    <div class="pg-index">12 / 14</div>
+  </div>
+
+  <div class="content">
+    <div class="row-top">
+      <div class="panel vpanel">
+        <div class="vpanel-head">
+          <span class="vpanel-title">轨道俯视图</span>
+          <span class="vpanel-sub" id="orbitSub">高度差已放大显示，非真实比例</span>
+        </div>
+        <div class="canvas-wrap">
+          <canvas id="orbitCv" class="cv-fill"></canvas>
+        </div>
+      </div>
+
+      <div class="panel vpanel">
+        <div class="vpanel-head">
+          <span class="vpanel-title">高度 – 时间曲线</span>
+          <div class="legend">
+            <span class="legend-item"><span class="legend-dot" style="background:var(--accent-2)"></span>当前轨道</span>
+            <span class="legend-item"><span class="legend-dot" style="background:var(--text-faint)"></span>LEO 参考 400km</span>
+            <span class="legend-item"><span class="legend-dot" style="background:var(--bad)"></span>再入警戒线</span>
+          </div>
+        </div>
+        <div class="canvas-wrap">
+          <canvas id="chartCv" class="cv-fill"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <div class="row-bottom">
+      <div class="panel control-panel">
+        <div class="status-row">
+          <div class="status-left">
+            <span class="num-lg" id="hVal">420</span><span class="status-unit">km</span>
+          </div>
+          <span class="status-badge ok" id="statusBadge">轨道稳定</span>
+        </div>
+        <div class="stat-grid">
+          <div class="stat-item">
+            <div class="stat-name">已维持时长</div>
+            <div class="stat-value"><b id="tVal">0.0</b> s</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-name">抬升燃烧次数</div>
+            <div class="stat-value" id="boostVal">0</div>
+          </div>
+        </div>
+        <div class="act-row">
+          <button class="btn primary" id="boostBtn">🔥 抬升燃烧</button>
+          <button class="btn" id="resetBtn" hidden>↺ 重新开始</button>
+          <span class="cooldown-note" id="cdNote"></span>
+        </div>
+      </div>
+
+      <div class="callouts-col">
+        <div class="callout">
+          轨道衰减不是引力变了——稀薄大气仍在摩擦，卫星的速度被一点点“蹭掉”，
+          高度随之缓慢下降；<b>越低，剩余大气越稠，衰减越快</b>。
+        </div>
+        <div class="callout cool">
+          真实的国际空间站（ISS）每隔几个月才需要做一次抬升燃烧；这里把
+          <b>月级的过程压缩到了秒级</b>，方便你体验“持续维持”的节奏感，
+          数值不代表真实衰减速度。
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="pg-hint">💡 <b>怎么玩</b>：轨道会持续缓慢下降，越低掉得越快——在合适的时机点击“抬升燃烧”把高度提上去，别让它跌破再入警戒线。</div>
+</div>
+
+<script src="assets/base.js"></script>
+<script>
+(function(){
+  'use strict';
+
+  // ---- 物理参数（教学简化模型，不是真实大气密度积分）--------------------
+  var H_START  = 420;   // 起始高度 km（呼应事实表 LEO 参考 400km）
+  var H_REF    = 430;   // 衰减率随高度变化的参考基准
+  var H_RANGE  = 180;   // 参考区间宽度
+  var H_MAX    = 480;   // 显示 / 燃烧后高度上限
+  var H_THRESH = 250;   // 再入警戒线（简化教学值，非精确再入高度，第13页详细讲再入）
+  var H_LEO    = 400;   // LEO 参考线
+  var DECAY_BASE  = 3;    // km / 模拟秒，最低衰减率
+  var DECAY_EXTRA = 16;   // 越接近警戒线，额外叠加的衰减率
+  var BOOST_DH  = 30;   // 每次抬升增加的高度 km
+  var BOOST_CD  = 5;    // 冷却时间 s
+  var HIST_WIN  = 42;   // 图表滑动窗口 s
+
+  function decayRate(h){
+    var d = Math.max(0, (H_REF - h) / H_RANGE);
+    return DECAY_BASE + DECAY_EXTRA * d * d;
+  }
+
+  var state = {
+    h: H_START,
+    t: 0,
+    boosts: 0,
+    cd: 0,
+    failed: false,
+    angle: 0,
+    hist: [],          // {t, h}
+    marks: []          // {t, h}  抬升燃烧发生的时刻
+  };
+
+  function reset(){
+    state.h = H_START; state.t = 0; state.boosts = 0; state.cd = 0;
+    state.failed = false; state.angle = 0; state.hist = []; state.marks = [];
+    document.getElementById('resetBtn').hidden = true;
+    document.getElementById('boostBtn').disabled = false;
+    document.getElementById('boostBtn').hidden = false;
+  }
+
+  var hValEl = document.getElementById('hVal');
+  var tValEl = document.getElementById('tVal');
+  var boostValEl = document.getElementById('boostVal');
+  var badgeEl = document.getElementById('statusBadge');
+  var cdNoteEl = document.getElementById('cdNote');
+  var boostBtn = document.getElementById('boostBtn');
+  var resetBtn = document.getElementById('resetBtn');
+
+  boostBtn.addEventListener('click', function(){
+    if (state.failed || state.cd > 0) return;
+    state.h = Math.min(H_MAX, state.h + BOOST_DH);
+    state.boosts++;
+    state.cd = BOOST_CD;
+    state.marks.push({ t: state.t, h: state.h });
+  });
+  resetBtn.addEventListener('click', reset);
+
+  function fail(){
+    state.failed = true;
+    boostBtn.hidden = true;
+    resetBtn.hidden = false;
+  }
+
+  function update(dt){
+    if (state.failed) return;
+    var ds = Math.min(0.08, dt / 1000);
+    state.t += ds;
+    state.h -= decayRate(state.h) * ds;
+    if (state.cd > 0) state.cd = Math.max(0, state.cd - ds);
+
+    var omega = 0.55 * Math.pow(H_LEO / Math.max(state.h, 60), 1.5);
+    state.angle += omega * ds;
+
+    state.hist.push({ t: state.t, h: state.h });
+    while (state.hist.length && state.t - state.hist[0].t > HIST_WIN + 2) state.hist.shift();
+
+    if (state.h <= H_THRESH){
+      state.h = H_THRESH;
+      fail();
+    }
+  }
+
+  function statusInfo(){
+    if (state.failed) return { cls:'bad', text:'轨道衰减失败' };
+    if (state.h < H_THRESH + 45) return { cls:'warn', text:'临界，尽快抬升' };
+    return { cls:'ok', text:'轨道稳定' };
+  }
+
+  function renderHud(){
+    hValEl.textContent = state.h.toFixed(0);
+    tValEl.textContent = state.t.toFixed(1);
+    boostValEl.textContent = state.boosts;
+    var s = statusInfo();
+    badgeEl.className = 'status-badge ' + s.cls;
+    badgeEl.textContent = s.text;
+    if (state.failed){
+      cdNoteEl.textContent = '';
+    } else if (state.cd > 0){
+      boostBtn.disabled = true;
+      cdNoteEl.textContent = '冷却 ' + state.cd.toFixed(1) + 's';
+    } else {
+      boostBtn.disabled = false;
+      cdNoteEl.textContent = '就绪';
+    }
+  }
+
+  // ---- 画布 --------------------------------------------------------------
+  var orbitCv = document.getElementById('orbitCv');
+  var chartCv = document.getElementById('chartCv');
+  var octx, cctx;
+
+  function fitAll(){
+    var o = Deck.fit(orbitCv); if (o) octx = o;
+    var c = Deck.fit(chartCv); if (c) cctx = c;
+  }
+  fitAll();
+  Deck.onResize(fitAll);
+
+  function hToRadius(h, w, hh){
+    var earthR = Math.min(w, hh) * 0.24;
+    var maxR = Math.min(w, hh) * 0.46;
+    var f = Deck.clamp((h - H_THRESH) / (H_MAX - H_THRESH), 0, 1);
+    return { earthR: earthR, r: earthR + (maxR - earthR) * (0.18 + 0.82 * f) };
+  }
+
+  function drawOrbit(){
+    if (!octx) return;
+    var w = orbitCv.__w, hh = orbitCv.__h;
+    var ctx = octx;
+    ctx.clearRect(0, 0, w, hh);
+    var cx = w / 2, cy = hh / 2;
+    var geo = hToRadius(state.h, w, hh);
+    var earthR = geo.earthR;
+
+    // 参考环:LEO / 警戒线
+    function ringAt(h, color, dash){
+      var g = hToRadius(h, w, hh);
+      ctx.save();
+      ctx.setLineDash(dash || []);
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.arc(cx, cy, g.r, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
+    ringAt(H_LEO, Deck.rgba('text-faint', .55), [5, 5]);
+    ringAt(H_THRESH, Deck.rgba('bad', .6), [2, 5]);
+
+    // 衰减轨迹(过去一段时间的高度轨迹,画成缓慢收缩的螺旋)
+    ctx.save();
+    ctx.strokeStyle = Deck.rgba('accent-2', .35);
+    ctx.lineWidth = 1.4;
+    ctx.beginPath();
+    var trailLen = 26;
+    for (var i = 0; i < state.hist.length; i++){
+      var idx = state.hist.length - 1 - i;
+      if (i > trailLen * 8) break;
+      var rec = state.hist[idx];
+      var g2 = hToRadius(rec.h, w, hh);
+      var a2 = state.angle - (state.t - rec.t) * 0.55 * Math.pow(H_LEO / Math.max(rec.h, 60), 1.5);
+      var x = cx + Math.cos(a2) * g2.r, y = cy + Math.sin(a2) * g2.r * 0.42;
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+    ctx.restore();
+
+    // 地球
+    var grad = ctx.createRadialGradient(cx - earthR*0.3, cy - earthR*0.3, earthR*0.1, cx, cy, earthR);
+    grad.addColorStop(0, '#2a6fb0');
+    grad.addColorStop(1, '#0d2340');
+    ctx.fillStyle = grad;
+    ctx.beginPath(); ctx.arc(cx, cy, earthR, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = Deck.rgba('accent-2', .3);
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.arc(cx, cy, earthR + 4, 0, Math.PI * 2); ctx.stroke();
+
+    // 卫星
+    var sx = cx + Math.cos(state.angle) * geo.r;
+    var sy = cy + Math.sin(state.angle) * geo.r * 0.42;
+    ctx.fillStyle = state.failed ? Deck.rgba('bad', 1) : Deck.rgba('accent', 1);
+    ctx.beginPath(); ctx.arc(sx, sy, 5.5, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = Deck.rgba('accent', .3);
+    ctx.lineWidth = 8;
+    ctx.beginPath(); ctx.arc(sx, sy, 9, 0, Math.PI * 2); ctx.stroke();
+
+    // 最近一次燃烧的闪光
+    if (state.marks.length){
+      var last = state.marks[state.marks.length - 1];
+      if (state.t - last.t < 0.6){
+        var flashA = 1 - (state.t - last.t) / 0.6;
+        ctx.strokeStyle = 'rgba(255,209,102,' + (flashA * .8) + ')';
+        ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.arc(sx, sy, 9 + (1 - flashA) * 20, 0, Math.PI * 2); ctx.stroke();
+      }
+    }
+
+    if (state.failed){
+      ctx.fillStyle = Deck.rgba('bad', .9);
+      ctx.font = '700 16px ' + getComputedStyle(document.documentElement).getPropertyValue('--font-sans');
+      ctx.textAlign = 'center';
+      ctx.fillText('轨道已跌破警戒高度', cx, hh - 14);
+    }
+  }
+
+  function drawChart(){
+    if (!cctx) return;
+    var w = chartCv.__w, hh = chartCv.__h;
+    var ctx = cctx;
+    ctx.clearRect(0, 0, w, hh);
+
+    var padL = 40, padR = 10, padT = 10, padB = 22;
+    var plotW = w - padL - padR, plotH = hh - padT - padB;
+    var yMin = 220, yMax = 470;
+    var tNow = state.t, tMin = Math.max(0, tNow - HIST_WIN);
+
+    function xOf(t){ return padL + (t - tMin) / Math.max(0.001, (tNow - tMin)) * plotW; }
+    function yOf(h){ return padT + (1 - (h - yMin) / (yMax - yMin)) * plotH; }
+
+    // 网格 + y 轴刻度
+    [250, 300, 350, 400, 450].forEach(function(hv){
+      var y = yOf(hv);
+      ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(w - padR, y);
+      ctx.strokeStyle = 'rgba(150,175,220,.10)'; ctx.lineWidth = 1; ctx.stroke();
+      ctx.fillStyle = Deck.rgba('text-faint', .9);
+      ctx.font = '600 12px ' + getComputedStyle(document.documentElement).getPropertyValue('--font-mono');
+      ctx.textAlign = 'right';
+      ctx.fillText(hv, padL - 6, y + 4);
+    });
+
+    // LEO 参考线 + 警戒线
+    function hline(hv, color, dash){
+      var y = yOf(hv);
+      ctx.save();
+      ctx.setLineDash(dash);
+      ctx.strokeStyle = color; ctx.lineWidth = 1.4;
+      ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(w - padR, y); ctx.stroke();
+      ctx.restore();
+    }
+    hline(H_LEO, Deck.rgba('text-faint', .6), [5, 4]);
+    hline(H_THRESH, Deck.rgba('bad', .75), [2, 4]);
+
+    // 高度曲线
+    ctx.beginPath();
+    var started = false;
+    for (var i = 0; i < state.hist.length; i++){
+      var rec = state.hist[i];
+      if (rec.t < tMin) continue;
+      var x = xOf(rec.t), y = yOf(rec.h);
+      if (!started){ ctx.moveTo(x, y); started = true; } else ctx.lineTo(x, y);
+    }
+    ctx.strokeStyle = Deck.rgba('accent-2', .95);
+    ctx.lineWidth = 2.2;
+    ctx.stroke();
+
+    // 抬升燃烧标记
+    ctx.fillStyle = Deck.rgba('accent', 1);
+    state.marks.forEach(function(m){
+      if (m.t < tMin) return;
+      var x = xOf(m.t), y = yOf(m.h);
+      ctx.beginPath();
+      ctx.moveTo(x, y - 8); ctx.lineTo(x - 5, y - 1); ctx.lineTo(x + 5, y - 1);
+      ctx.closePath(); ctx.fill();
+    });
+
+    // x 轴时间刻度(相对窗口)
+    ctx.fillStyle = Deck.rgba('text-faint', .9);
+    ctx.font = '600 12px ' + getComputedStyle(document.documentElement).getPropertyValue('--font-mono');
+    ctx.textAlign = 'center';
+    ctx.fillText(tMin.toFixed(0) + 's', padL + 4, hh - 6);
+    ctx.fillText(tNow.toFixed(0) + 's', w - padR - 14, hh - 6);
+  }
+
+  Deck.loop(function(t, dt){
+    update(dt);
+    renderHud();
+    drawOrbit();
+    drawChart();
+  });
+
+  Deck.init({ index: 12, total: 14 });
+})();
+</script>
+</body>
+</html>

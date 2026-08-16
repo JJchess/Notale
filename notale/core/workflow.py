@@ -13,9 +13,13 @@ from pathlib import Path
 from typing import Any
 
 from notale.agents.builder import BuilderWorker, build_page
-from notale.agents.style import generate_run_style
 from notale.agents.loop import AgentBlocked
-from notale.core.models import LecturePlan, PageArtifact, PageRunStatus
+from notale.core.models import (
+    LecturePlan,
+    PageArtifact,
+    PageRunStatus,
+    StylePackRef,
+)
 from notale.core.observability import EventLog, build_summary, write_summary
 from notale.core.state import RunStore
 from notale.core.stages.contract import (
@@ -26,10 +30,17 @@ from notale.core.stages.contract import (
 )
 from notale.core.stages.page_check import make_fallback_page
 from notale.roles.profiles import BUILDER, PLANNER
+from notale.style_studio.build.from_topic import build_from_topic
+from notale.style_studio.exemplars import render_pack_exemplars_async
+from notale.style_studio.materialize import materialize_to_run
+from notale.style_studio.decoration import page_role_for
+from notale.style_studio.scrub import scrub_topic_for_content
+from notale.style_studio.models import StylePack
+from notale.style_studio.registry import get_pack
 from notale.tools.agent_tools import OPTIONAL_PAGE_TOOLS
 from notale.utils.config import CONFIG_PATH, get_config
 from notale.utils.skill_catalog import GeneratedDesignSkill, load_generated_style
-from notale.web.deck import write_deck_package
+from notale.web.deck import prepare_deck_runtime, write_deck_package
 
 
 _CONFIG = get_config()
@@ -67,11 +78,30 @@ def _contract_hash() -> str:
         root / "agents" / "style.py",
         root / "tools" / "base.py",
         root / "tools" / "agent_tools.py",
+        root / "tools" / "inspection.py",
         root / "tools" / "media.py",
         root / "utils" / "skill_catalog.py",
+        root / "web" / "browser.py",
+        root / "web" / "deck.py",
     ):
         if path is not None:
             digest.update(Path(path).read_bytes())
+    # Pack *contents* deliberately stay out of the contract hash — they are
+    # resolved after it is computed, and a run records its own pack digest in
+    # run.json instead. Only the code that compiles a pack belongs here.
+    for path in sorted((root / "style_studio").rglob("*.py")):
+        digest.update(str(path.relative_to(root)).encode())
+        digest.update(path.read_bytes())
+    # The deck runtime CSS decides how every page renders, so a change to it must
+    # invalidate a resume exactly like a code change does.
+    for path in sorted((root / "web" / "runtime").rglob("*")):
+        if path.is_file():
+            digest.update(str(path.relative_to(root)).encode())
+            digest.update(path.read_bytes())
+    for path in sorted((root / "components").rglob("*")):
+        if path.is_file():
+            digest.update(str(path.relative_to(root)).encode())
+            digest.update(path.read_bytes())
     digest.update(SKILL_CATALOG.sha256.encode())
     digest.update(PLANNER_SKILL_CATALOG.sha256.encode())
     digest.update(STYLE_STUDIO.sha256.encode())
@@ -151,7 +181,105 @@ def _load_terminal_pages(store: RunStore) -> list[PageArtifact]:
     return pages
 
 
-async def _session(llm: Any, store: RunStore, logger: EventLog) -> GenerateResult:
+def _assert_style_pack_unchanged(store: RunStore) -> None:
+    """Refuse to resume onto a StylePack that was edited since the run started.
+
+    Packs live outside the run and outside the contract hash, so nothing else
+    would notice a repalette between a run and its resume — the deck would just
+    come out half in one style and half in another.
+    """
+    recorded = store.state.style_pack
+    if recorded is None:
+        return
+    try:
+        pack = get_pack(recorded.pack_id, validate=False)
+    except (KeyError, FileNotFoundError) as exc:
+        raise ValueError(
+            f"run used StylePack {recorded.pack_id!r}, which no longer exists"
+        ) from exc
+    digest = hashlib.sha256((pack.pack_dir / "pack.json").read_bytes()).hexdigest()
+    if digest != recorded.sha256:
+        raise ValueError(
+            f"StylePack {recorded.pack_id!r} changed since this run started; "
+            "start a new run or restore the pack"
+        )
+
+
+def _pack_ref(pack: StylePack) -> StylePackRef:
+    digest = hashlib.sha256((pack.pack_dir / "pack.json").read_bytes()).hexdigest()
+    return StylePackRef(pack_id=pack.id, version=pack.version or "0.0.0", sha256=digest)
+
+
+async def _resolve_style(
+    llm: Any,
+    store: RunStore,
+    logger: EventLog,
+    *,
+    style_pack: str | None,
+) -> tuple[GeneratedDesignSkill, StylePackRef]:
+    """Resolve the run's StylePack, then materialize it into the run.
+
+    Naming a pack renders from the library and costs no model call at all;
+    otherwise the topic drives one call that patches a forked parent. Either way
+    the run ends up holding a real pack, and the design Skill the rest of the
+    pipeline consumes is produced the same way.
+    """
+    if style_pack:
+        pack = get_pack(style_pack)
+        logger.emit(
+            "style.pack.selected",
+            pack_id=pack.id,
+            version=pack.version,
+            status=pack.status,
+            source="explicit",
+        )
+    elif not _CONFIG.style.allow_generation:
+        raise RuntimeError(
+            "style.allow_generation is false; pass --style-pack to name a published pack"
+        )
+    else:
+        pack = await build_from_topic(
+            llm,
+            store.state.topic,
+            run_dir=store.run_dir,
+            logger=logger,
+            skill_text=STYLE_STUDIO.body,
+            parent_id=_CONFIG.style.default_pack,
+            discriminator=store.state.run_id.rsplit("-", 1)[-1],
+        )
+        # A fresh pack has no specimens of its own, and it must not borrow its
+        # parent's. Render its baseline now so page inspection has something
+        # true to compare against; a missing browser costs the baseline, not
+        # the run.
+        if _CONFIG.style.exemplar_pages > 0:
+            try:
+                await render_pack_exemplars_async(pack)
+                pack = get_pack(pack.id)
+            except Exception as exc:  # noqa: BLE001
+                logger.emit(
+                    "style.exemplars.skipped",
+                    pack_id=pack.id,
+                    error=f"{type(exc).__name__}: {exc}",
+                )
+    style = materialize_to_run(pack, store.run_dir)
+    logger.emit(
+        "style.completed",
+        agent_id="style",
+        pack_id=pack.id,
+        version=pack.version,
+        name=style.name,
+        sha256=style.sha256,
+    )
+    return style, _pack_ref(pack)
+
+
+async def _session(
+    llm: Any,
+    store: RunStore,
+    logger: EventLog,
+    *,
+    style_pack: str | None = None,
+) -> GenerateResult:
     run_dir = store.run_dir
     if store.state.plan_status == "completed":
         plan, style = _load_plan(store)
@@ -173,17 +301,13 @@ async def _session(llm: Any, store: RunStore, logger: EventLog) -> GenerateResul
             style_started = time.monotonic()
             logger.emit("stage.started", stage="style")
             try:
-                style = await generate_run_style(
-                    llm,
-                    store.state.topic,
-                    run_dir=run_dir,
-                    logger=logger,
-                    skill_text=STYLE_STUDIO.body,
+                style, pack_ref = await _resolve_style(
+                    llm, store, logger, style_pack=style_pack
                 )
             except BaseException as exc:
                 store.fail_style(f"{type(exc).__name__}: {exc}")
                 raise
-            store.finish_style(style.reference)
+            store.finish_style(style.reference, pack_ref)
             logger.emit(
                 "stage.completed",
                 stage="style",
@@ -201,10 +325,22 @@ async def _session(llm: Any, store: RunStore, logger: EventLog) -> GenerateResul
 
         started = time.monotonic()
         logger.emit("stage.started", stage="planner")
+        scrubbed = scrub_topic_for_content(store.state.topic)
+        planner_topic = scrubbed.text or store.state.topic.strip()
+        logger.emit(
+            "style.prompt_scrubbed",
+            changed=scrubbed.changed,
+            removed_count=len(scrubbed.removed),
+            removed=scrubbed.removed[:8],
+            fallback_to_raw=not bool(scrubbed.text),
+            planner_topic_sha256=hashlib.sha256(
+                planner_topic.encode("utf-8")
+            ).hexdigest(),
+        )
         try:
             plan = await plan_lecture(
                 llm,
-                store.state.topic,
+                planner_topic,
                 run_dir=run_dir,
                 logger=logger,
                 style=style,
@@ -232,6 +368,10 @@ async def _session(llm: Any, store: RunStore, logger: EventLog) -> GenerateResul
     if len(store.state.pages) != len(plan.pages):
         raise ValueError("run state page count does not match plan")
 
+    # Inspection must render the same global CSS, style tokens, assets, and
+    # component-relative paths that final deck assembly will use.
+    prepare_deck_runtime(run_dir, style.tokens, type_scale=style.type_scale)
+
     reset = store.reset_running()
     for number in reset:
         shutil.rmtree(run_dir / ".work" / f"p{number}", ignore_errors=True)
@@ -245,14 +385,10 @@ async def _session(llm: Any, store: RunStore, logger: EventLog) -> GenerateResul
     async def one_page(number: int) -> None:
         async with semaphore:
             spec = plan.pages[number - 1]
-            skills = [
-                {
-                    **plan.design.model_dump(mode="json"),
-                    "source": "run",
-                }
-            ] + [
-                item.model_dump(mode="json") for item in spec.skills
-            ]
+            style_ref = {
+                **plan.design.model_dump(mode="json"),
+                "source": "run",
+            }
             tools = sorted(set(spec.tools))
             store.start_page(number)
             started = time.monotonic()
@@ -260,23 +396,21 @@ async def _session(llm: Any, store: RunStore, logger: EventLog) -> GenerateResul
                 "builder.started",
                 agent_id=f"builder:p{number}",
                 page=number,
-                skills=skills,
+                style=style_ref,
                 tools=tools,
                 page_type=spec.type.value,
                 composition=spec.composition,
             )
+            worker = BuilderWorker(
+                llm=llm,
+                run_dir=run_dir,
+                plan=plan,
+                page=number,
+                style=style,
+                logger=logger,
+            )
             try:
-                artifact = await build_page(
-                    BuilderWorker(
-                        llm=llm,
-                        run_dir=run_dir,
-                        plan=plan,
-                        page=number,
-                        catalog=SKILL_CATALOG,
-                        style=style,
-                        logger=logger,
-                    )
-                )
+                artifact = await build_page(worker)
             except Exception as exc:
                 reason = f"{type(exc).__name__}: {exc}"
                 artifact = make_fallback_page(number, spec, reason)
@@ -323,6 +457,11 @@ async def _session(llm: Any, store: RunStore, logger: EventLog) -> GenerateResul
         plan.title,
         language=plan.language,
         style_tokens=style.tokens,
+        type_scale=style.type_scale,
+        page_roles=[
+            page_role_for(spec.type, number)
+            for number, spec in enumerate(plan.pages, 1)
+        ],
     )
     logger.emit(
         "stage.completed",
@@ -349,6 +488,7 @@ async def generate(
     *,
     out_root: Path = Path("runs"),
     resume_dir: Path | None = None,
+    style_pack: str | None = None,
 ) -> GenerateResult:
     contract_hash = _contract_hash()
     if resume_dir is None:
@@ -359,12 +499,13 @@ async def generate(
             raise ValueError("resume topic does not match run.json")
         if store.state.contract_hash != contract_hash:
             raise ValueError("run contract changed; start a new run")
+        _assert_style_pack_unchanged(store)
     logger = EventLog(store.run_dir)
     logger.emit("run.started", run_id=store.state.run_id, resume=resume_dir is not None, topic=topic)
     _snapshot(logger, llm, contract_hash)
     try:
         async with asyncio.timeout(_CONFIG.pipeline.run_timeout_sec):
-            result = await _session(llm, store, logger)
+            result = await _session(llm, store, logger, style_pack=style_pack)
     except BaseException as exc:
         error = f"{type(exc).__name__}: {exc}"
         logger.emit("run.failed", error=error)

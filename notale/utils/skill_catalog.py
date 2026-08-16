@@ -7,26 +7,43 @@ import json
 import re
 import shutil
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 import yaml
 
 from notale.core.models import (
+    DEFAULT_TYPE_SCALE,
     CompositionSpec,
     DesignSkillRef,
     LecturePlan,
-    PageType,
-    SkillAssignment,
+    TypeScale,
 )
 from notale.roles.base import RoleSpec
+from notale.web.font_catalog import (
+    LEGACY_FONT_TOKEN_KEYS,
+    NEW_FONT_TOKEN_KEYS,
+    validate_font_tokens,
+)
 
 
-REQUIRED_STYLE_TOKEN_KEYS = {
-    "bg", "surface", "ink", "muted", "accent", "accent-2", "line", "font",
+REQUIRED_COLOR_STYLE_TOKEN_KEYS = {
+    "bg", "surface", "ink", "muted", "accent", "accent-2", "accent-3", "line",
 }
-STYLE_TOKEN_KEYS = REQUIRED_STYLE_TOKEN_KEYS | {"mono"}
+REQUIRED_STYLE_TOKEN_KEYS = REQUIRED_COLOR_STYLE_TOKEN_KEYS | NEW_FONT_TOKEN_KEYS
+STYLE_TOKEN_KEYS = REQUIRED_STYLE_TOKEN_KEYS | LEGACY_FONT_TOKEN_KEYS
+
+# Type-scale customs are emitted into :root alongside the palette, but they are
+# deliberately NOT part of STYLE_TOKEN_KEYS: that set is simultaneously the
+# unknown-key gate for tokens.json and the emission filter in web/deck.py, so
+# widening it would let type sizes be smuggled into a pack's colour tokens.
+# Consumers union the two explicitly at each use site instead.
+TYPE_SCALE_TOKEN_KEYS = frozenset(
+    f"type-{role}{suffix}"
+    for role in ("title", "lede", "banner", "card", "cell")
+    for suffix in ("", "-leading", "-tracking", "-weight")
+)
 _SLUG = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 _UNSAFE_CSS_VALUE = re.compile(
     r"[{};<>\r\n]|url\s*\(|@import|expression\s*\(|javascript:|/\*|\*/",
@@ -83,6 +100,7 @@ class GeneratedDesignSkill:
     tokens: dict[str, str]
     compositions: tuple[CompositionSpec, ...]
     sha256: str
+    type_scale: TypeScale = field(default_factory=lambda: DEFAULT_TYPE_SCALE)
 
     def render(self, composition: str | None = None) -> str:
         text = f"# Run design Skill: {self.name}\n\n{self.body}"
@@ -95,9 +113,23 @@ class GeneratedDesignSkill:
                 raise ValueError(f"unknown run composition: {composition}")
             payload = matches[0].model_dump(mode="json")
             label = "Assigned page composition"
-        return text + f"\n\n## {label}\n\n```json\n" + json.dumps(
-            payload, ensure_ascii=False, indent=2
-        ) + "\n```"
+        scale = {
+            role.value: spec.model_dump(mode="json")
+            for role, spec in self.type_scale.roles.items()
+        }
+        return (
+            text
+            + f"\n\n## {label}\n\n```json\n"
+            + json.dumps(payload, ensure_ascii=False, indent=2)
+            + "\n```"
+            + "\n\n## Type scale\n\n"
+            "Use `var(--notale-type-<role>)` for size, `-leading` for line-height, "
+            "`-tracking` for letter-spacing, and `-weight` for font-weight. Mark the "
+            "element with `data-notale-role=\"<role>\"` so the rendered page can be "
+            "checked against the band it claims.\n\n```json\n"
+            + json.dumps(scale, ensure_ascii=False, indent=2)
+            + "\n```"
+        )
 
     def render_for_planner(self) -> str:
         """Expose only the planning-relevant projection of this Style."""
@@ -158,49 +190,20 @@ class SkillCatalog:
     sha256: str
 
     def planner_menu(self, optional_tools: set[str]) -> str:
-        def item(name: str) -> dict[str, Any]:
-            descriptor = self.skills[name]
-            return {
-                "name": name,
-                "description": descriptor.description,
-            }
-
         return json.dumps(
             {
-                "page_skills": [item(name) for name in self.role.skill_policy.page],
                 "tools": sorted(optional_tools),
             },
             ensure_ascii=False,
             indent=2,
         )
 
-    def validate_assignment(self, value: SkillAssignment) -> None:
-        if value.name not in self.skills:
-            raise ValueError(f"unknown skill: {value.name}")
-
     def validate_plan(self, plan: LecturePlan, optional_tools: set[str]) -> LecturePlan:
         for number, page in enumerate(plan.pages, 1):
-            for assignment in page.skills:
-                if assignment.name not in self.role.skill_policy.page:
-                    raise ValueError(
-                        f"page {number} skill is not an allowed capability: {assignment.name}"
-                    )
-                self.validate_assignment(assignment)
             unknown = sorted(set(page.tools) - optional_tools)
             if unknown:
                 raise ValueError(f"page {number} has unknown tools: {unknown}")
         return plan
-
-    def render(self, assignments: list[SkillAssignment]) -> str:
-        sections: list[str] = []
-        for assignment in assignments:
-            self.validate_assignment(assignment)
-            descriptor = self.skills[assignment.name]
-            text = f"# Skill: {assignment.name}\n\n{descriptor.body}"
-            if assignment.instruction:
-                text += f"\n\n## Planner instruction\n\n{assignment.instruction}"
-            sections.append(text)
-        return "\n\n---\n\n".join(sections)
 
     def snapshot(self) -> dict[str, Any]:
         return {
@@ -247,12 +250,13 @@ def _validate_generated_style(
         raise ValueError("generated style description must not be blank")
     if not body:
         raise ValueError("generated style body must not be blank")
-    missing = sorted(REQUIRED_STYLE_TOKEN_KEYS - set(tokens))
+    missing = sorted(REQUIRED_COLOR_STYLE_TOKEN_KEYS - set(tokens))
     unknown = sorted(set(tokens) - STYLE_TOKEN_KEYS)
     if missing:
         raise ValueError(f"generated style is missing tokens: {missing}")
     if unknown:
         raise ValueError(f"generated style has unknown tokens: {unknown}")
+    validate_font_tokens(tokens)
     normalized = {key: str(value).strip() for key, value in tokens.items()}
     unsafe = sorted(
         key
@@ -275,8 +279,6 @@ def _validate_generated_style(
         item if isinstance(item, CompositionSpec) else CompositionSpec.model_validate(item)
         for item in compositions
     )
-    if not 5 <= len(normalized_compositions) <= 7:
-        raise ValueError("generated style must define 5 to 7 compositions")
     ids = [item.id for item in normalized_compositions]
     names = [item.name.casefold() for item in normalized_compositions]
     signatures = [(item.primary, item.secondary) for item in normalized_compositions]
@@ -286,15 +288,16 @@ def _validate_generated_style(
         raise ValueError("generated style composition names must be unique")
     if len(signatures) != len(set(signatures)):
         raise ValueError("generated style composition primitive signatures must be unique")
-    if len({item.primary for item in normalized_compositions}) < 4:
-        raise ValueError("generated style compositions need at least four primary primitives")
-    covered = {page_type for item in normalized_compositions for page_type in item.page_types}
-    missing_types = sorted(item.value for item in set(PageType) - covered)
-    if missing_types:
-        raise ValueError(
-            f"generated style compositions do not cover page types: {missing_types}"
-        )
     return name, description, body, normalized, normalized_compositions
+
+
+def _coerce_type_scale(value: TypeScale | dict[str, Any] | None) -> TypeScale:
+    """Never returns None: an absent scale is the default, not a missing segment."""
+    if value is None:
+        return DEFAULT_TYPE_SCALE
+    if isinstance(value, TypeScale):
+        return value
+    return TypeScale.model_validate(value)
 
 
 def _generated_style_bytes(
@@ -303,7 +306,8 @@ def _generated_style_bytes(
     body: str,
     tokens: dict[str, str],
     compositions: tuple[CompositionSpec, ...],
-) -> tuple[bytes, bytes, bytes]:
+    type_scale: TypeScale,
+) -> tuple[bytes, bytes, bytes, bytes]:
     frontmatter = yaml.safe_dump(
         {"name": name, "description": description},
         allow_unicode=True,
@@ -321,7 +325,13 @@ def _generated_style_bytes(
         )
         + "\n"
     ).encode("utf-8")
-    return skill_raw, token_raw, composition_raw
+    type_scale_raw = (
+        json.dumps(
+            type_scale.model_dump(mode="json"), ensure_ascii=False, indent=2, sort_keys=True
+        )
+        + "\n"
+    ).encode("utf-8")
+    return skill_raw, token_raw, composition_raw, type_scale_raw
 
 
 def create_generated_style(
@@ -331,27 +341,34 @@ def create_generated_style(
     body: str,
     tokens: dict[str, str],
     compositions: list[CompositionSpec] | tuple[CompositionSpec, ...],
+    type_scale: TypeScale | dict[str, Any] | None = None,
 ) -> GeneratedDesignSkill:
     name, description, body, tokens, compositions = _validate_generated_style(
         name, description, body, tokens, compositions
     )
-    skill_raw, token_raw, composition_raw = _generated_style_bytes(
-        name, description, body, tokens, compositions
+    # Resolved before serialization so the byte stream is always four segments.
+    # There is no legacy three-segment form to keep alive.
+    scale = _coerce_type_scale(type_scale)
+    skill_raw, token_raw, composition_raw, scale_raw = _generated_style_bytes(
+        name, description, body, tokens, compositions, scale
     )
     digest = hashlib.sha256(
-        skill_raw + b"\0" + token_raw + b"\0" + composition_raw
+        skill_raw + b"\0" + token_raw + b"\0" + composition_raw + b"\0" + scale_raw
     ).hexdigest()
-    return GeneratedDesignSkill(name, description, body, tokens, compositions, digest)
+    return GeneratedDesignSkill(
+        name, description, body, tokens, compositions, digest, scale
+    )
 
 
 def write_generated_style(root: Path, style: GeneratedDesignSkill) -> Path:
     """Materialize a generated Skill under ``root/<name>`` without overwriting."""
 
-    skill_raw, token_raw, composition_raw = _generated_style_bytes(
-        style.name, style.description, style.body, style.tokens, style.compositions
+    skill_raw, token_raw, composition_raw, scale_raw = _generated_style_bytes(
+        style.name, style.description, style.body, style.tokens, style.compositions,
+        style.type_scale,
     )
     actual = hashlib.sha256(
-        skill_raw + b"\0" + token_raw + b"\0" + composition_raw
+        skill_raw + b"\0" + token_raw + b"\0" + composition_raw + b"\0" + scale_raw
     ).hexdigest()
     if actual != style.sha256:
         raise ValueError(
@@ -368,6 +385,7 @@ def write_generated_style(root: Path, style: GeneratedDesignSkill) -> Path:
         (temporary / "SKILL.md").write_bytes(skill_raw)
         (temporary / "tokens.json").write_bytes(token_raw)
         (temporary / "compositions.json").write_bytes(composition_raw)
+        (temporary / "type_scale.json").write_bytes(scale_raw)
         temporary.replace(directory)
     except BaseException:
         shutil.rmtree(temporary, ignore_errors=True)
@@ -380,6 +398,7 @@ def load_generated_style(root: Path, expected: DesignSkillRef) -> GeneratedDesig
     skill_path = directory / "SKILL.md"
     token_path = directory / "tokens.json"
     composition_path = directory / "compositions.json"
+    scale_path = directory / "type_scale.json"
     if not skill_path.is_file() or not token_path.is_file() or not composition_path.is_file():
         raise ValueError(f"generated style artifacts are incomplete: {directory}")
     metadata, body, skill_raw = _parse_skill_document(skill_path)
@@ -391,6 +410,13 @@ def load_generated_style(root: Path, expected: DesignSkillRef) -> GeneratedDesig
         tokens = json.loads(token_raw.decode("utf-8"))
         composition_raw = composition_path.read_bytes()
         compositions = json.loads(composition_raw.decode("utf-8"))
+        # A style written before the scale existed resolves to the default, so
+        # the hash is computed over the same four segments either way.
+        scale = (
+            json.loads(scale_path.read_bytes().decode("utf-8"))
+            if scale_path.is_file()
+            else None
+        )
     except (json.JSONDecodeError, OSError, UnicodeDecodeError) as exc:
         raise ValueError(f"invalid generated style tokens: {token_path}") from exc
     if not isinstance(tokens, dict):
@@ -405,9 +431,14 @@ def load_generated_style(root: Path, expected: DesignSkillRef) -> GeneratedDesig
         body=body,
         tokens=tokens,
         compositions=compositions,
+        type_scale=scale,
+    )
+    _, _, _, scale_raw = _generated_style_bytes(
+        validated.name, validated.description, validated.body, validated.tokens,
+        validated.compositions, validated.type_scale,
     )
     actual = hashlib.sha256(
-        skill_raw + b"\0" + token_raw + b"\0" + composition_raw
+        skill_raw + b"\0" + token_raw + b"\0" + composition_raw + b"\0" + scale_raw
     ).hexdigest()
     if actual != expected.sha256:
         raise ValueError(
@@ -420,6 +451,7 @@ def load_generated_style(root: Path, expected: DesignSkillRef) -> GeneratedDesig
         tokens=validated.tokens,
         compositions=validated.compositions,
         sha256=actual,
+        type_scale=validated.type_scale,
     )
 
 

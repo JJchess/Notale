@@ -1,0 +1,357 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+</head>
+<body data-page="09" data-total="20">
+<div id="stage">
+  <main class="page">
+    <header id="lec-header" class="lec-header page-header"></header>
+    <section class="page-body split min0" aria-label="穿越大气上升模拟">
+      <figure class="visual-shell min0" aria-label="火箭二维上升剖面，以及动压和阻力随时间的曲线">
+        <canvas id="flight-canvas" class="cv-fill" aria-label="火箭上升轨迹、动压与阻力随飞行时间的变化图"></canvas>
+      </figure>
+
+      <aside class="panel stack-3 min0" aria-label="飞行参数与实时结果">
+        <div class="panel-heading">
+          <span class="panel-kicker">ASCENT LAB</span>
+          <h2 class="panel-title">把速度放在什么高度？</h2>
+          <p class="panel-description">速度越大，动压随速度平方增长；但爬得越高，空气密度越低。改变推力时序、姿态和迎风面积，寻找峰值出现的位置。</p>
+        </div>
+
+        <div class="readout-grid" aria-live="polite" aria-atomic="true">
+          <div class="readout"><span class="caption muted">峰值动压</span><span id="q-value" class="readout-value"></span></div>
+          <div class="readout is-warm"><span class="caption muted">峰值阻力</span><span id="drag-value" class="readout-value"></span></div>
+          <div class="readout is-blue"><span class="caption muted">末端高度</span><span id="alt-value" class="readout-value"></span></div>
+          <div class="readout"><span class="caption muted">末端速度</span><span id="speed-value" class="readout-value"></span></div>
+        </div>
+
+        <div class="control-group">
+          <label class="caption muted" for="preset">快速对照</label>
+          <select id="preset">
+            <option value="gentle">低速高空</option>
+            <option value="fast">低空高速</option>
+            <option value="slender">细长火箭</option>
+            <option value="wide">宽大火箭</option>
+          </select>
+        </div>
+
+        <div class="control-row">
+          <label class="caption muted" for="thrust">推力前置</label>
+          <input id="thrust" type="range">
+          <output id="thrust-out" class="control-value" for="thrust"></output>
+        </div>
+        <div class="control-row">
+          <label class="caption muted" for="area">迎风面积</label>
+          <input id="area" type="range">
+          <output id="area-out" class="control-value" for="area"></output>
+        </div>
+        <div class="control-row">
+          <label class="caption muted" for="pitch">末端倾斜</label>
+          <input id="pitch" type="range">
+          <output id="pitch-out" class="control-value" for="pitch"></output>
+        </div>
+        <div class="control-row">
+          <label class="caption muted" for="limit">动压警戒值</label>
+          <input id="limit" type="range">
+          <output id="limit-out" class="control-value" for="limit"></output>
+        </div>
+      </aside>
+    </section>
+    <footer id="lec-footer" class="lec-footer page-footer"></footer>
+  </main>
+
+  <script>
+  document.addEventListener('DOMContentLoaded', function () {
+    'use strict';
+
+    Lec.mount({
+      index: 9,
+      kicker: `FIGHT THE AIR`,
+      title: `火箭为什么不能只把所有速度都留到最后`,
+      take: `低空高速运动会产生阻力和动压，发射路径必须同时处理重力与大气。`
+    });
+
+    var K = Lec.K;
+    var P = Lec.P;
+    var header = document.getElementById('lec-header');
+    var footer = document.getElementById('lec-footer');
+    header.className = 'lec-header page-header';
+    footer.className = 'lec-footer page-footer';
+    header.querySelector('.lec-header__top').className = 'lec-header__top cluster';
+    header.querySelector('.lec-header__kicker').className = 'lec-header__kicker kicker';
+    header.querySelector('.lec-header__index').className = 'lec-header__index page-number';
+    header.querySelector('.lec-header__title').className = 'lec-header__title page-title';
+    footer.querySelector('.lec-footer__take').className = 'lec-footer__take';
+    footer.querySelector('.lec-footer__topic').className = 'lec-footer__topic footer-meta';
+
+    var cv = document.getElementById('flight-canvas');
+    var preset = document.getElementById('preset');
+    var thrust = document.getElementById('thrust');
+    var area = document.getElementById('area');
+    var pitch = document.getElementById('pitch');
+    var limit = document.getElementById('limit');
+    var fitHandle;
+    var result;
+
+    function setRange(el, min, max, step, value) {
+      el.min = String(min);
+      el.max = String(max);
+      el.step = String(step);
+      el.value = String(value);
+    }
+
+    setRange(thrust, K.ZERO, K.HUNDRED, K.ONE, K.THREE * K.TEN);
+    setRange(area, K.ONE, K.FOUR * K.FOUR, K.HALF, K.SIX);
+    setRange(pitch, K.ZERO, K.THREE * K.TEN, K.ONE, K.TEN);
+    setRange(limit, K.TWO * K.TEN, K.SIX * K.TEN, K.ONE, K.FOUR * K.TEN);
+
+    var presets = {
+      gentle: { thrust: K.THREE * K.TEN, area: K.SIX, pitch: K.TEN },
+      fast: { thrust: K.EIGHT * K.TEN, area: K.SIX, pitch: K.TEN },
+      slender: { thrust: K.HALF * K.HUNDRED, area: K.TWO, pitch: K.TEN },
+      wide: { thrust: K.HALF * K.HUNDRED, area: K.FOUR * K.THREE, pitch: K.TEN }
+    };
+
+    function runSimulation() {
+      var duration = K.MINUTE + K.HALF * K.MINUTE;
+      var dt = K.HALF;
+      var mass = (K.TWO * K.HUNDRED) * K.TONNE;
+      var dragCoefficient = K.HALF;
+      var baseThrust = mass * K.G0 * (K.TWO + K.HALF);
+      var areaValue = Number(area.value);
+      var pitchEnd = P.degreesToRadians(Number(pitch.value));
+      var bias = (Number(thrust.value) - K.HALF * K.HUNDRED) / (K.HALF * K.HUNDRED);
+      var x = K.ZERO;
+      var y = K.ZERO;
+      var vx = K.ZERO;
+      var vy = K.ZERO;
+      var samples = [];
+      var maxQ = K.ZERO;
+      var maxDrag = K.ZERO;
+      var peakIndex = K.ZERO;
+      var t;
+
+      for (t = K.ZERO; t <= duration; t += dt) {
+        var progress = t / duration;
+        var speed = Math.sqrt(vx * vx + vy * vy);
+        var density = P.airDensity(y);
+        var pressure = P.airPressure(y);
+        var temperature = P.airTemperature(y);
+        var q = P.dynamicPressureAtAltitude(speed, y);
+        var drag = P.dragForceAtAltitude(dragCoefficient, areaValue, speed, y);
+        var mach = P.machNumber(speed, y);
+        var sound = P.speedOfSound(y);
+
+        samples.push({
+          t: t, x: x, y: y, vx: vx, vy: vy, speed: speed,
+          density: density, pressure: pressure, temperature: temperature,
+          q: q, drag: drag, mach: mach, sound: sound
+        });
+        if (q > maxQ) {
+          maxQ = q;
+          peakIndex = samples.length - K.ONE;
+        }
+        if (drag > maxDrag) maxDrag = drag;
+
+        var angle = pitchEnd * progress;
+        var thrustScale = K.ONE + bias * (K.ONE - K.TWO * progress) * K.HALF;
+        var thrustForce = baseThrust * Math.max(K.HALF, thrustScale);
+        var dragX = K.ZERO;
+        var dragY = K.ZERO;
+        if (speed > K.ZERO) {
+          dragX = -drag * vx / speed;
+          dragY = -drag * vy / speed;
+        }
+        var gravity = P.gravityAtAltitude(y);
+        var ax = thrustForce * Math.sin(angle) / mass + dragX / mass;
+        var ay = thrustForce * Math.cos(angle) / mass + dragY / mass - gravity;
+        vx += ax * dt;
+        vy += ay * dt;
+        x += vx * dt;
+        y = Math.max(K.ZERO, y + vy * dt);
+      }
+
+      return {
+        samples: samples,
+        peak: samples[peakIndex],
+        maxQ: maxQ,
+        maxDrag: maxDrag,
+        final: samples[samples.length - K.ONE],
+        duration: duration
+      };
+    }
+
+    function updateReadouts() {
+      var qKpa = result.maxQ / K.KPA;
+      var dragKn = result.maxDrag / K.KN;
+      document.getElementById('q-value').textContent = P.formatNumber(qKpa) + ' kPa';
+      document.getElementById('drag-value').textContent = P.formatNumber(dragKn) + ' kN';
+      document.getElementById('alt-value').textContent = P.formatDistance(result.final.y);
+      document.getElementById('speed-value').textContent = P.formatVelocity(result.final.speed);
+      document.getElementById('thrust-out').textContent = P.formatNumber(Number(thrust.value)) + '%';
+      document.getElementById('area-out').textContent = P.formatNumber(Number(area.value)) + ' m²';
+      document.getElementById('pitch-out').textContent = P.formatNumber(Number(pitch.value)) + '°';
+      document.getElementById('limit-out').textContent = P.formatNumber(Number(limit.value)) + ' kPa';
+    }
+
+    function draw(ctx, w, h) {
+      if (!result) return;
+      var C = {
+        bg: Deck.token('surface-inset'),
+        panel: Deck.token('surface-1'),
+        line: Deck.token('line'),
+        muted: Deck.token('ink-muted'),
+        faint: Deck.token('ink-faint'),
+        ink: Deck.token('ink-strong'),
+        accent: Deck.token('accent'),
+        warm: Deck.token('accent-warm'),
+        blue: Deck.token('accent-blue'),
+        danger: Deck.token('danger')
+      };
+      var fontSans = Deck.token('font-sans');
+      var fontMono = Deck.token('font-mono');
+      var fontWeight = Deck.token('weight-semibold');
+      var pad = K.SIX * K.FOUR;
+      var chartTop = h * (K.TWO / K.THREE);
+      var plotLeft = pad + K.FOUR * K.TWO;
+      var plotRight = w - pad;
+      var plotTop = pad;
+      var plotBottom = chartTop - K.FOUR * K.THREE;
+      var chartBottom = h - pad;
+      var samples = result.samples;
+      var final = result.final;
+      var maxAlt = Math.max(final.y, K.ATMOSPHERE_TROPOPAUSE_ALTITUDE * K.THREE);
+      var maxX = Math.max(final.x, K.KM);
+      var dangerQ = Number(limit.value) * K.KPA;
+      var i;
+
+      ctx.clearRect(K.ZERO, K.ZERO, w, h);
+      ctx.fillStyle = C.bg;
+      ctx.fillRect(K.ZERO, K.ZERO, w, h);
+
+      var bandH = (plotBottom - plotTop) * K.ONE_THIRD;
+      ctx.fillStyle = Deck.rgba('accent-blue', K.ONE / K.TEN);
+      ctx.fillRect(plotLeft, plotBottom - bandH, plotRight - plotLeft, bandH);
+      ctx.fillStyle = Deck.rgba('accent-blue', K.ONE / (K.TEN * K.TWO));
+      ctx.fillRect(plotLeft, plotTop, plotRight - plotLeft, plotBottom - plotTop - bandH);
+
+      ctx.strokeStyle = C.line;
+      ctx.lineWidth = K.ONE;
+      ctx.setLineDash([K.SIX, K.SIX]);
+      for (i = K.ZERO; i <= K.FOUR; i += K.ONE) {
+        var gy = plotBottom - (plotBottom - plotTop) * i / K.FOUR;
+        ctx.beginPath(); ctx.moveTo(plotLeft, gy); ctx.lineTo(plotRight, gy); ctx.stroke();
+      }
+      ctx.setLineDash([]);
+
+      function sx(v) { return plotLeft + (plotRight - plotLeft) * v / maxX; }
+      function sy(v) { return plotBottom - (plotBottom - plotTop) * v / maxAlt; }
+
+      ctx.strokeStyle = C.accent;
+      ctx.lineWidth = K.THREE;
+      ctx.beginPath();
+      samples.forEach(function (s, index) {
+        if (index === K.ZERO) ctx.moveTo(sx(s.x), sy(s.y));
+        else ctx.lineTo(sx(s.x), sy(s.y));
+      });
+      ctx.stroke();
+
+      var peak = result.peak;
+      ctx.fillStyle = peak.q >= dangerQ ? C.danger : C.warm;
+      ctx.beginPath(); ctx.arc(sx(peak.x), sy(peak.y), K.SIX, K.ZERO, K.TWO_PI); ctx.fill();
+      ctx.strokeStyle = Deck.rgba('ink-strong', K.HALF);
+      ctx.lineWidth = K.TWO;
+      Deck.arrow(ctx, sx(final.x), sy(final.y) + K.TEN, sx(final.x), sy(final.y) - K.TEN, K.SIX);
+
+      ctx.font = fontWeight + ' ' + (K.TWO * K.EIGHT) + 'px ' + fontSans;
+      ctx.fillStyle = C.ink;
+      ctx.fillText('上升剖面', plotLeft, plotTop - K.EIGHT);
+      ctx.font = (K.TWO * K.SIX) + 'px ' + fontMono;
+      ctx.fillStyle = C.muted;
+      ctx.fillText(P.formatDistance(maxAlt), K.SIX, plotTop + K.FOUR);
+      ctx.fillText('地面', K.TWO * K.SIX, plotBottom);
+
+      var infoX = Math.min(plotRight - K.HUNDRED * K.TWO, sx(peak.x) + K.TWO * K.TEN);
+      var infoY = Math.max(plotTop + K.THREE * K.TEN, sy(peak.y) - K.TWO * K.TEN);
+      ctx.font = fontWeight + ' ' + (K.TWO * K.SIX) + 'px ' + fontMono;
+      ctx.fillStyle = peak.q >= dangerQ ? C.danger : C.warm;
+      ctx.fillText('MAX Q  ' + P.formatNumber(result.maxQ / K.KPA) + ' kPa', infoX, infoY);
+      ctx.font = (K.TWO * K.SIX) + 'px ' + fontSans;
+      ctx.fillStyle = C.muted;
+      ctx.fillText('ρ ' + P.formatNumber(peak.density) + ' kg/m³  ·  Mach ' + P.formatNumber(peak.mach), infoX, infoY + K.TWO * K.TEN);
+
+      var cTop = chartTop + K.THREE * K.TEN;
+      var cHeight = chartBottom - cTop;
+      var qMax = Math.max(result.maxQ, dangerQ, K.ONE);
+      ctx.strokeStyle = C.line;
+      ctx.beginPath(); ctx.moveTo(plotLeft, cTop); ctx.lineTo(plotLeft, chartBottom); ctx.lineTo(plotRight, chartBottom); ctx.stroke();
+      ctx.font = fontWeight + ' ' + (K.TWO * K.SIX) + 'px ' + fontSans;
+      ctx.fillStyle = C.ink;
+      ctx.fillText('动压 / 阻力', plotLeft, chartTop + K.TEN);
+
+      var limitY = chartBottom - cHeight * dangerQ / qMax;
+      ctx.strokeStyle = C.danger;
+      ctx.setLineDash([K.EIGHT, K.SIX]);
+      ctx.beginPath(); ctx.moveTo(plotLeft, limitY); ctx.lineTo(plotRight, limitY); ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.font = (K.TWO * K.SIX) + 'px ' + fontMono;
+      ctx.fillStyle = C.danger;
+      ctx.fillText('读者警戒值', plotLeft + K.EIGHT, limitY - K.SIX);
+
+      function tx(v) { return plotLeft + (plotRight - plotLeft) * v / result.duration; }
+      ctx.strokeStyle = C.blue;
+      ctx.lineWidth = K.TWO;
+      ctx.beginPath();
+      samples.forEach(function (s, index) {
+        var py = chartBottom - cHeight * s.q / qMax;
+        if (index === K.ZERO) ctx.moveTo(tx(s.t), py); else ctx.lineTo(tx(s.t), py);
+      });
+      ctx.stroke();
+      ctx.strokeStyle = C.warm;
+      ctx.beginPath();
+      samples.forEach(function (s, index) {
+        var py = chartBottom - cHeight * s.drag / Math.max(result.maxDrag, K.ONE);
+        if (index === K.ZERO) ctx.moveTo(tx(s.t), py); else ctx.lineTo(tx(s.t), py);
+      });
+      ctx.stroke();
+
+      ctx.font = (K.TWO * K.SIX) + 'px ' + fontMono;
+      ctx.fillStyle = C.muted;
+      ctx.fillText('0', plotLeft, chartBottom + K.TWO * K.SIX);
+      ctx.fillText(P.formatTime(result.duration), plotRight - K.SIX * K.TEN, chartBottom + K.TWO * K.SIX);
+      ctx.fillStyle = C.blue;
+      ctx.fillText('— 动压', plotRight - K.HUNDRED * K.TWO, chartTop + K.TEN);
+      ctx.fillStyle = C.warm;
+      ctx.fillText('— 阻力', plotRight - K.HUNDRED, chartTop + K.TEN);
+    }
+
+    function refresh() {
+      result = runSimulation();
+      updateReadouts();
+      if (fitHandle) fitHandle.redraw();
+    }
+
+    preset.addEventListener('change', function () {
+      var p = presets[preset.value] || presets.gentle;
+      thrust.value = String(p.thrust);
+      area.value = String(p.area);
+      pitch.value = String(p.pitch);
+      refresh();
+    });
+    [thrust, area, pitch, limit].forEach(function (el) {
+      el.addEventListener('input', refresh);
+    });
+
+    result = runSimulation();
+    updateReadouts();
+    fitHandle = Deck.autofit(cv, draw);
+  });
+  </script>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+</body>
+</html>

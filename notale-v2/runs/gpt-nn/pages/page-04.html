@@ -1,0 +1,354 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+</head>
+<body data-page="04" data-total="24">
+  <div id="stage">
+    <style>
+      #stage #page-content { --left: 1.28fr; --right: .72fr; height: 100%; }
+      #stage .lab-panel { display:flex; flex-direction:column; min-height:0; height:100%; padding:var(--sp-5); }
+      #stage .lab-head { display:flex; align-items:flex-start; justify-content:space-between; gap:var(--sp-4); margin-block-end:var(--sp-3); }
+      #stage .lab-head h2 { font-size:var(--fs-h3); }
+      #stage .lab-sub { color:var(--text-muted); font-size:var(--fs-label); line-height:var(--lh-label); }
+      #stage .sample-wrap { position:relative; flex:1 1 auto; min-height:0; }
+      #stage #sample-plot { display:block; width:100%; height:100%; min-height:0; outline:none; }
+      #stage #sample-plot:focus-visible { box-shadow:0 0 0 3px var(--focus); }
+      #stage .plot-bg { fill:var(--surface-control); }
+      #stage .plot-grid { stroke:var(--line); stroke-width:1; opacity:.72; }
+      #stage .axis-line { stroke:var(--line-strong); stroke-width:2; }
+      #stage .boundary-shadow { stroke:var(--bg); stroke-width:8; }
+      #stage .boundary { stroke:var(--text-strong); stroke-width:3; }
+      #stage .normal { stroke:var(--warm); stroke-width:3; }
+      #stage .sample-a { fill:var(--secondary); stroke:var(--text-strong); stroke-width:3; }
+      #stage .sample-b { fill:var(--accent); stroke:var(--text-strong); stroke-width:3; }
+      #stage .sample-miss { stroke:var(--danger); stroke-width:6; stroke-dasharray:5 4; }
+      #stage .sample-selected { stroke:var(--focus); stroke-width:6; }
+      #stage .sample-mark { fill:var(--text-inverse); pointer-events:none; font-size:var(--fs-label); font-weight:var(--weight-bold); text-anchor:middle; dominant-baseline:central; }
+      #stage .axis-label { fill:var(--text-muted); font-size:var(--fs-label); font-weight:var(--weight-semibold); }
+      #stage .cursor { fill:none; stroke:var(--focus); stroke-width:2; stroke-dasharray:5 5; pointer-events:none; }
+      #stage .controls { display:grid; grid-template-columns:1fr auto auto auto; gap:var(--sp-3); margin-block-start:var(--sp-4); }
+      #stage .controls button { min-width:0; padding-inline:var(--sp-4); }
+      #stage .right-stack { display:grid; grid-template-rows:auto auto minmax(0,1fr); gap:var(--sp-4); height:100%; min-height:0; }
+      #stage .metric-grid { --readout-cols:3; }
+      #stage .metric-grid .readout { padding:var(--sp-3); }
+      #stage .metric-grid .readout__value { font-size:var(--fs-h3); }
+      #stage .machine { display:grid; grid-template-columns:1fr auto; align-items:center; gap:var(--sp-4); }
+      #stage .formula { display:flex; flex-wrap:wrap; align-items:center; gap:var(--sp-2); color:var(--text-strong); font-size:var(--fs-body-lg); font-weight:var(--weight-bold); }
+      #stage .formula code { padding:var(--sp-2) var(--sp-3); border:1px solid var(--line-strong); border-radius:var(--radius-sm); background:var(--surface-control); color:var(--accent-strong); font-family:inherit; }
+      #stage .delta { color:var(--warm); font-size:var(--fs-body-sm); line-height:var(--lh-body); margin-block-start:var(--sp-3); }
+      #stage .history { display:flex; flex-direction:column; justify-content:space-between; min-height:0; }
+      #stage .history-line { display:grid; grid-template-columns:auto 1fr; align-items:start; gap:var(--sp-4); }
+      #stage .history-dot { width:14px; height:14px; margin-block-start:var(--sp-2); border-radius:50%; background:var(--warm); box-shadow:var(--shadow-glow); }
+      #stage .history strong { display:block; font-size:var(--fs-body); margin-block-end:var(--sp-2); }
+      #stage .history p { color:var(--text-muted); font-size:var(--fs-body-sm); line-height:var(--lh-body); }
+      #stage .rule-note { margin-block-start:var(--sp-4); padding-block-start:var(--sp-4); border-block-start:1px solid var(--line); color:var(--text-muted); font-size:var(--fs-body-sm); line-height:var(--lh-body); }
+      #stage .rule-note b { color:var(--accent-strong); }
+      @media (prefers-reduced-motion: reduce) { #stage * { transition:none !important; } }
+    </style>
+
+    <main id="page-content" class="split-lr min0" aria-label="感知机在线学习实验">
+      <section class="split-lr__left panel lab-panel min0" aria-labelledby="samples-title">
+        <div class="lab-head">
+          <div>
+            <h2 id="samples-title">标注样本场</h2>
+            <div class="lab-sub">空白处添加；拖动样本；点按样本切换标签。键盘可用方向键与空格。</div>
+          </div>
+          <span id="next-label" class="badge badge--accent">新样本：＋</span>
+        </div>
+        <div class="sample-wrap plot min0">
+          <svg id="sample-plot" tabindex="0" role="application" aria-label="二维样本场。回车添加样本，方向键移动光标或已选样本，空格切换标签。"></svg>
+        </div>
+        <div class="controls">
+          <button id="label-btn" type="button" aria-pressed="true">标签：＋</button>
+          <button id="step-btn" class="button--primary" type="button">踏动一步</button>
+          <button id="run-btn" class="button--secondary" type="button" aria-pressed="false">连续训练</button>
+          <button id="reset-btn" class="button--ghost" type="button">重置</button>
+        </div>
+      </section>
+
+      <aside class="split-lr__right right-stack min0" aria-label="感知机参数与历史背景">
+        <div class="readout-grid metric-grid">
+          <div class="readout readout--warning"><span class="readout__label">误分类</span><output id="miss" class="readout__value">—</output></div>
+          <div class="readout readout--accent"><span class="readout__label">准确率</span><output id="acc" class="readout__value">—</output></div>
+          <div class="readout"><span class="readout__label">更新次数</span><output id="updates" class="readout__value">—</output></div>
+        </div>
+
+        <section class="panel panel--raised" aria-labelledby="machine-title">
+          <div class="panel-header"><h2 id="machine-title" class="card-title">在线更新机器</h2><span id="sample-state" class="badge">待踏动</span></div>
+          <div class="formula" aria-label="当前参数">
+            <code>w₁=<output id="w1">—</output></code>
+            <code>w₂=<output id="w2">—</output></code>
+            <code>b=<output id="bias">—</output></code>
+          </div>
+          <div id="delta" class="delta" aria-live="polite">选取下一个样本，预测后只在出错时修正参数。</div>
+        </section>
+
+        <section class="panel history min0" aria-labelledby="history-title">
+          <div>
+            <div class="history-line">
+              <span class="history-dot" aria-hidden="true"></span>
+              <div>
+                <strong id="history-title">Mark I Perceptron</strong>
+                <p id="event-label">—</p>
+              </div>
+            </div>
+            <p class="rule-note"><b>学习规则：</b>错误变成方向；输入决定权重往哪里移动，标签误差决定正负。正确样本不更新。</p>
+          </div>
+          <div class="callout callout--warm"><p>这是单层线性阈值学习器的历史演示，不是现代深度网络。</p></div>
+        </section>
+      </aside>
+    </main>
+
+    <script defer src="assets/lib/d3.min.js"></script>
+    <script>
+      (function () {
+        'use strict';
+
+        function boot() {
+          Lec.mount({
+            index: 4,
+            kicker: `THE PERCEPTRON`,
+            title: `Rosenblatt：让阈值单元从错误中<em>学习</em>`,
+            take: `感知机把“手工设权重”变成了“由标注样本逐步修正权重”。`
+          });
+
+          var P = Lec.P;
+          var svgNode = document.getElementById('sample-plot');
+          var svg = d3.select(svgNode);
+          var labelBtn = document.getElementById('label-btn');
+          var stepBtn = document.getElementById('step-btn');
+          var runBtn = document.getElementById('run-btn');
+          var resetBtn = document.getElementById('reset-btn');
+          var nextLabel = document.getElementById('next-label');
+          var state = createInitialState();
+          var loop;
+          var lastAuto = 0;
+          var layout = { width: 0, height: 0, pad: 42 };
+
+          function createInitialState() {
+            return {
+              points: [
+                { x: .22, y: .28, t: 0 }, { x: .34, y: .36, t: 0 },
+                { x: .28, y: .66, t: 0 }, { x: .68, y: .35, t: 1 },
+                { x: .76, y: .57, t: 1 }, { x: .61, y: .72, t: 1 }
+              ],
+              weights: [-.18, .13], bias: .04, learningRate: .24,
+              cursor: 0, updates: 0, selected: null, nextTarget: 1,
+              keyboard: { x: .5, y: .5 }, running: false, last: null
+            };
+          }
+
+          function prediction(point) {
+            return P.perceptronPredict([point.x, point.y], state.weights, state.bias, 0);
+          }
+
+          function perceptronStep(point) {
+            if (typeof P.perceptronStep === 'function') {
+              return P.perceptronStep({ x: [point.x, point.y], t: point.t }, state.weights, state.bias, state.learningRate);
+            }
+            return P.perceptronUpdate([point.x, point.y], state.weights, state.bias, point.t, state.learningRate);
+          }
+
+          function binaryMetrics() {
+            var predicted = state.points.map(prediction);
+            var actual = state.points.map(function (d) { return d.t; });
+            if (typeof P.binaryMetrics === 'function') return P.binaryMetrics(predicted, actual);
+            return { accuracy: P.accuracy(predicted, actual), incorrect: predicted.filter(function (d, i) { return d !== actual[i]; }).length };
+          }
+
+          function trainingSummary(metrics) {
+            if (typeof P.trainingSummary === 'function') return P.trainingSummary({ updates: state.updates, metrics: metrics });
+            return { updates: state.updates, incorrect: metrics.incorrect, accuracy: metrics.accuracy };
+          }
+
+          function format(value, digits) { return P.formatNumber(value, digits); }
+          function eventLabel() {
+            if (typeof P.eventLabel === 'function') return P.eventLabel('perceptron');
+            var e = P.eventById('perceptron');
+            return e ? format(e.year, 0) + ' · ' + e.people + ' · ' + e.significance : '';
+          }
+
+          function dims() {
+            layout.width = Math.max(1, svgNode.clientWidth);
+            layout.height = Math.max(1, svgNode.clientHeight);
+            svg.attr('viewBox', '0 0 ' + layout.width + ' ' + layout.height);
+          }
+          function sx(x) { return layout.pad + x * (layout.width - layout.pad * 2); }
+          function sy(y) { return layout.height - layout.pad - y * (layout.height - layout.pad * 2); }
+          function ux(x) { return P.clamp((x - layout.pad) / (layout.width - layout.pad * 2), 0, 1); }
+          function uy(y) { return P.clamp((layout.height - layout.pad - y) / (layout.height - layout.pad * 2), 0, 1); }
+
+          function boundarySegment() {
+            var w = state.weights, b = state.bias, pts = [], x, y;
+            if (Math.abs(w[1]) > 1e-9) {
+              y = -b / w[1]; if (y >= 0 && y <= 1) pts.push([0, y]);
+              y = -(w[0] + b) / w[1]; if (y >= 0 && y <= 1) pts.push([1, y]);
+            }
+            if (Math.abs(w[0]) > 1e-9) {
+              x = -b / w[0]; if (x >= 0 && x <= 1) pts.push([x, 0]);
+              x = -(w[1] + b) / w[0]; if (x >= 0 && x <= 1) pts.push([x, 1]);
+            }
+            return pts.slice(0, 2);
+          }
+
+          function draw() {
+            dims();
+            svg.selectAll('*').remove();
+            var w = layout.width, h = layout.height, pad = layout.pad;
+            svg.append('rect').attr('class', 'plot-bg').attr('x', 0).attr('y', 0).attr('width', w).attr('height', h);
+            var grid = svg.append('g');
+            d3.range(1, 5).forEach(function (i) {
+              grid.append('line').attr('class', 'plot-grid').attr('x1', sx(i / 5)).attr('x2', sx(i / 5)).attr('y1', pad).attr('y2', h - pad);
+              grid.append('line').attr('class', 'plot-grid').attr('x1', pad).attr('x2', w - pad).attr('y1', sy(i / 5)).attr('y2', sy(i / 5));
+            });
+            svg.append('line').attr('class', 'axis-line').attr('x1', pad).attr('x2', w - pad).attr('y1', h - pad).attr('y2', h - pad);
+            svg.append('line').attr('class', 'axis-line').attr('x1', pad).attr('x2', pad).attr('y1', pad).attr('y2', h - pad);
+            svg.append('text').attr('class', 'axis-label').attr('x', w - pad).attr('y', h - 12).attr('text-anchor', 'end').text('特征 x₁');
+            svg.append('text').attr('class', 'axis-label').attr('x', pad + 10).attr('y', pad + 20).text('特征 x₂');
+
+            var seg = boundarySegment();
+            if (seg.length === 2) {
+              ['boundary-shadow', 'boundary'].forEach(function (klass) {
+                svg.append('line').attr('class', klass).attr('x1', sx(seg[0][0])).attr('y1', sy(seg[0][1])).attr('x2', sx(seg[1][0])).attr('y2', sy(seg[1][1]));
+              });
+            }
+
+            var groups = svg.selectAll('g.sample').data(state.points).join('g').attr('class', 'sample')
+              .attr('transform', function (d) { return 'translate(' + sx(d.x) + ',' + sy(d.y) + ')'; });
+            groups.append('circle').attr('r', 15).attr('class', function (d, i) {
+              var c = d.t ? 'sample-b' : 'sample-a';
+              if (prediction(d) !== d.t) c += ' sample-miss';
+              if (state.selected === i) c += ' sample-selected';
+              return c;
+            });
+            groups.append('text').attr('class', 'sample-mark').text(function (d) { return d.t ? '+' : '−'; });
+            svg.append('circle').attr('class', 'cursor').attr('cx', sx(state.keyboard.x)).attr('cy', sy(state.keyboard.y)).attr('r', 22);
+            updateReadouts();
+          }
+
+          function updateReadouts() {
+            var metrics = binaryMetrics();
+            var summary = trainingSummary(metrics);
+            document.getElementById('miss').textContent = format(summary.incorrect, 0);
+            document.getElementById('acc').textContent = P.formatPercent(summary.accuracy, 0, false);
+            document.getElementById('updates').textContent = format(summary.updates, 0);
+            document.getElementById('w1').textContent = format(state.weights[0], 2);
+            document.getElementById('w2').textContent = format(state.weights[1], 2);
+            document.getElementById('bias').textContent = format(state.bias, 2);
+            if (state.last) {
+              var l = state.last;
+              document.getElementById('sample-state').textContent = l.error === 0 ? '预测正确' : '发生更新';
+              document.getElementById('sample-state').className = 'badge ' + (l.error === 0 ? 'badge--success' : 'badge--danger');
+              document.getElementById('delta').textContent = l.error === 0 ? '误差为零：边界保持不动。' : '更新方向：Δw = η · 误差 · x，Δb = η · 误差。边界已响应当前样本。';
+            }
+            document.getElementById('event-label').textContent = eventLabel();
+          }
+
+          function stepOnce() {
+            if (!state.points.length) return;
+            var point = state.points[state.cursor % state.points.length];
+            state.selected = state.cursor % state.points.length;
+            var result = perceptronStep(point);
+            state.last = result;
+            if (result.error !== 0) state.updates += 1;
+            state.weights = result.weights;
+            state.bias = result.bias;
+            state.cursor = (state.cursor + 1) % state.points.length;
+            draw();
+          }
+
+          function setRunning(value) {
+            state.running = value;
+            runBtn.setAttribute('aria-pressed', String(value));
+            runBtn.textContent = value ? '暂停训练' : '连续训练';
+          }
+
+          function pointerPosition(event) {
+            var p = Deck.pt(svgNode, event);
+            return { x: ux(p.x), y: uy(p.y) };
+          }
+          function nearest(pos) {
+            var best = null, bestD = Infinity;
+            state.points.forEach(function (d, i) {
+              var dx = sx(d.x) - sx(pos.x), dy = sy(d.y) - sy(pos.y), dist = dx * dx + dy * dy;
+              if (dist < bestD) { bestD = dist; best = i; }
+            });
+            return bestD < 900 ? best : null;
+          }
+
+          var dragging = null;
+          svgNode.addEventListener('pointerdown', function (event) {
+            var pos = pointerPosition(event), hit = nearest(pos);
+            svgNode.setPointerCapture(event.pointerId);
+            if (hit === null) {
+              state.points.push({ x: pos.x, y: pos.y, t: state.nextTarget });
+              state.selected = state.points.length - 1;
+              state.keyboard = pos;
+            } else { state.selected = hit; dragging = { index: hit, moved: false, start: pos }; }
+            draw();
+          });
+          svgNode.addEventListener('pointermove', function (event) {
+            if (!dragging) return;
+            var pos = pointerPosition(event);
+            if (Math.abs(pos.x - dragging.start.x) + Math.abs(pos.y - dragging.start.y) > .015) dragging.moved = true;
+            state.points[dragging.index].x = pos.x; state.points[dragging.index].y = pos.y; state.keyboard = pos; draw();
+          });
+          function endPointer(event) {
+            if (dragging && !dragging.moved) state.points[dragging.index].t = state.points[dragging.index].t ? 0 : 1;
+            dragging = null;
+            if (svgNode.hasPointerCapture(event.pointerId)) svgNode.releasePointerCapture(event.pointerId);
+            draw();
+          }
+          svgNode.addEventListener('pointerup', endPointer);
+          svgNode.addEventListener('pointercancel', function (event) { dragging = null; if (svgNode.hasPointerCapture(event.pointerId)) svgNode.releasePointerCapture(event.pointerId); draw(); });
+
+          svgNode.addEventListener('keydown', function (event) {
+            var amount = event.shiftKey ? .05 : .02;
+            if (event.key.indexOf('Arrow') === 0) {
+              event.preventDefault();
+              var target = state.selected === null ? state.keyboard : state.points[state.selected];
+              if (event.key === 'ArrowLeft') target.x = P.clamp(target.x - amount, 0, 1);
+              if (event.key === 'ArrowRight') target.x = P.clamp(target.x + amount, 0, 1);
+              if (event.key === 'ArrowUp') target.y = P.clamp(target.y + amount, 0, 1);
+              if (event.key === 'ArrowDown') target.y = P.clamp(target.y - amount, 0, 1);
+              state.keyboard = { x: target.x, y: target.y }; draw();
+            } else if (event.key === 'Enter') {
+              event.preventDefault(); state.points.push({ x: state.keyboard.x, y: state.keyboard.y, t: state.nextTarget }); state.selected = state.points.length - 1; draw();
+            } else if (event.key === ' ') {
+              event.preventDefault();
+              if (state.selected !== null) state.points[state.selected].t = state.points[state.selected].t ? 0 : 1;
+              else state.nextTarget = state.nextTarget ? 0 : 1;
+              syncLabel(); draw();
+            }
+          });
+
+          function syncLabel() {
+            labelBtn.textContent = '标签：' + (state.nextTarget ? '＋' : '−');
+            labelBtn.setAttribute('aria-pressed', String(!!state.nextTarget));
+            nextLabel.textContent = '新样本：' + (state.nextTarget ? '＋' : '−');
+          }
+          labelBtn.addEventListener('click', function () { state.nextTarget = state.nextTarget ? 0 : 1; syncLabel(); });
+          stepBtn.addEventListener('click', function () { setRunning(false); stepOnce(); });
+          runBtn.addEventListener('click', function () { setRunning(!state.running); });
+          resetBtn.addEventListener('click', function () { setRunning(false); state = createInitialState(); syncLabel(); draw(); });
+
+          loop = Deck.loop(function (time) {
+            if (state.running && time - lastAuto > 430) { lastAuto = time; stepOnce(); }
+          }, { still: 0 });
+          Deck.onResize(draw);
+          syncLabel(); draw();
+        }
+
+        if (document.readyState === 'loading') {
+          document.addEventListener('DOMContentLoaded', boot, { once: true });
+        } else { boot(); }
+      }());
+    </script>
+  </div>
+  <script src="assets/base.js"></script>
+  <script src="assets/lec.js"></script>
+</body>
+</html>

@@ -1,0 +1,297 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+</head>
+<body data-page="11" data-total="24">
+  <div id="stage">
+    <style>
+      #stage #page-content { position: relative; }
+      #stage .memory-field { position: relative; }
+      #stage .field-surface {
+        border: 1px solid var(--line);
+        border-radius: var(--radius-xl);
+        background:
+          radial-gradient(circle at 50% 42%, var(--accent-soft), transparent 42%),
+          linear-gradient(90deg, transparent 49.8%, var(--line) 50%, transparent 50.2%),
+          var(--surface-control);
+      }
+      #stage .field-surface::before,
+      #stage .field-surface::after {
+        content: "";
+        position: absolute;
+        border: 1px solid var(--line);
+        border-radius: 50%;
+        pointer-events: none;
+      }
+      #stage .field-surface::before { inset: 12% 25%; opacity: .45; }
+      #stage .field-surface::after { inset: 25% 35%; opacity: .35; }
+      #stage .field-overlay {
+        display: grid;
+        grid-template-columns: minmax(430px, .95fr) minmax(0, 1.18fr) minmax(320px, .72fr);
+        gap: var(--sp-5);
+        padding: var(--sp-5);
+      }
+      #stage .zone {
+        min-inline-size: 0;
+        min-block-size: 0;
+        border: 1px solid var(--line);
+        border-radius: var(--radius-lg);
+        background: linear-gradient(145deg, var(--surface-2), var(--surface-1));
+        box-shadow: var(--shadow-sm);
+      }
+      #stage .board-zone { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; gap: var(--sp-3); padding: var(--sp-4); }
+      #stage .zone-head { display: flex; justify-content: space-between; align-items: center; gap: var(--sp-3); }
+      #stage .zone-title { color: var(--text-strong); font-size: var(--fs-body-lg); font-weight: var(--weight-bold); line-height: var(--lh-tight); }
+      #stage .pixel-wrap { display: grid; place-items: center; min-block-size: 0; }
+      #stage #pixel-board {
+        inline-size: 400px;
+        block-size: 400px;
+        max-inline-size: 100%;
+        border: 1px solid var(--line-strong);
+        border-radius: var(--radius-md);
+        background: var(--surface-control);
+        box-shadow: inset 0 0 48px var(--bg), var(--shadow-glow);
+        cursor: crosshair;
+      }
+      #stage #pixel-board:focus-visible { outline: 4px solid var(--focus); outline-offset: 4px; }
+      #stage .memory-strip { display: flex; align-items: center; gap: var(--sp-3); min-block-size: 58px; }
+      #stage .memory-list { display: flex; gap: var(--sp-2); min-inline-size: 0; }
+      #stage .memory-chip { display: grid; grid-template-columns: repeat(8, 5px); gap: 1px; padding: var(--sp-2); border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface-control); }
+      #stage .memory-chip i { inline-size: 5px; block-size: 5px; background: var(--surface-3); }
+      #stage .memory-chip i.on { background: var(--accent); }
+      #stage .landscape-zone { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; gap: var(--sp-3); padding: var(--sp-4); }
+      #stage #energy-plot { inline-size: 100%; block-size: 100%; min-block-size: 310px; }
+      #stage .axis text { fill: var(--text-faint); font-size: var(--fs-tick); }
+      #stage .axis line, #stage .axis path { stroke: var(--line-strong); }
+      #stage .energy-path { fill: none; stroke: var(--accent); stroke-width: 4; }
+      #stage .energy-area { fill: var(--accent-soft); opacity: .72; }
+      #stage .energy-point { fill: var(--text-strong); stroke: var(--accent); stroke-width: 3; }
+      #stage .basin-note { display: flex; align-items: center; gap: var(--sp-3); color: var(--text-muted); font-size: var(--fs-body-sm); line-height: var(--lh-body); }
+      #stage .basin-arrow { color: var(--accent-strong); font-size: var(--fs-h3); line-height: 1; }
+      #stage .control-zone { display: flex; flex-direction: column; gap: var(--sp-3); padding: var(--sp-4); }
+      #stage .step-flow { display: flex; flex-direction: column; gap: var(--sp-2); }
+      #stage .action-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp-2); }
+      #stage .action-row button { min-inline-size: 0; padding-inline: var(--sp-3); }
+      #stage .action-row .wide { grid-column: 1 / -1; }
+      #stage .metrics { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp-2); }
+      #stage .metric { padding: var(--sp-3); border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--surface-control); }
+      #stage .metric-label { color: var(--text-muted); font-size: var(--fs-label); line-height: var(--lh-label); }
+      #stage .metric-value { color: var(--text-strong); font-size: var(--fs-h3); font-weight: var(--weight-bold); font-variant-numeric: tabular-nums; line-height: var(--lh-tight); }
+      #stage .status-box { margin-block-start: auto; padding: var(--sp-4); border-inline-start: 5px solid var(--accent); border-radius: var(--radius-md); background: var(--accent-soft); color: var(--text); font-size: var(--fs-body-sm); line-height: var(--lh-body); }
+      #stage .danger-state { border-inline-start-color: var(--danger); background: var(--danger-soft); }
+      #stage .microcopy { color: var(--text-muted); font-size: var(--fs-label); line-height: var(--lh-label); }
+      @media (prefers-reduced-motion: reduce) {
+        #stage * { transition-duration: 0s !important; }
+      }
+    </style>
+
+    <main id="page-content" class="min0" aria-label="本页正文">
+      <section class="canvas-full memory-field" aria-label="Hopfield 联想记忆实验场">
+        <div class="canvas-full__surface field-surface" aria-hidden="true"></div>
+        <div class="canvas-full__overlay field-overlay">
+          <section class="zone board-zone min0" aria-labelledby="board-title">
+            <div class="zone-head">
+              <h2 class="zone-title" id="board-title">残缺线索</h2>
+              <span class="badge badge--accent" id="mode-badge">可编辑</span>
+            </div>
+            <div class="pixel-wrap">
+              <canvas id="pixel-board" class="cv-fill no-pan" tabindex="0" role="application" aria-label="像素状态板。点击翻转像素；方向键移动光标，空格翻转当前像素。"></canvas>
+            </div>
+            <div class="memory-strip">
+              <span class="label">已存记忆</span>
+              <div class="memory-list" id="memory-list" aria-label="已存图案预览"></div>
+            </div>
+          </section>
+
+          <section class="zone landscape-zone min0" aria-labelledby="energy-title">
+            <div class="zone-head">
+              <h2 class="zone-title" id="energy-title">真实能量轨迹</h2>
+              <span class="badge" id="step-badge">等待启动</span>
+            </div>
+            <svg id="energy-plot" role="img" aria-label="每次异步更新后的 Hopfield 网络能量折线"></svg>
+            <div class="basin-note"><span class="basin-arrow" aria-hidden="true">↘</span><span>不是按地址查找：当前像素状态本身就是线索，更新会寻找附近的低能量吸引子。</span></div>
+          </section>
+
+          <aside class="zone control-zone min0" aria-label="实验控制与读数">
+            <div>
+              <div class="zone-title">破坏 → 恢复 → 过载</div>
+              <p class="microcopy">先加噪，再逐步观察；反复存入受扰图案会提高重合与串扰。</p>
+            </div>
+            <div class="step-flow">
+              <div class="action-row">
+                <button type="button" id="store">存入当前图案</button>
+                <button type="button" id="noise">添加噪声</button>
+                <button type="button" id="step">异步更新一步</button>
+                <button type="button" id="recall" class="button--primary">恢复到稳定</button>
+                <button type="button" id="reset" class="button--ghost wide">重置实验</button>
+              </div>
+            </div>
+            <div class="metrics" aria-label="网络指标">
+              <div class="metric"><div class="metric-label">记忆数</div><output class="metric-value" id="memory-count">—</output></div>
+              <div class="metric"><div class="metric-label">当前能量</div><output class="metric-value" id="energy-value">—</output></div>
+              <div class="metric"><div class="metric-label">重合度</div><output class="metric-value" id="overlap-value">—</output></div>
+              <div class="metric"><div class="metric-label">恢复率</div><output class="metric-value" id="recovery-value">—</output></div>
+            </div>
+            <output id="status" class="status-box" aria-live="polite">从一个不完整图案开始，网络会逐个神经元更新。</output>
+          </aside>
+        </div>
+      </section>
+    </main>
+
+    <script defer src="assets/lib/d3.min.js"></script>
+    <script>
+      (function () {
+        'use strict';
+
+        function installHopfieldCompatibility() {
+          if (Lec.P.hopfieldWeights) return;
+          var old = Lec;
+          var hp = {
+            size: 8,
+            noiseFlips: 11,
+            recallLimit: 512,
+            initialPatterns: [
+              [0,1,1,0,0,1,1,0,1,0,0,1,1,0,0,1,1,0,0,1,1,0,0,1,1,1,1,1,1,1,1,1,1,0,0,1,1,0,0,1,1,0,0,1,1,0,0,1,1,0,0,1,1,0,0,1,1,0,0,1,1,0,0,1],
+              [1,1,1,1,1,1,1,0,1,0,0,0,0,0,0,1,1,0,0,0,0,0,0,1,1,1,1,1,1,1,1,0,1,0,0,0,0,0,0,1,1,0,0,0,0,0,0,1,1,0,0,0,0,0,0,1,1,1,1,1,1,1,1,0]
+            ].map(function (p) { return p.map(function (v) { return v ? 1 : -1; }); })
+          };
+          var ext = {};
+          Object.keys(old.P).forEach(function (k) { ext[k] = old.P[k]; });
+          ext.hopfieldWeights = function (patterns) {
+            var n = patterns[0].length, w = Array.from({length:n}, function(){ return Array(n).fill(0); });
+            patterns.forEach(function (p) { for (var i=0;i<n;i+=1) for (var j=0;j<n;j+=1) if(i!==j) w[i][j] += p[i]*p[j]/n; });
+            return w;
+          };
+          ext.hopfieldEnergy = function (state, weights) {
+            var e=0; for(var i=0;i<state.length;i+=1) for(var j=0;j<state.length;j+=1) e -= weights[i][j]*state[i]*state[j]/2; return e;
+          };
+          ext.hopfieldRecallStep = function (state, weights, index) {
+            var next=state.slice(), field=0; for(var j=0;j<state.length;j+=1) field += weights[index][j]*state[j];
+            next[index] = field === 0 ? state[index] : (field > 0 ? 1 : -1); return {state:next, index:index, changed:next[index]!==state[index], field:field};
+          };
+          ext.hopfieldSummary = function (state, patterns) {
+            var overlaps=patterns.map(function(p){ var same=0; for(var i=0;i<state.length;i+=1) if(state[i]===p[i]) same+=1; return same/state.length; });
+            var best=Math.max.apply(null, overlaps), exact=overlaps.filter(function(v){return v===1;}).length;
+            return {capacity:patterns.length, overlap:best, recoveryRate:exact/patterns.length, crosstalk:1-best};
+          };
+          window.Lec = { K: Object.assign({}, old.K, {hopfield:hp}), P:ext, mount:old.mount };
+        }
+
+        function boot() {
+          installHopfieldCompatibility();
+          Lec.mount({
+            index: 11,
+            kicker: `ASSOCIATIVE MEMORY`,
+            title: `Hopfield 网络：从残缺线索滚回一个<em>记忆</em>`,
+            take: `神经网络不仅能分类，也能把状态更新设计成向低能量记忆收敛。`
+          });
+          document.querySelector('.lec-header__title').innerHTML = `Hopfield 网络：从残缺线索滚回一个<em>记忆</em>`;
+
+          var cfg=Lec.K.hopfield, n=cfg.size*cfg.size;
+          var memories=cfg.initialPatterns.map(function(p){return p.slice();});
+          var state=memories[0].slice(), weights, energies=[], cursor=0, updateIndex=0;
+          var cv=document.getElementById('pixel-board'), ctx, drawing=false;
+          var svg=d3.select('#energy-plot');
+          var status=document.getElementById('status');
+          var seed=37;
+          function rand(){ seed=(seed*1664525+1013904223)>>>0; return seed/4294967296; }
+          function recompute(){ weights=Lec.P.hopfieldWeights(memories); }
+          function energy(){ return Lec.P.hopfieldEnergy(state,weights); }
+          function fmt(v,d){ return Lec.P.formatNumber(v,d); }
+          function pct(v){ return Lec.P.formatPercent(v,0,false); }
+          function renderBoard(){
+            ctx=Deck.fit(cv); var w=400, cell=w/cfg.size;
+            ctx.clearRect(0,0,w,w);
+            for(var i=0;i<n;i+=1){ var x=(i%cfg.size)*cell, y=Math.floor(i/cfg.size)*cell;
+              ctx.fillStyle=state[i]>0?Deck.token('--accent'):Deck.token('--surface-3');
+              ctx.fillRect(x+3,y+3,cell-6,cell-6);
+              if(i===cursor){ctx.strokeStyle=Deck.token('--focus');ctx.lineWidth=4;ctx.strokeRect(x+5,y+5,cell-10,cell-10);}
+            }
+          }
+          function renderMemories(){
+            var host=d3.select('#memory-list');
+            host.selectAll('.memory-chip').data(memories).join(function(enter){
+              var chip=enter.append('div').attr('class','memory-chip').attr('aria-hidden','true');
+              chip.selectAll('i').data(function(d){return d;}).enter().append('i'); return chip;
+            }).each(function(d){d3.select(this).selectAll('i').data(d).attr('class',function(v){return v>0?'on':null;});});
+          }
+          function renderChart(){
+            var node=document.getElementById('energy-plot'), width=node.clientWidth||520, height=node.clientHeight||340;
+            svg.attr('viewBox','0 0 '+width+' '+height).selectAll('*').remove();
+            var margin={top:18,right:18,bottom:42,left:64}, iw=width-margin.left-margin.right, ih=height-margin.top-margin.bottom;
+            var data=energies.length?energies:[energy()]; var lo=d3.min(data), hi=d3.max(data); if(lo===hi){lo-=1;hi+=1;}
+            var x=d3.scaleLinear().domain([0,Math.max(1,data.length-1)]).range([0,iw]);
+            var y=d3.scaleLinear().domain([lo-(hi-lo)*.12,hi+(hi-lo)*.12]).range([ih,0]);
+            var g=svg.append('g').attr('transform','translate('+margin.left+','+margin.top+')');
+            g.append('g').attr('class','axis').attr('transform','translate(0,'+ih+')').call(d3.axisBottom(x).ticks(4));
+            g.append('g').attr('class','axis').call(d3.axisLeft(y).ticks(5));
+            var area=d3.area().x(function(d,i){return x(i);}).y0(ih).y1(function(d){return y(d);}).curve(d3.curveMonotoneX);
+            var line=d3.line().x(function(d,i){return x(i);}).y(function(d){return y(d);}).curve(d3.curveMonotoneX);
+            g.append('path').datum(data).attr('class','energy-area').attr('d',area);
+            g.append('path').datum(data).attr('class','energy-path').attr('d',line);
+            g.selectAll('.energy-point').data(data).join('circle').attr('class','energy-point').attr('cx',function(d,i){return x(i);}).attr('cy',function(d){return y(d);}).attr('r',5);
+            g.append('text').attr('x',iw).attr('y',ih+36).attr('text-anchor','end').attr('fill',Deck.token('--text-muted')).attr('font-size',15).text('异步更新步');
+            g.append('text').attr('transform','rotate(-90)').attr('x',-4).attr('y',-46).attr('text-anchor','end').attr('fill',Deck.token('--text-muted')).attr('font-size',15).text('能量 E');
+          }
+          function updateReadouts(message){
+            var s=Lec.P.hopfieldSummary(state,memories), e=energy();
+            document.getElementById('memory-count').textContent=fmt(s.capacity,0);
+            document.getElementById('energy-value').textContent=fmt(e,1);
+            document.getElementById('overlap-value').textContent=pct(s.overlap);
+            document.getElementById('recovery-value').textContent=pct(s.recoveryRate);
+            document.getElementById('step-badge').textContent=energies.length>1?'能量已重算':'等待启动';
+            document.getElementById('mode-badge').textContent=s.overlap===1?'完整记忆':'残缺线索';
+            status.textContent=message || (s.overlap===1?'已落入一个已存记忆。':'仍在能量地形中寻找稳定状态。');
+            status.classList.toggle('danger-state',s.crosstalk>.3 || memories.length>cfg.size);
+            renderBoard(); renderMemories(); renderChart();
+          }
+          function record(){ energies.push(energy()); }
+          function singleStep(){
+            var r=Lec.P.hopfieldRecallStep(state,weights,updateIndex%n); state=r.state; updateIndex+=1; record();
+            updateReadouts(r.changed?'一个神经元响应整体连接并翻转，能量重新计算。':'这个神经元已与当前吸引子一致。');
+            return r.changed;
+          }
+          function toggleAt(index){ state[index]*=-1; energies=[energy()]; updateReadouts('你改变了线索；这不是训练，记忆权重保持不变。'); }
+          cv.addEventListener('pointerdown',function(e){drawing=true;cv.setPointerCapture(e.pointerId);var p=Deck.pt(cv,e);cursor=Math.max(0,Math.min(n-1,Math.floor(p.y/50)*cfg.size+Math.floor(p.x/50)));toggleAt(cursor);});
+          cv.addEventListener('pointerup',function(e){drawing=false;if(cv.hasPointerCapture(e.pointerId))cv.releasePointerCapture(e.pointerId);});
+          cv.addEventListener('pointercancel',function(){drawing=false;});
+          cv.addEventListener('keydown',function(e){
+            var row=Math.floor(cursor/cfg.size), col=cursor%cfg.size;
+            if(e.key==='ArrowLeft')col=Math.max(0,col-1); else if(e.key==='ArrowRight')col=Math.min(cfg.size-1,col+1); else if(e.key==='ArrowUp')row=Math.max(0,row-1); else if(e.key==='ArrowDown')row=Math.min(cfg.size-1,row+1); else if(e.key===' '||e.key==='Enter'){e.preventDefault();toggleAt(cursor);return;} else return;
+            e.preventDefault();cursor=row*cfg.size+col;renderBoard();
+          });
+          document.getElementById('store').addEventListener('click',function(){memories.push(state.slice());recompute();energies=[energy()];updateReadouts('权重已由全部记忆重新计算。继续存相似图案，会出现串扰与伪记忆。');});
+          document.getElementById('noise').addEventListener('click',function(){for(var k=0;k<cfg.noiseFlips;k+=1){var i=Math.floor(rand()*n);state[i]*=-1;}energies=[energy()];updateReadouts('噪声制造了残缺线索；现在逐步更新或恢复。');});
+          document.getElementById('step').addEventListener('click',singleStep);
+          document.getElementById('recall').addEventListener('click',function(){
+            var sweepChanges=1, rounds=0;
+            while(sweepChanges&&rounds<cfg.recallLimit){
+              sweepChanges=0;
+              for(var k=0;k<n&&rounds<cfg.recallLimit;k+=1){
+                var r=Lec.P.hopfieldRecallStep(state,weights,updateIndex%n);
+                state=r.state; updateIndex+=1; rounds+=1;
+                if(r.changed)sweepChanges+=1;
+                record();
+              }
+            }
+            updateReadouts(rounds>=cfg.recallLimit&&sweepChanges?'达到更新预算，可能处在串扰状态。':'状态已稳定；它可能是真记忆，也可能是过载产生的伪记忆。');
+          });
+          document.getElementById('reset').addEventListener('click',function(){memories=cfg.initialPatterns.map(function(p){return p.slice();});state=memories[0].slice();seed=37;cursor=0;updateIndex=0;recompute();energies=[energy()];updateReadouts('实验已重置。先破坏图案，再观察能量下降。');});
+          recompute(); energies=[energy()]; Deck.onResize(function(){renderBoard();renderChart();}); updateReadouts();
+        }
+
+        if (document.readyState === 'loading') {
+          document.addEventListener('DOMContentLoaded', boot, { once: true });
+        } else {
+          boot();
+        }
+      }());
+    </script>
+  </div>
+  <script src="assets/base.js"></script>
+  <script src="assets/lec.js"></script>
+</body>
+</html>

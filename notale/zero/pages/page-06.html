@@ -1,0 +1,570 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>重力转向发射</title>
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  .p6-wrap{
+    position:absolute; left:var(--sp-6); right:var(--sp-6); top:100px; height:680px;
+    display:flex; gap:var(--sp-4);
+  }
+  .p6-canvas-col{
+    position:relative; flex:1 1 auto; min-width:0;
+    background:var(--bg2); border:1px solid var(--line); border-radius:6px;
+    overflow:hidden;
+  }
+  .p6-hud{
+    position:absolute; left:14px; top:12px; z-index:3; display:flex; gap:18px;
+    pointer-events:none;
+  }
+  .p6-hud .item{ display:flex; flex-direction:column; gap:1px; }
+  .p6-hud .lb{ font:600 var(--fs-label)/1.1 var(--font-mono); color:var(--text-faint); letter-spacing:.03em; }
+  .p6-hud .vv{ font:700 var(--fs-h3)/1.1 var(--font-mono); color:var(--text); font-variant-numeric:tabular-nums; }
+  .p6-hud .vv.accent{ color:var(--accent-2); }
+  .p6-atmlabel{
+    position:absolute; right:14px; z-index:2; font:500 13px/1.2 var(--font-mono);
+    color:var(--text-faint); pointer-events:none; white-space:nowrap;
+    text-shadow:0 1px 3px rgba(0,0,0,.85);
+  }
+  .p6-atmlabel b{ color:var(--accent-3); font-weight:600; }
+  .p6-ground-label{
+    position:absolute; left:14px; z-index:2; font:600 13px/1 var(--font-mono);
+    color:var(--text-faint); pointer-events:none; text-shadow:0 1px 3px rgba(0,0,0,.85);
+  }
+  .p6-panel-col{
+    flex:0 0 552px; min-width:0; display:flex; flex-direction:column; gap:var(--sp-3);
+  }
+  .p6-panel-col .panel{ flex:0 0 auto; }
+  .p6-row-label{ display:flex; align-items:baseline; justify-content:space-between; margin-bottom:6px; }
+  .p6-row-label .label{ color:var(--text-dim); }
+  .p6-row-label .num{ color:var(--accent-2); }
+  .p6-btnrow{ display:flex; gap:var(--sp-3); margin-top:var(--sp-3); }
+  .p6-btnrow .btn{ flex:1; text-align:center; }
+  .p6-live-grid{ display:grid; grid-template-columns:1fr 1fr; gap:8px 18px; }
+  .p6-live-grid .li{ display:flex; flex-direction:column; gap:2px; }
+  .p6-live-grid .lb{ font:600 var(--fs-label)/1.1 var(--font-sans); color:var(--text-faint); }
+  .p6-live-grid .vv{ font:700 var(--fs-h3)/1 var(--font-mono); color:var(--text); font-variant-numeric:tabular-nums; }
+  .p6-bar-wrap{ margin-top:10px; }
+  .p6-bar-track{
+    position:relative; height:10px; border-radius:5px; margin-top:6px;
+    background:var(--bg3); border:1px solid var(--line); overflow:hidden;
+  }
+  .p6-bar-fill{
+    position:absolute; left:0; top:0; bottom:0; width:0%;
+    background:linear-gradient(90deg, var(--accent-2), var(--good));
+    transition:width .12s linear;
+  }
+  .p6-bar-mark{
+    position:absolute; top:0; bottom:0; right:0; width:2px; background:var(--text-faint);
+  }
+  .p6-verdict{ font:700 var(--fs-h3)/1.2 var(--font-sans); margin-bottom:6px; }
+  .p6-verdict.good{ color:var(--good); }
+  .p6-verdict.bad{ color:var(--bad); }
+  .p6-reason{ font:400 var(--fs-body)/1.4 var(--font-sans); color:var(--text-dim); margin-bottom:10px; }
+  .p6-numrow{ display:flex; gap:18px; margin-bottom:10px; }
+  .p6-numrow .li{ display:flex; flex-direction:column; gap:2px; }
+  .p6-numrow .lb{ font:600 var(--fs-label)/1.1 var(--font-sans); color:var(--text-faint); }
+  .p6-numrow .vv{ font:700 var(--fs-h3)/1 var(--font-mono); color:var(--accent-3); font-variant-numeric:tabular-nums; }
+  #resultPanel[hidden]{ display:none; }
+  .p6-controls input[disabled]{ opacity:.45; }
+</style>
+</head>
+<body data-page="06" data-total="14">
+<div id="stage">
+  <div class="starfield"></div>
+
+  <div class="pg-head">
+    <div><span class="pg-kicker">MODULE 2 · 入轨</span><span class="pg-title">不是往上飞，是往“旁边”飞</span></div>
+    <div class="pg-index">6 / 14</div>
+  </div>
+
+  <div class="p6-wrap">
+    <div class="p6-canvas-col">
+      <canvas id="gameCv" class="cv-fill no-pan"></canvas>
+      <div class="p6-hud">
+        <div class="item"><span class="lb">T+</span><span class="vv" id="hudT">0 s</span></div>
+        <div class="item"><span class="lb">高度</span><span class="vv" id="hudH">0.0 km</span></div>
+        <div class="item"><span class="lb">速度</span><span class="vv accent" id="hudV">0.00 km/s</span></div>
+        <div class="item"><span class="lb">推进剂</span><span class="vv" id="hudFuel">100%</span></div>
+      </div>
+      <div class="p6-ground-label" id="groundLabel" style="bottom:14px;">地面 · 发射台</div>
+      <div class="p6-atmlabel" id="atmLabel">— 稠密大气层上界 <b>≈30 km</b></div>
+    </div>
+
+    <div class="p6-panel-col">
+      <div class="panel panel-tight callout cool">
+        <b>重力转向（gravity turn）</b>：起飞初期几乎垂直爬升，随后逐渐把推力转向水平——
+        入轨靠的是水平速度达标（≈7.66 km/s），不是飞得多高。转早了摔回去，转晚了攒不够速度。
+      </div>
+
+      <div class="panel p6-controls">
+        <div class="p6-row-label">
+          <span class="label">转向开始时机</span>
+          <span class="num" id="t0Val">T+25 s</span>
+        </div>
+        <input type="range" id="t0Slider" min="10" max="300" step="5" value="25">
+        <div class="p6-row-label" style="margin-top:14px;">
+          <span class="label">转向速率</span>
+          <span class="num" id="rVal">1.50 °/s</span>
+        </div>
+        <input type="range" id="rSlider" min="0.10" max="2.50" step="0.05" value="1.50">
+        <div class="p6-btnrow">
+          <button class="btn primary" id="launchBtn">发射</button>
+          <button class="btn" id="resetBtn">重置</button>
+        </div>
+      </div>
+
+      <div class="panel p6-live">
+        <div class="p6-live-grid">
+          <div class="li"><span class="lb">飞行时间</span><span class="vv" id="liveT">0 s</span></div>
+          <div class="li"><span class="lb">剩余推进剂</span><span class="vv" id="liveFuel">100%</span></div>
+          <div class="li"><span class="lb">高度</span><span class="vv" id="liveH">0.0 km</span></div>
+          <div class="li"><span class="lb">姿态角(从垂直计)</span><span class="vv" id="liveTheta">0°</span></div>
+        </div>
+        <div class="p6-bar-wrap">
+          <div class="p6-row-label" style="margin-bottom:0;">
+            <span class="label">水平速度 vx vs 目标 7.66 km/s</span>
+            <span class="num" id="vxVal">0.00 km/s</span>
+          </div>
+          <div class="p6-bar-track"><div class="p6-bar-fill" id="vxBar"></div><div class="p6-bar-mark"></div></div>
+        </div>
+      </div>
+
+      <div class="panel p6-result" id="resultPanel" hidden>
+        <div class="p6-verdict" id="verdictText"></div>
+        <div class="p6-reason" id="reasonText"></div>
+        <div class="p6-numrow">
+          <div class="li"><span class="lb">重力损失</span><span class="vv" id="gravLossVal">0.00 km/s</span></div>
+          <div class="li"><span class="lb">阻力损失</span><span class="vv" id="dragLossVal">0.00 km/s</span></div>
+          <div class="li"><span class="lb">合计损失</span><span class="vv" id="totalLossVal">0.00 km/s</span></div>
+        </div>
+        <div class="callout warn panel-tight" style="padding:8px 10px;">
+          全局参考：入轨实际需要的速度增量(Δv)预算 ≈ <b>9.3–9.4 km/s</b>，比轨道速度本身
+          7.66 km/s 多出的 ~1.5–1.7 km/s，正是重力损失 + 阻力损失 + 转向损失的总和。
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="pg-hint">💡 <b>怎么玩</b>：调整“转向开始时机”和“转向速率”，点击发射，看火箭能否在燃料耗尽前把速度矢量转到接近水平、达到入轨速度而不掉回地面。</div>
+</div>
+
+<script src="assets/base.js"></script>
+<script>
+(function(){
+  'use strict';
+
+  /* ---------------------------------------------------------------------
+     物理常量（简化教学模型，见 PLAN.md 第 6 页说明）
+     --------------------------------------------------------------------- */
+  var G0 = 9.81;              // m/s^2
+  var A_THRUST = 20;          // m/s^2，简化为恒定推力加速度
+  var BURN_T = 500;           // s，模拟总燃烧时间
+  var TIME_SCALE = 26;        // 模拟秒 / 真实秒，压缩节奏
+  var DRAG_K = 1e-6;
+  var H_SCALE = 30000;        // m，阻力随高度衰减尺度
+  var ATM_LINE = 30000;       // m，稠密大气层参考线
+  var SAFE_ALT = 50000;       // m，判定“已爬出稠密大气”的阈值
+  var TARGET_VX = 7660;       // m/s，参考事实表：LEO 轨道速度 ≈7.66 km/s
+
+  /* ---------------------------------------------------------------------
+     DOM
+     --------------------------------------------------------------------- */
+  var cv = document.getElementById('gameCv');
+  var t0Slider = document.getElementById('t0Slider');
+  var rSlider = document.getElementById('rSlider');
+  var t0Val = document.getElementById('t0Val');
+  var rVal = document.getElementById('rVal');
+  var launchBtn = document.getElementById('launchBtn');
+  var resetBtn = document.getElementById('resetBtn');
+  var hudT = document.getElementById('hudT');
+  var hudH = document.getElementById('hudH');
+  var hudV = document.getElementById('hudV');
+  var hudFuel = document.getElementById('hudFuel');
+  var liveT = document.getElementById('liveT');
+  var liveFuel = document.getElementById('liveFuel');
+  var liveH = document.getElementById('liveH');
+  var liveTheta = document.getElementById('liveTheta');
+  var vxVal = document.getElementById('vxVal');
+  var vxBar = document.getElementById('vxBar');
+  var resultPanel = document.getElementById('resultPanel');
+  var verdictText = document.getElementById('verdictText');
+  var reasonText = document.getElementById('reasonText');
+  var gravLossVal = document.getElementById('gravLossVal');
+  var dragLossVal = document.getElementById('dragLossVal');
+  var totalLossVal = document.getElementById('totalLossVal');
+  var atmLabel = document.getElementById('atmLabel');
+  var groundLabel = document.getElementById('groundLabel');
+
+  function syncSliderLabels(){
+    t0Val.textContent = 'T+' + t0Slider.value + ' s';
+    rVal.textContent = parseFloat(rSlider.value).toFixed(2) + ' °/s';
+  }
+  t0Slider.addEventListener('input', syncSliderLabels);
+  rSlider.addEventListener('input', syncSliderLabels);
+  syncSliderLabels();
+
+  /* ---------------------------------------------------------------------
+     场景坐标映射：用 log 压缩高度/航程，避免摄像机跟随的复杂度
+     --------------------------------------------------------------------- */
+  var gW = 920, gH = 680; // 逻辑尺寸，随 autofit 回调刷新
+  var groundY = 640, topMargin = 36;
+  var altC = 140, altH0 = 3000, altCap = 604;
+  function mapAlt(h){
+    var pix = altC * Math.log1p(Math.max(0, h) / altH0);
+    return Math.min(altCap, pix);
+  }
+  function mapX(x){
+    var s = x < 0 ? -1 : 1;
+    var pix = 110 * Math.log1p(Math.abs(x) / 1500);
+    return s * Math.min(280, pix);
+  }
+  function layout(w, h){
+    gW = w; gH = h;
+    groundY = h - 40;
+    topMargin = 34;
+    altCap = groundY - topMargin;
+    altC = altCap / Math.log1p(220000 / altH0);
+    var atmY = groundY - mapAlt(ATM_LINE);
+    atmLabel.style.top = (atmY - 20) + 'px';
+    groundLabel.style.bottom = (h - groundY + 8) + 'px';
+  }
+
+  /* ---------------------------------------------------------------------
+     模拟状态
+     --------------------------------------------------------------------- */
+  var st = null;         // 当前飞行状态，null = 待发射
+  var particles = [];
+  var running = false;
+  var stopSimLoop = null;
+  var gCtx = null;
+
+  function freshState(t0, r){
+    return {
+      t0: t0, r: r,
+      t: 0, x: 0, h: 0, vx: 0, vy: 0,
+      fuel: BURN_T, theta: 0,
+      gravLoss: 0, dragLoss: 0,
+      maxH: 0, done: false, crashed: false, success: false, evaluated: false
+    };
+  }
+
+  function physicsStep(s, dt){
+    if (s.done) return;
+    var theta = 0;
+    if (s.t >= s.t0){
+      theta = Math.min(90, (s.t - s.t0) * s.r);
+    }
+    var rad = theta * Math.PI / 180;
+    var axT = 0, ayT = 0;
+    if (s.fuel > 0){
+      axT = A_THRUST * Math.sin(rad);
+      ayT = A_THRUST * Math.cos(rad);
+    }
+    var v = Math.hypot(s.vx, s.vy);
+    var atmFactor = Math.exp(-Math.max(0, s.h) / H_SCALE);
+    var dragMag = DRAG_K * v * v * atmFactor;
+    var axD = 0, ayD = 0;
+    if (v > 1e-3){ axD = -dragMag * s.vx / v; ayD = -dragMag * s.vy / v; }
+
+    var ax = axT + axD;
+    var ay = ayT - G0 + ayD;
+    s.vx += ax * dt;
+    s.vy += ay * dt;
+    s.x += s.vx * dt;
+    s.h += s.vy * dt;
+
+    if (s.fuel > 0){
+      s.fuel = Math.max(0, s.fuel - dt);
+      s.gravLoss += G0 * Math.cos(rad) * dt;
+      s.dragLoss += dragMag * dt;
+    }
+    s.t += dt;
+    s.theta = theta;
+    s.maxH = Math.max(s.maxH, s.h);
+
+    if (s.h <= 0 && s.t > 2){
+      s.h = 0;
+      s.crashed = true;
+      s.done = true;
+      return;
+    }
+    if (s.fuel <= 0 && !s.evaluated){
+      s.evaluated = true;
+      var ok = s.vx >= TARGET_VX * 0.82 && s.vy > -1200 && s.h > SAFE_ALT;
+      if (ok){ s.success = true; s.done = true; }
+    }
+    if (s.t > BURN_T + 300 && !s.done){
+      s.done = true;
+      if (!s.success) s.crashed = true;
+    }
+  }
+
+  function finishRun(s){
+    var gravKms = s.gravLoss / 1000;
+    var dragKms = s.dragLoss / 1000;
+    var totalKms = gravKms + dragKms;
+    gravLossVal.textContent = gravKms.toFixed(2) + ' km/s';
+    dragLossVal.textContent = dragKms.toFixed(2) + ' km/s';
+    totalLossVal.textContent = totalKms.toFixed(2) + ' km/s';
+
+    var verdict, reason, cls;
+    if (s.success){
+      verdict = '入轨成功 ✅';
+      cls = 'good';
+      reason = '水平速度已接近目标、飞行角接近水平——地球会怎么替它“兜住”这个速度让它绕下去？下一页揭晓。';
+    } else {
+      verdict = '未能入轨 ✗';
+      cls = 'bad';
+      if (s.maxH < SAFE_ALT){
+        reason = '转向太早：还没爬出稠密大气层就把推力转平，水平速度用不上，重力把它拽了回来。';
+      } else if (s.vx < TARGET_VX * 0.5){
+        reason = '转向太晚：大部分推进剂都花在垂直爬升上，燃料耗尽时水平速度还差得远，最终还是掉了回来。';
+      } else {
+        reason = '转向时机与速率没配合好：燃料耗尽前没能把速度矢量调整到足够接近水平。';
+      }
+    }
+    verdictText.textContent = verdict;
+    verdictText.className = 'p6-verdict ' + cls;
+    reasonText.textContent = reason;
+    resultPanel.hidden = false;
+  }
+
+  /* ---------------------------------------------------------------------
+     渲染
+     --------------------------------------------------------------------- */
+  var COL = {};
+  function readColors(){
+    COL.bg = Deck.rgb('bg');
+    COL.bg2 = Deck.rgb('bg2');
+    COL.accent = Deck.rgb('accent');
+    COL.accent2 = Deck.rgb('accent-2');
+    COL.accent3 = Deck.rgb('accent-3');
+    COL.bad = Deck.rgb('bad');
+    COL.good = Deck.rgb('good');
+    COL.line = Deck.rgb('line') || [80,100,140];
+    COL.text = Deck.rgb('text');
+  }
+  function mix(a, b, t){
+    return 'rgb(' + Math.round(Deck.lerp(a[0],b[0],t)) + ',' + Math.round(Deck.lerp(a[1],b[1],t)) + ',' + Math.round(Deck.lerp(a[2],b[2],t)) + ')';
+  }
+  var ATM_RGB = [22,58,102];
+
+  function spawnParticles(rx, ry, theta, dt){
+    var n = 3;
+    for (var i=0;i<n;i++){
+      var spread = (Math.random()-0.5)*0.5;
+      var a = (theta*Math.PI/180) + Math.PI + spread; // 反方向喷出
+      var sp = 70 + Math.random()*70;
+      particles.push({
+        x: rx, y: ry,
+        vx: Math.sin(a)*sp, vy: -Math.cos(a)*sp,
+        life: 0.5 + Math.random()*0.3, maxLife: 0.8
+      });
+    }
+    if (particles.length > 140) particles.splice(0, particles.length-140);
+  }
+  function updateParticles(dt){
+    for (var i=particles.length-1;i>=0;i--){
+      var p = particles[i];
+      p.x += p.vx*dt; p.y += p.vy*dt;
+      p.life -= dt;
+      if (p.life <= 0) particles.splice(i,1);
+    }
+  }
+  function drawParticles(ctx){
+    for (var i=0;i<particles.length;i++){
+      var p = particles[i];
+      var a = Math.max(0, p.life/p.maxLife);
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, 2 + 2.5*a, 0, Math.PI*2);
+      ctx.fillStyle = 'rgba(' + COL.accent[0] + ',' + COL.accent[1] + ',' + COL.accent[2] + ',' + (a*0.85) + ')';
+      ctx.fill();
+    }
+  }
+
+  function render(ctx, w, h){
+    var frac = st ? Deck.clamp(st.h / 80000, 0, 1) : 0;
+    var grd = ctx.createLinearGradient(0,0,0,h);
+    var skyBottom = mix(ATM_RGB, COL.bg, frac);
+    grd.addColorStop(0, 'rgb(' + COL.bg[0] + ',' + COL.bg[1] + ',' + COL.bg[2] + ')');
+    grd.addColorStop(1, skyBottom);
+    ctx.fillStyle = grd;
+    ctx.fillRect(0,0,w,h);
+
+    // 远处地球弧线
+    ctx.save();
+    ctx.beginPath();
+    ctx.strokeStyle = 'rgba(' + COL.line[0] + ',' + COL.line[1] + ',' + COL.line[2] + ',.35)';
+    ctx.lineWidth = 2;
+    ctx.arc(w/2, groundY + 2600, 2600, Math.PI*1.05, Math.PI*1.95);
+    ctx.stroke();
+    ctx.restore();
+
+    // 大气层参考虚线
+    var atmY = groundY - mapAlt(ATM_LINE);
+    ctx.save();
+    ctx.setLineDash([6,6]);
+    ctx.strokeStyle = 'rgba(' + COL.accent3[0] + ',' + COL.accent3[1] + ',' + COL.accent3[2] + ',.55)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(0, atmY); ctx.lineTo(w, atmY); ctx.stroke();
+    ctx.restore();
+
+    // 地面
+    ctx.fillStyle = 'rgba(' + COL.bg2[0] + ',' + COL.bg2[1] + ',' + COL.bg2[2] + ',1)';
+    ctx.fillRect(0, groundY, w, h - groundY);
+    ctx.fillStyle = 'rgba(' + COL.accent2[0] + ',' + COL.accent2[1] + ',' + COL.accent2[2] + ',.5)';
+    ctx.fillRect(0, groundY, w, 2);
+    // 发射台
+    ctx.fillStyle = 'rgba(' + COL.line[0] + ',' + COL.line[1] + ',' + COL.line[2] + ',.6)';
+    ctx.fillRect(w*0.28-14, groundY-10, 28, 10);
+
+    drawParticles(ctx);
+
+    // 火箭
+    var curH = st ? st.h : 0;
+    var curX = st ? st.x : 0;
+    var curTheta = st ? st.theta : 0;
+    var rx = w*0.28 + mapX(curX);
+    rx = Deck.clamp(rx, 30, w-30);
+    var ry = groundY - mapAlt(curH) - 12;
+
+    ctx.save();
+    ctx.translate(rx, ry);
+    ctx.rotate(curTheta * Math.PI/180);
+    ctx.beginPath();
+    ctx.moveTo(0,-16);
+    ctx.lineTo(6,4);
+    ctx.lineTo(3,10);
+    ctx.lineTo(-3,10);
+    ctx.lineTo(-6,4);
+    ctx.closePath();
+    ctx.fillStyle = 'rgb(' + COL.text[0] + ',' + COL.text[1] + ',' + COL.text[2] + ')';
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(-6,2); ctx.lineTo(-11,10); ctx.lineTo(-4,8); ctx.closePath();
+    ctx.moveTo(6,2); ctx.lineTo(11,10); ctx.lineTo(4,8); ctx.closePath();
+    ctx.fillStyle = 'rgba(' + COL.accent2[0] + ',' + COL.accent2[1] + ',' + COL.accent2[2] + ',.9)';
+    ctx.fill();
+    ctx.restore();
+
+    if (st && st.crashed){
+      ctx.beginPath();
+      ctx.arc(rx, groundY-4, 20, 0, Math.PI*2);
+      ctx.fillStyle = 'rgba(' + COL.bad[0] + ',' + COL.bad[1] + ',' + COL.bad[2] + ',.35)';
+      ctx.fill();
+    }
+  }
+
+  var fit = Deck.autofit(cv, function(ctx, w, h){
+    readColors();
+    layout(w, h);
+    gCtx = ctx;
+    render(ctx, w, h);
+  });
+
+  /* ---------------------------------------------------------------------
+     HUD 刷新
+     --------------------------------------------------------------------- */
+  function refreshHud(){
+    var s = st;
+    var tShow = s ? s.t.toFixed(0) : '0';
+    var hShow = s ? (s.h/1000).toFixed(1) : '0.0';
+    var vShow = s ? (Math.hypot(s.vx,s.vy)/1000).toFixed(2) : '0.00';
+    var vxShow = s ? (Math.max(0,s.vx)/1000).toFixed(2) : '0.00';
+    var fuelShow = s ? Math.round(100*s.fuel/BURN_T) : 100;
+    var thetaShow = s ? Math.round(s.theta) : 0;
+
+    hudT.textContent = 'T+' + tShow + ' s';
+    hudH.textContent = hShow + ' km';
+    hudV.textContent = vShow + ' km/s';
+    hudFuel.textContent = fuelShow + '%';
+
+    liveT.textContent = tShow + ' s';
+    liveFuel.textContent = fuelShow + '%';
+    liveH.textContent = hShow + ' km';
+    liveTheta.textContent = thetaShow + '°';
+    vxVal.textContent = vxShow + ' km/s';
+    var pct = Deck.clamp((s? s.vx/TARGET_VX : 0) * 100, 0, 130);
+    vxBar.style.width = Math.min(100,pct) + '%';
+    vxBar.style.background = pct >= 90
+      ? 'linear-gradient(90deg, var(--accent-2), var(--good))'
+      : 'linear-gradient(90deg, var(--accent-2), var(--accent-2))';
+  }
+
+  /* ---------------------------------------------------------------------
+     运行控制
+     --------------------------------------------------------------------- */
+  function setControlsEnabled(en){
+    t0Slider.disabled = !en;
+    rSlider.disabled = !en;
+    launchBtn.disabled = !en;
+  }
+
+  function launch(){
+    if (running) return;
+    resultPanel.hidden = true;
+    var t0 = parseFloat(t0Slider.value);
+    var r = parseFloat(rSlider.value);
+    st = freshState(t0, r);
+    particles = [];
+    running = true;
+    setControlsEnabled(false);
+
+    if (stopSimLoop) stopSimLoop();
+    stopSimLoop = Deck.loop(function(t, dt){
+      var simDt = Math.min(2.5, (dt/1000) * TIME_SCALE);
+      var remaining = simDt;
+      var sub = 0.5;
+      while (remaining > 0.0001 && !st.done){
+        var step_ = Math.min(sub, remaining);
+        physicsStep(st, step_);
+        remaining -= step_;
+      }
+      if (gCtx){
+        var w = cv.__w || gW, h = cv.__h || gH;
+        if (st.fuel > 0 && !st.done){
+          var px = w*0.28 + mapX(st.x);
+          px = Deck.clamp(px, 30, w-30);
+          var py = groundY - mapAlt(st.h) - 12;
+          spawnParticles(px, py, st.theta, simDt);
+        }
+        updateParticles(simDt);
+        render(gCtx, w, h);
+      }
+      refreshHud();
+      if (st.done){
+        running = false;
+        setControlsEnabled(true);
+        finishRun(st);
+        if (stopSimLoop) stopSimLoop();
+      }
+    });
+  }
+
+  function reset(){
+    if (stopSimLoop) stopSimLoop();
+    running = false;
+    st = null;
+    particles = [];
+    resultPanel.hidden = true;
+    setControlsEnabled(true);
+    refreshHud();
+    if (gCtx){
+      var w = cv.__w || gW, h = cv.__h || gH;
+      render(gCtx, w, h);
+    }
+  }
+
+  launchBtn.addEventListener('click', launch);
+  resetBtn.addEventListener('click', reset);
+
+  refreshHud();
+  Deck.init({ index: 6, total: 14 });
+})();
+</script>
+</body>
+</html>

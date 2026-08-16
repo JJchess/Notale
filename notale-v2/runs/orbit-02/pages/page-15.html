@@ -1,0 +1,470 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+</head>
+<body data-page="15" data-total="20">
+<div id="stage">
+<style>
+  .pc-page { position: relative; inline-size: 100%; block-size: 100%; }
+  .pc-page .pc-scene { position: absolute; inset: 0; min-inline-size: 0; min-block-size: 0; }
+  .pc-page #pc-canvas { inline-size: 100%; block-size: 100%; display: block; cursor: grab; outline: none; }
+  .pc-page #pc-canvas:active { cursor: grabbing; }
+  .pc-page #pc-canvas:focus-visible { box-shadow: inset 0 0 0 var(--space-1) var(--focus); }
+  .pc-page .pc-legend { position: absolute; inset-inline-start: var(--page-pad-x); inset-block-start: 190px; display: flex; flex-wrap: wrap; gap: var(--space-3) var(--space-5); padding: var(--space-3) var(--space-4); border: 1px solid var(--line); border-radius: var(--radius-pill); background: var(--surface-glass); pointer-events: none; }
+  .pc-page .pc-swatch--current { --swatch: var(--chart-1); }
+  .pc-page .pc-swatch--target { --swatch: var(--chart-2); }
+  .pc-page .pc-swatch--node { --swatch: var(--warm); }
+  .pc-page .pc-swatch--dv { --swatch: var(--danger); }
+  .pc-page .pc-node-label { position: absolute; z-index: 1; min-inline-size: 90px; padding: var(--space-2) var(--space-3); border: 1px solid var(--line-strong); border-radius: var(--radius-pill); color: var(--text); background: var(--surface-glass); font-size: var(--fs-caption); line-height: var(--lh-tight); text-align: center; pointer-events: none; translate: -50% -50%; }
+  .pc-page .pc-instruction { position: absolute; inset-inline-start: var(--page-pad-x); inset-block-end: 120px; max-inline-size: 580px; padding: var(--space-3) var(--space-4); border-inline-start: var(--space-1) solid var(--accent); color: var(--text-muted); background: var(--surface-glass); font-size: var(--fs-small); line-height: var(--lh-body); pointer-events: none; }
+  .pc-page .pc-dock { position: absolute; z-index: 3; inset-inline-end: var(--page-pad-x); inset-block-start: 178px; inline-size: 430px; display: flex; flex-direction: column; gap: var(--space-4); padding: var(--space-5); }
+  .pc-page .pc-dock__head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); }
+  .pc-page .pc-dock__head h2 { margin: 0; font-size: var(--fs-h3); line-height: var(--lh-tight); }
+  .pc-page .pc-status { white-space: nowrap; }
+  .pc-page .pc-control { display: flex; flex-direction: column; gap: var(--space-2); }
+  .pc-page .pc-control-line { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-3); }
+  .pc-page .pc-control output { color: var(--accent-strong); font-family: var(--font-mono); font-size: var(--fs-label-lg); }
+  .pc-page .pc-select { inline-size: 100%; min-block-size: 46px; padding: var(--space-2) var(--space-3); }
+  .pc-page .pc-check { display: flex; align-items: center; gap: var(--space-3); color: var(--text); font-size: var(--fs-small); line-height: var(--lh-tight); }
+  .pc-page .pc-readouts { --readout-cols: 2; padding: var(--space-3); }
+  .pc-page .pc-readouts .readout { min-block-size: 88px; padding: var(--space-3); }
+  .pc-page .pc-readouts .readout-value { font-size: var(--fs-h3); }
+  .pc-page .pc-compare { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3); }
+  .pc-page .pc-mini { padding: var(--space-3); border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--surface-inset); }
+  .pc-page .pc-mini strong { display: block; margin-block-start: var(--space-1); color: var(--text-strong); font-family: var(--font-mono); font-size: var(--fs-label-lg); line-height: var(--lh-tight); }
+  .pc-page .pc-mini.is-active { border-color: var(--accent); background: var(--accent-soft); }
+  .pc-page .pc-actions { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--space-3); }
+  .pc-page .pc-result { min-block-size: 25px; margin: 0; color: var(--text-muted); font-size: var(--fs-caption); line-height: var(--lh-tight); }
+  @media (prefers-reduced-motion: reduce) { .pc-page * { transition-duration: 0.01ms !important; } }
+</style>
+
+<main class="canvas-full pc-page" aria-label="三维轨道平面变轨工作台">
+  <section class="canvas-layer pc-scene min0" aria-label="三维轨道场景">
+    <canvas id="pc-canvas" class="no-pan" tabindex="0" role="application" aria-label="三维轨道工作台。拖卫星到升交点或降交点；拖速度箭头端点改变目标平面；方向键移动，回车点火，Home 重置。"></canvas>
+    <div class="pc-node-label" id="node-up">升交点</div>
+    <div class="pc-node-label" id="node-down">降交点</div>
+  </section>
+
+  <div class="pc-legend legend" aria-hidden="true">
+    <span class="legend-item"><i class="legend-swatch pc-swatch--current"></i>当前轨道面</span>
+    <span class="legend-item"><i class="legend-swatch pc-swatch--target"></i>目标轨道面</span>
+    <span class="legend-item"><i class="legend-swatch pc-swatch--node"></i>两平面交线</span>
+    <span class="legend-item"><i class="legend-swatch pc-swatch--dv"></i>差向量 Δv</span>
+  </div>
+
+  <p class="pc-instruction">先沿轨道拖动卫星到交线端点，再抓住速度箭头端点转动目标轨道面。纯平面变轨只能在节点完成。</p>
+
+  <aside class="control-panel pc-dock" aria-label="变轨控制与读数">
+    <div class="pc-dock__head">
+      <h2>节点点火台</h2>
+      <span id="node-status" class="status status--warn pc-status">尚未到节点</span>
+    </div>
+
+    <label class="pc-control" for="angle-range">
+      <span class="pc-control-line"><span class="control-label">目标平面夹角</span><output id="angle-out"></output></span>
+      <input id="angle-range" type="range">
+    </label>
+
+    <label class="pc-control" for="apsis-select">
+      <span class="control-label">代价比较位置</span>
+      <select id="apsis-select" class="pc-select">
+        <option value="peri">近地点 · 快</option>
+        <option value="apo">远地点 · 慢</option>
+      </select>
+    </label>
+
+    <div class="readout-panel pc-readouts" aria-live="polite">
+      <div class="readout readout--accent"><span class="readout-label">纯转平面 Δv</span><strong id="dv-main" class="readout-value"></strong><span id="speed-main" class="readout-unit"></span></div>
+      <div class="readout"><span id="burn-mode-label" class="readout-label">分开点火总和</span><strong id="dv-combined" class="readout-value"></strong><span id="saving" class="readout-unit"></span></div>
+    </div>
+
+    <div class="pc-compare" aria-label="近地点与远地点比较">
+      <div id="peri-card" class="pc-mini"><span class="caption">近地点执行</span><strong id="peri-dv"></strong></div>
+      <div id="apo-card" class="pc-mini"><span class="caption">远地点执行</span><strong id="apo-dv"></strong></div>
+    </div>
+
+    <label class="pc-check" for="combine-check"><input id="combine-check" type="checkbox">把圆化与转平面合并为一次点火</label>
+
+    <div class="pc-actions">
+      <button id="burn-btn" class="button--primary" type="button" disabled>执行节点点火</button>
+      <button id="reset-btn" class="button--quiet" type="button">重置</button>
+    </div>
+    <p id="result" class="pc-result">拖动卫星寻找节点。</p>
+  </aside>
+</main>
+
+<script src="assets/lib/three.min.js"></script>
+<script>
+window.addEventListener('DOMContentLoaded', function () {
+  'use strict';
+
+  const page = Object.freeze({
+    index: Number(document.body.dataset.page),
+    kicker: `PLANE-CHANGE`,
+    title: `轨道平面改变的是<em>速度方向</em>，不是卫星朝向`,
+    take: `平面变轨的 Δv 随速度和转角增加，因此通常应在速度较低处进行。`
+  });
+
+  Lec.mount(page);
+
+  const cv = document.getElementById('pc-canvas');
+  const angleInput = document.getElementById('angle-range');
+  const angleOut = document.getElementById('angle-out');
+  const apsisSelect = document.getElementById('apsis-select');
+  const combineCheck = document.getElementById('combine-check');
+  const burnBtn = document.getElementById('burn-btn');
+  const resetBtn = document.getElementById('reset-btn');
+  const statusEl = document.getElementById('node-status');
+  const resultEl = document.getElementById('result');
+
+  const c = function (token) {
+    const rgb = Deck.rgb(token);
+    return new THREE.Color(rgb[0] / 255, rgb[1] / 255, rgb[2] / 255);
+  };
+  const scene = new THREE.Scene();
+  scene.background = c('--bg');
+  scene.fog = new THREE.Fog(c('--bg'), 12, 25);
+  const camera = new THREE.PerspectiveCamera(38, Deck.W / Deck.H, 0.1, 60);
+  camera.position.set(8.8, 7.2, 10.5);
+  camera.lookAt(0, 0, 0);
+
+  const renderer = new THREE.WebGLRenderer({ canvas: cv, antialias: true, alpha: false });
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+  renderer.setSize(Deck.W, Deck.H, false);
+
+  scene.add(new THREE.HemisphereLight(c('--text'), c('--surface-inset'), 1.4));
+  const key = new THREE.DirectionalLight(c('--accent-strong'), 2.2);
+  key.position.set(5, 8, 6);
+  scene.add(key);
+  const rim = new THREE.DirectionalLight(c('--accent-2'), 1.3);
+  rim.position.set(-6, 2, -5);
+  scene.add(rim);
+
+  const earth = new THREE.Mesh(
+    new THREE.SphereGeometry(1.35, 48, 32),
+    new THREE.MeshStandardMaterial({ color: c('--surface-3'), roughness: 0.72, metalness: 0.08, emissive: c('--surface-inset'), emissiveIntensity: 0.25 })
+  );
+  scene.add(earth);
+  const grid = new THREE.LineSegments(
+    new THREE.EdgesGeometry(new THREE.IcosahedronGeometry(1.37, 2)),
+    new THREE.LineBasicMaterial({ color: c('--line-strong'), transparent: true, opacity: 0.45 })
+  );
+  scene.add(grid);
+
+  const rx = 4.8;
+  const rz = 3.25;
+  const orbitPoints = [];
+  const targetPoints = [];
+  for (let i = 0; i <= 160; i += 1) {
+    const a = Lec.K.TWO_PI * i / 160;
+    orbitPoints.push(new THREE.Vector3(rx * Math.cos(a), 0, rz * Math.sin(a)));
+    targetPoints.push(new THREE.Vector3(rx * Math.cos(a), 0, rz * Math.sin(a)));
+  }
+  const currentLine = new THREE.Line(
+    new THREE.BufferGeometry().setFromPoints(orbitPoints),
+    new THREE.LineBasicMaterial({ color: c('--chart-1'), transparent: true, opacity: 0.95 })
+  );
+  scene.add(currentLine);
+  const targetGroup = new THREE.Group();
+  const targetLine = new THREE.Line(
+    new THREE.BufferGeometry().setFromPoints(targetPoints),
+    new THREE.LineDashedMaterial({ color: c('--chart-2'), dashSize: 0.18, gapSize: 0.11, transparent: true, opacity: 0.95 })
+  );
+  targetLine.computeLineDistances();
+  targetGroup.add(targetLine);
+  scene.add(targetGroup);
+
+  const planeGeo = new THREE.CircleGeometry(4.75, 64);
+  planeGeo.rotateX(-Lec.K.HALF_PI);
+  const currentPlane = new THREE.Mesh(planeGeo, new THREE.MeshBasicMaterial({ color: c('--chart-1'), transparent: true, opacity: 0.055, side: THREE.DoubleSide, depthWrite: false }));
+  currentPlane.scale.z = 0.68;
+  scene.add(currentPlane);
+  const targetPlane = new THREE.Mesh(planeGeo, new THREE.MeshBasicMaterial({ color: c('--chart-2'), transparent: true, opacity: 0.075, side: THREE.DoubleSide, depthWrite: false }));
+  targetPlane.scale.z = 0.68;
+  targetGroup.add(targetPlane);
+
+  const nodeLine = new THREE.Line(
+    new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(-5.7, 0, 0), new THREE.Vector3(5.7, 0, 0)]),
+    new THREE.LineBasicMaterial({ color: c('--warm'), transparent: true, opacity: 0.9 })
+  );
+  scene.add(nodeLine);
+  [-1, 1].forEach(function (sign) {
+    const node = new THREE.Mesh(new THREE.TorusGeometry(0.2, 0.055, 12, 28), new THREE.MeshBasicMaterial({ color: c('--warm') }));
+    node.rotation.y = Lec.K.HALF_PI;
+    node.position.x = sign * rx;
+    scene.add(node);
+  });
+
+  const satellite = new THREE.Group();
+  const body = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.22, 0.28), new THREE.MeshStandardMaterial({ color: c('--text-strong'), metalness: 0.65, roughness: 0.25 }));
+  satellite.add(body);
+  const panelMat = new THREE.MeshStandardMaterial({ color: c('--accent-2'), metalness: 0.35, roughness: 0.45 });
+  const p1 = new THREE.Mesh(new THREE.BoxGeometry(0.58, 0.035, 0.24), panelMat);
+  const p2 = p1.clone();
+  p1.position.x = -0.48;
+  p2.position.x = 0.48;
+  satellite.add(p1, p2);
+  scene.add(satellite);
+
+  function makeArrow(colorToken) {
+    const group = new THREE.Group();
+    const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 1, 10), new THREE.MeshBasicMaterial({ color: c(colorToken) }));
+    shaft.rotation.x = Lec.K.HALF_PI;
+    shaft.position.z = 0.5;
+    const head = new THREE.Mesh(new THREE.ConeGeometry(0.12, 0.3, 16), new THREE.MeshBasicMaterial({ color: c(colorToken) }));
+    head.rotation.x = Lec.K.HALF_PI;
+    head.position.z = 1.12;
+    group.add(shaft, head);
+    return group;
+  }
+  const beforeArrow = makeArrow('--chart-1');
+  const afterArrow = makeArrow('--chart-2');
+  const deltaArrow = makeArrow('--danger');
+  scene.add(beforeArrow, afterArrow, deltaArrow);
+  const handle = new THREE.Mesh(new THREE.SphereGeometry(0.15, 20, 14), new THREE.MeshBasicMaterial({ color: c('--chart-2') }));
+  const handleHit = new THREE.Mesh(new THREE.SphereGeometry(0.38, 12, 8), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
+  const satelliteHit = new THREE.Mesh(new THREE.SphereGeometry(0.48, 12, 8), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }));
+  satellite.add(satelliteHit);
+  scene.add(handle, handleHit);
+
+  const state = {
+    angle: Lec.P.toDegrees(Lec.K.PI / 6),
+    anomaly: Lec.K.PI * 0.72,
+    cameraAzimuth: 0,
+    cameraElevation: 0,
+    drag: '',
+    pointerId: null,
+    startX: 0,
+    startY: 0,
+    startAzimuth: 0,
+    startElevation: 0,
+    fired: false
+  };
+
+  angleInput.min = String(Lec.P.toDegrees(0));
+  angleInput.max = String(Lec.P.toDegrees(Lec.K.HALF_PI));
+  angleInput.step = String(Lec.P.toDegrees(Lec.K.DEG_TO_RAD));
+  angleInput.value = String(state.angle);
+
+  const rp = Lec.P.orbitalRadius(Lec.K.ISS_ALTITUDE);
+  const ra = Lec.P.orbitalRadius(Lec.K.GEO_ALTITUDE);
+  const semi = (rp + ra) / 2;
+  const speeds = {
+    peri: Lec.P.visViva(rp, semi),
+    apo: Lec.P.visViva(ra, semi)
+  };
+  const circular = {
+    peri: Lec.P.circularVelocityAtRadius(rp),
+    apo: Lec.P.circularVelocityAtRadius(ra)
+  };
+
+  function nearNode() {
+    const x = Math.cos(state.anomaly);
+    return Math.abs(Math.abs(x) - 1) < 0.035;
+  }
+  function currentNode() { return Math.cos(state.anomaly) >= 0 ? '升交点' : '降交点'; }
+
+  function placeArrow(group, origin, vector) {
+    const len = vector.length();
+    group.position.copy(origin);
+    group.scale.set(1, 1, len);
+    group.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), vector.clone().normalize());
+  }
+
+  function syncScene() {
+    const angleRad = Lec.P.toRadians(state.angle);
+    targetGroup.rotation.x = -angleRad;
+    const x = rx * Math.cos(state.anomaly);
+    const z = rz * Math.sin(state.anomaly);
+    satellite.position.set(x, 0, z);
+    satellite.rotation.y = -state.anomaly;
+    const tangent = new THREE.Vector3(-rx * Math.sin(state.anomaly), 0, rz * Math.cos(state.anomaly)).normalize();
+    const targetTangent = tangent.clone().applyAxisAngle(new THREE.Vector3(1, 0, 0), -angleRad);
+    const origin = satellite.position.clone();
+    const scale = 1.55;
+    placeArrow(beforeArrow, origin, tangent.clone().multiplyScalar(scale));
+    placeArrow(afterArrow, origin, targetTangent.clone().multiplyScalar(scale));
+    const beforeEnd = origin.clone().add(tangent.clone().multiplyScalar(scale));
+    const afterEnd = origin.clone().add(targetTangent.clone().multiplyScalar(scale));
+    placeArrow(deltaArrow, beforeEnd, afterEnd.clone().sub(beforeEnd));
+    handle.position.copy(afterEnd);
+    handleHit.position.copy(afterEnd);
+  }
+
+  function updateReadouts() {
+    const loc = apsisSelect.value;
+    const angleRad = Lec.P.toRadians(state.angle);
+    const pure = Lec.P.planeChangeDeltaVDegrees(speeds[loc], state.angle);
+    const separate = Math.abs(circular[loc] - speeds[loc]) + pure;
+    const combined = Lec.P.combinedBurnDeltaV(speeds[loc], circular[loc], angleRad);
+    const shown = combineCheck.checked ? combined : separate;
+    angleOut.textContent = Lec.P.formatNumber(state.angle, 0) + '°';
+    document.getElementById('dv-main').textContent = Lec.P.formatSpeed(pure, 2);
+    document.getElementById('speed-main').textContent = '当地速度 ' + Lec.P.formatSpeed(speeds[loc], 2);
+    document.getElementById('burn-mode-label').textContent = combineCheck.checked ? '合并圆化 + 转平面' : '分开点火总和';
+    document.getElementById('dv-combined').textContent = Lec.P.formatSpeed(shown, 2);
+    document.getElementById('saving').textContent = combineCheck.checked ? '比分开点火少 ' + Lec.P.formatSpeed(separate - combined, 2) : '勾选后比较合并点火';
+    document.getElementById('peri-dv').textContent = Lec.P.formatSpeed(Lec.P.planeChangeDeltaVDegrees(speeds.peri, state.angle), 2);
+    document.getElementById('apo-dv').textContent = Lec.P.formatSpeed(Lec.P.planeChangeDeltaVDegrees(speeds.apo, state.angle), 2);
+    document.getElementById('peri-card').classList.toggle('is-active', loc === 'peri');
+    document.getElementById('apo-card').classList.toggle('is-active', loc === 'apo');
+    const atNode = nearNode();
+    burnBtn.disabled = !atNode;
+    statusEl.className = 'status pc-status ' + (atNode ? 'status--live' : 'status--warn');
+    statusEl.textContent = atNode ? currentNode() + ' · 可点火' : '尚未到节点';
+    if (!state.fired) resultEl.textContent = atNode ? '已对准交线：现在可改变速度方向。' : '拖动卫星寻找节点。';
+    syncScene();
+  }
+
+  function projectLabel(id, point) {
+    const p = point.clone().project(camera);
+    const el = document.getElementById(id);
+    el.style.left = ((p.x + 1) * Deck.W / 2) + 'px';
+    el.style.top = ((1 - p.y) * Deck.H / 2) + 'px';
+  }
+
+  function render() {
+    const radius = 15.5;
+    const az = 0.7 + state.cameraAzimuth;
+    const el = 0.48 + state.cameraElevation;
+    camera.position.set(radius * Math.sin(az) * Math.cos(el), radius * Math.sin(el), radius * Math.cos(az) * Math.cos(el));
+    camera.lookAt(0, 0, 0);
+    projectLabel('node-up', new THREE.Vector3(rx, 0.35, 0));
+    projectLabel('node-down', new THREE.Vector3(-rx, 0.35, 0));
+    renderer.render(scene, camera);
+  }
+
+  function pickMode(pt) {
+    const mouse = new THREE.Vector2(pt.x / Deck.W * 2 - 1, -(pt.y / Deck.H) * 2 + 1);
+    const ray = new THREE.Raycaster();
+    ray.setFromCamera(mouse, camera);
+    if (ray.intersectObject(handleHit, false).length) return 'vector';
+    if (ray.intersectObject(satelliteHit, false).length) return 'satellite';
+    return 'camera';
+  }
+
+  function dragSatellite(pt) {
+    const best = { d: Infinity, a: state.anomaly };
+    for (let i = 0; i < 180; i += 1) {
+      const a = Lec.K.TWO_PI * i / 180;
+      const p = new THREE.Vector3(rx * Math.cos(a), 0, rz * Math.sin(a)).project(camera);
+      const sx = (p.x + 1) * Deck.W / 2;
+      const sy = (1 - p.y) * Deck.H / 2;
+      const d = (sx - pt.x) * (sx - pt.x) + (sy - pt.y) * (sy - pt.y);
+      if (d < best.d) { best.d = d; best.a = a; }
+    }
+    state.anomaly = best.a;
+    state.fired = false;
+    updateReadouts();
+  }
+
+  function dragVector(pt) {
+    const mouse = new THREE.Vector2(pt.x / Deck.W * 2 - 1, -(pt.y / Deck.H) * 2 + 1);
+    const ray = new THREE.Raycaster();
+    ray.setFromCamera(mouse, camera);
+    const plane = new THREE.Plane(new THREE.Vector3(1, 0, 0), -satellite.position.x);
+    const hit = new THREE.Vector3();
+    if (ray.ray.intersectPlane(plane, hit)) {
+      const rel = hit.sub(satellite.position);
+      const tangentSign = Math.cos(state.anomaly) >= 0 ? 1 : -1;
+      let a = Math.abs(Lec.P.toDegrees(Math.atan2(rel.y, rel.z * tangentSign)));
+      state.angle = Lec.P.clamp(a, Number(angleInput.min), Number(angleInput.max));
+      angleInput.value = String(state.angle);
+      state.fired = false;
+      updateReadouts();
+    }
+  }
+
+  cv.addEventListener('pointerdown', function (e) {
+    const pt = Deck.pt(cv, e);
+    state.drag = pickMode(pt);
+    state.pointerId = e.pointerId;
+    state.startX = pt.x;
+    state.startY = pt.y;
+    state.startAzimuth = state.cameraAzimuth;
+    state.startElevation = state.cameraElevation;
+    cv.setPointerCapture(e.pointerId);
+    if (state.drag === 'satellite') dragSatellite(pt);
+    if (state.drag === 'vector') dragVector(pt);
+  });
+  cv.addEventListener('pointermove', function (e) {
+    if (state.pointerId !== e.pointerId) return;
+    const pt = Deck.pt(cv, e);
+    if (state.drag === 'satellite') dragSatellite(pt);
+    else if (state.drag === 'vector') dragVector(pt);
+    else {
+      state.cameraAzimuth = state.startAzimuth + (pt.x - state.startX) / 420;
+      state.cameraElevation = Lec.P.clamp(state.startElevation + (state.startY - pt.y) / 520, -0.28, 0.48);
+    }
+  });
+  function endDrag(e) {
+    if (state.pointerId === e.pointerId) {
+      if (cv.hasPointerCapture(e.pointerId)) cv.releasePointerCapture(e.pointerId);
+      state.pointerId = null;
+      state.drag = '';
+    }
+  }
+  cv.addEventListener('pointerup', endDrag);
+  cv.addEventListener('pointercancel', endDrag);
+  cv.addEventListener('lostpointercapture', function () { state.pointerId = null; state.drag = ''; });
+  cv.addEventListener('keydown', function (e) {
+    const step = Lec.K.PI / 36;
+    if (e.key === 'ArrowLeft') state.anomaly -= step;
+    else if (e.key === 'ArrowRight') state.anomaly += step;
+    else if (e.key === 'ArrowUp') state.angle = Lec.P.clamp(state.angle + Lec.P.toDegrees(Lec.K.DEG_TO_RAD), Number(angleInput.min), Number(angleInput.max));
+    else if (e.key === 'ArrowDown') state.angle = Lec.P.clamp(state.angle - Lec.P.toDegrees(Lec.K.DEG_TO_RAD), Number(angleInput.min), Number(angleInput.max));
+    else if (e.key === 'Home') reset();
+    else if ((e.key === 'Enter' || e.key === ' ') && nearNode()) fire();
+    else return;
+    e.preventDefault();
+    angleInput.value = String(state.angle);
+    state.fired = false;
+    updateReadouts();
+  });
+
+  angleInput.addEventListener('input', function () { state.angle = Number(angleInput.value); state.fired = false; updateReadouts(); });
+  apsisSelect.addEventListener('change', function () { state.fired = false; updateReadouts(); });
+  combineCheck.addEventListener('change', function () { state.fired = false; updateReadouts(); });
+
+  function fire() {
+    if (!nearNode()) return;
+    state.fired = true;
+    const loc = apsisSelect.value;
+    const pure = Lec.P.planeChangeDeltaVDegrees(speeds[loc], state.angle);
+    const combined = Lec.P.combinedBurnDeltaV(speeds[loc], circular[loc], Lec.P.toRadians(state.angle));
+    resultEl.textContent = currentNode() + '点火完成：速度方向已转动，卫星本体朝向不是判据。' + (combineCheck.checked ? ' 合并点火 ' + Lec.P.formatSpeed(combined, 2) : ' 纯转平面 ' + Lec.P.formatSpeed(pure, 2));
+    updateReadouts();
+  }
+  burnBtn.addEventListener('click', fire);
+
+  function reset() {
+    state.angle = Lec.P.toDegrees(Lec.K.PI / 6);
+    state.anomaly = Lec.K.PI * 0.72;
+    state.cameraAzimuth = 0;
+    state.cameraElevation = 0;
+    state.fired = false;
+    angleInput.value = String(state.angle);
+    apsisSelect.value = 'peri';
+    combineCheck.checked = false;
+    resultEl.textContent = '拖动卫星寻找节点。';
+    updateReadouts();
+  }
+  resetBtn.addEventListener('click', reset);
+
+  Deck.onResize(function () {
+    renderer.setSize(Deck.W, Deck.H, false);
+    camera.aspect = Deck.W / Deck.H;
+    camera.updateProjectionMatrix();
+  });
+  updateReadouts();
+  Deck.loop(function () { render(); }, { still: 0 });
+}, { once: true });
+</script>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+</body>
+</html>

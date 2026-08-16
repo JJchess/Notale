@@ -1,0 +1,439 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+</head>
+<body data-page="10" data-total="20">
+<div id="stage">
+  <style>
+    .orbit-lab {
+      grid-template-rows: minmax(0, 1.7fr) minmax(0, .8fr);
+      grid-template-areas: "top" "bottom";
+      gap: var(--space-5);
+      padding-block-start: var(--space-12);
+      padding-block-end: var(--space-10);
+    }
+    .orbit-lab .layout-top { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: var(--space-5); }
+    .orbit-lab .orbit-frame { position: relative; padding: 0; }
+    .orbit-lab .orbit-svg { display: block; inline-size: 100%; block-size: 100%; min-block-size: 0; touch-action: none; }
+    .orbit-lab .orbit-svg:focus-visible,
+    .orbit-lab .orbit-handle:focus-visible,
+    .orbit-lab .satellite:focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
+    .orbit-lab .orbit-handle,
+    .orbit-lab .satellite { cursor: grab; }
+    .orbit-lab .orbit-handle:active,
+    .orbit-lab .satellite:active { cursor: grabbing; }
+    .orbit-lab .orbit-line { fill: none; stroke: var(--line-strong); stroke-width: 2; }
+    .orbit-lab .guide-line { stroke: var(--line); stroke-width: 1; stroke-dasharray: 6 7; }
+    .orbit-lab .earth { fill: var(--accent-2-soft); stroke: var(--accent-2); stroke-width: 2; }
+    .orbit-lab .earth-core { fill: var(--accent-2); opacity: .35; }
+    .orbit-lab .handle-ring { fill: var(--surface-inset); stroke: var(--warm); stroke-width: 3; }
+    .orbit-lab .handle-dot { fill: var(--warm); pointer-events: none; }
+    .orbit-lab .sat-body { fill: var(--text-strong); stroke: var(--accent); stroke-width: 3; }
+    .orbit-lab .sat-wing { fill: var(--accent); }
+    .orbit-lab .svg-label { fill: var(--text-muted); font-family: var(--font-sans); font-size: var(--fs-caption); }
+    .orbit-lab .svg-value { fill: var(--text-strong); font-family: var(--font-mono); font-size: var(--fs-label); font-weight: var(--weight-semibold); }
+    .orbit-lab .scene-note { position: absolute; inset: var(--space-4) auto auto var(--space-5); pointer-events: none; }
+    .orbit-lab .scene-note p { margin: 0; }
+    .orbit-lab .scene-note .caption { margin-block-start: var(--space-1); }
+    .orbit-lab .side-panel { justify-content: space-between; gap: var(--space-4); padding: var(--space-4); }
+    .orbit-lab .side-panel .control-group { gap: var(--space-2); padding-block-end: var(--space-3); }
+    .orbit-lab .metric-stack { display: grid; gap: var(--space-2); }
+    .orbit-lab .metric-row { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-3); }
+    .orbit-lab .metric-row output { color: var(--text-strong); font-family: var(--font-mono); font-size: var(--fs-small); font-weight: var(--weight-semibold); white-space: nowrap; }
+    .orbit-lab .button-row { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-2); }
+    .orbit-lab .button-row button { padding-inline: var(--space-3); }
+    .orbit-lab .layout-bottom { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, .75fr); gap: var(--space-5); }
+    .orbit-lab .energy-panel { display: grid; grid-template-rows: auto minmax(0, 1fr); gap: var(--space-3); padding: var(--space-4) var(--space-5); }
+    .orbit-lab .energy-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-4); }
+    .orbit-lab .energy-svg { inline-size: 100%; block-size: 100%; min-block-size: 0; }
+    .orbit-lab .energy-label { fill: var(--text-muted); font-family: var(--font-sans); font-size: var(--fs-caption); }
+    .orbit-lab .energy-value { fill: var(--text-strong); font-family: var(--font-mono); font-size: var(--fs-tick); }
+    .orbit-lab .energy-track { fill: var(--surface-inset); stroke: var(--line); }
+    .orbit-lab .zero-line { stroke: var(--text-faint); stroke-width: 1; }
+    .orbit-lab .insight { display: flex; flex-direction: column; justify-content: center; gap: var(--space-3); }
+    .orbit-lab .insight p { margin: 0; color: var(--text-muted); font-size: var(--fs-small); line-height: var(--lh-body); }
+    .orbit-lab .insight strong { color: var(--text-strong); }
+    @media (prefers-reduced-motion: reduce) {
+      .orbit-lab * { transition-duration: 0.01ms !important; }
+    }
+  </style>
+
+  <main class="split-tb orbit-lab" aria-label="椭圆轨道速度与能量实验台">
+    <section class="layout-top min0" aria-label="可塑形的椭圆轨道">
+      <figure class="plot orbit-frame min0">
+        <svg id="orbitSvg" class="orbit-svg no-pan" viewBox="0 0 1120 430" preserveAspectRatio="none" role="img" aria-labelledby="orbitCaption">
+          <title>地球位于椭圆焦点，卫星尾迹用颜色编码速度</title>
+          <desc id="orbitCaption">拖动近地点和远地点改变椭圆；暂停后可拖动卫星。方向键调近地点，Shift 加方向键调远地点。</desc>
+          <g id="orbitLayer"></g>
+        </svg>
+        <figcaption class="scene-note">
+          <p class="label">拖动两端拱点塑造轨道</p>
+          <p class="caption">亮暖尾迹＝更快；蓝紫尾迹＝更慢</p>
+        </figcaption>
+      </figure>
+
+      <aside class="control-panel side-panel" aria-label="轨道读数与控制">
+        <div class="control-group">
+          <div class="metric-stack">
+            <div class="metric-row"><span class="control-label">近地点高度</span><output id="periOut"></output></div>
+            <div class="metric-row"><span class="control-label">远地点高度</span><output id="apoOut"></output></div>
+            <div class="metric-row"><span class="control-label">偏心率 e</span><output id="eccOut"></output></div>
+          </div>
+        </div>
+        <div class="control-group">
+          <div class="metric-stack">
+            <div class="metric-row"><span class="control-label">当前位置</span><output id="altOut"></output></div>
+            <div class="metric-row"><span class="control-label">当前速度</span><output id="speedOut" class="accent"></output></div>
+            <div class="metric-row"><span class="control-label">一圈时间</span><output id="periodOut"></output></div>
+          </div>
+        </div>
+        <div class="button-row">
+          <button id="pauseBtn" class="button--primary" type="button" aria-pressed="false">暂停</button>
+          <button id="resetBtn" type="button">重置</button>
+        </div>
+        <p class="control-hint">暂停后拖动卫星，可检查轨道任意位置。</p>
+      </aside>
+    </section>
+
+    <section class="layout-bottom min0" aria-label="比机械能联动图">
+      <div class="panel panel--flat energy-panel">
+        <div class="energy-head">
+          <h2 class="heading-3">单位质量能量交换</h2>
+          <span id="conserveBadge" class="status status--live">总能量恒定</span>
+        </div>
+        <svg id="energySvg" class="energy-svg" viewBox="0 0 820 160" preserveAspectRatio="none" role="img" aria-label="动能、引力势能和总比机械能条形图"></svg>
+      </div>
+      <aside class="card card--accent insight">
+        <span class="kicker">VIS-VIVA</span>
+        <p><strong>靠近地球：</strong>势能降低，等量转成动能，卫星加速。</p>
+        <p><strong>远离地球：</strong>动能交还给势能；两者之和不变。</p>
+      </aside>
+    </section>
+  </main>
+
+  <script src="assets/lib/d3.min.js"></script>
+  <script>
+    window.addEventListener('DOMContentLoaded', function () {
+      'use strict';
+
+      const page = Object.freeze({
+        index: 10,
+        kicker: `ELLIPSE`,
+        title: `离地球越近，卫星在椭圆轨道上跑得<em>越快</em>`,
+        take: `椭圆轨道中动能与势能互换，但单位质量的总轨道能量保持不变。`
+      });
+
+      Lec.mount(page);
+      const mountedTitle = document.querySelector('.lec-header__title');
+      if (mountedTitle) mountedTitle.innerHTML = page.title;
+
+      const P = Lec.P;
+      const K = Lec.K;
+      const svg = d3.select('#orbitSvg');
+      const layer = d3.select('#orbitLayer');
+      const energySvg = d3.select('#energySvg');
+      const pauseBtn = document.getElementById('pauseBtn');
+      const resetBtn = document.getElementById('resetBtn');
+      const periOut = document.getElementById('periOut');
+      const apoOut = document.getElementById('apoOut');
+      const eccOut = document.getElementById('eccOut');
+      const altOut = document.getElementById('altOut');
+      const speedOut = document.getElementById('speedOut');
+      const periodOut = document.getElementById('periodOut');
+
+      const scene = Object.freeze({ width: 1120, height: 430, cx: 560, cy: 224, spanX: 455, spanY: 170 });
+      const limits = Object.freeze({
+        minimum: K.EARTH_RADIUS + K.KARMAN_ALTITUDE,
+        maximum: K.EARTH_RADIUS + K.GEO_ALTITUDE
+      });
+      const initial = Object.freeze({
+        periapsis: K.EARTH_RADIUS + K.ISS_ALTITUDE,
+        apoapsis: K.EARTH_RADIUS + K.GEO_ALTITUDE
+      });
+      const state = {
+        periapsis: initial.periapsis,
+        apoapsis: initial.apoapsis,
+        elapsed: 0,
+        paused: Deck.reduced(),
+        dragging: null
+      };
+
+      const rgbText = name => {
+        const c = Deck.rgb(name);
+        return d3.rgb(c[0], c[1], c[2]);
+      };
+      const speedColour = d3.scaleLinear()
+        .range([rgbText('chart-2'), rgbText('warm')])
+        .interpolate(d3.interpolateRgb);
+
+      function orbitData() {
+        const direct = P.orbitFromApsides(state.periapsis, state.apoapsis);
+        return P.apsidesFromElements(direct.semiMajorAxis, direct.eccentricity);
+      }
+
+      function geometry(orbit) {
+        const scale = Math.min(
+          scene.spanX / limits.maximum,
+          scene.spanY / limits.maximum
+        );
+        const a = orbit.semiMajorAxis * scale;
+        const b = orbit.semiMajorAxis * Math.sqrt(1 - orbit.eccentricity * orbit.eccentricity) * scale;
+        const centreX = scene.cx - orbit.semiMajorAxis * orbit.eccentricity * scale;
+        return { scale, a, b, centreX };
+      }
+
+      function pointAt(orbit, geo, anomaly) {
+        const radius = P.radiusAtTrueAnomaly(orbit.semiMajorAxis, orbit.eccentricity, anomaly);
+        return {
+          x: scene.cx + radius * Math.cos(anomaly) * geo.scale,
+          y: scene.cy + radius * Math.sin(anomaly) * geo.scale,
+          radius,
+          speed: P.speedAtTrueAnomaly(orbit.semiMajorAxis, orbit.eccentricity, anomaly)
+        };
+      }
+
+      function nearestElapsed(orbit, anomaly) {
+        const samples = d3.range(0, 361).map(function (i) {
+          const elapsed = orbit.period * i / 360;
+          const ks = P.keplerState(orbit.semiMajorAxis, orbit.eccentricity, elapsed, 0);
+          const delta = Math.atan2(Math.sin(ks.trueAnomaly - anomaly), Math.cos(ks.trueAnomaly - anomaly));
+          return { elapsed, error: Math.abs(delta) };
+        });
+        return d3.least(samples, d => d.error).elapsed;
+      }
+
+      function drawOrbit() {
+        const active = document.activeElement;
+        const focusKind = active && active.classList && active.classList.contains('orbit-handle') ? active.dataset.kind :
+          (active && active.classList && active.classList.contains('satellite') ? 'satellite' : null);
+        const orbit = orbitData();
+        const geo = geometry(orbit);
+        state.elapsed = ((state.elapsed % orbit.period) + orbit.period) % orbit.period;
+        const ks = P.keplerState(orbit.semiMajorAxis, orbit.eccentricity, state.elapsed, 0);
+        const radius = P.radiusAtTrueAnomaly(orbit.semiMajorAxis, orbit.eccentricity, ks.trueAnomaly);
+        const speedByViva = P.visViva(radius, orbit.semiMajorAxis);
+        const speed = P.speedAtTrueAnomaly(orbit.semiMajorAxis, orbit.eccentricity, ks.trueAnomaly);
+        const sat = pointAt(orbit, geo, ks.trueAnomaly);
+        const earthRadius = K.EARTH_RADIUS * geo.scale;
+        const peri = pointAt(orbit, geo, 0);
+        const apo = pointAt(orbit, geo, K.PI);
+
+        speedColour.domain([orbit.apoapsisSpeed, orbit.periapsisSpeed]);
+
+        const orbitPoints = d3.range(0, 121).map(i => pointAt(orbit, geo, K.TWO_PI * i / 120));
+        const orbitLine = d3.line().x(d => d.x).y(d => d.y).curve(d3.curveLinearClosed);
+
+        layer.selectAll('*').remove();
+        layer.append('line').attr('class', 'guide-line')
+          .attr('x1', apo.x).attr('x2', peri.x).attr('y1', scene.cy).attr('y2', scene.cy);
+        layer.append('path').attr('class', 'orbit-line').attr('d', orbitLine(orbitPoints));
+
+        const trail = d3.range(0, 28).map(function (i) {
+          const t = state.elapsed - orbit.period * i / 420;
+          const item = P.keplerState(orbit.semiMajorAxis, orbit.eccentricity, t, 0);
+          return pointAt(orbit, geo, item.trueAnomaly);
+        });
+        layer.append('g').selectAll('line').data(d3.pairs(trail)).join('line')
+          .attr('x1', d => d[0].x).attr('y1', d => d[0].y)
+          .attr('x2', d => d[1].x).attr('y2', d => d[1].y)
+          .attr('stroke', d => speedColour(d[0].speed))
+          .attr('stroke-width', 6)
+          .attr('stroke-linecap', 'round')
+          .attr('opacity', (d, i) => 1 - i / 32);
+
+        const earth = layer.append('g').attr('transform', `translate(${scene.cx},${scene.cy})`);
+        earth.append('circle').attr('class', 'earth').attr('r', earthRadius);
+        earth.append('circle').attr('class', 'earth-core').attr('r', earthRadius * .55);
+        earth.append('text').attr('class', 'svg-label').attr('text-anchor', 'middle')
+          .attr('y', earthRadius + 23).text('地球 · 焦点');
+
+        function addHandle(kind, point, label, value) {
+          const group = layer.append('g').attr('class', 'apsis-group');
+          group.append('circle').attr('class', 'orbit-handle handle-ring').attr('data-kind', kind)
+            .attr('cx', point.x).attr('cy', point.y).attr('r', 22).attr('tabindex', 0)
+            .attr('role', 'slider').attr('aria-label', label)
+            .attr('aria-valuemin', P.altitudeFromRadius(limits.minimum))
+            .attr('aria-valuemax', P.altitudeFromRadius(limits.maximum))
+            .attr('aria-valuenow', P.altitudeFromRadius(kind === 'periapsis' ? orbit.periapsisRadius : orbit.apoapsisRadius))
+            .attr('aria-valuetext', value);
+          group.append('circle').attr('class', 'handle-dot').attr('cx', point.x).attr('cy', point.y).attr('r', 4);
+          group.append('text').attr('class', 'svg-label').attr('text-anchor', kind === 'periapsis' ? 'start' : 'end')
+            .attr('x', point.x + (kind === 'periapsis' ? 22 : -22)).attr('y', point.y - 8).text(label);
+          group.append('text').attr('class', 'svg-value').attr('text-anchor', kind === 'periapsis' ? 'start' : 'end')
+            .attr('x', point.x + (kind === 'periapsis' ? 22 : -22)).attr('y', point.y + 14).text(value);
+        }
+        addHandle('apoapsis', apo, '远地点', P.formatDistance(orbit.apoapsisAltitude, 0));
+        addHandle('periapsis', peri, '近地点', P.formatDistance(orbit.periapsisAltitude, 0));
+
+        const satG = layer.append('g').attr('class', 'satellite').attr('tabindex', 0).attr('role', 'slider')
+          .attr('aria-label', '卫星轨道位置').attr('aria-valuetext', P.formatDistance(ks.altitude, 0))
+          .attr('transform', `translate(${sat.x},${sat.y})`);
+        satG.append('circle').attr('r', 22).attr('fill', 'var(--surface-inset)').attr('opacity', 0);
+        satG.append('rect').attr('class', 'sat-wing').attr('x', -20).attr('y', -4).attr('width', 40).attr('height', 8).attr('rx', 2);
+        satG.append('circle').attr('class', 'sat-body').attr('r', 8);
+
+        bindInteractiveNodes();
+        if (focusKind) {
+          const nextFocus = focusKind === 'satellite' ? layer.select('.satellite').node() : layer.select(`.orbit-handle[data-kind="${focusKind}"]`).node();
+          if (nextFocus) nextFocus.focus({ preventScroll: true });
+        }
+        periOut.value = P.formatDistance(orbit.periapsisAltitude, 0);
+        apoOut.value = P.formatDistance(orbit.apoapsisAltitude, 0);
+        eccOut.value = P.formatNumber(orbit.eccentricity, 3);
+        altOut.value = P.formatDistance(ks.altitude, 0);
+        speedOut.value = P.formatSpeed((speed + speedByViva) / 2, 2);
+        periodOut.value = P.formatDuration(orbit.period, 1);
+        drawEnergy(orbit, radius, speed);
+      }
+
+      function drawEnergy(orbit, radius, speed) {
+        const kinetic = P.kineticEnergy(1, speed);
+        const potential = P.potentialEnergyChange(1, Infinity, radius);
+        const total = P.specificOrbitalEnergy(orbit.semiMajorAxis);
+        const maxAbs = Math.max(
+          Math.abs(P.potentialEnergyChange(1, Infinity, orbit.periapsisRadius)),
+          P.kineticEnergy(1, orbit.periapsisSpeed)
+        );
+        const values = [
+          { label: '动能 / 质量', value: kinetic, colour: 'warm' },
+          { label: '引力势能 / 质量', value: potential, colour: 'chart-2' },
+          { label: '总比机械能', value: total, colour: 'accent' }
+        ];
+        const x = d3.scaleLinear().domain([-maxAbs, maxAbs]).range([178, 790]);
+        const rows = energySvg.selectAll('g.energy-row').data(values, d => d.label).join('g')
+          .attr('class', 'energy-row').attr('transform', (d, i) => `translate(0,${15 + i * 48})`);
+        rows.selectAll('*').remove();
+        rows.append('text').attr('class', 'energy-label').attr('x', 0).attr('y', 20).text(d => d.label);
+        rows.append('rect').attr('class', 'energy-track').attr('x', 178).attr('y', 4).attr('width', 612).attr('height', 22).attr('rx', 6);
+        rows.append('line').attr('class', 'zero-line').attr('x1', x(0)).attr('x2', x(0)).attr('y1', 1).attr('y2', 29);
+        rows.append('rect')
+          .attr('x', d => Math.min(x(0), x(d.value))).attr('y', 7)
+          .attr('width', d => Math.max(2, Math.abs(x(d.value) - x(0)))).attr('height', 16).attr('rx', 4)
+          .attr('fill', d => rgbText(d.colour));
+        rows.append('text').attr('class', 'energy-value').attr('text-anchor', 'end').attr('x', 782).attr('y', 21)
+          .text(d => P.formatSI(d.value, 'J/kg', 2));
+      }
+
+      function setApsis(kind, pointerX) {
+        const distance = Math.abs(pointerX - scene.cx) / (scene.spanX / limits.maximum);
+        if (kind === 'periapsis') {
+          state.periapsis = P.clamp(distance, limits.minimum, state.apoapsis);
+        } else {
+          state.apoapsis = P.clamp(distance, state.periapsis, limits.maximum);
+        }
+        const orbit = orbitData();
+        state.elapsed = P.clamp(state.elapsed, 0, orbit.period);
+        drawOrbit();
+      }
+
+      function pointerAnomaly(event) {
+        const point = Deck.pt(document.getElementById('orbitSvg'), event);
+        return Math.atan2(point.y - scene.cy, point.x - scene.cx);
+      }
+
+      function bindInteractiveNodes() {
+        layer.selectAll('.orbit-handle')
+          .on('focus', function () {
+            state.paused = true;
+            updatePause();
+          })
+          .on('pointerdown', function (event) {
+            state.dragging = this.dataset.kind;
+            svg.node().setPointerCapture(event.pointerId);
+            const p = Deck.pt(svg.node(), event);
+            setApsis(state.dragging, p.x);
+          })
+          .on('keydown', function (event) {
+            const kind = this.dataset.kind;
+            const step = (limits.maximum - limits.minimum) / 40;
+            if (event.key === 'ArrowLeft' || event.key === 'ArrowDown') {
+              event.preventDefault();
+              if (kind === 'periapsis') state.periapsis = P.clamp(state.periapsis - step, limits.minimum, state.apoapsis);
+              else state.apoapsis = P.clamp(state.apoapsis - step, state.periapsis, limits.maximum);
+              drawOrbit();
+            } else if (event.key === 'ArrowRight' || event.key === 'ArrowUp') {
+              event.preventDefault();
+              if (kind === 'periapsis') state.periapsis = P.clamp(state.periapsis + step, limits.minimum, state.apoapsis);
+              else state.apoapsis = P.clamp(state.apoapsis + step, state.periapsis, limits.maximum);
+              drawOrbit();
+            }
+          });
+
+        layer.selectAll('.satellite')
+          .on('focus', function () {
+            state.paused = true;
+            updatePause();
+          })
+          .on('pointerdown', function (event) {
+            state.paused = true;
+            updatePause();
+            state.dragging = 'satellite';
+            svg.node().setPointerCapture(event.pointerId);
+            const orbit = orbitData();
+            state.elapsed = nearestElapsed(orbit, pointerAnomaly(event));
+            drawOrbit();
+          })
+          .on('keydown', function (event) {
+            if (event.key === 'ArrowLeft' || event.key === 'ArrowDown' || event.key === 'ArrowRight' || event.key === 'ArrowUp') {
+              event.preventDefault();
+              state.paused = true;
+              const orbit = orbitData();
+              const direction = event.key === 'ArrowLeft' || event.key === 'ArrowDown' ? -1 : 1;
+              state.elapsed = (state.elapsed + direction * orbit.period / 72 + orbit.period) % orbit.period;
+              updatePause();
+              drawOrbit();
+            }
+          });
+
+        svg.on('pointermove.drag', function (event) {
+          if (state.dragging === 'periapsis' || state.dragging === 'apoapsis') {
+            const p = Deck.pt(svg.node(), event);
+            setApsis(state.dragging, p.x);
+          } else if (state.dragging === 'satellite') {
+            const orbit = orbitData();
+            state.elapsed = nearestElapsed(orbit, pointerAnomaly(event));
+            drawOrbit();
+          }
+        }).on('pointerup.drag pointercancel.drag lostpointercapture.drag', function () {
+          state.dragging = null;
+        });
+      }
+
+      function updatePause() {
+        pauseBtn.textContent = state.paused ? '继续' : '暂停';
+        pauseBtn.setAttribute('aria-pressed', String(state.paused));
+      }
+
+      pauseBtn.addEventListener('click', function () {
+        state.paused = !state.paused;
+        updatePause();
+        drawOrbit();
+      });
+      resetBtn.addEventListener('click', function () {
+        state.periapsis = initial.periapsis;
+        state.apoapsis = initial.apoapsis;
+        state.elapsed = 0;
+        state.paused = Deck.reduced();
+        updatePause();
+        drawOrbit();
+      });
+
+      updatePause();
+      drawOrbit();
+      Deck.loop(function (time, dt) {
+        if (!state.paused && !state.dragging) {
+          const orbit = orbitData();
+          state.elapsed = (state.elapsed + dt * orbit.period / 18) % orbit.period;
+          drawOrbit();
+        }
+      }, { still: 0 });
+    }, { once: true });
+  </script>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+</body>
+</html>

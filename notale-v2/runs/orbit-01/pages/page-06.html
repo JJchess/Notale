@@ -1,0 +1,439 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+</head>
+<body data-page="06" data-total="20">
+<div id="stage">
+  <main class="page">
+    <header id="lec-header"></header>
+    <section class="page-body split min0" aria-label="轨道能量实验">
+      <figure class="visual-shell min0">
+        <canvas id="energy-canvas" class="cv-fill no-pan" tabindex="0" role="application" aria-label="能量账本与轨道。拖动左侧动能栏改变切向速度，拖动右侧势能栏改变位置；聚焦后可用方向键操作。"></canvas>
+      </figure>
+      <aside class="panel control-panel min0" aria-label="操作与读数">
+        <div class="panel-heading">
+          <h2 class="panel-title">把一次操作记进账本</h2>
+          <p class="panel-description">总能量不是另一笔独立费用：它始终等于动能与引力势能之和。把操作卡拖进左侧账本，或点击卡片，再看轨迹怎样改写。</p>
+        </div>
+
+        <div class="control-group">
+          <span class="small muted">操作卡</span>
+          <div class="cluster" aria-label="轨道操作">
+            <button type="button" draggable="true" data-action="faster">增加速度</button>
+            <button type="button" draggable="true" data-action="raise">升高位置</button>
+            <button type="button" draggable="true" data-action="slower">减小速度</button>
+          </div>
+          <span class="small faint">也可聚焦画布：上下键调速度，左右键调位置。</span>
+        </div>
+
+        <div class="control-group">
+          <label class="small muted" for="craft-mass">航天器质量</label>
+          <input id="craft-mass" type="number" inputmode="decimal" aria-describedby="mass-value">
+          <span id="mass-value" class="control-value"></span>
+        </div>
+
+        <div class="readout-grid" aria-live="polite">
+          <div class="readout">
+            <span class="small muted">单位质量总能量</span>
+            <span id="specific-readout" class="readout-value"></span>
+          </div>
+          <div class="readout is-blue">
+            <span class="small muted">对应半长轴</span>
+            <span id="axis-readout" class="readout-value"></span>
+          </div>
+          <div class="readout is-warm">
+            <span class="small muted">整器轨道能量</span>
+            <span id="craft-readout" class="readout-value"></span>
+          </div>
+          <div class="readout">
+            <span class="small muted">积分能量漂移</span>
+            <span id="drift-readout" class="readout-value"></span>
+          </div>
+        </div>
+
+        <button id="reset" type="button" class="button-quiet">恢复初始圆轨道</button>
+      </aside>
+    </section>
+    <footer id="lec-footer"></footer>
+  </main>
+
+  <script>
+  document.addEventListener('DOMContentLoaded', function () {
+    'use strict';
+
+    Lec.mount({
+      index: 6,
+      kicker: `ENERGY LEDGER`,
+      title: `一次点火，到底买来了什么样的轨道`,
+      take: `轨道形状可以看成速度能量与引力势能共同记下的结果。`
+    });
+
+    var K = Lec.K;
+    var P = Lec.P;
+    var stage = document.getElementById('stage');
+    var header = stage.querySelector('#lec-header');
+    var footer = stage.querySelector('#lec-footer');
+    var cv = stage.querySelector('#energy-canvas');
+    var massInput = stage.querySelector('#craft-mass');
+    var massValue = stage.querySelector('#mass-value');
+    var specificReadout = stage.querySelector('#specific-readout');
+    var axisReadout = stage.querySelector('#axis-readout');
+    var craftReadout = stage.querySelector('#craft-readout');
+    var driftReadout = stage.querySelector('#drift-readout');
+    var reset = stage.querySelector('#reset');
+    var cards = stage.querySelectorAll('[data-action]');
+
+    header.classList.add('page-header');
+    footer.classList.add('page-footer');
+    header.querySelector('.lec-header__kicker').classList.add('kicker');
+    header.querySelector('.lec-header__title').classList.add('page-title');
+    footer.querySelector('.lec-footer__take').classList.add('muted');
+    footer.querySelector('.lec-footer__topic').classList.add('footer-meta');
+
+    var initialAltitude = K.ISS_ALTITUDE;
+    var altitude = initialAltitude;
+    var radius = P.radiusAtAltitude(altitude);
+    var speed = P.circularVelocityAtAltitude(altitude);
+    var mass = K.THOUSAND;
+    var path = [];
+    var drift = K.ZERO;
+    var timeStep = K.ZERO;
+    var dragMode = '';
+    var draggedAction = '';
+    var fitted = null;
+
+    massInput.min = String(K.HUNDRED);
+    massInput.max = String(K.MILLION);
+    massInput.step = String(K.HUNDRED);
+    massInput.value = String(mass);
+
+    function energyAt(r, v) {
+      return P.specificOrbitalEnergy(r, v, K.MU_EARTH);
+    }
+
+    function semiMajorFromEnergy(energy) {
+      var low = K.R_EARTH * K.HALF;
+      var high = P.radiusAtAltitude(K.GEO_ALTITUDE);
+      var i;
+      var middle;
+      for (i = K.ZERO; i < K.HUNDRED; i += K.ONE) {
+        middle = (low + high) * K.HALF;
+        if (P.specificOrbitalEnergyFromSemiMajorAxis(middle, K.MU_EARTH) < energy) {
+          low = middle;
+        } else {
+          high = middle;
+        }
+      }
+      return (low + high) * K.HALF;
+    }
+
+    function simulate(step) {
+      var points = [];
+      var x = radius;
+      var y = K.ZERO;
+      var vx = K.ZERO;
+      var vy = speed;
+      var initialEnergy = energyAt(radius, speed);
+      var semiMajor = semiMajorFromEnergy(initialEnergy);
+      var period = P.orbitalPeriod(semiMajor, K.MU_EARTH);
+      var count = K.THOUSAND;
+      var dt = step || period / count;
+      var i;
+      var rr;
+      var ax;
+      var ay;
+      var rrNext;
+      var axNext;
+      var ayNext;
+      var currentEnergy;
+      var localDrift = K.ZERO;
+
+      for (i = K.ZERO; i <= count; i += K.ONE) {
+        if (i % K.FOUR === K.ZERO) {
+          points.push({x: x, y: y});
+        }
+        rr = Math.sqrt(x * x + y * y);
+        if (rr <= K.R_EARTH) {
+          break;
+        }
+        ax = -K.MU_EARTH * x / (rr * rr * rr);
+        ay = -K.MU_EARTH * y / (rr * rr * rr);
+        x += vx * dt + ax * dt * dt * K.HALF;
+        y += vy * dt + ay * dt * dt * K.HALF;
+        rrNext = Math.sqrt(x * x + y * y);
+        axNext = -K.MU_EARTH * x / (rrNext * rrNext * rrNext);
+        ayNext = -K.MU_EARTH * y / (rrNext * rrNext * rrNext);
+        vx += (ax + axNext) * dt * K.HALF;
+        vy += (ay + ayNext) * dt * K.HALF;
+        currentEnergy = energyAt(rrNext, Math.sqrt(vx * vx + vy * vy));
+        localDrift = Math.max(localDrift, Math.abs((currentEnergy - initialEnergy) / initialEnergy));
+      }
+      return {points: points, drift: localDrift, step: dt};
+    }
+
+    function rebuildPath() {
+      var trial = simulate(K.ZERO);
+      var precision = Math.pow(K.TEN, -K.DISPLAY_DECIMALS) / K.HUNDRED;
+      var refinements = K.ZERO;
+      while (trial.drift > precision && refinements < K.FOUR) {
+        trial = simulate(trial.step / K.TWO);
+        refinements += K.ONE;
+      }
+      path = trial.points;
+      drift = trial.drift;
+      timeStep = trial.step;
+    }
+
+    function updateReadouts() {
+      var specific = energyAt(radius, speed);
+      var semiMajor = semiMajorFromEnergy(specific);
+      massValue.textContent = P.formatMass(mass);
+      specificReadout.textContent = P.formatEnergy(specific) + '/kg';
+      axisReadout.textContent = P.formatDistance(semiMajor);
+      craftReadout.textContent = P.formatEnergy(P.orbitalEnergy(mass, radius, speed, K.MU_EARTH));
+      driftReadout.textContent = P.formatNumber(drift * K.HUNDRED) + '%';
+    }
+
+    function commit() {
+      radius = P.radiusAtAltitude(altitude);
+      var circular = P.circularVelocity(radius, K.MU_EARTH);
+      speed = P.clamp(speed, circular * K.HALF, circular * (K.ONE + K.ONE_THIRD));
+      rebuildPath();
+      updateReadouts();
+      draw(K.ZERO);
+    }
+
+    function applyAction(action) {
+      var circular = P.circularVelocity(radius, K.MU_EARTH);
+      if (action === 'faster') {
+        speed += circular * K.SIX / K.HUNDRED;
+      } else if (action === 'slower') {
+        speed -= circular * K.SIX / K.HUNDRED;
+      } else if (action === 'raise') {
+        altitude = P.clamp(altitude + K.LOW_EARTH_ORBIT_ALTITUDE, K.LOW_EARTH_ORBIT_ALTITUDE, K.GEO_ALTITUDE);
+      }
+      commit();
+    }
+
+    function canvasFont(token) {
+      return Deck.token(token) + ' ' + Deck.token('font-sans');
+    }
+
+    function draw(animationTime) {
+      if (!fitted || !cv.__w || !cv.__h) {
+        return;
+      }
+      var ctx = fitted;
+      var w = cv.__w;
+      var h = cv.__h;
+      var orbitTop = K.TEN * K.TWO;
+      var ledgerTop = h * (K.HALF + K.ONE / K.TEN);
+      var ledgerBottom = h - K.TEN * K.TWO;
+      var orbitHeight = ledgerTop - orbitTop - K.TEN;
+      var earthX = w * K.ONE_THIRD;
+      var earthY = orbitTop + orbitHeight * K.HALF;
+      var maxR = K.R_EARTH;
+      var i;
+      var p;
+      var scale;
+      var earthDrawR;
+      var satellite;
+      var idx;
+      var kinetic = P.kineticEnergy(K.ONE, speed);
+      var potential = P.gravitationalPotential(K.ONE, radius, K.MU_EARTH);
+      var total = energyAt(radius, speed);
+      var values = [kinetic, total, potential];
+      var labels = ['动能 / kg', '总轨道能量 / kg', '引力势能 / kg'];
+      var colors = ['accent-warm', 'accent', 'accent-blue'];
+      var centers = [w / K.SIX, w * K.HALF, w * (K.ONE - K.ONE / K.SIX)];
+      var baseY = ledgerBottom - K.TEN * K.TWO;
+      var meterH = ledgerBottom - ledgerTop - K.TEN * K.SIX;
+      var maxAbs = Math.abs(potential);
+      var barW = w / (K.TEN * K.TWO);
+      var barH;
+
+      ctx.clearRect(K.ZERO, K.ZERO, w, h);
+      ctx.fillStyle = Deck.rgba('surface-inset', K.ONE);
+      ctx.fillRect(K.ZERO, K.ZERO, w, h);
+
+      for (i = K.ZERO; i < path.length; i += K.ONE) {
+        maxR = Math.max(maxR, Math.sqrt(path[i].x * path[i].x + path[i].y * path[i].y));
+      }
+      scale = Math.min(w * K.HALF, orbitHeight * (K.ONE - K.ONE / K.TEN)) / (K.TWO * maxR);
+      earthDrawR = K.R_EARTH * scale;
+
+      ctx.strokeStyle = Deck.rgba('accent-blue', K.HALF);
+      ctx.lineWidth = K.TWO;
+      ctx.beginPath();
+      for (i = K.ZERO; i < path.length; i += K.ONE) {
+        p = path[i];
+        if (i === K.ZERO) {
+          ctx.moveTo(earthX + p.x * scale, earthY + p.y * scale);
+        } else {
+          ctx.lineTo(earthX + p.x * scale, earthY + p.y * scale);
+        }
+      }
+      ctx.stroke();
+
+      ctx.fillStyle = Deck.rgba('accent-blue', K.ONE_THIRD);
+      ctx.strokeStyle = Deck.rgba('accent-blue', K.ONE);
+      ctx.lineWidth = K.TWO;
+      ctx.beginPath();
+      ctx.arc(earthX, earthY, earthDrawR, K.ZERO, K.TWO_PI);
+      ctx.fill();
+      ctx.stroke();
+
+      idx = path.length ? Math.floor((animationTime / K.HUNDRED) % path.length) : K.ZERO;
+      satellite = path[idx] || {x: radius, y: K.ZERO};
+      ctx.fillStyle = Deck.rgba('accent', K.ONE);
+      ctx.beginPath();
+      ctx.arc(earthX + satellite.x * scale, earthY + satellite.y * scale, K.SIX, K.ZERO, K.TWO_PI);
+      ctx.fill();
+
+      ctx.fillStyle = Deck.rgba('ink-muted', K.ONE);
+      ctx.font = canvasFont('type-label');
+      ctx.fillText('二体积分验证轨迹', w * (K.HALF + K.ONE / K.TEN), orbitTop + K.TEN * K.TWO);
+      ctx.font = canvasFont('type-body');
+      ctx.fillStyle = Deck.rgba('ink-strong', K.ONE);
+      ctx.fillText('当前位置 ' + P.formatDistance(altitude) + '　切向速度 ' + P.formatVelocity(speed), w * (K.HALF + K.ONE / K.TEN), orbitTop + K.TEN * (K.TWO + K.THREE));
+
+      ctx.strokeStyle = Deck.rgba('line-strong', K.ONE);
+      ctx.lineWidth = K.ONE;
+      ctx.beginPath();
+      ctx.moveTo(K.TEN * K.TWO, ledgerTop);
+      ctx.lineTo(w - K.TEN * K.TWO, ledgerTop);
+      ctx.stroke();
+
+      for (i = K.ZERO; i < values.length; i += K.ONE) {
+        ctx.fillStyle = Deck.rgba('ink-muted', K.ONE);
+        ctx.font = canvasFont('type-label');
+        ctx.textAlign = 'center';
+        ctx.fillText(labels[i], centers[i], ledgerTop + K.TEN * K.TWO);
+        barH = Math.abs(values[i]) / maxAbs * meterH;
+        ctx.fillStyle = Deck.rgba(colors[i], K.ONE_THIRD);
+        ctx.strokeStyle = Deck.rgba(colors[i], K.ONE);
+        ctx.lineWidth = K.TWO;
+        Deck.rr(ctx, centers[i] - barW * K.HALF, baseY - barH, barW, barH, K.SIX);
+        ctx.fill();
+        ctx.stroke();
+        ctx.fillStyle = Deck.rgba('ink-strong', K.ONE);
+        ctx.font = canvasFont('type-body');
+        ctx.fillText(P.formatEnergy(values[i]) + '/kg', centers[i], baseY + K.TEN * K.TWO);
+      }
+      ctx.textAlign = 'start';
+      ctx.fillStyle = Deck.rgba('ink-faint', K.ONE);
+      ctx.font = canvasFont('type-label');
+      ctx.fillText('拖动左栏改速度', K.TEN * K.TWO, ledgerBottom);
+      ctx.textAlign = 'right';
+      ctx.fillText('拖动右栏改位置', w - K.TEN * K.TWO, ledgerBottom);
+      ctx.textAlign = 'start';
+    }
+
+    function useCanvasPoint(point) {
+      var w = cv.__w;
+      var h = cv.__h;
+      var ledgerTop = h * (K.HALF + K.ONE / K.TEN);
+      var t = P.clamp((point.y - ledgerTop) / (h - ledgerTop), K.ZERO, K.ONE);
+      if (dragMode === 'speed') {
+        var circular = P.circularVelocity(radius, K.MU_EARTH);
+        speed = circular * (K.ONE + K.ONE_THIRD - t * (K.ONE_THIRD + K.HALF));
+      } else if (dragMode === 'position') {
+        altitude = K.GEO_ALTITUDE - t * (K.GEO_ALTITUDE - K.LOW_EARTH_ORBIT_ALTITUDE);
+      }
+      commit();
+    }
+
+    cv.addEventListener('pointerdown', function (event) {
+      var point = Deck.pt(cv, event);
+      if (point.y < cv.__h * (K.HALF + K.ONE / K.TEN)) {
+        return;
+      }
+      dragMode = point.x < cv.__w * K.ONE_THIRD ? 'speed' : (point.x > cv.__w * (K.ONE - K.ONE_THIRD) ? 'position' : '');
+      if (dragMode) {
+        cv.setPointerCapture(event.pointerId);
+        useCanvasPoint(point);
+      }
+    });
+    cv.addEventListener('pointermove', function (event) {
+      if (dragMode) {
+        useCanvasPoint(Deck.pt(cv, event));
+      }
+    });
+    cv.addEventListener('pointerup', function () {
+      dragMode = '';
+    });
+    cv.addEventListener('keydown', function (event) {
+      if (event.key === 'ArrowUp') {
+        event.preventDefault();
+        applyAction('faster');
+      } else if (event.key === 'ArrowDown') {
+        event.preventDefault();
+        applyAction('slower');
+      } else if (event.key === 'ArrowRight') {
+        event.preventDefault();
+        applyAction('raise');
+      } else if (event.key === 'ArrowLeft') {
+        event.preventDefault();
+        altitude = P.clamp(altitude - K.LOW_EARTH_ORBIT_ALTITUDE, K.LOW_EARTH_ORBIT_ALTITUDE, K.GEO_ALTITUDE);
+        commit();
+      }
+    });
+
+    Array.prototype.forEach.call(cards, function (card) {
+      card.addEventListener('click', function () {
+        applyAction(card.getAttribute('data-action'));
+      });
+      card.addEventListener('dragstart', function (event) {
+        draggedAction = card.getAttribute('data-action');
+        event.dataTransfer.setData('text/plain', draggedAction);
+      });
+    });
+    cv.addEventListener('dragover', function (event) {
+      event.preventDefault();
+    });
+    cv.addEventListener('drop', function (event) {
+      event.preventDefault();
+      Deck.pt(cv, event);
+      applyAction(event.dataTransfer.getData('text/plain') || draggedAction);
+      draggedAction = '';
+    });
+
+    massInput.addEventListener('input', function () {
+      var value = Number(massInput.value);
+      if (!P.isPositive(value)) {
+        return;
+      }
+      mass = P.clamp(value, K.HUNDRED, K.MILLION);
+      updateReadouts();
+    });
+    massInput.addEventListener('change', function () {
+      massInput.value = String(mass);
+    });
+    reset.addEventListener('click', function () {
+      altitude = initialAltitude;
+      radius = P.radiusAtAltitude(altitude);
+      speed = P.circularVelocityAtAltitude(altitude);
+      mass = K.THOUSAND;
+      massInput.value = String(mass);
+      commit();
+    });
+
+    rebuildPath();
+    updateReadouts();
+    Deck.autofit(cv, function (ctx) {
+      fitted = ctx;
+      draw(K.ZERO);
+    });
+    Deck.loop(function (t) {
+      draw(t);
+    }, {still: K.ZERO});
+  });
+  </script>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+</body>
+</html>

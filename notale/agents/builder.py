@@ -11,7 +11,7 @@ from notale.core.models import LecturePlan, PageArtifact
 from notale.core.observability import EventLog
 from notale.roles.profiles import BUILDER
 from notale.tools.agent_tools import PageToolState, builder_tools
-from notale.utils.skill_catalog import GeneratedDesignSkill, SkillCatalog
+from notale.utils.skill_catalog import GeneratedDesignSkill
 
 def compile_context(plan: LecturePlan, number: int) -> dict[str, Any]:
     page = plan.pages[number - 1]
@@ -55,7 +55,6 @@ class BuilderWorker:
         run_dir: Path,
         plan: LecturePlan,
         page: int,
-        catalog: SkillCatalog,
         style: GeneratedDesignSkill,
         logger: EventLog,
     ) -> None:
@@ -63,12 +62,17 @@ class BuilderWorker:
         self.page = page
         spec = plan.pages[page - 1]
         self.context = compile_context(plan, page)
-        capability_text = catalog.render(spec.skills)
         skill_text = style.render(spec.composition)
-        if capability_text:
-            skill_text += "\n\n---\n\n" + capability_text
         optional_tools = set(spec.tools)
-        self.state = PageToolState(run_dir=run_dir, page=page, logger=logger)
+        self.state = PageToolState(
+            run_dir=run_dir,
+            page=page,
+            logger=logger,
+            page_plan=spec,
+            lecture_language=plan.language,
+            style=style,
+            llm=llm,
+        )
         self.agent = AgentLoop(
             role=BUILDER,
             state=self.state,
@@ -93,7 +97,13 @@ The lecture language is {self.plan.language}. This JSON is the complete page bou
 The page workspace starts empty at revision 0. Do not call read_page before the first successful
 edit_page. The first page-file operation must be edit_page with mode="replace" and revision=0;
 assigned non-file tools may run first. After that, you may read and revise the page across multiple
-turns. Use only the tools present in this session. Finish with submit_page(revision, notes)."""
+turns. Use only the tools present in this session. After the initial implementation, call
+inspect_page(revision). It renders the exact 1280×720 page and runs one isolated visual review
+without inheriting this Builder conversation or tools. If it returns revised or reverted, it has
+already saved the page at the returned revision; call inspect_page again for that revision. If it
+returns success, finish with submit_page(revision, notes) in the next turn. If it returns
+review_discarded, your page is unchanged: apply the returned findings with edit_page, then call
+inspect_page again. If it returns any other error, fix what the error describes and retry."""
         return await self.agent.run(task)
 
 

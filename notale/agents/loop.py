@@ -3,13 +3,16 @@
 The message conversion, streaming tool-call assembly, and query-cycle behavior
 are a Notale-specific pruning of OpenHarness v0.1.9 (MIT), pinned at commit
 ``a0f8552c69d0b25d613af288823212a8b6b59a``.  MCP, permissions, hooks,
-coordinator state, memory, session continuation, image messages, and automatic
-conversation compaction are deliberately absent.
+coordinator state, memory, session continuation, and automatic conversation
+compaction are deliberately absent from the outer agent runtime. The same wire
+types support both OpenAI Chat Completions compatibility and the Responses API,
+including the isolated multimodal request made internally by ``inspect_page``.
 """
 
 from __future__ import annotations
 
 import asyncio
+import copy
 import hashlib
 import json
 import os
@@ -27,6 +30,7 @@ from notale.core.observability import EventLog
 from notale.roles.base import RoleSpec
 from notale.tools.base import BaseTool, ToolContext, ToolRegistry
 from notale.utils.config import get_config
+from notale.utils.retry import RetryPolicy, TransientError, run_with_retry
 
 
 _CONFIG = get_config()
@@ -56,6 +60,23 @@ class TextBlock(BaseModel):
     text: str
 
 
+class ImageBlock(BaseModel):
+    type: Literal["image"] = "image"
+    image_url: str
+    detail: Literal["auto", "low", "high"] = "high"
+
+
+class ReasoningBlock(BaseModel):
+    """Replayable Responses API reasoning item for store-disabled tool loops."""
+
+    type: Literal["reasoning"] = "reasoning"
+    id: str
+    summary: list[dict[str, Any]] = Field(default_factory=list)
+    content: list[dict[str, Any]] = Field(default_factory=list)
+    encrypted_content: str | None = None
+    status: Literal["in_progress", "completed", "incomplete"] | None = None
+
+
 class ToolUseBlock(BaseModel):
     type: Literal["tool_use"] = "tool_use"
     id: str = Field(default_factory=lambda: f"toolu_{uuid.uuid4().hex}")
@@ -68,9 +89,10 @@ class ToolResultBlock(BaseModel):
     tool_use_id: str
     content: str
     is_error: bool = False
+    images: list[ImageBlock] = Field(default_factory=list, exclude=True)
 
 
-ContentBlock = TextBlock | ToolUseBlock | ToolResultBlock
+ContentBlock = TextBlock | ImageBlock | ReasoningBlock | ToolUseBlock | ToolResultBlock
 
 
 class ConversationMessage(BaseModel):
@@ -81,6 +103,18 @@ class ConversationMessage(BaseModel):
     @classmethod
     def from_user_text(cls, text: str) -> "ConversationMessage":
         return cls(role="user", content=[TextBlock(text=text)])
+
+    @classmethod
+    def from_user_text_and_image(
+        cls, text: str, image_url: str, *, detail: str = "high"
+    ) -> "ConversationMessage":
+        return cls(
+            role="user",
+            content=[
+                TextBlock(text=text),
+                ImageBlock(image_url=image_url, detail=detail),
+            ],
+        )
 
     @property
     def text(self) -> str:
@@ -112,9 +146,12 @@ class ModelRequest:
     reasoning_effort: str
     tools: list[dict[str, Any]]
     response_schema: dict[str, Any] | None = None
+    response_schema_name: str = "notale_output"
     require_parameters: bool = False
 
     def to_openai_body(self) -> dict[str, Any]:
+        """Return the legacy Chat Completions-compatible request body."""
+
         body: dict[str, Any] = {
             "model": self.model,
             "messages": _convert_messages_to_openai(
@@ -133,7 +170,7 @@ class ModelRequest:
             body["response_format"] = {
                 "type": "json_schema",
                 "json_schema": {
-                    "name": "notale_style",
+                    "name": self.response_schema_name,
                     "strict": True,
                     "schema": self.response_schema,
                 },
@@ -143,6 +180,44 @@ class ModelRequest:
         else:
             body["stream_options"] = {"include_usage": True}
         return body
+
+    def to_responses_body(self) -> dict[str, Any]:
+        """Return the OpenAI Responses API request body."""
+
+        body: dict[str, Any] = {
+            "model": self.model,
+            "input": _convert_messages_to_responses(self.messages),
+            "stream": True,
+            "store": False,
+            "max_output_tokens": max(
+                1, min(int(self.max_tokens), _MAX_SAFE_COMPLETION_TOKENS)
+            ),
+            "reasoning": {"effort": self.reasoning_effort},
+            # Notale manually replays complete turns. With response storage disabled,
+            # encrypted reasoning items preserve GPT-5.6 tool-loop continuity.
+            "include": ["reasoning.encrypted_content"],
+        }
+        if self.system_prompt:
+            body["instructions"] = self.system_prompt
+        if self.response_schema is not None:
+            body["text"] = {
+                "format": {
+                    "type": "json_schema",
+                    "name": self.response_schema_name,
+                    "strict": True,
+                    "schema": _strict_responses_schema(self.response_schema),
+                }
+            }
+        if self.tools:
+            body["tools"] = _convert_tools_to_responses(self.tools)
+        return body
+
+    def to_wire_body(
+        self, wire_api: Literal["chat_completions", "responses"]
+    ) -> dict[str, Any]:
+        if wire_api == "responses":
+            return self.to_responses_body()
+        return self.to_openai_body()
 
 
 @dataclass(frozen=True)
@@ -195,6 +270,47 @@ def _convert_tools_to_openai(tools: list[dict[str, Any]]) -> list[dict[str, Any]
     ]
 
 
+def _convert_tools_to_responses(tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [
+        {
+            "type": "function",
+            "name": tool["name"],
+            "description": tool.get("description", ""),
+            "parameters": tool.get("input_schema", {}),
+            # Notale validates tool input itself. Keeping provider strictness disabled
+            # preserves Pydantic defaults instead of forcing optional parameters to null.
+            "strict": False,
+        }
+        for tool in tools
+    ]
+
+
+def _strict_responses_schema(schema: dict[str, Any]) -> dict[str, Any]:
+    """Normalize Pydantic output schemas for Responses strict JSON mode."""
+
+    normalized = copy.deepcopy(schema)
+
+    def visit(value: Any) -> None:
+        if isinstance(value, dict):
+            if "$ref" in value:
+                # Strict JSON mode rejects $ref nodes that carry sibling keywords such as
+                # the description Pydantic attaches to referenced field types.
+                for key in [key for key in value if key != "$ref"]:
+                    del value[key]
+            properties = value.get("properties")
+            if isinstance(properties, dict):
+                value["required"] = list(properties)
+                value["additionalProperties"] = False
+            for item in value.values():
+                visit(item)
+        elif isinstance(value, list):
+            for item in value:
+                visit(item)
+
+    visit(normalized)
+    return normalized
+
+
 def _convert_messages_to_openai(
     messages: list[ConversationMessage],
     system_prompt: str,
@@ -238,6 +354,16 @@ def _convert_messages_to_openai(
             for block in message.content
             if isinstance(block, ToolResultBlock)
         ]
+        images = [
+            block
+            for block in message.content
+            if isinstance(block, ImageBlock)
+        ]
+        images.extend(
+            image
+            for block in tool_results
+            for image in block.images
+        )
         user_text = "".join(
             block.text for block in message.content if isinstance(block, TextBlock)
         )
@@ -249,11 +375,117 @@ def _convert_messages_to_openai(
                     "content": block.content,
                 }
             )
-        if user_text.strip():
+        if images:
+            parts: list[dict[str, Any]] = []
+            if user_text.strip():
+                parts.append({"type": "text", "text": user_text})
+            parts.extend(
+                {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": block.image_url,
+                        "detail": block.detail,
+                    },
+                }
+                for block in images
+            )
+            result.append({"role": "user", "content": parts})
+        elif user_text.strip():
             result.append({"role": "user", "content": user_text})
         elif not tool_results:
             result.append({"role": "user", "content": ""})
     return result
+
+
+def _reasoning_item(block: ReasoningBlock) -> dict[str, Any]:
+    item: dict[str, Any] = {
+        "type": "reasoning",
+        "id": block.id,
+        "summary": block.summary,
+    }
+    if block.content:
+        item["content"] = block.content
+    if block.encrypted_content:
+        item["encrypted_content"] = block.encrypted_content
+    if block.status:
+        item["status"] = block.status
+    return item
+
+
+def _convert_messages_to_responses(
+    messages: list[ConversationMessage],
+) -> list[dict[str, Any]]:
+    """Replay Notale's complete local conversation as Responses input items."""
+
+    result: list[dict[str, Any]] = []
+    for message in messages:
+        if message.role == "assistant":
+            for block in message.content:
+                if isinstance(block, ReasoningBlock):
+                    result.append(_reasoning_item(block))
+                elif isinstance(block, TextBlock) and block.text:
+                    result.append({"role": "assistant", "content": block.text})
+                elif isinstance(block, ToolUseBlock):
+                    result.append(
+                        {
+                            "type": "function_call",
+                            "call_id": block.id,
+                            "name": block.name,
+                            "arguments": json.dumps(block.input),
+                        }
+                    )
+            continue
+
+        tool_results = [
+            block for block in message.content if isinstance(block, ToolResultBlock)
+        ]
+        for block in tool_results:
+            result.append(
+                {
+                    "type": "function_call_output",
+                    "call_id": block.tool_use_id,
+                    "output": block.content,
+                }
+            )
+
+        images = [
+            block for block in message.content if isinstance(block, ImageBlock)
+        ]
+        images.extend(image for block in tool_results for image in block.images)
+        user_text = "".join(
+            block.text for block in message.content if isinstance(block, TextBlock)
+        )
+        if images:
+            parts: list[dict[str, Any]] = []
+            if user_text.strip():
+                parts.append({"type": "input_text", "text": user_text})
+            parts.extend(
+                {
+                    "type": "input_image",
+                    "image_url": block.image_url,
+                    "detail": block.detail,
+                }
+                for block in images
+            )
+            result.append({"role": "user", "content": parts})
+        elif user_text.strip() or not tool_results:
+            result.append({"role": "user", "content": user_text})
+    return result
+
+
+def model_request_body(client: Any, request: ModelRequest) -> dict[str, Any]:
+    """Render the exact wire body used by a concrete client for logging/tests."""
+
+    wire_api = getattr(client, "wire_api", "chat_completions")
+    return request.to_wire_body(wire_api)
+
+
+def request_message_count(body: dict[str, Any]) -> int:
+    messages = body.get("messages")
+    if isinstance(messages, list):
+        return len(messages)
+    inputs = body.get("input")
+    return len(inputs) if isinstance(inputs, list) else int(bool(inputs))
 
 
 def _strip_think_blocks(buffer: str) -> tuple[str, str]:
@@ -269,7 +501,7 @@ def _strip_think_blocks(buffer: str) -> tuple[str, str]:
 
 
 class OpenAICompatibleClient:
-    """Small streaming transport for the OpenAI-compatible Chat API."""
+    """Small streaming transport for Chat Completions or Responses."""
 
     def __init__(
         self,
@@ -278,19 +510,36 @@ class OpenAICompatibleClient:
         base_url: str,
         timeout: float,
         model: str,
+        wire_api: Literal["chat_completions", "responses"] = "chat_completions",
     ) -> None:
         self.model = model
+        self.wire_api = wire_api
+        default_headers = {"User-Agent": "Notale/1.0"} if wire_api == "responses" else None
         self._client = AsyncOpenAI(
             api_key=api_key,
             base_url=_normalize_openai_base_url(base_url),
             timeout=timeout,
-            max_retries=3,
+            # Retry policy is owned by Notale so 429s use the deliberately long
+            # ladder and one logical call cannot multiply SDK and application
+            # attempts.
+            max_retries=0,
+            default_headers=default_headers,
         )
 
     async def close(self) -> None:
         await self._client.close()
 
     async def stream_message(
+        self, request: ModelRequest
+    ) -> AsyncIterator[ModelEvent]:
+        if getattr(self, "wire_api", "chat_completions") == "responses":
+            async for event in self._stream_responses(request):
+                yield event
+            return
+        async for event in self._stream_chat_completions(request):
+            yield event
+
+    async def _stream_chat_completions(
         self, request: ModelRequest
     ) -> AsyncIterator[ModelEvent]:
         stream = await self._client.chat.completions.create(
@@ -359,6 +608,105 @@ class OpenAICompatibleClient:
         message._reasoning = reasoning
         yield MessageComplete(message, usage, finish_reason)
 
+    async def _stream_responses(
+        self, request: ModelRequest
+    ) -> AsyncIterator[ModelEvent]:
+        stream = await self._client.responses.create(**request.to_responses_body())
+        visible_text = ""
+        think_buffer = ""
+        final_response: Any | None = None
+
+        async for event in stream:
+            event_type = getattr(event, "type", "")
+            if event_type == "response.output_text.delta":
+                think_buffer += str(getattr(event, "delta", "") or "")
+                visible, think_buffer = _strip_think_blocks(think_buffer)
+                if visible:
+                    visible_text += visible
+                    yield TextDelta(visible)
+            elif event_type in {
+                "response.completed",
+                "response.incomplete",
+                "response.failed",
+            }:
+                final_response = getattr(event, "response", None)
+
+        if final_response is None:
+            raise RuntimeError("Responses stream finished without a terminal response")
+        response_error = getattr(final_response, "error", None)
+        if response_error is not None:
+            error_message = getattr(response_error, "message", None) or str(response_error)
+            raise RuntimeError(f"Responses API failed: {error_message}")
+
+        blocks: list[ContentBlock] = []
+        reasoning_text: list[str] = []
+        for item in list(getattr(final_response, "output", None) or []):
+            item_type = getattr(item, "type", "")
+            if item_type == "reasoning":
+                raw = item.model_dump(exclude_none=True)
+                item_id = str(raw.get("id") or "")
+                if item_id:
+                    summary = list(raw.get("summary") or [])
+                    content = list(raw.get("content") or [])
+                    blocks.append(
+                        ReasoningBlock(
+                            id=item_id,
+                            summary=summary,
+                            content=content,
+                            encrypted_content=raw.get("encrypted_content"),
+                            status=raw.get("status"),
+                        )
+                    )
+                    for part in summary:
+                        text = str(part.get("text") or "")
+                        if text:
+                            reasoning_text.append(text)
+                continue
+            if item_type == "function_call":
+                arguments_text = str(getattr(item, "arguments", "") or "")
+                try:
+                    arguments = json.loads(arguments_text)
+                except (json.JSONDecodeError, TypeError):
+                    arguments = {}
+                blocks.append(
+                    ToolUseBlock(
+                        id=str(
+                            getattr(item, "call_id", "")
+                            or f"toolu_{uuid.uuid4().hex}"
+                        ),
+                        name=str(getattr(item, "name", "") or ""),
+                        input=arguments if isinstance(arguments, dict) else {},
+                    )
+                )
+                continue
+            if item_type == "message":
+                item_text = "".join(
+                    str(
+                        getattr(part, "text", None)
+                        or getattr(part, "refusal", None)
+                        or ""
+                    )
+                    for part in list(getattr(item, "content", None) or [])
+                )
+                if item_text:
+                    blocks.append(TextBlock(text=item_text))
+
+        if visible_text and not any(isinstance(block, TextBlock) for block in blocks):
+            blocks.append(TextBlock(text=visible_text))
+        message = ConversationMessage(role="assistant", content=blocks)
+        message._reasoning = "".join(reasoning_text)
+        raw_usage = getattr(final_response, "usage", None)
+        usage = Usage(
+            input_tokens=int(getattr(raw_usage, "input_tokens", 0) or 0),
+            output_tokens=int(getattr(raw_usage, "output_tokens", 0) or 0),
+        )
+        stop_reason = (
+            "tool_calls"
+            if message.tool_uses
+            else str(getattr(final_response, "status", "stop"))
+        )
+        yield MessageComplete(message, usage, stop_reason)
+
 
 def _client(llm: Any) -> tuple[Any, str, bool]:
     if llm is not None and hasattr(llm, "stream_message"):
@@ -371,12 +719,14 @@ def _client(llm: Any) -> tuple[Any, str, bool]:
     if not api_key:
         raise RuntimeError(f"missing API key: set {api_key_env}")
     timeout = float(getattr(inner, "timeout", _CONFIG.model.http_timeout_sec))
+    wire_api = getattr(inner, "wire_api", _CONFIG.model.wire_api)
     return (
         OpenAICompatibleClient(
             api_key,
             base_url=base_url,
             timeout=timeout,
             model=model,
+            wire_api=wire_api,
         ),
         model,
         True,
@@ -387,6 +737,46 @@ def resolve_client(llm: Any) -> tuple[Any, str, bool]:
     """Resolve the configured transport for one non-agent model call."""
 
     return _client(llm)
+
+
+async def complete_model_request(
+    client: Any,
+    request: ModelRequest,
+    *,
+    timeout_sec: float | None = None,
+    on_retry: Any = None,
+    policy: RetryPolicy | None = None,
+) -> tuple[MessageComplete, int | None, dict[str, Any]]:
+    """Consume one model stream with Notale's shared retry policy.
+
+    Callers never act on text deltas, so an interrupted attempt has no durable
+    side effect. Retrying the complete stream is therefore safe and also covers
+    failures that occur after the HTTP response has begun.
+    """
+
+    async def consume() -> tuple[MessageComplete, int | None]:
+        started = time.monotonic()
+        first_ms: int | None = None
+        complete: MessageComplete | None = None
+        async for event in client.stream_message(request):
+            if first_ms is None:
+                first_ms = round((time.monotonic() - started) * 1000)
+            if isinstance(event, MessageComplete):
+                complete = event
+        if complete is None:
+            raise TransientError(
+                "model stream finished without a final message",
+                error_class="server",
+            )
+        return complete, first_ms
+
+    (complete, first_ms), meta = await run_with_retry(
+        consume,
+        policy=policy
+        or RetryPolicy(timeout_sec=float(timeout_sec or _CONFIG.model.http_timeout_sec)),
+        on_retry=on_retry,
+    )
+    return complete, first_ms, meta
 
 
 class AgentLoop:
@@ -425,6 +815,8 @@ class AgentLoop:
         if self.registry.get(terminal_tool) is None:
             raise ValueError(f"terminal tool is not registered: {terminal_tool}")
 
+        if hasattr(state, "llm") and getattr(state, "llm", None) is None:
+            state.llm = llm
         factory = getattr(llm, "for_agent", None)
         if callable(factory):
             llm = factory(
@@ -482,7 +874,7 @@ class AgentLoop:
             reasoning_effort=_CONFIG.model.reasoning_effort,
             tools=self.registry.to_api_schema(),
         )
-        body = request.to_openai_body()
+        body = model_request_body(self.client, request)
         call_id = uuid.uuid4().hex
         snapshot = self._request_snapshot(
             turn=turn,
@@ -497,19 +889,28 @@ class AgentLoop:
             page=self.page,
             call_id=call_id,
             model=self.model,
-            message_count=len(body["messages"]),
+            message_count=request_message_count(body),
             tool_count=len(body.get("tools", [])),
             max_output_tokens=_CONFIG.model.max_output_tokens,
             reasoning_effort=_CONFIG.model.reasoning_effort,
             **snapshot,
         )
-        complete: MessageComplete | None = None
+        retry_meta: dict[str, Any] = {}
         try:
-            async for event in self.client.stream_message(request):
-                if first_ms is None:
-                    first_ms = round((time.monotonic() - started) * 1000)
-                if isinstance(event, MessageComplete):
-                    complete = event
+            complete, first_ms, retry_meta = await complete_model_request(
+                self.client,
+                request,
+                on_retry=lambda attempt, error_class, delay: self.logger.emit(
+                    "llm.call.retrying",
+                    agent_id=self.agent_id,
+                    page=self.page,
+                    call_id=call_id,
+                    attempt=attempt,
+                    next_attempt=attempt + 1,
+                    error_class=error_class,
+                    delay_sec=round(delay, 3),
+                ),
+            )
         except BaseException as exc:
             self.logger.emit(
                 "llm.call.failed",
@@ -519,6 +920,8 @@ class AgentLoop:
                 duration_ms=round((time.monotonic() - started) * 1000),
                 error=f"{type(exc).__name__}: {exc}",
                 first_event_ms=first_ms,
+                attempts=int(getattr(exc, "attempts", 1)),
+                error_class=str(getattr(exc, "error_class", "") or ""),
             )
             raise
         self.logger.emit(
@@ -528,9 +931,8 @@ class AgentLoop:
             call_id=call_id,
             duration_ms=round((time.monotonic() - started) * 1000),
             first_event_ms=first_ms,
+            attempts=int(retry_meta.get("attempts", 1)),
         )
-        if complete is None:
-            raise RuntimeError("model stream finished without a final message")
         return complete
 
     async def _execute_tool(self, call: ToolUseBlock, turn: int) -> ToolResultBlock:
@@ -565,43 +967,73 @@ class AgentLoop:
             tool_use_id=call.id,
             content=result.output,
             is_error=result.is_error,
+            images=[
+                ImageBlock(image_url=image.image_url, detail=image.detail)
+                for image in result.images
+            ],
         )
 
     async def _execute_calls(
         self, calls: list[ToolUseBlock], turn: int
     ) -> list[ToolResultBlock]:
-        for call in calls:
-            self.logger.emit(
-                "tool.started",
-                agent_id=self.agent_id,
-                page=self.page,
-                tool=call.name,
-                arguments=call.input,
-            )
-        serial = any(call.name == "plan" for call in calls)
+        transactional = {
+            "plan", "pages", "read_page", "edit_page", "inspect_page", "submit_page"
+        }
+        serial = any(call.name in transactional for call in calls)
         if len(calls) == 1 or serial:
             results = []
             for call in calls:
+                self.logger.emit(
+                    "tool.started",
+                    agent_id=self.agent_id,
+                    page=self.page,
+                    tool=call.name,
+                    arguments=call.input,
+                )
                 try:
-                    results.append(await self._execute_tool(call, turn))
-                except BaseException as exc:
-                    results.append(
-                        ToolResultBlock(
-                            tool_use_id=call.id,
-                            content=(
-                                f"Tool {call.name} failed: "
-                                f"{type(exc).__name__}: {exc}"
-                            ),
-                            is_error=True,
-                        )
+                    result = await self._execute_tool(call, turn)
+                except asyncio.CancelledError:
+                    raise
+                except Exception as exc:
+                    result = ToolResultBlock(
+                        tool_use_id=call.id,
+                        content=(
+                            f"Tool {call.name} failed: "
+                            f"{type(exc).__name__}: {exc}"
+                        ),
+                        is_error=True,
                     )
+                results.append(result)
+                self.logger.emit(
+                    "tool.completed",
+                    agent_id=self.agent_id,
+                    page=self.page,
+                    tool=call.name,
+                    arguments=call.input,
+                    output=result.content,
+                    is_error=result.is_error,
+                )
+                if getattr(self.state, "submission", None) is not None or getattr(
+                    self.state, "blocked", ""
+                ):
+                    break
         else:
+            for call in calls:
+                self.logger.emit(
+                    "tool.started",
+                    agent_id=self.agent_id,
+                    page=self.page,
+                    tool=call.name,
+                    arguments=call.input,
+                )
             raw = await asyncio.gather(
                 *(self._execute_tool(call, turn) for call in calls),
                 return_exceptions=True,
             )
             results = []
             for call, item in zip(calls, raw):
+                if isinstance(item, asyncio.CancelledError):
+                    raise item
                 if isinstance(item, BaseException):
                     item = ToolResultBlock(
                         tool_use_id=call.id,
@@ -612,16 +1044,16 @@ class AgentLoop:
                         is_error=True,
                     )
                 results.append(item)
-        for call, result in zip(calls, results):
-            self.logger.emit(
-                "tool.completed",
-                agent_id=self.agent_id,
-                page=self.page,
-                tool=call.name,
-                arguments=call.input,
-                output=result.content,
-                is_error=result.is_error,
-            )
+            for call, result in zip(calls, results):
+                self.logger.emit(
+                    "tool.completed",
+                    agent_id=self.agent_id,
+                    page=self.page,
+                    tool=call.name,
+                    arguments=call.input,
+                    output=result.content,
+                    is_error=result.is_error,
+                )
         return results
 
     async def _run_loop(self, task: str) -> None:

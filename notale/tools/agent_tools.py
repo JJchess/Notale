@@ -21,12 +21,12 @@ from notale.core.models import (
     PageLink,
     PagePlan,
     PageType,
-    SkillAssignment,
 )
 from notale.core.observability import EventLog
 from notale.core.stages.page_check import clean_fragment, page_delivery_failures
 from notale.tools.base import BaseTool, ToolContext, ToolResult
 from notale.utils.config import get_config
+from notale.utils.node import NodeProcessTimeout, run_node
 from notale.utils.skill_catalog import (
     GeneratedDesignSkill,
     SkillCatalog,
@@ -34,7 +34,11 @@ from notale.utils.skill_catalog import (
 
 
 _CONFIG = get_config()
-OPTIONAL_PAGE_TOOLS = {"run_js", "find_image", "make_image"}
+OPTIONAL_PAGE_TOOLS = {
+    "run_js", "find_image", "make_image",
+    "make_backplate", "create_widget", "create_code_runtime"
+}
+_MANAGED_COMPONENT_TOOLS = {"create_widget", "create_code_runtime"}
 
 
 def _atomic_text(path: Path, text: str) -> None:
@@ -85,14 +89,10 @@ class DraftPage(ToolInput):
     learning_action: str = Field(min_length=1)
     narrative_role: str = Field(min_length=1)
     links: list[SymbolicLink] = Field(default_factory=list, max_length=3)
-    skills: list[SkillAssignment] = Field(default_factory=list)
     tools: list[str] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def validate_capabilities(self) -> "DraftPage":
-        skill_names = [item.name for item in self.skills]
-        if len(skill_names) != len(set(skill_names)):
-            raise ValueError("page skills contain duplicate names")
         if len(self.tools) != len(set(self.tools)):
             raise ValueError("page tools contain duplicate names")
         invalid = sorted(
@@ -228,16 +228,40 @@ class PlannerGroupState:
         self.workspace.mkdir(parents=True, exist_ok=True)
 
 
-def _validate_page_capabilities(
-    chapter_pages: list[ChapterPages], catalog: SkillCatalog
+def normalize_page_capabilities(
+    chapter_pages: list[ChapterPages], logger: EventLog | None = None
 ) -> None:
+    """Make type-owned component capabilities canonical without another LLM turn."""
+
+    for chapter in chapter_pages:
+        for offset, page in enumerate(chapter.pages, 1):
+            before = list(page.tools)
+            ordinary = [name for name in page.tools if name not in _MANAGED_COMPONENT_TOOLS]
+            if page.type == PageType.SIM_EXPLORABLE:
+                page.tools = ordinary + ["create_widget"]
+            elif page.type == PageType.CODE_RUNNABLE:
+                page.tools = ordinary + ["create_code_runtime"]
+            else:
+                # A rich widget is optional outside simulation pages; the code runner is not.
+                page.tools = ordinary + (
+                    ["create_widget"] if "create_widget" in page.tools else []
+                )
+            page.tools = list(dict.fromkeys(page.tools))
+            if logger is not None and before != page.tools:
+                logger.emit(
+                    "planner.capabilities.normalized",
+                    chapter=chapter.id,
+                    chapter_page=offset,
+                    page_type=page.type.value,
+                    before=before,
+                    after=page.tools,
+                )
+
+
+def _validate_page_capabilities(chapter_pages: list[ChapterPages]) -> None:
     for chapter in chapter_pages:
         for offset, page in enumerate(chapter.pages, 1):
             label = f"{chapter.id}:{offset}"
-            for skill in page.skills:
-                if skill.name not in catalog.role.skill_policy.page:
-                    raise ValueError(f"page {label} has disallowed skill: {skill.name}")
-                catalog.validate_assignment(skill)
             unknown = sorted(set(page.tools) - OPTIONAL_PAGE_TOOLS)
             if unknown:
                 raise ValueError(f"page {label} has unknown tools: {unknown}")
@@ -290,7 +314,8 @@ class PlanTool(BaseTool):
     async def execute(self, arguments: PlanInput, context: ToolContext) -> ToolResult:
         del context
         try:
-            _validate_page_capabilities(arguments.chapter_pages, self.state.catalog)
+            normalize_page_capabilities(arguments.chapter_pages, self.state.logger)
+            _validate_page_capabilities(arguments.chapter_pages)
             _validate_page_compositions(arguments.chapter_pages, self.state.style)
         except ValueError as exc:
             return ToolResult(output=str(exc), is_error=True)
@@ -334,7 +359,8 @@ class PagesTool(BaseTool):
             _validate_draft_structure(
                 list(self.state.all_chapters), arguments.chapters
             )
-            _validate_page_capabilities(arguments.chapters, self.state.catalog)
+            normalize_page_capabilities(arguments.chapters, self.state.logger)
+            _validate_page_capabilities(arguments.chapters)
             _validate_page_compositions(arguments.chapters, self.state.style)
         except ValueError as exc:
             return ToolResult(output=str(exc), is_error=True)
@@ -363,7 +389,8 @@ def assemble_plan(
     if actual != expected:
         raise ValueError(f"chapter page drafts must follow outline order: {expected}")
     _validate_draft_structure(root.chapters, chapter_pages)
-    _validate_page_capabilities(chapter_pages, catalog)
+    normalize_page_capabilities(chapter_pages)
+    _validate_page_capabilities(chapter_pages)
     _validate_page_compositions(chapter_pages, style)
 
     ranges: dict[str, tuple[int, int]] = {}
@@ -404,7 +431,6 @@ def assemble_plan(
                     learning_action=page.learning_action,
                     narrative_role=page.narrative_role,
                     links=links,
-                    skills=page.skills,
                     tools=page.tools,
                 )
             )
@@ -441,6 +467,10 @@ class PageToolState:
     run_dir: Path
     page: int
     logger: EventLog
+    page_plan: PagePlan | None = None
+    lecture_language: str = "zh"
+    style: GeneratedDesignSkill | None = None
+    llm: Any = None
     revision: int = 0
     submission: PageArtifact | None = None
     blocked: str = ""
@@ -548,19 +578,40 @@ class SubmitPageInput(ToolInput):
 
 class SubmitPageTool(BaseTool):
     name = "submit_page"
-    description = "Validate and submit the current page revision. This finishes Builder."
+    description = (
+        "Submit the current page revision and finish Builder. The exact revision must have been "
+        "accepted by inspect_page's isolated visual review and received in a later Builder turn."
+    )
     input_model = SubmitPageInput
 
     def __init__(self, state: PageToolState) -> None:
         self.state = state
 
     async def execute(self, arguments: SubmitPageInput, context: ToolContext) -> ToolResult:
-        del context
         async with self.state.lock:
             if arguments.revision != self.state.revision:
                 return ToolResult(output=f"revision conflict: current revision is {self.state.revision}", is_error=True)
             if not self.state.page_path.is_file():
                 return ToolResult(output="page is empty; call edit_page first", is_error=True)
+            inspected_revision = self.state.tool_state.get("inspected_revision")
+            if inspected_revision != self.state.revision:
+                return ToolResult(
+                    output=(
+                        f"revision {self.state.revision} has not been visually inspected; "
+                        "call inspect_page for this exact revision first"
+                    ),
+                    is_error=True,
+                )
+            inspection_turn = int(self.state.tool_state.get("inspection_turn", 0) or 0)
+            current_turn = int(context.metadata.get("turn", 0) or 0)
+            if current_turn <= inspection_turn:
+                return ToolResult(
+                    output=(
+                        "submit_page must be called in a later Builder turn so the isolated "
+                        "inspection success result is received"
+                    ),
+                    is_error=True,
+                )
             artifact = PageArtifact(
                 html=clean_fragment(self.state.page_path.read_text(encoding="utf-8")),
                 notes=arguments.notes,
@@ -569,6 +620,7 @@ class SubmitPageTool(BaseTool):
                 artifact,
                 page=self.state.page,
                 run_dir=self.state.run_dir,
+                page_plan=self.state.page_plan,
             )
             if failures:
                 return ToolResult(output=json.dumps({"failures": failures}, ensure_ascii=False), is_error=True)
@@ -576,6 +628,9 @@ class SubmitPageTool(BaseTool):
             _atomic_text(path, artifact.model_dump_json(indent=2))
             _atomic_text(self.state.page_path, artifact.html)
             self.state.submission = artifact
+            from notale.tools.inspection import mark_inspection_submitted
+
+            mark_inspection_submitted(self.state)
             return ToolResult(output=f"submitted p{self.state.page}")
 
 
@@ -614,20 +669,16 @@ const context = vm.createContext(sandbox, {codeGeneration: {strings: false, wasm
         script = self.state.workspace / f"run-{used + 1}.cjs"
         _atomic_text(script, wrapper)
         try:
-            process = await asyncio.create_subprocess_exec(
-                "node", str(script),
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
+            result = await run_node(
+                [str(script)],
                 cwd=self.state.workspace,
+                timeout_sec=_CONFIG.tools.run_js_timeout_sec,
             )
-            stdout, stderr = await asyncio.wait_for(
-                process.communicate(), timeout=_CONFIG.tools.run_js_timeout_sec
-            )
-        except TimeoutError:
+        except NodeProcessTimeout:
             return ToolResult(output="run_js timed out", is_error=True)
-        text = (stdout + stderr).decode("utf-8", errors="replace")
+        text = (result.stdout + result.stderr).decode("utf-8", errors="replace")
         text = text[: _CONFIG.tools.run_js_max_output_chars]
-        return ToolResult(output=text or "(no output)", is_error=process.returncode != 0)
+        return ToolResult(output=text or "(no output)", is_error=result.returncode != 0)
 
 
 def root_planner_tools(state: PlannerRootState) -> list[BaseTool]:
@@ -642,16 +693,30 @@ def builder_tools(state: PageToolState, optional: set[str]) -> list[BaseTool]:
     unknown = sorted(optional - OPTIONAL_PAGE_TOOLS)
     if unknown:
         raise ValueError(f"unknown Builder tools: {unknown}")
+    from notale.tools.inspection import InspectPageTool
+
     tools: list[BaseTool] = [
-        ReadPageTool(state), EditPageTool(state), SubmitPageTool(state), BlockTool(state)
+        ReadPageTool(state), EditPageTool(state), InspectPageTool(state),
+        SubmitPageTool(state), BlockTool(state)
     ]
     if "run_js" in optional:
         tools.append(RunJsTool(state))
-    if {"find_image", "make_image"} & optional:
-        from notale.tools.media import FindImageTool, MakeImageTool
+    if {"create_widget", "create_code_runtime"} & optional:
+        if "create_widget" in optional:
+            from notale.tools.create_widget import CreateWidgetTool
+
+            tools.append(CreateWidgetTool(state))
+        if "create_code_runtime" in optional:
+            from notale.tools.create_code_runtime import CreateCodeRuntimeTool
+
+            tools.append(CreateCodeRuntimeTool(state))
+    if {"find_image", "make_image", "make_backplate"} & optional:
+        from notale.tools.media import FindImageTool, MakeBackplateTool, MakeImageTool
 
         if "find_image" in optional:
             tools.append(FindImageTool(state))
         if "make_image" in optional:
             tools.append(MakeImageTool(state))
+        if "make_backplate" in optional:
+            tools.append(MakeBackplateTool(state))
     return tools

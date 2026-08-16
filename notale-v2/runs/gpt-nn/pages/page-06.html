@@ -1,0 +1,491 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+</head>
+<body data-page="06" data-total="24">
+  <div id="stage">
+    <style>
+      #stage #page-content { position: relative; }
+      #stage .xor-game { border: 1px solid var(--line); border-radius: var(--radius-xl); background: var(--surface-control); box-shadow: var(--shadow-md); }
+      #stage .xor-canvas { inline-size: 100%; block-size: 100%; border-radius: var(--radius-xl); cursor: crosshair; }
+      #stage .xor-canvas:focus-visible { outline: 4px solid var(--focus); outline-offset: -6px; }
+      #stage .xor-hud { display: flex; flex-direction: column; justify-content: space-between; padding: var(--sp-5); }
+      #stage .xor-topbar { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--sp-5); }
+      #stage .xor-instruction { max-inline-size: 520px; padding: var(--sp-4) var(--sp-5); border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--surface-1); box-shadow: var(--shadow-sm); }
+      #stage .xor-instruction strong { display: block; margin-block-end: var(--sp-1); font-size: var(--fs-body-lg); }
+      #stage .xor-instruction p { color: var(--text-muted); font-size: var(--fs-body-sm); }
+      #stage .xor-controls { display: flex; align-items: flex-end; gap: var(--sp-3); padding: var(--sp-3); border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--surface-1); box-shadow: var(--shadow-sm); }
+      #stage .xor-controls .control { min-inline-size: 172px; }
+      #stage .xor-controls select { inline-size: 100%; }
+      #stage .xor-bottom { display: flex; align-items: flex-end; justify-content: space-between; gap: var(--sp-5); }
+      #stage .xor-result { display: grid; grid-template-columns: auto auto auto; gap: var(--sp-3); max-inline-size: 690px; }
+      #stage .xor-stat { min-inline-size: 154px; padding: var(--sp-3) var(--sp-4); border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--surface-1); }
+      #stage .xor-stat span { display: block; color: var(--text-muted); font-size: var(--fs-label); }
+      #stage .xor-stat output { display: block; color: var(--text-strong); font-size: var(--fs-h3); font-weight: var(--weight-bold); line-height: var(--lh-tight); font-variant-numeric: tabular-nums; }
+      #stage .xor-message { max-inline-size: 500px; padding: var(--sp-4) var(--sp-5); border: 1px solid var(--line-strong); border-inline-start: 6px solid var(--warm); border-radius: var(--radius-md); background: var(--warm-soft); color: var(--text); font-size: var(--fs-body-sm); line-height: var(--lh-body); }
+      #stage .xor-message[data-kind="success"] { border-inline-start-color: var(--success); background: var(--success-soft); }
+      #stage .xor-message[data-kind="locked"] { border-inline-start-color: var(--line-strong); background: var(--surface-1); color: var(--text-muted); }
+      #stage .xor-legend { position: absolute; inset-inline-start: var(--sp-5); inset-block-start: 50%; display: flex; flex-direction: column; gap: var(--sp-2); padding: var(--sp-3); border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--surface-1); }
+      #stage .xor-key { display: flex; align-items: center; gap: var(--sp-2); color: var(--text-muted); font-size: var(--fs-label); }
+      #stage .xor-mark { inline-size: 18px; block-size: 18px; border: 3px solid var(--secondary); border-radius: 50%; }
+      #stage .xor-mark--one { border-color: var(--accent); border-radius: var(--radius-sm); transform: rotate(45deg); }
+      @media (prefers-reduced-motion: reduce) {
+        #stage button { transition: none; }
+      }
+    </style>
+
+    <main id="page-content" class="min0" aria-label="XOR 画线分类挑战">
+      <section class="canvas-full xor-game" aria-label="单直线布尔分类游戏">
+        <div class="canvas-full__surface min0">
+          <canvas id="xor-canvas" class="cv-fill no-pan xor-canvas" tabindex="0" role="application" aria-label="分类平面。拖动画一条直线；方向键移动当前锚点，回车切换锚点，空格重置直线。" aria-describedby="xor-help xor-live"></canvas>
+        </div>
+
+        <div class="canvas-full__overlay xor-hud" aria-hidden="false">
+          <div class="xor-topbar">
+            <div class="xor-instruction">
+              <strong>规则：一条线，全部角点同时正确</strong>
+              <p id="xor-help">在空白处拖动画线，或拖动线上的两个锚点。线的两侧代表两种输出。</p>
+            </div>
+            <div class="xor-controls">
+              <label class="control" for="task-select">
+                <span class="control-label">布尔任务</span>
+                <select id="task-select" aria-label="选择布尔分类任务"></select>
+              </label>
+              <button id="best-btn" class="button button--secondary" type="button">显示单线最优</button>
+              <button id="reset-btn" class="button button--ghost" type="button">重画</button>
+            </div>
+          </div>
+
+          <div class="xor-legend" aria-label="类别图例">
+            <div class="xor-key"><i class="xor-mark" aria-hidden="true"></i><span>输出为零</span></div>
+            <div class="xor-key"><i class="xor-mark xor-mark--one" aria-hidden="true"></i><span>输出为一</span></div>
+          </div>
+
+          <div class="xor-bottom">
+            <div class="xor-result" aria-label="挑战结果">
+              <div class="xor-stat"><span>当前正确</span><output id="correct-out">—</output></div>
+              <div class="xor-stat"><span>单线极限</span><output id="best-out">—</output></div>
+              <div class="xor-stat"><span>已攻克任务</span><output id="score-out">—</output></div>
+            </div>
+            <output id="xor-live" class="xor-message" data-kind="locked" aria-live="polite">先画一条线，看看四个角点能否同时归位。</output>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <script>
+      (function () {
+        'use strict';
+
+        function boot() {
+          Lec.mount({
+            index: 6,
+            kicker: `ONE LINE IS NOT ENOUGH`,
+            title: `你能用一条直线切开<em>XOR</em>吗？`,
+            take: `有些失败不是训练不够久，而是模型结构根本表达不了目标。`
+          });
+
+          var canvas = document.getElementById('xor-canvas');
+          var select = document.getElementById('task-select');
+          var resetButton = document.getElementById('reset-btn');
+          var bestButton = document.getElementById('best-btn');
+          var correctOut = document.getElementById('correct-out');
+          var bestOut = document.getElementById('best-out');
+          var scoreOut = document.getElementById('score-out');
+          var live = document.getElementById('xor-live');
+          var reduced = Deck.reduced();
+          var ctx;
+          var layout;
+          var activePointer = null;
+          var dragMode = '';
+          var selectedAnchor = 'b';
+          var trail = [];
+          var emitter = { x: 0, y: 0, lastX: 0, lastY: 0, acc: 0 };
+
+          var fallbackTasks = [
+            { id: 'xor', label: 'XOR · 异或', targets: [0, 1, 1, 0] },
+            { id: 'and', label: 'AND · 与', targets: [0, 0, 0, 1] },
+            { id: 'or', label: 'OR · 或', targets: [0, 1, 1, 1] }
+          ];
+          var samples = [
+            { x: [0, 0] }, { x: [1, 0] }, { x: [0, 1] }, { x: [1, 1] }
+          ];
+
+          function tasksFromLec() {
+            var source = Lec.K.logicTasks;
+            if (!source) return fallbackTasks;
+            var list = Array.isArray(source) ? source : Object.keys(source).map(function (key) { return source[key]; });
+            return list.filter(function (task) { return task && (task.targets || task.outputs); }).map(function (task, index) {
+              return {
+                id: task.id || String(index),
+                label: task.label || task.name || task.id,
+                targets: (task.targets || task.outputs).slice()
+              };
+            });
+          }
+
+          var tasks = tasksFromLec();
+          var state = {
+            taskIndex: Math.max(0, tasks.findIndex(function (task) { return task.id.toLowerCase() === 'xor'; })),
+            line: { a: { x: 0.22, y: 0.72 }, b: { x: 0.78, y: 0.28 } },
+            attempts: 0,
+            solved: {},
+            showingBest: false
+          };
+
+          tasks.forEach(function (task, index) {
+            var option = document.createElement('option');
+            option.value = String(index);
+            option.textContent = task.label;
+            select.appendChild(option);
+          });
+          select.value = String(state.taskIndex);
+
+          function currentTask() { return tasks[state.taskIndex]; }
+
+          function normalizedPrediction(point, line) {
+            var cross = (line.b.x - line.a.x) * (point[1] - line.a.y) - (line.b.y - line.a.y) * (point[0] - line.a.x);
+            return cross >= 0 ? 1 : 0;
+          }
+
+          function classify(point, line) {
+            if (typeof Lec.P.classifyByLine === 'function') {
+              try {
+                var value = Lec.P.classifyByLine(point, line.a, line.b);
+                if (value === 0 || value === 1) return value;
+                if (value && (value.prediction === 0 || value.prediction === 1)) return value.prediction;
+              } catch (ignore) {}
+            }
+            return normalizedPrediction(point, line);
+          }
+
+          function evaluate(line) {
+            var task = currentTask();
+            var predictions = samples.map(function (sample) { return classify(sample.x, line); });
+            var correct = predictions.reduce(function (sum, value, index) { return sum + (value === task.targets[index] ? 1 : 0); }, 0);
+            return { predictions: predictions, correct: correct, total: samples.length };
+          }
+
+          function exhaustiveBest() {
+            if (typeof Lec.P.bestLinearSeparator === 'function') {
+              try {
+                var supplied = Lec.P.bestLinearSeparator(currentTask());
+                if (supplied && typeof supplied.correct === 'number') return supplied;
+              } catch (ignore) {}
+            }
+            var task = currentTask();
+            var best = { correct: -1, line: state.line };
+            for (var ai = 0; ai < 180; ai += 1) {
+              var angle = ai * Math.PI / 180;
+              var nx = Math.cos(angle);
+              var ny = Math.sin(angle);
+              var projections = samples.map(function (sample) { return sample.x[0] * nx + sample.x[1] * ny; }).sort(function (a, b) { return a - b; });
+              var thresholds = [projections[0] - 0.1, projections[projections.length - 1] + 0.1];
+              for (var pi = 0; pi < projections.length - 1; pi += 1) thresholds.push((projections[pi] + projections[pi + 1]) / 2);
+              thresholds.forEach(function (threshold) {
+                [1, -1].forEach(function (sign) {
+                  var predictions = samples.map(function (sample) { return (sign * (sample.x[0] * nx + sample.x[1] * ny - threshold) >= 0) ? 1 : 0; });
+                  var correct = predictions.reduce(function (sum, value, index) { return sum + (value === task.targets[index] ? 1 : 0); }, 0);
+                  if (correct > best.correct) {
+                    var tx = -ny * 0.9;
+                    var ty = nx * 0.9;
+                    var cx = nx * threshold;
+                    var cy = ny * threshold;
+                    best = { correct: correct, line: { a: { x: cx - tx * sign, y: cy - ty * sign }, b: { x: cx + tx * sign, y: cy + ty * sign } } };
+                  }
+                });
+              });
+            }
+            return best;
+          }
+
+          function challengeScore() {
+            if (typeof Lec.P.logicChallengeScore === 'function') {
+              try {
+                var supplied = Lec.P.logicChallengeScore(tasks, state.solved);
+                if (typeof supplied === 'number') return supplied;
+                if (supplied && typeof supplied.score === 'number') return supplied.score;
+              } catch (ignore) {}
+            }
+            return Object.keys(state.solved).length;
+          }
+
+          function fmtPair(value, total) { return String(value) + ' / ' + String(total); }
+
+          function updateStatus() {
+            var result = evaluate(state.line);
+            var best = exhaustiveBest();
+            var task = currentTask();
+            if (result.correct === result.total) state.solved[task.id] = true;
+            correctOut.textContent = fmtPair(result.correct, result.total);
+            bestOut.textContent = fmtPair(best.correct, result.total);
+            scoreOut.textContent = fmtPair(challengeScore(), tasks.length);
+
+            if (result.correct === result.total) {
+              live.dataset.kind = 'success';
+              live.textContent = '完成：这个任务可被一条直线表达。换个任务继续比较。';
+            } else if (state.showingBest || state.attempts >= samples.length) {
+              if (best.correct < result.total) {
+                live.dataset.kind = 'locked';
+                live.textContent = '穷举确认：单条直线最多只能判对 ' + fmtPair(best.correct, result.total) + '。提示已解锁：需要组合多个边界。';
+              } else {
+                live.dataset.kind = 'locked';
+                live.textContent = '这个任务存在全对的直线；继续移动锚点，直到全部角点归位。';
+              }
+            } else {
+              live.dataset.kind = 'locked';
+              live.textContent = '继续尝试。失败可能来自位置，也可能来自单直线的表达极限。';
+            }
+            canvas.setAttribute('aria-label', '当前任务 ' + task.label + '，正确 ' + fmtPair(result.correct, result.total) + '。方向键移动锚点，回车切换锚点，空格重置。');
+          }
+
+          function resetLine(countAttempt) {
+            state.line = { a: { x: 0.22, y: 0.72 }, b: { x: 0.78, y: 0.28 } };
+            state.showingBest = false;
+            if (countAttempt) state.attempts += 1;
+            trail.length = 0;
+            updateStatus();
+          }
+
+          function computeLayout() {
+            var w = canvas.clientWidth;
+            var h = canvas.clientHeight;
+            var size = Math.min(h * 0.68, w * 0.48);
+            layout = { w: w, h: h, size: size, left: Math.max(230, (w * 0.52 - size) / 2), top: (h - size) / 2 + 8 };
+          }
+
+          function modelToCanvas(point) {
+            return { x: layout.left + point.x * layout.size, y: layout.top + (1 - point.y) * layout.size };
+          }
+
+          function canvasToModel(point) {
+            return { x: (point.x - layout.left) / layout.size, y: 1 - (point.y - layout.top) / layout.size };
+          }
+
+          function drawLineInfinite(line, color, width, dashed) {
+            var a = modelToCanvas(line.a);
+            var b = modelToCanvas(line.b);
+            var dx = b.x - a.x;
+            var dy = b.y - a.y;
+            var length = Math.sqrt(dx * dx + dy * dy) || 1;
+            dx /= length; dy /= length;
+            ctx.save();
+            ctx.strokeStyle = color;
+            ctx.lineWidth = width;
+            if (dashed) ctx.setLineDash([12, 10]);
+            ctx.beginPath();
+            ctx.moveTo(a.x - dx * layout.w, a.y - dy * layout.w);
+            ctx.lineTo(a.x + dx * layout.w, a.y + dy * layout.w);
+            ctx.stroke();
+            ctx.restore();
+          }
+
+          function draw() {
+            if (!ctx || !layout) return;
+            var task = currentTask();
+            var result = evaluate(state.line);
+            ctx.clearRect(0, 0, layout.w, layout.h);
+
+            ctx.fillStyle = Deck.rgba('--secondary', 0.06);
+            ctx.fillRect(layout.left, layout.top, layout.size, layout.size);
+            ctx.strokeStyle = Deck.rgba('--line-strong', 0.9);
+            ctx.lineWidth = 2;
+            ctx.strokeRect(layout.left, layout.top, layout.size, layout.size);
+            ctx.strokeStyle = Deck.rgba('--line', 0.75);
+            ctx.lineWidth = 1;
+            ctx.setLineDash([8, 10]);
+            ctx.beginPath();
+            ctx.moveTo(layout.left + layout.size / 2, layout.top);
+            ctx.lineTo(layout.left + layout.size / 2, layout.top + layout.size);
+            ctx.moveTo(layout.left, layout.top + layout.size / 2);
+            ctx.lineTo(layout.left + layout.size, layout.top + layout.size / 2);
+            ctx.stroke();
+            ctx.setLineDash([]);
+
+            if (state.showingBest) drawLineInfinite(exhaustiveBest().line, Deck.rgba('--warm', 0.72), 4, true);
+            drawLineInfinite(state.line, Deck.rgba('--text-strong', 0.96), 6, false);
+
+            trail.forEach(function (mote) {
+              ctx.fillStyle = Deck.rgba('--accent', Math.max(0, mote.life) * 0.42);
+              ctx.beginPath();
+              ctx.arc(mote.x, mote.y, 3 + mote.life * 3, 0, Math.PI * 2);
+              ctx.fill();
+            });
+
+            ['a', 'b'].forEach(function (key) {
+              var anchor = modelToCanvas(state.line[key]);
+              ctx.fillStyle = key === selectedAnchor ? Deck.token('--focus') : Deck.token('--text-strong');
+              ctx.strokeStyle = Deck.token('--bg');
+              ctx.lineWidth = 4;
+              ctx.beginPath();
+              ctx.arc(anchor.x, anchor.y, 12, 0, Math.PI * 2);
+              ctx.fill(); ctx.stroke();
+            });
+
+            samples.forEach(function (sample, index) {
+              var p = modelToCanvas({ x: sample.x[0], y: sample.x[1] });
+              var target = task.targets[index];
+              var correct = result.predictions[index] === target;
+              ctx.save();
+              ctx.translate(p.x, p.y);
+              ctx.fillStyle = Deck.token('--surface-control');
+              ctx.strokeStyle = target ? Deck.token('--accent') : Deck.token('--secondary');
+              ctx.lineWidth = correct ? 8 : 4;
+              if (!correct) ctx.setLineDash([6, 5]);
+              ctx.beginPath();
+              if (target) {
+                ctx.rotate(Math.PI / 4);
+                ctx.rect(-24, -24, 48, 48);
+              } else {
+                ctx.arc(0, 0, 30, 0, Math.PI * 2);
+              }
+              ctx.fill(); ctx.stroke();
+              ctx.setLineDash([]);
+              ctx.rotate(target ? -Math.PI / 4 : 0);
+              ctx.fillStyle = correct ? Deck.token('--success') : Deck.token('--danger');
+              ctx.font = '700 20px ' + Deck.token('--font-sans');
+              ctx.textAlign = 'center';
+              ctx.textBaseline = 'middle';
+              ctx.fillText(correct ? '✓' : '×', 0, 0);
+              ctx.fillStyle = Deck.token('--text-muted');
+              ctx.font = '600 17px ' + Deck.token('--font-sans');
+              ctx.fillText('(' + sample.x.join(',') + ')', 0, 50);
+              ctx.restore();
+            });
+          }
+
+          function refit() {
+            ctx = Deck.fit(canvas);
+            computeLayout();
+            draw();
+          }
+
+          function hitAnchor(point) {
+            var keys = ['a', 'b'];
+            for (var i = 0; i < keys.length; i += 1) {
+              var p = modelToCanvas(state.line[keys[i]]);
+              var dx = point.x - p.x;
+              var dy = point.y - p.y;
+              if (dx * dx + dy * dy <= 32 * 32) return keys[i];
+            }
+            return '';
+          }
+
+          function spawnTrail(from, to) {
+            if (reduced) return;
+            var dx = to.x - from.x;
+            var dy = to.y - from.y;
+            var moved = Math.sqrt(dx * dx + dy * dy);
+            var step = 16;
+            emitter.acc += moved;
+            var guard = 0;
+            while (emitter.acc >= step && guard < 14) {
+              guard += 1;
+              emitter.acc -= step;
+              var t = moved > 0.000001 ? Math.min(1, guard * step / moved) : 0;
+              trail.push({ x: from.x + dx * t, y: from.y + dy * t, life: 1 });
+              if (trail.length > 90) trail.shift();
+            }
+          }
+
+          function endPointer(event) {
+            if (activePointer !== event.pointerId) return;
+            state.attempts += 1;
+            activePointer = null;
+            dragMode = '';
+            try { canvas.releasePointerCapture(event.pointerId); } catch (ignore) {}
+            updateStatus();
+            draw();
+          }
+
+          canvas.addEventListener('pointerdown', function (event) {
+            var p = Deck.pt(canvas, event);
+            var hit = hitAnchor(p);
+            activePointer = event.pointerId;
+            canvas.setPointerCapture(event.pointerId);
+            if (hit) {
+              dragMode = hit;
+              selectedAnchor = hit;
+            } else {
+              var model = canvasToModel(p);
+              state.line = { a: model, b: { x: model.x + 0.001, y: model.y + 0.001 } };
+              dragMode = 'b';
+              selectedAnchor = 'b';
+            }
+            emitter.lastX = p.x; emitter.lastY = p.y; emitter.acc = 0;
+            state.showingBest = false;
+            draw();
+          });
+
+          canvas.addEventListener('pointermove', function (event) {
+            if (activePointer !== event.pointerId) return;
+            var p = Deck.pt(canvas, event);
+            spawnTrail({ x: emitter.lastX, y: emitter.lastY }, p);
+            emitter.lastX = p.x; emitter.lastY = p.y;
+            state.line[dragMode] = canvasToModel(p);
+            updateStatus();
+            draw();
+          });
+          canvas.addEventListener('pointerup', endPointer);
+          canvas.addEventListener('pointercancel', endPointer);
+
+          canvas.addEventListener('keydown', function (event) {
+            var handled = true;
+            var delta = event.shiftKey ? 0.05 : 0.015;
+            if (event.key === 'ArrowLeft') state.line[selectedAnchor].x -= delta;
+            else if (event.key === 'ArrowRight') state.line[selectedAnchor].x += delta;
+            else if (event.key === 'ArrowUp') state.line[selectedAnchor].y += delta;
+            else if (event.key === 'ArrowDown') state.line[selectedAnchor].y -= delta;
+            else if (event.key === 'Enter') selectedAnchor = selectedAnchor === 'a' ? 'b' : 'a';
+            else if (event.key === ' ') resetLine(true);
+            else handled = false;
+            if (handled) {
+              event.preventDefault();
+              state.attempts += 1;
+              state.showingBest = false;
+              updateStatus();
+              draw();
+            }
+          });
+
+          select.addEventListener('change', function () {
+            state.taskIndex = Number(select.value);
+            state.attempts = 0;
+            resetLine(false);
+            canvas.focus();
+          });
+          resetButton.addEventListener('click', function () { resetLine(true); canvas.focus(); });
+          bestButton.addEventListener('click', function () {
+            state.showingBest = !state.showingBest;
+            state.attempts = Math.max(state.attempts, samples.length);
+            bestButton.textContent = state.showingBest ? '隐藏单线最优' : '显示单线最优';
+            updateStatus(); draw(); canvas.focus();
+          });
+
+          refit();
+          Deck.onResize(refit);
+          updateStatus();
+          Deck.loop(function (time, dt) {
+            if (!reduced && trail.length) {
+              trail.forEach(function (mote) { mote.life -= dt * 1.4; mote.y -= dt * 7; });
+              trail = trail.filter(function (mote) { return mote.life > 0; });
+              draw();
+            }
+          }, { still: 0 });
+        }
+
+        if (document.readyState === 'loading') {
+          document.addEventListener('DOMContentLoaded', boot, { once: true });
+        } else {
+          boot();
+        }
+      }());
+    </script>
+  </div>
+  <script src="assets/base.js"></script>
+  <script src="assets/lec.js"></script>
+</body>
+</html>

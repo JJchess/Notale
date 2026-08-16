@@ -1,0 +1,481 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>多级火箭 —— 用完就扔，轻装上阵</title>
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  .body-wrap{
+    position:absolute; left:var(--sp-6); right:var(--sp-6); top:96px; bottom:66px;
+    z-index:2; display:flex; gap:var(--sp-4);
+  }
+  .col{ min-width:0; min-height:0; display:flex; flex-direction:column; gap:var(--sp-3); }
+  .col-ctrl{ width:406px; flex:0 0 406px; }
+  .col-rocket{ width:284px; flex:0 0 284px; align-items:center; }
+  .col-result{ flex:1 1 auto; }
+
+  .panel h3{
+    font:700 var(--fs-h3)/1.3 var(--font-sans); color:var(--text);
+    margin:0 0 var(--sp-2) 0;
+  }
+  .subnote{ font:400 var(--fs-label)/1.4 var(--font-sans); color:var(--text-faint); margin-top:2px; }
+
+  .stagepicker{ display:flex; gap:var(--sp-2); }
+  .stagepicker .chip{ cursor:pointer; font-size:var(--fs-label); padding:7px 14px; user-select:none; }
+
+  .stage-slider{ margin-top:var(--sp-2); }
+  .stage-slider .row-top{ display:flex; justify-content:space-between; align-items:baseline; }
+  .stage-slider .row-top .label{ display:flex; align-items:center; gap:6px; }
+  .stage-slider .row-top .dot{ width:10px; height:10px; border-radius:2px; display:inline-block; }
+  .stage-slider .val{ font:700 var(--fs-num)/1 var(--font-mono); color:var(--accent); font-variant-numeric:tabular-nums; }
+  .stage-slider .sub{ font:500 12px/1.35 var(--font-mono); color:var(--text-faint); }
+
+  .proppicker{ display:flex; gap:8px; flex-wrap:wrap; }
+  .proppicker .chip{ cursor:pointer; flex-direction:column; align-items:flex-start; gap:1px; padding:6px 10px; }
+  .proppicker .chip .pname{ font-size:var(--fs-label); }
+  .proppicker .chip .pisp{ font:500 12px/1.35 var(--font-mono); color:var(--text-faint); }
+  .proppicker .chip.on .pisp{ color:rgba(6,8,18,.65); }
+
+  .guide-row{ display:flex; gap:8px; flex-wrap:wrap; }
+  .guide-row .btn{ font-size:13px; padding:8px 12px; }
+
+  #rocketCanvas{ background:transparent; }
+  .rocket-legend{ display:flex; flex-direction:column; gap:5px; align-items:flex-start; }
+  .rocket-legend .li{ display:flex; align-items:center; gap:7px; font:500 12px/1.3 var(--font-mono); color:var(--text-dim); }
+  .rocket-legend .sw{ width:14px; height:14px; border-radius:2px; flex:0 0 auto; }
+
+  .dv-row{ display:grid; grid-template-columns:74px 1fr 78px; align-items:center; gap:10px; }
+  .dv-row .name{ font:600 var(--fs-label)/1.2 var(--font-sans); color:var(--text-dim); }
+  .dv-track{ position:relative; height:16px; border-radius:4px; background:var(--bg3); border:1px solid var(--line); overflow:hidden; }
+  .dv-fill{ position:absolute; left:0; top:0; bottom:0; border-radius:4px 0 0 4px; }
+  .dv-num{ font:700 var(--fs-num)/1 var(--font-mono); color:var(--text); text-align:right; font-variant-numeric:tabular-nums; }
+
+  .total-wrap{ display:flex; align-items:baseline; gap:var(--sp-3); }
+  .total-wrap .num-lg{ font-size:52px; }
+  .target-line{ font:500 var(--fs-label)/1.4 var(--font-mono); color:var(--text-faint); }
+  .status-badge{
+    font:700 var(--fs-label)/1 var(--font-sans); padding:6px 12px; border-radius:5px;
+    display:inline-block;
+  }
+  .status-badge.good{ background:rgba(74,222,128,.16); color:var(--good); border:1px solid rgba(74,222,128,.5); }
+  .status-badge.warn{ background:rgba(255,209,102,.16); color:var(--accent-3); border:1px solid rgba(255,209,102,.5); }
+  .status-badge.bad{ background:rgba(255,84,112,.14); color:var(--bad); border:1px solid rgba(255,84,112,.5); }
+
+  .fine-print{ font:400 var(--fs-label)/1.4 var(--font-sans); color:var(--text-faint); }
+</style>
+</head>
+<body data-page="05" data-total="14">
+<div id="stage">
+  <div class="starfield"></div>
+
+  <div class="pg-head">
+    <div><span class="pg-kicker">MODULE 1 · 推进</span><span class="pg-title">多级火箭——用完就扔，轻装上阵</span></div>
+    <div class="pg-index">5 / 14</div>
+  </div>
+
+  <div class="body-wrap">
+
+    <!-- 左列：控制面板 -->
+    <div class="col col-ctrl">
+      <div class="panel" style="flex:0 0 auto;">
+        <h3>组装你的火箭</h3>
+        <div class="body-text" style="margin-bottom:var(--sp-2);">
+          起飞总质量固定 <b class="num" style="color:var(--text)">600 t</b>，
+          载荷固定 <b class="num" style="color:var(--text)">20 t</b>（不论几级都要送到轨道）。
+          你决定分几级、每级里推进剂占多少。
+        </div>
+        <div class="label" style="margin-bottom:6px;">分几级？</div>
+        <div class="stagepicker" id="stagePicker">
+          <div class="chip" data-n="1">单级</div>
+          <div class="chip" data-n="2">二级</div>
+          <div class="chip" data-n="3">三级</div>
+        </div>
+      </div>
+
+      <div class="panel" style="flex:0 0 auto;">
+        <h3 style="font-size:var(--fs-label); margin-bottom:var(--sp-2);">每级 · 推进剂占比</h3>
+        <div id="sliderWrap"></div>
+      </div>
+
+      <div class="panel" style="flex:0 0 auto;">
+        <h3 style="font-size:var(--fs-label); margin-bottom:6px;">推进剂类型（各级统一）</h3>
+        <div class="proppicker" id="propPicker">
+          <div class="chip" data-p="solid"><span class="pname">固体</span><span class="pisp">Isp≈250s</span></div>
+          <div class="chip" data-p="kerolox"><span class="pname">煤油+液氧</span><span class="pisp">Isp≈300s</span></div>
+          <div class="chip" data-p="hydrolox"><span class="pname">液氢+液氧</span><span class="pisp">Isp≈450s</span></div>
+        </div>
+      </div>
+
+      <div class="panel" style="flex:0 0 auto;">
+        <h3 style="font-size:var(--fs-label); margin-bottom:6px;">引导式尝试</h3>
+        <div class="guide-row">
+          <div class="btn" id="btnTry1">① 先试单级</div>
+          <div class="btn" id="btnTry3">② 再试三级</div>
+          <div class="btn" id="btnTryH2">③ 三级 + 换液氢液氧</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 中列：火箭剖面 -->
+    <div class="col col-rocket">
+      <div class="panel" style="flex:1 1 auto; display:flex; flex-direction:column; align-items:center; padding-top:var(--sp-3);">
+        <canvas id="rocketCanvas" width="248" height="560"></canvas>
+        <div class="rocket-legend" style="margin-top:var(--sp-2);">
+          <div class="li"><span class="sw" style="background:var(--accent-2);"></span>载荷（不变，20 t）</div>
+          <div class="li"><span class="sw" style="background:linear-gradient(90deg,#ff8c5a,var(--accent));"></span>推进剂（烧掉即消耗）</div>
+          <div class="li"><span class="sw" style="background:var(--bg3); border:1px solid var(--line);"></span>结构/干重（用完被甩掉）</div>
+        </div>
+        <div class="btn primary" id="btnIgnite" style="margin-top:var(--sp-3); align-self:stretch; text-align:center;">点火 →</div>
+      </div>
+    </div>
+
+    <!-- 右列：Δv 结果 -->
+    <div class="col col-result">
+      <div class="panel" style="flex:0 0 auto;">
+        <h3>每级贡献的 Δv</h3>
+        <div id="dvRows" style="display:flex; flex-direction:column; gap:8px;"></div>
+      </div>
+
+      <div class="panel" style="flex:0 0 auto;">
+        <div class="total-wrap">
+          <span class="label">累计 Δv</span>
+          <span class="num-lg" id="totalDv">0.00</span>
+          <span class="label" style="color:var(--text-faint);">km/s</span>
+          <span class="status-badge" id="statusBadge">—</span>
+        </div>
+        <div class="target-line" style="margin-top:6px;">入轨所需 Δv 预算 ≈ <b style="color:var(--text)">9.4 km/s</b>（含重力/阻力损失，不是轨道速度本身 7.66 km/s——第 6 页细讲）</div>
+      </div>
+
+      <div class="callout" id="mainCallout" style="flex:0 0 auto;">
+        多级不是为了好看，是为了不把用完的空壳也一起加速——每级烧完就甩掉自己的结构，后面几级不用再拖着它加速。
+      </div>
+
+      <div class="callout cool" style="flex:1 1 auto; overflow:hidden;">
+        <span class="fine-print">
+          进阶发现：如果把推进剂占比推到很高、再换成液氢液氧，<b>单级</b>在数字上也能摸到 9.4 km/s 的门槛——
+          但现实中没有任何单级火箭把"发动机+贮箱+航电"的结构占比做到这么低还留得出可用载荷，
+          这正是"单级入轨（SSTO）"至今没有实用先例的原因；多级则在远宽松的参数下就能稳稳达标。
+        </span>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="pg-hint">💡 <b>怎么玩</b>：先选"单级"拖满滑块看看差多远，再切到"三级"分别调每一级的推进剂占比，点"点火"看逐级分离、Δv 怎么累加到达标。</div>
+</div>
+
+<script src="assets/base.js"></script>
+<script>
+(function(){
+  "use strict";
+
+  var G0 = 9.81;                 // m/s^2
+  var M0 = 600;                  // t，起飞总质量（固定）
+  var PAYLOAD = 20;               // t，固定载荷
+  var NONPAYLOAD = M0 - PAYLOAD;  // 580 t，分配给各级
+  var TARGET = 9.4;               // km/s，入轨 Δv 预算参考值
+
+  var SPLITS = {
+    1: [NONPAYLOAD],
+    2: [NONPAYLOAD*370/580, NONPAYLOAD*210/580],
+    3: [NONPAYLOAD*290/580, NONPAYLOAD*174/580, NONPAYLOAD*116/580]
+  };
+
+  var ISP = { solid:250, kerolox:300, hydrolox:450 };
+  var PNAME = { solid:'固体', kerolox:'煤油+液氧', hydrolox:'液氢+液氧' };
+
+  var state = {
+    n: 1,
+    frac: [0.75, 0.75, 0.75],   // 每级推进剂占比，索引 0 = 底部第 1 级
+    prop: 'kerolox'
+  };
+
+  // ---- 计算：逐级火箭方程 -------------------------------------------------
+  function compute(){
+    var masses = SPLITS[state.n];
+    var vE = ISP[state.prop] * G0 / 1000;   // km/s
+    var current = M0;
+    var per = [];
+    for (var i = 0; i < masses.length; i++){
+      var f = state.frac[i];
+      var propellant = f * masses[i];
+      var m0 = current;
+      var mf = current - propellant;
+      var dv = vE * Math.log(m0 / mf);
+      per.push({ dv: dv, mass: masses[i], f: f, structure: masses[i]*(1-f) });
+      current = current - masses[i];
+    }
+    var total = per.reduce(function(s,x){ return s + x.dv; }, 0);
+    return { per: per, total: total, vE: vE };
+  }
+
+  // ---- DOM 构建：滑块 ------------------------------------------------------
+  var sliderWrap = document.getElementById('sliderWrap');
+  var stageColors = ['#ff7a45', '#ffab6b', '#47e0ff'];
+
+  function buildSliders(){
+    sliderWrap.innerHTML = '';
+    var masses = SPLITS[state.n];
+    for (var i = 0; i < state.n; i++){
+      (function(i){
+        var wrap = document.createElement('div');
+        wrap.className = 'stage-slider';
+        var pos = i === 0 ? '（最底部 · 最先点火）' : (i === state.n-1 ? '（最上面 · 挨着载荷）' : '（中间级）');
+        wrap.innerHTML =
+          '<div class="row-top">' +
+            '<span class="label"><span class="dot" style="background:'+stageColors[i]+'"></span>第 '+(i+1)+' 级 '+pos+'</span>' +
+            '<span class="val" id="fval'+i+'"></span>' +
+          '</div>' +
+          '<input type="range" class="no-pan" min="55" max="95" step="1" id="fs'+i+'">' +
+          '<div class="sub" id="fsub'+i+'"></div>';
+        sliderWrap.appendChild(wrap);
+        var input = wrap.querySelector('#fs'+i);
+        input.value = Math.round(state.frac[i]*100);
+        input.addEventListener('input', function(){
+          state.frac[i] = (+input.value) / 100;
+          refresh();
+        });
+      })(i);
+    }
+    refreshSliderReadouts();
+  }
+
+  function refreshSliderReadouts(){
+    var masses = SPLITS[state.n];
+    for (var i = 0; i < state.n; i++){
+      var f = state.frac[i];
+      var mass = masses[i];
+      var vEl = document.getElementById('fval'+i);
+      var sEl = document.getElementById('fsub'+i);
+      if (vEl) vEl.textContent = Math.round(f*100) + '%';
+      if (sEl) sEl.textContent = '该级质量 ' + mass.toFixed(0) + ' t → 推进剂 ' + (mass*f).toFixed(0) + ' t ／ 结构 ' + (mass*(1-f)).toFixed(0) + ' t';
+    }
+  }
+
+  // ---- 级数选择 ------------------------------------------------------------
+  var stagePicker = document.getElementById('stagePicker');
+  stagePicker.addEventListener('click', function(e){
+    var el = e.target.closest('.chip');
+    if (!el) return;
+    state.n = +el.dataset.n;
+    syncStagePicker();
+    buildSliders();
+    refresh();
+  });
+  function syncStagePicker(){
+    stagePicker.querySelectorAll('.chip').forEach(function(c){
+      c.classList.toggle('on', +c.dataset.n === state.n);
+    });
+  }
+
+  // ---- 推进剂选择 ------------------------------------------------------------
+  var propPicker = document.getElementById('propPicker');
+  propPicker.addEventListener('click', function(e){
+    var el = e.target.closest('.chip');
+    if (!el) return;
+    state.prop = el.dataset.p;
+    syncPropPicker();
+    refresh();
+  });
+  function syncPropPicker(){
+    propPicker.querySelectorAll('.chip').forEach(function(c){
+      c.classList.toggle('on', c.dataset.p === state.prop);
+    });
+  }
+
+  // ---- 引导按钮 --------------------------------------------------------------
+  document.getElementById('btnTry1').addEventListener('click', function(){
+    state.n = 1; state.frac = [0.75,0.75,0.75]; state.prop = 'kerolox';
+    syncStagePicker(); syncPropPicker(); buildSliders(); refresh();
+  });
+  document.getElementById('btnTry3').addEventListener('click', function(){
+    state.n = 3; state.frac = [0.9,0.9,0.9]; state.prop = 'kerolox';
+    syncStagePicker(); syncPropPicker(); buildSliders(); refresh();
+  });
+  document.getElementById('btnTryH2').addEventListener('click', function(){
+    state.n = 3; state.frac = [0.9,0.9,0.9]; state.prop = 'hydrolox';
+    syncStagePicker(); syncPropPicker(); buildSliders(); refresh();
+  });
+
+  // ---- 右侧 Δv 明细 -----------------------------------------------------------
+  var dvRows = document.getElementById('dvRows');
+  var totalDvEl = document.getElementById('totalDv');
+  var statusBadge = document.getElementById('statusBadge');
+
+  function refreshResult(res){
+    dvRows.innerHTML = '';
+    var maxDv = Math.max.apply(null, res.per.map(function(p){return p.dv;}).concat([res.total/2, 3]));
+    res.per.forEach(function(p, i){
+      var row = document.createElement('div');
+      row.className = 'dv-row';
+      var pct = Deck.clamp((p.dv / (res.total || 1)) * 100, 0, 100);
+      row.innerHTML =
+        '<span class="name">第 '+(i+1)+' 级</span>' +
+        '<span class="dv-track"><span class="dv-fill" style="width:'+Deck.clamp(p.dv/9.4*100,0,100)+'%; background:'+stageColors[i]+';"></span></span>' +
+        '<span class="dv-num">'+p.dv.toFixed(2)+' km/s</span>';
+      dvRows.appendChild(row);
+    });
+
+    totalDvEl.textContent = res.total.toFixed(2);
+    var diff = res.total - TARGET;
+    if (diff >= 0){
+      totalDvEl.style.color = 'var(--good)';
+      statusBadge.textContent = '达标 · 超出 ' + diff.toFixed(2) + ' km/s';
+      statusBadge.className = 'status-badge good';
+    } else if (diff >= -0.6){
+      totalDvEl.style.color = 'var(--accent-3)';
+      statusBadge.textContent = '接近 · 还差 ' + (-diff).toFixed(2) + ' km/s';
+      statusBadge.className = 'status-badge warn';
+    } else {
+      totalDvEl.style.color = 'var(--bad)';
+      statusBadge.textContent = '未达标 · 还差 ' + (-diff).toFixed(2) + ' km/s';
+      statusBadge.className = 'status-badge bad';
+    }
+  }
+
+  // ---- 火箭剖面 canvas --------------------------------------------------------
+  var canvas = document.getElementById('rocketCanvas');
+  var ctx = canvas.getContext('2d');
+  var CW = canvas.width, CH = canvas.height;
+  var stageAnimT = null;   // 点火动画：null = 静止显示当前参数
+  var stopLoop = null;
+
+  function drawRocket(res, animT){
+    ctx.clearRect(0, 0, CW, CH);
+    var baseY = CH - 30;
+    var stageW = 150;
+    var cx = CW/2;
+    var gap = 5;
+    var bodyTop = 60;
+    var bodyH = baseY - bodyTop;
+    var masses = SPLITS[state.n];
+    var totalMass = masses.reduce(function(a,b){return a+b;}, 0);
+
+    // 分离动画进度（每级 0~1，用来把已烧完的级平移淡出）
+    var sep = new Array(state.n).fill(0);
+    if (animT !== null){
+      var perDur = 900, holdBefore = 250;
+      for (var i = 0; i < state.n; i++){
+        var start = holdBefore + i*perDur;
+        var t = (animT - start) / (perDur*0.75);
+        sep[i] = Deck.clamp(t, 0, 1);
+      }
+    }
+
+    // 载荷（尖端）
+    var noseH = 46;
+    ctx.fillStyle = Deck.rgba('accent-2', 1);
+    ctx.beginPath();
+    ctx.moveTo(cx, bodyTop - noseH);
+    ctx.lineTo(cx - stageW/2 + 8, bodyTop);
+    ctx.lineTo(cx + stageW/2 - 8, bodyTop);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = '#04121a';
+    ctx.font = '600 12px ' + getComputedStyle(document.documentElement).getPropertyValue('--font-mono');
+    ctx.textAlign = 'center';
+    ctx.fillText('载荷 20t', cx, bodyTop - noseH/2 + 4);
+
+    var y = bodyTop;
+    // 从顶部(最后一级)往下画到底部(第一级)，但数组是底部在前，所以倒序遍历
+    for (var idx = state.n - 1; idx >= 0; idx--){
+      var h = (masses[idx] / totalMass) * (bodyH - gap*(state.n-1));
+      var f = state.frac[idx];
+      var structH = h * (1 - f);
+      var propH = h * f;
+
+      ctx.save();
+      var s = sep[idx];
+      if (s > 0){
+        ctx.globalAlpha = 1 - s;
+        ctx.translate((idx%2===0? 1:-1) * s * 60, s * 40);
+      }
+
+      // 结构层（上部）
+      ctx.fillStyle = Deck.rgba('bg3', 1);
+      ctx.strokeStyle = Deck.rgba('line', 1);
+      ctx.lineWidth = 1;
+      ctx.fillRect(cx - stageW/2, y, stageW, structH);
+      ctx.strokeRect(cx - stageW/2, y, stageW, structH);
+      // 结构斜纹
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(cx - stageW/2, y, stageW, structH);
+      ctx.clip();
+      ctx.strokeStyle = Deck.rgba('line-soft', 1);
+      for (var lx = -stageW; lx < stageW*1.5; lx += 10){
+        ctx.beginPath();
+        ctx.moveTo(cx - stageW/2 + lx, y);
+        ctx.lineTo(cx - stageW/2 + lx + structH, y + structH);
+        ctx.stroke();
+      }
+      ctx.restore();
+
+      // 推进剂层（下部）
+      var grad = ctx.createLinearGradient(0, y+structH, 0, y+structH+propH);
+      grad.addColorStop(0, '#ff8c5a');
+      grad.addColorStop(1, Deck.rgba('accent', 1));
+      ctx.fillStyle = grad;
+      ctx.fillRect(cx - stageW/2, y + structH, stageW, propH);
+      ctx.strokeStyle = Deck.rgba('line', 1);
+      ctx.strokeRect(cx - stageW/2, y + structH, stageW, propH);
+
+      // 级号标注
+      if (h > 22){
+        ctx.fillStyle = '#0c0f16';
+        ctx.font = '700 13px ' + getComputedStyle(document.documentElement).getPropertyValue('--font-mono');
+        ctx.textAlign = 'left';
+        ctx.fillText('L' + (idx+1), cx - stageW/2 + 8, y + h/2 + 4);
+      }
+
+      ctx.restore();
+
+      y += h + gap;
+    }
+
+    // 地面
+    ctx.fillStyle = Deck.rgba('line-soft', 1);
+    ctx.fillRect(0, baseY, CW, 4);
+  }
+
+  function refreshRocket(){
+    var res = compute();
+    drawRocket(res, stageAnimT);
+  }
+
+  // ---- 点火动画 ---------------------------------------------------------------
+  document.getElementById('btnIgnite').addEventListener('click', function(){
+    if (stopLoop) stopLoop();
+    var duration = 250 + state.n*900 + 500;
+    stopLoop = Deck.loop(function(t){
+      stageAnimT = t;
+      refreshRocket();
+      if (t > duration){
+        if (stopLoop) stopLoop();
+        stopLoop = null;
+        stageAnimT = null;
+        refreshRocket();
+      }
+    }, { still: duration + 1 });
+  });
+
+  // ---- 统一刷新 -----------------------------------------------------------------
+  function refresh(){
+    refreshSliderReadouts();
+    var res = compute();
+    refreshResult(res);
+    if (!stopLoop){ stageAnimT = null; drawRocket(res, null); }
+  }
+
+  syncStagePicker();
+  syncPropPicker();
+  buildSliders();
+  refresh();
+
+  Deck.init({ index: 5, total: 14 });
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,402 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+</head>
+<body data-page="17" data-total="20">
+<div id="stage">
+  <style>
+    .decay-lab.split-lr {
+      --split-left: 1.42fr;
+      --split-right: 0.78fr;
+      grid-template-rows: minmax(0, 1fr);
+      grid-template-areas: "left right";
+      padding: var(--space-6) var(--page-pad-x);
+    }
+    .decay-lab .layout-left {
+      display: grid;
+      grid-template-rows: minmax(0, 1fr) auto;
+      gap: var(--space-4);
+    }
+    .decay-lab .plot {
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr) auto;
+      padding: var(--space-5);
+    }
+    .decay-lab .plot-head,
+    .decay-lab .plot-foot,
+    .decay-lab .control-title,
+    .decay-lab .range-line,
+    .decay-lab .button-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--space-3);
+    }
+    .decay-lab .plot-head { align-items: flex-start; }
+    .decay-lab .plot-foot { padding-block-start: var(--space-2); }
+    .decay-lab .plot-note { margin: 0; }
+    .decay-lab #decay-chart { inline-size: 100%; block-size: 100%; min-block-size: 0; }
+    .decay-lab .axis text { fill: var(--chart-axis); font-family: var(--font-mono); font-size: var(--fs-tick); }
+    .decay-lab .axis path,
+    .decay-lab .axis line { stroke: var(--chart-grid); }
+    .decay-lab .gridline line { stroke: var(--chart-grid); stroke-dasharray: 4 6; }
+    .decay-lab .gridline path { display: none; }
+    .decay-lab .decay-area { fill: var(--accent-soft); }
+    .decay-lab .decay-line { fill: none; stroke: var(--chart-1); stroke-width: 4; }
+    .decay-lab .current-dot { fill: var(--warm); stroke: var(--surface-inset); stroke-width: 4; }
+    .decay-lab .threshold { stroke: var(--danger); stroke-width: 2; stroke-dasharray: 8 7; }
+    .decay-lab .boost-mark { stroke: var(--chart-2); stroke-width: 2; stroke-dasharray: 3 5; }
+    .decay-lab .chart-label { fill: var(--text-muted); font-family: var(--font-sans); font-size: var(--fs-caption); }
+    .decay-lab .metrics { --readout-cols: 4; padding: var(--space-3); }
+    .decay-lab .metrics .readout { min-block-size: 86px; padding: var(--space-3); }
+    .decay-lab .metrics .readout-value { font-size: var(--fs-h3); }
+    .decay-lab .layout-right { display: flex; }
+    .decay-lab .control-panel { inline-size: 100%; justify-content: space-between; gap: var(--space-4); padding: var(--space-5); }
+    .decay-lab .control-group { gap: var(--space-2); padding-block-end: var(--space-4); }
+    .decay-lab .control-title .heading-3 { display: flex; align-items: center; gap: var(--space-3); }
+    .decay-lab .satellite-bay {
+      display: grid;
+      place-items: center;
+      min-block-size: 126px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-md);
+      background: var(--surface-inset);
+    }
+    .decay-lab .satellite { position: relative; inline-size: 210px; block-size: 78px; transition: inline-size 180ms ease; }
+    .decay-lab .satellite__body {
+      position: absolute; inset: 18px 82px;
+      border: 2px solid var(--accent-strong);
+      border-radius: var(--radius-sm);
+      background: var(--surface-3);
+      box-shadow: var(--shadow-panel);
+    }
+    .decay-lab .satellite__panel {
+      position: absolute; inset-block: 25px; inline-size: 76px;
+      border: 1px solid var(--accent-2);
+      background: repeating-linear-gradient(90deg, var(--accent-2-soft) 0 14px, var(--surface-2) 14px 16px);
+    }
+    .decay-lab .satellite__panel:first-child { inset-inline-start: 0; }
+    .decay-lab .satellite__panel:last-child { inset-inline-end: 0; }
+    .decay-lab .satellite.is-narrow { inline-size: 138px; }
+    .decay-lab .satellite.is-narrow .satellite__body { inset-inline: 48px; }
+    .decay-lab .satellite.is-narrow .satellite__panel { inline-size: 42px; }
+    .decay-lab select { padding: var(--space-2) var(--space-3); }
+    .decay-lab .range-line output { color: var(--text-strong); font-family: var(--font-mono); font-size: var(--fs-label); }
+    .decay-lab .button-row { justify-content: flex-start; flex-wrap: wrap; }
+    .decay-lab .button-row button { flex: 1 1 auto; }
+    .decay-lab .compact { --readout-cols: 2; padding: var(--space-2); }
+    .decay-lab .compact .readout { min-block-size: 74px; padding: var(--space-3); }
+    .decay-lab .compact .readout-value { font-size: var(--fs-h3); }
+    .decay-lab .lesson { margin: 0; color: var(--text-muted); font-size: var(--fs-small); line-height: var(--lh-body); }
+    @media (prefers-reduced-motion: reduce) {
+      .decay-lab .satellite { transition: none; }
+    }
+  </style>
+
+  <main class="decay-lab split-lr" aria-label="轨道寿命实验室">
+    <section class="layout-left min0" aria-labelledby="plot-title">
+      <figure class="plot min0">
+        <div class="plot-head">
+          <div>
+            <h2 class="heading-3" id="plot-title">实时积分的高度履历</h2>
+            <p class="caption plot-note">每一步都用当前高度重算密度、速度与衰减率</p>
+          </div>
+          <span class="status" id="run-status">待命</span>
+        </div>
+        <svg id="decay-chart" role="img" aria-labelledby="plot-title chart-desc"></svg>
+        <figcaption class="plot-foot caption">
+          <span id="chart-desc">横轴为传播时间，纵轴为轨道高度。</span>
+          <span class="mono" id="elapsed-label">—</span>
+        </figcaption>
+      </figure>
+      <div class="readout-panel metrics" aria-live="polite">
+        <div class="readout readout--accent"><span class="readout-label">当前高度</span><strong class="readout-value" id="altitude-out">—</strong></div>
+        <div class="readout"><span class="readout-label">大气密度</span><strong class="readout-value" id="density-out">—</strong></div>
+        <div class="readout"><span class="readout-label">阻力减速度</span><strong class="readout-value" id="drag-out">—</strong></div>
+        <div class="readout"><span class="readout-label">估算剩余寿命</span><strong class="readout-value" id="life-out">—</strong></div>
+      </div>
+    </section>
+
+    <aside class="layout-right min0">
+      <div class="control-panel">
+        <div class="control-title">
+          <h2 class="heading-3">组装与传播</h2>
+          <button type="button" class="button--quiet" id="reset-btn">重置</button>
+        </div>
+        <div class="satellite-bay" aria-hidden="true">
+          <div class="satellite" id="satellite-model"><span class="satellite__panel"></span><span class="satellite__body"></span><span class="satellite__panel"></span></div>
+        </div>
+        <div class="control-group">
+          <label class="control-label" for="height-input">初始高度</label>
+          <div class="range-line"><span class="control-hint">低轨</span><output id="height-output" for="height-input">—</output></div>
+          <input id="height-input" type="range" aria-describedby="height-help">
+          <span class="control-hint" id="height-help">越低，密度上升后衰减会明显加速</span>
+        </div>
+        <div class="control-group">
+          <label class="control-label" for="build-select">卫星构型</label>
+          <select id="build-select">
+            <option value="wide">轻而宽 · 易受阻</option>
+            <option value="narrow">重而窄 · 更耐久</option>
+          </select>
+          <div class="readout-panel compact">
+            <div class="readout"><span class="readout-label">弹道系数</span><strong class="readout-value" id="bc-out">—</strong></div>
+            <div class="readout"><span class="readout-label">累计再升轨 Δv</span><strong class="readout-value" id="dv-out">—</strong></div>
+          </div>
+        </div>
+        <div class="button-row">
+          <button type="button" id="iss-btn">载入 ISS 高度</button>
+          <button type="button" class="button--primary" id="run-btn">开始传播</button>
+          <button type="button" id="boost-btn">再升轨</button>
+        </div>
+        <p class="lesson" id="lesson-text">先比较两种构型，再快进观察：衰减不是匀速下降。</p>
+      </div>
+    </aside>
+  </main>
+
+  <script src="assets/lib/d3.min.js"></script>
+  <script>
+    window.addEventListener('DOMContentLoaded', function () {
+      'use strict';
+
+      const page = Object.freeze({
+        index: 17,
+        kicker: `DECAY`,
+        title: `在低轨，极稀薄的空气会一点点偷走<em>轨道能量</em>`,
+        take: `低轨卫星能待多久，取决于高度、大气密度、迎风面积与质量，并可能需要再升轨。`
+      });
+
+      Lec.mount(page);
+
+      const P = Lec.P;
+      const K = Lec.K;
+      const els = {
+        chart: document.getElementById('decay-chart'),
+        height: document.getElementById('height-input'),
+        heightOut: document.getElementById('height-output'),
+        build: document.getElementById('build-select'),
+        model: document.getElementById('satellite-model'),
+        run: document.getElementById('run-btn'),
+        iss: document.getElementById('iss-btn'),
+        boost: document.getElementById('boost-btn'),
+        reset: document.getElementById('reset-btn'),
+        status: document.getElementById('run-status'),
+        altitude: document.getElementById('altitude-out'),
+        density: document.getElementById('density-out'),
+        drag: document.getElementById('drag-out'),
+        life: document.getElementById('life-out'),
+        bc: document.getElementById('bc-out'),
+        dv: document.getElementById('dv-out'),
+        elapsed: document.getElementById('elapsed-label'),
+        lesson: document.getElementById('lesson-text'),
+        desc: document.getElementById('chart-desc')
+      };
+
+      const lowerAltitude = K.KARMAN_ALTITUDE;
+      const minimumAltitude = K.KARMAN_ALTITUDE * 2;
+      const maximumAltitude = K.ISS_ALTITUDE * 2;
+      const heightStep = K.KARMAN_ALTITUDE / K.display.pageCount;
+      const buildBaseMass = K.vehicles.v2.liftoffMass / K.pageCount;
+      const builds = Object.freeze({
+        wide: Object.freeze({ mass: buildBaseMass, area: K.vehicles.v2.height, cd: K.atmosphere.heatCapacityRatio }),
+        narrow: Object.freeze({ mass: buildBaseMass * K.display.defaultDecimals * K.display.defaultDecimals, area: K.vehicles.v2.height / K.display.defaultDecimals, cd: K.atmosphere.heatCapacityRatio })
+      });
+      const state = {
+        initialAltitude: K.ISS_ALTITUDE,
+        altitude: K.ISS_ALTITUDE,
+        elapsed: 0,
+        totalDeltaV: 0,
+        running: false,
+        lost: false,
+        build: 'wide',
+        history: [],
+        boosts: []
+      };
+
+      els.height.min = String(minimumAltitude);
+      els.height.max = String(maximumAltitude);
+      els.height.step = String(heightStep);
+      els.height.value = String(state.altitude);
+
+      function currentBuild() { return builds[state.build]; }
+
+      function physics() {
+        const b = currentBuild();
+        const radius = P.orbitalRadius(state.altitude);
+        const speed = P.circularVelocityAtRadius(radius);
+        const density = P.upperAtmosphericDensity(state.altitude);
+        return {
+          speed: speed,
+          density: density,
+          drag: P.dragAcceleration(density, speed, b.cd, b.area, b.mass),
+          decayRate: P.orbitDecayRate(state.altitude, b.mass, b.cd, b.area),
+          lifetime: P.orbitDecayTime(state.altitude, lowerAltitude, b.mass, b.cd, b.area),
+          ballistic: P.ballisticCoefficient(b.mass, b.cd, b.area)
+        };
+      }
+
+      function addHistory() {
+        const last = state.history[state.history.length - 1];
+        if (!last || state.elapsed !== last.time || state.altitude !== last.altitude) {
+          state.history.push({ time: state.elapsed, altitude: state.altitude });
+        }
+        if (state.history.length > K.numeric.integrationSteps) state.history.shift();
+      }
+
+      function formatElapsed(seconds) { return P.formatDuration(seconds, K.display.defaultDecimals); }
+
+      function updateControls() {
+        els.height.value = String(state.altitude);
+        els.height.disabled = state.running;
+        els.build.disabled = state.running;
+        els.iss.disabled = state.running;
+        els.boost.disabled = state.running || state.lost || state.altitude >= K.ISS_ALTITUDE;
+        els.run.disabled = state.lost;
+        els.run.textContent = state.running ? '暂停传播' : (state.elapsed ? '继续传播' : '开始传播');
+      }
+
+      function render() {
+        const q = physics();
+        els.heightOut.textContent = P.formatDistance(state.altitude, 0);
+        els.altitude.textContent = P.formatDistance(state.altitude, 0);
+        els.density.textContent = P.formatSI(q.density, 'kg/m³', K.display.defaultDecimals + K.display.percentDecimals);
+        els.drag.textContent = P.formatSI(q.drag, 'm/s²', K.display.defaultDecimals);
+        els.life.textContent = state.lost ? '已进入大气边界' : formatElapsed(q.lifetime);
+        els.bc.textContent = P.formatSI(q.ballistic, 'kg/m²', K.display.defaultDecimals);
+        els.dv.textContent = P.formatSpeed(state.totalDeltaV, K.display.defaultDecimals);
+        els.elapsed.textContent = '已传播 ' + formatElapsed(state.elapsed);
+        els.model.classList.toggle('is-narrow', state.build === 'narrow');
+        els.status.className = 'status ' + (state.lost ? 'status--error' : state.running ? 'status--live' : state.elapsed ? 'status--warn' : '');
+        els.status.textContent = state.lost ? '寿命终点' : state.running ? '传播中' : state.elapsed ? '已暂停' : '待命';
+        els.lesson.textContent = state.lost ? '高度越低，密度越高；最后一段衰减会迅速加速。' : (state.totalDeltaV ? '再升轨支付了实时计算的 Δv，并把寿命曲线向后延长。' : '先比较两种构型，再快进观察：衰减不是匀速下降。');
+        els.desc.textContent = '实时轨迹当前高度' + P.formatDistance(state.altitude, 0) + '，已传播' + formatElapsed(state.elapsed) + '。';
+        updateControls();
+        drawChart();
+      }
+
+      function drawChart() {
+        const box = els.chart.getBoundingClientRect();
+        const width = Math.max(1, box.width);
+        const height = Math.max(1, box.height);
+        const margin = { top: 18, right: 24, bottom: 46, left: 82 };
+        const innerW = Math.max(1, width - margin.left - margin.right);
+        const innerH = Math.max(1, height - margin.top - margin.bottom);
+        const data = state.history.length ? state.history : [{ time: 0, altitude: state.altitude }];
+        const localPeriod = P.orbitalPeriodAtRadius(P.orbitalRadius(state.altitude));
+        const maxTime = Math.max(localPeriod, d3.max(data, d => d.time));
+        const high = Math.max(maximumAltitude, d3.max(data, d => d.altitude));
+        const x = d3.scaleLinear().domain([0, maxTime]).range([0, innerW]);
+        const y = d3.scaleLinear().domain([lowerAltitude, high]).nice().range([innerH, 0]);
+        const svg = d3.select(els.chart).attr('viewBox', `0 0 ${width} ${height}`);
+        svg.selectAll('*').remove();
+        const g = svg.append('g').attr('transform', `translate(${margin.left},${margin.top})`);
+        g.append('g').attr('class', 'gridline').call(d3.axisLeft(y).ticks(5).tickSize(-innerW).tickFormat(''));
+        g.append('line').attr('class', 'threshold').attr('x1', 0).attr('x2', innerW).attr('y1', y(lowerAltitude)).attr('y2', y(lowerAltitude));
+        g.append('text').attr('class', 'chart-label').attr('x', 8).attr('y', y(lowerAltitude) - 8).text('大气边界');
+        const area = d3.area().x(d => x(d.time)).y0(innerH).y1(d => y(d.altitude)).curve(d3.curveMonotoneX);
+        const line = d3.line().x(d => x(d.time)).y(d => y(d.altitude)).curve(d3.curveMonotoneX);
+        g.append('path').datum(data).attr('class', 'decay-area').attr('d', area);
+        g.append('path').datum(data).attr('class', 'decay-line').attr('d', line);
+        g.selectAll('.boost-mark').data(state.boosts).join('line').attr('class', 'boost-mark').attr('x1', d => x(d)).attr('x2', d => x(d)).attr('y1', 0).attr('y2', innerH);
+        const last = data[data.length - 1];
+        g.append('circle').attr('class', 'current-dot').attr('cx', x(last.time)).attr('cy', y(last.altitude)).attr('r', 7);
+        g.append('g').attr('class', 'axis').attr('transform', `translate(0,${innerH})`).call(d3.axisBottom(x).ticks(5).tickFormat(v => formatElapsed(v)));
+        g.append('g').attr('class', 'axis').call(d3.axisLeft(y).ticks(5).tickFormat(v => P.formatDistance(v, 0)));
+      }
+
+      function reset() {
+        state.initialAltitude = K.ISS_ALTITUDE;
+        state.altitude = K.ISS_ALTITUDE;
+        state.elapsed = 0;
+        state.totalDeltaV = 0;
+        state.running = false;
+        state.lost = false;
+        state.build = 'wide';
+        state.history = [];
+        state.boosts = [];
+        els.build.value = state.build;
+        addHistory();
+        render();
+      }
+
+      els.height.addEventListener('input', function () {
+        state.altitude = Number(els.height.value);
+        state.initialAltitude = state.altitude;
+        state.elapsed = 0;
+        state.totalDeltaV = 0;
+        state.lost = false;
+        state.history = [];
+        state.boosts = [];
+        addHistory();
+        render();
+      });
+      els.build.addEventListener('change', function () {
+        state.build = els.build.value;
+        state.elapsed = 0;
+        state.totalDeltaV = 0;
+        state.lost = false;
+        state.history = [];
+        state.boosts = [];
+        addHistory();
+        render();
+      });
+      els.iss.addEventListener('click', function () {
+        state.altitude = K.ISS_ALTITUDE;
+        state.initialAltitude = state.altitude;
+        state.elapsed = 0;
+        state.totalDeltaV = 0;
+        state.lost = false;
+        state.history = [];
+        state.boosts = [];
+        addHistory();
+        render();
+      });
+      els.run.addEventListener('click', function () {
+        state.running = !state.running;
+        render();
+      });
+      els.boost.addEventListener('click', function () {
+        if (state.altitude < K.ISS_ALTITUDE && !state.lost) {
+          const transfer = P.hohmannTransferByAltitude(state.altitude, K.ISS_ALTITUDE);
+          state.totalDeltaV += transfer.totalDeltaV;
+          state.altitude = K.ISS_ALTITUDE;
+          state.boosts.push(state.elapsed);
+          addHistory();
+          render();
+        }
+      });
+      els.reset.addEventListener('click', reset);
+      Deck.onResize(drawChart);
+
+      addHistory();
+      render();
+
+      const simulatedSecondsPerRealSecond = K.time.julianYear / K.pageCount;
+      Deck.loop(function (time, dt) {
+        if (!state.running || state.lost || dt <= 0) return;
+        const totalStep = dt * simulatedSecondsPerRealSecond;
+        const substeps = K.display.pageDigits * K.display.defaultDecimals;
+        const step = totalStep / substeps;
+        for (let i = 0; i < substeps; i += 1) {
+          const q = physics();
+          state.altitude += q.decayRate * step;
+          state.elapsed += step;
+          if (state.altitude <= lowerAltitude) {
+            state.altitude = lowerAltitude;
+            state.lost = true;
+            state.running = false;
+            break;
+          }
+        }
+        addHistory();
+        render();
+      }, { still: 0 });
+    }, { once: true });
+  </script>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+</body>
+</html>

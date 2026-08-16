@@ -1,0 +1,360 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+</head>
+<body data-page="01" data-total="20">
+<div id="stage">
+<style>
+  .p01.canvas-full { position: relative; }
+  .p01 .sim-canvas { inline-size: 100%; block-size: 100%; display: block; }
+  .p01 .sim-canvas:focus-visible { outline: 0; box-shadow: inset 0 0 0 var(--space-1) var(--focus); }
+  .p01 .game-ui { z-index: 1; pointer-events: none; padding: 0 var(--page-pad-x); }
+  .p01 .mission {
+    position: absolute; inset-block-start: 224px; inset-inline-start: var(--page-pad-x);
+    inline-size: 350px; padding: var(--space-5); border: 1px solid var(--line);
+    border-radius: var(--radius-lg); background: var(--surface-glass); box-shadow: var(--shadow-panel);
+    pointer-events: auto;
+  }
+  .p01 .mission h2 { margin: 0 0 var(--space-2); color: var(--text-strong); font-size: var(--fs-h3); line-height: var(--lh-tight); }
+  .p01 .mission p { margin: 0; color: var(--text-muted); font-size: var(--fs-small); line-height: var(--lh-body); }
+  .p01 .readouts {
+    position: absolute; inset-block-start: 224px; inset-inline-end: var(--page-pad-x);
+    inline-size: 322px; display: flex; flex-direction: column; gap: var(--space-3);
+    padding: var(--space-4); border: 1px solid var(--line); border-radius: var(--radius-lg);
+    background: var(--surface-glass); box-shadow: var(--shadow-panel); pointer-events: auto;
+  }
+  .p01 .status-line { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); }
+  .p01 .state-word { color: var(--text-strong); font-size: var(--fs-h3); font-weight: var(--weight-bold); line-height: var(--lh-tight); }
+  .p01 .speed-line { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-3); padding-block: var(--space-2); border-block: 1px solid var(--line); }
+  .p01 .speed-line span { color: var(--text-muted); font-size: var(--fs-label); }
+  .p01 .speed-line output { color: var(--accent-strong); font-family: var(--font-mono); font-size: var(--fs-body-lg); font-weight: var(--weight-semibold); }
+  .p01 .button-row { display: grid; grid-template-columns: 1fr auto; gap: var(--space-3); }
+  .p01 .key-help { color: var(--text-faint); font-size: var(--fs-caption); line-height: var(--lh-tight); }
+  .p01 .legend { position: absolute; inset-inline-start: var(--page-pad-x); inset-block-end: 86px; pointer-events: none; }
+  .p01 .trail-list { position: absolute; inset-inline-end: var(--page-pad-x); inset-block-end: 86px; display: flex; align-items: center; gap: var(--space-2); color: var(--text-muted); font-size: var(--fs-caption); pointer-events: none; }
+  .p01 .trial-mark { inline-size: 22px; block-size: 4px; border-radius: var(--radius-pill); background: var(--accent-2); opacity: .55; }
+  @media (prefers-reduced-motion: reduce) { .p01 * { transition-duration: 0.01ms !important; } }
+</style>
+
+<main class="p01 canvas-full" aria-label="牛顿大炮轨道实验">
+  <canvas id="orbit-canvas" class="sim-canvas cv-fill no-pan" tabindex="0" role="application" aria-label="拖动大炮发射手柄改变速度和方向。方向键调整，回车或空格发射，R 重置。"></canvas>
+  <div class="game-ui" aria-hidden="false">
+    <section class="mission" aria-labelledby="mission-title">
+      <h2 id="mission-title">让炮弹绕回出发点</h2>
+      <p>拖动炮口前的发光手柄，改变初速度大小和方向；每次试射都会留下轨迹。</p>
+    </section>
+    <aside class="readouts" aria-label="发射控制">
+      <div class="status-line"><span class="label">本次结果</span><strong id="state-word" class="state-word" aria-live="polite">待发射</strong></div>
+      <div class="speed-line"><span>初速度</span><output id="speed-output">—</output></div>
+      <div class="button-row">
+        <button id="launch-button" class="button--primary" type="button">发射</button>
+        <button id="reset-button" class="button--quiet" type="button">重置</button>
+      </div>
+      <div class="key-help">方向键调手柄 · Enter 发射 · R 重置</div>
+    </aside>
+    <div class="legend" aria-label="矢量图例">
+      <span class="legend-item"><i class="legend-swatch"></i>速度</span>
+      <span class="legend-item"><i class="legend-swatch" style="--swatch:var(--warm)"></i>重力 → 地心</span>
+    </div>
+    <div class="trail-list"><span>试射留痕</span><span id="trial-marks"></span></div>
+  </div>
+</main>
+
+<script>
+window.addEventListener('DOMContentLoaded', function () {
+  'use strict';
+
+  const page = Object.freeze({
+    index: Number(document.body.dataset.page),
+    kicker: `SIDEWAYS`,
+    title: `把炮弹扔得足够快，它会一直<em>落下去</em>`,
+    take: `轨道不是摆脱重力，而是下落时不断错过地面。`
+  });
+  Lec.mount(page);
+
+  const cv = document.getElementById('orbit-canvas');
+  const launchButton = document.getElementById('launch-button');
+  const resetButton = document.getElementById('reset-button');
+  const stateWord = document.getElementById('state-word');
+  const speedOutput = document.getElementById('speed-output');
+  const trialMarks = document.getElementById('trial-marks');
+  const R = Lec.K.EARTH_RADIUS;
+  const MU = Lec.K.EARTH_MU;
+  const START_R = R + Lec.K.KARMAN_ALTITUDE;
+  const START_ANGLE = 2.35;
+  const CENTER = Object.freeze({ x: 800, y: 576 });
+  const PX_R = 292;
+  const SCALE = PX_R / R;
+  const start = Object.freeze({ x: START_R * Math.cos(START_ANGLE), y: START_R * Math.sin(START_ANGLE) });
+  const tangent = Object.freeze({ x: Math.sin(START_ANGLE), y: -Math.cos(START_ANGLE) });
+  const maxSpeed = Lec.P.escapeVelocityAtRadius(START_R);
+  const initialSpeed = Lec.K.rocket.leoOrbitalSpeed;
+  let ctx = Deck.fit(cv);
+  let dragging = false;
+  let activePointer = null;
+  let state;
+
+  function freshState() {
+    return {
+      phase: 'aim', result: '', aimSpeed: initialSpeed,
+      aimDir: { x: tangent.x, y: tangent.y },
+      body: null, histories: [], activeTrail: [], steps: 0,
+      angleTravel: 0, previousAngle: START_ANGLE, success: false
+    };
+  }
+
+  function screenPoint(p) {
+    return { x: CENTER.x + p.x * SCALE, y: CENTER.y - p.y * SCALE };
+  }
+
+  function aimEnd() {
+    const p = screenPoint(start);
+    const length = 52 + 146 * state.aimSpeed / maxSpeed;
+    return { x: p.x + state.aimDir.x * length, y: p.y - state.aimDir.y * length };
+  }
+
+  function setAimFromPoint(p) {
+    if (state.phase === 'running') return;
+    const s = screenPoint(start);
+    const dx = p.x - s.x;
+    const dy = -(p.y - s.y);
+    const length = Math.hypot(dx, dy);
+    if (length < 1) return;
+    state.aimDir = { x: dx / length, y: dy / length };
+    state.aimSpeed = Lec.P.clamp((length - 52) / 146 * maxSpeed, 0, maxSpeed);
+    state.phase = 'aim';
+    state.result = '';
+    updateUI();
+  }
+
+  function updateUI() {
+    const words = { aim: '待发射', running: '下落中', impact: '命中', orbit: '绕行', away: '飞离' };
+    stateWord.textContent = state.result ? words[state.result] : words[state.phase];
+    speedOutput.textContent = Lec.P.formatSpeed(state.phase === 'running' && state.body ? Math.hypot(state.body.vx, state.body.vy) : state.aimSpeed);
+    launchButton.disabled = state.phase === 'running';
+    launchButton.textContent = state.phase === 'running' ? '飞行中' : '发射';
+    trialMarks.replaceChildren();
+    state.histories.forEach(function () {
+      const mark = document.createElement('i');
+      mark.className = 'trial-mark';
+      trialMarks.appendChild(mark);
+    });
+  }
+
+  function launch() {
+    if (state.phase === 'running') return;
+    state.body = {
+      x: start.x, y: start.y,
+      vx: state.aimDir.x * state.aimSpeed,
+      vy: state.aimDir.y * state.aimSpeed
+    };
+    state.activeTrail = [{ x: start.x, y: start.y }];
+    state.steps = 0;
+    state.angleTravel = 0;
+    state.previousAngle = START_ANGLE;
+    state.success = false;
+    state.phase = 'running';
+    state.result = '';
+    updateUI();
+    if (Deck.reduced()) {
+      let guard = 0;
+      while (state.phase === 'running' && guard < 14000) {
+        stepPhysics();
+        guard += 1;
+      }
+      draw();
+    }
+  }
+
+  function finish(result) {
+    state.phase = result;
+    state.result = result;
+    state.success = result === 'orbit';
+    state.histories.push({ points: state.activeTrail.slice(), result: result });
+    if (state.histories.length > 6) state.histories.shift();
+    state.activeTrail = [];
+    updateUI();
+  }
+
+  function stepPhysics() {
+    if (state.phase !== 'running') return;
+    const b = state.body;
+    const radius = Math.hypot(b.x, b.y);
+    const gravity = Lec.P.gravityAtRadius(radius, { mu: MU, meanRadius: R });
+    const localPeriod = Lec.P.orbitalPeriodAtRadius(radius, { mu: MU, meanRadius: R });
+    const dt = localPeriod / 2400;
+    b.vx += -gravity * b.x / radius * dt;
+    b.vy += -gravity * b.y / radius * dt;
+    b.x += b.vx * dt;
+    b.y += b.vy * dt;
+    state.steps += 1;
+    const nextRadius = Math.hypot(b.x, b.y);
+    const angle = Math.atan2(b.y, b.x);
+    let delta = angle - state.previousAngle;
+    if (delta > Lec.K.PI) delta -= Lec.K.TWO_PI;
+    if (delta < -Lec.K.PI) delta += Lec.K.TWO_PI;
+    state.angleTravel += delta;
+    state.previousAngle = angle;
+    if (state.steps % 5 === 0) state.activeTrail.push({ x: b.x, y: b.y });
+    if (nextRadius <= R) finish('impact');
+    else if (Math.abs(state.angleTravel) >= Lec.K.TWO_PI) finish('orbit');
+    else {
+      const edgeRadius = Math.min(CENTER.x, 1600 - CENTER.x, CENTER.y, 900 - CENTER.y) / SCALE;
+      if (nextRadius > edgeRadius) finish('away');
+    }
+  }
+
+  function arrow(x1, y1, x2, y2, color, width) {
+    ctx.strokeStyle = color; ctx.fillStyle = color; ctx.lineWidth = width;
+    ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+    const a = Math.atan2(y2 - y1, x2 - x1);
+    ctx.beginPath(); ctx.moveTo(x2, y2);
+    ctx.lineTo(x2 - 12 * Math.cos(a - 0.48), y2 - 12 * Math.sin(a - 0.48));
+    ctx.lineTo(x2 - 12 * Math.cos(a + 0.48), y2 - 12 * Math.sin(a + 0.48));
+    ctx.closePath(); ctx.fill();
+  }
+
+  function drawEarth() {
+    const glow = ctx.createRadialGradient(CENTER.x - 90, CENTER.y - 120, 30, CENTER.x, CENTER.y, PX_R + 45);
+    glow.addColorStop(0, Deck.rgba('accent-2', .42));
+    glow.addColorStop(.68, Deck.rgba('surface-3', 1));
+    glow.addColorStop(1, Deck.rgba('surface-inset', 1));
+    ctx.fillStyle = glow;
+    ctx.beginPath(); ctx.arc(CENTER.x, CENTER.y, PX_R, 0, Lec.K.TWO_PI); ctx.fill();
+    ctx.strokeStyle = state.success ? Deck.rgba('accent-strong', 1) : Deck.rgba('line-strong', 1);
+    ctx.lineWidth = state.success ? 7 : 2;
+    ctx.beginPath(); ctx.arc(CENTER.x, CENTER.y, PX_R, 0, Lec.K.TWO_PI); ctx.stroke();
+    ctx.save(); ctx.beginPath(); ctx.arc(CENTER.x, CENTER.y, PX_R - 2, 0, Lec.K.TWO_PI); ctx.clip();
+    ctx.strokeStyle = Deck.rgba('accent', .12); ctx.lineWidth = 1;
+    for (let i = -5; i <= 5; i += 1) {
+      ctx.beginPath(); ctx.ellipse(CENTER.x, CENTER.y, PX_R, Math.abs(i) * 24 + 18, 0, 0, Lec.K.TWO_PI); ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  function drawCannon() {
+    const s = screenPoint(start);
+    const radial = { x: Math.cos(START_ANGLE), y: -Math.sin(START_ANGLE) };
+    const tx = tangent.x, ty = -tangent.y;
+    ctx.fillStyle = Deck.rgba('surface-3', 1);
+    ctx.strokeStyle = Deck.rgba('text-muted', 1); ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.moveTo(s.x - radial.x * 5, s.y - radial.y * 5);
+    ctx.lineTo(s.x + tx * 48 - radial.x * 9, s.y + ty * 48 - radial.y * 9);
+    ctx.lineTo(s.x + tx * 48 + radial.x * 9, s.y + ty * 48 + radial.y * 9);
+    ctx.lineTo(s.x + radial.x * 9, s.y + radial.y * 9); ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = Deck.rgba('warm', 1); ctx.beginPath(); ctx.arc(s.x, s.y, 12, 0, Lec.K.TWO_PI); ctx.fill();
+  }
+
+  function drawTrail(points, color, alpha, width) {
+    if (points.length < 2) return;
+    ctx.strokeStyle = Deck.rgba(color, alpha); ctx.lineWidth = width; ctx.beginPath();
+    points.forEach(function (p, i) { const q = screenPoint(p); if (i === 0) ctx.moveTo(q.x, q.y); else ctx.lineTo(q.x, q.y); });
+    ctx.stroke();
+  }
+
+  function drawSuccessInsight() {
+    if (!state.success) return;
+    const s = screenPoint(start);
+    const along = R / 2;
+    const drop = Lec.P.curvatureDrop(along, R);
+    const radialWorld = { x: Math.cos(START_ANGLE), y: Math.sin(START_ANGLE) };
+    const tangentWorld = tangent;
+    const tangentEnd = { x: start.x + tangentWorld.x * along, y: start.y + tangentWorld.y * along };
+    const groundEnd = { x: tangentEnd.x - radialWorld.x * drop, y: tangentEnd.y - radialWorld.y * drop };
+    const a = screenPoint(tangentEnd), g = screenPoint(groundEnd);
+    ctx.setLineDash([10, 8]); ctx.strokeStyle = Deck.rgba('accent-strong', .9); ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.moveTo(s.x, s.y); ctx.lineTo(a.x, a.y); ctx.stroke(); ctx.setLineDash([]);
+    arrow(a.x, a.y, g.x, g.y, Deck.rgba('warm', 1), 4);
+    ctx.font = '650 16px ' + Deck.token('font-sans'); ctx.fillStyle = Deck.rgba('accent-strong', 1);
+    ctx.fillText('地面弯走了', g.x + 14, g.y + 6);
+    ctx.fillStyle = Deck.rgba('warm', 1); ctx.fillText('仍在下落', a.x + 14, a.y - 10);
+  }
+
+  function draw() {
+    ctx.clearRect(0, 0, 1600, 900);
+    ctx.fillStyle = Deck.rgba('text-faint', .35);
+    for (let i = 0; i < 72; i += 1) {
+      const x = (i * 223) % 1600, y = 180 + ((i * 137) % 650);
+      ctx.fillRect(x, y, i % 5 === 0 ? 2 : 1, i % 5 === 0 ? 2 : 1);
+    }
+    drawEarth();
+    state.histories.forEach(function (h, i) { drawTrail(h.points, h.result === 'orbit' ? 'success' : 'accent-2', .28 + i * .04, 2); });
+    drawTrail(state.activeTrail, 'accent-strong', .95, 3);
+    drawSuccessInsight();
+    drawCannon();
+
+    if (state.phase === 'aim' || state.phase === 'impact' || state.phase === 'orbit' || state.phase === 'away') {
+      const s = screenPoint(start), end = aimEnd();
+      arrow(s.x, s.y, end.x, end.y, Deck.rgba('accent-strong', 1), 4);
+      ctx.fillStyle = Deck.rgba('accent-strong', .18); ctx.beginPath(); ctx.arc(end.x, end.y, 28, 0, Lec.K.TWO_PI); ctx.fill();
+      ctx.fillStyle = Deck.rgba('text-strong', 1); ctx.beginPath(); ctx.arc(end.x, end.y, 10, 0, Lec.K.TWO_PI); ctx.fill();
+    }
+
+    if (state.body && state.phase === 'running') {
+      const p = screenPoint(state.body);
+      ctx.fillStyle = Deck.rgba('text-strong', 1); ctx.beginPath(); ctx.arc(p.x, p.y, 8, 0, Lec.K.TWO_PI); ctx.fill();
+      const speed = Math.hypot(state.body.vx, state.body.vy) || 1;
+      arrow(p.x, p.y, p.x + state.body.vx / speed * 72, p.y - state.body.vy / speed * 72, Deck.rgba('accent-strong', 1), 3);
+      const radius = Math.hypot(state.body.x, state.body.y) || 1;
+      arrow(p.x, p.y, p.x - state.body.x / radius * 58, p.y + state.body.y / radius * 58, Deck.rgba('warm', 1), 3);
+    }
+  }
+
+  function reset() {
+    state = freshState();
+    updateUI();
+    draw();
+  }
+
+  cv.addEventListener('pointerdown', function (event) {
+    const p = Deck.pt(cv, event); const h = aimEnd();
+    if (Math.hypot(p.x - h.x, p.y - h.y) <= 44 && state.phase !== 'running') {
+      dragging = true; activePointer = event.pointerId; cv.setPointerCapture(event.pointerId); setAimFromPoint(p); cv.focus();
+    }
+  });
+  cv.addEventListener('pointermove', function (event) { if (dragging && event.pointerId === activePointer) setAimFromPoint(Deck.pt(cv, event)); });
+  function endDrag(event) {
+    if (!dragging || event.pointerId !== activePointer) return;
+    dragging = false;
+    if (cv.hasPointerCapture(event.pointerId)) cv.releasePointerCapture(event.pointerId);
+    activePointer = null;
+  }
+  cv.addEventListener('pointerup', endDrag);
+  cv.addEventListener('pointercancel', endDrag);
+  cv.addEventListener('lostpointercapture', function () { dragging = false; activePointer = null; });
+  cv.addEventListener('keydown', function (event) {
+    if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); launch(); return; }
+    if (event.key.toLowerCase() === 'r') { event.preventDefault(); reset(); return; }
+    if (state.phase === 'running') return;
+    let angle = Math.atan2(state.aimDir.y, state.aimDir.x);
+    if (event.key === 'ArrowLeft') angle += Lec.K.DEG_TO_RAD;
+    else if (event.key === 'ArrowRight') angle -= Lec.K.DEG_TO_RAD;
+    else if (event.key === 'ArrowUp') state.aimSpeed = Lec.P.clamp(state.aimSpeed + maxSpeed / 80, 0, maxSpeed);
+    else if (event.key === 'ArrowDown') state.aimSpeed = Lec.P.clamp(state.aimSpeed - maxSpeed / 80, 0, maxSpeed);
+    else if (event.key === 'Home') { state.aimDir = { x: tangent.x, y: tangent.y }; state.aimSpeed = initialSpeed; updateUI(); event.preventDefault(); return; }
+    else return;
+    state.aimDir = { x: Math.cos(angle), y: Math.sin(angle) };
+    state.phase = 'aim'; state.result = ''; updateUI(); event.preventDefault();
+  });
+  launchButton.addEventListener('click', launch);
+  resetButton.addEventListener('click', reset);
+  Deck.onResize(function () { ctx = Deck.fit(cv); draw(); });
+  state = freshState();
+  updateUI();
+  Deck.loop(function () {
+    if (state.phase === 'running') {
+      for (let i = 0; i < 12 && state.phase === 'running'; i += 1) stepPhysics();
+      updateUI();
+    }
+    draw();
+  }, { still: 0 });
+}, { once: true });
+</script>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+</body>
+</html>

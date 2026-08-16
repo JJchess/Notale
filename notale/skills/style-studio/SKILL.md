@@ -11,6 +11,8 @@ not design individual pages.
 
 Assume the structured response schema is authoritative for field names, types, required values,
 and composition count. Concentrate on design decisions the schema cannot express.
+Name the visual system with two to four lowercase alphabetic words joined by hyphens. Do not use
+digits, dates, measurements, or a one-word label, and do not reuse the lecture title as the name.
 
 ## Derive, do not categorize
 
@@ -30,9 +32,11 @@ logic. Never copy reference text, branding, lesson-specific imagery, or signatur
 
 ## Build a fixed-canvas composition vocabulary
 
-Create exactly 5–7 structurally distinct, topic-specific families for a 1280×720 canvas. Each family must
-define its dominant visual carrier, reading path, spatial balance, and supporting role for text.
-Changing only color, font, texture, ornament, or motif does not create a new family.
+Create a compact catalog of structurally distinct, topic-specific families for a 1280×720 canvas.
+A lecture around twenty pages often benefits from roughly 5–7 families, but derive the count from
+meaningful structural needs; never add, remove, split, or merge a family merely to hit that range.
+Each family must define its dominant visual carrier, reading path, spatial balance, and supporting
+role for text. Changing only color, font, texture, ornament, or motif does not create a new family.
 
 Use one primary structural primitive and at most one different secondary:
 
@@ -53,11 +57,19 @@ Translate primitives through the subject. Give families topic-derived names and 
 generic template names. Keep one carrier dominant when combining primitives. Avoid deriving
 several families from the same top-title / middle-content / bottom-controls skeleton.
 
-Across the catalog use at least four different primaries and unique primary/secondary signatures.
-Collectively support all page types: `formula-derivation`, `sim-explorable`, `code-runnable`,
-`quiz-check`, `worked-example`, `section-break`, and `narrative-scene`. Make `use_when`,
-`spatial_logic`, `dominant_carrier`, `text_role`, `variation`, and `avoid` concrete enough that a
-Planner can match a claim to a family and a Builder can recognize when a page falsifies it.
+Across the catalog use varied primaries and unique primary/secondary signatures.
+Support only page types that the supplied learning request can genuinely use. The available types
+are `formula-derivation`, `sim-explorable`, `code-runnable`, `quiz-check`, `worked-example`,
+`section-break`, and `narrative-scene`; they are a vocabulary, not a coverage checklist. Never add
+a composition merely to represent a type. Include `code-runnable` only when writing, running, or
+debugging code is itself a learning objective in the request. Include `sim-explorable` only when
+manipulating meaningful variables or state reveals something the learner is meant to understand.
+Make `use_when`, `spatial_logic`, `dominant_carrier`, `text_role`, `variation`, and `avoid` concrete
+enough that a Planner can match a claim to a family and a Builder can recognize when a page
+falsifies it. In `spatial_logic`, state approximate canvas shares or proportions for the dominant
+carrier and supporting regions. In `text_role`, state how many text regions the family can support
+and how they yield visually to the carrier. These are composition-specific design guides, not
+validation thresholds.
 
 ## Author the Builder-facing Skill body
 
@@ -75,15 +87,38 @@ or point of view that unifies the deck.
 ### Identity
 
 Specify typographic voice, weights, scale contrast, material qualities, line behavior, edge
-treatment, depth, and texture. Use offline-safe system font stacks. Explain what carries authority
-and what feels provisional, active, historical, computed, or observed when those distinctions
-matter.
+treatment, depth, and texture. Choose `font-display`, `font-body`, and `font-mono` by exact ID from
+the installed offline catalog supplied below this Skill. Use the display role for headings and
+short typographic carriers, the body role for sustained reading, and mono only for code or
+tabular/computed material. For a Chinese lecture, choose a `zh-Hans` body; a Latin-only display may
+still lead Latin text while Chinese glyphs fall back to the selected body. Explain what carries
+authority and what feels provisional, active, historical, computed, or observed when those
+distinctions matter.
 
 ### Spatial grammar
 
 Define outer breathing room, alignment logic, density, focal scale, reading order, and the
 relationship between text and dominant evidence. Require one clear visual carrier instead of
 generic cards or dashboard chrome. State reusable principles, not a fixed grid.
+
+### Scale and spacing recipe
+
+Give Builders a compact, directly executable scale for this specific visual system on a 1280×720
+canvas. Include recommended CSS-pixel ranges for display statements, ordinary titles, body text,
+captions/annotations, outer margins, major gaps, and minor gaps. State how much of the canvas the
+dominant carrier normally owns and when the recipe intentionally becomes denser or sparser. Choose
+values that make the intended hierarchy visible; a ratio alone is insufficient because a tiny
+title and tiny body can satisfy the same ratio. Treat all values as design guidance rather than
+hard acceptance rules, and do not reuse one universal scale across unrelated aesthetics.
+
+### Component grammar
+
+Define how this visual system constructs its recurring parts: evidence images and crops, charts or
+diagrams, quotations/documents, labels and captions, panels or grouping surfaces, borders, corner
+treatment, background fields, and any subject-relevant control surface. Specify which treatments
+are dominant, supporting, or forbidden; how much area an authentic image should receive when it is
+the carrier; and how to avoid thumbnail galleries, dashboard cards, and equal-weight clutter.
+Describe a coherent component language, not page-specific HTML or a compulsory component count.
 
 ### Semantic encoding
 
@@ -100,6 +135,10 @@ flexible across page types.
 
 Unify photographs, historical artifacts, illustrations, diagrams, charts, equations, quotations,
 and code without falsifying evidence. Describe treatment only; never allocate tools or providers.
+When the subject materially involves identifiable people, documents, places, objects, artworks, or
+events, include at least one composition capable of making authentic evidence the dominant carrier
+when that evidence would strengthen the argument. Do not substitute a recurring abstract motif for
+all available subject evidence. This is a composition decision, not a required media count.
 
 Preserve these boundaries:
 
@@ -120,15 +159,19 @@ when action adds no learning value.
 ### Continuity and controlled variation
 
 List invariants that make blurred pages recognizable as one deck. Then define limited variation
-for chapter transitions, narrative scenes, worked examples, code, simulations, and synthesis.
-Repeat the decision system, not one composition.
+for the narrative scenes, worked examples, chapter transitions, synthesis, and any other page types
+actually justified by the request. Discuss code or simulation variation only when that learning
+mode is genuinely relevant. Repeat the decision system, not one composition.
 
 ### Page contract
 
 Require every Builder to:
 
 - Build one self-contained 1280×720 HTML fragment with exactly one `data-notale-page` root.
-- Use injected `--notale-*` tokens and never redefine reserved tokens.
+- Use injected `--notale-font-display`, `--notale-font-body`, `--notale-font-mono`, and color
+  `--notale-*` tokens; never redefine reserved tokens, and never reference a `--notale-*` token
+  that is not declared — the declared color roles are `bg`, `surface`, `ink`, `muted`, `accent`,
+  `accent-2`, `accent-3`, and `line`.
 - Stay fully offline: no CDN, remote font, remote image, fetch, remote import, placeholder asset,
   or undeclared third-party global.
 - Make interaction project state from a real algorithm, equation, rule, dataset, or state machine.
@@ -143,10 +186,14 @@ decoration, ambiguous color reuse, motif overuse, style drift, and effects that 
 
 ## Define executable tokens
 
-Choose literal CSS-compatible values. Use offline-safe font stacks. Give both accents stable
-semantic meanings in the body. Ensure primary ink reaches at least 4.5:1 contrast against both the
-dominant field and embedded surface. Never use braces, semicolons, angle brackets, `url()`, remote
-fonts, CSS declarations, or variable names in token values.
+Choose literal CSS-compatible color values and exact installed font IDs. Build the body's semantic
+color encoding only on the declared tokens, and write the token name next to every color role the
+body mentions (e.g. 暗朱红 `--notale-accent`) — never describe a semantic color that has no
+corresponding token. Give all three accents stable semantic meanings in the body. Ensure primary
+ink reaches at least 4.5:1 contrast against both the
+dominant field and embedded surface. Never invent a font name or return a CSS font stack. Never use
+braces, semicolons, angle brackets, `url()`, remote fonts, CSS declarations, or variable names in
+token values.
 
 ## Preflight once
 
@@ -154,10 +201,15 @@ Before returning the structured response, verify that:
 
 - The thesis, motif, grammar, and family names are unmistakably derived from the topic.
 - Decisions are executable rather than mood-board adjectives.
+- The body includes a concrete 1280×720 scale/spacing recipe and component grammar whose values and
+  treatments visibly express this run's design rather than a universal template.
 - Independent Builders will produce coherence without repeating one layout.
-- Families differ in carrier, reading path, and balance, cover every page type, and obey the schema.
+- Families differ in carrier, reading path, and balance, cover the justified page types, and obey
+  the schema without manufacturing a learning mode for coverage.
 - The body contains no page copy, exact layout, HTML, hidden dependency, or tool allocation.
 - Media boundaries and the immutable page contract remain intact.
+- Font roles are chosen from the supplied catalog, suit the lecture language, and have visibly
+  distinct jobs without sacrificing body readability.
 - Tokens are safe, semantically explained, offline-compatible, and sufficiently contrasted.
 
 Return the final design once. Do not narrate the process or wrap the JSON in Markdown.

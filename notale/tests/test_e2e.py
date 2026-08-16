@@ -7,6 +7,30 @@ from notale.core.workflow import generate
 from notale.tests.fake_llm import FakeClient, no_network
 
 
+def plan_for_pack(plan_data: dict, pack_id: str) -> dict:
+    """Retarget a plan's compositions onto a real pack's catalog.
+
+    The shared ``plan_data`` fixture names compositions from the fake style
+    fixture. A run driven by an actual pack has to choose from that pack's own
+    catalog, honouring page-type compatibility and the no-adjacent-repeat rule.
+    """
+    from notale.style_studio.registry import get_pack
+
+    catalog = get_pack(pack_id).compositions()
+    plan = json.loads(json.dumps(plan_data))
+    plan["design"]["name"] = pack_id
+    previous = ""
+    for page in plan["pages"]:
+        choice = next(
+            item
+            for item in catalog
+            if page["type"] in [t.value for t in item.page_types] and item.id != previous
+        )
+        page["composition"] = choice.id
+        previous = choice.id
+    return plan
+
+
 def page_fixture(number: int) -> str:
     return json.dumps({
         "html": f"<section data-notale-page><h1>页面 {number}</h1><p>有效知识内容</p></section>",
@@ -33,7 +57,8 @@ async def test_planner_then_parallel_builders_with_complete_logs(tmp_path: Path,
     assert not (result.run_dir / "page-contexts").exists()
     assert not (result.run_dir / "assets" / "manifest.json").exists()
     request_files = sorted((result.run_dir / "llm-requests").glob("*/turn-*.json"))
-    assert len(request_files) == 10
+    # style + planner + four isolated Inspector calls + three outer Builder turns per page
+    assert len(request_files) == 18
     plan = json.loads((result.run_dir / "plan.json").read_text())
     style_dir = result.run_dir / "skills" / plan["design"]["name"]
     assert (style_dir / "SKILL.md").is_file()
@@ -49,6 +74,21 @@ async def test_planner_then_parallel_builders_with_complete_logs(tmp_path: Path,
     assert '\"id\": \"forked-ledger\"' not in builder_system
     assert "Available composition catalog" not in builder_system
     assert "narrative-keynote" not in builder_system
+    inspection_request = json.loads(
+        (result.run_dir / "llm-requests" / "inspection-p1" / "turn-0001.json").read_text()
+    )["request"]
+    assert "tools" not in inspection_request
+    assert [message["role"] for message in inspection_request["messages"]] == [
+        "system", "user",
+    ]
+    # Just the current render: rendering a baseline specimen needs a browser, and
+    # this run is sealed off from the network, so the pack has no specimen to show.
+    assert [part["type"] for part in inspection_request["messages"][1]["content"]] == [
+        "text", "image_url",
+    ]
+    prompt_text = inspection_request["messages"][1]["content"][0]["text"]
+    assert "Run design Skill: pathways-field-guide" in prompt_text
+    assert "rendered specimen" not in prompt_text
     assert "--notale-accent: #176b87" in (
         result.run_dir / "runtime" / "global.css"
     ).read_text()
@@ -63,10 +103,45 @@ async def test_planner_then_parallel_builders_with_complete_logs(tmp_path: Path,
     assert summary["peak_builder_concurrency"] >= 2
     assert summary["model_calls"] >= 10
     assert summary["model_calls"] == len(request_files)
+    assert summary["inspection"]["renders"] == 4
+    assert summary["inspection"]["submitted"] == 4
+    assert summary["inspection"]["model_calls"] == 4
+    assert summary["inspection"]["revisions"] == 0
+    assert summary["inspection"]["input_tokens"] > 0
     assert summary["total_tokens"] > 0
     assert summary["planner"]["grouped"] is False
     assert summary["planner"]["pages"] == 4
     assert summary["style"]["name"] == plan["design"]["name"]
+
+
+@pytest.mark.asyncio
+async def test_visual_directives_reach_style_but_not_planner(tmp_path: Path, plan_data):
+    fixtures = {"plan": json.dumps(plan_data, ensure_ascii=False)}
+    fixtures.update({f"build:p{number}": page_fixture(number) for number in range(1, 5)})
+    topic = "为高中生制作四页量子力学讲义，采用深色主题，使用蓝紫配色。"
+
+    with no_network():
+        result = await generate(FakeClient(by_purpose=fixtures), topic, out_root=tmp_path)
+
+    style_request = json.loads(
+        (result.run_dir / "llm-requests" / "style" / "turn-0001.json").read_text()
+    )["request"]
+    planner_request = json.loads(
+        (result.run_dir / "llm-requests" / "planner" / "turn-0001.json").read_text()
+    )["request"]
+    style_text = json.dumps(style_request, ensure_ascii=False)
+    planner_text = json.dumps(planner_request, ensure_ascii=False)
+    assert "深色主题" in style_text and "蓝紫配色" in style_text
+    assert "量子力学" in planner_text and "高中生" in planner_text
+    assert "深色主题" not in planner_text and "蓝紫配色" not in planner_text
+
+    events = [
+        json.loads(line)
+        for line in (result.run_dir / "events.jsonl").read_text().splitlines()
+    ]
+    event = next(item for item in events if item["kind"] == "style.prompt_scrubbed")
+    assert event["payload"]["changed"] is True
+    assert event["payload"]["removed_count"] == 2
 
 
 @pytest.mark.asyncio
@@ -105,6 +180,31 @@ async def test_builder_block_creates_same_schema_fallback(tmp_path: Path, plan_d
 
 
 @pytest.mark.asyncio
+async def test_inspection_runtime_failure_uses_safe_fallback_and_keeps_failed_report(
+    tmp_path: Path, plan_data
+):
+    class BrokenInspectionBrowser(FakeClient):
+        async def render_inspection_page(self, *, document_path, page):
+            del document_path, page
+            raise RuntimeError("fixture browser unavailable")
+
+    fixtures = {"plan": json.dumps(plan_data, ensure_ascii=False)}
+    fixtures.update({f"build:p{number}": page_fixture(number) for number in range(1, 5)})
+    result = await generate(
+        BrokenInspectionBrowser(by_purpose=fixtures), "topic", out_root=tmp_path
+    )
+
+    assert result.completed == []
+    assert result.degraded == ["p1", "p2", "p3", "p4"]
+    page = json.loads((result.run_dir / "pages" / "p1.json").read_text())
+    assert "安全降级" in page["html"]
+    assert "fixture browser unavailable" in page["html"]
+    report = json.loads((result.run_dir / "inspections" / "p1.json").read_text())
+    assert report["status"] == "failed"
+    assert "browser unavailable" in report["rounds"][0]["error"]
+
+
+@pytest.mark.asyncio
 async def test_resume_rejects_old_or_changed_contract(tmp_path: Path, plan_data):
     old = tmp_path / "old"
     old.mkdir()
@@ -123,26 +223,84 @@ async def test_resume_rejects_old_or_changed_contract(tmp_path: Path, plan_data)
 
 
 @pytest.mark.asyncio
-async def test_style_failure_is_terminal_and_never_starts_planner(tmp_path: Path):
+async def test_unreadable_generated_palette_costs_the_palette_not_the_run(
+    tmp_path: Path, plan_data
+):
+    """A palette the model got wrong used to end the run before planning began.
+
+    It now falls back to the parent pack and the deck still ships, with the
+    substitution recorded rather than silent.
+    """
+    from notale.style_studio.registry import get_pack
     from notale.tests.fake_llm import _default_style
 
     invalid = _default_style()
-    invalid["tokens"] = {
-        **invalid["tokens"], "bg": "#111111", "ink": "#222222"
+    invalid["tokens"] = {**invalid["tokens"], "bg": "#111111", "ink": "#222222"}
+    fixtures = {
+        "style": json.dumps(invalid, ensure_ascii=False),
+        "plan": json.dumps(plan_data, ensure_ascii=False),
     }
-    client = FakeClient(by_purpose={"style": json.dumps(invalid)})
-    with pytest.raises(ValueError, match="contrast"):
-        await generate(client, "topic", out_root=tmp_path)
+    fixtures.update({f"build:p{number}": page_fixture(number) for number in range(1, 5)})
 
-    assert [purpose for purpose, _ in client.calls] == ["style"]
-    run_dir = next(path for path in tmp_path.iterdir() if path.is_dir())
-    state = json.loads((run_dir / "run.json").read_text())
-    assert state["style_status"] == "failed"
+    with no_network():
+        result = await generate(FakeClient(by_purpose=fixtures), "topic", out_root=tmp_path)
 
-    resumed = FakeClient()
-    with pytest.raises(RuntimeError, match="previously failed"):
-        await generate(resumed, "topic", resume_dir=run_dir)
-    assert resumed.calls == []
+    assert result.completed == ["p1", "p2", "p3", "p4"]
+    state = json.loads((result.run_dir / "run.json").read_text())
+    assert state["style_status"] == "completed"
+    assert state["style_pack"]["pack_id"]
+
+    tokens = json.loads(
+        (result.run_dir / "skills" / state["style"]["name"] / "tokens.json").read_text()
+    )
+    assert tokens["bg"] != "#111111"
+    assert tokens == get_pack(state["style_pack"]["pack_id"]).notale_tokens()
+    css = (result.run_dir / "runtime" / "global.css").read_text()
+    assert f"--notale-bg: {tokens['bg']}" in css
+
+
+@pytest.mark.asyncio
+async def test_named_style_pack_renders_without_a_style_model_call(
+    tmp_path: Path, plan_data
+):
+    fixtures = {
+        "plan": json.dumps(plan_for_pack(plan_data, "swiss-modern"), ensure_ascii=False)
+    }
+    fixtures.update({f"build:p{number}": page_fixture(number) for number in range(1, 5)})
+    client = FakeClient(by_purpose=fixtures)
+
+    with no_network():
+        result = await generate(
+            client, "topic", out_root=tmp_path, style_pack="swiss-modern"
+        )
+
+    assert "style" not in [purpose for purpose, _ in client.calls]
+    state = json.loads((result.run_dir / "run.json").read_text())
+    assert state["style_pack"]["pack_id"] == "swiss-modern"
+    reference = json.loads((result.run_dir / "style_pack_ref.json").read_text())
+    assert reference["style_pack_id"] == "swiss-modern"
+
+
+@pytest.mark.asyncio
+async def test_same_pack_is_reproducible_across_runs(tmp_path: Path, plan_data):
+    """The point of a pack: two runs of it emit byte-identical tokens."""
+    fixtures = {
+        "plan": json.dumps(plan_for_pack(plan_data, "paper-and-ink"), ensure_ascii=False)
+    }
+    fixtures.update({f"build:p{number}": page_fixture(number) for number in range(1, 5)})
+
+    roots = []
+    for index in range(2):
+        with no_network():
+            result = await generate(
+                FakeClient(by_purpose=fixtures),
+                "topic",
+                out_root=tmp_path / f"run{index}",
+                style_pack="paper-and-ink",
+            )
+        roots.append((result.run_dir / "runtime" / "global.css").read_text())
+
+    assert roots[0] == roots[1]
 
 
 @pytest.mark.asyncio

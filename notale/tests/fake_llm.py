@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 import socket
 from collections import deque
@@ -54,6 +55,14 @@ class FakeClient:
     def for_agent(self, *, state: Any, purpose: str, terminal_tool: str):
         return _FixtureAdapter(self, state, purpose, terminal_tool)
 
+    async def render_inspection_page(self, *, document_path: Any, page: int):
+        del document_path, page
+        return {
+            "screenshot": base64.b64decode(
+                "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M/wHwAE/wJ/l4Z7WQAAAABJRU5ErkJggg=="
+            ),
+        }
+
 
 class _FixtureAdapter:
     def __init__(
@@ -85,43 +94,62 @@ class _FixtureAdapter:
     async def stream_message(
         self, request: ModelRequest
     ) -> AsyncIterator[ModelEvent]:
-        del request
         self.inner.active += 1
         self.inner.peak_active = max(self.inner.peak_active, self.inner.active)
         try:
             if self.inner.delay:
                 await asyncio.sleep(self.inner.delay)
-            fixture = await self._load()
-            if self.purpose == "style":
-                payload = fixture if fixture.get("name") else _default_style()
-                message = text_msg(json.dumps(payload, ensure_ascii=False))
-            elif self.terminal_tool == "plan":
-                payload = (
-                    {key: value for key, value in fixture.items() if key != "style"}
-                    if "chapter_pages" in fixture
-                    else _final_plan_to_root(fixture)
-                )
-                message = tool_call_msg("plan", payload)
-            elif self.terminal_tool == "pages":
-                message = tool_call_msg("pages", fixture)
-            elif self.terminal_tool == "submit_page":
-                if fixture.get("block"):
-                    message = tool_call_msg("block", {"reason": fixture["block"]})
-                elif self.state.revision == 0:
-                    message = tool_call_msg(
-                        "edit_page",
-                        {"mode": "replace", "revision": 0, "html": fixture["html"]},
-                    )
-                else:
-                    message = tool_call_msg(
-                        "submit_page",
-                        {
-                            "revision": self.state.revision,
-                            "notes": fixture.get("notes", ""),
-                        },
-                    )
+            if self.purpose.startswith(("component:", "inspection:")):
+                messages = [
+                    {"role": item.get("role", ""), "content": str(item.get("content") or "")}
+                    for item in request.to_openai_body()["messages"]
+                ]
+                raw = await self.inner.complete(messages, purpose=self.purpose)
+                if self.purpose.startswith("inspection:") and raw.strip() == "{}":
+                    raw = json.dumps({"decision": "success", "findings": [], "html": ""})
+                message = text_msg(raw)
             else:
-                raise AssertionError(f"unknown terminal tool: {self.terminal_tool}")
+                fixture = await self._load()
+                if self.purpose == "style":
+                    payload = fixture if fixture.get("name") else _default_style()
+                    message = text_msg(json.dumps(payload, ensure_ascii=False))
+                elif self.terminal_tool == "plan":
+                    payload = (
+                        {key: value for key, value in fixture.items() if key != "style"}
+                        if "chapter_pages" in fixture
+                        else _final_plan_to_root(fixture)
+                    )
+                    message = tool_call_msg("plan", payload)
+                elif self.terminal_tool == "pages":
+                    message = tool_call_msg("pages", fixture)
+                elif self.terminal_tool == "submit_page":
+                    if fixture.get("block"):
+                        message = tool_call_msg("block", {"reason": fixture["block"]})
+                    elif self.state.tool_state.get("inspection_error"):
+                        message = tool_call_msg(
+                            "block",
+                            {"reason": str(self.state.tool_state["inspection_error"])},
+                        )
+                    elif self.state.revision == 0:
+                        message = tool_call_msg(
+                            "edit_page",
+                            {"mode": "replace", "revision": 0, "html": fixture["html"]},
+                        )
+                    elif self.state.tool_state.get("inspected_revision") != self.state.revision:
+                        message = tool_call_msg(
+                            "inspect_page",
+                            {"revision": self.state.revision},
+                        )
+                    else:
+                        message = tool_call_msg(
+                            "submit_page",
+                            {
+                                "revision": self.state.revision,
+                                "notes": fixture.get("notes", ""),
+                            },
+                        )
+                else:
+                    raise AssertionError(f"unknown terminal tool: {self.terminal_tool}")
             yield MessageComplete(
                 message=message,
                 usage=Usage(input_tokens=10, output_tokens=5),
@@ -204,6 +232,18 @@ Use strong ink, quiet paper-like fields, precise lines, and a humanist sans-seri
 ## Spatial grammar
 Give one route, diagram, or evidence object the dominant scale; attach concise labels directly.
 
+## Scale and spacing recipe
+On 1280×720, use 54–76px display statements, 34–46px ordinary titles, 20–26px body,
+14–18px annotations, 52–76px outer margins, 28–44px major gaps, and 12–20px minor gaps.
+Let the route or evidence carrier own roughly 58–72% of the useful field; these are visual
+recommendations, not acceptance thresholds.
+
+## Component grammar
+Crop authentic evidence decisively when it is the carrier and give it at least half the field;
+use hairline route marks and direct labels instead of card chrome. Documents sit on one quiet
+surface, diagrams share the route-line language, and controls form one compact working strip.
+Avoid thumbnail galleries, equal panels, dashboard cards, and mixed corner treatments.
+
 ## Semantic encoding
 Blue marks the active path, amber marks alternatives, and muted ink preserves prior state.
 
@@ -228,9 +268,11 @@ Avoid generic card grids, decorative gradients, ambiguous accents, and ornamenta
             "muted": "#66727c",
             "accent": "#176b87",
             "accent-2": "#c46a28",
+            "accent-3": "#4f7d5d",
             "line": "#a8b1b5",
-            "font": "Inter, Arial, sans-serif",
-            "mono": "ui-monospace, SFMono-Regular, monospace",
+            "font-display": "space-grotesk",
+            "font-body": "noto-sans-sc",
+            "font-mono": "jetbrains-mono",
         },
         "compositions": _default_compositions(),
     }
@@ -292,20 +334,45 @@ def tool_call_msg(name: str, tool_input: dict[str, Any]) -> ConversationMessage:
 
 
 class ScriptedClient:
-    def __init__(self, script: list[ConversationMessage], *, delay: float = 0) -> None:
+    def __init__(
+        self,
+        script: list[ConversationMessage],
+        *,
+        delay: float = 0,
+        inspection_script: list[str] | None = None,
+    ) -> None:
         self._script = deque(script)
+        self._inspection_script = deque(inspection_script or [])
         self.delay = delay
         self.requests: list[ModelRequest] = []
+        self.inspection_requests: list[ModelRequest] = []
+
+    async def render_inspection_page(self, *, document_path: Any, page: int):
+        del document_path, page
+        return {
+            "screenshot": base64.b64decode(
+                "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M/wHwAE/wJ/l4Z7WQAAAABJRU5ErkJggg=="
+            ),
+        }
 
     async def stream_message(
         self, request: ModelRequest
     ) -> AsyncIterator[ModelEvent]:
-        self.requests.append(request)
         if self.delay:
             await asyncio.sleep(self.delay)
-        if not self._script:
-            raise RuntimeError("script exhausted")
-        message = self._script.popleft()
+        if request.response_schema_name == "notale_inspection":
+            self.inspection_requests.append(request)
+            raw = (
+                self._inspection_script.popleft()
+                if self._inspection_script
+                else json.dumps({"decision": "success", "findings": [], "html": ""})
+            )
+            message = text_msg(raw)
+        else:
+            self.requests.append(request)
+            if not self._script:
+                raise RuntimeError("script exhausted")
+            message = self._script.popleft()
         for block in message.content:
             if isinstance(block, TextBlock) and block.text:
                 yield TextDelta(block.text)

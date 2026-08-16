@@ -1,3 +1,4 @@
+import base64
 import json
 import struct
 from pathlib import Path
@@ -12,10 +13,13 @@ from notale.tools.media import (
     FindImageTool,
     MakeImageInput,
     MakeImageTool,
+    MakeBackplateInput,
+    MakeBackplateTool,
     ensure_asset_manifest,
     inspect_image,
     load_asset_manifest,
 )
+from notale.style_studio.materialize import materialize_to_run
 
 
 def test_media_tools_have_plain_names_and_arguments(tmp_path: Path):
@@ -90,3 +94,41 @@ async def test_make_image_uses_paratera_seedream(tmp_path: Path, monkeypatch):
     assert record["model"] == "Doubao-Seedream-4.0"
     assert record["usage"] == {"generated_images": 1}
     assert "test-secret" not in json.dumps(manifest)
+
+
+@pytest.mark.asyncio
+async def test_backplate_flattens_negative_contract_without_changing_wire_shape(
+    tmp_path: Path, monkeypatch
+):
+    image = b"\x89PNG\r\n\x1a\n" + b"\0" * 8 + struct.pack(">II", 1280, 720) + b"\0" * 1100
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(
+            200,
+            json={"data": [{"b64_json": base64.b64encode(image).decode()}]},
+        )
+
+    def client_factory(**kwargs):
+        return httpx.AsyncClient(transport=httpx.MockTransport(handler), **kwargs)
+
+    monkeypatch.setenv("PARATERA_API_KEY", "test-secret")
+    materialize_to_run("swiss-modern", tmp_path)
+    state = PageToolState(tmp_path, 1, EventLog(tmp_path))
+    result = await MakeBackplateTool(state, client_factory).execute(
+        MakeBackplateInput(
+            subject="an abstract quantum probability field",
+            safe_areas=[{"role": "title", "x": 0.06, "y": 0.08, "w": 0.5, "h": 0.2}],
+        ),
+        None,
+    )
+
+    assert not result.is_error
+    payload = json.loads(requests[0].content)
+    assert set(payload) == {"model", "prompt"}
+    assert "Avoid: text, letters, numbers" in payload["prompt"]
+    manifest = load_asset_manifest(tmp_path, create=False)
+    record = manifest["assets"][0]
+    assert record["negative_prompt"]
+    assert record["attempts"] == 1

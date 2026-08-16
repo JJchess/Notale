@@ -1,0 +1,466 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+</head>
+<body data-page="05" data-total="20">
+  <div id="stage">
+    <main class="page">
+      <header id="lec-header" class="lec-header"></header>
+      <section class="page-body split min0" aria-label="椭圆轨道侦探实验">
+        <figure class="visual-shell min0" aria-label="椭圆轨道实时积分图">
+          <canvas id="orbit-canvas" class="cv-fill no-pan" role="img" aria-label="可拖动速度向量的地球椭圆轨道图；点击轨道可暂停读取当前位置速度"></canvas>
+        </figure>
+
+        <aside class="panel control-panel min0" aria-label="轨道参数与控制">
+          <div class="stack-3">
+            <h2 class="panel-title">改变一端，观察另一端</h2>
+            <p class="panel-description">在轨道图上拖动速度箭头，或用下方控件精调。近地点更快、远地点更慢；相同时间内，地心连线扫过的面积相近。</p>
+          </div>
+
+          <div class="readout-grid">
+            <div class="readout">
+              <span class="readout-label">近地点</span>
+              <strong id="rp-out" class="control-value">—</strong>
+            </div>
+            <div class="readout is-blue">
+              <span class="readout-label">远地点</span>
+              <strong id="ra-out" class="control-value">—</strong>
+            </div>
+            <div class="readout is-warm">
+              <span class="readout-label">半长轴</span>
+              <strong id="a-out" class="control-value">—</strong>
+            </div>
+            <div class="readout">
+              <span class="readout-label">偏心率 e</span>
+              <strong id="e-out" class="control-value">—</strong>
+            </div>
+          </div>
+
+          <div class="control-group">
+            <label class="control-label" for="burn-site">先判断：在哪里顺行点火，会抬高远地点？</label>
+            <select id="burn-site">
+              <option value="peri">近地点</option>
+              <option value="apo">远地点</option>
+            </select>
+          </div>
+
+          <div class="control-row">
+            <label class="control-label" for="speed-range">速度大小</label>
+            <input id="speed-range" type="range" aria-describedby="speed-hint">
+            <output id="speed-out" class="control-value">—</output>
+            <span id="speed-hint" class="control-hint">选定端点后，改变当地状态向量。</span>
+          </div>
+
+          <div class="control-row">
+            <label class="control-label" for="angle-range">速度方向</label>
+            <input id="angle-range" type="range">
+            <output id="angle-out" class="control-value">—</output>
+          </div>
+
+          <div class="cluster">
+            <button id="verify-btn" class="button-primary" type="button">点火并验证</button>
+            <button id="play-btn" type="button" aria-pressed="false">暂停观察</button>
+          </div>
+
+          <div class="callout" aria-live="polite">
+            <span class="callout-title">当前位置速度</span>
+            <p id="status-out">卫星正在按积分轨迹运行；点击轨道任一点可暂停读取。</p>
+          </div>
+        </aside>
+      </section>
+      <footer id="lec-footer" class="lec-footer"></footer>
+    </main>
+
+    <script>
+      document.addEventListener('DOMContentLoaded', function () {
+        'use strict';
+
+        Lec.mount({
+          index: 5,
+          kicker: `ELLIPTIC ORBITS`,
+          title: `同一条轨道上，速度为什么会忽快忽慢`,
+          take: `椭圆轨道不是“速度不稳定”，而是近地点和远地点的速度有系统差异。`
+        });
+
+        var K = Lec.K;
+        var P = Lec.P;
+        var header = document.getElementById('lec-header');
+        var footer = document.getElementById('lec-footer');
+        header.classList.add('page-header');
+        footer.classList.add('page-footer');
+        header.querySelector('.lec-header__kicker').classList.add('kicker');
+        header.querySelector('.lec-header__title').classList.add('page-title');
+        header.querySelector('.lec-header__index').classList.add('page-number');
+        footer.querySelector('.lec-footer__take').classList.add('accent');
+        footer.querySelector('.lec-footer__topic').classList.add('footer-meta');
+
+        var cv = document.getElementById('orbit-canvas');
+        var speedRange = document.getElementById('speed-range');
+        var angleRange = document.getElementById('angle-range');
+        var burnSite = document.getElementById('burn-site');
+        var verifyBtn = document.getElementById('verify-btn');
+        var playBtn = document.getElementById('play-btn');
+        var rpOut = document.getElementById('rp-out');
+        var raOut = document.getElementById('ra-out');
+        var aOut = document.getElementById('a-out');
+        var eOut = document.getElementById('e-out');
+        var speedOut = document.getElementById('speed-out');
+        var angleOut = document.getElementById('angle-out');
+        var statusOut = document.getElementById('status-out');
+
+        speedRange.min = String(K.ONE - K.TWO / K.TEN);
+        speedRange.max = String(K.ONE + K.ONE_THIRD);
+        speedRange.step = String(K.ONE / K.HUNDRED);
+        speedRange.value = String(K.ONE);
+        angleRange.min = String(-K.THREE * K.TEN);
+        angleRange.max = String(K.THREE * K.TEN);
+        angleRange.step = String(K.ONE);
+        angleRange.value = String(K.ZERO);
+
+        var mu = K.MU_EARTH;
+        var initialRadius = P.radiusAtAltitude(K.ISS_ALTITUDE);
+        var initialSpeed = P.circularVelocity(initialRadius, mu) * (K.ONE + K.ONE / K.TEN);
+        var state = { x: initialRadius, y: K.ZERO, vx: K.ZERO, vy: initialSpeed };
+        var current = { x: state.x, y: state.y, vx: state.vx, vy: state.vy };
+        var anchor = { x: state.x, y: state.y, vx: state.vx, vy: state.vy };
+        var elements;
+        var trail = [];
+        var paused = false;
+        var dragging = false;
+        var accumulator = K.ZERO;
+        var inspectedSpeed = initialSpeed;
+        var fitHandle;
+
+        function magnitude(x, y) {
+          return Math.sqrt(x * x + y * y);
+        }
+
+        function derive(s) {
+          var r = magnitude(s.x, s.y);
+          var v = magnitude(s.vx, s.vy);
+          var h = s.x * s.vy - s.y * s.vx;
+          var e = P.eccentricityFromState(r, v, Math.abs(h), mu);
+          var energy = P.specificOrbitalEnergy(r, v, mu);
+          var a = -mu / (K.TWO * energy);
+          e = P.clamp(e, K.ZERO, K.ONE - K.ONE / K.THOUSAND);
+          var rp = P.periapsisFromApsis(a, e);
+          var ra = P.apoapsisFromApsis(a, e);
+          var apsides = P.orbitalElementsFromApsides(rp, ra, mu);
+          var dot = s.x * s.vx + s.y * s.vy;
+          var evx = ((v * v - mu / r) * s.x - dot * s.vx) / mu;
+          var evy = ((v * v - mu / r) * s.y - dot * s.vy) / mu;
+          var omega = e > K.ONE / K.THOUSAND ? Math.atan2(evy, evx) : Math.atan2(s.y, s.x);
+          apsides.eccentricity = e;
+          apsides.omega = omega;
+          return apsides;
+        }
+
+        function accel(s) {
+          var r = magnitude(s.x, s.y);
+          var factor = -mu / (r * r * r);
+          return { x: factor * s.x, y: factor * s.y };
+        }
+
+        function step(s, dt) {
+          var a0 = accel(s);
+          var nx = s.x + s.vx * dt + K.HALF * a0.x * dt * dt;
+          var ny = s.y + s.vy * dt + K.HALF * a0.y * dt * dt;
+          var probe = { x: nx, y: ny, vx: s.vx, vy: s.vy };
+          var a1 = accel(probe);
+          return {
+            x: nx,
+            y: ny,
+            vx: s.vx + K.HALF * (a0.x + a1.x) * dt,
+            vy: s.vy + K.HALF * (a0.y + a1.y) * dt
+          };
+        }
+
+        function rebuildTrail() {
+          elements = derive(state);
+          trail = [];
+          var sample = { x: state.x, y: state.y, vx: state.vx, vy: state.vy };
+          var count = K.THOUSAND + K.HUNDRED * K.TWO;
+          var dt = elements.period / count;
+          var i;
+          for (i = K.ZERO; i < count; i += K.ONE) {
+            trail.push(sample);
+            sample = step(sample, dt);
+          }
+          current = { x: state.x, y: state.y, vx: state.vx, vy: state.vy };
+          accumulator = K.ZERO;
+          inspectedSpeed = magnitude(current.vx, current.vy);
+          updateReadouts();
+        }
+
+        function apsisState(which) {
+          var angle = elements.omega + (which === 'apo' ? K.PI : K.ZERO);
+          var radius = which === 'apo' ? elements.apoapsisRadius : elements.periapsisRadius;
+          var speed = which === 'apo' ? elements.apoapsisVelocity : elements.periapsisVelocity;
+          var sign = state.x * state.vy - state.y * state.vx >= K.ZERO ? K.ONE : -K.ONE;
+          return {
+            x: radius * Math.cos(angle),
+            y: radius * Math.sin(angle),
+            vx: -sign * speed * Math.sin(angle),
+            vy: sign * speed * Math.cos(angle)
+          };
+        }
+
+        function setAnchor() {
+          anchor = apsisState(burnSite.value);
+          speedRange.value = String(K.ONE);
+          angleRange.value = String(K.ZERO);
+          inspectedSpeed = magnitude(anchor.vx, anchor.vy);
+          updateReadouts();
+        }
+
+        function applyControls() {
+          var factor = P.clamp(Number(speedRange.value), Number(speedRange.min), Number(speedRange.max));
+          var delta = P.degreesToRadians(Number(angleRange.value));
+          var c = Math.cos(delta);
+          var s = Math.sin(delta);
+          var vx = anchor.vx * c - anchor.vy * s;
+          var vy = anchor.vx * s + anchor.vy * c;
+          state = { x: anchor.x, y: anchor.y, vx: vx * factor, vy: vy * factor };
+          rebuildTrail();
+          redraw();
+        }
+
+        function updateReadouts() {
+          rpOut.textContent = P.formatDistance(P.altitudeFromRadius(elements.periapsisRadius));
+          raOut.textContent = P.formatDistance(P.altitudeFromRadius(elements.apoapsisRadius));
+          aOut.textContent = P.formatDistance(elements.semiMajorAxis);
+          eOut.textContent = P.formatNumber(elements.eccentricity);
+          speedOut.textContent = P.formatVelocity(magnitude(state.vx, state.vy));
+          angleOut.textContent = P.formatNumber(Number(angleRange.value)) + '°';
+        }
+
+        function worldToScreen(x, y, w, h) {
+          var maxR = elements.apoapsisRadius * (K.ONE + K.ONE / K.TEN);
+          var scale = Math.min(w, h) * (K.HALF - K.ONE / K.TEN) / maxR;
+          return { x: w * K.HALF + x * scale, y: h * K.HALF - y * scale, scale: scale };
+        }
+
+        function drawLabel(ctx, text, x, y, color) {
+          ctx.fillStyle = color;
+          ctx.font = Deck.token('type-label') + ' ' + Deck.token('font-sans');
+          ctx.fillText(text, x, y);
+        }
+
+        function draw(ctx, w, h) {
+          ctx.clearRect(K.ZERO, K.ZERO, w, h);
+          if (!elements || !trail.length) return;
+          var line = Deck.rgba('line-strong', K.HALF);
+          var accent = Deck.rgba('accent', K.ONE);
+          var warm = Deck.rgba('accent-warm', K.ONE);
+          var blue = Deck.rgba('accent-blue', K.ONE);
+          var muted = Deck.rgba('ink-muted', K.ONE);
+          var earth = worldToScreen(K.ZERO, K.ZERO, w, h);
+          var earthRadius = K.R_EARTH * earth.scale;
+          var i;
+          var p;
+
+          ctx.strokeStyle = Deck.rgba('line', K.HALF);
+          ctx.lineWidth = K.ONE;
+          ctx.beginPath();
+          ctx.moveTo(K.ZERO, earth.y);
+          ctx.lineTo(w, earth.y);
+          ctx.stroke();
+
+          ctx.fillStyle = Deck.rgba('accent-blue', K.ONE / K.TEN);
+          ctx.strokeStyle = Deck.rgba('accent-blue', K.HALF);
+          ctx.lineWidth = K.TWO;
+          ctx.beginPath();
+          ctx.arc(earth.x, earth.y, earthRadius, K.ZERO, K.TWO_PI);
+          ctx.fill();
+          ctx.stroke();
+          drawLabel(ctx, '地球', earth.x - earthRadius / K.TWO, earth.y + K.FOUR, blue);
+
+          ctx.strokeStyle = line;
+          ctx.lineWidth = K.TWO;
+          ctx.beginPath();
+          for (i = K.ZERO; i < trail.length; i += K.ONE) {
+            p = worldToScreen(trail[i].x, trail[i].y, w, h);
+            if (i === K.ZERO) ctx.moveTo(p.x, p.y);
+            else ctx.lineTo(p.x, p.y);
+          }
+          ctx.closePath();
+          ctx.stroke();
+
+          var apoIndex = K.ZERO;
+          var maxRadius = K.ZERO;
+          for (i = K.ZERO; i < trail.length; i += K.ONE) {
+            var rr = magnitude(trail[i].x, trail[i].y);
+            if (rr > maxRadius) { maxRadius = rr; apoIndex = i; }
+          }
+          var span = K.TEN * K.TWO;
+          var wedgeIndices = [K.ZERO, apoIndex];
+          var wedgeColors = [warm, blue];
+          var wi;
+          for (wi = K.ZERO; wi < wedgeIndices.length; wi += K.ONE) {
+            ctx.fillStyle = wi === K.ZERO ? Deck.rgba('accent-warm', K.ONE / K.TEN) : Deck.rgba('accent-blue', K.ONE / K.TEN);
+            ctx.beginPath();
+            ctx.moveTo(earth.x, earth.y);
+            for (i = -span; i <= span; i += K.ONE) {
+              var idx = (wedgeIndices[wi] + i + trail.length) % trail.length;
+              p = worldToScreen(trail[idx].x, trail[idx].y, w, h);
+              ctx.lineTo(p.x, p.y);
+            }
+            ctx.closePath();
+            ctx.fill();
+          }
+
+          var peri = apsisState('peri');
+          var apo = apsisState('apo');
+          var pp = worldToScreen(peri.x, peri.y, w, h);
+          var ap = worldToScreen(apo.x, apo.y, w, h);
+          ctx.fillStyle = warm;
+          ctx.beginPath(); ctx.arc(pp.x, pp.y, K.SIX, K.ZERO, K.TWO_PI); ctx.fill();
+          ctx.fillStyle = blue;
+          ctx.beginPath(); ctx.arc(ap.x, ap.y, K.SIX, K.ZERO, K.TWO_PI); ctx.fill();
+          drawLabel(ctx, '近地点 · 快', pp.x + K.TEN, pp.y - K.TEN, warm);
+          drawLabel(ctx, '远地点 · 慢', ap.x + K.TEN, ap.y - K.TEN, blue);
+
+          ctx.save();
+          ctx.setLineDash([K.SIX, K.SIX]);
+          ctx.strokeStyle = Deck.rgba('accent-warm', K.HALF);
+          ctx.beginPath(); ctx.moveTo(pp.x, pp.y); ctx.lineTo(ap.x, ap.y); ctx.stroke();
+          ctx.restore();
+          drawLabel(ctx, '2a  ·  等时间扫过面积相近', earth.x - K.HUNDRED, h - K.TEN * K.TWO, muted);
+
+          var cp = worldToScreen(current.x, current.y, w, h);
+          ctx.strokeStyle = Deck.rgba('accent', K.HALF);
+          ctx.beginPath(); ctx.moveTo(earth.x, earth.y); ctx.lineTo(cp.x, cp.y); ctx.stroke();
+          ctx.fillStyle = accent;
+          ctx.beginPath(); ctx.arc(cp.x, cp.y, K.SIX, K.ZERO, K.TWO_PI); ctx.fill();
+
+          var active = apsisState(burnSite.value);
+          var av = worldToScreen(active.x, active.y, w, h);
+          var velocityScale = Math.min(w, h) / (K.HUNDRED * K.HUNDRED);
+          ctx.strokeStyle = accent;
+          ctx.fillStyle = accent;
+          ctx.lineWidth = K.THREE;
+          Deck.arrow(ctx, av.x, av.y, av.x + state.vx * velocityScale, av.y - state.vy * velocityScale, K.TEN);
+        }
+
+        function redraw() {
+          if (fitHandle) fitHandle.redraw();
+        }
+
+        function nearestTrail(point) {
+          var ctxW = cv.__w;
+          var ctxH = cv.__h;
+          var best = trail[K.ZERO];
+          var bestD = Infinity;
+          var i;
+          for (i = K.ZERO; i < trail.length; i += K.EIGHT) {
+            var p = worldToScreen(trail[i].x, trail[i].y, ctxW, ctxH);
+            var dx = p.x - point.x;
+            var dy = p.y - point.y;
+            var d = dx * dx + dy * dy;
+            if (d < bestD) { bestD = d; best = trail[i]; }
+          }
+          return best;
+        }
+
+        speedRange.addEventListener('input', applyControls);
+        angleRange.addEventListener('input', applyControls);
+        burnSite.addEventListener('change', function () {
+          setAnchor();
+          state = { x: anchor.x, y: anchor.y, vx: anchor.vx, vy: anchor.vy };
+          rebuildTrail();
+          statusOut.textContent = burnSite.value === 'peri' ? '已选近地点。现在增加顺行速度，再让引擎验证。' : '已选远地点。现在增加顺行速度，再观察哪一端升高。';
+          redraw();
+        });
+
+        verifyBtn.addEventListener('click', function () {
+          var raised = Number(speedRange.value) > K.ONE;
+          if (!raised) {
+            speedRange.value = String(K.ONE + K.ONE / K.TEN);
+            applyControls();
+          }
+          var correct = burnSite.value === 'peri';
+          statusOut.textContent = correct ? '验证成立：近地点顺行加速后，另一侧的远地点被抬高。' : '这次抬高的是近地点：要抬高远地点，应在近地点顺行点火。';
+        });
+
+        playBtn.addEventListener('click', function () {
+          paused = !paused;
+          playBtn.setAttribute('aria-pressed', String(paused));
+          playBtn.textContent = paused ? '继续运行' : '暂停观察';
+          statusOut.textContent = paused ? '已暂停，当前位置速度：' + P.formatVelocity(inspectedSpeed) : '继续沿实时积分轨迹运行。';
+        });
+
+        cv.addEventListener('pointerdown', function (event) {
+          var point = Deck.pt(cv, event);
+          var active = apsisState(burnSite.value);
+          var ap = worldToScreen(active.x, active.y, cv.__w, cv.__h);
+          var dx = point.x - ap.x;
+          var dy = point.y - ap.y;
+          if (dx * dx + dy * dy < K.HUNDRED * K.HUNDRED) {
+            dragging = true;
+            cv.setPointerCapture(event.pointerId);
+          } else {
+            current = nearestTrail(point);
+            inspectedSpeed = magnitude(current.vx, current.vy);
+            paused = true;
+            playBtn.setAttribute('aria-pressed', 'true');
+            playBtn.textContent = '继续运行';
+            statusOut.textContent = '已暂停，当前位置速度：' + P.formatVelocity(inspectedSpeed);
+            redraw();
+          }
+        });
+
+        cv.addEventListener('pointermove', function (event) {
+          if (!dragging) return;
+          var point = Deck.pt(cv, event);
+          var active = apsisState(burnSite.value);
+          var ap = worldToScreen(active.x, active.y, cv.__w, cv.__h);
+          var sx = point.x - ap.x;
+          var sy = -(point.y - ap.y);
+          var base = magnitude(anchor.vx, anchor.vy);
+          var velocityScale = Math.min(cv.__w, cv.__h) / (K.HUNDRED * K.HUNDRED);
+          var factor = magnitude(sx, sy) / velocityScale / base;
+          var baseAngle = Math.atan2(anchor.vy, anchor.vx);
+          var angle = Math.atan2(sy, sx) - baseAngle;
+          while (angle > K.PI) angle -= K.TWO_PI;
+          while (angle < -K.PI) angle += K.TWO_PI;
+          speedRange.value = String(P.clamp(factor, Number(speedRange.min), Number(speedRange.max)));
+          angleRange.value = String(P.clamp(P.radiansToDegrees(angle), Number(angleRange.min), Number(angleRange.max)));
+          applyControls();
+        });
+
+        function endDrag(event) {
+          if (!dragging) return;
+          dragging = false;
+          if (cv.hasPointerCapture(event.pointerId)) cv.releasePointerCapture(event.pointerId);
+        }
+        cv.addEventListener('pointerup', endDrag);
+        cv.addEventListener('pointercancel', endDrag);
+
+        elements = derive(state);
+        fitHandle = Deck.autofit(cv, draw);
+        rebuildTrail();
+        setAnchor();
+        redraw();
+
+        Deck.loop(function (time, dtReal) {
+          if (!paused && !dragging) {
+            var simStep = elements.period / (K.THOUSAND + K.HUNDRED * K.TWO);
+            accumulator += dtReal * elements.period / (K.TEN * K.THOUSAND);
+            while (accumulator >= simStep) {
+              current = step(current, simStep);
+              accumulator -= simStep;
+            }
+            inspectedSpeed = magnitude(current.vx, current.vy);
+          }
+          draw(Deck.fit(cv), cv.__w, cv.__h);
+        }, { still: K.THOUSAND });
+      });
+    </script>
+  </div>
+  <script src="assets/base.js"></script>
+  <script src="assets/lec.js"></script>
+</body>
+</html>

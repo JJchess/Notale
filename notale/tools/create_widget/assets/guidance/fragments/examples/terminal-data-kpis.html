@@ -1,0 +1,78 @@
+<style>
+  .desk { background: #17141F; border-radius: 12px; padding: 20px; color: #D6D2DE;
+          font-family: ui-monospace, 'Cascadia Mono', Consolas, monospace; }
+  .bar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap;
+         gap: 10px; margin-bottom: 16px; }
+  .ttl { font-size: 12px; letter-spacing: .12em; text-transform: uppercase; color: #847CA3; }
+  .seg button { background: transparent; border: 1px solid rgba(168,155,190,.3); color: #A89BBE;
+        font: inherit; font-size: 11px; letter-spacing: .08em; padding: 4px 14px; cursor: pointer;
+        transition: border-color .15s, color .15s; }
+  .seg button:first-child { border-radius: 4px 0 0 4px; }
+  .seg button:last-child { border-radius: 0 4px 4px 0; margin-left: -1px; }
+  .seg button:hover { color: #D6D2DE; }
+  .seg button.on { color: #A78BFA; border-color: #A78BFA; position: relative; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; }
+  .kpi { background: #1F1A2D; border-radius: 8px; padding: 14px 14px 10px; }
+  .lbl { font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: #847CA3; }
+  .num { font-size: 26px; font-variant-numeric: tabular-nums; color: #F9FAFB; margin: 6px 0 2px; }
+  .dlt { font-size: 12px; font-variant-numeric: tabular-nums; }
+  .up { color: #34D399; }
+  .dn { color: #F87171; }
+  .spark { display: block; width: 100%; height: 28px; margin-top: 8px;
+           border-top: 1px dotted rgba(168,155,190,.25); }
+  .foot { margin-top: 14px; padding-top: 10px; border-top: 1px dotted rgba(168,155,190,.2);
+          font-size: 11px; color: #847CA3; letter-spacing: .06em; }
+</style>
+<div class="desk">
+  <div class="bar">
+    <span class="ttl">Service pulse</span>
+    <span class="seg">
+      <button id="b7" class="on">7D</button>
+      <button id="b30">30D</button>
+    </span>
+  </div>
+  <div class="grid" id="grid"></div>
+  <div class="foot">UPDATED 09:00 UTC &middot; SOURCE: METRICS-API</div>
+</div>
+<script>
+  const DATA = {
+    7:  [{l:'Requests', v:48210, d:4.2,  s:[28,30,29,34,33,38,41]},
+         {l:'P95 latency &middot; ms', v:212, d:-3.1, s:[40,38,39,35,34,33,31]},
+         {l:'Error rate &middot; %', v:0.42, d:-0.08, s:[30,28,32,26,24,25,22]}],
+    30: [{l:'Requests', v:201480, d:11.6, s:[20,24,23,28,30,34,41]},
+         {l:'P95 latency &middot; ms', v:228, d:1.9,  s:[30,32,31,35,36,34,37]},
+         {l:'Error rate &middot; %', v:0.51, d:0.04, s:[22,24,26,25,28,27,29]}]
+  };
+  const grid = document.getElementById('grid');
+  let shown = DATA[7].map(() => 0);
+  function fmt(k, v) { return k.includes('%') ? v.toFixed(2) : Math.round(v).toLocaleString(); }
+  function render(period) {
+    grid.innerHTML = DATA[period].map((m, i) => {
+      const pts = m.s.map((y, x) => `${x * 100 / (m.s.length - 1)},${44 - y}`).join(' ');
+      const sign = m.d >= 0 ? 'up' : 'dn';
+      const good = m.l === 'Requests' ? sign : (m.d >= 0 ? 'dn' : 'up');
+      return `<div class="kpi"><div class="lbl">${m.l}</div>` +
+        `<div class="num" id="n${i}">${fmt(m.l, shown[i])}</div>` +
+        `<div class="dlt ${good}">${m.d >= 0 ? '&#9650;' : '&#9660;'} ${m.d >= 0 ? '+' : ''}${m.d}${m.l.includes('%') ? ' pp' : '%'}</div>` +
+        `<svg class="spark" viewBox="0 0 100 46" preserveAspectRatio="none">` +
+        `<polyline points="${pts}" fill="none" stroke="#A78BFA" stroke-width="1.5"/></svg></div>`;
+    }).join('');
+    DATA[period].forEach((m, i) => countUp(i, shown[i], m.v, m.l));
+    shown = DATA[period].map(m => m.v);
+  }
+  function countUp(i, from, to, label) {
+    const el = () => document.getElementById('n' + i);
+    const t0 = performance.now();
+    (function tick(now) {
+      const t = Math.min((now - t0) / 400, 1);
+      const v = to - (to - from) * Math.pow(1 - t, 3);
+      const node = el();
+      if (node) node.textContent = fmt(label, v);
+      if (t < 1) requestAnimationFrame(tick);
+    })(t0);
+  }
+  const b7 = document.getElementById('b7'), b30 = document.getElementById('b30');
+  b7.addEventListener('click', () => { b7.classList.add('on'); b30.classList.remove('on'); render(7); });
+  b30.addEventListener('click', () => { b30.classList.add('on'); b7.classList.remove('on'); render(30); });
+  render(7);
+</script>

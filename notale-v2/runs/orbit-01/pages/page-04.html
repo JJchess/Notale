@@ -1,0 +1,509 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+</head>
+<body data-page="04" data-total="20">
+<div id="stage">
+  <main class="page">
+    <header id="lec-header"></header>
+
+    <section class="page-body split min0" aria-label="圆轨道速度实验">
+      <figure class="visual-shell min0" aria-label="圆轨道速度与高度实验场景">
+        <canvas id="orbit-canvas" class="cv-fill no-pan" aria-label="三维地球、卫星轨迹和速度随高度曲线。可在场景右侧拖动卫星改变高度；高度滑块提供相同的键盘操作。"></canvas>
+      </figure>
+
+      <aside class="panel control-panel min0" aria-label="实验说明与控制">
+        <div class="stack-2">
+          <h2 class="panel-title">找出精确匹配</h2>
+          <p class="panel-description">先固定速度换高度，再固定高度换速度。只有当前位置与切向速度互相匹配，轨迹才会闭合成圆。</p>
+        </div>
+
+        <div class="readout-grid is-three" aria-live="polite">
+          <div class="readout">
+            <span class="caption muted">当前高度</span>
+            <strong class="readout-value" id="altitude-readout">—</strong>
+          </div>
+          <div class="readout is-blue">
+            <span class="caption muted">圆轨道速度</span>
+            <strong class="caption blue" id="circular-readout">—</strong>
+          </div>
+          <div class="readout is-warm">
+            <span class="caption muted">绕行周期</span>
+            <strong class="caption warm" id="period-readout">—</strong>
+          </div>
+        </div>
+
+        <div class="control-group">
+          <div class="cluster">
+            <label class="caption muted" for="height-range">卫星高度</label>
+            <output class="caption accent" id="height-value" for="height-range">—</output>
+          </div>
+          <input id="height-range" type="range" aria-describedby="height-hint">
+          <span class="caption faint" id="height-hint">也可拖动场景右侧的卫星。</span>
+        </div>
+
+        <div class="control-group">
+          <div class="cluster">
+            <label class="caption muted" for="speed-range">实际切向速度</label>
+            <output class="caption accent" id="speed-value" for="speed-range">—</output>
+          </div>
+          <input id="speed-range" type="range">
+        </div>
+
+        <div class="cluster" aria-label="对照操作">
+          <button id="hold-speed" type="button">同样速度，换高度</button>
+          <button id="match-speed" type="button">同样高度，匹配速度</button>
+        </div>
+
+        <button id="run-button" class="button-primary" type="button">试跑</button>
+
+        <div class="callout" id="result-box" aria-live="polite">
+          <span class="caption blue" id="result-title">等待试跑</span>
+          <p id="result-copy">调节高度或速度，虚线圆会提示当前位置需要的参考速度。</p>
+        </div>
+      </aside>
+    </section>
+
+    <footer id="lec-footer"></footer>
+  </main>
+
+  <script>
+  document.addEventListener('DOMContentLoaded', function () {
+    'use strict';
+
+    Lec.mount({
+      index: 4,
+      kicker: `CIRCULAR SPEED`,
+      title: `在这个高度，向前跑多快才会绕成圆`,
+      take: `圆轨道不是“没有重力”，而是重力恰好持续改变速度方向。`
+    });
+
+    var K = Lec.K;
+    var P = Lec.P;
+    var header = document.getElementById('lec-header');
+    var footer = document.getElementById('lec-footer');
+    header.className = 'page-header';
+    footer.className = 'page-footer';
+    header.querySelector('.lec-header__top').className = 'cluster';
+    header.querySelector('.lec-header__kicker').className = 'kicker';
+    header.querySelector('.lec-header__index').className = 'page-number';
+    header.querySelector('.lec-header__title').className = 'page-title';
+    footer.querySelector('.lec-footer__take').className = 'prose';
+    footer.querySelector('.lec-footer__topic').className = 'footer-meta';
+
+    var cv = document.getElementById('orbit-canvas');
+    var heightInput = document.getElementById('height-range');
+    var speedInput = document.getElementById('speed-range');
+    var altitudeReadout = document.getElementById('altitude-readout');
+    var circularReadout = document.getElementById('circular-readout');
+    var periodReadout = document.getElementById('period-readout');
+    var heightValue = document.getElementById('height-value');
+    var speedValue = document.getElementById('speed-value');
+    var resultBox = document.getElementById('result-box');
+    var resultTitle = document.getElementById('result-title');
+    var resultCopy = document.getElementById('result-copy');
+
+    var minAltitude = K.LOW_EARTH_ORBIT_ALTITUDE;
+    var maxAltitude = K.ISS_ALTITUDE * K.SIX;
+    var altitudeStep = K.KM * K.TEN;
+    var minRatio = K.TWO / K.THREE;
+    var maxRatio = K.ONE + K.ONE_THIRD;
+    var ratioStep = K.ONE / K.HUNDRED;
+    var altitude = K.ISS_ALTITUDE;
+    var speedRatio = K.ONE;
+    var actualSpeed = P.circularVelocityAtAltitude(altitude);
+    var path = [];
+    var outcome = 'circle';
+    var hasRun = false;
+    var animationStart = K.ZERO;
+    var lastLoopTime = K.ZERO;
+    var ctx = null;
+    var dragging = false;
+
+    heightInput.min = String(minAltitude);
+    heightInput.max = String(maxAltitude);
+    heightInput.step = String(altitudeStep);
+    speedInput.min = String(minRatio);
+    speedInput.max = String(maxRatio);
+    speedInput.step = String(ratioStep);
+
+    function acceleration(x, y) {
+      var radius = Math.sqrt(x * x + y * y);
+      var factor = -K.MU_EARTH / (radius * radius * radius);
+      return { x: factor * x, y: factor * y };
+    }
+
+    function buildPath() {
+      var orbitalRadius = P.radiusAtAltitude(altitude);
+      var referencePeriod = P.orbitalPeriodAtAltitude(altitude);
+      var steps = K.HUNDRED * K.SIX;
+      var duration = referencePeriod * (K.ONE + K.ONE / K.FOUR);
+      var dt = duration / steps;
+      var x = orbitalRadius;
+      var y = K.ZERO;
+      var vx = K.ZERO;
+      var vy = actualSpeed;
+      var a = acceleration(x, y);
+      var earthRadius = P.radiusAtAltitude(K.ZERO);
+      var minRadius = orbitalRadius;
+      var maxRadius = orbitalRadius;
+      var collided = false;
+      var i;
+
+      path = [{ x: x, y: y }];
+      for (i = K.ONE; i <= steps; i += K.ONE) {
+        var nx = x + vx * dt + K.HALF * a.x * dt * dt;
+        var ny = y + vy * dt + K.HALF * a.y * dt * dt;
+        var na = acceleration(nx, ny);
+        vx += K.HALF * (a.x + na.x) * dt;
+        vy += K.HALF * (a.y + na.y) * dt;
+        x = nx;
+        y = ny;
+        a = na;
+        var radius = Math.sqrt(x * x + y * y);
+        minRadius = Math.min(minRadius, radius);
+        maxRadius = Math.max(maxRadius, radius);
+        path.push({ x: x, y: y });
+        if (radius <= earthRadius) {
+          collided = true;
+          break;
+        }
+      }
+
+      if (collided) {
+        outcome = 'impact';
+      } else if (Math.abs(actualSpeed - P.circularVelocityAtAltitude(altitude)) <= P.circularVelocityAtAltitude(altitude) / K.HUNDRED) {
+        outcome = 'circle';
+      } else {
+        outcome = 'ellipse';
+      }
+    }
+
+    function setResult() {
+      resultBox.className = 'callout';
+      if (!hasRun) {
+        resultTitle.textContent = '等待试跑';
+        resultCopy.textContent = '调节高度或速度，虚线圆会提示当前位置需要的参考速度。';
+        return;
+      }
+      if (outcome === 'circle') {
+        resultTitle.textContent = '恰好匹配 · 圆轨道';
+        resultCopy.textContent = '速度大小近似不变，重力持续把速度方向转向地心。';
+      } else if (outcome === 'impact') {
+        resultBox.className = 'callout is-danger';
+        resultTitle.textContent = '速度偏低 · 撞地轨道';
+        resultCopy.textContent = '同一高度并不保证留在轨道；切向速度不足，轨迹会穿过地表。';
+      } else {
+        resultBox.className = 'callout is-warm';
+        resultTitle.textContent = actualSpeed > P.circularVelocityAtAltitude(altitude) ? '速度偏高 · 椭圆轨道' : '速度未匹配 · 椭圆轨道';
+        resultCopy.textContent = '轨迹不再保持同一半径；本页只把它作为“没有匹配”的结果。';
+      }
+    }
+
+    function sync(rebuild) {
+      var circular = P.circularVelocityAtAltitude(altitude);
+      var period = P.orbitalPeriodAtAltitude(altitude);
+      if (rebuild) {
+        buildPath();
+      }
+      heightInput.value = String(altitude);
+      speedInput.value = String(actualSpeed / circular);
+      altitudeReadout.textContent = P.formatDistance(altitude);
+      circularReadout.textContent = P.formatVelocity(circular);
+      periodReadout.textContent = P.formatTime(period);
+      heightValue.textContent = P.formatDistance(altitude);
+      speedValue.textContent = P.formatVelocity(actualSpeed);
+      setResult();
+      if (Deck.reduced()) {
+        draw(K.ZERO);
+      }
+    }
+
+    function canvasFont(token, familyToken) {
+      return Deck.token(token) + ' ' + Deck.token(familyToken);
+    }
+
+    function project(point, cx, cy, scale, tilt) {
+      return {
+        x: cx + point.x * scale,
+        y: cy + point.y * scale * tilt
+      };
+    }
+
+    function draw(t) {
+      if (!ctx || !cv.__w || !cv.__h) {
+        return;
+      }
+      var w = cv.__w;
+      var h = cv.__h;
+      var ink = Deck.token('ink');
+      var muted = Deck.token('ink-muted');
+      var faint = Deck.token('ink-faint');
+      var line = Deck.token('line');
+      var lineStrong = Deck.token('line-strong');
+      var accent = Deck.token('accent');
+      var blue = Deck.token('accent-blue');
+      var warm = Deck.token('accent-warm');
+      var danger = Deck.token('danger');
+      var surface = Deck.token('surface-2');
+      var inset = Deck.token('surface-inset');
+      var cx = w * (K.HALF + K.ONE / K.TEN);
+      var cy = h * K.HALF;
+      var earthScreenRadius = Math.min(w, h) / K.FOUR;
+      var sceneMaxRadius = P.radiusAtAltitude(maxAltitude);
+      var scale = earthScreenRadius / P.radiusAtAltitude(K.ZERO);
+      var maxScale = (w - cx - K.SIX * K.TEN) / sceneMaxRadius;
+      scale = Math.min(scale, maxScale);
+      var tilt = K.HALF;
+      var earthR = P.radiusAtAltitude(K.ZERO) * scale;
+      var orbitR = P.radiusAtAltitude(altitude) * scale;
+      var chartX = K.THREE * K.EIGHT;
+      var chartY = K.THREE * K.EIGHT;
+      var chartW = w / K.THREE;
+      var chartH = h / K.THREE;
+      var i;
+
+      ctx.clearRect(K.ZERO, K.ZERO, w, h);
+
+      ctx.fillStyle = Deck.rgba('accent-blue', K.ONE / K.TEN);
+      ctx.beginPath();
+      ctx.ellipse(cx, cy + earthR / K.THREE, earthR * (K.ONE + K.ONE / K.TEN), earthR * K.HALF, K.ZERO, K.ZERO, K.TWO_PI);
+      ctx.fill();
+
+      ctx.strokeStyle = Deck.rgba('accent', K.HALF);
+      ctx.lineWidth = K.TWO;
+      ctx.setLineDash([K.EIGHT, K.SIX]);
+      ctx.beginPath();
+      ctx.ellipse(cx, cy, orbitR, orbitR * tilt, K.ZERO, K.ZERO, K.TWO_PI);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      if (path.length > K.ONE) {
+        ctx.strokeStyle = outcome === 'impact' ? danger : (outcome === 'circle' ? accent : warm);
+        ctx.lineWidth = K.THREE;
+        ctx.beginPath();
+        for (i = K.ZERO; i < path.length; i += K.ONE) {
+          var q = project(path[i], cx, cy, scale, tilt);
+          if (i === K.ZERO) {
+            ctx.moveTo(q.x, q.y);
+          } else {
+            ctx.lineTo(q.x, q.y);
+          }
+        }
+        ctx.stroke();
+      }
+
+      ctx.fillStyle = surface;
+      ctx.strokeStyle = blue;
+      ctx.lineWidth = K.TWO;
+      ctx.beginPath();
+      ctx.arc(cx, cy, earthR, K.ZERO, K.TWO_PI);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.strokeStyle = Deck.rgba('accent-blue', K.HALF);
+      ctx.lineWidth = K.ONE;
+      for (i = -K.TWO; i <= K.TWO; i += K.ONE) {
+        ctx.beginPath();
+        ctx.ellipse(cx, cy + i * earthR / K.THREE, Math.sqrt(Math.max(K.ZERO, earthR * earthR - (i * earthR / K.THREE) * (i * earthR / K.THREE))), earthR / K.EIGHT, K.ZERO, K.ZERO, K.TWO_PI);
+        ctx.stroke();
+      }
+      ctx.beginPath();
+      ctx.ellipse(cx, cy, earthR / K.THREE, earthR, K.ZERO, K.ZERO, K.TWO_PI);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.ellipse(cx, cy, earthR * (K.TWO / K.THREE), earthR, K.ZERO, K.ZERO, K.TWO_PI);
+      ctx.stroke();
+
+      var progress = hasRun && path.length ? ((t - animationStart) / (K.THOUSAND * K.SIX)) % K.ONE : K.ZERO;
+      var satelliteIndex = Math.min(path.length - K.ONE, Math.floor(progress * path.length));
+      var satPoint = project(path[satelliteIndex] || { x: P.radiusAtAltitude(altitude), y: K.ZERO }, cx, cy, scale, tilt);
+      ctx.fillStyle = outcome === 'impact' ? danger : accent;
+      ctx.strokeStyle = ink;
+      ctx.lineWidth = K.TWO;
+      ctx.beginPath();
+      ctx.arc(satPoint.x, satPoint.y, K.EIGHT, K.ZERO, K.TWO_PI);
+      ctx.fill();
+      ctx.stroke();
+
+      var initialSatX = cx + orbitR;
+      ctx.fillStyle = muted;
+      ctx.font = canvasFont('type-label', 'font-sans');
+      ctx.textAlign = 'right';
+      ctx.fillText('拖动高度', initialSatX - K.SIX * K.TWO, cy - K.THREE * K.SIX);
+      ctx.strokeStyle = muted;
+      ctx.fillStyle = muted;
+      Deck.arrow(ctx, initialSatX - K.TEN * K.SIX, cy - K.TWO * K.SIX, initialSatX - K.TWO * K.SIX, cy - K.TWO * K.SIX, K.SIX);
+
+      ctx.fillStyle = inset;
+      ctx.strokeStyle = line;
+      ctx.lineWidth = K.ONE;
+      Deck.rr(ctx, chartX, chartY, chartW, chartH, K.TEN);
+      ctx.fill();
+      ctx.stroke();
+
+      var pad = K.THREE * K.TEN;
+      var plotX = chartX + pad * (K.ONE + K.HALF);
+      var plotY = chartY + pad;
+      var plotW = chartW - pad * K.TWO;
+      var plotH = chartH - pad * (K.ONE + K.HALF);
+      ctx.strokeStyle = lineStrong;
+      ctx.beginPath();
+      ctx.moveTo(plotX, plotY);
+      ctx.lineTo(plotX, plotY + plotH);
+      ctx.lineTo(plotX + plotW, plotY + plotH);
+      ctx.stroke();
+
+      var maxV = P.circularVelocityAtAltitude(minAltitude);
+      var minV = P.circularVelocityAtAltitude(maxAltitude);
+      ctx.strokeStyle = blue;
+      ctx.lineWidth = K.TWO;
+      ctx.beginPath();
+      for (i = K.ZERO; i <= K.HUNDRED; i += K.ONE) {
+        var f = i / K.HUNDRED;
+        var sampleAltitude = Deck.lerp(minAltitude, maxAltitude, f);
+        var sampleV = P.circularVelocityAtAltitude(sampleAltitude);
+        var px = plotX + f * plotW;
+        var py = plotY + (maxV - sampleV) / (maxV - minV) * plotH;
+        if (i === K.ZERO) {
+          ctx.moveTo(px, py);
+        } else {
+          ctx.lineTo(px, py);
+        }
+      }
+      ctx.stroke();
+
+      var currentF = (altitude - minAltitude) / (maxAltitude - minAltitude);
+      var currentV = P.circularVelocityAtAltitude(altitude);
+      var currentX = plotX + currentF * plotW;
+      var currentY = plotY + (maxV - currentV) / (maxV - minV) * plotH;
+      ctx.fillStyle = accent;
+      ctx.beginPath();
+      ctx.arc(currentX, currentY, K.SIX, K.ZERO, K.TWO_PI);
+      ctx.fill();
+
+      ctx.font = canvasFont('type-tick', 'font-mono');
+      ctx.fillStyle = muted;
+      ctx.textAlign = 'left';
+      ctx.fillText(P.formatVelocity(maxV), plotX, chartY + K.TWO * K.TEN);
+      ctx.fillText(P.formatDistance(minAltitude), plotX, plotY + plotH + K.TWO * K.TEN);
+      ctx.textAlign = 'right';
+      ctx.fillText(P.formatDistance(maxAltitude), plotX + plotW, plotY + plotH + K.TWO * K.TEN);
+      ctx.fillStyle = faint;
+      ctx.fillText('速度随高度', chartX + chartW - K.TWO * K.TEN, chartY + K.TWO * K.TEN);
+    }
+
+    function refit() {
+      ctx = Deck.fit(cv);
+      draw(K.ZERO);
+    }
+
+    heightInput.addEventListener('input', function () {
+      altitude = P.clamp(Number(heightInput.value), minAltitude, maxAltitude);
+      actualSpeed = P.circularVelocityAtAltitude(altitude) * speedRatio;
+      hasRun = false;
+      sync(true);
+    });
+
+    speedInput.addEventListener('input', function () {
+      speedRatio = P.clamp(Number(speedInput.value), minRatio, maxRatio);
+      actualSpeed = P.circularVelocityAtAltitude(altitude) * speedRatio;
+      hasRun = false;
+      sync(true);
+    });
+
+    document.getElementById('hold-speed').addEventListener('click', function () {
+      altitude += (maxAltitude - minAltitude) / K.FOUR;
+      if (altitude > maxAltitude) {
+        altitude = minAltitude;
+      }
+      speedRatio = actualSpeed / P.circularVelocityAtAltitude(altitude);
+      speedRatio = P.clamp(speedRatio, minRatio, maxRatio);
+      actualSpeed = P.circularVelocityAtAltitude(altitude) * speedRatio;
+      hasRun = false;
+      sync(true);
+    });
+
+    document.getElementById('match-speed').addEventListener('click', function () {
+      speedRatio = K.ONE;
+      actualSpeed = P.circularVelocityAtAltitude(altitude);
+      hasRun = false;
+      sync(true);
+    });
+
+    document.getElementById('run-button').addEventListener('click', function () {
+      hasRun = true;
+      animationStart = lastLoopTime;
+      buildPath();
+      setResult();
+      if (Deck.reduced()) {
+        draw(K.ZERO);
+      }
+    });
+
+    function altitudeFromPoint(point) {
+      var w = cv.__w;
+      var cx = w * (K.HALF + K.ONE / K.TEN);
+      var earthScreenRadius = Math.min(cv.__w, cv.__h) / K.FOUR;
+      var scale = earthScreenRadius / P.radiusAtAltitude(K.ZERO);
+      var maxScale = (w - cx - K.SIX * K.TEN) / P.radiusAtAltitude(maxAltitude);
+      scale = Math.min(scale, maxScale);
+      var radius = Math.max(P.radiusAtAltitude(minAltitude), (point.x - cx) / scale);
+      return P.clamp(P.altitudeFromRadius(radius), minAltitude, maxAltitude);
+    }
+
+    cv.addEventListener('pointerdown', function (event) {
+      var point = Deck.pt(cv, event);
+      if (point.x < cv.__w * K.HALF) {
+        return;
+      }
+      dragging = true;
+      cv.setPointerCapture(event.pointerId);
+      altitude = altitudeFromPoint(point);
+      actualSpeed = P.circularVelocityAtAltitude(altitude) * speedRatio;
+      hasRun = false;
+      sync(true);
+    });
+
+    cv.addEventListener('pointermove', function (event) {
+      if (!dragging) {
+        return;
+      }
+      var point = Deck.pt(cv, event);
+      altitude = altitudeFromPoint(point);
+      actualSpeed = P.circularVelocityAtAltitude(altitude) * speedRatio;
+      hasRun = false;
+      sync(true);
+    });
+
+    function endDrag(event) {
+      if (!dragging) {
+        return;
+      }
+      dragging = false;
+      if (cv.hasPointerCapture(event.pointerId)) {
+        cv.releasePointerCapture(event.pointerId);
+      }
+    }
+
+    cv.addEventListener('pointerup', endDrag);
+    cv.addEventListener('pointercancel', endDrag);
+
+    buildPath();
+    refit();
+    Deck.onResize(refit);
+    sync(false);
+    Deck.loop(function (t) {
+      lastLoopTime = t;
+      draw(t);
+    }, { still: K.ZERO });
+  });
+  </script>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+</body>
+</html>

@@ -108,6 +108,27 @@ def build_summary(run_dir: Path, state: RunState, status: str, error: str = "") 
     model: dict[str, Any] = {}
     planner: dict[str, Any] = {"groups": 0, "peak_group_concurrency": 0}
     style: dict[str, Any] = {}
+    components: dict[str, Any] = {
+        "created": 0,
+        "failed": 0,
+        "model_calls": 0,
+        "model_duration_ms": 0,
+        "repair_calls": 0,
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "by_kind": {},
+    }
+    inspection: dict[str, Any] = {
+        "renders": 0,
+        "render_failures": 0,
+        "rejected": 0,
+        "submitted": 0,
+        "model_calls": 0,
+        "model_duration_ms": 0,
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "revisions": 0,
+    }
     active_planner_groups = 0
     if path.is_file():
         for line in path.read_text(encoding="utf-8").splitlines():
@@ -123,18 +144,48 @@ def build_summary(run_dir: Path, state: RunState, status: str, error: str = "") 
                 model = dict(payload.get("model") or {})
             elif kind == "llm.call.started":
                 calls += 1
+                if agent.startswith("component:"):
+                    components["model_calls"] += 1
+                elif agent.startswith("inspection:"):
+                    inspection["model_calls"] += 1
             elif kind == "llm.call.completed":
                 call_duration_ms += int(event.get("duration_ms", 0) or 0)
+                if agent.startswith("component:"):
+                    components["model_duration_ms"] += int(event.get("duration_ms", 0) or 0)
+                elif agent.startswith("inspection:"):
+                    inspection["model_duration_ms"] += int(event.get("duration_ms", 0) or 0)
             elif kind == "agent.turn":
                 bucket = agents.setdefault(agent, {"turns": 0, "tools": 0, "input_tokens": 0, "output_tokens": 0})
                 bucket["turns"] += 1
                 bucket["input_tokens"] += int(payload.get("input_tokens", 0) or 0)
                 bucket["output_tokens"] += int(payload.get("output_tokens", 0) or 0)
-                if page_number:
+                if page_number and not agent.startswith(("component:", "inspection:")):
                     page_bucket = page_metrics.setdefault(page_number, {})
                     page_bucket["turns"] = int(page_bucket.get("turns", 0)) + 1
                     page_bucket["input_tokens"] = int(page_bucket.get("input_tokens", 0)) + int(payload.get("input_tokens", 0) or 0)
                     page_bucket["output_tokens"] = int(page_bucket.get("output_tokens", 0)) + int(payload.get("output_tokens", 0) or 0)
+                if agent.startswith("component:"):
+                    components["input_tokens"] += int(payload.get("input_tokens", 0) or 0)
+                    components["output_tokens"] += int(payload.get("output_tokens", 0) or 0)
+                    if page_number:
+                        component_usage = page_metrics.setdefault(page_number, {}).setdefault(
+                            "component", {}
+                        )
+                        component_usage["input_tokens"] = int(component_usage.get("input_tokens", 0)) + int(payload.get("input_tokens", 0) or 0)
+                        component_usage["output_tokens"] = int(component_usage.get("output_tokens", 0)) + int(payload.get("output_tokens", 0) or 0)
+                elif agent.startswith("inspection:"):
+                    inspection["input_tokens"] += int(payload.get("input_tokens", 0) or 0)
+                    inspection["output_tokens"] += int(payload.get("output_tokens", 0) or 0)
+                    if page_number:
+                        inspection_usage = page_metrics.setdefault(page_number, {}).setdefault(
+                            "inspection", {}
+                        )
+                        inspection_usage["input_tokens"] = int(
+                            inspection_usage.get("input_tokens", 0)
+                        ) + int(payload.get("input_tokens", 0) or 0)
+                        inspection_usage["output_tokens"] = int(
+                            inspection_usage.get("output_tokens", 0)
+                        ) + int(payload.get("output_tokens", 0) or 0)
             elif kind in {"agent.completed", "agent.blocked", "agent.failed"}:
                 terminal_usage[agent] = (
                     int(payload.get("input_tokens", 0) or 0),
@@ -158,7 +209,7 @@ def build_summary(run_dir: Path, state: RunState, status: str, error: str = "") 
                 active += 1
                 peak = max(peak, active)
                 page_metrics.setdefault(page_number, {}).update({
-                    "skills": payload.get("skills", []),
+                    "style": payload.get("style", {}),
                     "tools": payload.get("tools", []),
                     "page_type": payload.get("page_type", ""),
                     "composition": payload.get("composition", ""),
@@ -169,6 +220,74 @@ def build_summary(run_dir: Path, state: RunState, status: str, error: str = "") 
                     "builder_duration_ms": int(event.get("duration_ms", 0) or 0),
                     "builder_result": kind.removeprefix("builder."),
                 })
+            elif kind == "component.repair.started":
+                components["repair_calls"] += 1
+            elif kind == "component.validated":
+                components["created"] += 1
+                component_kind = str(payload.get("component_kind", "unknown"))
+                bucket = components["by_kind"].setdefault(
+                    component_kind,
+                    {"created": 0, "model_calls": 0, "repair_calls": 0, "duration_ms": 0},
+                )
+                bucket["created"] += 1
+                bucket["model_calls"] += int(payload.get("model_calls", 0) or 0)
+                bucket["repair_calls"] += int(payload.get("repair_calls", 0) or 0)
+                bucket["duration_ms"] += int(event.get("duration_ms", 0) or 0)
+                if page_number:
+                    component_usage = page_metrics.setdefault(page_number, {}).setdefault(
+                        "component", {}
+                    )
+                    component_usage.update({
+                        "kind": component_kind,
+                        "component_id": payload.get("component_id", ""),
+                        "model_calls": int(payload.get("model_calls", 0) or 0),
+                        "repair_calls": int(payload.get("repair_calls", 0) or 0),
+                        "duration_ms": int(event.get("duration_ms", 0) or 0),
+                    })
+            elif kind == "component.failed":
+                components["failed"] += 1
+            elif kind == "inspection.rendered":
+                inspection["renders"] += 1
+                if page_number:
+                    page_metrics.setdefault(page_number, {}).setdefault(
+                        "inspection", {}
+                    ).update({
+                        "status": "rendered",
+                        "rounds": int(payload.get("round", 0) or 0),
+                        "latest_revision": int(payload.get("revision", 0) or 0),
+                    })
+            elif kind == "inspection.failed":
+                inspection["render_failures"] += 1
+                if page_number:
+                    page_metrics.setdefault(page_number, {}).setdefault(
+                        "inspection", {}
+                    ).update({
+                        "status": "failed",
+                        "reason": payload.get("error", ""),
+                    })
+            elif kind == "inspection.rejected":
+                inspection["rejected"] += 1
+            elif kind == "inspection.revised":
+                inspection["revisions"] += 1
+                if page_number:
+                    page_metrics.setdefault(page_number, {}).setdefault(
+                        "inspection", {}
+                    ).update({
+                        "status": "revised",
+                        "rounds": int(payload.get("round", 0) or 0),
+                        "latest_revision": int(payload.get("output_revision", 0) or 0),
+                        "revisions": int(payload.get("inspector_revisions", 0) or 0),
+                    })
+            elif kind == "inspection.accepted":
+                inspection["submitted"] += 1
+                if page_number:
+                    page_metrics.setdefault(page_number, {}).setdefault(
+                        "inspection", {}
+                    ).update({
+                        "status": "submitted",
+                        "rounds": int(payload.get("rounds", 0) or 0),
+                        "latest_revision": int(payload.get("revision", 0) or 0),
+                    })
             elif kind == "planner.group.started":
                 planner["groups"] += 1
                 active_planner_groups += 1
@@ -177,16 +296,27 @@ def build_summary(run_dir: Path, state: RunState, status: str, error: str = "") 
                 )
             elif kind in {"planner.group.completed", "planner.group.failed"}:
                 active_planner_groups = max(0, active_planner_groups - 1)
-            elif kind == "style.created":
+            elif kind == "style.generated":
+                # Only the generated path calls a model; naming a pack skips this.
                 style.update({
-                    "name": payload.get("name", ""),
-                    "sha256": payload.get("sha256", ""),
                     "description": payload.get("description", ""),
                     "body_chars": int(payload.get("body_chars", 0) or 0),
                     "token_keys": payload.get("token_keys", []),
                     "compositions": payload.get("compositions", []),
                     "duration_ms": int(event.get("duration_ms", 0) or 0),
                 })
+            elif kind == "style.completed":
+                style.update({
+                    "name": payload.get("name", ""),
+                    "sha256": payload.get("sha256", ""),
+                    "pack_id": payload.get("pack_id", ""),
+                    "pack_version": payload.get("version", ""),
+                })
+            elif kind == "style.pack.selected":
+                style["pack_source"] = payload.get("source", "")
+            elif kind == "style.pack.built":
+                style["pack_source"] = "generated"
+                style["parent_pack_id"] = payload.get("parent_id", "")
             elif kind == "style.started":
                 style["request_bytes"] = int(payload.get("request_bytes", 0) or 0)
             elif kind == "planner.plan.completed":
@@ -209,7 +339,9 @@ def build_summary(run_dir: Path, state: RunState, status: str, error: str = "") 
     for number, metrics in page_metrics.items():
         usage = terminal_usage.get(f"builder:p{number}")
         if usage is not None:
-            metrics["input_tokens"], metrics["output_tokens"] = usage
+            metrics["builder_input_tokens"], metrics["builder_output_tokens"] = usage
+            metrics["input_tokens"] = usage[0]
+            metrics["output_tokens"] = usage[1]
 
     pages = []
     for number, page in enumerate(state.pages, 1):
@@ -236,6 +368,8 @@ def build_summary(run_dir: Path, state: RunState, status: str, error: str = "") 
         "peak_builder_concurrency": peak,
         "planner": planner,
         "style": style,
+        "components": components,
+        "inspection": inspection,
         "stages_ms": stages,
         "agents": agents,
         "pages": pages,

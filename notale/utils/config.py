@@ -22,6 +22,7 @@ class ModelConfig(StrictModel):
     base_url: str
     name: str
     api_key_env: str
+    wire_api: Literal["chat_completions", "responses"]
     http_timeout_sec: PositiveFloat
     max_output_tokens: PositiveInt
     reasoning_effort: Literal["low", "medium", "high", "max", "xhigh"]
@@ -58,6 +59,8 @@ class ToolsConfig(StrictModel):
     run_js_max_source_chars: PositiveInt
     run_js_max_output_chars: PositiveInt
     run_js_max_calls: PositiveInt
+    node_process_concurrency: PositiveInt
+    node_timeout_retries: int = Field(ge=0, le=2)
 
 
 class MediaConfig(StrictModel):
@@ -71,15 +74,41 @@ class MediaConfig(StrictModel):
     generation_endpoint: str
     generation_api_key_env: str
     generation_model: str
+    backend: str = "seedream"
     maximum_find_per_page: PositiveInt
     maximum_make_per_page: PositiveInt
     maximum_find_per_run: PositiveInt
     maximum_make_per_run: PositiveInt
 
 
+class ComponentsConfig(StrictModel):
+    min_width_px: PositiveInt
+    max_width_px: PositiveInt
+    min_height_px: PositiveInt
+    max_height_px: PositiveInt
+    max_output_tokens: PositiveInt
+    validation_timeout_sec: PositiveFloat
+    validation_error_max_chars: PositiveInt
+    maximum_repair_calls: int = Field(ge=0, le=1)
+
+
+class InspectionConfig(StrictModel):
+    browser_concurrency: PositiveInt
+    browser_timeout_sec: PositiveFloat
+    render_settle_ms: int = Field(ge=0, le=5000)
+    browser_path_env: str = Field(min_length=1)
+    maximum_revisions: int = Field(ge=0, le=10)
+
+
 class PreviewConfig(StrictModel):
     host: str
     port: int = Field(ge=1, le=65535)
+
+
+class StyleConfig(StrictModel):
+    default_pack: str = Field(min_length=1)
+    allow_generation: bool = True
+    exemplar_pages: int = Field(ge=0, le=8)
 
 
 class NotaleConfig(StrictModel):
@@ -88,7 +117,10 @@ class NotaleConfig(StrictModel):
     pipeline: PipelineConfig
     tools: ToolsConfig
     media: MediaConfig
+    components: ComponentsConfig
+    inspection: InspectionConfig
     preview: PreviewConfig
+    style: StyleConfig
 
     @model_validator(mode="after")
     def validate_relationships(self) -> "NotaleConfig":
@@ -98,6 +130,10 @@ class NotaleConfig(StrictModel):
             raise ValueError("media find page budget exceeds run budget")
         if self.media.maximum_make_per_page > self.media.maximum_make_per_run:
             raise ValueError("media make page budget exceeds run budget")
+        if self.components.min_width_px > self.components.max_width_px:
+            raise ValueError("component minimum width exceeds maximum width")
+        if self.components.min_height_px > self.components.max_height_px:
+            raise ValueError("component minimum height exceeds maximum height")
         return self
 
 

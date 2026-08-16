@@ -1,0 +1,677 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+</head>
+<body data-page="03" data-total="24">
+  <div id="stage">
+    <style>
+      #stage #page-content {
+        inline-size: 100%;
+        block-size: 100%;
+      }
+      #stage .hebb-layout {
+        --stage-share: 1.72fr;
+        --cards-share: 0.72fr;
+      }
+      #stage .hebb-workbench {
+        position: relative;
+        display: grid;
+        grid-template-rows: auto minmax(0, 1fr) auto;
+        gap: var(--sp-4);
+        block-size: 100%;
+        min-inline-size: 0;
+        min-block-size: 0;
+        padding: var(--sp-5);
+        overflow: clip;
+        border: 1px solid var(--line-strong);
+        border-radius: var(--radius-xl);
+        background:
+          linear-gradient(145deg, rgb(255 255 255 / 0.045), transparent 52%),
+          var(--surface-1);
+        box-shadow: var(--shadow-md);
+      }
+      #stage .bench-head,
+      #stage .bench-foot,
+      #stage .status-line,
+      #stage .legend-line {
+        display: flex;
+        min-inline-size: 0;
+        align-items: center;
+        justify-content: space-between;
+        gap: var(--sp-4);
+      }
+      #stage .bench-title {
+        font-size: var(--fs-h3);
+      }
+      #stage .status-line {
+        justify-content: flex-start;
+        color: var(--text-muted);
+        font-size: var(--fs-label);
+      }
+      #stage .pulse-key {
+        display: inline-flex;
+        align-items: center;
+        gap: var(--sp-2);
+        white-space: nowrap;
+      }
+      #stage .pulse-dot {
+        inline-size: 14px;
+        block-size: 14px;
+        border-radius: 50%;
+        background: var(--secondary);
+      }
+      #stage .pulse-dot--post {
+        border-radius: var(--radius-sm);
+        background: var(--warm);
+      }
+      #stage .canvas-shell {
+        position: relative;
+        min-inline-size: 0;
+        min-block-size: 0;
+        overflow: clip;
+        border: 1px solid var(--line);
+        border-radius: var(--radius-lg);
+        background:
+          linear-gradient(rgb(41 66 95 / 0.24) 1px, transparent 1px),
+          linear-gradient(90deg, rgb(41 66 95 / 0.24) 1px, transparent 1px),
+          var(--surface-control);
+        background-size: 40px 40px;
+      }
+      #stage #hebb-canvas {
+        display: block;
+        inline-size: 100%;
+        block-size: 100%;
+        cursor: grab;
+      }
+      #stage #hebb-canvas:active {
+        cursor: grabbing;
+      }
+      #stage #hebb-canvas:focus-visible {
+        outline: 3px solid var(--focus);
+        outline-offset: -5px;
+      }
+      #stage .round-state {
+        position: absolute;
+        inset-block-start: var(--sp-4);
+        inset-inline-start: var(--sp-4);
+        pointer-events: none;
+      }
+      #stage .bench-foot {
+        color: var(--text-muted);
+        font-size: var(--fs-body-sm);
+        line-height: var(--lh-body);
+      }
+      #stage .weight-rail {
+        inline-size: 280px;
+        flex: 0 0 auto;
+      }
+      #stage .hebb-cards {
+        justify-content: space-between;
+      }
+      #stage .mode-card {
+        display: flex;
+        flex-direction: column;
+        gap: var(--sp-4);
+      }
+      #stage .mode-grid {
+        display: grid;
+        gap: var(--sp-3);
+      }
+      #stage .mode-grid button {
+        inline-size: 100%;
+        justify-content: space-between;
+      }
+      #stage .mode-grid button[aria-pressed="true"] {
+        border-color: var(--accent);
+        background: var(--accent-soft);
+        color: var(--accent-strong);
+      }
+      #stage .summary-list {
+        display: grid;
+        gap: var(--sp-3);
+      }
+      #stage .summary-row {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        align-items: center;
+        gap: var(--sp-3);
+        padding-block-end: var(--sp-2);
+        border-block-end: 1px solid var(--line);
+      }
+      #stage .summary-row:last-child {
+        padding-block-end: 0;
+        border-block-end: 0;
+      }
+      #stage .summary-name {
+        color: var(--text-muted);
+        font-size: var(--fs-label);
+      }
+      #stage .summary-value {
+        color: var(--text-strong);
+        font-size: var(--fs-body-lg);
+        font-weight: var(--weight-bold);
+        font-variant-numeric: tabular-nums;
+      }
+      #stage .history-card p,
+      #stage .boundary-card p {
+        color: var(--text-muted);
+      }
+      #stage .history-mark {
+        display: block;
+        margin-block-end: var(--sp-2);
+        color: var(--accent-strong);
+        font-size: var(--fs-body-sm);
+        font-weight: var(--weight-semibold);
+      }
+      #stage .boundary-card {
+        border-inline-start-color: var(--warm);
+      }
+      @media (prefers-reduced-motion: reduce) {
+        #stage button { transition: none; }
+      }
+    </style>
+
+    <main id="page-content" class="min0" aria-label="Hebb 局部学习工作台">
+      <section class="stage-cards hebb-layout min0">
+        <div class="stage-cards__stage hebb-workbench min0">
+          <div class="bench-head">
+            <div>
+              <h2 class="bench-title">突触工作台</h2>
+              <div class="status-line" aria-label="脉冲图例">
+                <span class="pulse-key"><span class="pulse-dot"></span>突触前活动</span>
+                <span class="pulse-key"><span class="pulse-dot pulse-dot--post"></span>突触后活动</span>
+              </div>
+            </div>
+            <output id="weight-badge" class="badge badge--accent" aria-live="polite">连接强度</output>
+          </div>
+
+          <div class="canvas-shell min0">
+            <canvas id="hebb-canvas" class="cv-fill no-pan" tabindex="0" role="application" aria-label="可拖拽的突触前与突触后脉冲。方向键移动当前脉冲，空格切换脉冲，回车重放当前经验。"></canvas>
+            <span id="round-state" class="round-state badge">等待选择经验</span>
+          </div>
+
+          <div class="bench-foot">
+            <span>拖动脉冲改变相遇时机；碰撞与连接拉力由物理引擎实时计算。</span>
+            <div class="weight-rail">
+              <div class="meter" aria-hidden="true"><div id="weight-meter" class="meter__fill"></div></div>
+            </div>
+          </div>
+        </div>
+
+        <aside class="stage-cards__cards hebb-cards min0" aria-label="经验控制与解释">
+          <section class="card card--raised mode-card">
+            <div class="card-header">
+              <h3 class="card-title">制造一轮经验</h3>
+              <button id="reset-button" type="button" class="button button--ghost">重置</button>
+            </div>
+            <div class="mode-grid" role="group" aria-label="活动经验">
+              <button type="button" class="button button--primary" data-mode="together" aria-pressed="false"><span>总是一起</span><span aria-hidden="true">↔</span></button>
+              <button type="button" class="button button--secondary" data-mode="sync" aria-pressed="false"><span>从不同步到同步</span><span aria-hidden="true">⇢</span></button>
+              <button type="button" class="button" data-mode="one" aria-pressed="false"><span>只激活一端</span><span aria-hidden="true">→</span></button>
+            </div>
+          </section>
+
+          <section class="card card--accent">
+            <div class="card-header"><h3 class="card-title">连接增量</h3></div>
+            <div class="summary-list" aria-label="三种经验的连接增量比较">
+              <div class="summary-row"><span class="summary-name">总是一起</span><output id="delta-together" class="summary-value">—</output></div>
+              <div class="summary-row"><span class="summary-name">逐渐同步</span><output id="delta-sync" class="summary-value">—</output></div>
+              <div class="summary-row"><span class="summary-name">只激活一端</span><output id="delta-one" class="summary-value">—</output></div>
+            </div>
+          </section>
+
+          <section class="callout history-card">
+            <span id="history-label" class="history-mark"></span>
+            <p>共同活动改变连接的局部原则，启发了后续学习规则研究。</p>
+          </section>
+
+          <section class="callout callout--warm boundary-card">
+            <p><strong>边界：</strong>“一起激活就加强”是有影响力的原则，不是完整、精确的生物学习理论；这里的“变硬”只是物理隐喻。</p>
+          </section>
+        </aside>
+      </section>
+    </main>
+
+    <script defer src="assets/lib/matter.min.js"></script>
+    <script>
+      (function () {
+        'use strict';
+
+        function boot() {
+          Lec.mount({
+            index: 3,
+            kicker: `LOCAL LEARNING`,
+            title: `Hebb：让连接从共同活动中<em>长出来</em>`,
+            take: `学习规则可以只依赖连接两端的局部活动，而不需要一个全局教师逐条改权重。`
+          });
+
+          var M = Matter;
+          var Engine = M.Engine;
+          var Bodies = M.Bodies;
+          var Body = M.Body;
+          var Composite = M.Composite;
+          var Constraint = M.Constraint;
+          var canvas = document.getElementById('hebb-canvas');
+          var stateNode = document.getElementById('round-state');
+          var weightBadge = document.getElementById('weight-badge');
+          var weightMeter = document.getElementById('weight-meter');
+          var buttons = Array.prototype.slice.call(document.querySelectorAll('[data-mode]'));
+          var deltas = {
+            together: document.getElementById('delta-together'),
+            sync: document.getElementById('delta-sync'),
+            one: document.getElementById('delta-one')
+          };
+          var engine = Engine.create({ gravity: { x: 0, y: 0 } });
+          var ctx;
+          var dims = { w: 0, h: 0 };
+          var pulses = [];
+          var supports = [];
+          var bridge;
+          var dragConstraint = null;
+          var selectedPulse = 0;
+          var running = false;
+          var elapsed = 0;
+          var overlapFrames = 0;
+          var activeFrames = 0;
+          var mode = 'together';
+          var rate = Lec.K.TRAINING.DEFAULT_LEARNING_RATE;
+          var weight = rate;
+          var baseWeight = weight;
+          var reduced = Deck.reduced();
+
+          engine.world.gravity.scale = 0;
+
+          function fmt(value) {
+            return Lec.P.formatNumber(value, 4);
+          }
+
+          function historyText() {
+            var event;
+            if (typeof Lec.P.eventLabel === 'function') {
+              return Lec.P.eventLabel('hebb');
+            }
+            event = Lec.P.eventById('hebb');
+            return event ? event.title + ' · ' + Lec.P.formatNumber(event.year, 0) : '';
+          }
+
+          function hebbUpdate(before, pre, post) {
+            var result;
+            if (typeof Lec.P.hebbUpdate === 'function') {
+              result = Lec.P.hebbUpdate(before, pre, post, rate);
+              if (typeof result === 'number') { return result; }
+              if (result && typeof result.weight === 'number') { return result.weight; }
+              if (result && typeof result.nextWeight === 'number') { return result.nextWeight; }
+            }
+            return before + rate * pre * post;
+          }
+
+          function deltaSummary(before, after) {
+            var result;
+            if (typeof Lec.P.weightDeltaSummary === 'function') {
+              result = Lec.P.weightDeltaSummary(before, after);
+              if (typeof result === 'number') { return result; }
+              if (result && typeof result.delta === 'number') { return result.delta; }
+            }
+            return after - before;
+          }
+
+          function updateReadouts() {
+            var normalized = Math.min(1, Math.max(0, (weight - baseWeight) / (rate * buttons.length)));
+            weightBadge.textContent = '连接强度 ' + fmt(weight);
+            weightMeter.style.setProperty('--value', Lec.P.formatPercent(normalized, 1, false));
+            if (bridge) {
+              bridge.stiffness = 0.02 + normalized * 0.28;
+            }
+          }
+
+          function clearWorld() {
+            Composite.clear(engine.world, false, true);
+            pulses = [];
+            supports = [];
+            bridge = null;
+            dragConstraint = null;
+          }
+
+          function addBounds(w, h) {
+            var t = 34;
+            Composite.add(engine.world, [
+              Bodies.rectangle(w / 2, -t / 2, w, t, { isStatic: true }),
+              Bodies.rectangle(w / 2, h + t / 2, w, t, { isStatic: true }),
+              Bodies.rectangle(-t / 2, h / 2, t, h, { isStatic: true }),
+              Bodies.rectangle(w + t / 2, h / 2, t, h, { isStatic: true })
+            ]);
+          }
+
+          function makePulse(x, y, group) {
+            var body = Bodies.circle(x, y, 19, {
+              restitution: 0.84,
+              frictionAir: 0.018,
+              friction: 0.02,
+              label: group
+            });
+            body.group = group;
+            pulses.push(body);
+            return body;
+          }
+
+          function buildWorld() {
+            var w = canvas.clientWidth;
+            var h = canvas.clientHeight;
+            var cy = h * 0.54;
+            var leftAnchor;
+            var rightAnchor;
+            var leftNode;
+            var rightNode;
+            dims.w = w;
+            dims.h = h;
+            clearWorld();
+            addBounds(w, h);
+
+            leftAnchor = Bodies.circle(w * 0.37, cy, 5, { isStatic: true });
+            rightAnchor = Bodies.circle(w * 0.63, cy, 5, { isStatic: true });
+            leftNode = Bodies.circle(w * 0.45, cy, 31, { restitution: 0.55, frictionAir: 0.08, label: 'terminal-pre' });
+            rightNode = Bodies.circle(w * 0.55, cy, 31, { restitution: 0.55, frictionAir: 0.08, label: 'terminal-post' });
+            supports = [leftNode, rightNode];
+            bridge = Constraint.create({
+              bodyA: leftNode,
+              bodyB: rightNode,
+              length: w * 0.1,
+              stiffness: 0.02,
+              damping: 0.12
+            });
+            Composite.add(engine.world, [
+              leftAnchor,
+              rightAnchor,
+              leftNode,
+              rightNode,
+              Constraint.create({ bodyA: leftAnchor, bodyB: leftNode, length: w * 0.08, stiffness: 0.16, damping: 0.12 }),
+              Constraint.create({ bodyA: rightAnchor, bodyB: rightNode, length: w * 0.08, stiffness: 0.16, damping: 0.12 }),
+              bridge,
+              makePulse(w * 0.17, cy - 46, 'pre'),
+              makePulse(w * 0.2, cy + 34, 'pre'),
+              makePulse(w * 0.83, cy - 38, 'post'),
+              makePulse(w * 0.8, cy + 42, 'post')
+            ]);
+            updateReadouts();
+          }
+
+          function resetPulsePositions() {
+            var cy = dims.h * 0.54;
+            var spots = [
+              [dims.w * 0.17, cy - 46], [dims.w * 0.2, cy + 34],
+              [dims.w * 0.83, cy - 38], [dims.w * 0.8, cy + 42]
+            ];
+            pulses.forEach(function (pulse, i) {
+              Body.setPosition(pulse, { x: spots[i][0], y: spots[i][1] });
+              Body.setVelocity(pulse, { x: 0, y: 0 });
+              Body.setAngularVelocity(pulse, 0);
+            });
+          }
+
+          function setButtons(disabled) {
+            buttons.forEach(function (button) {
+              button.disabled = disabled;
+              button.setAttribute('aria-pressed', String(button.getAttribute('data-mode') === mode));
+            });
+          }
+
+          function launch(which) {
+            mode = which;
+            running = true;
+            elapsed = 0;
+            overlapFrames = 0;
+            activeFrames = 0;
+            resetPulsePositions();
+            setButtons(true);
+            stateNode.textContent = which === 'together' ? '共同活动正在发生' : (which === 'sync' ? '正在寻找同步' : '单端活动正在发生');
+
+            if (which === 'together') {
+              Body.setVelocity(pulses[0], { x: 6.2, y: 0.6 });
+              Body.setVelocity(pulses[1], { x: 5.8, y: -0.3 });
+              Body.setVelocity(pulses[2], { x: -6.2, y: 0.5 });
+              Body.setVelocity(pulses[3], { x: -5.8, y: -0.4 });
+            } else if (which === 'sync') {
+              Body.setVelocity(pulses[0], { x: 6.1, y: 0.4 });
+              Body.setVelocity(pulses[1], { x: 5.7, y: -0.2 });
+              Body.setVelocity(pulses[2], { x: -2.1, y: 0.2 });
+              Body.setVelocity(pulses[3], { x: -1.8, y: -0.1 });
+            } else {
+              Body.setVelocity(pulses[0], { x: 6.2, y: 0.5 });
+              Body.setVelocity(pulses[1], { x: 5.8, y: -0.4 });
+            }
+
+            if (reduced) {
+              finishRound(which === 'together' ? 1 : (which === 'sync' ? 0.5 : 0));
+            }
+          }
+
+          function finishRound(forcedOverlap) {
+            var overlap = typeof forcedOverlap === 'number' ? forcedOverlap : (activeFrames ? overlapFrames / activeFrames : 0);
+            var before = weight;
+            var after = hebbUpdate(before, overlap, overlap);
+            var delta = deltaSummary(before, after);
+            weight = after;
+            deltas[mode].textContent = (delta >= 0 ? '+' : '') + fmt(delta);
+            running = false;
+            setButtons(false);
+            stateNode.textContent = overlap > 0 ? '本轮：检测到共同活动' : '本轮：没有共同活动';
+            updateReadouts();
+          }
+
+          function sampleOverlap() {
+            var pre = pulses.slice(0, 2);
+            var post = pulses.slice(2, 4);
+            var met = false;
+            pre.forEach(function (a) {
+              post.forEach(function (b) {
+                var dx = a.position.x - b.position.x;
+                var dy = a.position.y - b.position.y;
+                if (dx * dx + dy * dy < 112 * 112) { met = true; }
+              });
+            });
+            activeFrames += 1;
+            if (met) { overlapFrames += 1; }
+          }
+
+          function drawConstraint(constraint, width, color) {
+            var a = constraint.bodyA ? constraint.bodyA.position : constraint.pointA;
+            var b = constraint.bodyB ? constraint.bodyB.position : constraint.pointB;
+            ctx.beginPath();
+            ctx.moveTo(a.x, a.y);
+            ctx.lineTo(b.x, b.y);
+            ctx.lineWidth = width;
+            ctx.strokeStyle = color;
+            ctx.stroke();
+          }
+
+          function draw() {
+            var font = Deck.token('--font-sans');
+            var normalized = Math.min(1, Math.max(0, (weight - baseWeight) / (rate * buttons.length)));
+            ctx.clearRect(0, 0, dims.w, dims.h);
+
+            ctx.save();
+            ctx.setLineDash([8, 10]);
+            ctx.strokeStyle = Deck.rgba('--line-strong', 0.72);
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(dims.w / 2, 48);
+            ctx.lineTo(dims.w / 2, dims.h - 38);
+            ctx.stroke();
+            ctx.restore();
+
+            ctx.fillStyle = Deck.rgba('--text-muted', 0.95);
+            ctx.font = '17px ' + font;
+            ctx.textAlign = 'center';
+            ctx.fillText('局部连接', dims.w / 2, 32);
+            ctx.textAlign = 'left';
+            ctx.fillText('突触前侧', 24, dims.h - 22);
+            ctx.textAlign = 'right';
+            ctx.fillText('突触后侧', dims.w - 24, dims.h - 22);
+
+            if (supports.length) {
+              var constraints = Composite.allConstraints(engine.world);
+              constraints.forEach(function (c) {
+                if (c === bridge) {
+                  drawConstraint(c, 5 + normalized * 15, Deck.rgba('--accent', 0.9));
+                } else if (c !== dragConstraint) {
+                  drawConstraint(c, 3, Deck.rgba('--line-strong', 0.75));
+                }
+              });
+              supports.forEach(function (body, index) {
+                ctx.beginPath();
+                ctx.arc(body.position.x, body.position.y, body.circleRadius, 0, Math.PI * 2);
+                ctx.fillStyle = index ? Deck.rgba('--warm', 0.28) : Deck.rgba('--secondary', 0.28);
+                ctx.fill();
+                ctx.lineWidth = 3;
+                ctx.strokeStyle = index ? Deck.token('--warm') : Deck.token('--secondary');
+                ctx.stroke();
+              });
+            }
+
+            pulses.forEach(function (pulse, index) {
+              var isPost = pulse.group === 'post';
+              ctx.save();
+              ctx.translate(pulse.position.x, pulse.position.y);
+              ctx.rotate(pulse.angle);
+              ctx.beginPath();
+              if (isPost) {
+                ctx.roundRect(-19, -19, 38, 38, 7);
+              } else {
+                ctx.arc(0, 0, 19, 0, Math.PI * 2);
+              }
+              ctx.fillStyle = isPost ? Deck.token('--warm') : Deck.token('--secondary');
+              ctx.fill();
+              if (index === selectedPulse) {
+                ctx.lineWidth = 4;
+                ctx.strokeStyle = Deck.token('--focus');
+                ctx.stroke();
+              }
+              ctx.restore();
+            });
+          }
+
+          function nearestPulse(point) {
+            var best = -1;
+            var bestD = Infinity;
+            pulses.forEach(function (pulse, index) {
+              var dx = pulse.position.x - point.x;
+              var dy = pulse.position.y - point.y;
+              var d = dx * dx + dy * dy;
+              if (d < bestD && d < 52 * 52) {
+                bestD = d;
+                best = index;
+              }
+            });
+            return best;
+          }
+
+          function stopDrag() {
+            if (dragConstraint) {
+              Composite.remove(engine.world, dragConstraint);
+              dragConstraint = null;
+            }
+          }
+
+          canvas.addEventListener('pointerdown', function (event) {
+            var p = Deck.pt(canvas, event);
+            var index = nearestPulse(p);
+            if (index < 0) { return; }
+            selectedPulse = index;
+            canvas.setPointerCapture(event.pointerId);
+            dragConstraint = Constraint.create({
+              pointA: { x: p.x, y: p.y },
+              bodyB: pulses[index],
+              pointB: { x: 0, y: 0 },
+              stiffness: 0.2,
+              damping: 0.12
+            });
+            Composite.add(engine.world, dragConstraint);
+          });
+          canvas.addEventListener('pointermove', function (event) {
+            var p;
+            if (!dragConstraint) { return; }
+            p = Deck.pt(canvas, event);
+            dragConstraint.pointA.x = p.x;
+            dragConstraint.pointA.y = p.y;
+          });
+          canvas.addEventListener('pointerup', function (event) {
+            stopDrag();
+            if (canvas.hasPointerCapture(event.pointerId)) { canvas.releasePointerCapture(event.pointerId); }
+          });
+          canvas.addEventListener('pointercancel', stopDrag);
+          canvas.addEventListener('keydown', function (event) {
+            var step = event.shiftKey ? 22 : 10;
+            var pulse = pulses[selectedPulse];
+            if (!pulse) { return; }
+            if (event.key === ' ') {
+              selectedPulse = (selectedPulse + 1) % pulses.length;
+              event.preventDefault();
+            } else if (event.key === 'Enter') {
+              if (!running) { launch(mode); }
+              event.preventDefault();
+            } else if (event.key.indexOf('Arrow') === 0) {
+              Body.translate(pulse, {
+                x: event.key === 'ArrowLeft' ? -step : (event.key === 'ArrowRight' ? step : 0),
+                y: event.key === 'ArrowUp' ? -step : (event.key === 'ArrowDown' ? step : 0)
+              });
+              event.preventDefault();
+            }
+          });
+
+          buttons.forEach(function (button) {
+            button.addEventListener('click', function () {
+              launch(button.getAttribute('data-mode'));
+            });
+          });
+          document.getElementById('reset-button').addEventListener('click', function () {
+            running = false;
+            stopDrag();
+            weight = baseWeight;
+            Object.keys(deltas).forEach(function (key) { deltas[key].textContent = '—'; });
+            resetPulsePositions();
+            stateNode.textContent = '等待选择经验';
+            setButtons(false);
+            updateReadouts();
+          });
+
+          document.getElementById('history-label').textContent = historyText();
+          ctx = Deck.fit(canvas);
+          buildWorld();
+          Deck.onResize(function () {
+            ctx = Deck.fit(canvas);
+            buildWorld();
+          });
+          Deck.loop(function (time, dt) {
+            var safeDt = Math.min(34, Math.max(0, dt || 16));
+            if (!reduced) {
+              Engine.update(engine, safeDt);
+              if (running) {
+                elapsed += safeDt;
+                if (mode === 'sync' && elapsed > 620 && elapsed < 690) {
+                  Body.setVelocity(pulses[2], { x: -6.3, y: 0.1 });
+                  Body.setVelocity(pulses[3], { x: -5.9, y: -0.2 });
+                }
+                sampleOverlap();
+                if (elapsed > 1800) { finishRound(); }
+              }
+            }
+            draw();
+          }, { still: 0 });
+          updateReadouts();
+        }
+
+        if (document.readyState === 'loading') {
+          document.addEventListener('DOMContentLoaded', boot, { once: true });
+        } else {
+          boot();
+        }
+      }());
+    </script>
+  </div>
+  <script src="assets/base.js"></script>
+  <script src="assets/lec.js"></script>
+</body>
+</html>

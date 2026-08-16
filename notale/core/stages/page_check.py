@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import html as html_mod
 import json
 import re
@@ -10,9 +9,12 @@ from html.parser import HTMLParser
 from pathlib import Path
 
 from notale.core.models import PageArtifact, PagePlan
+from notale.tools.managed_component import component_delivery_failures
 from notale.tools.media import load_asset_manifest
 from notale.utils.config import get_config
+from notale.utils.node import NodeProcessTimeout, run_node
 from notale.utils.parsing import visible_text
+from notale.utils.skill_catalog import STYLE_TOKEN_KEYS, TYPE_SCALE_TOKEN_KEYS
 
 
 _CONFIG = get_config()
@@ -31,9 +33,18 @@ _EXTERNAL_RUNTIME_TAG = re.compile(
     r"(?:source|video|audio)\b[^>]*\bsrc|object\b[^>]*\bdata)\s*=",
     re.I,
 )
+# Derived from the one place each vocabulary is defined, so a new token cannot be
+# added and then silently rejected here as undeclared. Because _RESERVED_TOKEN is
+# built from the same tuple, this also stops a page redefining the type scale:
+# the pack owns it.
+_DECLARED_TOKEN_NAMES = tuple(sorted(STYLE_TOKEN_KEYS | TYPE_SCALE_TOKEN_KEYS))
 _RESERVED_TOKEN = re.compile(
-    r"--notale-(?:bg|surface|ink|muted|accent|accent-2|line|font|mono)\s*:", re.I
+    r"--notale-(?:"
+    + "|".join(re.escape(name) for name in sorted(_DECLARED_TOKEN_NAMES, key=len, reverse=True))
+    + r")\s*:",
+    re.I,
 )
+_TOKEN_REFERENCE = re.compile(r"--notale-[a-z0-9-]+")
 _SCRIPT = re.compile(r"<script(?P<attrs>[^>]*)>(?P<code>.*?)</script\s*>", re.I | re.S)
 
 
@@ -92,11 +103,26 @@ def _asset_failures(artifact: PageArtifact, page: int, run_dir: Path | None) -> 
     image_sources = {image.get("src", "").strip() for image in parser.images}
     for reference in sorted(local_refs - image_sources):
         failures.append(f"local image must be used by an img with alt: {reference}")
+    backplates = [
+        image for image in parser.images if "data-notale-backplate" in image
+    ]
+    if len(backplates) > 1:
+        failures.append(f"page declares {len(backplates)} backplates; at most one is allowed")
     for index, image in enumerate(parser.images, 1):
         src = image.get("src", "").strip()
+        is_backplate = "data-notale-backplate" in image
         if image.get("srcset", "").strip():
             failures.append(f"image {index} must not use srcset")
-        if not image.get("alt", "").strip():
+        if is_backplate:
+            # A text-free ground carries no information, so a meaningful alt would
+            # be a lie to a screen reader. It must say so explicitly instead.
+            if image.get("alt", "").strip():
+                failures.append(
+                    f"image {index} is a backplate and must have an empty alt"
+                )
+            if image.get("aria-hidden", "").strip().lower() != "true":
+                failures.append(f"image {index} is a backplate and needs aria-hidden=\"true\"")
+        elif not image.get("alt", "").strip():
             failures.append(f"image {index} needs a meaningful alt")
         if not src.startswith("../assets/") or "?" in src or "#" in src:
             failures.append(f"image {index} must use a local media-tool path: {src!r}")
@@ -111,6 +137,12 @@ def _asset_failures(artifact: PageArtifact, page: int, run_dir: Path | None) -> 
             continue
         if int(record.get("page", 0) or 0) != page:
             failures.append(f"image {index} is not assigned to page {page}")
+        # Stops a documentary photograph being smuggled in as a decorative ground.
+        if is_backplate and str(record.get("kind") or "") != "backplate":
+            failures.append(
+                f"image {index} is marked as a backplate but was not produced by "
+                "make_backplate"
+            )
         path = Path(run_dir) / relative
         if not path.is_file() or path.stat().st_size <= 0:
             failures.append(f"image {index} is missing locally: {src!r}")
@@ -136,21 +168,15 @@ async def _js_failure(html: str, run_dir: Path | None, page: int) -> str:
     path = work / f"check-p{page}.js"
     path.write_text("\n;\n".join(scripts), encoding="utf-8")
     try:
-        process = await asyncio.create_subprocess_exec(
-            "node", "--check", str(path),
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
         try:
-            stdout, stderr = await asyncio.wait_for(
-                process.communicate(), timeout=_CONFIG.tools.inline_js_check_timeout_sec
+            result = await run_node(
+                ["--check", str(path)],
+                timeout_sec=_CONFIG.tools.inline_js_check_timeout_sec,
             )
-        except TimeoutError:
-            process.kill()
-            await process.communicate()
+        except NodeProcessTimeout:
             return "inline JavaScript syntax check timed out"
-        if process.returncode:
-            output = (stdout + stderr).decode("utf-8", errors="replace")
+        if result.returncode:
+            output = (result.stdout + result.stderr).decode("utf-8", errors="replace")
             return "inline JavaScript is invalid: " + output[: _CONFIG.tools.inline_js_error_max_chars]
         return ""
     finally:
@@ -162,6 +188,7 @@ async def page_delivery_failures(
     *,
     page: int,
     run_dir: Path | None = None,
+    page_plan: PagePlan | None = None,
 ) -> list[str]:
     failures: list[str] = []
     if not artifact.html.strip():
@@ -174,6 +201,9 @@ async def page_delivery_failures(
         failures.append("html must contain exactly one data-notale-page root")
     if _RESERVED_TOKEN.search(artifact.html):
         failures.append("page must not redefine shared --notale-* tokens")
+    declared = {f"--notale-{name}" for name in _DECLARED_TOKEN_NAMES}
+    for name in sorted(set(_TOKEN_REFERENCE.findall(artifact.html)) - declared):
+        failures.append(f"undeclared --notale token: {name}")
     if _REMOTE_ASSET.search(artifact.html):
         failures.append("page contains a remote runtime dependency")
     if _EXTERNAL_RUNTIME_TAG.search(artifact.html):
@@ -191,6 +221,11 @@ async def page_delivery_failures(
     if match:
         failures.append(f"visible runtime leak: {match.group(0)}")
     failures.extend(_asset_failures(artifact, page, run_dir))
+    failures.extend(
+        component_delivery_failures(
+            artifact, page=page, run_dir=run_dir, page_plan=page_plan
+        )
+    )
     js_failure = await _js_failure(artifact.html, run_dir, page)
     if js_failure:
         failures.append(js_failure)

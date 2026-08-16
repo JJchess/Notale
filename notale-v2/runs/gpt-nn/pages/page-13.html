@@ -1,0 +1,343 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+</head>
+<body data-page="13" data-total="24">
+  <div id="stage">
+    <style>
+      #stage #page-content { --focus-w: 1360px; --focus-pad: var(--sp-2); }
+      #stage .memory-lab { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; gap: var(--sp-4); block-size: 100%; }
+      #stage .sequence-bar { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; align-items: end; gap: var(--sp-4); padding: var(--sp-4) var(--sp-5); }
+      #stage .sequence-control { display: flex; align-items: center; gap: var(--sp-3); }
+      #stage .sequence-control select { inline-size: 112px; }
+      #stage .tokens { display: flex; min-inline-size: 0; align-items: center; justify-content: center; gap: var(--sp-2); }
+      #stage .token { display: grid; place-items: center; inline-size: 44px; block-size: 44px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface-control); color: var(--text-muted); font-size: var(--fs-body); font-weight: var(--weight-semibold); transition: border-color 220ms ease, background 220ms ease, transform 220ms ease; }
+      #stage .token.is-fed { border-color: var(--accent); background: var(--accent-soft); color: var(--text-strong); }
+      #stage .token.is-current { transform: translateY(-4px); box-shadow: var(--shadow-glow); }
+      #stage .history-tag { align-self: center; color: var(--text-muted); }
+      #stage .machine { position: relative; display: grid; grid-template-rows: 1fr 1fr; min-block-size: 0; padding: var(--sp-4) var(--sp-5); border: 1px solid var(--line-strong); border-radius: var(--radius-xl); background: linear-gradient(180deg, var(--surface-raised), var(--surface-1)); box-shadow: var(--shadow-md), inset 0 1px 0 var(--line-strong), inset 0 -3px 0 var(--surface-control); }
+      #stage .machine::after { position: absolute; inset: 1px 1px auto; block-size: 28%; border-radius: var(--radius-xl); background: linear-gradient(180deg, var(--surface-3), transparent); opacity: .34; content: ""; pointer-events: none; }
+      #stage .lane { position: relative; z-index: 1; display: grid; grid-template-columns: 146px minmax(0, 1fr) 156px; align-items: center; min-inline-size: 0; }
+      #stage .lane + .lane { border-block-start: 1px solid var(--line); }
+      #stage .lane-name { display: flex; flex-direction: column; gap: var(--sp-1); }
+      #stage .lane-name strong { font-size: var(--fs-body-lg); }
+      #stage .lane-name span { color: var(--text-muted); font-size: var(--fs-label); }
+      #stage .pipe { position: relative; block-size: 76px; margin-inline: var(--sp-4); border: 1px solid var(--line-strong); border-radius: var(--radius-pill); background: linear-gradient(180deg, var(--surface-control), var(--surface-3) 48%, var(--surface-control)); box-shadow: inset 0 10px 20px var(--bg), 0 1px 0 var(--line-strong); }
+      #stage .pipe-flow { position: absolute; inset-block: 18px; inset-inline-start: 16px; inline-size: calc((100% - 32px) * var(--flow)); border-radius: var(--radius-pill); background: linear-gradient(90deg, var(--secondary), var(--accent)); opacity: .82; transition: inline-size 240ms ease; }
+      #stage .pipe-mark { position: absolute; inset-block: 10px; inline-size: 2px; background: var(--line); }
+      #stage .pipe-mark:nth-child(2) { inset-inline-start: 25%; }
+      #stage .pipe-mark:nth-child(3) { inset-inline-start: 50%; }
+      #stage .pipe-mark:nth-child(4) { inset-inline-start: 75%; }
+      #stage .state-readout { display: flex; flex-direction: column; gap: var(--sp-1); text-align: right; }
+      #stage .state-readout output { color: var(--text-strong); font-size: var(--fs-h3); font-weight: var(--weight-bold); font-variant-numeric: tabular-nums; line-height: var(--lh-tight); }
+      #stage .state-readout span { color: var(--text-muted); font-size: var(--fs-label); }
+      #stage .valves { position: absolute; z-index: 3; inset-inline: 298px 190px; inset-block-start: 50%; display: grid; grid-template-columns: repeat(3, 1fr); translate: 0 -50%; pointer-events: none; }
+      #stage .valve { position: relative; display: grid; justify-items: center; gap: var(--sp-1); pointer-events: auto; }
+      #stage .valve label { color: var(--text-strong); font-size: var(--fs-label); font-weight: var(--weight-semibold); text-shadow: 0 2px 2px var(--bg); }
+      #stage .dial { position: relative; display: grid; place-items: center; inline-size: 82px; block-size: 82px; border: 1px solid var(--line-strong); border-radius: 50%; background: linear-gradient(180deg, var(--surface-raised), var(--surface-control)); box-shadow: 0 10px 18px var(--bg), inset 0 2px 0 var(--text-faint), inset 0 -5px 8px var(--bg); }
+      #stage .dial::before { inline-size: 52px; block-size: 12px; border: 1px solid var(--line-strong); border-radius: var(--radius-pill); background: linear-gradient(180deg, var(--text-muted), var(--surface-3)); box-shadow: 0 3px 5px var(--bg), inset 0 1px 0 var(--text); content: ""; transform: rotate(calc(-65deg + 130deg * var(--gate))); transition: transform 220ms ease-out; }
+      #stage .dial input { position: absolute; inset: 0; inline-size: 100%; block-size: 100%; opacity: 0; cursor: ew-resize; }
+      #stage .dial:focus-within { outline: 3px solid var(--focus); outline-offset: 4px; }
+      #stage .gate-value { color: var(--accent-strong); font-size: var(--fs-tick); font-variant-numeric: tabular-nums; }
+      #stage .analysis-row { display: grid; grid-template-columns: 210px minmax(0, 1fr) 270px; align-items: center; gap: var(--sp-4); padding: var(--sp-4) var(--sp-5); }
+      #stage .analysis-title { display: flex; flex-direction: column; gap: var(--sp-1); }
+      #stage .analysis-title strong { font-size: var(--fs-body); }
+      #stage .analysis-title span { color: var(--text-muted); font-size: var(--fs-label); }
+      #stage .grad-chart { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(22px, 1fr); align-items: end; gap: var(--sp-2); block-size: 66px; padding-block-start: var(--sp-2); border-block-end: 1px solid var(--line-strong); }
+      #stage .grad-pair { display: grid; grid-template-columns: 1fr 1fr; align-items: end; gap: 3px; block-size: 100%; }
+      #stage .grad-bar { min-block-size: 3px; block-size: calc(var(--v) * 100%); border-radius: var(--radius-sm) var(--radius-sm) 0 0; background: var(--danger); transition: block-size 240ms ease; }
+      #stage .grad-bar.lstm { background: var(--accent); }
+      #stage .legend-local { display: flex; flex-direction: column; gap: var(--sp-2); color: var(--text-muted); font-size: var(--fs-label); }
+      #stage .legend-local span { display: flex; align-items: center; gap: var(--sp-2); }
+      #stage .key { inline-size: 22px; block-size: 7px; border-radius: var(--radius-pill); background: var(--danger); }
+      #stage .key.lstm { background: var(--accent); }
+      #stage button:focus-visible, #stage select:focus-visible, #stage input:focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
+      @media (prefers-reduced-motion: reduce) {
+        #stage .token, #stage .pipe-flow, #stage .dial::before, #stage .grad-bar { transition: none; }
+      }
+    </style>
+
+    <main id="page-content" class="focus min0" aria-label="序列记忆管道实验">
+      <section class="focus__content memory-lab min0">
+        <div class="sequence-bar panel min0">
+          <div class="sequence-control">
+            <label class="control-label" for="early-char">早期提示</label>
+            <select id="early-char" aria-label="改动序列的早期提示字符">
+              <option value="key">钥</option>
+              <option value="rain">雨</option>
+            </select>
+          </div>
+          <div class="tokens" id="tokens" aria-label="待送入的字符序列"></div>
+          <button class="button--primary" id="feed" type="button">送入下一字符</button>
+          <button class="button--ghost" id="reset" type="button">复位</button>
+        </div>
+
+        <div class="machine min0" aria-label="普通循环网络与 LSTM 同步状态">
+          <div class="lane min0">
+            <div class="lane-name"><strong>普通 RNN</strong><span>状态反复改写</span></div>
+            <div class="pipe" aria-hidden="true"><div class="pipe-flow" id="rnn-flow"></div><i class="pipe-mark"></i><i class="pipe-mark"></i><i class="pipe-mark"></i><i class="pipe-mark"></i></div>
+            <div class="state-readout"><output id="rnn-state">—</output><span>末端隐藏状态</span></div>
+          </div>
+          <div class="lane min0">
+            <div class="lane-name"><strong>LSTM</strong><span>细胞状态直通</span></div>
+            <div class="pipe" aria-hidden="true"><div class="pipe-flow" id="lstm-flow"></div><i class="pipe-mark"></i><i class="pipe-mark"></i><i class="pipe-mark"></i><i class="pipe-mark"></i></div>
+            <div class="state-readout"><output id="lstm-state">—</output><span>末端细胞状态</span></div>
+          </div>
+          <div class="valves" aria-label="LSTM 三个门控阀门">
+            <div class="valve">
+              <label for="forget-bias">遗忘阀</label>
+              <div class="dial" id="forget-dial"><input id="forget-bias" type="range" aria-label="调整遗忘门偏置"></div>
+              <output class="gate-value" id="forget-value">—</output>
+            </div>
+            <div class="valve">
+              <label for="write-bias">写入阀</label>
+              <div class="dial" id="write-dial"><input id="write-bias" type="range" aria-label="调整写入门偏置"></div>
+              <output class="gate-value" id="write-value">—</output>
+            </div>
+            <div class="valve">
+              <label for="output-bias">输出阀</label>
+              <div class="dial" id="output-dial"><input id="output-bias" type="range" aria-label="调整输出门偏置"></div>
+              <output class="gate-value" id="output-value">—</output>
+            </div>
+          </div>
+        </div>
+
+        <div class="analysis-row panel min0">
+          <div class="analysis-title"><strong>早期字符 → 末端输出</strong><span>梯度沿时间回传</span><span class="history-tag badge" id="history-tag"></span></div>
+          <div class="grad-chart" id="grad-chart" aria-label="普通 RNN 与 LSTM 的逐时间梯度范数"></div>
+          <div class="legend-local">
+            <span><i class="key"></i>普通 RNN：容易衰减</span>
+            <span><i class="key lstm"></i>LSTM：保留通道</span>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <script>
+      (function () {
+        'use strict';
+
+        function boot() {
+          Lec.mount({
+            index: 13,
+            kicker: `MEMORY THROUGH TIME`,
+            title: `从循环网络到 LSTM：让重要信息穿过<em>时间</em>`,
+            take: `LSTM 用可学习的门控制保留、写入和读出，缓解普通循环网络难以保存长期信息的问题。`
+          });
+
+          var P = Lec.P;
+          var early = document.getElementById('early-char');
+          var feed = document.getElementById('feed');
+          var reset = document.getElementById('reset');
+          var tokenBox = document.getElementById('tokens');
+          var chart = document.getElementById('grad-chart');
+          var controls = {
+            forget: document.getElementById('forget-bias'),
+            write: document.getElementById('write-bias'),
+            output: document.getElementById('output-bias')
+          };
+          var stepIndex = 0;
+          var rnnState = 0;
+          var lstmState = { h: 0, c: 0 };
+          var rnnHistory = [];
+          var lstmHistory = [];
+          var gateHistory = [];
+          var sequence = [];
+
+          var sequenceConfig = Lec.K.sequenceModels || {};
+          var lstmEvent = P.eventById('lstm');
+          var historyLabel;
+          if (typeof P.eventLabel === 'function') {
+            historyLabel = P.eventLabel('lstm');
+          } else {
+            historyLabel = lstmEvent ? String(lstmEvent.year) + ' · ' + lstmEvent.title : '';
+          }
+          document.getElementById('history-tag').textContent = historyLabel;
+          var rangeMin = typeof sequenceConfig.gateMin === 'number' ? sequenceConfig.gateMin : -2;
+          var rangeMax = typeof sequenceConfig.gateMax === 'number' ? sequenceConfig.gateMax : 2;
+          var rangeStep = typeof sequenceConfig.gateStep === 'number' ? sequenceConfig.gateStep : 0.1;
+          var defaults = sequenceConfig.gateBiases || { forget: 1.5, write: 0, output: 0.5 };
+
+          Object.keys(controls).forEach(function (name) {
+            controls[name].min = rangeMin;
+            controls[name].max = rangeMax;
+            controls[name].step = rangeStep;
+            controls[name].value = defaults[name];
+          });
+
+          function inputValue(char, index) {
+            if (index === 0) return char === '钥' ? 1 : -1;
+            if (char === '锁') return -0.1;
+            return 0.08;
+          }
+
+          function fallbackRnn(payload) {
+            return { h: P.tanh(payload.previous * 0.58 + payload.input * 0.92) };
+          }
+
+          function fallbackLstm(payload) {
+            var f = P.sigmoid(payload.biases.forget + payload.previous.h * 0.1);
+            var i = P.sigmoid(payload.biases.write + Math.abs(payload.input) * 0.55);
+            var o = P.sigmoid(payload.biases.output + payload.previous.h * 0.1);
+            var candidate = P.tanh(payload.input * 0.92);
+            var c = f * payload.previous.c + i * candidate;
+            return { h: o * P.tanh(c), c: c, forget: f, input: i, output: o };
+          }
+
+          function callStep(name, payload, fallback) {
+            if (typeof P[name] === 'function') {
+              try { return P[name](payload); } catch (ignore) { return fallback(payload); }
+            }
+            return fallback(payload);
+          }
+
+          function gradients() {
+            var result;
+            if (typeof P.gradientNormThroughTime === 'function') {
+              try {
+                result = P.gradientNormThroughTime({ rnnStates: rnnHistory, lstmStates: lstmHistory, gates: gateHistory });
+                if (result && result.rnn && result.lstm) return result;
+              } catch (ignore) {}
+            }
+            var rnn = [];
+            var lstm = [];
+            var rp = 1;
+            var lp = 1;
+            var i;
+            for (i = rnnHistory.length - 1; i >= 0; i -= 1) {
+              rp *= Math.abs(0.58 * (1 - rnnHistory[i] * rnnHistory[i]));
+              lp *= gateHistory[i] ? gateHistory[i].forget : 1;
+              rnn.unshift(rp);
+              lstm.unshift(lp);
+            }
+            return { rnn: rnn, lstm: lstm };
+          }
+
+          function fmt(value) {
+            return typeof value === 'number' ? P.formatNumber(value, 2) : '—';
+          }
+
+          function makeSequence() {
+            sequence = [early.value === 'key' ? '钥' : '雨', '·', '·', '·', '·', '·', '·', '锁'];
+            tokenBox.innerHTML = '';
+            sequence.forEach(function (char, index) {
+              var span = document.createElement('span');
+              span.className = 'token';
+              span.textContent = char;
+              span.setAttribute('aria-label', '序列字符 ' + (index + 1) + '：' + char);
+              tokenBox.appendChild(span);
+            });
+          }
+
+          function gateBiases() {
+            return {
+              forget: Number(controls.forget.value),
+              write: Number(controls.write.value),
+              output: Number(controls.output.value)
+            };
+          }
+
+          function updateValves(gates) {
+            var values = { forget: gates.forget, write: gates.input, output: gates.output };
+            Object.keys(values).forEach(function (name) {
+              var value = P.clamp(values[name], 0, 1);
+              document.getElementById(name + '-dial').style.setProperty('--gate', value);
+              document.getElementById(name + '-value').textContent = fmt(value);
+            });
+          }
+
+          function drawChart() {
+            var values = gradients();
+            chart.innerHTML = '';
+            values.rnn.forEach(function (value, index) {
+              var pair = document.createElement('span');
+              var a = document.createElement('i');
+              var b = document.createElement('i');
+              pair.className = 'grad-pair';
+              a.className = 'grad-bar';
+              b.className = 'grad-bar lstm';
+              a.style.setProperty('--v', P.clamp(value, 0, 1));
+              b.style.setProperty('--v', P.clamp(values.lstm[index], 0, 1));
+              pair.appendChild(a);
+              pair.appendChild(b);
+              chart.appendChild(pair);
+            });
+          }
+
+          function render() {
+            var tokens = tokenBox.children;
+            var i;
+            for (i = 0; i < tokens.length; i += 1) {
+              tokens[i].classList.toggle('is-fed', i < stepIndex);
+              tokens[i].classList.toggle('is-current', i === stepIndex && stepIndex < sequence.length);
+            }
+            document.getElementById('rnn-state').textContent = stepIndex ? fmt(rnnState) : '—';
+            document.getElementById('lstm-state').textContent = stepIndex ? fmt(lstmState.c) : '—';
+            document.getElementById('rnn-flow').style.setProperty('--flow', stepIndex ? P.clamp((rnnState + 1) / 2, 0, 1) : 0);
+            document.getElementById('lstm-flow').style.setProperty('--flow', stepIndex ? P.clamp((lstmState.c + 1) / 2, 0, 1) : 0);
+            feed.disabled = stepIndex >= sequence.length;
+            feed.textContent = stepIndex >= sequence.length ? '序列已到末端' : '送入下一字符';
+            drawChart();
+          }
+
+          function resetRun() {
+            stepIndex = 0;
+            rnnState = 0;
+            lstmState = { h: 0, c: 0 };
+            rnnHistory = [];
+            lstmHistory = [];
+            gateHistory = [];
+            makeSequence();
+            updateValves(fallbackLstm({ previous: lstmState, input: 0, biases: gateBiases() }));
+            render();
+          }
+
+          function feedOne() {
+            var x;
+            var nextRnn;
+            var nextLstm;
+            if (stepIndex >= sequence.length) return;
+            x = inputValue(sequence[stepIndex], stepIndex);
+            nextRnn = callStep('rnnStep', { input: x, previous: rnnState }, fallbackRnn);
+            nextLstm = callStep('lstmStep', { input: x, previous: lstmState, biases: gateBiases() }, fallbackLstm);
+            rnnState = typeof nextRnn === 'number' ? nextRnn : nextRnn.h;
+            lstmState = { h: nextLstm.h, c: nextLstm.c };
+            rnnHistory.push(rnnState);
+            lstmHistory.push(lstmState.c);
+            gateHistory.push({ forget: nextLstm.forget, input: nextLstm.input, output: nextLstm.output });
+            stepIndex += 1;
+            updateValves(nextLstm);
+            render();
+          }
+
+          function rerunCurrent() {
+            var count = stepIndex;
+            resetRun();
+            while (stepIndex < count) feedOne();
+          }
+
+          feed.addEventListener('click', feedOne);
+          reset.addEventListener('click', resetRun);
+          early.addEventListener('change', rerunCurrent);
+          Object.keys(controls).forEach(function (name) {
+            controls[name].addEventListener('input', rerunCurrent);
+          });
+
+          resetRun();
+        }
+
+        if (document.readyState === 'loading') {
+          document.addEventListener('DOMContentLoaded', boot, { once: true });
+        } else {
+          boot();
+        }
+      }());
+    </script>
+  </div>
+  <script src="assets/base.js"></script>
+  <script src="assets/lec.js"></script>
+</body>
+</html>

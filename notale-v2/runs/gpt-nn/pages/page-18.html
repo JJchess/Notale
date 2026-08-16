@@ -1,0 +1,321 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+</head>
+<body data-page="18" data-total="24">
+<div id="stage">
+<style>
+#stage #page-content { block-size: 100%; }
+#stage .go-layout { --stage-share: 1.55fr; --cards-share: .82fr; }
+#stage .go-stage { display: grid; grid-template-columns: minmax(0, 1.16fr) minmax(300px, .84fr); gap: var(--sp-5); padding: var(--sp-5); }
+#stage .board-wrap { position: relative; min-inline-size: 0; min-block-size: 0; border: 1px solid var(--line-strong); border-radius: var(--radius-lg); background: var(--warm-soft); box-shadow: var(--shadow-md); }
+#stage .board-wrap canvas { display: block; inline-size: 100%; block-size: 100%; border-radius: var(--radius-lg); cursor: crosshair; }
+#stage .board-wrap canvas:focus-visible { outline: 4px solid var(--focus); outline-offset: 4px; }
+#stage .search-pane { display: flex; min-inline-size: 0; min-block-size: 0; flex-direction: column; gap: var(--sp-4); }
+#stage .phase-strip { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--sp-2); }
+#stage .phase { padding: var(--sp-3) var(--sp-2); border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--surface-control); color: var(--text-faint); font-size: var(--fs-label); line-height: var(--lh-label); text-align: center; }
+#stage .phase.is-active { border-color: var(--accent); background: var(--accent-soft); color: var(--accent-strong); font-weight: var(--weight-bold); }
+#stage .tree { flex: 1 1 auto; min-block-size: 0; padding: var(--sp-4); }
+#stage .tree svg, #stage .compare svg { display: block; inline-size: 100%; block-size: 100%; }
+#stage .controls { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp-3); }
+#stage .controls button { inline-size: 100%; padding-inline: var(--sp-3); }
+#stage .status { min-block-size: 3.1em; padding: var(--sp-3) var(--sp-4); border-inline-start: 5px solid var(--accent); border-radius: var(--radius-sm); background: var(--surface-control); color: var(--text); font-size: var(--fs-body-sm); line-height: var(--lh-body); }
+#stage .stage-cards__cards .card { padding: var(--sp-4); }
+#stage .stage-cards__cards .card-title { font-size: var(--fs-body-lg); }
+#stage .compare { block-size: 210px; }
+#stage .component-list { display: grid; gap: var(--sp-3); margin: 0; padding: 0; list-style: none; }
+#stage .component-list li { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: var(--sp-3); align-items: start; font-size: var(--fs-body-sm); line-height: var(--lh-body); }
+#stage .component-list .badge { min-inline-size: 76px; justify-content: center; }
+#stage .history { margin-block-start: auto; }
+#stage .history p { color: var(--text-muted); font-size: var(--fs-body-sm); line-height: var(--lh-body); }
+#stage .chart-label { fill: var(--text-muted); font-size: var(--fs-label); font-weight: var(--weight-semibold); }
+#stage .chart-note { fill: var(--text-faint); font-size: var(--fs-tick); }
+#stage .bar-bg { fill: var(--surface-3); }
+#stage .bar-policy { fill: var(--secondary); }
+#stage .bar-search { fill: var(--accent); }
+#stage .tree-link { stroke: var(--line-strong); stroke-width: 2; fill: none; }
+#stage .tree-node { fill: var(--surface-raised); stroke: var(--line-strong); stroke-width: 2; }
+#stage .tree-node.is-hot { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 3; }
+#stage .tree-text { fill: var(--text); font-size: var(--fs-label); font-weight: var(--weight-semibold); text-anchor: middle; dominant-baseline: central; }
+#stage .tree-sub { fill: var(--text-muted); font-size: var(--fs-tick); text-anchor: middle; }
+@media (prefers-reduced-motion: reduce) { #stage * { transition: none !important; } }
+</style>
+
+<main id="page-content" class="min0" aria-label="本页正文">
+  <section class="stage-cards go-layout min0" aria-label="AlphaGo 网络与搜索协作实验">
+    <div class="stage-cards__stage panel go-stage min0">
+      <div class="board-wrap min0">
+        <canvas id="go-board" class="cv-fill no-pan" tabindex="0" role="application" aria-label="缩小围棋盘。方向键移动光标，回车或空格落黑子"></canvas>
+      </div>
+      <div class="search-pane min0">
+        <div class="phase-strip" aria-label="蒙特卡洛树搜索步骤">
+          <div class="phase is-active">选择</div><div class="phase">扩展</div><div class="phase">评估</div><div class="phase">回传</div>
+        </div>
+        <div class="plot tree min0"><svg id="tree-svg" role="img" aria-label="当前候选搜索树"></svg></div>
+        <div class="controls">
+          <button id="step-btn" type="button">检查下一步</button>
+          <button id="batch-btn" class="button--primary" type="button">运行一批搜索</button>
+          <button id="play-btn" type="button">落下搜索选择</button>
+          <button id="reset-btn" class="button--ghost" type="button">重置棋局</button>
+        </div>
+        <output id="status" class="status" aria-live="polite">先在棋盘交叉点落一枚黑子，再观察网络直觉。</output>
+      </div>
+    </div>
+
+    <aside class="stage-cards__cards min0" aria-label="比较与说明">
+      <article class="card card--accent">
+        <div class="card-header"><h2 class="card-title">同一局面，两种建议</h2><span id="result-badge" class="badge badge--accent">等待落子</span></div>
+        <div class="compare"><svg id="compare-svg" role="img" aria-label="策略先验与搜索访问分布对比"></svg></div>
+      </article>
+      <article class="card">
+        <ul class="component-list">
+          <li><span class="badge">策略网络</span><span>给候选动作先验，像快速直觉。</span></li>
+          <li><span class="badge">价值网络</span><span>估计局面前景，为叶节点打分。</span></li>
+          <li><span class="badge">树搜索</span><span>反复选择、扩展、评估、回传，重新分配证据。</span></li>
+        </ul>
+      </article>
+      <article class="card history">
+        <div class="card-header"><h2 class="card-title">历史位置</h2><span id="event-tag" class="badge"></span></div>
+        <p id="history-copy"></p>
+      </article>
+    </aside>
+  </section>
+</main>
+
+<script defer src="assets/lib/d3.min.js"></script>
+<script>
+(function () {
+  'use strict';
+
+  function boot() {
+    Lec.mount({
+      index: 18,
+      kicker: `LEARNING MEETS SEARCH`,
+      title: `AlphaGo：不是“一个网络”，而是网络与<em>搜索</em>的合奏`,
+      take: `神经网络可以提供直觉与局面评估，搜索则把这些判断组织成可检验的决策。`
+    });
+
+    var mountedTitle = document.querySelector('.lec-header__title');
+    if (mountedTitle) mountedTitle.innerHTML = `AlphaGo：不是“一个网络”，而是网络与<em>搜索</em>的合奏`;
+
+    var board = document.getElementById('go-board');
+    var status = document.getElementById('status');
+    var badge = document.getElementById('result-badge');
+    var phases = Array.prototype.slice.call(document.querySelectorAll('.phase'));
+    var N = 7;
+    var state;
+
+    function fresh() {
+      return { board: Array.from({ length: N }, function () { return Array(N).fill(0); }), cursor: { x: 3, y: 3 }, candidates: [], phase: 0, simulations: 0, trace: [], playerMoved: false };
+    }
+
+    function candidateModel(s) {
+      var list = [];
+      var centre = (N - 1) / 2;
+      for (var y = 0; y < N; y += 1) for (var x = 0; x < N; x += 1) {
+        if (s.board[y][x] !== 0) continue;
+        var near = 0;
+        [[1,0],[-1,0],[0,1],[0,-1]].forEach(function (d) {
+          var yy = y + d[1], xx = x + d[0];
+          if (yy >= 0 && yy < N && xx >= 0 && xx < N && s.board[yy][xx] === 1) near += 1;
+        });
+        var prior = 1 / (1 + Math.abs(x - centre) + Math.abs(y - centre)) + near * 0.32 + ((x * 5 + y * 3) % 7) * 0.012;
+        var value = 0.36 + near * 0.13 + (Math.abs(x - centre) + Math.abs(y - centre)) * 0.018;
+        list.push({ x: x, y: y, prior: prior, value: Math.min(0.92, value), visits: 0, total: 0 });
+      }
+      list.sort(function (a, b) { return b.prior - a.prior; });
+      list = list.slice(0, 3);
+      var sum = list.reduce(function (a, d) { return a + d.prior; }, 0) || 1;
+      list.forEach(function (d) { d.prior /= sum; });
+      return list;
+    }
+
+    function summary() {
+      if (typeof Lec.P.mctsSummary === 'function') {
+        try { return Lec.P.mctsSummary(state); } catch (ignore) {}
+      }
+      var total = state.candidates.reduce(function (a, d) { return a + d.visits; }, 0);
+      return state.candidates.map(function (d) { return { x: d.x, y: d.y, prior: d.prior, value: d.value, visits: d.visits, distribution: total ? d.visits / total : 0 }; });
+    }
+
+    function simulationStep() {
+      if (!state.candidates.length) return;
+      if (typeof Lec.P.mctsStep === 'function') {
+        try {
+          var next = Lec.P.mctsStep(state);
+          if (next) state = next;
+          return;
+        } catch (ignore) {}
+      }
+      if (state.phase === 0) {
+        var logTotal = Math.log(state.simulations + 2);
+        state.selected = state.candidates.reduce(function (best, d) {
+          var score = d.visits ? d.total / d.visits + d.prior * Math.sqrt(logTotal / d.visits) : Infinity - d.prior;
+          return !best || score > best.score ? { node: d, score: score } : best;
+        }, null).node;
+      } else if (state.phase === 1) {
+        state.selected.expanded = true;
+      } else if (state.phase === 2) {
+        state.lastValue = state.selected.value + (state.selected.prior < state.candidates[0].prior ? 0.14 : -0.05);
+      } else {
+        state.selected.visits += 1;
+        state.selected.total += state.lastValue;
+        state.simulations += 1;
+      }
+      state.phase = (state.phase + 1) % 4;
+    }
+
+    function coord(d) { return String.fromCharCode(65 + d.x) + String(N - d.y); }
+
+    function drawBoard() {
+      var ctx = Deck.fit(board);
+      var w = board.clientWidth, h = board.clientHeight;
+      var size = Math.min(w, h) - 76;
+      var ox = (w - size) / 2, oy = (h - size) / 2;
+      var cell = size / (N - 1);
+      ctx.clearRect(0, 0, w, h);
+      ctx.strokeStyle = Deck.rgba('--text-inverse', .72);
+      ctx.lineWidth = 2;
+      for (var i = 0; i < N; i += 1) {
+        ctx.beginPath(); ctx.moveTo(ox, oy + i * cell); ctx.lineTo(ox + size, oy + i * cell); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(ox + i * cell, oy); ctx.lineTo(ox + i * cell, oy + size); ctx.stroke();
+      }
+      ctx.font = Deck.token('--fs-label') + ' ' + Deck.token('--font-sans');
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      for (var y = 0; y < N; y += 1) for (var x = 0; x < N; x += 1) {
+        var v = state.board[y][x];
+        if (v) {
+          ctx.beginPath(); ctx.arc(ox + x * cell, oy + y * cell, cell * .38, 0, Math.PI * 2);
+          ctx.fillStyle = v === 1 ? Deck.token('--text-inverse') : Deck.token('--text-strong'); ctx.fill();
+          ctx.strokeStyle = v === 1 ? Deck.token('--line-strong') : Deck.token('--text-muted'); ctx.stroke();
+        }
+      }
+      state.candidates.forEach(function (d, i) {
+        ctx.beginPath(); ctx.arc(ox + d.x * cell, oy + d.y * cell, cell * (.16 + d.prior * .18), 0, Math.PI * 2);
+        ctx.fillStyle = i === 0 ? Deck.rgba('--secondary', .8) : Deck.rgba('--accent', .55); ctx.fill();
+      });
+      ctx.strokeStyle = Deck.token('--focus'); ctx.lineWidth = 4;
+      ctx.strokeRect(ox + state.cursor.x * cell - cell * .25, oy + state.cursor.y * cell - cell * .25, cell * .5, cell * .5);
+      state.hit = { ox: ox, oy: oy, cell: cell };
+    }
+
+    function drawTree() {
+      var svg = d3.select('#tree-svg');
+      svg.selectAll('*').remove();
+      svg.attr('viewBox', '0 0 360 250');
+      var root = { x: 180, y: 38 };
+      svg.append('path').attr('class', 'tree-link').attr('d', 'M180,58 L180,88');
+      state.candidates.forEach(function (d, i) {
+        var x = 70 + i * 110;
+        svg.append('path').attr('class', 'tree-link').attr('d', 'M180,88 L' + x + ',145');
+        svg.append('circle').datum(d).attr('class', 'tree-node' + (state.selected === d ? ' is-hot' : '')).attr('cx', x).attr('cy', 166).attr('r', 28 + Math.min(12, d.visits * 2));
+        svg.append('text').attr('class', 'tree-text').attr('x', x).attr('y', 164).text(coord(d));
+        svg.append('text').attr('class', 'tree-sub').attr('x', x).attr('y', 214).text(d.visits ? '已回传 ' + Lec.P.formatNumber(d.visits, 0) : '待检查');
+      });
+      svg.append('circle').attr('class', 'tree-node is-hot').attr('cx', root.x).attr('cy', root.y).attr('r', 27);
+      svg.append('text').attr('class', 'tree-text').attr('x', root.x).attr('y', root.y).text('局面');
+    }
+
+    function drawCompare() {
+      var data = summary();
+      var svg = d3.select('#compare-svg');
+      svg.selectAll('*').remove();
+      svg.attr('viewBox', '0 0 390 210');
+      if (!data.length) {
+        svg.append('text').attr('class', 'chart-label').attr('x', 195).attr('y', 105).attr('text-anchor', 'middle').text('落子后生成候选');
+        return;
+      }
+      var maxV = d3.max(data, function (d) { return Math.max(d.prior || 0, d.distribution || 0); }) || 1;
+      var scale = d3.scaleLinear().domain([0, maxV]).range([0, 235]);
+      data.forEach(function (d, i) {
+        var y = 24 + i * 61;
+        svg.append('text').attr('class', 'chart-label').attr('x', 0).attr('y', y + 20).text(coord(d));
+        svg.append('rect').attr('class', 'bar-bg').attr('x', 55).attr('y', y).attr('width', 235).attr('height', 17).attr('rx', 5);
+        svg.append('rect').attr('class', 'bar-policy').attr('x', 55).attr('y', y).attr('width', scale(d.prior || 0)).attr('height', 17).attr('rx', 5);
+        svg.append('rect').attr('class', 'bar-bg').attr('x', 55).attr('y', y + 23).attr('width', 235).attr('height', 17).attr('rx', 5);
+        svg.append('rect').attr('class', 'bar-search').attr('x', 55).attr('y', y + 23).attr('width', scale(d.distribution || 0)).attr('height', 17).attr('rx', 5);
+        svg.append('text').attr('class', 'chart-note').attr('x', 300).attr('y', y + 14).text('网络先验');
+        svg.append('text').attr('class', 'chart-note').attr('x', 300).attr('y', y + 37).text('搜索分布');
+      });
+    }
+
+    function render(message) {
+      phases.forEach(function (p, i) { p.classList.toggle('is-active', i === state.phase); });
+      var s = summary();
+      var net = state.candidates[0];
+      var searched = s.length ? s.slice().sort(function (a, b) { return (b.distribution || 0) - (a.distribution || 0); })[0] : null;
+      if (!state.playerMoved) badge.textContent = '等待落子';
+      else if (!state.simulations) badge.textContent = '只有网络';
+      else if (searched && net && searched.x === net.x && searched.y === net.y) badge.textContent = '搜索支持直觉';
+      else badge.textContent = '搜索修正直觉';
+      if (message) status.textContent = message;
+      drawBoard(); drawTree(); drawCompare();
+    }
+
+    function placeHuman(x, y) {
+      if (x < 0 || y < 0 || x >= N || y >= N || state.board[y][x] !== 0) {
+        render('这个交叉点已有棋子，请换一个位置。'); return;
+      }
+      state.board[y][x] = 1; state.cursor = { x: x, y: y }; state.playerMoved = true;
+      state.candidates = candidateModel(state); state.phase = 0; state.simulations = 0; state.selected = null;
+      render('策略—价值网络已给出候选。蓝色最强只是直觉；现在逐步检查搜索。');
+    }
+
+    board.addEventListener('pointerdown', function (e) {
+      var p = Deck.pt(board, e), h = state.hit;
+      placeHuman(Math.round((p.x - h.ox) / h.cell), Math.round((p.y - h.oy) / h.cell));
+    });
+    board.addEventListener('keydown', function (e) {
+      if (e.key === 'ArrowLeft') state.cursor.x = Math.max(0, state.cursor.x - 1);
+      else if (e.key === 'ArrowRight') state.cursor.x = Math.min(N - 1, state.cursor.x + 1);
+      else if (e.key === 'ArrowUp') state.cursor.y = Math.max(0, state.cursor.y - 1);
+      else if (e.key === 'ArrowDown') state.cursor.y = Math.min(N - 1, state.cursor.y + 1);
+      else if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); placeHuman(state.cursor.x, state.cursor.y); return; }
+      else return;
+      e.preventDefault(); drawBoard();
+    });
+    document.getElementById('step-btn').addEventListener('click', function () {
+      if (!state.candidates.length) { render('请先在棋盘落子。'); return; }
+      simulationStep();
+      render(['选择最值得检查的分支。', '扩展一个候选局面。', '价值网络评估叶节点。', '把评估沿路径回传。'][state.phase]);
+    });
+    document.getElementById('batch-btn').addEventListener('click', function () {
+      if (!state.candidates.length) { render('请先在棋盘落子。'); return; }
+      for (var i = 0; i < 48; i += 1) simulationStep();
+      render('一批搜索完成：访问分布把多次检验汇成新的落子建议。');
+    });
+    document.getElementById('play-btn').addEventListener('click', function () {
+      if (!state.candidates.length || !state.simulations) { render('先运行搜索，再落下它的选择。'); return; }
+      var best = state.candidates.slice().sort(function (a, b) { return b.visits - a.visits; })[0];
+      state.board[best.y][best.x] = 2; state.candidates = []; state.selected = null;
+      render('白子采用搜索后的选择。你可以继续落黑子，或重置复盘。');
+    });
+    document.getElementById('reset-btn').addEventListener('click', function () { state = fresh(); render('棋局已重置。请落一枚黑子。'); board.focus(); });
+
+    var event = Lec.P.eventById('alphago');
+    var eventTag = document.getElementById('event-tag');
+    var historyCopy = document.getElementById('history-copy');
+    if (typeof Lec.P.eventLabel === 'function') {
+      try { eventTag.textContent = Lec.P.eventLabel('alphago'); } catch (ignore) {}
+    }
+    if (!eventTag.textContent && event) eventTag.textContent = event.title + ' · ' + Lec.P.formatNumber(event.year, 0);
+    if (event) historyCopy.textContent = event.significance + ' 关键不是单一网络，而是学习、强化学习与树搜索的系统组合。';
+
+    state = fresh();
+    Deck.autofit(board, drawBoard);
+    Deck.onResize(function () { drawTree(); drawCompare(); });
+    render();
+  }
+
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot, { once: true });
+  else boot();
+}());
+</script>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+</body>
+</html>

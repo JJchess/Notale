@@ -1,0 +1,424 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>齐奥尔科夫斯基方程 —— 推进剂能换来多少速度</title>
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  .content{
+    position:absolute; left:var(--sp-6); right:var(--sp-6); top:96px; bottom:46px;
+    z-index:2; display:flex; gap:var(--sp-4);
+  }
+  .col-left{
+    flex:0 0 600px; display:flex; flex-direction:column; gap:var(--sp-3);
+  }
+  .col-right{
+    flex:1 1 auto; min-width:0; min-height:0;
+    display:flex; flex-direction:column;
+  }
+
+  /* --- 公式 + Δv 大字 --------------------------------------------------- */
+  .formula-box{ display:flex; align-items:center; justify-content:space-between; gap:var(--sp-3); }
+  .formula-tex{
+    font:600 20px/1.3 var(--font-mono); color:var(--text);
+  }
+  .formula-tex .lo{ font-size:14px; vertical-align:sub; color:var(--text-dim); }
+  .dv-readout{ text-align:right; }
+  .dv-readout .cap{ font:600 var(--fs-label)/1.2 var(--font-sans); color:var(--text-dim); }
+  .dv-readout .num-lg{ line-height:1; }
+  .dv-readout .unit{ font:600 var(--fs-label)/1 var(--font-mono); color:var(--text-dim); margin-left:4px; }
+
+  /* --- Isp 控制 ----------------------------------------------------------*/
+  .isp-head{ display:flex; align-items:baseline; justify-content:space-between; margin-bottom:6px; }
+  .isp-head .label{ color:var(--text); }
+  .isp-head .ve-num{ font:600 var(--fs-body)/1 var(--font-mono); color:var(--accent-2); }
+  .label sub, .formula-tex sub, .ve-num sub, .mass-head sub{ font-size:12px; }
+  .chip-row{ display:flex; flex-wrap:wrap; gap:8px; margin-top:10px; }
+  .chip{ cursor:pointer; user-select:none; border:1px solid var(--line); }
+  .chip small{ opacity:.75; margin-left:4px; font-weight:500; font-size:12px; }
+  .ion-note{ margin-top:8px; font:400 var(--fs-label)/1.4 var(--font-sans); color:var(--text-faint); }
+
+  /* --- 质量比堆叠条 -------------------------------------------------------*/
+  .mass-head{ display:flex; align-items:baseline; justify-content:space-between; margin-bottom:8px; }
+  .mass-head .ratio-num{ font:700 var(--fs-h3)/1 var(--font-mono); color:var(--text); }
+  .massbar{
+    position:relative; height:56px; border-radius:8px; overflow:visible;
+    background:var(--bg3); border:1px solid var(--line);
+  }
+  .bar-prop, .bar-dry{
+    position:absolute; top:0; bottom:0; display:flex; align-items:center; overflow:hidden;
+    font:600 var(--fs-label)/1 var(--font-sans);
+  }
+  .bar-prop{
+    left:0; border-radius:8px 0 0 8px;
+    background:linear-gradient(180deg, rgba(255,140,90,.9), rgba(255,90,40,.85));
+    color:#2a0e04; justify-content:flex-start; padding-left:12px;
+  }
+  .bar-dry{
+    right:0; border-radius:0 8px 8px 0;
+    background:linear-gradient(180deg, rgba(120,150,200,.35), rgba(80,110,160,.35));
+    color:var(--text); justify-content:flex-end; padding-right:12px;
+  }
+  .bar-handle{
+    position:absolute; top:-6px; bottom:-6px; width:16px; margin-left:-8px;
+    cursor:ew-resize; touch-action:none;
+  }
+  .bar-handle::before{
+    content:""; position:absolute; left:6px; right:6px; top:0; bottom:0;
+    background:#fff; border:2px solid var(--accent); border-radius:4px;
+    box-shadow:0 0 0 3px rgba(0,0,0,.35);
+  }
+  .mass-legend{ display:flex; justify-content:space-between; margin-top:6px; font:500 var(--fs-label)/1.3 var(--font-sans); color:var(--text-faint); }
+
+  /* --- 结果对比 ------------------------------------------------------------*/
+  .result-box{ display:flex; align-items:center; gap:var(--sp-3); }
+  .result-badge{
+    flex:0 0 auto; width:70px; height:70px; border-radius:50%;
+    display:flex; align-items:center; justify-content:center; text-align:center;
+    font:700 15px/1.15 var(--font-sans);
+    border:2px solid var(--line); transition:background .15s, border-color .15s, color .15s;
+  }
+  .result-badge.good{ background:rgba(74,222,128,.16); border-color:var(--good); color:var(--good); }
+  .result-badge.bad{ background:rgba(255,84,112,.16); border-color:var(--bad); color:var(--bad); }
+  .result-text{ font:400 var(--fs-body)/1.4 var(--font-sans); color:var(--text-dim); }
+  .result-text b{ color:var(--text); font-weight:700; }
+
+  /* --- 图表 --------------------------------------------------------------- */
+  .chart-panel{ flex:1 1 auto; min-height:0; display:flex; flex-direction:column; }
+  .chart-title{ font:600 var(--fs-label)/1.2 var(--font-sans); color:var(--text-dim); margin-bottom:6px; }
+  .chart-wrap{ flex:1 1 auto; min-height:0; position:relative; }
+  .chart-wrap svg{ width:100%; height:100%; display:block; }
+  .axis path, .axis line{ stroke:var(--line); }
+  .axis text{ fill:var(--text-faint); font:500 var(--fs-num)/1 var(--font-mono); }
+  .curve-label{ font:600 var(--fs-label)/1 var(--font-sans); }
+  .target-label{ font:600 var(--fs-label)/1 var(--font-sans); fill:var(--accent-3); }
+</style>
+</head>
+<body data-page="04" data-total="14">
+<div id="stage">
+  <div class="starfield"></div>
+
+  <div class="pg-head">
+    <div><span class="pg-kicker">MODULE 1 · 推进</span><span class="pg-title">齐奥尔科夫斯基方程——推进剂能换来多少速度</span></div>
+    <div class="pg-index">4 / 14</div>
+  </div>
+
+  <div class="content">
+
+    <div class="col-left">
+
+      <div class="panel formula-box">
+        <div class="formula-tex">Δv&nbsp;=&nbsp;I<span class="lo">sp</span>·g<span class="lo">0</span>·ln(m<span class="lo">0</span>/m<span class="lo">f</span>)</div>
+        <div class="dv-readout">
+          <div class="cap">当前 Δv</div>
+          <div><span class="num-lg" id="dv-val">0.0</span><span class="unit">km/s</span></div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="isp-head">
+          <span class="label">比冲 I<sub>sp</sub> / 排气速度 v<sub>e</sub></span>
+          <span class="ve-num"><span id="isp-val">300</span> s　→　v<sub>e</sub>&nbsp;=&nbsp;<span id="ve-val">2.94</span> km/s</span>
+        </div>
+        <input type="range" id="isp-slider" class="no-pan" min="0" max="1000" step="1" value="463">
+        <div class="chip-row" id="chip-row"></div>
+        <div class="ion-note">💡 离子推进 Δv 增益巨大，但推力极小，无法单独完成发射——这里只比较 Δv，推力问题不在本页讨论。</div>
+      </div>
+
+      <div class="panel">
+        <div class="mass-head">
+          <span class="label">质量比 m<sub>0</sub>/m<sub>f</sub>（拖动分界线调整）</span>
+          <span class="ratio-num" id="ratio-val">6.7</span>
+        </div>
+        <div class="massbar no-pan" id="massbar">
+          <div class="bar-prop" id="bar-prop">推进剂 <span id="prop-pct" style="margin-left:6px">85%</span></div>
+          <div class="bar-dry" id="bar-dry"><span id="dry-pct">15%</span> 结构+载荷</div>
+          <div class="bar-handle" id="bar-handle"></div>
+        </div>
+        <div class="mass-legend"><span>结构占比越小 → 质量比越大</span><span>起飞质量 m₀ = 1（归一化）</span></div>
+      </div>
+
+      <div class="panel result-box">
+        <div class="result-badge" id="result-badge">未达标</div>
+        <div class="result-text">入轨（LEO）实际需要的 Δv 预算 ≈ <b>9.4 km/s</b>（不是轨道速度 7.66 km/s 本身，多出的部分是发射过程中的重力/阻力损失）。
+          当前这组参数<b id="result-word">还差一截</b>。</div>
+      </div>
+
+      <div class="callout warn">
+        质量比每往上冲一点，Δv 的增益越来越小（ln 函数是边际递减的）——这就是为什么<b>单级火箭很难独自打到轨道</b>，下一页看多级火箭怎么解决这个问题。
+      </div>
+
+    </div>
+
+    <div class="col-right">
+      <div class="panel chart-panel">
+        <div class="chart-title">Δv 随质量比变化的曲线 —— 亮色曲线是当前选中的推进剂，虚线是另外三种的对比</div>
+        <div class="chart-wrap"><svg id="chart"></svg></div>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="pg-hint">💡 <b>怎么玩</b>：拖动质量比堆叠条的分界线、切换/滑动比冲，看左侧 Δv 数字和右侧曲线怎么变——橙色点是当前参数在曲线上的位置，虚线是不换推进剂只换质量比会怎样。</div>
+</div>
+
+<script src="assets/base.js"></script>
+<script src="assets/lib/d3.min.js"></script>
+<script>
+(function(){
+  'use strict';
+
+  var G0 = 9.81;
+  var PRESETS = [
+    { name:'固体',      isp:250 },
+    { name:'煤油/液氧', isp:300 },
+    { name:'液氢/液氧', isp:450 },
+    { name:'离子推进',  isp:3000 }
+  ];
+  var TARGET_DV = 9.4;      // km/s，事实表：入轨实际 Δv 预算
+  var RATIO_MIN = 2, RATIO_MAX = 20;
+  var DV_MAX = 15;          // 图表 y 轴上限
+  var ISP_MIN = 150, ISP_MAX = 3200;
+
+  var state = { isp: 300, dryFrac: 0.15 };
+
+  function ispFromSlider(v){
+    var lo = Math.log10(ISP_MIN), hi = Math.log10(ISP_MAX);
+    return Math.pow(10, lo + (hi - lo) * (v / 1000));
+  }
+  function sliderFromIsp(isp){
+    var lo = Math.log10(ISP_MIN), hi = Math.log10(ISP_MAX);
+    return (Math.log10(isp) - lo) / (hi - lo) * 1000;
+  }
+  function veOf(isp){ return isp * G0 / 1000; }               // km/s
+  function ratioOf(dryFrac){ return 1 / dryFrac; }
+  function dvOf(isp, ratio){ return veOf(isp) * Math.log(ratio); }
+
+  /* ---------------- 左侧控件 ---------------- */
+
+  var chipRow = document.getElementById('chip-row');
+  PRESETS.forEach(function(p){
+    var el = document.createElement('span');
+    el.className = 'chip';
+    el.innerHTML = p.name + '<small>' + p.isp + 's</small>';
+    el.addEventListener('click', function(){
+      state.isp = p.isp;
+      ispSlider.value = sliderFromIsp(p.isp);
+      render();
+    });
+    el._preset = p;
+    chipRow.appendChild(el);
+  });
+
+  var ispSlider = document.getElementById('isp-slider');
+  ispSlider.value = sliderFromIsp(state.isp);
+  ispSlider.addEventListener('input', function(){
+    state.isp = ispFromSlider(+ispSlider.value);
+    render();
+  });
+
+  var massbar = document.getElementById('massbar');
+  var barProp = document.getElementById('bar-prop');
+  var barDry  = document.getElementById('bar-dry');
+  var barHandle = document.getElementById('bar-handle');
+
+  function dryFracFromX(x, w){
+    var f = 1 - Deck.clamp(x, 0, w) / w;
+    return Deck.clamp(f, RATIO_TO_FRAC(RATIO_MAX), RATIO_TO_FRAC(RATIO_MIN));
+  }
+  function RATIO_TO_FRAC(r){ return 1 / r; }
+
+  var dragging = false;
+  function setFromEvent(e){
+    var w = massbar.clientWidth;
+    var p = Deck.pt(massbar, e);
+    state.dryFrac = dryFracFromX(p.x, w);
+    render();
+  }
+  massbar.addEventListener('pointerdown', function(e){
+    dragging = true;
+    massbar.setPointerCapture(e.pointerId);
+    setFromEvent(e);
+  });
+  massbar.addEventListener('pointermove', function(e){
+    if (dragging) setFromEvent(e);
+  });
+  ['pointerup','pointercancel'].forEach(function(evt){
+    massbar.addEventListener(evt, function(){ dragging = false; });
+  });
+
+  /* ---------------- 图表（D3） ---------------- */
+
+  var svg = d3.select('#chart');
+  var chartWrap = document.querySelector('.chart-wrap');
+  var W = 0, H = 0, margin = { top:18, right:24, bottom:44, left:56 };
+  var x, y, gCurves, gAxisX, gAxisY, gTarget, gMarker;
+
+  function buildChart(){
+    W = chartWrap.clientWidth  || 800;
+    H = chartWrap.clientHeight || 640;
+    svg.attr('viewBox', '0 0 ' + W + ' ' + H).attr('width', W).attr('height', H);
+    svg.selectAll('*').remove();
+
+    x = d3.scaleLinear().domain([1, RATIO_MAX]).range([margin.left, W - margin.right]);
+    y = d3.scaleLinear().domain([0, DV_MAX]).range([H - margin.bottom, margin.top]);
+
+    var plotW = W - margin.left - margin.right;
+    var plotH = H - margin.top - margin.bottom;
+
+    var clipId = 'chart-clip-04';
+    svg.append('clipPath').attr('id', clipId)
+      .append('rect')
+      .attr('x', margin.left).attr('y', margin.top)
+      .attr('width', plotW).attr('height', plotH);
+
+    gAxisX = svg.append('g').attr('class', 'axis')
+      .attr('transform', 'translate(0,' + (H - margin.bottom) + ')')
+      .call(d3.axisBottom(x).ticks(6).tickSizeOuter(0));
+    gAxisY = svg.append('g').attr('class', 'axis')
+      .attr('transform', 'translate(' + margin.left + ',0)')
+      .call(d3.axisLeft(y).ticks(6).tickSizeOuter(0));
+
+    svg.append('text').attr('class', 'axis')
+      .attr('x', W - margin.right).attr('y', H - 10)
+      .attr('text-anchor', 'end')
+      .style('font', '600 14px var(--font-sans)').style('fill', 'var(--text-faint)')
+      .text('质量比 m₀/mf →');
+    svg.append('text').attr('class', 'axis')
+      .attr('x', margin.left).attr('y', margin.top - 4)
+      .style('font', '600 14px var(--font-sans)').style('fill', 'var(--text-faint)')
+      .text('Δv (km/s)');
+
+    gTarget = svg.append('g');
+    gTarget.append('line')
+      .attr('x1', margin.left).attr('x2', W - margin.right)
+      .attr('y1', y(TARGET_DV)).attr('y2', y(TARGET_DV))
+      .attr('stroke', 'var(--accent-3)').attr('stroke-width', 2).attr('stroke-dasharray', '7,5');
+    gTarget.append('text').attr('class', 'target-label')
+      .attr('x', margin.left + 8).attr('y', y(TARGET_DV) - 8)
+      .text('入轨 Δv 预算 ≈ 9.4 km/s');
+
+    gCurves = svg.append('g').attr('clip-path', 'url(#' + clipId + ')');
+    gMarker = svg.append('g');
+  }
+
+  var lineGen = function(isp){
+    // 像素级夹住到绘图区顶边——超出部分反正会被 clipPath 裁掉，直接不让
+    // 路径的几何坐标跑出 svg 的坐标范围（比如离子推进在高质量比时 Δv 能
+    // 算到 80+ km/s），这样和「先算真实值再裁」视觉上完全一样，但不会把
+    // 元素的包围盒撑到画布外面。
+    return d3.line()
+      .x(function(d){ return x(d); })
+      .y(function(d){ return Math.max(y(dvOf(isp, d)), margin.top); })
+      .curve(d3.curveMonotoneX);
+  };
+  var SAMPLE_R = d3.range(1, RATIO_MAX + 0.001, (RATIO_MAX - 1) / 60);
+
+  function labelPos(isp){
+    var dvAtMax = dvOf(isp, RATIO_MAX);
+    if (dvAtMax <= DV_MAX * 0.96) return { r: RATIO_MAX * 0.9, dv: dvOf(isp, RATIO_MAX * 0.9) };
+    var rExit = Math.exp((DV_MAX * 0.9) / veOf(isp));
+    rExit = Math.min(rExit, RATIO_MAX);
+    return { r: Math.max(1.3, rExit), dv: dvOf(isp, Math.max(1.3, rExit)) };
+  }
+
+  function drawCurves(){
+    gCurves.selectAll('*').remove();
+
+    PRESETS.forEach(function(p){
+      var isLive = Math.abs(p.isp - state.isp) < Math.max(2, p.isp * 0.01);
+      if (isLive) return; // 与当前活体曲线重合，跳过参考线避免重复
+      gCurves.append('path')
+        .datum(SAMPLE_R)
+        .attr('d', lineGen(p.isp))
+        .attr('fill', 'none')
+        .attr('stroke', 'var(--text-faint)')
+        .attr('stroke-width', 1.5)
+        .attr('stroke-dasharray', '5,4')
+        .attr('opacity', .75);
+      var lp = labelPos(p.isp);
+      gCurves.append('text')
+        .attr('class', 'curve-label')
+        .attr('x', x(lp.r) + 6)
+        .attr('y', y(Math.min(lp.dv, DV_MAX)) - 6)
+        .attr('fill', 'var(--text-faint)')
+        .text(p.name + ' ' + p.isp + 's');
+    });
+
+    gCurves.append('path')
+      .datum(SAMPLE_R)
+      .attr('d', lineGen(state.isp))
+      .attr('fill', 'none')
+      .attr('stroke', 'var(--accent-2)')
+      .attr('stroke-width', 3);
+
+    var liveLabel = labelPos(state.isp);
+    gCurves.append('text')
+      .attr('class', 'curve-label')
+      .attr('x', x(liveLabel.r) + 6)
+      .attr('y', y(Math.min(liveLabel.dv, DV_MAX)) - 6)
+      .attr('fill', 'var(--accent-2)')
+      .text('当前 ' + Math.round(state.isp) + 's');
+  }
+
+  function drawMarker(ratio, dv){
+    gMarker.selectAll('*').remove();
+    var cy = y(Math.min(dv, DV_MAX));
+    gMarker.append('circle')
+      .attr('cx', x(ratio)).attr('cy', cy).attr('r', 9)
+      .attr('fill', 'var(--accent)').attr('opacity', .18);
+    gMarker.append('circle')
+      .attr('cx', x(ratio)).attr('cy', cy).attr('r', 5.5)
+      .attr('fill', 'var(--accent)').attr('stroke', '#1a0e08').attr('stroke-width', 1.5);
+  }
+
+  /* ---------------- 渲染整页状态 ---------------- */
+
+  function render(){
+    var ratio = ratioOf(state.dryFrac);
+    var dv = dvOf(state.isp, ratio);
+    var propPct = Math.round((1 - state.dryFrac) * 100);
+    var dryPct = 100 - propPct;
+
+    document.getElementById('dv-val').textContent = dv.toFixed(1);
+    document.getElementById('isp-val').textContent = Math.round(state.isp);
+    document.getElementById('ve-val').textContent = veOf(state.isp).toFixed(2);
+    document.getElementById('ratio-val').textContent = ratio.toFixed(1);
+    document.getElementById('prop-pct').textContent = propPct + '%';
+    document.getElementById('dry-pct').textContent = dryPct + '%';
+
+    barProp.style.width = propPct + '%';
+    barDry.style.width = dryPct + '%';
+    barHandle.style.left = propPct + '%';
+
+    var chips = chipRow.querySelectorAll('.chip');
+    for (var i = 0; i < chips.length; i++){
+      var on = Math.abs(chips[i]._preset.isp - state.isp) < Math.max(2, chips[i]._preset.isp * 0.01);
+      chips[i].classList.toggle('on', on);
+    }
+
+    var badge = document.getElementById('result-badge');
+    var word = document.getElementById('result-word');
+    if (dv >= TARGET_DV){
+      badge.textContent = '达标'; badge.className = 'result-badge good';
+      word.textContent = '已经够了';
+    } else {
+      badge.textContent = '未达标'; badge.className = 'result-badge bad';
+      word.textContent = '还差 ' + (TARGET_DV - dv).toFixed(1) + ' km/s';
+    }
+
+    if (gCurves){ drawCurves(); drawMarker(ratio, dv); }
+  }
+
+  requestAnimationFrame(function(){
+    buildChart();
+    render();
+  });
+
+  Deck.init({ index: 4, total: 14 });
+})();
+</script>
+</body>
+</html>

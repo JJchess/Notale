@@ -23,8 +23,9 @@ from notale.tools.agent_tools import (
     SubmitPageTool,
     assemble_plan,
 )
-from notale.tests.fake_llm import _default_style, _final_plan_to_root
+from notale.tests.fake_llm import ScriptedClient, _default_style, _final_plan_to_root
 from notale.tools.base import ToolContext
+from notale.tools.inspection import InspectPageInput, InspectPageTool
 from notale.utils.skill_catalog import create_generated_style
 from notale.web.deck import write_deck_package
 
@@ -58,11 +59,48 @@ def test_planner_schema_has_no_derived_or_retired_fields():
     assert "mode" not in schema["properties"]
     assert "terminology" not in schema["properties"]
     assert "notation" not in schema["properties"]
+    assert "skills" not in schema["$defs"]["DraftPage"]["properties"]
+
+
+@pytest.mark.asyncio
+async def test_plan_tool_normalizes_type_owned_component_tools_without_retry(tmp_path: Path):
+    style = create_generated_style(**_default_style())
+    state = PlannerRootState(tmp_path, SKILL_CATALOG, EventLog(tmp_path), style)
+    payload = {
+        "title": "组件归一化", "language": "zh", "audience": "学习者",
+        "throughline": "观察后编码",
+        "chapters": [{
+            "id": "whole", "title": "全章", "goal": "理解", "entry": "观察",
+            "payoff": "掌握", "pages": 2,
+        }],
+        "chapter_pages": [{"id": "whole", "pages": [
+            {
+                "type": "sim-explorable", "composition": "route-field",
+                "claim": "状态决定轨迹", "learning_action": "操纵参数",
+                "narrative_role": "观察机制", "links": [], "tools": [],
+            },
+            {
+                "type": "code-runnable", "composition": "forked-ledger",
+                "claim": "实现规则", "learning_action": "运行代码",
+                "narrative_role": "迁移实现", "links": [],
+                "tools": ["create_widget", "create_code_runtime"],
+            },
+        ]}],
+    }
+    draft = PlanInput.model_validate(payload)
+    result = await PlanTool(state).execute(draft, ToolContext(state.workspace, {"turn": 1}))
+    assert not result.is_error
+    assert draft.chapter_pages[0].pages[0].tools == ["create_widget"]
+    assert draft.chapter_pages[0].pages[1].tools == ["create_code_runtime"]
+    saved = json.loads((state.workspace / "plan.json").read_text())
+    assert saved["chapter_pages"][0]["pages"][0]["tools"] == ["create_widget"]
+    events = [json.loads(line) for line in (tmp_path / "events.jsonl").read_text().splitlines()]
+    assert sum(item["kind"] == "planner.capabilities.normalized" for item in events) == 2
 
 
 @pytest.mark.asyncio
 async def test_page_transaction_revision_patch_and_submit(tmp_path: Path):
-    state = PageToolState(tmp_path, 1, EventLog(tmp_path))
+    state = PageToolState(tmp_path, 1, EventLog(tmp_path), llm=ScriptedClient([]))
     edit = EditPageTool(state)
     result = await edit.execute(EditPageInput(
         mode="replace", revision=0, html="<section data-notale-page><h1>旧标题</h1></section>"
@@ -74,7 +112,14 @@ async def test_page_transaction_revision_patch_and_submit(tmp_path: Path):
     assert json.loads(patched.output)["revision"] == 2
     read = await ReadPageTool(state).execute(ReadPageInput(), None)
     assert "新标题" in json.loads(read.output)["html"]
-    submitted = await SubmitPageTool(state).execute(SubmitPageInput(revision=2, notes="讲稿"), None)
+    inspected = await InspectPageTool(state).execute(
+        InspectPageInput(revision=2), ToolContext(state.workspace, {"turn": 2})
+    )
+    assert not inspected.is_error
+    submitted = await SubmitPageTool(state).execute(
+        SubmitPageInput(revision=2, notes="讲稿"),
+        ToolContext(state.workspace, {"turn": 3}),
+    )
     assert not submitted.is_error
     saved = PageArtifact.model_validate_json((tmp_path / "pages" / "p1.json").read_text())
     assert saved.notes == "讲稿"
@@ -109,6 +154,26 @@ async def test_shell_cleaning_and_delivery_checks(tmp_path: Path):
         run_dir=tmp_path,
     )
     assert any("remote" in item for item in failures)
+
+
+@pytest.mark.asyncio
+async def test_undeclared_notale_token_reference_fails_delivery(tmp_path: Path):
+    invented = (
+        '<section data-notale-page style="color:var(--notale-color-red, #8f2f2b)">'
+        "正文</section>"
+    )
+    failures = await page_delivery_failures(
+        PageArtifact(html=invented), page=1, run_dir=tmp_path
+    )
+    assert "undeclared --notale token: --notale-color-red" in failures
+
+    declared = (
+        '<section data-notale-page style="color:var(--notale-accent-3);'
+        'background:var(--notale-bg);font-family:var(--notale-font-body)">正文</section>'
+    )
+    assert not await page_delivery_failures(
+        PageArtifact(html=declared), page=1, run_dir=tmp_path
+    )
 
 
 @pytest.mark.asyncio

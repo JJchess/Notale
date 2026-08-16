@@ -4,7 +4,6 @@ from pathlib import Path
 import pytest
 
 from notale.agents.loop import AgentLoop, ConversationMessage, ToolUseBlock
-from notale.core.models import SkillAssignment
 from notale.core.observability import EventLog
 from notale.core.stages.contract import SKILL_CATALOG
 from notale.roles.profiles import BUILDER, PLANNER
@@ -31,6 +30,7 @@ async def test_agent_loop_edits_then_submits(tmp_path: Path):
             "mode": "replace", "revision": 0,
             "html": "<section data-notale-page><h1>完成</h1></section>",
         }),
+        tool_call_msg("inspect_page", {"revision": 1}),
         tool_call_msg("submit_page", {"revision": 1, "notes": "notes"}),
     ])
     state = PageToolState(tmp_path, 1, EventLog(tmp_path))
@@ -46,17 +46,20 @@ async def test_agent_loop_edits_then_submits(tmp_path: Path):
     )
     artifact = await agent.run("build")
     assert artifact.notes == "notes"
-    assert len(client.requests) == 2
+    assert len(client.requests) == 3
     events = [json.loads(line) for line in (tmp_path / "events.jsonl").read_text().splitlines()]
     kinds = [event["kind"] for event in events]
     assert "agent.started" in kinds
-    assert kinds.count("tool.completed") == 2
+    assert kinds.count("tool.completed") == 3
 
     first = json.loads(
         (tmp_path / "llm-requests" / "builder-p1" / "turn-0001.json").read_text()
     )
     second = json.loads(
         (tmp_path / "llm-requests" / "builder-p1" / "turn-0002.json").read_text()
+    )
+    third = json.loads(
+        (tmp_path / "llm-requests" / "builder-p1" / "turn-0003.json").read_text()
     )
     assert [item["role"] for item in first["request"]["messages"]] == [
         "system", "user",
@@ -68,6 +71,13 @@ async def test_agent_loop_edits_then_submits(tmp_path: Path):
         second["request"]["messages"][2]["tool_calls"][0]["function"]["arguments"]
     )
     assert "完成" in arguments["html"]
+    assert [item["role"] for item in third["request"]["messages"]][-2:] == [
+        "assistant", "tool",
+    ]
+    inspect_result = third["request"]["messages"][-1]["content"]
+    assert '"status": "success"' in inspect_result
+    assert '"html"' not in inspect_result
+    assert "image_url" not in json.dumps(third["request"]["messages"][-2:])
     assert "api_key" not in json.dumps(second).lower()
     started = [event for event in events if event["kind"] == "llm.call.started"]
     assert started[0]["payload"]["request_path"] == "llm-requests/builder-p1/turn-0001.json"
@@ -122,22 +132,20 @@ async def test_planner_finishes_with_plan_from_accepted_style(tmp_path: Path, pl
     assert state.style is not None
 
 
-def test_selected_skill_is_injected_not_exposed_as_a_tool(tmp_path: Path):
+def test_component_is_a_tool_and_old_page_skill_is_not_injected(tmp_path: Path):
     state = PageToolState(tmp_path, 1, EventLog(tmp_path))
-    skill = SKILL_CATALOG.render([SkillAssignment(name="create-sim")])
     agent = AgentLoop(
         role=BUILDER,
         state=state,
-        tools=builder_tools(state, {"run_js"}),
+        tools=builder_tools(state, {"create_widget"}),
         terminal_tool="submit_page",
         llm=ScriptedClient([]),
         logger=state.logger,
         agent_id="builder:p1",
         page=1,
-        skill_text=skill,
     )
-    assert "Skill: create-sim" in agent.system_prompt
-    assert "skill" not in [tool.name for tool in agent.tools]
+    assert "Skill: create-sim" not in agent.system_prompt
+    assert "create_widget" in [tool.name for tool in agent.tools]
 
 
 @pytest.mark.asyncio
@@ -156,6 +164,7 @@ async def test_parallel_tool_results_are_replayed_as_separate_openai_messages(tm
             "revision": 0,
             "html": "<section data-notale-page><h1>并发</h1></section>",
         }),
+        tool_call_msg("inspect_page", {"revision": 1}),
         tool_call_msg("submit_page", {"revision": 1, "notes": ""}),
     ])
     state = PageToolState(tmp_path, 1, EventLog(tmp_path))
@@ -189,6 +198,7 @@ async def test_unknown_tool_is_returned_to_model_as_an_error(tmp_path: Path):
             "revision": 0,
             "html": "<section data-notale-page><h1>恢复</h1></section>",
         }),
+        tool_call_msg("inspect_page", {"revision": 1}),
         tool_call_msg("submit_page", {"revision": 1, "notes": ""}),
     ])
     state = PageToolState(tmp_path, 1, EventLog(tmp_path))
@@ -211,6 +221,70 @@ async def test_unknown_tool_is_returned_to_model_as_an_error(tmp_path: Path):
         "tool_call_id": unknown.tool_uses[0].id,
         "content": "Unknown tool: not_a_tool",
     }
+
+
+@pytest.mark.asyncio
+async def test_submit_in_same_turn_as_inspection_is_rejected_until_builder_sees_screenshot(
+    tmp_path: Path,
+):
+    transaction = ConversationMessage(
+        role="assistant",
+        content=[
+            ToolUseBlock(
+                id="edit",
+                name="edit_page",
+                input={
+                    "mode": "replace",
+                    "revision": 0,
+                    "html": "<section data-notale-page><h1>事务页</h1></section>",
+                },
+            ),
+            ToolUseBlock(
+                id="inspect",
+                name="inspect_page",
+                input={"revision": 1},
+            ),
+            ToolUseBlock(
+                id="early-submit",
+                name="submit_page",
+                input={"revision": 1, "notes": ""},
+            ),
+        ],
+    )
+    client = ScriptedClient([
+        transaction,
+        tool_call_msg("submit_page", {"revision": 1, "notes": ""}),
+    ])
+    state = PageToolState(tmp_path, 1, EventLog(tmp_path))
+    agent = AgentLoop(
+        role=BUILDER,
+        state=state,
+        tools=builder_tools(state, set()),
+        terminal_tool="submit_page",
+        llm=client,
+        logger=state.logger,
+        agent_id="builder:p1",
+        page=1,
+    )
+
+    artifact = await agent.run("build")
+
+    assert "事务页" in artifact.html
+    events = [json.loads(line) for line in (tmp_path / "events.jsonl").read_text().splitlines()]
+    completed = [
+        item["payload"]["tool"]
+        for item in events
+        if item["kind"] == "tool.completed" and item.get("agent_id") == "builder:p1"
+    ]
+    assert completed == ["edit_page", "inspect_page", "submit_page", "submit_page"]
+    first_submit = [
+        item for item in events
+        if item["kind"] == "tool.completed"
+        and item.get("agent_id") == "builder:p1"
+        and item["payload"]["tool"] == "submit_page"
+    ][0]
+    assert first_submit["payload"]["is_error"] is True
+    assert "later Builder turn" in first_submit["payload"]["output"]
 
 
 @pytest.mark.asyncio

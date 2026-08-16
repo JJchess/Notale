@@ -1,0 +1,322 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+</head>
+<body data-page="18" data-total="20">
+<div id="stage">
+  <style>
+    .reentry-page { position:relative; }
+    .reentry-page .world,
+    .reentry-page .plasma { position:absolute; inset:0; inline-size:100%; block-size:100%; }
+    .reentry-page .world { z-index:0; }
+    .reentry-page .plasma { z-index:1; pointer-events:none; }
+    .reentry-page .page-head { pointer-events:none; }
+    .reentry-page .title { max-inline-size:19ch; }
+    .reentry-page .hud { position:absolute; z-index:3; inset:190px auto auto var(--page-pad-x); display:grid; grid-template-columns:repeat(5, minmax(0, 1fr)); gap:var(--space-3); inline-size:820px; }
+    .reentry-page .metric { min-inline-size:0; padding:var(--space-3) var(--space-4); border:1px solid var(--line); border-radius:var(--radius-md); background:var(--surface-glass); box-shadow:var(--shadow-panel); }
+    .reentry-page .metric-label { display:block; }
+    .reentry-page .metric-value { margin-block-start:var(--space-1); font-size:var(--fs-h3); }
+    .reentry-page .controls { position:absolute; z-index:4; inset:174px var(--page-pad-x) auto auto; inline-size:430px; gap:var(--space-3); padding:var(--space-4); }
+    .reentry-page .control-group { gap:var(--space-1); padding-block-end:var(--space-2); }
+    .reentry-page .control-top { display:flex; align-items:center; justify-content:space-between; gap:var(--space-3); }
+    .reentry-page output { color:var(--text-strong); font-family:var(--font-mono); font-size:var(--fs-label); }
+    .reentry-page .actions { display:grid; grid-template-columns:1fr 1fr; gap:var(--space-3); }
+    .reentry-page .flight-status { position:absolute; z-index:3; inset:510px auto auto var(--page-pad-x); inline-size:820px; display:flex; align-items:center; justify-content:space-between; gap:var(--space-4); padding:var(--space-3) var(--space-4); border:1px solid var(--line-strong); border-radius:var(--radius-md); background:var(--surface-glass); }
+    .reentry-page .flight-status strong { color:var(--text-strong); font-size:var(--fs-body); }
+    .reentry-page .flight-status span:last-child { color:var(--text-muted); font-size:var(--fs-small); }
+    .reentry-page .trace-card { position:absolute; z-index:3; inset:auto auto 112px var(--page-pad-x); inline-size:820px; block-size:180px; padding:var(--space-4); border:1px solid var(--line); border-radius:var(--radius-lg); background:var(--surface-glass); box-shadow:var(--shadow-panel); }
+    .reentry-page .trace-head { display:flex; justify-content:space-between; align-items:center; gap:var(--space-4); margin-block-end:var(--space-2); }
+    .reentry-page .trace-head strong { font-size:var(--fs-small); }
+    .reentry-page .trace-head span { color:var(--text-muted); font-size:var(--fs-caption); }
+    .reentry-page .trace { inline-size:100%; block-size:120px; }
+    .reentry-page .page-foot { pointer-events:none; }
+    .reentry-page .take { max-inline-size:760px; }
+    .reentry-page input:focus-visible, .reentry-page button:focus-visible { outline:3px solid var(--focus); outline-offset:3px; }
+    @media (prefers-reduced-motion: reduce) { .reentry-page * { transition-duration:0.01ms !important; } }
+  </style>
+
+  <main class="canvas-full reentry-page" aria-label="再入走廊驾驶游戏">
+    <canvas class="world cv-fill" aria-hidden="true"></canvas>
+    <canvas class="plasma cv-fill" aria-hidden="true"></canvas>
+
+    <header class="page-head"></header>
+
+    <section class="hud" aria-label="飞行遥测">
+      <div class="metric"><span class="metric-label">高度</span><span class="metric-value" id="altRead">—</span></div>
+      <div class="metric"><span class="metric-label">相对速度</span><span class="metric-value" id="speedRead">—</span></div>
+      <div class="metric"><span class="metric-label">动压</span><span class="metric-value" id="qRead">—</span></div>
+      <div class="metric"><span class="metric-label">加热率</span><span class="metric-value" id="heatRead">—</span></div>
+      <div class="metric"><span class="metric-label">过载</span><span class="metric-value" id="gRead">—</span></div>
+    </section>
+
+    <section class="control-panel controls" aria-label="再入参数与驾驶">
+      <div class="control-group">
+        <div class="control-top"><label class="control-label" for="angle">再入角</label><output id="angleOut" for="angle">—</output></div>
+        <input id="angle" type="range" min="0" max="100" value="26" aria-label="再入角">
+      </div>
+      <div class="control-group">
+        <div class="control-top"><label class="control-label" for="velocity">初始速度</label><output id="velocityOut" for="velocity">—</output></div>
+        <input id="velocity" type="range" min="0" max="100" value="62" aria-label="初始速度">
+      </div>
+      <div class="control-group">
+        <div class="control-top"><label class="control-label" for="beta">弹道系数</label><output id="betaOut" for="beta">—</output></div>
+        <input id="beta" type="range" min="0" max="100" value="45" aria-label="弹道系数">
+      </div>
+      <div class="control-group">
+        <div class="control-top"><label class="control-label" for="attitude">姿态：升力方向</label><output id="attitudeOut" for="attitude">—</output></div>
+        <input id="attitude" type="range" min="-100" max="100" value="15" aria-label="姿态，负值压低，正值抬升">
+        <span class="control-hint">飞行中持续驾驶；抬升可延长减速，但过多会跳出。</span>
+      </div>
+      <div class="actions">
+        <button class="button--primary" id="startBtn" type="button">进入大气</button>
+        <button id="resetBtn" type="button">重置</button>
+      </div>
+    </section>
+
+    <div class="flight-status" aria-live="polite">
+      <strong id="statusMain">待命：先设定走廊入口</strong>
+      <span id="statusSub">目标同时满足热、压与落点约束</span>
+    </div>
+
+    <figure class="trace-card" aria-labelledby="traceTitle">
+      <figcaption class="trace-head"><strong id="traceTitle">速度—高度轨迹</strong><span>圆点标出峰值加热；虚线为上次尝试</span></figcaption>
+      <canvas class="trace cv-fill" aria-label="本次与上次再入的速度高度轨迹"></canvas>
+    </figure>
+
+    <footer class="page-foot"></footer>
+  </main>
+
+  <script src="assets/lib/pixi.min.js"></script>
+  <script>
+  window.addEventListener('DOMContentLoaded', function () {
+    'use strict';
+
+    const page = Object.freeze({
+      index: 18,
+      kicker: `REENTRY`,
+      title: `再入走廊：太陡会过热，太浅会<em>跳出去</em>`,
+      take: `返回地球必须在有限走廊内同时管理减速、动压、热流和落点。`
+    });
+    Lec.mount(page);
+
+    const root = document.querySelector('.reentry-page');
+    const world = root.querySelector('.world');
+    const traceCanvas = root.querySelector('.trace');
+    const plasmaCanvas = root.querySelector('.plasma');
+    const wctx = Deck.fit(world);
+    const tctx = Deck.fit(traceCanvas);
+    const P = Lec.P, K = Lec.K;
+    const controls = {
+      angle: document.getElementById('angle'), velocity: document.getElementById('velocity'),
+      beta: document.getElementById('beta'), attitude: document.getElementById('attitude')
+    };
+    const startBtn = document.getElementById('startBtn');
+    const resetBtn = document.getElementById('resetBtn');
+    const refs = {
+      angleOut: document.getElementById('angleOut'), velocityOut: document.getElementById('velocityOut'),
+      betaOut: document.getElementById('betaOut'), attitudeOut: document.getElementById('attitudeOut'),
+      alt: document.getElementById('altRead'), speed: document.getElementById('speedRead'),
+      q: document.getElementById('qRead'), heat: document.getElementById('heatRead'), g: document.getElementById('gRead'),
+      main: document.getElementById('statusMain'), sub: document.getElementById('statusSub')
+    };
+
+    const entryAltitude = K.KARMAN_ALTITUDE * 1.2;
+    const surfaceCircular = P.circularVelocityAtRadius(K.EARTH_RADIUS);
+    const noseRadius = K.atmosphere.scaleHeight / 10000;
+    const qLimit = K.atmosphere.seaLevelPressure * 0.7;
+    const heatLimit = P.reentryHeatingRate(P.atmosphericDensity(K.KARMAN_ALTITUDE / 2), P.circularVelocityAtRadius(K.EARTH_RADIUS + K.KARMAN_ALTITUDE), noseRadius);
+    const gLimit = P.gravityAtRadius(K.EARTH_RADIUS) * 3;
+    const targetX = K.earth.circumference / 16;
+    const targetHalf = K.earth.circumference / 160;
+    const landingSpeedLimit = K.earth.escapeSpeedSurface / 10;
+
+    let lastTrace = [];
+    let state;
+
+    function inputModel() {
+      const a = Number(controls.angle.value) / 100;
+      const v = Number(controls.velocity.value) / 100;
+      const b = Number(controls.beta.value) / 100;
+      return {
+        angle: P.lerp(K.HALF_PI * 0.018, K.HALF_PI * 0.16, a),
+        speed: P.lerp(surfaceCircular * 0.88, surfaceCircular * 1.04, v),
+        beta: P.lerp(K.atmosphere.scaleHeight / 100, K.atmosphere.scaleHeight / 25, b),
+        lift: Number(controls.attitude.value) / 100
+      };
+    }
+
+    function fresh() {
+      const m = inputModel();
+      return { phase:'ready', x:0, h:entryAltitude, vx:m.speed * Math.cos(m.angle), vy:-m.speed * Math.sin(m.angle),
+        beta:m.beta, t:0, q:0, heat:0, gload:0, peakQ:0, peakHeat:0, peakG:0, heatDose:0,
+        entered:false, trace:[], heatPoint:null, message:'待命：先设定走廊入口' };
+    }
+
+    function updateInputLabels() {
+      const m = inputModel();
+      refs.angleOut.textContent = '−' + P.formatNumber(P.toDegrees(m.angle), 1) + '°';
+      refs.velocityOut.textContent = P.formatSpeed(m.speed, 2);
+      refs.betaOut.textContent = P.formatNumber(m.beta, 0) + ' kg/m²';
+      const lift = Number(controls.attitude.value);
+      refs.attitudeOut.textContent = lift === 0 ? '中性' : (lift > 0 ? '抬升 ' : '压低 ') + P.formatPercent(Math.abs(lift) / 100, 0);
+      if (state && state.phase === 'ready') { state = fresh(); updateHud(); drawAll(); }
+    }
+
+    function updateHud() {
+      const rel = relativeSpeed(state);
+      refs.alt.textContent = P.formatDistance(Math.max(0, state.h), 1);
+      refs.speed.textContent = P.formatSpeed(rel, 2);
+      refs.q.textContent = P.formatSI(state.q, 'Pa', 1);
+      refs.heat.textContent = P.formatSI(state.heat, 'W/m²', 1);
+      refs.g.textContent = P.formatNumber(state.gload, 1) + ' g';
+      refs.main.textContent = state.message;
+      refs.sub.textContent = '峰值：热 ' + P.formatSI(state.peakHeat, 'W/m²', 1) + ' · 动压 ' + P.formatSI(state.peakQ, 'Pa', 1) + ' · ' + P.formatNumber(state.peakG, 1) + ' g';
+    }
+
+    function relativeSpeed(s) {
+      const speed = Math.hypot(s.vx, s.vy);
+      const air = K.EARTH_ROTATION_RATE * (K.EARTH_RADIUS + Math.max(0, s.h));
+      const angle = Math.atan2(Math.abs(s.vy), Math.max(1, s.vx));
+      return P.relativeVelocity(speed, air, angle);
+    }
+
+    function finish(kind, message) {
+      state.phase = kind;
+      state.message = message;
+      startBtn.textContent = '再次尝试';
+      controls.angle.disabled = controls.velocity.disabled = controls.beta.disabled = false;
+      updateHud();
+    }
+
+    function physicsStep(dt) {
+      if (state.phase !== 'flight') return;
+      const r = K.EARTH_RADIUS + Math.max(0, state.h);
+      const speed = Math.max(1, Math.hypot(state.vx, state.vy));
+      const rel = relativeSpeed(state);
+      const rho = P.atmosphericDensity(Math.max(0, state.h));
+      const gravity = P.gravityAtRadius(r);
+      const drag = P.dragAcceleration(rho, rel, 1, 1, state.beta);
+      const ux = state.vx / speed, uy = state.vy / speed;
+      const liftCommand = Number(controls.attitude.value) / 100;
+      const lift = drag * liftCommand * 0.28;
+      state.vx += (-drag * ux - lift * uy) * dt;
+      state.vy += (-gravity - drag * uy + lift * ux) * dt;
+      state.x += state.vx * dt;
+      state.h += state.vy * dt;
+      state.t += dt;
+      state.q = P.dynamicPressure(rho, rel);
+      state.heat = P.reentryHeatingRate(rho, rel, noseRadius);
+      state.gload = Math.hypot(drag, lift) / K.g0;
+      state.heatDose += state.heat * dt;
+      state.peakQ = Math.max(state.peakQ, state.q);
+      state.peakG = Math.max(state.peakG, state.gload);
+      if (state.heat > state.peakHeat) { state.peakHeat = state.heat; state.heatPoint = { v:rel, h:state.h }; }
+      if (state.h < K.KARMAN_ALTITUDE * 0.8) state.entered = true;
+      if (!state.trace.length || state.t - state.trace[state.trace.length - 1].t > P.orbitalPeriodAtRadius(r) / 1200) {
+        state.trace.push({ t:state.t, v:rel, h:Math.max(0,state.h) });
+      }
+      if (state.heat > heatLimit) return finish('failed', '热失效：峰值加热越过热盾预算');
+      if (state.q > qLimit || state.gload > gLimit) return finish('failed', '结构失效：动压或过载超限');
+      if (state.entered && state.h > entryAltitude * 1.12 && state.vy > 0) return finish('failed', '跳跃再入：返回舱重新升出大气');
+      if (state.h <= 0) {
+        const inZone = Math.abs(state.x - targetX) <= targetHalf;
+        if (rel <= landingSpeedLimit && inZone) finish('complete', '成功：速度、热负荷与落区同时合格');
+        else if (!inZone) finish('failed', '落点失败：热与压可控，但错过目标区');
+        else finish('failed', '着陆失败：到达目标区时速度仍过高');
+      } else if (state.x > targetX + targetHalf * 5) finish('failed', '落点失败：航程过长，已越过目标区');
+    }
+
+    function start() {
+      if (state.phase !== 'ready') lastTrace = state.trace.slice();
+      state = fresh();
+      state.phase = 'flight'; state.message = '再入中：用姿态滑块驾驶升力方向';
+      startBtn.textContent = '飞行中';
+      controls.angle.disabled = controls.velocity.disabled = controls.beta.disabled = true;
+      updateHud();
+    }
+
+    function reset() {
+      lastTrace = [];
+      controls.angle.value = 26; controls.velocity.value = 62; controls.beta.value = 45; controls.attitude.value = 15;
+      controls.angle.disabled = controls.velocity.disabled = controls.beta.disabled = false;
+      startBtn.textContent = '进入大气';
+      state = fresh(); updateInputLabels(); updateHud(); drawAll();
+    }
+
+    function drawWorld() {
+      const ctx = wctx, W = Deck.W, H = Deck.H;
+      ctx.clearRect(0,0,W,H);
+      const bg = ctx.createLinearGradient(0,0,0,H);
+      bg.addColorStop(0, Deck.rgba('bg',0.18)); bg.addColorStop(0.62, Deck.rgba('surface-inset',0.72)); bg.addColorStop(1, Deck.rgba('accent-2',0.12));
+      ctx.fillStyle = bg; ctx.fillRect(0,0,W,H);
+      ctx.strokeStyle = Deck.rgba('line-strong',0.34); ctx.lineWidth = 1;
+      for (let y=270;y<850;y+=64) { ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke(); }
+      const horizonY = 608;
+      ctx.beginPath(); ctx.moveTo(0,horizonY); ctx.quadraticCurveTo(W/2,horizonY+92,W,horizonY); ctx.lineTo(W,H); ctx.lineTo(0,H); ctx.closePath();
+      ctx.fillStyle = Deck.rgba('accent-2',0.12); ctx.fill();
+      const xScale = 820 / (targetX + targetHalf * 4);
+      const sx = 64 + state.x * xScale;
+      const sy = P.lerp(horizonY, 285, P.clamp(state.h / entryAltitude,0,1));
+      const tx = 64 + targetX * xScale;
+      const tw = Math.max(18,targetHalf*2*xScale);
+      ctx.fillStyle = Deck.rgba('success',0.18); ctx.fillRect(tx-tw/2,horizonY-8,tw,18);
+      ctx.strokeStyle = Deck.rgba('success',0.9); ctx.lineWidth=2; ctx.strokeRect(tx-tw/2,horizonY-8,tw,18);
+      ctx.font = '600 14px ' + Deck.token('font-sans'); ctx.fillStyle=Deck.rgba('success',1); ctx.fillText('目标落区',tx-tw/2,horizonY+30);
+      ctx.save(); ctx.translate(sx,sy); ctx.rotate(Math.atan2(state.vy,state.vx));
+      const heatRatio=P.clamp(state.heat/heatLimit,0,1);
+      ctx.beginPath(); ctx.moveTo(24,0); ctx.quadraticCurveTo(4,-19,-20,-13); ctx.lineTo(-20,13); ctx.quadraticCurveTo(4,19,24,0); ctx.closePath();
+      ctx.fillStyle = heatRatio>0.62 ? Deck.rgba('danger',0.92) : Deck.rgba('warm',0.92); ctx.fill();
+      ctx.strokeStyle=Deck.rgba('text-strong',0.9); ctx.lineWidth=2; ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(-19,-12); ctx.lineTo(-19,12); ctx.strokeStyle=Deck.rgba('accent-strong',0.95); ctx.lineWidth=5; ctx.stroke(); ctx.restore();
+      ctx.fillStyle=Deck.rgba('text-muted',1); ctx.font='500 14px '+Deck.token('font-sans');
+      ctx.fillText('大气边缘',64,276); ctx.fillText('地表 / 落点轴',64,horizonY+30);
+    }
+
+    function drawTrace() {
+      const ctx=tctx, W=traceCanvas.clientWidth/Deck.s || 788, H=traceCanvas.clientHeight/Deck.s || 120;
+      ctx.clearRect(0,0,W,H); const pad=28;
+      ctx.strokeStyle=Deck.rgba('chart-grid',1); ctx.lineWidth=1;
+      for(let i=0;i<4;i++){ const y=pad+(H-pad*1.3)*i/3; ctx.beginPath();ctx.moveTo(pad,y);ctx.lineTo(W-8,y);ctx.stroke(); }
+      function line(data,color,dash){ if(data.length<2)return; ctx.save();ctx.strokeStyle=color;ctx.lineWidth=2;ctx.setLineDash(dash);ctx.beginPath(); data.forEach((p,i)=>{ const x=pad+(W-pad-12)*P.clamp(p.v/(surfaceCircular*1.1),0,1); const y=H-14-(H-pad-18)*P.clamp(p.h/entryAltitude,0,1); if(i)ctx.lineTo(x,y);else ctx.moveTo(x,y); });ctx.stroke();ctx.restore(); }
+      line(lastTrace,Deck.rgba('text-faint',0.8),[6,6]); line(state.trace,Deck.rgba('accent-strong',1),[]);
+      if(state.heatPoint){ const x=pad+(W-pad-12)*P.clamp(state.heatPoint.v/(surfaceCircular*1.1),0,1); const y=H-14-(H-pad-18)*P.clamp(state.heatPoint.h/entryAltitude,0,1); ctx.beginPath();ctx.arc(x,y,5,0,K.TWO_PI);ctx.fillStyle=Deck.rgba('warm',1);ctx.fill(); }
+      ctx.fillStyle=Deck.rgba('chart-axis',1);ctx.font='14px '+Deck.token('font-mono');ctx.fillText('速度 →',W-76,H-2);ctx.fillText('高',4,18);ctx.fillText('低',4,H-12);
+    }
+
+    function drawAll(){ drawWorld(); drawTrace(); }
+
+    const pixi = new PIXI.Application({ view:plasmaCanvas, width:Deck.W, height:Deck.H, backgroundAlpha:0, antialias:true, autoStart:false, sharedTicker:false });
+    pixi.ticker.stop();
+    const particles=[];
+    for(let i=0;i<180;i++){
+      const s=new PIXI.Sprite(PIXI.Texture.WHITE); s.anchor.set(0.5); s.width=2+(i%4); s.height=1+(i%2); s.tint=(i%3===0)?Deck.rgb('danger')[0]*65536+Deck.rgb('danger')[1]*256+Deck.rgb('danger')[2]:Deck.rgb('warm')[0]*65536+Deck.rgb('warm')[1]*256+Deck.rgb('warm')[2]; s.visible=false; pixi.stage.addChild(s); particles.push({s:s,phase:(i*0.618)%1,spread:(i%23)/23});
+    }
+    function drawParticles(time){
+      const active=state.phase==='flight' ? P.clamp(state.heat/heatLimit,0,1) : 0;
+      const xScale=820/(targetX+targetHalf*4), sx=64+state.x*xScale, sy=P.lerp(608,285,P.clamp(state.h/entryAltitude,0,1));
+      particles.forEach((p,i)=>{ const on=i<Math.floor(active*particles.length); p.s.visible=on; if(on){ const travel=((p.phase+time*0.00022)%1); p.s.x=sx-24-travel*(55+active*110); p.s.y=sy+(p.spread-0.5)*(18+travel*42); p.s.alpha=(1-travel)*0.78; p.s.scale.set(0.7+active); } });
+      pixi.renderer.render(pixi.stage);
+    }
+
+    Object.values(controls).forEach(function(el){ el.addEventListener('input',updateInputLabels); });
+    startBtn.addEventListener('click',start); resetBtn.addEventListener('click',reset);
+    state=fresh(); updateInputLabels(); updateHud();
+    Deck.onResize(function(){ Deck.fit(world); Deck.fit(traceCanvas); Deck.fit(plasmaCanvas); pixi.renderer.resize(Deck.W*Deck.s,Deck.H*Deck.s); pixi.stage.scale.set(Deck.s); drawAll(); });
+    Deck.loop(function(time,dt){
+      if(state.phase==='flight'){
+        let budget=Math.min(90,dt*18), guard=0;
+        while(budget>0 && state.phase==='flight' && guard<120){ const local=P.orbitalPeriodAtRadius(K.EARTH_RADIUS+Math.max(0,state.h))/18000; const step=Math.min(budget,local); physicsStep(step); budget-=step; guard++; }
+        updateHud();
+      }
+      drawAll(); drawParticles(Deck.reduced()?0:time);
+    },{still:0});
+  }, { once:true });
+  </script>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+</body>
+</html>

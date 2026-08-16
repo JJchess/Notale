@@ -1,0 +1,421 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+</head>
+<body data-page="04" data-total="20">
+<div id="stage">
+<style>
+  .thrust-page {
+    --split-top: 1.16fr;
+    --split-bottom: .84fr;
+    gap: var(--space-5);
+  }
+  .thrust-page .layout-top {
+    position: relative;
+    overflow: hidden;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-lg);
+    background:
+      linear-gradient(var(--chart-grid) 1px, transparent 1px),
+      linear-gradient(90deg, var(--chart-grid) 1px, transparent 1px),
+      var(--surface-inset);
+    background-size: 40px 40px;
+    box-shadow: var(--shadow-panel);
+  }
+  .thrust-page .bench-head {
+    position: absolute;
+    z-index: 2;
+    inset: var(--space-5) var(--space-5) auto;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-5);
+    pointer-events: none;
+  }
+  .thrust-page .bench-title {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    color: var(--text-strong);
+    font-size: var(--fs-h3);
+    font-weight: var(--weight-semibold);
+    line-height: var(--lh-tight);
+  }
+  .thrust-page .bench-title::before {
+    content: "";
+    inline-size: 10px;
+    block-size: 10px;
+    border-radius: 50%;
+    background: var(--success);
+    box-shadow: 0 0 0 5px var(--accent-soft);
+  }
+  .thrust-page .formula-strip {
+    display: flex;
+    align-items: center;
+    gap: var(--space-4);
+    padding: var(--space-2) var(--space-4);
+    border: 1px solid var(--line-strong);
+    border-radius: var(--radius-pill);
+    color: var(--text-muted);
+    background: var(--surface-glass);
+    font-family: var(--font-mono);
+    font-size: var(--fs-label);
+    line-height: var(--lh-tight);
+  }
+  .thrust-page .formula-strip strong { color: var(--accent-strong); }
+  .thrust-page #engine-svg {
+    inline-size: 100%;
+    block-size: 100%;
+    display: block;
+  }
+  .thrust-page #engine-svg text {
+    font-family: var(--font-sans);
+    font-size: var(--fs-caption);
+    fill: var(--text-muted);
+  }
+  .thrust-page #engine-svg .metric-text {
+    font-family: var(--font-mono);
+    font-size: var(--fs-label-lg);
+    font-weight: var(--weight-semibold);
+    fill: var(--text-strong);
+  }
+  .thrust-page #engine-svg .wire {
+    fill: none;
+    stroke: var(--line-strong);
+    stroke-width: 2;
+  }
+  .thrust-page #engine-svg .wire-hot { stroke: var(--warm); }
+  .thrust-page #engine-svg .wire-accent { stroke: var(--accent-strong); }
+  .thrust-page #engine-svg .route {
+    fill: none;
+    stroke: var(--text-faint);
+    stroke-width: 1.5;
+    stroke-dasharray: 5 6;
+  }
+  .thrust-page #engine-svg .particle { fill: var(--warm); }
+  .thrust-page #engine-svg .particle-tail {
+    stroke: var(--warm);
+    stroke-width: 2;
+    stroke-linecap: round;
+  }
+  .thrust-page #engine-svg .thrust-line {
+    stroke: var(--accent-strong);
+    stroke-width: 8;
+    stroke-linecap: round;
+  }
+  .thrust-page #engine-svg .pressure-positive { fill: var(--success); }
+  .thrust-page #engine-svg .pressure-negative { fill: var(--danger); }
+  .thrust-page .layout-bottom {
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr);
+    gap: var(--space-4);
+  }
+  .thrust-page .control-rack {
+    display: grid;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: var(--space-3);
+    padding: var(--space-4);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-lg);
+    background: var(--surface-glass);
+  }
+  .thrust-page .dial {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    min-inline-size: 0;
+  }
+  .thrust-page .dial-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--space-2);
+  }
+  .thrust-page .dial label {
+    color: var(--text-muted);
+    font-size: var(--fs-label);
+    font-weight: var(--weight-medium);
+    line-height: var(--lh-tight);
+  }
+  .thrust-page .dial output {
+    color: var(--text-strong);
+    font-family: var(--font-mono);
+    font-size: var(--fs-caption);
+    line-height: var(--lh-tight);
+    white-space: nowrap;
+  }
+  .thrust-page .readout-panel {
+    --readout-cols: 6;
+    gap: var(--space-3);
+    padding: var(--space-3);
+  }
+  .thrust-page .readout {
+    min-block-size: 84px;
+    padding: var(--space-3);
+  }
+  .thrust-page .readout-value { font-size: var(--fs-h3); }
+  .thrust-page .readout-note {
+    color: var(--text-faint);
+    font-size: var(--fs-caption);
+    line-height: var(--lh-tight);
+  }
+  .thrust-page .pressure-readout.is-help .readout-value { color: var(--success); }
+  .thrust-page .pressure-readout.is-loss .readout-value { color: var(--danger); }
+  @media (prefers-reduced-motion: reduce) {
+    .thrust-page * { transition-duration: 0.01ms !important; }
+  }
+</style>
+
+<main class="split-tb thrust-page" aria-label="发动机推力剖面试车台">
+  <section class="layout-top min0" aria-labelledby="bench-label">
+    <div class="bench-head">
+      <div class="bench-title" id="bench-label">剖面试车台 <span class="status status--live">实时计算</span></div>
+      <div class="formula-strip" aria-label="总推力等于动量推力加压力修正">
+        <span>F</span><strong id="formula-total">—</strong><span>= ṁvₑ</span><strong id="formula-momentum">—</strong><span>+ (pₑ−pₐ)Aₑ</span><strong id="formula-pressure">—</strong>
+      </div>
+    </div>
+    <svg id="engine-svg" viewBox="0 0 1472 360" role="img" aria-labelledby="engine-title engine-desc">
+      <title id="engine-title">由实时输入生成的火箭发动机剖面</title>
+      <desc id="engine-desc">燃烧室、喷口、向后喷出的动量流、反向推力箭头和压力修正同步变化。</desc>
+    </svg>
+  </section>
+
+  <section class="layout-bottom min0" aria-label="发动机参数和统一读数">
+    <div class="control-rack">
+      <div class="dial">
+        <div class="dial-head"><label for="mass-flow">质量流率 ṁ</label><output id="mass-flow-out" for="mass-flow">—</output></div>
+        <input id="mass-flow" type="range" aria-label="质量流率">
+      </div>
+      <div class="dial">
+        <div class="dial-head"><label for="exhaust">有效喷速 vₑ</label><output id="exhaust-out" for="exhaust">—</output></div>
+        <input id="exhaust" type="range" aria-label="有效喷气速度">
+      </div>
+      <div class="dial">
+        <div class="dial-head"><label for="exit-pressure">喷口压强 pₑ</label><output id="exit-pressure-out" for="exit-pressure">—</output></div>
+        <input id="exit-pressure" type="range" aria-label="喷口出口压强">
+      </div>
+      <div class="dial">
+        <div class="dial-head"><label for="exit-area">喷口面积 Aₑ</label><output id="exit-area-out" for="exit-area">—</output></div>
+        <input id="exit-area" type="range" aria-label="喷口出口面积">
+      </div>
+      <div class="dial">
+        <div class="dial-head"><label for="ambient">外界压强 pₐ</label><output id="ambient-out" for="ambient">—</output></div>
+        <input id="ambient" type="range" aria-label="外界压强，从真空到海平面">
+      </div>
+      <div class="dial">
+        <div class="dial-head"><label for="duration">作用时长 Δt</label><output id="duration-out" for="duration">—</output></div>
+        <input id="duration" type="range" aria-label="发动机作用时长">
+      </div>
+    </div>
+
+    <div class="readout-panel" aria-live="polite">
+      <div class="readout readout--accent">
+        <span class="readout-label">总推力</span><strong class="readout-value" id="total-force">—</strong><span class="readout-note">喷流 + 压力项</span>
+      </div>
+      <div class="readout">
+        <span class="readout-label">动量流推力</span><strong class="readout-value" id="momentum-force">—</strong><span class="readout-note">每秒向后带走动量</span>
+      </div>
+      <div class="readout pressure-readout" id="pressure-card">
+        <span class="readout-label">压力修正</span><strong class="readout-value" id="pressure-force">—</strong><span class="readout-note" id="pressure-note">—</span>
+      </div>
+      <div class="readout">
+        <span class="readout-label">燃料消耗</span><strong class="readout-value" id="consumption">—</strong><span class="readout-note">由质量流率累计</span>
+      </div>
+      <div class="readout">
+        <span class="readout-label">有效喷速 / 比冲</span><strong class="readout-value" id="isp-readout">—</strong><span class="readout-note" id="ve-readout">—</span>
+      </div>
+      <div class="readout">
+        <span class="readout-label">累计冲量</span><strong class="readout-value" id="impulse">—</strong><span class="readout-note">推力 × 作用时长</span>
+      </div>
+    </div>
+  </section>
+</main>
+
+<script src="assets/lib/d3.min.js"></script>
+<script>
+window.addEventListener('DOMContentLoaded', function () {
+  'use strict';
+
+  const page = Object.freeze({
+    index: 4,
+    kicker: `THRUST`,
+    title: `火箭向后扔质量，换来向前的<em>动量变化</em>`,
+    take: `推力来自喷出质量的动量流，以及喷口压力对外界压力的修正。`
+  });
+
+  Lec.mount(page);
+
+  const P = Lec.P;
+  const K = Lec.K;
+  const controls = {
+    flow: document.getElementById('mass-flow'),
+    exhaust: document.getElementById('exhaust'),
+    pe: document.getElementById('exit-pressure'),
+    area: document.getElementById('exit-area'),
+    pa: document.getElementById('ambient'),
+    duration: document.getElementById('duration')
+  };
+
+  const referenceFlow = P.massFlow(K.vehicles.v2.thrust, K.rocket.keroloxSeaLevelIsp);
+  const referenceArea = K.vehicles.v2.thrust / K.atmosphere.seaLevelPressure;
+  const ranges = {
+    flow: [referenceFlow / K.display.pageDigits, referenceFlow * K.display.pageDigits, referenceFlow],
+    exhaust: [P.effectiveExhaustVelocity(K.rocket.solidIsp), P.effectiveExhaustVelocity(K.rocket.hydroloxVacuumIsp), P.effectiveExhaustVelocity(K.rocket.keroloxVacuumIsp)],
+    pe: [K.units.Pa - K.units.Pa, K.atmosphere.seaLevelPressure * K.display.pageDigits, K.atmosphere.seaLevelPressure],
+    area: [referenceArea / K.display.pageDigits, referenceArea * K.display.pageDigits, referenceArea],
+    pa: [K.units.Pa - K.units.Pa, K.atmosphere.seaLevelPressure, K.atmosphere.seaLevelPressure],
+    duration: [K.units.s, K.time.minute, K.time.minute / K.display.pageDigits]
+  };
+
+  Object.keys(controls).forEach(function (key) {
+    const input = controls[key];
+    const range = ranges[key];
+    input.min = String(range[0]);
+    input.max = String(range[1]);
+    input.step = String((range[1] - range[0]) / (K.numeric.integrationSteps / K.display.pageDigits));
+    input.value = String(range[2]);
+  });
+
+  const outputs = {
+    flow: document.getElementById('mass-flow-out'),
+    exhaust: document.getElementById('exhaust-out'),
+    pe: document.getElementById('exit-pressure-out'),
+    area: document.getElementById('exit-area-out'),
+    pa: document.getElementById('ambient-out'),
+    duration: document.getElementById('duration-out')
+  };
+
+  const svg = d3.select('#engine-svg');
+  const defs = svg.append('defs');
+  defs.append('marker').attr('id', 'arrow-thrust').attr('viewBox', '0 0 10 10').attr('refX', 2).attr('refY', 5).attr('markerWidth', 8).attr('markerHeight', 8).attr('orient', 'auto-start-reverse')
+    .append('path').attr('d', 'M 0 0 L 10 5 L 0 10 z').attr('fill', 'var(--accent-strong)');
+
+  const staticLayer = svg.append('g');
+  const dynamicLayer = svg.append('g');
+  const particleLayer = svg.append('g');
+  const labelLayer = svg.append('g');
+
+  staticLayer.append('path').attr('class', 'wire').attr('d', 'M390 128 L540 128 L610 82 L835 82 L835 278 L610 278 L540 232 L390 232 Z');
+  staticLayer.append('path').attr('class', 'wire wire-hot').attr('d', 'M610 82 L610 278 M646 92 L646 268 M682 92 L682 268');
+  staticLayer.append('path').attr('class', 'wire').attr('d', 'M835 104 L970 145 L970 215 L835 256');
+  staticLayer.append('path').attr('class', 'wire').attr('d', 'M970 145 L1070 116 M970 215 L1070 244');
+  staticLayer.append('line').attr('class', 'route').attr('x1', 516).attr('y1', 128).attr('x2', 430).attr('y2', 62);
+  staticLayer.append('line').attr('class', 'route').attr('x1', 748).attr('y1', 82).attr('x2', 748).attr('y2', 42);
+  staticLayer.append('line').attr('class', 'route').attr('x1', 970).attr('y1', 215).attr('x2', 1045).attr('y2', 302);
+  staticLayer.append('text').attr('x', 350).attr('y', 54).text('推进剂入口 / 每秒质量');
+  staticLayer.append('text').attr('x', 690).attr('y', 32).text('燃烧室 / 动量被建立');
+  staticLayer.append('text').attr('x', 1030).attr('y', 326).text('喷口出口 / 压力边界');
+  staticLayer.append('text').attr('x', 650).attr('y', 186).attr('class', 'metric-text').text('ENGINE CUTAWAY');
+  staticLayer.append('text').attr('x', 650).attr('y', 212).text('质量向右喷出 · 发动机向左受推');
+
+  function readState() {
+    return {
+      requestedFlow: Number(controls.flow.value),
+      requestedVe: Number(controls.exhaust.value),
+      pe: Number(controls.pe.value),
+      area: Number(controls.area.value),
+      pa: Number(controls.pa.value),
+      duration: Number(controls.duration.value)
+    };
+  }
+
+  let state = null;
+
+  function compute() {
+    const raw = readState();
+    const isp = P.specificImpulse(raw.requestedVe);
+    const ve = P.effectiveExhaustVelocity(isp);
+    const momentum = P.thrustFromMassFlow(raw.requestedFlow, isp);
+    const checkedFlow = P.massFlow(momentum, isp);
+    const total = P.nozzleThrust(checkedFlow, ve, raw.pe, raw.pa, raw.area);
+    const pressure = total - momentum;
+    const impulse = P.impulse(total, raw.duration);
+    const consumed = checkedFlow * raw.duration;
+    state = Object.assign(raw, { isp: isp, ve: ve, flow: checkedFlow, momentum: momentum, pressure: pressure, total: total, impulse: impulse, consumed: consumed });
+    updateText();
+    drawDynamic(Deck.reduced() ? K.units.s : performance.now() / K.units.kN);
+  }
+
+  function updateText() {
+    outputs.flow.textContent = P.formatSI(state.flow, 'kg/s', K.display.defaultDecimals);
+    outputs.exhaust.textContent = P.formatSpeed(state.ve, K.display.defaultDecimals);
+    outputs.pe.textContent = P.formatSI(state.pe, 'Pa', K.display.defaultDecimals);
+    outputs.area.textContent = P.formatNumber(state.area, K.display.defaultDecimals) + ' m²';
+    outputs.pa.textContent = P.formatSI(state.pa, 'Pa', K.display.defaultDecimals);
+    outputs.duration.textContent = P.formatDuration(state.duration, K.display.defaultDecimals);
+
+    document.getElementById('total-force').textContent = P.formatSI(state.total, 'N', K.display.defaultDecimals);
+    document.getElementById('momentum-force').textContent = P.formatSI(state.momentum, 'N', K.display.defaultDecimals);
+    document.getElementById('pressure-force').textContent = P.formatSI(state.pressure, 'N', K.display.defaultDecimals);
+    document.getElementById('consumption').textContent = P.formatMass(state.consumed, K.display.defaultDecimals);
+    document.getElementById('isp-readout').textContent = P.formatNumber(state.isp, K.display.defaultDecimals) + ' s';
+    document.getElementById('ve-readout').textContent = P.formatSpeed(state.ve, K.display.defaultDecimals);
+    document.getElementById('impulse').textContent = P.formatSI(state.impulse, 'N·s', K.display.defaultDecimals);
+    document.getElementById('formula-total').textContent = P.formatSI(state.total, 'N', K.display.defaultDecimals);
+    document.getElementById('formula-momentum').textContent = P.formatSI(state.momentum, 'N', K.display.defaultDecimals);
+    document.getElementById('formula-pressure').textContent = P.formatSI(state.pressure, 'N', K.display.defaultDecimals);
+
+    const card = document.getElementById('pressure-card');
+    const note = document.getElementById('pressure-note');
+    card.classList.toggle('is-help', state.pressure > K.units.Pa - K.units.Pa);
+    card.classList.toggle('is-loss', state.pressure < K.units.Pa - K.units.Pa);
+    note.textContent = state.pressure > 0 ? '出口压强更高：帮助推力' : (state.pressure < 0 ? '外界压强更高：造成损失' : '压强匹配：不增不减');
+  }
+
+  function drawDynamic(time) {
+    if (!state) return;
+    const flowFraction = P.clamp(P.inverseLerp(ranges.flow[0], ranges.flow[1], state.flow), 0, 1);
+    const speedFraction = P.clamp(P.inverseLerp(ranges.exhaust[0], ranges.exhaust[1], state.ve), 0, 1);
+    const areaFraction = P.clamp(P.inverseLerp(ranges.area[0], ranges.area[1], state.area), 0, 1);
+    const forceFraction = P.clamp(P.inverseLerp(0, P.nozzleThrust(ranges.flow[1], ranges.exhaust[1], ranges.pe[1], ranges.pa[0], ranges.area[1]), Math.max(0, state.total)), 0, 1);
+    const nozzleHalf = P.lerp(30, 78, areaFraction);
+    const exitX = 1070;
+    const count = Math.round(P.lerp(12, 44, flowFraction));
+    const particles = d3.range(count).map(function (index) {
+      const phase = (index / count + time * P.lerp(.16, .42, speedFraction)) % 1;
+      const spread = ((index * 17) % count) / Math.max(1, count - 1) - .5;
+      return {
+        x: exitX + phase * 340,
+        y: 180 + spread * (nozzleHalf * 1.4 + phase * 82),
+        r: P.lerp(2.5, 5, flowFraction) * (1 - phase * .55),
+        tail: P.lerp(8, 24, speedFraction)
+      };
+    });
+
+    dynamicLayer.selectAll('*').remove();
+    dynamicLayer.append('path').attr('class', 'wire wire-accent').attr('d', 'M970 145 L1070 ' + (180 - nozzleHalf) + ' M970 215 L1070 ' + (180 + nozzleHalf));
+    dynamicLayer.append('line').attr('class', 'thrust-line').attr('x1', 390).attr('y1', 180).attr('x2', 390 - P.lerp(90, 300, forceFraction)).attr('y2', 180).attr('marker-end', 'url(#arrow-thrust)');
+    dynamicLayer.append('text').attr('x', 86).attr('y', 160).attr('class', 'metric-text').text('推力 ' + P.formatSI(state.total, 'N', K.display.defaultDecimals));
+    dynamicLayer.append('text').attr('x', 86).attr('y', 192).text('方向与喷流动量相反');
+    dynamicLayer.append('circle').attr('cx', 1070).attr('cy', 180).attr('r', 9).attr('class', state.pressure >= 0 ? 'pressure-positive' : 'pressure-negative');
+    dynamicLayer.append('text').attr('x', 1092).attr('y', 184).text(state.pressure >= 0 ? '压力项：助推' : '压力项：损失');
+
+    particleLayer.selectAll('line').data(particles).join('line').attr('class', 'particle-tail')
+      .attr('x1', function (d) { return d.x - d.tail; }).attr('x2', function (d) { return d.x; })
+      .attr('y1', function (d) { return d.y; }).attr('y2', function (d) { return d.y; }).attr('opacity', function (d) { return P.clamp((1410 - d.x) / 180, .15, .9); });
+    particleLayer.selectAll('circle').data(particles).join('circle').attr('class', 'particle')
+      .attr('cx', function (d) { return d.x; }).attr('cy', function (d) { return d.y; }).attr('r', function (d) { return d.r; });
+
+    labelLayer.selectAll('*').remove();
+    labelLayer.append('text').attr('x', 1190).attr('y', 72).attr('class', 'metric-text').text('ṁvₑ  ' + P.formatSI(state.momentum, 'N', K.display.defaultDecimals));
+    labelLayer.append('text').attr('x', 1190).attr('y', 98).text('喷流单位时间动量变化');
+  }
+
+  Object.keys(controls).forEach(function (key) {
+    controls[key].addEventListener('input', compute);
+  });
+
+  compute();
+  Deck.loop(function (time) {
+    if (!Deck.reduced()) drawDynamic(time / K.units.kN);
+  }, { still: K.units.s });
+}, { once: true });
+</script>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+</body>
+</html>

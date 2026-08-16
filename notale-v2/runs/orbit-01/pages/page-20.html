@@ -1,0 +1,393 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+</head>
+<body data-page="20" data-total="20">
+<div id="stage">
+  <main class="page">
+    <header class="page-header"><div id="lec-header"></div></header>
+
+    <section class="page-body split min0" aria-label="轨道任务验证工作区">
+      <figure class="visual-shell min0" aria-label="任务轨道与速度预算实时模拟">
+        <canvas id="orbit-canvas" class="cv-fill" aria-hidden="true"></canvas>
+      </figure>
+
+      <aside class="panel control-panel min0" aria-label="任务卡与行动卡">
+        <div class="panel-heading">
+          <span class="panel-kicker">MISSION CARD</span>
+          <h2 class="panel-title" id="mission-name">让物体绕地球</h2>
+          <p class="panel-description" id="mission-detail">把载荷送入稳定轨道，并用因果链解释它为何不会径直落地。</p>
+        </div>
+
+        <div class="control-group">
+          <span class="caption muted">排列三张行动卡</span>
+          <div class="grid-3">
+            <label class="control-group"><span class="caption muted">先做</span><select id="action-first" aria-label="第一张行动卡"></select></label>
+            <label class="control-group"><span class="caption muted">再做</span><select id="action-second" aria-label="第二张行动卡"></select></label>
+            <label class="control-group"><span class="caption muted">最后</span><select id="action-third" aria-label="第三张行动卡"></select></label>
+          </div>
+        </div>
+
+        <div class="control-group">
+          <label class="caption muted" for="explanation">用模拟结果完成解释</label>
+          <textarea id="explanation">火箭通过分级与横向加速改变速度方向，物体在重力作用下持续下落并错过地面，所以它能绕地球运行。</textarea>
+        </div>
+
+        <div class="cluster">
+          <button type="button" id="draw-task">换一张任务卡</button>
+          <button type="button" id="validate" class="button-primary">验证行动链</button>
+        </div>
+
+        <div class="control-group" aria-live="polite">
+          <span class="caption muted">物理证据</span>
+          <div class="cluster" id="evidence">
+            <span class="readout" data-proof="orbit"><span class="caption"><span class="dot"></span> 目标轨道</span></span>
+            <span class="readout" data-proof="payload"><span class="caption"><span class="dot"></span> 保留载荷</span></span>
+            <span class="readout" data-proof="gravity"><span class="caption"><span class="dot"></span> 重力仍在</span></span>
+            <span class="readout" data-proof="direction"><span class="caption"><span class="dot"></span> 速度方向</span></span>
+          </div>
+          <p class="caption muted" id="result-text">先排列行动，再让预算、轨道积分与任务约束逐项作证。</p>
+        </div>
+      </aside>
+    </section>
+
+    <footer class="page-footer"><div id="lec-footer"></div></footer>
+  </main>
+
+  <script>
+  document.addEventListener("DOMContentLoaded", function () {
+    "use strict";
+
+    Lec.mount({
+      index: 20,
+      kicker: `EXPLAIN YOUR ORBIT`,
+      title: `不是说“它会上去”，而是说明它为什么能留下`,
+      take: `一个可靠的轨道解释，必须同时说清楚速度、方向、重力、质量和目标约束。`
+    });
+
+    var K = Lec.K;
+    var P = Lec.P;
+    var stage = document.getElementById("stage");
+    var titleNode = stage.querySelector(".lec-header__title");
+    var kickerNode = stage.querySelector(".lec-header__kicker");
+    var topNode = stage.querySelector(".lec-header__top");
+    var footerNode = document.getElementById("lec-footer");
+    var cv = document.getElementById("orbit-canvas");
+    var missionName = document.getElementById("mission-name");
+    var missionDetail = document.getElementById("mission-detail");
+    var explanation = document.getElementById("explanation");
+    var resultText = document.getElementById("result-text");
+    var drawTask = document.getElementById("draw-task");
+    var validate = document.getElementById("validate");
+    var selects = [
+      document.getElementById("action-first"),
+      document.getElementById("action-second"),
+      document.getElementById("action-third")
+    ];
+
+    if (titleNode) { titleNode.classList.add("page-title"); }
+    if (kickerNode) { kickerNode.classList.add("kicker"); }
+    if (topNode) { topNode.classList.add("cluster"); }
+    if (footerNode) { footerNode.classList.add("cluster"); }
+
+    var actions = [
+      { key: "up", label: "向上" },
+      { key: "horizontal", label: "横向加速" },
+      { key: "plane", label: "改变轨道平面" },
+      { key: "staging", label: "分级" },
+      { key: "transfer", label: "转移" },
+      { key: "wait", label: "等待相位" }
+    ];
+
+    var missions = [
+      {
+        key: "orbit",
+        name: "让物体绕地球",
+        detail: "把载荷送入稳定轨道，并用因果链解释它为何不会径直落地。",
+        altitude: K.LOW_EARTH_ORBIT_ALTITUDE,
+        required: ["staging", "horizontal"],
+        answer: "火箭通过分级与横向加速改变速度方向，物体在重力作用下持续下落并错过地面，所以它能绕地球运行。"
+      },
+      {
+        key: "height",
+        name: "把卫星送到指定高度",
+        detail: "从低轨出发抬高轨道，同时保住载荷并满足速度预算。",
+        altitude: K.ISS_ALTITUDE,
+        required: ["staging", "horizontal", "transfer"],
+        answer: "火箭通过分级、横向加速与转移改变速度方向，物体在重力作用下持续下落，所以它能留在指定高度的轨道。"
+      },
+      {
+        key: "fixed",
+        name: "让地面站看到固定方向",
+        detail: "把周期与轨道方向都纳入约束，让地面投影保持稳定。",
+        altitude: P.geostationaryAltitude(),
+        required: ["horizontal", "transfer", "plane"],
+        answer: "火箭通过横向加速、转移和改变轨道平面来改变速度方向，物体在重力作用下持续下落，所以它能让地面站看到固定方向。"
+      },
+      {
+        key: "rendezvous",
+        name: "与目标卫星交会",
+        detail: "让追赶者在正确相位到达同一轨道位置，而不是直线追逐。",
+        altitude: K.ISS_ALTITUDE,
+        required: ["horizontal", "transfer", "wait"],
+        answer: "火箭通过横向加速、转移和等待相位改变速度方向与到达时机，物体在重力作用下持续下落，所以它能与目标卫星交会。"
+      }
+    ];
+
+    var state = {
+      mission: K.ZERO,
+      verified: false,
+      proofs: [false, false, false, false],
+      trajectory: []
+    };
+
+    function populateSelects() {
+      selects.forEach(function (select) {
+        actions.forEach(function (action) {
+          var option = document.createElement("option");
+          option.value = action.key;
+          option.textContent = action.label;
+          select.appendChild(option);
+        });
+      });
+      selects[K.ZERO].value = "staging";
+      selects[K.ONE].value = "horizontal";
+      selects[K.TWO].value = "transfer";
+    }
+
+    function durationText(seconds) {
+      return P.formatTime(seconds);
+    }
+
+    function computePhysics(mission) {
+      var initialAltitude = mission.key === "orbit" ? mission.altitude : K.LOW_EARTH_ORBIT_ALTITUDE;
+      var periapsis = P.radiusAtAltitude(initialAltitude);
+      var apoapsis = P.radiusAtAltitude(mission.altitude);
+      var low = Math.min(periapsis, apoapsis);
+      var high = Math.max(periapsis, apoapsis);
+      var elements = P.orbitalElementsFromApsides(low, high, K.MU_EARTH);
+      var period = P.orbitalPeriod(elements.semiMajorAxis, K.MU_EARTH);
+      var transfer = P.hohmannTransfer(low, high, K.MU_EARTH);
+      var maneuver = mission.key === "orbit" ? K.ZERO : transfer.totalDeltaV;
+      var budget = P.deltaVBudget(P.circularVelocityAtAltitude(mission.altitude), {
+        gravity: K.TYPICAL_GRAVITY_LOSS,
+        drag: K.TYPICAL_DRAG_LOSS,
+        steering: K.TYPICAL_STEERING_LOSS,
+        maneuver: maneuver
+      });
+      var stages = [
+        {
+          specificImpulse: K.HUNDRED * K.THREE,
+          wetMass: K.THOUSAND * K.HUNDRED,
+          dryMass: K.THOUSAND * K.TEN
+        },
+        {
+          specificImpulse: K.HUNDRED * K.FOUR,
+          wetMass: K.THOUSAND * K.THREE * K.TEN,
+          dryMass: K.THOUSAND * K.FOUR
+        }
+      ];
+      var rocket = P.multistageDeltaV(stages, K.THOUSAND, K.G0);
+      return {
+        initialAltitude: initialAltitude,
+        elements: elements,
+        period: period,
+        budget: budget,
+        rocket: rocket
+      };
+    }
+
+    function integrateOrbit(physics) {
+      var points = [];
+      var steps = K.HUNDRED * K.SIX;
+      var dt = physics.period / steps;
+      var x = physics.elements.periapsisRadius;
+      var y = K.ZERO;
+      var vx = K.ZERO;
+      var vy = physics.elements.periapsisVelocity;
+      var i;
+      var r;
+      var a1x;
+      var a1y;
+      var a2x;
+      var a2y;
+      var nx;
+      var ny;
+
+      for (i = K.ZERO; i <= steps; i += K.ONE) {
+        points.push({ x: x, y: y });
+        r = Math.sqrt(x * x + y * y);
+        a1x = -K.MU_EARTH * x / (r * r * r);
+        a1y = -K.MU_EARTH * y / (r * r * r);
+        nx = x + vx * dt + K.HALF * a1x * dt * dt;
+        ny = y + vy * dt + K.HALF * a1y * dt * dt;
+        r = Math.sqrt(nx * nx + ny * ny);
+        a2x = -K.MU_EARTH * nx / (r * r * r);
+        a2y = -K.MU_EARTH * ny / (r * r * r);
+        vx += K.HALF * (a1x + a2x) * dt;
+        vy += K.HALF * (a1y + a2y) * dt;
+        x = nx;
+        y = ny;
+      }
+      return points;
+    }
+
+    function actionOrderPass(mission, chosen) {
+      var indexes = mission.required.map(function (key) { return chosen.indexOf(key); });
+      var present = indexes.every(function (index) { return index >= K.ZERO; });
+      var ordered = indexes.every(function (index, i) {
+        return i === K.ZERO || index > indexes[i - K.ONE];
+      });
+      return present && ordered;
+    }
+
+    function updateProofs() {
+      var nodes = document.querySelectorAll("#evidence [data-proof]");
+      nodes.forEach(function (node, index) {
+        var label = node.querySelector(".caption");
+        label.classList.remove("accent", "warm");
+        if (state.verified) {
+          label.classList.add(state.proofs[index] ? "accent" : "warm");
+        }
+      });
+    }
+
+    function updateMission() {
+      var mission = missions[state.mission];
+      missionName.textContent = mission.name;
+      missionDetail.textContent = mission.detail + " 目标高度：" + P.formatDistance(mission.altitude) + "。";
+      explanation.value = mission.answer;
+      state.verified = false;
+      state.proofs = [false, false, false, false];
+      state.trajectory = [];
+      resultText.textContent = "先排列行动，再让预算、轨道积分与任务约束逐项作证。";
+      updateProofs();
+      draw();
+    }
+
+    function validateChain() {
+      var mission = missions[state.mission];
+      var chosen = selects.map(function (select) { return select.value; });
+      var physics = computePhysics(mission);
+      var text = explanation.value.trim();
+      var path = integrateOrbit(physics);
+      var last = path[path.length - K.ONE];
+      var closure = Math.sqrt(
+        Math.pow(last.x - path[K.ZERO].x, K.TWO) +
+        Math.pow(last.y - path[K.ZERO].y, K.TWO)
+      );
+      var stable = closure / physics.elements.semiMajorAxis < K.ONE / K.HUNDRED;
+      var goal = actionOrderPass(mission, chosen) && stable;
+      var payload = physics.rocket.totalDeltaV >= physics.budget.total;
+      var gravity = text.indexOf("重力") >= K.ZERO && (text.indexOf("下落") >= K.ZERO || text.indexOf("坠落") >= K.ZERO);
+      var direction = chosen.indexOf("horizontal") >= K.ZERO && (text.indexOf("方向") >= K.ZERO || text.indexOf("横向") >= K.ZERO);
+
+      state.verified = true;
+      state.proofs = [goal, payload, gravity, direction];
+      state.trajectory = path;
+      updateProofs();
+      resultText.textContent = goal && payload && gravity && direction ?
+        "四类证据互相吻合：这段解释能被模拟结果支持。" :
+        "尚有证据不成立；检查行动顺序、速度预算和解释中的因果词。";
+      draw();
+    }
+
+    function draw(existingCtx) {
+      var ctx = existingCtx || Deck.fit(cv);
+      var W = Deck.W;
+      var H = Deck.H;
+      var mission = missions[state.mission];
+      var physics = computePhysics(mission);
+      var cx = W * K.HALF;
+      var cy = H * K.HALF;
+      var maxRadius = physics.elements.apoapsisRadius;
+      var scale = W * K.ONE_THIRD / maxRadius;
+      var earthRadius = K.R_EARTH * scale;
+      var fontSans = Deck.token("--font-sans");
+      var fontMono = Deck.token("--font-mono");
+      var path = state.trajectory.length ? state.trajectory : integrateOrbit(physics);
+      var stride = K.SIX;
+      var i;
+      var px;
+      var py;
+      var tilt = mission.key === "fixed" ? K.ONE_THIRD : K.ONE;
+
+      ctx.clearRect(K.ZERO, K.ZERO, W, H);
+      ctx.fillStyle = Deck.rgba("--accent-blue", K.ONE / K.TEN);
+      ctx.beginPath();
+      ctx.arc(cx, cy, earthRadius, K.ZERO, K.TWO_PI);
+      ctx.fill();
+      ctx.strokeStyle = Deck.rgba("--accent-blue", K.HALF);
+      ctx.lineWidth = K.TWO;
+      ctx.stroke();
+
+      ctx.strokeStyle = state.verified && state.proofs[K.ZERO] ? Deck.rgba("--accent", K.ONE) : Deck.rgba("--accent-warm", K.ONE);
+      ctx.lineWidth = K.THREE;
+      ctx.beginPath();
+      path.forEach(function (point, index) {
+        if (index % stride !== K.ZERO && index !== path.length - K.ONE) { return; }
+        px = cx + point.x * scale;
+        py = cy + point.y * scale * tilt;
+        if (index === K.ZERO) { ctx.moveTo(px, py); } else { ctx.lineTo(px, py); }
+      });
+      ctx.stroke();
+
+      px = cx + path[K.ZERO].x * scale;
+      py = cy + path[K.ZERO].y * scale * tilt;
+      ctx.fillStyle = Deck.rgba("--accent-warm", K.ONE);
+      ctx.beginPath();
+      ctx.arc(px, py, K.EIGHT, K.ZERO, K.TWO_PI);
+      ctx.fill();
+
+      ctx.strokeStyle = Deck.rgba("--accent", K.ONE);
+      ctx.fillStyle = Deck.rgba("--accent", K.ONE);
+      ctx.lineWidth = K.FOUR;
+      Deck.arrow(ctx, px, py, px, py - H / K.TEN, K.TEN + K.SIX);
+
+      ctx.fillStyle = Deck.rgba("--ink-strong", K.ONE);
+      ctx.font = (K.TEN + K.SIX + K.SIX) + "px " + fontSans;
+      ctx.fillText(mission.name, W / K.TEN, H / K.TEN);
+
+      ctx.fillStyle = Deck.rgba("--ink-muted", K.ONE);
+      ctx.font = (K.TEN + K.SIX) + "px " + fontMono;
+      ctx.fillText("目标速度  " + P.formatVelocity(P.circularVelocityAtAltitude(mission.altitude)), W / K.TEN, H - H / K.SIX);
+      ctx.fillText("任务预算  " + P.formatVelocity(physics.budget.total), W / K.TEN, H - H / K.TEN);
+      ctx.fillText("火箭可用  " + P.formatVelocity(physics.rocket.totalDeltaV), W * K.HALF, H - H / K.SIX);
+      ctx.fillText("轨道周期  " + durationText(physics.period), W * K.HALF, H - H / K.TEN);
+
+      ctx.fillStyle = Deck.rgba("--accent-blue", K.ONE);
+      ctx.font = (K.TEN + K.FOUR) + "px " + fontSans;
+      ctx.fillText("重力持续指向地心", cx - W / K.TEN, cy + K.SIX);
+    }
+
+    populateSelects();
+    drawTask.addEventListener("click", function () {
+      var jump = Math.floor(Math.random() * (missions.length - K.ONE)) + K.ONE;
+      state.mission = (state.mission + jump) % missions.length;
+      updateMission();
+    });
+    validate.addEventListener("click", validateChain);
+    selects.forEach(function (select) {
+      select.addEventListener("change", function () {
+        state.verified = false;
+        updateProofs();
+        resultText.textContent = "行动链已改变；请重新验证。";
+      });
+    });
+    explanation.addEventListener("input", function () {
+      state.verified = false;
+      updateProofs();
+    });
+
+    Deck.autofit(cv, draw);
+    updateMission();
+  });
+  </script>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+</body>
+</html>

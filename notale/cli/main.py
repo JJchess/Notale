@@ -9,6 +9,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 from notale.core.workflow import generate
+from notale.style_studio.cli import main as style_cli_main
 from notale.utils.config import get_config
 from notale.web.preview import serve
 
@@ -35,11 +36,26 @@ def main() -> None:
         default=str(PROJECT_ROOT / "runs"),
         help="run 输出根目录",
     )
+    generate_parser.add_argument(
+        "--style-pack",
+        default=None,
+        help="引用已发布的 StylePack（见 notale style list）；省略则按主题生成",
+    )
 
     preview_parser = commands.add_parser("serve", help="预览最新讲义")
     preview_parser.add_argument("--host", default=_CONFIG.preview.host)
     preview_parser.add_argument("--port", default=_CONFIG.preview.port, type=int)
-    args = parser.parse_args()
+
+    # `notale style ...` delegates wholesale; its own parser owns the subcommands.
+    commands.add_parser(
+        "style",
+        help="管理 StylePack（list/show/validate/fork/patch/publish 等）",
+        add_help=False,
+    )
+    args, extra = parser.parse_known_args()
+
+    if args.cmd == "style":
+        raise SystemExit(style_cli_main(extra))
 
     if args.cmd == "serve":
         serve(args.host, args.port, root=PROJECT_ROOT)
@@ -51,6 +67,7 @@ def main() -> None:
             args.topic,
             out_root=Path(args.out),
             resume_dir=Path(args.resume) if args.resume else None,
+            style_pack=args.style_pack,
         )
     )
     print(f"\n✔ run: {result.run_dir}")

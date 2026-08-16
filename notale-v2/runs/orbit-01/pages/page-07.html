@@ -1,0 +1,409 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+</head>
+<body data-page="07" data-total="20">
+<div id="stage">
+  <main class="page">
+    <header id="lec-header"></header>
+
+    <section class="page-body split min0" aria-label="逃逸边界实验">
+      <figure class="visual-shell min0" aria-label="压缩距离显示的二体积分轨迹">
+        <canvas id="orbit-canvas" class="cv-fill" aria-label="探测器从当前高度和速度出发的二体积分轨迹"></canvas>
+      </figure>
+
+      <aside class="panel control-panel min0" aria-label="实验说明与控制">
+        <div class="panel-heading">
+          <span id="state-badge" class="status"><span class="dot"></span><span id="state-text">计算中</span></span>
+          <p class="panel-description">固定高度试速度，或固定速度换高度。每次按结果二分，逼近“会回来”与“不会回来”的分界。</p>
+        </div>
+
+        <div class="readout-grid">
+          <div class="readout is-blue">
+            <span class="small muted">积分最远离地</span>
+            <strong id="distance-out" class="readout-value">—</strong>
+          </div>
+          <div class="readout">
+            <span class="small muted">当前逃逸速度</span>
+            <strong id="escape-out" class="readout-value">—</strong>
+          </div>
+          <div class="readout is-warm">
+            <span class="small muted">远方剩余速度</span>
+            <strong id="infinity-out" class="readout-value">—</strong>
+          </div>
+          <div class="readout">
+            <span class="small muted">积分时间</span>
+            <strong id="time-out" class="readout-value">—</strong>
+          </div>
+        </div>
+
+        <div class="stack-3">
+          <div class="control-group">
+            <div class="control-row">
+              <label class="muted" for="altitude">发射高度</label>
+              <input id="altitude" type="range" aria-describedby="altitude-hint">
+              <output id="altitude-out" class="control-value" for="altitude">—</output>
+            </div>
+            <p id="altitude-hint" class="small faint">改变高度时，初始速度保持不变。</p>
+          </div>
+
+          <div class="control-group">
+            <div class="control-row">
+              <label class="muted" for="speed">切向初速度</label>
+              <input id="speed" type="range">
+              <output id="speed-out" class="control-value" for="speed">—</output>
+            </div>
+          </div>
+
+          <div class="control-group">
+            <div class="control-row">
+              <label class="muted" for="target-infinity">目标远方余速</label>
+              <input id="target-infinity" type="range" aria-describedby="infinity-hint">
+              <output id="target-out" class="control-value" for="target-infinity">—</output>
+            </div>
+            <p id="infinity-hint" class="small faint">拖动后反推当前位置所需初速度。</p>
+          </div>
+        </div>
+
+        <div class="cluster">
+          <button id="bisect" class="button-primary" type="button">按本次结果二分</button>
+          <button id="reset" type="button">重置边界</button>
+          <span id="bracket-out" class="small muted" aria-live="polite">尚未记录</span>
+        </div>
+      </aside>
+    </section>
+
+    <footer id="lec-footer"></footer>
+  </main>
+
+  <script>
+  document.addEventListener('DOMContentLoaded', function () {
+    'use strict';
+
+    Lec.mount({
+      index: 7,
+      kicker: `LEAVE EARTH`,
+      title: `从“绕回来”到“再也回不来”，边界在哪里`,
+      take: `逃逸不是“飞得更高一点”，而是初始速度跨过了一个由位置决定的边界。`
+    });
+
+    var K = Lec.K;
+    var P = Lec.P;
+    var header = document.getElementById('lec-header');
+    var footer = document.getElementById('lec-footer');
+    header.classList.add('page-header');
+    footer.classList.add('page-footer');
+    header.querySelector('.lec-header__kicker').classList.add('kicker');
+    header.querySelector('.lec-header__title').classList.add('page-title');
+    footer.querySelector('.lec-footer__take').classList.add('take');
+    footer.querySelector('.lec-footer__topic').classList.add('footer-meta');
+
+    var canvas = document.getElementById('orbit-canvas');
+    var altitudeInput = document.getElementById('altitude');
+    var speedInput = document.getElementById('speed');
+    var targetInput = document.getElementById('target-infinity');
+    var altitudeOut = document.getElementById('altitude-out');
+    var speedOut = document.getElementById('speed-out');
+    var targetOut = document.getElementById('target-out');
+    var escapeOut = document.getElementById('escape-out');
+    var infinityOut = document.getElementById('infinity-out');
+    var distanceOut = document.getElementById('distance-out');
+    var timeOut = document.getElementById('time-out');
+    var stateBadge = document.getElementById('state-badge');
+    var stateText = document.getElementById('state-text');
+    var bracketOut = document.getElementById('bracket-out');
+    var bisectButton = document.getElementById('bisect');
+    var resetButton = document.getElementById('reset');
+
+    var velocityStep = K.TEN;
+    var altitude = K.ISS_ALTITUDE;
+    var speed = P.escapeVelocityAtAltitude(altitude) * (K.ONE - K.ONE / K.TEN);
+    var targetInfinity = K.ZERO;
+    var low = K.ZERO;
+    var high = K.ZERO;
+    var attempts = K.ZERO;
+    var latest = null;
+    var painter = null;
+
+    altitudeInput.min = String(K.ZERO);
+    altitudeInput.max = String(K.GEO_ALTITUDE);
+    altitudeInput.step = String(K.LOW_EARTH_ORBIT_ALTITUDE);
+    altitudeInput.value = String(altitude);
+
+    speedInput.min = String(P.circularVelocityAtAltitude(K.GEO_ALTITUDE));
+    speedInput.max = String(P.escapeVelocityAtAltitude(K.ZERO) * (K.ONE + K.ONE / K.FOUR));
+    speedInput.step = String(velocityStep);
+    speedInput.value = String(speed);
+
+    targetInput.min = String(K.ZERO);
+    targetInput.max = String(K.TYPICAL_LEO_SPEED);
+    targetInput.step = String(velocityStep);
+    targetInput.value = String(targetInfinity);
+
+    function resetBracket() {
+      var boundary = P.escapeVelocityAtAltitude(altitude);
+      low = boundary * (K.ONE - K.ONE / K.FOUR);
+      high = boundary * (K.ONE + K.ONE / K.FOUR);
+      attempts = K.ZERO;
+      bracketOut.textContent = '待二分 · 区间宽 ' + P.formatVelocity(high - low);
+    }
+
+    function acceleration(x, y) {
+      var r = Math.sqrt(x * x + y * y);
+      var factor = -K.MU_EARTH / (r * r * r);
+      return { x: factor * x, y: factor * y };
+    }
+
+    function rk4(state, dt) {
+      var a1 = acceleration(state.x, state.y);
+      var k1 = { x: state.vx, y: state.vy, vx: a1.x, vy: a1.y };
+      var a2 = acceleration(state.x + k1.x * dt / K.TWO, state.y + k1.y * dt / K.TWO);
+      var k2 = { x: state.vx + k1.vx * dt / K.TWO, y: state.vy + k1.vy * dt / K.TWO, vx: a2.x, vy: a2.y };
+      var a3 = acceleration(state.x + k2.x * dt / K.TWO, state.y + k2.y * dt / K.TWO);
+      var k3 = { x: state.vx + k2.vx * dt / K.TWO, y: state.vy + k2.vy * dt / K.TWO, vx: a3.x, vy: a3.y };
+      var a4 = acceleration(state.x + k3.x * dt, state.y + k3.y * dt);
+      var k4 = { x: state.vx + k3.vx * dt, y: state.vy + k3.vy * dt, vx: a4.x, vy: a4.y };
+      return {
+        x: state.x + dt * (k1.x + K.TWO * k2.x + K.TWO * k3.x + k4.x) / K.SIX,
+        y: state.y + dt * (k1.y + K.TWO * k2.y + K.TWO * k3.y + k4.y) / K.SIX,
+        vx: state.vx + dt * (k1.vx + K.TWO * k2.vx + K.TWO * k3.vx + k4.vx) / K.SIX,
+        vy: state.vy + dt * (k1.vy + K.TWO * k2.vy + K.TWO * k3.vy + k4.vy) / K.SIX
+      };
+    }
+
+    function simulate() {
+      var radius = P.radiusAtAltitude(altitude);
+      var escape = P.escapeVelocityAtAltitude(altitude);
+      var state = { x: radius, y: K.ZERO, vx: K.ZERO, vy: speed };
+      var points = [{ x: state.x, y: state.y }];
+      var elapsed = K.ZERO;
+      var maxRadius = radius;
+      var collided = false;
+      var angleTravel = K.ZERO;
+      var previousAngle = K.ZERO;
+      var maxSteps = K.THOUSAND * K.SIX;
+      var sampleEvery = K.EIGHT;
+      var i;
+
+      for (i = K.ZERO; i < maxSteps; i += K.ONE) {
+        var r = Math.sqrt(state.x * state.x + state.y * state.y);
+        var localPeriod = K.TWO_PI * Math.sqrt(r * r * r / K.MU_EARTH);
+        var dt = localPeriod / (K.THOUSAND / K.TWO);
+        state = rk4(state, dt);
+        elapsed += dt;
+        r = Math.sqrt(state.x * state.x + state.y * state.y);
+        maxRadius = Math.max(maxRadius, r);
+
+        var angle = Math.atan2(state.y, state.x);
+        var delta = angle - previousAngle;
+        if (delta > K.PI) { delta -= K.TWO_PI; }
+        if (delta < -K.PI) { delta += K.TWO_PI; }
+        angleTravel += Math.abs(delta);
+        previousAngle = angle;
+
+        if (i % sampleEvery === K.ZERO) {
+          points.push({ x: state.x, y: state.y });
+        }
+        if (r <= K.R_EARTH) {
+          collided = true;
+          points.push({ x: state.x, y: state.y });
+          break;
+        }
+        if (r >= K.LUNAR_DISTANCE || angleTravel >= K.TWO_PI) {
+          points.push({ x: state.x, y: state.y });
+          break;
+        }
+      }
+
+      var finalRadius = Math.sqrt(state.x * state.x + state.y * state.y);
+      var finalSpeed = Math.sqrt(state.vx * state.vx + state.vy * state.vy);
+      var finalEnergy = P.specificOrbitalEnergy(finalRadius, finalSpeed, K.MU_EARTH);
+      var infinity = P.hyperbolicExcessSpeed(radius, speed, K.MU_EARTH);
+      var nearBoundary = Math.abs(speed - escape) <= velocityStep;
+      var kind;
+      var label;
+
+      if (collided) {
+        kind = 'bound';
+        label = '仍受束缚 · 返回地球';
+      } else if (nearBoundary) {
+        kind = 'edge';
+        label = '趋向逃逸 · 临界轨迹';
+      } else if (finalEnergy < K.ZERO) {
+        kind = 'bound';
+        label = '仍受束缚 · 终将绕回';
+      } else {
+        kind = 'escape';
+        label = '具有剩余远方速度';
+      }
+
+      return {
+        points: points,
+        radius: radius,
+        escape: escape,
+        infinity: infinity,
+        elapsed: elapsed,
+        maxRadius: maxRadius,
+        collided: collided,
+        kind: kind,
+        label: label
+      };
+    }
+
+    function durationText(seconds) {
+      var d = P.formatDuration(seconds);
+      if (d.days > K.ZERO) { return d.days + ' d ' + d.hours + ' h'; }
+      if (d.hours > K.ZERO) { return d.hours + ' h ' + d.minutes + ' min'; }
+      if (d.minutes > K.ZERO) { return d.minutes + ' min ' + d.seconds + ' s'; }
+      return d.seconds + ' s';
+    }
+
+    function draw(ctx, w, h) {
+      if (!latest) { return; }
+      ctx.clearRect(K.ZERO, K.ZERO, w, h);
+
+      var cx = w / K.TWO;
+      var cy = h / K.TWO;
+      var shortSide = Math.min(w, h);
+      var earthDraw = shortSide / K.TEN;
+      var outer = shortSide * (K.ONE / K.TWO - K.ONE / K.TEN);
+      var topRadius = Math.max(latest.maxRadius, latest.radius * K.TWO);
+      var denominator = Math.log(topRadius / K.R_EARTH);
+      var fontLabel = Deck.token('type-label') + ' ' + Deck.token('font-sans');
+      var trajectoryColor = latest.kind === 'bound' ? 'accent-blue' : (latest.kind === 'edge' ? 'accent-warm' : 'accent');
+
+      function project(point) {
+        var physical = Math.sqrt(point.x * point.x + point.y * point.y);
+        var angle = Math.atan2(point.y, point.x);
+        var mapped = earthDraw + Math.log(Math.max(physical, K.R_EARTH) / K.R_EARTH) / denominator * (outer - earthDraw);
+        return { x: cx + Math.cos(angle) * mapped, y: cy - Math.sin(angle) * mapped };
+      }
+
+      ctx.strokeStyle = Deck.rgba('line-strong', K.ONE / K.TWO);
+      ctx.lineWidth = K.ONE;
+      ctx.setLineDash([K.SIX, K.EIGHT]);
+      [K.ONE / K.FOUR, K.ONE / K.TWO, K.THREE / K.FOUR, K.ONE].forEach(function (part) {
+        ctx.beginPath();
+        ctx.arc(cx, cy, earthDraw + (outer - earthDraw) * part, K.ZERO, K.TWO_PI);
+        ctx.stroke();
+      });
+      ctx.setLineDash([]);
+
+      ctx.fillStyle = Deck.rgba('accent-blue', K.ONE / K.TEN);
+      ctx.strokeStyle = Deck.rgba('accent-blue', K.ONE);
+      ctx.lineWidth = K.TWO;
+      ctx.beginPath();
+      ctx.arc(cx, cy, earthDraw, K.ZERO, K.TWO_PI);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.strokeStyle = Deck.rgba(trajectoryColor, K.ONE);
+      ctx.lineWidth = K.THREE;
+      ctx.beginPath();
+      latest.points.forEach(function (point, index) {
+        var p = project(point);
+        if (index === K.ZERO) { ctx.moveTo(p.x, p.y); } else { ctx.lineTo(p.x, p.y); }
+      });
+      ctx.stroke();
+
+      var launch = project(latest.points[K.ZERO]);
+      var end = project(latest.points[latest.points.length - K.ONE]);
+      ctx.fillStyle = Deck.rgba('ink-strong', K.ONE);
+      ctx.beginPath();
+      ctx.arc(launch.x, launch.y, K.SIX, K.ZERO, K.TWO_PI);
+      ctx.fill();
+      ctx.fillStyle = Deck.rgba(trajectoryColor, K.ONE);
+      ctx.beginPath();
+      ctx.arc(end.x, end.y, K.EIGHT, K.ZERO, K.TWO_PI);
+      ctx.fill();
+
+      ctx.strokeStyle = Deck.rgba('accent-warm', K.ONE);
+      ctx.fillStyle = Deck.rgba('accent-warm', K.ONE);
+      ctx.lineWidth = K.TWO;
+      var arrowLength = shortSide / K.TEN * speed / latest.escape;
+      Deck.arrow(ctx, launch.x, launch.y, launch.x, launch.y - arrowLength, K.EIGHT);
+
+      ctx.font = fontLabel;
+      ctx.fillStyle = Deck.rgba('ink-muted', K.ONE);
+      ctx.textAlign = 'left';
+      ctx.fillText('距离为压缩显示', K.SIX * K.FOUR, K.SIX * K.FOUR);
+      ctx.fillText('白点：发射位置', K.SIX * K.FOUR, h - K.SIX * K.FOUR);
+      ctx.textAlign = 'center';
+      ctx.fillText('地球', cx, cy + K.SIX);
+    }
+
+    function updateBadge(kind) {
+      stateBadge.className = 'status';
+      if (kind === 'bound') { stateBadge.classList.add('is-danger'); }
+      if (kind === 'edge') { stateBadge.classList.add('is-warm'); }
+      if (kind === 'escape') { stateBadge.classList.add('is-success'); }
+    }
+
+    function update() {
+      latest = simulate();
+      altitudeOut.textContent = P.formatDistance(altitude);
+      speedOut.textContent = P.formatVelocity(speed);
+      targetOut.textContent = P.formatVelocity(targetInfinity);
+      escapeOut.textContent = P.formatVelocity(latest.escape);
+      infinityOut.textContent = P.formatVelocity(latest.infinity);
+      distanceOut.textContent = P.formatDistance(Math.max(K.ZERO, latest.maxRadius - K.R_EARTH));
+      timeOut.textContent = durationText(latest.elapsed);
+      stateText.textContent = latest.label;
+      updateBadge(latest.kind);
+      speedInput.value = String(speed);
+      if (painter) { painter.redraw(); }
+    }
+
+    altitudeInput.addEventListener('input', function () {
+      altitude = P.clamp(Number(altitudeInput.value), K.ZERO, K.GEO_ALTITUDE);
+      resetBracket();
+      update();
+    });
+
+    speedInput.addEventListener('input', function () {
+      speed = P.clamp(Number(speedInput.value), Number(speedInput.min), Number(speedInput.max));
+      targetInfinity = P.hyperbolicExcessSpeed(P.radiusAtAltitude(altitude), speed, K.MU_EARTH);
+      targetInput.value = String(P.clamp(targetInfinity, Number(targetInput.min), Number(targetInput.max)));
+      update();
+    });
+
+    targetInput.addEventListener('input', function () {
+      targetInfinity = P.clamp(Number(targetInput.value), K.ZERO, K.TYPICAL_LEO_SPEED);
+      speed = P.escapeSpeedFromInfinitySpeed(P.radiusAtAltitude(altitude), targetInfinity, K.MU_EARTH);
+      speed = P.clamp(speed, Number(speedInput.min), Number(speedInput.max));
+      update();
+    });
+
+    bisectButton.addEventListener('click', function () {
+      if (speed < latest.escape) { low = Math.max(low, speed); } else { high = Math.min(high, speed); }
+      if (low >= high) { resetBracket(); }
+      speed = (low + high) / K.TWO;
+      attempts += K.ONE;
+      targetInfinity = P.hyperbolicExcessSpeed(P.radiusAtAltitude(altitude), speed, K.MU_EARTH);
+      targetInput.value = String(P.clamp(targetInfinity, Number(targetInput.min), Number(targetInput.max)));
+      bracketOut.textContent = '尝试 ' + attempts + ' · 区间宽 ' + P.formatVelocity(high - low);
+      update();
+    });
+
+    resetButton.addEventListener('click', function () {
+      resetBracket();
+      speed = P.escapeVelocityAtAltitude(altitude) * (K.ONE - K.ONE / K.TEN);
+      targetInfinity = K.ZERO;
+      targetInput.value = String(targetInfinity);
+      update();
+    });
+
+    resetBracket();
+    latest = simulate();
+    painter = Deck.autofit(canvas, draw);
+    update();
+  });
+  </script>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+</body>
+</html>

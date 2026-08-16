@@ -1,0 +1,424 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+</head>
+<body data-page="13" data-total="20">
+<div id="stage">
+  <style>
+    .p13.canvas-full { background: var(--bg); }
+    .p13 .scene-wrap { position: relative; min-inline-size: 0; min-block-size: 0; overflow: hidden; }
+    .p13 .scene-wrap::after { content: ""; position: absolute; inset: 0; pointer-events: none; background: radial-gradient(circle at 48% 55%, transparent 0 25%, var(--bg) 76%); opacity: .32; }
+    .p13 .webgl { inline-size: 100%; block-size: 100%; display: block; cursor: grab; outline: none; }
+    .p13 .webgl:active { cursor: grabbing; }
+    .p13 .webgl:focus-visible { box-shadow: inset 0 0 0 var(--space-1) var(--focus); }
+    .p13 .hud { z-index: 3; pointer-events: none; padding: var(--space-0) var(--page-pad-x); }
+    .p13 .hud > * { pointer-events: auto; }
+    .p13 .brief { position: absolute; inset-inline-start: var(--page-pad-x); inset-block-start: 238px; max-inline-size: 350px; }
+    .p13 .brief p { margin: var(--space-3) 0 0; color: var(--text-muted); font-size: var(--fs-small); line-height: var(--lh-body); }
+    .p13 .center-note { position: absolute; inset-inline-start: 44%; inset-block-end: 142px; translate: -50% 0; padding: var(--space-3) var(--space-4); border: 1px solid var(--line-strong); border-radius: var(--radius-pill); background: var(--surface-glass); color: var(--accent-strong); font-size: var(--fs-label); font-weight: var(--weight-semibold); white-space: nowrap; pointer-events: none; }
+    .p13 .dashboard { position: absolute; inset-inline-end: var(--page-pad-x); inset-block-start: 184px; inline-size: 414px; display: flex; flex-direction: column; gap: var(--space-4); }
+    .p13 .control-panel { gap: var(--space-4); padding: var(--space-5); }
+    .p13 .control-group { gap: var(--space-2); padding-block-end: var(--space-4); }
+    .p13 .control-row { justify-content: space-between; }
+    .p13 output { color: var(--text-strong); font-family: var(--font-mono); font-size: var(--fs-label); font-variant-numeric: tabular-nums; }
+    .p13 .readout-panel { --readout-cols: 2; padding: var(--space-3); }
+    .p13 .readout { min-block-size: 86px; padding: var(--space-3); }
+    .p13 .readout-value { font-size: var(--fs-h3); }
+    .p13 .wide { grid-column: 1 / -1; }
+    .p13 .formula { color: var(--text-muted); font-size: var(--fs-caption); line-height: var(--lh-tight); }
+    .p13 .legend { position: absolute; inset-inline-start: var(--page-pad-x); inset-block-end: 72px; padding: var(--space-3) var(--space-4); border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--surface-glass); pointer-events: none; }
+    .p13 .sw-equator { --swatch: var(--accent-2); }
+    .p13 .sw-orbit { --swatch: var(--warm); }
+    .p13 .sw-launch { --swatch: var(--accent); }
+    @media (prefers-reduced-motion: reduce) { .p13 .webgl { scroll-behavior: auto; } }
+  </style>
+
+  <main id="scene-caption" class="p13 canvas-full" aria-label="发射场与轨道平面三维实验">
+    <div class="scene-wrap canvas-layer min0">
+      <canvas id="orbit-scene" class="webgl cv-fill no-pan" tabindex="0" role="application" aria-label="三维地球。拖动青色发射点改变纬度，拖动方位箭头改变方向；拖动空白处绕地球观察。方向键旋转视角，按 R 重置。"></canvas>
+    </div>
+
+    <div class="hud" aria-hidden="false">
+      <section class="brief callout" aria-label="操作说明">
+        <span class="status status--live">实时预测轨道面</span>
+        <p>拖动青色发射点改变纬度；拖动箭头改变发射方位。抓住地球外侧可绕行观察。</p>
+      </section>
+
+      <div class="center-note">轨道环以地心为中心，而不是悬在发射场纬线上</div>
+
+      <aside class="dashboard" aria-label="发射条件与计算结果">
+        <section class="control-panel">
+          <div class="control-group">
+            <div class="control-row"><label class="control-label" for="latitude">发射场纬度</label><output id="latitude-out" for="latitude"></output></div>
+            <input id="latitude" type="range" aria-label="发射场纬度">
+          </div>
+          <div class="control-group">
+            <div class="control-row"><label class="control-label" for="azimuth">发射方位角</label><output id="azimuth-out" for="azimuth"></output></div>
+            <input id="azimuth" type="range" aria-label="发射方位角，从正北顺时针">
+            <div class="control-hint">从正北顺时针：向东发射时自转助益最大</div>
+          </div>
+          <div class="control-row">
+            <span class="formula" id="azimuths">同倾角可用方位 —</span>
+            <button id="reset" class="button button--quiet" type="button">重置视角与发射场</button>
+          </div>
+        </section>
+
+        <section class="readout-panel" aria-live="polite" aria-label="轨道平面计算结果">
+          <div class="readout readout--accent">
+            <span class="readout-label">实际初始倾角</span>
+            <strong class="readout-value" id="inclination">—</strong>
+          </div>
+          <div class="readout">
+            <span class="readout-label">该纬度最小倾角</span>
+            <strong class="readout-value" id="minimum">—</strong>
+          </div>
+          <div class="readout">
+            <span class="readout-label">地表自转速度</span>
+            <strong class="readout-value" id="surface-speed">—</strong>
+          </div>
+          <div class="readout">
+            <span class="readout-label">当前方向自转助益</span>
+            <strong class="readout-value" id="assist">—</strong>
+          </div>
+          <div class="readout wide">
+            <span class="readout-label">惯性速度（同一地面发射速度）</span>
+            <strong class="readout-value" id="inertial-speed">—</strong>
+          </div>
+        </section>
+      </aside>
+
+      <div class="legend" aria-label="图例">
+        <span class="legend-item"><i class="legend-swatch sw-equator"></i>赤道面</span>
+        <span class="legend-item"><i class="legend-swatch sw-orbit"></i>预测轨道面</span>
+        <span class="legend-item"><i class="legend-swatch sw-launch"></i>发射场与方位</span>
+      </div>
+    </div>
+  </main>
+
+  <script src="assets/lib/three.min.js"></script>
+  <script>
+    window.addEventListener('DOMContentLoaded', function () {
+      'use strict';
+
+      const page = Object.freeze({
+        index: Number(document.body.dataset.page),
+        kicker: `ORBIT-PLANE`,
+        title: `轨道不只是一个高度，它还是穿过地心的一个<em>平面</em>`,
+        take: `发射场纬度、发射方位和地球自转共同限制初始轨道倾角。`
+      });
+      Lec.mount(page);
+
+      const cv = document.getElementById('orbit-scene');
+      const latInput = document.getElementById('latitude');
+      const azInput = document.getElementById('azimuth');
+      const initial = Object.freeze({ latitude: Lec.K.earth.axialTilt, azimuth: Lec.K.HALF_PI, longitude: -Lec.K.earth.axialTilt });
+      const state = { latitude: initial.latitude, azimuth: initial.azimuth, longitude: initial.longitude, yaw: -0.62, pitch: 0.25, distance: 6.2, earthAngle: 0, dirty: true };
+      const radius = 1.58;
+      const scene = new THREE.Scene();
+      const camera = new THREE.PerspectiveCamera(35, Deck.W / Deck.H, 0.1, 40);
+      const renderer = new THREE.WebGLRenderer({ canvas: cv, antialias: true, alpha: true });
+      renderer.outputColorSpace = THREE.SRGBColorSpace;
+      renderer.setSize(Deck.W, Deck.H, false);
+
+      function color(name) {
+        const c = Deck.rgb(name);
+        return new THREE.Color(c[0] / 255, c[1] / 255, c[2] / 255);
+      }
+
+      scene.add(new THREE.HemisphereLight(color('--text'), color('--surface-inset'), 1.15));
+      const key = new THREE.DirectionalLight(color('--accent-2'), 2.2);
+      key.position.set(-4, 5, 6);
+      scene.add(key);
+      const rim = new THREE.DirectionalLight(color('--accent'), 1.5);
+      rim.position.set(5, -1, -4);
+      scene.add(rim);
+
+      const earth = new THREE.Mesh(
+        new THREE.SphereGeometry(radius, 64, 40),
+        new THREE.MeshStandardMaterial({ color: color('--surface-3'), roughness: 0.74, metalness: 0.08 })
+      );
+      scene.add(earth);
+
+      const grid = new THREE.Group();
+      const gridMat = new THREE.LineBasicMaterial({ color: color('--line-strong'), transparent: true, opacity: 0.7 });
+      function lineLoop(points, material) {
+        return new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(points), material);
+      }
+      for (let j = -2; j <= 2; j += 1) {
+        const lat = j * Lec.K.HALF_PI / 3;
+        const pts = [];
+        for (let i = 0; i < 96; i += 1) {
+          const a = Lec.K.TWO_PI * i / 96;
+          pts.push(new THREE.Vector3(radius * Math.cos(lat) * Math.cos(a), radius * Math.sin(lat), radius * Math.cos(lat) * Math.sin(a)));
+        }
+        grid.add(lineLoop(pts, gridMat));
+      }
+      for (let j = 0; j < 12; j += 1) {
+        const lon = Lec.K.TWO_PI * j / 12;
+        const pts = [];
+        for (let i = 0; i < 96; i += 1) {
+          const lat = -Lec.K.HALF_PI + Lec.K.PI * i / 96;
+          pts.push(new THREE.Vector3(radius * Math.cos(lat) * Math.cos(lon), radius * Math.sin(lat), radius * Math.cos(lat) * Math.sin(lon)));
+        }
+        grid.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), gridMat));
+      }
+      scene.add(grid);
+
+      const equatorMat = new THREE.LineBasicMaterial({ color: color('--accent-2'), transparent: true, opacity: 0.95 });
+      const equatorPts = [];
+      for (let i = 0; i < 160; i += 1) {
+        const a = Lec.K.TWO_PI * i / 160;
+        equatorPts.push(new THREE.Vector3(2.16 * Math.cos(a), 0, 2.16 * Math.sin(a)));
+      }
+      scene.add(lineLoop(equatorPts, equatorMat));
+
+      const plane = new THREE.Mesh(
+        new THREE.CircleGeometry(2.12, 128),
+        new THREE.MeshBasicMaterial({ color: color('--warm'), transparent: true, opacity: 0.09, side: THREE.DoubleSide, depthWrite: false })
+      );
+      const orbitRing = new THREE.Mesh(
+        new THREE.RingGeometry(2.1, 2.14, 160),
+        new THREE.MeshBasicMaterial({ color: color('--warm'), transparent: true, opacity: 0.95, side: THREE.DoubleSide, depthWrite: false })
+      );
+      scene.add(plane, orbitRing);
+
+      const marker = new THREE.Mesh(
+        new THREE.SphereGeometry(0.105, 24, 16),
+        new THREE.MeshBasicMaterial({ color: color('--accent-strong') })
+      );
+      const markerHalo = new THREE.Mesh(
+        new THREE.RingGeometry(0.14, 0.19, 32),
+        new THREE.MeshBasicMaterial({ color: color('--accent'), transparent: true, opacity: 0.75, side: THREE.DoubleSide, depthWrite: false })
+      );
+      scene.add(marker, markerHalo);
+      const arrow = new THREE.ArrowHelper(new THREE.Vector3(1, 0, 0), new THREE.Vector3(), 0.86, color('--accent').getHex(), 0.22, 0.12);
+      scene.add(arrow);
+
+      const raycaster = new THREE.Raycaster();
+      const ndc = new THREE.Vector2();
+      const zAxis = new THREE.Vector3(0, 0, 1);
+      const yAxis = new THREE.Vector3(0, 1, 0);
+      let dragging = '';
+      let last = null;
+      let arrowTip = new THREE.Vector3();
+
+      function localFrame() {
+        const lon = state.longitude - state.earthAngle;
+        const cl = Math.cos(state.latitude);
+        const sl = Math.sin(state.latitude);
+        const co = Math.cos(lon);
+        const so = Math.sin(lon);
+        return {
+          up: new THREE.Vector3(cl * co, sl, cl * so),
+          north: new THREE.Vector3(-sl * co, cl, -sl * so),
+          east: new THREE.Vector3(-so, 0, co)
+        };
+      }
+
+      function updateCamera() {
+        const cp = Math.cos(state.pitch);
+        camera.position.set(state.distance * cp * Math.sin(state.yaw), state.distance * Math.sin(state.pitch), state.distance * cp * Math.cos(state.yaw));
+        camera.lookAt(0, 0, 0);
+        camera.updateMatrixWorld();
+      }
+
+      function updateGeometry() {
+        earth.rotation.y = -state.earthAngle;
+        grid.rotation.y = -state.earthAngle;
+        const f = localFrame();
+        const pos = f.up.clone().multiplyScalar(radius * 1.015);
+        const direction = f.north.clone().multiplyScalar(Math.cos(state.azimuth)).add(f.east.clone().multiplyScalar(Math.sin(state.azimuth))).normalize();
+        const normal = f.up.clone().cross(direction).normalize();
+        marker.position.copy(pos);
+        markerHalo.position.copy(pos.clone().add(f.up.clone().multiplyScalar(0.015)));
+        markerHalo.quaternion.setFromUnitVectors(zAxis, f.up);
+        arrow.position.copy(pos.clone().add(f.up.clone().multiplyScalar(0.05)));
+        arrow.setDirection(direction);
+        arrowTip = arrow.position.clone().add(direction.clone().multiplyScalar(0.86));
+        const q = new THREE.Quaternion().setFromUnitVectors(zAxis, normal);
+        plane.quaternion.copy(q);
+        orbitRing.quaternion.copy(q);
+      }
+
+      function degreeText(rad, signed) {
+        const value = Lec.P.toDegrees(rad);
+        return (signed && value > 0 ? '+' : '') + Lec.P.formatNumber(value, 1) + '°';
+      }
+
+      function updateReadouts() {
+        const p = Lec.P;
+        const inclination = p.launchInclination(state.latitude, state.azimuth);
+        const minimum = p.minimumLaunchInclination(state.latitude);
+        const surface = p.surfaceRotationSpeed(state.latitude);
+        const assist = p.rotationAssist(state.latitude, state.azimuth);
+        const referenceSpeed = p.circularVelocityAtRadius(Lec.K.EARTH_RADIUS + Lec.K.ISS_ALTITUDE);
+        const inertial = p.inertialLaunchSpeed(referenceSpeed, state.latitude, state.azimuth);
+        const azimuths = p.launchAzimuths(state.latitude, inclination);
+        document.getElementById('latitude-out').textContent = degreeText(state.latitude, true);
+        document.getElementById('azimuth-out').textContent = degreeText(state.azimuth, false);
+        document.getElementById('inclination').textContent = degreeText(inclination, false);
+        document.getElementById('minimum').textContent = degreeText(minimum, false);
+        document.getElementById('surface-speed').textContent = p.formatSpeed(surface, 1);
+        document.getElementById('assist').textContent = p.formatSpeed(assist, 1);
+        document.getElementById('inertial-speed').textContent = p.formatSpeed(inertial, 2);
+        document.getElementById('azimuths').textContent = '同倾角可用方位 ' + azimuths.map(function (v) { return degreeText(v, false); }).join(' / ');
+        document.getElementById('scene-caption').setAttribute('aria-label', '发射场纬度 ' + degreeText(state.latitude, true) + '，方位角 ' + degreeText(state.azimuth, false) + '，初始轨道倾角 ' + degreeText(inclination, false) + '。轨道面穿过地心。');
+        latInput.value = String(p.toDegrees(state.latitude));
+        azInput.value = String(p.toDegrees(state.azimuth));
+      }
+
+      const fullDegrees = Lec.P.toDegrees(Lec.K.TWO_PI);
+      const rightDegrees = Lec.P.toDegrees(Lec.K.HALF_PI);
+      latInput.min = String(-rightDegrees);
+      latInput.max = String(rightDegrees);
+      latInput.step = String(fullDegrees / fullDegrees);
+      azInput.min = String(0);
+      azInput.max = String(fullDegrees);
+      azInput.step = String(fullDegrees / fullDegrees);
+
+      function commit() {
+        updateGeometry();
+        updateReadouts();
+        state.dirty = true;
+      }
+
+      latInput.addEventListener('input', function () {
+        state.latitude = Lec.P.toRadians(Number(latInput.value));
+        commit();
+      });
+      azInput.addEventListener('input', function () {
+        state.azimuth = Lec.P.toRadians(Number(azInput.value));
+        commit();
+      });
+
+      function setRay(e) {
+        const p = Deck.pt(cv, e);
+        ndc.set(p.x / Deck.W * 2 - 1, -(p.y / Deck.H) * 2 + 1);
+        raycaster.setFromCamera(ndc, camera);
+        return p;
+      }
+
+      function screenDistance(world, p) {
+        const projected = world.clone().project(camera);
+        const x = (projected.x + 1) * Deck.W / 2;
+        const y = (1 - projected.y) * Deck.H / 2;
+        return Math.hypot(x - p.x, y - p.y);
+      }
+
+      cv.addEventListener('pointerdown', function (e) {
+        const p = setRay(e);
+        updateGeometry();
+        if (screenDistance(arrowTip, p) < 48) dragging = 'azimuth';
+        else if (screenDistance(marker.position, p) < 52) dragging = 'site';
+        else dragging = 'camera';
+        last = p;
+        cv.setPointerCapture(e.pointerId);
+      });
+
+      cv.addEventListener('pointermove', function (e) {
+        if (!dragging) return;
+        const p = setRay(e);
+        if (dragging === 'camera') {
+          state.yaw -= (p.x - last.x) / Deck.W * Lec.K.TWO_PI;
+          state.pitch = Lec.P.clamp(state.pitch + (p.y - last.y) / Deck.H * Lec.K.PI, -Lec.K.HALF_PI * 0.82, Lec.K.HALF_PI * 0.82);
+          updateCamera();
+          state.dirty = true;
+        } else if (dragging === 'site') {
+          const hit = raycaster.intersectObject(earth, false)[0];
+          if (hit) {
+            const q = hit.point.clone().normalize();
+            state.latitude = Math.asin(Lec.P.clamp(q.y, -1, 1));
+            state.longitude = Math.atan2(q.z, q.x) + state.earthAngle;
+            commit();
+          }
+        } else {
+          const f = localFrame();
+          const origin = f.up.clone().multiplyScalar(radius * 1.05);
+          const tangent = new THREE.Plane().setFromNormalAndCoplanarPoint(f.up, origin);
+          const hit = new THREE.Vector3();
+          if (raycaster.ray.intersectPlane(tangent, hit)) {
+            const v = hit.sub(origin);
+            if (v.lengthSq() > 0.01) {
+              let a = Math.atan2(v.dot(f.east), v.dot(f.north));
+              if (a < 0) a += Lec.K.TWO_PI;
+              state.azimuth = a;
+              commit();
+            }
+          }
+        }
+        last = p;
+      });
+
+      function endDrag(e) {
+        dragging = '';
+        last = null;
+        if (e && cv.hasPointerCapture(e.pointerId)) cv.releasePointerCapture(e.pointerId);
+      }
+      cv.addEventListener('pointerup', endDrag);
+      cv.addEventListener('pointercancel', endDrag);
+      cv.addEventListener('lostpointercapture', function () { dragging = ''; last = null; });
+      window.addEventListener('blur', function () { dragging = ''; last = null; });
+
+      cv.addEventListener('keydown', function (e) {
+        const step = Lec.K.DEG_TO_RAD * 3;
+        let used = true;
+        if (e.key.toLowerCase() === 'r') resetAll();
+        else if (e.shiftKey && e.key === 'ArrowUp') state.latitude = Lec.P.clamp(state.latitude + step, -Lec.K.HALF_PI, Lec.K.HALF_PI);
+        else if (e.shiftKey && e.key === 'ArrowDown') state.latitude = Lec.P.clamp(state.latitude - step, -Lec.K.HALF_PI, Lec.K.HALF_PI);
+        else if (e.shiftKey && e.key === 'ArrowRight') state.azimuth = (state.azimuth + step) % Lec.K.TWO_PI;
+        else if (e.shiftKey && e.key === 'ArrowLeft') state.azimuth = (state.azimuth - step + Lec.K.TWO_PI) % Lec.K.TWO_PI;
+        else if (e.key === 'ArrowLeft') state.yaw -= step;
+        else if (e.key === 'ArrowRight') state.yaw += step;
+        else if (e.key === 'ArrowUp') state.pitch = Lec.P.clamp(state.pitch + step, -Lec.K.HALF_PI * 0.82, Lec.K.HALF_PI * 0.82);
+        else if (e.key === 'ArrowDown') state.pitch = Lec.P.clamp(state.pitch - step, -Lec.K.HALF_PI * 0.82, Lec.K.HALF_PI * 0.82);
+        else used = false;
+        if (used) {
+          e.preventDefault();
+          updateCamera();
+          commit();
+        }
+      });
+
+      function resetAll() {
+        state.latitude = initial.latitude;
+        state.azimuth = initial.azimuth;
+        state.longitude = initial.longitude;
+        state.yaw = -0.62;
+        state.pitch = 0.25;
+        state.distance = 6.2;
+        state.earthAngle = 0;
+        updateCamera();
+        commit();
+      }
+      document.getElementById('reset').addEventListener('click', resetAll);
+
+      Deck.onResize(function () {
+        renderer.setSize(Deck.W, Deck.H, false);
+        camera.aspect = Deck.W / Deck.H;
+        camera.updateProjectionMatrix();
+        state.dirty = true;
+      });
+
+      updateCamera();
+      commit();
+      Deck.loop(function (time, dt) {
+        if (!Deck.reduced() && !dragging) {
+          state.earthAngle = (state.earthAngle + Lec.K.EARTH_ROTATION_RATE * dt) % Lec.K.TWO_PI;
+          updateGeometry();
+          state.dirty = true;
+        }
+        if (state.dirty) {
+          renderer.render(scene, camera);
+          state.dirty = false;
+        }
+      }, { still: 0 });
+    }, { once: true });
+  </script>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+</body>
+</html>

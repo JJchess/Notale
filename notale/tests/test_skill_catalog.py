@@ -2,7 +2,9 @@ from copy import deepcopy
 
 import pytest
 
-from notale.core.models import LecturePlan, SkillAssignment
+from pydantic import ValidationError
+
+from notale.core.models import LecturePlan, PagePlan
 from notale.core.stages.contract import PLANNER_SKILL_CATALOG, SKILL_CATALOG, STYLE_STUDIO
 from notale.tools.agent_tools import OPTIONAL_PAGE_TOOLS
 from notale.utils.skill_catalog import (
@@ -13,15 +15,14 @@ from notale.utils.skill_catalog import (
 from notale.tests.fake_llm import _default_compositions
 
 
-def test_catalog_validates_and_renders_selected_skills(plan_data):
+def test_catalog_validates_tool_only_page_capabilities(plan_data):
     plan = LecturePlan.model_validate(plan_data)
     assert SKILL_CATALOG.validate_plan(plan, OPTIONAL_PAGE_TOOLS) is plan
-    rendered = SKILL_CATALOG.render(plan.pages[2].skills)
-    assert "Skill: create-sim" in rendered
+    assert SKILL_CATALOG.skills == {}
     assert "narrative-keynote" not in SKILL_CATALOG.skills
     assert "pudding-playable-visual-essay" not in SKILL_CATALOG.skills
     assert "style-studio" not in PLANNER_SKILL_CATALOG.skills
-    assert "profile" not in SkillAssignment.model_json_schema()["properties"]
+    assert "skills" not in PagePlan.model_json_schema()["properties"]
 
 
 def test_style_studio_preserves_builder_page_and_media_contract():
@@ -34,10 +35,13 @@ def test_style_studio_preserves_builder_page_and_media_contract():
         "Treat assigned tools as a hard capability boundary",
         "never allocate tools or providers",
         "identifiable people, documents, places, and historical events",
-        "Create exactly 5–7 structurally distinct, topic-specific families",
+        "roughly 5–7 families",
+        "never add, remove, split, or merge a family merely to hit that range",
         "focal-object",
         "interactive-workbench",
-        "Collectively support all page types",
+        "they are a vocabulary, not a coverage checklist",
+        "merely to represent a type",
+        "authentic evidence the dominant carrier",
     ):
         assert required in body
 
@@ -49,7 +53,7 @@ def test_generated_style_round_trips_and_detects_tampering(tmp_path):
         body="# Revolutionary Broadsheet\n\nInk, rupture, and accumulated evidence.",
         tokens={
             "bg": "#f4eedf", "surface": "#fffaf0", "ink": "#201a17",
-            "muted": "#756b63", "accent": "#a52a2a", "accent-2": "#1f5d73",
+            "muted": "#756b63", "accent": "#a52a2a", "accent-2": "#1f5d73", "accent-3": "#3f6b3f",
             "line": "#b7aa99", "font": "Georgia, serif",
         },
         compositions=_default_compositions(),
@@ -70,16 +74,11 @@ def test_generated_style_rejects_weak_composition_catalogs():
         "body": "# Composition test\n\nA complete shared visual law.",
         "tokens": {
             "bg": "#f4eedf", "surface": "#fffaf0", "ink": "#201a17",
-            "muted": "#756b63", "accent": "#a52a2a", "accent-2": "#1f5d73",
+            "muted": "#756b63", "accent": "#a52a2a", "accent-2": "#1f5d73", "accent-3": "#3f6b3f",
             "line": "#b7aa99", "font": "Georgia, serif",
         },
         "compositions": _default_compositions(),
     }
-
-    too_few = deepcopy(base)
-    too_few["compositions"] = too_few["compositions"][:4]
-    with pytest.raises(ValueError, match="5 to 7"):
-        create_generated_style(**too_few)
 
     repeated = deepcopy(base)
     repeated["compositions"][1]["primary"] = "focal-object"
@@ -87,11 +86,28 @@ def test_generated_style_rejects_weak_composition_catalogs():
     with pytest.raises(ValueError, match="signatures"):
         create_generated_style(**repeated)
 
-    uncovered = deepcopy(base)
-    for item in uncovered["compositions"]:
-        item["page_types"] = ["narrative-scene"]
-    with pytest.raises(ValueError, match="do not cover page types"):
-        create_generated_style(**uncovered)
+
+
+def test_generated_style_accepts_topic_relevant_page_type_subset():
+    value = {
+        "name": "historical-evidence-field",
+        "description": "A focused visual system for an evidence-led history lecture.",
+        "body": "# Historical evidence field\n\nDocuments and places carry the argument.",
+        "tokens": {
+            "bg": "#f4eedf", "surface": "#fffaf0", "ink": "#201a17",
+            "muted": "#756b63", "accent": "#a52a2a", "accent-2": "#1f5d73", "accent-3": "#3f6b3f",
+            "line": "#b7aa99", "font": "Georgia, serif",
+        },
+        "compositions": _default_compositions(),
+    }
+    for item in value["compositions"]:
+        item["page_types"] = ["narrative-scene", "worked-example"]
+
+    style = create_generated_style(**value)
+
+    covered = {page_type.value for item in style.compositions for page_type in item.page_types}
+    assert covered == {"narrative-scene", "worked-example"}
+    assert "code-runnable" not in covered
 
 
 def test_plan_rejects_unassigned_tools(plan_data):
@@ -103,6 +119,5 @@ def test_plan_rejects_unassigned_tools(plan_data):
 
 def test_plan_rejects_page_use_of_design_skill(plan_data):
     plan_data["pages"][0]["skills"] = [{"name": "narrative-keynote"}]
-    plan = LecturePlan.model_validate(plan_data)
-    with pytest.raises(ValueError, match="allowed capability"):
-        SKILL_CATALOG.validate_plan(plan, OPTIONAL_PAGE_TOOLS)
+    with pytest.raises(ValidationError, match="skills"):
+        LecturePlan.model_validate(plan_data)

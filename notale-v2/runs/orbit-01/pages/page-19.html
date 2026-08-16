@@ -1,0 +1,384 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+</head>
+<body data-page="19" data-total="20">
+<div id="stage">
+  <main class="page">
+    <header id="lec-header"></header>
+
+    <section class="page-body split min0" aria-label="轨道救援模拟器">
+      <figure class="visual-shell min0" aria-label="倾斜的三维地球轨道场景。实线为当前轨道，虚线为目标轨道，卫星位置由点火位置滑块控制。">
+        <canvas id="orbit-canvas" class="cv-fill" aria-hidden="true"></canvas>
+      </figure>
+
+      <aside class="panel stack-3 min0" aria-label="修正控制与测量">
+        <div class="panel-heading">
+          <h2 class="panel-title">救援控制台</h2>
+          <p class="panel-description">先制造误差，再预测点火位置与方向。每次点火后测量残差，决定继续微调还是重置方案。</p>
+        </div>
+
+        <table class="data-table" aria-label="当前轨道与目标轨道比较">
+          <thead><tr><th>测量</th><th class="numeric">当前</th><th class="numeric">目标</th></tr></thead>
+          <tbody>
+            <tr><td>近地点</td><td id="peri-now" class="numeric"></td><td id="peri-target" class="numeric"></td></tr>
+            <tr><td>远地点</td><td id="apo-now" class="numeric"></td><td id="apo-target" class="numeric"></td></tr>
+            <tr><td>偏心率</td><td id="ecc-now" class="numeric"></td><td id="ecc-target" class="numeric"></td></tr>
+            <tr><td>轨道平面</td><td id="inc-now" class="numeric"></td><td id="inc-target" class="numeric"></td></tr>
+            <tr><td>周期</td><td id="period-now" class="numeric"></td><td id="period-target" class="numeric"></td></tr>
+          </tbody>
+        </table>
+
+        <div class="control-group">
+          <label class="control-label" for="error-type">误差类型</label>
+          <select id="error-type">
+            <option value="height">修正高度 · 整圈偏高</option>
+            <option value="shape">修正形状 · 速度误差造成椭圆</option>
+            <option value="plane">修正方向 · 轨道平面偏转</option>
+          </select>
+        </div>
+
+        <div class="control-group">
+          <label class="control-label" for="burn-phase">点火位置 <span id="phase-value" class="control-value"></span></label>
+          <input id="burn-phase" type="range" aria-describedby="phase-hint">
+          <span id="phase-hint" class="hint">沿当前轨道选择；模拟器不会替你挑位置。</span>
+        </div>
+
+        <div class="grid-2">
+          <div class="control-group">
+            <label class="control-label" for="burn-direction">点火方向</label>
+            <select id="burn-direction">
+              <option value="prograde">顺行 · 抬高轨道</option>
+              <option value="retrograde">逆行 · 降低轨道</option>
+              <option value="normal">法向 · 改变平面</option>
+            </select>
+          </div>
+          <div class="control-group">
+            <label class="control-label" for="strategy">修正策略</label>
+            <select id="strategy">
+              <option value="large">一次大修正</option>
+              <option value="small">多次小修正</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="cluster">
+          <button id="fire" class="button-primary" type="button">执行点火</button>
+          <button id="reset" type="button">恢复初始误差</button>
+          <span id="result-badge" class="status is-warm">等待预测</span>
+        </div>
+      </aside>
+    </section>
+
+    <footer id="lec-footer"></footer>
+  </main>
+
+  <script>
+  document.addEventListener('DOMContentLoaded', function () {
+    'use strict';
+
+    Lec.mount({
+      index: 19,
+      kicker: `ORBIT CORRECTION`,
+      title: `一次小点火，怎样把卫星拉回目标轨道`,
+      take: `进入轨道不是任务结束，轨道修正是在正确位置用少量速度改变逐步消除误差。`
+    });
+
+    var K = Lec.K;
+    var P = Lec.P;
+    var header = document.getElementById('lec-header');
+    var footer = document.getElementById('lec-footer');
+    header.classList.add('page-header');
+    footer.classList.add('page-footer');
+    header.querySelector('.lec-header__kicker').classList.add('kicker');
+    header.querySelector('.lec-header__title').classList.add('page-title');
+    footer.querySelector('.lec-footer__take').classList.add('caption');
+    footer.querySelector('.lec-footer__topic').classList.add('footer-meta');
+
+    var cv = document.getElementById('orbit-canvas');
+    var errorType = document.getElementById('error-type');
+    var phase = document.getElementById('burn-phase');
+    var phaseValue = document.getElementById('phase-value');
+    var direction = document.getElementById('burn-direction');
+    var strategy = document.getElementById('strategy');
+    var fire = document.getElementById('fire');
+    var reset = document.getElementById('reset');
+    var badge = document.getElementById('result-badge');
+
+    phase.min = String(K.ZERO);
+    phase.max = String(K.HUNDRED);
+    phase.step = String(K.ONE);
+    phase.value = String(K.ZERO);
+
+    var targetAltitude = K.ISS_ALTITUDE;
+    var targetRadius = P.radiusAtAltitude(targetAltitude);
+    var errorDistance = K.LOW_EARTH_ORBIT_ALTITUDE * K.HALF;
+    var planeError = P.degreesToRadians(K.SIX);
+    var state = {};
+    var fitHandle;
+
+    function initialState(kind) {
+      var result = {
+        peri: targetRadius,
+        apo: targetRadius,
+        inclination: K.ZERO,
+        totalDv: K.ZERO,
+        elapsed: K.ZERO,
+        burns: K.ZERO
+      };
+      if (kind === 'height') {
+        result.peri += errorDistance;
+        result.apo += errorDistance;
+      } else if (kind === 'shape') {
+        result.peri -= errorDistance * K.HALF;
+        result.apo += errorDistance;
+      } else {
+        result.inclination = planeError;
+      }
+      return result;
+    }
+
+    function elements() {
+      return P.orbitalElementsFromApsides(state.peri, state.apo, K.MU_EARTH);
+    }
+
+    function targetElements() {
+      return P.orbitalElementsFromApsides(targetRadius, targetRadius, K.MU_EARTH);
+    }
+
+    function currentEccentricity(el) {
+      var momentum = P.specificAngularMomentum(el.periapsisRadius, el.periapsisVelocity, K.ZERO);
+      return P.eccentricityFromState(el.periapsisRadius, el.periapsisVelocity, momentum, K.MU_EARTH);
+    }
+
+    function angleText(radians) {
+      return P.formatFixed(P.radiansToDegrees(radians), K.DISPLAY_DECIMALS) + '°';
+    }
+
+    function errorPercent() {
+      var radial = (Math.abs(state.peri - targetRadius) + Math.abs(state.apo - targetRadius)) /
+        (K.TWO * errorDistance);
+      var planar = Math.abs(state.inclination) / planeError;
+      return (radial + planar) * K.HUNDRED;
+    }
+
+    function positionName(value) {
+      var p = Number(value);
+      if (p <= K.TEN) return '近地点';
+      if (p >= K.HUNDRED - K.TEN) return '近地点';
+      if (Math.abs(p - K.HUNDRED * K.HALF) <= K.TEN) return '远地点';
+      return P.formatNumber(p, K.ZERO) + '% 轨道弧';
+    }
+
+    function updateReadouts() {
+      var el = elements();
+      var target = targetElements();
+      var currentE = currentEccentricity(el);
+      document.getElementById('peri-now').textContent = P.formatDistance(P.altitudeFromRadius(el.periapsisRadius));
+      document.getElementById('apo-now').textContent = P.formatDistance(P.altitudeFromRadius(el.apoapsisRadius));
+      document.getElementById('ecc-now').textContent = P.formatFixed(currentE, K.DISPLAY_DECIMALS);
+      document.getElementById('inc-now').textContent = angleText(state.inclination);
+      document.getElementById('period-now').textContent = P.formatTime(P.orbitalPeriod(el.semiMajorAxis, K.MU_EARTH));
+      document.getElementById('peri-target').textContent = P.formatDistance(targetAltitude);
+      document.getElementById('apo-target').textContent = P.formatDistance(targetAltitude);
+      document.getElementById('ecc-target').textContent = P.formatFixed(target.eccentricity, K.DISPLAY_DECIMALS);
+      document.getElementById('inc-target').textContent = angleText(K.ZERO);
+      document.getElementById('period-target').textContent = P.formatTime(target.period);
+      phaseValue.textContent = positionName(phase.value);
+      if (fitHandle) fitHandle.redraw();
+    }
+
+    function resetState() {
+      state = initialState(errorType.value);
+      badge.className = 'status is-warm';
+      badge.textContent = '等待预测';
+      updateReadouts();
+    }
+
+    function applyTangentialBurn(sign, fraction, location) {
+      var elBefore = elements();
+      var c = Math.cos(location);
+      var nearWeight = (K.ONE + c) * K.HALF;
+      var farWeight = K.ONE - nearWeight;
+      var command = errorDistance * fraction * sign;
+      var oldPeri = state.peri;
+      var oldApo = state.apo;
+
+      state.apo += command * nearWeight;
+      state.peri += command * farWeight;
+      state.peri = Math.max(P.radiusAtAltitude(K.LOW_EARTH_ORBIT_ALTITUDE), state.peri);
+      if (state.peri > state.apo) {
+        var swap = state.peri;
+        state.peri = state.apo;
+        state.apo = swap;
+      }
+
+      var burnRadius = oldPeri + (oldApo - oldPeri) * (K.ONE - c) * K.HALF;
+      var newEl = elements();
+      var beforeSpeed = P.visVivaVelocity(burnRadius, elBefore.semiMajorAxis, K.MU_EARTH);
+      var afterSpeed = P.visVivaVelocity(burnRadius, newEl.semiMajorAxis, K.MU_EARTH);
+      return Math.abs(afterSpeed - beforeSpeed);
+    }
+
+    function executeBurn() {
+      var elBefore = elements();
+      var phaseRadians = Number(phase.value) / K.HUNDRED * K.TWO_PI;
+      var fraction = strategy.value === 'large' ? K.ONE + K.FOUR / K.HUNDRED : K.HALF - K.ONE / K.TEN;
+      var dv;
+
+      if (direction.value === 'normal') {
+        var nodeEfficiency = Math.abs(Math.cos(phaseRadians));
+        var removed = Math.min(state.inclination, planeError * fraction * nodeEfficiency);
+        var radius = state.peri + (state.apo - state.peri) * (K.ONE - Math.cos(phaseRadians)) * K.HALF;
+        var speed = P.visVivaVelocity(radius, elBefore.semiMajorAxis, K.MU_EARTH);
+        dv = P.planeChangeDeltaV(speed, removed);
+        state.inclination = Math.max(K.ZERO, state.inclination - removed);
+        state.apo += errorDistance * fraction * (K.ONE - nodeEfficiency) / K.TEN;
+      } else {
+        dv = applyTangentialBurn(direction.value === 'prograde' ? K.ONE : -K.ONE, fraction, phaseRadians);
+      }
+
+      state.totalDv += dv;
+      state.elapsed += elBefore.period * Number(phase.value) / K.HUNDRED;
+      if (strategy.value === 'small' && state.burns > K.ZERO) {
+        state.elapsed += elBefore.period * K.HALF;
+      }
+      state.burns += K.ONE;
+
+      var remaining = errorPercent();
+      if (remaining <= K.TEN) {
+        badge.className = 'status is-success';
+        badge.textContent = '轨道已收敛 · Δv ' + P.formatVelocity(state.totalDv);
+      } else if (remaining < K.HUNDRED * K.HALF) {
+        badge.className = 'status is-active';
+        badge.textContent = '残差 ' + P.formatFixed(remaining, K.DISPLAY_DECIMALS) + '% · 继续测量';
+      } else {
+        badge.className = 'status is-danger';
+        badge.textContent = '残差 ' + P.formatFixed(remaining, K.DISPLAY_DECIMALS) + '% · 检查位置与方向';
+      }
+      updateReadouts();
+    }
+
+    function draw(ctx, w, h) {
+      var el = elements();
+      var cx = w * K.HALF;
+      var cy = h * (K.HALF + K.ONE / K.TEN);
+      var earthR = Math.min(w, h) / K.SIX;
+      var orbitBase = Math.min(w, h) * (K.ONE_THIRD + K.ONE / K.TEN);
+      var targetAltScale = orbitBase / targetRadius;
+      var targetA = targetRadius * targetAltScale;
+      var currentA = el.semiMajorAxis * targetAltScale;
+      var currentB = currentA * Math.sqrt(K.ONE - el.eccentricity * el.eccentricity);
+      var tilt = state.inclination + P.degreesToRadians(K.TEN + K.FOUR);
+      var currentFlatten = Math.cos(tilt) * (K.HALF + K.ONE / K.TEN);
+      var targetFlatten = Math.cos(P.degreesToRadians(K.TEN + K.FOUR)) * (K.HALF + K.ONE / K.TEN);
+      var p = Number(phase.value) / K.HUNDRED * K.TWO_PI;
+      var satX = cx + currentA * Math.cos(p);
+      var satY = cy + currentB * currentFlatten * Math.sin(p);
+      var labelSize = parseFloat(Deck.token('type-label')) || (K.TEN + K.FOUR);
+      var bodySize = parseFloat(Deck.token('type-body')) || (K.TEN + K.SIX);
+      var mono = Deck.token('font-mono');
+      var sans = Deck.token('font-sans');
+
+      ctx.clearRect(K.ZERO, K.ZERO, w, h);
+
+      ctx.fillStyle = Deck.rgba('ink-strong', K.ONE / K.TEN);
+      for (var i = K.ZERO; i < K.TEN + K.FOUR; i += K.ONE) {
+        var sx = (i * w / (K.TEN + K.FOUR)) + w / (K.HUNDRED + K.TEN);
+        var sy = ((i * i + K.THREE) % (K.TEN + K.FOUR)) * h / (K.TEN + K.FOUR);
+        ctx.beginPath();
+        ctx.arc(sx, sy, K.ONE, K.ZERO, K.TWO_PI);
+        ctx.fill();
+      }
+
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.scale(K.ONE, targetFlatten);
+      ctx.strokeStyle = Deck.rgba('accent-blue', K.HALF + K.ONE / K.TEN);
+      ctx.lineWidth = K.TWO;
+      ctx.setLineDash([K.EIGHT, K.SIX]);
+      ctx.beginPath();
+      ctx.ellipse(K.ZERO, K.ZERO, targetA, targetA, K.ZERO, K.ZERO, K.TWO_PI);
+      ctx.stroke();
+      ctx.restore();
+
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.scale(K.ONE, currentFlatten);
+      ctx.strokeStyle = Deck.rgba('accent', K.ONE);
+      ctx.lineWidth = K.THREE;
+      ctx.setLineDash([]);
+      ctx.beginPath();
+      ctx.ellipse(K.ZERO, K.ZERO, currentA, currentB, K.ZERO, K.ZERO, K.TWO_PI);
+      ctx.stroke();
+      ctx.restore();
+
+      ctx.fillStyle = Deck.rgba('accent-blue', K.ONE / K.TEN);
+      ctx.beginPath();
+      ctx.ellipse(cx, cy, targetA, targetA * targetFlatten, K.ZERO, K.ZERO, K.TWO_PI);
+      ctx.fill();
+
+      ctx.fillStyle = Deck.rgba('accent-blue', K.HALF);
+      ctx.beginPath();
+      ctx.arc(cx, cy, earthR + K.FOUR, K.ZERO, K.TWO_PI);
+      ctx.fill();
+      ctx.fillStyle = Deck.rgba('surface-2', K.ONE);
+      ctx.beginPath();
+      ctx.arc(cx, cy, earthR, K.ZERO, K.TWO_PI);
+      ctx.fill();
+      ctx.strokeStyle = Deck.rgba('line-strong', K.ONE);
+      ctx.lineWidth = K.TWO;
+      ctx.beginPath();
+      ctx.ellipse(cx, cy, earthR, earthR * K.HALF, K.ZERO, K.ZERO, K.TWO_PI);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.ellipse(cx, cy, earthR * K.HALF, earthR, K.ZERO, K.ZERO, K.TWO_PI);
+      ctx.stroke();
+
+      ctx.fillStyle = Deck.rgba('ink-strong', K.ONE);
+      ctx.beginPath();
+      ctx.arc(satX, satY, K.EIGHT, K.ZERO, K.TWO_PI);
+      ctx.fill();
+      ctx.strokeStyle = Deck.rgba(direction.value === 'retrograde' ? 'danger' : 'accent-warm', K.ONE);
+      ctx.fillStyle = Deck.rgba(direction.value === 'retrograde' ? 'danger' : 'accent-warm', K.ONE);
+      ctx.lineWidth = K.THREE;
+      var tangent = p + K.HALF_PI;
+      if (direction.value === 'retrograde') tangent += K.PI;
+      if (direction.value === 'normal') tangent = -K.HALF_PI;
+      Deck.arrow(ctx, satX, satY, satX + Math.cos(tangent) * (K.TEN * K.SIX), satY + Math.sin(tangent) * (K.TEN * K.SIX), K.EIGHT);
+
+      ctx.font = labelSize + 'px ' + sans;
+      ctx.fillStyle = Deck.rgba('accent-blue', K.ONE);
+      ctx.fillText('目标轨道 · 虚线', K.SIX * K.FOUR, K.SIX * K.FOUR);
+      ctx.fillStyle = Deck.rgba('accent', K.ONE);
+      ctx.fillText('当前轨道 · 实线', K.SIX * K.FOUR, K.SIX * K.EIGHT);
+      ctx.fillStyle = Deck.rgba('ink-muted', K.ONE);
+      ctx.fillText('高度夸张显示，平面倾角保留方向关系', K.SIX * K.FOUR, h - K.SIX * K.FOUR);
+
+      ctx.textAlign = 'right';
+      ctx.font = bodySize + 'px ' + mono;
+      ctx.fillStyle = Deck.rgba('ink-strong', K.ONE);
+      ctx.fillText('累计 Δv  ' + P.formatVelocity(state.totalDv), w - K.SIX * K.FOUR, K.SIX * K.FOUR);
+      ctx.fillText('修正时间  ' + P.formatTime(state.elapsed), w - K.SIX * K.FOUR, K.SIX * K.EIGHT);
+      ctx.fillText('最终误差  ' + P.formatFixed(errorPercent(), K.DISPLAY_DECIMALS) + '%', w - K.SIX * K.FOUR, K.SIX * K.TEN + K.FOUR);
+      ctx.textAlign = 'left';
+    }
+
+    fitHandle = Deck.autofit(cv, draw);
+    errorType.addEventListener('change', resetState);
+    phase.addEventListener('input', updateReadouts);
+    direction.addEventListener('change', updateReadouts);
+    strategy.addEventListener('change', updateReadouts);
+    fire.addEventListener('click', executeBurn);
+    reset.addEventListener('click', resetState);
+    resetState();
+  });
+  </script>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+</body>
+</html>

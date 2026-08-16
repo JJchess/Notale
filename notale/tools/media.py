@@ -2,12 +2,10 @@
 
 from __future__ import annotations
 
-import base64
 import datetime as dt
 import hashlib
 import html
 import json
-import os
 import re
 import struct
 import threading
@@ -19,7 +17,9 @@ import httpx
 from pydantic import BaseModel, ConfigDict, Field
 
 from notale.tools.base import BaseTool, ToolContext, ToolResult
+from notale.tools.media_backends import ImageRequest, get_backend
 from notale.utils.config import get_config
+from notale.utils.retry import RetryPolicy, run_with_retry
 
 
 _CONFIG = get_config().media
@@ -376,11 +376,6 @@ class MakeImageTool(BaseTool):
         )
         if not allowed:
             return ToolResult(output="make_image per-page request budget exhausted", is_error=True)
-        key = os.environ.get(_CONFIG.generation_api_key_env, "").strip()
-        if not key:
-            return ToolResult(
-                output=f"missing media API key in {_CONFIG.generation_api_key_env}", is_error=True
-            )
         page_id = f"p{self.state.page}"
         prompt = (
             "Create a clearly non-documentary editorial illustration for an educational lecture. "
@@ -388,30 +383,25 @@ class MakeImageTool(BaseTool):
             "historical evidence. Use no readable text, letters, numbers, logos, or watermark.\n\n"
             + arguments.prompt.strip()
         )
-        payload = {
-            "model": _CONFIG.generation_model,
-            "prompt": prompt,
-        }
         try:
-            async with self.client_factory(
-                timeout=_CONFIG.request_timeout_sec, follow_redirects=True
-            ) as client:
-                response = await client.post(
-                    _CONFIG.generation_endpoint,
-                    headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
-                    json=payload,
-                )
-                response.raise_for_status()
-                body = response.json()
-                image = (body.get("data") or [None])[0]
-                if not isinstance(image, dict):
-                    raise ValueError("image response is missing data[0]")
-                if image.get("b64_json"):
-                    binary = base64.b64decode(image["b64_json"], validate=True)
-                elif image.get("url"):
-                    binary, _ = await _download(client, str(image["url"]))
-                else:
-                    raise ValueError("image response has neither b64_json nor url")
+            backend = get_backend()
+            request = ImageRequest(prompt=prompt)
+            result, retry_meta = await run_with_retry(
+                lambda: backend.generate(
+                    request, client_factory=self.client_factory
+                ),
+                policy=RetryPolicy(timeout_sec=_CONFIG.request_timeout_sec),
+                on_retry=lambda attempt, error_class, delay: self.state.event(
+                    "media.retrying",
+                    tool=self.name,
+                    backend=backend.name,
+                    attempt=attempt,
+                    next_attempt=attempt + 1,
+                    error_class=error_class,
+                    delay_sec=round(delay, 3),
+                ),
+            )
+            binary = result.data
             mime, extension, width, height = inspect_image(binary)
             prompt_hash = hashlib.sha256(prompt.encode("utf-8")).hexdigest()
             asset_id = _asset_id(page_id, "generated", prompt_hash)
@@ -431,10 +421,11 @@ class MakeImageTool(BaseTool):
                 "height": height,
                 "bytes": len(binary),
                 "sha256": hashlib.sha256(binary).hexdigest(),
-                "model": _CONFIG.generation_model,
+                "model": result.model,
                 "prompt": prompt,
                 "prompt_sha256": prompt_hash,
-                "usage": body.get("usage") or {},
+                "usage": result.usage,
+                "attempts": int(retry_meta.get("attempts", 1)),
                 "created_at": _now(),
             }
             record = _record_asset(self.state.run_dir, record)
@@ -443,8 +434,165 @@ class MakeImageTool(BaseTool):
                 media_assets.append(record["asset_id"])
             self.state.save_tool_state()
             self.state.event(
-                "media.made", asset_id=record["asset_id"], model=_CONFIG.generation_model
+                "media.made",
+                asset_id=record["asset_id"],
+                model=result.model,
+                backend=backend.name,
+                attempts=int(retry_meta.get("attempts", 1)),
             )
             return ToolResult(output=_tool_output(record), metadata={"asset_id": record["asset_id"]})
         except Exception as exc:
             return ToolResult(output=f"media generation failed: {exc}", is_error=True)
+
+
+class SafeAreaInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    role: str = Field(min_length=2, max_length=20)
+    x: float = Field(ge=0, le=1)
+    y: float = Field(ge=0, le=1)
+    w: float = Field(gt=0, le=1)
+    h: float = Field(gt=0, le=1)
+
+
+class MakeBackplateInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    subject: str = Field(min_length=8, max_length=1200)
+    safe_areas: list[SafeAreaInput] = Field(min_length=1, max_length=6)
+
+
+class MakeBackplateTool(BaseTool):
+    name = "make_backplate"
+    description = (
+        "Generate a text-free background plate for this page, styled by the run's "
+        "StylePack and reserving the regions where your text will sit. Returns a "
+        "local htmlSrc for an <img data-notale-backplate alt=\"\" aria-hidden=\"true\">. "
+        "Declare safe_areas as fractions of the 1280x720 frame covering every text "
+        "region you intend to place; inspect_page measures the real ground under "
+        "your text afterwards and reports backplate_contrast."
+    )
+    input_model = MakeBackplateInput
+
+    def __init__(self, state: Any, client_factory: Any = httpx.AsyncClient) -> None:
+        self.state = state
+        self.client_factory = client_factory
+
+    async def execute(
+        self, arguments: MakeBackplateInput, context: ToolContext
+    ) -> ToolResult:
+        del context
+        from notale.style_studio.backplate import (
+            ImageChannel,
+            SafeArea,
+            backplate_prompt,
+            validate_safe_areas,
+        )
+
+        allowed, _ = _consume_budget(
+            self.state, "make", _CONFIG.maximum_make_per_page, _CONFIG.maximum_make_per_run
+        )
+        if not allowed:
+            return ToolResult(output="make_backplate request budget exhausted", is_error=True)
+        if self.state.tool_state.get("backplate_asset_id"):
+            return ToolResult(output="this page already has a backplate", is_error=True)
+
+        areas = [
+            SafeArea(role=item.role, x=item.x, y=item.y, w=item.w, h=item.h)
+            for item in arguments.safe_areas
+        ]
+        problems = validate_safe_areas(areas)
+        if problems:
+            return ToolResult(output="; ".join(problems), is_error=True)
+
+        channel = ImageChannel.load(self.state.run_dir)
+        composition = None
+        style, page_plan = getattr(self.state, "style", None), getattr(self.state, "page_plan", None)
+        if style is not None and page_plan is not None:
+            try:
+                composition = style.composition(page_plan.composition)
+            except Exception:  # noqa: BLE001 — guidance only
+                composition = None
+        prompt, negative = backplate_prompt(
+            channel=channel,
+            subject=arguments.subject,
+            safe_areas=areas,
+            composition=composition,
+        )
+
+        page_id = f"p{self.state.page}"
+        try:
+            backend = get_backend()
+            request = ImageRequest(prompt=prompt, negative_prompt=negative)
+            result, retry_meta = await run_with_retry(
+                lambda: backend.generate(
+                    request,
+                    client_factory=self.client_factory,
+                ),
+                policy=RetryPolicy(timeout_sec=_CONFIG.request_timeout_sec),
+                on_retry=lambda attempt, error_class, delay: self.state.event(
+                    "media.retrying",
+                    tool=self.name,
+                    backend=backend.name,
+                    attempt=attempt,
+                    next_attempt=attempt + 1,
+                    error_class=error_class,
+                    delay_sec=round(delay, 3),
+                ),
+            )
+            binary = result.data
+            mime, extension, width, height = inspect_image(binary)
+            provider_prompt = request.provider_prompt()
+            prompt_hash = hashlib.sha256(provider_prompt.encode("utf-8")).hexdigest()
+            asset_id = _asset_id(page_id, "backplate", prompt_hash)
+            relative = f"assets/{asset_id}.{extension}"
+            _atomic_bytes(self.state.run_dir / relative, binary)
+            record = {
+                "asset_id": asset_id,
+                "page": self.state.page,
+                "kind": "backplate",
+                "alt": "",
+                "source_type": "generated-backplate",
+                "source_url": "",
+                "license": "model-output",
+                "local_path": relative,
+                "mime_type": mime,
+                "width": width,
+                "height": height,
+                "bytes": len(binary),
+                "sha256": hashlib.sha256(binary).hexdigest(),
+                "model": result.model,
+                "prompt": prompt,
+                "negative_prompt": negative,
+                "prompt_sha256": prompt_hash,
+                "safe_areas": [item.model_dump() for item in arguments.safe_areas],
+                "usage": result.usage,
+                "attempts": int(retry_meta.get("attempts", 1)),
+                "created_at": _now(),
+            }
+            record = _record_asset(self.state.run_dir, record)
+            self.state.tool_state["backplate_asset_id"] = record["asset_id"]
+            media_assets = self.state.tool_state.setdefault("mediaAssets", [])
+            if record["asset_id"] not in media_assets:
+                media_assets.append(record["asset_id"])
+            self.state.save_tool_state()
+            self.state.event(
+                "media.backplate",
+                asset_id=record["asset_id"],
+                backend=backend.name,
+                attempts=int(retry_meta.get("attempts", 1)),
+            )
+            payload = json.loads(_tool_output(record))
+            payload["usage"] = (
+                '<img data-notale-backplate src="{src}" alt="" aria-hidden="true">'.format(
+                    src=payload["html_src"]
+                )
+            )
+            payload["note"] = (
+                "Ink is not verified yet: inspect_page measures the real ground under "
+                "your text and reports backplate_contrast with a recommended colour."
+            )
+            return ToolResult(
+                output=json.dumps(payload, ensure_ascii=False, indent=2),
+                metadata={"asset_id": record["asset_id"]},
+            )
+        except Exception as exc:
+            return ToolResult(output=f"backplate generation failed: {exc}", is_error=True)

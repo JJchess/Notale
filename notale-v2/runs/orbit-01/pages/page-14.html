@@ -1,0 +1,460 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+</head>
+<body data-page="14" data-total="20">
+<div id="stage">
+  <main class="page">
+    <header id="lec-header" class="lec-header"></header>
+
+    <section class="page-body split min0" aria-label="霍曼转移实验">
+      <figure class="visual-shell min0" aria-label="共面圆轨道与转移椭圆三维模拟">
+        <canvas id="orbit-canvas" class="cv-fill no-pan" aria-label="拖动点火标记改变第一次点火所在的轨道位置"></canvas>
+      </figure>
+
+      <aside class="panel control-panel min0" aria-label="转移控制与读数">
+        <div class="panel-heading">
+          <p class="caption accent">两次切向点火</p>
+          <h2 class="panel-title">先抬高远端，再在远端圆化</h2>
+          <p id="explain" class="panel-description">拖动点火位置，看椭圆的远地点跟着转到轨道另一侧。</p>
+        </div>
+
+        <div class="control-group">
+          <div class="control-row is-stacked">
+            <label class="caption" for="altitude">目标轨道高度 <span id="altitude-value" class="control-value"></span></label>
+            <input id="altitude" type="range" aria-describedby="altitude-hint">
+            <p id="altitude-hint" class="caption muted">低轨道保持不变；滑块只改变目标圆轨道。</p>
+          </div>
+          <div class="control-row is-stacked">
+            <label class="caption" for="burn-angle">第一次点火位置 <span id="angle-value" class="control-value"></span></label>
+            <input id="burn-angle" type="range" aria-describedby="angle-hint">
+            <p id="angle-hint" class="caption muted">也可直接拖动画面中的暖色点火标记。</p>
+          </div>
+        </div>
+
+        <div class="cluster">
+          <button id="start" class="button-primary" type="button">开始转移</button>
+          <button id="reset" class="button-quiet" type="button">回到标准位置</button>
+        </div>
+
+        <div class="readout-grid" aria-label="转移计算结果">
+          <div class="readout is-warm">
+            <span class="caption muted">第一次速度变化</span>
+            <strong id="dv1" class="readout-value"></strong>
+          </div>
+          <div class="readout is-blue">
+            <span class="caption muted">第二次速度变化</span>
+            <strong id="dv2" class="readout-value"></strong>
+          </div>
+          <div class="readout">
+            <span class="caption muted">转移时间</span>
+            <strong id="transfer-time" class="readout-value"></strong>
+          </div>
+          <div class="readout">
+            <span class="caption muted">目标轨道周期</span>
+            <strong id="target-period" class="readout-value"></strong>
+          </div>
+        </div>
+      </aside>
+    </section>
+
+    <footer id="lec-footer" class="lec-footer"></footer>
+  </main>
+
+  <script src="assets/lib/three.min.js"></script>
+  <script>
+  document.addEventListener("DOMContentLoaded", function () {
+    "use strict";
+
+    Lec.mount({
+      index: 14,
+      kicker: `HOHMANN TRANSFER`,
+      title: `怎样从一个圆轨道搬到另一个圆轨道`,
+      take: `改变轨道高度通常不是整圈加速，而是在合适位置做有方向的速度改变。`
+    });
+
+    var header = document.getElementById("lec-header");
+    var footer = document.getElementById("lec-footer");
+    header.classList.add("page-header");
+    footer.classList.add("page-footer");
+    header.querySelector(".lec-header__kicker").classList.add("kicker");
+    header.querySelector(".lec-header__title").classList.add("page-title");
+    header.querySelector(".lec-header__index").classList.add("page-number");
+    footer.querySelector(".lec-footer__topic").classList.add("footer-meta");
+
+    var K = Lec.K;
+    var P = Lec.P;
+    var canvas = document.getElementById("orbit-canvas");
+    var altitudeInput = document.getElementById("altitude");
+    var angleInput = document.getElementById("burn-angle");
+    var altitudeValue = document.getElementById("altitude-value");
+    var angleValue = document.getElementById("angle-value");
+    var explain = document.getElementById("explain");
+    var startButton = document.getElementById("start");
+    var resetButton = document.getElementById("reset");
+    var initialAltitude = K.ISS_ALTITUDE;
+    var minTargetAltitude = initialAltitude + K.LOW_EARTH_ORBIT_ALTITUDE;
+    var maxTargetAltitude = K.GEO_ALTITUDE / K.TWO;
+    var defaultTargetAltitude = K.GEO_ALTITUDE / K.SIX;
+    var state = {
+      targetAltitude: defaultTargetAltitude,
+      angle: K.ZERO,
+      running: false,
+      elapsed: K.ZERO,
+      x: K.ZERO,
+      y: K.ZERO,
+      vx: K.ZERO,
+      vy: K.ZERO,
+      phase: "ready"
+    };
+    var transfer;
+    var targetOrbit;
+    var targetPeriod;
+    var trailPoints = [];
+
+    altitudeInput.min = String(minTargetAltitude);
+    altitudeInput.max = String(maxTargetAltitude);
+    altitudeInput.step = String(K.LOW_EARTH_ORBIT_ALTITUDE);
+    altitudeInput.value = String(defaultTargetAltitude);
+    angleInput.min = String(K.ZERO);
+    angleInput.max = String(K.TWO_PI);
+    angleInput.step = String(K.PI / K.HUNDRED);
+    angleInput.value = String(K.ZERO);
+
+    function themeColor(name) {
+      return new THREE.Color(Deck.rgba(name, K.ONE));
+    }
+
+    var colors = {
+      earth: themeColor("--accent-blue"),
+      low: themeColor("--accent"),
+      high: themeColor("--accent-blue"),
+      transfer: themeColor("--accent-warm"),
+      satellite: themeColor("--ink-strong"),
+      faint: themeColor("--line-strong"),
+      surface: themeColor("--surface-2")
+    };
+
+    var renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true, alpha: true });
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    var scene = new THREE.Scene();
+    var camera = new THREE.PerspectiveCamera(K.FOUR * K.TEN + K.EIGHT, K.ONE, K.ONE / K.HUNDRED, K.HUNDRED);
+    var root = new THREE.Group();
+    root.rotation.x = K.ZERO;
+    scene.add(root);
+    scene.add(new THREE.HemisphereLight(colors.satellite, colors.surface, K.ONE));
+    var keyLight = new THREE.DirectionalLight(colors.satellite, K.TWO);
+    keyLight.position.set(K.THREE, -K.FOUR, K.SIX);
+    scene.add(keyLight);
+
+    var earth = new THREE.Mesh(
+      new THREE.SphereGeometry(K.ONE, K.SIX * K.EIGHT, K.FOUR * K.EIGHT),
+      new THREE.MeshStandardMaterial({ color: colors.earth, roughness: K.HALF, metalness: K.ONE / K.TEN })
+    );
+    root.add(earth);
+
+    var atmosphere = new THREE.Mesh(
+      new THREE.SphereGeometry(K.ONE + K.ONE / K.HUNDRED, K.FOUR * K.EIGHT, K.FOUR * K.SIX),
+      new THREE.MeshBasicMaterial({ color: colors.earth, transparent: true, opacity: K.ONE / K.TEN, side: THREE.BackSide })
+    );
+    root.add(atmosphere);
+
+    function circularLine(radius, color, opacity) {
+      var points = [];
+      var count = K.HUNDRED;
+      var i;
+      for (i = K.ZERO; i <= count; i += K.ONE) {
+        var a = K.TWO_PI * i / count;
+        points.push(new THREE.Vector3(radius * Math.cos(a), radius * Math.sin(a), K.ZERO));
+      }
+      return new THREE.Line(
+        new THREE.BufferGeometry().setFromPoints(points),
+        new THREE.LineBasicMaterial({ color: color, transparent: true, opacity: opacity })
+      );
+    }
+
+    var lowLine;
+    var highLine;
+    var transferLine;
+    var trailLine = new THREE.Line(
+      new THREE.BufferGeometry(),
+      new THREE.LineBasicMaterial({ color: colors.satellite, transparent: true, opacity: K.HALF })
+    );
+    root.add(trailLine);
+
+    var markerGeometry = new THREE.SphereGeometry(K.ONE / K.TEN, K.FOUR * K.SIX, K.FOUR * K.FOUR);
+    var burnOne = new THREE.Mesh(markerGeometry, new THREE.MeshBasicMaterial({ color: colors.transfer }));
+    var burnTwo = new THREE.Mesh(markerGeometry, new THREE.MeshBasicMaterial({ color: colors.high }));
+    var satellite = new THREE.Mesh(
+      new THREE.OctahedronGeometry(K.ONE / (K.FOUR + K.TWO)),
+      new THREE.MeshStandardMaterial({ color: colors.satellite, roughness: K.ONE / K.FOUR, metalness: K.HALF })
+    );
+    root.add(burnOne, burnTwo, satellite);
+
+    var velocityArrow = new THREE.ArrowHelper(
+      new THREE.Vector3(K.ONE, K.ZERO, K.ZERO),
+      new THREE.Vector3(K.ZERO, K.ZERO, K.ZERO),
+      K.HALF,
+      colors.low
+    );
+    root.add(velocityArrow);
+
+    function modelRadius(radiusMeters) {
+      return radiusMeters / K.R_EARTH;
+    }
+
+    function ellipsePoints(angle) {
+      var rp = modelRadius(transfer.initialRadius);
+      var ra = modelRadius(transfer.finalRadius);
+      var a = (rp + ra) * K.HALF;
+      var c = (ra - rp) * K.HALF;
+      var b = Math.sqrt(a * a - c * c);
+      var ux = Math.cos(angle);
+      var uy = Math.sin(angle);
+      var vx = -uy;
+      var vy = ux;
+      var points = [];
+      var count = K.HUNDRED;
+      var i;
+      for (i = K.ZERO; i <= count; i += K.ONE) {
+        var t = K.TWO_PI * i / count;
+        points.push(new THREE.Vector3(
+          -c * ux + a * Math.cos(t) * ux + b * Math.sin(t) * vx,
+          -c * uy + a * Math.cos(t) * uy + b * Math.sin(t) * vy,
+          K.ZERO
+        ));
+      }
+      return points;
+    }
+
+    function rebuildGeometry() {
+      if (lowLine) {
+        root.remove(lowLine, highLine, transferLine);
+        lowLine.geometry.dispose();
+        highLine.geometry.dispose();
+        transferLine.geometry.dispose();
+      }
+      lowLine = circularLine(modelRadius(transfer.initialRadius), colors.low, K.HALF);
+      highLine = circularLine(modelRadius(transfer.finalRadius), colors.high, K.HALF);
+      transferLine = new THREE.Line(
+        new THREE.BufferGeometry().setFromPoints(ellipsePoints(state.angle)),
+        new THREE.LineDashedMaterial({ color: colors.transfer, dashSize: K.ONE / K.TEN, gapSize: K.ONE / K.TEN })
+      );
+      transferLine.computeLineDistances();
+      root.add(lowLine, highLine, transferLine);
+      var rp = modelRadius(transfer.initialRadius);
+      var ra = modelRadius(transfer.finalRadius);
+      burnOne.position.set(rp * Math.cos(state.angle), rp * Math.sin(state.angle), K.ZERO);
+      burnTwo.position.set(-ra * Math.cos(state.angle), -ra * Math.sin(state.angle), K.ZERO);
+      if (!state.running) {
+        satellite.position.copy(burnOne.position);
+        velocityArrow.position.copy(burnOne.position);
+        velocityArrow.setDirection(new THREE.Vector3(-Math.sin(state.angle), Math.cos(state.angle), K.ZERO));
+      }
+      var view = Math.max(K.THREE, ra * K.TWO);
+      camera.position.set(K.ZERO, -view, view * (K.THREE / K.FOUR));
+      camera.lookAt(K.ZERO, K.ZERO, K.ZERO);
+    }
+
+    function updateNumbers() {
+      targetOrbit = P.orbitAtAltitude(state.targetAltitude);
+      targetPeriod = P.orbitalPeriodAtAltitude(state.targetAltitude);
+      transfer = P.hohmannTransferFromAltitudes(initialAltitude, state.targetAltitude);
+      altitudeValue.textContent = P.formatDistance(state.targetAltitude);
+      angleValue.textContent = P.formatNumber(P.radiansToDegrees(state.angle)) + "°";
+      document.getElementById("dv1").textContent = P.formatVelocity(transfer.firstBurn);
+      document.getElementById("dv2").textContent = P.formatVelocity(transfer.secondBurn);
+      document.getElementById("transfer-time").textContent = P.formatTime(transfer.transferTime);
+      document.getElementById("target-period").textContent = P.formatTime(targetPeriod);
+      rebuildGeometry();
+    }
+
+    function setInitialState() {
+      var r = transfer.initialRadius;
+      var speed = transfer.transferSpeedAtInitial;
+      state.x = r * Math.cos(state.angle);
+      state.y = r * Math.sin(state.angle);
+      state.vx = -speed * Math.sin(state.angle);
+      state.vy = speed * Math.cos(state.angle);
+      state.elapsed = K.ZERO;
+      trailPoints = [new THREE.Vector3(state.x / K.R_EARTH, state.y / K.R_EARTH, K.ZERO)];
+      trailLine.geometry.dispose();
+      trailLine.geometry = new THREE.BufferGeometry().setFromPoints(trailPoints);
+    }
+
+    function acceleration(x, y) {
+      var r = Math.sqrt(x * x + y * y);
+      var f = -K.MU_EARTH / (r * r * r);
+      return { x: f * x, y: f * y };
+    }
+
+    function integrate(h) {
+      var a0 = acceleration(state.x, state.y);
+      var nx = state.x + state.vx * h + K.HALF * a0.x * h * h;
+      var ny = state.y + state.vy * h + K.HALF * a0.y * h * h;
+      var a1 = acceleration(nx, ny);
+      state.vx += K.HALF * (a0.x + a1.x) * h;
+      state.vy += K.HALF * (a0.y + a1.y) * h;
+      state.x = nx;
+      state.y = ny;
+      state.elapsed += h;
+    }
+
+    function updateSatellite() {
+      satellite.position.set(state.x / K.R_EARTH, state.y / K.R_EARTH, K.ZERO);
+      var speed = Math.sqrt(state.vx * state.vx + state.vy * state.vy);
+      var direction = new THREE.Vector3(state.vx, state.vy, K.ZERO).normalize();
+      velocityArrow.position.copy(satellite.position);
+      velocityArrow.setDirection(direction);
+      velocityArrow.setLength(K.ONE / K.TWO + speed / transfer.initialCircularSpeed / K.FOUR);
+    }
+
+    function finishTransfer() {
+      state.running = false;
+      state.phase = "arrived";
+      state.elapsed = transfer.transferTime;
+      state.x = -transfer.finalRadius * Math.cos(state.angle);
+      state.y = -transfer.finalRadius * Math.sin(state.angle);
+      state.vx = targetOrbit.circularVelocity * Math.sin(state.angle);
+      state.vy = -targetOrbit.circularVelocity * Math.cos(state.angle);
+      updateSatellite();
+      explain.textContent = "第二次点火把椭圆圆化。总需求 " + P.formatVelocity(transfer.totalDeltaV) + "，与标准方案相同。";
+      startButton.textContent = "再次转移";
+    }
+
+    function render() {
+      renderer.render(scene, camera);
+    }
+
+    function resizeRenderer() {
+      var width = canvas.offsetWidth;
+      var height = canvas.offsetHeight;
+      if (!width || !height) { return; }
+      renderer.setPixelRatio(Math.max(K.ONE, Deck.s));
+      renderer.setSize(width, height, false);
+      camera.aspect = width / height;
+      camera.updateProjectionMatrix();
+      render();
+    }
+
+    altitudeInput.addEventListener("input", function () {
+      state.targetAltitude = P.clamp(Number(altitudeInput.value), minTargetAltitude, maxTargetAltitude);
+      state.running = false;
+      state.phase = "ready";
+      updateNumbers();
+      setInitialState();
+      updateSatellite();
+      explain.textContent = "目标越高，转移椭圆越长；两次速度变化和飞行时间都会重算。";
+      render();
+    });
+
+    angleInput.addEventListener("input", function () {
+      state.angle = P.clamp(Number(angleInput.value), K.ZERO, K.TWO_PI);
+      state.running = false;
+      state.phase = "ready";
+      updateNumbers();
+      setInitialState();
+      updateSatellite();
+      explain.textContent = "在圆轨道任一处做同样的切向点火，升高的是正对面的轨道点。";
+      render();
+    });
+
+    startButton.addEventListener("click", function () {
+      setInitialState();
+      state.phase = "transfer";
+      state.running = !Deck.reduced();
+      startButton.textContent = "重新开始";
+      explain.textContent = "第一次点火已完成：卫星正按二体动力学沿转移椭圆飞向远地点。";
+      if (Deck.reduced()) {
+        finishTransfer();
+      }
+      render();
+    });
+
+    resetButton.addEventListener("click", function () {
+      state.angle = K.ZERO;
+      angleInput.value = String(K.ZERO);
+      state.running = false;
+      state.phase = "ready";
+      updateNumbers();
+      setInitialState();
+      updateSatellite();
+      startButton.textContent = "开始转移";
+      explain.textContent = "标准位置把第一次点火放在画面右侧，远地点出现在正对面。";
+      render();
+    });
+
+    var dragging = false;
+    var raycaster = new THREE.Raycaster();
+    var pointer = new THREE.Vector2();
+    var plane = new THREE.Plane(new THREE.Vector3(K.ZERO, K.ZERO, K.ONE), K.ZERO);
+    var hit = new THREE.Vector3();
+
+    function dragBurn(event) {
+      var p = Deck.pt(canvas, event);
+      pointer.x = K.TWO * p.x / canvas.offsetWidth - K.ONE;
+      pointer.y = K.ONE - K.TWO * p.y / canvas.offsetHeight;
+      raycaster.setFromCamera(pointer, camera);
+      if (raycaster.ray.intersectPlane(plane, hit)) {
+        state.angle = Math.atan2(hit.y, hit.x);
+        if (state.angle < K.ZERO) { state.angle += K.TWO_PI; }
+        angleInput.value = String(state.angle);
+        state.running = false;
+        state.phase = "ready";
+        updateNumbers();
+        setInitialState();
+        updateSatellite();
+        explain.textContent = "点火位置转动后，转移椭圆也转动；被抬高的仍是轨道另一侧。";
+        render();
+      }
+    }
+
+    canvas.addEventListener("pointerdown", function (event) {
+      dragging = true;
+      canvas.setPointerCapture(event.pointerId);
+      dragBurn(event);
+    });
+    canvas.addEventListener("pointermove", function (event) {
+      if (dragging) { dragBurn(event); }
+    });
+    canvas.addEventListener("pointerup", function () { dragging = false; });
+    canvas.addEventListener("pointercancel", function () { dragging = false; });
+
+    updateNumbers();
+    setInitialState();
+    updateSatellite();
+    resizeRenderer();
+    Deck.onResize(resizeRenderer);
+
+    Deck.loop(function (t, dt) {
+      if (state.running) {
+        var simAdvance = dt * transfer.transferTime / (K.TEN * K.THOUSAND);
+        var step = transfer.transferTime / (K.HUNDRED * K.TWO);
+        var remaining = Math.min(simAdvance, transfer.transferTime - state.elapsed);
+        while (remaining > K.ZERO) {
+          var h = Math.min(step, remaining);
+          integrate(h);
+          remaining -= h;
+        }
+        updateSatellite();
+        trailPoints.push(satellite.position.clone());
+        if (trailPoints.length > K.HUNDRED) { trailPoints.shift(); }
+        trailLine.geometry.dispose();
+        trailLine.geometry = new THREE.BufferGeometry().setFromPoints(trailPoints);
+        var altitudeNow = P.altitudeFromRadius(Math.sqrt(state.x * state.x + state.y * state.y));
+        var referenceSpeed = P.visVivaVelocityAtAltitude(altitudeNow, transfer.transferSemiMajorAxis);
+        explain.textContent = "二体积分速度 " + P.formatVelocity(Math.sqrt(state.vx * state.vx + state.vy * state.vy)) + "；vis-viva 校验 " + P.formatVelocity(referenceSpeed) + "。";
+        if (state.elapsed >= transfer.transferTime) { finishTransfer(); }
+      }
+      render();
+    }, { still: transfer.transferTime });
+  });
+  </script>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+</body>
+</html>

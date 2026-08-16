@@ -1,0 +1,397 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+</head>
+<body data-page="08" data-total="20">
+<div id="stage">
+  <main class="page">
+    <header id="lec-header" class="page-header"></header>
+
+    <section class="page-body split min0" aria-label="轨道平面三维实验">
+      <figure id="scene-shell" class="visual-shell min0 no-pan" aria-label="可旋转和缩放的地球、赤道、倾斜轨道平面与地面轨迹"></figure>
+
+      <aside class="panel stack-3 min0" aria-label="轨道平面控制台">
+        <div class="panel-header">
+          <div class="panel-heading">
+            <p class="panel-kicker">三维轨道实验</p>
+            <h2 class="panel-title">把轨道这张“纸”倾斜</h2>
+            <p class="panel-description">拖动倾角；在地球上拖拽可旋转，滚轮可缩放。卫星的表面投影会跟着换路线。</p>
+          </div>
+        </div>
+
+        <div class="control-group">
+          <div class="control-row">
+            <label class="control-label" for="inclination">目标轨道倾角</label>
+            <input id="inclination" type="range" aria-describedby="inclination-hint">
+            <output id="inclination-value" class="control-value" for="inclination"></output>
+          </div>
+          <p id="inclination-hint" class="control-hint">赤道是参照面；倾角改变轨道平面的朝向。</p>
+        </div>
+
+        <div class="control-group">
+          <span class="control-label">选择一次速度操作</span>
+          <div class="segmented" role="group" aria-label="速度操作">
+            <button id="speed-only" type="button">只改大小</button>
+            <button id="direction-only" class="is-active" type="button" aria-pressed="true">只改方向</button>
+            <button id="combined" type="button">大小＋方向</button>
+          </div>
+          <p id="operation-result" class="hint" aria-live="polite"></p>
+        </div>
+
+        <div class="control-group">
+          <label class="control-label" for="burn-location">在哪里改变方向更划算？</label>
+          <select id="burn-location">
+            <option value="fast">卫星较快的位置</option>
+            <option value="slow">卫星较慢的位置</option>
+          </select>
+        </div>
+
+        <div class="readout-grid">
+          <div class="readout is-blue">
+            <span class="readout-label">此处轨道速度</span>
+            <strong id="speed-readout" class="readout-value"></strong>
+          </div>
+          <div class="readout">
+            <span class="readout-label">这次操作代价</span>
+            <strong id="dv-readout" class="readout-value"></strong>
+          </div>
+        </div>
+
+        <div class="callout">
+          <span class="callout-title">三维判断</span>
+          <p id="challenge-feedback">先选位置，再拖大目标倾角；页面只按当前速度和偏转角计算代价。</p>
+        </div>
+      </aside>
+    </section>
+
+    <footer id="lec-footer" class="page-footer"></footer>
+  </main>
+
+  <script src="assets/lib/three.min.js"></script>
+  <script>
+  document.addEventListener('DOMContentLoaded', function () {
+    'use strict';
+
+    Lec.mount({
+      index: 8,
+      kicker: `ORBITAL PLANE`,
+      title: `卫星绕地球转，但不一定绕着赤道转`,
+      take: `一条轨道不仅有大小和形状，还有一个在三维空间中的轨道平面。`
+    });
+
+    var header = document.getElementById('lec-header');
+    var footer = document.getElementById('lec-footer');
+    header.classList.add('page-header');
+    footer.classList.add('page-footer');
+    header.querySelector('.lec-header__kicker').classList.add('kicker');
+    header.querySelector('.lec-header__title').classList.add('page-title');
+    footer.querySelector('.lec-footer__take').classList.add('take');
+    footer.querySelector('.lec-footer__topic').classList.add('footer-meta');
+
+    var K = Lec.K;
+    var P = Lec.P;
+    var shell = document.getElementById('scene-shell');
+    var inclinationInput = document.getElementById('inclination');
+    var inclinationValue = document.getElementById('inclination-value');
+    var burnLocation = document.getElementById('burn-location');
+    var speedReadout = document.getElementById('speed-readout');
+    var dvReadout = document.getElementById('dv-readout');
+    var operationResult = document.getElementById('operation-result');
+    var challengeFeedback = document.getElementById('challenge-feedback');
+    var buttons = {
+      size: document.getElementById('speed-only'),
+      direction: document.getElementById('direction-only'),
+      combined: document.getElementById('combined')
+    };
+
+    inclinationInput.min = String(K.ZERO);
+    inclinationInput.max = String(K.HUNDRED - K.TEN);
+    inclinationInput.step = String(K.ONE);
+    inclinationInput.value = String(K.FOUR * K.TEN);
+
+    var state = {
+      inclinationDegrees: Number(inclinationInput.value),
+      operation: 'direction',
+      azimuth: P.degreesToRadians(K.FOUR * K.TEN),
+      elevation: P.degreesToRadians(K.THREE * K.TEN),
+      distance: K.SIX,
+      dragging: false,
+      previous: null
+    };
+
+    function themeColor(name) {
+      var value = Deck.rgb(name);
+      return new THREE.Color().setRGB(
+        value[0] / 255,
+        value[1] / 255,
+        value[2] / 255
+      );
+    }
+
+    var scene = new THREE.Scene();
+    scene.background = themeColor('surface-inset');
+    var camera = new THREE.PerspectiveCamera(
+      K.FOUR * K.TEN + K.TEN,
+      K.ONE,
+      K.ONE / K.TEN,
+      K.HUNDRED
+    );
+    var renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.domElement.setAttribute('tabindex', '0');
+    renderer.domElement.setAttribute('role', 'application');
+    renderer.domElement.setAttribute('aria-label', '三维地球。方向键旋转视角，加减键缩放；倾角由右侧滑块控制。');
+    shell.appendChild(renderer.domElement);
+
+    scene.add(new THREE.HemisphereLight(themeColor('accent-blue'), themeColor('surface-inset'), K.ONE));
+    var keyLight = new THREE.DirectionalLight(themeColor('ink-strong'), K.TWO);
+    keyLight.position.set(K.THREE, K.FOUR, K.SIX);
+    scene.add(keyLight);
+
+    var earthGroup = new THREE.Group();
+    scene.add(earthGroup);
+
+    var earth = new THREE.Mesh(
+      new THREE.SphereGeometry(K.ONE, K.FOUR * K.TEN + K.EIGHT, K.THREE * K.TEN + K.TWO),
+      new THREE.MeshPhongMaterial({
+        color: themeColor('surface-3'),
+        emissive: themeColor('surface-1'),
+        shininess: K.TEN
+      })
+    );
+    earthGroup.add(earth);
+
+    var gridMaterial = new THREE.LineBasicMaterial({ color: themeColor('line-strong'), transparent: true, opacity: K.HALF });
+    var warmMaterial = new THREE.LineBasicMaterial({ color: themeColor('accent-warm'), transparent: true, opacity: K.ONE });
+    var trackMaterial = new THREE.LineBasicMaterial({ color: themeColor('accent-blue'), transparent: true, opacity: K.ONE });
+    var orbitMaterial = new THREE.LineBasicMaterial({ color: themeColor('accent'), transparent: true, opacity: K.ONE });
+    var referenceMaterial = new THREE.LineDashedMaterial({ color: themeColor('ink-faint'), transparent: true, opacity: K.HALF, dashSize: K.ONE / K.TEN, gapSize: K.ONE / (K.TEN + K.TEN) });
+
+    function circlePoints(radius, axis, segments) {
+      var points = [];
+      var index;
+      var angle;
+      for (index = K.ZERO; index <= segments; index += K.ONE) {
+        angle = K.TWO_PI * index / segments;
+        if (axis === 'equator') {
+          points.push(new THREE.Vector3(radius * Math.cos(angle), K.ZERO, radius * Math.sin(angle)));
+        } else {
+          points.push(new THREE.Vector3(radius * Math.cos(angle), radius * Math.sin(angle), K.ZERO));
+        }
+      }
+      return points;
+    }
+
+    var segments = K.HUNDRED;
+    var equator = new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(circlePoints(K.ONE + K.ONE / K.HUNDRED, 'equator', segments)), warmMaterial);
+    earthGroup.add(equator);
+
+    var latitudeIndex;
+    var latitudeAngle;
+    var latitudeRadius;
+    var latitudeY;
+    for (latitudeIndex = -K.TWO; latitudeIndex <= K.TWO; latitudeIndex += K.ONE) {
+      if (latitudeIndex === K.ZERO) { continue; }
+      latitudeAngle = P.degreesToRadians(latitudeIndex * K.TEN * K.THREE / K.TWO);
+      latitudeRadius = Math.cos(latitudeAngle);
+      latitudeY = Math.sin(latitudeAngle);
+      var latitude = new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(circlePoints(latitudeRadius, 'equator', segments)), gridMaterial);
+      latitude.position.y = latitudeY;
+      earthGroup.add(latitude);
+    }
+
+    var longitudeIndex;
+    for (longitudeIndex = K.ZERO; longitudeIndex < K.SIX; longitudeIndex += K.ONE) {
+      var longitude = new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(circlePoints(K.ONE + K.ONE / K.HUNDRED, 'meridian', segments)), gridMaterial);
+      longitude.rotation.y = K.PI * longitudeIndex / K.SIX;
+      earthGroup.add(longitude);
+    }
+
+    var orbitRadius = K.ONE + K.ONE_THIRD;
+    var orbitGroup = new THREE.Group();
+    scene.add(orbitGroup);
+
+    var plane = new THREE.Mesh(
+      new THREE.CircleGeometry(orbitRadius, segments),
+      new THREE.MeshBasicMaterial({ color: themeColor('accent'), transparent: true, opacity: K.ONE / (K.TEN + K.TEN), side: THREE.DoubleSide, depthWrite: false })
+    );
+    plane.rotation.x = K.HALF_PI;
+    orbitGroup.add(plane);
+
+    var orbitLine = new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(circlePoints(orbitRadius, 'equator', segments)), orbitMaterial);
+    orbitGroup.add(orbitLine);
+
+    var referenceOrbit = new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(circlePoints(orbitRadius, 'equator', segments)), referenceMaterial);
+    referenceOrbit.computeLineDistances();
+    scene.add(referenceOrbit);
+
+    var groundTrack = new THREE.Line(new THREE.BufferGeometry(), trackMaterial);
+    earthGroup.add(groundTrack);
+
+    var satellite = new THREE.Mesh(
+      new THREE.SphereGeometry(K.ONE / K.TEN, K.TEN + K.SIX, K.EIGHT),
+      new THREE.MeshBasicMaterial({ color: themeColor('accent-warm') })
+    );
+    orbitGroup.add(satellite);
+
+    function selectedSpeed() {
+      return burnLocation.value === 'slow' ? K.TYPICAL_LEO_SPEED * K.HALF : K.TYPICAL_LEO_SPEED;
+    }
+
+    function deltaV() {
+      var speed = selectedSpeed();
+      var angle = P.degreesToRadians(state.inclinationDegrees);
+      if (state.operation === 'size') {
+        return speed * K.ONE / K.TEN;
+      }
+      if (state.operation === 'combined') {
+        return P.combinedPlaneChangeDeltaV(speed, speed + speed * K.ONE / K.TEN, angle);
+      }
+      return P.planeChangeDeltaV(speed, angle);
+    }
+
+    function updateReadouts() {
+      var angle = P.degreesToRadians(state.inclinationDegrees);
+      inclinationValue.textContent = P.formatNumber(P.radiansToDegrees(angle)) + '°';
+      speedReadout.textContent = P.formatVelocity(selectedSpeed());
+      dvReadout.textContent = P.formatVelocity(deltaV());
+
+      if (state.operation === 'size') {
+        operationResult.textContent = '速度箭头变长，但轨道平面朝向不变。';
+      } else if (state.operation === 'combined') {
+        operationResult.textContent = '方向和大小同时改变：新平面出现，并合并计算代价。';
+      } else {
+        operationResult.textContent = '速度方向改变：轨道平面转向目标倾角。';
+      }
+
+      challengeFeedback.textContent = burnLocation.value === 'slow'
+        ? '已选择较慢处。继续增大倾角，观察代价怎样变化。'
+        : '已选择较快处。继续增大倾角，观察代价怎样变化。';
+    }
+
+    function updateGeometry(phase) {
+      var displayedDegrees = state.operation === 'size' ? K.ZERO : state.inclinationDegrees;
+      var inclination = P.degreesToRadians(displayedDegrees);
+      orbitGroup.rotation.z = inclination;
+      var satelliteAngle = phase;
+      satellite.position.set(orbitRadius * Math.cos(satelliteAngle), K.ZERO, orbitRadius * Math.sin(satelliteAngle));
+
+      var trackPoints = [];
+      var index;
+      var angle;
+      var point;
+      for (index = K.ZERO; index <= segments; index += K.ONE) {
+        angle = K.TWO_PI * index / segments;
+        point = new THREE.Vector3(Math.cos(angle), K.ZERO, Math.sin(angle));
+        point.applyAxisAngle(new THREE.Vector3(K.ZERO, K.ZERO, K.ONE), inclination);
+        point.applyAxisAngle(new THREE.Vector3(K.ZERO, K.ONE, K.ZERO), -phase * K.ONE / K.TEN);
+        point.normalize().multiplyScalar(K.ONE + K.TWO / K.HUNDRED);
+        trackPoints.push(point);
+      }
+      groundTrack.geometry.dispose();
+      groundTrack.geometry = new THREE.BufferGeometry().setFromPoints(trackPoints);
+    }
+
+    function updateCamera() {
+      var horizontal = state.distance * Math.cos(state.elevation);
+      camera.position.set(
+        horizontal * Math.sin(state.azimuth),
+        state.distance * Math.sin(state.elevation),
+        horizontal * Math.cos(state.azimuth)
+      );
+      camera.lookAt(K.ZERO, K.ZERO, K.ZERO);
+    }
+
+    function resizeRenderer() {
+      var width = shell.clientWidth;
+      var height = shell.clientHeight;
+      if (!width || !height) { return; }
+      renderer.setSize(width, height, false);
+      camera.aspect = width / height;
+      camera.updateProjectionMatrix();
+      updateCamera();
+      renderer.render(scene, camera);
+    }
+
+    inclinationInput.addEventListener('input', function () {
+      state.inclinationDegrees = P.clamp(Number(inclinationInput.value), Number(inclinationInput.min), Number(inclinationInput.max));
+      updateReadouts();
+      updateGeometry(K.ZERO);
+      renderer.render(scene, camera);
+    });
+
+    Object.keys(buttons).forEach(function (name) {
+      buttons[name].addEventListener('click', function () {
+        state.operation = name;
+        Object.keys(buttons).forEach(function (key) {
+          var active = key === name;
+          buttons[key].classList.toggle('is-active', active);
+          buttons[key].setAttribute('aria-pressed', active ? 'true' : 'false');
+        });
+        updateReadouts();
+        updateGeometry(K.ZERO);
+        renderer.render(scene, camera);
+      });
+    });
+
+    burnLocation.addEventListener('change', updateReadouts);
+
+    renderer.domElement.addEventListener('pointerdown', function (event) {
+      state.dragging = true;
+      state.previous = Deck.pt(renderer.domElement, event);
+      renderer.domElement.setPointerCapture(event.pointerId);
+    });
+    renderer.domElement.addEventListener('pointermove', function (event) {
+      if (!state.dragging) { return; }
+      var point = Deck.pt(renderer.domElement, event);
+      state.azimuth -= (point.x - state.previous.x) / (K.HUNDRED + K.HUNDRED);
+      state.elevation = P.clamp(state.elevation + (point.y - state.previous.y) / (K.HUNDRED + K.HUNDRED), -K.HALF_PI + K.ONE / K.TEN, K.HALF_PI - K.ONE / K.TEN);
+      state.previous = point;
+      updateCamera();
+    });
+    renderer.domElement.addEventListener('pointerup', function (event) {
+      state.dragging = false;
+      state.previous = null;
+      renderer.domElement.releasePointerCapture(event.pointerId);
+    });
+    renderer.domElement.addEventListener('wheel', function (event) {
+      event.preventDefault();
+      state.distance = P.clamp(state.distance + Math.sign(event.deltaY) * K.HALF, K.THREE, K.TEN);
+      updateCamera();
+    }, { passive: false });
+    renderer.domElement.addEventListener('keydown', function (event) {
+      var handled = true;
+      if (event.key === 'ArrowLeft') { state.azimuth -= P.degreesToRadians(K.TEN); }
+      else if (event.key === 'ArrowRight') { state.azimuth += P.degreesToRadians(K.TEN); }
+      else if (event.key === 'ArrowUp') { state.elevation = P.clamp(state.elevation + P.degreesToRadians(K.TEN), -K.HALF_PI + K.ONE / K.TEN, K.HALF_PI - K.ONE / K.TEN); }
+      else if (event.key === 'ArrowDown') { state.elevation = P.clamp(state.elevation - P.degreesToRadians(K.TEN), -K.HALF_PI + K.ONE / K.TEN, K.HALF_PI - K.ONE / K.TEN); }
+      else if (event.key === '+' || event.key === '=') { state.distance = P.clamp(state.distance - K.HALF, K.THREE, K.TEN); }
+      else if (event.key === '-' || event.key === '_') { state.distance = P.clamp(state.distance + K.HALF, K.THREE, K.TEN); }
+      else { handled = false; }
+      if (handled) {
+        event.preventDefault();
+        updateCamera();
+      }
+    });
+
+    updateReadouts();
+    updateGeometry(K.ZERO);
+    resizeRenderer();
+    Deck.onResize(resizeRenderer);
+
+    Deck.loop(function (time) {
+      var phase = Deck.reduced() ? K.ZERO : time / (K.THOUSAND * K.FOUR);
+      updateGeometry(phase);
+      earthGroup.rotation.y = Deck.reduced() ? K.ZERO : phase / K.TEN;
+      renderer.render(scene, camera);
+    }, { still: K.ZERO });
+  });
+  </script>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+</body>
+</html>

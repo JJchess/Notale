@@ -1,0 +1,295 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+</head>
+<body data-page="01" data-total="24">
+  <div id="stage">
+    <style>
+      #stage #page-content { position: relative; inline-size: 100%; block-size: 100%; padding: calc(var(--sp-9) + var(--sp-9) + var(--sp-6)) var(--page-x) var(--page-y); }
+      #stage .history-map { position: relative; }
+      #stage .history-surface { position: relative; border: 1px solid var(--line); border-radius: var(--radius-xl); background: linear-gradient(145deg, color-mix(in srgb, var(--surface-2) 82%, transparent), var(--surface-control)); box-shadow: var(--shadow-md); }
+      #stage .history-overlay { display: grid; grid-template-rows: auto 1fr auto; gap: var(--sp-4); padding: var(--sp-5); }
+      #stage .history-toolbar { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--sp-5); align-items: start; }
+      #stage .time-control { inline-size: min(760px, 100%); padding: var(--sp-4) var(--sp-5); border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--surface-1); box-shadow: var(--shadow-sm); }
+      #stage .time-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--sp-4); margin-block-end: var(--sp-2); }
+      #stage .time-head label { color: var(--text-strong); font-size: var(--fs-body-sm); font-weight: var(--weight-semibold); line-height: var(--lh-body); }
+      #stage #year-output { color: var(--accent-strong); font-size: var(--fs-h3); font-weight: var(--weight-bold); font-variant-numeric: tabular-nums; line-height: var(--lh-tight); }
+      #stage .toolbar-actions { display: flex; align-items: center; gap: var(--sp-3); }
+      #stage .legend-box { display: flex; align-items: center; gap: var(--sp-4); padding: var(--sp-3) var(--sp-4); border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--surface-1); color: var(--text-muted); font-size: var(--fs-label); line-height: var(--lh-label); }
+      #stage .key { display: inline-flex; align-items: center; gap: var(--sp-2); white-space: nowrap; }
+      #stage .key::before { content: ""; inline-size: 16px; block-size: 16px; border: 2px solid var(--line-strong); border-radius: 50%; background: var(--surface-3); }
+      #stage .key--ready::before { border-color: var(--accent); background: var(--accent-soft); }
+      #stage .key--blocked::before { border-style: dashed; border-color: var(--danger); background: var(--danger-soft); }
+      #stage .history-status { align-self: end; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: var(--sp-4); align-items: center; padding: var(--sp-4) var(--sp-5); border: 1px solid var(--line-strong); border-radius: var(--radius-lg); background: var(--surface-1); box-shadow: var(--shadow-sm); }
+      #stage .status-mark { display: grid; place-items: center; inline-size: 42px; block-size: 42px; border-radius: 50%; background: var(--accent-soft); color: var(--accent-strong); font-size: var(--fs-body-lg); font-weight: var(--weight-bold); }
+      #stage #impact-output { color: var(--text); font-size: var(--fs-body-sm); line-height: var(--lh-body); }
+      #stage #impact-output strong { color: var(--accent-strong); }
+      #stage canvas:focus-visible { outline: 3px solid var(--focus); outline-offset: -5px; border-radius: var(--radius-xl); }
+      #stage .canvas-help { position: absolute; inset-inline-end: var(--sp-5); inset-block-end: 112px; padding: var(--sp-2) var(--sp-3); border-radius: var(--radius-pill); background: var(--surface-2); color: var(--text-muted); font-size: var(--fs-label); line-height: var(--lh-label); }
+      @media (prefers-reduced-motion: reduce) { #stage * { transition: none !important; } }
+    </style>
+
+    <main id="page-content" class="min0" aria-label="本页正文">
+      <section class="canvas-full history-map min0" aria-label="神经网络历史事件依赖图">
+        <div class="canvas-full__surface history-surface min0">
+          <canvas id="history-canvas" class="cv-fill no-pan" tabindex="0" role="application" aria-label="历史依赖网络。左右方向键选择条件，回车或空格暂时移除或恢复。"></canvas>
+        </div>
+        <div class="canvas-full__overlay history-overlay min0">
+          <div class="history-toolbar min0">
+            <div class="time-control min0">
+              <div class="time-head"><label for="time-cursor">把时间游标拖到</label><output id="year-output" for="time-cursor"></output></div>
+              <input id="time-cursor" type="range" aria-describedby="time-hint">
+              <p id="time-hint" class="control-hint">游标右侧的条件尚未出现；点选网络节点，可暂时移除它并重算后续路径。</p>
+            </div>
+            <div class="toolbar-actions">
+              <div class="legend-box" aria-label="图例"><span class="key key--ready">已具备</span><span class="key key--blocked">路径中断</span></div>
+              <button id="reset-map" class="button--ghost" type="button">恢复全部</button>
+            </div>
+          </div>
+          <div aria-hidden="true"></div>
+          <div class="history-status" aria-live="polite">
+            <span class="status-mark" aria-hidden="true">↳</span>
+            <output id="impact-output">拖动时间游标，观察条件如何逐步汇合。</output>
+          </div>
+          <div class="canvas-help">方向键选节点 · 回车切换</div>
+        </div>
+      </section>
+    </main>
+
+    <script defer src="assets/lib/d3.min.js"></script>
+    <script>
+      (function () {
+        'use strict';
+
+        function boot() {
+          Lec.mount({
+            index: 1,
+            kicker: `HISTORY AS A SYSTEM`,
+            title: `神经网络史，不是一条不断上升的<em>时间线</em>`,
+            take: `每次繁荣都解除了一部分旧瓶颈，同时暴露出新的瓶颈。`
+          });
+          var mountedTitle = document.querySelector('.lec-header__title');
+          if (mountedTitle && mountedTitle.textContent.indexOf('<em>') !== -1) mountedTitle.innerHTML = mountedTitle.textContent;
+
+          var cv = document.getElementById('history-canvas');
+          var slider = document.getElementById('time-cursor');
+          var yearOutput = document.getElementById('year-output');
+          var impactOutput = document.getElementById('impact-output');
+          var reset = document.getElementById('reset-map');
+          var history = Lec.K.HISTORY;
+          var events = Lec.K.TIMELINE;
+          var eventIndex = new Map(events.map(function (event) { return [event.id, event]; }));
+          var specs = [
+            { id: 'neuron', label: '神经元模型', event: 'mcculloch-pitts', lane: 0 },
+            { id: 'learning', label: '学习规则', event: 'hebb', lane: 2 },
+            { id: 'deep', label: '深层训练', event: 'backprop', lane: 1 },
+            { id: 'structure', label: '专用结构', event: 'lenet5', lane: 0 },
+            { id: 'data', label: '数据', event: 'imagenet', lane: 2 },
+            { id: 'compute', label: '算力', event: 'alexnet', lane: 1 },
+            { id: 'scale', label: '规模化', event: 'gpt3', lane: 1 }
+          ].map(function (spec) {
+            var event = eventIndex.get(spec.event);
+            return Object.assign({}, spec, { year: event.year, title: event.title });
+          });
+          var edges = [
+            { source: 'neuron', target: 'learning' },
+            { source: 'neuron', target: 'deep' },
+            { source: 'learning', target: 'deep' },
+            { source: 'deep', target: 'structure' },
+            { source: 'structure', target: 'compute' },
+            { source: 'data', target: 'compute' },
+            { source: 'deep', target: 'scale' },
+            { source: 'structure', target: 'scale' },
+            { source: 'data', target: 'scale' },
+            { source: 'compute', target: 'scale' }
+          ];
+          var removed = new Set();
+          var selected = 0;
+          var hits = [];
+          var year = history.LAST_YEAR;
+
+          slider.min = history.FIRST_YEAR;
+          slider.max = history.LAST_YEAR;
+          slider.value = year;
+          slider.step = 1;
+
+          function eventLabel(spec) {
+            if (typeof Lec.P.eventLabel === 'function') {
+              return String(Lec.P.eventLabel(spec.event));
+            }
+            var event = eventIndex.get(spec.event);
+            return event.title + ' · ' + event.year;
+          }
+
+          function localReachability(nodes) {
+            var reachable = new Set();
+            var changed = true;
+            nodes.forEach(function (node) {
+              var incoming = edges.filter(function (edge) { return edge.target === node.id; });
+              if (!incoming.length && node.year <= year && !removed.has(node.id)) reachable.add(node.id);
+            });
+            while (changed) {
+              changed = false;
+              nodes.forEach(function (node) {
+                var incoming = edges.filter(function (edge) { return edge.target === node.id; });
+                if (node.year <= year && !removed.has(node.id) && incoming.length && incoming.every(function (edge) { return reachable.has(edge.source); }) && !reachable.has(node.id)) {
+                  reachable.add(node.id);
+                  changed = true;
+                }
+              });
+            }
+            return reachable;
+          }
+
+          function reachability(nodes) {
+            if (typeof Lec.P.dependencyReachability === 'function') {
+              try {
+                var result = Lec.P.dependencyReachability(nodes, edges, Array.from(removed), year);
+                if (result && result.reachable) return new Set(result.reachable);
+                if (Array.isArray(result)) return new Set(result);
+              } catch (ignore) {}
+            }
+            return localReachability(nodes);
+          }
+
+          function layout(width, height) {
+            if (typeof Lec.P.timelineLayout === 'function') {
+              try {
+                var publicLayout = Lec.P.timelineLayout(specs, { width: width, height: height, year: year });
+                if (Array.isArray(publicLayout) && publicLayout.length === specs.length) return publicLayout;
+              } catch (ignore) {}
+            }
+            var x = d3.scaleLinear().domain([history.FIRST_YEAR, history.LAST_YEAR]).range([150, width - 150]);
+            var lane = d3.scalePoint().domain([0, 1, 2]).range([height * 0.43, height * 0.79]);
+            return specs.map(function (node) { return Object.assign({}, node, { x: x(node.year), y: lane(node.lane) }); });
+          }
+
+          function updateStatus(reachable) {
+            var available = specs.filter(function (node) { return node.year <= year; });
+            var blocked = available.filter(function (node) { return !reachable.has(node.id) && !removed.has(node.id); });
+            yearOutput.textContent = Deck.fmt ? Deck.fmt(year) : String(year);
+            if (removed.size) {
+              var removedNames = specs.filter(function (node) { return removed.has(node.id); }).map(function (node) { return node.label; }).join('、');
+              impactOutput.innerHTML = '移除 <strong>' + removedNames + '</strong> 后，' + blocked.length + ' 个已出现条件的依赖路径中断。突破来自条件汇合，而非单点接力。';
+            } else if (year < history.LAST_YEAR) {
+              impactOutput.innerHTML = '截至 <strong>' + year + '</strong>，已有 ' + available.length + ' 类关键条件出现；后续节点仍等待其他条件汇合。';
+            } else {
+              impactOutput.innerHTML = '全部条件同时在场时，<strong>规模化</strong>才成为可达结果；任一上游缺口都可能改变后续路径。';
+            }
+          }
+
+          function draw() {
+            var ctx = Deck.fit(cv);
+            var width = cv.clientWidth;
+            var height = cv.clientHeight;
+            var nodes = layout(width, height);
+            var nodeById = new Map(nodes.map(function (node) { return [node.id, node]; }));
+            var reachable = reachability(nodes);
+            var curve = d3.line().curve(d3.curveBumpX);
+            hits = [];
+            ctx.clearRect(0, 0, width, height);
+
+            ctx.save();
+            ctx.setLineDash([5, 9]);
+            ctx.strokeStyle = Deck.rgba('--line-strong', 0.38);
+            ctx.lineWidth = 1;
+            nodes.forEach(function (node) {
+              ctx.beginPath();
+              ctx.moveTo(node.x, height * 0.31);
+              ctx.lineTo(node.x, height * 0.84);
+              ctx.stroke();
+            });
+            ctx.restore();
+
+            edges.forEach(function (edge) {
+              var source = nodeById.get(edge.source);
+              var target = nodeById.get(edge.target);
+              var active = reachable.has(source.id) && reachable.has(target.id);
+              ctx.save();
+              ctx.strokeStyle = active ? Deck.rgba('--accent', 0.72) : Deck.rgba('--line-strong', 0.5);
+              ctx.lineWidth = active ? 3 : 2;
+              if (!active) ctx.setLineDash([7, 8]);
+              var path = new Path2D(curve([[source.x + 57, source.y], [target.x - 57, target.y]]));
+              ctx.stroke(path);
+              ctx.restore();
+            });
+
+            nodes.forEach(function (node, index) {
+              var future = node.year > year;
+              var isRemoved = removed.has(node.id);
+              var ready = reachable.has(node.id);
+              var focused = index === selected && document.activeElement === cv;
+              var w = 154;
+              var h = 86;
+              hits.push({ x: node.x - w / 2, y: node.y - h / 2, w: w, h: h, index: index });
+              ctx.save();
+              ctx.globalAlpha = future ? 0.34 : 1;
+              ctx.fillStyle = ready ? Deck.rgba('--accent-soft', 0.98) : (isRemoved ? Deck.rgba('--danger-soft', 0.98) : Deck.rgba('--surface-2', 0.98));
+              ctx.strokeStyle = ready ? Deck.token('--accent') : (isRemoved ? Deck.token('--danger') : Deck.token('--line-strong'));
+              ctx.lineWidth = focused ? 4 : 2;
+              if (!ready) ctx.setLineDash([6, 5]);
+              Deck.rr(ctx, node.x - w / 2, node.y - h / 2, w, h, 18);
+              ctx.fill();
+              ctx.stroke();
+              ctx.setLineDash([]);
+              ctx.textAlign = 'center';
+              ctx.textBaseline = 'middle';
+              ctx.fillStyle = isRemoved ? Deck.token('--danger') : Deck.token('--text-strong');
+              ctx.font = '680 19px ' + Deck.token('--font-sans');
+              ctx.fillText(isRemoved ? '× ' + node.label : node.label, node.x, node.y - 10);
+              ctx.fillStyle = Deck.token('--text-muted');
+              ctx.font = '420 15px ' + Deck.token('--font-sans');
+              var label = eventLabel(node);
+              if (label.length > 22) label = label.slice(0, 20) + '…';
+              ctx.fillText(label, node.x, node.y + 19);
+              ctx.restore();
+            });
+
+            ctx.save();
+            ctx.fillStyle = Deck.token('--text-muted');
+            ctx.font = '560 17px ' + Deck.token('--font-sans');
+            ctx.textAlign = 'left';
+            ctx.fillText('条件不是排成一列，而是在多条路径上彼此汇合', 36, height * 0.25);
+            ctx.restore();
+            updateStatus(reachable);
+          }
+
+          function toggle(index) {
+            var node = specs[index];
+            if (!node || node.year > year) return;
+            if (removed.has(node.id)) removed.delete(node.id); else removed.add(node.id);
+            draw();
+          }
+
+          slider.addEventListener('input', function () { year = Number(slider.value); draw(); });
+          reset.addEventListener('click', function () { removed.clear(); year = history.LAST_YEAR; slider.value = year; selected = 0; draw(); });
+          cv.addEventListener('pointerdown', function (event) {
+            var point = Deck.pt(cv, event);
+            var hit = hits.find(function (box) { return point.x >= box.x && point.x <= box.x + box.w && point.y >= box.y && point.y <= box.y + box.h; });
+            if (hit) { selected = hit.index; toggle(selected); cv.focus(); }
+          });
+          cv.addEventListener('keydown', function (event) {
+            if (event.key === 'ArrowRight' || event.key === 'ArrowDown') { selected = (selected + 1) % specs.length; event.preventDefault(); draw(); }
+            if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') { selected = (selected + specs.length - 1) % specs.length; event.preventDefault(); draw(); }
+            if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); toggle(selected); }
+          });
+          cv.addEventListener('focus', draw);
+          cv.addEventListener('blur', draw);
+          Deck.autofit(cv, draw);
+        }
+
+        if (document.readyState === 'loading') {
+          document.addEventListener('DOMContentLoaded', boot, { once: true });
+        } else {
+          boot();
+        }
+      }());
+    </script>
+  </div>
+  <script src="assets/base.js"></script>
+  <script src="assets/lec.js"></script>
+</body>
+</html>
