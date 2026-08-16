@@ -22,6 +22,7 @@ from typing import Iterable, Literal
 
 from pydantic import BaseModel, Field
 
+from .redact import redact
 from .wire import Usage
 
 
@@ -52,7 +53,20 @@ class Writer:
 
     def add(self, req_blocks: list[dict], text: str, usage: dict,
             rid: str, started: str, finished: str, tag: dict | None = None) -> None:
+        """写一次调用。
+
+        **写入前一律脱敏。** trace 逐字记录提示词和模型回复,而 builder 跑的
+        Bash 打印什么就可能被模型复述什么 —— 实测 orbit-01 的 trace 里就这样
+        混进了一个真实 API key,推 GitHub 之前才被拦下。proxy.py 当初对请求头
+        做了 REDACT,这一层当初漏了。
+        """
+        import json as _j
         import uuid as _u
+
+        req_blocks = _j.loads(redact(_j.dumps(req_blocks, ensure_ascii=False)))
+        text = redact(text)
+        if tag:
+            tag = _j.loads(redact(_j.dumps(tag, ensure_ascii=False)))
 
         a = TraceRow(uuid=str(_u.uuid4()), parentUuid=self.prev, sessionId=self.session,
                      timestamp=started, type="user", requestId=rid,
