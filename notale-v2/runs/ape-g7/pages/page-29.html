@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>同一任务，共享符号怎样改变协作？</title>
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  .page29{height:100%;display:flex;flex-direction:column;gap:14px}
+  symbol-team-game{display:block;padding:8px;box-sizing:border-box;background:var(--surface-soft);border:1px solid var(--line);border-radius:var(--r-lg)}
+  .game-shell{display:grid;grid-template-columns:1fr 1fr .82fr;gap:16px;height:330px}
+  .game-shell>*{min-width:0;min-height:0}
+  .station{padding:16px;display:flex;flex-direction:column;gap:10px}
+  .station:first-child{background:var(--accent-soft)}
+  .station:nth-child(2){background:var(--primary-soft)}
+  .game-shell .dash{background:var(--success-soft)}
+  .station h2{display:flex;justify-content:space-between;align-items:center}
+  .role{font-size:var(--fs-label);color:var(--muted);font-weight:600}
+  .tiles{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;flex:1}
+  .tile{position:relative;display:grid;place-items:center;min-height:68px;border:2px solid var(--line-strong);border-radius:var(--r-sm);background:var(--primary);font-size:44px;font-weight:800;color:#ffffff}.tile small{position:absolute;top:5px;left:7px;font-size:var(--fs-label);line-height:1;color:var(--muted)}
+  button.tile{min-height:68px;padding:0;font-size:30px}
+  button.tile:hover{background:var(--primary-soft)}
+  .signal{min-height:48px;padding:10px 14px;border-left:5px solid var(--accent);background:var(--accent-soft);font-size:var(--fs-sec);line-height:var(--lh-body)}
+  .dash{padding:16px;display:flex;flex-direction:column;gap:10px}
+  .round-pill{padding:7px 10px;border-radius:999px;background:var(--primary-soft);color:var(--primary-strong);font-size:var(--fs-label);font-weight:750;text-align:center}
+  .meter{display:flex;align-items:baseline;justify-content:space-between;border-bottom:1px solid var(--line);padding-bottom:7px}
+  .meter strong{font-size:var(--fs-h2);color:var(--primary-strong);font-variant-numeric:tabular-nums}
+  .actions{display:flex;gap:8px;margin-top:auto}.actions button{flex:1;min-height:44px}
+  .k-comparison{--comparison-cols:150px repeat(2,minmax(0,1fr));font-size:var(--fs-sec)}
+  .k-comparison>*{padding:7px 12px;line-height:1.35}
+  .k-comparison .hdr{font-size:var(--fs-body)}
+  .k-comparison>div:not(.hdr):not(.dim):not(.rowline):not(.diff){background:var(--surface-soft)}
+  .conclusion{display:flex;gap:18px;align-items:center;padding:10px 16px;background:var(--primary-soft);border-left:6px solid var(--primary);border-radius:0 var(--r-sm) var(--r-sm) 0;font-size:var(--fs-sec);line-height:1.4}
+  .conclusion strong{color:var(--primary-strong);white-space:nowrap}
+  @media (prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;transition:none!important}}
+</style>
+</head>
+<body data-page="29" data-total="45">
+<div id="stage">
+<main id="main">
+  <section class="page29" aria-label="有词无词协作比较">
+    <symbol-team-game class="min0"></symbol-team-game>
+    <div class="k-comparison" aria-label="两轮逐维比较">
+      <div class="hdr">比较维度</div><div class="hdr">无约定词</div><div class="hdr">共享符号</div>
+      <div class="rowline"></div>
+      <div class="dim">可用信号</div><div>指点、表情、姿势</div><div class="diff">双方都看得懂的词或图符</div>
+      <div class="rowline"></div>
+      <div class="dim">任务结果</div><div id="r1match">完成首轮后显示</div><div id="r2match">完成次轮后显示</div>
+      <div class="rowline"></div>
+      <div class="dim">协调成本</div><div id="r1cost">操作、撤销、重复确认</div><div id="r2cost" class="diff">操作、撤销、重复确认</div>
+      <div class="rowline"></div>
+      <div class="dim">可复用性</div><div>临时动作容易改变含义</div><div class="diff">同一符号稳定指向同一形状与位置</div>
+    </div>
+    <div class="conclusion"><strong>符号降低确认成本</strong><span>共享符号让双方更快确认“哪个、哪里、怎么做”。无词时仍可凭目光、手势、模仿和共同情境完成复杂协作。</span></div>
+  </section>
+</main>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script>
+class SymbolTeamGame extends HTMLElement{
+  constructor(){super();this.attachShadow({mode:'open'}).innerHTML='<slot></slot>';this.reset(false)}
+  fresh(){return {round:1,target:[1,2,0,2],board:[0,0,0,0],moves:0,undo:0,repeats:0,done:[null,null],trace:[]}}
+  connectedCallback(){this.render()}
+  start(){this.state=this.fresh();this.dispatchEvent(new CustomEvent('game-start',{bubbles:true,composed:true}));this.render()}
+  reset(emit=true){this.state=this.fresh();if(emit)this.dispatchEvent(new CustomEvent('game-reset',{bubbles:true,composed:true}));if(this.isConnected)this.render()}
+  getState(){return JSON.parse(JSON.stringify(this.state))}
+  metrics(){let hit=this.state.board.filter((v,i)=>v===this.state.target[i]).length;return {match:Lec.P.ratio(hit,this.state.target.length),cost:this.state.moves+this.state.undo+this.state.repeats}}
+  act(i){if(this.state.done[this.state.round-1])return;let old=this.state.board[i];this.state.board[i]=(old+1)%3;this.state.moves++;if(old!==0)this.state.undo++;if(this.state.round===1&&this.state.moves%2===0)this.state.repeats++;this.state.trace.push({round:this.state.round,cell:i,value:this.state.board[i]});this.progress('place');this.render()}
+  progress(action){this.dispatchEvent(new CustomEvent('game-progress',{detail:{state:this.getState(),action,metrics:this.metrics()},bubbles:true,composed:true}))}
+  finish(){let m=this.metrics();this.state.done[this.state.round-1]={match:m.match,cost:m.cost,moves:this.state.moves,undo:this.state.undo,repeats:this.state.repeats};if(this.state.round===1){this.state.round=2;this.state.board=[0,0,0,0];this.state.moves=0;this.state.undo=0;this.state.repeats=0;this.render()}else{this.dispatchEvent(new CustomEvent('game-complete',{detail:{score:m.match,metrics:m,trace:this.state.trace.slice()},bubbles:true,composed:true}));this.render()}this.updateTable()}
+  updateTable(){let a=this.state.done[0],b=this.state.done[1];let show=(x)=>x?Lec.P.roundTo(Lec.P.percent(x.match,1),0)+'%':'完成后显示';document.getElementById('r1match').textContent=show(a);document.getElementById('r2match').textContent=show(b);if(a)document.getElementById('r1cost').textContent=a.cost+' 次协调动作';if(b)document.getElementById('r2cost').textContent=b.cost+' 次协调动作'}
+  render(){let s=this.state, names=['空位','圆','三角'], glyph=['·','●','▲'], m=this.metrics(), finished=!!s.done[1];this.innerHTML=`<style>
+    :host{display:block}.fixed-strip{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:8px}.fixed-strip span{padding:5px 8px;text-align:center;background:var(--surface);border:1px solid var(--line);border-radius:var(--r-sm);font-size:var(--fs-label);font-weight:700;color:var(--muted)}.fixed-strip strong{color:var(--primary-strong)}.game-shell{display:grid;grid-template-columns:1fr 1fr .82fr;gap:16px;height:286px}.min0{min-width:0;min-height:0}.panel{box-sizing:border-box;padding:16px;background:var(--surface);border:1px solid var(--line);border-radius:var(--r-md);box-shadow:var(--shadow-soft)}.station{display:flex;flex-direction:column;gap:10px}.station h2{margin:0;color:var(--primary-strong);font-size:var(--fs-h2);line-height:1.35;display:flex;justify-content:space-between}.role{font-size:var(--fs-label);color:var(--muted);font-weight:600}.tiles{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;flex:1}.tile{position:relative;display:grid;place-items:center;min-height:68px;border:2px solid var(--line-strong);border-radius:var(--r-sm);background:var(--primary);font-size:44px;font-weight:800;color:#ffffff}.tile small{position:absolute;top:5px;left:7px;font-size:var(--fs-label);line-height:1;color:var(--muted)}button.tile{padding:0;cursor:pointer}button.tile:focus-visible,button:focus-visible{outline:3px solid var(--focus);outline-offset:2px}.signal{min-height:48px;padding:8px 10px;border-left:5px solid var(--accent);background:var(--accent-soft);font-size:var(--fs-sec);line-height:1.5}.signal{display:grid;grid-template-columns:repeat(6,1fr);gap:5px}.signal span{display:grid;place-items:center;padding:4px;background:var(--surface);border:1px solid var(--line);border-radius:var(--r-sm);font-size:var(--fs-label);font-weight:700}.dash{display:flex;flex-direction:column;gap:10px}.round-pill{padding:7px 10px;border-radius:999px;background:var(--primary-soft);color:var(--primary-strong);font-size:var(--fs-label);font-weight:750;text-align:center}.meter{display:flex;align-items:baseline;justify-content:space-between;border-bottom:1px solid var(--line);padding-bottom:7px;font-size:var(--fs-sec)}.meter strong{font-size:var(--fs-h2);color:var(--primary-strong)}.actions{display:flex;gap:8px;margin-top:auto}.actions button{flex:1;min-height:44px;padding:8px;color:var(--primary-strong);background:var(--surface);border:1px solid var(--line-strong);border-radius:var(--r-sm);font-size:var(--fs-label);font-weight:700;cursor:pointer}.note{color:var(--muted);font-size:var(--fs-sec);line-height:1.5}</style>
+    <div class="fixed-strip" aria-label="实验控制条件"><span><strong>固定</strong> 同一目标</span><span><strong>固定</strong> 同一成员</span><span><strong>固定</strong> 同一尺度</span><span><strong>只改变</strong> 符号条件</span></div><div class="game-shell">
+      <section class="panel station min0"><h2>指令者：目标图 <span class="role">只让指令者看</span></h2><div class="tiles">${s.target.map((v,i)=>`<div class="tile" aria-label="位置${i+1}，${names[v]}"><small>${i+1}</small>${glyph[v]}</div>`).join('')}</div><div class="signal">${s.round===1?'<span>看这里</span><span>指位置</span><span>做形状</span><span>点头</span><span>摇头</span><span>再示范</span>':'<span>● 圆</span><span>▲ 三角</span><span>①</span><span>②</span><span>③</span><span>④</span>'}</div></section>
+      <section class="panel station min0"><h2>操作者：复现区 <span class="role">点击格子切换</span></h2><div class="tiles">${s.board.map((v,i)=>`<button class="tile" data-i="${i}" aria-label="位置${i+1}，当前${names[v]}"><small>${i+1}</small>${glyph[v]}</button>`).join('')}</div><p class="note" aria-live="polite">已匹配 ${s.board.filter((v,i)=>v===s.target[i]).length} / ${s.target.length} 格；答案不自动揭示。</p></section>
+      <aside class="panel dash min0"><div class="round-pill">${finished?'两轮已完成':'第 '+s.round+' 轮 · '+(s.round===1?'无约定词':'共享符号')}</div><div class="meter"><span>复现匹配率</span><strong>${Lec.P.roundTo(Lec.P.percent(m.match,1),0)}%</strong></div><div class="meter"><span>操作</span><strong>${s.moves}</strong></div><div class="meter"><span>撤销</span><strong>${s.undo}</strong></div><div class="meter"><span>重复确认</span><strong>${s.repeats}</strong></div><div class="actions"><button id="finish" ${finished?'disabled':''}>${s.round===1?'结束首轮':'结束次轮'}</button><button id="reset">重置换角色</button></div></aside>
+    </div>`;
+    this.querySelectorAll('[data-i]').forEach(b=>b.onclick=()=>this.act(+b.dataset.i));this.querySelector('#finish').onclick=()=>this.finish();this.querySelector('#reset').onclick=()=>this.reset();this.updateTable()}
+}
+customElements.define('symbol-team-game',SymbolTeamGame);
+Lec.mount({index:29,kicker:'SHARED SYMBOLS',title:'同一任务，共享符号怎样改变协作？',take:'共享符号让双方更快确认“哪个、哪里、怎么做”，从而降低协调成本。'});
+</script>
+</body>
+</html>

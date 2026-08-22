@@ -1,0 +1,324 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  #main { --process-line-y: 58%; }
+  .claim-page { position: relative; width: 100%; height: 100%; }
+  .assembly-head { height: 42px; }
+  .assembly-prompt { color: var(--text-muted); font-size: var(--fs-sec); line-height: var(--lh-copy); }
+  .assembly-status { flex: 0 0 auto; color: var(--accent); font-family: var(--font-mono); font-size: var(--fs-body); font-weight: 700; }
+  .chain-zone { position: relative; height: 420px; box-sizing: border-box; border: var(--border); border-left: 3px solid var(--primary); border-radius: var(--radius-3); background: var(--surface-1); }
+  .chain-zone::after { content: ""; position: absolute; right: 7%; bottom: 37px; left: 7%; height: 2px; background: var(--primary-dark); opacity: .55; }
+  #claim-chain { position: absolute; inset: 0; pointer-events: none; }
+  #claim-chain svg { display: block; width: 100%; height: 100%; overflow: visible; }
+  .chain-link { fill: none; stroke: var(--accent); stroke-width: 3; stroke-dasharray: 8 8; opacity: .42; }
+  .chain-link.is-live { stroke: var(--primary-bright); stroke-dasharray: none; opacity: 1; }
+  .chain-flow { fill: none; stroke: var(--primary-bright); stroke-width: 7; opacity: 0; stroke-linecap: round; }
+  .chain-flow.is-running { animation: chain-flash 900ms ease-out both; }
+  .process-track { position: absolute; inset: 40px 0 0; gap: var(--sp-2); align-items: stretch; }
+  .process-track > .axis { left: 36px; right: 36px; opacity: .55; }
+  .process-track > .step {
+    height: 176px; margin-top: 34px; box-sizing: border-box; padding: var(--sp-4) var(--sp-3);
+    justify-content: flex-start; border-color: var(--line-strong); border-style: dashed; background: var(--surface-2);
+  }
+  .process-track > .step.is-filled { border-style: solid; border-color: var(--primary); border-top-color: var(--primary-bright); background: var(--surface-teal); }
+  .process-track > .step.is-target { border-color: var(--accent); border-top-color: var(--accent); background: var(--surface-yellow); }
+  .process-track > .step.is-wrong { animation: slot-shake 300ms ease-in-out; }
+  .process-track > .step::after { content: ""; position: absolute; left: 50%; bottom: -38px; width: 2px; height: 36px; background: var(--primary-dark); transform: translateX(-50%); opacity: .45; }
+  .process-track > .step:nth-of-type(4)::after, .process-track > .step:nth-of-type(8)::after { transform: translateX(-50%) rotate(24deg); transform-origin: top; }
+  .process-track > .step.is-filled::after { background: var(--primary); opacity: .9; }
+  .process-track > .arw { flex-basis: 24px; color: transparent; }
+  .slot-num { color: var(--text-faint); font-family: var(--font-mono); font-size: var(--fs-tick); }
+  .slot-empty { margin: auto 0; color: var(--text-faint); font-size: var(--fs-label); text-align: center; }
+  .slot-title { margin-top: var(--sp-2); color: var(--text-strong); font-family: var(--font-narrow); font-size: var(--fs-h2); font-weight: 700; line-height: 1.25; }
+  .slot-copy { margin-top: var(--sp-2); color: var(--text-muted); font-size: var(--fs-sec); line-height: var(--lh-copy); }
+  .link-question {
+    position: absolute; top: 0; width: 174px; min-height: 38px; transform: translateX(-50%);
+    color: var(--text-faint); font-size: var(--fs-label); line-height: 1.35; text-align: center; opacity: .38;
+  }
+  .link-question.is-live { color: var(--accent); opacity: 1; }
+  .body-mark, .system-rings { position: absolute; top: 116px; width: 42px; height: 86px; pointer-events: none; opacity: .45; }
+  .body-mark { left: 4px; }
+  .body-mark::before { content: ""; position: absolute; top: 0; left: 14px; width: 14px; height: 14px; border: 2px solid var(--primary); border-radius: 50%; }
+  .body-mark::after { content: ""; position: absolute; top: 20px; left: 8px; width: 26px; height: 48px; border: 2px solid var(--primary); border-radius: 45% 45% 25% 25%; }
+  .system-rings { right: 20px; border: 2px solid var(--primary); border-radius: 50%; opacity: 0; }
+  .system-rings::before, .system-rings::after { content: ""; position: absolute; border: 2px solid var(--primary); border-radius: 50%; }
+  .system-rings::before { inset: -9px; }
+  .system-rings::after { inset: -18px; }
+  .system-rings.is-visible { opacity: .75; animation: rings-in 700ms ease-out both; }
+  .role-strip { position: absolute; right: var(--sp-3); bottom: var(--sp-3); left: var(--sp-3); display: flex; gap: var(--sp-2); height: 48px; }
+  .role-cue { display: flex; flex: 1 1 0; align-items: center; justify-content: center; min-width: 0; padding: 0 var(--sp-2); border-top: 2px solid var(--primary-dark); background: var(--surface-teal); color: var(--text-muted); font-size: var(--fs-label); font-weight: 700; line-height: 1.35; text-align: center; }
+  .role-cue.is-live { border-top-color: var(--primary-bright); color: var(--text-strong); }
+  .error-note { position: absolute; right: 120px; bottom: 64px; left: 120px; color: var(--danger); font-size: var(--fs-sec); line-height: var(--lh-copy); text-align: center; }
+  .tray-area { height: 148px; margin-top: var(--sp-2); padding: var(--sp-1) var(--sp-4); box-sizing: border-box; border: var(--border); border-left: 3px solid var(--primary-dark); border-radius: var(--radius-3); background: var(--surface-1); }
+  .tray-top { height: 38px; }
+  .tray-title { color: var(--text-strong); font-family: var(--font-narrow); font-size: var(--fs-h2); font-weight: 700; }
+  .keyboard-place { display: flex; align-items: center; gap: var(--sp-2); }
+  .keyboard-place label { color: var(--text-muted); font-size: var(--fs-label); }
+  .keyboard-place select { width: 208px; }
+  .keyboard-place button { font-size: var(--fs-sec); }
+  .tray { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--sp-1) var(--sp-3); height: 102px; }
+  .node-card {
+    position: relative; display: flex; align-items: center; min-width: 0; min-height: 49px; box-sizing: border-box;
+    padding: var(--sp-1) var(--sp-3); border: var(--border); border-left: 3px solid var(--primary-dark);
+    border-radius: var(--radius-2); background: var(--surface-1); box-shadow: var(--shadow-panel); cursor: grab;
+    touch-action: none; user-select: none;
+  }
+  .node-card:hover { border-color: var(--accent); border-left-color: var(--accent); }
+  .node-card.is-dragging { z-index: 20; border-color: var(--accent); background: var(--surface-yellow); cursor: grabbing; }
+  .node-card.is-wrong { animation: card-shake 300ms ease-in-out; }
+  .card-title { flex: 0 0 148px; color: var(--text-strong); font-family: var(--font-narrow); font-size: var(--fs-body); font-weight: 700; line-height: 1.25; }
+  .card-copy { min-width: 0; color: var(--text-muted); font-size: var(--fs-sec); line-height: 1.35; }
+  .completion { position: absolute; right: 0; bottom: 0; left: 0; display: none; align-items: center; justify-content: space-between; min-height: 54px; padding: 0 var(--sp-4); border-left: 5px solid var(--accent); background: var(--surface-yellow); }
+  .completion.is-visible { display: flex; border-left-color: var(--primary); background: var(--surface-teal); }
+  .completion p { color: var(--text-strong); font-size: var(--fs-lead); font-weight: 700; line-height: var(--lh-copy); }
+  .reset-button { flex: 0 0 44px; padding: 0; font-size: 24px; }
+  .lec-progress { height: 4px; overflow: visible; }
+  .lec-progress::after { display: none; }
+  @keyframes slot-shake { 25% { transform: translateX(-6px); } 75% { transform: translateX(6px); } }
+  @keyframes card-shake { 25% { transform: translateX(-8px); } 75% { transform: translateX(8px); } }
+  @keyframes chain-flash { 0% { opacity: 0; stroke-dasharray: 0 1600; } 45% { opacity: .9; } 100% { opacity: 0; stroke-dasharray: 1600 0; } }
+  @keyframes rings-in { from { transform: scale(.55); } to { transform: scale(1); } }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: 1ms !important; transition-duration: 1ms !important; }
+  }
+</style>
+</head>
+<body data-page="05" data-total="52">
+<div id="stage">
+<main id="main">
+  <section class="claim-page col min0" aria-label="主张链拼装游戏">
+    <div class="assembly-head row items-center justify-between">
+      <p class="assembly-prompt">拖动卡片到下一空位，找出每个问题所需的中介。</p>
+      <div id="progress" class="assembly-status" aria-live="polite">主张链 0 / 6</div>
+    </div>
+
+    <div id="chain-zone" class="chain-zone min0 no-pan">
+      <div id="claim-chain" aria-hidden="true"></div>
+      <div id="process-track" class="k-process process-track" aria-label="从猿类身体到太空生活的六步过程">
+        <div class="axis"></div>
+      </div>
+      <span class="body-mark" aria-hidden="true"></span>
+      <span id="system-rings" class="system-rings" aria-hidden="true"></span>
+      <div id="role-strip" class="role-strip" aria-label="六个节点在主张链中的作用"></div>
+      <p id="error-note" class="error-note" role="status" aria-live="assertive"></p>
+    </div>
+
+    <section id="tray-area" class="tray-area min0" aria-labelledby="tray-title">
+      <div class="tray-top row items-center justify-between">
+        <h2 id="tray-title" class="tray-title">待装节点</h2>
+        <div class="keyboard-place">
+          <label for="card-select">键盘装配</label>
+          <select id="card-select" aria-label="选择要装入下一空位的卡片"></select>
+          <button id="place-button" type="button" class="btn">装入下一空位</button>
+        </div>
+      </div>
+      <div id="tray" class="tray min0"></div>
+    </section>
+
+    <div id="completion" class="completion" aria-live="polite">
+      <p>从猿类身体到太空生活必须经过文化与技术系统，而非一次跃迁。</p>
+      <button id="reset-button" class="btn icon-only reset-button" type="button" title="重置主张链" aria-label="重置主张链">↻</button>
+    </div>
+  </section>
+</main>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script src="assets/lib/d3.min.js"></script>
+<script>
+(function () {
+  'use strict';
+
+  Lec.mount({index: 5, kicker: 'CLAIM ASSEMBLY', title: '没有那次跃迁', take: '从猿类身体到太空生活必须经过文化与技术系统，而非一次跃迁。'});
+
+  const steps = [
+    { id: 'body', title: '猿类身体', copy: '有限、脆弱、依赖环境', question: '身体本身做不到时，什么先接手？' },
+    { id: 'learn', title: '学习与合作', copy: '个体从他人处获得办法', question: '办法怎样不随个人消失？' },
+    { id: 'culture', title: '跨代累积文化', copy: '成果被保存并继续改进', question: '知识怎样变成可执行能力？' },
+    { id: 'tools', title: '工具与技术', copy: '把知识固化进物件和程序', question: '复杂技术怎样持续可靠运行？' },
+    { id: 'system', title: '组织与人造环境', copy: '多人共同维持生存条件', question: '这套系统最终允许什么处境？' },
+    { id: 'space', title: '太空生活', copy: '身体被包进可维持的系统', question: '' }
+  ];
+  const trayOrder = ['tools', 'body', 'system', 'learn', 'space', 'culture'];
+  const roleLabels = ['身体基础', '获得办法', '保存成果', '执行知识', '维持系统', '形成处境'];
+  const state = { placed: [], dragging: null };
+  const track = document.getElementById('process-track');
+  const tray = document.getElementById('tray');
+  const select = document.getElementById('card-select');
+  const placeButton = document.getElementById('place-button');
+  const progress = document.getElementById('progress');
+  const errorNote = document.getElementById('error-note');
+  const completion = document.getElementById('completion');
+  let errorTimer = 0;
+
+  const svg = d3.select('#claim-chain').append('svg').attr('viewBox', '0 0 1200 300').attr('role', 'img').attr('aria-label', '从猿类身体到太空生活的六步主张链');
+  const link = d3.linkHorizontal().x(d => d.x).y(d => d.y);
+  const xPositions = d3.scalePoint().domain(d3.range(6)).range([78, 1122]);
+  const links = d3.range(5).map(i => ({ source: { x: xPositions(i) + 70, y: 185 }, target: { x: xPositions(i + 1) - 70, y: 185 } }));
+  const defs = svg.append('defs');
+  defs.append('marker').attr('id', 'arrow-muted').attr('viewBox', '0 0 10 10').attr('refX', 9).attr('refY', 5).attr('markerWidth', 6).attr('markerHeight', 6).attr('orient', 'auto-start-reverse').append('path').attr('d', 'M 0 0 L 10 5 L 0 10 z').attr('fill', 'currentColor');
+  const linkPaths = svg.append('g').selectAll('path').data(links).join('path').attr('class', 'chain-link').attr('d', link).attr('marker-end', 'url(#arrow-muted)');
+  const flowPath = svg.append('path').attr('class', 'chain-flow').attr('d', d3.line().x(d => d[0]).y(d => d[1])([[42,185],[1158,185]]));
+
+  const roleNodes = roleLabels.map(label => {
+    const node = document.createElement('span');
+    node.className = 'role-cue';
+    node.textContent = label;
+    document.getElementById('role-strip').appendChild(node);
+    return node;
+  });
+
+  const questionNodes = steps.slice(0, 5).map((step, index) => {
+    const node = document.createElement('p');
+    node.className = 'link-question';
+    node.style.left = (((index + 0.5) / 6) * 100) + '%';
+    node.textContent = step.question;
+    document.getElementById('chain-zone').appendChild(node);
+    return node;
+  });
+
+  steps.forEach((step, index) => {
+    const slot = document.createElement('div');
+    slot.className = 'step';
+    slot.dataset.index = String(index);
+    slot.innerHTML = '<span class="slot-num">' + (index + 1) + '</span><span class="slot-empty">等待节点</span>';
+    track.appendChild(slot);
+    if (index < steps.length - 1) {
+      const arrow = document.createElement('span');
+      arrow.className = 'arw';
+      arrow.setAttribute('aria-hidden', 'true');
+      track.appendChild(arrow);
+    }
+  });
+
+  function availableSteps() {
+    return trayOrder.map(id => steps.find(step => step.id === id)).filter(step => !state.placed.includes(step.id));
+  }
+
+  function makeCard(step) {
+    const card = document.createElement('article');
+    card.className = 'node-card';
+    card.dataset.id = step.id;
+    card.setAttribute('aria-label', step.title + '：' + step.copy + '。可拖到下一空位。');
+    card.innerHTML = '<span class="card-title">' + step.title + '</span><span class="card-copy">' + step.copy + '</span>';
+    card.addEventListener('pointerdown', beginDrag);
+    return card;
+  }
+
+  function render() {
+    const placedCount = state.placed.length;
+    progress.textContent = '主张链 ' + placedCount + ' / ' + steps.length;
+
+    Array.from(track.querySelectorAll('.step')).forEach((slot, index) => {
+      const placedId = state.placed[index];
+      slot.classList.toggle('is-filled', Boolean(placedId));
+      slot.classList.toggle('is-target', index === placedCount && placedCount < steps.length);
+      if (placedId) {
+        const step = steps.find(item => item.id === placedId);
+        slot.innerHTML = '<span class="slot-num">' + (index + 1) + '</span><span class="slot-title">' + step.title + '</span><span class="slot-copy">' + step.copy + '</span>';
+      } else {
+        slot.innerHTML = '<span class="slot-num">' + (index + 1) + '</span><span class="slot-empty">等待节点</span>';
+      }
+    });
+
+    linkPaths.classed('is-live', (d, index) => index < placedCount - 1);
+    questionNodes.forEach((node, index) => node.classList.toggle('is-live', index < placedCount - 1));
+    roleNodes.forEach((node, index) => node.classList.toggle('is-live', index < placedCount));
+    tray.replaceChildren(...availableSteps().map(makeCard));
+    select.replaceChildren(...availableSteps().map(step => new Option(step.title, step.id)));
+    placeButton.disabled = placedCount === steps.length;
+    select.disabled = placedCount === steps.length;
+    const complete = placedCount === steps.length;
+    completion.classList.toggle('is-visible', complete);
+    completion.querySelector('p').textContent = complete
+      ? '太空能力不只在身体里，也分布在知识、工具、组织和人造环境中。'
+      : '从猿类身体到太空生活必须经过文化与技术系统，而非一次跃迁。';
+    document.getElementById('system-rings').classList.toggle('is-visible', complete);
+  }
+
+  function showError(card) {
+    window.clearTimeout(errorTimer);
+    errorNote.textContent = '这里跳过了中介：先找出能回答上一段连接问题的卡片。';
+    const slot = track.querySelector('.step.is-target');
+    if (slot) {
+      slot.classList.remove('is-wrong');
+      void slot.offsetWidth;
+      slot.classList.add('is-wrong');
+    }
+    if (card) {
+      card.classList.remove('is-wrong');
+      void card.offsetWidth;
+      card.classList.add('is-wrong');
+    }
+    errorTimer = window.setTimeout(() => { errorNote.textContent = ''; }, 600);
+  }
+
+  function tryPlace(id, card) {
+    const expected = steps[state.placed.length];
+    if (!expected || id !== expected.id) {
+      showError(card);
+      return false;
+    }
+    state.placed.push(id);
+    errorNote.textContent = '';
+    render();
+    if (state.placed.length === steps.length) {
+      flowPath.classed('is-running', false);
+      void flowPath.node().getBBox();
+      flowPath.classed('is-running', true);
+      completion.querySelector('p').focus?.();
+    }
+    return true;
+  }
+
+  function beginDrag(event) {
+    if (event.button !== 0) return;
+    const card = event.currentTarget;
+    const start = Deck.pt(document.getElementById('main'), event);
+    state.dragging = { card, id: card.dataset.id, start, dx: 0, dy: 0 };
+    card.classList.add('is-dragging');
+    card.setPointerCapture(event.pointerId);
+    card.addEventListener('pointermove', moveDrag);
+    card.addEventListener('pointerup', endDrag, { once: true });
+    card.addEventListener('pointercancel', endDrag, { once: true });
+  }
+
+  function moveDrag(event) {
+    if (!state.dragging) return;
+    const point = Deck.pt(document.getElementById('main'), event);
+    state.dragging.dx = point.x - state.dragging.start.x;
+    state.dragging.dy = point.y - state.dragging.start.y;
+    state.dragging.card.style.transform = 'translate(' + state.dragging.dx + 'px,' + state.dragging.dy + 'px)';
+  }
+
+  function endDrag(event) {
+    if (!state.dragging) return;
+    const drag = state.dragging;
+    drag.card.removeEventListener('pointermove', moveDrag);
+    drag.card.classList.remove('is-dragging');
+    drag.card.style.transform = '';
+    const point = Deck.pt(document.getElementById('main'), event);
+    const zoneTop = document.getElementById('chain-zone').offsetTop;
+    const overTargetBand = point.y >= zoneTop + 72 && point.y <= zoneTop + 248;
+    if (overTargetBand) tryPlace(drag.id, drag.card);
+    state.dragging = null;
+  }
+
+  placeButton.addEventListener('click', () => tryPlace(select.value, tray.querySelector('[data-id="' + select.value + '"]')));
+  document.getElementById('reset-button').addEventListener('click', () => {
+    state.placed = [];
+    errorNote.textContent = '';
+    flowPath.classed('is-running', false);
+    render();
+    placeButton.focus();
+  });
+
+  render();
+}());
+</script>
+</body>
+</html>

@@ -13,8 +13,13 @@ import json
 import os
 import re
 import time
+import urllib.error
 import urllib.request
 from pathlib import Path
+
+# 接口的硬下限,实测出来的:小于这个像素数直接 400
+# ("image size must be at least 921600 pixels")。921600 = 1280×720。
+MIN_PIXELS = 921_600
 
 ENDPOINT = "https://llmapi.paratera.com/v1/images/generations"
 MODEL = "Doubao-Seedream-4.0"
@@ -33,11 +38,36 @@ def api_key() -> str:
     raise SystemExit("找不到 PARATERA_API_KEY(环境变量和 .env.local 都没有)")
 
 
+def check_size(size: str) -> None:
+    """先在本地把尺寸拦下来。
+
+    接口要求 ≥921,600 像素,低于就 400。而 400 的正文埋在 HTTPError 里 ——
+    不捕获的话调用方只看到一串 traceback,试一次就会放弃配图。
+    实测 1024×576(589,824 像素)会被拒,2048×1152 正常。
+    """
+    m = re.fullmatch(r"(\d+)x(\d+)", size.strip())
+    if not m:
+        raise SystemExit(f"--size 要写成 宽x高,比如 2048x1152(你给的是 {size!r})")
+    w, h = int(m.group(1)), int(m.group(2))
+    if w * h < MIN_PIXELS:
+        raise SystemExit(
+            f"--size {size} 只有 {w*h:,} 像素,接口要求至少 {MIN_PIXELS:,}(=1280×720)。\n"
+            f"    16:9 的话用 2048x1152(默认)或 1280x720;要更小就别用这个接口。")
+
+
 def generate(prompt: str, size: str, n: int) -> list[bytes]:
+    check_size(size)
     body = json.dumps({"model": MODEL, "prompt": prompt, "size": size, "n": n}).encode()
     req = urllib.request.Request(ENDPOINT, data=body, headers={
         "Authorization": f"Bearer {api_key()}", "Content-Type": "application/json"})
-    r = json.loads(urllib.request.urlopen(req, timeout=300).read())
+    try:
+        r = json.loads(urllib.request.urlopen(req, timeout=300).read())
+    except urllib.error.HTTPError as e:
+        # 把接口自己的报错原文交出来。裸 traceback 对调用方没有任何可操作信息。
+        detail = e.read().decode("utf-8", "replace")[:400]
+        raise SystemExit(f"接口返回 HTTP {e.code}:\n    {detail}")
+    except urllib.error.URLError as e:
+        raise SystemExit(f"连不上接口({e.reason})。这台机器要能出网才能生成插图。")
     out = []
     for d in r.get("data") or []:
         if d.get("b64_json"):

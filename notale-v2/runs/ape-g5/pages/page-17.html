@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  #main{display:flex;flex-direction:column;gap:10px}
+  .taskbar{display:flex;align-items:center;justify-content:space-between;gap:16px;min-height:34px}
+  .taskbar p{font-size:var(--fs-sec)}
+  .status{display:flex;align-items:center;gap:10px;white-space:nowrap}
+  .game{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(360px,.65fr);gap:16px;height:238px;min-height:0}
+  .workbench{position:relative;overflow:hidden;border:1px solid var(--line-strong);border-radius:var(--radius-md);background:linear-gradient(160deg,var(--paper),var(--paper-2));box-shadow:var(--shadow)}
+  .benchhead{position:absolute;inset:14px 18px auto;z-index:2;display:flex;justify-content:space-between;align-items:center}
+  .benchhead strong{font-size:var(--fs-h2)}
+  .model{position:absolute;inset:48px 20px 10px;display:flex;align-items:center;justify-content:center;gap:42px}
+  .stone-wrap{position:relative;width:300px;height:168px}
+  .stone{width:100%;height:100%;filter:drop-shadow(0 12px 9px rgb(23 33 43 / 16%))}
+  .stone polygon{transition:points 240ms ease-out,fill 180ms ease-out}
+  .target{width:180px;text-align:center;color:var(--ink-soft);font-size:var(--fs-label);font-weight:700}
+  .target svg{display:block;width:180px;height:110px;margin-top:6px;border:1px dashed var(--line-strong);border-radius:var(--radius-sm);background:rgb(255 253 248 / 70%)}
+  .cue{position:absolute;z-index:3;padding:5px 9px;color:#fff;font-size:var(--fs-label);font-weight:750;border-radius:999px;background:var(--accent-2);transform:translate(-50%,-50%)}
+  .side{display:flex;flex-direction:column;gap:10px;min-width:0}
+  .instruction{flex:1;padding:18px;border-left:6px solid var(--accent);border-radius:var(--radius-md);background:var(--accent-soft)}
+  .instruction h2{margin-bottom:6px}.instruction p{font-size:var(--fs-sec)}
+  .mini-metrics{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+  .metric{padding:9px;text-align:center;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--paper)}
+  .metric b{display:block;color:var(--accent);font-size:var(--fs-h2);line-height:1.2}.metric span{font-size:var(--fs-label)}
+  .tray{display:grid;grid-template-columns:150px repeat(4,minmax(0,1fr)) 116px 116px;gap:8px;align-items:stretch;height:72px}
+  .tray-label{display:flex;align-items:center;padding:0 14px;font-size:var(--fs-label);font-weight:740;border-left:4px solid var(--accent)}
+  .action{position:relative;padding:8px 10px;color:var(--text);font:700 var(--fs-label)/1.35 var(--font-sans);text-align:left;border:1px solid var(--line-strong);border-radius:var(--radius-sm);background:var(--paper);cursor:grab;transition:transform 160ms ease-out,border-color 160ms ease-out,background 160ms ease-out}
+  .action:hover{transform:translateY(-2px)}.action[aria-pressed="true"]{border-color:var(--accent);background:var(--accent-soft);box-shadow:0 0 0 3px rgb(0 109 119 / 13%)}
+  .action small{display:block;color:var(--ink-soft);font-size:var(--fs-label);font-weight:600}
+  .go,.reset{font:720 var(--fs-label)/1.35 var(--font-sans);border-radius:var(--radius-sm);cursor:pointer}.go{color:#fff;border:1px solid var(--accent);background:var(--accent)}.reset{color:var(--text);border:1px solid var(--line-strong);background:var(--paper)}
+  .go:disabled{opacity:.45;cursor:not-allowed}
+  .compare{height:232px;grid-template-columns:minmax(130px,.55fr) repeat(2,minmax(0,1fr))}
+  .compare>.hdr,.compare>.dim,.compare>.cell{padding:7px 14px}
+  .compare>.hdr{font-size:var(--fs-body)}.compare>.cell{font-size:var(--fs-sec)}
+  .resultline{display:flex;gap:18px;align-items:center}.resultline b{color:var(--accent)}
+  .bridge{font-weight:760;color:var(--accent)}
+  button:focus-visible{outline:3px solid var(--focus);outline-offset:2px}
+  @media(prefers-reduced-motion:reduce){.action,.stone polygon{transition:none!important}.action:hover{transform:none}}
+</style>
+</head>
+<body data-page="17" data-total="48">
+<div id="stage">
+<main id="main">
+  <div class="taskbar">
+    <p><strong>任务：</strong>排列同一组敲击动作，尽量复刻教学用简化石片模型。</p>
+    <div class="status"><span class="badge" id="phase">第 1 阶段 · 只看成品</span><span class="label" id="clock">剩余 —</span><span class="label" id="step">步骤 0 / 4</span></div>
+  </div>
+
+  <section class="game" aria-label="复刻石器挑战">
+    <div class="workbench min0">
+      <div class="benchhead"><strong>当前石核</strong><span class="label" id="direction">先选择动作，再按 Enter 执行</span></div>
+      <div class="model">
+        <div class="stone-wrap" id="stoneWrap">
+          <svg class="stone" viewBox="0 0 330 190" role="img" aria-label="当前简化石核轮廓">
+            <polygon id="stone" points="38,92 68,40 151,22 247,43 295,93 258,151 165,172 78,148" fill="var(--line-strong)" stroke="var(--text)" stroke-width="3"/>
+          </svg>
+        </div>
+        <div class="target">目标成品轮廓
+          <svg viewBox="0 0 180 130" role="img" aria-label="目标轮廓">
+            <polygon points="28,68 48,31 91,18 145,41 156,75 129,106 76,113 38,96" fill="var(--accent-soft)" stroke="var(--accent)" stroke-width="3"/>
+          </svg>
+        </div>
+      </div>
+    </div>
+    <aside class="side min0">
+      <div class="instruction"><h2 id="modeTitle">只有结果信息</h2><p id="modeCopy">目标告诉你“做成什么”。动作的生成顺序仍需推测。</p></div>
+      <div class="mini-metrics" aria-live="polite">
+        <div class="metric"><b id="match">0%</b><span>轮廓重合</span></div>
+        <div class="metric"><b id="errors">—</b><span>错序</span></div>
+        <div class="metric"><b id="waste">—</b><span>无效动作</span></div>
+      </div>
+    </aside>
+  </section>
+
+  <div class="tray" id="tray" aria-label="动作卡托盘">
+    <div class="tray-label">选择 → 执行</div>
+    <button class="action" data-id="1" aria-pressed="false">A · 左上<small>向内 · 中力度</small></button>
+    <button class="action" data-id="2" aria-pressed="false">B · 右缘<small>向下 · 轻力度</small></button>
+    <button class="action" data-id="3" aria-pressed="false">C · 底缘<small>向上 · 重力度</small></button>
+    <button class="action" data-id="4" aria-pressed="false">D · 左缘<small>向右 · 轻力度</small></button>
+    <button class="go" id="submit" disabled>提交本阶段</button>
+    <button class="reset" id="reset">重置挑战</button>
+  </div>
+
+  <section class="k-comparison compare" aria-label="两种复制条件逐行比较">
+    <div class="hdr">比较维度</div><div class="hdr">只看成品</div><div class="hdr">看见过程</div>
+    <div class="dim">可见信息</div><div class="cell">最终轮廓</div><div class="cell diff">轮廓＋敲击点、方向、顺序</div><div class="rowline"></div>
+    <div class="dim">学习者操作</div><div class="cell">推测动作及顺序</div><div class="cell diff">根据过程线索执行同组动作</div><div class="rowline"></div>
+    <div class="dim">复制结果</div><div class="cell resultline" id="resultA">尚未完成</div><div class="cell resultline" id="resultB">尚未完成</div><div class="rowline"></div>
+    <div class="dim">可迁移信息</div><div class="cell">知道“做成什么”</div><div class="cell diff">知道“从哪里、按什么顺序、怎样做”</div><div class="rowline"></div>
+    <div class="dim">信息增加</div><div class="cell bridge">结果信息</div><div class="cell bridge">→ 生成成品所需的中间关系</div>
+  </section>
+  <div class="sr-only" id="announce" aria-live="polite"></div>
+</main>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script>
+Lec.mount({index:17,kicker:"COPYING THE PROCESS",title:"同一件石器，为什么看见了还做不出来？",take:"只看成品很难复现工艺；过程信息决定复制的保真度。"});
+Deck.init({index:17,total:48});
+
+(function(){
+  /* 当前共享 Lec 尚未导出规划中的 page17 专用项；在同一命名空间补齐确定性教学模型。 */
+  var K=Lec.K,P=Lec.P;
+  K.PAGE17_ACTION_COUNT=K.PAGE17_ACTION_COUNT||4;
+  K.PAGE17_CANONICAL_SEQUENCE=K.PAGE17_CANONICAL_SEQUENCE||[2,4,1,3];
+  K.PAGE17_PRODUCT_ONLY_TIME_S=K.PAGE17_PRODUCT_ONLY_TIME_S||32;
+  K.PAGE17_PROCESS_VISIBLE_TIME_S=K.PAGE17_PROCESS_VISIBLE_TIME_S||32;
+  K.PAGE17_DWELL_TIME_S=K.PAGE17_DWELL_TIME_S||138;
+  P.page17ApplyAction=P.page17ApplyAction||function(state,action){var a=state.slice();a.push(action);return a};
+  P.page17OrderErrors=P.page17OrderErrors||function(seq,canon){return seq.reduce(function(n,x,i){return n+(x!==canon[i]?1:0)},0)};
+  P.page17IneffectiveActions=P.page17IneffectiveActions||function(seq){return seq.reduce(function(n,x,i){return n+(seq.indexOf(x)!==i?1:0)},0)};
+  P.page17ShapeMatch=P.page17ShapeMatch||function(state){return Math.max(0,(state.length-P.page17OrderErrors(state,K.PAGE17_CANONICAL_SEQUENCE))/K.PAGE17_ACTION_COUNT)};
+  P.page17ScoreDifference=P.page17ScoreDifference||function(a,b){return a-b};
+  P.page17RemainingTime=P.page17RemainingTime||function(start,now,limit){return Math.max(0,limit-(now-start)/1000)};
+  var phase=1,seq=[],selected=null,results={},start=performance.now(),locked=false;
+  var $=function(id){return document.getElementById(id)}, cards=[].slice.call(document.querySelectorAll('.action'));
+  var shapes=[
+    '38,92 68,40 151,22 247,43 295,93 258,151 165,172 78,148',
+    '38,92 75,47 151,22 247,43 295,93 258,151 165,172 78,148',
+    '38,92 75,47 151,22 247,43 281,91 250,145 165,172 78,148',
+    '38,92 75,47 151,22 247,43 281,91 250,145 165,160 78,148',
+    '46,92 75,47 151,22 247,43 281,91 250,145 165,160 78,142'
+  ];
+  function pct(v){return P.percent?P.percent(v):v*100}
+  function score(){return {match:P.page17ShapeMatch(seq,[]),errors:P.page17OrderErrors(seq,K.PAGE17_CANONICAL_SEQUENCE),waste:P.page17IneffectiveActions(seq)}}
+  function render(){
+    $('step').textContent='步骤 '+seq.length+' / '+K.PAGE17_ACTION_COUNT;
+    var s=score();$('match').textContent=Math.round(pct(s.match))+'%';$('errors').textContent=seq.length===K.PAGE17_ACTION_COUNT?s.errors:'—';$('waste').textContent=seq.length===K.PAGE17_ACTION_COUNT?s.waste:'—';
+    $('stone').setAttribute('points',shapes[Math.min(seq.length,4)]);$('submit').disabled=seq.length!==K.PAGE17_ACTION_COUNT||locked;
+    cards.forEach(function(c){c.setAttribute('aria-pressed',String(Number(c.dataset.id)===selected));c.disabled=locked||seq.indexOf(Number(c.dataset.id))>=0});
+    if(phase===2){var want=K.PAGE17_CANONICAL_SEQUENCE[seq.length];$('direction').textContent=want?'过程线索：下一步看 '+['','A','B','C','D'][want]+' 卡':'过程线索已读完';showCue(want)}else{$('direction').textContent='先选择动作，再按 Enter 执行';showCue(0)}
+  }
+  function showCue(id){var old=document.querySelector('.cue');if(old)old.remove();if(!id)return;var cue=document.createElement('span');cue.className='cue';cue.textContent='第 '+(seq.length+1)+' 步';var pos={1:[24,32],2:[80,42],3:[52,82],4:[18,60]}[id];cue.style.left=pos[0]+'%';cue.style.top=pos[1]+'%';$('stoneWrap').appendChild(cue)}
+  function execute(id){if(locked||seq.length>=K.PAGE17_ACTION_COUNT||seq.indexOf(id)>=0)return;var expected=K.PAGE17_CANONICAL_SEQUENCE[seq.length];seq=P.page17ApplyAction(seq,id);selected=null;$('announce').textContent=phase===2?(id===expected?'动作符合当前过程线索。':'动作与当前过程线索不符。'):'轮廓已改变，请继续判断。';render()}
+  cards.forEach(function(c){c.addEventListener('click',function(){selected=Number(c.dataset.id);render();execute(selected)});c.addEventListener('keydown',function(e){if(e.key==='ArrowLeft'||e.key==='ArrowRight'){e.preventDefault();var i=cards.indexOf(c)+(e.key==='ArrowRight'?1:-1);cards[(i+cards.length)%cards.length].focus()}if(e.key==='Enter'){e.preventDefault();execute(Number(c.dataset.id))}})});
+  function resultText(s){return '<b>'+Math.round(pct(s.match))+'%</b><span>错序 '+s.errors+' · 无效 '+s.waste+'</span>'}
+  function finish(){if(seq.length<K.PAGE17_ACTION_COUNT)return;locked=true;var s=score();results[phase]=s;$('result'+(phase===1?'A':'B')).innerHTML=resultText(s);
+    if(phase===1){phase=2;seq=[];selected=null;locked=false;start=performance.now();$('phase').textContent='第 2 阶段 · 看见过程';$('modeTitle').textContent='增加过程信息';$('modeCopy').textContent='目标和动作完全相同。敲击点、方向与先后关系现在可见。';$('announce').textContent='第一阶段已保存。现在按过程线索复刻同一目标。';render()}else{var d=P.page17ScoreDifference(results[2].match,results[1].match);$('phase').textContent='比较完成';$('modeTitle').textContent='过程提供生成路径';$('modeCopy').textContent=d>0?'过程线索缩小了对敲击点与顺序的猜测范围。':d===0?'这次两种条件结果相同，但成品仍未显式携带步骤。':'过程信息只有被正确读取并执行时，才会提高保真度。';$('announce').textContent=$('modeCopy').textContent;render()}}
+  $('submit').addEventListener('click',finish);
+  $('reset').addEventListener('click',function(){phase=1;seq=[];selected=null;results={};locked=false;start=performance.now();$('phase').textContent='第 1 阶段 · 只看成品';$('modeTitle').textContent='只有结果信息';$('modeCopy').textContent='目标告诉你“做成什么”。动作的生成顺序仍需推测。';$('resultA').textContent='尚未完成';$('resultB').textContent='尚未完成';$('announce').textContent='挑战已重置。';render()});
+  Deck.loop(function(now){if(locked||phase>2)return;var limit=phase===1?K.PAGE17_PRODUCT_ONLY_TIME_S:K.PAGE17_PROCESS_VISIBLE_TIME_S;var r=P.page17RemainingTime(start,now,limit);$('clock').textContent='剩余 '+Math.ceil(r)+' 秒';if(r<=0&&seq.length===K.PAGE17_ACTION_COUNT)finish()},{still:performance.now()});
+  render();
+})();
+</script>
+</body>
+</html>

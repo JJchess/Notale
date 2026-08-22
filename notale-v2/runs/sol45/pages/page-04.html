@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  #stage{padding:var(--sp-5) var(--sp-6);gap:var(--sp-3)}
+  .kicker{color:var(--track-blue);font:700 var(--fs-label)/1.4 var(--font-mono);letter-spacing:.12em}
+  .topline{display:flex;align-items:flex-start;justify-content:space-between;gap:var(--sp-5)}
+  .progress{display:flex;align-items:center;gap:var(--sp-3)}
+  .segments{display:flex;gap:var(--sp-1)}
+  .segments i{display:block;width:30px;height:6px;background:var(--panel-raised);border:1px solid var(--track-blue-line);border-radius:999px}
+  .segments i.on{background:var(--sun-gold);border-color:var(--sun-gold);box-shadow:var(--glow-gold)}
+  .workspace{position:relative;display:flex;flex-direction:column;min-height:0;padding:var(--sp-3) var(--sp-4) var(--sp-4);overflow:hidden}
+  .orbit{position:absolute;width:820px;height:260px;left:50%;top:-120px;transform:translateX(-50%);opacity:.5;pointer-events:none}
+  .instruction{display:flex;align-items:center;justify-content:space-between;min-height:32px;color:var(--text-muted);font-size:var(--fs-sec)}
+  .tray{position:relative;z-index:3;display:flex;flex-wrap:wrap;align-content:center;justify-content:center;gap:var(--sp-2);height:154px;padding:var(--sp-2) var(--sp-5)}
+  .member{position:relative;z-index:5;display:flex;width:150px;height:58px;flex-direction:column;align-items:center;justify-content:center;color:var(--text);font:700 var(--fs-body)/1.35 var(--font-sans);background:var(--panel-raised);border:1px solid var(--track-blue-line);border-radius:var(--radius-sm);box-shadow:var(--glow-blue);cursor:grab;touch-action:none;user-select:none;will-change:transform}
+  .member small{color:var(--text-muted);font-size:var(--fs-label);font-weight:500}
+  .member:focus-visible{outline:3px solid var(--focus);outline-offset:3px}
+  .member.dragging{color:var(--sun-gold);border-color:var(--sun-gold);box-shadow:var(--glow-gold);cursor:grabbing}
+  .member.placed{display:none}
+  .tree{position:relative;z-index:2;display:flex;flex:1;min-height:0;flex-direction:column;align-items:stretch}
+  .root{align-self:center;display:flex;align-items:center;gap:var(--sp-2);padding:var(--sp-2) var(--sp-4);color:var(--sun-gold);font-size:var(--fs-h2);font-weight:760;background:var(--panel-deep);border:2px solid var(--sun-gold-line);border-radius:999px;box-shadow:var(--glow-gold)}
+  .sun{width:24px;height:24px;border-radius:50%;background:var(--sun-gold);box-shadow:0 0 22px var(--sun-gold)}
+  .branches{position:relative;display:flex;flex:1;min-height:0;align-items:stretch;gap:var(--sp-3);padding-top:52px}
+  .tree-lines{position:absolute;top:-70px;right:0;bottom:0;left:0;width:100%;height:calc(100% + 70px);pointer-events:none}
+  .branches:before{position:absolute;content:"";top:24px;left:10%;right:10%;height:2px;background:var(--track-blue-line)}
+  .drawer{position:relative;display:flex;min-width:0;flex:1;flex-direction:column;align-items:stretch;padding:var(--sp-3);background:linear-gradient(180deg,var(--panel-raised),var(--panel));border:2px solid var(--track-blue-line);box-shadow:inset 0 0 42px var(--track-blue-soft);border-radius:var(--radius-md);transition:border-color 220ms ease-out,box-shadow 220ms ease-out}
+  .drawer:before{position:absolute;content:"";bottom:100%;left:50%;width:2px;height:30px;background:var(--track-blue-line)}
+  .drop-surface{position:absolute;inset:0;border-radius:var(--radius-md);background:linear-gradient(180deg,var(--track-blue-soft),transparent 62%);pointer-events:none}
+  .drawer.connected:before{background:var(--track-blue);box-shadow:var(--glow-blue)}
+  .drawer.connected{border-color:var(--track-blue)}
+  .drawer.hit{border-color:var(--sun-gold);box-shadow:var(--glow-gold)}
+  .drawer.wrong{border-color:var(--danger)}
+  .drawer .bt{display:flex;align-items:center;justify-content:space-between;margin:0 0 var(--sp-2);color:var(--track-blue);font-size:var(--fs-h2);font-weight:750}
+  .drawer .desc{min-height:48px;color:var(--text-muted);font-size:var(--fs-sec);line-height:1.5}
+  .class-mark{display:flex;height:76px;align-items:center;justify-content:center;margin:var(--sp-1) 0;color:var(--track-blue);font-size:42px;line-height:1;background:var(--panel-deep);border:1px solid var(--line);border-radius:var(--radius-sm)}
+  .drawer .lv{display:flex;min-height:54px;flex-wrap:wrap;align-content:flex-start;gap:var(--sp-1);margin:var(--sp-2) 0 0;padding:var(--sp-2) 0 0 var(--sp-3);border-left:3px solid var(--track-blue-line)}
+  .placed-tag{padding:4px var(--sp-2);color:var(--sun-gold);font-size:var(--fs-label);font-weight:700;background:var(--sun-gold-soft);border:1px solid var(--sun-gold-line);border-radius:999px}
+  .feedback{min-height:30px;text-align:center;color:var(--text-muted);font-size:var(--fs-sec);line-height:1.5}
+  .feedback.good{color:var(--sun-gold);font-size:var(--fs-lead);font-weight:750}
+  .reset{display:none}.reset.show{display:inline-flex}
+  @keyframes shake{0%,100%{transform:translateX(0)}25%{transform:translateX(-8px)}50%{transform:translateX(8px)}75%{transform:translateX(-8px)}}
+  .shake{animation:shake 360ms ease-out}
+  @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body data-page="04" data-total="32">
+<div id="stage">
+  <header style="height:104px" class="topline shrink0">
+    <div class="col gap-1">
+      <div class="kicker">MEMBER FAMILIES</div>
+      <h1>谁住在太阳系里？</h1>
+      <p class="lead">太阳系不是“太阳加八颗行星”的名单。</p>
+    </div>
+    <div class="progress" aria-label="分拣进度">
+      <div><span class="label">已归位</span> <strong id="count" class="mono track">0 / 8</strong></div>
+      <div class="segments" aria-label="已完成的成员类别"><i></i><i></i><i></i><i></i><i></i></div>
+      <button id="reset" class="btn reset" type="button">重新分拣</button>
+    </div>
+  </header>
+
+  <main class="workspace panel min0" style="flex:1">
+    <div class="orbit orbit-ring" aria-hidden="true"></div>
+    <div class="instruction"><span>拖动名称到对应抽屉；键盘可用方向键选抽屉，按 Enter 投放。</span><span class="chip">顶层身份</span></div>
+    <section id="tray" class="tray no-pan" aria-label="待分成员"></section>
+
+    <section class="tree k-classification min0" aria-label="太阳系成员分类树">
+      <div class="root box"><span class="sun" aria-hidden="true"></span><span class="bt">太阳系成员</span></div>
+      <div id="branches" class="branches lv min0"><svg class="tree-lines" viewBox="0 0 1000 300" preserveAspectRatio="none" aria-hidden="true"><path d="M500 0 V28 H100 V54 M500 28 H300 V54 M500 28 V54 M500 28 H700 V54 M500 28 H900 V54" fill="none" stroke="var(--track-blue)" stroke-width="2" vector-effect="non-scaling-stroke"/></svg></div>
+    </section>
+    <div id="feedback" class="feedback" aria-live="polite">把零散名称组织成五个并列的成员类别。</div>
+  </main>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script src="assets/lib/d3.min.js"></script>
+<script>
+(function(){
+  Deck.init({index:4,total:32});
+  const source = Lec.K.classification;
+  const categories = [
+    {key:'star',name:'恒星',desc:'太阳系中心恒星',mark:'☀'},
+    {key:'planet',name:'行星',desc:'两颗行星示例',mark:'●'},
+    {key:'dwarf',name:'矮行星',desc:'已确认的矮行星',mark:'◉'},
+    {key:'moon',name:'卫星',desc:'绕行星运行的天然卫星',mark:'◒'},
+    {key:'small',name:'小天体',desc:'数量众多的小型成员',mark:'✦'}
+  ];
+  const originals = [
+    {name:'太阳',hint:'中心恒星',cat:'star'}, {name:'地球',hint:'行星示例',cat:'planet'},
+    {name:'木星',hint:'行星示例',cat:'planet'}, {name:'谷神星',hint:'矮行星',cat:'dwarf'},
+    {name:'冥王星',hint:'矮行星',cat:'dwarf'}, {name:'月球',hint:'天然卫星',cat:'moon'},
+    {name:'小行星',hint:'类别化剪影',cat:'small'}, {name:'彗星',hint:'类别化剪影',cat:'small'}
+  ];
+  let items=[], placed=new Set(), selected=0;
+  const tray=d3.select('#tray'), feedback=document.querySelector('#feedback');
+  const count=document.querySelector('#count'), reset=document.querySelector('#reset');
+  const branch=d3.select('#branches');
+  branch.selectAll('.drawer').data(categories).join('div').attr('class','drawer box').attr('data-key',d=>d.key)
+    .attr('aria-label',d=>d.name+'抽屉').html(d=>`<div class="drop-surface" aria-hidden="true"></div><div class="bt"><span>${d.name}</span><span class="chip">成员类</span></div><div class="class-mark" aria-hidden="true">${d.mark}</div><div class="desc">${d.desc}</div><div class="lv" aria-label="已归入${d.name}的成员"></div>`);
+
+  function fresh(){
+    items=originals.map((d,i)=>({...d,id:i})); placed=new Set(); selected=0;
+    document.querySelectorAll('.drawer').forEach(x=>{x.classList.remove('connected','hit','wrong');x.querySelector('.lv').innerHTML=''});
+    feedback.className='feedback'; feedback.textContent='把零散名称组织成五个并列的成员类别。'; reset.classList.remove('show');
+    render(); update();
+  }
+  function render(){
+    const cards=tray.selectAll('.member').data(items,d=>d.id).join('div')
+      .attr('class',d=>'member'+(placed.has(d.id)?' placed':''))
+      .attr('tabindex',d=>placed.has(d.id)?-1:0).attr('role','button')
+      .attr('aria-label',d=>d.name+'，'+d.hint).html(d=>`<span>${d.name}</span><small>${d.hint}</small>`)
+      .style('opacity',Deck.reduced()?1:0).style('transform',Deck.reduced()?'none':'translateY(-16px)');
+    cards.call(d3.drag().on('start',dragStart).on('drag',dragging).on('end',classifyDrop))
+      .on('keydown',keyDrop).on('focus',function(){highlight(selected)});
+    if(!Deck.reduced()) cards.transition().delay((d,i)=>i*70).duration(420).ease(d3.easeCubicOut).style('opacity',1).style('transform','none');
+  }
+  function dragStart(event){ d3.select(this).classed('dragging',true).raise(); this.dataset.x=0;this.dataset.y=0; }
+  function dragging(event){
+    const x=+(this.dataset.x||0)+event.dx/Deck.s, y=+(this.dataset.y||0)+event.dy/Deck.s;
+    this.dataset.x=x;this.dataset.y=y; d3.select(this).style('transform',`translate(${x}px,${y}px)`);
+    const r=this.getBoundingClientRect(), cx=(r.left+r.right)/2, cy=(r.top+r.bottom)/2;
+    document.querySelectorAll('.drawer').forEach(el=>{const q=el.getBoundingClientRect();el.classList.toggle('hit',cx>=q.left&&cx<=q.right&&cy>=q.top&&cy<=q.bottom)});
+  }
+  function classifyDrop(event,d){
+    d3.select(this).classed('dragging',false); const target=document.querySelector('.drawer.hit');
+    document.querySelectorAll('.drawer').forEach(x=>x.classList.remove('hit'));
+    if(target && target.dataset.key===d.cat) place(d,target,this); else wrong(d,target,this);
+  }
+  function place(d,target,node){
+    placed.add(d.id); target.querySelector('.lv').insertAdjacentHTML('beforeend',`<span class="placed-tag">${d.name}</span>`);
+    const needed=items.filter(x=>x.cat===d.cat).length, got=items.filter(x=>x.cat===d.cat&&placed.has(x.id)).length;
+    if(got===needed) target.classList.add('connected');
+    d3.select(node).transition().duration(220).ease(d3.easeCubicOut).style('transform','scale(.75)').style('opacity',0).on('end',render);
+    feedback.className='feedback';feedback.textContent=`${d.name}已归入「${categories.find(x=>x.key===d.cat).name}」。`; update();
+  }
+  function wrong(d,target,node){
+    if(target){target.classList.add('wrong');setTimeout(()=>target.classList.remove('wrong'),420)}
+    feedback.className='feedback'; const goal=target?categories.find(x=>x.key===target.dataset.key).name:'这里';
+    feedback.textContent=`它不是「${goal}」；先看卡片名称，再换一个成员抽屉。`;
+    node.classList.add('shake');setTimeout(()=>node.classList.remove('shake'),420);
+    d3.select(node).transition().duration(320).ease(d3.easeBackOut).style('transform','none');node.dataset.x=0;node.dataset.y=0;
+  }
+  function keyDrop(event,d){
+    if(event.key==='ArrowRight'||event.key==='ArrowDown'){event.preventDefault();selected=(selected+1)%categories.length;highlight(selected)}
+    else if(event.key==='ArrowLeft'||event.key==='ArrowUp'){event.preventDefault();selected=(selected+categories.length-1)%categories.length;highlight(selected)}
+    else if(event.key==='Enter'||event.key===' '){event.preventDefault();const target=document.querySelectorAll('.drawer')[selected];target.dataset.key===d.cat?place(d,target,this):wrong(d,target,this)}
+  }
+  function highlight(i){document.querySelectorAll('.drawer').forEach((x,j)=>x.classList.toggle('hit',i===j))}
+  function update(){
+    count.textContent=`${placed.size} / ${items.length}`;
+    const completed=categories.map(c=>items.filter(x=>x.cat===c.key).every(x=>placed.has(x.id)));
+    document.querySelectorAll('.segments i').forEach((x,i)=>x.classList.toggle('on',completed[i]));
+    if(placed.size===items.length){feedback.className='feedback good';feedback.textContent='八颗行星只是成员谱系中的一支。';reset.classList.add('show');document.querySelectorAll('.drawer').forEach(x=>x.classList.add('connected'))}
+  }
+  reset.addEventListener('click',fresh);
+  fresh();
+})();
+</script>
+</body>
+</html>

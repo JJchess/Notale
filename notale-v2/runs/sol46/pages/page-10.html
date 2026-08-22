@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+</head>
+<body data-page="10" data-total="32">
+<div id="stage">
+  <style>
+    .orbital-page{padding:24px 32px 22px;box-sizing:border-box}
+    .sim-shell{position:relative;overflow:hidden;border:1px solid var(--line);border-radius:var(--r-lg);background:radial-gradient(circle at 31% 63%,rgba(85,185,255,.08),transparent 30%),var(--panel-deep)}
+    .sim-shell canvas{z-index:0}.sim-ui{position:absolute;z-index:2;inset:0;pointer-events:none}
+    .controls{position:absolute;right:22px;top:20px;width:330px;pointer-events:auto;padding:18px}
+    .controls input{width:100%;accent-color:var(--sun)}
+    .hud{position:absolute;left:22px;top:20px;display:flex;gap:10px}
+    .legend{position:absolute;left:22px;bottom:18px;display:flex;gap:18px;color:var(--muted)}
+    .legend i{display:inline-block;width:28px;height:3px;margin-right:7px;vertical-align:middle;background:var(--sun)}
+    .legend span:nth-child(2) i{background:var(--orbit)}
+    .tag{position:absolute;padding:4px 8px;border:1px solid var(--line);border-radius:var(--r-sm);background:rgba(7,17,31,.85);color:var(--muted);font-size:var(--fs-label);font-weight:650}
+    .tag-center{left:28%;top:62%}.tag-gravity{left:38%;top:45%;color:var(--orbit-bright)}.tag-motion{left:52%;top:24%;color:var(--sun)}.tag-curve{left:19%;top:82%}
+    .steps{--process-cols:6;height:104px;gap:28px}.steps>.step{padding:10px 12px}.steps .arw{right:-24px}.step b{display:block;color:var(--orbit-bright);font-size:var(--fs-label);line-height:1.25}.step small{display:block;margin-top:4px;color:var(--muted);font-size:var(--fs-label);line-height:1.35}
+    .result{min-height:48px;border-left:5px solid var(--orbit);padding:8px 14px;background:rgba(85,185,255,.08)}
+    button:focus-visible,input:focus-visible{outline:3px solid var(--focus);outline-offset:3px}
+    @media(prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+  </style>
+  <header class="row items-end justify-between gap-4" style="height:72px;padding:20px 32px 10px">
+    <div><div class="label orbit-color">ORBIT AS FALLING · 轨道如何形成</div><h1>一直下落，始终错过</h1></div>
+    <div class="lead" style="max-width:690px;text-align:right">调节横向速度，让弹体完成一圈且不碰撞。</div>
+  </header>
+
+  <main class="orbital-page col grow min0 gap-3">
+    <section class="sim-shell grow min0 no-pan" aria-label="发射轨道炮物理沙盘">
+      <canvas id="world" class="cv-fill"></canvas>
+      <div class="sim-ui">
+        <div class="hud">
+          <div class="readout"><span>闭合进度</span><span id="progress">0%</span></div>
+          <div class="readout"><span>已错过</span><span id="misses">0</span><span class="unit">次</span></div>
+          <span class="badge" id="stateBadge">尚未闭合</span>
+        </div>
+        <div class="panel controls col gap-2">
+          <div class="row justify-between"><span class="label">炮口功率 · 横向速度</span><strong class="mono accent" id="powerOut">58%</strong></div>
+          <input id="power" type="range" min="0" max="100" value="58" aria-label="炮口功率">
+          <div class="row gap-2">
+            <button class="btn primary grow" id="launch">发射</button>
+            <button class="btn" id="pause" disabled>暂停</button>
+            <button class="btn" id="reset">重置</button>
+          </div>
+          <div id="feedback" class="sec muted" aria-live="polite">拖动功率环，再发射观察轨迹。</div>
+        </div>
+        <span class="tag tag-center">中心</span><span class="tag tag-gravity">引力方向</span>
+        <span class="tag tag-motion">运动方向</span><span class="tag tag-curve">弯曲表面</span>
+        <div class="legend label"><span><i></i>当前轨迹</span><span><i></i>成功轨道</span></div>
+      </div>
+    </section>
+
+    <section class="k-process steps" id="steps" aria-label="轨道形成的六步因果链">
+      <div class="axis"></div>
+      <div class="step current"><b>1 瞄准切线</b><small>如果只向前？</small><i class="arw"></i></div>
+      <div class="step"><b>2 横向离台</b><small>前进消除下落吗？</small><i class="arw"></i></div>
+      <div class="step"><b>3 引力拉向中心</b><small>方向不断改变</small><i class="arw"></i></div>
+      <div class="step"><b>4 地面同时弯离</b><small>撞上，还是错过？</small><i class="arw"></i></div>
+      <div class="step"><b>5 再次错过</b><small>下一刻仍在下落</small><i class="arw"></i></div>
+      <div class="step"><b>6 轨迹闭合</b><small>持续下落成轨</small></div>
+    </section>
+
+    <div class="result lead" style="height:48px">轨道中的物体并没有停止下落；它一边被引力拉向中心，一边因横向运动不断错过中心天体。</div>
+  </main>
+  <script src="assets/lib/matter.min.js"></script>
+  <script>
+  window.addEventListener('DOMContentLoaded',function(){
+    Deck.init({index:10,total:32});
+    const cv=document.getElementById('world'), shell=cv.parentElement;
+    const power=document.getElementById('power'), powerOut=document.getElementById('powerOut');
+    const launch=document.getElementById('launch'), pause=document.getElementById('pause'), reset=document.getElementById('reset');
+    const progressEl=document.getElementById('progress'), missesEl=document.getElementById('misses');
+    const feedback=document.getElementById('feedback'), badge=document.getElementById('stateBadge');
+    const stepEls=[...document.querySelectorAll('#steps .step')];
+    const Engine=Matter.Engine, Bodies=Matter.Bodies, Body=Matter.Body, Composite=Matter.Composite;
+    const engine=Engine.create({gravity:{x:0,y:0,scale:0}});
+    const MU=1.8e7, centerRadius=72, launchRadius=210, fixedStep=1000/60;
+    let body=null, running=false, paused=false, trail=[], phase=0, lastAngle=0, unwrapped=0, misses=0, status='ready', flash=0;
+    function dims(){return {w:shell.clientWidth,h:shell.clientHeight,cx:shell.clientWidth*.34,cy:shell.clientHeight*.57};}
+    function fmtPct(v){return Lec.P.percent ? Lec.P.percent(v,1) : Math.round(v*100);}
+    function setup(){
+      if(body) Composite.remove(engine.world,body);
+      const d=dims(); body=Bodies.circle(d.cx,d.cy-launchRadius,8,{frictionAir:0,restitution:.2});
+      Body.setStatic(body,true); Composite.add(engine.world,body); trail=[];phase=0;lastAngle=-Math.PI/2;unwrapped=0;misses=0;status='ready';running=false;paused=false;
+      updateUI();draw();
+    }
+    function fire(){
+      setup(); const p=Number(power.value)/100; Body.setStatic(body,false);
+      Body.setVelocity(body,{x:3.7+p*5.8,y:0}); running=true; status='flying'; launch.disabled=true; power.disabled=true; pause.disabled=false;
+      feedback.textContent='引力始终指向中心；观察速度箭头怎样转向。';
+      body.dispatchEvent;
+    }
+    function updateUI(){
+      powerOut.textContent=power.value+'%'; progressEl.textContent=Math.min(100,Math.round(Math.abs(unwrapped)/(Math.PI*2)*100))+'%'; missesEl.textContent=String(misses);
+      badge.textContent=status==='success'?'持续绕行':status==='impact'?'撞击':status==='flying'?'正在下落':'尚未闭合';
+      badge.classList.toggle('current',status==='success');
+      let idx=status==='ready'?0:Math.min(5,1+Math.floor(Math.abs(unwrapped)/(Math.PI*2)*5));
+      stepEls.forEach((el,i)=>{el.classList.toggle('current',i===idx);el.classList.toggle('done',i<idx)});
+      pause.textContent=paused?'继续':'暂停';
+    }
+    function finish(type){running=false;status=type;pause.disabled=true;launch.disabled=false;power.disabled=false;flash=1;
+      if(type==='success') feedback.textContent='你让它一直下落，也一直错过了。';
+      else feedback.textContent='横向位移不够：表面还没来得及弯离。'; updateUI();
+    }
+    function tick(dt){
+      if(!running||paused||!body)return;
+      const d=dims(),dx=d.cx-body.position.x,dy=d.cy-body.position.y,r2=dx*dx+dy*dy,r=Math.sqrt(r2);
+      const F=MU*body.mass/Math.max(r2,14400), conversion=.00072;
+      Body.applyForce(body,body.position,{x:F*dx/r*conversion,y:F*dy/r*conversion}); Engine.update(engine,fixedStep);
+      trail.push({x:body.position.x,y:body.position.y});if(trail.length>360)trail.shift();
+      const a=Math.atan2(body.position.y-d.cy,body.position.x-d.cx);let da=a-lastAngle;if(da>Math.PI)da-=Math.PI*2;if(da< -Math.PI)da+=Math.PI*2;unwrapped+=da;lastAngle=a;
+      const q=Math.floor(Math.abs(unwrapped)/(Math.PI/2));misses=Math.min(4,q);
+      if(r<=centerRadius+8){finish('impact');return}
+      if(Math.abs(unwrapped)>=Math.PI*2){finish('success');return}
+      if(body.position.x<-30||body.position.x>d.w+30||body.position.y<-30||body.position.y>d.h+30){finish('impact');return}
+      updateUI();draw();
+    }
+    function draw(){
+      const ctx=Deck.fit(cv),d=dims(), orbit=Deck.token('--orbit'),sun=Deck.token('--sun'),danger=Deck.token('--danger'),muted=Deck.token('--quiet');ctx.clearRect(0,0,d.w,d.h);
+      ctx.save();ctx.translate(d.cx,d.cy);let g=ctx.createRadialGradient(-18,-22,8,0,0,centerRadius);g.addColorStop(0,'#8FD2FF');g.addColorStop(.45,'#245D86');g.addColorStop(1,'#0D1B2D');ctx.fillStyle=g;ctx.beginPath();ctx.arc(0,0,centerRadius,0,Math.PI*2);ctx.fill();ctx.strokeStyle=orbit;ctx.lineWidth=2;ctx.stroke();
+      ctx.strokeStyle=Deck.rgba('--orbit',.4);ctx.setLineDash([7,9]);ctx.beginPath();ctx.arc(0,0,launchRadius,0,Math.PI*2);ctx.stroke();ctx.setLineDash([]);
+      for(let i=0;i<4;i++){let a=i*Math.PI/2-Math.PI/2;ctx.fillStyle=i<misses?orbit:Deck.rgba('--orbit',.25);ctx.fillRect(Math.cos(a)*launchRadius-3,Math.sin(a)*launchRadius-3,6,6)}ctx.restore();
+      if(trail.length>1){ctx.strokeStyle=status==='success'?orbit:(status==='impact'?muted:sun);ctx.lineWidth=2;ctx.beginPath();trail.forEach((p,i)=>i?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y));ctx.stroke()}
+      if(body){ctx.fillStyle=status==='impact'?danger:sun;ctx.beginPath();ctx.arc(body.position.x,body.position.y,8,0,Math.PI*2);ctx.fill();const vx=body.velocity.x,vy=body.velocity.y,vn=Math.hypot(vx,vy)||1;Deck.arrow(ctx,body.position.x,body.position.y,body.position.x+vx/vn*70,body.position.y+vy/vn*70,9);ctx.strokeStyle=sun;ctx.stroke();const rx=d.cx-body.position.x,ry=d.cy-body.position.y,rn=Math.hypot(rx,ry)||1;ctx.beginPath();Deck.arrow(ctx,body.position.x,body.position.y,body.position.x+rx/rn*58,body.position.y+ry/rn*58,8);ctx.strokeStyle=orbit;ctx.stroke()}
+    }
+    power.addEventListener('input',()=>{powerOut.textContent=power.value+'%'});launch.addEventListener('click',fire);
+    pause.addEventListener('click',()=>{paused=!paused;updateUI();draw()});reset.addEventListener('click',setup);
+    Deck.onResize(setup);setup();Deck.loop((t,dt)=>{if(running&&!paused)tick(dt);else if(flash>0){flash=Math.max(0,flash-dt/500);draw()}},{still:1});
+  });
+  </script>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+</body>
+</html>

@@ -1,0 +1,366 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  #main { --lane-label: 178px; }
+  .page-shell { display:flex; flex-direction:column; gap:12px; width:100%; height:100%; min-width:0; min-height:0; }
+  .compare-wrap { flex:0 0 248px; min-width:0; overflow:hidden; transition:flex-basis 240ms ease; }
+  .compare-wrap.is-folded { flex-basis:92px; }
+  .compare-wrap.is-folded .compare-table { display:none; }
+  .compare-table { height:100%; grid-template-rows:42px repeat(7, auto); }
+  .compare-table > .hdr,
+  .compare-table > .dim,
+  .compare-table > .cell,
+  .compare-table > .diff { padding:7px 14px; }
+  .compare-table > .hdr { font-size:20px; align-items:center; }
+  .compare-table > .dim { font-size:15px; }
+  .compare-table > .cell,
+  .compare-table > .diff { font-size:16px; line-height:1.35; }
+  .folded-claim { display:none; height:100%; }
+  .compare-wrap.is-folded .folded-claim { display:grid; grid-template-columns:230px repeat(3, 1fr); align-items:center; border-block:2px solid var(--line-strong); background:var(--surface-1); }
+  .claim-root { height:100%; display:flex; align-items:center; padding:0 20px; color:var(--text-strong); font-size:19px; font-weight:700; border-right:2px solid var(--accent); }
+  .claim-branch { position:relative; display:flex; align-items:center; justify-content:center; height:100%; color:var(--text-strong); font-size:18px; font-weight:700; }
+  .claim-branch::before { content:""; width:26px; height:2px; margin-right:10px; background:var(--primary-dark); }
+  .claim-branch.is-cost { color:var(--accent); }
+
+  .lab { flex:1 1 0; display:flex; flex-direction:column; min-width:0; min-height:0; border:var(--border); border-radius:var(--radius-3); background:rgba(13,26,32,.72); overflow:hidden; }
+  .lab-toolbar { display:flex; align-items:center; gap:12px; flex:0 0 58px; min-width:0; padding:8px 12px; border-bottom:var(--border); background:var(--surface-1); }
+  .instruction { flex:1 1 auto; min-width:0; color:var(--text-muted); font-size:16px; line-height:1.4; }
+  .score { flex:0 0 auto; color:var(--accent); font-family:var(--font-mono); font-size:18px; font-weight:700; white-space:nowrap; }
+  .prediction-rack { display:flex; gap:8px; flex:0 0 auto; }
+  .prediction { min-width:142px; min-height:40px; font-size:16px; touch-action:none; cursor:grab; user-select:none; }
+  .play, .reset { font-size:16px; }
+  body[data-page="10"] .lec-progress { height:4px; overflow:visible; appearance:none; -webkit-appearance:none; }
+  body[data-page="10"] .lec-progress::after { display:none; }
+  body[data-page="10"] progress.lec-progress::-webkit-progress-bar { height:4px; background:var(--surface-3); }
+  body[data-page="10"] progress.lec-progress::-webkit-progress-value { height:4px; background:var(--primary); }
+  .prediction.is-placed { color:var(--accent-ink); border-color:var(--accent); background:var(--accent); }
+  .prediction.is-dragging { position:relative; z-index:5; cursor:grabbing; box-shadow:0 12px 28px rgba(0,0,0,.38); }
+  .prediction.is-wrong { animation:shake 280ms ease; border-color:var(--danger); }
+  .play { min-width:104px; }
+  .reset { width:40px; min-width:40px; padding:0; font-size:22px; }
+
+  .track-field { position:relative; flex:1 1 0; min-height:0; overflow:hidden; }
+  .physics-canvas { z-index:0; pointer-events:none; }
+  .track-overlay { position:absolute; inset:0; z-index:1; display:grid; grid-template-columns:var(--lane-label) minmax(0,1fr) 290px; grid-template-rows:1fr 1fr; min-width:0; min-height:0; }
+  .track-overlay::after { content:""; position:absolute; left:var(--lane-label); right:290px; top:50%; height:1px; background:var(--line); }
+  .lane-name { display:flex; flex-direction:column; justify-content:center; gap:2px; min-width:0; padding:10px 14px; border-right:var(--border); background:rgba(7,16,21,.76); }
+  .lane-name strong { color:var(--text-strong); font-family:var(--font-narrow); font-size:20px; line-height:1.3; }
+  .lane-name span { color:var(--text-muted); font-size:14px; line-height:1.35; }
+  .drop-lane { position:relative; min-width:0; outline:0; }
+  .drop-lane.is-target { background:var(--surface-yellow); box-shadow:inset 0 0 0 2px var(--accent); }
+  .drop-lane.is-wrong { background:rgba(255,113,104,.09); }
+  .drop-hint { position:absolute; top:10px; left:14px; color:var(--text-faint); font-size:14px; line-height:1.35; }
+  .drop-lane.has-prediction .drop-hint { color:var(--accent); font-weight:700; }
+  .finish-line { position:absolute; top:18px; right:18px; bottom:18px; width:2px; border-left:2px dashed var(--line-strong); }
+  .finish-line::after { content:"12"; position:absolute; top:-16px; left:-7px; color:var(--text-faint); font:13px/1.35 var(--font-mono); }
+
+  .lane-readouts { display:grid; grid-template-columns:1fr; align-content:center; gap:5px; min-width:0; padding:9px 14px; border-left:var(--border); background:rgba(7,16,21,.76); }
+  .mini-reading { display:grid; grid-template-columns:1fr auto; gap:8px; align-items:center; min-width:0; font-size:14px; line-height:1.35; }
+  .mini-reading span:first-child { color:var(--text-muted); }
+  .mini-reading output { color:var(--primary-bright); font-family:var(--font-mono); font-size:15px; font-weight:700; white-space:nowrap; }
+  .load-bar { height:7px; overflow:hidden; border-radius:var(--radius-1); background:var(--surface-3); }
+  .load-bar i { display:block; width:var(--load,0%); height:100%; background:var(--primary); transition:width 160ms ease; }
+  .lane-readouts.is-concentrated .load-bar i { background:var(--accent); }
+  .step-progress { position:absolute; left:calc(var(--lane-label) + 14px); right:304px; bottom:7px; display:flex; justify-content:space-between; color:var(--text-faint); font:13px/1.35 var(--font-mono); pointer-events:none; }
+  .status-line { position:absolute; left:calc(var(--lane-label) + 14px); right:304px; top:50%; z-index:3; transform:translateY(-50%); padding:6px 10px; color:var(--text-strong); font-size:16px; line-height:1.4; text-align:center; background:rgba(7,16,21,.92); border:var(--border); opacity:0; pointer-events:none; transition:opacity 140ms ease; }
+  .status-line.is-visible { opacity:1; }
+  @keyframes shake { 25%{transform:translateX(-7px)} 50%{transform:translateX(7px)} 75%{transform:translateX(-4px)} }
+  @media (prefers-reduced-motion: reduce) { * { animation-duration:1ms !important; transition-duration:1ms !important; } }
+</style>
+</head>
+<body data-page="10" data-total="52">
+<div id="stage">
+<main id="main"></main>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script src="assets/lib/matter.min.js"></script>
+<script>
+Lec.mount({index: 10, kicker: 'BODY / TRADE-OFF', title: '直立的两面', take: '同一种直立结构同时释放双手、提高行走效率并带来承重代价。'});
+
+const main = document.getElementById('main');
+main.innerHTML = `
+  <div class="page-shell">
+    <section class="compare-wrap min0" id="compareWrap" aria-label="两种步态的同维度比较">
+      <div class="k-comparison compare-table min0" style="--compare-cols:2">
+        <div class="hdr">比较维度</div><div class="hdr">直立步态</div><div class="hdr">四点支撑参照</div>
+        <div class="dim">手的任务</div><div class="diff">双手不必持续撑地</div><div class="cell">双手参与支撑</div><div class="rowline"></div>
+        <div class="dim">同距步行</div><div class="diff">摆动中交换势能，模型能耗较低</div><div class="cell">持续屈曲与多点接触，模型能耗较高</div><div class="rowline"></div>
+        <div class="dim">重量路径</div><div class="diff">躯干 → 骨盆 → 髋膝 → 足</div><div class="cell">躯干 → 前肢与后肢共同分担</div><div class="rowline"></div>
+        <div class="dim">结构代价</div><div class="diff">下背、髋、膝、足持续承重</div><div class="cell">手被占用，负荷较分散</div>
+      </div>
+      <div class="folded-claim" aria-label="实验结论">
+        <div class="claim-root">同一种直立结构</div>
+        <div class="claim-branch">释放双手</div>
+        <div class="claim-branch">较低能耗</div>
+        <div class="claim-branch is-cost">集中承重</div>
+      </div>
+    </section>
+
+    <section class="lab min0" aria-label="步态代价实验">
+      <div class="lab-toolbar min0">
+        <p class="instruction">先把两张预测牌拖到轨道。键盘可用上下键选轨道，按 Enter 放置。</p>
+        <div class="score" id="predictionScore">预测 0/2</div>
+        <div class="prediction-rack" id="rack">
+          <button class="prediction" data-prediction="energy" aria-label="能耗更低预测牌，按上下键选择轨道，按回车放置">能耗更低</button>
+          <button class="prediction" data-prediction="load" aria-label="承重更集中预测牌，按上下键选择轨道，按回车放置">承重更集中</button>
+        </div>
+        <button class="btn is-primary play" id="playBtn" disabled aria-label="播放十二步实验">▶ 播放</button>
+        <button class="btn icon-only reset" id="resetBtn" title="重置实验" aria-label="重置实验">↺</button>
+      </div>
+      <div class="track-field min0 no-pan" id="trackField">
+        <canvas class="physics-canvas cv-fill" id="physicsCanvas" aria-hidden="true"></canvas>
+        <div class="track-overlay">
+          <div class="lane-name"><strong>直立步态</strong><span>双足交替支撑</span></div>
+          <div class="drop-lane" data-lane="upright" aria-label="直立步态轨道"><span class="drop-hint">放置预测</span><i class="finish-line"></i></div>
+          <div class="lane-readouts is-concentrated" id="uprightReadouts">
+            <div class="mini-reading"><span>可用手数</span><output id="uprightHands">—</output></div>
+            <div class="mini-reading"><span>能量筹码</span><output id="uprightEnergy">—</output></div>
+            <div class="mini-reading"><span>髋膝足负荷</span><output id="uprightLoad">模型相对值</output></div>
+            <div class="load-bar"><i id="uprightBar"></i></div>
+          </div>
+          <div class="lane-name"><strong>四点支撑参照</strong><span>不是祖先复原</span></div>
+          <div class="drop-lane" data-lane="quad" aria-label="四点支撑参照轨道"><span class="drop-hint">放置预测</span><i class="finish-line"></i></div>
+          <div class="lane-readouts" id="quadReadouts">
+            <div class="mini-reading"><span>可用手数</span><output id="quadHands">—</output></div>
+            <div class="mini-reading"><span>能量筹码</span><output id="quadEnergy">—</output></div>
+            <div class="mini-reading"><span>前后肢负荷</span><output id="quadLoad">模型相对值</output></div>
+            <div class="load-bar"><i id="quadBar"></i></div>
+          </div>
+        </div>
+        <div class="step-progress"><span>行程 <b id="stepNow">0</b>/<b id="stepTotal">—</b> 步</span><span>同体重 · 同路程 · 同速度</span></div>
+        <div class="status-line" id="statusLine" role="status" aria-live="polite"></div>
+      </div>
+    </section>
+  </div>`;
+
+const TOTAL_STEPS = 12;
+const MODEL = Object.freeze({
+  upright: { energyStart: 100, energyPerStep: 4, load: 82, hands: 2 },
+  quad: { energyStart: 100, energyPerStep: 6, load: 48, hands: 0 }
+});
+const correctLane = { energy:'upright', load:'upright' };
+const state = { placed:{}, keyboardLane:{energy:'upright', load:'upright'}, running:false, complete:false, step:0, startTime:0 };
+
+const $ = id => document.getElementById(id);
+const field = $('trackField');
+const canvas = $('physicsCanvas');
+let ctx = null;
+const laneEls = Array.from(document.querySelectorAll('.drop-lane'));
+const predictionEls = Array.from(document.querySelectorAll('.prediction'));
+$('stepTotal').textContent = String(TOTAL_STEPS);
+
+const engine = Matter.Engine.create({gravity:{x:0,y:1,scale:0.001},positionIterations:8,velocityIterations:6,constraintIterations:4,enableSleeping:true});
+const runner = Matter.Runner.create({delta:1000/60,isFixed:true});
+Matter.Runner.run(runner, engine);
+
+function makeWalker(x, y, upright) {
+  const B = Matter.Bodies, C = Matter.Constraint;
+  const torso = B.rectangle(x, y - (upright ? 45 : 20), upright ? 18 : 50, upright ? 62 : 24, { density:.002, frictionAir:.06, collisionFilter:{group:-1} });
+  const hip = B.circle(x, y - 12, 8, { density:.003, frictionAir:.06, collisionFilter:{group:-1} });
+  const supports = upright
+    ? [B.rectangle(x-10,y+25,8,56,{collisionFilter:{group:-1}}), B.rectangle(x+10,y+25,8,56,{collisionFilter:{group:-1}})]
+    : [B.rectangle(x-30,y+12,42,7,{collisionFilter:{group:-1}}), B.rectangle(x+30,y+12,42,7,{collisionFilter:{group:-1}})];
+  const constraints = [C.create({bodyA:torso,bodyB:hip,stiffness:.72,length:upright?31:18})];
+  supports.forEach((limb, i) => constraints.push(C.create({bodyA:hip,bodyB:limb,pointB:{x:i? -15:15,y:0},stiffness:.62,length:upright?25:34}))); 
+  Matter.Composite.add(engine.world, [torso, hip, ...supports, ...constraints]);
+  return { torso, hip, supports, upright };
+}
+const walkers = [makeWalker(285,88,true), makeWalker(285,235,false)];
+Deck.autofit(canvas, () => { ctx = canvas.getContext('2d'); draw(0); });
+Matter.Composite.add(engine.world, [
+  Matter.Bodies.rectangle(480,146,960,10,{isStatic:true}),
+  Matter.Bodies.rectangle(480,292,960,10,{isStatic:true})
+]);
+if (Deck.reduced()) Matter.Runner.stop(runner);
+
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden || Deck.reduced()) Matter.Runner.stop(runner);
+  else if (!state.complete) Matter.Runner.run(runner, engine);
+});
+
+function dynamicValues(step) {
+  const values = {};
+  Object.keys(MODEL).forEach(lane => {
+    const m = MODEL[lane];
+    values[lane] = {
+      energy: Math.max(0, m.energyStart - m.energyPerStep * step),
+      load: Math.min(100, m.load + (step % 2 ? 5 : 0)),
+      hands: m.hands
+    };
+  });
+  return values;
+}
+
+function showStatus(message, hold) {
+  const el = $('statusLine');
+  el.textContent = message;
+  el.classList.add('is-visible');
+  clearTimeout(showStatus.timer);
+  if (!hold) showStatus.timer = setTimeout(() => el.classList.remove('is-visible'), 1700);
+}
+
+function placePrediction(type, lane, token) {
+  laneEls.forEach(el => el.classList.remove('is-target','is-wrong'));
+  if (lane !== correctLane[type]) {
+    token.classList.remove('is-wrong'); void token.offsetWidth; token.classList.add('is-wrong');
+    document.querySelector(`[data-lane="${lane}"]`).classList.add('is-wrong');
+    showStatus('这条步态的优势不等于所有负荷都更低：再看手是否撑地、重量经过哪些关节。');
+    return;
+  }
+  state.placed[type] = lane;
+  token.classList.add('is-placed');
+  token.setAttribute('aria-pressed','true');
+  document.querySelector(`[data-lane="${lane}"]`).classList.add('has-prediction');
+  document.querySelector(`[data-lane="${lane}"] .drop-hint`).textContent = Object.keys(state.placed).length === 2 ? '两项预测已吸附' : `${token.textContent} ✓`;
+  const count = Object.keys(state.placed).length;
+  $('predictionScore').textContent = `预测 ${count}/2`;
+  $('playBtn').disabled = count !== 2;
+  showStatus(`${token.textContent}：预测成立。`);
+}
+
+predictionEls.forEach(token => {
+  let drag = null;
+  token.addEventListener('pointerdown', e => {
+    if (state.running || state.complete) return;
+    token.setPointerCapture(e.pointerId);
+    drag = { start:Deck.pt(field,e), x:0, y:0 };
+    token.classList.add('is-dragging');
+  });
+  token.addEventListener('pointermove', e => {
+    if (!drag) return;
+    const p = Deck.pt(field,e);
+    drag.x = p.x - drag.start.x; drag.y = p.y - drag.start.y;
+    token.style.transform = `translate(${drag.x}px,${drag.y}px)`;
+    const lane = p.y < field.offsetHeight/2 ? 'upright' : 'quad';
+    laneEls.forEach(el => el.classList.toggle('is-target', el.dataset.lane === lane));
+  });
+  token.addEventListener('pointerup', e => {
+    if (!drag) return;
+    const p = Deck.pt(field,e);
+    const lane = p.y < field.offsetHeight/2 ? 'upright' : 'quad';
+    token.classList.remove('is-dragging'); token.style.transform = '';
+    drag = null;
+    placePrediction(token.dataset.prediction, lane, token);
+  });
+  token.addEventListener('keydown', e => {
+    if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+      e.preventDefault();
+      state.keyboardLane[token.dataset.prediction] = e.key === 'ArrowUp' ? 'upright' : 'quad';
+      laneEls.forEach(el => el.classList.toggle('is-target', el.dataset.lane === state.keyboardLane[token.dataset.prediction]));
+      showStatus(`已选择${e.key === 'ArrowUp' ? '直立步态' : '四点支撑参照'}轨道。`);
+    }
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      placePrediction(token.dataset.prediction, state.keyboardLane[token.dataset.prediction], token);
+    }
+  });
+});
+
+$('playBtn').addEventListener('click', startExperiment);
+$('resetBtn').addEventListener('click', resetExperiment);
+
+function startExperiment() {
+  if (state.running || Object.keys(state.placed).length !== 2) return;
+  state.running = true; state.step = 0; state.startTime = performance.now();
+  $('playBtn').disabled = true;
+  predictionEls.forEach(el => el.disabled = true);
+  showStatus('同步前进：观察能量扣除与黄色负荷脉冲。');
+  if (Deck.reduced()) {
+    state.step = TOTAL_STEPS;
+    updateReadouts();
+    finishExperiment();
+  }
+}
+
+function finishExperiment() {
+  if (state.complete) return;
+  state.running = false; state.complete = true; state.step = TOTAL_STEPS;
+  $('stepNow').textContent = String(TOTAL_STEPS);
+  $('compareWrap').classList.add('is-folded');
+  $('uprightReadouts').style.boxShadow = 'inset 3px 0 0 var(--accent)';
+  showStatus('直立同时带来：释放双手、较低能耗、集中承重。', true);
+  Matter.Runner.stop(runner);
+}
+
+function resetExperiment() {
+  state.placed = {}; state.running = false; state.complete = false; state.step = 0; state.startTime = 0;
+  $('predictionScore').textContent = '预测 0/2'; $('stepNow').textContent = '0';
+  $('playBtn').disabled = true; $('compareWrap').classList.remove('is-folded');
+  $('statusLine').classList.remove('is-visible'); $('uprightReadouts').style.boxShadow = '';
+  predictionEls.forEach(el => { el.disabled=false; el.classList.remove('is-placed','is-wrong'); el.removeAttribute('aria-pressed'); el.style.transform=''; });
+  laneEls.forEach(el => { el.classList.remove('has-prediction','is-target','is-wrong'); el.querySelector('.drop-hint').textContent='放置预测'; });
+  walkers.forEach((w,i) => {
+    const x=285, y=i?235:88;
+    Matter.Body.setPosition(w.hip,{x,y:y-12}); Matter.Body.setVelocity(w.hip,{x:0,y:0});
+    Matter.Body.setPosition(w.torso,{x,y:y-(w.upright?45:20)}); Matter.Body.setVelocity(w.torso,{x:0,y:0});
+  });
+  updateReadouts();
+  if (!Deck.reduced()) Matter.Runner.run(runner, engine);
+}
+
+function updateReadouts() {
+  const values = dynamicValues(state.step);
+  ['upright','quad'].forEach(lane => {
+    const v = values[lane];
+    $(`${lane}Hands`).textContent = String(v.hands);
+    $(`${lane}Energy`).textContent = `${v.energy} / 100（相对）`;
+    $(`${lane}Load`).textContent = `${v.load} / 100（相对）`;
+    $(`${lane}Bar`).style.setProperty('--load', `${v.load}%`);
+  });
+  $('stepNow').textContent = String(state.step);
+}
+
+function drawWalker(w, offsetX, offsetY, progress, pulse) {
+  const primary = Deck.token('--primary-bright');
+  const muted = Deck.token('--text-muted');
+  const accent = Deck.token('--accent');
+  const x = 54 + progress * (canvas.offsetWidth - 150);
+  const baseY = offsetY;
+  const phase = progress * TOTAL_STEPS * Math.PI;
+  ctx.save(); ctx.translate(x, baseY);
+  ctx.strokeStyle = muted; ctx.fillStyle = Deck.rgba('--primary',.17); ctx.lineWidth=5; ctx.lineCap='round';
+  if (w.upright) {
+    ctx.beginPath(); ctx.arc(0,-52,10,0,Math.PI*2); ctx.fill(); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0,-41); ctx.lineTo(0,4); ctx.lineTo(-12,35); ctx.lineTo(-22 + Math.sin(phase)*7,64); ctx.moveTo(0,4); ctx.lineTo(12,35); ctx.lineTo(22 - Math.sin(phase)*7,64); ctx.moveTo(0,-25); ctx.lineTo(-20,-4 + Math.sin(phase)*5); ctx.moveTo(0,-25); ctx.lineTo(20,-4 - Math.sin(phase)*5); ctx.stroke();
+    if (pulse) { ctx.strokeStyle=accent; ctx.lineWidth=7; ctx.beginPath(); ctx.moveTo(0,-38);ctx.lineTo(0,4);ctx.lineTo(12,35);ctx.lineTo(22,64);ctx.stroke(); }
+  } else {
+    ctx.beginPath(); ctx.arc(34,-21,9,0,Math.PI*2); ctx.fill(); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(30,-13);ctx.lineTo(-24,-4);ctx.moveTo(15,-7);ctx.lineTo(24,30);ctx.moveTo(-8,-5);ctx.lineTo(-22,30);ctx.moveTo(-19,-3);ctx.lineTo(-42,29);ctx.moveTo(1,-6);ctx.lineTo(45,28);ctx.stroke();
+    if (pulse) { ctx.strokeStyle=primary;ctx.lineWidth=6;ctx.beginPath();ctx.moveTo(12,-8);ctx.lineTo(24,30);ctx.moveTo(-12,-5);ctx.lineTo(-28,29);ctx.stroke(); }
+  }
+  ctx.restore();
+}
+
+function draw(t) {
+  const w=canvas.offsetWidth, h=canvas.offsetHeight;
+  ctx.clearRect(0,0,w,h);
+  ctx.strokeStyle=Deck.rgba('--primary',.34); ctx.lineWidth=2;
+  ctx.beginPath(); ctx.moveTo(0,h/2-1);ctx.lineTo(w,h/2-1);ctx.stroke();
+  const progress = state.running || state.complete ? state.step/TOTAL_STEPS : 0;
+  const pulse = state.running && state.step%2===1;
+  drawWalker(walkers[0],0,0,progress,pulse);
+  drawWalker(walkers[1],0,h/2,progress,pulse);
+}
+
+updateReadouts();
+Deck.loop((t) => {
+  if (state.running) {
+    const elapsed = t - state.startTime;
+    const next = Math.min(TOTAL_STEPS, Math.floor(elapsed / 240));
+    if (next !== state.step) {
+      state.step = next;
+      updateReadouts();
+      walkers.forEach((w,i) => Matter.Body.applyForce(w.hip,w.hip.position,{x:.0008,y:i?-.00004:-.00012}));
+    }
+    if (state.step >= TOTAL_STEPS) finishExperiment();
+  }
+  draw(t);
+}, {still:1});
+</script>
+</body>
+</html>

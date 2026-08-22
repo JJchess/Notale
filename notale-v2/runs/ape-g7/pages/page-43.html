@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>补给何时撑不住？</title>
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  .page43{height:100%;display:flex;flex-direction:column;gap:16px}
+  .workspace{display:flex;gap:20px;flex:1;min-height:0}
+  .controls{width:410px;flex:0 0 410px;padding:18px;display:flex;flex-direction:column;justify-content:space-between;gap:10px}
+  .controls h2{margin-bottom:2px}.ctl{display:grid;grid-template-columns:92px 1fr 54px;gap:8px}.ctl label{font-size:15px}.ctl output{text-align:right;font-size:16px;font-variant-numeric:tabular-nums;font-weight:750;color:var(--primary-strong)}
+  .ctl input[type="range"]{min-width:0;width:100%}.ctl select{width:100%;min-width:0}
+  .reset{width:100%;min-height:44px;margin-top:2px}
+  .account{display:flex;flex-direction:column;gap:12px;flex:1;min-width:0}
+  .k-comparison{--comparison-cols:150px repeat(2,minmax(0,1fr));flex:0 0 auto}
+  .k-comparison>div{display:flex;align-items:center;justify-content:center;min-height:38px;padding:7px 12px}
+  .k-comparison .dim{justify-content:flex-end;gap:8px}.resource-dot{width:11px;height:11px;border-radius:50%;flex:0 0 auto}
+  .cell{font-size:16px;line-height:1.35;gap:10px}.k-comparison .cell:not(.diff){background:var(--surface-soft)}.amount{font-weight:800;font-variant-numeric:tabular-nums}.saving{color:var(--success);font-weight:750}
+  .slope-chain{--process-gap:34px;flex:0 0 72px}.slope-chain>.step{padding:8px 12px;display:flex;flex-direction:column;gap:2px;align-items:center;justify-content:center;text-align:center;font-size:16px;line-height:1.35}.slope-chain strong{font-size:16px;color:var(--primary-strong)}.chart-wrap{position:relative;min-height:0;flex:1;background:var(--surface);border:1px solid var(--line);border-radius:var(--r-md);box-shadow:var(--shadow-soft);overflow:hidden}
+  #chart{position:absolute;inset:0}.live{min-height:24px;color:var(--primary-strong);font-size:16px;line-height:1.35;font-weight:700}
+  .footnote{display:flex;justify-content:space-between;gap:22px}.footnote p{flex:1;font-size:16px;line-height:1.45;color:var(--muted)}
+</style>
+</head>
+<body data-page="43" data-total="45">
+<div id="stage">
+<main id="main">
+  <section class="page43">
+    <div class="footnote">
+      <p>乘员、任务时长与回收效率，会迅速改变水、氧和食物的携带量。</p>
+      <p>回收接近 100% 也不等于无需补给：微小损失会随时间累积。</p>
+    </div>
+    <div class="workspace">
+      <aside class="panel controls min0" aria-label="资源账本参数">
+        <h2>改变账本条件</h2>
+        <div class="ctl"><label for="crew">乘员数</label><input id="crew" type="range" min="1" max="12" step="1" value="4"><output id="crewOut">4 人</output></div>
+        <div class="ctl"><label for="days">任务时长</label><input id="days" type="range" min="30" max="900" step="30" value="360"><output id="daysOut">360 天</output></div>
+        <div class="ctl"><label for="resource">调整回收</label><select id="resource"><option value="water">水</option><option value="oxygen">氧</option><option value="food">食物</option></select><span></span></div>
+        <div class="ctl"><label for="recovery">当前效率</label><input id="recovery" type="range" min="0" max="99" step="1" value="85"><output id="recoveryOut">85%</output></div>
+        <div class="ctl"><label for="limit">补给上限</label><input id="limit" type="range" min="100" max="10000" step="100" value="3000"><output id="limitOut">3000</output></div>
+        <button class="reset" id="reset" type="button">复位账本</button>
+        <p class="note">上限是用于比较的抽象容量；三类资源共用同一数值刻度。</p>
+        <p class="note">基准采用教学平均值，实际需求随活动、环境和个体变化。</p>
+        <div id="announce" class="live" aria-live="polite"></div>
+      </aside>
+      <section class="account min0" aria-label="资源需求比较">
+        <div class="k-comparison" aria-label="完全不回收与当前回收效率比较">
+          <div class="hdr">资源</div><div class="hdr">完全不回收</div><div class="hdr">当前回收效率</div>
+          <div class="rowline"></div>
+          <div class="dim"><span class="resource-dot" style="background:#145da0"></span>水</div><div class="cell baseline"><span id="w0" class="amount"></span><span>kg</span></div><div class="cell diff"><span id="w1" class="amount"></span><span>kg</span><span id="ws" class="saving"></span></div>
+          <div class="rowline"></div>
+          <div class="dim"><span class="resource-dot" style="background:#d86b2b"></span>氧</div><div class="cell"><span id="o0" class="amount"></span><span>kg</span></div><div class="cell diff"><span id="o1" class="amount"></span><span>kg</span><span id="os" class="saving"></span></div>
+          <div class="rowline"></div>
+          <div class="dim"><span class="resource-dot" style="background:#247a55"></span>食物</div><div class="cell"><span id="f0" class="amount"></span><span>千 kcal</span></div><div class="cell diff"><span id="f1" class="amount"></span><span>千 kcal</span><span id="fs" class="saving"></span></div>
+        </div>
+        <div class="k-process slope-chain" aria-label="累计需求的计算关系"><div class="step"><strong>先定每日需求</strong><span>人数 × 每人教学平均值</span></div><div class="arw"></div><div class="step is-current"><strong>回收只降低斜率</strong><span>每日需求 ×（1 − 回收率）</span></div><div class="arw"></div><div class="step"><strong>时间继续累积</strong><span>当前斜率 × 任务天数</span></div></div>
+        <div class="chart-wrap min0"><div id="chart" role="img" aria-label="三类资源随任务时间累计的曲线，虚线为完全不回收，实线为当前效率"></div></div>
+      </section>
+    </div>
+  </section>
+</main>
+</div>
+<script src="assets/lib/echarts.min.js"></script>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script>
+Lec.mount({index:43,kicker:"SYSTEM LIMITS",title:"补给何时撑不住？",take:"乘员、任务时长与回收效率会迅速改变所需携带的水、氧和食物。"});
+(function(){
+  var $=function(id){return document.getElementById(id)}, chart=echarts.init($('chart'),null,{renderer:'svg'});
+  var recover={water:85,oxygen:75,food:10};
+  var defaults={crew:4,days:360,limit:3000,recover:{water:85,oxygen:75,food:10}};
+  function pct(v){return Lec.P.percent(Lec.P.ratio(v,100));}
+  function round(v){return Lec.P.roundTo(v,1);}
+  function state(){return {crew:+$('crew').value,days:+$('days').value,limit:+$('limit').value};}
+  function needs(s){
+    return {
+      water:Lec.K.dailyWaterPerPerson*s.crew,
+      oxygen:Lec.K.dailyOxygenPerPerson*s.crew,
+      food:Lec.K.dailyFoodEnergyKcalPerPerson*s.crew/1000
+    };
+  }
+  function render(){
+    var s=state(), n=needs(s), active=$('resource').value;
+    recover[active]=Lec.P.clamp(+$('recovery').value,0,99);
+    $('crewOut').textContent=s.crew+' 人'; $('daysOut').textContent=s.days+' 天'; $('limitOut').textContent=s.limit;
+    $('recoveryOut').textContent=pct(recover[active]);
+    var ids={water:['w0','w1','ws'],oxygen:['o0','o1','os'],food:['f0','f1','fs']};
+    Object.keys(ids).forEach(function(k){var raw=n[k]*s.days, cur=raw*(1-recover[k]/100);$(ids[k][0]).textContent=round(raw);$(ids[k][1]).textContent=round(cur);$(ids[k][2]).textContent='减少 '+pct(recover[k]);});
+    var colors={water:'#145da0',oxygen:'#d86b2b',food:'#247a55'}, names={water:'水',oxygen:'氧',food:'食物'}, series=[];
+    Object.keys(names).forEach(function(k){
+      var pts0=[],pts1=[],steps=12;
+      for(var i=0;i<=steps;i++){var d=round(s.days*i/steps);pts0.push([d,round(n[k]*d)]);pts1.push([d,round(n[k]*d*(1-recover[k]/100))]);}
+      series.push({name:names[k]+'｜零回收',type:'line',data:pts0,showSymbol:true,symbolSize:7,lineStyle:{type:'dashed',width:2,color:colors[k],opacity:.45},itemStyle:{color:colors[k]}});
+      series.push({name:names[k]+'｜当前',type:'line',data:pts1,showSymbol:true,symbolSize:8,lineStyle:{width:3,color:colors[k]},areaStyle:{color:colors[k],opacity:.28},itemStyle:{color:colors[k]},markLine:{silent:true,symbol:'none',label:{fontSize:14,color:'#53657a',formatter:'补给上限'},lineStyle:{color:'#b33b45',width:2},data:[{yAxis:s.limit}]}});
+    });
+    chart.setOption({animation:false,textStyle:{fontSize:16,fontFamily:'Inter, Noto Sans SC, sans-serif'},grid:{left:72,right:28,top:54,bottom:52},legend:{top:10,textStyle:{fontSize:14,color:'#53657a'},itemWidth:20},tooltip:{trigger:'axis',textStyle:{fontSize:16}},xAxis:{type:'value',name:'任务时间（天）',min:0,max:s.days,splitNumber:8,nameTextStyle:{fontSize:14},axisLabel:{fontSize:14},splitLine:{show:true,lineStyle:{color:'#c7d3e1',width:1}}},yAxis:{type:'value',name:'累计携带量',nameTextStyle:{fontSize:14},axisLabel:{fontSize:12},splitArea:{show:true,areaStyle:{color:['#f8fafc','#eaf1f8']}}},series:series},true);
+    var breaks=Object.keys(names).map(function(k){var slope=n[k]*(1-recover[k]/100);return {k:k,d:slope>0?Math.ceil(s.limit/slope):Infinity};}).filter(function(x){return x.d<=s.days;});
+    $('announce').textContent=breaks.length?breaks.map(function(x){return names[x.k]+'约第 '+x.d+' 天触及上限';}).join('；'):'当前范围内未断供';
+  }
+  ['crew','days','limit','recovery'].forEach(function(id){$(id).addEventListener('input',render)});
+  $('resource').addEventListener('change',function(){$('recovery').value=recover[this.value];render()});
+  $('reset').addEventListener('click',function(){$('crew').value=defaults.crew;$('days').value=defaults.days;$('limit').value=defaults.limit;recover={water:defaults.recover.water,oxygen:defaults.recover.oxygen,food:defaults.recover.food};$('resource').value='water';$('recovery').value=recover.water;render()});
+  Deck.onResize(function(){chart.resize()}); render();
+})();
+</script>
+</body>
+</html>

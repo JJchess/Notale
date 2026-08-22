@@ -1,0 +1,218 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  #stage{padding:32px 48px 28px;overflow:hidden}
+  .topline{align-items:flex-start}
+  .kicker{color:var(--teal);font-family:var(--font-mono);font-size:var(--fs-label);font-weight:750;letter-spacing:.12em}
+  .progress{min-width:150px;text-align:right;color:var(--teal-soft);font-size:var(--fs-label);font-family:var(--font-mono)}
+  .main{position:relative;overflow:hidden;border:var(--stroke) solid var(--line);border-radius:var(--r-lg);background:linear-gradient(180deg,var(--panel-deep),var(--panel));box-shadow:0 18px 42px var(--shadow)}
+  #tree{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+  .branch-line{fill:none;stroke:var(--teal-dim);stroke-width:3;stroke-dasharray:8 8;vector-effect:non-scaling-stroke}
+  .branch-line.active{stroke:var(--teal);stroke-dasharray:none}
+  .tree-label{fill:var(--ink-muted);font:650 16px var(--font-sans)}
+  .origin-wrap{position:absolute;left:50%;top:40px;transform:translateX(-50%);text-align:center;z-index:2}
+  .origin{width:108px;height:108px;margin:auto;display:flex;align-items:center;justify-content:center;background:var(--panel-deep);font-weight:760;line-height:1.25}
+  .origin::before{content:"人";font-size:38px;color:var(--teal-soft);z-index:1}
+  .origin-caption{margin-top:7px;color:var(--ink-muted);font-size:var(--fs-sec)}
+  .paths{position:absolute;left:28px;right:28px;top:185px;height:270px;display:flex;flex-direction:row;gap:18px;z-index:2}
+  .path-box{flex:1;min-width:0;padding:0!important;background:rgba(13,27,36,.92)!important;transition:border-color 180ms ease,transform 180ms ease}
+  .path-box.targeted{border-color:var(--amber);transform:translateY(-3px)}
+  .path-box.complete{border-color:var(--teal)}
+  .path-box>.bt{justify-content:space-between;margin:0!important;padding:10px 16px!important;font-size:20px!important}
+  .path-box .lv{margin:0 14px;padding:10px 8px 8px 20px;min-height:64px}
+  .question{color:var(--ink-muted);font-size:var(--fs-sec);line-height:1.4}
+  .slot{min-height:52px;margin:8px 14px 0;padding:10px 12px;border:1px dashed var(--line-strong);border-radius:var(--r-sm);color:var(--ink-faint);font-size:var(--fs-sec);line-height:1.35}
+  .slot.filled{border-style:solid;border-color:var(--teal-dim);color:var(--text);background:rgba(54,214,192,.06)}
+  .open-end{margin:7px 14px 10px;color:var(--ink-faint);font-size:var(--fs-label);opacity:.45}
+  .complete .open-end{color:var(--teal-soft);opacity:1}
+  .tray{position:absolute;left:34px;right:34px;bottom:24px;height:176px;padding:14px 20px;border-top:var(--stroke) solid var(--line-strong);border-radius:50% 50% 0 0/18px 18px 0 0;background:var(--panel-deep);z-index:3}
+  .tray-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
+  .cards{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px 14px}
+  .idea{min-height:52px;padding:8px 12px;color:var(--text);font:650 16px/1.35 var(--font-sans);text-align:left;border:var(--stroke) solid var(--line-strong);border-radius:var(--r-sm);background:var(--panel-hi);cursor:grab;touch-action:none;transition:border-color 180ms ease,background 180ms ease,opacity 180ms ease}
+  .idea:hover,.idea:focus-visible{border-color:var(--amber)}
+  .idea.dragging{border-color:var(--amber);background:var(--panel-deep);cursor:grabbing;z-index:10}
+  .idea.placed{opacity:.25;pointer-events:none}
+  .idea.wrong{animation:shake 240ms ease-out}
+  .status{position:absolute;right:24px;top:22px;z-index:4;width:390px;text-align:right;color:var(--amber-soft);font-size:var(--fs-sec);line-height:1.4}
+  .finish{position:absolute;inset:0;z-index:8;display:none;align-items:center;justify-content:center;background:rgba(7,16,24,.84)}
+  .finish.show{display:flex}
+  .finish-inner{text-align:center;padding:28px 44px;border:var(--stroke) solid var(--teal);border-radius:var(--r-lg);background:var(--panel-hi)}
+  .finish-title{font-size:30px;font-weight:780;color:var(--teal-soft);margin-bottom:8px}
+  @keyframes shake{25%{transform:translateX(-7px)}50%{transform:translateX(7px)}75%{transform:translateX(-4px)}}
+  @media (prefers-reduced-motion:reduce){.idea,.path-box{transition:none}.idea.wrong{animation:none}}
+</style>
+</head>
+<body data-page="39" data-total="45">
+<div id="stage">
+  <header class="row justify-between topline shrink0" style="height:112px">
+    <div class="col gap-1">
+      <div class="kicker">FUTURES / OPEN PATHS</div>
+      <h1>未来不只有一条路</h1>
+      <p class="lead">未来选择取决于：我们主要改变什么？</p>
+    </div>
+    <div class="progress" id="progress" aria-live="polite">已归位 0 / 8</div>
+  </header>
+
+  <main class="main grow min0 no-pan" aria-label="未来太空路线开放分支分类图">
+    <svg id="tree" viewBox="0 0 1440 760" role="img" aria-label="面对太空环境分出工程、生物、文化与退出四条平行开放路径"></svg>
+    <div class="origin-wrap">
+      <div class="origin dual-ring" aria-hidden="true"></div>
+      <div class="origin-caption">面对太空环境</div>
+    </div>
+    <div class="status" id="status" aria-live="polite">拖动方案卡到主要改变对象对应的路径。键盘可用左右键选路径，按 Enter 归类。</div>
+
+    <section class="paths k-classification" aria-label="四条路径">
+      <article class="box path-box" data-path="engineering">
+        <div class="bt"><span>工程｜改环境</span><span class="count mono">0/2</span></div>
+        <div class="lv"><div class="question">让外部条件更像地球？</div></div>
+        <div class="slot">等待方案归入</div><div class="slot">等待方案归入</div>
+        <div class="open-end">└ 还可继续分岔…</div>
+      </article>
+      <article class="box path-box" data-path="biology">
+        <div class="bt"><span>生物｜改身体</span><span class="count mono">0/2</span></div>
+        <div class="lv"><div class="question">直接改变人体耐受方式？</div></div>
+        <div class="slot">等待方案归入</div><div class="slot">等待方案归入</div>
+        <div class="open-end">└ 还可继续分岔…</div>
+      </article>
+      <article class="box path-box" data-path="culture">
+        <div class="bt"><span>文化｜改行为与制度</span><span class="count mono">0/2</span></div>
+        <div class="lv"><div class="question">改变群体如何生活与协作？</div></div>
+        <div class="slot">等待方案归入</div><div class="slot">等待方案归入</div>
+        <div class="open-end">└ 还可继续分岔…</div>
+      </article>
+      <article class="box path-box" data-path="exit">
+        <div class="bt"><span>退出｜不长期定居</span><span class="count mono">0/2</span></div>
+        <div class="lv"><div class="question">避免让人长期暴露？</div></div>
+        <div class="slot">等待方案归入</div><div class="slot">等待方案归入</div>
+        <div class="open-end">└ 还可继续分岔…</div>
+      </article>
+    </section>
+
+    <section class="tray" aria-label="待分类方案托盘">
+      <div class="tray-head"><span class="label">方案托盘</span><span class="secondary">四条路径没有高低或先后顺序</span></div>
+      <div class="cards" id="cards"></div>
+    </section>
+
+    <div class="finish" id="finish" role="dialog" aria-modal="true" aria-labelledby="finishTitle">
+      <div class="finish-inner">
+        <div class="finish-title" id="finishTitle">没有预设终点</div>
+        <p class="body" style="margin-bottom:18px">这些是开放路径，不是成功排名。</p>
+        <button class="btn btn-primary" id="reset">重新分类</button>
+      </div>
+    </div>
+  </main>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script src="assets/lib/d3.min.js"></script>
+<script>
+(function(){
+  Deck.init({index:39,total:45});
+  const ideas=[
+    {text:'建造旋转栖居舱',path:'engineering'},
+    {text:'长期药物或植入物辅助',path:'biology'},
+    {text:'建立延迟通信下的授权规则',path:'culture'},
+    {text:'以机器人承担长期任务',path:'exit'},
+    {text:'增加辐射屏蔽与生命支持',path:'engineering'},
+    {text:'改变可遗传的生理特征',path:'biology'},
+    {text:'重排作息、训练与照护制度',path:'culture'},
+    {text:'短期驻留后返回地球',path:'exit'}
+  ];
+  const pathNames={engineering:'环境',biology:'身体',culture:'行为与制度',exit:'是否长期驻留'};
+  const order=['engineering','biology','culture','exit'];
+  const counts={engineering:0,biology:0,culture:0,exit:0};
+  let placed=0, keyboardTarget=0;
+
+  const svg=d3.select('#tree');
+  const root=d3.hierarchy({name:'面对太空环境',children:order.map(name=>({name}))});
+  d3.tree().size([1120,260])(root);
+  const link=d3.linkVertical().x(d=>d.x+160).y(d=>d.y+80);
+  svg.append('g').attr('transform','translate(0,0)').selectAll('path').data(root.links()).join('path')
+    .attr('class',d=>'branch-line branch-'+d.target.data.name).attr('d',link);
+
+  const cards=d3.select('#cards').selectAll('button').data(ideas).join('button')
+    .attr('class','idea').attr('type','button').attr('data-path',d=>d.path)
+    .attr('aria-label',d=>d.text+'。用左右方向键选择路径，按 Enter 归类')
+    .text(d=>d.text);
+
+  function pathBox(name){return document.querySelector('.path-box[data-path="'+name+'"]')}
+  function announce(text){document.getElementById('status').textContent=text}
+  function markTarget(name){document.querySelectorAll('.path-box').forEach(x=>x.classList.toggle('targeted',x.dataset.path===name))}
+  function clearTarget(){document.querySelectorAll('.path-box').forEach(x=>x.classList.remove('targeted'))}
+
+  function tryPlace(el,d,target){
+    clearTarget();
+    if(target!==d.path){
+      el.classList.remove('wrong'); void el.offsetWidth; el.classList.add('wrong');
+      announce('这项主要改变的是〈'+pathNames[d.path]+'〉，请换一条路径。');
+      return;
+    }
+    const box=pathBox(target), slots=box.querySelectorAll('.slot');
+    slots[counts[target]].textContent=d.text;
+    slots[counts[target]].classList.add('filled');
+    counts[target]++; placed++;
+    box.querySelector('.count').textContent=counts[target]+'/2';
+    if(counts[target]===2) box.classList.add('complete');
+    svg.select('.branch-'+target).classed('active',true).attr('stroke-dasharray',null);
+    el.classList.add('placed'); el.disabled=true;
+    document.getElementById('progress').textContent='已归位 '+placed+' / 8';
+    announce('已归入「'+box.querySelector('.bt span').textContent+'」。');
+    if(placed===8){
+      document.querySelectorAll('.path-box').forEach(x=>x.classList.add('complete'));
+      document.getElementById('finish').classList.add('show');
+      document.getElementById('reset').focus();
+    }
+  }
+
+  const drag=d3.drag().clickDistance(6)
+    .on('start',function(event,d){
+      if(this.disabled)return;
+      this.classList.add('dragging');
+      this._start={x:event.x,y:event.y};
+    })
+    .on('drag',function(event){
+      if(this.disabled)return;
+      d3.select(this).style('transform','translate('+(event.x-this._start.x)+'px,'+(event.y-this._start.y)+'px)');
+      const hit=order.find(name=>{const r=pathBox(name).getBoundingClientRect();return event.sourceEvent.clientX>=r.left-72*Deck.s&&event.sourceEvent.clientX<=r.right+72*Deck.s&&event.sourceEvent.clientY>=r.top-72*Deck.s&&event.sourceEvent.clientY<=r.bottom+72*Deck.s});
+      clearTarget(); if(hit)markTarget(hit); this._hit=hit;
+    })
+    .on('end',function(event,d){
+      if(this.disabled)return;
+      this.classList.remove('dragging');
+      d3.select(this).transition().duration(240).ease(d3.easeCubicOut).style('transform',null);
+      const hit=this._hit; this._hit=null; clearTarget();
+      if(hit)tryPlace(this,d,hit); else announce('把卡片放入一条路径。');
+    });
+  cards.call(drag).on('keydown',function(event,d){
+    if(event.key==='ArrowLeft'||event.key==='ArrowRight'){
+      event.preventDefault(); keyboardTarget=(keyboardTarget+(event.key==='ArrowRight'?1:3))%4;
+      markTarget(order[keyboardTarget]); announce('当前候选：'+pathBox(order[keyboardTarget]).querySelector('.bt span').textContent+'。按 Enter 归类。');
+    }else if(event.key==='Enter'||event.key===' '){event.preventDefault();tryPlace(this,d,order[keyboardTarget])}
+  });
+
+  document.getElementById('reset').addEventListener('click',()=>{
+    placed=0; order.forEach(k=>counts[k]=0); keyboardTarget=0;
+    document.querySelectorAll('.path-box').forEach(box=>{
+      box.classList.remove('complete','targeted'); box.querySelector('.count').textContent='0/2';
+      box.querySelectorAll('.slot').forEach(s=>{s.textContent='等待方案归入';s.classList.remove('filled')});
+    });
+    svg.selectAll('.branch-line').classed('active',false);
+    document.querySelectorAll('.idea').forEach(x=>{x.disabled=false;x.classList.remove('placed','wrong')});
+    document.getElementById('finish').classList.remove('show');
+    document.getElementById('progress').textContent='已归位 0 / 8';
+    announce('拖动方案卡到主要改变对象对应的路径。键盘可用左右键选路径，按 Enter 归类。');
+    document.querySelector('.idea').focus();
+  });
+
+  if(!Deck.reduced()){
+    svg.selectAll('.branch-line').attr('stroke-dasharray','0 1000').transition().delay((d,i)=>180+i*90).duration(650).attr('stroke-dasharray','8 8');
+    cards.style('opacity',0).style('transform','translateY(18px)').transition().delay((d,i)=>420+i*55).duration(420).ease(d3.easeCubicOut).style('opacity',1).style('transform',null);
+  }
+})();
+</script>
+</body>
+</html>

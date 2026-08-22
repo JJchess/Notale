@@ -1,0 +1,729 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<script src="assets/lib/matter.min.js"></script>
+<style>
+:root {
+  --bg: #0b0e14;
+  --text: #e6e6e6;
+  --font-sans: "Noto Sans SC", system-ui, sans-serif;
+  --focus: #4f6ef2;
+}
+
+/* ----- page-specific layout ----- */
+#stage {
+  background: #0b0e14;
+}
+
+#main {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+.sim-wrap {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+#sim-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+}
+
+/* ----- floating cards (semi-transparent dark overlays) ----- */
+.card-col {
+  position: absolute;
+  top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: none;
+  z-index: 5;
+}
+.card-col-left  { left: 16px; }
+.card-col-right { right: 16px; }
+
+.floating-card {
+  background: rgba(11, 14, 20, 0.82);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 8px;
+  padding: 10px 14px;
+  width: 160px;
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  pointer-events: auto;
+}
+.floating-card .card-title {
+  font-size: var(--fs-label);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  margin-bottom: 3px;
+}
+.floating-card .card-desc {
+  font-size: var(--fs-sec);
+  color: rgba(230, 230, 230, 0.75);
+  line-height: 1.4;
+}
+.floating-card.benefit .card-title { color: #5fcb8a; }
+.floating-card.cost .card-title { color: #f28b82; }
+
+/* ----- bottom status bar ----- */
+.status-bar {
+  position: absolute;
+  bottom: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  background: rgba(11, 14, 20, 0.75);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  padding: 6px 18px;
+  font-size: var(--fs-label);
+  pointer-events: none;
+  white-space: nowrap;
+}
+.status-bar .stat-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.status-bar .stat-value {
+  font-family: var(--font-mono, monospace);
+  font-weight: 600;
+}
+.status-bar .status-stable { color: #5fcb8a; }
+.status-bar .status-unstable { color: #f28b82; }
+
+/* ----- key takeaways at bottom of canvas ----- */
+.takeaway-line {
+  position: absolute;
+  bottom: 52px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 5;
+  font-size: var(--fs-sec);
+  color: rgba(230, 230, 230, 0.6);
+  text-align: center;
+  width: 70%;
+  pointer-events: none;
+  line-height: 1.4;
+}
+
+.insight-line {
+  position: absolute;
+  bottom: 82px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 5;
+  font-size: var(--fs-sec);
+  color: rgba(230, 230, 230, 0.5);
+  text-align: center;
+  width: 75%;
+  pointer-events: none;
+  line-height: 1.4;
+  font-style: italic;
+}
+
+/* ----- critical angle warning ----- */
+.warning-msg {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 6;
+  font-size: var(--fs-lead);
+  font-weight: 700;
+  color: #f28b82;
+  background: rgba(11, 14, 20, 0.85);
+  border: 1px solid rgba(242, 139, 130, 0.4);
+  border-radius: 8px;
+  padding: 12px 24px;
+  opacity: 0;
+  transition: opacity 0.3s;
+  pointer-events: none;
+  text-align: center;
+}
+.warning-msg.visible { opacity: 1; }
+
+/* canvas focus style */
+#sim-canvas:focus-visible {
+  outline: 2px solid var(--focus, #4f6ef2);
+  outline-offset: -2px;
+}
+</style>
+</head>
+<body data-page="11" data-total="50">
+<div id="stage">
+<main id="main">
+<div class="sim-wrap">
+  <canvas id="sim-canvas" class="cv-fill no-pan" tabindex="0"></canvas>
+
+  <!-- Left: 收益 cards -->
+  <div class="card-col card-col-left">
+    <div class="floating-card benefit">
+      <div class="card-title">省力</div>
+      <div class="card-desc">质心在髋踝上方摆动，骨骼承重代替肌肉持续发力</div>
+    </div>
+    <div class="floating-card benefit">
+      <div class="card-title">看得远</div>
+      <div class="card-desc">眼位提高，开阔草地上的视野明显扩展</div>
+    </div>
+    <div class="floating-card benefit">
+      <div class="card-title">散热</div>
+      <div class="card-desc">身体受光面积减小，配合汗液蒸发更利于散热</div>
+    </div>
+  </div>
+
+  <!-- Right: 代价 cards -->
+  <div class="card-col card-col-right">
+    <div class="floating-card cost">
+      <div class="card-title">脊柱</div>
+      <div class="card-desc">脊柱变成承重柱，椎间盘长期受压——腰背不适的结构根源</div>
+    </div>
+    <div class="floating-card cost">
+      <div class="card-title">骨盆</div>
+      <div class="card-desc">骨盆变短变宽以传递上肢重量，力学结构更紧张</div>
+    </div>
+  </div>
+
+  <!-- Key insight -->
+  <div class="insight-line">
+    看得远、散热好是同一站姿的红利，但脊柱和骨盆为此付出代价：没有免费的适应。
+  </div>
+
+  <!-- Bottom status -->
+  <div class="status-bar" id="status-bar">
+    <div class="stat-item">
+      <span>前倾角</span>
+      <span class="stat-value" id="angle-val">0°</span>
+    </div>
+    <div class="stat-item">
+      <span>质心</span>
+      <span class="stat-value" id="com-status">稳定</span>
+    </div>
+  </div>
+
+  <!-- Takeaway -->
+  <div class="takeaway-line" id="takeaway">
+    拖拽质心小球，感受直立时质心在支撑面内的自然摆动
+  </div>
+
+  <!-- Warning -->
+  <div class="warning-msg" id="warning-msg">
+    质心越界——只有肌肉强力拉回才能防止跌倒
+  </div>
+</div>
+</main>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script>
+(function() {
+  'use strict';
+
+  /* ========== page-specific constants ========== */
+  const P11_COM_HEIGHT_FRACTION = 0.55;
+  const P11_ANKLE_TO_TOE_FRACTION = 0.12;
+  const CRITICAL_ANGLE = Math.atan(
+    P11_ANKLE_TO_TOE_FRACTION / P11_COM_HEIGHT_FRACTION
+  ); // ≈ 12.3°
+
+  const FIGURE_H = 380;
+  const FIGURE_W = 44;
+  const COM_Y = FIGURE_H * P11_COM_HEIGHT_FRACTION; // 209
+  const ANKLE_TO_TOE = FIGURE_H * P11_ANKLE_TO_TOE_FRACTION; // ~45.6
+  const SUPPORT_HALF = ANKLE_TO_TOE;
+  const HEAD_R = 18;
+
+  /* ========== DOM refs ========== */
+  const canvas = document.getElementById('sim-canvas');
+  const ctx = canvas.getContext('2d');
+  const angleEl = document.getElementById('angle-val');
+  const comStatusEl = document.getElementById('com-status');
+  const warningEl = document.getElementById('warning-msg');
+  const takeawayEl = document.getElementById('takeaway');
+
+  /* ========== Matter.js setup ========== */
+  const { Engine, Bodies, Body, Constraint, Composite, Events, Vector } = Matter;
+
+  const engine = Engine.create();
+  engine.gravity.y = 0.6; // reduced for visual clarity
+
+  let W, H, cx, groundY;
+
+  function calcLayout() {
+    const rect = canvas.getBoundingClientRect();
+    W = rect.width;
+    H = rect.height;
+    cx = W / 2;
+    groundY = H - 60;
+  }
+
+  let figure, pivot, groundBody;
+  let bodiesInitialized = false;
+
+  function initBodies() {
+    calcLayout();
+    if (bodiesInitialized) {
+      // reposition existing bodies
+      Body.setPosition(figure, { x: cx, y: groundY - FIGURE_H / 2 });
+      Body.setAngle(figure, 0);
+      Body.setAngularVelocity(figure, 0);
+      Body.setPosition(groundBody, { x: cx, y: groundY + 10 });
+      pivot.pointA = { x: cx, y: groundY };
+      return;
+    }
+
+    figure = Bodies.rectangle(cx, groundY - FIGURE_H / 2, FIGURE_W, FIGURE_H, {
+      density: 0.002,
+      frictionAir: 0.025,
+      restitution: 0.1,
+      label: 'figure'
+    });
+
+    groundBody = Bodies.rectangle(cx, groundY + 15, W * 2, 30, {
+      isStatic: true,
+      label: 'ground'
+    });
+
+    pivot = Constraint.create({
+      pointA: { x: cx, y: groundY },
+      bodyB: figure,
+      pointB: { x: 0, y: FIGURE_H / 2 },
+      stiffness: 1,
+      length: 0,
+      label: 'pivot'
+    });
+
+    Composite.add(engine.world, [figure, groundBody, pivot]);
+    bodiesInitialized = true;
+  }
+
+  /* ========== keyboard support ========== */
+  let kbTimeout = null;
+
+  function onKeyDown(e) {
+    if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+      e.preventDefault();
+      if (!isDragging) {
+        isDragging = true;
+        isFalling = false;
+        fallTimer = 0;
+        warningEl.classList.remove('visible');
+        takeawayEl.style.opacity = '0';
+      }
+      const step = e.key === 'ArrowLeft' ? -0.007 : 0.007;
+      const newAngle = figure.angle + step;
+      const maxAngle = 30 * Math.PI / 180;
+      const clamped = Math.max(-maxAngle, Math.min(maxAngle, newAngle));
+      Body.setAngle(figure, clamped);
+      Body.setAngularVelocity(figure, 0);
+      Body.setPosition(figure, {
+        x: pivot.pointA.x + Math.sin(clamped) * FIGURE_H / 2,
+        y: pivot.pointA.y - Math.cos(clamped) * FIGURE_H / 2
+      });
+      updateStatus();
+      // After a short delay, release and let physics take over
+      if (kbTimeout) clearTimeout(kbTimeout);
+      kbTimeout = setTimeout(function() {
+        isDragging = false;
+        const absAngle = Math.abs(figure.angle);
+        if (absAngle > CRITICAL_ANGLE) {
+          isFalling = true;
+          fallTimer = 0;
+          warningEl.classList.add('visible');
+          comStatusEl.textContent = '越界!';
+          comStatusEl.className = 'stat-value status-unstable';
+        }
+        takeawayEl.textContent = '松手后质心在重力作用下自然摆动——骨骼承重代替肌肉持续拉紧';
+        takeawayEl.style.opacity = '1';
+      }, 800);
+    }
+  }
+
+  document.addEventListener('keydown', onKeyDown);
+
+  /* ========== interaction state ========== */
+  let isDragging = false;
+  let dragOffsetX = 0;
+  let isFalling = false;
+  let fallTimer = 0;
+
+  /* ========== pointer handling ========== */
+  function getPointerPos(e) {
+    const p = Deck.pt(canvas, e);
+    return { x: p.x, y: p.y };
+  }
+
+  function comScreenPos() {
+    // COM position in screen coords relative to figure
+    const angle = figure.angle;
+    const pivotX = pivot.pointA.x;
+    const pivotY = pivot.pointA.y;
+    const comX = pivotX - Math.sin(angle) * COM_Y;
+    const comY = pivotY - Math.cos(angle) * COM_Y;
+    return { x: comX, y: comY };
+  }
+
+  function isNearCOM(px, py) {
+    const com = comScreenPos();
+    const dx = px - com.x;
+    const dy = py - com.y;
+    return (dx * dx + dy * dy) < 400; // 20px radius
+  }
+
+  function onPointerDown(e) {
+    const p = getPointerPos(e);
+    if (isNearCOM(p.x, p.y)) {
+      isDragging = true;
+      isFalling = false;
+      fallTimer = 0;
+      warningEl.classList.remove('visible');
+      takeawayEl.style.opacity = '0';
+      const com = comScreenPos();
+      dragOffsetX = p.x - com.x;
+      // Stop physics while dragging
+      Body.setAngularVelocity(figure, 0);
+    }
+  }
+
+  function onPointerMove(e) {
+    const p = getPointerPos(e);
+    if (isDragging) {
+      const targetComX = p.x - dragOffsetX;
+      const pivotX = pivot.pointA.x;
+      const dx = targetComX - pivotX;
+      // Clamp to reasonable range (about ±30°)
+      const maxDx = Math.sin(30 * Math.PI / 180) * COM_Y;
+      const clampedDx = Math.max(-maxDx, Math.min(maxDx, dx));
+      const angle = Math.asin(clampedDx / COM_Y);
+      Body.setAngle(figure, -angle);
+      Body.setAngularVelocity(figure, 0);
+      // Update figure position
+      Body.setPosition(figure, {
+        x: pivotX + Math.sin(angle) * FIGURE_H / 2,
+        y: pivotY - Math.cos(angle) * FIGURE_H / 2
+      });
+      updateStatus();
+    }
+  }
+
+  function onPointerUp(e) {
+    if (isDragging) {
+      isDragging = false;
+      const angle = figure.angle;
+      const absAngle = Math.abs(angle);
+      if (absAngle > CRITICAL_ANGLE) {
+        // Beyond critical — start falling
+        isFalling = true;
+        fallTimer = 0;
+        warningEl.classList.add('visible');
+        comStatusEl.textContent = '越界!';
+        comStatusEl.className = 'stat-value status-unstable';
+      }
+      // Let physics take over
+      takeawayEl.textContent = '松手后质心在重力作用下自然摆动——骨骼承重代替肌肉持续拉紧';
+      takeawayEl.style.opacity = '1';
+    }
+  }
+
+  canvas.addEventListener('pointerdown', onPointerDown);
+  canvas.addEventListener('pointermove', onPointerMove);
+  canvas.addEventListener('pointerup', onPointerUp);
+  canvas.addEventListener('pointerleave', onPointerUp);
+
+  /* ========== status update ========== */
+  function updateStatus() {
+    const angleDeg = Math.abs(figure.angle) * 180 / Math.PI;
+    angleEl.textContent = angleDeg.toFixed(1) + '°';
+    const absAngle = Math.abs(figure.angle);
+    if (absAngle <= CRITICAL_ANGLE) {
+      comStatusEl.textContent = '稳定';
+      comStatusEl.className = 'stat-value status-stable';
+    } else {
+      comStatusEl.textContent = '越界';
+      comStatusEl.className = 'stat-value status-unstable';
+    }
+  }
+
+  /* ========== drawing ========== */
+  function drawHuman(angle) {
+    const pivotX = pivot.pointA.x;
+    const pivotY = pivot.pointA.y;
+
+    ctx.save();
+    ctx.translate(pivotX, pivotY);
+    ctx.rotate(-angle); // Matter.js angle is CCW positive; we want CW positive
+
+    // Body silhouette (torso)
+    const torsoTop = -FIGURE_H * 0.78;
+    const torsoBot = -FIGURE_H * 0.35;
+    const torsoH = torsoBot - torsoTop; // positive
+    const torsoW = FIGURE_W * 0.8;
+    ctx.fillStyle = 'rgba(230, 230, 230, 0.6)';
+    ctx.beginPath();
+    ctx.ellipse(0, (torsoTop + torsoBot) / 2, torsoW / 2, torsoH / 2, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Head
+    ctx.fillStyle = 'rgba(230, 230, 230, 0.7)';
+    ctx.beginPath();
+    ctx.arc(0, -FIGURE_H + HEAD_R, HEAD_R, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Legs (two lines from hip to ankle)
+    const hipY = -FIGURE_H * 0.45;
+    ctx.strokeStyle = 'rgba(230, 230, 230, 0.5)';
+    ctx.lineWidth = 5;
+    ctx.lineCap = 'round';
+    // Left leg
+    ctx.beginPath();
+    ctx.moveTo(-6, hipY);
+    ctx.lineTo(-4, 0);
+    ctx.stroke();
+    // Right leg
+    ctx.beginPath();
+    ctx.moveTo(6, hipY);
+    ctx.lineTo(4, 0);
+    ctx.stroke();
+
+    // Arms
+    const shoulderY = -FIGURE_H * 0.8;
+    ctx.strokeStyle = 'rgba(230, 230, 230, 0.4)';
+    ctx.lineWidth = 4;
+    // Left arm
+    ctx.beginPath();
+    ctx.moveTo(-torsoW / 2 - 2, shoulderY);
+    ctx.lineTo(-torsoW / 2 - 16, shoulderY + 40);
+    ctx.stroke();
+    // Right arm
+    ctx.beginPath();
+    ctx.moveTo(torsoW / 2 + 2, shoulderY);
+    ctx.lineTo(torsoW / 2 + 16, shoulderY + 40);
+    ctx.stroke();
+
+    ctx.restore();
+  }
+
+  function draw() {
+    const angle = figure ? figure.angle : 0;
+    const pivotX = pivot ? pivot.pointA.x : cx;
+    const pivotY = pivot ? pivot.pointA.y : groundY;
+
+    // COM position
+    const comX = pivotX - Math.sin(angle) * COM_Y;
+    const comY = pivotY - Math.cos(angle) * COM_Y;
+
+    // Clear
+    ctx.clearRect(0, 0, W, H);
+
+    // Background
+    ctx.fillStyle = '#0b0e14';
+    ctx.fillRect(0, 0, W, H);
+
+    // Ground line
+    ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(0, pivotY);
+    ctx.lineTo(W, pivotY);
+    ctx.stroke();
+
+    // Support base (green area under feet)
+    const absAngle = Math.abs(angle);
+    const isStable = absAngle <= CRITICAL_ANGLE;
+    const supportColor = isStable ? 'rgba(95, 203, 138, 0.2)' : 'rgba(242, 139, 130, 0.25)';
+    const supportBorder = isStable ? 'rgba(95, 203, 138, 0.4)' : 'rgba(242, 139, 130, 0.5)';
+    ctx.fillStyle = supportColor;
+    ctx.strokeStyle = supportBorder;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.rect(pivotX - SUPPORT_HALF, pivotY, SUPPORT_HALF * 2, 6);
+    ctx.fill();
+    ctx.stroke();
+
+    // Vertical reference line at center
+    ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([4, 6]);
+    ctx.beginPath();
+    ctx.moveTo(pivotX, pivotY - FIGURE_H - 20);
+    ctx.lineTo(pivotX, pivotY + 10);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Gravity line (from COM straight down)
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.25)';
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([3, 5]);
+    ctx.beginPath();
+    ctx.moveTo(comX, comY);
+    ctx.lineTo(comX, pivotY + 10);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Draw human figure
+    drawHuman(angle);
+
+    // COM ball
+    const comGrad = ctx.createRadialGradient(comX - 4, comY - 4, 2, comX, comY, 12);
+    comGrad.addColorStop(0, '#7aa2f7');
+    comGrad.addColorStop(0.6, '#4f6ef2');
+    comGrad.addColorStop(1, 'rgba(79, 110, 242, 0.3)');
+    ctx.fillStyle = comGrad;
+    ctx.beginPath();
+    ctx.arc(comX, comY, 10, 0, Math.PI * 2);
+    ctx.fill();
+    // Outer glow
+    ctx.strokeStyle = 'rgba(79, 110, 242, 0.5)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(comX, comY, 14, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // COM label
+    ctx.fillStyle = 'rgba(230, 230, 230, 0.6)';
+    ctx.font = '14px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('质心', comX, comY - 20);
+
+    // Angle arc
+    if (Math.abs(angle) > 0.01) {
+      const arcRadius = 40;
+      const startAngle = Math.PI / 2;
+      const endAngle = Math.PI / 2 - angle;
+      ctx.strokeStyle = 'rgba(255,255,255,0.2)';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.arc(pivotX, pivotY, arcRadius, startAngle, endAngle, angle > 0);
+      ctx.stroke();
+      // Angle label
+      const labelAngle = Math.PI / 2 - angle / 2;
+      const labelR = 52;
+      ctx.fillStyle = 'rgba(255,255,255,0.35)';
+      ctx.font = '12px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText((Math.abs(angle) * 180 / Math.PI).toFixed(1) + '°',
+        pivotX + Math.cos(labelAngle) * labelR,
+        pivotY - Math.sin(labelAngle) * labelR);
+    }
+
+    // Critical angle markers
+    const critR = 70;
+    ctx.strokeStyle = 'rgba(242, 139, 130, 0.15)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([3, 4]);
+    // Left critical angle line
+    ctx.beginPath();
+    ctx.moveTo(pivotX, pivotY);
+    const critEndX = pivotX - Math.sin(CRITICAL_ANGLE) * critR;
+    const critEndY = pivotY - Math.cos(CRITICAL_ANGLE) * critR;
+    ctx.lineTo(critEndX, critEndY);
+    ctx.stroke();
+    // Right critical angle line
+    ctx.beginPath();
+    ctx.moveTo(pivotX, pivotY);
+    const critEndX2 = pivotX + Math.sin(CRITICAL_ANGLE) * critR;
+    const critEndY2 = pivotY - Math.cos(CRITICAL_ANGLE) * critR;
+    ctx.lineTo(critEndX2, critEndY2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = 'rgba(242, 139, 130, 0.3)';
+    ctx.font = '14px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('临界', critEndX2 + 20, critEndY2 - 8);
+    ctx.fillText('临界', critEndX - 20, critEndY - 8);
+  }
+
+  /* ========== physics fall handling ========== */
+  function handleFalling() {
+    if (!isFalling) return;
+    const angle = figure.angle;
+    const absAngle = Math.abs(angle);
+    // If the figure has swung back within bounds, stop falling
+    if (absAngle < CRITICAL_ANGLE * 0.8) {
+      isFalling = false;
+      fallTimer = 0;
+      warningEl.classList.remove('visible');
+      comStatusEl.textContent = '稳定';
+      comStatusEl.className = 'stat-value status-stable';
+      takeawayEl.textContent = '直立行走的省力来自质心在脚底支撑面内的自然摆动——骨骼承重代替了肌肉持续拉紧';
+    }
+  }
+
+  /* ========== main loop ========== */
+  let needsInit = true;
+
+  function tick(time) {
+    if (needsInit) {
+      Deck.fit(canvas);
+      initBodies();
+      needsInit = false;
+    }
+
+    // Update physics
+    if (!isDragging) {
+      Engine.update(engine, 16.67);
+      handleFalling();
+      updateStatus();
+    }
+
+    // Draw
+    draw();
+
+    // Update status bar colors
+    const absAngle = Math.abs(figure ? figure.angle : 0);
+    if (absAngle > CRITICAL_ANGLE) {
+      angleEl.style.color = '#f28b82';
+    } else {
+      angleEl.style.color = '';
+    }
+  }
+
+  const stopLoop = Deck.loop(tick, { still: 0 });
+
+  /* ========== resize handling ========== */
+  Deck.onResize(function() {
+    calcLayout();
+    Deck.fit(canvas);
+    if (bodiesInitialized) {
+      // Reposition bodies
+      Body.setPosition(groundBody, { x: cx, y: groundY + 15 });
+      pivot.pointA = { x: cx, y: groundY };
+      // Reset figure to upright
+      Body.setPosition(figure, { x: cx, y: groundY - FIGURE_H / 2 });
+      Body.setAngle(figure, 0);
+      Body.setAngularVelocity(figure, 0);
+      isDragging = false;
+      isFalling = false;
+      fallTimer = 0;
+      warningEl.classList.remove('visible');
+      takeawayEl.textContent = '拖拽质心小球，感受直立时质心在支撑面内的自然摆动';
+      takeawayEl.style.opacity = '1';
+    }
+  });
+
+  /* ========== mount ========== */
+  Lec.mount({
+    index: 11,
+    kicker: '第2章 · 猿的身体',
+    title: '直立的账本',
+    take: '每个适应都是权衡'
+  });
+})();
+</script>
+</body>
+</html>

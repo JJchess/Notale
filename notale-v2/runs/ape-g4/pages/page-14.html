@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    #main{display:flex;gap:var(--sp-5)}
+    .sim{flex:2 1 0;display:flex;flex-direction:column;gap:var(--sp-3);min-width:0;min-height:0}
+    .meters{display:flex;gap:var(--sp-2);min-width:0}
+    .meter{flex:1 1 0;min-width:0;padding:var(--sp-2) var(--sp-3);background:var(--surface);border:1px solid var(--line);border-radius:var(--radius-sm)}
+    .meter b{display:block;font-size:var(--fs-sec);line-height:1.35;font-variant-numeric:tabular-nums;white-space:nowrap}
+    .meter span{display:block;font-size:var(--fs-label);line-height:1.4;color:var(--muted);white-space:nowrap}
+    .world{position:relative;flex:1 1 0;min-height:0;overflow:hidden;background:var(--surface-soft);border:1px solid var(--line);border-radius:var(--radius-lg)}
+    .world canvas{cursor:crosshair}
+    .world:focus-within{outline:3px solid var(--focus);outline-offset:2px}
+    .scene-help{position:absolute;left:var(--sp-4);top:var(--sp-3);z-index:2;padding:var(--sp-2) var(--sp-3);background:var(--surface);border-radius:var(--radius-sm);font-size:var(--fs-label);line-height:1.4;color:var(--muted)}
+    .target{position:absolute;z-index:3;width:34px;height:34px;padding:0;border-radius:50%;transform:translate(-50%,-50%);touch-action:none;background:var(--accent);color:white;border:3px solid var(--surface);box-shadow:var(--shadow);font-size:var(--fs-body)}
+    .controls{display:flex;align-items:center;gap:var(--sp-3);min-width:0}
+    .controls .feedback{flex:1 1 0;min-width:0;font-size:var(--fs-sec);line-height:var(--lh-copy);color:var(--muted)}
+    .flow{flex:1 1 0;min-width:0;min-height:0}
+    .k-process.vertical{height:100%;box-sizing:border-box;padding:0;gap:var(--sp-1)}
+    .k-process.vertical>.axis{left:18px;top:24px;bottom:24px}
+    .k-process.vertical>.step{flex:1 1 0;padding:var(--sp-2) var(--sp-3) var(--sp-2) var(--sp-6);display:flex;flex-direction:column;justify-content:center}
+    .k-process.vertical>.step b{font-size:var(--fs-sec);line-height:1.35}
+    .k-process.vertical>.step span{font-size:var(--fs-label);line-height:1.4;color:var(--muted)}
+    .k-process.vertical>.arw{position:absolute;left:7px;flex:none;width:22px;height:22px;background:var(--surface);border:1px solid var(--line);border-radius:50%;font-size:var(--fs-sec)}
+    .k-process.vertical>.arw:nth-of-type(3){top:15.5%}.k-process.vertical>.arw:nth-of-type(5){top:32.5%}.k-process.vertical>.arw:nth-of-type(7){top:49.5%}.k-process.vertical>.arw:nth-of-type(9){top:66.5%}.k-process.vertical>.arw:nth-of-type(11){top:83.5%}
+  </style>
+</head>
+<body data-page="14" data-total="50">
+  <div id="stage"><main id="main"></main></div>
+  <script src="assets/base.js"></script>
+  <script src="assets/lec.js"></script>
+  <script src="assets/lib/matter.min.js"></script>
+  <script>
+    Lec.mount({index:14,kicker:"GAIT AS CONTROLLED FALLING",title:"走路，是把下一只脚放到身体将要落下的地方",take:"走路不是轮流抬脚，而是不断把新的支撑放到前方，接住仍在向前运动的身体。"});
+    Deck.init({index:14,total:50});
+    var main=document.getElementById("main");
+    Lec.K.p14GaitModel=Lec.K.p14GaitModel||{legLengthM:1,footSupportLengthM:0.24,initialForwardLeanDeg:7,initialHorizontalSpeedMS:0.75,maxReachFractionOfLegLength:0.72,fallAngleDeg:28,stableCatchCount:3,contactFriction:0.9,physicsTimeStepS:0.0167,landingPreviewSeconds:0.42};
+    var cfg=Lec.K.p14GaitModel;
+    var fmt=function(n,d){return Lec.P.formatNumber(n,d)};
+    var mass=Lec.K.bodyMassReferenceKg||70, grav=Lec.K.standardGravityMS2||9.80665, weight=Lec.P.weight(mass,grav);
+    main.innerHTML='<section class="sim min0"><div class="meters" aria-label="物理读数">'+
+      '<div class="meter"><b>'+fmt(mass,0)+' kg</b><span>可调参考人物</span></div><div class="meter"><b>'+fmt(grav,2)+' m/s²</b><span>近地表重力</span></div><div class="meter"><b>'+fmt(weight,0)+' N</b><span>近地表重量</span></div><div class="meter"><b id="edge">— m</b><span>越过支撑前缘</span></div><div class="meter"><b id="speed">— m/s</b><span>重心水平速度</span></div><div class="meter"><b id="angle">—°</b><span>躯干前倾 · <i id="catches">0 / '+cfg.stableCatchCount+'</i></span></div></div>'+
+      '<div class="world no-pan" id="world"><canvas class="cv-fill" id="cv" role="img" aria-label="侧视简化步态模型：躯干受重力向前运动，重心垂线、当前支撑脚与建议落脚区持续显示。"></canvas><div class="scene-help">开始后拖动蓝色落点；方向键可微调，松手尝试落脚。</div><button type="button" class="target" id="target" aria-label="摆动脚落点" aria-valuetext="等待开始">↓</button></div>'+
+      '<div class="controls"><button type="button" class="primary" id="start">开始一步</button><button type="button" id="retry">重来一步</button><button type="button" id="reset">重置挑战</button><div class="feedback" id="feedback" aria-live="polite">把落点放在建议区域，再开始一步。</div></div></section>'+
+      '<section class="flow min0"><div class="k-process vertical" id="process"><div class="axis"></div></div></section>';
+    var steps=[['后脚支撑','当前是谁在支撑身体？'],['重心向前移动','重心相对支撑脚往哪里走？'],['越过当前支撑区','什么时候必须准备下一支撑？'],['摆动脚寻找落点','下一只脚应落在哪里？'],['前脚接触地面','接触后什么发生改变？'],['切换支撑并接住','新支撑能否接住身体？']];
+    var proc=document.getElementById('process');
+    steps.forEach(function(s,i){var el=document.createElement('div');el.className='step'+(i===0?' is-current':'');el.innerHTML='<b>'+(i+1)+' · '+s[0]+'</b><span>'+s[1]+'</span>';proc.appendChild(el);if(i<5){var a=document.createElement('div');a.className='arw';a.setAttribute('aria-hidden','true');proc.appendChild(a);}});
+    var stepEls=proc.querySelectorAll('.step'), cv=document.getElementById('cv'), worldEl=document.getElementById('world'), target=document.getElementById('target');
+    var edgeEl=document.getElementById('edge'),speedEl=document.getElementById('speed'),angleEl=document.getElementById('angle'),catchEl=document.getElementById('catches'),feedback=document.getElementById('feedback');
+    var Engine=Matter.Engine,Bodies=Matter.Bodies,Body=Matter.Body,Composite=Matter.Composite,Constraint=Matter.Constraint;
+    var engine=Engine.create({gravity:{x:0,y:1}}), torso,ground,leg, state, pxPerM=170;
+    function fresh(){return {running:false,step:0,catches:0,supportX:330,targetX:535,suggestedX:515,elapsed:0,result:'ready',side:0};}
+    function build(keep){Composite.clear(engine.world,false);engine.gravity.y=1;state=keep||fresh();ground=Bodies.rectangle(460,390,940,44,{isStatic:true,friction:cfg.contactFriction});torso=Bodies.rectangle(state.supportX+38,205,64,116,{friction:cfg.contactFriction,angle:cfg.initialForwardLeanDeg*Math.PI/180});leg=Constraint.create({pointA:{x:state.supportX,y:366},bodyB:torso,pointB:{x:-8,y:52},length:cfg.legLengthM*pxPerM,stiffness:0.88,damping:0.12});Composite.add(engine.world,[ground,torso,leg]);Body.setVelocity(torso,{x:cfg.initialHorizontalSpeedMS*pxPerM/60,y:0});setStep(0);placeTarget();draw();updateReadouts();}
+    function setStep(n){state.step=n;stepEls.forEach(function(el,i){el.classList.toggle('is-current',i===n);el.classList.toggle('is-past',i<n);});}
+    function placeTarget(){target.style.left=(state.targetX/worldEl.clientWidth*100)+'%';target.style.top='82%';target.setAttribute('aria-valuetext','落点 '+fmt((state.targetX-state.supportX)/pxPerM,2)+' 米');}
+    function begin(){if(state.running)return;state.running=true;state.elapsed=0;state.result='running';setStep(1);feedback.textContent='重心正在前移；把新支撑放到建议区域。';document.getElementById('start').disabled=true;}
+    function fail(msg){state.running=false;state.result='fail';feedback.textContent=msg+'。调整落点后重来一步。';document.getElementById('start').disabled=false;}
+    function evaluate(){setStep(4);var reach=cfg.legLengthM*cfg.maxReachFractionOfLegLength*pxPerM;var delta=state.targetX-state.suggestedX;if(Math.abs(state.targetX-state.supportX)>reach){fail('落点超出可达范围');return;}if(delta<-55){fail('落点太近');return;}if(delta>75){fail('落脚太晚');return;}state.supportX=state.targetX;state.catches++;setStep(5);catchEl.textContent=state.catches+' / '+cfg.stableCatchCount;feedback.textContent=state.catches>=cfg.stableCatchCount?'挑战完成：每次新支撑都接住了仍在前移的身体。':'接住了。下一步仍要重新安排前方支撑。';state.running=false;state.result=state.catches>=cfg.stableCatchCount?'win':'caught';document.getElementById('start').disabled=state.result==='win';setTimeout(function(){if(state.result==='caught'){var k=state.catches;var sx=state.supportX;build({running:false,step:0,catches:k,supportX:sx,targetX:sx+200,suggestedX:sx+180,elapsed:0,result:'ready',side:1-state.side});}},250);}
+    function tick(t,dt){if(state.running){var ms=Math.min(cfg.physicsTimeStepS*1000,dt||16.67);Engine.update(engine,ms);state.elapsed+=ms/1000;Matter.Body.applyForce(torso,torso.position,{x:0.00035,y:0});var vx=torso.velocity.x*60/pxPerM;state.suggestedX=Lec.P.clamp(torso.position.x+vx*pxPerM*cfg.landingPreviewSeconds,torso.position.x-cfg.legLengthM*cfg.maxReachFractionOfLegLength*pxPerM,torso.position.x+cfg.legLengthM*cfg.maxReachFractionOfLegLength*pxPerM);if(state.elapsed>.28&&state.step<2)setStep(2);if(state.elapsed>.52&&state.step<3)setStep(3);if(state.elapsed>1.25)evaluate();var deg=Math.abs(torso.angle*180/Math.PI);if(state.running&&deg>=cfg.fallAngleDeg)fail('落脚太晚');}draw();updateReadouts();}
+    function draw(){Deck.fit(cv);var ctx=cv.getContext('2d'),w=cv.clientWidth,h=cv.clientHeight;ctx.clearRect(0,0,w,h);var sy=h/410,sx=w/920;ctx.save();ctx.scale(sx,sy);ctx.fillStyle=Deck.rgb('--surface-strong');ctx.fillRect(0,368,920,42);ctx.fillStyle=Deck.rgb('--accent');ctx.fillRect(state.supportX-30,354,60,14);ctx.fillStyle=Deck.rgba('--accent',.16);ctx.fillRect(state.suggestedX-48,330,96,38);ctx.strokeStyle=Deck.rgb('--accent');ctx.setLineDash([7,6]);ctx.strokeRect(state.suggestedX-48,330,96,38);ctx.setLineDash([]);var x=torso.position.x,y=torso.position.y;ctx.strokeStyle=Deck.rgb('--line-strong');ctx.lineWidth=10;ctx.beginPath();ctx.moveTo(x-8,y+52);ctx.lineTo(state.supportX,354);ctx.stroke();ctx.strokeStyle=Deck.rgb('--cyan');ctx.beginPath();ctx.moveTo(x+8,y+52);ctx.lineTo(state.targetX,354);ctx.stroke();ctx.save();ctx.translate(x,y);ctx.rotate(torso.angle);ctx.fillStyle=Deck.rgb('--text');ctx.fillRect(-32,-58,64,116);ctx.restore();ctx.fillStyle=Deck.rgb('--danger');ctx.beginPath();ctx.arc(x,y,8,0,Math.PI*2);ctx.fill();ctx.strokeStyle=Deck.rgb('--danger');ctx.lineWidth=2;ctx.setLineDash([5,5]);ctx.beginPath();ctx.moveTo(x,y);ctx.lineTo(x,368);ctx.stroke();ctx.setLineDash([]);Deck.arrow(ctx,x+10,y,x+82,y,10);ctx.restore();}
+    function updateReadouts(){var front=state.supportX+30;var dist=(torso.position.x-front)/pxPerM;var rawV=torso.velocity.x*60/pxPerM;var vx=Lec.P.clamp(Number.isFinite(rawV)?rawV:0,-5,5);edgeEl.textContent=(dist>=0?'+':'')+fmt(dist,2)+' m';speedEl.textContent=fmt(vx,2)+' m/s';angleEl.textContent=fmt(torso.angle*180/Math.PI,1)+'°';}
+    function moveTarget(x){var reach=cfg.legLengthM*cfg.maxReachFractionOfLegLength*pxPerM;state.targetX=Lec.P.clamp(x,state.supportX-reach,state.supportX+reach);placeTarget();}
+    var dragging=false;target.addEventListener('pointerdown',function(e){dragging=true;target.setPointerCapture(e.pointerId);});target.addEventListener('pointermove',function(e){if(dragging)moveTarget(Deck.pt(worldEl,e).x);});target.addEventListener('pointerup',function(e){dragging=false;});target.addEventListener('pointercancel',function(){dragging=false;});target.addEventListener('keydown',function(e){if(e.key==='ArrowLeft'||e.key==='ArrowRight'){e.preventDefault();moveTarget(state.targetX+(e.key==='ArrowRight'?1:-1)*(e.shiftKey?25:8));}if(e.key==='Enter'||e.key===' '){e.preventDefault();begin();}});
+    document.getElementById('start').onclick=begin;document.getElementById('retry').onclick=function(){var k=state.catches;build();state.catches=k;catchEl.textContent=k+' / '+cfg.stableCatchCount;feedback.textContent='本次已重来；流程提示保留。';};document.getElementById('reset').onclick=function(){build();catchEl.textContent='0 / '+cfg.stableCatchCount;feedback.textContent='挑战已重置。把落点放在建议区域。';document.getElementById('start').disabled=false;};
+    Deck.onResize(function(){placeTarget();draw();});build();Deck.loop(tick,{still:700});
+  </script>
+</body>
+</html>

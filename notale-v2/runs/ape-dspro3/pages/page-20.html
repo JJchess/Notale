@@ -1,0 +1,845 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>第 20 页 · 互动讲义</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <link rel="stylesheet" href="assets/lib/katex.min.css">
+  <style>
+    /* ---- page-20: 跳高角度模拟 ---- */
+    #main {
+      display: flex;
+      flex-direction: column;
+      gap: var(--sp-3);
+      height: 100%;
+    }
+
+    /* 上方: canvas + 参考插图 */
+    .sim-row {
+      display: flex;
+      flex-direction: row;
+      gap: var(--sp-4);
+      flex: 1 1 0%;
+      min-height: 0;
+    }
+    .sim-canvas-wrap {
+      flex: 1 1 0%;
+      min-width: 0;
+      position: relative;
+      border-radius: var(--r-md);
+      overflow: hidden;
+      border: 1px solid var(--border);
+      background: var(--bg);
+    }
+    .sim-canvas-wrap canvas {
+      display: block;
+    }
+    .sim-ref {
+      flex-shrink: 0;
+      width: 240px;
+      border-radius: var(--r-md);
+      overflow: hidden;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      display: flex;
+      flex-direction: column;
+    }
+    .sim-ref img {
+      width: 100%;
+      height: auto;
+      display: block;
+      opacity: 0.7;
+    }
+    .sim-ref .ref-label {
+      font-size: var(--fs-tick);
+      color: var(--text-dim);
+      padding: var(--sp-2) var(--sp-3);
+      text-align: center;
+      line-height: 1.35;
+    }
+
+    /* 读数条 */
+    .readout-bar {
+      display: flex;
+      flex-direction: row;
+      gap: var(--sp-8);
+      align-items: center;
+      padding: 0 var(--sp-4);
+      flex-wrap: wrap;
+    }
+    .readout-item {
+      display: flex;
+      flex-direction: row;
+      align-items: baseline;
+      gap: var(--sp-2);
+      font-size: var(--fs-label);
+      color: var(--text-sec);
+      white-space: nowrap;
+    }
+    .readout-item .val {
+      font-size: var(--fs-body);
+      font-weight: 600;
+      color: var(--text);
+      font-variant-numeric: tabular-nums;
+      font-family: var(--font-mono);
+    }
+    .readout-item .val.accent {
+      color: var(--accent);
+    }
+    .readout-item .val.diff {
+      color: var(--diff-fg);
+    }
+
+    /* 控件行 */
+    .ctl-row {
+      display: flex;
+      flex-direction: row;
+      gap: var(--sp-6);
+      align-items: center;
+    }
+    .ctl-row .ctl {
+      flex: 1 1 0%;
+      min-width: 0;
+    }
+    .ctl-row .ctl input[type="range"] {
+      flex: 1 1 0%;
+      min-width: 0;
+      accent-color: var(--accent);
+    }
+
+    /* echarts 容器 */
+    .chart-wrap {
+      flex-shrink: 0;
+      height: 150px;
+      border-radius: var(--r-md);
+      overflow: hidden;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      margin-top: var(--sp-2);
+    }
+
+    /* k-process 微型条 */
+    .mini-process {
+      display: flex;
+      flex-direction: row;
+      align-items: center;
+      gap: var(--sp-1);
+      flex-shrink: 0;
+      padding: 2px 0;
+      font-size: var(--fs-tick);
+      color: var(--text-dim);
+      opacity: 0.7;
+      width: 100%;
+      justify-content: center;
+    }
+    .mini-process .mp-step {
+      padding: 1px var(--sp-2);
+      border-radius: var(--r-sm);
+      transition: color 300ms var(--ease), opacity 300ms var(--ease);
+      white-space: nowrap;
+    }
+    .mini-process .mp-step.on {
+      color: var(--accent);
+      opacity: 1;
+      font-weight: 600;
+    }
+    .mini-process .mp-arw {
+      padding: 0 1px;
+      color: var(--border-strong);
+      flex-shrink: 0;
+    }
+  </style>
+</head>
+<body data-page="20" data-total="60">
+<div id="stage">
+<main id="main">
+  <!-- 微型 process 指示条 -->
+  <div class="mini-process" id="mini-process">
+    <span class="mp-step" data-idx="0">1. 铅球直觉</span>
+    <span class="mp-arw">→</span>
+    <span class="mp-step" data-idx="1">2. 跳高直觉</span>
+    <span class="mp-arw">→</span>
+    <span class="mp-step" data-idx="2">3. 人体≠铅球</span>
+    <span class="mp-arw">→</span>
+    <span class="mp-step" data-idx="3">4. v₀≠常数</span>
+    <span class="mp-arw">→</span>
+    <span class="mp-step" data-idx="4">5. 曲线相交</span>
+    <span class="mp-arw">→</span>
+    <span class="mp-step" data-idx="5">6. 感悟</span>
+  </div>
+
+  <!-- 模拟区域 -->
+  <div class="sim-row">
+    <div class="sim-canvas-wrap" id="sim-wrap"></div>
+    <div class="sim-ref">
+      <img src="assets/img/p20-highjump.png" alt="跳高参考图">
+      <div class="ref-label">参考示意图</div>
+    </div>
+  </div>
+
+  <!-- 实时读数 -->
+  <div class="readout-bar" id="readout-bar">
+    <div class="readout-item">角度 <span class="val accent" id="ro-angle">42°</span></div>
+    <div class="readout-item">初速度 <span class="val" id="ro-v0">3.37</span> m/s</div>
+    <div class="readout-item">理论高度 <span class="val" id="ro-ht">1.24</span> m</div>
+    <div class="readout-item">实际高度 <span class="val accent" id="ro-ha">1.24</span> m</div>
+    <div class="readout-item">差值 <span class="val diff" id="ro-diff">0.00</span> m</div>
+  </div>
+
+  <!-- 双滑块 -->
+  <div class="ctl-row">
+    <div class="ctl">
+      <label for="sl-angle">起跳角度</label>
+      <input type="range" id="sl-angle" min="35" max="50" step="0.5" value="42">
+      <span id="sl-angle-val" style="font-variant-numeric:tabular-nums;min-width:3em;">42°</span>
+    </div>
+    <div class="ctl">
+      <label for="sl-v0">初速度（受生理约束）</label>
+      <input type="range" id="sl-v0" min="1.5" max="3.6" step="0.05" value="3.37">
+      <span id="sl-v0-val" style="font-variant-numeric:tabular-nums;min-width:4em;">3.37 m/s</span>
+    </div>
+  </div>
+
+  <!-- 三条曲线 -->
+  <div class="chart-wrap" id="chart-wrap"></div>
+</main>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script src="assets/lib/echarts.min.js"></script>
+<script src="assets/lib/pixi.min.js"></script>
+<script src="assets/lib/matter.min.js"></script>
+<script src="assets/lib/katex.min.js"></script>
+<script>
+(function() {
+  /* ================================================================
+     page-20: 跳高角度模拟
+     知识结构: process — 六个概念步骤
+     交互: 双滑块 → PixiJS 轨迹 + echarts 三曲线
+     必用: matterjs, pixijs-2d, make-illustration
+  ================================================================ */
+
+  // ---- 0. 底盘初始化 ----
+  Deck.init({ index: 20, total: 60 });
+
+  // ---- 1. Lec.mount 页眉 ----
+  Lec.mount({
+    index: 20,
+    kicker: '跳高角度',
+    title: '最佳角度不是 45°',
+    take: '人体的最佳，不是抛物线的最佳——是「你能在这个角度上输出最大力量」的那个点。'
+  });
+
+  // ---- 2. 常量与派生值 ----
+  var g = Lec.K.EARTH_GRAVITY;                          // 9.8 m/s²
+  var v0Vertical = Lec.K.HUMAN_JUMP_INITIAL_VELOCITY;   // ≈3.13 m/s (垂直跳初速度)
+  var homData = Lec.P.getHominidData('homo_sapiens_modern');
+  var cmHeight0 = homData.height * 0.55;                // 质心初始高度 ≈0.96 m
+  var barHeight = 1.50;                                  // 默认横杆高度 (m)
+
+  // ---- 3. velocityAtAngle — 人体在不同角度可输出的最大初速度 ----
+  function velocityAtAngle(angleDeg) {
+    // 浅角度腿部能爆发更大初速度; 陡角度踝/膝力矩受限,初速度下降
+    // 模型: 35° 时比垂直跳高 ~15%, 50° 时降至 ~70%
+    var v0Max = v0Vertical * 1.15;     // 35° 时的最大初速度 ≈3.60
+    var t = Lec.P.clamp((angleDeg - 35) / 15, 0, 1);  // 0 at 35°, 1 at 50°
+    return v0Max * (1 - 0.3 * t * t);
+  }
+
+  // 初始值
+  var initAngle = 42;
+  var v0Max35 = velocityAtAngle(35);
+  var initV0 = velocityAtAngle(initAngle);
+
+  // ---- 4. DOM 引用 ----
+  var simWrap = document.getElementById('sim-wrap');
+  var chartWrap = document.getElementById('chart-wrap');
+  var slAngle = document.getElementById('sl-angle');
+  var slV0 = document.getElementById('sl-v0');
+  var slAngleVal = document.getElementById('sl-angle-val');
+  var slV0Val = document.getElementById('sl-v0-val');
+  var roAngle = document.getElementById('ro-angle');
+  var roV0 = document.getElementById('ro-v0');
+  var roHt = document.getElementById('ro-ht');
+  var roHa = document.getElementById('ro-ha');
+  var roDiff = document.getElementById('ro-diff');
+  var miniProcess = document.getElementById('mini-process');
+
+  // ---- 5. PixiJS 初始化 ----
+  var simW = 0, simH = 0;
+  var app, trailGfx, bodyGfx, sceneGfx, labelGfx;
+
+  function initPixi() {
+    var rect = simWrap.getBoundingClientRect();
+    // 逻辑尺寸
+    simW = Math.floor(rect.width);
+    simH = Math.floor(rect.height);
+    if (simW < 100 || simH < 100) { simW = 1120; simH = 400; }
+
+    if (app) {
+      app.renderer.resize(simW, simH);
+      return;
+    }
+
+    app = new PIXI.Application({
+      width: simW,
+      height: simH,
+      backgroundColor: 0x0b1119,
+      antialias: true,
+      resolution: Math.min(window.devicePixelRatio || 1, 2),
+      autoDensity: true,
+    });
+    simWrap.appendChild(app.view);
+
+    // 图层
+    sceneGfx = new PIXI.Graphics();   // 地面、横杆、网格
+    trailGfx = new PIXI.Graphics();   // 轨迹线
+    bodyGfx  = new PIXI.Graphics();   // 质心球 + 躯干
+    labelGfx = new PIXI.Graphics();   // 标注
+
+    app.stage.addChild(sceneGfx);
+    app.stage.addChild(trailGfx);
+    app.stage.addChild(bodyGfx);
+    app.stage.addChild(labelGfx);
+  }
+
+  // ---- 6. Matter.js 物理 ----
+  var engine, jumper, groundBody;
+  var trailPoints = [];
+  var simRunning = false;
+  var simDone = false;
+  var simResult = { ht: 0, ha: 0, peakY: 0 };
+  // 坐标映射: 物理坐标 (m, y-up) → 屏幕坐标 (px, y-down)
+  var SCALE = 200;           // px/m
+  var originX, groundY;      // 屏幕坐标
+
+  function updateOrigin() {
+    originX = Math.round(simW * 0.12);
+    groundY = Math.round(simH * 0.92);
+  }
+
+  function physToScreen(px, py) {
+    // px, py: 物理坐标 (m), y-up, 原点在起跳点地面
+    return {
+      x: originX + px * SCALE,
+      y: groundY - py * SCALE
+    };
+  }
+
+  function screenToPhys(sx, sy) {
+    return {
+      x: (sx - originX) / SCALE,
+      y: (groundY - sy) / SCALE
+    };
+  }
+
+  function initMatter() {
+    if (engine) {
+      Matter.Composite.clear(engine.world, false);
+      Matter.Engine.clear(engine);
+    }
+    engine = Matter.Engine.create({ gravity: { x: 0, y: g, scale: 0.001 } });
+
+    // 地面: 宽 8m, 厚 0.1m, 放在 y = -0.05 (物理)
+    var gw = 8, gh = 0.1;
+    var gScreen = physToScreen(0, -gh/2);
+    groundBody = Matter.Bodies.rectangle(
+      gScreen.x + gw/2 * SCALE,
+      gScreen.y,
+      gw * SCALE,
+      gh * SCALE,
+      { isStatic: true, friction: 0.5, render: { visible: false } }
+    );
+    Matter.Composite.add(engine.world, groundBody);
+
+    // 跳高者: 质心小球, 半径 0.08m
+    var r = 0.08;
+    var startScreen = physToScreen(0, cmHeight0);
+    jumper = Matter.Bodies.circle(startScreen.x, startScreen.y, r * SCALE, {
+      friction: 0.1,
+      restitution: 0.3,
+      render: { visible: false }
+    });
+    Matter.Composite.add(engine.world, jumper);
+  }
+
+  function launchJumper(angleDeg, v0) {
+    var rad = angleDeg * Math.PI / 180;
+    var vx = v0 * Math.cos(rad);
+    var vy = v0 * Math.sin(rad);
+    // 重置位置
+    var startScreen = physToScreen(0, cmHeight0);
+    Matter.Body.setPosition(jumper, { x: startScreen.x, y: startScreen.y });
+    Matter.Body.setVelocity(jumper, { x: vx * SCALE, y: -vy * SCALE });
+    Matter.Body.setAngularVelocity(jumper, 0);
+    trailPoints = [];
+    simRunning = true;
+    simDone = false;
+    simResult = { ht: 0, ha: 0, peakY: 0 };
+    // 记录起点
+    trailPoints.push({ x: startScreen.x, y: startScreen.y });
+  }
+
+  function resetSimulation() {
+    simRunning = false;
+    simDone = false;
+    trailPoints = [];
+    var startScreen = physToScreen(0, cmHeight0);
+    Matter.Body.setPosition(jumper, { x: startScreen.x, y: startScreen.y });
+    Matter.Body.setVelocity(jumper, { x: 0, y: 0 });
+    Matter.Body.setAngularVelocity(jumper, 0);
+    drawScene();
+  }
+
+  // ---- 7. 绘制 ----
+  function drawScene() {
+    if (!sceneGfx) return;
+    sceneGfx.clear();
+    var rgbText = Deck.rgb('text');
+    var rgbBorder = Deck.rgb('border');
+    var rgbAccent = Deck.rgb('accent');
+    var rgbDim = Deck.rgb('text-dim');
+
+    // 地面
+    var gy = groundY;
+    sceneGfx.lineStyle(2, rgbBorder[0] * 65536 + rgbBorder[1] * 256 + rgbBorder[2], 0.6);
+    sceneGfx.moveTo(0, gy);
+    sceneGfx.lineTo(simW, gy);
+
+    // 横杆
+    var barScreenY = physToScreen(0, barHeight).y;
+    sceneGfx.lineStyle(2.5, rgbAccent[0] * 65536 + rgbAccent[1] * 256 + rgbAccent[2], 0.8);
+    var barX1 = physToScreen(-0.5, barHeight).x;
+    var barX2 = physToScreen(2.5, barHeight).x;
+    sceneGfx.moveTo(barX1, barScreenY);
+    sceneGfx.lineTo(barX2, barScreenY);
+    // 横杆两端小标记
+    sceneGfx.lineStyle(2, rgbAccent[0] * 65536 + rgbAccent[1] * 256 + rgbAccent[2], 0.5);
+    sceneGfx.moveTo(barX1, barScreenY - 8);
+    sceneGfx.lineTo(barX1, barScreenY + 8);
+    sceneGfx.moveTo(barX2, barScreenY - 8);
+    sceneGfx.lineTo(barX2, barScreenY + 8);
+
+    // 网格线
+    sceneGfx.lineStyle(0.5, rgbBorder[0] * 65536 + rgbBorder[1] * 256 + rgbBorder[2], 0.15);
+    for (var h = 0.5; h <= 2.5; h += 0.5) {
+      var gy2 = physToScreen(0, h).y;
+      if (gy2 > 0 && gy2 < simH) {
+        sceneGfx.moveTo(0, gy2);
+        sceneGfx.lineTo(simW, gy2);
+      }
+    }
+    for (var d = 0.5; d <= 5; d += 0.5) {
+      var gx = physToScreen(d, 0).x;
+      if (gx < simW) {
+        sceneGfx.moveTo(gx, 0);
+        sceneGfx.lineTo(gx, simH);
+      }
+    }
+
+    // 起跳点标记
+    var origS = physToScreen(0, 0);
+    sceneGfx.lineStyle(0, 0, 0);
+    sceneGfx.beginFill(rgbAccent[0] * 65536 + rgbAccent[1] * 256 + rgbAccent[2], 0.6);
+    sceneGfx.drawCircle(origS.x, origS.y, 4);
+    sceneGfx.endFill();
+
+    // CM 初始位置标记
+    var cmS = physToScreen(0, cmHeight0);
+    sceneGfx.lineStyle(0, 0, 0);
+    sceneGfx.beginFill(rgbDim[0] * 65536 + rgbDim[1] * 256 + rgbDim[2], 0.35);
+    sceneGfx.drawCircle(cmS.x, cmS.y, 3);
+    sceneGfx.endFill();
+    // 虚线: 起跳点 → CM 初始位置
+    sceneGfx.lineStyle(1, rgbDim[0] * 65536 + rgbDim[1] * 256 + rgbDim[2], 0.3);
+    sceneGfx.moveTo(origS.x, origS.y);
+    sceneGfx.lineTo(cmS.x, cmS.y);
+  }
+
+  function drawTrail() {
+    if (!trailGfx) return;
+    trailGfx.clear();
+    if (trailPoints.length < 2) return;
+    var rgbAccent = Deck.rgb('accent');
+    var color = rgbAccent[0] * 65536 + rgbAccent[1] * 256 + rgbAccent[2];
+
+    trailGfx.lineStyle(2.5, color, 0.7);
+    trailGfx.moveTo(trailPoints[0].x, trailPoints[0].y);
+    for (var i = 1; i < trailPoints.length; i++) {
+      trailGfx.lineTo(trailPoints[i].x, trailPoints[i].y);
+    }
+    // 尾部渐隐
+    if (trailPoints.length > 3) {
+      var last = trailPoints[trailPoints.length - 1];
+      trailGfx.lineStyle(0, 0, 0);
+      trailGfx.beginFill(color, 0.9);
+      trailGfx.drawCircle(last.x, last.y, 5);
+      trailGfx.endFill();
+    }
+  }
+
+  function drawBody() {
+    if (!bodyGfx) return;
+    bodyGfx.clear();
+    if (!simRunning && !simDone) return;
+    if (trailPoints.length === 0) return;
+
+    var pos = trailPoints[trailPoints.length - 1];
+    var rgbAccent = Deck.rgb('accent');
+    var color = rgbAccent[0] * 65536 + rgbAccent[1] * 256 + rgbAccent[2];
+
+    // 质心球
+    bodyGfx.lineStyle(0, 0, 0);
+    bodyGfx.beginFill(color, 0.9);
+    bodyGfx.drawCircle(pos.x, pos.y, 6);
+    bodyGfx.endFill();
+
+    // 躯干线条 (简化: 从 CM 向上向下延伸)
+    var angle = -0.3; // 背越式后仰
+    var len = 0.35 * SCALE; // 半身长
+    bodyGfx.lineStyle(2, color, 0.5);
+    bodyGfx.moveTo(pos.x - Math.sin(angle) * len * 0.6, pos.y - Math.cos(angle) * len * 0.6);
+    bodyGfx.lineTo(pos.x + Math.sin(angle) * len * 0.4, pos.y + Math.cos(angle) * len * 0.4);
+  }
+
+  function drawAll() {
+    drawScene();
+    drawTrail();
+    drawBody();
+  }
+
+  // ---- 8. 计算高度 ----
+  function calcHeights(angleDeg, v0) {
+    var rad = angleDeg * Math.PI / 180;
+    var rise = (v0 * v0 * Math.sin(rad) * Math.sin(rad)) / (2 * g);
+    return {
+      theoretical: cmHeight0 + (v0Max35 * v0Max35 * Math.sin(rad) * Math.sin(rad)) / (2 * g),
+      actual: cmHeight0 + rise,
+      diff: (cmHeight0 + rise) - (cmHeight0 + (v0Max35 * v0Max35 * Math.sin(rad) * Math.sin(rad)) / (2 * g))
+    };
+  }
+
+  // ---- 9. 更新 UI ----
+  var currentAngle = initAngle;
+  var currentV0 = initV0;
+
+  function updateReadouts() {
+    var h = calcHeights(currentAngle, currentV0);
+    roAngle.textContent = currentAngle + '°';
+    roV0.textContent = currentV0.toFixed(2);
+    roHt.textContent = h.theoretical.toFixed(2);
+    roHa.textContent = h.actual.toFixed(2);
+    roDiff.textContent = (h.diff >= 0 ? '+' : '') + h.diff.toFixed(2);
+    slAngleVal.textContent = currentAngle + '°';
+    slV0Val.textContent = currentV0.toFixed(2) + ' m/s';
+  }
+
+  function updateProcessHighlight() {
+    var steps = miniProcess.querySelectorAll('.mp-step');
+    steps.forEach(function(s) { s.classList.remove('on'); });
+    var idx;
+    if (currentAngle >= 44) {
+      idx = 0; // 铅球直觉/跳高直觉 (45°区域)
+    } else if (currentAngle >= 43) {
+      idx = 2; // 人体≠铅球 (43-44°)
+    } else if (currentAngle >= 40.5) {
+      idx = 4; // 曲线相交 (40-42°)
+    } else {
+      idx = 5; // 感悟
+    }
+    // 同时高亮相关步骤
+    if (currentAngle >= 44) { steps[0].classList.add('on'); steps[1].classList.add('on'); }
+    else if (currentAngle >= 43) { steps[2].classList.add('on'); }
+    else if (currentAngle >= 40.5) { steps[3].classList.add('on'); steps[4].classList.add('on'); }
+    else { steps[5].classList.add('on'); }
+  }
+
+  function updateSliders() {
+    slAngle.value = currentAngle;
+    slV0.value = currentV0;
+    var maxV0 = velocityAtAngle(currentAngle);
+    slV0.max = maxV0;
+    if (currentV0 > maxV0) {
+      currentV0 = maxV0;
+      slV0.value = currentV0;
+    }
+    updateReadouts();
+    updateProcessHighlight();
+    updateChartMarker();
+  }
+
+  // ---- 10. echarts 三曲线 ----
+  var chartDom = document.getElementById('chart-wrap');
+  var myChart;
+
+  function buildChartData() {
+    var angles = [];
+    var theory = [];
+    var actual = [];
+    var diff = [];
+    for (var a = 35; a <= 50; a += 0.5) {
+      angles.push(a + '°');
+      var h = calcHeights(a, velocityAtAngle(a));
+      theory.push(+(h.theoretical.toFixed(3)));
+      actual.push(+(h.actual.toFixed(3)));
+      diff.push(+((h.actual - h.theoretical).toFixed(3)));
+    }
+    return { angles: angles, theory: theory, actual: actual, diff: diff };
+  }
+
+  function initChart() {
+    if (myChart) { myChart.dispose(); }
+    myChart = echarts.init(chartDom, null, { renderer: 'svg' });
+
+    var data = buildChartData();
+    var rgbAccent = Deck.rgb('accent');
+    var rgbDiff = Deck.rgb('diff-fg');
+    var rgbText = Deck.rgb('text');
+    var rgbTextDim = Deck.rgb('text-dim');
+    var rgbBorder = Deck.rgb('border');
+    var rgbBg = Deck.rgb('bg');
+
+    var accentHex = '#' + rgbAccent.map(function(c){ return ('0' + c.toString(16)).slice(-2); }).join('');
+    var diffHex = '#' + rgbDiff.map(function(c){ return ('0' + c.toString(16)).slice(-2); }).join('');
+    var textHex = '#' + rgbText.map(function(c){ return ('0' + c.toString(16)).slice(-2); }).join('');
+    var textDimHex = '#' + rgbTextDim.map(function(c){ return ('0' + c.toString(16)).slice(-2); }).join('');
+    var borderHex = '#' + rgbBorder.map(function(c){ return ('0' + c.toString(16)).slice(-2); }).join('');
+
+    var option = {
+      grid: { left: 48, right: 48, top: 20, bottom: 28 },
+      xAxis: {
+        type: 'category',
+        data: data.angles,
+        axisLine: { lineStyle: { color: borderHex } },
+        axisTick: { show: false },
+        axisLabel: { color: textDimHex, fontSize: 12, interval: 4 },
+        splitLine: { show: false },
+        name: '起跳角度',
+        nameLocation: 'middle',
+        nameGap: 24,
+        nameTextStyle: { color: textDimHex, fontSize: 13 }
+      },
+      yAxis: {
+        type: 'value',
+        name: '高度 (m)',
+        nameTextStyle: { color: textDimHex, fontSize: 13 },
+        axisLabel: { color: textDimHex, fontSize: 12 },
+        axisLine: { lineStyle: { color: borderHex } },
+        splitLine: { lineStyle: { color: borderHex, type: 'dashed', opacity: 0.3 } },
+        min: function(value) { return Math.floor(value.min * 10) / 10 - 0.1; },
+        max: function(value) { return Math.ceil(value.max * 10) / 10 + 0.1; }
+      },
+      series: [
+        {
+          name: '纯抛物线',
+          type: 'line',
+          data: data.theory,
+          lineStyle: { color: textDimHex, type: 'dashed', width: 1.5 },
+          itemStyle: { color: textDimHex },
+          symbol: 'none',
+          emphasis: { focus: 'series' }
+        },
+        {
+          name: '人体实际',
+          type: 'line',
+          data: data.actual,
+          lineStyle: { color: accentHex, width: 2.5 },
+          itemStyle: { color: accentHex },
+          symbol: 'none',
+          emphasis: { focus: 'series' }
+        },
+        {
+          name: '差值',
+          type: 'line',
+          data: data.diff,
+          lineStyle: { color: diffHex, type: 'dotted', width: 1.5 },
+          itemStyle: { color: diffHex },
+          symbol: 'none',
+          emphasis: { focus: 'series' }
+        },
+        {
+          name: '当前角度',
+          type: 'line',
+          markLine: {
+            silent: true,
+            symbol: 'none',
+            lineStyle: { color: accentHex, type: 'solid', width: 1, opacity: 0.5 },
+            data: [{ xAxis: initAngle - 35 > 0 ? Math.round((initAngle - 35) / 0.5) : 0 }]
+          },
+          data: []
+        }
+      ],
+      legend: {
+        show: true,
+        bottom: 0,
+        textStyle: { color: textDimHex, fontSize: 13 },
+        data: ['纯抛物线', '人体实际', '差值'],
+        itemWidth: 16,
+        itemHeight: 2
+      },
+      textStyle: { fontSize: 14 },
+      backgroundColor: 'transparent'
+    };
+    myChart.setOption(option);
+  }
+
+  function updateChartMarker() {
+    if (!myChart) return;
+    var idx = Math.round((currentAngle - 35) / 0.5);
+    myChart.setOption({
+      series: [null, null, null, {
+        markLine: {
+          data: [{ xAxis: idx }]
+        }
+      }]
+    });
+  }
+
+  function resizeChart() {
+    if (myChart) myChart.resize();
+  }
+
+  // ---- 11. PixiJS 动画循环 ----
+  var lastTrailSample = 0;
+  var TRAIL_INTERVAL = 8; // ms between trail samples
+
+  function simTick(delta) {
+    if (!simRunning) return;
+    if (simDone) return;
+
+    // 更新物理
+    var dt = Math.min(delta * (1000 / 60) / 1000, 0.033); // 限制最大步长
+    for (var i = 0; i < 3; i++) {
+      Matter.Engine.update(engine, dt / 3 * 1000);
+    }
+
+    var pos = jumper.position;
+    var vel = jumper.velocity;
+
+    // 记录轨迹
+    var now = performance.now();
+    if (now - lastTrailSample > TRAIL_INTERVAL) {
+      trailPoints.push({ x: pos.x, y: pos.y });
+      lastTrailSample = now;
+
+      // 追踪最高点
+      var physY = screenToPhys(pos.x, pos.y).y;
+      if (physY > simResult.peakY) {
+        simResult.peakY = physY;
+      }
+    }
+
+    // 检测落地: y 接近地面 且 速度很小
+    var physY = screenToPhys(pos.x, pos.y).y;
+    if (physY <= 0.01 && trailPoints.length > 10 && Math.abs(vel.y) < 5) {
+      simDone = true;
+      simRunning = false;
+      simResult.ha = simResult.peakY;
+      simResult.ht = calcHeights(currentAngle, currentV0).theoretical;
+      // 最后加一个地面点
+      var gs = physToScreen(0, 0);
+      trailPoints.push({ x: pos.x, y: gs.y });
+    }
+
+    // 超出边界
+    if (pos.x > simW + 100 || pos.x < -100 || pos.y > simH + 100) {
+      simDone = true;
+      simRunning = false;
+    }
+
+    drawTrail();
+    drawBody();
+  }
+
+  // ---- 12. 事件处理 ----
+  function onAngleChange() {
+    currentAngle = parseFloat(slAngle.value);
+    var maxV0 = velocityAtAngle(currentAngle);
+    // 如果当前 v0 超过新角度下的生理上限,自动降低
+    if (currentV0 > maxV0) {
+      currentV0 = maxV0;
+      slV0.value = currentV0;
+    }
+    slV0.max = maxV0;
+    updateSliders();
+    resetSimulation();
+    launchJumper(currentAngle, currentV0);
+    lastTrailSample = performance.now();
+  }
+
+  function onV0Change() {
+    currentV0 = parseFloat(slV0.value);
+    updateSliders();
+    resetSimulation();
+    launchJumper(currentAngle, currentV0);
+    lastTrailSample = performance.now();
+  }
+
+  slAngle.addEventListener('input', onAngleChange);
+  slV0.addEventListener('input', onV0Change);
+
+  // ---- 13. 启动 ----
+  function start() {
+    initPixi();
+    updateOrigin();
+    initMatter();
+    initChart();
+    updateSliders();
+    drawScene();
+
+    // 初始发射
+    launchJumper(currentAngle, currentV0);
+    lastTrailSample = performance.now();
+
+    // PixiJS ticker
+    app.ticker.add(function(delta) {
+      if (Deck.reduced()) {
+        // 减少动效模式: 直接画完整轨迹
+        if (simRunning) {
+          // 快速完成模拟
+          while (simRunning) {
+            Matter.Engine.update(engine, 16);
+            var pos = jumper.position;
+            trailPoints.push({ x: pos.x, y: pos.y });
+            var physY = screenToPhys(pos.x, pos.y).y;
+            if (physY > simResult.peakY) simResult.peakY = physY;
+            if (physY <= 0.01 && trailPoints.length > 10) {
+              simDone = true;
+              simRunning = false;
+              simResult.ha = simResult.peakY;
+              simResult.ht = calcHeights(currentAngle, currentV0).theoretical;
+              var gs = physToScreen(0, 0);
+              trailPoints.push({ x: pos.x, y: gs.y });
+              break;
+            }
+            if (pos.x > simW + 200 || pos.y > simH + 200) {
+              simDone = true;
+              simRunning = false;
+              break;
+            }
+          }
+          drawTrail();
+          drawBody();
+        }
+      } else {
+        simTick(delta);
+      }
+    });
+
+    // 窗口大小变化
+    Deck.onResize(function() {
+      initPixi();
+      updateOrigin();
+      drawScene();
+      drawTrail();
+      drawBody();
+      resizeChart();
+    });
+  }
+
+  start();
+})();
+</script>
+</body>
+</html>

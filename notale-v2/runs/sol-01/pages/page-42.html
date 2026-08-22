@@ -1,0 +1,384 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  #main { overflow: hidden; }
+  .defense-page { position: relative; width: var(--content-w); height: var(--content-h); overflow: hidden; }
+  .process-strip { position: absolute; z-index: 6; top: 0; right: 0; left: 0; height: 74px; }
+  .process-strip.k-process { --process-line-y: 50%; gap: var(--sp-2); }
+  .process-strip.k-process > .step { display: flex; align-items: center; justify-content: center; padding: var(--sp-2) var(--sp-3) var(--sp-2) var(--sp-5); background: rgb(16 27 36 / 92%); font-size: var(--fs-label); font-weight: 650; line-height: var(--lh-tight); text-align: center; }
+  .process-strip.k-process > .step::before { top: 50%; transform: translateY(-50%); }
+  .process-strip.k-process > .arw { flex-basis: 20px; }
+  .orbit-field { position: absolute; top: 86px; right: 0; bottom: 0; left: 0; overflow: hidden; border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--surface-data); }
+  #orbitCanvas { display: block; width: 100%; height: 100%; touch-action: none; }
+  .scene-label { position: absolute; z-index: 3; pointer-events: none; padding: var(--sp-1) var(--sp-2); background: rgb(7 16 24 / 82%); color: var(--text-muted); font-size: var(--fs-label); line-height: var(--lh-tight); }
+  .scene-label.sun { left: 29%; bottom: 26%; color: var(--accent); }
+  .scene-label.earth { right: 22%; top: 44%; color: var(--primary); }
+  .legend { position: absolute; z-index: 4; top: var(--sp-4); left: var(--sp-4); display: flex; gap: var(--sp-5); padding: var(--sp-2) var(--sp-3); background: rgb(7 16 24 / 84%); }
+  .legend span { display: flex; align-items: center; gap: var(--sp-2); color: var(--text-muted); font-size: var(--fs-label); line-height: var(--lh-tight); }
+  .swatch { width: 28px; height: 3px; background: var(--danger); }
+  .swatch.changed { background: var(--primary); }
+  .mission { position: absolute; z-index: 5; top: var(--sp-4); right: var(--sp-4); width: 348px; padding: var(--sp-4); border: 1px solid var(--line-strong); border-radius: var(--radius-md); background: rgb(16 27 36 / 94%); }
+  .mission-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--sp-3); }
+  .mission-title { color: var(--text); font-size: var(--fs-h2); font-weight: 650; line-height: var(--lh-tight); }
+  .round { color: var(--accent); font-family: var(--font-mono); font-size: var(--fs-label); }
+  .mission .readout { margin-bottom: var(--sp-3); padding: var(--sp-3); }
+  .mission .ctl { align-items: stretch; flex-direction: column; gap: var(--sp-2); margin-top: var(--sp-2); }
+  .control-line { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); }
+  .control-value { color: var(--text); font-family: var(--font-mono); font-size: var(--fs-sec); }
+  .direction { display: flex; width: 100%; }
+  .direction button { flex: 1 1 0; min-height: var(--control-h); }
+  .feedback { min-height: 48px; margin-top: var(--sp-3); color: var(--text); font-size: var(--fs-sec); line-height: var(--lh-body); }
+  .feedback.success { color: var(--success); }
+  .feedback.fail { color: var(--danger); }
+  .mission-actions { display: flex; gap: var(--sp-2); margin-top: var(--sp-2); }
+  .mission-actions button { flex: 1 1 0; font-size: var(--fs-sec); }
+  .timeline { position: absolute; z-index: 5; right: var(--sp-4); bottom: var(--sp-4); left: var(--sp-4); padding: var(--sp-3) var(--sp-4); border-top: 1px solid var(--primary-line); background: rgb(7 16 24 / 90%); }
+  .timeline-head { display: flex; justify-content: space-between; gap: var(--sp-4); margin-bottom: var(--sp-2); }
+  .timeline-title { color: var(--text); font-size: var(--fs-sec); font-weight: 650; }
+  .timeline-note { color: var(--text-muted); font-size: var(--fs-label); }
+  .timeline input { width: 100%; }
+  .ticks { display: flex; justify-content: space-between; margin-top: var(--sp-1); color: var(--text-muted); font-family: var(--font-mono); font-size: var(--fs-tick); line-height: var(--lh-tight); }
+  .status-row { position: absolute; z-index: 5; bottom: 92px; left: var(--sp-4); display: flex; gap: var(--sp-2); }
+  .status-row span { min-width: 88px; padding: var(--sp-2); border: 1px solid var(--line); background: rgb(7 16 24 / 82%); color: var(--text-dim); font-size: var(--fs-label); line-height: var(--lh-tight); text-align: center; }
+  .status-row span.on { border-color: var(--primary); color: var(--text); }
+  .status-row span.current { border-color: var(--accent); color: var(--accent); }
+  .hypothesis { position: absolute; z-index: 4; bottom: 132px; left: var(--sp-4); color: var(--text-muted); font-size: var(--fs-label); line-height: var(--lh-tight); }
+  progress.lec-progress { appearance: none; block-size: 2px; overflow: visible; border: 0; padding: 0; line-height: 0; }
+  progress.lec-progress::-webkit-progress-bar,
+  progress.lec-progress::-webkit-progress-value { height: 2px; border: 0; }
+  .result-traces { position: absolute; z-index: 4; top: 82px; left: var(--sp-4); display: flex; flex-direction: column; gap: var(--sp-1); pointer-events: none; }
+  .result-traces span { color: var(--text-muted); font-family: var(--font-mono); font-size: var(--fs-label); line-height: var(--lh-tight); }
+  .sr-summary { font-size: var(--fs-sec); }
+  button:focus-visible, input:focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
+  @media (prefers-reduced-motion: reduce) { #orbitCanvas { cursor: default; } }
+</style>
+</head>
+<body data-page="42" data-total="50">
+<div id="stage">
+<main id="main">
+  <section class="defense-page min0" aria-label="近地天体轨道偏转模拟">
+    <div class="process-strip k-process" aria-label="行星防御过程">
+      <div class="axis" aria-hidden="true"></div>
+      <div class="step is-done">尽早发现</div><div class="arw" aria-hidden="true"></div>
+      <div class="step is-done">连续观测</div><div class="arw" aria-hidden="true"></div>
+      <div class="step is-current" aria-current="step">轨道预测</div><div class="arw" aria-hidden="true"></div>
+      <div class="step">微小变轨</div><div class="arw" aria-hidden="true"></div>
+      <div class="step">偏差累积</div><div class="arw" aria-hidden="true"></div>
+      <div class="step">安全掠过</div>
+    </div>
+
+    <div class="orbit-field min0 no-pan" id="orbitField">
+      <canvas id="orbitCanvas" role="img" aria-label="红线是未干预预测，青线是干预后轨迹；两线从变轨点开始逐渐分开。"></canvas>
+      <div class="legend" aria-label="轨迹图例"><span><i class="swatch"></i>未干预预测</span><span><i class="swatch changed"></i>干预后轨迹</span></div>
+      <div class="scene-label sun">太阳</div>
+      <div class="scene-label earth">地球与安全边界</div>
+      <div class="result-traces" id="resultTraces" aria-label="已完成方案"></div>
+
+      <section class="mission" aria-label="偏转任务控制">
+        <div class="mission-head"><h2 class="mission-title">轨道偏转</h2><span class="round" id="roundLabel">方案 1/3</span></div>
+        <div class="readout is-current"><span class="name">交会时最近距离</span><strong class="value" id="missValue">—</strong><span class="name">安全边界</span><span class="control-value" id="safeValue">—</span></div>
+        <div class="ctl">
+          <div class="control-line"><label for="dv">切向速度改变量</label><output class="control-value" id="dvValue" for="dv">—</output></div>
+          <input id="dv" type="range" min="0" max="100" step="1" value="40" aria-label="切向速度改变量">
+        </div>
+        <div class="ctl">
+          <span class="ctl-label">改变方向</span>
+          <div class="direction segmented" role="group" aria-label="速度改变方向">
+            <button id="prograde" type="button" aria-pressed="true">顺轨</button>
+            <button id="retrograde" type="button" aria-pressed="false">逆轨</button>
+          </div>
+        </div>
+        <p class="feedback" id="feedback" aria-live="polite">拖动变轨节点，再调整切向速度。</p>
+        <div class="mission-actions">
+          <button id="judge" type="button">判定方案</button>
+          <button id="reset" type="button" title="重跑全部方案" aria-label="重跑全部方案">↻ 重置</button>
+        </div>
+      </section>
+
+      <div class="status-row" aria-label="任务进度"><span class="on">已预测</span><span id="statusBurn">待变轨</span><span id="statusProp">待外推</span><span id="statusJudge">待判定</span></div>
+      <div class="hypothesis">教学用假设轨道，不代表近期真实威胁</div>
+
+      <section class="timeline" aria-label="预警时间轴">
+        <div class="timeline-head"><span class="timeline-title">发现 → 观测收窄不确定性 → 变轨 → 交会</span><span class="timeline-note" id="leadLabel">预警窗口 —</span></div>
+        <input id="burnTime" type="range" min="10" max="100" step="1" value="78" aria-label="距离交会还有多少年时变轨">
+        <div class="ticks"><span>发现</span><span>轨道可预测</span><span>可实施节点</span><span>交会</span></div>
+      </section>
+    </div>
+  </section>
+</main>
+</div>
+<script src="assets/lib/three.min.js"></script>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script>
+Lec.mount({
+  index: 42,
+  kicker: "PLANETARY DEFENSE / 行星防御",
+  title: "越早改变一点，后来就能错开很远",
+  take: "同样微小的速度改变，留给它累积的时间越长，交会时造成的位置偏差越大。"
+});
+
+(function () {
+  "use strict";
+
+  var K = Lec.K;
+  var P = Lec.P;
+  var AU_M = K.UNITS.M_PER_AU;
+  var YEAR_S = K.UNITS.SECONDS_PER_JULIAN_YEAR;
+  var EARTH_RADIUS_KM = K.EARTH.RADIUS_KM;
+  var SAFE_KM = EARTH_RADIUS_KM * 2;
+  var BASELINE_KM = EARTH_RADIUS_KM * 0.55;
+  var MU = K.PHYSICS.G * K.SUN.massKg;
+  var windows = [20, 10, 4];
+  var reduced = Deck.reduced();
+
+  var state = freshState();
+  var field = document.getElementById("orbitField");
+  var canvas = document.getElementById("orbitCanvas");
+  var burnInput = document.getElementById("burnTime");
+  var dvInput = document.getElementById("dv");
+  var prograde = document.getElementById("prograde");
+  var retrograde = document.getElementById("retrograde");
+  var judge = document.getElementById("judge");
+  var reset = document.getElementById("reset");
+  var renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true, alpha: false });
+  var scene = new THREE.Scene();
+  var camera = new THREE.PerspectiveCamera(42, 1, 0.1, 100);
+  var world = new THREE.Group();
+  var trajectoryGroup = new THREE.Group();
+  var resultGroup = new THREE.Group();
+  var asteroid = new THREE.Mesh(new THREE.IcosahedronGeometry(0.055, 1), new THREE.MeshStandardMaterial({ color: 0xffd166, roughness: 0.8 }));
+  var earth = new THREE.Mesh(new THREE.SphereGeometry(0.085, 24, 16), new THREE.MeshStandardMaterial({ color: 0x4fc3d7, roughness: 0.65 }));
+  var sun = new THREE.Mesh(new THREE.SphereGeometry(0.16, 24, 16), new THREE.MeshBasicMaterial({ color: 0xffd166 }));
+  var burnMarker = new THREE.Mesh(new THREE.OctahedronGeometry(0.07), new THREE.MeshBasicMaterial({ color: 0xffd166 }));
+  var separationLine = null;
+  var dragView = { active: false, x: 0, yaw: -0.18 };
+
+  function freshState() {
+    return { round: 0, burnPct: 78, dvMmS: 40, direction: 1, judged: false, results: [], missKm: 0, leadYears: 0, success: false };
+  }
+
+  function lineMaterial(color, opacity) {
+    return new THREE.LineBasicMaterial({ color: color, transparent: opacity < 1, opacity: opacity });
+  }
+
+  function makeLine(points, color, opacity) {
+    return new THREE.Line(new THREE.BufferGeometry().setFromPoints(points), lineMaterial(color, opacity));
+  }
+
+  function orbitPoint(radius, angle, y) {
+    return new THREE.Vector3(radius * Math.cos(angle), y || 0, radius * Math.sin(angle));
+  }
+
+  function clearGroup(group) {
+    while (group.children.length) {
+      var item = group.children.pop();
+      if (item.geometry) item.geometry.dispose();
+      if (item.material) item.material.dispose();
+    }
+  }
+
+  scene.background = new THREE.Color(Deck.token("--surface-data"));
+  scene.add(new THREE.AmbientLight(0xffffff, 1.35));
+  var key = new THREE.PointLight(0xffd166, 18, 20);
+  key.position.set(-2, 3, 1);
+  scene.add(key);
+  camera.position.set(0.2, 4.4, 5.6);
+  camera.lookAt(0, 0, 0);
+  world.rotation.y = dragView.yaw;
+  scene.add(world);
+  world.add(trajectoryGroup, resultGroup, sun, earth, asteroid, burnMarker);
+  sun.position.set(-1.15, 0, 0);
+
+  var stars = [];
+  for (var si = 0; si < 120; si += 1) {
+    var a = si * 2.399963;
+    var r = 2.4 + (si % 17) * 0.11;
+    stars.push(new THREE.Vector3(Math.cos(a) * r, ((si % 9) - 4) * 0.12, Math.sin(a) * r));
+  }
+  world.add(new THREE.Points(new THREE.BufferGeometry().setFromPoints(stars), new THREE.PointsMaterial({ color: 0x526974, size: 0.018 })));
+
+  function compute() {
+    var maxYears = windows[state.round];
+    var minYears = maxYears * 0.12;
+    state.leadYears = minYears + (maxYears - minYears) * state.burnPct / 100;
+    var dv = state.dvMmS / 1000 * state.direction;
+    var circular = P.visVivaSpeed(AU_M, AU_M, K.SUN.massKg);
+    var changedSpeed = circular + dv;
+    var invA = 2 / AU_M - changedSpeed * changedSpeed / MU;
+    var changedA = 1 / invA;
+    var changedPeriod = Math.sqrt(4 * Math.PI * Math.PI * Math.pow(changedA, 3) / MU);
+    var basePeriod = Math.sqrt(4 * Math.PI * Math.PI * Math.pow(AU_M, 3) / MU);
+    var phaseShift = (2 * Math.PI / changedPeriod - 2 * Math.PI / basePeriod) * state.leadYears * YEAR_S;
+    var signedShiftKm = phaseShift * P.auToKm(1);
+    state.missKm = Math.abs(BASELINE_KM + signedShiftKm);
+    state.success = state.missKm >= SAFE_KM;
+    return { phaseShift: phaseShift, changedA: changedA / AU_M, changedE: Math.abs(1 - AU_M / changedA) };
+  }
+
+  function buildTrajectory() {
+    var calc = compute();
+    clearGroup(trajectoryGroup);
+    var earthOrbit = [];
+    var baseline = [];
+    var changed = [];
+    var uncertaintyOuter = [];
+    var uncertaintyInner = [];
+    var i;
+    for (i = 0; i <= 180; i += 1) {
+      var t = i / 180;
+      var angle = -Math.PI * 0.88 + t * Math.PI * 1.76;
+      earthOrbit.push(orbitPoint(2.25, angle, 0));
+      baseline.push(orbitPoint(2.25, angle, 0.025));
+      var separation = calc.phaseShift * Math.pow(t, 1.45) * 15;
+      var pos = P.orbitPosition(2.25 * calc.changedA, Math.min(calc.changedE, 0.12), angle + separation);
+      changed.push(new THREE.Vector3(pos.x, 0.065 + Math.sin(t * Math.PI) * 0.08, pos.y));
+      if (i < 90) {
+        var spread = (1 - t) * 0.10;
+        uncertaintyOuter.push(orbitPoint(2.25 + spread, angle, 0.015));
+        uncertaintyInner.push(orbitPoint(2.25 - spread, angle, 0.015));
+      }
+    }
+    trajectoryGroup.add(makeLine(earthOrbit, 0x526974, 0.72));
+    trajectoryGroup.add(makeLine(uncertaintyOuter, 0xffd166, 0.18));
+    trajectoryGroup.add(makeLine(uncertaintyInner, 0xffd166, 0.18));
+    trajectoryGroup.add(makeLine(baseline, 0xff7b72, 0.92));
+    trajectoryGroup.add(makeLine(changed, 0x4fc3d7, 1));
+
+    var burnIndex = Math.max(8, Math.min(152, Math.round(180 * (1 - state.burnPct / 100))));
+    burnMarker.position.copy(changed[burnIndex]);
+    asteroid.position.copy(changed[158]);
+    earth.position.copy(baseline[180]);
+    var endChanged = changed[180];
+    separationLine = makeLine([baseline[180], endChanged], state.success ? 0x78d6a5 : 0xffd166, 1);
+    trajectoryGroup.add(separationLine);
+    updateDOM();
+    renderer.render(scene, camera);
+  }
+
+  function formatKm(value) {
+    if (value < 1000) return P.significant(value, 3) + " km";
+    return P.significant(value / 1000, 3) + " 千 km";
+  }
+
+  function updateDOM() {
+    document.getElementById("roundLabel").textContent = "方案 " + (state.round + 1) + "/3";
+    document.getElementById("missValue").textContent = formatKm(state.missKm);
+    document.getElementById("safeValue").textContent = formatKm(SAFE_KM);
+    document.getElementById("dvValue").textContent = state.dvMmS + " mm/s";
+    document.getElementById("leadLabel").textContent = "提前 " + P.significant(state.leadYears, 3) + " 年变轨";
+    prograde.setAttribute("aria-pressed", String(state.direction === 1));
+    retrograde.setAttribute("aria-pressed", String(state.direction === -1));
+    document.getElementById("statusBurn").className = state.dvMmS > 0 ? "on" : "";
+    document.getElementById("statusBurn").textContent = state.dvMmS > 0 ? "已变轨" : "待变轨";
+    document.getElementById("statusProp").className = "current";
+    document.getElementById("statusProp").textContent = "已外推";
+    document.getElementById("statusJudge").className = state.judged ? (state.success ? "on" : "current") : "";
+    document.getElementById("statusJudge").textContent = state.judged ? "已判定" : "待判定";
+    var feedback = document.getElementById("feedback");
+    if (!state.judged) {
+      feedback.className = "feedback";
+      feedback.textContent = state.direction === 1 ? "青线正逐渐离开红色预测线。" : "逆轨改变可能抵消原有偏差。";
+    }
+    judge.textContent = state.judged && state.round < 2 ? "进入下一方案" : "判定方案";
+  }
+
+  function setDirection(direction) {
+    state.direction = direction;
+    state.judged = false;
+    buildTrajectory();
+  }
+
+  function judgeRound() {
+    if (state.judged && state.round < 2) {
+      state.round += 1;
+      state.judged = false;
+      state.burnPct = 78;
+      burnInput.value = state.burnPct;
+      buildTrajectory();
+      return;
+    }
+    state.judged = true;
+    var feedback = document.getElementById("feedback");
+    if (state.success) {
+      feedback.className = "feedback success";
+      feedback.textContent = "安全掠过：累积偏差已越过安全边界。";
+    } else if (state.direction < 0 && state.missKm < BASELINE_KM) {
+      feedback.className = "feedback fail";
+      feedback.textContent = "方向相反：这次改变让交会更接近。";
+    } else {
+      feedback.className = "feedback fail";
+      feedback.textContent = "改变太晚：偏差还没有足够时间累积。";
+    }
+    state.results[state.round] = { years: state.leadYears, dv: state.dvMmS, miss: state.missKm, success: state.success };
+    renderResults();
+    updateDOM();
+  }
+
+  function renderResults() {
+    var holder = document.getElementById("resultTraces");
+    holder.innerHTML = "";
+    state.results.forEach(function (result, index) {
+      if (!result) return;
+      var row = document.createElement("span");
+      row.textContent = "方案 " + (index + 1) + " · 提前 " + P.significant(result.years, 2) + " 年 · " + formatKm(result.miss);
+      holder.appendChild(row);
+    });
+  }
+
+  function resetAll() {
+    state = freshState();
+    burnInput.value = state.burnPct;
+    dvInput.value = state.dvMmS;
+    document.getElementById("feedback").className = "feedback";
+    document.getElementById("feedback").textContent = "拖动变轨节点，再调整切向速度。";
+    renderResults();
+    buildTrajectory();
+  }
+
+  burnInput.addEventListener("input", function () { state.burnPct = Number(this.value); state.judged = false; buildTrajectory(); });
+  dvInput.addEventListener("input", function () { state.dvMmS = Number(this.value); state.judged = false; buildTrajectory(); });
+  prograde.addEventListener("click", function () { setDirection(1); });
+  retrograde.addEventListener("click", function () { setDirection(-1); });
+  judge.addEventListener("click", judgeRound);
+  reset.addEventListener("click", resetAll);
+
+  canvas.addEventListener("pointerdown", function (event) { dragView.active = true; dragView.x = event.clientX; canvas.setPointerCapture(event.pointerId); });
+  canvas.addEventListener("pointermove", function (event) {
+    if (!dragView.active) return;
+    dragView.yaw += (event.clientX - dragView.x) * 0.004;
+    dragView.x = event.clientX;
+    world.rotation.y = dragView.yaw;
+    renderer.render(scene, camera);
+  });
+  canvas.addEventListener("pointerup", function () { dragView.active = false; });
+
+  function resizeScene() {
+    var width = field.clientWidth;
+    var height = field.clientHeight;
+    renderer.setPixelRatio(1);
+    renderer.setSize(width, height, false);
+    camera.aspect = width / height;
+    camera.updateProjectionMatrix();
+    renderer.render(scene, camera);
+  }
+
+  Deck.onResize(resizeScene);
+  resizeScene();
+  buildTrajectory();
+
+  if (!reduced) {
+    Deck.loop(function (time) {
+      asteroid.rotation.x = time * 0.00035;
+      asteroid.rotation.y = time * 0.00055;
+      renderer.render(scene, camera);
+    }, { still: 1000 });
+  }
+}());
+</script>
+</body>
+</html>

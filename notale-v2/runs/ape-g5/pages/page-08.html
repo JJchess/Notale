@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    #main{display:grid;grid-template-columns:minmax(0,3fr) minmax(0,2fr);gap:24px}
+    .race-zone,.result-zone{min-width:0;min-height:0}
+    .race-zone{display:flex;flex-direction:column;gap:14px}
+    .condition-bar{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:16px;align-items:center}
+    .pace-control{position:relative;height:88px;box-sizing:border-box;padding:10px 18px;border:1px solid var(--line-strong);border-radius:var(--radius-md);background:var(--paper);cursor:crosshair;touch-action:none}
+    .pace-control:focus-visible{outline:4px solid rgb(0 109 119 / 25%);outline-offset:2px}
+    .pace-head{display:flex;justify-content:space-between;align-items:center;font-size:var(--fs-label);font-weight:700;line-height:1.35}
+    .pace-read{color:var(--accent);font-variant-numeric:tabular-nums}
+    .pace-field{position:relative;height:38px;margin-top:4px;border-left:2px solid var(--line-strong);border-right:2px solid var(--line-strong);background:linear-gradient(90deg,var(--paper-2),var(--accent-soft))}
+    .pace-field::before{content:"慢";position:absolute;left:8px;bottom:7px;font-size:var(--fs-label);color:var(--ink-soft)}
+    .pace-field::after{content:"快";position:absolute;right:8px;bottom:7px;font-size:var(--fs-label);color:var(--ink-soft)}
+    .pace-block{position:absolute;top:5px;width:18px;height:28px;border-radius:5px;background:var(--accent);transform:translateX(-50%);box-shadow:0 3px 8px rgb(0 109 119 / 25%)}
+    .reset{min-height:48px;padding:0 20px;color:#fff;font:700 var(--fs-label)/1.35 var(--font-sans);white-space:nowrap;border:1px solid var(--accent);border-radius:var(--radius-sm);background:var(--accent);cursor:pointer}
+    .track-board{position:relative;flex:1;min-height:0;padding:22px 26px 18px;border:1px solid var(--line);border-radius:var(--radius-md);background:var(--paper);box-shadow:var(--shadow);overflow:hidden}
+    .track-meta{display:flex;justify-content:space-between;color:var(--ink-soft);font-size:var(--fs-label);font-weight:680;line-height:1.35}
+    .track{position:relative;height:104px;margin-top:12px;border-top:2px solid var(--line-strong);border-bottom:2px dashed var(--line);background:linear-gradient(90deg,transparent 0 49%,rgb(200 194 181 / 24%) 49% 51%,transparent 51%)}
+    .track:last-of-type{margin-top:20px}
+    .track-label{position:absolute;left:0;top:10px;font-size:var(--fs-label);font-weight:760;color:var(--accent)}
+    .track.control .track-label{color:var(--accent-2)}
+    .finish{position:absolute;right:14px;inset-block:0;width:5px;background:repeating-linear-gradient(0deg,var(--text) 0 7px,var(--paper) 7px 14px)}
+    .walker{position:absolute;left:86px;bottom:16px;width:38px;height:54px;transform:translateX(0);will-change:transform}
+    .walker::before{content:"";position:absolute;left:12px;top:0;width:14px;height:14px;border:3px solid currentColor;border-radius:50%}
+    .walker::after{content:"";position:absolute;left:19px;top:17px;width:3px;height:29px;background:currentColor;box-shadow:-8px 17px 0 -1px currentColor,8px 17px 0 -1px currentColor;transform:rotate(var(--lean,0deg));transform-origin:top}
+    .biped .walker{color:var(--accent)}.control .walker{color:var(--accent-2)}
+    .time-strip{display:flex;justify-content:center;gap:12px;margin-top:16px;font-size:var(--fs-sec);line-height:var(--lh-sec)}
+    .time-strip strong{font-variant-numeric:tabular-nums}
+    .result-zone{display:grid;grid-template-rows:278px minmax(0,1fr) auto;gap:12px}
+    #costChart{min-width:0;height:278px;border:1px solid var(--line);border-radius:var(--radius-md);background:var(--paper)}
+    .compact.k-comparison{grid-template-columns:112px repeat(2,minmax(0,1fr))}
+    .compact.k-comparison>.hdr,.compact.k-comparison>.dim,.compact.k-comparison>.cell{padding:8px 10px}
+    .compact.k-comparison>.hdr{font-size:var(--fs-sec)}
+    .compact .cell{font-variant-numeric:tabular-nums;text-align:center}
+    .feedback{padding:10px 14px;border-left:5px solid var(--accent);border-radius:0 var(--radius-sm) var(--radius-sm) 0;background:var(--accent-soft);font-size:var(--fs-sec);font-weight:700;line-height:var(--lh-sec)}
+    .hint{font-size:var(--fs-sec);line-height:var(--lh-sec)}
+  </style>
+</head>
+<body data-page="08" data-total="48">
+  <div id="stage">
+    <main id="main">
+      <section class="race-zone min0" aria-labelledby="raceTitle">
+        <div class="condition-bar">
+          <div id="pace" class="pace-control no-pan" tabindex="0" role="slider" aria-labelledby="raceTitle" aria-describedby="paceHelp">
+            <div class="pace-head"><span id="raceTitle">共享条件：速度 × 距离</span><span class="pace-read"><span id="speedOut"></span> · <span id="distanceOut"></span></span></div>
+            <div class="pace-field"><span id="paceBlock" class="pace-block"></span></div>
+          </div>
+          <button id="reset" class="reset" type="button">重置条件</button>
+        </div>
+        <div id="paceHelp" class="hint secondary">左右键调速度，上下键调距离；也可在配速块内拖动。</div>
+        <div class="track-board">
+          <div class="track-meta"><span>共同起点</span><span>共同终点</span></div>
+          <div class="track biped"><span class="track-label">两足步行</span><span class="walker" aria-hidden="true"></span><span class="finish" aria-hidden="true"></span></div>
+          <div class="track control"><span class="track-label">对照步态</span><span class="walker" aria-hidden="true"></span><span class="finish" aria-hidden="true"></span></div>
+          <div class="time-strip"><span>相同任务的完成时间</span><strong id="timeOut"></strong><span>两者相同</span></div>
+        </div>
+        <p class="note">动画只表示同速、同距的移动过程；谁先到终点不代表谁更省。</p>
+      </section>
+      <section class="result-zone min0" aria-label="成本曲线与同维度比较">
+        <div id="costChart" role="img" aria-label="两种步态随速度变化的归一化单位移动成本曲线"></div>
+        <div class="k-comparison compact" aria-label="当前条件比较表">
+          <div class="hdr">比较维度</div><div class="hdr" style="color:var(--accent)">两足步行</div><div class="hdr" style="color:var(--accent-2)">对照步态</div>
+          <div class="dim">共同条件</div><div class="cell" id="condA"></div><div class="cell" id="condB"></div><div class="rowline"></div>
+          <div class="dim">单位成本</div><div class="cell" id="unitA"></div><div class="cell" id="unitB"></div><div class="rowline"></div>
+          <div class="dim">完成时间</div><div class="cell" id="timeA"></div><div class="cell" id="timeB"></div><div class="rowline"></div>
+          <div class="dim">总移动成本</div><div class="cell" id="totalA"></div><div class="cell" id="totalB"></div>
+        </div>
+        <div id="feedback" class="feedback" aria-live="polite">拖动配速块，寻找优势改变的区域。</div>
+      </section>
+    </main>
+  </div>
+  <script src="assets/lib/echarts.min.js"></script>
+  <script src="assets/base.js"></script>
+  <script src="assets/lec.js"></script>
+  <script>
+    Lec.mount({index:8,kicker:"GAIT COST",title:"走得省，不等于处处赢",take:"在特定速度与距离下，两足行走可以降低移动成本，但并非处处占优。"});
+    Deck.init({index:8,total:48});
+    const K=Lec.K,P=Lec.P;
+    Object.assign(K,{
+      P08_SPEED_MIN_MPS:0.4,P08_SPEED_MAX_MPS:2.4,P08_SPEED_DEFAULT_MPS:1.2,P08_SPEED_STEP_MPS:0.1,
+      P08_DISTANCE_MIN_M:100,P08_DISTANCE_MAX_M:2000,P08_DISTANCE_DEFAULT_M:800,P08_DISTANCE_STEP_M:100,
+      P08_BIPED_OPTIMAL_SPEED_MPS:1.3,P08_CONTROL_OPTIMAL_SPEED_MPS:0.85,
+      P08_BIPED_COST_MIN:0.72,P08_BIPED_LOW_SPEED_FACTOR:0.55,P08_BIPED_HIGH_SPEED_FACTOR:1.5,
+      P08_CONTROL_COST_MIN:0.82,P08_CONTROL_LOW_SPEED_FACTOR:0.8,P08_CONTROL_HIGH_SPEED_FACTOR:0.38,
+      P08_CURVE_SAMPLE_COUNT:41
+    });
+    P.p08GaitCost=function(mode,speed){const b=mode==='biped',opt=b?K.P08_BIPED_OPTIMAL_SPEED_MPS:K.P08_CONTROL_OPTIMAL_SPEED_MPS,min=b?K.P08_BIPED_COST_MIN:K.P08_CONTROL_COST_MIN,low=b?K.P08_BIPED_LOW_SPEED_FACTOR:K.P08_CONTROL_LOW_SPEED_FACTOR,high=b?K.P08_BIPED_HIGH_SPEED_FACTOR:K.P08_CONTROL_HIGH_SPEED_FACTOR,d=speed-opt;return min+(d<0?low:high)*d*d};
+    P.p08TravelTime=function(distanceM,speedMps){return distanceM/P.positive(speedMps,K.P08_SPEED_MIN_MPS)};
+    P.p08TotalGaitCost=function(unitCost,distanceM){return unitCost*distanceM};
+    const initial=()=>({speed:K.P08_SPEED_DEFAULT_MPS,distance:K.P08_DISTANCE_DEFAULT_M,crossed:false,minSide:null,maxSide:null});
+    let state=initial(), phase=0;
+    const $=id=>document.getElementById(id), chart=echarts.init($('costChart'),null,{renderer:'svg'});
+    const walkers=[...document.querySelectorAll('.walker')];
+    function safe(v,f,min,max){return P.clamp(P.finiteNumber(v,f),min,max)}
+    function fmtDistance(m){return m>=K.METRES_PER_KILOMETRE?Deck.fmt(P.metresToKilometres(m),2)+' km':Deck.fmt(m,0)+' m'}
+    function fmtTime(sec){const mins=Math.floor(sec/K.SECONDS_PER_MINUTE), rem=Math.round(sec-mins*K.SECONDS_PER_MINUTE);return mins?mins+'分 '+rem+'秒':rem+'秒'}
+    function calc(){
+      const a=P.p08GaitCost('biped',state.speed),b=P.p08GaitCost('control',state.speed),t=P.p08TravelTime(state.distance,state.speed);
+      return {a,b,t,ta:P.p08TotalGaitCost(a,state.distance),tb:P.p08TotalGaitCost(b,state.distance)};
+    }
+    const samples=()=>Array.from({length:K.P08_CURVE_SAMPLE_COUNT},(_,i)=>{const s=K.P08_SPEED_MIN_MPS+(K.P08_SPEED_MAX_MPS-K.P08_SPEED_MIN_MPS)*i/(K.P08_CURVE_SAMPLE_COUNT-1);return [s,P.p08GaitCost('biped',s),P.p08GaitCost('control',s)]});
+    const curve=samples();
+    function render(){
+      const r=calc(), speed=Deck.fmt(state.speed,2), dist=fmtDistance(state.distance), time=fmtTime(r.t);
+      $('speedOut').textContent=speed+' m/s';$('distanceOut').textContent=dist;$('timeOut').textContent=time;
+      const pct=(state.speed-K.P08_SPEED_MIN_MPS)/(K.P08_SPEED_MAX_MPS-K.P08_SPEED_MIN_MPS)*100;$('paceBlock').style.left=pct+'%';
+      $('pace').setAttribute('aria-valuemin',K.P08_SPEED_MIN_MPS);$('pace').setAttribute('aria-valuemax',K.P08_SPEED_MAX_MPS);$('pace').setAttribute('aria-valuenow',state.speed);$('pace').setAttribute('aria-valuetext',speed+'米每秒，距离'+dist);
+      const cond=speed+' m/s · '+dist;$('condA').textContent=cond;$('condB').textContent=cond;
+      $('unitA').textContent=Deck.fmt(r.a,2)+' 指数/距离';$('unitB').textContent=Deck.fmt(r.b,2)+' 指数/距离';$('timeA').textContent=time;$('timeB').textContent=time;
+      $('totalA').textContent=Deck.fmt(r.ta,1);$('totalB').textContent=Deck.fmt(r.tb,1);
+      $('totalA').classList.toggle('diff',r.ta<r.tb);$('totalB').classList.toggle('diff',r.tb<r.ta);
+      const low=Math.min(r.ta,r.tb),high=Math.max(r.ta,r.tb),percent=P.percent(P.fraction(high-low,high));
+      const side=Math.abs(r.ta-r.tb)/high<.03?'near':(r.ta<r.tb?'biped':'control');state.minSide=state.minSide||side;state.crossed=state.crossed||state.minSide!==side;
+      let msg=side==='near'?'当前条件下，两者总成本差异很小。':(side==='biped'?'当前条件下，两足步行总成本较低，低约 ':'当前条件下，对照步态总成本较低，低约 ')+Deck.fmt(percent,1)+'%。';
+      if(state.crossed) msg+=' 优势属于一段条件，不属于整条赛道。';$('feedback').textContent=msg;
+      chart.setOption({animation:!Deck.reduced(),textStyle:{fontSize:16,fontFamily:Deck.token('--font-sans'),color:Deck.token('--text')},grid:{left:66,right:18,top:42,bottom:48},legend:{top:8,textStyle:{fontSize:14,color:Deck.token('--text')}},tooltip:{trigger:'axis',textStyle:{fontSize:16},formatter:()=>speed+' m/s<br>两足步行：'+Deck.fmt(r.a,2)+'<br>对照步态：'+Deck.fmt(r.b,2)+'<br>距离：'+dist+'<br>时间：'+time+'<br>总成本：'+Deck.fmt(r.ta,1)+' / '+Deck.fmt(r.tb,1)},xAxis:{type:'value',min:K.P08_SPEED_MIN_MPS,max:K.P08_SPEED_MAX_MPS,name:'速度 m/s',nameTextStyle:{fontSize:14},axisLabel:{fontSize:13}},yAxis:{type:'value',name:'教学成本指数/距离',nameTextStyle:{fontSize:14},axisLabel:{fontSize:13}},series:[{name:'两足步行',type:'line',showSymbol:false,data:curve.map(d=>[d[0],d[1]]),lineStyle:{width:4,color:Deck.token('--accent')},itemStyle:{color:Deck.token('--accent')},markLine:{silent:true,symbol:'none',data:[{xAxis:state.speed}],lineStyle:{color:Deck.token('--line-strong'),type:'dashed'}},markPoint:{symbolSize:14,data:[{coord:[state.speed,r.a]}]}},{name:'对照步态',type:'line',showSymbol:false,data:curve.map(d=>[d[0],d[2]]),lineStyle:{width:4,color:Deck.token('--accent-2')},itemStyle:{color:Deck.token('--accent-2')},markPoint:{symbolSize:14,data:[{coord:[state.speed,r.b]}]}}]});
+    }
+    function setFromPoint(e){const p=Deck.pt($('pace'),e),w=$('pace').clientWidth-36,h=$('pace').clientHeight-20;state.speed=safe(K.P08_SPEED_MIN_MPS+(p.x-18)/w*(K.P08_SPEED_MAX_MPS-K.P08_SPEED_MIN_MPS),state.speed,K.P08_SPEED_MIN_MPS,K.P08_SPEED_MAX_MPS);state.distance=safe(K.P08_DISTANCE_MAX_M-(p.y-10)/h*(K.P08_DISTANCE_MAX_M-K.P08_DISTANCE_MIN_M),state.distance,K.P08_DISTANCE_MIN_M,K.P08_DISTANCE_MAX_M);render()}
+    let dragging=false;$('pace').addEventListener('pointerdown',e=>{dragging=true;$('pace').setPointerCapture(e.pointerId);setFromPoint(e)});$('pace').addEventListener('pointermove',e=>{if(dragging)setFromPoint(e)});$('pace').addEventListener('pointerup',()=>dragging=false);
+    $('pace').addEventListener('keydown',e=>{let handled=true,boost=e.shiftKey?5:1;if(e.key==='ArrowRight')state.speed+=K.P08_SPEED_STEP_MPS*boost;else if(e.key==='ArrowLeft')state.speed-=K.P08_SPEED_STEP_MPS*boost;else if(e.key==='ArrowUp')state.distance+=K.P08_DISTANCE_STEP_M*boost;else if(e.key==='ArrowDown')state.distance-=K.P08_DISTANCE_STEP_M*boost;else if(e.key==='PageUp')state.speed+=K.P08_SPEED_STEP_MPS*5;else if(e.key==='PageDown')state.speed-=K.P08_SPEED_STEP_MPS*5;else if(e.key==='Home')state.speed=K.P08_SPEED_MIN_MPS;else if(e.key==='End')state.speed=K.P08_SPEED_MAX_MPS;else handled=false;if(handled){e.preventDefault();state.speed=safe(state.speed,K.P08_SPEED_DEFAULT_MPS,K.P08_SPEED_MIN_MPS,K.P08_SPEED_MAX_MPS);state.distance=safe(state.distance,K.P08_DISTANCE_DEFAULT_M,K.P08_DISTANCE_MIN_M,K.P08_DISTANCE_MAX_M);render()}});
+    $('reset').addEventListener('click',()=>{state=initial();phase=0;render()});
+    Deck.loop((t,dt)=>{if(Deck.reduced()){walkers.forEach(w=>w.style.transform='translateX(300px)');return}const r=calc();phase=(phase+dt*Math.max(.08,state.speed/r.t*18))%1;const x=phase*560;walkers.forEach((w,i)=>{w.style.transform='translateX('+x+'px)';w.style.setProperty('--lean',(i?Math.sin(t*.008):Math.sin(t*.008+1))*6+'deg')})},{still:0});
+    window.addEventListener('resize',()=>chart.resize());render();
+  </script>
+</body>
+</html>

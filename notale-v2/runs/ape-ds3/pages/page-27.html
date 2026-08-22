@@ -1,0 +1,951 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+/* ===== page-27: escape velocity launch pad ===== */
+#main {
+  position: relative;
+  overflow: hidden;
+  background: #0a0e14;
+}
+
+/* simulation canvas */
+#sim-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+/* k-process overlay — top of canvas */
+.k-process {
+  position: absolute !important;
+  top: 8px;
+  left: 16px;
+  right: 16px;
+  z-index: 10;
+  width: auto !important;
+  background: rgba(10,14,20,0.7);
+  border-radius: var(--radius-md);
+  padding: 4px 8px;
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
+.k-process > .step {
+  background: transparent;
+  border: 1px solid rgba(216,218,210,0.2);
+  padding: 6px 10px;
+  margin: 4px 0;
+  box-shadow: none;
+  text-align: center;
+}
+.k-process > .step::before { display: none; }
+.k-process > .step .step-label {
+  font-size: var(--fs-label);
+  line-height: 1.3;
+  font-weight: 600;
+}
+.k-process > .step .step-sub {
+  font-size: var(--fs-label);
+  line-height: 1.3;
+  color: var(--muted);
+  margin-top: 2px;
+}
+.k-process > .step.current {
+  border-color: var(--accent);
+  background: rgba(11,122,117,0.15);
+  opacity: 1;
+  filter: none;
+}
+.k-process > .step.passed {
+  opacity: 0.5;
+  filter: saturate(0.6);
+}
+.k-process > .step .outcome-tags {
+  display: flex;
+  gap: 4px;
+  justify-content: center;
+  margin-top: 3px;
+}
+.k-process > .step .outcome-tags .tag {
+  font-size: var(--fs-label);
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-weight: 600;
+}
+.tag-fail { background: rgba(180,80,50,0.3); color: #d4956a; }
+.tag-win  { background: rgba(60,160,140,0.3); color: #6dd5c0; }
+.k-process > .arw {
+  flex: 0 0 28px;
+  font-size: 14px;
+}
+
+/* control panel — bottom-right overlay */
+.control-panel {
+  position: absolute;
+  bottom: 12px;
+  right: 12px;
+  z-index: 10;
+  width: 300px;
+  padding: 12px 14px;
+  background: rgba(10,14,20,0.88);
+  border: 1px solid rgba(216,218,210,0.2);
+  border-radius: var(--radius-md);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+.control-panel .ctl-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.control-panel .ctl-row:last-child { margin-bottom: 0; }
+.control-panel label {
+  font-size: var(--fs-label);
+  color: var(--text);
+  white-space: nowrap;
+  min-width: 60px;
+}
+.control-panel .slider-wrap {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.control-panel input[type="range"] {
+  flex: 1;
+  height: 4px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+.control-panel .val {
+  font-size: var(--fs-label);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  min-width: 52px;
+  text-align: right;
+  color: var(--accent);
+}
+.control-panel .btn-group {
+  display: flex;
+  gap: 6px;
+}
+.control-panel .btn-group button {
+  flex: 1;
+  padding: 6px 12px;
+  font-size: var(--fs-label);
+  border: 1px solid rgba(216,218,210,0.3);
+  background: rgba(255,255,255,0.06);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  cursor: pointer;
+  transition: background .15s, border-color .15s;
+  font-family: inherit;
+}
+.control-panel .btn-group button:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.control-panel .btn-group button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+.control-panel .btn-group button.primary:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.control-panel .btn-group button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.control-panel .status {
+  font-size: var(--fs-sec);
+  line-height: 1.4;
+  text-align: center;
+  padding: 5px 8px;
+  border-radius: var(--radius-sm);
+  min-height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+}
+.control-panel .status.idle { color: var(--muted); }
+.control-panel .status.flying { color: #88bbdd; }
+.control-panel .status.fall { color: #d4956a; background: rgba(180,80,50,0.15); }
+.control-panel .status.escape { color: #6dd5c0; background: rgba(60,160,140,0.15); }
+
+/* gauges */
+.gauges {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+.gauges .gauge {
+  flex: 1;
+  text-align: center;
+  background: rgba(255,255,255,0.04);
+  border-radius: var(--radius-sm);
+  padding: 4px 6px;
+}
+.gauges .gauge .g-label {
+  font-size: var(--fs-label);
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+.gauges .gauge .g-val {
+  font-size: var(--fs-body);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  line-height: 1.3;
+}
+.gauges .gauge .g-unit {
+  font-size: var(--fs-label);
+  color: var(--muted);
+  margin-left: 2px;
+}
+
+/* legend — top-left of canvas */
+.legend {
+  position: absolute;
+  top: 62px;
+  left: 16px;
+  z-index: 10;
+  font-size: var(--fs-label);
+  color: var(--muted);
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.legend .leg-item {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.legend .leg-swatch {
+  width: 14px;
+  height: 3px;
+  border-radius: 1px;
+}
+
+/* escape velocity marker on slider */
+.esc-marker {
+  position: relative;
+  height: 0;
+}
+.esc-marker .mark {
+  position: absolute;
+  top: -8px;
+  width: 2px;
+  height: 16px;
+  background: var(--warning);
+  transform: translateX(-50%);
+  display: none;
+}
+.esc-marker .mark.show { display: block; }
+.esc-marker .mark-label {
+  position: absolute;
+  top: -20px;
+  font-size: var(--fs-label);
+  color: var(--warning);
+  white-space: nowrap;
+  transform: translateX(-50%);
+  display: none;
+}
+.esc-marker .mark-label.show { display: block; }
+
+/* altitude cap for trajectory */
+.traj-legend {
+  display: flex;
+  gap: 10px;
+  margin-top: 2px;
+  justify-content: center;
+}
+.traj-legend .tleg-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--fs-label);
+  color: var(--muted);
+}
+.traj-legend .tleg-swatch {
+  width: 12px;
+  height: 3px;
+  border-radius: 1px;
+}
+</style>
+</head>
+<body data-page="27" data-total="50">
+<div id="stage">
+<main id="main">
+
+  <!-- k-process: 初速度 → 持续减速 → 两种终态 -->
+  <div class="k-process" id="proc">
+    <div class="axis"></div>
+    <div class="step current" data-step="1">
+      <div class="step-label">设定初速度</div>
+      <div class="step-sub">滑杆选择发射速度</div>
+    </div>
+    <div class="arw"></div>
+    <div class="step" data-step="2">
+      <div class="step-label">引力持续减速</div>
+      <div class="step-sub">速度被地球引力慢慢消耗</div>
+    </div>
+    <div class="arw"></div>
+    <div class="step" data-step="3">
+      <div class="step-label">两种终态</div>
+      <div class="outcome-tags">
+        <span class="tag tag-fail">掉回</span>
+        <span class="tag tag-win">逃逸</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- legend -->
+  <div class="legend" id="legend">
+    <div class="leg-item"><span class="leg-swatch" style="background:#d4956a;"></span> 掉回</div>
+    <div class="leg-item"><span class="leg-swatch" style="background:#6dd5c0;"></span> 逃逸</div>
+    <div class="leg-item"><span class="leg-swatch" style="background:rgba(255,255,255,0.3);"></span> 当前飞行</div>
+  </div>
+
+  <!-- main simulation canvas -->
+  <canvas id="sim-canvas" class="cv-fill"></canvas>
+
+  <!-- control panel -->
+  <div class="control-panel" id="panel">
+    <!-- gauges -->
+    <div class="gauges">
+      <div class="gauge">
+        <div class="g-label">速度</div>
+        <div class="g-val"><span id="speed-val">0.0</span><span class="g-unit">km/s</span></div>
+      </div>
+      <div class="gauge">
+        <div class="g-label">高度</div>
+        <div class="g-val"><span id="alt-val">0</span><span class="g-unit">km</span></div>
+      </div>
+    </div>
+
+    <!-- speed slider -->
+    <div class="ctl-row">
+      <label>初速度</label>
+      <div class="slider-wrap">
+        <input type="range" id="speed-slider" min="0" max="15.7" step="0.1" value="6.0">
+        <span class="val" id="slider-display">6.0</span>
+      </div>
+    </div>
+
+    <!-- escape marker -->
+    <div class="esc-marker" style="height:0;">
+      <div class="mark" id="esc-mark"></div>
+      <div class="mark-label" id="esc-label">逃逸速度</div>
+    </div>
+
+    <!-- buttons -->
+    <div class="btn-group">
+      <button class="primary" id="btn-launch">🚀 发射</button>
+      <button id="btn-reset">↺ 重来</button>
+    </div>
+
+    <!-- status -->
+    <div class="status idle" id="status">设定初速度，按发射</div>
+
+    <!-- trajectory legend -->
+    <div class="traj-legend">
+      <div class="tleg-item"><span class="tleg-swatch" style="background:#d4956a;"></span> 掉回</div>
+      <div class="tleg-item"><span class="tleg-swatch" style="background:#6dd5c0;"></span> 逃逸</div>
+    </div>
+  </div>
+
+</main>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script src="assets/lib/matter.min.js"></script>
+<script>
+/* ===== page-27: escape velocity launch simulator ===== */
+Lec.mount({
+  index: 27,
+  kicker: '逃离',
+  title: '快到永远掉不回来',
+  take: '逃逸速度不是"快"，是"快到永远掉不回来"。'
+});
+
+/* ---------- constants ---------- */
+const v_esc = Lec.K.EARTH_ESCAPE_VELOCITY_KMPS;           // ~11.2 km/s
+const g0 = Lec.K.EARTH_GRAVITY_MPS2;                       // 9.81 m/s²
+const g0_kmps2 = g0 / 1000;                                 // 0.00981 km/s²
+const R = Lec.K.EARTH_RADIUS_KM;                            // 6371 km
+const maxSlider = Math.ceil(v_esc * 1.4 * 10) / 10;        // 15.7
+
+/* ---------- DOM refs ---------- */
+const canvas = document.getElementById('sim-canvas');
+const ctx = canvas.getContext('2d');
+const slider = document.getElementById('speed-slider');
+const sliderDisp = document.getElementById('slider-display');
+const speedVal = document.getElementById('speed-val');
+const altVal = document.getElementById('alt-val');
+const btnLaunch = document.getElementById('btn-launch');
+const btnReset = document.getElementById('btn-reset');
+const statusEl = document.getElementById('status');
+const escMark = document.getElementById('esc-mark');
+const escLabel = document.getElementById('esc-label');
+const steps = document.querySelectorAll('#proc .step');
+
+/* ---------- state ---------- */
+let isFlying = false;
+let simTime = 0;
+let pos = 0;          // altitude km
+let vel = 0;          // km/s
+let traj = [];        // [{h, v}] current trajectory data
+let allTrajs = [];    // [{points, escaped}]
+let successCount = 0;
+let hasEverEscaped = false;
+
+/* slider range */
+slider.max = String(maxSlider);
+slider.step = '0.1';
+slider.value = String(v_esc * 0.5);
+sliderDisp.textContent = Lec.P.round(parseFloat(slider.value), 1);
+updateSliderDisplay();
+
+/* ---------- canvas sizing ---------- */
+let W_canvas, H_canvas; // logical dimensions
+
+function resizeCanvas() {
+  Deck.fit(canvas);
+  W_canvas = canvas.offsetWidth;
+  H_canvas = canvas.offsetHeight;
+  draw();
+}
+resizeCanvas();
+Deck.onResize(resizeCanvas);
+
+/* ---------- Matter.js setup ---------- */
+// Use Matter.js for physics engine and body management.
+// Custom inverse-square gravity is applied via Body.setVelocity.
+const { Engine, Bodies, Body, Composite } = Matter;
+const engine = Engine.create();
+engine.gravity.y = 0;   // no default gravity, we apply custom inverse-square
+
+// Rocket body: small rectangle
+const rocketBody = Bodies.rectangle(0, 0, 0.5, 1, {
+  label: 'rocket',
+  frictionAir: 0,
+  density: 0.001
+});
+// Ground body: large static rectangle
+const groundBody = Bodies.rectangle(0, -0.5, 2000, 1, {
+  isStatic: true,
+  label: 'ground'
+});
+Composite.add(engine.world, [rocketBody, groundBody]);
+
+/* ---------- physics simulation ---------- */
+function resetSim() {
+  isFlying = false;
+  simTime = 0;
+  pos = 0;
+  vel = 0;
+  traj = [];
+  Body.setPosition(rocketBody, { x: 0, y: 0 });
+  Body.setVelocity(rocketBody, { x: 0, y: 0 });
+  updateGauges(0, 0);
+  statusEl.className = 'status idle';
+  statusEl.textContent = '设定初速度，按发射';
+  setStep(1);
+  btnLaunch.disabled = false;
+}
+
+function launch(v0) {
+  if (isFlying) return;
+  isFlying = true;
+  simTime = 0;
+  pos = 0;
+  vel = v0;
+  traj = [{h: 0, v: v0}];
+  hitGround = false;
+  // Reset and set rocket body initial velocity (upward = negative y in Matter.js)
+  Body.setPosition(rocketBody, { x: 0, y: 0 });
+  Body.setVelocity(rocketBody, { x: 0, y: -v0 });
+  statusEl.className = 'status flying';
+  statusEl.textContent = '飞行中…';
+  btnLaunch.disabled = true;
+  setStep(2);
+}
+
+// Inverse-square gravity acceleration (km/s²) at given altitude
+function gravAccel(h) {
+  const r = R + h;
+  return g0_kmps2 * (R * R) / (r * r);
+}
+
+// Check if rocket has escaped (energy criterion)
+function checkEscaped(h, v) {
+  const ke = 0.5 * v * v;
+  const pe = g0_kmps2 * R * R / (R + h);
+  return ke > pe * 0.999 && v > 0 && h > 100;
+}
+
+function stepSim(dt) {
+  if (!isFlying) return;
+  
+  // RK4 integration for accurate 1D inverse-square gravity physics
+  const dt2 = dt / 2;
+  
+  const a1 = -gravAccel(pos);
+  const k1v = a1;
+  const k1h = vel;
+  
+  const a2 = -gravAccel(pos + dt2 * k1h);
+  const k2v = a2;
+  const k2h = vel + dt2 * k1v;
+  
+  const a3 = -gravAccel(pos + dt2 * k2h);
+  const k3v = a3;
+  const k3h = vel + dt2 * k2v;
+  
+  const a4 = -gravAccel(pos + dt * k3h);
+  const k4v = a4;
+  const k4h = vel + dt * k3v;
+  
+  const newVel = vel + (dt / 6) * (k1v + 2*k2v + 2*k3v + k4v);
+  const newPos = Math.max(0, pos + (dt / 6) * (k1h + 2*k2h + 2*k3h + k4h));
+  
+  simTime += dt;
+  
+  // Sync Matter.js body position for visual consistency
+  Body.setPosition(rocketBody, { x: 0, y: -newPos });
+  Body.setVelocity(rocketBody, { x: 0, y: -newVel });
+  
+  // Check for ground collision
+  if (newPos <= 0.01 && newVel < 0) {
+    isFlying = false;
+    // Add the final point (at ground)
+    allTrajs.push({points: traj.slice(), escaped: false});
+    statusEl.className = 'status fall';
+    statusEl.textContent = '掉回来了 —— 速度不够';
+    btnLaunch.disabled = false;
+    setStep(3);
+    pos = 0;
+    vel = 0;
+    updateGauges(0, 0);
+    return;
+  }
+  
+  // Update state
+  pos = newPos;
+  vel = newVel;
+  traj.push({h: pos, v: vel});
+  updateGauges(vel, pos);
+  
+  // Check escape (energy criterion)
+  if (vel > 0 && checkEscaped(pos, vel)) {
+    isFlying = false;
+    allTrajs.push({points: traj.slice(), escaped: true});
+    successCount++;
+    hasEverEscaped = true;
+    statusEl.className = 'status escape';
+    statusEl.textContent = '逃逸成功 —— 它永远不会回来';
+    btnLaunch.disabled = false;
+    setStep(3);
+    showEscapeMarker();
+    return;
+  }
+}
+
+function updateGauges(v, h) {
+  speedVal.textContent = v.toFixed(1);
+  if (h >= 1000) {
+    altVal.textContent = Lec.P.round(h, 0);
+  } else if (h >= 100) {
+    altVal.textContent = Lec.P.round(h, 1);
+  } else {
+    altVal.textContent = Lec.P.round(h, 2);
+  }
+}
+
+function updateSliderDisplay() {
+  const v = parseFloat(slider.value);
+  sliderDisp.textContent = v.toFixed(1);
+}
+
+function setStep(n) {
+  steps.forEach((s, i) => {
+    s.classList.toggle('current', i === n - 1);
+    s.classList.toggle('passed', i < n - 1);
+  });
+}
+
+function showEscapeMarker() {
+  // Calculate position of escape velocity on the slider
+  const sliderEl = slider;
+  const min = parseFloat(sliderEl.min);
+  const max = parseFloat(sliderEl.max);
+  const frac = (v_esc - min) / (max - min);
+  const pct = frac * 100;
+  escMark.style.left = pct + '%';
+  escLabel.style.left = pct + '%';
+  escMark.classList.add('show');
+  escLabel.classList.add('show');
+}
+
+/* ---------- rendering ---------- */
+function draw() {
+  const W = W_canvas;
+  const H = H_canvas;
+  
+  ctx.clearRect(0, 0, W, H);
+  
+  // Background: space gradient
+  const grad = ctx.createLinearGradient(0, 0, 0, H);
+  grad.addColorStop(0, '#05080e');
+  grad.addColorStop(0.6, '#0a1420');
+  grad.addColorStop(0.9, '#1a2a38');
+  grad.addColorStop(1, '#2a3a45');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, W, H);
+  
+  // Stars
+  ctx.fillStyle = 'rgba(255,255,255,0.5)';
+  for (let i = 0; i < 80; i++) {
+    const sx = (i * 137.5 + 53) % W;
+    const sy = (i * 89.3 + 17) % (H * 0.8);
+    const sr = 0.5 + (i % 3) * 0.3;
+    ctx.beginPath();
+    ctx.arc(sx, sy, sr, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  
+  // Earth surface
+  const groundY = H - 40;
+  const earthGrad = ctx.createLinearGradient(0, groundY, 0, H);
+  earthGrad.addColorStop(0, '#3a4a3a');
+  earthGrad.addColorStop(0.2, '#2a3a2a');
+  earthGrad.addColorStop(1, '#1a2a1a');
+  ctx.fillStyle = earthGrad;
+  ctx.fillRect(0, groundY, W, H - groundY);
+  
+  // Surface line
+  ctx.strokeStyle = 'rgba(200,220,180,0.3)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(0, groundY);
+  ctx.lineTo(W, groundY);
+  ctx.stroke();
+  
+  // Skyline silhouette
+  ctx.fillStyle = 'rgba(30,40,30,0.5)';
+  for (let x = 0; x < W; x += 6) {
+    const bh = 3 + Math.sin(x * 0.05) * 2 + Math.sin(x * 0.13) * 1.5;
+    ctx.fillRect(x, groundY - bh, 5, bh);
+  }
+  
+  // Visual scale: how many pixels per km
+  // We want the rocket to be visible. Map altitude to screen y.
+  // Max visible altitude: ~500 km (covers most sub-escape trajectories)
+  const maxVisAlt = 500; // km
+  const scale = (groundY - 20) / maxVisAlt; // px per km (y goes up = smaller y)
+  
+  function altToY(h) {
+    return groundY - h * scale;
+  }
+  
+  // Draw previous trajectories (in the speed-altitude plot area)
+  // Speed-altitude plot: overlaid on the right side
+  const plotLeft = W * 0.62;
+  const plotRight = W - 16;
+  const plotTop = 16;
+  const plotBottom = H * 0.55;
+  const plotW = plotRight - plotLeft;
+  const plotH = plotBottom - plotTop;
+  
+  // Draw plot background
+  ctx.fillStyle = 'rgba(0,0,0,0.5)';
+  ctx.strokeStyle = 'rgba(216,218,210,0.15)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.roundRect(plotLeft, plotTop, plotW, plotH, 4);
+  ctx.fill();
+  ctx.stroke();
+  
+  // Plot title
+  ctx.fillStyle = 'rgba(255,255,255,0.5)';
+  ctx.font = '14px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('速度-高度轨迹', plotLeft + plotW/2, plotTop + 16);
+  
+  // Plot axes
+  const axL = plotLeft + 36;
+  const axR = plotRight - 10;
+  const axT = plotTop + 24;
+  const axB = plotBottom - 14;
+  const axW = axR - axL;
+  const axH = axB - axT;
+  
+  ctx.strokeStyle = 'rgba(255,255,255,0.2)';
+  ctx.lineWidth = 1;
+  // x-axis
+  ctx.beginPath();
+  ctx.moveTo(axL, axB);
+  ctx.lineTo(axR, axB);
+  ctx.stroke();
+  // y-axis
+  ctx.beginPath();
+  ctx.moveTo(axL, axT);
+  ctx.lineTo(axL, axB);
+  ctx.stroke();
+  
+  // Axis labels
+  ctx.fillStyle = 'rgba(255,255,255,0.35)';
+  ctx.font = '14px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('速度 (km/s)', axL + axW/2, axB + 14);
+  ctx.textAlign = 'center';
+  // y-axis label rotated
+  ctx.save();
+  ctx.translate(axL - 12, axT + axH/2);
+  ctx.rotate(-Math.PI/2);
+  ctx.fillText('高度 (km)', 0, 0);
+  ctx.restore();
+  
+  // X-axis: speed range 0 to maxSlider
+  // Y-axis: altitude 0 to 500 km
+  function speedToX(s) {
+    const frac = Math.min(s / maxSlider, 1);
+    return axL + frac * axW;
+  }
+  function altToPlotY(a) {
+    const frac = Math.min(a / 500, 1);
+    return axB - frac * axH;
+  }
+  
+  // Grid lines
+  ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+  ctx.lineWidth = 1;
+  for (let i = 1; i <= 5; i++) {
+    const x = axL + (i/5) * axW;
+    ctx.beginPath();
+    ctx.moveTo(x, axT);
+    ctx.lineTo(x, axB);
+    ctx.stroke();
+  }
+  for (let i = 1; i <= 4; i++) {
+    const y = axT + (i/4) * axH;
+    ctx.beginPath();
+    ctx.moveTo(axL, y);
+    ctx.lineTo(axR, y);
+    ctx.stroke();
+  }
+  
+  // Escape velocity vertical line
+  ctx.strokeStyle = 'rgba(154,52,18,0.4)';
+  ctx.lineWidth = 1;
+  ctx.setLineDash([3, 3]);
+  const escX = speedToX(v_esc);
+  ctx.beginPath();
+  ctx.moveTo(escX, axT);
+  ctx.lineTo(escX, axB);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  
+  // Escape velocity label
+  ctx.fillStyle = 'rgba(154,52,18,0.6)';
+  ctx.font = '14px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('v_esc=' + v_esc.toFixed(1) + ' km/s', escX, axT - 4);
+  
+  // Draw all previous trajectories
+  for (const t of allTrajs) {
+    const color = t.escaped ? '#6dd5c0' : '#d4956a';
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1.5;
+    ctx.globalAlpha = 0.6;
+    ctx.beginPath();
+    let started = false;
+    for (const p of t.points) {
+      const px = speedToX(Math.abs(p.v));
+      const py = altToPlotY(p.h);
+      if (!started) {
+        ctx.moveTo(px, py);
+        started = true;
+      } else {
+        ctx.lineTo(px, py);
+      }
+    }
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+  
+  // Draw current trajectory (if flying)
+  if (traj.length > 1) {
+    ctx.strokeStyle = 'rgba(255,255,255,0.6)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    let started = false;
+    for (const p of traj) {
+      const px = speedToX(Math.abs(p.v));
+      const py = altToPlotY(p.h);
+      if (!started) {
+        ctx.moveTo(px, py);
+        started = true;
+      } else {
+        ctx.lineTo(px, py);
+      }
+    }
+    ctx.stroke();
+  }
+  
+  // Draw rocket in main view
+  const rocketAlt = Math.min(pos, maxVisAlt);
+  const rocketY = altToY(rocketAlt);
+  const rocketX = W * 0.25;
+  
+  if (isFlying || pos > 0) {
+    // Rocket body
+    const rSize = 10;
+    const rAlpha = pos > maxVisAlt ? Math.max(0, 1 - (pos - maxVisAlt) / 100) : 1;
+    
+    if (rAlpha > 0) {
+      ctx.save();
+      ctx.globalAlpha = rAlpha;
+      
+      // Rocket flame
+      ctx.fillStyle = 'rgba(255,180,50,0.6)';
+      ctx.beginPath();
+      ctx.moveTo(rocketX - 3, rocketY + rSize);
+      ctx.lineTo(rocketX + 3, rocketY + rSize);
+      ctx.lineTo(rocketX, rocketY + rSize + 8 + Math.random() * 4);
+      ctx.closePath();
+      ctx.fill();
+      
+      // Rocket body
+      ctx.fillStyle = '#c8d0d8';
+      ctx.beginPath();
+      ctx.moveTo(rocketX, rocketY - rSize);
+      ctx.lineTo(rocketX - 4, rocketY + rSize * 0.5);
+      ctx.lineTo(rocketX + 4, rocketY + rSize * 0.5);
+      ctx.closePath();
+      ctx.fill();
+      
+      // Rocket window
+      ctx.fillStyle = '#88bbdd';
+      ctx.beginPath();
+      ctx.arc(rocketX, rocketY - 2, 2.5, 0, Math.PI * 2);
+      ctx.fill();
+      
+      ctx.restore();
+    }
+    
+    // Trail from rocket
+    if (pos > 0.5 && pos <= maxVisAlt) {
+      ctx.strokeStyle = 'rgba(255,200,150,0.2)';
+      ctx.lineWidth = 1;
+      ctx.setLineDash([2, 4]);
+      ctx.beginPath();
+      ctx.moveTo(rocketX, rocketY + rSize);
+      ctx.lineTo(rocketX, groundY);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+  }
+  
+  // Launch pad
+  ctx.fillStyle = 'rgba(100,120,100,0.5)';
+  ctx.fillRect(rocketX - 8, groundY - 2, 16, 4);
+  
+  // Altitude label on main view
+  if (pos > 0 && pos <= maxVisAlt) {
+    ctx.fillStyle = 'rgba(255,255,255,0.4)';
+    ctx.font = '14px sans-serif';
+    ctx.textAlign = 'right';
+    ctx.fillText(Lec.P.round(pos, 1) + ' km', rocketX - 16, rocketY + 4);
+  }
+  
+  // Speed label on main view
+  if (isFlying) {
+    ctx.fillStyle = 'rgba(255,255,255,0.4)';
+    ctx.font = '14px sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillText(vel.toFixed(1) + ' km/s', rocketX + 16, rocketY + 4);
+  }
+}
+
+/* ---------- animation loop ---------- */
+const SIM_DT = 0.2; // seconds per frame (simulation time)
+
+let stopLoop = null;
+
+function tick() {
+  if (isFlying) {
+    // Run multiple sub-steps per frame for accuracy
+    const subSteps = 4;
+    const subDt = SIM_DT / subSteps;
+    for (let i = 0; i < subSteps; i++) {
+      stepSim(subDt);
+      if (!isFlying) break;
+    }
+  }
+  draw();
+}
+
+stopLoop = Deck.loop(tick);
+
+/* ---------- event handlers ---------- */
+slider.addEventListener('input', function() {
+  const v = parseFloat(this.value);
+  sliderDisp.textContent = v.toFixed(1);
+  if (!isFlying) {
+    speedVal.textContent = v.toFixed(1);
+    altVal.textContent = '0';
+  }
+});
+
+btnLaunch.addEventListener('click', function() {
+  if (isFlying) return;
+  const v0 = parseFloat(slider.value);
+  launch(v0);
+});
+
+btnReset.addEventListener('click', function() {
+  allTrajs = [];
+  successCount = 0;
+  hasEverEscaped = false;
+  escMark.classList.remove('show');
+  escLabel.classList.remove('show');
+  resetSim();
+  // Reset slider to default
+  slider.value = String(v_esc * 0.5);
+  sliderDisp.textContent = (v_esc * 0.5).toFixed(1);
+});
+
+// Keyboard: Enter to launch
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Enter' && !isFlying && document.activeElement !== slider) {
+    btnLaunch.click();
+  }
+});
+
+/* ---------- init ---------- */
+slider.value = String(v_esc * 0.5);
+updateSliderDisplay();
+resetSim();
+
+/* ---------- clean up on page unload ---------- */
+window.addEventListener('beforeunload', function() {
+  if (stopLoop) stopLoop();
+  Engine.clear(engine);
+});
+
+/* convenience: expose resize for selfcheck */
+window.__resizeCanvas = resizeCanvas;
+</script>
+</body>
+</html>

@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  .page-head{box-sizing:border-box;padding:18px 42px 10px;display:flex;flex-shrink:0;align-items:center;justify-content:space-between;gap:24px}
+  .kicker{font:700 var(--fs-label)/1.4 var(--font-mono);letter-spacing:.14em;color:var(--primary-bright)}
+  .take{max-width:680px;margin:6px 0 0;color:var(--muted);font-size:var(--fs-sec);line-height:var(--lh-text)}
+  .progress{display:flex;align-items:center;gap:12px;font-size:var(--fs-label);color:var(--muted)}
+  .nodes{display:flex;gap:8px}.node{width:14px;height:14px;border:2px solid var(--line);border-radius:50%;background:var(--panel-deep)}
+  .node.on{border-color:var(--primary);background:var(--primary);box-shadow:0 0 14px rgba(53,194,178,.5)}
+  .board-wrap{padding:0 42px 12px;position:relative}
+  .board{position:relative;height:570px;border:2px solid var(--line);border-radius:var(--r-lg);background:linear-gradient(180deg,rgba(14,32,51,.97),rgba(9,24,39,.95));box-shadow:var(--shadow);overflow:hidden}
+  .board::after{position:absolute;right:2px;bottom:2px;left:2px;height:34px;border-top:3px solid var(--primary);border-radius:50% 50% 0 0;background:rgba(53,194,178,.035);content:"";pointer-events:none}
+  #konva{position:absolute;inset:0;pointer-events:none}
+  .matrix.k-classification{position:absolute;inset:18px 376px 18px 18px;display:grid;grid-template-columns:270px repeat(3,minmax(0,1fr));grid-template-rows:42px repeat(4,1fr);gap:8px}
+  .mh{display:flex;align-items:center;justify-content:center;border-bottom:2px solid var(--primary);font-size:var(--fs-label);font-weight:720;color:var(--primary-bright)}
+  .risk{padding:10px 14px!important;display:flex;flex-direction:column;justify-content:center}
+  .risk .bt{margin:-10px -14px 5px!important;padding:4px 14px!important;min-height:28px!important;font-size:var(--fs-sec)!important}
+  .risk p{margin:0;color:var(--muted);font-size:var(--fs-sec);line-height:1.38}
+  .slot{position:relative;display:flex;align-items:center;justify-content:center;padding:8px;border:2px dashed var(--line);border-radius:var(--r-sm);background:rgba(7,17,31,.58);font-size:var(--fs-label);color:var(--faint);text-align:center;transition:border-color 160ms ease,background 160ms ease}
+  .slot.hot,.slot:focus{outline:none;border-color:var(--accent);background:var(--accent-soft)}
+  .slot.filled{border-style:solid;border-color:var(--primary);color:var(--text)}
+  .tray{position:absolute;right:18px;top:18px;bottom:18px;width:338px;padding:14px;box-sizing:border-box;border-left:2px solid var(--line-soft)}
+  .tray-title{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;font-size:var(--fs-label);color:var(--muted)}
+  .cards{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .actor{min-height:42px;padding:6px 8px;border:2px solid var(--primary);border-radius:var(--r-sm);background:var(--primary-soft);color:var(--text);font-size:var(--fs-label);font-weight:700;line-height:1.25;cursor:grab;touch-action:none;transition:transform 180ms ease-out,border-color 180ms ease-out,opacity 180ms ease-out}
+  .actor.selected{border-color:var(--accent);background:var(--accent-soft);color:var(--accent);transform:translateY(-2px)}
+  .actor.used{opacity:.38;cursor:default}.actor.wrong{animation:shake 220ms ease-out}
+  @keyframes shake{0%,100%{transform:translateX(0)}25%{transform:translateX(-6px)}50%{transform:translateX(6px)}75%{transform:translateX(-6px)}}
+  .instruction{margin-top:12px;font-size:var(--fs-sec);line-height:1.4;color:var(--muted)}
+  .status{margin-top:8px;min-height:48px;padding:9px 11px;border-left:3px solid var(--primary);background:rgba(53,194,178,.07);font-size:var(--fs-sec);line-height:1.4}
+  .foot{height:104px;padding:0 42px 24px;display:flex;align-items:center;gap:22px}
+  .claim{flex:1;padding:14px 20px;border-left:6px solid var(--accent);background:linear-gradient(90deg,var(--accent-soft),transparent);font-size:var(--fs-lead);font-weight:700;line-height:1.45}
+  @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body data-page="44" data-total="48">
+<div id="stage">
+  <header class="page-head" style="height:98px">
+    <div><div class="kicker">RISK &amp; CONSENT · 风险伦理</div><h1>签字之后，风险归谁？</h1><p class="take">按“影响首先落在哪里”审议四类风险，再分开判断谁须知情、谁实际承担、谁负补偿责任。</p></div>
+    <div class="progress" aria-label="审议进度"><span id="count">责任槽：尚未归位</span><span class="nodes" aria-hidden="true"><i class="node"></i><i class="node"></i><i class="node"></i><i class="node"></i></span></div>
+  </header>
+  <main class="board-wrap min0" style="flex:1">
+    <section class="board no-pan" aria-label="风险责任审议台">
+      <div id="konva" aria-hidden="true"></div>
+      <div class="matrix k-classification" id="matrix">
+        <div class="mh">影响首先落在</div><div class="mh">谁须知情</div><div class="mh">谁实际承担</div><div class="mh">谁负补偿责任</div>
+        <article class="risk box"><div class="bt">身体</div><p>航天员因任务受伤</p></article><div class="slot" tabindex="0" data-answer="航天员、任务机构" data-col="知情">放入主体卡</div><div class="slot" tabindex="0" data-answer="航天员、家庭" data-col="承担">放入主体卡</div><div class="slot" tabindex="0" data-answer="任务机构、保险机制" data-col="补偿">放入主体卡</div>
+        <article class="risk box"><div class="bt">关系</div><p>长期任务使家庭失去照料与收入</p></article><div class="slot" tabindex="0" data-answer="航天员、家庭" data-col="知情">放入主体卡</div><div class="slot" tabindex="0" data-answer="家庭" data-col="承担">放入主体卡</div><div class="slot" tabindex="0" data-answer="雇主／任务机构" data-col="补偿">放入主体卡</div>
+        <article class="risk box"><div class="bt">公共系统</div><p>失败造成公共资金损失或地面人员伤害</p></article><div class="slot" tabindex="0" data-answer="公众代表、监管者、地面社区" data-col="知情">放入主体卡</div><div class="slot" tabindex="0" data-answer="公众、地面社区" data-col="承担">放入主体卡</div><div class="slot" tabindex="0" data-answer="发射方、任务机构、保险机制" data-col="补偿">放入主体卡</div>
+        <article class="risk box"><div class="bt">环境</div><p>残骸、污染或生物污染影响任务之外区域</p></article><div class="slot" tabindex="0" data-answer="监管者、受影响社区、科学共同体" data-col="知情">放入主体卡</div><div class="slot" tabindex="0" data-answer="当地居民、生态系统、未来公众" data-col="承担">放入主体卡</div><div class="slot" tabindex="0" data-answer="发射方、任务机构、公共治理机制" data-col="补偿">放入主体卡</div>
+      </div>
+      <aside class="tray" aria-label="待分配主体卡">
+        <div class="tray-title"><strong>主体卡</strong><span>拖入对应槽</span></div>
+        <div class="cards" id="cards"></div>
+        <p class="instruction">也可选择一张卡，用方向键移动焦点，按 Enter 放置。</p>
+        <div class="status" id="status" aria-live="polite">先比较三列：签署同意的人，不一定是承担后果的人。</div>
+      </aside>
+    </section>
+  </main>
+  <footer class="foot">
+    <div class="hand-scale">个人同意</div>
+    <div class="claim" id="claim">航天员可以同意身体风险，却不能替家庭、公众或环境同意。</div>
+    <button id="reset" type="button">重置审议</button>
+  </footer>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script src="assets/lib/konva.min.js"></script>
+<script>
+(function(){
+  Deck.init({index:44,total:48});
+  const answers=[...document.querySelectorAll('.slot')].map(s=>s.dataset.answer);
+  const unique=[...new Set(answers)];
+  const cards=document.getElementById('cards'), slots=[...document.querySelectorAll('.slot')];
+  let selected=null, placed=0;
+  unique.forEach((name,i)=>{const b=document.createElement('button');b.type='button';b.className='actor';b.textContent=name;b.dataset.name=name;b.draggable=true;b.setAttribute('aria-label','主体卡：'+name);b.addEventListener('click',()=>select(b));b.addEventListener('dragstart',e=>{select(b);e.dataTransfer.setData('text/plain',name)});cards.appendChild(b)});
+  const konvaHost=document.getElementById('konva');
+  const stage=new Konva.Stage({container:'konva',width:konvaHost.clientWidth,height:konvaHost.clientHeight});
+  const layer=new Konva.Layer();stage.add(layer);
+  function lineFor(slot){const board=document.querySelector('.board').getBoundingClientRect(),r=slot.getBoundingClientRect(),s=Deck.s||1;const x=(r.left-board.left)/s,y=(r.top-board.top+r.height/2)/s;const ln=new Konva.Line({points:[286,y,x-8,y],stroke:Deck.token('--accent'),strokeWidth:2,opacity:.85,lineCap:'round'});layer.add(ln);layer.draw()}
+  function select(b){if(b.classList.contains('used'))return;document.querySelectorAll('.actor').forEach(x=>x.classList.remove('selected'));selected=b;b.classList.add('selected');document.getElementById('status').textContent='已选择“'+b.dataset.name+'”。现在选择一个责任槽。'}
+  function place(slot,name){if(slot.classList.contains('filled'))return;const card=[...document.querySelectorAll('.actor')].find(b=>b.dataset.name===name);if(name===slot.dataset.answer){slot.textContent=name;slot.classList.add('filled');slot.removeAttribute('tabindex');placed++;lineFor(slot);if(card&&!answers.some((a,i)=>a===name&&!slots[i].classList.contains('filled')))card.classList.add('used');selected=null;document.querySelectorAll('.actor').forEach(x=>x.classList.remove('selected'));update(slot)}else{if(card){card.classList.remove('wrong');void card.offsetWidth;card.classList.add('wrong')}document.getElementById('status').textContent=slot.dataset.col==='承担'?'这里问的是实际承受后果的人，不是签署同意的人。':'请按“'+slot.dataset.col+'”的责任重新判断。'} }
+  function update(slot){const total=slots.length;document.getElementById('count').textContent='责任槽 '+placed+' / '+total;const row=Math.floor(slots.indexOf(slot)/3);const done=slots.slice(row*3,row*3+3).every(s=>s.classList.contains('filled'));if(done)document.querySelectorAll('.node')[row].classList.add('on');document.getElementById('status').textContent=done?'这一类已审议：同一风险跨越了不同责任主体。':'归位正确。继续比较知情、承担与补偿。';if(placed===total){document.getElementById('claim').textContent='同意不能私人化外溢后果：自愿只是风险正当化的起点，不是终点。';document.getElementById('status').textContent='审议完成：责任线已经越过个人，连接家庭、公众与环境。'}}
+  slots.forEach((s,i)=>{s.addEventListener('dragover',e=>{e.preventDefault();s.classList.add('hot')});s.addEventListener('dragleave',()=>s.classList.remove('hot'));s.addEventListener('drop',e=>{e.preventDefault();s.classList.remove('hot');place(s,e.dataTransfer.getData('text/plain'))});s.addEventListener('click',()=>{if(selected)place(s,selected.dataset.name)});s.addEventListener('keydown',e=>{let n=i;if(e.key==='ArrowRight')n=i+1;if(e.key==='ArrowLeft')n=i-1;if(e.key==='ArrowDown')n=i+3;if(e.key==='ArrowUp')n=i-3;if(n!==i&&slots[n]){e.preventDefault();slots[n].focus()}if(e.key==='Enter'&&selected){e.preventDefault();place(s,selected.dataset.name)}})});
+  document.getElementById('reset').addEventListener('click',()=>{placed=0;selected=null;slots.forEach(s=>{s.className='slot';s.tabIndex=0;s.textContent='放入主体卡'});document.querySelectorAll('.actor').forEach(b=>b.className='actor');document.querySelectorAll('.node').forEach(n=>n.classList.remove('on'));layer.destroyChildren();layer.draw();document.getElementById('count').textContent='责任槽：尚未归位';document.getElementById('claim').textContent='航天员可以同意身体风险，却不能替家庭、公众或环境同意。';document.getElementById('status').textContent='先比较三列：签署同意的人，不一定是承担后果的人。'});
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,615 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>第 49 页 · 互动讲义</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    #sim-container {
+      width: 1408px;
+      height: 420px;
+      position: relative;
+      border-radius: var(--r-md);
+      overflow: hidden;
+      background: var(--bg);
+      /* no border — canvas must fill exactly */
+    }
+    #sim-container canvas {
+      display: block;
+    }
+    .ctl-row {
+      display: flex;
+      align-items: center;
+      gap: var(--sp-3);
+      margin-top: var(--sp-3);
+    }
+    .ctl-row label {
+      font-size: var(--fs-label);
+      color: var(--text-sec);
+      flex-shrink: 0;
+      font-weight: 500;
+    }
+    .ctl-row input[type="range"] {
+      flex: 1 1 0%;
+      min-width: 0;
+      accent-color: var(--accent);
+      height: 6px;
+    }
+    .ctl-row .end-label {
+      font-size: var(--fs-label);
+      color: var(--text-dim);
+      flex-shrink: 0;
+    }
+    #key-note {
+      font-size: var(--fs-sec);
+      color: var(--text-dim);
+      text-align: center;
+      margin-top: 6px;
+      min-height: 22px;
+      line-height: 1.4;
+      transition: color 400ms var(--ease);
+    }
+    #key-note.active {
+      color: var(--text);
+    }
+    .process-strip {
+      margin-top: var(--sp-2);
+    }
+    .k-process .step {
+      font-size: var(--fs-sec);
+      padding: var(--sp-2) var(--sp-1);
+    }
+    .k-process .step .evt-label {
+      font-size: var(--fs-label);
+      color: var(--text-dim);
+      margin-top: 1px;
+      line-height: 1.35;
+    }
+  </style>
+</head>
+<body data-page="49" data-total="60">
+  <div id="stage">
+    <main id="main">
+      <div id="sim-container"></div>
+      <div class="ctl-row">
+        <label for="posture-slider">身体姿态</label>
+        <span class="end-label">伸展</span>
+        <input type="range" id="posture-slider" min="0" max="100" value="50" step="1">
+        <span class="end-label">收拢</span>
+        <span class="end-label" id="omega-readout" style="min-width:100px;text-align:right;"></span>
+      </div>
+      <div id="key-note"></div>
+      <div class="k-process process-strip" id="process-strip"></div>
+    </main>
+  </div>
+  <script src="assets/base.js"></script>
+  <script src="assets/lec.js"></script>
+  <script src="assets/lib/pixi.min.js"></script>
+  <script src="assets/lib/matter.min.js"></script>
+  <script src="assets/lib/seedrandom.min.js"></script>
+  <script>
+  (function() {
+    /* ================================================================
+       SETUP: Deck, Lec, constants
+       ================================================================ */
+    Deck.init({ index: 49, total: 60 });
+    Lec.mount({
+      index: 49,
+      kicker: '第4章 · 星际跳跃',
+      title: '低重力翻跟头',
+      take: '角动量守恒让旋转持续，但视觉参照的混乱让方向感丧失'
+    });
+
+    const G_MOON   = Lec.K.MOON_GRAVITY;            // 1.62 m/s²
+    const G_EARTH  = Lec.K.EARTH_GRAVITY;           // 9.8 m/s²
+    const MASS     = Lec.K.ASTRONAUT_MASS;          // 70 kg
+    const V0       = Lec.K.HUMAN_JUMP_INITIAL_VELOCITY; // 2.5 m/s
+
+    /* Physical moment-of-inertia range (kg·m²) */
+    const I_MIN = 2.5;   // fully tucked
+    const I_0   = 6.3;   // neutral
+    const I_MAX = 12.5;  // fully extended
+    const OMEGA_0 = 0.5; // initial angular velocity (rad/s)
+    const L0 = I_0 * OMEGA_0; // conserved angular momentum = 3.15 kg·m²/s
+
+    /* ================================================================
+       DOM refs
+       ================================================================ */
+    const simContainer = document.getElementById('sim-container');
+    const postureSlider = document.getElementById('posture-slider');
+    const keyNote = document.getElementById('key-note');
+    const processStrip = document.getElementById('process-strip');
+    const omegaReadout = document.getElementById('omega-readout');
+
+    /* ================================================================
+       MATTER.JS — linear motion only (jump trajectory, ground collision)
+       ================================================================ */
+    const engine = Matter.Engine.create({
+      gravity: { x: 0, y: G_MOON / G_EARTH, scale: 0.001 }
+    });
+    const ground = Matter.Bodies.rectangle(704, 400, 1500, 50, {
+      isStatic: true,
+      friction: 0.8,
+      label: 'ground'
+    });
+    const charBody = Matter.Bodies.rectangle(704, 340, 28, 56, {
+      inertia: Infinity,
+      friction: 0.3,
+      restitution: 0.05,
+      density: 0.002,
+      label: 'character'
+    });
+    Matter.Composite.add(engine.world, [ground, charBody]);
+
+    /* ================================================================
+       PIXIJS — rendering
+       ================================================================ */
+    const app = new PIXI.Application({
+      width: 1408,
+      height: 420,
+      backgroundColor: 0x0b1119,
+      resolution: 1,
+      autoDensity: true,
+      antialias: true
+    });
+    simContainer.appendChild(app.view);
+
+    /* ---- Layers ---- */
+    const bgLayer = new PIXI.Container();
+    const charLayer = new PIXI.Container();
+    const indicatorLayer = new PIXI.Container();
+    const labelLayer = new PIXI.Container();
+    app.stage.addChild(bgLayer);
+    app.stage.addChild(charLayer);
+    app.stage.addChild(indicatorLayer);
+    app.stage.addChild(labelLayer);
+
+    /* ---- Background: sky gradient ---- */
+    const skyGfx = new PIXI.Graphics();
+    const skyColors = [0x0a1525, 0x0d1a30, 0x111d38, 0x0b1628, 0x060e1a];
+    const skyH = 340;
+    const bandH = skyH / skyColors.length;
+    skyColors.forEach((c, i) => {
+      skyGfx.beginFill(c);
+      skyGfx.drawRect(0, i * bandH, 1408, bandH + 1);
+      skyGfx.endFill();
+    });
+    bgLayer.addChild(skyGfx);
+
+    /* ---- Stars ---- */
+    const rng = new Math.seedrandom('page-49-stars');
+    const starsGfx = new PIXI.Graphics();
+    for (let i = 0; i < 180; i++) {
+      const sx = rng() * 1408;
+      const sy = rng() * 300;
+      const sr = 0.5 + rng() * 1.5;
+      const sa = 0.3 + rng() * 0.7;
+      starsGfx.beginFill(0xffffff, sa);
+      starsGfx.drawCircle(sx, sy, sr);
+      starsGfx.endFill();
+    }
+    bgLayer.addChild(starsGfx);
+
+    /* ---- Lunar ground ---- */
+    const groundGfx = new PIXI.Graphics();
+    groundGfx.beginFill(0x3a3a40);
+    groundGfx.drawRect(0, 340, 1408, 80);
+    groundGfx.endFill();
+    // surface line
+    groundGfx.lineStyle(1, 0x555560, 0.6);
+    groundGfx.moveTo(0, 340);
+    groundGfx.lineTo(1408, 340);
+    // craters
+    const craterRng = new Math.seedrandom('page-49-craters');
+    for (let i = 0; i < 12; i++) {
+      const cx = craterRng() * 1408;
+      const cy = 350 + craterRng() * 60;
+      const cr = 4 + craterRng() * 14;
+      groundGfx.beginFill(0x2e2e34, 0.5);
+      groundGfx.drawEllipse(cx, cy, cr, cr * 0.4);
+      groundGfx.endFill();
+      groundGfx.lineStyle(1, 0x444450, 0.3);
+      groundGfx.drawEllipse(cx, cy, cr, cr * 0.4);
+    }
+    bgLayer.addChild(groundGfx);
+
+    /* ---- Character graphics ---- */
+    const charContainer = new PIXI.Container();
+    charLayer.addChild(charContainer);
+
+    const torsoGfx = new PIXI.Graphics();
+    const headGfx = new PIXI.Graphics();
+    const leftArmGfx = new PIXI.Graphics();
+    const rightArmGfx = new PIXI.Graphics();
+    const leftLegGfx = new PIXI.Graphics();
+    const rightLegGfx = new PIXI.Graphics();
+    charContainer.addChild(torsoGfx);
+    charContainer.addChild(headGfx);
+    charContainer.addChild(leftArmGfx);
+    charContainer.addChild(rightArmGfx);
+    charContainer.addChild(leftLegGfx);
+    charContainer.addChild(rightLegGfx);
+
+    function drawCharacter(extension) {
+      /* extension: 0 = fully extended, 1 = fully tucked */
+      const bodyW = 16;
+      const bodyH = 28;
+      const limbMin = 0.25;
+      const limbScale = limbMin + (1 - limbMin) * extension;
+
+      /* Torso */
+      torsoGfx.clear();
+      torsoGfx.beginFill(0xe8d5b7);
+      torsoGfx.drawRoundedRect(-bodyW/2, -bodyH/2, bodyW, bodyH, 3);
+      torsoGfx.endFill();
+
+      /* Head */
+      headGfx.clear();
+      headGfx.beginFill(0xf0dcc0);
+      headGfx.drawCircle(0, -bodyH/2 - 10, 8);
+      headGfx.endFill();
+
+      /* Arms */
+      const armLen = 22 * limbScale;
+      const shoulderY = -bodyH/2 + 4;
+      leftArmGfx.clear();
+      leftArmGfx.lineStyle(4, 0xe0c8a8, 1);
+      leftArmGfx.moveTo(-bodyW/2, shoulderY);
+      leftArmGfx.lineTo(-bodyW/2 - armLen, shoulderY + armLen * 0.3);
+      rightArmGfx.clear();
+      rightArmGfx.lineStyle(4, 0xe0c8a8, 1);
+      rightArmGfx.moveTo(bodyW/2, shoulderY);
+      rightArmGfx.lineTo(bodyW/2 + armLen, shoulderY + armLen * 0.3);
+
+      /* Legs */
+      const legLen = 24 * limbScale;
+      const hipY = bodyH/2 - 2;
+      leftLegGfx.clear();
+      leftLegGfx.lineStyle(5, 0xd8c0a0, 1);
+      leftLegGfx.moveTo(-bodyW/4, hipY);
+      leftLegGfx.lineTo(-bodyW/4 - legLen * 0.6, hipY + legLen);
+      rightLegGfx.clear();
+      rightLegGfx.lineStyle(5, 0xd8c0a0, 1);
+      rightLegGfx.moveTo(bodyW/4, hipY);
+      rightLegGfx.lineTo(bodyW/4 + legLen * 0.6, hipY + legLen);
+    }
+
+    /* ---- Direction indicator arrow ---- */
+    const dirArrow = new PIXI.Graphics();
+    indicatorLayer.addChild(dirArrow);
+
+    function drawDirectionIndicator(cx, cy, angle, match) {
+      /* angle: character's rotation angle (radians from vertical)
+         match: 0-1 how well perceived up matches gravity */
+      dirArrow.clear();
+      const arrowLen = 36;
+      const tipX = cx + Math.sin(angle) * arrowLen;
+      const tipY = cy - Math.cos(angle) * arrowLen;
+
+      /* Color: green (match=1) → yellow → red (match=0) */
+      const r = match < 0.5 ? 1 : 2 - 2 * match;
+      const g = match > 0.5 ? 1 : 2 * match;
+      const color = (Math.floor(r * 220) << 16) | (Math.floor(g * 180) << 8) | 40;
+
+      dirArrow.lineStyle(2.5, color, 0.9);
+      dirArrow.moveTo(cx, cy);
+      dirArrow.lineTo(tipX, tipY);
+
+      /* Arrowhead */
+      const headSize = 7;
+      const ax = -Math.sin(angle) * headSize;
+      const ay = Math.cos(angle) * headSize;
+      const bx = Math.cos(angle) * headSize * 0.5;
+      const by = Math.sin(angle) * headSize * 0.5;
+      dirArrow.beginFill(color, 0.9);
+      dirArrow.moveTo(tipX, tipY);
+      dirArrow.lineTo(tipX + ax - bx, tipY + ay - by);
+      dirArrow.lineTo(tipX + ax + bx, tipY + ay + by);
+      dirArrow.closePath();
+      dirArrow.endFill();
+    }
+
+    /* ---- Gravity reference arrow (always down) ---- */
+    const gravArrow = new PIXI.Graphics();
+    indicatorLayer.addChild(gravArrow);
+    function drawGravityArrow(cx, cy) {
+      gravArrow.clear();
+      const len = 30;
+      gravArrow.lineStyle(1.5, 0x8899aa, 0.5);
+      gravArrow.moveTo(cx, cy);
+      gravArrow.lineTo(cx, cy + len);
+      gravArrow.beginFill(0x8899aa, 0.5);
+      gravArrow.moveTo(cx, cy + len);
+      gravArrow.lineTo(cx - 5, cy + len - 8);
+      gravArrow.lineTo(cx + 5, cy + len - 8);
+      gravArrow.closePath();
+      gravArrow.endFill();
+    }
+
+    /* ---- Ground label ---- */
+    const groundLabel = new PIXI.Text('月球表面  g = 1.62 m/s²', {
+      fontFamily: 'Inter, system-ui, sans-serif',
+      fontSize: 14,
+      fill: 0x667788,
+    });
+    groundLabel.x = 16;
+    groundLabel.y = 395;
+    labelLayer.addChild(groundLabel);
+
+    /* ---- Flight info label ---- */
+    const flightLabel = new PIXI.Text('', {
+      fontFamily: 'Inter, system-ui, sans-serif',
+      fontSize: 14,
+      fill: 0xaabbcc,
+    });
+    flightLabel.x = 16;
+    flightLabel.y = 14;
+    labelLayer.addChild(flightLabel);
+
+    /* ================================================================
+       PROCESS STRIP
+       ================================================================ */
+    const eventDefs = [
+      { num:'①', label:'初始跳起', desc:'从月面跳起，初始角速度 0.5 rad/s' },
+      { num:'②', label:'收拢加速', desc:'收拢四肢，转动惯量减小，角速度增大' },
+      { num:'③', label:'动量守恒', desc:'角动量 L = Iω 保持不变，旋转持续' },
+      { num:'④', label:'视觉混乱', desc:'天地交替，方向感指示器剧烈波动' },
+      { num:'⑤', label:'姿态调整', desc:'伸展四肢，转动惯量增大，旋转减慢' },
+      { num:'⑥', label:'最终稳定', desc:'落地，姿态偏差可达 30°–60°' }
+    ];
+
+    (function buildProcessStrip() {
+      let html = '<div class="axis"></div><div class="steps">';
+      eventDefs.forEach((evt, i) => {
+        html += '<div class="step" data-ev="' + i + '"><div>' + evt.num + ' ' + evt.label + '</div><div class="evt-label">' + evt.desc + '</div></div>';
+        if (i < 5) html += '<div class="arw">→</div>';
+      });
+      html += '</div>';
+      processStrip.innerHTML = html;
+    })();
+
+    function updateProcessStrip(activeIdx) {
+      const steps = processStrip.querySelectorAll('.step');
+      steps.forEach((s, i) => {
+        s.classList.remove('current', 'done');
+        if (i < activeIdx) s.classList.add('done');
+        if (i === activeIdx) s.classList.add('current');
+      });
+    }
+
+    /* ================================================================
+       KEY SENTENCES
+       ================================================================ */
+    const keySentences = [
+      '角动量守恒让身体一旦开始旋转就不会自己停下，低重力让旋转持续更久，但旋转本身不是问题。',
+      '问题在于方向：地面和天空的交替出现让大脑失去"上"的参照，身体的本能反应与重力方向脱节。',
+      '低重力下的运动需要重新学习视觉参照，演化没有为我们准备这份感知，但训练可以弥补。'
+    ];
+
+    /* ================================================================
+       SIMULATION STATE
+       ================================================================ */
+    let sliderValue = 0.5;        // 0=extended, 1=tucked
+    let currentI = I_0;           // current moment of inertia in kg·m²
+    let angularMomentum = L0;     // conserved
+    let simAngle = 0;             // current rotation angle (rad)
+    let simOmega = OMEGA_0;       // current angular velocity (rad/s)
+    let currentEvent = 0;
+    let phase = 'waiting';        // 'waiting' | 'jumping' | 'flying' | 'landing' | 'landed'
+    let phaseTimer = 0;
+    let jumpCount = 0;
+    let hasTucked = false;
+    let hasExtended = false;
+    let prevBodyY = 340;
+
+    /* Helpers */
+    function sliderToI(v) {
+      /* v: 0 (extended, I_max) → 1 (tucked, I_min) */
+      return I_MAX - v * (I_MAX - I_MIN);
+    }
+
+    function applyJump() {
+      Matter.Body.setVelocity(charBody, { x: 0, y: -8.5 });
+      Matter.Body.setPosition(charBody, { x: 704, y: 338 });
+      simAngle = 0.05;
+      simOmega = OMEGA_0;
+      angularMomentum = currentI * simOmega;
+      phase = 'jumping';
+      phaseTimer = 0;
+      hasTucked = false;
+      hasExtended = false;
+      jumpCount++;
+      currentEvent = 0;
+      updateProcessStrip(0);
+      keyNote.textContent = '';
+      keyNote.classList.remove('active');
+    }
+
+    /* ================================================================
+       MAIN LOOP
+       ================================================================ */
+    const reduced = Deck.reduced();
+
+    app.ticker.add((delta) => {
+      const dt = Math.min(delta * 16.67, 33); // ms, cap at 2x
+      const dtSec = dt / 1000;
+
+      if (!reduced) {
+        Matter.Engine.update(engine, dt);
+      }
+
+      const bx = charBody.position.x;
+      const by = charBody.position.y;
+      const vy = charBody.velocity.y;
+
+      /* ---- Phase management ---- */
+      if (phase === 'waiting') {
+        phaseTimer += dt;
+        if (phaseTimer > 1200) {
+          applyJump();
+        }
+      } else if (phase === 'jumping') {
+        if (vy > 0) {
+          /* reached apex → flying */
+          phase = 'flying';
+          currentEvent = Math.max(currentEvent, 1);
+          updateProcessStrip(currentEvent);
+        }
+      } else if (phase === 'flying') {
+        /* Detect tuck */
+        if (!hasTucked && sliderValue > 0.7) {
+          hasTucked = true;
+          currentEvent = Math.max(currentEvent, 2);
+          updateProcessStrip(currentEvent);
+        }
+        /* Detect visual confusion */
+        const absAngle = Math.abs(simAngle % (2 * Math.PI));
+        const normAngle = absAngle > Math.PI ? 2 * Math.PI - absAngle : absAngle;
+        if (normAngle > 0.8 && currentEvent < 3) {
+          currentEvent = 3;
+          updateProcessStrip(3);
+        }
+        /* Detect extend */
+        if (!hasExtended && hasTucked && sliderValue < 0.4) {
+          hasExtended = true;
+          currentEvent = Math.max(currentEvent, 4);
+          updateProcessStrip(currentEvent);
+        }
+        /* Check landing */
+        if (by >= 336 && vy > 0 && prevBodyY < 336) {
+          phase = 'landing';
+          phaseTimer = 0;
+          currentEvent = 5;
+          updateProcessStrip(5);
+        }
+      } else if (phase === 'landing') {
+        phaseTimer += dt;
+        if (phaseTimer > 1500) {
+          phase = 'landed';
+          phaseTimer = 0;
+        }
+      } else if (phase === 'landed') {
+        phaseTimer += dt;
+        if (phaseTimer > 1800) {
+          phase = 'waiting';
+          phaseTimer = 0;
+          currentEvent = 0;
+          updateProcessStrip(0);
+          keyNote.textContent = '';
+          keyNote.classList.remove('active');
+          simAngle = 0;
+          simOmega = 0;
+          Matter.Body.setPosition(charBody, { x: 704, y: 338 });
+          Matter.Body.setVelocity(charBody, { x: 0, y: 0 });
+        }
+      }
+      prevBodyY = by;
+
+      /* ---- Angular motion (only during flight) ---- */
+      if (phase === 'jumping' || phase === 'flying') {
+        if (!reduced) {
+          simAngle += simOmega * dtSec;
+        }
+      }
+
+      /* ---- Key note ---- */
+      if (phase === 'flying' && currentEvent >= 3 && currentEvent < 5) {
+        if (keyNote.textContent !== keySentences[1]) {
+          keyNote.textContent = keySentences[1];
+          keyNote.classList.add('active');
+        }
+      } else if (phase === 'landing' || phase === 'landed') {
+        if (keyNote.textContent !== keySentences[2]) {
+          keyNote.textContent = keySentences[2];
+          keyNote.classList.add('active');
+        }
+      } else if (phase === 'jumping') {
+        if (keyNote.textContent !== keySentences[0]) {
+          keyNote.textContent = keySentences[0];
+          keyNote.classList.add('active');
+        }
+      }
+
+      /* ---- Omega readout ---- */
+      omegaReadout.textContent = 'ω = ' + simOmega.toFixed(2) + ' rad/s';
+
+      /* ---- Flight info ---- */
+      if (phase === 'jumping' || phase === 'flying') {
+        const flightH = Math.max(0, (336 - by) / 100);
+        flightLabel.text = '飞行中 · 高度 ' + flightH.toFixed(1) + ' m · 角速度 ' + simOmega.toFixed(2) + ' rad/s';
+      } else if (phase === 'landing') {
+        const landingAngle = Math.abs(simAngle % (2 * Math.PI));
+        const normLand = landingAngle > Math.PI ? 2 * Math.PI - landingAngle : landingAngle;
+        const deg = (normLand * 180 / Math.PI).toFixed(0);
+        flightLabel.text = '落地！姿态偏差 ≈ ' + deg + '°';
+      } else {
+        flightLabel.text = '';
+      }
+
+      /* ---- Render character ---- */
+      if (!reduced) {
+        charContainer.x = bx;
+        charContainer.y = by;
+        charContainer.rotation = simAngle;
+      } else {
+        charContainer.x = 704;
+        charContainer.y = 200;
+        charContainer.rotation = 0.6;
+      }
+      drawCharacter(1 - sliderValue);
+
+      /* ---- Direction indicator ---- */
+      const cx = charContainer.x;
+      const cy = charContainer.y;
+      const absAngle = Math.abs(simAngle % (2 * Math.PI));
+      const normAngle = absAngle > Math.PI ? 2 * Math.PI - absAngle : absAngle;
+      const match = Math.max(0, 1 - normAngle / (Math.PI / 2));
+      drawDirectionIndicator(cx, cy - 10, simAngle, match);
+      drawGravityArrow(cx, cy - 10);
+
+      /* ---- Reduced motion: static overlay ---- */
+      if (reduced) {
+        flightLabel.text = '（动画已暂停）拖动滑块观察姿态与角速度关系';
+      }
+    });
+
+    /* ================================================================
+       SLIDER HANDLER
+       ================================================================ */
+    postureSlider.addEventListener('input', function() {
+      sliderValue = parseInt(this.value) / 100;
+      const newI = sliderToI(sliderValue);
+
+      if (phase === 'flying' || phase === 'jumping') {
+        /* Angular momentum conservation */
+        angularMomentum = currentI * simOmega; // snapshot current L
+        simOmega = angularMomentum / newI;
+        /* Clamp to reasonable range */
+        simOmega = Math.max(0.15, Math.min(8, simOmega));
+        angularMomentum = newI * simOmega; // re-sync
+      } else {
+        /* On ground, just update omega for preview */
+        simOmega = OMEGA_0 * (I_0 / newI);
+      }
+      currentI = newI;
+    });
+
+    /* ================================================================
+       INITIAL RENDER
+       ================================================================ */
+    drawCharacter(1 - sliderValue);
+    currentI = sliderToI(sliderValue);
+    simOmega = OMEGA_0;
+    updateProcessStrip(0);
+    omegaReadout.textContent = 'ω = ' + simOmega.toFixed(2) + ' rad/s';
+    charContainer.x = 704;
+    charContainer.y = 338;
+    charContainer.rotation = 0;
+    drawDirectionIndicator(704, 328, 0, 1);
+    drawGravityArrow(704, 328);
+
+  })();
+  </script>
+</body>
+</html>

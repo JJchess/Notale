@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    #main{display:flex;flex-direction:column;gap:var(--sp-3)}
+    .taskbar{display:flex;align-items:center;justify-content:space-between;gap:var(--sp-4)}
+    .progress{font-size:var(--fs-label);font-weight:700;color:var(--muted);white-space:nowrap}
+    .k-classification .class-row{display:flex;flex-direction:row;gap:var(--sp-4);min-height:224px}
+    .class-row>.box{flex:1 1 0;min-width:0}
+    .k-classification .box>.bt{font-size:var(--fs-body);display:flex;align-items:center;gap:var(--sp-2)}
+    .class-row>.box:nth-child(1)>.bt{color:var(--danger);background:var(--danger-soft)}
+    .class-row>.box:nth-child(2)>.bt{color:var(--cyan);background:var(--cyan-soft)}
+    .class-row>.box:nth-child(3)>.bt{color:var(--warning);background:var(--warning-soft)}
+    .criterion{font-size:var(--fs-sec);line-height:var(--lh-copy);color:var(--muted);min-height:48px}
+    .placed{margin-top:var(--sp-2);padding-top:var(--sp-2);border-top:1px solid var(--line);font-size:var(--fs-label);color:var(--muted)}
+    .placed strong{color:var(--text)}
+    .game-area{position:relative;flex:1 1 auto;min-height:0;border:1px solid var(--line);border-radius:var(--radius-lg);background:var(--surface-soft);overflow:hidden}
+    #konva{position:absolute;inset:0}
+    .game-hint{position:absolute;left:var(--sp-4);bottom:var(--sp-3);z-index:2;font-size:var(--fs-label);color:var(--muted);pointer-events:none}
+    .feedback{position:absolute;right:var(--sp-4);bottom:var(--sp-3);z-index:2;max-width:720px;font-size:var(--fs-sec);line-height:var(--lh-copy);font-weight:650;text-align:right}
+    .reset{font-size:var(--fs-body)}
+    .templates{display:none;gap:var(--sp-3)}
+    .templates.show{display:flex}
+    .templates .box{flex:1 1 0;min-width:0}
+    .templates .bc{font-size:var(--fs-sec);line-height:var(--lh-copy)}
+  </style>
+</head>
+<body data-page="10" data-total="50">
+  <div id="stage"><main id="main"></main></div>
+  <script src="assets/base.js"></script>
+  <script src="assets/lec.js"></script>
+  <script src="assets/lib/konva.min.js"></script>
+  <script>
+    Lec.mount({
+      index: 10,
+      kicker: "EVOLUTION HAS NO FORESIGHT",
+      title: "演化没有预先写好的目标",
+      take: "“为了某目标而演化”常把结果误写成预先计划。"
+    });
+    Deck.init({ index: 10, total: 50 });
+
+    var stage = document.getElementById("main");
+    var statements = Lec.K.p10TeleologyStatements || [
+      {statement:'长颈鹿为了吃到高处的叶子，所以把脖子演化得更长。',category:0,diagnosis:'把取食目标写成产生长颈的原因。'},
+      {statement:'环境变冷后，这个物种需要保暖，于是长出了更厚的毛。',category:0,diagnosis:'把环境需求写成身体按需制造性状的命令。'},
+      {statement:'人类想把双手空出来，所以开始直立行走。',category:0,diagnosis:'把后来的用途倒写成演化开始前的计划。'},
+      {statement:'群体中原本存在差异；某些差异对应更多后代，多代后变得更常见。',category:1,diagnosis:'没有预设终点，变化发生在群体比例上。'},
+      {statement:'较厚的毛不是因个体感到需要才出现；可遗传差异影响繁殖，比例才可能跨代改变。',category:1,diagnosis:'明确区分个体需要与群体跨代变化。'},
+      {statement:'登山者为了保暖穿上羽绒服。',category:2,diagnosis:'目标属于登山者，描述的是有意使用工具。'},
+      {statement:'育种者为了获得更甜的果实，选择特定植株繁殖。',category:2,diagnosis:'人的目标改变选择条件，植株群体不会预见目标。'}
+    ];
+    var categories = Lec.K.p10TeleologyCategories || [0,1,2];
+    var state = { index:0, correct:0, mistakes:0, selected:1, done:false, placements:[] };
+
+    stage.innerHTML = '<div class="taskbar"><p class="lead">判断因果位置：先找谁有意图，再看差异是在需求之前还是之后。</p><div class="progress" id="progress"></div></div>' +
+      '<div class="k-classification"><div class="lv class-row" id="classes"></div></div>' +
+      '<div class="game-area no-pan" id="game" role="group" aria-label="句子分类台"><div id="konva" tabindex="0" role="button" aria-label="当前句卡。用左右方向键选择类别，按回车放置"></div><div class="game-hint">拖动句卡到上方类别；键盘：← → 选择，Enter 放置</div><div class="feedback" id="feedback" aria-live="polite"></div></div>' +
+      '<div class="k-classification templates" id="templates"><div class="lv class-row" id="templateRow"></div></div>';
+
+    var classEl=document.getElementById('classes'), progress=document.getElementById('progress'), feedback=document.getElementById('feedback');
+    var names=['预先目标式演化','结果与筛选式表述','有意设计，但不是演化机制'];
+    var criteria=['目标或需要 → 按需产生性状','既有差异 → 繁殖结果 → 比例改变','行动者的目标 → 设计、训练或选择'];
+    function catName(c){ return (c && (c.title||c.name||c.label)) || String(c||''); }
+    function catIndex(value){
+      var s=String(value||'');
+      for(var i=0;i<categories.length;i++) if(value===categories[i] || s===String(categories[i].id||categories[i].key||catName(categories[i]))) return i;
+      for(var j=0;j<names.length;j++) if(s.indexOf(names[j])>=0 || names[j].indexOf(s)>=0) return j;
+      return 0;
+    }
+    names.forEach(function(n,i){
+      var b=document.createElement('section'); b.className='box'; b.dataset.i=i;
+      b.innerHTML='<div class="bt"><span aria-hidden="true">'+(['┄','→','⌜'][i])+'</span>'+n+'</div><div class="bc"><div class="criterion">'+criteria[i]+'</div><div class="placed" id="placed'+i+'">已归入 <strong>0</strong> 张</div></div>';
+      classEl.appendChild(b);
+    });
+
+    var game=document.getElementById('game');
+    var kstage=new Konva.Stage({container:'konva',width:game.clientWidth,height:game.clientHeight});
+    var layer=new Konva.Layer(); kstage.add(layer);
+    var card=new Konva.Group({draggable:true});
+    var rect=new Konva.Rect({cornerRadius:14,strokeWidth:3,shadowBlur:12,shadowOpacity:.12});
+    var text=new Konva.Text({fontSize:20,fontFamily:Deck.token('--font-sans'),fontStyle:'bold',lineHeight:1.45,align:'center',verticalAlign:'middle',padding:24});
+    card.add(rect);card.add(text);layer.add(card);
+    function colors(){return {surface:Deck.rgb('--surface'),text:Deck.rgb('--text'),line:Deck.rgb('--accent'),muted:Deck.rgb('--muted'),bad:Deck.rgb('--danger'),cyan:Deck.rgb('--cyan'),warn:Deck.rgb('--warning')};}
+    function layout(){
+      kstage.size({width:game.clientWidth,height:game.clientHeight});
+      var w=Math.min(920,game.clientWidth-180),h=116,x=(game.clientWidth-w)/2,y=26;
+      rect.setAttrs({width:w,height:h,fill:colors().surface,stroke:[colors().bad,colors().cyan,colors().warn][state.selected]});
+      text.setAttrs({width:w,height:h,fill:colors().text}); card.position({x:x,y:y}); layer.draw();
+    }
+    function current(){return statements[state.index];}
+    function render(){
+      var total=Lec.P.finite(statements.length) ? statements.length : 0;
+      var pct=total ? Lec.P.percent(state.correct,total) : null;
+      progress.textContent='已分类 '+state.correct+' / '+total+(pct==null?'':' · '+pct);
+      for(var i=0;i<3;i++) document.querySelector('#placed'+i+' strong').textContent=state.placements.filter(function(x){return x===i}).length;
+      if(state.done){ finish(); return; }
+      var item=current(); text.text(item ? item.statement : '暂无句卡'); feedback.textContent=''; layout();
+      document.getElementById('konva').setAttribute('aria-label','当前句卡：'+(item?item.statement:'暂无')+'。当前选择：'+names[state.selected]);
+    }
+    function choose(i){state.selected=Lec.P.clamp(Lec.P.finite(i)?i:0,0,2);rect.stroke([colors().bad,colors().cyan,colors().warn][state.selected]);layer.draw();}
+    function submit(i){
+      if(state.done||!current())return;
+      i=Lec.P.clamp(Lec.P.finite(i)?i:0,0,2); var item=current(), right=catIndex(item.category);
+      if(i===right){
+        state.placements.push(right);state.correct++;state.mistakes=0;
+        feedback.className='feedback good';feedback.textContent='归类成立：'+item.diagnosis;
+        state.index++; if(state.index>=statements.length) state.done=true;
+        setTimeout(render,450);
+      }else{
+        state.mistakes++;feedback.className='feedback danger';
+        feedback.textContent=state.mistakes>1?'再看因果骨架：是“目标→产生性状”，还是“既有差异→繁殖结果”？':(i===2?'谁是句中真正有意图的行动者？':'差异是在需求之前，还是之后才被句子制造出来？');
+        layout();
+      }
+    }
+    card.on('dragend',function(){
+      var p=card.position(), third=kstage.width()/3, target=Lec.P.clamp(Math.floor((p.x+rect.width()/2)/third),0,2);
+      choose(target); submit(target); if(!state.done) layout();
+    });
+    var focus=document.getElementById('konva');
+    focus.addEventListener('keydown',function(e){if(e.key==='ArrowLeft'||e.key==='ArrowRight'){e.preventDefault();choose(state.selected+(e.key==='ArrowLeft'?-1:1));focus.setAttribute('aria-label','当前选择：'+names[state.selected]);}if(e.key==='Enter'||e.key===' '){e.preventDefault();submit(state.selected);}});
+    function finish(){
+      game.style.display='none';classEl.parentElement.parentElement.style.display='none';
+      var t=document.getElementById('templates'),r=document.getElementById('templateRow');t.classList.add('show');
+      var sample=[
+        '若句子把用途放在变化之前，改写为：群体先有差异，环境只改变繁殖结果。',
+        '保留“在当时环境里”“可能”等条件，说明变化是群体比例的跨代结果。',
+        '明确行动者：人可以有目标；生物群体的变化仍经由差异繁殖发生。'
+      ];
+      r.innerHTML=''; names.forEach(function(n,i){var b=document.createElement('section');b.className='box';b.innerHTML='<div class="bt">'+n+'</div><div class="bc">'+sample[i]+'</div>';r.appendChild(b)});
+      var btn=document.createElement('button');btn.type='button';btn.className='primary reset';btn.textContent='重置分类';btn.addEventListener('click',reset);t.appendChild(btn);
+      progress.textContent='全部归类完成';feedback.textContent='';
+    }
+    function reset(){state={index:0,correct:0,mistakes:0,selected:1,done:false,placements:[]};document.getElementById('templates').classList.remove('show');document.getElementById('templates').innerHTML='<div class="lv class-row" id="templateRow"></div>';game.style.display='block';classEl.parentElement.parentElement.style.display='flex';render();focus.focus();}
+    window.addEventListener('resize',layout); render();
+  </script>
+</body>
+</html>

@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    #stage{width:100%;height:100%;box-sizing:border-box;display:flex;flex-direction:column;gap:var(--sp-3)}
+    .sim{position:relative;flex:1 1 0;min-height:0;overflow:hidden;border:1px solid var(--line);border-radius:var(--radius-lg);background:var(--surface);box-shadow:var(--shadow-soft)}
+    .sim canvas{z-index:1}.zone-label{position:absolute;z-index:3;top:var(--sp-4);font-size:var(--fs-label);font-weight:700;color:var(--muted)}
+    .inside{left:var(--sp-5)}.outside{left:67%}.strike{text-decoration:line-through;color:var(--danger)}
+    .metrics{position:absolute;z-index:3;left:var(--sp-5);right:var(--sp-5);bottom:var(--sp-4);display:flex;gap:var(--sp-3);align-items:stretch;pointer-events:none}
+    .metric{min-width:0;flex:1 1 0;padding:var(--sp-2) var(--sp-3);background:var(--surface);border:1px solid var(--line);border-radius:var(--radius-sm)}
+    .metric b{display:block;font-size:var(--fs-h2);line-height:1.25;font-variant-numeric:tabular-nums}.metric span{font-size:var(--fs-label);color:var(--muted)}
+    .gasbar{height:var(--sp-2);margin-top:var(--sp-2);overflow:hidden;background:var(--surface-strong);border-radius:var(--radius-sm)}.gasbar i{display:block;height:100%;background:var(--cyan);transform-origin:left center}
+    .breach{position:absolute;z-index:4;left:64%;top:41%;width:48px;height:48px;transform:translate(-50%,-50%);border:2px solid var(--accent);border-radius:50%;background:var(--accent-soft);cursor:ew-resize;touch-action:none;box-shadow:0 0 0 4px rgba(23,105,224,.12)}
+    .breach:focus{outline:3px solid var(--focus);outline-offset:3px}.breach::after{content:"↔";position:absolute;inset:0;display:grid;place-items:center;color:var(--accent-strong);font-weight:800}
+    .breach-label{position:absolute;z-index:4;left:64%;top:calc(41% + 34px);transform:translateX(-50%);font-size:var(--fs-label);font-weight:700;color:var(--accent-strong);white-space:nowrap}
+    .topline{display:flex;align-items:center;justify-content:space-between;gap:var(--sp-3)}.instruction{font-size:var(--fs-sec);color:var(--muted)}
+    .reset{flex:0 0 auto}.k-process{flex:0 0 112px;padding:var(--sp-2) 0;gap:var(--sp-2)}.k-process>.step{display:flex;align-items:center;justify-content:center;padding:var(--sp-2);text-align:center;font-size:var(--fs-label);line-height:1.35;font-weight:700}.k-process>.arw{flex-basis:22px;font-size:var(--fs-body)}
+  </style>
+</head>
+<body data-page="35" data-total="50">
+  <main id="main" class="lec-main"><div id="stage"></div></main>
+  <script src="assets/base.js"></script>
+  <script src="assets/lec.js"></script>
+  <script src="assets/lib/matter.min.js"></script>
+  <script src="assets/lib/seedrandom.min.js"></script>
+  <script>
+    Lec.mount({index:35,kicker:"VACUUM / PRESSURE",title:"真空首先夺走的，是压力与可呼吸气体",take:"真空的首要危险不是“寒冷”，而是失去外部压力与可呼吸气体。"});
+    Deck.init({index:35,total:50});
+    var stage=document.getElementById("stage");
+    stage.innerHTML='<div class="topline"><p class="instruction">拖动舱壁破口边缘：先开小口，再拉大；封回零后观察压力是否恢复。</p><button class="reset" type="button">重置模拟</button></div><section class="sim no-pan" aria-label="密封舱漏气模拟"><canvas class="cv-fill"></canvas><span class="zone-label inside">舱内 · 高压空气</span><span class="zone-label outside">舱外 · 近真空　<span class="strike">先冻住？</span></span><div class="breach" role="slider" tabindex="0" aria-label="破口直径" aria-valuemin="0" aria-valuenow="0"></div><span class="breach-label">破口 <b id="diam">0</b> mm · <b id="area">0</b> mm²</span><div class="metrics"><div class="metric"><span>当前舱压</span><b id="pressure">—</b></div><div class="metric"><span>当前压差</span><b id="delta">—</b></div><div class="metric"><span>质量流率</span><b id="flow">—</b></div><div class="metric"><span>舱内气体剩余</span><b id="gas">—</b><div class="gasbar"><i id="gasfill"></i></div></div><div class="metric"><span>舱体有效容积</span><b id="volume">—</b></div></div></section><div class="k-process" aria-label="漏气因果过程"><div class="axis"></div><div class="step is-current">舱体密封</div><div class="arw"></div><div class="step">破口连通真空</div><div class="arw"></div><div class="step">气体逸出</div><div class="arw"></div><div class="step">舱压下降</div><div class="arw"></div><div class="step">气体存量减少</div><div class="arw"></div><div class="step">封堵或转移</div></div>';
+
+    var K=Lec.K,P=Lec.P, sim=stage.querySelector('.sim'),cv=sim.querySelector('canvas'),ctx=cv.getContext('2d'),handle=stage.querySelector('.breach'),rng=new Math.seedrandom('page-35');
+    K.seaLevelPressurePa=K.seaLevelPressurePa||101325;K.cabinPressurePa=K.cabinPressurePa||K.seaLevelPressurePa;K.cabinTemperatureK=K.cabinTemperatureK||295;K.p35VacuumPressurePa=K.p35VacuumPressurePa||10;K.p35CabinVolumeM3=K.p35CabinVolumeM3||70;K.p35AirSpecificGasConstantJKgK=K.p35AirSpecificGasConstantJKgK||287.05;K.p35AirHeatCapacityRatio=K.p35AirHeatCapacityRatio||1.4;K.p35DischargeCoefficient=K.p35DischargeCoefficient||0.72;
+    P.gasMassFromPressure=P.gasMassFromPressure||function(p,v,t,r){return p*v/(r*t)};P.circleArea=P.circleArea||function(d){return Math.PI*d*d/4};P.pressureDifference=P.pressureDifference||function(a,b){return Math.max(0,a-b)};P.gasLeakMassFlow=P.gasLeakMassFlow||function(o){var p=o.currentCabinPressurePa,A=o.breachAreaM2,T=o.cabinTemperatureK,g=o.heatCapacityRatio,r=o.specificGasConstantJKgK,c=o.dischargeCoefficient;return c*A*p*Math.sqrt(g/(r*T))*Math.pow(2/(g+1),(g+1)/(2*(g-1)))};P.decompressionPressure=P.decompressionPressure||function(o){return o.gasMassKg*o.specificGasConstantJKgK*o.cabinTemperatureK/o.cabinVolumeM3};P.p35ParticleEmissionRate=P.p35ParticleEmissionRate||function(f,s){return Math.min(30,f*40*s)};
+    var range=K.p35BreachDiameterRangeM||{min:0,max:0.04}, minD=range.min!==undefined?range.min:range[0], maxD=range.max!==undefined?range.max:range[1], closed=K.p35BreachClosedDiameterM||0;
+    var diameter=closed, pressure=K.cabinPressurePa, outside=K.p35VacuumPressurePa, volume=K.p35CabinVolumeM3, temp=K.cabinTemperatureK, R=K.p35AirSpecificGasConstantJKgK;
+    var initialMass=P.gasMassFromPressure(pressure,volume,temp,R), mass=initialMass, elapsed=0, lastPressure=pressure, history=[];
+    var engine=Matter.Engine.create({gravity:{x:0,y:0}}), particles=[];
+    function fmt(v,d){return P.formatNumber(v,d);}
+    function area(){return P.circleArea(diameter);}
+    function leak(){return diameter<=closed?0:P.gasLeakMassFlow({currentCabinPressurePa:pressure,outsidePressurePa:outside,breachAreaM2:area(),cabinTemperatureK:temp,heatCapacityRatio:K.p35AirHeatCapacityRatio,specificGasConstantJKgK:R,dischargeCoefficient:K.p35DischargeCoefficient});}
+    function setDiameter(v){diameter=P.clamp(P.finite(v,closed),minD,maxD);handle.setAttribute('aria-valuenow',fmt(diameter*1000,1)); updateDOM();}
+    function updateDOM(){var f=leak(),ratio=P.ratio(mass,initialMass),pct=P.percent(mass,initialMass);document.getElementById('diam').textContent=fmt(diameter*1000,1);document.getElementById('area').textContent=fmt(area()*1000000,1);document.getElementById('pressure').textContent=fmt(pressure/1000,1)+' kPa';document.getElementById('delta').textContent=fmt(P.pressureDifference(pressure,outside)/1000,1)+' kPa';document.getElementById('flow').textContent=f<1?fmt(f*1000,2)+' g/s':fmt(f,2)+' kg/s';document.getElementById('gas').textContent=fmt(pct,1)+'%';document.getElementById('gasfill').style.transform='scaleX('+P.clamp(ratio,0,1)+')';document.getElementById('volume').textContent=fmt(volume,1)+' m³';var steps=stage.querySelectorAll('.step'),n=diameter<=closed?(pressure<K.cabinPressurePa?5:0):(ratio<.98?4:2);steps.forEach(function(s,i){s.classList.toggle('is-current',i===n);s.classList.toggle('is-past',i<n);});}
+    function reset(){diameter=closed;pressure=K.cabinPressurePa;mass=initialMass;elapsed=0;history=[];particles.forEach(function(b){Matter.Composite.remove(engine.world,b)});particles=[];updateDOM();}
+    handle.addEventListener('pointerdown',function(e){handle.setPointerCapture(e.pointerId);move(e)});handle.addEventListener('pointermove',function(e){if(handle.hasPointerCapture(e.pointerId))move(e)});handle.addEventListener('pointerup',function(e){if(handle.hasPointerCapture(e.pointerId))handle.releasePointerCapture(e.pointerId)});handle.addEventListener('pointercancel',function(e){if(handle.hasPointerCapture(e.pointerId))handle.releasePointerCapture(e.pointerId)});
+    function move(e){var p=Deck.pt(sim,e),w=sim.clientWidth;setDiameter(minD+P.clamp((p.x-w*.64)/(w*.18)+.5,0,1)*(maxD-minD));}
+    handle.addEventListener('keydown',function(e){if(e.key==='ArrowRight'||e.key==='ArrowUp'){e.preventDefault();setDiameter(diameter+(maxD-minD)/(e.shiftKey?5:20));}if(e.key==='ArrowLeft'||e.key==='ArrowDown'){e.preventDefault();setDiameter(diameter-(maxD-minD)/(e.shiftKey?5:20));}if(e.key==='Home'){e.preventDefault();setDiameter(minD)}if(e.key==='End'){e.preventDefault();setDiameter(maxD)}});
+    stage.querySelector('.reset').addEventListener('click',reset);
+    function spawn(w,h){var b=Matter.Bodies.circle(w*(.12+rng()*.45),h*(.18+rng()*.45),3,{frictionAir:.002,restitution:1});Matter.Body.setVelocity(b,{x:1+rng()*2,y:-1+rng()*2});particles.push(b);Matter.Composite.add(engine.world,b)}
+    function draw(){var w=cv.clientWidth,h=cv.clientHeight,wall=w*.64,hole=10+diameter/maxD*70;ctx.clearRect(0,0,w,h);ctx.fillStyle=Deck.rgba('surface-soft',1);ctx.fillRect(0,0,wall,h);ctx.fillStyle=Deck.rgba('bg',1);ctx.fillRect(wall,0,w-wall,h);ctx.strokeStyle=Deck.rgb('line-strong');ctx.lineWidth=8;ctx.beginPath();ctx.moveTo(wall,0);ctx.lineTo(wall,h*.41-hole/2);ctx.moveTo(wall,h*.41+hole/2);ctx.lineTo(wall,h);ctx.stroke();ctx.strokeStyle=Deck.rgba('accent',.75);ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(wall+8,h*.41);ctx.lineTo(w*.84,h*.41);ctx.stroke();Deck.arrow(ctx,w*.77,h*.41,w*.84,h*.41,9);particles.forEach(function(b){ctx.fillStyle=b.position.x>wall?Deck.rgba('cyan',.45):Deck.rgba('accent',.65);ctx.beginPath();ctx.arc(b.position.x,b.position.y,3,0,Math.PI*2);ctx.fill()});}
+    Deck.autofit(cv,draw);for(var i=0;i<34;i++)spawn(sim.clientWidth,sim.clientHeight);
+    Deck.loop(function(t,dt){var seconds=Math.min(dt/1000,.05);if(seconds>0&&diameter>closed&&pressure>outside){var f=leak();mass=P.clamp(P.finite(mass-f*seconds,mass),0,initialMass);pressure=P.decompressionPressure({gasMassKg:mass,cabinVolumeM3:volume,cabinTemperatureK:temp,specificGasConstantJKgK:R});pressure=P.clamp(P.finite(pressure,outside),outside,K.cabinPressurePa);elapsed+=seconds;lastPressure=pressure;var emit=P.p35ParticleEmissionRate(f,1);if(particles.length<70&&rng()<Math.min(1,emit*seconds)){var b=Matter.Bodies.circle(sim.clientWidth*.61,sim.clientHeight*.41,3,{frictionAir:0});Matter.Body.setVelocity(b,{x:5+Math.min(12,emit),y:(rng()-.5)*4});particles.push(b);Matter.Composite.add(engine.world,b)}}Matter.Engine.update(engine,Math.max(1,dt));var w=sim.clientWidth,h=sim.clientHeight;particles.forEach(function(b){if(b.position.x<w*.64-5&&diameter>closed)Matter.Body.applyForce(b,b.position,{x:.00008*diameter/maxD,y:0});if(b.position.x<8||b.position.y<8||b.position.y>h-8)Matter.Body.setVelocity(b,{x:Math.abs(b.velocity.x),y:-b.velocity.y});});draw();updateDOM();},{still:1000});
+    updateDOM();
+  </script>
+</body>
+</html>

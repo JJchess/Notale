@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    .p07{height:100%;display:flex;flex-direction:column;gap:var(--sp-3)}
+    .p07 .k-generalization{grid-template-columns:minmax(0,.78fr) 42px minmax(0,1.5fr);flex:0 0 112px}
+    .p07 .k-generalization>.claim{padding:var(--sp-4) var(--sp-5)}
+    .p07 .supports{flex-direction:row;align-items:stretch}
+    .p07 .support{flex:1 1 0;padding:var(--sp-3) var(--sp-4);font-weight:700}
+    .game-shell{position:relative;flex:1 1 0;min-height:0;background:var(--surface);border:1px solid var(--line);border-radius:var(--radius-lg);box-shadow:var(--shadow-soft);overflow:hidden}
+    #konva{position:absolute;inset:0}
+    .hit{position:absolute;width:300px;height:66px;transform:translate(-50%,-50%);opacity:0;cursor:grab;border:0;padding:0}
+    .hit:focus-visible{opacity:.12;outline:4px solid var(--focus);outline-offset:2px}
+    .hit.dragging{cursor:grabbing}
+    .game-bar{position:absolute;left:var(--sp-4);right:var(--sp-4);bottom:var(--sp-3);display:flex;align-items:center;justify-content:space-between;gap:var(--sp-4)}
+    .game-bar .instruction{font-size:var(--fs-label);line-height:1.4;color:var(--muted)}
+    .status{font-size:var(--fs-body);line-height:var(--lh-copy);font-weight:720;color:var(--accent-strong)}
+  </style>
+</head>
+<body data-page="07" data-total="50">
+  <div id="stage"><main id="main"></main></div>
+  <script src="assets/base.js"></script>
+  <script src="assets/lec.js"></script>
+  <script src="assets/lib/konva.min.js"></script>
+  <script>
+    Lec.mount({
+      index: 7,
+      kicker: "SELECTION CONDITIONS",
+      title: "演化不会凭需要发生",
+      take: "演化需要可遗传差异、繁殖差异和许多代积累。"
+    });
+    Deck.init({ index: 7, total: 50 });
+
+    var stage = document.getElementById("stage");
+    var main = document.getElementById("main");
+    main.innerHTML = '<section class="p07">'+
+      '<div class="k-generalization"><div class="claim">三项条件必须连成一条跨代因果链</div><div class="trunk"></div><div class="supports">'+
+      '<div class="support">① 可遗传差异</div><div class="support">② 繁殖差异</div><div class="support">③ 许多代积累</div></div></div>'+
+      '<div class="game-shell no-pan" id="game"><div id="konva" aria-hidden="true"></div>'+
+      '<button class="hit" id="variation" type="button" aria-label="变异卡：体色有浅、深差异。拖动到第一栏；方向键切换卡片"></button>'+
+      '<button class="hit" id="environment" type="button" aria-label="环境卡：深色地表。拖动到第二栏；方向键切换卡片"></button>'+
+      '<button class="hit" id="duration" type="button" aria-label="代次卡：持续许多代。拖动到第三栏；方向键切换卡片"></button>'+
+      '<div class="game-bar"><span class="instruction">拖动三张卡入对应槽；方向键可切换卡片，Enter 放入。</span><span class="status" id="status" aria-live="polite"></span><button id="reset" type="button">重置</button></div></div></section>';
+
+    var scenarioTotal = Array.isArray(Lec.K.p07PairScenarios) ? Lec.K.p07PairScenarios.length : 0;
+    var conditionTotal = Array.isArray(Lec.K.p07SelectionConditions) ? Lec.K.p07SelectionConditions.length : 3;
+    var options = {
+      variation:[{t:'体色有浅、深差异',ok:true,n:'部分差异能传给后代'},{t:'个体因日晒暂时变深',ok:false,n:'一生中的变化不自动遗传'},{t:'锻炼后肌肉增大',ok:false,n:'练习结果不自动遗传'}],
+      environment:[{t:'深色地表',ok:true,n:'深色个体繁殖贡献较高'},{t:'浅色地表',ok:true,n:'浅色个体繁殖贡献较高'},{t:'环境对体色没有影响',ok:false,n:'两类繁殖贡献相同'}],
+      duration:[{t:'持续许多代',ok:true,n:'差异有机会跨代积累'},{t:'只发生一代',ok:false,n:'一次结果不足以改变群体'}]
+    };
+    function fresh(){return {choice:{variation:0,environment:0,duration:0},placed:{variation:false,environment:false,duration:false},completed:0,trace:[]};}
+    var state=fresh(), game=document.getElementById('game'), status=document.getElementById('status');
+    var kw=game.clientWidth, kh=game.clientHeight;
+    var ks=new Konva.Stage({container:'konva',width:kw,height:kh});
+    var layer=new Konva.Layer(); ks.add(layer);
+    var ids=['variation','environment','duration'];
+    var titles=['差异能传下去吗？','留下后代的数量不同吗？','这种差异持续了许多代吗？'];
+    var nodes={};
+    function token(n){return Deck.token(n);}
+    function addText(cfg){return new Konva.Text(Object.assign({fontFamily:token('--font-sans'),fill:token('--text')},cfg));}
+    function build(){layer.destroyChildren();kw=game.clientWidth;kh=game.clientHeight;ks.size({width:kw,height:kh});
+      var margin=22,gap=18,w=(kw-margin*2-gap*2)/3,top=18,panelH=224,slotY=114;
+      layer.add(new Konva.Line({points:[margin+30,top+92,kw-margin-30,top+92],stroke:token('--line-strong'),strokeWidth:4}));
+      ids.forEach(function(id,i){var x=margin+i*(w+gap);layer.add(new Konva.Rect({x:x,y:top,width:w,height:panelH,fill:token('--surface-soft'),stroke:token('--line'),strokeWidth:1,cornerRadius:14}));
+        layer.add(addText({x:x+16,y:top+14,width:w-32,text:titles[i],fontSize:18,fontStyle:'bold',align:'center'}));
+        if(i<2) layer.add(addText({x:x+w+1,y:top+77,width:gap-2,text:'→',fontSize:22,fontStyle:'bold',align:'center',fill:token('--accent-strong')}));
+        layer.add(new Konva.Rect({x:x+18,y:slotY,width:w-36,height:72,dash:[8,6],stroke:token('--line-strong'),strokeWidth:2,cornerRadius:10}));
+        var item=options[id][state.choice[id]], placed=state.placed[id];
+        var cy=placed?slotY+36:top+panelH+54, cx=x+w/2;
+        var g=new Konva.Group({x:cx,y:cy});
+        g.add(new Konva.Rect({x:-150,y:-33,width:300,height:66,fill:placed?(item.ok?token('--success-soft'):token('--danger-soft')):token('--accent-soft'),stroke:placed?(item.ok?token('--success'):token('--danger')):token('--accent'),strokeWidth:2,cornerRadius:10,shadowColor:token('--line-strong'),shadowBlur:6,shadowOpacity:.25}));
+        g.add(addText({x:-136,y:-13,width:272,text:item.t,fontSize:16,fontStyle:'bold',align:'center'}));layer.add(g);nodes[id]={g:g,cx:cx,homeY:top+panelH+54,slotY:slotY+36,w:w,x:x};
+        var hit=document.getElementById(id);hit.style.left=cx+'px';hit.style.top=cy+'px';
+        if(placed) layer.add(addText({x:x+18,y:top+194,width:w-36,text:item.n,fontSize:16,align:'center',fill:item.ok?token('--success'):token('--danger')}));
+      });
+      layer.draw();updateStatus();
+    }
+    function safeCount(n,max){var valid=Lec.P.finite(n);var value=(typeof valid==='number')?valid:(valid?n:0);return Lec.P.clamp(value,0,Math.max(0,max));}
+    function updateStatus(){var done=ids.filter(function(id){return state.placed[id]&&options[id][state.choice[id]].ok;}).length;state.completed=safeCount(done,conditionTotal);var all=ids.every(function(id){return state.placed[id];});var complete=all&&done===ids.length;
+      status.textContent=complete?'演化条件完整':'条件 '+Lec.P.formatNumber(state.completed)+' / '+Lec.P.formatNumber(conditionTotal)+(all?' · 因果链在红色处断开':'');
+      if(complete&&!state.won){state.won=true;game.dispatchEvent(new CustomEvent('game-complete',{bubbles:true,detail:{score:null,metrics:{conditions:state.completed,scenarios:safeCount(1,scenarioTotal)},trace:state.trace.slice()}}));}
+    }
+    function place(id){state.placed[id]=true;state.trace.push({action:'place',card:id,choice:state.choice[id]});build();game.dispatchEvent(new CustomEvent('game-progress',{bubbles:true,detail:{state:JSON.parse(JSON.stringify(state)),action:'place',metrics:{conditions:state.completed}}}));}
+    ids.forEach(function(id){var el=document.getElementById(id),drag=false,startY=0;
+      el.addEventListener('pointerdown',function(e){drag=true;startY=Deck.pt(game,e).y;el.setPointerCapture(e.pointerId);el.classList.add('dragging');});
+      el.addEventListener('pointermove',function(e){if(!drag)return;var p=Deck.pt(game,e);nodes[id].g.y(p.y);el.style.top=p.y+'px';layer.batchDraw();});
+      function end(e){if(!drag)return;drag=false;el.classList.remove('dragging');var y=Deck.pt(game,e).y;if(y<205)place(id);else build();}
+      el.addEventListener('pointerup',end);el.addEventListener('pointercancel',function(){drag=false;build();});
+      el.addEventListener('keydown',function(e){if(e.key==='ArrowRight'||e.key==='ArrowDown'||e.key==='ArrowLeft'||e.key==='ArrowUp'){e.preventDefault();var d=(e.key==='ArrowRight'||e.key==='ArrowDown')?1:-1;state.choice[id]=(state.choice[id]+d+options[id].length)%options[id].length;state.placed[id]=false;state.won=false;build();el.focus();}else if(e.key==='Enter'||e.key===' '){e.preventDefault();place(id);el.focus();}});
+    });
+    document.getElementById('reset').addEventListener('click',function(){state=fresh();build();game.dispatchEvent(new CustomEvent('game-reset',{bubbles:true}));});
+    game.start=function(){game.dispatchEvent(new CustomEvent('game-start',{bubbles:true}));};game.reset=function(){state=fresh();build();};game.getState=function(){return JSON.parse(JSON.stringify(state));};
+    build();Deck.onResize(build);
+  </script>
+</body>
+</html>

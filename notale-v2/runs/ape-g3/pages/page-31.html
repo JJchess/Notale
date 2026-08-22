@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>设计三级火箭：什么时候该把哪一段丢掉？</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    body{height:900px;overflow:hidden}
+    #stage{margin-top:-96px}
+    .lec-footer{bottom:96px}
+    .game{width:1408px;height:620px;display:grid;grid-template-rows:72px 1fr 58px;gap:12px}.game>*{min-width:0;min-height:0}
+    .topline{display:grid;grid-template-columns:1fr auto;gap:20px;align-items:center}.instruction{font-size:var(--fs-body);line-height:var(--lh-body);margin:0}.controls{display:flex;gap:10px;align-items:center}.controls button{min-width:96px}
+    .scene{display:grid;grid-template-columns:270px 430px 1fr;gap:20px;min-height:0}.scene>*{min-width:0;min-height:0}
+    .parts,.rocket-bay,.telemetry{border:1px solid var(--line);border-radius:var(--radius-md);background:var(--surface);padding:16px;box-sizing:border-box}
+    .parts h2,.telemetry h2{font-size:var(--fs-h2);margin-bottom:12px}.part-list{display:flex;flex-direction:column;gap:8px}.part{width:100%;justify-content:space-between;background:var(--surface-soft)}.part[aria-pressed="true"]{border:2px solid var(--accent);background:var(--accent-soft)}.part:disabled{opacity:.45}
+    .rocket-bay{position:relative;display:flex;align-items:center;justify-content:center;overflow:hidden;background:linear-gradient(90deg,var(--surface-soft),#fff 48%,var(--surface-soft))}.rocket{width:190px;display:flex;flex-direction:column;align-items:stretch;filter:drop-shadow(0 12px 12px rgb(36 56 82 / 16%))}.nose{height:52px;clip-path:polygon(50% 0,100% 100%,0 100%);background:var(--secondary-soft);border-bottom:3px solid var(--secondary)}
+    .slot{position:relative;height:74px;border:2px dashed var(--line-strong);background:#fff;display:flex;align-items:center;justify-content:center;font-size:var(--fs-label);line-height:var(--lh-label);font-weight:700}.slot.filled{border-style:solid}.slot[data-kind="payload"]{height:48px;background:var(--secondary-soft)}.slot[data-kind="s3"]{background:linear-gradient(to right,var(--accent-soft) var(--fuel,100%),#fff var(--fuel,100%))}.slot[data-kind="s2"]{background:linear-gradient(to right,var(--success-soft) var(--fuel,100%),#fff var(--fuel,100%))}.slot[data-kind="s1"]{height:94px;background:linear-gradient(to right,var(--warning-soft) var(--fuel,100%),#fff var(--fuel,100%))}.slot.burden{outline:4px solid var(--warning);color:var(--warning)}.slot.detached{display:none}.ring{position:absolute;z-index:3;left:-16px;right:-16px;bottom:-7px;height:14px;min-height:14px;padding:0;border-radius:8px;background:var(--line-strong)}.ring.ready{background:var(--warning);box-shadow:0 0 0 5px var(--warning-soft)}
+    .flame{height:26px;width:80px;align-self:center;clip-path:polygon(0 0,100% 0,72% 100%,50% 55%,28% 100%);background:var(--warning);opacity:0}.flame.on{opacity:1}
+    .telemetry{display:grid;grid-template-rows:auto auto 1fr;gap:10px}.reads{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}.read{padding:10px;border-left:3px solid var(--accent);background:var(--surface-soft)}.read span{display:block;font-size:var(--fs-label);line-height:var(--lh-label);color:var(--muted)}.read strong{display:block;font-size:var(--fs-body);line-height:var(--lh-body);font-variant-numeric:tabular-nums}
+    .k-process{gap:22px;align-self:stretch}.k-process>div{padding:10px 7px;text-align:center;font-size:var(--fs-label);line-height:var(--lh-label);display:flex;flex-direction:column;justify-content:center}.k-process>div::before{width:24px;height:24px;margin:0 auto 5px}.k-process>:not(:last-child)::after{left:calc(100% + 1px);width:20px}.result{font-size:var(--fs-sec);line-height:var(--lh-sec);padding:10px 12px;border-radius:var(--radius-sm);background:var(--accent-soft);align-self:end}.bottom{display:grid;grid-template-columns:1fr 520px;gap:20px;align-items:center}.note{margin:0}.status{font-size:var(--fs-body);line-height:var(--lh-body);font-weight:700;color:var(--accent-strong);text-align:right}
+    @media(prefers-reduced-motion:reduce){*{transition:none!important}}
+  </style>
+</head>
+<body data-page="31" data-total="48">
+  <div id="stage">
+    <main class="game" aria-label="三级火箭分级游戏">
+      <div class="topline">
+        <p class="instruction" id="instruction">依次选择部件，再点对应槽位：载荷在顶端，级段由上到下为三、二、一。</p>
+        <div class="controls"><button id="ignite" data-primary disabled>点火</button><button id="reset">重置</button></div>
+      </div>
+      <section class="scene">
+        <div class="parts min0"><h2>待装部件</h2><div class="part-list" id="parts"></div></div>
+        <div class="rocket-bay min0" id="bay">
+          <div class="rocket" aria-label="火箭侧视剖面">
+            <div class="nose"></div>
+            <button class="slot" data-kind="payload">顶部载荷槽</button>
+            <button class="slot" data-kind="s3">三级槽</button>
+            <button class="slot" data-kind="s2">二级槽<span class="ring" data-ring="s2" aria-hidden="true"></span></button>
+            <button class="slot" data-kind="s1">一级槽<span class="ring" data-ring="s1" aria-hidden="true"></span></button>
+            <div class="flame" id="flame"></div>
+          </div>
+        </div>
+        <div class="telemetry min0">
+          <h2>质量—速度轨迹</h2>
+          <div class="reads"><div class="read"><span>当前总质量</span><strong id="mass">—</strong></div><div class="read"><span>累计速度增量</span><strong id="dv">—</strong></div><div class="read"><span>已抛弃结构</span><strong id="discard">—</strong></div></div>
+          <div class="k-process" id="flow"><div data-state="current">组装</div><div>一级燃烧</div><div>一级分离</div><div>二级燃烧</div><div>二级分离</div><div>三级完成</div></div>
+          <div class="result" id="result">任务门槛与结果将在点火后持续更新。</div>
+        </div>
+      </section>
+      <div class="bottom"><p class="note">理想分级模型：忽略空气阻力、重力损失、发动机点火过程与飞行姿态。</p><div class="status" id="status" aria-live="polite">先完成组装。</div></div>
+    </main>
+  </div>
+  <script src="assets/base.js"></script>
+  <script src="assets/lec.js"></script>
+  <script>
+    Lec.mount({index:31,kicker:'STAGING / 分级',title:'设计三级火箭：什么时候该把哪一段丢掉？',take:'分级通过及时丢掉无用结构，换取更高的最终速度。'});
+    Deck.init({index:31,total:48});
+    const demo=Lec.K.rocketStagingDemo||{targetDeltaV:9000,payloadMass:5000,maxSeparationDelay:2,stages:[{propellantMass:120000,structureMass:12000,effectiveExhaustVelocity:3000},{propellantMass:30000,structureMass:4000,effectiveExhaustVelocity:3400},{propellantMass:9000,structureMass:1500,effectiveExhaustVelocity:3800}]}, stages=demo.stages;
+    const labels={payload:'载荷',s1:'一级',s2:'二级',s3:'三级'};
+    const expected=['payload','s3','s2','s1'];
+    let state,selected,stopLoop=null;
+    const $=s=>document.querySelector(s), slots=[...document.querySelectorAll('.slot')], flow=[...document.querySelectorAll('#flow>div')];
+    const fmtMass=x=>Lec.P.formatNumber(x)+' kg', fmtDv=x=>Lec.P.formatNumber(x)+' m/s';
+    function fresh(){return{placed:{},phase:0,fuel:[1,1,1],attached:[true,true,true],dv:0,discarded:0,wait:0,delays:[0,0],trace:[],running:false,complete:false};}
+    function totalMass(){let m=demo.payloadMass;stages.forEach((s,i)=>{if(state.attached[i])m+=s.structureMass+s.propellantMass*state.fuel[i]});return m}
+    function makeParts(){const data=[['s2',stages[1]],['payload',null],['s1',stages[0]],['s3',stages[2]]];$('#parts').innerHTML=data.map(([k,s])=>`<button class="part" data-part="${k}" aria-pressed="false"><span>${labels[k]}</span><span>${s?fmtMass(s.propellantMass+s.structureMass):fmtMass(demo.payloadMass)}</span></button>`).join('');document.querySelectorAll('.part').forEach(b=>b.onclick=()=>selectPart(b.dataset.part));}
+    function selectPart(k){if(state.running)return;selected=k;document.querySelectorAll('.part').forEach(b=>b.setAttribute('aria-pressed',b.dataset.part===k));$('#status').textContent='已选择'+labels[k]+'，点选它应在的槽位。'}
+    slots.forEach(slot=>slot.onclick=()=>{if(state.running){const k=slot.dataset.kind;if((k==='s1'&&state.phase===2)||(k==='s2'&&state.phase===4))separate(k);return}if(!selected)return;state.placed[slot.dataset.kind]=selected;selected=null;render();});
+    function assembled(){return expected.every(k=>state.placed[k]===k)}
+    function render(){slots.forEach(slot=>{const k=slot.dataset.kind,p=state.placed[k];slot.classList.toggle('filled',!!p);if(!state.running)slot.childNodes[0].nodeValue=p?labels[p]:labels[k]+'槽';if(k[0]==='s'){const i=+k[1]-1;slot.style.setProperty('--fuel',(state.fuel[i]*100)+'%');slot.classList.toggle('detached',!state.attached[i]);slot.classList.toggle('burden',state.attached[i]&&state.fuel[i]===0&&i<2)}});document.querySelectorAll('.part').forEach(b=>b.disabled=Object.values(state.placed).includes(b.dataset.part));$('#ignite').disabled=!assembled()||state.running;$('#mass').textContent=fmtMass(totalMass());$('#dv').textContent=fmtDv(state.dv);$('#discard').textContent=fmtMass(state.discarded);flow.forEach((x,i)=>x.dataset.state=i<state.phase?'done':i===state.phase?'current':'');$('#flame').classList.toggle('on',[1,3,5].includes(state.phase));if(assembled()&&!state.running)$('#status').textContent='组装正确。点火后，在燃尽提示出现时点击分离环。';}
+    function separate(k){const i=+k[1]-1;if(!state.attached[i])return;state.attached[i]=false;state.discarded+=stages[i].structureMass;state.delays[i]=state.wait;state.trace.push({action:'separate',stage:i+1,delay:state.wait});state.phase++;state.wait=0;$('#status').textContent=labels[k]+'已分离，当前质量立即下降。';render();}
+    function igniteStage(i){const ignition=totalMass(), burn=stages[i].propellantMass;state.fuel[i]=0;const burnout=ignition-burn;state.dv+=Lec.P.rocketDeltaV(stages[i].effectiveExhaustVelocity,ignition,burnout);state.phase=i===0?2:i===1?4:5;state.wait=0;render();if(i<2){const ring=document.querySelector(`[data-ring="s${i+1}"]`);ring.classList.add('ready');$('#status').textContent=labels['s'+(i+1)]+'燃尽：空壳仍在被携带。现在点击分离环。'}else finish();}
+    function start(){if(!assembled())return;state.running=true;state.phase=1;$('#ignite').disabled=true;$('#status').textContent='一级正在燃烧，整枚火箭都由它推动。';render();let elapsed=0,lastPhase=1;stopLoop=Deck.loop((t,dt)=>{if(state.complete)return;elapsed+=dt;if(state.phase!==lastPhase){elapsed=0;lastPhase=state.phase}if([1,3,5].includes(state.phase)&&elapsed>1.5){igniteStage((state.phase-1)/2);elapsed=0;lastPhase=state.phase}else if([2,4].includes(state.phase)){state.wait+=dt;const i=state.phase===2?0:1;if(state.wait>=demo.maxSeparationDelay){state.delays[i]=state.wait;state.trace.push({action:'carry-empty',stage:i+1,delay:state.wait});state.phase++;state.wait=0;$('#status').textContent=labels['s'+(i+1)]+'未及时分离，空壳将由后续级继续加速。';render()}}},{still:2});}
+    function finish(){state.complete=true;state.running=false;if(stopLoop)stopLoop();const ratio=state.dv/demo.targetDeltaV,ok=state.dv>=demo.targetDeltaV;$('#result').textContent=(ok?'任务达标：':'速度不足：')+'完成 '+Lec.P.percent(ratio)+'；最终保留 '+fmtMass(totalMass())+'。';$('#status').textContent='空级不会继续提供推力，却会迫使后续级继续加速它。';render();}
+    function reset(){if(stopLoop)stopLoop();state=fresh();selected=null;makeParts();slots.forEach(s=>{s.classList.remove('detached','burden','filled');const r=s.querySelector('.ring');if(r)r.classList.remove('ready')});$('#result').textContent='任务门槛与结果将在点火后持续更新。';$('#status').textContent='先完成组装。';render();}
+    $('#ignite').onclick=start;$('#reset').onclick=reset;reset();
+  </script>
+</body>
+</html>

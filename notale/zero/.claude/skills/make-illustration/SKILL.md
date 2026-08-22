@@ -12,6 +12,10 @@ python3 <skill-dir>/scripts/gen.py "<prompt>" --out pages/assets/img/<name>.png
 ```
 
 Defaults to 2048×1152 (16:9, matches the 1600×900 canvas). `--size WxH` to change,
+**but the endpoint refuses anything under 921,600 pixels (=1280×720)** — measured: 1024×576 returns
+HTTP 400. Stick to the default, or 1280×720 if you need smaller. The script now checks this locally
+and tells you, instead of throwing a raw traceback.
+
 `--n 3` for several variations to choose from. Every generated file is logged with its
 prompt in `illustrations.json` next to it, so you can trace later what produced what.
 

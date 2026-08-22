@@ -1,0 +1,684 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>第 30 页 · 互动讲义</title>
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  /* ---- 页面专属布局 ---- */
+  #main {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-4);
+    height: 100%;
+  }
+
+  /* 视频区 */
+  .vid-zone {
+    flex: 1 1 0%;
+    min-height: 0;
+    position: relative;
+    background: #000;
+    border-radius: var(--r-md);
+    overflow: hidden;
+    border: 1px solid var(--border);
+  }
+
+  .vid-zone video {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    display: block;
+  }
+
+  /* 标注浮层 —— 出现在视频右侧 */
+  .vid-annotation {
+    position: absolute;
+    right: var(--sp-4);
+    top: 50%;
+    transform: translateY(-50%);
+    max-width: 280px;
+    background: var(--surface-raised);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--r-md);
+    padding: var(--sp-5);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 300ms var(--ease);
+    box-shadow: var(--shadow-md);
+    z-index: 5;
+  }
+
+  .vid-annotation.visible {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  .vid-annotation .ann-num {
+    font-size: var(--fs-tick);
+    font-weight: 700;
+    color: var(--accent);
+    margin-bottom: var(--sp-1);
+  }
+
+  .vid-annotation .ann-title {
+    font-size: var(--fs-body);
+    font-weight: 600;
+    color: var(--text);
+    margin-bottom: var(--sp-2);
+    line-height: 1.4;
+  }
+
+  .vid-annotation .ann-desc {
+    font-size: var(--fs-sec);
+    color: var(--text-sec);
+    line-height: 1.45;
+  }
+
+  /* 视频上的播放提示 */
+  .vid-hint {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    font-size: var(--fs-label);
+    color: var(--text-dim);
+    pointer-events: none;
+    opacity: 0.7;
+    transition: opacity 400ms var(--ease);
+  }
+
+  .vid-hint.hidden {
+    opacity: 0;
+  }
+
+  /* ---- 时间轴区域 ---- */
+  .tl-zone {
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-2);
+  }
+
+  /* 时间轴进度条 */
+  .tl-bar-wrap {
+    position: relative;
+    width: 100%;
+    height: 6px;
+    background: var(--border);
+    border-radius: 3px;
+    cursor: pointer;
+    overflow: visible;
+  }
+
+  .tl-bar-fill {
+    position: absolute;
+    top: 0;
+    left: 0;
+    height: 100%;
+    background: var(--accent-soft);
+    border-radius: 3px;
+    transition: width 100ms linear;
+    pointer-events: none;
+  }
+
+  .tl-bar-scrub {
+    position: absolute;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    width: 14px;
+    height: 14px;
+    background: var(--accent);
+    border-radius: 50%;
+    border: 2px solid var(--bg);
+    box-shadow: 0 0 6px rgba(77,166,255,0.5);
+    pointer-events: none;
+    transition: left 100ms linear;
+    z-index: 2;
+  }
+
+  /* 六个标记点 */
+  .tl-marker {
+    position: absolute;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    width: 10px;
+    height: 10px;
+    background: var(--text-dim);
+    border-radius: 50%;
+    border: 2px solid var(--bg);
+    cursor: pointer;
+    z-index: 3;
+    transition: background 200ms var(--ease), box-shadow 200ms var(--ease);
+  }
+
+  .tl-marker:hover,
+  .tl-marker:focus-visible {
+    background: var(--accent);
+    box-shadow: 0 0 8px rgba(77,166,255,0.6);
+    outline: none;
+  }
+
+  .tl-marker.active {
+    background: var(--accent);
+    box-shadow: 0 0 10px rgba(77,166,255,0.7);
+    width: 12px;
+    height: 12px;
+  }
+
+  /* 标记标签 */
+  .tl-labels {
+    display: flex;
+    flex-direction: row;
+    width: 100%;
+    position: relative;
+  }
+
+  .tl-label {
+    position: absolute;
+    transform: translateX(-50%);
+    font-size: var(--fs-tick);
+    color: var(--text-dim);
+    white-space: nowrap;
+    cursor: pointer;
+    transition: color 200ms var(--ease);
+    text-align: center;
+    max-width: 110px;
+    line-height: 1.35;
+  }
+
+  .tl-label:hover,
+  .tl-label.active {
+    color: var(--accent);
+  }
+
+  /* ---- k-process 步骤行 ---- */
+  .k-process.timeline-process {
+    gap: 0;
+  }
+
+  .k-process.timeline-process .steps {
+    display: flex;
+    flex-direction: row;
+    align-items: flex-start;
+    gap: 0;
+    width: 100%;
+    padding-top: 14px;  /* 给标记点留空间 */
+  }
+
+  .k-process.timeline-process .step {
+    font-size: var(--fs-tick);
+    padding: var(--sp-1) var(--sp-1);
+    gap: var(--sp-1);
+    cursor: pointer;
+  }
+
+  .k-process.timeline-process .step .step-num {
+    font-size: var(--fs-label);
+    font-weight: 700;
+    color: var(--text-dim);
+    transition: color 200ms var(--ease);
+  }
+
+  .k-process.timeline-process .step.current .step-num {
+    color: var(--accent);
+  }
+
+  .k-process.timeline-process .step .step-label {
+    font-size: var(--fs-tick);
+    color: var(--text-dim);
+    line-height: 1.35;
+    transition: color 200ms var(--ease);
+  }
+
+  .k-process.timeline-process .step.current .step-label {
+    color: var(--text);
+  }
+
+  .k-process.timeline-process .step.done .step-label {
+    color: var(--text-dim);
+  }
+
+  .k-process.timeline-process .arw {
+    font-size: var(--fs-label);
+    padding-top: var(--sp-1);
+  }
+
+  /* 下面三句要点 */
+  .takeaways {
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: row;
+    gap: var(--sp-4);
+  }
+
+  .takeaway {
+    flex: 1 1 0%;
+    min-width: 0;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--r-sm);
+    padding: var(--sp-3) var(--sp-4);
+    font-size: var(--fs-sec);
+    color: var(--text-sec);
+    line-height: 1.4;
+    text-align: center;
+    transition: background 200ms var(--ease), color 200ms var(--ease), border-color 200ms var(--ease);
+  }
+
+  .takeaway.highlight {
+    background: var(--diff-bg);
+    border-color: var(--diff-fg);
+    color: var(--text);
+  }
+
+  /* ---- Lottie 容器（用作当前标记的脉冲动画） ---- */
+  .lottie-pulse {
+    width: 24px;
+    height: 24px;
+    flex-shrink: 0;
+  }
+
+  /* reduced-motion */
+  @media (prefers-reduced-motion: reduce) {
+    .vid-annotation {
+      transition: none;
+    }
+    .tl-bar-fill,
+    .tl-bar-scrub {
+      transition: none;
+    }
+    .tl-marker {
+      transition: none;
+    }
+  }
+</style>
+</head>
+<body data-page="30" data-total="60">
+<div id="stage">
+<main id="main"></main>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script src="assets/lib/lottie.min.js"></script>
+<script>
+/* ============================================================
+   page-30 · 微重力中的身体本能 · 120 秒
+   ============================================================ */
+
+Deck.init({ index: 30, total: 60 });
+
+const main = document.getElementById('main');
+
+/* ---- 六个事件定义 ---- */
+const EVENTS = [
+  { id: 0, t: 0,   num: '1', title: '进入微重力', desc: '宇航员从舱门进入 ISS 主舱段，身体开始漂浮。重力消失的瞬间，身体从"有重量"切换到"无重量"状态。' },
+  { id: 1, t: 9,   num: '2', title: '尝试走路', desc: '宇航员试图用脚接触舱壁，但脚无法稳定着地。脚与舱壁之间没有重力压出的摩擦力，轻轻一碰就弹开——走路失效。' },
+  { id: 2, t: 18,  num: '3', title: '身体漂移', desc: '在没有约束的情况下，身体开始缓慢旋转或漂移。方向感不再来自重力——脚下没有"下"，方向只能依赖视觉。' },
+  { id: 3, t: 27,  num: '4', title: '手臂本能伸出', desc: '宇航员伸手抓住最近的扶手或舱壁突出物。上肢本能启动了——这是数百万年树栖生活留下的抓握反射。' },
+  { id: 4, t: 36,  num: '5', title: '手臂替代下肢', desc: '宇航员开始用手臂拉拽身体，从一个扶手移到另一个扶手。腿悬空不参与移动——上肢成为主要移动器官。' },
+  { id: 5, t: 45,  num: '6', title: '稳定爬行模式', desc: '宇航员熟练地用手臂在舱内移动，腿自然弯曲跟随。新的运动模式建立——在三维空间中自如穿行。' }
+];
+
+/* ---- 构建 DOM ---- */
+main.innerHTML = `
+  <div class="vid-zone" id="vidZone">
+    <video id="issVideo" src="assets/img/iss-clip.mp4" preload="auto" muted playsinline title="视频来源：NASA ISS 25周年空间站导览（公有领域），剪辑自 jsc2025m000041"></video>
+    <div class="vid-hint" id="vidHint">▶ 点击播放，观察身体如何适应微重力</div>
+    <div class="vid-annotation" id="vidAnnotation">
+      <div class="ann-num" id="annNum"></div>
+      <div class="ann-title" id="annTitle"></div>
+      <div class="ann-desc" id="annDesc"></div>
+    </div>
+  </div>
+
+  <div class="k-process timeline-process">
+    <div class="steps" id="stepRow">
+      ${EVENTS.map((ev, i) => {
+        const arrow = i < EVENTS.length - 1 ? '<div class="arw">→</div>' : '';
+        return `<div class="step" data-idx="${i}" tabindex="0" role="button" aria-label="事件${ev.num}: ${ev.title}">
+          <span class="step-num">${ev.num}</span>
+          <span class="step-label">${ev.title}</span>
+        </div>${arrow}`;
+      }).join('')}
+    </div>
+    <div class="tl-bar-wrap" id="tlBarWrap" tabindex="0" role="slider" aria-label="视频进度" aria-valuemin="0" aria-valuemax="45" aria-valuenow="0">
+      <div class="tl-bar-fill" id="tlBarFill" style="width:0%"></div>
+      <div class="tl-bar-scrub" id="tlBarScrub" style="left:0%"></div>
+      ${EVENTS.map(ev => `<div class="tl-marker" data-t="${ev.t}" data-idx="${ev.id}" tabindex="0" role="button" aria-label="事件${ev.num}: ${ev.title}" style="left:${(ev.t/45*100).toFixed(1)}%"></div>`).join('')}
+    </div>
+  </div>
+
+  <div class="takeaways" id="takeaways">
+    <div class="takeaway" data-idx="0">微重力下，脚失去摩擦力，腿无法产生推进力——走路失效。</div>
+    <div class="takeaway" data-idx="1">手臂本能地替代下肢：抓握在任何方向上都能提供锚点和推进力。</div>
+    <div class="takeaway" data-idx="2">这具身体没有为太空设计，但演化赋予的上肢灵活性让它意外地胜任。</div>
+  </div>
+`;
+
+/* ---- 元素引用 ---- */
+const video = document.getElementById('issVideo');
+const vidHint = document.getElementById('vidHint');
+const vidAnnotation = document.getElementById('vidAnnotation');
+const annNum = document.getElementById('annNum');
+const annTitle = document.getElementById('annTitle');
+const annDesc = document.getElementById('annDesc');
+const tlBarWrap = document.getElementById('tlBarWrap');
+const tlBarFill = document.getElementById('tlBarFill');
+const tlBarScrub = document.getElementById('tlBarScrub');
+const stepRow = document.getElementById('stepRow');
+const takeaways = document.getElementById('takeaways');
+
+let currentEventIdx = -1;
+let isDragging = false;
+const VIDEO_DURATION = 45; // seconds
+
+/* ---- Lottie 脉冲动画（用于步骤标记） ---- */
+const pulseData = {
+  v: "5.5.7", fr: 30, ip: 0, op: 60, w: 40, h: 40, nm: "pulse", ddd: 0, assets: [],
+  layers: [{
+    ddd: 0, ind: 1, ty: 4, nm: "dot", sr: 1,
+    ks: {
+      o: { a: 1, k: [{ t: 0, s: [100] }, { t: 30, s: [30] }, { t: 60, s: [100] }] },
+      r: { a: 0, k: 0 },
+      p: { a: 0, k: [20, 20, 0] },
+      a: { a: 0, k: [0, 0, 0] },
+      s: { a: 1, k: [{ t: 0, s: [80, 80, 100] }, { t: 30, s: [120, 120, 100] }, { t: 60, s: [80, 80, 100] }] }
+    },
+    shapes: [{
+      ty: "el", p: { a: 0, k: [0, 0] }, s: { a: 0, k: [24, 24] },
+      d: 1
+    }, {
+      ty: "fl", c: { a: 0, k: [0.302, 0.651, 1, 1] }, o: { a: 0, k: 100 }, r: 1
+    }],
+    ip: 0, op: 60, st: 0
+  }]
+};
+
+/* ---- 更新 UI：高亮当前步骤、标注、进度条 ---- */
+function setCurrentEvent(idx) {
+  if (idx === currentEventIdx) return;
+  currentEventIdx = idx;
+
+  // 更新步骤行
+  const steps = stepRow.querySelectorAll('.step');
+  steps.forEach((s, i) => {
+    s.classList.remove('done', 'current');
+    if (i < idx) s.classList.add('done');
+    if (i === idx) s.classList.add('current');
+  });
+
+  // 更新标注
+  if (idx >= 0 && idx < EVENTS.length) {
+    annNum.textContent = '事件 ' + EVENTS[idx].num + ' / 6';
+    annTitle.textContent = EVENTS[idx].title;
+    annDesc.textContent = EVENTS[idx].desc;
+    vidAnnotation.classList.add('visible');
+  } else {
+    vidAnnotation.classList.remove('visible');
+  }
+
+  // 更新要点高亮
+  const takeEls = takeaways.querySelectorAll('.takeaway');
+  takeEls.forEach(el => el.classList.remove('highlight'));
+  if (idx >= 0 && idx < EVENTS.length) {
+    // 事件 0-1 → 要点 0, 事件 2-3 → 要点 1, 事件 4-5 → 要点 2
+    const takeIdx = Math.min(2, Math.floor(idx / 2));
+    takeEls[takeIdx]?.classList.add('highlight');
+  }
+
+  // 更新标记点
+  const markers = tlBarWrap.querySelectorAll('.tl-marker');
+  markers.forEach(m => {
+    const mi = parseInt(m.dataset.idx);
+    m.classList.toggle('active', mi === idx);
+  });
+}
+
+/* ---- 更新进度条 ---- */
+function updateProgress(t) {
+  const pct = Math.min(100, Math.max(0, (t / VIDEO_DURATION) * 100));
+  tlBarFill.style.width = pct + '%';
+  tlBarScrub.style.left = pct + '%';
+
+  // 找到最近的已过事件
+  let nearestIdx = -1;
+  for (let i = EVENTS.length - 1; i >= 0; i--) {
+    if (t >= EVENTS[i].t - 0.5) {
+      nearestIdx = i;
+      break;
+    }
+  }
+  if (nearestIdx !== currentEventIdx) {
+    setCurrentEvent(nearestIdx);
+  }
+}
+
+/* ---- 视频事件 ---- */
+video.addEventListener('timeupdate', () => {
+  if (!isDragging) {
+    updateProgress(video.currentTime);
+  }
+});
+
+video.addEventListener('play', () => {
+  vidHint.classList.add('hidden');
+});
+
+video.addEventListener('pause', () => {
+  if (video.currentTime < 0.5) {
+    vidHint.classList.remove('hidden');
+  }
+});
+
+video.addEventListener('ended', () => {
+  setCurrentEvent(5);
+});
+
+/* ---- 点击标记跳转 ---- */
+tlBarWrap.addEventListener('click', (e) => {
+  const marker = e.target.closest('.tl-marker');
+  if (marker) {
+    const t = parseFloat(marker.dataset.t);
+    video.currentTime = t;
+    updateProgress(t);
+    if (video.paused) video.play().catch(() => {});
+    return;
+  }
+  // 点击进度条其他位置
+  const rect = tlBarWrap.getBoundingClientRect();
+  const scaleX = 1600 / rect.width; // 底盘缩放补偿
+  const x = (e.clientX - rect.left) * scaleX;
+  const pct = Math.min(1, Math.max(0, x / rect.width));
+  const t = pct * VIDEO_DURATION;
+  video.currentTime = t;
+  updateProgress(t);
+  if (video.paused) video.play().catch(() => {});
+});
+
+/* ---- 拖拽进度条 ---- */
+tlBarWrap.addEventListener('mousedown', (e) => {
+  if (e.target.closest('.tl-marker')) return;
+  isDragging = true;
+  const rect = tlBarWrap.getBoundingClientRect();
+  const scaleX = 1600 / rect.width;
+  const x = (e.clientX - rect.left) * scaleX;
+  const pct = Math.min(1, Math.max(0, x / rect.width));
+  video.currentTime = pct * VIDEO_DURATION;
+  updateProgress(video.currentTime);
+});
+
+document.addEventListener('mousemove', (e) => {
+  if (!isDragging) return;
+  const rect = tlBarWrap.getBoundingClientRect();
+  const scaleX = 1600 / rect.width;
+  const x = (e.clientX - rect.left) * scaleX;
+  const pct = Math.min(1, Math.max(0, x / rect.width));
+  video.currentTime = pct * VIDEO_DURATION;
+  updateProgress(video.currentTime);
+});
+
+document.addEventListener('mouseup', () => {
+  isDragging = false;
+});
+
+/* ---- 触摸支持 ---- */
+tlBarWrap.addEventListener('touchstart', (e) => {
+  if (e.target.closest('.tl-marker')) return;
+  isDragging = true;
+  const rect = tlBarWrap.getBoundingClientRect();
+  const scaleX = 1600 / rect.width;
+  const x = (e.touches[0].clientX - rect.left) * scaleX;
+  const pct = Math.min(1, Math.max(0, x / rect.width));
+  video.currentTime = pct * VIDEO_DURATION;
+  updateProgress(video.currentTime);
+}, { passive: false });
+
+document.addEventListener('touchmove', (e) => {
+  if (!isDragging) return;
+  const rect = tlBarWrap.getBoundingClientRect();
+  const scaleX = 1600 / rect.width;
+  const x = (e.touches[0].clientX - rect.left) * scaleX;
+  const pct = Math.min(1, Math.max(0, x / rect.width));
+  video.currentTime = pct * VIDEO_DURATION;
+  updateProgress(video.currentTime);
+}, { passive: false });
+
+document.addEventListener('touchend', () => {
+  isDragging = false;
+});
+
+/* ---- 步骤行点击 ---- */
+stepRow.addEventListener('click', (e) => {
+  const step = e.target.closest('.step');
+  if (!step) return;
+  const idx = parseInt(step.dataset.idx);
+  if (idx >= 0 && idx < EVENTS.length) {
+    video.currentTime = EVENTS[idx].t;
+    updateProgress(EVENTS[idx].t);
+    setCurrentEvent(idx);
+    if (video.paused) video.play().catch(() => {});
+  }
+});
+
+/* ---- 键盘操作 ---- */
+stepRow.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' || e.key === ' ') {
+    e.preventDefault();
+    const step = e.target.closest('.step');
+    if (!step) return;
+    const idx = parseInt(step.dataset.idx);
+    if (idx >= 0 && idx < EVENTS.length) {
+      video.currentTime = EVENTS[idx].t;
+      updateProgress(EVENTS[idx].t);
+      setCurrentEvent(idx);
+      if (video.paused) video.play().catch(() => {});
+    }
+  }
+});
+
+tlBarWrap.addEventListener('keydown', (e) => {
+  if (e.key === 'ArrowLeft') {
+    e.preventDefault();
+    video.currentTime = Math.max(0, video.currentTime - 1);
+    updateProgress(video.currentTime);
+  } else if (e.key === 'ArrowRight') {
+    e.preventDefault();
+    video.currentTime = Math.min(VIDEO_DURATION, video.currentTime + 1);
+    updateProgress(video.currentTime);
+  }
+});
+
+/* ---- 标注点击关闭 ---- */
+vidAnnotation.addEventListener('click', () => {
+  vidAnnotation.classList.remove('visible');
+  currentEventIdx = -1;
+  const steps = stepRow.querySelectorAll('.step');
+  steps.forEach(s => s.classList.remove('current'));
+  const markers = tlBarWrap.querySelectorAll('.tl-marker');
+  markers.forEach(m => m.classList.remove('active'));
+  const takeEls = takeaways.querySelectorAll('.takeaway');
+  takeEls.forEach(el => el.classList.remove('highlight'));
+});
+
+/* ---- Lottie 脉冲动画（在第一个步骤上） ---- */
+let pulseAnim = null;
+try {
+  const firstStep = stepRow.querySelector('.step');
+  if (firstStep) {
+    const pulseContainer = document.createElement('div');
+    pulseContainer.className = 'lottie-pulse';
+    pulseContainer.style.cssText = 'position:absolute;top:-28px;left:50%;transform:translateX(-50%);pointer-events:none;';
+    firstStep.style.position = 'relative';
+    firstStep.appendChild(pulseContainer);
+
+    if (typeof lottie !== 'undefined') {
+      pulseAnim = lottie.loadAnimation({
+        container: pulseContainer,
+        renderer: 'svg',
+        loop: true,
+        autoplay: true,
+        animationData: pulseData
+      });
+    }
+  }
+} catch(e) {
+  // lottie 不可用时静默降级
+}
+
+/* ---- 移动脉冲到当前步骤 ---- */
+function movePulseToStep(idx) {
+  const steps = stepRow.querySelectorAll('.step');
+  const target = steps[idx];
+  if (!target) return;
+  // 移除旧容器并销毁旧动画
+  const oldContainer = stepRow.querySelector('.lottie-pulse');
+  if (oldContainer) {
+    if (oldContainer.parentElement !== target) {
+      if (pulseAnim) { pulseAnim.destroy(); pulseAnim = null; }
+      oldContainer.remove();
+    } else {
+      return; // 已经在目标步骤上
+    }
+  }
+  // 添加新容器
+  if (typeof lottie !== 'undefined') {
+    const pulseContainer = document.createElement('div');
+    pulseContainer.className = 'lottie-pulse';
+    pulseContainer.style.cssText = 'position:absolute;top:-28px;left:50%;transform:translateX(-50%);pointer-events:none;';
+    target.style.position = 'relative';
+    target.appendChild(pulseContainer);
+    pulseAnim = lottie.loadAnimation({
+      container: pulseContainer,
+      renderer: 'svg',
+      loop: true,
+      autoplay: true,
+      animationData: pulseData
+    });
+  }
+}
+
+// 覆盖 setCurrentEvent 以移动脉冲
+const origSetCurrentEvent = setCurrentEvent;
+setCurrentEvent = function(idx) {
+  origSetCurrentEvent(idx);
+  movePulseToStep(idx);
+};
+
+/* ---- Lec.mount ---- */
+Lec.mount({
+  index: 30,
+  kicker: '脱离地球',
+  title: '微重力中的身体本能',
+  take: '重力消失后，脚失去摩擦力，走路失效；手臂本能地替代下肢——演化遗产让身体在太空中意外地胜任。'
+});
+
+/* ---- reduced-motion ---- */
+if (Deck.reduced()) {
+  if (pulseAnim) pulseAnim.stop();
+  document.querySelectorAll('.lottie-pulse').forEach(el => el.style.opacity = '0');
+}
+</script>
+</body>
+</html>

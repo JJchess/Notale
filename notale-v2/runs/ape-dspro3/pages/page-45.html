@@ -1,0 +1,826 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>第 45 页 · 互动讲义</title>
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+/* ============================================================
+   Page 45 — 小行星一跳
+   3D scene fills #main, overlay at bottom
+   ============================================================ */
+
+#main {
+  position: relative;
+  overflow: hidden;
+}
+
+#cvs {
+  position: absolute;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+  display: block;
+}
+
+/* ---- overlay panel at bottom ---- */
+.overlay {
+  position: absolute;
+  bottom: 0; left: 0; right: 0;
+  padding: var(--sp-3) var(--sp-6) var(--sp-4);
+  background: rgba(11, 17, 25, 0.88);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  z-index: 5;
+}
+
+/* ---- k-process steps row ---- */
+.overlay .k-process {
+  gap: 0;
+}
+
+.overlay .k-process .axis {
+  height: 1px;
+  background: var(--border);
+  margin: 2px 0 0;
+}
+
+.overlay .k-process .axis + .steps {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 0;
+  width: 100%;
+}
+
+.overlay .k-process .step {
+  flex: 1 1 0%;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 2px var(--sp-1);
+  font-size: var(--fs-label);
+  color: var(--text-dim);
+  transition: color 300ms var(--ease), opacity 300ms var(--ease);
+  text-align: center;
+}
+
+.overlay .k-process .step .r-val {
+  font-weight: 600;
+  font-size: var(--fs-label);
+}
+
+.overlay .k-process .step .r-tag {
+  font-size: var(--fs-label);
+  color: var(--text-dim);
+  opacity: 0.7;
+}
+
+.overlay .k-process .step.current {
+  color: var(--accent);
+  opacity: 1;
+}
+
+.overlay .k-process .step.current .r-tag {
+  color: var(--accent);
+  opacity: 0.9;
+}
+
+.overlay .k-process .step.done {
+  opacity: 0.35;
+}
+
+.overlay .k-process .arw {
+  flex-shrink: 0;
+  width: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-dim);
+  font-size: var(--fs-label);
+  font-weight: 700;
+  user-select: none;
+  padding-top: 2px;
+}
+
+/* ---- controls row ---- */
+.ctl-row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: var(--sp-4);
+}
+
+.ctl-row .slider-wrap {
+  flex: 1 1 0%;
+  min-width: 0;
+  position: relative;
+  padding: 0 2px;
+}
+
+.ctl-row input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 6px;
+  background: var(--border);
+  border-radius: 3px;
+  outline: none;
+  cursor: pointer;
+}
+
+.ctl-row input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid var(--bg);
+  cursor: pointer;
+  box-shadow: 0 0 6px rgba(77,166,255,0.4);
+}
+
+.ctl-row input[type="range"]::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid var(--bg);
+  cursor: pointer;
+}
+
+.ctl-row input[type="range"]:focus-visible {
+  box-shadow: 0 0 0 2px rgba(96,165,250,0.3);
+}
+
+/* slider tick marks */
+.slider-ticks {
+  position: absolute;
+  top: 10px; left: 0; right: 0;
+  height: 10px;
+  pointer-events: none;
+}
+
+.slider-ticks .tick {
+  position: absolute;
+  top: 0;
+  width: 1px;
+  height: 8px;
+  background: var(--text-dim);
+  opacity: 0.5;
+  transform: translateX(-50%);
+}
+
+.slider-ticks .tick-label {
+  position: absolute;
+  top: 10px;
+  font-size: var(--fs-tick);
+  color: var(--text-dim);
+  transform: translateX(-50%);
+  white-space: nowrap;
+}
+
+/* ---- info row ---- */
+.info-row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: var(--sp-6);
+  font-size: var(--fs-label);
+  color: var(--text-sec);
+}
+
+.info-row .val {
+  font-weight: 600;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.info-row .esc {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.info-row .safe {
+  color: var(--ok);
+  font-weight: 600;
+}
+
+.info-row .danger {
+  color: var(--warn);
+  font-weight: 600;
+}
+
+/* jump button */
+.btn-jump {
+  font-family: inherit;
+  font-size: var(--fs-label);
+  font-weight: 600;
+  padding: 6px 20px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: #fff;
+  cursor: pointer;
+  transition: background 200ms var(--ease), box-shadow 200ms var(--ease);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.btn-jump:hover {
+  background: var(--accent-soft);
+  box-shadow: 0 0 12px rgba(77,166,255,0.4);
+}
+
+.btn-jump:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
+.btn-jump:active {
+  transform: scale(0.97);
+}
+
+.btn-jump:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+/* result badge in overlay */
+.result-badge {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 10px;
+  font-size: var(--fs-label);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.result-badge.landed {
+  background: rgba(52,211,153,0.15);
+  color: var(--ok);
+}
+
+.result-badge.escaped {
+  background: rgba(245,158,11,0.15);
+  color: var(--warn);
+}
+
+/* ---- scene hint text ---- */
+.scene-hint {
+  position: absolute;
+  top: var(--sp-4);
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: var(--fs-label);
+  color: var(--text-dim);
+  pointer-events: none;
+  z-index: 2;
+  opacity: 0.8;
+  transition: opacity 500ms;
+}
+
+.scene-hint.fading {
+  opacity: 0;
+}
+</style>
+</head>
+<body data-page="45" data-total="60">
+<div id="stage">
+<main id="main">
+  <canvas id="cvs"></canvas>
+  <div class="scene-hint" id="hint">拖动下方滑块改变天体半径，然后点击「跳！」</div>
+  <div class="overlay" id="overlay">
+    <div class="k-process">
+      <div class="steps" id="steps">
+        <div class="step" data-r="800"><span class="r-val">800 m</span><span class="r-tag">安全</span></div>
+        <div class="arw">→</div>
+        <div class="step" data-r="600"><span class="r-val">600 m</span><span class="r-tag">安全</span></div>
+        <div class="arw">→</div>
+        <div class="step" data-r="500"><span class="r-val">500 m</span><span class="r-tag">安全</span></div>
+        <div class="arw">→</div>
+        <div class="step" data-r="400"><span class="r-val">400 m</span><span class="r-tag">危险</span></div>
+        <div class="arw">→</div>
+        <div class="step" data-r="300"><span class="r-val">300 m</span><span class="r-tag">危险</span></div>
+        <div class="arw">→</div>
+        <div class="step" data-r="200"><span class="r-val">200 m</span><span class="r-tag">危险</span></div>
+      </div>
+      <div class="axis"></div>
+    </div>
+    <div class="ctl-row">
+      <label style="font-size:var(--fs-label);color:var(--text-sec);white-space:nowrap;flex-shrink:0;">天体半径</label>
+      <div class="slider-wrap">
+        <input type="range" id="slider" min="200" max="800" value="600" step="1">
+        <div class="slider-ticks" aria-hidden="true">
+          <div class="tick" style="left:0%"></div><div class="tick-label" style="left:0%">200</div>
+          <div class="tick" style="left:16.67%"></div><div class="tick-label" style="left:16.67%">300</div>
+          <div class="tick" style="left:33.33%"></div><div class="tick-label" style="left:33.33%">400</div>
+          <div class="tick" style="left:50%"></div><div class="tick-label" style="left:50%">500</div>
+          <div class="tick" style="left:66.67%"></div><div class="tick-label" style="left:66.67%">600</div>
+          <div class="tick" style="left:100%"></div><div class="tick-label" style="left:100%">800</div>
+        </div>
+      </div>
+      <span class="val" id="r-display" style="font-size:var(--fs-label);min-width:50px;text-align:right;">600 m</span>
+      <button class="btn-jump" id="btn-jump">跳！</button>
+    </div>
+    <div class="info-row">
+      <span>逃逸速度 <span class="val" id="v-esc">—</span></span>
+      <span>跳跃初速度 <span class="val" id="v-jump">—</span></span>
+      <span>结果 <span id="result-badge" class="result-badge landed">—</span></span>
+    </div>
+  </div>
+</main>
+</div>
+
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script src="assets/lib/three.min.js"></script>
+<script src="assets/lib/matter.min.js"></script>
+<script>
+(function() {
+  /* ==============================================================
+     Page 45 — 小行星一跳
+     Three.js 3D visualisation + Matter.js physics
+     ============================================================== */
+
+  // --- Page setup ---
+  Deck.init({ index: 45, total: 60 });
+  Lec.mount({
+    index: 45,
+    kicker: 'ESCAPE-SPEED',
+    title: '跳一下就再也回不来了',
+    take: '逃逸速度取决于天体质量，跳太高可能再也回不来。'
+  });
+
+  // --- Physical constants ---
+  var G = 6.67430e-11;          // gravitational constant (not in Lec.K)
+  var ASTEROID_DENSITY = 86552; // kg/m³ — tuned so crossover at ~450 m
+  var JUMP_V0 = Lec.K.HUMAN_JUMP_INITIAL_VELOCITY; // ≈ 3.13 m/s
+  var ASTRONAUT_MASS = Lec.K.ASTRONAUT_MASS;       // 70 kg
+
+  // --- DOM refs ---
+  var slider = document.getElementById('slider');
+  var rDisplay = document.getElementById('r-display');
+  var vEscEl = document.getElementById('v-esc');
+  var vJumpEl = document.getElementById('v-jump');
+  var resultBadge = document.getElementById('result-badge');
+  var btnJump = document.getElementById('btn-jump');
+  var hintEl = document.getElementById('hint');
+  var steps = document.querySelectorAll('#steps .step');
+
+  // --- State ---
+  var asteroidRadius = 600;  // current radius (m)
+  var isJumping = false;
+  var jumpResult = null;     // 'landed' | 'escaped' | null
+  var jumpHeight = 0;        // current height above surface (m)
+  var jumpMaxHeight = 0;     // max height reached (m)
+
+  // --- Derived physics ---
+  function asteroidMass(R) {
+    return ASTEROID_DENSITY * (4 / 3) * Math.PI * R * R * R;
+  }
+
+  function surfaceGravity(R) {
+    return G * asteroidMass(R) / (R * R);
+  }
+
+  function escapeVelocity(R) {
+    return Math.sqrt(2 * G * asteroidMass(R) / R);
+  }
+
+  // ============================================================
+  //  THREE.JS — 3D Scene
+  // ============================================================
+
+  var canvas = document.getElementById('cvs');
+  var renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true, alpha: false });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.setSize(1408, 620);
+  renderer.setClearColor(0x0b1119);
+
+  var scene = new THREE.Scene();
+
+  var camera = new THREE.PerspectiveCamera(50, 1408 / 620, 10, 8000);
+  camera.position.set(200, 500, 1600);
+  camera.lookAt(0, 200, 0);
+
+  // --- Lighting ---
+  var ambient = new THREE.AmbientLight(0x334466, 0.6);
+  scene.add(ambient);
+
+  var sun = new THREE.DirectionalLight(0xffeedd, 1.8);
+  sun.position.set(1200, 800, 600);
+  scene.add(sun);
+
+  var fill = new THREE.DirectionalLight(0x8899cc, 0.4);
+  fill.position.set(-400, 200, -400);
+  scene.add(fill);
+
+  // --- Starfield ---
+  var starGeom = new THREE.BufferGeometry();
+  var starCount = 600;
+  var starPos = new Float32Array(starCount * 3);
+  for (var i = 0; i < starCount; i++) {
+    starPos[i * 3] = (Math.random() - 0.5) * 4000;
+    starPos[i * 3 + 1] = (Math.random() - 0.5) * 3000;
+    starPos[i * 3 + 2] = (Math.random() - 0.5) * 3000;
+  }
+  starGeom.setAttribute('position', new THREE.BufferAttribute(starPos, 3));
+  var starMat = new THREE.PointsMaterial({ color: 0xffffff, size: 1.5, transparent: true, opacity: 0.8 });
+  var stars = new THREE.Points(starGeom, starMat);
+  scene.add(stars);
+
+  // --- Procedural asteroid texture ---
+  function makeAsteroidTexture(size) {
+    var cv = document.createElement('canvas');
+    cv.width = size; cv.height = size;
+    var ctx = cv.getContext('2d');
+    // base
+    ctx.fillStyle = '#7a7a80';
+    ctx.fillRect(0, 0, size, size);
+    // noise patches
+    for (var i = 0; i < 300; i++) {
+      var x = Math.random() * size;
+      var y = Math.random() * size;
+      var r = Math.random() * 18 + 2;
+      var b = 70 + Math.random() * 80;
+      ctx.fillStyle = 'rgb(' + Math.floor(b) + ',' + Math.floor(b) + ',' + Math.floor(b+10) + ')';
+      ctx.beginPath();
+      ctx.arc(x, y, r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    // craters
+    for (var j = 0; j < 15; j++) {
+      var cx = Math.random() * size;
+      var cy = Math.random() * size;
+      var cr = Math.random() * 30 + 8;
+      ctx.fillStyle = 'rgba(50,50,55,0.5)';
+      ctx.beginPath();
+      ctx.arc(cx, cy, cr, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(140,140,145,0.4)';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+    }
+    var tex = new THREE.CanvasTexture(cv);
+    tex.wrapS = THREE.RepeatWrapping;
+    tex.wrapU = THREE.RepeatWrapping;
+    return tex;
+  }
+
+  var asteroidTex = makeAsteroidTexture(512);
+  var asteroidGeom = new THREE.SphereGeometry(1, 64, 48);
+  var asteroidMat = new THREE.MeshStandardMaterial({
+    map: asteroidTex,
+    roughness: 0.85,
+    metalness: 0.05,
+    color: 0xcccccc
+  });
+  var asteroidMesh = new THREE.Mesh(asteroidGeom, asteroidMat);
+  asteroidMesh.castShadow = true;
+  asteroidMesh.receiveShadow = true;
+  scene.add(asteroidMesh);
+
+  // --- Character (astronaut) ---
+  var charGroup = new THREE.Group();
+  // helmet
+  var helmetGeom = new THREE.SphereGeometry(8, 16, 12);
+  var helmetMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.3, metalness: 0.1 });
+  var helmet = new THREE.Mesh(helmetGeom, helmetMat);
+  charGroup.add(helmet);
+  // body
+  var bodyGeom = new THREE.CylinderGeometry(6, 7, 16, 12);
+  var bodyMat = new THREE.MeshStandardMaterial({ color: 0xdddddd, roughness: 0.5, metalness: 0.2 });
+  var body = new THREE.Mesh(bodyGeom, bodyMat);
+  body.position.y = -14;
+  charGroup.add(body);
+  // visor
+  var visorGeom = new THREE.SphereGeometry(6, 12, 8);
+  var visorMat = new THREE.MeshStandardMaterial({ color: 0x3388cc, roughness: 0.2, metalness: 0.8, emissive: 0x112233, emissiveIntensity: 0.3 });
+  var visor = new THREE.Mesh(visorGeom, visorMat);
+  visor.position.z = 5;
+  charGroup.add(visor);
+
+  charGroup.visible = true;
+  scene.add(charGroup);
+
+  // --- Jump trail ---
+  var trailPoints = [];
+  var trailLine = null;
+  var trailGeom = new THREE.BufferGeometry();
+  var trailMat = new THREE.LineBasicMaterial({ color: 0x4da6ff, transparent: true, opacity: 0.5, linewidth: 1 });
+  var trailMesh = new THREE.Line(trailGeom, trailMat);
+  trailMesh.visible = false;
+  scene.add(trailMesh);
+
+  function updateTrail(positions) {
+    if (positions.length < 2) { trailMesh.visible = false; return; }
+    trailGeom.dispose();
+    trailGeom = new THREE.BufferGeometry();
+    var arr = new Float32Array(positions.length * 3);
+    for (var i = 0; i < positions.length; i++) {
+      arr[i * 3] = positions[i][0];
+      arr[i * 3 + 1] = positions[i][1];
+      arr[i * 3 + 2] = positions[i][2];
+    }
+    trailGeom.setAttribute('position', new THREE.BufferAttribute(arr, 3));
+    trailMesh.geometry = trailGeom;
+    trailMesh.visible = true;
+  }
+
+  function clearTrail() {
+    trailPoints = [];
+    trailMesh.visible = false;
+  }
+
+  // --- Update asteroid size ---
+  function updateAsteroidSize(R) {
+    asteroidMesh.scale.set(R, R, R);
+    // position character on surface
+    charGroup.position.set(0, R, 0);
+  }
+
+  // --- Update character position during jump ---
+  function updateCharacterPosition(heightAboveSurface) {
+    var R = asteroidRadius;
+    var dist = R + heightAboveSurface;
+    charGroup.position.set(0, dist, 0);
+  }
+
+  // ============================================================
+  //  MATTER.JS — Physics engine
+  // ============================================================
+
+  var MatterEngine = Matter.Engine;
+  var MatterWorld = Matter.World;
+  var MatterBodies = Matter.Bodies;
+  var MatterBody = Matter.Body;
+  var MatterEvents = Matter.Events;
+  var MatterComposite = Matter.Composite;
+
+  var engine = MatterEngine.create();
+  engine.gravity.y = 0; // we apply custom gravity
+
+  // Matter.js scale: 1 m = 5 px
+  var MT_SCALE = 5;
+  var GROUND_THICKNESS = 20;
+  var GROUND_Y = 1200; // asteroid surface in Matter.js coords
+  var JUMPER_RADIUS = 6;
+
+  var ground = MatterBodies.rectangle(400, GROUND_Y + GROUND_THICKNESS / 2, 800, GROUND_THICKNESS, { isStatic: true, label: 'ground' });
+  var jumper = MatterBodies.circle(400, GROUND_Y - JUMPER_RADIUS, JUMPER_RADIUS, {
+    restitution: 0.3,
+    friction: 0.5,
+    density: 0.001,
+    label: 'jumper'
+  });
+
+  MatterComposite.add(engine.world, [ground, jumper]);
+
+  // Apply custom gravity each physics step
+  MatterEvents.on(engine, 'beforeUpdate', function() {
+    var h_px = GROUND_Y - jumper.position.y; // height above surface in px
+    var h_m = h_px / MT_SCALE;               // height in meters
+    if (h_m < 0) h_m = 0;
+    var R = asteroidRadius;
+    var r = R + h_m;                         // distance from asteroid center
+    var M = asteroidMass(R);
+    var g = G * M / (r * r);                 // gravity at this distance
+    var force = g * jumper.mass * MT_SCALE;  // downward force in Matter.js units
+    MatterBody.applyForce(jumper, jumper.position, { x: 0, y: force });
+  });
+
+  // --- Jump trigger ---
+  function triggerJump() {
+    if (isJumping) return;
+    isJumping = true;
+    jumpResult = null;
+    jumpHeight = 0;
+    jumpMaxHeight = 0;
+    clearTrail();
+    resultBadge.className = 'result-badge';
+    resultBadge.textContent = '跳跃中…';
+    btnJump.disabled = true;
+
+    // Reset jumper to surface
+    MatterBody.setPosition(jumper, { x: 400, y: GROUND_Y - JUMPER_RADIUS });
+    MatterBody.setVelocity(jumper, { x: 0, y: -JUMP_V0 * MT_SCALE }); // upward
+    MatterBody.setAngularVelocity(jumper, 0);
+  }
+
+  // --- Check if jumper escaped ---
+  function checkEscape() {
+    var h_px = GROUND_Y - jumper.position.y;
+    var h_m = h_px / MT_SCALE;
+    var vy = jumper.velocity.y;
+    // If jumper is far above surface and still moving upward, it escaped
+    if (h_m > 800 && vy < -0.5) {
+      return true;
+    }
+    // If jumper is very far above, definitely escaped
+    if (h_m > 1500) {
+      return true;
+    }
+    return false;
+  }
+
+  // --- Check if jumper landed ---
+  function checkLanded() {
+    var h_px = GROUND_Y - jumper.position.y;
+    var h_m = h_px / MT_SCALE;
+    var vy = jumper.velocity.y;
+    // Landed: near surface and velocity is very small
+    if (h_m < 1 && Math.abs(vy) < 2) {
+      return true;
+    }
+    return false;
+  }
+
+  // ============================================================
+  //  UI Updates
+  // ============================================================
+
+  function updateUI() {
+    var R = asteroidRadius;
+    var vEsc = escapeVelocity(R);
+    rDisplay.textContent = R + ' m';
+    vEscEl.textContent = vEsc.toFixed(2) + ' m/s';
+    vJumpEl.textContent = JUMP_V0.toFixed(2) + ' m/s';
+
+    // Update steps
+    steps.forEach(function(step) {
+      var stepR = parseInt(step.getAttribute('data-r'));
+      step.classList.remove('current', 'done');
+      if (stepR > R + 5) {
+        step.classList.add('done');
+      } else if (Math.abs(stepR - R) <= 50) {
+        step.classList.add('current');
+      }
+    });
+
+    // Update step tags based on escape velocity
+    steps.forEach(function(step) {
+      var stepR = parseInt(step.getAttribute('data-r'));
+      var stepVesc = escapeVelocity(stepR);
+      var tag = step.querySelector('.r-tag');
+      if (stepVesc > JUMP_V0) {
+        tag.textContent = '安全';
+      } else {
+        tag.textContent = '危险';
+      }
+    });
+  }
+
+  function showResult(landed) {
+    jumpResult = landed ? 'landed' : 'escaped';
+    if (landed) {
+      resultBadge.textContent = '安全落回';
+      resultBadge.className = 'result-badge landed';
+    } else {
+      resultBadge.textContent = '逃逸！回不来了';
+      resultBadge.className = 'result-badge escaped';
+    }
+    btnJump.disabled = false;
+  }
+
+  // ============================================================
+  //  Animation Loop
+  // ============================================================
+
+  var lastTrailRecord = 0;
+  var jumpStartTime = 0;
+  var landedSettleFrames = 0;
+
+  function animate() {
+    // Step Matter.js
+    MatterEngine.update(engine, 1000 / 60);
+
+    if (isJumping) {
+      var h_px = GROUND_Y - jumper.position.y;
+      var h_m = Math.max(0, h_px / MT_SCALE);
+      jumpHeight = h_m;
+      if (h_m > jumpMaxHeight) jumpMaxHeight = h_m;
+
+      updateCharacterPosition(h_m);
+
+      // Record trail points
+      var now = performance.now();
+      if (now - lastTrailRecord > 30 && h_m > 2) {
+        trailPoints.push([0, asteroidRadius + h_m, 0]);
+        if (trailPoints.length > 40) trailPoints.shift();
+        updateTrail(trailPoints);
+        lastTrailRecord = now;
+      }
+
+      // Check escape
+      if (checkEscape()) {
+        isJumping = false;
+        showResult(false);
+        // Animate character flying away
+        charGroup.position.set(0, asteroidRadius + 2000, 0);
+        clearTrail();
+      }
+
+      // Check landed
+      if (checkLanded()) {
+        landedSettleFrames++;
+        if (landedSettleFrames > 15) {
+          isJumping = false;
+          showResult(true);
+          var R = asteroidRadius;
+          updateCharacterPosition(0);
+          clearTrail();
+        }
+      } else {
+        landedSettleFrames = 0;
+      }
+    }
+
+    // Rotate asteroid slowly
+    asteroidMesh.rotation.y += 0.001;
+
+    // Fade hint
+    if (jumpResult && hintEl.classList.contains('fading') === false) {
+      hintEl.classList.add('fading');
+    }
+
+    renderer.render(scene, camera);
+  }
+
+  Deck.loop(animate);
+
+  // ============================================================
+  //  Event Handlers
+  // ============================================================
+
+  var sliderDebounce = null;
+
+  slider.addEventListener('input', function() {
+    asteroidRadius = parseInt(slider.value);
+    updateAsteroidSize(asteroidRadius);
+    updateCharacterPosition(0);
+    updateUI();
+    clearTrail();
+
+    // Reset jump state
+    if (isJumping) {
+      isJumping = false;
+      MatterBody.setPosition(jumper, { x: 400, y: GROUND_Y - JUMPER_RADIUS });
+      MatterBody.setVelocity(jumper, { x: 0, y: 0 });
+      updateCharacterPosition(0);
+      btnJump.disabled = false;
+    }
+    jumpResult = null;
+    resultBadge.textContent = '将自动跳跃';
+    resultBadge.className = 'result-badge';
+
+    // Debounced auto-jump: trigger 600ms after slider stops
+    clearTimeout(sliderDebounce);
+    sliderDebounce = setTimeout(function() {
+      if (!isJumping) {
+        triggerJump();
+        updateUI();
+      }
+    }, 600);
+  });
+
+  btnJump.addEventListener('click', function() {
+    if (isJumping) return;
+    clearTimeout(sliderDebounce);
+    triggerJump();
+    updateUI();
+  });
+
+  // Keyboard: Space to jump
+  document.addEventListener('keydown', function(e) {
+    if (e.code === 'Space' && document.activeElement !== slider) {
+      e.preventDefault();
+      if (!isJumping) {
+        triggerJump();
+        updateUI();
+      }
+    }
+  });
+
+  // ============================================================
+  //  Initial state
+  // ============================================================
+
+  updateAsteroidSize(asteroidRadius);
+  updateCharacterPosition(0);
+  updateUI();
+  resultBadge.textContent = '—';
+  resultBadge.className = 'result-badge';
+
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,600 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  progress.lec-progress {
+    appearance: none;
+    overflow: visible;
+    border: 0;
+  }
+
+  progress.lec-progress::-webkit-progress-bar,
+  progress.lec-progress::-webkit-progress-value {
+    height: 2px;
+    border: 0;
+  }
+
+  .p21-page {
+    --support-cols: 4;
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-4);
+  }
+
+  .p21-scene {
+    position: relative;
+    display: flex;
+    align-items: stretch;
+    min-height: 310px;
+    overflow: hidden;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-md);
+    background: var(--surface);
+  }
+
+  .p21-orbit {
+    position: relative;
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: visible;
+    background:
+      linear-gradient(90deg, transparent 0 12%, var(--primary-soft) 12% 88%, transparent 88% 100%),
+      repeating-linear-gradient(90deg, transparent 0 79px, var(--line) 80px 81px),
+      var(--surface);
+  }
+
+  .p21-orbit-canvas {
+    z-index: 0;
+    pointer-events: none;
+  }
+
+  .p21-orbit > :not(.p21-orbit-canvas) { z-index: 1; }
+
+  .p21-orbit::before {
+    position: absolute;
+    top: -176px;
+    right: 82px;
+    width: 820px;
+    height: 470px;
+    border: 2px solid var(--primary-line);
+    border-radius: 50%;
+    content: "";
+  }
+
+  .p21-sun {
+    position: absolute;
+    top: 70px;
+    left: 62px;
+    width: 112px;
+    height: 112px;
+    border: 1px solid var(--accent);
+    border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 42px var(--accent-soft);
+  }
+
+  .p21-sun-label {
+    position: absolute;
+    top: 192px;
+    left: 92px;
+    color: var(--text);
+    font-size: var(--fs-label);
+    line-height: var(--lh-tight);
+  }
+
+  .p21-earth-wrap {
+    position: absolute;
+    top: 60px;
+    right: 118px;
+    width: 132px;
+    height: 160px;
+  }
+
+  .p21-earth {
+    position: relative;
+    width: 132px;
+    height: 132px;
+    overflow: hidden;
+    border: 2px solid var(--primary);
+    border-radius: 50%;
+    background:
+      radial-gradient(circle at 38% 34%, var(--primary) 0 4px, transparent 5px),
+      radial-gradient(circle at 57% 63%, var(--primary) 0 6px, transparent 7px),
+      var(--surface-raised);
+    box-shadow: inset -48px 0 34px rgb(7 16 24 / 82%);
+  }
+
+  .p21-earth::after {
+    position: absolute;
+    inset: 0 48% 0 auto;
+    width: 2px;
+    background: var(--primary-line);
+    content: "";
+  }
+
+  .p21-hemi {
+    position: absolute;
+    left: 8px;
+    width: 112px;
+    height: 50px;
+    border: 3px solid transparent;
+    opacity: .38;
+  }
+
+  .p21-hemi.north {
+    top: 8px;
+    border-top-color: var(--accent);
+    border-radius: 58px 58px 8px 8px;
+  }
+
+  .p21-hemi.south {
+    bottom: 8px;
+    border-bottom-color: var(--accent);
+    border-radius: 8px 8px 58px 58px;
+  }
+
+  .p21-hemi.is-current { opacity: 1; }
+
+  .p21-earth-label {
+    margin-top: var(--sp-2);
+    color: var(--text-muted);
+    font-size: var(--fs-label);
+    line-height: var(--lh-tight);
+    text-align: center;
+  }
+
+  .p21-distance {
+    position: absolute;
+    top: 124px;
+    left: 174px;
+    right: 250px;
+    height: 2px;
+    background: var(--primary-line);
+    transform-origin: left center;
+  }
+
+  .p21-distance::before,
+  .p21-distance::after {
+    position: absolute;
+    top: -8px;
+    width: 2px;
+    height: 18px;
+    background: var(--primary);
+    content: "";
+  }
+
+  .p21-distance::before { left: 0; }
+  .p21-distance::after { right: 0; }
+
+  .p21-distance-value {
+    position: absolute;
+    top: 88px;
+    left: 48%;
+    padding: var(--sp-1) var(--sp-2);
+    background: var(--surface);
+    color: var(--primary);
+    font-family: var(--font-mono);
+    font-size: var(--fs-sec);
+    line-height: var(--lh-tight);
+    transform: translateX(-50%);
+  }
+
+  .p21-lock {
+    position: absolute;
+    top: 148px;
+    left: 48%;
+    color: var(--text-muted);
+    font-size: var(--fs-label);
+    line-height: var(--lh-tight);
+    transform: translateX(-50%);
+  }
+
+  .p21-orbit-tag {
+    position: absolute;
+    top: var(--sp-4);
+    right: var(--sp-5);
+    color: var(--primary);
+    font-size: var(--fs-label);
+    font-weight: 650;
+    line-height: var(--lh-tight);
+  }
+
+  .p21-baseline {
+    position: absolute;
+    right: 36px;
+    bottom: 18px;
+    left: 36px;
+    display: flex;
+    align-items: center;
+    gap: var(--sp-3);
+    min-height: 44px;
+    padding: 0 var(--sp-3);
+    border-top: 1px solid var(--primary-line);
+    border-bottom: 1px solid var(--primary-line);
+    background: var(--surface-data);
+    color: var(--text-muted);
+    font-size: var(--fs-label);
+    line-height: var(--lh-tight);
+  }
+
+  .p21-baseline strong {
+    color: var(--text);
+    font-size: var(--fs-sec);
+  }
+
+  .p21-baseline .equal {
+    margin-left: auto;
+    color: var(--accent);
+    font-family: var(--font-mono);
+    font-size: var(--fs-sec);
+  }
+
+  .p21-data {
+    display: flex;
+    flex: 0 0 332px;
+    flex-direction: column;
+    justify-content: center;
+    gap: var(--sp-3);
+    padding: var(--sp-4);
+    border-left: 1px solid var(--line);
+    background: var(--surface-data);
+  }
+
+  .p21-data .readout { padding: var(--sp-3); }
+
+  .p21-control {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-4);
+    min-height: 72px;
+    padding: var(--sp-3) var(--sp-4);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-sm);
+    background: var(--surface-data);
+  }
+
+  .p21-switch {
+    position: relative;
+    flex: 1 1 auto;
+    height: 48px;
+    touch-action: none;
+  }
+
+  .p21-switch input {
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    width: 100%;
+    height: 48px;
+    margin: 0;
+    cursor: grab;
+    opacity: 0;
+  }
+
+  .p21-switch input:focus-visible + .p21-track {
+    outline: 3px solid var(--focus);
+    outline-offset: 3px;
+  }
+
+  .p21-track {
+    position: absolute;
+    top: 11px;
+    right: 0;
+    left: 0;
+    height: 26px;
+    border: 1px solid var(--line-strong);
+    border-radius: 4px;
+    background: var(--surface);
+  }
+
+  .p21-thumb {
+    position: absolute;
+    top: 3px;
+    left: 4px;
+    width: calc(50% - 8px);
+    height: 40px;
+    border: 1px solid var(--accent);
+    border-radius: var(--radius-sm);
+    background: var(--accent-soft);
+    pointer-events: none;
+  }
+
+  .p21-choice {
+    position: absolute;
+    top: 12px;
+    z-index: 1;
+    width: 50%;
+    color: var(--text-muted);
+    font-size: var(--fs-label);
+    font-weight: 650;
+    line-height: 24px;
+    text-align: center;
+    pointer-events: none;
+  }
+
+  .p21-choice.north { left: 0; }
+  .p21-choice.south { right: 0; }
+  .p21-choice.is-current { color: var(--accent); }
+
+  .p21-progress {
+    display: flex;
+    flex: 0 0 190px;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--sp-3);
+  }
+
+  .p21-marks { display: flex; gap: var(--sp-2); }
+  .p21-mark {
+    width: 28px;
+    height: 4px;
+    background: var(--line-strong);
+  }
+  .p21-mark.is-seen { background: var(--accent); }
+
+  .p21-reset {
+    display: none;
+    flex: 0 0 44px;
+    width: 44px;
+    min-width: 44px;
+    padding: 0;
+    font-size: 24px;
+  }
+  .p21-reset.is-visible { display: inline-flex; }
+
+  .p21-generalization {
+    min-height: 190px;
+    gap: var(--sp-3);
+  }
+
+  .p21-generalization > .claim {
+    max-width: 1180px;
+    padding: var(--sp-3) var(--sp-5);
+  }
+
+  .p21-generalization > .trunk { top: 42px; }
+  .p21-generalization > .supports {
+    gap: var(--sp-3);
+    padding-top: var(--sp-4);
+  }
+  .p21-generalization > .supports::before { top: var(--sp-4); }
+  .p21-generalization .support {
+    min-height: 88px;
+    padding: var(--sp-3) var(--sp-4);
+  }
+  .p21-generalization .support::before { height: var(--sp-4); }
+  .p21-generalization .support strong {
+    display: block;
+    margin-bottom: var(--sp-1);
+    color: var(--text);
+    font-size: var(--fs-body);
+    line-height: var(--lh-tight);
+  }
+  .p21-generalization .support.is-current {
+    border-top-color: var(--accent);
+    background: var(--accent-soft);
+    color: var(--text);
+  }
+
+  .p21-feedback {
+    min-width: 244px;
+    color: var(--text-muted);
+    font-size: var(--fs-sec);
+    line-height: var(--lh-body);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .p21-earth { box-shadow: inset -48px 0 34px rgb(7 16 24 / 82%); }
+  }
+</style>
+</head>
+<body data-page="21" data-total="50">
+<div id="stage">
+<main id="main">
+  <section class="page p21-page min0" aria-label="近日点与南北半球季节对照">
+    <div class="p21-scene min0">
+      <div class="p21-orbit min0" aria-label="地球固定在近日点的示意图">
+        <canvas class="p21-orbit-canvas cv-fill" id="orbitCanvas" aria-hidden="true"></canvas>
+        <div class="p21-orbit-tag">近日点 · 轨道位置锁定</div>
+        <div class="p21-sun" aria-hidden="true"></div>
+        <div class="p21-sun-label">太阳</div>
+        <div class="p21-distance" aria-hidden="true"></div>
+        <div class="p21-distance-value" id="distanceValue">— AU</div>
+        <div class="p21-lock">同一时刻 · 同一日地距离</div>
+        <div class="p21-earth-wrap">
+          <div class="p21-earth" aria-hidden="true">
+            <div class="p21-hemi north is-current" id="northArc"></div>
+            <div class="p21-hemi south" id="southArc"></div>
+          </div>
+          <div class="p21-earth-label">地球 · 近日点</div>
+        </div>
+        <div class="p21-baseline">
+          <strong>被控制的变量</strong>
+          <span>日期不变</span>
+          <span>轨道位置不变</span>
+          <span>日地距离不变</span>
+          <span class="equal">只换观察半球</span>
+        </div>
+      </div>
+      <aside class="p21-data min0" aria-label="近日点测量读数">
+        <div class="label">受控条件</div>
+        <div class="readout is-current">
+          <span class="name">观察半球</span>
+          <span class="value" id="hemiValue">北半球</span>
+        </div>
+        <div class="readout">
+          <span class="name">近日点距离</span>
+          <span class="value" id="periValue">— AU</span>
+        </div>
+        <div class="readout">
+          <span class="name">相对远日点辐照</span>
+          <span class="value" id="fluxValue">—</span>
+        </div>
+        <p class="secondary">距离变化影响整颗地球的辐照，不能让两个半球得到相反解释。</p>
+      </aside>
+    </div>
+
+    <div class="p21-control">
+      <span class="ctl-label label">切换观察对象</span>
+      <div class="p21-switch no-pan" id="switchWrap">
+        <input id="hemiSwitch" type="range" min="0" max="1" step="1" value="0" aria-label="观察半球，0 为北半球，1 为南半球">
+        <div class="p21-track" aria-hidden="true"></div>
+        <div class="p21-thumb" id="switchThumb" aria-hidden="true"></div>
+        <span class="p21-choice north is-current" id="northChoice">北半球 · 冬季</span>
+        <span class="p21-choice south" id="southChoice">南半球 · 夏季</span>
+      </div>
+      <div class="p21-progress">
+        <span class="p21-feedback" id="feedback" aria-live="polite">近日点落在北半球冬季期间。</span>
+        <span class="p21-marks" aria-hidden="true"><i class="p21-mark is-seen" id="markNorth"></i><i class="p21-mark" id="markSouth"></i></span>
+        <span class="mono" id="progressText">半球对照 1/2</span>
+      </div>
+      <button class="p21-reset" id="resetButton" type="button" title="重置为北半球" aria-label="重置为北半球">↺</button>
+    </div>
+
+    <section class="k-generalization p21-generalization min0" aria-label="距离不是季节主因的证据结构">
+      <div class="claim" id="claim">地球在近日点时，北半球仍处于冬季；同一距离对应南北半球相反季节，因此距离不是季节的主要成因。</div>
+      <div class="trunk" aria-hidden="true"></div>
+      <div class="supports">
+        <div class="support is-current" id="supportDistance"><strong>共同条件</strong>南北半球共享同一日地距离。</div>
+        <div class="support is-current" id="supportNorth"><strong>北半球</strong>近日点仍落在冬季期间。</div>
+        <div class="support" id="supportSouth"><strong>南半球</strong>地球位置不动，季节却是夏季。</div>
+        <div class="support" id="supportFlux"><strong>距离的作用</strong>改变整颗地球接收的太阳辐照。</div>
+      </div>
+    </section>
+  </section>
+</main>
+</div>
+<script src="assets/lib/gsap.min.js"></script>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script>
+Lec.mount({
+  index: 21,
+  kicker: "SEASONS · DISTANCE TEST",
+  title: "离太阳最近时，北半球为什么仍是冬季？",
+  take: "地球在近日点时，北半球仍处于冬季；同一距离对应南北半球相反季节，因此距离不是季节的主要成因。"
+});
+
+(function () {
+  var earth = Lec.K.EARTH;
+  var peri = Lec.P.perihelionAU(earth);
+  var aphe = Lec.P.aphelionAU(earth);
+  var fluxRatio = Lec.P.solarFluxRatio(peri, aphe);
+  var fmt = Lec.P.significant;
+  var reduced = Deck.reduced();
+  var state = { hemi: 0, seen: [true, false] };
+
+  var input = document.getElementById('hemiSwitch');
+  var thumb = document.getElementById('switchThumb');
+  var distanceLine = document.querySelector('.p21-distance');
+  var claim = document.getElementById('claim');
+  var reset = document.getElementById('resetButton');
+
+  document.getElementById('distanceValue').textContent = fmt(peri, 4) + ' AU';
+  document.getElementById('periValue').textContent = fmt(peri, 4) + ' AU';
+  document.getElementById('fluxValue').textContent = fmt(fluxRatio, 3) + '×';
+
+  Deck.autofit(document.getElementById('orbitCanvas'), function (ctx, width, height) {
+    var primary = Deck.rgba('--primary', 0.28);
+    var primarySoft = Deck.rgba('--primary', 0.09);
+    var line = Deck.rgba('--line-strong', 0.45);
+    var accent = Deck.rgba('--accent', 0.16);
+    var beam = ctx.createLinearGradient(150, 0, width - 120, 0);
+    beam.addColorStop(0, accent);
+    beam.addColorStop(0.6, primarySoft);
+    beam.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = beam;
+    ctx.fillRect(150, 56, width - 250, 142);
+    ctx.strokeStyle = line;
+    ctx.lineWidth = 1;
+    for (var x = 194; x < width - 210; x += 80) {
+      ctx.beginPath();
+      ctx.moveTo(x, 58);
+      ctx.lineTo(x, 198);
+      ctx.stroke();
+    }
+    ctx.strokeStyle = primary;
+    ctx.lineWidth = 18;
+    ctx.beginPath();
+    ctx.ellipse(width * 0.62, -62, width * 0.43, 260, 0, 0.15, 2.98);
+    ctx.stroke();
+    ctx.fillStyle = Deck.rgba('--primary', 0.06);
+    ctx.fillRect(36, height - 68, width - 72, 46);
+  });
+
+  function setCurrent(id, on) {
+    document.getElementById(id).classList.toggle('is-current', on);
+  }
+
+  function render(animate) {
+    var south = state.hemi === 1;
+    state.seen[state.hemi] = true;
+    var completed = state.seen[0] && state.seen[1];
+
+    input.value = String(state.hemi);
+    document.getElementById('hemiValue').textContent = south ? '南半球' : '北半球';
+    document.getElementById('feedback').textContent = south
+      ? '地球位置不动，南半球标签翻为夏季。'
+      : '近日点落在北半球冬季期间。';
+    document.getElementById('progressText').textContent = '半球对照 ' + (completed ? '2/2' : '1/2');
+
+    setCurrent('northArc', !south);
+    setCurrent('southArc', south);
+    setCurrent('northChoice', !south);
+    setCurrent('southChoice', south);
+    setCurrent('supportNorth', state.seen[0]);
+    setCurrent('supportSouth', state.seen[1]);
+    setCurrent('supportFlux', completed);
+    setCurrent('markNorth', state.seen[0]);
+    setCurrent('markSouth', state.seen[1]);
+    claim.classList.toggle('is-current', completed);
+    reset.classList.toggle('is-visible', completed);
+
+    if (!animate || reduced) {
+      gsap.set(thumb, { xPercent: south ? 100 : 0 });
+      return;
+    }
+
+    gsap.to(thumb, { xPercent: south ? 100 : 0, duration: 0.42, ease: 'back.out(1.6)', overwrite: 'auto' });
+    gsap.fromTo(south ? '#southArc' : '#northArc',
+      { scale: 0.94, transformOrigin: '50% 50%' },
+      { scale: 1, duration: 0.5, ease: 'power2.out', clearProps: 'transform' });
+    gsap.fromTo(distanceLine,
+      { boxShadow: '0 0 0 var(--primary)' },
+      { boxShadow: '0 0 18px var(--primary)', duration: 0.28, repeat: 1, yoyo: true, ease: 'power1.out', clearProps: 'boxShadow' });
+    if (completed) {
+      gsap.fromTo(claim, { x: -8 }, { x: 0, duration: 0.45, ease: 'power2.out', clearProps: 'transform' });
+    }
+  }
+
+  input.addEventListener('input', function () {
+    state.hemi = Number(input.value);
+    render(true);
+  });
+
+  input.addEventListener('change', function () {
+    state.hemi = Number(input.value) < 0.5 ? 0 : 1;
+    render(true);
+  });
+
+  reset.addEventListener('click', function () {
+    state = { hemi: 0, seen: [true, false] };
+    render(!reduced);
+    input.focus();
+  });
+
+  render(false);
+
+  if (!reduced) {
+    gsap.from('.p21-orbit::before', { duration: 0 });
+    gsap.from('.p21-earth-wrap', { x: 42, autoAlpha: 0, duration: 0.65, ease: 'power2.out' });
+    gsap.from('.p21-distance', { scaleX: 0, duration: 0.7, delay: 0.18, ease: 'power2.out', clearProps: 'transform' });
+    gsap.from('.p21-generalization .support', { y: 10, autoAlpha: 0, duration: 0.42, stagger: 0.08, delay: 0.3, ease: 'power1.out', clearProps: 'transform,opacity,visibility' });
+  }
+}());
+</script>
+</body>
+</html>

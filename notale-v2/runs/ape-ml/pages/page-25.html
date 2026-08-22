@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  #stage{padding:28px 36px 26px;gap:16px;overflow:hidden}
+  .eyebrow{color:var(--teal);font:700 var(--fs-label)/1.4 var(--font-mono);letter-spacing:.12em}
+  .topline{display:flex;align-items:flex-end;justify-content:space-between;gap:24px}
+  .statusline{display:flex;align-items:center;gap:12px}
+  .sim-panel{position:relative;padding:14px;border:var(--stroke) solid var(--line-strong);border-radius:var(--r-md);background:var(--panel-deep);overflow:hidden}
+  #world{position:relative;width:900px;height:430px;flex:0 0 900px;border-radius:var(--r-sm);overflow:hidden;background:var(--panel-deep)}
+  #world canvas{display:block;width:900px!important;height:430px!important}
+  .world-tag{position:absolute;z-index:3;padding:5px 10px;color:var(--ink-muted);font-size:var(--fs-label);border:1px solid var(--line);border-radius:999px;background:var(--panel);pointer-events:none}
+  .tag-body{left:188px;top:26px}.tag-handle{left:386px;top:184px}.tag-wheel{right:95px;top:42px}.tag-anchor{left:36px;bottom:34px}
+  .rack{position:absolute;z-index:4;right:18px;bottom:18px;width:230px;min-height:92px;padding:12px;border:2px dashed var(--teal-dim);border-radius:var(--r-md);background:rgba(9,22,30,.86);text-align:center}
+  .rack.ready{border-color:var(--amber);box-shadow:inset 0 0 24px rgba(255,181,71,.1)}
+  .rack-title{color:var(--teal-soft);font-size:var(--fs-label);font-weight:700}
+  .rack-slots{display:flex;justify-content:center;gap:8px;margin-top:10px}
+  .slot{width:54px;height:34px;display:grid;place-items:center;color:var(--ink-faint);font:700 16px/1 var(--font-mono);border:1px solid var(--line);border-radius:var(--r-sm)}
+  .slot.on{color:var(--teal);border-color:var(--teal);background:rgba(54,214,192,.1)}
+  .handle-hit{position:absolute;z-index:6;left:402px;top:222px;width:56px;height:56px;border:3px solid var(--amber);border-radius:50%;background:rgba(255,181,71,.14);cursor:grab;touch-action:none}
+  .handle-hit:focus-visible,.part:focus-visible{outline:4px solid var(--focus);outline-offset:3px}
+  .handle-hit[aria-disabled="true"]{opacity:.45;cursor:not-allowed}
+  .side{width:386px;flex:0 0 386px}
+  .curve{height:138px;width:100%;display:block;border:1px solid var(--line);border-radius:var(--r-sm);background:var(--panel-deep)}
+  .checks{display:flex;flex-direction:column;gap:10px}
+  .check{display:flex;align-items:center;gap:10px;color:var(--ink-muted);font-size:var(--fs-sec)}
+  .check b{width:24px;height:24px;display:grid;place-items:center;border:1px solid var(--line-strong);border-radius:50%;color:var(--ink-faint)}
+  .check.done{color:var(--text)}.check.done b{color:var(--bg);border-color:var(--teal);background:var(--teal)}
+  .feedback{min-height:54px;padding:12px 14px;color:var(--amber-soft);font-size:var(--fs-sec);line-height:var(--lh-copy);border-left:4px solid var(--amber);background:rgba(255,181,71,.08)}
+  .part{cursor:grab;user-select:none;transition:transform 180ms ease-out,border-color 180ms ease-out}
+  .part.dragging{transform:translateY(-8px);border-color:var(--amber)}
+  .part.installed{border-color:var(--teal);background:var(--panel-hi)}
+  .part .verb{color:var(--amber-soft);font-size:var(--fs-label);font-weight:700}
+  .part p{font-size:var(--fs-sec);line-height:var(--lh-copy)}
+  .it-title{display:flex;align-items:center;justify-content:space-between}
+  .icon{font:800 22px/1 var(--font-mono);color:var(--teal)}
+  @media (prefers-reduced-motion:reduce){.part{transition:none}}
+</style>
+</head>
+<body data-page="25" data-total="45">
+<div id="stage">
+  <header style="height:92px" class="topline shrink0">
+    <div class="col gap-1"><div class="eyebrow">MICROGRAVITY / LOAD</div><h1>重量不在，负荷要造</h1></div>
+    <p class="lead" style="max-width:690px">失重中质量和惯性仍在；训练器要主动制造阻力，并让反作用传回身体与舱体。</p>
+  </header>
+
+  <main style="flex:1" class="row gap-3 min0">
+    <section class="sim-panel row gap-3 min0 grow" aria-label="失重阻力训练舱">
+      <div id="world" class="no-pan" aria-hidden="true">
+        <span class="world-tag tag-body">漂浮人体</span><span class="world-tag tag-handle">拉动手柄</span>
+        <span class="world-tag tag-wheel">惯性轮</span><span class="world-tag tag-anchor">舱体固定孔</span>
+        <div id="rack" class="rack" aria-label="中央训练架投放区">
+          <div class="rack-title">中央训练架</div>
+          <div class="rack-slots"><span id="slot-spring" class="slot">弹</span><span id="slot-wheel" class="slot">轮</span><span id="slot-anchor" class="slot">固</span></div>
+        </div>
+        <div id="handle" class="handle-hit" role="slider" tabindex="0" aria-label="训练手柄；左右拖动或用方向键完成往返" aria-valuemin="0" aria-valuemax="100" aria-valuenow="50" aria-disabled="true"></div>
+      </div>
+      <aside class="side col gap-3 min0">
+        <div class="readout"><span class="label">接通进度</span><span id="count" class="value" aria-live="polite">已接通 0/3 类部件</span></div>
+        <div><div class="label" style="margin-bottom:8px">全程相对负荷</div><canvas id="curve" class="curve" width="350" height="138" aria-label="相对负荷曲线"></canvas></div>
+        <div class="checks" aria-label="任务检查项">
+          <div id="c-resist" class="check"><b>—</b><span>阻力来源</span></div>
+          <div id="c-path" class="check"><b>—</b><span>闭合路径</span></div>
+          <div id="c-trip" class="check"><b>—</b><span>完成一次往返</span></div>
+        </div>
+        <div id="feedback" class="feedback" aria-live="polite">把下方部件逐个拖入训练架；键盘可用 Enter 安装。</div>
+        <button id="reset" class="btn" type="button">换一种组合</button>
+      </aside>
+    </section>
+  </main>
+
+  <section style="height:178px;--enum-cols:3" class="k-enumeration shrink0" aria-label="三种同级造力方法">
+    <article class="it part" data-part="spring" tabindex="0" role="button" aria-label="安装弹簧"><div class="it-title">弹簧 <span class="icon">↝</span></div><span class="verb">拉伸产生回复作用</span><p>力传到手与肌肉；行程末端更明显，回程仍有拉力。</p></article>
+    <article class="it part" data-part="wheel" tabindex="0" role="button" aria-label="安装惯性轮"><div class="it-title">惯性轮 <span class="icon">◎</span></div><span class="verb">改变转速需要施力</span><p>力传到手臂；启动、制动与换向时负荷突出。</p></article>
+    <article class="it part" data-part="anchor" tabindex="0" role="button" aria-label="安装固定点"><div class="it-title">固定点 <span class="icon">⊕</span></div><span class="verb">把反作用传回舱体</span><p>闭合受力路径；身体不再随拉动整体漂走。</p></article>
+  </section>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script src="assets/lib/matter.min.js"></script>
+<script>
+(function(){
+  Deck.init({index:25,total:45});
+  const M=Matter, worldEl=document.getElementById('world');
+  const engine=M.Engine.create({gravity:{x:0,y:0,scale:0}});
+  const render=M.Render.create({element:worldEl,engine,options:{width:900,height:430,wireframes:false,background:Deck.token('--panel-deep'),showAngleIndicator:false}});
+  const torso=M.Bodies.rectangle(250,230,72,150,{mass:70,frictionAir:.08,render:{fillStyle:Deck.token('--panel-hi'),strokeStyle:Deck.token('--teal'),lineWidth:3}});
+  const head=M.Bodies.circle(250,130,30,{mass:8,frictionAir:.08,render:{fillStyle:Deck.token('--panel-hi'),strokeStyle:Deck.token('--teal-soft'),lineWidth:3}});
+  const wheel=M.Bodies.circle(650,170,54,{mass:18,frictionAir:.015,isStatic:true,render:{fillStyle:Deck.token('--panel'),strokeStyle:Deck.token('--teal-dim'),lineWidth:5}});
+  const anchor=M.Bodies.circle(78,340,10,{isStatic:true,render:{fillStyle:Deck.token('--ink-faint')}});
+  const hand=M.Bodies.circle(430,250,18,{isStatic:true,render:{fillStyle:'transparent',strokeStyle:'transparent'}});
+  const neck=M.Constraint.create({bodyA:head,bodyB:torso,pointB:{x:0,y:-72},length:12,stiffness:.7,render:{strokeStyle:Deck.token('--line-strong')}});
+  const spring=M.Constraint.create({bodyA:torso,pointA:{x:35,y:0},bodyB:hand,stiffness:.035,damping:.12,length:120,render:{visible:false}});
+  const tether=M.Constraint.create({bodyA:anchor,bodyB:torso,pointB:{x:-30,y:60},length:190,stiffness:.08,render:{visible:false}});
+  M.Composite.add(engine.world,[torso,head,wheel,anchor,hand,neck,spring,tether]);
+  M.Render.run(render);
+  let runner=M.Runner.create(); if(!Deck.reduced()) M.Runner.run(runner,engine); else M.Engine.update(engine,16);
+
+  const state={spring:false,wheel:false,anchor:false,trip:false,trace:[],side:0};
+  const parts=[...document.querySelectorAll('.part')], rack=document.getElementById('rack'), handle=document.getElementById('handle');
+  function installedCount(){return ['spring','wheel','anchor'].filter(k=>state[k]).length}
+  function setCheck(id,on){const e=document.getElementById(id);e.classList.toggle('done',on);e.querySelector('b').textContent=on?'✓':'—'}
+  function update(msg){
+    const n=installedCount(), resistance=state.spring||state.wheel;
+    document.getElementById('count').textContent='已接通 '+n+'/3 类部件';
+    document.getElementById('slot-spring').classList.toggle('on',state.spring);document.getElementById('slot-wheel').classList.toggle('on',state.wheel);document.getElementById('slot-anchor').classList.toggle('on',state.anchor);
+    rack.classList.toggle('ready',n===3); handle.setAttribute('aria-disabled',n<3?'true':'false');
+    setCheck('c-resist',resistance);setCheck('c-path',state.anchor&&resistance);setCheck('c-trip',state.trip);
+    if(msg) document.getElementById('feedback').textContent=msg;
+    spring.render.visible=state.spring;tether.render.visible=state.anchor;wheel.render.strokeStyle=state.wheel?Deck.token('--teal'):Deck.token('--teal-dim');
+  }
+  function install(el){const k=el.dataset.part;if(state[k])return;state[k]=true;el.classList.add('installed');el.setAttribute('aria-pressed','true');
+    update(k==='anchor'?'固定点接通：反作用有了返回舱体的路径。':k==='spring'?'弹簧接通：位移越大，回复作用越明显。':'惯性轮接通：改变转速时才出现明显阻力。');
+  }
+  parts.forEach(el=>{
+    el.addEventListener('pointerdown',e=>{el.setPointerCapture(e.pointerId);el.classList.add('dragging')});
+    el.addEventListener('pointerup',e=>{el.classList.remove('dragging');const r=rack.getBoundingClientRect();if(e.clientX>=r.left&&e.clientX<=r.right&&e.clientY>=r.top&&e.clientY<=r.bottom)install(el);else document.getElementById('feedback').textContent='部件未进入训练架，已回到原位。'});
+    el.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();install(el)}});
+  });
+  let dragging=false,startX=0,origin=430;
+  function moveHandle(x){if(installedCount()<3){update('只有固定或只有阻力都不够：先接通三类部件。');return}
+    x=Deck.clamp(x,355,515);M.Body.setPosition(hand,{x:x,y:250});handle.style.transform='translateX('+(x-430)+'px)';handle.setAttribute('aria-valuenow',String(Math.round((x-355)/1.6)));
+    const displacement=Math.abs(x-430)/85, velocity=Math.abs(x-(state.lastX||x))/20;
+    const load=(state.spring?displacement*.68:0)+(state.wheel?velocity*.65:0);state.trace.push(Deck.clamp(load,0,1));if(state.trace.length>90)state.trace.shift();
+    if(x>490)state.side=1;if(state.side===1&&x<370){state.trip=true;update('往返完成：弹簧提供持续阻力，惯性轮突出换向负荷，固定点闭合受力路径。')}
+    state.lastX=x;drawCurve();
+  }
+  handle.addEventListener('pointerdown',e=>{if(installedCount()<3){moveHandle(430);return}dragging=true;startX=Deck.pt(worldEl,e).x;origin=Matter.Body.position(hand).x;handle.setPointerCapture(e.pointerId)});
+  handle.addEventListener('pointermove',e=>{if(dragging)moveHandle(origin+Deck.pt(worldEl,e).x-startX)});
+  handle.addEventListener('pointerup',()=>{dragging=false});
+  handle.addEventListener('keydown',e=>{if(e.key==='ArrowLeft'||e.key==='ArrowRight'){e.preventDefault();moveHandle(M.Body.position(hand).x+(e.key==='ArrowRight'?16:-16))}});
+  const cv=document.getElementById('curve'),ctx=cv.getContext('2d');
+  function drawCurve(){const w=cv.width,h=cv.height;ctx.clearRect(0,0,w,h);ctx.strokeStyle=Deck.token('--line-strong');ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(14,h-18);ctx.lineTo(w-10,h-18);ctx.stroke();if(state.trace.length<2)return;ctx.strokeStyle=state.trip?Deck.token('--amber'):Deck.token('--teal');ctx.lineWidth=4;ctx.beginPath();state.trace.forEach((v,i)=>{const x=14+i*(w-28)/89,y=h-18-v*(h-34);i?ctx.lineTo(x,y):ctx.moveTo(x,y)});ctx.stroke()}
+  document.getElementById('reset').addEventListener('click',()=>{Object.assign(state,{spring:false,wheel:false,anchor:false,trip:false,trace:[],side:0,lastX:430});parts.forEach(e=>{e.classList.remove('installed');e.removeAttribute('aria-pressed')});M.Body.setPosition(hand,{x:430,y:250});handle.style.transform='';update('已清空。重新组合三类部件，再完成一次往返。');drawCurve()});
+  update();drawCurve();
+  addEventListener('pagehide',()=>{M.Runner.stop(runner);M.Render.stop(render)});
+})();
+</script>
+</body>
+</html>

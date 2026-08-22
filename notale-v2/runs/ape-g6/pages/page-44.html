@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>三张席位，三种必须回答的问题</title>
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  .game{display:flex;flex-direction:column;gap:10px}
+  .instruction{font-size:var(--fs-sec);line-height:var(--lh-sec);color:var(--muted)}
+  #main{overflow:visible}
+  progress.lec-header__progress{-webkit-appearance:none;appearance:none;overflow:visible}
+  .arena{display:flex;gap:16px;height:186px}
+  .rack{flex:1.22 1 0;display:flex;flex-direction:column;gap:8px;padding:14px;border:1px solid var(--line);border-radius:var(--radius-md);background:var(--surface)}
+  .rack-head,.seat-head{display:flex;align-items:baseline;justify-content:space-between;gap:12px}
+  .rack-head strong,.seat-head strong{font-size:var(--fs-h2);line-height:1.35}
+  .count{font-size:var(--fs-label);line-height:1.4;color:var(--muted)}
+  .people{display:flex;flex-wrap:wrap;gap:8px}
+  .person{flex:1 1 30%;min-width:0;min-height:54px;padding:6px 10px;border:1px solid var(--line-strong);border-radius:var(--radius-sm);background:var(--surface);color:var(--text);font:inherit;text-align:left;cursor:grab}
+  .person strong{display:block;font-size:var(--fs-sec);line-height:1.35}
+  .person span{display:block;margin-top:2px;color:var(--muted);font-size:var(--fs-label);line-height:1.4}
+  .person[aria-pressed="true"]{border-color:var(--accent);background:var(--accent-soft);box-shadow:inset 4px 0 var(--accent)}
+  .cabin{flex:.78 1 0;display:flex;flex-direction:column;gap:10px;padding:14px;border:3px solid var(--accent-strong);border-radius:32px 32px var(--radius-md) var(--radius-md);background:linear-gradient(180deg,var(--accent-soft),var(--surface))}
+  .seats{display:flex;gap:8px;flex:1}
+  .seat{display:flex;flex:1 1 0;align-items:center;justify-content:center;min-width:0;padding:8px;border:2px dashed var(--line-strong);border-radius:var(--radius-sm);font-size:var(--fs-sec);line-height:1.35;text-align:center;color:var(--muted)}
+  .seat.filled{border-style:solid;border-color:var(--accent);background:var(--surface);color:var(--text);font-weight:650}
+  .rule{display:flex;align-items:center;gap:10px}
+  label{font-size:var(--fs-label);font-weight:700;line-height:1.4}
+  select{min-width:0;min-height:42px;padding:7px 30px 7px 10px;border:1px solid var(--line-strong);border-radius:var(--radius-sm);background:var(--surface);color:var(--text);font:inherit;font-size:var(--fs-sec)}
+  .justice{display:flex;gap:12px;position:relative}
+  .justice::after{content:"共同形成可辩护方案";position:absolute;left:35%;right:35%;bottom:-20px;padding-top:2px;border-top:3px solid var(--accent);color:var(--accent-strong);font-size:var(--fs-label);font-weight:700;line-height:1.4;text-align:center}
+  .branch{flex:1 1 0;min-width:0}
+  .branch .box{height:142px;padding:12px}
+  .branch .bt{margin:-12px -12px 10px;padding:7px 12px;font-size:var(--fs-h2)}
+  .branch p{font-size:var(--fs-sec);line-height:var(--lh-sec)}
+  .branch .summary{margin-top:8px;color:var(--muted)}
+  .actions{display:flex;align-items:center;justify-content:flex-end;gap:10px;margin-top:18px}
+  .actions button{min-height:42px;padding:8px 16px;border:1px solid var(--accent-strong);border-radius:var(--radius-sm);background:var(--accent);color:white;font:inherit;font-size:var(--fs-sec);font-weight:700;cursor:pointer}
+  .actions .reset{background:var(--surface);color:var(--accent-strong)}
+  .status{margin-right:auto;font-size:var(--fs-sec);line-height:var(--lh-sec);font-weight:650}
+  .checks{display:none;gap:8px;flex-wrap:wrap;margin-top:3px}
+  .checks.open{display:flex}
+  .check{flex:1 1 46%;font-size:var(--fs-sec);line-height:var(--lh-sec)}
+  button:focus-visible,select:focus-visible,[tabindex]:focus-visible{outline:3px solid var(--focus);outline-offset:2px}
+</style>
+</head>
+<body data-page="44" data-total="48">
+<div id="stage"><main id="main"></main></div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script>
+Lec.mount({index:44,kicker:"ORBITAL JUSTICE",title:"三张席位，三种必须回答的问题",take:"“谁能上太空、谁获益、谁承担风险”是三类不同的制度问题，工程可行性不能替代其中任何一类。"});
+Deck.init({index:44,total:48});
+const main=document.getElementById('main');
+const LP=Lec.P||Lec;
+const N=(v,lo,hi)=>LP.round(LP.clamp(LP.finiteNumber(v,lo),lo,hi),0);
+const P44=Lec.P44||{};
+const candidateCount=N(P44.CANDIDATE_COUNT,6,12), seatCount=N(P44.SEAT_COUNT,3,candidateCount), categoryCount=N(P44.JUSTICE_CATEGORY_COUNT,3,6), checkCount=N(P44.DEFENSIBILITY_CHECK_COUNT,4,8);
+const people=[
+ {id:'science',name:'轨道科学研究员',note:'实验执行｜收益或集中'},
+ {id:'repair',name:'航天系统维修员',note:'故障处置｜操作压力'},
+ {id:'teacher',name:'公共教育工作者',note:'开放课程｜需额外训练'},
+ {id:'patient',name:'患者代表',note:'疾病研究｜需医疗保障'},
+ {id:'funder',name:'出资机构代表',note:'购买主张｜资格有争议'},
+ {id:'lottery',name:'公开抽签入选者',note:'公众机会｜需任务适配'}
+].slice(0,candidateCount);
+const state={selected:[],principle:'',benefit:'',risk:'',submitted:false};
+main.innerHTML=`<section class="game" aria-label="分配轨道席位小游戏">
+ <p class="instruction">先公开选择原则，再选择 ${seatCount} 位乘员；同时说明收益如何开放、风险如何保障。</p>
+ <div class="arena">
+  <section class="rack min0"><div class="rack-head"><strong>候选人</strong><span class="count">${candidateCount} 位候选人</span></div><div class="people" id="people"></div></section>
+  <section class="cabin min0" id="cabin"><div class="seat-head"><strong>轨道舱</strong><span class="count">${seatCount} 个席位</span></div><div class="seats" id="seats"></div></section>
+ </div>
+ <div class="k-classification justice" aria-label="${categoryCount} 类公平问题">
+  <section class="lv branch"><div class="box"><span class="bt">机会分配｜谁能上？</span><div class="rule"><label for="principle">公开原则</label><select id="principle"><option value="">请选择</option><option value="mission">任务适配优先</option><option value="public">公共收益优先</option><option value="equal">机会平等优先</option><option value="mixed">混合原则</option></select></div><p class="summary" id="opportunity">尚未分配；被排除者也必须可见。</p></div></section>
+  <section class="lv branch"><div class="box"><span class="bt">收益分配｜谁获益？</span><div class="rule"><label for="benefit">收益制度</label><select id="benefit"><option value="">请选择</option><option value="open">成果开放</option><option value="limited">限定共享</option><option value="private">出资者专有</option></select></div><p class="summary" id="benefitText">席位不等于任务收益自然共享。</p></div></section>
+  <section class="lv branch"><div class="box"><span class="bt">风险分配｜谁承担？</span><div class="rule"><label for="risk">风险制度</label><select id="risk"><option value="">请选择</option><option value="minimum">最低合规</option><option value="care">共同保障</option><option value="compensate">风险补偿</option></select></div><p class="summary" id="riskText">自愿参加不能消除制度责任。</p></div></section>
+ </div>
+ <div class="actions"><div class="status" id="status" aria-live="polite">选择候选人，观察三类责任如何变化。</div><button class="reset" id="reset">重置</button><button id="submit">提交辩护</button></div>
+ <div class="checks" id="checks" aria-live="polite"></div>
+</section>`;
+const peopleEl=document.getElementById('people'), seatsEl=document.getElementById('seats');
+people.forEach(p=>{const b=document.createElement('button');b.className='person';b.type='button';b.dataset.id=p.id;b.draggable=true;b.setAttribute('aria-pressed','false');b.innerHTML=`<strong>${p.name}</strong><span>${p.note}</span>`;b.addEventListener('click',()=>toggle(p.id));b.addEventListener('dragstart',e=>e.dataTransfer.setData('text/plain',p.id));peopleEl.appendChild(b)});
+const cabin=document.getElementById('cabin');cabin.addEventListener('dragover',e=>e.preventDefault());cabin.addEventListener('drop',e=>{e.preventDefault();toggle(e.dataTransfer.getData('text/plain'))});
+['principle','benefit','risk'].forEach(id=>document.getElementById(id).addEventListener('change',e=>{state[id]=e.target.value;state.submitted=false;render()}));
+function toggle(id){const i=state.selected.indexOf(id);if(i>=0)state.selected.splice(i,1);else if(state.selected.length<seatCount)state.selected.push(id);else{document.getElementById('status').textContent='机会已满；先移出一位候选人。';return}state.submitted=false;render()}
+function render(){
+ document.querySelectorAll('.person').forEach(b=>b.setAttribute('aria-pressed',String(state.selected.includes(b.dataset.id))));
+ seatsEl.innerHTML='';for(let i=0;i<seatCount;i++){const p=people.find(x=>x.id===state.selected[i]);const d=document.createElement('div');d.className='seat'+(p?' filled':'');d.textContent=p?p.name:'空席位';seatsEl.appendChild(d)}
+ const chosen=people.filter(p=>state.selected.includes(p.id)), excluded=people.filter(p=>!state.selected.includes(p.id));
+ document.getElementById('opportunity').textContent=chosen.length?`入选：${chosen.map(p=>p.name).join('、')}。未入选 ${excluded.length} 位，仍属于受影响者。`:'尚未分配；被排除者也必须可见。';
+ const bt={open:'公众可用；机构承担整理与安全边界成本。',limited:'任务机构先受益；公众需等待或满足条件。',private:'出资方主要受益；公众与其他机构被排除。'};
+ const rt={minimum:'乘员承担任务风险；制度只履行既定要求。',care:'乘员获退出权与任务后照护；独立审查也保护公共责任。',compensate:'乘员及相关工作人员获共同保障与额外补偿。'};
+ document.getElementById('benefitText').textContent=bt[state.benefit]||'席位不等于任务收益自然共享。';document.getElementById('riskText').textContent=rt[state.risk]||'自愿参加不能消除制度责任。';
+ if(!state.submitted)document.getElementById('checks').classList.remove('open');
+}
+function consistency(){const s=state.selected;return state.principle==='mission'&&s.some(x=>x==='science'||x==='repair')||state.principle==='public'&&s.some(x=>x==='teacher'||x==='patient'||x==='lottery')||state.principle==='equal'&&s.includes('lottery')||state.principle==='mixed'&&s.some(x=>x==='science'||x==='repair')&&s.some(x=>x==='teacher'||x==='patient'||x==='lottery')}
+document.getElementById('submit').addEventListener('click',()=>{state.submitted=true;const tests=[state.selected.length===seatCount,!!state.principle&&consistency(),!!state.benefit,!!state.risk];const msgs=[tests[0]?'席位全部分配且没有重复。':'请先分完全部席位。',tests[1]?'人选能由公开原则解释。':'所选人选尚不能由公开原则解释。',tests[2]?'收益制度已说明受益者与被排除者。':'请说明收益如何开放，以及谁被排除。',tests[3]?'风险制度覆盖乘员与制度责任。':'请处理乘员保障与任务后责任。'];const met=N(tests.filter(Boolean).length,0,checkCount);const box=document.getElementById('checks');box.innerHTML=msgs.map((m,i)=>`<div class="check">${tests[i]?'✓':'○'} ${m}</div>`).join('');box.classList.add('open');document.getElementById('status').textContent=met===checkCount?`方案可辩护：已满足 ${met} / ${checkCount} 项。`:`已满足 ${met} / ${checkCount} 项；请补上具体遗漏。`;});
+document.getElementById('reset').addEventListener('click',()=>{state.selected=[];state.principle=state.benefit=state.risk='';state.submitted=false;['principle','benefit','risk'].forEach(id=>document.getElementById(id).value='');document.getElementById('status').textContent='已重置。先选择公开原则，再分配席位。';render()});
+render();
+</script>
+</body>
+</html>

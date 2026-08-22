@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+#main{display:flex;flex-direction:column;gap:var(--sp-3)}
+.taskbar{height:42px;display:flex;align-items:center;justify-content:space-between;gap:var(--sp-4)}
+.task{font-size:var(--fs-lead);font-weight:720;line-height:1.4}
+.legend{display:flex;align-items:center;gap:var(--sp-4);color:var(--ink-soft);font-size:var(--fs-label);font-weight:650}
+.legend i{display:inline-block;width:13px;height:13px;margin-right:7px;vertical-align:-2px;border:2px solid var(--accent);border-radius:50%}.legend .live{background:var(--accent)}
+.tree-wrap{height:366px;position:relative;border-top:1px solid var(--line);border-bottom:1px solid var(--line);background:linear-gradient(180deg,rgb(255 253 248 / 66%),rgb(235 231 220 / 28%));overflow:hidden}
+#tree{width:100%;height:100%;display:block}
+.branch{fill:none;stroke:var(--line-strong);stroke-width:3;stroke-linecap:round;stroke-linejoin:round;transition:opacity .16s,stroke .16s}
+.branch.active{stroke:var(--accent);stroke-width:5}.branch.dim{opacity:.2}
+.node{cursor:pointer;outline:none}.node circle{stroke:var(--accent);stroke-width:3;fill:var(--paper)}.node.live circle{fill:var(--accent)}.node.junction circle{fill:var(--accent-warm)}.node.selected circle{stroke:var(--accent-2);stroke-width:5}.node.dim{opacity:.35}.node:focus circle{stroke:var(--focus);stroke-width:6}
+.node text{font-family:var(--font-sans);font-size:15px;font-weight:720;fill:var(--text);paint-order:stroke;stroke:var(--paper);stroke-width:5px;stroke-linejoin:round}.node .date{font-size:14px;font-weight:600;fill:var(--ink-soft)}
+.level-mark{position:absolute;left:12px;color:var(--ink-soft);font-size:var(--fs-label);font-weight:700;writing-mode:vertical-rl;letter-spacing:.08em}.level-mark.ends{top:18px}.level-mark.split{bottom:22px}
+.feedback{height:180px;display:flex;gap:var(--sp-3);align-items:stretch}
+.feedback .box{flex:1;padding:var(--sp-4) var(--sp-4) var(--sp-3)}
+.feedback .box>.bt{font-size:var(--fs-label);margin-top:calc(-1 * var(--sp-4) - 1px);margin-bottom:var(--sp-2)}
+.feedback .lv{height:100%;box-sizing:border-box;padding-left:var(--sp-3);display:flex;align-items:center}
+.feedback p{font-size:var(--fs-sec);line-height:var(--lh-sec);font-weight:620}
+.feedback .verdict p{font-size:var(--fs-lead);font-weight:760;color:var(--accent)}
+.reset{align-self:center;min-width:126px;min-height:46px;padding:var(--sp-2) var(--sp-4);color:#fff;font:700 var(--fs-label)/1.35 var(--font-sans);white-space:nowrap;border:1px solid var(--accent);border-radius:var(--radius-sm);background:var(--accent);cursor:pointer}.reset:active{transform:translateY(1px)}
+.live-note{position:absolute;left:24px;bottom:12px;padding:5px 10px;color:var(--text);font-size:var(--fs-sec);font-weight:680;line-height:1.4;border-left:4px solid var(--accent-2);background:rgb(255 253 248 / 92%)}
+</style>
+</head>
+<body data-page="04" data-total="48">
+<div id="stage">
+<main id="main">
+  <div class="taskbar">
+    <p class="task">点一下你认为是人类祖先的节点。</p>
+    <div class="legend" aria-label="图例"><span><i class="live"></i>现生末端</span><span><i></i>灭绝末端</span><span>分叉点＝共同祖先种群</span></div>
+  </div>
+  <section class="tree-wrap" aria-label="可点选的人类演化谱系灌木">
+    <span class="level-mark ends">现生与灭绝末端</span><span class="level-mark split">共同祖先与分支</span>
+    <svg id="tree" role="group" aria-label="用 Tab 或方向键移动，按 Enter 或空格选择节点"></svg>
+    <div id="instant" class="live-note">亲缘接近，不等于一方由另一方演变而来。</div>
+  </section>
+  <section class="k-classification feedback" aria-label="所选节点的三层分类">
+    <div class="box min0"><div class="bt">状态</div><div class="lv" style="--level:0"><p id="status">请选择一个节点</p></div></div>
+    <div class="box min0"><div class="bt">与智人的亲缘关系</div><div class="lv" style="--level:1"><p id="relation">沿枝条追到分叉点，就能找到共同祖先。</p></div></div>
+    <div class="box verdict min0"><div class="bt">是不是智人祖先</div><div class="lv" style="--level:2"><p id="ancestor">等待判断</p></div></div>
+    <button id="reset" class="reset" type="button">重置灌木</button>
+  </section>
+  <div id="announce" class="sr-only" aria-live="polite"></div>
+</main>
+</div>
+<script src="assets/lib/d3.min.js"></script>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script>
+Lec.mount({index:4,kicker:"BRANCHING KINSHIP",title:"人类演化不是阶梯，而是一丛分枝",take:"人类演化像分枝灌木，现生猿类是亲戚而不是我们的祖先。"});
+Deck.init({index:4,total:48});
+
+const wan = years => Deck.fmt(years / 10000, {maximumFractionDigits:0});
+const lcaRange = `约 ${wan(Lec.K.HUMAN_CHIMP_LCA_MIN_YEARS)}万—${wan(Lec.K.HUMAN_CHIMP_LCA_MAX_YEARS)} 万年前`;
+const homoDate = `约 ${wan(Lec.K.GENUS_HOMO_AGE_YEARS)} 万年前出现`;
+const sapiensDate = `约 ${wan(Lec.K.HOMO_SAPIENS_AGE_YEARS)} 万年前出现`;
+const data={id:'older',name:'更早的共同祖先',kind:'junction',status:'推定的共同祖先种群',relation:'与其他现生猿类在更早处分叉。',ancestor:'可能属于更早祖先种群',feedback:'分叉点代表祖先种群，不等于任何一个现生物种。',children:[
+ {id:'apes',name:'其他现生猿类',kind:'live',status:'较远的现生亲戚',relation:'在更早的分叉处与智人共享祖先。',ancestor:'不是',feedback:'亲戚，不是祖先；双方来自更早的共同祖先。'},
+ {id:'lca',name:'人与黑猩猩谱系\n共同祖先种群',date:lcaRange,kind:'junction',status:'分叉前的祖先种群',relation:'此后分成不同谱系；它不是今天的人或黑猩猩。',ancestor:'是祖先种群',feedback:'分叉发生在祖先种群之后，不能把它叫作今天的黑猩猩。',children:[
+  {id:'pan',name:'黑猩猩与倭黑猩猩',kind:'live',status:'现生近亲',relation:'与智人共享较近的共同祖先。',ancestor:'不是',feedback:'亲戚，不是祖先；双方来自更早的共同祖先。'},
+  {id:'early',name:'早期人族分支',kind:'junction',status:'已灭绝近亲形成的分枝群',relation:'共同祖先之后，产生多个后续分支。',ancestor:'不能把整组都称为直系祖先',feedback:'分枝中既有可能的祖先，也有近亲旁支。',children:[
+   {id:'side1',name:'早期人族旁支 A',kind:'extinct',status:'已灭绝旁支',relation:'与通向智人的分支共享祖先。',ancestor:'不是',feedback:'这是近亲旁支；灭绝不等于低级或失败。'},
+   {id:'side2',name:'早期人族旁支 B',kind:'extinct',status:'已灭绝旁支',relation:'与通向智人的分支共享祖先。',ancestor:'不是',feedback:'这是近亲旁支；灭绝不等于低级或失败。'},
+   {id:'homo',name:'人属',date:homoDate,kind:'junction',status:'包含多个分支的属',relation:'智人属于人属，但人属不只有智人。',ancestor:'其中部分种群可能是祖先',feedback:'“人属”是包含多个分支的归类，不是一条单线。',children:[
+    {id:'hside',name:'已灭绝人属旁支',kind:'extinct',status:'已灭绝人属旁支',relation:'与智人共享较近的人属祖先。',ancestor:'不是',feedback:'这是近亲旁支；灭绝不等于低级或失败。'},
+    {id:'sapiens',name:'智人',date:sapiensDate,kind:'live',status:'现生人类物种',relation:'灌木中延续至今的一个末端。',ancestor:'不是自己的祖先',feedback:'这是仍然现生的一个末端分支，不是整棵树的顶端。'}
+   ]}
+  ]}
+ ]}
+]};
+const root=d3.hierarchy(data), nodes=root.descendants();
+const svg=d3.select('#tree').attr('viewBox','0 0 1408 366');
+const tree=d3.tree().size([1280,285]).separation((a,b)=>a.parent===b.parent?1.15:1.45);
+tree(root);
+nodes.forEach(d=>{d.px=64+d.x;d.py=328-d.y;});
+const links=svg.append('g').selectAll('path').data(root.links()).join('path').attr('class','branch').attr('data-target',d=>d.target.data.id).attr('d',d3.linkVertical().x(d=>d.px).y(d=>d.py));
+const ng=svg.append('g').selectAll('g').data(nodes).join('g').attr('class',d=>`node ${d.data.kind}`).attr('transform',d=>`translate(${d.px},${d.py})`).attr('tabindex',0).attr('role','button').attr('aria-label',d=>`${d.data.name.replace('\n','')}，${d.data.status}`);
+ng.append('circle').attr('r',d=>d.data.kind==='junction'?9:8);
+ng.each(function(d){const lines=d.data.name.split('\n'), t=d3.select(this).append('text').attr('text-anchor','middle').attr('y',d.children?18:-14);lines.forEach((s,i)=>t.append('tspan').attr('x',0).attr('dy',i?17:0).text(s));if(d.data.date)t.append('tspan').attr('class','date').attr('x',0).attr('dy',18).text(d.data.date);});
+let selected=null;
+function choose(d){selected=d;const ids=new Set(d.ancestors().map(n=>n.data.id));links.classed('active',l=>ids.has(l.target.data.id)).classed('dim',l=>!ids.has(l.target.data.id));ng.classed('selected',n=>n===d).classed('dim',n=>!ids.has(n.data.id)&&!n.ancestors().includes(d));document.querySelector('#status').textContent=d.data.status;document.querySelector('#relation').textContent=d.data.relation;document.querySelector('#ancestor').textContent=d.data.ancestor;document.querySelector('#instant').textContent=d.data.feedback;document.querySelector('#announce').textContent=`${d.data.name.replace('\n','')}：${d.data.feedback}`;}
+ng.on('click',(e,d)=>choose(d)).on('keydown',(e,d)=>{const i=nodes.indexOf(d);let next=null;if(e.key==='ArrowRight'||e.key==='ArrowDown')next=nodes[(i+1)%nodes.length];if(e.key==='ArrowLeft'||e.key==='ArrowUp')next=nodes[(i-1+nodes.length)%nodes.length];if(next){e.preventDefault();ng.filter(n=>n===next).node().focus();}if(e.key==='Enter'||e.key===' '){e.preventDefault();choose(d);}});
+document.querySelector('#reset').addEventListener('click',()=>{selected=null;links.classed('active dim',false);ng.classed('selected dim',false);document.querySelector('#status').textContent='请选择一个节点';document.querySelector('#relation').textContent='沿枝条追到分叉点，就能找到共同祖先。';document.querySelector('#ancestor').textContent='等待判断';document.querySelector('#instant').textContent='亲缘接近，不等于一方由另一方演变而来。';document.querySelector('#announce').textContent='已重置，所有枝条等权显示。';});
+</script>
+</body>
+</html>

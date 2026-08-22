@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>维持一团火，比点燃它更难</title>
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  .fire-page{height:100%;display:flex;gap:24px;min-width:0}
+  .sim{flex:1.4 1 0;min-width:0;display:flex;flex-direction:column;gap:12px;padding:16px;background:var(--surface);border:1px solid var(--line);border-radius:var(--r-lg);box-shadow:var(--shadow-soft)}
+  .loop-side{position:relative;flex:1.3 1 0;min-width:0;display:flex;flex-direction:column;gap:12px;padding:16px;background:var(--surface-soft);border:1px solid var(--line);border-radius:var(--r-lg)}.system-outline{position:absolute;inset:8px;width:calc(100% - 16px);height:calc(100% - 16px);pointer-events:none;z-index:0}.loop-side>*:not(.system-outline){position:relative;z-index:1}
+  .hearth{position:relative;flex:1;min-height:0;overflow:hidden;border:1px solid var(--line);border-radius:var(--r-lg);background:linear-gradient(#eaf1f8 0 56%,#d6e0e9 56% 100%);box-shadow:var(--shadow-soft)}
+  .hearth canvas{display:block}.scene-label{position:absolute;top:16px;left:18px;z-index:2;color:var(--primary-strong);font-size:var(--fs-label);font-weight:750}
+  .state-pill{position:absolute;top:14px;right:16px;z-index:2;padding:7px 13px;border-radius:999px;background:var(--surface);border:1px solid var(--line);font-size:var(--fs-sec);font-weight:800}
+  .states{display:flex;gap:8px}.states span{flex:1;padding:7px 10px;text-align:center;border-radius:var(--r-sm);font-size:var(--fs-label);font-weight:750;border:1px solid var(--line)}.states .weak{background:var(--surface-soft)}.states .usable{background:var(--success-soft);border-color:var(--success)}.states .wild{background:var(--danger-soft);border-color:var(--danger)}
+  .meters{display:flex;gap:10px}.meter{flex:1;min-width:0;padding:10px 13px;background:var(--surface);border:1px solid var(--line);border-radius:var(--r-sm)}
+  .meter .value{font-size:var(--fs-h2);font-weight:800;color:var(--primary-strong)}
+  .bar{height:7px;margin-top:7px;background:var(--surface-muted);border-radius:99px;overflow:hidden}.bar i{display:block;height:100%;width:50%;background:var(--primary);transition:width .22s ease-out,background .22s ease-out}
+  .controls{display:flex;align-items:center;gap:14px;padding:12px 16px}.controls button{min-height:44px}.air{flex:1}.air input{width:100%;min-width:160px}
+  .feedback{min-height:54px;padding:12px 16px;border-left:6px solid var(--accent);background:var(--accent-soft);border-radius:0 var(--r-sm) var(--r-sm) 0;font-size:var(--fs-sec);line-height:var(--lh-body)}
+  .k-process.fire-loop{position:relative;display:grid;grid-template-columns:1fr 28px 1fr;grid-template-rows:repeat(3,1fr);gap:8px;flex:1;min-height:0}
+  .loop-lines{position:absolute;inset:0;width:100%;height:100%;z-index:0;pointer-events:none}.fire-loop .step,.fire-loop .arw{z-index:1}
+  .fire-loop .step{padding:10px 12px;display:flex;gap:10px;align-items:center;font-size:var(--fs-sec);line-height:var(--lh-tight)}
+  .fire-loop .num{display:grid;place-items:center;flex:0 0 28px;height:28px;border-radius:50%;background:var(--surface-muted);font-weight:800}
+  .fire-loop .arw{min-width:28px}.fire-loop .back{grid-column:1/-1;text-align:center;color:var(--primary);font-size:var(--fs-h2);font-weight:800;line-height:18px}
+  .fire-loop .s1{grid-area:1/1}.fire-loop .a1{grid-area:1/2}.fire-loop .s2{grid-area:1/3}.fire-loop .s3{grid-area:2/3}.fire-loop .a2{grid-area:2/2}.fire-loop .s4{grid-area:2/1}.fire-loop .s5{grid-area:3/1}.fire-loop .a3{grid-area:3/2}.fire-loop .s6{grid-area:3/3}
+  .fire-loop .a2::before{content:"←"}.process-title{display:flex;justify-content:space-between;align-items:end}.timer{font-size:var(--fs-h2);font-weight:800;color:var(--primary-strong)}
+  .takeaway{padding:12px 16px;background:var(--primary-soft);border-radius:var(--r-sm);font-size:var(--fs-sec);line-height:var(--lh-body);font-weight:700}
+  @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body data-page="30" data-total="45">
+<div id="stage">
+<main id="main">
+  <div class="fire-page">
+    <section class="sim min0" aria-labelledby="sim-title">
+      <div class="row between items-center">
+        <h2 id="sim-title">照料中的火</h2>
+        <div class="label muted">目标：完整时段保持“可用火”</div>
+      </div>
+      <div class="hearth min0">
+        <div class="scene-label">观察火焰、烟与余烬</div>
+        <div class="state-pill" id="statePill" aria-live="polite">等待开始</div>
+        <canvas id="fireCanvas" class="cv-fill" role="img" aria-label="燃烧状态图：火焰高度、烟量、余烬与木柴随操作变化。"></canvas>
+      </div>
+      <div class="states" aria-label="火势可能经过的三个状态"><span class="weak">衰弱：热量下降</span><span class="usable">可用火：持续照料</span><span class="wild">失控：过热或浓烟</span></div>
+      <div class="meters">
+        <div class="meter"><div class="label">火势</div><div class="value" id="heatV">50%</div><div class="bar"><i id="heatB"></i></div></div>
+        <div class="meter"><div class="label">燃料存量</div><div class="value" id="fuelV">55%</div><div class="bar"><i id="fuelB"></i></div></div>
+        <div class="meter"><div class="label">烟量</div><div class="value" id="smokeV">18%</div><div class="bar"><i id="smokeB"></i></div></div>
+      </div>
+      <div class="panel controls">
+        <button id="fuelBtn" type="button">添一份燃料</button>
+        <div class="ctl air"><label for="airInput">进气 <span id="airV">50%</span></label><input id="airInput" type="range" min="0" max="100" value="50" step="5"></div>
+        <button id="startBtn" type="button">开始计时</button>
+        <button id="resetBtn" type="button">重置</button>
+      </div>
+    </section>
+    <aside class="loop-side min0">
+      <svg class="system-outline" viewBox="0 0 440 580" preserveAspectRatio="none" aria-hidden="true"><path d="M18 54 H422 V522 H18 Z" fill="none" stroke="#c7d3e1" stroke-width="2" stroke-dasharray="8 10"/></svg>
+      <div class="process-title"><h2>照料闭环</h2><div class="timer mono-num" id="timer">10.0 s</div></div>
+      <div class="k-process fire-loop" aria-label="维持火的六步闭环">
+        <svg class="loop-lines" viewBox="0 0 420 300" preserveAspectRatio="none" aria-hidden="true"><defs><marker id="loopArrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 Z" fill="#145da0"/></marker></defs><path d="M90 48 H330 V150 H90 V252 H330 Q398 252 398 150 V48 H360" fill="none" stroke="#8799ae" stroke-width="4" stroke-linejoin="round" marker-end="url(#loopArrow)"/></svg>
+        <div class="step s1 is-current"><span class="num">1</span><span>读取火势与烟</span></div><div class="arw a1"></div>
+        <div class="step s2"><span class="num">2</span><span>选择适量燃料</span></div>
+        <div class="step s3"><span class="num">3</span><span>调整进气</span></div><div class="arw a2"></div>
+        <div class="step s4"><span class="num">4</span><span>等待火势响应</span></div>
+        <div class="step s5"><span class="num">5</span><span>根据反馈照料</span></div><div class="arw a3"></div>
+        <div class="step s6"><span class="num">6</span><span>维持可用状态</span></div>
+      </div>
+      <div class="feedback" id="feedback" aria-live="polite">先读状态，再开始计时。火势的响应会稍晚于操作。</div>
+      <p class="takeaway">火需要燃料、氧气、知识与持续照料；“会用火”是一套可观察、学习和传递的实践。</p>
+    </aside>
+  </div>
+</main>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script>
+Lec.mount({index:30,kicker:"CULTURAL PRACTICE",title:"维持一团火，比点燃它更难",take:"火需要燃料、氧气、知识与持续照料；“会用火”是一套实践"});
+(function(){
+  var K=Lec.K, P=Lec.P, target=K.time.minute/6, lo=K.math.percentScale*.38, hi=K.math.percentScale*.72;
+  var cv=document.getElementById('fireCanvas'), ctx, running=false, ended=false, stopLoop=null;
+  var s;
+  function fresh(){return {heat:50,fuel:55,air:50,smoke:18,left:target,stable:0,elapsed:0,step:0,trace:[],firstBad:null};}
+  function pct(v){return P.percent(P.ratio(P.clamp(v,0,100),100),0);}
+  function reset(){s=fresh();running=false;ended=false;document.getElementById('airInput').value=s.air;document.getElementById('startBtn').textContent='开始计时';render();draw(0);}
+  function status(){if(s.heat<lo)return '火势衰弱';if(s.heat>hi)return '过热失控';if(s.smoke>55)return '浓烟过多';return '可用火';}
+  function render(){
+    var st=status(), ok=st==='可用火';
+    document.getElementById('statePill').textContent=ended?(s.stable>=target*.7?'维持成功':'需要重试'):st;
+    ['heat','fuel','smoke'].forEach(function(k){document.getElementById(k+'V').textContent=pct(s[k]);document.getElementById(k+'B').style.width=P.clamp(s[k],0,100)+'%';});
+    document.getElementById('airV').textContent=pct(s.air);document.getElementById('timer').textContent=P.roundTo(s.left,1).toFixed(1)+' s';
+    var steps=document.querySelectorAll('.fire-loop .step');steps.forEach(function(el,i){el.classList.toggle('is-current',i===s.step);el.classList.toggle('is-done',i<s.step);});
+    if(ended) document.getElementById('feedback').textContent=s.stable>=target*.7?'成功：你用多次观察与小幅调整维持了火势。':'首先失衡：'+(s.firstBad||'照料节奏')+'。重置后尝试更早、小幅调整。';
+    else if(!running) document.getElementById('feedback').textContent='先读状态，再开始计时。火势的响应会稍晚于操作。';
+    else document.getElementById('feedback').textContent=ok?'状态可用：暂时等待，继续观察反馈。':(s.heat<lo?'火势偏弱：检查燃料与进气。':s.smoke>55?'烟在增加：燃料和进气没有配合。':'火势过强：减少进气并等待响应。');
+  }
+  function draw(t){if(!ctx)ctx=Deck.fit(cv);var w=cv.offsetWidth,h=cv.offsetHeight;ctx.clearRect(0,0,w,h);var base=h*.76,cx=w*.5;
+    ctx.fillStyle=Deck.rgba('--muted',.24);for(var i=0;i<5;i++){ctx.beginPath();ctx.ellipse(cx+(i-2)*18,base-105-(i%2)*24,18+s.smoke*.18,30+s.smoke*.32,0,0,Math.PI*2);ctx.fill();}
+    ctx.fillStyle=Deck.rgb('--text').length?'#6e4931':'#6e4931';ctx.save();ctx.translate(cx,base);ctx.rotate(.12);ctx.fillRect(-105,-13,210,26);ctx.rotate(-.24);ctx.fillRect(-105,-13,210,26);ctx.restore();
+    var flick=Deck.reduced()?0:Math.sin(t/160)*8, fh=55+s.heat*1.35+flick;
+    var g=ctx.createLinearGradient(0,base,0,base-fh);g.addColorStop(0,'#d86b2b');g.addColorStop(.55,'#f5a623');g.addColorStop(1,'#ffe8a3');ctx.fillStyle=g;ctx.beginPath();ctx.moveTo(cx-54,base-18);ctx.quadraticCurveTo(cx-65,base-fh*.48,cx-12,base-fh);ctx.quadraticCurveTo(cx+12,base-fh*.62,cx+48,base-fh*.38);ctx.quadraticCurveTo(cx+70,base-55,cx+54,base-18);ctx.closePath();ctx.fill();
+    ctx.fillStyle='#d86b2b';for(var j=0;j<9;j++){ctx.beginPath();ctx.arc(cx-68+j*17,base+24,3+(j%3),0,Math.PI*2);ctx.fill();}
+  }
+  function tick(t,dt){if(running&&!ended){var d=dt/1000;s.elapsed+=d;s.left=P.clamp(target-s.elapsed,0,target);s.fuel=P.clamp(s.fuel-d*(1.25+s.air/90),0,100);var desired=P.clamp(s.fuel*.72+s.air*.42-12,0,100);s.heat+= (desired-s.heat)*P.clamp(d*.55,0,1);s.smoke+=((Math.max(0,s.fuel-68)*.8+Math.max(0,38-s.air)*1.1)-s.smoke)*P.clamp(d*.7,0,1);var st=status();if(st==='可用火')s.stable+=d;else if(!s.firstBad)s.firstBad=st;s.step=Math.min(5,Math.floor(P.ratio(s.elapsed,target)*6));if(s.left<=0){ended=true;running=false;document.getElementById('startBtn').textContent='再次开始';}render();}draw(t);}
+  document.getElementById('fuelBtn').addEventListener('click',function(){s.fuel=P.clamp(s.fuel+18,0,100);s.trace.push({at:P.roundTo(s.elapsed,1),action:'添燃料'});if(running)s.step=2;render();});
+  document.getElementById('airInput').addEventListener('input',function(e){s.air=P.clamp(Number(e.target.value),0,100);s.trace.push({at:P.roundTo(s.elapsed,1),action:'调进气',value:s.air});if(running)s.step=3;render();});
+  document.getElementById('startBtn').addEventListener('click',function(){if(ended)reset();running=true;document.getElementById('startBtn').textContent='计时中';render();});
+  document.getElementById('resetBtn').addEventListener('click',reset);
+  reset();Deck.autofit(cv,function(c){ctx=c;draw(0);});stopLoop=Deck.loop(tick,{still:900});
+  window.addEventListener('pagehide',function(){if(stopLoop)stopLoop();},{once:true});
+})();
+</script>
+</body>
+</html>

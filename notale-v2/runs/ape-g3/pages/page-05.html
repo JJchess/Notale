@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>如果宇宙史只有一年，航天时代在哪里？</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    html.lec-root{position:static;width:100%;height:100%;transform:none}
+    body.lec-page{position:relative;width:1600px;height:900px;overflow:hidden;transform:none}
+    .lec-header__inner{transform:translateY(4px)}
+    .p05{height:620px;display:grid;grid-template-columns:1fr;grid-template-rows:64px minmax(0,1fr);gap:16px;border:0;background:transparent;overflow:visible}
+    .p05-tools{display:flex;align-items:center;gap:12px;min-width:0}
+    .p05-tools .hint{font-size:15px;line-height:1.4}
+    .p05-tools button{margin-left:auto;flex:0 0 auto}
+    .p05-board{position:relative;min-width:0;min-height:0;border:1px solid var(--line);border-radius:var(--radius-lg);background:var(--surface);box-shadow:var(--shadow-panel);overflow:hidden}
+    #konva{position:absolute;inset:0}
+    .p05-keys{position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none}
+    .p05-key{position:absolute;width:176px;height:46px;opacity:0;pointer-events:auto}
+    .p05-status{min-width:300px;color:var(--muted);font-size:16px;line-height:1.5}
+  </style>
+</head>
+<body data-page="05" data-total="48">
+  <div id="stage">
+    <section class="p05 k-comparison" style="--comparison-cols:1" aria-label="宇宙年与最后一天的两级时间比较">
+      <div class="p05-tools" data-axis>
+        <span class="p05-status" id="status" role="status" aria-live="polite">拖动事件片，比较先后与离终点的距离。</span>
+        <span class="hint">键盘：方向键选位置，Enter 放置，Esc 撤回</span>
+        <button id="reset" type="button">重置拼图</button>
+      </div>
+      <div class="p05-board min0" data-diff aria-label="上方把宇宙历史压缩为一年，下方放大这个宇宙年的最后一天。四个事件都落在终点附近。">
+        <div id="konva" aria-hidden="true"></div>
+        <div class="p05-keys" id="keys"></div>
+      </div>
+    </section>
+  </div>
+  <script src="assets/lib/konva.min.js"></script>
+  <script src="assets/base.js"></script>
+  <script src="assets/lec.js"></script>
+  <script>
+    Lec.mount({
+      index: 5,
+      kicker: 'COSMIC CALENDAR',
+      title: '如果宇宙史只有一年，航天时代在哪里？',
+      take: '航天时代在人类史中极短，却调用了漫长累积的能力。'
+    });
+    Deck.init({ index: 5, total: 48 });
+
+    const K=Lec.K, P=Lec.P;
+    const universe=K.universeAgeYears, days=K.calendarDaysPerCommonYear;
+    const events=[
+      {name:'智人出现', ago:K.homoSapiensAgeYears, detail:'距今约 '+P.formatNumber(K.homoSapiensAgeYears)+' 年'},
+      {name:'农业扩展', ago:K.agricultureApproxYearsAgo, detail:'距今约 '+P.formatNumber(K.agricultureApproxYearsAgo)+' 年；并非全球同步'},
+      {name:'首次载人航天', ago:K.referenceYear-K.firstHumanSpaceflightYear, detail:P.formatNumber(K.firstHumanSpaceflightYear)+' 年'},
+      {name:'首次载人登月', ago:K.referenceYear-K.firstCrewedMoonLandingYear, detail:P.formatNumber(K.firstCrewedMoonLandingYear)+' 年'}
+    ];
+    events.forEach(e=>e.f=P.timelineFraction(e.ago,universe));
+
+    const host=document.getElementById('konva'), keyHost=document.getElementById('keys');
+    const W=host.clientWidth, H=host.clientHeight;
+    const stage=new Konva.Stage({container:'konva',width:W,height:H});
+    const layer=new Konva.Layer(); stage.add(layer);
+    const css=getComputedStyle(document.documentElement);
+    const C=n=>css.getPropertyValue(n).trim();
+    const x0=174, x1=W-42, axisW=x1-x0;
+    const yearY=160, dayY=352;
+    const chipX=[24,212,400,588], chipY=18, chipW=174, chipH=46;
+    let placed=[false,false,false,false], selected=0;
+    const chips=[], projections=[];
+
+    function text(cfg){return new Konva.Text(Object.assign({fontFamily:C('--font-sans'),fill:C('--text'),fontSize:15,lineHeight:1.35},cfg));}
+    function line(points,stroke=C('--line-strong'),width=1,dash=[]){return new Konva.Line({points,stroke,strokeWidth:width,dash});}
+    function addBase(){
+      layer.add(text({x:24,y:94,width:135,text:'宇宙史 → 一年',fontSize:18,fontStyle:'bold'}));
+      layer.add(text({x:24,y:286,width:135,text:'最后一天',fontSize:18,fontStyle:'bold'}));
+      layer.add(line([x0,yearY,x1,yearY],C('--line-strong'),3));
+      layer.add(line([x0,dayY,x1,dayY],C('--line-strong'),3));
+      for(let m=0;m<=12;m++){
+        const x=x0+axisW*m/12; layer.add(line([x,yearY-8,x,yearY+8]));
+        if(m<12) layer.add(text({x:x+3,y:yearY+12,width:50,text:String(m+1)+'月',fontSize:13,fill:C('--muted')}));
+      }
+      [0,6,12,18,24].forEach(h=>{const x=x0+axisW*h/24;layer.add(line([x,dayY-8,x,dayY+8]));layer.add(text({x:x-15,y:dayY+12,width:42,align:'center',text:String(h),fontSize:13,fill:C('--muted')}));});
+      layer.add(text({x:x1-18,y:yearY-44,width:70,text:'12月31日',fontSize:15,fill:C('--accent-strong'),fontStyle:'bold'}));
+      layer.add(new Konva.Rect({x:x1-10,y:yearY-19,width:10,height:38,fill:C('--accent'),cornerRadius:3}));
+      layer.add(line([x1-5,yearY+21,x1-5,dayY-20],C('--accent'),2,[5,5]));
+      layer.add(text({x:x1-174,y:dayY-47,width:164,align:'right',text:'放大宇宙年的最后一天 ↓',fontSize:15,fill:C('--accent-strong'),fontStyle:'bold'}));
+      const earthF=P.timelineFraction(K.earthAgeYears,universe), earthX=x0+axisW*earthF;
+      layer.add(new Konva.Circle({x:x0,y:yearY,radius:6,fill:C('--secondary')}));
+      layer.add(text({x:x0,y:112,width:110,text:'宇宙开始',fontSize:15,fontStyle:'bold'}));
+      layer.add(new Konva.Circle({x:earthX,y:yearY,radius:6,fill:C('--success')}));
+      layer.add(text({x:earthX-72,y:112,width:144,align:'center',text:'地球形成\n距今约 '+P.formatNumber(K.earthAgeYears)+' 年',fontSize:15}));
+      layer.add(text({x:24,y:H-40,width:W-48,text:'把宇宙史压成一年，越靠近今天，事件占用的时间越短。',fontSize:16,fill:C('--muted')}));
+    }
+    addBase();
+
+    function trueX(e,row){
+      if(row===0) return x0+axisW*e.f;
+      const dayStart=1-1/days;
+      return x0+axisW*Math.max(0,Math.min(1,(e.f-dayStart)*days));
+    }
+    function drawProjection(i){
+      const e=events[i], g=new Konva.Group({opacity:0});
+      [yearY,dayY].forEach((y,row)=>{
+        const ax=trueX(e,row); const labelX=x1-560+i*134, labelY=y+(row?54:-92)+(i%2)*34;
+        g.add(line([ax,y,ax,labelY+18,labelX+60,labelY+18],C('--accent'),1.5));
+        g.add(new Konva.Circle({x:ax,y,radius:5,fill:C('--accent')}));
+        g.add(new Konva.Rect({x:labelX,y:labelY,width:126,height:38,fill:C('--accent-soft'),stroke:C('--accent'),cornerRadius:8}));
+        g.add(text({x:labelX+6,y:labelY+8,width:114,align:'center',text:e.name,fontSize:14,fontStyle:'bold'}));
+      });
+      g.add(text({x:x1-560+i*134,y:dayY+102,width:126,align:'center',text:e.detail,fontSize:14,fill:C('--muted')}));
+      layer.add(g); projections[i]=g;
+    }
+    events.forEach((e,i)=>{
+      drawProjection(i);
+      const g=new Konva.Group({x:chipX[i],y:chipY,draggable:true});
+      g.add(new Konva.Rect({width:chipW,height:chipH,fill:C('--surface'),stroke:C('--line-strong'),strokeWidth:1.5,cornerRadius:10,shadowColor:'#243852',shadowOpacity:.12,shadowBlur:8,shadowOffsetY:3}));
+      g.add(text({x:8,y:11,width:chipW-16,align:'center',text:e.name,fontSize:16,fontStyle:'bold'}));
+      g.on('dragmove',()=>{selected=i; projections[i].opacity(.35); layer.batchDraw();});
+      g.on('dragend',()=>{
+        projections[i].opacity(placed[i]?1:0);
+        const p=g.position(); const candidate=Math.round((p.x-24)/188);
+        if(candidate===i && p.y>78){place(i);} else {g.to({x:chipX[i],y:chipY,duration:.18});document.getElementById('status').textContent='比较先后与离终点的距离。';}
+      });
+      layer.add(g); chips[i]=g;
+      const b=document.createElement('button'); b.className='p05-key'; b.style.left=chipX[i]+'px';b.style.top=chipY+'px';b.setAttribute('aria-label',e.name+'事件片');
+      b.addEventListener('focus',()=>{selected=i;});
+      b.addEventListener('keydown',ev=>{if(ev.key==='ArrowRight'||ev.key==='ArrowDown'){selected=Math.min(3,selected+1);keyHost.children[selected].focus();ev.preventDefault();}if(ev.key==='ArrowLeft'||ev.key==='ArrowUp'){selected=Math.max(0,selected-1);keyHost.children[selected].focus();ev.preventDefault();}if(ev.key==='Enter'){place(i);ev.preventDefault();}if(ev.key==='Escape'){withdraw(i);ev.preventDefault();}});
+      keyHost.appendChild(b);
+    });
+    function place(i){placed[i]=true;chips[i].draggable(false);chips[i].to({x:chipX[i],y:82,duration:.18});projections[i].opacity(1);update();}
+    function withdraw(i){placed[i]=false;chips[i].draggable(true);chips[i].position({x:chipX[i],y:chipY});projections[i].opacity(0);update();}
+    function update(){
+      const n=placed.filter(Boolean).length, s=document.getElementById('status');
+      if(n<4){s.textContent='已放置 '+P.formatNumber(n)+' / '+P.formatNumber(4)+'：继续比较先后与离终点的距离。';}
+      else{
+        const span=K.referenceYear-K.firstHumanSpaceflightYear;
+        const ratio=P.percent(span/K.homoSapiensAgeYears);
+        s.textContent='拼接完成：航天时代约占智人历史的 '+ratio+'。';
+        layer.add(new Konva.Rect({x:x1-12,y:yearY-24,width:14,height:48,stroke:C('--accent'),strokeWidth:4,cornerRadius:4,shadowColor:C('--accent'),shadowBlur:12}));
+      }
+      layer.batchDraw();
+    }
+    document.getElementById('reset').addEventListener('click',()=>{placed.forEach((_,i)=>withdraw(i));document.getElementById('status').textContent='拖动事件片，比较先后与离终点的距离。';});
+    layer.draw();
+  </script>
+</body>
+</html>

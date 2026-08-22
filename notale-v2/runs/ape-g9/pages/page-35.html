@@ -1,0 +1,263 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  #main { display:flex; gap:var(--sp-5); }
+  .launch-side { flex:1 1 auto; min-width:0; display:flex; flex-direction:column; gap:var(--sp-3); }
+  .well { position:relative; flex:1 1 auto; min-height:0; overflow:hidden; border:var(--border); border-radius:var(--radius-3); background:linear-gradient(90deg,rgba(53,198,180,.025),rgba(53,198,180,.09) 50%,rgba(53,198,180,.025)),var(--surface-0); }
+  .well::before { content:""; position:absolute; inset:0; background:linear-gradient(90deg,transparent 49.8%,rgba(53,198,180,.12) 50%,transparent 50.2%); pointer-events:none; }
+  #stage .lec-progress { overflow:visible; }
+  .sim-canvas { z-index:1; }
+  .orbit-line { position:absolute; z-index:2; top:34px; right:28px; left:28px; height:2px; background:var(--primary); box-shadow:0 0 12px rgba(53,198,180,.7); }
+  .orbit-line::after { content:"入轨目标"; position:absolute; right:0; bottom:8px; color:var(--primary-bright); font-size:var(--fs-label); font-weight:700; }
+  .well-status { position:absolute; z-index:3; top:14px; left:22px; display:flex; gap:var(--sp-5); align-items:center; }
+  .well-status span { color:var(--text-muted); font-size:var(--fs-label); font-weight:700; }
+  .well-status strong { color:var(--text-strong); font-family:var(--font-mono); font-size:var(--fs-sec); }
+  .rocket-label { position:absolute; z-index:3; left:calc(50% + 50px); width:152px; padding-left:var(--sp-3); color:var(--text-muted); font-size:var(--fs-label); font-weight:700; line-height:1.35; border-left:2px solid var(--primary-dark); pointer-events:none; }
+  .rocket-label.payload { top:98px; color:var(--primary-bright); }
+  .rocket-label.upper { top:153px; }
+  .rocket-label.stage2 { top:225px; }
+  .rocket-label.stage1 { top:306px; }
+  .checkpoint { position:absolute; z-index:4; left:24px; width:184px; min-height:58px; justify-content:flex-start; text-align:left; padding:var(--sp-2) var(--sp-3); background:var(--surface-glass); }
+  .checkpoint[data-cp="1"] { top:278px; }
+  .checkpoint[data-cp="2"] { top:196px; }
+  .checkpoint::after { content:""; position:absolute; top:50%; left:100%; width:138px; height:2px; background:var(--line-strong); }
+  .checkpoint.is-set { color:var(--accent-ink); border-color:var(--primary-bright); background:var(--primary); }
+  .checkpoint.is-bad { border-color:var(--accent); color:var(--accent); background:var(--surface-yellow); animation:shake 180ms linear 2; }
+  .checkpoint.is-passed { box-shadow:0 0 0 2px rgba(53,198,180,.22); }
+  .constraint { position:absolute; z-index:2; right:12px; top:118px; width:184px; height:2px; background:var(--accent); transform:rotate(24deg); transform-origin:right center; opacity:.65; }
+  .controls { flex:0 0 142px; box-sizing:border-box; display:flex; align-items:stretch; gap:var(--sp-4); padding:var(--sp-3) var(--sp-4); border:var(--border); border-radius:var(--radius-3); background:var(--surface-1); }
+  .instruction-bank { flex:0 0 188px; display:flex; flex-direction:column; gap:var(--sp-2); }
+  .instruction-bank .btn { min-height:42px; cursor:grab; }
+  .instruction-bank .btn[aria-pressed="true"] { color:var(--accent-ink); border-color:var(--accent); background:var(--accent); }
+  .control-copy { flex:1 1 auto; min-width:0; display:flex; flex-direction:column; justify-content:center; gap:var(--sp-2); }
+  .control-copy p { font-size:var(--fs-sec); line-height:var(--lh-copy); }
+  .feedback { color:var(--primary-bright); }
+  .feedback.is-warning { color:var(--accent); }
+  .launch-btn { flex:0 0 140px; align-self:center; }
+  .taxonomy { position:relative; flex:0 0 424px; min-width:0; height:100%; overflow:hidden; }
+  .taxonomy-tree { position:absolute; inset:0; z-index:-1; width:100%; height:100%; }
+  .taxonomy.k-classification { gap:var(--sp-2); }
+  .taxonomy .box { padding:var(--sp-3); }
+  .taxonomy .box > .bt { margin:calc(-1 * var(--sp-3)) calc(-1 * var(--sp-3)) var(--sp-2); padding:var(--sp-2) var(--sp-3); font-size:var(--fs-lead); }
+  .taxonomy .lv { margin-left:calc(var(--level,0) * var(--sp-4)); padding-left:var(--sp-4); }
+  .taxonomy .lv::before { top:16px; width:var(--sp-3); }
+  .class-item { display:flex; justify-content:space-between; gap:var(--sp-3); padding:6px var(--sp-2); font-size:var(--fs-sec); line-height:1.35; border-bottom:var(--border); }
+  .class-item:last-child { border-bottom:0; }
+  .class-item strong { color:var(--text-strong); font-weight:700; }
+  .class-item span { color:var(--text-muted); text-align:right; }
+  .class-item.is-active { background:var(--surface-teal); box-shadow:inset 3px 0 0 var(--primary); }
+  .meters { display:flex; flex-direction:column; gap:var(--sp-2); }
+  .meter-label { display:flex; justify-content:space-between; gap:var(--sp-3); color:var(--text-muted); font-size:var(--fs-label); font-weight:700; }
+  .meter-label output { color:var(--text-strong); font-family:var(--font-mono); }
+  .meter { height:9px; overflow:hidden; border-radius:var(--radius-1); background:var(--surface-3); }
+  .meter > span { display:block; width:var(--value,0%); height:100%; background:var(--primary); transition:width 220ms ease; }
+  .meter.risk > span { background:var(--accent); }
+  .settlement { display:none; padding:var(--sp-3); border-left:4px solid var(--accent); background:var(--surface-yellow); }
+  .settlement.is-visible { display:block; }
+  .settlement p { font-size:var(--fs-sec); line-height:var(--lh-copy); }
+  @keyframes shake { 25%{transform:translateX(-5px)} 75%{transform:translateX(5px)} }
+  @media (prefers-reduced-motion:reduce) { *,*::before,*::after { animation:none!important; transition:none!important; } }
+</style>
+</head>
+<body data-page="35" data-total="52">
+<div id="stage">
+<main id="main"></main>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script src="assets/lib/matter.min.js"></script>
+<script>
+Lec.mount({index:35,kicker:"STAGING / MASS & RISK",title:"丢掉空壳，才能把更多质量送入轨道",take:"抛弃空贮箱能改善质量预算，但每一级都增加分离、点火与控制的复杂度和风险。"});
+
+const gameConfig={targetDeltaV:Lec.K.leoLaunchDeltaVMetresPerSecond,specificImpulse:Lec.K.demoRocketSpecificImpulseSeconds,checkpoints:2,maxStages:3,resetLabel:"重新分级"};
+const engine=Matter.Engine.create({gravity:{x:0,y:1,scale:0.001}});
+const singleStageRatio=Lec.P.rocketMassRatioFromSpecificImpulse(gameConfig.targetDeltaV,gameConfig.specificImpulse);
+const main=document.getElementById('main');
+main.innerHTML=`
+  <section class="launch-side min0" aria-label="分级入轨游戏">
+    <div class="well no-pan" id="well">
+      <canvas id="sim" class="cv-fill sim-canvas" aria-label="三级火箭侧视发射剖面，分离后的空级会下落碰撞"></canvas>
+      <div class="orbit-line"></div>
+      <div class="well-status">
+        <span>进度 <strong id="progressText">检查点 0/2</strong></span>
+        <span>箭体质量 <strong id="massText">100%</strong></span>
+      </div>
+      <span class="rocket-label payload">必须到轨｜载荷</span>
+      <span class="rocket-label upper">仍有功能｜上面级</span>
+      <span class="rocket-label stage2">待燃尽｜二级</span>
+      <span class="rocket-label stage1">待燃尽｜一级</span>
+      <button class="checkpoint" data-cp="2" aria-label="检查点二，尚未设置处置">检查点 2｜未设置</button>
+      <button class="checkpoint" data-cp="1" aria-label="检查点一，尚未设置处置">检查点 1｜未设置</button>
+      <div class="constraint" aria-hidden="true"></div>
+    </div>
+    <div class="controls">
+      <div class="instruction-bank" aria-label="处置指令">
+        <button class="btn instruction" draggable="true" data-command="keep" aria-pressed="false">保留</button>
+        <button class="btn instruction" draggable="true" data-command="separate" aria-pressed="false">分离</button>
+      </div>
+      <div class="control-copy">
+        <p>把指令拖到两个燃尽检查点；键盘可先选指令，再选检查点。</p>
+        <p id="feedback" class="feedback" aria-live="polite">空贮箱燃尽后，判断它是否还属于有效质量。</p>
+      </div>
+      <button id="launchBtn" class="btn is-primary launch-btn" disabled>发射</button>
+    </div>
+  </section>
+  <aside class="taxonomy k-classification min0" aria-label="火箭质量与分级代价分类">
+    <svg class="taxonomy-tree" viewBox="0 0 424 620" aria-hidden="true">
+      <path d="M18 24 H404 V598 H18 Z M18 112 H404 M18 292 H404 M18 444 H404" fill="none" stroke="var(--line-strong)" stroke-width="2"/>
+      <path d="M32 76 V260 M32 144 H68 M32 196 H84 M32 244 H84" fill="none" stroke="var(--primary-dark)" stroke-width="3"/>
+      <path d="M32 350 V422 M32 374 H68 M32 402 H84" fill="none" stroke="var(--primary-dark)" stroke-width="3"/>
+      <path d="M8 215 H410 M8 386 H410" fill="none" stroke="var(--accent)" stroke-width="2" stroke-dasharray="7 8" opacity=".55"/>
+    </svg>
+    <div class="box">
+      <div class="bt">箭体质量｜之后是否仍有功能</div>
+      <div class="lv" style="--level:0">
+        <div class="class-item is-active" data-class="payload"><strong>有效质量</strong><span>载荷必须到轨</span></div>
+      </div>
+      <div class="lv" style="--level:1">
+        <div class="class-item is-active" data-class="working"><strong>待用质量</strong><span>上面级仍能工作</span></div>
+      </div>
+      <div class="lv" style="--level:1">
+        <div class="class-item" data-class="dead"><strong>无效负担</strong><span>燃尽级只剩空壳</span></div>
+      </div>
+    </div>
+    <div class="box">
+      <div class="bt">增加级数｜收益与代价</div>
+      <div class="lv" style="--level:0">
+        <div class="class-item"><strong>性能收益</strong><span>少加速空贮箱</span></div>
+      </div>
+      <div class="lv" style="--level:1">
+        <div class="class-item"><strong>新增复杂度</strong><span>分离器、点火、控制</span></div>
+      </div>
+      <div class="lv" style="--level:1">
+        <div class="class-item"><strong>新增风险</strong><span>两个关键接口</span></div>
+      </div>
+    </div>
+    <div class="box meters">
+      <div class="meter-label"><span>速度预算</span><output id="speedText">0 / 0 km/s</output></div>
+      <div class="meter"><span id="speedBar"></span></div>
+      <div class="meter-label"><span>新增风险</span><output id="riskText">0 个接口</output></div>
+      <div class="meter risk"><span id="riskBar"></span></div>
+      <p class="note">共用条件：各级比冲 <span id="ispText" class="mono"></span>；单级质量比参照 <span id="ratioText" class="mono"></span>。</p>
+    </div>
+    <div id="settlement" class="settlement">
+      <p><strong>少带无效质量</strong>：后续发动机不再加速空贮箱。</p>
+      <p><strong>多了两个关键接口</strong>：分离、点火与控制都必须正确完成。</p>
+    </div>
+  </aside>`;
+
+const els={
+  well:document.getElementById('well'),canvas:document.getElementById('sim'),feedback:document.getElementById('feedback'),
+  launch:document.getElementById('launchBtn'),progress:document.getElementById('progressText'),mass:document.getElementById('massText'),
+  speed:document.getElementById('speedText'),speedBar:document.getElementById('speedBar'),risk:document.getElementById('riskText'),
+  riskBar:document.getElementById('riskBar'),settlement:document.getElementById('settlement')
+};
+document.getElementById('ispText').textContent=Lec.P.roundTo(gameConfig.specificImpulse,0)+' s';
+document.getElementById('ratioText').textContent=Lec.P.roundTo(singleStageRatio,1)+':1';
+const targetKm=Lec.P.roundTo(gameConfig.targetDeltaV/1000,1);
+
+function freshState(){return{selected:null,commands:{1:null,2:null},phase:'setup',checkpoint:0,speed:0,mass:100,risk:0,bodies:[],trace:[]};}
+let state=freshState();
+let stopLoop=null;
+const palette={bg:null,surface:null,line:null,primary:null,bright:null,accent:null,text:null,muted:null};
+function readPalette(){palette.bg=Deck.token('--surface-0');palette.surface=Deck.token('--surface-2');palette.line=Deck.token('--line-strong');palette.primary=Deck.token('--primary');palette.bright=Deck.token('--primary-bright');palette.accent=Deck.token('--accent');palette.text=Deck.token('--text-strong');palette.muted=Deck.token('--text-muted');}
+function stageGeometry(){const w=els.canvas.offsetWidth,h=els.canvas.offsetHeight;return{w,h,cx:w*.5,base:h-34};}
+function draw(){
+  readPalette(); const ctx=Deck.fit(els.canvas),g=stageGeometry(); ctx.clearRect(0,0,g.w,g.h);
+  ctx.strokeStyle=palette.line;ctx.lineWidth=2;ctx.setLineDash([6,8]);ctx.beginPath();ctx.moveTo(g.cx,g.base);ctx.lineTo(g.cx,62);ctx.stroke();ctx.setLineDash([]);
+  state.bodies.forEach(body=>{const v=body.vertices;ctx.beginPath();ctx.moveTo(v[0].x,v[0].y);for(let i=1;i<v.length;i++)ctx.lineTo(v[i].x,v[i].y);ctx.closePath();ctx.fillStyle=palette.surface;ctx.fill();ctx.strokeStyle=palette.accent;ctx.stroke();});
+  const y=state.phase==='complete'?72:104-Math.min(state.speed/gameConfig.targetDeltaV,1)*32;
+  const parts=[
+    {key:'payload',top:y,h:34,w:58,fill:palette.primary},
+    {key:'upper',top:y+36,h:48,w:70,fill:palette.surface},
+    {key:'stage2',top:y+86,h:70,w:82,fill:palette.surface},
+    {key:'stage1',top:y+158,h:82,w:94,fill:palette.surface}
+  ];
+  const hidden=state.checkpoint;
+  parts.forEach((p,i)=>{if((p.key==='stage1'&&hidden>=1)||(p.key==='stage2'&&hidden>=2))return;const x=g.cx-p.w/2;ctx.fillStyle=p.fill;ctx.strokeStyle=p.key==='payload'?palette.bright:palette.primary;ctx.lineWidth=2;ctx.fillRect(x,p.top,p.w,p.h);ctx.strokeRect(x,p.top,p.w,p.h);if(i>0){ctx.strokeStyle=palette.accent;ctx.beginPath();ctx.moveTo(x,p.top);ctx.lineTo(x+p.w,p.top);ctx.stroke();}});
+  ctx.fillStyle=palette.accent;ctx.beginPath();ctx.moveTo(g.cx-20,y+240-hidden*76);ctx.lineTo(g.cx,y+266-hidden*76);ctx.lineTo(g.cx+20,y+240-hidden*76);ctx.closePath();ctx.fill();
+}
+Deck.autofit(els.canvas,draw);
+
+function updateUI(){
+  els.progress.textContent='检查点 '+state.checkpoint+'/'+gameConfig.checkpoints;
+  els.mass.textContent=Lec.P.roundTo(state.mass,0)+'%';
+  els.speed.textContent=Lec.P.roundTo(state.speed/1000,1)+' / '+targetKm+' km/s';
+  els.speedBar.style.setProperty('--value',Math.min(100,state.speed/gameConfig.targetDeltaV*100)+'%');
+  els.risk.textContent=state.risk+' 个接口';
+  els.riskBar.style.setProperty('--value',(state.risk/gameConfig.checkpoints*100)+'%');
+  document.querySelector('[data-class="dead"]').classList.toggle('is-active',state.phase!=='setup'||Object.values(state.commands).some(Boolean));
+  els.launch.disabled=state.phase==='setup'&&!state.commands[1]||state.phase==='setup'&&!state.commands[2];
+  draw();
+}
+function setFeedback(text,warning=false){els.feedback.textContent=text;els.feedback.classList.toggle('is-warning',warning);}
+function selectCommand(command){
+  if(state.phase!=='setup')return;state.selected=command;
+  document.querySelectorAll('.instruction').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.command===command)));
+  setFeedback(command==='separate'?'已选择“分离”：指定一个燃尽检查点。':'已选择“保留”：空级会成为后续负担。',command==='keep');
+}
+function assign(cp,command){
+  if(state.phase!=='setup'||!command)return;
+  const zone=document.querySelector('[data-cp="'+cp+'"]');
+  state.commands[cp]=command;state.trace.push({checkpoint:Number(cp),command});
+  zone.textContent='检查点 '+cp+'｜'+(command==='separate'?'分离':'保留');zone.classList.toggle('is-set',command==='separate');zone.classList.toggle('is-bad',command==='keep');
+  zone.setAttribute('aria-label','检查点'+cp+'，处置为'+(command==='separate'?'分离':'保留'));
+  if(command==='keep')setFeedback('空级仍被保留，后续必须继续加速它。',true);else setFeedback('指令已吸附：燃尽后，空级将脱锁下坠。');
+  state.selected=null;document.querySelectorAll('.instruction').forEach(b=>b.setAttribute('aria-pressed','false'));updateUI();
+}
+
+document.querySelectorAll('.instruction').forEach(btn=>{
+  btn.addEventListener('click',()=>selectCommand(btn.dataset.command));
+  btn.addEventListener('dragstart',e=>{selectCommand(btn.dataset.command);e.dataTransfer.setData('text/plain',btn.dataset.command);});
+});
+document.querySelectorAll('.checkpoint').forEach(zone=>{
+  zone.addEventListener('click',()=>{if(state.selected)assign(zone.dataset.cp,state.selected);else setFeedback('先选择“保留”或“分离”指令。',true);});
+  zone.addEventListener('dragover',e=>e.preventDefault());
+  zone.addEventListener('drop',e=>{e.preventDefault();assign(zone.dataset.cp,e.dataTransfer.getData('text/plain'));});
+});
+
+function addFallingStage(cp){
+  const g=stageGeometry(),y=cp===1?344:262,w=cp===1?94:82,h=cp===1?82:70;
+  const body=Matter.Bodies.rectangle(g.cx,y,w,h,{restitution:.28,friction:.5,angle:cp===1?.08:-.08});
+  Matter.Body.setVelocity(body,{x:cp===1?2.4:-2.1,y:-1});Matter.Body.setAngularVelocity(body,cp===1?.035:-.04);
+  Matter.Composite.add(engine.world,body);state.bodies.push(body);
+}
+function ensureGround(){if(Matter.Composite.allBodies(engine.world).some(b=>b.isStatic))return;const g=stageGeometry();Matter.Composite.add(engine.world,Matter.Bodies.rectangle(g.w/2,g.h+18,g.w,40,{isStatic:true}));}
+function passCheckpoint(cp){
+  state.checkpoint=cp;state.risk=cp;document.querySelector('[data-cp="'+cp+'"]').classList.add('is-passed');
+  const separating=state.commands[cp]==='separate';
+  if(separating){state.mass=cp===1?63:34;state.speed=cp===1?gameConfig.targetDeltaV*.43:gameConfig.targetDeltaV*.76;addFallingStage(cp);setFeedback('空级已脱锁：箭体变轻，下一工作级继续增加速度。');}
+  else{state.mass=cp===1?82:61;state.speed=cp===1?gameConfig.targetDeltaV*.31:gameConfig.targetDeltaV*.55;setFeedback('空壳仍随箭体上升，速度预算被无效质量拖低。',true);}
+  updateUI();
+}
+function completeLaunch(){
+  const both=state.commands[1]==='separate'&&state.commands[2]==='separate';state.phase='complete';state.speed=both?gameConfig.targetDeltaV:gameConfig.targetDeltaV*.72;state.mass=both?18:state.mass;updateUI();
+  els.settlement.classList.add('is-visible');els.launch.textContent=gameConfig.resetLabel;els.launch.disabled=false;
+  setFeedback(both?'载荷进入轨道槽：质量预算达标，同时新增两个关键接口。':'未达到入轨速度：被保留的空级消耗了速度预算。',!both);
+  if(stopLoop){stopLoop();stopLoop=null;}draw();
+}
+function startLaunch(){
+  state.phase='flight';els.launch.disabled=true;setFeedback('一级点火：速度开始累积。');ensureGround();
+  let elapsed=0,first=false,second=false;
+  stopLoop=Deck.loop((t,dt)=>{
+    const step=dt||16;elapsed+=step;Matter.Engine.update(engine,Math.min(step,32));
+    if(!first&&elapsed>=420){first=true;passCheckpoint(1);}
+    if(!second&&elapsed>=1050){second=true;passCheckpoint(2);}
+    if(elapsed>=1750){completeLaunch();return;}draw();
+  },{still:1750});
+  if(Deck.reduced()){passCheckpoint(1);passCheckpoint(2);completeLaunch();}
+}
+function resetGame(){
+  if(stopLoop){stopLoop();stopLoop=null;}Matter.Composite.clear(engine.world,false);Matter.Engine.clear(engine);state=freshState();
+  document.querySelectorAll('.checkpoint').forEach(z=>{z.textContent='检查点 '+z.dataset.cp+'｜未设置';z.classList.remove('is-set','is-bad','is-passed');z.setAttribute('aria-label','检查点'+z.dataset.cp+'，尚未设置处置');});
+  document.querySelectorAll('.instruction').forEach(b=>b.setAttribute('aria-pressed','false'));els.settlement.classList.remove('is-visible');els.launch.textContent='发射';setFeedback('空贮箱燃尽后，判断它是否还属于有效质量。');updateUI();
+}
+els.launch.addEventListener('click',()=>state.phase==='complete'?resetGame():startLaunch());
+updateUI();
+</script>
+</body>
+</html>

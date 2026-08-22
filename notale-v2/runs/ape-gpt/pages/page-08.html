@@ -1,0 +1,347 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  .lec-header__inner,
+  .lec-footer__inner { display: flex; width: 100%; min-width: 0; align-items: center; justify-content: space-between; gap: var(--sp-4); }
+  .lec-header__identity,
+  .lec-header__heading { display: flex; min-width: 0; align-items: center; gap: var(--sp-3); }
+  .lec-header__index { color: var(--accent-strong); font-family: var(--font-mono); font-size: var(--fs-body-lg); font-weight: 720; }
+  .lec-header__kicker { color: var(--text-muted); font-size: var(--fs-label); font-weight: 700; line-height: 1.2; white-space: nowrap; }
+  .lec-header__title { overflow: hidden; color: var(--text); font-size: var(--fs-body-lg); line-height: 1.2; text-overflow: ellipsis; white-space: nowrap; }
+  .lec-footer__take { display: flex; min-width: 0; gap: var(--sp-2); align-items: center; }
+  .lec-footer__take-label { color: var(--accent-strong); font-weight: 700; }
+  .lec-footer__take-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .lec-footer__index { font-family: var(--font-mono); }
+  culture-tool-game { min-width: 0; min-height: 0; }
+  .game-board { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; gap: var(--sp-3); }
+  .game-top { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-4); }
+  .game-top p { max-width: 780px; }
+  .attempts { white-space: nowrap; }
+  .workbench { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--sp-4); align-items: center; min-height: 0; padding: var(--sp-3) var(--sp-5); border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface-1); }
+  .tool-scene { position: relative; min-height: 150px; display: grid; place-items: center; overflow: hidden; }
+  .target-line { position: absolute; inset-inline: var(--sp-4); bottom: var(--sp-4); height: var(--sp-1); border-radius: var(--radius-pill); background: var(--surface-3); }
+  .target-zone { position: absolute; left: 66%; bottom: var(--sp-3); width: var(--sp-8); height: var(--sp-5); border: 1px dashed var(--positive); border-radius: var(--radius-pill); transform: translateX(-50%); }
+  .impact { position: absolute; bottom: var(--sp-2); width: var(--sp-3); height: var(--sp-3); border-radius: var(--radius-pill); background: var(--warning); transform: translateX(-50%); transition: left 220ms ease; }
+  .tool { position: relative; width: 46%; height: var(--sp-6); transform-origin: 18% 50%; transition: transform 160ms ease; }
+  .shaft { position: absolute; left: 0; top: 50%; width: 100%; height: var(--sp-2); border-radius: var(--radius-pill); background: linear-gradient(90deg, var(--line-strong), var(--accent)); transform: translateY(-50%); transform-origin: left center; }
+  .head { position: absolute; right: calc(var(--sp-3) * -1); top: 50%; width: var(--sp-6); height: var(--sp-6); border: var(--sp-2) solid var(--accent-strong); border-left-width: var(--sp-1); transform: translateY(-50%) rotate(0deg); transform-origin: center; transition: transform 160ms ease; }
+  .score-stack { display: grid; grid-template-columns: repeat(2, minmax(150px, 1fr)); gap: var(--sp-3); }
+  .score-stack .readout { padding: var(--sp-3); box-shadow: none; }
+  .score-stack .readout-value { font-size: var(--fs-h2); }
+  .game-controls { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto auto; gap: var(--sp-4); align-items: end; }
+  .range-control { display: grid; gap: var(--sp-1); }
+  .range-label { display: flex; justify-content: space-between; gap: var(--sp-3); }
+  .generation-card { display: flex; flex-direction: column; justify-content: space-between; gap: var(--sp-3); }
+  .generation-card[aria-current="step"] { border-color: var(--accent); background: linear-gradient(var(--accent-soft), var(--surface-1)); }
+  .gen-head { display: flex; justify-content: space-between; align-items: center; gap: var(--sp-2); }
+  .gen-name { font-size: var(--fs-body-lg); font-weight: 720; line-height: var(--lh-heading); }
+  .gen-rule { color: var(--text-muted); font-size: var(--fs-body); line-height: var(--lh-body); }
+  .gen-data { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp-3); }
+  .metric { display: grid; gap: var(--sp-1); }
+  .metric strong { color: var(--accent-strong); font-family: var(--font-mono); font-size: var(--fs-h3); line-height: var(--lh-tight); }
+  .status { min-height: 1.5em; color: var(--text-muted); font-size: var(--fs-body); line-height: var(--lh-body); }
+  @media (prefers-reduced-motion: reduce) { .impact, .tool, .head { transition: none; } }
+</style>
+</head>
+<body data-page="08" data-total="18">
+<div id="stage">
+  <culture-tool-game class="stage-cards" aria-label="跨代工具优化游戏">
+    <section class="panel game-board min0" aria-labelledby="task-title">
+      <div class="game-top">
+        <div class="stack-1">
+          <h2 id="task-title" class="h3">把投掷工具调到目标区</h2>
+          <p class="text-sm muted">调整杆长与尖端角度，再提交测试。每种规则的尝试次数相同。</p>
+        </div>
+        <span class="badge attempts" id="attemptsLabel"></span>
+      </div>
+
+      <div class="workbench min0">
+        <div class="tool-scene min0" role="img" aria-label="当前工具形状、测试落点与目标区">
+          <div class="target-line"></div>
+          <div class="target-zone"></div>
+          <div class="impact" id="impact"></div>
+          <div class="tool" id="tool"><div class="shaft" id="shaft"></div><div class="head" id="head"></div></div>
+        </div>
+        <div class="score-stack min0">
+          <div class="readout">
+            <span class="readout-label">本代最佳</span>
+            <strong class="readout-value" id="generationBest">—</strong>
+          </div>
+          <div class="readout">
+            <span class="readout-label">跨代最佳</span>
+            <strong class="readout-value" id="lineageBest">—</strong>
+          </div>
+        </div>
+      </div>
+
+      <div class="game-controls">
+        <div class="range-control min0">
+          <div class="range-label"><label for="lengthInput">杆长</label><output id="lengthValue"></output></div>
+          <input id="lengthInput" type="range" aria-describedby="gameStatus">
+        </div>
+        <div class="range-control min0">
+          <div class="range-label"><label for="angleInput">尖端角度</label><output id="angleValue"></output></div>
+          <input id="angleInput" type="range" aria-describedby="gameStatus">
+        </div>
+        <button class="primary" id="tryButton" type="button">提交测试</button>
+        <button id="resetButton" type="button">重新开始</button>
+      </div>
+      <p class="status" id="gameStatus" aria-live="polite"></p>
+    </section>
+
+    <article class="card generation-card min0" data-card="0">
+      <div>
+        <div class="gen-head"><span class="gen-name">独立起步</span><span class="badge">不继承</span></div>
+        <p class="gen-rule">每代从空白方案开始，改进不能接力。</p>
+      </div>
+      <div class="gen-data"><div class="metric"><span class="label">本代最佳</span><strong data-best="0">—</strong></div><div class="metric"><span class="label">保留率</span><strong data-retention="0">—</strong></div></div>
+    </article>
+
+    <article class="card generation-card min0" data-card="1">
+      <div>
+        <div class="gen-head"><span class="gen-name">可靠传承</span><span class="badge">继承后微调</span></div>
+        <p class="gen-rule">先复制上一代最佳方案，再继续创新。</p>
+      </div>
+      <div class="gen-data"><div class="metric"><span class="label">本代最佳</span><strong data-best="1">—</strong></div><div class="metric"><span class="label">保留率</span><strong data-retention="1">—</strong></div></div>
+    </article>
+
+    <article class="card generation-card min0" data-card="2">
+      <div>
+        <div class="gen-head"><span class="gen-name">低精度传承</span><span class="badge">复制有偏差</span></div>
+        <p class="gen-rule">仍能继承，但复制误差会损失已有成果。</p>
+      </div>
+      <div class="gen-data"><div class="metric"><span class="label">本代最佳</span><strong data-best="2">—</strong></div><div class="metric"><span class="label">保留率</span><strong data-retention="2">—</strong></div></div>
+    </article>
+  </culture-tool-game>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script src="assets/lib/seedrandom.min.js"></script>
+<script>
+Deck.init({ index: 8, total: 18 });
+Lec.mount({
+  index: 8,
+  kicker: `CUMULATIVE CULTURE`,
+  title: `独自发明，还是复制后再改一点？`,
+  take: `文化之所以能累积，不只因为有人创新，还因为成果能被较可靠地传下去。`
+});
+
+class CultureToolGame extends HTMLElement {
+  constructor() {
+    super();
+    const root = this.attachShadow({ mode: 'open' });
+    root.innerHTML = '<slot></slot>';
+    this.nodes = {};
+    this.state = null;
+  }
+
+  connectedCallback() {
+    this.nodes.length = this.querySelector('#lengthInput');
+    this.nodes.angle = this.querySelector('#angleInput');
+    this.nodes.tryButton = this.querySelector('#tryButton');
+    this.nodes.resetButton = this.querySelector('#resetButton');
+    this.nodes.status = this.querySelector('#gameStatus');
+    this.nodes.attempts = this.querySelector('#attemptsLabel');
+    this.nodes.generationBest = this.querySelector('#generationBest');
+    this.nodes.lineageBest = this.querySelector('#lineageBest');
+    this.nodes.lengthValue = this.querySelector('#lengthValue');
+    this.nodes.angleValue = this.querySelector('#angleValue');
+    this.nodes.shaft = this.querySelector('#shaft');
+    this.nodes.head = this.querySelector('#head');
+    this.nodes.tool = this.querySelector('#tool');
+    this.nodes.impact = this.querySelector('#impact');
+
+    [this.nodes.length, this.nodes.angle].forEach((input) => {
+      input.min = '0'; input.max = '100'; input.step = '1';
+      input.addEventListener('input', () => this.updateControls());
+      input.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape') this.restoreCurrent();
+      });
+    });
+    this.nodes.tryButton.addEventListener('click', () => this.takeTurn());
+    this.nodes.resetButton.addEventListener('click', () => this.reset());
+    this.reset();
+  }
+
+  freshState() {
+    const rng = new Math.seedrandom('page-08');
+    const disturbances = Array.from({ length: 12 }, () => (rng() - 0.5) * 0.045);
+    return {
+      generation: 0,
+      attempt: 0,
+      attemptsPerGeneration: 3,
+      current: { length: 28, angle: 72 },
+      generationBest: null,
+      lineageBest: null,
+      lineageConfig: null,
+      records: [null, null, null],
+      disturbances,
+      disturbanceIndex: 0,
+      complete: false,
+      trace: []
+    };
+  }
+
+  taskPerformance(config, disturbance) {
+    const lengthError = Math.abs(config.length - 72) / 100;
+    const angleError = Math.abs(config.angle - 38) / 100;
+    return Deck.clamp(1 - (lengthError * 0.62 + angleError * 0.38) + disturbance, 0, 1);
+  }
+
+  fmt(value) {
+    return Lec.P.significant(value, 3);
+  }
+
+  start() {
+    if (!this.state) this.reset();
+    this.dispatchEvent(new CustomEvent('game-start', { bubbles: true, composed: true, detail: { state: this.getState() } }));
+  }
+
+  reset() {
+    this.state = this.freshState();
+    this.setInputs(this.state.current);
+    this.render('先调整两个参数，再提交测试。');
+    this.dispatchEvent(new CustomEvent('game-reset', { bubbles: true, composed: true, detail: { state: this.getState() } }));
+    this.start();
+  }
+
+  restoreCurrent() {
+    this.setInputs(this.state.current);
+    this.render('已恢复到本次测试前的方案。');
+  }
+
+  setInputs(config) {
+    this.nodes.length.value = String(Math.round(config.length));
+    this.nodes.angle.value = String(Math.round(config.angle));
+    this.updateControls();
+  }
+
+  readConfig() {
+    return { length: Number(this.nodes.length.value), angle: Number(this.nodes.angle.value) };
+  }
+
+  updateControls() {
+    if (!this.state) return;
+    const config = this.readConfig();
+    this.nodes.lengthValue.textContent = this.fmt(config.length);
+    this.nodes.angleValue.textContent = this.fmt(config.angle);
+    this.nodes.shaft.style.transform = `translateY(-50%) scaleX(${0.55 + config.length / 220})`;
+    this.nodes.head.style.transform = `translateY(-50%) rotate(${(config.angle - 50) * 0.7}deg)`;
+    this.nodes.tool.style.transform = `rotate(${(config.angle - 50) * 0.08}deg)`;
+  }
+
+  takeTurn() {
+    if (this.state.complete) return;
+    const config = this.readConfig();
+    const disturbance = this.state.disturbances[this.state.disturbanceIndex++];
+    const score = this.taskPerformance(config, disturbance);
+    this.state.current = config;
+    this.state.attempt += 1;
+    this.state.trace.push({ generation: this.state.generation, config: { ...config }, score });
+
+    if (!this.state.generationBest || score > this.state.generationBest.score) {
+      this.state.generationBest = { score, config: { ...config } };
+    }
+    if (!this.state.lineageBest || score > this.state.lineageBest) {
+      this.state.lineageBest = score;
+      this.state.lineageConfig = { ...config };
+    }
+
+    this.dispatchEvent(new CustomEvent('game-progress', {
+      bubbles: true, composed: true,
+      detail: { state: this.getState(), action: 'test', metrics: { score, generationBest: this.state.generationBest.score, lineageBest: this.state.lineageBest } }
+    }));
+
+    if (this.state.attempt >= this.state.attemptsPerGeneration) {
+      this.finishGeneration();
+    } else {
+      this.render(`本次性能 ${this.fmt(score)}。还可继续微调。`, score);
+    }
+  }
+
+  finishGeneration() {
+    const g = this.state.generation;
+    this.state.records[g] = {
+      best: this.state.generationBest.score,
+      retention: this.state.records[g] ? this.state.records[g].retention : null
+    };
+
+    if (g === 2) {
+      this.state.complete = true;
+      this.render('创新产生变化；模仿与教学减少复制误差。外部记录保存跨代最佳。', this.state.generationBest.score);
+      this.dispatchEvent(new CustomEvent('game-complete', {
+        bubbles: true, composed: true,
+        detail: { score: this.state.lineageBest, metrics: { records: this.state.records }, trace: this.state.trace.slice() }
+      }));
+      return;
+    }
+
+    const previousBest = this.state.lineageBest;
+    const inherited = { ...this.state.lineageConfig };
+    const copyNoise = g === 0 ? 3 : 24;
+    const jitterA = Math.abs(this.state.disturbances[this.state.disturbanceIndex++]) * 100;
+    const jitterB = Math.abs(this.state.disturbances[this.state.disturbanceIndex++]) * 100;
+    const signA = inherited.length >= 72 ? 1 : -1;
+    const signB = inherited.angle >= 38 ? 1 : -1;
+    inherited.length = Deck.clamp(inherited.length + (copyNoise + jitterA) * signA, 0, 100);
+    inherited.angle = Deck.clamp(inherited.angle + (copyNoise + jitterB) * signB, 0, 100);
+    const inheritedScore = this.taskPerformance(inherited, 0);
+
+    this.state.generation += 1;
+    this.state.attempt = 0;
+    this.state.generationBest = { score: inheritedScore, config: { ...inherited } };
+    this.state.records[this.state.generation] = {
+      best: inheritedScore,
+      retention: Deck.clamp(Lec.P.ratio(inheritedScore, previousBest), 0, 1)
+    };
+    this.state.current = inherited;
+    this.setInputs(inherited);
+    const rule = this.state.generation === 1 ? '复制较准，起点接近上一代最佳。' : '复制误差变大，起点可能明显倒退。';
+    this.render(rule, inheritedScore);
+  }
+
+  render(message, lastScore) {
+    const s = this.state;
+    const attemptShown = Math.min(s.attempt, s.attemptsPerGeneration);
+    this.nodes.attempts.textContent = `本代尝试 ${Lec.P.padInteger(attemptShown, 1)} / ${Lec.P.padInteger(s.attemptsPerGeneration, 1)}`;
+    this.nodes.generationBest.textContent = s.generationBest ? this.fmt(s.generationBest.score) : '—';
+    this.nodes.lineageBest.textContent = s.lineageBest !== null ? this.fmt(s.lineageBest) : '—';
+    this.nodes.status.textContent = message;
+    this.nodes.tryButton.disabled = s.complete;
+    this.nodes.tryButton.textContent = s.complete ? '挑战完成' : '提交测试';
+
+    const visualScore = lastScore !== undefined ? lastScore : (s.generationBest ? s.generationBest.score : 0.18);
+    this.nodes.impact.style.left = `${12 + visualScore * 78}%`;
+
+    this.querySelectorAll('[data-card]').forEach((card) => {
+      const index = Number(card.dataset.card);
+      card.toggleAttribute('aria-current', index === s.generation && !s.complete);
+      const record = s.records[index];
+      const best = card.querySelector(`[data-best="${index}"]`);
+      const retention = card.querySelector(`[data-retention="${index}"]`);
+      if (record) {
+        best.textContent = this.fmt(record.best);
+        retention.textContent = record.retention === null ? '不适用' : this.fmt(record.retention);
+      } else if (index === s.generation && s.generationBest) {
+        best.textContent = this.fmt(s.generationBest.score);
+        retention.textContent = s.records[index] && s.records[index].retention !== null ? this.fmt(s.records[index].retention) : '—';
+      } else {
+        best.textContent = '—'; retention.textContent = '—';
+      }
+    });
+    this.updateControls();
+  }
+
+  getState() {
+    return JSON.parse(JSON.stringify(this.state));
+  }
+}
+
+customElements.define('culture-tool-game', CultureToolGame);
+</script>
+</body>
+</html>

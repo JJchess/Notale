@@ -1,0 +1,408 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  .lec-header__inner { width: 100%; }
+  .lec-header__identity,
+  .lec-header__heading { display: flex; min-width: 0; align-items: center; gap: var(--sp-3); }
+  .lec-header__index { flex: 0 0 auto; color: var(--accent-strong); font-family: var(--font-mono); }
+  .lec-header__kicker { flex: 0 0 auto; color: var(--text-muted); font-size: var(--fs-tick); line-height: 1.35; }
+  .lec-header__title { min-width: 0; color: var(--text); font-size: var(--fs-label); line-height: 1.35; letter-spacing: 0; white-space: nowrap; }
+  .orbit-game { isolation: isolate; }
+  .orbit-field { position: absolute; z-index: 0; inset: var(--sp-2) var(--sp-2) 156px; min-width: 0; min-height: 0; }
+  .orbit-game canvas { z-index: 0; }
+  .orbit-guide {
+    position: absolute;
+    z-index: 2;
+    top: var(--sp-4);
+    left: var(--sp-4);
+    width: 360px;
+    padding: var(--sp-4);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-md);
+    background: var(--surface-1);
+  }
+  .orbit-guide p { font-size: var(--fs-body); line-height: var(--lh-copy); }
+  .orbit-guide strong { color: var(--accent-strong); }
+  .attempts {
+    position: absolute;
+    z-index: 2;
+    top: var(--sp-4);
+    right: var(--sp-4);
+    display: flex;
+    width: 390px;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: var(--sp-2);
+  }
+  .attempt-list { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--sp-2); }
+  .attempt-chip {
+    display: inline-flex;
+    min-height: 38px;
+    padding-inline: var(--sp-3);
+    align-items: center;
+    gap: var(--sp-2);
+    border: 1px solid var(--line-strong);
+    border-radius: var(--radius-pill);
+    background: var(--surface-1);
+    color: var(--text-muted);
+    font-size: var(--fs-label);
+    line-height: 1.4;
+  }
+  .attempt-mark { width: 26px; height: 0; border-top: 3px solid var(--accent); }
+  .attempt-chip:nth-child(2) .attempt-mark { border-top-style: dashed; border-top-color: var(--warning); }
+  .attempt-chip:nth-child(3) .attempt-mark { border-top-style: dotted; border-top-color: var(--danger); }
+  .game-status {
+    position: absolute;
+    z-index: 2;
+    right: var(--sp-4);
+    bottom: 178px;
+    max-width: 440px;
+    padding: var(--sp-3) var(--sp-4);
+    border-inline-start: 5px solid var(--accent);
+    border-radius: 0 var(--radius-md) var(--radius-md) 0;
+    background: var(--surface-1);
+    font-size: var(--fs-body);
+    line-height: var(--lh-copy);
+  }
+  .control-dock {
+    position: absolute;
+    z-index: 3;
+    right: var(--sp-4);
+    bottom: var(--sp-4);
+    left: var(--sp-4);
+    display: grid;
+    min-width: 0;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    gap: var(--sp-4);
+    align-items: center;
+    padding: var(--sp-4);
+  }
+  .speed-control { min-width: 0; }
+  .speed-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--sp-3); }
+  .speed-value { color: var(--accent-strong); font-size: var(--fs-body-lg); font-weight: 720; }
+  .reference { margin-top: var(--sp-1); color: var(--text-muted); font-size: var(--fs-label); line-height: 1.4; }
+  .control-dock button { min-width: 138px; }
+  .orbit-game:focus-within .control-dock { border-color: var(--focus); }
+</style>
+</head>
+<body data-page="11" data-total="18">
+<div id="stage">
+  <main class="canvas-full orbit-game no-pan" aria-label="轨道发射挑战">
+    <div class="orbit-field"><canvas id="orbit-canvas" class="cv-fill" role="img" aria-labelledby="orbit-alt"><span id="orbit-alt" class="sr-only">图中显示地球、发射点和最多三条实时计算的轨迹。</span></canvas></div>
+    <section class="orbit-guide stack-2" aria-label="操作目标">
+      <p><strong>目标：</strong>让发射物绕行，不撞地也不逃走。</p>
+      <p class="muted">调节横向速度后发射，比较保留的三条轨迹。</p>
+    </section>
+
+    <section class="attempts" aria-label="最近三次尝试">
+      <span class="label muted">最近三次轨迹</span>
+      <div id="attempt-list" class="attempt-list"><span class="attempt-chip">尚未发射</span></div>
+    </section>
+
+    <p id="game-status" class="game-status" aria-live="polite">物体会不断落向地球。横向速度决定它是否错过地面。</p>
+
+    <section class="controls control-dock" aria-label="发射控制">
+      <div class="speed-control min0">
+        <div class="speed-head">
+          <label for="speed">横向发射速度</label>
+          <output id="speed-value" class="speed-value mono" for="speed"></output>
+        </div>
+        <input id="speed" type="range" aria-describedby="speed-reference">
+        <p id="speed-reference" class="reference"></p>
+      </div>
+      <button id="launch" class="primary" type="button">发射</button>
+      <button id="reset" type="button">清除轨迹</button>
+    </section>
+  </main>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script>
+  Deck.init({ index: 11, total: 18 });
+
+  Lec.mount({
+    index: 11,
+    kicker: `FALLING SIDEWAYS`,
+    title: `轨道不是“没有重力”，而是持续自由落体`,
+    take: `给物体足够的横向速度，地面弯离它的速度可以与下落相匹配。`
+  });
+
+  (function () {
+    'use strict';
+
+    var K = Lec.K;
+    var P = Lec.P;
+    var earth = K.earth;
+    var altitude = K.spacecraft.lowEarthOrbitAltitude;
+    var startRadius = P.orbitRadiusFromAltitude(earth, altitude);
+    var circularVelocity = P.circularOrbitVelocity(earth, startRadius);
+    var circularPeriod = P.orbitalPeriod(earth, startRadius);
+    var minimumVelocity = P.lerp(P.divide(circularVelocity, K.math.two), circularVelocity, K.math.half);
+    var maximumVelocity = P.lerp(circularVelocity, circularVelocity * K.math.two, K.math.half);
+    var initialVelocity = P.lerp(minimumVelocity, circularVelocity, K.math.quarter);
+    var velocityStep = P.divide(maximumVelocity - minimumVelocity, K.math.hundred);
+    var mu = P.gravitationalParameter(earth);
+
+    var canvas = document.getElementById('orbit-canvas');
+    var speed = document.getElementById('speed');
+    var speedValue = document.getElementById('speed-value');
+    var speedReference = document.getElementById('speed-reference');
+    var launch = document.getElementById('launch');
+    var reset = document.getElementById('reset');
+    var status = document.getElementById('game-status');
+    var list = document.getElementById('attempt-list');
+    var alt = document.getElementById('orbit-alt');
+    var ctx;
+    var running = null;
+    var attempts = [];
+    var sequence = K.math.zero;
+
+    speed.min = minimumVelocity;
+    speed.max = maximumVelocity;
+    speed.step = velocityStep;
+    speed.value = initialVelocity;
+
+    function formatSpeed(value) {
+      return P.significant(P.divide(value, K.prefixes.kilo), K.math.three) + ' km/s';
+    }
+
+    function formatMinutes(value) {
+      return P.significant(P.divide(value, K.units.secondsPerMinute), K.math.three) + ' 分钟';
+    }
+
+    function updateSpeedReadout() {
+      var value = Number(speed.value);
+      var relative = P.significant(P.ratio(value, circularVelocity) * K.math.hundred, K.math.three);
+      speedValue.textContent = formatSpeed(value) + ' · ' + relative + '% 参考速度';
+    }
+
+    speedReference.textContent = '近圆轨道参考：' + formatSpeed(circularVelocity) + '；周期约 ' + formatMinutes(circularPeriod) + '。';
+    updateSpeedReadout();
+
+    function freshAttempt(v) {
+      return {
+        id: ++sequence,
+        launchSpeed: v,
+        x: K.math.zero,
+        y: -startRadius,
+        vx: v,
+        vy: K.math.zero,
+        elapsed: K.math.zero,
+        points: [{ x: K.math.zero, y: -startRadius, t: K.math.zero }],
+        minRadius: startRadius,
+        maxRadius: startRadius,
+        result: '飞行中'
+      };
+    }
+
+    function classify(a) {
+      var r = Math.sqrt(a.x * a.x + a.y * a.y);
+      var v2 = a.vx * a.vx + a.vy * a.vy;
+      var specificEnergy = P.divide(v2, K.math.two) - P.divide(mu, r);
+      var spread = P.ratio(a.maxRadius - a.minRadius, startRadius);
+      if (r <= earth.meanRadius) return '撞地';
+      if (specificEnergy >= K.math.zero && r > startRadius * K.math.two) return '逃逸';
+      if (a.elapsed >= circularPeriod && spread < P.divide(K.math.one, K.math.ten)) return '近圆轨道';
+      if (a.elapsed >= circularPeriod * P.lerp(K.math.one, K.math.two, K.math.quarter)) return '更高的椭圆轨道';
+      return '';
+    }
+
+    function integrate(a, dt) {
+      var r = Math.sqrt(a.x * a.x + a.y * a.y);
+      var gravity = P.gravityAtRadius(earth, r);
+      var ax = -gravity * P.divide(a.x, r);
+      var ay = -gravity * P.divide(a.y, r);
+      a.vx += ax * dt;
+      a.vy += ay * dt;
+      a.x += a.vx * dt;
+      a.y += a.vy * dt;
+      a.elapsed += dt;
+      r = Math.sqrt(a.x * a.x + a.y * a.y);
+      a.minRadius = Math.min(a.minRadius, r);
+      a.maxRadius = Math.max(a.maxRadius, r);
+      if (a.points.length === K.math.zero || a.elapsed - a.points[a.points.length - K.math.one].t > K.math.ten) {
+        a.points.push({ x: a.x, y: a.y, t: a.elapsed });
+      }
+      return classify(a);
+    }
+
+    function finishAttempt(result) {
+      running.result = result;
+      attempts.push(running);
+      if (attempts.length > K.math.three) attempts.shift();
+      var completed = running;
+      running = null;
+      speed.disabled = false;
+      launch.disabled = false;
+      launch.textContent = '再次发射';
+      var messages = {
+        '撞地': '速度偏慢：轨迹向地面弯得太快。',
+        '近圆轨道': '挑战完成：向下弯曲与地面弯离相匹配。',
+        '更高的椭圆轨道': '物体仍在下落，但会进入更高的椭圆轨道。',
+        '逃逸': '速度过快：轨迹没有弯回地球附近。'
+      };
+      status.textContent = messages[result];
+      renderAttempts();
+      alt.textContent = '最近一次结果：' + result + '。飞船与其中的人一起受重力下落，所以微重力不等于没有重力。';
+      document.querySelector('.orbit-game').dispatchEvent(new CustomEvent('game-complete', {
+        bubbles: true,
+        composed: true,
+        detail: { score: result === '近圆轨道' ? K.math.one : K.math.zero, metrics: { result: result, speed: completed.launchSpeed }, trace: completed.points.slice() }
+      }));
+    }
+
+    function runToEnd(a) {
+      var step = P.divide(circularPeriod, K.math.thousand);
+      var guard = K.math.zero;
+      var result = '';
+      while (!result && guard < K.math.thousand * K.math.two) {
+        result = integrate(a, step);
+        guard += K.math.one;
+      }
+      finishAttempt(result || '更高的椭圆轨道');
+    }
+
+    function begin() {
+      if (running) return;
+      running = freshAttempt(Number(speed.value));
+      speed.disabled = true;
+      launch.disabled = true;
+      launch.textContent = '模拟中…';
+      status.textContent = '持续计算当前位置的重力，轨迹正在形成。';
+      document.querySelector('.orbit-game').dispatchEvent(new CustomEvent('game-start', { bubbles: true, composed: true }));
+      if (Deck.reduced()) {
+        runToEnd(running);
+        draw();
+      }
+    }
+
+    function renderAttempts() {
+      list.textContent = '';
+      if (!attempts.length) {
+        var empty = document.createElement('span');
+        empty.className = 'attempt-chip';
+        empty.textContent = '尚未发射';
+        list.appendChild(empty);
+        return;
+      }
+      attempts.forEach(function (a, index) {
+        var chip = document.createElement('span');
+        chip.className = 'attempt-chip';
+        var mark = document.createElement('span');
+        mark.className = 'attempt-mark';
+        mark.setAttribute('aria-hidden', 'true');
+        chip.appendChild(mark);
+        chip.appendChild(document.createTextNode(formatSpeed(a.launchSpeed) + ' · ' + a.result));
+        list.appendChild(chip);
+      });
+    }
+
+    function clearAll() {
+      running = null;
+      attempts = [];
+      speed.disabled = false;
+      launch.disabled = false;
+      launch.textContent = '发射';
+      status.textContent = '物体会不断落向地球。横向速度决定它是否错过地面。';
+      alt.textContent = '图中显示地球、发射点和最多三条实时计算的轨迹。';
+      renderAttempts();
+      draw();
+      document.querySelector('.orbit-game').dispatchEvent(new CustomEvent('game-reset', { bubbles: true, composed: true }));
+    }
+
+    function pathStyle(index) {
+      var styles = [
+        { color: Deck.rgb('--accent'), dash: [] },
+        { color: Deck.rgb('--warning'), dash: [12, 8] },
+        { color: Deck.rgb('--danger'), dash: [3, 8] }
+      ];
+      return styles[index % styles.length];
+    }
+
+    function drawPath(a, index, cx, cy, scale, active) {
+      if (a.points.length < K.math.two) return;
+      var style = pathStyle(index);
+      ctx.beginPath();
+      a.points.forEach(function (p, i) {
+        var px = cx + p.x * scale;
+        var py = cy + p.y * scale;
+        if (i === K.math.zero) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+      });
+      ctx.setLineDash(style.dash);
+      ctx.strokeStyle = 'rgb(' + style.color.join(',') + ')';
+      ctx.globalAlpha = active ? K.math.one : P.lerp(K.math.half, K.math.one, K.math.quarter);
+      ctx.lineWidth = active ? K.math.four : K.math.three;
+      ctx.stroke();
+      ctx.globalAlpha = K.math.one;
+      ctx.setLineDash([]);
+    }
+
+    function draw() {
+      if (!ctx) return;
+      var w = canvas.offsetWidth;
+      var h = canvas.offsetHeight;
+      var cx = w * K.math.half;
+      var cy = h * P.lerp(K.math.quarter, K.math.half, K.math.half);
+      var earthPixels = Math.min(w, h) * P.lerp(K.math.quarter, K.math.half, K.math.quarter);
+      var scale = P.divide(earthPixels, earth.meanRadius);
+      ctx.clearRect(K.math.zero, K.math.zero, w, h);
+
+      ctx.beginPath();
+      ctx.arc(cx, cy, earthPixels + K.math.ten, K.math.zero, K.math.tau);
+      ctx.fillStyle = Deck.rgba('--accent', P.divide(K.math.one, K.math.ten));
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(cx, cy, earthPixels, K.math.zero, K.math.tau);
+      ctx.fillStyle = Deck.rgba('--surface-3', K.math.one);
+      ctx.fill();
+      ctx.lineWidth = K.math.three;
+      ctx.strokeStyle = Deck.rgba('--accent', P.lerp(K.math.half, K.math.one, K.math.quarter));
+      ctx.stroke();
+
+      attempts.forEach(function (a, i) { drawPath(a, i, cx, cy, scale, false); });
+      if (running) drawPath(running, attempts.length, cx, cy, scale, true);
+
+      var craft = running || { x: K.math.zero, y: -startRadius };
+      var px = cx + craft.x * scale;
+      var py = cy + craft.y * scale;
+      ctx.beginPath();
+      ctx.arc(px, py, K.math.eight, K.math.zero, K.math.tau);
+      ctx.fillStyle = Deck.rgba('--accent-strong', K.math.one);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.moveTo(px, py);
+      ctx.lineTo(px + 72, py);
+      ctx.strokeStyle = Deck.rgba('--accent-strong', K.math.one);
+      ctx.lineWidth = K.math.three;
+      ctx.stroke();
+      Deck.arrow(ctx, px + 48, py, px + 72, py, K.math.eight);
+      ctx.stroke();
+    }
+
+    ctx = Deck.fit(canvas);
+    Deck.onResize(function () { ctx = Deck.fit(canvas); draw(); });
+
+    speed.addEventListener('input', updateSpeedReadout);
+    launch.addEventListener('click', begin);
+    reset.addEventListener('click', clearAll);
+
+    Deck.loop(function (time, dt) {
+      if (running && dt > K.math.zero) {
+        var simulated = P.divide(dt, K.math.thousand) * P.lerp(K.math.thousand, K.math.thousand * K.math.two, K.math.quarter);
+        var substep = P.divide(simulated, K.math.eight);
+        var result = '';
+        for (var i = K.math.zero; i < K.math.eight && !result; i += K.math.one) result = integrate(running, substep);
+        if (result) finishAttempt(result);
+      }
+      draw();
+    }, { still: K.math.one });
+
+    draw();
+  }());
+</script>
+</body>
+</html>

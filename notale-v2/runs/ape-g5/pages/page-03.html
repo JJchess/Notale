@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    #main{display:flex;flex-direction:column;gap:12px}
+    .flow{--step-count:3;height:70px;flex:0 0 70px;gap:36px}
+    .flow.k-process>.step{padding:10px 18px;display:flex;align-items:center;justify-content:center;text-align:center;font-size:var(--fs-sec);line-height:var(--lh-sec);font-weight:700}
+    .viz{position:relative;flex:1 1 auto;min-height:0;border:1px solid var(--line);border-radius:var(--radius-md);background:var(--paper);box-shadow:var(--shadow);overflow:hidden}
+    #chart{position:absolute;inset:0}
+    .readout{position:absolute;z-index:3;right:20px;top:16px;min-width:220px;padding:10px 14px;border:1px solid var(--line);border-radius:var(--radius-sm);background:rgb(255 253 248 / 92%);text-align:right;pointer-events:none}
+    .readout .label{color:var(--ink-soft)}
+    .readout strong{display:block;color:var(--accent);font-size:var(--fs-h2);line-height:1.25;font-variant-numeric:tabular-nums}
+    .feedback{position:absolute;z-index:3;left:22px;bottom:14px;max-width:760px;color:var(--ink-soft);font-size:var(--fs-sec);line-height:var(--lh-sec);pointer-events:none}
+    .controls{flex:0 0 58px;padding:0 4px}
+    .controls.ctl{grid-template-columns:170px minmax(0,1fr) 170px 230px;gap:16px}
+    .controls input[type=range]{padding:0}
+    .controls button{white-space:nowrap}
+    .legend{position:absolute;z-index:3;left:22px;top:15px;display:flex;gap:18px;font-size:var(--fs-label);font-weight:680}
+    .key{display:inline-flex;align-items:center;gap:7px}.key::before{content:"";width:11px;height:11px;border-radius:50%;background:var(--accent)}
+    .key.engineering::before{background:var(--accent-2)}
+  </style>
+</head>
+<body data-page="03" data-total="48">
+  <div id="stage">
+    <main id="main">
+      <section class="k-process flow" aria-label="时间换算过程">
+        <div class="axis"></div>
+        <div class="step is-done">距地球形成后的占比</div><div class="arw" aria-hidden="true"></div>
+        <div class="step is-current">一天中已经过去的秒数</div><div class="arw" aria-hidden="true"></div>
+        <div class="step">落到 24 小时时刻</div>
+      </section>
+      <section class="viz min0" aria-label="地球历史双层时间轴">
+        <div class="legend"><span class="key">生物时间标记</span><span class="key engineering">航天工程事件</span></div>
+        <div class="readout"><span class="label">当前观察窗口</span><strong id="windowRead">完整地球历史</strong><span class="label" id="clockRead">00:00:00 → 24:00:00</span></div>
+        <div id="chart" role="img" aria-label="上方缩略轴显示完整地球历史，下方主轴放大当前观察窗口。事件引线连接真实年代与一天类比时刻。"></div>
+        <p class="feedback" id="feedback" aria-live="polite">拖动压缩尺，观察靠近今天的事件逐步分开。</p>
+      </section>
+      <div class="ctl controls">
+        <label for="zoom">观察尺度</label>
+        <input id="zoom" type="range" min="0" max="100" step="1" value="0" aria-describedby="feedback">
+        <output id="level" for="zoom">完整地球历史</output>
+        <button id="reset" type="button">重置为完整地球历史</button>
+      </div>
+    </main>
+  </div>
+  <script src="assets/lib/d3.min.js"></script>
+  <script src="assets/lib/echarts.min.js"></script>
+  <script src="assets/lib/gsap.min.js"></script>
+  <script src="assets/lib/ScrollTrigger.min.js"></script>
+  <script src="assets/base.js"></script>
+  <script src="assets/lec.js"></script>
+  <script>
+    Lec.mount({
+      index: 3,
+      kicker: "DEEP TIME",
+      title: "如果地球历史只有一天，人类何时出现？",
+      take: "把地球约 46 亿年的历史压成一天后，智人只在午夜前约几秒出现，载人航天则挤在最后一瞬。"
+    });
+    Deck.init({ index: 3, total: 48 });
+
+    (function(){
+      gsap.registerPlugin(ScrollTrigger);
+      const K=Lec.K, P=Lec.P, earth=P.positive(K.evolution.earthAgeYears,1);
+      const lcaNear=6000000, lcaFar=K.evolution.homininSplitYearsAgo;
+      const now=new Date().getUTCFullYear();
+      const safe=v=>P.clamp(P.finiteNumber(v,0),0,earth);
+      const flight=safe(now-K.evolution.firstHumanSpaceflightYear);
+      const moon=safe(now-K.evolution.firstMoonLandingYear);
+      const events=[
+        {name:'地球形成',age:earth,raw:'约 '+Deck.fmt(earth/1e8,1)+' 亿年前',type:'bio'},
+        {name:'共同祖先范围',age:safe((lcaNear+lcaFar)/2),raw:'约 '+Deck.fmt(lcaNear/1e4,0)+' 万—'+Deck.fmt(lcaFar/1e4,0)+' 万年前',type:'bio',range:[safe(lcaNear),safe(lcaFar)]},
+        {name:'智人出现',age:safe(K.evolution.homoSapiensYearsAgo),raw:'约 '+Deck.fmt(K.evolution.homoSapiensYearsAgo/1e4,0)+' 万年前',type:'bio'},
+        {name:'首次载人进入太空',age:flight,raw:Deck.fmt(K.evolution.firstHumanSpaceflightYear,0)+' 年',type:'eng'},
+        {name:'首次登月',age:moon,raw:Deck.fmt(K.evolution.firstMoonLandingYear,0)+' 年',type:'eng'},
+        {name:'今天',age:0,raw:'距今 '+Deck.fmt(0,0)+' 年',type:'today'}
+      ];
+      events.forEach(e=>{e.frac=P.chronologyFraction(e.age,earth);e.sec=P.clockAnalogySeconds(e.age,earth);e.px=P.compressTimeline(e.age,earth,100);});
+      const day=24*60*60, secondYears=earth/day;
+      const stops=[{p:0,w:earth,n:'完整地球历史'},{p:35,w:earth/24,n:'最后 1 小时'},{p:68,w:earth/(24*60),n:'最后 1 分钟'},{p:100,w:secondYears,n:'最后 1 秒'}];
+      const chart=echarts.init(document.getElementById('chart'),null,{renderer:'svg'});
+      const zoom=document.getElementById('zoom'), level=document.getElementById('level');
+      const colors={bio:Deck.token('--accent'),eng:Deck.token('--accent-2'),today:Deck.token('--line-strong')};
+      function clock(sec,ms){
+        if(sec>=day-1e-9) return '24:00:00';
+        const h=Math.floor(sec/3600),m=Math.floor((sec%3600)/60),s=sec%60;
+        return String(h).padStart(2,'0')+':'+String(m).padStart(2,'0')+':'+s.toFixed(ms?3:1).padStart(ms?6:4,'0');
+      }
+      function windowFor(p){
+        let a=stops[0],b=stops[stops.length-1];
+        for(let i=0;i<stops.length-1;i++)if(p>=stops[i].p&&p<=stops[i+1].p){a=stops[i];b=stops[i+1];break;}
+        const t=(p-a.p)/(b.p-a.p); return {w:Math.exp(Math.log(a.w)+(Math.log(b.w)-Math.log(a.w))*t),name:(Math.abs(p-a.p)<2?a.n:Math.abs(p-b.p)<2?b.n:'局部放大')};
+      }
+      function update(){
+        const p=+zoom.value, state=windowFor(p), w=state.w;
+        level.value=state.name;
+        document.getElementById('windowRead').textContent=state.name;
+        document.getElementById('clockRead').textContent=clock(P.clockAnalogySeconds(w,earth),false)+' → 24:00:00';
+        document.getElementById('feedback').textContent=p>88?'这里已经进入午夜前的毫秒尺度。':p>55?'你正在放大最后几秒，而不是延长这段历史。':'拖动压缩尺，观察靠近今天的事件逐步分开。';
+        const visible=events.filter(e=>e.age<=w);
+        chart.setOption({
+          animationDuration:Deck.reduced()?0:180,
+          animationEasing:'linear',
+          textStyle:{fontFamily:Deck.token('--font-sans'),fontSize:16,color:Deck.token('--text')},
+          tooltip:{trigger:'item',textStyle:{fontSize:16},formatter:q=>{const e=q.data.event,remain=day-e.sec;return '<b>'+e.name+'</b><br>'+e.raw+'<br>占地球历史：'+Deck.fmt(P.percent(e.frac,1),6)+'%<br>一天时刻：'+clock(e.sec,e.type==='eng')+'<br>距午夜：'+Deck.fmt(remain,e.type==='eng'?3:1)+' 秒';}},
+          grid:[{left:65,right:65,top:82,height:54},{left:65,right:65,top:190,bottom:58}],
+          xAxis:[
+            {type:'value',min:earth,max:0,gridIndex:0,axisLabel:{fontSize:13,formatter:v=>v===earth?'约 '+Deck.fmt(earth/1e8,1)+' 亿年':v===0?'今天':''},axisLine:{lineStyle:{color:Deck.token('--line-strong')}},splitLine:{show:false},axisTick:{show:false}},
+            {type:'value',min:w,max:0,gridIndex:1,name:'真实时间（距今）  →  一天类比时刻',nameLocation:'middle',nameGap:38,nameTextStyle:{fontSize:15,color:Deck.token('--ink-soft')},axisLabel:{fontSize:13,formatter:v=>v===0?'24:00:00':clock(P.clockAnalogySeconds(v,earth),false)},axisLine:{lineStyle:{color:Deck.token('--line-strong'),width:2}},splitLine:{show:true,lineStyle:{color:Deck.token('--line'),type:'dashed'}}}
+          ],
+          yAxis:[{type:'value',gridIndex:0,min:0,max:1,show:false},{type:'value',gridIndex:1,min:0,max:1,show:false}],
+          series:[
+            {type:'scatter',xAxisIndex:0,yAxisIndex:0,symbolSize:10,data:events.map(e=>({value:[e.age,.5],event:e,itemStyle:{color:colors[e.type]}}))},
+            {type:'scatter',xAxisIndex:1,yAxisIndex:1,symbolSize:14,data:visible.map((e,i)=>({value:[e.age,.28+(i%2)*.42],event:e,itemStyle:{color:colors[e.type]},label:{show:p>20,position:i%2?'top':'bottom',distance:10,fontSize:15,fontWeight:700,color:Deck.token('--text'),formatter:e.name}})),emphasis:{scale:1.35}}
+          ]
+        },true);
+      }
+      zoom.addEventListener('input',update);
+      zoom.addEventListener('keydown',e=>{let p=+zoom.value;if(e.key==='PageUp'||e.key==='PageDown'){e.preventDefault();const dir=e.key==='PageUp'?1:-1;const candidates=stops.map(s=>s.p).filter(v=>dir>0?v>p:v<p);zoom.value=candidates.length?(dir>0?Math.min(...candidates):Math.max(...candidates)):p;update();}});
+      document.getElementById('reset').addEventListener('click',()=>{zoom.value=0;update();zoom.focus();});
+      Deck.onResize(()=>chart.resize());
+      update();
+    })();
+  </script>
+</body>
+</html>

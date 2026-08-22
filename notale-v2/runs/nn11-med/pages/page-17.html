@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title></title>
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/deck.css">
+<style>
+#main{display:flex;flex-direction:column;height:100%;gap:11px}
+.simbar{display:flex;align-items:center;gap:16px;flex:0 0 auto;min-height:42px}
+.simbar .btns{flex:0 0 auto}
+.simbar .hint{flex:1;min-width:0}
+.metric{flex:0 0 auto;min-width:290px;text-align:right;font-size:var(--fs-sec);color:var(--text-2)}
+.metric .num{color:var(--text);font-weight:700;margin-left:7px}
+.chainbox{flex:1 1 auto;min-height:0;border:1px solid var(--line-soft);background:rgba(25,21,18,.68)}
+.chainbox::after{content:"";position:absolute;inset:0;pointer-events:none;background:linear-gradient(90deg,rgba(224,145,58,.025),transparent 24%,rgba(95,200,216,.03))}
+.context{display:grid;grid-template-columns:1.18fr .82fr;gap:12px;flex:0 0 auto}
+.context>*{min-width:0}
+.why,.dating{border-top:1px solid var(--line);padding:10px 14px 0}
+.why{border-top-color:var(--cult)}
+.kicker{font-size:var(--fs-label);font-weight:700;letter-spacing:.06em;color:var(--cult);margin-bottom:4px}
+.why p,.dating p{margin:0;font-size:var(--fs-sec);line-height:1.45;color:var(--text-2)}
+.why strong{color:var(--text)}
+.quote{color:var(--cult-2)}
+.dating .kicker{color:var(--text-3)}
+.dating .num{color:var(--text)}
+canvas{display:block}
+</style>
+</head>
+<body data-page="17" data-total="44">
+<div id="stage"><main id="main">
+  <div class="simbar min0">
+    <div class="btns" role="group" aria-label="选择传递方式">
+      <button class="btn" id="imitBtn" type="button" aria-pressed="false">只靠模仿</button>
+      <button class="btn cult" id="langBtn" type="button" aria-pressed="false">加上语言</button>
+      <button class="btn" id="rerunBtn" type="button">重跑</button>
+    </div>
+    <div class="hint">按一下比较两种传递方式，或重跑换一批随机误差</div>
+    <div class="metric" id="metric" aria-live="polite">两条链已同时跑完</div>
+  </div>
+
+  <div class="cvbox chainbox min0" role="img" aria-label="两条从原型传到第十二代的技能传递链。只靠模仿的轮廓逐代漂移，加上语言的轮廓被吸附在稳定档位。">
+    <canvas id="chainCanvas" class="cv-fill"></canvas>
+  </div>
+
+  <div class="context min0">
+    <section class="why min0">
+      <div class="kicker">语言传的不只是结果，还能传“为什么”</div>
+      <p>模仿只能复制眼前的形状；一句 <span class="quote">“这里要薄，不然一敲就断”</span>，可以纠正一万次模仿都修不好的错。</p>
+    </section>
+    <section class="dating min0">
+      <div class="kicker">语言本身不留化石｜年代只能间接推断</div>
+      <p>Blombos 洞刻纹赭石约 <span class="num">7.7 万年前</span>；贝壳串珠可早到 <span class="num">10 万年前</span>。</p>
+    </section>
+  </div>
+</main></div>
+<script src="assets/base.js"></script>
+<script src="assets/deck.js"></script>
+<script src="assets/lib/seedrandom.min.js"></script>
+<script>
+Chrome.mount({ act:2, title:'语言：把经验压缩成可以传的东西', sub:'光看着别人做，误差会一代一代累积。语言把连续的动作切成可以纠错的词。', foot:'保真度上去了，人也铺开了——接下来六万年，智人走遍了整颗行星。' });
+
+(function(){
+  var canvas=document.getElementById('chainCanvas');
+  var metric=document.getElementById('metric');
+  var imitBtn=document.getElementById('imitBtn');
+  var langBtn=document.getElementById('langBtn');
+  var rerunBtn=document.getElementById('rerunBtn');
+  var runNo=0, selected=null, result=null;
+  var prototype=[.25,.50,.75,.50,.25,.75];
+  var levels=[0,.25,.50,.75,1];
+
+  function gaussian(rng){
+    var u=0,v=0;
+    while(u===0) u=rng();
+    while(v===0) v=rng();
+    return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v);
+  }
+  function nearest(v){
+    var best=levels[0], d=Infinity;
+    for(var i=0;i<levels.length;i++){
+      var nd=Math.abs(v-levels[i]);
+      if(nd<d){d=nd;best=levels[i];}
+    }
+    return best;
+  }
+  function distance(a,b){
+    var s=0;
+    for(var i=0;i<a.length;i++) s+=(a[i]-b[i])*(a[i]-b[i]);
+    return Math.sqrt(s);
+  }
+  function simulate(){
+    var seed=runNo===0?'page-17':'page-17-'+runNo;
+    var rng=new Math.seedrandom(seed);
+    var noises=[];
+    for(var g=0;g<12;g++){
+      var row=[];
+      for(var j=0;j<6;j++) row.push(gaussian(rng)*.16);
+      noises.push(row);
+    }
+    var imit=[prototype.slice()], lang=[prototype.slice()];
+    for(var gen=0;gen<12;gen++){
+      var ai=[], al=[];
+      for(var k=0;k<6;k++){
+        ai[k]=Math.max(0,Math.min(1,imit[gen][k]+noises[gen][k]));
+        al[k]=nearest(nearest(lang[gen][k])+noises[gen][k]);
+      }
+      imit.push(ai); lang.push(al);
+    }
+    result={imit:imit,lang:lang,di:distance(imit[12],prototype),dl:distance(lang[12],prototype)};
+    selected=null;
+    imitBtn.setAttribute('aria-pressed','false');
+    langBtn.setAttribute('aria-pressed','false');
+    metric.textContent='两条链已同时跑完';
+    draw();
+  }
+
+  function poly(ctx,cx,cy,vals,r,fill,stroke,alpha){
+    ctx.save(); ctx.globalAlpha=alpha;
+    ctx.beginPath();
+    for(var i=0;i<6;i++){
+      var ang=-Math.PI/2+i*Math.PI/3;
+      var rr=r*(.54+vals[i]*.46);
+      var x=cx+Math.cos(ang)*rr, y=cy+Math.sin(ang)*rr;
+      if(i===0)ctx.moveTo(x,y);else ctx.lineTo(x,y);
+    }
+    ctx.closePath();
+    ctx.fillStyle=fill;ctx.fill();
+    ctx.strokeStyle=stroke;ctx.lineWidth=1.5;ctx.stroke();
+    ctx.beginPath();ctx.arc(cx,cy,2.2,0,Math.PI*2);ctx.fillStyle=stroke;ctx.fill();
+    ctx.restore();
+  }
+
+  function arrow(ctx,x1,y,x2,color,alpha){
+    ctx.save();ctx.globalAlpha=alpha;ctx.strokeStyle=color;ctx.fillStyle=color;ctx.lineWidth=1.4;
+    ctx.beginPath();ctx.moveTo(x1,y);ctx.lineTo(x2-6,y);ctx.stroke();
+    ctx.beginPath();ctx.moveTo(x2-7,y-4);ctx.lineTo(x2,y);ctx.lineTo(x2-7,y+4);ctx.fill();ctx.restore();
+  }
+
+  function draw(){
+    if(!result)return;
+    var ctx=Deck.fit(canvas), w=canvas.offsetWidth, h=canvas.offsetHeight;
+    ctx.clearRect(0,0,w,h);
+    var text=Deck.token('--text'), text2=Deck.token('--text-2'), text3=Deck.token('--text-3');
+    var line=Deck.token('--line'), cult=Deck.token('--cult'), cult2=Deck.token('--cult-2');
+    var neutral='#b9ada0';
+    var left=168,right=66, usable=w-left-right;
+    var y1=h*.35,y2=h*.73;
+    var step=usable/12, radius=Math.min(25,step*.27);
+    var font='15px '+Deck.token('--font-sans');
+    var fontBody='16px '+Deck.token('--font-sans');
+    var fontNum='13px '+Deck.token('--font-num');
+
+    ctx.textBaseline='middle';
+    ctx.font=fontNum;ctx.fillStyle=text3;ctx.textAlign='center';
+    for(var g=0;g<=12;g++){
+      var gx=left+g*step;
+      ctx.fillText(g===0?'原型':String(g),gx,23);
+      ctx.strokeStyle=Deck.rgba('--text-3',.15);ctx.lineWidth=1;
+      ctx.beginPath();ctx.moveTo(gx,38);ctx.lineTo(gx,h-18);ctx.stroke();
+    }
+    ctx.font=font;ctx.fillStyle=text3;ctx.textAlign='right';ctx.fillText('第几代',left-22,23);
+
+    ctx.textAlign='left';ctx.font=fontBody;ctx.fillStyle=selected==='lang'?text3:text;
+    ctx.fillText('只靠模仿',18,y1-9);
+    ctx.font=font;ctx.fillStyle=text3;ctx.fillText('连续误差累积',18,y1+17);
+    ctx.font=fontBody;ctx.fillStyle=selected==='imit'?text3:cult2;ctx.fillText('加上语言',18,y2-9);
+    ctx.font=font;ctx.fillStyle=text3;ctx.fillText('5 档量化纠错',18,y2+17);
+
+    function lane(arr,y,color,isDim){
+      var alpha=isDim?.26:1;
+      for(var i=0;i<12;i++) arrow(ctx,left+i*step+radius+4,y,left+(i+1)*step-radius-3,color,alpha*.72);
+      for(var n=0;n<=12;n++){
+        var isProto=n===0;
+        poly(ctx,left+n*step,y,arr[n],radius,isProto?Deck.rgba('--gene',.18):(color===cult?Deck.rgba('--cult',.18):'rgba(185,173,160,.12)'),isProto?Deck.token('--gene'):color,alpha);
+      }
+    }
+    lane(result.imit,y1,neutral,selected==='lang');
+    lane(result.lang,y2,cult,selected==='imit');
+
+    ctx.textAlign='right';ctx.font=font;ctx.fillStyle=selected==='lang'?text3:text2;
+    ctx.fillText('偏差 '+result.di.toFixed(2),w-14,y1-30);
+    ctx.fillStyle=selected==='imit'?text3:cult2;ctx.fillText('偏差 '+result.dl.toFixed(2),w-14,y2-30);
+
+    ctx.textAlign='left';ctx.font=font;ctx.fillStyle=text3;
+    ctx.fillText('同一原型 · 同一串随机误差 · 不同纠错机制',18,h-15);
+  }
+
+  imitBtn.addEventListener('click',function(){
+    selected='imit';imitBtn.setAttribute('aria-pressed','true');langBtn.setAttribute('aria-pressed','false');
+    metric.innerHTML='第 12 代与原型的偏差 <span class="num">'+result.di.toFixed(2)+'</span>';draw();
+  });
+  langBtn.addEventListener('click',function(){
+    selected='lang';imitBtn.setAttribute('aria-pressed','false');langBtn.setAttribute('aria-pressed','true');
+    metric.innerHTML='第 12 代与原型的偏差 <span class="num">'+result.dl.toFixed(2)+'</span>';draw();
+  });
+  rerunBtn.addEventListener('click',function(){runNo++;simulate();});
+  Deck.onResize(draw);
+  simulate();
+})();
+</script>
+</body></html>

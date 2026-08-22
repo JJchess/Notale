@@ -1,0 +1,778 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  /* page-29 specific overrides: all use theme tokens only */
+  #main {
+    height: 620px;
+    display: flex;
+    flex-direction: row;
+    gap: 0;
+  }
+  .cv-wrap {
+    width: 980px;
+    height: 620px;
+    position: relative;
+    flex-shrink: 0;
+    background: var(--color-surface);
+    border-right: 1px solid var(--color-border);
+  }
+  .cv-wrap canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+  }
+  .rp {
+    width: 428px;
+    height: 620px;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    padding: var(--sp-lg);
+    gap: var(--sp-md);
+    overflow-y: auto;
+  }
+  .rp .stage-tag {
+    font-size: var(--fs-label);
+    color: var(--color-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-bottom: var(--sp-xs);
+  }
+  .rp .stage-title {
+    font-size: var(--fs-h2);
+    font-weight: 600;
+    line-height: var(--lh-tight);
+    color: var(--text);
+  }
+  .metrics-row {
+    display: flex;
+    flex-direction: row;
+    gap: var(--sp-sm);
+  }
+  .metrics-row .panel {
+    flex: 1;
+    min-width: 0;
+    padding: var(--sp-sm) var(--sp-md);
+  }
+  .btn-row {
+    display: flex;
+    flex-direction: row;
+    gap: var(--sp-sm);
+  }
+  .btn-row button {
+    flex: 1;
+    font-size: var(--fs-label);
+    padding: var(--sp-sm) var(--sp-md);
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+    background: var(--bg);
+    color: var(--text);
+    cursor: pointer;
+    line-height: var(--lh-tight);
+    transition: background 0.15s;
+  }
+  .btn-row button:hover {
+    background: var(--color-surface);
+  }
+  .btn-row button:active {
+    background: var(--color-border-light);
+  }
+  .btn-row button.primary {
+    background: var(--color-accent);
+    color: #fff;
+    border-color: var(--color-accent);
+    font-weight: 600;
+  }
+  .btn-row button.primary:hover {
+    opacity: 0.9;
+  }
+  .btn-row button:disabled {
+    opacity: 0.4;
+    cursor: default;
+  }
+  .fail-list {
+    font-size: var(--fs-sec);
+    line-height: var(--lh-normal);
+    color: var(--text);
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-sm);
+  }
+  .fail-list .fail-item {
+    padding: var(--sp-sm) var(--sp-md);
+    background: var(--color-surface);
+    border: 1px solid var(--color-border-light);
+    border-radius: 6px;
+    font-size: var(--fs-sec);
+    line-height: var(--lh-normal);
+  }
+  .fail-list .fail-item .fail-header {
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 2px;
+  }
+  .fail-list .fail-item .fail-true {
+    font-weight: 600;
+    font-size: var(--fs-label);
+  }
+  .fail-list .fail-item .fail-pred {
+    font-size: var(--fs-tick);
+    color: var(--color-dim);
+  }
+  .fail-list .fail-item .fail-coord {
+    font-size: var(--fs-tick);
+    color: var(--color-dim);
+  }
+  .section-label {
+    font-size: var(--fs-label);
+    color: var(--color-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-top: var(--sp-sm);
+    margin-bottom: var(--sp-xs);
+  }
+  .tooltip {
+    position: absolute;
+    pointer-events: none;
+    background: var(--bg);
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+    padding: var(--sp-sm) var(--sp-md);
+    font-size: var(--fs-sec);
+    line-height: var(--lh-tight);
+    color: var(--text);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    z-index: 5;
+    display: none;
+    white-space: nowrap;
+  }
+</style>
+</head>
+<body data-page="29" data-total="40">
+<div id="stage">
+<main id="main"></main>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lib/seedrandom.min.js"></script>
+<script src="assets/lib/mlp.js"></script>
+<script src="assets/lec.js"></script>
+<script>
+(function() {
+  // === Mount header/footer ===
+  Lec.mount({
+    act: '决策外包',
+    title: '盒子如何学会分类',
+    sub: '机器学习把决策从人脑拿出来，放进一个你看不懂的盒子。盒子能决策，但你不能解释它。',
+    foot: ''
+  });
+
+  var main = document.getElementById('main');
+
+  // === Build DOM ===
+  // Left: canvas wrap
+  var cvWrap = document.createElement('div');
+  cvWrap.className = 'cv-wrap';
+  var canvas = document.createElement('canvas');
+  canvas.id = 'main-canvas';
+  canvas.width = 980;
+  canvas.height = 620;
+  cvWrap.appendChild(canvas);
+
+  // Tooltip
+  var tooltip = document.createElement('div');
+  tooltip.className = 'tooltip';
+  cvWrap.appendChild(tooltip);
+
+  // Right panel
+  var rp = document.createElement('div');
+  rp.className = 'rp';
+
+  // Stage tag
+  var stageTag = document.createElement('div');
+  stageTag.className = 'stage-tag';
+  stageTag.textContent = '训练过程';
+  rp.appendChild(stageTag);
+
+  // Stage title
+  var stageTitle = document.createElement('div');
+  stageTitle.className = 'stage-title';
+  stageTitle.textContent = '从可解释到不可解释';
+  rp.appendChild(stageTitle);
+
+  // Metrics row
+  var metricsRow = document.createElement('div');
+  metricsRow.className = 'metrics-row';
+
+  var epochPanel = document.createElement('div');
+  epochPanel.className = 'panel';
+  epochPanel.innerHTML = '<span class="value" id="ep-val">0</span><span class="label">轮次 / 200</span>';
+  metricsRow.appendChild(epochPanel);
+
+  var lossPanel = document.createElement('div');
+  lossPanel.className = 'panel';
+  lossPanel.innerHTML = '<span class="value" id="ls-val">—</span><span class="label">损失</span>';
+  metricsRow.appendChild(lossPanel);
+
+  var accPanel = document.createElement('div');
+  accPanel.className = 'panel';
+  accPanel.innerHTML = '<span class="value" id="ac-val">—</span><span class="label">准确率</span>';
+  metricsRow.appendChild(accPanel);
+
+  rp.appendChild(metricsRow);
+
+  // Controls section label
+  var ctrlLabel = document.createElement('div');
+  ctrlLabel.className = 'section-label';
+  ctrlLabel.textContent = '控制';
+  rp.appendChild(ctrlLabel);
+
+  // Button row 1: Start / Reset
+  var btnRow1 = document.createElement('div');
+  btnRow1.className = 'btn-row';
+
+  var btnStart = document.createElement('button');
+  btnStart.className = 'primary';
+  btnStart.textContent = '开始训练';
+  btnRow1.appendChild(btnStart);
+
+  var btnReset = document.createElement('button');
+  btnReset.textContent = '重置';
+  btnRow1.appendChild(btnReset);
+
+  rp.appendChild(btnRow1);
+
+  // Button row 2: Pause / Resume
+  var btnRow2 = document.createElement('div');
+  btnRow2.className = 'btn-row';
+
+  var btnPause = document.createElement('button');
+  btnPause.textContent = '暂停';
+  btnPause.disabled = true;
+  btnRow2.appendChild(btnPause);
+
+  rp.appendChild(btnRow2);
+
+  // Speed control
+  var speedCtl = document.createElement('div');
+  speedCtl.className = 'ctl';
+  speedCtl.style.marginTop = '0';
+  var speedLabel = document.createElement('label');
+  speedLabel.textContent = '速度';
+  speedCtl.appendChild(speedLabel);
+  var speedSlider = document.createElement('input');
+  speedSlider.type = 'range';
+  speedSlider.min = '0.5';
+  speedSlider.max = '5';
+  speedSlider.step = '0.5';
+  speedSlider.value = '1';
+  speedCtl.appendChild(speedSlider);
+  var speedVal = document.createElement('span');
+  speedVal.className = 'text-label';
+  speedVal.style.minWidth = '32px';
+  speedVal.style.textAlign = 'right';
+  speedVal.textContent = '1×';
+  speedCtl.appendChild(speedVal);
+  rp.appendChild(speedCtl);
+
+  // Explanation failure section (hidden initially)
+  var failSection = document.createElement('div');
+  failSection.style.display = 'none';
+
+  var failLabel = document.createElement('div');
+  failLabel.className = 'section-label';
+  failLabel.textContent = '解释失败';
+  failSection.appendChild(failLabel);
+
+  var failDesc = document.createElement('div');
+  failDesc.className = 'text-sec text-dim';
+  failDesc.style.marginBottom = 'var(--sp-sm)';
+  failDesc.textContent = '模型高置信度分错的点：';
+  failSection.appendChild(failDesc);
+
+  var failList = document.createElement('div');
+  failList.className = 'fail-list';
+  failSection.appendChild(failList);
+
+  rp.appendChild(failSection);
+
+  main.appendChild(cvWrap);
+  main.appendChild(rp);
+
+  // === Data generation ===
+  var rng = new Math.seedrandom('page-29');
+  var data = [];
+
+  // Blue class (t=0): crescent centered at (0.3, 0.6), lower half
+  for (var i = 0; i < 40; i++) {
+    var x, y;
+    do {
+      var angle = rng() * Math.PI * 2;
+      var r = 0.25 + (rng() - 0.5) * 2 * 0.08;
+      x = 0.3 + r * Math.cos(angle);
+      y = 0.6 + r * Math.sin(angle);
+    } while (y > 0.6 || x < 0 || x > 1 || y < 0 || y > 1);
+    data.push({ x: [x, y], t: 0 });
+  }
+
+  // Orange class (t=1): crescent centered at (0.7, 0.4), upper half
+  for (var i = 0; i < 40; i++) {
+    var x, y;
+    do {
+      var angle = rng() * Math.PI * 2;
+      var r = 0.25 + (rng() - 0.5) * 2 * 0.08;
+      x = 0.7 + r * Math.cos(angle);
+      y = 0.4 + r * Math.sin(angle);
+    } while (y < 0.4 || x < 0 || x > 1 || y < 0 || y > 1);
+    data.push({ x: [x, y], t: 1 });
+  }
+
+  // === MLP Setup ===
+  var net = MLP.create({ sizes: [2, 6, 1], act: 'relu', lr: 0.1, seed: 42 });
+
+  // === State ===
+  var TOTAL_EPOCHS = 200;
+  var BATCH_SIZE = 16;
+  var BATCHES_PER_EPOCH = Math.ceil(data.length / BATCH_SIZE); // 5
+
+  var state = 'idle'; // 'idle' | 'training' | 'paused' | 'done'
+  var totalBatches = 0;
+  var currentEpoch = 0;
+  var speed = 1;
+  var fieldData = null;
+  var fieldUpdateCounter = 0;
+  var hoveredIdx = -1;
+  var failPoints = []; // explanation failure points after training
+
+  // === Canvas Setup ===
+  var ctx = Deck.fit(canvas);
+  var CANVAS_W = 980, CANVAS_H = 620;
+
+  // Plot area: square centered in canvas
+  var PLOT_SIZE = 540;
+  var PLOT_X = 60;
+  var PLOT_Y = 40;
+
+  function dataToCanvas(dx, dy) {
+    return {
+      cx: PLOT_X + dx * PLOT_SIZE,
+      cy: PLOT_Y + (1 - dy) * PLOT_SIZE
+    };
+  }
+
+  function canvasToData(cx, cy) {
+    return {
+      dx: (cx - PLOT_X) / PLOT_SIZE,
+      dy: 1 - (cy - PLOT_Y) / PLOT_SIZE
+    };
+  }
+
+  // === Offscreen heatmap ===
+  var GRID = 100;
+  var offCanvas = document.createElement('canvas');
+  offCanvas.width = GRID;
+  offCanvas.height = GRID;
+  var offCtx = offCanvas.getContext('2d');
+
+  function updateField() {
+    if (!net || net.diverged) return;
+    fieldData = net.field(0, 0, 1, 1, GRID, GRID);
+  }
+
+  var heatBlue = Deck.rgb('--color-accent');   // [37, 99, 235]
+  var heatOrange = Deck.rgb('--color-warning'); // [217, 119, 6]
+
+  function drawHeatmap() {
+    if (!fieldData) return;
+    var imgData = offCtx.createImageData(GRID, GRID);
+    for (var i = 0; i < GRID * GRID; i++) {
+      var v = fieldData[i];
+      var r = Math.round(heatBlue[0] + v * (heatOrange[0] - heatBlue[0]));
+      var g = Math.round(heatBlue[1] + v * (heatOrange[1] - heatBlue[1]));
+      var b = Math.round(heatBlue[2] + v * (heatOrange[2] - heatBlue[2]));
+      var a = 35;
+      var idx = i * 4;
+      imgData.data[idx] = r;
+      imgData.data[idx + 1] = g;
+      imgData.data[idx + 2] = b;
+      imgData.data[idx + 3] = a;
+    }
+    offCtx.putImageData(imgData, 0, 0);
+    ctx.drawImage(offCanvas, PLOT_X, PLOT_Y, PLOT_SIZE, PLOT_SIZE);
+  }
+
+  function drawAxes() {
+    ctx.strokeStyle = Deck.rgba('--color-border', 0.6);
+    ctx.lineWidth = 1;
+    ctx.fillStyle = Deck.rgba('--color-dim', 0.7);
+    ctx.font = '13px ' + getComputedStyle(document.body).fontFamily;
+    ctx.textAlign = 'center';
+
+    // X axis
+    var x0 = PLOT_X, x1 = PLOT_X + PLOT_SIZE;
+    var yBase = PLOT_Y + PLOT_SIZE;
+    ctx.beginPath();
+    ctx.moveTo(x0, yBase);
+    ctx.lineTo(x1, yBase);
+    ctx.stroke();
+
+    // X ticks
+    for (var xi = 0; xi <= 1; xi += 0.25) {
+      var tx = PLOT_X + xi * PLOT_SIZE;
+      ctx.beginPath();
+      ctx.moveTo(tx, yBase);
+      ctx.lineTo(tx, yBase + 5);
+      ctx.stroke();
+      ctx.fillText(xi.toFixed(2), tx, yBase + 18);
+    }
+
+    // X label
+    ctx.font = '14px ' + getComputedStyle(document.body).fontFamily;
+    ctx.fillText('特征 A', PLOT_X + PLOT_SIZE / 2, yBase + 36);
+
+    // Y axis
+    var y0 = PLOT_Y, y1 = PLOT_Y + PLOT_SIZE;
+    ctx.beginPath();
+    ctx.moveTo(PLOT_X, y0);
+    ctx.lineTo(PLOT_X, y1);
+    ctx.stroke();
+
+    // Y ticks
+    ctx.textAlign = 'right';
+    for (var yi = 0; yi <= 1; yi += 0.25) {
+      var ty = PLOT_Y + (1 - yi) * PLOT_SIZE;
+      ctx.beginPath();
+      ctx.moveTo(PLOT_X, ty);
+      ctx.lineTo(PLOT_X - 5, ty);
+      ctx.stroke();
+      ctx.fillText(yi.toFixed(2), PLOT_X - 8, ty + 4);
+    }
+
+    // Y label
+    ctx.font = '14px ' + getComputedStyle(document.body).fontFamily;
+    ctx.save();
+    ctx.translate(PLOT_X - 42, PLOT_Y + PLOT_SIZE / 2);
+    ctx.rotate(-Math.PI / 2);
+    ctx.textAlign = 'center';
+    ctx.fillText('特征 B', 0, 0);
+    ctx.restore();
+  }
+
+  function drawDataPoints() {
+    for (var i = 0; i < data.length; i++) {
+      var pt = data[i];
+      var pos = dataToCanvas(pt.x[0], pt.x[1]);
+      var isBlue = pt.t === 0;
+      var isFail = failPoints.indexOf(i) !== -1;
+
+      // Glow for fail points
+      if (isFail && state === 'done') {
+        var pulse = 0.5 + 0.5 * Math.sin(Date.now() / 300);
+        ctx.beginPath();
+        ctx.arc(pos.cx, pos.cy, 10 + pulse * 3, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(220,38,38,' + (0.15 + pulse * 0.15) + ')';
+        ctx.fill();
+      }
+
+      // Point
+      ctx.beginPath();
+      ctx.arc(pos.cx, pos.cy, isFail ? 6 : 4.5, 0, Math.PI * 2);
+      ctx.fillStyle = isBlue ? Deck.rgba('--color-accent', 1) : Deck.rgba('--color-warning', 1);
+      ctx.fill();
+      ctx.strokeStyle = Deck.rgba('--bg', 1);
+      ctx.lineWidth = 1;
+      ctx.stroke();
+
+      // Highlight ring for fail points
+      if (isFail && state === 'done') {
+        ctx.beginPath();
+        ctx.arc(pos.cx, pos.cy, 7, 0, Math.PI * 2);
+        ctx.strokeStyle = 'rgba(220,38,38,0.8)';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+      }
+    }
+  }
+
+  function drawLegend() {
+    var lx = PLOT_X + PLOT_SIZE + 16;
+    var ly = PLOT_Y + 10;
+
+    // Blue class
+    ctx.beginPath();
+    ctx.arc(lx, ly + 6, 5, 0, Math.PI * 2);
+    ctx.fillStyle = Deck.rgba('--color-accent', 1);
+    ctx.fill();
+    ctx.strokeStyle = Deck.rgba('--bg', 1);
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.fillStyle = Deck.rgba('--text', 0.8);
+    ctx.font = '14px ' + getComputedStyle(document.body).fontFamily;
+    ctx.textAlign = 'left';
+    ctx.fillText('类别 A（蓝色）', lx + 12, ly + 10);
+
+    // Orange class
+    ctx.beginPath();
+    ctx.arc(lx, ly + 28, 5, 0, Math.PI * 2);
+    ctx.fillStyle = Deck.rgba('--color-warning', 1);
+    ctx.fill();
+    ctx.strokeStyle = Deck.rgba('--bg', 1);
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.fillText('类别 B（橙色）', lx + 12, ly + 32);
+  }
+
+  function draw() {
+    ctx.clearRect(0, 0, CANVAS_W, CANVAS_H);
+
+    // Background
+    ctx.fillStyle = Deck.rgba('--color-surface', 1);
+    ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+
+    drawHeatmap();
+    drawAxes();
+    drawDataPoints();
+    drawLegend();
+
+    // Title in canvas
+    ctx.fillStyle = Deck.rgba('--text', 0.9);
+    ctx.font = 'bold 15px ' + getComputedStyle(document.body).fontFamily;
+    ctx.textAlign = 'left';
+    ctx.fillText('决策边界 · 训练过程', PLOT_X, PLOT_Y - 8);
+  }
+
+  // === Metrics update ===
+  function updateMetrics() {
+    var evalResult = net.evaluate(data);
+    document.getElementById('ep-val').textContent = currentEpoch;
+    document.getElementById('ls-val').textContent = evalResult.loss.toFixed(3);
+    document.getElementById('ac-val').textContent = (evalResult.acc * 100).toFixed(1) + '%';
+  }
+
+  // === Training complete ===
+  function onTrainingComplete() {
+    updateField();
+    updateMetrics();
+
+    // Find explanation failure points: model confident but wrong
+    var candidates = [];
+    for (var i = 0; i < data.length; i++) {
+      var pred = net.predict(data[i].x);
+      var trueLabel = data[i].t;
+      var isWrong = (trueLabel === 0 && pred > 0.5) || (trueLabel === 1 && pred < 0.5);
+      if (isWrong) {
+        var confidence = trueLabel === 0 ? pred : (1 - pred);
+        candidates.push({ idx: i, confidence: confidence, pred: pred });
+      }
+    }
+    candidates.sort(function(a, b) { return b.confidence - a.confidence; });
+    failPoints = candidates.slice(0, 3).map(function(c) { return c.idx; });
+
+    // Populate fail list
+    failList.innerHTML = '';
+    for (var j = 0; j < Math.min(3, candidates.length); j++) {
+      var c = candidates[j];
+      var pt = data[c.idx];
+      var trueName = pt.t === 0 ? '类别 A' : '类别 B';
+      var predName = c.pred > 0.5 ? '类别 B' : '类别 A';
+      var confPct = (c.confidence * 100).toFixed(0);
+
+      var item = document.createElement('div');
+      item.className = 'fail-item';
+      var trueColor = pt.t === 0 ? 'var(--color-accent)' : 'var(--color-warning)';
+      item.innerHTML =
+        '<div class="fail-header">' +
+          '<span class="fail-true" style="color:' + trueColor + '">真实：' + trueName + '</span>' +
+          '<span class="fail-pred">模型判为 ' + predName + '（' + confPct + '%）</span>' +
+        '</div>' +
+        '<div class="fail-coord">坐标 (' + pt.x[0].toFixed(3) + ', ' + pt.x[1].toFixed(3) + ')</div>';
+      failList.appendChild(item);
+    }
+
+    failSection.style.display = 'block';
+    stageTitle.textContent = '边界形成，但无法解释';
+
+    // Update button states
+    btnStart.disabled = true;
+    btnPause.disabled = true;
+    btnReset.disabled = false;
+    btnStart.textContent = '训练完成';
+    btnStart.classList.remove('primary');
+  }
+
+  // === Reset ===
+  function resetAll() {
+    net.reset();
+    state = 'idle';
+    totalBatches = 0;
+    currentEpoch = 0;
+    fieldData = null;
+    fieldUpdateCounter = 0;
+    failPoints = [];
+    hoveredIdx = -1;
+
+    updateField();
+    document.getElementById('ep-val').textContent = '0';
+    document.getElementById('ls-val').textContent = '—';
+    document.getElementById('ac-val').textContent = '—';
+
+    failSection.style.display = 'none';
+    failList.innerHTML = '';
+    stageTitle.textContent = '从可解释到不可解释';
+
+    btnStart.disabled = false;
+    btnStart.textContent = '开始训练';
+    btnStart.classList.add('primary');
+    btnPause.disabled = true;
+    btnPause.textContent = '暂停';
+    btnReset.disabled = false;
+
+    tooltip.style.display = 'none';
+    draw();
+  }
+
+  // === Event handlers ===
+  btnStart.addEventListener('click', function() {
+    if (state === 'idle') {
+      state = 'training';
+      btnStart.disabled = true;
+      btnStart.textContent = '训练中…';
+      btnPause.disabled = false;
+      btnPause.textContent = '暂停';
+      stageTitle.textContent = '边界正在形成…';
+    }
+  });
+
+  btnPause.addEventListener('click', function() {
+    if (state === 'training') {
+      state = 'paused';
+      btnPause.textContent = '继续';
+      stageTitle.textContent = '训练已暂停';
+    } else if (state === 'paused') {
+      state = 'training';
+      btnPause.textContent = '暂停';
+      stageTitle.textContent = '边界正在形成…';
+    }
+  });
+
+  btnReset.addEventListener('click', resetAll);
+
+  speedSlider.addEventListener('input', function() {
+    speed = parseFloat(this.value);
+    speedVal.textContent = speed % 1 === 0 ? speed + '×' : speed.toFixed(1) + '×';
+  });
+
+  // Hover detection
+  canvas.addEventListener('mousemove', function(e) {
+    var pt = Deck.pt(canvas, e);
+    var cx = pt.x, cy = pt.y;
+
+    // Check if inside plot area
+    if (cx < PLOT_X || cx > PLOT_X + PLOT_SIZE || cy < PLOT_Y || cy > PLOT_Y + PLOT_SIZE) {
+      tooltip.style.display = 'none';
+      hoveredIdx = -1;
+      return;
+    }
+
+    // Find nearest data point
+    var minDist = Infinity;
+    var nearestIdx = -1;
+    var threshold = 12; // pixels
+
+    for (var i = 0; i < data.length; i++) {
+      var pos = dataToCanvas(data[i].x[0], data[i].x[1]);
+      var dx = cx - pos.cx;
+      var dy = cy - pos.cy;
+      var dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist < minDist && dist < threshold) {
+        minDist = dist;
+        nearestIdx = i;
+      }
+    }
+
+    if (nearestIdx >= 0) {
+      hoveredIdx = nearestIdx;
+      var dpt = data[nearestIdx];
+      var pred = net.predict(dpt.x);
+      var trueName = dpt.t === 0 ? 'A（蓝）' : 'B（橙）';
+      var predName = pred > 0.5 ? 'B（橙）' : 'A（蓝）';
+      var predPct = (pred > 0.5 ? pred : 1 - pred);
+      var pos = dataToCanvas(dpt.x[0], dpt.x[1]);
+
+      tooltip.style.display = 'block';
+      tooltip.style.left = (pos.cx + 14) + 'px';
+      tooltip.style.top = (pos.cy - 40) + 'px';
+      tooltip.innerHTML =
+        '真实：' + trueName + ' &nbsp;|&nbsp; 预测：' + predName +
+        '（' + (predPct * 100).toFixed(0) + '%）';
+    } else {
+      hoveredIdx = -1;
+      tooltip.style.display = 'none';
+    }
+  });
+
+  canvas.addEventListener('mouseleave', function() {
+    tooltip.style.display = 'none';
+    hoveredIdx = -1;
+  });
+
+  // === Initial setup ===
+  updateField();
+  draw();
+
+  // === Training loop ===
+  Deck.loop(function() {
+    if (state === 'training') {
+      if (net.diverged) {
+        state = 'done';
+        stageTitle.textContent = '训练发散，请重置';
+        btnStart.disabled = true;
+        btnPause.disabled = true;
+        return;
+      }
+
+      var batchesThisFrame = Math.max(1, Math.round(speed));
+      for (var i = 0; i < batchesThisFrame; i++) {
+        net.step(data, BATCH_SIZE);
+        totalBatches++;
+      }
+      currentEpoch = Math.min(TOTAL_EPOCHS, Math.floor(totalBatches / BATCHES_PER_EPOCH));
+
+      fieldUpdateCounter += batchesThisFrame;
+      if (fieldUpdateCounter >= 2) {
+        fieldUpdateCounter = 0;
+        updateField();
+      }
+
+      // Update metrics every ~4 batches
+      if (totalBatches % 4 === 0 || currentEpoch === TOTAL_EPOCHS) {
+        updateMetrics();
+      }
+
+      // Update stage title based on progress
+      if (currentEpoch < 30) {
+        stageTitle.textContent = '边界正在形成…';
+      } else if (currentEpoch < 150) {
+        stageTitle.textContent = '边界扭曲中…';
+      } else if (currentEpoch < TOTAL_EPOCHS) {
+        stageTitle.textContent = '趋于稳定…';
+      }
+
+      if (currentEpoch >= TOTAL_EPOCHS) {
+        state = 'done';
+        updateField();
+        onTrainingComplete();
+      }
+    }
+
+    draw();
+  });
+})();
+</script>
+</body>
+</html>

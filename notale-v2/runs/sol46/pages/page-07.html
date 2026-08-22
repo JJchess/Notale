@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+</head>
+<body data-page="07" data-total="32">
+<div id="stage">
+  <style>
+    #stage{padding:30px 42px 28px;gap:18px}
+    .page-head{height:106px;align-items:flex-end}
+    .kicker{color:var(--orbit);font:700 14px/1.2 var(--font-mono);letter-spacing:.16em;margin-bottom:8px}
+    .page-head h1{font-size:40px}
+    .take{max-width:850px;margin:0;color:var(--muted);font-size:18px;line-height:1.5}
+    .map-shell{position:relative;overflow:visible;padding:0;box-sizing:border-box;box-shadow:none;background:linear-gradient(180deg,rgba(85,185,255,.035),transparent 45%),var(--panel-deep)}
+    #region-map{position:absolute;inset:0 0 20px;z-index:2}
+    .map-ui{position:absolute;inset:0 0 20px;z-index:3;pointer-events:none}
+    .zone{position:absolute;top:76px;height:134px;transition:filter 220ms ease,opacity 220ms ease}
+    .zone .box{height:100%;padding:10px 6px;background:rgba(13,27,45,.76);border-style:dashed}
+    .zone .box>.bt{margin:-10px -6px 8px;padding:7px 5px;font-size:18px;white-space:nowrap}
+    .members{font-size:14px;line-height:1.45;color:var(--muted)}
+    .members strong{display:block;color:var(--text);font-size:15px}
+    .zone.hot .box{border-color:var(--sun);box-shadow:0 0 18px var(--sun-glow)}
+    .map-label{position:absolute;transform:translateX(-50%);font-size:14px;line-height:1.25;text-align:center;white-space:nowrap}
+    .map-label .role{display:block;color:var(--quiet);margin-top:3px}
+    .axis-title{position:absolute;left:64px;bottom:89px;color:var(--muted);font-size:14px}
+    .tick-label{position:absolute;bottom:64px;transform:translateX(-50%);font:14px/1.2 var(--font-mono);color:var(--muted)}
+    .handle-read{position:absolute;bottom:16px;transform:translateX(-50%);min-width:132px;text-align:center;border:1px solid var(--line-strong);border-radius:var(--r-sm);background:var(--panel-raised);padding:7px 9px;font:14px/1.2 var(--font-mono);color:var(--orbit-bright);transition:border-color 180ms,box-shadow 180ms}
+    .handle-read.done{border-color:var(--sun);color:var(--sun);box-shadow:0 0 14px var(--sun-glow)}
+    .progress{position:absolute;right:18px;top:16px;z-index:5;padding:11px 14px}
+    .progress .marks{display:flex;gap:7px;margin-top:7px}
+    .progress i{width:28px;height:4px;background:var(--line);border-radius:2px}
+    .progress i.on{background:var(--sun);box-shadow:0 0 8px var(--sun-glow)}
+    .result{position:absolute;z-index:6;left:50%;top:49%;transform:translate(-50%,-50%) scale(.98);opacity:0;pointer-events:none;border-color:var(--sun);font-size:22px;font-weight:760;color:var(--sun);transition:opacity 240ms,transform 240ms}
+    .result.show{opacity:1;transform:translate(-50%,-50%) scale(1)}
+    .feedback{height:58px;align-items:center}
+    .feedback p{margin:0;font-size:16px;line-height:1.4;color:var(--muted)}
+    .feedback p.error{color:var(--danger)}
+    .legend{font-size:14px;color:var(--muted)}
+    .legend b{color:var(--orbit-bright)}
+
+    @media(prefers-reduced-motion:reduce){.zone,.handle-read,.result{transition:none}}
+  </style>
+  <header class="page-head row justify-between gap-6">
+    <div><div class="kicker">SYSTEM MAP · 07</div><h1>给太阳系画分区</h1></div>
+    <p class="take">太阳系从内向外不是均匀散布，而是出现成员和性质不同的区域。</p>
+  </header>
+  <main class="map-shell panel grow min0 no-pan" aria-label="太阳系日距分区互动地图">
+    <div id="region-map" tabindex="0" role="application" aria-label="太阳系分区地图。按数字一二三选择边界，用左右方向键移动，回车确认"></div>
+    <div class="map-ui k-classification" id="map-ui">
+      <div class="progress panel"><span class="label" id="progress-text">三条边界已定位</span><div class="marks"><i></i><i></i><i></i></div></div>
+      <div class="result panel" id="result">区域地图已建立</div>
+      <div class="axis-title">日距（对数刻度，AU）</div>
+    </div>
+  </main>
+  <footer class="feedback row justify-between gap-4">
+    <p id="feedback" aria-live="polite">拖动三根边界线，把主小行星带与海王星外区域夹定。方向键也可调整。</p>
+    <div class="row items-center gap-3"><span class="legend"><b>虚线范围</b> 表示过渡区域，不是实体墙壁</span><button class="btn" id="reset">重置边界</button></div>
+  </footer>
+  <script src="assets/lib/konva.min.js"></script>
+  <script>
+  window.addEventListener('DOMContentLoaded',function(){
+    Deck.init({index:7,total:32});
+    var K=Lec.K, P=Lec.P, bodies=K.bodies, regions=K.regions;
+    var host=document.getElementById('region-map'), ui=document.getElementById('map-ui');
+    var W=host.clientWidth-2,H=host.clientHeight-2,left=64,right=W-40, axisY=H-112;
+    var stage=new Konva.Stage({container:'region-map',width:W,height:H});
+    var base=new Konva.Layer(), active=new Konva.Layer(); stage.add(base);stage.add(active);
+    var C={orbit:Deck.token('--orbit'),dim:Deck.token('--orbit-dim'),line:Deck.token('--line'),sun:Deck.token('--sun'),text:Deck.token('--text'),success:Deck.token('--success'),danger:Deck.token('--danger')};
+    function x(au){return P.logScale(au,0.3,regions.kuiperBelt.outerAU,left,right)}
+    function auAt(px){var t=(px-left)/(right-left);return Math.exp(Math.log(.3)+t*(Math.log(regions.kuiperBelt.outerAU)-Math.log(.3)))}
+    var bounds=[regions.asteroidBelt.innerAU,regions.asteroidBelt.outerAU,regions.kuiperBelt.innerAU];
+    var starts=[.82,6.7,16.2].map(function(v){return x(v)}), solved=[false,false,false], groups=[];
+    var zones=[
+      {name:'内太阳系',a:.3,b:regions.asteroidBelt.innerAU,m:'水星 · 金星 · 地球 · 火星',s:'岩石行星'},
+      {name:'主小行星带',a:regions.asteroidBelt.innerAU,b:regions.asteroidBelt.outerAU,m:bodies.ceres.name,s:'代表成员'},
+      {name:'巨行星区',a:regions.asteroidBelt.outerAU,b:bodies.neptune.semimajorAxisAU,m:'木星 · 土星 · 天王星 · 海王星',s:'气态与冰巨行星'},
+      {name:'海王星外区域',a:regions.kuiperBelt.innerAU,b:regions.kuiperBelt.outerAU,m:bodies.pluto.name,s:'代表成员'}
+    ];
+    zones.forEach(function(z,i){
+      base.add(new Konva.Rect({x:x(z.a),y:68,width:Math.max(22,x(z.b)-x(z.a)),height:150,fill:Deck.rgba('--orbit',i%2?.055:.085),stroke:C.dim,dash:[7,7],strokeWidth:1}));
+      var d=document.createElement('div');d.className='zone lv';d.style.left=x(z.a)+'px';d.style.width=Math.max(70,x(z.b)-x(z.a))+'px';d.innerHTML='<div class="box"><div class="bt">'+z.name+'</div><div class="members"><strong>'+z.m+'</strong>'+z.s+'</div></div>';ui.appendChild(d);z.el=d;
+    });
+    base.add(new Konva.Line({points:[left,axisY,right,axisY],stroke:C.orbit,strokeWidth:2}));
+    base.add(new Konva.Line({points:[right,axisY,right-10,axisY-5,right-10,axisY+5],closed:true,fill:C.orbit}));
+    var ticks=[.3,1,regions.asteroidBelt.innerAU,regions.asteroidBelt.outerAU,10,regions.kuiperBelt.innerAU,regions.kuiperBelt.outerAU];
+    ticks.forEach(function(v){var px=x(v);base.add(new Konva.Line({points:[px,axisY-6,px,axisY+7],stroke:C.dim,strokeWidth:1}));var t=document.createElement('span');t.className='tick-label';t.style.left=px+'px';t.textContent=P.significantFigures(v,2);ui.appendChild(t)});
+    var planetList=['mercury','venus','earth','mars','ceres','jupiter','saturn','uranus','neptune','pluto'];
+    var role={mercury:'岩石行星',venus:'岩石行星',earth:'岩石行星',mars:'岩石行星',ceres:'代表成员',jupiter:'气态巨行星',saturn:'气态巨行星',uranus:'冰巨行星',neptune:'最外侧行星',pluto:'代表成员'};
+    planetList.forEach(function(id,n){var b=bodies[id],px=x(b.semimajorAxisAU), py=286+(n%2)*82;base.add(new Konva.Line({points:[px,218,px,py-9],stroke:C.dim,strokeWidth:1,dash:[3,5]}));base.add(new Konva.Circle({x:px,y:py,radius:id==='jupiter'?9:6,fill:id==='ceres'||id==='pluto'?C.sun:C.orbit,stroke:C.text,strokeWidth:1}));var l=document.createElement('div');l.className='map-label';l.style.left=px+'px';l.style.top=(py+13)+'px';l.innerHTML=b.name+'<span class="role">'+role[id]+'</span>';ui.appendChild(l)});
+    function fmt(v){return P.significantFigures(v,3)+' AU'}
+    function updateProgress(){var n=solved.filter(Boolean).length;document.getElementById('progress-text').textContent='三条边界已定位 '+n+'/'+solved.length;document.querySelectorAll('.marks i').forEach(function(m,i){m.classList.toggle('on',solved[i])});document.getElementById('result').classList.toggle('show',n===solved.length);zones.forEach(function(z){z.el.classList.toggle('hot',n===solved.length)})}
+    bounds.forEach(function(target,i){
+      var g=new Konva.Group({x:starts[i],y:0,draggable:true,dragBoundFunc:function(p){return{x:P.clamp(p.x,left,right),y:0}}});
+      var line=new Konva.Line({points:[0,58,0,axisY+6],stroke:C.sun,strokeWidth:2,dash:[6,6],opacity:.8});
+      var cap=new Konva.RegularPolygon({x:0,y:axisY+15,sides:3,radius:10,rotation:180,fill:C.sun});g.add(line,cap);active.add(g);groups.push(g);
+      var read=document.createElement('div');read.className='handle-read';read.style.left=starts[i]+'px';read.textContent=fmt(auAt(starts[i]));ui.appendChild(read);
+      function render(px){read.style.left=px+'px';var au=auAt(px);read.textContent=fmt(au);zones.forEach(function(z){z.el.classList.toggle('hot',Math.abs(px-x(z.a))<18||Math.abs(px-x(z.b))<18)});return au}
+      g.on('dragmove',function(){render(g.x())});
+      g.on('dragend',function(){var ok=Math.abs(g.x()-x(target))<=18;if(ok){g.x(x(target));solved[i]=true;line.strokeWidth(3);read.classList.add('done');document.getElementById('feedback').className='';document.getElementById('feedback').textContent='边界已吸附：位置关系与相邻区域接通。'}else{solved[i]=false;read.classList.remove('done');document.getElementById('feedback').className='error';document.getElementById('feedback').textContent='这条线把代表成员分错了：检查谷神星或冥王星位于哪一侧。';var origin=starts[i];if(Deck.reduced()){g.x(origin);render(origin)}else{var seq=[-8,8,-5,5,0],q=0;var timer=setInterval(function(){g.x(g.x()+seq[q]);active.batchDraw();q++;if(q===seq.length){clearInterval(timer);g.to({x:origin,duration:.26,onUpdate:function(){render(g.x())}})}},38)}}render(g.x());updateProgress();active.draw()});
+      g.on('dragstart',function(){selected=i});
+    });
+    var selected=0;
+    host.addEventListener('keydown',function(e){
+      if(e.key>='1'&&e.key<='3'){selected=+e.key-1;return}
+      if(e.key==='ArrowLeft'||e.key==='ArrowRight'){e.preventDefault();var g=groups[selected],step=(right-left)/120;g.x(P.clamp(g.x()+(e.key==='ArrowRight'?step:-step),left,right));var au=auAt(g.x());document.querySelectorAll('.handle-read')[selected].style.left=g.x()+'px';document.querySelectorAll('.handle-read')[selected].textContent=fmt(au);active.draw()}
+      if(e.key==='Enter'||e.key===' '){e.preventDefault();groups[selected].fire('dragend')}
+    });
+    updateProgress();base.draw();active.draw();
+    document.getElementById('reset').addEventListener('click',function(){solved.fill(false);groups.forEach(function(g,i){g.x(starts[i]);g.children[0].strokeWidth(2);var rs=document.querySelectorAll('.handle-read');rs[i].classList.remove('done');rs[i].style.left=starts[i]+'px';rs[i].textContent=fmt(auAt(starts[i]))});document.getElementById('feedback').className='';document.getElementById('feedback').textContent='拖动三根边界线，把主小行星带与海王星外区域夹定。方向键也可调整。';updateProgress();active.draw()});
+  });
+  </script>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+</body>
+</html>

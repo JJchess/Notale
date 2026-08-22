@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <link rel="stylesheet" href="assets/lib/katex.min.css">
+  <style>
+    #main{display:flex;flex-direction:column;gap:12px}
+    .intro{height:48px;display:flex;align-items:center;justify-content:space-between;gap:24px}
+    .instruction{font-size:var(--fs-body);line-height:var(--lh-copy);font-weight:650}
+    .actions{display:flex;align-items:center;gap:12px}
+    .fire,.reset{min-height:42px;padding:8px 22px;border-radius:var(--radius-sm);font:700 var(--fs-label)/1.35 var(--font-sans);cursor:pointer}
+    .fire{color:#fff;border:1px solid var(--accent);background:var(--accent)}
+    .fire:disabled{cursor:not-allowed;opacity:.55}
+    .reset{color:var(--accent);border:1px solid var(--line-strong);background:var(--paper)}
+    .sim{position:relative;height:350px;overflow:hidden;border:1px solid var(--line);border-radius:var(--radius-md);background:linear-gradient(#eef5f3 0 62%,#e3dfd4 62%);box-shadow:var(--shadow)}
+    .sim.vacuum{background:linear-gradient(#17212b 0 62%,#ded9cd 62%)}
+    .sim canvas{z-index:1}
+    .env{position:absolute;z-index:3;top:14px;left:18px;display:flex;align-items:center;gap:9px;padding:5px 11px;border-radius:999px;background:rgb(255 253 248 / 88%);color:var(--accent);font-size:var(--fs-label);font-weight:750}
+    .scene-note{position:absolute;z-index:3;top:16px;right:18px;color:var(--ink-soft);font-size:var(--fs-sec);line-height:var(--lh-sec)}
+    .formula{position:absolute;z-index:3;top:52px;right:18px;width:390px;padding:10px 14px;border-left:3px solid var(--accent-2);background:rgb(255 253 248 / 90%);font-size:var(--fs-sec);line-height:var(--lh-sec);display:flex;align-items:center;gap:18px}
+    #eq{display:block;flex:0 0 88px;font-size:20px;text-align:center}
+    .readouts{position:absolute;z-index:4;right:16px;bottom:12px;left:16px;display:flex;gap:10px}
+    .read{flex:1;min-width:0;padding:8px 13px;border:1px solid var(--line);border-radius:var(--radius-sm);background:rgb(255 253 248 / 94%)}
+    .read .label{display:block;color:var(--ink-soft)}
+    .read strong{display:block;color:var(--accent);font-size:var(--fs-lead);line-height:1.35;font-variant-numeric:tabular-nums}
+    .status{position:absolute;z-index:4;left:50%;bottom:84px;transform:translateX(-50%);padding:7px 14px;border-radius:999px;background:var(--text);color:#fff;font-size:var(--fs-sec);line-height:var(--lh-sec);white-space:nowrap}
+    .process-wrap{height:176px}
+    .k-process{--step-count:6;height:100%;grid-template-columns:minmax(0,1fr) 18px minmax(0,1fr) 18px minmax(0,1fr) 18px minmax(0,1fr) 18px minmax(0,1fr) 18px minmax(0,1fr);gap:6px}
+    .k-process>.step{padding:12px 11px;display:flex;flex-direction:column;justify-content:center}
+    .k-process>.step b{font-size:var(--fs-label);line-height:1.35;color:var(--accent)}
+    .k-process>.step span{font-size:var(--fs-sec);line-height:var(--lh-sec);margin-top:4px}
+    .k-process>.arw{width:18px}
+    .k-process>.arw::after{left:-4px;width:26px}
+    .k-process>.axis{left:1%;right:1%}
+    @media (prefers-reduced-motion:reduce){.sim *{transition:none!important}}
+  </style>
+</head>
+<body data-page="27" data-total="48">
+  <div id="stage">
+    <main id="main">
+      <div class="intro min0">
+        <p class="instruction">喷出一个质量包，观察“质量向后”如何先于“火箭向前”。</p>
+        <div class="actions">
+          <button class="fire" id="fire" type="button">喷出一个质量包</button>
+          <button class="reset" id="reset" type="button">重置</button>
+        </div>
+      </div>
+      <section class="sim no-pan" id="sim" aria-label="喷气反推滑台">
+        <canvas id="world" class="cv-fill" aria-hidden="true"></canvas>
+        <div class="env" id="env">● 空气中</div>
+        <div class="scene-note">轨道无墙面；箭头长度表示速度大小</div>
+        <div class="formula"><span id="eq" aria-label="动量等于质量乘速度"></span><span>动量由质量和速度共同决定；正负号只表示方向。</span></div>
+        <div class="status" id="status" aria-live="polite">喷气前：火箭与排气属于同一个静止系统。</div>
+        <div class="readouts">
+          <div class="read"><span class="label">剩余质量包</span><strong id="packets">5 个</strong></div>
+          <div class="read"><span class="label">剩余火箭质量</span><strong id="mass">105 kg</strong></div>
+          <div class="read"><span class="label">火箭速度</span><strong id="speed">0.000 m/s</strong></div>
+          <div class="read"><span class="label">火箭动量</span><strong id="momentum">0.0 kg·m/s</strong></div>
+          <div class="read"><span class="label">空气 / 真空首次速度差</span><strong id="compare">等待复演</strong></div>
+        </div>
+      </section>
+      <section class="process-wrap" aria-label="喷气反推的六步因果链">
+        <div class="k-process" id="process">
+          <div class="axis"></div>
+          <div class="step is-current"><b>01 静止整体</b><span>火箭与排气共同静止</span></div><div class="arw"></div>
+          <div class="step"><b>02 向后加速</b><span>一部分自身质量离开</span></div><div class="arw"></div>
+          <div class="step"><b>03 带走动量</b><span>排气获得向后动量</span></div><div class="arw"></div>
+          <div class="step"><b>04 火箭向前</b><span>剩余部分反向运动</span></div><div class="arw"></div>
+          <div class="step"><b>05 连续喷气</b><span>速度逐次改变</span></div><div class="arw"></div>
+          <div class="step"><b>06 去掉空气</b><span>相同条件，结果相同</span></div>
+        </div>
+      </section>
+    </main>
+  </div>
+  <script src="assets/lib/matter.min.js"></script>
+  <script src="assets/lib/katex.min.js"></script>
+  <script src="assets/base.js"></script>
+  <script src="assets/lec.js"></script>
+  <script>
+    Lec.mount({index:27,kicker:"JET REACTION",title:"向后喷，向前走",take:"火箭靠向后高速排出自身携带的质量获得向前动量，不需要推着空气走。"});
+    Deck.init({index:27,total:48});
+    katex.render('p=mv',document.getElementById('eq'),{throwOnError:false});
+
+    const dry=Lec.P.positive(Lec.P.finiteNumber(Lec.K.PAGE_27_CART_DRY_MASS_KG,100),100);
+    const packetMass=Lec.P.positive(Lec.P.finiteNumber(Lec.K.PAGE_27_PACKET_MASS_KG,1),1);
+    const packetCount=Lec.P.clamp(Lec.P.finiteNumber(Lec.K.PAGE_27_PACKET_COUNT,5),1,10);
+    const exhaustSpeed=Lec.P.clamp(Lec.P.positive(Lec.P.finiteNumber(Lec.K.PAGE_27_EXHAUST_PACKET_SPEED_MPS,10),10),1,100);
+    const initialV=Lec.P.finiteNumber(Lec.K.PAGE_27_INITIAL_VELOCITY_MPS,0);
+    const tolerance=Lec.P.positive(Lec.P.finiteNumber(Lec.K.PAGE_27_NUMERIC_TOLERANCE,1e-9),1e-9);
+    const scaleBase=Lec.P.positive(Lec.P.finiteNumber(Lec.K.PAGE_27_VECTOR_SCALE_SPEED_MPS,10),10);
+    const cv=document.getElementById('world'),sim=document.getElementById('sim'),fire=document.getElementById('fire');
+    const resetBtn=document.getElementById('reset'),ctx=cv.getContext('2d');
+    const Engine=Matter.Engine,Bodies=Matter.Bodies,Composite=Matter.Composite,Body=Matter.Body;
+    const engine=Engine.create({gravity:{x:0,y:0}});
+    let rocket,packetBodies=[],state;
+    function fresh(){return{remaining:packetCount,velocity:initialV,rocketX:650,shots:0,anim:0,phase:'ready',vacuumDone:false,ghostX:null,lastPacket:null};}
+    function build(){Composite.clear(engine.world,false);packetBodies=[];rocket=Bodies.rectangle(650,190,240,60,{frictionAir:0,inertia:Infinity});Composite.add(engine.world,rocket);for(let i=0;i<packetCount;i++){const b=Bodies.rectangle(555+i*20,190,15,32,{frictionAir:0});packetBodies.push(b);Composite.add(engine.world,b);}}
+    function massNow(){return dry+state.remaining*packetMass;}
+    function updateReadings(){const m=massNow(),p=Lec.P.momentum(m,state.velocity);document.getElementById('packets').textContent=state.remaining+' 个';document.getElementById('mass').textContent=Deck.fmt(m,1)+' kg';document.getElementById('speed').textContent=Deck.fmt(state.velocity,3)+' m/s';document.getElementById('momentum').textContent=Deck.fmt(p,1)+' kg·m/s';}
+    function setStep(n){document.querySelectorAll('#process .step').forEach((el,i)=>{el.classList.toggle('is-current',i===n-1);el.classList.toggle('is-done',i<n-1);});}
+    function announce(text){document.getElementById('status').textContent=text;}
+    function shoot(){if(state.anim||state.remaining<=0)return;const beforeMass=massNow(),beforeP=Lec.P.momentum(beforeMass,state.velocity),exhaustV=-exhaustSpeed;const exhaustP=Lec.P.momentum(packetMass,exhaustV);state.remaining--;const afterMass=Lec.P.positive(dry+state.remaining*packetMass,dry);state.velocity=(beforeP-exhaustP)/afterMass;state.shots++;state.anim=Deck.reduced()?0.001:1;state.phase='eject';fire.disabled=true;const b=packetBodies[state.remaining];state.lastPacket=b;Body.setVelocity(b,{x:-exhaustSpeed,y:0});Body.setVelocity(rocket,{x:state.velocity*8,y:0});setStep(2);announce('向后排出质量：排气速度 '+Deck.fmt(exhaustV,1)+' m/s。');updateReadings();}
+    function completeShot(){state.anim=0;fire.disabled=state.remaining<=0;if(state.remaining<=0){fire.textContent='排气已用完';announce('没有可排出的质量，就不能继续用这种方式改变速度。');setStep(5);}else{fire.textContent='再喷出一个质量包';announce('排气带走向后动量，剩余火箭获得向前动量。');setStep(state.shots===1?4:5);}if(state.shots===1&&!state.vacuumDone) vacuumReplay();}
+    function vacuumReplay(){state.vacuumDone=true;sim.classList.add('vacuum');document.getElementById('env').textContent='○ 真空中复演';setStep(6);const first=state.velocity;const replayBefore=Lec.P.momentum(dry+packetCount*packetMass,initialV);const replay=(replayBefore-Lec.P.momentum(packetMass,-exhaustSpeed))/(dry+(packetCount-1)*packetMass);const diff=Math.abs(first-replay);document.getElementById('compare').textContent=diff<tolerance?'0 m/s · 结果相同':Deck.fmt(diff,6)+' m/s';state.ghostX=Body.position.x;announce('真空中复演：反推方向与计算结果不变。');setTimeout(()=>{sim.classList.remove('vacuum');document.getElementById('env').textContent='● 空气中 / 真空重影';fire.disabled=state.remaining<=0;},Deck.reduced()?0:900);}
+    function reset(){state=fresh();build();fire.disabled=false;fire.textContent='喷出一个质量包';sim.classList.remove('vacuum');document.getElementById('env').textContent='● 空气中';document.getElementById('compare').textContent='等待复演';announce('喷气前：火箭与排气属于同一个静止系统。');setStep(1);updateReadings();}
+    fire.addEventListener('click',shoot);resetBtn.addEventListener('click',reset);
+    function draw(){Deck.fit(cv);const w=cv.clientWidth,h=cv.clientHeight;ctx.clearRect(0,0,w,h);ctx.strokeStyle=Deck.token('--line-strong');ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(40,230);ctx.lineTo(w-40,230);ctx.stroke();ctx.fillStyle=Deck.token('--ink-soft');ctx.fillRect(648,220,4,20);
+      if(state.ghostX!==null){ctx.globalAlpha=.22;ctx.fillStyle=Deck.token('--accent');ctx.fillRect(state.ghostX-120,160,240,60);ctx.globalAlpha=1;}
+      const rp=rocket.position;ctx.fillStyle=Deck.token('--accent');Deck.rr(ctx,rp.x-120,160,240,60,12);ctx.fill();ctx.fillStyle=Deck.token('--paper');ctx.beginPath();ctx.moveTo(rp.x+120,160);ctx.lineTo(rp.x+165,190);ctx.lineTo(rp.x+120,220);ctx.fill();ctx.fillStyle=Deck.token('--accent-2');packetBodies.forEach((b,i)=>{if(i<state.remaining)ctx.fillRect(rp.x-105+i*20,174,14,32);else ctx.fillRect(b.position.x-7,b.position.y-16,14,32);});
+      if(state.shots){const arrowScale=Lec.P.clamp(Lec.P.ratio(Math.abs(-exhaustSpeed),scaleBase)*70,45,110);ctx.strokeStyle=Deck.token('--accent-2');ctx.fillStyle=Deck.token('--accent-2');ctx.lineWidth=5;const px=state.lastPacket?state.lastPacket.position.x:rp.x-150;Deck.arrow(ctx,px,130,px-arrowScale,130,11);ctx.fillStyle=Deck.token('--text');ctx.font='700 16px '+Deck.token('--font-sans');ctx.fillText('排气：向后 '+Deck.fmt(Lec.P.momentum(packetMass,-exhaustSpeed),1)+' kg·m/s',Math.max(20,px-arrowScale),105);ctx.strokeStyle=Deck.token('--accent');ctx.fillStyle=Deck.token('--accent');Deck.arrow(ctx,rp.x,130,rp.x+Math.max(45,state.velocity*220),130,11);ctx.fillStyle=Deck.token('--text');ctx.fillText('火箭：向前',rp.x+20,105);}}
+    reset();
+    Deck.autofit(cv,draw);Deck.loop((t,dt)=>{if(state.anim){Matter.Engine.update(engine,Math.min(dt||16,24));state.anim-=dt/650;if(state.anim<=0)completeShot();}draw();},{still:0});
+  </script>
+</body>
+</html>

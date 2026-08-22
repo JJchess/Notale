@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>飞得够高，为什么仍会掉下来？</title>
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  .lab{height:100%;display:flex;flex-direction:column;gap:12px;min-height:0}
+  .instruction{display:flex;align-items:center;justify-content:space-between;gap:16px}
+  .instruction p{font-size:var(--fs-sec);line-height:var(--lh-sec)}
+  .sim{position:relative;flex:1 1 auto;min-height:0;border:1px solid var(--line);border-radius:var(--radius-lg);overflow:hidden;background:linear-gradient(#eef4f4,#fffdf8)}
+  #space{position:absolute;inset:0;width:100%;height:100%}
+  .meters{position:absolute;inset:16px 16px auto;display:flex;justify-content:space-between;pointer-events:none}
+  .meter{width:230px;padding:12px 14px;border:1px solid var(--line);border-radius:var(--radius-md);background:rgb(255 253 248 / 94%)}
+  .meter b{display:block;font-size:var(--fs-h2);line-height:1.35;font-variant-numeric:tabular-nums}
+  .radial{border-left:8px solid var(--warm)} .tangent{border-bottom:8px solid var(--accent)}
+  .status{position:absolute;left:260px;right:260px;top:14px;text-align:center;font-size:var(--fs-sec);line-height:var(--lh-sec);font-weight:650}
+  .controls{position:absolute;left:16px;right:16px;bottom:14px;display:flex;align-items:center;justify-content:center;gap:12px}
+  .controls .panel{padding:8px 12px;background:rgb(255 253 248 / 95%)}
+  button{min-height:42px;padding:8px 16px;border:1px solid var(--accent-strong);border-radius:var(--radius-sm);background:var(--accent);color:white;font:650 var(--fs-sec)/1.4 var(--font-sans);cursor:pointer}
+  .compare{--compare-n:2;flex:0 0 auto}
+  .compare>.hdr,.compare>.dim,.compare>.cell{padding:7px 12px}
+  .compare>.hdr{min-height:42px;font-size:var(--fs-sec)}
+  .compare>.cell{font-size:var(--fs-sec)}
+  .pending{color:var(--muted);font-style:italic}
+  .model{font-size:var(--fs-sec);line-height:var(--lh-sec);color:var(--muted)}
+  canvas:focus-visible{outline:3px solid var(--focus);outline-offset:-4px}
+  progress.lec-header__progress{appearance:none;border:0;padding:0;line-height:0;font-size:0;vertical-align:top}
+</style>
+</head>
+<body data-page="34" data-total="48">
+<div id="stage"><main id="main"></main></div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script src="assets/lib/matter.min.js"></script>
+<script>
+Lec.mount({index:34,kicker:"ORBIT THRESHOLD",title:"飞得够高，为什么仍会掉下来？",take:"到达高空不等于进入轨道；决定轨道的核心门槛是横向速度。"});
+Deck.init({index:34,total:48});
+const main=document.getElementById('main');
+main.innerHTML=`<section class="lab">
+  <div class="instruction"><p>拖动出发点的箭头改变方向，松手发射；比较离地高度与横向速度。</p><p class="label accent">固定速度预算 <strong id="budget"></strong></p></div>
+  <div class="sim no-pan">
+    <canvas id="space" tabindex="0" role="application" aria-label="轨道实验台。左右方向键改变速度方向，空格发射，R键重置。"></canvas>
+    <div class="meters"><div class="meter radial"><span class="label">离地高度｜径向刻度</span><b id="alt"></b><span id="radial" class="label"></span></div><div class="meter tangent"><span class="label">横向速度｜切向刻度</span><b id="tan"></b><span id="split" class="label"></span></div></div>
+    <div id="status" class="status" aria-live="polite">拖动箭头，先试“向上”，再试“沿地表”。</div>
+    <div class="controls"><div class="panel panel--flat label">当前总速度 <strong id="total"></strong></div><button id="launch">发射</button><button id="reset">重置</button></div>
+  </div>
+  <div class="k-comparison compare">
+    <div class="hdr">比较维度</div><div class="hdr">高度优先</div><div class="hdr">横向速度优先</div>
+    <div class="dim">速度方向</div><div class="cell diff">主要背离地心，径向分量大</div><div class="cell diff">主要沿地表切线，横向分量大</div><div class="rowline"></div>
+    <div class="dim">最先增长</div><div class="cell">离地高度迅速增加</div><div class="cell">横向速度接近完整预算</div><div class="rowline"></div>
+    <div class="dim">随后结果</div><div id="laterA" class="cell pending">运行后揭示</div><div id="laterB" class="cell pending">运行后揭示</div><div class="rowline"></div>
+    <div class="dim">是否入轨</div><div id="goalA" class="cell pending">等待检验</div><div id="goalB" class="cell pending">等待检验</div>
+  </div>
+  <p class="model">理想化二维、球对称地球模型；忽略大气阻力、地球非球形、自转、推力过程与姿态控制。近地表重力参照 <span id="gref"></span>。</p>
+</section>`;
+const $=id=>document.getElementById(id);
+const R=Lec.P.finiteNumber(6371000,6371000), H=Lec.P.finiteNumber(400000,400000), V=Lec.P.finiteNumber(7700,7700), G=Lec.P.finiteNumber(9.81,9.81), PERIOD=Lec.P.finiteNumber(5520,5520), mu=G*R*R;
+const fmt=(v,d=0)=>Lec.P.round(Lec.P.finiteNumber(v,0),d);
+$('budget').textContent=fmt(V/1000,1)+' km/s'; $('gref').textContent='约 '+fmt(G,1)+' m/s²';
+const cv=$('space'),ctx=Deck.fit(cv),engine=Matter.Engine.create({gravity:{x:0,y:0}}); engine.gravity.scale=0;
+let state,body,trace=[],drag=false,finished=false,accum=0;
+function fresh(){return{angle:-Math.PI/2,running:false,elapsed:0,result:'',launched:false};}
+state=fresh();
+function start(){
+ if(state.running||finished)return;
+ const x=0,y=-(R+H), vx=V*Math.cos(state.angle),vy=V*Math.sin(state.angle);
+ body=Matter.Bodies.circle(x,y,25000,{frictionAir:0}); Matter.Body.setVelocity(body,{x:vx/100,y:vy/100}); Matter.Composite.add(engine.world,body);
+ state.running=true;state.launched=true;trace=[];$('launch').disabled=true;$('status').textContent='慢放演示：观察两个读数如何分开。';
+}
+function reset(){Matter.Composite.clear(engine.world,false);state=fresh();body=null;trace=[];finished=false;accum=0;$('launch').disabled=false;$('status').textContent='拖动箭头，先试“向上”，再试“沿地表”。';updateReadouts();draw();}
+function components(){const a=state.angle;return{rad:Math.max(0,-Math.sin(a)*V),tan:Math.abs(Math.cos(a)*V)};}
+function updateReadouts(){let alt=H,tan=components().tan,rad=components().rad,total=V;if(body){const r=Math.hypot(body.position.x,body.position.y);alt=Lec.P.clamp(r-R,0,3000000);const ux=body.position.x/r,uy=body.position.y/r;const vx=body.velocity.x*100,vy=body.velocity.y*100;tan=Math.abs(vx*(-uy)+vy*ux);rad=vx*ux+vy*uy;total=Math.hypot(vx,vy);}
+ $('alt').textContent=fmt(alt/1000)+' km';$('tan').textContent=fmt(tan/1000,1)+' km/s';$('total').textContent=fmt(total/1000,1)+' km/s';$('radial').textContent='径向 '+fmt(rad/1000,1)+' km/s';$('split').textContent='横向分配 '+fmt(Lec.P.clamp(tan/V*100,0,100))+'%';}
+function end(ok){state.running=false;finished=true;state.result=ok?'success':'fail';$('laterA').textContent='上升、减速，随后重新接近地面';$('laterB').textContent='一边下落，一边持续错过地面';$('laterA').className=$('laterB').className='cell';$('goalA').textContent='很高也不会自动入轨';$('goalB').textContent='足够横向速度可稳定绕行';$('goalA').className='cell diff';$('goalB').className='cell diff';$('status').textContent=ok?'✓ 稳定绕行：高度提供空间，横向速度让下落持续错过地面。代表性周期约 '+fmt(PERIOD/60)+' 分钟，实际值随轨道变化。':'✕ 未入轨：你可能飞得很高，但横向速度不足。';}
+function simulate(dt){if(!state.running||!body)return;const r=Math.hypot(body.position.x,body.position.y),scale=1/100;Matter.Body.applyForce(body,body.position,{x:-body.mass*mu*body.position.x/(r*r*r)*scale*scale,y:-body.mass*mu*body.position.y/(r*r*r)*scale*scale});Matter.Engine.update(engine,dt*18);state.elapsed+=dt*18;trace.push({x:body.position.x,y:body.position.y});if(trace.length>700)trace.shift();const nr=Math.hypot(body.position.x,body.position.y);if(nr<=R){end(false);}else if(state.elapsed>=PERIOD&&nr<R+1800000){end(true);}else if(nr>R+3000000){end(false);}updateReadouts();}
+function draw(){const w=cv.clientWidth,h=cv.clientHeight;ctx.clearRect(0,0,w,h);const cx=w/2,cy=h*.60,earth=112,s=earth/R;ctx.fillStyle=Deck.rgba('--accent',.12);ctx.beginPath();ctx.arc(cx,cy,earth+H*s,0,Math.PI*2);ctx.strokeStyle=Deck.rgba('--accent',.35);ctx.lineWidth=2;ctx.stroke();ctx.fillStyle=Deck.token('--accent-strong');ctx.beginPath();ctx.arc(cx,cy,earth,0,Math.PI*2);ctx.fill();ctx.strokeStyle=Deck.token('--warm');ctx.lineWidth=3;ctx.beginPath();trace.forEach((p,i)=>{const x=cx+p.x*s,y=cy+p.y*s;i?ctx.lineTo(x,y):ctx.moveTo(x,y)});ctx.stroke();let px,py;if(body){px=cx+body.position.x*s;py=cy+body.position.y*s}else{px=cx;py=cy-(earth+H*s)}ctx.fillStyle=Deck.token('--warm');ctx.beginPath();ctx.arc(px,py,7,0,Math.PI*2);ctx.fill();if(!state.running&&!finished){const L=78,ex=px+Math.cos(state.angle)*L,ey=py+Math.sin(state.angle)*L;ctx.strokeStyle=Deck.token('--warm');ctx.lineWidth=5;Deck.arrow(ctx,px,py,ex,ey,12);}}
+function setAngleFromEvent(e){const p=Deck.pt(cv,e),w=cv.clientWidth,h=cv.clientHeight,cx=w/2,cy=h*.60,py=cy-(112+H*(112/R));state.angle=Math.atan2(p.y-py,p.x-cx);state.angle=Lec.P.clamp(state.angle,-Math.PI,-.02);updateReadouts();draw();}
+cv.addEventListener('pointerdown',e=>{if(!state.running&&!finished){drag=true;cv.setPointerCapture(e.pointerId);setAngleFromEvent(e)}});cv.addEventListener('pointermove',e=>{if(drag)setAngleFromEvent(e)});cv.addEventListener('pointerup',()=>{if(drag){drag=false;start()}});
+cv.addEventListener('keydown',e=>{if(e.key==='ArrowLeft'||e.key==='ArrowRight'){e.preventDefault();state.angle=Lec.P.clamp(state.angle+(e.key==='ArrowLeft'?-.08:.08),-Math.PI,-.02);updateReadouts();draw()}else if(e.key===' '||e.key==='Enter'){e.preventDefault();start()}else if(e.key.toLowerCase()==='r')reset()});
+$('launch').onclick=start;$('reset').onclick=reset;Deck.onResize(()=>{Deck.fit(cv);draw()});Deck.loop((t,dt)=>{simulate(Math.min(dt,32));draw()},{still:1});updateReadouts();draw();
+</script>
+</body>
+</html>

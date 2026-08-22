@@ -1,0 +1,314 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  :root{
+    --motion-micro: 160ms;
+    --motion-state: 240ms;
+    --motion-feedback: 420ms;
+    --ease-out: cubic-bezier(.22,.75,.25,1);
+  }
+  #stage{padding:28px 42px 30px;position:relative}
+  .page-head{height:112px;display:flex;align-items:flex-start;justify-content:space-between;gap:var(--sp-5);border-bottom:1px solid var(--line)}
+  .kicker{color:var(--primary);font:700 var(--fs-label)/1.4 var(--font-mono);letter-spacing:.12em}
+  .page-head .lead{max-width:640px;margin:8px 0 0;text-align:right;color:var(--muted)}
+  .progress{display:flex;gap:8px;align-items:center;margin-top:12px;color:var(--muted);font-size:var(--fs-sec)}
+  .progress i{width:34px;height:4px;border-radius:999px;background:var(--line-strong)}
+  .progress i.current{background:var(--accent);box-shadow:0 0 12px var(--accent-line)}
+  .progress i.done{background:var(--primary)}
+  .game-shell{position:relative;display:flex;flex:1;min-height:0;gap:18px;padding-top:18px}
+  .source-panel{flex:0 0 330px;min-width:0;padding:16px;border:1px solid var(--line);border-radius:var(--radius-2);background:var(--panel-raised)}
+  .source-panel .k-classification{gap:10px}
+  .source-panel .k-classification .lv{gap:9px;margin-left:10px;padding-left:14px}
+  .source-panel .k-classification .box{padding:10px 12px;transition:border-color var(--motion-state),background var(--motion-state),transform var(--motion-state)}
+  .source-panel .k-classification .box>.bt{margin:-10px -12px 8px;padding:7px 11px;font-size:19px}
+  .source-panel .source-item.current{border-color:var(--accent);background:var(--accent-soft);transform:translateX(3px)}
+  .source-panel .source-item.current>.bt{color:var(--accent);background:var(--accent-soft)}
+  .source-panel .source-item.done{border-color:var(--primary-line)}
+  .source-feature{color:var(--muted);font-size:var(--fs-sec);line-height:1.45}
+  .source-state{margin-top:5px;color:var(--primary);font-size:var(--fs-label);font-weight:700}
+  .cutaway{position:relative;display:flex;flex:1;min-width:0;min-height:0;flex-direction:column;padding:16px 18px;border:1px solid var(--line-strong);border-radius:var(--radius-2);overflow:hidden;background:repeating-linear-gradient(0deg,transparent 0,transparent 31px,rgba(89,195,195,.10) 32px),linear-gradient(90deg,var(--panel-raised),var(--panel) 50%,var(--panel-raised))}
+  .cutaway::after{position:absolute;right:0;bottom:0;width:390px;height:170px;border-top:2px solid var(--primary-line);border-left:2px solid var(--primary-line);border-radius:100% 0 0 0;content:"";box-shadow:inset 8px 8px 18px rgba(89,195,195,.08);pointer-events:none}
+  .work-head{height:50px;display:flex;align-items:flex-start;justify-content:space-between;gap:16px}
+  .instruction{color:var(--muted);font-size:var(--fs-sec);line-height:1.45}
+  .beam-field{position:relative;display:flex;flex:1;min-height:0;align-items:stretch;gap:16px}.field-svg{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}.field-svg .guide{fill:none;stroke:var(--line-strong);stroke-width:1}.field-svg .track{fill:none;stroke:var(--accent);stroke-width:2;stroke-dasharray:9 12;opacity:.55}.field-svg .collision{fill:none;stroke:var(--danger);stroke-width:2;opacity:.7}
+  .beam-origin{position:relative;flex:0 0 120px;display:flex;flex-direction:column;justify-content:center;gap:15px;color:var(--accent);font-size:var(--fs-label);font-weight:700}
+  .ray{height:3px;background:linear-gradient(90deg,var(--accent),var(--primary));box-shadow:0 0 10px var(--accent-line);transform-origin:left center;animation:sweep-in 700ms var(--ease-out) both}
+  .ray:nth-child(2){animation-delay:80ms}.ray:nth-child(3){animation-delay:160ms}
+  .vessel{position:relative;z-index:1;display:flex;flex:1;min-width:0;align-items:stretch;gap:12px;padding:14px;border:1px solid var(--primary-line);border-radius:42px 12px 12px 42px;background:rgba(7,16,24,.78)}
+  .slot{position:relative;display:flex;flex:1;min-width:0;flex-direction:column;align-items:center;justify-content:center;gap:12px;border:1px dashed var(--line-strong);border-radius:var(--radius-1);background:repeating-linear-gradient(135deg,transparent 0,transparent 13px,rgba(89,195,195,.10) 14px,transparent 15px),var(--panel);transition:border-color var(--motion-state),box-shadow var(--motion-state),transform var(--motion-state)}
+  .slot::before{position:absolute;top:0;bottom:0;left:-7px;width:3px;background:var(--line-strong);content:""}
+  .slot.filled{border-style:solid;border-color:var(--primary);box-shadow:inset 0 0 22px var(--primary-soft)}
+  .slot.recommended{border-color:var(--accent);box-shadow:inset 0 0 24px var(--accent-soft),0 0 14px var(--accent-line)}
+  .slot-label{color:var(--muted);font-size:var(--fs-label);font-weight:700}
+  .slot-value{min-height:32px;color:var(--text);font-size:var(--fs-lead);font-weight:750;text-align:center}
+  .slot-hint{color:var(--faint);font-size:var(--fs-label)}
+  .crew{position:relative;z-index:1;flex:0 0 86px;display:flex;align-items:center;justify-content:center}
+  .crew-shape{position:relative;width:45px;height:112px;border:2px solid var(--primary);border-radius:25px 25px 17px 17px;opacity:.9}
+  .crew-shape::before{position:absolute;top:-39px;left:5px;width:31px;height:31px;border:2px solid var(--primary);border-radius:50%;content:""}
+  .crew-shape::after{position:absolute;top:30px;left:-21px;width:84px;height:2px;background:var(--primary);content:""}
+  .impact{position:absolute;z-index:3;right:88px;top:50%;width:12px;height:12px;border:2px solid var(--danger);border-radius:50%;opacity:0;transform:translateY(-50%)}
+  .impact.flash{animation:impact-flash var(--motion-feedback) ease-out}
+  .secondary-rays{position:absolute;z-index:2;right:92px;top:50%;width:76px;height:76px;opacity:0;pointer-events:none}
+  .secondary-rays i{position:absolute;left:0;top:50%;width:68px;height:2px;background:linear-gradient(90deg,var(--danger),transparent);transform-origin:left}
+  .secondary-rays i:nth-child(1){transform:rotate(-30deg)}.secondary-rays i:nth-child(2){transform:rotate(0)}.secondary-rays i:nth-child(3){transform:rotate(30deg)}
+  .secondary-rays.show{animation:branch var(--motion-feedback) ease-out forwards}
+  .materials{height:94px;display:flex;align-items:center;gap:12px;border-top:1px solid var(--line)}
+  .materials-title{flex:0 0 160px;color:var(--muted);font-size:var(--fs-sec);line-height:1.45}
+  .material{position:relative;z-index:8;min-width:82px;min-height:48px;padding:8px 15px;border:1px solid var(--line-strong);border-radius:var(--radius-1);color:var(--text);background:var(--panel-raised);font-size:var(--fs-sec);font-weight:750;cursor:grab;touch-action:none;transition:border-color var(--motion-micro),background var(--motion-micro),transform var(--motion-micro)}
+  .material:hover,.material.selected{border-color:var(--accent);background:var(--accent-soft)}
+  .material.dragging{cursor:grabbing;transition:none;box-shadow:var(--shadow-panel)}
+  .controls{margin-left:auto;display:flex;gap:10px}
+  .action{min-height:44px;padding:8px 17px;border:1px solid var(--line-strong);border-radius:var(--radius-1);color:var(--text);background:var(--panel-deep);font-size:var(--fs-sec);font-weight:700;cursor:pointer}
+  .action.primary{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
+  .action:disabled{opacity:.45;cursor:not-allowed}
+  .result-panel{flex:0 0 330px;min-width:0;display:flex;flex-direction:column;gap:12px;padding:16px;border:1px solid var(--line);border-radius:var(--radius-2);background:var(--panel-raised)}
+  .result-line{flex:1;padding:12px;border-left:3px solid var(--line-strong);background:repeating-linear-gradient(90deg,transparent 0,transparent 22px,rgba(89,195,195,.10) 23px,transparent 24px),var(--panel);font-size:var(--fs-sec);line-height:1.45}
+  .result-line strong{display:block;margin-bottom:3px;font-size:var(--fs-lead)}
+  .result-line.good{border-color:var(--primary)}.result-line.warn{border-color:var(--danger)}
+  .feedback{min-height:104px;padding:14px;border:1px solid var(--accent-line);border-radius:var(--radius-1);color:var(--text);background:var(--accent-soft);font-size:var(--fs-sec);line-height:1.5}
+  .feedback.bump{animation:feedback-in var(--motion-feedback) var(--ease-out)}
+  .game-shell.complete>.source-panel,.game-shell.complete>.cutaway,.game-shell.complete>.result-panel{visibility:hidden}.summary{display:none;position:absolute;z-index:12;inset:18px 0 0;padding:24px;border:1px solid var(--accent-line);border-radius:var(--radius-2);background:rgba(9,22,32,.97);box-shadow:var(--shadow-panel)}
+  .summary.show{display:flex;flex-direction:column;animation:summary-in 360ms var(--ease-out)}.summary-map{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;opacity:.28}.summary-map path{fill:none;stroke:var(--primary);stroke-width:2;stroke-dasharray:8 10}.summary>*:not(.summary-map){position:relative;z-index:1}
+  .summary h2{font-size:30px;color:var(--accent)}
+  .summary-row{display:flex;flex:1;gap:16px;margin:18px 0}
+  .summary-cut{flex:1;min-width:0;padding:16px;border:1px solid var(--primary-line);border-radius:var(--radius-1);background:var(--panel)}
+  .summary-cut .layers{display:flex;gap:6px;margin:14px 0}
+  .summary-cut .layers span{flex:1;padding:10px 5px;border:1px solid var(--line-strong);border-radius:4px;text-align:center;font-size:var(--fs-label)}
+  .conclusion{font-size:var(--fs-lead);line-height:1.5}
+  @keyframes sweep-in{from{opacity:0;transform:translateX(-60px) scaleX(.2)}to{opacity:1;transform:none}}
+  @keyframes impact-flash{0%{opacity:0;transform:translateY(-50%) scale(.4)}35%{opacity:1;transform:translateY(-50%) scale(2)}100%{opacity:0;transform:translateY(-50%) scale(3)}}
+  @keyframes branch{0%{opacity:0;transform:scaleX(.2)}35%{opacity:1}100%{opacity:.65;transform:none}}
+  @keyframes feedback-in{0%{opacity:.35;transform:translateY(8px)}100%{opacity:1;transform:none}}
+  @keyframes summary-in{from{opacity:0;transform:translateY(14px) scale(.99)}to{opacity:1;transform:none}}
+  @media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}.ray{opacity:1}.summary.show{opacity:1}.secondary-rays.show{opacity:.65}}
+</style>
+</head>
+<body data-page="43" data-total="50">
+<div id="stage">
+  <header class="page-head shrink0">
+    <div>
+      <div class="kicker">ANCIENT BODY / RADIATION</div>
+      <h1>屏蔽不是堆得越厚越安全</h1>
+      <div class="progress" aria-label="情境进度"><span id="roundLabel">情境</span><i></i><i></i><i></i></div>
+    </div>
+    <p class="lead">先辨认辐射类别，再配置材料与层位。质量和次级粒子也要算进取舍。</p>
+  </header>
+
+  <main class="game-shell min0">
+    <section class="source-panel min0" aria-labelledby="sourceTitle">
+      <div class="k-classification">
+        <div class="lv">
+          <div class="box">
+            <div class="bt" id="sourceTitle">太空辐射</div>
+            <div class="lv" id="sourceTree"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="cutaway min0" aria-labelledby="workTitle">
+      <div class="work-head shrink0">
+        <div><h2 id="workTitle">配置三层舱壁</h2><div class="instruction">拖材料到层位；键盘可选材料后用方向键与 Enter 放置。</div></div>
+        <div class="legend"><span class="key"><i class="swatch current"></i>当前辐射</span><span class="key"><i class="swatch"></i>富氢响应</span></div>
+      </div>
+      <div class="beam-field min0">
+        <svg class="field-svg" viewBox="0 0 780 530" preserveAspectRatio="none" aria-label="粒子穿过分层舱壁的路径图"><path class="guide" d="M0 70H780M0 265H780M0 460H780"/><path class="track" d="M0 214L164 220L322 198L476 230L780 218M0 266L170 266L328 278L486 254L780 265M0 318L158 310L316 334L480 302L780 316"/><path class="collision" d="M625 265l42-34m-42 34l48 0m-48 0l42 35"/></svg>
+        <div class="beam-origin" aria-hidden="true"><span>粒子束</span><i class="ray"></i><i class="ray"></i><i class="ray"></i></div>
+        <div class="vessel no-pan" id="vessel">
+          <div class="slot" data-slot="0"><span class="slot-label">外层</span><span class="slot-value">待配置</span><span class="slot-hint">首先迎击粒子</span></div>
+          <div class="slot" data-slot="1"><span class="slot-label">结构层</span><span class="slot-value">待配置</span><span class="slot-hint">承力与屏蔽</span></div>
+          <div class="slot" data-slot="2"><span class="slot-label">避难区</span><span class="slot-value">待配置</span><span class="slot-hint">贴近乘员</span></div>
+          <div class="impact" id="impact"></div>
+          <div class="secondary-rays" id="secondaryRays"><i></i><i></i><i></i></div>
+          <div class="crew" aria-label="乘员位置"><div class="crew-shape"></div></div>
+        </div>
+      </div>
+      <div class="materials shrink0" aria-label="材料库">
+        <div class="materials-title"><strong>材料库</strong><br>同一种材料可以重复放置</div>
+        <button class="material" data-material="铝">铝</button>
+        <button class="material" data-material="聚乙烯">聚乙烯</button>
+        <button class="material" data-material="水">水</button>
+        <button class="material" data-material="铅">铅</button>
+        <div class="controls"><button class="action primary" id="evaluate" disabled>评估配置</button></div>
+      </div>
+    </section>
+
+    <aside class="result-panel min0" aria-labelledby="resultTitle">
+      <h2 id="resultTitle">穿透与次级粒子</h2>
+      <div class="result-line" id="attenuation"><strong>削弱</strong><span>等待完整配置</span></div>
+      <div class="result-line" id="penetration"><strong>穿透</strong><span>等待完整配置</span></div>
+      <div class="result-line" id="secondary"><strong>次级粒子</strong><span>等待完整配置</span></div>
+      <div class="feedback" id="feedback" aria-live="polite">把三块材料放入舱壁，再评估当前辐射。</div>
+      <div class="note">更厚通常多吸收一些能量，但并不等于无条件更安全。</div>
+    </aside>
+
+    <section class="summary" id="summary" aria-labelledby="summaryTitle">
+      <svg class="summary-map" viewBox="0 0 1500 680" preserveAspectRatio="none" aria-label="三类辐射分别连接到各自材料组合"><path d="M90 90H360L470 210H1410M360 90L470 340H1410M360 90L470 470H1410"/></svg>
+      <h2 id="summaryTitle">没有万能屏蔽层</h2>
+      <div class="summary-row" id="summaryRow"></div>
+      <div class="row items-center justify-between gap-4">
+        <div class="conclusion">屏蔽设计先问“是什么辐射”，再问“用什么材料、放在哪里”。</div>
+        <button class="action primary" id="replay">重新配置</button>
+      </div>
+    </section>
+  </main>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script>
+(function(){
+  'use strict';
+  Deck.init({index:43,total:50});
+  const materials=['铝','聚乙烯','水','铅'];
+  const slots=3;
+  const rounds=[
+    {name:'太阳高能粒子',feature:'太阳活动期间增强，以质子为主',judge:'富氢材料适合贴近乘员；预警与避难区同样重要。'},
+    {name:'俘获带粒子',feature:'困在行星磁场中的电子与质子',judge:'航线、停留时间与适量屏蔽共同决定暴露。'},
+    {name:'银河宇宙射线',feature:'能量高，含重离子，长期存在',judge:'很难完全挡住；碰撞还可能产生次级粒子。'}
+  ];
+  const initial=()=>({round:0,layers:Array(slots).fill(null),status:'editing',records:[]});
+  let state=initial(), selected=null, keyboardSlot=0, drag=null;
+  const q=s=>document.querySelector(s), qa=s=>Array.from(document.querySelectorAll(s));
+  const sourceTree=q('#sourceTree'), roundLabel=q('#roundLabel'), evaluate=q('#evaluate'), feedback=q('#feedback');
+
+  function buildSources(){
+    sourceTree.innerHTML=rounds.map((r,i)=>`<div class="box source-item" data-source="${i}"><div class="bt">${r.name}</div><div class="source-feature">${r.feature}</div><div class="source-state">${i===state.round?'正在评估':i<state.round?'已评估':'待评估'}</div></div>`).join('');
+  }
+  function render(){
+    buildSources();
+    roundLabel.textContent=`情境 ${state.round+1} / ${rounds.length}`;
+    qa('.progress i').forEach((el,i)=>el.className=i<state.round?'done':i===state.round?'current':'');
+    qa('.slot').forEach((el,i)=>{
+      const val=state.layers[i];
+      el.classList.toggle('filled',!!val);
+      el.classList.toggle('recommended',state.status==='evaluated'&&isRecommended(i,val));
+      el.querySelector('.slot-value').textContent=val||'待配置';
+    });
+    evaluate.disabled=state.layers.some(x=>!x)||state.status!=='editing';
+  }
+  function isRecommended(i,val){
+    const name=rounds[state.round].name;
+    if(name==='太阳高能粒子') return i===2&&(val==='聚乙烯'||val==='水');
+    if(name==='俘获带粒子') return (i<2&&val==='铝')||(i===2&&(val==='聚乙烯'||val==='水'));
+    return val==='聚乙烯'||val==='水';
+  }
+  function place(index,mat){
+    if(state.status!=='editing') return;
+    state.layers[index]=mat;
+    keyboardSlot=index;
+    render();
+    feedback.textContent=`${mat}已放入${['外层','结构层','避难区'][index]}。`;
+    feedback.classList.remove('bump'); void feedback.offsetWidth; feedback.classList.add('bump');
+  }
+  function metrics(){
+    const name=rounds[state.round].name;
+    const hydrogen=state.layers.filter(m=>m==='聚乙烯'||m==='水').length;
+    const lead=state.layers.filter(m=>m==='铅').length;
+    const aluminum=state.layers.filter(m=>m==='铝').length;
+    let fit=false;
+    if(name==='太阳高能粒子') fit=hydrogen>0&&(state.layers[2]==='聚乙烯'||state.layers[2]==='水');
+    if(name==='俘获带粒子') fit=state.layers.slice(0,2).includes('铝')&&hydrogen>0;
+    if(name==='银河宇宙射线') fit=hydrogen>1&&lead===0;
+    const secondaryRisk=lead>0||(name==='银河宇宙射线'&&aluminum>1);
+    return {hydrogen,lead,aluminum,fit,secondaryRisk};
+  }
+  function qualitative(m){
+    const name=rounds[state.round].name;
+    if(name==='太阳高能粒子') return {attenuation:m.hydrogen?'富氢层重点削弱质子':'仅靠结构层，削弱有限',penetration:m.fit?'避难区暴露进一步降低':'仍需预警与避难区配合',secondary:m.secondaryRisk?'需要关注':'相对较少'};
+    if(name==='俘获带粒子') return {attenuation:m.fit?'结构层与富氢层共同削弱':'材料组合仍有缺口',penetration:'航线与停留时间仍然重要',secondary:m.secondaryRisk?'需要关注':'相对较少'};
+    return {attenuation:m.hydrogen>1?'富氢层只能部分削弱':'整体削弱仍然有限',penetration:'高能重离子仍会穿透',secondary:m.secondaryRisk?'碰撞分叉更明显':'仍会产生'};
+  }
+  function evaluateRound(){
+    if(evaluate.disabled) return;
+    const m=metrics(), text=qualitative(m), r=rounds[state.round];
+    state.status='evaluated';
+    q('#attenuation span').textContent=text.attenuation;
+    q('#penetration span').textContent=text.penetration;
+    q('#secondary span').textContent=text.secondary;
+    q('#attenuation').className='result-line '+(m.fit?'good':'warn');
+    q('#penetration').className='result-line '+(r.name==='银河宇宙射线'?'warn':m.fit?'good':'warn');
+    q('#secondary').className='result-line '+(m.secondaryRisk?'warn':'good');
+    if(m.fit){
+      feedback.textContent=r.judge;
+    }else if(m.lead>0){
+      feedback.textContent='高密度不等于通用：这里增加了次级粒子。';
+    }else if(m.hydrogen===0){
+      feedback.textContent='结构有效，但避难区还缺富氢材料。';
+    }else{
+      feedback.textContent=r.judge;
+    }
+    feedback.classList.remove('bump'); void feedback.offsetWidth; feedback.classList.add('bump');
+    if(m.secondaryRisk||r.name==='银河宇宙射线'){q('#impact').classList.remove('flash');q('#secondaryRays').classList.remove('show');void q('#impact').offsetWidth;q('#impact').classList.add('flash');q('#secondaryRays').classList.add('show');}
+    state.records.push({round:state.round,layers:state.layers.slice(),metrics:m});
+    render();
+    setTimeout(()=>{
+      if(state.round<rounds.length-1){state.round++;state.layers=Array(slots).fill(null);state.status='editing';resetReadouts();render();feedback.textContent='辐射类别已改变。重新选择材料与层位。';}
+      else complete();
+    },Deck.reduced()?0:420);
+  }
+  function resetReadouts(){
+    ['attenuation','penetration','secondary'].forEach(id=>{q('#'+id).className='result-line';q('#'+id+' span').textContent='等待完整配置';});
+    q('#secondaryRays').classList.remove('show');
+  }
+  function complete(){
+    state.status='complete';
+    q('#summaryRow').innerHTML=state.records.map(rec=>{
+      const r=rounds[rec.round];
+      return `<div class="summary-cut"><h2>${r.name}</h2><div class="layers">${rec.layers.map(x=>`<span>${x}</span>`).join('')}</div><div class="secondary">${r.judge}</div></div>`;
+    }).join('');
+    q('.game-shell').classList.add('complete');
+    q('#summary').classList.add('show');
+    q('#replay').focus();
+  }
+  function resetAll(){
+    state=initial();selected=null;keyboardSlot=0;
+    qa('.material').forEach(b=>b.classList.remove('selected'));
+    q('#summary').classList.remove('show');q('.game-shell').classList.remove('complete');resetReadouts();feedback.textContent='把三块材料放入舱壁，再评估当前辐射。';render();
+  }
+  function selectMaterial(btn){
+    selected=btn.dataset.material;
+    qa('.material').forEach(b=>b.classList.toggle('selected',b===btn));
+    feedback.textContent=`已选择${selected}。用左右方向键选择层位，按 Enter 放置。`;
+  }
+  qa('.material').forEach(btn=>{
+    btn.addEventListener('click',()=>selectMaterial(btn));
+    btn.addEventListener('keydown',e=>{
+      if(['ArrowRight','ArrowLeft','Enter',' '].includes(e.key)) e.stopPropagation();
+      if(e.key==='ArrowRight'){e.preventDefault();keyboardSlot=(keyboardSlot+1)%slots;feedback.textContent=`目标：${['外层','结构层','避难区'][keyboardSlot]}。按 Enter 放置。`;}
+      if(e.key==='ArrowLeft'){e.preventDefault();keyboardSlot=(keyboardSlot+slots-1)%slots;feedback.textContent=`目标：${['外层','结构层','避难区'][keyboardSlot]}。按 Enter 放置。`;}
+      if((e.key==='Enter'||e.key===' ')&&selected){e.preventDefault();place(keyboardSlot,selected);}
+    });
+    btn.addEventListener('pointerdown',e=>{
+      if(state.status!=='editing') return;
+      selectMaterial(btn);btn.setPointerCapture(e.pointerId);
+      drag={btn,id:e.pointerId,sx:e.clientX,sy:e.clientY,dx:0,dy:0};btn.classList.add('dragging');
+    });
+    btn.addEventListener('pointermove',e=>{
+      if(!drag||drag.id!==e.pointerId) return;
+      drag.dx=(e.clientX-drag.sx)/Deck.s;drag.dy=(e.clientY-drag.sy)/Deck.s;
+      btn.style.transform=`translate(${drag.dx}px,${drag.dy}px)`;
+    });
+    btn.addEventListener('pointerup',e=>{
+      if(!drag||drag.id!==e.pointerId) return;
+      const threshold=24*Deck.s;
+      let target=-1;
+      qa('.slot').forEach((slot,i)=>{
+        const r=slot.getBoundingClientRect();
+        if(e.clientX>=r.left-threshold&&e.clientX<=r.right+threshold&&e.clientY>=r.top-threshold&&e.clientY<=r.bottom+threshold) target=i;
+      });
+      btn.classList.remove('dragging');btn.style.transform='';drag=null;
+      if(target>=0) place(target,btn.dataset.material);
+      else feedback.textContent='把材料释放在外层、结构层或避难区内。';
+    });
+  });
+  evaluate.addEventListener('click',evaluateRound);
+  q('#replay').addEventListener('click',resetAll);
+  render();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    .sim-shell{display:flex;width:100%;height:100%;gap:var(--sp-5)}
+    .sim-left{flex:1.85 1 0;display:flex;flex-direction:column;gap:var(--sp-3)}
+    .sim-right{flex:1 1 0;display:flex;flex-direction:column;gap:var(--sp-3)}
+    .control-line{display:flex;gap:var(--sp-3)}
+    .control-line>.ctl{flex:1 1 0}.ctl select{flex:1 1 auto}
+    .world{position:relative;flex:1 1 0;min-height:0;overflow:hidden;background:var(--surface);border:1px solid var(--line);border-radius:var(--radius-lg);box-shadow:var(--shadow-soft)}
+    .world canvas{display:block}.world-label{position:absolute;z-index:2;left:var(--sp-4);padding:var(--sp-2) var(--sp-3);background:var(--surface);border-radius:var(--radius-sm);font-size:var(--fs-label);font-weight:700;pointer-events:none}
+    .world-label.parents{top:var(--sp-3)}.world-label.offspring{top:54%}
+    .world-divider{position:absolute;left:var(--sp-4);right:var(--sp-4);top:50%;border-top:2px dashed var(--line-strong);pointer-events:none}
+    .actions{display:flex;gap:var(--sp-3)}.actions button{flex:1 1 0}
+    .status{min-height:52px;align-items:center}
+    .k-process.compact{flex:1 1 auto;padding:0 var(--sp-3);gap:var(--sp-1)}
+    .k-process.compact>.step{padding:var(--sp-2) var(--sp-3);font-size:var(--fs-sec);line-height:1.35;font-weight:680}
+    .k-process.compact>.arw{flex-basis:18px;font-size:var(--fs-body)}
+    .metrics{padding:var(--sp-4)}.metric-head{display:flex;justify-content:space-between;gap:var(--sp-3);font-size:var(--fs-label);font-weight:700}
+    .trait-bar{position:relative;display:flex;height:34px;margin-top:var(--sp-2);overflow:visible;border:1px solid var(--line-strong);border-radius:var(--radius-sm)}
+    .trait-bar span{width:0;min-width:0;height:100%;transition:flex-grow 240ms ease-out}.trait-bar .b1{background:var(--cyan-soft)}.trait-bar .b2{background:var(--surface-strong)}.trait-bar .b3{background:var(--accent)}
+    .previous{position:absolute;top:4px;bottom:4px;left:0;width:3px;background:var(--warning);pointer-events:none}
+    .history{height:54px;margin-top:var(--sp-2);display:flex;align-items:flex-end;gap:var(--sp-1);border-bottom:2px solid var(--line)}
+    .history i{flex:1 1 0;min-width:5px;background:var(--accent-soft);border-top:3px solid var(--accent);transition:height 240ms ease-out}
+    @media (prefers-reduced-motion:reduce){.trait-bar span,.history i{transition:none}}
+  </style>
+</head>
+<body data-page="08" data-total="50">
+  <div id="stage"><main id="main"></main></div>
+  <script src="assets/base.js"></script>
+  <script src="assets/lec.js"></script>
+  <script src="assets/lib/seedrandom.min.js"></script>
+  <script src="assets/lib/pixi.min.js"></script>
+  <script>
+    Lec.mount({
+      index: 8,
+      kicker: "SELECTION ACROSS GENERATIONS",
+      title: "自然选择改写群体比例",
+      take: "自然选择改变的是群体中性状的比例，不是个体按需升级。"
+    });
+    Deck.init({ index: 8, total: 50 });
+
+    var stage=document.getElementById("main");
+    stage.innerHTML='<div class="sim-shell">\
+      <section class="sim-left min0" aria-label="繁殖群体模拟器">\
+        <div class="control-line">\
+          <div class="ctl min0"><label for="env">环境偏向</label><input id="env" type="range" min="-1" max="1" step="0.1" value="0" aria-describedby="envVal"><span id="envVal" class="label">中性</span></div>\
+          <div class="ctl min0"><label for="guess">先预测</label><select id="guess"><option value="left">向左移动</option><option value="same" selected>基本不变</option><option value="right">向右移动</option></select></div>\
+        </div>\
+        <div class="world min0" id="world" role="img" aria-label="同形标记的色阶表示抽象可遗传性状。亲代在上半区，后代在下半区生成后整批替换亲代。"><span class="world-label parents">亲代：性状保持不变</span><span class="world-label offspring">后代：从亲代性状继承</span><span class="world-divider"></span></div>\
+        <div class="actions"><button type="button" class="primary" id="breed">繁殖一代（按住连续）</button><button type="button" id="reset">重置同一种子</button></div>\
+        <div class="note status" id="feedback" aria-live="polite">拖动环境偏向，先预测，再运行一代。</div>\
+      </section>\
+      <aside class="sim-right min0">\
+        <div class="k-process vertical compact" id="flow"><div class="axis"></div>\
+          <div class="step is-current">1　初始群体已有差异</div><div class="arw"></div>\
+          <div class="step">2　环境形成筛选条件</div><div class="arw"></div>\
+          <div class="step">3　繁殖机会不同</div><div class="arw"></div>\
+          <div class="step">4　后代继承亲代性状</div><div class="arw"></div>\
+          <div class="step">5　新一代替换亲代</div><div class="arw"></div>\
+          <div class="step">6　比例跨代累积</div>\
+        </div>\
+        <div class="panel metrics"><div class="metric-head"><span id="gen">第 0 代</span><span id="mean">性状均值 0</span><span id="pop">群体 0</span></div><div class="trait-bar" aria-label="左、中、右三个性状区间比例"><span class="b1"></span><span class="b2"></span><span class="b3"></span><i class="previous"></i></div><div class="history" id="history" aria-label="最近各代的群体性状均值"></div></div>\
+      </aside></div>';
+
+    var K=Lec.K, P=Lec.P;
+    function finite(v,f){v=P.finite(v);return Number.isFinite(v)?v:f}
+    function clamp(v,a,b){return P.clamp(finite(v,a),a,b)}
+    var baseSize=typeof K.populationSimulationSize==='number'?K.populationSimulationSize:500;
+    var generationYears=typeof K.humanGenerationYears==='number'?K.humanGenerationYears:25;
+    var seedBase=String(K.populationSimulationSeed||'course')+':p08-selection';
+    var state={generation:0,target:0,pop:[],previous:[0,0,0],history:[],step:0,running:false,timer:null};
+    var rng;
+    function makePopulation(){rng=new Math.seedrandom(seedBase);state.pop=[];for(var i=0;i<baseSize;i++){var t=clamp((rng()+rng()+rng())/3,-0,1);state.pop.push({trait:t,x:rng(),y:rng()});}state.generation=0;state.history=[];state.previous=shares();}
+    function shares(){var c=[0,0,0];state.pop.forEach(function(o){c[Math.min(2,Math.floor(o.trait*3))]++});return c.map(function(n){return n/state.pop.length})}
+    var world=document.getElementById('world');
+    var app=new PIXI.Application({width:world.clientWidth,height:world.clientHeight,backgroundAlpha:0,antialias:true});
+    app.view.className='cv-fill';world.insertBefore(app.view,world.firstChild);Deck.fit(app.view);
+    var layer=new PIXI.Container(), links=new PIXI.Graphics();app.stage.addChild(links,layer);
+    var tex=(function(){var g=new PIXI.Graphics();g.beginFill(0xffffff).drawCircle(5,5,4).endFill();return app.renderer.generateTexture(g)})();
+    function tint(t){var a=Deck.token('--cyan'),b=Deck.token('--accent');function hex(s){return parseInt(String(s).replace('#',''),16)}return t<.5?hex(a):hex(b)}
+    function drawPopulation(mode,selected){layer.removeChildren().forEach(function(s){s.destroy()});links.clear();var w=app.renderer.width,h=app.renderer.height/2;state.pop.forEach(function(o,i){var s=new PIXI.Sprite(tex);s.anchor.set(.5);s.tint=tint(o.trait);s.alpha=mode==='fade'?.28:1;s.x=24+o.x*(w-48);s.y=45+o.y*(h-70);layer.addChild(s);if(selected&&selected.indexOf(i)>=0){links.lineStyle(1,parseInt(String(Deck.token('--accent')).replace('#',''),16),.28).moveTo(s.x,s.y).lineTo(s.x,h+s.y-24)}})}
+    function setStep(n){state.step=n;document.querySelectorAll('#flow .step').forEach(function(el,i){el.classList.toggle('is-current',i===n);el.classList.toggle('is-past',i<n)})}
+    function updateMetrics(){var sh=shares(),mean=state.pop.reduce(function(a,o){return a+o.trait},0)/state.pop.length;document.querySelectorAll('.trait-bar span').forEach(function(el,i){el.style.flexGrow=String(sh[i])});document.querySelector('.previous').style.left=((state.previous[0]+state.previous[1])*100)+'%';document.getElementById('gen').textContent='第 '+P.formatNumber(state.generation)+' 代';document.getElementById('mean').textContent='性状均值 '+P.formatNumber(mean);document.getElementById('pop').textContent='群体 '+P.formatNumber(state.pop.length);var hist=document.getElementById('history');hist.innerHTML='';state.history.slice(-10).forEach(function(v){var i=document.createElement('i');i.style.height=(12+v*40)+'px';hist.appendChild(i)})}
+    function reproduce(){if(state.running)return;state.running=true;var oldMean=state.pop.reduce(function(a,o){return a+o.trait},0)/state.pop.length;state.previous=shares();setStep(1);var weights=state.pop.map(function(o){return state.target===0?1:.2+.8*(1-Math.abs(o.trait-(state.target+1)/2))});var total=weights.reduce(function(a,b){return a+b},0),chosen=[],next=[];for(var n=0;n<state.pop.length;n++){var r=rng()*total,idx=0;while((r-=weights[idx])>0&&idx<weights.length-1)idx++;chosen.push(idx);var p=state.pop[idx];next.push({trait:p.trait,x:clamp(p.x+(rng()-.5)*.08,0,1),y:rng()})}setStep(2);drawPopulation('normal',chosen.slice(0,Math.min(80,chosen.length)));setTimeout(function(){setStep(3);},180);setTimeout(function(){setStep(4);drawPopulation('fade');},360);setTimeout(function(){state.pop=next;state.generation++;drawPopulation('normal');setStep(5);var mean=state.pop.reduce(function(a,o){return a+o.trait},0)/state.pop.length;state.history.push(mean);updateMetrics();var d=mean-oldMean,actual=Math.abs(d)<.005?'same':d<0?'left':'right',guess=document.getElementById('guess').value;document.getElementById('feedback').textContent=(guess===actual?'预测与本代方向一致。':'本代受随机抽样影响，方向与预测不同。')+' 个体没有变色；变化发生在新一代的群体构成。';state.running=false},Deck.reduced()?0:600)}
+    document.getElementById('env').addEventListener('input',function(){state.target=Number(this.value);document.getElementById('envVal').textContent=state.target<-.05?'偏左':state.target>.05?'偏右':'中性';setStep(1)});
+    var breed=document.getElementById('breed');breed.addEventListener('click',reproduce);breed.addEventListener('pointerdown',function(){clearInterval(state.timer);state.timer=setInterval(reproduce,900)});['pointerup','pointercancel','pointerleave'].forEach(function(e){breed.addEventListener(e,function(){clearInterval(state.timer)})});
+    document.getElementById('reset').addEventListener('click',function(){clearInterval(state.timer);state.running=false;makePopulation();drawPopulation('normal');setStep(0);updateMetrics();document.getElementById('feedback').textContent='已恢复相同种子的初始群体。'});
+    Deck.onResize(function(){app.renderer.resize(world.clientWidth,world.clientHeight);drawPopulation('normal')});
+    makePopulation();drawPopulation('normal');updateMetrics();
+  </script>
+</body>
+</html>

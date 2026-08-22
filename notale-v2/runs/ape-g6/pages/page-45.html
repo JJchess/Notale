@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>一次碰撞，为什么会让下一次更可能？</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    .lec-header__progress{appearance:none;overflow:visible;line-height:0}
+    .orbit-page{display:flex;gap:var(--sp-5);width:100%;height:100%}
+    .sim-wrap{position:relative;flex:1 1 0;min-width:0;min-height:0;overflow:hidden;border:1px solid var(--line-strong);border-radius:var(--radius-lg);background:#071b26;box-shadow:var(--shadow)}
+    #pixi-host{position:absolute;inset:0}
+    #pixi-host canvas{display:block;width:100%;height:100%;outline:none;cursor:crosshair}
+    #pixi-host canvas:focus-visible{box-shadow:inset 0 0 0 4px var(--focus)}
+    .sim-copy{position:absolute;z-index:2;top:var(--sp-4);left:var(--sp-4);max-width:540px;padding:var(--sp-3) var(--sp-4);border-radius:var(--radius-sm);background:rgb(7 27 38 / 84%);color:#f6ffff;pointer-events:none}
+    .sim-copy .lead{font-size:var(--fs-body)}
+    .legend{display:flex;gap:var(--sp-4);margin-top:var(--sp-2);font-size:var(--fs-label);line-height:1.4}
+    .legend span::before{display:inline-block;margin-right:6px;vertical-align:1px;content:""}
+    .lg-craft::before{width:15px;height:8px;border:2px solid #c8f5f1;border-radius:2px}
+    .lg-dead::before{width:11px;height:11px;border:2px solid #efa66f;transform:rotate(45deg)}
+    .lg-frag::before{width:7px;height:7px;background:#f4d35e;clip-path:polygon(50% 0,100% 100%,0 75%)}
+    .sim-note{position:absolute;z-index:2;left:var(--sp-4);bottom:var(--sp-4);max-width:720px;color:#d7e4e7;font-size:var(--fs-sec);line-height:var(--lh-sec);pointer-events:none}
+    .side{flex:0 0 326px;min-width:0;display:flex;flex-direction:column;gap:var(--sp-3)}
+    .mini-process{--process-axis-y:50%;gap:10px;height:58px}
+    .mini-process>.axis{right:4px;left:4px;height:3px}
+    .mini-process>.step{display:flex;align-items:center;justify-content:center;padding:5px;border-width:1px;border-radius:var(--radius-sm);font-size:var(--fs-label);font-weight:700;line-height:1.25;text-align:center}
+    .mini-process>.arw{display:none}
+    .chain-return{margin-top:-8px;color:var(--accent-strong);font-size:var(--fs-label);font-weight:700;text-align:center}
+    .metrics{display:flex;flex-wrap:wrap;gap:var(--sp-2)}
+    .metric{flex:1 1 145px;min-width:0;padding:var(--sp-3);border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--surface)}
+    .metric .label{display:block;color:var(--muted)}
+    .metric strong{display:block;font-size:var(--fs-h2);line-height:1.35;font-variant-numeric:tabular-nums}
+    .risk{padding:var(--sp-3) var(--sp-4);border-left:5px solid var(--warm);background:var(--warm-soft);font-size:var(--fs-body);font-weight:700;line-height:var(--lh-copy)}
+    .risk.good{border-color:var(--success);background:var(--success-soft)}
+    .hint{font-size:var(--fs-sec);line-height:var(--lh-sec)}
+    .controls{margin-top:auto;display:flex;gap:var(--sp-3)}
+    .controls button{flex:1 1 0;font-size:var(--fs-body)}
+  </style>
+</head>
+<body data-page="45" data-total="48">
+  <div id="stage"><main id="main">
+    <section class="orbit-page">
+      <div class="sim-wrap min0 no-pan" aria-label="轨道碎片清理模拟">
+        <div id="pixi-host"></div>
+        <div class="sim-copy">
+          <p class="lead">高速碰撞会制造更多碎片，增加下一轮交会机会。</p>
+          <div class="legend" aria-label="图例"><span class="lg-craft">航天器</span><span class="lg-dead">失效物体</span><span class="lg-frag">碎片</span></div>
+        </div>
+        <p class="sim-note">瞄准带交会标记的碎片并清理；方向键换目标，Enter 清理。课堂简化模型：位置、速度与碰撞概率不代表任务级预测。</p>
+      </div>
+      <aside class="side min0" aria-label="过程与模拟状态">
+        <div class="k-process mini-process" aria-label="碎片连锁过程">
+          <div class="axis"></div>
+          <div class="step is-current">共享<br>轨道</div><div class="step">轨迹<br>接近</div><div class="step">发生<br>碰撞</div><div class="step">碎片<br>增殖</div><div class="step">风险<br>反馈</div><div class="step">协同<br>清理</div>
+        </div>
+        <div class="chain-return">碰撞增殖 ↻ 更多交会机会</div>
+        <div class="metrics">
+          <div class="metric"><span class="label">当前碎片</span><strong><span id="debris-count">—</span> 件</strong></div>
+          <div class="metric"><span class="label">累计碰撞</span><strong><span id="collision-count">—</span> 次</strong></div>
+          <div class="metric"><span class="label">已清理</span><strong><span id="removed-count">—</span> 件</strong></div>
+          <div class="metric"><span class="label">追踪尺度</span><strong>约 <span id="threshold">—</span> cm</strong></div>
+        </div>
+        <div id="risk" class="risk" aria-live="polite">仍有连锁风险</div>
+        <p class="hint">优先清理穿越交会区、接近其他物体的目标。轨道是需要共同监测、规避与治理的公共空间。</p>
+        <div class="ctl controls"><button id="reset" type="button">重置</button><button id="new-set" type="button">换一组</button></div>
+      </aside>
+    </section>
+  </main></div>
+  <script src="assets/base.js"></script>
+  <script src="assets/lec.js"></script>
+  <script src="assets/lib/pixi.min.js"></script>
+  <script src="assets/lib/seedrandom.min.js"></script>
+  <script>
+    Lec.mount({index:45,kicker:"SHARED ORBIT",title:"一次碰撞，为什么会让下一次更可能？",take:"碎片增殖会提高后续碰撞机会；降低风险需要持续协同治理。"});
+    Deck.init({index:45,total:48});
+    const host=document.getElementById('pixi-host');
+    const W=1058,H=620;
+    const app=new PIXI.Application({width:W,height:H,backgroundColor:0x071b26,antialias:true,resolution:1,autoDensity:false});
+    app.ticker.stop(); host.appendChild(app.view); app.view.tabIndex=0; app.view.setAttribute('aria-label','轨道碎片清理区');
+    const g=new PIXI.Graphics(); app.stage.addChild(g);
+    const steps=[...document.querySelectorAll('.mini-process .step')];
+    const out={d:document.getElementById('debris-count'),c:document.getElementById('collision-count'),r:document.getElementById('removed-count'),risk:document.getElementById('risk')};
+    document.getElementById('threshold').textContent=Lec.P.round(Lec.P.clamp(Lec.P.finiteNumber(10,10),1,100),0);
+    let group=0,state,rng,lastStatus='',accum=0;
+    const reduced=Deck.reduced();
+    function makeState(){
+      rng=new Math.seedrandom('apeman-spaceman-p45'+(group?'#'+group:''));
+      const objects=[];
+      for(let i=0;i<5;i++) objects.push({id:'o'+i,type:i<2?'craft':'dead',band:i%3,a:rng()*Math.PI*2,s:(i%2?1:-1)*(0.16+rng()*.07),active:true});
+      for(let i=0;i<16;i++) objects.push(fragment('f'+i,i%3,rng()*Math.PI*2));
+      const s={objects,collisions:0,removed:0,time:0,lastCollision:0,selected:0,phase:0,baseline:0};
+      s.baseline=riskScore(s); return s;
+    }
+    function fragment(id,band,a){return{id,type:'frag',band,a,s:(rng()>.5?1:-1)*(0.20+rng()*.16),active:true};}
+    function pos(o,at=0){const a=o.a+o.s*at;const rx=[250,350,445][o.band],ry=[120,174,222][o.band];return{x:390+Math.cos(a)*rx,y:344+Math.sin(a)*ry};}
+    function debris(){return state.objects.filter(o=>o.active&&o.type==='frag');}
+    function riskScore(s){const ds=s.objects.filter(o=>o.active&&o.type==='frag');let n=0;for(let t=0;t<=4;t+=.5){for(let i=0;i<ds.length;i++)for(let j=i+1;j<ds.length;j++){const p=pos(ds[i],t),q=pos(ds[j],t);if(Math.hypot(p.x-q.x,p.y-q.y)<38)n++;}}return n;}
+    function clean(o){if(!o||!o.active||o.type!=='frag')return;o.active=false;state.removed++;state.phase=5;state.selected=Math.max(0,Math.min(state.selected,debris().length-1));updateUI();}
+    function collide(){const active=state.objects.filter(o=>o.active);for(let i=0;i<active.length;i++)for(let j=i+1;j<active.length;j++){const a=active[i],b=active[j];if(a.band===b.band)continue;const p=pos(a),q=pos(b);if(Math.hypot(p.x-q.x,p.y-q.y)<15&&rng()<.16){a.active=false;b.active=false;state.collisions++;state.lastCollision=state.time;state.phase=2;const band=(a.band+b.band)%3;for(let k=0;k<7;k++)state.objects.push(fragment('x'+state.collisions+'-'+k,band,(a.a+b.a)/2+(rng()-.5)*.22));return;}}}
+    function update(dt){state.time+=dt;state.objects.forEach(o=>{if(o.active)o.a=(o.a+o.s*dt)%(Math.PI*2)});accum+=dt;if(accum>.32){accum=0;collide();if(state.phase===2)state.phase=3;else if(riskScore(state)>state.baseline)state.phase=4;}}
+    function updateUI(){const d=debris().length;out.d.textContent=Lec.P.round(Lec.P.clamp(Lec.P.finiteNumber(d,0),0,999),0);out.c.textContent=Lec.P.round(Lec.P.clamp(Lec.P.finiteNumber(state.collisions,0),0,999),0);out.r.textContent=Lec.P.round(Lec.P.clamp(Lec.P.finiteNumber(state.removed,0),0,999),0);const good=riskScore(state)<state.baseline&&state.time-state.lastCollision>4;const msg=good?'风险已降低':'仍有连锁风险';out.risk.textContent=msg;out.risk.classList.toggle('good',good);steps.forEach((x,i)=>x.classList.toggle('is-current',i===state.phase));lastStatus=msg;}
+    function draw(){g.clear();g.lineStyle(2,0x366575,.72);[0,1,2].forEach(b=>g.drawEllipse(390,344,[250,350,445][b],[120,174,222][b]));g.beginFill(0x1b7180);g.drawCircle(120,500,118);g.endFill();g.lineStyle(4,0x66b4bb,.6);g.drawCircle(120,500,121);
+      const ds=debris(),sel=ds[state.selected];state.objects.forEach(o=>{if(!o.active)return;const p=pos(o);if(o.type==='craft'){g.lineStyle(2,0xc8f5f1);g.beginFill(0x267f91);g.drawRoundedRect(p.x-10,p.y-6,20,12,3);g.endFill();g.moveTo(p.x-18,p.y);g.lineTo(p.x+18,p.y);}else if(o.type==='dead'){g.lineStyle(2,0xefa66f);g.beginFill(0x653c31);g.drawPolygon([p.x,p.y-8,p.x+8,p.y,p.x,p.y+8,p.x-8,p.y]);g.endFill();}else{g.lineStyle(1,0xf4d35e);g.beginFill(0xf4d35e);g.drawPolygon([p.x,p.y-4,p.x+4,p.y+4,p.x-4,p.y+3]);g.endFill();}if(o===sel){g.lineStyle(2,0xffffff,.9);g.drawCircle(p.x,p.y,15);g.moveTo(p.x-22,p.y);g.lineTo(p.x-11,p.y);g.moveTo(p.x+11,p.y);g.lineTo(p.x+22,p.y);}});app.renderer.render(app.stage);}
+    function reset(){state=makeState();accum=0;updateUI();draw();}
+    app.view.addEventListener('pointerdown',e=>{const p=Deck.pt(app.view,e);let best=null,dist=28;debris().forEach(o=>{const q=pos(o),v=Math.hypot(q.x-p.x,q.y-p.y);if(v<dist){dist=v;best=o}});clean(best);draw();app.view.focus();});
+    app.view.addEventListener('keydown',e=>{const ds=debris();if(!ds.length)return;if(e.key==='ArrowRight'||e.key==='ArrowDown'){state.selected=(state.selected+1)%ds.length;e.preventDefault();draw();}if(e.key==='ArrowLeft'||e.key==='ArrowUp'){state.selected=(state.selected-1+ds.length)%ds.length;e.preventDefault();draw();}if(e.key==='Enter'||e.key===' '){clean(ds[state.selected]);e.preventDefault();draw();}});
+    document.getElementById('reset').addEventListener('click',reset);document.getElementById('new-set').addEventListener('click',()=>{group++;reset()});
+    reset();let uiClock=0;Deck.loop((t,dt)=>{if(!reduced){update(Math.min(dt,50)/1000);uiClock+=dt;if(uiClock>350){uiClock=0;updateUI();}}draw();},{still:1});
+  </script>
+</body>
+</html>

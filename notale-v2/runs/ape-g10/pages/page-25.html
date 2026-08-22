@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  #main{display:flex;flex-direction:column;align-items:center;gap:16px}
+  .playfield{width:var(--content-w);height:402px;display:flex;gap:16px;min-height:0}
+  .workshop{width:376px;display:flex;flex-direction:column;gap:14px;padding:20px;overflow:hidden}
+  .workshop-head{display:flex;align-items:center;justify-content:space-between;gap:12px}
+  .round{font-family:var(--font-mono);font-size:var(--fs-sec);color:var(--primary);font-weight:700}
+  .tool-stage{position:relative;flex:1;min-height:0;display:grid;place-items:center;background:var(--surface-deep);border:1px solid var(--line);border-radius:var(--radius-md);overflow:hidden}
+  .tool-stage::before{content:"";position:absolute;width:160px;height:160px;border:1px solid var(--primary-line);border-radius:50%;transform:rotate(-14deg)}
+  .tool{position:relative;width:126px;height:78px;clip-path:polygon(4% 52%,20% 15%,66% 3%,96% 32%,78% 86%,31% 96%);background:linear-gradient(145deg,var(--accent),var(--primary) 58%,#214b58);filter:drop-shadow(0 0 16px rgba(66,199,194,.34));transition:transform 220ms ease-out}
+  .tool::after{content:"";position:absolute;inset:12px 18px;border:1px solid rgba(232,242,244,.55);clip-path:inherit}
+  .candidate{position:absolute;right:14px;bottom:12px;left:14px;display:flex;justify-content:space-between;align-items:center;padding:9px 12px;background:rgba(7,16,25,.9);border:1px solid var(--line-strong);border-radius:var(--radius-sm);font-size:var(--fs-sec);line-height:var(--lh-sec)}
+  .candidate strong{color:var(--accent);font-family:var(--font-mono);font-size:var(--fs-lead)}
+  .actions{display:flex;gap:10px}.actions button{flex:1;font-size:var(--fs-sec)}
+  .actions button.good{border-color:var(--accent);box-shadow:0 0 0 1px rgba(255,181,71,.35)}
+  .status{min-height:46px;color:var(--muted);font-size:var(--fs-sec);line-height:var(--lh-sec)}
+  .status.warn{color:var(--accent)}
+  .chart-panel{position:relative;flex:1;display:flex;flex-direction:column;padding:16px 18px 12px;min-width:0}
+  .empty-model{position:absolute;z-index:3;top:168px;right:86px;left:112px;display:flex;flex-direction:column;gap:12px;pointer-events:none}
+  .empty-line{padding:13px 18px;background:rgba(7,16,25,.9);border:1px solid var(--line-strong);border-left:5px solid var(--faint);border-radius:var(--radius-sm);font-size:var(--fs-sec);line-height:var(--lh-sec)}
+  .empty-line.saved{border-left-color:var(--primary);box-shadow:0 0 22px rgba(66,199,194,.08)}
+
+  .chart-head{display:flex;justify-content:space-between;align-items:flex-start;gap:18px}
+  .legend{display:flex;gap:18px;font-size:var(--fs-label);color:var(--muted)}
+  .legend span::before{content:"";display:inline-block;width:24px;height:3px;margin-right:7px;vertical-align:middle;background:var(--faint)}
+  .legend .saved::before{height:4px;background:var(--primary)}
+  .round-strip{display:flex;gap:7px;height:48px;margin-top:8px}
+  .round-slot{flex:1;display:grid;place-items:center;color:var(--muted);background:var(--surface-deep);border:1px solid var(--line);border-radius:var(--radius-sm);font-family:var(--font-mono);font-size:var(--fs-label);font-weight:700}
+  .round-slot.current{color:var(--bg);background:var(--accent);border-color:var(--accent)}
+  .round-slot.done{color:var(--text);background:var(--primary-soft);border-color:var(--primary-line)}
+  #chart{flex:1;min-height:0;width:100%}
+  .finish{color:var(--accent);font-size:var(--fs-sec);font-weight:700;line-height:var(--lh-sec)}
+  .compare{width:var(--content-w);height:202px;--compare-cols:180px repeat(2,minmax(0,1fr))}
+  .compare > *{padding:7px 14px}
+  .compare .hdr{font-size:var(--fs-lead)}
+  .compare .cell{font-size:var(--fs-sec);line-height:1.4;background:rgba(23,41,54,.22)}
+  .compare .dim{font-size:var(--fs-label)}
+  .shake{animation:shake 260ms ease-out}
+  .pulse{animation:pulse 420ms ease-out}
+  @keyframes shake{25%{transform:translateX(-7px)}50%{transform:translateX(6px)}75%{transform:translateX(-3px)}}
+  @keyframes pulse{45%{transform:scale(1.06);filter:drop-shadow(0 0 24px var(--accent))}}
+  @media(prefers-reduced-motion:reduce){.tool{transition:none}.shake,.pulse{animation:none}}
+</style>
+</head>
+<body data-page="25" data-total="48">
+<div id="stage">
+<main id="main">
+  <section class="playfield" aria-label="棘轮效应挑战">
+    <div class="panel workshop min0">
+      <div class="workshop-head"><h2>当前工坊</h2><span id="round" class="round">传播轮次</span></div>
+      <div class="tool-stage" id="toolStage">
+        <div class="tool" id="tool" aria-hidden="true"></div>
+        <div class="candidate"><span>本轮共同尝试</span><strong id="candidate">—</strong></div>
+      </div>
+      <div class="actions" aria-label="选择如何处理候选版本">
+        <button id="accept" type="button">收录新版</button>
+        <button id="keep" type="button">保留旧版</button>
+      </div>
+      <p id="status" class="status" aria-live="polite">比较候选值与当前存档，再决定是否收录。</p>
+    </div>
+    <div class="panel chart-panel min0">
+      <div class="chart-head">
+        <div><h2>同样尝试，不同记忆条件</h2><p class="note">纵轴是教学指数，不是考古测量。</p></div>
+        <div class="legend" aria-label="图例"><span>每轮清零</span><span class="saved">保留最佳版本</span></div>
+      </div>
+      <div id="roundStrip" class="round-strip" aria-label="八个传播轮次进度"></div>
+      <div id="chart" role="img" aria-label="每轮清零与保留最佳版本的技术复杂度曲线"></div>
+      <div id="emptyModel" class="empty-model"><div class="empty-line">每轮清零：下一次仍从基线开始</div><div class="empty-line saved">保留最佳：下一次从当前存档继续</div></div>
+      <div id="finish" class="finish" aria-live="polite"></div>
+    </div>
+  </section>
+  <section class="k-comparison compare" aria-label="两种记忆条件逐维比较">
+    <div class="hdr">比较维度</div><div class="hdr">每轮清零</div><div class="hdr">保留最佳版本</div>
+    <div class="dim">新一轮起点</div><div class="cell">基线 1</div><div class="cell diff">上轮已保存值</div><div class="rowline"></div>
+    <div class="dim">本轮尝试</div><div class="cell">共用同一随机改进值</div><div class="cell">共用同一随机改进值</div><div class="rowline"></div>
+    <div class="dim">失败或退步</div><div class="cell">直接成为本轮结果</div><div class="cell diff">保留旧版，不倒退</div><div class="rowline"></div>
+    <div class="dim">八轮后的形态</div><div class="cell">围绕低位波动</div><div class="cell diff">平台与上升台阶累积</div>
+  </section>
+</main>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script src="assets/lib/echarts.min.js"></script>
+<script src="assets/lib/seedrandom.min.js"></script>
+<script>
+Lec.mount({index:25,kicker:"CULTURAL RATCHET",title:"不再从零开始",take:"若每一代都能保留并改进已有成果，复杂技术就不必由每个人从零发明。"});
+Math.seedrandom("apeman-p25");
+const el=document.getElementById("chart");
+const chart=echarts.init(el,null,{renderer:"svg"});
+const rounds=["1","2","3","4","5","6","7","8"];
+const fmt=n=>Lec.P.formatNumber(n);
+let state;
+function makeState(){
+  const rng=new Math.seedrandom("apeman-p25");
+  const changes=Array.from({length:8},()=>Math.floor(rng()*5)-2);
+  return {round:0,saved:1,changes,clear:[],archive:[],done:false};
+}
+function candidate(){return Math.max(0,state.saved+state.changes[state.round]);}
+function render(){
+  const active=state.round<8;
+  document.getElementById("round").textContent=active?`传播轮次 ${fmt(state.round+1)} / ${fmt(8)}`:`传播轮次 ${fmt(8)} / ${fmt(8)}`;
+  document.getElementById("candidate").textContent=active?`${fmt(candidate())}（${state.changes[state.round]>=0?"+":""}${fmt(state.changes[state.round])}）`:`存档 ${fmt(state.saved)}`;
+  document.getElementById("roundStrip").innerHTML=rounds.map((r,i)=>`<span class="round-slot ${i<state.round?"done":i===state.round&&active?"current":""}">${r}</span>`).join("");
+  document.getElementById("emptyModel").style.display=state.round===0?"flex":"none";
+  document.getElementById("accept").disabled=!active;
+  document.getElementById("keep").disabled=!active;
+  chart.setOption({animationDuration:Deck.reduced()?0:420,textStyle:{fontSize:16,color:"#E8F2F4"},grid:{left:64,right:24,top:44,bottom:50},xAxis:{type:"category",name:"传播轮次",nameTextStyle:{fontSize:14,color:"#9CB0B9"},data:rounds,axisLabel:{fontSize:14,color:"#9CB0B9"},axisLine:{lineStyle:{color:"#718791"}}},yAxis:{type:"value",name:"技术复杂度（教学指数）",nameTextStyle:{fontSize:14,color:"#9CB0B9"},min:0,max:10,interval:2,axisLabel:{fontSize:14,color:"#9CB0B9"},splitLine:{lineStyle:{color:"rgba(190,222,226,.12)"}},splitArea:{show:true,areaStyle:{color:["rgba(66,199,194,.035)","rgba(23,41,54,.32)"]}}},series:[{name:"每轮清零",type:"line",step:"middle",symbolSize:8,data:state.clear,lineStyle:{color:"#667A86",width:3},itemStyle:{color:"#667A86"}},{name:"保留最佳版本",type:"line",step:"middle",symbolSize:9,data:state.archive,lineStyle:{color:"#42C7C2",width:4},itemStyle:{color:"#FFB547"}}]});
+}
+function decide(action){
+  if(state.done)return;
+  const cand=candidate();
+  const correct=(cand>state.saved&&action==="accept")||(cand<=state.saved&&action==="keep");
+  const status=document.getElementById("status");
+  if(!correct){
+    status.textContent="棘轮只收下改进：请比较候选值与当前存档。";status.className="status warn";
+    const b=document.getElementById(action);b.classList.remove("shake");void b.offsetWidth;b.classList.add("shake");return;
+  }
+  const clearValue=Math.max(0,1+state.changes[state.round]);
+  state.clear.push(clearValue);
+  if(action==="accept")state.saved=cand;
+  state.archive.push(state.saved);state.round++;
+  status.className="status";status.textContent=action==="accept"?"改进已存档，下一轮从这个版本继续。":"候选没有更好，旧版继续作为下一轮起点。";
+  const b=document.getElementById(action);b.classList.add("good");setTimeout(()=>b.classList.remove("good"),Deck.reduced()?0:420);
+  const tool=document.getElementById("tool");tool.classList.remove("pulse");void tool.offsetWidth;tool.classList.add("pulse");
+  if(state.round===8){state.done=true;status.textContent="棘轮不保证每轮进步；它让已有改进不必反复丢失。";document.getElementById("finish").innerHTML=`终点差：${fmt(state.saved-state.clear[7])}　·　保留的是成果，不是好运　<button id="reset" type="button">用同一种子重置</button>`;document.getElementById("reset").addEventListener("click",reset);}
+  render();
+}
+function reset(){state=makeState();document.getElementById("finish").textContent="";document.getElementById("status").className="status";document.getElementById("status").textContent="比较候选值与当前存档，再决定是否收录。";render();}
+document.getElementById("accept").addEventListener("click",()=>decide("accept"));
+document.getElementById("keep").addEventListener("click",()=>decide("keep"));
+window.p25={decide,reset,getState:()=>JSON.parse(JSON.stringify(state))};
+reset();
+Deck.onResize(()=>chart.resize());
+</script>
+</body>
+</html>

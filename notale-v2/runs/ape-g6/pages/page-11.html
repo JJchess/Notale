@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>大脑很昂贵，账要从全身一起算</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    .lec-header__progress{appearance:none;border:0;padding:0;min-height:0;line-height:0;font-size:0}
+    .p11-layout{display:flex;gap:var(--sp-5);height:100%}
+    .p11-flow{flex:var(--left-ratio) 1 0;display:flex;flex-direction:column;gap:var(--sp-3)}
+    .p11-budget{flex:var(--right-ratio) 1 0;display:flex;flex-direction:column;gap:var(--sp-3);padding:var(--sp-4)}
+    .task{padding:var(--sp-3) var(--sp-4);border-left:5px solid var(--accent);background:var(--accent-soft)}
+    .flow-wrap{position:relative;flex:1;min-height:0;border:1px solid var(--line);border-radius:var(--radius-md);background:var(--surface);overflow:hidden}
+    #flow-svg{display:block;width:100%;height:100%}
+    #flow-svg text{font-family:var(--font-sans);fill:var(--text)}
+    #flow-svg .node-title{font-size:16px;font-weight:700}
+    #flow-svg .node-value{font-size:14px;fill:var(--muted)}
+    #flow-svg .channel{font-size:14px;fill:var(--accent-strong)}
+    .quality{display:flex;align-items:center;gap:var(--sp-3);margin:0;padding:0;border:0;min-width:0}
+    .quality legend{font-size:var(--fs-label);font-weight:650;margin-right:var(--sp-2)}
+    .quality label{display:flex;align-items:center;gap:var(--sp-1);font-size:var(--fs-label);min-height:36px}
+    .range-value{min-width:98px;text-align:right;font-size:var(--fs-label);font-weight:700;color:var(--accent-strong)}
+    #budget-chart{height:210px;min-height:210px}
+    .status{padding:var(--sp-3) var(--sp-4);border:2px solid var(--line-strong);border-radius:var(--radius-sm);font-size:var(--fs-body);font-weight:700;line-height:1.4}
+    .status.bad{border-color:var(--warm);background:repeating-linear-gradient(135deg,var(--warm-soft),var(--warm-soft) 8px,#fff7f2 8px,#fff7f2 16px)}
+    .status.ok{border-color:var(--accent);background:var(--accent-soft)}
+    .status.good{border-color:var(--success);background:var(--success-soft)}
+    .model-note{margin-top:auto}
+    @media(max-width:900px){.p11-layout{flex-direction:column}.p11-budget{order:-1}.flow-wrap{min-height:300px}}
+  </style>
+</head>
+<body data-page="11" data-total="48">
+  <div id="stage"><main id="main"></main></div>
+  <script src="assets/base.js"></script>
+  <script src="assets/lec.js"></script>
+  <script src="assets/lib/d3.min.js"></script>
+  <script src="assets/lib/echarts.min.js"></script>
+  <script>
+    Lec.mount({index:11,kicker:"BODY / ENERGY BUDGET",title:"大脑很昂贵，账要从全身一起算",take:"食物质量、身体代价和可能的社会收益，必须放在同一张账里考虑。"});
+    Deck.init({index:11,total:48});
+    const main=document.getElementById('main');
+    const K=(name,fallback)=>Lec.P.finiteNumber(Lec.K&&Lec.K[name],fallback);
+    const C={budget:K('P11_BUDGET_UNITS',100),low:K('P11_DIGESTION_COST_LOW',30),medium:K('P11_DIGESTION_COST_MEDIUM',22),high:K('P11_DIGESTION_COST_HIGH',16),body:K('P11_BODY_MAINTENANCE_UNITS',34),brainMin:K('P11_BRAIN_UNITS_MIN',12),brainMax:K('P11_BRAIN_UNITS_MAX',32),brainDefault:K('P11_BRAIN_UNITS_DEFAULT',20),step:K('P11_SLIDER_STEP_UNITS',1),need:K('P11_OTHER_BODY_NEED_UNITS',18),target:K('P11_BUFFER_TARGET_UNITS',6),threshold:K('P11_SOCIAL_RETURN_BRAIN_THRESHOLD',24),left:K('P11_LEFT_PANEL_RATIO',58),right:K('P11_RIGHT_PANEL_RATIO',42)};
+    main.style.setProperty('--left-ratio',C.left);main.style.setProperty('--right-ratio',C.right);
+    main.innerHTML=`<div class="p11-layout">
+      <section class="p11-flow min0" aria-labelledby="flow-head">
+        <p id="flow-head" class="lead">有限能量沿全身预算逐步分配</p>
+        <p class="task sec">任务：把脑部投入提高到社会收益门槛，同时避免其他身体需求赤字。</p>
+        <div class="flow-wrap k-process"><div class="axis" aria-hidden="true"></div><svg id="flow-svg" role="img" aria-label="从食物摄取到社会收益可能回流的六步能量过程"></svg></div>
+      </section>
+      <section class="p11-budget panel min0" aria-labelledby="budget-head">
+        <h2 id="budget-head">分配脑部能量预算</h2>
+        <fieldset class="quality"><legend>食物质量</legend><label><input type="radio" name="quality" value="low">低</label><label><input type="radio" name="quality" value="medium" checked>中</label><label><input type="radio" name="quality" value="high">高</label></fieldset>
+        <div class="ctl"><label for="brain">脑部投入</label><input id="brain" type="range" aria-describedby="brain-help" min="${C.brainMin}" max="${C.brainMax}" step="${C.step}" value="${C.brainDefault}"><output id="brain-value" class="range-value"></output></div>
+        <p id="brain-help" class="sec">增加脑部投入不会增加总预算，只会改变其余部分所得。</p>
+        <div id="budget-chart" role="img" aria-label="相对能量堆叠预算条"></div>
+        <p id="status" class="status" aria-live="polite"></p>
+        <p class="note model-note">相对量模型，不是古人类每日代谢复原。“质量较高”仅指更易取得可用能量；社会回报也不必然发生。</p>
+      </section></div>`;
+    const brainEl=document.getElementById('brain'), out=document.getElementById('brain-value'), statusEl=document.getElementById('status');
+    const chart=echarts.init(document.getElementById('budget-chart'),null,{renderer:'svg'});
+    const colors={accent:Deck.token('--accent'),strong:Deck.token('--accent-strong'),surface3:Deck.token('--surface-3'),warm:Deck.token('--warm'),success:Deck.token('--success'),muted:Deck.token('--muted'),line:Deck.token('--line-strong')};
+    function model(){const q=document.querySelector('input[name="quality"]:checked').value;const digestion=Lec.P.clamp(Lec.P.finiteNumber(C[q],C.medium),0,C.budget);const available=C.budget-digestion;const allocatable=available-C.body;const brain=Lec.P.round(Lec.P.clamp(Lec.P.finiteNumber(brainEl.value,C.brainDefault),C.brainMin,C.brainMax),0);const other=allocatable-brain;const buffer=Lec.P.finiteNumber(other-C.need,0);return{q,digestion,available,allocatable,brain,other,buffer,social:brain>=C.threshold&&buffer>=0};}
+    function updateChart(s){const remainder=Math.max(0,s.buffer);const deficit=Math.max(0,-s.buffer);chart.setOption({animationDuration:Deck.reduced()?0:250,textStyle:{fontSize:16,fontFamily:Deck.token('--font-sans')},grid:{left:12,right:12,top:44,bottom:38,containLabel:true},xAxis:{type:'value',max:C.budget,axisLabel:{fontSize:12},splitLine:{lineStyle:{color:Deck.token('--line')}}},yAxis:{type:'category',data:['进入预算'],axisLabel:{fontSize:14}},legend:{top:0,itemWidth:13,itemHeight:10,textStyle:{fontSize:14},data:['消化成本','身体维持','脑部投入','活动与成长','剩余缓冲']},series:[['消化成本',s.digestion,colors.surface3],['身体维持',C.body,colors.line],['脑部投入',s.brain,colors.accent],['活动与成长',Math.max(0,Math.min(C.need,s.other)),deficit?colors.warm:colors.strong],['剩余缓冲',remainder,colors.success]].map(x=>({name:x[0],type:'bar',stack:'total',data:[x[1]],itemStyle:{color:x[2]},barWidth:56,emphasis:{disabled:true}}))});}
+    function drawFlow(s){const svg=d3.select('#flow-svg'),w=790,h=390;svg.attr('viewBox',`0 0 ${w} ${h}`).selectAll('*').remove();const defs=svg.append('defs');defs.append('marker').attr('id','arr').attr('viewBox','0 0 10 10').attr('refX',9).attr('refY',5).attr('markerWidth',7).attr('markerHeight',7).attr('orient','auto').append('path').attr('d','M0,0 L10,5 L0,10 Z').attr('fill',colors.strong);const nodes=[{t:'1  摄取食物',v:`${Lec.P.round(C.budget,0)} 相对单位`,x:28,y:36},{t:'2  消化取得',v:`可用 ${Lec.P.round(s.available,0)}`,x:292,y:36},{t:'3  身体基础成本',v:`维持 ${Lec.P.round(C.body,0)}`,x:556,y:36},{t:'4  脑部投入',v:`投入 ${s.brain}`,x:556,y:238},{t:'5  其他身体代价',v:`可用 ${Lec.P.round(s.other,0)}`,x:292,y:238},{t:'6  潜在社会收益',v:s.social?'可能改善资源获取':'尚未形成回流',x:28,y:238}];const links=[[0,1,s.available],[1,2,s.allocatable],[2,3,s.brain],[3,4,Math.max(0,s.other)],[4,5,Math.max(0,s.buffer)]];const pts=n=>({l:n.x,r:n.x+206,cy:n.y+55});svg.append('g').selectAll('path').data(links).join('path').attr('d',d=>{const a=pts(nodes[d[0]]),b=pts(nodes[d[1]]);return `M${a.r},${a.cy} L${b.l},${b.cy}`}).attr('fill','none').attr('stroke',d=>d[2]<0?colors.warm:colors.accent).attr('stroke-width',d=>Math.max(5,Math.min(18,Math.abs(d[2])/4))).attr('marker-end','url(#arr)');svg.append('path').attr('d','M28,293 C4,293 4,92 28,92').attr('fill','none').attr('stroke',s.social?colors.success:colors.line).attr('stroke-width',4).attr('stroke-dasharray','10 8').attr('marker-end','url(#arr)');const g=svg.append('g').selectAll('g').data(nodes).join('g').attr('transform',d=>`translate(${d.x},${d.y})`);g.append('rect').attr('width',206).attr('height',110).attr('rx',12).attr('fill',(d,i)=>i===5&&s.social?Deck.token('--success-soft'):Deck.token('--surface')).attr('stroke',(d,i)=>i===5&&s.social?colors.success:(s.buffer<0&&i>=4?colors.warm:colors.line)).attr('stroke-width',2);g.append('text').attr('class','node-title').attr('x',14).attr('y',34).text(d=>d.t);g.append('text').attr('class','node-value').attr('x',14).attr('y',68).text(d=>d.v);if(s.social){svg.append('text').attr('class','channel').attr('x',30).attr('y',378).text('合作协调 · 学习照料 · 信息共享');}}
+    function update(){const s=model();out.value=`${s.brain} 相对能量单位`;let text,cls;if(s.buffer<0){text=s.brain>=C.threshold?'挤压其他身体需求；潜在收益不能取消当下成本。':'挤压其他身体需求';cls='bad'}else if(s.buffer<C.target){text=s.social?'这个组合在模型中可维持：预算勉强平衡':'预算勉强平衡';cls='ok'}else{text=s.social?'这个组合在模型中可维持：保有缓冲':'保有缓冲';cls='good'}statusEl.textContent=`其余身体需求 ${Lec.P.round(s.other,0)}；结余 ${Lec.P.round(s.buffer,0)}。${text}`;statusEl.className=`status ${cls}`;drawFlow(s);updateChart(s)}
+    document.querySelectorAll('input[name="quality"]').forEach(el=>el.addEventListener('change',update));brainEl.addEventListener('input',update);window.addEventListener('resize',()=>chart.resize());update();
+  </script>
+</body>
+</html>

@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    .p46{height:100%;display:flex;flex-direction:column;gap:var(--sp-3)}
+    .p46-top{display:flex;align-items:center;justify-content:space-between;gap:var(--sp-4);min-height:44px}
+    .p46-game{position:relative;flex:1 1 auto;min-height:0}
+    .p46 .k-classification{height:100%;display:flex;flex-direction:row;gap:var(--sp-3)}
+    .p46 .k-classification>.lv{flex:1 1 0;min-width:0;margin:0;padding:0;border-left:3px solid var(--line-strong)}
+    .p46 .box{height:100%;box-sizing:border-box}
+    .p46 .box>.bt{height:54px;box-sizing:border-box;text-align:center}
+    .p46 .box>.bc{height:calc(100% - 54px);box-sizing:border-box;display:flex;align-items:flex-end;padding:var(--sp-3)}
+    .criterion{width:100%;min-height:76px;box-sizing:border-box;padding:var(--sp-3);border-radius:var(--radius-sm);background:var(--surface-soft);color:var(--muted);font-size:var(--fs-sec);line-height:var(--lh-copy)}
+    .criterion.is-near{background:var(--warning-soft);color:var(--warning)}
+    .criterion strong{display:block;color:var(--text)}
+    #konva46{position:absolute;inset:0;z-index:3}
+    .p46-controls{display:flex;align-items:center;justify-content:space-between;gap:var(--sp-4)}
+    .status{font-size:var(--fs-body);line-height:var(--lh-copy);font-weight:700}
+    .hint{font-size:var(--fs-label);line-height:1.4;color:var(--muted)}
+    .p46 button{font-size:var(--fs-body)}
+  </style>
+</head>
+<body data-page="46" data-total="50">
+  <div id="stage"><main id="main"></main></div>
+  <script src="assets/base.js"></script>
+  <script src="assets/lec.js"></script>
+  <script src="assets/lib/konva.min.js"></script>
+  <script>
+    Lec.mount({
+      index: 46,
+      kicker: "THREE CLOCKS",
+      title: "回到地球，身体把变化放回哪只时钟？",
+      take: "宇航员回地球后的恢复不是“逆向演化”，而是可逆或部分可逆的生理变化。"
+    });
+    Deck.init({ index: 46, total: 50 });
+
+    var stage = document.getElementById("stage");
+    var main = document.getElementById("main");
+    main.innerHTML = '<section class="p46" aria-label="三时钟归位小游戏">'+
+      '<div class="p46-top"><p class="lead">拖动六张卡片归类；键盘用左右键选时钟，Enter 归位。</p><span class="hint">错误归位会弹回，请检查判据</span></div>'+
+      '<div class="p46-game no-pan" id="game46">'+
+        '<div class="k-classification">'+
+          '<div class="lv min0"><div class="box"><div class="bt">短时生理调节</div><div class="bc"><div class="criterion" id="crit0"><strong>同一个体 · 可再次调节</strong>环境改变后，调节方向可以再次改变。</div></div></div></div>'+
+          '<div class="lv min0"><div class="box"><div class="bt">个体生命期重塑</div><div class="bc"><div class="criterion" id="crit1"><strong>同一个体 · 组织响应负荷</strong>恢复可能较慢、部分可逆，且存在差异。</div></div></div></div>'+
+          '<div class="lv min0"><div class="box"><div class="bt">多代演化</div><div class="bc"><div class="criterion" id="crit2"><strong>必须有跨许多代的群体证据</strong>本页没有可归入此时钟的证据。</div></div></div></div>'+
+        '</div><div id="konva46" tabindex="0" role="application" aria-label="六张返地变化卡。左右键选择时钟，上下键切换卡片，回车归位。"></div>'+
+      '</div>'+
+      '<div class="p46-controls"><div><div class="status" id="status46" aria-live="polite">选择一张卡片开始归位</div><div class="hint" id="key46">当前目标：短时生理调节</div></div><button type="button" id="reset46">重新归位</button></div>'+
+
+    '</section>';
+
+    var host = document.getElementById('game46');
+    var statusEl = document.getElementById('status46');
+    var keyEl = document.getElementById('key46');
+    var zoneNames = ['短时生理调节','个体生命期重塑','多代演化'];
+    var cards = [
+      {title:'体液重新分布',flight:'飞行中：体液分布改变',back:'返地后：循环系统重新调节',answer:0},
+      {title:'站立循环调节',flight:'飞行中：较少对抗重力方向',back:'返地后：重新适应直立状态',answer:0},
+      {title:'平衡与方向感',flight:'飞行中：感觉线索重新配合',back:'返地后：重力线索再次校准',answer:0},
+      {title:'抗重力肌群',flight:'飞行中：日常承重刺激减少',back:'返地后：承重训练促使恢复',answer:1},
+      {title:'承重部位骨组织',flight:'飞行中：机械刺激减少',back:'返地后：负重推动组织重塑',answer:1},
+      {title:'动作控制',flight:'飞行中：采用微重力动作策略',back:'返地后：走路转身重新协调',answer:1}
+    ];
+    var gameState = {placed:[], selected:0, target:0, trace:[]};
+    var kstage, layer, groups=[];
+    function fresh(){ gameState={placed:cards.map(function(){return null}),selected:0,target:0,trace:[]}; }
+    fresh();
+    function token(n){ return Deck.token(n); }
+    function zones(w){ return [{x:0,w:w/3},{x:w/3,w:w/3},{x:2*w/3,w:w/3}]; }
+    function cardHome(i,w,h){ var cw=(w-5*12)/6; return {x:12+i*(cw+8),y:h-158,w:cw,h:74}; }
+    function placedPos(i,z,w){ var indexes=[]; gameState.placed.forEach(function(v,j){if(v===z)indexes.push(j)}); var n=indexes.indexOf(i); return {x:z*w/3+18,y:72+n*82,w:w/3-36,h:70}; }
+    function setNear(z){ [0,1,2].forEach(function(i){document.getElementById('crit'+i).classList.toggle('is-near',i===z)}); }
+    function updateText(msg){
+      var placed=cards.filter(function(c,i){return gameState.placed[i]!==null}).length;
+      var ratio=Lec.P.ratio(placed,cards.length);
+      statusEl.textContent=msg || (placed ? '已归位 '+placed+' 张，继续判断其余变化' : '选择一张卡片开始归位');
+      keyEl.textContent='当前卡片：'+cards[gameState.selected].title+'；目标：'+zoneNames[gameState.target];
+      if(placed===cards.length && ratio!==null){statusEl.textContent='归位完成：恢复 ≠ 逆向演化';}
+    }
+    function place(i,z){
+      if(cards[i].answer!==z){
+        gameState.trace.push({card:i,zone:z,ok:false});
+        statusEl.textContent=z===2?'这是同一个人的变化；跨代证据在哪里？':'再检查“'+zoneNames[z]+'”的判据';
+        gameState.target=z; draw(); return;
+      }
+      gameState.placed[i]=z; gameState.trace.push({card:i,zone:z,ok:true});
+      var next=gameState.placed.indexOf(null); if(next>=0)gameState.selected=next;
+      updateText('已归位：'+cards[i].title); draw();
+    }
+    function draw(){
+      var w=host.clientWidth,h=host.clientHeight;
+      if(!kstage){kstage=new Konva.Stage({container:'konva46',width:w,height:h});layer=new Konva.Layer();kstage.add(layer)}
+      kstage.size({width:w,height:h});layer.destroyChildren();groups=[];
+      var zs=zones(w), now=Date.now()/1000;
+      zs.forEach(function(z,zi){
+        var raw=(now*(zi===0?0.7:zi===1?0.22:0.05))%1;
+        var progress=Math.max(0,Math.min(1,raw));
+        var cx=z.x+z.w/2,cy=45,ang=progress*Math.PI*2-Math.PI/2;
+        layer.add(new Konva.Circle({x:cx,y:cy,radius:19,fill:token('--surface'),stroke:token('--line-strong'),strokeWidth:2,listening:false}));
+        layer.add(new Konva.Line({points:[cx,cy,cx+Math.cos(ang)*13,cy+Math.sin(ang)*13],stroke:zi===2?token('--muted'):token('--accent'),strokeWidth:3,lineCap:'round',listening:false}));
+      });
+      cards.forEach(function(c,i){
+        var p=gameState.placed[i]===null?cardHome(i,w,h):placedPos(i,gameState.placed[i],w);
+        var g=new Konva.Group({x:p.x,y:p.y,draggable:gameState.placed[i]===null,name:'card'});
+        var selected=i===gameState.selected;
+        g.add(new Konva.Rect({width:p.w,height:p.h,fill:token('--surface'),stroke:selected?token('--accent'):token('--line-strong'),strokeWidth:selected?3:1,cornerRadius:8,shadowColor:token('--line-strong'),shadowBlur:5,shadowOpacity:.22}));
+        g.add(new Konva.Text({x:10,y:8,width:p.w-20,text:c.title,fontFamily:token('--font-sans'),fontSize:16,fontStyle:'bold',fill:token('--text'),align:'center'}));
+        g.add(new Konva.Text({x:8,y:33,width:p.w-16,text:gameState.placed[i]===null?c.flight:c.flight+'  →  '+c.back,fontFamily:token('--font-sans'),fontSize:16,lineHeight:1.35,fill:token('--muted'),align:'center'}));
+        g.on('pointerdown',function(){gameState.selected=i;updateText();draw()});
+        g.on('dragmove',function(){var center=g.x()+p.w/2;setNear(Math.max(0,Math.min(2,Math.floor(center/(w/3)))))});
+        g.on('dragend',function(){setNear(-1);var center=g.x()+p.w/2;place(i,Math.max(0,Math.min(2,Math.floor(center/(w/3)))))});
+        layer.add(g);groups.push(g);
+      });
+      layer.draw();
+    }
+    document.getElementById('konva46').addEventListener('keydown',function(e){
+      if(e.key==='ArrowLeft'||e.key==='ArrowRight'){e.preventDefault();gameState.target=Math.max(0,Math.min(2,gameState.target+(e.key==='ArrowRight'?1:-1)));setNear(gameState.target);updateText()}
+      if(e.key==='ArrowUp'||e.key==='ArrowDown'){e.preventDefault();var step=e.key==='ArrowDown'?1:-1;var n=gameState.selected;do{n=(n+step+cards.length)%cards.length}while(gameState.placed[n]!==null&&n!==gameState.selected);gameState.selected=n;updateText();draw()}
+      if(e.key==='Enter'||e.key===' '){e.preventDefault();place(gameState.selected,gameState.target)}
+    });
+    document.getElementById('reset46').addEventListener('click',function(){fresh();setNear(-1);updateText('已清空，请重新归位');draw()});
+    Deck.onResize(draw); updateText(); draw();
+  </script>
+</body>
+</html>

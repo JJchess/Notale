@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title></title>
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/deck.css">
+<style>
+#main{display:flex;flex-direction:column;height:100%;gap:14px}
+.system-view{flex:1 1 auto;min-height:0;display:grid;grid-template-columns:430px minmax(0,1fr);gap:34px;align-items:stretch}
+.body-map{position:relative;min-height:0;border-right:1px solid var(--line-soft);display:flex;align-items:center;justify-content:center;padding-right:24px}
+.body-map::before{content:"1 g 标定的人体";position:absolute;left:0;top:4px;font-size:var(--fs-label);font-weight:700;letter-spacing:.1em;color:var(--text-3)}
+.body-map svg{width:100%;height:100%;max-height:466px;overflow:visible}
+.body-map .silhouette{fill:rgba(224,145,58,.035);stroke:#6e6258;stroke-width:2}
+.body-map .bone{fill:none;stroke:#7e7166;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
+.body-map .fine{fill:none;stroke:#514840;stroke-width:1.2;stroke-linecap:round}
+.body-map .flowline{fill:none;stroke:#6c6056;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.body-map .region{opacity:.22;transition:opacity .18s ease,filter .18s ease}
+.body-map .region.active{opacity:1;filter:drop-shadow(0 0 8px rgba(224,145,58,.28))}
+.body-map .region *{stroke:var(--gene)}
+.body-map .region .fill{fill:rgba(224,145,58,.16);stroke:var(--gene)}
+.body-map .datum{stroke:var(--line);stroke-width:1;stroke-dasharray:5 6}
+.body-map .gravity{stroke:var(--gene);stroke-width:2}
+.body-map text{font-family:var(--font-sans);font-size:var(--fs-label);fill:var(--text-3)}
+.body-map text.active-label{fill:var(--gene-2);font-weight:700}
+.tree-panel{min-height:0;display:flex;flex-direction:column;padding:4px 0 0}
+.root-node{position:relative;flex:0 0 auto;margin:0 0 12px 18px;padding:10px 15px;border:1px solid var(--gene-dim);border-radius:var(--r);background:rgba(224,145,58,.08);font-size:var(--fs-h2);font-weight:700;color:var(--gene-2)}
+.root-node::after{content:"";position:absolute;left:26px;top:100%;height:13px;border-left:2px solid var(--gene-dim)}
+.hier.system-tree{flex:1 1 auto;min-height:0;display:grid;grid-template-rows:repeat(3,minmax(0,auto));align-content:start;gap:8px;margin-left:18px}
+.system-tree>.lv{position:relative;margin-left:8px;padding-left:24px;border-left:2px solid var(--gene-dim)}
+.system-tree>.lv::before{content:"";position:absolute;left:-2px;top:25px;width:22px;border-top:2px solid var(--gene-dim)}
+.branch-head{width:100%;min-height:50px;display:grid;grid-template-columns:24px 190px minmax(0,1fr);gap:12px;align-items:center;text-align:left;border:1px solid var(--line);border-radius:9px;padding:9px 14px;background:rgba(25,21,18,.72);color:var(--text);font:inherit;cursor:pointer;transition:border-color .16s,background .16s}
+.branch-head:hover{border-color:#65574c;background:var(--panel)}
+.branch-head:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+.branch-head[aria-expanded="true"]{border-color:var(--gene-dim);background:rgba(224,145,58,.07)}
+.chev{font-family:var(--font-num);font-size:var(--fs-body);color:var(--gene);transition:transform .16s}
+.branch-head[aria-expanded="true"] .chev{transform:rotate(90deg)}
+.branch-name{font-size:var(--fs-body);font-weight:700;color:var(--text)}
+.branch-desc{font-size:var(--fs-sec);line-height:1.4;color:var(--text-2)}
+.children{position:relative;margin:7px 0 2px 21px;padding:3px 10px 3px 28px;border-left:1px solid var(--gene-dim)}
+.children[hidden]{display:none}
+.child{position:relative;padding:5px 0 5px 2px;font-size:var(--fs-sec);line-height:1.42;color:var(--text-2)}
+.child::before{content:"";position:absolute;right:calc(100% + 8px);top:1.05em;width:18px;border-top:1px solid var(--gene-dim)}
+.child .num{color:var(--gene-2);font-weight:700}
+.principle{flex:0 0 auto;display:grid;grid-template-columns:240px minmax(0,1fr);gap:22px;align-items:center;padding:13px 18px;border-top:1px solid var(--line);border-bottom:1px solid var(--line-soft);background:linear-gradient(90deg,rgba(224,145,58,.07),transparent 72%)}
+.principle-kicker{font-size:var(--fs-label);font-weight:700;letter-spacing:.08em;color:var(--gene)}
+.principle-kicker .hint{margin-top:4px;font-weight:400;letter-spacing:0}
+.principle p{margin:0;font-size:var(--fs-lead);line-height:1.42;color:var(--text-2)}
+.principle strong{color:var(--text)}
+@media (prefers-reduced-motion:reduce){.body-map .region,.chev,.branch-head{transition:none}}
+</style>
+</head>
+<body data-page="35" data-total="44">
+<div id="stage"><main id="main">
+  <section class="system-view min0" aria-label="失重影响的人体系统分类">
+    <figure class="body-map min0" aria-label="人体简图，当前类别对应区域高亮">
+      <svg viewBox="0 0 390 480" role="img" aria-labelledby="humanTitle humanDesc">
+        <title id="humanTitle">重力标定的人体系统</title>
+        <desc id="humanDesc">结构负荷、流体分布、姿态与感觉三类区域随右侧选择高亮。</desc>
+        <line class="datum" x1="18" y1="440" x2="365" y2="440"/>
+        <line class="gravity" x1="42" y1="66" x2="42" y2="410"/>
+        <path class="gravity" d="M34 397 L42 412 L50 397" fill="none"/>
+        <text x="20" y="52" fill="var(--gene-2)">1 g</text>
+        <text x="18" y="430">向下</text>
+        <path class="silhouette" d="M196 53 C170 53 158 71 161 94 C164 113 174 124 172 143 C169 166 153 179 145 203 C134 236 143 279 153 312 L145 430 L177 430 L195 331 L213 430 L245 430 L237 312 C247 279 256 236 245 203 C237 179 221 166 218 143 C216 124 226 113 229 94 C232 71 220 53 196 53 Z"/>
+        <g class="fine">
+          <ellipse cx="195" cy="88" rx="31" ry="37"/>
+          <path d="M176 125 Q195 138 215 125 M195 126 L195 309 M166 166 Q195 182 225 166 M159 205 Q195 221 231 205 M159 247 Q195 260 231 247 M170 287 Q195 299 220 287"/>
+          <path d="M172 148 L139 260 L121 354 M218 148 L251 260 L269 354 M164 314 L144 430 M226 314 L246 430"/>
+        </g>
+        <g class="region" data-region="structure">
+          <path class="bone" d="M195 126 L195 309 M170 151 Q195 168 220 151 M160 190 Q195 207 230 190 M153 230 Q195 247 237 230 M169 302 L145 430 M221 302 L245 430 M172 149 L135 266 M218 149 L255 266"/>
+          <circle class="fill" cx="195" cy="307" r="8"/>
+        </g>
+        <g class="region" data-region="fluid">
+          <path class="flowline" d="M195 293 C170 267 174 228 194 207 C214 228 220 267 195 293 Z"/>
+          <path class="flowline" d="M194 207 C178 181 177 147 187 126 M196 207 C214 181 213 147 204 126 M189 292 C177 329 169 366 163 404 M201 292 C213 329 221 366 227 404"/>
+          <path class="fill" d="M194 216 C181 229 182 250 195 261 C208 250 208 229 194 216 Z"/>
+        </g>
+        <g class="region" data-region="sense">
+          <ellipse class="fill" cx="195" cy="88" rx="29" ry="34"/>
+          <path class="flowline" d="M178 86 q8 -10 16 0 M196 86 q8 -10 16 0 M184 104 Q195 111 206 104"/>
+          <path class="flowline" d="M170 82 q-13 5 -2 17 M220 82 q13 5 2 17"/>
+        </g>
+        <text x="278" y="124" data-label="sense">姿态与感觉</text>
+        <line class="datum" x1="225" y1="115" x2="271" y2="115"/>
+        <text x="278" y="231" data-label="fluid">流体分布</text>
+        <line class="datum" x1="216" y1="222" x2="271" y2="222"/>
+        <text x="278" y="360" data-label="structure">结构负荷</text>
+        <line class="datum" x1="229" y1="351" x2="271" y2="351"/>
+      </svg>
+    </figure>
+
+    <div class="tree-panel min0">
+      <div class="root-node">重力被拿掉</div>
+      <div class="hier system-tree" id="systemTree">
+        <div class="lv min0" data-key="structure">
+          <button class="branch-head" type="button" aria-expanded="true" aria-controls="children-structure">
+            <span class="chev">›</span><span class="branch-name">结构负荷类</span><span class="branch-desc">骨、肌、脊柱：存在理由就是对抗 <span class="num">1 g</span></span>
+          </button>
+          <div class="children" id="children-structure">
+            <div class="child">承重骨每月流失 <span class="num">1–1.5%</span></div>
+            <div class="child">抗重力肌 <span class="num">5–11 天</span>可失去约 <span class="num">20%</span> 的质量</div>
+            <div class="child">脊柱伸长 <span class="num">3–5 cm</span>，返回后腰痛与椎间盘突出风险升高</div>
+          </div>
+        </div>
+        <div class="lv min0" data-key="fluid">
+          <button class="branch-head" type="button" aria-expanded="false" aria-controls="children-fluid">
+            <span class="chev">›</span><span class="branch-name">流体分布类</span><span class="branch-desc">心血管、颅内、眼：校准前提是“站着”</span>
+          </button>
+          <div class="children" id="children-fluid" hidden>
+            <div class="child">约 <span class="num">2 升</span>体液从下肢移向胸腔和头部</div>
+            <div class="child">血浆容量下降 <span class="num">10–15%</span>，心脏后负荷下降</div>
+            <div class="child">航天相关神经眼综合征（SANS）：视盘水肿、远视漂移，长期任务中报告率超过 <span class="num">60%</span></div>
+          </div>
+        </div>
+        <div class="lv min0" data-key="sense">
+          <button class="branch-head" type="button" aria-expanded="false" aria-controls="children-sense">
+            <span class="chev">›</span><span class="branch-name">姿态与感觉类</span><span class="branch-desc">前庭、本体感觉、视觉：靠重力定“哪边是下”</span>
+          </button>
+          <div class="children" id="children-sense" hidden>
+            <div class="child">太空适应综合征：入轨头两三天约 <span class="num">70%</span> 的人出现，头晕呕吐</div>
+            <div class="child">返回后立位耐受不良：站起来就晕，需要数天到数周恢复</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <aside class="principle min0">
+    <div class="principle-kicker">规则没错，环境换了<div class="hint">点任一类展开</div></div>
+    <p>这三类没有一类是“太空病”。<strong>它们都是这具身体在正确地执行为地球写的规则</strong>——骨头按受力重塑，体液按重力分布，内耳按重力找“下”。</p>
+  </aside>
+</main></div>
+<script src="assets/base.js"></script>
+<script src="assets/deck.js"></script>
+<script>
+Chrome.mount({ act:5, title:'拿掉重力之后', sub:'这具身体的很多部件，是把"永远有 1 g 向下"当成前提设计的。', foot:'先把最贵的那一项拆开看：骨头。' });
+(function(){
+  var branches=Array.from(document.querySelectorAll('.system-tree>.lv'));
+  var regions=Array.from(document.querySelectorAll('.body-map .region'));
+  var labels=Array.from(document.querySelectorAll('.body-map text[data-label]'));
+  function openBranch(key){
+    branches.forEach(function(branch){
+      var on=branch.dataset.key===key;
+      var button=branch.querySelector('.branch-head');
+      var children=branch.querySelector('.children');
+      button.setAttribute('aria-expanded',String(on));
+      children.hidden=!on;
+    });
+    regions.forEach(function(region){region.classList.toggle('active',region.dataset.region===key);});
+    labels.forEach(function(label){label.classList.toggle('active-label',label.dataset.label===key);});
+  }
+  branches.forEach(function(branch){
+    branch.querySelector('.branch-head').addEventListener('click',function(){openBranch(branch.dataset.key);});
+  });
+  openBranch('structure');
+  window.openSystemBranch=openBranch;
+})();
+</script>
+</body></html>

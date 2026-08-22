@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    .council-head{padding:30px 42px 14px;display:flex;align-items:flex-end;justify-content:space-between;gap:24px}
+    .kicker{color:var(--primary-bright);font:700 var(--fs-label)/1.4 var(--font-mono);letter-spacing:.12em}
+    .statusline{display:flex;gap:12px;align-items:center;font:700 var(--fs-sec)/1.4 var(--font-mono)}
+    .workspace{padding:0 42px 32px;display:flex;gap:24px;position:relative}
+    .proposal{flex:0 0 46%;padding:22px;display:flex;flex-direction:column;gap:14px;position:relative;overflow:hidden}
+    .schematic{position:absolute;inset:82px 18px 72px;width:calc(100% - 36px);height:calc(100% - 154px);pointer-events:none;opacity:.28}
+    .review{flex:1;padding:22px;display:flex;flex-direction:column;gap:8px;position:relative;overflow:hidden;justify-content:space-between}
+    .mission-select{width:100%;font-size:var(--fs-body)}
+    .proposal .k-generalization>.supports{grid-template-columns:1fr;gap:9px;padding:0 0 0 28px}
+    .proposal .k-generalization>.supports:before{left:8px;right:auto;top:0;bottom:0;width:3px;height:auto}
+    .proposal .k-generalization .support{padding:10px 14px}
+    .proposal .k-generalization .support:before{left:-20px;bottom:auto;top:50%;width:20px;height:2px;transform:none}
+    .support{transition:border-color 220ms ease,background 220ms ease,transform 220ms ease}
+    .support.active{border-color:var(--accent)!important;background:var(--accent-soft)!important}
+    .support.done{border-color:var(--primary)!important;background:var(--primary-soft)!important}
+    .support-title{display:flex;align-items:center;justify-content:space-between;color:var(--primary-bright);font-weight:750;font-size:var(--fs-body)}
+    .support-copy{margin-top:4px;color:var(--muted);font-size:var(--fs-sec);line-height:var(--lh-text)}
+    .gate-row{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;position:relative;padding:8px 0 4px}
+    .gate-row:before{content:"";position:absolute;left:8%;right:8%;top:31px;height:2px;background:var(--line);z-index:0}
+    .gate{position:relative;z-index:1;text-align:center;color:var(--muted);font-size:var(--fs-label)}
+    .gate-dot{width:46px;height:46px;margin:0 auto 7px;border:2px solid var(--line);border-radius:50%;display:grid;place-items:center;background:var(--panel-deep);font:700 var(--fs-sec)/1 var(--font-mono);transition:all 220ms ease}
+    .gate.active .gate-dot{border-color:var(--accent);color:var(--accent);box-shadow:0 0 20px var(--accent-soft)}
+    .gate.done .gate-dot{border-color:var(--primary);background:var(--primary);color:var(--bg)}
+    .question{min-height:154px;padding:18px;border:2px solid var(--line);border-radius:var(--r-md);background:var(--panel-deep);display:flex;flex-direction:column;justify-content:center;gap:8px}
+    .question.current{border-color:var(--accent);background:linear-gradient(100deg,var(--accent-soft),var(--panel-deep) 64%)}
+    .question-label{color:var(--accent);font-weight:750;font-size:var(--fs-label)}
+    .question-text{font-size:var(--fs-lead);font-weight:720;line-height:var(--lh-text)}
+    .feedback{min-height:34px;color:var(--muted);font-size:var(--fs-sec);line-height:var(--lh-text)}
+    .ledger{display:flex;flex-direction:column;border-top:1px solid var(--line-soft)}
+    .ledger-row{display:grid;grid-template-columns:70px 1fr 145px 64px;gap:10px;align-items:center;min-height:46px;border-bottom:1px solid var(--line-soft);font-size:var(--fs-label)}
+    .ledger-row .lq{color:var(--muted)}
+    .ledger-row .ls{text-align:right;color:var(--faint);font-weight:700}
+    .ledger-row.done .ls{color:var(--primary-bright)}
+    .answers{display:flex;gap:12px}
+    .answers button{flex:1;font-size:var(--fs-sec)}
+    .final-mark{display:none;align-items:center;gap:16px;padding:14px 18px;border:2px solid var(--accent);border-radius:var(--r-md);background:var(--accent-soft)}
+    .final-mark.show{display:flex}
+    .badge{width:58px;height:58px;border:3px solid var(--accent);border-radius:50%;display:grid;place-items:center;color:var(--accent);font-weight:800;box-shadow:0 0 24px rgba(255,181,71,.28)}
+    .shake{animation:shake 260ms ease}
+    @keyframes shake{25%{transform:translateX(-8px)}50%{transform:translateX(8px)}75%{transform:translateX(-4px)}}
+    .enter{animation:enter 520ms cubic-bezier(.2,.8,.2,1) both}
+    @keyframes enter{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+    @media(prefers-reduced-motion:reduce){*,*:before,*:after{animation:none!important;transition:none!important}.shake{outline:3px solid var(--danger)}}
+  </style>
+</head>
+<body data-page="46" data-total="48">
+  <div id="stage">
+    <header class="council-head" style="height:118px">
+      <div class="col gap-1">
+        <div class="kicker">FUTURE MISSION COUNCIL</div>
+        <h1>一项任务，必须回答五个问题</h1>
+      </div>
+      <div class="statusline" aria-live="polite">
+        <span class="chip" id="proposalCount">提案 0/5</span>
+        <span class="chip" id="reviewCount">质询 0/5</span>
+        <span class="chip" id="progressText">审查 0%</span>
+      </div>
+    </header>
+
+    <main class="workspace min0" style="flex:1">
+      <section class="proposal panel science-grid min0 enter" aria-labelledby="proposalTitle">
+        <div class="row between items-center">
+          <h2 id="proposalTitle">任务档案</h2>
+          <span class="chip">五项不可互相替代</span>
+        </div>
+        <label class="fs-label muted" for="mission">选择议题</label>
+        <select id="mission" class="mission-select" aria-label="选择任务">
+          <option value="earth">地球观测卫星</option>
+          <option value="moon">月球科研站</option>
+          <option value="mars">火星样本返回</option>
+        </select>
+        <div class="k-generalization min0" style="flex:1">
+          <div class="claim is-current" id="claim">值得追求的任务</div>
+          <div class="trunk"></div>
+          <div class="supports" id="supports" style="--support-cols:5"></div>
+        </div>
+        <div class="row gap-2">
+          <button id="submit" class="is-target" style="flex:1">提交提案</button>
+          <button id="begin" style="flex:1" disabled>接受质询</button>
+        </div>
+      </section>
+
+      <section class="review panel science-grid min0 enter" aria-labelledby="reviewTitle" style="animation-delay:90ms">
+        <svg class="schematic" viewBox="0 0 600 500" aria-hidden="true"><g fill="none" stroke="var(--primary)" stroke-width="4"><path d="M70 390 Q300 40 530 390"/><path d="M105 390 Q300 95 495 390"/><path d="M145 390 Q300 150 455 390"/><path d="M190 390 Q300 210 410 390"/><path d="M240 390 Q300 275 360 390"/></g><g fill="var(--panel-deep)" stroke="var(--primary-bright)" stroke-width="5"><circle cx="70" cy="390" r="18"/><circle cx="185" cy="220" r="18"/><circle cx="300" cy="125" r="18"/><circle cx="415" cy="220" r="18"/><circle cx="530" cy="390" r="18"/></g></svg>
+        <div class="row between items-center">
+          <h2 id="reviewTitle">议会审查环</h2>
+          <span class="chip">回应 ≠ 赞成</span>
+        </div>
+        <div class="gate-row" id="gates" aria-label="五道审查门"></div>
+        <div class="ledger" id="ledger" aria-label="五项质询记录"></div>
+        <div class="question" id="question">
+          <div class="question-label">等待提案</div>
+          <div class="question-text">先提交五联提案，再逐项接受质询。</div>
+          <div class="fs-sec muted">通过规则：五项均获得回应，不要求全票赞成。</div>
+        </div>
+        <div class="answers">
+          <button id="specific" disabled>具体回应</button>
+          <button id="slogan" disabled>空泛口号</button>
+        </div>
+        <div class="feedback" id="feedback" aria-live="assertive">值得追求，不等于“技术上做得到”或“听起来宏大”。</div>
+        <div class="final-mark" id="final">
+          <div class="badge">议</div>
+          <div><strong class="accent">提案可进入审议——不代表已经获得赞成</strong><div class="fs-sec muted">目标、证据、成本、风险与受益者均已获得回应。</div></div>
+        </div>
+        <button id="reset" disabled>重新组案</button>
+      </section>
+    </main>
+  </div>
+  <script src="assets/base.js"></script>
+  <script src="assets/lec.js"></script>
+  <script>
+    Deck.init({index:46,total:48});
+    const criteria=[
+      {id:'goal',label:'目标',prompt:'我们希望改变什么？',test:'清楚 · 可观察',question:'目标是否清楚且可检验？',reply:'说明要改变的现象，并给出可观察的判断方式。'},
+      {id:'evidence',label:'证据',prompt:'凭什么认为方案有效？',test:'事实 · 推断分开',question:'证据支持的是事实、推断还是期待？',reply:'区分已有观察、由此作出的推断与仍待验证的期待。'},
+      {id:'cost',label:'成本',prompt:'需要哪些公共资源？',test:'投入 · 取舍同列',question:'选择它意味着暂缓什么？',reply:'列出投入的资源，并指出同一资源不能同时支持的选择。'},
+      {id:'risk',label:'风险',prompt:'可能伤害谁或什么？',test:'知情 · 承担 · 补偿',question:'谁知情、谁承担、如何补偿？',reply:'说明受影响者、承担主体与失败后的补偿安排。'},
+      {id:'beneficiary',label:'受益者',prompt:'收益流向哪些群体？',test:'受益 · 排除同看',question:'未参与决策者是否也受影响？',reply:'指出直接与间接受益者，也检查可能被排除的人。'}
+    ];
+    const els={supports:document.querySelector('#supports'),gates:document.querySelector('#gates'),ledger:document.querySelector('#ledger'),mission:document.querySelector('#mission'),submit:document.querySelector('#submit'),begin:document.querySelector('#begin'),specific:document.querySelector('#specific'),slogan:document.querySelector('#slogan'),reset:document.querySelector('#reset'),question:document.querySelector('#question'),feedback:document.querySelector('#feedback'),final:document.querySelector('#final'),proposalCount:document.querySelector('#proposalCount'),reviewCount:document.querySelector('#reviewCount'),progressText:document.querySelector('#progressText'),claim:document.querySelector('#claim')};
+    let state;
+    function fresh(){return{submitted:false,started:false,answered:0,mission:els.mission.value,replies:[]}}
+    function renderStructure(){
+      els.supports.innerHTML=criteria.map((c,i)=>`<div class="support" data-i="${i}"><div class="support-title"><span>${c.label}</span><span>○</span></div><div class="support-copy">${c.prompt}</div></div>`).join('');
+      els.gates.innerHTML=criteria.map((c,i)=>`<div class="gate" data-i="${i}"><div class="gate-dot">${i+1}</div><div>${c.label}</div></div>`).join('');
+      els.ledger.innerHTML=criteria.map((c,i)=>`<div class="ledger-row" data-i="${i}"><strong>${c.label}</strong><span class="lq">${c.question}</span><span class="primary">${c.test}</span><span class="ls">待回应</span></div>`).join('');
+    }
+    function render(){
+      const total=criteria.length, pct=Lec.P.progressPercent(state.answered,total);
+      els.proposalCount.textContent=`提案 ${state.submitted?total:0}/${total}`;
+      els.reviewCount.textContent=`质询 ${state.answered}/${total}`;
+      els.progressText.textContent=`审查 ${pct}%`;
+      els.claim.textContent=`值得追求的任务：${els.mission.options[els.mission.selectedIndex].text}`;
+      [...els.supports.children].forEach((el,i)=>{el.classList.toggle('done',state.submitted);el.classList.toggle('active',state.started&&i===state.answered);el.querySelector('span:last-child').textContent=state.submitted?'●':'○'});
+      [...els.gates.children].forEach((el,i)=>{el.classList.toggle('done',i<state.answered);el.classList.toggle('active',state.started&&i===state.answered)});
+      [...els.ledger.children].forEach((el,i)=>{el.classList.toggle('done',i<state.answered);el.querySelector('.ls').textContent=i<state.answered?'已回应':(state.started&&i===state.answered?'质询中':'待回应')});
+      els.begin.disabled=!state.submitted||state.started; els.submit.disabled=state.submitted; els.mission.disabled=state.submitted;
+      const asking=state.started&&state.answered<total; els.specific.disabled=!asking; els.slogan.disabled=!asking;
+      els.reset.disabled=!state.submitted; els.final.classList.toggle('show',state.answered===total);
+      if(asking){const c=criteria[state.answered];els.question.className='question current';els.question.innerHTML=`<div class="question-label">当前质询 · ${c.label}</div><div class="question-text">${c.question}</div><div class="fs-sec muted">选择能真正回答问题的回应。</div>`}
+      else if(state.answered===total){els.question.className='question';els.question.innerHTML='<div class="question-label">五道审查门已接通</div><div class="question-text">完整回应让提案具备被讨论的条件。</div><div class="fs-sec muted">它仍可以被质疑、修改或否决。</div>'}
+    }
+    function reset(){state=fresh();els.feedback.textContent='值得追求，不等于“技术上做得到”或“听起来宏大”。';render()}
+    renderStructure();reset();
+    els.mission.addEventListener('change',()=>{state.mission=els.mission.value;render()});
+    els.submit.addEventListener('click',()=>{state.submitted=true;els.feedback.textContent='五联提案已归位。现在让每一项都经受质询。';render()});
+    els.begin.addEventListener('click',()=>{state.started=true;els.feedback.textContent='第一道审查门已打开。';render()});
+    els.slogan.addEventListener('click',()=>{const c=criteria[state.answered];els.question.classList.remove('shake');void els.question.offsetWidth;els.question.classList.add('shake');els.feedback.textContent=`这句话表达态度，但没有回答：${c.question}`});
+    els.specific.addEventListener('click',()=>{const c=criteria[state.answered];state.replies.push({id:c.id,text:c.reply});state.answered++;els.feedback.textContent=state.answered<criteria.length?`已回应：${c.reply}`:'五项均已回应；通过审查不等于达成共识。';render()});
+    els.reset.addEventListener('click',()=>{els.mission.disabled=false;reset()});
+  </script>
+</body>
+</html>

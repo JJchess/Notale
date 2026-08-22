@@ -1,0 +1,329 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  :root {
+    --bg: #111417;
+    --text: #edf2f0;
+    --font-sans: Inter, "Noto Sans SC", "Source Han Sans SC", "Microsoft YaHei", "PingFang SC", Arial, sans-serif;
+  }
+  #main { padding-top: 28px; padding-bottom: 24px; }
+  .page39 { height: 100%; }
+  .p39-top { min-height: 66px; }
+  .p39-lead { max-width: 890px; color: var(--text-secondary); }
+  .p39-status { min-width: 206px; text-align: right; }
+  .p39-count { color: var(--accent); font-family: var(--font-mono); font-size: var(--fs-lead); font-weight: 700; line-height: 1.35; }
+  .p39-instruction { color: var(--text-secondary); font-size: var(--fs-sec); line-height: var(--lh-sec); }
+  .p39-process {
+    --process-gap: 30px;
+    width: 900px;
+    margin: 4px auto 0;
+    padding: 8px 0 10px;
+  }
+  .p39-process > .step {
+    min-height: 42px;
+    padding: 9px 12px;
+    color: var(--text-muted);
+    font-size: var(--fs-label);
+    font-weight: 650;
+    line-height: 1.35;
+    text-align: center;
+  }
+  .p39-process > .step.is-current { color: var(--text); }
+  .p39-process > .step.is-complete { color: var(--primary); background: var(--primary-soft); border-color: var(--primary-line); border-top-color: var(--primary); }
+  .network-wrap {
+    position: relative;
+    flex: 1 1 0;
+    min-height: 0;
+    overflow: hidden;
+    background: #151b1d;
+    border-top: 1px solid var(--line);
+    border-bottom: 1px solid var(--line);
+  }
+  #network { display: block; width: 100%; height: 100%; touch-action: none; }
+  .network-label {
+    fill: var(--text);
+    font-family: var(--font-sans);
+    font-size: 16px;
+    font-weight: 650;
+  }
+  .network-sub { fill: var(--text-secondary); font-family: var(--font-sans); font-size: 14px; }
+  .network-small { fill: var(--text-muted); font-family: var(--font-sans); font-size: 14px; }
+  .pipe-fixed, .pipe-connected, .pipe-preview, .loss-pipe, .supply-pipe { fill: none; stroke-linecap: round; stroke-linejoin: round; }
+  .pipe-fixed { stroke: var(--primary-line); stroke-width: 7; }
+  .pipe-connected { stroke: var(--primary); stroke-width: 8; }
+  .pipe-preview { stroke: var(--accent); stroke-width: 6; stroke-dasharray: 10 8; }
+  .loss-pipe { stroke: var(--accent-line); stroke-width: 6; }
+  .supply-pipe { stroke: var(--text-muted); stroke-width: 9; }
+  .node-body { fill: var(--surface-raised); stroke: var(--line-strong); stroke-width: 1.5; }
+  .node-body.active { stroke: var(--primary); }
+  .port { fill: var(--surface); stroke: var(--line-strong); stroke-width: 3; }
+  .port.targetable { stroke: var(--accent); stroke-width: 4; }
+  .port.done { fill: var(--primary); stroke: var(--primary); }
+  .drag-end { cursor: grab; outline: none; }
+  .drag-end:focus-visible .handle-ring { stroke: var(--focus); stroke-width: 4; }
+  .handle-ring { fill: var(--surface-raised); stroke: var(--accent); stroke-width: 3; }
+  .handle-core { fill: var(--accent); pointer-events: none; }
+  .drag-end.done .handle-ring { fill: var(--primary); stroke: var(--primary); }
+  .silhouette { fill: rgba(85,194,176,.055); stroke: rgba(85,194,176,.38); stroke-width: 2; }
+  .measure { stroke: var(--line); stroke-width: 1; }
+  .measure-major { stroke: var(--line-strong); stroke-width: 1.5; }
+  .particle { fill: var(--primary); pointer-events: none; }
+  .particle.loss { fill: var(--accent); }
+  .feedback {
+    min-height: 50px;
+    padding-top: 10px;
+    color: var(--text-secondary);
+    font-size: var(--fs-sec);
+    line-height: var(--lh-sec);
+    text-align: center;
+  }
+  .feedback.error { color: var(--danger); }
+  .feedback.complete { color: var(--text); font-size: var(--fs-lead); font-weight: 700; }
+  .reset {
+    width: 44px;
+    min-width: 44px;
+    padding: 0;
+    font-size: 24px;
+  }
+  .reset[hidden] { display: none; }
+  .error-shake { animation: shake 220ms ease-in-out 2; }
+  @keyframes shake { 0%,100% { transform: translateX(0); } 35% { transform: translateX(-8px); } 70% { transform: translateX(8px); } }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; }
+  }
+</style>
+</head>
+<body data-page="39" data-total="44">
+<div id="stage">
+<main id="main">
+  <section class="page39 col min0" aria-labelledby="loop-question">
+    <div class="p39-top row between items-start gap-5 shrink0">
+      <div class="col gap-1 min0">
+        <p id="loop-question" class="lead p39-lead">拖动四段断开的管端，把使用后的资源接回可用状态。</p>
+        <p class="p39-instruction">管线必须从上一步的输出端，接向下一步的输入端。</p>
+      </div>
+      <div class="row items-center gap-4 shrink0">
+        <div class="p39-status">
+          <div id="progressCount" class="p39-count" aria-live="polite">已接通 0 / 4</div>
+          <div class="label text-muted">资源回收路径</div>
+        </div>
+        <button id="resetBtn" class="reset" type="button" title="重置管路" aria-label="重置管路" hidden>↻</button>
+      </div>
+    </div>
+
+    <div class="k-process p39-process shrink0" aria-label="资源回收的四步过程">
+      <span class="axis" aria-hidden="true"></span>
+      <div class="step is-current" data-step="0">收集</div><span class="arw" aria-hidden="true"></span>
+      <div class="step" data-step="1">回收处理</div><span class="arw" aria-hidden="true"></span>
+      <div class="step" data-step="2">质量检查</div><span class="arw" aria-hidden="true"></span>
+      <div class="step" data-step="3">返回可用端</div>
+    </div>
+
+    <figure class="network-wrap min0 no-pan">
+      <svg id="network" viewBox="0 0 1408 400" role="img" aria-label="资源从补给进入可用资源舱，经乘员使用、收集、处理和质量检查后返回；泄漏和不合格物进入不可逆损失端。拖动四个琥珀色管端到正确输入端。"></svg>
+    </figure>
+
+    <div class="row center gap-4 shrink0">
+      <p id="feedback" class="feedback" aria-live="polite">补给从顶部进入；泄漏、污染和排放仍从底部离开。</p>
+    </div>
+  </section>
+</main>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script src="assets/lib/d3.min.js"></script>
+<script>
+Lec.mount({
+  index: 39,
+  kicker: "SYSTEMS / RESOURCE LOOP",
+  title: "把损失接回循环",
+  take: "封闭系统的核心不是拥有更多资源，而是尽量减少不可逆损失"
+});
+
+(function () {
+  var svg = d3.select("#network");
+  var feedback = document.getElementById("feedback");
+  var countEl = document.getElementById("progressCount");
+  var resetBtn = document.getElementById("resetBtn");
+  var reduced = Deck.reduced();
+
+  var nodes = [
+    { id:"store", label:"可用资源舱", sub:"补给与回收汇合", x:160, y:88, w:190, h:64 },
+    { id:"use", label:"乘员使用端", sub:"资源进入身体与任务", x:510, y:78, w:210, h:64 },
+    { id:"collect", label:"废物流收集", sub:"使用后先集中", x:1015, y:86, w:190, h:64 },
+    { id:"process", label:"回收处理", sub:"移除可处理污染", x:1115, y:238, w:190, h:64 },
+    { id:"quality", label:"质量检查", sub:"合格才可返回", x:890, y:326, w:190, h:64 },
+    { id:"return", label:"返回资源舱", sub:"重新成为可用资源", x:410, y:326, w:205, h:64 },
+    { id:"loss", label:"不可逆损失端", sub:"泄漏 · 污染 · 排放", x:700, y:348, w:215, h:52 }
+  ];
+
+  var ports = {
+    useOut:{x:720,y:110}, collectIn:{x:1015,y:118},
+    collectOut:{x:1205,y:118}, processIn:{x:1210,y:238},
+    processOut:{x:1115,y:270}, qualityIn:{x:1080,y:358},
+    qualityOut:{x:890,y:358}, returnIn:{x:615,y:358}
+  };
+
+  var links = [
+    { id:"collect", source:"useOut", target:"collectIn", path:"M720,110 C820,110 915,118 1015,118" },
+    { id:"process", source:"collectOut", target:"processIn", path:"M1205,118 C1280,145 1275,220 1210,238" },
+    { id:"quality", source:"processOut", target:"qualityIn", path:"M1115,270 C1115,305 1100,335 1080,358" },
+    { id:"return", source:"qualityOut", target:"returnIn", path:"M890,358 C800,358 705,358 615,358" }
+  ];
+  var connected = new Set();
+  var keyboardTarget = 0;
+  var activeLink = null;
+
+  var defs = svg.append("defs");
+  defs.append("marker").attr("id","arrow-primary").attr("viewBox","0 -5 10 10").attr("refX",9).attr("refY",0).attr("markerWidth",7).attr("markerHeight",7).attr("orient","auto")
+    .append("path").attr("d","M0,-5L10,0L0,5").attr("fill","var(--primary)");
+  defs.append("marker").attr("id","arrow-muted").attr("viewBox","0 -5 10 10").attr("refX",9).attr("refY",0).attr("markerWidth",7).attr("markerHeight",7).attr("orient","auto")
+    .append("path").attr("d","M0,-5L10,0L0,5").attr("fill","var(--text-muted)");
+  defs.append("marker").attr("id","arrow-loss").attr("viewBox","0 -5 10 10").attr("refX",9).attr("refY",0).attr("markerWidth",7).attr("markerHeight",7).attr("orient","auto")
+    .append("path").attr("d","M0,-5L10,0L0,5").attr("fill","var(--accent)");
+
+  var backdrop = svg.append("g").attr("aria-hidden","true");
+  d3.range(28).forEach(function(i){
+    backdrop.append("line").attr("x1",38+i*49).attr("x2",38+i*49).attr("y1",i%5===0?22:30).attr("y2",i%5===0?38:34).attr("class",i%5===0?"measure-major":"measure");
+  });
+  backdrop.append("text").attr("x",38).attr("y",20).attr("class","network-small").text("舱内资源边界");
+
+  var person = backdrop.append("g").attr("transform","translate(650,92)");
+  person.append("circle").attr("cx",50).attr("cy",40).attr("r",28).attr("class","silhouette");
+  person.append("path").attr("d","M26,74 C15,112 18,170 36,211 L24,286 M74,74 C87,112 84,170 66,211 L78,286 M28,91 L-3,172 M72,91 L103,172 M36,211 L66,211 L75,104 C70,82 62,72 50,72 C38,72 30,82 25,104 Z").attr("class","silhouette");
+  person.append("text").attr("x",50).attr("y",188).attr("text-anchor","middle").attr("class","network-sub").text("乘员");
+
+  var fixed = svg.append("g").attr("aria-hidden","true");
+  fixed.append("path").attr("d","M255,0 L255,88").attr("class","supply-pipe").attr("marker-end","url(#arrow-muted)");
+  fixed.append("text").attr("x",275).attr("y",28).attr("class","network-label").text("新补给入口");
+  fixed.append("text").attr("x",275).attr("y",50).attr("class","network-sub").text("循环越完整，补给需求越低");
+  fixed.append("path").attr("d","M350,120 C410,120 455,112 510,110").attr("class","pipe-fixed").attr("marker-end","url(#arrow-primary)");
+  fixed.append("path").attr("d","M410,358 C300,350 250,285 250,152").attr("class","pipe-fixed").attr("marker-end","url(#arrow-primary)");
+  fixed.append("path").attr("id","lossPath").attr("d","M1115,280 C1000,315 885,360 807,374").attr("class","loss-pipe").attr("marker-end","url(#arrow-loss)");
+  fixed.append("path").attr("d","M700,374 L700,400").attr("class","loss-pipe").attr("marker-end","url(#arrow-loss)");
+
+  var nodeG = svg.append("g").selectAll("g.node").data(nodes).join("g").attr("class","node").attr("transform",function(d){ return "translate("+d.x+","+d.y+")"; });
+  nodeG.append("rect").attr("class","node-body").attr("width",function(d){return d.w;}).attr("height",function(d){return d.h;}).attr("rx",4);
+  nodeG.append("text").attr("class","network-label").attr("x",function(d){return d.w/2;}).attr("y",23).attr("text-anchor","middle").text(function(d){return d.label;});
+  nodeG.append("text").attr("class","network-sub").attr("x",function(d){return d.w/2;}).attr("y",47).attr("text-anchor","middle").text(function(d){return d.sub;});
+
+  var targetData = links.map(function(d){ return {id:d.target, link:d, x:ports[d.target].x, y:ports[d.target].y}; });
+  var targets = svg.append("g").selectAll("circle.port").data(targetData).join("circle").attr("class","port").attr("cx",function(d){return d.x;}).attr("cy",function(d){return d.y;}).attr("r",10);
+  var connectedLayer = svg.append("g").attr("aria-hidden","true");
+  var previewLayer = svg.append("g").attr("aria-hidden","true");
+  var particleLayer = svg.append("g").attr("aria-hidden","true");
+
+  var handles = svg.append("g").selectAll("g.drag-end").data(links).join("g")
+    .attr("class","drag-end").attr("tabindex",0).attr("role","button")
+    .attr("aria-label",function(d,i){ return "第"+(i+1)+"段管端；用方向键选择输入端，按回车连接"; })
+    .attr("transform",function(d){ var p=ports[d.source]; return "translate("+p.x+","+p.y+")"; });
+  handles.append("circle").attr("class","handle-ring").attr("r",14);
+  handles.append("circle").attr("class","handle-core").attr("r",5);
+
+  var drag = d3.drag()
+    .on("start",function(event,d){ if(connected.has(d.id)) return; activeLink=d; showTargets(d); })
+    .on("drag",function(event,d){ if(connected.has(d.id)) return; drawPreview(d,event.x,event.y); })
+    .on("end",function(event,d){
+      if(connected.has(d.id)) return;
+      var hit = nearestTarget(event.x,event.y,28);
+      previewLayer.selectAll("*").remove();
+      clearTargets();
+      if(hit) attempt(d,hit.link); else bounce(d);
+      activeLink=null;
+    });
+  handles.call(drag).on("keydown",function(event,d){
+    if(connected.has(d.id)) return;
+    if(["ArrowRight","ArrowDown"].includes(event.key)){ event.preventDefault(); keyboardTarget=(keyboardTarget+1)%links.length; showTargets(d); }
+    if(["ArrowLeft","ArrowUp"].includes(event.key)){ event.preventDefault(); keyboardTarget=(keyboardTarget+links.length-1)%links.length; showTargets(d); }
+    if(event.key==="Enter" || event.key===" "){ event.preventDefault(); attempt(d,links[keyboardTarget]); }
+  }).on("focus",function(event,d){ activeLink=d; showTargets(d); }).on("blur",function(){ activeLink=null; clearTargets(); });
+
+  function nearestTarget(x,y,r){
+    var best=null, dist=Infinity;
+    targetData.forEach(function(t){ var q=Math.hypot(x-t.x,y-t.y); if(q<dist){dist=q;best=t;} });
+    return dist<=r?best:null;
+  }
+  function showTargets(d){
+    targets.classed("targetable",function(t){return !connected.has(t.link.id) && (t.link.id===d.id || t.link.id===links[keyboardTarget].id);});
+  }
+  function clearTargets(){ targets.classed("targetable",false); }
+  function drawPreview(d,x,y){
+    var p=ports[d.source];
+    previewLayer.selectAll("path").data([d]).join("path").attr("class","pipe-preview").attr("d","M"+p.x+","+p.y+" C"+((p.x+x)/2)+","+p.y+" "+((p.x+x)/2)+","+y+" "+x+","+y);
+  }
+  function attempt(sourceLink,targetLink){
+    clearTargets();
+    if(sourceLink.id===targetLink.id){ connect(sourceLink); return; }
+    var sourceIndex=links.indexOf(sourceLink), targetIndex=links.indexOf(targetLink);
+    var msg = targetIndex < sourceIndex
+      ? "资源流向反了：从上一步的输出端接向下一步的输入端"
+      : "这股废物流还不能返回可用端：先经过回收处理与质量检查";
+    showError(msg,sourceLink,targetLink);
+  }
+  function connect(link){
+    connected.add(link.id);
+    connectedLayer.selectAll("path").data(links.filter(function(d){return connected.has(d.id);}),function(d){return d.id;}).join("path")
+      .attr("class","pipe-connected").attr("d",function(d){return d.path;}).attr("marker-end","url(#arrow-primary)");
+    handles.classed("done",function(d){return connected.has(d.id);}).attr("aria-disabled",function(d){return connected.has(d.id)?"true":null;});
+    targets.classed("done",function(d){return connected.has(d.link.id);});
+    pulse(link);
+    update();
+  }
+  function bounce(link){
+    var el=handles.filter(function(d){return d.id===link.id;}).node();
+    el.classList.remove("error-shake"); void el.getBBox(); el.classList.add("error-shake");
+    feedback.className="feedback error";
+    feedback.textContent="管端没有接到输入端；沿箭头拖到下一步的圆形端口。";
+  }
+  function showError(msg,sourceLink,targetLink){
+    feedback.className="feedback error"; feedback.textContent=msg;
+    [handles.filter(function(d){return d.id===sourceLink.id;}).node(), targets.filter(function(d){return d.link.id===targetLink.id;}).node()].forEach(function(el){ if(el){el.classList.remove("error-shake"); void el.getBBox(); el.classList.add("error-shake");} });
+  }
+  function pulse(link){
+    if(reduced) return;
+    var path=connectedLayer.selectAll("path").filter(function(d){return d.id===link.id;}).node();
+    var length=path.getTotalLength();
+    var dot=particleLayer.append("circle").attr("class","particle").attr("r",7);
+    dot.transition().duration(780).ease(d3.easeCubicInOut).attrTween("transform",function(){ return function(t){ var p=path.getPointAtLength(t*length); return "translate("+p.x+","+p.y+")"; }; }).remove();
+  }
+  function update(){
+    var n=connected.size;
+    countEl.textContent="已接通 "+n+" / 4";
+    document.querySelectorAll(".p39-process .step").forEach(function(el,i){ el.classList.toggle("is-complete",i<n); el.classList.toggle("is-current",i===n && n<4); });
+    if(n===4){
+      feedback.className="feedback complete";
+      feedback.textContent="循环减少损失，不等于没有损失";
+      resetBtn.hidden=false;
+      fixed.selectAll(".supply-pipe").style("stroke-width",5).style("opacity",.55);
+      fixed.selectAll(".loss-pipe").style("stroke-width",4).style("opacity",.62);
+      runLoopParticles();
+    } else {
+      feedback.className="feedback";
+      feedback.textContent=n?"路径已延长；继续沿箭头接向下一步。":"补给从顶部进入；泄漏、污染和排放仍从底部离开。";
+    }
+  }
+  function runLoopParticles(){
+    particleLayer.selectAll("*").remove();
+    if(reduced) return;
+    var paths=connectedLayer.selectAll("path").nodes();
+    paths.forEach(function(path,i){
+      var length=path.getTotalLength();
+      var dot=particleLayer.append("circle").attr("class","particle").attr("r",5);
+      function go(){ dot.attr("opacity",1).transition().delay(i*180).duration(900).ease(d3.easeLinear).attrTween("transform",function(){return function(t){var p=path.getPointAtLength(t*length);return "translate("+p.x+","+p.y+")";};}).on("end",function(){dot.attr("opacity",0);}); }
+      go();
+    });
+  }
+  resetBtn.addEventListener("click",function(){
+    connected.clear(); connectedLayer.selectAll("*").remove(); particleLayer.selectAll("*").remove(); previewLayer.selectAll("*").remove();
+    handles.classed("done",false).attr("aria-disabled",null); targets.classed("done",false); resetBtn.hidden=true;
+    fixed.selectAll(".supply-pipe,.loss-pipe").style("stroke-width",null).style("opacity",null);
+    update(); handles.node().focus();
+  });
+})();
+</script>
+</body>
+</html>

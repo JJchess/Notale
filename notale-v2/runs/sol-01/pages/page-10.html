@@ -1,0 +1,787 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  #main { overflow: hidden; }
+  .signal-page {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-3);
+    width: var(--content-w);
+    height: var(--content-h);
+  }
+  .process-strip {
+    flex: 0 0 72px;
+    --process-line-y: 50%;
+  }
+  .process-flow {
+    position: absolute;
+    z-index: 0;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+  }
+  .process-flow line,
+  .process-flow polyline {
+    fill: none;
+    stroke: var(--primary-line);
+    stroke-width: 2;
+    vector-effect: non-scaling-stroke;
+  }
+  .process-strip > .step {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-3);
+    padding: var(--sp-3) var(--sp-5) var(--sp-3) var(--sp-6);
+  }
+  .process-strip .step-title {
+    color: var(--text);
+    font-size: var(--fs-body);
+    font-weight: 650;
+    line-height: var(--lh-tight);
+  }
+  .process-strip .step-copy {
+    color: var(--text-muted);
+    font-size: var(--fs-sec);
+    line-height: var(--lh-body);
+  }
+  .workbench {
+    display: flex;
+    flex: 1 1 0;
+    min-height: 0;
+    gap: var(--sp-4);
+  }
+  .signal-field {
+    position: relative;
+    display: flex;
+    flex: 1 1 0;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-md);
+    background: var(--surface);
+  }
+  .field-head {
+    z-index: 8;
+    display: flex;
+    flex: 0 0 62px;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--sp-4);
+    padding: 0 var(--sp-5);
+    border-bottom: 1px solid var(--line);
+    background: var(--surface-data);
+  }
+  .field-title {
+    font-size: var(--fs-h2);
+    font-weight: 650;
+    line-height: var(--lh-tight);
+  }
+  .field-scale {
+    color: var(--text-muted);
+    font-size: var(--fs-label);
+    line-height: var(--lh-tight);
+  }
+  .space-track {
+    position: relative;
+    flex: 1 1 0;
+    min-height: 0;
+    margin: 0 var(--sp-5);
+  }
+  .orbit-field {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+  }
+  .orbit-field path {
+    fill: none;
+    stroke: var(--primary-line);
+    stroke-width: 1.5;
+    vector-effect: non-scaling-stroke;
+  }
+  .sun {
+    position: absolute;
+    z-index: 5;
+    top: 68px;
+    left: 0;
+    width: 76px;
+    height: 76px;
+    border: 2px solid var(--accent);
+    border-radius: 50%;
+    background: var(--accent-soft);
+    box-shadow: 0 0 28px var(--accent-soft), inset -16px 0 0 var(--accent-soft);
+  }
+  .sun::after {
+    position: absolute;
+    top: 50%;
+    left: calc(100% + var(--sp-2));
+    color: var(--accent);
+    font-size: var(--fs-label);
+    font-weight: 650;
+    line-height: var(--lh-tight);
+    content: "太阳";
+    transform: translateY(-50%);
+  }
+  .ray-axis {
+    position: absolute;
+    z-index: 1;
+    top: 106px;
+    right: 0;
+    left: 86px;
+    height: 2px;
+    background: var(--primary-line);
+  }
+  .ray-axis::after {
+    position: absolute;
+    top: -6px;
+    right: -1px;
+    width: 0;
+    height: 0;
+    border-top: 7px solid transparent;
+    border-bottom: 7px solid transparent;
+    border-left: 12px solid var(--primary);
+    content: "";
+  }
+  .travel-fill {
+    position: absolute;
+    z-index: 2;
+    top: 105px;
+    left: 86px;
+    width: 0;
+    height: 4px;
+    background: var(--accent);
+    transform-origin: left center;
+  }
+  .pulse {
+    position: absolute;
+    z-index: 7;
+    top: 96px;
+    left: 76px;
+    width: 22px;
+    height: 22px;
+    border: 3px solid var(--accent);
+    border-radius: 50%;
+    background: var(--accent-soft);
+    box-shadow: 0 0 20px var(--accent);
+    opacity: 0;
+    transform: translateX(0);
+  }
+  .orbit-node {
+    position: absolute;
+    z-index: 4;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background: var(--primary-line);
+  }
+  .orbit-node::before {
+    position: absolute;
+    top: 99px;
+    left: -7px;
+    width: 14px;
+    height: 14px;
+    border: 2px solid var(--primary);
+    border-radius: 50%;
+    background: var(--surface);
+    content: "";
+  }
+  .orbit-node .orbit-name {
+    position: absolute;
+    top: 128px;
+    left: 50%;
+    color: var(--text-muted);
+    font-size: var(--fs-label);
+    line-height: var(--lh-tight);
+    white-space: nowrap;
+    transform: translateX(-50%);
+  }
+  .orbit-node .orbit-au {
+    position: absolute;
+    top: 158px;
+    left: 50%;
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+    font-size: var(--fs-tick);
+    line-height: var(--lh-tight);
+    white-space: nowrap;
+    transform: translateX(-50%);
+  }
+  .orbit-node.is-target { background: var(--accent); }
+  .orbit-node.is-target::before {
+    border-color: var(--accent);
+    background: var(--accent-soft);
+  }
+  .orbit-node.is-target .orbit-name { color: var(--accent); }
+  .orbit-node.is-reached::before {
+    border-color: var(--success);
+    background: var(--success);
+  }
+  .timeline-band {
+    position: relative;
+    flex: 0 0 116px;
+    margin: 0 var(--sp-5) var(--sp-4);
+    border-top: 1px solid var(--line-strong);
+  }
+  .time-ruler {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+  }
+  .time-ruler line {
+    stroke: var(--primary-line);
+    stroke-width: 1;
+    vector-effect: non-scaling-stroke;
+  }
+  .timeline-caption {
+    position: absolute;
+    top: var(--sp-2);
+    left: 0;
+    color: var(--text-muted);
+    font-size: var(--fs-label);
+    line-height: var(--lh-tight);
+  }
+  .time-cell {
+    position: absolute;
+    top: 38px;
+    width: 86px;
+    min-height: 62px;
+    padding: var(--sp-2);
+    border-top: 2px solid var(--line-strong);
+    background: var(--surface-data);
+    text-align: center;
+    transform: translateX(-50%);
+  }
+  .time-cell .cell-name {
+    color: var(--text-muted);
+    font-size: var(--fs-label);
+    line-height: var(--lh-tight);
+  }
+  .time-cell .cell-time {
+    margin-top: var(--sp-1);
+    color: var(--text);
+    font-family: var(--font-mono);
+    font-size: var(--fs-sec);
+    font-weight: 650;
+    line-height: var(--lh-tight);
+    white-space: nowrap;
+  }
+  .time-cell.is-target {
+    border-top-color: var(--accent);
+    background: var(--accent-soft);
+  }
+  .time-cell.is-reached { border-top-color: var(--success); }
+  .time-cell .cell-progress {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    width: 0;
+    height: 3px;
+    background: var(--accent);
+  }
+  .console {
+    position: relative;
+    display: flex;
+    flex: 0 0 318px;
+    flex-direction: column;
+    gap: var(--sp-3);
+    min-width: 0;
+  }
+  .telemetry-lines {
+    position: absolute;
+    z-index: 0;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+  }
+  .telemetry-lines path,
+  .telemetry-lines line {
+    fill: none;
+    stroke: var(--primary-line);
+    stroke-width: 1;
+    vector-effect: non-scaling-stroke;
+  }
+  .console > :not(.telemetry-lines) { position: relative; z-index: 1; }
+  .target-console {
+    min-height: 128px;
+    padding: var(--sp-4);
+    background-image:
+      linear-gradient(var(--primary-line), var(--primary-line)),
+      linear-gradient(90deg, var(--primary-line), var(--primary-line));
+    background-position: right 28px top 18px, right 18px top 28px;
+    background-size: 44px 1px, 1px 44px;
+    background-repeat: no-repeat;
+  }
+  .console-kicker {
+    color: var(--text-muted);
+    font-size: var(--fs-label);
+    font-weight: 650;
+    line-height: var(--lh-tight);
+  }
+  .target-name {
+    margin-top: var(--sp-2);
+    color: var(--accent);
+    font-size: var(--fs-h2);
+    font-weight: 650;
+    line-height: var(--lh-tight);
+  }
+  .target-distance {
+    margin-top: var(--sp-2);
+    color: var(--text-muted);
+    font-size: var(--fs-sec);
+    line-height: var(--lh-body);
+  }
+  .console .readout { padding: var(--sp-3); }
+  .controls {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-2);
+    padding: var(--sp-3);
+    border: 1px solid var(--line);
+    background: var(--surface);
+  }
+  .controls .ctl { align-items: stretch; flex-direction: column; }
+  .controls select { width: 100%; }
+  .command-row { display: flex; gap: var(--sp-2); }
+  .command-row button { flex: 1 1 0; font-size: var(--fs-sec); }
+  #send-btn { border-color: var(--primary); }
+  #reset-btn { flex: 0 0 48px; padding: 0; font-size: var(--fs-h2); }
+  .feedback {
+    min-height: 46px;
+    color: var(--text-muted);
+    font-size: var(--fs-sec);
+    line-height: var(--lh-body);
+  }
+  .feedback.is-error { color: var(--danger); }
+  .feedback.is-complete { color: var(--accent); font-weight: 650; }
+  .note { flex: 0 0 auto; max-width: none; }
+  .shake { animation: shake 260ms ease-in-out; }
+  @keyframes shake {
+    0%, 100% { transform: translateX(0); }
+    25% { transform: translateX(-6px); }
+    75% { transform: translateX(6px); }
+  }
+  progress.lec-progress {
+    box-sizing: border-box;
+    height: 2px;
+    border: 0;
+    appearance: none;
+    overflow: visible;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .shake { animation: none; }
+  }
+</style>
+</head>
+<body data-page="10" data-total="50">
+<div id="stage">
+<main id="main">
+  <section class="signal-page min0" aria-label="太阳到行星的单程光信号传播">
+    <div class="k-process process-strip" aria-label="信号传播的三个事件">
+      <svg class="process-flow" viewBox="0 0 1408 72" preserveAspectRatio="none" aria-hidden="true">
+        <line x1="24" y1="36" x2="1384" y2="36"></line>
+        <polyline points="1370,27 1384,36 1370,45"></polyline>
+      </svg>
+      <div class="axis" aria-hidden="true"></div>
+      <div class="step" id="step-launch">
+        <span class="step-title">发出</span>
+        <span class="step-copy">太阳边缘亮起，计时归零</span>
+      </div>
+      <div class="arw" aria-hidden="true"></div>
+      <div class="step" id="step-travel">
+        <span class="step-title">传播</span>
+        <span class="step-copy">依次越过更外侧的行星轨道</span>
+      </div>
+      <div class="arw" aria-hidden="true"></div>
+      <div class="step" id="step-arrive">
+        <span class="step-title">抵达</span>
+        <span class="step-copy">距离转化为单程信息延迟</span>
+      </div>
+    </div>
+
+    <div class="workbench min0">
+      <section class="signal-field min0" aria-labelledby="field-title">
+        <div class="field-head">
+          <h2 class="field-title" id="field-title">光信号向外传播</h2>
+          <span class="field-scale">轨道半长轴 · 平方根展开</span>
+        </div>
+        <div class="space-track" id="space-track" aria-hidden="true">
+          <svg class="orbit-field" viewBox="0 0 1000 232" preserveAspectRatio="none">
+            <path d="M 38 106 C 96 18, 96 194, 38 106"></path>
+            <path d="M 38 106 C 152 -8, 152 220, 38 106"></path>
+            <path d="M 38 106 C 224 -26, 224 238, 38 106"></path>
+            <path d="M 38 106 C 306 -40, 306 252, 38 106"></path>
+            <path d="M 38 106 C 430 -50, 430 262, 38 106"></path>
+            <path d="M 38 106 C 570 -58, 570 270, 38 106"></path>
+            <path d="M 38 106 C 744 -64, 744 276, 38 106"></path>
+            <path d="M 38 106 C 944 -70, 944 282, 38 106"></path>
+          </svg>
+          <div class="sun" id="sun"></div>
+          <div class="ray-axis"></div>
+          <div class="travel-fill" id="travel-fill"></div>
+          <div class="pulse" id="pulse"></div>
+        </div>
+        <div class="timeline-band" id="timeline-band">
+          <svg class="time-ruler" viewBox="0 0 1000 116" preserveAspectRatio="none" aria-hidden="true">
+            <line x1="0" y1="34" x2="1000" y2="34"></line>
+            <line x1="80" y1="28" x2="80" y2="108"></line>
+            <line x1="200" y1="28" x2="200" y2="108"></line>
+            <line x1="320" y1="28" x2="320" y2="108"></line>
+            <line x1="440" y1="28" x2="440" y2="108"></line>
+            <line x1="560" y1="28" x2="560" y2="108"></line>
+            <line x1="680" y1="28" x2="680" y2="108"></line>
+            <line x1="800" y1="28" x2="800" y2="108"></line>
+            <line x1="920" y1="28" x2="920" y2="108"></line>
+          </svg>
+          <span class="timeline-caption">单程抵达时间</span>
+        </div>
+      </section>
+
+      <aside class="console min0" aria-label="信号控制与遥测">
+        <svg class="telemetry-lines" viewBox="0 0 318 497" preserveAspectRatio="none" aria-hidden="true">
+          <path d="M 294 20 L 294 477 L 18 477"></path>
+          <line x1="278" y1="64" x2="294" y2="64"></line>
+          <line x1="278" y1="190" x2="294" y2="190"></line>
+          <line x1="278" y1="298" x2="294" y2="298"></line>
+          <line x1="278" y1="414" x2="294" y2="414"></line>
+        </svg>
+        <div class="target target-console is-current" id="target-console">
+          <div class="console-kicker">接收目标</div>
+          <div class="target-name" id="target-name">尚未选择</div>
+          <div class="target-distance" id="target-distance">选择一颗行星，锁定它的平均轨道尺度。</div>
+        </div>
+        <div class="readout is-current">
+          <span class="name">单程计时</span>
+          <strong class="value" id="timer-value">00:00</strong>
+          <span class="name">传播状态</span>
+          <span class="value" id="status-value">待命</span>
+        </div>
+        <div class="readout">
+          <span class="name">轨道节点</span>
+          <strong class="value" id="reached-value">已抵达 0 / 8</strong>
+        </div>
+        <div class="controls">
+          <div class="ctl">
+            <label for="planet-select">接收信号的行星</label>
+            <select id="planet-select">
+              <option value="">请选择目标</option>
+            </select>
+          </div>
+          <div class="command-row" id="command-row">
+            <button type="button" id="send-btn">发送信号</button>
+            <button type="button" id="reset-btn" title="清空全部时间戳" aria-label="重置全部信号">↺</button>
+          </div>
+        </div>
+        <div class="feedback" id="feedback" role="status" aria-live="polite">目标越远，信息抵达所需的时间越长。</div>
+      </aside>
+    </div>
+
+    <p class="note">距离取轨道半长轴作课堂近似；这里比较的是太阳到轨道平均尺度的单程信息延迟。</p>
+  </section>
+</main>
+</div>
+<script src="assets/lib/gsap.min.js"></script>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script>
+(function () {
+  'use strict';
+
+  Lec.mount({
+    index: 10,
+    kicker: 'SIGNAL DELAY',
+    title: '此刻收到的，是几分钟前的太阳',
+    take: '光从太阳到各行星也需要可感知的传播时间；我们看到的太阳系从来不是严格同步的“现在”。'
+  });
+
+  var planets = Lec.K.PLANETS;
+  var select = document.getElementById('planet-select');
+  var sendBtn = document.getElementById('send-btn');
+  var resetBtn = document.getElementById('reset-btn');
+  var commandRow = document.getElementById('command-row');
+  var targetName = document.getElementById('target-name');
+  var targetDistance = document.getElementById('target-distance');
+  var timerValue = document.getElementById('timer-value');
+  var statusValue = document.getElementById('status-value');
+  var reachedValue = document.getElementById('reached-value');
+  var feedback = document.getElementById('feedback');
+  var spaceTrack = document.getElementById('space-track');
+  var timelineBand = document.getElementById('timeline-band');
+  var pulse = document.getElementById('pulse');
+  var travelFill = document.getElementById('travel-fill');
+  var sun = document.getElementById('sun');
+  var steps = [
+    document.getElementById('step-launch'),
+    document.getElementById('step-travel'),
+    document.getElementById('step-arrive')
+  ];
+  var nodes = [];
+  var cells = [];
+  var reached = {};
+  var activeTimeline = null;
+  var busy = false;
+  var trackStart = 86;
+  var trackEndInset = 10;
+  var maxAU = planets[planets.length - 1].semimajorAU;
+
+  function significant(value, digits) {
+    return Lec.P.significant(value, digits);
+  }
+
+  function positionRatio(planet) {
+    var orderPart = (planet.order - 1) / (planets.length - 1);
+    var distancePart = Math.sqrt(planet.semimajorAU / maxAU);
+    return 0.06 + 0.72 * orderPart + 0.14 * distancePart;
+  }
+
+  function formatDelay(planet) {
+    var minutes = Lec.P.lightTimeMinutesFromAU(planet.semimajorAU);
+    if (minutes < 60) {
+      return significant(minutes, 3) + ' 分钟';
+    }
+    return significant(Lec.P.lightTimeHoursFromAU(planet.semimajorAU), 3) + ' 小时';
+  }
+
+  function formatClock(seconds) {
+    var rounded = Math.max(0, Math.round(seconds));
+    var hours = Math.floor(rounded / 3600);
+    var minutes = Math.floor((rounded % 3600) / 60);
+    var secs = rounded % 60;
+    if (hours > 0) {
+      return String(hours).padStart(2, '0') + ':' + String(minutes).padStart(2, '0') + ':' + String(secs).padStart(2, '0');
+    }
+    return String(minutes).padStart(2, '0') + ':' + String(secs).padStart(2, '0');
+  }
+
+  function getPlanet() {
+    var id = select.value;
+    var found = null;
+    planets.forEach(function (planet) {
+      if (planet.id === id) found = planet;
+    });
+    return found;
+  }
+
+  function setStep(index) {
+    steps.forEach(function (step, i) {
+      step.classList.toggle('is-current', i === index);
+      step.classList.toggle('is-done', i < index);
+      if (i === index) step.setAttribute('aria-current', 'step');
+      else step.removeAttribute('aria-current');
+    });
+  }
+
+  function setFeedback(text, kind) {
+    feedback.textContent = text;
+    feedback.classList.toggle('is-error', kind === 'error');
+    feedback.classList.toggle('is-complete', kind === 'complete');
+  }
+
+  function shakeCommands() {
+    commandRow.classList.remove('shake');
+    void commandRow.offsetWidth;
+    commandRow.classList.add('shake');
+  }
+
+  function targetX(planet) {
+    return trackStart + positionRatio(planet) * (spaceTrack.clientWidth - trackStart - trackEndInset);
+  }
+
+  function renderPositions() {
+    var usableSpace = spaceTrack.clientWidth - trackStart - trackEndInset;
+    var usableBand = timelineBand.clientWidth - trackStart - trackEndInset;
+    planets.forEach(function (planet, i) {
+      var ratio = positionRatio(planet);
+      nodes[i].style.left = (trackStart + ratio * usableSpace) + 'px';
+      cells[i].style.left = (trackStart + ratio * usableBand) + 'px';
+    });
+  }
+
+  function updateSelection() {
+    var planet = getPlanet();
+    nodes.forEach(function (node) { node.classList.remove('is-target'); });
+    cells.forEach(function (cell) { cell.classList.remove('is-target'); });
+    if (!planet) {
+      targetName.textContent = '尚未选择';
+      targetDistance.textContent = '选择一颗行星，锁定它的平均轨道尺度。';
+      return;
+    }
+    var index = planets.indexOf(planet);
+    nodes[index].classList.add('is-target');
+    cells[index].classList.add('is-target');
+    targetName.textContent = planet.name;
+    targetDistance.textContent = significant(planet.semimajorAU, 3) + ' AU · 单程约 ' + formatDelay(planet);
+  }
+
+  function updateReachedCount() {
+    var count = Object.keys(reached).length;
+    reachedValue.textContent = '已抵达 ' + count + ' / ' + planets.length;
+    if (count === planets.length) {
+      setFeedback('越远，收到的消息越旧。', 'complete');
+    }
+  }
+
+  function markReached(index) {
+    var planet = planets[index];
+    reached[planet.id] = true;
+    nodes[index].classList.add('is-reached');
+    cells[index].classList.add('is-reached');
+    cells[index].querySelector('.cell-time').textContent = formatDelay(planet);
+    updateReachedCount();
+  }
+
+  function finishSignal(planet) {
+    var totalSeconds = Lec.P.lightTimeSeconds(Lec.P.auToM(planet.semimajorAU));
+    busy = false;
+    statusValue.textContent = '已抵达';
+    timerValue.textContent = formatClock(totalSeconds);
+    sendBtn.disabled = false;
+    select.disabled = false;
+    setStep(2);
+    nodes[planets.indexOf(planet)].classList.add('is-target');
+    setFeedback(planet.name + '收到信号：单程约 ' + formatDelay(planet) + '。');
+    updateReachedCount();
+  }
+
+  function sendSignal() {
+    var planet = getPlanet();
+    var targetIndex;
+    var totalSeconds;
+    var duration;
+    var x;
+    var proxy = { progress: 0 };
+
+    if (!planet) {
+      shakeCommands();
+      setFeedback('先选择一个接收信号的行星。', 'error');
+      return;
+    }
+    if (busy) {
+      shakeCommands();
+      setFeedback('信号仍在传播，请等待抵达或重置。', 'error');
+      return;
+    }
+
+    targetIndex = planets.indexOf(planet);
+    totalSeconds = Lec.P.lightTimeSeconds(Lec.P.auToM(planet.semimajorAU));
+    duration = 2.8 + positionRatio(planet) * 3.2;
+    x = targetX(planet) - 76;
+    busy = true;
+    sendBtn.disabled = true;
+    select.disabled = true;
+    statusValue.textContent = '发射';
+    timerValue.textContent = '00:00';
+    setFeedback('信号正在向 ' + planet.name + ' 传播。');
+    setStep(0);
+    cells[targetIndex].querySelector('.cell-progress').style.width = '0%';
+
+    if (activeTimeline) activeTimeline.kill();
+    gsap.set(pulse, { x: 0, opacity: 0 });
+    gsap.set(travelFill, { width: 0 });
+    gsap.set(sun, { scale: 1 });
+
+    if (Deck.reduced()) {
+      planets.forEach(function (item, i) {
+        if (item.semimajorAU <= planet.semimajorAU) markReached(i);
+      });
+      gsap.set(pulse, { x: x, opacity: 1 });
+      gsap.set(travelFill, { width: x + 10 });
+      cells[targetIndex].querySelector('.cell-progress').style.width = '100%';
+      finishSignal(planet);
+      return;
+    }
+
+    activeTimeline = gsap.timeline({
+      defaults: { ease: 'none' },
+      onComplete: function () { finishSignal(planet); }
+    });
+    activeTimeline.addLabel('launch', 0)
+      .to(sun, { scale: 1.12, duration: 0.22, yoyo: true, repeat: 1, ease: 'power2.out' }, 'launch')
+      .to(pulse, { opacity: 1, duration: 0.18 }, 'launch')
+      .addLabel('travel', 0.34)
+      .call(function () { statusValue.textContent = '传播中'; setStep(1); }, null, 'travel')
+      .to(pulse, { x: x, duration: duration }, 'travel')
+      .to(travelFill, { width: x + 10, duration: duration }, 'travel')
+      .to(cells[targetIndex].querySelector('.cell-progress'), { width: '100%', duration: duration }, 'travel')
+      .to(proxy, {
+        progress: 1,
+        duration: duration,
+        onUpdate: function () {
+          timerValue.textContent = formatClock(totalSeconds * proxy.progress);
+        }
+      }, 'travel');
+
+    planets.forEach(function (item, i) {
+      if (item.semimajorAU <= planet.semimajorAU) {
+        activeTimeline.call(function () { markReached(i); }, null, 'travel+=' + (duration * item.semimajorAU / planet.semimajorAU));
+      }
+    });
+  }
+
+  function resetAll() {
+    if (activeTimeline) {
+      activeTimeline.kill();
+      activeTimeline = null;
+    }
+    busy = false;
+    reached = {};
+    sendBtn.disabled = false;
+    select.disabled = false;
+    timerValue.textContent = '00:00';
+    statusValue.textContent = '待命';
+    reachedValue.textContent = '已抵达 0 / ' + planets.length;
+    setStep(-1);
+    gsap.set(pulse, { x: 0, opacity: 0 });
+    gsap.set(travelFill, { width: 0 });
+    gsap.set(sun, { scale: 1 });
+    nodes.forEach(function (node) { node.classList.remove('is-reached'); });
+    cells.forEach(function (cell) {
+      cell.classList.remove('is-reached');
+      cell.querySelector('.cell-time').textContent = '等待';
+      cell.querySelector('.cell-progress').style.width = '0%';
+    });
+    updateSelection();
+    setFeedback('目标越远，信息抵达所需的时间越长。');
+  }
+
+  planets.forEach(function (planet) {
+    var option = document.createElement('option');
+    var node = document.createElement('div');
+    var cell = document.createElement('div');
+    option.value = planet.id;
+    option.textContent = planet.name;
+    select.appendChild(option);
+
+    node.className = 'orbit-node';
+    node.innerHTML = '<span class="orbit-name">' + planet.name + '</span><span class="orbit-au">' + significant(planet.semimajorAU, 3) + ' AU</span>';
+    spaceTrack.appendChild(node);
+    nodes.push(node);
+
+    cell.className = 'time-cell';
+    cell.innerHTML = '<div class="cell-name">' + planet.name + '</div><div class="cell-time">等待</div><div class="cell-progress"></div>';
+    timelineBand.appendChild(cell);
+    cells.push(cell);
+  });
+
+  select.addEventListener('change', updateSelection);
+  sendBtn.addEventListener('click', sendSignal);
+  resetBtn.addEventListener('click', resetAll);
+  Deck.onResize(renderPositions);
+  renderPositions();
+  setStep(-1);
+  gsap.timeline({ defaults: { duration: 0.32, ease: 'power2.out' } })
+    .from(sun, { opacity: 0, scale: 0.7 })
+    .from(nodes, { opacity: 0, scaleY: 0, transformOrigin: 'center center', stagger: 0.05 }, '<0.08')
+    .from(cells, { opacity: 0, y: 10, stagger: 0.04 }, '-=0.1')
+    .from('.controls', { opacity: 0, y: 8 }, '-=0.08');
+})();
+</script>
+</body>
+</html>

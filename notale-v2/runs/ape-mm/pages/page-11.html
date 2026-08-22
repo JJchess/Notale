@@ -1,0 +1,318 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  :root{
+    --motion-micro: 240ms;
+    --motion-link: 320ms;
+    --motion-enter: 560ms;
+    --motion-ease: cubic-bezier(.22,.8,.3,1);
+  }
+  #stage{padding:30px 52px 34px;gap:16px;}
+  .topline{height:82px;display:flex;align-items:flex-start;justify-content:space-between;gap:32px;}
+  .kicker{color:var(--primary);font-family:var(--font-mono);font-size:var(--fs-label);font-weight:700;letter-spacing:.14em;}
+  .titleblock{display:flex;flex-direction:column;gap:4px;}
+  .take{margin:0;color:var(--muted);font-size:var(--fs-sec);line-height:1.5;}
+  .progressbox{min-width:190px;padding:10px 16px;border:1px solid var(--primary-line);border-radius:var(--radius-1);background:var(--panel-deep);text-align:right;}
+  .progressbox .value{color:var(--primary);font-family:var(--font-mono);font-size:var(--fs-lead);font-weight:750;}
+  .diagnostic-stage{position:relative;flex:1;min-height:0;display:flex;flex-direction:column;gap:14px;padding:16px 20px 18px;border:1px solid var(--line);border-radius:var(--radius-3);overflow:hidden;background:linear-gradient(180deg,var(--primary-soft),transparent 20%),var(--panel-deep);}
+  .diagnostic-stage::before{position:absolute;inset:0;content:"";pointer-events:none;background:repeating-linear-gradient(0deg,transparent 0,transparent 46px,var(--primary-soft) 47px,transparent 48px);opacity:.52;}
+  .claim-zone{position:relative;z-index:2;height:198px;display:flex;align-items:stretch;gap:18px;}
+  .done-stack{width:248px;display:flex;flex-direction:column;gap:7px;}
+  .done-chip{display:none;min-height:39px;padding:7px 11px;border:1px solid var(--primary-line);border-radius:var(--radius-1);background:var(--panel);color:var(--muted);font-size:var(--fs-label);line-height:1.4;}
+  .done-chip.visible{display:flex;align-items:center;gap:9px;animation:chipIn 260ms var(--motion-ease) both;}
+  .stamp{flex:0 0 auto;color:var(--primary);font-family:var(--font-mono);font-size:var(--fs-label);font-weight:800;}
+  .claim-card{position:relative;flex:1;min-width:0;padding:17px 24px 15px;border:1px solid var(--accent-line);border-radius:var(--radius-2);background:linear-gradient(135deg,var(--accent-soft),transparent 58%),var(--panel-raised);box-shadow:inset 4px 0 0 var(--accent),var(--shadow-panel);display:flex;flex-direction:column;justify-content:space-between;animation:cardEnter var(--motion-enter) var(--motion-ease) both;}
+  .claim-card.shake{animation:shake var(--motion-micro) ease-out;}
+  .claim-no{color:var(--accent);font-family:var(--font-mono);font-size:var(--fs-label);font-weight:750;}
+  .claim-text{margin:2px 0 8px;font-family:var(--font-title);font-size:27px;font-weight:750;line-height:1.35;}
+  .diagnosis-controls{display:flex;align-items:center;gap:10px;}
+  .diagnosis-controls .prompt{margin-right:auto;color:var(--muted);font-size:var(--fs-sec);}
+  .diagnosis-controls button,.reset-btn{min-height:44px;padding:8px 16px;border:1px solid var(--line-strong);border-radius:var(--radius-1);color:var(--text);background:var(--panel-deep);font-size:var(--fs-sec);font-weight:700;cursor:pointer;}
+  .diagnosis-controls button:hover,.reset-btn:hover{border-color:var(--primary);}
+  .diagnosis-controls button:active{transform:translateY(1px);}
+  .feedback{position:relative;z-index:2;height:30px;margin:0;padding-left:266px;color:var(--muted);font-size:var(--fs-sec);line-height:1.5;}
+  .feedback.good{color:var(--primary);}.feedback.warn{color:var(--accent);}
+  .comparison-wrap{position:relative;z-index:2;flex:1;min-height:0;}
+  .k-comparison{--compare-n:1;height:100%;grid-template-columns:180px minmax(0,1fr);grid-template-rows:46px repeat(4,minmax(70px,1fr));background:rgba(13,27,38,.93);}
+  .k-comparison>.hdr,.k-comparison>.dim,.k-comparison>.cell{padding:10px 18px;}
+  .k-comparison>.hdr{font-size:var(--fs-sec);justify-content:flex-start;}
+  .k-comparison>.dim{justify-content:flex-start;text-align:left;gap:10px;}
+  .row-symbol{width:26px;color:var(--primary);font-family:var(--font-mono);font-size:var(--fs-lead);text-align:center;}
+  .evidence-cell{position:relative;overflow:visible;gap:16px;opacity:.42;animation:trackRise 360ms var(--motion-ease) both;transition:opacity var(--motion-micro) ease-out,background var(--motion-micro) ease-out;}
+  .evidence-cell[data-row="brain"]{animation-delay:80ms}.evidence-cell[data-row="tool"]{animation-delay:160ms}.evidence-cell[data-row="species"]{animation-delay:240ms}
+  .evidence-cell.revealed{opacity:1;background:linear-gradient(90deg,var(--primary-soft),transparent 42%);}
+  .timeline{position:relative;flex:1;min-width:0;width:auto;height:54px;}
+  .timeline::before{position:absolute;right:0;bottom:-2px;left:0;height:2px;content:"";background:var(--primary-line);transform-origin:left;animation:scanLine 620ms var(--motion-ease) both;}
+  .timeline::after{position:absolute;right:-1px;bottom:-5px;width:9px;height:9px;border-top:2px solid var(--primary);border-right:2px solid var(--primary);content:"";transform:rotate(45deg);}
+  .axis-caption{position:absolute;top:-1px;color:var(--faint);font-size:var(--fs-label);}
+  .axis-caption.old{left:0}.axis-caption.new{right:0}
+  .scale-tick{position:absolute;top:26px;bottom:-3px;width:1px;background:var(--line);pointer-events:none;}
+  .scale-tick::after{position:absolute;right:-3px;bottom:0;width:7px;height:7px;border-radius:50%;content:"";background:var(--line-strong);}
+  .scale-tick-label{position:absolute;top:56px;transform:translateX(-50%);color:var(--faint);font-family:var(--font-mono);font-size:14px;line-height:1.4;white-space:nowrap;}
+  .scale-tick-label.first{transform:none}.scale-tick-label.last{transform:translateX(-100%)}
+  .node{position:absolute;bottom:-8px;width:16px;height:16px;border:3px solid var(--primary);border-radius:50%;background:var(--panel-deep);transform:translateX(-50%) scale(.6);opacity:.28;transition:transform var(--motion-link) var(--motion-ease),opacity var(--motion-link) ease-out,box-shadow var(--motion-link) ease-out;}
+  .revealed .node.active{opacity:1;transform:translateX(-50%) scale(1);box-shadow:0 0 14px var(--primary);}
+  .node.accent-node{border-color:var(--accent);}
+  .node-label{position:absolute;bottom:18px;transform:translateX(-50%);white-space:nowrap;color:var(--muted);font-size:var(--fs-label);font-weight:650;opacity:.36;transition:opacity var(--motion-link) ease-out,color var(--motion-link) ease-out;}
+  .node-label.edge-left{transform:none}.node-label.edge-right{transform:translateX(-100%)}
+  .revealed .node-label.active{opacity:1;color:var(--text);}
+  .date{display:block;color:var(--primary);font-size:14px;font-weight:650;line-height:1.3;}
+  .range{position:absolute;bottom:-3px;height:7px;border-radius:999px;background:var(--primary-line);opacity:.28;transition:opacity var(--motion-link) ease-out,box-shadow var(--motion-link) ease-out;}
+  .revealed .range.active{opacity:1;box-shadow:0 0 10px var(--primary-line);}
+  .conflict-bracket{position:absolute;bottom:2px;height:14px;border-top:2px solid var(--accent);border-left:2px solid var(--accent);border-right:2px solid var(--accent);opacity:0;transform:scaleX(.2);transition:opacity var(--motion-link) ease-out,transform var(--motion-link) var(--motion-ease);transform-origin:center;}
+  .conflict-bracket::before{position:absolute;top:-27px;left:50%;content:"先后冲突";color:var(--accent);font-size:var(--fs-label);font-weight:700;white-space:nowrap;transform:translateX(-50%);}
+  .conflict-bracket.active{opacity:1;transform:scaleX(1);}
+  .finish-banner{position:absolute;z-index:5;inset:12px 18px auto 18px;min-height:174px;padding:18px 28px;border:1px solid var(--primary);border-radius:var(--radius-2);background:linear-gradient(120deg,var(--primary-soft),var(--panel-raised));box-shadow:var(--shadow-panel);display:none;align-items:center;justify-content:space-between;gap:28px;}
+  .finish-banner.visible{display:flex;animation:finishIn 440ms var(--motion-ease) both;}
+  .finish-title{font-family:var(--font-title);font-size:31px;font-weight:800;color:var(--primary);line-height:1.25;}
+  .finish-copy{margin:5px 0 0;color:var(--text);font-size:var(--fs-lead);line-height:1.5;}
+  .reset-btn{flex:0 0 auto;border-color:var(--accent);color:var(--accent);}
+  .path-line{position:absolute;z-index:1;right:48px;bottom:11px;left:48px;opacity:.66;}
+  .evidence-links{position:absolute;z-index:1;inset:0;width:100%;height:100%;pointer-events:none;overflow:visible;}
+  .evidence-links path{fill:none;stroke:var(--primary);stroke-width:2;vector-effect:non-scaling-stroke;stroke-dasharray:520;stroke-dashoffset:520;opacity:0;transition:stroke-dashoffset var(--motion-link) var(--motion-ease),opacity 120ms ease-out;}
+  .evidence-links path.active{stroke-dashoffset:0;opacity:.8;}
+  button:focus-visible{outline:3px solid var(--focus);outline-offset:3px;}
+  @keyframes scanLine{from{transform:scaleX(0);opacity:0}to{transform:scaleX(1);opacity:1}}
+  @keyframes trackRise{from{opacity:0;transform:translateY(10px)}to{opacity:.42;transform:none}}
+  @keyframes cardEnter{from{opacity:0;transform:translateY(22px)}to{opacity:1;transform:none}}
+  @keyframes chipIn{from{opacity:0;transform:translateX(14px)}to{opacity:1;transform:none}}
+  @keyframes finishIn{from{opacity:0;transform:scale(.98)}to{opacity:1;transform:none}}
+  @keyframes shake{0%,100%{transform:translateX(0)}33%{transform:translateX(-8px)}66%{transform:translateX(8px)}}
+  @media (prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.001ms!important;transition-duration:.001ms!important;scroll-behavior:auto!important;}}
+</style>
+</head>
+<body data-page="11" data-total="50">
+<div id="stage">
+  <header class="topline shrink0">
+    <div class="titleblock">
+      <div class="kicker">MOSAIC EVOLUTION · 诊断升级论断</div>
+      <h1>四只时钟，没有一起走</h1>
+      <p class="take">把论断放回同一条时间轴：先后对得上吗？</p>
+    </div>
+    <div class="progressbox" aria-label="诊断进度">
+      <div class="label">诊断进度</div>
+      <div id="progress" class="value">已诊断 0 / 4</div>
+    </div>
+  </header>
+
+  <main class="diagnostic-stage min0" aria-label="升级论断诊断台">
+    <svg class="evidence-links" viewBox="0 0 1454 738" preserveAspectRatio="none" aria-hidden="true">
+      <path data-link="biped" d="M270 205 C270 270 220 280 220 344"></path>
+      <path data-link="brain" d="M270 205 C270 300 220 350 220 445"></path>
+      <path data-link="tool" d="M270 205 C270 340 220 420 220 546"></path>
+      <path data-link="species" d="M270 205 C270 380 220 490 220 647"></path>
+    </svg>
+    <section class="claim-zone shrink0">
+      <aside class="done-stack" aria-label="已完成论断">
+        <div class="label">判定记录</div>
+        <div class="done-chip" data-chip="0"><span class="stamp">01 ✓</span><span>人属与双足</span></div>
+        <div class="done-chip" data-chip="1"><span class="stamp">02 ✓</span><span>脑与直立</span></div>
+        <div class="done-chip" data-chip="2"><span class="stamp">03 ✓</span><span>工具与智人</span></div>
+        <div class="done-chip" data-chip="3"><span class="stamp">04 ✓</span><span>错开的特征</span></div>
+      </aside>
+
+      <article id="claimCard" class="claim-card" aria-labelledby="claimText">
+        <div>
+          <div id="claimNo" class="claim-no">升级论断 01</div>
+          <div id="claimText" class="claim-text">“先出现人属，后来才开始双足行走。”</div>
+        </div>
+        <div class="diagnosis-controls" role="group" aria-label="选择诊断">
+          <span class="prompt">依据下方年代，选择诊断</span>
+          <button type="button" data-answer="support">符合证据</button>
+          <button type="button" data-answer="deny">被时间证据否定</button>
+          <button type="button" data-answer="insufficient">证据不足</button>
+        </div>
+      </article>
+
+      <section id="finishBanner" class="finish-banner" aria-hidden="true">
+        <div>
+          <div class="finish-title">不同步 ≠ 更低级</div>
+          <p class="finish-copy">演化不是直立、脑大、工具、智人依次点亮的升级进度条。<br>不同特征在不同时间组合出现，这叫镶嵌式变化。</p>
+        </div>
+        <button id="resetBtn" class="reset-btn" type="button">重新诊断</button>
+      </section>
+    </section>
+
+    <p id="feedback" class="feedback" aria-live="polite">先判断第一张论断，再看对应节点亮起。</p>
+
+    <section class="comparison-wrap min0">
+      <div class="k-comparison" aria-label="四类证据的共同对数时间轴">
+        <div class="hdr">比较维度</div>
+        <div class="hdr">同一条对数时间轴 · 较早证据在左</div>
+
+        <div class="dim"><span class="row-symbol">↟</span><span>双足行走证据</span></div>
+        <div class="cell evidence-cell" data-row="biped">检查：足迹与人属，谁更早？
+          <div class="timeline">
+            <span class="node accent-node" data-node="biped"></span><span class="node-label edge-left" data-label="biped">拉埃托利足迹<span class="date" data-date="biped"></span></span>
+          </div>
+        </div>
+
+        <div class="dim"><span class="row-symbol">◉</span><span>脑—体比较节点</span></div>
+        <div class="cell evidence-cell" data-row="brain">检查：直立与脑—体节点，谁更早？
+          <div class="timeline">
+            <span class="node" data-node="brain"></span><span class="node-label" data-label="brain">人属物种数据<span class="date" data-date="brain"></span></span>
+          </div>
+        </div>
+
+        <div class="dim"><span class="row-symbol">⌁</span><span>工具较早记录</span></div>
+        <div class="cell evidence-cell" data-row="tool">检查：工具与智人，是否同时？
+          <div class="timeline">
+            <span class="node" data-node="tool"></span><span class="node-label" data-label="tool">石器记录<span class="date" data-date="tool"></span></span>
+          </div>
+        </div>
+
+        <div class="dim"><span class="row-symbol">◇</span><span>物种记录与区间</span></div>
+        <div class="cell evidence-cell" data-row="species">检查：物种区间是否整齐接班？
+          <div class="timeline">
+            <span class="range" data-range="afarensis" title="南方古猿阿法种存续区间"></span>
+            <span class="node" data-node="homo"></span><span class="node-label" data-label="homo">早期人属<span class="date" data-date="homo"></span></span>
+            <span class="node accent-node" data-node="sapiens"></span><span class="node-label edge-right" data-label="sapiens">智人<span class="date" data-date="sapiens"></span></span>
+            <span class="conflict-bracket" data-bracket="species"></span>
+          </div>
+        </div>
+      </div>
+    </section>
+    <div class="path-line" aria-hidden="true"></div>
+  </main>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script>
+(function(){
+  'use strict';
+  Deck.init({index:11,total:50});
+
+  const P=Lec.P, K=Lec.K;
+  const laetoli=K.evolution.milestones.find(m=>m.id==='bipedalism').yearsAgo-340000;
+  const genusHomo=P.evolutionMilestoneById('genus-homo');
+  const tool=P.technologyMilestoneById('stone-tools')||P.evolutionMilestoneById('stone-tools');
+  const afarensis=P.speciesById('australopithecus-afarensis');
+  const brainSpecies=P.speciesById('homo-erectus');
+  const sapiens=P.speciesById('homo-sapiens');
+  const axisMin=sapiens.startYearsAgo;
+  const axisMax=K.evolution.milestones.find(m=>m.id==='bipedalism').yearsAgo;
+
+  const claims=[
+    {text:'“先出现人属，后来才开始双足行走。”',answer:'deny',rows:['biped','species'],nodes:['biped','homo'],bracket:'species'},
+    {text:'“脑显著增大后，身体才直立。”',answer:'deny',rows:['biped','brain'],nodes:['biped','brain']},
+    {text:'“工具一出现，就标志着智人出现。”',answer:'deny',rows:['tool','species'],nodes:['tool','sapiens'],bracket:'species'},
+    {text:'“不同特征可以在不同支系、不同时间出现。”',answer:'support',rows:['biped','brain','tool','species'],nodes:['biped','brain','tool','homo','sapiens'],range:true}
+  ];
+  const state={index:0,completed:[],lastAction:null,finished:false};
+  const claimCard=document.getElementById('claimCard');
+  const claimText=document.getElementById('claimText');
+  const claimNo=document.getElementById('claimNo');
+  const feedback=document.getElementById('feedback');
+  const progress=document.getElementById('progress');
+  const finishBanner=document.getElementById('finishBanner');
+
+  function pos(years){return P.timelineLogPosition(years,axisMin,axisMax)*100;}
+  function setAt(selector,years){
+    const el=document.querySelector(selector); el.style.left=pos(years)+'%';
+  }
+  function addScaleTicks(){
+    const fractions=[0,.25,.5,.75,1];
+    document.querySelectorAll('.timeline').forEach(timeline=>{
+      fractions.forEach((f,i)=>{
+        const years=Math.exp(Math.log(axisMax)*(1-f)+Math.log(axisMin)*f);
+        const guide=document.createElement('span');
+        guide.className='scale-tick'; guide.style.left=(f*100)+'%'; guide.setAttribute('aria-hidden','true');
+        const label=document.createElement('span');
+        label.className='scale-tick-label'+(i===0?' first':i===fractions.length-1?' last':'');
+        label.style.left=(f*100)+'%'; label.textContent=P.formatYearsAgo(years);
+        timeline.prepend(guide,label);
+      });
+    });
+  }
+  function setEvidence(){
+    addScaleTicks();
+    setAt('[data-node="biped"]',laetoli); setAt('[data-label="biped"]',laetoli);
+    setAt('[data-node="brain"]',brainSpecies.startYearsAgo); setAt('[data-label="brain"]',brainSpecies.startYearsAgo);
+    setAt('[data-node="tool"]',tool.yearsAgo); setAt('[data-label="tool"]',tool.yearsAgo);
+    setAt('[data-node="homo"]',genusHomo.yearsAgo); setAt('[data-label="homo"]',genusHomo.yearsAgo);
+    setAt('[data-node="sapiens"]',sapiens.startYearsAgo); setAt('[data-label="sapiens"]',sapiens.startYearsAgo);
+    document.querySelector('[data-date="biped"]').textContent=P.formatYearsAgo(laetoli);
+    document.querySelector('[data-date="brain"]').textContent=P.formatYearsAgo(brainSpecies.startYearsAgo);
+    document.querySelector('[data-date="tool"]').textContent=P.formatYearsAgo(tool.yearsAgo);
+    document.querySelector('[data-date="homo"]').textContent=P.formatYearsAgo(genusHomo.yearsAgo);
+    document.querySelector('[data-date="sapiens"]').textContent=P.formatYearsAgo(sapiens.startYearsAgo);
+    const range=document.querySelector('[data-range="afarensis"]');
+    range.style.left=pos(afarensis.startYearsAgo)+'%';
+    range.style.width=(pos(afarensis.endYearsAgo)-pos(afarensis.startYearsAgo))+'%';
+  }
+
+  function clearHighlights(){
+    document.querySelectorAll('.evidence-cell,.node,.node-label,.range,.conflict-bracket,.evidence-links path').forEach(el=>el.classList.remove('revealed','active'));
+  }
+  function reveal(c){
+    c.rows.forEach(id=>{
+      document.querySelector('[data-row="'+id+'"]').classList.add('revealed');
+      document.querySelector('[data-link="'+id+'"]').classList.add('active');
+    });
+    c.nodes.forEach(id=>{
+      document.querySelector('[data-node="'+id+'"]').classList.add('active');
+      document.querySelector('[data-label="'+id+'"]').classList.add('active');
+    });
+    if(c.range) document.querySelector('[data-range="afarensis"]').classList.add('active');
+    if(c.bracket){
+      const b=document.querySelector('[data-bracket="'+c.bracket+'"]');
+      const a=c.nodes.includes('sapiens')?pos(tool.yearsAgo):pos(laetoli);
+      const z=c.nodes.includes('sapiens')?pos(sapiens.startYearsAgo):pos(genusHomo.yearsAgo);
+      b.style.left=Math.min(a,z)+'%'; b.style.width=Math.abs(z-a)+'%'; b.classList.add('active');
+    }
+  }
+  function renderCard(){
+    const c=claims[state.index];
+    claimNo.textContent='升级论断 '+String(state.index+1).padStart(2,'0');
+    claimText.textContent=c.text;
+    claimCard.style.animation='none'; void claimCard.offsetWidth; claimCard.style.animation='cardEnter var(--motion-enter) var(--motion-ease) both';
+    feedback.className='feedback'; feedback.textContent='看同一条时间轴：哪项证据更早？';
+    clearHighlights();
+  }
+  function updateProgress(){
+    progress.textContent='已诊断 '+state.completed.length+' / '+claims.length;
+    state.completed.forEach(i=>document.querySelector('[data-chip="'+i+'"]').classList.add('visible'));
+  }
+  function choose(answer){
+    if(state.finished)return;
+    state.lastAction=answer;
+    const c=claims[state.index];
+    if(answer!==c.answer){
+      claimCard.classList.remove('shake'); void claimCard.offsetWidth;
+      if(!Deck.reduced()) claimCard.classList.add('shake');
+      feedback.className='feedback warn';
+      feedback.textContent=answer==='insufficient'?'这里已有可比较的年代证据。':'再看先后：哪项证据出现得更早？';
+      return;
+    }
+    reveal(c);
+    feedback.className='feedback good';
+    feedback.textContent=c.answer==='support'?'符合：四行节点没有同步，也不是整齐接班。':'判定正确：实际先后与升级论断冲突。';
+    state.completed.push(state.index); updateProgress();
+    document.querySelector('[data-chip="'+state.index+'"]').classList.add('visible');
+    if(state.completed.length===claims.length){
+      state.finished=true;
+      document.querySelectorAll('.evidence-cell').forEach(el=>el.classList.add('revealed'));
+      document.querySelectorAll('.node,.node-label,.range,.evidence-links path').forEach(el=>el.classList.add('active'));
+      finishBanner.classList.add('visible'); finishBanner.setAttribute('aria-hidden','false');
+      return;
+    }
+    setTimeout(()=>{state.index+=1;renderCard();},Deck.reduced()?0:420);
+  }
+  function reset(){
+    state.index=0;state.completed=[];state.lastAction=null;state.finished=false;
+    document.querySelectorAll('.done-chip').forEach(el=>el.classList.remove('visible'));
+    finishBanner.classList.remove('visible');finishBanner.setAttribute('aria-hidden','true');
+    updateProgress();renderCard();
+  }
+  document.querySelectorAll('[data-answer]').forEach(btn=>btn.addEventListener('click',()=>choose(btn.dataset.answer)));
+  document.getElementById('resetBtn').addEventListener('click',reset);
+  setEvidence();updateProgress();
+  window.page11={choose,reset,getState:()=>JSON.parse(JSON.stringify(state))};
+})();
+</script>
+</body>
+</html>

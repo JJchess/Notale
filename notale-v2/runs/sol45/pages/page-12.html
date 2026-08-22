@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  #stage{padding:var(--sp-5) var(--sp-6) var(--sp-4);}
+  .eyebrow{font:700 var(--fs-label)/1.4 var(--font-mono);letter-spacing:.14em;color:var(--track-blue)}
+  .mission{padding:var(--sp-3) var(--sp-4);background:var(--panel-deep);border:1px solid var(--track-blue-line);border-radius:var(--radius-md)}
+  .zone-box{height:100%;padding:var(--sp-3)!important;display:flex;flex-direction:column;background:rgba(7,17,31,.7)!important;overflow:hidden}
+  .zone-box>.bt{margin:0 var(--sp-2) var(--sp-2)!important;font-size:var(--fs-label)!important}
+  .viz-wrap{position:relative;flex:1;min-height:0;overflow:hidden;border-radius:var(--radius-sm)}
+  #viz{display:block;width:100%;height:100%;touch-action:none;outline:none}
+  #viz:focus-visible{box-shadow:inset 0 0 0 3px var(--focus)}
+  .status{min-width:350px;text-align:right;color:var(--text-muted);font-size:var(--fs-sec)}
+  .status strong{color:var(--sun-gold);font-family:var(--font-mono)}
+  .zone-list{display:flex;gap:var(--sp-2);margin:0!important;padding:0!important;border:0!important}
+  .zone-key{flex:1;padding:var(--sp-2) var(--sp-3);color:var(--text-dim);font-size:var(--fs-label);font-weight:700;text-align:center;border-top:3px solid var(--line-strong);background:rgba(13,27,46,.7)}
+  .zone-key.done,.zone-key.current{color:var(--sun-gold);border-top-color:var(--sun-gold)}
+  .zone-key.current{box-shadow:inset 0 0 20px var(--sun-gold-soft)}
+  .feedback{min-height:27px;color:var(--text-muted);font-size:var(--fs-sec)}
+  .feedback.bad{color:var(--danger)} .feedback.good{color:var(--success)}
+  .conclusion{opacity:0;color:var(--text);font-size:var(--fs-lead);font-weight:700;transition:opacity 220ms ease}
+  .conclusion.show{opacity:1}
+  .axis text{fill:var(--text-muted);font:14px var(--font-mono)}
+  .axis path,.axis line{stroke:var(--line-strong)}
+  .zone-fill{opacity:.16;mask-image:linear-gradient(to right,transparent,black 12%,black 88%,transparent);-webkit-mask-image:linear-gradient(to right,transparent,black 12%,black 88%,transparent)}
+  .member-label{fill:var(--text);font:700 16px var(--font-sans)}
+  .zone-name{fill:var(--track-blue);font:700 18px var(--font-sans)}
+  .drawn{fill:rgba(255,200,87,.06);stroke:var(--sun-gold);stroke-width:3;stroke-dasharray:9 7}
+  .hit{fill:none;stroke:var(--sun-gold);stroke-width:4;filter:drop-shadow(0 0 9px rgba(255,200,87,.7))}
+  .hint{fill:var(--text-muted);font:16px var(--font-sans)}
+  @media (prefers-reduced-motion:reduce){.conclusion{transition:none}}
+</style>
+</head>
+<body data-page="12" data-total="32">
+<div id="stage">
+  <header class="row items-end justify-between gap-5" style="height:92px">
+    <div><div class="eyebrow">SYSTEM ZONES · 12</div><h1>从太阳向外，成员聚成四个邻域</h1></div>
+    <p class="lead muted">同样是太阳系成员，它们并不均匀撒在空间里。</p>
+  </header>
+  <section class="mission row items-center justify-between gap-4" style="height:68px" aria-label="当前任务">
+    <div class="row items-center gap-3"><span class="chip is-current">圈选</span><span>拖出椭圆，圈住「<strong id="targetName" class="accent"></strong>」</span></div>
+    <div class="status">已识别 <strong id="count">0 / 4</strong></div>
+  </section>
+  <main class="k-classification min0" style="flex:1;margin-top:var(--sp-3)">
+    <section class="box zone-box min0">
+      <div class="bt"><span>太阳系空间</span><span class="muted">→ 沿同一条对数距离主干分区</span></div>
+      <div class="viz-wrap min0 no-pan">
+        <svg id="viz" viewBox="0 0 1440 760" role="application" tabindex="0" aria-label="太阳系四区域对数距离带。拖动圈选；也可用左右方向键移动选圈、上下方向键调整宽度，回车确认。">
+          <title>太阳系四个空间区域圈选游戏</title>
+          <desc>从太阳向外依次辨认内行星区、小行星带、巨行星区与海王星外区。</desc>
+        </svg>
+      </div>
+      <div class="lv zone-list" aria-label="四个下位区域">
+        <div class="zone-key" data-key="inner">内行星区</div><div class="zone-key" data-key="belt">小行星带</div><div class="zone-key" data-key="giant">巨行星区</div><div class="zone-key" data-key="outer">海王星外区</div>
+      </div>
+    </section>
+  </main>
+  <footer class="row items-center justify-between gap-4" style="height:82px">
+    <div><p id="feedback" class="feedback" aria-live="polite">从目标区域的一侧拖到另一侧；点的大小只编码类别，不代表真实直径。</p><p class="note">范围用于建立分区直觉；区域之间存在空隙、交叠与穿越轨道。</p></div>
+    <p id="conclusion" class="conclusion">四区是认识分布的地图语言，不是不可穿越的墙。</p>
+    <button id="reset" class="btn" hidden>重新圈选</button>
+  </footer>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script src="assets/lib/d3.min.js"></script>
+<script>
+(function(){
+  Deck.init({index:12,total:32});
+  const R=Lec.K.regions, planets=Lec.K.planets, dwarfs=Lec.K.dwarfPlanets;
+  const byKey=k=>planets.find(d=>d.key===k), dwarf=k=>dwarfs.find(d=>d.key===k);
+  const regions=[
+    {key:'inner',name:'内行星区',a:R.terrestrialInnerEdgeAU,b:R.terrestrialOuterEdgeAU,members:planets.slice(0,4).map(d=>d.name).join(' · '),texture:'four'},
+    {key:'belt',name:'小行星带',a:R.asteroidBeltInnerAU,b:R.asteroidBeltOuterAU,members:'大量小天体 · '+dwarf('ceres').name,texture:'dense'},
+    {key:'giant',name:'巨行星区',a:byKey('jupiter').semimajorAxisAU,b:byKey('neptune').semimajorAxisAU,members:planets.slice(4).map(d=>d.name).join(' · '),texture:'giants'},
+    {key:'outer',name:'海王星外区',a:R.kuiperBeltInnerAU,b:R.kuiperBeltOuterAU,members:'柯伊伯带天体 · '+dwarf('pluto').name,texture:'sparse'}
+  ];
+  const svg=d3.select('#viz'), x=d3.scaleLog().domain([R.terrestrialInnerEdgeAU,R.kuiperBeltOuterAU]).range([150,1320]);
+  const bandY=315, bandH=170;
+  const defs=svg.append('defs');
+  const glow=defs.append('radialGradient').attr('id','sunGlow'); glow.append('stop').attr('stop-color','var(--sun-gold)').attr('offset','0'); glow.append('stop').attr('stop-color','var(--sun-gold)').attr('stop-opacity',0).attr('offset','1');
+  svg.append('circle').attr('cx',20).attr('cy',bandY+bandH/2).attr('r',165).attr('fill','url(#sunGlow)');
+  svg.append('path').attr('d',`M 75 ${bandY-92} A 105 105 0 0 1 75 ${bandY+bandH+92}`).attr('fill','none').attr('stroke','var(--sun-gold)').attr('stroke-width',6);
+  svg.append('text').attr('x',40).attr('y',bandY+bandH/2+6).attr('class','zone-name').text('太阳');
+  svg.append('rect').attr('x',120).attr('y',bandY).attr('width',1230).attr('height',bandH).attr('rx',42).attr('fill','var(--track-blue-soft)');
+  const zg=svg.append('g');
+  regions.forEach((z,zi)=>{
+    const xa=x(z.a), xb=x(z.b), g=zg.append('g').attr('data-key',z.key);
+    g.append('rect').attr('class','zone-fill').attr('x',xa).attr('y',bandY).attr('width',Math.max(8,xb-xa)).attr('height',bandH).attr('fill','var(--track-blue)');
+    g.append('text').attr('class','zone-name').attr('x',(xa+xb)/2).attr('y',bandY-25).attr('text-anchor','middle').text(z.name).attr('opacity',.45);
+    let dots=[];
+    if(z.texture==='four') dots=planets.slice(0,4).map((p,i)=>({v:p.semimajorAxisAU,y:bandY+55+(i%2)*58,r:10}));
+    if(z.texture==='giants') dots=planets.slice(4).map((p,i)=>({v:p.semimajorAxisAU,y:bandY+52+(i%2)*62,r:15-i*2}));
+    if(z.texture==='dense') for(let i=0;i<34;i++) dots.push({v:z.a+(z.b-z.a)*((i+.5)/34),y:bandY+25+(i*37%120),r:2.7});
+    if(z.texture==='sparse') for(let i=0;i<29;i++) dots.push({v:z.a+(z.b-z.a)*((i+.7)/29),y:bandY+23+(i*53%125),r:2.2});
+    g.selectAll('circle.member').data(dots).join('circle').attr('class','member').attr('cx',d=>x(d.v)).attr('cy',d=>d.y).attr('r',d=>d.r).attr('fill','var(--track-blue)').attr('opacity',.8);
+    g.append('text').attr('class','member-label').attr('x',(xa+xb)/2).attr('y',bandY-58).attr('text-anchor','middle').attr('opacity',0).text(z.members);
+  });
+  const tickVals=[R.terrestrialInnerEdgeAU,byKey('earth').semimajorAxisAU,Math.floor(R.asteroidBeltInnerAU),Math.floor(R.asteroidBeltOuterAU),Math.round(byKey('jupiter').semimajorAxisAU),Math.round(byKey('saturn').semimajorAxisAU),R.kuiperBeltInnerAU,R.kuiperBeltOuterAU];
+  svg.append('g').attr('class','axis').attr('transform',`translate(0,${bandY+bandH+48})`).call(d3.axisBottom(x).tickValues(tickVals).tickFormat(d=>d+' AU').tickSize(12));
+  svg.append('text').attr('class','hint').attr('x',735).attr('y',665).attr('text-anchor','middle').text('拖动圈选；键盘：← → 移动，↑ ↓ 改变跨度，Enter 确认');
+  let order=[],idx=0,done=new Set(),start=null,selection=null,keyCenter=735,keyWidth=180;
+  const feedback=document.querySelector('#feedback'), targetName=document.querySelector('#targetName');
+  function shuffle(){order=regions.map(d=>d.key); for(let i=order.length-1;i>0;i--){const j=(i*7+12)% (i+1);[order[i],order[j]]=[order[j],order[i]];}}
+  function current(){return regions.find(d=>d.key===order[idx]);}
+  function updateUI(){targetName.textContent=current()?current().name:'完成';document.querySelector('#count').textContent=done.size+' / '+regions.length;document.querySelectorAll('.zone-key').forEach(el=>{el.classList.toggle('done',done.has(el.dataset.key));el.classList.toggle('current',current()&&el.dataset.key===current().key);});}
+  function drawSel(cx,w){svg.selectAll('.drawn').remove();selection={l:cx-w/2,r:cx+w/2};svg.append('ellipse').attr('class','drawn').attr('cx',cx).attr('cy',bandY+bandH/2).attr('rx',w/2).attr('ry',bandH/2+24);}
+  function submit(){if(!selection||!current())return;const z=current(),l=x(z.a),r=x(z.b), overlap=Math.max(0,Math.min(selection.r,r)-Math.max(selection.l,l)),cover=overlap/(r-l),tooWide=(selection.r-selection.l)>(r-l)*2.15;
+    if(cover>=.7&&!tooWide){done.add(z.key);const g=zg.select(`[data-key="${z.key}"]`);svg.selectAll('.drawn').remove();g.append('ellipse').attr('class','hit').attr('cx',(l+r)/2).attr('cy',bandY+bandH/2).attr('rx',(r-l)/2+8).attr('ry',bandH/2+18);g.select('.member-label').attr('opacity',1);g.select('.zone-name').attr('opacity',1).attr('fill','var(--sun-gold)');feedback.className='feedback good';feedback.textContent='识别正确：典型成员已展开。';idx++;if(idx===regions.length){targetName.textContent='全部完成';document.querySelector('#conclusion').classList.add('show');document.querySelector('#reset').hidden=false;}updateUI();}
+    else{feedback.className='feedback bad';feedback.textContent=tooWide?'圈得太宽：区域不是整段太阳系。':'位置不对：留意这一类成员集中在哪段距离。';const e=svg.select('.drawn');if(!Deck.reduced())e.transition().duration(260).attrTween('transform',()=>t=>`translate(${[-6,6,-4,4,0][Math.min(4,Math.floor(t*5))]},0)`).on('end',()=>e.remove());else e.remove();selection=null;}
+  }
+  svg.call(d3.drag().on('start',ev=>{start=ev.x;drawSel(start,2)}).on('drag',ev=>drawSel((start+ev.x)/2,Math.abs(ev.x-start))).on('end',submit));
+  svg.on('keydown',ev=>{if(['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Enter',' '].includes(ev.key))ev.preventDefault();if(ev.key==='ArrowLeft')keyCenter-=18;if(ev.key==='ArrowRight')keyCenter+=18;if(ev.key==='ArrowUp')keyWidth+=18;if(ev.key==='ArrowDown')keyWidth=Math.max(36,keyWidth-18);keyCenter=Math.max(150,Math.min(1320,keyCenter));if(ev.key==='Enter'||ev.key===' ')submit();else drawSel(keyCenter,keyWidth);});
+  document.querySelector('#reset').addEventListener('click',()=>{done.clear();idx=0;selection=null;svg.selectAll('.hit,.drawn').remove();zg.selectAll('.member-label').attr('opacity',0);zg.selectAll('.zone-name').attr('opacity',.45).attr('fill','var(--track-blue)');feedback.className='feedback';feedback.textContent='从目标区域的一侧拖到另一侧；点的大小只编码类别，不代表真实直径。';document.querySelector('#conclusion').classList.remove('show');document.querySelector('#reset').hidden=true;shuffle();updateUI();svg.node().focus();});
+  shuffle();updateUI();
+})();
+</script>
+</body>
+</html>

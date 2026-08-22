@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>双足行走，不只是把身体站直</title>
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  #main{height:auto}
+  progress.lec-header__progress{appearance:none;-webkit-appearance:none;display:block;border:0;padding:0;min-height:0;line-height:0;font-size:0}progress.lec-header__progress::-webkit-progress-bar{height:5px;background:var(--surface-3)}progress.lec-header__progress::-webkit-progress-value{height:5px;background:var(--accent)}
+  .walk-lab{position:relative;width:100%;height:620px;overflow:hidden;border:1px solid var(--line);border-radius:var(--radius-lg);background:linear-gradient(145deg,#f7f5ef 0%,#e5edef 100%)}
+  .viewport{position:absolute;inset:0 0 132px 0;overflow:hidden}
+  #walk-canvas{display:block;width:100%;height:100%;touch-action:none}
+  .thesis{position:absolute;z-index:3;top:22px;left:24px;width:390px;padding:16px 18px;border-left:6px solid var(--accent);background:rgb(255 253 248 / 92%);box-shadow:var(--shadow)}
+  .thesis p{font-size:var(--fs-lead);font-weight:700;line-height:var(--lh-copy)}
+  .thesis .sec{display:block;margin-top:6px;font-weight:500}
+  .controls{position:absolute;z-index:4;top:22px;right:24px;width:300px;padding:16px 18px;border:1px solid var(--line);border-radius:var(--radius-md);background:rgb(255 253 248 / 94%);box-shadow:var(--shadow)}
+  .control-block+.control-block{margin-top:14px}
+  .control-head{display:flex;justify-content:space-between;gap:12px;font-size:var(--fs-label);font-weight:700;line-height:1.4}
+  .controls input[type=range]{width:100%;margin:8px 0 2px;accent-color:var(--accent)}
+  .ends{display:flex;justify-content:space-between;color:var(--muted);font-size:var(--fs-label);line-height:1.4}
+  .controls .btn{width:100%;margin-top:14px}
+  .status{margin-top:10px;color:var(--accent-strong);font-size:var(--fs-sec);line-height:var(--lh-sec)}
+  .joint-labels{position:absolute;z-index:3;left:50%;top:72px;transform:translateX(150px);pointer-events:none}
+  .joint-label{position:absolute;width:150px;padding-left:24px;color:var(--text);font-size:var(--fs-label);font-weight:650;line-height:1.4;white-space:nowrap}
+  .joint-label:before{content:"";position:absolute;left:-45px;top:10px;width:58px;height:1px;background:var(--line-strong)}
+  .joint-label:nth-child(1){top:38px}.joint-label:nth-child(2){top:104px}.joint-label:nth-child(3){top:212px}.joint-label:nth-child(4){top:300px}
+  .phasebar{position:absolute;z-index:5;left:0;right:0;bottom:0;height:132px;padding:14px 18px 12px;background:rgb(255 253 248 / 96%);border-top:1px solid var(--line)}
+  .phase-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
+  .phase-top strong{font-size:var(--fs-sec);line-height:1.45}.phase-top span{font-size:var(--fs-label);color:var(--muted)}
+  .k-process{--process-axis-y:50%;gap:22px;height:72px}
+  .k-process>.step{display:flex;align-items:center;justify-content:center;padding:8px 6px;text-align:center;font-size:var(--fs-label);font-weight:680;line-height:1.35;cursor:pointer}
+  .k-process>.arw{width:22px;transform:translate(-22px,-50%);font-size:18px}
+  .k-process>.axis{left:18px;right:18px}
+  .sr-only:focus{position:absolute;width:auto;height:auto;padding:8px;background:#fff;color:#000;clip:auto}
+</style>
+</head>
+<body data-page="06" data-total="48">
+<div id="stage"><main id="main">
+  <section class="walk-lab" aria-label="双足行走协同模型">
+    <div class="viewport min0" role="img" aria-label="三维骨架依次完成六阶段步行。落脚点或骨盆姿态偏离居中时，脊柱、膝和重心路径出现更多补偿。"><canvas id="walk-canvas" aria-hidden="true"></canvas></div>
+    <div class="thesis"><p>一处改变，会沿整条运动链传播。</p><span class="sec">调节右侧两项，观察骨盆、脊柱、膝和足如何连续补偿。</span></div>
+    <div class="controls" aria-label="步态模型控制">
+      <div class="control-block"><div class="control-head"><label for="pelvis">骨盆姿态</label><span id="pelvisWord">中</span></div><input id="pelvis" type="range" min="-100" max="100" value="0" step="10"><div class="ends"><span>左</span><span>中</span><span>右</span></div></div>
+      <div class="control-block"><div class="control-head"><label for="stepWidth">下一步落脚点</label><span id="widthWord">居中</span></div><input id="stepWidth" type="range" min="-100" max="100" value="0" step="10"><div class="ends"><span>窄</span><span>居中</span><span>宽</span></div></div>
+      <button class="btn" id="reset" type="button">回到协调状态</button>
+      <p class="status" id="status" aria-live="polite">此模型中补偿较少，重心路径较平顺。</p>
+    </div>
+    <div class="joint-labels" aria-hidden="true"><span class="joint-label" id="labPelvis">骨盆 · 保持支撑</span><span class="joint-label" id="labSpine">脊柱 · 稳定躯干</span><span class="joint-label" id="labKnee">膝 · 调节屈伸</span><span class="joint-label" id="labFoot">足 · 接触地面</span></div>
+    <div class="phasebar">
+      <div class="phase-top"><strong id="phaseCount">阶段 1/6 · 落脚</strong><span>选择阶段可定位；动画会继续展示完整循环</span></div>
+      <div class="k-process" id="process"><div class="axis"></div></div>
+    </div>
+  </section>
+</main></div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script src="assets/lib/three.min.js"></script>
+<script>
+Lec.mount({index:6,kicker:"BIPEDAL MECHANICS",title:"双足行走，不只是把身体站直",take:"双足行走依赖骨盆、脊柱、膝和足的协同，不是单靠“站直”。"});
+Deck.init({index:6,total:48});
+const steps=["落脚","承重","单腿支撑","身体越过支撑足","蹬离","换腿再落脚"];
+const process=document.getElementById('process');
+steps.forEach((name,i)=>{const s=document.createElement('div');s.className='step';s.textContent=name;s.tabIndex=0;s.setAttribute('role','button');s.setAttribute('aria-label',`定位到${name}`);s.addEventListener('click',()=>jump(i));s.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();jump(i)}});process.appendChild(s);if(i<steps.length-1){const a=document.createElement('div');a.className='arw';a.style.left=`${(i+1)*100/steps.length}%`;process.appendChild(a)}});
+const cv=document.getElementById('walk-canvas'),box=cv.parentElement;
+const renderer=new THREE.WebGLRenderer({canvas:cv,antialias:true,alpha:true});renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,2));renderer.outputColorSpace=THREE.SRGBColorSpace;renderer.shadowMap.enabled=true;
+const scene=new THREE.Scene();const camera=new THREE.PerspectiveCamera(35,1,.1,100);camera.position.set(7,5.2,9);camera.lookAt(0,2.1,0);
+scene.add(new THREE.HemisphereLight(0xffffff,0x7b8587,2.2));const key=new THREE.DirectionalLight(0xffffff,2.8);key.position.set(-4,8,5);key.castShadow=true;scene.add(key);
+const ground=new THREE.Mesh(new THREE.PlaneGeometry(13,9),new THREE.MeshStandardMaterial({color:0xdde6e8,roughness:.9}));ground.rotation.x=-Math.PI/2;ground.receiveShadow=true;scene.add(ground);
+const lineMat=new THREE.LineBasicMaterial({color:0x77898d});const axisGeom=new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,.012,-4),new THREE.Vector3(0,.012,4)]);scene.add(new THREE.Line(axisGeom,lineMat));
+const neutral=new THREE.MeshStandardMaterial({color:0x85969a,roughness:.55,transparent:true,opacity:.76});const accent=new THREE.MeshStandardMaterial({color:0x007c91,roughness:.42});const warm=new THREE.MeshStandardMaterial({color:0xc95d32,roughness:.45});
+const root=new THREE.Group();scene.add(root);function joint(r=.11,m=accent){const o=new THREE.Mesh(new THREE.SphereGeometry(r,18,12),m);o.castShadow=true;root.add(o);return o}function bone(a,b,r=.055,m=neutral){const g=new THREE.CylinderGeometry(r,r,1,10);const o=new THREE.Mesh(g,m);o.castShadow=true;root.add(o);o.userData={a,b};return o}function setBone(o,a,b){const d=new THREE.Vector3().subVectors(b,a),mid=new THREE.Vector3().addVectors(a,b).multiplyScalar(.5);o.position.copy(mid);o.scale.y=d.length();o.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),d.clone().normalize())}
+const pts={head:joint(.22,neutral),neck:joint(.10,neutral),hipL:joint(.13),hipR:joint(.13),kneeL:joint(.13),kneeR:joint(.13),ankleL:joint(.11),ankleR:joint(.11),toeL:joint(.09,warm),toeR:joint(.09,warm)};
+const bones=[bone('neck','head',.075),bone('hipL','neck',.07),bone('hipR','neck',.07),bone('hipL','hipR',.09,accent),bone('hipL','kneeL',.07),bone('kneeL','ankleL',.06),bone('ankleL','toeL',.055,accent),bone('hipR','kneeR',.07),bone('kneeR','ankleR',.06),bone('ankleR','toeR',.055,accent)];
+const com=new THREE.Mesh(new THREE.SphereGeometry(.09,16,10),warm);scene.add(com);const comRing=new THREE.Mesh(new THREE.RingGeometry(.13,.2,28),new THREE.MeshBasicMaterial({color:0xc95d32,side:THREE.DoubleSide}));comRing.rotation.x=-Math.PI/2;scene.add(comRing);const trailGeom=new THREE.BufferGeometry(),trail=new THREE.Line(trailGeom,new THREE.LineBasicMaterial({color:0xc95d32}));scene.add(trail);
+let phase=0,lastPhase=-1,manualUntil=0;const pelvis=document.getElementById('pelvis'),width=document.getElementById('stepWidth');
+function val(el){return Lec.P.clamp(Lec.P.finiteNumber(Number(el.value),0),-100,100)/100}function word(v,neg,mid,pos){return v<-.18?neg:v>.18?pos:mid}
+function jump(i){phase=i/steps.length;manualUntil=performance.now()+1800;update(0)}
+function update(t){if(performance.now()>manualUntil&&!Deck.reduced())phase=(phase+t*.00009)%1;const p=phase*steps.length,i=Math.min(steps.length-1,Math.floor(p)),u=p-i,pel=val(pelvis),wid=val(width),sway=Math.sin(phase*Math.PI*2);const travel=(phase-.5)*3.2;const liftL=Math.max(0,-Math.sin(phase*Math.PI*2))*.42,liftR=Math.max(0,Math.sin(phase*Math.PI*2))*.42;const lateral=.48+wid*.28;
+ const hipY=2.65+Math.abs(Math.sin(phase*Math.PI*2))*.05;pts.hipL.position.set(-lateral+pel*.13,hipY+pel*.12,travel);pts.hipR.position.set(lateral+pel*.13,hipY-pel*.12,travel);pts.neck.position.set(-pel*.22-sway*wid*.12,4.05,travel+.03);pts.head.position.set(-pel*.18-sway*wid*.1,4.62,travel+.03);
+ pts.ankleL.position.set(-lateral,0.18+liftL,travel-.75*Math.cos(phase*Math.PI*2));pts.toeL.position.set(-lateral,0.1+liftL,pts.ankleL.position.z+.38);pts.ankleR.position.set(lateral,0.18+liftR,travel+.75*Math.cos(phase*Math.PI*2));pts.toeR.position.set(lateral,0.1+liftR,pts.ankleR.position.z+.38);
+ const comp=Math.abs(pel)*.28+Math.abs(wid)*.18;pts.kneeL.position.lerpVectors(pts.hipL.position,pts.ankleL.position,.56);pts.kneeR.position.lerpVectors(pts.hipR.position,pts.ankleR.position,.56);pts.kneeL.position.z+=.18+comp;pts.kneeR.position.z+=.18+comp;bones.forEach(o=>setBone(o,pts[o.userData.a].position,pts[o.userData.b].position));
+ const cx=-pel*.16+sway*wid*.23;com.position.set(cx,.05,travel);comRing.position.set(cx,.018,travel);const tp=[];for(let q=0;q<28;q++){const z=travel-2.5+q*.18;tp.push(new THREE.Vector3(-pel*.16+Math.sin((q/27+phase)*Math.PI*2)*wid*.23,.025,z))}trailGeom.setFromPoints(tp);
+ const count=Lec.P.round(Lec.P.clamp(Lec.P.finiteNumber(i+1,1),1,steps.length),0);document.getElementById('phaseCount').textContent=`阶段 ${count}/${steps.length} · ${steps[i]}`;[...process.querySelectorAll('.step')].forEach((el,n)=>el.className='step '+(n===i?'is-current':n<i?'is-done':''));
+ if(i!==lastPhase){lastPhase=i;const labels=[["骨盆 · 建立支撑","脊柱 · 对准前方","膝 · 准备承重","足 · 接触地面"],["骨盆 · 转移重量","脊柱 · 平衡躯干","膝 · 轻度屈曲","足 · 向前滚动"],["骨盆 · 限制侧倒","脊柱 · 保持头胸","膝 · 单腿支撑","足 · 缩小支撑面"],["骨盆 · 随身体前移","脊柱 · 减少侧摆","膝 · 逐渐伸展","足 · 压力前移"],["骨盆 · 衔接下一步","脊柱 · 维持方向","膝 · 连续伸展","足 · 前足蹬离"],["骨盆 · 左右换责","脊柱 · 连续补偿","膝 · 摆动准备","足 · 再次落脚"]][i];['Pelvis','Spine','Knee','Foot'].forEach((k,n)=>document.getElementById('lab'+k).textContent=labels[n])}
+ renderer.render(scene,camera)}
+function refresh(){const pv=val(pelvis),wv=val(width);document.getElementById('pelvisWord').textContent=word(pv,'左','中','右');document.getElementById('widthWord').textContent=word(wv,'窄','居中','宽');const more=Math.abs(pv)+Math.abs(wv)>.55;document.getElementById('status').textContent=more?'此模型中补偿较多，躯干与重心左右摆动更明显。':'此模型中补偿较少，重心路径较平顺。';manualUntil=performance.now()+900}
+[pelvis,width].forEach(el=>el.addEventListener('input',refresh));document.getElementById('reset').addEventListener('click',()=>{pelvis.value=0;width.value=0;camera.position.set(7,5.2,9);camera.lookAt(0,2.1,0);refresh()});
+let drag=false,px=0;cv.addEventListener('pointerdown',e=>{drag=true;px=e.clientX;cv.setPointerCapture(e.pointerId)});cv.addEventListener('pointermove',e=>{if(!drag)return;const dx=e.clientX-px;px=e.clientX;const a=Math.atan2(camera.position.x,camera.position.z)+Lec.P.clamp(dx,-20,20)*.0025,r=Math.hypot(camera.position.x,camera.position.z);camera.position.x=Math.sin(Lec.P.clamp(a,.35,1.05))*r;camera.position.z=Math.cos(Lec.P.clamp(a,.35,1.05))*r;camera.lookAt(0,2.1,0)});cv.addEventListener('pointerup',()=>drag=false);
+function resize(){const w=box.clientWidth,h=box.clientHeight;renderer.setSize(w,h,false);camera.aspect=w/h;camera.updateProjectionMatrix();update(0)}window.addEventListener('resize',resize);resize();refresh();Deck.loop(update,{still:4200});
+</script>
+</body></html>

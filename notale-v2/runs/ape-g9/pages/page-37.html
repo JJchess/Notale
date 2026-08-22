@@ -1,0 +1,320 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  #main { display:flex; flex-direction:column; gap:var(--sp-3); }
+  .taskline { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); align-items:center; gap:var(--sp-2); min-height:48px; padding:var(--sp-1) var(--sp-2); border-left:3px solid var(--accent); background:var(--surface-yellow); }
+  .cause-step { display:flex; align-items:center; justify-content:center; min-height:36px; padding:0 var(--sp-2); color:var(--text-strong); font-size:var(--fs-sec); line-height:1.35; border:1px solid var(--line-strong); background:rgba(7,16,21,.52); }
+  .cause-step strong { color:var(--accent); }
+  .taskline .legend { display:flex; align-items:center; gap:var(--sp-3); padding:0 var(--sp-2); }
+  .lab { position:relative; display:flex; flex:1 1 0; gap:var(--sp-4); min-width:0; min-height:0; }
+  .compare-wrap { flex:0 0 842px; min-width:0; min-height:0; }
+  .k-comparison { --compare-cols:2; height:100%; grid-template-columns:142px 270px minmax(0,1fr); grid-template-rows:50px 64px 70px 92px 76px minmax(78px,1fr); background:rgba(7,16,21,.6); }
+  .k-comparison > .hdr,.k-comparison > .dim,.k-comparison > .cell,.k-comparison > .diff { padding:var(--sp-2) var(--sp-3); }
+  .k-comparison > .hdr { font-size:var(--fs-lead); align-items:center; }
+  .k-comparison > .dim { font-size:var(--fs-label); }
+  .k-comparison > .cell { font-size:var(--fs-sec); background:rgba(13,26,32,.78); }
+  .k-comparison > .dim { background:rgba(19,36,43,.72); }
+  .k-comparison > .hdr { background:var(--surface-2); }
+  .k-comparison > .cell.plan-b { transition:border-color 180ms ease,background 180ms ease; }
+  .k-comparison.is-changed > .plan-b { border-left-color:var(--accent); background:rgba(255,204,77,.055); }
+  .cell-stack { display:flex; width:100%; flex-direction:column; justify-content:center; gap:var(--sp-1); min-width:0; }
+  .inline-reading { color:var(--primary-bright); font-family:var(--font-mono); font-size:18px; font-weight:700; line-height:1.35; white-space:nowrap; }
+  .control-select { width:100%; min-height:38px; }
+  .range-line { display:grid; grid-template-columns:minmax(0,1fr) 92px; align-items:center; gap:var(--sp-2); width:100%; min-width:0; }
+  .range-line output { color:var(--accent); font-family:var(--font-mono); font-size:18px; font-weight:700; text-align:right; white-space:nowrap; }
+  .bounds { display:flex; justify-content:space-between; color:var(--text-faint); font-family:var(--font-mono); font-size:13px; line-height:1.35; }
+  .material-note { color:var(--text-muted); font-size:var(--fs-sec); line-height:1.4; }
+  .instrument { position:relative; display:flex; flex:1 1 0; flex-direction:column; min-width:0; min-height:0; padding:var(--sp-4); overflow:hidden; border:var(--border); border-left:3px solid var(--primary); border-radius:var(--radius-3); background:linear-gradient(90deg,rgba(53,198,180,.08),transparent 38%),var(--surface-glass); box-shadow:var(--shadow-panel); }
+  .instrument-head { position:relative; z-index:2; display:grid; grid-template-columns:minmax(0,1fr) auto 40px; align-items:center; gap:var(--sp-3); }
+  .instrument-head .legend { display:flex; align-items:center; gap:var(--sp-3); }
+  .instrument-head h2 { font-size:var(--fs-h2); }
+  .reset { flex:0 0 40px; width:40px; min-width:40px; padding:0; font-size:22px; }
+  .body-field { position:absolute; inset:50px 12px 82px 12px; opacity:.34; pointer-events:none; }
+  .body-core { position:absolute; top:58px; left:50%; width:78px; height:202px; border:2px solid var(--primary-dark); border-radius:45% 45% 30% 30%; background:rgba(53,198,180,.2); box-shadow:inset 0 0 0 12px rgba(7,16,21,.3); transform:translateX(-50%); }
+  .body-core::before { content:""; position:absolute; top:-54px; left:50%; width:58px; height:58px; border:2px solid var(--primary-dark); border-radius:50%; background:rgba(53,198,180,.2); transform:translateX(-50%); }
+  .shield-ring { position:absolute; top:4px; left:50%; border:10px solid rgba(53,198,180,.28); border-radius:48%; background:rgba(53,198,180,.035); transform:translateX(-50%); transition:opacity 280ms ease; }
+  .ring-1 { width:150px; height:326px; }
+  .ring-2 { top:-10px; width:196px; height:354px; border-width:9px; opacity:.68; }
+  .ring-3 { top:-24px; width:242px; height:382px; border-width:8px; opacity:.42; }
+  #chart { position:relative; z-index:1; width:100%; height:304px; margin-top:0; overflow:visible; }
+  #chart text { font-family:var(--font-sans); letter-spacing:0; }
+  #chart .axis text { fill:var(--text-muted); font-size:14px; }
+  #chart .axis path,#chart .axis line { stroke:var(--line-strong); }
+  #chart .chart-label { fill:var(--text-strong); font-size:16px; font-weight:700; }
+  #chart .chart-read { fill:var(--text-strong); font-family:var(--font-mono); font-size:18px; font-weight:700; }
+  #chart .chart-sub { fill:var(--text-muted); font-size:14px; }
+  #chart .metric-track { fill:var(--surface-3); stroke:var(--line-strong); stroke-width:1; }
+  #chart .metric-zero { stroke:var(--text-muted); stroke-width:2; }
+  .safe-feedback { display:none; position:absolute; z-index:3; right:var(--sp-4); bottom:92px; left:var(--sp-4); min-height:48px; padding:var(--sp-2) var(--sp-3); color:var(--text-strong); font-size:var(--fs-sec); line-height:1.4; border-left:3px solid var(--accent); background:var(--surface-yellow); opacity:0; transform:translateX(0); pointer-events:none; }
+  .safe-feedback.is-on { display:block; animation:safe-shake 480ms ease both; }
+  @keyframes safe-shake { 0%{opacity:0;transform:translateX(0)} 15%{opacity:1;transform:translateX(-7px)} 30%{transform:translateX(7px)} 45%{transform:translateX(-5px)} 60%{transform:translateX(4px)} 78%{opacity:1;transform:translateX(0)} 100%{opacity:0;transform:translateX(0)} }
+  .material-band { position:relative; z-index:2; display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:var(--sp-2); margin-top:auto; }
+  .material-mini { min-width:0; padding:var(--sp-2); color:var(--text-muted); font-size:14px; line-height:1.35; border-top:3px solid var(--primary-dark); background:rgba(13,26,32,.94); }
+  .material-mini strong { color:var(--text-strong); font-size:var(--fs-label); }
+  .footer-strip { display:grid; grid-template-columns:360px minmax(0,1fr); align-items:stretch; gap:var(--sp-4); min-height:96px; padding:var(--sp-3); border:var(--border); background:var(--surface-1); }
+  .progress-box { display:flex; flex-direction:column; gap:var(--sp-2); min-width:0; }
+  .progress-title { color:var(--text-muted); font-size:var(--fs-label); font-weight:700; line-height:1.35; }
+  .progress-cells { display:grid; grid-template-columns:repeat(3,1fr); gap:var(--sp-2); }
+  .progress-cell { display:flex; align-items:center; justify-content:center; min-height:52px; color:var(--text-muted); font-size:var(--fs-label); font-weight:700; border:1px solid var(--line-strong); border-radius:var(--radius-1); background:var(--surface-3); }
+  .progress-cell.is-done { color:var(--accent-ink); border-color:var(--primary); background:var(--primary); }
+  .claim { display:flex; align-items:center; padding-left:var(--sp-4); color:var(--text-strong); font-size:var(--fs-sec); line-height:1.45; border-left:2px solid var(--accent); }
+  .claim strong { color:var(--accent); font-size:var(--fs-lead); }
+  .row-flash { animation:row-flash 520ms ease; }
+  @keyframes row-flash { 0%,100%{box-shadow:none} 35%{box-shadow:inset 5px 0 0 var(--accent);background:var(--surface-yellow)} }
+  .lec-footer .lec-progress { overflow:visible; }
+  @media (prefers-reduced-motion:reduce) { * { animation-duration:0.001ms !important; transition-duration:0.001ms !important; } }
+</style>
+</head>
+<body data-page="37" data-total="52">
+<div id="stage">
+<main id="main">
+  <div class="taskline" aria-label="比较关系"><div class="cause-step">环境更远 + 时长更久</div><div class="cause-step"><strong>累积暴露通常上升</strong></div><div class="cause-step">加屏蔽：指数下降 + 质量上升</div></div>
+  <section class="lab min0" aria-label="辐射屏蔽方案比较试验台">
+    <div class="compare-wrap min0">
+      <div class="k-comparison min0" id="comparison">
+        <div class="hdr">比较维度</div>
+        <div class="hdr">方案 A · 基准任务</div>
+        <div class="hdr plan-b">方案 B · 可调任务</div>
+
+        <div class="dim">环境</div>
+        <div class="cell"><div class="cell-stack"><span>近地轨道</span><span class="inline-reading" id="a-env"></span></div></div>
+        <div class="cell plan-b" data-source="environment"><select id="environment" class="control-select" aria-label="方案 B 环境"></select></div>
+
+        <div class="dim">任务时长</div>
+        <div class="cell"><div class="cell-stack"><span class="inline-reading" id="a-duration"></span><span class="muted">固定参照</span></div></div>
+        <div class="cell plan-b" data-source="duration"><div class="cell-stack"><div class="range-line"><input id="duration" type="range" aria-label="方案 B 任务时长"><output id="duration-out"></output></div><div class="bounds"><span id="duration-min"></span><span id="duration-max"></span></div></div></div>
+
+        <div class="dim">材料策略</div>
+        <div class="cell"><div class="cell-stack"><span>铝结构 · 兼作舱体</span><span class="material-note">高能辐射作用下须评估次级粒子。</span></div></div>
+        <div class="cell plan-b" data-source="material"><div class="cell-stack"><select id="material" class="control-select" aria-label="方案 B 材料策略"></select><span class="material-note" id="material-detail"></span></div></div>
+
+        <div class="dim">屏蔽面密度</div>
+        <div class="cell"><div class="cell-stack"><span class="inline-reading" id="a-shield"></span><span class="muted">每平方米所带屏蔽质量</span></div></div>
+        <div class="cell plan-b" data-source="shield"><div class="cell-stack"><div class="range-line"><input id="shield" type="range" aria-label="方案 B 屏蔽面密度"><output id="shield-out"></output></div><div class="bounds"><span id="shield-min"></span><span id="shield-max"></span></div></div></div>
+
+        <div class="dim">输出</div>
+        <div class="cell"><div class="cell-stack"><span>相对暴露指数 A</span><span class="inline-reading" id="a-exposure"></span><span class="muted" id="a-mass"></span></div></div>
+        <div class="diff plan-b" data-source="output"><div class="cell-stack"><span>方案 B / 方案 A</span><span class="inline-reading accent" id="ratio"></span><span class="muted" id="mass-delta"></span></div></div>
+      </div>
+    </div>
+
+    <figure class="instrument min0" aria-labelledby="chart-title">
+      <div class="instrument-head"><h2 id="chart-title">风险下降 ↔ 质量上升</h2><div class="legend" aria-label="图例"><span class="swatch" title="方案 A"></span><span class="swatch" style="--swatch:var(--accent)" title="方案 B"></span></div><button class="btn icon-only reset" id="reset" type="button" aria-label="重置方案" title="重置方案">↺</button></div>
+      <div class="body-field" aria-hidden="true"><div class="shield-ring ring-3"></div><div class="shield-ring ring-2"></div><div class="shield-ring ring-1"></div><div class="body-core"></div></div>
+      <svg id="chart" role="img" aria-label="方案 A 与方案 B 的相对暴露指数和屏蔽面密度横条比较"></svg>
+      <div class="safe-feedback" id="safe-feedback" role="status">这里没有统一安全线；请比较相对风险与质量代价。</div>
+      <figcaption class="material-band" aria-label="材料策略差异"><div class="material-mini"><strong>铝结构：</strong>兼作舱体；评估次级粒子</div><div class="material-mini"><strong>富氢材料：</strong>利于质子与中子防护</div><div class="material-mini"><strong>水墙：</strong>兼作储备；布置受限</div></figcaption>
+    </figure>
+  </section>
+
+  <section class="footer-strip" aria-label="比较进度与结论">
+    <div class="progress-box"><div class="progress-title" id="progress-text">已比较 0/3 个环境</div><div class="progress-cells"><span class="progress-cell">近地轨道</span><span class="progress-cell">地月空间</span><span class="progress-cell">深空航行</span></div></div>
+    <p class="claim" id="claim">辐射风险不会在一条线外突然出现。环境越少受地球保护、任务越久，累积暴露通常越高；增加屏蔽能降低演示指数，却会直接增加发射质量。</p>
+  </section>
+</main>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script src="assets/lib/d3.min.js"></script>
+<script>
+Lec.mount({index: 37, kicker: 'RADIATION / TRADE-OFF', title: '挡住多少，要带走多重？', take: '距离、材料与任务时长共同影响辐射风险，屏蔽也有质量代价。'});
+
+(function () {
+  const P = Lec.P;
+  const K = Lec.K;
+  const demoInputs = {
+    baseRate: Number.isFinite(K.radiationDemoBaseRate) ? K.radiationDemoBaseRate : 1,
+    shieldHalfValueKgM2: Number.isFinite(K.radiationDemoShieldHalfValueKgM2) ? K.radiationDemoShieldHalfValueKgM2 : 20
+  };
+  const halfValue = demoInputs.shieldHalfValueKgM2;
+  const environments = [
+    { id:'leo', label:'近地轨道', factor:0.45 },
+    { id:'cislunar', label:'地月空间', factor:0.80 },
+    { id:'deep', label:'深空航行', factor:1.00 }
+  ];
+  const materials = [
+    { id:'al', label:'铝结构', detail:'兼作舱体；须评估次级粒子。' },
+    { id:'hydrogen', label:'富氢材料', detail:'利于质子与中子防护。' },
+    { id:'water', label:'水墙', detail:'可兼作储备，但布置受限。' }
+  ];
+  const source = { baseDuration:180, durationMin:30, durationMax:900, durationStep:30, shieldMin:0, shieldMaxMultiplier:3, shieldStepMultiplier:0.1 };
+  const initial = { environment:'leo', material:'al', duration:180, shield:halfValue };
+  const compared = new Set();
+  let state = Object.assign({}, initial);
+  let safeTimer = 0;
+
+  const el = id => document.getElementById(id);
+  const envSelect = el('environment');
+  const materialSelect = el('material');
+  const durationInput = el('duration');
+  const shieldInput = el('shield');
+
+  environments.forEach(item => {
+    const option = document.createElement('option');
+    option.value = item.id;
+    option.textContent = item.label + ' · 因子 ' + P.roundTo(item.factor, 2);
+    envSelect.appendChild(option);
+  });
+  materials.forEach(item => {
+    const option = document.createElement('option');
+    option.value = item.id;
+    option.textContent = item.label;
+    materialSelect.appendChild(option);
+  });
+
+  durationInput.min = source.durationMin;
+  durationInput.max = source.durationMax;
+  durationInput.step = source.durationStep;
+  shieldInput.min = source.shieldMin;
+  shieldInput.max = halfValue * source.shieldMaxMultiplier;
+  shieldInput.step = halfValue * source.shieldStepMultiplier;
+  el('duration-min').textContent = source.durationMin + ' 天';
+  el('duration-max').textContent = source.durationMax + ' 天';
+  el('shield-min').textContent = P.roundTo(source.shieldMin, 1) + ' kg/m²';
+  el('shield-max').textContent = P.roundTo(halfValue * source.shieldMaxMultiplier, 1) + ' kg/m²';
+  el('a-env').textContent = '因子 ' + P.roundTo(environments[0].factor, 2);
+  el('a-duration').textContent = source.baseDuration + ' 天';
+  el('a-shield').textContent = P.roundTo(halfValue, 1) + ' kg/m²';
+
+  const svg = d3.select('#chart');
+  const W = 500;
+  const H = 326;
+  const margin = { left:18, right:132 };
+  svg.attr('viewBox', `0 0 ${W} ${H}`);
+  svg.append('title').text('相对暴露指数与每平方米屏蔽质量比较');
+  svg.append('desc').text('两组横条均从零开始，青色为方案 A，黄色为方案 B。');
+  const riskScale = d3.scaleLinear().range([margin.left, W - margin.right]);
+  const massScale = d3.scaleLinear().domain([0, halfValue * source.shieldMaxMultiplier]).range([margin.left, W - margin.right]);
+  const chart = svg.append('g');
+  chart.append('text').attr('class','chart-label').attr('x',margin.left).attr('y',28).text('相对暴露指数');
+  chart.append('text').attr('class','chart-sub').attr('x',margin.left).attr('y',49).text('仅用于任务间比较，不是医学剂量');
+  chart.append('text').attr('class','chart-label').attr('x',margin.left).attr('y',184).text('屏蔽面密度');
+  chart.append('text').attr('class','chart-sub').attr('x',margin.left).attr('y',205).text('每平方米增加的屏蔽质量');
+  chart.append('g').attr('class','axis risk-axis').attr('transform','translate(0,139)');
+  chart.append('g').attr('class','axis mass-axis').attr('transform','translate(0,295)');
+  chart.selectAll('.metric-track').data([68,102,224,258]).join('rect').attr('class','metric-track').attr('x',margin.left).attr('y',d=>d).attr('width',W-margin.left-margin.right).attr('height',18).attr('rx',2);
+  chart.selectAll('.metric-zero').data([[margin.left,64,margin.left,124],[margin.left,220,margin.left,280]]).join('line').attr('class','metric-zero').attr('x1',d=>d[0]).attr('y1',d=>d[1]).attr('x2',d=>d[2]).attr('y2',d=>d[3]);
+  const bars = chart.selectAll('.metric-bar').data([
+    { key:'risk-a', y:68, color:'primary' }, { key:'risk-b', y:102, color:'accent' },
+    { key:'mass-a', y:224, color:'primary' }, { key:'mass-b', y:258, color:'accent' }
+  ]).join('rect').attr('class','metric-bar').attr('x',margin.left).attr('y',d=>d.y).attr('height',18).attr('rx',2);
+  const values = chart.selectAll('.metric-value').data([
+    { key:'risk-a', y:82 }, { key:'risk-b', y:116 }, { key:'mass-a', y:238 }, { key:'mass-b', y:272 }
+  ]).join('text').attr('class','chart-read metric-value').attr('x',W-8).attr('y',d=>d.y).attr('text-anchor','end');
+  const constraint = chart.append('path').attr('fill','none').attr('stroke-width',2).attr('stroke-dasharray','6 5');
+
+  function exposure(environment, durationDays, shieldKgM2) {
+    return demoInputs.baseRate * environment.factor * durationDays * Math.pow(0.5, shieldKgM2 / demoInputs.shieldHalfValueKgM2);
+  }
+
+  function valuesForState() {
+    const env = environments.find(item => item.id === state.environment);
+    const aExposure = exposure(environments[0], source.baseDuration, halfValue);
+    const bExposure = exposure(env, state.duration, state.shield);
+    return { env, aExposure, bExposure, ratio:bExposure / aExposure, massDelta:state.shield - halfValue };
+  }
+
+  function color(name) { return getComputedStyle(document.documentElement).getPropertyValue('--' + name).trim(); }
+
+  function draw(v, animate) {
+    const maxRisk = exposure(environments[2], source.durationMax, source.shieldMin);
+    riskScale.domain([0, maxRisk]);
+    const transition = animate && !Deck.reduced() ? d3.transition().duration(280).ease(d3.easeCubicOut) : null;
+    chart.select('.risk-axis').call(d3.axisBottom(riskScale).ticks(4).tickFormat(n => P.significant(n, 2)));
+    chart.select('.mass-axis').call(d3.axisBottom(massScale).ticks(4).tickFormat(n => P.roundTo(n, 0)));
+    const widths = {
+      'risk-a':riskScale(v.aExposure)-margin.left, 'risk-b':riskScale(v.bExposure)-margin.left,
+      'mass-a':massScale(halfValue)-margin.left, 'mass-b':massScale(state.shield)-margin.left
+    };
+    bars.attr('fill', d => color(d.color));
+    const barTarget = transition ? bars.transition(transition) : bars;
+    barTarget.attr('width',d=>Math.max(0,widths[d.key]));
+    const read = {
+      'risk-a':'A  ' + P.significant(v.aExposure,3), 'risk-b':'B  ' + P.significant(v.bExposure,3),
+      'mass-a':'A  ' + P.roundTo(halfValue,1) + ' kg/m²', 'mass-b':'B  ' + P.roundTo(state.shield,1) + ' kg/m²'
+    };
+    values.text(d=>read[d.key]);
+    const x1 = Math.max(margin.left + 8, riskScale(v.bExposure));
+    const x2 = Math.max(margin.left + 8, massScale(state.shield));
+    constraint.attr('stroke',color('accent')).attr('d',`M${x1},121 C${x1+36},160 ${x2-36},210 ${x2},251`);
+  }
+
+  function flash(sourceName) {
+    const cell = document.querySelector(`[data-source="${sourceName}"]`);
+    if (!cell || Deck.reduced()) return;
+    cell.classList.remove('row-flash');
+    void cell.offsetWidth;
+    cell.classList.add('row-flash');
+  }
+
+  function update(sourceName, userAction) {
+    const v = valuesForState();
+    el('duration-out').textContent = state.duration + ' 天';
+    el('shield-out').textContent = P.roundTo(state.shield,1) + ' kg/m²';
+    el('material-detail').textContent = materials.find(item=>item.id===state.material).detail;
+    el('a-exposure').textContent = P.significant(v.aExposure,3);
+    el('a-mass').textContent = P.roundTo(halfValue,1) + ' kg/m²';
+    el('ratio').textContent = P.roundTo(v.ratio,2) + ' ×';
+    const deltaPrefix = v.massDelta >= 0 ? '+' : '';
+    el('mass-delta').textContent = '质量增量 ' + deltaPrefix + P.roundTo(v.massDelta,1) + ' kg/m²';
+    el('comparison').classList.toggle('is-changed', userAction || compared.size > 0);
+    const shieldRatio = state.shield / (halfValue * source.shieldMaxMultiplier);
+    document.querySelector('.ring-1').style.opacity = String(0.35 + shieldRatio * 0.65);
+    document.querySelector('.ring-2').style.opacity = String(0.18 + shieldRatio * 0.5);
+    document.querySelector('.ring-3').style.opacity = String(0.08 + shieldRatio * 0.34);
+
+    if (userAction) {
+      compared.add(state.environment);
+      flash(sourceName);
+    }
+    const cells = Array.from(document.querySelectorAll('.progress-cell'));
+    environments.forEach((item,index)=>cells[index].classList.toggle('is-done',compared.has(item.id)));
+    el('progress-text').textContent = '已比较 ' + compared.size + '/3 个环境';
+    if (compared.size === environments.length) {
+      el('claim').innerHTML = '<strong>约束已显现：</strong>降低一项风险，会牵动另一项质量预算。材料差异仍需独立评估。';
+      constraint.attr('stroke-dasharray',null).attr('stroke-width',3);
+    } else {
+      el('claim').textContent = '辐射风险不会在一条线外突然出现。环境越少受地球保护、任务越久，累积暴露通常越高；增加屏蔽能降低演示指数，却会直接增加发射质量。';
+      constraint.attr('stroke-dasharray','6 5').attr('stroke-width',2);
+    }
+    draw(v, userAction);
+
+    if (userAction && state.shield >= halfValue * source.shieldMaxMultiplier) {
+      const feedback = el('safe-feedback');
+      clearTimeout(safeTimer);
+      feedback.classList.remove('is-on');
+      void feedback.offsetWidth;
+      feedback.classList.add('is-on');
+      safeTimer = setTimeout(()=>feedback.classList.remove('is-on'), 520);
+    }
+  }
+
+  function syncControls() {
+    envSelect.value = state.environment;
+    materialSelect.value = state.material;
+    durationInput.value = state.duration;
+    shieldInput.value = state.shield;
+  }
+
+  envSelect.addEventListener('change',()=>{ state.environment=envSelect.value; update('environment',true); });
+  materialSelect.addEventListener('change',()=>{ state.material=materialSelect.value; update('material',true); });
+  durationInput.addEventListener('input',()=>{ state.duration=Number(durationInput.value); update('duration',true); });
+  shieldInput.addEventListener('input',()=>{ state.shield=Number(shieldInput.value); update('shield',true); });
+  el('reset').addEventListener('click',()=>{
+    state=Object.assign({},initial);
+    compared.clear();
+    syncControls();
+    el('comparison').classList.remove('is-changed');
+    update('',false);
+  });
+
+  syncControls();
+  update('',false);
+})();
+</script>
+</body>
+</html>

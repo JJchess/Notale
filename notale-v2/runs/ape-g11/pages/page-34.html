@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  .orbit-head{box-sizing:border-box;padding:20px 36px 10px;display:flex;align-items:flex-end;justify-content:space-between;gap:24px}
+  .kicker{color:var(--primary-bright);font:700 var(--fs-label)/1.4 var(--font-mono);letter-spacing:.12em}
+  .take{max-width:720px;margin:5px 0 0;color:var(--muted);font-size:var(--fs-sec);line-height:var(--lh-text)}
+  .main{padding:0 36px 28px;display:flex;gap:24px}
+  .map{position:relative;flex:1.72;min-width:0;min-height:0;overflow:hidden;border:2px solid var(--line);border-radius:var(--r-lg);background:radial-gradient(circle at 53% 48%,rgba(53,194,178,.12),transparent 48%),var(--panel-deep)}
+  #space{position:absolute;inset:0;width:100%;height:100%;touch-action:none;cursor:grab}
+  #space:active{cursor:grabbing}
+  .hud{position:absolute;inset:18px 20px auto;display:flex;justify-content:space-between;align-items:flex-start;pointer-events:none}
+  .state-now{padding:10px 15px;border-left:4px solid var(--accent);background:rgba(7,17,31,.78);border-radius:var(--r-sm)}
+  .state-now strong{display:block;color:var(--accent);font-size:var(--fs-h2)}
+  .state-now span{font-size:var(--fs-label);color:var(--muted)}
+  .progress{padding:8px 13px;background:rgba(7,17,31,.78);border:1px solid var(--line);border-radius:999px;font-size:var(--fs-label)}
+  .launch-label{position:absolute;right:17%;top:22%;font-size:var(--fs-label);color:var(--text);pointer-events:none}
+  .launch-label:before{content:"";display:inline-block;width:10px;height:10px;margin-right:7px;border-radius:50%;background:var(--accent);box-shadow:0 0 16px var(--accent)}
+  .side{flex:1;min-width:0;min-height:0;display:flex;flex-direction:column;gap:14px}
+  .class-root{padding:13px 15px;border:2px solid var(--primary);border-radius:var(--r-md);background:var(--primary-soft);font-weight:720;color:var(--primary-bright)}
+  .state-list{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .state-item{position:relative;padding:10px 12px;border:2px solid var(--line);border-radius:var(--r-sm);background:var(--panel-deep);transition:border-color 180ms ease,background 180ms ease,transform 180ms ease}
+  .state-item.is-current{border-color:var(--accent);background:var(--accent-soft);transform:translateY(-2px)}
+  .state-item.found:after{content:"已发现";position:absolute;right:8px;top:8px;color:var(--success);font-size:var(--fs-label);font-weight:700}
+  .state-item h3{margin:0 0 3px;font-size:var(--fs-body);line-height:1.35;color:var(--text)}
+  .state-item p{margin:0;color:var(--muted);font-size:var(--fs-label);line-height:1.4}
+  .control-panel{padding:14px 16px}
+  .speedline{display:flex;align-items:center;gap:14px}
+  #speed{flex:1;min-width:0;height:28px;accent-color:var(--accent)}
+  .speed-value{min-width:128px;color:var(--accent);font:720 var(--fs-h2)/1.2 var(--font-mono);text-align:right}
+  .thresholds{display:flex;justify-content:space-between;margin-top:2px;color:var(--muted);font-size:var(--fs-label)}
+  .thresholds b{color:var(--primary-bright);font-family:var(--font-mono)}
+  .explain{padding:12px 15px;border-left:4px solid var(--primary);background:var(--panel-deep);font-size:var(--fs-sec);line-height:var(--lh-text);color:var(--muted)}
+  .finish{min-height:26px;color:var(--accent);font-size:var(--fs-sec);font-weight:700}
+  .reset{align-self:flex-start}
+  @media (prefers-reduced-motion:reduce){.state-item{transition:none}}
+</style>
+</head>
+<body data-page="34" data-total="48">
+<div id="stage">
+  <header class="orbit-head" style="height:112px">
+    <div><div class="kicker">ORBIT STATES · E4</div><h1>速度把轨迹分成四类</h1><p class="take">亚轨道、圆轨道、椭圆轨道和逃逸，对应同一发射位置上的不同横向速度。</p></div>
+    <span class="chip">理想化轨迹分类</span>
+  </header>
+  <main class="main min0" style="flex:1">
+    <section class="map min0 no-pan" aria-label="三维地球与实时轨迹">
+      <canvas id="space" class="cv-fill" aria-hidden="true"></canvas>
+      <div class="hud"><div class="state-now"><span>当前轨迹</span><strong id="currentName">圆轨道</strong><span id="criterion">半径近似恒定并闭合</span></div><div class="progress" id="progress">已发现</div></div>
+      <div class="launch-label">固定发射位置</div>
+    </section>
+    <aside class="side min0 k-classification">
+      <div class="class-root">上位分类：当前横向速度</div>
+      <div class="lv min0" style="flex:1">
+        <div class="box min0" style="height:244px">
+          <div class="bt">速度区间 → 轨迹类别</div>
+          <div class="state-list" id="stateList">
+            <div class="state-item" data-state="sub"><h3>亚轨道</h3><p>低于圆轨道阈值 · 回到地面</p></div>
+            <div class="state-item" data-state="circular"><h3>圆轨道</h3><p>阈值点 · 持续绕行</p></div>
+            <div class="state-item" data-state="ellipse"><h3>椭圆轨道</h3><p>两阈值之间 · 闭合椭圆</p></div>
+            <div class="state-item" data-state="escape"><h3>逃逸</h3><p>达到逃逸阈值 · 不再返回</p></div>
+          </div>
+        </div>
+      </div>
+      <div class="panel control-panel">
+        <label class="ctl-label" for="speed">沿速度环拖动橙色点</label>
+        <div class="speedline"><input id="speed" type="range" aria-label="当前横向速度"><output class="speed-value" id="speedValue"></output></div>
+        <div class="thresholds"><span>圆轨道 <b id="vCircular"></b></span><span>逃逸 <b id="vEscape"></b></span></div>
+      </div>
+      <div class="explain">高度不是轨道类别的充分条件。在同一位置，横向速度决定轨迹会撞回地面、闭合绕行，还是逃离地球。逃逸速度也不是进入近地轨道所需速度。</div>
+      <div class="row between items-center"><div class="finish" id="finish" aria-live="polite"></div><button class="reset" id="reset" type="button">重置探索</button></div>
+    </aside>
+  </main>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script src="assets/lib/three.min.js"></script>
+<script>
+(function(){
+  Deck.init({index:34,total:48});
+  var altitude=Lec.K.physics.lowEarthOrbitTypicalAltitude;
+  var vCircular=Lec.P.earthOrbitVelocity(altitude);
+  var vEscape=Lec.P.earthEscapeVelocity(altitude);
+  var max=vEscape*1.08;
+  var slider=document.getElementById('speed');
+  slider.min=0; slider.max=max; slider.step=max/400; slider.value=vCircular;
+  function fmt(v){return Lec.P.formatFixed(v/1000,2)+' km/s';}
+  document.getElementById('vCircular').textContent=fmt(vCircular);
+  document.getElementById('vEscape').textContent=fmt(vEscape);
+
+  var canvas=document.getElementById('space'), host=canvas.parentElement;
+  var renderer=new THREE.WebGLRenderer({canvas:canvas,antialias:true,alpha:true});
+  renderer.setPixelRatio(Math.min(devicePixelRatio,2)); renderer.outputColorSpace=THREE.SRGBColorSpace;
+  var scene=new THREE.Scene();
+  var camera=new THREE.PerspectiveCamera(38,1,.1,100); camera.position.set(0,-5.4,4.7); camera.lookAt(0,0,0);
+  scene.add(new THREE.HemisphereLight(0x9adfd8,0x06101d,2.2));
+  var sun=new THREE.DirectionalLight(0xffffff,2.6); sun.position.set(4,-3,6); scene.add(sun);
+  var earth=new THREE.Mesh(new THREE.SphereGeometry(1,64,40),new THREE.MeshStandardMaterial({color:0x123f64,roughness:.72,metalness:.08,emissive:0x071a28,emissiveIntensity:.65})); scene.add(earth);
+  var grid=new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.IcosahedronGeometry(1.012,3)),new THREE.LineBasicMaterial({color:0x35c2b2,transparent:true,opacity:.13})); scene.add(grid);
+  var ringMat=new THREE.LineBasicMaterial({color:0x35c2b2,transparent:true,opacity:.28});
+  [1.28,1.48,1.72,2.02].forEach(function(r){var pts=[];for(var i=0;i<=128;i++){var a=i/128*Math.PI*2;pts.push(new THREE.Vector3(Math.cos(a)*r,Math.sin(a)*r,0));}scene.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts),ringMat));});
+  var launchAngle=.62, r0=1+altitude/Lec.K.astronomy.earthMeanRadius;
+  var launch=new THREE.Vector3(Math.cos(launchAngle)*r0,Math.sin(launchAngle)*r0,0);
+  var marker=new THREE.Mesh(new THREE.SphereGeometry(.055,24,16),new THREE.MeshBasicMaterial({color:0xffb547})); marker.position.copy(launch); scene.add(marker);
+  var trajectory=new THREE.Line(new THREE.BufferGeometry(),new THREE.LineBasicMaterial({color:0xffb547,transparent:true,opacity:1})); scene.add(trajectory);
+  var discovered=new Set(), lastState='';
+  var names={sub:'亚轨道',circular:'圆轨道',ellipse:'椭圆轨道',escape:'逃逸'};
+  var criteria={sub:'轨迹与地球表面相交',circular:'半径近似恒定并闭合',ellipse:'闭合，但远近地心距离不同',escape:'轨迹不闭合并持续远离'};
+  function classify(v){if(Math.abs(v-vCircular)/vCircular<=.005)return 'circular';if(v<vCircular)return 'sub';if(v<vEscape)return 'ellipse';return 'escape';}
+  function integrate(v){
+    var x=launch.x,y=launch.y, scale=v/vCircular, vx=-Math.sin(launchAngle)*scale,vy=Math.cos(launchAngle)*scale;
+    var pts=[],dt=.009;
+    for(var i=0;i<720;i++){var rr=Math.sqrt(x*x+y*y),a=-1/(rr*rr*rr);vx+=a*x*dt;vy+=a*y*dt;x+=vx*dt;y+=vy*dt;pts.push(new THREE.Vector3(x,y,0));if(rr<=1&&i>3)break;if(rr>4.5)break;}
+    trajectory.geometry.dispose(); trajectory.geometry=new THREE.BufferGeometry().setFromPoints(pts);
+  }
+  function update(mark){
+    var v=Number(slider.value), state=classify(v); integrate(v);
+    document.getElementById('speedValue').textContent=fmt(v);document.getElementById('currentName').textContent=names[state];document.getElementById('criterion').textContent=criteria[state];
+    if(mark)discovered.add(state);
+    document.querySelectorAll('.state-item').forEach(function(el){var on=el.dataset.state===state;el.classList.toggle('is-current',on);el.classList.toggle('found',discovered.has(el.dataset.state));});
+    document.getElementById('progress').textContent='已发现 '+discovered.size+' / '+Object.keys(names).length;
+    document.getElementById('finish').textContent=discovered.size===Object.keys(names).length?'同一位置，速度改变轨迹类别':'';
+    if(state!==lastState&&!Deck.reduced()){trajectory.material.opacity=.2;setTimeout(function(){trajectory.material.opacity=1;},180);} lastState=state;
+    renderer.render(scene,camera);
+  }
+  function resize(){var w=host.clientWidth,h=host.clientHeight;renderer.setSize(w,h,false);camera.aspect=w/h;camera.updateProjectionMatrix();renderer.render(scene,camera);}
+  Deck.onResize(resize);window.addEventListener('resize',resize);resize();
+  slider.addEventListener('input',function(){update(true);});
+  document.getElementById('reset').addEventListener('click',function(){discovered.clear();slider.value=vCircular;update(true);slider.focus();});
+  update(true);
+  var dragging=false,px=0,baseZ=camera.position.z;
+  canvas.addEventListener('pointerdown',function(e){dragging=true;px=e.clientX;canvas.setPointerCapture(e.pointerId);});
+  canvas.addEventListener('pointermove',function(e){if(!dragging)return;var d=(e.clientX-px)*.0025;px=e.clientX;scene.rotation.z+=d;renderer.render(scene,camera);});
+  canvas.addEventListener('pointerup',function(){dragging=false;});
+  if(!Deck.reduced()){
+    var start=performance.now();Deck.loop(function(t){var p=Math.min(1,(t-start)/900);earth.material.emissiveIntensity=.15+.5*p;renderer.render(scene,camera);},{still:1000});
+  }
+})();
+</script>
+</body>
+</html>

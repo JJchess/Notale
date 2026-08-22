@@ -1,0 +1,281 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  #stage { padding: 34px 52px 30px; }
+  .page-head { display:flex; align-items:flex-end; justify-content:space-between; gap:36px; }
+  .kicker { margin:0 0 4px; color:var(--primary); font:700 var(--fs-label)/1.4 var(--font-mono); letter-spacing:.16em; }
+  .take { margin:4px 0 0; color:var(--muted); font-size:var(--fs-sec); line-height:1.5; }
+  .progress-box { min-width:270px; padding:12px 16px; border-left:2px solid var(--accent); background:var(--accent-soft); }
+  .progress-box .label { color:var(--muted); }
+  #progress { margin-top:2px; color:var(--accent); font:750 var(--fs-lead)/1.4 var(--font-mono); }
+  .relay-panel { position:relative; overflow:hidden; padding:12px 18px 8px; border:1px solid var(--line); border-radius:var(--radius-2); background:linear-gradient(180deg,var(--primary-soft),transparent 34%),var(--panel-deep); box-shadow:var(--shadow-panel); }
+  .relay-panel::before { position:absolute; inset:0; content:""; pointer-events:none; background:repeating-linear-gradient(0deg,transparent 0,transparent 47px,rgba(89,195,195,.065) 48px,transparent 49px); }
+  .relay-panel::after { position:absolute; right:24px; bottom:12px; width:280px; height:74px; border-top:2px solid var(--primary-line); border-radius:50% 50% 0 0; box-shadow:0 -5px 18px rgba(89,195,195,.18); content:""; pointer-events:none; }
+  .relay-panel svg { position:relative; z-index:1; display:block; width:100%; height:100%; }
+  .flow-link { fill:none; stroke-linecap:round; vector-effect:non-scaling-stroke; }
+  .node-ring { vector-effect:non-scaling-stroke; }
+  .person-label { fill:var(--text); font:700 16px/1.4 var(--font-sans); }
+  .role-label { fill:var(--muted); font:600 14px/1.4 var(--font-sans); }
+  .action-char { fill:var(--text); font:700 18px/1 var(--font-sans); text-anchor:middle; dominant-baseline:central; }
+  .action-empty { fill:var(--faint); }
+  .fidelity-label { fill:var(--muted); font:600 14px/1.4 var(--font-sans); }
+  .fidelity-value { fill:var(--text); font:700 16px/1.4 var(--font-mono); }
+  .axis-label { fill:var(--muted); font:600 14px/1.4 var(--font-sans); }
+  .control-zone { display:flex; align-items:center; gap:24px; min-height:88px; padding:14px 18px; border:1px solid var(--line); border-radius:var(--radius-2); background:var(--panel); }
+  .method-group { display:flex; align-items:center; gap:10px; min-width:0; }
+  .method-group > span { margin-right:4px; color:var(--muted); font-size:var(--fs-sec); }
+  .choice { position:relative; display:inline-flex; align-items:center; min-height:42px; padding:7px 14px; border:1px solid var(--line-strong); border-radius:var(--radius-1); color:var(--text); font-size:var(--fs-sec); cursor:pointer; }
+  .choice:has(input:checked) { border-color:var(--accent); color:var(--accent); background:var(--accent-soft); }
+  .choice input { width:18px; height:18px; margin:0 8px 0 0; accent-color:var(--accent); }
+  #handoff,#reset { min-height:44px; padding:8px 20px; border:1px solid var(--primary); border-radius:var(--radius-1); color:var(--bg); background:var(--primary); font-size:var(--fs-sec); font-weight:750; cursor:pointer; }
+  #handoff:disabled { border-color:var(--line-strong); color:var(--faint); background:var(--panel-deep); cursor:not-allowed; }
+  #reset { border-color:var(--accent); color:var(--bg); background:var(--accent); }
+  #status { flex:1; min-width:250px; color:var(--muted); font-size:var(--fs-sec); line-height:1.5; }
+  .bottom-line { display:flex; align-items:center; justify-content:space-between; gap:30px; }
+  .bottom-line p { margin:0; }
+  .keyline { display:inline-flex; align-items:center; gap:8px; color:var(--muted); font-size:var(--fs-label); }
+  .sw { width:20px; height:4px; border-radius:999px; background:var(--primary); }
+  .sw.error { background:var(--accent); }
+  .shake { animation:shake .32s ease-out; }
+  @keyframes shake { 0%,100%{transform:translateX(0)} 25%{transform:translateX(-7px)} 50%{transform:translateX(7px)} 75%{transform:translateX(-4px)} }
+  @media (prefers-reduced-motion:reduce) { .shake { animation:none; } }
+</style>
+</head>
+<body data-page="17" data-total="50">
+<div id="stage">
+  <header class="page-head" style="height:92px">
+    <div>
+      <p class="kicker">CULTURE · FIDELITY</p>
+      <h1>传到第六个人，还剩多少？</h1>
+      <p class="take">保真度：与最初目标在同一位置相同的动作数。</p>
+    </div>
+    <div class="progress-box" aria-live="polite">
+      <div class="label">接力进度</div>
+      <div id="progress">第 0 / 5 次交接</div>
+    </div>
+  </header>
+
+  <main class="relay-panel diagram strata earth-arc k-process min0" style="flex:1" aria-label="六人模仿接力的误差链">
+    <svg id="relay" role="img" aria-labelledby="svgTitle svgDesc"></svg>
+  </main>
+
+  <section class="control-zone ctl" style="height:92px" aria-label="当前交接方式">
+    <div class="method-group" role="radiogroup" aria-label="选择观察或纠正方式">
+      <span>这一棒：</span>
+      <label class="choice"><input type="radio" name="method" value="once">只看一次</label>
+      <label class="choice"><input type="radio" name="method" value="twice">重复两次</label>
+      <label class="choice"><input type="radio" name="method" value="correct">纠正一处</label>
+    </div>
+    <button id="handoff" type="button">传给下一棒</button>
+    <button id="reset" type="button" hidden>用同一种子重置</button>
+    <div id="status" aria-live="polite">选择一种方式，再完成当前交接。</div>
+  </section>
+
+  <footer class="bottom-line" style="height:84px">
+    <p class="lead">传递难免引入误差；关键不是要求零误差，而是让示范可重复、让偏差能被发现并纠正。</p>
+    <div class="row gap-4 shrink0" aria-label="图例">
+      <span class="keyline"><i class="sw"></i>已传递</span>
+      <span class="keyline"><i class="sw error"></i>本棒新误差</span>
+    </div>
+  </footer>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script src="assets/lib/d3.min.js"></script>
+<script src="assets/lib/seedrandom.min.js"></script>
+<script>
+(() => {
+  'use strict';
+  Deck.init({index:17,total:50});
+
+  const target = ['抬','转','拍','停','指','收','踏','举'];
+  const people = ['A','B','C','D','E','F'];
+  const roles = ['原始示范者','模仿者','模仿者','模仿者','模仿者','最终接棒者'];
+  const svg = d3.select('#relay')
+    .attr('viewBox','0 0 1200 430')
+    .attr('preserveAspectRatio','xMidYMid meet');
+  svg.append('title').attr('id','svgTitle').text('模仿接力中的误差链');
+  svg.append('desc').attr('id','svgDesc').text('六个人依次观察并复制八个动作，下方记录每一棒相对原始动作的保真度。');
+
+  const primary = Deck.token('--primary');
+  const accent = Deck.token('--accent');
+  const panel = Deck.token('--panel');
+  const panelDeep = Deck.token('--panel-deep');
+  const line = Deck.token('--line-strong');
+  const text = Deck.token('--text');
+  const muted = Deck.token('--muted');
+  const x = d3.scalePoint().domain(people).range([110,1090]);
+  const fidelity = d3.scaleLinear().domain([0,8]).range([0,320]);
+  const barW = 116;
+  const cellW = 13;
+  const seqY = 156;
+  const reduced = Deck.reduced();
+  const duration = reduced ? 0 : 420;
+  let state;
+
+  const defs = svg.append('defs');
+  defs.append('marker').attr('id','arrow').attr('viewBox','0 0 10 10').attr('refX',9).attr('refY',5)
+    .attr('markerWidth',6).attr('markerHeight',6).attr('orient','auto-start-reverse')
+    .append('path').attr('d','M 0 0 L 10 5 L 0 10 z').attr('fill',primary);
+  const pulseGrad = defs.append('linearGradient').attr('id','pulseGrad');
+  pulseGrad.append('stop').attr('offset','0%').attr('stop-color',primary).attr('stop-opacity',0);
+  pulseGrad.append('stop').attr('offset','50%').attr('stop-color',text).attr('stop-opacity',1);
+  pulseGrad.append('stop').attr('offset','100%').attr('stop-color',primary).attr('stop-opacity',0);
+
+  svg.append('text').attr('class','axis-label').attr('x',24).attr('y',137).text('八格动作序列');
+  svg.append('text').attr('class','axis-label').attr('x',24).attr('y',318).text('与原始目标相同');
+  const finishCompare=svg.append('g').attr('aria-label','目标与最终序列对齐比较').attr('display','none');
+  finishCompare.append('rect').attr('x',352).attr('y',348).attr('width',496).attr('height',76).attr('rx',10)
+    .attr('fill',panelDeep).attr('stroke',accent);
+  finishCompare.append('text').attr('class','axis-label').attr('x',380).attr('y',378).text('目标');
+  finishCompare.append('text').attr('class','action-char target-sequence').attr('x',620).attr('y',374).style('letter-spacing','8px').text(target.join(''));
+  finishCompare.append('text').attr('class','axis-label').attr('x',380).attr('y',409).text('最终');
+  finishCompare.append('text').attr('class','action-char final-sequence').attr('x',620).attr('y',405).style('letter-spacing','8px');
+
+  const links = svg.append('g').selectAll('line').data(d3.range(5)).join('line')
+    .attr('class','flow-link').attr('x1',d=>x(people[d])+33).attr('x2',d=>x(people[d+1])-39)
+    .attr('y1',85).attr('y2',85).attr('stroke',line).attr('stroke-width',2).attr('marker-end','url(#arrow)');
+
+  const pulse = svg.append('rect').attr('x',0).attr('y',81).attr('width',54).attr('height',8)
+    .attr('rx',4).attr('fill','url(#pulseGrad)').attr('opacity',0).attr('pointer-events','none');
+
+  const groups = svg.append('g').selectAll('g.person').data(people).join('g')
+    .attr('class','person').attr('transform',(d,i)=>`translate(${x(d)},${reduced ? 0 : 12})`).attr('opacity',reduced?1:0);
+  groups.append('circle').attr('class','node-ring').attr('cy',85).attr('r',28).attr('fill',panelDeep).attr('stroke',line).attr('stroke-width',2);
+  groups.append('text').attr('class','person-label').attr('x',0).attr('y',90).attr('text-anchor','middle').text(d=>d);
+  groups.append('text').attr('class','role-label').attr('x',0).attr('y',42).attr('text-anchor','middle').text((d,i)=>roles[i]);
+  groups.append('g').attr('class','sequence').each(function(){
+    d3.select(this).selectAll('rect').data(d3.range(8)).join('rect')
+      .attr('x',d=>(d-4)*cellW+1).attr('y',seqY).attr('width',cellW-2).attr('height',34).attr('rx',3)
+      .attr('fill',panel).attr('stroke',line);
+    d3.select(this).append('text').attr('class','action-char').attr('x',0).attr('y',seqY+18)
+      .style('letter-spacing','2px').text('········').attr('fill',muted);
+  });
+  groups.append('g').attr('class','fidelity').each(function(){
+    const g=d3.select(this);
+    g.append('rect').attr('x',-barW/2).attr('y',292).attr('width',barW).attr('height',12).attr('rx',6).attr('fill',panel).attr('stroke',line);
+    g.append('rect').attr('class','bar').attr('x',-barW/2).attr('y',292).attr('height',12).attr('rx',6).attr('fill',primary).attr('width',0);
+    g.append('text').attr('class','fidelity-value').attr('x',0).attr('y',334).attr('text-anchor','middle').text('—');
+  });
+
+  if (!reduced) {
+    groups.transition().delay((d,i)=>i*65).duration(duration).attr('transform',d=>`translate(${x(d)},0)`).attr('opacity',1);
+  }
+
+  const progressEl = document.getElementById('progress');
+  const statusEl = document.getElementById('status');
+  const handoff = document.getElementById('handoff');
+  const reset = document.getElementById('reset');
+
+  function freshState(){
+    return { step:0, rng:new Math.seedrandom('page-17'), sequences:[target.slice()], newErrors:[[]], corrected:[[]], trace:[] };
+  }
+  function score(seq){ return seq.reduce((n,v,i)=>n+(v===target[i]?1:0),0); }
+  function replacement(original,rng){
+    const options=target.filter(v=>v!==original);
+    return options[Math.floor(rng()*options.length)];
+  }
+  function transition(method){
+    const source=state.sequences[state.step];
+    const rate=method==='twice' ? 0.12 : 0.22;
+    const next=source.map(v=>state.rng()<rate ? replacement(v,state.rng) : v);
+    const made=next.map((v,i)=>v!==source[i]?i:-1).filter(i=>i>=0);
+    const corrected=[];
+    if(method==='correct' && made.length){
+      const pick=made[Math.floor(state.rng()*made.length)];
+      next[pick]=source[pick];
+      corrected.push(pick);
+    }
+    const newErrors=next.map((v,i)=>v!==source[i]?i:-1).filter(i=>i>=0);
+    state.step+=1;
+    state.sequences.push(next);
+    state.newErrors.push(newErrors);
+    state.corrected.push(corrected);
+    state.trace.push({method,newErrors:newErrors.slice(),corrected:corrected.slice(),fidelity:score(next)});
+    return {source,next,newErrors,corrected};
+  }
+
+  function render(animate=false, result=null){
+    links.attr('stroke',(d)=>d===state.step&&state.step<people.length-1?accent:(d<state.step?primary:line)).attr('stroke-width',(d)=>d===state.step?4:2);
+    groups.select('.node-ring')
+      .attr('fill',(d,i)=>i<=state.step?primary:panelDeep)
+      .attr('stroke',(d,i)=>i===state.step?accent:(i<=state.step?primary:line))
+      .attr('stroke-width',(d,i)=>i===state.step?4:2);
+    groups.select('.person-label').attr('fill',(d,i)=>i<=state.step?Deck.token('--bg'):text);
+
+    groups.each(function(d,i){
+      const g=d3.select(this);
+      const seq=state.sequences[i];
+      const errs=state.newErrors[i]||[];
+      const corrected=state.corrected[i]||[];
+      g.select('.sequence').selectAll('rect')
+        .attr('fill',(q)=>errs.includes(q)?accent:(seq?panel:panelDeep))
+        .attr('stroke',(q)=>corrected.includes(q)?primary:(errs.includes(q)?accent:line));
+      g.select('.sequence text').text(seq?seq.join(''):'········').attr('fill',seq?text:muted);
+      const s=seq?score(seq):0;
+      g.select('.bar').transition().duration(animate?duration:0).attr('width',seq?barW*(fidelity(s)/320):0);
+      g.select('.fidelity-value').text(seq?`${s} / ${target.length}`:'—');
+      if(animate && i===state.step && !reduced){
+        g.select('.sequence').selectAll('rect').filter(q=>errs.includes(q)).attr('transform','translate(4,0)').transition().duration(duration).attr('transform','translate(0,0)');
+        g.select('.node-ring').transition().duration(duration/2).attr('r',34).transition().duration(duration/2).attr('r',28);
+      }
+    });
+
+    progressEl.textContent=`第 ${state.step} / ${people.length-1} 次交接`;
+    finishCompare.attr('display',state.step===people.length-1?null:'none');
+    if(state.step===people.length-1){
+      const finalScore=score(state.sequences[state.step]);
+      finishCompare.select('.final-sequence').text(state.sequences[state.step].join('')).attr('fill',accent);
+      statusEl.textContent=`接力完成：最终保留 ${finalScore} / ${target.length}。`;
+      handoff.hidden=true;
+      reset.hidden=false;
+      document.querySelectorAll('input[name="method"]').forEach(el=>el.disabled=true);
+      window.dispatchEvent(new CustomEvent('game-complete',{detail:{score:finalScore,metrics:{fidelity:finalScore},trace:state.trace.slice()}}));
+    } else {
+      statusEl.textContent=result && result.corrected.length ? '一处偏差已被发现并纠正。' : (result ? `这一棒新增 ${result.newErrors.length} 处误差。` : '选择一种方式，再完成当前交接。');
+    }
+  }
+
+  function runPulse(fromIndex){
+    if(reduced) return;
+    pulse.attr('opacity',1).attr('x',x(people[fromIndex])+28)
+      .transition().duration(duration).ease(d3.easeCubicOut).attr('x',x(people[fromIndex+1])-62).attr('opacity',0);
+  }
+  function start(){
+    state=freshState();
+    handoff.hidden=false;
+    reset.hidden=true;
+    document.querySelectorAll('input[name="method"]').forEach(el=>{el.checked=false;el.disabled=false;});
+    render(false);
+    window.dispatchEvent(new CustomEvent('game-start',{detail:{state:getState()}}));
+  }
+  function getState(){ return {step:state.step,sequences:state.sequences.map(s=>s.slice()),trace:state.trace.map(t=>({...t}))}; }
+
+  handoff.addEventListener('click',()=>{
+    const selected=document.querySelector('input[name="method"]:checked');
+    if(!selected){
+      handoff.classList.remove('shake'); void handoff.offsetWidth; handoff.classList.add('shake');
+      statusEl.textContent='先决定这一棒如何观察或纠正。';
+      return;
+    }
+    const from=state.step;
+    const result=transition(selected.value);
+    runPulse(from);
+    render(true,result);
+    selected.checked=false;
+    window.dispatchEvent(new CustomEvent('game-progress',{detail:{state:getState(),action:selected.value,metrics:{fidelity:score(state.sequences[state.step])}}}));
+  });
+  reset.addEventListener('click',()=>{
+    start();
+    window.dispatchEvent(new CustomEvent('game-reset',{detail:{state:getState()}}));
+  });
+  window.page17Game={start,reset:start,getState};
+  start();
+})();
+</script>
+</body>
+</html>

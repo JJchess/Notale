@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  .memory-page{height:100%;display:flex;flex-direction:column;gap:16px;padding-top:4px}
+  .memory-top{display:flex;align-items:center;justify-content:space-between;gap:24px;min-height:62px}
+  .memory-intro{max-width:940px;padding:9px 14px;color:var(--muted);background:var(--surface);border-left:4px solid var(--primary);border-radius:0 var(--radius-sm) var(--radius-sm) 0;font-size:var(--fs-sec);line-height:var(--lh-sec)}
+  .chain-status{display:flex;align-items:center;gap:14px;min-width:280px;justify-content:flex-end}
+  .chain-count{font-family:var(--font-mono);font-size:var(--fs-lead);font-weight:750;color:var(--primary)}
+  .reset{font-size:var(--fs-sec)}
+  .workbench{position:relative;flex:1;min-height:0;padding:18px 20px 16px;background:linear-gradient(135deg,rgba(66,199,194,.05),transparent 36%),var(--surface-deep);border:1px solid var(--line);border-radius:var(--radius-md);overflow:hidden}
+  .source-row{display:flex;align-items:center;gap:14px;min-height:70px;padding:0 10px 12px;border-bottom:1px solid var(--line)}
+  .source-mark{width:58px;height:58px;border:1px solid var(--primary-line);border-radius:50% 46% 44% 50%;display:grid;place-items:center;color:var(--primary);font-size:28px;background:var(--primary-soft)}
+  .source-copy{width:170px}.source-copy strong{display:block;font-size:var(--fs-sec)}
+  .source-copy span{display:block;color:var(--muted);font-size:var(--fs-label)}
+  .chips{display:flex;gap:12px;flex-wrap:wrap}
+  .reader-network{margin-left:auto;width:300px;height:62px;position:relative;border-left:1px solid var(--primary-line)}
+  .reader-network::before,.reader-network::after{content:"";position:absolute;left:32px;right:24px;height:1px;background:var(--primary-line);transform-origin:left center}
+  .reader-network::before{top:23px;transform:rotate(7deg)}.reader-network::after{top:42px;transform:rotate(-6deg)}
+  .reader-network .net-label{position:absolute;left:18px;top:0;color:var(--muted);font-size:var(--fs-label)}
+  .reader-network .person{position:absolute;width:18px;height:18px;border:2px solid var(--primary);border-radius:50%;background:var(--surface-deep);box-shadow:0 0 12px rgba(66,199,194,.45)}
+  .reader-network .p1{left:90px;top:25px}.reader-network .p2{left:180px;top:10px}.reader-network .p3{left:258px;top:37px}
+  .info-chip{min-width:108px;background:var(--surface-high);border-color:var(--primary-line);font-size:var(--fs-sec);touch-action:none;transition:transform 180ms ease-out,border-color 180ms ease-out,opacity 180ms ease-out}
+  .info-chip[aria-pressed="true"]{color:#071019;background:var(--accent);border-color:var(--accent)}
+  .info-chip.used{opacity:.38;text-decoration:line-through;pointer-events:none}
+  .chain-wrap{position:relative;margin-top:12px;height:342px}
+  #linkLayer{position:absolute;inset:0;width:100%;height:100%;z-index:0;pointer-events:none;overflow:visible}
+  .link-path{fill:none;stroke:rgba(66,199,194,.22);stroke-width:4;stroke-linecap:round;transition:stroke 220ms ease-out,filter 220ms ease-out}
+  .link-path.on{stroke:var(--primary);filter:drop-shadow(0 0 6px rgba(66,199,194,.7))}
+  .k-process.memory-chain{--process-cols:4;position:relative;z-index:1;height:100%;gap:34px;padding:8px 2px 0}
+  .k-process.memory-chain .axis{top:36px;opacity:.35}
+  .k-process.memory-chain .step{height:318px;padding:52px 14px 14px;border-radius:8px;background:linear-gradient(150deg,rgba(66,199,194,.05),transparent 38%),var(--surface);transition:transform 220ms ease-out,border-color 220ms ease-out}
+  .k-process.memory-chain .step:nth-of-type(3){transform:translateY(8px)}
+  .k-process.memory-chain .step:nth-of-type(4){transform:translateY(16px)}
+  .k-process.memory-chain .step:nth-of-type(5){transform:translateY(24px)}
+  .k-process.memory-chain .step.is-current{transform:translateY(-3px);background:var(--surface-high)}
+  .k-process.memory-chain .step.done{border-color:var(--primary-line)}
+  .step-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px}
+  .step-head h2{font-size:var(--fs-h2)}
+  .condition{font-family:var(--font-mono);font-size:var(--fs-label);color:var(--faint)}
+  .step.done .condition{color:var(--primary)}
+  .encoding{min-height:72px;padding:10px 12px;background:#09151e;display:flex;align-items:center;gap:10px;
+  }
+  .encoding::before{flex:0 0 48px;height:48px;display:grid;place-items:center;color:var(--primary);background:var(--primary-soft);border:1px solid var(--primary-line);border-radius:var(--radius-sm);font-family:var(--font-mono);font-size:28px;line-height:1}
+  .knot .encoding::before{content:"●┈●";font-size:16px}.image .encoding::before{content:"▧"}.text .encoding::before{content:"文"}.database .encoding::before{content:"{ }";font-size:20px}
+  .encoding{border:1px dashed var(--line-strong);border-radius:var(--radius-sm);font-size:var(--fs-sec);line-height:var(--lh-sec);color:var(--muted)}
+  .step.is-current .encoding{border-color:var(--accent)}
+  .step.done .encoding{border-style:solid;border-color:var(--primary-line);color:var(--text)}
+  .fields{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+  .field{padding:3px 7px;border:1px solid var(--line);border-radius:999px;font-size:var(--fs-label);color:var(--faint)}
+  .field.kept{color:var(--text);border-color:var(--primary-line);background:var(--primary-soft)}
+  .field.rule{border-style:dashed;color:var(--accent)}
+  .dimension-list{display:flex;flex-direction:column;gap:7px;margin-top:10px;padding-top:9px;border-top:1px solid var(--line)}
+  .dimension{display:flex;gap:8px;min-height:34px;padding:5px 7px;background:rgba(66,199,194,.06);border-left:2px solid var(--primary-line);font-size:var(--fs-sec);line-height:var(--lh-sec)}
+  .dimension b{flex:0 0 66px;color:var(--primary);font-size:var(--fs-label)}
+  .dimension span{color:var(--muted)}
+  .rule-band{height:48px;margin-top:7px;background:repeating-linear-gradient(90deg,var(--primary-soft) 0 18px,rgba(255,181,71,.14) 18px 36px);border:1px dashed var(--primary-line);border-radius:var(--radius-sm)}
+  .copy-note{margin-top:8px;color:var(--muted);font-size:var(--fs-sec);line-height:var(--lh-sec)}
+  .feedback{display:flex;align-items:center;justify-content:space-between;gap:20px;min-height:54px;padding:10px 16px;background:var(--surface);border-left:4px solid var(--primary);border-radius:0 var(--radius-sm) var(--radius-sm) 0}
+  #message{font-size:var(--fs-sec);line-height:var(--lh-sec)}
+  .life-cycle{display:flex;align-items:center;gap:7px;white-space:nowrap;color:var(--primary);font-family:var(--font-mono);font-size:var(--fs-label)}
+  .life-cycle b{padding:5px 9px;background:var(--primary-soft);border:1px solid var(--primary-line);border-radius:var(--radius-sm)}
+  .rule-note{max-width:430px;color:var(--muted);font-size:var(--fs-sec);line-height:var(--lh-sec);text-align:right}
+  .shake{animation:shake .24s ease-out}
+  @keyframes shake{25%{transform:translateX(-8px)}50%{transform:translateX(7px)}75%{transform:translateX(-4px)}}
+  @media (prefers-reduced-motion:reduce){.info-chip,.link-path,.k-process.memory-chain .step{transition:none}.shake{animation:none}}
+</style>
+</head>
+<body data-page="27" data-total="48">
+<div id="stage">
+<main id="main">
+  <section class="memory-page" aria-labelledby="activityTitle">
+    <div class="memory-top">
+      <p id="activityTitle" class="memory-intro">把同一事实拆成四个字段。依次将高亮信息拖进当前媒介；键盘可按 Enter 选择。外部记忆保存的是编码，不是物体自带的意义。</p>
+      <div class="chain-status"><span id="progress" class="chain-count" aria-live="polite">外部记忆链</span><button id="reset" class="reset" type="button">重置编码链</button></div>
+    </div>
+    <div class="workbench no-pan">
+      <div class="source-row">
+        <div class="source-mark" aria-hidden="true">◔</div>
+        <div class="source-copy"><strong>个体记忆</strong><span>同一事实的四个字段</span></div>
+        <div id="chips" class="chips" aria-label="待编码的信息"></div>
+        <div class="reader-network" aria-label="可复制媒介把信息连接到其他读取者"><span class="net-label">可被他人再次读取</span><i class="person p1"></i><i class="person p2"></i><i class="person p3"></i></div>
+      </div>
+      <div class="chain-wrap">
+        <svg id="linkLayer" role="img" aria-label="个体记忆到四种外部媒介的连接链"></svg>
+        <div id="chain" class="k-process memory-chain">
+          <div class="axis" aria-hidden="true"></div>
+        </div>
+      </div>
+    </div>
+    <div class="feedback"><span id="message" aria-live="assertive">从“数量”开始：把对应信息拖入绳结卡。</span><span class="life-cycle" aria-label="外部记忆的功能链"><b>编码</b>→<b>保存</b>→<b>读取</b>→<b>复制</b></span><span class="rule-note">这是一条功能链，不是所有社会必经的历史阶梯。</span></div>
+  </section>
+</main>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script src="assets/lib/d3.min.js"></script>
+<script>
+Lec.mount({index:27,kicker:"EXTERNAL MEMORY",title:"把记忆放到身体之外",take:"绳结、图像、文字与数据库把记忆从个体神经系统移到可复制媒介。"});
+const stages=[{id:"knot",label:"绳结"},{id:"image",label:"图像"},{id:"text",label:"文字"},{id:"database",label:"数据库"}];
+const link=d3.linkHorizontal().x(d=>d.x).y(d=>d.y);
+const N=n=>Lec.P.formatNumber(n);
+const facts=[{id:"object",label:"谷物",kind:"对象"},{id:"number",label:N(8),kind:"数量"},{id:"time",label:"秋收后",kind:"时间"},{id:"place",label:"北仓",kind:"地点"}];
+const specs=[
+ {need:"number",condition:"约定",encoding:`${N(8)} 个结＋“谷物”标签`,kept:["数量"],rule:"类别靠约定",save:"数量；类别另约定",read:"知道结与对象的对应",copy:"可照样复结，语境易丢失"},
+ {need:"object",condition:"保存",encoding:`谷仓图＋${N(8)} 袋谷物＋月亮符号`,kept:["对象","数量","时间"],rule:"地点未表达",save:"对象、数量、粗略时间",read:"共享图像符号含义",copy:"可临摹，细节可能漂移"},
+ {need:"time",condition:"读取",encoding:`秋收后，北仓有 ${N(8)} 袋谷物`,kept:["对象","数量","时间","地点"],rule:"须识字懂语言",save:"四类信息均可表达",read:"识字并理解语言",copy:"可逐字抄写与核对"},
+ {need:"place",condition:"复制",encoding:`时间=秋收后；地点=北仓；物品=谷物；数量=${N(8)}`,kept:["对象","数量","时间","地点"],rule:"须共享字段格式",save:"分字段保存同一事实",read:"共享字段与访问规则",copy:"可复制、检索和校验"}
+];
+let current=0, selected=null;
+const chips=document.getElementById('chips'), chain=document.getElementById('chain'), msg=document.getElementById('message'), progress=document.getElementById('progress');
+function build(){
+ if(!chain.querySelector('.axis')) chain.innerHTML='<div class="axis" aria-hidden="true"></div>';
+ chips.innerHTML=facts.map(f=>`<button class="info-chip" type="button" draggable="true" data-id="${f.id}" aria-pressed="false" aria-label="${f.kind}：${f.label}">${f.kind} · ${f.label}</button>`).join('');
+ stages.forEach((s,i)=>{const a=document.createElement('article');a.className=`step ${s.id}`;a.dataset.i=i;a.innerHTML=`<div class="step-head"><h2>${s.label}</h2><span class="condition">${specs[i].condition}</span></div><div class="encoding">把当前字段拖到这里</div><div class="fields"><span class="field">对象</span><span class="field">数量</span><span class="field">时间</span><span class="field">地点</span></div><div class="dimension-list"><div class="dimension"><b>能保存</b><span>${specs[i].save}</span></div><div class="dimension"><b>读取要</b><span>${specs[i].read}</span></div></div><div class="rule-band" title="每种媒介都依赖共享约定" aria-label="共享约定贯穿保存与读取"></div><p class="copy-note">复制：完成编码后揭示</p>${i<3?'<span class="arw" aria-hidden="true"></span>':''}`;chain.appendChild(a)});
+ chips.querySelectorAll('button').forEach(b=>{b.addEventListener('click',()=>choose(b));b.addEventListener('dragstart',e=>{selected=b.dataset.id;e.dataTransfer.setData('text/plain',selected)})});
+ chain.querySelectorAll('.step').forEach(el=>{el.addEventListener('dragover',e=>e.preventDefault());el.addEventListener('drop',e=>{e.preventDefault();attempt(e.dataTransfer.getData('text/plain'))})});
+ render(); drawLinks();
+}
+function choose(b){if(b.classList.contains('used'))return;selected=b.dataset.id;chips.querySelectorAll('button').forEach(x=>x.setAttribute('aria-pressed',String(x===b)));attempt(selected)}
+function attempt(id){
+ if(current>=stages.length)return;
+ const expected=specs[current].need, step=chain.querySelector(`[data-i="${current}"]`);
+ if(id!==expected){
+   const f=facts.find(x=>x.id===id); step.classList.remove('shake');void step.offsetWidth;step.classList.add('shake');
+   msg.textContent=current===0?(id==='place'?'绳结没有表达“地点”；它只能直接表示数量。':'绳结只能直接表示数量，类别需要共享约定。'):`这种编码没有表达当前需要补入的“${facts.find(x=>x.id===expected).kind}”。`;
+   return;
+ }
+ chips.querySelector(`[data-id="${id}"]`).classList.add('used');
+ step.classList.add('done'); step.querySelector('.encoding').textContent=specs[current].encoding;
+ step.querySelectorAll('.field').forEach(x=>{if(specs[current].kept.includes(x.textContent))x.classList.add('kept')});
+ const extra=document.createElement('span');extra.className='field rule';extra.textContent=specs[current].rule;step.querySelector('.fields').appendChild(extra);
+ step.querySelector('.copy-note').textContent=specs[current].copy;
+ current++; selected=null; render(); drawLinks();
+ if(current===stages.length) msg.textContent='信息已离开单一个体，但没有离开共享规则。';
+ else msg.textContent=`已接通“${specs[current-1].condition}”。下一步补入“${facts.find(x=>x.id===specs[current].need).kind}”。`;
+}
+function render(){
+ progress.textContent=`外部记忆链 ${N(current)}/${N(stages.length)}`;
+ chain.querySelectorAll('.step').forEach((el,i)=>el.classList.toggle('is-current',i===current));
+ chips.querySelectorAll('button').forEach(b=>b.setAttribute('aria-pressed','false'));
+}
+function drawLinks(){
+ const svg=d3.select('#linkLayer').attr('viewBox','0 0 1364 300');
+ const xs=[170,510,850,1190], data=d3.range(3).map(i=>({source:{x:xs[i]+105,y:35},target:{x:xs[i+1]-105,y:35},on:i<current}));
+ svg.selectAll('path').data(data).join('path').attr('class',d=>`link-path${d.on?' on':''}`).attr('d',link);
+}
+document.getElementById('reset').addEventListener('click',()=>{current=0;selected=null;chain.querySelectorAll('.step').forEach(el=>el.remove());build();msg.textContent='从“数量”开始：把对应信息拖入绳结卡。'});
+build();
+</script>
+</body>
+</html>

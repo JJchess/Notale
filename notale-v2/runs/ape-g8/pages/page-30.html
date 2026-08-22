@@ -1,0 +1,855 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  #main {
+    --plate-line: rgba(188, 200, 197, 0.34);
+    --plate-faint: rgba(188, 200, 197, 0.1);
+    --connected: var(--primary);
+    padding-top: 32px;
+    padding-bottom: 32px;
+  }
+
+  .page-shell {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    width: 100%;
+    height: 100%;
+    min-width: 0;
+    min-height: 0;
+  }
+
+  .page-intro {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 28px;
+    min-width: 0;
+  }
+
+  .intro-copy {
+    min-width: 0;
+  }
+
+  .intro-copy h1 {
+    margin-bottom: 5px;
+  }
+
+  .intro-copy p {
+    color: var(--text-secondary);
+    font-size: var(--fs-sec);
+    line-height: var(--lh-sec);
+  }
+
+  .progress-block {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    flex: 0 0 auto;
+    min-width: 324px;
+    padding-bottom: 3px;
+  }
+
+  .progress-copy {
+    color: var(--text-secondary);
+    font-family: var(--font-mono);
+    font-size: var(--fs-sec);
+    line-height: 1.45;
+    white-space: nowrap;
+  }
+
+  #progressCount {
+    color: var(--accent);
+    font-weight: 700;
+  }
+
+  .progress-ticks {
+    display: flex;
+    gap: 5px;
+    flex: 1 1 auto;
+  }
+
+  .progress-ticks i {
+    display: block;
+    width: 22px;
+    height: 8px;
+    background: var(--surface-strong);
+    border: 1px solid var(--line-strong);
+    transition: background-color 180ms ease, border-color 180ms ease;
+  }
+
+  .progress-ticks i.on {
+    background: var(--primary);
+    border-color: var(--primary);
+  }
+
+  .reset-button {
+    display: none;
+    width: 42px;
+    min-width: 42px;
+    height: 42px;
+    padding: 0;
+  }
+
+  .reset-button.show {
+    display: inline-flex;
+  }
+
+  .reset-button svg {
+    width: 20px;
+    height: 20px;
+  }
+
+  .workspace {
+    position: relative;
+    display: flex;
+    flex: 1 1 0;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+    background-color: #151a1c;
+    background-image:
+      linear-gradient(var(--plate-faint) 1px, transparent 1px),
+      linear-gradient(90deg, var(--plate-faint) 1px, transparent 1px);
+    background-size: 32px 32px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-sm);
+  }
+
+  .condition-zone {
+    position: relative;
+    z-index: 4;
+    flex: 0 0 380px;
+    box-sizing: border-box;
+    min-width: 0;
+    padding: 18px 20px;
+    background: rgba(26, 32, 34, 0.96);
+    border-right: 1px solid var(--line-strong);
+    outline: none;
+  }
+
+  .condition-zone:focus-visible {
+    box-shadow: inset 0 0 0 3px var(--focus);
+  }
+
+  .zone-label {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 10px;
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+    font-size: var(--fs-label);
+    line-height: 1.35;
+  }
+
+  .zone-label strong {
+    color: var(--text-secondary);
+    font-size: var(--fs-label);
+  }
+
+  .condition-list.k-enumeration {
+    --enum-cols: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+  }
+
+  .condition-list.k-enumeration > .it {
+    grid-template-columns: 30px 74px minmax(0, 1fr);
+    align-items: center;
+    gap: 9px;
+    min-height: 58px;
+    padding: 6px 10px;
+    cursor: grab;
+    touch-action: none;
+    user-select: none;
+    transition: border-color 150ms ease, background-color 150ms ease, opacity 150ms ease;
+  }
+
+  .condition-list.k-enumeration > .it::before {
+    width: 28px;
+    height: 28px;
+    font-size: var(--fs-tick);
+  }
+
+  .condition-list.k-enumeration > .it > .it-title {
+    font-size: var(--fs-lead);
+  }
+
+  .condition-list.k-enumeration > .it > .it-body {
+    grid-column: 3;
+    color: var(--text-secondary);
+    font-size: var(--fs-sec);
+    line-height: 1.42;
+  }
+
+  .condition-list .it.selected {
+    background: var(--accent-soft);
+    border-color: var(--accent);
+  }
+
+  .condition-list .it.dragging {
+    z-index: 20;
+    cursor: grabbing;
+    border-color: var(--accent);
+    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.42);
+  }
+
+  .condition-list .it.connected {
+    color: var(--primary);
+    background: var(--primary-soft);
+    border-color: var(--primary-line);
+  }
+
+  .condition-list .it.connected::before {
+    color: var(--bg);
+    background: var(--primary);
+    border-color: var(--primary);
+  }
+
+  .condition-list .it.shake {
+    animation: reject 280ms ease;
+  }
+
+  @keyframes reject {
+    0%, 100% { transform: translateX(0); }
+    25% { transform: translateX(-9px); }
+    55% { transform: translateX(8px); }
+    78% { transform: translateX(-4px); }
+  }
+
+  .diagram-zone {
+    position: relative;
+    flex: 1 1 0;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .cabin-volume {
+    position: absolute;
+    z-index: 0;
+    top: 11%;
+    left: 13%;
+    width: 76%;
+    height: 77%;
+    background: var(--surface-strong);
+    border: 1px solid var(--line-strong);
+    clip-path: polygon(14% 0, 86% 0, 100% 14%, 100% 86%, 86% 100%, 14% 100%, 0 86%, 0 14%);
+  }
+
+  .boundary-caption {
+    position: absolute;
+    z-index: 3;
+    color: var(--text-secondary);
+    background: #151a1c;
+    font-family: var(--font-mono);
+    font-size: var(--fs-label);
+    line-height: 1.35;
+  }
+
+  .boundary-caption.outside { top: 18px; right: 22px; }
+  .boundary-caption.inside { top: 56px; left: 44%; color: var(--primary); }
+
+  .service-bay {
+    position: absolute;
+    z-index: 1;
+    top: 25%;
+    box-sizing: border-box;
+    width: 19%;
+    height: 43%;
+    background: #111719;
+    border: 2px solid var(--line-strong);
+    border-top: 6px solid var(--primary-line);
+  }
+
+  .service-bay.left { left: 12%; }
+  .service-bay.right { right: 9%; }
+
+  .service-bay::before,
+  .service-bay::after {
+    position: absolute;
+    right: 12px;
+    left: 12px;
+    height: 28%;
+    content: "";
+    background: var(--surface-strong);
+    border: 1px solid var(--line-strong);
+  }
+
+  .service-bay::before { top: 14%; }
+  .service-bay::after { bottom: 14%; }
+
+  .plate-meta {
+    position: absolute;
+    z-index: 3;
+    top: 16px;
+    left: 20px;
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+    font-size: var(--fs-label);
+    line-height: 1.35;
+  }
+
+  .plate-meta span {
+    color: var(--text-secondary);
+  }
+
+  .diagram-canvas {
+    z-index: 0;
+  }
+
+  .diagram-svg {
+    position: absolute;
+    z-index: 2;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+  }
+
+  .hull, .module, .person, .detail, .earth, .boundary, .route {
+    fill: none;
+    vector-effect: non-scaling-stroke;
+  }
+
+  .hull-fill {
+    fill: rgba(188, 200, 197, 0.045);
+    stroke: none;
+  }
+
+  .module-fill {
+    fill: rgba(85, 194, 176, 0.16);
+    stroke: rgba(85, 194, 176, 0.4);
+    stroke-width: 2;
+    vector-effect: non-scaling-stroke;
+  }
+
+  .hull { stroke: rgba(237, 242, 240, 0.72); stroke-width: 2; }
+  .module { stroke: var(--plate-line); stroke-width: 1.2; stroke-dasharray: 5 5; }
+  .detail { stroke: rgba(188, 200, 197, 0.28); stroke-width: 1; }
+  .person { stroke: rgba(237, 242, 240, 0.8); stroke-width: 1.8; }
+  .earth { stroke: rgba(85, 194, 176, 0.34); stroke-width: 2; }
+  .boundary { stroke: rgba(242, 184, 75, 0.5); stroke-width: 2; stroke-dasharray: 7 7; }
+  .boundary.complete { stroke: var(--primary); stroke-dasharray: 0; filter: drop-shadow(0 0 7px rgba(85, 194, 176, 0.55)); }
+  .route { stroke: rgba(188, 200, 197, 0.72); stroke-width: 3; stroke-dasharray: 7 5; transition: stroke 180ms ease; }
+  .route.on { stroke: var(--primary); stroke-width: 2.3; stroke-dasharray: 0; filter: drop-shadow(0 0 5px rgba(85, 194, 176, 0.62)); }
+  .route.pulse { stroke-dasharray: 9 7; animation: flow 550ms linear; }
+
+  @keyframes flow { to { stroke-dashoffset: -32; } }
+
+  .endpoint {
+    position: absolute;
+    z-index: 5;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    color: var(--accent);
+    background: #151a1c;
+    border: 2px solid var(--accent);
+    border-radius: 50%;
+    font-family: var(--font-mono);
+    font-size: var(--fs-tick);
+    font-weight: 700;
+    line-height: 1;
+    transform: translate(-50%, -50%);
+    transition: color 150ms ease, border-color 150ms ease, box-shadow 150ms ease;
+  }
+
+  .endpoint.keyboard-target {
+    box-shadow: 0 0 0 4px rgba(242, 184, 75, 0.22);
+  }
+
+  .endpoint.on {
+    color: var(--bg);
+    background: var(--primary);
+    border-color: var(--primary);
+  }
+
+  .endpoint.error {
+    color: var(--danger);
+    border-color: var(--danger);
+    box-shadow: 0 0 0 5px rgba(239, 117, 109, 0.2);
+  }
+
+  .system-label {
+    position: absolute;
+    z-index: 4;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 2px;
+    box-sizing: border-box;
+    width: 220px;
+    min-height: 98px;
+    padding: 10px 14px;
+    color: var(--text-muted);
+    background: rgba(17, 20, 23, 0.9);
+    border: 1px solid var(--line-strong);
+    border-left: 3px solid var(--line-strong);
+    font-size: var(--fs-label);
+    line-height: 1.35;
+    opacity: 0.78;
+    transition: color 160ms ease, opacity 160ms ease, border-color 160ms ease;
+  }
+
+  .system-label strong {
+    color: inherit;
+    font-size: var(--fs-label);
+  }
+
+  .system-label.on {
+    color: var(--primary);
+    border-color: var(--primary);
+    opacity: 1;
+  }
+
+  .habitable-field {
+    position: absolute;
+    z-index: 1;
+    top: 50%;
+    left: 59%;
+    width: 274px;
+    height: 340px;
+    background: rgba(85, 194, 176, 0.055);
+    border-radius: 50%;
+    transform: translate(-50%, -50%);
+    transition: background-color 180ms ease, box-shadow 180ms ease;
+  }
+
+  .habitable-field.complete {
+    background: rgba(85, 194, 176, 0.13);
+    box-shadow: inset 0 0 0 2px rgba(85, 194, 176, 0.34);
+  }
+
+  .relation-key {
+    position: absolute;
+    z-index: 5;
+    top: 15%;
+    left: 50%;
+    display: flex;
+    gap: 8px;
+    color: var(--text-secondary);
+    font-size: var(--fs-label);
+    line-height: 1.35;
+    transform: translateX(-50%);
+  }
+
+  .relation-key span {
+    padding: 6px 10px;
+    background: #111417;
+    border-bottom: 2px solid var(--primary-line);
+  }
+
+  .environment-gauge {
+    position: absolute;
+    z-index: 3;
+    right: 24px;
+    bottom: 20px;
+    left: 24px;
+    display: grid;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .environment-gauge span {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 42px;
+    color: var(--text-muted);
+    background: rgba(17, 20, 23, 0.92);
+    border: 1px solid var(--line-strong);
+    font-size: var(--fs-label);
+    line-height: 1.35;
+  }
+
+  .environment-gauge span.on {
+    color: var(--primary);
+    border-color: var(--primary);
+  }
+
+  .center-status {
+    position: absolute;
+    z-index: 5;
+    top: 50%;
+    left: 59%;
+    box-sizing: border-box;
+    width: 210px;
+    padding: 10px 12px;
+    color: var(--text-secondary);
+    background: rgba(17, 20, 23, 0.88);
+    border: 1px solid var(--line-strong);
+    font-size: var(--fs-sec);
+    line-height: 1.45;
+    text-align: center;
+    transform: translate(-50%, -50%);
+  }
+
+  .center-status.complete {
+    color: var(--primary);
+    border-color: var(--primary);
+    font-weight: 700;
+  }
+
+  .feedback {
+    position: absolute;
+    z-index: 8;
+    right: 20px;
+    bottom: 16px;
+    max-width: 500px;
+    min-height: 24px;
+    color: var(--text-secondary);
+    font-size: var(--fs-sec);
+    line-height: 1.45;
+    text-align: right;
+  }
+
+  .feedback.error {
+    color: var(--danger);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.001ms !important;
+      transition-duration: 0.001ms !important;
+    }
+  }
+</style>
+</head>
+<body data-page="30" data-total="44">
+<div id="stage">
+<main id="main">
+  <section class="page-shell" aria-labelledby="pageTitle">
+    <div class="page-intro">
+      <div class="intro-copy min0">
+        <h1 id="pageTitle">航天器不能只提供空气</h1>
+        <p>六项必须同时成立。拖动条件到同号端点；键盘用方向键选择，Enter 接入。</p>
+      </div>
+      <div class="progress-block" aria-live="polite">
+        <span class="progress-copy">环境条件 <b id="progressCount">0 / 6</b> 已接通</span>
+        <span class="progress-ticks" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i></span>
+        <button id="resetButton" class="reset-button" type="button" title="重置全部连接" aria-label="重置全部连接">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7M3 4v6h6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <div class="workspace min0" id="workspace">
+      <section id="conditionZone" class="condition-zone no-pan" tabindex="0" role="application" aria-label="六项环境条件接线区。上下键选择条件，左右键选择端点，Enter 尝试接入。">
+        <div class="zone-label"><strong>六项条件 · 同时成立</strong><span id="keyboardReadout">选择 01 · 目标 01</span></div>
+        <div class="condition-list k-enumeration" id="conditionList">
+          <div class="it selected" data-id="pressure"><span class="it-title">压力</span><span class="it-body">守住密封与舱内压力；中断会失去稳定压力环境。</span></div>
+          <div class="it" data-id="oxygen"><span class="it-title">氧气</span><span class="it-body">供应氧气并监测气体；中断会失去可呼吸气体。</span></div>
+          <div class="it" data-id="temperature"><span class="it-title">温度</span><span class="it-body">收集并排出多余热量；中断会失去温度控制。</span></div>
+          <div class="it" data-id="radiation"><span class="it-title">辐射</span><span class="it-body">监测暴露并降低剂量；中断会增加累积暴露。</span></div>
+          <div class="it" data-id="waste"><span class="it-title">废物</span><span class="it-body">收集、隔离并处理废物；中断会污染舱内环境。</span></div>
+          <div class="it" data-id="food"><span class="it-title">食物</span><span class="it-body">储存并按周期提供补给；中断会失去可食用补给。</span></div>
+        </div>
+      </section>
+
+      <figure class="diagram-zone min0" aria-labelledby="diagramCaption">
+        <div class="cabin-volume" aria-hidden="true"></div>
+        <figcaption id="diagramCaption" class="plate-meta">CREW HABITAT / <span>ENVIRONMENT INTERFACE</span></figcaption>
+        <span class="boundary-caption outside">舱外环境</span>
+        <span class="boundary-caption inside">密封舱内容积</span>
+        <div class="service-bay left" aria-hidden="true"></div>
+        <div class="service-bay right" aria-hidden="true"></div>
+        <canvas id="diagramCanvas" class="diagram-canvas cv-fill" aria-hidden="true"></canvas>
+        <svg class="diagram-svg" viewBox="0 0 950 480" preserveAspectRatio="none" aria-hidden="true">
+          <path class="earth" d="M640 525 Q785 356 972 415"/>
+          <path class="hull-fill" d="M128 105 L250 55 H730 L850 108 V371 L730 423 H250 L128 372 Z"/>
+          <rect class="module-fill" x="184" y="145" width="136" height="67"/>
+          <rect class="module-fill" x="658" y="144" width="134" height="69"/>
+          <rect class="module-fill" x="181" y="271" width="145" height="76"/>
+          <rect class="module-fill" x="653" y="269" width="140" height="79"/>
+          <ellipse class="module-fill" cx="492" cy="241" rx="137" ry="170"/>
+          <path class="hull" d="M128 105 L250 55 H730 L850 108 V371 L730 423 H250 L128 372 Z"/>
+          <path class="hull" d="M154 124 L266 80 H713 L824 125 V353 L713 398 H266 L154 354 Z"/>
+          <path class="module" d="M253 56 V423 M730 56 V423 M154 238 H824"/>
+          <path class="module" d="M184 145 H320 V212 H184 M658 144 H792 V213 H658 M181 271 H326 V347 H181 M653 269 H793 V348 H653"/>
+          <path class="detail" d="M208 161 h88 m-88 16 h62 m412-16 h84 m-84 16 h60 M207 289 h94 m-94 17 h68 m404-18 h89 m-89 18 h62"/>
+          <path class="detail" d="M287 80 v-25 m416 25 v-25 M284 398 v25 m420-25 v25"/>
+          <ellipse id="environmentBoundary" class="boundary" cx="492" cy="241" rx="137" ry="170"/>
+          <circle class="person" cx="492" cy="152" r="29"/>
+          <path class="person" d="M480 181 C463 209 461 251 469 285 L455 361 M504 181 C521 209 523 251 515 285 L529 361 M467 212 L417 276 M517 212 L568 276 M469 285 H515"/>
+          <path class="detail" d="M476 143 q16-13 32 0 M483 158 h18 M492 181 v104"/>
+          <path id="route-pressure" class="route" d="M12 92 H116 V124 H154 L355 175"/>
+          <path id="route-oxygen" class="route" d="M12 153 H92 V202 H182 L355 215"/>
+          <path id="route-temperature" class="route" d="M12 214 H129 V254 H355"/>
+          <path id="route-radiation" class="route" d="M12 275 H105 V331 H275 L374 322"/>
+          <path id="route-waste" class="route" d="M12 336 H126 V376 H326 L413 369"/>
+          <path id="route-food" class="route" d="M12 397 H172 V411 H651 V350 L610 325"/>
+          <circle class="detail" cx="355" cy="175" r="4"/><circle class="detail" cx="355" cy="215" r="4"/>
+          <circle class="detail" cx="355" cy="254" r="4"/><circle class="detail" cx="374" cy="322" r="4"/>
+          <circle class="detail" cx="413" cy="369" r="4"/><circle class="detail" cx="610" cy="325" r="4"/>
+        </svg>
+
+        <span class="endpoint" data-id="pressure" style="left:1.3%;top:19.2%">01</span>
+        <span class="endpoint" data-id="oxygen" style="left:1.3%;top:31.9%">02</span>
+        <span class="endpoint" data-id="temperature" style="left:1.3%;top:44.6%">03</span>
+        <span class="endpoint" data-id="radiation" style="left:1.3%;top:57.3%">04</span>
+        <span class="endpoint" data-id="waste" style="left:1.3%;top:70%">05</span>
+        <span class="endpoint" data-id="food" style="left:1.3%;top:82.7%">06</span>
+
+        <span class="system-label" data-label="pressure" style="left:14%;top:8%"><strong>密封舱壁</strong><span>动作：维持压力边界</span><span>中断：压力环境失稳</span></span>
+        <span class="system-label" data-label="oxygen" style="left:68%;top:9%"><strong>气体接口</strong><span>动作：供应并监测</span><span>中断：失去可呼吸气体</span></span>
+        <span class="system-label" data-label="temperature" style="left:14%;top:37%"><strong>热控管路</strong><span>动作：收集并排热</span><span>中断：温度失去控制</span></span>
+        <span class="system-label" data-label="radiation" style="left:70%;top:37%"><strong>外层防护</strong><span>动作：监测并降暴露</span><span>中断：累积暴露增加</span></span>
+        <span class="system-label" data-label="waste" style="left:14%;top:68%"><strong>废物接口</strong><span>动作：收集隔离处理</span><span>中断：舱内环境污染</span></span>
+        <span class="system-label" data-label="food" style="left:69%;top:68%"><strong>补给储存区</strong><span>动作：保护并提供食物</span><span>中断：失去可食补给</span></span>
+
+
+        <div id="habitableField" class="habitable-field" aria-hidden="true"></div>
+        <div class="relation-key" aria-label="六项统一阅读顺序"><span>环境条件</span><span>系统动作</span><span>中断后果</span></div>
+        <div class="environment-gauge" aria-label="舱体外围六项环境刻度"><span>压力</span><span>氧气</span><span>温度</span><span>辐射</span><span>废物</span><span>食物</span></div>
+        <div id="centerStatus" class="center-status">人体周围的环境边界<br><span>仍有 6 项待接入</span></div>
+        <div id="feedback" class="feedback" aria-live="assertive">六项没有先后次序，缺少任何一项都不是可居住环境。</div>
+      </figure>
+    </div>
+
+  </section>
+</main>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script>
+  Lec.mount({
+    index: 30,
+    kicker: "ENVIRONMENTAL CONDITIONS",
+    title: "航天器不能只提供空气",
+    take: "生命支持是一组共同维持人体环境接口的系统。"
+  });
+
+  (function () {
+    var ids = ["pressure", "oxygen", "temperature", "radiation", "waste", "food"];
+    var names = { pressure: "压力", oxygen: "氧气", temperature: "温度", radiation: "辐射", waste: "废物", food: "食物" };
+    var actions = {
+      pressure: "密封舱壁已接入：持续守住压力边界。",
+      oxygen: "气体接口已接入：供应氧气并监测舱内气体。",
+      temperature: "热控管路已接入：收集热量并向舱外排热。",
+      radiation: "外层防护已接入：监测暴露并降低累积剂量。",
+      waste: "废物接口已接入：收集、隔离并处理废物。",
+      food: "补给储存区已接入：保护并按任务周期提供食物。"
+    };
+    var connected = new Set();
+    var selected = 0;
+    var target = 0;
+    var drag = null;
+    var workspace = document.getElementById("workspace");
+    var zone = document.getElementById("conditionZone");
+    var items = Array.prototype.slice.call(document.querySelectorAll(".condition-list .it"));
+    var endpoints = Array.prototype.slice.call(document.querySelectorAll(".endpoint"));
+    var ticks = Array.prototype.slice.call(document.querySelectorAll(".progress-ticks i"));
+    var gauge = Array.prototype.slice.call(document.querySelectorAll(".environment-gauge span"));
+    var progress = document.getElementById("progressCount");
+    var feedback = document.getElementById("feedback");
+    var center = document.getElementById("centerStatus");
+    var boundary = document.getElementById("environmentBoundary");
+    var habitableField = document.getElementById("habitableField");
+    var reset = document.getElementById("resetButton");
+    var keyboardReadout = document.getElementById("keyboardReadout");
+    var diagramCanvas = document.getElementById("diagramCanvas");
+
+    Deck.autofit(diagramCanvas, function (ctx) {
+      var w = diagramCanvas.clientWidth;
+      var h = diagramCanvas.clientHeight;
+      var primary = Deck.rgba("--primary", 0.16);
+      var line = Deck.rgba("--text-secondary", 0.28);
+      var strong = Deck.rgba("--text-secondary", 0.12);
+      ctx.clearRect(0, 0, w, h);
+
+      ctx.fillStyle = strong;
+      ctx.beginPath();
+      ctx.moveTo(w * 0.13, h * 0.22);
+      ctx.lineTo(w * 0.25, h * 0.11);
+      ctx.lineTo(w * 0.78, h * 0.11);
+      ctx.lineTo(w * 0.9, h * 0.22);
+      ctx.lineTo(w * 0.9, h * 0.78);
+      ctx.lineTo(w * 0.78, h * 0.89);
+      ctx.lineTo(w * 0.25, h * 0.89);
+      ctx.lineTo(w * 0.13, h * 0.78);
+      ctx.closePath();
+      ctx.fill();
+
+      ctx.fillStyle = primary;
+      [[0.18, 0.29], [0.68, 0.29], [0.18, 0.58], [0.68, 0.58]].forEach(function (box) {
+        ctx.fillRect(w * box[0], h * box[1], w * 0.14, h * 0.16);
+      });
+
+      ctx.strokeStyle = line;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.ellipse(w * 0.52, h * 0.5, w * 0.14, h * 0.35, 0, 0, Math.PI * 2);
+      ctx.stroke();
+      for (var i = 0; i < 6; i++) {
+        var y = h * (0.19 + i * 0.127);
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(w * (0.16 + i * 0.035), y);
+        ctx.stroke();
+      }
+    });
+
+    function endpointCenter(ep) {
+      var diagram = ep.parentElement;
+      return {
+        x: diagram.offsetLeft + ep.offsetLeft,
+        y: diagram.offsetTop + ep.offsetTop
+      };
+    }
+
+    function setSelection(nextItem, nextTarget) {
+      selected = (nextItem + ids.length) % ids.length;
+      target = (nextTarget + ids.length) % ids.length;
+      items.forEach(function (item, i) { item.classList.toggle("selected", i === selected && !connected.has(ids[i])); });
+      endpoints.forEach(function (ep, i) { ep.classList.toggle("keyboard-target", i === target && !connected.has(ids[i])); });
+      keyboardReadout.textContent = "选择 " + String(selected + 1).padStart(2, "0") + " · 目标 " + String(target + 1).padStart(2, "0");
+    }
+
+    function render() {
+      var count = connected.size;
+      progress.textContent = count + " / 6";
+      ticks.forEach(function (tick, i) { tick.classList.toggle("on", i < count); });
+      gauge.forEach(function (mark, i) { mark.classList.toggle("on", connected.has(ids[i])); });
+      items.forEach(function (item) { item.classList.toggle("connected", connected.has(item.dataset.id)); });
+      endpoints.forEach(function (ep) { ep.classList.toggle("on", connected.has(ep.dataset.id)); });
+      ids.forEach(function (id) {
+        document.getElementById("route-" + id).classList.toggle("on", connected.has(id));
+        document.querySelector('[data-label="' + id + '"]').classList.toggle("on", connected.has(id));
+      });
+      if (count === 6) {
+        center.classList.add("complete");
+        center.innerHTML = "6 项同时在线<br><span>可居住环境边界已建立</span>";
+        boundary.classList.add("complete");
+        habitableField.classList.add("complete");
+        reset.classList.add("show");
+        feedback.classList.remove("error");
+        feedback.textContent = "六项共同接入同一环境边界。";
+      } else {
+        center.classList.remove("complete");
+        center.innerHTML = "人体周围的环境边界<br><span>仍有 " + (6 - count) + " 项待接入</span>";
+        boundary.classList.remove("complete");
+        habitableField.classList.remove("complete");
+        reset.classList.remove("show");
+      }
+      setSelection(selected, target);
+    }
+
+    function reject(itemId, endpointId) {
+      var item = items[ids.indexOf(itemId)];
+      var endpoint = endpoints[ids.indexOf(endpointId)];
+      item.classList.remove("shake");
+      void item.offsetWidth;
+      item.classList.add("shake");
+      endpoint.classList.add("error");
+      feedback.classList.add("error");
+      feedback.textContent = "这里处理的是" + names[endpointId] + "，不是" + names[itemId] + "。";
+      window.setTimeout(function () {
+        item.classList.remove("shake");
+        endpoint.classList.remove("error");
+      }, 420);
+    }
+
+    function connect(itemId, endpointId) {
+      if (connected.has(itemId)) return;
+      if (itemId !== endpointId) {
+        reject(itemId, endpointId);
+        return;
+      }
+      connected.add(itemId);
+      feedback.classList.remove("error");
+      feedback.textContent = actions[itemId];
+      var route = document.getElementById("route-" + itemId);
+      route.classList.add("pulse");
+      window.setTimeout(function () { route.classList.remove("pulse"); }, 600);
+      render();
+    }
+
+    function nearestEndpoint(point) {
+      var best = null;
+      var bestDistance = Infinity;
+      endpoints.forEach(function (ep) {
+        var c = endpointCenter(ep);
+        var d = Math.hypot(point.x - c.x, point.y - c.y);
+        if (d < bestDistance) { bestDistance = d; best = ep; }
+      });
+      return bestDistance < 58 ? best : null;
+    }
+
+    zone.addEventListener("pointerdown", function (event) {
+      var item = event.target.closest(".it");
+      if (!item || connected.has(item.dataset.id)) return;
+      selected = ids.indexOf(item.dataset.id);
+      setSelection(selected, target);
+      var p = Deck.pt(workspace, event);
+      drag = { item: item, startX: p.x, startY: p.y };
+      item.classList.add("dragging");
+      item.setPointerCapture(event.pointerId);
+    });
+
+    zone.addEventListener("pointermove", function (event) {
+      if (!drag) return;
+      var p = Deck.pt(workspace, event);
+      drag.item.style.transform = "translate(" + (p.x - drag.startX) + "px," + (p.y - drag.startY) + "px)";
+    });
+
+    function finishDrag(event) {
+      if (!drag) return;
+      var p = Deck.pt(workspace, event);
+      var endpoint = nearestEndpoint(p);
+      var item = drag.item;
+      item.classList.remove("dragging");
+      item.style.transform = "";
+      drag = null;
+      if (endpoint) {
+        target = ids.indexOf(endpoint.dataset.id);
+        connect(item.dataset.id, endpoint.dataset.id);
+      } else {
+        feedback.classList.remove("error");
+        feedback.textContent = "把标签放到一个编号端点上。";
+      }
+    }
+
+    zone.addEventListener("pointerup", finishDrag);
+    zone.addEventListener("pointercancel", function () {
+      if (!drag) return;
+      drag.item.classList.remove("dragging");
+      drag.item.style.transform = "";
+      drag = null;
+    });
+
+    zone.addEventListener("keydown", function (event) {
+      if (event.key === "ArrowUp" || event.key === "ArrowDown") {
+        event.preventDefault();
+        setSelection(selected + (event.key === "ArrowUp" ? -1 : 1), target);
+      } else if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+        event.preventDefault();
+        setSelection(selected, target + (event.key === "ArrowLeft" ? -1 : 1));
+      } else if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        connect(ids[selected], ids[target]);
+      }
+    });
+
+    reset.addEventListener("click", function () {
+      connected.clear();
+      selected = 0;
+      target = 0;
+      feedback.classList.remove("error");
+      feedback.textContent = "六项没有先后次序，缺少任何一项都不是可居住环境。";
+      render();
+      zone.focus();
+    });
+
+    render();
+  }());
+</script>
+</body>
+</html>

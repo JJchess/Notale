@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  #stage{padding:32px 40px 28px;gap:18px;overflow:hidden}
+  .eyebrow{color:var(--teal);font:700 var(--fs-label)/1.4 var(--font-mono);letter-spacing:.14em}
+  .status-strip{display:flex;gap:12px;align-items:stretch}
+  .status-strip .readout{padding:10px 16px;min-width:176px}
+  .status-strip .value{font-size:18px}
+  .status-message{flex:1;border-color:var(--line-strong)}
+  .workbench{display:flex;gap:18px;min-height:0}
+  .visual-stack{display:flex;flex-direction:column;gap:14px;min-width:0;min-height:0}
+  .loop-panel{position:relative;flex:1.08;min-height:0;padding:10px 16px 8px}
+  .chart-panel{position:relative;flex:.92;min-height:0;padding:10px 16px 8px}
+  .section-cap{position:absolute;z-index:2;top:10px;left:16px;color:var(--ink-muted);font-size:var(--fs-label);font-weight:700}
+  svg{display:block;width:100%;height:100%;overflow:visible}
+  .controls{width:342px;flex:0 0 342px;display:flex;flex-direction:column;gap:14px;min-height:0}
+  .control-panel{padding:20px;display:flex;flex-direction:column;gap:12px}
+  .slider-block{display:flex;flex-direction:column;gap:5px}
+  .slider-head{display:flex;justify-content:space-between;align-items:center;font-size:var(--fs-sec)}
+  .slider-head output{font:700 18px/1.2 var(--font-mono);color:var(--teal)}
+  input[type=range]{width:100%;height:30px;accent-color:var(--teal)}
+  .energy-value{font:760 28px/1.2 var(--font-mono);color:var(--teal)}
+  .energy-value.over{color:var(--amber)}
+  .meter-caption{display:flex;justify-content:space-between;color:var(--ink-muted);font-size:var(--fs-label)}
+  .meter{height:18px}
+  .meter > .limit{top:0;bottom:0}
+  .actions{display:flex;gap:10px}.actions .btn{flex:1}
+  .conclusion{padding:18px 20px;border-left:6px solid var(--teal);font-size:var(--fs-sec);line-height:var(--lh-copy)}
+  .process-foot{color:var(--ink-muted);font-size:var(--fs-sec);line-height:1.4}
+  .pulse{animation:pulse 420ms ease-out}
+  @keyframes pulse{50%{filter:drop-shadow(0 0 10px var(--amber))}}
+  @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body data-page="35" data-total="45">
+<div id="stage">
+  <header class="row items-end justify-between gap-4" style="height:78px">
+    <div class="col gap-1 min0"><div class="eyebrow">SYSTEM LOOP · 35</div><h1>闭环不是无损圆环</h1></div>
+    <p class="lead" style="max-width:720px;text-align:right">回收减少补给，却会引入能耗、效率损失、维护和故障累积。</p>
+  </header>
+  <section class="status-strip" style="height:68px" aria-label="任务状态">
+    <div class="readout"><span class="label">水剩余</span><span class="value" id="waterRemain">—</span></div>
+    <div class="readout"><span class="label">空气剩余</span><span class="value" id="airRemain">—</span></div>
+    <div class="readout"><span class="label">相对能耗</span><span class="value" id="energyTop">—</span></div>
+    <div class="readout status-message" id="statusBox" aria-live="polite"><span class="label">30 天任务判断</span><span class="value" id="statusText">计算中</span></div>
+  </section>
+  <main class="workbench min0" style="flex:1">
+    <div class="visual-stack min0 grow">
+      <section class="panel loop-panel min0" aria-label="库存使用回收流程">
+        <div class="section-cap">每日主循环 · 线宽表示流量</div>
+        <svg id="loopSvg" role="img" aria-label="库存经过乘员使用与回收后返回库存，部分流量成为损失"></svg>
+      </section>
+      <section class="panel chart-panel min0" aria-label="三十天库存曲线">
+        <div class="section-cap">库存轨迹 · 第 15 天维护闸门截断回收</div>
+        <svg id="chartSvg" role="img" aria-label="水和空气在正常运行及停机情况下的库存曲线"></svg>
+      </section>
+    </div>
+    <aside class="controls min0">
+      <section class="panel control-panel" style="flex:1">
+        <h2>稳住闭环</h2>
+        <p class="secondary">调节两类回收率，比较补给、能耗与停机余量。</p>
+        <div class="slider-block">
+          <div class="slider-head"><label for="waterSlider">水回收率</label><output id="waterOut">—</output></div>
+          <input id="waterSlider" type="range" aria-label="水回收率">
+        </div>
+        <div class="slider-block">
+          <div class="slider-head"><label for="airSlider">空气回收率</label><output id="airOut">—</output></div>
+          <input id="airSlider" type="range" aria-label="空气回收率">
+        </div>
+        <div>
+          <div class="meter-caption"><span>教学用相对能耗指数</span><span id="energyBudgetLabel">预算 —</span></div>
+          <div class="energy-value" id="energyValue">—</div>
+          <div class="meter" aria-hidden="true"><div class="fillbar" id="energyBar"></div><div class="limit" id="energyLimit"></div></div>
+        </div>
+        <div class="actions">
+          <button class="btn" id="compareBtn" type="button" aria-pressed="true">显示停机对照</button>
+          <button class="btn" id="resetBtn" type="button">一键重置</button>
+        </div>
+        <p class="process-foot"><span class="target">维护条件：</span>第 15 天停机 24 h；当日回收率降为零，缺口不会在重启后自动补回。</p>
+      </section>
+      <section class="panel conclusion" style="height:126px">回收让补给下降，但每一次循环仍有损失；回收率越高，通常也越依赖能源、维护与不中断运行。</section>
+    </aside>
+  </main>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script src="assets/lib/d3.min.js"></script>
+<script>
+Deck.init({index:35,total:45});
+const cfg={crew:4,days:30,initialReserveDays:8,failureDay:15,failureHours:24,energyBudget:14,transitionMs:280};
+const range=Lec.K.LIFE_SUPPORT_RECOVERY_RANGE || [0.50,0.95];
+const defaults={water:Lec.P.lerp(range[0],range[1],0.60),air:Lec.P.lerp(range[0],range[1],0.55)};
+const energyIndex=(rw,ra)=>10*(rw**2+ra**2);
+const need={water:Lec.P.waterRequirement(cfg.crew,1),air:Lec.P.oxygenRequirement(cfg.crew,1)};
+const initial={water:Lec.P.waterRequirement(cfg.crew,cfg.initialReserveDays),air:Lec.P.oxygenRequirement(cfg.crew,cfg.initialReserveDays)};
+const co2=Lec.P.carbonDioxideProduced(cfg.crew,1);
+const css=getComputedStyle(document.documentElement);
+const C=n=>css.getPropertyValue(n).trim();
+const colors={teal:C('--teal'),air:C('--teal-soft'),amber:C('--amber'),muted:C('--ink-muted'),line:C('--line-strong'),panel:C('--panel-deep'),text:C('--text'),success:C('--success')};
+const waterSlider=document.getElementById('waterSlider'),airSlider=document.getElementById('airSlider');
+[waterSlider,airSlider].forEach(s=>{s.min=range[0];s.max=range[1];s.step=(range[1]-range[0])/100;});
+waterSlider.value=defaults.water; airSlider.value=defaults.air;
+let showFailure=true, first=true;
+function series(rate,type,failure){
+  rate=Lec.P.clamp(rate,range[0],range[1]); let stock=initial[type], out=[{day:0,value:stock}];
+  for(let d=1;d<=cfg.days;d++){const effective=(failure&&d===cfg.failureDay)?0:rate;stock=Math.max(0,stock-need[type]*(1-effective));out.push({day:d,value:stock});}
+  return out;
+}
+function exhausted(arr){const x=arr.find(d=>d.value<=0);return x?x.day:null}
+function fmtMass(x){return Lec.P.significantFigures(x,3)+' kg'}
+function renderLoop(rw,ra,ok,exhaustType){
+ const svg=d3.select('#loopSvg'),w=1050,h=330;svg.attr('viewBox',`0 0 ${w} ${h}`); if(first)svg.selectAll('*').remove();
+ const defs=svg.selectAll('defs').data([0]).join('defs');defs.selectAll('marker').data(['teal','amber']).join('marker').attr('id',d=>'arrow-'+d).attr('viewBox','0 -5 10 10').attr('refX',9).attr('markerWidth',7).attr('markerHeight',7).attr('orient','auto').selectAll('path').data(d=>[d]).join('path').attr('d','M0,-5L10,0L0,5').attr('fill',d=>colors[d]);
+ const nodes=[{id:'stock',x:100,y:130,t:'1  初始库存',s:`水 ${fmtMass(initial.water)} · 空气 ${fmtMass(initial.air)}`},{id:'crew',x:390,y:130,t:'2  乘员每日取用',s:`水 ${fmtMass(need.water)} · 空气 ${fmtMass(need.air)}`},{id:'recover',x:680,y:130,t:'3  使用后进入回收端',s:`同时产生 CO₂ ${fmtMass(co2)}`}];
+ const g=svg.selectAll('g.nodes').data([0]).join('g').attr('class','nodes');const ng=g.selectAll('g.node').data(nodes,d=>d.id).join(e=>{const q=e.append('g').attr('class','node');q.append('rect');q.append('text').attr('class','title');q.append('text').attr('class','sub');return q});
+ ng.attr('transform',d=>`translate(${d.x},${d.y})`);ng.select('rect').attr('x',-112).attr('y',-42).attr('width',224).attr('height',84).attr('rx',14).attr('fill',colors.panel).attr('stroke',d=>exhaustType&&d.id==='recover'?colors.amber:colors.line).attr('stroke-width',3);
+ ng.select('.title').attr('text-anchor','middle').attr('y',-7).attr('fill',colors.text).style('font-size','16px').style('font-weight',700).text(d=>d.t);ng.select('.sub').attr('text-anchor','middle').attr('y',20).attr('fill',colors.muted).style('font-size','14px').text(d=>d.s);
+ const flows=[{id:'use',d:'M212,130 H278',c:colors.teal,w:5,dash:null},{id:'toRec',d:'M502,130 H568',c:colors.teal,w:5,dash:null},{id:'return',d:'M680,88 C680,22 100,22 100,88',c:colors.teal,w:2+8*((rw+ra)/2),dash:null},{id:'loss',d:'M792,130 C900,130 900,238 975,238',c:colors.amber,w:2+8*(1-(rw+ra)/2),dash:'8 8'}];
+ const fp=svg.selectAll('path.flow').data(flows,d=>d.id).join('path').attr('class','flow').attr('fill','none').attr('d',d=>d.d).attr('stroke',d=>d.c).attr('stroke-linecap','round').attr('stroke-dasharray',d=>d.dash).attr('marker-end',d=>`url(#arrow-${d.c===colors.amber?'amber':'teal'})`);
+ (Deck.reduced()?fp:fp.transition().duration(cfg.transitionMs).ease(d3.easeCubicOut)).attr('stroke-width',d=>d.w).attr('opacity',1);
+ const labels=[{x:390,y:42,t:`4  回收返回：水 ${(rw*100).toFixed(0)}% · 空气 ${(ra*100).toFixed(0)}%`,c:colors.teal},{x:900,y:276,t:'5  不可回收损失',c:colors.amber},{x:836,y:304,t:'6  第 15 天维护停机 24 h',c:colors.amber}];
+ svg.selectAll('text.flow-label').data(labels).join('text').attr('class','flow-label').attr('x',d=>d.x).attr('y',d=>d.y).attr('text-anchor','middle').attr('fill',d=>d.c).style('font-size','15px').style('font-weight',700).text(d=>d.t);
+ svg.selectAll('circle.outer').data([0]).join('circle').attr('class','outer').attr('cx',390).attr('cy',132).attr('r',154).attr('fill','none').attr('stroke',ok?colors.success:colors.line).attr('stroke-width',ok?3:1).attr('stroke-dasharray','7 10').attr('opacity',.55);
+ }
+function renderChart(rw,ra){
+ const sets={wn:series(rw,'water',false),wf:series(rw,'water',true),an:series(ra,'air',false),af:series(ra,'air',true)};
+ const svg=d3.select('#chartSvg'),w=1050,h=300,m={top:38,right:28,bottom:44,left:62};svg.attr('viewBox',`0 0 ${w} ${h}`);if(first)svg.selectAll('*').remove();
+ const x=d3.scaleLinear().domain([0,cfg.days]).range([m.left,w-m.right]);const ymax=Math.max(initial.water,initial.air);const y=d3.scaleLinear().domain([0,ymax]).nice().range([h-m.bottom,m.top]);
+ const xAxis=d3.axisBottom(x).tickValues([0,5,10,15,20,25,30]).tickFormat(d=>d);const yAxis=d3.axisLeft(y).ticks(4).tickFormat(d=>Lec.P.significantFigures(d,2));
+ const gx=svg.selectAll('g.xaxis').data([0]).join('g').attr('class','xaxis').attr('transform',`translate(0,${h-m.bottom})`).call(xAxis);const gy=svg.selectAll('g.yaxis').data([0]).join('g').attr('class','yaxis').attr('transform',`translate(${m.left},0)`).call(yAxis);
+ svg.selectAll('.xaxis text,.yaxis text').style('font-size','13px').attr('fill',colors.muted);svg.selectAll('.domain,.tick line').attr('stroke',colors.line);
+ svg.selectAll('text.axisname').data([{x:w/2,y:h-8,t:'任务日'},{x:12,y:68,t:'库存 kg'}]).join('text').attr('class','axisname').attr('x',d=>d.x).attr('y',d=>d.y).attr('fill',colors.muted).style('font-size','14px').text(d=>d.t);
+ const line=d3.line().x(d=>x(d.day)).y(d=>y(d.value)).curve(d3.curveMonotoneX);const paths=[{id:'wn',data:sets.wn,c:colors.teal,dash:null},{id:'an',data:sets.an,c:colors.air,dash:null},{id:'wf',data:sets.wf,c:colors.teal,dash:'7 7'},{id:'af',data:sets.af,c:colors.air,dash:'7 7'}].filter(d=>showFailure||!d.dash);
+ const ps=svg.selectAll('path.stock').data(paths,d=>d.id).join(enter=>enter.append('path').attr('class','stock').attr('fill','none').attr('opacity',0),update=>update,exit=>exit.remove()).attr('stroke',d=>d.c).attr('stroke-dasharray',d=>d.dash).attr('stroke-width',d=>d.dash?2.5:4);
+ (Deck.reduced()?ps:ps.transition().duration(cfg.transitionMs).ease(d3.easeCubicOut)).attr('d',d=>line(d.data)).attr('opacity',d=>d.dash?.72:1);
+ svg.selectAll('line.failure').data([cfg.failureDay]).join('line').attr('class','failure').attr('x1',x).attr('x2',x).attr('y1',m.top).attr('y2',h-m.bottom).attr('stroke',colors.amber).attr('stroke-width',3).attr('stroke-dasharray','4 6');
+ svg.selectAll('text.failure-label').data([0]).join('text').attr('class','failure-label').attr('x',x(cfg.failureDay)+8).attr('y',m.top+16).attr('fill',colors.amber).style('font-size','14px').text('维护闸门');
+ const legend=[{x:650,t:'水',c:colors.teal},{x:715,t:'空气',c:colors.air},{x:800,t:'正常',c:colors.muted},{x:885,t:'24 h 停机',c:colors.amber}];const lg=svg.selectAll('g.legend-item').data(legend).join(e=>{const q=e.append('g').attr('class','legend-item');q.append('line');q.append('text');return q}).attr('transform',d=>`translate(${d.x},18)`);lg.select('line').attr('x2',20).attr('stroke',d=>d.c).attr('stroke-width',3);lg.select('text').attr('x',27).attr('y',5).attr('fill',colors.muted).style('font-size','14px').text(d=>d.t);
+ return sets;
+}
+function update(){
+ const rw=Lec.P.clamp(+waterSlider.value,range[0],range[1]),ra=Lec.P.clamp(+airSlider.value,range[0],range[1]);const sets=renderChart(rw,ra);const e=energyIndex(rw,ra);const wEnd=sets.wf.at(-1).value,aEnd=sets.af.at(-1).value;const wx=exhausted(sets.wf),ax=exhausted(sets.af);const ok=wEnd>0&&aEnd>0&&e<=cfg.energyBudget;
+ renderLoop(rw,ra,ok,wx?'water':ax?'air':null);
+ document.getElementById('waterOut').textContent=(rw*100).toFixed(0)+'%';document.getElementById('airOut').textContent=(ra*100).toFixed(0)+'%';
+ document.getElementById('waterRemain').textContent=(wEnd/need.water).toFixed(1)+' 毛需求日';document.getElementById('airRemain').textContent=(aEnd/need.air).toFixed(1)+' 毛需求日';document.getElementById('energyTop').textContent=e.toFixed(1)+' / '+cfg.energyBudget;
+ document.getElementById('energyValue').textContent=e.toFixed(1);document.getElementById('energyValue').classList.toggle('over',e>cfg.energyBudget);document.getElementById('energyBudgetLabel').textContent='预算 '+cfg.energyBudget;
+ document.getElementById('energyBar').style.setProperty('--value',Math.min(100,e/(cfg.energyBudget*1.25)*100)+'%');document.getElementById('energyLimit').style.setProperty('--limit',(cfg.energyBudget/(cfg.energyBudget*1.25)*100)+'%');
+ let msg;if(wx||ax){const who=wx&&(!ax||wx<=ax)?'水':'空气',day=wx&&(!ax||wx<=ax)?wx:ax;msg=`第 ${day} 天${who}耗尽：损失率仍高于现有储备`;}else if(e>cfg.energyBudget)msg='库存够，但能耗预算超出';else msg='30 天可维持，仍有故障余量';
+ document.getElementById('statusText').textContent=msg;document.getElementById('statusBox').classList.toggle('is-target',ok); if((wx||ax)&&!Deck.reduced()){document.getElementById('statusBox').classList.remove('pulse');void document.getElementById('statusBox').offsetWidth;document.getElementById('statusBox').classList.add('pulse');} first=false;
+}
+[waterSlider,airSlider].forEach(s=>s.addEventListener('input',update));
+document.getElementById('compareBtn').addEventListener('click',e=>{showFailure=!showFailure;e.currentTarget.setAttribute('aria-pressed',showFailure);e.currentTarget.textContent=showFailure?'显示停机对照':'显示正常运行';update()});
+document.getElementById('resetBtn').addEventListener('click',()=>{waterSlider.value=defaults.water;airSlider.value=defaults.air;showFailure=true;document.getElementById('compareBtn').setAttribute('aria-pressed','true');document.getElementById('compareBtn').textContent='显示停机对照';update()});
+update();
+</script>
+</body>
+</html>

@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+#stage{padding:24px 32px 22px;gap:16px}
+.kicker{color:var(--primary-bright);font:700 var(--fs-label)/1.4 var(--font-mono);letter-spacing:.14em}
+.game-shell{display:flex;gap:18px;min-height:0;align-items:stretch}
+#instruction-game{box-sizing:content-box;width:960px;height:520px;flex:0 0 960px;border:2px solid var(--line);border-radius:var(--r-lg);overflow:hidden;background:var(--panel-deep);box-shadow:var(--shadow)}
+.game-side{flex:1;min-width:0;padding:18px;display:flex;flex-direction:column;gap:12px}
+.status-row{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.dictionary{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.term{border:1px solid var(--line-soft);border-radius:var(--r-sm);padding:8px 10px;background:var(--panel-deep);font-size:var(--fs-label);color:var(--muted)}
+.term b{color:var(--primary-bright);font-size:20px;margin-right:6px}
+#feedback{min-height:54px;color:var(--muted);font-size:var(--fs-sec);line-height:var(--lh-text)}
+#feedback.good{color:var(--success)} #feedback.bad{color:var(--danger)}
+#action{width:100%;margin-top:auto;font-size:var(--fs-body)}
+#instruction-game:focus{outline:3px solid var(--focus);outline-offset:3px}
+.board-help{font-size:var(--fs-label);color:var(--muted)}
+.support strong{display:block;color:var(--primary-bright);font-size:var(--fs-body);margin-bottom:4px}
+.support.on{border-color:var(--accent);box-shadow:inset 0 3px 0 var(--accent)}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body data-page="17" data-total="48">
+<div id="stage">
+  <header class="row between items-end" style="height:72px">
+    <div><div class="kicker">CULTURAL RELAY · 指令压缩挑战</div><h1>把看不见的图，说给同伴</h1></div>
+    <div class="chip accent-chip" id="round-chip">第 1/2 轮</div>
+  </header>
+
+  <main class="game-shell min0" style="flex:1">
+    <div id="instruction-game" class="no-pan" tabindex="0" role="application" aria-label="有限符号指令游戏。用左右方向键选择符号，回车加入指令，退格删除。"></div>
+    <aside class="panel game-side min0">
+      <div class="status-row"><h2 id="role-title">发送者：编排指令</h2><span class="chip" id="budget">已用 0/6</span></div>
+      <p class="fs-sec muted" style="margin:0">目标图只在发送前可见。拖动符号到桥上；也可用方向键选择，按回车加入。</p>
+      <div class="dictionary" aria-label="共享符号词典">
+        <div class="term"><b>▲</b>向上移一格</div><div class="term"><b>▼</b>向下移一格</div>
+        <div class="term"><b>◀</b>向左移一格</div><div class="term"><b>▶</b>向右移一格</div>
+        <div class="term"><b>●</b>放置圆点</div><div class="term"><b>■</b>放置方块</div>
+      </div>
+      <div class="board-help" id="step-readout">等待编排 · 退格可删除末尾符号</div>
+      <div id="feedback" aria-live="polite">从起点出发，用不超过六个共享符号描述两枚标记。</div>
+      <button id="action" class="is-target">发送指令</button>
+    </aside>
+  </main>
+
+  <section class="k-generalization" style="height:188px">
+    <div class="claim is-current">语言的关键能力不只是给眼前事物命名，而是用共享符号传递不在眼前的对象、步骤和规则。</div>
+    <div class="trunk"></div>
+    <div class="supports">
+      <div class="support" id="s-absence"><strong>指代缺席对象</strong>它不在眼前，也能被指代</div>
+      <div class="support" id="s-steps"><strong>压缩操作步骤</strong>先后顺序可以被压缩并重放</div>
+      <div class="support" id="s-rules"><strong>保存共享规则</strong>同一符号须由双方按同一规则理解</div>
+    </div>
+  </section>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script src="assets/lib/konva.min.js"></script>
+<script>
+(function(){
+'use strict';
+Deck.init({index:17,total:48});
+var W=960,H=520, stage=new Konva.Stage({container:'instruction-game',width:W,height:H});
+var layer=new Konva.Layer(); stage.add(layer);
+var C={bg:'#091827',panel:'#0E2033',line:'#285068',soft:'rgba(53,194,178,.18)',primary:'#35C2B2',bright:'#67E1D2',accent:'#FFB547',danger:'#FF786F',text:'#E8F1F7',muted:'#A9C0CF'};
+var symbols=['▲','▼','◀','▶','●','■'];
+var delta={'▲':[0,-1],'▼':[0,1],'◀':[-1,0],'▶':[1,0]};
+var targets=[{circle:[1,2],square:[3,1]},{circle:[0,1],square:[2,3]}];
+var solutions=[['●','▲','▶','▶','■'],['◀','▲','●','▶','▶','▼']];
+var state, selected=0;
+function fresh(round){return {round:round||0,phase:'compose',seq:[],cursor:[1,2],placed:{circle:null,square:null},step:0,won:0};}
+state=fresh(0);
+var ui={round:document.getElementById('round-chip'),budget:document.getElementById('budget'),role:document.getElementById('role-title'),step:document.getElementById('step-readout'),feedback:document.getElementById('feedback'),action:document.getElementById('action')};
+function grid(x,y,label,showTarget){
+ var ox=x,oy=y,cell=58;
+ layer.add(new Konva.Rect({x:ox-8,y:oy-38,width:cell*4+16,height:cell*4+54,cornerRadius:14,fill:C.panel,stroke:C.line,strokeWidth:2}));
+ layer.add(new Konva.Text({x:ox,y:oy-31,width:cell*4,text:label,fontSize:16,fontStyle:'bold',fill:C.text,align:'center'}));
+ for(var i=0;i<=4;i++){layer.add(new Konva.Line({points:[ox+i*cell,oy,ox+i*cell,oy+4*cell],stroke:C.line,strokeWidth:1}));layer.add(new Konva.Line({points:[ox,oy+i*cell,ox+4*cell,oy+i*cell],stroke:C.line,strokeWidth:1}));}
+ if(showTarget){drawMark(ox,oy,cell,targets[state.round].circle,'circle',.95);drawMark(ox,oy,cell,targets[state.round].square,'square',.95);}
+ else {if(state.placed.circle)drawMark(ox,oy,cell,state.placed.circle,'circle',1);if(state.placed.square)drawMark(ox,oy,cell,state.placed.square,'square',1);}
+ return {x:ox,y:oy,c:cell};
+}
+function drawMark(ox,oy,c,p,type,opacity){var x=ox+p[0]*c+c/2,y=oy+p[1]*c+c/2;layer.add(type==='circle'?new Konva.Circle({x:x,y:y,r:14,fill:C.primary,opacity:opacity,shadowColor:C.primary,shadowBlur:8}):new Konva.Rect({x:x-14,y:y-14,width:28,height:28,fill:C.accent,opacity:opacity,shadowColor:C.accent,shadowBlur:8}));}
+function human(x,flip){layer.add(new Konva.Circle({x:x,y:78,r:19,stroke:C.primary,strokeWidth:3,opacity:.55}));layer.add(new Konva.Line({points:[x,99,x,174,x+(flip?-27:27),222],stroke:C.primary,strokeWidth:4,opacity:.45,lineCap:'round'}));layer.add(new Konva.Line({points:[x,122,x+(flip?-38:38),154],stroke:C.primary,strokeWidth:4,opacity:.45,lineCap:'round'}));}
+function draw(){layer.destroyChildren();
+ layer.add(new Konva.Rect({x:0,y:0,width:W,height:H,fill:C.bg}));
+ layer.add(new Konva.Rect({x:450,y:0,width:60,height:390,fill:'rgba(0,0,0,.35)'}));
+ human(40,false);human(920,true);
+ grid(92,86,'发送者看到的目标',state.phase==='compose');
+ var rec=grid(636,86,'接收者的复原',false);
+ layer.add(new Konva.Circle({x:rec.x+1*58+29,y:rec.y+2*58+29,r:6,fill:C.accent}));
+ layer.add(new Konva.Text({x:452,y:48,width:56,text:'符号桥',fontSize:15,fill:C.muted,align:'center'}));
+ for(var s=0;s<6;s++){var active=s<state.seq.length;layer.add(new Konva.Rect({x:405+s*25,y:80+s*43,width:46,height:36,cornerRadius:8,fill:active?C.soft:C.panel,stroke:active?C.primary:C.line,strokeWidth:2}));if(active)layer.add(new Konva.Text({x:405+s*25,y:86+s*43,width:46,text:state.seq[s],fontSize:21,fill:(state.phase==='execute'&&s===state.step)?C.accent:C.bright,align:'center'}));}
+ layer.add(new Konva.Line({points:[60,385,900,385],stroke:C.primary,strokeWidth:2,opacity:.5}));
+ for(var i=0;i<symbols.length;i++) makeToken(i,125+i*120,418);
+ layer.draw(); updateUI();
+}
+function makeToken(i,x,y){var g=new Konva.Group({x:x,y:y,draggable:state.phase==='compose'});g.add(new Konva.Rect({width:78,height:70,cornerRadius:12,fill:i===selected?C.soft:C.panel,stroke:i===selected?C.accent:C.line,strokeWidth:2,shadowColor:'#000',shadowBlur:8}));g.add(new Konva.Text({y:15,width:78,text:symbols[i],fontSize:30,fill:C.text,align:'center'}));g.on('dragend',function(){if(g.y()<385)addSymbol(symbols[i]);else draw();});g.on('click tap',function(){selected=i;addSymbol(symbols[i]);});layer.add(g);}
+function addSymbol(sym){if(state.phase!=='compose'||state.seq.length>=6)return;state.seq.push(sym);feedback('已加入“'+sym+'”。继续编排，或发送给接收者。','');draw();}
+function feedback(t,kind){ui.feedback.textContent=t;ui.feedback.className=kind||'';}
+function updateUI(){ui.round.textContent='第 '+(state.round+1)+'/2 轮';ui.budget.textContent='已用 '+state.seq.length+'/6';ui.role.textContent=state.phase==='compose'?'发送者：编排指令':'接收者：只读符号';ui.step.textContent=state.phase==='execute'?'第 '+Math.min(state.step+1,state.seq.length)+'/'+state.seq.length+' 步':'等待编排 · 退格可删除末尾符号';ui.action.textContent=state.phase==='compose'?'发送指令':state.phase==='execute'?'检查复原':state.phase==='result'?(state.round===1?'重新挑战':'下一轮'):'重新挑战';ui.action.disabled=state.phase==='compose'&&!state.seq.length;}
+function execute(){state.cursor=[1,2];state.placed={circle:null,square:null};var bad=false;for(var i=0;i<state.seq.length;i++){var a=state.seq[i];if(delta[a]){var nx=state.cursor[0]+delta[a][0],ny=state.cursor[1]+delta[a][1];if(nx<0||nx>3||ny<0||ny>3){bad=true;feedback('这一步会走出网格。请返回发送者修改指令。','bad');break;}state.cursor=[nx,ny];}else state.placed[a==='●'?'circle':'square']=state.cursor.slice();state.step=i;}
+ state.phase='result';draw();if(!bad)check();}
+function same(a,b){return a&&a[0]===b[0]&&a[1]===b[1];}
+function check(){var t=targets[state.round],ok=same(state.placed.circle,t.circle)&&same(state.placed.square,t.square);if(ok){state.won++;feedback(state.round===1?'你用共享规则传递了不可见结构。':'复原完全一致：符号跨过遮挡，重建了目标结构。','good');document.getElementById('s-absence').classList.add('on');document.getElementById('s-steps').classList.add('on');document.getElementById('s-rules').classList.add('on');}else feedback('指令可执行，但复原的位置或形状与目标不同。','bad');}
+ui.action.addEventListener('click',function(){if(state.phase==='compose'){state.phase='execute';feedback('目标已经隐藏。接收者只能按共享词典读取符号。','');draw();}else if(state.phase==='execute')execute();else if(state.phase==='result'){if(state.round===0){state=fresh(1);feedback('第二轮：目标位置改变，规则保持不变。','');}else{state=fresh(0);document.querySelectorAll('.support').forEach(function(e){e.classList.remove('on');});feedback('从起点出发，用不超过六个共享符号描述两枚标记。','');}draw();}});
+var board=document.getElementById('instruction-game');board.addEventListener('keydown',function(e){if(state.phase!=='compose')return;if(e.key==='ArrowRight'){selected=(selected+1)%6;e.preventDefault();draw();}else if(e.key==='ArrowLeft'){selected=(selected+5)%6;e.preventDefault();draw();}else if(e.key==='Enter'||e.key===' '){addSymbol(symbols[selected]);e.preventDefault();}else if(e.key==='Backspace'){state.seq.pop();draw();e.preventDefault();}});
+if(!Deck.reduced()){document.querySelectorAll('header,.game-shell,.k-generalization').forEach(function(el,i){el.animate([{opacity:0,transform:'translateY(16px)'},{opacity:1,transform:'translateY(0)'}],{duration:420+i*100,delay:i*80,easing:'cubic-bezier(.2,.8,.2,1)',fill:'both'});});}
+draw();
+})();
+</script>
+</body>
+</html>

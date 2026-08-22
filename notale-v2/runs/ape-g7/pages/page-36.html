@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>同一高度，不同速度，走向不同轨道</title>
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  .orbit-page{height:100%;display:flex;flex-direction:column;gap:20px}
+  .orbit-head{display:flex;align-items:flex-end;justify-content:space-between;gap:24px}
+  .orbit-head .lead{max-width:570px;color:var(--muted)}
+  .orbit-work{display:flex;gap:24px;min-height:0;flex:1}
+  .orbit-controls{flex:0 0 430px;min-width:0;display:flex;flex-direction:column;gap:16px}
+  .orbit-view{position:relative;flex:1;min-width:0;min-height:0;overflow:hidden;border:1px solid var(--line);border-radius:var(--r-lg);background:#071522;box-shadow:var(--shadow)}
+  #orbitCanvas{display:block}
+  .process-list{gap:9px!important;flex:1}
+  .process-list .step{min-height:55px;padding:9px 12px 9px 50px!important;display:flex;flex-direction:column;justify-content:center}
+  .process-list .step::before{position:absolute;left:14px;top:50%;width:27px;height:27px;display:grid;place-items:center;transform:translateY(-50%);border-radius:50%;background:var(--surface-muted);color:var(--primary-strong);font-size:15px;font-weight:800;content:attr(data-n)}
+  .process-list .step.is-current::before{color:#fff;background:var(--primary)}
+  .process-list .step.is-done::before{background:var(--line-strong);color:#fff}
+  .process-list .arw{height:4px;min-height:4px}
+  .process-list .arw::before{font-size:16px!important}
+  .step-name{font-size:16px;font-weight:750;line-height:1.35}
+  .step-detail{font-size:16px;line-height:1.35;color:var(--muted)}
+  .speed-panel{padding:14px 18px}
+  .speed-panel .ctl{display:block}
+  .speed-line{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px}
+  .speed-value{font-size:22px;font-weight:800;color:var(--primary-strong);font-variant-numeric:tabular-nums}
+  #speed{width:100%;min-width:0;height:28px}
+  .scale{display:flex;justify-content:space-between;color:var(--muted);font-size:13px;line-height:1.35;font-variant-numeric:tabular-nums}
+  .scene-badge{position:absolute;z-index:3;top:18px;left:18px;min-width:190px;padding:11px 14px;border-radius:var(--r-md);background:rgba(255,255,255,.92);border:1px solid var(--line);box-shadow:var(--shadow-soft)}
+  .scene-badge .result{font-size:22px;font-weight:800;line-height:1.35;color:var(--primary-strong)}
+  .scene-badge .meta{font-size:16px;line-height:1.45;color:var(--muted)}
+  .scene-key{position:absolute;z-index:3;right:18px;top:18px;display:flex;gap:16px;padding:8px 11px;border-radius:var(--r-sm);background:rgba(7,21,34,.78);color:#eaf1f8;font-size:15px;line-height:1.35}
+  .scene-key span{display:flex;align-items:center;gap:7px}.keyline{width:25px;height:3px;background:#ffd166}.keyline.gravity{background:#ff817b}
+  .scene-note{position:absolute;z-index:3;left:18px;right:18px;bottom:15px;padding:9px 13px;border-radius:var(--r-sm);background:rgba(7,21,34,.82);color:#f3f7fb;font-size:16px;line-height:1.4;text-align:center}
+  @media (prefers-reduced-motion:reduce){.orbit-view *{scroll-behavior:auto!important}}
+</style>
+</head>
+<body data-page="36" data-total="45">
+<div id="stage">
+<main id="main">
+  <section class="orbit-page">
+    <div class="orbit-head">
+      <h1>同一高度，不同速度，走向不同轨道</h1>
+      <p class="lead">从同一出发点水平掷出，只改切向速度。观察重力怎样把直线运动不断弯成轨迹。</p>
+    </div>
+    <div class="orbit-work">
+      <section class="orbit-controls min0" aria-label="轨道形成过程">
+        <div class="k-process is-vertical process-list" id="process">
+          <div class="step is-done" data-n="1"><span class="step-name">固定起点</span><span class="step-detail">地表上方约 408 km</span></div>
+          <div class="arw" aria-hidden="true"></div>
+          <div class="step is-done" data-n="2"><span class="step-name">设定切向速度</span><span class="step-detail">出发方向始终沿地球切线</span></div>
+          <div class="arw" aria-hidden="true"></div>
+          <div class="step is-current" data-n="3"><span class="step-name">重力持续转向</span><span class="step-detail">速度箭头与向心箭头同时存在</span></div>
+          <div class="arw" aria-hidden="true"></div>
+          <div class="step" data-n="4"><span class="step-name">轨迹逐段形成</span><span class="step-detail" id="shapeText">弯向地表并相交</span></div>
+          <div class="arw" aria-hidden="true"></div>
+          <div class="step" data-n="5"><span class="step-name">判断结果</span><span class="step-detail" id="resultText">坠落</span></div>
+        </div>
+        <div class="panel speed-panel">
+          <div class="ctl">
+            <div class="speed-line"><label for="speed">切向速度</label><output class="speed-value" id="speedOut">6.6 km/s</output></div>
+            <input id="speed" type="range" min="0.84" max="1.18" step="0.005" value="0.86" aria-describedby="speedHint">
+            <div class="scale"><span>偏低</span><span id="circleMark">圆轨道</span><span>更快</span></div>
+          </div>
+          <p class="note" id="speedHint">拖动滑杆；圆轨道速度附近会轻微吸附。</p>
+        </div>
+      </section>
+      <figure class="orbit-view min0 no-pan" aria-label="三维地球与实时轨迹">
+        <canvas id="orbitCanvas" class="cv-fill"></canvas>
+        <div class="scene-badge" aria-live="polite"><div class="result" id="badgeResult">坠落</div><div class="meta"><span id="periodLabel">轨道未闭合</span><br><span id="apoLabel">轨迹与地表相交</span></div></div>
+        <div class="scene-key" aria-hidden="true"><span><i class="keyline"></i>切向速度</span><span><i class="keyline gravity"></i>重力方向</span></div>
+        <div class="scene-note">同一高度下，速度改变的是整条轨迹；重力始终存在。</div>
+      </figure>
+    </div>
+  </section>
+</main>
+</div>
+<script src="assets/lib/three.min.js"></script>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script>
+Lec.mount({
+  index: 36,
+  kicker: "ORBIT / VELOCITY",
+  title: "同一高度，不同速度，走向不同轨道",
+  take: "同一高度下，过慢会与地表相交，合适会持续绕行，更快则会把轨道的远地点抬高；轨道形状取决于速度，而不是‘有没有重力’。"
+});
+
+(function(){
+  var canvas=document.getElementById('orbitCanvas');
+  var wrap=canvas.parentElement;
+  var scene=new THREE.Scene();
+  scene.background=new THREE.Color(0x071522);
+  var camera=new THREE.PerspectiveCamera(38,1,.1,100);
+  camera.position.set(0,5.8,8.4); camera.lookAt(0,0,0);
+  var renderer=new THREE.WebGLRenderer({canvas:canvas,antialias:true,alpha:false});
+  renderer.outputColorSpace=THREE.SRGBColorSpace;
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,2));
+  scene.add(new THREE.HemisphereLight(0xb9ddff,0x071522,1.65));
+  var sun=new THREE.DirectionalLight(0xffffff,2.1); sun.position.set(5,7,8); scene.add(sun);
+
+  var ER=2.42;
+  var earth=new THREE.Mesh(new THREE.SphereGeometry(ER,64,40),new THREE.MeshStandardMaterial({color:0x17699b,roughness:.82,metalness:.04}));
+  earth.rotation.x=.16; scene.add(earth);
+  var wire=new THREE.Mesh(new THREE.SphereGeometry(ER*1.006,32,18),new THREE.MeshBasicMaterial({color:0x8ed8ee,wireframe:true,transparent:true,opacity:.15}));
+  scene.add(wire);
+  var glow=new THREE.Mesh(new THREE.SphereGeometry(ER*1.035,48,30),new THREE.MeshBasicMaterial({color:0x4bb8e8,transparent:true,opacity:.075,side:THREE.BackSide})); scene.add(glow);
+  var starsGeo=new THREE.BufferGeometry(), pts=[];
+  for(var i=0;i<260;i++){var a=i*2.399,b=Math.acos(1-2*(i+.5)/260),r=15;pts.push(r*Math.sin(b)*Math.cos(a),r*Math.cos(b),r*Math.sin(b)*Math.sin(a));}
+  starsGeo.setAttribute('position',new THREE.Float32BufferAttribute(pts,3));scene.add(new THREE.Points(starsGeo,new THREE.PointsMaterial({color:0xaac4d8,size:.035})));
+
+  var trajectory=new THREE.Line(new THREE.BufferGeometry(),new THREE.LineBasicMaterial({color:0xffd166,transparent:true,opacity:.96}));scene.add(trajectory);
+  var craft=new THREE.Mesh(new THREE.ConeGeometry(.075,.24,10),new THREE.MeshStandardMaterial({color:0xffd166,emissive:0x6b3c00,metalness:.45,roughness:.35}));scene.add(craft);
+  var velArrow=new THREE.ArrowHelper(new THREE.Vector3(0,1,0),new THREE.Vector3(),.8,0xffd166,.18,.11);scene.add(velArrow);
+  var gravArrow=new THREE.ArrowHelper(new THREE.Vector3(-1,0,0),new THREE.Vector3(),.75,0xff817b,.18,.11);scene.add(gravArrow);
+
+  var altitude=Lec.K.spaceflight.issTypicalAltitude;
+  var orbitRadius=Lec.P.orbitRadiusFromAltitude(Lec.K.earth.meanRadius,altitude);
+  var circular=Lec.P.circularOrbitVelocity(Lec.K.earth.mass,orbitRadius);
+  var input=document.getElementById('speed');
+  var state={ratio:parseFloat(input.value),points:[],status:''};
+
+  function pathFor(q){
+    var r0=ER*(orbitRadius/Lec.K.earth.meanRadius),x=r0,y=0,vx=0,vy=q*Math.sqrt(ER/r0),dt=.008,arr=[],hit=false;
+    for(var n=0;n<2400;n++){
+      var rr=Math.sqrt(x*x+y*y),ax=-ER*x/(rr*rr*rr),ay=-ER*y/(rr*rr*rr);
+      vx+=ax*dt;vy+=ay*dt;x+=vx*dt;y+=vy*dt;
+      arr.push(new THREE.Vector3(x,y,0));
+      if(n>12 && Math.sqrt(x*x+y*y)<=ER){hit=true;break;}
+      if(n>250 && Math.atan2(y,x)<0 && arr[n-1].y<0 && y>=0)break;
+    }
+    return {points:arr,hit:hit};
+  }
+  function update(){
+    var q=parseFloat(input.value);
+    if(Math.abs(q-1)<.012){q=1;input.value='1';}
+    state.ratio=q;
+    var speed=q*circular;
+    var result=pathFor(q);state.points=result.points;
+    trajectory.geometry.dispose();trajectory.geometry=new THREE.BufferGeometry().setFromPoints(result.points);
+    var status=q<.975?'坠落':(q<=1.025?'绕行':'更高轨道');state.status=status;
+    var shape=status==='坠落'?'弯向地表并相交':(status==='绕行'?'前后相接，近似闭合':'远地点抬高，形成椭圆');
+    document.getElementById('speedOut').textContent=Lec.P.roundTo(speed/1000,2)+' km/s';
+    document.getElementById('shapeText').textContent=shape;document.getElementById('resultText').textContent=status;
+    document.getElementById('badgeResult').textContent=status;document.getElementById('apoLabel').textContent=shape;
+    if(status==='坠落') document.getElementById('periodLabel').textContent='轨道未闭合';
+    else {
+      var mu=Lec.K.physics.gravitationalConstant*Lec.K.earth.mass;
+      var a=1/(2/orbitRadius-speed*speed/mu);
+      var period=Lec.P.orbitalPeriod(Lec.K.earth.mass,a);
+      document.getElementById('periodLabel').textContent='周期约 '+Lec.P.roundTo(period/60,0)+' 分钟';
+    }
+    var steps=document.querySelectorAll('#process .step');steps[3].className='step is-done';steps[4].className='step is-current';
+    craft.position.copy(result.points[Math.min(45,result.points.length-1)]||new THREE.Vector3(ER,0,0));
+    craft.rotation.z=-Math.PI/2;
+    var start=new THREE.Vector3(ER*(orbitRadius/Lec.K.earth.meanRadius),0,0);
+    velArrow.position.copy(start);velArrow.setDirection(new THREE.Vector3(0,1,0));velArrow.setLength(.55+.34*q,.18,.11);
+    gravArrow.position.copy(start);gravArrow.setDirection(new THREE.Vector3(-1,0,0));gravArrow.setLength(.72,.18,.11);
+    renderer.render(scene,camera);
+  }
+  input.addEventListener('input',update);
+  function resize(){var w=wrap.clientWidth,h=wrap.clientHeight;renderer.setSize(w,h,false);camera.aspect=w/h;camera.updateProjectionMatrix();renderer.render(scene,camera);}
+  Deck.onResize(resize);window.addEventListener('resize',resize);resize();update();
+  if(!Deck.reduced()) Deck.loop(function(t){earth.rotation.y=t*.000035;wire.rotation.y=t*.00002;renderer.render(scene,camera);},{still:0});
+})();
+</script>
+</body>
+</html>

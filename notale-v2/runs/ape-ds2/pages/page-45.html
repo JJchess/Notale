@@ -1,0 +1,548 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<script src="assets/lib/d3.min.js"></script>
+<style>
+:root{
+  --bg:        #0b0e14;
+  --text:      #e6e6e6;
+  --font-sans: "Noto Sans SC", system-ui, sans-serif;
+}
+body{
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+}
+/* Make stage a flex container so main fills remaining space */
+#stage{
+  display: flex;
+  flex-direction: column;
+}
+#main{
+  flex: 1;
+  position: relative;
+  width: auto;
+  height: auto;
+  min-height: 0;
+  overflow: hidden;
+}
+#viz-container{
+  position: absolute;
+  inset: 0;
+}
+#hominin-chart{
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* overlay panel for key sentences — positioned at top-right to avoid group labels */
+#key-sentences{
+  position: absolute;
+  right: 80px;
+  top: 8px;
+  width: 220px;
+  pointer-events: none;
+  z-index: 10;
+}
+#key-sentences .ks{
+  font-size: 13px;
+  line-height: 1.4;
+  color: rgba(230,230,230,0.85);
+  margin-bottom: 5px;
+  padding: 4px 8px;
+  background: rgba(11,14,20,0.85);
+  border-radius: 4px;
+  border-left: 2px solid var(--accent, #4f6ef2);
+}
+#key-sentences .ks strong{
+  color: #fff;
+  font-weight: 600;
+}
+
+/* bottom-left time window */
+#time-window{
+  position: absolute;
+  left: 20px;
+  bottom: 16px;
+  font-size: 14px;
+  color: #8892a4;
+  background: rgba(11,14,20,0.75);
+  padding: 4px 12px;
+  border-radius: 6px;
+  backdrop-filter: blur(4px);
+  pointer-events: none;
+  z-index: 10;
+}
+
+/* bottom-left legend (moved left to avoid &#x2715; marks and "现在" label) */
+#legend{
+  position: absolute;
+  left: 20px;
+  bottom: 60px;
+  font-size: 13px;
+  color: #8892a4;
+  background: rgba(11,14,20,0.75);
+  padding: 4px 10px;
+  border-radius: 6px;
+  backdrop-filter: blur(4px);
+  pointer-events: none;
+  z-index: 10;
+  text-align: left;
+  line-height: 1.5;
+}
+#legend .accent{
+  color: var(--accent, #4f6ef2);
+  font-weight: 600;
+}
+#legend .extinct-mark{
+  color: #e05050;
+}
+
+/* d3 SVG text */
+#hominin-chart text{
+  font-family: var(--font-sans);
+  fill: var(--text);
+}
+#hominin-chart .axis-label{
+  fill: #8892a4;
+  font-size: 13px;
+}
+#hominin-chart .branch-label{
+  font-size: 14px;
+}
+#hominin-chart .group-label{
+  font-size: 15px;
+  font-weight: 600;
+  fill: rgba(230,230,230,0.6);
+}
+#hominin-chart .extinct-mark{
+  fill: #e05050;
+  font-size: 14px;
+  font-weight: 700;
+}
+#hominin-chart .footprint-icon{
+  fill: var(--accent, #4f6ef2);
+}
+#hominin-chart .tick line{
+  stroke: rgba(255,255,255,0.08);
+  stroke-dasharray: 2,3;
+}
+#hominin-chart .tick text{
+  fill: #8892a4;
+  font-size: 13px;
+}
+#hominin-chart .domain{
+  stroke: rgba(255,255,255,0.15);
+}
+</style>
+</head>
+<body data-page="45" data-total="50">
+<div id="stage">
+<main id="main">
+  <div id="viz-container" class="cv-fill">
+    <svg id="hominin-chart"></svg>
+  </div>
+  <div id="key-sentences">
+    <div class="ks">人科演化不是一架梯子，而是一丛<strong>灌木</strong>——绝大多数枝条在半路断了。</div>
+    <div class="ks">智人不是注定出现的主角，只是这丛灌木里<strong>唯一活到现在的枝条</strong>。</div>
+    <div class="ks">从东非到太空，是这唯一幸存的枝条走出来的路，不是整丛灌木的共同方向。</div>
+  </div>
+  <div id="time-window">7 Ma — 现在</div>
+  <div id="legend">
+    <span>—— 人科分支</span><br>
+    <span class="extinct-mark">×</span> = 灭绝<br>
+    <span class="accent">唯一延续至今</span> = 智人
+  </div>
+</main>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script>
+(function(){
+  'use strict';
+
+  // ---- Mount ----
+  Lec.mount({
+    title: '人科谱系不是一条直线',
+    sub: '人科演化不是一架梯子，而是一丛灌木——绝大多数枝条在半路断了。'
+  });
+  var kickerEl = document.querySelector('.lec-kicker');
+  if (kickerEl) kickerEl.textContent = '回望 · 谱系';
+
+  // ---- Data (全套口径) ----
+  Lec.P45 = Lec.P45 || {};
+
+  Lec.P45.HOMININ_TAXA = [
+    { name:'乍得沙赫人',  group:'早期人科',   startMa:7.0, endMa:6.0, extinct:true },
+    { name:'图根原人',    group:'早期人科',   startMa:6.0, endMa:5.7, extinct:true },
+    { name:'地猿',        group:'早期人科',   startMa:4.4, endMa:4.2, extinct:true },
+    { name:'南方古猿·湖畔种', group:'南方古猿类', startMa:4.2, endMa:3.9, extinct:true },
+    { name:'南方古猿·阿法种', group:'南方古猿类', startMa:3.9, endMa:2.9, extinct:true },
+    { name:'南方古猿·非洲种', group:'南方古猿类', startMa:3.3, endMa:2.1, extinct:true },
+    { name:'傍人',        group:'傍人',       startMa:2.7, endMa:1.2, extinct:true },
+    { name:'能人',        group:'人属',       startMa:2.3, endMa:1.5, extinct:true },
+    { name:'直立人',      group:'人属',       startMa:2.0, endMa:0.1, extinct:true },
+    { name:'海德堡人',    group:'人属',       startMa:0.7, endMa:0.2, extinct:true },
+    { name:'尼安德特人',  group:'人属',       startMa:0.4, endMa:0.04, extinct:true },
+    { name:'丹尼索瓦人',  group:'人属',       startMa:0.4, endMa:0.05, extinct:true },
+    { name:'佛罗勒斯人',  group:'人属',       startMa:0.1, endMa:0.05, extinct:true },
+    { name:'智人',        group:'人属',       startMa:0.2, endMa:0,    extinct:false }
+  ];
+
+  Lec.P45.ZOOM_LEVELS = {
+    all: 6,
+    middle: 1.5
+  };
+
+  // ---- Group colors ----
+  var GROUP_COLORS = {
+    '早期人科':   { bar:'rgba(200,180,120,0.55)',  border:'rgba(200,180,120,0.7)' },
+    '南方古猿类': { bar:'rgba(200,150,100,0.55)',  border:'rgba(200,150,100,0.7)' },
+    '傍人':       { bar:'rgba(200,100,100,0.55)',  border:'rgba(200,100,100,0.7)' },
+    '人属':       { bar:'rgba(100,150,200,0.55)',  border:'rgba(100,150,200,0.7)' }
+  };
+  var ACCENT = '#4f6ef2';
+  var GROUP_ORDER = ['早期人科','南方古猿类','傍人','人属'];
+
+  // ---- SVG setup ----
+  var svg = d3.select('#hominin-chart');
+  var container = document.getElementById('viz-container');
+  var timeWindowEl = document.getElementById('time-window');
+
+  var margin = { top: 12, right: 20, bottom: 40, left: 28 };
+  var W, H, innerW, innerH;
+  var g, xScale, xAxis;
+  var zoomBehavior;
+  var currentTransform;
+
+  var taxa = Lec.P45.HOMININ_TAXA;
+  var sortedTaxa = taxa.slice().sort(function(a,b){
+    return b.startMa - a.startMa || a.name.localeCompare(b.name);
+  });
+  var N = sortedTaxa.length;
+
+  // ---- Footprint SVG path ----
+  var footprintPath = 'M-6,-8 C-4,-12 4,-12 6,-8 C8,-4 6,2 4,6 C2,10 -2,10 -4,6 C-6,2 -8,-4 -6,-8 Z M-2,-6 C-2,-4 2,-4 2,-6 C2,-8 -2,-8 -2,-6 Z M-3,2 C-1,0 1,0 3,2 C4,4 3,6 2,7 C0,8 -2,8 -3,6 C-4,4 -4,3 -3,2 Z';
+
+  // ---- Drawing function ----
+  function draw(transform){
+    if(!g) return;
+    transform = transform || d3.zoomIdentity;
+
+    var k = transform.k;
+    var tx = transform.x;
+    var x0 = -tx / k;
+    var x1 = (innerW - tx) / k;
+    // Domain is [7, 0] (left=7Ma, right=0=present)
+    var leftMa = xScale.invert ? xScale.invert(x0) : 7;  // older (left edge)
+    var rightMa = xScale.invert ? xScale.invert(x1) : 0; // younger (right edge)
+    var domainMin = Math.max(0, Math.min(7, rightMa));
+    var domainMax = Math.max(0, Math.min(7, leftMa));
+    var span = domainMax - domainMin;
+
+    // Update time window
+    var leftStr = (domainMin < 0.1) ? '0' : (domainMin.toFixed(1) + ' Ma');
+    var rightStr = (domainMax < 0.1) ? '现在' : (domainMax.toFixed(1) + ' Ma');
+    timeWindowEl.textContent = leftStr + ' — ' + rightStr;
+
+    // Label visibility based on zoom
+    var showGroupOnly = (span >= Lec.P45.ZOOM_LEVELS.all);
+    var showMiddle = (span >= Lec.P45.ZOOM_LEVELS.middle && span < Lec.P45.ZOOM_LEVELS.all);
+    var showDetail = (span < Lec.P45.ZOOM_LEVELS.middle);
+
+    // Apply zoom transform
+    g.attr('transform', 'translate(' + tx + ',' + ty + ') scale(' + k + ')');
+
+    // Update x-axis (reversed domain: older on left, present on right)
+    var zoomedXScale = xScale.copy();
+    zoomedXScale.domain([domainMax, domainMin]);
+    xAxis.scale(zoomedXScale);
+    g.select('.x-axis').call(xAxis);
+
+    // ---- Draw branches ----
+    var barHeight = Math.max(8, Math.min(18, (innerH / N) * 0.6));
+    var gap = (innerH - barHeight * N) / (N + 1);
+
+    // Remove old elements
+    g.selectAll('.branch-group').remove();
+    g.selectAll('.group-strip').remove();
+
+    // Draw each taxon
+    sortedTaxa.forEach(function(d, i){
+      var yPos = gap + i * (barHeight + gap);
+      var isExtinct = d.extinct;
+      var isSapiens = (d.name === '智人');
+      var group = d.group;
+
+      var barColor, borderColor;
+      if(isSapiens){
+        barColor = ACCENT;
+        borderColor = ACCENT;
+      } else {
+        var gc = GROUP_COLORS[group] || { bar:'rgba(100,100,120,0.4)', border:'rgba(100,100,120,0.6)' };
+        barColor = gc.bar;
+        borderColor = gc.border;
+      }
+
+      var bg = g.append('g').attr('class', 'branch-group');
+
+      var xStart = zoomedXScale(d.startMa);
+      var xEnd = zoomedXScale(Math.max(d.endMa, 0.001));
+      if(xStart === undefined || xEnd === undefined) return;
+      if(xStart > innerW + 10 || xEnd < -10) return;
+
+      var barX = Math.max(0, xStart);
+      var barW = Math.max(1, xEnd - xStart);
+      if(barX + barW > innerW) barW = innerW - barX;
+
+      if(barW > 0){
+        bg.append('rect')
+          .attr('x', barX)
+          .attr('y', yPos)
+          .attr('width', barW)
+          .attr('height', barHeight)
+          .attr('rx', 2)
+          .attr('ry', 2)
+          .attr('fill', barColor)
+          .attr('stroke', borderColor)
+          .attr('stroke-width', isSapiens ? 1.5 : 0.5)
+          .attr('opacity', isSapiens ? 1 : 0.75);
+      }
+
+      var labelY = yPos + barHeight / 2;
+
+      // Extinct mark (×) at end of bar
+      if(isExtinct && xEnd >= 0 && xEnd <= innerW){
+        bg.append('text')
+          .attr('x', Math.min(xEnd + 3, innerW - 3))
+          .attr('y', labelY + 1)
+          .attr('text-anchor', 'start')
+          .attr('dominant-baseline', 'central')
+          .attr('class', 'extinct-mark')
+          .attr('font-size', Math.min(14, barHeight + 3))
+          .text('×');
+      }
+
+      // Footprint for Homo sapiens at right edge
+      if(isSapiens && !isExtinct){
+        var fpScale = Math.min(0.9, barHeight / 16);
+        var fpX = Math.min(innerW - 14, innerW - 6);
+        var fpY = labelY;
+        var fpG = bg.append('g')
+          .attr('transform', 'translate(' + fpX + ',' + fpY + ') scale(' + fpScale + ')')
+          .attr('class', 'footprint-icon');
+        fpG.append('path')
+          .attr('d', footprintPath)
+          .attr('fill', ACCENT);
+      }
+
+      // ---- Label ----
+      var showLabel = false;
+      if(showGroupOnly){
+        showLabel = false;
+      } else if(showMiddle){
+        if(group === '南方古猿类' || group === '傍人'){
+          showLabel = true;
+        }
+      } else if(showDetail){
+        showLabel = true;
+      }
+
+      if(showLabel && barW > 20){
+        var labelX = barX + 4;
+        bg.append('text')
+          .attr('x', labelX)
+          .attr('y', labelY)
+          .attr('text-anchor', 'start')
+          .attr('dominant-baseline', 'central')
+          .attr('class', 'branch-label')
+          .attr('fill', isSapiens ? ACCENT : (isExtinct ? 'rgba(230,230,230,0.7)' : '#e6e6e6'))
+          .attr('font-weight', isSapiens ? '700' : '400')
+          .attr('font-size', Math.min(14, barHeight + 2))
+          .text(d.name);
+      }
+    });
+
+    // ---- Group labels (showGroupOnly mode) ----
+    if(showGroupOnly){
+      var groupRanges = {};
+      sortedTaxa.forEach(function(d, i){
+        if(!groupRanges[d.group]){
+          groupRanges[d.group] = { first:i, last:i, count:0 };
+        }
+        groupRanges[d.group].last = i;
+        groupRanges[d.group].count++;
+      });
+
+      GROUP_ORDER.forEach(function(group){
+        var gr = groupRanges[group];
+        if(!gr) return;
+        var yStart = gap + gr.first * (barHeight + gap) - 3;
+        var yEnd = gap + gr.last * (barHeight + gap) + barHeight + 3;
+        var midY = (yStart + yEnd) / 2;
+
+        var gc = GROUP_COLORS[group] || { bar:'rgba(100,100,120,0.4)' };
+        // Background strip
+        g.append('rect')
+          .attr('class', 'group-strip')
+          .attr('x', 0)
+          .attr('y', yStart)
+          .attr('width', innerW)
+          .attr('height', yEnd - yStart)
+          .attr('fill', gc.bar.replace('0.55','0.10'))
+          .attr('rx', 4)
+          .attr('ry', 4)
+          .attr('pointer-events', 'none');
+
+        // Group label (far left to avoid × marks)
+        var labelColor = (group === '人属') ? ACCENT : (gc.bar.replace('0.55','0.85'));
+        g.append('text')
+          .attr('class', 'group-label')
+          .attr('x', 2)
+          .attr('y', midY)
+          .attr('text-anchor', 'start')
+          .attr('dominant-baseline', 'central')
+          .attr('fill', labelColor)
+          .attr('font-size', '15px')
+          .text(group);
+      });
+    }
+  }
+
+  var ty = 0;
+
+  // ---- Initialize ----
+  function init(){
+    var rect = container.getBoundingClientRect();
+    W = rect.width;
+    H = rect.height;
+    innerW = W - margin.left - margin.right;
+    innerH = H - margin.top - margin.bottom;
+
+    if(innerW < 100 || innerH < 100) return;
+
+    svg.selectAll('*').remove();
+    svg.attr('width', W).attr('height', H);
+
+    // Clip path to prevent text overflow
+    var defs = svg.append('defs');
+    defs.append('clipPath')
+      .attr('id', 'chart-clip')
+      .append('rect')
+      .attr('x', 0)
+      .attr('y', 0)
+      .attr('width', W)
+      .attr('height', H);
+
+    g = svg.append('g')
+      .attr('transform', 'translate(' + margin.left + ',' + margin.top + ')');
+
+    // X scale: past (7 Ma) on left, present (0) on right
+    xScale = d3.scaleLinear()
+      .domain([7, 0])
+      .range([0, innerW]);
+
+    // X axis — use "现在" as a separate label to avoid overlap with × marks
+    xAxis = d3.axisBottom(xScale)
+      .tickValues([7, 5, 3, 1])
+      .tickFormat(function(d){ return d + ' Ma'; })
+      .tickSize(6)
+      .tickSizeOuter(0);
+
+    g.append('g')
+      .attr('class', 'x-axis')
+      .attr('transform', 'translate(0,' + innerH + ')')
+      .call(xAxis);
+
+    // "现在" label at the right end, below the axis to avoid × marks
+    g.append('text')
+      .attr('x', innerW)
+      .attr('y', innerH + 20)
+      .attr('text-anchor', 'end')
+      .attr('fill', '#8892a4')
+      .attr('font-size', '13px')
+      .text('现在');
+
+    // X axis label
+    g.append('text')
+      .attr('class', 'axis-label')
+      .attr('x', innerW / 2)
+      .attr('y', innerH + 38)
+      .attr('text-anchor', 'middle')
+      .attr('font-size', '13px')
+      .attr('fill', '#8892a4')
+      .text('时间（百万年前）');
+
+    // ---- Zoom ----
+    zoomBehavior = d3.zoom()
+      .scaleExtent([0.5, 20])
+      .translateExtent([[0, 0], [innerW, innerH]])
+      .extent([[0, 0], [innerW, innerH]])
+      .on('zoom', function(event){
+        currentTransform = event.transform;
+        ty = currentTransform.y;
+        draw(currentTransform);
+      });
+
+    svg.call(zoomBehavior);
+
+    // Initial draw
+    currentTransform = d3.zoomIdentity;
+    ty = 0;
+    draw(currentTransform);
+
+    // ---- Keyboard ----
+    var svgNode = svg.node();
+    svgNode.setAttribute('tabindex', '0');
+    svgNode.setAttribute('role', 'application');
+    svgNode.setAttribute('aria-label', '人科演化分支图，滚轮缩放，方向键平移');
+
+    svg.on('keydown', function(event){
+      if(!currentTransform) return;
+      var k = currentTransform.k;
+      var tx = currentTransform.x;
+      var ty2 = currentTransform.y;
+      var key = event.key;
+
+      if(key === 'ArrowLeft'){
+        event.preventDefault();
+        tx += 40;
+      } else if(key === 'ArrowRight'){
+        event.preventDefault();
+        tx -= 40;
+      } else if(key === 'ArrowUp' || key === '+' || key === '='){
+        event.preventDefault();
+        k = Math.min(20, k * 1.3);
+      } else if(key === 'ArrowDown' || key === '-'){
+        event.preventDefault();
+        k = Math.max(0.5, k / 1.3);
+      } else {
+        return;
+      }
+
+      var newTransform = d3.zoomIdentity.translate(tx, ty2).scale(k);
+      svg.transition().duration(200).call(zoomBehavior.transform, newTransform);
+    });
+  }
+
+  // ---- Resize ----
+  var resizeTimer;
+  function onResize(){
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(function(){
+      init();
+    }, 150);
+  }
+  window.addEventListener('resize', onResize);
+
+  // Start
+  init();
+
+})();
+</script>
+</body>
+</html>

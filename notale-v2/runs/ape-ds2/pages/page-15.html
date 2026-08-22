@@ -1,0 +1,1279 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+/* ===== page-15 specific ===== */
+:root{
+  --bg:        #0b0e14;
+  --text:      #e6e6e6;
+  --font-sans: "Noto Sans SC", system-ui, sans-serif;
+}
+
+/* Split layout — use flex-grow ratios to fit inside stage padding */
+#main {
+  width: 1408px;
+  height: 620px;
+  margin: 0 auto;
+  overflow: hidden;
+}
+.content-wrap {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 1408px;
+  height: 620px;
+  display: flex;
+  flex-direction: row;
+  gap: var(--space-5);
+  box-sizing: border-box;
+  overflow: hidden;
+}
+.content-wrap > .left-panel {
+  flex: 55 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.content-wrap > .right-panel {
+  flex: 45 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  overflow-y: auto;
+}
+
+/* Simulator canvas area */
+.sim-canvas-wrap {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+}
+#sim-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* Controls */
+.ctl-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  padding: var(--space-2) 0;
+}
+.ctl-group {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.ctl-group > .label {
+  font-size: var(--fs-label);
+  color: var(--muted);
+  white-space: nowrap;
+}
+.ctl-btn {
+  font-size: var(--fs-label);
+  padding: 4px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel-bg);
+  color: var(--text);
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.2s, border-color 0.2s;
+}
+.ctl-btn:hover {
+  border-color: var(--accent);
+}
+.ctl-btn.active {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
+  font-weight: 600;
+}
+.ctl-btn.preset {
+  font-weight: 600;
+  background: rgba(79, 110, 242, 0.08);
+  border-color: rgba(79, 110, 242, 0.3);
+}
+.ctl-btn.preset:hover {
+  background: rgba(79, 110, 242, 0.15);
+}
+.ctl-btn.start {
+  font-weight: 700;
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+  padding: 6px 20px;
+}
+.ctl-btn.start:hover {
+  opacity: 0.85;
+}
+.ctl-btn.start:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.ctl-btn.start.running {
+  background: #e53e3e;
+  border-color: #e53e3e;
+}
+.ctl-btn.reset {
+  border-color: var(--muted);
+  color: var(--muted);
+}
+.status-msg {
+  font-size: var(--fs-sec);
+  font-weight: 600;
+  color: var(--accent);
+  min-height: 1.4em;
+}
+
+/* Process chain on right panel */
+.process-chain {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0;
+  flex: 1;
+  padding: var(--space-2) 0;
+}
+.p-step {
+  position: relative;
+  padding: 10px 14px;
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  text-align: left;
+  transition: all 0.3s ease;
+  opacity: 0.6;
+}
+.p-step.active {
+  opacity: 1;
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+.p-step.done {
+  opacity: 0.45;
+}
+.p-step .step-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.p-step .step-num {
+  flex: 0 0 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 700;
+}
+.p-step.active .step-num {
+  background: var(--accent);
+}
+.p-step.done .step-num {
+  background: var(--muted);
+}
+.p-step .step-title {
+  font-size: var(--fs-label);
+  font-weight: 700;
+  color: var(--text);
+}
+.p-step .step-desc {
+  font-size: var(--fs-sec);
+  color: var(--muted);
+  margin-top: 2px;
+  line-height: 1.35;
+}
+.p-step .step-tag {
+  display: inline-block;
+  font-size: var(--fs-label);
+  font-weight: 600;
+  padding: 1px 8px;
+  border-radius: 4px;
+  margin-top: 4px;
+}
+.p-step .step-tag.cooling {
+  background: rgba(56, 178, 172, 0.15);
+  color: #38b2ac;
+  border: 1px solid rgba(56, 178, 172, 0.3);
+}
+.p-step .step-tag.heat {
+  background: rgba(237, 137, 54, 0.15);
+  color: #ed8936;
+  border: 1px solid rgba(237, 137, 54, 0.3);
+}
+
+/* Process arrows */
+.p-arrow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 28px;
+  color: var(--muted);
+  font-size: 14px;
+  position: relative;
+}
+.p-arrow::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 2px;
+  height: 100%;
+  background: var(--border);
+  transform: translateX(-50%);
+}
+.p-arrow-label {
+  position: relative;
+  z-index: 1;
+  background: var(--bg);
+  padding: 0 8px;
+  font-size: 14px;
+  color: var(--muted);
+  font-weight: 600;
+}
+.p-arrow-label.active {
+  color: var(--accent);
+}
+
+/* Branch row */
+.p-branch {
+  display: flex;
+  flex-direction: row;
+  gap: var(--space-3);
+  position: relative;
+  padding: 4px 0;
+}
+.p-branch::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: 2px;
+  height: 100%;
+  background: var(--border);
+  transform: translateX(-50%);
+}
+.p-branch > .p-step {
+  flex: 1;
+  min-width: 0;
+}
+.p-branch-arrows {
+  display: flex;
+  flex-direction: row;
+  gap: var(--space-3);
+  position: relative;
+  height: 28px;
+}
+.p-branch-arrows > div {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  color: var(--muted);
+  position: relative;
+}
+.p-branch-arrows > div::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--border);
+}
+.p-branch-arrows .arrow-label {
+  position: relative;
+  z-index: 1;
+  background: var(--bg);
+  padding: 0 6px;
+  font-size: 14px;
+  color: var(--muted);
+}
+
+/* Loop arrow */
+.p-loop-arrow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  height: 28px;
+  font-size: 14px;
+  color: var(--muted);
+}
+.p-loop-arrow.active {
+  color: var(--accent);
+}
+.p-loop-arrow .arrow-label {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+/* Right panel title */
+.right-panel-title {
+  font-size: var(--fs-sec);
+  font-weight: 700;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 0 0 var(--space-1) 0;
+  border-bottom: 1px solid var(--border);
+}
+
+/* Panel status display */
+.panel-status {
+  font-size: var(--fs-sec);
+  color: var(--muted);
+  text-align: center;
+  padding: 2px 0;
+}
+</style>
+</head>
+<body data-page="15" data-total="50">
+<div id="stage">
+<main id="main">
+  <div class="content-wrap">
+    <!-- Left panel: Simulator -->
+    <div class="left-panel">
+      <div class="sim-canvas-wrap">
+        <canvas id="sim-canvas"></canvas>
+      </div>
+      <div class="ctl-row">
+        <div class="ctl-group">
+          <button class="ctl-btn preset" data-preset="human" id="preset-human">人类体质</button>
+          <button class="ctl-btn preset" data-preset="animal" id="preset-animal">典型兽类</button>
+        </div>
+      </div>
+      <div class="ctl-row">
+        <div class="ctl-group">
+          <span class="label">体毛</span>
+          <button class="ctl-btn active" data-param="fur" data-val="naked" id="fur-naked">无毛</button>
+          <button class="ctl-btn" data-param="fur" data-val="furry" id="fur-furry">厚毛</button>
+        </div>
+        <div class="ctl-group">
+          <span class="label">汗腺</span>
+          <button class="ctl-btn active" data-param="sweat" data-val="dense" id="sweat-dense">密集</button>
+          <button class="ctl-btn" data-param="sweat" data-val="sparse" id="sweat-sparse">稀疏</button>
+        </div>
+        <div class="ctl-group">
+          <span class="label">腿长</span>
+          <button class="ctl-btn active" data-param="leg" data-val="long" id="leg-long">长</button>
+          <button class="ctl-btn" data-param="leg" data-val="short" id="leg-short">短</button>
+        </div>
+      </div>
+      <div class="ctl-row" style="justify-content: space-between;">
+        <button class="ctl-btn start" id="btn-start">▶ 开始奔跑</button>
+        <button class="ctl-btn reset" id="btn-reset">↺ 重置</button>
+        <span class="status-msg" id="status-msg"></span>
+      </div>
+    </div>
+
+    <!-- Right panel: Process steps -->
+    <div class="right-panel">
+      <div class="right-panel-title">产热 — 散热链</div>
+      <div class="process-chain" id="process-chain">
+        <!-- Step 1 -->
+        <div class="p-step" id="ps-1">
+          <div class="step-header">
+            <span class="step-num">1</span>
+            <span class="step-title">产热</span>
+          </div>
+          <div class="step-desc">肌肉奔跑时产生大量热</div>
+        </div>
+        <div class="p-arrow" id="par-1"><span class="p-arrow-label" id="pal-1">于是</span></div>
+
+        <!-- Step 2 -->
+        <div class="p-step" id="ps-2">
+          <div class="step-header">
+            <span class="step-num">2</span>
+            <span class="step-title">升温</span>
+          </div>
+          <div class="step-desc">热量排不掉，核心温度上升</div>
+        </div>
+        <div class="p-arrow" id="par-2"><span class="p-arrow-label" id="pal-2">否则</span></div>
+
+        <!-- Step 3 -->
+        <div class="p-step" id="ps-3">
+          <div class="step-header">
+            <span class="step-num">3</span>
+            <span class="step-title">过界</span>
+          </div>
+          <div class="step-desc">逼近 40°C，身体强制停机</div>
+        </div>
+        <div class="p-branch-arrows">
+          <div><span class="arrow-label">散热端拦截</span></div>
+          <div><span class="arrow-label">产热端拦截</span></div>
+        </div>
+
+        <!-- Step 4 & 5 (branch) -->
+        <div class="p-branch">
+          <div class="p-step" id="ps-4">
+            <div class="step-header">
+              <span class="step-num">4</span>
+              <span class="step-title">蒸发</span>
+            </div>
+            <div class="step-desc">汗液在无毛皮肤上直接蒸发</div>
+            <span class="step-tag cooling">散热端</span>
+          </div>
+          <div class="p-step" id="ps-5">
+            <div class="step-header">
+              <span class="step-num">5</span>
+              <span class="step-title">省热</span>
+            </div>
+            <div class="step-desc">长腿步频低，同样速度产热更少</div>
+            <span class="step-tag heat">产热端</span>
+          </div>
+        </div>
+        <div class="p-arrow" id="par-3"><span class="p-arrow-label" id="pal-3">汇聚</span></div>
+
+        <!-- Step 6 -->
+        <div class="p-step" id="ps-6">
+          <div class="step-header">
+            <span class="step-num">6</span>
+            <span class="step-title">稳态</span>
+          </div>
+          <div class="step-desc">散热 ≥ 产热，体温稳住，奔跑持续</div>
+        </div>
+        <div class="p-loop-arrow" id="loop-arrow">
+          <span class="arrow-label">← 回到 1 · 循环</span>
+        </div>
+      </div>
+      <div class="panel-status" id="panel-status">选择参数，开始奔跑</div>
+    </div>
+  </div>
+</main>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script>
+/* ===== Page 15: 散热收支 ===== */
+(function(){
+  'use strict';
+
+  /* ---- Mount header/footer ---- */
+  Lec.mount({
+    index: 15,
+    kicker: 'BODY / COOLING',
+    title: '散热：无毛、汗腺、长腿如何造就耐力之王',
+    take: '无毛、汗腺、长腿——人类可能靠散热能力成为动物界的耐力之王：不是跑得比谁都快，而是能在热浪里跑得比谁都久。'
+  });
+
+  /* ---- Constants (本页口径) ---- */
+  var P15 = {
+    INITIAL_CORE_TEMP:   37.0,   // °C
+    OVERHEAT_CORE_TEMP:  40.0,   // °C
+    FULL_SWEAT_TEMP:     39.0,   // °C
+    RUNNING_HEAT:        1000,   // W
+    LATENT_HEAT_WATER:   2400,   // kJ/L
+    SWEAT_RATE_DENSE:    1.5,    // L/h
+    SWEAT_RATE_SPARSE:   0.3,    // L/h
+    FUR_COOLING_MULT:    { naked: 1.0, furry: 0.35 },
+    LEG_HEAT_MULT:       { long: 0.85, short: 1.25 },
+    BODY_HEAT_CAPACITY:  245000, // J/K
+    COURSE_DISTANCE:     10,     // km
+    RUNNING_SPEED:       12,     // km/h
+    TIME_COMPRESSION:    300     // 1 real sec = 300 sim sec (= 5 min)
+  };
+
+  /* ---- State ---- */
+  var state = {
+    fur: 'naked',         // 'naked' | 'furry'
+    sweat: 'dense',       // 'dense' | 'sparse'
+    leg: 'long',          // 'long' | 'short'
+    running: false,
+    completed: false,
+    overheat: false,
+    // Simulation
+    simTime: 0,           // simulated seconds elapsed
+    temp: P15.INITIAL_CORE_TEMP,
+    tempHistory: [],      // [{t, temp}]
+    distance: 0,          // km
+    stopDistance: 0,      // where runner stopped
+    // Previous runs
+    prevRuns: [],         // [{fur, sweat, leg, complete, tempHistory, stopDist}]
+    runCount: 0
+  };
+
+  /* ---- DOM refs ---- */
+  var canvas = document.getElementById('sim-canvas');
+  var ctx = null;
+  var cw, ch;  // logical canvas size
+
+  var btnStart = document.getElementById('btn-start');
+  var btnReset = document.getElementById('btn-reset');
+  var statusMsg = document.getElementById('status-msg');
+  var panelStatus = document.getElementById('panel-status');
+
+  /* ---- Process step refs ---- */
+  var steps = {};
+  for (var i = 1; i <= 6; i++) steps[i] = document.getElementById('ps-' + i);
+  var arrowLabels = {};
+  for (var i = 1; i <= 3; i++) arrowLabels[i] = document.getElementById('pal-' + i);
+  var loopArrow = document.getElementById('loop-arrow');
+
+  /* ---- Controls setup ---- */
+  function setupControls() {
+    // Preset buttons
+    document.getElementById('preset-human').addEventListener('click', function() {
+      if (state.running) return;
+      setParam('fur', 'naked');
+      setParam('sweat', 'dense');
+      setParam('leg', 'long');
+      updateButtonStates();
+      statusMsg.textContent = '已选择：人类体质';
+    });
+    document.getElementById('preset-animal').addEventListener('click', function() {
+      if (state.running) return;
+      setParam('fur', 'furry');
+      setParam('sweat', 'sparse');
+      setParam('leg', 'short');
+      updateButtonStates();
+      statusMsg.textContent = '已选择：典型兽类';
+    });
+
+    // Toggle buttons
+    var toggleBtns = document.querySelectorAll('[data-param]');
+    toggleBtns.forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        if (state.running) return;
+        var param = btn.getAttribute('data-param');
+        var val = btn.getAttribute('data-val');
+        setParam(param, val);
+        updateButtonStates();
+        statusMsg.textContent = '';
+      });
+    });
+
+    // Start button
+    btnStart.addEventListener('click', function() {
+      if (state.running) {
+        // Already running, do nothing
+        return;
+      }
+      startSimulation();
+    });
+
+    // Reset button
+    btnReset.addEventListener('click', function() {
+      resetSimulation();
+    });
+
+    // Keyboard: Enter/Space on start button
+    btnStart.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        if (!state.running) startSimulation();
+      }
+    });
+    btnStart.setAttribute('tabindex', '0');
+  }
+
+  function setParam(param, val) {
+    state[param] = val;
+  }
+
+  function updateButtonStates() {
+    document.querySelectorAll('[data-param]').forEach(function(btn) {
+      var param = btn.getAttribute('data-param');
+      var val = btn.getAttribute('data-val');
+      btn.classList.toggle('active', state[param] === val);
+    });
+  }
+
+  /* ---- Simulation ---- */
+  function startSimulation() {
+    // Reset simulation state
+    state.simTime = 0;
+    state.temp = P15.INITIAL_CORE_TEMP;
+    state.tempHistory = [{t: 0, temp: P15.INITIAL_CORE_TEMP}];
+    state.distance = 0;
+    state.stopDistance = 0;
+    state.running = true;
+    state.completed = false;
+    state.overheat = false;
+
+    btnStart.textContent = '⏹ 奔跑中…';
+    btnStart.classList.add('running');
+    btnStart.disabled = false;
+    statusMsg.textContent = '';
+    panelStatus.textContent = '奔跑中…';
+
+    // Reset all steps
+    for (var i = 1; i <= 6; i++) {
+      steps[i].classList.remove('active', 'done');
+    }
+    for (var i = 1; i <= 3; i++) {
+      arrowLabels[i].classList.remove('active');
+    }
+    loopArrow.classList.remove('active');
+
+    // Step 1 on
+    steps[1].classList.add('active');
+  }
+
+  function resetSimulation() {
+    state.running = false;
+    state.completed = false;
+    state.overheat = false;
+    state.simTime = 0;
+    state.temp = P15.INITIAL_CORE_TEMP;
+    state.tempHistory = [{t: 0, temp: P15.INITIAL_CORE_TEMP}];
+    state.distance = 0;
+    state.stopDistance = 0;
+
+    btnStart.textContent = '▶ 开始奔跑';
+    btnStart.classList.remove('running');
+    btnStart.disabled = false;
+    statusMsg.textContent = '';
+    panelStatus.textContent = '选择参数，开始奔跑';
+
+    for (var i = 1; i <= 6; i++) {
+      steps[i].classList.remove('active', 'done');
+    }
+    for (var i = 1; i <= 3; i++) {
+      arrowLabels[i].classList.remove('active');
+    }
+    loopArrow.classList.remove('active');
+  }
+
+  function updateModel(dt) {
+    if (!state.running) return;
+
+    var T = state.temp;
+    var totalSimTime = P15.COURSE_DISTANCE / P15.RUNNING_SPEED * 3600; // seconds
+
+    // Sweat drive
+    var driveRange = P15.FULL_SWEAT_TEMP - P15.INITIAL_CORE_TEMP;
+    var sweatDrive = (T - P15.INITIAL_CORE_TEMP) / driveRange;
+    sweatDrive = Math.max(0, Math.min(1, sweatDrive));
+
+    // Sweat rate
+    var maxSweatRate = state.sweat === 'dense' ? P15.SWEAT_RATE_DENSE : P15.SWEAT_RATE_SPARSE;
+    var sweatRate = maxSweatRate * sweatDrive; // L/h
+
+    // Cooling power (W) = sweatRate (L/h) * 2400 (kJ/L) / 3.6 (kJ/kJ * h/s) * fur multiplier
+    // Actually: 1 L/h * 2400 kJ/L = 2400 kJ/h = 2400/3.6 W ≈ 666.7 W per L/h
+    var coolingW = sweatRate * P15.LATENT_HEAT_WATER / 3.6 * P15.FUR_COOLING_MULT[state.fur];
+
+    // Heat production
+    var heatW = P15.RUNNING_HEAT * P15.LEG_HEAT_MULT[state.leg];
+
+    // Temperature change
+    var dT = (heatW - coolingW) * dt / P15.BODY_HEAT_CAPACITY;
+
+    state.temp += dT;
+    state.simTime += dt;
+    state.distance = (state.simTime / totalSimTime) * P15.COURSE_DISTANCE;
+
+    state.tempHistory.push({t: state.simTime, temp: state.temp});
+
+    // Check overheat
+    if (state.temp >= P15.OVERHEAT_CORE_TEMP) {
+      state.temp = P15.OVERHEAT_CORE_TEMP;
+      state.running = false;
+      state.overheat = true;
+      state.stopDistance = state.distance;
+      state.prevRuns.push({
+        fur: state.fur,
+        sweat: state.sweat,
+        leg: state.leg,
+        complete: false,
+        tempHistory: state.tempHistory.slice(),
+        stopDist: state.stopDistance
+      });
+      state.runCount++;
+      finishRun(false);
+      return;
+    }
+
+    // Check completion
+    if (state.simTime >= totalSimTime) {
+      state.simTime = totalSimTime;
+      state.distance = P15.COURSE_DISTANCE;
+      state.running = false;
+      state.completed = true;
+      state.prevRuns.push({
+        fur: state.fur,
+        sweat: state.sweat,
+        leg: state.leg,
+        complete: true,
+        tempHistory: state.tempHistory.slice(),
+        stopDist: P15.COURSE_DISTANCE
+      });
+      state.runCount++;
+      finishRun(true);
+      return;
+    }
+  }
+
+  function finishRun(completed) {
+    btnStart.textContent = '▶ 开始奔跑';
+    btnStart.classList.remove('running');
+    btnStart.disabled = false;
+
+    if (completed) {
+      statusMsg.textContent = '✓ 跑完全程！散热系统有效';
+      panelStatus.textContent = '跑完全程 ' + P15.COURSE_DISTANCE + ' km ✓';
+    } else {
+      statusMsg.textContent = '✗ 过热，停在第 ' + state.stopDistance.toFixed(1) + ' km';
+      panelStatus.textContent = '过热停机 @ ' + state.stopDistance.toFixed(1) + ' km';
+    }
+
+    // Set final step states
+    updateStepStates(completed);
+  }
+
+  function updateStepStates(completed) {
+    if (completed) {
+      // Steady state achieved
+      steps[1].classList.remove('active');
+      steps[1].classList.add('done');
+      steps[2].classList.remove('active');
+      steps[2].classList.add('done');
+      steps[3].classList.remove('active');
+      steps[3].classList.add('done');
+      steps[4].classList.add('active');
+      steps[5].classList.add('active');
+      steps[6].classList.remove('done');
+      steps[6].classList.add('active');
+      loopArrow.classList.add('active');
+    } else {
+      // Overheat path
+      steps[1].classList.remove('active');
+      steps[1].classList.add('done');
+      steps[2].classList.remove('active');
+      steps[2].classList.add('done');
+      steps[3].classList.remove('done');
+      steps[3].classList.add('active');
+    }
+  }
+
+  /* ---- Canvas drawing ---- */
+  function initCanvas() {
+    ctx = Deck.fit(canvas);
+    cw = canvas.width;
+    ch = canvas.height;
+  }
+
+  function draw() {
+    if (!ctx) return;
+    var w = cw, h = ch;
+
+    // Clear
+    ctx.clearRect(0, 0, w, h);
+
+    // Layout regions
+    var sceneH = Math.round(h * 0.62);
+    var graphH = h - sceneH;
+    var gaugeW = 52;
+    var margin = 12;
+    var sceneW = w - gaugeW - margin * 2;
+    var graphW = w - margin * 2;
+
+    // ---- Draw savanna scene ----
+    drawScene(ctx, margin, 0, sceneW, sceneH, gaugeW);
+
+    // ---- Draw temperature gauge ----
+    drawGauge(ctx, w - gaugeW - margin, 6, gaugeW, sceneH - 12);
+
+    // ---- Draw temperature-time curve ----
+    drawGraph(ctx, margin, sceneH, graphW, graphH);
+
+    // ---- Draw runner on scene ----
+    if (state.running || state.completed || state.overheat) {
+      drawRunner(ctx, margin, 0, sceneW, sceneH);
+    }
+
+    // ---- Highlight step based on simulation state ----
+    highlightSteps();
+  }
+
+  function drawScene(ctx, x, y, w, h, gaugeW) {
+    // Sky gradient
+    var skyGrad = ctx.createLinearGradient(x, y, x, y + h * 0.65);
+    skyGrad.addColorStop(0, '#1a1a2e');
+    skyGrad.addColorStop(0.3, '#2d2d5e');
+    skyGrad.addColorStop(0.6, '#d4a373');
+    skyGrad.addColorStop(1, '#e8d5b7');
+    ctx.fillStyle = skyGrad;
+    ctx.fillRect(x, y, w, h);
+
+    // Sun
+    var sunX = x + w * 0.85;
+    var sunY = y + h * 0.15;
+    var sunR = 18;
+    var sunGrad = ctx.createRadialGradient(sunX, sunY, 0, sunX, sunY, sunR * 2);
+    sunGrad.addColorStop(0, 'rgba(255,220,100,1)');
+    sunGrad.addColorStop(0.4, 'rgba(255,200,80,0.6)');
+    sunGrad.addColorStop(1, 'rgba(255,200,80,0)');
+    ctx.fillStyle = sunGrad;
+    ctx.fillRect(sunX - sunR * 2, sunY - sunR * 2, sunR * 4, sunR * 4);
+    ctx.beginPath();
+    ctx.arc(sunX, sunY, sunR, 0, Math.PI * 2);
+    ctx.fillStyle = '#ffe066';
+    ctx.fill();
+
+    // Ground
+    var groundY = y + h * 0.65;
+    var groundGrad = ctx.createLinearGradient(x, groundY, x, y + h);
+    groundGrad.addColorStop(0, '#c4a265');
+    groundGrad.addColorStop(0.15, '#b8955a');
+    groundGrad.addColorStop(0.5, '#a0784a');
+    groundGrad.addColorStop(1, '#7a5a3a');
+    ctx.fillStyle = groundGrad;
+    ctx.fillRect(x, groundY, w, h * 0.35);
+
+    // Ground line
+    ctx.strokeStyle = '#b8955a';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(x, groundY);
+    ctx.lineTo(x + w, groundY);
+    ctx.stroke();
+
+    // Grass tufts
+    ctx.strokeStyle = '#6a9a3a';
+    ctx.lineWidth = 1.5;
+    for (var i = 0; i < 20; i++) {
+      var gx = x + (i / 20) * w + (Math.random() - 0.5) * 15;
+      var gy = groundY + 2 + (Math.random() - 0.5) * 4;
+      ctx.beginPath();
+      ctx.moveTo(gx, gy);
+      ctx.lineTo(gx - 3, gy - 10 - Math.random() * 6);
+      ctx.moveTo(gx, gy);
+      ctx.lineTo(gx + 3, gy - 8 - Math.random() * 8);
+      ctx.moveTo(gx, gy);
+      ctx.lineTo(gx, gy - 12 - Math.random() * 5);
+      ctx.stroke();
+    }
+
+    // Acacia tree silhouette
+    var treeX = x + w * 0.15;
+    var treeY = groundY;
+    drawAcacia(ctx, treeX, treeY, 20);
+
+    // Another tree, smaller
+    drawAcacia(ctx, x + w * 0.75, groundY, 14);
+
+    // Distance markers on ground
+    ctx.fillStyle = 'rgba(255,255,255,0.15)';
+    ctx.font = '12px sans-serif';
+    ctx.textAlign = 'center';
+    for (var km = 0; km <= 10; km += 2) {
+      var mx = x + (km / 10) * w;
+      var my = groundY + 6;
+      ctx.fillRect(mx - 0.5, my, 1, 6);
+      ctx.fillText(km + 'km', mx, my + 16);
+    }
+
+    // "烈日" label
+    ctx.fillStyle = 'rgba(255,200,80,0.3)';
+    ctx.font = '14px sans-serif';
+    ctx.textAlign = 'right';
+    ctx.fillText('烈日', x + w, y + 14);
+  }
+
+  function drawAcacia(ctx, x, y, size) {
+    // Trunk
+    ctx.strokeStyle = '#4a3520';
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.lineTo(x, y - size * 1.2);
+    ctx.stroke();
+
+    // Canopy
+    ctx.strokeStyle = '#3a6a2a';
+    ctx.lineWidth = 1.5;
+    var cx = x;
+    var cy = y - size * 1.2;
+    var spread = size * 1.5;
+    for (var a = 0; a < 6; a++) {
+      var angle = (a / 6) * Math.PI - Math.PI / 2 + (Math.random() - 0.5) * 0.3;
+      var len = spread * 0.5 + Math.random() * spread * 0.3;
+      ctx.beginPath();
+      ctx.moveTo(cx, cy);
+      ctx.lineTo(cx + Math.cos(angle) * len, cy + Math.sin(angle) * len * 0.3);
+      ctx.stroke();
+    }
+  }
+
+  function drawRunner(ctx, x, y, w, h) {
+    var groundY = y + h * 0.65;
+    var totalSimTime = P15.COURSE_DISTANCE / P15.RUNNING_SPEED * 3600;
+    var progress = state.simTime / totalSimTime;
+    // If overheat, stop at the point of overheat
+    if (state.overheat) {
+      progress = state.stopDistance / P15.COURSE_DISTANCE;
+    }
+    if (progress > 1) progress = 1;
+
+    var runnerX = x + 30 + progress * (w - 60);
+    var runnerY = groundY;
+
+    var runnerH = 28;
+    var runnerW = 10;
+
+    // Runner silhouette
+    ctx.fillStyle = '#e8d5b7';
+    ctx.strokeStyle = '#2a1a0a';
+    ctx.lineWidth = 2;
+
+    // Head
+    ctx.beginPath();
+    ctx.arc(runnerX, runnerY - runnerH + 4, 4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+
+    // Body
+    ctx.beginPath();
+    ctx.moveTo(runnerX, runnerY - runnerH + 8);
+    ctx.lineTo(runnerX, runnerY - runnerH + 18);
+    ctx.stroke();
+
+    // Arms
+    var armSwing = Math.sin(state.simTime * 0.015) * 4;
+    ctx.beginPath();
+    ctx.moveTo(runnerX, runnerY - runnerH + 12);
+    ctx.lineTo(runnerX - 6 + armSwing, runnerY - runnerH + 8);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(runnerX, runnerY - runnerH + 12);
+    ctx.lineTo(runnerX + 6 - armSwing, runnerY - runnerH + 8);
+    ctx.stroke();
+
+    // Legs
+    var legSwing = Math.sin(state.simTime * 0.015) * 5;
+    ctx.beginPath();
+    ctx.moveTo(runnerX, runnerY - runnerH + 18);
+    ctx.lineTo(runnerX - 4 + legSwing, runnerY);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(runnerX, runnerY - runnerH + 18);
+    ctx.lineTo(runnerX + 4 - legSwing, runnerY);
+    ctx.stroke();
+
+    // If overheat, draw fallen runner
+    if (state.overheat) {
+      // X over the runner
+      ctx.strokeStyle = 'rgba(200,50,50,0.8)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(runnerX - 6, runnerY - runnerH - 2);
+      ctx.lineTo(runnerX + 6, runnerY - runnerH + 14);
+      ctx.moveTo(runnerX + 6, runnerY - runnerH - 2);
+      ctx.lineTo(runnerX - 6, runnerY - runnerH + 14);
+      ctx.stroke();
+
+      // "过热倒地" label
+      ctx.fillStyle = '#e53e3e';
+      ctx.font = 'bold 12px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('过热倒地', runnerX, runnerY - runnerH - 8);
+    }
+
+    // Step label
+    ctx.fillStyle = 'rgba(255,255,255,0.5)';
+    ctx.font = '12px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText((state.distance).toFixed(1) + 'km', runnerX, runnerY + 24);
+  }
+
+  function drawGauge(ctx, x, y, w, h) {
+    var pad = 4;
+    var barX = x + 12;
+    var barW = w - 24;
+    var barY = y + 20;
+    var barH = h - 40;
+
+    // Background
+    ctx.fillStyle = 'rgba(0,0,0,0.3)';
+    ctx.beginPath();
+    Deck.rr(ctx, x, y, w, h, 6);
+    ctx.fill();
+
+    // Bar background
+    ctx.fillStyle = 'rgba(255,255,255,0.1)';
+    ctx.beginPath();
+    Deck.rr(ctx, barX, barY, barW, barH, 4);
+    ctx.fill();
+
+    // Scale markings
+    var tempMin = 35, tempMax = 42;
+    ctx.fillStyle = 'rgba(255,255,255,0.4)';
+    ctx.font = '10px sans-serif';
+    ctx.textAlign = 'right';
+    ctx.strokeStyle = 'rgba(255,255,255,0.2)';
+    ctx.lineWidth = 1;
+
+    for (var t = tempMin; t <= tempMax; t += 1) {
+      var frac = (t - tempMin) / (tempMax - tempMin);
+      var my = barY + barH - frac * barH;
+      ctx.beginPath();
+      ctx.moveTo(barX, my);
+      ctx.lineTo(barX + barW, my);
+      ctx.stroke();
+      ctx.fillText(t + '°', barX - 2, my + 3);
+    }
+
+    // Critical lines
+    var markColors = {37: '#48bb78', 39: '#ecc94b', 40: '#e53e3e'};
+    ctx.lineWidth = 2;
+    for (var t in markColors) {
+      t = parseInt(t);
+      var frac = (t - tempMin) / (tempMax - tempMin);
+      var my = barY + barH - frac * barH;
+      ctx.strokeStyle = markColors[t];
+      ctx.setLineDash([4, 3]);
+      ctx.beginPath();
+      ctx.moveTo(barX, my);
+      ctx.lineTo(barX + barW, my);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+
+    // Current temperature fill
+    if (state.temp >= tempMin) {
+      var tempFrac = (state.temp - tempMin) / (tempMax - tempMin);
+      tempFrac = Math.max(0, Math.min(1, tempFrac));
+      var fillH = tempFrac * barH;
+      var fillY = barY + barH - fillH;
+
+      var fillGrad = ctx.createLinearGradient(barX, barY + barH, barX, barY);
+      fillGrad.addColorStop(0, '#48bb78');
+      fillGrad.addColorStop(0.4, '#ecc94b');
+      fillGrad.addColorStop(0.7, '#ed8936');
+      fillGrad.addColorStop(1, '#e53e3e');
+      ctx.fillStyle = fillGrad;
+      ctx.beginPath();
+      Deck.rr(ctx, barX + 2, fillY, barW - 4, fillH - 2, 3);
+      ctx.fill();
+    }
+
+    // Temperature reading
+    var displayTemp = Math.round(state.temp * 10) / 10;
+    ctx.fillStyle = state.temp >= 40 ? '#e53e3e' : '#e6e6e6';
+    ctx.font = 'bold 14px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(displayTemp.toFixed(1) + '°C', x + w / 2, y + 14);
+
+    // Label
+    ctx.fillStyle = 'rgba(255,255,255,0.4)';
+    ctx.font = '10px sans-serif';
+    ctx.fillText('核心体温', x + w / 2, y + h - 4);
+  }
+
+  function drawGraph(ctx, x, y, w, h) {
+    var pad = {top: 8, right: 8, bottom: 22, left: 36};
+    var graphX = x + pad.left;
+    var graphY = y + pad.top;
+    var graphW = w - pad.left - pad.right;
+    var graphH = h - pad.top - pad.bottom;
+
+    // Background
+    ctx.fillStyle = 'rgba(0,0,0,0.25)';
+    ctx.beginPath();
+    Deck.rr(ctx, x, y, w, h, 6);
+    ctx.fill();
+
+    // Axes
+    ctx.strokeStyle = 'rgba(255,255,255,0.2)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(graphX, graphY);
+    ctx.lineTo(graphX, graphY + graphH);
+    ctx.lineTo(graphX + graphW, graphY + graphH);
+    ctx.stroke();
+
+    // Y-axis labels
+    var yMin = 36, yMax = 42;
+    ctx.fillStyle = 'rgba(255,255,255,0.35)';
+    ctx.font = '10px sans-serif';
+    ctx.textAlign = 'right';
+    for (var t = yMin; t <= yMax; t += 1) {
+      var frac = (t - yMin) / (yMax - yMin);
+      var ly = graphY + graphH - frac * graphH;
+      ctx.fillText(t + '°', graphX - 4, ly + 3);
+      // Grid line
+      ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+      ctx.beginPath();
+      ctx.moveTo(graphX, ly);
+      ctx.lineTo(graphX + graphW, ly);
+      ctx.stroke();
+    }
+
+    // Red dashed line at 40°C
+    var overheatFrac = (40 - yMin) / (yMax - yMin);
+    var overheatY = graphY + graphH - overheatFrac * graphH;
+    ctx.strokeStyle = '#e53e3e';
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([3, 3]);
+    ctx.beginPath();
+    ctx.moveTo(graphX, overheatY);
+    ctx.lineTo(graphX + graphW, overheatY);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = '#e53e3e';
+    ctx.font = '10px sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillText('40°C 危险线', graphX + 4, overheatY - 2);
+
+    // X-axis label
+    ctx.fillStyle = 'rgba(255,255,255,0.35)';
+    ctx.font = '10px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('时间 (分钟)', graphX + graphW / 2, y + h - 4);
+
+    // X-axis ticks
+    var totalSimTime = P15.COURSE_DISTANCE / P15.RUNNING_SPEED * 3600;
+    ctx.fillStyle = 'rgba(255,255,255,0.25)';
+    for (var min = 0; min <= 50; min += 10) {
+      var frac = (min * 60) / totalSimTime;
+      var lx = graphX + frac * graphW;
+      ctx.fillText(min + '\'', lx, graphY + graphH + 14);
+    }
+
+    // Draw previous runs as faint reference
+    for (var r = 0; r < state.prevRuns.length; r++) {
+      var run = state.prevRuns[r];
+      drawTempCurve(ctx, graphX, graphY, graphW, graphH, run.tempHistory, totalSimTime, yMin, yMax,
+        'rgba(255,255,255,0.1)', 1);
+    }
+
+    // Draw current run curve
+    if (state.tempHistory.length > 1) {
+      drawTempCurve(ctx, graphX, graphY, graphW, graphH, state.tempHistory, totalSimTime, yMin, yMax,
+        '#4f6ef2', 2.5);
+    }
+
+    // Curve label
+    if (state.runCount > 0) {
+      ctx.fillStyle = 'rgba(255,255,255,0.3)';
+      ctx.font = '10px sans-serif';
+      ctx.textAlign = 'left';
+      ctx.fillText('第' + state.runCount + '次', graphX + 4, graphY + 12);
+    }
+  }
+
+  function drawTempCurve(ctx, gx, gy, gw, gh, history, totalTime, yMin, yMax, color, lineW) {
+    if (history.length < 2) return;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = lineW;
+    ctx.beginPath();
+    for (var i = 0; i < history.length; i++) {
+      var frac = history[i].t / totalTime;
+      var x = gx + frac * gw;
+      var tempFrac = (history[i].temp - yMin) / (yMax - yMin);
+      var y = gy + gh - tempFrac * gh;
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+  }
+
+  /* ---- Step highlighting based on simulation state ---- */
+  function highlightSteps() {
+    // This is called during draw to update step highlights in real-time
+    if (!state.running && !state.completed && !state.overheat) return;
+
+    for (var i = 1; i <= 6; i++) {
+      steps[i].classList.remove('active', 'done');
+    }
+    for (var i = 1; i <= 3; i++) {
+      arrowLabels[i].classList.remove('active');
+    }
+    loopArrow.classList.remove('active');
+
+    if (state.running) {
+      // Step 1 always active during running
+      steps[1].classList.add('active');
+      steps[2].classList.add('active');
+
+      if (state.temp >= P15.FULL_SWEAT_TEMP - 0.5) {
+        // Sweating actively
+        steps[3].classList.add('active');
+        steps[4].classList.add('active');
+        arrowLabels[2].classList.add('active');
+      }
+      if (state.temp < P15.INITIAL_CORE_TEMP + 0.5) {
+        // Just started
+        steps[2].classList.remove('active');
+      }
+    } else if (state.completed) {
+      steps[1].classList.add('done');
+      steps[2].classList.add('done');
+      steps[3].classList.add('done');
+      steps[4].classList.add('active');
+      steps[5].classList.add('active');
+      steps[6].classList.add('active');
+      loopArrow.classList.add('active');
+      arrowLabels[3].classList.add('active');
+    } else if (state.overheat) {
+      steps[1].classList.add('done');
+      steps[2].classList.add('done');
+      steps[3].classList.add('active');
+      arrowLabels[2].classList.add('active');
+    }
+  }
+
+  /* ---- Animation loop ---- */
+  var lastRealTime = 0;
+
+  function gameLoop(dt) {
+    if (!ctx) {
+      initCanvas();
+    }
+
+    // Update simulation
+    if (state.running) {
+      // dt is in seconds (real time)
+      var simDt = dt * P15.TIME_COMPRESSION; // convert to simulated seconds
+      // Cap dt to avoid jumps
+      if (simDt > 120) simDt = 120;
+      updateModel(simDt);
+    }
+
+    // Draw
+    draw();
+  }
+
+  /* ---- Init ---- */
+  function init() {
+    initCanvas();
+    setupControls();
+
+    // Start animation loop
+    Deck.loop(gameLoop, { still: 0 });
+
+    // Handle resize
+    Deck.onResize(function() {
+      initCanvas();
+    });
+  }
+
+  // Wait for DOM
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
+})();
+</script>
+</body>
+</html>

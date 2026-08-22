@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <link rel="stylesheet" href="assets/lib/katex.min.css">
+  <style>
+    #main{display:flex;flex-direction:column;gap:12px}
+    .process-strip{--step-count:6;height:76px;gap:26px}
+    .process-strip>.step{padding:10px 8px;text-align:center;font-size:var(--fs-label);font-weight:720;line-height:1.35;display:flex;align-items:center;justify-content:center}
+    .process-strip>.arw::after{left:-23px}
+    .workbench{display:flex;gap:16px;height:390px;min-height:0}
+    .rack{width:210px;flex:none;padding:16px;display:flex;flex-direction:column;gap:10px}
+    .rack h2,.status h2{font-size:var(--fs-h2)}
+    .stage-pick{min-height:72px;text-align:left;padding:10px 12px;border:1px solid var(--line-strong);border-radius:var(--radius-sm);background:var(--paper);color:var(--text);font:inherit;cursor:grab}
+    .stage-pick strong{display:block;font-size:var(--fs-sec)}
+    .stage-pick span{display:block;color:var(--ink-soft);font-size:var(--fs-label);line-height:1.35}
+    .stage-pick[disabled]{opacity:.42;cursor:not-allowed}
+    .scene-wrap{position:relative;flex:1;min-width:0;overflow:hidden;border:1px solid var(--line);border-radius:var(--radius-md);background:linear-gradient(180deg,#dcefee,#fffdf8)}
+    #three{display:block;width:100%;height:100%;touch-action:none}
+    .scene-hint{position:absolute;left:14px;bottom:10px;padding:5px 9px;border-radius:999px;background:rgb(255 253 248 / 88%);font-size:var(--fs-label);font-weight:650}
+    .drop-label{position:absolute;top:12px;left:50%;transform:translateX(-50%);color:var(--accent);font-size:var(--fs-label);font-weight:750}
+    .status{width:300px;flex:none;padding:16px;display:flex;flex-direction:column;gap:10px}
+    .state-row{display:flex;align-items:center;gap:10px;min-height:42px;border-bottom:1px solid var(--line);font-size:var(--fs-sec)}
+    .state-row b{width:76px}.state-row span{color:var(--ink-soft)}
+    .mass-read{margin-top:auto;padding:12px;background:var(--accent-soft);border-radius:var(--radius-sm)}
+    .mass-read .reading{font-size:28px}.mass-read p{font-size:var(--fs-sec)}
+    .result-band{position:relative;height:112px;display:flex;align-items:center;gap:20px;padding:12px 18px}
+    .result-item{min-width:190px}.result-item b{display:block;font-size:var(--fs-label)}
+    .result-item output{font-size:var(--fs-h2);font-weight:780;color:var(--accent)}
+    .gain{padding-left:18px;border-left:4px solid var(--accent)}
+    .actions{margin-left:auto;display:flex;gap:10px;align-items:center}
+    .actions button{min-height:44px;padding:8px 18px;border:1px solid var(--accent);border-radius:var(--radius-sm);font:700 var(--fs-label)/1.35 var(--font-sans);cursor:pointer}
+    #act{color:#fff;background:var(--accent)}#reset{color:var(--accent);background:var(--paper)}
+    .calc-wrap{font-size:var(--fs-label);color:var(--ink-soft)}
+    #calc{padding:8px 12px;border:1px solid var(--line-strong);border-radius:var(--radius-sm);background:var(--paper);color:var(--text);font:700 var(--fs-label)/1.35 var(--font-sans);cursor:pointer}
+    .calc-pop{position:absolute;z-index:8;right:250px;bottom:104px;width:390px;box-sizing:border-box;padding:14px;border:1px solid var(--line-strong);border-radius:var(--radius-sm);background:var(--paper);box-shadow:var(--shadow);font-size:var(--fs-sec);line-height:var(--lh-sec)}
+    .calc-pop[hidden]{display:none}.formula{font-size:20px;margin-top:6px}
+  </style>
+</head>
+<body data-page="29" data-total="48">
+  <div id="stage">
+    <main id="main">
+      <section class="k-process process-strip" aria-label="分级火箭过程">
+        <div class="axis"></div><div class="step is-current">放置载荷</div><div class="arw"></div><div class="step">向下堆叠</div><div class="arw"></div><div class="step">点燃下级</div><div class="arw"></div><div class="step">燃料耗尽</div><div class="arw"></div><div class="step">分离空级</div><div class="arw"></div><div class="step">上级继续</div>
+      </section>
+
+      <section class="workbench">
+        <div class="panel rack min0">
+          <h2>部件架</h2>
+          <p class="secondary">依次点击或拖到主轴。</p>
+          <button class="stage-pick" draggable="true" data-stage="0"><strong>上级 · 氢氧</strong><span>推进剂 32 t · 干质量 4 t</span></button>
+          <button class="stage-pick" draggable="true" data-stage="1"><strong>中级 · 煤油液氧</strong><span>推进剂 90 t · 干质量 10 t</span></button>
+          <button class="stage-pick" draggable="true" data-stage="2"><strong>下级 · 固体</strong><span>推进剂 180 t · 干质量 24 t</span></button>
+        </div>
+
+        <div class="scene-wrap min0 no-pan" id="dropzone">
+          <canvas id="three" role="img" aria-label="三维火箭由载荷、发动机、推进剂舱和结构逐级堆叠；点击部件也可完成拖放"></canvas>
+          <div class="drop-label">载荷 8 t：全过程保留</div>
+          <div class="scene-hint">拖动空白处可小幅绕转检查结构</div>
+        </div>
+
+        <div class="panel status min0">
+          <h2>质量状态</h2>
+          <div class="state-row"><b>载荷</b><span>必须保留</span></div>
+          <div class="state-row"><b>上级</b><span id="s0">待放置</span></div>
+          <div class="state-row"><b>中级</b><span id="s1">待放置</span></div>
+          <div class="state-row"><b>下级</b><span id="s2">待放置</span></div>
+          <div class="mass-read"><p>当前仍需加速</p><div><span class="reading" id="mass">8</span> <span class="unit">t</span></div><p id="empty">携带空级 0 段</p></div>
+        </div>
+      </section>
+
+      <section class="panel result-band" aria-live="polite">
+        <div class="result-item"><b>按时分离 · 累计理想 Δv</b><output id="dvStage">先堆叠级段</output></div>
+        <div class="result-item"><b>始终不分离 · 累计理想 Δv</b><output id="dvKeep">—</output></div>
+        <div class="result-item gain"><b>分离多获得</b><output id="gain">—</output></div>
+        <div class="calc-wrap"><button id="calc" aria-expanded="false">怎么算</button><div class="calc-pop" id="calcPop" hidden><div class="formula" id="formula"></div><div>m₀ 是点火前总质量；mƒ 是耗尽后、分离前总质量。结果是理想速度增量，不等于实际入轨速度。</div></div></div>
+        <div class="actions"><button id="act" disabled>先放置级段</button><button id="reset">重置</button></div>
+      </section>
+    </main>
+  </div>
+  <script src="assets/lib/three.min.js"></script>
+  <script src="assets/lib/katex.min.js"></script>
+  <script src="assets/base.js"></script>
+  <script src="assets/lec.js"></script>
+  <script>
+    Lec.mount({index:29,kicker:"MASS / STAGING",title:"为什么火箭要一段一段地丢掉自己？",take:"抛弃已经耗尽推进剂的空结构，能避免后面的发动机继续加速无用质量，因此多级火箭更有效。"});
+    Deck.init({index:29,total:48});
+
+    const payload=8;
+    const defs=[
+      {name:'上级',prop:32,dry:4,isp:Lec.K.ISP_HYDROLOX_S,color:0x006d77},
+      {name:'中级',prop:90,dry:10,isp:Lec.K.ISP_KEROLOX_S,color:0xd97706},
+      {name:'下级',prop:180,dry:24,isp:Lec.K.ISP_SOLID_S,color:0x53616c}
+    ].map(d=>({name:d.name,prop:Lec.P.positive(Lec.P.finiteNumber(d.prop,1),1),dry:Lec.P.positive(Lec.P.finiteNumber(d.dry,1),1),isp:d.isp,color:d.color}));
+    let state={placed:0,phase:'build',work:2,spent:[],separated:[]};
+    const picks=[...document.querySelectorAll('.stage-pick')], steps=[...document.querySelectorAll('.process-strip .step')];
+    const act=document.querySelector('#act'), drop=document.querySelector('#dropzone');
+
+    const cv=document.querySelector('#three'), renderer=new THREE.WebGLRenderer({canvas:cv,antialias:true,alpha:true});
+    renderer.setPixelRatio(1.5); renderer.outputColorSpace=THREE.SRGBColorSpace;
+    const scene=new THREE.Scene(), camera=new THREE.PerspectiveCamera(33,1,.1,100);
+    camera.position.set(7,5.5,12); camera.lookAt(0,2.8,0);
+    scene.add(new THREE.HemisphereLight(0xffffff,0x8b948f,2.2));
+    const key=new THREE.DirectionalLight(0xffffff,3);key.position.set(6,10,8);scene.add(key);
+    const rocket=new THREE.Group();scene.add(rocket);
+    const payloadMesh=new THREE.Mesh(new THREE.ConeGeometry(.72,1.6,24),new THREE.MeshStandardMaterial({color:0x17212b,roughness:.45}));payloadMesh.position.y=6.2;rocket.add(payloadMesh);
+    const groups=[];
+    defs.forEach((d,i)=>{const g=new THREE.Group(), h=[1.55,2.05,2.45][i], r=[.72,.88,1.04][i];
+      const tank=new THREE.Mesh(new THREE.CylinderGeometry(r,r,h,24),new THREE.MeshStandardMaterial({color:d.color,roughness:.52,transparent:true,opacity:1}));
+      const engine=new THREE.Mesh(new THREE.CylinderGeometry(r*.32,r*.58,.5,18),new THREE.MeshStandardMaterial({color:0x53616c,metalness:.6,roughness:.3}));engine.position.y=-h/2-.25;
+      const ring=new THREE.Mesh(new THREE.TorusGeometry(r,0.08,8,24),new THREE.MeshStandardMaterial({color:0x17212b}));ring.rotation.x=Math.PI/2;ring.position.y=h/2;
+      g.add(tank,engine,ring);g.userData={tank,engine,h};g.visible=false;rocket.add(g);groups.push(g);
+    });
+    function layout(){let y=5.35;for(let i=0;i<3;i++){const g=groups[i];if(!g.visible)continue;y-=g.userData.h/2;g.position.y=y;y-=g.userData.h/2+.5}}
+    function resize(){const w=cv.clientWidth,h=cv.clientHeight;renderer.setSize(w,h,false);camera.aspect=w/h;camera.updateProjectionMatrix()}
+    Deck.onResize(resize);resize();
+    let dragging=false,lastX=0,targetRot=.18;
+    cv.addEventListener('pointerdown',e=>{dragging=true;lastX=Deck.pt(cv,e).x;cv.setPointerCapture(e.pointerId)});
+    cv.addEventListener('pointermove',e=>{if(!dragging)return;const x=Deck.pt(cv,e).x;targetRot=Deck.clamp(targetRot+(x-lastX)*.006,-.45,.65);lastX=x});
+    cv.addEventListener('pointerup',()=>dragging=false);
+    Deck.loop((t,dt)=>{rocket.rotation.y=Deck.reduced()?targetRot:Deck.lerp(rocket.rotation.y,targetRot,Math.min(1,dt*8));renderer.render(scene,camera)},{still:0});
+
+    function addStage(){if(state.placed>=3||state.phase!=='build')return;groups[state.placed].visible=true;state.placed++;layout();update()}
+    picks.forEach((b,i)=>{b.addEventListener('click',()=>{if(i===state.placed)addStage()});b.addEventListener('dragstart',e=>e.dataTransfer.setData('text/plain',String(i)))});
+    drop.addEventListener('dragover',e=>e.preventDefault());drop.addEventListener('drop',e=>{e.preventDefault();if(+e.dataTransfer.getData('text/plain')===state.placed)addStage()});
+
+    function masses(keep){let total=payload, sum=0;for(let i=0;i<state.placed;i++)total+=defs[i].prop+defs[i].dry;
+      for(let i=state.placed-1;i>=0;i--){const d=defs[i],m0=total,mf=total-d.prop;sum+=Lec.P.rocketDeltaV(m0,mf,d.isp);total=mf-(keep?0:d.dry)}return sum}
+    function currentMass(){let m=payload;for(let i=0;i<state.placed;i++){if(!state.separated.includes(i))m+=defs[i].dry+(state.spent.includes(i)?0:defs[i].prop)}return m}
+    function setStep(n){steps.forEach((s,i)=>{s.classList.toggle('is-current',i===n);s.classList.toggle('is-done',i<n)})}
+    function update(){picks.forEach((b,i)=>b.disabled=i!==state.placed||state.phase!=='build');
+      defs.forEach((d,i)=>{let txt=i>=state.placed?'待放置':state.separated.includes(i)?'已分离':state.spent.includes(i)?'已空结构':(state.phase==='burn'&&i===state.work?'工作中':'推进剂待用');document.querySelector('#s'+i).textContent=txt});
+      document.querySelector('#mass').textContent=Deck.fmt(currentMass(),{maximumFractionDigits:0});document.querySelector('#empty').textContent='携带空级 '+state.spent.filter(i=>!state.separated.includes(i)).length+' 段';
+      if(state.placed){const a=masses(false),b=masses(true);document.querySelector('#dvStage').textContent=Deck.fmt(a/1000,{maximumFractionDigits:2})+' km/s';document.querySelector('#dvKeep').textContent=Deck.fmt(b/1000,{maximumFractionDigits:2})+' km/s';document.querySelector('#gain').textContent=Deck.fmt((a-b)/1000,{maximumFractionDigits:2})+' km/s'}
+      if(state.phase==='build'){setStep(state.placed?1:0);act.disabled=!state.placed;act.textContent=state.placed?'点燃最下级':'先放置级段'}
+      else if(state.phase==='ready'){setStep(2);act.disabled=false;act.textContent='点火'}
+      else if(state.phase==='spent'){setStep(3);act.disabled=false;act.textContent='分离空级'}
+      else if(state.phase==='done'){setStep(5);act.disabled=true;act.textContent='演示完成'}
+    }
+    act.addEventListener('click',()=>{
+      if(state.phase==='build'){state.phase='ready';state.work=state.placed-1;update();return}
+      if(state.phase==='ready'){state.phase='burn';setStep(2);act.disabled=true;act.textContent='燃烧中…';const finish=()=>{state.spent.push(state.work);groups[state.work].userData.tank.material.wireframe=true;groups[state.work].userData.tank.material.opacity=.35;state.phase='spent';update()};Deck.reduced()?finish():setTimeout(finish,700);return}
+      if(state.phase==='spent'){state.separated.push(state.work);groups[state.work].position.x=2.2;groups[state.work].rotation.z=-.35;setStep(4);state.work--;if(state.work<0){state.phase='done'}else{state.phase='ready'}update()}
+    });
+    document.addEventListener('keydown',e=>{if(e.code==='Space'&&document.activeElement===act){e.preventDefault();act.click()}});
+    document.querySelector('#reset').addEventListener('click',()=>{state={placed:0,phase:'build',work:2,spent:[],separated:[]};groups.forEach(g=>{g.visible=false;g.position.x=0;g.rotation.z=0;g.userData.tank.material.wireframe=false;g.userData.tank.material.opacity=1});targetRot=.18;document.querySelector('#dvStage').textContent='先堆叠级段';document.querySelector('#dvKeep').textContent='—';document.querySelector('#gain').textContent='—';update()});
+    document.querySelector('#calc').addEventListener('click',e=>{const pop=document.querySelector('#calcPop'),open=pop.hidden;pop.hidden=!open;e.currentTarget.setAttribute('aria-expanded',String(open))});
+    katex.render('\\Delta v=I_{sp}g_0\\ln\\left(\\frac{m_0}{m_f}\\right)',document.querySelector('#formula'),{throwOnError:false});
+    update();
+  </script>
+</body>
+</html>

@@ -1,0 +1,670 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+/* ── page-33: 光速接力 ── comparison: visual (light vs human, same 1s window) ── */
+
+#main {
+  position: relative;
+  background: #0b0e14;
+  overflow: hidden;
+}
+
+/* ── canvas fills #main ── */
+#scene {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+/* ── overlay container ── */
+.overlay-wrap {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.overlay-wrap > * {
+  pointer-events: auto;
+}
+
+/* ── top-left: kicker, title, readings ── */
+.tl-block {
+  position: absolute;
+  left: 48px;
+  top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  z-index: 2;
+}
+.tl-block .pg-kicker {
+  font-size: var(--fs-label);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent, #0b7a75);
+}
+.tl-block .pg-title {
+  font-size: var(--fs-h1);
+  font-weight: 700;
+  line-height: 1.35;
+  color: #e6e6e6;
+  max-width: 560px;
+}
+.tl-block .readings {
+  display: flex;
+  gap: 24px;
+  margin-top: 8px;
+}
+.tl-block .rdg {
+  font-size: var(--fs-sec);
+  color: rgba(230,230,230,0.7);
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+}
+.tl-block .rdg .num {
+  font-size: var(--fs-body);
+  font-weight: 700;
+  color: #e6e6e6;
+  font-variant-numeric: tabular-nums;
+}
+.tl-block .rdg .hl {
+  color: #f0c040;
+}
+
+/* ── bottom section ── */
+.btm-section {
+  position: absolute;
+  left: 48px;
+  right: 48px;
+  bottom: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  z-index: 2;
+}
+
+/* ── shared timeline comparison ── */
+.timeline-cmp {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 10px 16px;
+  background: rgba(11,14,20,0.75);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 8px;
+}
+.timeline-cmp .axis-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 20px;
+}
+.timeline-cmp .axis-row .albl {
+  font-size: var(--fs-label);
+  color: rgba(230,230,230,0.5);
+  width: 24px;
+  flex-shrink: 0;
+}
+.timeline-cmp .axis-row .atrack {
+  flex: 1;
+  height: 4px;
+  background: rgba(255,255,255,0.10);
+  border-radius: 2px;
+  position: relative;
+  overflow: hidden;
+}
+.timeline-cmp .axis-row .atrack .afill {
+  height: 100%;
+  background: rgba(255,255,255,0.25);
+  border-radius: 2px;
+  width: 0;
+  transition: none;
+}
+
+/* comparison rows: light and human on same axis */
+.timeline-cmp .cmp-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 22px;
+}
+.timeline-cmp .cmp-row .icon {
+  width: 24px;
+  flex-shrink: 0;
+  text-align: center;
+  font-size: 15px;
+  line-height: 1;
+}
+.timeline-cmp .cmp-row .lbl {
+  font-size: var(--fs-label);
+  color: rgba(230,230,230,0.7);
+  width: 20px;
+  flex-shrink: 0;
+}
+.timeline-cmp .cmp-row .btrack {
+  flex: 1;
+  height: 14px;
+  background: rgba(255,255,255,0.06);
+  border-radius: 3px;
+  position: relative;
+  overflow: hidden;
+}
+.timeline-cmp .cmp-row .btrack .bfill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  height: 100%;
+  border-radius: 3px;
+  width: 0;
+  transition: none;
+}
+.timeline-cmp .cmp-row .btrack .bfill.light-fill {
+  background: #f0c040;
+  box-shadow: 0 0 8px rgba(240,192,64,0.4);
+}
+.timeline-cmp .cmp-row .btrack .bfill.human-fill {
+  background: rgba(255,255,255,0.25);
+}
+.timeline-cmp .cmp-row .val {
+  font-size: var(--fs-label);
+  font-weight: 700;
+  color: #e6e6e6;
+  width: 80px;
+  flex-shrink: 0;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.timeline-cmp .cmp-row .val .dim {
+  color: rgba(230,230,230,0.5);
+  font-weight: 400;
+}
+.timeline-cmp .cmp-row .val.highlight {
+  color: #f0c040;
+}
+
+/* ── controls ── */
+.ctl-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 4px 0;
+}
+.ctl-row #goBtn {
+  padding: 8px 20px;
+  border: 1px solid var(--accent, #0b7a75);
+  background: var(--accent, #0b7a75);
+  color: #fff;
+  border-radius: 4px;
+  font-size: var(--fs-label);
+  font-weight: 700;
+  cursor: pointer;
+  font-family: inherit;
+  letter-spacing: 0.04em;
+  transition: background 0.2s, border-color 0.2s;
+}
+.ctl-row #goBtn:hover {
+  background: #0d9488;
+  border-color: #0d9488;
+}
+.ctl-row #goBtn:active {
+  background: #086b66;
+}
+.ctl-row .sm-label {
+  font-size: var(--fs-label);
+  color: rgba(230,230,230,0.5);
+}
+.ctl-row input[type="range"] {
+  width: 100px;
+  accent-color: var(--accent, #0b7a75);
+  cursor: pointer;
+}
+.ctl-row #smVal {
+  font-size: var(--fs-label);
+  font-weight: 700;
+  color: #e6e6e6;
+  width: 28px;
+  text-align: center;
+}
+
+/* ── light year reveal ── */
+.ly-reveal {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 3;
+  pointer-events: none;
+  opacity: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+.ly-reveal .ly-arrow {
+  font-size: 28px;
+  color: #f0c040;
+  line-height: 1;
+}
+.ly-reveal .ly-label {
+  font-size: var(--fs-lead);
+  font-weight: 700;
+  color: #f0c040;
+  text-align: center;
+}
+.ly-reveal .ly-sub {
+  font-size: var(--fs-sec);
+  color: rgba(230,230,230,0.6);
+  text-align: center;
+}
+
+/* ── human figure (canvas-drawn) ── */
+/* drawn on canvas, no HTML needed */
+
+/* ── note ── */
+.speed-note {
+  position: absolute;
+  right: 48px;
+  top: 220px;
+  font-size: var(--fs-label);
+  color: rgba(230,230,230,0.25);
+  text-align: right;
+  z-index: 2;
+  pointer-events: none;
+  max-width: 160px;
+  line-height: 1.4;
+}
+</style>
+</head>
+<body data-page="33" data-total="50">
+<div id="stage">
+<main id="main">
+  <canvas id="scene" class="cv-fill"></canvas>
+
+  <div class="overlay-wrap">
+    <!-- top-left -->
+    <div class="tl-block">
+      <div class="pg-kicker">四 · 光速</div>
+      <div class="pg-title">光，每秒绕地球七圈半</div>
+      <div class="readings">
+        <div class="rdg">光速 <span class="num" id="cRead">—</span> km/s</div>
+        <div class="rdg">地球周长 <span class="num" id="circRead">—</span> km</div>
+        <div class="rdg">每秒 <span class="num hl" id="lapsRead">—</span> 圈</div>
+      </div>
+    </div>
+
+    <!-- bottom section -->
+    <div class="btm-section">
+      <div class="timeline-cmp">
+        <div class="axis-row">
+          <span class="albl">1″</span>
+          <div class="atrack"><div class="afill" id="axisFill"></div></div>
+          <span style="width:80px;flex-shrink:0"></span>
+        </div>
+        <div class="cmp-row">
+          <span class="icon">⚡</span>
+          <span class="lbl">光</span>
+          <div class="btrack"><div class="bfill light-fill" id="lightFill"></div></div>
+          <span class="val highlight" id="lightValDisplay">0 <span class="dim">圈</span></span>
+        </div>
+        <div class="cmp-row">
+          <span class="icon">🧑</span>
+          <span class="lbl">人</span>
+          <div class="btrack"><div class="bfill human-fill" id="humanFill"></div></div>
+          <span class="val" id="humanValDisplay">几米 <span class="dim">*</span></span>
+        </div>
+      </div>
+
+      <div class="ctl-row">
+        <button id="goBtn">起跑 / 接力</button>
+        <span class="sm-label">慢放</span>
+        <input type="range" id="slowMo" min="1" max="8" value="1" step="1">
+        <span id="smVal">1×</span>
+      </div>
+    </div>
+
+    <!-- light year reveal -->
+    <div class="ly-reveal" id="lyReveal">
+      <div class="ly-arrow">⟶</div>
+      <div class="ly-label">1 光年 = 光走一年</div>
+      <div class="ly-sub" id="lyKm">—</div>
+    </div>
+
+    <!-- note -->
+    <div class="speed-note">* 人形位移已被放大才能看见</div>
+  </div>
+</main>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script src="assets/lib/gsap.min.js"></script>
+<script>
+// ── page-33: 光速接力 ──
+(function() {
+  'use strict';
+
+  // ── mount ──
+  Lec.mount({ index: 33, sub: '四 · 光速', title: '光，每秒绕地球七圈半', take: '光速快到另一个量级——同一秒里，人挪几米，光绕地球七圈半' });
+
+  // ── constants from Lec ──
+  var C       = Lec.K.SPEED_OF_LIGHT_KMPS;   // 299792.458 km/s
+  var R_EARTH = Lec.K.EARTH_RADIUS_KM;        // 6371 km
+  var CIRCUM  = 2 * Math.PI * R_EARTH;        // km
+  var LAPS    = C / CIRCUM;                   // ~7.48
+  var LY_KM   = Lec.P.lyToKm(1);              // km per light year
+
+  // ── DOM refs ──
+  var canvas   = document.getElementById('scene');
+  var cRead    = document.getElementById('cRead');
+  var circRead = document.getElementById('circRead');
+  var lapsRead = document.getElementById('lapsRead');
+
+  var lightFill     = document.getElementById('lightFill');
+  var humanFill     = document.getElementById('humanFill');
+  var axisFill      = document.getElementById('axisFill');
+  var lightValDisp  = document.getElementById('lightValDisplay');
+  var humanValDisp  = document.getElementById('humanValDisplay');
+
+  var goBtn   = document.getElementById('goBtn');
+  var slowMo  = document.getElementById('slowMo');
+  var smVal   = document.getElementById('smVal');
+  var lyReveal = document.getElementById('lyReveal');
+  var lyKm    = document.getElementById('lyKm');
+
+  // ── display initial values ──
+  cRead.textContent    = Lec.P.round(C, 0).toLocaleString();
+  circRead.textContent = Lec.P.round(CIRCUM, 0).toLocaleString();
+  lapsRead.textContent = Lec.P.round(LAPS, 1);
+
+  lyKm.textContent = '≈ ' + Lec.P.round(LY_KM / 1e12, 2) + ' 万亿 km';
+
+  // ── state ──
+  var progress    = 0;   // 0..1
+  var running     = false;
+  var hasRunOnce  = false;
+  var tween       = null;
+
+  // ── canvas setup ──
+  var ctx, W, H;
+  function resize() {
+    ctx = Deck.fit(canvas);
+    W = canvas.width;
+    H = canvas.height;
+  }
+  resize();
+
+  // ── drawing ──
+  function drawScene(p) {
+    if (!ctx) return;
+    var cx = W * 0.58;
+    var cy = H * 0.36;
+    var earthR = Math.min(130, W * 0.09);
+    var orbitR = earthR * 1.55;
+    var vertFactor = 0.38;  // perspective flattening
+
+    // clear
+    ctx.clearRect(0, 0, W, H);
+
+    // ── draw orbit ring ──
+    ctx.save();
+    ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, orbitR, orbitR * vertFactor, 0, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // equatorial band (slightly brighter arc)
+    ctx.strokeStyle = 'rgba(255,255,255,0.04)';
+    ctx.lineWidth = 8;
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, orbitR, orbitR * vertFactor, 0, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+
+    // ── draw Earth (wireframe) ──
+    ctx.save();
+    ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+    ctx.lineWidth = 1.2;
+
+    // outer circle
+    ctx.beginPath();
+    ctx.arc(cx, cy, earthR, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // latitude lines
+    for (var lat = -2; lat <= 2; lat++) {
+      var r = earthR * Math.cos(lat * Math.PI / 6);
+      var yy = cy + earthR * Math.sin(lat * Math.PI / 6) * 0.5;
+      if (r < 2) continue;
+      ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+      ctx.beginPath();
+      ctx.ellipse(cx, yy, r, r * 0.5, 0, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+
+    // longitude lines
+    for (var lon = 0; lon < 6; lon++) {
+      var angle = lon * Math.PI / 3;
+      ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+      ctx.beginPath();
+      ctx.ellipse(cx, cy, earthR * 0.01, earthR, 0, 0, Math.PI * 2);
+      // actually draw a vertical arc
+      ctx.beginPath();
+      for (var t = -Math.PI/2; t <= Math.PI/2; t += 0.05) {
+        var ex = cx + earthR * Math.cos(angle) * Math.cos(t);
+        var ey = cy + earthR * Math.sin(t) * 0.5;
+        if (t === -Math.PI/2) ctx.moveTo(ex, ey);
+        else ctx.lineTo(ex, ey);
+      }
+      ctx.stroke();
+    }
+
+    // Earth glow (subtle inner shadow)
+    var grd = ctx.createRadialGradient(cx, cy, earthR * 0.5, cx, cy, earthR);
+    grd.addColorStop(0, 'rgba(255,255,255,0.01)');
+    grd.addColorStop(0.7, 'rgba(255,255,255,0.02)');
+    grd.addColorStop(1, 'rgba(255,255,255,0.06)');
+    ctx.fillStyle = grd;
+    ctx.beginPath();
+    ctx.arc(cx, cy, earthR, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.restore();
+
+    // ── draw light trail ──
+    if (p > 0.001) {
+      var totalAngle = p * 2 * Math.PI * LAPS;
+      var steps = Math.max(3, Math.floor(totalAngle / 0.05));
+      ctx.save();
+      for (var i = 0; i < steps; i++) {
+        var frac = i / steps;
+        var a = frac * totalAngle;
+        var tx = cx + orbitR * Math.cos(a);
+        var ty = cy + orbitR * vertFactor * Math.sin(a);
+        var alpha = 0.03 + 0.35 * (frac * frac);  // brighten toward end
+        ctx.fillStyle = 'rgba(240,192,64,' + alpha + ')';
+        var r = 1.5 + 3 * frac;
+        ctx.beginPath();
+        ctx.arc(tx, ty, r, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.restore();
+    }
+
+    // ── draw light pulse ──
+    if (p > 0) {
+      var angle = p * 2 * Math.PI * LAPS;
+      var px = cx + orbitR * Math.cos(angle);
+      var py = cy + orbitR * vertFactor * Math.sin(angle);
+
+      // glow
+      ctx.save();
+      var glow = ctx.createRadialGradient(px, py, 0, px, py, 20);
+      glow.addColorStop(0, 'rgba(240,192,64,0.6)');
+      glow.addColorStop(0.3, 'rgba(240,192,64,0.2)');
+      glow.addColorStop(1, 'rgba(240,192,64,0)');
+      ctx.fillStyle = glow;
+      ctx.beginPath();
+      ctx.arc(px, py, 20, 0, Math.PI * 2);
+      ctx.fill();
+
+      // core
+      ctx.fillStyle = '#f0c040';
+      ctx.shadowColor = '#f0c040';
+      ctx.shadowBlur = 8;
+      ctx.beginPath();
+      ctx.arc(px, py, 3.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+
+    // ── draw human figure (tiny, bottom-right area) ──
+    // Small stick figure as qualitative reference
+    var hx = W * 0.78;
+    var hy = H * 0.82;
+    ctx.save();
+    ctx.strokeStyle = 'rgba(255,255,255,0.2)';
+    ctx.lineWidth = 2;
+    // head
+    ctx.beginPath();
+    ctx.arc(hx, hy - 20, 6, 0, Math.PI * 2);
+    ctx.stroke();
+    // body
+    ctx.beginPath();
+    ctx.moveTo(hx, hy - 14);
+    ctx.lineTo(hx, hy + 4);
+    ctx.stroke();
+    // arms
+    ctx.beginPath();
+    ctx.moveTo(hx - 8, hy - 8);
+    ctx.lineTo(hx + 8, hy - 8);
+    ctx.stroke();
+    // legs
+    ctx.beginPath();
+    ctx.moveTo(hx, hy + 4);
+    ctx.lineTo(hx - 7, hy + 16);
+    ctx.moveTo(hx, hy + 4);
+    ctx.lineTo(hx + 7, hy + 16);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // ── update DOM overlays ──
+  function updateOverlays(p) {
+    var dist = p * C;
+    var laps = p * LAPS;
+
+    // timeline bar
+    axisFill.style.width = (p * 100) + '%';
+
+    // light bar (fills to 100% at p=1 because light reaches 7.5 laps)
+    var lightPct = Math.min(100, p * 100);
+    lightFill.style.width = lightPct + '%';
+    humanFill.style.width = (p * 1.5) + '%';  // human barely moves
+
+    // light value
+    if (p < 0.001) {
+      lightValDisp.innerHTML = '0 <span class="dim">圈</span>';
+    } else {
+      var lapStr = laps >= 1
+        ? (laps >= 7 ? '7½' : Lec.P.round(laps, 1))
+        : Lec.P.round(laps, 2);
+      lightValDisp.innerHTML = lapStr + ' <span class="dim">圈</span>';
+    }
+
+    // human value
+    var humanDist = p * 2;  // ~2 meters in 1 second walking speed, qualitative
+    humanValDisp.innerHTML = (humanDist < 0.5 ? '< 1' : Lec.P.round(humanDist, 1)) + ' <span class="dim">m *</span>';
+  }
+
+  // ── redraw ──
+  function redraw(p) {
+    drawScene(p);
+    updateOverlays(p);
+  }
+
+  // ── start animation ──
+  function startRun() {
+    if (tween) {
+      tween.kill();
+      tween = null;
+    }
+
+    // hide light year reveal
+    gsap.to(lyReveal, { autoAlpha: 0, duration: 0.3 });
+
+    progress = 0;
+    running = true;
+    hasRunOnce = true;
+    redraw(0);
+
+    var speed = parseFloat(slowMo.value) || 1;
+    var dur = 1 * speed;  // 1 second at 1x, longer at higher slow-mo
+
+    tween = gsap.to({ p: 0 }, {
+      p: 1,
+      duration: dur,
+      ease: 'none',
+      onUpdate: function() {
+        progress = this.targets()[0].p;
+        redraw(progress);
+      },
+      onComplete: function() {
+        running = false;
+        tween = null;
+        progress = 1;
+        redraw(1);
+
+        // show light year reveal
+        gsap.to(lyReveal, { autoAlpha: 1, duration: 0.6, delay: 0.3 });
+      }
+    });
+  }
+
+  // ── slow-mo change ──
+  slowMo.addEventListener('input', function() {
+    var val = parseInt(this.value, 10);
+    smVal.textContent = val + '×';
+
+    // if running, update timeScale
+    if (tween) {
+      tween.timeScale(1 / val);
+    }
+  });
+
+  // ── go button ──
+  goBtn.addEventListener('click', function() {
+    startRun();
+  });
+
+  // ── keyboard shortcut ──
+  document.addEventListener('keydown', function(e) {
+    if (e.key === ' ' || e.key === 'Enter') {
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+      e.preventDefault();
+      startRun();
+    }
+  });
+
+  // ── initial draw ──
+  redraw(0);
+
+  // ── resize handler ──
+  Deck.onResize(function() {
+    resize();
+    if (running && tween) {
+      redraw(tween.targets()[0].p);
+    } else {
+      redraw(progress);
+    }
+  });
+
+})();
+</script>
+</body>
+</html>

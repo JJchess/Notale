@@ -1,0 +1,284 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  #stage { padding: 34px 54px 30px; }
+  .page-head { height: 104px; flex: 0 0 104px; }
+  .kicker { color: var(--primary); font-family: var(--font-mono); font-size: var(--fs-label); font-weight: 700; letter-spacing: .16em; }
+  .head-note { max-width: 730px; margin: 0; color: var(--muted); font-size: var(--fs-sec); line-height: 1.5; text-align: right; }
+  .progress-line { height: 52px; flex: 0 0 52px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+  .progress-label { color: var(--text); font-size: var(--fs-sec); font-weight: 700; }
+  .progress-nodes { display: flex; gap: 16px; align-items: center; }
+  .progress-node { width: 14px; height: 14px; border: 2px solid var(--line-strong); border-radius: 50%; background: var(--bg); transition: background 180ms ease-out, border-color 180ms ease-out; }
+  .progress-node.done { border-color: var(--accent); background: var(--accent); box-shadow: 0 0 12px var(--accent-line); }
+  .workshop { position: relative; gap: 26px; padding-top: 22px; }
+  .prompt-rail { width: 398px; flex: 0 0 398px; }
+  .prompt-card { position: relative; min-height: 174px; padding: 22px; overflow: hidden; border: 1px solid var(--primary-line); border-radius: var(--radius-2); background: linear-gradient(135deg, var(--primary-soft), transparent 60%), var(--panel); box-shadow: var(--shadow-panel); }
+  .prompt-card::after { position: absolute; right: 14px; bottom: 14px; width: 96px; height: 96px; border: 2px solid var(--primary-line); border-radius: 50%; content: ""; opacity: .5; }
+  .prompt-index { color: var(--primary); font-family: var(--font-mono); font-size: var(--fs-label); font-weight: 700; letter-spacing: .08em; }
+  .prompt-text { position: relative; z-index: 1; margin: 12px 0 0; color: var(--text); font-size: var(--fs-lead); font-weight: 700; line-height: 1.5; }
+  .absorbed { display: inline-flex; min-height: 30px; margin-top: 14px; padding: 3px 10px; align-items: center; border: 1px solid var(--accent-line); border-radius: var(--radius-1); color: var(--accent); background: var(--accent-soft); font-size: var(--fs-sec); font-weight: 700; opacity: 0; transform: translateX(-12px); transition: opacity 220ms ease-out, transform 220ms ease-out; }
+  .absorbed.show { opacity: 1; transform: translateX(0); }
+  .choice-title { margin: 18px 0 8px; color: var(--muted); font-size: var(--fs-sec); }
+  .strategy-buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .strategy-btn, .reset-btn { min-height: 48px; border: 1px solid var(--line-strong); border-radius: var(--radius-1); color: var(--text); background: var(--panel-deep); font-size: var(--fs-sec); font-weight: 700; cursor: pointer; transition: border-color 160ms ease-out, background 160ms ease-out, color 160ms ease-out, transform 160ms ease-out; }
+  .strategy-btn:hover { border-color: var(--primary); }
+  .strategy-btn.correct { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+  .strategy-btn.wrong { border-color: var(--danger); color: var(--danger); }
+  .key { margin-right: 7px; color: var(--faint); font-family: var(--font-mono); font-size: var(--fs-label); }
+  .feedback { min-height: 54px; margin: 12px 0 0; color: var(--muted); font-size: var(--fs-sec); line-height: 1.5; }
+  .feedback.good { color: var(--accent); }
+  .ledger-column { width: 960px; flex: 0 0 960px; }
+  .ledger-wrap { position: relative; width: 960px; height: 420px; flex: 0 0 420px; overflow: hidden; border-radius: var(--radius-2); background: var(--panel); box-shadow: inset 0 0 0 1px var(--line-strong), var(--shadow-panel); }
+  .diagnostic-note, .ledger-note { border-left: 3px solid var(--primary); color: var(--muted); background: var(--panel-deep); font-size: var(--fs-sec); line-height: 1.5; }
+  .diagnostic-note { min-height: 78px; margin-top: 10px; padding: 12px 15px; }
+  .ledger-note { min-height: 68px; margin-top: 14px; padding: 10px 16px; }
+  .note-label { display: block; margin-bottom: 2px; color: var(--primary); font-size: var(--fs-label); font-weight: 750; letter-spacing: .06em; }
+  #teaching-stage { position: absolute; inset: 0; width: 960px; height: 420px; }
+  .ledger-dom { position: absolute; inset: 0; display: flex; flex-direction: column; pointer-events: none; }
+  .ledger-head { display: grid; height: 86px; flex: 0 0 86px; grid-template-columns: 160px 260px 300px 240px; align-items: end; padding-bottom: 12px; border-bottom: 1px solid var(--line); color: var(--muted); font-size: var(--fs-label); font-weight: 700; }
+  .ledger-head span { padding: 0 14px; }
+  .ledger-head span + span { border-left: 1px solid var(--line); }
+  .k-enumeration.ledger-rows { --enum-cols: 1; display: grid; flex: 1; grid-template-columns: 1fr; grid-template-rows: repeat(4, 76px); gap: 0; }
+  .k-enumeration.ledger-rows > .it { display: grid; grid-template-columns: 160px 260px 300px 240px; gap: 0; padding: 0; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; background: transparent; transition: background 220ms ease-out, box-shadow 220ms ease-out; }
+  .k-enumeration.ledger-rows > .it.current { background: linear-gradient(90deg, var(--accent-soft), transparent 82%); box-shadow: inset 4px 0 0 var(--accent), inset 0 0 0 1px var(--accent-line); }
+  .ledger-cell { display: flex; min-width: 0; padding: 8px 14px; align-items: center; color: var(--muted); font-size: var(--fs-sec); line-height: 1.42; }
+  .ledger-cell + .ledger-cell { border-left: 1px solid var(--line); }
+  .strategy-name { color: var(--text); font-family: var(--font-title); font-size: var(--fs-h2); font-weight: 750; }
+  .row-node { display: inline-block; width: 12px; height: 12px; margin-right: 10px; flex: 0 0 auto; border: 2px solid var(--primary); border-radius: 50%; background: var(--panel); }
+  .it.current .row-node, .it.done .row-node { border-color: var(--accent); background: var(--accent); }
+  .completion { position: absolute; z-index: 4; right: 20px; bottom: 18px; display: none; padding: 8px 14px; border: 1px solid var(--accent); border-radius: var(--radius-1); color: var(--accent); background: var(--panel-deep); font-size: var(--fs-sec); font-weight: 750; }
+  .completion.show { display: block; }
+  .bottom-line { height: 82px; flex: 0 0 82px; padding-top: 18px; }
+  .takeaway { margin: 0; max-width: 1140px; color: var(--text); font-size: var(--fs-lead); line-height: 1.5; }
+  .reset-btn { min-width: 148px; padding: 0 18px; }
+  @keyframes ledgerIn { from { opacity: 0; transform: translateX(-18px); } to { opacity: 1; transform: translateX(0); } }
+  .ledger-rows .it { animation: ledgerIn 430ms ease-out both; }
+  .ledger-rows .it:nth-child(2) { animation-delay: 60ms; }
+  .ledger-rows .it:nth-child(3) { animation-delay: 120ms; }
+  .ledger-rows .it:nth-child(4) { animation-delay: 180ms; }
+  @keyframes shake { 0%,100% { transform: translateX(0); } 18% { transform: translateX(-8px); } 38% { transform: translateX(8px); } 58% { transform: translateX(-5px); } 78% { transform: translateX(5px); } }
+  .shake { animation: shake 260ms ease-out; }
+  @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .001ms !important; animation-delay: 0ms !important; transition-duration: .001ms !important; } }
+</style>
+</head>
+<body data-page="19" data-total="50">
+<div id="stage">
+  <header class="page-head row items-center justify-between">
+    <div class="col gap-1">
+      <div class="kicker">CULTURAL RELAY · 教学策略</div>
+      <h1>教，不只是让人照着做</h1>
+    </div>
+    <p class="head-note">逐张读取学习障碍，选择最直接补上缺失信息的教法。<br>四种策略可以配合使用；这里先判断首选补偿。</p>
+  </header>
+
+  <section class="progress-line row items-center justify-between" aria-label="答题进度">
+    <div id="progress-label" class="progress-label" aria-live="polite"></div>
+    <div id="progress-nodes" class="progress-nodes" aria-hidden="true"></div>
+  </section>
+
+  <main class="workshop row min0" style="flex:1">
+    <section class="prompt-rail min0" aria-labelledby="prompt-label">
+      <div id="prompt-card" class="prompt-card">
+        <div id="prompt-label" class="prompt-index"></div>
+        <p id="prompt-text" class="prompt-text"></p>
+        <div id="absorbed" class="absorbed"></div>
+      </div>
+      <p class="choice-title">选择教学策略（键盘按数字键）</p>
+      <div id="strategy-buttons" class="strategy-buttons"></div>
+      <p id="feedback" class="feedback" aria-live="polite">先判断：这张卡究竟缺哪一种信息？</p>
+      <div class="diagnostic-note"><span class="note-label">判断线索</span>先看学习者已经会什么，再定位缺失的信息。</div>
+    </section>
+
+    <div class="ledger-column col min0">
+    <section class="ledger-wrap min0" aria-label="四种教学策略账本">
+      <div id="teaching-stage" aria-hidden="true"></div>
+      <div class="ledger-dom">
+        <div class="ledger-head">
+          <span>教学策略</span><span>学习障碍</span><span>教学动作</span><span>补上的信息</span>
+        </div>
+        <div id="ledger-rows" class="k-enumeration ledger-rows">
+          <article class="it" data-row="0"><div class="ledger-cell strategy-name"><i class="row-node"></i>示范</div><div class="ledger-cell">看见成品，却不知道动作顺序</div><div class="ledger-cell">放慢并完整做一遍打结过程</div><div class="ledger-cell">动作如何连续展开</div></article>
+          <article class="it" data-row="1"><div class="ledger-cell strategy-name"><i class="row-node"></i>指点</div><div class="ledger-cell">动作大致正确，却总敲错石核位置</div><div class="ledger-cell">指向应观察和击打的边缘</div><div class="ledger-cell">注意力应落在哪里</div></article>
+          <article class="it" data-row="2"><div class="ledger-cell strategy-name"><i class="row-node"></i>纠错</div><div class="ledger-cell">已经尝试，但握持方向反了</div><div class="ledger-cell">标出偏差，并让其立即重做</div><div class="ledger-cell">当前动作与目标差在哪里</div></article>
+          <article class="it" data-row="3"><div class="ledger-cell strategy-name"><i class="row-node"></i>语言说明</div><div class="ledger-cell">会照做，却不知道何时停止用力</div><div class="ledger-cell">说明“刃缘出现连续薄片时停止”</div><div class="ledger-cell">看不见的规则与条件</div></article>
+        </div>
+      </div>
+      <div id="completion" class="completion">障碍不同，教法也不同</div>
+    </section>
+    <div class="ledger-note"><span class="note-label">同级并列</span>四种策略没有高低或先后；这里比较它们最直接补上哪类信息。</div>
+    </div>
+  </main>
+
+  <footer class="bottom-line row items-start justify-between">
+    <p class="takeaway">教学不是一种万能动作：示范呈现过程，指点组织注意，纠错修正已有尝试，语言说明表达不可直接看见的规则。</p>
+    <button id="reset" class="reset-btn" type="button">重新选择</button>
+  </footer>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script src="assets/lib/konva.min.js"></script>
+<script>
+(function () {
+  'use strict';
+  Deck.init({ index: 19, total: 50 });
+  Konva.pixelRatio = Math.min(window.devicePixelRatio || 1, 2);
+
+  var items = [
+    { strategy: '示范', obstacle: '看见成品，却不知道动作顺序', need: '动作顺序', result: '动作如何连续展开' },
+    { strategy: '指点', obstacle: '动作大致正确，却总敲错石核位置', need: '注意位置', result: '注意力应落在哪里' },
+    { strategy: '纠错', obstacle: '已经尝试，但握持方向反了', need: '偏差位置', result: '当前动作与目标差在哪里' },
+    { strategy: '语言说明', obstacle: '会照做，却不知道何时停止用力', need: '不可见规则', result: '看不见的规则与条件' }
+  ];
+  var state = { current: 0, solved: [], locked: false, complete: false };
+  var stage = new Konva.Stage({ container: 'teaching-stage', width: 960, height: 420 });
+  var layer = new Konva.Layer();
+  stage.add(layer);
+  var colors = {
+    panel: Deck.token('--panel'), line: Deck.token('--line'), primary: Deck.token('--primary'),
+    primaryLine: Deck.token('--primary-line'), accent: Deck.token('--accent'), accentLine: Deck.token('--accent-line')
+  };
+  var lines = [];
+  var headH = 86;
+  var rowH = 76;
+
+  function makeLine(i) {
+    var y = headH + rowH * i + rowH / 2;
+    var guide = new Konva.Line({ points: [18, y, 128, y, 146, y, 194, y, 254, y, 286, y], stroke: colors.primaryLine, strokeWidth: 2, dash: [5, 7], listening: false });
+    var relay = new Konva.Line({ points: [18, y, 128, y, 146, y, 194, y, 254, y, 286, y], stroke: colors.accent, strokeWidth: 4, lineCap: 'round', lineJoin: 'round', opacity: 0, listening: false });
+    var nodeA = new Konva.Circle({ x: 18, y: y, radius: 6, stroke: colors.primary, strokeWidth: 2, fill: colors.panel, listening: false });
+    var nodeB = new Konva.Circle({ x: 286, y: y, radius: 6, stroke: colors.primary, strokeWidth: 2, fill: colors.panel, listening: false });
+    layer.add(guide, relay, nodeA, nodeB);
+    lines.push({ guide: guide, relay: relay, a: nodeA, b: nodeB });
+  }
+  items.forEach(function (_, i) { makeLine(i); });
+  layer.draw();
+
+  var buttonsHost = document.getElementById('strategy-buttons');
+  items.forEach(function (item, i) {
+    var button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'strategy-btn';
+    button.dataset.choice = i;
+    button.setAttribute('aria-label', '选择' + item.strategy);
+    button.innerHTML = '<span class="key">' + (i + 1) + '</span>' + item.strategy;
+    button.addEventListener('click', function () { choose(i); });
+    buttonsHost.appendChild(button);
+  });
+
+  var progressNodes = document.getElementById('progress-nodes');
+  items.forEach(function () {
+    var node = document.createElement('span');
+    node.className = 'progress-node';
+    progressNodes.appendChild(node);
+  });
+
+  function progressText() {
+    var shown = state.complete ? items.length : Math.min(state.current + 1, items.length);
+    return '教学判断 ' + shown + ' / ' + items.length;
+  }
+
+  function render() {
+    document.getElementById('progress-label').textContent = progressText();
+    document.getElementById('prompt-label').textContent = state.complete ? '四张障碍卡已完成' : '学习障碍 · ' + (state.current + 1);
+    document.getElementById('prompt-text').textContent = state.complete ? '四种障碍缺少的信息不同，因此首选教法也不同。' : items[state.current].obstacle;
+    var nodes = progressNodes.children;
+    for (var i = 0; i < nodes.length; i++) nodes[i].classList.toggle('done', state.solved.indexOf(i) !== -1);
+    document.querySelectorAll('.ledger-rows .it').forEach(function (row, i) {
+      row.classList.toggle('done', state.solved.indexOf(i) !== -1);
+      row.classList.toggle('current', !state.complete && i === state.current);
+    });
+    document.getElementById('completion').classList.toggle('show', state.complete);
+    buttonsHost.querySelectorAll('button').forEach(function (b) { b.disabled = state.locked || state.complete; });
+  }
+
+  function animateRelay(i) {
+    var line = lines[i];
+    line.relay.opacity(1);
+    line.relay.dash([600, 600]);
+    line.relay.dashOffset(600);
+    line.a.stroke(colors.accent); line.a.fill(colors.accent);
+    line.b.stroke(colors.accent); line.b.fill(colors.accent);
+    if (Deck.reduced()) {
+      line.relay.dash([]);
+      layer.draw();
+      return;
+    }
+    new Konva.Tween({ node: line.relay, duration: 0.32, dashOffset: 0, easing: Konva.Easings.EaseOut, onFinish: function () { line.relay.dash([]); layer.draw(); } }).play();
+  }
+
+  function choose(choice) {
+    if (state.locked || state.complete) return;
+    var current = items[state.current];
+    var button = buttonsHost.querySelector('[data-choice="' + choice + '"]');
+    if (choice !== state.current) {
+      button.classList.remove('shake');
+      void button.offsetWidth;
+      button.classList.add('wrong', 'shake');
+      document.getElementById('feedback').className = 'feedback';
+      document.getElementById('feedback').textContent = '这张卡缺的是' + current.need + '，再选能直接补上它的策略。';
+      window.setTimeout(function () { button.classList.remove('wrong', 'shake'); }, 300);
+      return;
+    }
+    state.locked = true;
+    state.solved.push(state.current);
+    button.classList.add('correct');
+    var absorbed = document.getElementById('absorbed');
+    absorbed.textContent = '已接入：' + current.strategy;
+    absorbed.classList.add('show');
+    var feedback = document.getElementById('feedback');
+    feedback.className = 'feedback good';
+    feedback.textContent = '补上了：' + current.result;
+    animateRelay(state.current);
+    render();
+    window.setTimeout(function () {
+      button.classList.remove('correct');
+      absorbed.classList.remove('show');
+      if (state.current === items.length - 1) {
+        state.complete = true;
+        state.locked = false;
+        document.getElementById('feedback').textContent = '四类信息缺口都已接通。';
+      } else {
+        state.current += 1;
+        state.locked = false;
+        document.getElementById('feedback').className = 'feedback';
+        document.getElementById('feedback').textContent = '继续判断：下一张卡缺哪一种信息？';
+      }
+      render();
+    }, Deck.reduced() ? 20 : 720);
+  }
+
+  function reset() {
+    state = { current: 0, solved: [], locked: false, complete: false };
+    lines.forEach(function (line) {
+      line.relay.opacity(0); line.relay.dash([]);
+      line.a.stroke(colors.primary); line.a.fill(colors.panel);
+      line.b.stroke(colors.primary); line.b.fill(colors.panel);
+    });
+    layer.draw();
+    document.getElementById('absorbed').classList.remove('show');
+    document.getElementById('feedback').className = 'feedback';
+    document.getElementById('feedback').textContent = '先判断：这张卡究竟缺哪一种信息？';
+    buttonsHost.querySelectorAll('button').forEach(function (b) { b.className = 'strategy-btn'; });
+    render();
+    buttonsHost.querySelector('button').focus();
+  }
+
+  document.getElementById('reset').addEventListener('click', reset);
+  document.addEventListener('keydown', function (event) {
+    if (event.altKey || event.ctrlKey || event.metaKey || /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)) return;
+    var n = Number(event.key);
+    if (n >= 1 && n <= items.length) {
+      event.preventDefault();
+      choose(n - 1);
+    }
+  });
+
+  render();
+}());
+</script>
+</body>
+</html>

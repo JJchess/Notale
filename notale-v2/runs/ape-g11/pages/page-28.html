@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+:root{--cut:14px;--motion-fast:180ms;--motion-ui:260ms;--motion-enter:560ms;--ease-out:cubic-bezier(.22,.8,.3,1)}
+#stage{padding:3px 4px}
+.page-head{display:flex;align-items:flex-end;justify-content:space-between;border-bottom:2px solid var(--line-soft);padding-bottom:14px}
+.kicker{color:var(--primary-bright);font:700 var(--fs-label)/1.4 var(--font-mono);letter-spacing:.14em}
+.progress{display:flex;align-items:center;gap:14px;color:var(--muted);font-size:var(--fs-label)}
+.progress strong{color:var(--text);font:720 var(--fs-h2)/1 var(--font-mono)}
+.board{position:relative;display:grid;grid-template-columns:repeat(4,1fr);grid-template-rows:1fr 1.12fr;gap:18px 22px;min-height:0;padding-top:18px}
+.bin{--cut:16px;position:relative;min-width:0;padding:2px;background:linear-gradient(135deg,var(--primary),var(--line) 42%,var(--line-soft));clip-path:polygon(var(--cut) 0,100% 0,100% calc(100% - var(--cut)),calc(100% - var(--cut)) 100%,0 100%,0 var(--cut));opacity:1;transform:none;animation:deploy var(--motion-enter) var(--ease-out) forwards}
+.bin:nth-of-type(2){animation-delay:70ms}.bin:nth-of-type(4){animation-delay:140ms}.bin:nth-of-type(5){animation-delay:210ms}
+.bin-inner{height:100%;box-sizing:border-box;padding:15px 17px;background:linear-gradient(var(--primary-soft),var(--primary-soft)),var(--panel-soft);clip-path:inherit}
+.bin .bt{display:flex;align-items:center;justify-content:space-between;color:var(--primary-bright);font-size:var(--fs-h2);font-weight:760;line-height:1.2}
+.bin .count{font:700 var(--fs-label)/1 var(--font-mono);color:var(--muted)}
+.question{margin:7px 0 11px;color:var(--muted);font-size:var(--fs-sec);line-height:1.4}
+.guide{display:flex;flex-direction:column;gap:2px;margin-bottom:8px;color:var(--muted);font-size:var(--fs-label);line-height:1.35}.guide span{padding:3px 7px;border-left:1px solid var(--line)}.bin:has(.placed) .guide{display:none}.answer-list{display:flex;flex-direction:column;gap:7px;min-height:54px;padding-left:13px;border-left:2px solid var(--primary)}
+.placed{position:relative;padding:6px 9px;background:var(--primary-soft);color:var(--text);font-size:var(--fs-sec);line-height:1.35;clip-path:polygon(7px 0,100% 0,100% calc(100% - 7px),calc(100% - 7px) 100%,0 100%,0 7px)}
+.placed::before{position:absolute;left:-13px;top:50%;width:13px;height:1px;background:var(--primary);content:""}
+.data{grid-column:1;grid-row:1;--dx:28px;--dy:20px}.model{grid-column:2;grid-row:1;--dx:12px;--dy:20px}.infer{grid-column:3;grid-row:1;--dx:-12px;--dy:20px}.value{grid-column:4;grid-row:1;--dx:-28px;--dy:20px}
+.evidence-table{grid-column:1/5;grid-row:2;position:relative;z-index:3;display:flex;flex-direction:column;min-height:0;padding:18px 20px;border:2px solid var(--line);background:linear-gradient(180deg,var(--accent-soft),transparent 30%),var(--panel-soft);box-shadow:var(--shadow);clip-path:polygon(18px 0,100% 0,100% calc(100% - 18px),calc(100% - 18px) 100%,0 100%,0 18px)}
+.table-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}.table-title{font-size:var(--fs-h2);font-weight:740}.hint{color:var(--muted);font-size:var(--fs-label)}
+.cards{display:grid;grid-template-columns:1fr 1fr;gap:4px 12px;min-height:0}
+.claim-card{position:relative;width:100%;min-height:46px;padding:6px 42px 6px 15px;border:1px solid var(--line);background:var(--panel-deep);color:var(--text);text-align:left;font-size:var(--fs-sec);line-height:1.4;cursor:grab;clip-path:polygon(9px 0,100% 0,100% calc(100% - 9px),calc(100% - 9px) 100%,0 100%,0 9px);opacity:1;transform:none;animation:rise 430ms var(--ease-out) forwards}
+.card-copy{display:block}.claim-card::after{position:absolute;right:14px;top:50%;color:var(--faint);content:"⌁";transform:translateY(-50%)}
+.claim-card:hover,.claim-card:focus-visible{border-color:var(--accent);background:var(--accent-soft)}
+.claim-card.dragging{z-index:10;border-color:var(--accent);box-shadow:0 0 24px rgba(255,181,71,.35);cursor:grabbing;animation:none;opacity:1}
+.claim-card.wrong{animation:shake 280ms ease-out;box-shadow:inset 4px 0 var(--danger)}
+.bin.over{background:var(--accent)}.bin.pulse{animation:pulse 620ms ease-out}
+.feedback{min-height:54px;margin-top:auto;padding-top:11px;color:var(--muted);font-size:var(--fs-sec);line-height:1.4;border-top:1px solid var(--line-soft)}
+.feedback strong{color:var(--accent)}
+.complete{position:absolute;z-index:20;inset:72px 52px;display:none;flex-direction:column;align-items:center;justify-content:center;padding:28px;text-align:center;background:rgba(9,24,39,.97);border:2px solid var(--primary);clip-path:polygon(22px 0,100% 0,100% calc(100% - 22px),calc(100% - 22px) 100%,0 100%,0 22px)}
+.complete.show{display:flex}.complete p{max-width:720px;margin:10px 0 18px;font-size:var(--fs-lead);line-height:1.5}.complete button{clip-path:polygon(8px 0,100% 0,100% calc(100% - 8px),calc(100% - 8px) 100%,0 100%,0 8px)}
+@keyframes deploy{from{opacity:0;transform:translate(var(--dx),var(--dy))}to{opacity:1;transform:none}}@keyframes rise{from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:none}}@keyframes shake{25%,75%{transform:translateX(-9px)}50%{transform:translateX(9px)}}@keyframes pulse{50%{filter:brightness(1.35)}}
+@media(prefers-reduced-motion:reduce){.bin,.claim-card{animation:none;opacity:1;transform:none}.claim-card.wrong,.bin.pulse{animation:none}}
+</style>
+</head>
+<body data-page="28" data-total="48">
+<div id="stage">
+  <header class="page-head" style="height:78px">
+    <div><div class="kicker">READ THE CLAIM</div><h1>这句话，属于哪一种？</h1></div>
+    <div class="progress" aria-live="polite"><span>已归类</span><strong id="done">0 / 8</strong></div>
+  </header>
+  <div class="row items-center between" style="height:58px"><p class="fs-lead" style="margin:0">先判断主张在做什么，再判断它是否有充分依据。</p><span class="chip">四类并列，不是事实等级</span></div>
+  <main class="board k-classification min0" style="flex:1">
+    <section class="bin box data" data-type="数据"><div class="bin-inner"><div class="bt">数据 <span class="count">0</span></div><p class="question">直接观察或测量到了什么？</p><div class="guide"><span>来自：观察</span><span>来自：测量</span><span>作用：记录所见</span><span>不是：绝对真相</span></div><div class="answer-list"></div></div></section>
+    <section class="bin box model" data-type="模型"><div class="bin-inner"><div class="bt">模型 <span class="count">0</span></div><p class="question">用什么简化表示来解释或预测？</p><div class="guide"><span>动作：简化</span><span>动作：表示</span><span>作用：解释</span><span>作用：预测</span></div><div class="answer-list"></div></div></section>
+    <section class="evidence-table no-pan" aria-label="待分类句子证据台">
+      <div class="table-top"><span class="table-title">中央证据台</span><span class="hint">拖入分类舱，或聚焦后按 1–4</span></div>
+      <div class="cards" id="cards"></div>
+      <div class="feedback" id="feedback" aria-live="polite">先问：这句话在做什么？</div>
+    </section>
+    <section class="bin box infer" data-type="推断"><div class="bin-inner"><div class="bt">推断 <span class="count">0</span></div><p class="question">根据证据，最合理地推出什么？</p><div class="guide"><span>起点：已有证据</span><span>动作：连接解释</span><span>语气：可能</span><span>不是：随意猜测</span></div><div class="answer-list"></div></div></section>
+    <section class="bin box value" data-type="价值"><div class="bin-inner"><div class="bt">价值 <span class="count">0</span></div><p class="question">什么更值得、应该或可接受？</p><div class="guide"><span>比较：更值得</span><span>选择：应该</span><span>边界：可接受</span><span>不是：不科学</span></div><div class="answer-list"></div></div></section>
+    <section class="complete" id="complete" role="dialog" aria-labelledby="completeTitle"><h2 id="completeTitle">四种主张，各有工作</h2><p>数据记录所见，模型简化世界，推断连接证据与解释，价值判断回答“应该怎样”。四类都可以重要，但不能因为都写成陈述句，就混作同一种“事实”。</p><button id="reset">重新分类</button></section>
+  </main>
+  <div class="panel-flat col justify-center gap-1" style="height:92px;flex:none;padding:10px 18px;font-size:var(--fs-sec);line-height:1.45;color:var(--muted)"><span>数据也依赖测量方式与记录条件；推断也不是随意猜测。</span><span>分类是在辨认主张的功能，不是在给四类主张排高低。</span></div>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script>
+Deck.init({index:28,total:48});
+const f=(n)=>Lec.P.formatFixed(n,1);
+const items=[
+ {t:'数据',s:`温度计读数是 ${f(21.4)}°C。`,wrong:'这句在报告测量，不是在解释测量。'},
+ {t:'数据',s:`三次计时结果分别为 ${f(4.8)}、${f(4.9)}、${f(5.0)} 秒。`,wrong:'列出的读数是直接记录的数据。'},
+ {t:'模型',s:'忽略空气阻力时，可把运动画成抛物线。',wrong:'“忽略”说明它在用简化表示。'},
+ {t:'模型',s:'这张球棍图用小球和连杆表示分子。',wrong:'“表示”是在建立简化模型。'},
+ {t:'推断',s:'地面仍湿，说明不久前可能下过雨。',wrong:'它从湿地面推出一种可能解释。'},
+ {t:'推断',s:'两组结果稳定不同，处理条件可能产生了影响。',wrong:'它由结果差异推出可能的影响。'},
+ {t:'价值',s:'学校应该优先资助可重复的研究。',wrong:'“应该优先”回答怎样选择。'},
+ {t:'价值',s:'即使更慢，也应选择风险较低的方案。',wrong:'“应选择”表达什么更可取。'}
+];
+const types=['数据','模型','推断','价值'];
+const state={done:new Set(),drag:null};
+const cards=document.querySelector('#cards'),feedback=document.querySelector('#feedback');
+function renderCards(){cards.innerHTML='';items.forEach((it,i)=>{if(state.done.has(i))return;const b=document.createElement('button');b.className='claim-card';b.style.animationDelay=(i*45+180)+'ms';b.dataset.i=i;b.draggable=true;const copy=document.createElement('span');copy.className='card-copy';copy.textContent=it.s;b.append(copy);b.setAttribute('aria-label',it.s+'；按数字 1 到 4 分类');b.addEventListener('dragstart',e=>{state.drag=i;b.classList.add('dragging');e.dataTransfer.setData('text/plain',String(i));});b.addEventListener('dragend',()=>{state.drag=null;b.classList.remove('dragging');});b.addEventListener('keydown',e=>{const n=Number(e.key);if(n>=1&&n<=4){e.preventDefault();judge(i,types[n-1],b);}});cards.appendChild(b);});}
+function judge(i,type,card){const it=items[i];if(it.t===type){state.done.add(i);const bin=document.querySelector(`.bin[data-type="${type}"]`);const p=document.createElement('div');p.className='placed';p.textContent=it.s;bin.querySelector('.answer-list').appendChild(p);bin.querySelector('.count').textContent=bin.querySelectorAll('.placed').length;feedback.innerHTML=`<strong>${type}</strong>：${bin.querySelector('.question').textContent}`;renderCards();document.querySelector('#done').textContent=`${state.done.size} / ${items.length}`;if(state.done.size===items.length)finish();else cards.querySelector('.claim-card')?.focus();}else{card?.classList.remove('wrong');void card?.offsetWidth;card?.classList.add('wrong');feedback.innerHTML=`<strong>再比较：</strong>${it.wrong}`;}}
+function finish(){document.querySelectorAll('.bin').forEach(b=>b.classList.add('pulse'));setTimeout(()=>{document.querySelector('#complete').classList.add('show');document.querySelector('#reset').focus();},Deck.reduced()?0:500)}
+document.querySelectorAll('.bin').forEach(bin=>{bin.addEventListener('dragover',e=>{e.preventDefault();bin.classList.add('over')});bin.addEventListener('dragleave',()=>bin.classList.remove('over'));bin.addEventListener('drop',e=>{e.preventDefault();bin.classList.remove('over');const i=Number(e.dataTransfer.getData('text/plain'));judge(i,bin.dataset.type,document.querySelector(`.claim-card[data-i="${i}"]`));});});
+document.querySelector('#reset').addEventListener('click',()=>{state.done.clear();document.querySelectorAll('.answer-list').forEach(x=>x.innerHTML='');document.querySelectorAll('.count').forEach(x=>x.textContent='0');document.querySelectorAll('.bin').forEach(x=>x.classList.remove('pulse'));document.querySelector('#complete').classList.remove('show');document.querySelector('#done').textContent='0 / 8';feedback.textContent='先问：这句话在做什么？';renderCards();cards.querySelector('.claim-card')?.focus();});
+renderCards();
+</script>
+</body>
+</html>

@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    #stage{height:100%;}
+    .energy-page{height:100%;}
+    .energy-page.k-generalization{display:grid;grid-template-columns:minmax(0,.92fr) 42px minmax(0,1.38fr);}
+    .energy-page .claim{height:100%;box-sizing:border-box;display:flex;flex-direction:column;gap:var(--sp-3);padding:var(--sp-4) var(--sp-5);}
+    .claim-text{font-size:var(--fs-lead);line-height:var(--lh-copy);font-weight:760;}
+    .chart-wrap{height:292px;min-height:0;position:relative;}
+    #budgetChart{width:100%;height:100%;}
+    .chart-center{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;pointer-events:none;font-weight:760;line-height:var(--lh-tight);}
+    .chart-center .value{font-size:var(--fs-h1);color:var(--accent-strong);font-variant-numeric:tabular-nums;}
+    .chart-center .label{color:var(--muted);}
+    .energy-page .supports{gap:var(--sp-3);}
+    .energy-page .support{padding:var(--sp-3) var(--sp-4);color:var(--text);}
+    .ledger-head{display:flex;align-items:baseline;justify-content:space-between;gap:var(--sp-3);margin-bottom:var(--sp-2);}
+    .ledger-head strong{font-size:var(--fs-h2);line-height:1.3;color:var(--text);}
+    .ledger-value{font-size:var(--fs-h2);font-weight:760;color:var(--accent-strong);font-variant-numeric:tabular-nums;white-space:nowrap;}
+    .ledger-detail{font-size:var(--fs-sec);line-height:var(--lh-copy);color:var(--muted);}
+    .boundary{border-left:4px solid var(--warning);background:var(--warning-soft);}
+    .ctl{padding:var(--sp-2) var(--sp-3);flex-wrap:wrap;}
+    .ctl output{min-width:92px;font-size:var(--fs-body);font-weight:760;color:var(--accent-strong);font-variant-numeric:tabular-nums;}
+    .actions{display:flex;gap:var(--sp-2);margin-left:auto;}
+    .micro-note{font-size:var(--fs-sec);line-height:var(--lh-copy);color:var(--muted);}
+  </style>
+</head>
+<body data-page="18" data-total="50">
+  <div id="stage"><main id="main"></main></div>
+
+  <script src="assets/base.js"></script>
+  <script src="assets/lec.js"></script>
+  <script src="assets/lib/echarts.min.js"></script>
+  <script>
+    Lec.mount({
+      index: 18,
+      kicker: "BRAIN ENERGY LEDGER",
+      title: "大脑不只是“大”，还一直很贵",
+      take: "人脑的意义不只在尺寸，还在连接、发育与高昂能耗。"
+    });
+    Deck.init({ index: 18, total: 50 });
+
+    var stage = document.getElementById("stage");
+    var main = document.getElementById("main");
+    main.innerHTML = `
+      <section class="energy-page k-generalization" aria-label="成人静息脑能量预算">
+        <div class="claim min0">
+          <p class="claim-text">成人静息时，脑只占身体的一部分，却持续占用显著的代谢预算。</p>
+          <div class="chart-wrap min0">
+            <div id="budgetChart" role="img" aria-label="全身静息代谢预算环：脑与身体其余部分"></div>
+            <div class="chart-center" aria-hidden="true"><span class="value" id="centerValue"></span><span class="label" id="centerLabel">你的配置</span></div>
+          </div>
+          <div class="ctl" aria-label="配置脑能量预算">
+            <label for="estimate">估计脑所占比例</label>
+            <input id="estimate" type="range" min="5" max="40" step="1" value="15" aria-describedby="taskHint">
+            <output id="estimateOut" for="estimate">15%</output>
+            <span class="actions">
+              <button type="button" class="primary" id="compare">对照成人静息量级</button>
+              <button type="button" id="reset" disabled>重新估计</button>
+            </span>
+          </div>
+          <p class="micro-note" id="taskHint">拖动分隔线作出估计，再与课程口径对照。</p>
+        </div>
+        <div class="trunk" aria-hidden="true"></div>
+        <div class="supports min0">
+          <article class="support">
+            <div class="ledger-head"><strong>功率账</strong><span class="ledger-value" id="powerValue"></span></div>
+            <p class="ledger-detail" id="powerDetail"></p>
+          </article>
+          <article class="support">
+            <div class="ledger-head"><strong>累计账</strong><span class="ledger-value" id="energyValue"></span></div>
+            <p class="ledger-detail" id="energyDetail"></p>
+          </article>
+          <article class="support">
+            <div class="ledger-head"><strong>耗氧量级</strong><span class="ledger-value" id="oxygenValue"></span></div>
+            <p class="ledger-detail" id="oxygenDetail"></p>
+          </article>
+          <article class="support boundary">
+            <div class="ledger-head"><strong>解释边界</strong><span class="label">预算之外</span></div>
+            <p class="ledger-detail">高能耗说明维持成本；能力还取决于连接如何组织，以及发育如何形成这些连接。</p>
+          </article>
+          <p class="note">成人静息状态的量级，不用于婴幼儿，也不表示所有人在所有状态下都相同。</p>
+        </div>
+      </section>
+      <div class="sr-only" aria-live="polite" id="live"></div>`;
+
+    var chart = echarts.init(document.getElementById("budgetChart"), null, { renderer: "svg" });
+    var slider = document.getElementById("estimate");
+    var compared = false;
+    var savedEstimate = Number(slider.value) / 100;
+    function safe(v, fallback){ return Lec.P.finite(v) ? v : fallback; }
+    var restPower = safe(Lec.K.humanMetabolicPowerRestW, 100);
+    var official = Lec.P.clamp(safe(Lec.K.brainRestingEnergyFraction, 0.2), 0, 1);
+    var duration = safe(Lec.K.courseDurationSeconds, 5400);
+    var oxygenFlow = safe(Lec.K.humanOxygenUseRestLPerMin, 0.25);
+
+    function num(v){ return Lec.P.formatNumber(safe(v, 0)); }
+    function pct(v){ return num(Lec.P.roundTo(Lec.P.percent(Lec.P.clamp(v, 0, 1), 1), 0)) + "%"; }
+    function update(){
+      var estimate = Lec.P.clamp(safe(Number(slider.value) / 100, savedEstimate), 0, 1);
+      if(!compared) savedEstimate = estimate;
+      var fraction = compared ? official : estimate;
+      var brainPower = restPower * fraction;
+      var bodyEnergy = Lec.P.metabolicEnergy(restPower, duration);
+      var brainEnergy = Lec.P.metabolicEnergy(brainPower, duration);
+      var bodyOxygen = Lec.P.oxygenUse(oxygenFlow, duration);
+      var brainOxygen = bodyOxygen * fraction;
+      document.getElementById("estimateOut").textContent = pct(estimate);
+      document.getElementById("centerValue").textContent = pct(fraction);
+      document.getElementById("centerLabel").textContent = compared ? "课程口径" : "你的配置";
+      document.getElementById("powerValue").textContent = num(brainPower, 3) + " W";
+      document.getElementById("powerDetail").textContent = "全身 " + num(restPower, 3) + " W；身体其余部分 " + num(restPower - brainPower, 3) + " W。";
+      document.getElementById("energyValue").textContent = num(brainEnergy / 1000, 3) + " kJ";
+      document.getElementById("energyDetail").textContent = Lec.P.formatDuration(duration) + " 内，全身 " + num(bodyEnergy / 1000, 3) + " kJ，其余部分 " + num((bodyEnergy - brainEnergy) / 1000, 3) + " kJ。";
+      document.getElementById("oxygenValue").textContent = num(brainOxygen, 3) + " L";
+      document.getElementById("oxygenDetail").textContent = "全身静息耗氧 " + num(oxygenFlow, 3) + " L/min；同一时段共 " + num(bodyOxygen, 3) + " L。按静息能耗比例作量级估算。";
+      var accent = Deck.token("--accent");
+      var soft = Deck.token("--surface-strong");
+      var line = Deck.token("--line-strong");
+      var series = [{
+        type:"pie", radius:["57%","78%"], center:["50%","49%"], silent:true,
+        label:{show:false}, emphasis:{disabled:true},
+        data:[{value:fraction,itemStyle:{color:accent}},{value:1-fraction,itemStyle:{color:soft}}]
+      }];
+      if(compared){
+        series.push({type:"pie",radius:["83%","86%"],center:["50%","49%"],silent:true,label:{show:false},emphasis:{disabled:true},data:[{value:savedEstimate,itemStyle:{color:line}},{value:1-savedEstimate,itemStyle:{color:"transparent"}}]});
+      }
+      chart.setOption({animation:false,textStyle:{fontSize:16},tooltip:{show:false,textStyle:{fontSize:16}},series:series},{notMerge:true});
+    }
+    slider.addEventListener("input", function(){ if(!compared) update(); });
+    document.getElementById("compare").addEventListener("click", function(){
+      compared = true; slider.disabled = true; this.disabled = true; document.getElementById("reset").disabled = false;
+      document.getElementById("live").textContent = "课程口径为" + pct(official) + "，细轮廓保留你的估计。账本已按课程口径计算。";
+      update();
+    });
+    document.getElementById("reset").addEventListener("click", function(){
+      compared = false; slider.disabled = false; document.getElementById("compare").disabled = false; this.disabled = true;
+      document.getElementById("live").textContent = "已回到估计阶段。"; update(); slider.focus();
+    });
+    Deck.onResize(function(){ chart.resize(); });
+    update();
+  </script>
+</body>
+</html>

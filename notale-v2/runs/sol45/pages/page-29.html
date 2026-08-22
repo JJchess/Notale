@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  .rule-btn{flex:1;min-height:54px;position:relative;justify-content:flex-start;padding-left:46px;font-size:var(--fs-sec)}
+  .rule-btn::before{content:"";position:absolute;left:16px;width:18px;height:18px;border:2px solid var(--track-blue);border-radius:50%;background:var(--panel-deep)}
+  .rule-btn[aria-pressed="true"]::before{background:var(--sun-gold);border-color:var(--sun-gold);box-shadow:var(--glow-gold)}
+  .rule-btn.experimental::after{content:"课堂实验规则";margin-left:auto;color:var(--text-muted);font-size:var(--fs-label);font-weight:500}
+  .progress-dot{width:12px;height:12px;border-radius:50%;background:var(--line-strong);border:1px solid var(--text-dim)}
+  .progress-dot.done{background:var(--sun-gold);border-color:var(--sun-gold);box-shadow:0 0 12px var(--sun-gold)}
+  #ledger{width:100%;height:calc(100% - 42px);display:block}
+  .ledger-wrap{position:relative;min-height:0;overflow:hidden}
+  .ledger-head{display:grid;grid-template-columns:170px repeat(4,1fr) 150px;align-items:center;height:42px;padding:0 18px;color:var(--text-muted);font-size:var(--fs-label);font-weight:700;border-bottom:1px solid var(--line)}
+  .ledger-head span:not(:first-child){text-align:center}
+  .status-box{width:250px;align-self:stretch;justify-content:center}
+  .shake{animation:shake .28s ease-in-out 2}
+  @keyframes shake{0%,100%{transform:translateX(0)}25%{transform:translateX(-7px)}75%{transform:translateX(7px)}}
+  .summary{display:none;position:absolute;inset:0;z-index:5;padding:var(--sp-4);background:rgba(7,17,31,.96)}
+  .summary.show{display:flex}
+  .mini-list{flex:1;padding:var(--sp-3);border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--panel-deep)}
+  .mini-list strong{display:block;color:var(--track-blue);font-size:var(--fs-sec);margin-bottom:var(--sp-2)}
+  .mini-list span{display:inline-block;margin:3px 8px 3px 0;font-size:var(--fs-label);color:var(--text-muted)}
+  @media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body data-page="29" data-total="32">
+<div id="stage">
+  <header class="row items-end justify-between" style="height:102px;padding:24px 48px 12px">
+    <div><div class="label track">CLASSIFICATION LAB · 29 / 32</div><h1>规则一改，名单就变</h1></div>
+    <div class="row items-center gap-2" aria-label="实验进度"><span class="label" id="roundLabel">规则实验 1 / 3</span><i class="progress-dot" id="dot0"></i><i class="progress-dot" id="dot1"></i><i class="progress-dot" id="dot2"></i></div>
+  </header>
+
+  <main class="k-classification min0" style="flex:1;padding:0 48px 20px">
+    <section class="box is-current col min0" style="height:100%;padding:16px 20px">
+      <div class="bt row justify-between" style="margin-bottom:10px"><span>判据 → 筛选 → 名单</span><span class="chip is-current" id="ledgerTitle">现行三项判据</span></div>
+      <div class="row gap-2" id="ruleBar" style="height:58px">
+        <button class="btn rule-btn" data-rule="orbitSun" aria-pressed="true">绕太阳</button>
+        <button class="btn rule-btn" data-rule="round" aria-pressed="true">接近球形</button>
+        <button class="btn rule-btn" data-rule="clearOrbit" aria-pressed="true">清空轨道邻域</button>
+        <button class="btn rule-btn experimental" data-rule="hasMoon" aria-pressed="false">有卫星</button>
+      </div>
+      <div class="lv row gap-3 min0" style="flex:1;margin-top:12px">
+        <div class="panel ledger-wrap min0 grow">
+          <div class="ledger-head"><span>同一批天体</span><span>绕太阳</span><span>球形</span><span>清空</span><span>卫星</span><span>规则结果</span></div>
+          <svg id="ledger" role="img" aria-label="十三个天体按照当前判据形成的动态名单"></svg>
+          <div class="summary col items-center justify-center gap-4" id="summary" aria-live="polite">
+            <h2>同一批天体，三种名单</h2>
+            <div class="row gap-3" id="snapshots" style="width:100%"></div>
+            <button class="btn is-primary" id="resetBtn">重写一次</button>
+          </div>
+        </div>
+        <aside class="readout is-key status-box shrink0" aria-live="polite">
+          <span class="label">当前名单</span><span class="value" id="count">8 个入选</span>
+          <p class="sec" id="instruction">先观察现行三项判据；改变开关，找到下一轮名单。</p>
+          <p class="note" id="feedback">入选者上移，未入选者仍留在账册中。</p>
+        </aside>
+      </div>
+    </section>
+  </main>
+
+  <footer class="row items-center justify-between" style="height:86px;padding:10px 48px 22px">
+    <p class="lead"><span class="accent">改变判据，成员名单就会改变。</span></p>
+    <p class="sec muted" style="max-width:670px;text-align:right">分类规则的价值在于稳定地组织比较；它不是自然界预先贴在天体上的标签。</p>
+  </footer>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script src="assets/lib/d3.min.js"></script>
+<script>
+(function(){
+  Deck.init({index:29,total:32});
+  const planets=Lec.K.planets.map(d=>({name:d.name,orbitSun:true,round:true,clearOrbit:true,hasMoon:d.moons>0}));
+  const dwarfs=Lec.K.dwarfPlanets.map(d=>({name:d.name,orbitSun:true,round:true,clearOrbit:false,hasMoon:d.moons>0}));
+  const bodies=planets.concat(dwarfs);
+  const targets=[
+    {orbitSun:true,round:true,clearOrbit:true,hasMoon:false,title:'现行三项判据'},
+    {orbitSun:true,round:true,clearOrbit:false,hasMoon:false,title:'去掉第三项后'},
+    {orbitSun:true,round:true,clearOrbit:true,hasMoon:true,title:'再加一项后'}
+  ];
+  let state={rules:{...targets[0]},round:0,snapshots:[]}; delete state.rules.title;
+  const svg=d3.select('#ledger'), reduced=Deck.reduced();
+  const labels={orbitSun:'绕太阳',round:'球形',clearOrbit:'清空',hasMoon:'卫星'};
+  const cols={orbitSun:310,round:475,clearOrbit:640,hasMoon:805};
+  function selected(d){return Object.keys(state.rules).every(k=>!state.rules[k]||d[k]);}
+  function same(a,b){return ['orbitSun','round','clearOrbit','hasMoon'].every(k=>a[k]===b[k]);}
+  function draw(initial){
+    const ordered=bodies.map((d,i)=>({...d,chosen:selected(d),order:i})).sort((a,b)=>(b.chosen-a.chosen)||a.order-b.order);
+    const rows=svg.selectAll('g.body-row').data(ordered,d=>d.name).join(enter=>{
+      const g=enter.append('g').attr('class','body-row').attr('transform',(d,i)=>`translate(18,${8+i*32})`).attr('opacity',initial?0:1);
+      g.append('rect').attr('width',1045).attr('height',28).attr('rx',6);
+      g.append('text').attr('class','nm').attr('x',12).attr('y',20);
+      g.append('text').attr('class','criteria').attr('x',310).attr('y',20).attr('font-family','var(--font-mono)').attr('letter-spacing','142px');
+      g.append('text').attr('class','result').attr('x',1010).attr('y',20).attr('text-anchor','end'); return g;
+    });
+    rows.select('.nm').text(d=>d.name);
+    rows.select('.criteria').text(d=>['orbitSun','round','clearOrbit','hasMoon'].map(k=>d[k]?'✓':'—').join(''));
+    rows.select('.result').text(d=>d.chosen?'入选':'未入选');
+    rows.select('rect').attr('fill',d=>d.chosen?'rgba(255,200,87,.12)':'rgba(99,117,141,.08)').attr('stroke',d=>d.chosen?'rgba(255,200,87,.34)':'rgba(169,189,210,.12)');
+    rows.selectAll('text').attr('font-family','var(--font-sans)').attr('font-size','15px').attr('fill',d=>d.chosen?'#FFC857':'#A9BDD2').attr('opacity',d=>d.chosen?1:.38);
+    (reduced?rows:rows.transition().delay(initial?(d,i)=>i*36:0).duration(initial?420:420).ease(d3.easeCubicOut)).attr('transform',(d,i)=>`translate(18,${8+i*32})`).attr('opacity',1);
+    document.getElementById('count').textContent=ordered.filter(d=>d.chosen).length+' 个入选';
+  }
+  function updateButtons(){document.querySelectorAll('.rule-btn').forEach(b=>b.setAttribute('aria-pressed',String(state.rules[b.dataset.rule])));}
+  function advance(){
+    const target=targets[state.round];
+    if(!same(state.rules,target)) return false;
+    const names=bodies.filter(selected).map(d=>d.name); state.snapshots.push({title:target.title,names});
+    document.getElementById('dot'+state.round).classList.add('done');
+    if(state.round===2){setTimeout(showSummary,reduced?0:500);return true;}
+    state.round++; document.getElementById('roundLabel').textContent='规则实验 '+(state.round+1)+' / 3';
+    document.getElementById('ledgerTitle').textContent=targets[state.round].title;
+    document.getElementById('instruction').textContent=state.round===1?'去掉“清空轨道邻域”，观察边界如何外移。':'恢复第三项，再把“有卫星”加入实验规则。';
+    document.getElementById('feedback').textContent='上一轮正确。继续改写判据。'; return true;
+  }
+  function showSummary(){
+    const host=document.getElementById('snapshots'); host.innerHTML='';
+    state.snapshots.forEach(s=>{const el=document.createElement('div');el.className='mini-list';el.innerHTML='<strong>'+s.title+' · '+s.names.length+' 个</strong>'+s.names.map(n=>'<span>'+n+'</span>').join('');host.appendChild(el)});
+    document.getElementById('summary').classList.add('show');
+    document.querySelectorAll('.rule-btn').forEach(b=>b.disabled=true);
+    document.getElementById('resetBtn').focus();
+  }
+  document.querySelectorAll('.rule-btn').forEach(btn=>btn.addEventListener('click',()=>{
+    state.rules[btn.dataset.rule]=!state.rules[btn.dataset.rule]; updateButtons(); draw(false);
+    if(!advance()){
+      document.getElementById('feedback').textContent='名单数量不符：检查你增加或删除了哪一项判据。';
+      btn.classList.remove('shake'); void btn.offsetWidth; if(!reduced)btn.classList.add('shake');
+    }
+  }));
+  document.getElementById('resetBtn').addEventListener('click',()=>{
+    state={rules:{orbitSun:true,round:true,clearOrbit:true,hasMoon:false},round:0,snapshots:[]};
+    document.getElementById('summary').classList.remove('show');document.querySelectorAll('.rule-btn').forEach(b=>b.disabled=false);
+    document.querySelectorAll('.progress-dot').forEach(d=>d.classList.remove('done'));document.getElementById('roundLabel').textContent='规则实验 1 / 3';
+    document.getElementById('ledgerTitle').textContent=targets[0].title;document.getElementById('instruction').textContent='先观察现行三项判据；改变开关，找到下一轮名单。';
+    document.getElementById('feedback').textContent='入选者上移，未入选者仍留在账册中。';updateButtons();draw(false);advance();document.querySelector('.rule-btn').focus();
+  });
+  updateButtons();draw(true);advance();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,664 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  /* —— 3D 场景暗色覆盖 —— */
+  #main {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    background: #0a0a14;
+    overflow: hidden;
+  }
+  #three-canvas {
+    display: block;
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+  }
+
+  /* —— HUD 标签层 —— */
+  #hud-layer {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    pointer-events: none;
+    z-index: 5;
+  }
+  .cp-label {
+    position: absolute;
+    transform: translate(-50%, -100%);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    pointer-events: none;
+    white-space: nowrap;
+    opacity: 0;
+    transition: opacity 0.15s;
+  }
+  .cp-label .cp-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    margin-bottom: 2px;
+  }
+  .cp-label .cp-reading {
+    font-size: var(--fs-tick);
+    font-variant-numeric: tabular-nums;
+    color: #ccc;
+    line-height: 1.2;
+    background: rgba(10,10,20,0.75);
+    padding: 2px 8px;
+    border-radius: 4px;
+  }
+  .cp-label .cp-status {
+    font-size: var(--fs-label);
+    color: #fff;
+    line-height: 1.2;
+    background: rgba(10,10,20,0.75);
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-weight: 500;
+  }
+  .cp-label .cp-dist {
+    font-size: var(--fs-tick);
+    color: #999;
+    line-height: 1.2;
+  }
+
+  /* —— 底部洞察文字 —— */
+  #insight-bar {
+    position: absolute;
+    bottom: 104px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    gap: var(--sp-2xl);
+    pointer-events: none;
+    z-index: 5;
+    background: rgba(10,10,20,0.7);
+    border-radius: 8px;
+    padding: var(--sp-sm) var(--sp-xl);
+    max-width: 88%;
+  }
+  #insight-bar .insight {
+    font-size: var(--fs-sec);
+    color: #ccc;
+    line-height: var(--lh-normal);
+    text-align: center;
+    flex: 1;
+    min-width: 0;
+  }
+  #insight-bar .insight + .insight {
+    border-left: 1px solid rgba(255,255,255,0.15);
+    padding-left: var(--sp-xl);
+  }
+
+  /* —— 提示 —— */
+  #hint {
+    position: absolute;
+    bottom: 200px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: var(--fs-label);
+    color: rgba(255,255,255,0.4);
+    pointer-events: none;
+    z-index: 5;
+  }
+</style>
+</head>
+<body data-page="12" data-total="40">
+<div id="stage">
+<main id="main">
+  <canvas id="three-canvas"></canvas>
+  <div id="hud-layer"></div>
+  <div id="hint">拖动同伴，观察声音如何衰减</div>
+  <div id="insight-bar">
+    <span class="insight">声音是一圈一圈扩散的，<br>你无法让它只传给某一个人。</span>
+    <span class="insight">距离每增加一倍，能量散到<br>四倍面积，很快被噪声淹没。</span>
+    <span class="insight">想让五个人听到，就要让<br>五百个人都听到——没有隐私，没有地址。</span>
+  </div>
+</main>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script src="assets/lib/three.min.js"></script>
+<script>
+(function () {
+  'use strict';
+
+  // ============================================================
+  // 0. 挂载 Lec 页眉
+  // ============================================================
+  Lec.mount({
+    index: 12,
+    kicker: '声音的半径',
+    title: '声音能传多远？',
+    take: '声音的局限：你想让五个人听到，就要让五百个人都听到。没有隐私，没有地址。'
+  });
+
+  // ============================================================
+  // 1. 常量与数据
+  // ============================================================
+  var LW = Lec.K.SOUND_SOURCE_LW;       // 80 dB
+  var AN = Lec.K.AMBIENT_NOISE;         // 30 dB
+  var RD = Lec.K.REF_DIST;              // 1 m
+
+  var OBS = [
+    { dist: 0.5,  label: '耳语也清晰',          color: '#ff8c42' },
+    { dist: 2,    label: '正常交谈',              color: '#f7c948' },
+    { dist: 8,    label: '需要提高音量',          color: '#a8e06e' },
+    { dist: 32,   label: '勉强听见，词句模糊',    color: '#4dc9f6' },
+    { dist: 128,  label: '低于环境噪声，听不到',  color: '#7b68ee' },
+    { dist: 500,  label: '完全沉默',              color: '#9b59b6' }
+  ];
+
+  // 3D 场景距离映射 (对数)
+  var MAX_3D = 5.2;
+  function realTo3D(r) {
+    return Math.log(r / 0.25 + 1) / Math.log(500 / 0.25 + 1) * MAX_3D;
+  }
+  function threeDToReal(d) {
+    var t = d / MAX_3D;
+    return 0.25 * (Math.pow(500 / 0.25 + 1, t) - 1);
+  }
+
+  // SPL 计算
+  function calcSPL(realDist) {
+    var d = Math.max(realDist, 0.01);
+    return LW - 20 * Math.log10(d / RD) - 11;
+  }
+
+  // 听感标签阈值
+  function getHearingLabel(spl) {
+    if (spl > 67) return '耳语也清晰';
+    if (spl > 55) return '正常交谈';
+    if (spl > 43) return '需要提高音量';
+    if (spl > 31) return '勉强听见，词句模糊';
+    if (spl > AN)  return '低于环境噪声，听不到';
+    return '完全沉默';
+  }
+
+  // ============================================================
+  // 2. Three.js 场景搭建
+  // ============================================================
+  var canvas = document.getElementById('three-canvas');
+  var renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true, alpha: false });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.setSize(Deck.W, Deck.H);
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+  renderer.setClearColor(0x0a0a14);
+
+  var scene = new THREE.Scene();
+
+  // 相机 —— 俯视角度
+  var camera = new THREE.PerspectiveCamera(48, Deck.W / Deck.H, 0.5, 60);
+  camera.position.set(-1.5, 9.5, 5.5);
+  camera.lookAt(2.2, 0, 0);
+
+  // 光照
+  var ambient = new THREE.AmbientLight(0x334466, 1.2);
+  scene.add(ambient);
+  var dirLight = new THREE.DirectionalLight(0xffffff, 0.6);
+  dirLight.position.set(5, 12, 3);
+  scene.add(dirLight);
+
+  // 地面
+  var groundGeo = new THREE.PlaneGeometry(18, 18);
+  var groundMat = new THREE.MeshStandardMaterial({ color: 0x1a1a2e, roughness: 0.9 });
+  var ground = new THREE.Mesh(groundGeo, groundMat);
+  ground.rotation.x = -Math.PI / 2;
+  ground.position.y = -0.05;
+  ground.receiveShadow = true;
+  scene.add(ground);
+
+  // 网格辅助线
+  var grid = new THREE.GridHelper(16, 32, 0x2a2a3e, 0x1a1a2a);
+  grid.position.y = 0;
+  scene.add(grid);
+
+  // ============================================================
+  // 3. 声源
+  // ============================================================
+  var sourceGroup = new THREE.Group();
+  sourceGroup.position.set(0, 0, 0);
+
+  // 内核
+  var coreGeo = new THREE.SphereGeometry(0.18, 32, 32);
+  var coreMat = new THREE.MeshStandardMaterial({ color: 0xffaa44, emissive: 0xff6600, emissiveIntensity: 1.5, roughness: 0.2 });
+  var core = new THREE.Mesh(coreGeo, coreMat);
+  sourceGroup.add(core);
+
+  // 光晕
+  var glowGeo = new THREE.SphereGeometry(0.28, 32, 32);
+  var glowMat = new THREE.MeshBasicMaterial({ color: 0xff9944, transparent: true, opacity: 0.25, depthWrite: false });
+  var glow = new THREE.Mesh(glowGeo, glowMat);
+  sourceGroup.add(glow);
+
+  // 外光晕
+  var outerGlowGeo = new THREE.SphereGeometry(0.42, 32, 32);
+  var outerGlowMat = new THREE.MeshBasicMaterial({ color: 0xff7722, transparent: true, opacity: 0.08, depthWrite: false });
+  var outerGlow = new THREE.Mesh(outerGlowGeo, outerGlowMat);
+  sourceGroup.add(outerGlow);
+
+  scene.add(sourceGroup);
+
+  // 点光源
+  var ptLight = new THREE.PointLight(0xff9944, 30, 8, 1.5);
+  ptLight.position.set(0, 0.3, 0);
+  scene.add(ptLight);
+
+  // ============================================================
+  // 4. 同伴角色
+  // ============================================================
+  var companions = [];
+  var companionMeshes = []; // 用于 raycasting 的可命中 mesh 列表
+
+  function createCompanion(colorHex) {
+    var group = new THREE.Group();
+
+    // 身体
+    var bodyGeo = new THREE.CylinderGeometry(0.07, 0.09, 0.28, 16);
+    var bodyMat = new THREE.MeshStandardMaterial({ color: colorHex, roughness: 0.5, metalness: 0.2 });
+    var body = new THREE.Mesh(bodyGeo, bodyMat);
+    body.position.y = 0.14;
+    body.castShadow = true;
+    group.add(body);
+
+    // 头
+    var headGeo = new THREE.SphereGeometry(0.1, 16, 16);
+    var headMat = new THREE.MeshStandardMaterial({ color: colorHex, roughness: 0.4, metalness: 0.1 });
+    var head = new THREE.Mesh(headGeo, headMat);
+    head.position.y = 0.34;
+    head.castShadow = true;
+    head.name = 'companion-head';
+    group.add(head);
+
+    // 顶上小球（拖拽提示点）
+    var dotGeo = new THREE.SphereGeometry(0.05, 8, 8);
+    var dotMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+    var dot = new THREE.Mesh(dotGeo, dotMat);
+    dot.position.y = 0.46;
+    dot.name = 'companion-dot';
+    group.add(dot);
+
+    group.userData = { colorHex: colorHex };
+    return group;
+  }
+
+  OBS.forEach(function (obs, i) {
+    var group = createCompanion(obs.color);
+    var d3 = realTo3D(obs.dist);
+    group.position.set(d3, 0, 0);
+    group.userData.obsIndex = i;
+    group.userData.presetDist3D = d3;
+    group.userData.presetRealDist = obs.dist;
+    scene.add(group);
+    companions.push(group);
+
+    // 收集可命中的子 mesh
+    group.traverse(function (child) {
+      if (child.isMesh) {
+        child.userData.companionGroup = group;
+        companionMeshes.push(child);
+      }
+    });
+  });
+
+  // ============================================================
+  // 5. 虚位标记（ghost）
+  // ============================================================
+  var ghostMarkers = [];
+  OBS.forEach(function (obs) {
+    var d3 = realTo3D(obs.dist);
+    var ringGeo = new THREE.TorusGeometry(0.12, 0.015, 8, 24);
+    var ringMat = new THREE.MeshBasicMaterial({ color: 0x888899, transparent: true, opacity: 0.35, depthWrite: false });
+    var ring = new THREE.Mesh(ringGeo, ringMat);
+    ring.rotation.x = -Math.PI / 2;
+    ring.position.set(d3, 0.02, 0);
+    scene.add(ring);
+    ghostMarkers.push({ mesh: ring, dist3D: d3, realDist: obs.dist });
+  });
+
+  // ============================================================
+  // 6. 声线
+  // ============================================================
+  var soundLines = [];
+  companions.forEach(function (comp) {
+    var positions = new Float32Array(6);
+    positions[0] = 0; positions[1] = 0.02; positions[2] = 0;
+    positions[3] = comp.position.x; positions[4] = 0.02; positions[5] = comp.position.z;
+    var geom = new THREE.BufferGeometry();
+    geom.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geom.boundingSphere = new THREE.Sphere(new THREE.Vector3(2.5, 0.02, 0), 5);
+    var mat = new THREE.LineBasicMaterial({
+      color: comp.userData.colorHex,
+      transparent: true,
+      opacity: 0.6,
+      depthTest: true
+    });
+    var line = new THREE.Line(geom, mat);
+    line.renderOrder = 1;
+    line.frustumCulled = false;
+    scene.add(line);
+    soundLines.push({ line: line, companion: comp });
+  });
+
+  // ============================================================
+  // 7. 衰减曲线（地面上的参考线）
+  // ============================================================
+  var CURVE_SEGMENTS = 120;
+  var curvePositions = new Float32Array((CURVE_SEGMENTS + 1) * 3);
+  for (var i = 0; i <= CURVE_SEGMENTS; i++) {
+    var t = i / CURVE_SEGMENTS;
+    var r3 = t * MAX_3D;
+    var rr = threeDToReal(r3);
+    var sp = calcSPL(rr);
+    var normSPL = Math.max(0, Math.min(1, (sp - 10) / 70));
+    curvePositions[i * 3] = r3;
+    curvePositions[i * 3 + 1] = 0.015 + i * 0.00012;
+    curvePositions[i * 3 + 2] = normSPL * 0.15;
+  }
+  var curveGeo = new THREE.BufferGeometry();
+  curveGeo.setAttribute('position', new THREE.BufferAttribute(curvePositions, 3));
+  // 手动设置包围球，避免自动计算时的 NaN（点集近似共面）
+  curveGeo.boundingSphere = new THREE.Sphere(new THREE.Vector3(2.6, 0.02, 0.04), 3.5);
+  var curveMat = new THREE.LineBasicMaterial({ color: 0x4488aa, transparent: true, opacity: 0.35, depthTest: true });
+  var decayCurve = new THREE.Line(curveGeo, curveMat);
+  decayCurve.frustumCulled = false;
+  scene.add(decayCurve);
+
+  // ============================================================
+  // 8. 球面波 —— 扩散环
+  // ============================================================
+  var WAVE_COUNT = 18;
+  var WAVE_SPEED = 0.55; // cycles/sec
+  var waveRings = [];
+  for (var w = 0; w < WAVE_COUNT; w++) {
+    var wGeo = new THREE.TorusGeometry(1, 0.01, 8, 80);
+    var wMat = new THREE.MeshBasicMaterial({
+      color: 0x4dc9f6,
+      transparent: true,
+      opacity: 0,
+      depthWrite: false
+    });
+    var wRing = new THREE.Mesh(wGeo, wMat);
+    wRing.rotation.x = -Math.PI / 2;
+    wRing.position.y = 0.025;
+    wRing.renderOrder = 0;
+    wRing.userData.phase = w / WAVE_COUNT;
+    scene.add(wRing);
+    waveRings.push(wRing);
+  }
+
+  // ============================================================
+  // 9. HUD DOM 标签
+  // ============================================================
+  var hudLayer = document.getElementById('hud-layer');
+  var labelEls = [];
+
+  companions.forEach(function (comp, i) {
+    var el = document.createElement('div');
+    el.className = 'cp-label';
+    el.innerHTML =
+      '<div class="cp-dot" style="background:' + comp.userData.colorHex + '"></div>' +
+      '<span class="cp-reading">-- dB</span>' +
+      '<span class="cp-status">' + OBS[i].label + '</span>';
+    hudLayer.appendChild(el);
+    labelEls.push({ el: el, companion: comp });
+  });
+
+  function updateLabels() {
+    labelEls.forEach(function (item) {
+      var comp = item.companion;
+      var worldPos = new THREE.Vector3(comp.position.x, 0.5, comp.position.z);
+      var projected = worldPos.clone().project(camera);
+      var sx = (projected.x * 0.5 + 0.5) * Deck.W;
+      var sy = (-projected.y * 0.5 + 0.5) * Deck.H;
+
+      // 判断是否在相机后方
+      var behind = projected.z > 1;
+      item.el.style.opacity = behind ? '0' : '1';
+      item.el.style.left = sx + 'px';
+      item.el.style.top = sy + 'px';
+
+      if (!behind) {
+        var d3 = Math.sqrt(comp.position.x * comp.position.x + comp.position.z * comp.position.z);
+        var realDist = threeDToReal(d3);
+        var spl = calcSPL(realDist);
+        var hearingLabel = getHearingLabel(spl);
+
+        var readingEl = item.el.querySelector('.cp-reading');
+        var statusEl = item.el.querySelector('.cp-status');
+
+        readingEl.textContent = Math.round(spl) + ' dB';
+        statusEl.textContent = hearingLabel;
+
+        // 低于环境噪声时变灰
+        if (spl < AN) {
+          statusEl.style.color = '#888';
+          readingEl.style.color = '#888';
+        } else {
+          statusEl.style.color = '#fff';
+          readingEl.style.color = '#ccc';
+        }
+      }
+    });
+  }
+
+  // ============================================================
+  // 10. 拖拽交互
+  // ============================================================
+  var raycaster = new THREE.Raycaster();
+  raycaster.far = 20;
+  var mouse = new THREE.Vector2();
+  var dragPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+  var dragTarget = null;
+  var dragPlaneIntersect = new THREE.Vector3();
+  var hoverTarget = null;
+
+  function getPointerNDC(e) {
+    var pt = Deck.pt(canvas, e);
+    mouse.x = (pt.x / Deck.W) * 2 - 1;
+    mouse.y = -(pt.y / Deck.H) * 2 + 1;
+    return mouse;
+  }
+
+  function findCompanion(e) {
+    getPointerNDC(e);
+    raycaster.setFromCamera(mouse, camera);
+    var hits = raycaster.intersectObjects(companionMeshes, false);
+    if (hits.length > 0) {
+      return hits[0].object.userData.companionGroup;
+    }
+    return null;
+  }
+
+  function groundIntersect(e) {
+    getPointerNDC(e);
+    raycaster.setFromCamera(mouse, camera);
+    var target = new THREE.Vector3();
+    var hit = raycaster.ray.intersectPlane(dragPlane, target);
+    return hit ? target : null;
+  }
+
+  canvas.addEventListener('pointerdown', function (e) {
+    var comp = findCompanion(e);
+    if (comp) {
+      dragTarget = comp;
+      canvas.style.cursor = 'grabbing';
+      canvas.setPointerCapture(e.pointerId);
+      e.preventDefault();
+    }
+  });
+
+  canvas.addEventListener('pointermove', function (e) {
+    if (dragTarget) {
+      var pt = groundIntersect(e);
+      if (pt) {
+        // 限制在地面范围内
+        pt.x = THREE.MathUtils.clamp(pt.x, -6, 8);
+        pt.z = THREE.MathUtils.clamp(pt.z, -3, 3);
+        dragTarget.position.x = pt.x;
+        dragTarget.position.z = pt.z;
+      }
+    } else {
+      var comp = findCompanion(e);
+      if (comp !== hoverTarget) {
+        // 恢复旧 hover
+        if (hoverTarget) {
+          hoverTarget.traverse(function (c) {
+            if (c.isMesh && c.name === 'companion-dot') {
+              c.material.color.set(0xffffff);
+            }
+          });
+        }
+        hoverTarget = comp;
+        if (hoverTarget) {
+          hoverTarget.traverse(function (c) {
+            if (c.isMesh && c.name === 'companion-dot') {
+              c.material.color.set(0xffff00);
+            }
+          });
+          canvas.style.cursor = 'grab';
+        } else {
+          canvas.style.cursor = 'default';
+        }
+      }
+    }
+  });
+
+  canvas.addEventListener('pointerup', function (e) {
+    if (dragTarget) {
+      dragTarget = null;
+      canvas.style.cursor = hoverTarget ? 'grab' : 'default';
+    }
+  });
+
+  canvas.addEventListener('pointerleave', function () {
+    if (dragTarget) {
+      dragTarget = null;
+    }
+    if (hoverTarget) {
+      hoverTarget.traverse(function (c) {
+        if (c.isMesh && c.name === 'companion-dot') {
+          c.material.color.set(0xffffff);
+        }
+      });
+      hoverTarget = null;
+    }
+    canvas.style.cursor = 'default';
+  });
+
+  // 触摸事件
+  canvas.addEventListener('touchstart', function (e) {
+    if (e.touches.length === 1) {
+      var comp = findCompanion(e.touches[0]);
+      if (comp) {
+        dragTarget = comp;
+        e.preventDefault();
+      }
+    }
+  }, { passive: false });
+
+  canvas.addEventListener('touchmove', function (e) {
+    if (dragTarget && e.touches.length === 1) {
+      var pt = groundIntersect(e.touches[0]);
+      if (pt) {
+        pt.x = THREE.MathUtils.clamp(pt.x, -6, 8);
+        pt.z = THREE.MathUtils.clamp(pt.z, -3, 3);
+        dragTarget.position.x = pt.x;
+        dragTarget.position.z = pt.z;
+      }
+      e.preventDefault();
+    }
+  }, { passive: false });
+
+  canvas.addEventListener('touchend', function () {
+    dragTarget = null;
+  });
+
+  // ============================================================
+  // 11. 动画循环
+  // ============================================================
+  function updateSoundLines() {
+    soundLines.forEach(function (item) {
+      var comp = item.companion;
+      var line = item.line;
+      var d3 = Math.sqrt(comp.position.x * comp.position.x + comp.position.z * comp.position.z);
+      var realDist = threeDToReal(d3);
+      var spl = calcSPL(realDist);
+
+      var attr = line.geometry.attributes.position;
+      attr.setXYZ(0, 0, 0.02, 0);
+      attr.setXYZ(1, comp.position.x, 0.02, comp.position.z);
+      attr.needsUpdate = true;
+
+      // 低于环境噪声时隐藏声线
+      var opacity = spl < AN ? 0 : Math.max(0.1, Math.min(0.7, (spl - AN) / (70 - AN) * 0.7));
+      line.material.opacity = opacity;
+      line.visible = spl >= AN;
+    });
+  }
+
+  function updateDecayCurve() {
+    // 衰减曲线是静态的，不需要每帧更新
+    // 保留此函数以备将来需要
+  }
+
+  var timeAccum = 0;
+  Deck.loop(function (time, dt) {
+    // 限制 dt 防止跳帧
+    var safeDt = Math.min(dt, 0.1);
+    timeAccum += safeDt;
+
+    // 更新声线
+    updateSoundLines();
+
+    // 更新衰减曲线
+    updateDecayCurve();
+
+    // 更新球面波
+    waveRings.forEach(function (ring) {
+      ring.userData.phase += safeDt * WAVE_SPEED;
+      if (ring.userData.phase > 1) ring.userData.phase -= 1;
+
+      var r = ring.userData.phase * MAX_3D;
+      ring.scale.set(r, r, 1);
+
+      var rr = threeDToReal(r);
+      var spl = calcSPL(rr);
+      var opacity = spl < AN ? 0 : Math.max(0, (spl - AN) / (70 - AN) * 0.45);
+      ring.material.opacity = opacity;
+    });
+
+    // 声源脉动
+    var pulse = 1 + Math.sin(timeAccum * 3.5) * 0.06;
+    glow.scale.setScalar(pulse);
+    outerGlow.scale.setScalar(pulse * 0.95 + 0.05);
+    core.material.emissiveIntensity = 1.5 + Math.sin(timeAccum * 3.5) * 0.3;
+
+    // 更新标签
+    updateLabels();
+
+    // 渲染
+    renderer.render(scene, camera);
+  });
+
+  // 初始标签更新
+  updateLabels();
+
+  // 响应窗口大小变化
+  Deck.onResize(function () {
+    renderer.setSize(Deck.W, Deck.H);
+    camera.aspect = Deck.W / Deck.H;
+    camera.updateProjectionMatrix();
+  });
+
+})();
+</script>
+</body>
+</html>

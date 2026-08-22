@@ -1,0 +1,228 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  energy-race-game{position:relative;display:block;flex:1;min-width:0;min-height:0;margin:45px 80px;overflow:hidden;border:1px solid var(--line);border-radius:var(--radius-3);background:var(--panel-deep);box-shadow:var(--shadow-panel)}
+  .world{position:absolute;inset:0;overflow:hidden}
+  .hud{position:absolute;z-index:2;inset:0;pointer-events:none}
+  .hud button,.hud select{pointer-events:auto}
+  .race-head{position:absolute;top:22px;left:28px;right:28px;height:56px;display:flex;align-items:flex-start;justify-content:space-between}
+  .kicker{color:var(--primary);font:700 var(--fs-label)/1.4 var(--font-mono);letter-spacing:.14em}
+  .race-head h1{margin-top:2px}
+  .badges{display:flex;gap:10px;align-items:center;padding-top:7px}
+  .badge{min-width:112px;padding:7px 11px;border:1px solid var(--line-strong);border-radius:999px;color:var(--muted);background:var(--panel);font-size:var(--fs-label);font-weight:700;text-align:center;line-height:1.4}
+  .badge.done{border-color:var(--primary);color:var(--primary);background:var(--primary-soft);box-shadow:0 0 14px var(--primary-soft)}
+  .controls{position:absolute;top:92px;left:28px;right:28px;height:64px;display:flex;align-items:center;gap:16px;padding:10px 16px;border:1px solid var(--line);border-radius:var(--radius-2);background:rgba(13,27,38,.94);box-shadow:var(--shadow-panel)}
+  .controls .ctl{flex-wrap:nowrap}
+  .controls label{white-space:nowrap}
+  .controls select{min-width:96px}
+  .go{min-width:104px;border-color:var(--accent)!important;color:var(--accent)!important;background:var(--accent-soft)!important;font-size:var(--fs-sec)!important;font-weight:800}
+  .reset{margin-left:auto;font-size:var(--fs-sec)!important}
+  .model-note{max-width:275px;margin-left:auto;color:var(--muted);font-size:var(--fs-sec);line-height:1.4}
+  .process-wrap{position:absolute;top:170px;left:28px;right:28px;height:82px}
+  .process-wrap .k-process{gap:7px;--process-axis-y:50%}
+  .process-wrap .k-process>.step{justify-content:center;padding:8px 9px;border-radius:var(--radius-1);font-size:var(--fs-label);font-weight:700;line-height:1.3;text-align:center}
+  .process-wrap .k-process>.arw{flex-basis:18px}
+  .process-wrap .k-process>.arw::before{font-size:18px}
+  .track-label{position:absolute;top:274px;color:var(--muted);font-size:var(--fs-label);font-weight:700}
+  .start-label{left:70px}.finish-label{right:91px}
+  .distance{position:absolute;top:274px;left:50%;transform:translateX(-50%);color:var(--primary);font:700 var(--fs-sec)/1.4 var(--font-mono)}
+  .telemetry{position:absolute;top:300px;right:62px;width:230px;display:flex;flex-direction:column;gap:8px}
+  .telemetry .readout{padding:9px 12px;background:rgba(9,22,32,.92)}
+  .status{position:absolute;top:497px;left:50%;width:760px;transform:translateX(-50%);padding:8px 14px;border:1px solid var(--primary-line);border-radius:999px;color:var(--text);background:rgba(9,22,32,.94);font-size:var(--fs-sec);line-height:1.4;text-align:center}
+  .records{position:absolute;left:28px;right:28px;bottom:44px;height:190px;padding:14px 16px;border:1px solid var(--line);border-radius:var(--radius-2);background:rgba(9,22,32,.94)}
+  .record-head{display:flex;align-items:center;justify-content:space-between;height:28px}
+  .record-head h2{font-size:var(--fs-h2)}
+  .record-head .secondary{font-size:var(--fs-sec)}
+  .record-pair{position:relative;display:flex;gap:38px;height:130px;margin-top:8px}
+  .record-pair::before{position:absolute;top:12px;bottom:12px;left:50%;width:22px;border-top:2px solid var(--primary-line);border-bottom:2px solid var(--primary-line);content:"";transform:translateX(-50%)}
+  .record{flex:1;min-width:0;padding:10px 14px;border:1px solid var(--line-strong);border-radius:var(--radius-1);background:var(--panel)}
+  .record.empty{display:grid;place-items:center;color:var(--faint);font-size:var(--fs-sec)}
+  .record-title{display:flex;justify-content:space-between;color:var(--muted);font-size:var(--fs-label);font-weight:700}
+  .record-values{display:flex;gap:10px;margin-top:8px}
+  .rv{flex:1;padding:6px 8px;border-left:2px solid var(--line-strong);color:var(--muted);font-size:var(--fs-label);line-height:1.35}
+  .rv strong{display:block;color:var(--text);font:700 var(--fs-sec)/1.4 var(--font-mono)}
+  .rv.diff{border-color:var(--accent);background:var(--accent-soft)}
+  .record-cost{margin-top:7px;color:var(--primary);font:700 var(--fs-sec)/1.4 var(--font-mono)}
+  .shake{animation:shake 320ms ease-out}
+  .conclusion{position:absolute;z-index:5;left:265px;right:265px;top:352px;padding:22px 32px;border:1px solid var(--accent);border-radius:var(--radius-2);color:var(--text);background:rgba(13,27,38,.97);box-shadow:0 0 38px var(--accent-soft);font-size:var(--fs-lead);font-weight:800;line-height:1.5;text-align:center;opacity:0;transform:translateY(12px);pointer-events:none}
+  .conclusion.show{opacity:1;transform:translateY(0);transition:opacity 260ms ease-out,transform 260ms ease-out}
+  .footnote{position:absolute;right:30px;bottom:13px;color:var(--faint);font-size:var(--fs-sec);line-height:1.4}
+  @keyframes shake{0%,100%{transform:translateX(0)}25%{transform:translateX(-8px)}48%{transform:translateX(7px)}70%{transform:translateX(-5px)}}
+  @media(prefers-reduced-motion:reduce){*{animation-duration:1ms!important;transition-duration:1ms!important}}
+</style>
+</head>
+<body data-page="07" data-total="50">
+<div id="stage">
+  <energy-race-game id="game" aria-label="移动成本控制变量试走">
+    <div class="world strata"><canvas id="raceCanvas" class="cv-fill" width="1440" height="810" aria-hidden="true"></canvas></div>
+    <div class="hud">
+      <div class="race-head">
+        <div><div class="kicker">BODY / COST · 07</div><h1>同一段路，怎样走更省？</h1></div>
+        <div class="badges" aria-label="比较进度">
+          <span class="badge" data-badge="mass">体形 0/1</span><span class="badge" data-badge="gait">步态 0/1</span><span class="badge" data-badge="speed">速度 0/1</span>
+        </div>
+      </div>
+
+      <div class="controls ctl" aria-label="试走条件">
+        <label>体形<select id="mass"><option value="45">45 kg</option><option value="70" selected>70 kg</option><option value="95">95 kg</option></select></label>
+        <label>步态<select id="gait"><option value="walk" selected>步行</option><option value="run">跑步</option></select></label>
+        <label>速度<select id="speed"><option value="1.5" selected>1.5 m/s</option><option value="2.5">2.5 m/s</option><option value="3.5">3.5 m/s</option></select></label>
+        <button class="go" id="go" type="button">开走</button>
+        <div class="model-note">固定路程，只改一个条件，比较才有解释力。</div>
+        <button class="reset" id="reset" type="button">按相同初态重走</button>
+      </div>
+
+      <div class="process-wrap">
+        <div class="k-process" id="process" aria-label="试走过程">
+          <div class="axis"></div>
+          <div class="step current">1 选择体形</div><div class="arw">到</div>
+          <div class="step">2 选择步态</div><div class="arw">到</div>
+          <div class="step">3 选择速度</div><div class="arw">到</div>
+          <div class="step">4 走完路程</div><div class="arw">到</div>
+          <div class="step">5 累计成本</div><div class="arw">到</div>
+          <div class="step">6 控制变量比较</div>
+        </div>
+      </div>
+
+      <div class="track-label start-label">起点</div><div class="distance" id="distance">200 m</div><div class="track-label finish-label">终点</div>
+      <div class="telemetry">
+        <div class="readout"><span class="key">预计用时</span><span class="value" id="timeValue">—</span></div>
+        <div class="readout"><span class="key">相对能耗</span><span class="value current" id="costValue">0 点</span></div>
+      </div>
+      <div class="status" id="status" role="status" aria-live="polite">先完成一次试走，再只改一个条件。</div>
+
+      <section class="records" id="recordsBox" aria-label="控制变量比较记录">
+        <div class="record-head"><h2>最近两次试走</h2><span class="secondary">差异项会以琥珀色标出</span></div>
+        <div class="record-pair" id="recordPair"><div class="record empty">第一次记录等待中</div><div class="record empty">第二次记录等待中</div></div>
+      </section>
+      <div class="conclusion" id="conclusion">不存在脱离体形与速度的“最省步态”：移动成本由三者共同决定。</div>
+      <div class="footnote">相对能耗点：课堂比较模型，不是人体热量测量。</div>
+    </div>
+  </energy-race-game>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script>
+(function(){
+  'use strict';
+  var DISTANCE_M = 200;
+  var SPEEDS = [1.5, 2.5, 3.5];
+  var FACTOR = {walk:[1.00,1.25,1.80],run:[1.55,1.15,1.00]};
+  var GAIT_NAME = {walk:'步行',run:'跑步'};
+
+  function initialState(){return {selection:{mass:70,gait:'walk',speed:1.5},running:false,progress:0,records:[],earned:{mass:false,gait:false,speed:false},trace:[]};}
+  function snapshot(value){return JSON.parse(JSON.stringify(value));}
+  function differences(a,b){return ['mass','gait','speed'].filter(function(k){return a[k]!==b[k];});}
+  function calculate(sel){
+    var i=SPEEDS.indexOf(sel.speed);
+    return {seconds:DISTANCE_M/sel.speed,cost:100*(sel.mass/70)*FACTOR[sel.gait][i]};
+  }
+
+  class EnergyRaceGame extends HTMLElement{
+    connectedCallback(){
+      if(this.ready)return; this.ready=true; this.state=initialState();
+      this.cv=this.querySelector('#raceCanvas'); this.ctx=Deck.fit(this.cv);
+      this.mass=this.querySelector('#mass'); this.gait=this.querySelector('#gait'); this.speed=this.querySelector('#speed');
+      this.go=this.querySelector('#go'); this.resetButton=this.querySelector('#reset');
+      this.status=this.querySelector('#status'); this.timeValue=this.querySelector('#timeValue'); this.costValue=this.querySelector('#costValue');
+      this.recordPair=this.querySelector('#recordPair'); this.recordsBox=this.querySelector('#recordsBox'); this.conclusion=this.querySelector('#conclusion');
+      this.steps=Array.from(this.querySelectorAll('.k-process>.step'));
+      var self=this;
+      [this.mass,this.gait,this.speed].forEach(function(el){el.addEventListener('change',function(){self.syncSelection(el.id);});});
+      this.go.addEventListener('click',function(){self.start();});
+      this.resetButton.addEventListener('click',function(){self.reset();});
+      Deck.onResize(function(){self.ctx=Deck.fit(self.cv);self.draw();});
+      this.render(); this.draw();
+    }
+    syncSelection(changed){
+      this.state.selection={mass:Number(this.mass.value),gait:this.gait.value,speed:Number(this.speed.value)};
+      this.setStep(changed==='mass'?0:changed==='gait'?1:2);
+      this.renderReadout(); this.draw();
+    }
+    start(){
+      if(this.state.running)return;
+      var previous=this.state.records[this.state.records.length-1];
+      var diff=previous?differences(previous.selection,this.state.selection):[];
+      if(previous && diff.length!==1){
+        this.recordsBox.classList.remove('shake'); void this.recordsBox.offsetWidth; this.recordsBox.classList.add('shake');
+        this.status.textContent=diff.length===0?'请只改一个条件后再试。':'你同时改了多个条件；保留两项不变，才能知道是哪一项造成差异。';
+        return;
+      }
+      this.state.running=true; this.state.progress=0; this.runDuration=(DISTANCE_M/this.state.selection.speed)/10*1000;
+      this.go.disabled=true; this.setStep(3); this.status.textContent='人物、用时与能耗正在同步推进。';
+      this.dispatchEvent(new CustomEvent('game-start',{bubbles:true,composed:true,detail:{state:this.getState()}}));
+      var self=this;
+      if(this.stopLoop)this.stopLoop();
+      this.stopLoop=Deck.loop(function(t){
+        var p=Deck.reduced()?1:Lec.P.clamp(t/self.runDuration,0,1);
+        self.state.progress=p; self.renderReadout(); self.draw(t);
+        self.dispatchEvent(new CustomEvent('game-progress',{bubbles:true,composed:true,detail:{state:self.getState(),action:'walk',metrics:calculate(self.state.selection)}}));
+        if(p>=1){if(self.stopLoop)self.stopLoop();self.stopLoop=null;self.finishRun();}
+      },{still:this.runDuration});
+    }
+    finishRun(){
+      var result=calculate(this.state.selection), rec={selection:snapshot(this.state.selection),seconds:result.seconds,cost:result.cost};
+      var previous=this.state.records[this.state.records.length-1], diff=previous?differences(previous.selection,rec.selection):[];
+      this.state.records.push(rec); if(this.state.records.length>2)this.state.records.shift();
+      this.state.trace.push(snapshot(rec)); this.state.running=false; this.go.disabled=false; this.setStep(previous?5:4);
+      if(diff.length===1){this.state.earned[diff[0]]=true;this.status.textContent='有效比较：只改变了“'+({mass:'体形',gait:'步态',speed:'速度'}[diff[0]])+'”。';}
+      else{this.status.textContent='第一次记录完成。现在只改一个条件再试。';}
+      var complete=Object.keys(this.state.earned).every((k)=>this.state.earned[k]);
+      if(complete){this.conclusion.classList.add('show');this.status.textContent='三组控制变量比较完成。';this.setStep(5,true);this.dispatchEvent(new CustomEvent('game-complete',{bubbles:true,composed:true,detail:{score:3,metrics:{comparisons:3},trace:snapshot(this.state.trace)}}));}
+      this.render(); this.draw();
+    }
+    reset(){
+      if(this.stopLoop){this.stopLoop();this.stopLoop=null;}
+      this.state=initialState(); this.mass.value='70';this.gait.value='walk';this.speed.value='1.5';this.go.disabled=false;
+      this.conclusion.classList.remove('show');this.setStep(0);this.render();this.draw();
+      this.dispatchEvent(new CustomEvent('game-reset',{bubbles:true,composed:true}));
+    }
+    getState(){return snapshot(this.state);}
+    setStep(index,allPast){this.steps.forEach(function(el,i){el.classList.toggle('current',!allPast&&i===index);el.classList.toggle('past',allPast||i<index);});}
+    renderReadout(){
+      var r=calculate(this.state.selection), p=this.state.running?this.state.progress:0;
+      this.timeValue.textContent=(this.state.running?Math.max(0,r.seconds*(1-p)):r.seconds).toFixed(1)+' s';
+      this.costValue.textContent=(r.cost*p).toFixed(0)+' 点';
+    }
+    render(){
+      this.renderReadout();
+      var self=this; ['mass','gait','speed'].forEach(function(k){var b=self.querySelector('[data-badge="'+k+'"]');b.classList.toggle('done',self.state.earned[k]);b.textContent=({mass:'体形',gait:'步态',speed:'速度'}[k])+' '+(self.state.earned[k]?'1/1':'0/1');});
+      var pair=this.state.records.slice(-2), diff=pair.length===2?differences(pair[0].selection,pair[1].selection):[];
+      function recordHTML(rec,n){
+        if(!rec)return '<div class="record empty">'+(n===1?'第一次记录等待中':'第二次记录等待中')+'</div>';
+        var s=rec.selection;
+        return '<article class="record"><div class="record-title"><span>试走 '+n+'</span><span>'+rec.seconds.toFixed(1)+' s</span></div><div class="record-values">'+
+          '<div class="rv '+(diff.includes('mass')?'diff':'')+'">体形<strong>'+s.mass+' kg</strong></div>'+
+          '<div class="rv '+(diff.includes('gait')?'diff':'')+'">步态<strong>'+GAIT_NAME[s.gait]+'</strong></div>'+
+          '<div class="rv '+(diff.includes('speed')?'diff':'')+'">速度<strong>'+s.speed.toFixed(1)+' m/s</strong></div></div><div class="record-cost">相对能耗 '+rec.cost.toFixed(0)+' 点</div></article>';
+      }
+      this.recordPair.innerHTML=recordHTML(pair[0],1)+recordHTML(pair[1],2);
+    }
+    draw(now){
+      var ctx=this.ctx||Deck.fit(this.cv), w=this.cv.clientWidth||1440,h=this.cv.clientHeight||810;
+      ctx.clearRect(0,0,w,h);
+      var primary=Deck.token('--primary'),accent=Deck.token('--accent'),line=Deck.token('--line-strong'),muted=Deck.token('--muted'),panel=Deck.token('--panel');
+      var y=430,x1=105,x2=w-140,p=this.state.progress||0,x=Lec.P.lerp(x1,x2,p),sel=this.state.selection;
+      ctx.strokeStyle=line;ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(x1,y);ctx.lineTo(x2,y);ctx.stroke();
+      ctx.strokeStyle=primary;ctx.lineWidth=4;ctx.beginPath();ctx.moveTo(x1,y);ctx.lineTo(x,y);ctx.stroke();
+      for(var m=0;m<=10;m++){var tx=Lec.P.lerp(x1,x2,m/10);ctx.strokeStyle=m/10<=p?primary:line;ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(tx,y-8);ctx.lineTo(tx,y+9);ctx.stroke();}
+      for(var f=0;f<Math.floor(p*18);f++){var fx=Lec.P.lerp(x1,x2,(f+1)/19);ctx.strokeStyle=Deck.rgba('--primary',.55);ctx.lineWidth=3;ctx.beginPath();ctx.ellipse(fx,y+18+(f%2)*4,8,3,(f%2?-.2:.2),0,Math.PI*2);ctx.stroke();}
+      var scale=.82+(sel.mass-45)/50*.18, phase=Deck.reduced()?0:((now||0)/180)*(sel.gait==='run'?1.45:1),swing=Math.sin(phase)*22*(sel.gait==='run'?1.2:.8);
+      ctx.save();ctx.translate(x,y-12);ctx.scale(scale,scale);ctx.strokeStyle=accent;ctx.fillStyle=panel;ctx.lineWidth=5;ctx.lineCap='round';
+      ctx.beginPath();ctx.arc(0,-92,15,0,Math.PI*2);ctx.fill();ctx.stroke();
+      ctx.beginPath();ctx.moveTo(0,-76);ctx.lineTo(0,-30);ctx.moveTo(0,-62);ctx.lineTo(swing*.55,-38);ctx.moveTo(0,-62);ctx.lineTo(-swing*.55,-38);ctx.moveTo(0,-30);ctx.lineTo(swing,0);ctx.moveTo(0,-30);ctx.lineTo(-swing,0);ctx.stroke();
+      ctx.fillStyle=primary;[-30,-62].forEach(function(jy){ctx.beginPath();ctx.arc(0,jy,5,0,Math.PI*2);ctx.fill();});ctx.restore();
+      var barX=w-292,barY=438,barW=230;ctx.fillStyle=Deck.rgba('--line-strong',.75);Deck.rr(ctx,barX,barY,barW,12,6);ctx.fill();ctx.fillStyle=accent;Deck.rr(ctx,barX,barY,barW*p,12,6);ctx.fill();
+      ctx.strokeStyle=Deck.rgba('--primary',.28);ctx.lineWidth=2;ctx.beginPath();ctx.arc(w+165,h+175,390,Math.PI*1.05,Math.PI*1.62);ctx.stroke();
+    }
+  }
+  customElements.define('energy-race-game',EnergyRaceGame);
+  Deck.init({index:7,total:50});
+})();
+</script>
+</body>
+</html>

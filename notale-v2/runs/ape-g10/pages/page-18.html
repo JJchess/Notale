@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  #main{display:flex;flex-direction:column;gap:14px}
+  .budget-top{height:206px;display:flex;gap:16px;min-height:0}
+  .food-zone{flex:0 0 294px;padding:16px;display:flex;flex-direction:column;gap:10px;background:linear-gradient(145deg,rgba(66,199,194,.16),rgba(16,29,40,.98))}
+  .food-zone h2,.work-zone h2{font-size:var(--fs-h2);margin:0}
+  .food-select{width:100%}
+  .model-note{color:var(--muted);font-size:var(--fs-sec);line-height:var(--lh-sec)}
+  .food-path{display:flex;align-items:center;justify-content:space-between;margin-top:auto;color:var(--primary);font-size:var(--fs-label)}
+  .tool{width:54px;height:42px;display:grid;place-items:center;border:1px solid var(--primary-line);border-radius:var(--radius-sm);background:var(--surface-deep);font-size:24px}
+  .flow{height:2px;flex:1;background:linear-gradient(90deg,var(--primary),rgba(66,199,194,.2));position:relative}
+  .flow::after{content:"›";position:absolute;right:-2px;top:-16px;font-size:24px}
+  .work-zone{flex:1;padding:16px 20px;display:flex;flex-direction:column;gap:8px;background:linear-gradient(135deg,rgba(255,181,71,.08),rgba(23,41,54,.98))}
+  .work-head{display:flex;align-items:center;justify-content:space-between}
+  .alloc{font-family:var(--font-mono);color:var(--accent);font-size:var(--fs-sec)}
+  .labor-row{display:grid;grid-template-columns:78px minmax(0,1fr) 44px;gap:12px;align-items:center;min-height:38px}
+  .labor-row label{font-size:var(--fs-sec);font-weight:700}
+  .labor-row output{font-family:var(--font-mono);color:var(--accent);font-size:var(--fs-sec);text-align:right}
+  input[type="range"]{width:100%;min-height:30px}
+  .chips{display:flex;gap:4px;pointer-events:none}
+  .chip{width:18px;height:8px;border:1px solid var(--line-strong);border-radius:4px;background:var(--surface-high)}
+  .chip.on{background:var(--accent);border-color:var(--accent)}
+  .status-line{min-height:26px;display:flex;align-items:center;justify-content:space-between;gap:16px;font-size:var(--fs-sec);line-height:var(--lh-sec)}
+  #feedback{color:#D7E6E9;display:block;flex:1;align-self:stretch}
+  .reset{flex:0 0 auto}
+  .compare-wrap{flex:1;min-height:0;display:flex;flex-direction:column;gap:10px}
+  .k-comparison{--compare-cols:210px repeat(2,minmax(0,1fr));flex:1;background:rgba(16,29,40,.98);grid-template-rows:52px repeat(4,minmax(52px,1fr) 1px) minmax(62px,1.2fr)}
+  .k-comparison .cell{background:rgba(23,41,54,.46)}
+  .k-comparison .cell.diff{background:var(--accent-soft)}
+  .k-comparison .dim{background:rgba(11,23,33,.82)}
+  .k-comparison>*{padding:8px 16px}
+  .k-comparison .hdr{font-size:var(--fs-lead)}
+  .value-cell{display:flex;align-items:center;gap:14px;font-size:var(--fs-sec);line-height:1.35}
+  .bar-track{height:12px;flex:1;background:#09151E;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+  .bar{height:100%;width:0;background:var(--primary);transition:width 240ms ease-out}
+  .baseline .bar{background:var(--accent)}
+  .num{width:78px;text-align:right;font-family:var(--font-mono);font-weight:700}
+  .final-cell{font-size:var(--fs-lead);font-weight:750}
+  .final-cell .bar-track{height:16px}
+  .connections{display:flex;gap:10px;align-items:center}
+  .link-node{display:flex;align-items:center;gap:6px;color:var(--muted);font-size:var(--fs-label)}
+  .link-node::before{content:"";width:10px;height:10px;border:2px solid var(--primary);border-radius:50%}
+  .link-node.on{color:var(--primary)}
+  .link-node.on::before{background:var(--primary);box-shadow:0 0 10px rgba(66,199,194,.7)}
+  .insight{font-size:var(--fs-sec);line-height:var(--lh-sec);color:var(--muted)}
+  .shake{animation:shake .24s ease-out}
+  .flash{animation:flash .4s ease-out}
+  @keyframes shake{25%{transform:translateX(-5px)}50%{transform:translateX(5px)}75%{transform:translateX(-3px)}}
+  @keyframes flash{50%{color:var(--accent)}}
+  @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body data-page="18" data-total="48">
+<div id="stage">
+<main id="main">
+  <section class="budget-top" aria-label="经营食物预算">
+    <div class="food-zone panel min0">
+      <h2>选择食物基础值</h2>
+      <select id="food" class="food-select" aria-label="选择食物"><option value="18">块茎</option><option value="22">坚果</option><option value="26">肉类</option></select>
+      <p class="model-note">数值均为教学模型单位，不代表固定真实热量。</p>
+      <div class="food-path" aria-hidden="true"><span class="tool">✋</span><span class="flow"></span><span class="tool">石</span><span class="flow"></span><span class="tool">火</span></div>
+    </div>
+    <div class="work-zone panel high min0" id="workZone">
+      <div class="work-head"><h2>分配 12 点劳动</h2>合计不可超过预算<span class="alloc" id="allocated">已分配 — / — 点</span></div>
+      <div class="labor-row"><label for="gather">获取</label><input id="gather" type="range" min="0" max="12" step="1" value="4"><output id="gatherOut">—</output></div>
+      <div class="labor-row"><label for="process">加工</label><input id="process" type="range" min="0" max="12" step="1" value="4"><output id="processOut">—</output></div>
+      <div class="labor-row"><label for="share">分享</label><input id="share" type="range" min="0" max="12" step="1" value="4"><output id="shareOut">—</output></div>
+      <div class="status-line"><span id="feedback" aria-live="polite">拖动筹码，比较身体最终得到的能量。</span><button class="reset" id="reset" type="button">重置预算</button></div>
+    </div>
+  </section>
+
+  <section class="compare-wrap" aria-label="直接取食与当前方案比较">
+    <div class="connections" aria-label="方案条件">完整方案需让三类投入共同工作<span class="link-node" id="nGather">稳定获取</span><span class="link-node" id="nProcess">加工释放</span><span class="link-node" id="nShare">协作回报</span></div>
+    <div class="k-comparison min0">
+      <div class="hdr dim">同一预算维度</div><div class="hdr">直接取食基线</div><div class="hdr">当前方案</div>
+      <div class="dim">毛能量</div><div class="cell value-cell baseline">完整摄入<div class="bar-track"><div class="bar" id="bGross"></div></div><span class="num" id="baseGross">—</span></div><div class="cell value-cell">随获取完成度<div class="bar-track"><div class="bar" id="cGross"></div></div><span class="num" id="gross">—</span></div><div class="rowline"></div>
+      <div class="dim">获取与加工成本</div><div class="cell value-cell baseline">直接取得<div class="bar-track"><div class="bar" id="bCost"></div></div><span class="num" id="baseCost">—</span></div><div class="cell value-cell">获取加加工<div class="bar-track"><div class="bar" id="cCost"></div></div><span class="num" id="cost">—</span></div><div class="rowline"></div>
+      <div class="dim">加工释放增益</div><div class="cell value-cell">未经加工<div class="bar-track"><div class="bar"></div></div><span class="num" id="baseProc">—</span></div><div class="cell value-cell">释放设有上限<div class="bar-track"><div class="bar" id="cProc"></div></div><span class="num" id="procGain">—</span></div><div class="rowline"></div>
+      <div class="dim">分享与协作回报</div><div class="cell value-cell">独自取食<div class="bar-track"><div class="bar"></div></div><span class="num" id="baseShare">—</span></div><div class="cell value-cell">不超过获取量<div class="bar-track"><div class="bar" id="cShare"></div></div><span class="num" id="shareGain">—</span></div><div class="rowline"></div>
+      <div class="dim">最终可用能量</div><div class="cell value-cell final-cell baseline">扣除成本后<div class="bar-track"><div class="bar" id="bNet"></div></div><span class="num" id="baseNet">—</span></div><div class="cell value-cell final-cell diff">与基线相比<div class="bar-track"><div class="bar" id="cNet"></div></div><span class="num accent" id="net">—</span></div>
+    </div>
+    <p class="insight">能量密度或加工都不是“免费能量”：寻找、处理和协作均有成本。脑、食物与社会关系应看作相互作用的反馈系统，而非单一食物造就大脑。</p>
+  </section>
+</main>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script>
+Lec.mount({index:18, kicker:"BODY · FOOD BUDGET", title:"食物不是免费能量", take:"高质量食物与加工能提高可获得能量，但食物、脑与社会关系是相互作用。"});
+(() => {
+  const BUDGET=12, BASE={gross:18,cost:8,proc:0,share:0,net:10};
+  const $=id=>document.getElementById(id);
+  const inputs=[$('gather'),$('process'),$('share')];
+  let userActed=false, locked=false, lockTimer=0;
+  const fmt=n=>Lec.P.formatNumber(n,{maximumFractionDigits:1});
+  const signed=n=>(n>0?'+':'')+fmt(n);
+  function state(){return {food:+$('food').value,gather:+inputs[0].value,process:+inputs[1].value,share:+inputs[2].value};}
+  function metrics(s){
+    const total=s.gather+s.process+s.share;
+    const gross=s.food*Math.min(s.gather/4,1);
+    const proc=Math.min(s.process*2,8);
+    const share=Math.min(s.share,s.gather);
+    const net=gross+proc+share-total;
+    return {total,gross,cost:s.gather+s.process,proc,share,net,delta:net-BASE.net};
+  }
+  function bar(id,v,max=30){$(id).style.width=Lec.P.percent(Math.max(0,Math.min(v,max))/max,{maximumFractionDigits:0});}
+  function setText(id,v,prefix=''){$(id).textContent=prefix+fmt(v)+' 单位';}
+  function enforce(changed){
+    let total=inputs.reduce((a,x)=>a+(+x.value),0);
+    if(total>BUDGET){changed.value=Math.max(0,+changed.value-(total-BUDGET));}
+  }
+  function render(action){
+    const s=state(),m=metrics(s);
+    $('allocated').textContent='已分配 '+fmt(m.total)+' / '+fmt(BUDGET)+' 点';
+    $('gatherOut').textContent=fmt(s.gather);$('processOut').textContent=fmt(s.process);$('shareOut').textContent=fmt(s.share);
+    setText('baseGross',BASE.gross);setText('baseCost',BASE.cost,'−');setText('baseProc',BASE.proc);setText('baseShare',BASE.share);setText('baseNet',BASE.net);
+    setText('gross',m.gross);setText('cost',m.cost,'−');setText('procGain',m.proc,'+');setText('shareGain',m.share,'+');
+    $('net').textContent=fmt(m.net)+'（'+signed(m.delta)+'）';
+    bar('bGross',BASE.gross);bar('bCost',BASE.cost);bar('bNet',BASE.net);bar('cGross',m.gross);bar('cCost',m.cost);bar('cProc',m.proc);bar('cShare',m.share);bar('cNet',m.net);
+    $('nGather').classList.toggle('on',s.gather>=4);$('nProcess').classList.toggle('on',s.process>0);$('nShare').classList.toggle('on',s.share>0&&m.share>0);
+    let msg='还可分配 '+fmt(BUDGET-m.total)+' 点劳动。';
+    if(s.gather<4) msg='食物还没被稳定取得；加工不能替代获取。';
+    else if(s.share>s.gather) msg='没有可分享的剩余，协作回报已封顶。';
+    else if(m.total===BUDGET&&m.net>BASE.net&&s.process>0&&s.share>0) msg='方案越过基线：三项投入共同产生净收益。';
+    else if(m.total===BUDGET) msg='预算已用完；改变分配，优势也会改变。';
+    $('feedback').textContent=msg;
+    if(action&&s.gather<4){$('workZone').classList.remove('shake');void $('workZone').offsetWidth;$('workZone').classList.add('shake');}
+    if(action&&s.share>s.gather){$('shareOut').classList.remove('flash');void $('shareOut').offsetWidth;$('shareOut').classList.add('flash');}
+    if(userActed&&m.total===BUDGET&&!locked){
+      locked=true;inputs.forEach(x=>x.disabled=true);$('food').disabled=true;
+      $('feedback').textContent='没有单一赢家：换食物或换预算，优势会改变。';
+      clearTimeout(lockTimer);lockTimer=setTimeout(()=>{locked=false;inputs.forEach(x=>x.disabled=false);$('food').disabled=false;},2000);
+    }
+  }
+  inputs.forEach(input=>input.addEventListener('input',()=>{userActed=true;enforce(input);render('input');}));
+  $('food').addEventListener('change',()=>{userActed=true;render('food');});
+  $('reset').addEventListener('click',()=>{clearTimeout(lockTimer);locked=false;userActed=false;$('food').value='18';inputs.forEach(x=>{x.value='4';x.disabled=false;});$('food').disabled=false;render();});
+  render();
+})();
+</script>
+</body>
+</html>

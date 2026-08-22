@@ -1,0 +1,891 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  :root {
+    --bg: #111417;
+    --text: #edf2f0;
+    --font-sans: Inter, "Noto Sans SC", "Source Han Sans SC", "Microsoft YaHei", "PingFang SC", Arial, sans-serif;
+    --motion-fast: 180ms;
+    --motion-mid: 420ms;
+    --motion-ease: cubic-bezier(.2,.75,.25,1);
+  }
+
+  #main {
+    display: flex;
+    gap: var(--sp-5);
+  }
+
+  .fracture-workbench {
+    position: relative;
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    min-width: 0;
+    height: 620px;
+    overflow: hidden;
+    background: #14191b;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-md);
+  }
+
+  .bench-head {
+    position: relative;
+    z-index: 8;
+    display: flex;
+    flex: 0 0 68px;
+    align-items: center;
+    justify-content: space-between;
+    min-height: 68px;
+    padding: 0 var(--sp-5);
+    background: rgba(20, 25, 27, .94);
+    border-bottom: 1px solid var(--line);
+  }
+
+  .bench-head h2 {
+    font-size: var(--fs-h2);
+  }
+
+  .bench-state {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-3);
+    color: var(--text-secondary);
+    font-size: var(--fs-label);
+    line-height: 1.35;
+  }
+
+  .state-light {
+    width: 9px;
+    height: 9px;
+    background: var(--accent);
+    border-radius: 50%;
+    box-shadow: 0 0 0 5px var(--accent-soft);
+  }
+
+  .scene-wrap {
+    position: relative;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: hidden;
+    touch-action: none;
+  }
+
+  #fracture-canvas {
+    cursor: crosshair;
+  }
+
+  .scene-label {
+    position: absolute;
+    z-index: 5;
+    pointer-events: none;
+    color: var(--text-secondary);
+    font-size: var(--fs-label);
+    line-height: 1.35;
+  }
+
+  .scene-label::before {
+    display: inline-block;
+    width: 18px;
+    height: 2px;
+    margin-right: var(--sp-2);
+    vertical-align: middle;
+    content: "";
+    background: currentColor;
+  }
+
+  .label-core { left: 48px; top: 386px; }
+  .label-striker { left: 92px; top: 116px; }
+  .label-force { left: 610px; top: 126px; color: var(--primary); }
+
+  .geometry-chain {
+    position: absolute;
+    z-index: 6;
+    top: 18px;
+    right: var(--sp-5);
+    left: var(--sp-5);
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+    min-height: 46px;
+    padding: 0 var(--sp-3);
+    background: rgba(20, 26, 28, .9);
+    border: 1px solid var(--line);
+  }
+
+  .outcome-band {
+    display: flex;
+    min-height: 70px;
+    margin-bottom: var(--sp-2);
+    overflow: hidden;
+    background: rgba(20, 26, 28, .92);
+    border: 1px solid var(--line);
+  }
+
+  .outcome {
+    flex: 1 1 0;
+    min-width: 0;
+    padding: var(--sp-3) var(--sp-4);
+    color: var(--text-muted);
+    border-right: 1px solid var(--line);
+    transition: background-color var(--motion-fast) ease, color var(--motion-fast) ease;
+  }
+
+  .outcome:last-child {
+    border-right: 0;
+  }
+
+  .outcome.is-active {
+    color: var(--text);
+    background: var(--accent-soft);
+    box-shadow: inset 0 3px 0 var(--accent);
+  }
+
+  .outcome-name {
+    display: block;
+    font-size: var(--fs-label);
+    font-weight: 700;
+    line-height: 1.35;
+  }
+
+  .outcome-condition {
+    display: block;
+    margin-top: var(--sp-1);
+    font-size: var(--fs-label);
+    line-height: 1.35;
+  }
+
+  .geometry-node {
+    flex: 1 1 0;
+    min-width: 0;
+    color: var(--text-muted);
+    font-size: var(--fs-label);
+    font-weight: 650;
+    line-height: 1.35;
+    text-align: center;
+  }
+
+  .geometry-node.is-active {
+    color: var(--accent);
+  }
+
+  .geometry-link {
+    flex: 0 0 34px;
+    height: 2px;
+    color: var(--primary);
+    background: currentColor;
+  }
+
+  .geometry-link::after {
+    display: block;
+    width: 8px;
+    height: 8px;
+    margin-top: -4px;
+    margin-left: 24px;
+    content: "";
+    border-top: 2px solid currentColor;
+    border-right: 2px solid currentColor;
+    transform: rotate(45deg);
+  }
+
+  .drag-handle {
+    position: absolute;
+    z-index: 10;
+    width: 30px;
+    height: 30px;
+    padding: 0;
+    border: 2px solid var(--accent);
+    border-radius: 50%;
+    background: #171c1e;
+    box-shadow: 0 0 0 7px var(--accent-soft);
+    transform: translate(-50%, -50%);
+    transition: box-shadow var(--motion-fast) ease, background-color var(--motion-fast) ease;
+    touch-action: none;
+  }
+
+  .drag-handle::after {
+    width: 6px;
+    height: 6px;
+    content: "";
+    background: var(--accent);
+    border-radius: 50%;
+  }
+
+  .drag-handle:hover,
+  .drag-handle:focus-visible {
+    background: var(--accent-soft);
+    box-shadow: 0 0 0 10px rgba(242, 184, 75, .16);
+  }
+
+  .drag-handle.vector {
+    width: 34px;
+    height: 34px;
+  }
+
+  .instruction {
+    position: absolute;
+    z-index: 7;
+    right: var(--sp-5);
+    bottom: var(--sp-5);
+    left: var(--sp-5);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--sp-4);
+    min-height: 58px;
+    padding: var(--sp-3) var(--sp-4);
+    color: var(--text);
+    background: rgba(12, 15, 17, .92);
+    border-left: 3px solid var(--accent);
+  }
+
+  #feedback {
+    font-size: var(--fs-sec);
+    line-height: var(--lh-sec);
+  }
+
+  #reset-btn {
+    flex: 0 0 auto;
+    min-width: 84px;
+  }
+
+  .process-rail {
+    flex: 0 0 320px;
+    min-width: 0;
+    height: 620px;
+    padding: var(--sp-4);
+    background: var(--surface-raised);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-md);
+  }
+
+  .process-heading {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    margin-bottom: var(--sp-2);
+  }
+
+  .process-heading h2 {
+    font-size: var(--fs-h2);
+  }
+
+  .process-heading span {
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+    font-size: var(--fs-label);
+    line-height: 1.35;
+  }
+
+  .k-process.vertical {
+    --process-gap: 8px;
+    height: 378px;
+    padding: var(--sp-2) 0;
+  }
+
+  .k-process.vertical > .axis {
+    left: 18px;
+  }
+
+  .k-process.vertical > .step {
+    display: grid;
+    grid-template-columns: 30px minmax(0, 1fr);
+    align-items: center;
+    gap: var(--sp-2);
+    min-height: 66px;
+    margin-left: 42px;
+    padding: var(--sp-2) var(--sp-3);
+    transition: background-color var(--motion-fast) ease, border-color var(--motion-fast) ease, filter var(--motion-fast) ease;
+  }
+
+  .k-process.vertical > .arw {
+    left: 17px;
+  }
+
+  .step-num {
+    color: var(--primary);
+    font-family: var(--font-mono);
+    font-size: var(--fs-label);
+    font-weight: 700;
+    line-height: 1.35;
+  }
+
+  .step-copy {
+    min-width: 0;
+  }
+
+  .step-title {
+    color: var(--text);
+    font-size: var(--fs-label);
+    font-weight: 700;
+    line-height: 1.35;
+  }
+
+  .step-desc {
+    overflow: hidden;
+    color: var(--text-muted);
+    font-size: var(--fs-label);
+    line-height: 1.35;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .step.is-current .step-num,
+  .step.is-current .step-title {
+    color: var(--accent);
+  }
+
+  .outline-check {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-3);
+    height: 78px;
+    margin-top: var(--sp-2);
+    padding: var(--sp-2) var(--sp-3);
+    background: #141a1c;
+    border: 1px solid var(--line);
+  }
+
+  .outline-item {
+    flex: 1 1 0;
+    min-width: 0;
+    text-align: center;
+  }
+
+  .outline-item svg {
+    display: block;
+    width: 100%;
+    height: 54px;
+  }
+
+  .outline-item span,
+  .outline-arrow {
+    color: var(--text-secondary);
+    font-size: var(--fs-label);
+    line-height: 1.35;
+  }
+
+  .outline-arrow {
+    color: var(--primary);
+    font-size: 22px;
+  }
+
+  #after-edge {
+    opacity: .15;
+    transition: opacity var(--motion-mid) var(--motion-ease);
+  }
+
+  .outline-check.has-result #after-edge {
+    opacity: 1;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      scroll-behavior: auto !important;
+      transition-duration: 0.01ms !important;
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+    }
+  }
+</style>
+</head>
+<body data-page="12" data-total="44">
+<div id="stage">
+<main id="main">
+  <section class="fracture-workbench min0" aria-labelledby="workbench-title">
+    <div class="bench-head">
+      <h2 id="workbench-title">设置受力</h2>
+      <div class="bench-state" aria-live="polite"><span class="state-light"></span><span id="state-text">设置受力</span></div>
+    </div>
+    <div class="scene-wrap no-pan" id="scene-wrap">
+      <canvas id="fracture-canvas" class="cv-fill" aria-hidden="true"></canvas>
+      <div class="geometry-chain" aria-label="受力几何对应关系">
+        <span class="geometry-node is-active" data-geo="0">接触点</span><span class="geometry-link" aria-hidden="true"></span>
+        <span class="geometry-node" data-geo="1">裂纹起点</span><span class="geometry-link" aria-hidden="true"></span>
+        <span class="geometry-node" data-geo="2">脱落区域</span>
+      </div>
+      <span class="scene-label label-core">石核</span>
+      <span class="scene-label label-striker">打击石</span>
+      <span class="scene-label label-force">受力方向</span>
+      <button class="drag-handle contact" id="contact-handle" type="button" role="slider" aria-label="接触点位置" aria-valuemin="0" aria-valuemax="100" aria-valuenow="72" title="拖动接触点；方向键可微调"></button>
+      <button class="drag-handle vector" id="vector-handle" type="button" role="slider" aria-label="施力方向" aria-valuemin="-70" aria-valuemax="70" aria-valuenow="18" title="拖动箭头端点；方向键可微调"></button>
+      <div class="instruction">
+        <p id="feedback">先沿石核外缘移动接触点，再拖动箭头端点；松手完成打击。</p>
+        <button id="reset-btn" type="button" title="恢复完整石核">重置</button>
+      </div>
+    </div>
+  </section>
+
+  <aside class="process-rail min0" aria-labelledby="process-title">
+    <div class="process-heading"><h2 id="process-title">力到边缘</h2><span id="round-state">待操作</span></div>
+    <div class="outcome-band" aria-label="当前几何关系对应的结果">
+      <div class="outcome" data-outcome="flake"><span class="outcome-name">连续脱片</span><span class="outcome-condition">外缘＋合适方向</span></div>
+      <div class="outcome" data-outcome="inside"><span class="outcome-name">钝坑</span><span class="outcome-condition">接触点靠内</span></div>
+      <div class="outcome" data-outcome="glance"><span class="outcome-name">擦痕</span><span class="outcome-condition">方向擦边</span></div>
+    </div>
+    <div class="k-process vertical" id="process-chain">
+      <span class="axis" aria-hidden="true"></span>
+      <div class="step is-current" data-step="0"><span class="step-num">01</span><span class="step-copy"><span class="step-title">接触点</span><span class="step-desc">力从外缘进入</span></span><span class="arw" aria-hidden="true"></span></div>
+      <div class="step" data-step="1"><span class="step-num">02</span><span class="step-copy"><span class="step-title">力方向</span><span class="step-desc">箭头指向石核</span></span><span class="arw" aria-hidden="true"></span></div>
+      <div class="step" data-step="2"><span class="step-num">03</span><span class="step-copy"><span class="step-title">打击</span><span class="step-desc">打击石进入落点</span></span><span class="arw" aria-hidden="true"></span></div>
+      <div class="step" data-step="3"><span class="step-num">04</span><span class="step-copy"><span class="step-title">传递</span><span class="step-desc">受力线向内部展开</span></span><span class="arw" aria-hidden="true"></span></div>
+      <div class="step" data-step="4"><span class="step-num">05</span><span class="step-copy"><span class="step-title">断裂</span><span class="step-desc">裂纹决定脱片</span></span><span class="arw" aria-hidden="true"></span></div>
+      <div class="step" data-step="5"><span class="step-num">06</span><span class="step-copy"><span class="step-title">检查</span><span class="step-desc">对齐打击前后</span></span></div>
+    </div>
+    <div class="outline-check" id="outline-check" aria-label="击打前后轮廓对齐">
+      <div class="outline-item"><svg viewBox="0 0 110 54" aria-hidden="true"><path d="M12 43 L20 18 L47 8 L79 12 L98 28 L87 45 Z" fill="none" stroke="#8d9b98" stroke-width="2"/></svg><span>击打前</span></div>
+      <span class="outline-arrow" aria-hidden="true">→</span>
+      <div class="outline-item"><svg viewBox="0 0 110 54" aria-hidden="true"><path d="M12 43 L20 18 L47 8 L79 12 L98 28 L87 45 Z" fill="none" stroke="#61716f" stroke-width="2"/><path id="after-edge" d="M79 12 L69 24 L82 36" fill="none" stroke="#f2b84b" stroke-width="4" stroke-linecap="round"/></svg><span id="edge-label">等待结果</span></div>
+    </div>
+  </aside>
+</main>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script src="assets/lib/matter.min.js"></script>
+<script>
+Lec.mount({
+  index: 12,
+  kicker: "E3 · FORCE → FRACTURE",
+  title: "力从哪里进入，边缘就从哪里形成",
+  take: "同一个石块，力从哪里进入、朝哪个方向传递，会决定石片怎样脱落，以及能否留下锋利边缘。"
+});
+
+(function () {
+  var Engine = Matter.Engine;
+  var Bodies = Matter.Bodies;
+  var Body = Matter.Body;
+  var Composite = Matter.Composite;
+  var engine = Engine.create({ gravity: { x: 0, y: 1.05 } });
+  var wrap = document.getElementById('scene-wrap');
+  var canvas = document.getElementById('fracture-canvas');
+  var contactEl = document.getElementById('contact-handle');
+  var vectorEl = document.getElementById('vector-handle');
+  var feedbackEl = document.getElementById('feedback');
+  var stateEl = document.getElementById('state-text');
+  var roundEl = document.getElementById('round-state');
+  var outlineEl = document.getElementById('outline-check');
+  var edgeLabel = document.getElementById('edge-label');
+  var resetBtn = document.getElementById('reset-btn');
+  var steps = Array.prototype.slice.call(document.querySelectorAll('.step'));
+  var geometryNodes = Array.prototype.slice.call(document.querySelectorAll('.geometry-node'));
+  var outcomes = Array.prototype.slice.call(document.querySelectorAll('.outcome'));
+  var ctx;
+  var W = 996;
+  var H = 552;
+  var core = { cx: 490, cy: 334, rx: 255, ry: 158 };
+  var state = {
+    contact: 72,
+    angle: 18,
+    phase: 'setup',
+    progress: 0,
+    step: 0,
+    result: null,
+    striker: null,
+    fragments: [],
+    drag: null,
+    struck: false
+  };
+  var colors = {};
+  var ground = Bodies.rectangle(W / 2, H + 22, W + 80, 60, { isStatic: true });
+  Composite.add(engine.world, ground);
+
+  function refreshMetrics() {
+    W = wrap.clientWidth;
+    H = wrap.clientHeight;
+    core.cx = W * 0.49;
+    core.cy = H * 0.53;
+    core.rx = Math.min(310, W * 0.32);
+    core.ry = Math.min(188, H * 0.35);
+    Body.setPosition(ground, { x: W / 2, y: H + 22 });
+  }
+
+  function pointOnCore(value) {
+    var t = -2.72 + (value / 100) * 2.2;
+    return {
+      x: core.cx + Math.cos(t) * core.rx,
+      y: core.cy + Math.sin(t) * core.ry,
+      nx: Math.cos(t),
+      ny: Math.sin(t)
+    };
+  }
+
+  function vectorPoint() {
+    var p = pointOnCore(state.contact);
+    var r = (state.angle - 90) * Math.PI / 180;
+    return { x: p.x - Math.cos(r) * 170, y: p.y - Math.sin(r) * 170 };
+  }
+
+  function setHandles() {
+    var p = pointOnCore(state.contact);
+    var v = vectorPoint();
+    contactEl.style.left = p.x + 'px';
+    contactEl.style.top = p.y + 'px';
+    vectorEl.style.left = v.x + 'px';
+    vectorEl.style.top = v.y + 'px';
+    contactEl.setAttribute('aria-valuenow', String(Math.round(state.contact)));
+    vectorEl.setAttribute('aria-valuenow', String(Math.round(state.angle)));
+  }
+
+  function setStep(index, complete) {
+    state.step = index;
+    steps.forEach(function (el, i) {
+      el.classList.toggle('is-current', i === index);
+      el.classList.toggle('is-done', i < index || (complete && i === index));
+    });
+    var geoIndex = index < 3 ? 0 : (index < 5 ? 1 : 2);
+    geometryNodes.forEach(function (el, i) {
+      el.classList.toggle('is-active', i <= geoIndex);
+    });
+  }
+
+  function classify() {
+    if (state.contact < 54) return { kind: 'inside', success: false };
+    if (Math.abs(state.angle) > 47) return { kind: 'glance', success: false };
+    return { kind: 'flake', success: true };
+  }
+
+  function updateOutcome() {
+    var kind = classify().kind;
+    outcomes.forEach(function (el) {
+      el.classList.toggle('is-active', el.getAttribute('data-outcome') === kind);
+    });
+  }
+
+  function clearBodies() {
+    state.fragments.forEach(function (body) { Composite.remove(engine.world, body); });
+    state.fragments = [];
+    if (state.striker) Composite.remove(engine.world, state.striker);
+    state.striker = null;
+  }
+
+  function beginStrike() {
+    if (state.phase !== 'setup') return;
+    state.result = classify();
+    state.phase = 'strike';
+    state.progress = 0;
+    state.struck = false;
+    setStep(2, false);
+    stateEl.textContent = '打击中';
+    roundEl.textContent = '打击中';
+    feedbackEl.textContent = '打击石正沿箭头进入接触点。';
+    var v = vectorPoint();
+    state.striker = Bodies.circle(v.x, v.y, 36, {
+      restitution: state.result.success ? 0.15 : 0.42,
+      friction: 0.7,
+      density: 0.004
+    });
+    Composite.add(engine.world, state.striker);
+    var p = pointOnCore(state.contact);
+    var dx = p.x - v.x;
+    var dy = p.y - v.y;
+    var d = Math.max(1, Math.sqrt(dx * dx + dy * dy));
+    Body.setVelocity(state.striker, { x: dx / d * 13, y: dy / d * 13 });
+  }
+
+  function makeFragments() {
+    var p = pointOnCore(state.contact);
+    if (!state.result.success) {
+      Body.setVelocity(state.striker, { x: -state.striker.velocity.x * 0.34, y: -5 });
+      return;
+    }
+    var fragment = Bodies.polygon(p.x - 8, p.y + 20, 4, 30, {
+      restitution: 0.18,
+      friction: 0.75,
+      density: 0.003,
+      angle: 0.3
+    });
+    var chip = Bodies.polygon(p.x + 14, p.y + 8, 3, 16, {
+      restitution: 0.22,
+      friction: 0.7,
+      density: 0.002
+    });
+    Body.setVelocity(fragment, { x: 4.5, y: 1.2 });
+    Body.setAngularVelocity(fragment, 0.11);
+    Body.setVelocity(chip, { x: 6, y: -1.5 });
+    state.fragments.push(fragment, chip);
+    Composite.add(engine.world, [fragment, chip]);
+  }
+
+  function finishStrike() {
+    state.phase = 'result';
+    setStep(5, true);
+    stateEl.textContent = '检查结果';
+    roundEl.textContent = state.result.success ? '形成薄边' : '未形成薄边';
+    outlineEl.classList.add('has-result');
+    if (state.result.success) {
+      edgeLabel.textContent = '连续薄边';
+      feedbackEl.textContent = '石片沿连续裂纹脱落，留下了锋利边缘。';
+    } else if (state.result.kind === 'inside') {
+      edgeLabel.textContent = '钝坑';
+      feedbackEl.textContent = '接触点太靠内，力没有沿外缘带走石片。';
+    } else {
+      edgeLabel.textContent = '表面擦痕';
+      feedbackEl.textContent = '方向过于擦边，只刮过表面。';
+    }
+  }
+
+  function reset() {
+    clearBodies();
+    state.phase = 'setup';
+    state.progress = 0;
+    state.result = null;
+    state.struck = false;
+    setStep(0, false);
+    stateEl.textContent = '设置受力';
+    roundEl.textContent = '待操作';
+    edgeLabel.textContent = '等待结果';
+    outlineEl.classList.remove('has-result');
+    feedbackEl.textContent = '先沿石核外缘移动接触点，再拖动箭头端点；松手完成打击。';
+    contactEl.disabled = false;
+    vectorEl.disabled = false;
+    setHandles();
+  }
+
+  function beginDrag(which, e) {
+    if (state.phase !== 'setup') return;
+    e.preventDefault();
+    state.drag = which;
+    e.currentTarget.setPointerCapture(e.pointerId);
+    setStep(which === 'contact' ? 0 : 1, false);
+  }
+
+  function moveDrag(e) {
+    if (!state.drag || state.phase !== 'setup') return;
+    var pt = Deck.pt(wrap, e);
+    if (state.drag === 'contact') {
+      var best = 0;
+      var bestDist = Infinity;
+      for (var i = 0; i <= 100; i++) {
+        var q = pointOnCore(i);
+        var dist = (q.x - pt.x) * (q.x - pt.x) + (q.y - pt.y) * (q.y - pt.y);
+        if (dist < bestDist) { bestDist = dist; best = i; }
+      }
+      state.contact = best;
+      setStep(0, false);
+    } else {
+      var p = pointOnCore(state.contact);
+      var a = Math.atan2(p.y - pt.y, p.x - pt.x) * 180 / Math.PI + 90;
+      while (a > 180) a -= 360;
+      while (a < -180) a += 360;
+      state.angle = Deck.clamp(a, -70, 70);
+      setStep(1, false);
+    }
+    setHandles();
+    updateOutcome();
+  }
+
+  function endDrag(e) {
+    if (!state.drag) return;
+    state.drag = null;
+    if (e.currentTarget.hasPointerCapture && e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId);
+    beginStrike();
+  }
+
+  function keyAdjust(which, e) {
+    if (state.phase !== 'setup') return;
+    var delta = 0;
+    if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') delta = -3;
+    if (e.key === 'ArrowRight' || e.key === 'ArrowUp') delta = 3;
+    if (!delta && e.key !== 'Enter' && e.key !== ' ') return;
+    e.preventDefault();
+    if (delta) {
+      if (which === 'contact') state.contact = Deck.clamp(state.contact + delta, 0, 100);
+      else state.angle = Deck.clamp(state.angle + delta, -70, 70);
+      setStep(which === 'contact' ? 0 : 1, false);
+      setHandles();
+      updateOutcome();
+    } else {
+      beginStrike();
+    }
+  }
+
+  function drawCore() {
+    ctx.save();
+    ctx.translate(core.cx, core.cy);
+    ctx.beginPath();
+    ctx.moveTo(-core.rx, 55);
+    ctx.quadraticCurveTo(-core.rx + 24, -90, -115, -core.ry + 24);
+    ctx.quadraticCurveTo(35, -core.ry - 10, core.rx - 22, -62);
+    ctx.quadraticCurveTo(core.rx + 16, 30, core.rx - 72, core.ry - 8);
+    ctx.quadraticCurveTo(20, core.ry + 12, -core.rx, 55);
+    ctx.closePath();
+    var grad = ctx.createLinearGradient(-200, -140, 220, 150);
+    grad.addColorStop(0, '#4a5552');
+    grad.addColorStop(.5, '#303a38');
+    grad.addColorStop(1, '#202826');
+    ctx.fillStyle = grad;
+    ctx.fill();
+    ctx.strokeStyle = '#75827f';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.globalAlpha = .24;
+    ctx.strokeStyle = '#9aa7a3';
+    ctx.lineWidth = 1;
+    for (var i = -120; i <= 100; i += 42) {
+      ctx.beginPath();
+      ctx.moveTo(-190, i);
+      ctx.quadraticCurveTo(-20, i - 38, 190, i + 16);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  function drawGrid() {
+    ctx.save();
+    ctx.strokeStyle = colors.line;
+    ctx.lineWidth = 1;
+    ctx.globalAlpha = .46;
+    for (var x = 24; x < W; x += 48) {
+      ctx.lineWidth = ((x - 24) % 192 === 0) ? 2 : 1;
+      ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke();
+    }
+    for (var y = 22; y < H; y += 48) {
+      ctx.lineWidth = ((y - 22) % 192 === 0) ? 2 : 1;
+      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
+    }
+    ctx.globalAlpha = .82;
+    ctx.strokeStyle = colors.primary;
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(0, H - 76); ctx.lineTo(W, H - 76); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(72, 0); ctx.lineTo(72, H); ctx.stroke();
+    ctx.globalAlpha = .72;
+    ctx.strokeStyle = colors.accent;
+    for (var tx = 72; tx < W; tx += 96) {
+      ctx.beginPath(); ctx.moveTo(tx, H - 84); ctx.lineTo(tx, H - 68); ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  function drawArrow() {
+    var p = pointOnCore(state.contact);
+    var v = vectorPoint();
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(v.x, v.y, 36, 0, Math.PI * 2);
+    ctx.fillStyle = '#68736f';
+    ctx.fill();
+    ctx.strokeStyle = '#a5b0ad';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(v.x - 10, v.y - 8, 7, 0, Math.PI * 2);
+    ctx.strokeStyle = '#7f8b87';
+    ctx.stroke();
+    ctx.strokeStyle = colors.accent;
+    ctx.fillStyle = colors.accent;
+    ctx.lineWidth = 3;
+    Deck.arrow(ctx, v.x + 28, v.y + 22, p.x, p.y, 13);
+    ctx.stroke();
+    ctx.fill();
+    ctx.restore();
+  }
+
+  function drawCrack(progress) {
+    if (!state.result || progress <= 0) return;
+    var p = pointOnCore(state.contact);
+    var len = state.result.success ? 145 : 44;
+    var bend = state.result.success ? 62 : 10;
+    ctx.save();
+    ctx.strokeStyle = state.result.success ? colors.primary : '#8d9b98';
+    ctx.lineWidth = state.result.success ? 4 : 3;
+    ctx.setLineDash(state.result.success ? [] : [6, 5]);
+    ctx.beginPath();
+    ctx.moveTo(p.x, p.y);
+    ctx.quadraticCurveTo(p.x - bend * progress, p.y + 28 * progress, p.x - len * progress, p.y + 76 * progress);
+    ctx.stroke();
+    if (state.result.success && progress >= .86) {
+      ctx.strokeStyle = colors.accent;
+      ctx.lineWidth = 6;
+      ctx.beginPath();
+      ctx.moveTo(p.x - 4, p.y + 2);
+      ctx.quadraticCurveTo(p.x - 36, p.y + 25, p.x - 72, p.y + 62);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  function drawBody(body, fill, stroke) {
+    if (!body) return;
+    ctx.save();
+    ctx.translate(body.position.x, body.position.y);
+    ctx.rotate(body.angle);
+    ctx.beginPath();
+    body.vertices.forEach(function (v, i) {
+      var x = v.x - body.position.x;
+      var y = v.y - body.position.y;
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    });
+    ctx.closePath();
+    ctx.fillStyle = fill;
+    ctx.fill();
+    ctx.strokeStyle = stroke;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function render() {
+    ctx.clearRect(0, 0, W, H);
+    ctx.fillStyle = '#14191b';
+    ctx.fillRect(0, 0, W, H);
+    drawGrid();
+    drawCore();
+    if (state.phase === 'setup') drawArrow();
+    if (state.phase === 'strike' || state.phase === 'result') {
+      drawCrack(Deck.clamp((state.progress - .34) / .38, 0, 1));
+      drawBody(state.striker, '#68736f', '#a5b0ad');
+      state.fragments.forEach(function (body) { drawBody(body, '#384340', '#77837f'); });
+    }
+  }
+
+  function tick(t, dt) {
+    if (!ctx) return;
+    if (state.phase === 'strike') {
+      state.progress += dt / 1000;
+      Engine.update(engine, Math.min(dt || 16.67, 32));
+      if (!state.struck && state.progress > .52) {
+        state.struck = true;
+        setStep(3, false);
+        makeFragments();
+      }
+      if (state.progress > .74) setStep(4, false);
+      if (state.progress > 1.55 || Deck.reduced()) finishStrike();
+    } else if (state.phase === 'result' && state.fragments.length) {
+      Engine.update(engine, Math.min(dt || 16.67, 32));
+    }
+    render();
+  }
+
+  function fit() {
+    refreshMetrics();
+    ctx = Deck.fit(canvas);
+    colors.line = Deck.rgba('--line-strong', 1);
+    colors.primary = Deck.rgba('--primary', 1);
+    colors.accent = Deck.rgba('--accent', 1);
+    setHandles();
+    updateOutcome();
+    render();
+  }
+
+  contactEl.addEventListener('pointerdown', function (e) { beginDrag('contact', e); });
+  vectorEl.addEventListener('pointerdown', function (e) { beginDrag('vector', e); });
+  contactEl.addEventListener('pointermove', moveDrag);
+  vectorEl.addEventListener('pointermove', moveDrag);
+  contactEl.addEventListener('pointerup', endDrag);
+  vectorEl.addEventListener('pointerup', endDrag);
+  contactEl.addEventListener('pointercancel', endDrag);
+  vectorEl.addEventListener('pointercancel', endDrag);
+  contactEl.addEventListener('keydown', function (e) { keyAdjust('contact', e); });
+  vectorEl.addEventListener('keydown', function (e) { keyAdjust('vector', e); });
+  resetBtn.addEventListener('click', reset);
+  Deck.onResize(fit);
+  fit();
+  Deck.loop(tick, { still: 1600 });
+})();
+</script>
+</body>
+</html>

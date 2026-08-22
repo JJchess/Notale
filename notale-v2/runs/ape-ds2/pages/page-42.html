@@ -1,0 +1,515 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+:root {
+  --bg: #0b0e14;
+  --text: #e6e6e6;
+  --font-sans: "Noto Sans SC", system-ui, sans-serif;
+  --panel-bg: rgba(255,255,255,0.04);
+  --border: rgba(255,255,255,0.10);
+  --muted: #8892a4;
+  --accent: #5b7cf0;
+  --accent-soft: rgba(91,124,240,0.10);
+  --diff-bg: rgba(255,183,77,0.12);
+  --c-gps: #4fc3c1;
+  --c-com: #ffb74d;
+  --c-wx: #4fc3f7;
+  --c-rec: #ff8a65;
+}
+html, body { margin: 0; padding: 0; overflow: hidden; }
+#stage { background: var(--bg); color: var(--text); }
+
+/* ---- page layout ---- */
+#main {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+}
+.p42-wrap {
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  width: 1408px;
+  height: 620px;
+  gap: 0;
+  flex: 0 0 auto;
+}
+.disc-side {
+  flex: 3;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+}
+.disc-side svg {
+  display: block;
+  width: 480px;
+  height: 480px;
+  flex: 0 0 auto;
+  margin-top: 68px;
+}
+.card-side {
+  flex: 2;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 0;
+  min-width: 0;
+}
+/* ---- disc SVG styles ---- */
+.orbit-ring {
+  fill: none;
+  stroke: var(--border);
+  stroke-width: 1;
+  opacity: 0.5;
+  transition: opacity 0.3s, stroke 0.3s;
+}
+.orbit-ring.highlight {
+  stroke: var(--text);
+  opacity: 0.7;
+}
+.sector {
+  fill: transparent;
+  cursor: pointer;
+  transition: fill 0.3s;
+}
+.sector.active {
+  fill: var(--accent-soft);
+}
+.sector-label {
+  font-size: 15px;
+  fill: var(--muted);
+  text-anchor: middle;
+  dominant-baseline: central;
+  pointer-events: none;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  transition: fill 0.3s;
+}
+.sector-label.active {
+  fill: var(--text);
+}
+.sat-dot {
+  transition: all 0.3s;
+  cursor: pointer;
+}
+.sat-dot.active {
+  opacity: 1 !important;
+  r: 5;
+}
+.earth-dot {
+  fill: rgba(255,255,255,0.08);
+  stroke: rgba(255,255,255,0.2);
+  stroke-width: 1;
+}
+.earth-label {
+  fill: var(--muted);
+  font-size: 14px;
+  text-anchor: middle;
+  dominant-baseline: central;
+  letter-spacing: 0.1em;
+}
+.ring-label {
+  fill: var(--muted);
+  font-size: 14px;
+  text-anchor: start;
+  dominant-baseline: central;
+  opacity: 0.4;
+}
+/* ---- card styles ---- */
+.card-item {
+  position: relative;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel-bg);
+  cursor: pointer;
+  transition: all 0.3s;
+  min-height: 0;
+  overflow: hidden;
+  padding: 0;
+}
+.card-item.dim {
+  opacity: 0.3;
+}
+.card-item.active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  flex: 2.5;
+}
+.card-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  flex: 0 0 auto;
+}
+.card-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+}
+.card-name {
+  font-size: var(--fs-body);
+  font-weight: 700;
+  flex: 0 0 auto;
+  letter-spacing: 0.05em;
+}
+.card-tagline {
+  font-size: var(--fs-sec);
+  color: var(--muted);
+  flex: 1 1 auto;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.card-item.active .card-tagline {
+  color: var(--text);
+}
+.card-body {
+  display: none;
+  padding: 0 14px 10px;
+  gap: 4px;
+  flex-direction: column;
+  overflow-y: auto;
+}
+.card-item.active .card-body {
+  display: flex;
+}
+.card-body .detail-row {
+  font-size: var(--fs-sec);
+  line-height: 1.4;
+  color: var(--text);
+}
+.card-body .detail-row .hl {
+  font-weight: 600;
+  color: var(--text);
+}
+.card-body .detail-row .dim {
+  color: var(--muted);
+}
+.card-body .detail-head {
+  font-size: var(--fs-label);
+  font-weight: 600;
+  color: var(--muted);
+  margin-top: 3px;
+  letter-spacing: 0.03em;
+}
+</style>
+</head>
+<body data-page="42" data-total="50">
+<div id="stage">
+<main id="main"></main>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lib/d3.min.js"></script>
+<script src="assets/lec.js"></script>
+<script>
+(function(){
+  'use strict';
+
+  /* ===== Lec.mount ===== */
+  Lec.mount({
+    index: 42,
+    kicker: '第 6 章 · 太空时代',
+    title: '头顶的机器',
+    take: 'GPS、通信、气象、侦察——轨道上的机器已成为现代文明的基础设施，和电网、自来水一样，坏了立刻察觉，平时很少有人想起。'
+  });
+
+  /* ===== 本页常量（本页口径） ===== */
+  var EARTH_RADIUS_KM = 6371;
+  var GPS_ORBIT_HEIGHT_KM = 20200;
+  var GEO_ORBIT_HEIGHT_KM = 35786;
+  var SUNSYNC_ORBIT_HEIGHT_KM = 850;
+  var RECON_ORBIT_HEIGHT_KM = 300;
+
+  /* ===== Helper: compute orbital period (minutes) ===== */
+  function orbitalPeriod(heightKm) {
+    var r = (EARTH_RADIUS_KM + heightKm) * 1000;
+    var v = Lec.P.orbitalVelocity(Lec.K.EARTH_MASS_KG, r);
+    return 2 * Math.PI * r / v / 60;
+  }
+
+  /* ===== Category data ===== */
+  var CATS = [
+    {
+      id: 'gps', name: '定位', color: '#4fc3c1',
+      ringIdx: 1, nSats: 6, satRadius: 135,
+      tagline: '给全世界的时钟对表。',
+      height: GPS_ORBIT_HEIGHT_KM,
+      period: orbitalPeriod(GPS_ORBIT_HEIGHT_KM),
+      why: '不高不低，单星覆盖范围大，全球任何地点同时可见至少 4 颗。',
+      evidence: '手机导航、共享单车定位、电网与金融交易的时间同步——GPS 授时是数字社会的隐形钟表。'
+    },
+    {
+      id: 'com', name: '通信', color: '#ffb74d',
+      ringIdx: 2, nSats: 3, satRadius: 185,
+      tagline: '一颗卫星钉在天上，听半个地球。',
+      height: GEO_ORBIT_HEIGHT_KM,
+      period: orbitalPeriod(GEO_ORBIT_HEIGHT_KM),
+      why: '轨道周期等于地球自转周期，卫星相对地面钉在天空同一位置，天线不用追踪。',
+      evidence: '跨洋电视直播、越洋电话、飞机与船舶上的网络、偏远地区宽带。'
+    },
+    {
+      id: 'wx', name: '气象', color: '#4fc3f7',
+      ringIdx: 0, nSats: 2, satRadius: 87,
+      tagline: '每天定时路过你的头顶，为全世界天气把脉。',
+      height: SUNSYNC_ORBIT_HEIGHT_KM,
+      period: orbitalPeriod(SUNSYNC_ORBIT_HEIGHT_KM),
+      why: '低轨看得细；太阳同步保证每次成像的日照条件一致，云图才能相互比较。',
+      evidence: '台风路径提前数天预警，天气预报里的卫星云图与温度分布。'
+    },
+    {
+      id: 'rec', name: '侦察', color: '#ff8a65',
+      ringIdx: 0, nSats: 1, satRadius: 62,
+      tagline: '离地面最近的眼睛，看清地球上最小的变化。',
+      height: RECON_ORBIT_HEIGHT_KM,
+      period: orbitalPeriod(RECON_ORBIT_HEIGHT_KM),
+      why: '离地面越近分辨率越高；代价是单颗星覆盖条带窄、过顶时间窗口短。',
+      evidence: '作物长势、港口船只、灾后地表变化——定期被成像观察。'
+    }
+  ];
+
+  /* ===== Build SVG disc with d3 ===== */
+  var W = 480, H = 480, CX = 240, CY = 240;
+  var R_EARTH = 18;
+  var R_RINGS = [87, 135, 185]; // LEO, MEO, GEO
+
+  var svg = d3.select('#main').append('div').attr('class','p42-wrap');
+
+  // left side: disc
+  var discDiv = svg.append('div').attr('class','disc-side');
+  var discSvg = discDiv.append('svg')
+    .attr('viewBox', '0 0 ' + W + ' ' + H)
+    .attr('width', W).attr('height', H);
+
+  // orbit rings
+  R_RINGS.forEach(function(r, i) {
+    discSvg.append('circle')
+      .attr('cx', CX).attr('cy', CY)
+      .attr('r', r)
+      .attr('class', 'orbit-ring ring-' + i);
+  });
+
+  // ring labels
+  ['LEO','MEO','GEO'].forEach(function(label, i) {
+    discSvg.append('text')
+      .attr('x', CX + R_RINGS[i] + 6)
+      .attr('y', CY)
+      .attr('class', 'ring-label')
+      .text(label);
+  });
+
+  // quadrant sectors
+  var arcGen = d3.arc()
+    .innerRadius(20)
+    .outerRadius(200)
+    .startAngle(function(d) { return d.s; })
+    .endAngle(function(d) { return d.e; });
+
+  var sectors = [
+    { s: -Math.PI/2, e: 0, cat: 0 },        // 定位: top-right
+    { s: 0, e: Math.PI/2, cat: 1 },          // 通信: bottom-right
+    { s: Math.PI/2, e: Math.PI, cat: 2 },    // 气象: bottom-left
+    { s: Math.PI, e: Math.PI*3/2, cat: 3 }   // 侦察: top-left
+  ];
+
+  sectors.forEach(function(s) {
+    var g = discSvg.append('g').datum(s);
+
+    g.append('path')
+      .attr('d', arcGen(s))
+      .attr('class', 'sector sector-' + s.cat)
+      .attr('data-cat', s.cat);
+
+    // label at center of quadrant
+    var midAngle = (s.s + s.e) / 2;
+    var labelR = 130;
+    var lx = CX + labelR * Math.cos(midAngle);
+    var ly = CY + labelR * Math.sin(midAngle);
+
+    g.append('text')
+      .attr('x', lx)
+      .attr('y', ly)
+      .attr('class', 'sector-label label-' + s.cat)
+      .text(CATS[s.cat].name);
+  });
+
+  // Earth center
+  discSvg.append('circle')
+    .attr('cx', CX).attr('cy', CY)
+    .attr('r', R_EARTH)
+    .attr('class', 'earth-dot');
+
+  discSvg.append('text')
+    .attr('x', CX)
+    .attr('y', CY + 6)
+    .attr('class', 'earth-label')
+    .text('EARTH');
+
+  // Satellite dots
+  CATS.forEach(function(cat, ci) {
+    var r = cat.satRadius;
+    var n = cat.nSats;
+    var angles = [];
+
+    var quadStart, quadEnd;
+    switch(ci) {
+      case 0: quadStart = -Math.PI/2; quadEnd = 0; break;
+      case 1: quadStart = 0; quadEnd = Math.PI/2; break;
+      case 2: quadStart = Math.PI/2; quadEnd = Math.PI; break;
+      case 3: quadStart = Math.PI; quadEnd = Math.PI*3/2; break;
+    }
+
+    if (n === 1) {
+      angles.push((quadStart + quadEnd) / 2);
+    } else {
+      var step = (quadEnd - quadStart) / (n + 1);
+      for (var k = 1; k <= n; k++) {
+        angles.push(quadStart + step * k);
+      }
+    }
+
+    angles.forEach(function(a) {
+      var x = CX + r * Math.cos(a);
+      var y = CY + r * Math.sin(a);
+      discSvg.append('circle')
+        .attr('cx', x).attr('cy', y)
+        .attr('r', 4)
+        .attr('class', 'sat-dot dot-' + ci)
+        .attr('data-cat', ci)
+        .style('fill', cat.color)
+        .style('opacity', 0.3);
+    });
+  });
+
+  // ===== Right side: cards =====
+  var cardList = svg.append('div').attr('class','card-side');
+
+  CATS.forEach(function(cat, ci) {
+    var period = cat.period;
+    var periodStr;
+    if (ci === 0) {
+      periodStr = Math.round(period) + ' 分（≈ 12 小时）';
+    } else if (ci === 1) {
+      periodStr = Math.round(period) + ' 分（≈ 24 小时）';
+    } else if (ci === 2) {
+      periodStr = Math.round(period) + ' 分（≈ 102 分钟）';
+    } else {
+      periodStr = Math.round(period) + ' 分（≈ 90 分钟）';
+    }
+
+    var card = cardList.append('div')
+      .attr('class', 'card-item')
+      .attr('data-cat', ci)
+      .attr('tabindex', '0')
+      .attr('role', 'button')
+      .attr('aria-pressed', ci === 0 ? 'true' : 'false');
+
+    card.append('div').attr('class','card-head').html(
+      '<span class="card-dot" style="background:' + cat.color + '"></span>' +
+      '<span class="card-name" style="color:' + cat.color + '">' + cat.name + '</span>' +
+      '<span class="card-tagline">' + cat.tagline + '</span>'
+    );
+
+    var body = card.append('div').attr('class','card-body');
+    body.append('div').attr('class','detail-row')
+      .html('<span class="hl">轨道高度</span> <span class="dim">' + cat.height.toLocaleString() + ' km</span>');
+    body.append('div').attr('class','detail-row')
+      .html('<span class="hl">一圈时间</span> <span class="dim">' + periodStr + '</span>');
+    body.append('div').attr('class','detail-head').text('为什么选这个高度');
+    body.append('div').attr('class','detail-row').text(cat.why);
+    body.append('div').attr('class','detail-head').text('基础设施证据');
+    body.append('div').attr('class','detail-row').text(cat.evidence);
+  });
+
+  // ===== Selection state =====
+  var current = 0;
+
+  function selectCategory(idx) {
+    if (idx === current) return;
+    current = idx;
+
+    // Update sectors
+    discSvg.selectAll('.sector')
+      .classed('active', function(d) { return d.cat === idx; });
+
+    // Update sector labels
+    CATS.forEach(function(_, ci) {
+      discSvg.selectAll('.label-' + ci)
+        .classed('active', ci === idx);
+    });
+
+    // Update satellite dots
+    CATS.forEach(function(_, ci) {
+      discSvg.selectAll('.dot-' + ci)
+        .style('opacity', ci === idx ? 1 : 0.3)
+        .attr('r', ci === idx ? 5 : 4);
+    });
+
+    // Update orbit ring highlights
+    var targetRing = CATS[idx].ringIdx;
+    discSvg.selectAll('.orbit-ring')
+      .classed('highlight', function(_, i) { return i === targetRing; });
+
+    // Update cards
+    cardList.selectAll('.card-item')
+      .classed('active', function(_, i) { return i === idx; })
+      .classed('dim', function(_, i) { return i !== idx; })
+      .attr('aria-pressed', function(_, i) { return i === idx ? 'true' : 'false'; });
+  }
+
+  // ===== Event handlers =====
+
+  // Click on sector
+  discSvg.selectAll('.sector').on('click', function(ev, d) {
+    selectCategory(d.cat);
+  });
+
+  // Click on card
+  cardList.selectAll('.card-item').on('click', function() {
+    var idx = parseInt(d3.select(this).attr('data-cat'));
+    selectCategory(idx);
+  });
+
+  // Keyboard on cards
+  cardList.selectAll('.card-item').on('keydown', function(ev) {
+    if (ev.key === 'Enter' || ev.key === ' ') {
+      ev.preventDefault();
+      var idx = parseInt(d3.select(this).attr('data-cat'));
+      selectCategory(idx);
+    }
+  });
+
+  // Global keyboard: Left/Right or A/D
+  document.addEventListener('keydown', function(ev) {
+    if (ev.key === 'ArrowRight' || ev.key === 'd' || ev.key === 'D') {
+      ev.preventDefault();
+      selectCategory((current + 1) % 4);
+      var el = cardList.selectAll('.card-item').nodes()[current];
+      if (el) el.focus();
+    } else if (ev.key === 'ArrowLeft' || ev.key === 'a' || ev.key === 'A') {
+      ev.preventDefault();
+      selectCategory((current + 3) % 4);
+      var el = cardList.selectAll('.card-item').nodes()[current];
+      if (el) el.focus();
+    }
+  });
+
+  // ===== Default state =====
+  selectCategory(0);
+
+})();
+</script>
+</body>
+</html>

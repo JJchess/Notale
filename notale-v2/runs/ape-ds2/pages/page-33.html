@@ -1,0 +1,806 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+/* ========== page-33: 能源跃迁对照表 ========== */
+
+/* 让 #main 不超出画布：它被 #stage 的 padding 推了，把它拉回原位 */
+#main {
+  position: absolute !important;
+  top: 0 !important;
+  left: 0 !important;
+  width: 1600px !important;
+  height: 900px !important;
+}
+
+/* 主布局：ledger 账本感，内容区 1408×620 */
+.ledger-layout {
+  display: flex;
+  gap: 0;
+  width: 1408px;
+  height: 620px;
+  align-items: stretch;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #fff;
+  overflow: hidden;
+  box-sizing: border-box;
+  margin: 96px 96px 0 96px;
+}
+
+/* 左栏：垂直滑轨 */
+.ledger-left {
+  flex: 0 0 300px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  border-right: 1px solid var(--border);
+  background: #fafbfc;
+  min-height: 0;
+  box-sizing: border-box;
+}
+
+/* 右栏 */
+.ledger-right {
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 12px 20px 8px 20px;
+  gap: 8px;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+/* ========== 垂直滑轨 ========== */
+.slider-rail {
+  position: relative;
+  width: 60px;
+  height: 380px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  cursor: pointer;
+  outline: none;
+}
+.slider-rail:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 4px;
+  border-radius: 4px;
+}
+
+.slider-track {
+  position: absolute;
+  top: 18px;
+  bottom: 18px;
+  left: 50%;
+  width: 3px;
+  background: var(--border);
+  transform: translateX(-50%);
+  border-radius: 2px;
+  z-index: 1;
+}
+
+.slider-thumb {
+  position: absolute;
+  left: 50%;
+  width: 16px;
+  height: 16px;
+  background: var(--accent);
+  border: 3px solid #fff;
+  border-radius: 50%;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.18);
+  transform: translate(-50%, -50%);
+  z-index: 4;
+  transition: top 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+  pointer-events: none;
+}
+
+.slider-nodes {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  z-index: 3;
+}
+
+.slider-node {
+  position: absolute;
+  left: 50%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  transform: translate(-50%, -50%);
+  cursor: pointer;
+  z-index: 3;
+  transition: opacity 0.3s;
+}
+
+.slider-node .dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #fff;
+  border: 2.5px solid var(--border);
+  transition: all 0.3s ease;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.06);
+}
+
+.slider-node.active .dot {
+  background: var(--accent);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(79, 110, 242, 0.18);
+}
+
+.slider-node .label {
+  font-size: var(--fs-label);
+  font-weight: 600;
+  color: var(--muted);
+  white-space: nowrap;
+  transition: color 0.3s;
+  position: absolute;
+  left: 30px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 100px;
+  line-height: 1.2;
+}
+
+.slider-node.active .label {
+  color: #1c1c1c;
+  font-weight: 700;
+}
+
+/* ========== k-comparison 表格 ========== */
+.k-comparison {
+  --k-comp-cols: 3;
+  font-size: var(--fs-sec);
+  line-height: 1.35;
+  flex-shrink: 0;
+}
+
+.k-comparison .hdr {
+  font-size: var(--fs-label);
+  font-weight: 700;
+  color: var(--muted);
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  padding: 4px 4px 6px;
+}
+
+.k-comparison .dim {
+  font-weight: 600;
+  font-size: var(--fs-sec);
+  color: #1c1c1c;
+  padding: 5px 4px;
+}
+
+.k-comparison .crow > * {
+  padding: 5px 6px;
+  font-size: var(--fs-sec);
+  transition: opacity 0.4s, background 0.4s;
+}
+
+.k-comparison .crow.inactive > * {
+  opacity: 0.30;
+}
+
+.k-comparison .crow.active > * {
+  opacity: 1;
+  background: var(--diff-bg);
+  border-radius: 4px;
+}
+
+.k-comparison .crow .num {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.k-comparison .rowline {
+  opacity: 0.4;
+}
+
+/* ========== 能量仆人阵列 ========== */
+.servant-area {
+  width: 100%;
+  height: 152px;
+  flex-shrink: 0;
+  position: relative;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #fafbfc;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+}
+
+.servant-area .servant-label {
+  font-size: 14px;
+  color: var(--muted);
+  padding: 4px 10px 0;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  line-height: 1.2;
+}
+
+.servant-area .servant-svg-wrap {
+  flex: 1;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 0;
+}
+
+.servant-area .servant-svg-wrap svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+/* ========== 底部信息栏 ========== */
+.bottom-info {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.counter-box {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 5px 12px;
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  min-width: 180px;
+}
+
+.counter-box .counter-label {
+  font-size: 14px;
+  color: var(--muted);
+  letter-spacing: 0.04em;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.counter-box .counter-value {
+  font-family: var(--font-mono);
+  font-size: var(--fs-lead);
+  font-weight: 700;
+  color: #1c1c1c;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+}
+
+.counter-box .counter-sub {
+  font-size: 14px;
+  color: var(--muted);
+  line-height: 1.2;
+}
+
+.energy-bar-wrap {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.energy-bar-label {
+  font-size: 14px;
+  color: var(--muted);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  line-height: 1.2;
+}
+
+.energy-bar {
+  display: flex;
+  height: 22px;
+  border-radius: 4px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+}
+
+.energy-bar .seg {
+  height: 100%;
+  transition: width 0.5s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: 600;
+  color: #fff;
+  text-shadow: 0 1px 1px rgba(0,0,0,0.3);
+  line-height: 1;
+}
+
+.energy-bar-legend {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.energy-bar-legend .leg-item {
+  font-size: 14px;
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  line-height: 1.2;
+}
+
+.energy-bar-legend .leg-swatch {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+/* ========== 说明句 ========== */
+.take-note {
+  font-size: var(--fs-sec);
+  color: var(--muted);
+  line-height: 1.4;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+/* ========== 响应式微调 ========== */
+@media (max-width: 1400px) {
+  .ledger-left { flex-basis: 260px; }
+}
+</style>
+</head>
+<body data-page="33" data-total="50">
+<div id="stage">
+  <main id="main"></main>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script src="assets/lib/d3.min.js"></script>
+<script src="assets/lib/gsap.min.js"></script>
+<script>
+/* ========== page-33: 一百个能量仆人 ========== */
+
+// --- 常量（全套口径）---
+var ENERGY_SERVANT_WATTS = 100; // 1 个能量仆人 = 100 W
+var STAGE_POWER_KW = {
+  hunting: 0.1,
+  agriculture: 0.3,
+  industrial: 3,
+  petroleum: 10
+};
+var STAGE_LABELS = [
+  { key: 'hunting',    label: '采集狩猎', fuel: '人力、薪柴',       kw: 0.1,  servants: 1 },
+  { key: 'agriculture',label: '农业',     fuel: '人力、畜力、薪柴', kw: 0.3,  servants: 3 },
+  { key: 'industrial',  label: '工业早期', fuel: '煤炭',             kw: 3,    servants: 30 },
+  { key: 'petroleum',  label: '石油时代', fuel: '煤炭、石油、天然气', kw: 10,   servants: 100 }
+];
+// 能源构成（示意比例）
+var STAGE_MIX = {
+  hunting:    [ { name: '薪柴', pct: 100, c: '#B8860B' } ],
+  agriculture:[ { name: '薪柴', pct: 50, c: '#B8860B' }, { name: '畜力', pct: 50, c: '#8B4513' } ],
+  industrial: [ { name: '煤炭', pct: 100, c: '#555555' } ],
+  petroleum:  [ { name: '煤炭', pct: 30, c: '#555555' }, { name: '石油', pct: 40, c: '#E8791A' }, { name: '天然气', pct: 30, c: '#4682B4' } ]
+};
+
+// 节点位置百分比（等间距，留出上下边距）
+var nodePositions = [7.5, 30.83, 54.17, 77.5];
+
+// --- 状态 ---
+var currentIndex = 0;
+
+// --- DOM 引用 ---
+var mainEl = document.getElementById('main');
+
+// --- 构建页面 ---
+function buildPage() {
+  mainEl.innerHTML = '';
+
+  // 主容器
+  var layout = document.createElement('div');
+  layout.className = 'ledger-layout';
+  mainEl.appendChild(layout);
+
+  // 左栏：滑轨
+  var leftCol = document.createElement('div');
+  leftCol.className = 'ledger-left';
+  layout.appendChild(leftCol);
+
+  // 右栏：表格 + 阵列
+  var rightCol = document.createElement('div');
+  rightCol.className = 'ledger-right';
+  layout.appendChild(rightCol);
+
+  // ========== 左栏：滑轨 ==========
+  var rail = document.createElement('div');
+  rail.className = 'slider-rail';
+  rail.setAttribute('role', 'slider');
+  rail.setAttribute('tabindex', '0');
+  rail.setAttribute('aria-label', '能源阶段选择');
+  rail.setAttribute('aria-valuemin', '0');
+  rail.setAttribute('aria-valuemax', '3');
+  rail.setAttribute('aria-valuenow', '0');
+  leftCol.appendChild(rail);
+
+  var track = document.createElement('div');
+  track.className = 'slider-track';
+  rail.appendChild(track);
+
+  var thumb = document.createElement('div');
+  thumb.className = 'slider-thumb';
+  thumb.style.top = nodePositions[0] + '%';
+  rail.appendChild(thumb);
+
+  var nodesContainer = document.createElement('div');
+  nodesContainer.className = 'slider-nodes';
+  rail.appendChild(nodesContainer);
+
+  STAGE_LABELS.forEach(function(s, i) {
+    var node = document.createElement('div');
+    node.className = 'slider-node' + (i === 0 ? ' active' : '');
+    node.style.top = nodePositions[i] + '%';
+    node.dataset.index = i;
+    node.setAttribute('role', 'button');
+    node.setAttribute('tabindex', '-1');
+    node.setAttribute('aria-label', s.label);
+
+    var dot = document.createElement('div');
+    dot.className = 'dot';
+    node.appendChild(dot);
+
+    var label = document.createElement('span');
+    label.className = 'label';
+    label.textContent = s.label;
+    node.appendChild(label);
+
+    node.addEventListener('click', function() { setStage(i); });
+    nodesContainer.appendChild(node);
+  });
+
+  // ========== 右栏：表格 ==========
+  var table = document.createElement('div');
+  table.className = 'k-comparison';
+  rightCol.appendChild(table);
+
+  // 表头
+  var headers = ['阶段', '主导能源', '人均可用功率', '能量仆人数'];
+  headers.forEach(function(h) {
+    var hdr = document.createElement('div');
+    hdr.className = 'hdr';
+    hdr.textContent = h;
+    table.appendChild(hdr);
+  });
+
+  // 数据行
+  var rowEls = [];
+  STAGE_LABELS.forEach(function(s, i) {
+    var crow = document.createElement('div');
+    crow.className = 'crow' + (i === 0 ? ' active' : ' inactive');
+    crow.dataset.index = i;
+
+    var dim = document.createElement('div');
+    dim.className = 'dim';
+    dim.textContent = s.label;
+    crow.appendChild(dim);
+
+    var fuel = document.createElement('div');
+    fuel.textContent = s.fuel;
+    crow.appendChild(fuel);
+
+    var power = document.createElement('div');
+    power.innerHTML = '<span class="num">' + s.kw.toFixed(1) + '</span> kW';
+    crow.appendChild(power);
+
+    var servant = document.createElement('div');
+    servant.innerHTML = '<span class="num">' + s.servants + '</span>';
+    crow.appendChild(servant);
+
+    table.appendChild(crow);
+    rowEls.push(crow);
+
+    var rl = document.createElement('div');
+    rl.className = 'rowline';
+    table.appendChild(rl);
+  });
+
+  // ========== 能量仆人阵列 ==========
+  var servantArea = document.createElement('div');
+  servantArea.className = 'servant-area';
+  rightCol.appendChild(servantArea);
+
+  var sLabel = document.createElement('div');
+  sLabel.className = 'servant-label';
+  sLabel.textContent = '⚇ 能量仆人 · 每个 = 100 W';
+  servantArea.appendChild(sLabel);
+
+  var svgWrap = document.createElement('div');
+  svgWrap.className = 'servant-svg-wrap';
+  servantArea.appendChild(svgWrap);
+
+  var svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('width', '100%');
+  svg.setAttribute('height', '100%');
+  svg.setAttribute('viewBox', '0 0 800 130');
+  svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+  svgWrap.appendChild(svg);
+
+  // ========== 底部信息栏 ==========
+  var bottomInfo = document.createElement('div');
+  bottomInfo.className = 'bottom-info';
+  rightCol.appendChild(bottomInfo);
+
+  // 计数显示
+  var counterBox = document.createElement('div');
+  counterBox.className = 'counter-box';
+  bottomInfo.appendChild(counterBox);
+
+  var cLabel = document.createElement('div');
+  cLabel.className = 'counter-label';
+  cLabel.textContent = '人均可用功率';
+  counterBox.appendChild(cLabel);
+
+  var cValue = document.createElement('div');
+  cValue.className = 'counter-value';
+  cValue.textContent = '0.1 kW';
+  counterBox.appendChild(cValue);
+
+  var cSub = document.createElement('div');
+  cSub.className = 'counter-sub';
+  cSub.textContent = '≈ 1 个能量仆人';
+  counterBox.appendChild(cSub);
+
+  // 能源构成条
+  var barWrap = document.createElement('div');
+  barWrap.className = 'energy-bar-wrap';
+  bottomInfo.appendChild(barWrap);
+
+  var barLabel = document.createElement('div');
+  barLabel.className = 'energy-bar-label';
+  barLabel.textContent = '能源构成';
+  barWrap.appendChild(barLabel);
+
+  var bar = document.createElement('div');
+  bar.className = 'energy-bar';
+  barWrap.appendChild(bar);
+
+  var legend = document.createElement('div');
+  legend.className = 'energy-bar-legend';
+  barWrap.appendChild(legend);
+
+  // ========== 说明句 ==========
+  var note = document.createElement('div');
+  note.className = 'take-note';
+  note.textContent = '工业革命首先是一场能量革命：从 0.1 kW 到 10 kW，人均可用能量跃升一百倍';
+  rightCol.appendChild(note);
+
+  // --- 返回构建好的元素引用 ---
+  return {
+    rail: rail,
+    thumb: thumb,
+    nodes: nodesContainer.querySelectorAll('.slider-node'),
+    rowEls: rowEls,
+    svg: svg,
+    cValue: cValue,
+    cSub: cSub,
+    bar: bar,
+    legend: legend,
+    note: note
+  };
+}
+
+var refs = buildPage();
+
+// --- d3 绘制小人 ---
+function drawServants(count) {
+  var svg = d3.select(refs.svg);
+  svg.selectAll('*').remove();
+
+  var W = 800, H = 130;
+  var cols, rows;
+  if (count <= 1) { cols = 1; rows = 1; }
+  else if (count <= 3) { cols = 3; rows = 1; }
+  else if (count <= 30) { cols = 10; rows = 3; }
+  else { cols = 10; rows = 10; }
+
+  var cellW = W / cols;
+  var cellH = H / rows;
+  var scale = Math.min(cellW, cellH) / 32;
+  scale = Math.min(scale, 1.8);
+  scale = Math.max(scale, 0.3);
+
+  var accent = Deck.rgb('--accent') || [79, 110, 242];
+  var fill = 'rgba(' + accent[0] + ',' + accent[1] + ',' + accent[2] + ',0.65)';
+  var stroke = 'rgba(' + accent[0] + ',' + accent[1] + ',' + accent[2] + ',0.9)';
+
+  var g = svg.selectAll('g.person')
+    .data(d3.range(count))
+    .enter().append('g')
+    .attr('class', 'person')
+    .attr('transform', function(d) {
+      var col = d % cols;
+      var row = Math.floor(d / cols);
+      var x = col * cellW + cellW / 2;
+      var y = row * cellH + cellH / 2;
+      return 'translate(' + x + ',' + y + ') scale(' + scale + ')';
+    });
+
+  // 身体（圆角矩形）
+  g.append('rect')
+    .attr('x', -6)
+    .attr('y', -2)
+    .attr('width', 12)
+    .attr('height', 16)
+    .attr('rx', 4)
+    .attr('fill', fill);
+
+  // 头（圆形）
+  g.append('circle')
+    .attr('cx', 0)
+    .attr('cy', -8)
+    .attr('r', 6)
+    .attr('fill', fill)
+    .attr('stroke', stroke)
+    .attr('stroke-width', 0.5);
+
+  // 手臂（横线）
+  g.append('line')
+    .attr('x1', -8)
+    .attr('y1', 2)
+    .attr('x2', 8)
+    .attr('y2', 2)
+    .attr('stroke', stroke)
+    .attr('stroke-width', 1.5)
+    .attr('stroke-linecap', 'round');
+
+  // 腿（两条竖线）
+  g.append('line')
+    .attr('x1', -3)
+    .attr('y1', 14)
+    .attr('x2', -5)
+    .attr('y2', 22)
+    .attr('stroke', stroke)
+    .attr('stroke-width', 1.5)
+    .attr('stroke-linecap', 'round');
+
+  g.append('line')
+    .attr('x1', 3)
+    .attr('y1', 14)
+    .attr('x2', 5)
+    .attr('y2', 22)
+    .attr('stroke', stroke)
+    .attr('stroke-width', 1.5)
+    .attr('stroke-linecap', 'round');
+}
+
+// --- 更新能源构成条 ---
+function updateEnergyBar(mix) {
+  var bar = refs.bar;
+  var legend = refs.legend;
+  bar.innerHTML = '';
+  legend.innerHTML = '';
+
+  mix.forEach(function(m) {
+    var seg = document.createElement('div');
+    seg.className = 'seg';
+    seg.style.width = m.pct + '%';
+    seg.style.background = m.c;
+    seg.textContent = m.pct >= 30 ? m.name : '';
+    bar.appendChild(seg);
+
+    var item = document.createElement('span');
+    item.className = 'leg-item';
+    var swatch = document.createElement('span');
+    swatch.className = 'leg-swatch';
+    swatch.style.background = m.c;
+    item.appendChild(swatch);
+    item.appendChild(document.createTextNode(m.name));
+    legend.appendChild(item);
+  });
+}
+
+// --- 切换阶段 ---
+function setStage(index) {
+  if (index === currentIndex) return;
+  var prev = currentIndex;
+  currentIndex = index;
+
+  var s = STAGE_LABELS[index];
+
+  // 滑轨
+  refs.thumb.style.top = nodePositions[index] + '%';
+  refs.rail.setAttribute('aria-valuenow', index);
+  refs.nodes.forEach(function(n, i) {
+    n.classList.toggle('active', i === index);
+  });
+
+  // 表格行高亮
+  refs.rowEls.forEach(function(r, i) {
+    r.classList.toggle('active', i === index);
+    r.classList.toggle('inactive', i !== index);
+  });
+
+  // 能量仆人阵列（d3 更新）
+  drawServants(s.servants);
+
+  // 人均功率数字动画（gsap）
+  var prevKw = STAGE_LABELS[prev].kw;
+  var targetKw = s.kw;
+  var prevN = STAGE_LABELS[prev].servants;
+  var targetN = s.servants;
+
+  var obj = { val: prevKw };
+  gsap.to(obj, {
+    val: targetKw,
+    duration: 0.7,
+    ease: 'power2.out',
+    onUpdate: function() {
+      refs.cValue.textContent = obj.val.toFixed(1) + ' kW';
+    },
+    onComplete: function() {
+      refs.cValue.textContent = targetKw.toFixed(1) + ' kW';
+    }
+  });
+
+  var objN = { val: prevN };
+  gsap.to(objN, {
+    val: targetN,
+    duration: 0.7,
+    ease: 'power2.out',
+    onUpdate: function() {
+      refs.cSub.textContent = '≈ ' + Math.round(objN.val) + ' 个能量仆人';
+    },
+    onComplete: function() {
+      refs.cSub.textContent = '≈ ' + targetN + ' 个能量仆人';
+    }
+  });
+
+  // 能源构成条
+  var mix = STAGE_MIX[s.key];
+  updateEnergyBar(mix);
+}
+
+// --- 键盘事件 ---
+refs.rail.addEventListener('keydown', function(e) {
+  var idx = currentIndex;
+  if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') {
+    e.preventDefault();
+    if (idx > 0) setStage(idx - 1);
+  } else if (e.key === 'ArrowDown' || e.key === 'ArrowRight') {
+    e.preventDefault();
+    if (idx < 3) setStage(idx + 1);
+  } else if (e.key === 'Home') {
+    e.preventDefault();
+    setStage(0);
+  } else if (e.key === 'End') {
+    e.preventDefault();
+    setStage(3);
+  }
+});
+
+// --- 挂载页眉页脚 ---
+Lec.mount({
+  index: 33,
+  kicker: 'ENERGY LEAP',
+  title: '一百个能量仆人',
+  take: '从人力畜力到煤炭石油，人均可用能量跃升百倍——工业革命首先是一场能量革命'
+});
+
+// --- 初始绘制 ---
+drawServants(STAGE_LABELS[0].servants);
+updateEnergyBar(STAGE_MIX.hunting);
+</script>
+</body>
+</html>

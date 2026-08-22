@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  #stage{padding:28px 42px 24px;gap:18px;overflow:hidden}
+  .topline{display:flex;align-items:flex-start;justify-content:space-between;gap:24px}
+  .kicker{color:var(--teal);font:700 var(--fs-label)/1.4 var(--font-mono);letter-spacing:.12em}
+  .phase{min-width:260px;text-align:right;color:var(--amber);font:700 var(--fs-label)/1.4 var(--font-mono)}
+  .game-shell{display:flex;gap:18px;min-height:0}
+  .conditions{width:300px;display:flex;flex-direction:column;gap:12px}
+  .habitat{flex:1;position:relative;display:flex;flex-direction:column;justify-content:center;gap:7px;padding:16px 18px;text-align:left;color:var(--text);border:2px solid var(--line);border-radius:var(--r-md);background:var(--panel);cursor:pointer;font:inherit;transition:transform 180ms ease-out,border-color 180ms ease-out,background 180ms ease-out}
+  .habitat:hover,.habitat:focus-visible{border-color:var(--teal)}
+  .habitat.active{border-color:var(--amber);background:var(--panel-hi)}
+  .habitat .terrain{height:18px;border-radius:999px;border:1px solid var(--line-strong)}
+  .habitat[data-env="light"] .terrain{background:linear-gradient(90deg,var(--teal-soft),var(--ink-muted))}
+  .habitat[data-env="mottle"] .terrain{background:repeating-linear-gradient(110deg,var(--panel-deep) 0 12px,var(--teal-dim) 12px 24px,var(--ink-muted) 24px 34px)}
+  .habitat[data-env="dark"] .terrain{background:linear-gradient(90deg,var(--panel-deep),var(--line-strong))}
+  .habitat.shake{animation:shake .28s ease-in-out 2}
+  .habitat:disabled{opacity:.52;cursor:default}
+  .sim{position:relative;flex:1;min-width:0;min-height:0;padding:16px 18px 12px;overflow:hidden;border:2px solid var(--line);border-radius:var(--r-lg);background:var(--panel-deep)}
+  .sim canvas{position:absolute;inset:52px 16px 112px;width:calc(100% - 32px);height:calc(100% - 164px)}
+  .sim-head{position:relative;z-index:2;display:flex;justify-content:space-between;align-items:center}
+  .legend-dot{width:15px;height:15px;border-radius:50%;display:inline-block;border:2px solid var(--line-strong)}
+  .dot-light{background:var(--teal-soft)} .dot-mottle{background:repeating-linear-gradient(45deg,var(--teal) 0 3px,var(--panel-deep) 3px 6px)} .dot-dark{background:var(--line-strong)}
+  .bands{position:absolute;z-index:2;right:18px;bottom:14px;left:18px;display:flex;flex-direction:column;gap:7px}
+  .band-row{display:grid;grid-template-columns:54px 1fr 52px;align-items:center;gap:10px;font-size:var(--fs-label)}
+  .band{height:12px;border-radius:999px;background:var(--panel);overflow:hidden;border:1px solid var(--line)}
+  .band i{display:block;height:100%;transition:width 360ms ease-out}.band-light i{background:var(--teal-soft)}.band-mottle i{background:var(--teal)}.band-dark i{background:var(--line-strong)}
+  .controlbar{display:flex;align-items:center;gap:14px;min-height:54px}
+  .predict{display:flex;align-items:center;gap:10px}.predict select{min-height:44px;padding:7px 12px;color:var(--text);font:650 var(--fs-body)/1.35 var(--font-sans);border:2px solid var(--line-strong);border-radius:var(--r-sm);background:var(--panel-deep)}
+  .feedback{flex:1;color:var(--teal-soft);font-size:var(--fs-sec);line-height:1.45}
+  .ring{position:absolute;z-index:3;left:50%;top:43%;width:90px;height:90px;border:3px solid var(--teal);border-radius:50%;opacity:0;transform:translate(-50%,-50%) scale(.5);pointer-events:none}.ring.go{animation:ring .7s ease-out}
+  .support strong{display:inline;margin-right:8px;color:var(--teal-soft);font-size:var(--fs-body)}
+  .k-generalization .support{padding:10px 14px}
+  @keyframes shake{25%{transform:translateX(-7px)}75%{transform:translateX(7px)}}
+  @keyframes ring{0%{opacity:.8;transform:translate(-50%,-50%) scale(.5)}100%{opacity:0;transform:translate(-50%,-50%) scale(3)}}
+  @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body data-page="09" data-total="45">
+<div id="stage">
+  <header class="topline" style="height:76px">
+    <div><div class="kicker">SELECTION, NOT UPGRADE</div><h1>环境改变后，谁更常留下后代？</h1></div>
+    <div id="phase" class="phase" aria-live="polite">阶段 1/2 · 第 0/6 代</div>
+  </header>
+
+  <section class="k-generalization" style="height:82px">
+    <div class="claim">选择保留的是当前环境下更常留下后代的差异，不是朝目标主动升级。</div>
+    <div class="trunk"></div>
+  </section>
+
+  <main class="game-shell min0" style="flex:1">
+    <aside class="conditions min0" aria-label="选择生境">
+      <button class="habitat" data-env="light"><span class="label">生境条件</span><strong>明亮地面</strong><span class="terrain"></span><span class="secondary">浅色更不显眼</span></button>
+      <button class="habitat" data-env="mottle"><span class="label">生境条件</span><strong>斑驳地面</strong><span class="terrain"></span><span class="secondary">斑色更不显眼</span></button>
+      <button class="habitat" data-env="dark"><span class="label">生境条件</span><strong>昏暗地面</strong><span class="terrain"></span><span class="secondary">深色更不显眼</span></button>
+    </aside>
+
+    <section class="sim min0" aria-label="种群繁殖模拟">
+      <div class="sim-head">
+        <span id="envName" class="chip is-current">先选择一种生境，运行 6 代</span>
+        <div class="legend"><span class="key"><i class="legend-dot dot-light"></i>浅色</span><span class="key"><i class="legend-dot dot-mottle"></i>斑色</span><span class="key"><i class="legend-dot dot-dark"></i>深色</span></div>
+      </div>
+      <canvas id="population" class="no-pan" aria-label="六十个体及逐代分叉轨迹"></canvas>
+      <div class="ring" id="ring"></div>
+      <div class="bands" aria-label="三种体色所占比例">
+        <div class="band-row"><span>浅色</span><div class="band band-light"><i id="bar-light"></i></div><output id="n-light" class="mono">20 / 60</output></div>
+        <div class="band-row"><span>斑色</span><div class="band band-mottle"><i id="bar-mottle"></i></div><output id="n-mottle" class="mono">20 / 60</output></div>
+        <div class="band-row"><span>深色</span><div class="band band-dark"><i id="bar-dark"></i></div><output id="n-dark" class="mono">20 / 60</output></div>
+      </div>
+    </section>
+  </main>
+
+  <section class="controlbar" style="height:60px">
+    <div id="predictBox" class="predict" hidden><label for="prediction">预测新环境中谁会上升</label><select id="prediction"><option value="">请选择体色</option><option value="light">浅色</option><option value="mottle">斑色</option><option value="dark">深色</option></select></div>
+    <div id="feedback" class="feedback" aria-live="polite">选择第一种生境；换代时个体被后代替换，个体本身不会变色。</div>
+    <button id="reset" class="btn" hidden>同种子重来</button><button id="swap" class="btn btn-primary" hidden>换一组环境</button>
+  </section>
+
+  <section class="k-generalization" style="height:118px">
+    <div class="supports">
+      <div class="support"><strong>差异先存在</strong>初始种群已有浅、斑、深三型。</div>
+      <div class="support"><strong>环境改变机会</strong>更不显眼者更常留下后代。</div>
+      <div class="support"><strong>后代继承差异</strong>变化发生在换代，不发生在个体身上。</div>
+      <div class="support"><strong>比例而非目标</strong>环境一换，上升的体色可以反转。</div>
+    </div>
+  </section>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script src="assets/lib/seedrandom.min.js"></script>
+<script>
+(function(){
+  Deck.init({index:9,total:45});
+  const cfg={size:60,gens:6,inherit:.99, mutation:.01, weights:{light:{light:1.35,mottle:1,dark:.65},mottle:{light:.8,mottle:1.35,dark:.8},dark:{light:.65,mottle:1,dark:1.35}}};
+  const labels={light:'浅色',mottle:'斑色',dark:'深色'}, envLabels={light:'明亮地面',mottle:'斑驳地面',dark:'昏暗地面'}, types=['light','mottle','dark'];
+  const cv=document.querySelector('#population'), buttons=[...document.querySelectorAll('.habitat')], phaseEl=document.querySelector('#phase'), feedback=document.querySelector('#feedback'), predictBox=document.querySelector('#predictBox'), prediction=document.querySelector('#prediction'), resetBtn=document.querySelector('#reset'), swapBtn=document.querySelector('#swap'), ring=document.querySelector('#ring');
+  let state;
+  function fresh(pairOffset=0){return {rng:new Math.seedrandom('apeman-spaceman-p09'),population:[...Array(20).fill('light'),...Array(20).fill('mottle'),...Array(20).fill('dark')],history:[[20,20,20]],phase:1,gen:0,env:null,firstEnv:null,pairOffset,running:false,complete:false};}
+  function counts(){return types.map(t=>state.population.filter(x=>x===t).length)}
+  function reproduce(){
+    const w=state.population.map(t=>cfg.weights[state.env][t]), total=w.reduce((a,b)=>a+b,0), next=[];
+    for(let i=0;i<cfg.size;i++){let r=state.rng()*total,j=0;while(r>w[j]&&j<w.length-1)r-=w[j++];let t=state.population[j];if(state.rng()>cfg.inherit){const other=types.filter(x=>x!==t);t=other[state.rng()<.5?0:1]}next.push(t)}
+    state.population=next;state.gen++;state.history.push(counts());render();
+  }
+  function runPhase(){
+    state.running=true;buttons.forEach(b=>b.disabled=true);prediction.disabled=true;
+    const step=()=>{if(state.gen<cfg.gens){reproduce();setTimeout(step,Deck.reduced()?0:430)}else finishPhase()};step();
+  }
+  function finishPhase(){
+    state.running=false;
+    if(state.phase===1){state.firstEnv=state.env;state.phase=2;state.gen=0;buttons.forEach(b=>{b.disabled=b.dataset.env===state.firstEnv;b.classList.remove('active')});predictBox.hidden=false;feedback.textContent='切换到另一种生境，再预测哪种体色比例会上升。';document.querySelector('#envName').textContent='保留第 6 代种群，等待新生境';phaseEl.textContent='阶段 2/2 · 第 0/6 代';}
+    else{state.complete=true;buttons.forEach(b=>b.disabled=true);predictBox.hidden=true;resetBtn.hidden=false;swapBtn.hidden=false;feedback.textContent='环境变了，占优者也可能改变；这里没有预设的“更高级”。';document.querySelector('#envName').textContent='第 12 代冻结 · 占优者随环境改变';render()}
+  }
+  buttons.forEach(b=>b.addEventListener('click',()=>{
+    if(state.running||state.complete)return;state.env=b.dataset.env;buttons.forEach(x=>x.classList.toggle('active',x===b));document.querySelector('#envName').textContent=envLabels[state.env]+' · 当前繁殖机会';
+    if(state.phase===1)runPhase();else{prediction.value='';feedback.textContent='比较新环境中的繁殖机会，然后作出预测。';prediction.focus()}
+  }));
+  prediction.addEventListener('change',()=>{
+    if(!state.env||!prediction.value)return;const best=types.reduce((a,b)=>cfg.weights[state.env][a]>cfg.weights[state.env][b]?a:b);
+    if(prediction.value!==best){const card=buttons.find(b=>b.dataset.env===state.env);card.classList.remove('shake');void card.offsetWidth;card.classList.add('shake');feedback.textContent='你选的不是新环境中机会最高的一型；请比较繁殖机会。';prediction.value='';return}
+    feedback.textContent='预测成立：'+labels[best]+'在当前环境中的繁殖权重最高。';ring.classList.remove('go');void ring.offsetWidth;ring.classList.add('go');runPhase();
+  });
+  resetBtn.addEventListener('click',()=>start(0));swapBtn.addEventListener('click',()=>start(state.pairOffset+1));
+  function start(offset){state=fresh(offset);buttons.forEach(b=>{b.disabled=false;b.classList.remove('active')});predictBox.hidden=true;prediction.value='';prediction.disabled=false;resetBtn.hidden=true;swapBtn.hidden=true;feedback.textContent=offset?'选择另一条环境路线；事件序列仍由固定种子生成。':'选择第一种生境；换代时个体被后代替换，个体本身不会变色。';document.querySelector('#envName').textContent='先选择一种生境，运行 6 代';render()}
+  function render(){
+    const c=counts();types.forEach((t,i)=>{document.querySelector('#bar-'+t).style.width=Lec.P.progress(c[i],0,cfg.size)*100+'%';document.querySelector('#n-'+t).textContent=c[i]+' / '+cfg.size});phaseEl.textContent='阶段 '+state.phase+'/2 · 第 '+state.gen+'/'+cfg.gens+' 代';draw();
+  }
+  function draw(){
+    const ctx=Deck.fit(cv),w=cv.offsetWidth,h=cv.offsetHeight;ctx.clearRect(0,0,w,h);const cols=10,gapX=(w-210)/(cols-1),gapY=(h-54)/5;
+    const colors={light:Deck.token('--teal-soft'),mottle:Deck.token('--teal'),dark:Deck.token('--line-strong')};
+    state.population.forEach((t,i)=>{const x=20+(i%cols)*gapX,y=22+Math.floor(i/cols)*gapY;ctx.globalAlpha=1;ctx.fillStyle=colors[t];ctx.beginPath();ctx.arc(x,y,6,0,Math.PI*2);ctx.fill();if(t==='mottle'){ctx.strokeStyle=Deck.token('--panel-deep');ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(x-4,y-3);ctx.lineTo(x+4,y+3);ctx.stroke()}});
+    const hx=w-150, max=Math.max(12,state.history.length-1);ctx.lineWidth=2;types.forEach((t,ti)=>{ctx.strokeStyle=colors[t];ctx.beginPath();state.history.forEach((row,i)=>{const x=hx+i*(125/max),y=h-16-row[ti]/cfg.size*(h-32);i?ctx.lineTo(x,y):ctx.moveTo(x,y)});ctx.stroke()});
+    ctx.strokeStyle=Deck.rgba('--teal',.22);ctx.setLineDash([4,7]);for(let i=0;i<=12;i++){const x=hx+i*(125/12);ctx.beginPath();ctx.moveTo(x,8);ctx.lineTo(x,h-8);ctx.stroke()}ctx.setLineDash([]);
+  }
+  Deck.onResize(draw);start(0);
+})();
+</script>
+</body>
+</html>

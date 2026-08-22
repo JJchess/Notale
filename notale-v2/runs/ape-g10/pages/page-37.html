@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  .p37{height:100%;display:flex;flex-direction:column;gap:12px}
+  .work{display:flex;gap:16px;height:330px;min-height:330px}
+  .hangar{position:relative;flex:0 0 960px;height:330px;overflow:hidden;background:linear-gradient(180deg,#0b1721,#08131c);border:1px solid var(--line);border-radius:var(--radius-md);box-shadow:var(--shadow)}
+  .hangar::before{content:"";position:absolute;inset:32px 110px 120px;border:1px solid var(--primary-line);border-radius:50%;transform:rotate(-8deg);opacity:.45}
+  #rocket-builder{position:absolute;inset:0;width:960px;height:500px;transform:scale(.65);transform-origin:top left}
+  .scene-label{position:absolute;z-index:2;color:var(--muted);font-size:var(--fs-label);line-height:1.4;pointer-events:none}
+  .scene-label.base{left:122px;top:20px}.scene-label.rig{left:588px;top:20px}
+  .tray-label{left:24px;bottom:96px;color:var(--primary)}
+  .stage-card{position:absolute;z-index:3;bottom:18px;width:206px;min-height:66px;padding:10px 12px;background:var(--surface-high);border:1px solid var(--primary-line);border-radius:var(--radius-sm);color:var(--text);font-size:var(--fs-label);line-height:1.4;text-align:left}
+  .stage-card strong{display:block;color:var(--primary);font-size:var(--fs-sec)}
+  #load-lower{left:24px}#load-upper{left:244px}
+  .stage-card:disabled{opacity:.45;cursor:not-allowed}
+  .side{flex:1;min-width:0;display:flex;flex-direction:column;gap:10px}
+  .status{min-height:76px;padding:12px 14px;background:var(--surface-deep);border:1px solid var(--primary-line);border-radius:var(--radius-sm)}
+  .status-line{display:flex;justify-content:space-between;gap:8px;color:var(--muted);font-size:var(--fs-label)}
+  .status strong{color:var(--text);font-size:var(--fs-sec)}
+  .feedback{margin-top:5px;color:var(--accent);font-size:var(--fs-sec);line-height:1.4}
+  .reset{align-self:flex-end;min-width:124px;font-size:var(--fs-sec)}
+  .compare-wrap{height:196px;min-height:196px}
+  .k-comparison{--compare-cols:164px repeat(2,minmax(0,1fr));height:100%}
+  .k-comparison > *{padding:8px 14px}
+  .k-comparison .hdr{font-size:var(--fs-sec)}
+  .k-comparison .cell{font-size:var(--fs-sec);line-height:1.38}
+  .k-comparison .dim{font-size:var(--fs-label)}
+  .metric{font-family:var(--font-mono);font-weight:700;color:var(--text)}
+  .claimbar{display:flex;align-items:center;gap:18px;min-height:0;padding:10px 18px;background:var(--surface-high);border-left:5px solid var(--primary);border-radius:0 var(--radius-sm) var(--radius-sm) 0}
+  .claimbar p{flex:1;font-size:var(--fs-sec);line-height:1.45}
+  .claimbar b{color:var(--accent)}
+  @keyframes rise{from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:none}}
+  .work,.compare-wrap,.claimbar{animation:rise 560ms cubic-bezier(.2,.7,.2,1) both}.compare-wrap{animation-delay:90ms}.claimbar{animation-delay:170ms}
+  @media(prefers-reduced-motion:reduce){.work,.compare-wrap,.claimbar{animation:none}}
+</style>
+</head>
+<body data-page="37" data-total="48">
+<div id="stage"><main id="main">
+  <section class="p37">
+    <div class="work">
+      <div class="hangar no-pan min0" aria-label="双发射台火箭装配场景">
+        <div class="scene-label base">单级基线 · 封闭结构</div>
+        <div class="scene-label rig">两级装配架 · 拖动级段到轮廓</div>
+        <div class="scene-label tray-label">级段托盘｜也可用按钮装入</div>
+        <div id="rocket-builder"></div>
+        <button class="stage-card" id="load-lower"><strong>一级推进级</strong>推进剂 70 t · 结构 7 t · Isp 350 s</button>
+        <button class="stage-card" id="load-upper"><strong>二级推进级</strong>推进剂 16 t · 结构 2 t · Isp 350 s</button>
+      </div>
+      <aside class="side min0">
+        <div class="status" aria-live="polite">
+          <div class="status-line"><span>装配进度</span><strong id="filled">2 个级位已填 0 个</strong></div>
+          <div class="status-line"><span>分离接口</span><strong id="interfaces">已接通 0/1 个</strong></div>
+          <div class="feedback" id="feedback">先把较重的一级放在下方，再连接较轻的二级。</div>
+        </div>
+        <button class="reset" id="reset">重置装配</button>
+        <p class="note">拖动级段可调整上下顺序；键盘可用上方两个装入按钮。</p>
+      </aside>
+    </div>
+
+    <div class="compare-wrap">
+      <div class="k-comparison">
+        <div class="hdr">比较维度</div><div class="hdr">单级基线</div><div class="hdr">两级方案（实时）</div>
+        <div class="dim">初始质量</div><div class="cell metric" id="single-mass"></div><div class="cell metric" id="multi-mass"></div>
+        <div class="rowline"></div>
+        <div class="dim">燃烧中携带的空结构</div><div class="cell">全程携带 9 t</div><div class="cell diff" id="carried">等待装配</div>
+        <div class="rowline"></div>
+        <div class="dim">总 Δv</div><div class="cell metric" id="single-dv"></div><div class="cell metric diff" id="multi-dv">—</div>
+        <div class="rowline"></div>
+        <div class="dim">工程代价</div><div class="cell">1 台发动机组 · 0 个接口</div><div class="cell diff" id="cost">等待装配</div>
+      </div>
+    </div>
+
+    <div class="claimbar">
+      <p>分级的收益不是凭空增加能量，而是让后续发动机<b>不再加速已经空掉的结构</b>。</p>
+      <p>级数越多不必然越好：每增加一级，也增加结构、分离动作、故障点和成本。</p>
+    </div>
+  </section>
+</main></div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script src="assets/lib/konva.min.js"></script>
+<script>
+Lec.mount({index:37,kicker:"ENGINEERING TRADE-OFF",title:"丢掉空壳，火箭能走多远？",take:"分级通过丢弃空结构改善质量比，但增加复杂度、故障点和成本。"});
+(function(){
+  const payloadKg=5000, ispS=350;
+  const exhaustVelocity=Lec.P.exhaustVelocityFromSpecificImpulse(ispS);
+  const fmt=(n,d=0)=>Lec.P.formatNumber(n,{minimumFractionDigits:d,maximumFractionDigits:d});
+  const dvSingle=Lec.P.rocketDeltaV(exhaustVelocity,100000,14000);
+  const dv1=Lec.P.rocketDeltaV(exhaustVelocity,100000,30000);
+  const dv2=Lec.P.rocketDeltaV(exhaustVelocity,23000,7000);
+  const totalDv=dv1+dv2;
+  document.getElementById('single-mass').textContent=fmt(100000/1000)+' t（含载荷 '+fmt(payloadKg/1000)+' t）';
+  document.getElementById('single-dv').textContent=fmt(dvSingle/1000,1)+' km/s';
+  document.getElementById('multi-mass').textContent='—';
+
+  const stage=new Konva.Stage({container:"rocket-builder",width:960,height:500});
+  const layer=new Konva.Layer(); stage.add(layer);
+  const C={primary:'#42C7C2',accent:'#FFB547',surface:'#172936',deep:'#0B1721',muted:'#718791',text:'#E8F2F4'};
+  const lowerZone={x:620,y:180,w:150,h:150};
+  const upperZone={x:645,y:80,w:100,h:100};
+  let state=fresh();
+  function fresh(){return {lower:false,upper:false,done:false};}
+  function rocketBody(x,y,w,h,fill,stroke){return new Konva.Rect({x,y,width:w,height:h,cornerRadius:12,fill,stroke,strokeWidth:2});}
+  layer.add(new Konva.Line({points:[65,350,400,350],stroke:C.muted,strokeWidth:2}));
+  layer.add(rocketBody(160,90,120,260,C.surface,C.primary));
+  layer.add(new Konva.Line({points:[220,55,160,90,280,90],closed:true,fill:C.surface,stroke:C.primary,strokeWidth:2}));
+  layer.add(new Konva.Rect({x:180,y:120,width:80,height:175,fill:C.primary,opacity:.28}));
+  layer.add(new Konva.Line({points:[535,350,850,350],stroke:C.muted,strokeWidth:2}));
+  [lowerZone,upperZone].forEach(z=>layer.add(new Konva.Rect({x:z.x,y:z.y,width:z.w,height:z.h,cornerRadius:10,stroke:C.primary,dash:[9,8],strokeWidth:2,opacity:.75})));
+  layer.add(new Konva.Line({points:[695,30,655,78,735,78],closed:true,fill:C.deep,stroke:C.primary,strokeWidth:2}));
+  const connector=new Konva.Line({points:[695,174,695,190],stroke:C.accent,strokeWidth:5,opacity:0});layer.add(connector);
+  function makeDrag(kind,x,y,w,h){
+    const g=new Konva.Group({x,y,width:w,height:h,draggable:true,name:kind});
+    const box=rocketBody(0,0,w,h,C.surface,C.primary); g.add(box);
+    g.add(new Konva.Rect({x:12,y:16,width:w-24,height:h-32,fill:C.primary,opacity:.32,cornerRadius:6}));
+    g.on('dragend',()=>drop(g,kind));
+    g.on('dragstart',()=>g.moveToTop()); layer.add(g); return g;
+  }
+  const lower=makeDrag('lower',45,380,150,78), upper=makeDrag('upper',260,380,100,78);
+  const homes={lower:{x:45,y:380},upper:{x:260,y:380}};
+  function inside(g,z){const p=g.position();return p.x+g.width()/2>z.x&&p.x+g.width()/2<z.x+z.w&&p.y+g.height()/2>z.y&&p.y+g.height()/2<z.y+z.h;}
+  function shake(g,msg){
+    document.getElementById('feedback').textContent=msg;
+    const home=homes[g.name()];
+    if(Deck.reduced()){g.position(home);layer.draw();return;}
+    g.to({x:g.x()+14,duration:.08,onFinish:()=>g.to({x:g.x()-28,duration:.10,onFinish:()=>g.to({x:home.x,y:home.y,duration:.16})})});
+  }
+  function place(kind){
+    const g=kind==='lower'?lower:upper, z=kind==='lower'?lowerZone:upperZone;
+    g.to({x:z.x,y:z.y,duration:Deck.reduced()?0:.22}); state[kind]=true; g.draggable(false); update();
+  }
+  function drop(g,kind){
+    if(kind==='lower'&&inside(g,lowerZone)){place(kind);return;}
+    if(kind==='upper'&&inside(g,upperZone)&&state.lower){place(kind);return;}
+    shake(g,kind==='upper'?'上级必须连同载荷被下级加速；请先把更重的级段放在下方。':'请把更重的一级放在下方级位。');
+  }
+  function update(){
+    const count=Number(state.lower)+Number(state.upper);
+    document.getElementById('filled').textContent='2 个级位已填 '+fmt(count)+' 个';
+    document.getElementById('interfaces').textContent='已接通 '+fmt(state.lower&&state.upper?1:0)+'/1 个';
+    document.getElementById('load-lower').disabled=state.lower;
+    document.getElementById('load-upper').disabled=state.upper;
+    if(state.lower&&state.upper){complete();}
+    else {
+      document.getElementById('feedback').textContent=state.lower?'一级已吸附。现在把较轻的二级放在上方。':'先把较重的一级放在下方，再连接较轻的二级。';
+      document.getElementById('multi-mass').textContent=count?fmt(((state.lower?77000:18000)+payloadKg)/1000)+' t（未完成）':'—';
+    }
+  }
+  function complete(){
+    state.done=true; connector.opacity(1); connector.to({opacity:.35,duration:Deck.reduced()?0:.25,yoyo:true});
+    document.getElementById('feedback').textContent='装配完成：多出的 Δv 来自少带空壳。';
+    document.getElementById('multi-mass').textContent=fmt(100000/1000)+' t（含载荷 '+fmt(payloadKg/1000)+' t）';
+    document.getElementById('carried').textContent='一级分离后，不再携带 7 t 空壳';
+    document.getElementById('multi-dv').textContent=fmt(totalDv/1000,1)+' km/s（'+fmt(dv1/1000,1)+' + '+fmt(dv2/1000,1)+'）';
+    document.getElementById('cost').textContent='2 台发动机组 · 1 个接口；复杂度上升';
+  }
+  function reset(){
+    state=fresh(); [lower,upper].forEach(g=>{g.stopDrag();g.draggable(true);g.position(homes[g.name()]);}); connector.opacity(0);
+    document.getElementById('carried').textContent='等待装配';document.getElementById('multi-dv').textContent='—';document.getElementById('cost').textContent='等待装配';document.getElementById('multi-mass').textContent='—';update();layer.draw();
+  }
+  document.getElementById('load-lower').addEventListener('click',()=>place('lower'));
+  document.getElementById('load-upper').addEventListener('click',()=>state.lower?place('upper'):shake(upper,'上级必须连同载荷被下级加速；请先把更重的级段放在下方。'));
+  document.getElementById('reset').addEventListener('click',reset);
+  layer.draw();update();
+})();
+</script>
+</body>
+</html>

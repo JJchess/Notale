@@ -1,0 +1,561 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  progress.lec-progress {
+    appearance: none;
+    overflow: visible;
+    border: 0;
+  }
+  progress.lec-progress::-webkit-progress-bar,
+  progress.lec-progress::-webkit-progress-value {
+    height: 2px;
+    border: 0;
+  }
+  .interior-page {
+    position: relative;
+    width: var(--content-w);
+    height: var(--content-h);
+    overflow: hidden;
+  }
+  .interior-page::before {
+    position: absolute;
+    inset: 76px 0 154px;
+    border-top: 1px solid var(--line);
+    border-bottom: 1px solid var(--line);
+    background:
+      radial-gradient(ellipse at 50% 105%, transparent 0 47%, var(--primary-line) 47.3% 47.55%, transparent 47.8%),
+      linear-gradient(90deg, transparent, var(--primary-soft) 50%, transparent);
+    content: "";
+    pointer-events: none;
+  }
+  .control-strip {
+    position: relative;
+    z-index: 5;
+    height: 68px;
+  }
+  .prompt {
+    color: var(--text);
+    font-size: var(--fs-sec);
+    line-height: var(--lh-body);
+  }
+  .prediction {
+    display: inline-flex;
+    gap: var(--sp-2);
+  }
+  .prediction button {
+    min-width: 76px;
+    font-size: var(--fs-sec);
+  }
+  .prediction button.wrong {
+    border-color: var(--danger);
+  }
+  .start-button {
+    min-width: 126px;
+    border-color: var(--primary);
+    color: var(--text);
+    font-size: var(--fs-sec);
+  }
+  .reset-button {
+    width: 44px;
+    padding: 0;
+    font-size: 24px;
+  }
+  .feedback {
+    flex: 1 1 0;
+    min-width: 280px;
+    color: var(--text-muted);
+    font-size: var(--fs-sec);
+    line-height: var(--lh-body);
+  }
+  .feedback.is-key { color: var(--accent); }
+  .scene-shell {
+    position: relative;
+    height: 374px;
+    min-width: 0;
+  }
+  .scene-shell canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+  }
+  .scene-overlay {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+  }
+  .model-label {
+    position: absolute;
+    top: 12px;
+    width: 250px;
+    transform: translateX(-50%);
+    text-align: center;
+  }
+  .model-label:nth-child(1) { left: 20%; }
+  .model-label:nth-child(2) { left: 50%; }
+  .model-label:nth-child(3) { left: 80%; }
+  .model-name {
+    color: var(--text);
+    font-size: var(--fs-h2);
+    font-weight: 650;
+    line-height: var(--lh-tight);
+  }
+  .model-state {
+    margin-top: var(--sp-1);
+    color: var(--text-muted);
+    font-size: var(--fs-label);
+    line-height: var(--lh-tight);
+  }
+  .model-label.predicted .model-name { color: var(--accent); }
+  .model-label.predicted::after {
+    display: block;
+    width: 2px;
+    height: 26px;
+    margin: var(--sp-2) auto 0;
+    background: var(--accent);
+    content: "";
+  }
+  .heat-key {
+    position: absolute;
+    top: 84px;
+    left: 0;
+    padding-left: var(--sp-3);
+    border-left: 2px solid var(--primary);
+    color: var(--text-muted);
+    font-size: var(--fs-label);
+    line-height: var(--lh-tight);
+  }
+  .heat-key strong {
+    display: block;
+    margin-bottom: var(--sp-1);
+    color: var(--text);
+    font-size: var(--fs-sec);
+  }
+  .reference-row {
+    position: absolute;
+    right: 0;
+    bottom: 8px;
+    left: 0;
+    display: flex;
+    justify-content: center;
+    gap: var(--sp-6);
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  .reference {
+    min-width: 270px;
+    padding: var(--sp-2) var(--sp-4);
+    border-top: 2px solid var(--primary);
+    background: rgb(16 27 36 / 88%);
+    color: var(--text-muted);
+    font-size: var(--fs-label);
+    line-height: var(--lh-tight);
+    text-align: center;
+  }
+  .reference strong {
+    color: var(--text);
+    font-size: var(--fs-sec);
+  }
+  .process-wrap {
+    position: relative;
+    z-index: 4;
+    height: 146px;
+    padding-top: var(--sp-3);
+  }
+  .process-head {
+    height: 25px;
+    color: var(--text-muted);
+    font-size: var(--fs-label);
+    line-height: var(--lh-tight);
+  }
+  .process-head strong { color: var(--accent); }
+  .event-count {
+    margin-left: auto;
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+  }
+  .interior-process {
+    --process-line-y: 22px;
+    height: 102px;
+    gap: var(--sp-2);
+  }
+  .interior-process > .axis {
+    right: 52px;
+    left: 52px;
+  }
+  .interior-process > .step {
+    display: flex;
+    align-items: flex-end;
+    padding: 36px var(--sp-2) var(--sp-2);
+    border-color: var(--line);
+    background: rgb(16 27 36 / 92%);
+    color: var(--text-muted);
+    font-size: var(--fs-label);
+    line-height: var(--lh-tight);
+    text-align: center;
+  }
+  .interior-process > .step::before {
+    top: 16px;
+    left: 50%;
+    transform: translateX(-50%);
+  }
+  .interior-process > .arw {
+    flex-basis: 22px;
+    font-size: var(--fs-lead);
+  }
+  .interior-process > .step.is-done { opacity: .72; }
+  .interior-process > .step.is-current {
+    border-color: var(--accent);
+    background: var(--accent-soft);
+    color: var(--text);
+    filter: none;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .reference-row { transform: none; }
+  }
+</style>
+</head>
+<body data-page="29" data-total="50">
+<div id="stage">
+<main id="main">
+  <section class="interior-page min0" aria-label="行星内部冷却过程互动模型">
+    <div class="control-strip row items-center gap-4">
+      <span class="prompt">先预测：哪个同材料模型最先失去持续活动？</span>
+      <div class="prediction" role="group" aria-label="选择预测">
+        <button type="button" data-predict="small" aria-pressed="false">小模型</button>
+        <button type="button" data-predict="medium" aria-pressed="false">中模型</button>
+        <button type="button" data-predict="large" aria-pressed="false">大模型</button>
+      </div>
+      <button type="button" id="start" class="start-button" disabled>启动冷却</button>
+      <button type="button" id="reset" class="reset-button" title="一键重置" aria-label="一键重置">↶</button>
+      <div id="feedback" class="feedback" aria-live="polite">三颗模型具有相同材料与初始状态，只改变尺寸。</div>
+    </div>
+
+    <div class="scene-shell min0" id="scene-shell">
+      <canvas id="planet-canvas" class="cv-fill" aria-hidden="true"></canvas>
+      <div class="scene-overlay">
+        <div class="model-label" data-model-label="small">
+          <div class="model-name">小模型</div><div class="model-state">薄壳 · 热流活跃</div>
+        </div>
+        <div class="model-label" data-model-label="medium">
+          <div class="model-name">中模型</div><div class="model-state">薄壳 · 热流活跃</div>
+        </div>
+        <div class="model-label" data-model-label="large">
+          <div class="model-name">大模型</div><div class="model-state">薄壳 · 热流活跃</div>
+        </div>
+        <div class="heat-key"><strong>剖面亮度</strong>剩余内部热量</div>
+        <div id="references" class="reference-row" aria-live="polite">
+          <div class="reference" id="mars-ref"><strong>火星</strong>现实参照</div>
+          <div class="reference" id="earth-ref"><strong>地球</strong>现实参照</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="process-wrap">
+      <div class="process-head row items-center">
+        <span>当前事件：<strong id="current-event">等待启动</strong></span>
+        <span id="event-count" class="event-count">剩余 6 个事件</span>
+      </div>
+      <div class="k-process interior-process" aria-label="内部演化六事件因果链">
+        <div class="axis" aria-hidden="true"></div>
+        <div class="step" data-step="0">热源留下内部热量</div><div class="arw" aria-hidden="true"></div>
+        <div class="step" data-step="1">热穿过内部向外散失</div><div class="arw" aria-hidden="true"></div>
+        <div class="step" data-step="2">尺寸改变冷却快慢</div><div class="arw" aria-hidden="true"></div>
+        <div class="step" data-step="3">对流与熔融逐渐减弱</div><div class="arw" aria-hidden="true"></div>
+        <div class="step" data-step="4">长期火山活动趋弱</div><div class="arw" aria-hidden="true"></div>
+        <div class="step" data-step="5">全球磁场可能衰减</div>
+      </div>
+    </div>
+  </section>
+</main>
+</div>
+<script src="assets/lib/three.min.js"></script>
+<script src="assets/lib/gsap.min.js"></script>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script>
+Lec.mount({
+  index: 29,
+  kicker: "INTERIOR EVOLUTION",
+  title: "一颗行星会热多久？",
+  take: "更大的行星通常更能留住内部热量，因此火山、内部对流和磁场有机会持续更久。"
+});
+
+(function () {
+  var canvas = document.getElementById('planet-canvas');
+  var shell = document.getElementById('scene-shell');
+  var feedback = document.getElementById('feedback');
+  var startButton = document.getElementById('start');
+  var resetButton = document.getElementById('reset');
+  var currentEvent = document.getElementById('current-event');
+  var eventCount = document.getElementById('event-count');
+  var references = document.getElementById('references');
+  var predictButtons = Array.prototype.slice.call(document.querySelectorAll('[data-predict]'));
+  var steps = Array.prototype.slice.call(document.querySelectorAll('[data-step]'));
+  var labels = Array.prototype.slice.call(document.querySelectorAll('[data-model-label]'));
+  var stateLabels = Array.prototype.slice.call(document.querySelectorAll('.model-state'));
+  var events = [
+    '形成热与放射性热源', '热量持续向表面逸散', '小天体冷却更快',
+    '对流与部分熔融减弱', '火山活动趋弱', '全球磁场可能衰减'
+  ];
+  var selected = null;
+  var running = false;
+  var timeline = null;
+
+  var planets = Lec.K.PLANETS;
+  var earth = planets[2];
+  var mars = planets[3];
+  var earthMass = Lec.P.planetMassKg(earth);
+  var marsMass = Lec.P.planetMassKg(mars);
+  var earthDiameter = Lec.P.planetDiameterKm(earth);
+  var marsDiameter = Lec.P.planetDiameterKm(mars);
+  var earthVolume = Lec.P.sphereVolume(earthDiameter / 2);
+  var marsVolume = Lec.P.sphereVolume(marsDiameter / 2);
+  var massRatio = Lec.P.ratio(earthMass, marsMass);
+  var volumeRatio = Lec.P.ratio(earthVolume, marsVolume);
+  document.getElementById('mars-ref').innerHTML = '<strong>火星</strong> 质量较小，直径 ' + Lec.P.significant(marsDiameter, 3) + ' km';
+  document.getElementById('earth-ref').innerHTML = '<strong>地球</strong> 质量约为火星 ' + Lec.P.significant(massRatio, 2) + ' 倍，体积约 ' + Lec.P.significant(volumeRatio, 2) + ' 倍';
+
+  var renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true, alpha: true });
+  renderer.setClearColor(0x000000, 0);
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.12;
+  var scene = new THREE.Scene();
+  var camera = new THREE.PerspectiveCamera(32, 1, 0.1, 100);
+  camera.position.set(0, 0.15, 11.5);
+  scene.add(new THREE.HemisphereLight(0x9de8f1, 0x071018, 1.45));
+  var key = new THREE.DirectionalLight(0xffffff, 2.4);
+  key.position.set(2, 4, 6);
+  scene.add(key);
+  var rim = new THREE.DirectionalLight(0x4fc3d7, 1.8);
+  rim.position.set(-5, 1, -2);
+  scene.add(rim);
+
+  var models = [];
+  var sizes = [0.92, 1.18, 1.45];
+  var xs = [-3.35, 0, 3.35];
+  var coolingRates = [1, 0.72, 0.48];
+
+  function makePlanet(radius, x, index) {
+    var group = new THREE.Group();
+    group.position.set(x, -0.15, 0);
+    group.rotation.set(-0.1, -0.65, 0.04);
+    scene.add(group);
+
+    var coreMat = new THREE.MeshPhysicalMaterial({
+      color: 0xff9d52, emissive: 0xff5b22, emissiveIntensity: 1.25,
+      roughness: 0.42, metalness: 0.08
+    });
+    var core = new THREE.Mesh(new THREE.SphereGeometry(radius * 0.64, 36, 24), coreMat);
+    group.add(core);
+
+    var mantleMat = new THREE.MeshPhysicalMaterial({
+      color: 0xd96c3d, emissive: 0xb73f1f, emissiveIntensity: 0.72,
+      roughness: 0.6, metalness: 0.02, side: THREE.DoubleSide
+    });
+    var mantle = new THREE.Mesh(new THREE.SphereGeometry(radius * 0.86, 48, 28, 0.42, Math.PI * 1.48), mantleMat);
+    group.add(mantle);
+
+    var shellMat = new THREE.MeshStandardMaterial({
+      color: 0x294c58, emissive: 0x102b34, emissiveIntensity: 0.2,
+      roughness: 0.78, metalness: 0.12, side: THREE.DoubleSide
+    });
+    var crust = new THREE.Mesh(new THREE.SphereGeometry(radius, 56, 32, 0.42, Math.PI * 1.48), shellMat);
+    group.add(crust);
+
+    var fieldMat = new THREE.MeshBasicMaterial({ color: 0x4fc3d7, transparent: true, opacity: 0.62 });
+    var field = new THREE.Group();
+    [1.22, 1.43].forEach(function (scale, ringIndex) {
+      var curve = new THREE.EllipseCurve(0, 0, radius * scale, radius * (0.52 + ringIndex * 0.1), 0, Math.PI * 2);
+      var points = curve.getPoints(80).map(function (p) { return new THREE.Vector3(p.x, p.y, 0); });
+      var geo = new THREE.BufferGeometry().setFromPoints(points);
+      field.add(new THREE.LineLoop(geo, fieldMat));
+    });
+    field.rotation.y = 0.55;
+    group.add(field);
+
+    var heat = new THREE.Group();
+    for (var i = 0; i < 5; i++) {
+      var heatGeo = new THREE.CylinderGeometry(0.012, 0.025, radius * 0.55, 8);
+      var heatMat = new THREE.MeshBasicMaterial({ color: i % 2 ? 0xffd166 : 0xff7b72, transparent: true, opacity: 0.8 });
+      var ray = new THREE.Mesh(heatGeo, heatMat);
+      var angle = (i / 5) * Math.PI * 2;
+      ray.position.set(Math.cos(angle) * radius * 0.48, Math.sin(angle) * radius * 0.48, radius * 0.18);
+      ray.rotation.z = angle - Math.PI / 2;
+      heat.add(ray);
+    }
+    group.add(heat);
+
+    return {
+      group: group, core: core, mantle: mantle, crust: crust, field: field, heat: heat,
+      radius: radius, rate: coolingRates[index], state: { cool: 0 }
+    };
+  }
+
+  sizes.forEach(function (radius, i) { models.push(makePlanet(radius, xs[i], i)); });
+
+  function resize() {
+    var w = Math.max(1, shell.clientWidth);
+    var h = Math.max(1, shell.clientHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.6));
+    renderer.setSize(w, h, false);
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
+    render();
+  }
+
+  function applyModel(model) {
+    var c = Deck.clamp(model.state.cool * model.rate, 0, 1);
+    model.core.material.emissiveIntensity = 1.25 - c * 1.05;
+    model.core.material.color.setRGB(1 - c * 0.48, 0.61 - c * 0.34, 0.32 - c * 0.18);
+    model.mantle.material.emissiveIntensity = 0.72 - c * 0.62;
+    model.crust.scale.setScalar(1 + c * 0.075);
+    model.mantle.scale.setScalar(1 - c * 0.08);
+    model.heat.children.forEach(function (ray) { ray.material.opacity = 0.8 * (1 - c); });
+    model.field.children.forEach(function (line) { line.material.opacity = 0.62 * (1 - Math.pow(c, 1.7)); });
+    model.group.rotation.y = -0.65 + model.state.cool * 0.72;
+  }
+
+  function render() {
+    models.forEach(applyModel);
+    renderer.render(scene, camera);
+  }
+
+  function setStep(index) {
+    steps.forEach(function (step, i) {
+      step.classList.toggle('is-done', i < index);
+      step.classList.toggle('is-current', i === index);
+      if (i === index) step.setAttribute('aria-current', 'step');
+      else step.removeAttribute('aria-current');
+    });
+    currentEvent.textContent = events[index];
+    eventCount.textContent = index === 5 ? '因果链完整' : '剩余 ' + (5 - index) + ' 个事件';
+    if (index === 2 && selected !== 'small') {
+      feedback.textContent = '比较散热表面积相对于内部体积的大小。';
+      feedback.classList.add('is-key');
+    }
+    if (index === 3) stateLabels[0].textContent = '厚壳 · 对流先减弱';
+    if (index === 4) {
+      stateLabels[0].textContent = '火山活动先趋弱';
+      stateLabels[1].textContent = '对流正在减弱';
+    }
+    if (index === 5) {
+      stateLabels[0].textContent = '持续活动已沉寂';
+      stateLabels[1].textContent = '活动明显减弱';
+      stateLabels[2].textContent = '仍保留更多内部热量';
+    }
+  }
+
+  function complete() {
+    running = false;
+    references.style.opacity = '1';
+    references.style.transform = 'translateY(0)';
+    feedback.textContent = '质量影响演化节奏；组成、形成历史与内部状态也会改变结果。';
+    feedback.classList.add('is-key');
+    steps.forEach(function (step) { step.classList.add('is-current'); step.classList.remove('is-done'); });
+    currentEvent.textContent = '内部热量是必要条件之一，不是磁场的唯一开关';
+    eventCount.textContent = '因果链完整';
+  }
+
+  function buildTimeline() {
+    timeline = gsap.timeline({ paused: true, defaults: { ease: 'power1.inOut' }, onComplete: complete });
+    events.forEach(function (_, index) {
+      var at = index * 1.05;
+      timeline.add(function () { setStep(index); }, at);
+      models.forEach(function (model) {
+        timeline.to(model.state, { cool: (index + 1) / 6, duration: 1.0, onUpdate: render }, at);
+      });
+    });
+    timeline.to(references, { opacity: 1, y: 0, duration: 0.55 }, 5.7);
+  }
+
+  function choosePrediction(key, button) {
+    if (running) return;
+    selected = key;
+    predictButtons.forEach(function (b) {
+      var active = b === button;
+      b.setAttribute('aria-pressed', active ? 'true' : 'false');
+      b.classList.toggle('wrong', active && key !== 'small');
+    });
+    labels.forEach(function (label) { label.classList.toggle('predicted', label.getAttribute('data-model-label') === key); });
+    startButton.disabled = false;
+    if (key === 'small') {
+      feedback.textContent = '较小模型先失去持续活动。预测已接入时间轴。';
+      feedback.classList.add('is-key');
+    } else {
+      feedback.textContent = '预测已保留。启动后比较三颗模型的壳层增厚。';
+      feedback.classList.remove('is-key');
+      gsap.fromTo(button, { x: -5 }, { x: 0, duration: 0.32, ease: 'elastic.out(1, 0.35)' });
+    }
+  }
+
+  function startCooling() {
+    if (!selected || running) return;
+    running = true;
+    startButton.disabled = true;
+    predictButtons.forEach(function (b) { b.disabled = true; });
+    feedback.textContent = '热量正由内部穿过壳层，向表面散失。';
+    feedback.classList.remove('is-key');
+    if (Deck.reduced()) {
+      models.forEach(function (model) { model.state.cool = 1; });
+      render();
+      setStep(5);
+      complete();
+    } else {
+      timeline.restart();
+    }
+  }
+
+  function reset() {
+    if (timeline) timeline.pause(0);
+    running = false;
+    selected = null;
+    models.forEach(function (model) { model.state.cool = 0; });
+    predictButtons.forEach(function (b) {
+      b.disabled = false;
+      b.setAttribute('aria-pressed', 'false');
+      b.classList.remove('wrong');
+      gsap.set(b, { x: 0 });
+    });
+    labels.forEach(function (label) { label.classList.remove('predicted'); });
+    stateLabels.forEach(function (label) { label.textContent = '薄壳 · 热流活跃'; });
+    steps.forEach(function (step) {
+      step.classList.remove('is-done', 'is-current');
+      step.removeAttribute('aria-current');
+    });
+    references.style.opacity = '0';
+    references.style.transform = 'translateY(16px)';
+    currentEvent.textContent = '等待启动';
+    eventCount.textContent = '剩余 6 个事件';
+    feedback.textContent = '三颗模型具有相同材料与初始状态，只改变尺寸。';
+    feedback.classList.remove('is-key');
+    startButton.disabled = true;
+    render();
+  }
+
+  predictButtons.forEach(function (button) {
+    button.addEventListener('click', function () { choosePrediction(button.getAttribute('data-predict'), button); });
+  });
+  startButton.addEventListener('click', startCooling);
+  resetButton.addEventListener('click', reset);
+  buildTimeline();
+  resize();
+  Deck.onResize(resize);
+  window.addEventListener('beforeunload', function () {
+    if (timeline) timeline.kill();
+    models.forEach(function (model) {
+      model.group.traverse(function (obj) {
+        if (obj.geometry) obj.geometry.dispose();
+        if (obj.material && obj.material.dispose) obj.material.dispose();
+      });
+    });
+    renderer.dispose();
+  });
+}());
+</script>
+</body>
+</html>

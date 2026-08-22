@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title></title>
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/deck.css">
+<style>
+#main{display:flex;flex-direction:column;height:100%;gap:12px}
+.race-tools{display:flex;align-items:center;gap:14px;flex:0 0 auto;min-height:44px}
+.pickset{display:flex;align-items:center;gap:8px;flex-wrap:wrap;flex:1 1 auto}
+.pick{position:relative}
+.pick input{position:absolute;opacity:0;pointer-events:none}
+.pick span{display:block;font:600 var(--fs-label)/1.2 var(--font-sans);color:var(--text-2);border:1px solid var(--line);border-radius:7px;padding:8px 12px;cursor:pointer;transition:background .16s,border-color .16s,color .16s}
+.pick input:checked+span{background:var(--cult);border-color:var(--cult);color:#12100e}
+.pick input:focus-visible+span{outline:2px solid var(--focus);outline-offset:3px}
+.clockbox{min-width:190px;text-align:right}
+.clock{font-family:var(--font-num);font-variant-numeric:tabular-nums;font-size:var(--fs-h2);line-height:1;color:var(--text)}
+.scale{margin-top:5px;font-size:var(--fs-tick);color:var(--text-3);font-family:var(--font-num)}
+.race{flex:1 1 auto;min-height:0;border-top:1px solid var(--line-soft);border-bottom:1px solid var(--line-soft);padding:8px 0 6px;display:flex;flex-direction:column}
+#runners{flex:1 1 auto;min-height:0;display:flex;flex-direction:column;justify-content:space-evenly}
+.axisrow,.runner{display:grid;grid-template-columns:205px minmax(0,1fr) 132px;gap:14px;align-items:center}
+.axisrow{font-size:var(--fs-label);color:var(--text-3)}
+.axisrow .route{display:flex;justify-content:space-between;align-items:center;padding:0 14px}
+.axisrow .route b{font-family:var(--font-num);font-size:var(--fs-label);color:var(--text-2)}
+.runner{min-height:46px;opacity:.37;border-radius:6px;background:rgba(255,255,255,.018);transition:opacity .18s,background .18s}
+.runner.active{opacity:1;background:rgba(95,200,216,.035)}
+.who{display:flex;align-items:center;gap:10px;min-width:0}
+.badge{width:8px;height:8px;border-radius:50%;background:var(--text-3);flex:0 0 auto}
+.runner.active .badge{background:var(--cult);box-shadow:0 0 12px rgba(95,200,216,.45)}
+.name{font-size:var(--fs-body);line-height:1.15;white-space:nowrap}
+.speed{display:block;margin-top:4px;font-family:var(--font-num);font-size:var(--fs-tick);line-height:1.1;color:var(--text-3)}
+.runner.orbit .name,.runner.orbit .time{color:var(--cult-2);font-weight:700}
+.track{position:relative;height:22px;margin:0 14px}
+.track::before{content:"";position:absolute;left:0;right:0;top:10px;height:2px;background:var(--line);border-radius:2px}
+.track::after{content:"";position:absolute;right:-1px;top:2px;height:18px;width:2px;background:var(--text-2)}
+.progress{position:absolute;left:0;top:10px;height:2px;width:0;background:var(--cult);opacity:.72}
+.marker{position:absolute;left:0;top:0;width:22px;height:22px;border:2px solid var(--text-3);background:var(--bg);transform:translateX(-50%) rotate(45deg);transition:border-color .18s,box-shadow .18s}
+.runner.active .marker{border-color:var(--cult);box-shadow:0 0 14px rgba(95,200,216,.28)}
+.runner.arrived .marker{background:var(--cult);border-color:var(--cult)}
+.time{text-align:right;font-family:var(--font-num);font-size:var(--fs-sec);font-variant-numeric:tabular-nums;color:var(--text-2);white-space:nowrap}
+.insights{flex:0 0 auto;display:grid;grid-template-columns:1.12fr .88fr;gap:28px;align-items:center;padding:10px 0 2px}
+.orbitfact{display:flex;align-items:baseline;gap:12px;min-width:0}
+.orbitfact .big{color:var(--cult);font-size:36px}
+.orbitcopy{font-size:var(--fs-sec);line-height:1.45;color:var(--text-2)}
+.orbitcopy b{color:var(--text)}
+.danger{border-left:3px solid var(--warn);padding:3px 0 3px 16px;font-size:var(--fs-sec);line-height:1.45;color:var(--text-2)}
+.danger b{color:#f0968c}
+@media (prefers-reduced-motion:reduce){.pick span,.runner{transition:none}}
+</style>
+</head>
+<body data-page="30" data-total="44">
+<div id="stage"><main id="main">
+  <section class="race-tools min0" aria-label="竞速控制">
+    <div class="pickset min0" id="pickset"></div>
+    <div class="hint">选几个对手，按开始</div>
+    <button class="btn lg cult" id="start" type="button">开始</button>
+    <div class="clockbox">
+      <div class="clock" id="clock">00:00</div>
+      <div class="scale">共同时间尺 · 1 秒 = 现实 60 秒</div>
+    </div>
+  </section>
+
+  <section class="race min0" aria-label="北京到上海同场竞速">
+    <div class="axisrow">
+      <div>参照物 / 真实速度</div>
+      <div class="route"><b>北京 · 0 km</b><span>同一段距离</span><b>上海 · 1084 km</b></div>
+      <div style="text-align:right">实际用时</div>
+    </div>
+    <div id="runners"></div>
+  </section>
+
+  <section class="insights min0" aria-label="速度意味着什么">
+    <div class="orbitfact min0">
+      <div class="big sm num" id="orbitPeriod">—</div>
+      <div class="orbitcopy"><b>绕地球一整圈</b><br>400 km 高度；一堂课的时间里，空间站会绕地球一圈。</div>
+    </div>
+    <div class="danger"><b>这个速度不能一点点加上去。</b><br>空气会把你烧掉；必须在很短的时间里、在很稀薄的地方把它加完。</div>
+  </section>
+</main></div>
+<script src="assets/base.js"></script>
+<script src="assets/deck.js"></script>
+<script>
+Chrome.mount({ act:4, title:'7.7 km/s 有多快', sub:'换成一段你走过的路：北京到上海，直线 1084 公里。', foot:'这个速度不是渐渐加上去的。它有一道非常硬的账要算。' });
+
+(function(){
+  var distance = 1084000;
+  var data = [
+    {id:'walk', name:'步行', speed:1.4, speedLabel:'1.4 m/s'},
+    {id:'train', name:'高铁（复兴号）', speed:350000/3600, speedLabel:'350 km/h = 97.2 m/s'},
+    {id:'plane', name:'客机巡航', speed:900000/3600, speedLabel:'900 km/h = 250 m/s'},
+    {id:'sound', name:'声速（海平面）', speed:343, speedLabel:'343 m/s'},
+    {id:'bullet', name:'步枪子弹', speed:900, speedLabel:'900 m/s'},
+    {id:'orbit', name:'近地轨道', speed:7673, speedLabel:'7,673 m/s'}
+  ];
+  data.forEach(function(d){ d.duration = distance / d.speed; });
+
+  function durationText(sec){
+    if(sec >= 86400){ return (sec/86400).toFixed(2) + ' 天'; }
+    var s = Math.round(sec), h = Math.floor(s/3600); s -= h*3600;
+    var m = Math.floor(s/60); s -= m*60;
+    if(h) return h + ' 小时 ' + m + ' 分';
+    return m + ' 分 ' + s + ' 秒';
+  }
+  function clockText(sec){
+    var total = Math.max(0, Math.round(sec));
+    var h = Math.floor(total/3600), m = Math.floor((total%3600)/60), s = total%60;
+    return (h ? String(h).padStart(2,'0') + ':' : '') + String(m).padStart(2,'0') + ':' + String(s).padStart(2,'0');
+  }
+
+  var picks = document.getElementById('pickset');
+  var runners = document.getElementById('runners');
+  data.forEach(function(d){
+    var label = document.createElement('label');
+    label.className = 'pick';
+    label.innerHTML = '<input type="checkbox" value="'+d.id+'" '+((d.id==='train'||d.id==='orbit')?'checked':'')+'><span>'+d.name.replace('（复兴号）','')+'</span>';
+    picks.appendChild(label);
+
+    var row = document.createElement('div');
+    row.className = 'runner' + (d.id==='orbit' ? ' orbit' : '');
+    row.dataset.id = d.id;
+    row.innerHTML = '<div class="who"><i class="badge"></i><div class="min0"><div class="name">'+d.name+'</div><span class="speed">'+d.speedLabel+'</span></div></div>'+
+      '<div class="track"><div class="progress"></div><i class="marker"></i></div>'+
+      '<div class="time">'+durationText(d.duration)+'</div>';
+    runners.appendChild(row);
+    d.row = row; d.marker = row.querySelector('.marker'); d.progress = row.querySelector('.progress');
+  });
+
+  function selected(){
+    var ids = Array.prototype.map.call(picks.querySelectorAll('input:checked'), function(x){return x.value;});
+    return data.filter(function(d){return ids.indexOf(d.id)>=0;});
+  }
+  function syncSelection(){
+    data.forEach(function(d){ d.row.classList.toggle('active', !!picks.querySelector('input[value="'+d.id+'"]:checked')); });
+  }
+  picks.addEventListener('change', syncSelection);
+  syncSelection();
+
+  var earthR = 6371000, altitude = 400000, vc = 7673;
+  var periodMinutes = (2 * Math.PI * (earthR + altitude) / vc) / 60;
+  document.getElementById('orbitPeriod').textContent = periodMinutes.toFixed(1) + ' 分钟';
+
+  var button = document.getElementById('start');
+  var clock = document.getElementById('clock');
+  var stopLoop = null, running = false;
+
+  function resetVisual(){
+    data.forEach(function(d){
+      d.row.classList.remove('arrived');
+      d.marker.style.left = '0%';
+      d.progress.style.width = '0%';
+    });
+    clock.textContent = '00:00';
+  }
+  function stop(){ if(stopLoop){ stopLoop(); stopLoop=null; } running=false; }
+  function begin(){
+    if(running){ stop(); resetVisual(); button.textContent='开始'; return; }
+    var racers = selected();
+    if(!racers.length){ return; }
+    resetVisual();
+    running=true; button.textContent='重来';
+    var origin=null;
+    stopLoop = Deck.loop(function(t){
+      if(origin===null) origin=t;
+      var realSeconds = Math.max(0,(t-origin)/1000*60);
+      clock.textContent = clockText(realSeconds);
+      racers.forEach(function(d){
+        var p = Math.min(1, realSeconds/d.duration);
+        d.marker.style.left = (p*100)+'%';
+        d.progress.style.width = (p*100)+'%';
+        d.row.classList.toggle('arrived',p>=1);
+      });
+      var maxTime = Math.max.apply(null,racers.map(function(d){return d.duration;}));
+      if(realSeconds>=maxTime){ stop(); button.textContent='重来'; }
+    },{still:0});
+  }
+  button.addEventListener('click',begin);
+})();
+</script>
+</body></html>

@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>挡住多少，不只取决于墙有多厚</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    html.lec-root{top:0;bottom:auto;height:900px}
+    .lec-header__inner{transform:translateY(4px)}
+    .rad-page{position:absolute;left:96px;top:140px;width:1408px;height:620px;display:grid;grid-template-rows:416px 96px 88px;gap:10px}
+    .sim{position:relative;overflow:hidden;border:1px solid var(--line);border-radius:var(--radius-lg);background:#101a2c;box-shadow:var(--shadow-raised)}
+    #pixi-host{position:absolute;inset:0}
+    #pixi-host canvas{display:block;width:100%;height:100%}
+    .zone-label{position:absolute;top:14px;color:#dfe8f2;font-size:var(--fs-label);line-height:var(--lh-label);font-weight:700;letter-spacing:.03em}
+    .z-source{left:20px}.z-env{left:310px}.z-hull{left:690px}.z-crew{right:30px}
+    .results{position:absolute;z-index:3;right:18px;top:48px;width:260px;padding:14px 16px;border:1px solid rgb(199 211 224 / 45%);border-radius:var(--radius-md);background:rgb(16 26 44 / 88%);color:#f5f9ff}
+    .result-row{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-bottom:8px;font-size:var(--fs-label);line-height:var(--lh-label)}
+    .result-row strong{font-size:24px;font-variant-numeric:tabular-nums;color:#ffae66}
+    .results .note{color:#c7d3e0}
+    .model-note{position:absolute;z-index:3;left:20px;bottom:14px;max-width:540px;color:#c7d3e0;font-size:var(--fs-sec);line-height:var(--lh-sec)}
+    .controls{display:grid;grid-template-columns:1fr 1.15fr 1.5fr 1.5fr;gap:12px;align-items:stretch}
+    .controls .ctl{padding:8px 12px;border:1px solid var(--line);border-radius:var(--radius-md);background:var(--surface)}
+    .controls .ctl.range{display:grid;grid-template-columns:auto 1fr auto;column-gap:10px}
+    .controls select{width:100%;min-width:0}
+    .controls output{min-width:84px;padding:5px 8px;font-size:var(--fs-label)}
+    .process-band.k-process{gap:28px;height:88px}
+    .process-band.k-process>div{padding:10px 8px;text-align:center;font-size:var(--fs-label);line-height:var(--lh-label);font-weight:700;display:flex;align-items:center;justify-content:center}
+    .process-band.k-process>div::before{width:24px;height:24px;margin:0 7px 0 0;flex:0 0 auto}
+    .process-band.k-process>div:not(:last-child)::after{left:calc(100% + 2px);width:24px}
+    .step-sub{display:block;font-size:var(--fs-tick);font-weight:500;color:var(--muted)}
+    .sr-only{font-size:16px}
+  </style>
+</head>
+<body data-page="40" data-total="48">
+  <div id="stage">
+    <main class="rad-page" aria-label="辐射屏障相对暴露模拟器">
+      <section class="sim" aria-label="粒子从左向右经过路径环境和舱体屏蔽；一部分被偏转或拦截，一部分到达乘员目标区。">
+        <div id="pixi-host" aria-hidden="true"></div>
+        <span class="zone-label z-source">粒子流</span><span class="zone-label z-env">路径环境遮蔽</span><span class="zone-label z-hull">舱体材料层</span><span class="zone-label z-crew">抽象乘员目标区</span>
+        <aside class="results" aria-live="polite">
+          <div class="result-row"><span>相对到达率</span><strong id="arrival">—</strong></div>
+          <div class="result-row"><span>累计暴露指数</span><strong id="exposure">—</strong></div>
+          <div class="note">相对模拟值，不是人体吸收剂量</div>
+        </aside>
+        <p class="model-note">粒子轨迹只表达统计暴露。材料衰减采用课堂演示指数模型，不代表真实微观路径。</p>
+      </section>
+
+      <section class="controls" aria-label="模拟参数">
+        <div class="ctl"><label for="particle">粒子环境</label><select id="particle"></select></div>
+        <div class="ctl"><label for="path">任务路径</label><select id="path"></select></div>
+        <div class="ctl range"><label for="density">舱体面密度</label><input id="density" type="range"><output id="density-out" for="density">—</output></div>
+        <div class="ctl range"><label for="duration">暴露时间</label><input id="duration" type="range"><output id="duration-out" for="duration">—</output></div>
+      </section>
+
+      <section class="k-process process-band" aria-label="相对暴露形成过程">
+        <div id="s1">粒子环境</div><div id="s2">任务路径</div><div id="s3">外部遮蔽</div><div id="s4">舱体屏蔽</div><div id="s5">暴露时间</div><div id="s6" data-state="current">相对命中结果</div>
+      </section>
+    </main>
+  </div>
+
+  <script src="assets/lib/seedrandom.min.js"></script>
+  <script src="assets/lib/pixi.min.js"></script>
+  <script src="assets/base.js"></script>
+  <script src="assets/lec.js"></script>
+  <script>
+    Lec.mount({
+      index: 40,
+      kicker: 'EXPOSURE PATH',
+      title: '挡住多少，不只取决于墙有多厚',
+      take: '辐射风险取决于粒子、屏蔽、时间与任务路径的共同作用。'
+    });
+    Deck.init({ index: 40, total: 48 });
+
+    const P=Lec.P, clamp=Deck.clamp;
+    /* 共享底盘尚未发布本页规划中的 radiationDemo 常量时，保留同名演示口径。 */
+    const K=Object.assign({
+      radiationDemoParticleTypes:[
+        {label:'较易偏转粒子流',fluxFactor:.72,penetrationFactor:.65,deflectionFactor:.9,speedRange:[.7,1.1],visualClass:'light'},
+        {label:'高穿透粒子流',fluxFactor:.58,penetrationFactor:1.35,deflectionFactor:.28,speedRange:[.9,1.3],visualClass:'heavy'}
+      ],
+      radiationDemoPaths:[
+        {label:'近地受保护路径',environmentFactor:.72,externalShieldFactor:.55,defaultDurationSeconds:86400,durationRangeSeconds:[21600,604800]},
+        {label:'深空转移路径',environmentFactor:1.1,externalShieldFactor:.08,defaultDurationSeconds:2592000,durationRangeSeconds:[604800,7776000]}
+      ],
+      radiationDemoShieldPresets:[{label:'舱体材料',arealDensity:8,attenuationByParticleType:[.09,.028]}],
+      radiationDemoShieldArealDensityUnit:'相对单位',radiationDemoShieldArealDensityRange:[2,28],
+      radiationDemoMinTransmission:.02,radiationDemoMaxTransmission:1,
+      radiationDemoMinProbability:.01,radiationDemoMaxProbability:.98,
+      radiationDemoReferenceDurationSeconds:86400,radiationDemoReferenceExposure:1,
+      radiationDemoParticleCount:240,radiationDemoParticlesPerFrame:12,radiationDemoTimeStep:.016,radiationDemoStatisticsWindow:240
+    },Lec.K);
+    const types=K.radiationDemoParticleTypes, paths=K.radiationDemoPaths, shields=K.radiationDemoShieldPresets;
+    const particle=document.querySelector('#particle'), path=document.querySelector('#path');
+    const density=document.querySelector('#density'), duration=document.querySelector('#duration');
+    const densityOut=document.querySelector('#density-out'), durationOut=document.querySelector('#duration-out');
+    const arrivalOut=document.querySelector('#arrival'), exposureOut=document.querySelector('#exposure');
+    const steps=[1,2,3,4,5,6].map(n=>document.querySelector('#s'+n));
+    types.forEach((d,i)=>particle.add(new Option(d.label,i)));
+    paths.forEach((d,i)=>path.add(new Option(d.label,i)));
+
+    const rangeVals=(r,fallback)=>Array.isArray(r)?r:[r.min??fallback[0],r.max??fallback[1]];
+    const dr=rangeVals(K.radiationDemoShieldArealDensityRange,[0,30]);
+    density.min=dr[0]; density.max=dr[1]; density.step=(dr[1]-dr[0])/50;
+    density.value=shields[0].arealDensity;
+    const host=document.querySelector('#pixi-host');
+    const app=new PIXI.Application({width:1408,height:416,backgroundAlpha:0,antialias:true,resolution:1});
+    host.appendChild(app.view);
+    app.stop();
+    const g=new PIXI.Graphics(); app.stage.addChild(g);
+    let samples=[], previous=null, sceneId=0, progress=.82, computed={};
+
+    function active(n){steps.forEach((el,i)=>el.dataset.state=i+1===n?'current':(i+1<n?'done':'pending'));}
+    [[particle,1],[path,2],[density,4],[duration,5]].forEach(([el,n])=>{el.addEventListener('focus',()=>active(n));});
+    function pathDuration(reset=false){
+      const p=paths[path.value], rr=rangeVals(p.durationRangeSeconds,[p.defaultDurationSeconds,p.defaultDurationSeconds]);
+      duration.min=rr[0]; duration.max=rr[1]; duration.step=Math.max(1,(rr[1]-rr[0])/50);
+      if(reset) duration.value=p.defaultDurationSeconds;
+    }
+    pathDuration(true);
+
+    function rebuild(keepPrevious=true){
+      if(keepPrevious && computed.arrivalRate!=null) previous={arrivalRate:computed.arrivalRate, exposure:computed.exposure};
+      sceneId++;
+      const t=types[particle.value], p=paths[path.value], preset=shields[0];
+      const env=clamp(p.environmentFactor*(1-p.externalShieldFactor),K.radiationDemoMinTransmission,K.radiationDemoMaxTransmission);
+      const coeff=Array.isArray(preset.attenuationByParticleType)?preset.attenuationByParticleType[particle.value]:preset.attenuationByParticleType[t.visualClass]??preset.attenuationByParticleType[t.label]??Object.values(preset.attenuationByParticleType)[particle.value];
+      const shield=Math.exp(-Number(coeff)*Number(density.value));
+      const probability=clamp(t.fluxFactor*env*shield,K.radiationDemoMinProbability,K.radiationDemoMaxProbability);
+      const count=K.radiationDemoParticleCount;
+      const rng=new Math.seedrandom('page-40-scene-'+sceneId);
+      let arrived=0;
+      samples=Array.from({length:count},(_,i)=>{
+        const y=72+rng()*290, envPass=rng()<env, hullPass=envPass&&rng()<shield, hit=hullPass&&rng()<clamp(t.fluxFactor,K.radiationDemoMinProbability,K.radiationDemoMaxProbability);
+        if(hit)arrived++;
+        return {y,phase:rng(),bend:(rng()-.5)*70,envPass,hullPass,hit};
+      });
+      const timeFactor=Number(duration.value)/K.radiationDemoReferenceDurationSeconds;
+      const relative=probability*timeFactor*t.penetrationFactor/K.radiationDemoReferenceExposure;
+      computed={env,shield,probability,arrivalRate:arrived/count,exposure:relative};
+      densityOut.textContent=P.formatNumber(Number(density.value))+' '+K.radiationDemoShieldArealDensityUnit;
+      durationOut.textContent=P.formatDuration(Number(duration.value));
+      arrivalOut.textContent=P.percent(computed.arrivalRate);
+      exposureOut.textContent=P.formatNumber(computed.exposure);
+      progress=.82;
+      draw(progress);
+    }
+
+    function draw(tick){
+      g.clear();
+      g.lineStyle(1,0x43678d,.6); for(let x=80;x<1320;x+=80){g.moveTo(x,54);g.lineTo(x,382)}
+      g.beginFill(0x0b73e0,.13);g.drawRoundedRect(300,52,210,326,26);g.endFill();
+      g.lineStyle(3,0x5da9ff,.8);g.arc(405,215,138,-1.25,1.25);
+      const thick=10+Number(density.value)/Number(density.max)*34;
+      g.beginFill(0x4b91d1,.78);g.drawRect(665-thick/2,52,thick,326);g.endFill();
+      g.lineStyle(2,0xff9a4f,.8);g.drawCircle(1125,215,62);g.drawCircle(1125,215,24);
+      if(previous){g.lineStyle(2,0xc7d3e0,.35);const px=1020+Math.min(160,previous.arrivalRate*180);g.moveTo(1020,356);g.lineTo(px,356)}
+      const col=[0x8ec5ff,0xb39cff,0x9ee7df,0xffc777][particle.value%4];
+      const reduced=Deck.reduced();
+      samples.forEach((s,i)=>{
+        let q=reduced?.95:(tick+s.phase)%1, x=38+q*1010, y=s.y;
+        if(x>300&&!s.envPass){x=Math.min(x,500);y+=s.bend*(x-300)/200}
+        else if(x>665&&!s.hullPass){x=Math.min(x,680)}
+        else if(x>1000&&!s.hit){x=Math.min(x,1030)}
+        g.beginFill(s.hit&&x>1000?0xff9a4f:col,s.hit&&x>1000?1:.72);g.drawCircle(x,y,s.hit&&x>1000?3.5:2.2);g.endFill();
+      });
+      app.renderer.render(app.stage);
+    }
+    function changed(step){active(step);rebuild(true)}
+    particle.addEventListener('change',()=>changed(1));
+    path.addEventListener('change',()=>{pathDuration(true);changed(2)});
+    density.addEventListener('input',()=>changed(4));
+    duration.addEventListener('input',()=>changed(5));
+    rebuild(false);
+    Deck.loop((time,dt)=>{progress=(progress+dt*.00012)%1;draw(progress)},{still:.82});
+  </script>
+</body>
+</html>

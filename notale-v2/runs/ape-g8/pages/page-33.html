@@ -1,0 +1,741 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  :root {
+    --bg: #111417;
+    --text: #edf2f0;
+    --font-sans: Inter, "Noto Sans SC", "Source Han Sans SC", "Microsoft YaHei", "PingFang SC", Arial, sans-serif;
+  }
+
+  #main { background: #151b1d; }
+
+  .gravity-map {
+    height: 100%;
+    gap: 14px;
+  }
+
+  .gravity-map > .claim {
+    max-width: none;
+    min-height: 54px;
+    padding-top: 12px;
+    padding-bottom: 12px;
+  }
+
+  .gravity-map > .supports {
+    --support-cols: 4;
+    box-sizing: border-box;
+    grid-template-columns: repeat(3, minmax(0, 1fr)) 276px;
+    grid-template-rows: 82px 396px;
+    align-items: stretch;
+    gap: 12px 16px;
+    padding-top: 26px;
+  }
+
+  .gravity-map > .supports::before { top: 17px; }
+  .gravity-map > .supports > .trunk {
+    top: -14px;
+    height: 32px;
+  }
+
+  .gravity-map .support {
+    z-index: 7;
+    padding: 10px 14px;
+    background: rgba(34, 41, 43, 0.96);
+  }
+
+  .gravity-map .support::before { height: 27px; }
+
+  .support-title {
+    display: block;
+    margin-bottom: 3px;
+    color: var(--text);
+    font-size: var(--fs-label);
+    font-weight: 700;
+    line-height: 1.35;
+  }
+
+  .support-copy {
+    display: block;
+    font-size: var(--fs-sec);
+    line-height: var(--lh-sec);
+  }
+
+  .boundary-support {
+    grid-column: 4;
+    grid-row: 1 / 3;
+    align-self: stretch;
+    border-top-color: var(--accent) !important;
+  }
+
+  .boundary-support::before { height: 27px !important; }
+
+  .boundary-head {
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .boundary-head strong {
+    display: block;
+    font-size: var(--fs-h2);
+    line-height: var(--lh-heading);
+  }
+
+  .boundary-head span {
+    display: block;
+    margin-top: 4px;
+    color: var(--text-secondary);
+    font-size: var(--fs-sec);
+    line-height: var(--lh-sec);
+  }
+
+  .risk-list {
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+    margin: 14px 0 12px;
+    padding: 0;
+    list-style: none;
+  }
+
+  .risk-list li {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    min-height: 46px;
+    padding-bottom: 6px;
+    color: var(--text-secondary);
+    border-bottom: 1px solid var(--line);
+    font-size: var(--fs-sec);
+    line-height: var(--lh-sec);
+  }
+
+  .risk-name {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+
+  .risk-name small {
+    color: var(--text-muted);
+    font-size: var(--fs-label);
+    line-height: 1.35;
+  }
+
+  .risk-state {
+    flex: 0 0 auto;
+    color: var(--text-muted);
+    font-size: var(--fs-label);
+    font-weight: 700;
+    line-height: 1.35;
+  }
+
+  .boundary-support.is-revealed .risk-state {
+    color: var(--accent);
+    animation: risk-in 420ms ease-out both;
+    animation-delay: calc(var(--i) * 70ms);
+  }
+
+  .boundary-note {
+    color: var(--text);
+    font-size: var(--fs-sec);
+    line-height: var(--lh-sec);
+  }
+
+  .model-field {
+    position: relative;
+    grid-column: 1 / 4;
+    grid-row: 1 / 3;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+    background: #101517;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-sm);
+  }
+
+  .model-field::before {
+    position: absolute;
+    z-index: 2;
+    top: 0;
+    right: 0;
+    left: 0;
+    height: 1px;
+    content: "";
+    background: linear-gradient(90deg, transparent, var(--primary), transparent);
+  }
+
+  #habitat-canvas { z-index: 0; display: block; }
+
+  .rotation-guide {
+    position: absolute;
+    z-index: 1;
+    top: 46px;
+    left: 126px;
+    width: 566px;
+    height: 248px;
+    pointer-events: none;
+    border: 1px dashed var(--primary-line);
+    border-radius: 50%;
+    transform: rotate(-8deg);
+  }
+
+  .rotation-guide::after {
+    position: absolute;
+    top: 24px;
+    right: 58px;
+    width: 14px;
+    height: 14px;
+    content: "";
+    border-top: 3px solid var(--primary);
+    border-right: 3px solid var(--primary);
+    transform: rotate(28deg);
+  }
+
+  .radius-guide {
+    position: absolute;
+    z-index: 2;
+    top: 175px;
+    left: 174px;
+    width: 430px;
+    height: 2px;
+    pointer-events: none;
+    background: var(--primary);
+    box-shadow: 0 0 12px rgba(85, 194, 176, 0.5);
+    transform: rotate(8deg);
+    transform-origin: left center;
+  }
+
+  .radius-guide::before,
+  .radius-guide::after {
+    position: absolute;
+    top: 50%;
+    width: 12px;
+    height: 12px;
+    content: "";
+    background: var(--primary);
+    border-radius: 50%;
+    transform: translateY(-50%);
+  }
+
+  .radius-guide::before { left: -6px; }
+  .radius-guide::after { right: -6px; }
+
+  .scene-label {
+    position: absolute;
+    z-index: 4;
+    color: var(--text-secondary);
+    font-size: var(--fs-label);
+    line-height: 1.35;
+    pointer-events: none;
+  }
+
+  .axis-label-local { top: 112px; left: 32px; }
+  .wall-label { right: 26px; bottom: 100px; color: var(--primary); }
+  .arrow-label { left: 46%; top: 51%; color: var(--primary); }
+
+  .effect-monitor {
+    position: absolute;
+    z-index: 5;
+    top: 152px;
+    left: 24px;
+    width: 224px;
+    padding: 12px 14px;
+    background: rgba(20, 26, 28, 0.9);
+    border-left: 3px solid var(--primary);
+  }
+
+  .effect-monitor-title {
+    margin-bottom: 8px;
+    color: var(--text);
+    font-size: var(--fs-label);
+    font-weight: 700;
+    line-height: 1.35;
+  }
+
+  .effect-row {
+    display: grid;
+    grid-template-columns: 82px minmax(0, 1fr);
+    align-items: center;
+    gap: 8px;
+    min-height: 34px;
+    color: var(--text-secondary);
+    font-size: var(--fs-label);
+    line-height: 1.35;
+  }
+
+  .effect-track {
+    height: 8px;
+    overflow: hidden;
+    background: var(--surface-strong);
+    border: 1px solid var(--line);
+  }
+
+  .effect-fill {
+    display: block;
+    width: 0;
+    height: 100%;
+    background: var(--primary);
+    transform-origin: left center;
+    transition: width 180ms ease-out, background-color 180ms ease-out;
+  }
+
+  .effect-monitor[data-state="high"] .effect-fill { background: var(--accent); }
+
+  .scene-readouts {
+    position: absolute;
+    z-index: 5;
+    top: 112px;
+    right: 20px;
+    display: flex;
+    gap: 8px;
+  }
+
+  .scene-readouts .readout {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 1px;
+    width: 156px;
+    padding: 7px 10px;
+    background: rgba(12, 15, 17, 0.9);
+  }
+
+  .scene-readouts .readout .name { font-size: var(--fs-label); }
+  .scene-readouts .readout .value { font-size: var(--fs-body); }
+
+  .control-deck {
+    position: absolute;
+    z-index: 6;
+    right: 18px;
+    bottom: 14px;
+    left: 18px;
+    display: grid;
+    grid-template-columns: 118px minmax(0, 1fr) 166px 44px;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 12px;
+    background: rgba(20, 26, 28, 0.94);
+    border-top: 1px solid var(--line-strong);
+  }
+
+  .control-deck label {
+    color: var(--text);
+    font-size: var(--fs-label);
+    font-weight: 700;
+    line-height: 1.35;
+  }
+
+  .dial-wrap { position: relative; min-width: 0; }
+  #spin-control { display: block; height: 32px; }
+
+  .dial-zones {
+    display: flex;
+    justify-content: space-between;
+    color: var(--text-muted);
+    font-size: var(--fs-label);
+    line-height: 1.35;
+  }
+
+  .dial-zones .target-zone { color: var(--primary); }
+
+  .feedback {
+    min-width: 0;
+    color: var(--text-secondary);
+    font-size: var(--fs-sec);
+    line-height: var(--lh-sec);
+  }
+
+  .feedback[data-state="target"] { color: var(--primary); font-weight: 700; }
+  .feedback[data-state="high"] { color: var(--accent); }
+
+  .reset-button {
+    width: 44px;
+    min-width: 44px;
+    padding: 0;
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .reset-button.is-visible { opacity: 1; pointer-events: auto; }
+
+  .reset-button svg {
+    width: 20px;
+    height: 20px;
+    fill: none;
+    stroke: currentColor;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    stroke-width: 2;
+  }
+
+  .model-field.is-target { border-color: var(--primary-line); }
+  .model-field.is-high { border-color: var(--accent-line); }
+  .model-field.is-high::after {
+    position: absolute;
+    z-index: 3;
+    inset: 8px;
+    content: "";
+    pointer-events: none;
+    border: 2px solid var(--accent-line);
+    animation: warning-pulse 480ms ease-out 2;
+  }
+
+  .model-field.is-low #spin-control { animation: dial-return 220ms ease-out; }
+
+  @keyframes warning-pulse {
+    from { opacity: 0.9; transform: scale(0.985); }
+    to { opacity: 0; transform: scale(1); }
+  }
+
+  @keyframes dial-return {
+    0%, 100% { transform: translateX(0); }
+    45% { transform: translateX(4px); }
+  }
+
+  @keyframes risk-in {
+    from { opacity: 0.35; transform: translateX(7px); }
+    to { opacity: 1; transform: translateX(0); }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.001ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.001ms !important;
+    }
+  }
+</style>
+</head>
+<body data-page="33" data-total="44">
+<div id="stage">
+<main id="main">
+  <section class="k-generalization gravity-map" aria-labelledby="gravity-claim">
+    <div class="claim" id="gravity-claim">旋转舱能改变身体所处的加速度环境，让舱壁成为可感知的“地面”；它不能自动消除太空中的全部风险。</div>
+    <div class="supports">
+      <span class="trunk" aria-hidden="true"></span>
+
+      <div class="support">
+        <span class="support-title">方向持续改变</span>
+        <span class="support-copy">加速度始终指向旋转轴心。</span>
+      </div>
+      <div class="support">
+        <span class="support-title">半径 × 角速度</span>
+        <span class="support-copy">两者共同决定加速度大小。</span>
+      </div>
+      <div class="support">
+        <span class="support-title">接触产生支持力</span>
+        <span class="support-copy">脚感到的是舱壁推力，不是新引力。</span>
+      </div>
+
+      <aside class="support boundary-support" id="boundary-support" aria-label="旋转不能消除的风险">
+        <div class="boundary-head">
+          <strong>旋转的边界</strong>
+          <span>这些条件不随拨盘改变</span>
+        </div>
+        <ul class="risk-list">
+          <li><span class="risk-name">辐射<small>旋转不提供屏蔽</small></span><span class="risk-state" style="--i:0">未处理</span></li>
+          <li><span class="risk-name">舱内压力<small>仍需密闭与调节</small></span><span class="risk-state" style="--i:1">未处理</span></li>
+          <li><span class="risk-name">补给与循环<small>资源仍会消耗</small></span><span class="risk-state" style="--i:2">未处理</span></li>
+          <li><span class="risk-name">隔离与前庭不适<small>旋转可能带来新不适</small></span><span class="risk-state" style="--i:3">未处理</span></li>
+          <li><span class="risk-name">维护<small>机构仍需持续可靠</small></span><span class="risk-state" style="--i:4">未处理</span></li>
+        </ul>
+        <p class="boundary-note">匹配重力参照，只处理了环境限制的一部分。</p>
+      </aside>
+
+      <figure class="model-field no-pan" id="model-field" aria-label="斜俯视的剖切环形舱。人物站在外缘舱壁，向心加速度箭头指向轴心。">
+        <canvas id="habitat-canvas" class="cv-fill" aria-hidden="true"></canvas>
+        <span class="rotation-guide" aria-hidden="true"></span>
+        <span class="radius-guide" aria-hidden="true"></span>
+        <span class="scene-label axis-label-local">旋转轴心</span>
+        <span class="scene-label arrow-label">向心加速度</span>
+        <span class="scene-label wall-label">舱壁支持力</span>
+
+        <div class="effect-monitor" id="effect-monitor" data-state="low" aria-label="旋转作用链">
+          <div class="effect-monitor-title">旋转作用链</div>
+          <div class="effect-row"><span>持续转向</span><span class="effect-track"><span class="effect-fill"></span></span></div>
+          <div class="effect-row"><span>向心加速度</span><span class="effect-track"><span class="effect-fill"></span></span></div>
+          <div class="effect-row"><span>脚下支持力</span><span class="effect-track"><span class="effect-fill"></span></span></div>
+        </div>
+
+        <div class="scene-readouts" aria-live="polite">
+          <div class="readout">
+            <span class="name">舱体转速</span>
+            <span class="value" id="rpm-value">0.0 rpm</span>
+          </div>
+          <div class="readout is-key">
+            <span class="name">加速度参照</span>
+            <span class="value" id="g-value">0.00 g</span>
+          </div>
+        </div>
+
+        <div class="control-deck">
+          <label for="spin-control">旋转强度</label>
+          <div class="dial-wrap">
+            <input id="spin-control" type="range" aria-describedby="spin-feedback" step="1">
+            <div class="dial-zones" aria-hidden="true">
+              <span>近失重</span><span class="target-zone">目标带</span><span>过高</span>
+            </div>
+          </div>
+          <div class="feedback" id="spin-feedback" data-state="low">转速不足：仍接近失重环境</div>
+          <button class="reset-button" id="reset-button" type="button" aria-label="重置旋转强度" title="重置">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>
+          </button>
+        </div>
+      </figure>
+    </div>
+  </section>
+</main>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script src="assets/lib/three.min.js"></script>
+<script>
+  Lec.mount({
+    index: 33,
+    kicker: "ARTIFICIAL GRAVITY",
+    title: "旋转不是万能重力",
+    take: "旋转改变加速度环境，不会自动消除全部生理风险"
+  });
+
+  Lec.K.G_EARTH = Lec.K.G_EARTH || Lec.K.g0;
+  Lec.K.artificialGravity = Lec.K.artificialGravity || {
+    radiusMetres: Lec.K.scale.humanHeight * 4,
+    controlMin: 0,
+    controlMax: 150,
+    controlDefault: 24,
+    targetMin: 90,
+    targetMax: 110
+  };
+  Lec.P.centripetalAcceleration = Lec.P.centripetalAcceleration || function (radiusMetres, angularVelocity) {
+    return radiusMetres * angularVelocity * angularVelocity;
+  };
+
+  (function () {
+    'use strict';
+
+    var cfg = Lec.K.artificialGravity;
+    var control = document.getElementById('spin-control');
+    var reset = document.getElementById('reset-button');
+    var field = document.getElementById('model-field');
+    var boundary = document.getElementById('boundary-support');
+    var feedback = document.getElementById('spin-feedback');
+    var rpmValue = document.getElementById('rpm-value');
+    var gValue = document.getElementById('g-value');
+    var effectMonitor = document.getElementById('effect-monitor');
+    var effectFills = effectMonitor.querySelectorAll('.effect-fill');
+    var riskStates = boundary.querySelectorAll('.risk-state');
+
+    control.min = String(cfg.controlMin);
+    control.max = String(cfg.controlMax);
+    control.value = String(cfg.controlDefault);
+
+    var state = {
+      strength: Number(control.value),
+      angle: 0,
+      reachedTarget: false,
+      entered: Deck.reduced() ? 1 : 0
+    };
+
+    var canvas = document.getElementById('habitat-canvas');
+    var width = 1068;
+    var height = 360;
+    var renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true, alpha: true });
+    renderer.setSize(width, height, false);
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.setClearColor(0x101517, 1);
+
+    var scene = new THREE.Scene();
+    var camera = new THREE.PerspectiveCamera(36, width / height, 0.1, 100);
+    camera.position.set(0.4, 8.2, 11.6);
+    camera.lookAt(0.25, 0, 0);
+
+    scene.add(new THREE.HemisphereLight(0xcde7e1, 0x111417, 2.2));
+    var key = new THREE.DirectionalLight(0xffffff, 3.2);
+    key.position.set(3, 7, 6);
+    scene.add(key);
+    var rim = new THREE.PointLight(0x55c2b0, 22, 22);
+    rim.position.set(-4, 2, 4);
+    scene.add(rim);
+
+    var habitat = new THREE.Group();
+    habitat.rotation.x = -0.12;
+    habitat.position.x = -0.65;
+    scene.add(habitat);
+
+    var shellMaterial = new THREE.MeshStandardMaterial({
+      color: 0x4b595a,
+      metalness: 0.72,
+      roughness: 0.35,
+      side: THREE.DoubleSide
+    });
+    var innerMaterial = new THREE.MeshStandardMaterial({
+      color: 0x263033,
+      metalness: 0.32,
+      roughness: 0.62,
+      side: THREE.DoubleSide
+    });
+    var primaryMaterial = new THREE.MeshBasicMaterial({ color: 0x55c2b0 });
+    var accentMaterial = new THREE.MeshBasicMaterial({ color: 0xf2b84b });
+    var mutedMaterial = new THREE.MeshBasicMaterial({ color: 0x61716f });
+
+    var cabinFloor = new THREE.Mesh(
+      new THREE.RingGeometry(2.78, 4.17, 96, 1, Lec.K.pi * 0.08, Lec.K.tau * 0.84),
+      new THREE.MeshStandardMaterial({ color: 0x303a3d, metalness: 0.48, roughness: 0.62, side: THREE.DoubleSide })
+    );
+    cabinFloor.position.z = -0.42;
+    habitat.add(cabinFloor);
+
+    var shell = new THREE.Mesh(new THREE.TorusGeometry(3.48, 0.68, 18, 96, Lec.K.tau * 0.84), shellMaterial);
+    shell.rotation.z = Lec.K.pi * 0.08;
+    habitat.add(shell);
+    var inner = new THREE.Mesh(new THREE.TorusGeometry(3.48, 0.47, 14, 96, Lec.K.tau * 0.84), innerMaterial);
+    inner.rotation.z = shell.rotation.z;
+    habitat.add(inner);
+
+    var pipeline = new THREE.Mesh(new THREE.TorusGeometry(3.35, 0.045, 8, 96, Lec.K.tau * 0.79), primaryMaterial);
+    pipeline.rotation.z = shell.rotation.z + 0.08;
+    pipeline.position.z = 0.48;
+    habitat.add(pipeline);
+
+    var hub = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.28, 0.62, 24), shellMaterial);
+    hub.rotation.x = Lec.K.pi / 2;
+    habitat.add(hub);
+    var spokeGeometry = new THREE.CylinderGeometry(0.035, 0.035, 3.1, 10);
+    for (var i = 0; i < 4; i += 1) {
+      var spoke = new THREE.Mesh(spokeGeometry, mutedMaterial);
+      spoke.position.set(Math.cos(i * Lec.K.pi / 2) * 1.55, Math.sin(i * Lec.K.pi / 2) * 1.55, 0);
+      spoke.rotation.z = -i * Lec.K.pi / 2;
+      habitat.add(spoke);
+    }
+
+    var person = new THREE.Group();
+    var body = new THREE.Mesh(new THREE.CapsuleGeometry(0.16, 0.52, 5, 10), accentMaterial);
+    body.rotation.z = Lec.K.pi / 2;
+    body.position.x = 3.02;
+    person.add(body);
+    var head = new THREE.Mesh(new THREE.SphereGeometry(0.18, 16, 12), accentMaterial);
+    head.position.x = 2.55;
+    person.add(head);
+    var feet = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.5, 0.18), primaryMaterial);
+    feet.position.x = 3.42;
+    person.add(feet);
+    habitat.add(person);
+
+    var forceRing = new THREE.Mesh(new THREE.TorusGeometry(3.48, 0.06, 10, 96), primaryMaterial);
+    forceRing.visible = false;
+    forceRing.position.z = 0.58;
+    habitat.add(forceRing);
+
+    var accelArrow = new THREE.ArrowHelper(new THREE.Vector3(-1, 0, 0), new THREE.Vector3(2.7, 0, 0.7), 2.25, 0x55c2b0, 0.32, 0.18);
+    habitat.add(accelArrow);
+
+    var looseObject = new THREE.Mesh(new THREE.OctahedronGeometry(0.16, 0), accentMaterial);
+    looseObject.position.set(1.75, -0.48, 0.18);
+    habitat.add(looseObject);
+
+    var tickGroup = new THREE.Group();
+    for (var t = 0; t < 32; t += 1) {
+      var tick = new THREE.Mesh(new THREE.BoxGeometry(t % 4 === 0 ? 0.055 : 0.025, t % 4 === 0 ? 0.34 : 0.2, 0.025), t % 4 === 0 ? primaryMaterial : mutedMaterial);
+      var a = t / 32 * Lec.K.tau;
+      tick.position.set(Math.cos(a) * 4.25, Math.sin(a) * 4.25, -0.15);
+      tick.rotation.z = a - Lec.K.pi / 2;
+      tickGroup.add(tick);
+    }
+    scene.add(tickGroup);
+
+    function model() {
+      var ratio = state.strength / 100;
+      var acceleration = Lec.P.weight(ratio, Lec.K.G_EARTH);
+      var omega = Math.sqrt(acceleration / cfg.radiusMetres);
+      var verifiedAcceleration = Lec.P.centripetalAcceleration(cfg.radiusMetres, omega);
+      var rpm = omega * Lec.K.units.minute / Lec.K.tau;
+      return {
+        ratio: verifiedAcceleration / Lec.K.G_EARTH,
+        acceleration: verifiedAcceleration,
+        omega: omega,
+        rpm: rpm
+      };
+    }
+
+    function classify() {
+      if (state.strength < cfg.targetMin) return 'low';
+      if (state.strength <= cfg.targetMax) return 'target';
+      return 'high';
+    }
+
+    function update() {
+      var m = model();
+      var kind = classify();
+      rpmValue.textContent = Deck.fmt(m.rpm, 1) + ' rpm';
+      gValue.textContent = Deck.fmt(m.ratio, 2) + ' g';
+      feedback.dataset.state = kind;
+      effectMonitor.dataset.state = kind;
+      effectFills.forEach(function (fill, index) {
+        fill.style.width = Deck.fmt(Math.min(100, m.ratio * (88 + index * 6)), 0) + '%';
+      });
+      field.classList.toggle('is-low', kind === 'low');
+      field.classList.toggle('is-target', kind === 'target');
+      field.classList.toggle('is-high', kind === 'high');
+
+      if (kind === 'low') feedback.textContent = '转速不足：仍接近失重环境';
+      if (kind === 'target') feedback.textContent = '加速度环境已匹配目标';
+      if (kind === 'high') feedback.textContent = '转速过高：匹配不等于风险更低';
+
+      accelArrow.setLength(0.55 + m.ratio * 1.62, 0.28, 0.16);
+      accelArrow.setColor(new THREE.Color(kind === 'high' ? 0xf2b84b : 0x55c2b0));
+      forceRing.visible = kind === 'target';
+      forceRing.scale.setScalar(kind === 'target' ? 1 : 0.94);
+
+      if (kind === 'target' && !state.reachedTarget) {
+        state.reachedTarget = true;
+        boundary.classList.add('is-revealed');
+        reset.classList.add('is-visible');
+        riskStates.forEach(function (el) { el.textContent = '仍需处理'; });
+      }
+    }
+
+    control.addEventListener('input', function () {
+      state.strength = Number(control.value);
+      update();
+    });
+
+    reset.addEventListener('click', function () {
+      state.strength = cfg.controlDefault;
+      state.reachedTarget = false;
+      control.value = String(cfg.controlDefault);
+      boundary.classList.remove('is-revealed');
+      reset.classList.remove('is-visible');
+      riskStates.forEach(function (el) { el.textContent = '未处理'; });
+      update();
+      control.focus();
+    });
+
+    update();
+
+    Deck.loop(function (time, dt) {
+      var m = model();
+      if (!Deck.reduced()) {
+        state.entered = Math.min(1, state.entered + dt / 1.15);
+        state.angle += m.omega * dt * 0.42;
+      } else {
+        state.entered = 1;
+      }
+      habitat.scale.setScalar(0.86 + state.entered * 0.14);
+      habitat.rotation.z = state.angle;
+      person.rotation.z = -state.angle;
+      accelArrow.rotation.z = -state.angle;
+      looseObject.rotation.x = time * 0.0007;
+      looseObject.rotation.y = time * 0.0005;
+      forceRing.material.opacity = 0.78 + Math.sin(time * 0.006) * 0.18;
+      forceRing.material.transparent = true;
+      renderer.render(scene, camera);
+    }, { still: 1200 });
+  }());
+</script>
+</body>
+</html>

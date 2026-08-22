@@ -1,0 +1,518 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  #main { --ledger-dim: 224px; }
+  .page-shell {
+    display: grid;
+    grid-template-rows: 58px 38px 352px 136px;
+    gap: 12px;
+    width: 100%;
+    height: 100%;
+  }
+  .premise {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 32px;
+    min-width: 0;
+    padding: 10px 18px;
+    background: var(--surface-soft);
+    border-left: 5px solid var(--accent);
+  }
+  .premise .lead {
+    max-width: 850px;
+    color: var(--text);
+    font-weight: 650;
+  }
+  .premise .secondary {
+    max-width: 470px;
+    color: var(--text-secondary);
+    text-align: right;
+  }
+  .ledger-status {
+    display: grid;
+    grid-template-columns: var(--ledger-dim) minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 16px;
+    min-width: 0;
+  }
+  .ledger-status .status-label {
+    color: var(--text-secondary);
+    font-size: var(--fs-label);
+    font-weight: 700;
+    line-height: 1.35;
+  }
+  .check-track {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: space-around;
+    height: 20px;
+  }
+  .check-track::before {
+    position: absolute;
+    right: 0;
+    left: 0;
+    height: 1px;
+    content: "";
+    background: var(--line-strong);
+  }
+  .check-dot {
+    z-index: 1;
+    width: 10px;
+    height: 10px;
+    background: var(--surface-raised);
+    border: 2px solid var(--accent);
+    border-radius: 50%;
+  }
+  .check-dot.is-done {
+    background: var(--primary);
+    border-color: var(--primary);
+  }
+  .count {
+    min-width: 112px;
+    color: var(--accent);
+    font-family: var(--font-mono);
+    font-size: var(--fs-sec);
+    font-weight: 700;
+    line-height: 1.35;
+    text-align: right;
+  }
+  .ledger-wrap {
+    position: relative;
+    min-width: 0;
+    overflow: visible;
+  }
+  .ledger {
+    --compare-cols: 2;
+    grid-template-columns: var(--ledger-dim) repeat(2, minmax(0, 1fr));
+    height: 100%;
+  }
+  .ledger::after { left: var(--ledger-dim); }
+  .ledger > .hdr {
+    min-height: 55px;
+    padding: 10px 18px;
+  }
+  .ledger > .hdr:first-child { color: var(--text-muted); }
+  .ledger .food-head {
+    justify-content: space-between;
+    gap: 12px;
+    font-size: var(--fs-sec);
+  }
+  .food-mark {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    color: var(--text-secondary);
+    font-weight: 500;
+  }
+  .food-shape {
+    display: inline-block;
+    width: 42px;
+    height: 18px;
+    border: 2px solid var(--line-strong);
+    border-radius: 45% 55% 48% 52%;
+  }
+  .food-shape.processed {
+    width: 45px;
+    height: 20px;
+    border-color: var(--primary-line);
+    border-style: dashed;
+    border-radius: 2px;
+  }
+  .ledger > .dim,
+  .ledger > .cell {
+    min-height: 48px;
+    padding: 9px 18px;
+  }
+  .ledger > .dim {
+    font-size: var(--fs-sec);
+    background: rgba(17, 20, 23, 0.42);
+  }
+  .ledger > .cell {
+    display: flex;
+    align-items: center;
+    position: relative;
+  }
+  .raw-cell { color: var(--text-secondary); }
+  .processed-cell {
+    color: var(--text-muted);
+    background: rgba(17, 20, 23, 0.28);
+    outline: 1px dashed transparent;
+    outline-offset: -7px;
+  }
+  .processed-cell.is-target {
+    background: var(--accent-soft);
+    outline-color: var(--accent-line);
+  }
+  .processed-cell.is-complete {
+    color: var(--primary);
+    background: var(--primary-soft);
+  }
+  .processed-cell .placeholder {
+    font-size: var(--fs-label);
+    line-height: 1.35;
+  }
+  .processed-cell.is-complete .placeholder { display: none; }
+  .placed-value {
+    display: none;
+    color: var(--primary);
+    font-size: var(--fs-sec);
+    font-weight: 700;
+    line-height: var(--lh-sec);
+  }
+  .processed-cell.is-complete .placed-value { display: block; }
+  .summary-dim,
+  .summary-cell {
+    max-height: 0;
+    min-height: 0 !important;
+    padding-top: 0 !important;
+    padding-bottom: 0 !important;
+    overflow: hidden;
+    opacity: 0;
+    border-top: 0;
+    transition: max-height 220ms ease, opacity 180ms ease, padding 220ms ease;
+  }
+  .ledger.is-finished .summary-dim,
+  .ledger.is-finished .summary-cell {
+    max-height: 72px;
+    min-height: 60px !important;
+    padding-top: 9px !important;
+    padding-bottom: 9px !important;
+    opacity: 1;
+  }
+  .ledger.is-finished .summary-cell { background: var(--primary-soft); }
+  #ledger-lines {
+    position: absolute;
+    z-index: 5;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    overflow: visible;
+  }
+  .measure-line {
+    stroke: var(--primary);
+    stroke-width: 2;
+    stroke-dasharray: 5 5;
+  }
+  .measure-node { fill: var(--primary); }
+  .tool-tray {
+    display: grid;
+    grid-template-columns: var(--ledger-dim) minmax(0, 1fr) 52px;
+    gap: 16px;
+    align-items: start;
+    box-sizing: border-box;
+    min-width: 0;
+    padding: 12px 14px 8px;
+    background: #141a1c;
+    border: 1px solid var(--line);
+    border-top: 3px solid var(--line-strong);
+    border-radius: var(--radius-sm);
+  }
+  .tray-label {
+    padding-top: 4px;
+    color: var(--text-secondary);
+    font-size: var(--fs-label);
+    font-weight: 700;
+    line-height: 1.35;
+  }
+  .tray-label span {
+    display: block;
+    margin-top: 5px;
+    color: var(--text-muted);
+    font-size: var(--fs-label);
+    font-weight: 400;
+  }
+  .change-cards {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 12px;
+    min-width: 0;
+  }
+  .change-card {
+    position: relative;
+    min-width: 0;
+    height: 82px;
+    padding: 8px 14px;
+    color: var(--text);
+    background: var(--surface-soft);
+    border: 1px solid var(--accent-line);
+    border-top: 3px solid var(--accent);
+    border-radius: var(--radius-sm);
+    font-size: var(--fs-label);
+    font-weight: 650;
+    line-height: 1.35;
+    touch-action: none;
+    cursor: grab;
+    user-select: none;
+  }
+  .change-card::before {
+    position: absolute;
+    top: 8px;
+    left: 10px;
+    color: var(--accent);
+    content: "⋮⋮";
+    font-family: var(--font-mono);
+    font-size: var(--fs-label);
+  }
+  .change-card span { padding-left: 22px; }
+  .change-card.is-selected { box-shadow: 0 0 0 2px var(--accent); }
+  .change-card.is-placed {
+    color: var(--text-muted);
+    border-color: var(--line);
+    border-top-color: var(--primary);
+    cursor: default;
+    opacity: 0.45;
+  }
+  .change-card.is-dragging {
+    z-index: 20;
+    cursor: grabbing;
+    box-shadow: 0 12px 28px rgba(0,0,0,.35);
+  }
+  .change-card.is-wrong { animation: wrong-shake 260ms ease; }
+  .feedback {
+    grid-column: 2;
+    min-height: 24px;
+    margin-top: 8px;
+    color: var(--text-secondary);
+    font-size: var(--fs-sec);
+    line-height: var(--lh-sec);
+  }
+  .feedback.is-error { color: var(--danger); }
+  .reset {
+    display: none;
+    width: 44px;
+    height: 44px;
+    min-height: 44px;
+    padding: 0;
+    font-size: 25px;
+  }
+  .reset.is-visible { display: inline-flex; }
+  @keyframes wrong-shake {
+    0%,100% { transform: translateX(0); }
+    25% { transform: translateX(-9px); }
+    75% { transform: translateX(9px); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation: none !important; transition: none !important; }
+  }
+</style>
+</head>
+<body data-page="13" data-total="44">
+<div id="stage">
+<main id="main">
+  <section class="page-shell min0" aria-labelledby="ledger-heading">
+    <div class="premise min0">
+      <p id="ledger-heading" class="lead">加工没有创造新的食物能量；它重新分配可利用份额与获取成本。</p>
+      <p class="secondary">同一种加工方式不会让所有食物得到相同结果。</p>
+    </div>
+
+    <div class="ledger-status" aria-live="polite">
+      <span class="status-label">同一种食物 · 定性账本</span>
+      <div class="check-track" aria-hidden="true">
+        <i class="check-dot"></i><i class="check-dot"></i><i class="check-dot"></i><i class="check-dot"></i>
+      </div>
+      <span id="count" class="count">已核对 0 / 4 项</span>
+    </div>
+
+    <div class="ledger-wrap min0 no-pan">
+      <div id="ledger" class="k-comparison ledger" aria-label="生食与加工后食物的能量账本比较">
+        <div class="hdr">账本项目</div>
+        <div class="hdr food-head"><span>生食</span><span class="food-mark"><i class="food-shape"></i>未经处理</span></div>
+        <div class="hdr food-head"><span>加工后</span><span class="food-mark"><i class="food-shape processed"></i>切碎 · 捣碎 · 加热</span></div>
+
+        <div class="dim">可利用能量</div><div class="cell raw-cell">基准</div><div class="cell processed-cell" data-row="0"><span class="placeholder">等待核对</span><span class="placed-value">通常增加</span></div><div class="rowline"></div>
+        <div class="dim">咀嚼负担</div><div class="cell raw-cell">基准</div><div class="cell processed-cell" data-row="1"><span class="placeholder">等待核对</span><span class="placed-value">通常减少</span></div><div class="rowline"></div>
+        <div class="dim">体内消化成本</div><div class="cell raw-cell">基准</div><div class="cell processed-cell" data-row="2"><span class="placeholder">等待核对</span><span class="placed-value">可能减少</span></div><div class="rowline"></div>
+        <div class="dim">入口前加工投入</div><div class="cell raw-cell">较少</div><div class="cell processed-cell" data-row="3"><span class="placeholder">等待核对</span><span class="placed-value">增加</span></div><div class="rowline"></div>
+
+        <div class="dim summary-dim">净收益关系</div>
+        <div class="cell summary-cell">由以上项目共同决定</div>
+        <div class="cell summary-cell diff">可能提高，但取决于食物与加工方式</div>
+      </div>
+      <svg id="ledger-lines" aria-hidden="true"></svg>
+    </div>
+
+    <div class="tool-tray min0">
+      <div class="tray-label">变化卡<span>拖入加工列对应行</span><span>键盘：方向键选行，Enter 放入</span></div>
+      <div id="cards" class="change-cards min0">
+        <button class="change-card" type="button" data-target="2" aria-label="体内消化成本可能减少"><span>体内消化成本可能减少</span></button>
+        <button class="change-card" type="button" data-target="0" aria-label="可利用份额增加"><span>可利用份额增加</span></button>
+        <button class="change-card" type="button" data-target="3" aria-label="入口前投入增加"><span>入口前投入增加</span></button>
+        <button class="change-card" type="button" data-target="1" aria-label="咀嚼负担减少"><span>咀嚼负担减少</span></button>
+      </div>
+      <button id="reset" class="reset" type="button" aria-label="重置账本" title="重置账本">↻</button>
+      <p id="feedback" class="feedback" aria-live="polite">收益与成本会同时变化。先核对一张变化卡。</p>
+    </div>
+  </section>
+</main>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script src="assets/lib/d3.min.js"></script>
+<script>
+Lec.mount({
+  index: 13,
+  kicker: "E3 · ENERGY LEDGER",
+  title: "加工改变能量账本",
+  take: "加工改变了获取能量和消化成本之间的关系"
+});
+
+(function () {
+  var ledger = d3.select("#ledger");
+  var cells = d3.selectAll(".processed-cell");
+  var cards = d3.selectAll(".change-card");
+  var dots = d3.selectAll(".check-dot");
+  var feedback = d3.select("#feedback");
+  var reset = d3.select("#reset");
+  var completed = new Set();
+  var selectedRow = 0;
+  var selectedCard = null;
+  var reasons = [
+    "这张卡描述的是可利用份额，不是这一项成本。",
+    "这张卡描述的是咀嚼负担，不是另一项投入。",
+    "这张卡描述的是人体内的消化成本。",
+    "这张卡描述的是食物入口前的加工投入。"
+  ];
+
+  function rowAt(clientY) {
+    var found = -1;
+    cells.each(function (_, i) {
+      var r = this.getBoundingClientRect();
+      if (clientY >= r.top && clientY <= r.bottom) found = i;
+    });
+    return found;
+  }
+
+  function targetRow(row) {
+    selectedRow = Math.max(0, Math.min(3, row));
+    cells.classed("is-target", function (_, i) {
+      return selectedCard && !completed.has(i) && i === selectedRow;
+    });
+  }
+
+  function drawLines() {
+    var wrap = document.querySelector(".ledger-wrap").getBoundingClientRect();
+    var lineData = [];
+    cells.each(function (_, i) {
+      if (!completed.has(i)) return;
+      var target = this.getBoundingClientRect();
+      var raw = document.querySelectorAll(".raw-cell")[i].getBoundingClientRect();
+      lineData.push({
+        x1: raw.right - wrap.left - 26,
+        x2: target.left - wrap.left + 26,
+        y: target.top - wrap.top + target.height / 2
+      });
+    });
+    var svg = d3.select("#ledger-lines");
+    svg.selectAll("g.connection").data(lineData).join(
+      function (enter) {
+        var g = enter.append("g").attr("class", "connection");
+        g.append("line").attr("class", "measure-line");
+        g.append("circle").attr("class", "measure-node").attr("r", 4);
+        return g;
+      }
+    ).each(function (d) {
+      d3.select(this).select("line").attr("x1", d.x1).attr("x2", d.x2).attr("y1", d.y).attr("y2", d.y);
+      d3.select(this).select("circle").attr("cx", d.x2).attr("cy", d.y);
+    });
+  }
+
+  function render() {
+    cells.classed("is-complete", function (_, i) { return completed.has(i); });
+    dots.classed("is-done", function (_, i) { return i < completed.size; });
+    d3.select("#count").text("已核对 " + completed.size + " / 4 项");
+    cards.classed("is-placed", function () { return completed.has(+this.dataset.target); })
+      .attr("disabled", function () { return completed.has(+this.dataset.target) ? true : null; });
+    var done = completed.size === 4;
+    ledger.classed("is-finished", done);
+    reset.classed("is-visible", done);
+    drawLines();
+  }
+
+  function clearSelection() {
+    selectedCard = null;
+    cards.classed("is-selected", false);
+    cells.classed("is-target", false);
+  }
+
+  function attempt(card, row) {
+    var target = +card.dataset.target;
+    if (row === target) {
+      completed.add(target);
+      feedback.classed("is-error", false).text(completed.size === 4 ? "净收益可能提高，但取决于食物与加工方式。" : "这一行已接通。收益与成本仍要合并核对。");
+      clearSelection();
+      render();
+      return;
+    }
+    feedback.classed("is-error", true).text(reasons[target]);
+    d3.select(card).classed("is-wrong", false);
+    void card.offsetWidth;
+    d3.select(card).classed("is-wrong", true);
+    setTimeout(function () { d3.select(card).classed("is-wrong", false); }, 280);
+  }
+
+  cards.on("focus click", function () {
+    if (this.disabled) return;
+    selectedCard = this;
+    cards.classed("is-selected", function () { return this === selectedCard; });
+    targetRow(selectedRow);
+  }).on("keydown", function (event) {
+    if (this.disabled) return;
+    selectedCard = this;
+    if (event.key === "ArrowDown" || event.key === "ArrowRight") {
+      event.preventDefault();
+      targetRow((selectedRow + 1) % 4);
+    } else if (event.key === "ArrowUp" || event.key === "ArrowLeft") {
+      event.preventDefault();
+      targetRow((selectedRow + 3) % 4);
+    } else if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      attempt(this, selectedRow);
+    }
+  });
+
+  cards.call(d3.drag()
+    .on("start", function () {
+      if (this.disabled) return;
+      this._dragX = 0;
+      this._dragY = 0;
+      selectedCard = this;
+      d3.select(this).classed("is-dragging is-selected", true);
+    })
+    .on("drag", function (event) {
+      if (this.disabled) return;
+      this._dragX += event.dx;
+      this._dragY += event.dy;
+      d3.select(this).style("transform", "translate(" + this._dragX + "px," + this._dragY + "px)");
+      var row = rowAt(event.sourceEvent.clientY);
+      if (row >= 0) targetRow(row);
+    })
+    .on("end", function (event) {
+      if (this.disabled) return;
+      var row = rowAt(event.sourceEvent.clientY);
+      d3.select(this).classed("is-dragging", false).style("transform", null);
+      if (row >= 0) attempt(this, row);
+      else clearSelection();
+    })
+  );
+
+  reset.on("click", function () {
+    completed.clear();
+    selectedRow = 0;
+    clearSelection();
+    feedback.classed("is-error", false).text("收益与成本会同时变化。先核对一张变化卡。");
+    render();
+  });
+
+  Deck.onResize(drawLines);
+  render();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,434 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  #main { overflow: hidden; }
+  .lec-progress::before { display: none; }
+  .orbit-page { position: relative; width: var(--content-w); height: var(--content-h); overflow: hidden; border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--surface); }
+  .scene { position: absolute; inset: 0; overflow: hidden; background: var(--bg); }
+  .scene canvas { display: block; }
+  .scene::after { position: absolute; inset: 0; pointer-events: none; background: linear-gradient(180deg, rgb(7 16 24 / 76%) 0, transparent 24%, transparent 68%, rgb(7 16 24 / 88%) 100%); content: ""; }
+  .process-wrap { position: absolute; z-index: 5; top: var(--sp-4); right: var(--sp-4); left: var(--sp-4); }
+  .k-process { --process-line-y: 50%; gap: var(--sp-2); }
+  .k-process > .step { min-height: 68px; padding: var(--sp-3) var(--sp-3) var(--sp-3) var(--sp-6); background: rgb(16 27 36 / 88%); }
+  .k-process > .step::before { top: var(--sp-3); }
+  .k-process > .arw { flex-basis: 22px; }
+  .step-name { display: block; color: var(--text); font-size: var(--fs-label); font-weight: 650; line-height: var(--lh-tight); }
+  .step-note { display: block; margin-top: var(--sp-1); color: var(--text-muted); font-size: var(--fs-label); line-height: var(--lh-tight); }
+  .scene-label { position: absolute; z-index: 4; padding: var(--sp-1) var(--sp-2); border-left: 2px solid var(--primary); background: rgb(7 16 24 / 82%); color: var(--text); font-size: var(--fs-label); line-height: var(--lh-tight); pointer-events: none; }
+  #sun-label { left: 36%; top: 52%; }
+  #near-label { left: 16%; top: 56%; }
+  #far-label { left: 65%; top: 38%; }
+  .instruction { position: absolute; z-index: 5; left: var(--sp-5); bottom: 114px; max-width: 510px; padding: var(--sp-3) var(--sp-4); border-left: 4px solid var(--accent); background: rgb(16 27 36 / 92%); color: var(--text); font-size: var(--fs-sec); line-height: var(--lh-body); }
+  .instruction strong { color: var(--accent); }
+  .feedback { display: block; min-height: 24px; margin-top: var(--sp-1); color: var(--text-muted); }
+  .feedback.good { color: var(--success); }
+  .feedback.bad { color: var(--danger); }
+  .telemetry-box { position: absolute; z-index: 5; right: var(--sp-5); bottom: 112px; width: 310px; }
+  .telemetry-box .readout { padding: var(--sp-3) var(--sp-4); border-bottom: 1px solid var(--line); }
+  .telemetry-box .readout:last-child { border-bottom: 0; }
+  .telemetry-box .value { font-size: var(--fs-body); }
+  .progress-band { position: absolute; z-index: 6; right: 0; bottom: 0; left: 0; min-height: 92px; padding: var(--sp-3) var(--sp-5); border-top: 1px solid var(--line); background: rgb(11 21 29 / 96%); }
+  .slot-line { display: flex; align-items: center; gap: var(--sp-3); }
+  .slot { display: flex; flex: 1 1 0; min-width: 0; min-height: 44px; align-items: center; gap: var(--sp-3); padding: 0 var(--sp-3); border: 1px solid var(--line); border-radius: var(--radius-sm); color: var(--text-muted); font-size: var(--fs-label); line-height: var(--lh-tight); }
+  .slot::before { width: 26px; height: 16px; border: 1px solid var(--primary-line); background: var(--primary-soft); clip-path: polygon(0 50%, 100% 0, 82% 100%); content: ""; }
+  .slot.done { border-color: var(--primary); color: var(--text); }
+  .slot.current { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
+  .slot.done::before, .slot.current::before { border-color: var(--accent); background: var(--accent); }
+  .reset { flex: 0 0 44px; width: 44px; min-height: 44px; padding: 0; font-size: var(--fs-h2); }
+  .summary { margin-top: var(--sp-2); color: var(--text-muted); font-size: var(--fs-sec); line-height: var(--lh-tight); }
+  .summary strong { color: var(--accent); font-weight: 650; }
+  .drag-handle { cursor: grab; }
+  .drag-handle:active { cursor: grabbing; }
+  @media (prefers-reduced-motion: reduce) { .scene canvas { scroll-behavior: auto; } }
+</style>
+</head>
+<body data-page="16" data-total="50">
+<div id="stage">
+<main id="main">
+  <section class="orbit-page min0" aria-label="水星轨道等面积交互">
+    <div id="scene" class="scene no-pan min0" role="application" aria-label="水星沿椭圆轨道运动。拖动轨道端点，使当前扇形与参考扇形面积相等。" aria-describedby="orbit-help"></div>
+
+    <div class="process-wrap">
+      <div class="k-process" aria-label="等面积运动的四个连续事件">
+        <div class="axis" aria-hidden="true"></div>
+        <div class="step is-done" data-step="0"><span class="step-name">1 选定等长时间窗</span><span class="step-note">每段同为轨道周期的 1/12</span></div>
+        <div class="arw" aria-hidden="true"></div>
+        <div class="step is-current" data-step="1" aria-current="step"><span class="step-name">2 沿真实椭圆前进</span><span class="step-note">位置由开普勒方程计算</span></div>
+        <div class="arw" aria-hidden="true"></div>
+        <div class="step" data-step="2"><span class="step-name">3 连线扫出扇形</span><span class="step-note">太阳始终是扇形顶点</span></div>
+        <div class="arw" aria-hidden="true"></div>
+        <div class="step" data-step="3"><span class="step-name">4 对齐面积与路程</span><span class="step-note">等面积，弧长却不同</span></div>
+      </div>
+    </div>
+
+    <span id="sun-label" class="scene-label">太阳 · 椭圆焦点</span>
+    <span id="near-label" class="scene-label">近日点 · 路程更长</span>
+    <span id="far-label" class="scene-label">远日点 · 路程更短</span>
+
+    <div id="orbit-help" class="instruction">
+      <strong id="round-label">第 2 / 3 段</strong>：沿轨道拖动黄色端点，使蓝色扇形与参考扇形等面积。方向键可微调。
+      <span id="feedback" class="feedback" aria-live="polite">释放端点后检查面积。</span>
+    </div>
+
+    <div class="telemetry-box panel dense" aria-label="轨道遥测">
+      <div class="readout is-current"><span class="name">经过时间</span><span id="time-value" class="value">—</span></div>
+      <div class="readout"><span class="name">扫过面积</span><span id="area-value" class="value">—</span></div>
+      <div class="readout"><span class="name">瞬时速度</span><span id="speed-value" class="value">—</span></div>
+    </div>
+
+    <div class="progress-band">
+      <div class="slot-line" aria-label="三个等面积区段的完成进度">
+        <div id="slot-1" class="slot done">第 1 段 · 近日点参考</div>
+        <div id="slot-2" class="slot current">第 2 段 · 配平中</div>
+        <div id="slot-3" class="slot">第 3 段 · 待配平</div>
+        <button id="reset" class="reset" type="button" title="重置三段" aria-label="重置三段">↺</button>
+      </div>
+      <div class="summary">同样时间内，近日点附近走得更远、速度更快；<strong>太阳—行星连线扫过的面积始终相等。</strong></div>
+    </div>
+  </section>
+</main>
+</div>
+<script src="assets/lib/three.min.js"></script>
+<script src="assets/lib/gsap.min.js"></script>
+<script src="assets/lib/ScrollTrigger.min.js"></script>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script>
+Lec.mount({
+  index: 16,
+  kicker: "KEPLER II",
+  title: "同样的时间，扫过同样的面积",
+  take: "行星靠近太阳时走得更快、相同时间内走得更远，但太阳与行星连线扫过的面积始终相等。"
+});
+
+(function () {
+  'use strict';
+
+  var planet = Lec.K.PLANETS.filter(function (body) { return body.id === 'mercury'; })[0];
+  var sun = Lec.K.SUN;
+  var TAU = Math.PI * 2;
+  var periodYears = Lec.P.orbitalPeriodYears(planet.semimajorAU);
+  var periodDays = Lec.P.secondsToDays(Lec.P.yearsToSeconds(periodYears));
+  var windowFraction = 1 / 12;
+  var deltaM = TAU * windowFraction;
+  var referenceArea = Math.PI * planet.semimajorAU * planet.semimajorAU * Math.sqrt(1 - planet.eccentricity * planet.eccentricity) * windowFraction;
+  var starts = [-deltaM / 2, Math.PI - deltaM / 2, Math.PI * 0.58];
+  var currentRound = 1;
+  var endM = starts[currentRound] + deltaM * 0.62;
+  var dragging = false;
+  var completed = [true, false, false];
+  var reduced = Deck.reduced();
+
+  var host = document.getElementById('scene');
+  var feedback = document.getElementById('feedback');
+  var roundLabel = document.getElementById('round-label');
+  var timeValue = document.getElementById('time-value');
+  var areaValue = document.getElementById('area-value');
+  var speedValue = document.getElementById('speed-value');
+  var processSteps = Array.prototype.slice.call(document.querySelectorAll('.k-process .step'));
+
+  var scene = new THREE.Scene();
+  scene.background = new THREE.Color(Deck.token('--bg'));
+  var camera = new THREE.PerspectiveCamera(34, 1, 0.1, 100);
+  camera.position.set(0, 8.6, 10.8);
+  camera.lookAt(0, 0, 0);
+  var renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+  renderer.setPixelRatio(1);
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+  renderer.domElement.className = 'cv-fill drag-handle';
+  renderer.domElement.setAttribute('tabindex', '0');
+  renderer.domElement.setAttribute('aria-label', '拖动行星端点配平扇形面积');
+  host.prepend(renderer.domElement);
+
+  scene.add(new THREE.HemisphereLight(0xeaf2f5, 0x071018, 1.1));
+  var sunLight = new THREE.PointLight(0xffd166, 9, 28, 2);
+  sunLight.position.set(0, 0.45, 0);
+  scene.add(sunLight);
+
+  var orbitScale = 5.25;
+  function orbitPoint(meanAnomaly, height) {
+    var p = Lec.P.orbitPosition(planet.semimajorAU, planet.eccentricity, meanAnomaly);
+    return new THREE.Vector3(p.x / planet.semimajorAU * orbitScale, height || 0, p.y / planet.semimajorAU * orbitScale);
+  }
+
+  var orbitPoints = [];
+  for (var i = 0; i <= 256; i += 1) orbitPoints.push(orbitPoint(TAU * i / 256, 0));
+  var orbitGeometry = new THREE.BufferGeometry().setFromPoints(orbitPoints);
+  var orbitLine = new THREE.Line(orbitGeometry, new THREE.LineBasicMaterial({ color: Deck.token('--primary'), transparent: true, opacity: 0.8 }));
+  scene.add(orbitLine);
+
+  var sunMesh = new THREE.Mesh(
+    new THREE.SphereGeometry(0.34, 32, 20),
+    new THREE.MeshStandardMaterial({ color: Deck.token('--accent'), emissive: Deck.token('--accent'), emissiveIntensity: 1.15, roughness: 0.7 })
+  );
+  sunMesh.position.set(0, 0.22, 0);
+  scene.add(sunMesh);
+
+  var planetMesh = new THREE.Mesh(
+    new THREE.SphereGeometry(0.18, 24, 16),
+    new THREE.MeshStandardMaterial({ color: Deck.token('--accent'), roughness: 0.65, metalness: 0.1 })
+  );
+  scene.add(planetMesh);
+  var halo = new THREE.Mesh(
+    new THREE.RingGeometry(0.25, 0.34, 32),
+    new THREE.MeshBasicMaterial({ color: Deck.token('--accent'), transparent: true, opacity: 0.8, side: THREE.DoubleSide })
+  );
+  halo.rotation.x = -Math.PI / 2;
+  planetMesh.add(halo);
+
+  var sectorMaterials = [
+    new THREE.MeshBasicMaterial({ color: Deck.token('--accent'), transparent: true, opacity: 0.3, side: THREE.DoubleSide, depthWrite: false }),
+    new THREE.MeshBasicMaterial({ color: Deck.token('--primary'), transparent: true, opacity: 0.3, side: THREE.DoubleSide, depthWrite: false }),
+    new THREE.MeshBasicMaterial({ color: Deck.token('--primary'), transparent: true, opacity: 0.3, side: THREE.DoubleSide, depthWrite: false })
+  ];
+  var sectors = [null, null, null];
+
+  function sectorGeometry(startM, finishM) {
+    var count = 44;
+    var positions = [0, 0.025, 0];
+    for (var n = 0; n <= count; n += 1) {
+      var p = orbitPoint(startM + (finishM - startM) * n / count, 0.025);
+      positions.push(p.x, p.y, p.z);
+    }
+    var indices = [];
+    for (var j = 1; j <= count; j += 1) indices.push(0, j, j + 1);
+    var geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    geometry.setIndex(indices);
+    geometry.computeVertexNormals();
+    return geometry;
+  }
+
+  function setSector(index, startM, finishM) {
+    if (sectors[index]) {
+      sectors[index].geometry.dispose();
+      scene.remove(sectors[index]);
+    }
+    sectors[index] = new THREE.Mesh(sectorGeometry(startM, finishM), sectorMaterials[index]);
+    scene.add(sectors[index]);
+  }
+
+  setSector(0, starts[0], starts[0] + deltaM);
+  setSector(1, starts[1], endM);
+
+  function areaForDelta(delta) { return referenceArea * delta / deltaM; }
+  function normalizeForward(value, start) {
+    var delta = value - start;
+    while (delta < 0) delta += TAU;
+    while (delta > TAU) delta -= TAU;
+    return start + delta;
+  }
+  function speedAt(meanAnomaly) {
+    var p = Lec.P.orbitPosition(planet.semimajorAU, planet.eccentricity, meanAnomaly);
+    return Lec.P.visVivaSpeed(Lec.P.auToM(p.radius), Lec.P.auToM(planet.semimajorAU), sun.massKg) / 1000;
+  }
+  function fmt(value, digits) { return String(Lec.P.significant(value, digits)); }
+
+  function render() { renderer.render(scene, camera); }
+  function resize() {
+    var width = host.clientWidth;
+    var height = host.clientHeight;
+    renderer.setSize(width, height, false);
+    camera.aspect = width / height;
+    camera.updateProjectionMatrix();
+    render();
+  }
+  Deck.onResize(resize);
+  resize();
+
+  function setProcess(index) {
+    processSteps.forEach(function (step, i) {
+      step.classList.toggle('is-done', i < index);
+      step.classList.toggle('is-current', i === index);
+      if (i === index) step.setAttribute('aria-current', 'step');
+      else step.removeAttribute('aria-current');
+    });
+  }
+
+  function updateReadouts() {
+    var delta = Deck.clamp(endM - starts[currentRound], 0, deltaM * 1.75);
+    var elapsed = periodDays * delta / TAU;
+    var area = areaForDelta(delta);
+    timeValue.textContent = fmt(elapsed, 3) + ' 天';
+    areaValue.textContent = fmt(area, 3) + ' AU²';
+    speedValue.textContent = fmt(speedAt(endM), 3) + ' km/s';
+    planetMesh.position.copy(orbitPoint(endM, 0.22));
+    setSector(currentRound, starts[currentRound], endM);
+    render();
+  }
+
+  function updateProgress() {
+    for (var n = 0; n < 3; n += 1) {
+      var slot = document.getElementById('slot-' + (n + 1));
+      slot.classList.toggle('done', completed[n]);
+      slot.classList.toggle('current', n === currentRound && !completed[n]);
+    }
+    roundLabel.textContent = currentRound < 3 ? '第 ' + (currentRound + 1) + ' / 3 段' : '三段已对齐';
+  }
+
+  function candidateFromEvent(event) {
+    var pt = Deck.pt(renderer.domElement, event);
+    var mouse = new THREE.Vector2(pt.x / renderer.domElement.offsetWidth * 2 - 1, -(pt.y / renderer.domElement.offsetHeight) * 2 + 1);
+    var ray = new THREE.Raycaster();
+    ray.setFromCamera(mouse, camera);
+    var hit = new THREE.Vector3();
+    if (!ray.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), hit)) return endM;
+    var x = hit.x / orbitScale * planet.semimajorAU;
+    var y = hit.z / orbitScale * planet.semimajorAU;
+    var eccentricAnomaly = Math.atan2(y / Math.sqrt(1 - planet.eccentricity * planet.eccentricity), x + planet.semimajorAU * planet.eccentricity);
+    var meanAnomaly = eccentricAnomaly - planet.eccentricity * Math.sin(eccentricAnomaly);
+    return normalizeForward(meanAnomaly, starts[currentRound]);
+  }
+
+  function moveCandidate(value) {
+    endM = Deck.clamp(value, starts[currentRound] + deltaM * 0.12, starts[currentRound] + deltaM * 1.75);
+    setProcess(2);
+    updateReadouts();
+  }
+
+  renderer.domElement.addEventListener('pointerdown', function (event) {
+    if (currentRound >= 3) return;
+    dragging = true;
+    renderer.domElement.setPointerCapture(event.pointerId);
+    moveCandidate(candidateFromEvent(event));
+  });
+  renderer.domElement.addEventListener('pointermove', function (event) {
+    if (dragging) moveCandidate(candidateFromEvent(event));
+  });
+  renderer.domElement.addEventListener('pointerup', function (event) {
+    if (!dragging) return;
+    dragging = false;
+    renderer.domElement.releasePointerCapture(event.pointerId);
+    checkCandidate();
+  });
+  renderer.domElement.addEventListener('keydown', function (event) {
+    if (currentRound >= 3 || (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight')) return;
+    event.preventDefault();
+    moveCandidate(endM + (event.key === 'ArrowRight' ? 1 : -1) * deltaM * 0.025);
+    clearTimeout(renderer.domElement._checkTimer);
+    renderer.domElement._checkTimer = setTimeout(checkCandidate, 450);
+  });
+
+  function checkCandidate() {
+    var ratio = (endM - starts[currentRound]) / deltaM;
+    if (Math.abs(ratio - 1) <= 0.07) {
+      endM = starts[currentRound] + deltaM;
+      completed[currentRound] = true;
+      sectorMaterials[currentRound].color.set(Deck.token('--accent'));
+      sectorMaterials[currentRound].opacity = 0.36;
+      setProcess(3);
+      feedback.className = 'feedback good';
+      feedback.textContent = '面积已对齐：同样时间内，这一段的路程不同。';
+      updateReadouts();
+      gsap.fromTo(sectorMaterials[currentRound], { opacity: 0.72 }, { opacity: 0.36, duration: reduced ? 0 : 0.55, ease: 'power2.out', onUpdate: render });
+      if (currentRound === 2) {
+        currentRound = 3;
+        updateProgress();
+        window.setTimeout(playAll, reduced ? 0 : 700);
+      } else {
+        window.setTimeout(function () {
+          currentRound += 1;
+          endM = starts[currentRound] + deltaM * 0.62;
+          setSector(currentRound, starts[currentRound], endM);
+          setProcess(1);
+          feedback.className = 'feedback';
+          feedback.textContent = '下一段起点已给定，继续配平相同面积。';
+          updateProgress();
+          updateReadouts();
+        }, reduced ? 0 : 650);
+      }
+    } else {
+      var tooSmall = ratio < 1;
+      feedback.className = 'feedback bad';
+      feedback.textContent = tooSmall ? '面积偏小：同样时间内还要继续前进。' : '面积偏大：你走过了更长的时间段。';
+      var target = starts[currentRound] + deltaM * (tooSmall ? Math.max(0.52, ratio - 0.05) : Math.min(1.42, ratio - 0.08));
+      gsap.to({ value: endM }, {
+        value: target,
+        duration: reduced ? 0 : 0.28,
+        ease: 'back.out(1.5)',
+        onUpdate: function () { endM = this.targets()[0].value; updateReadouts(); },
+        onComplete: function () { setProcess(1); }
+      });
+    }
+  }
+
+  function playAll() {
+    feedback.className = 'feedback good';
+    feedback.textContent = '三段同为等时、等面积；近日点段明显走得更快、更远。';
+    setProcess(3);
+    if (reduced) {
+      endM = starts[2] + deltaM;
+      planetMesh.position.copy(orbitPoint(endM, 0.22));
+      updateReadouts();
+      return;
+    }
+    var state = { phase: 0 };
+    gsap.to(state, {
+      phase: 3,
+      duration: 3.6,
+      ease: 'none',
+      onUpdate: function () {
+        var segment = Math.min(2, Math.floor(state.phase));
+        var local = state.phase - segment;
+        var m = starts[segment] + deltaM * local;
+        planetMesh.position.copy(orbitPoint(m, 0.22));
+        speedValue.textContent = fmt(speedAt(m), 3) + ' km/s';
+        render();
+      },
+      onComplete: function () {
+        planetMesh.position.copy(orbitPoint(starts[2] + deltaM, 0.22));
+        render();
+      }
+    });
+  }
+
+  document.getElementById('reset').addEventListener('click', function () {
+    gsap.killTweensOf(sectorMaterials);
+    completed = [true, false, false];
+    currentRound = 1;
+    endM = starts[1] + deltaM * 0.62;
+    for (var n = 1; n < 3; n += 1) {
+      sectorMaterials[n].color.set(Deck.token('--primary'));
+      sectorMaterials[n].opacity = 0.3;
+      if (sectors[n]) { sectors[n].geometry.dispose(); scene.remove(sectors[n]); sectors[n] = null; }
+    }
+    setSector(1, starts[1], endM);
+    feedback.className = 'feedback';
+    feedback.textContent = '释放端点后检查面积。';
+    setProcess(1);
+    updateProgress();
+    updateReadouts();
+    renderer.domElement.focus();
+  });
+
+  gsap.registerPlugin(ScrollTrigger);
+  if (!reduced) {
+    var intro = { progress: 0 };
+    ScrollTrigger.create({
+      trigger: '.orbit-page',
+      start: 'top bottom',
+      end: 'top center',
+      once: true,
+      onEnter: function () {
+        gsap.fromTo(sunMesh.scale, { x: 0.2, y: 0.2, z: 0.2 }, { x: 1, y: 1, z: 1, duration: 0.7, ease: 'power2.out', onUpdate: render });
+        gsap.fromTo(intro, { progress: 0 }, { progress: 1, duration: 1.1, ease: 'none', onUpdate: function () {
+          orbitGeometry.setDrawRange(0, Math.max(2, Math.floor(257 * intro.progress)));
+          render();
+        }});
+      }
+    });
+  } else {
+    orbitGeometry.setDrawRange(0, Infinity);
+  }
+
+  updateProgress();
+  updateReadouts();
+  render();
+}());
+</script>
+</body>
+</html>

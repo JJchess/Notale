@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>低负荷不是无影响</title>
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  .body-model{height:100%;display:flex;gap:var(--sp-6);min-width:0}
+  .overview{display:none}
+  .figure-zone{flex:0 0 56%;position:relative;min-width:0;overflow:hidden;border:1px solid var(--line);border-radius:var(--r-lg);background:linear-gradient(135deg,var(--surface-soft),var(--surface-muted))}
+  .figure-head{position:absolute;left:24px;top:20px;z-index:5}
+  .figure-head p{margin-top:6px;max-width:390px}
+  .human-svg{position:absolute;z-index:2;inset:66px 50px 18px 72px;width:calc(100% - 122px);height:calc(100% - 84px)}
+  .response-window{position:absolute;z-index:1;left:170px;width:320px;border:2px dashed var(--line-strong);border-radius:var(--r-lg);background:var(--primary-soft)}
+  .response-window.upper{top:104px;height:190px}.response-window.lower{top:310px;height:220px;background:var(--accent-soft)}
+  .response-window span{position:absolute;top:10px;left:14px;padding:4px 8px;background:var(--surface);border-radius:var(--r-sm);color:var(--muted);font-size:var(--fs-label);font-weight:700}
+  .baseline{fill:var(--line-strong);fill-opacity:.36;stroke:var(--primary-strong);stroke-width:6}
+  .bone{fill:none;stroke:var(--primary);stroke-width:9;stroke-linecap:round;stroke-linejoin:round;opacity:.82;transition:opacity 240ms ease,stroke-width 240ms ease}
+  .joint{fill:var(--primary-soft);stroke:var(--primary);stroke-width:4}
+  .muscle{fill:var(--accent);opacity:.55;transition:opacity 240ms ease,transform 240ms ease;transform-box:fill-box;transform-origin:center}
+  .fluid{fill:var(--success);opacity:.26;transition:transform 360ms cubic-bezier(.2,.8,.2,1),opacity 240ms ease;transform-box:fill-box;transform-origin:center}
+  .flow-arrow{fill:none;stroke:var(--success);stroke-width:5;stroke-linecap:round;stroke-dasharray:10 10;opacity:0;transition:opacity 220ms ease}
+  .flow-tip{fill:var(--success);opacity:0;transition:opacity 220ms ease}
+  .body-label{position:absolute;width:210px;box-sizing:border-box;padding:11px 13px;border-radius:var(--r-sm);background:rgb(255 255 255 / 94%);border:1px solid var(--line);font-size:var(--fs-label);font-weight:750;line-height:1.35;box-shadow:var(--shadow-soft)}
+  .body-label small{display:block;margin-top:4px;color:var(--muted);font-size:var(--fs-label);font-weight:500;line-height:1.35}
+  .label-fluid{top:132px;right:32px;color:var(--success)} .label-bone{bottom:158px;left:28px;color:var(--primary)} .label-muscle{top:244px;right:28px;color:#8a431e}
+  .timing-note{position:absolute;left:24px;right:24px;bottom:20px;z-index:4;padding:14px 18px;background:rgb(255 255 255 / 94%);border-left:7px solid var(--primary);border-radius:0 var(--r-sm) var(--r-sm) 0;font-size:var(--fs-sec);line-height:1.45;font-weight:700}
+  .notes-flow{position:relative;z-index:4;display:flex;flex-direction:column;gap:14px;width:330px;margin:104px 0 0 24px}
+  .micro-note{box-sizing:border-box;min-height:82px;padding:14px 16px;background:rgb(255 255 255 / 94%);border:1px solid var(--line);border-radius:var(--r-sm);color:var(--muted);font-size:var(--fs-label);font-weight:650;line-height:1.35}
+
+  .legend-dot{width:13px;height:13px;border-radius:50%;display:inline-block}
+  .control-zone{flex:1;min-width:0;height:100%;display:flex;flex-direction:column;gap:var(--sp-4)}
+  .process-strip{--process-gap:24px;gap:24px}
+  .process-strip .step{padding:8px 12px;text-align:center;min-height:76px;display:flex;flex-direction:column;justify-content:center}
+  .process-strip .step strong{font-size:var(--fs-sec);line-height:1.35}.process-strip .step span{font-size:var(--fs-label);color:var(--muted);line-height:1.35}
+  .state-panel{flex:1;padding:var(--sp-4) var(--sp-5)}
+  .status-row{display:grid;grid-template-columns:72px 1fr;gap:12px;align-items:center;margin-top:12px;padding:10px 12px;background:var(--surface-soft);border:1px solid var(--line);border-radius:var(--r-sm)}
+  .status-name{font-size:var(--fs-sec);font-weight:750}.status-copy{grid-column:1/-1;color:var(--muted);font-size:var(--fs-sec);line-height:1.4;margin-top:-5px}
+  .track{height:14px;position:relative;background:var(--surface-muted);border-radius:999px;overflow:hidden}
+  .track::before{content:"";position:absolute;left:50%;top:0;bottom:0;width:2px;background:var(--line-strong);z-index:2}
+  .fill{height:100%;width:50%;background:var(--primary);border-radius:999px;transition:width 240ms ease}
+  .status-row.mus .fill{background:var(--accent)}.status-row.flu .fill{background:var(--success)}
+  .baseline-key{display:flex;justify-content:space-between;color:var(--muted);font-size:var(--fs-label);margin:8px 0 0 84px}
+  .controls{padding:var(--sp-3) var(--sp-4)}
+  .controls .ctl{gap:10px}.controls input[type="range"]{flex:1;min-width:120px}
+  .run{min-width:190px;min-height:44px}.return{min-width:118px;min-height:44px}
+  .phase-line{font-size:var(--fs-sec);line-height:1.4;color:var(--text)}
+  .phase-line strong{color:var(--primary-strong)}
+  @media (prefers-reduced-motion:reduce){.bone,.muscle,.fluid,.flow-arrow,.flow-tip,.fill{transition:none!important}}
+</style>
+</head>
+<body data-page="41" data-total="45">
+<div id="stage">
+<main id="main">
+  <div class="body-model">
+    <section class="overview" aria-labelledby="process-title">
+      <h2 id="process-title">从进入到返回：不是同一个开关</h2>
+      <div class="k-process axis process-strip" aria-label="微重力身体响应四阶段">
+        <div class="step is-current" data-step="0"><strong>地球基线</strong><span>骨肌承重<br>体液受重力影响</span></div><i class="arw" aria-hidden="true"></i>
+        <div class="step" data-step="1"><strong>刚进入</strong><span>头胸体液先上移<br>骨肌尚未改变完</span></div><i class="arw" aria-hidden="true"></i>
+        <div class="step" data-step="2"><strong>持续低负荷</strong><span>承重与使用减少<br>骨肌逐渐响应</span></div><i class="arw" aria-hidden="true"></i>
+        <div class="step" data-step="3"><strong>返回负荷</strong><span>重新承重<br>进入适应恢复</span></div>
+      </div>
+    </section>
+    <section class="figure-zone min0" aria-labelledby="figure-title">
+      <div class="figure-head">
+        <h2 id="figure-title">同一身体，三套响应</h2>
+        <p class="sec muted">灰色轮廓始终保留地球负荷基线。</p>
+      </div>
+      <svg class="human-svg" viewBox="0 0 620 500" role="img" aria-label="人体骨骼、抗重力肌群与体液分布的对齐示意">
+        <g id="silhouette">
+          <circle class="baseline" cx="310" cy="60" r="43"/>
+          <path class="baseline" d="M263 111 Q310 88 357 111 L387 252 Q361 280 348 309 L363 476 L315 476 L310 320 L305 476 L257 476 L272 309 Q259 280 233 252Z"/>
+          <path class="baseline" d="M245 128 L161 282 L194 299 L279 175M375 128 L459 282 L426 299 L341 175"/>
+        </g>
+        <g id="fluidLayer">
+          <ellipse class="fluid" cx="310" cy="64" rx="35" ry="32"/>
+          <ellipse class="fluid" cx="310" cy="158" rx="58" ry="68"/>
+          <ellipse class="fluid" cx="310" cy="270" rx="53" ry="54"/>
+          <ellipse class="fluid" cx="279" cy="387" rx="20" ry="80"/><ellipse class="fluid" cx="341" cy="387" rx="20" ry="80"/>
+          <path class="flow-arrow" d="M400 258 C430 215 427 153 383 120"/><path class="flow-tip" d="M375 123 l17 -17 l2 24z"/>
+        </g>
+        <g id="muscleLayer">
+          <ellipse class="muscle" cx="267" cy="175" rx="19" ry="53"/><ellipse class="muscle" cx="353" cy="175" rx="19" ry="53"/>
+          <ellipse class="muscle" cx="280" cy="359" rx="22" ry="72"/><ellipse class="muscle" cx="340" cy="359" rx="22" ry="72"/>
+          <ellipse class="muscle" cx="278" cy="447" rx="18" ry="42"/><ellipse class="muscle" cx="342" cy="447" rx="18" ry="42"/>
+        </g>
+        <g id="boneLayer">
+          <circle class="bone" cx="310" cy="60" r="31"/>
+          <path class="bone" d="M310 94 L310 272 M261 130 L359 130 M310 131 L190 290 M310 131 L430 290 M274 266 Q310 294 346 266 M281 286 L276 470 M339 286 L344 470"/>
+          <circle class="joint" cx="276" cy="306" r="8"/><circle class="joint" cx="344" cy="306" r="8"/>
+        </g>
+      </svg>
+      <div class="notes-flow">
+        <span class="micro-note"><strong>先发生</strong><br>体液分布方向改变，头胸部相对增多。</span>
+        <span class="micro-note"><strong>后发生</strong><br>持续低负荷使骨维持刺激和肌肉使用下降。</span>
+        <span class="micro-note"><strong>返回后</strong><br>恢复受任务时长、训练与个体差异影响。</span>
+      </div>
+
+    </section>
+
+    <section class="control-zone min0" aria-label="三套身体响应与操作">
+      <h2>从进入到返回：不是同一个开关</h2>
+      <div class="k-process axis process-strip" aria-label="微重力身体响应四阶段">
+        <div class="step is-current" data-step="0"><strong>地球基线</strong><span>骨肌承重<br>体液受重力影响</span></div><i class="arw" aria-hidden="true"></i>
+        <div class="step" data-step="1"><strong>刚进入</strong><span>头胸体液先上移<br>骨肌尚未改变完</span></div><i class="arw" aria-hidden="true"></i>
+        <div class="step" data-step="2"><strong>持续低负荷</strong><span>承重与使用减少<br>骨肌逐渐响应</span></div><i class="arw" aria-hidden="true"></i>
+        <div class="step" data-step="3"><strong>返回负荷</strong><span>重新承重<br>进入适应恢复</span></div>
+      </div>
+      <div class="panel state-panel">
+        <p class="phase-line" aria-live="polite"><strong id="phaseName">地球基线：</strong><span id="phaseCopy">骨与肌肉持续承重，体液分布受重力影响。</span></p>
+        <div class="status-row flu"><span class="status-name">体液</span><div class="track"><div class="fill" id="fluidBar"></div></div><p class="status-copy" id="fluidText">地球负荷下的分布基线</p></div>
+        <div class="status-row mus"><span class="status-name">肌肉</span><div class="track"><div class="fill" id="muscleBar"></div></div><p class="status-copy" id="muscleText">抗重力肌群保持日常使用</p></div>
+        <div class="status-row"><span class="status-name">骨</span><div class="track"><div class="fill" id="boneBar"></div></div><p class="status-copy" id="boneText">承重维持刺激处于基线</p></div>
+        <div class="baseline-key"><span>偏离基线</span><span>地球基线</span><span>恢复方向</span></div>
+      </div>
+
+      <div class="panel controls">
+        <div class="ctl">
+          <button class="run" id="runBtn" type="button">按住运行微重力身体</button>
+          <label class="label" for="progress">进程</label>
+          <input id="progress" type="range" min="0" max="100" value="0" aria-label="身体响应进程，可拖回任一阶段">
+          <button class="return" id="returnBtn" type="button">返回负荷</button>
+        </div>
+        <p class="note">按住推进，松开暂停；也可拖动进程。返回后观察恢复方向。</p>
+      </div>
+    </section>
+  </div>
+</main>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script>
+Lec.mount({index:41,kicker:"MICROGRAVITY BODY",title:"低负荷不是无影响",take:"骨、肌肉与体液会对长期低负荷环境产生可观察变化"});
+(function(){
+  var slider=document.getElementById('progress'), run=document.getElementById('runBtn'), ret=document.getElementById('returnBtn');
+  var holding=false, returning=false, value=0;
+  var phases=[
+    ["地球基线：","骨与肌肉持续承重，体液分布受重力影响。"],
+    ["刚进入微重力：","头胸部体液相对上移；骨、肌变化尚未完成。"],
+    ["持续低负荷：","承重刺激与抗重力肌群使用逐渐减少。"],
+    ["返回负荷环境：","再次承重后进入适应与恢复阶段。"]
+  ];
+  function phase(v){return v<20?0:v<45?1:v<75?2:3}
+  function setBar(id,n){document.getElementById(id).style.width=n+'%'}
+  function render(v){
+    value=Math.max(0,Math.min(100,v)); slider.value=value;
+    var p=phase(value), low=Math.max(0,Math.min(1,(value-22)/53)), recover=Math.max(0,(value-75)/25);
+    var fluidShift=p===0?0:(p<3?-34:-34*(1-recover));
+    document.querySelectorAll('.fluid').forEach(function(el){el.style.transform='translateY('+fluidShift+'px)'});
+    document.querySelector('.flow-arrow').style.opacity=p===1?0.9:0; document.querySelector('.flow-tip').style.opacity=p===1?0.9:0;
+    document.querySelectorAll('.muscle').forEach(function(el){el.style.opacity=(.55-.22*low+.17*recover);el.style.transform='scale('+(1-.08*low+.06*recover)+')'});
+    document.querySelectorAll('.bone').forEach(function(el){el.style.opacity=(.82-.22*low+.15*recover)});
+    setBar('fluidBar',50+(p===0?0:22*(1-recover))); setBar('muscleBar',50-24*low+18*recover); setBar('boneBar',50-18*low+12*recover);
+    document.getElementById('phaseName').textContent=phases[p][0]; document.getElementById('phaseCopy').textContent=phases[p][1];
+    document.getElementById('fluidText').textContent=p===0?'地球负荷下的分布基线':p===1?'头胸部相对增多，先于骨肌改变':p===2?'较早完成重新分布':'逐步向地球负荷分布调整';
+    document.getElementById('muscleText').textContent=p<2?'改变需要持续时间':p===2?'使用下降，逐渐偏离基线':'重新承重与训练影响恢复';
+    document.getElementById('boneText').textContent=p<2?'变化尚不应画成已经完成':p===2?'维持刺激减少，响应较慢':'恢复速度与程度并不一致';
+    document.querySelectorAll('.process-strip .step').forEach(function(el,i){el.classList.toggle('is-current',i===p);el.classList.toggle('is-done',i<p)});
+  }
+  function start(){holding=true;returning=false;run.setAttribute('aria-pressed','true')}
+  function stop(){holding=false;run.setAttribute('aria-pressed','false')}
+  run.addEventListener('pointerdown',function(e){e.preventDefault();start()});
+  window.addEventListener('pointerup',stop); window.addEventListener('pointercancel',stop);
+  run.addEventListener('keydown',function(e){if((e.key===' '||e.key==='Enter')&&!e.repeat){e.preventDefault();start()}});
+  run.addEventListener('keyup',function(e){if(e.key===' '||e.key==='Enter')stop()});
+  slider.addEventListener('input',function(){holding=false;returning=false;render(+this.value)});
+  ret.addEventListener('click',function(){holding=false;if(Deck.reduced()){render(100)}else{returning=true}});
+  Deck.loop(function(t,dt){if(holding&&value<74.8)render(value+dt*.018);if(returning){render(value+dt*.035);if(value>=100)returning=false}},{still:100});
+  render(0);
+})();
+</script>
+</body>
+</html>

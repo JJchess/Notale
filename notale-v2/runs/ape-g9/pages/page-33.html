@@ -1,0 +1,334 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  velocity-ledger-game { display: block; width: 100%; height: 100%; }
+  .p33-shell { display: flex; flex-direction: column; width: 100%; height: 100%; gap: var(--sp-3); }
+  .p33-compare { flex: 0 0 278px; background: rgba(7,16,21,.58); }
+  .p33-compare > .hdr,
+  .p33-compare > .dim,
+  .p33-compare > .cell,
+  .p33-compare > .diff { padding-top: var(--sp-2); padding-bottom: var(--sp-2); }
+  .p33-compare > .hdr { font-size: 20px; }
+  .p33-compare > .hdr:first-child { color: var(--text-muted); font-size: var(--fs-label); }
+  .p33-compare > .cell,
+  .p33-compare > .diff { gap: var(--sp-3); }
+  .p33-value { color: var(--primary-bright); font-family: var(--font-mono); font-size: var(--fs-lead); font-weight: 700; white-space: nowrap; }
+  .p33-value.zero { color: var(--text-strong); }
+  .p33-measure { display: flex; flex: 1 1 0; flex-direction: column; justify-content: center; gap: var(--sp-2); min-width: 0; }
+  .p33-scale { position: relative; width: 100%; height: 10px; overflow: hidden; border: 1px solid var(--line-strong); border-radius: var(--radius-1); background: var(--surface-3); }
+  .p33-scale > span { display: block; width: var(--amount, 0%); height: 100%; background: var(--primary); }
+  .p33-scale.is-zero > span { width: 3px; background: var(--text-strong); }
+  .p33-scale.is-budget > span { background: var(--accent); }
+  .p33-workbench { position: relative; display: grid; grid-template-columns: 600px minmax(0,1fr); flex: 1 1 0; min-height: 0; overflow: visible; border: var(--border); border-radius: var(--radius-3); background: var(--surface-1); }
+  .p33-ledger { position: relative; z-index: 2; display: flex; flex-direction: column; min-width: 0; padding: var(--sp-3) var(--sp-4); border-right: var(--border); background: rgba(13,26,32,.88); }
+  .p33-ledger-head { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-4); }
+  .p33-ledger-title { color: var(--text-strong); font-family: var(--font-narrow); font-size: var(--fs-h2); font-weight: 700; line-height: 1.3; }
+  .p33-progress { color: var(--accent); font-family: var(--font-mono); font-size: var(--fs-sec); font-weight: 700; }
+  .p33-task { margin-top: var(--sp-1); color: var(--text-muted); font-size: var(--fs-sec); line-height: var(--lh-copy); }
+  .p33-game-row { display: grid; grid-template-columns: 220px minmax(0,1fr); gap: var(--sp-3); align-items: stretch; margin-top: var(--sp-2); min-height: 104px; }
+  .p33-tickets { display: flex; flex-direction: column; gap: var(--sp-2); min-width: 0; }
+  .p33-ticket { display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: center; gap: var(--sp-2); min-height: 46px; padding: var(--sp-2) var(--sp-3); text-align: left; border: 1px dashed var(--line-strong); background: var(--surface-2); cursor: grab; transition: transform 220ms ease-out, border-color 180ms ease-out, opacity 180ms ease-out; }
+  .p33-ticket[aria-pressed="true"] { border-color: var(--accent); box-shadow: inset 3px 0 0 var(--accent); }
+  .p33-ticket.is-posted { opacity: .42; cursor: default; }
+  .p33-ticket.is-wrong { animation: p33-shake 280ms ease-out; border-color: var(--danger); }
+  .p33-ticket-name { min-width: 0; color: var(--text-strong); font-size: var(--fs-label); font-weight: 700; line-height: 1.35; }
+  .p33-ticket-value { color: var(--accent); font-family: var(--font-mono); font-size: var(--fs-sec); font-weight: 700; white-space: nowrap; }
+  .p33-accounts { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: var(--sp-2); min-width: 0; }
+  .p33-account { display: flex; flex-direction: column; align-items: flex-start; justify-content: center; min-width: 0; min-height: 100%; padding: var(--sp-2) var(--sp-3); text-align: left; border: 1px solid var(--line-strong); background: transparent; }
+  .p33-account strong { color: var(--text-strong); font-size: var(--fs-label); line-height: 1.35; }
+  .p33-account span { margin-top: var(--sp-1); color: var(--text-muted); font-family: var(--font-mono); font-size: var(--fs-tick); line-height: 1.35; }
+  .p33-account.is-filled { border-color: var(--primary); background: var(--surface-teal); box-shadow: inset 0 0 0 1px rgba(53,198,180,.22); }
+  .p33-feedback { min-height: 23px; margin-top: var(--sp-2); color: var(--text-muted); font-size: var(--fs-sec); line-height: 1.4; }
+  .p33-feedback.is-error { color: var(--danger); }
+  .p33-budget { display: grid; grid-template-columns: 98px minmax(0,1fr) auto; align-items: center; gap: var(--sp-3); margin-top: auto; }
+  .p33-budget-label { color: var(--text-muted); font-size: var(--fs-label); font-weight: 700; }
+  .p33-budget-track { position: relative; display: flex; height: 16px; overflow: hidden; border: 1px solid var(--line-strong); border-radius: var(--radius-1); background: var(--surface-3); }
+  .p33-budget-orbit { width: 0; background: var(--accent); transition: width 600ms cubic-bezier(.2,.8,.2,1); }
+  .p33-budget-loss { flex: 1; background: var(--primary-dark); opacity: 0; transition: opacity 350ms ease-out 180ms; }
+  .p33-complete .p33-budget-orbit { width: var(--orbit-share); }
+  .p33-complete .p33-budget-loss { opacity: 1; }
+  .p33-budget-total { color: var(--accent); font-family: var(--font-mono); font-size: var(--fs-sec); font-weight: 700; white-space: nowrap; }
+  .p33-result { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); min-height: 43px; margin-top: var(--sp-2); }
+  .p33-conclusion { color: var(--text-strong); font-size: var(--fs-sec); font-weight: 700; line-height: var(--lh-copy); }
+  .p33-conclusion strong { color: var(--accent); }
+  .p33-reset { flex: 0 0 auto; min-height: 38px; padding: var(--sp-1) var(--sp-3); font-size: var(--fs-label); }
+  .p33-orbit { position: relative; min-width: 0; overflow: visible; background: linear-gradient(180deg,rgba(7,16,21,.1),rgba(7,16,21,.72)); }
+  .p33-orbit svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: hidden; }
+  .p33-earth { fill: var(--surface-2); stroke: var(--primary-dark); stroke-width: 2; }
+  .p33-air { fill: none; stroke: var(--primary-bright); stroke-width: 2; opacity: .9; }
+  .p33-start { fill: var(--accent); }
+  .p33-vertical, .p33-tangent, .p33-ring { fill: none; stroke-linecap: round; stroke-linejoin: round; }
+  .p33-vertical { stroke: var(--text-strong); stroke-width: 3; stroke-dasharray: 7 7; }
+  .p33-tangent { stroke: var(--primary-bright); stroke-width: 4; }
+  .p33-ring { stroke: var(--primary); stroke-width: 3; stroke-dasharray: 8 8; opacity: .2; transition: opacity 400ms ease-out; }
+  .p33-complete .p33-ring { opacity: .95; stroke-dasharray: none; }
+  .p33-flight-dot { fill: var(--primary-bright); opacity: 0; }
+  .p33-complete .p33-flight-dot { opacity: 1; animation: p33-orbit-dot 2200ms linear infinite; }
+  .p33-scene-label { position: absolute; z-index: 2; padding: var(--sp-1) var(--sp-2); color: var(--text-muted); font-size: var(--fs-label); line-height: 1.35; background: rgba(7,16,21,.8); }
+  .p33-label-height { top: 28px; left: 42px; }
+  .p33-label-fall { top: 98px; left: 112px; color: var(--text-strong); }
+  .p33-label-orbit { top: 52px; right: 28px; color: var(--primary-bright); }
+  .p33-scene-note { position: absolute; right: 26px; bottom: 16px; left: 28px; color: var(--text-muted); font-size: var(--fs-sec); line-height: var(--lh-copy); }
+  .p33-enter { animation: p33-rise 560ms ease-out both; }
+  .p33-compare > :nth-child(n+4) { animation-delay: 70ms; }
+  .p33-workbench { animation-delay: 190ms; }
+  @keyframes p33-rise { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: translateY(0); } }
+  @keyframes p33-shake { 0%,100% { transform: translateX(0); } 25% { transform: translateX(-8px); } 50% { transform: translateX(8px); } 75% { transform: translateX(-5px); } }
+  @keyframes p33-orbit-dot { from { offset-distance: 0%; } to { offset-distance: 100%; } }
+  .p33-flight-dot { offset-path: path("M 154 184 C 285 32 520 18 690 135 C 788 202 761 281 604 302"); }
+  @media (prefers-reduced-motion: reduce) {
+    .p33-enter, .p33-ticket.is-wrong, .p33-flight-dot { animation: none !important; }
+    .p33-ticket, .p33-budget-orbit, .p33-budget-loss, .p33-ring { transition: none !important; }
+    .p33-complete .p33-flight-dot { opacity: 1; }
+  }
+</style>
+</head>
+<body data-page="33" data-total="52">
+<div id="stage">
+<main id="main"></main>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script>
+(function () {
+  'use strict';
+
+  Lec.mount({index: 33, kicker: 'ORBIT / VELOCITY', title: '升得高，不等于进了轨道', take: '入轨困难主要来自必须获得很大的横向速度，而非只要升得足够高。'});
+  document.querySelector('.lec-progress').style.overflow = 'visible';
+
+  class VelocityLedgerGame extends HTMLElement {
+    connectedCallback() {
+      if (this._ready) return;
+      this._ready = true;
+      this.start();
+    }
+
+    start() {
+      var orbitMps = Lec.P.circularOrbitVelocityAtAltitude(
+        Lec.K.earthMassKg,
+        Lec.K.earthMeanRadiusM,
+        Lec.K.issTypicalAltitudeM
+      );
+      var totalMps = Lec.K.leoLaunchDeltaVMetresPerSecond;
+      var remainderMps = Lec.P.difference(totalMps, orbitMps);
+      var orbitKmps = Lec.P.kilometresFromMetres(orbitMps);
+      var totalKmps = Lec.P.kilometresFromMetres(totalMps);
+      var remainderKmps = Lec.P.kilometresFromMetres(remainderMps);
+      var heightKm = Lec.P.kilometresFromMetres(Lec.K.issTypicalAltitudeM);
+      var share = Lec.P.percent(orbitMps, totalMps);
+
+      this.model = {
+        selected: null,
+        posted: { orbit: false, remainder: false },
+        attempts: 0,
+        values: { orbitMps: orbitMps, totalMps: totalMps, remainderMps: remainderMps, share: share }
+      };
+      this._display = {
+        orbit: Lec.P.roundTo(orbitKmps, 1),
+        total: Lec.P.roundTo(totalKmps, 1),
+        remainder: Lec.P.roundTo(remainderKmps, 1),
+        height: Lec.P.roundTo(heightKm, 0),
+        share: Lec.P.roundTo(share, 0)
+      };
+      this.render();
+      this.bind();
+      this.dispatchEvent(new CustomEvent('game-start', { bubbles: true, composed: true }));
+    }
+
+    reset() {
+      this.start();
+      this.dispatchEvent(new CustomEvent('game-reset', { bubbles: true, composed: true }));
+    }
+
+    getState() {
+      return JSON.parse(JSON.stringify(this.model));
+    }
+
+    render() {
+      var d = this._display;
+      this.innerHTML = `
+        <div class="p33-shell">
+          <section class="k-comparison p33-compare p33-enter" aria-label="同一高度下，只升高与形成圆轨道的比较">
+            <div class="hdr">比较维度</div>
+            <div class="hdr">只升到典型空间站高度</div>
+            <div class="hdr">在该高度形成圆轨道</div>
+            <div class="dim">高度基准</div>
+            <div class="cell"><span class="p33-measure"><span class="p33-value">约 ${d.height} km</span><span class="p33-scale" style="--amount:100%"><span></span></span></span></div>
+            <div class="cell"><span class="p33-measure"><span class="p33-value">约 ${d.height} km</span><span class="p33-scale" style="--amount:100%"><span></span></span></span></div>
+            <div class="rowline"></div>
+            <div class="dim">顶点横向速度</div>
+            <div class="diff"><span class="p33-measure"><span class="p33-value zero">0 km/s</span><span class="p33-scale is-zero"><span></span></span></span></div>
+            <div class="diff"><span class="p33-measure"><span class="p33-value">约 ${d.orbit} km/s</span><span class="p33-scale" style="--amount:${d.share}%"><span></span></span></span></div>
+            <div class="rowline"></div>
+            <div class="dim">接下来会怎样</div>
+            <div class="cell">掉回地面</div>
+            <div class="cell">持续下落，同时不断错过地面</div>
+            <div class="rowline"></div>
+            <div class="dim">发射速度预算</div>
+            <div class="cell">升高本身不能换来轨道</div>
+            <div class="cell"><span class="p33-measure"><span><span class="p33-value">约 ${d.total} km/s</span> <span class="muted">含损失</span></span><span class="p33-scale is-budget" style="--amount:100%"><span></span></span></span></div>
+          </section>
+
+          <section class="p33-workbench p33-enter" aria-label="速度预算归账游戏">
+            <div class="p33-ledger min0">
+              <div class="p33-ledger-head">
+                <h2 class="p33-ledger-title">速度预算账本</h2>
+                <span class="p33-progress" id="p33-progress">已归账 0/2</span>
+              </div>
+              <p class="p33-task">拖动凭条入账；键盘可先选凭条，再选账户。</p>
+              <div class="p33-game-row">
+                <div class="p33-tickets" aria-label="待归账凭条">
+                  <button class="p33-ticket" type="button" draggable="true" data-ticket="orbit" aria-pressed="false">
+                    <span class="p33-ticket-name">圆轨道横向速度</span><span class="p33-ticket-value">${d.orbit} km/s</span>
+                  </button>
+                  <button class="p33-ticket" type="button" draggable="true" data-ticket="remainder" aria-pressed="false">
+                    <span class="p33-ticket-name">其余任务差额</span><span class="p33-ticket-value">${d.remainder} km/s</span>
+                  </button>
+                </div>
+                <div class="p33-accounts" aria-label="速度支出账户">
+                  <button class="p33-account" type="button" data-account="orbit">
+                    <strong>获得横向速度</strong><span>待入账</span>
+                  </button>
+                  <button class="p33-account" type="button" data-account="remainder">
+                    <strong>升高、重力与阻力损失</strong><span>待入账</span>
+                  </button>
+                </div>
+              </div>
+              <div class="p33-feedback" id="p33-feedback" aria-live="polite">未归账金额：${d.total} km/s</div>
+              <div class="p33-budget" aria-label="总发射速度预算">
+                <span class="p33-budget-label">总预算占比</span>
+                <div class="p33-budget-track"><span class="p33-budget-orbit"></span><span class="p33-budget-loss"></span></div>
+                <span class="p33-budget-total">${d.total} km/s</span>
+              </div>
+              <div class="p33-result">
+                <p class="p33-conclusion">同样在约 ${d.height} km，高度相同；关键是有没有约 ${d.orbit} km/s 的横向速度。</p>
+                <button class="btn p33-reset" type="button" data-reset disabled>重置账本</button>
+              </div>
+            </div>
+
+            <figure class="p33-orbit min0" aria-labelledby="p33-scene-note">
+              <svg viewBox="0 0 780 300" role="img" aria-label="同一起点的竖直上升回落路径与切向圆轨道路径">
+                <path class="p33-earth" d="M -40 306 Q 390 86 820 306 L 820 350 L -40 350 Z"></path>
+                <path class="p33-air" d="M -20 292 Q 390 82 800 292"></path>
+                <path class="p33-vertical" d="M 154 184 C 145 140 146 102 154 62 C 170 106 170 145 154 184"></path>
+                <path class="p33-tangent" d="M 154 184 C 270 100 418 74 562 104"></path>
+                <path class="p33-ring" d="M 154 184 C 285 32 520 18 690 135 C 788 202 761 281 604 302"></path>
+                <circle class="p33-start" cx="154" cy="184" r="7"></circle>
+                <circle class="p33-flight-dot" cx="0" cy="0" r="7"></circle>
+              </svg>
+              <span class="p33-scene-label p33-label-height">同一高度基准</span>
+              <span class="p33-scene-label p33-label-fall">竖直：到顶后回落</span>
+              <span class="p33-scene-label p33-label-orbit">切向：不断错过地面</span>
+              <figcaption class="p33-scene-note" id="p33-scene-note">两条路径从同一点出发。高度没有自动变成轨道，横向速度才使下落路径绕开地面。</figcaption>
+            </figure>
+          </section>
+        </div>`;
+      this.style.setProperty('--orbit-share', d.share + '%');
+    }
+
+    bind() {
+      var self = this;
+      this.querySelectorAll('[data-ticket]').forEach(function (button) {
+        button.addEventListener('click', function () { self.select(button.dataset.ticket); });
+        button.addEventListener('dragstart', function (event) {
+          if (self.model.posted[button.dataset.ticket]) { event.preventDefault(); return; }
+          self.model.selected = button.dataset.ticket;
+          event.dataTransfer.setData('text/plain', button.dataset.ticket);
+          event.dataTransfer.effectAllowed = 'move';
+          self.syncSelection();
+        });
+      });
+      this.querySelectorAll('[data-account]').forEach(function (account) {
+        account.addEventListener('click', function () { self.post(self.model.selected, account.dataset.account); });
+        account.addEventListener('dragover', function (event) { event.preventDefault(); event.dataTransfer.dropEffect = 'move'; });
+        account.addEventListener('drop', function (event) {
+          event.preventDefault();
+          self.post(event.dataTransfer.getData('text/plain'), account.dataset.account);
+        });
+      });
+      this.querySelector('[data-reset]').addEventListener('click', function () { self.reset(); });
+    }
+
+    select(ticket) {
+      if (this.model.posted[ticket]) return;
+      this.model.selected = this.model.selected === ticket ? null : ticket;
+      this.syncSelection();
+      this.setFeedback(this.model.selected ? '已选凭条。现在选择它对应的账户。' : '已取消选择。', false);
+    }
+
+    syncSelection() {
+      var selected = this.model.selected;
+      this.querySelectorAll('[data-ticket]').forEach(function (button) {
+        button.setAttribute('aria-pressed', String(button.dataset.ticket === selected));
+      });
+    }
+
+    post(ticket, account) {
+      if (!ticket || this.model.posted[ticket]) {
+        this.setFeedback('请先选择一张未归账凭条。', true);
+        return;
+      }
+      this.model.attempts += 1;
+      if (ticket !== account) {
+        var el = this.querySelector('[data-ticket="' + ticket + '"]');
+        el.classList.remove('is-wrong');
+        void el.offsetWidth;
+        el.classList.add('is-wrong');
+        this.setFeedback(ticket === 'orbit' ? '这笔不是升高费用：圆轨道要求横向速度。' : '这笔差额包含升高、重力与阻力损失。', true);
+        this.dispatchProgress('incorrect');
+        return;
+      }
+
+      this.model.posted[ticket] = true;
+      this.model.selected = null;
+      var ticketEl = this.querySelector('[data-ticket="' + ticket + '"]');
+      var accountEl = this.querySelector('[data-account="' + account + '"]');
+      ticketEl.classList.add('is-posted');
+      ticketEl.disabled = true;
+      ticketEl.setAttribute('aria-pressed', 'false');
+      accountEl.classList.add('is-filled');
+      accountEl.querySelector('span').textContent = this._display[ticket] + ' km/s 已入账';
+
+      var count = Number(this.model.posted.orbit) + Number(this.model.posted.remainder);
+      var unposted = count === 0 ? this._display.total : (this.model.posted.orbit ? this._display.remainder : this._display.orbit);
+      this.querySelector('#p33-progress').textContent = '已归账 ' + count + '/2';
+      this.setFeedback(count < 2 ? '归账正确。未归账金额：' + unposted + ' km/s' : '归账完成：轨道速度约占总预算的 ' + this._display.share + '%。', false);
+      accountEl.focus();
+      this.dispatchProgress('correct');
+
+      if (count === 2) {
+        this.classList.add('p33-complete');
+        this.querySelector('[data-reset]').disabled = false;
+        this.dispatchEvent(new CustomEvent('game-complete', {
+          bubbles: true,
+          composed: true,
+          detail: { score: 2, metrics: { attempts: this.model.attempts, orbitSharePercent: this.model.values.share }, trace: ['orbit', 'remainder'] }
+        }));
+      }
+    }
+
+    setFeedback(message, isError) {
+      var feedback = this.querySelector('#p33-feedback');
+      feedback.textContent = message;
+      feedback.classList.toggle('is-error', Boolean(isError));
+    }
+
+    dispatchProgress(action) {
+      this.dispatchEvent(new CustomEvent('game-progress', {
+        bubbles: true,
+        composed: true,
+        detail: { state: this.getState(), action: action, metrics: { attempts: this.model.attempts } }
+      }));
+    }
+  }
+
+  customElements.define('velocity-ledger-game', VelocityLedgerGame);
+  document.querySelector('#main').appendChild(document.createElement('velocity-ledger-game'));
+}());
+</script>
+</body>
+</html>

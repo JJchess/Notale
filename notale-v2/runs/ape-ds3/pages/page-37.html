@@ -1,0 +1,486 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+/* ===== page-37: 银河系图层开关 ===== */
+
+#main {
+  position: relative;
+  overflow: hidden;
+}
+
+/* PIXI canvas fills the container */
+#galaxy-container {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+#galaxy-container canvas {
+  display: block;
+  width: 100% !important;
+  height: 100% !important;
+}
+
+/* ---- 银河系直径标注: 左上角 ---- */
+.ly-label {
+  position: absolute;
+  top: 16px;
+  left: 20px;
+  font-size: var(--fs-label);
+  color: var(--muted);
+  pointer-events: none;
+  z-index: 2;
+  line-height: 1.4;
+}
+.ly-label strong {
+  color: var(--text);
+  font-weight: 600;
+}
+
+/* ---- 说明文字: 左下角 ---- */
+.info-text {
+  position: absolute;
+  bottom: 20px;
+  left: 20px;
+  z-index: 2;
+  pointer-events: none;
+  max-width: 520px;
+}
+.info-text p {
+  margin: 0 0 6px 0;
+  font-size: var(--fs-sec);
+  line-height: var(--lh-sec);
+  color: var(--text);
+  text-shadow: 0 1px 4px rgba(0,0,0,0.7), 0 0 12px rgba(0,0,0,0.5);
+}
+.info-text p:last-child { margin-bottom: 0; }
+
+/* ---- 图层开关组: 右下角竖排 ---- */
+.layer-controls {
+  position: absolute;
+  bottom: 20px;
+  right: 20px;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.layer-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  border: 1px solid rgba(255,255,255,0.2);
+  border-radius: 6px;
+  background: rgba(11,14,20,0.7);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  color: var(--text);
+  font-size: var(--fs-label);
+  font-family: var(--font-sans);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  user-select: none;
+  white-space: nowrap;
+}
+.layer-btn:hover {
+  border-color: rgba(255,255,255,0.4);
+  background: rgba(11,14,20,0.85);
+}
+.layer-btn .dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  transition: all 0.3s ease;
+}
+.layer-btn .dot.disk-dot   { background: #6a8caf; }
+.layer-btn .dot.bulge-dot  { background: #e8b84a; }
+.layer-btn .dot.arms-dot   { background: #8ab4d6; }
+.layer-btn .dot.sun-dot    { background: #ffdd57; box-shadow: 0 0 6px #ffdd57; }
+
+.layer-btn.active {
+  border-color: rgba(255,255,255,0.35);
+}
+.layer-btn.active .dot {
+  box-shadow: 0 0 8px currentColor;
+}
+.layer-btn.inactive {
+  opacity: 0.5;
+  border-color: rgba(255,255,255,0.1);
+}
+.layer-btn.inactive .dot {
+  opacity: 0.3;
+}
+</style>
+</head>
+<body data-page="37" data-total="50">
+<div id="stage">
+<main id="main">
+
+  <!-- PIXI canvas container -->
+  <div id="galaxy-container" class="cv-fill"></div>
+
+  <!-- 银河系直径标注 -->
+  <div class="ly-label" id="ly-label">直径 <strong id="diameter-val"></strong> 光年</div>
+
+  <!-- 说明文字 -->
+  <div class="info-text">
+    <p>银河系是一个直径约10万光年的盘状星系。太阳不在中心，也不在旋臂中央，而是一条旋臂的郊区。</p>
+    <p>我们平时看见的"星空"大多来自这个盘内部；只有俯视整个银河系，才能看出太阳系只是盘上一个小点。</p>
+  </div>
+
+  <!-- 图层开关组 -->
+  <div class="layer-controls" id="layer-controls">
+    <button class="layer-btn active" data-layer="disk">
+      <span class="dot disk-dot"></span> 银盘
+    </button>
+    <button class="layer-btn active" data-layer="bulge">
+      <span class="dot bulge-dot"></span> 银心核球
+    </button>
+    <button class="layer-btn active" data-layer="arms">
+      <span class="dot arms-dot"></span> 旋臂
+    </button>
+    <button class="layer-btn active" data-layer="sun">
+      <span class="dot sun-dot"></span> 太阳
+    </button>
+  </div>
+
+</main>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lib/pixi.min.js"></script>
+<script src="assets/lib/seedrandom.min.js"></script>
+<script src="assets/lec.js"></script>
+<script>
+(function() {
+  'use strict';
+
+  /* ========== 1. MOUNT ========== */
+  Lec.mount({
+    index: 37,
+    kicker: "四 · 光速",
+    title: "太阳住在银河系的郊区",
+    take: "银河系直径约10万光年，太阳不在中心，也不在旋臂中央，而是一条旋臂的郊区。"
+  });
+
+  /* ========== 2. 直径数字 ========== */
+  var lyVal = Lec.K.MILKY_WAY_LY;           // 100000
+  document.getElementById('diameter-val').textContent = (lyVal / 10000) + '万';
+
+  /* ========== 3. PIXI SETUP ========== */
+  var container = document.getElementById('galaxy-container');
+  var W = 1408, H = 620;
+
+  var app = new PIXI.Application({
+    width: W,
+    height: H,
+    backgroundColor: 0x0b0e14,
+    antialias: true,
+    resolution: 1,
+    autoDensity: true
+  });
+  container.appendChild(app.view);
+
+  /* ---------- 粒子纹理 ---------- */
+  var dotGfx = new PIXI.Graphics();
+  dotGfx.beginFill(0xffffff);
+  dotGfx.drawCircle(0, 0, 1.5);
+  dotGfx.endFill();
+  var dotTex = app.renderer.generateTexture(dotGfx);
+  dotGfx.destroy();
+
+  /* ---------- 容器 ---------- */
+  var diskLayer  = new PIXI.Container();   // 银盘: 背景星点
+  var bulgeLayer = new PIXI.Container();   // 银心核球: 中心高亮区
+  var armsLayer  = new PIXI.Container();   // 旋臂: 螺旋粒子带
+  var sunLayer   = new PIXI.Container();   // 太阳标记
+
+  app.stage.addChild(diskLayer);
+  app.stage.addChild(armsLayer);
+  app.stage.addChild(bulgeLayer);
+  app.stage.addChild(sunLayer);
+
+  var CX = W / 2, CY = H / 2;
+  var MAX_R = 500;  // 银盘视觉半径(px)
+
+  /* ========== 4. 生成粒子 ========== */
+  var rng = new Math.seedrandom('page-37');
+
+  function rand() { return rng(); }
+
+  // ---- 4a. 银盘: ~6000 均匀分布星点 ----
+  var NUM_DISK = 6000;
+  var diskSprites = [];
+  for (var i = 0; i < NUM_DISK; i++) {
+    var r = Math.sqrt(rand()) * MAX_R * 0.95;
+    var theta = rand() * Math.PI * 2;
+    var x = CX + r * Math.cos(theta);
+    var y = CY + r * Math.sin(theta);
+
+    var s = new PIXI.Sprite(dotTex);
+    s.x = x; s.y = y;
+    var bright = 0.15 + rand() * 0.35;
+    s.alpha = bright;
+    s.scale.set(0.4 + rand() * 0.8);
+    var tintVal = 0x8090a0 + Math.floor(rand() * 0x304050);
+    s.tint = Math.min(tintVal, 0xc0d0e0);
+    // store twinkle data
+    s._phase = rand() * Math.PI * 2;
+    s._amp = 0.05 + rand() * 0.12;
+    s._baseAlpha = bright;
+    diskLayer.addChild(s);
+    diskSprites.push(s);
+  }
+
+  // ---- 4b. 银心核球: ~1200 密集亮星 + 发光圆 ----
+  var NUM_BULGE = 1200;
+  var bulgeSprites = [];
+  for (var i = 0; i < NUM_BULGE; i++) {
+    var r = Math.pow(rand(), 1.5) * 120;
+    var theta = rand() * Math.PI * 2;
+    var x = CX + r * Math.cos(theta);
+    var y = CY + r * Math.sin(theta);
+
+    var s = new PIXI.Sprite(dotTex);
+    s.x = x; s.y = y;
+    var bright = 0.4 + rand() * 0.5;
+    s.alpha = bright;
+    s.scale.set(0.6 + rand() * 1.2);
+    s.tint = 0xddbb77 + Math.floor(rand() * 0x222244);
+    s._phase = rand() * Math.PI * 2;
+    s._amp = 0.05 + rand() * 0.10;
+    s._baseAlpha = bright;
+    bulgeLayer.addChild(s);
+    bulgeSprites.push(s);
+  }
+
+  // 核球发光圆
+  var glowGfx = new PIXI.Graphics();
+  // 多层渐变用多个圆叠加模拟
+  glowGfx.beginFill(0xe8b84a, 0.06);
+  glowGfx.drawCircle(CX, CY, 160);
+  glowGfx.endFill();
+  glowGfx.beginFill(0xe8b84a, 0.10);
+  glowGfx.drawCircle(CX, CY, 100);
+  glowGfx.endFill();
+  glowGfx.beginFill(0xffcc66, 0.15);
+  glowGfx.drawCircle(CX, CY, 60);
+  glowGfx.endFill();
+  glowGfx.beginFill(0xffdd88, 0.20);
+  glowGfx.drawCircle(CX, CY, 30);
+  glowGfx.endFill();
+  bulgeLayer.addChild(glowGfx);
+
+  // ---- 4c. 旋臂: ~3000 粒子沿对数螺旋分布 ----
+  var NUM_ARMS = 3000;
+  var NUM_ARM_LINES = 4;
+  var armsPerLine = Math.floor(NUM_ARMS / NUM_ARM_LINES);
+  var armSprites = [];
+
+  var SPIRAL_A = 20;    // 起始半径(px)
+  var SPIRAL_B = 0.28;  // 缠绕紧密程度
+
+  for (var a = 0; a < NUM_ARM_LINES; a++) {
+    var armOffset = a * Math.PI / 2;
+    for (var j = 0; j < armsPerLine; j++) {
+      var t = rand();
+      var r = SPIRAL_A + t * (MAX_R * 0.92 - SPIRAL_A);
+      // 对数螺旋: θ = ln(r/a) / b
+      var theta = Math.log(r / SPIRAL_A) / SPIRAL_B + armOffset;
+      // 沿臂的宽度散射
+      var scatter = (rand() - 0.5) * 24;
+      var scatAngle = theta + Math.PI / 2;
+      var px = CX + r * Math.cos(theta) + scatter * Math.cos(scatAngle);
+      var py = CY + r * Math.sin(theta) + scatter * Math.sin(scatAngle);
+
+      var s = new PIXI.Sprite(dotTex);
+      s.x = px; s.y = py;
+      var bright = 0.3 + rand() * 0.5;
+      s.alpha = bright;
+      s.scale.set(0.5 + rand() * 1.0);
+      s.tint = 0x99bbdd + Math.floor(rand() * 0x335566);
+      s._phase = rand() * Math.PI * 2;
+      s._amp = 0.05 + rand() * 0.12;
+      s._baseAlpha = bright;
+      armsLayer.addChild(s);
+      armSprites.push(s);
+    }
+  }
+
+  // ---- 4d. 太阳标记 ----
+  // 太阳位置: 在第一条旋臂的边缘带, 距中心约 65% 半径处, 略偏离旋臂中心线
+  var SUN_R = MAX_R * 0.62;
+  var SUN_ARM_OFFSET = 0;  // 第一条旋臂
+  var SUN_THETA = Math.log(SUN_R / SPIRAL_A) / SPIRAL_B + SUN_ARM_OFFSET;
+  // 偏离旋臂中心线, 向边缘偏移
+  var SUN_EDGE_OFFSET = 26;
+  var SUN_EDGE_ANGLE = SUN_THETA + Math.PI / 2;
+  var sunX = CX + SUN_R * Math.cos(SUN_THETA) + SUN_EDGE_OFFSET * Math.cos(SUN_EDGE_ANGLE);
+  var sunY = CY + SUN_R * Math.sin(SUN_THETA) + SUN_EDGE_OFFSET * Math.sin(SUN_EDGE_ANGLE);
+
+  // 太阳发光点
+  var sunGlow = new PIXI.Graphics();
+  sunGlow.beginFill(0xffee66, 0.3);
+  sunGlow.drawCircle(0, 0, 14);
+  sunGlow.endFill();
+  sunGlow.beginFill(0xffff88, 0.6);
+  sunGlow.drawCircle(0, 0, 7);
+  sunGlow.endFill();
+  sunGlow.beginFill(0xffffff, 0.9);
+  sunGlow.drawCircle(0, 0, 3);
+  sunGlow.endFill();
+  sunGlow.x = sunX; sunGlow.y = sunY;
+  sunLayer.addChild(sunGlow);
+
+  // 引线 + 标签 — 用 PIXI Graphics + Text
+  // 标签放在右上方空白处
+  var labelX = sunX + 80, labelY = sunY - 36;
+  // 引线
+  var leaderLine = new PIXI.Graphics();
+  leaderLine.lineStyle(1, 0xffffff, 0.5);
+  leaderLine.moveTo(sunX, sunY);
+  leaderLine.lineTo(labelX, labelY);
+  sunLayer.addChild(leaderLine);
+
+  // 引线末端小点
+  var leaderDot = new PIXI.Sprite(dotTex);
+  leaderDot.x = labelX; leaderDot.y = labelY;
+  leaderDot.alpha = 0.5;
+  leaderDot.scale.set(0.6);
+  leaderDot.tint = 0xffffff;
+  sunLayer.addChild(leaderDot);
+
+  // 标签 "太阳系"
+  var labelText = new PIXI.Text({
+    text: '太阳系',
+    style: {
+      fontFamily: 'var(--font-sans)',
+      fontSize: 14,
+      fill: '#ffffff',
+      fontWeight: 600
+    }
+  });
+  labelText.anchor.set(0, 0.5);
+  labelText.x = labelX + 6;
+  labelText.y = labelY;
+  labelText.alpha = 0.9;
+  sunLayer.addChild(labelText);
+
+  // 存储太阳元件以便动画
+  var sunPulse = { phase: 0 };
+
+  /* ========== 5. 图层开关交互 ========== */
+  var layerStates = {
+    disk:  true,
+    bulge: true,
+    arms:  true,
+    sun:   true
+  };
+  var layerContainers = {
+    disk:  diskLayer,
+    bulge: bulgeLayer,
+    arms:  armsLayer,
+    sun:   sunLayer
+  };
+
+  // 目标alpha (用于过渡动画)
+  var targetAlphas = {
+    disk:  1,
+    bulge: 1,
+    arms:  1,
+    sun:   1
+  };
+  // 当前alpha (实际渲染值)
+  var currentAlphas = {
+    disk:  1,
+    bulge: 1,
+    arms:  1,
+    sun:   1
+  };
+
+  var buttons = document.querySelectorAll('.layer-btn');
+  buttons.forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var layer = this.dataset.layer;
+      var isActive = this.classList.contains('active');
+      if (isActive) {
+        this.classList.remove('active');
+        this.classList.add('inactive');
+        layerStates[layer] = false;
+        targetAlphas[layer] = 0;
+      } else {
+        this.classList.remove('inactive');
+        this.classList.add('active');
+        layerStates[layer] = true;
+        targetAlphas[layer] = 1;
+      }
+    });
+  });
+
+  /* ========== 6. 动画循环 ========== */
+  var FADE_SPEED = 0.004; // 每帧 alpha 变化量 (600ms @ 60fps ≈ 0.004/帧)
+  var rotAngle = 0;
+
+  app.ticker.add(function() {
+    var dt = app.ticker.deltaTime;
+
+    // ---- 6a. 缓慢旋转整个盘面 ----
+    rotAngle += 0.00008 * dt;
+    diskLayer.rotation = rotAngle;
+    armsLayer.rotation = rotAngle;
+    bulgeLayer.rotation = rotAngle;
+    // 太阳标记不旋转
+
+    // ---- 6b. 星点闪烁 ----
+    var twinkleTime = Date.now() * 0.001;
+    // 只对部分星点做闪烁, 每帧更新一小批
+    var batchSize = 200;
+    for (var i = 0; i < batchSize; i++) {
+      var idx = Math.floor(rand() * diskSprites.length);
+      var sp = diskSprites[idx];
+      if (sp) {
+        var twinkle = Math.sin(twinkleTime * 1.2 + sp._phase) * sp._amp;
+        sp.alpha = Math.max(0.02, sp._baseAlpha + twinkle);
+      }
+    }
+    for (var i = 0; i < batchSize; i++) {
+      var idx = Math.floor(rand() * armSprites.length);
+      var sp = armSprites[idx];
+      if (sp) {
+        var twinkle = Math.sin(twinkleTime * 1.0 + sp._phase) * sp._amp;
+        sp.alpha = Math.max(0.02, sp._baseAlpha + twinkle);
+      }
+    }
+
+    // ---- 6c. 太阳脉动 ----
+    sunPulse.phase += 0.02 * dt;
+    var pulse = 0.85 + Math.sin(sunPulse.phase) * 0.15;
+    sunGlow.scale.set(pulse);
+
+    // ---- 6d. 图层淡入淡出 ----
+    var layers = ['disk', 'bulge', 'arms', 'sun'];
+    for (var l = 0; l < layers.length; l++) {
+      var key = layers[l];
+      var cur = currentAlphas[key];
+      var tgt = targetAlphas[key];
+      if (Math.abs(cur - tgt) > 0.001) {
+        if (cur < tgt) {
+          currentAlphas[key] = Math.min(tgt, cur + FADE_SPEED * dt * 2);
+        } else {
+          currentAlphas[key] = Math.max(tgt, cur - FADE_SPEED * dt * 2);
+        }
+        layerContainers[key].alpha = currentAlphas[key];
+      }
+    }
+  });
+
+})();
+</script>
+</body>
+</html>

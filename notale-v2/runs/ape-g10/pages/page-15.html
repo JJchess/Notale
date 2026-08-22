@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  #main{display:flex;flex-direction:column;gap:12px;position:relative}#main>.environment{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;opacity:.12;z-index:0}#main>section{position:relative;z-index:1}
+  .race-head{height:82px;display:flex;align-items:center;gap:20px;padding:12px 18px;background:var(--surface-deep);border:1px solid var(--line);border-radius:var(--radius-md)}
+  .roundbox{width:150px}.roundbox strong{display:block;font:700 var(--fs-h2)/1.2 var(--font-mono);color:var(--primary)}
+  .route{display:flex;align-items:center;flex:1;min-width:0}.route-node{width:24px;height:24px;border:3px solid var(--faint);border-radius:50%;background:var(--surface-deep)}
+  .route-node.done{border-color:var(--primary);background:var(--primary)}.route-node.current{border-color:var(--accent);box-shadow:0 0 0 5px var(--accent-soft)}
+  .route-line{height:3px;flex:1;background:var(--line-strong)}.route-line.done{background:var(--primary)}
+  .global-readouts{display:flex;gap:22px}.metric{min-width:118px}.metric span{display:block;color:var(--muted);font-size:var(--fs-label)}.metric b{font:700 var(--fs-body)/1.3 var(--font-mono)}
+  .compare-wrap{flex:1;min-height:0;display:flex;flex-direction:column;gap:10px}
+  .k-comparison{--compare-cols:150px repeat(3,minmax(0,1fr));flex:1;position:relative;grid-template-rows:60px 98px 1px 55px 1px 55px 1px 55px 1px 55px 1px 55px 1px 62px}.k-comparison>*:not(.common-field){position:relative;z-index:1}.common-field{position:absolute;inset:0;width:100%;height:100%;z-index:0;pointer-events:none;opacity:.22}
+  .k-comparison>*{padding:7px 14px}.k-comparison .hdr{font-size:var(--fs-body);display:flex;align-items:center;justify-content:center}.k-comparison .dim{display:flex;align-items:center;justify-content:flex-end}
+  .strategy{width:100%;min-height:46px;font-size:var(--fs-sec)}.strategy.current{border-color:var(--accent);color:var(--accent)}.strategy:disabled{opacity:.55;cursor:not-allowed}
+  .cell{display:flex;align-items:center;justify-content:center;text-align:center;gap:8px;background:var(--surface-high);border:1px solid var(--primary-line);box-shadow:inset 0 -3px 0 rgba(66,199,194,.18)}.cell:nth-child(4n+2){background:repeating-linear-gradient(135deg,rgba(66,199,194,.22) 0 3px,var(--surface-high) 3px 16px)}.cell:nth-child(4n+3){background:repeating-linear-gradient(90deg,rgba(66,199,194,.18) 0 2px,var(--surface-high) 2px 14px)}.cell:nth-child(4n+4){background:radial-gradient(circle,rgba(255,181,71,.28) 1.5px,transparent 2px) 0 0/14px 14px,var(--surface-high)}.cell strong{font-family:var(--font-mono)}
+  .runner-cell{position:relative;height:76px;overflow:hidden;background:linear-gradient(180deg,rgba(255,181,71,.06),transparent 55%),var(--surface-deep)}
+  .horizon{position:absolute;left:12px;right:12px;bottom:16px;height:2px;background:var(--accent-soft)}
+  .runner{position:absolute;left:18px;bottom:18px;width:25px;height:43px;transition:transform .35s ease}.runner:before{content:"";position:absolute;left:8px;width:13px;height:13px;border:2px solid var(--primary);border-radius:50%}.runner:after{content:"";position:absolute;left:12px;top:15px;width:3px;height:27px;background:var(--primary);box-shadow:-8px 10px 0 -1px var(--primary),8px 10px 0 -1px var(--primary);transform:rotate(-8deg)}
+  .heat-arc{position:absolute;width:54px;height:54px;left:6px;bottom:8px;border:2px solid var(--primary-line);border-radius:50%;border-left-color:transparent}.sweat{position:absolute;left:72px;bottom:28px;color:var(--primary);letter-spacing:4px;font-size:var(--fs-label)}
+  .bar{width:100%;height:10px;background:#09151e;border-radius:9px;overflow:hidden}.bar>i{display:block;height:100%;background:var(--primary);transition:width .25s}.bar.temp>i{background:linear-gradient(90deg,var(--primary),var(--accent))}
+  .feedback{height:48px;display:flex;align-items:center;gap:14px;padding:8px 14px;border-left:4px solid var(--primary);background:var(--primary-soft);font-size:var(--fs-sec);line-height:var(--lh-sec)}
+  .feedback.fail{border-color:var(--accent);background:var(--accent-soft)}.feedback b{color:var(--text)}
+  #reset{margin-left:auto;display:none;font-size:var(--fs-sec)}
+  @media(prefers-reduced-motion:reduce){.runner,.bar>i{transition:none}}
+</style>
+</head>
+<body data-page="15" data-total="48">
+<div id="stage"><main id="main">
+  <svg class="environment" viewBox="0 0 1408 620" role="img" aria-label="炎热开阔地表的共同天气场"><path d="M0 92 Q176 48 352 92 T704 92 T1056 92 T1408 92 M0 312 Q176 268 352 312 T704 312 T1056 312 T1408 312 M0 530 Q176 486 352 530 T704 530 T1056 530 T1408 530" fill="none" stroke="#FFB547" stroke-width="5" stroke-dasharray="18 24"/></svg>
+  <section class="race-head" aria-label="比赛进度">
+    <div class="roundbox"><span class="label muted">同一炎热路线</span><strong id="roundText"></strong></div>
+    <div class="route" id="route" aria-label="六段路线进度"></div>
+    <div class="global-readouts">
+      <div class="metric"><span>剩余能量</span><b id="energyRead"></b></div>
+      <div class="metric"><span>核心体温</span><b id="tempRead"></b></div>
+      <div class="metric"><span>累计时间</span><b id="timeRead"></b></div>
+    </div>
+  </section>
+  <section class="compare-wrap min0">
+    <div class="k-comparison" id="comparison" aria-label="三种移动策略同维度比较">
+      <svg class="common-field" viewBox="0 0 1408 500" role="img" aria-label="三条路线处于同一炎热、开阔环境"><defs><linearGradient id="heat" x1="0" y1="0" x2="1" y2="0"><stop stop-color="#42C7C2"/><stop offset="1" stop-color="#FFB547"/></linearGradient></defs><path d="M0 118 Q176 92 352 118 T704 118 T1056 118 T1408 118 M0 172 Q176 146 352 172 T704 172 T1056 172 T1408 172 M0 228 Q176 202 352 228 T704 228 T1056 228 T1408 228" fill="none" stroke="url(#heat)" stroke-width="3" stroke-dasharray="12 16"/></svg>
+      <div class="hdr">同一维度</div><div class="hdr"><button class="strategy" data-s="0">冲刺后停歇</button></div><div class="hdr"><button class="strategy" data-s="1">持续慢跑</button></div><div class="hdr"><button class="strategy" data-s="2">快走并散热</button></div>
+      <div class="dim">同段热地表</div>
+      <div class="cell panel runner-cell">热弧与汗滴<div class="horizon"></div><div class="runner"></div><div class="heat-arc"></div><span class="sweat">′ ′</span></div>
+      <div class="cell panel runner-cell">热弧与汗滴<div class="horizon"></div><div class="runner"></div><div class="heat-arc"></div><span class="sweat">′ ′ ′</span></div>
+      <div class="cell panel runner-cell">热弧与汗滴<div class="horizon"></div><div class="runner"></div><div class="heat-arc"></div><span class="sweat">′ ′ ′ ′</span></div>
+      <div class="rowline"></div>
+      <div class="dim">速度</div><div class="cell panel" data-speed="0"></div><div class="cell panel" data-speed="1"></div><div class="cell panel" data-speed="2"></div>
+      <div class="rowline"></div>
+      <div class="dim">每段能耗</div><div class="cell panel" data-cost="0"></div><div class="cell panel" data-cost="1"></div><div class="cell panel" data-cost="2"></div>
+      <div class="rowline"></div>
+      <div class="dim">产热</div><div class="cell panel diff">高峰明显</div><div class="cell panel">中等、连续</div><div class="cell panel">较低、持续</div>
+      <div class="rowline"></div>
+      <div class="dim">散热机会</div><div class="cell panel">停歇时强</div><div class="cell panel">沿途稳定</div><div class="cell panel diff">时间最多</div>
+      <div class="rowline"></div>
+      <div class="dim">主要代价</div><div class="cell panel">热峰与高能耗</div><div class="cell panel">累积热负荷</div><div class="cell panel">暴露时间长</div>
+      <div class="rowline"></div>
+      <div class="dim">当前预测</div><div class="cell panel">预计<div class="bar temp"><i data-tempbar="0"></i></div><span data-predict="0"></span></div><div class="cell panel">预计<div class="bar temp"><i data-tempbar="1"></i></div><span data-predict="1"></span></div><div class="cell panel">预计<div class="bar temp"><i data-tempbar="2"></i></div><span data-predict="2"></span></div>
+    </div>
+    <div id="feedback" class="feedback" aria-live="polite"><b>选择本段策略。</b><span>三列共享距离、天气与初始身体状态。</span><button id="reset">同种子重赛</button></div>
+  </section>
+</main></div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script src="assets/lib/seedrandom.min.js"></script>
+<script>
+Lec.mount({index:15,kicker:"BODY × HEAT",title:"散热赛：谁能在炎热中坚持？",take:"直立、出汗与耐力可在开阔炎热环境中形成组合优势，但不是单因果故事。"});
+const GAME={rounds:6,massKg:65,segmentM:800,startTempC:37.0,failTempC:39.5,energyKcal:700,strategies:["冲刺后停歇","持续慢跑","快走并散热"]};
+const cfg=[{speed:14,cost:6.5,heat:.62,cool:.31,rest:2},{speed:8,cost:4.2,heat:.40,cool:.31,rest:0},{speed:5,cost:3.0,heat:.25,cool:.37,rest:0}];
+let state;
+function fresh(){const rng=new Math.seedrandom("apeman-p15");return{round:0,temp:GAME.startTempC,energy:GAME.energyKcal,timeMin:0,trace:[],weather:Array.from({length:GAME.rounds},()=>({heat:.13+rng()*.16,wind:.02+rng()*.09})),done:false};}
+function fmt(n,d=1){return Lec.P.formatNumber(n,{maximumFractionDigits:d,minimumFractionDigits:d});}
+function cost(i){return Lec.P.caloriesFromJoules(Lec.P.metabolicEnergyForDistance(GAME.massKg,GAME.segmentM,cfg[i].cost));}
+function outcome(i){const c=cfg[i],w=state.weather[Math.min(state.round,GAME.rounds-1)];const travel=GAME.segmentM/1000/c.speed*60+c.rest;const delta=c.heat+w.heat-c.cool-w.wind;return{energy:cost(i),minutes:travel,temp:state.temp+delta};}
+function render(){
+ document.getElementById('roundText').textContent=state.done?'路线完成':`第 ${fmt(state.round+1,0)} / ${fmt(GAME.rounds,0)} 段`;
+ document.getElementById('energyRead').textContent=`${fmt(state.energy,0)} kcal`;
+ document.getElementById('tempRead').textContent=`${fmt(state.temp,1)} °C`;
+ document.getElementById('timeRead').textContent=Lec.P.formatDuration(state.timeMin*60);
+ const route=document.getElementById('route');route.innerHTML='';for(let i=0;i<GAME.rounds;i++){let n=document.createElement('span');n.className='route-node '+(i<state.round?'done':i===state.round&&!state.done?'current':'');route.append(n);if(i<GAME.rounds-1){let l=document.createElement('span');l.className='route-line '+(i<state.round?'done':'');route.append(l)}}
+ cfg.forEach((c,i)=>{document.querySelector(`[data-speed="${i}"]`).textContent=`${fmt(c.speed,0)} km/h`;document.querySelector(`[data-cost="${i}"]`).textContent=`${fmt(cost(i),0)} kcal`;const o=outcome(i),p=Math.max(0,Math.min(100,(o.temp-36.5)/(GAME.failTempC-36.5)*100));document.querySelector(`[data-tempbar="${i}"]`).style.width=p+'%';document.querySelector(`[data-predict="${i}"]`).textContent=`${fmt(o.temp,1)} °C`});
+ document.querySelectorAll('.strategy').forEach(b=>b.disabled=state.done);document.getElementById('reset').style.display=state.done?'block':'none';
+}
+function choose(i){if(state.done)return;const o=outcome(i);document.querySelectorAll('.strategy').forEach((b,j)=>b.classList.toggle('current',i===j));const fb=document.getElementById('feedback');
+ if(o.temp>=GAME.failTempC||state.energy-o.energy<=0){fb.className='feedback fail';fb.innerHTML='<b>角色停步。</b><span>这次策略的产热或持续时间超过散热余量，请改变下一段节奏。</span><button id="reset">同种子重赛</button>';document.getElementById('reset').onclick=reset;render();return;}
+ state.temp=o.temp;state.energy-=o.energy;state.timeMin+=o.minutes;state.trace.push({strategy:i,temp:o.temp,energy:o.energy});state.round++;
+ document.querySelectorAll('.runner')[i].style.transform=`translateX(${Math.min(250,state.round*38)}px)`;
+ if(state.round>=GAME.rounds){state.done=true;const peak=Math.max(...state.trace.map(x=>x.temp));fb.className='feedback';fb.innerHTML=`<b>六段完成：没有永远最优的策略。</b><span>总时间 ${Lec.P.formatDuration(state.timeMin*60)} · 总能耗 ${fmt(GAME.energyKcal-state.energy,0)} kcal · 最高 ${fmt(peak,1)} °C。结果还取决于风、补水与休息。</span><button id="reset">同种子重赛</button>`;document.getElementById('reset').onclick=reset;}else{fb.className='feedback';fb.innerHTML=`<b>完成本段。</b><span>产热与散热共同决定体温；下一段天气仍会改变权衡。</span><button id="reset">同种子重赛</button>`;}
+ render();
+}
+function reset(){state=fresh();document.querySelectorAll('.runner').forEach(r=>r.style.transform='');document.querySelectorAll('.strategy').forEach(b=>b.classList.remove('current'));const fb=document.getElementById('feedback');fb.className='feedback';fb.innerHTML='<b>选择本段策略。</b><span>三列共享距离、天气与初始身体状态。</span><button id="reset">同种子重赛</button>';document.getElementById('reset').onclick=reset;render();}
+document.querySelectorAll('.strategy').forEach((b,i)=>b.addEventListener('click',()=>choose(i)));reset();
+</script>
+</body>
+</html>

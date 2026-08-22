@@ -1,0 +1,230 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  .page-head{height:102px;padding:22px 54px 10px;display:flex;align-items:flex-start;justify-content:space-between;gap:36px}
+  .kicker{color:var(--primary);font:700 var(--fs-label)/1.4 var(--font-mono);letter-spacing:.16em}
+  .head-take{max-width:780px;margin:5px 0 0;text-align:right;color:var(--muted);font-size:var(--fs-sec);line-height:1.5}
+  .game-field{position:relative;flex:1;min-height:0;overflow:hidden}
+  #konva-host{position:absolute;inset:0;touch-action:none}
+  .hud{position:absolute;width:250px;height:500px;padding:20px;border:1px solid var(--line-strong);border-radius:var(--radius-2);background:rgba(9,22,32,.94);box-shadow:var(--shadow-panel);transform-origin:0 0}
+  .hud-title{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
+  .attempt{color:var(--accent);font:700 var(--fs-sec)/1.4 var(--font-mono)}
+  .meter{padding:11px 0;border-top:1px solid var(--line)}
+  .meter-line{display:flex;align-items:center;justify-content:space-between;gap:8px}
+  .meter-name{color:var(--muted);font-size:var(--fs-sec);line-height:1.45}
+  .meter-value{color:var(--text);font:700 var(--fs-sec)/1.4 var(--font-mono)}
+  .meter-track{height:7px;margin-top:8px;overflow:hidden;border-radius:999px;background:var(--line)}
+  .meter-fill{height:100%;width:0;background:var(--primary);transition:width 140ms ease}
+  .meter.good .meter-value{color:var(--accent)}
+  .meter.good .meter-fill{background:var(--accent)}
+  .meter.bad{box-shadow:inset 3px 0 0 var(--danger);padding-left:10px}
+  .result-box{min-height:94px;margin-top:13px;padding:12px;border:1px solid var(--primary-line);border-radius:var(--radius-1);background:var(--panel-deep)}
+  #result-title{font-weight:750;color:var(--primary);font-size:var(--fs-sec);line-height:1.4}
+  #result-detail{margin:5px 0 0;color:var(--muted);font-size:var(--fs-sec);line-height:1.45}
+  .hud .ctl{margin-top:12px;justify-content:flex-end}
+  .hud button{font-size:var(--fs-sec);color:var(--text);background:var(--panel-deep);border:1px solid var(--line-strong);border-radius:var(--radius-1);padding:7px 12px;cursor:pointer}
+  .hud button:hover{border-color:var(--primary)}
+  .scene-label{position:absolute;z-index:3;padding:4px 8px;border-left:2px solid var(--primary);color:var(--text);background:rgba(7,16,24,.78);font-size:var(--fs-label);font-weight:700;line-height:1.4;pointer-events:none;transform-origin:0 0}
+  .scene-label span{display:block;color:var(--muted);font-size:var(--fs-label);font-weight:500}
+  #game-input{position:absolute;z-index:4;border:0;background:transparent;outline:none;pointer-events:none;transform-origin:0 0}
+  #game-input:focus-visible{outline:3px solid var(--focus);outline-offset:-5px;border-radius:var(--radius-2)}
+  .target-hint{position:absolute;z-index:2;display:none;border:2px dashed var(--accent);border-radius:var(--radius-2);background:var(--accent-soft);pointer-events:none;transform-origin:0 0}
+  .process-band{height:122px;padding:10px 52px 18px;display:flex;flex-direction:column;gap:8px}
+  .process-band .k-process{flex:1;gap:7px;--process-axis-y:50%}
+  .process-band .k-process>.step{justify-content:center;padding:9px 11px;background:rgba(13,27,38,.96)}
+  .process-band .k-process>.arw{flex-basis:20px}
+  .step-no{color:var(--faint);font:700 var(--fs-tick)/1.4 var(--font-mono)}
+  .step-name{font-size:var(--fs-sec);font-weight:700;line-height:1.35;white-space:nowrap}
+  .process-band .step.current .step-no,.process-band .step.current .step-name{color:var(--accent)}
+  .model-note{color:var(--faint);font-size:var(--fs-sec);line-height:1.4;text-align:right}
+  @media (prefers-reduced-motion:reduce){.meter-fill{transition:none}}
+</style>
+</head>
+<body data-page="14" data-total="50">
+<div id="stage">
+  <header class="page-head">
+    <div>
+      <div class="kicker">MAKING A FLAKE · 14</div>
+      <h1>一击成片</h1>
+    </div>
+    <p class="head-take">石片不是“砸得越重越好”：撞击点、角度与力度必须配合，裂纹才会按预期传播。</p>
+  </header>
+
+  <main class="game-field min0" aria-label="石片受控断裂实验">
+    <div id="konva-host" class="no-pan" aria-hidden="true"></div>
+    <div id="platform-label" class="scene-label">平台边缘<span>拖动圆点选择撞击点</span></div>
+    <div id="hammer-label" class="scene-label">锤石<span>拖动改变角度与蓄力；松开撞击</span></div>
+    <div id="edge-label" class="scene-label">待检查刃缘<span>裂纹必须贯穿到这里</span></div>
+    <div id="target-hint" class="target-hint"></div>
+    <div id="game-input" role="application" tabindex="0" aria-label="石片敲击操作区。左右键调整撞击点，上下键调整角度，按住 Shift 加上下键调整力度，回车释放撞击。"></div>
+
+    <aside id="hud" class="hud" aria-label="三项控制仪表">
+      <div class="hud-title"><h2>三项控制</h2><span id="attempt" class="attempt">尝试 1/3</span></div>
+      <div id="meter-p" class="meter">
+        <div class="meter-line"><span class="meter-name">撞击点</span><span id="value-p" class="meter-value">—</span></div>
+        <div class="meter-track"><div id="fill-p" class="meter-fill"></div></div>
+      </div>
+      <div id="meter-a" class="meter">
+        <div class="meter-line"><span class="meter-name">入射角</span><span id="value-a" class="meter-value">—</span></div>
+        <div class="meter-track"><div id="fill-a" class="meter-fill"></div></div>
+      </div>
+      <div id="meter-f" class="meter">
+        <div class="meter-line"><span class="meter-name">力度</span><span id="value-f" class="meter-value">—</span></div>
+        <div class="meter-track"><div id="fill-f" class="meter-fill"></div></div>
+      </div>
+      <div class="result-box" aria-live="polite">
+        <div id="result-title">准备敲击</div>
+        <p id="result-detail">先选点，再拖动锤石并松开。</p>
+      </div>
+      <div class="ctl"><button id="reset" type="button">恢复石核</button></div>
+    </aside>
+  </main>
+
+  <section class="process-band" aria-label="从观察平台到检查刃缘的六步过程">
+    <div class="k-process">
+      <div class="axis"></div>
+      <div class="step current" data-step="0"><span class="step-no">01</span><span class="step-name">观察平台</span></div><div class="arw"></div>
+      <div class="step" data-step="1"><span class="step-no">02</span><span class="step-name">选撞击点</span></div><div class="arw"></div>
+      <div class="step" data-step="2"><span class="step-no">03</span><span class="step-name">调入射角</span></div><div class="arw"></div>
+      <div class="step" data-step="3"><span class="step-no">04</span><span class="step-name">蓄力度</span></div><div class="arw"></div>
+      <div class="step" data-step="4"><span class="step-no">05</span><span class="step-name">释放撞击</span></div><div class="arw"></div>
+      <div class="step" data-step="5"><span class="step-no">06</span><span class="step-name">检查刃缘</span></div>
+    </div>
+    <div class="model-note">因果关系教学模型；合格范围不是所有石料通用配方。</div>
+  </section>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script src="assets/lib/konva.min.js"></script>
+<script>
+(function(){
+  'use strict';
+  Deck.init({index:14,total:50});
+
+  const MODEL=Object.freeze({pMin:0,pMax:1,aMin:35,aMax:85,fMin:0,fMax:1,goodP:[0.16,0.30],goodA:[55,70],goodF:[0.55,0.78]});
+  const W=1440,H=810, platform={x:250,y:315,w:570};
+  const initial=()=>({p:0.46,a:76,f:0.34,attempt:1,failed:0,phase:0,result:'ready',message:'先选点，再拖动锤石并松开。',showHint:false});
+  let state=initial(), scale=1, ox=0, oy=0, busy=false;
+  const host=document.getElementById('konva-host');
+  const stage=new Konva.Stage({container:'konva-host',width:W,height:H});
+  const bg=new Konva.Layer(), fx=new Konva.Layer(), top=new Konva.Layer();
+  stage.add(bg,fx,top);
+  const C={bg:Deck.token('--bg'),panel:Deck.token('--panel'),deep:Deck.token('--panel-deep'),line:Deck.token('--line'),strong:Deck.token('--line-strong'),primary:Deck.token('--primary'),accent:Deck.token('--accent'),danger:Deck.token('--danger'),text:Deck.token('--text'),muted:Deck.token('--muted')};
+
+  for(let y=650;y<810;y+=24){bg.add(new Konva.Line({points:[80,y,1360,y+(y%48?5:-4)],stroke:C.line,strokeWidth:2,opacity:.48,listening:false}));}
+  bg.add(new Konva.Line({points:[170,560,215,385,250,315,820,315,900,360,1030,600,920,680,300,680,190,620],closed:true,fill:C.deep,stroke:C.strong,strokeWidth:3,shadowColor:C.bg,shadowBlur:24,shadowOpacity:.8,listening:false}));
+  bg.add(new Konva.Line({points:[250,315,820,315],stroke:C.primary,strokeWidth:6,lineCap:'round',listening:false}));
+  bg.add(new Konva.Line({points:[280,352,790,352,860,390],stroke:C.line,strokeWidth:2,dash:[12,10],listening:false}));
+  const causeArrow=new Konva.Arrow({points:[260,170,470,210,655,340,840,545],stroke:C.accent,fill:C.accent,strokeWidth:4,pointerLength:14,pointerWidth:14,opacity:.42,tension:.18,listening:false});
+  bg.add(causeArrow);
+  const causeNodes=[0,1,2,3].map(i=>new Konva.Circle({x:[300,480,660,840][i],y:[180,220,350,545][i],radius:8,fill:C.deep,stroke:C.accent,strokeWidth:3,opacity:.55,listening:false}));
+  causeNodes.forEach(n=>bg.add(n));
+
+  const crack=new Konva.Line({points:[],stroke:C.primary,strokeWidth:5,lineCap:'round',lineJoin:'round',shadowColor:C.primary,shadowBlur:12,visible:false,listening:false});
+  const flake=new Konva.Line({points:[650,370,825,330,880,410,842,548,760,610,675,520],closed:true,fill:C.panel,stroke:C.primary,strokeWidth:3,visible:false,shadowColor:C.primary,shadowBlur:16,listening:false});
+  const edgeGlow=new Konva.Line({points:[842,548,760,610,675,520],stroke:C.accent,strokeWidth:8,lineCap:'round',visible:false,shadowColor:C.accent,shadowBlur:18,listening:false});
+  const impactFlash=new Konva.Circle({radius:18,fill:C.accent,opacity:0,shadowColor:C.accent,shadowBlur:30,listening:false});
+  fx.add(crack,flake,edgeGlow,impactFlash);
+
+  const contact=new Konva.Group({draggable:true});
+  contact.add(new Konva.Circle({radius:15,fill:C.deep,stroke:C.accent,strokeWidth:4,shadowColor:C.accent,shadowBlur:10}));
+  contact.add(new Konva.Line({points:[0,-29,0,29],stroke:C.accent,strokeWidth:2,dash:[4,4],listening:false}));
+  top.add(contact);
+
+  const hammer=new Konva.Group({draggable:true});
+  hammer.add(new Konva.Line({points:[0,0,-95,-20],stroke:C.muted,strokeWidth:22,lineCap:'round',listening:false}));
+  hammer.add(new Konva.Ellipse({x:8,y:0,radiusX:45,radiusY:34,fill:C.strong,stroke:C.primary,strokeWidth:3,shadowColor:C.bg,shadowBlur:12,listening:false}));
+  hammer.add(new Konva.Circle({x:8,y:0,radius:9,fill:C.accent,opacity:.72,listening:false}));
+  top.add(hammer);
+
+  function inRange(v,r){return v>=r[0]&&v<=r[1]}
+  function pointX(){return platform.x+platform.w*state.p}
+  function hammerPos(){const d=90+state.f*180,rad=state.a*Math.PI/180;return{x:pointX()-Math.cos(rad)*d,y:platform.y-Math.sin(rad)*d}}
+  function statuses(){return{p:state.p<MODEL.goodP[0]?'太靠边':state.p>MODEL.goodP[1]?'过远':'合适',a:state.a<MODEL.goodA[0]?'偏低':state.a>MODEL.goodA[1]?'太陡':'合适',f:state.f<MODEL.goodF[0]?'不足':state.f>MODEL.goodF[1]?'过大':'合适'}}
+  function setPhase(n){state.phase=n;document.querySelectorAll('.process-band .step').forEach((el,i)=>{el.classList.toggle('past',i<n);el.classList.toggle('current',i===n||(n===6&&i===5));});causeNodes.forEach((node,i)=>{node.opacity(i<Math.min(n,4)?1:.55);node.fill(i<Math.min(n,4)?C.accent:C.deep)});bg.batchDraw()}
+  function updateScene(){
+    contact.position({x:pointX(),y:platform.y});
+    const hp=hammerPos();hammer.position(hp);hammer.rotation(-(90-state.a)*.28);
+    impactFlash.position({x:pointX(),y:platform.y});
+    top.batchDraw();updateHud();
+  }
+  function updateHud(){
+    const s=statuses();
+    document.getElementById('value-p').textContent=Math.round(state.p*100)+'% · '+s.p;
+    document.getElementById('value-a').textContent=Math.round(state.a)+'° · '+s.a;
+    document.getElementById('value-f').textContent=Math.round(state.f*100)+'% · '+s.f;
+    document.getElementById('fill-p').style.width=(state.p*100)+'%';
+    document.getElementById('fill-a').style.width=((state.a-MODEL.aMin)/(MODEL.aMax-MODEL.aMin)*100)+'%';
+    document.getElementById('fill-f').style.width=(state.f*100)+'%';
+    [['p',inRange(state.p,MODEL.goodP)],['a',inRange(state.a,MODEL.goodA)],['f',inRange(state.f,MODEL.goodF)]].forEach(([k,ok])=>document.getElementById('meter-'+k).classList.toggle('good',ok));
+    document.getElementById('attempt').textContent=state.result==='success'?'刃缘合格':(state.failed>=3?'继续练习':'尝试 '+state.attempt+'/3');
+    document.getElementById('result-title').textContent=state.result==='success'?'合格刃缘':state.result==='ready'?'准备敲击':'过程被阻断';
+    document.getElementById('result-detail').textContent=state.message;
+    document.getElementById('target-hint').style.display=state.showHint?'block':'none';
+  }
+  function clearResult(){crack.visible(false);flake.visible(false);edgeGlow.visible(false);impactFlash.opacity(0);['p','a','f'].forEach(k=>document.getElementById('meter-'+k).classList.remove('bad'));fx.draw()}
+  function primaryFailure(){
+    if(state.p<MODEL.goodP[0])return{key:'p',phase:1,msg:'撞击点太靠边，平台边缘先破碎。'};
+    if(state.p>MODEL.goodP[1])return{key:'p',phase:1,msg:'撞击点太远，裂纹没有进入边缘。'};
+    if(state.a<MODEL.goodA[0])return{key:'a',phase:2,msg:'角度太低，冲击沿平台擦过。'};
+    if(state.a>MODEL.goodA[1])return{key:'a',phase:2,msg:'角度太陡，冲击压进石核。'};
+    if(state.f<MODEL.goodF[0])return{key:'f',phase:3,msg:'力度不足，石片未脱离。'};
+    if(state.f>MODEL.goodF[1])return{key:'f',phase:3,msg:'力度过大，边缘碎裂。'};
+    return null;
+  }
+  function strike(){
+    if(busy)return;busy=true;clearResult();setPhase(4);
+    const fail=primaryFailure(),px=pointX();
+    const target=fail?([px,platform.y,px+70,390,px+95,455]):([px,platform.y,px+80,385,px+180,470,842,548]);
+    crack.points(target);crack.visible(true);crack.dash([1000,1000]);crack.dashOffset(1000);
+    impactFlash.position({x:px,y:platform.y});impactFlash.opacity(.95);
+    const finish=()=>{
+      impactFlash.opacity(0);
+      if(fail){
+        state.result='fail';state.message=fail.msg;state.failed+=1;state.attempt=Math.min(3,state.failed+1);state.showHint=state.failed>=3;setPhase(fail.phase);document.getElementById('meter-'+fail.key).classList.add('bad');
+        const hp=hammer.position();hammer.position({x:hp.x+10,y:hp.y});setTimeout(()=>hammer.position(hp),Deck.reduced()?0:110);
+      }else{
+        state.result='success';state.message='裂纹贯穿，石片脱离并形成连续薄刃。';setPhase(6);flake.visible(true);edgeGlow.visible(true);
+        if(!Deck.reduced()){flake.opacity(0);flake.position({x:-18,y:-12});new Konva.Tween({node:flake,duration:.26,opacity:1,x:0,y:0,rotation:2,easing:Konva.Easings.EaseOut}).play();}
+      }
+      updateHud();fx.draw();busy=false;
+    };
+    if(Deck.reduced()){crack.dash([]);finish();}
+    else{new Konva.Tween({node:crack,duration:.42,dashOffset:0,easing:Konva.Easings.EaseInOut,onFinish:finish}).play();new Konva.Tween({node:impactFlash,duration:.22,opacity:0}).play();}
+  }
+
+  contact.on('dragmove',()=>{if(busy)return;state.p=Deck.clamp((contact.x()-platform.x)/platform.w,0,1);contact.y(platform.y);state.result='ready';state.message='撞击点已改变；继续调整锤石。';setPhase(1);clearResult();updateScene();});
+  contact.on('dragend',updateScene);
+  hammer.on('dragmove',()=>{if(busy)return;const dx=pointX()-hammer.x(),dy=platform.y-hammer.y();state.a=Deck.clamp(Math.atan2(dy,Math.max(1,dx))*180/Math.PI,MODEL.aMin,MODEL.aMax);state.f=Deck.clamp((Math.hypot(dx,dy)-90)/180,0,1);state.result='ready';state.message='松开锤石，释放这次撞击。';setPhase(3);clearResult();updateHud();});
+  hammer.on('dragend',()=>{updateScene();strike()});
+
+  document.getElementById('game-input').addEventListener('keydown',e=>{
+    let used=true;
+    if(e.key==='ArrowLeft')state.p=Deck.clamp(state.p-.02,0,1);
+    else if(e.key==='ArrowRight')state.p=Deck.clamp(state.p+.02,0,1);
+    else if(e.key==='ArrowUp'&&e.shiftKey)state.f=Deck.clamp(state.f+.03,0,1);
+    else if(e.key==='ArrowDown'&&e.shiftKey)state.f=Deck.clamp(state.f-.03,0,1);
+    else if(e.key==='ArrowUp')state.a=Deck.clamp(state.a+1,MODEL.aMin,MODEL.aMax);
+    else if(e.key==='ArrowDown')state.a=Deck.clamp(state.a-1,MODEL.aMin,MODEL.aMax);
+    else if(e.key==='Enter'||e.key===' '){strike();e.preventDefault();return}else used=false;
+    if(used){e.preventDefault();state.result='ready';state.message='参数已调整；按回车释放撞击。';setPhase(e.shiftKey?3:(e.key.includes('Left')||e.key.includes('Right')?1:2));clearResult();updateScene();}
+  });
+  document.getElementById('reset').addEventListener('click',()=>{state=initial();busy=false;clearResult();setPhase(0);updateScene();});
+
+  const hud=document.getElementById('hud'), input=document.getElementById('game-input');
+  function place(el,x,y,w,h){el.style.left=(ox+x*scale)+'px';el.style.top=(oy+y*scale)+'px';if(w)el.style.width=w+'px';if(h)el.style.height=h+'px';el.style.transform='scale('+scale+')'}
+  function fit(){
+    const r=host.getBoundingClientRect(),logicalW=host.offsetWidth,logicalH=host.offsetHeight;
+    scale=Math.min(logicalW/W,logicalH/H);ox=(logicalW-W*scale)/2;oy=(logicalH-H*scale)/2;
+    stage.width(W*scale);stage.height(H*scale);stage.scale({x:scale,y:scale});stage.position({x:ox,y:oy});
+    place(hud,1100,180,250,500);place(document.getElementById('platform-label'),150,360);place(document.getElementById('hammer-label'),125,92);place(document.getElementById('edge-label'),825,548);place(input,100,90,970,560);place(document.getElementById('target-hint'),platform.x+platform.w*MODEL.goodP[0]-24,265,platform.w*(MODEL.goodP[1]-MODEL.goodP[0])+48,104);
+  }
+  Deck.onResize(fit);window.addEventListener('resize',fit);fit();setPhase(0);updateScene();
+})();
+</script>
+</body>
+</html>

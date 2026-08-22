@@ -1,0 +1,796 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    #main {
+      position: absolute;
+      top: var(--header-h);
+      bottom: var(--footer-h);
+      left: 0;
+      right: 0;
+      overflow: hidden;
+    }
+    #scene-wrap {
+      position: relative;
+      width: 100%;
+      height: 100%;
+    }
+    #three-canvas {
+      display: block;
+    }
+    #overlay-takeaway {
+      position: absolute;
+      top: 16px;
+      left: 16px;
+      max-width: 340px;
+      font-size: var(--fs-body);
+      line-height: var(--lh-tight);
+      color: rgba(255,255,255,0.92);
+      text-shadow: 0 1px 6px rgba(0,0,0,0.7);
+      background: rgba(0,0,0,0.55);
+      padding: 8px 12px;
+      border-radius: 6px;
+      border-left: 3px solid var(--color-accent);
+      transition: opacity 0.4s;
+    }
+    #overlay-curves {
+      position: absolute;
+      bottom: 16px;
+      right: 16px;
+      background: rgba(0,0,0,0.72);
+      border-radius: 8px;
+      padding: 8px;
+      border: 1px solid rgba(255,255,255,0.12);
+    }
+    #curves-canvas {
+      display: block;
+    }
+    #overlay-ctrl {
+      position: absolute;
+      bottom: 16px;
+      left: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      background: rgba(0,0,0,0.72);
+      border-radius: 8px;
+      padding: 10px;
+      border: 1px solid rgba(255,255,255,0.12);
+    }
+    .state-btns {
+      display: flex;
+      gap: 4px;
+    }
+    .state-btn {
+      padding: 6px 12px;
+      border: 1px solid rgba(255,255,255,0.25);
+      border-radius: 5px;
+      background: transparent;
+      color: rgba(255,255,255,0.7);
+      cursor: pointer;
+      font-size: var(--fs-label);
+      font-family: var(--font-sans);
+      transition: all 0.25s;
+      white-space: nowrap;
+    }
+    .state-btn.active {
+      background: var(--color-accent);
+      border-color: var(--color-accent);
+      color: #fff;
+    }
+    .state-btn:hover {
+      border-color: rgba(255,255,255,0.55);
+      color: #fff;
+    }
+    .state-btn:focus-visible {
+      outline: 2px solid var(--focus);
+      outline-offset: 2px;
+    }
+    .state-arrow {
+      color: rgba(255,255,255,0.3);
+      font-size: var(--fs-label);
+      align-self: center;
+      user-select: none;
+    }
+    .temp-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .temp-label {
+      font-size: var(--fs-label);
+      color: rgba(255,255,255,0.7);
+      white-space: nowrap;
+    }
+    #temp-slider {
+      width: 150px;
+      accent-color: var(--color-accent);
+      cursor: pointer;
+    }
+    #temp-val {
+      font-size: var(--fs-tick);
+      color: rgba(255,255,255,0.9);
+      font-variant-numeric: tabular-nums;
+      min-width: 36px;
+      text-align: right;
+    }
+  </style>
+</head>
+<body data-page="18" data-total="40">
+  <div id="stage">
+    <main id="main"></main>
+  </div>
+  <script src="assets/base.js"></script>
+  <script src="assets/lec.js"></script>
+  <script src="assets/lib/three.min.js"></script>
+  <script>
+(function() {
+  'use strict';
+
+  // ============================================================
+  // 1. Mount
+  // ============================================================
+  Lec.mount({
+    index: 18,
+    kicker: 'HEAT',
+    title: '皮肤的原始功能是保温——但皮肤只能靠自己',
+    take: '裸体时，热量直接从体表流失到空气中，你无法控制速度。'
+  });
+
+  // ============================================================
+  // 2. Constants
+  // ============================================================
+  var SKIN_TEMP = 33;          // °C
+  var AIR_TC = 0.026;          // W/(m·K)
+  var BODY_HEAT_CAP = 100;     // arbitrary heat capacity
+
+  var STATES = {
+    naked:   { R: 0.04, label: '裸体', pSpeed: 2.8, pCount: 2000, curveColor: '#ff5555', takeawayIdx: 0 },
+    clothed: { R: 0.15, label: '穿衣', pSpeed: 1.1, pCount: 1000, curveColor: '#ffaa00', takeawayIdx: 1 },
+    indoors: { R: 0.50, label: '进屋', pSpeed: 0.35, pCount: 500,  curveColor: '#5599ff', takeawayIdx: 2 }
+  };
+
+  var TAKEAWAYS = [
+    '皮肤的原始功能是保温，但皮肤只能靠自己。裸体时，热量直接从体表流失到空气中，你无法控制速度。',
+    '衣服是第一个「体外皮肤」。它在你和空气之间增加了一层静止空气，这层空气就是保温层——你不需要长出更厚的皮肤，你只需要穿上衣服。',
+    '每一个壳都在做同一件事：把热量流失的速度再减慢一点。从衣服到房间，每一步都是把「保温」这个功能从身体移出去。'
+  ];
+
+  // ============================================================
+  // 3. State
+  // ============================================================
+  var currentState = 'naked';
+  var targetState = 'naked';
+  var ambientTemp = 20;
+  var simTime = 0;
+  var stateTransition = 0;  // 0..1, lerp factor for state transitions
+
+  // ============================================================
+  // 4. DOM
+  // ============================================================
+  var main = document.getElementById('main');
+
+  var wrap = document.createElement('div');
+  wrap.id = 'scene-wrap';
+  main.appendChild(wrap);
+
+  var threeCanvas = document.createElement('canvas');
+  threeCanvas.id = 'three-canvas';
+  wrap.appendChild(threeCanvas);
+
+  // Takeaway overlay
+  var takeawayEl = document.createElement('div');
+  takeawayEl.id = 'overlay-takeaway';
+  takeawayEl.textContent = TAKEAWAYS[0];
+  wrap.appendChild(takeawayEl);
+
+  // State label removed — state shown by active button
+
+  // Curves panel
+  var curvesPanel = document.createElement('div');
+  curvesPanel.id = 'overlay-curves';
+  var curvesCanvas = document.createElement('canvas');
+  curvesCanvas.id = 'curves-canvas';
+  curvesCanvas.width = 320;
+  curvesCanvas.height = 180;
+  curvesPanel.appendChild(curvesCanvas);
+  wrap.appendChild(curvesPanel);
+
+  // Controls
+  var ctrlPanel = document.createElement('div');
+  ctrlPanel.id = 'overlay-ctrl';
+
+  var stateBtns = document.createElement('div');
+  stateBtns.className = 'state-btns';
+  var stateKeys = Object.keys(STATES);
+  stateKeys.forEach(function(k, idx) {
+    var btn = document.createElement('button');
+    btn.className = 'state-btn' + (k === currentState ? ' active' : '');
+    btn.textContent = STATES[k].label;
+    btn.setAttribute('data-state', k);
+    btn.addEventListener('click', function() { setState(k); });
+    stateBtns.appendChild(btn);
+    if (idx < stateKeys.length - 1) {
+      var arrow = document.createElement('span');
+      arrow.className = 'state-arrow';
+      arrow.textContent = '→';
+      stateBtns.appendChild(arrow);
+    }
+  });
+  ctrlPanel.appendChild(stateBtns);
+
+  var tempRow = document.createElement('div');
+  tempRow.className = 'temp-row';
+
+  var tempLabel = document.createElement('span');
+  tempLabel.className = 'temp-label';
+  tempLabel.textContent = '环境温度';
+  tempRow.appendChild(tempLabel);
+
+  var tempSlider = document.createElement('input');
+  tempSlider.id = 'temp-slider';
+  tempSlider.type = 'range';
+  tempSlider.min = '0';
+  tempSlider.max = '35';
+  tempSlider.value = '20';
+  tempSlider.step = '1';
+  tempRow.appendChild(tempSlider);
+
+  var tempVal = document.createElement('span');
+  tempVal.id = 'temp-val';
+  tempVal.textContent = '20°C';
+  tempRow.appendChild(tempVal);
+
+  ctrlPanel.appendChild(tempRow);
+  wrap.appendChild(ctrlPanel);
+
+  // ============================================================
+  // 5. Three.js Scene
+  // ============================================================
+  var renderer = new THREE.WebGLRenderer({ canvas: threeCanvas, antialias: true, alpha: false });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.setClearColor(0x0a0a14);
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+  var scene = new THREE.Scene();
+  scene.fog = new THREE.Fog(0x0a0a14, 8, 40);
+
+  var camera = new THREE.PerspectiveCamera(45, 1, 0.5, 60);
+  camera.position.set(0, 1.6, 7.5);
+  camera.lookAt(0, 1.1, 0);
+
+  // --- Lights ---
+  var ambientLight = new THREE.AmbientLight(0x1a1a3a, 0.5);
+  scene.add(ambientLight);
+
+  var keyLight = new THREE.DirectionalLight(0xffeedd, 2.5);
+  keyLight.position.set(5, 8, 3);
+  keyLight.castShadow = true;
+  keyLight.shadow.mapSize.width = 1024;
+  keyLight.shadow.mapSize.height = 1024;
+  keyLight.shadow.camera.near = 0.5;
+  keyLight.shadow.camera.far = 30;
+  keyLight.shadow.camera.left = -8;
+  keyLight.shadow.camera.right = 8;
+  keyLight.shadow.camera.top = 8;
+  keyLight.shadow.camera.bottom = -2;
+  keyLight.shadow.bias = -0.0001;
+  scene.add(keyLight);
+
+  var rimLight = new THREE.DirectionalLight(0x8899cc, 1.2);
+  rimLight.position.set(-3, 2, -2);
+  scene.add(rimLight);
+
+  // --- Ground ---
+  var groundGeo = new THREE.PlaneGeometry(40, 40);
+  var groundMat = new THREE.MeshStandardMaterial({ color: 0x1a1a24, roughness: 0.85, metalness: 0.1 });
+  var ground = new THREE.Mesh(groundGeo, groundMat);
+  ground.rotation.x = -Math.PI / 2;
+  ground.position.y = -0.02;
+  ground.receiveShadow = true;
+  scene.add(ground);
+
+  // --- Human Figure ---
+  var human = new THREE.Group();
+  human.position.set(0, 0, 0);
+
+  // Body: tapered cylinder
+  var bodyGeo = new THREE.CylinderGeometry(0.32, 0.38, 2.6, 32);
+  var bodyMat = new THREE.MeshStandardMaterial({ color: 0xffcc88, roughness: 0.4, metalness: 0.05 });
+  var body = new THREE.Mesh(bodyGeo, bodyMat);
+  body.position.y = 1.3;
+  body.castShadow = true;
+  human.add(body);
+
+  // Head
+  var headGeo = new THREE.SphereGeometry(0.33, 32, 32);
+  var headMat = new THREE.MeshStandardMaterial({ color: 0xffd4a0, roughness: 0.35, metalness: 0.05 });
+  var head = new THREE.Mesh(headGeo, headMat);
+  head.position.y = 2.85;
+  head.castShadow = true;
+  human.add(head);
+
+  // Arms
+  var armGeo = new THREE.CylinderGeometry(0.1, 0.12, 1.6, 16);
+  var armMat = new THREE.MeshStandardMaterial({ color: 0xffcc88, roughness: 0.4, metalness: 0.05 });
+
+  var leftArm = new THREE.Mesh(armGeo, armMat);
+  leftArm.position.set(-0.45, 2.3, 0);
+  leftArm.rotation.z = 0.15;
+  leftArm.castShadow = true;
+  human.add(leftArm);
+
+  var rightArm = new THREE.Mesh(armGeo, armMat);
+  rightArm.position.set(0.45, 2.3, 0);
+  rightArm.rotation.z = -0.15;
+  rightArm.castShadow = true;
+  human.add(rightArm);
+
+  // Legs
+  var legGeo = new THREE.CylinderGeometry(0.14, 0.16, 1.8, 16);
+  var legMat = new THREE.MeshStandardMaterial({ color: 0xffc080, roughness: 0.4, metalness: 0.05 });
+
+  var leftLeg = new THREE.Mesh(legGeo, legMat);
+  leftLeg.position.set(-0.15, 0.9, 0);
+  leftLeg.castShadow = true;
+  human.add(leftLeg);
+
+  var rightLeg = new THREE.Mesh(legGeo, legMat);
+  rightLeg.position.set(0.15, 0.9, 0);
+  rightLeg.castShadow = true;
+  human.add(rightLeg);
+
+  scene.add(human);
+
+  // --- Clothing Layer (visible in clothed state) ---
+  var clothingGroup = new THREE.Group();
+  clothingGroup.visible = false;
+
+  var clothGeo = new THREE.CylinderGeometry(0.42, 0.48, 2.4, 32);
+  var clothMat = new THREE.MeshStandardMaterial({
+    color: 0x8899bb,
+    roughness: 0.6,
+    metalness: 0.1,
+    transparent: true,
+    opacity: 0.55
+  });
+  var clothMesh = new THREE.Mesh(clothGeo, clothMat);
+  clothMesh.position.y = 1.3;
+  clothingGroup.add(clothMesh);
+
+  // Inner trapped air layer (warm glow)
+  var innerAirGeo = new THREE.CylinderGeometry(0.38, 0.42, 2.3, 32);
+  var innerAirMat = new THREE.MeshBasicMaterial({
+    color: 0xffaa44,
+    transparent: true,
+    opacity: 0.18,
+    depthWrite: false
+  });
+  var innerAir = new THREE.Mesh(innerAirGeo, innerAirMat);
+  innerAir.position.y = 1.3;
+  clothingGroup.add(innerAir);
+
+  scene.add(clothingGroup);
+
+  // --- Room (visible in indoors state) ---
+  var roomGroup = new THREE.Group();
+  roomGroup.visible = false;
+
+  var roomGeo = new THREE.BoxGeometry(3.5, 4.5, 3.5);
+  var roomMat = new THREE.MeshStandardMaterial({
+    color: 0x334455,
+    roughness: 0.5,
+    metalness: 0.15,
+    transparent: true,
+    opacity: 0.3,
+    side: THREE.BackSide
+  });
+  var roomMesh = new THREE.Mesh(roomGeo, roomMat);
+  roomMesh.position.y = 2.0;
+  roomGroup.add(roomMesh);
+
+  // Room floor indicator
+  var roomFloorGeo = new THREE.PlaneGeometry(3.5, 3.5);
+  var roomFloorMat = new THREE.MeshStandardMaterial({
+    color: 0x3a3a4a,
+    roughness: 0.7,
+    metalness: 0.1,
+    transparent: true,
+    opacity: 0.4
+  });
+  var roomFloor = new THREE.Mesh(roomFloorGeo, roomFloorMat);
+  roomFloor.rotation.x = -Math.PI / 2;
+  roomFloor.position.y = -0.01;
+  roomGroup.add(roomFloor);
+
+  scene.add(roomGroup);
+
+  // --- Particle System ---
+  var MAX_PARTICLES = 2000;
+  var particlePositions = new Float32Array(MAX_PARTICLES * 3);
+  var particleColors = new Float32Array(MAX_PARTICLES * 3);
+  var particleVelocities = new Float32Array(MAX_PARTICLES * 3);
+  var particleLife = new Float32Array(MAX_PARTICLES);
+
+  var particleGeo = new THREE.BufferGeometry();
+  particleGeo.setAttribute('position', new THREE.BufferAttribute(particlePositions, 3));
+  particleGeo.setAttribute('color', new THREE.BufferAttribute(particleColors, 3));
+
+  // Create glow texture for particles
+  var glowCanvas = document.createElement('canvas');
+  glowCanvas.width = 32;
+  glowCanvas.height = 32;
+  var gctx = glowCanvas.getContext('2d');
+  var gradient = gctx.createRadialGradient(16, 16, 0, 16, 16, 16);
+  gradient.addColorStop(0, 'rgba(255,255,255,1)');
+  gradient.addColorStop(0.15, 'rgba(255,240,200,0.9)');
+  gradient.addColorStop(0.4, 'rgba(255,180,60,0.5)');
+  gradient.addColorStop(0.7, 'rgba(255,80,20,0.1)');
+  gradient.addColorStop(1, 'rgba(0,0,0,0)');
+  gctx.fillStyle = gradient;
+  gctx.fillRect(0, 0, 32, 32);
+  var glowTex = new THREE.CanvasTexture(glowCanvas);
+
+  var particleMat = new THREE.PointsMaterial({
+    size: 0.25,
+    map: glowTex,
+    vertexColors: true,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    transparent: true,
+    opacity: 0.75
+  });
+
+  var particles = new THREE.Points(particleGeo, particleMat);
+  particles.renderOrder = 999;
+  scene.add(particles);
+
+  // Initialize particles
+  function spawnParticle(i) {
+    var angle = Math.random() * Math.PI * 2;
+    var h = (Math.random() - 0.5) * 2.4;
+    var r = 0.34 + Math.random() * 0.08;
+    // Clamp to body: head region is wider
+    if (h > 1.0) {
+      // Head region
+      var headY = h - 1.0;
+      var headR = Math.sqrt(Math.max(0, 0.33 * 0.33 - headY * headY));
+      r = Math.min(r, headR * 0.9);
+    }
+    particlePositions[i * 3] = Math.cos(angle) * r;
+    particlePositions[i * 3 + 1] = h + 1.3;
+    particlePositions[i * 3 + 2] = Math.sin(angle) * r;
+
+    // Initial velocity: outward from body
+    var dx = Math.cos(angle) * r;
+    var dy = h;
+    var dz = Math.sin(angle) * r;
+    var dist = Math.sqrt(dx * dx + dy * dy + dz * dz) || 0.01;
+    particleVelocities[i * 3] = dx / dist;
+    particleVelocities[i * 3 + 1] = dy / dist;
+    particleVelocities[i * 3 + 2] = dz / dist;
+
+    particleColors[i * 3] = 1.0;
+    particleColors[i * 3 + 1] = 0.9;
+    particleColors[i * 3 + 2] = 0.6;
+    particleLife[i] = Math.random();
+  }
+
+  function resetParticle(i) {
+    var angle = Math.random() * Math.PI * 2;
+    var h = (Math.random() - 0.5) * 2.4;
+    var r = 0.34 + Math.random() * 0.06;
+    if (h > 1.0) {
+      var headY = h - 1.0;
+      var headR = Math.sqrt(Math.max(0, 0.33 * 0.33 - headY * headY));
+      r = Math.min(r, headR * 0.9);
+    }
+    var cx = 0, cy = 1.3, cz = 0;
+    particlePositions[i * 3] = cx + Math.cos(angle) * r;
+    particlePositions[i * 3 + 1] = cy + h;
+    particlePositions[i * 3 + 2] = cz + Math.sin(angle) * r;
+
+    var dx = Math.cos(angle) * r;
+    var dy = h;
+    var dz = Math.sin(angle) * r;
+    var dist = Math.sqrt(dx * dx + dy * dy + dz * dz) || 0.01;
+    particleVelocities[i * 3] = dx / dist;
+    particleVelocities[i * 3 + 1] = dy / dist;
+    particleVelocities[i * 3 + 2] = dz / dist;
+
+    particleColors[i * 3] = 1.0;
+    particleColors[i * 3 + 1] = 0.9;
+    particleColors[i * 3 + 2] = 0.6;
+    particleLife[i] = Math.random();
+  }
+
+  for (var i = 0; i < MAX_PARTICLES; i++) {
+    spawnParticle(i);
+  }
+  particleGeo.attributes.position.needsUpdate = true;
+  particleGeo.attributes.color.needsUpdate = true;
+
+  // ============================================================
+  // 6. Curves Canvas
+  // ============================================================
+  var curvesCtx = null;
+  function drawCurves() {
+    if (!curvesCtx) return;
+    var w = curvesCanvas.width;
+    var h = curvesCanvas.height;
+    var ctx = curvesCtx;
+    ctx.clearRect(0, 0, w, h);
+
+    var margin = { top: 24, right: 20, bottom: 26, left: 42 };
+    var pw = w - margin.left - margin.right;
+    var ph = h - margin.top - margin.bottom;
+    var cx = margin.left;
+    var cy = margin.top;
+
+    // Background
+    ctx.fillStyle = 'rgba(0,0,0,0.3)';
+    ctx.fillRect(0, 0, w, h);
+
+    // Grid
+    ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+    ctx.lineWidth = 1;
+    for (var gy = 0; gy <= 4; gy++) {
+      var y = cy + (gy / 4) * ph;
+      ctx.beginPath();
+      ctx.moveTo(cx, y);
+      ctx.lineTo(cx + pw, y);
+      ctx.stroke();
+    }
+    for (var gx = 0; gx <= 4; gx++) {
+      var x = cx + (gx / 4) * pw;
+      ctx.beginPath();
+      ctx.moveTo(x, cy);
+      ctx.lineTo(x, cy + ph);
+      ctx.stroke();
+    }
+
+    // Compute max heat loss rate for scaling
+    var maxRate = 0;
+    var curves = {};
+    Object.keys(STATES).forEach(function(k) {
+      var R = STATES[k].R;
+      var tau = R * BODY_HEAT_CAP;
+      var pts = [];
+      for (var t = 0; t <= 60; t += 0.5) {
+        var Tb = ambientTemp + (SKIN_TEMP - ambientTemp) * Math.exp(-t / tau);
+        var rate = (Tb - ambientTemp) / R;
+        if (rate > maxRate) maxRate = rate;
+        pts.push({ t: t, rate: rate });
+      }
+      curves[k] = pts;
+    });
+    if (maxRate < 1) maxRate = 1;
+
+    // Y-axis labels
+    ctx.fillStyle = 'rgba(255,255,255,0.5)';
+    ctx.font = '11px "Inter", sans-serif';
+    ctx.textAlign = 'right';
+    for (var ly = 0; ly <= 4; ly++) {
+      var val = maxRate * (1 - ly / 4);
+      var y = cy + (ly / 4) * ph;
+      ctx.fillText(val.toFixed(0), cx - 6, y + 4);
+    }
+
+    // X-axis labels
+    ctx.textAlign = 'center';
+    for (var lx = 0; lx <= 4; lx++) {
+      var tv = lx * 15;
+      var x = cx + (lx / 4) * pw;
+      ctx.fillText(tv + 's', x, cy + ph + 16);
+    }
+
+    // Axis label
+    ctx.fillStyle = 'rgba(255,255,255,0.4)';
+    ctx.font = '10px "Inter", sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('热量逸散率 (W/m²)', cx + pw / 2, cy - 10);
+
+    // Draw curves
+    Object.keys(STATES).forEach(function(k) {
+      var pts = curves[k];
+      if (pts.length < 2) return;
+      ctx.strokeStyle = STATES[k].curveColor;
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      for (var pi = 0; pi < pts.length; pi++) {
+        var sx = cx + (pts[pi].t / 60) * pw;
+        var sy = cy + (1 - pts[pi].rate / maxRate) * ph;
+        if (pi === 0) ctx.moveTo(sx, sy);
+        else ctx.lineTo(sx, sy);
+      }
+      ctx.stroke();
+
+      // Label at end
+      var lastPt = pts[pts.length - 1];
+      var lx = cx + (lastPt.t / 60) * pw + 4;
+      var ly = cy + (1 - lastPt.rate / maxRate) * ph;
+      ctx.fillStyle = STATES[k].curveColor;
+      ctx.font = '11px "Inter", sans-serif';
+      ctx.textAlign = 'left';
+      ctx.fillText(STATES[k].label, lx, ly);
+    });
+  }
+
+  Deck.autofit(curvesCanvas, function(ctx) {
+    curvesCtx = ctx;
+    drawCurves();
+  });
+
+  // ============================================================
+  // 7. State change
+  // ============================================================
+  function setState(newState) {
+    if (targetState === newState) return;
+    targetState = newState;
+    stateTransition = 0;
+
+    // Update buttons
+    var btns = stateBtns.querySelectorAll('.state-btn');
+    btns.forEach(function(b) {
+      b.classList.toggle('active', b.getAttribute('data-state') === newState);
+    });
+
+    // Update takeaway
+    takeawayEl.style.opacity = '0';
+    setTimeout(function() {
+      takeawayEl.textContent = TAKEAWAYS[STATES[newState].takeawayIdx];
+      takeawayEl.style.opacity = '1';
+    }, 200);
+
+    // Update clothing/room visibility
+    clothingGroup.visible = (newState === 'clothed');
+    roomGroup.visible = (newState === 'indoors');
+  }
+
+  // ============================================================
+  // 8. Resize
+  // ============================================================
+  function resize() {
+    var w = wrap.clientWidth;
+    var h = wrap.clientHeight;
+    if (w < 1 || h < 1) return;
+    renderer.setSize(w, h);
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
+  }
+
+  Deck.onResize(resize);
+  resize();
+
+  // ============================================================
+  // 9. Event handlers
+  // ============================================================
+  tempSlider.addEventListener('input', function() {
+    ambientTemp = parseInt(tempSlider.value, 10);
+    tempVal.textContent = ambientTemp + '°C';
+    drawCurves();
+  });
+
+  // ============================================================
+  // 10. Animation loop
+  // ============================================================
+  var activeParticleCount = 2000;
+
+  Deck.loop(function(dt, _time) {
+    dt = Math.min(dt, 0.1); // clamp large dt
+    simTime += dt;
+
+    // State transition
+    if (targetState !== currentState) {
+      stateTransition = Math.min(1, stateTransition + dt * 2.5);
+      if (stateTransition >= 1) {
+        currentState = targetState;
+        stateTransition = 0;
+      }
+    }
+
+    var st = STATES[currentState];
+    activeParticleCount = st.pCount;
+
+    // Update particles
+    var pSpeed = st.pSpeed;
+    var bodyCx = human.position.x;
+    var bodyCy = human.position.y + 1.3;
+    var bodyCz = human.position.z;
+
+    for (var i = 0; i < MAX_PARTICLES; i++) {
+      if (i >= activeParticleCount) {
+        // Hide inactive particles by moving them far away
+        particlePositions[i * 3] = 999;
+        particlePositions[i * 3 + 1] = 999;
+        particlePositions[i * 3 + 2] = 999;
+        continue;
+      }
+
+      var px = particlePositions[i * 3];
+      var py = particlePositions[i * 3 + 1];
+      var pz = particlePositions[i * 3 + 2];
+
+      var dx = px - bodyCx;
+      var dy = py - bodyCy;
+      var dz = pz - bodyCz;
+      var dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+
+      // Move outward
+      var vx = particleVelocities[i * 3];
+      var vy = particleVelocities[i * 3 + 1];
+      var vz = particleVelocities[i * 3 + 2];
+
+      // Add slight upward drift (hot air rises)
+      vy += 0.3 * dt;
+
+      particlePositions[i * 3] += vx * pSpeed * dt;
+      particlePositions[i * 3 + 1] += vy * pSpeed * dt;
+      particlePositions[i * 3 + 2] += vz * pSpeed * dt;
+
+      // Recalculate distance
+      dx = particlePositions[i * 3] - bodyCx;
+      dy = particlePositions[i * 3 + 1] - bodyCy;
+      dz = particlePositions[i * 3 + 2] - bodyCz;
+      dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+
+      // Reset if too far
+      var maxDist = (currentState === 'indoors') ? 2.5 : 5.5;
+      if (dist > maxDist || particlePositions[i * 3 + 1] > 8) {
+        resetParticle(i);
+        dist = 0.5;
+      }
+
+      // Color based on distance
+      var t = Math.min(dist / 4.5, 1);
+      // Thermal gradient: white → yellow → orange → blue
+      if (t < 0.25) {
+        var s = t / 0.25;
+        particleColors[i * 3] = 1.0;
+        particleColors[i * 3 + 1] = 0.9 - s * 0.3;
+        particleColors[i * 3 + 2] = 0.6 - s * 0.4;
+      } else if (t < 0.5) {
+        var s2 = (t - 0.25) / 0.25;
+        particleColors[i * 3] = 1.0 - s2 * 0.5;
+        particleColors[i * 3 + 1] = 0.6 - s2 * 0.35;
+        particleColors[i * 3 + 2] = 0.2 + s2 * 0.3;
+      } else {
+        var s3 = (t - 0.5) / 0.5;
+        particleColors[i * 3] = 0.5 - s3 * 0.4;
+        particleColors[i * 3 + 1] = 0.25 - s3 * 0.2;
+        particleColors[i * 3 + 2] = 0.5 + s3 * 0.5;
+      }
+    }
+
+    particleGeo.attributes.position.needsUpdate = true;
+    particleGeo.attributes.color.needsUpdate = true;
+    particleGeo.setDrawRange(0, activeParticleCount);
+
+    // Update clothing inner air glow intensity (pulse slightly)
+    if (clothingGroup.visible) {
+      innerAir.material.opacity = 0.15 + Math.sin(simTime * 1.5) * 0.04;
+    }
+
+    // Render
+    renderer.render(scene, camera);
+
+    // Update curves every 0.5s
+    if (Math.floor(simTime / 0.5) !== Math.floor((simTime - dt) / 0.5)) {
+      drawCurves();
+    }
+  }, { still: 3 });
+
+  // ============================================================
+  // 11. Init
+  // ============================================================
+  drawCurves();
+  setState('naked');
+
+})();
+</script>
+</body>
+</html>

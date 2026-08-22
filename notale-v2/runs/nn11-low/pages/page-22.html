@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title></title>
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/deck.css">
+<style>
+#main{display:flex;flex-direction:column;height:100%;gap:12px}
+.chart-shell{flex:1 1 auto;min-height:0;position:relative;border-top:1px solid var(--line-soft);border-bottom:1px solid var(--line-soft)}
+#chart{position:absolute;inset:0}
+.bottom{flex:0 0 auto;display:grid;grid-template-columns:1.08fr 1.12fr;gap:18px;align-items:stretch}
+.bottom>.min0{min-height:0}
+.control-zone{padding:13px 18px 12px;border-left:3px solid var(--gene);background:linear-gradient(90deg,rgba(224,145,58,.10),rgba(224,145,58,.025))}
+.ctl{--acc:var(--gene)}
+.ctl .cl{font-weight:700;color:var(--gene-2)}
+.readout{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:8px}
+.metric{border-top:1px solid var(--line);padding-top:6px}
+.metric .v{font-family:var(--font-num);font-size:var(--fs-h2);line-height:1.15;color:var(--text);font-variant-numeric:tabular-nums}
+.metric .k{font-size:var(--fs-label);color:var(--text-3);margin-top:2px}
+.hint{margin-top:7px}
+.punch{padding:12px 18px;border:1px solid var(--line-soft);border-radius:var(--r);background:rgba(95,200,216,.035);display:flex;align-items:center;font-size:var(--fs-sec);line-height:1.5;color:var(--text-2)}
+.punch b{color:var(--gene-2)}
+.punch strong{color:var(--cult-2)}
+.legend-note{position:absolute;right:14px;top:10px;z-index:2;display:flex;gap:16px;font-size:var(--fs-label);color:var(--text-2);pointer-events:none}
+.key{display:flex;align-items:center;gap:7px}.key i{display:block;width:18px;height:5px;border-radius:3px}.key.g i{background:var(--gene)}.key.c i{background:var(--cult)}
+</style>
+</head>
+<body data-page="22" data-total="44">
+<div id="stage"><main id="main">
+  <section class="chart-shell min0" aria-label="基因适应与技术普及所需时间的共同对数轴比较">
+    <div class="legend-note"><span class="key g"><i></i>基因适应</span><span class="key c"><i></i>技术普及</span></div>
+    <div id="chart"></div>
+  </section>
+  <section class="bottom min0">
+    <div class="control-zone min0">
+      <div class="ctl">
+        <span class="cl">选择系数 s</span>
+        <input id="sRange" class="no-pan" type="range" min="0" max="1000" value="510" aria-label="选择系数 s，从 0.002 到 0.10，对数刻度">
+        <span class="cv" id="sValue">0.020</span>
+      </div>
+      <div class="readout" aria-live="polite">
+        <div class="metric"><div class="v" id="gen">340</div><div class="k">代</div></div>
+        <div class="metric"><div class="v" id="yrs">8,500</div><div class="k">年</div></div>
+        <div class="metric"><div class="v" id="ratio">340×</div><div class="k">技术簇中位数</div></div>
+        <div class="metric"><div class="v">25</div><div class="k">年 / 代</div></div>
+      </div>
+      <div class="hint">拖选择系数，看基因那一根条能跑多快</div>
+    </div>
+    <div class="punch min0">即使给基因一个<b>强得离谱</b>的选择系数（s = 0.10，68 代、约 1700 年），它仍比智能手机普及慢 <b>170 倍</b>。而这还只是“固定一项”——体外通道可以<strong>同时固定成千上万项</strong>。</div>
+  </section>
+</main></div>
+<script src="assets/base.js"></script>
+<script src="assets/deck.js"></script>
+<script src="assets/lib/echarts.min.js"></script>
+<script>
+Chrome.mount({ act:2, title:'速度的分岔', sub:'固定一项新适应要多久？两条通道的答案差两到三个数量级。', foot:'快的那条一旦启动，就不只是快一点——它会把整条曲线的形状换掉。' });
+var chart=echarts.init(document.getElementById('chart'),null,{renderer:'svg'});
+var p1=.01,p2=.90, median=25;
+var tech=[['智能手机',10],['互联网',15],['移动电话',20],['电视',25],['冰箱',30],['电力',60],['汽车',60],['电话',70]];
+var anchors=[['EPAS1',3000,8000],['欧洲肤色扫荡',6000,12000],['乳糖酶持续',7500,7500]];
+var input=document.getElementById('sRange');
+function sFromSlider(){return .002*Math.pow(.10/.002,+input.value/1000)}
+function yearsFor(s){return 25*(1/s)*Math.log((p2/(1-p2))/(p1/(1-p1)))}
+function fmt(n){return Math.round(n).toLocaleString('en-US')}
+function renderItem(params,api){
+  var y=api.value(0),a=api.coord([api.value(1),y]),b=api.coord([api.value(2),y]);
+  var h=api.size([0,1])[1]*.48;
+  return {type:'rect',shape:{x:a[0],y:a[1]-h/2,width:Math.max(3,b[0]-a[0]),height:h,r:3},style:api.style()};
+}
+function update(){
+  var s=sFromSlider(), yrs=yearsFor(s), gens=yrs/25;
+  document.getElementById('sValue').textContent=s.toFixed(3);
+  document.getElementById('gen').textContent=fmt(gens);
+  document.getElementById('yrs').textContent=fmt(yrs);
+  document.getElementById('ratio').textContent=fmt(yrs/median)+'×';
+  var cats=['当前计算','乳糖酶持续','欧洲肤色扫荡','EPAS1','','电话','汽车','电力','冰箱','电视','移动电话','互联网','智能手机'];
+  var data=[[0,1,yrs,'当前计算：约 '+fmt(yrs)+' 年']];
+  anchors.forEach(function(d,i){data.push([i+1,d[1],d[2],d[0]+'：约 '+fmt(d[1])+(d[2]!==d[1]?'–'+fmt(d[2]):'')+' 年'])});
+  var techData=tech.map(function(d,i){return [i+5,1,d[1],d[0]+'：约 '+d[1]+' 年']});
+  chart.setOption({
+    animationDuration:180,
+    textStyle:{fontFamily:getComputedStyle(document.documentElement).getPropertyValue('--font-sans'),fontSize:16,color:'#ece7df'},
+    grid:{left:158,right:46,top:54,bottom:46},
+    xAxis:{type:'log',min:1,max:100000,logBase:10,name:'从 1% 到 90% 所需时间（年，对数轴）',nameLocation:'middle',nameGap:32,nameTextStyle:{fontSize:14,color:'#8b8078'},axisLine:{lineStyle:{color:'#66594e'}},axisTick:{show:true},splitLine:{show:true,lineStyle:{color:'#2a231e'}},axisLabel:{fontSize:14,color:'#b9ada0',formatter:function(v){return ({1:'1 年',10:'10 年',100:'100 年',1000:'1千年',10000:'1万年',100000:'10万年'})[v]||''}}},
+    yAxis:{type:'category',inverse:true,data:cats,axisLine:{show:false},axisTick:{show:false},axisLabel:{fontSize:14,color:function(v,i){return i<4?'#e0913a':i>4?'#5fc8d8':'transparent'},margin:14}},
+    tooltip:{trigger:'item',backgroundColor:'#221b16',borderColor:'#3d342c',textStyle:{fontSize:16,color:'#ece7df'},formatter:function(p){return p.data[3]}},
+    series:[
+      {type:'custom',renderItem:renderItem,data:data,itemStyle:{color:'#e0913a'},encode:{x:[1,2],y:0},z:3},
+      {type:'custom',renderItem:renderItem,data:techData,itemStyle:{color:'#5fc8d8'},encode:{x:[1,2],y:0},z:3}
+    ],
+    graphic:[
+      {type:'text',left:8,top:39,style:{text:'基因',fill:'#e0913a',font:'700 15px sans-serif'}},
+      {type:'text',left:8,top:'57%',style:{text:'技术（约）',fill:'#5fc8d8',font:'700 15px sans-serif'}},
+      {type:'text',right:48,top:34,style:{text:'s = 0.02 已是很强的选择；多数位点远小于它',fill:'#b9ada0',font:'16px sans-serif',textAlign:'right'}}
+    ]
+  },true);
+}
+input.addEventListener('input',update);
+update();
+Deck.onResize(function(){chart.resize()});
+</script>
+</body></html>

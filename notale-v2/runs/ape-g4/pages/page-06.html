@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    #main{display:flex;gap:var(--sp-5)}
+    .tree-wrap{position:relative;flex:1 1 0;min-width:0;height:100%;overflow:hidden;background:var(--surface);border:1px solid var(--line);border-radius:var(--radius-lg);box-shadow:var(--shadow-soft)}
+    .tree-head{position:absolute;z-index:2;left:var(--sp-5);top:var(--sp-4);pointer-events:none}
+    .tree-head .label{margin-top:var(--sp-2);color:var(--muted)}
+    #tree{display:block;width:100%;height:100%}
+    .side{flex:0 0 300px;min-width:0;height:100%;display:flex;flex-direction:column;gap:var(--sp-4)}
+    .status{display:flex;align-items:baseline;justify-content:space-between;gap:var(--sp-3)}
+    .count{font-size:var(--fs-h1);font-weight:760;color:var(--accent-strong);font-variant-numeric:tabular-nums}
+    .detail{flex:1 1 0;min-height:0}
+    .detail h2{margin-bottom:var(--sp-3)}
+    .detail .latin{font-size:var(--fs-sec);line-height:var(--lh-copy);color:var(--cyan);font-style:italic;margin-bottom:var(--sp-3)}
+    .detail .range{font-weight:720;margin-bottom:var(--sp-3)}
+    .detail .evidence{display:inline-block;margin-bottom:var(--sp-4);padding:var(--sp-1) var(--sp-2);border:1px solid var(--line-strong);border-radius:var(--radius-sm);font-size:var(--fs-label);line-height:1.4;color:var(--muted)}
+    .legend{display:flex;flex-wrap:wrap;gap:var(--sp-3);align-items:center}
+    .legend span{font-size:var(--fs-label);line-height:1.4;color:var(--muted)}
+    .key{display:inline-block;width:34px;margin-right:var(--sp-2);vertical-align:middle;border-top:3px solid var(--line-strong)}
+    .key.dash{border-top-style:dashed}
+    .key.fade{opacity:.38}
+    .branch{fill:none;stroke:var(--line-strong);stroke-width:4;opacity:.34}
+    .branch.disputed{stroke-dasharray:9 7}
+    .branch.lit{stroke:var(--accent);opacity:1}
+    .co-band{fill:var(--cyan-soft);opacity:0}
+    .co-band.show{opacity:.8}
+    .endpoint{cursor:pointer;outline:none}
+    .endpoint circle{fill:var(--surface);stroke:var(--line-strong);stroke-width:4}
+    .endpoint.lit circle{fill:var(--accent-soft);stroke:var(--accent)}
+    .endpoint:focus circle{stroke:var(--focus);stroke-width:6}
+    .endpoint text{font-family:var(--font-sans);font-size:var(--fs-label);font-weight:700;fill:var(--muted)}
+    .endpoint.lit text{fill:var(--accent-strong)}
+    .axis text{font-family:var(--font-sans);font-size:var(--fs-label);fill:var(--muted)}
+    .axis line,.axis path{stroke:var(--line)}
+    .final-msg{font-family:var(--font-sans);font-size:var(--fs-h2);font-weight:760;fill:var(--accent-strong);opacity:0}
+    .final-msg.show{opacity:1}
+  </style>
+</head>
+<body data-page="06" data-total="50">
+  <div id="stage"><main id="main"></main></div>
+  <script src="assets/base.js"></script>
+  <script src="assets/lec.js"></script>
+  <script src="assets/lib/d3.min.js"></script>
+  <script>
+    Lec.mount({
+      index: 6,
+      kicker: "BRANCHING LINEAGES",
+      title: "人类演化不是梯子，而是一丛不断分叉的灌木",
+      take: "人类演化像多枝灌木，不像一架逐级向上的梯子。"
+    });
+    Deck.init({ index: 6, total: 50 });
+
+    var main = document.getElementById("main");
+    main.innerHTML = '<section class="tree-wrap min0" aria-label="人族分支对数时间图"><div class="tree-head"><div class="h2">点亮任一分支端点</div><div class="label">横向是时间；纵向只为分开支系，不表示高低。</div></div><svg id="tree" role="group" aria-label="六条并列的人族代表性分支"></svg></section><aside class="side min0"><section class="panel status"><div><div class="label muted">已发现分支</div><div class="secondary">点亮后保持可见</div></div><div class="count" id="count">0/0</div></section><section class="panel detail" id="detail"><h2>多条支系可以并存</h2><p class="body-copy">选择一个端点，查看它的时间范围与证据状态。</p></section><section class="legend" aria-label="连线图例"><span><i class="key"></i>较确定概括</span><span><i class="key dash"></i>仍有争议</span><span><i class="key fade"></i>共同祖先范围</span></section><div id="live" class="sr-only" aria-live="polite"></div></aside>';
+
+    var raw = Array.isArray(Lec.K.p06LineageNodes) ? Lec.K.p06LineageNodes : [];
+    function finiteOr(v, fallback){
+      var n=Number(v);
+      if(!Number.isFinite(n)) n=Number(fallback);
+      return Lec.P.finite(n) ? n : Number(fallback);
+    }
+    var evidence = Lec.K.evidenceLabels || {};
+    function ev(index, fallback){
+      if(Array.isArray(evidence)) return evidence[index] || fallback;
+      var vals = Object.keys(evidence).map(function(k){return evidence[k];});
+      return vals[index] || fallback;
+    }
+    function find(rx){ return raw.find(function(d){ return rx.test(String(d.id||d.label||"")); }) || {}; }
+    var specs = [
+      {id:"early", label:"早期人族候选", latin:"Sahelanthropus 等", source:find(/sahel|early/i), start:Lec.K.homininEarliestYearsAgo, end:Lec.K.homininEarliestYearsAgo, disputed:true, evidence:ev(1,"有支持但仍争议"), note:"接近早期记录的时间量级；分类位置与连接关系仍有争议。"},
+      {id:"afarensis", label:"南方古猿分支", latin:"Australopithecus afarensis", source:find(/afarensis|australo/i), disputed:false, evidence:ev(0,"较确定"), note:"露西是这一分支中的著名化石个体，不是全人类唯一的“祖母”。"},
+      {id:"paranthropus", label:"傍人分支", latin:"Paranthropus", source:find(/paranthropus/i), disputed:false, evidence:ev(0,"较确定"), note:"这组近亲长期存在后终止，并非通往现代人的必经台阶。"},
+      {id:"homo", label:"早期人属分支", latin:"早期 Homo", source:find(/early.?homo|genus.?homo/i), start:Lec.K.genusHomoEarliestYearsAgo, disputed:true, evidence:ev(1,"有支持但仍争议"), note:"最早记录的归属和人属内部连接仍会随新证据调整。"},
+      {id:"neanderthals", label:"尼安德特人分支", latin:"Homo neanderthalensis", source:find(/neander/i), disputed:false, evidence:ev(0,"较确定"), note:"它与早期智人在时间上重叠，是近亲分支，不是前一格。"},
+      {id:"sapiens", label:"智人分支", latin:"Homo sapiens", source:find(/sapiens/i), start:Lec.K.homoSapiensEarliestYearsAgo, end:1, disputed:false, evidence:ev(0,"较确定"), note:"智人只是延续至今的一支，并非其他支系预定的终点。"}
+    ].map(function(d){
+      d.start = finiteOr(d.source.startYearsAgo, finiteOr(d.start, 1));
+      d.end = finiteOr(d.source.endYearsAgo, finiteOr(d.end, d.start));
+      d.evidence = d.source.evidenceLabel || d.evidence;
+      d.coexistenceIds = d.source.coexistenceIds || [];
+      return d;
+    });
+    var lit = new Set(), focused = null;
+    var svg = d3.select("#tree"), W=1080, H=620, left=62, right=1015, axisY=555;
+    svg.attr("viewBox","0 0 "+W+" "+H);
+    var maxAge=finiteOr(Lec.K.homininEarliestYearsAgo,7000000), minAge=1;
+    function frac(v){
+      v=Lec.P.clamp(finiteOr(v,minAge),minAge,maxAge);
+      var q=Lec.P.logTimelineFraction(v,maxAge,minAge);
+      if(!Number.isFinite(q)) q=(Math.log(maxAge)-Math.log(v))/(Math.log(maxAge)-Math.log(minAge));
+      return Lec.P.clamp(q,0,1);
+    }
+    function x(v){return left+frac(v)*(right-left)}
+    var ys=[150,225,300,375,450,505];
+    var roots=[x(6200000),x(4800000),x(2600000),x(2500000),x(650000),x(520000)];
+    var g=svg.append("g");
+    g.append("path").attr("d","M"+left+",330 C240,330 300,335 "+x(2500000)+",360").attr("class","branch").style("stroke-linecap","round");
+    g.append("path").attr("d","M"+left+",330 C"+(left+45)+",330 "+(left+70)+",330 "+(left+95)+",330").attr("class","branch").style("mask-image","linear-gradient(to left,black,transparent)");
+    var bands=g.selectAll("rect.co-band").data(specs).join("rect").attr("class","co-band").attr("x",function(d){return x(d.start)}).attr("y",function(d,i){return ys[i]-12}).attr("width",function(d){return Math.max(8,x(d.end)-x(d.start))}).attr("height",24).attr("rx",12);
+    var paths=g.selectAll("path.item").data(specs).join("path").attr("class",function(d){return "branch item "+(d.disputed?"disputed":"")}).attr("d",function(d,i){var ex=x(d.end);return "M"+roots[i]+",330 C"+(roots[i]+45)+",330 "+Math.max(roots[i]+60,ex-90)+","+ys[i]+" "+ex+","+ys[i]});
+    var ends=g.selectAll("g.endpoint").data(specs).join("g").attr("class","endpoint it").attr("transform",function(d,i){return "translate("+x(d.end)+","+ys[i]+")"}).attr("tabindex",0).attr("role","button").attr("aria-pressed","false").attr("aria-label",function(d){return "点亮"+d.label}).on("click",function(e,d){activate(d,this)}).on("keydown",function(e,d){if(e.key==="Enter"||e.key===" "){e.preventDefault();activate(d,this)}});
+    ends.append("circle").attr("r",10);
+    ends.append("text").attr("x",function(d){return x(d.end)>870?-16:16}).attr("y",5).attr("text-anchor",function(d){return x(d.end)>870?"end":"start"}).text(function(d){return d.label});
+    var axis=svg.append("g").attr("class","axis").attr("transform","translate(0,"+axisY+")");
+    axis.append("line").attr("x1",left).attr("x2",right).attr("y1",0).attr("y2",0);
+    [{v:maxAge,t:"约700万年前"},{v:1000000,t:"100万年前"},{v:100000,t:"10万年前"},{v:1,t:"今天"}].forEach(function(t){axis.append("line").attr("x1",x(t.v)).attr("x2",x(t.v)).attr("y2",8);axis.append("text").attr("x",x(t.v)).attr("y",27).attr("text-anchor",t.v===maxAge?"start":t.v===1?"end":"middle").text(t.t)});
+    var msg=svg.append("text").attr("class","final-msg").attr("x",540).attr("y",92).attr("text-anchor","middle").text("灌木，不是梯子");
+    function number(n){return Lec.P.formatNumber(n)}
+    function age(n){return n>=1000000?number(n/1000000)+" 百万年前":number(n/10000)+" 万年前"}
+    function activate(d,node){
+      lit.add(d.id); focused=d.id;
+      paths.classed("lit",function(p){return lit.has(p.id)});
+      ends.classed("lit",function(p){return lit.has(p.id)}).attr("aria-pressed",function(p){return lit.has(p.id)?"true":"false"});
+      bands.classed("show",function(p){if(p.id===d.id)return false;return Math.min(p.start,d.start)>=Math.max(p.end,d.end)});
+      var range=d.id==="sapiens"?age(d.start)+"至今":d.start===d.end?age(d.start)+"附近":age(d.start)+"—"+age(d.end);
+      document.getElementById("detail").innerHTML='<h2>'+d.label+'</h2><div class="latin">'+d.latin+'</div><div class="range body-copy">'+range+'</div><div class="evidence">'+d.evidence+'</div><p class="body-copy">'+d.note+'</p>';
+      document.getElementById("count").textContent=lit.size+"/"+specs.length;
+      document.getElementById("live").textContent="已点亮"+d.label+"，共"+lit.size+"条分支";
+      if(lit.size===specs.length){msg.classed("show",true);g.select("path:not(.item)").style("opacity",.18)}
+    }
+  </script>
+</body>
+</html>

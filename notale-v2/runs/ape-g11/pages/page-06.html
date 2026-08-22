@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  #stage{padding:24px 36px 26px;gap:14px}
+  .kicker{color:var(--primary-bright);font:700 var(--fs-label)/1.4 var(--font-mono);letter-spacing:.12em}
+  .hero{display:flex;gap:18px;min-height:0}
+  .lab{position:relative;flex:1.55;min-width:0;overflow:hidden;border:2px solid var(--line);border-radius:var(--r-md);background:linear-gradient(180deg,rgba(53,194,178,.05),transparent),var(--panel-deep)}
+  #scene{position:absolute;inset:0;width:100%;height:100%}
+  .model-head{position:absolute;top:14px;width:50%;text-align:center;pointer-events:none}
+  .model-head.left{left:0}.model-head.right{right:0}
+  .model-head strong{display:block;font-size:var(--fs-h2)}
+  .model-head span{font-size:var(--fs-label);color:var(--muted)}
+  .mid-rule{position:absolute;top:68px;bottom:22px;left:50%;width:1px;background:var(--line-soft)}
+  .scene-legend{position:absolute;left:16px;bottom:12px}
+  .console{flex:.75;min-width:0;padding:18px 20px;display:flex;flex-direction:column;gap:10px}
+  .control-block{padding:10px 0;border-bottom:1px solid var(--line-soft)}
+  .control-block label{display:flex;justify-content:space-between;font-size:var(--fs-label);font-weight:700}
+  .ends{display:flex;justify-content:space-between;color:var(--muted);font-size:var(--fs-label)}
+  input[type=range]{width:100%;height:26px}
+  .status-row{display:flex;gap:8px;flex-wrap:wrap}
+  .lamp{padding:5px 9px;border:1px solid var(--line);border-radius:999px;color:var(--faint);font-size:var(--fs-label)}
+  .lamp.on{border-color:var(--primary);color:var(--primary-bright);background:var(--primary-soft)}
+  .feedback{min-height:52px;padding:10px 12px;border-left:4px solid var(--accent);background:var(--accent-soft);font-size:var(--fs-sec);line-height:var(--lh-text)}
+  .score{font:720 var(--fs-h2)/1 var(--font-mono);color:var(--accent)}
+  .conclusion{display:none;padding:10px 12px;border:1px solid var(--primary);border-radius:var(--r-sm);background:var(--primary-soft);font-size:var(--fs-sec);line-height:var(--lh-text)}
+  .conclusion.show{display:block}
+  .compare-wrap{min-height:0}
+  .k-comparison{height:100%;--compare-cols:minmax(155px,.55fr) repeat(2,minmax(0,1fr))}
+  .k-comparison .hdr,.k-comparison .dim,.k-comparison .cell{padding:7px 14px}
+  .k-comparison .cell{font-size:var(--fs-sec);line-height:1.35}
+  .take{display:flex;align-items:center;gap:16px;padding:10px 16px;border-left:7px solid var(--accent);background:linear-gradient(90deg,var(--accent-soft),transparent 78%);font-size:var(--fs-lead);font-weight:700;line-height:1.4}
+  @media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;transition:none!important}}
+</style>
+</head>
+<body data-page="06" data-total="48">
+<div id="stage">
+  <header class="row between items-end" style="height:72px">
+    <div><div class="kicker">BODY MECHANICS · 06</div><h1>站直不等于会走</h1></div>
+    <div class="hand-scale">同一身体尺度 · 正面简化模型</div>
+  </header>
+
+  <main class="hero min0" style="flex:1">
+    <section class="lab science-grid min0" aria-label="两种下肢结构的三维正面对照">
+      <canvas id="scene" aria-hidden="true"></canvas>
+      <div class="model-head left"><strong>只把身体竖起来</strong><span>锁定参照</span></div>
+      <div class="model-head right"><strong>结构协同</strong><span>随控制台实时改变</span></div>
+      <div class="mid-rule"></div>
+      <div class="legend scene-legend"><span><i class="legend-key is-current"></i>重心线</span><span><i class="legend-key"></i>支撑区 / 受力链</span></div>
+    </section>
+
+    <aside class="panel console min0" aria-label="结构协同控制台">
+      <div class="row between items-center"><h2>协同控制台</h2><span id="score" class="score" aria-live="polite">0/3</span></div>
+      <div class="fs-sec muted">调节右侧模型，比较重心线与单脚支撑区。</div>
+      <div class="control-block">
+        <label for="pelvis"><span>骨盆宽度</span><span id="pelvisState">较窄</span></label>
+        <input id="pelvis" type="range" min="0" max="100" value="10" step="1" aria-valuetext="较窄">
+        <div class="ends"><span>较窄</span><span>较宽</span></div>
+      </div>
+      <div class="control-block">
+        <label for="knee"><span>膝内收</span><span id="kneeState">膝外移</span></label>
+        <input id="knee" type="range" min="0" max="100" value="10" step="1" aria-valuetext="膝外移">
+        <div class="ends"><span>膝外移</span><span>膝靠近中线</span></div>
+      </div>
+      <div class="status-row" aria-label="协同状态">
+        <span id="lPelvis" class="lamp">骨盆配合</span><span id="lKnee" class="lamp">膝线配合</span><span id="lFoot" class="lamp">重心落足</span>
+      </div>
+      <div id="feedback" class="feedback" aria-live="polite">骨盆仍难把躯干带到支撑腿上方。</div>
+      <div id="conclusion" class="conclusion">重心进入支撑区：骨盆—膝—足形成连续受力链。</div>
+      <button id="reset" type="button">重置比较</button>
+    </aside>
+  </main>
+
+  <section class="compare-wrap min0" style="height:238px">
+    <div class="k-comparison" aria-label="四个维度逐行比较">
+      <div class="crow"><div class="hdr">比较维度</div><div class="hdr">只把身体竖起来</div><div class="hdr">协同的两足结构</div></div>
+      <div class="crow"><div class="dim">骨盆</div><div class="cell">较窄长，单脚支撑时躯干易侧移</div><div class="cell diff">较短宽，帮助躯干稳定在支撑腿上方</div></div><div class="rowline"></div>
+      <div class="crow"><div class="dim">股骨与膝</div><div class="cell">股骨近乎直下，膝离身体中线较远</div><div class="cell diff">股骨向内倾，膝更接近重心线</div></div><div class="rowline"></div>
+      <div class="crow"><div class="dim">足部</div><div class="cell">支撑区未与上方结构配合</div><div class="cell diff">足跟、足弓与前向大趾形成稳定支撑</div></div><div class="rowline"></div>
+      <div class="crow"><div class="dim">单脚支撑时</div><div class="cell">重心线落到足底支撑区之外</div><div class="cell diff">重心线穿过膝附近并落入足底支撑区</div></div>
+    </div>
+  </section>
+
+  <footer class="take" style="height:68px">两足行走不是把原有身体旋转成竖直姿势，而是骨盆、股骨和足部共同重组，让重心能稳定越过单脚支撑区。</footer>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script src="assets/lib/three.min.js"></script>
+<script>
+(function(){
+  Deck.init({index:6,total:48});
+  var canvas=document.getElementById('scene'), host=canvas.parentElement;
+  var renderer=new THREE.WebGLRenderer({canvas:canvas,antialias:true,alpha:true});
+  renderer.setPixelRatio(Math.min(devicePixelRatio,2)); renderer.outputColorSpace=THREE.SRGBColorSpace;
+  var scene=new THREE.Scene();
+  var camera=new THREE.OrthographicCamera(-2.2,2.2,2.4,-2.4,.1,100); camera.position.set(0,1.2,8); camera.lookAt(0,.15,0);
+  scene.add(new THREE.HemisphereLight(0xE8F1F7,0x07111F,1.7));
+  var key=new THREE.DirectionalLight(0xffffff,2.1); key.position.set(2,5,6); scene.add(key);
+  var boneMat=new THREE.MeshStandardMaterial({color:0xd8e2df,roughness:.58,metalness:.08,transparent:true,opacity:.88});
+  var mutedMat=new THREE.MeshStandardMaterial({color:0x7692a4,roughness:.7,transparent:true,opacity:.58});
+  var tealMat=new THREE.MeshStandardMaterial({color:0x35c2b2,emissive:0x0a3b36,roughness:.45});
+  var orangeMat=new THREE.MeshStandardMaterial({color:0xffb547,emissive:0x5a2d00,roughness:.4});
+  function sphere(r,mat){return new THREE.Mesh(new THREE.SphereGeometry(r,20,14),mat)}
+  function rod(a,b,r,mat){var d=new THREE.Vector3().subVectors(b,a),m=new THREE.Mesh(new THREE.CylinderGeometry(r,r,d.length(),14),mat);m.position.copy(a).add(b).multiplyScalar(.5);m.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),d.clone().normalize());return m}
+  function makeModel(cx,reference){var g=new THREE.Group();g.position.x=cx;scene.add(g);var parts={g:g,reference:reference,joints:[],rods:[],support:null,line:null,pulse:null};
+    for(var i=0;i<7;i++){var s=sphere(i<2?.105:.075,reference?mutedMat:boneMat);g.add(s);parts.joints.push(s)}
+    for(i=0;i<5;i++){var r=rod(new THREE.Vector3(),new THREE.Vector3(0,1,0),.052,reference?mutedMat:boneMat);g.add(r);parts.rods.push(r)}
+    parts.support=new THREE.Mesh(new THREE.BoxGeometry(.48,.055,.58),new THREE.MeshStandardMaterial({color:0x35c2b2,transparent:true,opacity:.28,emissive:0x123b38}));g.add(parts.support);
+    parts.line=new THREE.Mesh(new THREE.CylinderGeometry(.018,.018,2.55,10),orangeMat);g.add(parts.line);
+    parts.pulse=new THREE.Mesh(new THREE.RingGeometry(.11,.15,28),new THREE.MeshBasicMaterial({color:0xffb547,transparent:true,opacity:0,side:THREE.DoubleSide}));parts.pulse.rotation.x=-Math.PI/2;g.add(parts.pulse);return parts}
+  var left=makeModel(-1.08,true), right=makeModel(1.08,false), state={p:10,k:10,shift:0},won=false,stopAnim=null;
+  function setRod(mesh,a,b){var d=new THREE.Vector3().subVectors(b,a);mesh.position.copy(a).add(b).multiplyScalar(.5);mesh.scale.set(1,d.length(),1);mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),d.clone().normalize())}
+  function pose(m,p,k,shift){var wide=.24+.24*p/100, hipX=.05+.34*p/100+shift, kneeX=.48-.30*k/100, footX=.46;
+    if(m.reference){wide=.24;hipX=.03;kneeX=.44;footX=.46}
+    var pts=[new THREE.Vector3(-wide,1.25,0),new THREE.Vector3(wide,1.25,0),new THREE.Vector3(hipX,.84,0),new THREE.Vector3(kneeX,.06,0),new THREE.Vector3(footX,-.78,0),new THREE.Vector3(footX+.12,-.88,.18),new THREE.Vector3(footX-.13,-.88,-.12)];
+    pts.forEach(function(v,i){m.joints[i].position.copy(v)});setRod(m.rods[0],pts[0],pts[1]);setRod(m.rods[1],pts[1],pts[2]);setRod(m.rods[2],pts[2],pts[3]);setRod(m.rods[3],pts[3],pts[4]);setRod(m.rods[4],pts[4],pts[5]);
+    m.support.position.set(footX,-.91,0);var comX=m.reference?0:.08+.34*p/100+shift;m.line.position.set(comX,.35,.05);m.pulse.position.set(footX,-.87,0);return Math.abs(comX-footX)<=.23
+  }
+  function render(){pose(left,10,10,0);var onFoot=pose(right,state.p,state.k,state.shift);renderer.render(scene,camera);return onFoot}
+  function resize(){var w=host.offsetWidth,h=host.offsetHeight;renderer.setSize(w,h,false);camera.left=-2.2;camera.right=2.2;camera.top=2.4;camera.bottom=-2.4;camera.updateProjectionMatrix();render()}
+  Deck.onResize(resize);resize();
+  var pEl=document.getElementById('pelvis'),kEl=document.getElementById('knee');
+  function update(){state.p=+pEl.value;state.k=+kEl.value;var pc=state.p>=60,kc=state.k>=60,fc=pc&&kc&&render();var n=(pc?1:0)+(kc?1:0)+(fc?1:0);
+    document.getElementById('score').textContent=n+'/3';document.getElementById('lPelvis').classList.toggle('on',pc);document.getElementById('lKnee').classList.toggle('on',kc);document.getElementById('lFoot').classList.toggle('on',fc);
+    var ps=state.p<40?'较窄':state.p<70?'正在配合':'较宽',ks=state.k<40?'膝外移':state.k<70?'正在靠近':'膝靠近中线';document.getElementById('pelvisState').textContent=ps;document.getElementById('kneeState').textContent=ks;pEl.setAttribute('aria-valuetext',ps);kEl.setAttribute('aria-valuetext',ks);
+    var msg;if((state.p>=90&&state.k<40)||(state.k>=90&&state.p<40))msg='单项改变不足以形成稳定链条。';else if(!pc)msg='骨盆仍难把躯干带到支撑腿上方。';else if(!kc)msg='膝仍离重心线太远。';else msg='重心进入支撑区。';document.getElementById('feedback').textContent=msg;
+    if(fc&&!won){won=true;document.getElementById('conclusion').classList.add('show');successMotion()}else if(!fc){won=false;document.getElementById('conclusion').classList.remove('show')}
+  }
+  function successMotion(){if(stopAnim)stopAnim();if(Deck.reduced()){state.shift=.02;right.pulse.material.opacity=.7;right.rods.forEach(function(r){r.material=tealMat});render();return}var elapsed=0;stopAnim=Deck.loop(function(t,dt){elapsed+=dt;var q=Math.min(1,elapsed/.9),wave=Math.sin(q*Math.PI);state.shift=.05*wave;right.pulse.material.opacity=.85*(1-q);right.pulse.scale.setScalar(1+2*q);right.rods.forEach(function(r){r.material=tealMat});render();if(q>=1){state.shift=0;stopAnim();stopAnim=null;render()}},{still:1})}
+  pEl.addEventListener('input',update);kEl.addEventListener('input',update);document.getElementById('reset').addEventListener('click',function(){pEl.value=10;kEl.value=10;state.shift=0;right.rods.forEach(function(r){r.material=boneMat});right.pulse.material.opacity=0;update();pEl.focus()});
+  update();
+})();
+</script>
+</body>
+</html>

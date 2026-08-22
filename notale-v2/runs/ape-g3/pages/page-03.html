@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>七百万年挤在一把尺上，航天史只占最后一道刻痕</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    html{top:0!important;right:auto!important;bottom:auto!important;left:0!important;width:1600px!important;height:900px!important}
+    .lec-header>div,.lec-footer>div{display:flex;align-items:center;gap:24px;width:100%;min-width:0}
+    .lec-header>div h1{flex:1;min-width:0}
+    .lec-header>div p,.lec-footer>div p{margin:0}
+    #stage{width:var(--content-w);height:var(--content-h)}
+    .time-page{height:100%;display:grid;grid-template-rows:58px 58px 1fr 76px;gap:12px;min-height:0}
+    .intro{display:flex;align-items:start;justify-content:space-between;gap:32px}
+    .intro p{margin:0;max-width:900px}
+    .metrics{display:flex;gap:12px;align-items:center;white-space:nowrap}
+    .metric{font-size:var(--fs-label);color:var(--muted)}
+    .metric output{margin-left:6px;min-width:108px;padding:4px 10px;font-size:var(--fs-sec)}
+    .k-process.scale-scenes{height:58px;gap:30px}
+    .k-process.scale-scenes>*{padding:8px 12px 8px 46px;display:flex;align-items:center;border-radius:var(--radius-sm);font-size:var(--fs-label);line-height:var(--lh-label)}
+    .k-process.scale-scenes>*::before{position:absolute;left:10px;top:13px;width:28px;height:28px;margin:0}
+    .k-process.scale-scenes>:not(:last-child)::after{left:calc(100% + 2px)}
+    .chart-shell{position:relative;min-height:0;border-top:1px solid var(--line);border-bottom:1px solid var(--line);background:rgb(255 255 255 / 58%)}
+    #timeline{display:block;width:100%;height:100%}
+    .control-wrap{display:grid;grid-template-columns:120px 1fr 110px;align-items:center;gap:16px}
+    .control-wrap input{width:100%;accent-color:var(--accent)}
+    .end-label{font-size:var(--fs-label);font-weight:700;color:var(--muted)}
+    .end-label:last-child{text-align:right;color:var(--accent-strong)}
+    .axis text{font-size:var(--fs-tick);fill:var(--muted)}
+    .axis path,.axis line{stroke:var(--line-strong)}
+    .event-label{font-size:var(--fs-label);font-weight:700;fill:var(--text)}
+    .event-detail{font-size:var(--fs-sec);fill:var(--muted)}
+    .window-label{font-size:var(--fs-label);fill:var(--muted)}
+    .cluster-text{font-size:var(--fs-label);font-weight:750;fill:#fff}
+  </style>
+</head>
+<body data-page="03" data-total="48">
+  <div id="stage">
+    <main class="time-page" aria-label="动态嵌套时间轴">
+      <div class="intro min0">
+        <p class="fs-lead">拖动时间压缩尺：事件顺序不变，只有观察窗口逐层收窄。</p>
+        <div class="metrics" aria-live="polite">
+          <span class="metric">当前窗口占全尺度 <output id="share">—</output></span>
+          <span class="metric">放大 <output id="zoom">—</output></span>
+        </div>
+      </div>
+      <div class="k-process scale-scenes" aria-label="四层时间窗口">
+        <div data-state="current">全尺度</div>
+        <div>人类近期</div>
+        <div>农业近期</div>
+        <div>航天近期</div>
+      </div>
+      <figure class="chart-shell min0" style="margin:0">
+        <svg id="timeline" role="img" aria-labelledby="timeline-title timeline-desc">
+          <title id="timeline-title">从共同祖先年代区间到现在的嵌套时间轴</title>
+          <desc id="timeline-desc">拖动压缩尺会连续缩短时间窗口，智人、农业、载人航天和登月事件逐步从末端簇中展开。</desc>
+        </svg>
+      </figure>
+      <div class="control-wrap ctl">
+        <span class="end-label">漫长 · 约七百万年</span>
+        <input id="scale" type="range" min="0" max="3" step="0.01" value="0" aria-label="时间压缩尺" aria-valuetext="全尺度">
+        <span class="end-label">近期 · 航天时代</span>
+      </div>
+    </main>
+  </div>
+  <script src="assets/lib/d3.min.js"></script>
+  <script src="assets/base.js"></script>
+  <script src="assets/lec.js"></script>
+  <script>
+    Lec.mount({
+      index: 3,
+      kicker: 'TIME AT UNEQUAL SCALE',
+      title: '七百万年挤在一把尺上，航天史只占最后一道刻痕',
+      take: '人类演化、农业和航天史在时间轴上占据极不相称的长度'
+    });
+    Deck.init({ index: 3, total: 48 });
+
+    const nowYear = new Date().getFullYear();
+    const full = Lec.K.chronology.apeHumanSplitYearsAgo;
+    const splitNear = full * 6 / 7;
+    const sapiens = Lec.K.chronology.homoSapiensYearsAgo;
+    const agriculture = Lec.K.chronology.agricultureYearsAgo;
+    const flightAgo = nowYear - Lec.K.missions.gagarinFlightYear;
+    const moonAgo = nowYear - Lec.K.missions.apolloElevenLandingYear;
+    const spans = [full, sapiens, agriculture, Math.max(flightAgo + 4, 70)];
+    const sceneNames = ['全尺度','人类近期','农业近期','航天近期'];
+    const events = [
+      {id:'sapiens', years:sapiens, label:'智人出现', detail:'约 30 万年前', tone:'warm'},
+      {id:'agri', years:agriculture, label:'农业扩展开始', detail:'约 1.2 万年前起 · 并非全球同步', tone:'warm'},
+      {id:'flight', years:flightAgo, label:'首次载人航天', detail:Lec.K.missions.gagarinFlightYear + ' 年', tone:'cool'},
+      {id:'moon', years:moonAgo, label:'首次载人登月', detail:Lec.K.missions.apolloElevenLandingYear + ' 年', tone:'cool'},
+      {id:'now', years:0, label:'现在', detail:'', tone:'cool'}
+    ];
+    const slider = document.getElementById('scale');
+    const svg = d3.select('#timeline');
+    const shareOut = document.getElementById('share');
+    const zoomOut = document.getElementById('zoom');
+
+    function spanAt(v){
+      const i=Math.min(2,Math.floor(v));
+      const t=v-i;
+      return Math.exp(d3.interpolateNumber(Math.log(spans[i]),Math.log(spans[i+1]))(t));
+    }
+    function fmtYears(v){
+      if(v===0) return '现在';
+      if(v>=1000000) return Lec.P.formatNumber(v/1000000, v%1000000===0?0:1)+' 百万年';
+      if(v>=10000) return Lec.P.formatNumber(v/10000, v%10000===0?0:1)+' 万年';
+      return Lec.P.formatNumber(v,0)+' 年';
+    }
+    function draw(){
+      const value=Number(slider.value), currentSpan=spanAt(value);
+      const scene=Math.round(value);
+      document.querySelectorAll('.scale-scenes > *').forEach((el,i)=>el.dataset.state=i===scene?'current':(i<scene?'done':''));
+      slider.setAttribute('aria-valuetext',sceneNames[scene]+'，窗口 '+fmtYears(currentSpan));
+      shareOut.value=Lec.P.formatNumber(Lec.P.percent(currentSpan,full), currentSpan/full<0.01?3:1)+'%';
+      zoomOut.value=Lec.P.formatNumber(full/currentSpan, full/currentSpan<10?1:0)+'×';
+
+      const node=svg.node(), W=node.clientWidth||1408, H=node.clientHeight||392;
+      svg.attr('viewBox',`0 0 ${W} ${H}`); svg.selectAll(':scope > g').remove();
+      const left=54,right=W-42, axisY=150;
+      const x=d3.scaleLinear().domain([currentSpan,0]).range([left,right]);
+      const g=svg.append('g');
+      const tickCount=Math.max(3,Math.min(7,Math.floor((right-left)/190)));
+      g.append('g').attr('class','axis').attr('transform',`translate(0,${axisY})`)
+        .call(d3.axisBottom(x).ticks(tickCount).tickFormat(fmtYears).tickSize(10));
+      g.append('path').attr('d',`M${left},${axisY}H${right}`).attr('stroke','var(--text)').attr('stroke-width',3);
+
+      if(currentSpan>=splitNear){
+        const x1=x(Math.min(full,currentSpan)), x2=x(splitNear);
+        g.append('rect').attr('x',x1).attr('y',axisY-12).attr('width',Math.max(2,x2-x1)).attr('height',24)
+          .attr('fill','var(--warning-soft)').attr('stroke','var(--warning)').attr('stroke-width',2);
+        if(x2-x1>180) g.append('text').attr('class','event-label').attr('x',(x1+x2)/2).attr('y',axisY-25).attr('text-anchor','middle').text('共同祖先年代区间');
+        if(x2-x1>270) g.append('text').attr('class','event-detail').attr('x',(x1+x2)/2).attr('y',axisY-47).attr('text-anchor','middle').text('约 600 万—700 万年前');
+      }
+
+      const visible=events.filter(d=>d.years<=currentSpan);
+      const clusters=[];
+      visible.forEach(d=>{
+        const px=x(d.years), last=clusters[clusters.length-1];
+        if(last && px-last.mean<104){last.items.push(d);last.mean=d3.mean(last.items,e=>x(e.years));}
+        else clusters.push({items:[d],mean:px});
+      });
+      clusters.forEach((c,ci)=>{
+        if(c.items.length>1){
+          c.items.forEach(d=>g.append('line').attr('x1',x(d.years)).attr('x2',x(d.years)).attr('y1',axisY-8).attr('y2',axisY-25).attr('stroke',d.tone==='cool'?'var(--accent)':'var(--warning)'));
+          g.append('rect').attr('x',c.mean-34).attr('y',axisY-64).attr('width',68).attr('height',30).attr('rx',15).attr('fill','var(--accent-strong)');
+          g.append('text').attr('class','cluster-text').attr('x',c.mean).attr('y',axisY-44).attr('text-anchor','middle').text('末端 '+c.items.length+' 项');
+        }else{
+          const d=c.items[0], px=x(d.years), upper=ci%2===0, ly=upper?54:224;
+          g.append('line').attr('x1',px).attr('x2',px).attr('y1',axisY).attr('y2',upper?ly+38:ly-18).attr('stroke',d.tone==='cool'?'var(--accent)':'var(--warning)').attr('stroke-width',2);
+          g.append('circle').attr('cx',px).attr('cy',axisY).attr('r',6).attr('fill',d.tone==='cool'?'var(--accent)':'var(--warning)');
+          const anchor=px>right-80?'end':px<left+80?'start':'middle';
+          g.append('text').attr('class','event-label').attr('x',px).attr('y',ly).attr('text-anchor',anchor).text(d.label);
+          if(d.detail) g.append('text').attr('class','event-detail').attr('x',px).attr('y',ly+23).attr('text-anchor',anchor).text(d.detail);
+        }
+      });
+
+      const wy=H-92, rowH=20;
+      spans.forEach((s,i)=>{
+        const y=wy+i*rowH, ratio=Math.min(1,currentSpan/s), childW=(right-left)*ratio;
+        g.append('rect').attr('x',left).attr('y',y).attr('width',right-left).attr('height',12).attr('fill','none').attr('stroke','var(--line-strong)');
+        g.append('rect').attr('x',right-Math.max(2,childW)).attr('y',y).attr('width',Math.max(2,childW)).attr('height',12).attr('fill',i===scene?'var(--accent)':'var(--accent-soft)').attr('stroke','var(--accent)');
+        g.append('text').attr('class','window-label').attr('x',left).attr('y',y-3).text(sceneNames[i]);
+      });
+    }
+    slider.addEventListener('input',draw);
+    slider.addEventListener('change',()=>{slider.value=String(Math.round(Number(slider.value)));draw();});
+    draw();
+  </script>
+</body>
+</html>

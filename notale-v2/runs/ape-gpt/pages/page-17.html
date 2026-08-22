@@ -1,0 +1,305 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  .mission-game{display:block;height:100%;min-width:0;min-height:0}
+  .lec-header__inner{display:flex;width:100%;min-width:0;align-items:center;justify-content:space-between;gap:var(--sp-4)}
+  .lec-header__identity,.lec-header__heading{display:flex;min-width:0;align-items:baseline;gap:var(--sp-3)}
+  .lec-header__title{overflow:hidden;font-size:var(--fs-body-lg);line-height:var(--lh-heading);text-overflow:ellipsis;white-space:nowrap}
+  .lec-header__kicker{flex:0 0 auto}
+  .lec-footer__inner{display:flex;width:100%;min-width:0;align-items:center;justify-content:space-between;gap:var(--sp-4)}
+  .lec-footer__take{display:flex;min-width:0;gap:var(--sp-2)}
+  .mission-board{display:grid;grid-template-rows:auto minmax(0,1fr);gap:var(--sp-3);overflow:hidden}
+  .mission-strip{display:flex;align-items:center;justify-content:space-between;gap:var(--sp-4)}
+  .mission-copy{display:flex;align-items:center;gap:var(--sp-3);min-width:0}
+  .mission-copy p{font-size:var(--fs-body);line-height:var(--lh-body);color:var(--text-muted)}
+  .budget-pool{display:flex;align-items:center;gap:var(--sp-2);flex:0 0 auto}
+  .budget-dots{display:flex;gap:var(--sp-1)}
+  .budget-dot{width:18px;height:18px;border:2px solid var(--accent);border-radius:var(--radius-sm);background:var(--accent-soft)}
+  .budget-dot.used{border-color:var(--line-strong);background:var(--surface-1)}
+  .allocation-board{position:relative;display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:var(--sp-2);min-width:0;min-height:0;padding-top:72px;outline:none}
+  .allocation-board:focus-visible{box-shadow:0 0 0 4px var(--focus);border-radius:var(--radius-md)}
+  .drag-card{position:absolute;top:4px;left:50%;z-index:5;display:flex;width:150px;height:54px;align-items:center;justify-content:center;border:1px solid var(--accent);border-radius:var(--radius-sm);background:var(--accent);color:var(--accent-ink);font-size:var(--fs-label);font-weight:750;line-height:1.35;transform:translateX(-50%);cursor:grab;touch-action:none;user-select:none}
+  .drag-card.dragging{cursor:grabbing}
+  .drag-card.hidden{visibility:hidden}
+  .module-zone{position:relative;display:flex;min-width:0;min-height:0;padding:var(--sp-3);flex-direction:column;align-items:center;justify-content:center;gap:var(--sp-3);border:1px solid var(--line);border-radius:var(--radius-md);background:var(--surface-1);text-align:center}
+  .module-zone.current{border-color:var(--focus);background:var(--surface-2)}
+  .module-zone.assigned{border-color:var(--accent);background:var(--accent-soft)}
+  .module-icon{display:grid;width:58px;height:58px;place-items:center;border:1px solid var(--line-strong);border-radius:var(--radius-pill);color:var(--accent-strong);font-family:var(--font-mono);font-size:var(--fs-h3);font-weight:760}
+  .module-zone strong{font-size:var(--fs-body);line-height:1.35}
+  .module-zone span:last-child{color:var(--text-muted);font-size:var(--fs-label);line-height:1.4}
+  .assigned-mark{position:absolute;top:var(--sp-2);right:var(--sp-2);width:16px;height:16px;border-radius:var(--radius-pill);background:var(--positive);visibility:hidden}
+  .module-zone.assigned .assigned-mark{visibility:visible}
+  .metric-card{display:grid;grid-template-rows:auto 1fr;gap:var(--sp-3);overflow:hidden}
+  .metric-card h3,.result-card h3{font-size:var(--fs-body-lg)}
+  .metric-pair{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--sp-3);align-items:stretch}
+  .metric{display:flex;min-width:0;flex-direction:column;justify-content:center;gap:var(--sp-1)}
+  .metric-label{color:var(--text-muted);font-size:var(--fs-label);line-height:1.4}
+  .metric-value{color:var(--accent-strong);font-family:var(--font-mono);font-size:30px;font-weight:720;line-height:1.2;white-space:nowrap}
+  .result-card{display:grid;grid-template-rows:auto auto minmax(0,1fr) auto;gap:var(--sp-2);overflow:hidden}
+  .event-line{color:var(--warning);font-size:var(--fs-label);line-height:1.4;min-height:24px}
+  .result-line{font-size:var(--fs-body);line-height:var(--lh-body);min-height:52px}
+  .reason-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:var(--sp-2);align-items:end}
+  .reason-field{min-width:0}
+  .reason-field label{display:block;margin-bottom:var(--sp-1)}
+  .reason-field label.sr-only{margin:0}
+  .reason-field textarea{min-height:58px;height:58px;padding:var(--sp-2);resize:none;font-size:var(--fs-body);line-height:1.4}
+  .reason-row button{min-width:132px}
+  @media (prefers-reduced-motion:no-preference){.module-zone,.drag-card{transition:border-color 140ms ease,background 140ms ease,transform 140ms ease}}
+</style>
+</head>
+<body data-page="17" data-total="18">
+<div id="stage">
+  <mission-design-game class="mission-game">
+    <div class="stage-cards full">
+      <section class="panel mission-board min0" aria-labelledby="mission-name">
+        <div class="mission-strip">
+          <div class="mission-copy">
+            <span class="badge" id="mission-name">任务抽取中</span>
+            <p id="mission-brief">把强化卡放入最需要加固的系统模块。</p>
+          </div>
+          <div class="budget-pool" aria-label="剩余强化卡">
+            <span class="label">有限预算</span>
+            <span class="budget-dots" id="budget-dots" aria-hidden="true"></span>
+          </div>
+        </div>
+        <div class="allocation-board no-pan" id="allocation-board" role="application" tabindex="0" aria-label="系统模块分配板。左右方向键选择模块，回车分配或收回强化卡。" aria-activedescendant="module-propulsion">
+          <div class="drag-card" id="drag-card">拖动一张强化卡</div>
+          <div class="module-zone current" id="module-propulsion" data-key="propulsion"><i class="assigned-mark"></i><span class="module-icon" aria-hidden="true">↟</span><strong>推进</strong><span>质量余量</span></div>
+          <div class="module-zone" id="module-life" data-key="life"><i class="assigned-mark"></i><span class="module-icon" aria-hidden="true">◌</span><strong>生命保障</strong><span>资源持续</span></div>
+          <div class="module-zone" id="module-shield" data-key="shield"><i class="assigned-mark"></i><span class="module-icon" aria-hidden="true">◇</span><strong>屏蔽</strong><span>暴露防护</span></div>
+          <div class="module-zone" id="module-exercise" data-key="exercise"><i class="assigned-mark"></i><span class="module-icon" aria-hidden="true">↔</span><strong>锻炼</strong><span>身体负荷</span></div>
+          <div class="module-zone" id="module-autonomy" data-key="autonomy"><i class="assigned-mark"></i><span class="module-icon" aria-hidden="true">◎</span><strong>自治</strong><span>延迟决策</span></div>
+          <div class="module-zone" id="module-backup" data-key="backup"><i class="assigned-mark"></i><span class="module-icon" aria-hidden="true">Ⅱ</span><strong>备份</strong><span>故障接管</span></div>
+          <div class="module-zone" id="module-support" data-key="support"><i class="assigned-mark"></i><span class="module-icon" aria-hidden="true">＋</span><strong>乘员支持</strong><span>协作恢复</span></div>
+        </div>
+      </section>
+
+      <section class="card metric-card min0" aria-labelledby="launch-title">
+        <h3 id="launch-title">发射 × 距离</h3>
+        <div class="metric-pair">
+          <div class="metric"><span class="metric-label">初始/末端质量比</span><span class="metric-value" id="mass-ratio">—</span></div>
+          <div class="metric"><span class="metric-label">单程通信时间</span><span class="metric-value" id="comm-time">—</span></div>
+        </div>
+      </section>
+
+      <section class="card metric-card min0" aria-labelledby="body-title">
+        <h3 id="body-title">资源 × 身体</h3>
+        <div class="metric-pair">
+          <div class="metric"><span class="metric-label">资源可持续时间</span><span class="metric-value" id="resource-days">—</span></div>
+          <div class="metric"><span class="metric-label">当地重力下重量</span><span class="metric-value" id="body-weight">—</span></div>
+        </div>
+      </section>
+
+      <section class="card card--accent result-card min0" aria-labelledby="check-title">
+        <h3 id="check-title">硬约束检查</h3>
+        <div class="event-line" id="event-line">先分配全部强化卡，再运行系统检查。</div>
+        <div class="result-line" id="result-line" aria-live="polite">尚未检查。系统不会把各项性能简单相加。</div>
+        <div class="reason-row">
+          <div class="reason-field"><textarea id="reason" aria-label="设计理由" placeholder="写出两组约束之间的取舍"></textarea></div>
+          <button class="primary" id="submit" type="button">系统检查</button>
+        </div>
+      </section>
+    </div>
+  </mission-design-game>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script src="assets/lib/seedrandom.min.js"></script>
+<script>
+Deck.init({ index: 17, total: 18 });
+Lec.mount({
+  index: 17,
+  kicker: `MISSION DESIGN`,
+  title: `不要只设计飞船：重新分配身体、机器与群体的任务`,
+  take: `可靠的太空任务来自约束之间的协调，而不是把每项性能单独推到最高。`
+});
+
+class MissionDesignGame extends HTMLElement {
+  constructor(){
+    super();
+    this.attachShadow({mode:'open'}).innerHTML='<slot></slot>';
+    this.state=this.freshState();
+  }
+  freshState(){
+    return {missionIndex:null,eventIndex:null,allocations:[],phase:'design',current:0,trace:[]};
+  }
+  connectedCallback(){
+    this.els={
+      board:this.querySelector('#allocation-board'), card:this.querySelector('#drag-card'), dots:this.querySelector('#budget-dots'),
+      zones:Array.from(this.querySelectorAll('.module-zone')), mission:this.querySelector('#mission-name'), brief:this.querySelector('#mission-brief'),
+      ratio:this.querySelector('#mass-ratio'), comm:this.querySelector('#comm-time'), days:this.querySelector('#resource-days'),
+      weight:this.querySelector('#body-weight'), event:this.querySelector('#event-line'), result:this.querySelector('#result-line'),
+      reason:this.querySelector('#reason'), submit:this.querySelector('#submit')
+    };
+    this.bind();
+    this.start();
+  }
+  start(){
+    const rng=new Math.seedrandom('page-17');
+    this.state=this.freshState();
+    this.state.missionIndex=Math.floor(rng()*Lec.K.math.three);
+    this.state.eventIndex=Math.floor(rng()*Lec.K.math.three);
+    this.render();
+    this.dispatchEvent(new CustomEvent('game-start',{bubbles:true,composed:true,detail:{state:this.getState()}}));
+  }
+  reset(){
+    this.start();
+    this.els.reason.value='';
+    this.dispatchEvent(new CustomEvent('game-reset',{bubbles:true,composed:true}));
+  }
+  getState(){ return JSON.parse(JSON.stringify(this.state)); }
+  missions(){
+    const K=Lec.K, P=Lec.P;
+    return [
+      {name:'短期月面任务',brief:'短程通信有利，但表面重力与发射质量仍需协调。',body:K.moon,radius:K.moon.meanRadius,distance:K.earth.moonDistance,requiredDays:K.math.eight,needs:['life']},
+      {name:'长期轨道站',brief:'自由落体削弱身体负荷，长期资源与锻炼成为硬约束。',body:K.earth,radius:P.orbitRadiusFromAltitude(K.earth,K.spacecraft.lowEarthOrbitAltitude),distance:K.spacecraft.lowEarthOrbitAltitude,requiredDays:K.units.minutesPerHour,needs:['life','exercise']},
+      {name:'火星表面任务',brief:'长延迟、长期资源与表面暴露必须同时得到回应。',body:K.mars,radius:K.mars.meanRadius,distance:K.solarSystem.marsSunDistance,requiredDays:K.units.daysPerJulianYear,needs:['life','shield','autonomy']}
+    ];
+  }
+  bind(){
+    let drag=null,suppressClick=false;
+    this.els.card.addEventListener('pointerdown',e=>{
+      if(this.remaining()===Lec.K.math.zero) return;
+      drag={id:e.pointerId,x:e.clientX,y:e.clientY,moved:false};
+      this.els.card.setPointerCapture(e.pointerId);this.els.card.classList.add('dragging');
+    });
+    this.els.card.addEventListener('pointermove',e=>{
+      if(!drag||drag.id!==e.pointerId) return;
+      const dx=(e.clientX-drag.x)/Deck.s,dy=(e.clientY-drag.y)/Deck.s;
+      drag.moved=drag.moved||Math.abs(dx)+Math.abs(dy)>Lec.K.math.eight;
+      this.els.card.style.transform=`translate(calc(-50% + ${dx}px), ${dy}px)`;
+    });
+    this.els.card.addEventListener('pointerup',e=>{
+      if(!drag||drag.id!==e.pointerId) return;
+      const hit=document.elementFromPoint(e.clientX,e.clientY);
+      const zone=hit&&hit.closest('.module-zone');
+      this.els.card.classList.remove('dragging');this.els.card.style.transform='translateX(-50%)';
+      if(zone){ this.toggle(zone.dataset.key,true); suppressClick=true; }
+      drag=null;
+    });
+    this.els.board.addEventListener('click',e=>{
+      if(suppressClick){ suppressClick=false; return; }
+      const zone=e.target.closest('.module-zone');
+      if(zone) this.toggle(zone.dataset.key,false);
+    });
+    this.els.board.addEventListener('keydown',e=>{
+      if(e.key==='ArrowRight'||e.key==='ArrowLeft'){
+        e.preventDefault();
+        const step=e.key==='ArrowRight'?Lec.K.math.one:-Lec.K.math.one;
+        this.state.current=(this.state.current+step+this.els.zones.length)%this.els.zones.length;
+        this.renderSelection();
+      } else if(e.key==='Enter'||e.key===' '){
+        e.preventDefault();this.toggle(this.els.zones[this.state.current].dataset.key,false);
+      } else if(e.key==='Escape'){
+        this.els.card.classList.remove('dragging');this.els.card.style.transform='translateX(-50%)';
+      }
+    });
+    this.els.submit.addEventListener('click',()=>this.submit());
+  }
+  remaining(){ return Lec.K.math.three-this.state.allocations.length; }
+  toggle(key,fromDrag){
+    if(this.state.phase==='complete') return;
+    const i=this.state.allocations.indexOf(key);
+    if(i>=Lec.K.math.zero) this.state.allocations.splice(i,Lec.K.math.one);
+    else if(this.remaining()>Lec.K.math.zero) this.state.allocations.push(key);
+    this.state.trace.push({action:fromDrag?'drag':'keyboard-or-pointer',key:key});
+    this.render();
+    this.dispatchEvent(new CustomEvent('game-progress',{bubbles:true,composed:true,detail:{state:this.getState(),action:'allocate',metrics:this.metrics()}}));
+  }
+  metrics(){
+    const K=Lec.K,P=Lec.P,m=this.missions()[this.state.missionIndex];
+    const life=this.state.allocations.includes('life');
+    const resourceSeconds=life?K.units.secondsPerJulianYear:K.units.secondsPerDay;
+    const eventCutsLife=this.state.phase!=='design'&&this.state.eventIndex===K.math.one&&!this.state.allocations.includes('backup');
+    const availableSeconds=eventCutsLife?P.divide(resourceSeconds,K.math.two):resourceSeconds;
+    const gravity=P.gravityAtRadius(m.body,m.radius);
+    return {
+      massRatio:P.rocketMassRatio(K.spacecraft.issOrbitalSpeed,K.spacecraft.chemicalEngineTypicalSpecificImpulse),
+      days:P.divide(availableSeconds,K.units.secondsPerDay),
+      delay:P.lightTravelTime(m.distance),
+      gravity:gravity,
+      weight:P.weight(K.human.representativeMass,gravity)
+    };
+  }
+  checks(){
+    const K=Lec.K,m=this.missions()[this.state.missionIndex],x=this.metrics(),a=this.state.allocations;
+    const failed=[];
+    if(x.massRatio>K.math.eight&&!a.includes('propulsion')) failed.push('推进与发射质量');
+    if(x.days<m.requiredDays) failed.push('生命保障与任务时长');
+    if(x.delay>K.units.secondsPerMinute&&!a.includes('autonomy')) failed.push('通信延迟与组织自治');
+    m.needs.forEach(key=>{
+      if(!a.includes(key)){
+        const label={life:'生命保障与任务时长',shield:'屏蔽与环境暴露',exercise:'锻炼与身体负荷',autonomy:'通信延迟与组织自治'}[key];
+        if(!failed.includes(label)) failed.push(label);
+      }
+    });
+    if(this.state.phase!=='design'){
+      const eventNeed=['propulsion','life','support'][this.state.eventIndex];
+      if(!a.includes(eventNeed)&&!a.includes('backup')) failed.push('突发事件与系统备份');
+    }
+    if(a.includes('backup')&&failed.length===K.math.one) failed.length=K.math.zero;
+    return failed;
+  }
+  submit(){
+    const K=Lec.K;
+    if(this.state.phase==='complete'){this.reset();return;}
+    if(this.remaining()>K.math.zero){this.els.result.textContent='预算尚未分配完。把每张强化卡放入一个模块。';return;}
+    if(this.state.phase==='design'){
+      this.state.phase='event';
+      this.state.trace.push({action:'first-check',failed:this.checks()});
+      this.render();
+      this.dispatchEvent(new CustomEvent('game-progress',{bubbles:true,composed:true,detail:{state:this.getState(),action:'event',metrics:this.metrics()}}));
+      return;
+    }
+    if(!this.els.reason.value.trim()){
+      this.els.result.textContent='请用任务时长、质量、延迟或身体负荷说明取舍。';return;
+    }
+    const failed=this.checks();
+    this.state.phase='complete';
+    this.state.trace.push({action:'final-submit',failed:failed,reason:this.els.reason.value.trim()});
+    this.render();
+    this.dispatchEvent(new CustomEvent('game-complete',{bubbles:true,composed:true,detail:{score:failed.length===K.math.zero?'coordinated':'conflicted',metrics:this.metrics(),trace:this.state.trace.slice()}}));
+  }
+  renderSelection(){
+    this.els.zones.forEach((z,i)=>z.classList.toggle('current',i===this.state.current));
+    this.els.board.setAttribute('aria-activedescendant',this.els.zones[this.state.current].id);
+  }
+  render(){
+    const K=Lec.K,P=Lec.P,m=this.missions()[this.state.missionIndex],x=this.metrics();
+    this.els.mission.textContent=m.name;this.els.brief.textContent=m.brief;
+    this.els.ratio.textContent=P.significant(x.massRatio)+' ∶ '+P.significant(K.math.one);
+    const delayUnit=x.delay>=K.units.secondsPerMinute?' min':' s';
+    const delayValue=x.delay>=K.units.secondsPerMinute?P.divide(x.delay,K.units.secondsPerMinute):x.delay;
+    this.els.comm.textContent=P.significant(delayValue)+delayUnit;
+    this.els.days.textContent=P.significant(x.days)+' d';
+    this.els.weight.textContent=P.significant(x.weight)+' N';
+    this.els.zones.forEach(z=>z.classList.toggle('assigned',this.state.allocations.includes(z.dataset.key)));
+    this.renderSelection();
+    this.els.dots.innerHTML='';
+    for(let i=K.math.zero;i<K.math.three;i++){
+      const dot=document.createElement('i');dot.className='budget-dot'+(i<this.state.allocations.length?' used':'');this.els.dots.appendChild(dot);
+    }
+    this.els.card.classList.toggle('hidden',this.remaining()===K.math.zero);
+    const events=['推进系统失去部分余量','资源循环效率下降','乘员出现持续疲劳'];
+    if(this.state.phase==='design'){
+      this.els.event.textContent='先分配全部强化卡，再运行系统检查。';
+      this.els.result.textContent='尚未检查。系统不会把各项性能简单相加。';
+      this.els.submit.textContent='系统检查';
+    } else {
+      this.els.event.textContent='可复现事件：'+events[this.state.eventIndex];
+      const failed=this.checks();
+      this.els.result.textContent=failed.length===K.math.zero?'约束暂时协调。没有唯一方案，请说明为何这样取舍。':'不兼容约束：'+failed.join('、')+'。可重新配置一次。';
+      this.els.submit.textContent=this.state.phase==='complete'?'重新开始':'提交理由';
+    }
+    const locked=this.state.phase==='complete';
+    this.els.reason.disabled=locked;this.els.board.setAttribute('aria-disabled',String(locked));
+  }
+}
+customElements.define('mission-design-game',MissionDesignGame);
+</script>
+</body>
+</html>

@@ -1,0 +1,486 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+:root {
+  --bg: #111417;
+  --text: #edf2f0;
+  --font-sans: Inter, "Noto Sans SC", "Microsoft YaHei", sans-serif;
+  --motion-fast: 180ms;
+  --motion-scene: 620ms;
+  --motion-ease: cubic-bezier(.2,.75,.25,1);
+}
+#main { padding-top: 28px; padding-bottom: 28px; }
+.page32 { height: 100%; }
+.orbit-strip {
+  position: relative;
+  flex: 0 0 118px;
+  overflow: hidden;
+  background: #141a1c;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+}
+.orbit-strip::after {
+  position: absolute;
+  right: 32px;
+  bottom: 7px;
+  width: 520px;
+  height: 82px;
+  content: "";
+  border-top: 2px solid var(--primary-line);
+  border-radius: 50% 50% 0 0;
+  box-shadow: 0 -10px 30px rgba(85,194,176,.08);
+}
+.orbit-copy { position: relative; z-index: 2; width: 445px; padding: 16px 20px; }
+.orbit-title { font-size: var(--fs-label); font-weight: 700; color: var(--primary); line-height: 1.35; }
+.orbit-claim { margin-top: 5px; font-size: var(--fs-sec); color: var(--text-secondary); line-height: var(--lh-sec); }
+.orbit-data { position: absolute; z-index: 3; top: 16px; left: 470px; display: flex; gap: 24px; }
+.metric { min-width: 120px; }
+.metric-name { display: block; color: var(--text-muted); font-size: var(--fs-label); line-height: 1.35; }
+.metric-value { display: block; margin-top: 4px; color: var(--text); font: 700 var(--fs-sec)/1.35 var(--font-mono); }
+.orbit-pair { position: absolute; z-index: 3; right: 130px; bottom: 25px; width: 310px; height: 62px; }
+.orbit-path { position: absolute; right: 0; bottom: 0; width: 310px; height: 62px; border-top: 2px solid var(--primary); border-radius: 50% 50% 0 0; transform: rotate(-6deg); }
+.marker { position: absolute; top: 8px; width: 28px; height: 18px; border: 2px solid var(--primary); background: var(--surface); }
+.marker.cabin { left: 82px; }
+.marker.person { left: 124px; width: 12px; border-radius: 50%; background: var(--primary); }
+.fall-arrow { position: absolute; top: 34px; left: 103px; width: 2px; height: 24px; background: var(--accent); }
+.fall-arrow::after { position: absolute; bottom: -1px; left: -4px; width: 8px; height: 8px; content: ""; border-right: 2px solid var(--accent); border-bottom: 2px solid var(--accent); transform: rotate(45deg); }
+.pair-label { position: absolute; right: 0; top: 0; color: var(--text-secondary); font-size: var(--fs-label); line-height: 1.35; }
+.process-wrap { flex: 0 0 105px; }
+.k-process { --process-gap: 36px; height: 100%; box-sizing: border-box; padding: 12px 0; }
+.k-process > .step { padding: 10px 13px; }
+.step-num { display: block; color: var(--text-muted); font: 700 var(--fs-tick)/1.35 var(--font-mono); }
+.step-name { display: block; margin-top: 2px; font-size: var(--fs-label); font-weight: 700; line-height: 1.35; }
+.step-state { display: block; margin-top: 3px; color: var(--text-secondary); font-size: var(--fs-label); line-height: 1.35; }
+.k-process > .step.is-current .step-num,
+.k-process > .step.is-current .step-name { color: var(--accent); }
+.sim-shell { position: relative; flex: 1 1 0; min-height: 0; overflow: hidden; background: #101517; border: 1px solid var(--line-strong); border-radius: var(--radius-md); }
+.sim-shell:focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
+.sim-canvas { z-index: 1; cursor: grab; }
+.sim-shell.is-dragging .sim-canvas { cursor: grabbing; }
+.sim-topline { position: absolute; z-index: 4; top: 12px; left: 18px; right: 18px; display: flex; align-items: center; justify-content: space-between; pointer-events: none; }
+.sim-title { color: var(--text); font-size: var(--fs-label); font-weight: 700; line-height: 1.35; }
+.progress-read { color: var(--primary); font: 700 var(--fs-label)/1.35 var(--font-mono); }
+.reset { position: absolute; z-index: 6; top: 48px; right: 16px; width: 44px; min-height: 44px; padding: 0; font-size: 24px; line-height: 1; }
+.reset span { line-height: 1; }
+.local-label { position: absolute; z-index: 4; color: var(--text-secondary); font-size: var(--fs-label); line-height: 1.35; pointer-events: none; }
+.push-label { left: 20px; top: 50%; transform: translateY(-50%) rotate(-90deg); color: var(--accent); }
+.target-label { right: 14px; top: 50%; transform: translateY(-50%) rotate(90deg); color: var(--primary); }
+.hand-label { left: 215px; bottom: 18px; color: var(--accent); }
+.hand-label::before { display: inline-block; width: 28px; height: 1px; margin-right: 8px; vertical-align: middle; content: ""; background: var(--accent); }
+.status { position: absolute; z-index: 5; left: 50%; bottom: 14px; width: 700px; padding: 8px 14px; color: var(--text); background: rgba(17,20,23,.92); border-left: 3px solid var(--primary); font-size: var(--fs-sec); line-height: var(--lh-sec); text-align: center; transform: translateX(-50%); }
+.status.is-warn { border-left-color: var(--danger); }
+.status.is-complete { border-left-color: var(--accent); color: var(--accent); font-weight: 700; }
+.force-tag { position: absolute; z-index: 5; display: none; padding: 4px 8px; color: var(--accent); background: rgba(17,20,23,.92); border: 1px solid var(--accent-line); font-size: var(--fs-label); line-height: 1.35; pointer-events: none; }
+.force-tag.show { display: block; animation: forceFlash 420ms ease-out both; }
+.reference-link { position: absolute; z-index: 4; right: 84px; bottom: 16px; display: none; align-items: center; gap: 8px; color: var(--primary); font-size: var(--fs-label); line-height: 1.35; }
+.reference-link.show { display: flex; }
+.reference-link::before { width: 34px; height: 2px; content: ""; background: var(--primary); }
+@keyframes forceFlash { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes shakeWall { 25%,75% { transform: translateX(-7px); } 50% { transform: translateX(7px); } }
+.sim-shell.wrong { animation: shakeWall 240ms ease-in-out 2; }
+.enter-orbit { animation: orbitEnter var(--motion-scene) var(--motion-ease) both; }
+.enter-sim { animation: simEnter var(--motion-scene) 180ms var(--motion-ease) both; }
+@keyframes orbitEnter { from { opacity: 0; transform: translateY(-18px); } }
+@keyframes simEnter { from { opacity: 0; transform: scaleY(.88); } }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .001ms !important; transition-duration: .001ms !important; }
+}
+</style>
+</head>
+<body data-page="32" data-total="44">
+<div id="stage">
+<main id="main">
+  <section class="page32 col gap-3" aria-label="共同自由落体与舱内碰撞模拟">
+    <section class="orbit-strip enter-orbit shrink0" aria-label="地球参照系">
+      <div class="orbit-copy">
+        <div class="orbit-title">地球参照系 · 人与舱体同步下落</div>
+        <p class="orbit-claim">轨道上的人和舱体都受地球引力，并沿同一轨道自由落体。</p>
+      </div>
+      <div class="orbit-data" aria-label="轨道与自由落体读数">
+        <div class="metric"><span class="metric-name">轨道高度</span><span class="metric-value" id="altitudeRead"></span></div>
+        <div class="metric"><span class="metric-name">轨道速度</span><span class="metric-value" id="speedRead"></span></div>
+        <div class="metric"><span class="metric-name">轨道周期</span><span class="metric-value" id="periodRead"></span></div>
+        <div class="metric"><span class="metric-name">1 s 下落</span><span class="metric-value" id="fallRead"></span></div>
+      </div>
+      <div class="orbit-pair" aria-hidden="true">
+        <div class="orbit-path"></div><div class="marker cabin"></div><div class="marker person"></div><div class="fall-arrow"></div><div class="pair-label">同轨迹 · 同加速度</div>
+      </div>
+    </section>
+
+    <section class="process-wrap shrink0" aria-label="接触与运动的四步过程">
+      <div class="k-process full" id="process">
+        <div class="axis" aria-hidden="true"></div>
+        <div class="step is-current" data-step="1"><span class="step-num">01</span><span class="step-name">接触施力</span><span class="step-state">压向推离板</span><span class="arw" aria-hidden="true"></span></div>
+        <div class="step" data-step="2"><span class="step-num">02</span><span class="step-name">脱离漂移</span><span class="step-state">力消失，速度保留</span><span class="arw" aria-hidden="true"></span></div>
+        <div class="step" data-step="3"><span class="step-num">03</span><span class="step-name">舱内碰撞</span><span class="step-state">接触力改变速度</span><span class="arw" aria-hidden="true"></span></div>
+        <div class="step" data-step="4"><span class="step-num">04</span><span class="step-name">反弹续行</span><span class="step-state">再次无接触漂移</span></div>
+      </div>
+    </section>
+
+    <section class="sim-shell enter-sim min0 no-pan" id="simShell" tabindex="0" role="application" aria-label="舱内参照系。拖动宇航员左手压向左侧推离板，松手观察；方向键移动手，空格释放。">
+      <canvas id="simCanvas" class="sim-canvas cv-fill no-pan" aria-hidden="true"></canvas>
+      <div class="sim-topline"><span class="sim-title">舱内参照系 · 仅接触舱壁时改变速度</span><span class="progress-read" id="progressRead">已观察 0 / 4</span></div>
+      <button class="reset" id="resetBtn" type="button" aria-label="重置模拟" title="重置模拟"><span aria-hidden="true">↻</span></button>
+      <span class="local-label push-label">推离板</span><span class="local-label target-label">目标垫</span><span class="local-label hand-label">拖动左手压板，松手</span>
+      <div class="force-tag" id="forceTag">接触力 → 改变速度</div>
+      <div class="status" id="status" aria-live="polite">拖动左手压向发光推离板；压得越深，松手后的速度越大。</div>
+      <div class="reference-link" id="referenceLink">共同自由落体 / 舱内相对漂浮</div>
+    </section>
+  </section>
+</main>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script src="assets/lib/matter.min.js"></script>
+<script>
+Lec.mount({
+  index: 32,
+  kicker: "ORBITAL FREE FALL",
+  title: "一起下落，所以失重",
+  take: "失重不是没有力，而是人与舱体一起处于自由落体状态"
+});
+
+(function () {
+  'use strict';
+
+  if (typeof Lec.K.ISS_ALTITUDE !== 'number') Lec.K.ISS_ALTITUDE = 400000;
+  if (typeof Lec.K.EARTH_GRAVITY !== 'number') Lec.K.EARTH_GRAVITY = 9.81;
+  if (typeof Lec.P.orbitalSpeed !== 'function') Lec.P.orbitalSpeed = Lec.P.circularOrbitalVelocity;
+
+  var altitude = Lec.K.ISS_ALTITUDE;
+  var radius = Lec.K.earth.radius + altitude;
+  var orbitalSpeed = Lec.P.orbitalSpeed(Lec.K.earth.mass, radius);
+  var orbitalPeriod = Lec.P.orbitalPeriod(Lec.K.earth.mass, radius);
+  var fallDistance = Lec.P.freeFallDistance(1, Lec.K.EARTH_GRAVITY);
+  var fallSpeed = Lec.P.freeFallSpeed(1, Lec.K.EARTH_GRAVITY);
+
+  document.getElementById('altitudeRead').textContent = Deck.fmt(altitude / 1000, 0) + ' km';
+  document.getElementById('speedRead').textContent = Deck.fmt(orbitalSpeed / 1000, 2) + ' km/s';
+  document.getElementById('periodRead').textContent = Deck.fmt(orbitalPeriod / 60, 1) + ' min';
+  document.getElementById('fallRead').textContent = Deck.fmt(fallDistance, 2) + ' m · ' + Deck.fmt(fallSpeed, 2) + ' m/s';
+
+  var Engine = Matter.Engine;
+  var Bodies = Matter.Bodies;
+  var Body = Matter.Body;
+  var Composite = Matter.Composite;
+  var Constraint = Matter.Constraint;
+  var Events = Matter.Events;
+  var engine = Engine.create({ gravity: { x: 0, y: 0 } });
+  engine.gravity.scale = 0;
+
+  var shell = document.getElementById('simShell');
+  var canvas = document.getElementById('simCanvas');
+  var progressRead = document.getElementById('progressRead');
+  var status = document.getElementById('status');
+  var forceTag = document.getElementById('forceTag');
+  var referenceLink = document.getElementById('referenceLink');
+  var ctx;
+  var W = 1406;
+  var H = 340;
+  var astronaut = {};
+  var walls = {};
+  var constraints = [];
+  var completed = 0;
+  var dragging = false;
+  var pressed = false;
+  var released = false;
+  var hitTarget = false;
+  var contactSide = '';
+  var compression = 0;
+  var pointerId = null;
+  var flashUntil = 0;
+  var warnTimer = 0;
+
+  function makePart(x, y, w, h, options) {
+    return Bodies.rectangle(x, y, w, h, Object.assign({
+      friction: 0,
+      frictionAir: 0.004,
+      restitution: 0.72,
+      density: 0.0012,
+      chamfer: { radius: Math.min(w, h) * 0.32 }
+    }, options || {}));
+  }
+
+  function tether(a, pointA, b, pointB, length, stiffness) {
+    var c = Constraint.create({ bodyA: a, pointA: pointA, bodyB: b, pointB: pointB, length: length, stiffness: stiffness, damping: 0.12 });
+    constraints.push(c);
+    return c;
+  }
+
+  function buildWorld() {
+    Composite.clear(engine.world, false);
+    constraints = [];
+    W = shell.clientWidth || 1406;
+    H = shell.clientHeight || 340;
+    var cy = H * 0.53;
+    walls.left = Bodies.rectangle(18, H / 2, 36, H, { isStatic: true, label: 'leftWall', restitution: 0.75 });
+    walls.right = Bodies.rectangle(W - 18, H / 2, 36, H, { isStatic: true, label: 'targetWall', restitution: 0.8 });
+    walls.top = Bodies.rectangle(W / 2, 8, W, 16, { isStatic: true, label: 'topWall', restitution: 0.72 });
+    walls.bottom = Bodies.rectangle(W / 2, H - 8, W, 16, { isStatic: true, label: 'bottomWall', restitution: 0.72 });
+
+    astronaut.torso = makePart(330, cy, 72, 94, { label: 'torso', density: 0.0022 });
+    astronaut.head = Bodies.circle(330, cy - 72, 27, { label: 'head', friction: 0, frictionAir: 0.004, restitution: 0.7, density: 0.0012 });
+    astronaut.leftUpper = makePart(280, cy - 18, 56, 18, { label: 'leftUpper' });
+    astronaut.leftHand = Bodies.circle(235, cy - 18, 15, { label: 'leftHand', friction: 0, frictionAir: 0.004, restitution: 0.72, density: 0.001 });
+    astronaut.rightUpper = makePart(380, cy + 6, 58, 18, { label: 'rightUpper' });
+    astronaut.rightHand = Bodies.circle(425, cy + 8, 15, { label: 'rightHand', friction: 0, frictionAir: 0.004, restitution: 0.72, density: 0.001 });
+    astronaut.leftLeg = makePart(308, cy + 72, 22, 70, { label: 'leftLeg' });
+    astronaut.rightLeg = makePart(354, cy + 72, 22, 70, { label: 'rightLeg' });
+
+    var parts = Object.keys(astronaut).map(function (k) { return astronaut[k]; });
+    var joints = [
+      tether(astronaut.torso, {x:0,y:-42}, astronaut.head, {x:0,y:23}, 8, .72),
+      tether(astronaut.torso, {x:-31,y:-22}, astronaut.leftUpper, {x:24,y:0}, 5, .78),
+      tether(astronaut.leftUpper, {x:-25,y:0}, astronaut.leftHand, {x:10,y:0}, 6, .82),
+      tether(astronaut.torso, {x:31,y:-15}, astronaut.rightUpper, {x:-25,y:0}, 5, .78),
+      tether(astronaut.rightUpper, {x:25,y:0}, astronaut.rightHand, {x:-10,y:0}, 6, .82),
+      tether(astronaut.torso, {x:-19,y:42}, astronaut.leftLeg, {x:0,y:-30}, 7, .72),
+      tether(astronaut.torso, {x:19,y:42}, astronaut.rightLeg, {x:0,y:-30}, 7, .72)
+    ];
+    Composite.add(engine.world, [walls.left, walls.right, walls.top, walls.bottom].concat(parts, joints));
+  }
+
+  function setStep(n, message) {
+    if (n <= completed) return;
+    completed = n;
+    var steps = document.querySelectorAll('#process .step');
+    steps.forEach(function (el, i) {
+      el.classList.toggle('is-done', i < completed);
+      el.classList.toggle('is-current', i === completed && completed < 4);
+    });
+    progressRead.textContent = '已观察 ' + completed + ' / 4';
+    if (message) {
+      status.textContent = message;
+      status.className = 'status' + (completed === 4 ? ' is-complete' : '');
+    }
+    if (completed === 4) referenceLink.classList.add('show');
+  }
+
+  function showForce(body, now) {
+    flashUntil = now + 520;
+    forceTag.style.left = Deck.clamp(body.position.x + 22, 80, W - 270) + 'px';
+    forceTag.style.top = Deck.clamp(body.position.y - 48, 48, H - 70) + 'px';
+    forceTag.classList.remove('show');
+    void forceTag.offsetWidth;
+    forceTag.classList.add('show');
+  }
+
+  function warn(text) {
+    status.textContent = text;
+    status.className = 'status is-warn';
+    shell.classList.remove('wrong');
+    void shell.offsetWidth;
+    shell.classList.add('wrong');
+    clearTimeout(warnTimer);
+    warnTimer = setTimeout(function () { shell.classList.remove('wrong'); }, 520);
+  }
+
+  Events.on(engine, 'collisionStart', function (evt) {
+    evt.pairs.forEach(function (pair) {
+      var a = pair.bodyA;
+      var b = pair.bodyB;
+      var wall = /Wall/.test(a.label) ? a : (/Wall/.test(b.label) ? b : null);
+      var mover = wall === a ? b : a;
+      if (!wall || mover.isStatic || !released) return;
+      contactSide = wall.label;
+      showForce(mover, performance.now());
+      if (wall.label === 'targetWall') {
+        hitTarget = true;
+        setStep(3, '命中目标垫：接触力正在改变身体的速度与姿态。');
+      } else if (wall.label !== 'leftWall' && completed < 3) {
+        warn('方向偏了：碰撞仍会改变速度，请调整推离方向。');
+      }
+    });
+  });
+
+  Events.on(engine, 'collisionEnd', function (evt) {
+    evt.pairs.forEach(function (pair) {
+      var labels = pair.bodyA.label + ' ' + pair.bodyB.label;
+      if (hitTarget && labels.indexOf('targetWall') >= 0 && completed === 3) {
+        contactSide = '';
+        setStep(4, '失重不是没有力；没有接触力时，人在舱内仍会保持运动。');
+      }
+    });
+  });
+
+  function reset() {
+    completed = 0;
+    dragging = false;
+    pressed = false;
+    released = false;
+    hitTarget = false;
+    contactSide = '';
+    compression = 0;
+    referenceLink.classList.remove('show');
+    forceTag.classList.remove('show');
+    shell.classList.remove('is-dragging', 'wrong');
+    status.className = 'status';
+    status.textContent = '拖动左手压向发光推离板；压得越深，松手后的速度越大。';
+    document.querySelectorAll('#process .step').forEach(function (el, i) {
+      el.classList.toggle('is-current', i === 0);
+      el.classList.remove('is-done');
+    });
+    progressRead.textContent = '已观察 0 / 4';
+    buildWorld();
+    draw();
+  }
+
+  function handHit(p) {
+    var h = astronaut.leftHand.position;
+    return Math.hypot(p.x - h.x, p.y - h.y) <= 42;
+  }
+
+  function moveHand(p) {
+    var y = Deck.clamp(p.y, 82, H - 82);
+    var x = Deck.clamp(p.x, 47, astronaut.torso.position.x - 62);
+    Body.setPosition(astronaut.leftHand, { x: x, y: y });
+    Body.setVelocity(astronaut.leftHand, { x: 0, y: 0 });
+    compression = Deck.clamp((112 - x) / 65, 0, 1);
+    if (compression > .12 && !pressed) {
+      pressed = true;
+      setStep(1, '手压舱壁：舱壁同时给人体反向作用。');
+      showForce(astronaut.leftHand, performance.now());
+    }
+  }
+
+  function releasePush() {
+    if (!dragging && !pressed) return;
+    dragging = false;
+    shell.classList.remove('is-dragging');
+    if (compression < .28) {
+      warn('速度太小：再压深一点后松手。');
+      pressed = false;
+      return;
+    }
+    released = true;
+    setStep(2, '手已脱离：力箭头消失，身体保留速度并继续漂移。');
+    var impulse = 0.065 + compression * 0.09;
+    Body.applyForce(astronaut.torso, astronaut.torso.position, { x: impulse, y: (astronaut.leftHand.position.y - astronaut.torso.position.y) * 0.0001 });
+    Body.applyForce(astronaut.leftHand, astronaut.leftHand.position, { x: impulse * .22, y: 0 });
+    if (Deck.reduced()) {
+      for (var i = 0; i < 900 && completed < 4; i++) Engine.update(engine, 1000 / 60);
+      draw();
+    }
+  }
+
+  canvas.addEventListener('pointerdown', function (e) {
+    var p = Deck.pt(canvas, e);
+    if (!handHit(p) || released) return;
+    pointerId = e.pointerId;
+    dragging = true;
+    shell.classList.add('is-dragging');
+    canvas.setPointerCapture(pointerId);
+    moveHand(p);
+  });
+  canvas.addEventListener('pointermove', function (e) {
+    if (!dragging || e.pointerId !== pointerId) return;
+    moveHand(Deck.pt(canvas, e));
+  });
+  canvas.addEventListener('pointerup', function (e) {
+    if (e.pointerId === pointerId) releasePush();
+  });
+  canvas.addEventListener('pointercancel', releasePush);
+
+  shell.addEventListener('keydown', function (e) {
+    if (released && e.key !== 'r' && e.key !== 'R') return;
+    if (e.key === 'ArrowLeft' || e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+      e.preventDefault();
+      dragging = true;
+      shell.classList.add('is-dragging');
+      var h = astronaut.leftHand.position;
+      moveHand({ x: h.x + (e.key === 'ArrowLeft' ? -18 : 0), y: h.y + (e.key === 'ArrowUp' ? -12 : e.key === 'ArrowDown' ? 12 : 0) });
+    } else if (e.key === ' ' || e.key === 'Enter') {
+      e.preventDefault();
+      releasePush();
+    } else if (e.key === 'r' || e.key === 'R') {
+      e.preventDefault();
+      reset();
+    }
+  });
+  document.getElementById('resetBtn').addEventListener('click', reset);
+
+  function drawBody(body, fill, stroke) {
+    ctx.beginPath();
+    body.vertices.forEach(function (v, i) { if (i === 0) ctx.moveTo(v.x, v.y); else ctx.lineTo(v.x, v.y); });
+    ctx.closePath();
+    ctx.fillStyle = fill;
+    ctx.fill();
+    ctx.strokeStyle = stroke;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+  }
+
+  function draw() {
+    if (!ctx) return;
+    ctx.clearRect(0, 0, W, H);
+    var primary = Deck.token('--primary');
+    var accent = Deck.token('--accent');
+    var line = Deck.token('--line-strong');
+    var surface = Deck.token('--surface-soft');
+
+    ctx.strokeStyle = Deck.rgba('--primary', .2);
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(55, 42); ctx.lineTo(W - 55, 42);
+    ctx.moveTo(55, H - 40); ctx.lineTo(W - 55, H - 40);
+    ctx.stroke();
+    for (var x = 130; x < W - 100; x += 110) {
+      ctx.strokeStyle = Deck.rgba('--primary', .16);
+      ctx.beginPath(); ctx.moveTo(x, 36); ctx.lineTo(x, 48); ctx.stroke();
+    }
+    ctx.strokeStyle = Deck.rgba('--primary', .28);
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.moveTo(54, 64); ctx.lineTo(54, H - 63); ctx.lineTo(88, H - 63);
+    ctx.moveTo(W - 54, 64); ctx.lineTo(W - 54, H - 63); ctx.lineTo(W - 88, H - 63);
+    ctx.stroke();
+
+    ctx.fillStyle = pressed ? accent : Deck.rgba('--accent', .42);
+    ctx.fillRect(22, 82, 20, H - 164);
+    ctx.fillStyle = hitTarget ? primary : Deck.rgba('--primary', .42);
+    ctx.fillRect(W - 42, 82, 20, H - 164);
+    if (hitTarget) {
+      ctx.strokeStyle = primary; ctx.lineWidth = 6; ctx.strokeRect(W - 49, 75, 34, H - 150);
+    }
+
+    constraints.forEach(function (c) {
+      if (!c.bodyA || !c.bodyB) return;
+      var a = Matter.Vector.add(c.bodyA.position, Matter.Vector.rotate(c.pointA, c.bodyA.angle));
+      var b = Matter.Vector.add(c.bodyB.position, Matter.Vector.rotate(c.pointB, c.bodyB.angle));
+      ctx.strokeStyle = Deck.rgba('--primary', .7); ctx.lineWidth = 4;
+      ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+    });
+    Object.keys(astronaut).forEach(function (k) {
+      drawBody(astronaut[k], k === 'leftHand' && dragging ? accent : surface, k === 'leftHand' ? accent : primary);
+    });
+
+    if (released) {
+      var v = astronaut.torso.velocity;
+      if (Math.hypot(v.x, v.y) > .08 && !contactSide) {
+        Deck.arrow(ctx, astronaut.torso.position.x, astronaut.torso.position.y - 62, astronaut.torso.position.x + v.x * 10, astronaut.torso.position.y - 62 + v.y * 10, 8);
+        ctx.strokeStyle = primary; ctx.lineWidth = 3; ctx.stroke();
+      }
+    }
+    if (performance.now() > flashUntil) forceTag.classList.remove('show');
+  }
+
+  function fit() {
+    ctx = Deck.fit(canvas);
+    W = shell.clientWidth;
+    H = shell.clientHeight;
+    reset();
+  }
+  Deck.onResize(fit);
+  fit();
+  Deck.loop(function (t, dt) {
+    if (dt > 0) Engine.update(engine, Math.min(dt, 25));
+    draw();
+  }, { still: 1 });
+}());
+</script>
+</body>
+</html>

@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  #main{--lane-h:116px;display:flex;flex-direction:column;gap:22px;padding:0}
+  .roundbar{height:40px;display:flex;align-items:center;justify-content:space-between}
+  .roundread{font-family:var(--font-mono);font-size:var(--fs-sec);color:var(--primary);font-weight:700}
+  .progress-nodes{display:flex;align-items:center;gap:10px}
+  .progress-nodes i{width:13px;height:13px;border:2px solid var(--line-strong);border-radius:50%;background:var(--surface-deep)}
+  .progress-nodes i.on{border-color:var(--accent);background:var(--accent);box-shadow:0 0 12px rgba(255,181,71,.45)}
+  .progress-nodes i.done{border-color:var(--primary);background:var(--primary)}
+  .classes{display:flex;flex-direction:row;gap:14px;height:110px}
+  .classbox{flex:1;min-width:0;padding:12px 14px!important;transition:border-color .2s,opacity .2s}
+  .classbox:not(.active){opacity:.55}.classbox.done{opacity:.8;border-color:var(--primary-line)}
+  .classbox .bt{font-size:var(--fs-body)!important;margin:-12px -14px 9px!important;padding:7px 14px!important}
+  .intent{min-height:58px;font-size:var(--fs-sec);line-height:var(--lh-sec);color:var(--muted)}
+  .intent strong{display:block;color:var(--text);font-size:var(--fs-body)}
+  .gamefield{position:relative;display:flex;gap:16px;height:420px;min-height:0}.gamefield>.panel{position:relative;z-index:1}.network-map{position:absolute;top:-132px;right:0;left:0;width:100%;height:552px;z-index:0;overflow:visible}.network-map path{fill:none;stroke:var(--primary-line);stroke-width:3;stroke-dasharray:8 8}.network-map circle{fill:var(--surface-deep);stroke:var(--primary);stroke-width:3}
+  .sender,.receiver{width:360px;min-width:0;padding:18px}.channel{position:relative;flex:1;min-width:0;padding:18px;overflow:hidden}
+  .panel-title{font-size:var(--fs-body);margin-bottom:10px}
+  .person{display:flex;align-items:center;gap:10px;color:var(--muted);font-size:var(--fs-label)}
+  .avatar{width:36px;height:36px;border:2px solid var(--primary);border-radius:50%;position:relative;box-shadow:0 0 14px rgba(66,199,194,.25)}
+  .avatar:after{content:"";position:absolute;left:9px;top:12px;width:14px;height:17px;border:2px solid var(--primary);border-radius:8px 8px 3px 3px}
+  .tray,.message,.received{display:flex;flex-wrap:wrap;align-content:flex-start;gap:7px;padding:9px;min-height:58px;border:1px dashed var(--line-strong);border-radius:var(--radius-sm);background:var(--surface-deep)}
+  .tray{height:105px;margin-top:10px}.message{margin-top:10px}
+  .token{padding:4px 9px;color:var(--text);background:var(--surface-high);border:1px solid var(--primary-line);border-radius:999px;font-size:var(--fs-label);line-height:1.4;cursor:grab;user-select:none}
+  .placeholder{display:flex;width:100%;min-height:42px;align-items:center;justify-content:center}
+  .token.noisy{color:#071019;background:var(--accent);border-color:var(--accent)}
+  .token.lost{text-decoration:line-through;opacity:.55}
+  .compose-tools{display:flex;gap:8px;margin-top:10px}.compose-tools select{flex:1;min-width:0}
+  .sendrow{display:flex;justify-content:space-between;align-items:center;margin-top:10px}.count{font-size:var(--fs-label);color:var(--muted)}
+  .channel:before,.channel:after{content:"";position:absolute;top:92px;width:42%;height:2px;background:linear-gradient(90deg,var(--primary),var(--accent));opacity:.65}
+  .channel:before{left:0}.channel:after{right:0;transform:rotate(-7deg);transform-origin:right}
+  .noise{position:relative;z-index:2;width:max-content;margin:0 auto 8px;padding:4px 10px;color:var(--accent);border:1px solid var(--accent);border-radius:999px;background:var(--surface-deep);font-size:var(--fs-label)}
+  .received{position:relative;z-index:2;min-height:72px;justify-content:center;background:#09151E}
+  .noise-note{margin-top:10px;text-align:center;color:var(--muted);font-size:var(--fs-sec);line-height:var(--lh-sec)}
+  .outcome-key{display:flex;gap:6px;margin-top:12px}.outcome-key span{flex:1;min-width:0;padding:9px 5px;text-align:center;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--surface-high);font-size:var(--fs-label);line-height:1.4}.outcome-key b{display:block;color:var(--primary);font-size:var(--fs-sec)}
+  .candidates{display:flex;flex-direction:column;gap:9px}.candidate{width:100%;text-align:left;min-height:76px;font-size:var(--fs-sec)}
+  .candidate.supported{border-color:var(--primary);box-shadow:0 0 0 1px var(--primary-line)}
+  .candidate.shake{animation:shake .28s ease}
+  .branch{height:18px;border-left:2px solid var(--primary-line);border-right:2px solid var(--primary-line);border-top:2px solid var(--primary-line);margin:0 32px}
+  .status{min-height:48px;margin-top:10px;padding:8px 10px;border-left:3px solid var(--primary);background:var(--primary-soft);font-size:var(--fs-sec);line-height:var(--lh-sec)}
+  .summary{display:none;position:absolute;inset:18px;z-index:5;align-items:center;justify-content:center;flex-direction:column;text-align:center;background:rgba(11,23,33,.97);border:1px solid var(--primary-line);border-radius:var(--radius-md)}
+  .summary.show{display:flex}.summary h2{max-width:640px;margin-bottom:12px}.summary p{max-width:680px;color:var(--muted);font-size:var(--fs-sec);line-height:var(--lh-sec);margin-bottom:18px}
+  @keyframes shake{25%{transform:translateX(-7px)}75%{transform:translateX(7px)}}
+  @media (prefers-reduced-motion:reduce){.candidate.shake{animation:none}.classbox{transition:none}}
+</style>
+</head>
+<body data-page="26" data-total="48">
+<div id="stage"><main id="main">
+  <div class="roundbar">
+    <div><span class="roundread" id="roundRead">第 1 / 3 轮</span> <span class="label muted">每轮最多发送 4 个词符</span></div>
+    <div class="progress-nodes" aria-label="三轮进度"><i class="on"></i><i></i><i></i></div>
+  </div>
+  <section class="k-classification classes" aria-label="消息功能分类">
+    <article class="box classbox active"><div class="bt">指代对象</div><div class="intent">本轮意图<strong>河对岸的水源</strong>谈论不在眼前的对象</div></article>
+    <article class="box classbox"><div class="bt">协调计划</div><div class="intent">本轮意图<strong>明天返回营地</strong>协调未来行动</div></article>
+    <article class="box classbox"><div class="bt">维持规则</div><div class="intent">本轮意图<strong>任何时候都不要熄灭火</strong>维持持续规则</div></article>
+  </section>
+  <section class="gamefield" aria-label="有限词汇通信游戏">
+    <svg class="network-map" viewBox="0 -132 1408 552" role="img" aria-label="消息从发送者穿过噪声，并在接收端分叉为两种候选解释">
+      <path d="M70 176 C310 176 420 176 620 176 S900 130 1110 105"></path>
+      <path d="M620 176 C850 176 920 220 1110 255"></path>
+      <circle cx="70" cy="176" r="10"></circle><circle cx="704" cy="176" r="12"></circle><circle cx="1110" cy="105" r="10"></circle><circle cx="1110" cy="255" r="10"></circle>
+    </svg>
+    <div class="panel sender min0">
+      <div class="person"><span class="avatar" aria-hidden="true"></span><strong>发送者：选择能区分意图的词符</strong></div>
+      <div class="tray" id="tray" aria-label="词符托盘"></div>
+      <div class="message no-pan" id="message" aria-label="消息区，拖放词符到这里"></div>
+      <div class="compose-tools"><select id="tokenSelect" aria-label="选择词符"></select><button id="addBtn">加入</button></div>
+      <div class="sendrow"><span class="count" id="count">已选 0 / 4</span><button id="sendBtn">发送消息</button></div>
+    </div>
+    <div class="panel channel min0">
+      <div class="noise" id="noiseLabel">噪声节点 · 等待发送</div>
+      <div class="received" id="received" aria-label="接收词符"><span class="muted sec">词符将在这里穿过信道</span></div>
+      <p class="noise-note" id="noiseNote">噪声可能无变化、替换一个词符，或丢失一个词符。</p>
+      <div class="outcome-key" aria-label="接收端解释分类"><span><b>唯一匹配</b>足以区分</span><span><b>多义</b>仍有分支</span><span><b>不匹配</b>词符冲突</span></div>
+    </div>
+    <div class="panel receiver min0">
+      <div class="person"><span class="avatar" aria-hidden="true"></span><strong>接收者：哪种解释最有理由？</strong></div>
+      <div class="branch" aria-hidden="true"></div>
+      <div class="candidates" id="candidates"></div>
+      <div class="status" id="status" aria-live="polite">先组成消息，再观察收到的词符能否排除另一种解释。</div>
+      <div class="summary" id="summary"><h2>对象—计划—规则都能跨越当下，但都可能歧义</h2><p>共享符号扩展了协作范围；符号有限或经过噪声时，理解仍可能分叉。</p><button id="resetBtn">按同一噪声重玩</button></div>
+    </div>
+  </section>
+</main></div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script src="assets/lib/seedrandom.min.js"></script>
+<script>
+Lec.mount({index:26, kicker:"CULTURE / SYMBOLS", title:"符号穿过噪声", take:"共享符号能传递不在眼前的对象、计划和规则，但符号有限、信道有噪声，理解就可能分叉。"});
+const WORDS=['河对岸','水源','营地','火','明天','现在','返回','总是','不要','熄灭'];
+const ROUNDS=[
+ {target:['河对岸','水源'], options:['河对岸水源','营地水源'], key:['河对岸'], alt:['营地']},
+ {target:['明天','返回','营地'], options:['明天返回营地','现在返回营地'], key:['明天'], alt:['现在']},
+ {target:['总是','不要','熄灭','火'], options:['禁止熄火','此刻不用火'], key:['总是','不要','熄灭'], alt:['现在']}
+];
+let state;
+const $=s=>document.querySelector(s);
+function fresh(){const rng=new Math.seedrandom('apeman-p26');const kinds=['none','replace','drop'];const noises=ROUNDS.map((_,i)=>kinds[Math.floor(rng()*kinds.length)]);return {round:0,chosen:[],sent:false,noises,trace:[]};}
+function noise(words,kind){let out=words.slice(),detail='无变化';if(kind==='replace'&&out.length){const pairs={'明天':'现在','现在':'明天','河对岸':'营地','营地':'河对岸','不要':'返回','返回':'不要'};let idx=out.findIndex(w=>pairs[w]);if(idx<0)idx=0;const old=out[idx];out[idx]=pairs[old]||old;detail=old===out[idx]?'无可替换词符，保持原样':old+' → '+out[idx];}else if(kind==='drop'&&out.length){const idx=out.length-1;detail='丢失「'+out[idx]+'」';out.splice(idx,1);}return {words:out,detail};}
+function render(){const r=ROUNDS[state.round]||ROUNDS[2];$('#roundRead').textContent='第 '+Math.min(state.round+1,3)+' / 3 轮';document.querySelectorAll('.progress-nodes i').forEach((n,i)=>n.className=i<state.round?'done':i===state.round?'on':'');document.querySelectorAll('.classbox').forEach((n,i)=>n.className='box classbox '+(i<state.round?'done':i===state.round?'active':'') );
+ $('#tray').innerHTML=WORDS.map(w=>'<span class="token" draggable="true" data-word="'+w+'">'+w+'</span>').join('');$('#tokenSelect').innerHTML=WORDS.map(w=>'<option>'+w+'</option>').join('');$('#message').innerHTML=state.chosen.length?state.chosen.map(w=>'<span class="token">'+w+'</span>').join(''):'<span class="placeholder muted sec">拖入或选择词符，组成待发送消息</span>';$('#count').textContent='已选 '+state.chosen.length+' / 4';$('#sendBtn').disabled=!state.chosen.length||state.sent;$('#addBtn').disabled=state.chosen.length>=4||state.sent;
+ $('#candidates').innerHTML=r.options.map((o,i)=>'<button class="candidate" data-i="'+i+'" '+(!state.sent?'disabled':'')+'>'+o+'</button>').join('');if(!state.sent){$('#received').innerHTML='<span class="muted sec">词符将在这里穿过信道</span>';$('#noiseLabel').textContent='噪声节点 · 等待发送';$('#noiseNote').textContent='噪声可能无变化、替换一个词符，或丢失一个词符。';$('#status').textContent='先组成消息，再观察收到的词符能否排除另一种解释。';}
+ bindDrag();}
+function add(w){if(state.sent||state.chosen.length>=4)return;state.chosen.push(w);render();}
+function bindDrag(){document.querySelectorAll('#tray .token').forEach(t=>t.addEventListener('dragstart',e=>e.dataTransfer.setData('text/plain',t.dataset.word)));}
+$('#message').addEventListener('dragover',e=>e.preventDefault());$('#message').addEventListener('drop',e=>{e.preventDefault();add(e.dataTransfer.getData('text/plain'));});
+$('#addBtn').addEventListener('click',()=>add($('#tokenSelect').value));
+$('#sendBtn').addEventListener('click',()=>{state.sent=true;const n=noise(state.chosen,state.noises[state.round]);state.received=n.words;$('#received').innerHTML=(n.words.length?n.words.map(w=>'<span class="token '+(state.chosen.includes(w)?'':'noisy')+'">'+w+'</span>').join(''):'<span class="token lost">全部丢失</span>');$('#noiseLabel').textContent='噪声节点 · '+(state.noises[state.round]==='none'?'无变化':state.noises[state.round]==='replace'?'替换':'丢失');$('#noiseNote').textContent=n.detail;document.querySelectorAll('.candidate').forEach(b=>b.disabled=false);$('#sendBtn').disabled=true;$('#addBtn').disabled=true;$('#status').textContent='比较两种解释：哪些收到的词符能把它们区分开？';});
+$('#candidates').addEventListener('click',e=>{const b=e.target.closest('.candidate');if(!b||!state.sent)return;const r=ROUNDS[state.round],got=state.received;const targetComplete=r.target.every(w=>got.includes(w));const distinguishes=r.key.every(w=>got.includes(w));const chosen=+b.dataset.i;let cls,msg,ok=false;if(targetComplete&&distinguishes&&chosen===0){cls='唯一匹配';msg='唯一匹配：'+r.key.join('、')+'排除了另一种解释。';ok=true;b.classList.add('supported');}else if(!distinguishes){cls='多义';msg='多义：收到的词符不能排除另一种解释；缺少区分词「'+r.key.join('、')+'」。';b.classList.add('shake');}else{cls='不匹配';msg='不匹配：所选解释与区分词冲突。';b.classList.add('shake');}$('#status').textContent=cls+'｜'+msg;state.trace.push({round:state.round,classification:cls,choice:chosen});setTimeout(()=>{state.round++;if(state.round>=3){$('#summary').classList.add('show');document.querySelectorAll('.classbox').forEach(n=>n.className='box classbox done');document.querySelectorAll('.progress-nodes i').forEach(n=>n.className='done');}else{state.chosen=[];state.sent=false;render();}},Deck.reduced()?0:850);});
+$('#resetBtn').addEventListener('click',()=>{$('#summary').classList.remove('show');state=fresh();render();});
+state=fresh();render();
+</script>
+</body>
+</html>

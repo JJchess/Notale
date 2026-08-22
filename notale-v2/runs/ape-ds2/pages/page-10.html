@@ -1,0 +1,813 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+/* ===== Page 10 custom styles ===== */
+:root {
+  --p10-gap: 36px;
+  --p10-slider-h: 88px;
+}
+
+/* Content fills the padded area of #stage directly */
+/* Hide #main which is 100vw×100vh and overflows the padded area */
+#main { display: none; }
+
+.p10-wrap {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+}
+
+/* Left-right split */
+.p10-split {
+  display: flex;
+  flex-direction: row;
+  gap: var(--p10-gap);
+  flex: 1;
+  min-height: 0;
+}
+.p10-left {
+  flex: 6;
+  min-width: 0;
+  position: relative;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #0b0e14;
+}
+.p10-left canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.p10-right {
+  flex: 4;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+}
+
+/* ===== Causal chain ===== */
+.p10-chain {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  flex: 1;
+  min-height: 0;
+  justify-content: center;
+  position: relative;
+  padding-left: 26px;
+}
+/* Vertical timeline line */
+.p10-chain::before {
+  content: '';
+  position: absolute;
+  left: 9px;
+  top: 4%;
+  bottom: 4%;
+  width: 2px;
+  background: var(--border);
+  z-index: 0;
+}
+.p10-chain .chain-step {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 4px 0;
+  min-height: 0;
+  flex: 1;
+}
+.chain-step .dot {
+  flex: 0 0 14px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  margin-top: 2px;
+  border: 2px solid var(--border);
+  background: var(--bg);
+  transition: all 0.25s ease;
+  position: relative;
+  z-index: 2;
+}
+.chain-step.current .dot {
+  background: var(--accent);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.chain-step.done .dot {
+  background: var(--accent);
+  border-color: var(--accent);
+  opacity: 0.5;
+}
+.chain-step.future .dot {
+  border-style: dashed;
+}
+.chain-step .step-body {
+  flex: 1;
+  min-width: 0;
+}
+.chain-step .step-text {
+  font-size: 16px;
+  line-height: 1.35;
+  color: var(--text);
+  transition: all 0.3s ease;
+}
+.chain-step.current .step-text {
+  font-weight: 600;
+  font-size: 16px;
+  color: var(--text);
+}
+.chain-step.done .step-text {
+  opacity: 0.5;
+}
+.chain-step.future .step-text {
+  opacity: 0.4;
+}
+.chain-arrow {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 0 0 24px;
+  min-height: 0;
+  flex: 0 0 auto;
+  transition: opacity 0.3s ease;
+  height: 0;
+  overflow: visible;
+}
+.chain-arrow.active {
+  height: auto;
+  min-height: 18px;
+  padding: 1px 0 1px 24px;
+}
+.chain-arrow .arrow-icon {
+  flex: 0 0 auto;
+  color: var(--accent);
+  font-size: 13px;
+  line-height: 1;
+}
+.chain-arrow .arrow-q {
+  font-size: 14px;
+  color: var(--muted);
+  line-height: 1.35;
+  flex: 1;
+  min-width: 0;
+}
+.chain-arrow.hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* ===== Slider bar ===== */
+.p10-slider-bar {
+  flex: 0 0 var(--p10-slider-h);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 0;
+}
+.p10-slider-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.p10-slider-wrap {
+  flex: 1;
+  min-width: 0;
+  position: relative;
+  height: 40px;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  outline: none;
+}
+.p10-slider-track {
+  position: absolute;
+  top: 50%;
+  left: 9px;
+  right: 9px;
+  height: 4px;
+  background: var(--border);
+  border-radius: 2px;
+  transform: translateY(-50%);
+}
+.p10-slider-fill {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  background: var(--accent);
+  border-radius: 2px;
+  pointer-events: none;
+}
+.p10-slider-thumb {
+  position: absolute;
+  top: 50%;
+  width: 16px;
+  height: 16px;
+  background: var(--accent);
+  border: 3px solid #fff;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.3);
+  transition: box-shadow 0.15s;
+  z-index: 3;
+}
+.p10-slider-wrap:active .p10-slider-thumb,
+.p10-slider-wrap.dragging .p10-slider-thumb {
+  box-shadow: 0 0 0 5px var(--accent-soft);
+}
+/* Anchor markers on the axis - positioned below the slider row */
+.p10-slider-anchors {
+  position: relative;
+  height: 18px;
+  margin: 0 9px;
+  pointer-events: none;
+}
+.p10-slider-anchors .anchor {
+  position: absolute;
+  font-size: 14px;
+  color: var(--muted);
+  white-space: nowrap;
+  transform: translateX(-50%);
+  line-height: 1.2;
+  top: 0;
+  pointer-events: none;
+}
+.p10-slider-anchors .anchor::before {
+  content: '';
+  position: absolute;
+  top: -10px;
+  left: 50%;
+  width: 1px;
+  height: 6px;
+  background: var(--muted);
+  transform: translateX(-50%);
+}
+.p10-time {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  min-width: 100px;
+  text-align: right;
+  font-family: var(--font-mono);
+}
+.p10-play-btn {
+  flex: 0 0 auto;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 4px 12px;
+  font-size: 14px;
+  cursor: pointer;
+  font-weight: 500;
+  transition: background 0.2s;
+  white-space: nowrap;
+}
+.p10-play-btn:hover {
+  filter: brightness(1.15);
+}
+.p10-play-btn:active {
+  filter: brightness(0.95);
+}
+.p10-play-btn.playing {
+  background: var(--muted);
+}
+</style>
+</head>
+<body data-page="10" data-total="50">
+<div id="stage">
+  <main id="main"></main>
+  <!-- Our content will be injected by JS directly into #stage -->
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script src="assets/lib/gsap.min.js"></script>
+<script>
+/* ================================================================
+   Page 10 – 当森林让出空地
+   ================================================================ */
+
+// ---- 0. Build content directly into #stage ----
+var stage = document.getElementById('stage');
+
+var wrap = document.createElement('div');
+wrap.className = 'p10-wrap';
+wrap.innerHTML =
+  '<div class="p10-split">' +
+    '<div class="p10-left"><canvas id="landscape" class="cv-fill"></canvas></div>' +
+    '<div class="p10-right"><div class="p10-chain" id="chain"></div></div>' +
+  '</div>' +
+  '<div class="p10-slider-bar">' +
+    '<div class="p10-slider-row">' +
+      '<div class="p10-slider-wrap" id="sliderWrap" tabindex="0" role="slider" aria-valuemin="0" aria-valuemax="100">' +
+        '<div class="p10-slider-track"><div class="p10-slider-fill" id="sliderFill"></div></div>' +
+        '<div class="p10-slider-thumb" id="sliderThumb"></div>' +
+      '</div>' +
+      '<span class="p10-time" id="timeDisplay">10.0 百万年前</span>' +
+      '<button class="p10-play-btn" id="playBtn">▶ 播一遍</button>' +
+    '</div>' +
+    '<div class="p10-slider-anchors" id="sliderAnchors"></div>' +
+  '</div>';
+stage.appendChild(wrap);
+
+// ---- 1. Mount page header/footer ----
+Lec.mount({
+  index: 10,
+  kicker: '第 2 章 · 猿的身体',
+  title: '当森林让出空地',
+  take: '东非气候变化让森林成片退去，我们的祖先开始用两脚站在开阔地上。'
+});
+
+// ---- 2. Constants ----
+var LAETOLI_FOOTPRINTS_YEARS_AGO = 366 * 10000;
+var P10_T_START = 10_000_000;
+var P10_T_END   = LAETOLI_FOOTPRINTS_YEARS_AGO;
+
+var HOMININS_SPLIT = Lec.K && Lec.K.HOMININS_SPLIT_YEARS_AGO
+  ? Lec.K.HOMININS_SPLIT_YEARS_AGO
+  : 7_000_000;
+var uSplit = (P10_T_START - HOMININS_SPLIT) / (P10_T_START - P10_T_END);
+
+var STEP_EDGES = [0, 0.12, 0.25, uSplit, 0.70, 0.90, 1.00];
+
+var STEPS = [
+  { text: '地壳拉伸，东非抬升，降雨减少',          q: '抬升如何让降雨减少？' },
+  { text: '旱季拉长，森林开始撑不住',              q: '变干为什么让森林成片垮掉？' },
+  { text: '连续林冠退成片片孤岛',                  q: '森林碎了，食物和水源被什么隔开？' },
+  { text: '食物、水、栖身的树，散落各处',          q: '要走到下一片林子，中间是什么？' },
+  { text: '从一片林子到另一片，地面是唯一的路',    q: '为什么在地面上站着走？' },
+  { text: '366 万年前，Laetoli 的脚印把答案封存',  q: null }
+];
+
+// ---- 3. Utility functions ----
+function lerp(a, b, t) { return a + (b - a) * t; }
+function lerpColor(c1, c2, t) {
+  return [
+    Math.round(lerp(c1[0], c2[0], t)),
+    Math.round(lerp(c1[1], c2[1], t)),
+    Math.round(lerp(c1[2], c2[2], t))
+  ];
+}
+function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+
+function timeAt(u) { return P10_T_START + u * (P10_T_END - P10_T_START); }
+function formatMa(u) { return (timeAt(u) / 1e6).toFixed(1) + ' 百万年前'; }
+
+// ---- 4. Landscape drawing ----
+var cv = document.getElementById('landscape');
+var ctx;
+
+var TREES = [];
+var seed = 42;
+function seededRandom() {
+  seed = (seed * 16807 + 0) % 2147483647;
+  return (seed - 1) / 2147483646;
+}
+// Forest trees
+for (var i = 0; i < 28; i++) {
+  var x = 0.05 + seededRandom() * 0.90;
+  var y = 0.15 + seededRandom() * 0.45;
+  var size = 0.06 + seededRandom() * 0.12;
+  TREES.push({
+    x: x, y: y, size: size,
+    type: 'forest',
+    visibleStart: 0,
+    visibleEnd: 0.35 + seededRandom() * 0.25
+  });
+}
+// Savanna trees
+for (var i = 0; i < 6; i++) {
+  var x = 0.08 + seededRandom() * 0.84;
+  var y = 0.28 + seededRandom() * 0.30;
+  TREES.push({
+    x: x, y: y, size: 0.07 + seededRandom() * 0.06,
+    type: 'acacia',
+    visibleStart: 0.25 + seededRandom() * 0.20,
+    visibleEnd: 1
+  });
+}
+
+// Grass tufts
+var GRASSES = [];
+for (var i = 0; i < 60; i++) {
+  GRASSES.push({
+    x: 0.02 + seededRandom() * 0.96,
+    y: 0.70 + seededRandom() * 0.28,
+    h: 0.04 + seededRandom() * 0.08
+  });
+}
+
+function getFigureState(u) {
+  if (u < uSplit) return 'hidden';
+  if (u < uSplit + 0.03) return 'emerge';
+  if (u < 0.70) return 'atEdge';
+  if (u < 0.80) return 'walkStart';
+  if (u < 0.90) return 'walking';
+  return 'standing';
+}
+
+function drawScene(u) {
+  var W = ctx.canvas.width;
+  var H = ctx.canvas.height;
+  if (W === 0 || H === 0) return;
+
+  ctx.clearRect(0, 0, W, H);
+
+  // Sky
+  var skyTop = lerpColor([80, 140, 120], [190, 150, 80], u);
+  var skyBot = lerpColor([160, 200, 180], [230, 195, 130], u);
+  var grad = ctx.createLinearGradient(0, 0, 0, H * 0.7);
+  grad.addColorStop(0, 'rgb(' + skyTop.join(',') + ')');
+  grad.addColorStop(1, 'rgb(' + skyBot.join(',') + ')');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, W, H * 0.7);
+
+  // Ground
+  var groundCol = lerpColor([60, 90, 65], [170, 150, 90], u);
+  ctx.fillStyle = 'rgb(' + groundCol.join(',') + ')';
+  ctx.fillRect(0, H * 0.65, W, H * 0.35);
+
+  // Distant mountains
+  var mtnAlpha = 0.15 + u * 0.35;
+  var mtnCol = lerpColor([70, 100, 90], [140, 120, 80], u);
+  ctx.fillStyle = 'rgba(' + mtnCol.join(',') + ',' + mtnAlpha + ')';
+  ctx.beginPath();
+  ctx.moveTo(0, H * 0.55);
+  for (var mx = 0; mx <= W; mx += 20) {
+    var nx = mx / W;
+    var my = H * (0.38 + 0.12 * Math.sin(nx * 3.7 + 1.2)
+                         + 0.06 * Math.sin(nx * 7.1 + 0.8)
+                         + 0.04 * Math.sin(nx * 13.2 + 2.3));
+    ctx.lineTo(mx, my);
+  }
+  ctx.lineTo(W, H * 0.55);
+  ctx.closePath();
+  ctx.fill();
+
+  // Trees
+  for (var ti = 0; ti < TREES.length; ti++) {
+    var t = TREES[ti];
+    var treeAlpha = 0;
+    if (u >= t.visibleStart && u <= t.visibleEnd) {
+      var fadeIn = (u - t.visibleStart) / 0.05;
+      var fadeOut = (t.visibleEnd - u) / 0.05;
+      treeAlpha = Math.min(1, fadeIn, fadeOut);
+      treeAlpha = clamp(treeAlpha, 0, 1);
+    }
+    if (treeAlpha < 0.01) continue;
+
+    var tx = t.x * W;
+    var ty = t.y * H;
+    var ts = t.size * Math.min(W, H);
+
+    if (t.type === 'forest') {
+      ctx.globalAlpha = treeAlpha * 0.85;
+      ctx.fillStyle = 'rgba(50, 40, 30, 0.7)';
+      ctx.fillRect(tx - ts * 0.04, ty, ts * 0.08, ts * 0.5);
+      var canopyCol = lerpColor([50, 100, 55], [100, 130, 50], u);
+      ctx.fillStyle = 'rgba(' + canopyCol.join(',') + ',0.85)';
+      ctx.beginPath(); ctx.arc(tx, ty - ts * 0.15, ts * 0.55, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(tx - ts * 0.3, ty - ts * 0.05, ts * 0.4, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(tx + ts * 0.3, ty - ts * 0.05, ts * 0.4, 0, Math.PI * 2); ctx.fill();
+    } else {
+      ctx.globalAlpha = treeAlpha * 0.9;
+      ctx.fillStyle = 'rgba(130, 100, 60, 0.8)';
+      ctx.fillRect(tx - ts * 0.03, ty, ts * 0.06, ts * 0.6);
+      ctx.fillStyle = 'rgba(140, 160, 60, 0.7)';
+      ctx.beginPath(); ctx.ellipse(tx, ty - ts * 0.12, ts * 0.5, ts * 0.15, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(tx - ts * 0.25, ty - ts * 0.08, ts * 0.3, ts * 0.1, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(tx + ts * 0.25, ty - ts * 0.08, ts * 0.3, ts * 0.1, 0, 0, Math.PI * 2); ctx.fill();
+    }
+  }
+
+  // Grass
+  var grassDensity = 0;
+  if (u < 0.15) grassDensity = 0.15;
+  else if (u < uSplit) grassDensity = lerp(0.15, 0.4, (u - 0.15) / (uSplit - 0.15));
+  else if (u < 0.70) grassDensity = lerp(0.4, 0.6, (u - uSplit) / (0.70 - uSplit));
+  else grassDensity = lerp(0.6, 0.9, (u - 0.70) / 0.30);
+
+  var grassCol = lerpColor([80, 120, 65], [170, 160, 70], u);
+  var grassCol2 = lerpColor([60, 100, 55], [150, 140, 60], u);
+  ctx.globalAlpha = 0.5 + grassDensity * 0.3;
+  for (var gi = 0; gi < GRASSES.length; gi++) {
+    if (seededRandom() > grassDensity) continue;
+    var g = GRASSES[gi];
+    var gx = g.x * W;
+    var gy = g.y * H;
+    var gh = g.h * H * grassDensity * 0.6;
+    ctx.strokeStyle = gi % 2 === 0
+      ? 'rgb(' + grassCol.join(',') + ')'
+      : 'rgb(' + grassCol2.join(',') + ')';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(gx, gy);
+    ctx.quadraticCurveTo(gx + seededRandom() * 6 - 3, gy - gh, gx + seededRandom() * 4 - 2, gy - gh * 1.3);
+    ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+
+  // Ground haze
+  if (u < 0.5) {
+    var hazeAlpha = (0.5 - u) * 0.3;
+    ctx.fillStyle = 'rgba(180, 210, 200, ' + hazeAlpha.toFixed(3) + ')';
+    ctx.fillRect(0, H * 0.5, W, H * 0.2);
+  }
+
+  // Ancestor silhouette
+  var figState = getFigureState(u);
+  if (figState !== 'hidden') {
+    var figX, figY, figScale, figPosture;
+
+    if (figState === 'emerge' || figState === 'atEdge') {
+      figX = W * 0.55; figY = H * 0.62; figScale = 0.035 * Math.min(W, H); figPosture = 'bent';
+    } else if (figState === 'walkStart') {
+      figX = W * 0.50; figY = H * 0.63; figScale = 0.038 * Math.min(W, H); figPosture = 'walking';
+    } else if (figState === 'walking') {
+      figX = W * 0.45; figY = H * 0.64; figScale = 0.040 * Math.min(W, H); figPosture = 'walking';
+    } else {
+      figX = W * 0.40; figY = H * 0.62; figScale = 0.042 * Math.min(W, H); figPosture = 'standing';
+    }
+
+    ctx.fillStyle = 'rgba(20, 18, 15, 0.85)';
+    var s = figScale;
+
+    if (figPosture === 'bent') {
+      ctx.beginPath(); ctx.arc(figX, figY - 28 * s, 5 * s, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath();
+      ctx.moveTo(figX - 3 * s, figY - 23 * s);
+      ctx.quadraticCurveTo(figX + 2 * s, figY - 10 * s, figX + 4 * s, figY);
+      ctx.lineTo(figX - 2 * s, figY);
+      ctx.quadraticCurveTo(figX - 4 * s, figY - 10 * s, figX - 3 * s, figY - 23 * s);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.moveTo(figX + 1 * s, figY);
+      ctx.lineTo(figX + 3 * s, figY + 18 * s);
+      ctx.lineTo(figX + 1 * s, figY + 18 * s);
+      ctx.lineTo(figX - 1 * s, figY);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.moveTo(figX - 1 * s, figY);
+      ctx.lineTo(figX - 3 * s, figY + 18 * s);
+      ctx.lineTo(figX - 5 * s, figY + 18 * s);
+      ctx.lineTo(figX - 2 * s, figY);
+      ctx.fill();
+    } else if (figPosture === 'walking') {
+      ctx.beginPath(); ctx.arc(figX + 2 * s, figY - 26 * s, 5 * s, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath();
+      ctx.moveTo(figX - 2 * s, figY - 21 * s);
+      ctx.quadraticCurveTo(figX + 4 * s, figY - 8 * s, figX + 6 * s, figY + 2 * s);
+      ctx.lineTo(figX + 1 * s, figY + 2 * s);
+      ctx.quadraticCurveTo(figX - 1 * s, figY - 8 * s, figX - 2 * s, figY - 21 * s);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.moveTo(figX - 1 * s, figY - 16 * s);
+      ctx.lineTo(figX - 8 * s, figY - 6 * s);
+      ctx.lineTo(figX - 6 * s, figY - 4 * s);
+      ctx.lineTo(figX, figY - 14 * s);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.moveTo(figX + 2 * s, figY - 16 * s);
+      ctx.lineTo(figX + 10 * s, figY - 8 * s);
+      ctx.lineTo(figX + 8 * s, figY - 6 * s);
+      ctx.lineTo(figX + 1 * s, figY - 14 * s);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.moveTo(figX + 3 * s, figY + 2 * s);
+      ctx.lineTo(figX + 8 * s, figY + 20 * s);
+      ctx.lineTo(figX + 6 * s, figY + 20 * s);
+      ctx.lineTo(figX + 1 * s, figY + 2 * s);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.moveTo(figX + 1 * s, figY + 2 * s);
+      ctx.lineTo(figX - 4 * s, figY + 20 * s);
+      ctx.lineTo(figX - 6 * s, figY + 20 * s);
+      ctx.lineTo(figX - 1 * s, figY + 2 * s);
+      ctx.fill();
+    } else {
+      ctx.beginPath(); ctx.arc(figX, figY - 28 * s, 5.5 * s, 0, Math.PI * 2); ctx.fill();
+      ctx.fillRect(figX - 3 * s, figY - 23 * s, 6 * s, 23 * s);
+      ctx.fillRect(figX - 8 * s, figY - 18 * s, 6 * s, 3 * s);
+      ctx.fillRect(figX + 2 * s, figY - 18 * s, 6 * s, 3 * s);
+      ctx.fillRect(figX - 4 * s, figY, 3 * s, 20 * s);
+      ctx.fillRect(figX + 1 * s, figY, 3 * s, 20 * s);
+    }
+
+    // Footprints
+    if (u > 0.90) {
+      var fpAlpha = clamp((u - 0.90) / 0.10, 0, 1);
+      ctx.globalAlpha = fpAlpha;
+      ctx.fillStyle = 'rgba(60, 50, 40, 0.6)';
+      var fpY = H * 0.82;
+      for (var fpi = 0; fpi < 7; fpi++) {
+        var fpX = W * (0.25 + fpi * 0.06);
+        ctx.beginPath(); ctx.ellipse(fpX, fpY + (fpi % 2 === 0 ? 0 : 4), 5, 3, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(fpX, fpY - 3 + (fpi % 2 === 0 ? 0 : 4), 2, 0, Math.PI * 2); ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+    }
+  }
+}
+
+// ---- 5. Build the chain ----
+function buildChain() {
+  var chain = document.getElementById('chain');
+  chain.innerHTML = '';
+  for (var i = 0; i < STEPS.length; i++) {
+    var step = document.createElement('div');
+    step.className = 'chain-step future';
+    step.dataset.idx = i;
+    var dot = document.createElement('div'); dot.className = 'dot'; step.appendChild(dot);
+    var body = document.createElement('div'); body.className = 'step-body';
+    var txt = document.createElement('div'); txt.className = 'step-text'; txt.textContent = STEPS[i].text;
+    body.appendChild(txt); step.appendChild(body); chain.appendChild(step);
+
+    if (i < STEPS.length - 1 && STEPS[i].q) {
+      var arw = document.createElement('div');
+      arw.className = 'chain-arrow hidden';
+      arw.dataset.idx = i;
+      var icon = document.createElement('span'); icon.className = 'arrow-icon'; icon.textContent = '↓'; arw.appendChild(icon);
+      var q = document.createElement('span'); q.className = 'arrow-q'; q.textContent = STEPS[i].q; arw.appendChild(q);
+      chain.appendChild(arw);
+    }
+  }
+}
+buildChain();
+
+// ---- 6. Update chain ----
+function updateChain(u) {
+  var curIdx = 0;
+  for (var i = 0; i < STEP_EDGES.length - 1; i++) {
+    if (u >= STEP_EDGES[i] && u < STEP_EDGES[i + 1]) { curIdx = i; break; }
+  }
+  if (u >= STEP_EDGES[STEP_EDGES.length - 1]) curIdx = STEPS.length - 1;
+
+  var steps = document.querySelectorAll('.chain-step');
+  var arrows = document.querySelectorAll('.chain-arrow');
+
+  for (var i = 0; i < steps.length; i++) {
+    steps[i].className = 'chain-step';
+    if (i < curIdx) steps[i].className += ' done';
+    else if (i === curIdx) steps[i].className += ' current';
+    else steps[i].className += ' future';
+  }
+
+  for (var i = 0; i < arrows.length; i++) {
+    var ai = parseInt(arrows[i].dataset.idx);
+    arrows[i].className = 'chain-arrow';
+    if (ai === curIdx && STEPS[ai].q) arrows[i].className += ' active';
+    else arrows[i].className += ' hidden';
+  }
+}
+
+// ---- 7. Slider interaction ----
+var sliderWrap = document.getElementById('sliderWrap');
+var sliderFill = document.getElementById('sliderFill');
+var sliderThumb = document.getElementById('sliderThumb');
+var timeDisplay = document.getElementById('timeDisplay');
+var playBtn = document.getElementById('playBtn');
+var sliderAnchors = document.getElementById('sliderAnchors');
+
+var u = 0;
+var isDragging = false;
+
+function setU(val) {
+  u = clamp(val, 0, 1);
+  updateSliderVisuals();
+  drawScene(u);
+  updateChain(u);
+}
+
+function updateSliderVisuals() {
+  var wrapW = sliderWrap.offsetWidth;
+  if (wrapW === 0) wrapW = 1400;
+  var trackOff = 9;
+  var trackW = wrapW - 18;
+  var thumbPos = trackOff + trackW * u;
+  sliderThumb.style.left = thumbPos + 'px';
+  sliderFill.style.width = (thumbPos / wrapW * 100).toFixed(1) + '%';
+  timeDisplay.textContent = formatMa(u);
+}
+
+function uFromEvent(e) {
+  var rect = sliderWrap.getBoundingClientRect();
+  var clientX = e.touches ? e.touches[0].clientX : e.clientX;
+  var relX = clientX - rect.left;
+  return clamp((relX - 9) / (rect.width - 18), 0, 1);
+}
+
+sliderWrap.addEventListener('mousedown', function(e) {
+  isDragging = true; sliderWrap.classList.add('dragging'); setU(uFromEvent(e));
+});
+document.addEventListener('mousemove', function(e) { if (isDragging) setU(uFromEvent(e)); });
+document.addEventListener('mouseup', function() { isDragging = false; sliderWrap.classList.remove('dragging'); });
+
+sliderWrap.addEventListener('touchstart', function(e) {
+  isDragging = true; sliderWrap.classList.add('dragging'); setU(uFromEvent(e)); e.preventDefault();
+}, { passive: false });
+document.addEventListener('touchmove', function(e) { if (isDragging) { setU(uFromEvent(e)); e.preventDefault(); } }, { passive: false });
+document.addEventListener('touchend', function() { isDragging = false; sliderWrap.classList.remove('dragging'); });
+
+sliderWrap.addEventListener('keydown', function(e) {
+  var step = 0.01;
+  if (e.key === 'ArrowRight' || e.key === 'ArrowUp') { setU(u + step); e.preventDefault(); }
+  else if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') { setU(u - step); e.preventDefault(); }
+  else if (e.key === 'Home') { setU(0); e.preventDefault(); }
+  else if (e.key === 'End') { setU(1); e.preventDefault(); }
+});
+
+// ---- 8. Anchor markers ----
+function buildAnchors() {
+  var a = document.createElement('span');
+  a.className = 'anchor';
+  a.style.left = (uSplit * 100).toFixed(1) + '%';
+  a.textContent = '约 700 万年前 · 人猿分叉';
+  sliderAnchors.appendChild(a);
+
+  // Rightmost anchor - align to right edge
+  var b = document.createElement('span');
+  b.className = 'anchor';
+  b.style.left = 'auto';
+  b.style.right = '0';
+  b.style.transform = 'none';
+  b.textContent = '366 万年前 · Laetoli 脚印';
+  sliderAnchors.appendChild(b);
+}
+buildAnchors();
+
+// ---- 9. Play button (GSAP) ----
+playBtn.addEventListener('click', function() {
+  if (playBtn.classList.contains('playing')) return;
+  playBtn.classList.add('playing');
+  playBtn.textContent = '⏳ 播放中';
+
+  var uObj = { value: 0 };
+  // Total duration ~12s, with ~0.6s pauses at each of 5 edges = ~3s pause
+  // So ~9s for animation between 6 segments
+  var totalAnimDuration = 9;
+  var pauseDuration = 0.6;
+
+  var tl = gsap.timeline({
+    onComplete: function() {
+      playBtn.classList.remove('playing');
+      playBtn.textContent = '▶ 播一遍';
+    }
+  });
+
+  // Animate segment by segment, pausing at each step edge
+  for (var i = 0; i < STEP_EDGES.length - 1; i++) {
+    var fromU = STEP_EDGES[i];
+    var toU = STEP_EDGES[i + 1];
+    var segDuration = totalAnimDuration * (toU - fromU);
+
+    // Animate to the next edge
+    tl.to(uObj, {
+      value: toU,
+      duration: segDuration,
+      ease: 'none',
+      onUpdate: function() { setU(uObj.value); }
+    });
+
+    // Pause (except after the last edge)
+    if (i < STEP_EDGES.length - 2) {
+      tl.to(uObj, { value: toU, duration: pauseDuration, ease: 'none',
+        onUpdate: function() { setU(uObj.value); }
+      });
+    }
+  }
+});
+
+// ---- 10. Initial draw ----
+function initCtx() {
+  ctx = Deck.fit(cv);
+  setU(0);
+}
+setTimeout(initCtx, 50);
+
+// ---- 11. Handle resize ----
+Deck.onResize(function() { ctx = Deck.fit(cv); drawScene(u); });
+
+// ---- 12. Reduced motion ----
+if (Deck.reduced()) {
+  var s = document.createElement('style');
+  s.textContent = '.chain-step, .chain-arrow { transition: none !important; }';
+  document.head.appendChild(s);
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,586 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<script src="assets/lib/seedrandom.min.js"></script>
+<script src="assets/lib/d3.min.js"></script>
+<script src="assets/lib/gsap.min.js"></script>
+<style>
+/* ---- page-specific layout ---- */
+#stage {
+  --bg: #0b0e14;
+  --text: #e6e6e6;
+  --font-sans: "Noto Sans SC", system-ui, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+}
+#stage .split-lr {
+  display: flex;
+  flex-direction: row;
+  gap: 32px;
+  height: 100%;
+  width: 100%;
+  align-items: stretch;
+}
+#stage .left-col {
+  flex: 0 0 520px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding-top: 8px;
+}
+#stage .right-col {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+
+/* comparison table override */
+#stage .k-comparison {
+  --k-comp-cols: 2;
+  font-size: var(--fs-sec);
+  line-height: 1.4;
+}
+#stage .k-comparison .dim {
+  font-size: var(--fs-label);
+  white-space: nowrap;
+}
+#stage .k-comparison .cell {
+  padding: 6px 10px;
+  border-radius: 4px;
+  transition: background 0.3s, box-shadow 0.3s;
+  font-size: var(--fs-sec);
+}
+#stage .k-comparison .cell.active {
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+#stage .k-comparison .hdr {
+  font-size: var(--fs-label);
+  text-align: center;
+}
+#stage .k-comparison .hdr:first-child {
+  text-align: left;
+}
+#stage .k-comparison .dim {
+  color: var(--muted);
+  font-size: var(--fs-label);
+}
+#stage .k-comparison .rowline {
+  border-top: 1px solid rgba(208, 213, 221, 0.2);
+}
+
+/* toggle switch */
+#stage .toggle-wrap {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: 8px;
+}
+#stage .toggle-btn {
+  position: relative;
+  width: 160px;
+  height: 36px;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.15);
+  border-radius: 18px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: border-color 0.3s;
+  outline: none;
+  flex-shrink: 0;
+}
+#stage .toggle-btn:focus-visible {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(79, 110, 242, 0.3);
+}
+#stage .toggle-btn .slider {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 50%;
+  height: calc(100% - 6px);
+  background: var(--accent);
+  border-radius: 15px;
+  transition: transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+  pointer-events: none;
+}
+#stage .toggle-btn .slider.right {
+  transform: translateX(100%);
+}
+#stage .toggle-label {
+  font-size: var(--fs-label);
+  color: var(--muted);
+  transition: color 0.3s;
+  user-select: none;
+  width: 56px;
+  text-align: center;
+}
+#stage .toggle-label.active {
+  color: var(--text);
+  font-weight: 600;
+}
+
+/* telescope view */
+#stage .telescope-wrap {
+  position: relative;
+  width: 100%;
+  max-width: 620px;
+  aspect-ratio: 1 / 1;
+  background: radial-gradient(ellipse at 30% 40%, rgba(20,30,60,0.9), rgba(5,8,15,1));
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 12px;
+  overflow: hidden;
+}
+#stage .telescope-wrap svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+#stage .telescope-label {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: var(--fs-label);
+  color: rgba(255,255,255,0.5);
+  letter-spacing: 0.06em;
+  pointer-events: none;
+}
+#stage .telescope-label .model-name {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/* guide text */
+#stage .guide-text {
+  font-size: var(--fs-lead);
+  color: rgba(255,255,255,0.8);
+  text-align: center;
+  padding: 12px 0;
+  border-top: 1px solid rgba(255,255,255,0.08);
+  margin-top: 4px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+}
+
+/* 3-point takeaway */
+.takeaway-box {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 4px;
+}
+.takeaway-box .take-item {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  font-size: var(--fs-sec);
+  color: rgba(255,255,255,0.7);
+  line-height: 1.4;
+}
+.takeaway-box .take-item .num {
+  flex: 0 0 18px;
+  font-size: var(--fs-tick);
+  color: var(--accent);
+  font-weight: 700;
+  text-align: center;
+}
+</style>
+</head>
+<body data-page="31" data-total="50">
+<div id="stage">
+<main id="main"></main>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script>
+(function(){
+
+  // ---- mount header/footer ----
+  Lec.mount({
+    index: 31,
+    kicker: "MODELS",
+    title: "更自然，还是更精确？",
+    take: "日心说获胜不是因为「更自然」，而是因为它能更精确地预测观测"
+  });
+
+  var stage = document.getElementById('stage');
+  var main = document.getElementById('main');
+
+  // ---- build layout ----
+  main.className = 'split-lr';
+
+  // LEFT COLUMN
+  var left = document.createElement('div');
+  left.className = 'left-col';
+
+  // comparison table
+  var table = document.createElement('div');
+  table.className = 'k-comparison';
+
+  // data
+  var dims = [
+    {
+      label: '模型结构',
+      vals: ['地球为中心，行星在本轮与均轮上叠合运动', '太阳为中心，行星沿椭圆轨道绕日运动']
+    },
+    {
+      label: '能否解释逆行',
+      vals: ['能，靠本轮叠加', '能，靠地球与行星的相对运动']
+    },
+    {
+      label: '预测观测',
+      vals: ['偏差大，预测线明显偏离观测点', '偏差小，预测线基本穿过观测点']
+    }
+  ];
+  var headers = ['维度', '地心模型', '日心模型'];
+
+  // header row
+  headers.forEach(function(h, i){
+    var el = document.createElement('div');
+    el.className = 'hdr';
+    if (i > 0) el.style.textAlign = 'center';
+    el.textContent = h;
+    table.appendChild(el);
+  });
+
+  // separator
+  var sep0 = document.createElement('div');
+  sep0.className = 'rowline';
+  table.appendChild(sep0);
+
+  // data rows
+  dims.forEach(function(d, ri){
+    // dim label
+    var dimEl = document.createElement('div');
+    dimEl.className = 'dim';
+    dimEl.textContent = d.label;
+    table.appendChild(dimEl);
+
+    // two cells
+    d.vals.forEach(function(v, ci){
+      var cell = document.createElement('div');
+      cell.className = 'cell';
+      cell.textContent = v;
+      cell.dataset.dim = ri;
+      cell.dataset.model = ci;
+      table.appendChild(cell);
+    });
+
+    // separator
+    var sep = document.createElement('div');
+    sep.className = 'rowline';
+    table.appendChild(sep);
+  });
+
+  left.appendChild(table);
+
+  // takeaway box
+  var takeBox = document.createElement('div');
+  takeBox.className = 'takeaway-box';
+  var takeaways = [
+    '两种模型都能解释火星逆行——"能不能解释"不是日心说胜出的原因。',
+    '日心说在被改为椭圆轨道后，能更精确地预测观测。',
+    '科学选择的标准不是"更自然"，而是"更能预测"。'
+  ];
+  takeaways.forEach(function(t, i){
+    var item = document.createElement('div');
+    item.className = 'take-item';
+    var num = document.createElement('span');
+    num.className = 'num';
+    num.textContent = i + 1;
+    var txt = document.createElement('span');
+    txt.textContent = t;
+    item.appendChild(num);
+    item.appendChild(txt);
+    takeBox.appendChild(item);
+  });
+  left.appendChild(takeBox);
+
+  main.appendChild(left);
+
+  // ---- RIGHT COLUMN ----
+  var right = document.createElement('div');
+  right.className = 'right-col';
+
+  // telescope view
+  var telWrap = document.createElement('div');
+  telWrap.className = 'telescope-wrap';
+
+  var telLabel = document.createElement('div');
+  telLabel.className = 'telescope-label';
+  telLabel.innerHTML = '望远镜视野 · 火星视运动 · <span class="model-name" id="modelName">地心模型</span>';
+  telWrap.appendChild(telLabel);
+
+  var svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('viewBox', '0 0 600 600');
+  svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+  svg.id = 'telSvg';
+  telWrap.appendChild(svg);
+  right.appendChild(telWrap);
+
+  // toggle controls
+  var toggleWrap = document.createElement('div');
+  toggleWrap.className = 'toggle-wrap';
+  toggleWrap.setAttribute('role', 'radiogroup');
+  toggleWrap.setAttribute('aria-label', '模型切换');
+
+  var labelL = document.createElement('span');
+  labelL.className = 'toggle-label active';
+  labelL.id = 'labelGeo';
+  labelL.textContent = '地心说';
+
+  var btn = document.createElement('div');
+  btn.className = 'toggle-btn';
+  btn.id = 'toggleBtn';
+  btn.setAttribute('role', 'radio');
+  btn.setAttribute('tabindex', '0');
+  btn.setAttribute('aria-checked', 'true');
+  btn.setAttribute('aria-label', '切换模型：当前为地心说');
+
+  var slider = document.createElement('div');
+  slider.className = 'slider';
+  slider.id = 'toggleSlider';
+  btn.appendChild(slider);
+
+  var labelR = document.createElement('span');
+  labelR.className = 'toggle-label';
+  labelR.id = 'labelHelio';
+  labelR.textContent = '日心说';
+
+  toggleWrap.appendChild(labelL);
+  toggleWrap.appendChild(btn);
+  toggleWrap.appendChild(labelR);
+  right.appendChild(toggleWrap);
+
+  // guide text
+  var guide = document.createElement('div');
+  guide.className = 'guide-text';
+  guide.textContent = '与其问哪个模型更自然，不如看哪条线穿过观测点。';
+  right.appendChild(guide);
+
+  main.appendChild(right);
+
+  // ---- SVG content (telescope view) ----
+  var svgEl = document.getElementById('telSvg');
+  var W = 600, H = 600;
+  var pad = 60;
+  var innerW = W - 2 * pad;
+  var innerH = H - 2 * pad;
+
+  // stars background
+  var starsG = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+  var starCount = 120;
+  var rng = new Math.seedrandom('page-31-stars');
+  for (var i = 0; i < starCount; i++) {
+    var cx = rng() * W;
+    var cy = rng() * H;
+    var r = 0.5 + rng() * 1.5;
+    var op = 0.2 + rng() * 0.6;
+    var dot = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    dot.setAttribute('cx', cx);
+    dot.setAttribute('cy', cy);
+    dot.setAttribute('r', r);
+    dot.setAttribute('fill', '#fff');
+    dot.setAttribute('opacity', op);
+    starsG.appendChild(dot);
+  }
+  svgEl.appendChild(starsG);
+
+  // ---- Mars observation points ----
+  var obsData = [
+    {x: 0.08, y: 0.78},
+    {x: 0.18, y: 0.72},
+    {x: 0.28, y: 0.62},
+    {x: 0.36, y: 0.52},
+    {x: 0.44, y: 0.44},
+    {x: 0.52, y: 0.38},
+    {x: 0.58, y: 0.40},
+    {x: 0.64, y: 0.48},
+    {x: 0.72, y: 0.56},
+    {x: 0.80, y: 0.62},
+    {x: 0.88, y: 0.67}
+  ];
+
+  // scale to SVG
+  function sx(v) { return pad + v * innerW; }
+  function sy(v) { return pad + (1 - v) * innerH; }
+
+  // draw observation points
+  var obsG = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+  obsData.forEach(function(d){
+    var circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    circle.setAttribute('cx', sx(d.x));
+    circle.setAttribute('cy', sy(d.y));
+    circle.setAttribute('r', 5);
+    circle.setAttribute('fill', '#e74c3c');
+    circle.setAttribute('opacity', '0.9');
+    circle.setAttribute('stroke', 'rgba(231,76,60,0.3)');
+    circle.setAttribute('stroke-width', '2');
+    obsG.appendChild(circle);
+  });
+  svgEl.appendChild(obsG);
+
+  // ---- prediction curves ----
+  // Geocentric prediction: deviates from observations
+  var geoPts = obsData.map(function(d, i){
+    var offset = 0.06 * Math.sin(i * 1.1 + 0.5);
+    return {x: d.x, y: d.y + offset};
+  });
+
+  // Heliocentric prediction: passes through observations (with tiny noise)
+  var helioPts = obsData.map(function(d){
+    return {x: d.x, y: d.y + (Math.random() - 0.5) * 0.012};
+  });
+
+  // Use d3 to generate line paths
+  var xScale = d3.scaleLinear().domain([0, 1]).range([pad, pad + innerW]);
+  var yScale = d3.scaleLinear().domain([0, 1]).range([pad + innerH, pad]);
+
+  var lineGen = d3.line()
+    .x(function(d) { return xScale(d.x); })
+    .y(function(d) { return yScale(d.y); })
+    .curve(d3.curveNatural);
+
+  var geoPath = lineGen(geoPts);
+  var helioPath = lineGen(helioPts);
+
+  // draw prediction line
+  var predG = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+  var predLine = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  predLine.setAttribute('id', 'predLine');
+  predLine.setAttribute('d', geoPath);
+  predLine.setAttribute('fill', 'none');
+  predLine.setAttribute('stroke', '#4f6ef2');
+  predLine.setAttribute('stroke-width', '2.5');
+  predLine.setAttribute('opacity', '0.85');
+  predG.appendChild(predLine);
+
+  // label for prediction line
+  var predLabel = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+  predLabel.setAttribute('id', 'predLabel');
+  predLabel.setAttribute('x', pad + innerW - 20);
+  predLabel.setAttribute('y', pad + 20);
+  predLabel.setAttribute('fill', '#4f6ef2');
+  predLabel.setAttribute('font-size', '14px');
+  predLabel.setAttribute('text-anchor', 'end');
+  predLabel.setAttribute('font-family', 'ui-monospace, monospace');
+  predLabel.textContent = '预测';
+  predG.appendChild(predLabel);
+
+  svgEl.appendChild(predG);
+
+  // ---- state ----
+  var model = 0; // 0 = geocentric, 1 = heliocentric
+  var isAnimating = false;
+
+  function switchModel(target) {
+    if (isAnimating || target === model) return;
+    isAnimating = true;
+
+    var oldModel = model;
+    model = target;
+
+    // update toggle UI
+    var sliderEl = document.getElementById('toggleSlider');
+    var labelGeo = document.getElementById('labelGeo');
+    var labelHelio = document.getElementById('labelHelio');
+    var modelName = document.getElementById('modelName');
+    var btnEl = document.getElementById('toggleBtn');
+
+    if (model === 0) {
+      sliderEl.classList.remove('right');
+      labelGeo.classList.add('active');
+      labelHelio.classList.remove('active');
+      modelName.textContent = '地心模型';
+      btnEl.setAttribute('aria-checked', 'true');
+      btnEl.setAttribute('aria-label', '切换模型：当前为地心说');
+    } else {
+      sliderEl.classList.add('right');
+      labelGeo.classList.remove('active');
+      labelHelio.classList.add('active');
+      modelName.textContent = '日心模型';
+      btnEl.setAttribute('aria-checked', 'false');
+      btnEl.setAttribute('aria-label', '切换模型：当前为日心说');
+    }
+
+    // highlight table cells
+    var cells = document.querySelectorAll('.cell');
+    cells.forEach(function(c){
+      c.classList.remove('active');
+    });
+    cells.forEach(function(c){
+      if (parseInt(c.dataset.model) === model) {
+        c.classList.add('active');
+      }
+    });
+
+    // animate the prediction line with GSAP
+    var pathEl = document.getElementById('predLine');
+    var targetPath = model === 0 ? geoPath : helioPath;
+
+    // Use GSAP to animate the dashed stroke offset for a "drawing" effect
+    gsap.to(pathEl, {
+      duration: 0.8,
+      ease: 'power2.inOut',
+      onComplete: function() {
+        isAnimating = false;
+      }
+    });
+
+    // Directly update the path d attribute with a smooth transition
+    // Using d3 transition for the path morph
+    d3.select(pathEl)
+      .transition()
+      .duration(700)
+      .ease(d3.easeCubicInOut)
+      .attr('d', targetPath);
+  }
+
+  // ---- event handlers ----
+  var toggleBtn = document.getElementById('toggleBtn');
+  toggleBtn.addEventListener('click', function(){
+    switchModel(model === 0 ? 1 : 0);
+  });
+
+  toggleBtn.addEventListener('keydown', function(e){
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      switchModel(model === 0 ? 1 : 0);
+    }
+    if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+      e.preventDefault();
+      switchModel(e.key === 'ArrowRight' ? 1 : 0);
+    }
+  });
+
+  // label clicks also toggle
+  document.getElementById('labelGeo').addEventListener('click', function(){ switchModel(0); });
+  document.getElementById('labelHelio').addEventListener('click', function(){ switchModel(1); });
+
+  // ---- initial highlight ----
+  // highlight geocentric cells initially
+  document.querySelectorAll('.cell[data-model="0"]').forEach(function(c){ c.classList.add('active'); });
+
+  // ---- reduced motion ----
+  if (Deck.reduced()) {
+    // skip animations, just set state
+    document.querySelectorAll('.cell').forEach(function(c){
+      if (parseInt(c.dataset.model) === 0) c.classList.add('active');
+    });
+  }
+
+})();
+</script>
+</body>
+</html>

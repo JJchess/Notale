@@ -1,0 +1,351 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  #main { display: flex; flex-direction: column; gap: var(--sp-4); }
+  .lec-progress { overflow: visible; }
+  .p12-intro { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-5); min-height: 52px; }
+  .p12-intro p { max-width: 820px; color: var(--text-strong); font-size: var(--fs-lead); line-height: var(--lh-copy); }
+  .p12-progress { flex: 0 0 auto; color: var(--text-muted); font-size: var(--fs-sec); line-height: var(--lh-copy); }
+  .p12-progress strong { color: var(--accent); font-family: var(--font-mono); }
+  .p12-workbench { display: flex; flex: 1 1 0; min-height: 0; gap: var(--sp-5); }
+  .p12-plot { position: relative; flex: 1 1 0; min-width: 0; min-height: 0; border-top: 2px solid var(--line-strong); border-bottom: 2px solid var(--line-strong); background: var(--surface-glass); overflow: hidden; touch-action: none; }
+  .p12-plot::before { content: "CRANIAL MEASUREMENT / 01"; position: absolute; top: 12px; right: 16px; color: var(--text-faint); font-family: var(--font-mono); font-size: var(--fs-tick); line-height: 1.35; z-index: 2; }
+  .p12-plot svg { display: block; width: 100%; height: 100%; }
+  .p12-plot .axis text { fill: var(--text-muted); font-family: var(--font-mono); font-size: 14px; }
+  .p12-plot .axis path, .p12-plot .axis line { stroke: var(--line-strong); }
+  .p12-plot .grid line { stroke: var(--line); stroke-dasharray: 3 6; }
+  .p12-plot .grid path { display: none; }
+  .p12-plot .axis-title { fill: var(--text-muted); font-size: 14px; font-weight: 700; }
+  .p12-plot .species-label { fill: var(--text-strong); font-size: 14px; font-weight: 700; }
+  .p12-plot .species-range { fill: var(--primary); opacity: .16; stroke: var(--primary); stroke-width: 2; }
+  .p12-plot .species-line { fill: none; stroke: var(--primary); stroke-width: 2; opacity: .62; }
+  .p12-plot .endpoint { fill: var(--primary); stroke: var(--surface-0); stroke-width: 2; }
+  .p12-plot .target-glow { fill: var(--accent); opacity: .2; stroke: var(--accent); stroke-width: 2; stroke-dasharray: 5 5; }
+  .p12-plot .is-lit { fill: var(--accent); stroke: var(--accent); opacity: 1; }
+  .p12-plot .probe { cursor: grab; outline: none; }
+  .p12-plot .probe:active { cursor: grabbing; }
+  .p12-plot .probe-line { stroke: var(--accent); stroke-width: 2; stroke-dasharray: 5 5; pointer-events: none; }
+  .p12-plot .probe-ring { fill: var(--surface-0); stroke: var(--accent); stroke-width: 3; }
+  .p12-plot .probe-core { fill: var(--accent); }
+  .p12-plot .probe-hit { fill: transparent; }
+  .p12-plot .branch { fill: none; stroke: var(--primary-dark); stroke-width: 2; opacity: .6; }
+  .p12-plot .exception-label { fill: var(--accent); font-size: 14px; font-weight: 700; }
+  .p12-side { flex: 0 0 410px; min-width: 0; display: flex; flex-direction: column; gap: var(--sp-2); }
+  .p12-task { color: var(--text-strong); font-size: var(--fs-sec); line-height: var(--lh-copy); min-height: 42px; }
+  .p12-task strong { color: var(--accent); }
+  .p12-compare { --compare-cols: 1; grid-template-columns: 112px minmax(0, 1fr); }
+  .p12-compare > .hdr { min-height: 36px; padding-top: var(--sp-2); padding-bottom: var(--sp-2); font-size: var(--fs-sec); }
+  .p12-compare > .dim, .p12-compare > .cell, .p12-compare > .diff { min-height: 68px; padding: var(--sp-2) var(--sp-3); }
+  .p12-compare > .dim { justify-content: flex-start; text-align: left; gap: var(--sp-2); font-size: var(--fs-sec); }
+  .p12-compare > .cell, .p12-compare > .diff { flex-direction: column; align-items: flex-start; justify-content: center; }
+  .p12-mark { width: 14px; height: 14px; flex: 0 0 14px; box-sizing: border-box; border: 2px solid var(--text-faint); border-radius: 50%; }
+  .is-found .p12-mark { border-color: var(--accent); background: var(--accent); box-shadow: 0 0 0 4px var(--surface-yellow); }
+  .p12-observation { color: var(--text-muted); font-size: var(--fs-sec); line-height: var(--lh-copy); }
+  .p12-observation strong { display: block; color: var(--text-strong); font-size: var(--fs-body); }
+  .p12-reading { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-2); min-height: 64px; }
+  .p12-reading .reading { padding: var(--sp-2) 0; }
+  .p12-feedback { min-height: 48px; padding-left: var(--sp-4); color: var(--text-muted); font-size: var(--fs-sec); line-height: var(--lh-copy); border-left: 2px solid var(--primary-dark); }
+  .p12-feedback.is-error { color: var(--text-strong); border-left-color: var(--danger); }
+  .p12-feedback.is-success { color: var(--text-strong); border-left-color: var(--accent); }
+  .p12-actions { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); }
+  .p12-reset { width: 40px; padding: 0; font-size: 22px; }
+  .p12-conclusion { color: var(--text-strong); font-size: var(--fs-body); line-height: var(--lh-copy); }
+  .p12-conclusion strong { color: var(--accent); }
+  .p12-final { opacity: 0; transition: opacity 180ms ease; }
+  .p12-final.is-visible { opacity: 1; }
+  .p12-plot.is-wrong .probe { animation: p12-bounce 220ms ease; }
+  @keyframes p12-bounce { 45% { transform: translateX(8px); } }
+  @media (prefers-reduced-motion: reduce) { .p12-final { transition: none; } .p12-plot.is-wrong .probe { animation: none; } }
+</style>
+</head>
+<body data-page="12" data-total="52">
+<div id="stage">
+<main id="main">
+  <div class="p12-intro">
+    <p>沿同一年代轴移动探针，检查脑容量变化中的三种关系。</p>
+    <div class="p12-progress" aria-live="polite">3 项观察 · 已找到 <strong id="found-count">0/3</strong></div>
+  </div>
+  <div class="p12-workbench">
+    <figure class="p12-plot min0 no-pan" id="plot-wrap">
+      <svg id="brain-chart" role="img" aria-label="四组人类演化材料的年代与颅内容积比较"></svg>
+      <figcaption hidden>横轴越向右越接近现在，纵轴越高表示颅内容积越大。范围带表示类群内部差异。</figcaption>
+    </figure>
+    <aside class="p12-side min0" aria-label="三项比较观察">
+      <p class="p12-task" id="task-copy"><strong>任务 1/3</strong>：找到较晚类群总体上移的位置。</p>
+      <div class="k-comparison p12-compare" id="observation-table">
+        <div class="hdr">比较维度</div><div class="hdr">同一坐标系中的观察</div>
+        <div class="dim" id="dim-trend"><span class="p12-mark"></span>趋势</div>
+        <div class="cell"><div class="p12-observation"><strong>总体上移</strong><span id="obs-trend">等待探针验证</span></div></div>
+        <div class="rowline"></div>
+        <div class="dim" id="dim-overlap"><span class="p12-mark"></span>重叠</div>
+        <div class="cell"><div class="p12-observation"><strong>范围相交</strong><span id="obs-overlap">等待探针验证</span></div></div>
+        <div class="rowline"></div>
+        <div class="dim" id="dim-exception"><span class="p12-mark"></span>例外</div>
+        <div class="cell"><div class="p12-observation"><strong>晚出现、小容量</strong><span id="obs-exception">等待探针验证</span></div></div>
+      </div>
+      <div class="p12-reading" aria-live="polite">
+        <div class="reading"><span class="reading-label">年代</span><strong class="reading-value" id="read-year">—</strong></div>
+        <div class="reading"><span class="reading-label">颅内容积</span><strong class="reading-value" id="read-volume">—</strong></div>
+      </div>
+      <p class="p12-feedback" id="feedback">拖动十字探针；也可聚焦探针后使用方向键。</p>
+      <div class="p12-actions">
+        <p class="p12-conclusion"><strong>颅内容积</strong>只是身体测量值，不能单独充当智力或文化能力排行榜。</p>
+        <button class="btn icon-only p12-reset" id="reset" type="button" title="重置三项观察" aria-label="重置三项观察">↶</button>
+      </div>
+      <p class="p12-final fs-lead" id="final-line"><strong class="accent">趋势 ≠ 排名</strong>：总体变化不等于逐点递增。</p>
+    </aside>
+  </div>
+</main>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script src="assets/lib/d3.min.js"></script>
+<script>
+(function () {
+  'use strict';
+
+  Lec.mount({index:12,kicker:'BODY / BRAIN VOLUME',title:'变大，是趋势，不是排行榜',take:'脑容量在较晚阶段总体增大，但重叠与例外反对简单排名。'});
+
+  const P = Lec.P;
+  const K = Lec.K;
+  const brainVolumeSource = {
+    afarensisMin: 375, afarensisMax: 550,
+    erectusMin: 600, erectusMax: 1100,
+    sapiensMin: 1000, sapiensMax: 1800
+  };
+  const sapiensYearsAgo = K.homoSapiensYearsAgo || (K.human && K.human.homoSapiensYearsAgo);
+  const sources = {
+    afarensis: { key: 'afarensis', name: 'A. afarensis', start: 3900000, end: 2900000, min: K.afarensisBrainVolumeMinCm3 || brainVolumeSource.afarensisMin, max: K.afarensisBrainVolumeMaxCm3 || brainVolumeSource.afarensisMax },
+    erectus: { key: 'erectus', name: 'H. erectus', start: 1900000, end: 110000, min: K.erectusBrainVolumeMinCm3 || brainVolumeSource.erectusMin, max: K.erectusBrainVolumeMaxCm3 || brainVolumeSource.erectusMax },
+    sapiens: { key: 'sapiens', name: 'H. sapiens', start: sapiensYearsAgo, end: 0, min: K.sapiensBrainVolumeMinCm3 || brainVolumeSource.sapiensMin, max: K.sapiensBrainVolumeMaxCm3 || brainVolumeSource.sapiensMax },
+    floresiensis: { key: 'floresiensis', name: 'H. floresiensis', start: 100000, end: 60000, volume: 426 }
+  };
+
+  const tasks = [
+    { key: 'trend', label: '总体上移', prompt: '找到较晚类群总体上移的位置。', target: { years: 180000, volume: 1400 }, rx: 340000, ry: 360 },
+    { key: 'overlap', label: '范围重叠', prompt: '找到两个类群容量范围相交的位置。', target: { years: 200000, volume: 1050 }, rx: 230000, ry: 105 },
+    { key: 'exception', label: '晚期例外', prompt: '找到年代较晚但容量较小的点。', target: { years: 80000, volume: sources.floresiensis.volume }, rx: 150000, ry: 105 }
+  ];
+
+  const found = new Set();
+  let taskIndex = 0;
+  let probeData = { years: 2700000, volume: 760 };
+  let lastGood = { ...probeData };
+  let svg, x, y, probe, width, height;
+  const wrap = document.getElementById('plot-wrap');
+  const countEl = document.getElementById('found-count');
+  const feedback = document.getElementById('feedback');
+  const taskCopy = document.getElementById('task-copy');
+  const readYear = document.getElementById('read-year');
+  const readVolume = document.getElementById('read-volume');
+  const finalLine = document.getElementById('final-line');
+
+  function formatYear(years) {
+    if (years >= 1000000) return P.roundTo(years / 1000000, 1) + ' Ma';
+    if (years >= 1000) return P.roundTo(years / 1000, 0) + ' ka';
+    return years === 0 ? '现在' : P.roundTo(years, 0) + ' 年前';
+  }
+
+  function updateReadout(d) {
+    readYear.textContent = formatYear(d.years);
+    readVolume.textContent = P.roundTo(d.volume, 0) + ' cm³';
+  }
+
+  function currentTask() { return tasks[Math.min(taskIndex, tasks.length - 1)]; }
+
+  function updateSide() {
+    countEl.textContent = found.size + '/3';
+    tasks.forEach(function (task) {
+      document.getElementById('dim-' + task.key).classList.toggle('is-found', found.has(task.key));
+    });
+    if (found.size === tasks.length) {
+      taskCopy.innerHTML = '<strong>3 项观察已接通</strong>：把三行合起来读。';
+      finalLine.classList.add('is-visible');
+    } else {
+      const task = currentTask();
+      taskCopy.innerHTML = '<strong>任务 ' + (taskIndex + 1) + '/3</strong>：' + task.prompt;
+      finalLine.classList.remove('is-visible');
+    }
+  }
+
+  function setProbe(d, animate) {
+    probeData = { years: Deck.clamp(d.years, 0, 4000000), volume: Deck.clamp(d.volume, 300, 1900) };
+    if (!probe) return;
+    const selection = animate && !Deck.reduced() ? probe.transition().duration(180) : probe;
+    selection.attr('transform', 'translate(' + x(probeData.years) + ',' + y(probeData.volume) + ')');
+    probe.select('.probe-v').attr('y1', -y(probeData.volume) + 20).attr('y2', height - 44 - y(probeData.volume));
+    probe.select('.probe-h').attr('x1', -x(probeData.years) + 32).attr('x2', width - 24 - x(probeData.years));
+    updateReadout(probeData);
+  }
+
+  function isWithin(d, task) {
+    return Math.abs(d.years - task.target.years) <= task.rx && Math.abs(d.volume - task.target.volume) <= task.ry;
+  }
+
+  function pulseTarget(key) {
+    svg.selectAll('[data-target="' + key + '"]').classed('is-lit', true);
+  }
+
+  function evaluate(d) {
+    if (found.size === tasks.length) return;
+    const task = currentTask();
+    if (isWithin(d, task)) {
+      const snapped = { ...task.target };
+      setProbe(snapped, true);
+      lastGood = snapped;
+      found.add(task.key);
+      pulseTarget(task.key);
+      const messages = {
+        trend: '这支持趋势：较晚出现的类群，容量范围总体更高。',
+        overlap: '这支持重叠：H. erectus 与 H. sapiens 的容量范围相交。',
+        exception: '这支持例外：晚期仍出现约 426 cm³ 的材料。'
+      };
+      document.getElementById('obs-' + task.key).textContent = messages[task.key].replace('这支持' + task.label + '：', '');
+      feedback.textContent = messages[task.key];
+      feedback.className = 'p12-feedback is-success';
+      taskIndex += 1;
+      updateSide();
+    } else {
+      const errors = {
+        trend: '这里是单个范围；请比较较晚类群是否总体更高。',
+        overlap: '这里尚未同时落入两个类群的容量范围。',
+        exception: '请找年代较晚但容量较小的点。'
+      };
+      feedback.textContent = errors[task.key];
+      feedback.className = 'p12-feedback is-error';
+      wrap.classList.remove('is-wrong');
+      void wrap.offsetWidth;
+      wrap.classList.add('is-wrong');
+      setProbe(lastGood, true);
+    }
+  }
+
+  function render() {
+    const rect = wrap.getBoundingClientRect();
+    width = wrap.offsetWidth || rect.width;
+    height = wrap.offsetHeight || rect.height;
+    svg = d3.select('#brain-chart').attr('viewBox', '0 0 ' + width + ' ' + height);
+    svg.selectAll('*').remove();
+
+    const margin = { top: 20, right: 24, bottom: 36, left: 32 };
+    x = d3.scaleLinear().domain([4000000, 0]).range([32, width - 24]);
+    y = d3.scaleLinear().domain([300, 1900]).range([height - 36, 20]);
+
+    const xTicks = [4000000, 3000000, 2000000, 1000000, 0];
+    const yTicks = [400, 800, 1200, 1600];
+    svg.append('g').attr('class', 'grid').attr('transform', 'translate(0,' + (height - margin.bottom) + ')')
+      .call(d3.axisBottom(x).tickValues(xTicks).tickSize(-(height - margin.top - margin.bottom)).tickFormat(''));
+    svg.append('g').attr('class', 'grid').attr('transform', 'translate(' + margin.left + ',0)')
+      .call(d3.axisLeft(y).tickValues(yTicks).tickSize(-(width - margin.left - margin.right)).tickFormat(''));
+    svg.append('g').attr('class', 'axis').attr('transform', 'translate(0,' + (height - margin.bottom) + ')')
+      .call(d3.axisBottom(x).tickValues(xTicks).tickFormat(function (d) { return d === 0 ? '现在' : formatYear(d); }));
+    svg.append('g').attr('class', 'axis').attr('transform', 'translate(' + margin.left + ',0)')
+      .call(d3.axisLeft(y).tickValues(yTicks));
+    svg.append('text').attr('class', 'axis-title').attr('x', margin.left + 4).attr('y', 16).text('颅内容积 / cm³');
+    svg.append('text').attr('class', 'axis-title').attr('x', width - margin.right).attr('y', height - 4).attr('text-anchor', 'end').text('年代：越早 ← → 越接近现在');
+
+    const groups = [sources.afarensis, sources.erectus, sources.sapiens];
+    const mid = function (d) { return (d.min + d.max) / 2; };
+    const band = svg.append('g').attr('aria-hidden', 'true');
+    band.append('path').attr('class', 'branch').attr('d', d3.line()([
+      [x(sources.afarensis.end), y(mid(sources.afarensis))],
+      [x(sources.erectus.start), y(mid(sources.erectus))],
+      [x(sources.sapiens.start), y(mid(sources.sapiens))]
+    ]));
+
+    const group = band.selectAll('.species').data(groups).join('g').attr('class', 'species');
+    group.append('rect').attr('class', 'species-range')
+      .attr('x', function (d) { return x(d.start); }).attr('width', function (d) { return Math.max(8, x(d.end) - x(d.start)); })
+      .attr('y', function (d) { return y(d.max); }).attr('height', function (d) { return y(d.min) - y(d.max); });
+    group.append('line').attr('class', 'species-line')
+      .attr('x1', function (d) { return x(d.start); }).attr('x2', function (d) { return x(d.end); })
+      .attr('y1', function (d) { return y(mid(d)); }).attr('y2', function (d) { return y(mid(d)); });
+    group.each(function (d) {
+      d3.select(this).selectAll('circle.endpoint').data([
+        { years: d.start, volume: d.min }, { years: d.start, volume: d.max },
+        { years: d.end, volume: d.min }, { years: d.end, volume: d.max }
+      ]).join('circle').attr('class', 'endpoint').attr('r', 6)
+        .attr('cx', function (p) { return x(p.years); }).attr('cy', function (p) { return y(p.volume); });
+    });
+    group.append('text').attr('class', 'species-label')
+      .attr('x', function (d) { return x((d.start + d.end) / 2); })
+      .attr('y', function (d) { return y(d.max) - 9; }).attr('text-anchor', 'middle').text(function (d) { return d.name; });
+
+    svg.append('ellipse').attr('class', 'target-glow').attr('data-target', 'trend')
+      .attr('cx', x(tasks[0].target.years)).attr('cy', y(tasks[0].target.volume)).attr('rx', 40).attr('ry', 68);
+    svg.append('ellipse').attr('class', 'target-glow').attr('data-target', 'overlap')
+      .attr('cx', x(tasks[1].target.years)).attr('cy', y(tasks[1].target.volume)).attr('rx', 30).attr('ry', 18);
+    svg.append('circle').attr('class', 'endpoint').attr('data-target', 'exception').attr('r', 6)
+      .attr('cx', x(tasks[2].target.years)).attr('cy', y(tasks[2].target.volume));
+    svg.append('text').attr('class', 'exception-label').attr('x', x(tasks[2].target.years) - 10)
+      .attr('y', y(tasks[2].target.volume) - 12).attr('text-anchor', 'end').text('H. floresiensis · 晚出现、小容量');
+
+    probe = svg.append('g').attr('class', 'probe').attr('tabindex', 0).attr('role', 'slider')
+      .attr('aria-label', '年代与颅内容积十字探针').attr('aria-valuetext', '使用方向键移动，按回车检查当前位置');
+    probe.append('line').attr('class', 'probe-line probe-v');
+    probe.append('line').attr('class', 'probe-line probe-h');
+    probe.append('circle').attr('class', 'probe-hit').attr('r', 22);
+    probe.append('circle').attr('class', 'probe-ring').attr('r', 10);
+    probe.append('circle').attr('class', 'probe-core').attr('r', 3);
+
+    const drag = d3.drag().on('drag', function (event) {
+      setProbe({ years: x.invert(event.x), volume: y.invert(event.y) }, false);
+      feedback.className = 'p12-feedback';
+      feedback.textContent = '松开探针，检查当前位置是否支持当前观察。';
+    }).on('end', function () { evaluate(probeData); });
+    probe.call(drag);
+    svg.on('pointerdown', function (event) {
+      if (event.target.closest && event.target.closest('.probe')) return;
+      const point = d3.pointer(event, svg.node());
+      setProbe({ years: x.invert(point[0]), volume: y.invert(point[1]) }, false);
+    }).on('pointerup', function (event) {
+      if (event.target.closest && event.target.closest('.probe')) return;
+      evaluate(probeData);
+    });
+    probe.on('keydown', function (event) {
+      const stepYear = event.shiftKey ? 250000 : 80000;
+      const stepVolume = event.shiftKey ? 100 : 35;
+      let moved = true;
+      if (event.key === 'ArrowLeft') probeData.years += stepYear;
+      else if (event.key === 'ArrowRight') probeData.years -= stepYear;
+      else if (event.key === 'ArrowUp') probeData.volume += stepVolume;
+      else if (event.key === 'ArrowDown') probeData.volume -= stepVolume;
+      else moved = false;
+      if (moved) { event.preventDefault(); setProbe(probeData, false); }
+      if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); evaluate(probeData); }
+    });
+
+    found.forEach(pulseTarget);
+    setProbe(probeData, false);
+  }
+
+  document.getElementById('reset').addEventListener('click', function () {
+    found.clear();
+    taskIndex = 0;
+    probeData = { years: 2700000, volume: 760 };
+    lastGood = { ...probeData };
+    feedback.className = 'p12-feedback';
+    feedback.textContent = '拖动十字探针；也可聚焦探针后使用方向键。';
+    tasks.forEach(function (task) {
+      document.getElementById('obs-' + task.key).textContent = '等待探针验证';
+    });
+    svg.selectAll('[data-target]').classed('is-lit', false);
+    updateSide();
+    setProbe(probeData, true);
+  });
+
+  updateSide();
+  render();
+  Deck.onResize(render);
+  window.p12Probe = function (years, volume) {
+    setProbe({ years: years, volume: volume }, false);
+    evaluate(probeData);
+  };
+}());
+</script>
+</body>
+</html>

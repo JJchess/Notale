@@ -1,0 +1,782 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>第 16 页 · 互动讲义</title>
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<link rel="stylesheet" href="assets/lib/katex.min.css">
+<style>
+  /* ============================================================
+     Page 16 — 跳跃高度公式 · split-lr · process
+     ============================================================ */
+
+  #main {
+    display: flex;
+    flex-direction: row;
+    align-items: stretch;
+    gap: var(--sp-8);
+  }
+
+  /* ---- 左侧：模拟区 ---- */
+  .sim-panel {
+    flex: 0 0 540px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--sp-3);
+  }
+
+  #sim-canvas {
+    display: block;
+    border-radius: var(--r-md);
+    background: var(--surface);
+    border: 1px solid var(--border);
+  }
+
+  .sim-note {
+    font-size: var(--fs-label);
+    color: var(--text-dim);
+    text-align: center;
+    max-width: 480px;
+    line-height: 1.4;
+  }
+
+  /* ---- 右侧：控制与数据区 ---- */
+  .ctrl-panel {
+    flex: 1 1 0%;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-4);
+    padding: var(--sp-2) 0;
+  }
+
+  /* ---- 公式区 ---- */
+  .formula-row {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+    gap: var(--sp-4);
+    padding: var(--sp-3) var(--sp-6);
+    background: var(--surface);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--r-md);
+    min-height: 48px;
+    flex-wrap: wrap;
+  }
+
+  .formula-row .katex {
+    font-size: 22px !important;
+  }
+
+  .formula-result {
+    font-size: var(--fs-lead);
+    font-weight: 700;
+    color: var(--accent);
+    font-variant-numeric: tabular-nums;
+    font-family: var(--font-mono);
+    white-space: nowrap;
+  }
+
+  .formula-sep {
+    font-size: var(--fs-lead);
+    color: var(--text-dim);
+    font-weight: 300;
+  }
+
+  /* ---- 流程箭头 ---- */
+  .flow-row {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+    gap: var(--sp-1);
+    font-size: var(--fs-label);
+    color: var(--text-sec);
+    padding: 1px var(--sp-4);
+  }
+
+  .flow-var {
+    font-weight: 700;
+    color: var(--accent);
+    font-size: var(--fs-sec);
+  }
+
+  .flow-arrow {
+    color: var(--text-dim);
+    font-weight: 700;
+    margin: 0 2px;
+  }
+
+  .flow-mech {
+    color: var(--text);
+    background: var(--surface);
+    padding: 0 6px;
+    border-radius: var(--r-sm);
+    border: 1px solid var(--border);
+    font-size: var(--fs-tick);
+    font-family: var(--font-mono);
+  }
+
+  .flow-result {
+    font-weight: 600;
+    color: var(--text);
+  }
+
+  .flow-cross {
+    color: var(--err);
+    font-weight: 700;
+  }
+
+  .flow-dim {
+    opacity: 0.5;
+    font-size: var(--fs-tick);
+  }
+
+  /* ---- 滑块区 ---- */
+  .slider-group {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-3);
+  }
+
+  .slider-row {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: var(--sp-3);
+  }
+
+  .slider-label {
+    font-size: var(--fs-label);
+    color: var(--text-sec);
+    white-space: nowrap;
+    min-width: 80px;
+    font-weight: 500;
+  }
+
+  .slider-row input[type="range"] {
+    flex: 1 1 0%;
+    min-width: 100px;
+    height: 6px;
+    -webkit-appearance: none;
+    appearance: none;
+    background: var(--border);
+    border-radius: 3px;
+    outline: none;
+    cursor: pointer;
+  }
+
+  .slider-row input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: var(--accent);
+    border: 2px solid var(--bg);
+    cursor: pointer;
+    box-shadow: 0 0 6px rgba(77,166,255,0.4);
+  }
+
+  .slider-row input[type="range"]::-moz-range-thumb {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: var(--accent);
+    border: 2px solid var(--bg);
+    cursor: pointer;
+    box-shadow: 0 0 6px rgba(77,166,255,0.4);
+  }
+
+  .slider-row input[type="range"]:focus-visible {
+    box-shadow: 0 0 0 2px rgba(96,165,250,0.3);
+  }
+
+  .slider-val {
+    font-size: var(--fs-sec);
+    font-weight: 600;
+    color: var(--text);
+    min-width: 64px;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    font-family: var(--font-mono);
+  }
+
+  .slider-unit {
+    font-size: var(--fs-label);
+    color: var(--text-dim);
+    font-weight: 400;
+    min-width: 28px;
+  }
+
+  .ke-hint {
+    font-size: var(--fs-tick);
+    color: var(--text-dim);
+    margin-left: var(--sp-2);
+    white-space: nowrap;
+  }
+
+  .ke-hint .hi-warn {
+    color: var(--warn);
+    font-weight: 600;
+  }
+
+  /* ---- 数据面板 ---- */
+  .data-row {
+    display: flex;
+    flex-direction: row;
+    gap: var(--sp-4);
+  }
+
+  .data-card {
+    flex: 1 1 0%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--sp-1);
+    padding: var(--sp-3) var(--sp-3);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--r-md);
+  }
+
+  .data-card .data-label {
+    font-size: var(--fs-label);
+    color: var(--text-dim);
+  }
+
+  .data-card .data-value {
+    font-size: 26px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    font-family: var(--font-mono);
+    line-height: 1.2;
+  }
+
+  .data-card .data-unit {
+    font-size: var(--fs-label);
+    color: var(--text-dim);
+    font-weight: 400;
+  }
+
+  .data-card.height-card .data-value { color: var(--accent); }
+  .data-card.energy-card .data-value { color: var(--warn); }
+
+  /* ---- echarts 容器 ---- */
+  #mini-chart {
+    width: 100%;
+    height: 180px;
+    flex-shrink: 0;
+  }
+
+  /* ---- 关键洞察 ---- */
+  .insights {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-2);
+  }
+
+  .insight {
+    font-size: var(--fs-sec);
+    color: var(--text-sec);
+    line-height: 1.45;
+    padding-left: var(--sp-4);
+    border-left: 3px solid var(--border);
+  }
+
+  .insight strong {
+    color: var(--text);
+    font-weight: 600;
+  }
+
+  .insight .hi {
+    color: var(--accent);
+    font-weight: 600;
+  }
+
+  .insight .hi-warn {
+    color: var(--warn);
+    font-weight: 600;
+  }
+</style>
+</head>
+<body data-page="16" data-total="60">
+<div id="stage">
+<main id="main">
+
+  <!-- 左侧：Matter.js 物理模拟 -->
+  <div class="sim-panel">
+    <canvas id="sim-canvas" width="540" height="480"></canvas>
+    <div class="sim-note">拖动右侧滑块，观察小人跳跃高度变化</div>
+  </div>
+
+  <!-- 右侧：控制面板 -->
+  <div class="ctrl-panel">
+
+    <!-- 公式 + 结果 -->
+    <div class="formula-row">
+      <span id="formula-katex"></span>
+      <span class="formula-sep">=</span>
+      <span class="formula-result" id="formula-result">0.32 m</span>
+    </div>
+
+    <!-- 流程箭头 -->
+    <div class="flow-row">
+      <span class="flow-var">v₀</span><span class="flow-arrow">→</span>
+      <span class="flow-mech">v₀²/(2g)</span><span class="flow-arrow">→</span>
+      <span class="flow-result">h</span>
+      <span style="margin: 0 var(--sp-4);"></span>
+      <span class="flow-var">m</span><span class="flow-arrow">→</span>
+      <span class="flow-mech">½mv₀²</span><span class="flow-arrow">→</span>
+      <span class="flow-result">E</span>
+      <span style="margin: 0 var(--sp-4);"></span>
+      <span class="flow-var">m</span><span class="flow-cross">↛</span>
+      <span class="flow-dim">h</span>
+    </div>
+
+    <!-- 滑块 -->
+    <div class="slider-group">
+      <div class="slider-row">
+        <span class="slider-label">起跳初速度</span>
+        <input type="range" id="v0-slider" min="0.5" max="3" step="0.04" value="1">
+        <span class="slider-val" id="v0-val">2.50</span>
+        <span class="slider-unit">m/s</span>
+      </div>
+      <div class="slider-row">
+        <span class="slider-label">身体质量</span>
+        <input type="range" id="mass-slider" min="0.5" max="3" step="0.0142857" value="1">
+        <span class="slider-val" id="mass-val">70</span>
+        <span class="slider-unit">kg</span>
+        <span class="ke-hint">E = ½mv₀² = <span class="hi-warn" id="ke-hint-val">219</span> J</span>
+      </div>
+    </div>
+
+    <!-- 实时数据 -->
+    <div class="data-row">
+      <div class="data-card height-card">
+        <span class="data-label">跳跃高度</span>
+        <span class="data-value" id="height-val">0.32</span>
+        <span class="data-unit">m</span>
+      </div>
+      <div class="data-card energy-card">
+        <span class="data-label">所需动能</span>
+        <span class="data-value" id="energy-val">219</span>
+        <span class="data-unit">J</span>
+      </div>
+    </div>
+
+    <!-- echarts 迷你柱状图 -->
+    <div id="mini-chart"></div>
+
+    <!-- 关键洞察 -->
+    <div class="insights">
+      <div class="insight">
+        <strong>跳跃高度</strong>只取决于<span class="hi">初速度</span>和重力加速度，与<span class="hi-warn">身体质量无关</span>。无论 50 kg 还是 150 kg，初速度相同就跳得一样高。
+      </div>
+      <div class="insight">
+        <span class="hi-warn">质量越大</span>，达到同样初速度需要的<span class="hi-warn">动能越大</span>。体重更大的人跳得低，不是质量直接"拉低"了高度，而是肌肉难以给更大质量提供相同的初速度。
+      </div>
+    </div>
+
+  </div>
+
+</main>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script src="assets/lib/matter.min.js"></script>
+<script src="assets/lib/echarts.min.js"></script>
+<script src="assets/lib/katex.min.js"></script>
+<script>
+(function() {
+  // ============================================================
+  // 0. 初始化
+  // ============================================================
+  Lec.mount({
+    index: 16,
+    kicker: '第2章 · 地球跳跃实验室',
+    title: '跳跃高度公式',
+    take: 'h = v₀² / (2g)，质量不出现在公式中'
+  });
+  Deck.init({ index: 16, total: 60 });
+
+  // ============================================================
+  // 1. 常量与状态
+  // ============================================================
+  var GRAVITY = Lec.K.EARTH_GRAVITY;
+  var DEFAULT_V0 = Lec.K.HUMAN_JUMP_INITIAL_VELOCITY;
+  var DEFAULT_MASS = Lec.K.ASTRONAUT_MASS;
+
+  var V0_MIN = DEFAULT_V0 * 0.5;
+  var V0_MAX = DEFAULT_V0 * 3.0;
+  var MASS_MIN = DEFAULT_MASS * 0.5;
+  var MASS_MAX = DEFAULT_MASS * 3.0;
+
+  var H_MAX_REF = Lec.P.jumpHeightFromVelocity(V0_MAX, GRAVITY);
+  var E_MAX_REF = Lec.P.kineticEnergy(MASS_MAX, V0_MAX);
+
+  var PX_PER_M = 120;
+
+  var currentV0 = DEFAULT_V0;
+  var currentMass = DEFAULT_MASS;
+  var jumpHeight = Lec.P.jumpHeightFromVelocity(currentV0, GRAVITY);
+  var kineticEnergy = Lec.P.kineticEnergy(currentMass, currentV0);
+  var isJumping = false;
+  var maxHeightReached = 0;
+  var figureGrounded = true;
+
+  // ============================================================
+  // 2. Matter.js 设置
+  // ============================================================
+  var Engine = Matter.Engine;
+  var World = Matter.World;
+  var Bodies = Matter.Bodies;
+  var Body = Matter.Body;
+  var Composite = Matter.Composite;
+
+  var engine = Engine.create({
+    gravity: { x: 0, y: 1, scale: 0.001 },
+    enableSleeping: false
+  });
+
+  var groundY = 450;
+  var figureStartY = 415;
+  var figureStartX = 270;
+
+  var ground = Bodies.rectangle(270, groundY + 15, 560, 30, {
+    isStatic: true, restitution: 0, friction: 0.8
+  });
+
+  var figure = Bodies.rectangle(figureStartX, figureStartY, 30, 70, {
+    restitution: 0, friction: 0.5, density: 0.001, inertia: Infinity
+  });
+  Body.setMass(figure, DEFAULT_MASS);
+
+  var wallL = Bodies.rectangle(-15, 240, 30, 500, { isStatic: true, restitution: 0 });
+  var wallR = Bodies.rectangle(555, 240, 30, 500, { isStatic: true, restitution: 0 });
+
+  Composite.add(engine.world, [ground, figure, wallL, wallR]);
+
+  // ============================================================
+  // 3. Canvas 渲染
+  // ============================================================
+  var canvas = document.getElementById('sim-canvas');
+  var ctx = Deck.fit(canvas);
+
+  function drawRoundRect(cx, x, y, w, h, r) {
+    cx.beginPath();
+    cx.moveTo(x + r, y);
+    cx.lineTo(x + w - r, y);
+    cx.arcTo(x + w, y, x + w, y + r, r);
+    cx.lineTo(x + w, y + h - r);
+    cx.arcTo(x + w, y + h, x + w - r, y + h, r);
+    cx.lineTo(x + r, y + h);
+    cx.arcTo(x, y + h, x, y + h - r, r);
+    cx.lineTo(x, y + r);
+    cx.arcTo(x, y, x + r, y, r);
+    cx.closePath();
+  }
+
+  function drawFigure(x, y, scale) {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.scale(scale, scale);
+
+    // 头部
+    ctx.beginPath();
+    ctx.arc(0, -45, 10, 0, Math.PI * 2);
+    ctx.fillStyle = '#e6edf5';
+    ctx.fill();
+    ctx.strokeStyle = '#8899aa';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+
+    // 躯干
+    drawRoundRect(ctx, -11, -10, 22, 38, 6);
+    ctx.fillStyle = '#4da6ff';
+    ctx.fill();
+    ctx.strokeStyle = '#3388dd';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+
+    // 腿
+    ctx.beginPath();
+    ctx.moveTo(-6, 28); ctx.lineTo(-8, 48);
+    ctx.strokeStyle = '#e6edf5';
+    ctx.lineWidth = 3; ctx.lineCap = 'round';
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(6, 28); ctx.lineTo(8, 48);
+    ctx.stroke();
+
+    // 手臂
+    ctx.beginPath();
+    ctx.moveTo(-11, 0); ctx.lineTo(-17, 15);
+    ctx.strokeStyle = '#e6edf5';
+    ctx.lineWidth = 2.5; ctx.lineCap = 'round';
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(11, 0); ctx.lineTo(17, 15);
+    ctx.stroke();
+
+    ctx.restore();
+  }
+
+  function renderSimulation() {
+    var w = canvas.width;
+    var h = canvas.height;
+
+    ctx.fillStyle = '#0b1119';
+    ctx.fillRect(0, 0, w, h);
+
+    // 地面
+    ctx.fillStyle = '#243040';
+    ctx.fillRect(0, groundY, w, 4);
+    ctx.fillStyle = '#111a26';
+    ctx.fillRect(0, groundY + 4, w, h - groundY - 4);
+
+    // 地面纹理
+    ctx.strokeStyle = '#1a2a3a';
+    ctx.lineWidth = 1;
+    for (var gx = 0; gx < w; gx += 40) {
+      ctx.beginPath();
+      ctx.moveTo(gx, groundY + 4);
+      ctx.lineTo(gx + 20, h);
+      ctx.stroke();
+    }
+
+    var pos = figure.position;
+    var scale = 0.8 + (currentMass / DEFAULT_MASS) * 0.2;
+
+    // 最高点参考线
+    if (maxHeightReached > 5 && !isJumping) {
+      var refY = figureStartY - maxHeightReached;
+      ctx.setLineDash([4, 6]);
+      ctx.strokeStyle = 'rgba(77,166,255,0.3)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(0, refY);
+      ctx.lineTo(w, refY);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      var hReal = maxHeightReached / PX_PER_M;
+      ctx.fillStyle = 'rgba(77,166,255,0.7)';
+      ctx.font = '13px Inter, system-ui, sans-serif';
+      ctx.textAlign = 'right';
+      ctx.fillText(hReal.toFixed(2) + ' m', w - 12, refY - 6);
+    }
+
+    // 当前高度指示线
+    if (pos.y < figureStartY - 3) {
+      ctx.setLineDash([3, 5]);
+      ctx.strokeStyle = 'rgba(77,166,255,0.25)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(pos.x, pos.y);
+      ctx.lineTo(pos.x, figureStartY);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+
+    drawFigure(pos.x, pos.y, scale);
+
+    // 地面标记
+    ctx.fillStyle = '#334455';
+    ctx.font = '13px Inter, system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('地面  g = 9.8 m/s²', figureStartX, groundY - 10);
+  }
+
+  // ============================================================
+  // 4. 跳跃逻辑
+  // ============================================================
+  function doJump() {
+    Body.setPosition(figure, { x: figureStartX, y: figureStartY });
+    Body.setVelocity(figure, { x: 0, y: 0 });
+    Body.setAngularVelocity(figure, 0);
+    Body.setAngle(figure, 0);
+    Body.setMass(figure, currentMass);
+
+    var vMatter = currentV0 * Math.sqrt(PX_PER_M / GRAVITY);
+    Body.setVelocity(figure, { x: 0, y: -vMatter });
+
+    isJumping = true;
+    maxHeightReached = 0;
+    figureGrounded = false;
+  }
+
+  function checkLanding() {
+    var pos = figure.position;
+    var vy = figure.velocity.y;
+
+    if (isJumping && pos.y >= figureStartY - 2 && Math.abs(vy) < 0.8) {
+      Body.setPosition(figure, { x: figureStartX, y: figureStartY });
+      Body.setVelocity(figure, { x: 0, y: 0 });
+      isJumping = false;
+      figureGrounded = true;
+    }
+
+    if (isJumping) {
+      var curH = figureStartY - pos.y;
+      if (curH > maxHeightReached) maxHeightReached = curH;
+    }
+  }
+
+  // ============================================================
+  // 5. 动画循环
+  // ============================================================
+  Deck.loop(function() {
+    if (Deck.reduced()) {
+      if (isJumping) {
+        Engine.update(engine, 1000 / 60);
+        checkLanding();
+      }
+      renderSimulation();
+      return;
+    }
+    Engine.update(engine, 1000 / 60);
+    checkLanding();
+    renderSimulation();
+  });
+
+  // ============================================================
+  // 6. KaTeX 公式 (仅符号公式,≥20px base)
+  // ============================================================
+  function renderFormula() {
+    katex.render('h = \\frac{v_0^2}{2g}', document.getElementById('formula-katex'), {
+      throwOnError: false,
+      displayMode: true
+    });
+    var h = Lec.P.jumpHeightFromVelocity(currentV0, GRAVITY);
+    document.getElementById('formula-result').textContent = h.toFixed(2) + ' m';
+  }
+
+  // ============================================================
+  // 7. echarts 迷你柱状图
+  // ============================================================
+  var chartDom = document.getElementById('mini-chart');
+  var chart = echarts.init(chartDom, null, {
+    renderer: 'svg',
+    width: chartDom.clientWidth,
+    height: 180
+  });
+
+  function updateChart() {
+    var hPct = Math.min(100, (jumpHeight / H_MAX_REF) * 100);
+    var ePct = Math.min(100, (kineticEnergy / E_MAX_REF) * 100);
+
+    chart.setOption({
+      textStyle: { fontSize: 14 },
+      grid: { top: 24, right: 16, bottom: 32, left: 52 },
+      xAxis: {
+        type: 'category',
+        data: ['跳跃高度', '所需动能'],
+        axisLabel: { fontSize: 14, color: '#a0b0c0' },
+        axisLine: { lineStyle: { color: '#334455' } },
+        axisTick: { show: false }
+      },
+      yAxis: {
+        type: 'value',
+        max: 100,
+        axisLabel: { fontSize: 12, color: '#8899aa', formatter: '{value}%' },
+        splitLine: { lineStyle: { color: '#1a2a3a' } }
+      },
+      series: [{
+        type: 'bar',
+        data: [
+          {
+            value: +hPct.toFixed(1),
+            itemStyle: { color: '#4da6ff', borderRadius: [4, 4, 0, 0] }
+          },
+          {
+            value: +ePct.toFixed(1),
+            itemStyle: { color: '#f59e0b', borderRadius: [4, 4, 0, 0] }
+          }
+        ],
+        barWidth: '35%',
+        label: {
+          show: true,
+          position: 'top',
+          fontSize: 14,
+          color: '#e6edf5',
+          fontWeight: 600,
+          formatter: function(p) {
+            return p.dataIndex === 0
+              ? jumpHeight.toFixed(2) + ' m'
+              : Math.round(kineticEnergy) + ' J';
+          }
+        }
+      }]
+    }, true);
+  }
+
+  // ============================================================
+  // 8. UI 更新
+  // ============================================================
+  function updateAll() {
+    jumpHeight = Lec.P.jumpHeightFromVelocity(currentV0, GRAVITY);
+    kineticEnergy = Lec.P.kineticEnergy(currentMass, currentV0);
+
+    document.getElementById('v0-val').textContent = currentV0.toFixed(2);
+    document.getElementById('mass-val').textContent = Math.round(currentMass);
+    document.getElementById('height-val').textContent = jumpHeight.toFixed(2);
+    document.getElementById('energy-val').textContent = Math.round(kineticEnergy);
+    document.getElementById('ke-hint-val').textContent = Math.round(kineticEnergy);
+
+    renderFormula();
+    updateChart();
+    doJump();
+  }
+
+  // ============================================================
+  // 9. 滑块事件
+  // ============================================================
+  var v0Slider = document.getElementById('v0-slider');
+  var massSlider = document.getElementById('mass-slider');
+
+  function sliderToV0(sv) {
+    return V0_MIN + (sv - 0.5) / 2.5 * (V0_MAX - V0_MIN);
+  }
+
+  function sliderToMass(sv) {
+    return MASS_MIN + (sv - 0.5) / 2.5 * (MASS_MAX - MASS_MIN);
+  }
+
+  function onV0Input() {
+    currentV0 = sliderToV0(parseFloat(v0Slider.value));
+    updateAll();
+  }
+
+  function onMassInput() {
+    currentMass = sliderToMass(parseFloat(massSlider.value));
+    updateAll();
+  }
+
+  v0Slider.addEventListener('input', onV0Input);
+  massSlider.addEventListener('input', onMassInput);
+  v0Slider.addEventListener('change', onV0Input);
+  massSlider.addEventListener('change', onMassInput);
+
+  // ============================================================
+  // 10. 初始渲染
+  // ============================================================
+  v0Slider.value = 1;
+  massSlider.value = 1;
+  currentV0 = DEFAULT_V0;
+  currentMass = DEFAULT_MASS;
+
+  updateAll();
+
+  setTimeout(function() { doJump(); }, 600);
+
+  window.addEventListener('resize', function() { chart.resize(); });
+
+})();
+</script>
+</body>
+</html>

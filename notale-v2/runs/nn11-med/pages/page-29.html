@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title></title>
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/deck.css">
+<style>
+#main{height:100%;display:flex;flex-direction:column;gap:12px}
+.state-flow{flex:0 0 auto;display:grid;grid-template-columns:1fr 28px 1fr 28px 1fr 28px 1fr 28px 1fr;align-items:center}
+.state-node{min-width:0;border:1px solid var(--line-soft);border-radius:8px;padding:7px 10px;background:rgba(25,21,18,.62);text-align:center;color:var(--text-3);font-size:var(--fs-sec);line-height:1.35;transition:.12s}
+.state-node .range{display:block;font-family:var(--font-num);font-size:var(--fs-tick);margin-top:2px;color:var(--text-3)}
+.state-node.active{border-color:currentColor;background:rgba(255,255,255,.045);box-shadow:0 0 22px rgba(255,255,255,.04);font-weight:700}
+.state-node[data-state="impact"].active{color:var(--warn)}
+.state-node[data-state="lowellipse"].active,.state-node[data-state="highellipse"].active{color:var(--gene-2)}
+.state-node[data-state="circle"].active{color:var(--cult)}
+.state-node[data-state="escape"].active{color:var(--cult-2)}
+.state-arrow{text-align:center;color:var(--text-3);font-size:var(--fs-h2)}
+.workspace{flex:1 1 auto;min-height:0;display:grid;grid-template-columns:minmax(0,1.55fr) minmax(410px,.9fr);gap:14px}
+.sim-panel{min0;display:flex;flex-direction:column;padding:12px 14px 10px;background:linear-gradient(150deg,rgba(25,21,18,.88),rgba(8,7,6,.72));border:1px solid var(--line-soft);border-radius:var(--r)}
+.sim-head{display:flex;justify-content:space-between;align-items:center;gap:14px;margin-bottom:6px}
+.sim-head .ttl{margin:0}
+.legend{justify-content:flex-end}
+.orbit-box{flex:1 1 auto;min-height:0;background:radial-gradient(circle at 50% 52%,#171a1b 0,#0c0b0a 70%);border:1px solid var(--line-soft)}
+.side{min0;display:flex;flex-direction:column;gap:10px}
+.control-panel{padding:13px 16px 11px}
+.speed-row{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-bottom:2px}
+.speed-row .ttl{margin:0}
+.speed-read{font-family:var(--font-num);font-size:var(--fs-h2);color:var(--text);font-variant-numeric:tabular-nums}
+.range-wrap{position:relative;padding:14px 0 27px}
+.range-wrap input{width:100%;display:block;position:relative;z-index:2}
+.boundary{position:absolute;top:13px;height:14px;width:1px;background:var(--text-3);opacity:.8;pointer-events:none}
+.boundary.strong{height:18px;background:var(--cult)}
+.anchor-label{position:absolute;top:39px;transform:translateX(-50%);white-space:nowrap;font-family:var(--font-num);font-size:var(--fs-tick);color:var(--text-3)}
+.readouts{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px 12px;margin-top:8px;padding-top:10px;border-top:1px solid var(--line-soft)}
+.metric{min-width:0}
+.metric .k{display:block;font-size:var(--fs-label);color:var(--text-3);line-height:1.25}
+.metric .v{display:block;margin-top:2px;font-family:var(--font-num);font-size:var(--fs-sec);color:var(--text);font-variant-numeric:tabular-nums;white-space:nowrap}
+.metric.status{grid-column:span 2}
+.metric.status .v{font-family:var(--font-sans);font-size:var(--fs-lead);font-weight:700}
+.hint{margin-top:8px}
+.fall-panel{flex:1 1 auto;min-height:0;padding:13px 16px;display:grid;grid-template-columns:minmax(0,1fr) 150px;gap:12px;align-items:center;border-left:3px solid var(--cult)}
+.fall-copy{font-size:var(--fs-lead);line-height:1.52;color:var(--text-2)}
+.fall-copy b{color:var(--cult-2)}
+.fall-copy b:last-child{display:inline-block;margin-left:4px}
+.drop-sketch{width:150px;height:108px;display:block}
+.drop-sketch text{font-family:var(--font-sans);font-size:var(--fs-label);fill:var(--text-2)}
+@media (prefers-reduced-motion:reduce){.state-node{transition:none}}
+</style>
+</head>
+<body data-page="29" data-total="44">
+<div id="stage"><main id="main">
+  <section class="state-flow" aria-label="初速增加时的轨道状态顺序">
+    <div class="state-node" data-state="impact">落回<span class="range">4.00–7.66</span></div><div class="state-arrow">→</div>
+    <div class="state-node" data-state="lowellipse">椭圆<span class="range">近地点在对面</span></div><div class="state-arrow">→</div>
+    <div class="state-node" data-state="circle">圆<span class="range">7.79 km/s</span></div><div class="state-arrow">→</div>
+    <div class="state-node" data-state="highellipse">椭圆<span class="range">远地点在对面</span></div><div class="state-arrow">→</div>
+    <div class="state-node" data-state="escape">逃逸<span class="range">≥ 11.01</span></div>
+  </section>
+
+  <section class="workspace min0">
+    <div class="sim-panel min0">
+      <div class="sim-head">
+        <div class="ttl">从 200 km 高处水平发射 · 每秒积分一次</div>
+        <div class="legend"><span class="li"><i class="sw line" id="trailSw"></i>真实积分轨迹</span><span class="li"><i class="sw" style="background:#45423e"></i>地球</span></div>
+      </div>
+      <div class="cvbox orbit-box min0"><canvas id="orbit" class="cv-fill" aria-label="地球与实时积分得到的发射轨迹"></canvas></div>
+    </div>
+
+    <aside class="side min0">
+      <div class="panel control-panel">
+        <div class="speed-row"><div class="ttl">发射速度</div><output id="speedOut" class="speed-read">6.00 km/s</output></div>
+        <div class="range-wrap no-pan">
+          <input id="speed" type="range" min="4" max="12" step="0.01" value="6" aria-label="发射速度，单位千米每秒">
+          <i class="boundary" style="left:45.9%" title="落回与闭合椭圆的分界"></i>
+          <i class="boundary strong" style="left:47.25%" title="圆轨道下界"></i>
+          <i class="boundary strong" style="left:47.5%" title="圆轨道上界"></i>
+          <i class="boundary strong" style="left:87.68%" title="逃逸分界"></i>
+          <span class="anchor-label" style="left:47.35%">7.79 圆轨道</span>
+          <span class="anchor-label" style="left:87.68%">11.01 逃逸</span>
+        </div>
+        <div class="readouts">
+          <div class="metric"><span class="k">初速</span><span class="v" id="mSpeed">6.00 km/s</span></div>
+          <div class="metric status"><span class="k">状态</span><span class="v" id="mState">落回</span></div>
+          <div class="metric"><span class="k">近地点高度</span><span class="v" id="mPeri">撞地</span></div>
+          <div class="metric"><span class="k">远地点高度</span><span class="v" id="mApo">200 km</span></div>
+          <div class="metric"><span class="k">周期</span><span class="v" id="mPeriod">—</span></div>
+        </div>
+        <div class="hint">拖滑块改变初速，轨迹会重新算一遍</div>
+      </div>
+
+      <div class="panel fall-panel min0">
+        <div class="fall-copy">圆轨道上的航天器<b>一直在自由下落</b>——它每秒往下掉 <b>4.9 米</b>，而地球表面在这一秒里也弯下去了 <b>4.9 米</b>。<b>它永远追不上地面。</b></div>
+        <svg class="drop-sketch" viewBox="0 0 150 108" role="img" aria-label="切线与地球弧面都下降4.9米的示意">
+          <path d="M10 25 H140" stroke="#8b8078" stroke-width="1.5" stroke-dasharray="5 4"/>
+          <path d="M10 25 Q75 28 140 67" fill="none" stroke="#5fc8d8" stroke-width="3"/>
+          <path d="M13 25 C42 30 78 43 108 67" fill="none" stroke="#ece7df" stroke-width="2"/>
+          <circle cx="108" cy="67" r="4" fill="#5fc8d8"/>
+          <path d="M138 27 V65 M134 27 H142 M134 65 H142" stroke="#e0913a" stroke-width="1.5"/>
+          <text x="82" y="19">切线</text><text x="83" y="98">地球弧面</text><text x="104" y="48" fill="#f0b874">4.9 m</text>
+        </svg>
+      </div>
+    </aside>
+  </section>
+</main></div>
+<script src="assets/base.js"></script>
+<script src="assets/deck.js"></script>
+<script>
+Chrome.mount({ act:4, title:'牛顿的大炮', sub:'轨道不是"飞出去"。轨道是一直在往下掉，而地面一直在躲开。', foot:'既然要 7.8 km/s，那就得问：这个速度从哪儿来？' });
+
+(function(){
+  'use strict';
+  var GM=3.986e14, R=6.371e6, h0=2e5, r0=R+h0, dt=1, maxSteps=20000;
+  var vc=Math.sqrt(GM/r0), ve=vc*Math.sqrt(2);
+  var vGrazing=Math.sqrt(2*GM*R/(r0*(R+r0)));
+  var input=document.getElementById('speed'), canvas=document.getElementById('orbit');
+  var current=null;
+
+  function accel(x,y){var rr=Math.sqrt(x*x+y*y), q=-GM/(rr*rr*rr);return {x:q*x,y:q*y};}
+  function integrate(v0){
+    var x=0,y=-r0,vx=v0,vy=0,a=accel(x,y), pts=[{x:x,y:y}], minR=r0,maxR=r0;
+    var prevAng=-Math.PI/2, swept=0, period=null, impact=false, flight=0;
+    for(var i=1;i<=maxSteps;i++){
+      var nx=x+vx*dt+.5*a.x*dt*dt, ny=y+vy*dt+.5*a.y*dt*dt;
+      var na=accel(nx,ny);
+      vx+=.5*(a.x+na.x)*dt; vy+=.5*(a.y+na.y)*dt;
+      x=nx;y=ny;a=na;
+      var rr=Math.sqrt(x*x+y*y); minR=Math.min(minR,rr);maxR=Math.max(maxR,rr);
+      if(i<1800 || i%4===0) pts.push({x:x,y:y});
+      var ang=Math.atan2(y,x), da=ang-prevAng;
+      if(da<-Math.PI) da+=Math.PI*2; if(da>Math.PI) da-=Math.PI*2;
+      swept+=da; prevAng=ang;
+      if(rr<R){impact=true;flight=i*dt;break;}
+      if(swept>=Math.PI*2){period=i*dt;break;}
+      if(v0>=ve && rr>R*4.2){break;}
+    }
+    var state;
+    if(impact || v0<vGrazing) state='impact';
+    else if(v0<vc-15) state='lowellipse';
+    else if(v0<=vc+15) state='circle';
+    else if(v0<ve) state='highellipse';
+    else state='escape';
+    return {pts:pts,minR:minR,maxR:maxR,period:period,impact:impact,flight:flight,state:state,v:v0};
+  }
+  function colorFor(s){return s==='impact'?Deck.token('--warn'):(s==='lowellipse'||s==='highellipse')?Deck.token('--gene'):s==='circle'?Deck.token('--cult'):Deck.token('--cult-2');}
+  function kmHeight(rr){return Math.max(0,Math.round((rr-R)/1000)).toLocaleString('zh-CN')+' km';}
+  function fmtTime(sec){
+    if(sec==null)return '—';
+    var min=sec/60;
+    return min<100?min.toFixed(1)+' 分钟':(min/60).toFixed(1)+' 小时';
+  }
+  function draw(){
+    if(!current)return;
+    var ctx=Deck.fit(canvas), w=canvas.offsetWidth,h=canvas.offsetHeight;
+    ctx.clearRect(0,0,w,h);
+    var extent=2.48*R, scale=Math.min(w,h)/(2*extent), cx=w*.47,cy=h*.52;
+    function sx(x){return cx+x*scale} function sy(y){return cy+y*scale}
+    ctx.save();
+    ctx.strokeStyle='rgba(185,173,160,.08)';ctx.lineWidth=1;
+    for(var k=1;k<=2;k++){ctx.beginPath();ctx.arc(cx,cy,R*scale*k,0,Math.PI*2);ctx.stroke();}
+    var grad=ctx.createRadialGradient(cx-R*scale*.3,cy-R*scale*.35,R*scale*.1,cx,cy,R*scale);
+    grad.addColorStop(0,'#56534e');grad.addColorStop(.72,'#343330');grad.addColorStop(1,'#1e1d1b');
+    ctx.fillStyle=grad;ctx.beginPath();ctx.arc(cx,cy,R*scale,0,Math.PI*2);ctx.fill();
+    ctx.strokeStyle='rgba(236,231,223,.24)';ctx.lineWidth=1.2;ctx.stroke();
+    ctx.beginPath();
+    current.pts.forEach(function(p,i){var X=sx(p.x),Y=sy(p.y);if(i===0)ctx.moveTo(X,Y);else ctx.lineTo(X,Y)});
+    ctx.strokeStyle=colorFor(current.state);ctx.lineWidth=3;ctx.shadowColor=colorFor(current.state);ctx.shadowBlur=9;ctx.stroke();ctx.shadowBlur=0;
+    var launchX=sx(0),launchY=sy(-r0);
+    ctx.fillStyle=Deck.token('--text');ctx.beginPath();ctx.arc(launchX,launchY,4.5,0,Math.PI*2);ctx.fill();
+    ctx.strokeStyle=Deck.token('--text-2');ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(launchX-8,launchY);ctx.lineTo(launchX+10,launchY);ctx.stroke();
+    ctx.fillStyle=Deck.token('--text-2');ctx.font='15px '+getComputedStyle(document.documentElement).getPropertyValue('--font-sans');ctx.fillText('200 km',launchX+14,launchY-8);
+    ctx.fillStyle=Deck.token('--text-3');ctx.font='13px '+getComputedStyle(document.documentElement).getPropertyValue('--font-num');ctx.fillText('按比例绘制',14,h-14);
+    ctx.restore();
+  }
+  function update(){
+    var vk=parseFloat(input.value), vm=vk*1000;
+    current=integrate(vm);
+    var names={impact:'落回',lowellipse:'椭圆 · 近地点在对面',circle:'圆轨道',highellipse:'椭圆 · 远地点在对面',escape:'逃逸'};
+    document.getElementById('speedOut').textContent=vk.toFixed(2)+' km/s';
+    document.getElementById('mSpeed').textContent=vk.toFixed(2)+' km/s';
+    var stateEl=document.getElementById('mState'); stateEl.textContent=names[current.state];stateEl.style.color=colorFor(current.state);
+    document.getElementById('mPeri').textContent=current.state==='impact'?'撞地':kmHeight(current.minR);
+    document.getElementById('mApo').textContent=current.state==='escape'?'无上限':kmHeight(current.maxR);
+    document.getElementById('mPeriod').textContent=current.state==='impact'?'飞行 '+fmtTime(current.flight):fmtTime(current.period);
+    document.querySelectorAll('.state-node').forEach(function(n){n.classList.toggle('active',n.dataset.state===current.state)});
+    document.getElementById('trailSw').style.background=colorFor(current.state);
+    draw();
+  }
+  input.addEventListener('input',update);
+  Deck.onResize(draw);
+  update();
+})();
+</script>
+</body></html>

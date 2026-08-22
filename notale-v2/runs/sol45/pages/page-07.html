@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  #stage{padding:28px 46px 26px;gap:14px}
+  .eyebrow{color:var(--track-blue);font:700 var(--fs-label)/1.4 var(--font-mono);letter-spacing:.12em}
+  .viz-shell{position:relative;overflow:hidden;background:rgba(9,23,40,.9);border:1px solid var(--line);border-radius:var(--radius-lg);box-shadow:var(--shadow-panel)}
+  .viz-shell.is-current{border-color:var(--sun-gold-line);box-shadow:var(--shadow-panel),var(--glow-gold)}
+  #solar-svg{display:block;width:100%;height:100%}
+  #solar-svg text{font-family:var(--font-sans);fill:var(--text)}
+  #solar-svg .svg-label{font-size:15px;fill:var(--text-muted)}
+  #solar-svg .svg-body{font-size:16px}
+  #solar-svg .svg-sec{font-size:16px;fill:var(--text-muted)}
+  #solar-svg .svg-head{font-size:22px;font-weight:700}
+  #solar-svg .svg-tick{font:13px var(--font-mono);fill:var(--text-muted)}
+  .switchbar{position:absolute;z-index:3;left:50%;top:50%;transform:translate(-50%,-50%);padding:8px;background:var(--panel-raised);border:1px solid var(--line-strong);border-radius:var(--radius-md);box-shadow:var(--shadow-panel)}
+  .switchbar .btn{min-width:126px}
+  .statusline{position:absolute;z-index:3;right:22px;top:calc(50% - 24px);transform:translateY(-100%)}
+  .feedback{position:absolute;z-index:3;left:22px;bottom:18px;padding:8px 14px;color:var(--sun-gold);font-size:var(--fs-sec);line-height:1.5;background:rgba(7,17,31,.9);border-left:3px solid var(--sun-gold);opacity:0;transform:translateY(8px);transition:opacity 220ms ease-out,transform 220ms ease-out}
+  .feedback.show{opacity:1;transform:none}
+  .shake{animation:shake 220ms ease-out}
+  @keyframes shake{25%{transform:translate(-53%,-50%)}75%{transform:translate(-47%,-50%)}}
+  .conclusion{display:flex;align-items:center;justify-content:space-between;gap:24px;min-height:58px;padding:12px 18px;background:linear-gradient(90deg,var(--sun-gold-soft),var(--panel));border-left:6px solid var(--sun-gold);border-radius:0 var(--radius-md) var(--radius-md) 0;opacity:.48;transition:opacity 260ms ease-out,box-shadow 260ms ease-out}
+  .conclusion.done{opacity:1;box-shadow:var(--glow-gold)}
+  .conclusion p{font-size:var(--fs-lead);line-height:1.5;font-weight:700}
+  .reset{display:none}.conclusion.done .reset{display:inline-flex}
+  .btn:focus-visible{outline:3px solid var(--focus);outline-offset:3px}
+  @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body data-page="07" data-total="32">
+<div id="stage">
+  <header class="row items-end justify-between shrink0" style="height:78px">
+    <div class="col gap-1"><div class="eyebrow">SCALE CONFLICT · 07</div><h1>一张图，两种真相</h1></div>
+    <p class="lead muted">切换比例，观察同一组天体如何重排。</p>
+  </header>
+
+  <main class="viz-shell is-current min0" style="flex:1" aria-label="大小比例与距离比例的太阳系对照图">
+    <svg id="solar-svg" viewBox="0 0 1200 620" role="img" aria-labelledby="viz-title viz-desc">
+      <title id="viz-title">太阳系大小比例与距离比例比较</title>
+      <desc id="viz-desc">同一组天体在大小比例下能看清直径但距离远超画框，在距离比例下能容纳海王星但天体缩成点。</desc>
+    </svg>
+    <div class="switchbar row gap-1" role="radiogroup" aria-label="选择比例规则">
+      <button class="btn is-primary" type="button" role="radio" aria-checked="true" data-mode="size">大小比例</button>
+      <button class="btn" type="button" role="radio" aria-checked="false" data-mode="distance">距离比例</button>
+    </div>
+    <div id="progress" class="statusline chip is-current" aria-live="polite">已查看 1/2 种比例</div>
+    <div id="feedback" class="feedback" aria-live="polite"></div>
+  </main>
+
+  <section id="conclusion" class="conclusion shrink0" style="height:68px" aria-live="polite">
+    <p>同一张图无法同时清楚呈现太阳大小、行星大小与行星距离；<span class="accent">选择比例，也是在选择让什么可见。</span></p>
+    <button id="reset" class="btn reset shrink0" type="button">重置比较</button>
+  </section>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script src="assets/lib/d3.min.js"></script>
+<script>
+(function(){
+  Deck.init({index:7,total:32});
+  const P=Lec.K.planets, S=Lec.K.sun;
+  const order=[['mercury','水星'],['venus','金星'],['earth','地球'],['mars','火星'],['jupiter','木星'],['saturn','土星'],['uranus','天王星'],['neptune','海王星']];
+  const pick=(o,names)=>{for(const n of names)if(o&&o[n]!=null)return o[n];};
+  const planet=(key,name)=>{const o=P.find(d=>d.key===key);return {key,name,r:+pick(o,['meanRadiusKm','radiusKm','meanRadius']),au:+pick(o,['semimajorAxisAU','semiMajorAxisAU','semiMajorAxisAu','aAU','distanceAU'])};};
+  const data=order.map(d=>planet(d[0],d[1]));
+  const sunRadius=+pick(S,['meanRadiusKm','radiusKm','meanRadius']);
+  const sunDiameterPx=180;
+  const neptune=data[data.length-1];
+  const distanceX=d3.scaleLinear().domain([0,neptune.au]).range([90,1110]);
+  const sizeX=d3.scalePoint().domain(data.map(d=>d.key)).range([245,1110]);
+  const kmPerAU=Lec.P.auToKm(1);
+  const distancePxPerKm=(1110-90)/(neptune.au*kmPerAU);
+  const sizeDiameter=d=>Lec.P.scaleBodyDiameterForSunDiameter(d.r,sunDiameterPx);
+  const distanceDiameter=d=>d.r*2*distancePxPerKm;
+  const sizeDistance=d=>Lec.P.scaleDistanceForSunDiameter(d.au,sunDiameterPx);
+  const fmt=v=>Lec.P.significantFigures(v,3);
+  const svg=d3.select('#solar-svg');
+  const colors={blue:'var(--track-blue)',line:'var(--track-blue-line)',gold:'var(--sun-gold)',muted:'var(--text-muted)',panel:'var(--panel-raised)'};
+
+  svg.append('line').attr('x1',60).attr('x2',1140).attr('y1',302).attr('y2',302).attr('stroke','var(--line-strong)');
+  svg.append('text').attr('class','svg-head').attr('x',54).attr('y',42).text('当前比例图');
+  svg.append('text').attr('class','svg-sec').attr('x',54).attr('y',68).text('相同顺序 · 相同画幅');
+  svg.append('text').attr('class','svg-head').attr('x',54).attr('y',352).text('代价说明尺');
+  svg.append('text').attr('class','svg-sec').attr('x',54).attr('y',378).text('被牺牲的维度以真实计算值标出');
+  svg.append('line').attr('x1',90).attr('x2',1110).attr('y1',205).attr('y2',205).attr('stroke',colors.line).attr('stroke-width',2);
+  svg.append('text').attr('class','svg-label').attr('x',1110).attr('y',230).attr('text-anchor','end').text('画框右缘');
+
+  const top=svg.append('g').attr('class','top-bodies');
+  const groups=top.selectAll('g.body').data(data).join('g').attr('class','body');
+  groups.append('line').attr('class','leader').attr('stroke',colors.line).attr('stroke-width',1);
+  groups.append('circle').attr('class','solid').attr('fill',colors.blue);
+  groups.append('circle').attr('class','locator').attr('fill','none').attr('stroke',colors.blue).attr('stroke-width',1.5);
+  groups.append('path').attr('class','cross').attr('stroke',colors.gold).attr('stroke-width',1.6).attr('fill','none');
+  groups.append('text').attr('class','svg-label name').attr('text-anchor','middle').text(d=>d.name);
+  const sun=top.append('g').attr('class','sun');
+  sun.append('circle').attr('cy',170).attr('fill',colors.gold).style('filter','drop-shadow(0 0 14px rgba(255,200,87,.5))');
+  sun.append('text').attr('class','svg-label').attr('text-anchor','middle').attr('y',278).text('太阳');
+
+  const costData=[data.find(d=>d.key==='earth'),data.find(d=>d.key==='jupiter'),neptune];
+  const cost=svg.append('g').attr('class','cost');
+  const rows=cost.selectAll('g.cost-row').data(costData).join('g').attr('class','cost-row').attr('transform',(d,i)=>`translate(0,${420+i*58})`);
+  rows.append('text').attr('class','svg-body').attr('x',90).attr('y',6).text(d=>d.name);
+  rows.append('line').attr('x1',170).attr('x2',1090).attr('y1',0).attr('y2',0).attr('stroke','var(--line)');
+  rows.append('rect').attr('class','cost-bar').attr('x',170).attr('y',-7).attr('height',14).attr('rx',7).attr('fill',colors.gold);
+  rows.append('text').attr('class','svg-body cost-value').attr('x',1098).attr('y',6).attr('text-anchor','end').attr('fill',colors.gold);
+  svg.append('text').attr('id','cost-head').attr('class','svg-label').attr('x',1098).attr('y',395).attr('text-anchor','end');
+
+  let mode='size', seen=new Set(['size']);
+  const buttons=[...document.querySelectorAll('[data-mode]')];
+  const feedback=document.getElementById('feedback');
+  const reduced=Deck.reduced();
+  function update(next,initial){
+    mode=next; seen.add(next);
+    buttons.forEach(b=>{const on=b.dataset.mode===mode;b.classList.toggle('is-primary',on);b.setAttribute('aria-checked',String(on));b.tabIndex=on?0:-1;});
+    const t=reduced||initial?null:d3.transition().duration(650).ease(d3.easeCubicInOut);
+    const x=d=>mode==='size'?sizeX(d.key):distanceX(d.au);
+    const dia=d=>mode==='size'?sizeDiameter(d):distanceDiameter(d);
+    const apply=sel=>t?sel.transition(t):sel;
+    apply(sun.select('circle')).attr('cx',90).attr('r',mode==='size'?sunDiameterPx/2:sunRadius*2*distancePxPerKm/2).attr('opacity',mode==='size'?1:.08);
+    sun.select('text').attr('x',90);
+    apply(groups).attr('transform',d=>`translate(${x(d)},0)`);
+    apply(groups.select('.solid')).attr('cy',170).attr('r',d=>dia(d)/2).attr('opacity',d=>mode==='distance'||dia(d)<2?0:1);
+    apply(groups.select('.locator')).attr('cy',170).attr('r',d=>mode==='size'&&dia(d)<2?2:0).attr('opacity',d=>mode==='size'&&dia(d)<2?1:0);
+    apply(groups.select('.cross')).attr('d','M-3,170H3M0,167V173').attr('opacity',mode==='distance'?1:0);
+    const labelY=(d,i)=>i%2?112:258;
+    apply(groups.select('.leader')).attr('x1',0).attr('x2',0).attr('y1',d=>labelY(d,data.indexOf(d))<170?128:235).attr('y2',d=>labelY(d,data.indexOf(d))<170?164:176).attr('opacity',mode==='distance'?1:.35);
+    apply(groups.select('.name')).attr('y',(d,i)=>labelY(d,i));
+    const vals=costData.map(d=>mode==='size'?sizeDistance(d):distanceDiameter(d));
+    const max=d3.max(vals);
+    apply(rows.select('.cost-bar')).attr('width',(d,i)=>Math.max(1,vals[i]/max*760));
+    rows.select('.cost-value').text((d,i)=>mode==='size'?`${fmt(vals[i])} px，超出画框`: `${fmt(vals[i])} px，缩成点`);
+    d3.select('#cost-head').text(mode==='size'?'真实距离按同一大小比例计算':'真实直径按同一距离比例计算');
+    document.getElementById('progress').textContent=`已查看 ${seen.size}/2 种比例`;
+    if(!initial){feedback.textContent=mode==='distance'?'你看清了距离，但天体缩成了点。':'你看清了天体，但行星距离远超画框。';feedback.classList.add('show');}
+    const done=seen.size===2;document.getElementById('conclusion').classList.toggle('done',done);
+  }
+  buttons.forEach((b,i)=>{
+    b.addEventListener('click',()=>{if(b.dataset.mode===mode){const bar=document.querySelector('.switchbar');bar.classList.remove('shake');void bar.offsetWidth;bar.classList.add('shake');feedback.textContent='比例没有改变：请切到另一种再比较。';feedback.classList.add('show');return;}update(b.dataset.mode,false);});
+    b.addEventListener('keydown',e=>{if(!['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.key))return;e.preventDefault();const other=buttons[1-i];other.focus();other.click();});
+  });
+  document.getElementById('reset').addEventListener('click',()=>{seen=new Set(['size']);feedback.classList.remove('show');update('size',true);buttons[0].focus();});
+  update('size',true);
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,331 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  #main { display:flex; flex-direction:column; gap:16px; }
+  .lec-progress { overflow:visible; }
+  .lab-head { position:relative; display:flex; align-items:center; justify-content:space-between; min-height:48px; }
+  .head-track { position:absolute; inset:0; width:100%; height:100%; pointer-events:none; z-index:-1; }
+  .head-track line { stroke:var(--primary-dark); stroke-width:2; stroke-dasharray:8 8; }
+  .head-track path { fill:var(--primary); }
+  .lab-prompt { color:var(--text-strong); font-size:var(--fs-lead); line-height:var(--lh-copy); }
+  .lab-progress { display:flex; align-items:center; gap:16px; font-family:var(--font-mono); font-size:var(--fs-sec); }
+  .progress-nodes { display:flex; align-items:center; gap:7px; }
+  .progress-node { width:16px; height:16px; box-sizing:border-box; border:2px solid var(--line-strong); border-radius:50%; background:var(--surface-1); }
+  .progress-node.is-done { border-color:var(--primary); background:var(--primary); }
+  .progress-node.is-current { border-color:var(--accent); box-shadow:0 0 0 3px var(--surface-yellow); }
+  .transmission { --process-line-y:58%; flex:1 1 auto; min-height:0; gap:7px; padding:18px 14px; box-sizing:border-box; border-top:2px solid var(--line-strong); border-bottom:2px solid var(--line-strong); background:var(--surface-1); }
+  .process-plate { position:absolute; top:-14px; right:0; bottom:-14px; left:0; width:100%; height:calc(100% + 28px); pointer-events:none; z-index:-1; }
+  .process-plate .rail { stroke:var(--primary-dark); stroke-width:4; fill:none; }
+  .process-plate .window { fill:rgba(53,198,180,.055); stroke:var(--line-strong); stroke-width:2; }
+  .process-plate .mark { fill:var(--primary); }
+  .fidelity-line { display:none; position:absolute; inset:32px 18px 30px; width:calc(100% - 36px); height:calc(100% - 62px); z-index:2; pointer-events:none; overflow:visible; }
+  .fidelity-line .guide { stroke:var(--line-strong); stroke-width:2; stroke-dasharray:6 8; fill:none; }
+  .fidelity-line .curve { stroke:var(--accent); stroke-width:5; fill:none; stroke-linejoin:round; stroke-linecap:round; }
+  .fidelity-line .point { fill:var(--surface-1); stroke:var(--accent); stroke-width:4; }
+  .transmission.is-complete .fidelity-line { display:block; }
+  .transmission.is-complete .gesture-seq { opacity:.16; }
+  .transmission.is-complete > .axis, .transmission.is-complete > .arw { opacity:.22; }
+  .transmission > .axis { right:26px; left:26px; background:var(--primary-dark); }
+  .transmission > .step { justify-content:flex-start; padding:14px 10px 12px; min-height:284px; border-radius:var(--radius-2); transition:border-color 180ms ease, background 180ms ease, transform 180ms ease; }
+  .transmission > .arw { flex-basis:25px; min-height:250px; font-size:var(--fs-h2); position:relative; flex-direction:column; gap:5px; background:linear-gradient(90deg,transparent 43%,var(--surface-teal) 43%,var(--surface-teal) 57%,transparent 57%); }
+  .transmission > .arw.is-active { color:var(--accent); }
+  .transmission > .arw.is-broken::before { color:var(--accent); }
+  .step-title { min-height:52px; color:var(--text-strong); font-family:var(--font-narrow); font-size:18px; font-weight:700; line-height:1.4; }
+  .step-state { min-height:42px; color:var(--text-muted); font-size:14px; line-height:1.4; }
+  .gesture-seq { display:flex; flex-direction:column; gap:5px; margin-top:10px; padding:8px; border:1px solid var(--line-strong); background:var(--surface-2); }
+  .gesture { position:relative; display:block; height:25px; box-sizing:border-box; border:1px solid var(--primary-dark); border-left:5px solid var(--primary); background:rgba(53,198,180,.26); }
+  .gesture::after { content:""; position:absolute; top:50%; left:50%; width:10px; height:10px; border:2px solid var(--primary-bright); transform:translate(-50%,-50%) rotate(var(--turn,0deg)); }
+  .gesture[data-shape="dot"]::after { border-radius:50%; background:var(--primary-bright); }
+  .gesture[data-shape="bar"]::after { width:15px; height:3px; border:0; background:var(--primary-bright); }
+  .gesture.is-lost { border-color:var(--accent); border-left-color:var(--accent); background:rgba(255,204,77,.24); }
+  .gesture.is-lost::after { border-color:var(--accent); background:var(--accent); transform:translate(-50%,-50%) rotate(45deg); }
+  .gesture.is-empty { border-color:var(--line); border-left-color:var(--line-strong); background:rgba(204,229,225,.035); }
+  .gesture.is-empty::after { border-color:var(--line-strong); background:transparent; }
+  .step.is-watching .gesture { animation:pulse-slot 420ms ease both; animation-delay:calc(var(--i) * 55ms); }
+  .step.just-arrived { animation:arrive 300ms ease both; }
+  .step.is-error { animation:shake 240ms ease both; }
+  .arw-note { color:var(--text-faint); font-size:13px; line-height:1; white-space:nowrap; writing-mode:vertical-rl; }
+  .arw.is-broken .arw-note { color:var(--accent); }
+  .control-bench { display:flex; align-items:center; gap:24px; min-height:104px; padding:14px 18px; box-sizing:border-box; border-top:2px solid var(--line-strong); border-bottom:2px solid var(--line-strong); background:var(--surface-1); }
+  .quality-control { display:flex; flex:1 1 auto; align-items:center; gap:16px; min-width:0; }
+  .quality-label { flex:0 0 104px; color:var(--text-strong); font-size:var(--fs-sec); font-weight:700; }
+  .range-wrap { flex:1 1 auto; min-width:0; }
+  .range-ends { display:flex; justify-content:space-between; color:var(--text-muted); font-size:14px; line-height:1.35; }
+  .quality-readout { flex:0 0 180px; color:var(--primary-bright); font-family:var(--font-mono); font-size:var(--fs-sec); line-height:1.4; }
+  .quality-readout.is-pending { color:var(--accent); }
+  .action-zone { display:flex; align-items:center; gap:10px; flex:0 0 auto; }
+  .action-zone .btn { min-width:148px; font-size:var(--fs-sec); }
+  .feedback { min-height:28px; color:var(--text-muted); font-size:var(--fs-sec); line-height:1.4; }
+  .feedback.is-warning { color:var(--accent); }
+  .feedback strong { color:var(--text-strong); }
+  @keyframes pulse-slot { 0%{opacity:.32; transform:translateX(-4px)} 100%{opacity:1; transform:none} }
+  @keyframes arrive { 0%{transform:translateY(8px); opacity:.55} 100%{transform:none; opacity:1} }
+  @keyframes shake { 0%,100%{transform:translateX(0)} 30%{transform:translateX(-7px)} 70%{transform:translateX(7px)} }
+  @media (prefers-reduced-motion: reduce) { .transmission > .step, .gesture { transition:none; animation:none !important; } }
+</style>
+</head>
+<body data-page="19" data-total="52">
+<div id="stage">
+<main id="main">
+  <div class="lab-head">
+    <svg class="head-track" viewBox="0 0 1408 48" preserveAspectRatio="none" aria-hidden="true"><line x1="0" y1="46" x2="1396" y2="46"/><path d="M1396 40 l12 6 -12 6z"/></svg>
+    <p class="lab-prompt">每个人都只模仿上一位；没看清的部分，也会成为下一次示范。</p>
+    <div class="lab-progress" aria-label="传递进度">
+      <span id="progressText">传递 0/6</span>
+      <div class="progress-nodes" id="progressNodes" aria-hidden="true"></div>
+      <span id="retainedTop">原始信息保留 7/7</span>
+    </div>
+  </div>
+
+  <section class="k-process transmission" id="chain" aria-label="逐人模仿传递链">
+    <svg class="process-plate" viewBox="0 0 1408 342" preserveAspectRatio="none" aria-hidden="true">
+      <path class="rail" d="M28 198 H1380"/>
+      <path class="rail" d="M185 190 l12 8 -12 8 M382 190 l12 8 -12 8 M579 190 l12 8 -12 8 M776 190 l12 8 -12 8 M973 190 l12 8 -12 8 M1170 190 l12 8 -12 8"/>
+      <rect class="window" x="18" y="18" width="164" height="300"/><rect class="window" x="215" y="18" width="164" height="300"/>
+      <rect class="window" x="412" y="18" width="164" height="300"/><rect class="window" x="609" y="18" width="164" height="300"/>
+      <rect class="window" x="806" y="18" width="164" height="300"/><rect class="window" x="1003" y="18" width="164" height="300"/>
+      <rect class="window" x="1200" y="18" width="190" height="300"/>
+      <circle class="mark" cx="100" cy="198" r="6"/><circle class="mark" cx="297" cy="198" r="6"/><circle class="mark" cx="494" cy="198" r="6"/>
+      <circle class="mark" cx="691" cy="198" r="6"/><circle class="mark" cx="888" cy="198" r="6"/><circle class="mark" cx="1085" cy="198" r="6"/><circle class="mark" cx="1295" cy="198" r="6"/>
+    </svg>
+    <svg class="fidelity-line" id="fidelityLine" viewBox="0 0 1372 280" preserveAspectRatio="none" aria-label="各站相对原始动作的保真度折线">
+      <path class="guide" d="M20 24 H1352 M20 256 H1352"/>
+      <polyline class="curve" id="fidelityCurve" points=""/>
+      <g id="fidelityPoints"></g>
+    </svg>
+    <div class="axis" aria-hidden="true"></div>
+  </section>
+
+  <section class="control-bench" aria-label="传递控制台">
+    <div class="quality-control min0">
+      <label class="quality-label" for="quality">示范质量</label>
+      <div class="range-wrap min0">
+        <input id="quality" type="range" min="0" max="100" value="50" step="1" aria-describedby="rangeHelp">
+        <div class="range-ends" id="rangeHelp"><span>模糊 · 短</span><span>清晰 · 长</span></div>
+      </div>
+      <div class="quality-readout is-pending" id="qualityReadout">拖动后开始示范</div>
+    </div>
+    <div class="action-zone">
+      <button class="btn is-primary" id="passBtn" type="button">传给下一位</button>
+      <button class="btn" id="resetBtn" type="button">重新传递</button>
+    </div>
+  </section>
+  <p class="feedback" id="feedback" aria-live="polite">拖动示范质量，观察当前动作；看完后再传给下一位。</p>
+</main>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lib/seedrandom.min.js"></script>
+<script src="assets/lec.js"></script>
+<script>
+(() => {
+  'use strict';
+  Lec.mount({index:19, kicker:'CULTURE / TRANSMISSION', title:'传下去，还剩多少？', take:'信息在逐人模仿中会丢失，示范质量决定保真度。'});
+
+  const CONFIG = Object.freeze({people:6, symbols:7, quality:{clear:{label:'清晰示范',exposureMs:1800,errorRate:0.08},blurred:{label:'模糊示范',exposureMs:650,errorRate:0.28}}});
+  const ORIGINAL = Object.freeze(['diamond','up','dot','rise','square','fall','bar']);
+  const chain = document.getElementById('chain');
+  const quality = document.getElementById('quality');
+  const qualityReadout = document.getElementById('qualityReadout');
+  const passBtn = document.getElementById('passBtn');
+  const resetBtn = document.getElementById('resetBtn');
+  const feedback = document.getElementById('feedback');
+  const progressText = document.getElementById('progressText');
+  const retainedTop = document.getElementById('retainedTop');
+  const progressNodes = document.getElementById('progressNodes');
+  const fidelityCurve = document.getElementById('fidelityCurve');
+  const fidelityPoints = document.getElementById('fidelityPoints');
+  let watchTimer = 0;
+  let state;
+
+  function freshState() {
+    const rng = new Math.seedrandom(Lec.K.pageSeed19);
+    const thresholds = Array.from({length:CONFIG.people}, () =>
+      Array.from({length:CONFIG.symbols}, () => ({fail:rng(), omit:rng()}))
+    );
+    return {step:0, chains:[ORIGINAL.slice()], thresholds, qualityChosen:false, watching:false, qualityValue:50};
+  }
+
+  function metrics(value) {
+    const t = Number(value) / 100;
+    return {
+      exposure: Math.round(CONFIG.quality.blurred.exposureMs + (CONFIG.quality.clear.exposureMs - CONFIG.quality.blurred.exposureMs) * t),
+      errorRate: CONFIG.quality.blurred.errorRate + (CONFIG.quality.clear.errorRate - CONFIG.quality.blurred.errorRate) * t
+    };
+  }
+
+  function sameCount(a, b) {
+    return a.reduce((sum, item, i) => sum + (item === b[i] ? 1 : 0), 0);
+  }
+
+  function makeNext(source, stepIndex, rate) {
+    return source.map((token, i) => {
+      const roll = state.thresholds[stepIndex][i];
+      if (roll.fail >= rate) return token;
+      if (token === null) return null;
+      return roll.omit < 0.58 ? null : '×';
+    });
+  }
+
+  function buildChain() {
+    chain.querySelectorAll('.step,.arw').forEach(el => el.remove());
+    for (let i = 0; i <= CONFIG.people; i++) {
+      if (i > 0) {
+        const arrow = document.createElement('div');
+        arrow.className = 'arw';
+        arrow.dataset.arrow = String(i);
+        arrow.setAttribute('aria-hidden','true');
+        const note = document.createElement('span');
+        note.className = 'arw-note';
+        arrow.appendChild(note);
+        chain.appendChild(arrow);
+      }
+      const step = document.createElement('article');
+      step.className = 'step min0';
+      step.dataset.step = String(i);
+      const title = document.createElement('div');
+      title.className = 'step-title';
+      title.textContent = i === 0 ? '原始动作' : `第 ${i} 位模仿者`;
+      const status = document.createElement('div');
+      status.className = 'step-state';
+      const seq = document.createElement('div');
+      seq.className = 'gesture-seq';
+      for (let s = 0; s < CONFIG.symbols; s++) {
+        const slot = document.createElement('span');
+        slot.className = 'gesture is-empty';
+        slot.style.setProperty('--i', s);
+        slot.setAttribute('aria-hidden','true');
+        seq.appendChild(slot);
+      }
+      step.append(title, status, seq);
+      chain.appendChild(step);
+    }
+    progressNodes.replaceChildren(...Array.from({length:CONFIG.people}, () => {
+      const dot = document.createElement('span'); dot.className = 'progress-node'; return dot;
+    }));
+  }
+
+  function render() {
+    const current = state.chains[state.step];
+    chain.querySelectorAll('.step').forEach((stepEl, i) => {
+      stepEl.classList.toggle('is-past', i < state.step);
+      stepEl.classList.toggle('is-current', i === state.step);
+      stepEl.classList.toggle('is-watching', i === state.step && state.watching);
+      stepEl.toggleAttribute('aria-current', i === state.step);
+      const status = stepEl.querySelector('.step-state');
+      if (i === 0) status.textContent = '起点 · 七拍完整';
+      else if (i > state.step) status.textContent = '等待上一位';
+      else if (i === CONFIG.people) status.textContent = `仍与原始相同：${sameCount(state.chains[i], ORIGINAL)}/7`;
+      else status.textContent = `与上一位相同：${sameCount(state.chains[i], state.chains[i-1])}/7`;
+      stepEl.querySelectorAll('.gesture').forEach((slot, s) => {
+        const known = i <= state.step;
+        const token = known ? state.chains[i][s] : undefined;
+        slot.className = 'gesture ' + (!known ? 'is-empty' : (token === ORIGINAL[s] ? '' : 'is-lost'));
+        slot.dataset.shape = token === null || token === '×' || !known ? ORIGINAL[s] : token;
+        const turns = {up:'90deg', rise:'-45deg', fall:'45deg', diamond:'45deg'};
+        slot.style.setProperty('--turn', turns[slot.dataset.shape] || '0deg');
+      });
+    });
+    chain.querySelectorAll('.arw').forEach((arrow, idx) => {
+      const destination = idx + 1;
+      arrow.classList.toggle('is-active', destination === state.step + 1 && state.step < CONFIG.people);
+      const done = destination <= state.step;
+      const changed = done && sameCount(state.chains[destination], state.chains[destination-1]) < CONFIG.symbols;
+      arrow.classList.toggle('is-broken', changed);
+      arrow.querySelector('.arw-note').textContent = changed ? '有缺口' : (done ? '已传递' : '待传递');
+    });
+    [...progressNodes.children].forEach((node, i) => {
+      node.classList.toggle('is-done', i < state.step);
+      node.classList.toggle('is-current', i === state.step && state.step < CONFIG.people);
+    });
+    progressText.textContent = `传递 ${state.step}/6`;
+    retainedTop.textContent = `原始信息保留 ${sameCount(current, ORIGINAL)}/7`;
+    chain.classList.toggle('is-complete', state.step === CONFIG.people);
+    if (state.step === CONFIG.people) {
+      const points = state.chains.map((items, i) => {
+        const x = 20 + i * (1332 / CONFIG.people);
+        const y = 256 - (sameCount(items, ORIGINAL) / CONFIG.symbols) * 232;
+        return {x, y};
+      });
+      fidelityCurve.setAttribute('points', points.map(p => `${p.x},${p.y}`).join(' '));
+      fidelityPoints.innerHTML = points.map(p => `<circle class="point" cx="${p.x}" cy="${p.y}" r="7"/>`).join('');
+    } else {
+      fidelityCurve.setAttribute('points','');
+      fidelityPoints.replaceChildren();
+    }
+    passBtn.textContent = state.step === CONFIG.people ? '传递完成' : '传给下一位';
+    passBtn.disabled = state.step === CONFIG.people;
+  }
+
+  function startWatching() {
+    clearTimeout(watchTimer);
+    state.qualityChosen = true;
+    state.watching = true;
+    state.qualityValue = Number(quality.value);
+    const m = metrics(state.qualityValue);
+    qualityReadout.classList.remove('is-pending');
+    qualityReadout.textContent = `观看 ${m.exposure} ms · 误差 ${Math.round(m.errorRate * 100)}%`;
+    feedback.className = 'feedback';
+    feedback.textContent = `正在观看第 ${state.step + 1} 次示范；动作来自上一位。`;
+    render();
+    const wait = Deck.reduced() ? 0 : m.exposure;
+    watchTimer = window.setTimeout(() => {
+      state.watching = false;
+      feedback.textContent = '示范结束。现在可传给下一位。';
+      render();
+    }, wait);
+  }
+
+  function warn() {
+    const currentCard = chain.querySelector(`[data-step="${state.step}"]`);
+    currentCard.classList.remove('is-error');
+    void currentCard.offsetWidth;
+    currentCard.classList.add('is-error');
+    feedback.className = 'feedback is-warning';
+    feedback.textContent = '先看完这一位的示范，再传给下一位。';
+  }
+
+  quality.addEventListener('input', startWatching);
+  passBtn.addEventListener('click', () => {
+    if (!state.qualityChosen || state.watching) { warn(); return; }
+    const m = metrics(state.qualityValue);
+    const next = makeNext(state.chains[state.step], state.step, m.errorRate);
+    state.chains.push(next);
+    state.step += 1;
+    state.qualityChosen = false;
+    const arrived = chain.querySelector(`[data-step="${state.step}"]`);
+    arrived.classList.add('just-arrived');
+    window.setTimeout(() => arrived.classList.remove('just-arrived'), 320);
+    if (state.step === CONFIG.people) {
+      const kept = sameCount(next, ORIGINAL);
+      feedback.className = 'feedback';
+      feedback.innerHTML = `<strong>最终保留 ${kept}/7。</strong> 单次缺口沿传递链保留下来；清晰示范能减少新的缺口。`;
+    } else {
+      qualityReadout.classList.add('is-pending');
+      qualityReadout.textContent = '拖动后开始示范';
+      feedback.className = 'feedback';
+      feedback.textContent = '下一位只会看到刚刚生成的动作。拖动质量，开始下一次示范。';
+    }
+    render();
+  });
+  resetBtn.addEventListener('click', () => {
+    clearTimeout(watchTimer);
+    state = freshState();
+    quality.value = '50';
+    qualityReadout.className = 'quality-readout is-pending';
+    qualityReadout.textContent = '拖动后开始示范';
+    feedback.className = 'feedback';
+    feedback.textContent = '拖动示范质量，观察当前动作；看完后再传给下一位。';
+    render();
+  });
+
+  buildChain();
+  state = freshState();
+  render();
+})();
+</script>
+</body>
+</html>

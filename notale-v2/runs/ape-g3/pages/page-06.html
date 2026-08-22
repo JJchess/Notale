@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>把四类接力棒交到同一条路上</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    html{top:0!important;right:0!important;bottom:0!important;left:0!important}
+    header>div{position:relative;top:4px}
+    #stage{position:absolute;left:96px;top:140px;width:var(--content-w);height:var(--content-h);transform:none}
+    .relay-page{height:100%;display:grid;grid-template-rows:58px 1fr 54px;gap:14px;min-width:0;min-height:0}
+    .relay-intro{display:flex;align-items:center;justify-content:space-between;gap:24px;border-bottom:1px solid var(--line)}
+    .relay-intro p{margin:0;color:var(--muted)}
+    .relay-intro strong{color:var(--text)}
+    .workspace{display:grid;grid-template-columns:350px minmax(0,1fr);gap:24px;min-width:0;min-height:0}
+    .source{min-width:0;min-height:0;padding:18px;border:1px solid var(--line);border-radius:var(--radius-md);background:var(--surface-soft)}
+    .source-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+    .source-head h2{font-size:var(--fs-h2)}
+    .source-list{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+    .baton{min-height:64px;padding:9px 11px;border:1px solid var(--line-strong);border-left:7px solid var(--line-strong);border-radius:var(--radius-sm);background:var(--surface);color:var(--text);font-size:var(--fs-sec);line-height:var(--lh-sec);font-weight:680;cursor:grab;text-align:left;box-shadow:0 4px 10px rgb(36 56 82 / 8%)}
+    .baton[aria-pressed="true"]{outline:3px solid var(--focus);outline-offset:2px;background:var(--accent-soft)}
+    .baton.dragging{opacity:.55}
+    .baton.assigned{min-height:44px;width:100%;padding:6px 10px;cursor:grab;box-shadow:none}
+    .lanes-wrap{display:grid;grid-template-columns:minmax(0,1fr) 128px;gap:12px;min-width:0;min-height:0}
+    .lanes.k-enumeration{--enumeration-cols:1;gap:10px}
+    .lanes.k-enumeration>.lane{display:grid;grid-template-columns:126px minmax(210px,1fr) minmax(320px,1.25fr);align-items:center;gap:14px;padding:12px 16px;border-top-width:1px;box-shadow:none;transition:border-color var(--transition-fast),background var(--transition-fast)}
+    .lane h2{font-size:var(--fs-h2)}
+    .lane-desc{margin:0;color:var(--muted)}
+    .slots{display:grid;grid-template-columns:1fr 1fr;gap:8px;min-width:0}
+    .slot{min-height:52px;display:flex;align-items:center;justify-content:center;padding:4px;border:2px dashed var(--line);border-radius:var(--radius-sm);background:var(--bg);color:var(--muted);font-size:var(--fs-label);line-height:var(--lh-label)}
+    .lane.hovered{border-color:var(--accent);background:var(--accent-soft)}
+    .lane.filled{border-left:7px solid var(--lane-color)}
+    .lane.filled .baton{border-left-color:var(--lane-color)}
+    .destination{position:relative;display:flex;align-items:center;justify-content:center;border:2px solid var(--line-strong);border-radius:var(--radius-md);background:var(--surface);font-weight:760;text-align:center}
+    .destination::before{content:"";position:absolute;left:-14px;top:12%;bottom:12%;border-left:3px solid var(--line)}
+    .destination.connected{border-color:var(--success);background:var(--success-soft);color:var(--success)}
+    .destination.connected::before{border-color:var(--success)}
+    .footer-line{display:flex;align-items:center;gap:18px;min-width:0}
+    #feedback{margin:0;flex:1;color:var(--muted)}
+    #feedback.done{color:var(--success);font-weight:720}
+    #reset{flex:0 0 auto}
+    @media (prefers-reduced-motion:reduce){.lane,.baton{transition:none}}
+  </style>
+</head>
+<body data-page="06" data-total="48">
+  <div id="stage">
+    <main class="relay-page">
+      <div class="relay-intro">
+        <p class="fs-lead"><strong>这项能力主要由哪一层提供？</strong></p>
+        <p class="fs-sec">拖动卡片，或先选卡片再选接力道。</p>
+      </div>
+      <div class="workspace">
+        <section class="source min0" id="source" aria-label="待分配的接力棒">
+          <div class="source-head"><h2>待分配</h2><span class="hint">八张接力棒</span></div>
+          <div class="source-list" id="sourceList"></div>
+        </section>
+        <section class="lanes-wrap min0" aria-label="四层能力接力道">
+          <div class="k-enumeration lanes min0" id="lanes"></div>
+          <div class="destination fs-body" id="destination">走向<br>太空</div>
+        </section>
+      </div>
+      <div class="footer-line">
+        <p id="feedback" class="fs-sec" aria-live="polite">身体、群体、知识和机器，是彼此并列、共同保留的能力层。</p>
+        <button id="reset" type="button">重新分配</button>
+      </div>
+    </main>
+  </div>
+  <script src="assets/base.js"></script>
+  <script src="assets/lec.js"></script>
+  <script>
+    Lec.mount({
+      index: 6,
+      kicker: 'FOUR-LAYER RELAY',
+      title: '把四类接力棒交到同一条路上',
+      take: '身体、群体、知识和机器，是人类走向太空时彼此接力的四层能力。'
+    });
+    Deck.init({ index: 6, total: 48 });
+
+    const categories = [
+      {id:'body', name:'身体', desc:'提供感知、行动与维持生命的基础。', color:'var(--warning)', items:['行动与感知','生物需求与承受范围']},
+      {id:'group', name:'群体', desc:'让多人协调、照料与分担超过单个人的上限。', color:'var(--secondary)', items:['多人协调同一目标','分担个体无法独自完成的任务']},
+      {id:'knowledge', name:'知识', desc:'让经验能够保存、传递并继续改进。', color:'var(--accent)', items:['把经验变成可传递的方法','从前人的结果继续出发']},
+      {id:'machine', name:'机器', desc:'把人的力量、感官与可达范围延伸到身体之外。', color:'var(--success)', items:['延伸身体能够施加的作用','到达身体不能独自抵达之处']}
+    ];
+    const totalItems = categories.reduce((sum, category) => sum + category.items.length, 0);
+    let assignedItems = [];
+    let selected = null;
+    let dragging = null;
+    const sourceList = document.getElementById('sourceList');
+    const lanes = document.getElementById('lanes');
+    const feedback = document.getElementById('feedback');
+    const destination = document.getElementById('destination');
+
+    function makeBaton(text, category){
+      const b=document.createElement('button');
+      b.type='button'; b.className='baton'; b.textContent=text; b.draggable=true;
+      b.dataset.category=category; b.dataset.item=text; b.setAttribute('aria-pressed','false');
+      b.addEventListener('click',()=>selectBaton(b));
+      b.addEventListener('keydown',e=>{
+        if(e.key==='ArrowRight'||e.key==='ArrowDown'){
+          e.preventDefault(); selectBaton(b); document.querySelector('.lane').focus();
+        }
+      });
+      b.addEventListener('dragstart',e=>{dragging=b; b.classList.add('dragging'); e.dataTransfer.setData('text/plain',text);});
+      b.addEventListener('dragend',()=>{b.classList.remove('dragging'); dragging=null; document.querySelectorAll('.lane').forEach(x=>x.classList.remove('hovered'));});
+      return b;
+    }
+    categories.forEach(cat=>{
+      cat.items.forEach(item=>sourceList.appendChild(makeBaton(item,cat.id)));
+      const lane=document.createElement('div'); lane.className='lane'; lane.dataset.category=cat.id; lane.style.setProperty('--lane-color',cat.color);
+      lane.tabIndex=0; lane.setAttribute('role','button'); lane.setAttribute('aria-label',cat.name+'接力道');
+      lane.innerHTML=`<h2>${cat.name}</h2><p class="lane-desc fs-sec">${cat.desc}</p><div class="slots"><div class="slot">空槽</div><div class="slot">空槽</div></div>`;
+      lane.addEventListener('click',()=>{if(selected) place(selected,lane);});
+      lane.addEventListener('keydown',e=>{if(e.key==='Enter'&&selected){e.preventDefault();place(selected,lane);}});
+      lane.addEventListener('dragover',e=>{e.preventDefault();lane.classList.add('hovered');});
+      lane.addEventListener('dragleave',()=>lane.classList.remove('hovered'));
+      lane.addEventListener('drop',e=>{e.preventDefault();lane.classList.remove('hovered');if(dragging)place(dragging,lane);});
+      lanes.appendChild(lane);
+    });
+    document.querySelectorAll('.lane').forEach((lane,index,all)=>lane.addEventListener('keydown',e=>{
+      if(!['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.key)) return;
+      e.preventDefault();
+      const delta=(e.key==='ArrowUp'||e.key==='ArrowLeft')?-1:1;
+      all[(index+delta+all.length)%all.length].focus();
+    }));
+    document.getElementById('source').addEventListener('dragover',e=>e.preventDefault());
+    document.getElementById('source').addEventListener('drop',e=>{
+      e.preventDefault();
+      if(dragging&&dragging.classList.contains('assigned')){
+        dragging.parentElement.textContent='空槽';
+        assignedItems=assignedItems.filter(x=>x!==dragging.dataset.item);
+        dragging.classList.remove('assigned'); sourceList.appendChild(dragging); update();
+      }
+    });
+    function selectBaton(b){
+      document.querySelectorAll('.baton').forEach(x=>x.setAttribute('aria-pressed','false'));
+      selected=b; b.setAttribute('aria-pressed','true');
+      feedback.textContent='已选择“'+b.dataset.item+'”。请选择一条接力道。';
+    }
+    function place(b,lane){
+      const correct=b.dataset.category===lane.dataset.category;
+      if(!correct){
+        feedback.textContent='看它主要依靠身体本身、多人协作、可传递的方法，还是人造装置。';
+        return;
+      }
+      const empty=[...lane.querySelectorAll('.slot')].find(s=>!s.querySelector('.baton'));
+      if(!empty) return;
+      if(b.parentElement.classList.contains('slot')) b.parentElement.textContent='空槽';
+      empty.textContent=''; empty.appendChild(b); b.classList.add('assigned'); b.setAttribute('aria-pressed','false');
+      if(!assignedItems.includes(b.dataset.item)) assignedItems.push(b.dataset.item);
+      selected=null; update();
+    }
+    function update(){
+      document.querySelectorAll('.lane').forEach(l=>l.classList.toggle('filled',l.querySelectorAll('.baton').length===categories.find(c=>c.id===l.dataset.category).items.length));
+      const done=assignedItems.length===totalItems;
+      destination.classList.toggle('connected',done); feedback.classList.toggle('done',done);
+      feedback.textContent=done?'四层共同接力，没有一层单独把猿送上太空。':'放对后，接力棒会进入该层的卡槽。';
+    }
+    document.getElementById('reset').addEventListener('click',()=>{
+      assignedItems=[]; selected=null;
+      document.querySelectorAll('.baton').forEach(b=>{b.classList.remove('assigned');b.setAttribute('aria-pressed','false');sourceList.appendChild(b);});
+      document.querySelectorAll('.slot').forEach(s=>s.textContent='空槽'); update();
+    });
+  </script>
+</body>
+</html>

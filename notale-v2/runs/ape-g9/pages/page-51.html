@@ -1,0 +1,309 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  .lec-progress { overflow: visible; }
+  claim-pressure-game { display: block; width: 100%; height: 100%; }
+  .pressure-game { display: flex; flex-direction: column; width: 100%; height: 100%; gap: var(--sp-3); }
+  .game-top { display: grid; grid-template-columns: 250px minmax(0, 1fr) 232px; align-items: center; gap: var(--sp-5); min-height: 58px; }
+  .round-reading { color: var(--text-strong); font-family: var(--font-mono); font-size: var(--fs-lead); font-weight: 700; line-height: 1.35; white-space: nowrap; }
+  .round-track { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--sp-2); min-width: 0; }
+  .round-mark { position: relative; padding-top: var(--sp-3); color: var(--text-faint); font-size: var(--fs-label); font-weight: 700; line-height: 1.35; text-align: center; border-top: 3px solid var(--surface-3); }
+  .round-mark::before { content: ""; position: absolute; top: -7px; left: 50%; width: 10px; height: 10px; border: 2px solid var(--bg); border-radius: 50%; background: var(--surface-3); transform: translateX(-50%); }
+  .round-mark.is-current { color: var(--accent); border-top-color: var(--accent); }
+  .round-mark.is-current::before { background: var(--accent); }
+  .round-mark.is-done { color: var(--primary-bright); border-top-color: var(--primary); }
+  .round-mark.is-done::before { background: var(--primary); }
+  .meter-key { display: flex; align-items: center; justify-content: flex-end; gap: var(--sp-3); color: var(--text-muted); font-size: var(--fs-label); line-height: 1.35; }
+  .meter-sample { display: inline-flex; gap: 3px; }
+  .meter-sample i { width: 18px; height: 8px; background: var(--primary); }
+
+  .station-strip { position: relative; display: grid; grid-template-columns: 1fr 190px 1fr; align-items: center; min-height: 138px; overflow: hidden; border: var(--border); border-radius: var(--radius-3); background: var(--surface-1); }
+  .station-map { position: absolute; inset: 0; width: 100%; height: 100%; color: var(--primary-dark); }
+  .station-strip::before { content: ""; position: absolute; right: 0; bottom: 17px; left: 0; height: 2px; background: var(--line-strong); }
+  .station-wing { display: flex; align-items: center; justify-content: space-around; height: 54px; margin: 0 var(--sp-5); border: 2px solid var(--line-strong); background: var(--surface-glass); }
+  .station-module { width: 74px; height: 28px; border: 2px solid var(--primary-dark); background: var(--surface-teal); }
+  .station-core { position: relative; display: grid; place-items: center; width: 184px; height: 124px; margin: 0 auto; }
+  .human { position: relative; width: 30px; height: 61px; border: 2px solid var(--text-strong); border-radius: 46% 46% 30% 30%; }
+  .human::before { content: ""; position: absolute; top: -20px; left: 7px; width: 13px; height: 13px; border: 2px solid var(--text-strong); border-radius: 50%; background: var(--surface-1); }
+  .protect-ring { position: absolute; border: 2px solid var(--primary-dark); border-radius: 50%; }
+  .protect-ring.r1 { inset: 8px 50px; }
+  .protect-ring.r2 { inset: 0 29px; border-color: var(--primary); }
+  .station-label { position: absolute; z-index: 1; padding: 2px var(--sp-2); color: var(--text-muted); font-size: var(--fs-label); font-weight: 600; line-height: 1.35; background: var(--surface-1); }
+  .station-label.energy { top: 8px; left: var(--sp-4); }
+  .station-label.air { top: 8px; right: var(--sp-4); }
+  .station-label.body { bottom: 7px; left: calc(50% - 151px); color: var(--text-strong); }
+  .station-label.network { right: calc(50% - 170px); bottom: 7px; color: var(--primary-bright); }
+
+  .pressure-bus-wrap { position: relative; flex: 0 0 26px; width: 100%; height: 26px; color: var(--accent); }
+  .pressure-bus { position: absolute; inset: 0; display: block; width: 100%; height: 18px; color: var(--accent); }
+  .bus-caption { position: absolute; top: 2px; color: var(--text-muted); font-size: var(--fs-label); font-weight: 700; line-height: 1.35; }
+  .bus-caption.left { left: 28%; }
+  .bus-caption.right { right: 28%; }
+  .trial-wrap { position: relative; min-height: 0; flex: 1 1 auto; }
+  .trial-table { --compare-cols: 2; height: 100%; grid-template-rows: 66px repeat(4, minmax(0, 1fr)); align-content: stretch; }
+  .trial-table > .hdr, .trial-table > .dim, .trial-table > .cell, .trial-table > .diff { padding: var(--sp-2) var(--sp-3); }
+  .trial-table > .hdr { align-items: center; font-size: var(--fs-lead); }
+  .trial-table > .dim { justify-content: flex-start; gap: var(--sp-3); text-align: left; font-size: var(--fs-sec); }
+  .trial-table > .cell { position: relative; font-size: var(--fs-sec); transition: background 160ms ease, color 160ms ease, opacity 160ms ease; }
+  .trial-table > .cell::before { content: ""; position: absolute; top: 50%; left: 0; width: 0; height: 2px; background: var(--accent); transition: width 180ms ease; }
+  .trial-table > .cell.is-current { background: var(--surface-yellow); }
+  .trial-table > .cell.is-current::before { width: 100%; opacity: .32; }
+  .trial-table > .cell.is-pass { color: var(--text-strong); background: var(--surface-teal); box-shadow: inset 3px 0 0 var(--primary); }
+  .trial-table > .cell.is-fail { color: var(--text-muted); background: color-mix(in srgb, var(--danger) 9%, transparent); }
+  .trial-table > .cell.is-pending, .trial-table > .dim.is-pending { color: var(--text-faint); }
+  .fact-index { flex: 0 0 auto; color: var(--accent); font-family: var(--font-mono); font-size: var(--fs-label); }
+  .claim-head { display: flex; align-items: center; justify-content: space-between; width: 100%; gap: var(--sp-3); }
+  .strength { display: inline-flex; flex: 0 0 auto; gap: 3px; }
+  .strength i { width: 13px; height: 28px; border: 1px solid var(--line-strong); background: var(--surface-2); }
+  .strength i.on { border-color: var(--primary); background: var(--primary); }
+  .claim-left.is-cracked { animation: crack-shake 260ms ease; }
+  .claim-left.is-collapsed { color: var(--text-faint); opacity: .56; }
+  .claim-left.is-collapsed::after { content: "╱╲"; color: var(--danger); font-family: var(--font-mono); font-size: var(--fs-h2); }
+
+  .game-bottom { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: var(--sp-5); min-height: 70px; }
+  .feedback { min-width: 0; color: var(--text-muted); font-size: var(--fs-sec); line-height: var(--lh-copy); }
+  .feedback strong { color: var(--text-strong); font-size: var(--fs-body); }
+  .feedback.is-error { color: var(--danger); }
+  .feedback.is-success { color: var(--primary-bright); }
+  .actions { display: flex; align-items: center; gap: var(--sp-3); }
+  .claim-choice { width: 230px; min-height: 48px; font-size: var(--fs-sec); }
+  .claim-choice.is-correct { color: var(--accent-ink); border-color: var(--primary); background: var(--primary); }
+  .load-btn { min-width: 150px; min-height: 48px; font-size: var(--fs-sec); }
+  .reset-btn { display: none; width: 48px; height: 48px; padding: 0; font-size: var(--fs-h2); }
+  .reset-btn.is-visible { display: inline-flex; }
+
+  @keyframes crack-shake { 0%,100% { transform: translateX(0); } 25% { transform: translateX(-7px); } 55% { transform: translateX(6px); } 75% { transform: translateX(-3px); } }
+  @media (prefers-reduced-motion: reduce) { .claim-left.is-cracked { animation: none; } .trial-table > .cell, .trial-table > .cell::before { transition: none; } }
+</style>
+</head>
+<body data-page="51" data-total="52">
+<div id="stage">
+<main id="main"></main>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script>
+(() => {
+  const rounds = ["严寒", "呼吸", "维修", "撤离"];
+  const totalRounds = 4;
+  const winningClaim = "依赖被重组";
+  const facts = [
+    {
+      fact: "人能在室外无法长期裸身生存的严寒中越冬",
+      weak: "技术使寒冷不再构成身体限制",
+      strong: "加热、保温层与能源持续替身体维持温度"
+    },
+    {
+      fact: "密闭空间可供多人长期工作和休息",
+      weak: "建筑让人体不再依赖外界条件",
+      strong: "通风与监测把呼吸条件变成共同维护的系统"
+    },
+    {
+      fact: "单个部件故障可由站员修复",
+      weak: "每个人都能靠工具独立生存",
+      strong: "备件、专业知识与分工让群体恢复系统能力"
+    },
+    {
+      fact: "暴风雪会让撤离和外部救援暂停",
+      weak: "技术已使地点不再重要",
+      strong: "能力扩大了，团队仍须共同承担身体风险"
+    }
+  ];
+
+  class ClaimPressureGame extends HTMLElement {
+    constructor() {
+      super();
+      const shadow = this.attachShadow({ mode: "open" });
+      shadow.append(document.createElement("slot"));
+      this.state = this.initialState();
+    }
+
+    connectedCallback() {
+      this.renderShell();
+      this.render();
+      this.dispatchEvent(new CustomEvent("game-start", { bubbles: true, composed: true }));
+    }
+
+    initialState() {
+      return { round: 0, loaded: false, answers: [], complete: false, lastChoice: null };
+    }
+
+    start() {
+      if (!this.state.loaded && !this.state.complete) this.transition("load");
+    }
+
+    reset() {
+      this.state = this.initialState();
+      this.render();
+      this.dispatchEvent(new CustomEvent("game-reset", { bubbles: true, composed: true }));
+    }
+
+    getState() {
+      return JSON.parse(JSON.stringify(this.state));
+    }
+
+    transition(action, value) {
+      if (action === "load" && !this.state.loaded && !this.state.complete) {
+        this.state.loaded = true;
+        this.state.lastChoice = null;
+      } else if (action === "choose" && this.state.loaded && !this.state.complete) {
+        const correct = value === winningClaim;
+        this.state.answers.push({ round: this.state.round, choice: value, correct });
+        this.state.lastChoice = value;
+        if (correct) {
+          if (this.state.round === totalRounds - 1) {
+            this.state.complete = true;
+            this.state.loaded = false;
+          } else {
+            this.state.round += 1;
+            this.state.loaded = false;
+          }
+        }
+      }
+      this.render();
+      const detail = { state: this.getState(), action, metrics: { resolved: this.state.answers.filter(a => a.correct).length } };
+      this.dispatchEvent(new CustomEvent("game-progress", { detail, bubbles: true, composed: true }));
+      if (this.state.complete) {
+        this.dispatchEvent(new CustomEvent("game-complete", {
+          detail: { score: this.state.answers.filter(a => a.correct).length, metrics: detail.metrics, trace: this.state.answers.slice() },
+          bubbles: true,
+          composed: true
+        }));
+      }
+    }
+
+    renderShell() {
+      this.innerHTML = `
+        <section class="pressure-game" aria-label="南极越冬站主张压力测试">
+          <div class="game-top">
+            <div id="roundReading" class="round-reading" aria-live="polite"></div>
+            <div id="roundTrack" class="round-track" aria-label="四轮压力测试进度"></div>
+            <div class="meter-key"><span>主张耐压</span><span class="meter-sample" aria-hidden="true"><i></i><i></i><i></i><i></i></span></div>
+          </div>
+
+          <figure class="station-strip" aria-label="南极站用能源、舱体和维护网络包围并支持人体">
+            <svg class="station-map" viewBox="0 0 1408 104" preserveAspectRatio="none" aria-hidden="true">
+              <path d="M18 77 H270 V31 H472 V77 H622" fill="none" stroke="currentColor" stroke-width="3"/>
+              <path d="M1390 77 H1138 V31 H936 V77 H786" fill="none" stroke="currentColor" stroke-width="3"/>
+              <path d="M84 52 H548 M860 52 H1324" fill="none" stroke="var(--accent)" stroke-width="2" stroke-dasharray="12 10" opacity=".72"/>
+              <path d="M548 52 C610 52 610 17 704 17 C798 17 798 52 860 52" fill="none" stroke="var(--primary)" stroke-width="3"/>
+              <path d="M548 79 C610 79 610 94 704 94 C798 94 798 79 860 79" fill="none" stroke="var(--primary)" stroke-width="3"/>
+              <g fill="var(--surface-2)" stroke="var(--line-strong)" stroke-width="2">
+                <rect x="32" y="28" width="156" height="48"/><rect x="215" y="28" width="156" height="48"/><rect x="398" y="28" width="156" height="48"/>
+                <rect x="854" y="28" width="156" height="48"/><rect x="1037" y="28" width="156" height="48"/><rect x="1220" y="28" width="156" height="48"/>
+              </g>
+            </svg>
+            <span class="station-label energy">能源持续输入</span>
+            <span class="station-label air">空气持续监测</span>
+            <span class="station-label body">灵长类身体</span>
+            <span class="station-label network">知识与组织</span>
+            <div class="station-wing"><i class="station-module"></i><i class="station-module"></i><i class="station-module"></i></div>
+            <div class="station-core"><i class="protect-ring r2"></i><i class="protect-ring r1"></i><i class="human"></i></div>
+            <div class="station-wing"><i class="station-module"></i><i class="station-module"></i><i class="station-module"></i></div>
+          </figure>
+
+          <div class="pressure-bus-wrap">
+            <svg class="pressure-bus" viewBox="0 0 1408 18" preserveAspectRatio="none" aria-label="同一压力事实同时接入两个竞争主张">
+              <path d="M704 0 V8 H520 V18 M704 8 H1080 V18" fill="none" stroke="currentColor" stroke-width="3"/>
+              <circle cx="704" cy="8" r="5" fill="currentColor"/>
+            </svg>
+            <span class="bus-caption left">身体条件</span><span class="bus-caption right">集体条件</span>
+          </div>
+
+          <div class="trial-wrap min0">
+            <div id="trialTable" class="k-comparison trial-table" aria-label="四项事实对两个竞争主张的逐行比较"></div>
+          </div>
+
+          <div class="game-bottom">
+            <p id="feedback" class="feedback" aria-live="assertive"></p>
+            <div class="actions">
+              <button id="loadBtn" class="btn is-primary load-btn" type="button">加载压力</button>
+              <button id="leftChoice" class="choice claim-choice" type="button">限制已经消失</button>
+              <button id="rightChoice" class="choice claim-choice" type="button">依赖被技术重新组织</button>
+              <button id="resetBtn" class="btn icon-only reset-btn" type="button" aria-label="重置压力测试" title="重置压力测试">↻</button>
+            </div>
+          </div>
+        </section>`;
+      this.querySelector("#loadBtn").addEventListener("click", () => this.transition("load"));
+      this.querySelector("#leftChoice").addEventListener("click", () => this.transition("choose", "限制已经消失"));
+      this.querySelector("#rightChoice").addEventListener("click", () => this.transition("choose", winningClaim));
+      this.querySelector("#resetBtn").addEventListener("click", () => this.reset());
+    }
+
+    count(value) {
+      return Lec.P.roundTo(value, 0);
+    }
+
+    render() {
+      const resolved = this.state.answers.filter(a => a.correct).length;
+      const displayRound = this.state.complete ? totalRounds : this.state.round + 1;
+      this.querySelector("#roundReading").textContent = `压力测试 ${this.count(displayRound)} / ${this.count(totalRounds)}`;
+      this.querySelector("#roundTrack").innerHTML = rounds.map((name, index) => {
+        const cls = index < resolved ? "is-done" : (index === this.state.round && !this.state.complete ? "is-current" : "");
+        return `<span class="round-mark ${cls}">${name}</span>`;
+      }).join("");
+
+      const leftStrength = Math.max(0, totalRounds - resolved);
+      const meter = amount => Array.from({ length: totalRounds }, (_, i) => `<i class="${i < amount ? "on" : ""}"></i>`).join("");
+      let table = `
+        <div class="hdr">压力事实</div>
+        <div class="hdr claim-left ${this.state.complete ? "is-collapsed" : ""}"><span class="claim-head"><span>限制已经消失</span><span class="strength" aria-label="耐压剩余">${meter(leftStrength)}</span></span></div>
+        <div class="hdr"><span class="claim-head"><span>依赖被技术重新组织</span><span class="strength" aria-label="耐压完整">${meter(totalRounds)}</span></span></div>`;
+
+      facts.forEach((item, index) => {
+        const passed = index < resolved || this.state.complete;
+        const current = index === this.state.round && this.state.loaded && !this.state.complete;
+        const waiting = index > this.state.round && !this.state.complete;
+        const indexText = this.count(index + 1);
+        table += `
+          <div class="dim ${waiting ? "is-pending" : ""}"><span class="fact-index">${indexText}</span><span>${item.fact}</span></div>
+          <div class="cell ${passed ? "is-fail" : (current ? "is-current" : (waiting ? "is-pending" : ""))}">${item.weak}</div>
+          <div class="cell ${passed ? "is-pass" : (current ? "is-current" : (waiting ? "is-pending" : ""))}">${item.strong}</div>`;
+      });
+      const trialTable = this.querySelector("#trialTable");
+      trialTable.innerHTML = table;
+
+      const loadBtn = this.querySelector("#loadBtn");
+      const leftChoice = this.querySelector("#leftChoice");
+      const rightChoice = this.querySelector("#rightChoice");
+      const resetBtn = this.querySelector("#resetBtn");
+      loadBtn.hidden = this.state.loaded || this.state.complete;
+      leftChoice.hidden = !this.state.loaded || this.state.complete;
+      rightChoice.hidden = !this.state.loaded || this.state.complete;
+      leftChoice.disabled = !this.state.loaded;
+      rightChoice.disabled = !this.state.loaded;
+      resetBtn.classList.toggle("is-visible", this.state.complete);
+
+      const feedback = this.querySelector("#feedback");
+      feedback.className = "feedback";
+      if (this.state.complete) {
+        feedback.classList.add("is-success");
+        feedback.innerHTML = "<strong>能力扩大，不等于限制取消。</strong> 技术把依赖转移到能源、设备、知识与组织上。";
+      } else if (this.state.lastChoice === "限制已经消失") {
+        feedback.classList.add("is-error");
+        feedback.textContent = "它只解释了新增能力，没有解释设备失效后身体为何重新暴露。";
+        const leftHead = trialTable.querySelector(".claim-left");
+        leftHead.classList.add("is-cracked");
+        if (!Deck.reduced()) setTimeout(() => leftHead.classList.remove("is-cracked"), 280);
+      } else if (this.state.loaded) {
+        feedback.innerHTML = `<strong>${rounds[this.state.round]}压力已接入。</strong> 哪项主张既能解释新增能力，也能解释故障后果？`;
+      } else if (resolved > 0) {
+        feedback.classList.add("is-success");
+        feedback.textContent = "这项主张同时接住了身体条件与集体条件。继续加载下一项压力。";
+      } else {
+        feedback.textContent = "逐轮加载陌生情境，比较两个主张对同一事实的解释力。";
+      }
+    }
+  }
+
+  customElements.define("claim-pressure-game", ClaimPressureGame);
+  Lec.mount({index: 51, kicker: "TRANSFER TEST", title: "技术把限制移走了吗？", take: "技术扩大能力，却没有取消身体与集体依赖。"});
+  document.querySelector("#main").append(document.createElement("claim-pressure-game"));
+})();
+</script>
+</body>
+</html>

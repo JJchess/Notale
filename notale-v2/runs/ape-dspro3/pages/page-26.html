@@ -1,0 +1,518 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>第 26 页 · 互动讲义</title>
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<script src="assets/lib/echarts.min.js"></script>
+<style>
+/* ============================================================
+   Page 26 — 力量/体重比的族群对比
+   Layout: left panel (~30%) + right bar chart (~70%)
+   ============================================================ */
+
+#main {
+  display: flex;
+  flex-direction: row;
+  gap: var(--sp-6);
+  align-items: stretch;
+}
+
+/* ---- Left panel ---- */
+.data-panel {
+  width: 380px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+}
+
+.data-panel .panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+
+.key-sentence {
+  font-size: var(--fs-body);
+  color: var(--text);
+  line-height: 1.45;
+  padding: var(--sp-2) 0;
+  display: flex;
+  gap: var(--sp-2);
+}
+
+.key-sentence .idx {
+  color: var(--accent);
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+/* ---- Readout panel (hidden by default) ---- */
+.readout-panel {
+  opacity: 0;
+  transition: opacity 500ms var(--ease);
+}
+
+.readout-panel.visible {
+  opacity: 1;
+}
+
+.readout-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--sp-2) 0;
+  font-size: var(--fs-label);
+  border-bottom: 1px solid var(--border);
+}
+
+.readout-row:last-child {
+  border-bottom: none;
+}
+
+.readout-row .rname {
+  color: var(--text-sec);
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.readout-row .rdot {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+.readout-row .rval {
+  color: var(--diff-fg);
+  font-weight: 600;
+}
+
+.hint-text {
+  font-size: var(--fs-label);
+  color: var(--text-dim);
+  font-style: italic;
+}
+
+/* ---- Right chart area ---- */
+.chart-area {
+  flex: 1 1 0%;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  position: relative;
+}
+
+#chart-container {
+  flex: 1 1 0%;
+  min-height: 0;
+  position: relative;
+}
+
+/* ---- Strength labels floated above bars ---- */
+.strength-label {
+  position: absolute;
+  font-size: var(--fs-label);
+  color: var(--diff-fg);
+  font-weight: 600;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 400ms var(--ease);
+  white-space: nowrap;
+  transform: translate(-50%, -100%);
+  background: var(--surface-raised);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-sm);
+  padding: 3px 10px;
+  z-index: 5;
+}
+
+.strength-label.visible {
+  opacity: 1;
+}
+
+/* ---- Silhouette row below chart ---- */
+.silhouette-row {
+  display: flex;
+  flex-direction: row;
+  justify-content: space-around;
+  align-items: flex-end;
+  padding: 0 40px;
+  height: 60px;
+  flex-shrink: 0;
+}
+
+.silhouette-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.silhouette-item svg {
+  display: block;
+}
+
+.silhouette-item .sname {
+  font-size: var(--fs-tick);
+  color: var(--text-dim);
+}
+
+/* ---- Reduced motion ---- */
+@media (prefers-reduced-motion: reduce) {
+  .strength-label,
+  .readout-panel {
+    transition: none;
+  }
+}
+</style>
+</head>
+<body data-page="26" data-total="60">
+<div id="stage">
+<main id="main"></main>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script>
+(function() {
+  /* ==============================================================
+     Init
+     ============================================================== */
+  Deck.init({ index: 26, total: 60 });
+
+  /* ---- Mount header & footer ---- */
+  Lec.mount({
+    index: 26,
+    kicker: '地球跳跃实验室',
+    title: '力量/体重比的族群对比',
+    take: '比值高 ≠ 绝对力量大——南方古猿与智人的错位'
+  });
+
+  /* ==============================================================
+     Data — all from Lec, computed not hardcoded
+     ============================================================== */
+  var hominidKeys = [
+    'australopithecus_afarensis',
+    'homo_habilis',
+    'homo_erectus',
+    'homo_sapiens_modern'
+  ];
+  var hominidNames = ['南方古猿', '能人', '直立人', '智人'];
+  var barColors = ['#d4855e', '#e8b44b', '#5ea89a', '#5b9bd5'];
+
+  /**
+   * Estimate leg strength from body mass using allometric scaling.
+   * Larger animals have lower strength-to-weight ratios due to
+   * the square-cube law: muscle cross-section ∝ mass^(2/3).
+   * Calibrated so modern human (70 kg) ≈ 2200 N leg strength.
+   */
+  function computeLegStrength(mass) {
+    var g = Lec.K.EARTH_GRAVITY;
+    // legStrength = mass * g * factor, where factor decreases with mass
+    // factor = 5.5 - 0.035 * mass  (linear approximation of allometric decline)
+    var factor = 5.5 - 0.035 * mass;
+    return Math.round(mass * g * factor);
+  }
+
+  function getComparisonData() {
+    return hominidKeys.map(function(key, i) {
+      var d = Lec.P.getHominidData(key);
+      var bodyMass = d.mass;
+      var legStrength = computeLegStrength(bodyMass);
+      var ratio = Math.round((legStrength / bodyMass) * 10) / 10;
+      return {
+        key: key,
+        name: hominidNames[i],
+        color: barColors[i],
+        bodyMass: bodyMass,
+        legStrength: legStrength,
+        strengthToWeightRatio: ratio
+      };
+    });
+  }
+
+  var cmpData = getComparisonData();
+
+  /* ==============================================================
+     Build DOM
+     ============================================================== */
+  var main = document.getElementById('main');
+
+  /* -- Left panel -- */
+  var leftPanel = document.createElement('div');
+  leftPanel.className = 'data-panel';
+
+  /* Key sentences panel */
+  var keyPanel = document.createElement('div');
+  keyPanel.className = 'panel panel--raised';
+
+  var sentences = [
+    '南方古猿的力量/体重比在四个族群中最高，但它的绝对力量最小——因为体重轻，比值被放大。',
+    '智人的力量/体重比最低，但绝对力量最大——因为体重大，比值被拉低。',
+    '比值高≠跳得高：跳跃高度看的是初速度，而初速度取决于绝对力量与体重的配合，不是比值本身。'
+  ];
+
+  sentences.forEach(function(s, i) {
+    var div = document.createElement('div');
+    div.className = 'key-sentence';
+    var idx = document.createElement('span');
+    idx.className = 'idx';
+    idx.textContent = (i + 1) + '.';
+    var txt = document.createElement('span');
+    txt.textContent = s;
+    div.appendChild(idx);
+    div.appendChild(txt);
+    keyPanel.appendChild(div);
+  });
+
+  leftPanel.appendChild(keyPanel);
+
+  /* Readout panel (hidden initially) */
+  var readoutPanel = document.createElement('div');
+  readoutPanel.className = 'panel readout-panel';
+  readoutPanel.id = 'readout-panel';
+
+  var readoutTitle = document.createElement('div');
+  readoutTitle.style.cssText = 'font-size:var(--fs-sec);font-weight:600;color:var(--text);margin-bottom:var(--sp-2);';
+  readoutTitle.textContent = '绝对力量对比';
+  readoutPanel.appendChild(readoutTitle);
+
+  cmpData.forEach(function(d) {
+    var row = document.createElement('div');
+    row.className = 'readout-row';
+
+    var nameSpan = document.createElement('span');
+    nameSpan.className = 'rname';
+    var dot = document.createElement('span');
+    dot.className = 'rdot';
+    dot.style.backgroundColor = d.color;
+    nameSpan.appendChild(dot);
+    nameSpan.appendChild(document.createTextNode(d.name));
+    row.appendChild(nameSpan);
+
+    var valSpan = document.createElement('span');
+    valSpan.className = 'rval';
+    valSpan.id = 'readout-val-' + d.key;
+    valSpan.textContent = d.legStrength + ' N';
+    row.appendChild(valSpan);
+
+    readoutPanel.appendChild(row);
+  });
+
+  leftPanel.appendChild(readoutPanel);
+
+  /* Hint text */
+  var hint = document.createElement('div');
+  hint.className = 'hint-text';
+  hint.textContent = '拖拽柱体查看绝对力量';
+  leftPanel.appendChild(hint);
+
+  main.appendChild(leftPanel);
+
+  /* -- Right chart area -- */
+  var chartArea = document.createElement('div');
+  chartArea.className = 'chart-area';
+
+  var chartContainer = document.createElement('div');
+  chartContainer.id = 'chart-container';
+  chartArea.appendChild(chartContainer);
+
+  /* Silhouette row */
+  var silRow = document.createElement('div');
+  silRow.className = 'silhouette-row';
+
+  // Simple hominid silhouettes as inline SVGs
+  var silSvgs = [
+    // Australopithecus — shorter, more forward-leaning
+    '<svg viewBox="0 0 36 56" width="36" height="56"><ellipse cx="18" cy="8" rx="6" ry="7" fill="none" stroke="currentColor" stroke-width="2"/><path d="M18 15 L18 32 Q16 42 10 48 M18 32 Q20 42 26 48" fill="none" stroke="currentColor" stroke-width="2.5"/><line x1="10" y1="48" x2="7" y2="55" stroke="currentColor" stroke-width="2.5"/><line x1="26" y1="48" x2="29" y2="55" stroke="currentColor" stroke-width="2.5"/><line x1="18" y1="22" x2="7" y2="30" stroke="currentColor" stroke-width="2"/><line x1="18" y1="22" x2="29" y2="30" stroke="currentColor" stroke-width="2"/></svg>',
+    // Habilis — slightly taller, more upright
+    '<svg viewBox="0 0 36 56" width="36" height="56"><ellipse cx="18" cy="8" rx="5.5" ry="6.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M18 14.5 L18 30 Q16 40 11 46 M18 30 Q20 40 25 46" fill="none" stroke="currentColor" stroke-width="2.5"/><line x1="11" y1="46" x2="8" y2="55" stroke="currentColor" stroke-width="2.5"/><line x1="25" y1="46" x2="28" y2="55" stroke="currentColor" stroke-width="2.5"/><line x1="18" y1="20" x2="8" y2="28" stroke="currentColor" stroke-width="2"/><line x1="18" y1="20" x2="28" y2="28" stroke="currentColor" stroke-width="2"/></svg>',
+    // Erectus — taller, fully upright
+    '<svg viewBox="0 0 36 56" width="36" height="56"><ellipse cx="18" cy="7" rx="5" ry="6" fill="none" stroke="currentColor" stroke-width="2"/><path d="M18 13 L18 28 Q17 38 12 44 M18 28 Q19 38 24 44" fill="none" stroke="currentColor" stroke-width="2.5"/><line x1="12" y1="44" x2="10" y2="55" stroke="currentColor" stroke-width="2.5"/><line x1="24" y1="44" x2="26" y2="55" stroke="currentColor" stroke-width="2.5"/><line x1="18" y1="18" x2="9" y2="28" stroke="currentColor" stroke-width="2"/><line x1="18" y1="18" x2="27" y2="28" stroke="currentColor" stroke-width="2"/></svg>',
+    // Sapiens — tallest, modern proportions
+    '<svg viewBox="0 0 36 56" width="36" height="56"><ellipse cx="18" cy="7" rx="5" ry="6" fill="none" stroke="currentColor" stroke-width="2"/><path d="M18 13 L18 27 Q17 36 12 42 M18 27 Q19 36 24 42" fill="none" stroke="currentColor" stroke-width="2.5"/><line x1="12" y1="42" x2="10" y2="55" stroke="currentColor" stroke-width="2.5"/><line x1="24" y1="42" x2="26" y2="55" stroke="currentColor" stroke-width="2.5"/><line x1="18" y1="17" x2="9" y2="28" stroke="currentColor" stroke-width="2"/><line x1="18" y1="17" x2="27" y2="28" stroke="currentColor" stroke-width="2"/></svg>'
+  ];
+
+  cmpData.forEach(function(d, i) {
+    var item = document.createElement('div');
+    item.className = 'silhouette-item';
+    var wrapper = document.createElement('div');
+    wrapper.style.color = d.color;
+    wrapper.innerHTML = silSvgs[i];
+    item.appendChild(wrapper);
+    var sname = document.createElement('span');
+    sname.className = 'sname';
+    sname.textContent = d.name;
+    item.appendChild(sname);
+    silRow.appendChild(item);
+  });
+
+  chartArea.appendChild(silRow);
+  main.appendChild(chartArea);
+
+  /* ==============================================================
+     ECharts — bar chart
+     ============================================================== */
+  var chartDom = document.getElementById('chart-container');
+  var chart = echarts.init(chartDom, null, { renderer: 'svg' });
+
+  var option = {
+    textStyle: { fontSize: 16 },
+    grid: {
+      left: 70,
+      right: 30,
+      top: 30,
+      bottom: 10
+    },
+    xAxis: {
+      type: 'category',
+      data: cmpData.map(function(d) { return d.name; }),
+      axisLabel: {
+        fontSize: 14,
+        color: '#a0b0c0',
+        fontWeight: 500
+      },
+      axisLine: { lineStyle: { color: '#334455' } },
+      axisTick: { show: false }
+    },
+    yAxis: {
+      type: 'value',
+      name: '力量/体重比（N/kg）',
+      nameTextStyle: {
+        fontSize: 14,
+        color: '#a0b0c0'
+      },
+      nameLocation: 'middle',
+      nameGap: 50,
+      axisLabel: {
+        fontSize: 12,
+        color: '#8899aa'
+      },
+      splitLine: { lineStyle: { color: '#243040' } },
+      min: 0
+    },
+    series: [{
+      type: 'bar',
+      data: cmpData.map(function(d) {
+        return {
+          value: d.strengthToWeightRatio,
+          itemStyle: {
+            color: d.color,
+            borderRadius: [4, 4, 0, 0]
+          }
+        };
+      }),
+      barWidth: '40%',
+      emphasis: {
+        itemStyle: {
+          color: '#ffb832',
+          shadowBlur: 12,
+          shadowColor: 'rgba(255,184,50,0.4)'
+        }
+      },
+      animation: true,
+      animationDuration: 800,
+      animationEasing: 'cubicOut'
+    }]
+  };
+
+  chart.setOption(option);
+
+  /* ==============================================================
+     Strength labels — DOM overlays above bars
+     ============================================================== */
+  var strengthLabels = [];
+  cmpData.forEach(function(d, i) {
+    var label = document.createElement('div');
+    label.className = 'strength-label';
+    label.id = 'strength-label-' + i;
+    label.textContent = '腿部最大出力：' + d.legStrength + ' N';
+    chartDom.appendChild(label);
+    strengthLabels.push(label);
+  });
+
+  function positionLabels() {
+    cmpData.forEach(function(d, i) {
+      // convertToPixel with [dataIndex, value] returns [x, y] pixel coords
+      var pixel = chart.convertToPixel(
+        { seriesIndex: 0 },
+        [i, d.strengthToWeightRatio]
+      );
+      if (pixel && pixel.length === 2) {
+        var label = strengthLabels[i];
+        label.style.left = pixel[0] + 'px';
+        label.style.top = (pixel[1] - 8) + 'px';
+      }
+    });
+  }
+
+  // Position labels after chart renders
+  chart.on('rendered', positionLabels);
+
+  /* ==============================================================
+     Drag interaction — reveal absolute strength
+     ============================================================== */
+  var hideTimer = null;
+  var labelsVisible = false;
+
+  function showLabels() {
+    if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; }
+    positionLabels();
+    strengthLabels.forEach(function(l) { l.classList.add('visible'); });
+    document.getElementById('readout-panel').classList.add('visible');
+    labelsVisible = true;
+  }
+
+  function scheduleHide() {
+    if (hideTimer) clearTimeout(hideTimer);
+    hideTimer = setTimeout(function() {
+      strengthLabels.forEach(function(l) { l.classList.remove('visible'); });
+      document.getElementById('readout-panel').classList.remove('visible');
+      labelsVisible = false;
+      hideTimer = null;
+    }, 3000);
+  }
+
+  // Only bar clicks/drags trigger the reveal
+  chart.on('mousedown', function(params) {
+    if (params.seriesIndex === 0 && params.componentType === 'series') {
+      showLabels();
+    }
+  });
+
+  // Catch mouseup anywhere on the chart so drag-off-bar still works
+  chartDom.addEventListener('mouseup', function() {
+    if (labelsVisible) scheduleHide();
+  });
+
+  // Touch support
+  chartDom.addEventListener('touchend', function() {
+    if (labelsVisible) scheduleHide();
+  });
+
+  /* ==============================================================
+     Resize handler
+     ============================================================== */
+  window.addEventListener('resize', function() {
+    chart.resize();
+    if (labelsVisible) positionLabels();
+  });
+
+  /* ==============================================================
+     Reduced motion — skip animations
+     ============================================================== */
+  if (typeof Deck.reduced === 'function' && Deck.reduced()) {
+    // Disable bar animation
+    chart.setOption({ series: [{ animation: false }] });
+    // Disable label fade transition
+    strengthLabels.forEach(function(l) { l.style.transition = 'none'; });
+    document.getElementById('readout-panel').style.transition = 'none';
+  }
+})();
+</script>
+</body>
+</html>

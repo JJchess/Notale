@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  #stage{padding:28px 42px 30px;gap:14px}
+  .kicker{color:var(--primary-bright);font:700 var(--fs-label)/1.4 var(--font-mono);letter-spacing:.12em}
+  .titlebar{display:flex;align-items:flex-end;justify-content:space-between;gap:var(--sp-5)}
+  .take{max-width:560px;margin:0;color:var(--muted);font-size:var(--fs-sec);line-height:var(--lh-text);text-align:right}
+  .reading-strip{display:grid;grid-template-columns:1.2fr 1fr 1fr;align-items:center;border-top:1px solid var(--line);border-bottom:1px solid var(--line);background:linear-gradient(90deg,var(--primary-soft),transparent 76%)}
+  .reading-strip span{padding:0 18px;color:var(--muted);font-size:var(--fs-sec);line-height:1.35}
+  .reading-strip span+span{border-left:1px solid var(--line-soft)}
+  .reading-strip strong{color:var(--text)}
+  .upper{position:relative;display:flex;gap:var(--sp-3);min-height:0}
+  .chart-shell{position:relative;flex:1;min-width:0;overflow:hidden;border:var(--stroke) solid var(--line);border-radius:var(--r-md);background:linear-gradient(180deg,rgba(53,194,178,.05),transparent 45%),var(--panel-deep)}
+  #chart{position:absolute;inset:0}
+  .legend-inline{position:absolute;z-index:2;top:14px;right:22px;display:flex;gap:22px;padding:6px 12px;border-radius:var(--r-sm);background:rgba(7,17,31,.82)}
+  .plot-notes{position:absolute;z-index:2;inset:78px 48px 112px 70px;pointer-events:none}
+  .plot-note{position:absolute;max-width:190px;padding:9px 12px;border:2px solid var(--primary);border-radius:var(--r-sm);background:var(--primary-soft);color:var(--text);font-size:var(--fs-sec);line-height:1.35}
+  .plot-note.cost-note{border-color:var(--accent);background:var(--accent-soft)}
+  .growth-figures{position:absolute;z-index:2;right:38px;bottom:54px;left:64px;display:flex;justify-content:space-between;pointer-events:none}
+  .figure{display:flex;align-items:center;gap:7px;padding:5px 9px;border:1px solid var(--line-soft);border-radius:var(--r-sm);background:rgba(7,17,31,.76);color:var(--muted);font-size:var(--fs-label)}
+  .person{position:relative;width:38px;height:56px;border:3px solid var(--primary);border-top:0;border-radius:14px 14px 5px 5px}
+  .person:before{position:absolute;top:-20px;left:9px;width:16px;height:16px;border:3px solid var(--primary);border-radius:50%;content:""}
+  .figure:nth-child(2) .person{height:64px}.figure:nth-child(3) .person{height:72px}
+  .legend-inline span{font-size:var(--fs-label);font-weight:700}
+  .legend-inline i{display:inline-block;width:20px;height:4px;margin-right:7px;border-radius:4px;vertical-align:middle}
+  .concept-note{position:absolute;left:72px;top:14px;color:var(--faint);font-size:var(--fs-label)}
+  .lower{display:flex;gap:var(--sp-3);min-height:0}
+  .control-rail{display:flex;flex:1.35;flex-direction:column;justify-content:space-between;min-width:0;padding:16px 20px;border:var(--stroke) solid var(--line);border-radius:var(--r-md);background:var(--panel)}
+  .rail-labels{display:flex;justify-content:space-between;color:var(--muted);font-size:var(--fs-label)}
+  .track{position:relative;display:flex;align-items:center;height:48px}
+  .track:before{position:absolute;right:4px;left:4px;height:4px;border-radius:4px;background:linear-gradient(90deg,var(--primary),var(--accent));content:""}
+  input[type=range]{position:relative;z-index:2;width:100%;height:34px;background:transparent;cursor:pointer}
+  .zones{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+  .zone{padding:7px 8px;border:1px solid var(--line);border-radius:var(--r-sm);color:var(--faint);font-size:var(--fs-label);text-align:center;transition:border-color 180ms ease,background 180ms ease,color 180ms ease}
+  .zone.seen{border-color:var(--primary);background:var(--primary-soft);color:var(--text);box-shadow:inset 0 -3px 0 var(--primary)}
+  .status{display:flex;flex:.9;flex-direction:column;gap:10px;min-width:0;border:var(--stroke) solid var(--line);border-radius:var(--r-md);background:var(--panel-deep)}
+  .metrics{display:flex;gap:10px}
+  .metrics .readout{flex:1;min-width:0}
+  .cost .value{color:var(--accent)}
+  .prompt{min-height:48px;margin:0;padding:9px 12px;border-left:3px solid var(--primary);color:var(--muted);font-size:var(--fs-sec);line-height:var(--lh-text)}
+  .completion{display:none;margin:0;padding:10px 14px;border:1px solid var(--accent);border-radius:var(--r-sm);background:var(--accent-soft);color:var(--text);font-size:var(--fs-sec);font-weight:700;line-height:var(--lh-text)}
+  .completion.show{display:block;animation:arrive 320ms ease-out both}
+  .footer-row{display:flex;align-items:center;justify-content:space-between;gap:12px}
+  .progress{color:var(--primary-bright);font-size:var(--fs-label);font-weight:700}
+  .k-comparison{flex:.82;--compare-cols:150px repeat(3,minmax(0,1fr))}
+  .k-comparison .hdr,.k-comparison .dim,.k-comparison .cell{padding:8px 10px}
+  .k-comparison .cell{font-size:var(--fs-sec);line-height:1.38}
+  @keyframes arrive{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+  @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body data-page="16" data-total="48">
+<div id="stage">
+  <header style="height:92px" class="titlebar min0">
+    <div class="col gap-1 min0"><div class="kicker">CARE × LEARNING</div><h1>长童年：成本更高，学习窗口也更长</h1></div>
+    <p class="take">拖动成长期，比较同一变化带来的两项结果。概念指数只表达趋势，不用于预测人口或个体。</p>
+  </header>
+
+  <main style="flex:1" class="col gap-3 min0">
+    <section style="flex:1.62" class="upper min0" aria-label="照料成本与学习收益比较图">
+      <div class="chart-shell min0 science-grid">
+        <div class="legend-inline" aria-hidden="true"><span style="color:var(--accent)"><i style="background:var(--accent)"></i>照料成本</span><span style="color:var(--primary-bright)"><i style="background:var(--primary)"></i>学习收益</span></div>
+        <div id="chart" role="img" aria-label="成长期增加时，照料成本与学习复杂技能的窗口同时上升"></div>
+        <div class="growth-figures" aria-hidden="true"><div class="figure"><i class="person"></i><span>较早独立</span></div><div class="figure"><i class="person"></i><span>持续练习</span></div><div class="figure"><i class="person"></i><span>更久照料与教学</span></div></div>
+        <div class="concept-note">课堂概念模型 · 相对指数</div>
+      </div>
+      <div class="k-comparison min0" aria-label="三个观察位置的逐行比较">
+        <div class="crow"><div class="hdr">同一维度</div><div class="hdr">较短</div><div class="hdr">中等</div><div class="hdr">较长</div></div>
+        <div class="rowline"></div>
+        <div class="crow"><div class="dim">照料成本</div><div class="cell">较低<br><span class="muted">更早减少持续照料</span></div><div class="cell">持续增加</div><div class="cell diff">较高<br><span class="muted">投入维持更久</span></div></div>
+        <div class="rowline"></div>
+        <div class="crow"><div class="dim">学习窗口</div><div class="cell">较窄<br><span class="muted">练习轮次较少</span></div><div class="cell">持续扩大</div><div class="cell diff">较宽<br><span class="muted">社会学习更充分</span></div></div>
+        <div class="rowline"></div>
+        <div class="crow"><div class="dim">可经历的学习</div><div class="cell">较少轮次</div><div class="cell">示范与纠错增加</div><div class="cell">更多轮社会学习</div></div>
+        <div class="rowline"></div>
+        <div class="crow"><div class="dim">持续投入</div><div class="cell">较早减少</div><div class="cell">保护仍在继续</div><div class="cell">食物与教学更久</div></div>
+        <div class="rowline"></div>
+        <div class="crow"><div class="dim">不能推出</div><div class="cell">并非没有学习</div><div class="cell">不存在指定最优点</div><div class="cell">并非越长越好</div></div>
+        <div class="baseline"></div>
+      </div>
+    </section>
+
+    <section style="flex:1" class="lower min0" aria-label="成长期控制与当前结果">
+      <div class="control-rail min0 no-pan">
+        <div class="row between items-center"><label for="growth" class="fs-label"><strong>成长期</strong>：较短 → 较长</label><span id="position" class="chip is-current">中等位置</span></div>
+        <div class="track"><input id="growth" type="range" aria-label="调节成长期" min="0" max="100" value="50" step="1"></div>
+        <div class="rail-labels"><span>较短</span><span>中等</span><span>较长</span></div>
+        <div class="zones" aria-label="比较进度"><div class="zone" data-zone="0">短区间</div><div class="zone" data-zone="1">中区间</div><div class="zone" data-zone="2">长区间</div></div>
+      </div>
+      <div class="status min0">
+        <div class="metrics"><div class="readout cost"><span id="cost" class="value">—</span><span class="readout-label">照料成本 · 相对指数</span></div><div class="readout"><span id="benefit" class="value">—</span><span class="readout-label">学习收益 · 相对指数</span></div></div>
+        <p id="prompt" class="prompt">先移动到三个区间，比较两条轨迹是否同向变化。</p>
+        <p id="completion" class="completion">长童年不是免费的优势：它把更多照料成本，交换成学习复杂技能的更长窗口。</p>
+        <div class="footer-row"><span id="progress" class="progress" aria-live="polite">已比较 0/3 个区间</span><button id="reset" type="button">重置比较</button></div>
+      </div>
+    </section>
+  </main>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script src="assets/lib/echarts.min.js"></script>
+<script>
+(function(){
+  Deck.init({index:16,total:48});
+  var range=document.getElementById('growth');
+  var costEl=document.getElementById('cost');
+  var benefitEl=document.getElementById('benefit');
+  var positionEl=document.getElementById('position');
+  var progressEl=document.getElementById('progress');
+  var promptEl=document.getElementById('prompt');
+  var completionEl=document.getElementById('completion');
+  var zones=[false,false,false];
+  var timer;
+  var reduced=Deck.reduced();
+  var chart=echarts.init(document.getElementById('chart'),null,{renderer:'svg'});
+  function cost(x){return Lec.P.clamp(18+0.72*x,0,100)}
+  function benefit(x){return Lec.P.clamp(12+88*(1-Math.exp(-x/42)),0,100)}
+  var costData=[],benefitData=[];
+  for(var x=0;x<=100;x+=2){costData.push([x,cost(x)]);benefitData.push([x,benefit(x)])}
+  function baseSeries(name,data,color){return {name:name,type:'line',data:data,smooth:0.28,showSymbol:false,lineStyle:{width:4,color:color},areaStyle:{color:color,opacity:0.24},itemStyle:{color:color},emphasis:{disabled:true}}}
+  function option(x){
+    var c=cost(x),b=benefit(x);
+    return {
+      animationDuration:reduced?0:450,
+      textStyle:{fontSize:16,color:'#E8F1F7'},
+      grid:{left:58,right:34,top:42,bottom:42},
+      xAxis:{type:'value',min:0,max:100,name:'成长期：较短 → 较长',nameLocation:'middle',nameGap:29,nameTextStyle:{fontSize:14,color:'#A9C0CF'},axisLabel:{fontSize:14,color:'#A9C0CF'},axisLine:{lineStyle:{color:'#285068'}},splitLine:{lineStyle:{color:'rgba(53,194,178,.12)'}}},
+      yAxis:{type:'value',min:0,max:100,name:'相对水平',nameTextStyle:{fontSize:14,color:'#A9C0CF'},axisLabel:{fontSize:14,color:'#A9C0CF'},axisLine:{lineStyle:{color:'#285068'}},splitLine:{lineStyle:{color:'rgba(53,194,178,.12)'}}},
+      series:[baseSeries('照料成本',costData,'#FFB547'),baseSeries('学习收益',benefitData,'#35C2B2'),{type:'line',data:[],markLine:{silent:true,symbol:'none',lineStyle:{type:'dashed',width:2,color:'#E8F1F7'},label:{show:false},data:[{xAxis:x}]},markPoint:{symbol:'circle',symbolSize:14,label:{show:false},data:[{coord:[x,c],itemStyle:{color:'#FFB547'}},{coord:[x,b],itemStyle:{color:'#35C2B2'}}]}}]
+    };
+  }
+  function zoneFor(x){return x<34?0:(x<67?1:2)}
+  function update(mark){
+    var x=Number(range.value),z=zoneFor(x),c=cost(x),b=benefit(x);
+    costEl.textContent=Lec.P.formatFixed(c,0);
+    benefitEl.textContent=Lec.P.formatFixed(b,0);
+    positionEl.textContent=['较短位置','中等位置','较长位置'][z];
+    chart.setOption(option(x),true);
+    if(mark) zones[z]=true;
+    document.querySelectorAll('.zone').forEach(function(el,i){el.classList.toggle('seen',zones[i])});
+    var count=zones.filter(Boolean).length;
+    progressEl.textContent='已比较 '+count+'/3 个区间';
+    completionEl.classList.toggle('show',count===3);
+    promptEl.textContent=count===3?'两条指标随成长期一起上升，但含义相反：一个是投入，一个是机会。':'继续比较另一段：成本和收益是否同向变化？';
+    clearTimeout(timer);
+    if(count<3) timer=setTimeout(function(){promptEl.textContent='再比较另一端：成本和收益是否同向变化？'},8000);
+  }
+  range.addEventListener('input',function(){update(true)});
+  document.getElementById('reset').addEventListener('click',function(){zones=[false,false,false];range.value=50;completionEl.classList.remove('show');promptEl.textContent='先移动到三个区间，比较两条轨迹是否同向变化。';update(false);range.focus()});
+  update(false);
+  Deck.onResize(function(){chart.resize()});
+})();
+</script>
+</body>
+</html>

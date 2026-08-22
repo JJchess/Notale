@@ -1,0 +1,1378 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+/* ===== 本页交互参数 ===== */
+:root {
+  --hunter-a: #4f6ef2;
+  --hunter-b: #f2a34f;
+  --hunter-c: #4fddb8;
+  --prey-color: #e8d5a3;
+}
+
+/* ===== 布局 ===== */
+#stage {
+  position: relative;
+  overflow: hidden;
+}
+
+/* 主内容区 — 精确匹配 stage 的 padding 内容区 */
+#main {
+  position: absolute !important;
+  top: 96px;
+  left: 96px;
+  right: 96px;
+  bottom: 184px;
+  width: auto !important;
+  height: auto !important;
+}
+
+/* ===== 棋盘 ===== */
+#board {
+  display: block;
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+}
+
+/* ===== 信息卡 (左上) ===== */
+.info-card {
+  position: absolute;
+  top: 14px;
+  left: 14px;
+  z-index: 10;
+  background: rgba(11,14,20,0.82);
+  border: 1px solid rgba(255,255,255,0.10);
+  border-radius: 10px;
+  padding: 14px 18px;
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  pointer-events: none;
+  max-width: 320px;
+}
+.info-card .kicker {
+  font-size: var(--fs-label);
+  color: #667085;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+.info-card .title {
+  font-size: var(--fs-h2);
+  font-weight: 700;
+  color: var(--text);
+  line-height: 1.2;
+  margin-bottom: 6px;
+}
+.info-card .rule {
+  font-size: var(--fs-body);
+  color: var(--text);
+  line-height: 1.4;
+  opacity: 0.85;
+}
+
+/* ===== 猎人图例 (右上) ===== */
+.hunter-legend {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  pointer-events: none;
+}
+.hunter-tag {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--fs-label);
+  color: var(--text);
+  padding: 5px 12px 5px 8px;
+  border-radius: 6px;
+  background: rgba(11,14,20,0.70);
+  border: 1px solid rgba(255,255,255,0.08);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  transition: background 0.15s;
+}
+.hunter-tag .swatch {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.hunter-tag.active {
+  background: rgba(255,255,255,0.10);
+  border-color: rgba(255,255,255,0.20);
+  pointer-events: auto;
+  cursor: pointer;
+}
+.hunter-tag.active:hover {
+  background: rgba(255,255,255,0.18);
+}
+.hunter-tag.selected {
+  border-color: #fff;
+  box-shadow: 0 0 0 1px #fff;
+}
+
+/* ===== 底部栏 ===== */
+.bottom-bar {
+  position: absolute;
+  bottom: 8px;
+  left: 0;
+  right: 0;
+  z-index: 10;
+  height: 56px;
+  display: flex;
+  align-items: stretch;
+  gap: 12px;
+  padding: 0 14px;
+  pointer-events: none;
+}
+.bottom-bar > * {
+  pointer-events: auto;
+}
+
+/* Stepper */
+.stepper-wrap {
+  display: flex;
+  align-items: center;
+  flex: 1 1 auto;
+  min-width: 0;
+  background: rgba(11,14,20,0.78);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 10px;
+  padding: 0 8px;
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
+.stepper-wrap .k-process {
+  width: 100%;
+  gap: 0;
+}
+.stepper-wrap .k-process::before {
+  background: rgba(255,255,255,0.10);
+}
+.stepper-wrap .k-process > .step {
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 6px 2px;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  font-size: 14px;
+  color: #667085;
+  text-align: center;
+  line-height: 1.3;
+  transition: color 0.3s, background 0.3s;
+}
+.stepper-wrap .k-process > .step.current {
+  color: #fff;
+  font-weight: 700;
+  background: rgba(79,110,242,0.20);
+  border-radius: 4px;
+}
+.stepper-wrap .k-process > .step.done {
+  color: rgba(255,255,255,0.30);
+}
+.stepper-wrap .k-process > .arw {
+  width: 14px;
+  font-size: 12px;
+  color: rgba(255,255,255,0.12);
+  flex-shrink: 0;
+}
+
+/* 控制按钮 */
+.controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.controls button {
+  font-size: 14px;
+  padding: 7px 14px;
+  border: 1px solid rgba(255,255,255,0.15);
+  border-radius: 6px;
+  background: rgba(11,14,20,0.78);
+  color: var(--text);
+  cursor: pointer;
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  transition: background 0.15s, border-color 0.15s;
+  font-family: inherit;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+.controls button:hover {
+  background: rgba(255,255,255,0.10);
+  border-color: rgba(255,255,255,0.25);
+}
+.controls button:active {
+  background: rgba(255,255,255,0.15);
+}
+.controls button:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 2px;
+}
+.controls button.primary {
+  background: #4f6ef2;
+  border-color: #4f6ef2;
+  color: #fff;
+}
+.controls button.primary:hover {
+  background: #3d5ad8;
+}
+.controls button.primary:disabled,
+.controls button:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+/* ===== 结果横幅 ===== */
+.result-banner {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 20;
+  background: rgba(11,14,20,0.90);
+  border: 1px solid rgba(255,255,255,0.15);
+  border-radius: 12px;
+  padding: 22px 36px;
+  text-align: center;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  display: none;
+  min-width: 200px;
+}
+.result-banner.show {
+  display: block;
+}
+.result-banner .result-text {
+  font-size: 26px;
+  font-weight: 700;
+  display: block;
+  margin-bottom: 6px;
+}
+.result-banner .result-text.caught {
+  color: #4fddb8;
+}
+.result-banner .result-text.escaped {
+  color: #f2a34f;
+}
+.result-banner .result-text.timeout {
+  color: #f24f4f;
+}
+.result-banner .result-hint {
+  font-size: 15px;
+  color: #667085;
+  margin-bottom: 10px;
+  line-height: 1.4;
+}
+.result-banner .btn-row {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+}
+.result-banner .btn-row button {
+  font-size: 14px;
+  padding: 6px 16px;
+  border: 1px solid rgba(255,255,255,0.15);
+  border-radius: 6px;
+  background: rgba(255,255,255,0.08);
+  color: var(--text);
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.15s;
+}
+.result-banner .btn-row button:hover {
+  background: rgba(255,255,255,0.15);
+}
+.result-banner .btn-row button:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 2px;
+}
+
+/* ===== 角色标注 ===== */
+.role-legend {
+  position: absolute;
+  bottom: 72px;
+  right: 14px;
+  z-index: 5;
+  display: none;
+  flex-direction: column;
+  gap: 4px;
+  background: rgba(11,14,20,0.80);
+  border: 1px solid rgba(255,255,255,0.10);
+  border-radius: 8px;
+  padding: 8px 12px;
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
+.role-legend.show {
+  display: flex;
+}
+.role-legend .role-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  color: var(--text);
+  line-height: 1.3;
+}
+.role-legend .role-item .dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stepper-wrap .k-process > .step {
+    transition: none;
+  }
+  .role-label {
+    transition: none;
+  }
+}
+</style>
+</head>
+<body data-page="20" data-total="50">
+<div id="stage">
+  <main id="main">
+    <canvas id="board" class="cv-fill min0"></canvas>
+
+    <!-- 左上信息卡 -->
+    <div class="info-card">
+      <div class="kicker">语言之前</div>
+      <div class="title">把羚羊赶进死角</div>
+      <div class="rule">三个人，不能说话，把羚羊赶进死角。</div>
+    </div>
+
+    <!-- 右上猎人图例 -->
+    <div class="hunter-legend" id="hunterLegend">
+      <div class="hunter-tag active" data-hunter="A" tabindex="0" role="button" aria-label="选择猎人 A">
+        <span class="swatch" style="background:var(--hunter-a)"></span>
+        <span>猎人 A</span>
+      </div>
+      <div class="hunter-tag active" data-hunter="B" tabindex="0" role="button" aria-label="选择猎人 B">
+        <span class="swatch" style="background:var(--hunter-b)"></span>
+        <span>猎人 B</span>
+      </div>
+      <div class="hunter-tag active" data-hunter="C" tabindex="0" role="button" aria-label="选择猎人 C">
+        <span class="swatch" style="background:var(--hunter-c)"></span>
+        <span>猎人 C</span>
+      </div>
+    </div>
+
+    <!-- 底部栏 -->
+    <div class="bottom-bar">
+      <div class="stepper-wrap">
+        <div class="k-process" id="stepper">
+          <div class="step current" data-step="0">定位</div>
+          <div class="arw"></div>
+          <div class="step" data-step="1">计划</div>
+          <div class="arw"></div>
+          <div class="step" data-step="2">发动</div>
+          <div class="arw"></div>
+          <div class="step" data-step="3">驱赶</div>
+          <div class="arw"></div>
+          <div class="step" data-step="4">转向</div>
+          <div class="arw"></div>
+          <div class="step" data-step="5">兜住</div>
+        </div>
+      </div>
+      <div class="controls">
+        <button id="btnDemo" title="装载示例合围路线">演示</button>
+        <button id="btnClear" title="清空所有路线">清空</button>
+        <button id="btnRun" class="primary" disabled>运行</button>
+      </div>
+    </div>
+
+    <!-- 结果横幅 -->
+    <div class="result-banner" id="resultBanner">
+      <span class="result-text" id="resultText"></span>
+      <div class="result-hint" id="resultHint"></div>
+      <div class="btn-row">
+        <button id="btnReplay">回看</button>
+        <button id="btnRetry">重来</button>
+      </div>
+    </div>
+
+    <!-- 角色图例 (结果/回放时显示) -->
+    <div class="role-legend" id="roleLegend">
+      <div class="role-item"><span class="dot" style="background:var(--hunter-a)"></span>驱赶线</div>
+      <div class="role-item"><span class="dot" style="background:var(--hunter-b)"></span>左合围线</div>
+      <div class="role-item"><span class="dot" style="background:var(--hunter-c)"></span>右合围线</div>
+    </div>
+  </main>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script>
+(function() {
+  'use strict';
+
+  /* ================================================================
+     本页交互参数
+     ================================================================ */
+  var GRID_COLS = 9;
+  var GRID_ROWS = 8;
+  var MAX_WAYPOINTS = 4;
+  var HUNTER_OPEN_PACE = 0.55;
+  var PREY_OPEN_PACE = 0.50;
+  var PREY_DECISION_S = 0.3;
+  var THREAT_RADIUS = 2.0;
+  var HOME_WEIGHT = 1.2;
+  var HUNT_TIMEOUT_S = 25;
+  var SETTLE_S = 0.6;
+  var CELL_SIZE_RATIO = 0.86;
+
+  /* 岩壁集合 */
+  var WALLS = [];
+  (function buildWalls() {
+    for (var x = 0; x < GRID_COLS; x++) WALLS.push(x + ',' + 0);
+    for (var y = 1; y < GRID_ROWS; y++) { WALLS.push(0 + ',' + y); }
+    for (var y = 1; y < GRID_ROWS; y++) { WALLS.push((GRID_COLS-1) + ',' + y); }
+    var bottomExclude = { '4,7':1, '5,7':1 };
+    for (var x = 0; x < GRID_COLS; x++) {
+      var key = x + ',7';
+      if (!bottomExclude[key]) WALLS.push(key);
+    }
+  })();
+
+  function isWall(x, y) {
+    return WALLS.indexOf(x + ',' + y) >= 0;
+  }
+  function isGate(x, y) {
+    return (x === 4 && y === 7) || (x === 5 && y === 7);
+  }
+
+  var START = {
+    A: { x:4, y:6 },
+    B: { x:2, y:4 },
+    C: { x:6, y:4 },
+    prey: { x:4, y:4 }
+  };
+
+  var HUNTER_COLORS = {
+    A: getComputedStyle(document.documentElement).getPropertyValue('--hunter-a').trim() || '#4f6ef2',
+    B: getComputedStyle(document.documentElement).getPropertyValue('--hunter-b').trim() || '#f2a34f',
+    C: getComputedStyle(document.documentElement).getPropertyValue('--hunter-c').trim() || '#4fddb8'
+  };
+
+  var DEMO_ROUTE = {
+    A: [{x:4,y:5}, {x:3,y:4}, {x:2,y:3}, {x:1,y:2}],
+    B: [{x:2,y:3}, {x:2,y:2}, {x:2,y:1}],
+    C: [{x:5,y:4}, {x:4,y:3}, {x:3,y:2}, {x:2,y:2}]
+  };
+
+  /* ================================================================
+     游戏状态
+     ================================================================ */
+  var state = {
+    phase: 'positioning',
+    hunters: {
+      A: { waypoints: [], currentPos: null, fullPath: [], pathIdx: 0, moving: false, _t: 0 },
+      B: { waypoints: [], currentPos: null, fullPath: [], pathIdx: 0, moving: false, _t: 0 },
+      C: { waypoints: [], currentPos: null, fullPath: [], pathIdx: 0, moving: false, _t: 0 }
+    },
+    prey: { currentPos: null },
+    selectedHunter: null,
+    result: null,
+    elapsed: 0,
+    simTimer: null,
+    settledStart: -1,
+    replayTrace: [],
+    replayIdx: 0,
+    replayTimer: null,
+    pressureArrows: []
+  };
+
+  var stepNames = ['定位','计划','发动','驱赶','转向','兜住'];
+
+  /* ================================================================
+     DOM 引用
+     ================================================================ */
+  var canvas = document.getElementById('board');
+  var ctx = null;
+  var cellSize = 0, gridOx = 0, gridOy = 0;
+
+  var stepper = document.getElementById('stepper');
+  var stepEls = stepper.querySelectorAll('.step');
+  var btnDemo = document.getElementById('btnDemo');
+  var btnClear = document.getElementById('btnClear');
+  var btnRun = document.getElementById('btnRun');
+  var btnReplay = document.getElementById('btnReplay');
+  var btnRetry = document.getElementById('btnRetry');
+  var resultBanner = document.getElementById('resultBanner');
+  var resultText = document.getElementById('resultText');
+  var resultHint = document.getElementById('resultHint');
+  var hunterTags = document.querySelectorAll('.hunter-tag');
+  var roleLegend = document.getElementById('roleLegend');
+
+  /* ================================================================
+     网格计算
+     ================================================================ */
+  function calcGrid() {
+    var rect = canvas.parentElement.getBoundingClientRect();
+    var W = rect.width;
+    var H = rect.height;
+    var availW = W - 28;
+    var availH = H - 100 - 72;
+    var cs = Math.floor(Math.min(availW / GRID_COLS, availH / GRID_ROWS) * CELL_SIZE_RATIO);
+    cellSize = Math.max(cs, 28);
+    gridOx = Math.floor((W - cellSize * GRID_COLS) / 2);
+    gridOy = Math.floor(100 + (availH - cellSize * GRID_ROWS) / 2);
+  }
+
+  function gx(col) { return gridOx + col * cellSize + cellSize / 2; }
+  function gy(row) { return gridOy + row * cellSize + cellSize / 2; }
+  function gridAt(px, py) {
+    var col = Math.floor((px - gridOx) / cellSize);
+    var row = Math.floor((py - gridOy) / cellSize);
+    if (col < 0 || col >= GRID_COLS || row < 0 || row >= GRID_ROWS) return null;
+    return { x: col, y: row };
+  }
+
+  /* ================================================================
+     绘图
+     ================================================================ */
+  function draw() {
+    if (!ctx) return;
+    var dpr = window.devicePixelRatio || 1;
+    var W = canvas.width;
+    var H = canvas.height;
+
+    ctx.clearRect(0, 0, W, H);
+    ctx.fillStyle = '#0b0e14';
+    ctx.fillRect(0, 0, W, H);
+
+    var cs = cellSize * dpr;
+    var ox = gridOx * dpr;
+    var oy = gridOy * dpr;
+
+    // 网格线
+    ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+    ctx.lineWidth = 1;
+    for (var c = 0; c <= GRID_COLS; c++) {
+      ctx.beginPath();
+      ctx.moveTo(ox + c * cs, oy);
+      ctx.lineTo(ox + c * cs, oy + GRID_ROWS * cs);
+      ctx.stroke();
+    }
+    for (var r = 0; r <= GRID_ROWS; r++) {
+      ctx.beginPath();
+      ctx.moveTo(ox, oy + r * cs);
+      ctx.lineTo(ox + GRID_COLS * cs, oy + r * cs);
+      ctx.stroke();
+    }
+
+    // 岩壁
+    ctx.fillStyle = 'rgba(255,255,255,0.06)';
+    for (var wi = 0; wi < WALLS.length; wi++) {
+      var parts = WALLS[wi].split(',');
+      var wx = parseInt(parts[0], 10);
+      var wy = parseInt(parts[1], 10);
+      ctx.fillRect(ox + wx * cs, oy + wy * cs, cs, cs);
+    }
+
+    // 门洞
+    ctx.fillStyle = 'rgba(79,222,184,0.08)';
+    ctx.fillRect(ox + 4 * cs, oy + 7 * cs, cs, cs);
+    ctx.fillRect(ox + 5 * cs, oy + 7 * cs, cs, cs);
+    ctx.fillStyle = 'rgba(79,222,184,0.25)';
+    ctx.font = Math.round(12 * dpr) + 'px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('门', ox + 4.5 * cs, oy + 7.5 * cs);
+    ctx.fillText('门', ox + 5.5 * cs, oy + 7.5 * cs);
+
+    // 路线
+    drawRoutes(ctx, cs, ox, oy, dpr);
+
+    // 角色
+    drawCharacters(ctx, cs, ox, oy, dpr);
+
+    // 压力箭头
+    drawPressureArrows(ctx, cs, ox, oy, dpr);
+
+    // 角色标注
+    updateRoleLabels();
+  }
+
+  function drawRoutes(ctx, cs, ox, oy, dpr) {
+    var hunters = ['A','B','C'];
+    for (var hi = 0; hi < hunters.length; hi++) {
+      var h = hunters[hi];
+      var wp = state.phase === 'planning' ? state.hunters[h].waypoints : state.hunters[h].fullPath;
+      if (!wp.length) continue;
+      var color = HUNTER_COLORS[h];
+      var startPos = state.hunters[h].currentPos || START[h];
+
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 2 * dpr;
+      ctx.setLineDash([6 * dpr, 4 * dpr]);
+      ctx.beginPath();
+      ctx.moveTo(ox + (startPos.x + 0.5) * cs, oy + (startPos.y + 0.5) * cs);
+      for (var pi = 0; pi < wp.length; pi++) {
+        ctx.lineTo(ox + (wp[pi].x + 0.5) * cs, oy + (wp[pi].y + 0.5) * cs);
+      }
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      for (var pi2 = 0; pi2 < wp.length; pi2++) {
+        var px = ox + (wp[pi2].x + 0.5) * cs;
+        var py = oy + (wp[pi2].y + 0.5) * cs;
+        ctx.fillStyle = color;
+        ctx.beginPath();
+        ctx.arc(px, py, 4 * dpr, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(0,0,0,0.5)';
+        ctx.lineWidth = 1 * dpr;
+        ctx.stroke();
+      }
+    }
+  }
+
+  function drawCharacters(ctx, cs, ox, oy, dpr) {
+    var hunterKeys = ['A','B','C'];
+    for (var hi = 0; hi < hunterKeys.length; hi++) {
+      var h = hunterKeys[hi];
+      var pos = state.hunters[h].currentPos || START[h];
+      if (!pos) continue;
+      var cx = ox + (pos.x + 0.5) * cs;
+      var cy = oy + (pos.y + 0.5) * cs;
+      var r = cs * 0.30;
+      var color = HUNTER_COLORS[h];
+
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.moveTo(cx, cy - r * 0.9);
+      ctx.lineTo(cx - r * 0.8, cy + r * 0.5);
+      ctx.lineTo(cx + r * 0.8, cy + r * 0.5);
+      ctx.closePath();
+      ctx.fill();
+
+      ctx.beginPath();
+      ctx.arc(cx, cy - r * 0.7, r * 0.35, 0, Math.PI * 2);
+      ctx.fill();
+
+      if (state.selectedHunter === h && state.phase === 'planning') {
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = 2 * dpr;
+        ctx.beginPath();
+        ctx.arc(cx, cy, r * 1.15, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+    }
+
+    var preyPos = state.prey.currentPos || START.prey;
+    if (preyPos) {
+      var pcx = ox + (preyPos.x + 0.5) * cs;
+      var pcy = oy + (preyPos.y + 0.5) * cs;
+      var pr = cs * 0.32;
+
+      ctx.fillStyle = '#e8d5a3';
+      ctx.beginPath();
+      ctx.ellipse(pcx, pcy, pr * 0.9, pr * 0.6, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(pcx + pr * 0.7, pcy - pr * 0.2, pr * 0.35, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.strokeStyle = '#8a7a5a';
+      ctx.lineWidth = 2 * dpr;
+      ctx.beginPath();
+      ctx.moveTo(pcx + pr * 0.8, pcy - pr * 0.5);
+      ctx.lineTo(pcx + pr * 1.0, pcy - pr * 0.9);
+      ctx.moveTo(pcx + pr * 0.6, pcy - pr * 0.5);
+      ctx.lineTo(pcx + pr * 0.4, pcy - pr * 0.9);
+      ctx.stroke();
+    }
+  }
+
+  function drawPressureArrows(ctx, cs, ox, oy, dpr) {
+    if (state.phase !== 'replay' && state.phase !== 'result') return;
+    var arr = state.pressureArrows;
+    for (var i = 0; i < arr.length; i++) {
+      var a = arr[i];
+      if (a.shown > state.replayIdx) continue;
+      var fromX = ox + (a.from.x + 0.5) * cs;
+      var fromY = oy + (a.from.y + 0.5) * cs;
+      var toX = ox + (a.to.x + 0.5) * cs;
+      var toY = oy + (a.to.y + 0.5) * cs;
+
+      ctx.strokeStyle = 'rgba(255,255,255,0.30)';
+      ctx.lineWidth = 1.5 * dpr;
+      ctx.beginPath();
+      ctx.moveTo(fromX, fromY);
+      ctx.lineTo(toX, toY);
+      ctx.stroke();
+
+      var angle = Math.atan2(toY - fromY, toX - fromX);
+      var headLen = 8 * dpr;
+      ctx.fillStyle = 'rgba(255,255,255,0.30)';
+      ctx.beginPath();
+      ctx.moveTo(toX, toY);
+      ctx.lineTo(toX - headLen * Math.cos(angle - 0.4), toY - headLen * Math.sin(angle - 0.4));
+      ctx.lineTo(toX - headLen * Math.cos(angle + 0.4), toY - headLen * Math.sin(angle + 0.4));
+      ctx.closePath();
+      ctx.fill();
+    }
+  }
+
+  function updateRoleLabels() {
+    var show = state.phase === 'result' || state.phase === 'replay';
+    roleLegend.classList.toggle('show', show);
+  }
+
+  /* ================================================================
+     游戏逻辑
+     ================================================================ */
+  function initGame() {
+    state.phase = 'positioning';
+    state.hunters.A.waypoints = [];
+    state.hunters.B.waypoints = [];
+    state.hunters.C.waypoints = [];
+    state.hunters.A.currentPos = { x: START.A.x, y: START.A.y };
+    state.hunters.B.currentPos = { x: START.B.x, y: START.B.y };
+    state.hunters.C.currentPos = { x: START.C.x, y: START.C.y };
+    state.hunters.A.fullPath = [];
+    state.hunters.B.fullPath = [];
+    state.hunters.C.fullPath = [];
+    state.hunters.A.pathIdx = 0;
+    state.hunters.B.pathIdx = 0;
+    state.hunters.C.pathIdx = 0;
+    state.hunters.A.moving = false;
+    state.hunters.B.moving = false;
+    state.hunters.C.moving = false;
+    state.hunters.A._t = 0;
+    state.hunters.B._t = 0;
+    state.hunters.C._t = 0;
+    state.prey.currentPos = { x: START.prey.x, y: START.prey.y };
+    state.selectedHunter = null;
+    state.result = null;
+    state.elapsed = 0;
+    state.settledStart = -1;
+    state.pressureArrows = [];
+    state.replayTrace = [];
+    state.replayIdx = 0;
+
+    clearTimer();
+    resultBanner.classList.remove('show');
+    roleLegend.classList.remove('show');
+    roleLegend.classList.remove('show');
+    roleLegend.classList.remove('show');
+
+    setStep(0);
+    enableTagClicks(true);
+    btnRun.disabled = true;
+    btnDemo.disabled = false;
+    btnClear.disabled = false;
+    draw();
+  }
+
+  function setStep(idx) {
+    for (var i = 0; i < stepEls.length; i++) {
+      stepEls[i].classList.remove('current', 'done');
+      if (i < idx) stepEls[i].classList.add('done');
+      else if (i === idx) stepEls[i].classList.add('current');
+    }
+  }
+
+  function enableTagClicks(enabled) {
+    hunterTags.forEach(function(el) {
+      if (enabled) {
+        el.classList.add('active');
+        el.tabIndex = 0;
+      } else {
+        el.classList.remove('active', 'selected');
+        el.tabIndex = -1;
+      }
+    });
+  }
+
+  function updateRunButton() {
+    var hasRoutes = state.hunters.A.waypoints.length > 0 ||
+                    state.hunters.B.waypoints.length > 0 ||
+                    state.hunters.C.waypoints.length > 0;
+    btnRun.disabled = !hasRoutes || state.phase !== 'planning';
+  }
+
+  /* ================================================================
+     路线规划
+     ================================================================ */
+  function selectHunter(h) {
+    if (state.phase !== 'planning') return;
+    state.selectedHunter = (state.selectedHunter === h) ? null : h;
+    hunterTags.forEach(function(el) {
+      el.classList.toggle('selected', el.getAttribute('data-hunter') === state.selectedHunter);
+    });
+    draw();
+  }
+
+  function addWaypoint(col, row) {
+    if (state.phase !== 'planning' || !state.selectedHunter) return false;
+    if (isWall(col, row)) return false;
+    var h = state.selectedHunter;
+    var wp = state.hunters[h].waypoints;
+    if (wp.length >= MAX_WAYPOINTS) return false;
+    for (var i = 0; i < wp.length; i++) {
+      if (wp[i].x === col && wp[i].y === row) return false;
+    }
+    if (col === START[h].x && row === START[h].y) return false;
+    wp.push({ x: col, y: row });
+    updateRunButton();
+    draw();
+    return true;
+  }
+
+  function removeWaypoint(col, row) {
+    if (state.phase !== 'planning' || !state.selectedHunter) return false;
+    var h = state.selectedHunter;
+    var wp = state.hunters[h].waypoints;
+    for (var i = 0; i < wp.length; i++) {
+      if (wp[i].x === col && wp[i].y === row) {
+        wp.splice(i, 1);
+        updateRunButton();
+        draw();
+        return true;
+      }
+    }
+    return false;
+  }
+
+  function waypointAt(col, row) {
+    var hunters = ['A','B','C'];
+    for (var hi = 0; hi < hunters.length; hi++) {
+      var h = hunters[hi];
+      var wp = state.hunters[h].waypoints;
+      for (var i = 0; i < wp.length; i++) {
+        if (wp[i].x === col && wp[i].y === row) return h;
+      }
+    }
+    return null;
+  }
+
+  function loadDemo() {
+    if (state.phase === 'running') return;
+    state.phase = 'planning';
+    state.hunters.A.waypoints = DEMO_ROUTE.A.slice();
+    state.hunters.B.waypoints = DEMO_ROUTE.B.slice();
+    state.hunters.C.waypoints = DEMO_ROUTE.C.slice();
+    state.hunters.A.currentPos = { x: START.A.x, y: START.A.y };
+    state.hunters.B.currentPos = { x: START.B.x, y: START.B.y };
+    state.hunters.C.currentPos = { x: START.C.x, y: START.C.y };
+    state.prey.currentPos = { x: START.prey.x, y: START.prey.y };
+    state.selectedHunter = null;
+    hunterTags.forEach(function(el) { el.classList.remove('selected'); });
+    setStep(1);
+    enableTagClicks(true);
+    updateRunButton();
+    resultBanner.classList.remove('show');
+    roleLegend.classList.remove('show');
+    roleLegend.classList.remove('show');
+    roleLegend.classList.remove('show');
+    draw();
+  }
+
+  function clearRoutes() {
+    if (state.phase === 'running') return;
+    state.phase = 'planning';
+    state.hunters.A.waypoints = [];
+    state.hunters.B.waypoints = [];
+    state.hunters.C.waypoints = [];
+    state.hunters.A.currentPos = { x: START.A.x, y: START.A.y };
+    state.hunters.B.currentPos = { x: START.B.x, y: START.B.y };
+    state.hunters.C.currentPos = { x: START.C.x, y: START.C.y };
+    state.prey.currentPos = { x: START.prey.x, y: START.prey.y };
+    state.selectedHunter = null;
+    hunterTags.forEach(function(el) { el.classList.remove('selected'); });
+    setStep(1);
+    enableTagClicks(true);
+    updateRunButton();
+    resultBanner.classList.remove('show');
+    roleLegend.classList.remove('show');
+    roleLegend.classList.remove('show');
+    roleLegend.classList.remove('show');
+    draw();
+  }
+
+  /* ================================================================
+     模拟运行
+     ================================================================ */
+  function startSimulation() {
+    if (state.phase !== 'planning') return;
+    state.hunters.A.fullPath = buildFullPath('A');
+    state.hunters.B.fullPath = buildFullPath('B');
+    state.hunters.C.fullPath = buildFullPath('C');
+    state.hunters.A.pathIdx = 0; state.hunters.A._t = 0;
+    state.hunters.B.pathIdx = 0; state.hunters.B._t = 0;
+    state.hunters.C.pathIdx = 0; state.hunters.C._t = 0;
+    state.hunters.A.moving = true;
+    state.hunters.B.moving = true;
+    state.hunters.C.moving = true;
+    state.prey.currentPos = { x: START.prey.x, y: START.prey.y };
+    state.elapsed = 0;
+    state.settledStart = -1;
+    state.pressureArrows = [];
+    state.replayTrace = [];
+    state.phase = 'running';
+    setStep(2);
+    enableTagClicks(false);
+    btnDemo.disabled = true;
+    btnClear.disabled = true;
+    btnRun.disabled = true;
+    resultBanner.classList.remove('show');
+    roleLegend.classList.remove('show');
+    roleLegend.classList.remove('show');
+    roleLegend.classList.remove('show');
+
+    recordTrace();
+
+    var lastTime = performance.now();
+    var preyTimer = 0;
+
+    clearTimer();
+    state.simTimer = setInterval(function() {
+      var now = performance.now();
+      var dt = Math.min((now - lastTime) / 1000, 0.1);
+      lastTime = now;
+      state.elapsed += dt;
+      preyTimer += dt;
+
+      if (state.elapsed > HUNT_TIMEOUT_S) {
+        endSimulation('timeout');
+        return;
+      }
+
+      moveHunters(dt);
+
+      if (preyTimer >= PREY_DECISION_S) {
+        preyTimer -= PREY_DECISION_S;
+        movePrey();
+      }
+
+      checkResult();
+      recordTrace();
+      draw();
+    }, 50);
+  }
+
+  function buildFullPath(h) {
+    var start = { x: START[h].x, y: START[h].y };
+    var wp = state.hunters[h].waypoints;
+    if (wp.length === 0) return [start];
+    var path = [start];
+    for (var i = 0; i < wp.length; i++) {
+      path.push({ x: wp[i].x, y: wp[i].y });
+    }
+    return path;
+  }
+
+  function moveHunters(dt) {
+    var hunters = ['A','B','C'];
+    for (var hi = 0; hi < hunters.length; hi++) {
+      var h = hunters[hi];
+      var hData = state.hunters[h];
+      if (!hData.moving) continue;
+      var path = hData.fullPath;
+      if (hData.pathIdx >= path.length - 1) {
+        hData.moving = false;
+        continue;
+      }
+      hData._t += dt / HUNTER_OPEN_PACE;
+      if (hData._t >= 1) {
+        hData._t = 0;
+        hData.pathIdx++;
+        hData.currentPos = { x: path[hData.pathIdx].x, y: path[hData.pathIdx].y };
+        if (hData.pathIdx >= path.length - 1) {
+          hData.moving = false;
+        }
+      } else {
+        var from = path[hData.pathIdx];
+        var to = path[Math.min(hData.pathIdx + 1, path.length - 1)];
+        if (from && to) {
+          hData.currentPos = {
+            x: from.x + (to.x - from.x) * hData._t,
+            y: from.y + (to.y - from.y) * hData._t
+          };
+        }
+      }
+    }
+  }
+
+  function movePrey() {
+    var prey = state.prey.currentPos;
+    if (!prey) return;
+    var px = Math.round(prey.x);
+    var py = Math.round(prey.y);
+
+    var dirs = [
+      {dx:1,dy:0, name:'E'}, {dx:1,dy:1, name:'SE'}, {dx:0,dy:1, name:'S'},
+      {dx:-1,dy:1, name:'SW'}, {dx:-1,dy:0, name:'W'}, {dx:-1,dy:-1, name:'NW'},
+      {dx:0,dy:-1, name:'N'}, {dx:1,dy:-1, name:'NE'}
+    ];
+
+    var candidates = [];
+    for (var di = 0; di < dirs.length; di++) {
+      var nx = px + dirs[di].dx;
+      var ny = py + dirs[di].dy;
+      if (nx < 0 || nx >= GRID_COLS || ny < 0 || ny >= GRID_ROWS) continue;
+      if (isWall(nx, ny)) continue;
+      var occupied = false;
+      var hunterKeys = ['A','B','C'];
+      for (var hi = 0; hi < hunterKeys.length; hi++) {
+        var hPos = state.hunters[hunterKeys[hi]].currentPos;
+        if (hPos && Math.round(hPos.x) === nx && Math.round(hPos.y) === ny) {
+          occupied = true;
+          break;
+        }
+      }
+      if (occupied) continue;
+      candidates.push({ x: nx, y: ny, dir: dirs[di].name });
+    }
+
+    if (candidates.length === 0) {
+      if (state.settledStart < 0) state.settledStart = state.elapsed;
+      return;
+    }
+
+    var threat = false;
+    var hunterKeys = ['A','B','C'];
+    for (var hi2 = 0; hi2 < hunterKeys.length; hi2++) {
+      var hPos2 = state.hunters[hunterKeys[hi2]].currentPos;
+      if (!hPos2) continue;
+      var hx = Math.round(hPos2.x);
+      var hy = Math.round(hPos2.y);
+      var dist = Math.abs(px - hx) + Math.abs(py - hy);
+      if (dist <= THREAT_RADIUS) {
+        threat = true;
+        break;
+      }
+    }
+
+    var chosen = null;
+
+    if (!threat) {
+      var best = null;
+      var bestDown = -1;
+      for (var di2 = 0; di2 < candidates.length; di2++) {
+        if (candidates[di2].y > bestDown) {
+          bestDown = candidates[di2].y;
+          best = candidates[di2];
+        }
+      }
+      chosen = best;
+    } else {
+      var bestScore = -999;
+      var bestCandidates = [];
+      for (var di3 = 0; di3 < candidates.length; di3++) {
+        var c = candidates[di3];
+        var minDist = 999;
+        for (var hi3 = 0; hi3 < hunterKeys.length; hi3++) {
+          var hPos3 = state.hunters[hunterKeys[hi3]].currentPos;
+          if (!hPos3) continue;
+          var hx3 = Math.round(hPos3.x);
+          var hy3 = Math.round(hPos3.y);
+          var dist3 = Math.abs(c.x - hx3) + Math.abs(c.y - hy3);
+          minDist = Math.min(minDist, dist3);
+        }
+        var score = minDist + HOME_WEIGHT * c.y;
+        if (score > bestScore) {
+          bestScore = score;
+          bestCandidates = [c];
+        } else if (score === bestScore) {
+          bestCandidates.push(c);
+        }
+      }
+      if (bestCandidates.length > 1) {
+        var dirOrder = { 'E':0, 'SE':1, 'S':2, 'SW':3, 'W':4, 'NW':5, 'N':6, 'NE':7 };
+        bestCandidates.sort(function(a, b) {
+          return (dirOrder[a.dir] || 0) - (dirOrder[b.dir] || 0);
+        });
+      }
+      chosen = bestCandidates[0] || candidates[0];
+
+      if (chosen) {
+        var nearestHunter = null;
+        var nearestH = 999;
+        for (var hi4 = 0; hi4 < hunterKeys.length; hi4++) {
+          var hPos4 = state.hunters[hunterKeys[hi4]].currentPos;
+          if (!hPos4) continue;
+          var hx4 = Math.round(hPos4.x);
+          var hy4 = Math.round(hPos4.y);
+          var dist4 = Math.abs(chosen.x - hx4) + Math.abs(chosen.y - hy4);
+          if (dist4 < nearestH) {
+            nearestH = dist4;
+            nearestHunter = { x: hx4, y: hy4 };
+          }
+        }
+        if (nearestHunter) {
+          state.pressureArrows.push({
+            from: nearestHunter,
+            to: { x: chosen.x, y: chosen.y },
+            shown: state.replayTrace.length
+          });
+        }
+      }
+    }
+
+    if (chosen) {
+      state.prey.currentPos = { x: chosen.x, y: chosen.y };
+      state.settledStart = -1;
+    } else {
+      if (state.settledStart < 0) state.settledStart = state.elapsed;
+    }
+  }
+
+  function checkResult() {
+    var prey = state.prey.currentPos;
+    if (!prey) return;
+    var px = Math.round(prey.x);
+    var py = Math.round(prey.y);
+
+    if (isGate(px, py)) {
+      endSimulation('escaped');
+      return;
+    }
+
+    var dirs = [
+      {dx:1,dy:0}, {dx:1,dy:1}, {dx:0,dy:1},
+      {dx:-1,dy:1}, {dx:-1,dy:0}, {dx:-1,dy:-1},
+      {dx:0,dy:-1}, {dx:1,dy:-1}
+    ];
+    var hasMove = false;
+    for (var di = 0; di < dirs.length; di++) {
+      var nx = px + dirs[di].dx;
+      var ny = py + dirs[di].dy;
+      if (nx < 0 || nx >= GRID_COLS || ny < 0 || ny >= GRID_ROWS) continue;
+      if (isWall(nx, ny)) continue;
+      var occupied = false;
+      var hunterKeys = ['A','B','C'];
+      for (var hi = 0; hi < hunterKeys.length; hi++) {
+        var hPos = state.hunters[hunterKeys[hi]].currentPos;
+        if (hPos && Math.round(hPos.x) === nx && Math.round(hPos.y) === ny) {
+          occupied = true;
+          break;
+        }
+      }
+      if (!occupied) { hasMove = true; break; }
+    }
+
+    if (!hasMove) {
+      if (state.settledStart < 0) state.settledStart = state.elapsed;
+      else if (state.elapsed - state.settledStart >= SETTLE_S) {
+        endSimulation('caught');
+      }
+    } else {
+      state.settledStart = -1;
+    }
+  }
+
+  function endSimulation(result) {
+    clearTimer();
+    state.phase = 'result';
+    state.result = result;
+
+    ['A','B','C'].forEach(function(h) {
+      var pos = state.hunters[h].currentPos;
+      if (pos) {
+        pos.x = Math.round(pos.x);
+        pos.y = Math.round(pos.y);
+      }
+    });
+    var preyPos = state.prey.currentPos;
+    if (preyPos) {
+      preyPos.x = Math.round(preyPos.x);
+      preyPos.y = Math.round(preyPos.y);
+    }
+
+    var text = '', hint = '', cls = '';
+    if (result === 'caught') {
+      text = '兜住了';
+      cls = 'caught';
+      hint = '三条路线封死了每一个方向。';
+      setStep(5);
+    } else if (result === 'escaped') {
+      text = '逃了';
+      cls = 'escaped';
+      hint = '羚羊从门洞跑了。看看谁没守住。';
+      setStep(4);
+    } else {
+      text = '拖久了';
+      cls = 'timeout';
+      hint = '时间太长，羚羊找到了空隙。';
+      setStep(3);
+    }
+    resultText.textContent = text;
+    resultText.className = 'result-text ' + cls;
+    resultHint.textContent = hint;
+    resultBanner.classList.add('show');
+    draw();
+  }
+
+  function recordTrace() {
+    state.replayTrace.push({
+      hunters: {
+        A: state.hunters.A.currentPos ? { x: Math.round(state.hunters.A.currentPos.x), y: Math.round(state.hunters.A.currentPos.y) } : null,
+        B: state.hunters.B.currentPos ? { x: Math.round(state.hunters.B.currentPos.x), y: Math.round(state.hunters.B.currentPos.y) } : null,
+        C: state.hunters.C.currentPos ? { x: Math.round(state.hunters.C.currentPos.x), y: Math.round(state.hunters.C.currentPos.y) } : null
+      },
+      prey: state.prey.currentPos ? { x: Math.round(state.prey.currentPos.x), y: Math.round(state.prey.currentPos.y) } : null
+    });
+  }
+
+  function clearTimer() {
+    if (state.simTimer) {
+      clearInterval(state.simTimer);
+      state.simTimer = null;
+    }
+    if (state.replayTimer) {
+      clearInterval(state.replayTimer);
+      state.replayTimer = null;
+    }
+  }
+
+  /* ================================================================
+     回放
+     ================================================================ */
+  function startReplay() {
+    if (state.replayTrace.length < 2) return;
+    state.phase = 'replay';
+    state.replayIdx = 0;
+    resultBanner.classList.remove('show');
+    applyReplayFrame(0);
+
+    clearTimer();
+    state.replayTimer = setInterval(function() {
+      state.replayIdx++;
+      if (state.replayIdx >= state.replayTrace.length) {
+        clearInterval(state.replayTimer);
+        state.replayTimer = null;
+        state.phase = 'result';
+        resultBanner.classList.add('show');
+        roleLegend.classList.add('show');
+        roleLegend.classList.add('show');
+        roleLegend.classList.add('show');
+        draw();
+        return;
+      }
+      applyReplayFrame(state.replayIdx);
+      draw();
+    }, 80);
+  }
+
+  function applyReplayFrame(idx) {
+    var frame = state.replayTrace[idx];
+    if (!frame) return;
+    if (frame.hunters.A) state.hunters.A.currentPos = { x: frame.hunters.A.x, y: frame.hunters.A.y };
+    if (frame.hunters.B) state.hunters.B.currentPos = { x: frame.hunters.B.x, y: frame.hunters.B.y };
+    if (frame.hunters.C) state.hunters.C.currentPos = { x: frame.hunters.C.x, y: frame.hunters.C.y };
+    if (frame.prey) state.prey.currentPos = { x: frame.prey.x, y: frame.prey.y };
+  }
+
+  /* ================================================================
+     交互事件
+     ================================================================ */
+  function setupEvents() {
+    hunterTags.forEach(function(el) {
+      el.addEventListener('click', function() {
+        selectHunter(el.getAttribute('data-hunter'));
+      });
+      el.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          selectHunter(el.getAttribute('data-hunter'));
+        }
+      });
+    });
+
+    canvas.addEventListener('click', function(e) {
+      if (state.phase !== 'planning') return;
+      var pt = Deck.pt(canvas, e);
+      var grid = gridAt(pt.x, pt.y);
+      if (!grid) return;
+      if (isWall(grid.x, grid.y)) return;
+
+      var wpHunter = waypointAt(grid.x, grid.y);
+      if (wpHunter) {
+        if (state.selectedHunter === wpHunter) {
+          removeWaypoint(grid.x, grid.y);
+          return;
+        }
+      }
+
+      if (state.selectedHunter) {
+        addWaypoint(grid.x, grid.y);
+      }
+    });
+
+    btnDemo.addEventListener('click', loadDemo);
+    btnClear.addEventListener('click', clearRoutes);
+    btnRun.addEventListener('click', startSimulation);
+    btnReplay.addEventListener('click', startReplay);
+    btnRetry.addEventListener('click', function() {
+      initGame();
+      state.phase = 'planning';
+      setStep(1);
+      enableTagClicks(true);
+      updateRunButton();
+      draw();
+    });
+  }
+
+  /* ================================================================
+     画布设置
+     ================================================================ */
+  function setupCanvas() {
+    ctx = Deck.fit(canvas);
+    calcGrid();
+    draw();
+  }
+
+  /* ================================================================
+     键盘支持
+     ================================================================ */
+  function setupKeyboard() {
+    document.addEventListener('keydown', function(e) {
+      if (state.phase !== 'planning') return;
+      var target = e.target || e.srcElement;
+      if (target) {
+        var tag = target.tagName ? target.tagName.toLowerCase() : '';
+        if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
+      }
+      if (e.key === '1') selectHunter('A');
+      else if (e.key === '2') selectHunter('B');
+      else if (e.key === '3') selectHunter('C');
+    });
+  }
+
+  /* ================================================================
+     启动
+     ================================================================ */
+  document.addEventListener('DOMContentLoaded', function() {
+    Lec.mount({
+      title: '把羚羊赶进死角',
+      sub: '语言之前'
+    });
+
+    setupCanvas();
+    initGame();
+    setupEvents();
+    setupKeyboard();
+  });
+
+})();
+</script>
+</body>
+</html>

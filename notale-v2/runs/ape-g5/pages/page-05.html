@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    #main{display:flex;flex-direction:column;gap:10px}
+    .gamebar{height:34px;display:flex;align-items:center;justify-content:space-between;gap:16px}
+    .instruction,.status{font-size:var(--fs-sec);line-height:var(--lh-sec)}
+    .instruction{color:var(--ink-soft)} .status{font-weight:700;color:var(--accent)}
+    .reset{min-height:34px;padding:5px 14px;color:#fff;font:700 var(--fs-label)/1.35 var(--font-sans);border:1px solid var(--accent);border-radius:var(--radius-sm);background:var(--accent);cursor:pointer}
+    .card-bank{height:88px;box-sizing:border-box;padding:10px 12px;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));grid-template-rows:repeat(2,1fr);gap:6px 10px;border:1px dashed var(--line-strong);border-radius:var(--radius-md);background:rgb(255 253 248 / 62%);outline:none}
+    .card-bank:focus-visible{box-shadow:0 0 0 4px rgb(0 109 119 / 20%)}
+    .scale-card{min-width:0;padding:4px 9px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;color:var(--text);font-size:var(--fs-label);font-weight:650;line-height:1.35;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--paper);cursor:grab}
+    .scale-card.active{border-color:var(--accent);box-shadow:0 0 0 3px rgb(0 109 119 / 15%)}
+    .scale-card.placed{visibility:hidden}
+    .k-comparison{--compare-cols:3;height:256px;grid-template-columns:132px repeat(3,minmax(0,1fr))}
+    .k-comparison>.hdr,.k-comparison>.dim,.k-comparison>.cell{padding:7px 12px}
+    .k-comparison>.hdr{font-size:var(--fs-h2);display:flex;align-items:center;gap:9px}
+    .clock{width:26px;height:26px;flex:0 0 auto;border:2px solid var(--line-strong);border-radius:50%;position:relative}
+    .clock:after{content:"";position:absolute;left:11px;top:4px;width:2px;height:9px;transform-origin:bottom;background:var(--line-strong)}
+    .hdr.solved .clock{border-color:var(--accent);background:var(--accent-soft)}
+    .hdr.solved .clock:after{background:var(--accent);animation:tick 2.4s linear infinite}
+    .hdr:nth-child(4).solved .clock:after{animation-duration:.75s}
+    @keyframes tick{to{transform:rotate(360deg)}}
+    @media(prefers-reduced-motion:reduce){.hdr.solved .clock:after{animation:none;transform:rotate(55deg)}}
+    .dim{display:flex;align-items:center;justify-content:flex-end}.cell{display:flex;align-items:center;color:var(--ink-soft)}
+    .slot{width:100%;min-height:34px;box-sizing:border-box;padding:5px 8px;display:flex;align-items:center;font-size:var(--fs-label);font-weight:650;line-height:1.35;border:1px dashed var(--line-strong);border-radius:var(--radius-sm);background:var(--paper-2);cursor:pointer}
+    .slot.correct{color:var(--good);border-style:solid;border-color:var(--good);background:#edf5ef}
+    .slot.wrong{color:var(--danger);border-style:solid;border-color:var(--danger);background:#faeeee}
+    .anchor{font-size:var(--fs-sec);line-height:var(--lh-sec)}
+    .chart-wrap{position:relative;flex:1;min-height:0;border:1px solid var(--line);border-radius:var(--radius-md);background:var(--paper)}
+    #timeline{position:absolute;inset:0}.chart-title{position:absolute;z-index:2;left:16px;top:7px;font-size:var(--fs-label);font-weight:720;color:var(--ink-soft);pointer-events:none}
+  </style>
+</head>
+<body data-page="5" data-total="48">
+  <div id="stage">
+    <main id="main">
+      <div class="gamebar">
+        <div><span class="instruction">拖动卡片到同一栏；键盘：上下选卡、左右选栏、回车放置。</span> <span id="status" class="status" aria-live="polite">先判断卡片改变的对象与节拍。</span></div>
+        <button id="reset" class="reset" type="button">重置拼配</button>
+      </div>
+      <div id="bank" class="card-bank no-pan" tabindex="0" role="listbox" aria-label="六张尺度卡"></div>
+      <section id="comparison" class="k-comparison" aria-label="三种变化的同维度比较">
+        <div class="hdr">比较维度</div><div class="hdr" data-head="bio"><i class="clock" aria-hidden="true"></i>生物演化</div><div class="hdr" data-head="culture"><i class="clock" aria-hidden="true"></i>文化变化</div><div class="hdr" data-head="engineering"><i class="clock" aria-hidden="true"></i>工程迭代</div>
+        <div class="dim">变化对象</div><div class="cell"><div class="slot" data-lane="bio" data-kind="object">放入尺度卡</div></div><div class="cell"><div class="slot" data-lane="culture" data-kind="object">放入尺度卡</div></div><div class="cell"><div class="slot" data-lane="engineering" data-kind="object">放入尺度卡</div></div><div class="rowline"></div>
+        <div class="dim">典型节拍</div><div class="cell"><div class="slot" data-lane="bio" data-kind="pace">放入尺度卡</div></div><div class="cell"><div class="slot" data-lane="culture" data-kind="pace">放入尺度卡</div></div><div class="cell"><div class="slot" data-lane="engineering" data-kind="pace">放入尺度卡</div></div><div class="rowline"></div>
+        <div class="dim">时间锚点</div><div class="cell anchor" id="bioAnchor">匹配两张卡后显示</div><div class="cell anchor" id="cultureAnchor">匹配两张卡后显示</div><div class="cell anchor" id="engAnchor">匹配两张卡后显示</div>
+      </section>
+      <div class="chart-wrap"><div class="chart-title">共享对数时间尺｜同一横轴比较数量级</div><div id="timeline" role="img" aria-label="从一年到一千万年的对数时间尺，匹配后显示三种变化的时间锚点"></div></div>
+    </main>
+  </div>
+  <script src="assets/lib/echarts.min.js"></script>
+  <script src="assets/base.js"></script>
+  <script src="assets/lec.js"></script>
+  <script>
+    Lec.mount({index:5,kicker:"THREE CLOCKS",title:"身体、文化与工程，不按同一只钟变化",take:"生物演化、文化变化与工程迭代运行在截然不同的时间尺度上。快慢不同，不等于高低不同。"});
+    Deck.init({index:5,total:48});
+    const cards=[
+      {id:'b1',lane:'bio',kind:'object',text:'群体中的可遗传特征分布发生变化'},
+      {id:'b2',lane:'bio',kind:'pace',text:'要跨许多世代观察'},
+      {id:'c1',lane:'culture',kind:'object',text:'做法和信息可被学习、改写'},
+      {id:'c2',lane:'culture',kind:'pace',text:'同一代人也可能经历明显变化'},
+      {id:'e1',lane:'engineering',kind:'object',text:'方案经过设计、测试和修订'},
+      {id:'e2',lane:'engineering',kind:'pace',text:'迭代周期可以被主动组织'}
+    ];
+    const bank=document.getElementById('bank'),status=document.getElementById('status');
+    let active=0,laneIndex=0,placed={}; const lanes=['bio','culture','engineering'];
+    cards.forEach((c,i)=>{const d=document.createElement('div');d.className='scale-card';d.id=c.id;d.draggable=true;d.setAttribute('role','option');d.textContent=c.text;d.title=c.text;d.addEventListener('dragstart',e=>e.dataTransfer.setData('text/plain',c.id));d.addEventListener('click',()=>{active=i;renderCards();bank.focus()});bank.appendChild(d)});
+    document.querySelectorAll('.slot').forEach(s=>{s.addEventListener('dragover',e=>e.preventDefault());s.addEventListener('drop',e=>{e.preventDefault();place(e.dataTransfer.getData('text/plain'),s)});s.addEventListener('click',()=>place(cards[active].id,s))});
+    function renderCards(){cards.forEach((c,i)=>{const el=document.getElementById(c.id);el.classList.toggle('active',i===active&&!placed[c.id]);el.classList.toggle('placed',!!placed[c.id]);el.setAttribute('aria-selected',i===active?'true':'false')});bank.setAttribute('aria-activedescendant',cards[active].id)}
+    function place(id,slot){const c=cards.find(x=>x.id===id);if(!c||placed[id])return; const key=slot.dataset.lane+'-'+slot.dataset.kind; if(Object.values(placed).includes(key)){status.textContent='这个位置已有卡片，请选择同栏的另一维度。';return} placed[id]=key;slot.textContent=c.text;const ok=c.lane===slot.dataset.lane&&c.kind===slot.dataset.kind;slot.classList.add(ok?'correct':'wrong');slot.dataset.card=id;if(ok){status.textContent='匹配正确：这一维已经对齐。'}else{status.textContent=c.lane==='culture'?'冲突：这张卡描述可学习的信息，不是这一栏的对象。':'冲突：卡片描述的变化对象或节拍与这一栏不同。'} renderCards();update();}
+    bank.addEventListener('keydown',e=>{if(e.key==='ArrowDown'||e.key==='ArrowUp'){e.preventDefault();let n=active;do{n=(n+(e.key==='ArrowDown'?1:cards.length-1))%cards.length}while(placed[cards[n].id]&&n!==active);active=n;renderCards()}else if(e.key==='ArrowLeft'||e.key==='ArrowRight'){e.preventDefault();laneIndex=(laneIndex+(e.key==='ArrowRight'?1:2))%3;status.textContent='当前栏：'+['生物演化','文化变化','工程迭代'][laneIndex]}else if(e.key==='Enter'||e.key===' '){e.preventDefault();const c=cards[active],slot=document.querySelector(`.slot[data-lane="${lanes[laneIndex]}"][data-kind="${c.kind}"]`);place(c.id,slot)}});
+    const chart=echarts.init(document.getElementById('timeline'),null,{renderer:'svg'});
+    const lcaMin=Lec.P.positive(Lec.K.HUMAN_CHIMP_LCA_MIN_YEARS),lcaMax=Lec.P.positive(Lec.K.HUMAN_CHIMP_LCA_MAX_YEARS),homo=Lec.P.positive(Lec.K.GENUS_HOMO_AGE_YEARS),sapiens=Lec.P.positive(Lec.K.HOMO_SAPIENS_AGE_YEARS),first=Lec.K.FIRST_HUMAN_SPACEFLIGHT_YEAR,moon=Lec.K.FIRST_MOON_LANDING_YEAR,gap=Lec.P.positive(moon-first);
+    function solved(l){return cards.filter(c=>c.lane===l).every(c=>{const k=placed[c.id],s=k&&document.querySelector(`.slot[data-card="${c.id}"]`);return s&&s.classList.contains('correct')})}
+    function update(){const b=solved('bio'),c=solved('culture'),e=solved('engineering');document.querySelector('[data-head="bio"]').classList.toggle('solved',b);document.querySelector('[data-head="culture"]').classList.toggle('solved',c);document.querySelector('[data-head="engineering"]').classList.toggle('solved',e);bioAnchor.textContent=b?'约 30 万—700 万年前':'匹配两张卡后显示';cultureAnchor.textContent=c?'可在一代之内改变':'匹配两张卡后显示';engAnchor.textContent=e?`${first}—${moon} 年：间隔 ${gap} 年`:'匹配两张卡后显示';draw(b,c,e);if(b&&c&&e)status.textContent='不是一条加速阶梯，而是三套同时存在的变化节拍。'}
+    function draw(b,c,e){const series=[];if(b)series.push({name:'生物演化',type:'scatter',symbolSize:12,data:[[Math.log10(sapiens),0,'智人出现：约 30 万年前'],[Math.log10(homo),0,'人属出现：约 280 万年前'],[Math.log10((lcaMin+lcaMax)/2),0,'共同祖先：约 600万—700 万年前']],itemStyle:{color:Deck.token('--accent')}});if(c)series.push({name:'文化变化',type:'scatter',symbol:'roundRect',symbolSize:[82,14],data:[[0.65,1,'可在一代之内改变']],itemStyle:{color:Deck.token('--accent-2')}});if(e)series.push({name:'工程迭代',type:'scatter',symbolSize:14,data:[[Math.log10(gap),2,`${first}—${moon} 年，间隔 ${gap} 年`]],itemStyle:{color:Deck.token('--good')}});chart.setOption({animationDuration:Deck.reduced()?0:350,textStyle:{fontSize:16,fontFamily:Deck.token('--font-sans'),color:Deck.token('--text')},grid:{left:132,right:30,top:34,bottom:30},xAxis:{min:0,max:7,interval:1,axisLabel:{fontSize:13,formatter:v=>['1年','10年','100年','千年','万年','十万年','百万年','千万年'][v]||''},splitLine:{show:true,lineStyle:{color:Deck.token('--line')}}},yAxis:{type:'category',data:['生物演化','文化变化','工程迭代'],axisLabel:{fontSize:14},axisTick:{show:false}},tooltip:{trigger:'item',textStyle:{fontSize:16},formatter:p=>p.data[2]},series},true)}
+    document.getElementById('reset').addEventListener('click',reset);function reset(){placed={};document.querySelectorAll('.slot').forEach(s=>{s.textContent='放入尺度卡';s.className='slot';delete s.dataset.card});active=0;laneIndex=0;status.textContent='先判断卡片改变的对象与节拍。';renderCards();update();bank.focus()}
+    renderCards();update();Deck.onResize(()=>chart.resize());
+  </script>
+</body>
+</html>

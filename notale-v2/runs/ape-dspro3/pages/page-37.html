@@ -1,0 +1,912 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>第 37 页 · 互动讲义</title>
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  /* ---- 页面专属布局 ---- */
+  #main {
+    display: flex;
+    flex-direction: row;
+    gap: var(--sp-6);
+    height: 100%;
+  }
+
+  .sim-side {
+    flex: 0 0 60%;
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-3);
+    min-width: 0;
+  }
+
+  .ctrl-side {
+    flex: 0 0 40%;
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-4);
+    min-width: 0;
+  }
+
+  /* ---- 模拟容器 ---- */
+  .sim-box {
+    position: relative;
+    flex: 1 1 auto;
+    background: #1a0f08;
+    border: 1px solid var(--border);
+    border-radius: var(--r-md);
+    overflow: hidden;
+    min-height: 0;
+  }
+
+  .sim-box canvas {
+    display: block;
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+  }
+
+  .sim-bg {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    background-image: url('https://upload.wikimedia.org/wikipedia/commons/8/80/NASA%E2%80%99s_Perseverance_Mars_Rover_Surveys_%E2%80%98Crocodile_Bridge%E2%80%99_%28PIA26699_figA%29.jpg');
+    background-size: cover;
+    background-position: center bottom;
+    opacity: 0.55;
+    pointer-events: none;
+  }
+
+  /* ---- 事件标签（左下角） ---- */
+  /* 使用 .k-process 骨架，见 theme.css */
+  #evtProcess .step {
+    cursor: pointer;
+    user-select: none;
+  }
+  #evtProcess .step:hover {
+    color: var(--accent-soft);
+  }
+  #evtProcess .step.current:hover {
+    color: var(--accent);
+  }
+  #evtProcess .step:focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+    border-radius: var(--r-sm);
+  }
+
+  /* ---- 右侧面板 ---- */
+  .readout-row {
+    display: flex;
+    flex-direction: row;
+    gap: var(--sp-4);
+    flex-wrap: wrap;
+  }
+
+  .readout {
+    flex: 1 1 0%;
+    min-width: 80px;
+    text-align: center;
+    padding: var(--sp-3) var(--sp-2);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--r-sm);
+  }
+
+  .readout .val {
+    font-size: var(--fs-h2);
+    font-weight: 700;
+    color: var(--accent);
+    line-height: 1.2;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .readout .lbl {
+    font-size: var(--fs-label);
+    color: var(--text-dim);
+    margin-top: 2px;
+  }
+
+  /* ---- 柱状图 ---- */
+  .bar-chart {
+    display: flex;
+    flex-direction: row;
+    align-items: flex-end;
+    justify-content: center;
+    gap: var(--sp-8);
+    padding: var(--sp-4) var(--sp-6);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--r-md);
+    min-height: 160px;
+    position: relative;
+  }
+
+  .bar-col {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--sp-2);
+    flex: 0 0 80px;
+  }
+
+  .bar-fill {
+    width: 56px;
+    border-radius: var(--r-sm) var(--r-sm) 0 0;
+    transition: height 350ms var(--ease);
+    min-height: 4px;
+    position: relative;
+  }
+
+  .bar-fill.earth {
+    background: var(--text-dim);
+  }
+
+  .bar-fill.mars {
+    background: var(--accent);
+  }
+
+  .bar-val {
+    font-size: var(--fs-tick);
+    color: var(--text-sec);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .bar-label {
+    font-size: var(--fs-label);
+    color: var(--text-dim);
+    margin-top: var(--sp-1);
+  }
+
+  .bar-ref-line {
+    position: absolute;
+    left: 0; right: 0;
+    border-top: 1px dashed var(--border-strong);
+    pointer-events: none;
+  }
+
+  .bar-ref-label {
+    position: absolute;
+    font-size: var(--fs-tick);
+    color: var(--text-dim);
+    pointer-events: none;
+    white-space: nowrap;
+  }
+
+  /* ---- 滑块区域 ---- */
+  .slider-group {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-2);
+  }
+
+  .slider-group label {
+    font-size: var(--fs-label);
+    color: var(--text-sec);
+    font-weight: 500;
+  }
+
+  .slider-group input[type="range"] {
+    width: 100%;
+    accent-color: var(--accent);
+    cursor: pointer;
+  }
+
+  .slider-ticks {
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+    font-size: var(--fs-tick);
+    color: var(--text-dim);
+  }
+
+  /* ---- 事件按钮 ---- */
+  .evt-btns {
+    display: flex;
+    flex-direction: row;
+    gap: var(--sp-2);
+  }
+
+  .evt-btn {
+    flex: 1 1 0%;
+    font-family: var(--font-sans);
+    font-size: var(--fs-label);
+    padding: 6px 8px;
+    border: 1px solid var(--border);
+    border-radius: var(--r-sm);
+    background: var(--surface);
+    color: var(--text-dim);
+    cursor: pointer;
+    text-align: center;
+    transition: all 200ms var(--ease);
+  }
+
+  .evt-btn:hover {
+    border-color: var(--accent-soft);
+    color: var(--text);
+  }
+
+  .evt-btn.active {
+    background: var(--surface-raised);
+    border-color: var(--accent);
+    color: var(--accent);
+    font-weight: 600;
+  }
+
+  .evt-btn:focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+  }
+
+  /* ---- 提示句 ---- */
+  .insight {
+    font-size: var(--fs-sec);
+    color: var(--text-sec);
+    line-height: 1.45;
+    padding: var(--sp-3) var(--sp-4);
+    background: var(--surface);
+    border-left: 3px solid var(--accent-soft);
+    border-radius: 0 var(--r-sm) var(--r-sm) 0;
+    transition: opacity 300ms var(--ease);
+  }
+
+  /* ---- 滑块禁用态 ---- */
+  .slider-group.disabled {
+    opacity: 0.35;
+    pointer-events: none;
+  }
+
+  .slider-group.disabled input[type="range"] {
+    cursor: not-allowed;
+  }
+</style>
+</head>
+<body data-page="37" data-total="60">
+<div id="stage">
+<main id="main">
+
+  <!-- ===== 左：模拟区 ===== -->
+  <div class="sim-side">
+    <div class="sim-box" id="simBox" title="火星表面照片: NASA/JPL-Caltech (Perseverance)">
+      <div class="sim-bg"></div>
+      <canvas id="simCv"></canvas>
+    </div>
+
+    <!-- 事件链：k-process 骨架 -->
+    <div class="k-process" id="evtProcess">
+      <div class="axis"></div>
+      <div class="steps">
+        <div class="step done" data-evt="0" tabindex="0" role="button" aria-label="切换至地球参照跳跃">
+          <span>① 地球参照</span>
+          <span style="font-size:var(--fs-tick);color:var(--text-dim);">g=9.8 · h≈0.32m</span>
+        </div>
+        <div class="arw">→</div>
+        <div class="step done" data-evt="1" tabindex="0" role="button" aria-label="切换至火星裸体跳跃">
+          <span>② 火星裸体</span>
+          <span style="font-size:var(--fs-tick);color:var(--text-dim);">g=3.7 · h≈0.84m</span>
+        </div>
+        <div class="arw">→</div>
+        <div class="step current" data-evt="2" tabindex="0" role="button" aria-label="当前：火星穿宇航服跳跃">
+          <span>③ 火星穿宇航服</span>
+          <span style="font-size:var(--fs-tick);color:var(--text-dim);">g=3.7 · v₀↓</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== 右：控制区 ===== -->
+  <div class="ctrl-side">
+
+    <!-- 宇航服质量滑块 -->
+    <div class="panel" id="sliderPanel">
+      <div class="slider-group" id="suitSliderGroup">
+        <label for="suitMass">宇航服质量</label>
+        <input type="range" id="suitMass" min="50" max="200" value="130" step="1">
+        <div class="slider-ticks">
+          <span>50 kg</span>
+          <span>130 kg</span>
+          <span>200 kg</span>
+        </div>
+      </div>
+
+      <!-- 读数 -->
+      <div class="readout-row" style="margin-top: var(--sp-4);">
+        <div class="readout">
+          <div class="val" id="rdMass">200</div>
+          <div class="lbl">总质量 kg</div>
+        </div>
+        <div class="readout">
+          <div class="val" id="rdV0">0.88</div>
+          <div class="lbl">初速度 m/s</div>
+        </div>
+        <div class="readout">
+          <div class="val" id="rdHeight">0.10</div>
+          <div class="lbl">跳跃高度 m</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 柱状图 -->
+    <div class="bar-chart" id="barChart">
+      <div class="bar-col">
+        <div class="bar-fill earth" id="barEarth"></div>
+        <div class="bar-val" id="barEarthVal">0.32 m</div>
+        <div class="bar-label">地球参照</div>
+      </div>
+      <div class="bar-col">
+        <div class="bar-fill mars" id="barMars"></div>
+        <div class="bar-val" id="barMarsVal">0.10 m</div>
+        <div class="bar-label">火星当前</div>
+      </div>
+    </div>
+
+    <!-- 洞察句 -->
+    <div class="insight" id="insight"></div>
+
+    <!-- 事件按钮 -->
+    <div class="evt-btns" id="evtBtns">
+      <button class="evt-btn" data-evt="0">① 地球参照</button>
+      <button class="evt-btn" data-evt="1">② 火星裸体</button>
+      <button class="evt-btn active" data-evt="2">③ 火星穿宇航服</button>
+    </div>
+
+  </div>
+
+</main>
+</div>
+
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script src="assets/lib/matter.min.js"></script>
+<script>
+/* ============================================================
+   page-37 · 火星跳跃 · 130 秒
+   matterjs 物理模拟 + 实时交互
+   ============================================================ */
+
+(function() {
+  'use strict';
+
+  /* ---- 底盘初始化 ---- */
+  Deck.init({ index: 37, total: 60 });
+
+  /* ---- 页眉 ---- */
+  Lec.mount({
+    index: 37,
+    kicker: '脱离地球',
+    title: '火星跳跃',
+    take: '同一具身体，不同重力，加上宇航服的代价——火星上能跳多高？'
+  });
+
+  /* ---- 从 Lec 取常量 ---- */
+  const EARTH_G = Lec.K.EARTH_GRAVITY;        // 9.8
+  const MARS_G  = Lec.K.MARS_GRAVITY;         // 3.7
+  const V0      = Lec.K.HUMAN_JUMP_INITIAL_VELOCITY; // 2.5
+  const ASTRONAUT_MASS = Lec.K.ASTRONAUT_MASS;       // 70
+  const SUIT_MASS_DEFAULT = Lec.K.EVA_SUIT_MASS;     // 130
+  const TOTAL_EVA_MASS = Lec.K.TOTAL_EVA_MASS;       // 200
+
+  /* ---- DOM 引用 ---- */
+  const simBox  = document.getElementById('simBox');
+  const simCv   = document.getElementById('simCv');
+  const suitSlider = document.getElementById('suitMass');
+  const sliderGroup = document.getElementById('suitSliderGroup');
+  const rdMass  = document.getElementById('rdMass');
+  const rdV0    = document.getElementById('rdV0');
+  const rdHeight = document.getElementById('rdHeight');
+  const barEarth = document.getElementById('barEarth');
+  const barMars  = document.getElementById('barMars');
+  const barEarthVal = document.getElementById('barEarthVal');
+  const barMarsVal  = document.getElementById('barMarsVal');
+  const insight  = document.getElementById('insight');
+
+  /* ---- 状态 ---- */
+  const EVT_EARTH  = 0;
+  const EVT_MARS_NAKED = 1;
+  const EVT_MARS_SUITED = 2;
+
+  let currentEvent = EVT_MARS_SUITED;  // 默认事件三
+  let suitMass = SUIT_MASS_DEFAULT;    // 宇航服质量
+
+  /* ---- 事件参数 ---- */
+  function getEventParams(evt) {
+    if (evt === EVT_EARTH) {
+      return {
+        gravity: EARTH_G,
+        mass: ASTRONAUT_MASS,
+        v0: V0,
+        label: '地球参照'
+      };
+    } else if (evt === EVT_MARS_NAKED) {
+      return {
+        gravity: MARS_G,
+        mass: ASTRONAUT_MASS,
+        v0: V0,
+        label: '火星裸体'
+      };
+    } else {
+      const totalMass = ASTRONAUT_MASS + suitMass;
+      const vSuited = V0 * (ASTRONAUT_MASS / totalMass);
+      return {
+        gravity: MARS_G,
+        mass: totalMass,
+        v0: vSuited,
+        label: '火星穿宇航服'
+      };
+    }
+  }
+
+  /* ---- 计算跳跃高度 ---- */
+  function calcJumpHeight(v0, g) {
+    return Lec.P.jumpHeightFromVelocity(v0, g);
+  }
+
+  /* ---- Matter.js 引擎 ---- */
+  const { Engine, World, Bodies, Body, Events } = Matter;
+
+  const engine = Engine.create();
+  engine.gravity.y = MARS_G;  // 默认火星重力
+
+  let groundBody, charBody;
+  let physicsReady = false;
+  let jumpArmed = false;      // 是否准备好下一次跳跃
+  let jumpTimer = 0;          // 落地后等待计时
+  const JUMP_COOLDOWN = 60;   // 落地后等待帧数 (~1s @ 60fps)
+
+  function buildWorld() {
+    World.clear(engine.world, false);
+
+    // 地面
+    groundBody = Bodies.rectangle(2, 4.6, 4.2, 0.3, {
+      isStatic: true,
+      friction: 1,
+      restitution: 0
+    });
+
+    // 人物（矩形代表躯干，位置在 COM）
+    charBody = Bodies.rectangle(2, 3.8, 0.3, 0.6, {
+      friction: 0.5,
+      restitution: 0,
+      density: 0.001,
+      collisionFilter: { group: 0 }
+    });
+
+    World.add(engine.world, [groundBody, charBody]);
+    physicsReady = true;
+    jumpArmed = true;
+    jumpTimer = 0;
+  }
+
+  buildWorld();
+
+  /* ---- 触发跳跃 ---- */
+  function triggerJump(v0) {
+    if (!physicsReady || !charBody) return;
+    Body.setVelocity(charBody, { x: 0, y: -v0 });
+    Body.setPosition(charBody, { x: 2, y: 3.8 });
+    jumpArmed = false;
+    jumpTimer = 0;
+  }
+
+  /* ---- 重置物理世界参数 ---- */
+  function applyEventParams(params) {
+    engine.gravity.y = params.gravity;
+    // 重建世界以重置位置
+    World.clear(engine.world, false);
+    groundBody = Bodies.rectangle(2, 4.6, 4.2, 0.3, {
+      isStatic: true, friction: 1, restitution: 0
+    });
+    charBody = Bodies.rectangle(2, 3.8, 0.3, 0.6, {
+      friction: 0.5, restitution: 0, density: 0.001
+    });
+    World.add(engine.world, [groundBody, charBody]);
+    physicsReady = true;
+    jumpArmed = true;
+    jumpTimer = 0;
+  }
+
+  /* ---- 检测落地 ---- */
+  Events.on(engine, 'collisionStart', function(evt) {
+    for (const pair of evt.pairs) {
+      const a = pair.bodyA, b = pair.bodyB;
+      if ((a === charBody && b === groundBody) ||
+          (b === charBody && a === groundBody)) {
+        jumpArmed = true;
+        jumpTimer = 0;
+      }
+    }
+  });
+
+  /* ---- Canvas 渲染 ---- */
+  const ctx = Deck.fit(simCv);
+  let cvW, cvH;
+
+  function resize() {
+    cvW = simCv.width;
+    cvH = simCv.height;
+  }
+  resize();
+
+  /* ---- 物理 → 画布坐标 ---- */
+  const GROUND_CANVAS_Y_RATIO = 0.85; // 地面在画布 85% 处
+  const PHYS_GROUND_Y = 4.45;          // 物理地面顶面 y
+  const PHYS_CHAR_CROUCH_Y = 3.8;     // 人物蹲姿 COM y
+
+  function physToCanvas(px, py) {
+    const groundCY = cvH * GROUND_CANVAS_Y_RATIO;
+    const scale = (groundCY - 20) / (PHYS_GROUND_Y - (PHYS_GROUND_Y - 1.5));
+    // 映射：地面 py=4.45 → canvas groundCY；py 越小越往上
+    const cy = groundCY - (PHYS_GROUND_Y - py) * scale;
+    const cx = (px / 4) * cvW;
+    return { x: cx, y: cy };
+  }
+
+  /* ---- 绘制人物 ---- */
+  function drawCharacter(cx, cy, crouch) {
+    // 人物从 COM 展开：头在上，脚在下
+    const s = Math.min(cvW / 800, cvH / 500) * 1.2;
+    const headR = 14 * s;
+    const bodyW = 22 * s;
+    const bodyH = 32 * s;
+    const legLen = 28 * s;
+    const legW = 7 * s;
+
+    const headCY = cy - headR - bodyH * 0.5;
+    const bodyTop = headCY - headR * 1.6;
+    const bodyCY = bodyTop + bodyH / 2;
+    const feetY = cy + bodyH * 0.5 + legLen;
+
+    ctx.save();
+    ctx.fillStyle = '#e8d5b7';
+    ctx.strokeStyle = '#c4a882';
+    ctx.lineWidth = 1.5 * s;
+
+    // 头盔
+    ctx.beginPath();
+    ctx.arc(cx, headCY, headR, 0, Math.PI * 2);
+    ctx.fillStyle = '#f0e6d3';
+    ctx.fill();
+    ctx.strokeStyle = '#ccb896';
+    ctx.stroke();
+
+    // 面罩
+    ctx.beginPath();
+    ctx.arc(cx, headCY, headR * 0.65, -0.3, Math.PI + 0.3);
+    ctx.fillStyle = 'rgba(100,160,220,0.5)';
+    ctx.fill();
+
+    // 身体（宇航服）
+    const bx = cx - bodyW / 2;
+    const by = bodyCY - bodyH / 2;
+    const br = 5 * s;
+    ctx.beginPath();
+    ctx.moveTo(bx + br, by);
+    ctx.lineTo(bx + bodyW - br, by);
+    ctx.quadraticCurveTo(bx + bodyW, by, bx + bodyW, by + br);
+    ctx.lineTo(bx + bodyW, by + bodyH - br);
+    ctx.quadraticCurveTo(bx + bodyW, by + bodyH, bx + bodyW - br, by + bodyH);
+    ctx.lineTo(bx + br, by + bodyH);
+    ctx.quadraticCurveTo(bx, by + bodyH, bx, by + bodyH - br);
+    ctx.lineTo(bx, by + br);
+    ctx.quadraticCurveTo(bx, by, bx + br, by);
+    ctx.closePath();
+    ctx.fillStyle = '#e0d0b8';
+    ctx.fill();
+    ctx.strokeStyle = '#b8a080';
+    ctx.stroke();
+
+    // 背包
+    const bpW = bodyW * 0.8;
+    const bpH = bodyH * 0.7;
+    const bpX = cx - bpW / 2;
+    const bpY = bodyCY - bpH / 2 + 3 * s;
+    ctx.fillStyle = '#c8b898';
+    ctx.fillRect(bpX, bpY, bpW, bpH);
+    ctx.strokeStyle = '#a09070';
+    ctx.strokeRect(bpX, bpY, bpW, bpH);
+
+    // 腿
+    ctx.strokeStyle = '#d4c0a0';
+    ctx.lineWidth = legW;
+    ctx.lineCap = 'round';
+    const legTop = by + bodyH;
+    const kneeAngle = crouch ? 0.5 : 0.1;
+    // 左腿
+    ctx.beginPath();
+    ctx.moveTo(cx - bodyW * 0.25, legTop);
+    ctx.lineTo(cx - bodyW * 0.25 - kneeAngle * 8 * s, legTop + legLen * 0.5);
+    ctx.lineTo(cx - bodyW * 0.25, feetY);
+    ctx.stroke();
+    // 右腿
+    ctx.beginPath();
+    ctx.moveTo(cx + bodyW * 0.25, legTop);
+    ctx.lineTo(cx + bodyW * 0.25 + kneeAngle * 8 * s, legTop + legLen * 0.5);
+    ctx.lineTo(cx + bodyW * 0.25, feetY);
+    ctx.stroke();
+
+    // 靴子
+    ctx.fillStyle = '#a08060';
+    const bootW = legW * 1.8;
+    const bootH = 5 * s;
+    ctx.fillRect(cx - bodyW * 0.25 - bootW / 2, feetY - bootH, bootW, bootH);
+    ctx.fillRect(cx + bodyW * 0.25 - bootW / 2, feetY - bootH, bootW, bootH);
+
+    ctx.restore();
+  }
+
+  /* ---- 轨迹点 ---- */
+  let trailPoints = [];
+  const MAX_TRAIL = 80;
+
+  /* ---- 绘制 ---- */
+  function draw() {
+    resize();
+    ctx.clearRect(0, 0, cvW, cvH);
+
+    const params = getEventParams(currentEvent);
+    const groundCY = cvH * GROUND_CANVAS_Y_RATIO;
+    const scale = (groundCY - 20) / (PHYS_GROUND_Y - (PHYS_GROUND_Y - 1.5));
+
+    // 地面
+    ctx.fillStyle = 'rgba(120,60,30,0.5)';
+    ctx.fillRect(0, groundCY, cvW, cvH - groundCY);
+
+    // 地面线
+    ctx.strokeStyle = 'rgba(200,140,100,0.7)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(0, groundCY);
+    ctx.lineTo(cvW, groundCY);
+    ctx.stroke();
+
+    // 碎石
+    const seed = 42;
+    for (let i = 0; i < 20; i++) {
+      const sx = ((i * 173 + seed) % 1000) / 1000 * cvW;
+      const sy = groundCY + 8 + ((i * 97) % 30);
+      const sr = 2 + ((i * 53) % 5);
+      ctx.fillStyle = 'rgba(160,110,70,0.5)';
+      ctx.beginPath();
+      ctx.arc(sx, sy, sr, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // 轨迹
+    if (trailPoints.length > 1) {
+      ctx.strokeStyle = 'rgba(255,200,100,0.4)';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([4, 6]);
+      ctx.beginPath();
+      const p0 = physToCanvas(trailPoints[0].x, trailPoints[0].y);
+      ctx.moveTo(p0.x, p0.y);
+      for (let i = 1; i < trailPoints.length; i++) {
+        const pi = physToCanvas(trailPoints[i].x, trailPoints[i].y);
+        ctx.lineTo(pi.x, pi.y);
+      }
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // 轨迹点
+      for (let i = 0; i < trailPoints.length; i += 4) {
+        const pi = physToCanvas(trailPoints[i].x, trailPoints[i].y);
+        ctx.fillStyle = 'rgba(255,200,100,0.5)';
+        ctx.beginPath();
+        ctx.arc(pi.x, pi.y, 2.5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    // 高度标尺
+    const earthH = calcJumpHeight(V0, EARTH_G);
+    const currentH = calcJumpHeight(params.v0, params.gravity);
+    const maxH = Math.max(earthH, currentH, 0.9);
+
+    const refCY = groundCY - earthH * scale;
+    ctx.strokeStyle = 'rgba(200,200,200,0.35)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([3, 5]);
+    ctx.beginPath();
+    ctx.moveTo(30, refCY);
+    ctx.lineTo(cvW - 30, refCY);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    ctx.fillStyle = 'rgba(200,200,200,0.5)';
+    ctx.font = `${Math.max(12, 12 * Math.min(cvW/800, 1))}px ${getComputedStyle(document.body).fontFamily}`;
+    ctx.textAlign = 'left';
+    ctx.fillText(`地球参照 ${earthH.toFixed(2)} m`, 34, refCY - 4);
+
+    // 人物
+    if (physicsReady && charBody) {
+      const pos = charBody.position;
+      const pc = physToCanvas(pos.x, pos.y);
+      const isOnGround = pos.y >= PHYS_GROUND_Y - 0.15;
+      drawCharacter(pc.x, pc.y, isOnGround);
+
+      // 当前高度标注
+      const hAboveGround = Math.max(0, PHYS_GROUND_Y - pos.y);
+      if (hAboveGround > 0.03) {
+        ctx.fillStyle = 'rgba(255,255,255,0.7)';
+        ctx.font = `${Math.max(12, 12 * Math.min(cvW/800, 1))}px ${getComputedStyle(document.body).fontFamily}`;
+        ctx.textAlign = 'center';
+        ctx.fillText(`${hAboveGround.toFixed(2)} m`, pc.x, pc.y - 70 * Math.min(cvW/800, 1));
+      }
+    }
+
+    // 重力标签
+    ctx.fillStyle = 'rgba(255,255,255,0.4)';
+    ctx.font = `${Math.max(12, 12 * Math.min(cvW/800, 1))}px ${getComputedStyle(document.body).fontFamily}`;
+    ctx.textAlign = 'right';
+    const gLabel = params.gravity === EARTH_G ? '地球 g=9.8' : '火星 g=3.7';
+    ctx.fillText(gLabel, cvW - 12, groundCY - 12);
+  }
+
+  /* ---- 物理步进 ---- */
+  function step() {
+    if (!physicsReady) return;
+
+    const params = getEventParams(currentEvent);
+
+    // 管理跳跃循环
+    if (jumpArmed && charBody) {
+      if (jumpTimer >= JUMP_COOLDOWN) {
+        triggerJump(params.v0);
+      } else {
+        jumpTimer++;
+      }
+    }
+
+    Engine.update(engine, 1000 / 60);
+
+    // 防止人物穿透地面
+    if (charBody && charBody.position.y > PHYS_GROUND_Y) {
+      Body.setPosition(charBody, { x: charBody.position.x, y: PHYS_GROUND_Y });
+      Body.setVelocity(charBody, { x: 0, y: 0 });
+    }
+
+    // 记录轨迹
+    if (charBody) {
+      trailPoints.push({ x: charBody.position.x, y: charBody.position.y });
+      if (trailPoints.length > MAX_TRAIL) trailPoints.shift();
+
+      // 如果落地，缩小轨迹保留
+      if (charBody.position.y >= PHYS_GROUND_Y - 0.05 && charBody.velocity.y >= 0) {
+        if (trailPoints.length > 10) {
+          trailPoints = trailPoints.slice(-10);
+        }
+      }
+    }
+  }
+
+  /* ---- 主循环 ---- */
+  Deck.loop(function() {
+    step();
+    draw();
+  });
+
+  /* ---- 更新 UI ---- */
+  function updateUI() {
+    const params = getEventParams(currentEvent);
+    const jumpH = calcJumpHeight(params.v0, params.gravity);
+    const earthH = calcJumpHeight(V0, EARTH_G);
+
+    // 读数
+    rdMass.textContent = params.mass.toFixed(0);
+    rdV0.textContent = params.v0.toFixed(2);
+    rdHeight.textContent = jumpH.toFixed(2);
+
+    // 柱状图
+    const maxBarH = 140;
+    const maxH = Math.max(earthH, 0.9);
+    const earthBarH = (earthH / maxH) * maxBarH;
+    const marsBarH = (jumpH / maxH) * maxBarH;
+
+    barEarth.style.height = Math.max(4, earthBarH) + 'px';
+    barMars.style.height = Math.max(4, marsBarH) + 'px';
+    barEarthVal.textContent = earthH.toFixed(2) + ' m';
+    barMarsVal.textContent = jumpH.toFixed(2) + ' m';
+
+    // 滑块状态
+    if (currentEvent === EVT_MARS_SUITED) {
+      sliderGroup.classList.remove('disabled');
+      suitSlider.value = suitMass;
+    } else {
+      sliderGroup.classList.add('disabled');
+    }
+
+    // 洞察句
+    if (currentEvent === EVT_EARTH) {
+      insight.textContent = '在地球上，你的身体能跳约 0.32 米——这是我们的参照基线。';
+    } else if (currentEvent === EVT_MARS_NAKED) {
+      insight.textContent = '火星重力只有地球的 38%，理论上同一具身体能跳 2.6 倍高。';
+    } else {
+      if (jumpH < earthH) {
+        insight.textContent = '宇航服让总质量翻了近三倍，初速度大幅下降——实际跳跃高度反而低于地球裸体跳跃。低重力让每一次跳跃的空中时间更长，探索节奏完全不同。';
+      } else {
+        insight.textContent = '低重力让每一次跳跃的空中时间更长，探索节奏完全不同——跳得慢，落得也慢。';
+      }
+    }
+  }
+
+  /* ---- 切换事件 ---- */
+  function switchEvent(evt) {
+    if (currentEvent === evt) return;
+    const prevEvent = currentEvent;
+    currentEvent = evt;
+    trailPoints = [];
+
+    const params = getEventParams(evt);
+    applyEventParams(params);
+
+    // 更新 k-process 步骤状态
+    const steps = document.querySelectorAll('#evtProcess .step');
+    steps.forEach(step => {
+      const se = parseInt(step.dataset.evt);
+      step.classList.remove('done', 'current');
+      if (se < evt) step.classList.add('done');
+      else if (se === evt) step.classList.add('current');
+    });
+
+    // 更新右侧按钮
+    document.querySelectorAll('.evt-btn').forEach(btn => {
+      btn.classList.toggle('active', parseInt(btn.dataset.evt) === evt);
+    });
+
+    updateUI();
+  }
+
+  /* ---- 事件绑定 ---- */
+  document.getElementById('evtProcess').addEventListener('click', function(e) {
+    const step = e.target.closest('.step');
+    if (!step) return;
+    switchEvent(parseInt(step.dataset.evt));
+  });
+
+  // 键盘支持：k-process 步骤
+  document.getElementById('evtProcess').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter' || e.key === ' ') {
+      const step = e.target.closest('.step');
+      if (step) {
+        e.preventDefault();
+        switchEvent(parseInt(step.dataset.evt));
+      }
+    }
+  });
+
+  document.getElementById('evtBtns').addEventListener('click', function(e) {
+    const btn = e.target.closest('.evt-btn');
+    if (!btn) return;
+    switchEvent(parseInt(btn.dataset.evt));
+  });
+
+  suitSlider.addEventListener('input', function() {
+    suitMass = parseInt(this.value);
+    // 实时更新物理
+    const params = getEventParams(EVT_MARS_SUITED);
+    engine.gravity.y = params.gravity;
+    // 触发新跳跃
+    trailPoints = [];
+    applyEventParams(params);
+    updateUI();
+  });
+
+  /* ---- 键盘导航 ---- */
+  document.addEventListener('keydown', function(e) {
+    if (e.key === '1') switchEvent(EVT_EARTH);
+    if (e.key === '2') switchEvent(EVT_MARS_NAKED);
+    if (e.key === '3') switchEvent(EVT_MARS_SUITED);
+  });
+
+  /* ---- 初始状态 ---- */
+  suitSlider.value = suitMass;
+  updateUI();
+
+  // 初始应用事件三参数
+  applyEventParams(getEventParams(EVT_MARS_SUITED));
+
+})();
+</script>
+</body>
+</html>

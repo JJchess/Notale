@@ -1,0 +1,472 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  .p24 {
+    --motion-ui: 180ms;
+    --motion-enter: 520ms;
+    --ease-out: cubic-bezier(.22, .78, .28, 1);
+    height: 100%;
+  }
+
+  .p24.k-generalization {
+    grid-template-rows: auto minmax(0, 1fr);
+    gap: 18px;
+  }
+
+  .p24.k-generalization > .claim {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    box-sizing: border-box;
+    width: 100%;
+    max-width: none;
+    min-height: 62px;
+    padding: 12px 20px;
+  }
+
+  .claim-main {
+    font-size: var(--fs-lead);
+    font-weight: 700;
+    line-height: var(--lh-body);
+  }
+
+  .claim-sub {
+    color: var(--text-secondary);
+    font-size: var(--fs-sec);
+    font-weight: 500;
+    line-height: var(--lh-sec);
+  }
+
+  .p24.k-generalization > .supports {
+    display: block;
+    min-height: 0;
+    padding-top: 12px;
+  }
+
+  .p24.k-generalization > .supports::before {
+    top: 0;
+    right: 0;
+    left: 0;
+    background: linear-gradient(90deg, var(--primary), var(--primary-line) 72%, transparent);
+    transform: scaleX(0);
+    transform-origin: left;
+    animation: measure-in 700ms var(--ease-out) 100ms forwards;
+  }
+
+  .p24.k-generalization > .supports > .trunk {
+    top: -18px;
+    height: 18px;
+  }
+
+  culture-reuse-game {
+    display: block;
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+  }
+
+  @keyframes measure-in { to { transform: scaleX(1); } }
+
+  @media (prefers-reduced-motion: reduce) {
+    .p24.k-generalization > .supports::before {
+      animation: none;
+      transform: scaleX(1);
+    }
+  }
+</style>
+</head>
+<body data-page="24" data-total="44">
+<div id="stage">
+<main id="main">
+  <section class="p24 k-generalization" aria-labelledby="p24-claim">
+    <div class="claim" id="p24-claim">
+      <span class="claim-main">把“谁做、借助什么、何时怎么做”留在环境里</span>
+      <span class="claim-sub">换人之后，同一套关系仍可执行</span>
+    </div>
+    <div class="supports min0">
+      <span class="trunk" aria-hidden="true"></span>
+      <culture-reuse-game></culture-reuse-game>
+    </div>
+  </section>
+</main>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script>
+class CultureReuseGame extends HTMLElement {
+  constructor() {
+    super();
+    this.state = this.freshState();
+    this.dragId = null;
+  }
+
+  freshState() {
+    return {
+      placed: [],
+      complete: false,
+      message: '拖动卡片到空槽；也可聚焦卡片后按 Enter。',
+      tone: 'idle',
+      trace: []
+    };
+  }
+
+  connectedCallback() {
+    this.renderShell();
+    this.start();
+  }
+
+  start() {
+    this.dispatchEvent(new CustomEvent('game-start', { bubbles: true, composed: true }));
+    this.render();
+  }
+
+  reset() {
+    this.state = this.freshState();
+    this.dragId = null;
+    this.render();
+    this.dispatchEvent(new CustomEvent('game-reset', { bubbles: true, composed: true }));
+  }
+
+  getState() {
+    return JSON.parse(JSON.stringify(this.state));
+  }
+
+  cards() {
+    return [
+      { id: 'r1-role', kind: '角色', text: '工匠负责制作', short: '工匠', round: 1 },
+      { id: 'r1-tool', kind: '工具', text: '样板保留合格形状', short: '样板', round: 1 },
+      { id: 'r1-rule', kind: '规则', text: '当石片通过样板检验，就交给记录者', short: '通过检验 → 交接', round: 1 },
+      { id: 'r2-role', kind: '角色', text: '记录者负责交接', short: '记录者', round: 2 },
+      { id: 'r2-tool', kind: '工具', text: '角色标记说明当前职责', short: '角色标记', round: 2 },
+      { id: 'r2-rule', kind: '规则', text: '当工具放回工具架，就标记本轮完成', short: '工具归位 → 标记完成', round: 2 }
+    ];
+  }
+
+  expected() {
+    return ['r1-role', 'r1-tool', 'r1-rule', 'r2-role', 'r2-tool', 'r2-rule'];
+  }
+
+  renderShell() {
+    this.innerHTML = `
+      <style>
+        :host { display:block; color:var(--text); font-family:var(--font-sans); }
+        * { box-sizing:border-box; }
+        button { font-family:inherit; letter-spacing:0; }
+        .game { display:flex; flex-direction:column; gap:10px; height:100%; min-height:0; }
+        .bank-head, .board-head { display:flex; align-items:center; justify-content:space-between; min-height:26px; }
+        .section-name { color:var(--text-secondary); font-size:var(--fs-label); font-weight:700; line-height:1.35; }
+        .section-name b { color:var(--primary); }
+        .progress { color:var(--text); font-family:var(--font-mono); font-size:var(--fs-sec); font-weight:700; line-height:1.45; }
+        .bank { position:relative; display:flex; gap:12px; min-height:108px; }
+        .bank-diagram { z-index:0; opacity:.24; pointer-events:none; }
+        .bank > :not(.bank-diagram) { position:relative; z-index:1; }
+        .rule-card {
+          position:relative; flex:1 1 0; min-width:0; min-height:104px; padding:12px 14px 12px 17px;
+          color:var(--text); background:var(--surface-strong); border:1px solid var(--line-strong);
+          border-left:4px solid var(--primary); border-radius:var(--radius-sm); text-align:left;
+          cursor:grab; touch-action:none; transition:transform var(--motion-ui, 180ms) var(--ease-out, ease-out), border-color var(--motion-ui, 180ms) ease-out, opacity var(--motion-ui, 180ms) ease-out;
+          animation:card-in var(--motion-enter, 520ms) var(--ease-out, ease-out) both;
+        }
+        .rule-card::after { position:absolute; right:8px; bottom:7px; width:18px; height:8px; content:''; border-right:1px solid var(--line-strong); border-bottom:1px solid var(--line-strong); transform:skewX(-28deg); }
+        .rule-card:hover { border-color:var(--primary); transform:translateY(-3px); }
+        .rule-card:focus-visible, .reset:focus-visible { outline:3px solid var(--focus); outline-offset:3px; }
+        .rule-card:active { cursor:grabbing; transform:translateY(2px) scale(.99); }
+        .rule-card.dragging { opacity:.55; }
+        .rule-card.wrong { animation:shake 240ms ease-out; border-color:var(--danger); }
+        .interface-mark { display:flex; align-items:center; justify-content:center; width:100%; height:28px; margin:4px 0 7px; color:var(--primary); background:var(--primary-soft); border:1px solid var(--primary-line); font-family:var(--font-mono); font-size:var(--fs-label); font-weight:700; line-height:1.35; }
+        .kind { display:block; margin-bottom:5px; color:var(--primary); font-family:var(--font-mono); font-size:var(--fs-label); font-weight:700; line-height:1.35; }
+        .card-text { display:block; font-size:var(--fs-sec); font-weight:650; line-height:1.45; }
+        .workbench { position:relative; display:flex; flex-direction:column; gap:10px; min-height:0; padding:14px 16px 12px; overflow:hidden; background:#161c1e; border:1px solid var(--line); border-radius:var(--radius-md); }
+        .bench-diagram { z-index:0; opacity:.34; pointer-events:none; }
+        .workbench > :not(.bench-diagram) { position:relative; z-index:1; }
+        .workbench::before { position:absolute; top:0; right:0; left:0; height:3px; content:''; background:linear-gradient(90deg,var(--primary),var(--primary-line),transparent); }
+        .rounds { position:relative; display:flex; gap:46px; min-height:156px; }
+        .round { position:relative; flex:1 1 0; min-width:0; padding:38px 12px 12px; background:var(--surface-soft); border:1px solid var(--line-strong); border-radius:var(--radius-sm); }
+        .round + .round::before { position:absolute; top:82px; left:-34px; width:22px; height:2px; content:''; background:var(--line-strong); }
+        .round + .round::after { position:absolute; top:77px; left:-18px; width:9px; height:9px; content:''; border-top:2px solid var(--primary); border-right:2px solid var(--primary); transform:rotate(45deg); }
+        .round-title { position:absolute; top:9px; left:12px; color:var(--text-secondary); font-size:var(--fs-label); font-weight:700; line-height:1.35; }
+        .slots { display:flex; gap:10px; }
+        .slot { position:relative; display:flex; flex:1 1 0; min-width:0; min-height:112px; padding:34px 10px 10px; align-items:center; justify-content:center; color:var(--text-muted); background:#111719; border:1px dashed var(--primary-line); border-radius:var(--radius-sm); text-align:center; }
+        .slot-label { position:absolute; top:8px; left:10px; color:var(--text-secondary); font-size:var(--fs-label); font-weight:700; line-height:1.35; }
+        .slot-value { font-size:var(--fs-sec); font-weight:650; line-height:1.45; }
+        .slot.filled { color:var(--text); background:var(--primary-soft); border:1px solid var(--primary); box-shadow:inset 0 -3px 0 var(--primary); animation:snap 220ms var(--ease-out, ease-out); }
+        .slot.filled::after { position:absolute; top:17px; right:-11px; width:12px; height:1px; content:''; background:var(--primary); }
+        .slot:nth-child(3).filled::after { display:none; }
+        .status-row { display:flex; align-items:center; justify-content:space-between; min-height:44px; gap:20px; }
+        .status { color:var(--text-secondary); font-size:var(--fs-sec); line-height:1.45; }
+        .status.error { color:var(--danger); }
+        .status.good { color:var(--primary); }
+        .supports-line { display:flex; align-items:stretch; gap:16px; }
+        .support { position:relative; flex:1 1 0; min-width:0; padding:9px 12px 9px 15px; color:var(--text-secondary); background:var(--surface-strong); border:1px solid var(--line-strong); border-top:3px solid var(--primary); border-radius:var(--radius-sm); font-size:var(--fs-sec); line-height:1.45; }
+        .support strong { display:block; color:var(--text); font-size:var(--fs-label); line-height:1.35; }
+        .formula { display:none; flex:1 1 auto; align-items:center; justify-content:center; min-height:104px; padding:16px 24px; color:var(--text); background:var(--accent-soft); border:1px solid var(--accent-line); border-left:6px solid var(--accent); font-size:var(--fs-lead); font-weight:700; line-height:1.5; text-align:center; }
+        .formula .arrow { padding:0 14px; color:var(--accent); }
+        .reset { display:none; width:44px; min-width:44px; height:44px; padding:0; color:var(--text); background:var(--surface-soft); border:1px solid var(--line-strong); border-radius:var(--radius-sm); font-size:24px; line-height:1; cursor:pointer; }
+        .complete .bank { min-height:108px; }
+        .complete .rule-card { display:none; }
+        .complete .formula { display:flex; animation:formula-in 420ms var(--ease-out, ease-out) both; }
+        .complete .reset { display:inline-flex; align-items:center; justify-content:center; }
+        .complete .workbench::before { background:var(--accent); }
+        .complete .round + .round::before { background:var(--accent); transform:scaleX(1); transform-origin:left; }
+        .complete .round + .round::after { border-color:var(--accent); }
+        @keyframes card-in { from { opacity:0; transform:translateY(-18px); } to { opacity:1; transform:none; } }
+        @keyframes shake { 0%,100% { transform:translateX(0); } 30% { transform:translateX(-7px); } 65% { transform:translateX(7px); } }
+        @keyframes snap { 0% { transform:scale(1); } 45% { transform:scale(.97); } 100% { transform:scale(1); } }
+        @keyframes formula-in { from { opacity:0; transform:translateY(12px); } to { opacity:1; transform:none; } }
+        @media (prefers-reduced-motion:reduce) { *,*::before,*::after { animation-duration:.001ms !important; transition-duration:.001ms !important; } }
+      </style>
+      <div class="game">
+        <div class="bank-head">
+          <span class="section-name"><b>待整理</b> · 共同制作并交接石片工具</span>
+          <span class="progress" aria-label="排序进度"></span>
+        </div>
+        <div class="bank" aria-label="尚未归位的规则卡"><canvas class="bank-diagram cv-fill" aria-hidden="true"></canvas></div>
+        <div class="workbench">
+          <canvas class="bench-diagram cv-fill" aria-hidden="true"></canvas>
+          <div class="board-head">
+            <span class="section-name">外化操作板 · 两个连续回合</span>
+            <span class="section-name">角色 → 工具 → 条件动作</span>
+          </div>
+          <div class="rounds"></div>
+          <div class="status-row">
+            <div class="status" role="status" aria-live="polite"></div>
+            <button class="reset" type="button" title="重新排序" aria-label="重新排序">↻</button>
+          </div>
+        </div>
+        <div class="supports-line" aria-label="三条支撑关系">
+          <div class="support"><strong>角色外化</strong>换人后，职责仍可接续</div>
+          <div class="support"><strong>工具外化</strong>样板与标记保留动作标准</div>
+          <div class="support"><strong>规则外化</strong>条件再次出现时，动作可重做</div>
+        </div>
+      </div>`;
+
+    this.els = {
+      game: this.querySelector('.game'),
+      bank: this.querySelector('.bank'),
+      rounds: this.querySelector('.rounds'),
+      progress: this.querySelector('.progress'),
+      status: this.querySelector('.status'),
+      reset: this.querySelector('.reset')
+    };
+    this.els.reset.addEventListener('click', () => this.reset());
+    const diagram = this.querySelector('.bench-diagram');
+    Deck.autofit(diagram, ctx => this.drawBench(ctx, diagram));
+  }
+
+  drawBank(ctx, canvas) {
+    const w = canvas.offsetWidth;
+    const h = canvas.offsetHeight;
+    ctx.clearRect(0, 0, w, h);
+    ctx.strokeStyle = Deck.token('--primary');
+    ctx.lineWidth = 2;
+    for (let i = 0; i < 6; i++) {
+      const x = (i + .5) * w / 6;
+      ctx.save();
+      ctx.translate(x, h * .52);
+      ctx.rotate((i % 2 ? 1 : -1) * .08);
+      if (i % 3 === 0) {
+        ctx.beginPath(); ctx.arc(0, -8, 13, 0, Math.PI * 2); ctx.moveTo(-20, 28); ctx.lineTo(0, 8); ctx.lineTo(20, 28); ctx.stroke();
+      } else if (i % 3 === 1) {
+        ctx.beginPath(); ctx.moveTo(-30, 20); ctx.lineTo(-12, -24); ctx.lineTo(28, -8); ctx.lineTo(16, 25); ctx.closePath(); ctx.stroke();
+      } else {
+        Deck.arrow(ctx, -34, 0, 34, 0, 10);
+        ctx.strokeRect(-28, -23, 22, 14);
+      }
+      ctx.restore();
+    }
+  }
+
+  drawBench(ctx, canvas) {
+    const w = canvas.offsetWidth;
+    const h = canvas.offsetHeight;
+    const primary = Deck.token('--primary');
+    const line = Deck.token('--line-strong');
+    ctx.clearRect(0, 0, w, h);
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = line;
+    for (let x = 24; x < w; x += 64) {
+      ctx.beginPath();
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x, h);
+      ctx.stroke();
+    }
+    for (let y = 22; y < h; y += 44) {
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(w, y);
+      ctx.stroke();
+    }
+    ctx.strokeStyle = primary;
+    ctx.lineWidth = 3;
+    const railY = Math.round(h * .56);
+    Deck.arrow(ctx, 44, railY, w - 44, railY, 12);
+    [w * .14, w * .27, w * .40, w * .60, w * .73, w * .86].forEach((x, i) => {
+      ctx.beginPath();
+      if (i % 3 === 0) {
+        ctx.arc(x, railY, 20, 0, Math.PI * 2);
+      } else if (i % 3 === 1) {
+        ctx.moveTo(x - 22, railY);
+        ctx.lineTo(x, railY - 18);
+        ctx.lineTo(x + 22, railY);
+        ctx.lineTo(x, railY + 18);
+        ctx.closePath();
+      } else {
+        ctx.moveTo(x - 24, railY - 14);
+        ctx.lineTo(x + 12, railY - 14);
+        ctx.lineTo(x + 12, railY - 24);
+        ctx.lineTo(x + 28, railY);
+        ctx.lineTo(x + 12, railY + 24);
+        ctx.lineTo(x + 12, railY + 14);
+        ctx.lineTo(x - 24, railY + 14);
+        ctx.closePath();
+      }
+      ctx.stroke();
+    });
+  }
+
+  render() {
+    const all = this.cards();
+    const placed = new Set(this.state.placed);
+    this.els.game.classList.toggle('complete', this.state.complete);
+    this.els.progress.textContent = `已就位 ${this.state.placed.length} / 6`;
+    this.els.status.textContent = this.state.message;
+    this.els.status.className = `status ${this.state.tone === 'error' ? 'error' : this.state.tone === 'good' ? 'good' : ''}`;
+
+    this.els.bank.innerHTML = '<canvas class="bank-diagram cv-fill" aria-hidden="true"></canvas>';
+    const bankDiagram = this.els.bank.querySelector('.bank-diagram');
+    this.drawBank(Deck.fit(bankDiagram), bankDiagram);
+    if (this.state.complete) {
+      const formula = document.createElement('div');
+      formula.className = 'formula';
+      formula.innerHTML = '<span>谁负责 ＋ 借助什么 ＋ 在什么条件下怎么做</span><span class="arrow">→</span><span>群体可重复调用</span>';
+      this.els.bank.appendChild(formula);
+    } else {
+      const order = ['r2-rule', 'r1-tool', 'r2-role', 'r1-rule', 'r1-role', 'r2-tool'];
+      order.forEach((id, index) => {
+        if (placed.has(id)) return;
+        const card = all.find(item => item.id === id);
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'rule-card';
+        button.draggable = true;
+        button.dataset.id = id;
+        button.style.animationDelay = `${index * 55}ms`;
+        button.setAttribute('aria-label', `${card.kind}卡：${card.text}。按 Enter 放入下一空槽`);
+        button.innerHTML = `<span class="kind">${card.kind}</span><span class="interface-mark" aria-hidden="true">${card.kind === '角色' ? '○ / ID' : card.kind === '工具' ? '◇ / TOOL' : 'IF → DO'}</span><span class="card-text">${card.text}</span>`;
+        button.addEventListener('click', () => this.attempt(id, this.state.placed.length, button));
+        button.addEventListener('dragstart', event => {
+          this.dragId = id;
+          event.dataTransfer.setData('text/plain', id);
+          event.dataTransfer.effectAllowed = 'move';
+          button.classList.add('dragging');
+        });
+        button.addEventListener('dragend', () => {
+          this.dragId = null;
+          button.classList.remove('dragging');
+        });
+        this.els.bank.appendChild(button);
+      });
+    }
+
+    this.els.rounds.innerHTML = '';
+    [1, 2].forEach(roundNo => {
+      const round = document.createElement('section');
+      round.className = 'round';
+      round.innerHTML = `<div class="round-title">回合 ${roundNo} · ${roundNo === 1 ? '制作与检验' : '交接与归位'}</div><div class="slots"></div>`;
+      const slots = round.querySelector('.slots');
+      ['角色', '工具', '规则'].forEach((label, offset) => {
+        const slotIndex = (roundNo - 1) * 3 + offset;
+        const id = this.expected()[slotIndex];
+        const card = all.find(item => item.id === id);
+        const slot = document.createElement('div');
+        slot.className = `slot ${placed.has(id) ? 'filled' : ''}`;
+        slot.dataset.index = slotIndex;
+        slot.setAttribute('aria-label', `${label}槽${placed.has(id) ? `，已放入${card.short}` : '，空'}`);
+        slot.innerHTML = `<span class="slot-label">${label}</span><span class="slot-value">${placed.has(id) ? card.short : '等待归位'}</span>`;
+        slot.addEventListener('dragover', event => { event.preventDefault(); event.dataTransfer.dropEffect = 'move'; });
+        slot.addEventListener('drop', event => {
+          event.preventDefault();
+          const dragged = event.dataTransfer.getData('text/plain') || this.dragId;
+          const source = this.els.bank.querySelector(`[data-id="${dragged}"]`);
+          this.attempt(dragged, slotIndex, source);
+        });
+        slots.appendChild(slot);
+      });
+      this.els.rounds.appendChild(round);
+    });
+  }
+
+  attempt(id, slotIndex, source) {
+    if (this.state.complete || this.state.placed.includes(id)) return;
+    const expected = this.expected();
+    const nextIndex = this.state.placed.length;
+    let message = '';
+
+    if (slotIndex !== nextIndex || id !== expected[nextIndex]) {
+      if (nextIndex % 3 === 0) message = '这条规则缺少对应角色。先固定“谁来做”。';
+      else if (nextIndex % 3 === 1) message = '先放置这个回合的角色，再接入对应工具。';
+      else message = '先放置它所引用的工具，再写条件动作。';
+      this.state.message = message;
+      this.state.tone = 'error';
+      if (source) {
+        source.classList.remove('wrong');
+        void source.offsetWidth;
+        source.classList.add('wrong');
+      }
+      this.dispatchProgress('reject', { id, slotIndex });
+      this.renderStatusOnly();
+      return;
+    }
+
+    this.state.placed.push(id);
+    this.state.trace.push({ action: 'place', id, slotIndex });
+    this.state.tone = 'good';
+    this.state.message = nextIndex === 2 ? '第一回合已接通。继续整理交接回合。' : '关系已接通。';
+    this.state.complete = this.state.placed.length === expected.length;
+    if (this.state.complete) {
+      this.state.message = '可再次调用：被保存的是一套可重新执行的关系。';
+    }
+    this.render();
+    this.dispatchProgress('place', { id, slotIndex });
+    if (this.state.complete) {
+      this.dispatchEvent(new CustomEvent('game-complete', {
+        bubbles: true,
+        composed: true,
+        detail: { score: 6, metrics: { placed: 6 }, trace: this.state.trace.slice() }
+      }));
+    }
+  }
+
+  renderStatusOnly() {
+    this.els.status.textContent = this.state.message;
+    this.els.status.className = 'status error';
+  }
+
+  dispatchProgress(action, extra) {
+    this.dispatchEvent(new CustomEvent('game-progress', {
+      bubbles: true,
+      composed: true,
+      detail: {
+        state: this.getState(),
+        action: Object.assign({ type: action }, extra),
+        metrics: { placed: this.state.placed.length, total: 6 }
+      }
+    }));
+  }
+}
+
+customElements.define('culture-reuse-game', CultureReuseGame);
+
+Lec.mount({
+  index: 24,
+  kicker: 'CULTURE / REUSE',
+  title: '不只记住一次，而是让群体再次调用',
+  take: '规则、工具和角色一旦被放到脑外，群体就能反复调用同一种做法。'
+});
+</script>
+</body>
+</html>

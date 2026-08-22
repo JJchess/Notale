@@ -1,0 +1,282 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  #main { display:flex; flex-direction:column; gap:var(--sp-3); }
+  .experiment { display:flex; flex-direction:column; min-width:0; min-height:0; height:100%; gap:var(--sp-3); }
+  .population-rig { position:relative; flex:0 0 248px; min-width:0; overflow:hidden; border:var(--border); border-radius:var(--radius-3); background:var(--surface-1); }
+  .population-head { position:absolute; inset:12px 20px auto; z-index:2; display:flex; align-items:center; justify-content:space-between; gap:var(--sp-4); pointer-events:none; }
+  .population-head h2 { font-size:var(--fs-h2); }
+  .legend { display:flex; align-items:center; gap:var(--sp-4); }
+  .legend .a { --swatch:var(--primary); }
+  .legend .b { --swatch:var(--text-muted); }
+  #variation-board { position:absolute; inset:0; }
+  #variation-board svg { display:block; width:100%; height:100%; }
+  #variation-board text { font-family:var(--font-sans); letter-spacing:0; }
+  .result-readout { position:absolute; right:24px; bottom:14px; z-index:3; display:flex; gap:var(--sp-4); color:var(--text-muted); font-size:var(--fs-sec); line-height:var(--lh-copy); }
+  .result-readout strong { color:var(--text-strong); font-family:var(--font-mono); font-size:var(--fs-body); }
+  .classification-area { position:relative; flex:1 1 0; min-width:0; min-height:0; }
+  .k-classification.trays { position:absolute; inset:0; flex-direction:row; gap:var(--sp-4); }
+  .trays > .box { position:relative; display:flex; flex:1 1 0; flex-direction:column; min-width:0; min-height:0; padding:var(--sp-3); border-color:var(--line-strong); }
+  .trays > .box > .bt { flex:0 0 auto; margin:calc(-1 * var(--sp-3)) calc(-1 * var(--sp-3)) var(--sp-2); padding:var(--sp-2) var(--sp-3); font-size:var(--fs-h2); }
+  .tray-note { color:var(--text-muted); font-size:var(--fs-sec); line-height:var(--lh-copy); }
+  .tray-items { display:flex; flex:1 1 0; flex-direction:column; justify-content:flex-end; gap:var(--sp-1); min-height:0; margin-top:var(--sp-2); }
+  .tray-item { padding:5px var(--sp-2); color:var(--primary-bright); font-size:var(--fs-sec); line-height:1.35; border-left:3px solid var(--primary); background:var(--surface-teal); }
+  .box.is-target { border-color:var(--accent); background:var(--surface-yellow); }
+  .causal-link { position:absolute; left:31.7%; bottom:8px; width:35.2%; height:3px; z-index:2; background:var(--primary-dark); opacity:.28; pointer-events:none; }
+  .causal-link::after { content:""; position:absolute; right:0; top:-5px; width:10px; height:10px; border-top:3px solid var(--primary); border-right:3px solid var(--primary); transform:rotate(45deg); }
+  .causal-link.is-live { opacity:1; }
+  .card-drawer { position:absolute; inset:auto 12px 10px; z-index:4; display:flex; align-items:stretch; justify-content:center; gap:var(--sp-2); pointer-events:none; }
+  .scenario-card { width:238px; min-height:74px; padding:var(--sp-2) var(--sp-3); justify-content:flex-start; align-items:flex-start; flex-direction:column; text-align:left; line-height:1.35; border-left:4px solid var(--accent); background:var(--surface-3); box-shadow:var(--shadow-panel); pointer-events:auto; touch-action:none; cursor:grab; }
+  .scenario-card span { color:var(--text-muted); font-size:var(--fs-sec); font-weight:400; }
+  .scenario-card.is-dragging { cursor:grabbing; z-index:8; }
+  .scenario-card.is-error { border-color:var(--danger); }
+  .status-strip { flex:0 0 58px; display:flex; align-items:center; gap:var(--sp-4); min-width:0; padding:0 var(--sp-4); border:var(--border); border-left:4px solid var(--primary); border-radius:var(--radius-2); background:var(--surface-1); }
+  .status-text { flex:0 0 250px; color:var(--text-strong); font-family:var(--font-mono); font-size:var(--fs-sec); line-height:1.4; }
+  .feedback { flex:1 1 0; min-width:0; color:var(--text-muted); font-size:var(--fs-sec); line-height:var(--lh-copy); }
+  .feedback.is-final { color:var(--text-strong); font-size:var(--fs-lead); font-weight:700; }
+  #action-button { flex:0 0 154px; font-size:var(--fs-sec); }
+  #action-button .reset-mark { display:none; font-size:22px; line-height:1; }
+  #action-button.is-reset .reset-mark { display:inline; }
+  .lec-progress { overflow:visible; }
+  @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition-duration:0.001ms !important; animation-duration:0.001ms !important; } }
+</style>
+</head>
+<body data-page="16" data-total="52">
+<div id="stage">
+<main id="main">
+  <section class="experiment" aria-label="变异洗牌器">
+    <div class="population-rig min0">
+      <div class="population-head">
+        <h2>群体点阵</h2>
+        <div class="legend" aria-label="虚构性状图例">
+          <span class="legend-key"><i class="swatch a"></i>性状 A</span>
+          <span class="legend-key"><i class="swatch b"></i>性状 B</span>
+        </div>
+      </div>
+      <div id="variation-board"></div>
+      <div class="result-readout" aria-live="polite">
+        <span>A：<strong id="a-result">—</strong></span>
+        <span>B：<strong id="b-result">—</strong></span>
+      </div>
+    </div>
+
+    <div class="classification-area min0 no-pan">
+      <div class="k-classification trays" aria-label="三类现象">
+        <section class="box drop-zone" data-bin="0">
+          <h2 class="bt">可遗传差异</h2>
+          <p class="tray-note">出生时已有，后代可能继承</p>
+          <div class="tray-items" aria-live="polite"></div>
+        </section>
+        <section class="box drop-zone" data-bin="1">
+          <h2 class="bt">个体一生的改变</h2>
+          <p class="tray-note">经历、锻炼或学习发生在个体身上</p>
+          <div class="tray-items" aria-live="polite"></div>
+        </section>
+        <section class="box drop-zone" data-bin="2">
+          <h2 class="bt">群体跨代的结果</h2>
+          <p class="tray-note">多代以后，各变体比例发生变化</p>
+          <div class="tray-items" aria-live="polite"></div>
+        </section>
+      </div>
+      <div class="causal-link" aria-hidden="true"></div>
+      <div id="card-drawer" class="card-drawer" aria-label="待分类情境卡"></div>
+    </div>
+
+    <div class="status-strip">
+      <div id="progress-status" class="status-text">第 1/2 轮 · 已归类 0/4</div>
+      <div id="feedback" class="feedback" aria-live="assertive">拖入对应托盘。键盘可用左右键选类，Enter 放置。</div>
+      <button id="action-button" class="btn is-primary" type="button" disabled><span class="reset-mark" aria-hidden="true">↻</span><span class="action-label">运行筛选</span></button>
+    </div>
+  </section>
+</main>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script src="assets/lib/d3.min.js"></script>
+<script src="assets/lib/seedrandom.min.js"></script>
+<script>
+(function () {
+  "use strict";
+
+  Lec.mount({index:16,kicker:"BODY / VARIATION",title:"需要不会让个体升级",take:"自然选择筛选群体中已有的可遗传差异；改变的是代际间的比例。" });
+
+  const motion = {enterMs:420,correctMs:240,errorMs:180,settleMs:520,ease:d3.easeCubicOut};
+  const gameConfig = {rounds:2,cardsPerRound:4,bins:["可遗传差异","个体一生的改变","群体跨代的结果"],seed:Lec.K.pageSeed16};
+  const cardSource = [
+    {id:"born-a",title:"出生时带有性状 A",note:"后代可能继承",bin:0},
+    {id:"born-b",title:"出生时带有性状 B",note:"同一群体中的另一变体",bin:0},
+    {id:"muscle",title:"锻炼后肌肉更强",note:"发生在这个个体身上",bin:1},
+    {id:"tan",title:"日晒后皮肤变深",note:"环境造成，不等于遗传改变",bin:1},
+    {id:"scar",title:"受伤后留下疤痕",note:"不会因此传给后代",bin:1},
+    {id:"shade",title:"学会躲到阴影里",note:"学到的行为，不是基因变化",bin:1},
+    {id:"more-a",title:"下一代中 A 的比例上升",note:"比例改变",bin:2},
+    {id:"both",title:"下一代仍同时有 A 与 B",note:"变异没有消失",bin:2}
+  ];
+
+  const svg = d3.select("#variation-board").append("svg").attr("viewBox","0 0 960 420").attr("role","img").attr("aria-label","变异、个体改变与群体结果分类图");
+  svg.append("title").text("筛选前后两代群体中的虚构性状 A 与 B");
+  svg.append("desc").text("第一代有五个 A 和七个 B。筛选后下一代有八个 A 和四个 B；个体性状不在一生中改变。");
+
+  const colors = {
+    primary:Deck.token("--primary"), primaryBright:Deck.token("--primary-bright"),
+    muted:Deck.token("--text-muted"), faint:Deck.token("--text-faint"),
+    strong:Deck.token("--text-strong"), accent:Deck.token("--accent"),
+    surface:Deck.token("--surface-2"), line:Deck.token("--line-strong")
+  };
+  const initialTraits = ["A","B","B","A","B","A","B","B","A","B","A","B"];
+  const nextTraits = ["A","A","B","A","A","B","A","B","A","A","B","A"];
+  let state;
+
+  function seededOrder() {
+    const rng = new Math.seedrandom(Lec.K.pageSeed16);
+    const cards = cardSource.slice();
+    for (let i = cards.length - 1; i > 0; i -= 1) {
+      const j = Math.floor(rng() * (i + 1));
+      [cards[i], cards[j]] = [cards[j], cards[i]];
+    }
+    return cards;
+  }
+
+  function freshState() {
+    return {order:seededOrder(),round:0,placedInRound:0,placed:[],selectedBins:{},phase:"classify"};
+  }
+
+  function fmt(value) { return String(Lec.P.roundTo(value, 0)); }
+
+  function drawPopulation(filtered) {
+    svg.selectAll("*").filter(function(){ return this.tagName !== "title" && this.tagName !== "desc"; }).remove();
+    const rowY = [132,310];
+    const xs = d3.range(12).map(i => 110 + i * 62);
+
+    svg.append("text").attr("x",28).attr("y",138).attr("fill",colors.strong).attr("font-size",18).attr("font-weight",700).text("这一代");
+    svg.append("text").attr("x",28).attr("y",316).attr("fill",colors.strong).attr("font-size",18).attr("font-weight",700).text("下一代");
+    svg.append("line").attr("x1",96).attr("x2",860).attr("y1",218).attr("y2",218).attr("stroke",colors.accent).attr("stroke-width",3);
+    svg.append("rect").attr("class","filter-gate").attr("x",440).attr("y",198).attr("width",80).attr("height",40).attr("rx",4).attr("fill",colors.accent);
+    svg.append("text").attr("x",480).attr("y",224).attr("text-anchor","middle").attr("fill",Deck.token("--accent-ink")).attr("font-size",16).attr("font-weight",700).text("环境筛选");
+
+    function addRow(traits, y, visible) {
+      const nodes = svg.append("g").selectAll("g").data(traits).join("g").attr("transform",(d,i)=>`translate(${xs[i]},${y})`).attr("opacity",visible ? 1 : 0.12);
+      nodes.append("circle").attr("r",21).attr("fill",d=>d === "A" ? colors.primary : colors.surface).attr("stroke",d=>d === "A" ? colors.primaryBright : colors.muted).attr("stroke-width",3);
+      nodes.append("text").attr("text-anchor","middle").attr("dy","0.36em").attr("fill",d=>d === "A" ? Deck.token("--surface-0") : colors.strong).attr("font-size",16).attr("font-weight",800).text(d=>d);
+      return nodes;
+    }
+    const first = addRow(initialTraits,rowY[0],true);
+    const second = addRow(nextTraits,rowY[1],filtered);
+    if (!Deck.reduced() && state.phase === "classify") {
+      first.attr("opacity",0).transition().delay((d,i)=>i*22).duration(motion.enterMs).ease(motion.ease).attr("opacity",1);
+    }
+    if (filtered && !Deck.reduced()) {
+      second.attr("opacity",0).attr("transform",(d,i)=>`translate(${xs[i]},${rowY[0]})`).transition().delay((d,i)=>i*28).duration(motion.settleMs).ease(motion.ease).attr("opacity",1).attr("transform",(d,i)=>`translate(${xs[i]},${rowY[1]})`);
+      svg.select(".filter-gate").attr("x",96).transition().duration(motion.settleMs).ease(motion.ease).attr("x",824);
+    }
+  }
+
+  function currentCards() {
+    const start = state.round * gameConfig.cardsPerRound;
+    return state.order.slice(start,start + gameConfig.cardsPerRound);
+  }
+
+  function feedbackFor(card) {
+    if (card.bin === 1) return "这描述的是个体一生的改变，不会因此传给后代。";
+    if (card.bin === 2) return "这是多代后的群体结果，不是出生时的差异。";
+    return "这是出生时已有的差异，才可能进入遗传筛选。";
+  }
+
+  function renderCards() {
+    const active = currentCards().filter(card => !state.placed.includes(card.id));
+    const cards = d3.select("#card-drawer").selectAll("button").data(active,d=>d.id).join(
+      enter => enter.append("button").attr("type","button").attr("class","scenario-card").attr("data-card",d=>d.id).attr("aria-keyshortcuts","ArrowLeft ArrowRight Enter").html(d=>`<b>${d.title}</b><span>${d.note}</span>`),
+      update => update,
+      exit => exit.remove()
+    );
+    cards.each(function(d){ this.dataset.selectedBin = String(state.selectedBins[d.id] || 0); });
+    cards.call(d3.drag()
+      .on("start",function(){ d3.select(this).classed("is-dragging",true); })
+      .on("drag",function(event){ d3.select(this).style("transform",`translate(${event.x}px,${event.y}px)`); highlightDrop(event.sourceEvent); })
+      .on("end",function(event,d){ d3.select(this).classed("is-dragging",false).style("transform",null); clearTargets(); const bin=dropBin(event.sourceEvent); attempt(d,bin,this); })
+    );
+    cards.on("keydown",function(event,d){
+      let selected=Number(this.dataset.selectedBin || 0);
+      if(event.key === "ArrowLeft" || event.key === "ArrowRight") {
+        event.preventDefault();
+        selected=(selected+(event.key === "ArrowRight" ? 1 : -1)+gameConfig.bins.length)%gameConfig.bins.length;
+        this.dataset.selectedBin=String(selected); state.selectedBins[d.id]=selected;
+        document.getElementById("feedback").textContent=`已选择：${gameConfig.bins[selected]}。按 Enter 放置。`;
+        d3.selectAll(".drop-zone").classed("is-target",(x,i)=>i===selected);
+      } else if(event.key === "Enter") { event.preventDefault(); clearTargets(); attempt(d,selected,this); }
+    });
+  }
+
+  function dropBin(sourceEvent) {
+    if (!sourceEvent) return -1;
+    const x=sourceEvent.clientX, y=sourceEvent.clientY;
+    return Array.from(document.querySelectorAll(".drop-zone")).findIndex(el=>{ const r=el.getBoundingClientRect(); return x>=r.left && x<=r.right && y>=r.top && y<=r.bottom; });
+  }
+  function highlightDrop(e) { const bin=dropBin(e); d3.selectAll(".drop-zone").classed("is-target",(d,i)=>i===bin); }
+  function clearTargets() { d3.selectAll(".drop-zone").classed("is-target",false); }
+
+  function attempt(card,bin,node) {
+    if (bin < 0) { document.getElementById("feedback").textContent="请把情境卡放入一个分类托盘。"; return; }
+    if (bin !== card.bin) {
+      document.getElementById("feedback").textContent=feedbackFor(card);
+      const sel=d3.select(node).classed("is-error",true);
+      if (!Deck.reduced()) sel.transition().duration(motion.errorMs/3).style("transform","translateX(-8px)").transition().duration(motion.errorMs/3).style("transform","translateX(8px)").transition().duration(motion.errorMs/3).style("transform",null).on("end",()=>sel.classed("is-error",false));
+      else sel.classed("is-error",false);
+      return;
+    }
+    state.placed.push(card.id); state.placedInRound += 1;
+    document.querySelector(`.drop-zone[data-bin="${bin}"] .tray-items`).insertAdjacentHTML("beforeend",`<div class="tray-item">${card.title}</div>`);
+    document.getElementById("feedback").textContent=`归类正确：${card.note}。`;
+    if (bin === 0 || bin === 2) document.querySelector(".causal-link").classList.add("is-live");
+    if (state.placedInRound === gameConfig.cardsPerRound && state.round < gameConfig.rounds-1) {
+      state.round += 1; state.placedInRound = 0;
+      document.getElementById("feedback").textContent="第 1 轮完成。继续分类下一组情境。";
+    }
+    updateStatus(); renderCards();
+  }
+
+  function updateStatus() {
+    const total=state.placed.length;
+    const status=document.getElementById("progress-status");
+    if(total === cardSource.length) {
+      status.textContent=`${fmt(total)}/${fmt(cardSource.length)} · 可以运行筛选`;
+      document.getElementById("action-button").disabled=false;
+    } else status.textContent=`第 ${fmt(state.round+1)}/${fmt(gameConfig.rounds)} 轮 · 已归类 ${fmt(state.placedInRound)}/${fmt(gameConfig.cardsPerRound)}`;
+  }
+
+  function runSelection() {
+    state.phase="result";
+    drawPopulation(true);
+    const a0=initialTraits.filter(d=>d==="A").length, a1=nextTraits.filter(d=>d==="A").length;
+    const b0=initialTraits.filter(d=>d==="B").length, b1=nextTraits.filter(d=>d==="B").length;
+    document.getElementById("a-result").textContent=`${fmt(a0)}→${fmt(a1)}`;
+    document.getElementById("b-result").textContent=`${fmt(b0)}→${fmt(b1)}`;
+    const feedback=document.getElementById("feedback");
+    feedback.textContent="个体没有按需要改变性状；跨代改变的是群体中 A 与 B 的比例。";
+    feedback.classList.add("is-final");
+    document.getElementById("progress-status").textContent="筛选完成 · 个体性状不变";
+    const button=document.getElementById("action-button");
+    button.classList.add("is-reset"); button.querySelector(".action-label").textContent="重来"; button.disabled=false;
+  }
+
+  function reset() {
+    state=freshState();
+    document.querySelectorAll(".tray-items").forEach(el=>el.replaceChildren());
+    document.querySelector(".causal-link").classList.remove("is-live");
+    document.getElementById("a-result").textContent="—"; document.getElementById("b-result").textContent="—";
+    const feedback=document.getElementById("feedback"); feedback.classList.remove("is-final"); feedback.textContent="拖入对应托盘。键盘可用左右键选类，Enter 放置。";
+    const button=document.getElementById("action-button"); button.classList.remove("is-reset"); button.querySelector(".action-label").textContent="运行筛选"; button.disabled=true;
+    drawPopulation(false); updateStatus(); renderCards();
+  }
+
+  document.getElementById("action-button").addEventListener("click",()=>state.phase === "result" ? reset() : runSelection());
+  reset();
+  window.page16 = {getState:()=>JSON.parse(JSON.stringify(state)), classify:(id,bin)=>{ const card=cardSource.find(d=>d.id===id); if(card) attempt(card,bin,document.querySelector(`[data-card="${id}"]`)); }, run:runSelection, reset};
+}());
+</script>
+</body>
+</html>

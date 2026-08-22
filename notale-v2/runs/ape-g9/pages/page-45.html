@@ -1,0 +1,284 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+body[data-page="45"] .lec-progress{overflow:visible}
+#main{display:flex;flex-direction:column;gap:12px}
+.p45-lead{display:flex;align-items:center;justify-content:space-between;min-height:44px;gap:24px}
+.p45-lead p{font-size:var(--fs-sec);line-height:var(--lh-copy);color:var(--text-muted)}
+.p45-legend{display:flex;gap:18px;flex:0 0 auto}
+.p45-shell{position:relative;display:flex;flex:1 1 0;min-height:0;border:var(--border);border-radius:var(--radius-3);overflow:hidden;background:var(--surface-1)}
+.p45-map{position:relative;flex:1 1 0;min-width:0;min-height:0;background:linear-gradient(180deg,var(--surface-1),var(--surface-0))}
+#settlement-map{display:block;width:100%;height:100%;touch-action:none}
+.p45-days{display:flex;flex:0 0 342px;flex-direction:column;min-width:0;border-left:var(--border);background:var(--surface-glass)}
+.p45-days-head{padding:14px 16px 10px;border-bottom:var(--border)}
+.p45-days-head h2{font-size:var(--fs-h2)}
+.p45-days-head p{font-size:var(--fs-label);line-height:1.35;color:var(--text-muted)}
+#day-list{display:flex;flex:1 1 0;flex-direction:column;min-height:0;padding:8px 16px 10px}
+.day-row{display:grid;grid-template-columns:58px 1fr;align-items:center;flex:1 1 0;min-height:0;border-bottom:var(--border)}
+.day-row:last-child{border-bottom:0}
+.day-label{font-family:var(--font-mono);font-size:var(--fs-label);font-weight:700;color:var(--text-muted)}
+.day-metrics{display:flex;flex-direction:column;gap:3px;min-width:0}
+.day-state{font-size:var(--fs-sec);font-weight:700;line-height:1.35;color:var(--text-strong)}
+.day-values{font-family:var(--font-mono);font-size:var(--fs-label);line-height:1.35;color:var(--text-muted);white-space:nowrap}
+.day-row.is-fault .day-state{color:var(--danger)}
+.day-row.is-repair .day-state{color:var(--accent)}
+.day-row.is-ok .day-label{color:var(--primary-bright)}
+.p45-bar{display:flex;align-items:center;gap:18px;min-height:66px;padding:10px 16px;border:var(--border);border-radius:var(--radius-3);background:var(--surface-glass)}
+.p45-status{flex:1 1 0;min-width:0}
+.p45-status strong{display:block;font-size:var(--fs-lead);line-height:1.35;color:var(--text-strong)}
+.p45-status span{display:block;font-size:var(--fs-sec);line-height:1.35;color:var(--text-muted)}
+.p45-kbd{display:flex;align-items:center;gap:10px;flex:0 0 auto}
+.p45-kbd label{font-size:var(--fs-label);color:var(--text-muted)}
+.p45-kbd select{width:132px}
+.p45-kbd button{font-size:var(--fs-sec)}
+.node-shape{fill:var(--surface-2);stroke:var(--line-strong);stroke-width:2}
+.node-online .node-shape{fill:var(--surface-teal);stroke:var(--primary);stroke-width:3}
+.node-title{fill:var(--text-strong);font-family:var(--font-narrow);font-size:22px;font-weight:700;text-anchor:middle}
+.node-role{fill:var(--text-muted);font-family:var(--font-sans);font-size:15px;text-anchor:middle}
+.port{fill:var(--surface-0);stroke:var(--accent);stroke-width:3}
+.port-hit{fill:transparent;cursor:crosshair}
+.link-base{fill:none;stroke:var(--line-strong);stroke-width:3;stroke-dasharray:7 7}
+.link-ready{fill:none;stroke:var(--primary);stroke-width:4;marker-end:url(#arrow-ready)}
+.link-backup{fill:none;stroke:var(--accent);stroke-width:4;marker-end:url(#arrow-backup)}
+.link-failed{fill:none;stroke:var(--danger);stroke-width:5;marker-end:url(#arrow-failed)}
+.drag-line{fill:none;stroke:var(--accent);stroke-width:4;stroke-dasharray:8 6;pointer-events:none}
+.edge-handle{fill:var(--accent);stroke:var(--surface-0);stroke-width:3;cursor:grab}
+.edge-handle:active{cursor:grabbing}
+.edge-label{fill:var(--text-muted);font-family:var(--font-sans);font-size:14px;font-weight:700;text-anchor:middle}
+.surface-mark{fill:none;stroke:var(--line);stroke-width:1}
+.hab-core{fill:var(--surface-2);stroke:var(--primary);stroke-width:3}
+.hab-ring{fill:none;stroke:var(--primary-dark);stroke-width:2;stroke-dasharray:5 7}
+.fault-mark{fill:var(--danger);stroke:var(--surface-0);stroke-width:3}
+.pulse{fill:var(--primary-bright);pointer-events:none}
+.shake{animation:p45-shake 240ms ease-in-out}
+@keyframes p45-shake{25%{transform:translateX(-5px)}75%{transform:translateX(5px)}}
+@media (prefers-reduced-motion:reduce){.shake{animation:none}}
+</style>
+</head>
+<body data-page="45" data-total="52">
+<div id="stage">
+<main id="main"></main>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script src="assets/lib/d3.min.js"></script>
+<script>
+Lec.mount({index:45,kicker:"SYSTEM LOOP",title:"把定居点接成闭环",take:"一个可持续定居点必须把栖居、能源、循环、维修和治理连成系统。"});
+
+const main=document.getElementById("main");
+main.innerHTML=`
+  <div class="p45-lead">
+    <p>把每条线的末端拖到能接收它的模块。观察局部故障如何进入整条闭环。</p>
+    <div class="p45-legend" aria-label="连线图例">
+      <span class="legend-key"><i class="swatch" style="--swatch:var(--primary)"></i>正常依赖</span>
+      <span class="legend-key"><i class="swatch" style="--swatch:var(--accent)"></i>备用路径</span>
+      <span class="legend-key"><i class="swatch" style="--swatch:var(--danger)"></i>故障传播</span>
+    </div>
+  </div>
+  <section class="p45-shell min0" aria-label="定居点闭环沙盘">
+    <div class="p45-map min0 no-pan">
+      <svg id="settlement-map" viewBox="0 0 1040 470" role="img" aria-labelledby="map-title map-desc">
+        <title id="map-title">定居点模块依赖网络</title>
+        <desc id="map-desc">治理、能源、栖居、循环和维修通过六条有方向的连接组成闭环。</desc>
+      </svg>
+    </div>
+    <aside class="p45-days min0" aria-label="七日运行状态">
+      <div class="p45-days-head"><h2>运行轨道</h2><p id="budget-note"></p></div>
+      <div id="day-list"></div>
+    </aside>
+  </section>
+  <div class="p45-bar">
+    <div class="p45-status" aria-live="polite"><strong id="progress-text"></strong><span id="feedback-text"></span></div>
+    <div class="p45-kbd">
+      <label for="target-select">键盘接线</label>
+      <select id="target-select" aria-label="当前连线的目标模块"></select>
+      <button id="connect-btn" type="button">接入</button>
+      <button id="reset-btn" class="btn" type="button">重置沙盘</button>
+    </div>
+  </div>`;
+
+const svg=d3.select("#settlement-map");
+const link=d3.linkHorizontal().x(d=>d.x).y(d=>d.y);
+const stateColor=d3.scaleOrdinal(["ready","warning","failed"],["#35C6B4","#FFCC4D","#E85D5D"]);
+const nodes=[
+  {id:"govern",name:"治理",role:"定优先级",x:150,y:88,w:164,h:76},
+  {id:"power",name:"能源",role:"交付功率",x:472,y:58,w:164,h:76},
+  {id:"hab",name:"栖居",role:"维持生存",x:500,y:236,w:188,h:100,core:true},
+  {id:"cycle",name:"循环",role:"回收水与氧",x:778,y:296,w:174,h:82},
+  {id:"repair",name:"维修",role:"旁路与恢复",x:190,y:352,w:178,h:82}
+];
+const edgeSpecs=[
+  {id:"g-p",source:"govern",target:"power",label:"供能优先级"},
+  {id:"p-h",source:"power",target:"hab",label:"栖居功率"},
+  {id:"p-c",source:"power",target:"cycle",label:"循环功率"},
+  {id:"h-c",source:"hab",target:"cycle",label:"废水与二氧化碳"},
+  {id:"c-h",source:"cycle",target:"hab",label:"回收水与氧"},
+  {id:"r-c",source:"repair",target:"cycle",label:"维修旁路",backup:true}
+];
+const nodeById=new Map(nodes.map(d=>[d.id,d]));
+const state={connected:new Set(),active:0,running:false,complete:false,day:0,trace:[]};
+const freshState=()=>({connected:[],active:0,running:false,complete:false,day:0,trace:[]});
+
+const defs=svg.append("defs");
+[["ready","var(--primary)"],["backup","var(--accent)"],["failed","var(--danger)"]].forEach(([id,color])=>{
+  defs.append("marker").attr("id",`arrow-${id}`).attr("viewBox","0 0 10 10").attr("refX",9).attr("refY",5).attr("markerWidth",7).attr("markerHeight",7).attr("orient","auto-start-reverse").append("path").attr("d","M 0 0 L 10 5 L 0 10 z").attr("fill",color);
+});
+svg.append("path").attr("class","surface-mark").attr("d","M30,425 C210,382 350,438 520,402 S820,370 1010,414");
+svg.append("ellipse").attr("class","hab-ring").attr("cx",500).attr("cy",236).attr("rx",142).attr("ry",128);
+
+function portPoint(node,other){
+  const dx=other.x-node.x,dy=other.y-node.y;
+  if(Math.abs(dx)>Math.abs(dy)) return {x:node.x+(dx>0?node.w/2:-node.w/2),y:node.y};
+  return {x:node.x,y:node.y+(dy>0?node.h/2:-node.h/2)};
+}
+function edgePath(e,endOverride){
+  const a=nodeById.get(e.source),b=nodeById.get(e.target);
+  const s=portPoint(a,b),t=endOverride||portPoint(b,a);
+  return link({source:s,target:t});
+}
+
+const edgeLayer=svg.append("g").attr("aria-hidden","true");
+const edgeGroups=edgeLayer.selectAll("g.edge").data(edgeSpecs,d=>d.id).join("g").attr("class","edge");
+edgeGroups.append("path").attr("class","link-base").attr("d",d=>edgePath(d));
+edgeGroups.append("path").attr("class","edge-live").attr("d",d=>edgePath(d));
+edgeGroups.append("text").attr("class","edge-label").attr("x",d=>(nodeById.get(d.source).x+nodeById.get(d.target).x)/2+(d.id==="c-h"?-36:0)).attr("y",d=>(nodeById.get(d.source).y+nodeById.get(d.target).y)/2+(d.id==="h-c"?-24:d.id==="c-h"?22:-9)).text(d=>d.label);
+edgeGroups.append("circle").attr("class","edge-handle").attr("r",10).attr("cx",d=>portPoint(nodeById.get(d.source),nodeById.get(d.target)).x).attr("cy",d=>portPoint(nodeById.get(d.source),nodeById.get(d.target)).y);
+
+const nodeLayer=svg.append("g");
+const ng=nodeLayer.selectAll("g.node").data(nodes).join("g").attr("class","node").attr("transform",d=>`translate(${d.x},${d.y})`);
+ng.append("rect").attr("class",d=>d.core?"node-shape hab-core":"node-shape").attr("x",d=>-d.w/2).attr("y",d=>-d.h/2).attr("width",d=>d.w).attr("height",d=>d.h).attr("rx",8);
+ng.append("text").attr("class","node-title").attr("y",-4).text(d=>d.name);
+ng.append("text").attr("class","node-role").attr("y",24).text(d=>d.role);
+ng.append("circle").attr("class","port").attr("r",7);
+ng.append("circle").attr("class","port-hit").attr("r",28).attr("data-node",d=>d.id);
+
+const drag=d3.drag().on("start",function(event,e){
+  if(state.running||state.connected.has(e.id)) return;
+  state.active=edgeSpecs.indexOf(e);updateControls();
+  d3.select(this.parentNode).append("path").attr("class","drag-line").attr("d",edgePath(e,{x:event.x,y:event.y}));
+}).on("drag",function(event,e){
+  if(state.running||state.connected.has(e.id)) return;
+  d3.select(this.parentNode).select(".drag-line").attr("d",edgePath(e,{x:event.x,y:event.y}));
+}).on("end",function(event,e){
+  d3.select(this.parentNode).select(".drag-line").remove();
+  if(state.running||state.connected.has(e.id)) return;
+  const target=nodes.find(n=>Math.hypot(event.x-n.x,event.y-n.y)<Math.max(n.w,n.h)*.48);
+  if(target&&target.id===e.target) connectEdge(e); else wrongEdge(e);
+});
+edgeGroups.select(".edge-handle").call(drag);
+
+const targetSelect=document.getElementById("target-select");
+nodes.forEach(n=>targetSelect.add(new Option(n.name,n.id)));
+document.getElementById("connect-btn").addEventListener("click",()=>{
+  const e=edgeSpecs[state.active];
+  if(!e||state.connected.has(e.id)||state.running) return;
+  targetSelect.value===e.target?connectEdge(e):wrongEdge(e);
+});
+document.getElementById("reset-btn").addEventListener("click",reset);
+
+const crew=4;
+const days=7;
+const waterNeed=Lec.P.roundTo(crew*Lec.K.lifeSupportWaterPerPersonDayKg,2);
+const oxygenNeed=Lec.P.roundTo(crew*Lec.K.lifeSupportOxygenPerPersonDayKg,2);
+const carbonNeed=Lec.P.roundTo(crew*Lec.K.lifeSupportCarbonDioxidePerPersonDayKg,2);
+document.getElementById("budget-note").textContent=`${crew} 人 × ${days} 日；逐资源独立结算`;
+
+function blankDays(){
+  const data=d3.range(1,days+1).map(day=>({day,state:"等待闭环",values:"水 —  氧 —  二氧化碳 —"}));
+  d3.select("#day-list").selectAll("div.day-row").data(data).join("div").attr("class","day-row").html(d=>`<span class="day-label">第 ${d.day} 日</span><span class="day-metrics"><span class="day-state">${d.state}</span><span class="day-values">${d.values}</span></span>`);
+}
+function connectEdge(e){
+  state.connected.add(e.id);state.active=edgeSpecs.findIndex(x=>!state.connected.has(x.id));
+  edgeGroups.filter(d=>d.id===e.id).select(".edge-live").attr("class",e.backup?"edge-live link-backup":"edge-live link-ready");
+  edgeGroups.filter(d=>d.id===e.id).select(".edge-handle").attr("visibility","hidden");
+  pulseEdge(e);
+  updateNodes();updateControls();
+  document.getElementById("feedback-text").textContent=`${nodeById.get(e.source).name}已向${nodeById.get(e.target).name}交付${e.label}。`;
+  if(state.connected.size===edgeSpecs.length) runSimulation();
+}
+function wrongEdge(e){
+  const g=edgeGroups.filter(d=>d.id===e.id).node();
+  g.classList.remove("shake");void g.getBoundingClientRect();g.classList.add("shake");
+  document.getElementById("feedback-text").textContent="这条线没有交付对方需要的输入：检查起点和箭头方向。";
+}
+function pulseEdge(e){
+  if(Deck.reduced()) return;
+  const path=edgeGroups.filter(d=>d.id===e.id).select(".edge-live").node();
+  const length=path.getTotalLength();
+  const dot=edgeGroups.filter(d=>d.id===e.id).append("circle").attr("class","pulse").attr("r",6);
+  dot.transition().duration(520).ease(d3.easeCubicOut).attrTween("transform",()=>t=>{const p=path.getPointAtLength(t*length);return `translate(${p.x},${p.y})`;}).remove();
+}
+function updateNodes(){
+  const online=new Set();
+  edgeSpecs.filter(e=>state.connected.has(e.id)).forEach(e=>{online.add(e.source);online.add(e.target)});
+  ng.classed("node-online",d=>online.has(d.id));
+}
+function updateControls(){
+  const count=state.connected.size;
+  const active=edgeSpecs[state.active];
+  document.getElementById("progress-text").textContent=state.running?`第 ${state.day} / ${days} 日`:state.complete?"定居点维持运行":`闭环连接 ${count} / ${edgeSpecs.length}`;
+  document.getElementById("feedback-text").textContent=state.complete?"故障被维修旁路截断，循环在下一日恢复。":active?`当前：${nodeById.get(active.source).name} → 选择接收模块`:"完整闭环正在启动。";
+  targetSelect.disabled=state.running||state.complete;
+  document.getElementById("connect-btn").disabled=state.running||state.complete;
+  if(active) targetSelect.value=active.target;
+}
+function buildTrace(){
+  let water=52,oxygen=17,carbonCapacity=8;
+  return d3.range(1,days+1).map(day=>{
+    const cycleFactor=day===3?0:day===4?.65:.9;
+    const waterRecovered=waterNeed*cycleFactor;
+    const oxygenRecovered=oxygenNeed*(day===3?0:day===4?.55:.82);
+    const carbonRecovered=carbonNeed*(day===3?0:day===4?.55:.9);
+    water=Lec.P.difference(water+waterRecovered,waterNeed);
+    oxygen=Lec.P.difference(oxygen+oxygenRecovered,oxygenNeed);
+    const carbonMargin=Lec.P.difference(carbonCapacity+carbonRecovered,carbonNeed);
+    const mode=day===3?"failed":day===4?"warning":"ready";
+    return {day,mode,water:Lec.P.roundTo(water,1),oxygen:Lec.P.roundTo(oxygen,1),carbon:Lec.P.roundTo(carbonMargin,1)};
+  });
+}
+function runSimulation(){
+  state.running=true;state.trace=buildTrace();state.day=0;updateControls();
+  const advance=()=>{
+    state.day+=1;renderDays(state.day);
+    if(state.day===3) showFault(true);
+    if(state.day===4) showFault(false);
+    updateControls();
+    if(state.day<days&&!Deck.reduced()) setTimeout(advance,420);
+    else if(state.day<days){state.day=days;renderDays(days);finish();}
+    else finish();
+  };
+  setTimeout(advance,Deck.reduced()?0:360);
+}
+function renderDays(through){
+  const rows=d3.select("#day-list").selectAll("div.day-row").data(state.trace);
+  rows.attr("class",d=>`day-row ${d.day<=through?d.mode==="failed"?"is-fault":d.mode==="warning"?"is-repair":"is-ok":""}`).html(d=>{
+    const shown=d.day<=through;
+    const label=!shown?"等待":d.mode==="failed"?"循环主路故障":d.mode==="warning"?"旁路恢复":"系统平衡";
+    const vals=!shown?"水 —  氧 —  二氧化碳 —":`水 ${d.water} kg  氧 ${d.oxygen} kg  CO₂余量 ${d.carbon} kg`;
+    return `<span class="day-label">第 ${d.day} 日</span><span class="day-metrics"><span class="day-state">${label}</span><span class="day-values">${vals}</span></span>`;
+  });
+}
+function showFault(on){
+  const e=edgeSpecs.find(x=>x.id==="h-c");
+  edgeGroups.filter(d=>d.id===e.id).select(".edge-live").attr("class",on?"edge-live link-failed":"edge-live link-ready");
+  if(on) edgeGroups.filter(d=>d.id===e.id).append("circle").attr("class","fault-mark").attr("r",9).attr("cx",640).attr("cy",271);
+  else {edgeGroups.filter(d=>d.id===e.id).select(".fault-mark").remove();pulseEdge(edgeSpecs.find(x=>x.id==="r-c"));}
+}
+function finish(){
+  state.running=false;state.complete=true;state.day=days;updateControls();
+}
+function reset(){
+  state.connected.clear();state.active=0;state.running=false;state.complete=false;state.day=0;state.trace=[];
+  edgeGroups.select(".edge-live").attr("class","edge-live");
+  edgeGroups.select(".edge-handle").attr("visibility",null);
+  edgeGroups.selectAll(".fault-mark,.pulse,.drag-line").remove();
+  updateNodes();blankDays();updateControls();
+}
+blankDays();updateControls();
+</script>
+</body>
+</html>

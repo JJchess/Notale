@@ -1,0 +1,329 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  #stage{padding:26px 34px 24px;gap:18px}
+  .page-head{height:92px;display:flex;align-items:flex-start;justify-content:space-between;gap:36px}
+  .kicker{color:var(--primary);font:700 var(--fs-label)/1.4 var(--font-mono);letter-spacing:.12em}
+  .take{max-width:650px;margin:4px 0 0;color:var(--muted);font-size:var(--fs-lead);line-height:1.45;text-align:right}
+  .main-scene{display:flex;gap:24px;min-height:0}
+  .globe-panel{position:relative;flex:0 0 58%;min-width:0;min-height:0;overflow:hidden;border:1px solid var(--line);border-radius:var(--radius-3);background:radial-gradient(circle at 48% 48%,var(--primary-soft),transparent 44%),var(--panel-deep)}
+  #globe{position:absolute;inset:0}
+  #handles{position:absolute;inset:0;pointer-events:none}
+  .waypoint{position:absolute;width:30px;height:30px;margin:-15px 0 0 -15px;padding:0;border:3px solid var(--text);border-radius:50%;color:var(--bg);background:var(--primary);box-shadow:0 0 0 5px var(--primary-soft),0 0 18px var(--primary);font:800 15px/1 var(--font-mono);cursor:grab;pointer-events:auto;touch-action:none}
+  .waypoint:active{cursor:grabbing}
+  .waypoint.bad{border-color:var(--danger);background:var(--danger);animation:shake .28s 2}
+  .map-overlay{position:absolute;z-index:3;left:20px;right:20px;display:flex;justify-content:space-between;gap:16px;pointer-events:none}
+  .map-overlay.top{top:18px;align-items:flex-start}
+  .map-overlay.bottom{bottom:16px;align-items:flex-end}
+  .map-tag{padding:7px 10px;border:1px solid var(--line);border-radius:var(--radius-1);color:var(--muted);background:rgba(7,16,24,.86);font-size:var(--fs-label);font-weight:650;line-height:1.35}
+  .score{color:var(--text);font-size:var(--fs-sec)}
+  .score strong{color:var(--accent);font-family:var(--font-mono);font-size:var(--fs-lead)}
+  .legend .dash{width:24px;height:0;border-top:2px dashed var(--faint)}
+  .legend .solid{width:24px;height:3px;background:var(--primary);box-shadow:0 0 8px var(--primary)}
+  .decision{flex:1;min-width:0;min-height:0;display:flex;flex-direction:column;gap:12px}
+  .decision .k-comparison{--compare-n:2;grid-template-columns:112px minmax(0,.92fr) minmax(0,1.08fr)}
+  .decision .k-comparison>.hdr,.decision .k-comparison>.dim,.decision .k-comparison>.cell{padding:10px 12px}
+  .decision .k-comparison>.hdr{font-size:19px}
+  .decision .k-comparison>.dim{justify-content:flex-start;text-align:left;gap:8px}
+  .risk-dot{width:11px;height:11px;flex:0 0 auto;border:2px solid var(--danger);border-radius:50%;background:transparent}
+  .dim.ok .risk-dot{border-color:var(--primary);background:var(--primary);box-shadow:0 0 9px var(--primary)}
+  .cell.support{transition:background .2s,border-color .2s}
+  .cell.support.on{background:var(--accent-soft);box-shadow:inset 3px 0 0 var(--accent)}
+  .support-state{display:block;color:var(--faint);font-size:14px;font-weight:700}
+  .cell.support.on .support-state{color:var(--accent)}
+  .feedback{min-height:58px;padding:10px 14px;border-left:3px solid var(--primary);color:var(--text);background:var(--panel);font-size:var(--fs-sec);line-height:1.45}
+  .feedback.warn{border-left-color:var(--danger)}
+  .feedback.done{border-left-color:var(--accent);background:var(--accent-soft)}
+  .actions{display:flex;align-items:center;justify-content:space-between;gap:12px}
+  .actions .ctl{flex-wrap:nowrap}
+  .actions button{min-height:40px;font-size:var(--fs-sec)}
+  .model-note{color:var(--faint);font-size:14px;line-height:1.4}
+  .bottom-line{height:62px;display:flex;align-items:center;justify-content:space-between;gap:30px;padding:0 18px;border-top:1px solid var(--line)}
+  .bottom-line .lead{margin:0}
+  .boundary{max-width:610px;color:var(--muted);font-size:var(--fs-sec);line-height:1.45;text-align:right}
+  @keyframes shake{0%,100%{transform:translateX(0)}35%{transform:translateX(-8px)}70%{transform:translateX(8px)}}
+  @media (prefers-reduced-motion:reduce){.waypoint.bad{animation:none}.cell.support{transition:none}}
+</style>
+</head>
+<body data-page="25" data-total="50">
+<div id="stage">
+  <header class="page-head shrink0">
+    <div>
+      <div class="kicker">MIGRATION / SUPPORT</div>
+      <h1>迁徙不只靠一双脚</h1>
+    </div>
+    <p class="take">进入不同环境依赖身体适应，也依赖衣物、火、路线与社会信息。</p>
+  </header>
+
+  <route-planner-game class="main-scene min0" style="flex:1" aria-label="迁徙路线约束游戏">
+    <section class="globe-panel min0 no-pan" aria-label="可拖动航路点的三维地球">
+      <div id="globe"></div>
+      <div id="handles" aria-label="三个可拖动航路点"></div>
+      <div class="map-overlay top">
+        <div class="map-tag">拖动 ① ② ③，让路线接通沿途支持</div>
+        <div class="map-tag score" aria-live="polite">约束满足 <strong id="score">—</strong></div>
+      </div>
+      <div class="map-overlay bottom">
+        <div class="legend">
+          <span class="key"><i class="dash"></i>距离最短</span>
+          <span class="key"><i class="solid"></i>你的路线</span>
+        </div>
+        <div class="map-tag">拖空白处转动地球 · 滚轮缩放</div>
+      </div>
+    </section>
+
+    <section class="decision min0" aria-label="身体条件与文化支持比较">
+      <div class="k-comparison min0">
+        <div class="hdr">环境挑战</div><div class="hdr">身体条件</div><div class="hdr">文化支持</div>
+        <div class="rowline"></div>
+        <div class="dim" data-risk="cold"><i class="risk-dot"></i>寒冷</div>
+        <div class="cell">产热与体温调节，但耐受有边界</div>
+        <div class="cell support" data-support="cold">衣物、火与避风营地<span class="support-state">尚未接通</span></div>
+        <div class="rowline"></div>
+        <div class="dim" data-risk="food"><i class="risk-dot"></i>食物波动</div>
+        <div class="cell">可移动、携带并利用多种食物</div>
+        <div class="cell support" data-support="food">工具、加工与共享<span class="support-state">尚未接通</span></div>
+        <div class="rowline"></div>
+        <div class="dim" data-risk="distance"><i class="risk-dot"></i>长距离</div>
+        <div class="cell">双足步行与耐力</div>
+        <div class="cell support" data-support="distance">分段路线、补给点与同行者<span class="support-state">尚未接通</span></div>
+        <div class="rowline"></div>
+        <div class="dim" data-risk="unknown"><i class="risk-dot"></i>陌生地形</div>
+        <div class="cell">感官、记忆与学习</div>
+        <div class="cell support" data-support="unknown">路标、口述路线与社会信息<span class="support-state">尚未接通</span></div>
+      </div>
+      <div id="feedback" class="feedback" aria-live="polite">三处航路点可改变暴露与支持；身体条件保持不变。</div>
+      <div class="actions">
+        <span class="model-note">课堂约束模型，不是历史路线复原</span>
+        <div class="ctl">
+          <button id="shuffle" type="button">换一组环境节点</button>
+          <button id="reset" type="button">重置</button>
+        </div>
+      </div>
+    </section>
+  </route-planner-game>
+
+  <footer class="bottom-line shrink0">
+    <p class="lead">进入新环境并不是身体单独“闯过去”。</p>
+    <div class="boundary">文化支持能改变可走的路线，但不会把身体限制变没。</div>
+  </footer>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script src="assets/lib/three.min.js"></script>
+<script src="assets/lib/globe.gl.min.js"></script>
+<script src="assets/lib/seedrandom.min.js"></script>
+<script>
+class RoutePlannerGame extends HTMLElement{
+  constructor(){
+    super();
+    this.initialPoints=[{lat:20,lng:8},{lat:20,lng:50},{lat:18,lng:88}];
+    this.points=[];
+    this.setIndex=0;
+    this.dragging=null;
+    this.started=false;
+  }
+  connectedCallback(){
+    this.globeEl=this.querySelector('#globe');
+    this.handlesEl=this.querySelector('#handles');
+    this.scoreEl=this.querySelector('#score');
+    this.feedbackEl=this.querySelector('#feedback');
+    this.primary=Deck.token('--primary');
+    this.accent=Deck.token('--accent');
+    this.danger=Deck.token('--danger');
+    this.faint=Deck.token('--faint');
+    this.line=Deck.token('--line-strong');
+    this.buildHandles();
+    this.buildGlobe();
+    this.querySelector('#shuffle').addEventListener('click',()=>this.shuffle());
+    this.querySelector('#reset').addEventListener('click',()=>this.reset());
+    this.reset();
+    this.start();
+    Deck.onResize(()=>this.resize());
+  }
+  start(){
+    if(this.started)return;
+    this.started=true;
+    this.dispatchEvent(new CustomEvent('game-start',{bubbles:true,composed:true,detail:{state:this.getState()}}));
+  }
+  reset(){
+    this.setIndex=0;
+    this.rng=new Math.seedrandom('page-25');
+    this.points=this.initialPoints.map(p=>({...p}));
+    this.supports=this.makeSupports(0);
+    this.update('reset');
+    this.dispatchEvent(new CustomEvent('game-reset',{bubbles:true,composed:true,detail:{state:this.getState()}}));
+  }
+  shuffle(){
+    this.setIndex++;
+    this.supports=this.makeSupports(this.setIndex);
+    this.update('shuffle');
+  }
+  makeSupports(index){
+    if(index===0)return [
+      {lat:39,lng:23,type:'cold',label:'衣物'},{lat:43,lng:27,type:'cold',label:'火'},
+      {lat:34,lng:60,type:'food',label:'食物加工'},{lat:32,lng:64,type:'distance',label:'补给'},
+      {lat:27,lng:96,type:'unknown',label:'路线信息'}
+    ];
+    const shift=()=>Math.round((this.rng()-.5)*12);
+    return [
+      {lat:42+shift()/3,lng:22+shift(),type:'cold',label:'衣物'},{lat:45+shift()/3,lng:27+shift(),type:'cold',label:'火'},
+      {lat:34+shift()/3,lng:61+shift(),type:'food',label:'食物加工'},{lat:31+shift()/3,lng:65+shift(),type:'distance',label:'补给'},
+      {lat:28+shift()/3,lng:98+shift(),type:'unknown',label:'路线信息'}
+    ];
+  }
+  buildHandles(){
+    this.handles=[];
+    for(let i=0;i<3;i++){
+      const b=document.createElement('button');
+      b.type='button'; b.className='waypoint'; b.textContent=['①','②','③'][i];
+      b.setAttribute('aria-label','航路点 '+(i+1)+'，可用方向键移动');
+      b.addEventListener('pointerdown',e=>this.beginDrag(i,e));
+      b.addEventListener('keydown',e=>this.keyMove(i,e));
+      this.handlesEl.appendChild(b); this.handles.push(b);
+    }
+  }
+  buildGlobe(){
+    const land=[
+      [[-17,15],[-5,36],[24,37],[43,12],[51,-10],[34,-34],[16,-35],[-5,-5],[-17,15]],
+      [[-10,36],[10,55],[38,70],[80,72],[132,50],[145,35],[120,8],[93,9],[70,24],[43,12],[24,37],[-10,36]],
+      [[112,-12],[153,-13],[151,-39],[117,-35],[112,-12]]
+    ].map(coords=>({coords}));
+    this.globe=Globe({rendererConfig:{antialias:true,alpha:true}})(this.globeEl)
+      .backgroundColor('rgba(0,0,0,0)').showAtmosphere(true).atmosphereColor(this.primary).atmosphereAltitude(.12)
+      .showGraticules(true)
+      .pathsData(land).pathPoints('coords').pathPointLng(p=>p[0]).pathPointLat(p=>p[1]).pathColor(()=>this.line).pathStroke(.35)
+      .pointColor(d=>d.kind==='support'?(d.active?this.accent:this.line):this.primary)
+      .pointRadius(d=>d.kind==='support'?.42:.28).pointAltitude(d=>d.active?.025:.012)
+      .pointLabel(d=>d.label||'')
+      .arcColor(d=>d.invalid?this.danger:(d.shortest?this.faint:this.primary))
+      .arcStroke(d=>d.shortest?.35:.7).arcAltitude(.08)
+      .arcDashLength(d=>d.shortest?.16:1).arcDashGap(d=>d.shortest?.08:0)
+      .arcDashAnimateTime(d=>Deck.reduced()?0:(d.shortest?0:1400))
+      .pointOfView({lat:28,lng:48,altitude:1.65},Deck.reduced()?0:900);
+    const mat=this.globe.globeMaterial();
+    mat.color=new THREE.Color(Deck.token('--panel-deep'));
+    mat.emissive=new THREE.Color(Deck.token('--bg'));
+    mat.emissiveIntensity=.34;
+    mat.shininess=.7;
+    const controls=this.globe.controls();
+    controls.enablePan=false;
+    controls.minDistance=225;
+    controls.maxDistance=320;
+    controls.addEventListener('change',()=>this.positionHandles());
+    this.resize();
+  }
+  resize(){
+    const w=this.globeEl.clientWidth,h=this.globeEl.clientHeight;
+    if(w&&h){this.globe.width(w).height(h);this.positionHandles();}
+  }
+  beginDrag(i,e){
+    e.preventDefault();
+    this.dragging=i;
+    this.handles[i].setPointerCapture(e.pointerId);
+    const move=ev=>this.pointerMove(i,ev);
+    const up=ev=>{
+      this.handles[i].removeEventListener('pointermove',move);
+      this.handles[i].removeEventListener('pointerup',up);
+      this.handles[i].removeEventListener('pointercancel',up);
+      this.dragging=null; this.snapToCorridor(i); this.update('drop-waypoint');
+    };
+    this.handles[i].addEventListener('pointermove',move);
+    this.handles[i].addEventListener('pointerup',up);
+    this.handles[i].addEventListener('pointercancel',up);
+  }
+  pointerMove(i,e){
+    const p=Deck.pt(this.globeEl,e);
+    const g=this.globe.toGlobeCoords(p.x,p.y);
+    if(!g)return;
+    this.points[i]={lat:Deck.clamp(g.lat,-5,62),lng:Deck.clamp(g.lng,-5,125)};
+    this.update('move-waypoint');
+  }
+  keyMove(i,e){
+    const step=e.shiftKey?5:2;
+    if(!['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.key))return;
+    e.preventDefault();
+    if(e.key==='ArrowUp')this.points[i].lat+=step;
+    if(e.key==='ArrowDown')this.points[i].lat-=step;
+    if(e.key==='ArrowRight')this.points[i].lng+=step;
+    if(e.key==='ArrowLeft')this.points[i].lng-=step;
+    this.points[i].lat=Deck.clamp(this.points[i].lat,-5,62);
+    this.points[i].lng=Deck.clamp(this.points[i].lng,-5,125);
+    this.update('key-waypoint');
+  }
+  snapToCorridor(i){
+    const p=this.points[i];
+    const corridor=30+10*Math.sin((p.lng-10)/115*Math.PI);
+    if(Math.abs(p.lat-corridor)<13)p.lat=corridor;
+  }
+  distance(a,b){
+    const r=Math.PI/180,dp=(b.lat-a.lat)*r,dl=(b.lng-a.lng)*r;
+    const q=Math.sin(dp/2)**2+Math.cos(a.lat*r)*Math.cos(b.lat*r)*Math.sin(dl/2)**2;
+    return 2*Math.asin(Math.min(1,Math.sqrt(q)));
+  }
+  evaluate(){
+    const near=(type,limit)=>this.supports.some(s=>s.type===type&&this.points.some(p=>this.distance(p,s)<limit));
+    const active={cold:near('cold',.22),food:near('food',.23),distance:near('distance',.23),unknown:near('unknown',.23)};
+    const ordered=[{lat:12,lng:-12},...this.points,{lat:31,lng:128}];
+    const total=ordered.slice(1).reduce((v,p,i)=>v+this.distance(ordered[i],p),0);
+    const outOfOrder=this.points.some((p,i)=>i&&p.lng<this.points[i-1].lng-6);
+    const invalid=outOfOrder||total>3.15;
+    if(invalid)active.distance=false;
+    return {active,total,invalid,count:Object.values(active).filter(Boolean).length};
+  }
+  update(action){
+    if(!this.globe)return;
+    const result=this.evaluate();
+    const endpoints=[{lat:12,lng:-12,label:'固定起点',kind:'end'},{lat:31,lng:128,label:'固定终点',kind:'end'}];
+    const route=[endpoints[0],...this.points,endpoints[1]];
+    const arcs=[{startLat:endpoints[0].lat,startLng:endpoints[0].lng,endLat:endpoints[1].lat,endLng:endpoints[1].lng,shortest:true}];
+    for(let i=0;i<route.length-1;i++)arcs.push({startLat:route[i].lat,startLng:route[i].lng,endLat:route[i+1].lat,endLng:route[i+1].lng,invalid:result.invalid});
+    const supportPoints=this.supports.map(s=>({...s,kind:'support',active:result.active[s.type]}));
+    this.globe.pointsData([...endpoints,...supportPoints]);
+    this.globe.arcsData(arcs);
+    this.scoreEl.textContent=result.count+' / '+Object.keys(result.active).length;
+    for(const key of Object.keys(result.active)){
+      const on=result.active[key];
+      this.querySelector('[data-risk="'+key+'"]').classList.toggle('ok',on);
+      const cell=this.querySelector('[data-support="'+key+'"]');
+      cell.classList.toggle('on',on);
+      cell.querySelector('.support-state').textContent=on?'已接通':'尚未接通';
+    }
+    this.handles.forEach(h=>h.classList.toggle('bad',result.invalid));
+    this.feedbackEl.className='feedback'+(result.invalid?' warn':result.count===4?' done':'');
+    if(result.count===4)this.feedbackEl.textContent='四项约束已满足：可行不等于唯一。最短路线仍未必支持最充分。';
+    else if(result.invalid)this.feedbackEl.textContent='路线过长或折返：经过补给节点，或缩短绕行。';
+    else if(!result.active.cold)this.feedbackEl.textContent='寒冷段超过身体调温边界：让路线经过衣物或火节点。';
+    else if(!result.active.food)this.feedbackEl.textContent='食物波动仍未缓冲：让路线经过加工与共享节点。';
+    else if(!result.active.distance)this.feedbackEl.textContent='长距离缺少接力：让路线经过补给节点。';
+    else this.feedbackEl.textContent='陌生地形缺少指引：让路线经过社会信息节点。';
+    this.positionHandles();
+    this.dispatchEvent(new CustomEvent('game-progress',{bubbles:true,composed:true,detail:{state:this.getState(),action,metrics:result}}));
+    if(result.count===4)this.dispatchEvent(new CustomEvent('game-complete',{bubbles:true,composed:true,detail:{score:result.count,metrics:result,trace:this.points.map(p=>({...p}))}}));
+  }
+  positionHandles(){
+    if(!this.globe||!this.points.length)return;
+    const host=this.querySelector('.globe-panel');
+    const dx=this.globeEl.offsetLeft,dy=this.globeEl.offsetTop;
+    this.points.forEach((p,i)=>{
+      const q=this.globe.getScreenCoords(p.lat,p.lng,.045);
+      this.handles[i].style.left=(q.x+dx)+'px';
+      this.handles[i].style.top=(q.y+dy)+'px';
+      const visible=q.x+dx>-10&&q.x+dx<host.clientWidth+10&&q.y+dy>-10&&q.y+dy<host.clientHeight+10;
+      this.handles[i].style.visibility=visible?'visible':'hidden';
+    });
+  }
+  getState(){
+    const result=this.points.length&&this.supports?this.evaluate():null;
+    return {points:this.points.map(p=>({...p})),setIndex:this.setIndex,result:result?JSON.parse(JSON.stringify(result)):null};
+  }
+}
+customElements.define('route-planner-game',RoutePlannerGame);
+Deck.init({index:25,total:50});
+</script>
+</body>
+</html>

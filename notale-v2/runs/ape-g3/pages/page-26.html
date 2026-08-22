@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>轨道，是一场没有落地的下落</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    html{top:0!important}
+    .lec-header__inner{position:relative;top:4px}
+    #stage{transform:translate(-50%,-50%) scale(var(--s))}
+    .page26{position:absolute;left:96px;top:140px;width:1408px;height:620px;display:grid;grid-template-rows:116px minmax(0,1fr);gap:16px}
+    .page26 .k-process{gap:24px}
+    .page26 .k-process>section{padding:12px 10px 10px}
+    .page26 .k-process>section::before{width:24px;height:24px;margin-bottom:5px;font-size:14px}
+    .page26 .k-process>section:not(:last-child)::after{left:calc(100% + 1px);width:22px;font-size:18px}
+    .step-title{font-size:15px;line-height:1.4;font-weight:720}
+    .sim-shell{position:relative;min-width:0;min-height:0;border:1px solid var(--line);border-radius:var(--radius-lg);overflow:hidden;background:#101a2c;box-shadow:var(--shadow-raised)}
+    .sim-canvas{position:absolute;inset:0 372px 0 0;min-width:0}
+    .sim-side{position:absolute;z-index:3;top:0;right:0;bottom:0;width:372px;box-sizing:border-box;padding:18px 20px;display:flex;flex-direction:column;gap:11px;border-left:1px solid rgb(199 211 224 / 32%);background:rgb(244 247 251 / 97%)}
+    .sim-side .ctl{min-height:40px}
+    .slider-row{display:grid;grid-template-columns:1fr auto;gap:4px 12px}
+    .slider-row label{grid-column:1/2}
+    .slider-row output{grid-column:2/3;grid-row:1/3;min-width:110px}
+    .slider-row input{grid-column:1/2;width:100%}
+    .button-row{display:flex;gap:8px}
+    .button-row button{flex:1 1 0}
+    .readouts{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+    .datum{padding:8px 10px;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--surface)}
+    .datum span{display:block;color:var(--muted);font-size:14px;line-height:1.4}
+    .datum strong{display:block;font-size:16px;line-height:1.45;font-variant-numeric:tabular-nums}
+    .status{padding:9px 12px;border-radius:var(--radius-sm);background:var(--accent-soft);color:var(--accent-strong);font-size:16px;line-height:1.4;font-weight:750}
+    .model-note{margin-top:auto;color:var(--muted);font-size:14px;line-height:1.4}
+    .sr-only+canvas{display:block}
+  </style>
+</head>
+<body data-page="26" data-total="48">
+  <div id="stage">
+    <main class="page26">
+      <div class="k-process" aria-label="形成轨道的六个连续步骤">
+        <section data-state="current"><div class="step-title">给出横向速度</div></section>
+        <section><div class="step-title">炮弹开始下落</div></section>
+        <section><div class="step-title">速度方向转弯</div></section>
+        <section><div class="step-title">地面也在弯离</div></section>
+        <section><div class="step-title">速度不足则落地</div></section>
+        <section><div class="step-title">持续错过地面</div></section>
+      </div>
+
+      <section class="sim-shell" aria-label="炮弹轨道物理模拟">
+        <div class="sim-canvas min0">
+          <canvas id="orbit" class="cv-fill" aria-label="地球侧视图。炮弹从地球上方沿切线方向发射，引力箭头始终指向地心，轨迹随横向速度改变。"></canvas>
+        </div>
+        <aside class="sim-side min0">
+          <div class="slider-row ctl">
+            <label for="speed">横向发射速度</label>
+            <output id="launchRead" for="speed">—</output>
+            <input id="speed" type="range" min="55" max="100" step="5" value="65" aria-describedby="speedHelp">
+          </div>
+          <div id="speedHelp" class="hint">拖动时查看预测轨迹；发射后速度锁定。</div>
+          <div class="button-row ctl">
+            <button id="launch" data-primary>发射</button>
+            <button id="pause" disabled>暂停</button>
+            <button id="reset">重置</button>
+          </div>
+          <div class="readouts" aria-live="polite">
+            <div class="datum"><span>当前速度</span><strong id="currentV">—</strong></div>
+            <div class="datum"><span>当前高度</span><strong id="height">—</strong></div>
+            <div class="datum"><span>经过时间</span><strong id="elapsed">—</strong></div>
+            <div class="datum"><span>状态</span><strong id="state">待发射</strong></div>
+          </div>
+          <div id="verdict" class="status">轨道不是摆脱下落，而是持续下落并不断错过地面。</div>
+          <div class="model-note">模型：忽略空气阻力、地球自转与地形；地球视为球对称且固定。图中炮弹、炮口和箭头为可读性放大。</div>
+        </aside>
+      </section>
+    </main>
+  </div>
+
+  <script src="assets/base.js"></script>
+  <script src="assets/lec.js"></script>
+  <script>
+    Lec.mount({
+      index: 26,
+      kicker: 'ORBIT AS FALL',
+      title: '轨道，是一场没有落地的下落',
+      take: '轨道不是摆脱下落，而是持续下落并不断错过地面。'
+    });
+    Deck.init({ index: 26, total: 48 });
+
+    const cv=document.getElementById('orbit');
+    const speedEl=document.getElementById('speed');
+    const launchBtn=document.getElementById('launch');
+    const pauseBtn=document.getElementById('pause');
+    const resetBtn=document.getElementById('reset');
+    const launchRead=document.getElementById('launchRead');
+    const currentV=document.getElementById('currentV');
+    const heightOut=document.getElementById('height');
+    const elapsedOut=document.getElementById('elapsed');
+    const stateOut=document.getElementById('state');
+    const verdict=document.getElementById('verdict');
+    const steps=[...document.querySelectorAll('.k-process>section')];
+
+    const earthR=Lec.K.earth.meanRadius;
+    const altitude=Lec.K.spacecraft.lowEarthOrbitAltitude;
+    const r0=Lec.P.orbitalRadius(earthR,altitude);
+    const circularV=Lec.P.circularOrbitVelocity(Lec.K.earth.mass,r0);
+    const mu=circularV*circularV*r0;
+    let path=[], frame=0, running=false, paused=false, result='';
+
+    function fmtV(v){return Lec.P.formatNumber(Lec.P.metresToKilometres(v),2)+' km/s'}
+    function buildPath(){
+      const ratio=Number(speedEl.value)/100;
+      let x=0,y=-r0,vx=circularV*ratio,vy=0,t=0;
+      const dt=4, max=7200, points=[];
+      result='';
+      for(let i=0;i<max;i++){
+        const r=Math.hypot(x,y);
+        points.push({x,y,vx,vy,t,r});
+        if(i>2 && r<=earthR){result='落地';break}
+        const ax=-mu*x/(r*r*r), ay=-mu*y/(r*r*r);
+        vx+=ax*dt; vy+=ay*dt; x+=vx*dt; y+=vy*dt; t+=dt;
+        if(ratio===1 && t>5000 && Math.hypot(x,y+r0)<90000){result='持续绕行';points.push({x,y,vx,vy,t,r:Math.hypot(x,y)});break}
+      }
+      if(!result) result=ratio===1?'持续绕行':'落地';
+      path=points; frame=0;
+      launchRead.textContent=Lec.P.percent(circularV*ratio,circularV)+' · '+fmtV(circularV*ratio);
+      updateRead(points[0],'待发射'); draw();
+    }
+
+    function updateRead(p,status){
+      currentV.textContent=fmtV(Math.hypot(p.vx,p.vy));
+      const h=Lec.P.metresToKilometres(Math.max(0,p.r-earthR));
+      heightOut.textContent=Lec.P.formatNumber(h,0)+' km';
+      elapsedOut.textContent=Lec.P.formatDuration(p.t);
+      stateOut.textContent=status;
+      const phase=frame/Math.max(1,path.length-1);
+      const active=status==='落地'?4:status==='持续绕行'?5:Math.min(3,Math.floor(phase*5));
+      steps.forEach((s,i)=>s.dataset.state=i<active?'done':i===active?'current':'');
+    }
+
+    function draw(){
+      const ctx=Deck.fit(cv), w=cv.offsetWidth, h=cv.offsetHeight;
+      ctx.clearRect(0,0,w,h);
+      const cx=w*0.47,cy=h*0.52,scale=Math.min(w,h)*0.39/r0;
+      const pt=p=>({x:cx+p.x*scale,y:cy+p.y*scale});
+      ctx.fillStyle='#101a2c';ctx.fillRect(0,0,w,h);
+      ctx.beginPath();ctx.arc(cx,cy,earthR*scale,0,Math.PI*2);ctx.fillStyle='#183d67';ctx.fill();
+      ctx.strokeStyle='#64aef5';ctx.lineWidth=2;ctx.stroke();
+      ctx.beginPath();ctx.arc(cx,cy,3,0,Math.PI*2);ctx.fillStyle='#f4f7fb';ctx.fill();
+      ctx.fillStyle='#c7d3e0';ctx.font='14px '+Deck.token('--font-sans');ctx.fillText('地心',cx+9,cy+5);
+      const shown=running||paused?Math.max(1,frame):path.length;
+      if(path.length){
+        ctx.beginPath();path.slice(0,shown).forEach((p,i)=>{const q=pt(p);i?ctx.lineTo(q.x,q.y):ctx.moveTo(q.x,q.y)});
+        ctx.strokeStyle=result==='持续绕行'?'#72d7b1':'#f2a84b';ctx.lineWidth=3;ctx.stroke();
+        const p=path[Math.min(shown-1,path.length-1)],q=pt(p);
+        ctx.beginPath();ctx.arc(q.x,q.y,6,0,Math.PI*2);ctx.fillStyle='#fff';ctx.fill();
+        const vm=Math.hypot(p.vx,p.vy),vlen=54;
+        Deck.arrow(ctx,q.x,q.y,q.x+p.vx/vm*vlen,q.y+p.vy/vm*vlen,8);ctx.strokeStyle='#72d7b1';ctx.lineWidth=2;ctx.stroke();
+        const rr=Math.hypot(p.x,p.y),glen=46;
+        Deck.arrow(ctx,q.x,q.y,q.x-p.x/rr*glen,q.y-p.y/rr*glen,8);ctx.strokeStyle='#ff8791';ctx.lineWidth=2;ctx.stroke();
+        ctx.fillStyle='#72d7b1';ctx.fillText('速度',q.x+p.vx/vm*vlen+7,q.y+p.vy/vm*vlen);
+        ctx.fillStyle='#ffb0b6';ctx.fillText('引力',q.x-p.x/rr*glen+7,q.y-p.y/rr*glen);
+      }
+      const launch=pt({x:0,y:-r0});
+      ctx.fillStyle='#f4f7fb';ctx.fillRect(launch.x-5,launch.y-10,45,9);
+      ctx.fillStyle='#c7d3e0';ctx.fillText('发射点',launch.x-25,launch.y-18);
+    }
+
+    Deck.autofit(cv,draw);
+    speedEl.addEventListener('input',buildPath);
+    launchBtn.addEventListener('click',()=>{
+      if(Deck.reduced()){
+        frame=path.length;running=false;paused=false;updateRead(path[path.length-1],result);draw();return;
+      }
+      running=true;paused=false;speedEl.disabled=true;launchBtn.disabled=true;pauseBtn.disabled=false;pauseBtn.textContent='暂停';stateOut.textContent='下落中';
+    });
+    pauseBtn.addEventListener('click',()=>{paused=!paused;running=!paused;pauseBtn.textContent=paused?'继续':'暂停';stateOut.textContent=paused?'已暂停':'下落中';draw()});
+    resetBtn.addEventListener('click',()=>{running=false;paused=false;speedEl.disabled=false;launchBtn.disabled=false;pauseBtn.disabled=true;pauseBtn.textContent='暂停';buildPath()});
+    Deck.loop((t,dt)=>{
+      if(!running)return;
+      frame=Math.min(path.length,frame+Math.max(1,Math.round(dt/16)*5));
+      const p=path[Math.max(0,frame-1)];
+      if(frame>=path.length){running=false;pauseBtn.disabled=true;updateRead(p,result);verdict.textContent=result==='落地'?'横向速度不足：轨迹与地表相交。':'炮弹持续受引力下落，同时不断错过弯曲的地面。'}
+      else updateRead(p,'下落中');
+      draw();
+    },{still:1});
+    buildPath();
+  </script>
+</body>
+</html>

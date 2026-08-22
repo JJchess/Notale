@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>你脑中的演化，是一条队伍吗？</title>
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  #main{--board-h:300px}
+  .p03{height:100%;gap:12px}
+  .prompt{display:flex;align-items:baseline;justify-content:space-between;gap:24px}
+  .prompt p{font-size:var(--fs-lead);line-height:var(--lh-body)}
+  .prompt .hint{font-size:var(--fs-sec);color:var(--muted);white-space:nowrap}
+  .board{position:relative;height:var(--board-h);box-sizing:border-box;background:var(--surface);border:1px solid var(--line);border-radius:var(--r-lg);box-shadow:var(--shadow-soft);overflow:hidden}
+  #konva{position:absolute;inset:0}
+  #konva:focus-visible{outline:4px solid var(--focus);outline-offset:-4px}
+  .board-key{position:absolute;top:10px;left:16px;z-index:2;color:var(--muted);font-size:var(--fs-label);pointer-events:none}
+  .actions{min-height:46px;display:flex;align-items:center;gap:12px}
+  .actions button{min-width:112px;min-height:44px;font-size:var(--fs-sec)}
+  .actions button.primary{color:#fff;background:var(--primary);border-color:var(--primary)}
+  .actions button:disabled{cursor:not-allowed;opacity:.45}
+  .status{flex:1;font-size:var(--fs-sec);line-height:var(--lh-body);color:var(--muted)}
+  .k-comparison{--comparison-cols:150px minmax(0,1fr) minmax(0,1.35fr);flex:1;min-height:158px}
+  .k-comparison>*{padding:8px 14px}
+  .k-comparison .hdr{font-size:var(--fs-sec);display:flex;align-items:center;justify-content:center}
+  .k-comparison .dim{font-size:var(--fs-sec);display:flex;align-items:center;justify-content:flex-end}
+  .k-comparison .cell{font-size:var(--fs-sec);line-height:var(--lh-tight);display:flex;align-items:center}
+  .k-comparison .pending{color:var(--muted)}
+  .k-comparison.revealed .meaning{background:var(--accent-soft);box-shadow:inset 4px 0 0 var(--accent);color:#7a3512;font-weight:700}
+</style>
+</head>
+<body data-page="03" data-total="45">
+<div id="stage">
+<main id="main">
+  <section class="p03 col min0" aria-labelledby="task-title">
+    <div class="prompt">
+      <p id="task-title"><strong>先画你的进化图：</strong>把六张无名轮廓拖进一排槽位。</p>
+      <span class="hint">没有标准顺序；先按你的直觉排列</span>
+    </div>
+    <div class="board no-pan" aria-label="轮廓排列舞台">
+      <span class="board-key">点选轮廓后，可用 ← → 移动槽位</span>
+      <div id="konva" tabindex="0" role="application" aria-label="六张轮廓卡。拖动到槽位，或点选后用左右方向键移动。"></div>
+    </div>
+    <div class="actions ctl">
+      <button id="submit" class="primary" disabled>提交排列</button>
+      <button id="reset">重置</button>
+      <p id="status" class="status" aria-live="polite">还需放入 6 张轮廓。</p>
+    </div>
+    <div id="comparison" class="k-comparison" aria-label="排列方式与构图暗示的逐维比较">
+      <div class="hdr">观察维度</div><div class="hdr">你排出的图</div><div class="hdr">构图可能暗示</div>
+      <div class="rowline"></div>
+      <div class="dim">方向</div><div class="cell">六个槽位横向相接</div><div class="cell meaning pending">提交后诊断</div>
+      <div class="rowline"></div>
+      <div class="dim">等级</div><div class="cell">轮廓的站姿与高低并列</div><div class="cell meaning pending">提交后诊断</div>
+      <div class="rowline"></div>
+      <div class="dim">终点</div><div class="cell">最后一个位置被突出</div><div class="cell meaning pending">提交后诊断</div>
+      <div class="rowline"></div>
+      <div class="dim">缺席项</div><div class="cell">只能容纳一列先后顺序</div><div class="cell meaning pending">提交后诊断</div>
+    </div>
+  </section>
+</main>
+</div>
+<script src="assets/lib/konva.min.js"></script>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script>
+Lec.mount({index:3,kicker:"DEFAULT PICTURE",title:"你脑中的演化，是一条队伍吗？",take:"学生最熟悉的“猿到人队列”会暗示不存在的方向与等级"});
+(function(){
+  var W=1406,H=298, slotY=151, cardW=150, cardH=125, gap=24, startX=190;
+  var initialX=[1080,260,835,55,590,1240];
+  var poses=[
+    {h:78,lean:-16,arm:25,leg:20},{h:86,lean:-11,arm:22,leg:21},{h:94,lean:-7,arm:18,leg:22},
+    {h:101,lean:-3,arm:13,leg:23},{h:108,lean:0,arm:8,leg:24},{h:114,lean:2,arm:4,leg:25}
+  ];
+  var state, stage, layer, groups=[], selected=null, submitted=false;
+  function fresh(){return {slots:[null,null,null,null,null,null],cards:[0,1,2,3,4,5]};}
+  function slotX(i){return startX+i*(cardW+gap);}
+  function silhouette(group,p){
+    var ink='#29435d', cx=cardW/2, base=112, top=base-p.h;
+    group.add(new Konva.Circle({x:cx+p.lean,y:top+10,r:10,fill:ink}));
+    group.add(new Konva.Line({points:[cx+p.lean,top+22,cx,base-42],stroke:ink,strokeWidth:15,lineCap:'round'}));
+    group.add(new Konva.Line({points:[cx-2,top+38,cx-p.arm,base-48],stroke:ink,strokeWidth:9,lineCap:'round'}));
+    group.add(new Konva.Line({points:[cx+3,top+38,cx+p.arm,base-50],stroke:ink,strokeWidth:9,lineCap:'round'}));
+    group.add(new Konva.Line({points:[cx,base-43,cx-p.leg,base],stroke:ink,strokeWidth:11,lineCap:'round'}));
+    group.add(new Konva.Line({points:[cx,base-43,cx+p.leg,base],stroke:ink,strokeWidth:11,lineCap:'round'}));
+  }
+  function build(){
+    stage=new Konva.Stage({container:'konva',width:W,height:H}); layer=new Konva.Layer();stage.add(layer);
+    layer.add(new Konva.Text({x:0,y:132,width:W,text:'把卡片放入下方六个槽位',align:'center',fontSize:16,fill:'#53657a'}));
+    for(var i=0;i<6;i++){
+      layer.add(new Konva.Rect({x:slotX(i),y:slotY,width:cardW,height:cardH,cornerRadius:12,fill:'#eaf1f8',stroke:'#8799ae',strokeWidth:2,dash:[8,6]}));
+      layer.add(new Konva.Text({x:slotX(i),y:slotY+47,width:cardW,text:String(i+1),align:'center',fontSize:22,fontStyle:'bold',fill:'#8799ae'}));
+    }
+    poses.forEach(function(p,i){
+      var g=new Konva.Group({x:initialX[i],y:8,width:cardW,height:cardH,draggable:true,id:'card-'+i});
+      g.add(new Konva.Rect({width:cardW,height:cardH,cornerRadius:12,fill:'#ffffff',stroke:'#c7d3e1',strokeWidth:2,shadowColor:'#1f3752',shadowOpacity:.12,shadowBlur:8,shadowOffsetY:3}));
+      silhouette(g,p); layer.add(g);groups[i]=g;
+      g.on('pointerdown',function(){if(!submitted){selected=i;drawSelection();}});
+      g.on('dragend',function(){if(submitted)return; placeNearest(i);});
+    }); layer.draw();
+  }
+  function drawSelection(){groups.forEach(function(g,i){g.findOne('Rect').stroke(i===selected?'#0b72e7':'#c7d3e1');g.findOne('Rect').strokeWidth(i===selected?4:2);});layer.draw();}
+  function placeNearest(id){var g=groups[id], center=g.x()+cardW/2,best=-1,dist=1e9;for(var i=0;i<6;i++){var d=Math.abs(center-(slotX(i)+cardW/2));if(d<dist){dist=d;best=i;}}
+    var old=state.slots.indexOf(id);if(old>=0)state.slots[old]=null;
+    if(dist<105){var displaced=state.slots[best];state.slots[best]=id;g.position({x:slotX(best),y:slotY});if(displaced!==null){state.slots[old>=0?old:state.slots.indexOf(null)]=displaced;layout();}}
+    else g.position({x:initialX[id],y:8}); update();layer.draw();}
+  function layout(){state.slots.forEach(function(id,i){if(id!==null)groups[id].position({x:slotX(i),y:slotY});});}
+  function update(){var n=state.slots.filter(function(x){return x!==null;}).length;document.getElementById('submit').disabled=n<6;document.getElementById('status').textContent=n<6?'还需放入 '+(6-n)+' 张轮廓。':'排列完成，可以提交诊断。';}
+  function reset(){submitted=false;state=fresh();selected=null;groups.forEach(function(g,i){g.draggable(true);g.position({x:initialX[i],y:8});});drawSelection();document.getElementById('comparison').classList.remove('revealed');document.querySelectorAll('.meaning').forEach(function(el){el.classList.add('pending');el.textContent='提交后诊断';});document.getElementById('submit').disabled=true;document.getElementById('status').textContent='还需放入 6 张轮廓。';layer.find('.diagnostic').forEach(function(n){n.destroy();});layer.draw();}
+  document.getElementById('submit').addEventListener('click',function(){if(this.disabled)return;submitted=true;groups.forEach(function(g){g.draggable(false);});var texts=['像沿着一条路线向右推进','容易被读成“越来越高级”','末位像预先设定的目标','分支、共同祖先与共存都没有位置'];document.querySelectorAll('.meaning').forEach(function(el,i){el.textContent=texts[i];el.classList.remove('pending');});document.getElementById('comparison').classList.add('revealed');document.getElementById('status').textContent='你排的是顺序，也同时排出了价值。';layer.add(new Konva.Arrow({name:'diagnostic',points:[startX,142,slotX(5)+cardW,142],stroke:'#d86b2b',fill:'#d86b2b',strokeWidth:5,pointerLength:12,pointerWidth:12}));layer.add(new Konva.Rect({name:'diagnostic',x:slotX(5)-5,y:slotY-5,width:cardW+10,height:cardH+10,cornerRadius:16,stroke:'#d86b2b',strokeWidth:5}));layer.draw();});
+  document.getElementById('reset').addEventListener('click',reset);
+  document.getElementById('konva').addEventListener('keydown',function(e){if(submitted||selected===null)return;var at=state.slots.indexOf(selected);if((e.key==='ArrowLeft'||e.key==='ArrowRight')&&at>=0){e.preventDefault();var to=at+(e.key==='ArrowLeft'?-1:1);if(to>=0&&to<6){var other=state.slots[to];state.slots[to]=selected;state.slots[at]=other;layout();layer.draw();update();}}});
+  state=fresh();build();update();
+})();
+</script>
+</body>
+</html>

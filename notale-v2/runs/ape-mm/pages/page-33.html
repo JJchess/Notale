@@ -1,0 +1,280 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  #stage{padding:28px 44px 20px;position:relative}
+  .topline{height:92px;display:flex;align-items:flex-start;justify-content:space-between;gap:36px;flex:0 0 92px}
+  .kicker{color:var(--primary);font:700 var(--fs-label)/1.4 var(--font-mono);letter-spacing:.16em}
+  .title-take{display:flex;align-items:baseline;gap:24px}
+  .title-take .lead{margin:0;color:var(--muted)}
+  .round-status{min-width:150px;padding-top:22px;text-align:right;color:var(--accent);font:700 var(--fs-body)/1.4 var(--font-mono)}
+  fuel-stack-game{display:flex;flex:1 1 0;min-height:0;flex-direction:column;position:relative}
+  .causal-strip{height:76px;flex:0 0 76px;display:flex;align-items:center;justify-content:center;gap:14px;color:var(--muted);font-size:var(--fs-sec)}
+  .causal-strip .node{padding:7px 14px;border:1px solid var(--line);background:var(--panel-deep);border-radius:var(--radius-1)}
+  .causal-strip .node.hot{border-color:var(--accent-line);color:var(--accent);background:var(--accent-soft)}
+  .causal-strip .arrow{color:var(--accent);font-size:var(--fs-h2);font-weight:800}
+  .rounds{--process-axis-y:54%;flex:1 1 0;min-height:0}
+  .rounds>.step{padding:18px;transition:flex .28s ease,border-color .2s ease}
+  .rounds>.step.current{flex:6 1 0}
+  .rounds>.step.past{flex:1.55 1 0}
+  .rounds>.step.locked{flex:.72 1 0;opacity:.62}
+  .rounds>.step.locked .conditions,.rounds>.step.locked .mini-pile{display:none}
+  .rounds>.step.locked .compact-body:after{content:"待解锁";margin:auto;color:var(--faint);font-size:var(--fs-sec)}
+  .round-head{height:58px;display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex:0 0 58px}
+  .round-name{font:700 var(--fs-h2)/1.35 var(--font-title)}
+  .target{color:var(--primary);font:700 var(--fs-lead)/1.4 var(--font-mono);white-space:nowrap}
+  .stamp{display:none;padding:4px 9px;border:2px solid var(--accent);color:var(--accent);font:800 var(--fs-label)/1.3 var(--font-title);transform:rotate(-3deg)}
+  .past .stamp{display:block}
+  .compact-body{display:flex;flex:1;min-height:0;flex-direction:column;justify-content:space-between;gap:12px}
+  .conditions{color:var(--muted);font-size:var(--fs-sec);line-height:1.5}
+  .condition-line{display:flex;justify-content:space-between;gap:10px;border-bottom:1px solid var(--line);padding:6px 0}
+  .condition-line b{color:var(--text);font-family:var(--font-mono)}
+  .mini-pile{display:flex;flex:1 1 180px;min-height:180px;align-items:flex-end;justify-content:center;gap:3px;padding:10px;border-bottom:5px solid var(--primary-line)}
+  .pile-svg{display:block;width:100%;height:100%}
+  .pile-svg rect{fill:var(--accent);stroke:var(--accent-line);stroke-width:1}
+  .locked-mark{margin:auto;text-align:center;color:var(--faint);font-size:var(--fs-sec)}
+  .active-body{display:none;flex:1;min-height:0}
+  .current .active-body{display:block;position:relative}
+  .current .compact-body{display:none}
+  .sim-wrap{position:absolute;inset:0;min-width:0;min-height:0;overflow:hidden;border:1px solid var(--line);border-radius:var(--radius-1);background:var(--panel-deep)}
+  .sim-wrap canvas{display:block;width:100%;height:100%}
+  .bay-label,.fuel-label,.base-label{position:absolute;z-index:2;pointer-events:none;font-size:var(--fs-label);font-weight:700}
+  .bay-label{top:9px;right:280px;color:var(--accent)}
+  .fuel-label{top:9px;left:12px;color:var(--accent)}
+  .base-label{right:280px;bottom:10px;color:var(--primary)}
+  .metrics{position:absolute;z-index:3;right:12px;top:42px;bottom:12px;width:250px;display:flex;flex-direction:column;gap:10px;min-width:0;padding:10px;border:1px solid var(--line-strong);border-radius:var(--radius-1);background:var(--panel)}
+  .metric{padding:9px 11px;border:1px solid var(--line);background:var(--panel-deep);border-radius:var(--radius-1)}
+  .metric .key{color:var(--muted);font-size:var(--fs-label);line-height:1.35}
+  .metric .val{color:var(--primary);font:700 var(--fs-lead)/1.35 var(--font-mono);white-space:nowrap}
+  .meter{height:10px;overflow:hidden;border:1px solid var(--line-strong);border-radius:999px;background:var(--bg)}
+  .meter>i{display:block;width:0;height:100%;background:var(--primary);transition:width .2s ease}
+  .meter.done>i{background:var(--accent)}
+  .controls{display:flex;gap:8px;margin-top:auto}
+  .controls button{min-height:40px;flex:1;border:1px solid var(--line-strong);border-radius:var(--radius-1);color:var(--text);background:var(--panel-deep);font-size:16px;font-weight:700;cursor:pointer}
+  .controls button.primary-btn{border-color:var(--accent-line);color:var(--accent);background:var(--accent-soft)}
+  .feedback{min-height:48px;color:var(--muted);font-size:var(--fs-sec);line-height:1.5}
+  .feedback.bad{color:var(--danger)}
+  .feedback.good{color:var(--accent)}
+  .shake{animation:shake .34s ease}
+  @keyframes shake{0%,100%{transform:translateX(0)}25%{transform:translateX(-7px)}75%{transform:translateX(7px)}}
+  .finish{display:none;position:absolute;z-index:8;left:50%;bottom:18px;transform:translateX(-50%);width:720px;padding:18px 24px;border:1px solid var(--accent);background:var(--panel-raised);box-shadow:var(--shadow-panel);text-align:center}
+  .finish.show{display:block}
+  .finish strong{display:block;color:var(--accent);font-size:var(--fs-lead);line-height:1.5}
+  .finish p{margin:4px 0 12px;color:var(--text);font-size:var(--fs-sec);line-height:1.5}
+  .finish button{min-height:40px;padding:7px 18px;border:1px solid var(--primary);border-radius:var(--radius-1);color:var(--text);background:var(--panel-deep);font-size:16px;font-weight:700;cursor:pointer}
+  .earth-edge{height:42px;flex:0 0 42px;position:relative;overflow:hidden;border-top:1px solid var(--line)}
+  .earth-edge:after{content:"";position:absolute;left:8%;right:8%;top:18px;height:22px;border:2px solid var(--primary-line);border-bottom:0;border-radius:50% 50% 0 0;box-shadow:0 -5px 18px var(--primary-soft)}
+  .earth-edge .conclusion{position:relative;z-index:2;width:max-content;margin:8px auto 0;padding:0 18px;background:var(--bg);color:var(--text);font-size:var(--fs-sec)}
+  @media (prefers-reduced-motion:reduce){.rounds>.step,.meter>i{transition:none}.shake{animation:none}}
+</style>
+</head>
+<body data-page="33" data-total="50">
+<div id="stage">
+  <header class="topline">
+    <div>
+      <div class="kicker">MASS RATIO · E4</div>
+      <div class="title-take"><h1>燃料也要被推动</h1><p class="lead">追求更大速度增量，推进剂需求会非线性上升。</p></div>
+    </div>
+    <div id="roundStatus" class="round-status" aria-live="polite"></div>
+  </header>
+  <fuel-stack-game id="game" aria-label="燃料质量堆叠局">
+    <div class="causal-strip" aria-label="质量比因果过程">
+      <span class="node hot">提高目标 Δv</span><span class="arrow">→</span>
+      <span class="node">增加推进剂</span><span class="arrow">→</span>
+      <span class="node">初始质量增加</span><span class="arrow">→</span>
+      <span class="node">新增燃料也要加速</span><span class="arrow">→</span>
+      <span class="node hot">后续代价更大</span>
+    </div>
+    <section id="rounds" class="k-process rounds min0" aria-label="三轮速度增量目标">
+      <div class="axis" aria-hidden="true"></div>
+    </section>
+    <div id="finish" class="finish" role="status" aria-live="polite">
+      <strong>相同 Δv 增量，不等于相同燃料增量</strong>
+      <p>后来加入的燃料，也成为必须被推动的质量。</p>
+      <button id="resetAll" type="button">重置三轮</button>
+    </div>
+  </fuel-stack-game>
+  <div class="earth-edge"><div class="conclusion">同一发动机、同一干质量与载荷，只改变推进剂。</div></div>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script src="assets/lib/matter.min.js"></script>
+<script>
+(function(){
+  'use strict';
+  Deck.init({index:33,total:50});
+  var model={specificImpulse_s:450,dryMass_kg:10000,payloadMass_kg:2000,blockMass_kg:5000,targets_mps:[3000,6000,9000]};
+  var names=['起步','加速','再加速'];
+  var game=document.getElementById('game');
+  var rounds=document.getElementById('rounds');
+  var roundStatus=document.getElementById('roundStatus');
+  var finish=document.getElementById('finish');
+  var state=freshState();
+  var physics=null;
+  var reduce=Deck.reduced();
+
+  function freshState(){return {round:0,counts:[0,0,0],complete:[false,false,false],trace:[],started:false};}
+  function fMass(v){return Lec.P.formatMass(v,1);}
+  function fSpeed(v){return Lec.P.formatSpeed(v,1);}
+  function pct(v){return Lec.P.formatNumber(v*100,1)+'%';}
+  function required(target){
+    var ratio=Lec.P.rocketMassRatio(target,model.specificImpulse_s);
+    return Math.ceil(((ratio-1)*(model.dryMass_kg+model.payloadMass_kg))/model.blockMass_kg);
+  }
+  function deltaFor(n){
+    var finalMass=model.dryMass_kg+model.payloadMass_kg;
+    return Lec.P.rocketDeltaV(model.specificImpulse_s,finalMass+n*model.blockMass_kg,finalMass);
+  }
+  function blockMarkup(count){
+    if(!count)return '<div class="locked-mark">完成后保留燃料堆高度</div>';
+    var cols=Math.min(5,Math.max(1,Math.ceil(count/4))),out='<svg class="pile-svg" viewBox="0 0 180 120" aria-hidden="true">';
+    for(var i=0;i<count;i++){
+      var c=i%cols,row=Math.floor(i/cols),x=90-(cols*16)/2+c*16,y=104-row*14;
+      out+='<rect x="'+String(x)+'" y="'+String(y)+'" width="14" height="12" rx="2"></rect>';
+    }
+    return out+'</svg>';
+  }
+  function cardHTML(i){
+    var target=model.targets_mps[i],need=required(target),count=state.counts[i];
+    var cls=state.complete[i]?'step past':(i===state.round?'step current':'step locked');
+    var extra=i?'<div class="condition-line"><span>比上一轮多</span><b>'+String(need-required(model.targets_mps[i-1]))+' 块</b></div>':'';
+    var fraction=Lec.P.rocketPropellantFraction(target,model.specificImpulse_s);
+    return '<article class="'+cls+'" data-round="'+i+'">'+
+      '<div class="round-head"><div><div class="round-name">'+String(i+1)+' · '+names[i]+'</div><div class="target">'+fSpeed(target)+'</div></div><span class="stamp">达到 Δv</span></div>'+
+      '<div class="compact-body"><div class="conditions">'+
+        '<div class="condition-line"><span>目标需至少</span><b>'+String(need)+' 块</b></div>'+extra+
+        '<div class="condition-line"><span>目标推进剂比例</span><b>'+pct(fraction)+'</b></div></div>'+
+        '<div class="mini-pile" aria-label="完成时共 '+String(count)+' 块">'+blockMarkup(count)+'</div></div>'+
+      (i===state.round&&!state.complete[i]?activeHTML(i):'')+'</article>';
+  }
+  function activeHTML(i){
+    return '<div class="active-body min0"><div class="sim-wrap no-pan" id="simWrap">'+
+      '<span class="fuel-label">拖动燃料块</span><span class="bay-label">装载框</span><span class="base-label">干质量 + 载荷</span></div>'+
+      '<aside class="metrics"><div class="metric"><div class="key">已装推进剂</div><div id="propMass" class="val"></div></div>'+
+      '<div class="metric"><div class="key">初始总质量</div><div id="totalMass" class="val"></div></div>'+
+      '<div class="metric"><div class="key">推进剂比例</div><div id="fraction" class="val"></div></div>'+
+      '<div class="metric"><div class="key">当前 Δv / 目标</div><div id="dv" class="val"></div><div id="meter" class="meter"><i></i></div></div>'+
+      '<div id="feedback" class="feedback" aria-live="polite">把相同质量的燃料块拖入装载框。</div>'+
+      '<div class="controls"><button id="kbdAdd" type="button">键盘装入一块</button><button id="testRound" class="primary-btn" type="button">测试</button></div></aside></div>';
+  }
+  function render(){
+    stopPhysics();
+    var html='';
+    for(var i=0;i<3;i++){
+      html+=cardHTML(i);
+      if(i<2)html+='<div class="arw" aria-hidden="true">→</div>';
+    }
+    html+='<div class="axis" aria-hidden="true"></div>';
+    rounds.innerHTML=html;
+    roundStatus.textContent=state.round<3?'第 '+String(state.round+1)+' / '+String(model.targets_mps.length)+' 轮':'三轮完成';
+    finish.classList.toggle('show',state.round>=3);
+    if(state.round<3){
+      updateReadouts();
+      startPhysics();
+      document.getElementById('kbdAdd').addEventListener('click',keyboardAdd);
+      document.getElementById('testRound').addEventListener('click',testRound);
+    }
+  }
+  function updateReadouts(){
+    if(state.round>=3)return;
+    var count=state.counts[state.round],prop=count*model.blockMass_kg;
+    var finalMass=model.dryMass_kg+model.payloadMass_kg;
+    var initialMass=finalMass+prop;
+    var dv=Lec.P.rocketDeltaV(model.specificImpulse_s,initialMass,finalMass);
+    var fraction=Lec.P.rocketPropellantFraction(dv,model.specificImpulse_s);
+    var target=model.targets_mps[state.round];
+    document.getElementById('propMass').textContent=fMass(prop)+' · '+String(count)+' 块';
+    document.getElementById('totalMass').textContent=fMass(initialMass);
+    document.getElementById('fraction').textContent=pct(fraction);
+    document.getElementById('dv').textContent=fSpeed(dv)+' / '+fSpeed(target);
+    var meter=document.getElementById('meter');
+    meter.firstElementChild.style.width=Math.min(100,dv/target*100)+'%';
+    meter.classList.toggle('done',dv>=target);
+  }
+  function startPhysics(){
+    var M=Matter,wrap=document.getElementById('simWrap');
+    if(!wrap)return;
+    var engine=M.Engine.create({gravity:{x:0,y:1,scale:0.001}});
+    var width=600,height=330;
+    var render=M.Render.create({element:wrap,engine:engine,options:{width:width,height:height,wireframes:false,background:'transparent',showAngleIndicator:false,pixelRatio:1}});
+    render.canvas.setAttribute('aria-label','可拖动燃料块与装载框');
+    render.canvas.setAttribute('role','img');
+    var primary=Deck.token('--primary'),accent=Deck.token('--accent'),line=Deck.token('--line-strong'),panel=Deck.token('--panel-deep');
+    var ground=M.Bodies.rectangle(340,310,220,24,{isStatic:true,render:{fillStyle:primary,strokeStyle:primary,lineWidth:1}});
+    var leftWall=M.Bodies.rectangle(240,220,12,180,{isStatic:true,render:{fillStyle:line}});
+    var rightWall=M.Bodies.rectangle(440,220,12,180,{isStatic:true,render:{fillStyle:line}});
+    var base=M.Bodies.rectangle(340,289,180,18,{isStatic:true,render:{fillStyle:panel,strokeStyle:primary,lineWidth:2}});
+    M.Composite.add(engine.world,[ground,leftWall,rightWall,base]);
+    var mouse=M.Mouse.create(render.canvas);
+    var mouseConstraint=M.MouseConstraint.create(engine,{mouse:mouse,constraint:{stiffness:0.16,render:{visible:false}}});
+    M.Composite.add(engine.world,mouseConstraint);render.mouse=mouse;
+    var body=null;
+    function spawn(){
+      body=M.Bodies.rectangle(82,82,56,34,{restitution:0.04,friction:0.82,frictionStatic:1,render:{fillStyle:accent,strokeStyle:accent,lineWidth:1},label:'fuel'});
+      M.Composite.add(engine.world,body);
+    }
+    function settle(){
+      if(!body)return;
+      var inside=body.position.x>255&&body.position.x<425&&body.position.y>105&&body.position.y<290;
+      if(inside&&body.speed<0.15&&!body.plugin.counted){
+        body.plugin.counted=true;
+        state.counts[state.round]++;
+        state.trace.push({round:state.round,action:'load',count:state.counts[state.round]});
+        M.Body.setStatic(body,true);
+        updateReadouts();
+        game.dispatchEvent(new CustomEvent('game-progress',{bubbles:true,composed:true,detail:{state:game.getState(),action:'load',metrics:{deltaV_mps:deltaFor(state.counts[state.round])}}}));
+        window.setTimeout(spawn,reduce?0:180);
+      }else if(body.position.y>350||(body.position.x<215&&body.position.y>250)){
+        M.Composite.remove(engine.world,body);spawn();
+        var f=document.getElementById('feedback');
+        if(f){f.textContent='燃料块落在装载框外，未计入质量。';f.className='feedback bad';}
+      }
+    }
+    M.Events.on(engine,'afterUpdate',settle);
+    var runner=M.Runner.create();
+    M.Runner.run(runner,engine);M.Render.run(render);spawn();
+    physics={engine:engine,render:render,runner:runner,spawn:spawn,getBody:function(){return body;},mouse:mouse};
+  }
+  function stopPhysics(){
+    if(!physics)return;
+    Matter.Render.stop(physics.render);Matter.Runner.stop(physics.runner);
+    Matter.Composite.clear(physics.engine.world,false);Matter.Engine.clear(physics.engine);
+    if(physics.render.canvas.parentNode)physics.render.canvas.parentNode.removeChild(physics.render.canvas);
+    physics=null;
+  }
+  function keyboardAdd(){
+    if(!physics)return;
+    var body=physics.getBody();
+    if(!body)return;
+    Matter.Body.setPosition(body,{x:340,y:210});
+    Matter.Body.setVelocity(body,{x:0,y:0});
+  }
+  function testRound(){
+    var i=state.round,count=state.counts[i],dv=deltaFor(count),target=model.targets_mps[i];
+    var f=document.getElementById('feedback');
+    if(dv<target){
+      f.textContent='还差速度增量；新增燃料也会增加起飞质量。';f.className='feedback bad';
+      var card=rounds.querySelector('.current');card.classList.remove('shake');void card.offsetWidth;card.classList.add('shake');
+      state.trace.push({round:i,action:'test-short',count:count});return;
+    }
+    state.complete[i]=true;state.trace.push({round:i,action:'complete',count:count});
+    state.round++;
+    if(state.round>=model.targets_mps.length){
+      game.dispatchEvent(new CustomEvent('game-complete',{bubbles:true,composed:true,detail:{score:state.round,metrics:{blocks:state.counts.slice(),deltaV_mps:dv},trace:state.trace.slice()}}));
+    }else{
+      game.dispatchEvent(new CustomEvent('game-progress',{bubbles:true,composed:true,detail:{state:game.getState(),action:'round-complete',metrics:{blocks:count,deltaV_mps:dv}}}));
+    }
+    render();
+  }
+  game.start=function(){if(!state.started){state.started=true;game.dispatchEvent(new CustomEvent('game-start',{bubbles:true,composed:true}));}};
+  game.reset=function(){stopPhysics();state=freshState();render();game.dispatchEvent(new CustomEvent('game-reset',{bubbles:true,composed:true}));};
+  game.getState=function(){return JSON.parse(JSON.stringify(state));};
+  document.getElementById('resetAll').addEventListener('click',function(){game.reset();});
+  game.start();render();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,230 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  #main { display:flex; flex-direction:column; gap:16px; }
+  .energy-scene { position:relative; flex:1 1 0; min-height:0; overflow:hidden; border-top:1px solid var(--line); border-bottom:1px solid var(--line); background:linear-gradient(180deg,var(--surface-1),rgba(7,16,21,.42)); }
+  .time-window-label { position:absolute; z-index:2; top:12px; left:27%; width:46%; padding:4px 0; color:var(--text-muted); font:600 var(--fs-label)/1.35 var(--font-mono); text-align:center; border-right:1px solid var(--accent); border-left:1px solid var(--accent); }
+  .energy-scene::after { content:""; position:absolute; top:42px; bottom:16px; left:50%; width:46%; border-right:1px solid rgba(255,204,77,.42); border-left:1px solid rgba(255,204,77,.42); transform:translateX(-50%); pointer-events:none; }
+  #energy-svg { display:block; width:100%; height:100%; }
+  #energy-svg text { font-family:var(--font-sans); letter-spacing:0; }
+  #energy-svg .step-number { font-family:var(--font-mono); font-size:13px; font-weight:700; }
+  #energy-svg .step-label { font-size:14px; font-weight:700; }
+  #energy-svg .detail-label { font-size:16px; }
+  #energy-svg .flow-label { font-size:14px; font-weight:600; }
+  .causal-strip { --process-line-y:50%; position:absolute; z-index:3; right:20px; bottom:14px; left:20px; width:auto; height:46px; gap:8px; pointer-events:none; }
+  .lec-progress { overflow:visible; }
+  .causal-strip > .step { padding:6px 10px; font-size:15px; line-height:1.35; text-align:center; border-radius:var(--radius-2); }
+  .causal-strip > .arw { flex-basis:20px; font-size:18px; }
+  .console { position:relative; flex:0 0 176px; display:flex; align-items:stretch; min-width:0; min-height:0; box-sizing:border-box; border-top:2px solid var(--primary-dark); background:var(--surface-1); }
+  .console-schematic { position:absolute; inset:0; width:100%; height:100%; pointer-events:none; opacity:.34; }
+  .dial-zone,.task-zone { position:relative; z-index:1; }
+  .dial-zone { flex:1 1 0; min-width:0; padding:8px 22px; border-right:1px solid var(--line); background:var(--surface-teal); }
+  .dial-head { display:flex; align-items:baseline; justify-content:space-between; gap:16px; margin-bottom:8px; }
+  .dial-title { color:var(--text-strong); font:700 var(--fs-h2)/1.3 var(--font-narrow); }
+  .dial-reading { color:var(--accent); font:700 var(--fs-lead)/1.35 var(--font-mono); white-space:nowrap; }
+  .dial-zone input { width:100%; }
+  .dial-ticks { display:flex; justify-content:space-between; padding:0 5px; color:var(--text-muted); font:600 14px/1.35 var(--font-mono); }
+  .active-summary { margin-top:8px; color:var(--text-muted); font-size:16px; line-height:1.4; }
+  .active-summary strong { color:var(--primary-bright); }
+  .task-zone { position:relative; flex:0 0 482px; min-width:0; padding:8px 18px; background:var(--surface-yellow); }
+  .task-head { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:8px; }
+  .task-title { color:var(--text-strong); font:700 var(--fs-h2)/1.3 var(--font-narrow); }
+  .task-progress { color:var(--text-muted); font:600 var(--fs-label)/1.35 var(--font-mono); white-space:nowrap; }
+  .task-marks { display:flex; gap:12px; margin-bottom:9px; }
+  .task-mark { display:flex; align-items:center; gap:6px; color:var(--text-muted); font-size:15px; line-height:1.35; }
+  .task-mark::before { content:""; width:12px; height:12px; box-sizing:border-box; border:2px solid var(--line-strong); border-radius:50%; }
+  .task-mark.done { color:var(--primary-bright); }
+  .task-mark.done::before { border-color:var(--primary); background:var(--primary); }
+  .prompt { min-height:48px; color:var(--text-strong); font-size:18px; line-height:1.4; }
+  .feedback { min-height:24px; color:var(--accent); font-size:16px; line-height:1.4; }
+  .feedback.ok { color:var(--primary-bright); }
+  .claim { display:none; margin-top:4px; color:var(--text-strong); font-size:18px; font-weight:700; line-height:1.4; }
+  .claim.show { display:block; }
+  .task-zone.finished .prompt,.task-zone.finished .feedback { display:none; }
+  .reset { position:absolute; right:14px; bottom:12px; display:none; font-size:22px; }
+  .reset.show { display:inline-flex; }
+  .energy-scene.bump #energy-svg { animation:bump 180ms ease-out; }
+  @keyframes bump { 50% { transform:translateX(-7px); } }
+  @media (prefers-reduced-motion:reduce) { *,*::before,*::after { animation:none!important; transition:none!important; } }
+</style>
+</head>
+<body data-page="26" data-total="52">
+<div id="stage">
+<main id="main">
+  <section class="energy-scene min0" aria-labelledby="viz-title">
+    <div class="time-window-label">固定时间窗：时间不变，观察物质流</div>
+    <svg id="energy-svg" role="img" aria-label="体外能源与作用尺度的六级过程阶梯。六级阶梯从人体肌肉连接到高功率能源网络，当前档位决定固定时间窗内可处理的物质尺度"></svg>
+    <div class="k-process causal-strip" aria-label="因果过程">
+      <div class="axis"></div>
+      <div class="step is-current">身体做功</div><div class="arw" aria-hidden="true"></div>
+      <div class="step">接入体外能源</div><div class="arw" aria-hidden="true"></div>
+      <div class="step">驱动更大机器</div><div class="arw" aria-hidden="true"></div>
+      <div class="step">同一时间处理更多物质</div>
+    </div>
+  </section>
+
+  <section class="console min0" aria-label="能量阶梯控制台">
+    <svg class="console-schematic" viewBox="0 0 1408 176" aria-hidden="true">
+      <path d="M35 145 C42 106 47 70 61 67 C72 67 67 96 73 96 C80 96 78 43 91 42 C105 42 96 96 104 96 C112 96 112 29 126 30 C140 31 126 99 137 99 C146 99 151 51 164 54 C179 58 158 113 174 119 C193 126 220 123 241 139" fill="none" stroke="var(--primary)" stroke-width="4"/>
+      <path d="M23 157 A126 126 0 0 1 267 142" fill="none" stroke="var(--primary)" stroke-width="2"/>
+      <path d="M12 166 A148 148 0 0 1 290 145" fill="none" stroke="var(--primary-bright)" stroke-width="2"/>
+      <path d="M2 174 A170 170 0 0 1 314 148" fill="none" stroke="var(--accent)" stroke-width="2"/>
+    </svg>
+    <div class="dial-zone min0">
+      <div class="dial-head"><h2 class="dial-title">可调用的力量</h2><output id="dial-reading" class="dial-reading" for="energy-dial">第 1 档</output></div>
+      <input id="energy-dial" type="range" min="1" max="6" step="1" value="1" aria-label="选择可调用力量的档位" aria-describedby="dial-help">
+      <div class="dial-ticks" aria-hidden="true"><span>1</span><span>2</span><span>3</span><span>4</span><span>5</span><span>6</span></div>
+      <p id="dial-help" class="active-summary"><strong id="source-name">人体肌肉</strong> · <span id="action-name">手持、搬运</span> · <span id="scale-name">单件物体</span></p>
+    </div>
+
+    <div class="task-zone min0">
+      <div class="task-head"><h2 class="task-title">选择足以完成任务的最低档</h2><div id="task-progress" class="task-progress">3 项任务 · 已完成 0/3</div></div>
+      <div class="task-marks" aria-label="任务完成状态">
+        <span class="task-mark">单件搬运</span><span class="task-mark">连续加工</span><span class="task-mark">区域工程</span>
+      </div>
+      <p id="prompt" class="prompt">任务 1：在同一时间窗内搬运单件物体。</p>
+      <p id="feedback" class="feedback" role="status" aria-live="polite">转动拨盘，选择最低可行档。</p>
+      <p id="claim" class="claim">体外能源没有改变人手本身，却让手能指挥更大的机器系统；跃升的是单位时间内可改变的物质规模。</p>
+      <button id="reset" class="btn icon-only reset" type="button" title="重置" aria-label="重置全部任务">↻</button>
+    </div>
+  </section>
+</main>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script src="assets/lib/d3.min.js"></script>
+<script>
+Lec.mount({index:26,kicker:"CULTURE · EXTERNAL ENERGY",title:"借来的力量，放大的尺度",take:"人类利用体外能源后，单位时间内能改变的物质规模急剧上升。"});
+
+(function () {
+  const steps = [
+    {step:1, source:"人体肌肉", action:"手持、搬运", scale:"单件物体"},
+    {step:2, source:"驯养动物", action:"牵引、驮运", scale:"成批货物"},
+    {step:3, source:"风与流水", action:"持续转动机械", scale:"连续加工"},
+    {step:4, source:"热机", action:"集中燃料驱动设备", scale:"重载运输与开挖"},
+    {step:5, source:"电动机", action:"精确驱动多种机器", scale:"工厂级物质流"},
+    {step:6, source:"高功率能源网络", action:"多机器协同运行", scale:"城市与区域级工程"}
+  ];
+  const tasks = [
+    {name:"单件搬运", need:1, prompt:"任务 1：在同一时间窗内搬运单件物体。"},
+    {name:"连续加工", need:3, prompt:"任务 2：让物质在同一时间窗内连续加工。"},
+    {name:"区域工程", need:6, prompt:"任务 3：在同一时间窗内完成区域级工程。"}
+  ];
+  const svg = d3.select("#energy-svg");
+  const dial = document.getElementById("energy-dial");
+  const scene = document.querySelector(".energy-scene");
+  const reduced = Deck.reduced();
+  let current = 1;
+  let taskIndex = 0;
+  let completed = [false,false,false];
+
+  function draw(level, result) {
+    const width = 1408;
+    const height = 396;
+    const x = d3.scalePoint().domain(steps.map(d=>d.step)).range([40,width-40]).padding(0.4);
+    const h = d3.scalePow().exponent(1.7).domain([1,6]).range([28,height-132]);
+    svg.attr("viewBox",`0 0 ${width} ${height}`);
+    svg.selectAll("*").remove();
+    const defs = svg.append("defs");
+    defs.append("marker").attr("id","arrow26").attr("viewBox","0 0 10 10").attr("refX",9).attr("refY",5).attr("markerWidth",7).attr("markerHeight",7).attr("orient","auto-start-reverse").append("path").attr("d","M 0 0 L 10 5 L 0 10 z").attr("fill","#35C6B4");
+    defs.append("marker").attr("id","arrowActive26").attr("viewBox","0 0 10 10").attr("refX",9).attr("refY",5).attr("markerWidth",7).attr("markerHeight",7).attr("orient","auto-start-reverse").append("path").attr("d","M 0 0 L 10 5 L 0 10 z").attr("fill","#FFCC4D");
+
+    const baseY = height - 82;
+    const platformW = 174;
+    svg.append("path").attr("d",`M 22 ${baseY+7} H ${width-22}`).attr("fill","none").attr("stroke","rgba(204,229,225,.34)").attr("stroke-width",2);
+    svg.append("text").attr("class","flow-label").attr("x",26).attr("y",baseY+29).attr("fill","#A9B9B7").text("人手本身不变");
+    svg.append("path").attr("d",d3.line()(steps.map(d=>[x(d.step),baseY-h(d.step)-10]))).attr("fill","none").attr("stroke","#35C6B4").attr("stroke-width",3).attr("marker-end","url(#arrow26)");
+
+    const groups = svg.selectAll("g.energy-step").data(steps,d=>d.step).join("g").attr("class","energy-step").attr("transform",d=>`translate(${x(d.step)-platformW/2},${baseY-h(d.step)})`);
+    groups.append("rect").attr("width",platformW).attr("height",d=>h(d.step)).attr("rx",4).attr("fill",d=>d.step===level?"#FFCC4D":d.step<level?"#35C6B4":"#17323A").attr("opacity",d=>d.step===level?1:d.step<level?.72:.9).attr("stroke",d=>d.step===level?"#FFCC4D":"rgba(204,229,225,.22)").attr("stroke-width",d=>d.step===level?4:1);
+    groups.append("text").attr("class","step-number").attr("x",12).attr("y",22).attr("fill",d=>d.step===level?"#171407":"#E9F1EF").text(d=>`0${d.step}`);
+    groups.append("text").attr("class","step-label").attr("x",platformW/2).attr("y",d=>Math.max(48,h(d.step)-14)).attr("text-anchor","middle").attr("fill",d=>d.step===level?"#171407":"#E9F1EF").text(d=>d.source);
+
+    const active = steps[level-1];
+    const ax = x(level);
+    const ay = baseY-h(level)-10;
+    svg.append("path").attr("d",`M ${ax} ${ay} L ${ax} 58 L ${Math.min(width-250,ax+170)} 58`).attr("fill","none").attr("stroke","#FFCC4D").attr("stroke-width",3).attr("stroke-dasharray",result==="low"?"6 7":null).attr("marker-end","url(#arrowActive26)");
+    svg.append("text").attr("class","detail-label").attr("x",Math.min(width-240,ax+184)).attr("y",52).attr("fill","#FFCC4D").text(`${active.action} → ${active.scale}`);
+
+    const flowCount = level * 5;
+    const flowStart = width*.27;
+    const flowEnd = width*.73;
+    const stop = result==="low" ? flowStart+(flowEnd-flowStart)*.56 : flowEnd;
+    const flow = d3.range(flowCount).map(i=>({x:flowStart+(stop-flowStart)*((i%10)/9),y:84+Math.floor(i/10)*13}));
+    svg.selectAll("circle.matter").data(flow).join("circle").attr("class","matter").attr("cx",d=>d.x).attr("cy",d=>d.y).attr("r",4).attr("fill",result==="low"?"#728582":"#65E0D0").attr("opacity",.9);
+    svg.append("text").attr("class","flow-label").attr("x",width/2).attr("y",116).attr("text-anchor","middle").attr("fill","#A9B9B7").text(result==="low"?"物质流在任务终点前停住":"同一时间窗内的物质流");
+  }
+
+  function updateText() {
+    const d = steps[current-1];
+    document.getElementById("dial-reading").textContent=`第 ${current} 档`;
+    document.getElementById("source-name").textContent=d.source;
+    document.getElementById("action-name").textContent=d.action;
+    document.getElementById("scale-name").textContent=d.scale;
+  }
+
+  function renderProgress() {
+    document.getElementById("task-progress").textContent=`3 项任务 · 已完成 ${completed.filter(Boolean).length}/3`;
+    document.querySelectorAll(".task-mark").forEach((el,i)=>el.classList.toggle("done",completed[i]));
+  }
+
+  function evaluate() {
+    if (taskIndex >= tasks.length) return;
+    const task = tasks[taskIndex];
+    const feedback = document.getElementById("feedback");
+    let result = "high";
+    if (current < task.need) {
+      result = "low";
+      feedback.textContent="这一档无法在同一时间窗内达到任务尺度。";
+      feedback.className="feedback";
+      scene.classList.remove("bump");
+      void scene.offsetWidth;
+      if (!reduced) scene.classList.add("bump");
+    } else if (current > task.need) {
+      feedback.textContent="能完成，但不是最低档。";
+      feedback.className="feedback";
+    } else {
+      result = "ok";
+      completed[taskIndex]=true;
+      feedback.textContent="刚好够用。";
+      feedback.className="feedback ok";
+      taskIndex += 1;
+      renderProgress();
+      if (taskIndex < tasks.length) {
+        document.getElementById("prompt").textContent=tasks[taskIndex].prompt;
+      } else {
+        document.getElementById("prompt").textContent="三项任务已完成：六级阶梯连接的是作用尺度，不是价值排名。";
+        document.querySelector(".task-zone").classList.add("finished");
+        document.getElementById("claim").classList.add("show");
+        document.getElementById("reset").classList.add("show");
+      }
+    }
+    draw(current,result);
+  }
+
+  dial.addEventListener("input",function(){
+    current=Number(this.value);
+    updateText();
+    evaluate();
+  });
+
+  document.getElementById("reset").addEventListener("click",function(){
+    current=1; taskIndex=0; completed=[false,false,false]; dial.value="1";
+    document.getElementById("prompt").textContent=tasks[0].prompt;
+    document.getElementById("feedback").textContent="转动拨盘，选择最低可行档。";
+    document.getElementById("feedback").className="feedback";
+    document.querySelector(".task-zone").classList.remove("finished");
+    document.getElementById("claim").classList.remove("show");
+    this.classList.remove("show");
+    renderProgress(); updateText(); draw(current,"idle"); dial.focus();
+  });
+
+  renderProgress(); updateText(); draw(current,"idle");
+})();
+</script>
+</body>
+</html>

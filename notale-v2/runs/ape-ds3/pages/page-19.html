@@ -1,0 +1,893 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+/* ===== Page 19: 智人的三个节点 ===== */
+#main {
+  position: relative;
+  overflow: hidden;
+  background: var(--bg);
+}
+
+/* ===== Map Layer ===== */
+.map-layer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 1408px;
+  height: 434px;
+  pointer-events: none;
+  overflow: visible;
+}
+
+.continent {
+  fill: none;
+  stroke: var(--muted);
+  stroke-width: 1.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0.5;
+}
+
+/* ===== Migration Paths ===== */
+.mig-path {
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.mig-path.unrevealed {
+  stroke: var(--muted);
+  stroke-width: 1.5;
+  stroke-dasharray: 4 4;
+  opacity: 0.3;
+}
+.mig-path.revealed {
+  stroke: var(--accent);
+  stroke-width: 2.5;
+  stroke-dasharray: none;
+  opacity: 1;
+  filter: drop-shadow(0 0 4px rgba(11,122,117,0.5));
+}
+.mig-path.revealing {
+  stroke: var(--accent);
+  stroke-width: 2.5;
+  opacity: 1;
+  filter: drop-shadow(0 0 4px rgba(11,122,117,0.5));
+}
+
+/* ===== Station Markers ===== */
+.station-marker {
+  fill: var(--muted);
+  opacity: 0.25;
+  transition: fill 0.3s, opacity 0.3s;
+}
+.station-marker.active {
+  fill: var(--accent);
+  opacity: 1;
+  filter: drop-shadow(0 0 8px rgba(11,122,117,0.8));
+}
+.station-glow {
+  fill: var(--accent);
+  opacity: 0;
+  transition: opacity 0.5s;
+}
+.station-glow.active {
+  opacity: 0.3;
+}
+.station-label {
+  font-size: 14px;
+  fill: var(--muted);
+  font-family: var(--font-sans);
+  text-anchor: middle;
+  transition: fill 0.3s;
+}
+.station-label.active {
+  fill: var(--accent);
+  font-weight: 700;
+}
+
+/* ===== Scan Head ===== */
+.scan-head {
+  position: absolute;
+  top: 0;
+  width: 3px;
+  height: 100%;
+  pointer-events: none;
+  z-index: 10;
+}
+.scan-head-inner {
+  width: 100%;
+  height: 100%;
+  background: var(--accent);
+  opacity: 0.6;
+  box-shadow: 0 0 12px 6px rgba(11,122,117,0.4), 0 0 40px 20px rgba(11,122,117,0.15);
+}
+.scan-head-glow {
+  position: absolute;
+  top: 0;
+  left: -20px;
+  width: 43px;
+  height: 100%;
+  background: linear-gradient(90deg, transparent 0%, rgba(11,122,117,0.08) 30%, rgba(11,122,117,0.12) 50%, rgba(11,122,117,0.08) 70%, transparent 100%);
+  pointer-events: none;
+}
+
+/* ===== Info Panel (top-left) ===== */
+.info-panel {
+  position: absolute;
+  top: 20px;
+  left: 20px;
+  z-index: 5;
+  max-width: 420px;
+}
+.info-panel-inner {
+  background: rgba(11,14,20,0.82);
+  border: 1px solid rgba(216,218,210,0.15);
+  border-radius: var(--radius-md);
+  padding: var(--space-4) var(--space-5);
+  backdrop-filter: blur(4px);
+}
+.info-panel h3 {
+  font-size: var(--fs-body);
+  font-weight: 700;
+  color: var(--text);
+  margin: 0 0 var(--space-3) 0;
+  line-height: var(--lh-body);
+}
+.info-panel ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.info-panel li {
+  font-size: var(--fs-sec);
+  line-height: var(--lh-sec);
+  color: var(--text);
+  padding: 3px 0 3px 14px;
+  position: relative;
+  opacity: 0.85;
+}
+.info-panel li::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 10px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  opacity: 0.5;
+}
+.info-panel li + li {
+  margin-top: 2px;
+}
+
+/* ===== Time Readout (top-right) ===== */
+.time-readout {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  z-index: 5;
+  text-align: right;
+}
+.time-readout-inner {
+  background: rgba(11,14,20,0.82);
+  border: 1px solid rgba(216,218,210,0.15);
+  border-radius: var(--radius-md);
+  padding: var(--space-3) var(--space-4);
+  backdrop-filter: blur(4px);
+  min-width: 120px;
+}
+.time-readout-label {
+  font-size: var(--fs-label);
+  color: var(--muted);
+  line-height: var(--lh-label);
+  margin-bottom: 2px;
+}
+.time-readout-value {
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+  letter-spacing: 0.02em;
+}
+.time-readout-unit {
+  font-size: var(--fs-label);
+  color: var(--text);
+  font-weight: 400;
+  margin-left: 2px;
+}
+
+/* ===== Timeline Area ===== */
+.timeline-area {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  height: 150px;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 0 60px;
+  box-sizing: border-box;
+}
+.timeline-track {
+  position: relative;
+  width: 100%;
+  height: 36px;
+  cursor: pointer;
+  touch-action: none;
+}
+
+.timeline-station-label-above {
+  position: absolute;
+  bottom: calc(50% + 16px);
+  font-size: var(--fs-label);
+  color: var(--muted);
+  white-space: nowrap;
+  transform: translateX(-50%);
+  pointer-events: none;
+  transition: color 0.3s;
+}
+.timeline-station-label-above.active {
+  color: var(--accent);
+  font-weight: 700;
+}
+.timeline-bg {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--muted);
+  opacity: 0.3;
+  transform: translateY(-50%);
+  border-radius: 1px;
+}
+.timeline-fill {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  height: 2px;
+  background: var(--accent);
+  opacity: 0.5;
+  transform: translateY(-50%);
+  border-radius: 1px;
+  pointer-events: none;
+}
+.timeline-tick {
+  position: absolute;
+  top: 50%;
+  width: 1px;
+  height: 12px;
+  background: var(--muted);
+  opacity: 0.4;
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+.timeline-tick-label {
+  position: absolute;
+  top: calc(50% + 16px);
+  font-size: var(--fs-label);
+  color: var(--muted);
+  white-space: nowrap;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+/* Station markers on timeline */
+.timeline-station {
+  position: absolute;
+  top: 50%;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  transition: background 0.3s, box-shadow 0.3s;
+}
+.timeline-station.inactive {
+  background: var(--muted);
+  opacity: 0.3;
+}
+.timeline-station.active {
+  background: var(--accent);
+  box-shadow: 0 0 8px 2px rgba(11,122,117,0.6);
+  opacity: 1;
+}
+.timeline-station-label {
+  position: absolute;
+  bottom: calc(50% + 12px);
+  font-size: var(--fs-tick);
+  color: var(--muted);
+  white-space: nowrap;
+  transform: translateX(-50%);
+  pointer-events: none;
+  transition: color 0.3s;
+}
+.timeline-station-label.active {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+
+/* ===== Controls ===== */
+.controls {
+  position: absolute;
+  bottom: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+.controls .btn-play {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 1px solid var(--accent);
+  background: rgba(11,122,117,0.15);
+  color: var(--accent);
+  font-size: 16px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.2s, transform 0.15s;
+  padding: 0;
+  line-height: 1;
+}
+.controls .btn-play:hover {
+  background: rgba(11,122,117,0.3);
+}
+.controls .btn-play:active {
+  transform: scale(0.92);
+}
+.controls .btn-play.playing {
+  background: var(--accent);
+  color: #fff;
+}
+.controls .ctl-label {
+  font-size: var(--fs-label);
+  color: var(--muted);
+  line-height: var(--lh-label);
+}
+
+/* ===== Other branches (grey, unnamed) ===== */
+.other-branch {
+  fill: none;
+  stroke: var(--muted);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+  opacity: 0.15;
+  transition: opacity 1s;
+}
+.other-branch.visible {
+  opacity: 0.25;
+}
+
+/* ===== Responsive scale hints ===== */
+@media (prefers-reduced-motion: reduce) {
+  .scan-head-inner { transition: none; }
+  .station-marker { transition: none; }
+  .station-glow { transition: none; }
+}
+</style>
+</head>
+<body data-page="19" data-total="50">
+<div id="stage">
+<main id="main">
+
+<!-- ====== SVG Map Layer ====== -->
+<svg class="map-layer" viewBox="0 0 1408 434" xmlns="http://www.w3.org/2000/svg">
+  <!-- Continents (simplified) -->
+  <!-- Africa -->
+  <path class="continent" d="M 520 210 C 540 180, 580 170, 610 185 C 640 200, 650 230, 640 265 C 630 300, 610 340, 590 370 C 575 385, 550 380, 540 360 C 520 320, 500 280, 500 250 C 500 230, 510 220, 520 210 Z"/>
+  <!-- Eurasia -->
+  <path class="continent" d="M 650 165 C 680 120, 770 100, 880 110 C 960 115, 1020 135, 1050 165 C 1065 185, 1055 210, 1020 215 C 970 220, 900 210, 840 215 C 780 220, 720 205, 680 205 C 660 205, 640 185, 650 165 Z"/>
+  <!-- Australia -->
+  <path class="continent" d="M 990 325 C 1020 310, 1060 315, 1080 335 C 1095 350, 1080 365, 1050 370 C 1020 375, 990 365, 980 350 C 970 340, 975 330, 990 325 Z"/>
+  <!-- North America -->
+  <path class="continent" d="M 180 120 C 220 100, 290 110, 330 135 C 360 155, 365 185, 340 210 C 310 235, 270 250, 240 245 C 200 235, 170 210, 160 180 C 150 150, 160 130, 180 120 Z"/>
+  <!-- South America -->
+  <path class="continent" d="M 260 265 C 285 250, 310 260, 320 285 C 330 315, 315 350, 290 370 C 270 380, 245 370, 240 345 C 230 310, 240 280, 260 265 Z"/>
+  <!-- Greenland hint -->
+  <path class="continent" d="M 560 115 C 575 108, 590 112, 595 125 C 600 140, 585 150, 570 145 C 558 140, 552 128, 560 115 Z"/>
+  <!-- Madagascar -->
+  <path class="continent" d="M 640 335 C 648 330, 656 340, 654 355 C 652 365, 642 365, 638 355 C 635 348, 636 338, 640 335 Z"/>
+  <!-- SE Asia islands hint -->
+  <path class="continent" d="M 920 225 C 935 218, 950 225, 950 240 C 950 255, 930 250, 920 240 C 915 235, 915 228, 920 225 Z"/>
+  <path class="continent" d="M 900 240 C 910 235, 920 242, 918 252 C 915 260, 902 255, 898 248 C 896 244, 896 242, 900 240 Z"/>
+
+  <!-- Other hominin branches (grey, unnamed, fade in at end) -->
+  <path class="other-branch" d="M 530 230 C 490 200, 420 195, 370 205"/>
+  <path class="other-branch" d="M 530 230 C 520 260, 490 280, 460 290"/>
+
+  <!-- Migration Paths (unrevealed dashing by default) -->
+  <!-- Path 1: Africa internal (East Africa → NE Africa) -->
+  <path id="path-africa" class="mig-path unrevealed" d="M 570 290 C 580 270, 600 240, 620 220"/>
+  <!-- Path 2: Exit Africa (NE Africa → Sinai) -->
+  <path id="path-exit" class="mig-path unrevealed" d="M 620 220 C 635 210, 650 202, 662 198"/>
+  <!-- Path 3: Eurasia main (Sinai → across) -->
+  <path id="path-eurasia" class="mig-path unrevealed" d="M 662 198 C 690 190, 730 182, 780 178 C 830 174, 880 182, 920 195 C 940 202, 960 210, 980 220"/>
+  <!-- Path 4: Europe branch -->
+  <path id="path-europe" class="mig-path unrevealed" d="M 662 198 C 680 185, 710 172, 750 162 C 780 155, 810 152, 840 155"/>
+  <!-- Path 5: Australia branch -->
+  <path id="path-australia" class="mig-path unrevealed" d="M 980 220 C 995 250, 1010 290, 1030 330"/>
+  <!-- Path 6: Americas branch -->
+  <path id="path-americas" class="mig-path unrevealed" d="M 840 155 C 780 135, 700 118, 600 120 C 500 122, 420 140, 380 165 C 360 178, 340 195, 320 215"/>
+
+  <!-- Stations as enumeration: 同级并列 -->
+  <g class="k-enumeration">
+  <!-- Station 1: 出现 (East Africa) -->
+  <circle class="station-marker active" id="s1-marker" cx="570" cy="290" r="7"/>
+  <circle class="station-glow active" id="s1-glow" cx="570" cy="290" r="18"/>
+  <text class="station-label active" id="s1-label" x="570" y="278" font-size="14">智人出现</text>
+
+  <!-- Station 2: 走出非洲 (Sinai) -->
+  <circle class="station-marker" id="s2-marker" cx="662" cy="198" r="7"/>
+  <circle class="station-glow" id="s2-glow" cx="662" cy="198" r="18"/>
+  <text class="station-label" id="s2-label" x="662" y="186" font-size="14">走出非洲</text>
+
+  <!-- Station 3: 遍布全球 (multiple endpoints) -->
+  <circle class="station-marker" id="s3a-marker" cx="840" cy="155" r="5"/>
+  <circle class="station-glow" id="s3a-glow" cx="840" cy="155" r="14"/>
+  <circle class="station-marker" id="s3b-marker" cx="1030" cy="330" r="5"/>
+  <circle class="station-glow" id="s3b-glow" cx="1030" cy="330" r="14"/>
+  <circle class="station-marker" id="s3c-marker" cx="320" cy="215" r="5"/>
+  <circle class="station-glow" id="s3c-glow" cx="320" cy="215" r="14"/>
+  <text class="station-label" id="s3-label" x="850" y="142" font-size="14">遍布全球</text>
+  </g>
+</svg>
+
+<!-- ====== Scan Head ====== -->
+<div class="scan-head" id="scan-head">
+  <div class="scan-head-glow"></div>
+  <div class="scan-head-inner"></div>
+</div>
+
+<!-- ====== Info Panel (top-left) ====== -->
+<div class="info-panel">
+  <div class="info-panel-inner">
+    <h3>智人·同一支的线</h3>
+    <ul>
+      <li>智人在非洲生活了约30万年，绝大部分时间没有离开大陆</li>
+      <li>约6万年前走出非洲，扩散才真正开始，最终覆盖全球</li>
+      <li>智人是当时众多人类分支中唯一走到今天的</li>
+    </ul>
+  </div>
+</div>
+
+<!-- ====== Time Readout (top-right) ====== -->
+<div class="time-readout">
+  <div class="time-readout-inner">
+    <div class="time-readout-label">距今</div>
+    <div>
+      <span class="time-readout-value" id="time-value">30</span>
+      <span class="time-readout-unit">万年前</span>
+    </div>
+  </div>
+</div>
+
+<!-- ====== Timeline Area ====== -->
+<div class="timeline-area">
+  <div class="timeline-track" id="timeline-track">
+    <div class="timeline-bg"></div>
+    <div class="timeline-fill" id="timeline-fill"></div>
+
+    <!-- Tick marks -->
+    <div class="timeline-tick" style="left:0%;"></div>
+    <div class="timeline-tick" style="left:50%;"></div>
+    <div class="timeline-tick" style="left:100%;"></div>
+
+    <!-- Station 1 on timeline -->
+    <div class="timeline-station active" id="ts1" style="left:0%;"></div>
+    <div class="timeline-station-label-above active" id="ts1-label" style="left:0%;">智人出现</div>
+
+    <!-- Station 2 on timeline -->
+    <div class="timeline-station" id="ts2" style="left:0%;"></div>
+    <div class="timeline-station-label-above" id="ts2-label" style="left:0%;">走出非洲</div>
+
+    <!-- Station 3 on timeline -->
+    <div class="timeline-station" id="ts3" style="left:100%;"></div>
+    <div class="timeline-station-label-above" id="ts3-label" style="left:100%;">现在</div>
+
+    <!-- Labels below timeline -->
+    <span class="timeline-tick-label" style="left:0%;">30万年前</span>
+    <span class="timeline-tick-label" id="tick-outofafrica" style="left:0%;">6万年前</span>
+    <span class="timeline-tick-label" style="left:100%;">现在</span>
+  </div>
+</div>
+
+<!-- ====== Controls ====== -->
+<div class="controls">
+  <button class="btn-play" id="btn-play" aria-label="播放">▶</button>
+  <span class="ctl-label" id="ctl-status">拖动时间轴或点击播放</span>
+</div>
+
+</main>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script src="assets/lib/gsap.min.js"></script>
+<script>
+(function() {
+  'use strict';
+
+  // ---- Mount ----
+  Lec.mount({
+    index: 19,
+    kicker: 'ONE ROUTE',
+    title: '从非洲开始的一条线',
+    take: '智人30万年前出现，6万年前走出非洲，最终遍布全球'
+  });
+
+  // ---- Constants ----
+  var K = Lec.K;
+  var P = Lec.P;
+
+  var t0 = K.HOMO_SAPIENS_YEARS;           // 300,000 years ago
+  var t1 = 0;                               // now
+  var outOfAfrica = 60000;                   // ~60,000 years ago (from planning doc)
+
+  // Threshold: progress where the "exit Africa" event occurs
+  var threshold = (t0 - outOfAfrica) / (t0 - t1);
+  // threshold ≈ 0.8 (80% of the timeline)
+
+  // ---- DOM refs ----
+  var scanHead = document.getElementById('scan-head');
+  var timelineTrack = document.getElementById('timeline-track');
+  var timelineFill = document.getElementById('timeline-fill');
+  var timeValue = document.getElementById('time-value');
+  var btnPlay = document.getElementById('btn-play');
+  var ctlStatus = document.getElementById('ctl-status');
+
+  // Path elements
+  var pathAfrica = document.getElementById('path-africa');
+  var pathExit = document.getElementById('path-exit');
+  var pathEurasia = document.getElementById('path-eurasia');
+  var pathEurope = document.getElementById('path-europe');
+  var pathAustralia = document.getElementById('path-australia');
+  var pathAmericas = document.getElementById('path-americas');
+
+  // Station markers
+  var s1 = { marker: document.getElementById('s1-marker'), glow: document.getElementById('s1-glow'), label: document.getElementById('s1-label') };
+  var s2 = { marker: document.getElementById('s2-marker'), glow: document.getElementById('s2-glow'), label: document.getElementById('s2-label') };
+  var s3a = { marker: document.getElementById('s3a-marker'), glow: document.getElementById('s3a-glow') };
+  var s3b = { marker: document.getElementById('s3b-marker'), glow: document.getElementById('s3b-glow') };
+  var s3c = { marker: document.getElementById('s3c-marker'), glow: document.getElementById('s3c-glow') };
+  var s3label = document.getElementById('s3-label');
+
+  // Timeline stations
+  var ts1 = document.querySelector('#ts1');
+  var ts1Label = document.querySelector('#ts1-label');
+  var ts2 = document.querySelector('#ts2');
+  var ts2Label = document.querySelector('#ts2-label');
+  var ts3 = document.querySelector('#ts3');
+  var ts3Label = document.querySelector('#ts3-label');
+
+  // Other branches
+  var otherBranches = document.querySelectorAll('.other-branch');
+
+  // Tick label for outOfAfrica
+  var tickOutOfAfrica = document.getElementById('tick-outofafrica');
+
+  // ---- State ----
+  var progress = 0; // 0 to 1
+  var isPlaying = false;
+  var gsapTween = null;
+  var isDragging = false;
+
+  // ---- Helper: format years ago ----
+  function formatYearsAgo(years) {
+    if (years === 0) return '现在';
+    var wy = years / 10000;
+    if (wy >= 1) return Math.round(wy) + '万年前';
+    return Math.round(years) + '年前';
+  }
+
+  function formatYearsAgoShort(years) {
+    if (years === 0) return '现在';
+    var wy = years / 10000;
+    if (wy >= 1) return Math.round(wy) + '万';
+    return Math.round(years) + '年';
+  }
+
+  // ---- Update scene based on progress ----
+  function updateScene(p) {
+    p = P.clamp(p, 0, 1);
+
+    // 1. Scan head position
+    var trackWidth = timelineTrack.offsetWidth;
+    var scanX = p * trackWidth;
+    scanHead.style.transform = 'translateX(' + scanX + 'px)';
+    timelineFill.style.width = (p * 100) + '%';
+
+    // 2. Current time
+    var currentTime = Math.round(t0 - p * (t0 - t1));
+    var timeWy = currentTime / 10000;
+    if (currentTime === 0) {
+      timeValue.textContent = '0';
+      timeValue.nextElementSibling.textContent = '年前(现在)';
+    } else if (timeWy >= 1) {
+      timeValue.textContent = Math.round(timeWy);
+      timeValue.nextElementSibling.textContent = '万年前';
+    } else {
+      timeValue.textContent = Math.round(currentTime);
+      timeValue.nextElementSibling.textContent = '年前';
+    }
+
+    // 3. Path reveal
+    // Africa internal: revealed linearly from p=0 to p=threshold
+    var africaProgress = P.clamp(p / threshold, 0, 1);
+    setPathProgress(pathAfrica, africaProgress);
+
+    // Exit: starts at threshold, completes quickly
+    var exitProgress = P.clamp((p - threshold) / 0.05, 0, 1);
+    setPathProgress(pathExit, exitProgress);
+
+    // Global paths: start after exit, complete by p=1
+    var globalStart = threshold + 0.02;
+    var globalEnd = 1.0;
+    var globalProgress = P.clamp((p - globalStart) / (globalEnd - globalStart), 0, 1);
+    // Stagger the global paths
+    setPathProgress(pathEurasia, globalProgress);
+    setPathProgress(pathEurope, globalProgress * 0.9);
+    setPathProgress(pathAustralia, globalProgress * 0.7);
+    setPathProgress(pathAmericas, globalProgress * 0.6);
+
+    // 4. Station markers
+    // Station 1 always active
+    setMapStationActive(s1, true);
+    setTimelineStationActive(ts1, ts1Label, true);
+
+    // Station 2 activates at threshold
+    var s2Active = p >= threshold;
+    setMapStationActive(s2, s2Active);
+    setTimelineStationActive(ts2, ts2Label, s2Active);
+
+    // Station 3 activates at p >= 0.95
+    var s3Active = p >= 0.95;
+    setMapStationActive(s3a, s3Active);
+    setMapStationActive(s3b, s3Active);
+    setMapStationActive(s3c, s3Active);
+    setLabelActive(s3label, s3Active);
+    setTimelineStationActive(ts3, ts3Label, s3Active);
+
+    // 5. Other branches visibility (fade in at end)
+    var otherVisible = p >= 0.98;
+    otherBranches.forEach(function(el) {
+      el.classList.toggle('visible', otherVisible);
+    });
+
+    // 6. Control status
+    if (p >= 1) {
+      ctlStatus.textContent = '扫描完成';
+    } else if (isPlaying) {
+      ctlStatus.textContent = '播放中…';
+    } else {
+      ctlStatus.textContent = '拖动时间轴或点击播放';
+    }
+  }
+
+  function setPathProgress(el, progress) {
+    if (!el) return;
+    progress = P.clamp(progress, 0, 1);
+    var length = el.getTotalLength ? el.getTotalLength() : 0;
+    // Fallback if getTotalLength not available
+    if (!length) {
+      // Use a reasonable default
+      try { length = el.getTotalLength(); } catch(e) { length = 200; }
+    }
+    if (progress <= 0) {
+      el.classList.remove('revealed', 'revealing');
+      el.classList.add('unrevealed');
+      el.style.strokeDasharray = '';
+      el.style.strokeDashoffset = '';
+    } else if (progress >= 1) {
+      el.classList.remove('unrevealed', 'revealing');
+      el.classList.add('revealed');
+      el.style.strokeDasharray = '';
+      el.style.strokeDashoffset = '0';
+    } else {
+      el.classList.remove('unrevealed', 'revealed');
+      el.classList.add('revealing');
+      var dash = length * progress;
+      el.style.strokeDasharray = length + ' ' + length;
+      el.style.strokeDashoffset = length - dash;
+    }
+  }
+
+  function setMapStationActive(station, active) {
+    if (!station) return;
+    if (station.marker) {
+      station.marker.classList.toggle('active', active);
+    }
+    if (station.glow) {
+      station.glow.classList.toggle('active', active);
+    }
+    if (station.label) {
+      station.label.classList.toggle('active', active);
+    }
+  }
+
+  function setLabelActive(el, active) {
+    if (el) el.classList.toggle('active', active);
+  }
+
+  function setTimelineStationActive(el, labelEl, active) {
+    if (typeof labelEl === 'boolean') {
+      active = labelEl;
+      labelEl = null;
+    }
+    if (el && el.classList) {
+      el.classList.toggle('active', active);
+    }
+    if (labelEl && labelEl.classList) {
+      labelEl.classList.toggle('active', active);
+    }
+  }
+
+  // ---- Set up timeline positions ----
+  function layoutTimeline() {
+    var trackWidth = timelineTrack.offsetWidth;
+    if (trackWidth === 0) return;
+
+    // Position station 2 on timeline
+    ts2.style.left = (threshold * 100) + '%';
+    ts2Label.style.left = (threshold * 100) + '%';
+
+    // Position outOfAfrica tick label
+    tickOutOfAfrica.style.left = (threshold * 100) + '%';
+  }
+
+  // ---- Drag interaction ----
+  function getProgressFromPointer(e) {
+    var rect = timelineTrack.getBoundingClientRect();
+    var x = e.clientX - rect.left;
+    var p = x / rect.width;
+    return P.clamp(p, 0, 1);
+  }
+
+  function onPointerDown(e) {
+    if (e.button !== undefined && e.button !== 0) return;
+    e.preventDefault();
+    isDragging = true;
+    stopPlayback();
+    var p = getProgressFromPointer(e);
+    progress = p;
+    updateScene(progress);
+    timelineTrack.setPointerCapture(e.pointerId);
+  }
+
+  function onPointerMove(e) {
+    if (!isDragging) return;
+    e.preventDefault();
+    var p = getProgressFromPointer(e);
+    progress = p;
+    updateScene(progress);
+  }
+
+  function onPointerUp(e) {
+    if (!isDragging) return;
+    isDragging = false;
+    timelineTrack.releasePointerCapture(e.pointerId);
+  }
+
+  // ---- Playback ----
+  function startPlayback() {
+    if (progress >= 1) {
+      progress = 0;
+      updateScene(progress);
+    }
+    isPlaying = true;
+    btnPlay.textContent = '■';
+    btnPlay.classList.add('playing');
+    ctlStatus.textContent = '播放中…';
+
+    gsapTween = gsap.to({}, {
+      progress: 1,
+      duration: 10,
+      ease: 'none',
+      onUpdate: function() {
+        var p = this.targets()[0].progress;
+        progress = p;
+        updateScene(p);
+      },
+      onComplete: function() {
+        isPlaying = false;
+        btnPlay.textContent = '▶';
+        btnPlay.classList.remove('playing');
+        ctlStatus.textContent = '扫描完成';
+      }
+    });
+
+    // Use gsap to animate the progress value
+    // Actually, gsap.to needs a target object
+    var target = { v: progress };
+    gsapTween = gsap.to(target, {
+      v: 1,
+      duration: 10,
+      ease: 'none',
+      onUpdate: function() {
+        progress = target.v;
+        updateScene(progress);
+      },
+      onComplete: function() {
+        isPlaying = false;
+        btnPlay.textContent = '▶';
+        btnPlay.classList.remove('playing');
+        ctlStatus.textContent = '扫描完成';
+      }
+    });
+  }
+
+  function stopPlayback() {
+    if (gsapTween) {
+      gsapTween.kill();
+      gsapTween = null;
+    }
+    isPlaying = false;
+    btnPlay.textContent = '▶';
+    btnPlay.classList.remove('playing');
+    if (progress < 1) {
+      ctlStatus.textContent = '拖动时间轴或点击播放';
+    }
+  }
+
+  function togglePlayback() {
+    if (isPlaying) {
+      stopPlayback();
+    } else {
+      startPlayback();
+    }
+  }
+
+  // ---- Init ----
+  function init() {
+    // Layout timeline positions
+    layoutTimeline();
+
+    // Initial state: scan at far left
+    progress = 0;
+    updateScene(0);
+
+    // Event listeners
+    timelineTrack.addEventListener('pointerdown', onPointerDown);
+    window.addEventListener('pointermove', onPointerMove);
+    window.addEventListener('pointerup', onPointerUp);
+
+    btnPlay.addEventListener('click', togglePlayback);
+
+    // Re-layout on resize
+    window.addEventListener('resize', function() {
+      layoutTimeline();
+      updateScene(progress);
+    });
+
+    // Keyboard: space to toggle play
+    document.addEventListener('keydown', function(e) {
+      if (e.key === ' ' || e.key === 'Space') {
+        e.preventDefault();
+        togglePlayback();
+      }
+    });
+  }
+
+  // Wait for DOM
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
+
+})();
+</script>
+</body>
+</html>

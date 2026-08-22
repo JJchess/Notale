@@ -1,0 +1,664 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>第 19 页 · 互动讲义</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    /* ============================================================
+       Page 19 – Force-Velocity Curve · split-lr
+       ============================================================ */
+
+    /* ---- left column: chart ---- */
+    #chart-wrap {
+      position: relative;
+      width: 100%;
+      height: 520px;
+      cursor: grab;
+    }
+    #chart-wrap:active { cursor: grabbing; }
+    #chart-wrap.dragging { cursor: grabbing; }
+
+    #chart {
+      width: 100%;
+      height: 100%;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--r-md);
+      box-sizing: border-box;
+    }
+
+    /* ---- overlay elements inside chart-wrap ---- */
+    .chart-overlay {
+      position: absolute;
+      pointer-events: none;
+      display: none;
+    }
+
+    #drag-dot {
+      position: absolute;
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      background: var(--accent);
+      border: 3px solid var(--bg);
+      box-shadow: 0 0 12px rgba(77,166,255,0.6), 0 0 4px rgba(77,166,255,0.9);
+      pointer-events: auto;
+      cursor: grab;
+      z-index: 10;
+      display: block;
+      transform: translate(-50%, -50%);
+      transition: box-shadow 150ms var(--ease);
+    }
+    #drag-dot:active { cursor: grabbing; }
+    #drag-dot:hover {
+      box-shadow: 0 0 20px rgba(77,166,255,0.8), 0 0 8px rgba(77,166,255,1);
+    }
+
+    #vline {
+      position: absolute;
+      width: 1px;
+      border-left: 1px dashed var(--text-dim);
+      pointer-events: none;
+      z-index: 2;
+      display: block;
+    }
+
+    #hline {
+      position: absolute;
+      height: 1px;
+      border-top: 1px dashed var(--text-dim);
+      pointer-events: none;
+      z-index: 2;
+      display: block;
+    }
+
+    /* ---- right column: matter scene ---- */
+    #matter-wrap {
+      position: relative;
+      width: 100%;
+      height: 380px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--r-md);
+      overflow: hidden;
+    }
+
+    #matter-cv {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+
+    /* ---- readout panels ---- */
+    #readouts .ro-label {
+      font-size: var(--fs-label);
+      color: var(--text-dim);
+      font-weight: 500;
+      letter-spacing: 0.03em;
+    }
+
+    #readouts .ro-value {
+      font-size: var(--fs-h2);
+      font-family: var(--font-mono);
+      color: var(--text);
+      font-weight: 600;
+      line-height: 1.2;
+    }
+
+    /* ---- insights panel ---- */
+    #insights {
+      font-size: var(--fs-sec);
+      font-style: normal;
+      color: var(--text-dim);
+      line-height: 1.5;
+    }
+
+    #insights p {
+      margin: 0;
+      padding: 3px 0;
+      transition: color 300ms var(--ease), opacity 300ms var(--ease);
+      opacity: 0.55;
+    }
+
+    #insights p.active {
+      color: var(--text);
+      opacity: 1;
+    }
+
+    #insights p .dot {
+      color: var(--accent);
+      margin-right: 6px;
+    }
+  </style>
+</head>
+<body data-page="19" data-total="60">
+<div id="stage">
+<main id="main" class="row gap-6 items-start">
+
+  <!-- ===== LEFT: Force-Velocity Curve (55%) ===== -->
+  <div class="col" style="flex:0 0 55%;">
+    <div id="chart-wrap">
+      <div id="chart"></div>
+      <div id="vline" class="chart-overlay"></div>
+      <div id="hline" class="chart-overlay"></div>
+      <div id="drag-dot"></div>
+    </div>
+  </div>
+
+  <!-- ===== RIGHT: Jumping Figure + Readouts (45%) ===== -->
+  <div class="col grow gap-4 items-stretch">
+    <div id="matter-wrap">
+      <canvas id="matter-cv"></canvas>
+    </div>
+
+    <div class="row gap-4" id="readouts">
+      <div class="panel panel--raised col items-center" style="flex:1;">
+        <span class="ro-label">力量</span>
+        <span class="ro-value" id="val-force">—</span>
+      </div>
+      <div class="panel panel--raised col items-center" style="flex:1;">
+        <span class="ro-label">初速度</span>
+        <span class="ro-value" id="val-vel">—</span>
+      </div>
+      <div class="panel panel--raised col items-center" style="flex:1;">
+        <span class="ro-label">跳跃高度</span>
+        <span class="ro-value" id="val-height">—</span>
+      </div>
+    </div>
+
+    <div class="panel" id="insights">
+      <p><span class="dot">●</span>肌肉力量翻倍，跳跃高度只增加约 40% —— 力量与初速度之间是平方根关系，不是正比。</p>
+      <p><span class="dot">●</span>天赋决定了你的力量上限，训练决定了你离上限有多近；曲线上的位置是两者共同作用的结果。</p>
+      <p><span class="dot">●</span>从久坐者到精英运动员，初速度的提升大部分来自神经适应 —— 身体学会更高效地募集已有肌肉。</p>
+    </div>
+  </div>
+
+</main>
+</div>
+
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script src="assets/lib/echarts.min.js"></script>
+<script src="assets/lib/matter.min.js"></script>
+<script>
+(function() {
+  /* ==============================================================
+     Page 19 – 力量-速度曲线
+     Interactive force-velocity curve exploration.
+     Left: echarts curve with draggable dot. Right: matterjs jumping figure.
+     ============================================================== */
+
+  // ---- Init ----
+  Deck.init({ index: 19, total: 60 });
+
+  Lec.mount({
+    index: 19,
+    kicker: 'FORCE—VELOCITY',
+    title: '更强的腿一定跳得更高吗？',
+    take: '力量翻倍，高度只增四成——回报递减是身体的铁律'
+  });
+
+  /* ==============================================================
+     Force-Velocity Curve Data
+     Seven key points demonstrating diminishing returns.
+     v ∝ √F modified by physiological saturation.
+     ============================================================== */
+
+  var CURVE_POINTS = [
+    { force_N: 600,  velocity_m_s: 1.70, label: '久坐者' },
+    { force_N: 1200, velocity_m_s: 2.80, label: '普通人' },
+    { force_N: 1600, velocity_m_s: 3.00, label: '业余训练者' },
+    { force_N: 2000, velocity_m_s: 3.15, label: '大学运动员' },
+    { force_N: 2400, velocity_m_s: 3.30, label: '职业运动员' },
+    { force_N: 2800, velocity_m_s: 3.45, label: '精英跳高' },
+    { force_N: 3200, velocity_m_s: 3.60, label: '极限天赋' }
+  ];
+
+  var forceMin = CURVE_POINTS[0].force_N;
+  var forceMax = CURVE_POINTS[6].force_N;
+  var velMin   = CURVE_POINTS[0].velocity_m_s;
+  var velMax   = CURVE_POINTS[6].velocity_m_s;
+
+  /**
+   * Piecewise-linear interpolator between the seven key points.
+   * This models the physiological force-velocity relationship
+   * where neural recruitment efficiency declines at higher forces.
+   */
+  function forceVelocityInterpolator(force) {
+    if (force <= forceMin) return velMin;
+    if (force >= forceMax) return velMax;
+    for (var i = 0; i < CURVE_POINTS.length - 1; i++) {
+      if (force <= CURVE_POINTS[i + 1].force_N) {
+        var t = (force - CURVE_POINTS[i].force_N) /
+                (CURVE_POINTS[i + 1].force_N - CURVE_POINTS[i].force_N);
+        return CURVE_POINTS[i].velocity_m_s +
+               t * (CURVE_POINTS[i + 1].velocity_m_s - CURVE_POINTS[i].velocity_m_s);
+      }
+    }
+    return velMax;
+  }
+
+  /* ==============================================================
+     DOM References
+     ============================================================== */
+
+  var chartWrap = document.getElementById('chart-wrap');
+  var chartDom  = document.getElementById('chart');
+  var dragDot   = document.getElementById('drag-dot');
+  var vline     = document.getElementById('vline');
+  var hline     = document.getElementById('hline');
+  var matterCv  = document.getElementById('matter-cv');
+  var matterWrap = document.getElementById('matter-wrap');
+
+  var valForce  = document.getElementById('val-force');
+  var valVel    = document.getElementById('val-vel');
+  var valHeight = document.getElementById('val-height');
+
+  /* ==============================================================
+     ECharts – Force-Velocity Curve
+     ============================================================== */
+
+  var chart = echarts.init(chartDom, null, { renderer: 'svg' });
+
+  // Sample the curve at 200 points for a smooth line
+  var smoothData = [];
+  for (var i = 0; i <= 200; i++) {
+    var f = forceMin + (forceMax - forceMin) * i / 200;
+    smoothData.push([f, forceVelocityInterpolator(f)]);
+  }
+
+  // Key points with labels
+  var keyData = CURVE_POINTS.map(function(p) {
+    return { value: [p.force_N, p.velocity_m_s], name: p.label };
+  });
+
+  var option = {
+    backgroundColor: 'transparent',
+    textStyle: { fontSize: 16, color: '#e6edf5' },
+    grid: { left: 72, right: 28, top: 30, bottom: 52 },
+    xAxis: {
+      type: 'value',
+      name: '下肢最大输出力量 (N)',
+      nameLocation: 'center',
+      nameGap: 30,
+      nameTextStyle: { fontSize: 16, color: '#e6edf5', fontWeight: 500 },
+      axisLabel: { fontSize: 13, color: '#8899aa' },
+      axisLine: { lineStyle: { color: '#334455' } },
+      axisTick: { lineStyle: { color: '#334455' } },
+      splitLine: { lineStyle: { color: '#243040' } },
+      min: 400,
+      max: 3400
+    },
+    yAxis: {
+      type: 'value',
+      name: '腾空初速度 (m/s)',
+      nameLocation: 'center',
+      nameGap: 44,
+      nameTextStyle: { fontSize: 16, color: '#e6edf5', fontWeight: 500 },
+      axisLabel: { fontSize: 13, color: '#8899aa' },
+      axisLine: { lineStyle: { color: '#334455' } },
+      axisTick: { lineStyle: { color: '#334455' } },
+      splitLine: { lineStyle: { color: '#243040' } },
+      min: 1.2,
+      max: 4.0
+    },
+    series: [
+      {
+        type: 'line',
+        data: smoothData,
+        smooth: 0.4,
+        lineStyle: { color: '#4da6ff', width: 3 },
+        symbol: 'none',
+        z: 1
+      },
+      {
+        type: 'scatter',
+        data: keyData,
+        symbolSize: 10,
+        itemStyle: {
+          color: '#60a5fa',
+          borderColor: '#0b1119',
+          borderWidth: 2
+        },
+        label: {
+          show: true,
+          formatter: '{b}',
+          position: 'top',
+          distance: 8,
+          fontSize: 14,
+          color: '#a0b0c0'
+        },
+        z: 2
+      }
+    ]
+  };
+
+  chart.setOption(option);
+
+  /* ==============================================================
+     Matter.js – Jumping Figure
+     ============================================================== */
+
+  var SCALE = 140; // pixels per meter
+  var Engine = Matter.Engine;
+  var Bodies = Matter.Bodies;
+  var Body   = Matter.Body;
+  var Composite = Matter.Composite;
+
+  var engine = Engine.create();
+  engine.gravity.y = Lec.K.EARTH_GRAVITY * SCALE;
+
+  // Canvas dimensions
+  var ctx = Deck.fit(matterCv);
+  var cw = matterWrap.clientWidth;
+  var ch = matterWrap.clientHeight;
+  var groundY = ch - 40;
+  var cx = cw / 2;
+
+  // Create bodies
+  var ground = Bodies.rectangle(cx, groundY + 20, cw + 40, 40, { isStatic: true });
+  var figure = Bodies.rectangle(cx, groundY - 55, 24, 50);
+  Composite.add(engine.world, [ground, figure]);
+
+  /* ==============================================================
+     State
+     ============================================================== */
+
+  var currentForce    = CURVE_POINTS[1].force_N;
+  var currentVelocity = CURVE_POINTS[1].velocity_m_s;
+  var isDragging      = false;
+  var crouchTimer     = 0;
+  var initialLoad     = true;
+
+  /* ==============================================================
+     Grid Helper
+     ============================================================== */
+
+  function getGridRect() {
+    try {
+      var grid = chart.getModel().getComponent('grid');
+      if (grid && grid.coordinateSystem) {
+        return grid.coordinateSystem.getRect();
+      }
+    } catch (e) {}
+    return { x: 0, y: 0, width: chartWrap.clientWidth, height: chartWrap.clientHeight };
+  }
+
+  /* ==============================================================
+     Position Overlays (dot + reference lines)
+     ============================================================== */
+
+  function positionOverlays(force, velocity) {
+    var px = chart.convertToPixel({ xAxisIndex: 0 }, [force, 0]);
+    var py = chart.convertToPixel({ yAxisIndex: 0 }, [0, velocity]);
+
+    if (!px || !py) return;
+
+    // Drag dot – centered on the curve point
+    dragDot.style.left = px[0] + 'px';
+    dragDot.style.top  = py[1] + 'px';
+
+    // Reference lines – constrained to grid area
+    var gridRect = getGridRect();
+
+    vline.style.left   = px[0] + 'px';
+    vline.style.top    = gridRect.y + 'px';
+    vline.style.height = gridRect.height + 'px';
+    vline.style.display = 'block';
+
+    hline.style.left   = gridRect.x + 'px';
+    hline.style.width  = gridRect.width + 'px';
+    hline.style.top    = py[1] + 'px';
+    hline.style.display = 'block';
+  }
+
+  /* ==============================================================
+     Launch the matterjs figure
+     ============================================================== */
+
+  function launchFigure(velocity) {
+    var v_px = velocity * SCALE;
+    Body.setPosition(figure, { x: cx, y: groundY - 55 });
+    Body.setVelocity(figure, { x: 0, y: -v_px });
+    Body.setAngle(figure, 0);
+    Body.setAngularVelocity(figure, 0);
+    crouchTimer = 150; // ms of crouch visual
+  }
+
+  /* ==============================================================
+     Highlight the most relevant insight based on curve position
+     ============================================================== */
+
+  function updateInsightHighlight(force) {
+    var frac = (force - forceMin) / (forceMax - forceMin);
+    var items = document.querySelectorAll('#insights p');
+    for (var i = 0; i < items.length; i++) {
+      items[i].classList.remove('active');
+    }
+    if (frac < 0.25) {
+      items[2].classList.add('active'); // neural adaptation
+    } else if (frac < 0.65) {
+      items[1].classList.add('active'); // talent + training
+    } else {
+      items[0].classList.add('active'); // diminishing returns
+    }
+  }
+
+  /* ==============================================================
+     Master update – called on every drag move
+     ============================================================== */
+
+  function updateAll(force, skipLaunch) {
+    currentForce    = force;
+    currentVelocity = forceVelocityInterpolator(force);
+    var height = Lec.P.jumpHeightFromVelocity(currentVelocity);
+
+    // Update readout labels
+    valForce.textContent  = Math.round(force) + ' N';
+    valVel.textContent    = currentVelocity.toFixed(2) + ' m/s';
+    valHeight.textContent = height.toFixed(2) + ' m';
+
+    // Update overlays
+    positionOverlays(currentForce, currentVelocity);
+
+    // Launch the jumping figure (skip on initial page load)
+    if (!skipLaunch) {
+      launchFigure(currentVelocity);
+    }
+
+    // Highlight relevant insight
+    updateInsightHighlight(force);
+  }
+
+  /* ==============================================================
+     Drag Interaction
+     ============================================================== */
+
+  function getForceFromEvent(e) {
+    var pt = Deck.pt(chartWrap, e);
+    var dataPt = chart.convertFromPixel({ xAxisIndex: 0 }, [pt.x, pt.y]);
+    if (!dataPt) return currentForce;
+    return Math.max(forceMin, Math.min(forceMax, dataPt[0]));
+  }
+
+  function onDragStart(e) {
+    isDragging = true;
+    chartWrap.classList.add('dragging');
+    var force = getForceFromEvent(e);
+    updateAll(force);
+    e.preventDefault();
+  }
+
+  function onDragMove(e) {
+    if (!isDragging) return;
+    var force = getForceFromEvent(e);
+    updateAll(force);
+  }
+
+  function onDragEnd() {
+    isDragging = false;
+    chartWrap.classList.remove('dragging');
+  }
+
+  chartWrap.addEventListener('mousedown', onDragStart);
+  chartWrap.addEventListener('touchstart', onDragStart, { passive: false });
+  document.addEventListener('mousemove', onDragMove);
+  document.addEventListener('touchmove', onDragMove, { passive: false });
+  document.addEventListener('mouseup', onDragEnd);
+  document.addEventListener('touchend', onDragEnd);
+
+  /* ==============================================================
+     Animation Loop – Matter.js rendering
+     ============================================================== */
+
+  Deck.loop(function(t, dt) {
+    // Update physics (skip if reduced motion)
+    if (!Deck.reduced()) {
+      Matter.Engine.update(engine, Math.min(dt, 33));
+    }
+
+    // Re-read canvas dimensions (may have changed)
+    var drawW = matterWrap.clientWidth;
+    var drawH = matterWrap.clientHeight;
+    var gY = drawH - 40;
+    var midX = drawW / 2;
+
+    ctx.clearRect(0, 0, drawW, drawH);
+
+    // ---- Ground ----
+    ctx.fillStyle = '#111a26';
+    ctx.fillRect(0, gY, drawW, drawH - gY);
+    ctx.strokeStyle = '#334455';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(0, gY);
+    ctx.lineTo(drawW, gY);
+    ctx.stroke();
+
+    // ---- Height scale (right side) ----
+    var scaleX = drawW - 55;
+    ctx.strokeStyle = '#8899aa';
+    ctx.lineWidth = 1;
+    ctx.font = '12px ' + getComputedStyle(document.body).fontFamily;
+    ctx.fillStyle = '#8899aa';
+    ctx.textAlign = 'left';
+    for (var hm = 0; hm <= 2.0; hm += 0.5) {
+      var sy = gY - hm * SCALE;
+      if (sy < 10) continue;
+      ctx.beginPath();
+      ctx.moveTo(scaleX, sy);
+      ctx.lineTo(scaleX + 8, sy);
+      ctx.stroke();
+      ctx.fillText(hm.toFixed(1) + 'm', scaleX + 12, sy + 4);
+    }
+
+    // ---- Current height indicator (dashed line) ----
+    var currentH = Lec.P.jumpHeightFromVelocity(currentVelocity);
+    var indY = gY - currentH * SCALE;
+    if (indY > 0 && indY < gY) {
+      ctx.strokeStyle = '#4da6ff';
+      ctx.lineWidth = 1;
+      ctx.setLineDash([4, 4]);
+      ctx.beginPath();
+      ctx.moveTo(0, indY);
+      ctx.lineTo(drawW, indY);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // Height label on the indicator line
+      ctx.fillStyle = '#4da6ff';
+      ctx.font = '13px ' + getComputedStyle(document.body).fontFamily;
+      ctx.textAlign = 'right';
+      ctx.fillText(currentH.toFixed(2) + 'm', scaleX - 4, indY - 6);
+    }
+
+    // ---- Figure ----
+    var bx = figure.position.x;
+    var by = figure.position.y;
+
+    // Crouch effect
+    var bodyScale = 1;
+    var legScale  = 1;
+    if (crouchTimer > 0 && !Deck.reduced()) {
+      crouchTimer -= dt;
+      var ct = Math.max(0, crouchTimer / 150);
+      bodyScale = 0.7 + 0.3 * (1 - ct);
+      legScale  = 0.5 + 0.5 * (1 - ct);
+    }
+
+    var bh = 50 * bodyScale;
+    var bw = 24;
+
+    // -- Body rectangle --
+    ctx.fillStyle = '#4da6ff';
+    ctx.fillRect(bx - bw / 2, by - bh / 2, bw, bh);
+    ctx.strokeStyle = '#e6edf5';
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(bx - bw / 2, by - bh / 2, bw, bh);
+
+    // -- Arms --
+    ctx.strokeStyle = '#e6edf5';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(bx - bw / 2, by - bh / 2 + 15);
+    ctx.lineTo(bx - bw / 2 - 8, by - bh / 2 + 5);
+    ctx.moveTo(bx + bw / 2, by - bh / 2 + 15);
+    ctx.lineTo(bx + bw / 2 + 8, by - bh / 2 + 5);
+    ctx.stroke();
+
+    // -- Head --
+    var headR = 12;
+    var headY = by - bh / 2 - headR;
+    ctx.beginPath();
+    ctx.arc(bx, headY, headR, 0, Math.PI * 2);
+    ctx.fillStyle = '#60a5fa';
+    ctx.fill();
+    ctx.strokeStyle = '#e6edf5';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+
+    // -- Eyes --
+    ctx.fillStyle = '#0b1119';
+    ctx.beginPath();
+    ctx.arc(bx - 4, headY - 2, 2, 0, Math.PI * 2);
+    ctx.arc(bx + 4, headY - 2, 2, 0, Math.PI * 2);
+    ctx.fill();
+
+    // -- Legs --
+    var legLen = 30 * legScale;
+    ctx.strokeStyle = '#e6edf5';
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.moveTo(bx - 7, by + bh / 2);
+    ctx.lineTo(bx - 7, by + bh / 2 + legLen);
+    ctx.moveTo(bx + 7, by + bh / 2);
+    ctx.lineTo(bx + 7, by + bh / 2 + legLen);
+    ctx.stroke();
+
+    // -- Feet --
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(bx - 7 - 5, by + bh / 2 + legLen);
+    ctx.lineTo(bx - 7 + 5, by + bh / 2 + legLen);
+    ctx.moveTo(bx + 7 - 5, by + bh / 2 + legLen);
+    ctx.lineTo(bx + 7 + 5, by + bh / 2 + legLen);
+    ctx.stroke();
+  });
+
+  /* ==============================================================
+     Initial State
+     ============================================================== */
+
+  // Wait for echarts to finish layout, then set initial position
+  setTimeout(function() {
+    chart.resize();
+    updateAll(CURVE_POINTS[1].force_N, true); // skip launch on load
+    initialLoad = false;
+  }, 150);
+
+})();
+</script>
+</body>
+</html>

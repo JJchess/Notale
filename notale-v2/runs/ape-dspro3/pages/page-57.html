@@ -1,0 +1,440 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>第 57 页 · 互动讲义</title>
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  /* ---- 页面专属布局 ---- */
+  #main {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  /* ---- 图标行 ---- */
+  .icon-row {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    flex-shrink: 0;
+    height: 30px;
+  }
+  .icon-col {
+    flex: 1 1 0%;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    font-size: var(--fs-label);
+    font-weight: 600;
+    color: var(--text);
+  }
+  .icon-col svg {
+    flex-shrink: 0;
+  }
+  .icon-col--evo { color: #8aab9a; }
+  .icon-col--trn { color: #f0a050; }
+  .icon-col--eqp { color: #5a9fd4; }
+  .icon-col--cmb { color: #d4a840; }
+
+  /* ---- 图表容器 ---- */
+  #chart-wrap {
+    flex: 1 1 0%;
+    min-height: 0;
+    position: relative;
+    display: flex;
+    flex-direction: row;
+    align-items: stretch;
+  }
+  #chart {
+    flex: 1 1 0%;
+    min-width: 0;
+    min-height: 0;
+  }
+  /* 第四列按钮 —— 叠在图表右侧 */
+  #btn-overlay {
+    position: absolute;
+    right: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    z-index: 5;
+    font-family: inherit;
+    font-size: var(--fs-label);
+    font-weight: 600;
+    padding: 6px 14px;
+    border-radius: var(--r-sm);
+    border: 1px solid var(--border-strong);
+    background: var(--surface-raised);
+    color: var(--accent);
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background 200ms var(--ease), border-color 200ms var(--ease);
+  }
+  #btn-overlay:hover {
+    background: var(--border);
+    border-color: var(--accent-soft);
+  }
+  #btn-overlay:focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+  }
+  #btn-overlay.is-active {
+    color: var(--diff-fg);
+    border-color: var(--diff-fg);
+  }
+
+  /* ---- k-comparison 专属微调 ---- */
+  #comp-table {
+    grid-template-columns: 150px 1fr 1fr 1fr auto;
+    flex-shrink: 0;
+    font-size: var(--fs-sec);
+  }
+  #comp-table .dim {
+    font-size: var(--fs-label);
+  }
+  #comp-table > :not(.hdr):not(.dim) {
+    font-size: var(--fs-sec);
+  }
+  /* 第四列单元格 */
+  #comp-table .c4 {
+    max-width: 0;
+    overflow: hidden;
+    opacity: 0;
+    padding-left: 0;
+    padding-right: 0;
+    white-space: nowrap;
+    transition: max-width 500ms var(--ease),
+                opacity 400ms var(--ease),
+                padding-left 500ms var(--ease),
+                padding-right 500ms var(--ease);
+  }
+  #comp-table.expanded .c4 {
+    max-width: 400px;
+    opacity: 1;
+    padding-left: var(--sp-6);
+    padding-right: var(--sp-6);
+  }
+
+  /* ---- 底部图示 + 双句 ---- */
+  .bottom-strip {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: var(--sp-6);
+    flex-shrink: 0;
+    height: 100px;
+    padding: 0 var(--sp-4);
+    border-top: 1px solid var(--border);
+  }
+  .bottom-strip img {
+    height: 86px;
+    width: auto;
+    border-radius: var(--r-sm);
+    opacity: 0.85;
+    flex-shrink: 0;
+  }
+  .bottom-strip .sentences {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    font-size: var(--fs-sec);
+    color: var(--text-sec);
+    line-height: 1.45;
+    flex: 1 1 0%;
+    min-width: 0;
+  }
+  .bottom-strip .sentences .s1 {
+    color: var(--text);
+    font-weight: 500;
+  }
+  .bottom-strip .sentences .s2 {
+    color: var(--text-dim);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    #comp-table .c4 { transition: none; }
+  }
+</style>
+</head>
+<body data-page="57" data-total="60">
+<div id="stage">
+<main id="main"></main>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script src="assets/lib/echarts.min.js"></script>
+<script>
+/* ================================================================
+   page-57 · 三管齐下 · comparison
+   三列并排对比：自然演化、针对性训练、装备辅助
+   点击「三者叠加」按钮滑入第四列
+   ================================================================ */
+(function() {
+  /* ---- 底盘初始化 ---- */
+  Deck.init({ index: 57, total: 60 });
+
+  /* ---- 页眉 ---- */
+  Lec.mount({
+    kicker: '第5章 · 演化与工程',
+    title: '三管齐下',
+    take: '演化给了我们一副能跳的身体，训练把这副身体推到极限，装备让极限不再是极限。'
+  });
+
+  /* ---- 从 Lec 取所有数值 ---- */
+  var K = Lec.K, P = Lec.P;
+
+  var baseJump   = K.HUMAN_VERTICAL_JUMP_EARTH;          // 0.5 m — 现代普通人基线
+  var eliteV0    = 3.5;                                   // 精英运动员初速度 m/s
+  var eliteJump  = P.jumpHeightFromVelocity(eliteV0, K.EARTH_GRAVITY); // ~0.625 m
+
+  // 装备辅助：月球穿现代宇航服
+  var moonTransfer = P.transferJumpHeight(baseJump, K.EARTH_GRAVITY, K.MOON_GRAVITY);
+  var suitMassRatio = K.ASTRONAUT_MASS / K.TOTAL_EVA_MASS;    // 70 / 200
+  var suitMoonJump  = moonTransfer * suitMassRatio;            // ~1.06 m
+
+  // 三者叠加：精英运动员 + 月球重力 + 轻量化宇航服（质量减半）
+  var eliteMoonNoSuit = P.jumpHeightFromVelocity(eliteV0, K.MOON_GRAVITY);
+  var futureSuitMass  = K.ASTRONAUT_MASS + K.EVA_SUIT_MASS * 0.5; // 70 + 65 = 135
+  var futureMassRatio = K.ASTRONAUT_MASS / futureSuitMass;        // 70 / 135
+  var combinedJump    = eliteMoonNoSuit * futureMassRatio;        // ~1.96 m
+
+  /* ---- 构建 DOM ---- */
+  var main = document.getElementById('main');
+
+  // —— 图标行 ——
+  var iconRow = document.createElement('div');
+  iconRow.className = 'icon-row';
+  iconRow.innerHTML =
+    '<div class="icon-col icon-col--evo">' +
+      '<svg width="20" height="20" viewBox="0 0 20 20"><circle cx="10" cy="4" r="3" fill="none" stroke="currentColor" stroke-width="1.2"/><line x1="10" y1="7" x2="10" y2="16" stroke="currentColor" stroke-width="1.2"/><line x1="6" y1="11" x2="14" y2="11" stroke="currentColor" stroke-width="1.2"/><line x1="10" y1="16" x2="7" y2="19" stroke="currentColor" stroke-width="1.2"/><line x1="10" y1="16" x2="13" y2="19" stroke="currentColor" stroke-width="1.2"/></svg>' +
+      '自然演化</div>' +
+    '<div class="icon-col icon-col--trn">' +
+      '<svg width="20" height="20" viewBox="0 0 20 20"><rect x="5" y="1" width="4" height="8" rx="1" fill="none" stroke="currentColor" stroke-width="1.2"/><rect x="11" y="1" width="4" height="8" rx="1" fill="none" stroke="currentColor" stroke-width="1.2"/><line x1="7" y1="9" x2="7" y2="15" stroke="currentColor" stroke-width="1.2"/><line x1="13" y1="9" x2="13" y2="15" stroke="currentColor" stroke-width="1.2"/><line x1="4" y1="15" x2="16" y2="15" stroke="currentColor" stroke-width="1.5"/></svg>' +
+      '针对性训练</div>' +
+    '<div class="icon-col icon-col--eqp">' +
+      '<svg width="20" height="20" viewBox="0 0 20 20"><circle cx="10" cy="8" r="5" fill="none" stroke="currentColor" stroke-width="1.2"/><rect x="8" y="1" width="4" height="3" rx="1" fill="none" stroke="currentColor" stroke-width="1.2"/><rect x="7" y="13" width="6" height="6" rx="1" fill="none" stroke="currentColor" stroke-width="1.2"/><line x1="8" y1="17" x2="7" y2="19" stroke="currentColor" stroke-width="1.2"/><line x1="12" y1="17" x2="13" y2="19" stroke="currentColor" stroke-width="1.2"/></svg>' +
+      '装备辅助</div>';
+  main.appendChild(iconRow);
+
+  // —— 图表 + 按钮容器 ——
+  var chartWrap = document.createElement('div');
+  chartWrap.id = 'chart-wrap';
+  var chartDiv = document.createElement('div');
+  chartDiv.id = 'chart';
+  chartWrap.appendChild(chartDiv);
+
+  var btnOverlay = document.createElement('button');
+  btnOverlay.id = 'btn-overlay';
+  btnOverlay.textContent = '三者叠加 →';
+  chartWrap.appendChild(btnOverlay);
+  main.appendChild(chartWrap);
+
+  // —— k-comparison ——
+  var compTable = document.createElement('div');
+  compTable.id = 'comp-table';
+  compTable.className = 'k-comparison';
+  // 格式化数值
+  function fmt(m) { return m.toFixed(2); }
+  function pct(a, b) {
+    var d = ((b - a) / a * 100);
+    return (d >= 0 ? '+' : '') + d.toFixed(0) + '%';
+  }
+  compTable.innerHTML =
+    // 列头
+    '<div class="hdr"></div>' +
+    '<div class="hdr">自然演化</div>' +
+    '<div class="hdr">针对性训练</div>' +
+    '<div class="hdr">装备辅助</div>' +
+    '<div class="hdr c4">三者叠加</div>' +
+    // 机制
+    '<div class="dim">机制</div>' +
+    '<div>骨骼比例·足弓·臀大肌附着点<br>时间尺度：百万年</div>' +
+    '<div>肌肉横截面积·神经募集·快肌纤维<br>时间尺度：数月到数年</div>' +
+    '<div>外骨骼·轻量化宇航服<br>时间尺度：即时穿戴</div>' +
+    '<div class="c4">演化结构 + 训练输出 + 工程环境<br>三者协同作用</div>' +
+    // 提升幅度
+    '<div class="dim">提升幅度</div>' +
+    '<div>' + fmt(baseJump) + ' → ' + fmt(baseJump) + ' m<br>（无显著变化）</div>' +
+    '<div>' + fmt(baseJump) + ' → ' + fmt(eliteJump) + ' m<br>（' + pct(baseJump, eliteJump) + '）</div>' +
+    '<div>' + fmt(baseJump) + ' → ' + fmt(suitMoonJump) + ' m<br>（' + pct(baseJump, suitMoonJump) + '）</div>' +
+    '<div class="c4">' + fmt(baseJump) + ' → ' + fmt(combinedJump) + ' m<br>（' + pct(baseJump, combinedJump) + '）</div>' +
+    // 代价
+    '<div class="dim">代价</div>' +
+    '<div>时间极长，不可控<br>方向不可预测</div>' +
+    '<div>需持续投入，存在生理极限<br>有受伤风险</div>' +
+    '<div>昂贵，依赖外部能源<br>可能降低灵活性</div>' +
+    '<div class="c4">需要三者协同<br>缺一不可</div>';
+  main.appendChild(compTable);
+
+  // —— 底部图示 + 双句 ——
+  var bottomStrip = document.createElement('div');
+  bottomStrip.className = 'bottom-strip';
+  bottomStrip.innerHTML =
+    '<img src="assets/img/p57-triple.png" alt="猿人·运动员·宇航员三者叠加" title="AI生成">' +
+    '<div class="sentences">' +
+      '<span class="s1">演化给了我们一副能跳的身体，训练把这副身体推到极限，装备让极限不再是极限。</span>' +
+      '<span class="s2">三者各解决一部分问题：演化解决「能不能跳」，训练解决「能跳多高」，装备解决「在哪儿跳」。</span>' +
+    '</div>';
+  main.appendChild(bottomStrip);
+
+  /* ---- 构建 echarts 图表 ---- */
+  var chartDom = document.getElementById('chart');
+  var chart = echarts.init(chartDom, null, { renderer: 'svg' });
+
+  var yMax = 4.0;
+
+  // 构建基准线 markLine
+  function makeMarkLines() {
+    return {
+      silent: true,
+      symbol: 'none',
+      lineStyle: { type: 'dashed', color: 'rgba(160,176,192,0.45)', width: 1 },
+      data: [
+        { yAxis: baseJump, name: '基线',
+          label: { position: 'end', fontSize: 13, color: '#8899aa',
+                   formatter: function(p) { return '基线 ' + p.value.toFixed(2) + ' m'; } }
+        }
+      ]
+    };
+  }
+
+  var option3 = {
+    textStyle: { fontSize: 16, fontFamily: 'Inter, system-ui, sans-serif' },
+    grid: { left: 64, right: 40, top: 20, bottom: 42 },
+    xAxis: {
+      type: 'category',
+      data: ['自然演化', '针对性训练', '装备辅助'],
+      axisLabel: { fontSize: 14, color: '#a0b0c0' },
+      axisLine: { lineStyle: { color: '#334455' } },
+      axisTick: { show: false }
+    },
+    yAxis: {
+      type: 'value',
+      name: '跳跃高度 (m)',
+      nameTextStyle: { fontSize: 14, color: '#8899aa' },
+      min: 0,
+      max: yMax,
+      interval: 0.4,
+      axisLabel: { fontSize: 13, color: '#8899aa' },
+      splitLine: { lineStyle: { color: '#1a2a3a' } }
+    },
+    series: [
+      {
+        name: '自然演化',
+        type: 'bar',
+        data: [baseJump],
+        barWidth: '40%',
+        itemStyle: { color: '#7a9a8a', borderRadius: [3, 3, 0, 0] },
+        markLine: makeMarkLines(),
+        label: { show: true, position: 'inside', fontSize: 14, color: '#d0d8e0',
+                 formatter: function(p) { return p.value.toFixed(2); },
+                 distance: 6 }
+      },
+      {
+        name: '针对性训练',
+        type: 'bar',
+        data: [eliteJump],
+        barWidth: '40%',
+        itemStyle: { color: '#e89440', borderRadius: [3, 3, 0, 0] },
+        label: { show: true, position: 'top', fontSize: 14, color: '#a0b0c0',
+                 formatter: function(p) { return p.value.toFixed(2) + ' m'; },
+                 distance: 4 }
+      },
+      {
+        name: '装备辅助',
+        type: 'bar',
+        data: [suitMoonJump],
+        barWidth: '40%',
+        itemStyle: { color: '#4d9fd4', borderRadius: [3, 3, 0, 0] },
+        label: { show: true, position: 'top', fontSize: 14, color: '#a0b0c0',
+                 formatter: function(p) { return p.value.toFixed(2) + ' m'; },
+                 distance: 4 }
+      }
+    ]
+  };
+
+  // 第四列数据
+  var option4 = {
+    xAxis: {
+      data: ['自然演化', '针对性训练', '装备辅助', '三者叠加']
+    },
+    series: [
+      {
+        name: '自然演化',
+        type: 'bar',
+        data: [baseJump],
+        barWidth: '30%',
+        itemStyle: { color: '#7a9a8a', borderRadius: [3, 3, 0, 0] },
+        markLine: makeMarkLines(),
+        label: { show: true, position: 'inside', fontSize: 14, color: '#d0d8e0',
+                 formatter: function(p) { return p.value.toFixed(2); }, distance: 6 }
+      },
+      {
+        name: '针对性训练',
+        type: 'bar',
+        data: [eliteJump],
+        barWidth: '30%',
+        itemStyle: { color: '#e89440', borderRadius: [3, 3, 0, 0] },
+        label: { show: true, position: 'top', fontSize: 14, color: '#a0b0c0',
+                 formatter: function(p) { return p.value.toFixed(2) + ' m'; }, distance: 4 }
+      },
+      {
+        name: '装备辅助',
+        type: 'bar',
+        data: [suitMoonJump],
+        barWidth: '30%',
+        itemStyle: { color: '#4d9fd4', borderRadius: [3, 3, 0, 0] },
+        label: { show: true, position: 'top', fontSize: 14, color: '#a0b0c0',
+                 formatter: function(p) { return p.value.toFixed(2) + ' m'; }, distance: 4 }
+      },
+      {
+        name: '三者叠加',
+        type: 'bar',
+        data: [combinedJump],
+        barWidth: '30%',
+        itemStyle: { color: '#d4a840', borderRadius: [3, 3, 0, 0] },
+        label: { show: true, position: 'top', fontSize: 14, color: '#d4a840', fontWeight: 600,
+                 formatter: function(p) { return p.value.toFixed(2) + ' m'; }, distance: 4 }
+      }
+    ]
+  };
+
+  chart.setOption(option3);
+
+  /* ---- 窗口大小变化时重绘 ---- */
+  var resizeTimer;
+  window.addEventListener('resize', function() {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(function() { chart.resize(); }, 100);
+  });
+
+  /* ---- 三者叠加按钮交互 ---- */
+  var expanded = false;
+  btnOverlay.addEventListener('click', function() {
+    expanded = !expanded;
+    if (expanded) {
+      compTable.classList.add('expanded');
+      btnOverlay.textContent = '重置';
+      btnOverlay.classList.add('is-active');
+      chart.setOption(option4, { replaceMerge: ['xAxis', 'series'] });
+    } else {
+      compTable.classList.remove('expanded');
+      btnOverlay.textContent = '三者叠加 →';
+      btnOverlay.classList.remove('is-active');
+      chart.setOption(option3, { replaceMerge: ['xAxis', 'series'] });
+    }
+  });
+
+  /* ---- 动效偏好 ---- */
+  if (Deck.reduced && Deck.reduced()) {
+    var styleEl = document.createElement('style');
+    styleEl.textContent = '#comp-table .c4 { transition: none !important; }';
+    document.head.appendChild(styleEl);
+  }
+})();
+</script>
+</body>
+</html>

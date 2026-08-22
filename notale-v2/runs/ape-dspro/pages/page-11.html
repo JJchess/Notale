@@ -1,0 +1,613 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    /* === 页面特有样式 === */
+    #main {
+      padding: 96px 96px 88px 96px;
+      box-sizing: border-box;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+    }
+
+    .page-layout {
+      display: flex;
+      flex-direction: row;
+      gap: var(--sp-xl);
+      height: 580px;
+      max-height: 580px;
+    }
+
+    .left-col {
+      width: 460px;
+      flex-shrink: 0;
+      display: flex;
+      flex-direction: column;
+      gap: var(--sp-md);
+      justify-content: flex-start;
+    }
+
+    .right-col {
+      flex: 1;
+      min-width: 0;
+      position: relative;
+      border: 1px solid var(--color-border);
+      border-radius: 8px;
+      overflow: hidden;
+      background: #0a0a0f;
+    }
+
+    /* --- 触发按钮 --- */
+    .sound-btns {
+      display: flex;
+      flex-direction: row;
+      gap: var(--sp-sm);
+    }
+
+    .sound-btn {
+      flex: 1;
+      padding: 10px var(--sp-sm);
+      font-size: var(--fs-label);
+      font-weight: 600;
+      border: 2px solid var(--color-border);
+      border-radius: 8px;
+      background: var(--bg);
+      color: var(--text);
+      cursor: pointer;
+      transition: border-color 0.2s, background 0.2s, color 0.2s;
+      text-align: center;
+      user-select: none;
+      line-height: var(--lh-tight);
+    }
+
+    .sound-btn:hover {
+      border-color: var(--color-accent);
+    }
+
+    .sound-btn:focus-visible {
+      outline: 2px solid var(--focus);
+      outline-offset: 2px;
+    }
+
+    .sound-btn.speak-active {
+      border-color: #e74c3c;
+      background: #fde8e8;
+      color: #c0392b;
+    }
+
+    .sound-btn.strike-active {
+      border-color: #f39c12;
+      background: #fef5e7;
+      color: #d68910;
+    }
+
+    .sound-btn.whistle-active {
+      border-color: #27ae60;
+      background: #e8f8f0;
+      color: #1e8449;
+    }
+
+    /* --- 对比表：4 列定宽 + 字体收窄 --- */
+    .k-compact {
+      grid-template-columns: auto 1fr 1fr 1fr;
+    }
+
+    .k-compact .cell {
+      font-size: var(--fs-sec);
+    }
+
+    .k-compact .dim {
+      font-size: var(--fs-sec);
+    }
+
+    .k-compact .hdr {
+      font-size: var(--fs-label);
+    }
+
+    /* --- 3D 声源 --- */
+    .webgl-shell {
+      position: absolute;
+      bottom: var(--sp-md);
+      right: var(--sp-md);
+      width: 180px;
+      height: 180px;
+      z-index: 2;
+      border-radius: 50%;
+      overflow: hidden;
+      pointer-events: none;
+      opacity: 0.85;
+    }
+
+    /* --- 波形画布 --- */
+    .waveform-cv {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+
+    /* --- 图注 --- */
+    .page-note {
+      margin-top: var(--sp-sm);
+      font-size: var(--fs-sec);
+      color: var(--color-dim);
+      line-height: var(--lh-normal);
+      border-left: 2px solid var(--color-border-light);
+      padding-left: var(--sp-sm);
+      text-align: left;
+    }
+  </style>
+</head>
+<body data-page="11" data-total="40">
+<div id="stage">
+<main id="main">
+  <div class="page-layout">
+    <!-- 左栏：按钮 + 对比表 -->
+    <div class="left-col">
+      <div class="sound-btns">
+        <button class="sound-btn" data-sound="speak" aria-label="播放说话声音波形">🗣 说话</button>
+        <button class="sound-btn" data-sound="strike" aria-label="播放敲击声音波形">🔨 敲击</button>
+        <button class="sound-btn" data-sound="whistle" aria-label="播放哨声声音波形">🎵 哨声</button>
+      </div>
+
+      <div class="k-comparison k-compact">
+        <div class="hdr"></div>
+        <div class="hdr">说话</div>
+        <div class="hdr">敲击</div>
+        <div class="hdr">哨声</div>
+
+        <div class="dim">产生机制</div>
+        <div class="cell">声带振动</div>
+        <div class="cell diff">固体碰撞</div>
+        <div class="cell">空腔共振</div>
+
+        <div class="dim">波形特征</div>
+        <div class="cell">复杂谐波</div>
+        <div class="cell diff">脉冲衰减</div>
+        <div class="cell">准正弦波</div>
+
+        <div class="dim">持续时间</div>
+        <div class="cell">200–3000 ms</div>
+        <div class="cell diff">10–200 ms</div>
+        <div class="cell">500–5000 ms</div>
+
+        <div class="dim">峰值频率</div>
+        <div class="cell">100–400 Hz</div>
+        <div class="cell diff">宽带</div>
+        <div class="cell">800–2000 Hz</div>
+
+        <div class="dim">方向性</div>
+        <div class="cell">全向为主</div>
+        <div class="cell">全向</div>
+        <div class="cell diff">较强指向</div>
+
+        <div class="dim">能量消耗</div>
+        <div class="cell">中等</div>
+        <div class="cell diff">高</div>
+        <div class="cell">低</div>
+
+        <div class="dim">可叠加性</div>
+        <div class="cell diff">不可</div>
+        <div class="cell">可</div>
+        <div class="cell">可</div>
+
+        <div class="dim">信息承载</div>
+        <div class="cell diff">极高</div>
+        <div class="cell">低</div>
+        <div class="cell">中等</div>
+      </div>
+    </div>
+
+    <!-- 右栏：波形 + 3D 声源 -->
+    <div class="right-col">
+      <canvas class="waveform-cv cv-fill"></canvas>
+      <div class="webgl-shell">
+        <canvas class="cv-fill" data-webgl-3d-object></canvas>
+      </div>
+    </div>
+  </div>
+
+  <div class="page-note">
+    声音是身体能制造的最轻的工具：不消耗材料，不留下痕迹，说完就消失。
+  </div>
+</main>
+</div>
+
+<script src="assets/lib/three.min.js"></script>
+<script src="assets/lib/anime.min.js"></script>
+<script src="assets/lib/seedrandom.min.js"></script>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script>
+(function() {
+  // ========== Lec.mount ==========
+  Lec.mount({
+    act: '声音之外',
+    title: '声音波形对比',
+    sub: '声音是身体能制造的最轻的工具'
+  });
+
+  // ========== 种子随机 ==========
+  var rng = new Math.seedrandom('page-11');
+
+  // ========== 波形数据生成 ==========
+  var W = 2048; // 样本数
+
+  function generateSpeak() {
+    var d = new Float32Array(W);
+    for (var i = 0; i < W; i++) {
+      var t = i / W;
+      var env = 0.55 + 0.45 * Math.sin(t * Math.PI * 2.7) * (0.6 + 0.4 * Math.sin(t * 13.7));
+      env = Math.max(0.05, env);
+      var sig = 0;
+      sig += Math.sin(t * 2 * Math.PI * 80) * 0.55;
+      sig += Math.sin(t * 2 * Math.PI * 160) * 0.30;
+      sig += Math.sin(t * 2 * Math.PI * 240) * 0.12;
+      sig += Math.sin(t * 2 * Math.PI * 340) * 0.06;
+      sig += (rng() - 0.5) * 0.04;
+      d[i] = sig * env;
+    }
+    return d;
+  }
+
+  function generateStrike() {
+    var d = new Float32Array(W);
+    var tau = 0.04;
+    for (var i = 0; i < W; i++) {
+      var t = i / W;
+      var env = Math.exp(-t / tau);
+      var sig = 0;
+      if (i < 5) sig = 1.0;
+      else if (i < 15) sig = 0.5;
+      sig += Math.sin(t * 2 * Math.PI * 60) * env * 0.25;
+      sig += (rng() - 0.5) * env * 0.08;
+      d[i] = sig * env;
+    }
+    return d;
+  }
+
+  function generateWhistle() {
+    var d = new Float32Array(W);
+    for (var i = 0; i < W; i++) {
+      var t = i / W;
+      var env = 1.0;
+      if (t < 0.04) env = t / 0.04;
+      if (t > 0.96) env = (1 - t) / 0.04;
+      d[i] = Math.sin(t * 2 * Math.PI * 1200) * env * 0.75;
+    }
+    return d;
+  }
+
+  var waveData = {
+    speak: generateSpeak(),
+    strike: generateStrike(),
+    whistle: generateWhistle()
+  };
+
+  var waveColors = {
+    speak: '#e74c3c',
+    strike: '#f39c12',
+    whistle: '#27ae60'
+  };
+
+  var waveColorsRGB = {
+    speak: [0.906, 0.298, 0.235],
+    strike: [0.953, 0.612, 0.071],
+    whistle: [0.153, 0.682, 0.376]
+  };
+
+  // ========== 声音状态 ==========
+  var sounds = {
+    speak:  { active: false, playhead: 0, amplitude: 0, anim: null },
+    strike: { active: false, playhead: 0, amplitude: 0, anim: null },
+    whistle:{ active: false, playhead: 0, amplitude: 0, anim: null }
+  };
+
+  // ========== 波形 Canvas ==========
+  var cv = document.querySelector('.waveform-cv');
+  var ctx = null;
+
+  function setupCtx() {
+    ctx = Deck.fit(cv);
+  }
+  setupCtx();
+  Deck.onResize(function() {
+    setupCtx();
+  });
+
+  // ========== 波形绘制 ==========
+  function drawGrid(ctx, w, h) {
+    var c = Deck.rgba('--text', 0.12);
+    ctx.strokeStyle = c;
+    ctx.lineWidth = 0.5;
+
+    // 水平中线
+    ctx.beginPath();
+    ctx.moveTo(0, h / 2);
+    ctx.lineTo(w, h / 2);
+    ctx.stroke();
+
+    // 竖线
+    for (var x = 0; x <= w; x += w / 6) {
+      ctx.beginPath();
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x, h);
+      ctx.stroke();
+    }
+
+    // 时间标签
+    ctx.fillStyle = Deck.rgba('--text', 0.25);
+    ctx.font = '12px ' + getComputedStyle(document.body).fontFamily;
+    ctx.textAlign = 'center';
+    for (var j = 0; j <= 6; j++) {
+      var labelMs = (j / 6 * 160).toFixed(0);
+      ctx.fillText(labelMs + ' ms', j / 6 * w, h - 6);
+    }
+  }
+
+  function drawWave(ctx, data, startIdx, length, color, alpha, w, h, yOff) {
+    if (length < 2 || alpha < 0.01) return;
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.globalAlpha = alpha;
+    ctx.lineWidth = 2.2;
+    ctx.lineJoin = 'round';
+    ctx.beginPath();
+    var step = length / w;
+    var mid = h / 2 + yOff;
+    var amp = h * 0.38;
+    for (var px = 0; px < w; px++) {
+      var idx = Math.floor(startIdx + px * step);
+      if (idx >= data.length) idx = data.length - 1;
+      if (idx < 0) idx = 0;
+      var py = mid - data[idx] * amp;
+      if (px === 0) ctx.moveTo(px, py);
+      else ctx.lineTo(px, py);
+    }
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawWaveforms() {
+    if (!ctx) return;
+    var w = cv.width;
+    var h = cv.height;
+    if (w < 1 || h < 1) return;
+
+    ctx.clearRect(0, 0, w, h);
+    drawGrid(ctx, w, h);
+
+    var activeKeys = [];
+    for (var k in sounds) {
+      if (sounds[k].active && sounds[k].amplitude > 0.005) {
+        activeKeys.push(k);
+      }
+    }
+
+    var n = activeKeys.length;
+    if (n === 0) {
+      // 提示文字
+      ctx.fillStyle = Deck.rgba('--text', 0.3);
+      ctx.font = '16px ' + getComputedStyle(document.body).fontFamily;
+      ctx.textAlign = 'center';
+      ctx.fillText('点击左侧按钮，观看声音波形', w / 2, h / 2);
+      return;
+    }
+
+    for (var i = 0; i < n; i++) {
+      var key = activeKeys[i];
+      var s = sounds[key];
+      var yOff = (n > 1) ? (i - (n - 1) / 2) * 40 : 0;
+      drawWave(ctx, waveData[key], s.playhead, W * 0.35, waveColors[key], s.amplitude, w, h, yOff);
+    }
+  }
+
+  // ========== 触发 / 停止声音 ==========
+  function triggerSound(key) {
+    var s = sounds[key];
+    if (s.anim) s.anim.pause();
+
+    s.active = true;
+    s.playhead = 0;
+    s.amplitude = 1;
+
+    if (key === 'strike') {
+      s.anim = anime({
+        targets: s,
+        amplitude: [1, 0],
+        playhead: [0, W * 0.45],
+        duration: 350,
+        easing: 'easeOutExpo',
+        complete: function() {
+          s.active = false;
+          s.amplitude = 0;
+          updateButtonState(key);
+          update3DEmissive();
+        }
+      });
+    } else if (key === 'whistle') {
+      s.anim = anime({
+        targets: s,
+        playhead: [0, W * 0.75],
+        duration: 2200,
+        easing: 'linear',
+        complete: function() {
+          s.active = false;
+          updateButtonState(key);
+          update3DEmissive();
+        }
+      });
+    } else {
+      // 说话：不规则包络
+      s.anim = anime({
+        targets: s,
+        playhead: [0, W * 0.75],
+        amplitude: [
+          { value: 0.9, duration: 400, easing: 'easeOutQuad' },
+          { value: 0.7, duration: 300, easing: 'easeInQuad' },
+          { value: 0.95, duration: 350, easing: 'easeOutQuad' },
+          { value: 0.5, duration: 500, easing: 'easeInOutQuad' },
+          { value: 0.8, duration: 300, easing: 'easeOutQuad' },
+          { value: 0, duration: 400, easing: 'easeOutExpo' }
+        ],
+        duration: 2250,
+        easing: 'linear',
+        complete: function() {
+          s.active = false;
+          s.amplitude = 0;
+          updateButtonState(key);
+          update3DEmissive();
+        }
+      });
+    }
+    update3DEmissive();
+  }
+
+  function stopSound(key) {
+    var s = sounds[key];
+    if (s.anim) s.anim.pause();
+    s.active = false;
+    s.amplitude = 0;
+    s.playhead = 0;
+    update3DEmissive();
+  }
+
+  function updateButtonState(key) {
+    var btn = document.querySelector('.sound-btn[data-sound="' + key + '"]');
+    if (!btn) return;
+    var cls = key + '-active';
+    if (sounds[key].active) {
+      btn.classList.add(cls);
+    } else {
+      btn.classList.remove(cls);
+    }
+  }
+
+  // ========== 按钮交互 ==========
+  var buttons = document.querySelectorAll('.sound-btn');
+  buttons.forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var key = this.dataset.sound;
+      if (sounds[key].active) {
+        stopSound(key);
+      } else {
+        triggerSound(key);
+      }
+      updateButtonState(key);
+    });
+  });
+
+  // ========== 3D 声源对象 ==========
+  var mesh3d = null;
+  var material3d = null;
+  var renderer3d = null;
+  var scene3d = null;
+  var camera3d = null;
+
+  function init3DObject() {
+    var cv3d = document.querySelector('[data-webgl-3d-object]');
+    if (!cv3d) return;
+
+    renderer3d = new THREE.WebGLRenderer({ canvas: cv3d, antialias: true, alpha: true });
+    renderer3d.setClearColor(0x000000, 0);
+    renderer3d.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
+    renderer3d.outputColorSpace = THREE.SRGBColorSpace;
+    renderer3d.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer3d.toneMappingExposure = 1.05;
+
+    scene3d = new THREE.Scene();
+    camera3d = new THREE.PerspectiveCamera(35, 1, 0.1, 100);
+    camera3d.position.set(0, 0.1, 5.0);
+
+    var geometry = new THREE.IcosahedronGeometry(1.25, 1);
+    material3d = new THREE.MeshStandardMaterial({
+      color: 0x8aa4ff,
+      metalness: 0.50,
+      roughness: 0.32,
+      emissive: 0x101833,
+      emissiveIntensity: 0.25,
+      flatShading: true
+    });
+
+    mesh3d = new THREE.Mesh(geometry, material3d);
+    mesh3d.castShadow = true;
+    mesh3d.receiveShadow = true;
+    scene3d.add(mesh3d);
+
+    var ambient = new THREE.AmbientLight(0xffffff, 0.38);
+    scene3d.add(ambient);
+
+    var keyLight = new THREE.DirectionalLight(0xffffff, 2.0);
+    keyLight.position.set(3.4, 4.2, 4.8);
+    keyLight.castShadow = true;
+    keyLight.shadow.mapSize.set(512, 512);
+    scene3d.add(keyLight);
+
+    var rimLight = new THREE.DirectionalLight(0x7dd3fc, 0.75);
+    rimLight.position.set(-4.2, 1.2, -2.8);
+    scene3d.add(rimLight);
+
+    resize3D();
+    window.addEventListener('resize', resize3D);
+  }
+
+  function resize3D() {
+    if (!renderer3d) return;
+    var cv3d = document.querySelector('[data-webgl-3d-object]');
+    if (!cv3d) return;
+    var w = Math.max(1, cv3d.clientWidth);
+    var h = Math.max(1, cv3d.clientHeight);
+    renderer3d.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
+    renderer3d.setSize(w, h, false);
+    camera3d.aspect = w / h;
+    camera3d.updateProjectionMatrix();
+  }
+
+  function update3DEmissive() {
+    if (!material3d) return;
+    var r = 0x10, g = 0x18, b = 0x33; // base dark
+    var count = 0;
+    for (var k in sounds) {
+      if (sounds[k].active) {
+        var c = waveColorsRGB[k];
+        r += Math.floor(c[0] * 0x30);
+        g += Math.floor(c[1] * 0x30);
+        b += Math.floor(c[2] * 0x30);
+        count++;
+      }
+    }
+    if (count > 0) {
+      r = Math.min(0xff, Math.floor(r / count));
+      g = Math.min(0xff, Math.floor(g / count));
+      b = Math.min(0xff, Math.floor(b / count));
+    }
+    material3d.emissive.set((r << 16) | (g << 8) | b);
+    material3d.emissiveIntensity = count > 0 ? 0.45 : 0.25;
+  }
+
+  function render3D(time) {
+    if (!mesh3d || !renderer3d) return;
+    var t = time * 0.001;
+    mesh3d.rotation.x = -0.12 + Math.sin(t * 0.45) * 0.06;
+    mesh3d.rotation.y = t * 0.28;
+    mesh3d.rotation.z = Math.sin(t * 0.32) * 0.08;
+    if (!Deck.reduced()) {
+      mesh3d.position.y = Math.sin(t * 0.8) * 0.06;
+    }
+    renderer3d.render(scene3d, camera3d);
+  }
+
+  // ========== 主循环 ==========
+  init3DObject();
+
+  Deck.loop(function(time, dt) {
+    drawWaveforms();
+    render3D(time);
+  });
+})();
+</script>
+</body>
+</html>

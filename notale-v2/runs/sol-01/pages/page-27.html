@@ -1,0 +1,381 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  :root { --bg: #071018; --text: #eaf2f5; --font-sans: Inter, "IBM Plex Sans", "Noto Sans SC", "Microsoft YaHei", Arial, sans-serif; }
+  #main { overflow: hidden; }
+  .energy-page { width: var(--content-w); height: var(--content-h); display: flex; flex-direction: column; gap: var(--sp-3); }
+  .roundbar { height: 52px; display: flex; align-items: center; justify-content: space-between; padding: 0 var(--sp-4); border: 1px solid var(--line); background: var(--surface); }
+  .round-status { display: flex; align-items: center; gap: var(--sp-4); min-width: 0; }
+  .round-count { color: var(--accent); font-family: var(--font-mono); font-size: var(--fs-sec); font-weight: 700; }
+  .round-name { color: var(--text); font-size: var(--fs-sec); }
+  .round-dots { display: flex; align-items: center; gap: var(--sp-3); }
+  .round-dot { width: 38px; height: 8px; border: 1px solid var(--line-strong); background: var(--surface-data); }
+  .round-dot.is-current { border-color: var(--accent); background: var(--accent-soft); }
+  .round-dot.is-done { border-color: var(--primary); background: var(--primary); }
+  .workspace { flex: 1 1 0; display: flex; gap: var(--sp-5); min-height: 0; }
+  .scene { position: relative; flex: 0 0 840px; min-width: 0; overflow: hidden; border: 1px solid var(--line); background: var(--surface); }
+  #energy-svg { display: block; width: 100%; height: 100%; }
+  .scene-caption { position: absolute; top: var(--sp-4); left: var(--sp-4); z-index: 2; color: var(--text-muted); font-size: var(--fs-label); line-height: var(--lh-tight); }
+  .beam-key { position: absolute; top: 54px; right: var(--sp-4); z-index: 2; display: flex; gap: var(--sp-2); }
+  .beam-key span { padding: var(--sp-2) var(--sp-3); border-left: 3px solid var(--primary); background: var(--surface-data); color: var(--text-muted); font-size: var(--fs-label); line-height: var(--lh-tight); }
+  .beam-key .reflected { border-left-color: var(--text-muted); }
+  .beam-key .absorbed { border-left-color: var(--accent); color: var(--text); }
+  .mechanism-strip { position: absolute; z-index: 2; top: 88px; right: var(--sp-4); left: 118px; display: flex; min-height: 44px; border: 1px solid var(--line); background: var(--surface-data); }
+  .mechanism-strip span { flex: 1 1 0; display: flex; align-items: center; justify-content: center; padding: var(--sp-2) var(--sp-3); color: var(--text-muted); font-size: var(--fs-sec); line-height: var(--lh-tight); text-align: center; }
+  .mechanism-strip span + span { border-left: 1px solid var(--line); }
+  .mechanism-strip strong { margin-right: var(--sp-2); color: var(--accent); font-weight: 650; }
+  .cause-strip { position: absolute; z-index: 3; top: 420px; right: 70px; left: 118px; display: flex; align-items: stretch; gap: var(--sp-2); }
+  .cause-step { flex: 1 1 0; min-height: 58px; display: flex; align-items: center; justify-content: center; padding: var(--sp-2); border: 1px solid var(--line-strong); background: var(--surface-data); color: var(--text-muted); font-size: var(--fs-label); font-weight: 650; line-height: var(--lh-tight); text-align: center; }
+  .cause-step.is-result { border-color: var(--primary); color: var(--text); }
+  .cause-arrow { flex: 0 0 34px; display: grid; place-items: center; color: var(--primary); font-size: var(--fs-h2); font-weight: 700; }
+  .cause-strip.is-live .cause-step { border-color: var(--accent); color: var(--accent); }
+  .assumption { position: absolute; right: var(--sp-4); bottom: var(--sp-3); left: var(--sp-4); z-index: 2; min-height: 58px; display: flex; align-items: center; justify-content: space-between; gap: var(--sp-4); padding: var(--sp-3) var(--sp-4); border: 1px solid var(--primary-line); background: var(--surface-data); color: var(--text-muted); font-size: var(--fs-sec); line-height: var(--lh-body); }
+  .assumption .constant-note { color: var(--text); }
+  progress.lec-progress { appearance: none; border: 0; font-size: 0; line-height: 0; }
+  progress.lec-progress::-webkit-progress-bar,
+  progress.lec-progress::-webkit-progress-value { height: 2px; }
+  .cause-box { fill: var(--surface-data); stroke: var(--line-strong); stroke-width: 1; }
+  .cause-box.is-result { stroke: var(--primary); }
+  .assumption strong { color: var(--text); font-weight: 650; }
+  .instrument { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; gap: var(--sp-3); }
+  .k-comparison.energy-compare { --compare-cols: 2; grid-template-columns: 126px repeat(2, minmax(0, 1fr)); flex: 1 1 0; }
+  .energy-compare > * { padding: var(--sp-3); }
+  .energy-compare > .hdr { min-height: 50px; font-size: var(--fs-body); align-items: center; }
+  .energy-compare > .dim { justify-content: flex-start; text-align: left; font-size: var(--fs-label); }
+  .energy-compare > .cell { min-height: 72px; display: flex; flex-direction: column; justify-content: center; gap: var(--sp-2); font-size: var(--fs-sec); }
+  .energy-compare .earth-cell { color: var(--text-muted); }
+  .energy-compare .experiment-cell { border-color: var(--primary-line); background: var(--primary-soft); }
+  .metric { display: flex; align-items: baseline; justify-content: space-between; gap: var(--sp-2); }
+  .metric .value { color: var(--text); font-size: var(--fs-body); font-weight: 700; }
+  .experiment-cell .metric .value { color: var(--accent); }
+  .mini { color: var(--text-muted); font-size: var(--fs-label); line-height: var(--lh-tight); }
+  .ctl.compact { min-height: 44px; gap: var(--sp-2); }
+  .ctl.compact input[type="range"] { min-width: 0; }
+  .ctl.compact input:disabled { opacity: .42; }
+  .model-tag { color: var(--text-muted); font-size: var(--fs-label); line-height: var(--lh-tight); }
+  .judge { min-height: 92px; display: flex; align-items: center; gap: var(--sp-3); padding: var(--sp-3) var(--sp-4); border: 1px solid var(--line); background: var(--surface); }
+  .judge-prompt { flex: 1 1 0; min-width: 0; }
+  .judge-prompt strong { display: block; color: var(--text); font-size: var(--fs-sec); line-height: var(--lh-tight); }
+  .feedback { min-height: 25px; margin-top: var(--sp-1); color: var(--text-muted); font-size: var(--fs-sec); line-height: var(--lh-body); }
+  .feedback.is-error { color: var(--danger); }
+  .feedback.is-correct { color: var(--success); }
+  .judge .segmented { flex: 0 0 auto; }
+  .judge button { font-size: var(--fs-sec); }
+  #submit { min-width: 76px; }
+  #reset { display: none; min-width: 112px; }
+  #reset.is-visible { display: inline-flex; }
+  .cause-label { font-family: var(--font-sans); font-size: 15px; fill: var(--text-muted); }
+  .svg-tick { font-family: var(--font-mono); font-size: 13px; fill: var(--text-muted); }
+  .svg-label { font-family: var(--font-sans); font-size: 15px; font-weight: 650; fill: var(--text); }
+  .svg-value { font-family: var(--font-mono); font-size: 16px; font-weight: 700; fill: var(--accent); }
+  .beam-in { stroke: var(--primary); stroke-linecap: round; }
+  .beam-reflect { stroke: var(--text-muted); stroke-linecap: round; }
+  .beam-absorb { stroke: var(--accent); stroke-linecap: round; }
+  .cause-path { fill: none; stroke: var(--line-strong); stroke-width: 2; marker-end: url(#arrow); }
+  .cause-path.is-live { stroke: var(--accent); stroke-width: 3; }
+  @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; } }
+</style>
+</head>
+<body data-page="27" data-total="50">
+<div id="stage">
+<main id="main">
+  <section class="energy-page" aria-label="行星能量收支实验台">
+    <div class="roundbar">
+      <div class="round-status">
+        <span id="round-count" class="round-count">第 1 / 3 轮</span>
+        <span id="round-name" class="round-name">只改变轨道距离</span>
+      </div>
+      <div class="round-dots" aria-label="实验进度">
+        <span class="round-dot is-current" aria-label="第1轮"></span>
+        <span class="round-dot" aria-label="第2轮"></span>
+        <span class="round-dot" aria-label="第3轮"></span>
+      </div>
+    </div>
+
+    <div class="workspace">
+      <figure class="scene min0" aria-labelledby="scene-title">
+        <figcaption id="scene-title" class="scene-caption">收到多少 → 反射多少 → 吸收多少</figcaption>
+        <div class="beam-key" aria-label="能量流图例"><span>入射</span><span class="reflected">反射</span><span class="absorbed">吸收</span></div>
+        <div class="mechanism-strip"><span><strong>距离</strong>改变光束密度</span><span><strong>反照率</strong>改变反射份额</span></div>
+        <div id="cause-strip" class="cause-strip"><span class="cause-step">距离 + 反照率</span><span class="cause-arrow" aria-hidden="true">→</span><span class="cause-step is-result">吸收太阳能</span><span class="cause-arrow" aria-hidden="true">→</span><span class="cause-step is-result">模型平衡温度</span></div>
+        <svg id="energy-svg" viewBox="0 0 760 556" role="img" aria-label="太阳光在地球和实验行星上的入射、反射与吸收比较"></svg>
+        <div class="assumption">
+          <span><strong>固定假设</strong>：热量均匀分配到整个球面</span>
+          <span class="constant-note">全表共用 · 不作为第三只旋钮</span>
+          <span>再分配因子 <span class="mono">4</span></span>
+        </div>
+      </figure>
+
+      <section class="instrument min0" aria-label="地球与实验行星对照">
+        <div class="k-comparison energy-compare">
+          <div class="hdr">比较维度</div>
+          <div class="hdr">地球基准</div>
+          <div class="hdr current">实验行星</div>
+
+          <div class="dim">轨道距离</div>
+          <div class="cell earth-cell"><div class="metric"><span>固定</span><span id="earth-distance" class="value">—</span></div></div>
+          <div class="cell experiment-cell diff">
+            <div class="metric"><span>可调</span><span id="distance-value" class="value">—</span></div>
+            <div class="ctl compact"><input id="distance" aria-label="实验行星轨道距离" type="range" min="0.65" max="1.75" step="0.10" value="1.45"></div>
+          </div>
+
+          <div class="dim">反照率</div>
+          <div class="cell earth-cell"><div class="metric"><span>反射份额</span><span id="earth-albedo" class="value">—</span></div></div>
+          <div class="cell experiment-cell diff">
+            <div class="metric"><span>反射份额</span><span id="albedo-value" class="value">—</span></div>
+            <div class="ctl compact"><input id="albedo" aria-label="实验行星反照率" type="range" min="0.05" max="0.75" step="0.05" value="0.30" disabled></div>
+          </div>
+
+          <div class="dim">吸收太阳能</div>
+          <div class="cell earth-cell"><div class="metric"><span>单位面积</span><span id="earth-absorbed" class="value">—</span></div><span class="mini">入射 × 未反射份额</span></div>
+          <div id="absorbed-cell" class="cell experiment-cell diff"><div class="metric"><span id="absorbed-direction">—</span><span id="absorbed-value" class="value">—</span></div><span id="absorbed-ratio" class="mini">—</span></div>
+
+          <div class="dim">平衡温度</div>
+          <div class="cell earth-cell"><div class="metric"><span>模型值</span><span id="earth-temp" class="value">—</span></div><span class="model-tag">模型平衡温度 · 因子 4</span></div>
+          <div id="temp-cell" class="cell experiment-cell diff"><div class="metric"><span id="temp-direction">—</span><span id="temp-value" class="value">—</span></div><span class="model-tag">模型平衡温度 · 因子 4</span></div>
+        </div>
+
+        <div class="judge">
+          <div class="judge-prompt">
+            <strong id="prompt">先判断：实验行星会更暖还是更冷？</strong>
+            <div id="feedback" class="feedback" aria-live="polite">距离改变单位面积收到的太阳能。</div>
+          </div>
+          <div id="choices" class="segmented" role="group" aria-label="温度判断">
+            <button type="button" data-choice="warmer" aria-pressed="false">更暖</button>
+            <button type="button" data-choice="cooler" aria-pressed="false">更冷</button>
+          </div>
+          <button id="submit" type="button">提交</button>
+          <button id="reset" type="button" title="重新开始三轮实验"><span aria-hidden="true">↻</span> 重置</button>
+        </div>
+      </section>
+    </div>
+  </section>
+</main>
+</div>
+<script src="assets/lib/d3.min.js"></script>
+<script src="assets/lib/gsap.min.js"></script>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script>
+Lec.mount({
+  index: 27,
+  kicker: "ENERGY BUDGET",
+  title: "距离与反照率，怎样共同设定平衡温度？",
+  take: "距离与反照率共同设定能量收支的基础条件，但模型平衡温度不是行星地表的实测温度。"
+});
+
+(function () {
+  var planets = Lec.K.PLANETS;
+  var earth = planets.filter(function (p) { return p.id === "earth"; })[0];
+  var redistribution = 4;
+  var rounds = [
+    { name: "只改变轨道距离", distance: 1.45, albedo: earth.albedo, lockDistance: false, lockAlbedo: true, hint: "距离改变单位面积收到的太阳能。" },
+    { name: "只改变反照率", distance: earth.semimajorAU, albedo: 0.60, lockDistance: true, lockAlbedo: false, hint: "反照率表示入射能量中被反射的份额。" },
+    { name: "让两项共同改变", distance: 0.75, albedo: 0.65, lockDistance: false, lockAlbedo: false, hint: "同时比较入射量与被反射的比例。" }
+  ];
+  var state = { round: 0, selected: null, completed: 0, finished: false };
+  var distanceInput = document.getElementById("distance");
+  var albedoInput = document.getElementById("albedo");
+  var choiceButtons = Array.prototype.slice.call(document.querySelectorAll("[data-choice]"));
+  var submit = document.getElementById("submit");
+  var reset = document.getElementById("reset");
+  var feedback = document.getElementById("feedback");
+  var reduceMotion = Deck.reduced();
+
+  function sig(value, digits) { return Lec.P.significant(value, digits); }
+  function pct(value) { return sig(value * 100, 2) + "%"; }
+  function watts(value) { return sig(value, 3) + " W/m²"; }
+  function kelvin(value) { return sig(value, 3) + " K"; }
+  function absorbed(distance, albedo) { return Lec.P.solarFlux(distance) * (1 - albedo); }
+
+  var earthAbsorbed = absorbed(earth.semimajorAU, earth.albedo);
+  var earthTemp = Lec.P.equilibriumTemperature(earth.semimajorAU, earth.albedo, redistribution);
+  document.getElementById("earth-distance").textContent = sig(earth.semimajorAU, 2) + " AU";
+  document.getElementById("earth-albedo").textContent = pct(earth.albedo);
+  document.getElementById("earth-absorbed").textContent = watts(earthAbsorbed);
+  document.getElementById("earth-temp").textContent = kelvin(earthTemp);
+
+  var svg = d3.select("#energy-svg");
+  var defs = svg.append("defs");
+  defs.append("marker").attr("id", "arrow").attr("viewBox", "0 0 10 10").attr("refX", 9).attr("refY", 5).attr("markerWidth", 7).attr("markerHeight", 7).attr("orient", "auto-start-reverse")
+    .append("path").attr("d", "M 0 0 L 10 5 L 0 10 z").attr("fill", "context-stroke");
+  var sunGrad = defs.append("radialGradient").attr("id", "sun-grad");
+  sunGrad.append("stop").attr("offset", "0%").attr("stop-color", "#fff2b3");
+  sunGrad.append("stop").attr("offset", "58%").attr("stop-color", "#ffd166");
+  sunGrad.append("stop").attr("offset", "100%").attr("stop-color", "#a86d16");
+  var dayGrad = defs.append("linearGradient").attr("id", "day-grad");
+  dayGrad.append("stop").attr("offset", "0%").attr("stop-color", "#4fc3d7");
+  dayGrad.append("stop").attr("offset", "52%").attr("stop-color", "#2b7786");
+  dayGrad.append("stop").attr("offset", "53%").attr("stop-color", "#14212a");
+  dayGrad.append("stop").attr("offset", "100%").attr("stop-color", "#071018");
+
+  svg.append("circle").attr("class", "sun").attr("cx", 54).attr("cy", 246).attr("r", 58).attr("fill", "url(#sun-grad)");
+  svg.append("text").attr("class", "svg-label").attr("x", 28).attr("y", 326).text("太阳");
+  svg.append("line").attr("class", "measure-line").attr("x1", 112).attr("x2", 706).attr("y1", 246).attr("y2", 246);
+  var scale = d3.scaleLinear().domain([0.5, 1.8]).range([282, 660]);
+  [0.5, 1.0, 1.5].forEach(function (v) {
+    svg.append("line").attr("class", "axis-line").attr("x1", scale(v)).attr("x2", scale(v)).attr("y1", 238).attr("y2", 254);
+    svg.append("text").attr("class", "svg-tick").attr("x", scale(v)).attr("y", 274).attr("text-anchor", "middle").text(v + " AU");
+  });
+
+  var lanes = [
+    { id: "earth", y: 150, label: "地球基准" },
+    { id: "experiment", y: 342, label: "实验行星" }
+  ];
+  var groups = svg.selectAll("g.planet-lane").data(lanes).join("g").attr("class", function (d) { return "planet-lane " + d.id; });
+  groups.append("path").attr("class", "orbit-line").attr("d", function (d) { return "M112 " + d.y + " Q390 " + (d.y - 96) + " 706 " + d.y; }).attr("opacity", .34);
+  groups.append("text").attr("class", "svg-label").attr("x", 132).attr("y", function (d) { return d.y - 58; }).text(function (d) { return d.label; });
+  groups.append("g").attr("class", "beam-group");
+  groups.append("circle").attr("class", "planet").attr("cy", function (d) { return d.y; }).attr("r", 28).attr("fill", "url(#day-grad)").attr("stroke", function (d) { return d.id === "experiment" ? "var(--accent)" : "var(--primary)"; }).attr("stroke-width", 2);
+  groups.append("text").attr("class", "svg-value flux-label").attr("y", function (d) { return d.y + 58; }).attr("text-anchor", "middle");
+
+  function drawLane(id, distance, albedo) {
+    var x = scale(distance);
+    var flux = Lec.P.solarFlux(distance);
+    var fluxRatio = Lec.P.solarFluxRatio(distance);
+    var lane = svg.select("g." + id);
+    lane.select(".planet").attr("cx", x);
+    lane.select(".flux-label").attr("x", x).text(sig(fluxRatio, 2) + "× 地球入射");
+    var beam = lane.select(".beam-group");
+    var y = id === "earth" ? 150 : 342;
+    var count = Math.max(3, Math.round(7 * Math.min(1.5, fluxRatio)));
+    var beamData = d3.range(count).map(function (i) { return y + (i - (count - 1) / 2) * 6; });
+    beam.selectAll("line.incoming").data(beamData).join("line").attr("class", "incoming beam-in").attr("x1", 112).attr("x2", x - 30).attr("y1", function (d) { return d; }).attr("y2", function (d) { return d; }).attr("stroke-width", 2);
+    var reflected = Math.max(1, Math.round(count * albedo));
+    var reflectedData = d3.range(reflected).map(function (i) { return y - 12 + i * 6; });
+    beam.selectAll("line.reflected").data(reflectedData).join("line").attr("class", "reflected beam-reflect").attr("x1", x - 24).attr("x2", x - 76).attr("y1", function (d) { return d; }).attr("y2", function (d) { return d - 34; }).attr("stroke-width", 2);
+    beam.selectAll("line.absorbed").data([1 - albedo]).join("line").attr("class", "absorbed beam-absorb").attr("x1", x - 22).attr("x2", x + 16).attr("y1", y + 20).attr("y2", y + 20).attr("stroke-width", function (d) { return 4 + d * 10; });
+  }
+
+  function update() {
+    var distance = Number(distanceInput.value);
+    var albedo = Number(albedoInput.value);
+    var expAbsorbed = absorbed(distance, albedo);
+    var expTemp = Lec.P.equilibriumTemperature(distance, albedo, redistribution);
+    var energyRatio = Lec.P.ratio(expAbsorbed, earthAbsorbed);
+    document.getElementById("distance-value").textContent = sig(distance, 2) + " AU";
+    document.getElementById("albedo-value").textContent = pct(albedo);
+    document.getElementById("absorbed-value").textContent = watts(expAbsorbed);
+    document.getElementById("absorbed-ratio").textContent = sig(energyRatio, 2) + " × 地球吸收量";
+    document.getElementById("absorbed-direction").textContent = expAbsorbed >= earthAbsorbed ? "↑ 更多" : "↓ 更少";
+    document.getElementById("temp-value").textContent = kelvin(expTemp);
+    document.getElementById("temp-direction").textContent = expTemp >= earthTemp ? "↑ 更暖" : "↓ 更冷";
+    drawLane("earth", earth.semimajorAU, earth.albedo);
+    drawLane("experiment", distance, albedo);
+  }
+
+  function clearChoice() {
+    state.selected = null;
+    choiceButtons.forEach(function (button) { button.setAttribute("aria-pressed", "false"); button.disabled = false; });
+  }
+
+  function loadRound(index) {
+    var round = rounds[index];
+    state.round = index;
+    distanceInput.value = round.distance;
+    albedoInput.value = round.albedo;
+    distanceInput.disabled = round.lockDistance;
+    albedoInput.disabled = round.lockAlbedo;
+    document.getElementById("round-count").textContent = "第 " + (index + 1) + " / 3 轮";
+    document.getElementById("round-name").textContent = round.name;
+    document.getElementById("prompt").textContent = "先判断：实验行星会更暖还是更冷？";
+    feedback.textContent = round.hint;
+    feedback.className = "feedback";
+    document.querySelectorAll(".round-dot").forEach(function (dot, i) {
+      dot.className = "round-dot" + (i < state.completed ? " is-done" : i === index ? " is-current" : "");
+    });
+    clearChoice();
+    submit.disabled = false;
+    update();
+  }
+
+  function correctChoice() {
+    var expTemp = Lec.P.equilibriumTemperature(Number(distanceInput.value), Number(albedoInput.value), redistribution);
+    return expTemp > earthTemp ? "warmer" : "cooler";
+  }
+
+  choiceButtons.forEach(function (button) {
+    button.addEventListener("click", function () {
+      state.selected = button.dataset.choice;
+      choiceButtons.forEach(function (b) { b.setAttribute("aria-pressed", String(b === button)); });
+      feedback.className = "feedback";
+      feedback.textContent = rounds[state.round].hint;
+    });
+  });
+
+  [distanceInput, albedoInput].forEach(function (input) {
+    input.addEventListener("input", function () {
+      update();
+      feedback.className = "feedback";
+      feedback.textContent = rounds[state.round].hint;
+    });
+  });
+
+  submit.addEventListener("click", function () {
+    if (!state.selected) {
+      feedback.className = "feedback is-error";
+      feedback.textContent = "先选择“更暖”或“更冷”。";
+      return;
+    }
+    if (state.selected !== correctChoice()) {
+      feedback.className = "feedback is-error";
+      feedback.textContent = "先比较吸收的太阳能：距离改变入射量，反照率改变被反射的比例。";
+      var chosen = document.querySelector('[data-choice="' + state.selected + '"]');
+      if (!reduceMotion) gsap.fromTo(chosen, { x: -6 }, { x: 6, duration: .08, repeat: 3, yoyo: true, clearProps: "transform" });
+      if (!reduceMotion) gsap.fromTo("#absorbed-cell", { backgroundColor: "rgba(255,123,114,.26)" }, { backgroundColor: "rgba(79,195,215,.14)", duration: .55, clearProps: "backgroundColor" });
+      return;
+    }
+    submit.disabled = true;
+    choiceButtons.forEach(function (button) { button.disabled = true; });
+    feedback.className = "feedback is-correct";
+    feedback.textContent = "判断成立：先看吸收能量，再读模型平衡温度。";
+    document.getElementById("cause-strip").classList.add("is-live");
+    if (!reduceMotion) {
+      gsap.fromTo("#cause-strip .cause-step", { x: -5 }, { x: 0, duration: .34, stagger: .16, ease: "power1.out", clearProps: "transform" });
+    }
+    state.completed = state.round + 1;
+    document.querySelectorAll(".round-dot")[state.round].className = "round-dot is-done";
+    window.setTimeout(function () {
+      document.getElementById("cause-strip").classList.remove("is-live");
+      if (state.round < 2) loadRound(state.round + 1);
+      else finish();
+    }, reduceMotion ? 0 : 900);
+  });
+
+  function finish() {
+    state.finished = true;
+    distanceInput.disabled = true;
+    albedoInput.disabled = true;
+    document.getElementById("round-count").textContent = "3 / 3 轮完成";
+    document.getElementById("round-name").textContent = "完整能量收支对照";
+    document.getElementById("prompt").textContent = "距离与反照率共同设定基础能量条件。";
+    feedback.className = "feedback is-correct";
+    feedback.textContent = "平衡温度 ≠ 地表实温。它是固定假设下的模型结果。";
+    document.getElementById("choices").style.display = "none";
+    submit.style.display = "none";
+    reset.classList.add("is-visible");
+    document.querySelectorAll(".round-dot").forEach(function (dot) { dot.className = "round-dot is-done"; });
+  }
+
+  reset.addEventListener("click", function () {
+    state = { round: 0, selected: null, completed: 0, finished: false };
+    document.getElementById("choices").style.display = "inline-flex";
+    submit.style.display = "inline-flex";
+    reset.classList.remove("is-visible");
+    loadRound(0);
+  });
+
+  loadRound(0);
+  if (!reduceMotion) {
+    gsap.from(".sun", { scale: .35, autoAlpha: 0, transformOrigin: "center", duration: .55, ease: "power2.out" });
+    gsap.from(".orbit-line", { strokeDasharray: 900, strokeDashoffset: 900, duration: .8, stagger: .12, ease: "power1.out" });
+    gsap.from(".energy-compare > *", { autoAlpha: 0, y: 8, duration: .28, stagger: .025, delay: .22, ease: "power1.out" });
+  }
+})();
+</script>
+</body>
+</html>

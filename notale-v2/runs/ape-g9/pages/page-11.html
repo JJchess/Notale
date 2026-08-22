@@ -1,0 +1,756 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+body[data-page="11"] .lec-progress {
+  overflow: visible;
+}
+#main {
+  --lane-label-w: 126px;
+  --track-pad: 34px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+.timeline-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 38px;
+}
+.timeline-prompt {
+  color: var(--text-strong);
+  font-size: var(--fs-body);
+  line-height: var(--lh-copy);
+}
+.timeline-status {
+  flex: 0 0 auto;
+  padding: var(--sp-2) var(--sp-4);
+  color: var(--accent);
+  font-family: var(--font-mono);
+  font-size: var(--fs-sec);
+  font-weight: 700;
+  line-height: 1.35;
+  border: 1px solid rgba(255, 204, 77, 0.45);
+  border-radius: var(--radius-2);
+  background: var(--surface-yellow);
+}
+.timeline-process.k-process {
+  position: relative;
+  display: flex;
+  flex: 0 0 350px;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding-top: 54px;
+  overflow: visible;
+  border: var(--border);
+  border-left: 3px solid var(--primary-dark);
+  border-radius: var(--radius-3);
+  background: var(--surface-1);
+}
+.process-map {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+.timeline-process.k-process > .axis,
+.timeline-process.k-process > .step,
+.timeline-process.k-process > .tick-layer,
+.timeline-process.k-process > .guide-layer,
+.timeline-process.k-process > .drag-guide,
+.timeline-process.k-process > .axis-caption,
+.timeline-process.k-process > .axis-end,
+.timeline-process.k-process > .feedback,
+.timeline-process.k-process > .final-claim,
+.timeline-process.k-process > .reset-btn {
+  z-index: 1;
+}
+.timeline-process.k-process > .axis {
+  top: 34px;
+  right: var(--track-pad);
+  left: calc(var(--lane-label-w) + var(--track-pad));
+  z-index: 0;
+  height: 3px;
+  background: var(--primary-dark);
+}
+.timeline-process.k-process > .axis::after {
+  width: 10px;
+  height: 10px;
+  border-color: var(--accent);
+}
+.axis-caption {
+  position: absolute;
+  top: 4px;
+  left: calc(var(--lane-label-w) + var(--track-pad));
+  color: var(--text-muted);
+  font-size: var(--fs-label);
+  line-height: 1.35;
+}
+.axis-end {
+  position: absolute;
+  top: 4px;
+  right: calc(var(--track-pad) + 46px);
+  color: var(--text-muted);
+  font-size: var(--fs-label);
+  line-height: 1.35;
+}
+.tick-layer,
+.guide-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.axis-tick-mark {
+  position: absolute;
+  top: 27px;
+  width: 1px;
+  height: 14px;
+  background: var(--line-strong);
+}
+.axis-tick-label {
+  position: absolute;
+  top: 4px;
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+  font-size: var(--fs-tick);
+  line-height: 1.35;
+  white-space: nowrap;
+  transform: translateX(-50%);
+}
+.timeline-process.k-process > .step.timeline-lane {
+  position: relative;
+  display: flex;
+  flex: 0 0 66px;
+  flex-direction: row;
+  justify-content: flex-start;
+  padding: 0;
+  border: var(--border);
+  border-top: 2px solid rgba(53, 198, 180, 0.52);
+  border-radius: var(--radius-2);
+  background: var(--surface-2);
+}
+.timeline-process.k-process > .step.timeline-lane:nth-of-type(even) {
+  background: var(--surface-teal);
+}
+.lane-head {
+  display: flex;
+  flex: 0 0 var(--lane-label-w);
+  align-items: center;
+  justify-content: space-between;
+  box-sizing: border-box;
+  padding-right: var(--sp-4);
+  color: var(--text-strong);
+  font-family: var(--font-narrow);
+  font-size: var(--fs-h2);
+  font-weight: 700;
+  line-height: 1.3;
+}
+.lane-count {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--fs-label);
+  font-weight: 600;
+}
+.lane-track {
+  position: relative;
+  flex: 1 1 0;
+  min-width: 0;
+  margin: 0 var(--track-pad);
+  border-top: 2px solid rgba(53, 198, 180, 0.42);
+  border-bottom: 1px solid var(--line);
+  background: linear-gradient(90deg, rgba(53, 198, 180, 0.07), transparent 54%);
+}
+.lane-track::before {
+  content: "";
+  position: absolute;
+  top: -5px;
+  left: 0;
+  width: 8px;
+  height: 8px;
+  border: 2px solid var(--primary-dark);
+  border-radius: 50%;
+  background: var(--bg);
+}
+.slot {
+  position: absolute;
+  top: 7px;
+  width: 176px;
+  height: 48px;
+  box-sizing: border-box;
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--radius-2);
+  background: rgba(13, 26, 32, 0.55);
+  transform: translateX(-50%);
+}
+.slot.is-key-target {
+  border: 2px solid var(--accent);
+  background: var(--surface-yellow);
+}
+.placed-event {
+  position: absolute;
+  top: 7px;
+  width: 176px;
+  min-height: 48px;
+  box-sizing: border-box;
+  padding: 5px var(--sp-2);
+  color: var(--text-strong);
+  font-size: var(--fs-label);
+  font-weight: 700;
+  line-height: 1.35;
+  text-align: center;
+  border: 2px solid var(--primary);
+  border-radius: var(--radius-2);
+  background: var(--surface-2);
+  box-shadow: 0 0 22px rgba(53, 198, 180, 0.16);
+  transform: translateX(-50%);
+}
+.placed-event .event-year {
+  display: block;
+  color: var(--primary-bright);
+  font-family: var(--font-mono);
+  font-size: var(--fs-tick);
+  line-height: 1.35;
+}
+.event-guide {
+  position: absolute;
+  top: 34px;
+  bottom: 8px;
+  width: 1px;
+  background: rgba(53, 198, 180, 0.52);
+}
+.event-guide::before {
+  content: "";
+  position: absolute;
+  top: -4px;
+  left: -4px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--primary-bright);
+}
+.drag-guide {
+  position: absolute;
+  top: 34px;
+  bottom: 8px;
+  width: 2px;
+  opacity: 0;
+  background: var(--accent);
+  box-shadow: 0 0 16px rgba(255, 204, 77, 0.7);
+  pointer-events: none;
+}
+.drag-guide.is-visible { opacity: 1; }
+.timeline-tray {
+  position: relative;
+  display: flex;
+  flex: 1 1 0;
+  min-height: 0;
+  align-items: stretch;
+  gap: var(--sp-3);
+  padding: var(--sp-3);
+  border: var(--border);
+  border-left: 3px solid var(--primary-dark);
+  border-radius: var(--radius-3);
+  background: var(--surface-glass);
+}
+.tray-label {
+  display: flex;
+  flex: 0 0 104px;
+  flex-direction: column;
+  justify-content: center;
+  color: var(--text-muted);
+  font-size: var(--fs-label);
+  font-weight: 700;
+  line-height: 1.35;
+}
+.tray-label span {
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+  font-size: var(--fs-tick);
+  font-weight: 500;
+}
+.pieces {
+  position: relative;
+  display: grid;
+  flex: 1 1 0;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-rows: repeat(2, minmax(0, 1fr));
+  gap: var(--sp-2);
+  min-width: 0;
+  min-height: 0;
+}
+.event-piece {
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  box-sizing: border-box;
+  padding: var(--sp-2) var(--sp-3);
+  color: var(--text-strong);
+  font-size: var(--fs-sec);
+  font-weight: 700;
+  line-height: 1.35;
+  border: 1px solid var(--line-strong);
+  border-left: 4px solid var(--primary-dark);
+  border-radius: var(--radius-2);
+  background: var(--surface-2);
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  will-change: transform;
+}
+.event-piece::after {
+  content: "⋮⋮";
+  margin-left: auto;
+  padding-left: var(--sp-2);
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+}
+.event-piece.is-key-selected {
+  border-color: var(--accent);
+  border-left-color: var(--accent);
+  background: var(--surface-yellow);
+}
+.event-piece.is-placed {
+  visibility: hidden;
+  pointer-events: none;
+}
+.feedback {
+  position: absolute;
+  right: var(--sp-4);
+  bottom: var(--sp-3);
+  left: calc(var(--lane-label-w) + var(--track-pad));
+  z-index: 4;
+  min-height: 26px;
+  color: var(--accent);
+  font-size: var(--fs-sec);
+  line-height: var(--lh-copy);
+  pointer-events: none;
+}
+.final-claim {
+  position: absolute;
+  right: 74px;
+  bottom: var(--sp-3);
+  left: calc(var(--lane-label-w) + var(--track-pad));
+  z-index: 5;
+  display: none;
+  padding: var(--sp-3) var(--sp-4);
+  color: var(--text-strong);
+  font-size: var(--fs-lead);
+  font-weight: 700;
+  line-height: var(--lh-copy);
+  border-left: 5px solid var(--accent);
+  background: var(--surface-yellow);
+}
+.final-claim.is-visible { display: block; }
+.reset-btn {
+  position: absolute;
+  right: var(--sp-3);
+  bottom: var(--sp-3);
+  display: none;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  font-size: 24px;
+}
+.reset-btn.is-visible { display: inline-flex; }
+.timeline-tray.is-complete {
+  opacity: 0;
+  pointer-events: none;
+}
+.timeline-process.is-complete .lane-track {
+  border-top-color: var(--primary-bright);
+  background: var(--surface-teal);
+}
+@media (prefers-reduced-motion: reduce) {
+  .event-piece,
+  .placed-event,
+  .timeline-tray { transition: none !important; }
+}
+</style>
+</head>
+<body data-page="11" data-total="52">
+<div id="stage">
+<main id="main"></main>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script src="assets/lib/d3.min.js"></script>
+<script src="assets/lib/gsap.min.js"></script>
+<script src="assets/lib/ScrollTrigger.min.js"></script>
+<script>
+(function () {
+  'use strict';
+
+  Lec.mount({index: 11, kicker: 'EVOLUTION MOSAIC', title: '身体不是一次升级完成的', take: '直立、工具、脑容量增长和现代体形并非同时出现。'});
+
+  const main = document.getElementById('main');
+  main.innerHTML = `
+    <div class="timeline-top">
+      <p class="timeline-prompt">把六块标本拖进对应泳道与年代槽，比较哪些先出现、哪些彼此重叠。</p>
+      <div class="timeline-status" aria-live="polite"><span id="placed-count"></span></div>
+    </div>
+    <section id="timeline-board" class="k-process timeline-process no-pan min0" tabindex="0" role="application" aria-label="演化事件拼图时间线。方向键选择拼片和目标，空格归位。">
+      <span class="axis-caption">更早</span><span class="axis-end">接近现在</span>
+      <svg id="process-map" class="process-map" role="img" aria-label="四条平行轨迹共享同一条从七百万年前指向现在的时间轴；事件槽位以垂线按年代对齐。"></svg>
+      <div class="axis" aria-hidden="true"></div>
+      <div id="tick-layer" class="tick-layer" aria-hidden="true"></div>
+      <div id="guide-layer" class="guide-layer" aria-hidden="true"></div>
+      <div id="drag-guide" class="drag-guide" aria-hidden="true"></div>
+      <p id="feedback" class="feedback" aria-live="assertive"></p>
+      <p id="final-claim" class="final-claim">直立、制工具、脑容量总体增长与接近现代的体形错时出现；人体是一组不同步形成的特征，不是一次完成的升级。</p>
+      <button id="reset" class="btn icon-only reset-btn" type="button" aria-label="打散重来" title="打散重来">↻</button>
+    </section>
+    <section id="tray" class="timeline-tray min0" aria-label="待归位事件">
+      <div class="tray-label">事件标本<span>拖动或用键盘</span></div>
+      <div id="pieces" class="pieces min0"></div>
+    </section>`;
+
+  const sources = {
+    laetoliFootprintsYearsAgo: 3660000,
+    earlyToolsYearsAgo: 3300000,
+    brainGrowthYearsAgo: 2000000,
+    modernProportionsYearsAgo: 1900000
+  };
+  const oldestYearsAgo = Lec.K.human.earliestHomininsYearsAgo;
+  const laneOrder = ['walking', 'tools', 'brain', 'body'];
+  const laneNames = { walking: '行走', tools: '工具', brain: '脑', body: '体形' };
+  const events = [
+    { id: 'walk', label: '稳定双足行走已出现', years: sources.laetoliFootprintsYearsAgo, lane: 'walking', reveal: '早于已知石器与 Homo' },
+    { id: 'tools', label: '已知早期石器出现', years: sources.earlyToolsYearsAgo, lane: 'tools', reveal: '工具不必等待 Homo 出现' },
+    { id: 'homo', label: '最早期 Homo 化石', years: Lec.K.human.genusHomoYearsAgo, lane: 'body', reveal: '分类仍可讨论' },
+    { id: 'brain', label: '脑容量进入总体增长阶段', years: sources.brainGrowthYearsAgo, lane: 'brain', reveal: '是长期趋势，不是瞬间跳变' },
+    { id: 'shape', label: '接近现代的身材比例出现', years: sources.modernProportionsYearsAgo, lane: 'body', reveal: '不等于现代人已经出现' },
+    { id: 'sapiens', label: 'Homo sapiens 出现', years: Lec.K.human.homoSapiensYearsAgo, lane: 'body', reveal: '位于上述变化之后很久' }
+  ];
+  const tickYears = [7000000, 6000000, 5000000, 4000000, 3000000, 2000000, 1000000, 0];
+  const state = { placed: new Set(), selected: 0, targetLane: 0, targetSlot: 0 };
+  const board = document.getElementById('timeline-board');
+  const piecesEl = document.getElementById('pieces');
+  const feedback = document.getElementById('feedback');
+  const tray = document.getElementById('tray');
+  const guide = document.getElementById('drag-guide');
+  const reduced = Deck.reduced();
+
+  function formatYears(years) {
+    if (years === 0) return '现在';
+    const ma = Lec.P.roundTo(years / 1000000, 2);
+    return ma + ' Ma';
+  }
+
+  laneOrder.forEach(lane => {
+    const row = document.createElement('div');
+    row.className = 'step timeline-lane';
+    row.dataset.lane = lane;
+    row.innerHTML = `<div class="lane-head"><span>${laneNames[lane]}</span><span class="lane-count" data-count="${lane}"></span></div><div class="lane-track" data-track="${lane}"></div>`;
+    board.insertBefore(row, feedback);
+  });
+
+  events.forEach(event => {
+    const piece = document.createElement('div');
+    piece.className = 'event-piece';
+    piece.dataset.id = event.id;
+    piece.textContent = event.label;
+    piece.setAttribute('aria-hidden', 'true');
+    piecesEl.appendChild(piece);
+  });
+
+  const trackFor = lane => board.querySelector(`[data-track="${lane}"]`);
+  const timelineX = (years, width) => width * Lec.P.timelineFraction(years, oldestYearsAgo);
+
+  function renderMap() {
+    const svg = d3.select('#process-map');
+    const width = board.offsetWidth;
+    const height = board.offsetHeight;
+    const ref = trackFor('walking');
+    const x0 = ref.offsetLeft;
+    const trackWidth = ref.offsetWidth;
+    const primary = Deck.token('--primary-dark');
+    const line = Deck.token('--line-strong');
+    svg.attr('viewBox', `0 0 ${width} ${height}`);
+    svg.selectAll('*').remove();
+    svg.append('g')
+      .selectAll('rect')
+      .data(laneOrder)
+      .join('rect')
+      .attr('x', x0)
+      .attr('y', lane => board.querySelector(`[data-lane="${lane}"]`).offsetTop)
+      .attr('width', trackWidth)
+      .attr('height', 66)
+      .attr('fill', (_, i) => i % 2 ? 'rgba(53,198,180,0.10)' : 'rgba(19,36,43,0.72)');
+    svg.append('g')
+      .selectAll('line')
+      .data(events)
+      .join('line')
+      .attr('x1', event => x0 + timelineX(event.years, trackWidth))
+      .attr('x2', event => x0 + timelineX(event.years, trackWidth))
+      .attr('y1', 36)
+      .attr('y2', height - 9)
+      .attr('stroke', line)
+      .attr('stroke-width', 1)
+      .attr('stroke-dasharray', '4 6');
+    svg.append('g')
+      .selectAll('path')
+      .data(laneOrder)
+      .join('path')
+      .attr('d', lane => {
+        const y = board.querySelector(`[data-lane="${lane}"]`).offsetTop + 9;
+        return `M${x0},${y} H${x0 + trackWidth - 10} l10,-5 v10 z`;
+      })
+      .attr('fill', primary);
+  }
+
+  function renderTicks() {
+    const tickLayer = document.getElementById('tick-layer');
+    tickLayer.innerHTML = '';
+    const track = trackFor('walking');
+    const offset = track.offsetLeft;
+    const width = track.offsetWidth;
+    tickYears.forEach(years => {
+      const x = offset + timelineX(years, width);
+      const mark = document.createElement('span');
+      mark.className = 'axis-tick-mark';
+      mark.style.left = x + 'px';
+      const label = document.createElement('span');
+      label.className = 'axis-tick-label';
+      label.style.left = x + 'px';
+      label.textContent = formatYears(years);
+      tickLayer.append(mark, label);
+    });
+  }
+
+  function renderSlots() {
+    board.querySelectorAll('.slot').forEach(el => el.remove());
+    events.forEach(event => {
+      if (state.placed.has(event.id)) return;
+      const track = trackFor(event.lane);
+      const slot = document.createElement('span');
+      slot.className = 'slot';
+      slot.dataset.slot = event.id;
+      slot.style.left = timelineX(event.years, track.offsetWidth) + 'px';
+      track.appendChild(slot);
+    });
+  }
+
+  function updateCounts() {
+    const total = events.length;
+    document.getElementById('placed-count').textContent = '已归位 ' + state.placed.size + ' / ' + total;
+    laneOrder.forEach(lane => {
+      const done = events.filter(e => e.lane === lane && state.placed.has(e.id)).length;
+      const all = events.filter(e => e.lane === lane).length;
+      board.querySelector(`[data-count="${lane}"]`).textContent = done + '/' + all;
+    });
+  }
+
+  function renderGuides() {
+    const layer = document.getElementById('guide-layer');
+    layer.innerHTML = '';
+    const ref = trackFor('walking');
+    events.filter(e => state.placed.has(e.id)).forEach(event => {
+      const line = document.createElement('span');
+      line.className = 'event-guide';
+      line.style.left = (ref.offsetLeft + timelineX(event.years, ref.offsetWidth)) + 'px';
+      layer.appendChild(line);
+    });
+  }
+
+  function place(event) {
+    state.placed.add(event.id);
+    const track = trackFor(event.lane);
+    const slot = track.querySelector(`[data-slot="${event.id}"]`);
+    if (slot) slot.remove();
+    const placed = document.createElement('div');
+    placed.className = 'placed-event';
+    placed.dataset.placed = event.id;
+    placed.style.left = timelineX(event.years, track.offsetWidth) + 'px';
+    placed.innerHTML = `${event.label}<span class="event-year">${formatYears(event.years)}</span>`;
+    placed.title = event.reveal;
+    track.appendChild(placed);
+    piecesEl.querySelector(`[data-id="${event.id}"]`).classList.add('is-placed');
+    feedback.textContent = event.reveal;
+    updateCounts();
+    renderGuides();
+    if (!reduced) gsap.fromTo(placed, {scale: 0.92}, {scale: 1, duration: 0.32, ease: 'back.out(1.7)'});
+    if (state.placed.size === events.length) complete();
+    else syncKeyboardState();
+  }
+
+  function complete() {
+    tray.classList.add('is-complete');
+    board.classList.add('is-complete');
+    document.getElementById('final-claim').classList.add('is-visible');
+    document.getElementById('reset').classList.add('is-visible');
+    feedback.textContent = '';
+    if (!reduced) gsap.from('#final-claim', {y: 12, opacity: 0, duration: 0.45, ease: 'power2.out'});
+  }
+
+  function relationHint(event, lane, x) {
+    if (lane !== event.lane) return `“${event.label}”属于${laneNames[event.lane]}泳道。`;
+    const tools = events.find(e => e.id === 'tools');
+    const homo = events.find(e => e.id === 'homo');
+    if (event.id === 'tools') return '石器应放在最早期 Homo 之前。';
+    if (event.id === 'walk') return '双足行走应放在已知早期石器之前。';
+    if (event.id === 'sapiens') return 'Homo sapiens 位于这些变化之后很久。';
+    if (event.id === 'brain' || event.id === 'shape') return '这项变化靠近时间轴的 2 Ma 区域。';
+    if (event.id === 'homo' && x > timelineX(tools.years, trackFor(lane).offsetWidth)) return '最早期 Homo 晚于已知早期石器。';
+    return '沿共同刻度比较年代，再对齐对应槽位。';
+  }
+
+  function reject(piece, event, hint) {
+    feedback.textContent = hint;
+    guide.classList.remove('is-visible');
+    if (reduced) {
+      piece.style.transform = '';
+      return;
+    }
+    gsap.to(piece, {x: 0, y: 0, duration: 0.42, ease: 'back.out(1.6)'});
+    gsap.fromTo(piece, {borderColor: 'var(--accent)'}, {borderColor: 'var(--line-strong)', duration: 0.18, repeat: 1, yoyo: true});
+  }
+
+  let dragOrigin = null;
+  function dragged(event, datum) {
+    const source = event.sourceEvent;
+    const point = Deck.pt(board, source);
+    if (!dragOrigin) dragOrigin = {point, x: gsap.getProperty(this, 'x') || 0, y: gsap.getProperty(this, 'y') || 0};
+    const dx = point.x - dragOrigin.point.x;
+    const dy = point.y - dragOrigin.point.y;
+    gsap.set(this, {x: dragOrigin.x + dx, y: dragOrigin.y + dy});
+    guide.style.left = point.x + 'px';
+    guide.classList.add('is-visible');
+  }
+
+  function dropped(event, datum) {
+    const piece = this;
+    const source = event.sourceEvent;
+    const point = Deck.pt(board, source);
+    dragOrigin = null;
+    guide.classList.remove('is-visible');
+    const laneRow = laneOrder.map(lane => board.querySelector(`[data-lane="${lane}"]`)).find(row => point.y >= row.offsetTop && point.y <= row.offsetTop + row.offsetHeight);
+    const lane = laneRow ? laneRow.dataset.lane : null;
+    const track = lane ? trackFor(lane) : null;
+    const localX = track ? point.x - track.offsetLeft : -1;
+    const targetX = track ? timelineX(datum.years, track.offsetWidth) : -1000;
+    const close = track && Math.abs(localX - targetX) <= 94;
+    if (lane === datum.lane && close) {
+      gsap.set(piece, {x: 0, y: 0});
+      place(datum);
+    } else {
+      reject(piece, datum, relationHint(datum, lane, localX));
+    }
+  }
+
+  d3.selectAll('.event-piece')
+    .data(events)
+    .call(d3.drag()
+      .on('start', function () { dragOrigin = null; feedback.textContent = ''; })
+      .on('drag', dragged)
+      .on('end', dropped));
+
+  function remainingEvents() {
+    return events.filter(e => !state.placed.has(e.id));
+  }
+
+  function syncKeyboardState() {
+    const remaining = remainingEvents();
+    if (!remaining.length) return;
+    state.selected = Math.min(state.selected, remaining.length - 1);
+    const selected = remaining[state.selected];
+    const laneEvents = events.filter(e => e.lane === laneOrder[state.targetLane] && !state.placed.has(e.id));
+    state.targetSlot = Math.min(state.targetSlot, Math.max(0, laneEvents.length - 1));
+    piecesEl.querySelectorAll('.event-piece').forEach(el => el.classList.toggle('is-key-selected', el.dataset.id === selected.id));
+    board.querySelectorAll('.slot').forEach(el => el.classList.remove('is-key-target'));
+    const target = laneEvents[state.targetSlot];
+    if (target) {
+      const targetEl = board.querySelector(`[data-slot="${target.id}"]`);
+      if (targetEl) targetEl.classList.add('is-key-target');
+    }
+    board.setAttribute('aria-label', `演化事件拼图。当前拼片：${selected.label}；当前目标：${laneNames[laneOrder[state.targetLane]]}${target ? '，' + formatYears(target.years) : '，本泳道无空槽'}。方向键选择，空格归位。`);
+  }
+
+  board.addEventListener('keydown', event => {
+    if (state.placed.size === events.length) return;
+    const remaining = remainingEvents();
+    if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+      event.preventDefault();
+      const dir = event.key === 'ArrowRight' ? 1 : -1;
+      state.selected = (state.selected + dir + remaining.length) % remaining.length;
+      syncKeyboardState();
+    } else if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+      event.preventDefault();
+      const dir = event.key === 'ArrowDown' ? 1 : -1;
+      state.targetLane = (state.targetLane + dir + laneOrder.length) % laneOrder.length;
+      state.targetSlot = 0;
+      syncKeyboardState();
+    } else if (event.key === '[' || event.key === ']') {
+      event.preventDefault();
+      const laneEvents = events.filter(e => e.lane === laneOrder[state.targetLane] && !state.placed.has(e.id));
+      if (laneEvents.length) state.targetSlot = (state.targetSlot + (event.key === ']' ? 1 : -1) + laneEvents.length) % laneEvents.length;
+      syncKeyboardState();
+    } else if (event.key === ' ' || event.key === 'Enter') {
+      event.preventDefault();
+      const selected = remaining[state.selected];
+      const laneEvents = events.filter(e => e.lane === laneOrder[state.targetLane] && !state.placed.has(e.id));
+      const target = laneEvents[state.targetSlot];
+      if (target && target.id === selected.id) place(selected);
+      else {
+        const targetYears = target ? timelineX(target.years, trackFor(laneOrder[state.targetLane]).offsetWidth) : -1;
+        feedback.textContent = relationHint(selected, laneOrder[state.targetLane], targetYears);
+        if (!reduced) gsap.fromTo(piecesEl.querySelector(`[data-id="${selected.id}"]`), {x: -6}, {x: 0, duration: 0.18, repeat: 2, yoyo: true});
+      }
+    }
+  });
+
+  function reset() {
+    state.placed.clear();
+    state.selected = 0;
+    state.targetLane = 0;
+    state.targetSlot = 0;
+    board.querySelectorAll('.placed-event').forEach(el => el.remove());
+    piecesEl.querySelectorAll('.event-piece').forEach(el => {
+      el.classList.remove('is-placed');
+      gsap.set(el, {x: 0, y: 0});
+    });
+    tray.classList.remove('is-complete');
+    board.classList.remove('is-complete');
+    document.getElementById('final-claim').classList.remove('is-visible');
+    document.getElementById('reset').classList.remove('is-visible');
+    feedback.textContent = '';
+    renderSlots();
+    renderGuides();
+    updateCounts();
+    syncKeyboardState();
+    board.focus();
+  }
+  document.getElementById('reset').addEventListener('click', reset);
+
+  renderMap();
+  renderTicks();
+  renderSlots();
+  updateCounts();
+  syncKeyboardState();
+  Deck.onResize(() => {
+    renderMap();
+    renderTicks();
+    renderSlots();
+    renderGuides();
+    board.querySelectorAll('.placed-event').forEach(el => {
+      const event = events.find(e => e.id === el.dataset.placed);
+      el.style.left = timelineX(event.years, trackFor(event.lane).offsetWidth) + 'px';
+    });
+  });
+
+  if (!reduced) {
+    gsap.registerPlugin(ScrollTrigger);
+    gsap.from('.timeline-process > .axis', {scaleX: 0, transformOrigin: 'left center', duration: 0.7, ease: 'power2.out', scrollTrigger: {trigger: '#main', start: 'top 80%', once: true}});
+    gsap.from('.timeline-lane', {x: -32, opacity: 0, stagger: 0.12, duration: 0.6, ease: 'power2.out', scrollTrigger: {trigger: '#main', start: 'top 80%', once: true}});
+    gsap.from('.event-piece', {y: 18, opacity: 0, stagger: 0.06, duration: 0.42, delay: 0.42, ease: 'power2.out', scrollTrigger: {trigger: '#main', start: 'top 80%', once: true}});
+  }
+})();
+</script>
+</body>
+</html>

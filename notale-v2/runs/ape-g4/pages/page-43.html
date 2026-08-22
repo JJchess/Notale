@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    .page43{height:100%;display:flex;flex-direction:column;gap:var(--sp-3)}
+    .topline{display:flex;align-items:center;justify-content:space-between;gap:var(--sp-4)}
+    .prompt{font-size:var(--fs-sec);line-height:var(--lh-copy);color:var(--muted)}
+    .scenario{flex:0 0 auto}.scenario select{width:220px}
+    .work{display:flex;gap:var(--sp-4);flex:1 1 0;min-height:0}.schedule{flex:3 1 0;min-width:0}.classify{flex:2 1 0;min-width:0}
+    .schedule,.classify{display:flex;flex-direction:column;gap:var(--sp-3)}
+    .board{position:relative;flex:1 1 0;min-height:0;padding:var(--sp-4);background:var(--surface);border:1px solid var(--line);border-radius:var(--radius-lg);box-shadow:var(--shadow-soft)}
+    .timehead{display:flex;justify-content:space-between;border-bottom:3px solid var(--line-strong);padding-bottom:var(--sp-2);color:var(--muted);font-size:var(--fs-label)}
+    .event-list{display:flex;flex-direction:column;gap:var(--sp-3);padding-top:var(--sp-3)}
+    .event{display:flex;align-items:center;gap:var(--sp-4);min-height:78px;padding:var(--sp-3) var(--sp-4);background:var(--surface-soft);border:2px solid var(--line-strong);border-radius:var(--radius-md);cursor:grab;transform:translate(0,0)}
+    .event:focus{outline:3px solid var(--focus);outline-offset:2px}.event.dragging{opacity:.65}.event-time{flex:0 0 82px;font-size:var(--fs-label);font-weight:760;color:var(--accent-strong)}
+    .event-main{flex:1 1 0;min-width:0}.event-main strong{display:block;font-size:var(--fs-body)}.event-main span{font-size:var(--fs-sec);color:var(--muted)}
+    .tags{display:flex;gap:var(--sp-2);flex-wrap:wrap}.tags span{font-size:var(--fs-label);padding:var(--sp-1) var(--sp-2);background:var(--accent-soft);border-radius:var(--radius-sm)}
+    .status{display:flex;align-items:center;justify-content:space-between;gap:var(--sp-3);min-height:52px;padding:var(--sp-2) var(--sp-3);background:var(--warning-soft);border-left:4px solid var(--warning);border-radius:0 var(--radius-sm) var(--radius-sm) 0;font-size:var(--fs-sec);line-height:var(--lh-copy)}
+    .status.safe{background:var(--success-soft);border-color:var(--success)}
+    .vizbox{position:relative;flex:1 1 0;min-height:0;background:var(--surface);border:1px solid var(--line);border-radius:var(--radius-lg);overflow:hidden}.vizbox svg{display:block;width:100%;height:100%}
+    .lane-label{font-size:15px;font-weight:720;fill:var(--text)}.node-label{font-size:14px;font-weight:700;fill:var(--text)}
+    .k-classification{gap:var(--sp-2)}.k-classification .lv{gap:var(--sp-2);padding-left:var(--sp-3);margin-left:0}.k-classification .box>.bt{padding:var(--sp-2) var(--sp-3);font-size:var(--fs-body)}
+    .k-classification .box>.bc{padding:var(--sp-2) var(--sp-3);font-size:var(--fs-label);color:var(--muted)}
+    .mini-legend{display:flex;gap:var(--sp-3);font-size:var(--fs-label);color:var(--muted)}
+    button{font-size:var(--fs-sec)}
+  </style>
+</head>
+<body data-page="43" data-total="50">
+  <div id="stage"><main id="main"></main></div>
+  <script src="assets/base.js"></script>
+  <script src="assets/lec.js"></script>
+  <script src="assets/lib/d3.min.js"></script>
+  <script>
+    Lec.mount({index:43,kicker:"CLOSED-HABITAT / CREW RISK",title:"冲突不只来自人",take:"隔离风险同时来自空间、单调、延迟、工作负荷与团队关系。"});
+    Deck.init({index:43,total:50});
+    var stage=document.getElementById("main");
+    stage.innerHTML='<section class="page43"><div class="topline"><p class="prompt">拖动两段任务班次交换顺序；再切换通信距离，观察压力如何重新叠加。</p><div class="ctl scenario"><label for="scene">通信情景</label><select id="scene" aria-label="通信距离情景"></select></div></div><div class="work"><section class="schedule min0"><div class="board"><div class="timehead"><span>任务周期开始</span><span id="distance">距离 —</span><span>任务周期结束</span></div><div class="event-list" id="events"></div></div><div class="status" id="status" aria-live="polite"><span></span><button type="button" id="reset">重置本情景</button></div></section><section class="classify min0"><div class="k-classification"><div class="lv"><div class="box"><div class="bt">任务事件 → 压力类别 → 冲突表现</div><div class="bc">连线越集中，越需要调整条件，而不是寻找“问题人物”。</div></div></div></div><div class="vizbox"><svg id="viz" role="img" aria-label="事件连接到五类封闭舱压力的分类图"></svg></div><p class="note">冲突节点表示条件叠加，不表示问题人物。</p></section></div></section>';
+
+    var original=[
+      {id:"a",title:"维修与例行检查",sub:"甲乙同区操作；随后等待地面确认",cats:["空间","工作负荷","通信延迟"]},
+      {id:"b",title:"休息与私人通信",sub:"安静区保留；之后进行团队决策与交接",cats:["空间","单调","团队关系"]}
+    ];
+    var state={order:["a","b"],scene:0};
+    var source=Lec.K.signalDistanceScenariosM||{};
+    var scenarios=[];
+    Object.keys(source).forEach(function(k){var v=source[k];if(typeof v==="number")scenarios.push({key:k,label:k,value:v});else if(v&&typeof v.distanceM==="number")scenarios.push({key:k,label:v.label||k,value:v.distanceM});else if(v&&typeof v.meters==="number")scenarios.push({key:k,label:v.label||k,value:v.meters});});
+    if(!scenarios.length)scenarios=[{key:"course",label:"课程默认情景",value:0}];
+    var scene=document.getElementById("scene");scenarios.forEach(function(s,i){var o=document.createElement("option");o.value=i;o.textContent=s.label;scene.appendChild(o)});
+    function safeDuration(sec){try{return Lec.P.formatDuration(sec)}catch(e){return Lec.P.formatNumber(sec)+" 秒"}}
+    function safeNumber(n){try{return Lec.P.formatNumber(n)}catch(e){return String(n)}}
+    function metrics(){var s=scenarios[state.scene],delay=Lec.P.signalRoundTripTime(s.value);var reversed=state.order[0]==="b";var high=!reversed||delay>Lec.P.hoursToSeconds(1);return{delay:delay,high:high,count:high?3:1,s:s};}
+    function render(){var m=metrics();document.getElementById("distance").textContent="距离 "+safeNumber(m.s.value)+" m · 往返 "+safeDuration(m.delay);var host=document.getElementById("events");host.innerHTML="";state.order.forEach(function(id,i){var d=original.find(function(x){return x.id===id}),el=document.createElement("div");el.className="event no-pan";el.draggable=true;el.tabIndex=0;el.setAttribute("role","button");el.setAttribute("aria-label",d.title+"，按方向键交换班次");el.dataset.id=id;el.innerHTML='<div class="event-time">班次 '+(i+1)+'</div><div class="event-main"><strong>'+d.title+'</strong><span>'+d.sub+'</span></div><div class="tags">'+d.cats.map(function(c){return'<span>'+c+'</span>'}).join("")+'</div>';el.addEventListener("dragstart",function(){el.classList.add("dragging")});el.addEventListener("dragend",function(){el.classList.remove("dragging")});el.addEventListener("dragover",function(e){e.preventDefault()});el.addEventListener("drop",function(e){e.preventDefault();swap(id)});el.addEventListener("keydown",function(e){if(e.key==="ArrowUp"||e.key==="ArrowDown"){e.preventDefault();swap(id)}});host.appendChild(el)});var st=document.getElementById("status");st.classList.toggle("safe",!m.high);st.firstElementChild.textContent=m.high?"高风险叠加：等待回复期间又安排高负荷交接。":"当前编排保留休息与交接窗口；风险已缓解，但没有被消除。";draw(m);}
+    function swap(id){state.order.reverse();render();var el=document.querySelector('[data-id="'+id+'"]');if(el)el.focus()}
+    function draw(m){var svg=d3.select("#viz"),node=svg.node(),w=node.clientWidth||540,h=node.clientHeight||360;svg.attr("viewBox","0 0 "+w+" "+h);svg.selectAll("*").remove();var cats=["空间","单调","通信延迟","工作负荷","团队关系"],y=d3.scalePoint().domain(cats).range([44,h-38]);var items=state.order.map(function(id,i){var d=original.find(function(x){return x.id===id});return{id:id,label:"班次 "+(i+1),cats:d.cats}});var x1=82,x2=w-118;svg.selectAll(".lane").data(cats).join("line").attr("x1",130).attr("x2",w-18).attr("y1",function(d){return y(d)}).attr("y2",function(d){return y(d)}).attr("stroke",Deck.rgb("line")).attr("stroke-width",2);svg.selectAll(".ll").data(cats).join("text").attr("class","lane-label").attr("x",16).attr("y",function(d){return y(d)+5}).text(function(d){return d});var links=[];items.forEach(function(d,i){d.cats.forEach(function(c){links.push({x:i?x2:x1,y:y(c),cat:c})})});svg.selectAll(".link").data(links).join("path").attr("d",function(d){return"M"+d.x+","+(h/2)+" C"+((d.x+w/2)/2)+","+(h/2)+" "+((d.x+w/2)/2)+","+d.y+" "+(w/2)+","+d.y}).attr("fill","none").attr("stroke",m.high?Deck.rgb("warning"):Deck.rgb("accent")).attr("stroke-width",3).attr("opacity",.62);svg.selectAll(".eventnode").data(items).join("circle").attr("cx",function(d,i){return i?x2:x1}).attr("cy",h/2).attr("r",25).attr("fill",Deck.rgb("accent-soft")).attr("stroke",Deck.rgb("accent")).attr("stroke-width",3);svg.selectAll(".nl").data(items).join("text").attr("class","node-label").attr("text-anchor","middle").attr("x",function(d,i){return i?x2:x1}).attr("y",h/2+5).text(function(d){return d.label});svg.append("circle").attr("cx",w/2).attr("cy",h/2).attr("r",m.high?18:10).attr("fill",m.high?Deck.rgb("danger"):Deck.rgb("success"));svg.append("text").attr("class","node-label").attr("text-anchor","middle").attr("x",w/2).attr("y",h/2+42).text(m.high?"冲突："+safeNumber(m.count)+" 类叠加":"已缓解");}
+    scene.addEventListener("change",function(){state.scene=Lec.P.clamp(Lec.P.finite(Number(scene.value),0),0,scenarios.length-1);render()});document.getElementById("reset").addEventListener("click",function(){state={order:["a","b"],scene:0};scene.value="0";render()});
+    render();Deck.onResize(function(){draw(metrics())});
+  </script>
+</body>
+</html>

@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <link rel="stylesheet" href="assets/lib/katex.min.css">
+  <style>
+    #main{display:grid;grid-template-columns:minmax(0,40fr) minmax(0,60fr);gap:var(--sp-5)}
+    .control-field{height:100%;box-sizing:border-box;display:flex;flex-direction:column;padding:var(--sp-4);border:1px solid var(--line);border-radius:var(--radius-md);background:var(--paper);box-shadow:var(--shadow)}
+    .control-head{display:flex;align-items:flex-start;justify-content:space-between;gap:var(--sp-3)}
+    .destination{color:var(--accent);font-size:var(--fs-label);font-weight:760;line-height:1.35}
+    .reading-line{margin-top:var(--sp-2);display:flex;align-items:baseline;gap:var(--sp-2)}
+    #speedRead{color:var(--accent);font-size:var(--fs-h1);font-weight:790;line-height:var(--lh-tight);font-variant-numeric:tabular-nums}
+    #cRead{color:var(--ink-soft);font-size:var(--fs-label);font-weight:700}
+    .journey{margin-top:var(--sp-3);padding:var(--sp-3);border-left:6px solid var(--accent);background:var(--accent-soft)}
+    .journey .label{color:var(--ink-soft)}
+    #yearRead{display:block;margin-top:2px;font-size:28px;font-weight:790;line-height:1.2;font-variant-numeric:tabular-nums}
+    #scaleRead{display:block;margin-top:4px;color:var(--accent);font-size:var(--fs-sec);font-weight:720;line-height:var(--lh-sec)}
+    .speed-scale{position:relative;margin:var(--sp-4) 0 var(--sp-3);padding:0 8px}
+    .speed-scale input{width:100%;height:42px;margin:0;accent-color:var(--accent)}
+    .stops{display:grid;grid-template-columns:repeat(3,1fr);gap:var(--sp-2);margin-top:2px}
+    .stop{min-height:42px;padding:var(--sp-1) var(--sp-2);color:var(--text);font-size:var(--fs-label);font-weight:680;line-height:1.35;border:1px solid var(--line-strong);border-radius:var(--radius-sm);background:var(--paper);cursor:pointer}
+    .stop[aria-pressed="true"]{color:#fff;border-color:var(--accent);background:var(--accent)}
+    .formula-row{display:flex;align-items:center;gap:var(--sp-3);margin-top:auto;padding-top:var(--sp-3);border-top:1px solid var(--line)}
+    #formula{min-width:112px;font-size:20px}
+    .formula-copy{font-size:var(--fs-sec);line-height:var(--lh-sec)}
+    .actions{display:flex;align-items:center;justify-content:space-between;gap:var(--sp-3);margin-top:var(--sp-3)}
+    .hint{color:var(--ink-soft);font-size:var(--fs-label);font-weight:650;line-height:1.35}
+    #reset{min-height:42px;padding:var(--sp-2) var(--sp-4);color:#fff;font-size:var(--fs-label);font-weight:720;border:1px solid var(--accent);border-radius:var(--radius-sm);background:var(--accent);cursor:pointer}
+    .compare-wrap{height:100%;display:flex;flex-direction:column;min-width:0}
+    .compare-title{display:flex;align-items:flex-end;justify-content:space-between;gap:var(--sp-3);margin-bottom:var(--sp-3)}
+    .distance{font-size:var(--fs-lead);font-weight:760;line-height:var(--lh-copy)}
+    .distance strong{color:var(--accent)}
+    .same-distance{color:var(--ink-soft);font-size:var(--fs-sec);line-height:var(--lh-sec)}
+    .k-comparison{--compare-cols:2;flex:1;grid-template-columns:190px minmax(0,1fr) 210px;grid-template-rows:auto minmax(0,1fr)}
+    .k-comparison>.chart-cell{grid-column:1/-1;min-width:0;min-height:0;padding:var(--sp-2) var(--sp-3) var(--sp-3)}
+    #chart{width:100%;height:100%;min-height:0}
+    .boundary{min-height:24px;margin-top:var(--sp-2);color:var(--warn);font-size:var(--fs-sec);line-height:var(--lh-sec)}
+    .takeaway{margin-top:var(--sp-2);padding-left:var(--sp-3);font-size:var(--fs-sec);font-weight:650;line-height:var(--lh-sec);border-left:3px solid var(--accent-2)}
+  </style>
+</head>
+<body data-page="46" data-total="48">
+  <div id="stage">
+    <main id="main">
+      <section class="control-field min0" aria-labelledby="speedTitle">
+        <div class="control-head">
+          <div>
+            <h2 id="speedTitle">星际速度尺</h2>
+            <div class="reading-line"><output id="speedRead" aria-live="polite">—</output><span id="cRead">—</span></div>
+          </div>
+          <span class="destination">目的地固定</span>
+        </div>
+        <div class="journey">
+          <span class="label">抵达比邻星约需</span>
+          <output id="yearRead" aria-live="polite">—</output>
+          <span id="scaleRead">—</span>
+        </div>
+        <div class="speed-scale">
+          <label class="label" for="speed">拖动速度；方向键微调，Page Up / Down 跨量级</label>
+          <input id="speed" type="range" min="0" max="1000" step="1" value="0" aria-label="星际飞行速度，对数刻度">
+          <div class="stops" aria-label="三个速度基准点">
+            <button class="stop" type="button" data-stop="0">探测器量级</button>
+            <button class="stop" type="button" data-stop="1">0.01c</button>
+            <button class="stop" type="button" data-stop="2">0.1c</button>
+          </div>
+        </div>
+        <div class="formula-row">
+          <div id="formula" aria-label="旅行时间 t 等于距离 d 除以速度 v"></div>
+          <p class="formula-copy">旅行时间等于距离除以速度；这里固定距离，只拨动速度。</p>
+        </div>
+        <div class="actions">
+          <span class="hint">同一距离，只比较速度与时间</span>
+          <button id="reset" type="button">重置</button>
+        </div>
+      </section>
+
+      <section class="compare-wrap min0" aria-labelledby="compareTitle">
+        <div class="compare-title">
+          <div><h2 id="compareTitle">三种速度 × 同一距离</h2><p class="same-distance">条越长，地球上等待的时间越久。</p></div>
+          <p class="distance">比邻星 · <strong id="distanceRead">—</strong></p>
+        </div>
+        <div class="k-comparison min0">
+          <div class="hdr">速度情境</div><div class="hdr">速度</div><div class="hdr">旅行时间</div>
+          <div class="chart-cell min0"><div id="chart" role="img" aria-label="同一比邻星距离下，三种速度所需旅行时间的横向对数条形图"></div></div>
+        </div>
+        <p id="boundary" class="boundary" aria-live="polite"></p>
+        <p class="takeaway">提高十倍速度，时间才缩短为十分之一；星际旅程很快跨过一个人的生命期。</p>
+      </section>
+    </main>
+  </div>
+  <script src="assets/lib/echarts.min.js"></script>
+  <script src="assets/lib/katex.min.js"></script>
+  <script src="assets/base.js"></script>
+  <script src="assets/lec.js"></script>
+  <script>
+    Lec.mount({
+      index: 46,
+      kicker: "INTERSTELLAR SCALE",
+      title: "把速度拨到光速的十分之一，旅程仍以几十年计",
+      take: "即使速度巨大，恒星间距离仍会把旅程推向几十年、数百年甚至更久。"
+    });
+    Deck.init({ index: 46, total: 48 });
+
+    const C = Lec.K.SPEED_OF_LIGHT;
+    const minV = Lec.K.INTERSTELLAR_SPEED_BASELINE_MPS;
+    const maxV = 0.1 * C;
+    const distanceLy = Lec.K.PROXIMA_CENTAURI_DISTANCE_LY;
+    const distanceM = Lec.P.lightYearsToMetres(distanceLy);
+    const scenarios = [minV, 0.01 * C, 0.1 * C];
+    const speed = document.getElementById('speed');
+    const chart = echarts.init(document.getElementById('chart'), null, {renderer:'svg'});
+    katex.render('t=\\frac{d}{v}', document.getElementById('formula'), {throwOnError:false});
+
+    function yearsFor(v){
+      Lec.P.travelTime(distanceM, v);
+      return distanceLy / Lec.P.fraction(v, C);
+    }
+    function posToV(p){
+      const safe = Lec.P.clamp(Lec.P.finiteNumber(Number(p), 0), 0, 1000) / 1000;
+      return minV * Math.pow(maxV / minV, safe);
+    }
+    function vToPos(v){ return Math.log(v / minV) / Math.log(maxV / minV) * 1000; }
+    function numberText(n, digits){ return Number(n).toLocaleString('zh-CN',{maximumFractionDigits:digits,minimumFractionDigits:0}); }
+    function yearText(y){
+      if(y >= 10000) return numberText(y, 0) + ' 年';
+      if(y >= 100) return numberText(y, 0) + ' 年';
+      return numberText(y, 1) + ' 年';
+    }
+    function scaleText(y){
+      if(y >= 10000) return '数万年量级';
+      if(y >= 100) return '数百年量级';
+      return '数十年量级';
+    }
+    function speedLabel(v){
+      const f = Lec.P.fraction(v, C);
+      if(f >= 0.0095) return numberText(f, 3) + 'c';
+      return numberText(v / 1000, 1) + ' km/s';
+    }
+    function update(){
+      let v = posToV(speed.value);
+      v = Lec.P.clamp(Lec.P.finiteNumber(v, minV), minV, maxV);
+      const f = Lec.P.fraction(v, C);
+      const y = yearsFor(v);
+      document.getElementById('speedRead').textContent = numberText(v / 1000, v < 100000 ? 1 : 0) + ' km/s';
+      document.getElementById('cRead').textContent = numberText(f, 4) + 'c';
+      document.getElementById('yearRead').textContent = yearText(y);
+      document.getElementById('scaleRead').textContent = scaleText(y);
+      document.getElementById('distanceRead').textContent = numberText(distanceLy, 4) + ' ly';
+      document.getElementById('boundary').textContent = f >= 0.1 - 1e-8 ? '达到 0.1c，经典估算开始需要谨慎；本页不展开相对论修正。' : '';
+      const nearest = scenarios.reduce((best,x,i)=>Math.abs(Math.log(v/x)) < Math.abs(Math.log(v/scenarios[best])) ? i : best, 0);
+      document.querySelectorAll('.stop').forEach((b,i)=>b.setAttribute('aria-pressed', String(i===nearest && Math.abs(Number(speed.value)-vToPos(scenarios[i]))<8)));
+      draw(v, y, nearest);
+    }
+    function draw(v, currentYears, nearest){
+      const ys = scenarios.map(yearsFor);
+      const labels = ['深空探测器量级','假设 0.01c','假设 0.1c'];
+      const speedLabels = scenarios.map(speedLabel);
+      chart.setOption({
+        animation:false,
+        textStyle:{fontFamily:Deck.token('--font-sans'),fontSize:16,color:Deck.token('--text')},
+        grid:{left:190,right:112,top:28,bottom:62},
+        xAxis:{type:'log',logBase:10,min:10,max:1000000,name:'旅行时间（地球年，对数刻度）',nameLocation:'middle',nameGap:40,nameTextStyle:{fontSize:14,color:Deck.token('--ink-soft')},axisLabel:{fontSize:13,color:Deck.token('--ink-soft'),formatter:function(n){return n>=10000?(n/10000)+'万':String(n);}},splitLine:{show:true,lineStyle:{color:Deck.token('--line')}}},
+        yAxis:{type:'category',inverse:true,data:labels,axisTick:{show:false},axisLine:{show:false},axisLabel:{fontSize:14,color:Deck.token('--text'),lineHeight:20,formatter:function(value,i){return value+'\n'+speedLabels[i];}}},
+        tooltip:{trigger:'axis',textStyle:{fontSize:16},formatter:function(p){const i=p[0].dataIndex;return labels[i]+'<br>'+speedLabels[i]+'<br><b>'+yearText(ys[i])+'</b>'; }},
+        series:[
+          {type:'bar',barWidth:28,data:ys.map((val,i)=>({value:val,itemStyle:{color:i===nearest?Deck.token('--accent'):Deck.token('--line-strong'),borderRadius:[0,6,6,0]},label:{show:true,position:'right',fontSize:16,fontWeight:700,color:Deck.token('--text'),formatter:yearText(val)}}))},
+          {type:'scatter',symbol:'diamond',symbolSize:18,data:[[currentYears,nearest]],itemStyle:{color:Deck.token('--accent-2'),borderColor:Deck.token('--paper'),borderWidth:3},label:{show:true,position:'top',fontSize:14,fontWeight:700,color:Deck.token('--accent-2'),formatter:'当前值'}}
+        ]
+      }, true);
+    }
+    speed.addEventListener('input', update);
+    speed.addEventListener('keydown', function(e){
+      if(e.key==='PageUp'||e.key==='PageDown'){
+        e.preventDefault();
+        speed.value = Lec.P.clamp(Number(speed.value)+(e.key==='PageUp'?100:-100),0,1000);
+        update();
+      }
+    });
+    document.querySelectorAll('.stop').forEach((b,i)=>b.addEventListener('click',()=>{speed.value=Math.round(vToPos(scenarios[i]));update();}));
+    document.getElementById('reset').addEventListener('click',()=>{speed.value=0;update();speed.focus();});
+    Deck.onResize(()=>chart.resize());
+    update();
+  </script>
+</body>
+</html>

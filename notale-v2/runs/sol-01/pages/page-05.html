@@ -1,0 +1,294 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  solar-zone-game { display:block; width:100%; height:100%; }
+  .lec-progress::before { display:none; }
+  .lec-progress > * { height:100%; }
+</style>
+</head>
+<body data-page="05" data-total="50">
+<div id="stage">
+<main id="main"><solar-zone-game></solar-zone-game></main>
+</div>
+<script src="assets/lib/d3.min.js"></script>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script>
+Lec.mount({
+  index: 5,
+  kicker: "SYSTEM ZONES",
+  title: "把成员放回太阳系骨架",
+  take: "太阳系可分为太阳、内行星区、外行星区和小天体储库"
+});
+
+class SolarZoneGame extends HTMLElement {
+  constructor() {
+    super();
+    this.state = this.freshState();
+    this.drag = null;
+  }
+
+  freshState() {
+    const inner = Lec.P.planetsByType('terrestrial');
+    const innerIds = new Set(inner.map((planet) => planet.id));
+    const outer = Lec.K.PLANETS.filter((planet) => !innerIds.has(planet.id));
+    const dwarf = (name) => Lec.K.DWARF_PLANETS.find((item) => item.name === name);
+    return {
+      started: false,
+      complete: false,
+      index: 0,
+      placed: {},
+      attempts: 0,
+      members: [
+        { id: Lec.K.SUN.id, name: Lec.K.SUN.name, zone: 'sun', reason: '太阳位于系统中心，请按空间归属分类。' },
+        ...inner.map((planet) => ({ id: planet.id, name: planet.name, zone: 'inner', reason: `${planet.name}属于内行星区，请按它在太阳系中的位置归类。` })),
+        ...outer.map((planet) => ({ id: planet.id, name: planet.name, zone: 'outer', reason: `${planet.name}属于外行星区，请按它在太阳系中的位置归类。` })),
+        { id: dwarf('谷神星').id, name: '谷神星', clue: '小行星带线索', zone: 'small', reason: '谷神星在小行星带，请归入小天体储库。' },
+        { id: dwarf('冥王星').id, name: '冥王星', clue: '柯伊伯带线索', zone: 'small', reason: '冥王星在柯伊伯带，请归入小天体储库。' },
+        { id: 'halley', name: '哈雷彗星', clue: '奥尔特云线索', zone: 'small', reason: '哈雷彗星作为奥尔特云的位置线索，请归入小天体储库。' }
+      ]
+    };
+  }
+
+  connectedCallback() {
+    this.renderShell();
+    this.bind();
+    this.start();
+  }
+
+  start() {
+    if (!this.state.started) {
+      this.state.started = true;
+      this.dispatchEvent(new CustomEvent('game-start', { bubbles: true, composed: true }));
+    }
+    this.render();
+  }
+
+  reset() {
+    this.state = this.freshState();
+    this.state.started = true;
+    this.render();
+    this.dispatchEvent(new CustomEvent('game-reset', { bubbles: true, composed: true }));
+  }
+
+  getState() {
+    return JSON.parse(JSON.stringify(this.state));
+  }
+
+  renderShell() {
+    this.innerHTML = `
+      <style>
+        solar-zone-game {  display:block; width:var(--content-w); height:var(--content-h); color:var(--text); font-family:var(--font-sans); }
+        solar-zone-game, solar-zone-game * { box-sizing:border-box; }
+        .game { position:relative; width:100%; height:100%; display:flex; flex-direction:column; gap:var(--sp-3); }
+        .gamebar { min-height:48px; display:flex; align-items:center; gap:var(--sp-5); }
+        .prompt { flex:1 1 auto; color:var(--text-muted); font-size:var(--fs-sec); line-height:var(--lh-body); }
+        .game-progress { flex:0 0 auto; color:var(--text); font-family:var(--font-mono); font-size:var(--fs-body); line-height:var(--lh-tight); }
+        .game-progress strong { color:var(--accent); font-size:var(--fs-lead); }
+        .reset { flex:0 0 auto; min-width:100px; font-size:var(--fs-sec); }
+        .classification { position:relative; flex:1 1 auto; min-height:0; gap:var(--sp-2); }
+        .root { position:relative; z-index:2; height:376px; padding:var(--sp-3); background:var(--surface); }
+        .root > .bt { display:flex; align-items:center; justify-content:space-between; min-height:34px; margin-bottom:var(--sp-2); }
+        .root-title { color:var(--text); font-size:var(--fs-h2); font-weight:650; }
+        .basis { color:var(--text-muted); font-size:var(--fs-label); font-weight:600; }
+        .branches { position:relative; z-index:2; display:flex; gap:var(--sp-3); margin:0; padding:30px 0 0; border:0; }
+        .branches::before { display:none; }
+        .zone { position:relative; z-index:3; flex:1 1 0; min-width:0; height:282px; padding:var(--sp-3); text-align:left; cursor:pointer; overflow:hidden; }
+        .zone-small { flex-grow:1.28; }
+        .zone > .bt { display:flex; align-items:center; justify-content:space-between; margin-bottom:var(--sp-2); font-size:var(--fs-body); }
+        .zone-count { color:var(--text-muted); font-family:var(--font-mono); font-size:var(--fs-label); font-weight:500; }
+        .zone-hint { min-height:43px; color:var(--text-muted); font-size:var(--fs-sec); line-height:var(--lh-tight); }
+        .zone-members { display:flex; flex-wrap:wrap; align-content:flex-start; gap:var(--sp-2); min-height:142px; margin-top:var(--sp-2); padding-top:var(--sp-2); border-top:1px solid var(--line); }
+        .member { min-width:72px; height:36px; display:inline-flex; align-items:center; justify-content:center; padding:0 var(--sp-3); border:1px solid var(--primary); border-radius:var(--radius-sm); background:var(--primary-soft); color:var(--text); font-size:var(--fs-sec); line-height:var(--lh-tight); animation:arrive 260ms ease-out; }
+        .member small { margin-left:var(--sp-2); color:var(--text-muted); font-size:var(--fs-label); }
+        .skeleton { position:absolute; z-index:1; inset:0; width:100%; height:100%; pointer-events:none; overflow:visible; }
+        .link { fill:none; stroke:var(--line-strong); stroke-width:2; }
+        .link.on { stroke:var(--primary); }
+        .link.complete { stroke:var(--accent); stroke-width:3; }
+        .axis-label { position:absolute; z-index:4; top:67px; right:24px; color:var(--text-muted); font-size:var(--fs-label); }
+        .axis-line { position:absolute; z-index:1; top:91px; right:24px; left:24px; height:1px; background:var(--primary-line); }
+        .axis-line::after { position:absolute; right:-1px; top:-5px; width:0; height:0; border-top:5px solid transparent; border-bottom:5px solid transparent; border-left:9px solid var(--primary); content:""; }
+        .tray { min-height:150px; display:flex; align-items:stretch; gap:var(--sp-4); padding:var(--sp-3) var(--sp-4); border:1px solid var(--line); background:var(--surface-data); }
+        .current-wrap { flex:0 0 220px; display:flex; flex-direction:column; gap:var(--sp-2); }
+        .tray-label { color:var(--text-muted); font-size:var(--fs-label); font-weight:600; }
+        .current-card { position:relative; z-index:20; width:100%; min-height:72px; padding:var(--sp-3); border:2px solid var(--accent); background:var(--accent-soft); color:var(--text); font-size:var(--fs-lead); font-weight:650; touch-action:none; cursor:grab; }
+        .current-card:active { cursor:grabbing; }
+        .clue { display:block; margin-top:var(--sp-1); color:var(--text-muted); font-size:var(--fs-label); font-weight:500; }
+        .queue { flex:1 1 auto; min-width:0; display:flex; flex-direction:column; gap:var(--sp-2); }
+        .queue-items { display:flex; flex-wrap:wrap; gap:var(--sp-2); align-content:flex-start; }
+        .queued { min-height:36px; display:inline-flex; align-items:center; padding:0 var(--sp-3); border:1px solid var(--line); color:var(--text-muted); font-size:var(--fs-label); line-height:var(--lh-tight); }
+        .feedback { flex:0 0 360px; display:flex; align-items:center; padding:var(--sp-3) var(--sp-4); border-left:3px solid var(--primary); background:var(--surface); color:var(--text); font-size:var(--fs-sec); line-height:var(--lh-body); }
+        .feedback.error { border-left-color:var(--danger); }
+        .feedback.done { border-left-color:var(--accent); color:var(--accent); font-size:var(--fs-lead); font-weight:650; }
+        .shake { animation:shake 280ms ease-out; }
+        @keyframes arrive { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:none; } }
+        @keyframes shake { 0%,100% { transform:translateX(0); } 30% { transform:translateX(-10px); } 70% { transform:translateX(10px); } }
+        @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation:none !important; transition:none !important; } }
+      </style>
+      <section class="game" aria-label="太阳系成员空间归类">
+        <div class="gamebar">
+          <p class="prompt">把当前成员拖入空间区；也可聚焦区域后按 Enter 归位。</p>
+          <div class="game-progress" aria-live="polite">已归位 <strong id="doneCount">0</strong> / <span id="totalCount">0</span></div>
+          <button class="reset" type="button">重置</button>
+        </div>
+        <div class="k-classification classification min0">
+          <div class="box root">
+            <div class="bt"><span class="root-title">太阳系</span><span class="basis">分类依据：在系统中的空间归属</span></div>
+            <span class="axis-label">由中心向外</span><span class="axis-line" aria-hidden="true"></span>
+            <div class="lv branches">
+              <button class="box zone" data-zone="sun" type="button"><span class="bt">太阳 <span class="zone-count"></span></span><span class="zone-hint">系统中心</span><span class="zone-members"></span></button>
+              <button class="box zone" data-zone="inner" type="button"><span class="bt">内行星区 <span class="zone-count"></span></span><span class="zone-hint">靠近太阳的四颗行星</span><span class="zone-members"></span></button>
+              <button class="box zone" data-zone="outer" type="button"><span class="bt">外行星区 <span class="zone-count"></span></span><span class="zone-hint">更外侧的四颗行星</span><span class="zone-members"></span></button>
+              <button class="box zone zone-small" data-zone="small" type="button"><span class="bt">小天体储库 <span class="zone-count"></span></span><span class="zone-hint">区间中与更远处的储库</span><span class="zone-members"></span></button>
+            </div>
+          </div>
+          <svg class="skeleton" role="img" aria-label="太阳系根节点连接四个空间分区，分区再连接已归位成员"></svg>
+        </div>
+        <div class="tray no-pan">
+          <div class="current-wrap"><span class="tray-label">当前成员</span><button class="current-card" type="button"></button></div>
+          <div class="queue"><span class="tray-label">待归位</span><div class="queue-items"></div></div>
+          <div class="feedback" role="status" aria-live="polite">先判断位置，再选择所属空间区。</div>
+        </div>
+      </section>`;
+  }
+
+  bind() {
+    this.querySelector('.reset').addEventListener('click', () => this.reset());
+    this.querySelectorAll('.zone').forEach((zone) => {
+      zone.addEventListener('click', () => this.place(zone.dataset.zone));
+    });
+    const card = this.querySelector('.current-card');
+    card.addEventListener('pointerdown', (event) => this.dragStart(event));
+    card.addEventListener('pointermove', (event) => this.dragMove(event));
+    card.addEventListener('pointerup', (event) => this.dragEnd(event));
+    card.addEventListener('pointercancel', (event) => this.dragEnd(event));
+  }
+
+  current() { return this.state.members[this.state.index]; }
+
+  dragStart(event) {
+    if (!this.current() || this.state.complete) return;
+    const point = Deck.pt(document.getElementById('stage'), event);
+    this.drag = { id: event.pointerId, x: point.x, y: point.y };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  }
+
+  dragMove(event) {
+    if (!this.drag || this.drag.id !== event.pointerId) return;
+    const point = Deck.pt(document.getElementById('stage'), event);
+    event.currentTarget.style.transform = `translate(${point.x - this.drag.x}px, ${point.y - this.drag.y}px)`;
+  }
+
+  dragEnd(event) {
+    if (!this.drag || this.drag.id !== event.pointerId) return;
+    const card = event.currentTarget;
+    card.style.transform = '';
+    this.drag = null;
+    const hit = document.elementFromPoint(event.clientX, event.clientY);
+    const zone = hit && hit.closest ? hit.closest('.zone') : null;
+    if (zone) this.place(zone.dataset.zone);
+  }
+
+  place(zoneId) {
+    const member = this.current();
+    if (!member || this.state.complete) return;
+    this.state.attempts += 1;
+    if (member.zone !== zoneId) {
+      const card = this.querySelector('.current-card');
+      const feedback = this.querySelector('.feedback');
+      feedback.textContent = member.reason;
+      feedback.className = 'feedback error';
+      card.classList.remove('shake');
+      void card.offsetWidth;
+      card.classList.add('shake');
+      this.dispatchEvent(new CustomEvent('game-progress', {
+        bubbles: true, composed: true,
+        detail: { state: this.getState(), action: 'incorrect-zone', metrics: { placed: this.state.index, attempts: this.state.attempts } }
+      }));
+      return;
+    }
+    this.state.placed[member.id] = zoneId;
+    this.state.index += 1;
+    this.state.complete = this.state.index === this.state.members.length;
+    this.render();
+    const eventName = this.state.complete ? 'game-complete' : 'game-progress';
+    const detail = this.state.complete
+      ? { score: this.state.members.length, metrics: { attempts: this.state.attempts }, trace: Object.keys(this.state.placed) }
+      : { state: this.getState(), action: 'place-member', metrics: { placed: this.state.index, attempts: this.state.attempts } };
+    this.dispatchEvent(new CustomEvent(eventName, { bubbles: true, composed: true, detail }));
+  }
+
+  render() {
+    const total = this.state.members.length;
+    this.querySelector('#doneCount').textContent = this.state.index;
+    this.querySelector('#totalCount').textContent = total;
+    const card = this.querySelector('.current-card');
+    const current = this.current();
+    card.disabled = this.state.complete;
+    card.innerHTML = current ? `${current.name}${current.clue ? `<span class="clue">${current.clue}</span>` : '<span class="clue">拖动或选择上方区域</span>'}` : '归类完成';
+    this.querySelector('.queue-items').innerHTML = this.state.members.slice(this.state.index + 1).map((member) => `<span class="queued">${member.name}</span>`).join('');
+
+    const capacities = { sun: 1, inner: 4, outer: 4, small: 3 };
+    Object.keys(capacities).forEach((zoneId) => {
+      const zone = this.querySelector(`[data-zone="${zoneId}"]`);
+      const members = this.state.members.filter((member) => this.state.placed[member.id] === zoneId);
+      zone.querySelector('.zone-count').textContent = `${members.length} / ${capacities[zoneId]}`;
+      zone.querySelector('.zone-members').innerHTML = members.map((member) => `<span class="member" data-member="${member.id}">${member.name}${member.clue ? `<small>${member.clue.replace('线索', '')}</small>` : ''}</span>`).join('');
+      zone.classList.toggle('is-current', current && current.zone === zoneId);
+    });
+
+    const feedback = this.querySelector('.feedback');
+    if (this.state.complete) {
+      feedback.textContent = '一个中心，两个行星区，多处小天体储库';
+      feedback.className = 'feedback done';
+    } else if (this.state.index > 0) {
+      feedback.textContent = `${this.state.members[this.state.index - 1].name}已接入所属分区。`;
+      feedback.className = 'feedback';
+    } else {
+      feedback.textContent = '太阳系不是均匀散开的成员名单，而是以太阳为中心、向外分区的系统。';
+      feedback.className = 'feedback';
+    }
+    requestAnimationFrame(() => this.drawLinks());
+  }
+
+  drawLinks() {
+    const svgNode = this.querySelector('.skeleton');
+    const rootBox = this.querySelector('.classification').getBoundingClientRect();
+    const toLocal = (rect) => ({ x: rect.left - rootBox.left + rect.width / 2, y: rect.top - rootBox.top });
+    const zones = Array.from(this.querySelectorAll('.zone'));
+    const rootPoint = { x: rootBox.width / 2, y: 52 };
+    const zoneLinks = zones.map((zone) => ({
+      source: rootPoint,
+      target: toLocal(zone.getBoundingClientRect()),
+      complete: this.state.complete,
+      on: zone.querySelectorAll('.member').length > 0
+    }));
+    const memberLinks = [];
+    zones.forEach((zone) => {
+      const zr = zone.getBoundingClientRect();
+      const source = { x: zr.left - rootBox.left + 18, y: zr.top - rootBox.top + 82 };
+      zone.querySelectorAll('.member').forEach((member) => {
+        const mr = member.getBoundingClientRect();
+        memberLinks.push({ source, target: { x: mr.left - rootBox.left, y: mr.top - rootBox.top + mr.height / 2 }, on: true });
+      });
+    });
+    const links = zoneLinks.concat(memberLinks);
+    const line = d3.line().x((point) => point.x).y((point) => point.y).curve(d3.curveBumpY);
+    d3.select(svgNode)
+      .attr('viewBox', `0 0 ${rootBox.width} ${rootBox.height}`)
+      .selectAll('path')
+      .data(links)
+      .join('path')
+      .attr('class', (link) => `link${link.on ? ' on' : ''}${link.complete ? ' complete' : ''}`)
+      .attr('d', (link) => line([link.source, link.target]));
+  }
+}
+
+customElements.define('solar-zone-game', SolarZoneGame);
+</script>
+</body>
+</html>

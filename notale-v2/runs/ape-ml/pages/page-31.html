@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  #stage{padding:30px 46px 26px;gap:18px;overflow:hidden}
+  .kicker{font:700 var(--fs-label)/1.3 var(--font-mono);letter-spacing:.12em;color:var(--amber)}
+  .head{align-items:flex-end;border-bottom:2px solid var(--line);padding-bottom:14px}
+  .take{max-width:760px;text-align:right}
+  .work{display:flex;gap:18px;min-height:0}
+  .viz-panel{flex:1.7;position:relative;padding:12px 18px 8px}
+  .side{flex:1;display:flex;flex-direction:column;gap:12px;min-width:0}
+  #orbitViz{display:block;width:100%;height:100%}
+  .axis text{fill:var(--ink-muted);font:14px var(--font-mono)}
+  .axis path,.axis line{stroke:var(--line-strong)}
+  .axis-title{fill:var(--ink-muted);font:14px var(--font-sans)}
+  .row-label{fill:var(--text);font:700 18px var(--font-sans)}
+  .value-label{font:700 22px var(--font-mono)}
+  .small-label{fill:var(--ink-muted);font:16px var(--font-sans)}
+  .planet-name{fill:var(--text);font:700 20px var(--font-sans)}
+  .closed{stroke:var(--teal);fill:none;stroke-width:4}
+  .open{stroke:var(--amber);fill:none;stroke-width:4}
+  .ghost{opacity:.24;stroke-width:8}
+  .marker-c{fill:var(--teal)} .marker-e{fill:var(--amber)}
+  .guide{stroke:var(--line-strong);stroke-width:2;stroke-dasharray:7 7}
+  .planet{fill:var(--panel-hi);stroke:var(--teal);stroke-width:4}
+  .atmo{fill:none;stroke:var(--teal-dim);stroke-width:10;opacity:.55}
+  .controls{padding:14px 18px}
+  .controls select{width:132px}
+  .ctl output{min-width:104px;text-align:right;color:var(--teal);font:700 18px var(--font-mono)}
+  .progress{padding:12px 16px;display:flex;align-items:center;justify-content:space-between}
+  .dots{display:flex;gap:10px}.dot{width:15px;height:15px;border:2px solid var(--line-strong);border-radius:50%}.dot.seen{border-color:var(--teal);background:var(--teal)}
+  .completion{min-height:25px;color:var(--amber-soft);font-size:var(--fs-sec);font-weight:700}
+  .flash{animation:flash .55s ease-out}
+  @keyframes flash{0%{color:var(--amber);text-shadow:0 0 18px var(--amber)}100%{text-shadow:none}}
+  .enter-planet{animation:rise .7s ease-out both}.enter-closed{stroke-dasharray:520;animation:draw 1s .35s ease-out both}.enter-open{stroke-dasharray:480;animation:draw 1s .75s ease-out both}
+  @keyframes rise{from{transform:translateY(45px);opacity:0}to{transform:translateY(0);opacity:1}}@keyframes draw{from{stroke-dashoffset:520}to{stroke-dashoffset:0}}
+  @media(prefers-reduced-motion:reduce){.enter-planet,.enter-closed,.enter-open,.flash{animation:none!important}}
+</style>
+</head>
+<body data-page="31" data-total="45">
+<div id="stage">
+  <header class="head row justify-between shrink0" style="height:88px">
+    <div><div class="kicker">ORBIT ≠ ESCAPE</div><h1>绕行，还是离开</h1></div>
+    <p class="lead take">近地轨道速度和逃逸速度回答不同问题：持续绕行与不再返回</p>
+  </header>
+
+  <main class="work min0" style="flex:1">
+    <section class="panel viz-panel min0" aria-label="轨道速度与逃逸速度计算图">
+      <svg id="orbitViz" viewBox="0 0 1200 430" preserveAspectRatio="xMidYMid meet" role="img" aria-label="同一天体同一高度上，圆轨道与逃逸的速度和路径比较"></svg>
+    </section>
+
+    <aside class="side min0">
+      <section class="panel controls shrink0">
+        <div class="ctl"><label for="bodySelect">天体</label><select id="bodySelect" aria-label="选择天体"><option value="earth">地球</option><option value="moon">月球</option><option value="mars">火星</option></select></div>
+        <div class="ctl is-target"><label for="altitude">轨道高度</label><input id="altitude" type="range" min="0" step="1" aria-describedby="altHelp"><output id="altOut" for="altitude"></output></div>
+        <p id="altHelp" class="secondary">拖动高度，比较同一地点的两个速度门槛。</p>
+      </section>
+
+      <section class="k-comparison min0" style="--cmp-cols:2;flex:1" aria-label="圆轨道与逃逸的四维比较">
+        <div class="hdr"></div><div class="hdr">圆轨道</div><div class="hdr">逃逸</div>
+        <div class="cmp-row"><div class="dim">回答的问题</div><div class="cell">怎样持续绕行</div><div class="cell diff">怎样在理想条件下不再返回</div><div class="rowline"></div></div>
+        <div class="cmp-row"><div class="dim">速度</div><div class="cell mono" id="tableVc">—</div><div class="cell mono diff" id="tableVe">—</div><div class="rowline"></div></div>
+        <div class="cmp-row"><div class="dim">同时显示</div><div class="cell" id="tablePeriod">周期 —</div><div class="cell">没有“逃逸周期”</div><div class="rowline"></div></div>
+        <div class="cmp-row"><div class="dim">路径含义</div><div class="cell">闭合；持续受引力作用</div><div class="cell diff">开放；并非“没有引力”</div></div>
+      </section>
+
+      <section class="panel progress shrink0" style="height:76px">
+        <div><div id="progressText" class="label" aria-live="polite">已比较天体 1/3</div><div id="completion" class="completion"></div></div>
+        <div class="dots" aria-hidden="true"><span class="dot seen" data-dot="earth"></span><span class="dot" data-dot="moon"></span><span class="dot" data-dot="mars"></span></div>
+        <button id="reset" class="btn">重置为地球 400 km</button>
+      </section>
+    </aside>
+  </main>
+
+  <footer class="panel-hi row items-center justify-center shrink0" style="height:66px;border-left:8px solid var(--teal);border-radius:var(--r-sm);padding:0 24px">
+    <p class="lead">圆轨道速度让你不断错过地面；逃逸速度回答理想条件下能否不再返回，两者不是同一个门槛。</p>
+  </footer>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script src="assets/lib/d3.min.js"></script>
+<script>
+(function(){
+  'use strict';
+  Deck.init({index:31,total:45});
+  var K=Lec.K, P=Lec.P;
+  var bodies={
+    earth:{name:'地球',mass:K.earth.mass,radius:K.earth.meanRadius,defaultAlt:K.orbit.lowEarthAltitude},
+    moon:{name:'月球',mass:K.moon.mass,radius:K.moon.meanRadius,defaultAlt:K.moon.meanRadius*0.1},
+    mars:{name:'火星',mass:K.solarSystem.mars.mass,radius:K.solarSystem.mars.radius,defaultAlt:K.solarSystem.mars.radius*0.1}
+  };
+  var current='earth', seen=new Set(['earth']);
+  var sel=document.getElementById('bodySelect'), slider=document.getElementById('altitude'), out=document.getElementById('altOut');
+  var svg=d3.select('#orbitViz'), x=d3.scaleLinear().domain([0,12]).range([180,1080]);
+  var teal=getComputedStyle(document.documentElement).getPropertyValue('--teal').trim();
+  var amber=getComputedStyle(document.documentElement).getPropertyValue('--amber').trim();
+  var gPlanet=svg.append('g').attr('class','enter-planet');
+  gPlanet.append('circle').attr('class','atmo').attr('cx',120).attr('cy',172).attr('r',111);
+  gPlanet.append('circle').attr('class','planet').attr('cx',120).attr('cy',172).attr('r',96);
+  gPlanet.append('text').attr('class','planet-name').attr('x',120).attr('y',178).attr('text-anchor','middle');
+  svg.append('path').attr('class','closed enter-closed').attr('d','M 205 126 C 370 20, 570 36, 650 126 C 570 216, 370 232, 205 126 Z');
+  svg.append('path').attr('class','open enter-open').attr('d','M 205 126 C 440 116, 690 80, 1088 18');
+  svg.append('text').attr('class','small-label').attr('x',530).attr('y',56).attr('fill',teal).text('闭合轨道：绕回来');
+  svg.append('text').attr('class','small-label').attr('x',910).attr('y',44).attr('fill',amber).text('开放路径：不再返回');
+  svg.append('text').attr('class','axis-title').attr('x',1080).attr('y',410).attr('text-anchor','end').text('速度 km/s');
+  var axis=svg.append('g').attr('class','axis').attr('transform','translate(0,388)').call(d3.axisBottom(x).ticks(6));
+  var rows=[{key:'c',y:286,label:'圆轨道',color:teal},{key:'e',y:350,label:'逃逸',color:amber}];
+  rows.forEach(function(r){
+    svg.append('text').attr('class','row-label').attr('x',30).attr('y',r.y+7).text(r.label);
+    svg.append('line').attr('x1',180).attr('x2',1080).attr('y1',r.y).attr('y2',r.y).attr('stroke','var(--line-strong)').attr('stroke-width',2);
+    svg.append('line').attr('class','guide guide-'+r.key).attr('y1',145).attr('y2',r.y);
+    svg.append('circle').attr('class','marker marker-'+r.key).attr('cy',r.y).attr('r',10);
+    svg.append('text').attr('class','value-label value-'+r.key).attr('y',r.y-16).attr('text-anchor','middle').attr('fill',r.color);
+  });
+  var periodText=svg.append('text').attr('class','small-label').attr('x',180).attr('y',320);
+
+  function sf(v){return P.significantFigures(v,3)}
+  function configure(body, alt){
+    slider.max=Math.round(body.radius*0.5/1000);
+    slider.value=Math.round(alt/1000);
+    slider.setAttribute('aria-valuemax',slider.max);
+  }
+  function update(animate){
+    var b=bodies[current], h=Math.max(0,Math.min(+slider.value*1000,b.radius*0.5));
+    var r=P.radiusFromAltitude(h,b.radius);
+    var vc=P.circularOrbitVelocity(b.mass,r)/1000;
+    var ve=P.escapeVelocity(b.mass,r)/1000;
+    var mins=P.secondsToMinutes(P.orbitalPeriod(b.mass,r));
+    var dur=(animate&&!Deck.reduced())?450:0;
+    gPlanet.select('.planet-name').text(b.name);
+    out.value=sf(h/1000)+' km';
+    var vals={c:vc,e:ve};
+    rows.forEach(function(row){
+      var px=x(vals[row.key]);
+      svg.select('.marker-'+row.key).interrupt().transition().duration(dur).ease(d3.easeCubicOut).attr('cx',px);
+      svg.select('.guide-'+row.key).interrupt().transition().duration(dur).ease(d3.easeCubicOut).attr('x1',px).attr('x2',px);
+      svg.select('.value-'+row.key).interrupt().transition().duration(dur).ease(d3.easeCubicOut).attr('x',px).text(sf(vals[row.key])+' km/s');
+    });
+    periodText.text('一周约 '+sf(mins)+' 分钟');
+    document.getElementById('tableVc').textContent=sf(vc)+' km/s';
+    document.getElementById('tableVe').textContent=sf(ve)+' km/s';
+    document.getElementById('tablePeriod').textContent='周期 '+sf(mins)+' 分钟';
+    [out,document.getElementById('tableVc'),document.getElementById('tableVe'),document.getElementById('tablePeriod')].forEach(function(el){el.classList.remove('flash');void el.offsetWidth;el.classList.add('flash')});
+  }
+  function progress(){
+    document.querySelectorAll('.dot').forEach(function(d){d.classList.toggle('seen',seen.has(d.dataset.dot))});
+    document.getElementById('progressText').textContent='已比较天体 '+seen.size+'/3';
+    document.getElementById('completion').textContent=seen.size===3?'同地 ve > vc，但含义不同':'';
+  }
+  sel.addEventListener('change',function(){current=sel.value;seen.add(current);configure(bodies[current],bodies[current].defaultAlt);progress();update(true)});
+  slider.addEventListener('input',function(){update(true)});
+  document.getElementById('reset').addEventListener('click',function(){current='earth';sel.value=current;seen=new Set(['earth']);configure(bodies.earth,K.orbit.lowEarthAltitude);progress();update(true)});
+  configure(bodies.earth,K.orbit.lowEarthAltitude);update(false);
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,686 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+/* ── dark theme tokens ── */
+:root {
+  --bg: #0b0e14;
+  --text: #e6e6e6;
+  --font-sans: "Noto Sans SC", system-ui, sans-serif;
+  --accent: #4f6ef2;
+  --accent-soft: rgba(79, 110, 242, 0.18);
+  --muted: #8899bb;
+  --border: #2a3040;
+  --panel-bg: #141a28;
+  --diff-bg: rgba(254, 243, 199, 0.12);
+  --success: #2b9f6e;
+  --danger: #e54545;
+  --warning: #f0a030;
+}
+
+#stage { overflow: hidden; }
+#main { width: 100%; height: 100%; overflow: hidden; }
+
+/* ── game layout ── */
+.game-wrap {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  position: relative;
+  overflow: hidden;
+  max-width: 100%;
+}
+
+/* ── result overlay (slides down) ── */
+.result-area {
+  flex: 0 0 auto;
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.6s ease-out, opacity 0.5s ease;
+  opacity: 0;
+}
+.result-area.show {
+  max-height: 280px;
+  opacity: 1;
+}
+.result-inner {
+  padding: 12px 0 8px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 8px;
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.bars-compare {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.bar-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.bar-label {
+  flex: 0 0 80px;
+  font-size: var(--fs-label);
+  color: var(--muted);
+  text-align: right;
+}
+.bar-track {
+  flex: 1 1 auto;
+  height: 24px;
+  background: var(--border);
+  border-radius: 4px;
+  position: relative;
+  overflow: visible;
+}
+.bar-fill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.8s ease;
+  position: relative;
+}
+.bar-fill.weight {
+  background: var(--muted);
+}
+.bar-fill.energy {
+  background: var(--accent);
+}
+.bar-pct {
+  flex: 0 0 auto;
+  font-size: var(--fs-label);
+  font-weight: 700;
+  color: var(--text);
+  min-width: 48px;
+  white-space: nowrap;
+}
+.player-marker {
+  position: absolute;
+  top: -4px;
+  width: 2px;
+  height: 32px;
+  background: var(--warning);
+  transform: translateX(-50%);
+  z-index: 2;
+}
+.pm-label {
+  position: absolute;
+  top: -18px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 14px;
+  color: var(--warning);
+  white-space: nowrap;
+  line-height: 1;
+}
+
+.result-points {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 6px;
+}
+.result-points p {
+  font-size: var(--fs-sec);
+  margin: 0;
+  line-height: 1.4;
+  padding-left: 12px;
+  border-left: 2px solid var(--accent);
+}
+
+/* ── cards area ── */
+.cards-area {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 32px;
+  padding: 8px 0;
+  min-height: 0;
+}
+
+.ration-card {
+  flex: 0 0 280px;
+  min-height: 240px;
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  border-radius: 0;
+  padding: 20px 24px;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  transition: border-color 0.3s, opacity 0.3s, box-shadow 0.3s;
+  /* corner cut via clip-path */
+  --corner: 14px;
+  clip-path: polygon(
+    0 var(--corner), var(--corner) 0,
+    calc(100% - var(--corner)) 0, 100% var(--corner),
+    100% calc(100% - var(--corner)), calc(100% - var(--corner)) 100%,
+    var(--corner) 100%, 0 calc(100% - var(--corner))
+  );
+}
+.ration-card.brain {
+  border-color: var(--accent);
+}
+.ration-card.brain.ok {
+  box-shadow: 0 0 20px rgba(43, 159, 110, 0.25);
+  border-color: var(--success);
+}
+.ration-card.brain.low {
+  box-shadow: 0 0 16px rgba(229, 69, 69, 0.2);
+  border-color: var(--danger);
+}
+.ration-card.body {
+  border-color: var(--border);
+}
+.ration-card.body.deprived {
+  opacity: 0.5;
+  border-color: var(--danger);
+}
+
+.card-icon {
+  font-size: 28px;
+  margin-bottom: 4px;
+}
+.card-title {
+  font-size: var(--fs-h2);
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+.card-sub {
+  font-size: var(--fs-sec);
+  color: var(--muted);
+  margin-bottom: 12px;
+}
+.card-readout {
+  font-size: var(--fs-lead);
+  font-weight: 700;
+  margin-bottom: 4px;
+  font-variant-numeric: tabular-nums;
+}
+.card-readout .unit {
+  font-size: var(--fs-sec);
+  font-weight: 400;
+  color: var(--muted);
+}
+.card-status {
+  font-size: var(--fs-sec);
+  margin-top: auto;
+  padding: 6px 10px;
+  border-radius: 4px;
+  text-align: center;
+  min-height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.card-status.ok {
+  background: rgba(43, 159, 110, 0.15);
+  color: var(--success);
+}
+.card-status.low {
+  background: rgba(229, 69, 69, 0.15);
+  color: var(--danger);
+}
+.card-status.high {
+  background: rgba(240, 160, 48, 0.15);
+  color: var(--warning);
+}
+
+/* ── token area ── */
+.token-area {
+  flex: 0 0 auto;
+  border-top: 1px solid var(--border);
+  padding: 10px 0 4px;
+}
+
+.token-visual {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 8px;
+  flex-wrap: nowrap;
+  overflow: hidden;
+}
+.token-dot {
+  flex: 0 0 6px;
+  height: 10px;
+  border-radius: 1px;
+  background: var(--accent);
+  opacity: 0.5;
+  transition: opacity 0.2s;
+}
+.token-dot.used {
+  opacity: 0.15;
+  background: var(--muted);
+}
+.token-info {
+  font-size: var(--fs-label);
+  color: var(--muted);
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+}
+
+.controls-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  min-height: 36px;
+}
+.controls-row .label-sm {
+  font-size: var(--fs-label);
+  color: var(--muted);
+  margin-right: 4px;
+}
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 36px;
+  height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--panel-bg);
+  color: var(--text);
+  font-size: var(--fs-label);
+  font-family: var(--font-sans);
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+  user-select: none;
+}
+.btn:hover {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+.btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.btn:active {
+  transform: scale(0.96);
+}
+.btn.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+  font-weight: 600;
+}
+.btn.primary:hover {
+  background: #3a56d4;
+}
+.btn.danger {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+.btn.danger:hover {
+  background: rgba(229, 69, 69, 0.12);
+}
+.btn.ghost {
+  border-color: transparent;
+  background: transparent;
+}
+.btn.ghost:hover {
+  background: var(--accent-soft);
+}
+
+.spacer {
+  flex: 1 1 auto;
+}
+
+/* ── k-comparison inside result ── */
+.k-comparison {
+  --k-comp-cols: 2;
+  margin-bottom: 8px;
+  max-width: 100%;
+  overflow: hidden;
+}
+.k-comparison .hdr {
+  color: var(--muted);
+  border-bottom-color: var(--border);
+}
+.k-comparison .dim {
+  color: var(--text);
+}
+.k-comparison .rowline {
+  border-top-color: var(--border);
+}
+.k-comparison .diff {
+  background: var(--diff-bg);
+}
+.k-comparison .crow > * {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── reduced motion ── */
+@media (prefers-reduced-motion: reduce) {
+  .result-area {
+    transition: none;
+  }
+  .bar-fill {
+    transition: none;
+  }
+  .ration-card {
+    transition: none;
+  }
+}
+</style>
+</head>
+<body data-page="14" data-total="50">
+<div id="stage">
+<main id="main"></main>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script>
+/* ── 全套口径 ── */
+var DAILY_ENERGY_KCAL = 2000;
+var BODY_MASS_KG = 70;
+var BRAIN_MASS_KG = 1.4;
+var BRAIN_ENERGY_FRACTION = 0.20;
+
+/* ── 派生值 ── */
+var BRAIN_MASS_FRACTION = BRAIN_MASS_KG / BODY_MASS_KG; // 0.02
+var REST_BODY_MASS_FRACTION = 1 - BRAIN_MASS_FRACTION; // 0.98
+var REST_BODY_ENERGY_FRACTION = 1 - BRAIN_ENERGY_FRACTION; // 0.80
+var FAIR_SHARE_KCAL = DAILY_ENERGY_KCAL * BRAIN_MASS_FRACTION; // 40
+var BRAIN_ENERGY_KCAL = DAILY_ENERGY_KCAL * BRAIN_ENERGY_FRACTION; // 400
+var REST_BODY_ENERGY_KCAL = DAILY_ENERGY_KCAL * REST_BODY_ENERGY_FRACTION; // 1600
+var BRAIN_MASS_KG_STR = BRAIN_MASS_KG.toFixed(1);
+var REST_BODY_MASS_KG = BODY_MASS_KG - BRAIN_MASS_KG;
+
+/* ── mount ── */
+Lec.mount({
+  index: 14,
+  kicker: "第2章 · 猿的身体",
+  title: "大脑的配给卡",
+  take: "大脑占体重 2% 却消耗 20% 的能量——没有高能饮食，大脑不可能维持"
+});
+
+/* ── game state ── */
+var state = {
+  brainTokens: 0,
+  total: 100,
+  settled: false
+};
+
+function getBrainPct() { return state.brainTokens; }
+function getBodyPct() { return state.total - state.brainTokens; }
+function getBrainKcal() { return state.brainTokens * 20; }
+function getBodyKcal() { return (state.total - state.brainTokens) * 20; }
+
+/* ── DOM refs ── */
+var main = document.getElementById('main');
+
+/* ── build HTML ── */
+main.innerHTML =
+  '<div class="game-wrap">' +
+    /* result area */
+    '<div class="result-area" id="resultArea">' +
+      '<div class="result-inner">' +
+        '<div class="k-comparison" id="compTable">' +
+          '<div class="hdr">配给对象</div>' +
+          '<div class="hdr">体重份额</div>' +
+          '<div class="hdr">能量消耗份额</div>' +
+          '<div class="crow">' +
+            '<div class="dim">大脑</div>' +
+            '<div class="val-brain-wt">≈2% (≈1.4 kg)</div>' +
+            '<div class="diff val-brain-en">≈20% (≈400 kcal)</div>' +
+          '</div>' +
+          '<div class="rowline"></div>' +
+          '<div class="crow">' +
+            '<div class="dim">身体其余部分</div>' +
+            '<div class="val-body-wt">≈98% (≈68.6 kg)</div>' +
+            '<div class="val-body-en">≈80% (≈1600 kcal)</div>' +
+          '</div>' +
+        '</div>' +
+        '<div class="bars-compare">' +
+          '<div class="bar-row">' +
+            '<span class="bar-label">体重份额</span>' +
+            '<div class="bar-track">' +
+              '<div class="bar-fill weight" id="barWeight" style="width:0%"></div>' +
+            '</div>' +
+            '<span class="bar-pct" id="pctWeight"></span>' +
+          '</div>' +
+          '<div class="bar-row">' +
+            '<span class="bar-label">能量消耗份额</span>' +
+            '<div class="bar-track" id="energyTrack">' +
+              '<div class="bar-fill energy" id="barEnergy" style="width:0%"></div>' +
+              '<div class="player-marker" id="playerMarker" style="left:0%;display:none">' +
+                '<span class="pm-label" id="pmLabel">你的分配</span>' +
+              '</div>' +
+            '</div>' +
+            '<span class="bar-pct" id="pctEnergy"></span>' +
+          '</div>' +
+        '</div>' +
+        '<div class="result-points">' +
+          '<p>大脑只占体重约2%，却要消耗每日能量预算的约20%。</p>' +
+          '<p>按体重的"公平配给"，大脑只能拿到约40千卡；实际需要约400千卡——十倍之差。</p>' +
+          '<p>没有高能饮食，大脑不可能维持；这正是能量成为演化压力的原因。</p>' +
+        '</div>' +
+      '</div>' +
+    '</div>' +
+
+    /* cards area */
+    '<div class="cards-area">' +
+      '<div class="ration-card brain" id="brainCard">' +
+        '<div class="card-icon">🧠</div>' +
+        '<div class="card-title">大脑</div>' +
+        '<div class="card-sub">体重份额 ≈2% (≈1.4 kg)</div>' +
+        '<div class="card-readout" id="brainReadout">0% <span class="unit">→ 0 千卡</span></div>' +
+        '<div class="card-status" id="brainStatus"></div>' +
+      '</div>' +
+      '<div class="ration-card body" id="bodyCard">' +
+        '<div class="card-icon">🦵</div>' +
+        '<div class="card-title">身体其余部分</div>' +
+        '<div class="card-sub">体重份额 ≈98% (≈68.6 kg)</div>' +
+        '<div class="card-readout" id="bodyReadout">100% <span class="unit">→ 2000 千卡</span></div>' +
+        '<div class="card-status" id="bodyStatus"></div>' +
+      '</div>' +
+    '</div>' +
+
+    /* token area */
+    '<div class="token-area">' +
+      '<div class="token-visual" id="tokenVisual"></div>' +
+      '<div class="controls-row">' +
+        '<span class="label-sm">配给大脑:</span>' +
+        '<button class="btn" id="btnP1" tabindex="0" aria-label="加1张给大脑">+1</button>' +
+        '<button class="btn" id="btnP5" tabindex="0" aria-label="加5张给大脑">+5</button>' +
+        '<button class="btn" id="btnP10" tabindex="0" aria-label="加10张给大脑">+10</button>' +
+        '<span class="label-sm" style="margin-left:8px;">撤回:</span>' +
+        '<button class="btn" id="btnM1" tabindex="0" aria-label="从大脑撤回1张">−1</button>' +
+        '<button class="btn" id="btnM5" tabindex="0" aria-label="从大脑撤回5张">−5</button>' +
+        '<button class="btn" id="btnM10" tabindex="0" aria-label="从大脑撤回10张">−10</button>' +
+        '<span class="spacer"></span>' +
+        '<button class="btn primary" id="btnSettle" tabindex="0">结算配给</button>' +
+        '<button class="btn danger" id="btnReset" tabindex="0">重置</button>' +
+      '</div>' +
+      '<div class="token-info" id="tokenInfo">剩余能量卡：100 / 100 张</div>' +
+    '</div>' +
+  '</div>';
+
+/* ── DOM refs ── */
+var brainCard = document.getElementById('brainCard');
+var bodyCard = document.getElementById('bodyCard');
+var brainReadout = document.getElementById('brainReadout');
+var bodyReadout = document.getElementById('bodyReadout');
+var brainStatus = document.getElementById('brainStatus');
+var bodyStatus = document.getElementById('bodyStatus');
+var tokenVisual = document.getElementById('tokenVisual');
+var tokenInfo = document.getElementById('tokenInfo');
+var resultArea = document.getElementById('resultArea');
+var barWeight = document.getElementById('barWeight');
+var barEnergy = document.getElementById('barEnergy');
+var playerMarker = document.getElementById('playerMarker');
+var pmLabel = document.getElementById('pmLabel');
+var pctWeight = document.getElementById('pctWeight');
+var pctEnergy = document.getElementById('pctEnergy');
+
+/* ── build token dots ── */
+var TOKEN_DOTS = 20;
+function buildTokens() {
+  tokenVisual.innerHTML = '';
+  var used = Math.floor(state.brainTokens / 5);
+  for (var i = 0; i < TOKEN_DOTS; i++) {
+    var dot = document.createElement('span');
+    dot.className = 'token-dot' + (i < used ? ' used' : '');
+    dot.setAttribute('aria-hidden', 'true');
+    tokenVisual.appendChild(dot);
+  }
+}
+
+/* ── update UI ── */
+function updateUI() {
+  var bp = getBrainPct();
+  var bkcal = getBrainKcal();
+  var wp = getBodyPct();
+  var wkcal = getBodyKcal();
+
+  brainReadout.innerHTML = bp + '% <span class="unit">→ ' + bkcal + ' 千卡</span>';
+  bodyReadout.innerHTML = wp + '% <span class="unit">→ ' + wkcal + ' 千卡</span>';
+  tokenInfo.textContent = '剩余能量卡：' + (state.total - bp) + ' / ' + state.total + ' 张';
+
+  /* update token dots */
+  var dots = tokenVisual.querySelectorAll('.token-dot');
+  var used = Math.floor(bp / 5);
+  for (var i = 0; i < dots.length; i++) {
+    dots[i].className = 'token-dot' + (i < used ? ' used' : '');
+  }
+
+  /* update status if settled */
+  if (state.settled) {
+    updateSettlementStatus();
+  }
+}
+
+function updateSettlementStatus() {
+  var bp = getBrainPct();
+  if (bp >= 18 && bp <= 22) {
+    brainCard.className = 'ration-card brain ok';
+    brainStatus.textContent = '配给成功——大脑正常运行';
+    brainStatus.className = 'card-status ok';
+    bodyStatus.textContent = '';
+    bodyStatus.className = 'card-status';
+  } else if (bp < 18) {
+    brainCard.className = 'ration-card brain low';
+    brainStatus.textContent = '大脑缺能';
+    brainStatus.className = 'card-status low';
+    bodyStatus.textContent = '';
+    bodyStatus.className = 'card-status';
+  } else {
+    brainCard.className = 'ration-card brain';
+    brainStatus.textContent = '';
+    brainStatus.className = 'card-status';
+    bodyCard.className = 'ration-card body deprived';
+    bodyStatus.textContent = '身体其余部分欠账';
+    bodyStatus.className = 'card-status high';
+  }
+}
+
+/* ── allocate ── */
+function allocate(n) {
+  if (state.settled) return;
+  state.brainTokens = Math.max(0, Math.min(state.total, state.brainTokens + n));
+  buildTokens();
+  updateUI();
+}
+
+/* ── settle ── */
+function settle() {
+  if (state.settled) return;
+  state.settled = true;
+
+  var bp = getBrainPct();
+
+  /* show bars with animation */
+  barWeight.style.width = '2%';
+  pctWeight.textContent = '2%';
+  barEnergy.style.width = '20%';
+  pctEnergy.textContent = '20%';
+
+  /* show player marker */
+  var pct = Math.min(100, Math.max(0, bp));
+  playerMarker.style.display = 'block';
+  playerMarker.style.left = pct + '%';
+
+  /* show result area */
+  resultArea.classList.add('show');
+
+  /* update status */
+  updateSettlementStatus();
+
+  /* disable controls */
+  document.querySelectorAll('.btn:not(#btnReset):not(#btnSettle)').forEach(function(b) {
+    b.disabled = true;
+    b.style.opacity = '0.4';
+  });
+  document.getElementById('btnSettle').disabled = true;
+  document.getElementById('btnSettle').style.opacity = '0.4';
+}
+
+/* ── reset ── */
+function resetGame() {
+  state.brainTokens = 0;
+  state.settled = false;
+
+  brainCard.className = 'ration-card brain';
+  bodyCard.className = 'ration-card body';
+  brainStatus.textContent = '';
+  brainStatus.className = 'card-status';
+  bodyStatus.textContent = '';
+  bodyStatus.className = 'card-status';
+
+  resultArea.classList.remove('show');
+  barWeight.style.width = '0%';
+  barEnergy.style.width = '0%';
+  playerMarker.style.display = 'none';
+
+  document.querySelectorAll('.btn').forEach(function(b) {
+    b.disabled = false;
+    b.style.opacity = '';
+  });
+
+  buildTokens();
+  updateUI();
+}
+
+/* ── keyboard handlers ── */
+function onBtnKeydown(e) {
+  if (e.key === 'Enter' || e.key === ' ') {
+    e.preventDefault();
+    this.click();
+  }
+}
+
+/* ── wire events ── */
+document.getElementById('btnP1').addEventListener('click', function(){ allocate(1); });
+document.getElementById('btnP5').addEventListener('click', function(){ allocate(5); });
+document.getElementById('btnP10').addEventListener('click', function(){ allocate(10); });
+document.getElementById('btnM1').addEventListener('click', function(){ allocate(-1); });
+document.getElementById('btnM5').addEventListener('click', function(){ allocate(-5); });
+document.getElementById('btnM10').addEventListener('click', function(){ allocate(-10); });
+document.getElementById('btnSettle').addEventListener('click', settle);
+document.getElementById('btnReset').addEventListener('click', resetGame);
+
+document.querySelectorAll('.btn').forEach(function(b) {
+  b.addEventListener('keydown', onBtnKeydown);
+});
+
+/* ── init ── */
+buildTokens();
+updateUI();
+
+/* ── aria-live on token info ── */
+tokenInfo.setAttribute('aria-live', 'polite');
+</script>
+</body>
+</html>

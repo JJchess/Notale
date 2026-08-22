@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>配置一套会彼此牵动的生命支持环</title>
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  body{position:relative;top:-96px}
+  .life-page{position:absolute;left:96px;top:140px;width:var(--content-w);height:var(--content-h);display:grid;grid-template-columns:minmax(0,2.15fr) minmax(300px,.85fr);gap:24px}
+  .life-page>.min0{min-height:0}
+  .ledger{position:relative;height:100%;padding:14px!important;gap:10px!important;overflow:hidden}
+  .ledger-head,.flow-row{display:grid;grid-template-columns:1.05fr 1.2fr 1.05fr .9fr;gap:10px;align-items:center;position:relative;z-index:2}
+  .ledger-head{height:32px;color:var(--muted);font-size:var(--fs-label);font-weight:750;text-align:center}
+  .flow-row{height:78px;border:1px solid var(--line);border-left:5px solid var(--line-strong);border-radius:var(--radius-sm);background:rgb(255 255 255 / 88%);padding:7px 10px;box-sizing:border-box}
+  .flow-row.air{border-left-color:#899bb0}.flow-row.water{border-left-color:var(--accent)}.flow-row.food{border-left-color:var(--warning)}.flow-row.waste{border-left-color:var(--danger)}
+  .cell{min-width:0;text-align:center;font-size:var(--fs-label);line-height:var(--lh-label)}
+  .need{font-size:var(--fs-sec);line-height:var(--lh-sec);font-weight:760}.amount{display:block;color:var(--muted);font-size:var(--fs-label);font-weight:600}
+  .module{width:100%;min-height:56px;padding:5px 8px;touch-action:none;cursor:grab;position:relative;z-index:4}
+  .module[data-state="0"]{border-style:dashed;color:var(--muted)}.module[data-state="1"]{border-color:var(--warning);background:var(--warning-soft)}.module[data-state="2"]{border-color:var(--success);background:var(--success-soft)}
+    .path-state{font-weight:700}.loss{color:var(--danger)}
+  #network{position:absolute;inset:46px 14px 58px;width:calc(100% - 28px);height:calc(100% - 104px);z-index:1;pointer-events:none}
+  .power{height:42px;border:2px double var(--accent);border-radius:var(--radius-sm);background:var(--accent-soft);display:flex;align-items:center;justify-content:space-between;padding:0 16px;position:relative;z-index:2;font-size:var(--fs-label);font-weight:750}
+  .power span{font-weight:600;color:var(--muted)}
+  .diagnosis{height:100%;display:flex;flex-direction:column;gap:14px}
+  .diagnosis h2{padding-bottom:10px;border-bottom:1px solid var(--line)}
+  .diag{padding:14px;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--surface)}
+  .diag strong{display:block;font-size:var(--fs-sec);line-height:var(--lh-sec)}.diag span{display:block;margin-top:4px;font-size:var(--fs-sec);line-height:var(--lh-sec);color:var(--muted)}
+  .instruction{padding:12px 14px;border-radius:var(--radius-sm);background:var(--surface-soft);font-size:var(--fs-sec);line-height:var(--lh-sec)}
+  .result{margin-top:auto;padding:15px;border:2px solid var(--accent);border-radius:var(--radius-md);background:var(--accent-soft);font-size:var(--fs-sec);line-height:var(--lh-sec);font-weight:700}
+  .result.done{border-color:var(--success);background:var(--success-soft)}
+</style>
+</head>
+<body data-page="41" data-total="48">
+<div id="stage">
+  <main class="life-page">
+    <section class="k-classification ledger min0" aria-label="生命支持流量分类账">
+      <div class="ledger-head"><span>需求端</span><span>处理模块</span><span>返回端</span><span>残余端</span></div>
+      <svg id="network" role="img" aria-label="物质返回路径与供能连接随模块配置改变"></svg>
+      <div class="flow-row air">
+        <div class="cell need">氧气需求<span class="amount" id="oxygen"></span></div>
+        <div class="cell"><button class="module" data-module="air" data-name="空气再生" data-state="0">空气再生 · 断开</button></div>
+        <div class="cell path-state" id="air-return">依赖储备</div><div class="cell loss">系统损失 ↗</div>
+      </div>
+      <div class="flow-row water">
+        <div class="cell need">水需求<span class="amount" id="water"></span></div>
+        <div class="cell"><button class="module" data-module="water" data-name="水处理" data-state="0">水处理 · 断开</button></div>
+        <div class="cell path-state" id="water-return">依赖储备</div><div class="cell loss" id="waste-water">正在累积</div>
+      </div>
+      <div class="flow-row food">
+        <div class="cell need">食物需求<span class="amount" id="food"></span></div>
+        <div class="cell">外部补给 →</div><div class="cell path-state">需求可达</div><div class="cell loss">食物残余 ↓</div>
+      </div>
+      <div class="flow-row waste">
+        <div class="cell need">各类残余</div>
+        <div class="cell"><button class="module" data-module="waste" data-name="废物处理" data-state="0">废物处理 · 断开</button></div>
+        <div class="cell path-state" id="waste-return">无返回路径</div><div class="cell loss" id="residue">正在累积 →</div>
+      </div>
+      <div class="power">⚡ 能量供能母线 <span id="power-summary">0／3 个模块已供能</span></div>
+    </section>
+    <aside class="panel diagnosis min0" aria-live="polite">
+      <h2>系统状态</h2>
+      <div class="instruction">拖动模块：左侧断开，中间接通物质，右侧同时供能。点击或按 Enter 也可逐级切换。</div>
+      <div class="diag"><strong>需求可达</strong><span id="d-demand">食物；氧气和水依赖储备</span></div>
+      <div class="diag"><strong>处理工作</strong><span id="d-process">0／3 个模块</span></div>
+      <div class="diag"><strong>残余状态</strong><span id="d-residue">正在累积</span></div>
+      <div class="diag"><strong>供能状态</strong><span id="d-power">全部未供能</span></div>
+      <div class="result" id="result">物质路径、处理模块与供能必须同时接通。</div>
+    </aside>
+  </main>
+</div>
+<script src="assets/lib/d3.min.js"></script>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script>
+Lec.mount({index:41,kicker:'COUPLED LOOPS',title:'配置一套会彼此牵动的生命支持环',take:'空气、水、食物、废物和能量构成彼此耦合的循环系统。'});
+Deck.init({index:41,total:48});
+const fmt = Lec.P.formatNumber;
+document.querySelector('#oxygen').textContent=fmt(Lec.K.crewDailyOxygen)+' kg O₂／乘员日';
+document.querySelector('#water').textContent=fmt(Lec.K.crewDailyWater)+' kg 水／乘员日';
+document.querySelector('#food').textContent=fmt(Lec.K.crewDailyFood)+' kg 食物／乘员日';
+const modules=[...document.querySelectorAll('.module')];
+function render(){
+ const s=Object.fromEntries(modules.map(b=>[b.dataset.module,+b.dataset.state]));
+ modules.forEach(b=>{const n=+b.dataset.state, label=n===0?'断开':n===1?'有输入，无处理':'正在处理';b.textContent=b.dataset.name+' · '+label;b.setAttribute('aria-label',b.dataset.name+'，'+label)});
+ const active=Object.values(s).filter(v=>v===2).length, powered=active;
+ document.querySelector('#air-return').textContent=s.air===2?'需求可达':s.air===1?'有输入，无处理':'依赖储备';
+ document.querySelector('#water-return').textContent=s.water===2?'需求可达':s.water===1?'有输入，无处理':'依赖储备';
+ document.querySelector('#waste-water').textContent=s.water===2?'存在残余':'正在累积';
+ document.querySelector('#waste-return').textContent=s.waste===2?'部分返回空气／水侧':'无返回路径';
+ document.querySelector('#residue').textContent=s.waste===2?'有去路 →':'正在累积 →';
+ document.querySelector('#power-summary').textContent=powered+'／3 个模块已供能';
+ document.querySelector('#d-process').textContent=active+'／3 个模块';
+ document.querySelector('#d-power').textContent=powered===3?'全部已供能':powered===0?'全部未供能':powered+'／3 个模块已供能';
+ document.querySelector('#d-demand').textContent=(s.air===2?'氧气、':'')+(s.water===2?'水、':'')+'食物'+((s.air<2||s.water<2)?'；其余依赖储备':'');
+ document.querySelector('#d-residue').textContent=s.waste===2?'有去路，仍有系统损失':'正在累积';
+ const done=s.air===2&&s.water===2&&s.waste===2, r=document.querySelector('#result');r.textContent=done?'基本路径已建立：循环仍需补给，并保留残余端。':'物质路径、处理模块与供能必须同时接通。';r.classList.toggle('done',done);
+ draw(s);
+}
+function draw(s){
+ const svg=d3.select('#network'), w=svg.node().clientWidth||900,h=svg.node().clientHeight||470;svg.attr('viewBox',`0 0 ${w} ${h}`);svg.selectAll('*').remove();
+ const ys=[76,164,252,340], x1=w*.22,x2=w*.41,x3=w*.67,x4=w*.88;
+ const rows=[['air',ys[0],'#899bb0'],['water',ys[1],Deck.token('--accent')],['food',ys[2],Deck.token('--warning')],['waste',ys[3],Deck.token('--danger')]];
+ rows.forEach(([id,y,c])=>{const on=id==='food'||s[id]>0;svg.append('path').attr('d',`M${x1},${y} H${x2} M${x2},${y} H${id==='waste'?x4:x3}`).attr('fill','none').attr('stroke',c).attr('stroke-width',id==='waste'?3:5).attr('stroke-dasharray',on?null:'8 7').attr('opacity',on?.9:.38)});
+ modules.forEach((b,i)=>{const id=b.dataset.module, y=ys[id==='air'?0:id==='water'?1:3];svg.append('path').attr('d',`M${w*.41},${h-5} V${y+22}`).attr('fill','none').attr('stroke',Deck.token('--accent')).attr('stroke-width',3).attr('stroke-dasharray',s[id]===2?null:'5 6').attr('opacity',s[id]===2?1:.28)});
+}
+modules.forEach(b=>{
+ b.addEventListener('click',()=>{b.dataset.state=(+b.dataset.state+1)%3;render()});
+ let start=null;
+ b.addEventListener('pointerdown',e=>{start=Deck.pt(b,e);b.setPointerCapture(e.pointerId)});
+ b.addEventListener('pointerup',e=>{if(!start)return;const p=Deck.pt(b,e),dx=p.x-start.x;if(Math.abs(dx)>18){b.dataset.state=dx>0?Math.min(2,+b.dataset.state+1):Math.max(0,+b.dataset.state-1);render();}start=null});
+ b.addEventListener('keydown',e=>{if(e.key==='ArrowRight'){e.preventDefault();b.dataset.state=Math.min(2,+b.dataset.state+1);render()}if(e.key==='ArrowLeft'){e.preventDefault();b.dataset.state=Math.max(0,+b.dataset.state-1);render()}})
+});
+render();
+</script>
+</body>
+</html>

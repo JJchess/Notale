@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    .p30{height:100%;display:flex;flex-direction:column;gap:var(--sp-3)}
+    .ledger{--cmp-cols:minmax(150px,.55fr) repeat(2,minmax(0,1fr));flex:0 0 286px}
+    .ledger>*{padding:var(--sp-2) var(--sp-3)}
+    .ledger>.hdr{min-height:42px;font-size:var(--fs-lead);justify-content:flex-start;gap:var(--sp-3)}
+    .ledger>.dim{font-size:var(--fs-sec);line-height:var(--lh-copy)}
+    .ledger>.cell{font-size:var(--fs-sec);line-height:var(--lh-copy)}
+    .ledger-viz{margin-left:auto;display:flex;align-items:center;gap:var(--sp-1);min-width:108px;justify-content:flex-end}
+    .person{width:10px;height:10px;border-radius:50%;background:var(--accent);box-shadow:0 14px 0 -2px var(--accent)}
+    .structured .person{background:var(--cyan);box-shadow:0 14px 0 -2px var(--cyan)}
+    .link-count{font-size:var(--fs-label);font-variant-numeric:tabular-nums;color:var(--muted)}
+    .deps{display:flex;gap:var(--sp-2);margin-left:var(--sp-2);align-items:center}
+    .dep{padding:var(--sp-1) var(--sp-2);border:1px solid var(--cyan);border-radius:var(--radius-sm);font-size:var(--fs-label);font-weight:700;color:var(--cyan);background:var(--cyan-soft)}
+    .lower{display:grid;grid-template-columns:minmax(0,1fr) 290px;gap:var(--sp-3);flex:1 1 0;min-height:0}
+    .chart-panel{position:relative;padding:var(--sp-2) var(--sp-3);min-height:0}
+    #chart{width:100%;height:100%;min-height:0}
+    .model-tag{position:absolute;right:var(--sp-4);top:var(--sp-3);z-index:2;font-size:var(--fs-label);color:var(--muted)}
+    .controls{display:flex;flex-direction:column;gap:var(--sp-3);min-width:0}
+    .controls .ctl{flex-wrap:wrap}
+    .controls .ctl label{width:100%}
+    .current{font-size:var(--fs-h2);font-weight:760;font-variant-numeric:tabular-nums;color:var(--accent-strong)}
+    .metrics{display:grid;grid-template-columns:1fr 1fr;gap:var(--sp-2)}
+    .metric{padding:var(--sp-3);background:var(--surface-soft);border:1px solid var(--line);border-radius:var(--radius-md)}
+    .metric b{display:block;font-size:var(--fs-h2);line-height:1.2;font-variant-numeric:tabular-nums}
+    .metric span{font-size:var(--fs-label);color:var(--muted)}
+    .controls .note{font-size:var(--fs-sec)}
+  </style>
+</head>
+<body data-page="30" data-total="50">
+  <div id="stage"><main id="main"></main></div>
+  <script src="assets/base.js"></script>
+  <script src="assets/lec.js"></script>
+  <script src="assets/lib/echarts.min.js"></script>
+  <script>
+    Lec.mount({
+      index: 30,
+      kicker: "COORDINATION AT SCALE",
+      title: "人数增加时，协作不只是“多叫几个人”",
+      take: "规则、角色和记录帮助陌生人大规模协作，也增加系统依赖。"
+    });
+    Deck.init({ index: 30, total: 50 });
+
+    var main = document.getElementById("main");
+    main.innerHTML = '<section class="p30">' +
+      '<div class="k-comparison ledger">' +
+        '<div class="hdr muted">协作维度</div><div class="hdr">逐人协调 <span class="ledger-viz" aria-hidden="true"><i class="person"></i><i class="person"></i><i class="person"></i><em class="link-count" id="directHead"></em></span></div><div class="hdr structured">制度化协调 <span class="ledger-viz" aria-hidden="true"><i class="person"></i><i class="person"></i><i class="person"></i><em class="link-count" id="structuredHead"></em></span></div>' +
+        '<div class="rowline"></div>' +
+        '<div class="dim">找到该问谁</div><div class="cell">自行辨认并联系相关的人</div><div class="cell">先找责任角色，再找担任者</div>' +
+        '<div class="rowline"></div>' +
+        '<div class="dim">分配任务</div><div class="cell">逐次商量；变更需重新通知</div><div class="cell">程序分派；角色限定责任与权限</div>' +
+        '<div class="rowline"></div>' +
+        '<div class="dim">保存进度</div><div class="cell">状态留在当下交流与记忆中</div><div class="cell">共享记录保存任务、决定与交接</div>' +
+        '<div class="rowline"></div>' +
+        '<div class="dim">主要脆弱点</div><div class="cell diff">联系变密后，遗漏与冲突更难察觉</div><div class="cell diff">共同支撑失灵会影响许多人 <span class="deps"><i class="dep">规则</i><i class="dep">角色</i><i class="dep">记录</i></span></div>' +
+      '</div>' +
+      '<div class="lower">' +
+        '<div class="panel chart-panel min0"><span class="model-tag">教学模型</span><div id="chart" role="img" aria-label="逐人协调与制度化协调的模型联系数随人数变化的曲线"></div></div>' +
+        '<aside class="controls min0">' +
+          '<div class="ctl"><label for="people">调节协作人数</label><input id="people" type="range"><output id="peopleOut" class="current"></output></div>' +
+          '<div class="metrics" aria-live="polite"><div class="metric"><b id="directVal"></b><span>潜在直接联系</span></div><div class="metric"><b id="structuredVal"></b><span>制度化模型联系</span></div></div>' +
+          '<p class="note" id="explain">制度重组联系，不消除协调成本。</p>' +
+        '</aside>' +
+      '</div></section>';
+
+    /* 本页专用教学模型；共享配置缺席时，把情境参数登记到 Lec 后再统一读取。 */
+    Lec.K.p30CollaborationPeopleRange = Lec.K.p30CollaborationPeopleRange || {min:2,max:60,default:20,step:1};
+    Lec.K.p30PeoplePerRoleTarget = Lec.K.p30PeoplePerRoleTarget || 6;
+    Lec.P.p30DirectCoordinationLinks = Lec.P.p30DirectCoordinationLinks || function(n){ return n * (n - 1) / 2; };
+    Lec.P.p30RoleCount = Lec.P.p30RoleCount || function(n,target){ return Math.ceil(n / target); };
+    Lec.P.p30StructuredCoordinationLinks = Lec.P.p30StructuredCoordinationLinks || function(n,r){ return n + r * (r - 1) / 2; };
+    Lec.P.p30CollaborationSeries = Lec.P.p30CollaborationSeries || function(r,target){
+      var out=[]; for(var n=r.min;n<=r.max;n+=r.step){var roles=Lec.P.p30RoleCount(n,target);out.push({n:n,direct:Lec.P.p30DirectCoordinationLinks(n),roles:roles,structured:Lec.P.p30StructuredCoordinationLinks(n,roles)});} return out;
+    };
+    Lec.P.p30CoordinationAxisMax = Lec.P.p30CoordinationAxisMax || function(items){var peak=0;items.forEach(function(d){peak=Math.max(peak,d.direct,d.structured);});return Math.ceil(peak/100)*100;};
+    Lec.P.p30DependencyEmphasis = Lec.P.p30DependencyEmphasis || function(n,r){return (n-r.min)/(r.max-r.min);};
+    var range = Lec.K.p30CollaborationPeopleRange;
+    var min = Number(range.min), max = Number(range.max), def = Number(range.default), step = Number(range.step);
+    var slider = document.getElementById('people');
+    slider.min = min; slider.max = max; slider.step = step; slider.value = def;
+    var series = Lec.P.p30CollaborationSeries(range, Lec.K.p30PeoplePerRoleTarget);
+    var directData = [], structuredData = [];
+    series.forEach(function(d){
+      var n = Number(d.n != null ? d.n : d.people);
+      var direct = d.direct != null ? d.direct : Lec.P.p30DirectCoordinationLinks(n);
+      var roles = d.roles != null ? d.roles : Lec.P.p30RoleCount(n, Lec.K.p30PeoplePerRoleTarget);
+      var structured = d.structured != null ? d.structured : Lec.P.p30StructuredCoordinationLinks(n, roles);
+      directData.push([n, direct]); structuredData.push([n, structured]);
+    });
+    var axisMax = Lec.P.p30CoordinationAxisMax(series);
+    var chart = echarts.init(document.getElementById('chart'), null, {renderer:'svg'});
+    function fmt(v){ return Lec.P.formatNumber(Lec.P.finite(v) ? v : 0); }
+    function safeN(v){ var n=Number(v); return Lec.P.clamp(Lec.P.finite(n) ? n : def, min, max); }
+    function update(){
+      var n = safeN(slider.value);
+      var direct = Lec.P.p30DirectCoordinationLinks(n);
+      var roles = Lec.P.p30RoleCount(n, Lec.K.p30PeoplePerRoleTarget);
+      var structured = Lec.P.p30StructuredCoordinationLinks(n, roles);
+      var ratio = Lec.P.ratio(direct, structured);
+      document.getElementById('peopleOut').textContent = fmt(n) + ' 人';
+      document.getElementById('directVal').textContent = fmt(direct);
+      document.getElementById('structuredVal').textContent = fmt(structured);
+      document.getElementById('directHead').textContent = fmt(direct) + ' 条';
+      document.getElementById('structuredHead').textContent = fmt(structured) + ' 条';
+      var emphasis = Lec.P.clamp(Lec.P.p30DependencyEmphasis(n, range), 0, 1);
+      document.querySelectorAll('.dep').forEach(function(el){ el.style.opacity = String(.45 + emphasis * .55); el.style.borderWidth = (1 + emphasis * 2) + 'px'; });
+      chart.setOption({series:[{markLine:{silent:true,symbol:'none',label:{show:false},lineStyle:{color:Deck.rgb('text'),width:2,type:'dashed'},data:[{xAxis:n}]}}]});
+    }
+    chart.setOption({
+      animation:false,
+      textStyle:{fontSize:16,fontFamily:Deck.token('font-sans'),color:Deck.rgb('text')},
+      grid:{left:96,right:24,top:34,bottom:48},
+      tooltip:{trigger:'axis',textStyle:{fontSize:16}},
+      legend:{left:10,top:0,textStyle:{fontSize:14},data:['潜在直接联系','制度化模型联系']},
+      xAxis:{type:'value',min:min,max:max,name:'协作人数（人）',nameTextStyle:{fontSize:14},axisLabel:{fontSize:14}},
+      yAxis:{type:'value',max:axisMax,name:'模型中的协调联系（条）',nameLocation:'middle',nameGap:66,nameTextStyle:{fontSize:14},axisLabel:{fontSize:14,formatter:function(v){return fmt(v);}}},
+      series:[
+        {name:'潜在直接联系',type:'line',showSymbol:false,smooth:false,data:directData,lineStyle:{width:3,color:Deck.rgb('accent')},itemStyle:{color:Deck.rgb('accent')}},
+        {name:'制度化模型联系',type:'line',showSymbol:false,smooth:false,data:structuredData,lineStyle:{width:3,color:Deck.rgb('cyan')},itemStyle:{color:Deck.rgb('cyan')}}
+      ]
+    });
+    slider.addEventListener('input', update);
+    Deck.onResize(function(){ chart.resize(); });
+    update();
+  </script>
+</body>
+</html>

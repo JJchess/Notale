@@ -1,0 +1,510 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  #main { overflow: hidden; }
+  progress.lec-progress {
+    appearance: none;
+    -webkit-appearance: none;
+    border: 0;
+    padding: 0;
+    overflow: visible;
+  }
+  .orbit-page {
+    position: relative;
+    width: var(--content-w);
+    height: var(--content-h);
+    overflow: hidden;
+    border: 1px solid var(--line);
+    background: var(--surface-data);
+  }
+  .space-scene {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    cursor: grab;
+    outline: none;
+    touch-action: none;
+  }
+  .space-scene:active { cursor: grabbing; }
+  .space-scene:focus-visible { box-shadow: inset 0 0 0 3px var(--focus); }
+  .scene-canvas { display: block; }
+  .scene-shade {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background: linear-gradient(90deg, rgb(7 16 24 / 76%) 0, transparent 32%, transparent 68%, rgb(7 16 24 / 68%) 100%);
+  }
+  .scene-label {
+    position: absolute;
+    top: var(--sp-4);
+    left: var(--sp-4);
+    color: var(--text-muted);
+    font-size: var(--fs-label);
+    line-height: var(--lh-tight);
+    pointer-events: none;
+  }
+  .scene-label strong { color: var(--text); font-weight: 650; }
+  .telemetry-box {
+    position: absolute;
+    z-index: 4;
+    top: var(--sp-4);
+    right: var(--sp-4);
+    width: 248px;
+    padding: var(--sp-4);
+    border-left: 3px solid var(--primary);
+    background: rgb(16 27 36 / 92%);
+  }
+  .telemetry-row {
+    display: flex;
+    justify-content: space-between;
+    gap: var(--sp-4);
+    align-items: baseline;
+    min-height: 30px;
+  }
+  .telemetry-row + .telemetry-row { border-top: 1px solid var(--line); padding-top: var(--sp-2); margin-top: var(--sp-2); }
+  .telemetry-name { color: var(--text-muted); font-size: var(--fs-label); }
+  .telemetry-value { color: var(--text); font-size: var(--fs-body); font-weight: 650; }
+  .drag-hint {
+    position: absolute;
+    z-index: 4;
+    top: var(--sp-4);
+    left: 50%;
+    min-height: 44px;
+    padding: var(--sp-3) var(--sp-4);
+    border: 1px solid var(--primary-line);
+    background: rgb(16 27 36 / 90%);
+    color: var(--text);
+    font-size: var(--fs-sec);
+    line-height: var(--lh-tight);
+    transform: translateX(-50%);
+    pointer-events: none;
+  }
+  .k-generalization.orbit-logic {
+    position: absolute;
+    z-index: 3;
+    right: var(--sp-4);
+    bottom: 92px;
+    left: var(--sp-4);
+    grid-template-rows: auto auto;
+    gap: var(--sp-3);
+    pointer-events: none;
+  }
+  .k-generalization.orbit-logic > .claim {
+    width: 940px;
+    max-width: 940px;
+    padding: var(--sp-3) var(--sp-4);
+    background: rgb(16 27 36 / 94%);
+    opacity: 0;
+    transform: translateY(8px);
+    transition: opacity 220ms ease, transform 220ms ease;
+  }
+  .k-generalization.orbit-logic > .claim.is-revealed { opacity: 1; transform: translateY(0); }
+  .k-generalization.orbit-logic > .trunk { top: 36px; bottom: 0; }
+  .k-generalization.orbit-logic > .supports {
+    gap: var(--sp-3);
+    padding-top: var(--sp-3);
+  }
+  .k-generalization.orbit-logic > .supports::before { top: var(--sp-3); }
+  .k-generalization.orbit-logic .support {
+    min-height: 70px;
+    padding: var(--sp-3) var(--sp-4);
+    background: rgb(22 35 45 / 92%);
+  }
+  .k-generalization.orbit-logic .support::before { height: var(--sp-3); }
+  .support-title {
+    display: block;
+    margin-bottom: var(--sp-1);
+    color: var(--text);
+    font-size: var(--fs-label);
+    font-weight: 650;
+  }
+  .view-rail {
+    position: absolute;
+    z-index: 5;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    display: flex;
+    align-items: center;
+    min-height: 76px;
+    padding: var(--sp-3) var(--sp-4);
+    border-top: 1px solid var(--line);
+    background: rgb(11 21 29 / 97%);
+  }
+  .view-progress { width: 150px; color: var(--text); font-size: var(--fs-sec); line-height: var(--lh-tight); }
+  .view-progress strong { color: var(--accent); font-family: var(--font-mono); }
+  .view-stops { position: relative; display: flex; flex: 1; justify-content: space-around; align-items: center; }
+  .view-stops::before { position: absolute; top: 13px; right: 13%; left: 13%; height: 2px; background: var(--primary-line); content: ""; }
+  .view-stop { position: relative; z-index: 1; min-width: 180px; color: var(--text-muted); text-align: center; font-size: var(--fs-label); line-height: var(--lh-tight); }
+  .view-dot { display: block; width: 18px; height: 18px; margin: 0 auto var(--sp-2); border: 2px solid var(--primary); border-radius: 50%; background: var(--surface); }
+  .view-stop.is-seen .view-dot { background: var(--primary); box-shadow: 0 0 0 4px var(--primary-soft); }
+  .view-stop.is-current { color: var(--accent); font-weight: 650; }
+  .view-stop.is-current .view-dot { border-color: var(--accent); background: var(--accent); box-shadow: 0 0 0 5px var(--accent-soft); }
+  .reset-button { width: 48px; min-width: 48px; height: 48px; padding: 0; font-size: 24px; line-height: 1; }
+  .feedback {
+    position: absolute;
+    z-index: 6;
+    top: 68px;
+    left: 50%;
+    width: 680px;
+    min-height: 44px;
+    padding: var(--sp-3) var(--sp-4);
+    border-left: 3px solid var(--accent);
+    background: rgb(16 27 36 / 96%);
+    color: var(--text);
+    font-size: var(--fs-sec);
+    line-height: var(--lh-tight);
+    opacity: 0;
+    transform: translateX(-50%);
+    pointer-events: none;
+    transition: opacity 180ms ease;
+  }
+  .feedback.is-visible { opacity: 1; }
+  @media (prefers-reduced-motion: reduce) {
+    .k-generalization.orbit-logic > .claim, .feedback { transition: none; }
+  }
+</style>
+</head>
+<body data-page="07" data-total="50">
+<div id="stage">
+<main id="main">
+  <section class="orbit-page min0" aria-label="行星轨道共面性三维观察">
+    <div id="scene" class="space-scene no-pan min0" tabindex="0" role="application" aria-label="拖动旋转轨道薄盘；也可用上下方向键改变视角，松开后对准俯视、斜视或侧视">
+      <div class="scene-shade"></div>
+      <div class="scene-label"><strong>八条轨道</strong> · 半长轴压缩显示 · 行星为定位光点</div>
+      <div class="drag-hint">上下拖动薄盘，或按 ↑ ↓ 对准三个观察角度</div>
+    </div>
+
+    <aside class="telemetry-box telemetry" aria-live="polite">
+      <div class="telemetry-row"><span class="telemetry-name">当前视角</span><span id="viewName" class="telemetry-value mono">斜视</span></div>
+      <div class="telemetry-row"><span class="telemetry-name">观察倾角</span><span id="angleValue" class="telemetry-value mono">42°</span></div>
+      <div class="telemetry-row"><span class="telemetry-name">盘面厚度</span><span id="thicknessValue" class="telemetry-value mono">—</span></div>
+    </aside>
+
+    <div class="k-generalization orbit-logic" aria-label="轨道共面性的主张与三条支撑">
+      <div id="claim" class="claim">八颗行星的轨道接近同一平面。这种跨越整个行星系统的共同结构，提示它们拥有共同的形成背景。</div>
+      <div class="trunk" aria-hidden="true"></div>
+      <div class="supports">
+        <div class="support"><span class="support-title">俯视 · 共同中心</span>八条轨道大小不同，却都围绕太阳展开。</div>
+        <div class="support"><span class="support-title">斜视 · 略有偏离</span>轨道相对参考面微倾，因此不是完全重合。</div>
+        <div class="support"><span class="support-title">侧视 · 收束成带</span>独立轨道压成窄带，显出共享的空间结构。</div>
+      </div>
+    </div>
+
+    <div id="feedback" class="feedback" role="status">还没有对准盘面边缘：继续旋转，直到轨道压成最窄的一带。</div>
+
+    <nav class="view-rail" aria-label="观察进度">
+      <div class="view-progress">已观察 <strong id="progressValue">0/3</strong></div>
+      <div class="view-stops" aria-hidden="true">
+        <div class="view-stop" data-view="top"><span class="view-dot"></span><span>俯视 · 共同中心</span></div>
+        <div class="view-stop" data-view="oblique"><span class="view-dot"></span><span>斜视 · 略有倾斜</span></div>
+        <div class="view-stop" data-view="edge"><span class="view-dot"></span><span>侧视 · 收束窄带</span></div>
+      </div>
+      <button id="reset" class="reset-button" type="button" title="重置观察" aria-label="重置观察">↺</button>
+    </nav>
+  </section>
+</main>
+</div>
+<script src="assets/lib/three.min.js"></script>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script>
+Lec.mount({
+  index: 7,
+  kicker: "ORBITAL PLANE",
+  title: "八颗行星，几乎走在同一张薄盘上",
+  take: "八颗行星的轨道接近同一平面，提示它们拥有共同的形成背景。"
+});
+
+(function () {
+  var wrap = document.getElementById('scene');
+  var viewName = document.getElementById('viewName');
+  var angleValue = document.getElementById('angleValue');
+  var thicknessValue = document.getElementById('thicknessValue');
+  var progressValue = document.getElementById('progressValue');
+  var feedback = document.getElementById('feedback');
+  var claim = document.getElementById('claim');
+  var resetButton = document.getElementById('reset');
+  var stops = Array.prototype.slice.call(document.querySelectorAll('.view-stop'));
+  var planets = Lec.K.PLANETS;
+  var sun = Lec.K.SUN;
+  var reduced = Deck.reduced();
+  var targets = [
+    { id: 'top', angle: 4, label: '俯视' },
+    { id: 'oblique', angle: 42, label: '斜视' },
+    { id: 'edge', angle: 86, label: '侧视' }
+  ];
+  var angle = reduced ? 42 : 28;
+  var desiredAngle = angle;
+  var visited = {};
+  var dragging = false;
+  var startY = 0;
+  var startAngle = angle;
+  var feedbackTimer = 0;
+  var completionTimer = 0;
+
+  var scene = new THREE.Scene();
+  scene.background = new THREE.Color(Deck.token('--bg'));
+  var camera = new THREE.PerspectiveCamera(35, 1, 0.1, 100);
+  var renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+  renderer.setPixelRatio(1);
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+  renderer.domElement.className = 'scene-canvas cv-fill';
+  renderer.domElement.setAttribute('aria-hidden', 'true');
+  wrap.insertBefore(renderer.domElement, wrap.firstChild);
+
+  var system = new THREE.Group();
+  scene.add(system);
+  var primary = new THREE.Color(Deck.token('--primary'));
+  var accent = new THREE.Color(Deck.token('--accent'));
+  var surface = new THREE.Color(Deck.token('--surface-data'));
+  var lineColor = new THREE.Color(Deck.token('--line-strong'));
+
+  var plane = new THREE.Mesh(
+    new THREE.CircleGeometry(5.55, 128),
+    new THREE.MeshBasicMaterial({ color: primary, transparent: true, opacity: 0.075, side: THREE.DoubleSide, depthWrite: false })
+  );
+  plane.rotation.x = -Math.PI / 2;
+  system.add(plane);
+
+  var rim = new THREE.LineLoop(
+    new THREE.BufferGeometry().setFromPoints(Array.from({ length: 160 }, function (_, i) {
+      var a = i / 160 * Math.PI * 2;
+      return new THREE.Vector3(Math.cos(a) * 5.55, 0, Math.sin(a) * 5.55);
+    })),
+    new THREE.LineBasicMaterial({ color: lineColor, transparent: true, opacity: 0.65 })
+  );
+  system.add(rim);
+
+  var star = new THREE.Mesh(
+    new THREE.SphereGeometry(0.14, 24, 16),
+    new THREE.MeshBasicMaterial({ color: accent })
+  );
+  star.name = sun && sun.name ? sun.name : '太阳';
+  system.add(star);
+  var glow = new THREE.PointLight(accent, 1.5, 8);
+  system.add(glow);
+
+  var orbitLines = [];
+  var measureLines = [];
+  var allWorldPoints = [];
+  var maxA = Math.max.apply(null, planets.map(function (p) { return p.semimajorAU; }));
+
+  planets.forEach(function (planet, planetIndex) {
+    var radiusScale = 0.72 + 4.72 * Math.sqrt(planet.semimajorAU / maxA);
+    var inclination = Lec.P.degToRad(planet.inclinationDeg);
+    var orbitPoints = [];
+    var markerPoint;
+    var basePoint;
+    for (var i = 0; i < 180; i += 1) {
+      var mean = i / 180 * Math.PI * 2;
+      Lec.P.solveKepler(mean, planet.eccentricity);
+      var pos = Lec.P.orbitPosition(radiusScale, planet.eccentricity, mean);
+      var p3 = new THREE.Vector3(pos.x, Math.sin(inclination) * pos.y, Math.cos(inclination) * pos.y);
+      orbitPoints.push(p3);
+      allWorldPoints.push(p3);
+      if (i === 20 + planetIndex * 13) {
+        markerPoint = p3.clone();
+        basePoint = new THREE.Vector3(p3.x, 0, p3.z);
+      }
+    }
+    var orbit = new THREE.LineLoop(
+      new THREE.BufferGeometry().setFromPoints(orbitPoints),
+      new THREE.LineBasicMaterial({ color: primary, transparent: true, opacity: 0.78 })
+    );
+    orbitLines.push(orbit);
+    system.add(orbit);
+
+    var marker = new THREE.Mesh(
+      new THREE.SphereGeometry(0.055, 12, 8),
+      new THREE.MeshBasicMaterial({ color: planet.id === 'earth' ? accent : primary })
+    );
+    marker.position.copy(markerPoint);
+    marker.name = planet.name;
+    system.add(marker);
+
+    var measure = new THREE.Line(
+      new THREE.BufferGeometry().setFromPoints([basePoint, markerPoint]),
+      new THREE.LineDashedMaterial({ color: primary, transparent: true, opacity: 0.65, dashSize: 0.04, gapSize: 0.025 })
+    );
+    measure.computeLineDistances();
+    measureLines.push(measure);
+    system.add(measure);
+  });
+
+  function resize() {
+    var width = wrap.clientWidth;
+    var height = wrap.clientHeight;
+    renderer.setSize(width, height, false);
+    camera.aspect = width / height;
+    camera.updateProjectionMatrix();
+    render();
+  }
+
+  function setCamera() {
+    var rad = Lec.P.degToRad(angle);
+    var distance = 15.2;
+    camera.position.set(0, Math.cos(rad) * distance, Math.sin(rad) * distance);
+    camera.lookAt(0, 0, 0);
+    camera.updateMatrixWorld();
+  }
+
+  function projectedThickness() {
+    var minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    allWorldPoints.forEach(function (point) {
+      var projected = point.clone().project(camera);
+      minX = Math.min(minX, projected.x);
+      maxX = Math.max(maxX, projected.x);
+      minY = Math.min(minY, projected.y);
+      maxY = Math.max(maxY, projected.y);
+    });
+    return Math.max(1, Math.min(100, (maxY - minY) / (maxX - minX) * 100));
+  }
+
+  function nearestTarget() {
+    return targets.reduce(function (best, target) {
+      var d = Math.abs(angle - target.angle);
+      return d < best.distance ? { target: target, distance: d } : best;
+    }, { target: targets[0], distance: Infinity });
+  }
+
+  function updateUI() {
+    var nearest = nearestTarget();
+    viewName.textContent = nearest.distance <= 9 ? nearest.target.label : '旋转中';
+    angleValue.textContent = Lec.P.round(angle, 0) + '°';
+    thicknessValue.textContent = Lec.P.round(projectedThickness(), 0) + '% 直径';
+    var count = Object.keys(visited).length;
+    progressValue.textContent = count + '/3';
+    stops.forEach(function (stop) {
+      var id = stop.getAttribute('data-view');
+      stop.classList.toggle('is-seen', !!visited[id]);
+      stop.classList.toggle('is-current', nearest.distance <= 3 && nearest.target.id === id);
+    });
+  }
+
+  function render() {
+    setCamera();
+    measureLines.forEach(function (line) { line.visible = angle > 18 && angle < 82; });
+    renderer.render(scene, camera);
+    updateUI();
+  }
+
+  function showFeedback(message) {
+    window.clearTimeout(feedbackTimer);
+    feedback.textContent = message;
+    feedback.classList.add('is-visible');
+    feedbackTimer = window.setTimeout(function () { feedback.classList.remove('is-visible'); }, 2400);
+  }
+
+  function completeSequence() {
+    if (Object.keys(visited).length !== 3) return;
+    window.clearTimeout(completionTimer);
+    claim.classList.add('is-revealed', 'is-current');
+    if (reduced) {
+      angle = 42;
+      desiredAngle = 42;
+      render();
+      return;
+    }
+    var index = 0;
+    completionTimer = window.setInterval(function () {
+      orbitLines.forEach(function (line, i) {
+        line.material.color.copy(i <= index ? accent : primary);
+        line.material.opacity = i <= index ? 1 : 0.78;
+      });
+      renderer.render(scene, camera);
+      index += 1;
+      if (index >= orbitLines.length) {
+        window.clearInterval(completionTimer);
+        window.setTimeout(function () {
+          orbitLines.forEach(function (line) { line.material.color.copy(primary); });
+          desiredAngle = 42;
+        }, 400);
+      }
+    }, 90);
+  }
+
+  function settle() {
+    var nearest = nearestTarget();
+    if (nearest.distance <= 11) {
+      angle = nearest.target.angle;
+      desiredAngle = angle;
+      visited[nearest.target.id] = true;
+      showFeedback(nearest.target.label + '已对准：' + (nearest.target.id === 'edge' ? '八条轨道收束为窄带。' : nearest.target.id === 'top' ? '轨道大小不同，共同环绕太阳。' : '可见轨道略微偏离参考面。'));
+      render();
+      completeSequence();
+    } else {
+      var direction = angle >= startAngle ? -1 : 1;
+      desiredAngle = Deck.clamp(angle + direction * 4, 4, 86);
+      showFeedback('还没有对准盘面边缘：继续旋转，直到轨道压成最窄的一带。');
+    }
+  }
+
+  wrap.addEventListener('pointerdown', function (event) {
+    dragging = true;
+    startY = Deck.pt(wrap, event).y;
+    startAngle = angle;
+    desiredAngle = angle;
+    wrap.setPointerCapture(event.pointerId);
+  });
+  wrap.addEventListener('pointermove', function (event) {
+    if (!dragging) return;
+    var currentY = Deck.pt(wrap, event).y;
+    angle = Deck.clamp(startAngle + (currentY - startY) * 0.18, 4, 86);
+    desiredAngle = angle;
+    render();
+  });
+  wrap.addEventListener('pointerup', function (event) {
+    if (!dragging) return;
+    dragging = false;
+    wrap.releasePointerCapture(event.pointerId);
+    settle();
+  });
+  wrap.addEventListener('pointercancel', function () { dragging = false; });
+  wrap.addEventListener('keydown', function (event) {
+    if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown' && event.key !== 'Home' && event.key !== 'End') return;
+    event.preventDefault();
+    startAngle = angle;
+    if (event.key === 'Home') angle = 4;
+    else if (event.key === 'End') angle = 86;
+    else angle = Deck.clamp(angle + (event.key === 'ArrowDown' ? 4 : -4), 4, 86);
+    desiredAngle = angle;
+    render();
+    window.clearTimeout(wrap.keyboardTimer);
+    wrap.keyboardTimer = window.setTimeout(settle, 260);
+  });
+
+  resetButton.addEventListener('click', function () {
+    visited = {};
+    angle = 4;
+    desiredAngle = 4;
+    claim.classList.remove('is-revealed', 'is-current');
+    feedback.classList.remove('is-visible');
+    orbitLines.forEach(function (line) { line.material.color.copy(primary); line.material.opacity = 0.78; });
+    render();
+    wrap.focus();
+  });
+
+  Deck.onResize(resize);
+  resize();
+
+  if (reduced) {
+    visited = { top: true, oblique: true, edge: true };
+    claim.classList.add('is-revealed');
+    render();
+  } else {
+    Deck.loop(function (_, dt) {
+      if (!dragging && Math.abs(desiredAngle - angle) > 0.05) {
+        angle = Deck.lerp(angle, desiredAngle, Math.min(1, dt * 9));
+        render();
+      }
+    }, { still: 1 });
+  }
+}());
+</script>
+</body>
+</html>

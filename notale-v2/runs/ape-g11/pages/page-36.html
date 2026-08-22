@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  #stage{padding:24px 30px 26px;gap:14px}
+  .eyebrow{color:var(--primary-bright);font:700 var(--fs-label)/1.4 var(--font-mono);letter-spacing:.12em}
+  .leadline{margin:4px 0 0;color:var(--muted);font-size:var(--fs-lead);line-height:var(--lh-text)}
+  .game{display:flex;gap:16px;min-height:0}
+  .parts{width:230px;display:flex;flex-direction:column;gap:12px}
+  .part{position:relative;min-height:74px;cursor:grab;touch-action:none;text-align:left;justify-content:flex-start;padding-left:66px}
+  .part:before{position:absolute;left:18px;width:30px;height:42px;border:2px solid currentColor;border-radius:8px 8px 14px 14px;content:""}
+  .part.fuel:before{height:48px;border-radius:14px;background:linear-gradient(180deg,transparent 35%,var(--accent-soft) 36%)}
+  .part.dragging{z-index:8;opacity:.88;box-shadow:0 12px 28px rgba(0,0,0,.4)}
+  .scene{position:relative;flex:1;min-width:0;overflow:hidden;border:2px solid var(--line);border-radius:var(--r-lg);background:radial-gradient(circle at 50% 5%,rgba(53,194,178,.12),transparent 38%),linear-gradient(180deg,#07111f,#0b2235)}
+  #physics{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+  .orbit{position:absolute;left:12%;right:12%;top:45px;height:100px;border:2px dashed rgba(53,194,178,.45);border-bottom:0;border-radius:50% 50% 0 0;transition:border-color .25s,box-shadow .25s}
+  .orbit.success{border-color:var(--accent);box-shadow:0 -7px 20px rgba(255,181,71,.2)}
+  .orbit-label{position:absolute;right:15%;top:28px;color:var(--muted);font-size:var(--fs-label)}
+  .tower{position:absolute;left:50%;bottom:72px;width:250px;transform:translateX(-50%);display:flex;flex-direction:column-reverse;align-items:center;gap:7px}
+  .payload{width:72px;height:58px;clip-path:polygon(50% 0,100% 70%,82% 100%,18% 100%,0 70%);background:var(--accent);color:var(--bg);display:flex;align-items:flex-end;justify-content:center;padding-bottom:4px;font-size:var(--fs-label);font-weight:800;transition:transform .7s ease-out}
+  .slot{width:220px;height:104px;border:2px dashed var(--line);border-radius:var(--r-md);background:rgba(9,24,39,.78);display:flex;align-items:center;justify-content:center;gap:12px;color:var(--faint);font-size:var(--fs-label);transition:.18s ease-out}
+  .slot.ready{border-style:solid;border-color:var(--primary);box-shadow:0 0 18px var(--line-soft);color:var(--text)}
+  .slot.current{border-color:var(--accent);box-shadow:0 0 22px var(--accent-soft)}
+  .slot .mini{width:42px;height:65px;border:2px solid var(--primary);border-radius:9px 9px 14px 14px;background:linear-gradient(180deg,var(--panel-soft) 42%,var(--accent-soft) 43%)}
+  .earth{position:absolute;left:0;right:0;bottom:0;height:72px;border-top:3px solid var(--primary);border-radius:50% 50% 0 0;background:rgba(53,194,178,.08)}
+  .meters{width:300px;display:flex;flex-direction:column;gap:12px}
+  .massbar,.dvbar{position:relative;height:32px;border:1px solid var(--line);border-radius:8px;background:var(--panel-deep);overflow:hidden}
+  .massfill,.dvfill{height:100%;width:0;background:var(--primary);transition:width .25s ease-out}
+  .dvfill{background:var(--accent)}
+  .targetline{position:absolute;top:0;bottom:0;width:2px;background:var(--text);opacity:.85}
+  .process-compact .step{padding:10px 12px;font-size:var(--fs-label);text-align:center}
+  .process-compact .arw{flex-basis:22px}
+  .status{min-height:52px;padding:10px 12px;border-left:3px solid var(--primary);background:var(--panel-deep);font-size:var(--fs-sec);line-height:1.4}
+  .shake{animation:shake .24s ease-out}
+  @keyframes shake{25%{transform:translateX(-7px)}50%{transform:translateX(7px)}75%{transform:translateX(-4px)}}
+  @media(prefers-reduced-motion:reduce){*,*:before,*:after{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body data-page="36" data-total="48">
+<div id="stage">
+  <header style="height:88px" class="row between items-start">
+    <div><div class="eyebrow">ORBITAL ENGINEERING · 36</div><h1>为什么火箭要分级？</h1><p class="leadline">多带推进剂能增加速度，但推进剂和空结构本身也必须先被加速。</p></div>
+    <div class="chip accent-chip" id="assemblyCount">已装配 0/3 级</div>
+  </header>
+  <div class="k-process process-compact" style="height:62px">
+    <div class="axis"></div><div class="step is-current">点火</div><div class="arw"></div><div class="step">消耗推进剂</div><div class="arw"></div><div class="step">抛弃空级</div><div class="arw"></div><div class="step">剩余质量下降</div><div class="arw"></div><div class="step">下一级继续加速</div>
+  </div>
+  <main class="game min0" style="flex:1">
+    <section class="parts panel pad-3 min0" aria-label="部件架">
+      <h2>部件架</h2>
+      <p class="fs-sec muted" style="margin:0">拖动部件到装配环。键盘可先选部件，再用方向键选级，按 Enter 装入。</p>
+      <button class="part engine no-pan" id="enginePart" data-part="engine" draggable="false">发动机<br><span class="muted">提供排气速度</span></button>
+      <button class="part fuel no-pan" id="fuelPart" data-part="fuel" draggable="false">推进剂舱<br><span class="muted">燃烧后质量减少</span></button>
+      <div class="note">每一级都要同时具备发动机和推进剂舱。</div>
+    </section>
+    <section class="scene min0 no-pan" id="scene" aria-label="火箭装配与发射场景">
+      <canvas id="physics" class="cv-fill" aria-hidden="true"></canvas>
+      <div class="orbit" id="orbit"></div><div class="orbit-label" id="targetLabel">理想圆轨道目标</div>
+      <div class="tower" id="tower"><div class="payload" id="payload">载荷</div><div class="slot" data-level="0">第 1 级 · 待装入</div><div class="slot" data-level="1">第 2 级 · 待装入</div><div class="slot" data-level="2">第 3 级 · 待装入</div></div>
+      <div class="earth"></div>
+    </section>
+    <aside class="meters panel pad-3 min0">
+      <h2>实时结果</h2>
+      <div class="readout"><span class="readout-label">总速度增量 Δv</span><span class="value" id="dvValue">—</span><span class="unit">km/s</span></div>
+      <div><div class="row between fs-label"><span>速度增量</span><span id="goalShort">目标 —</span></div><div class="dvbar"><div class="dvfill" id="dvFill"></div><div class="targetline" id="targetLine"></div></div></div>
+      <div><div class="row between fs-label"><span>当前质量</span><span id="massValue">—</span></div><div class="massbar"><div class="massfill" id="massFill"></div></div></div>
+      <div class="legend"><span><i class="legend-key"></i>剩余质量</span><span><i class="legend-key is-current"></i>新增 Δv</span></div>
+      <div class="status" id="status" aria-live="polite">先装好至少一级，再发射。</div>
+      <div class="row gap-2"><button class="is-target grow" id="launch">发射</button><button class="grow" id="reset">重搭一次</button></div>
+      <p class="fs-sec muted" style="margin:auto 0 0">理想化比较：忽略空气阻力、重力损失与地球自转。达到目标线不等于现实发射必然成功。</p>
+    </aside>
+  </main>
+  <footer style="height:54px" class="panel-flat row items-center px-4"><strong class="accent">关键：</strong><span style="margin-left:10px">分级不是“多装几个发动机”，而是在合适时刻丢掉不再有用的干质量。</span></footer>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script src="assets/lib/matter.min.js"></script>
+<script>
+(function(){
+  Deck.init({index:36,total:48});
+  const rk=typeof Lec.K==='function'?Lec.K('rocket'):Lec.K.rocket;
+  function nums(o,p=''){const a=[];if(!o)return a;Object.keys(o).forEach(k=>{const v=o[k],q=p+k;if(typeof v==='number'&&isFinite(v))a.push([q,v]);else if(v&&typeof v==='object')a.push(...nums(v,q+'.'));});return a}
+  const all=nums(rk); function pick(re,lo,hi){const hit=all.find(x=>re.test(x[0])&&x[1]>=lo&&x[1]<=hi);return hit&&hit[1]}
+  const exhaust=pick(/exhaust|velocity|ve/i,1000,10000)||all.find(x=>x[1]>=1000&&x[1]<=10000)[1];
+  const wet=pick(/wet|initial|gross|launch.*mass/i,10,100000)||all.find(x=>x[1]>=100&&x[1]<=100000)[1];
+  const dry=pick(/dry|empty|structure/i,1,wet)||all.find(x=>x[1]>1&&x[1]<wet)[1];
+  const payloadMass=pick(/payload/i,1,100000)||dry;
+  const altitude=pick(/altitude|leo/i,1000,2000000)||((typeof Lec.K==='function'?Lec.K('astronomy'):Lec.K.astronomy).lowEarthOrbitAltitude);
+  const target=Lec.P.earthOrbitVelocity(altitude);
+  const fmt=v=>Lec.P.formatFixed(v,1), kms=v=>Lec.P.kilometresFromMetres(v);
+  const state={levels:[{engine:0,fuel:0},{engine:0,fuel:0},{engine:0,fuel:0}],selected:'engine',running:false,lastDv:0};
+  const slots=[...document.querySelectorAll('.slot')], parts=[...document.querySelectorAll('.part')];
+  const status=document.getElementById('status'), dvValue=document.getElementById('dvValue'), massValue=document.getElementById('massValue');
+  document.getElementById('targetLabel').textContent='理想圆轨道目标 '+fmt(kms(target))+' km/s';
+  document.getElementById('goalShort').textContent='目标 '+fmt(kms(target))+' km/s';
+  const targetPct=82; document.getElementById('targetLine').style.left=targetPct+'%';
+  function completeCount(){return state.levels.filter(x=>x.engine&&x.fuel).length}
+  function totalMass(n){return payloadMass+n*wet}
+  function calc(n){let remain=payloadMass+n*wet,dv=0,steps=[];for(let i=0;i<n;i++){const after=remain-(wet-dry);const add=Lec.P.rocketDeltaV(exhaust,remain,after);dv+=add;remain=after-dry;steps.push({before:remain+wet,after,remain,add,dv});}return{dv,remain,steps,start:totalMass(n)}}
+  function render(){const n=completeCount();slots.forEach((el,i)=>{const x=state.levels[i],ok=x.engine&&x.fuel;el.classList.toggle('ready',ok);el.innerHTML=ok?'<span class="mini"></span><span>第 '+(i+1)+' 级<br>发动机＋推进剂</span>':'第 '+(i+1)+' 级 · '+(x.engine||x.fuel?'还缺一种部件':'待装入')});document.getElementById('assemblyCount').textContent=state.running?'发射过程中':'已装配 '+n+'/3 级';const c=calc(n);dvValue.textContent=fmt(kms(c.dv));massValue.textContent=fmt(c.start)+' kg';document.getElementById('dvFill').style.width=Math.min(targetPct,c.dv/target*targetPct)+'%';document.getElementById('massFill').style.width=(n?100:0)+'%';}
+  function place(part,idx){if(state.running)return;const l=state.levels[idx];if(l[part]){slots[idx].classList.add('shake');setTimeout(()=>slots[idx].classList.remove('shake'),250);status.textContent='这个部件已经装入第 '+(idx+1)+' 级。';return}l[part]=1;status.textContent='第 '+(idx+1)+' 级已装入'+(part==='engine'?'发动机。':'推进剂舱。');render()}
+  let drag=null;parts.forEach(p=>{p.addEventListener('pointerdown',e=>{drag={p,x:e.clientX,y:e.clientY};p.setPointerCapture(e.pointerId);p.classList.add('dragging')});p.addEventListener('pointermove',e=>{if(!drag)return;p.style.transform=`translate(${(e.clientX-drag.x)/Deck.s}px,${(e.clientY-drag.y)/Deck.s}px)`});p.addEventListener('pointerup',e=>{if(!drag)return;const hit=slots.find(s=>{const r=s.getBoundingClientRect();return e.clientX>=r.left&&e.clientX<=r.right&&e.clientY>=r.top&&e.clientY<=r.bottom});p.style.transform='';p.classList.remove('dragging');if(hit)place(p.dataset.part,+hit.dataset.level);else{p.classList.add('shake');setTimeout(()=>p.classList.remove('shake'),250);status.textContent='把部件放进一个装配环。'}drag=null});p.addEventListener('focus',()=>state.selected=p.dataset.part);p.addEventListener('keydown',e=>{if(['ArrowUp','ArrowDown'].includes(e.key)){e.preventDefault();let i=+(p.dataset.level||0);i=(i+(e.key==='ArrowDown'?1:2))%3;p.dataset.level=i;slots[i].focus?.();status.textContent='已选择第 '+(i+1)+' 级，按 Enter 装入。'}if(e.key==='Enter'){e.preventDefault();place(p.dataset.part,+(p.dataset.level||0))}})});
+  const {Engine,Render,Runner,Bodies,Composite}=Matter, engine=Engine.create({gravity:{x:0,y:0,scale:0}}), runner=Runner.create();
+  const canvas=document.getElementById('physics'), scene=document.getElementById('scene');
+  const renderMatter=Render.create({canvas,engine,options:{width:scene.clientWidth,height:scene.clientHeight,wireframes:false,background:'transparent',pixelRatio:window.devicePixelRatio}});Render.run(renderMatter);Runner.run(runner,engine);
+  function dropShell(i){const b=Bodies.rectangle(scene.clientWidth/2,scene.clientHeight-230-i*80,56,82,{render:{fillStyle:'#17374a',strokeStyle:'#ffb547',lineWidth:2}});Composite.add(engine.world,b);Matter.Body.setVelocity(b,{x:(i-1)*2.2,y:1});engine.gravity.y=.65;setTimeout(()=>Composite.remove(engine.world,b),1800)}
+  function launch(){const n=completeCount();if(!n){status.textContent='这一级缺少发动机或推进剂，不能点火';slots[0].classList.add('shake');setTimeout(()=>slots[0].classList.remove('shake'),250);return}if(state.running)return;state.running=true;render();const c=calc(n);let i=0;function beat(){slots.forEach((s,j)=>s.classList.toggle('current',j===i));document.querySelectorAll('.k-process .step').forEach((s,j)=>{s.classList.toggle('is-current',j===Math.min(4,i+1));s.classList.toggle('is-past',j<Math.min(4,i+1))});const st=c.steps[i];document.getElementById('massFill').style.width=Math.max(8,st.remain/c.start*100)+'%';document.getElementById('dvFill').style.width=Math.min(targetPct,st.dv/target*targetPct)+'%';dvValue.textContent=fmt(kms(st.dv));massValue.textContent=fmt(st.remain)+' kg';status.textContent='第 '+(i+1)+'/'+n+' 级燃尽：抛掉空结构，新增 '+fmt(kms(st.add))+' km/s。';dropShell(i);i++;if(i<n)setTimeout(beat,Deck.reduced()?30:900);else setTimeout(finish,Deck.reduced()?30:850)}function finish(){slots.forEach(s=>s.classList.remove('current'));state.running=false;state.lastDv=c.dv;if(c.dv>=target){document.getElementById('orbit').classList.add('success');document.getElementById('payload').style.transform='translate(280px,-470px)';status.textContent='入轨：理想总 Δv 达到目标线。'}else status.textContent='未入轨：还差 '+fmt(kms(target-c.dv))+' km/s 的理想速度增量。';document.getElementById('assemblyCount').textContent='完成 '+n+' 级方案'}beat()}
+  document.getElementById('launch').onclick=launch;document.getElementById('reset').onclick=()=>{state.levels.forEach(x=>{x.engine=0;x.fuel=0});state.running=false;engine.gravity.y=0;Composite.clear(engine.world);document.getElementById('orbit').classList.remove('success');document.getElementById('payload').style.transform='';status.textContent=state.lastDv?'上一方案 '+fmt(kms(state.lastDv))+' km/s；现在可重搭比较。':'先装好至少一级，再发射。';render()};
+  render();
+})();
+</script>
+</body>
+</html>

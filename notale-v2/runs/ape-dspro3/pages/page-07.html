@@ -1,0 +1,859 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>第 07 页 · 互动讲义</title>
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+/* ============================================================
+   Page 07 — 露西的骨架 · split-lr layout
+   ============================================================ */
+
+#main {
+  display: flex;
+  flex-direction: row;
+  height: 100%;
+  position: relative;
+}
+
+/* ---- Left panel: skeleton image ---- */
+.p07-left {
+  flex: 0 0 60%;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+}
+
+.p07-skeleton-wrap {
+  position: relative;
+  width: 520px;
+  height: 580px;
+  background: #080d14;
+  border-radius: var(--r-md);
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+
+.p07-skeleton-wrap img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  object-position: center 56%;
+  display: block;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+.p07-zone-canvas {
+  position: absolute;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.p07-force-svg {
+  position: absolute;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+  pointer-events: none;
+  z-index: 3;
+}
+
+/* ---- Right panel: classification + tag origins ---- */
+.p07-right {
+  flex: 0 0 40%;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 0 var(--sp-6) 0 var(--sp-8);
+  min-width: 0;
+}
+
+.p07-right .k-classification {
+  width: 100%;
+}
+
+.p07-right .box {
+  padding: var(--sp-6);
+}
+
+.p07-right .bt {
+  margin-bottom: var(--sp-6);
+}
+
+.p07-tag-slot {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-4) var(--sp-4);
+  margin-bottom: var(--sp-4);
+  border: 1px dashed var(--border);
+  border-radius: var(--r-sm);
+  min-height: 60px;
+  color: var(--text-dim);
+  font-size: var(--fs-label);
+  transition: border-color 300ms var(--ease), background 300ms var(--ease);
+}
+
+.p07-tag-slot.placed {
+  border-color: var(--ok);
+  border-style: solid;
+  background: rgba(52,211,153,0.06);
+  color: var(--ok);
+}
+
+.p07-tag-slot .slot-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--border);
+  flex-shrink: 0;
+}
+
+.p07-tag-slot.placed .slot-dot {
+  background: var(--ok);
+}
+
+.p07-tag-slot .slot-label {
+  color: var(--text-dim);
+  font-size: var(--fs-label);
+}
+
+.p07-tag-slot.placed .slot-label {
+  color: var(--ok);
+}
+
+/* ---- Draggable tags (absolutely positioned within #main) ---- */
+.p07-tag {
+  position: absolute;
+  z-index: 20;
+  width: 200px;
+  padding: var(--sp-3) var(--sp-4);
+  background: var(--surface-raised);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-md);
+  cursor: grab;
+  user-select: none;
+  -webkit-user-drag: none;
+  box-shadow: var(--shadow-md);
+  transition: box-shadow 200ms var(--ease), border-color 200ms var(--ease);
+  font-size: var(--fs-label);
+  line-height: 1.4;
+  color: var(--text);
+}
+
+.p07-tag:active {
+  cursor: grabbing;
+}
+
+.p07-tag.dragging {
+  box-shadow: var(--shadow-lg);
+  border-color: var(--accent-soft);
+  z-index: 30;
+}
+
+.p07-tag.snapped {
+  cursor: default;
+  border-color: var(--ok);
+  background: rgba(52,211,153,0.08);
+  box-shadow: 0 0 12px rgba(52,211,153,0.25);
+  z-index: 5;
+  pointer-events: none;
+  transition: border-color 200ms var(--ease), box-shadow 200ms var(--ease), transform 200ms var(--ease);
+}
+
+.p07-tag.snap-flash {
+  border-color: #fff !important;
+  box-shadow: 0 0 20px rgba(255,255,255,0.5) !important;
+}
+
+.p07-tag.returning {
+  pointer-events: none;
+}
+
+.p07-tag .tag-text {
+  font-size: var(--fs-label);
+  line-height: 1.45;
+  color: var(--text);
+}
+
+.p07-tag .tag-text::first-line {
+  font-weight: 600;
+  color: var(--accent);
+  font-size: var(--fs-sec);
+}
+
+.p07-tag.snapped .tag-text::first-line {
+  color: var(--ok);
+}
+
+/* ---- Feature description (appears after snap) ---- */
+.p07-feature {
+  position: absolute;
+  z-index: 6;
+  width: 200px;
+  padding: var(--sp-3) var(--sp-4);
+  background: rgba(17,26,38,0.95);
+  border: 1px solid var(--ok);
+  border-radius: var(--r-sm);
+  font-size: var(--fs-sec);
+  line-height: 1.45;
+  color: var(--text);
+  pointer-events: none;
+  display: none;
+}
+
+.p07-feature.show {
+  display: block;
+}
+
+/* ---- Wrong feedback flash ---- */
+.p07-wrong-flash {
+  position: absolute;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+  border-radius: var(--r-md);
+  pointer-events: none;
+  z-index: 4;
+  opacity: 0;
+  background: rgba(248,113,113,0.15);
+  transition: opacity 150ms ease-out;
+}
+
+/* ---- Instruction hint ---- */
+.p07-hint {
+  font-size: var(--fs-label);
+  color: var(--text-dim);
+  margin-top: var(--sp-4);
+  text-align: center;
+  font-style: italic;
+}
+
+.p07-hint.done {
+  color: var(--ok);
+  font-style: normal;
+  font-weight: 500;
+}
+</style>
+</head>
+<body data-page="07" data-total="60">
+<div id="stage">
+<main id="main">
+
+  <!-- ===== Left: Lucy skeleton ===== -->
+  <div class="p07-left" id="p07-left">
+    <div class="p07-skeleton-wrap" id="p07-skeleton-wrap">
+      <img
+        id="p07-skeleton-img"
+        src="assets/img/lucy-skeleton.jpg"
+        alt="露西（AL 288-1）骨架化石"
+        title="Photo: Lucy (AL 288-1) Australopithecus afarensis skeleton, National Museum of Ethiopia. CC BY 2.5, via Wikimedia Commons."
+      >
+      <canvas class="p07-zone-canvas" id="p07-zone-canvas"></canvas>
+      <svg class="p07-force-svg" id="p07-force-svg" viewBox="0 0 520 580"></svg>
+      <div class="p07-wrong-flash" id="p07-wrong-flash"></div>
+    </div>
+  </div>
+
+  <!-- ===== Right: classification + tag slots ===== -->
+  <div class="p07-right" id="p07-right">
+    <div class="k-classification">
+      <div class="box">
+        <div class="bt">直立行走的三个关键关节</div>
+        <div class="lv">
+          <div class="p07-tag-slot" data-slot="hip">
+            <span class="slot-dot"></span>
+          </div>
+          <div class="p07-tag-slot" data-slot="knee">
+            <span class="slot-dot"></span>
+          </div>
+          <div class="p07-tag-slot" data-slot="ankle">
+            <span class="slot-dot"></span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="p07-hint" id="p07-hint">将标签拖到骨架对应位置</div>
+  </div>
+
+  <!-- ===== Draggable tags ===== -->
+  <div class="p07-tag" id="p07-tag-hip" data-joint="hip">
+    <div class="tag-text">髋关节<br>宽短髂骨，臀中肌附着面大</div>
+  </div>
+  <div class="p07-tag" id="p07-tag-knee" data-joint="knee">
+    <div class="tag-text">膝关节<br>股骨髁不对称，负重传递轴直</div>
+  </div>
+  <div class="p07-tag" id="p07-tag-ankle" data-joint="ankle">
+    <div class="tag-text">踝关节<br>距骨圆顶状，跟骨粗壮承重</div>
+  </div>
+
+  <!-- Feature descriptions (appear near snapped tags) -->
+  <div class="p07-feature" id="p07-feat-hip">髂骨宽而短，向外扩展为臀中肌提供大面积附着面；单腿支撑时稳定骨盆，防止对侧下沉——直立行走的核心机制。</div>
+  <div class="p07-feature" id="p07-feat-knee">股骨内外侧髁不对称，胫骨平台有明确凹陷；股骨与胫骨对线接近垂直，体重沿胫骨长轴直传至足部。</div>
+  <div class="p07-feature" id="p07-feat-ankle">距骨上表面呈圆顶状，与胫骨远端形成稳定铰链；跟骨粗壮，跟骨结节为跟腱提供强力杠杆支点，在推离地面时传递力量。</div>
+
+</main>
+</div>
+
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script src="assets/lib/matter.min.js"></script>
+<script>
+(function() {
+  /* ==============================================================
+     Init
+     ============================================================== */
+  Deck.init({ index: 7, total: 60 });
+
+  Lec.mount({
+    kicker: 'FOSSIL ANATOMY',
+    title: '露西的骨架',
+    take: '露西（AL 288-1）的髋关节、膝关节和踝关节已具备现代人直立行走的特征'
+  });
+
+  /* ==============================================================
+     DOM refs
+     ============================================================== */
+  var main = document.getElementById('main');
+  var skeletonWrap = document.getElementById('p07-skeleton-wrap');
+  var skeletonImg = document.getElementById('p07-skeleton-img');
+  var zoneCanvas = document.getElementById('p07-zone-canvas');
+  var forceSvg = document.getElementById('p07-force-svg');
+  var wrongFlash = document.getElementById('p07-wrong-flash');
+  var hint = document.getElementById('p07-hint');
+
+  var tagEls = {
+    hip:   document.getElementById('p07-tag-hip'),
+    knee:  document.getElementById('p07-tag-knee'),
+    ankle: document.getElementById('p07-tag-ankle')
+  };
+  var featEls = {
+    hip:   document.getElementById('p07-feat-hip'),
+    knee:  document.getElementById('p07-feat-knee'),
+    ankle: document.getElementById('p07-feat-ankle')
+  };
+  var slotEls = {
+    hip:   document.querySelector('[data-slot="hip"]'),
+    knee:  document.querySelector('[data-slot="knee"]'),
+    ankle: document.querySelector('[data-slot="ankle"]')
+  };
+
+  /* ==============================================================
+     Joint data — from p07 spec
+     ============================================================== */
+  var joints = {
+    hip: {
+      label: '髋关节——宽短髂骨，臀中肌附着面大',
+      targetRegion: { x: 0.42, y: 0.20, radius: 0.07 },
+      featureDescription: '髂骨宽而短，向外扩展为臀中肌提供大面积附着面；单腿支撑时稳定骨盆，防止对侧下沉——直立行走的核心机制。'
+    },
+    knee: {
+      label: '膝关节——股骨髁不对称，负重传递轴直',
+      targetRegion: { x: 0.42, y: 0.50, radius: 0.07 },
+      featureDescription: '股骨内外侧髁不对称，胫骨平台有明确凹陷；股骨与胫骨对线接近垂直，体重沿胫骨长轴直传至足部。'
+    },
+    ankle: {
+      label: '踝关节——距骨圆顶状，跟骨粗壮承重',
+      targetRegion: { x: 0.42, y: 0.80, radius: 0.07 },
+      featureDescription: '距骨上表面呈圆顶状，与胫骨远端形成稳定铰链；跟骨粗壮，跟骨结节为跟腱提供强力杠杆支点，在推离地面时传递力量。'
+    }
+  };
+
+  /* ==============================================================
+     Compute target zones in #main coordinates
+     ============================================================== */
+  function getImageDisplayRect() {
+    var wrapRect = skeletonWrap.getBoundingClientRect();
+    var mainRect = main.getBoundingClientRect();
+
+    // Image is object-fit: contain inside the wrap.
+    // Natural aspect: 1000/2413 ≈ 0.4144
+    var natW = 1000, natH = 2413;
+    var natAspect = natW / natH;
+    var wrapW = skeletonWrap.clientWidth;
+    var wrapH = skeletonWrap.clientHeight;
+    var wrapAspect = wrapW / wrapH;
+
+    var imgW, imgH, imgLeft, imgTop;
+    if (natAspect > wrapAspect) {
+      // Image is wider → constrained by width
+      imgW = wrapW;
+      imgH = wrapW / natAspect;
+      imgLeft = 0;
+      imgTop = (wrapH - imgH) / 2;
+    } else {
+      // Image is taller → constrained by height
+      imgH = wrapH;
+      imgW = wrapH * natAspect;
+      imgLeft = (wrapW - imgW) / 2;
+      imgTop = 0;
+    }
+
+    // Adjust for object-position: center 56%
+    // The image is positioned within the container
+    var objPosX = 0.50; // center
+    var objPosY = 0.56; // 56% from top
+    var overflowX = imgW > wrapW ? imgW - wrapW : 0;
+    var overflowY = imgH > wrapH ? imgH - wrapH : 0;
+    var offsetX = overflowX * objPosX;
+    var offsetY = overflowY * objPosY;
+
+    return {
+      left:   wrapRect.left - mainRect.left + imgLeft - offsetX,
+      top:    wrapRect.top  - mainRect.top  + imgTop  - offsetY,
+      width:  imgW,
+      height: imgH
+    };
+  }
+
+  function getTargetZone(jointKey) {
+    var rect = getImageDisplayRect();
+    var t = joints[jointKey].targetRegion;
+    return {
+      cx: rect.left + rect.width  * t.x,
+      cy: rect.top  + rect.height * t.y,
+      r:  Math.min(rect.width, rect.height) * t.radius
+    };
+  }
+
+  /* ==============================================================
+     Matter.js setup
+     ============================================================== */
+  var Engine = Matter.Engine;
+  var World = Matter.World;
+  var Bodies = Matter.Bodies;
+  var Body = Matter.Body;
+  var Constraint = Matter.Constraint;
+  var Composite = Matter.Composite;
+
+  var engine = Engine.create({ gravity: { x: 0, y: 0 } });
+  var bodies = {};
+  var origins = {};      // origin positions (right panel)
+  var targets = {};      // target positions (on skeleton)
+  var placed = {};       // which joints are placed
+  var currentDrag = null;
+  var dragOffset = { x: 0, y: 0 };
+
+  // Create bodies
+  ['hip', 'knee', 'ankle'].forEach(function(key) {
+    var el = tagEls[key];
+    var mainRect = main.getBoundingClientRect();
+    var elRect = el.getBoundingClientRect();
+    var x = elRect.left - mainRect.left + elRect.width / 2;
+    var y = elRect.top  - mainRect.top  + elRect.height / 2;
+
+    origins[key] = { x: x, y: y };
+    var body = Bodies.rectangle(x, y, elRect.width, elRect.height, {
+      frictionAir: 0.15,
+      restitution: 0.3,
+      render: { visible: false }
+    });
+    bodies[key] = body;
+    Composite.add(engine.world, body);
+  });
+
+  function updateTargets() {
+    ['hip', 'knee', 'ankle'].forEach(function(key) {
+      targets[key] = getTargetZone(key);
+    });
+  }
+
+  function syncDOM() {
+    ['hip', 'knee', 'ankle'].forEach(function(key) {
+      if (placed[key]) return;
+      var body = bodies[key];
+      var el = tagEls[key];
+      el.style.left = (body.position.x - el.offsetWidth / 2) + 'px';
+      el.style.top  = (body.position.y - el.offsetHeight / 2) + 'px';
+    });
+  }
+
+  /* ==============================================================
+     Zone canvas — highlight rings
+     ============================================================== */
+  var zoneCtx = Deck.fit(zoneCanvas);
+  var zoneAlpha = { hip: 0, knee: 0, ankle: 0 };
+  var zoneTargetAlpha = { hip: 0, knee: 0, ankle: 0 };
+
+  function drawZoneCanvas() {
+    var w = zoneCanvas.width;
+    var h = zoneCanvas.height;
+    zoneCtx.clearRect(0, 0, w, h);
+
+    var wrapRect = skeletonWrap.getBoundingClientRect();
+    var mainRect = main.getBoundingClientRect();
+
+    ['hip', 'knee', 'ankle'].forEach(function(key) {
+      if (placed[key]) return;
+
+      // Smooth alpha transition
+      zoneAlpha[key] += (zoneTargetAlpha[key] - zoneAlpha[key]) * 0.15;
+      if (Math.abs(zoneAlpha[key] - zoneTargetAlpha[key]) < 0.005) {
+        zoneAlpha[key] = zoneTargetAlpha[key];
+      }
+      var alpha = zoneAlpha[key];
+      if (alpha < 0.01) return;
+
+      var t = getTargetZone(key);
+      // Convert to canvas-local coordinates
+      var cx = t.cx - (wrapRect.left - mainRect.left);
+      var cy = t.cy - (wrapRect.top  - mainRect.top);
+      var r  = t.r;
+
+      // Glow ring
+      zoneCtx.save();
+      zoneCtx.beginPath();
+      zoneCtx.arc(cx, cy, r, 0, Math.PI * 2);
+      zoneCtx.strokeStyle = 'rgba(77,166,255,' + (alpha * 0.7) + ')';
+      zoneCtx.lineWidth = 2.5;
+      zoneCtx.shadowColor = 'rgba(77,166,255,' + (alpha * 0.5) + ')';
+      zoneCtx.shadowBlur = 12;
+      zoneCtx.stroke();
+
+      // Inner fill
+      zoneCtx.beginPath();
+      zoneCtx.arc(cx, cy, r * 0.6, 0, Math.PI * 2);
+      zoneCtx.fillStyle = 'rgba(77,166,255,' + (alpha * 0.15) + ')';
+      zoneCtx.fill();
+      zoneCtx.restore();
+    });
+  }
+
+  /* ==============================================================
+     Force line SVG
+     ============================================================== */
+  function drawForceLine() {
+    forceSvg.innerHTML = '';
+    var wrapW = 520, wrapH = 580;
+
+    var pts = {};
+    ['hip', 'knee', 'ankle'].forEach(function(key) {
+      var t = getTargetZone(key);
+      var wrapRect = skeletonWrap.getBoundingClientRect();
+      var mainRect = main.getBoundingClientRect();
+      pts[key] = {
+        x: t.cx - (wrapRect.left - mainRect.left),
+        y: t.cy - (wrapRect.top  - mainRect.top)
+      };
+    });
+
+    var line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    line.setAttribute('x1', pts.hip.x);
+    line.setAttribute('y1', pts.hip.y);
+    line.setAttribute('x2', pts.ankle.x);
+    line.setAttribute('y2', pts.ankle.y);
+    line.setAttribute('stroke', 'rgba(52,211,153,0.7)');
+    line.setAttribute('stroke-width', '3');
+    line.setAttribute('stroke-linecap', 'round');
+    line.setAttribute('filter', 'url(#p07-glow)');
+    forceSvg.appendChild(line);
+
+    // Dots at each joint
+    ['hip', 'knee', 'ankle'].forEach(function(key) {
+      var dot = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+      dot.setAttribute('cx', pts[key].x);
+      dot.setAttribute('cy', pts[key].y);
+      dot.setAttribute('r', '5');
+      dot.setAttribute('fill', '#34d399');
+      dot.setAttribute('opacity', '0.9');
+      forceSvg.appendChild(dot);
+    });
+
+    // Labels
+    var labels = [
+      { key: 'hip', text: '髋：稳骨盆' },
+      { key: 'knee', text: '膝：传负荷' },
+      { key: 'ankle', text: '踝：推地面' }
+    ];
+    labels.forEach(function(l) {
+      var text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      text.setAttribute('x', pts[l.key].x + 16);
+      text.setAttribute('y', pts[l.key].y + 5);
+      text.setAttribute('fill', '#34d399');
+      text.setAttribute('font-size', '14');
+      text.setAttribute('font-family', 'Inter, system-ui, sans-serif');
+      text.textContent = l.text;
+      forceSvg.appendChild(text);
+    });
+
+    // Glow filter
+    var defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+    var filter = document.createElementNS('http://www.w3.org/2000/svg', 'filter');
+    filter.setAttribute('id', 'p07-glow');
+    filter.innerHTML =
+      '<feGaussianBlur stdDeviation="3" result="blur"/>' +
+      '<feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>';
+    defs.appendChild(filter);
+    forceSvg.insertBefore(defs, forceSvg.firstChild);
+  }
+
+  /* ==============================================================
+     Drag interaction
+     ============================================================== */
+  function getMainPos(e) {
+    var pt = Deck.pt(main, e);
+    return { x: pt.x, y: pt.y };
+  }
+
+  function onPointerDown(e) {
+    var el = e.target.closest('.p07-tag');
+    if (!el) return;
+    if (el.classList.contains('snapped')) return;
+    if (el.classList.contains('returning')) return;
+
+    e.preventDefault();
+    var key = el.dataset.joint;
+    if (placed[key]) return;
+
+    currentDrag = key;
+    var body = bodies[key];
+    Body.setStatic(body, true);
+    Body.setVelocity(body, { x: 0, y: 0 });
+
+    var pos = getMainPos(e);
+    dragOffset.x = body.position.x - pos.x;
+    dragOffset.y = body.position.y - pos.y;
+
+    el.classList.add('dragging');
+
+    // Hide feature description while dragging
+    featEls[key].classList.remove('show');
+  }
+
+  function onPointerMove(e) {
+    if (!currentDrag) return;
+
+    var pos = getMainPos(e);
+    var body = bodies[currentDrag];
+    Body.setPosition(body, {
+      x: pos.x + dragOffset.x,
+      y: pos.y + dragOffset.y
+    });
+
+    // Check if hovering over any target zone
+    updateTargets();
+    ['hip', 'knee', 'ankle'].forEach(function(key) {
+      if (placed[key]) { zoneTargetAlpha[key] = 0; return; }
+      var t = targets[key];
+      var dx = body.position.x - t.cx;
+      var dy = body.position.y - t.cy;
+      var dist = Math.sqrt(dx * dx + dy * dy);
+      zoneTargetAlpha[key] = (dist < t.r * 1.5) ? 1 : 0;
+    });
+  }
+
+  function onPointerUp(e) {
+    if (!currentDrag) return;
+
+    var key = currentDrag;
+    var body = bodies[key];
+    var el = tagEls[key];
+    currentDrag = null;
+    el.classList.remove('dragging');
+
+    updateTargets();
+
+    // Check all target zones
+    var hitZone = null;
+    ['hip', 'knee', 'ankle'].forEach(function(zoneKey) {
+      if (placed[zoneKey]) return; // already taken
+      var t = targets[zoneKey];
+      var dx = body.position.x - t.cx;
+      var dy = body.position.y - t.cy;
+      var dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist < t.r) {
+        hitZone = zoneKey;
+      }
+    });
+
+    if (hitZone === key) {
+      // Correct! Snap to target
+      snapTag(key);
+    } else {
+      // Wrong — spring back
+      returnTag(key);
+    }
+
+    // Reset zone highlights
+    ['hip', 'knee', 'ankle'].forEach(function(k) {
+      zoneTargetAlpha[k] = 0;
+    });
+  }
+
+  function snapTag(key) {
+    var body = bodies[key];
+    var el = tagEls[key];
+    var t = targets[key];
+
+    // Snap body to target
+    Body.setPosition(body, { x: t.cx, y: t.cy });
+    Body.setStatic(body, true);
+    Body.setVelocity(body, { x: 0, y: 0 });
+
+    placed[key] = true;
+    el.classList.add('snapped');
+
+    // Brief confirmation: scale up + edge flash
+    el.style.transform = 'scale(1.06)';
+    el.classList.add('snap-flash');
+    setTimeout(function() {
+      el.style.transform = 'scale(1)';
+      el.classList.remove('snap-flash');
+    }, 250);
+
+    // Show feature description below the snapped tag
+    var featEl = featEls[key];
+    featEl.style.left = (t.cx - 100) + 'px';
+    featEl.style.top  = (t.cy + 18) + 'px';
+    featEl.classList.add('show');
+
+    // Mark slot as placed
+    if (slotEls[key]) slotEls[key].classList.add('placed');
+
+    checkAllPlaced();
+  }
+
+  function returnTag(key) {
+    var body = bodies[key];
+    var el = tagEls[key];
+    el.classList.add('returning');
+
+    Body.setStatic(body, false);
+
+    // Spring constraint back to origin
+    var constraint = Constraint.create({
+      bodyA: body,
+      pointB: { x: origins[key].x, y: origins[key].y },
+      stiffness: 0.03,
+      damping: 0.12,
+      length: 0
+    });
+    Composite.add(engine.world, constraint);
+
+    // Show wrong flash
+    wrongFlash.style.opacity = '1';
+    setTimeout(function() { wrongFlash.style.opacity = '0'; }, 400);
+
+    // Remove constraint after body settles
+    var checkSettle = function() {
+      var dx = body.position.x - origins[key].x;
+      var dy = body.position.y - origins[key].y;
+      var dist = Math.sqrt(dx * dx + dy * dy);
+      var spd = Math.sqrt(body.velocity.x * body.velocity.x + body.velocity.y * body.velocity.y);
+      if (dist < 8 && spd < 0.5) {
+        Composite.remove(engine.world, constraint);
+        Body.setPosition(body, { x: origins[key].x, y: origins[key].y });
+        Body.setVelocity(body, { x: 0, y: 0 });
+        Body.setStatic(body, true);
+        el.classList.remove('returning');
+        syncDOM();
+      } else {
+        requestAnimationFrame(checkSettle);
+      }
+    };
+    requestAnimationFrame(checkSettle);
+  }
+
+  function checkAllPlaced() {
+    var allPlaced = placed.hip && placed.knee && placed.ankle;
+    if (allPlaced) {
+      drawForceLine();
+      forceSvg.style.opacity = '1';
+      hint.textContent = '髋稳骨盆 · 膝传负荷 · 踝推地面——缺哪一个都走不利索';
+      hint.classList.add('done');
+
+      // Fade force line after 2 seconds
+      setTimeout(function() {
+        forceSvg.style.transition = 'opacity 1200ms ease-out';
+        forceSvg.style.opacity = '0.3';
+      }, 2200);
+    }
+  }
+
+  /* ==============================================================
+     Main loop
+     ============================================================== */
+  Deck.loop(function() {
+    Engine.update(engine, 16.67);
+    syncDOM();
+    drawZoneCanvas();
+  });
+
+  /* ==============================================================
+     Event listeners
+     ============================================================== */
+  main.addEventListener('mousedown', onPointerDown);
+  main.addEventListener('mousemove', onPointerMove);
+  main.addEventListener('mouseup', onPointerUp);
+  main.addEventListener('mouseleave', onPointerUp);
+
+  main.addEventListener('touchstart', function(e) {
+    if (e.target.closest('.p07-tag')) {
+      e.preventDefault();
+      onPointerDown(e.touches[0]);
+    }
+  }, { passive: false });
+  main.addEventListener('touchmove', function(e) {
+    if (currentDrag) {
+      e.preventDefault();
+      onPointerMove(e.touches[0]);
+    }
+  }, { passive: false });
+  main.addEventListener('touchend', function(e) {
+    onPointerUp(e);
+  });
+
+  /* ==============================================================
+     Initial positioning + resize
+     ============================================================== */
+  function positionTags() {
+    var mainRect = main.getBoundingClientMatrix ?
+      { left: 0, top: 0 } :
+      main.getBoundingClientRect();
+    // Reposition: compute origins from right panel slot positions
+    ['hip', 'knee', 'ankle'].forEach(function(key) {
+      if (placed[key]) return;
+      var slot = slotEls[key];
+      var slotRect = slot.getBoundingClientRect();
+      var mainR = main.getBoundingClientRect();
+      var cx = slotRect.left - mainR.left + slotRect.width / 2;
+      var cy = slotRect.top  - mainR.top  + slotRect.height / 2;
+      origins[key] = { x: cx, y: cy };
+      var body = bodies[key];
+      Body.setPosition(body, { x: cx, y: cy });
+      Body.setStatic(body, true);
+      Body.setVelocity(body, { x: 0, y: 0 });
+    });
+    updateTargets();
+    syncDOM();
+  }
+
+  // Position after fonts load
+  if (document.fonts && document.fonts.ready) {
+    document.fonts.ready.then(function() {
+      setTimeout(positionTags, 100);
+    });
+  } else {
+    setTimeout(positionTags, 300);
+  }
+
+  // Re-position on resize
+  var resizeTimeout;
+  window.addEventListener('resize', function() {
+    clearTimeout(resizeTimeout);
+    resizeTimeout = setTimeout(function() {
+      positionTags();
+      if (placed.hip && placed.knee && placed.ankle) {
+        drawForceLine();
+      }
+    }, 200);
+  });
+
+})();
+</script>
+</body>
+</html>

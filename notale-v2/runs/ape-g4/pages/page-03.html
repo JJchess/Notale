@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    .p03{height:100%;display:flex;flex-direction:column;gap:var(--sp-3)}
+    .p03-top{display:flex;align-items:center;justify-content:space-between;gap:var(--sp-4)}
+    .p03-ratio{padding:var(--sp-2) var(--sp-4);border-radius:var(--radius-md);background:var(--warning-soft);color:var(--warning);font-weight:760;font-size:var(--fs-lead);white-space:nowrap}
+    .p03 .k-comparison{--cmp-cols:minmax(150px,.48fr) repeat(2,minmax(0,1fr));flex:1 1 auto}
+    .p03 .k-comparison>*{padding:var(--sp-2) var(--sp-3)}
+    .p03 .k-comparison>.hdr{min-height:40px;font-size:var(--fs-h2)}
+    .p03 .k-comparison>.dim{font-size:var(--fs-label)}
+    .timeline-cell{display:flex;flex-direction:column;justify-content:center;gap:var(--sp-1);min-height:148px}
+    .timeline-cell.warm{background:var(--warning-soft)}
+    .timeline-cell.cool{background:var(--accent-soft)}
+    .scale-meta{display:flex;justify-content:space-between;gap:var(--sp-3);font-size:var(--fs-label);color:var(--muted)}
+    .scale-meta strong{color:var(--text);font-variant-numeric:tabular-nums}
+    .timeline-svg{width:100%;height:104px;display:block;overflow:visible}
+    .timeline-svg text{font-family:var(--font-sans);font-size:var(--fs-label);fill:var(--text)}
+    .timeline-svg .axis-label{font-size:var(--fs-tick);fill:var(--muted)}
+    .timeline-svg .event{cursor:pointer;outline:none}
+    .timeline-svg .event:focus .hit{stroke:var(--focus);stroke-width:4}
+    .compact{font-size:var(--fs-sec);line-height:var(--lh-copy)}
+    .method{font-size:var(--fs-label);color:var(--muted)}
+    .p03-controls{display:flex;align-items:center;gap:var(--sp-3)}
+    .p03-controls .ctl{flex:1 1 auto}
+    .p03-controls button{flex:0 0 auto}
+    .live{min-width:310px;text-align:right;font-size:var(--fs-sec);font-variant-numeric:tabular-nums}
+  </style>
+</head>
+<body data-page="03" data-total="50">
+  <div id="stage"><main id="main"></main></div>
+
+  <script src="assets/base.js"></script>
+  <script src="assets/lec.js"></script>
+  <script src="assets/lib/d3.min.js"></script>
+  <script>
+    Lec.mount({
+      index: 3,
+      kicker: "TWO SCALES",
+      title: "同样一屏，装下的时间差了几个数量级",
+      take: "数百万年的生物演化与数百年的航天史不在同一时间尺度上。"
+    });
+    Deck.init({ index: 3, total: 50 });
+
+    var stage = document.getElementById("stage");
+    var main = document.getElementById("main");
+    main.innerHTML = '<section class="p03" aria-label="生物演化与载人航天时间尺度比较">'+
+      '<div class="p03-top"><p class="lead">拖动共享游标：相同的屏幕距离，在两把尺上代表不同的时间。</p><div class="p03-ratio" id="ratio"></div></div>'+
+      '<div class="k-comparison min0">'+
+        '<div class="hdr dim">比较维度</div><div class="hdr">生物演化尺度</div><div class="hdr">载人航天尺度</div>'+
+        '<div class="rowline"></div><div class="dim">覆盖区间与事件</div><div class="cell timeline-cell warm min0"><div class="scale-meta"><strong id="bioSpan"></strong><span id="bioPixel"></span></div><svg id="bioSvg" class="timeline-svg" role="img" aria-label="从早期人族到现在的对数时间尺"></svg></div><div class="cell timeline-cell cool min0"><div class="scale-meta"><strong id="spaceSpan"></strong><span id="spacePixel"></span></div><svg id="spaceSvg" class="timeline-svg" role="img" aria-label="从首次载人航天到课程参考年的线性时间尺"></svg></div>'+
+        '<div class="rowline"></div><div class="dim">位置算法</div><div class="cell compact">对数排列：近处展开，远处压缩</div><div class="cell compact">线性排列：每一格代表固定年数</div>'+
+        '<div class="rowline"></div><div class="dim">等宽尺的含义</div><div class="cell diff compact">每个屏幕单位代表的年份随位置变化</div><div class="cell diff compact">每个屏幕单位代表固定年份</div>'+
+      '</div>'+
+      '<div class="p03-controls"><div class="ctl"><label for="cursor">共享横向位置</label><input id="cursor" type="range" min="0" max="1000" step="1" value="500" aria-describedby="live"><span class="label">等宽，不等时</span></div><button type="button" id="reset">重置</button><div class="live" id="live" aria-live="polite"></div></div>'+
+    '</section>';
+
+    var K=Lec.K, P=Lec.P;
+    var bioYears=K.evolution.homininSplitYearsAgo;
+    var startYear=K.evolution.firstHumanSpaceflightYear, endYear=new Date().getFullYear();
+    var spaceYears=P.yearsAgo(startYear,endYear);
+    var moonGap=P.yearsAgo(K.evolution.firstHumanSpaceflightYear,K.evolution.firstMoonLandingYear);
+    var ratio=P.ratio(bioYears,spaceYears);
+    function n(v,d){ return P.formatNumber(v,d); }
+    function years(v){ return '约 '+n(v,3)+' 年'; }
+    document.getElementById('ratio').textContent='跨度约相差 '+n(ratio,3)+'×';
+    document.getElementById('bioSpan').textContent='总跨度 '+years(bioYears);
+    document.getElementById('spaceSpan').textContent=startYear+'—'+endYear+' · '+years(spaceYears);
+
+    var bioEvents=[
+      {age:K.evolution.homininSplitYearsAgo,label:'早期人族时间量级',detail:'证据与分类仍有争议'},
+      {age:K.evolution.homoOriginYearsAgo,label:'早期 Homo 属',detail:'目前已知化石记录约'},
+      {age:K.evolution.homoSapiensYearsAgo,label:'早期智人',detail:'约 '+n(K.evolution.homoSapiensYearsAgo,2)+' 年前'}
+    ];
+    var spaceEvents=[
+      {year:K.evolution.firstHumanSpaceflightYear,label:'首次载人航天'},
+      {year:K.evolution.firstMoonLandingYear,label:'首次登月',detail:'距首次载人航天 '+years(moonGap)},
+      {year:endYear,label:'课程参考年'}
+    ];
+    var W=560,H=104,L=18,R=18, cursor=0.5;
+    var bioScale=d3.scaleLog().domain([bioYears,1]).range([L,W-R]);
+    var spaceScale=d3.scaleLinear().domain([startYear,endYear]).range([L,W-R]);
+    function draw(svgId,events,isBio){
+      var svg=d3.select('#'+svgId).attr('viewBox','0 0 '+W+' '+H);
+      svg.selectAll('*').remove();
+      svg.append('line').attr('x1',L).attr('x2',W-R).attr('y1',56).attr('y2',56).attr('stroke','var(--line-strong)').attr('stroke-width',3);
+      var g=svg.selectAll('.event').data(events).join('g').attr('class','event').attr('tabindex',0).attr('role','button').attr('aria-label',function(d){return d.label+(d.detail?'，'+d.detail:'');}).attr('transform',function(d){return 'translate('+(isBio?bioScale(Math.max(1,d.age)):spaceScale(d.year))+',56)';});
+      g.append('circle').attr('class','hit').attr('r',7).attr('fill',isBio?'var(--warning)':'var(--accent)').attr('stroke','var(--surface)').attr('stroke-width',3);
+      g.append('text').attr('text-anchor',function(d,i){return i===0?'start':(i===events.length-1?'end':'middle');}).attr('y',function(d,i){return i===1?-28:(i===2?28:-15);}).text(function(d){return isBio?d.label:(d.year+' '+d.label);});
+      g.on('focus mouseenter',function(ev,d){ d3.select(this).select('circle').attr('r',10); document.getElementById('live').textContent=d.label+(d.detail?' · '+d.detail:''); }).on('blur mouseleave',function(){d3.select(this).select('circle').attr('r',7);updateLive();});
+      svg.append('line').attr('class','cursor-line').attr('y1',12).attr('y2',92).attr('stroke','var(--danger)').attr('stroke-width',3).attr('stroke-dasharray','5 4');
+      svg.append('text').attr('class','cursor-text').attr('text-anchor','middle').attr('y',101).attr('fill','var(--danger)');
+    }
+    draw('bioSvg',bioEvents,true); draw('spaceSvg',spaceEvents,false);
+    document.getElementById('bioPixel').textContent='平均 '+years(bioYears/(W-L-R))+' / px';
+    document.getElementById('spacePixel').textContent=years(spaceYears/(W-L-R))+' / px';
+    function updateLive(){
+      var bioAge=bioScale.invert(L+cursor*(W-L-R));
+      var year=spaceScale.invert(L+cursor*(W-L-R));
+      document.getElementById('live').textContent='上尺：距今 '+years(bioAge)+' ｜ 下尺：约 '+Math.round(year)+' 年';
+    }
+    function update(){
+      var x=L+cursor*(W-L-R), bioAge=bioScale.invert(x), year=spaceScale.invert(x);
+      d3.selectAll('.cursor-line').attr('x1',x).attr('x2',x);
+      d3.select('#bioSvg .cursor-text').attr('x',x).text('距今 '+years(bioAge));
+      d3.select('#spaceSvg .cursor-text').attr('x',x).text('约 '+Math.round(year)+' 年');
+      updateLive();
+    }
+    var slider=document.getElementById('cursor');
+    slider.addEventListener('input',function(){cursor=Number(slider.value)/1000;update();});
+    document.getElementById('reset').addEventListener('click',function(){slider.value=500;cursor=.5;update();slider.focus();});
+    update();
+  </script>
+</body>
+</html>

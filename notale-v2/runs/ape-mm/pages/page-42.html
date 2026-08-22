@@ -1,0 +1,232 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  #stage{padding:28px 52px 24px;gap:14px}
+  .page-head{height:82px;display:flex;align-items:flex-end;justify-content:space-between;gap:36px;flex:0 0 auto}
+  .kicker{color:var(--primary);font:700 15px/1.4 var(--font-mono);letter-spacing:.14em}
+  .take{max-width:700px;margin:0;color:var(--muted);font-size:var(--fs-sec);line-height:1.5;text-align:right}
+  .clock{display:grid;grid-template-rows:minmax(300px,58%) minmax(210px,42%);gap:14px;flex:1;min-height:0}
+  .monitor{position:relative;overflow:hidden;border:1px solid var(--line);border-radius:var(--radius-2);background:linear-gradient(90deg,var(--panel-deep),var(--panel),var(--panel-deep))}
+  .monitor::before{position:absolute;inset:0;content:"";background:linear-gradient(rgba(89,195,195,.04) 1px,transparent 1px),linear-gradient(90deg,rgba(89,195,195,.04) 1px,transparent 1px);background-size:36px 36px;pointer-events:none}
+  .earth-glow{position:absolute;right:18px;bottom:0;width:430px;height:92px;border:2px solid var(--primary-line);border-bottom:0;border-radius:50% 50% 0 0;box-shadow:0 -6px 24px rgba(89,195,195,.2),inset 0 10px 28px rgba(89,195,195,.07)}
+  .monitor-tag{position:absolute;top:18px;left:22px;color:var(--muted);font-size:var(--fs-label);font-weight:650}
+  .day-readout{position:absolute;top:16px;right:22px;z-index:3;display:flex;gap:12px;align-items:baseline;color:var(--muted);font-size:var(--fs-sec)}
+  .day-readout output{min-width:118px;color:var(--accent);font:700 var(--fs-lead)/1.4 var(--font-mono);text-align:right}
+  .body-wrap{position:absolute;z-index:1;inset:44px 18px 18px;display:grid;place-items:center;overflow:hidden;border:1px solid var(--primary-line);border-radius:48%;background:radial-gradient(circle at 50% 42%,var(--primary-soft),transparent 46%),var(--panel-deep);box-shadow:inset 0 0 42px rgba(89,195,195,.08)}
+  .body-svg{position:absolute;inset:0;width:100%;height:100%;min-height:0;overflow:visible}
+  .skeleton{fill:none;stroke:var(--primary);stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round;vector-effect:non-scaling-stroke}
+  .joint{fill:var(--panel-deep);stroke:var(--primary);stroke-width:2;vector-effect:non-scaling-stroke}
+  .ghost{fill:none;stroke:var(--primary-line);stroke-width:1.2;stroke-dasharray:4 7;vector-effect:non-scaling-stroke}
+  .system-mark{fill:none;stroke:var(--accent);stroke-width:3;opacity:.08;vector-effect:non-scaling-stroke}
+  .fluid-stream{fill:none;stroke:var(--primary);stroke-width:2;stroke-dasharray:7 8;opacity:.16;vector-effect:non-scaling-stroke}
+  .face-halo{fill:var(--accent-soft);stroke:var(--accent);stroke-width:2;opacity:.05;vector-effect:non-scaling-stroke}
+  .balance-axis{stroke:var(--accent);stroke-width:2.4;opacity:.08;transform-origin:center;vector-effect:non-scaling-stroke}
+  .callout{position:absolute;z-index:2;width:230px;color:var(--muted);font-size:var(--fs-sec);line-height:1.45}
+  .callout::after{position:absolute;top:13px;width:92px;height:1px;content:"";background:var(--primary-line)}
+  .callout strong{display:block;color:var(--text);font-size:16px}
+  .callout.active strong{color:var(--accent)}
+  .callout.left{left:28px;text-align:right}.callout.left::after{left:calc(100% + 12px)}
+  .callout.right{right:28px}.callout.right::after{right:calc(100% + 12px)}
+  .fluid-label{top:90px}.balance-label{top:205px}.muscle-label{top:205px}.bone-label{top:320px}
+  .timeline-panel{display:flex;flex-direction:column;gap:10px;padding:14px 18px 12px;border:1px solid var(--line);border-radius:var(--radius-2);background:var(--panel)}
+  .process-head{display:flex;align-items:center;justify-content:space-between;gap:24px;height:26px}
+  .process-head h2{font-size:var(--fs-h2)}
+  .counter{color:var(--muted);font-size:var(--fs-sec)}.counter strong{color:var(--primary);font-family:var(--font-mono)}
+  .k-process.clock-steps{--process-axis-y:25px;flex:0 0 61px;gap:8px;align-items:flex-start;padding:0 88px 0 130px}
+  .k-process.clock-steps>.axis{top:25px;left:150px;right:106px}
+  .k-process.clock-steps>.step{align-items:center;justify-content:flex-start;height:61px;padding:0;border:0;background:transparent;box-shadow:none;text-align:center}
+  .node{width:15px;height:15px;margin-top:18px;border:2px solid var(--line-strong);border-radius:50%;background:var(--panel-deep);box-shadow:0 0 0 4px var(--panel)}
+  .step.visited .node{border-color:var(--primary);background:var(--primary)}
+  .step.current .node{border-color:var(--accent);background:var(--accent);box-shadow:0 0 0 5px var(--accent-soft),0 0 16px var(--accent-line)}
+  .node-label{margin-top:6px;color:var(--muted);font-size:14px;line-height:1.25;white-space:nowrap}
+  .step.current .node-label{color:var(--accent)}
+  .k-process.clock-steps>.arw{display:none}
+  .tracks{display:grid;grid-template-columns:112px 1fr;grid-template-rows:repeat(4,22px);gap:3px 12px;min-height:0}
+  .track-name{display:flex;align-items:center;justify-content:flex-end;color:var(--muted);font-size:16px;font-weight:700}
+  .track{position:relative;overflow:hidden;border-left:1px solid var(--line-strong);background:linear-gradient(90deg,transparent 19.8%,var(--line) 20%,transparent 20.2%,transparent 39.8%,var(--line) 40%,transparent 40.2%,transparent 59.8%,var(--line) 60%,transparent 60.2%,transparent 79.8%,var(--line) 80%,transparent 80.2%)}
+  .track::before{position:absolute;top:10px;right:0;left:0;height:2px;content:"";background:var(--primary-line)}
+  .trace{position:absolute;top:7px;left:0;width:100%;height:8px;transform:scaleX(.03);transform-origin:left center;border-radius:999px;background:linear-gradient(90deg,var(--primary),var(--accent));opacity:.42}
+  .track.hot .trace{opacity:.95;box-shadow:0 0 10px var(--accent-line)}
+  .control-row{display:grid;grid-template-columns:112px 1fr auto;gap:12px;align-items:center;height:42px}
+  .control-row label{color:var(--text);font-size:16px;font-weight:700;text-align:right}
+  input[type="range"]{width:100%;accent-color:var(--primary)}
+  button{min-height:38px;padding:6px 16px;border:1px solid var(--line-strong);border-radius:var(--radius-1);color:var(--text);background:var(--panel-deep);font-size:16px;cursor:pointer}
+  button:hover{border-color:var(--primary)}
+  .feedback{display:flex;align-items:center;justify-content:space-between;gap:20px;min-height:26px;padding-left:124px;color:var(--muted);font-size:var(--fs-sec);line-height:1.45}
+  .conclusion{color:var(--text);font-weight:700;opacity:0}.conclusion.visible{opacity:1}.conclusion strong{color:var(--accent)}
+  @media (prefers-reduced-motion:reduce){.body-wrap,.earth-glow,.track-wrap{transform:none!important}.node,.trace,.callout,.conclusion{transition:none!important}}
+</style>
+</head>
+<body data-page="42" data-total="50">
+<div id="stage">
+  <header class="page-head">
+    <div>
+      <div class="kicker">MICROGRAVITY CLOCK · IV</div>
+      <h1>身体在失重中重新分配</h1>
+    </div>
+    <p class="take">缺少日常负重，会让多个身体系统按不同速度重新调节。</p>
+  </header>
+
+  <main class="clock min0">
+    <section class="monitor min0" aria-label="人体系统变化监测窗">
+      <div class="earth-glow" aria-hidden="true"></div>
+      <div class="monitor-tag">身体反应监测 · 亮起处为当前观察重点</div>
+      <div class="day-readout"><span>任务时钟</span><output id="clockReadout" aria-live="polite">地面基线</output></div>
+
+      <div class="callout left fluid-label" data-system="fluid"><strong>体液</strong><span>先向上身重新分配</span></div>
+      <div class="callout left balance-label" data-system="balance"><strong>平衡感</strong><span>视觉与前庭线索暂时不一致</span></div>
+      <div class="callout right muscle-label" data-system="muscle"><strong>肌肉</strong><span>抗重力活动减少，腿部负荷下降</span></div>
+      <div class="callout right bone-label" data-system="bone"><strong>骨骼</strong><span>长期缺少负重，偏离逐渐累积</span></div>
+
+      <div class="body-wrap" aria-hidden="true">
+        <svg class="body-svg" viewBox="0 0 560 390">
+          <g class="body-ghost" opacity=".24" transform="translate(12 0)">
+            <circle class="ghost" cx="280" cy="48" r="30"/><path class="ghost" d="M280 78v112M280 105l-72 74M280 105l72 74M280 190l-52 135M280 190l52 135"/>
+          </g>
+          <circle class="face-halo" cx="280" cy="48" r="43"/>
+          <g class="body-main">
+            <circle class="skeleton" cx="280" cy="48" r="30"/>
+            <path class="skeleton" d="M280 78c-18 25-24 55-17 91l17 25 17-25c7-36 1-66-17-91z"/>
+            <path class="skeleton" d="M264 99l-57 78M296 99l57 78M280 194l-50 132M280 194l50 132"/>
+            <path class="skeleton" d="M254 178q26 24 52 0"/>
+            <circle class="joint" cx="280" cy="105" r="5"/><circle class="joint" cx="254" cy="178" r="5"/><circle class="joint" cx="306" cy="178" r="5"/><circle class="joint" cx="230" cy="326" r="5"/><circle class="joint" cx="330" cy="326" r="5"/>
+          </g>
+          <g class="fluid-group">
+            <path class="fluid-stream" d="M266 184C245 145 252 112 272 78"/><path class="fluid-stream" d="M294 184c21-39 14-72-6-106"/>
+          </g>
+          <line class="balance-axis" x1="220" y1="92" x2="340" y2="92"/>
+          <g class="muscle-mark system-mark"><path d="M268 205Q242 260 232 318M292 205q26 55 36 113"/></g>
+          <g class="bone-mark system-mark"><path d="M252 174q28 34 56 0M280 191l-50 135M280 191l50 135"/></g>
+        </svg>
+      </div>
+    </section>
+
+    <section class="timeline-panel min0">
+      <div class="process-head"><h2>从入轨到返回：四条反应轨</h2><div class="counter">已查看 <strong id="visitedCount">1/6</strong></div></div>
+      <div class="k-process clock-steps" id="steps" aria-label="失重身体反应过程">
+        <div class="axis" aria-hidden="true"></div>
+        <div class="step current visited"><span class="node"></span><span class="node-label">地面基线</span></div>
+        <div class="step"><span class="node"></span><span class="node-label">入轨后数小时</span></div>
+        <div class="step"><span class="node"></span><span class="node-label">初到数日</span></div>
+        <div class="step"><span class="node"></span><span class="node-label">一两周</span></div>
+        <div class="step"><span class="node"></span><span class="node-label">数月任务</span></div>
+        <div class="step"><span class="node"></span><span class="node-label">返回地面</span></div>
+      </div>
+      <div class="tracks track-wrap" aria-label="四个系统随任务进程的反应轨">
+        <div class="track-name">体液</div><div class="track" data-track="fluid"><span class="trace"></span></div>
+        <div class="track-name">平衡感</div><div class="track" data-track="balance"><span class="trace"></span></div>
+        <div class="track-name">肌肉</div><div class="track" data-track="muscle"><span class="trace"></span></div>
+        <div class="track-name">骨骼</div><div class="track" data-track="bone"><span class="trace"></span></div>
+      </div>
+      <div class="control-row">
+        <label for="taskClock">任务日</label>
+        <input id="taskClock" type="range" min="0" max="1000" step="1" value="0" aria-describedby="timeFeedback">
+        <button id="resetClock" type="button">重置身体时钟</button>
+      </div>
+      <div class="feedback" id="timeFeedback">
+        <span id="continuity">拖动滑杆，观察哪些系统先响应。</span>
+        <span class="conclusion" id="conclusion"><strong>不是“升级”：</strong>不同系统在新条件下重新调节。</span>
+      </div>
+    </section>
+  </main>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script src="assets/lib/gsap.min.js"></script>
+<script>
+(function(){
+  Deck.init({index:42,total:50});
+  var slider=document.getElementById('taskClock');
+  var reset=document.getElementById('resetClock');
+  var readout=document.getElementById('clockReadout');
+  var continuity=document.getElementById('continuity');
+  var visitedCount=document.getElementById('visitedCount');
+  var conclusion=document.getElementById('conclusion');
+  var steps=Array.from(document.querySelectorAll('#steps .step'));
+  var reduced=Deck.reduced();
+  var labels=['地面基线','入轨后数小时','初到数日','一两周','数月任务','返回地面'];
+  var visited=new Set([0]);
+  var activeIndex=0;
+
+  var tl=gsap.timeline({paused:true,defaults:{duration:0.45,ease:'power2.out'}});
+  tl.addLabel('baseline',0)
+    .to('.face-halo',{opacity:.82},1)
+    .to('.fluid-stream',{opacity:.95,y:-16,strokeDashoffset:-18},1)
+    .to('[data-system="fluid"]',{color:'var(--text)'},1)
+    .to('.balance-axis',{opacity:.9,rotation:7},2)
+    .to('[data-system="balance"]',{color:'var(--text)'},2)
+    .to('.muscle-mark',{opacity:.9},3)
+    .to('[data-system="muscle"]',{color:'var(--text)'},3)
+    .to('.bone-mark',{opacity:.9},4)
+    .to('[data-system="bone"]',{color:'var(--text)'},4)
+    .to('.balance-axis',{rotation:0,opacity:.35},5)
+    .to('.face-halo',{opacity:.22},5)
+    .to('.fluid-stream',{opacity:.3,y:0},5)
+    .to('.muscle-mark',{opacity:.35},5)
+    .to('.bone-mark',{opacity:.35},5);
+  tl.duration(5);
+
+  var traceStarts={fluid:.12,balance:.28,muscle:.48,bone:.68};
+  function setTraces(p){
+    Object.keys(traceStarts).forEach(function(key){
+      var local=Deck.clamp((p-traceStarts[key])/(1-traceStarts[key]),0,1);
+      gsap.set('[data-track="'+key+'"] .trace',{scaleX:Math.max(.03,local)});
+    });
+  }
+  function currentSystem(i){
+    return i===1?'fluid':i===2?'balance':i===3?'muscle':i===4?'bone':i===5?'all':'';
+  }
+  function update(value,markVisited){
+    var p=Number(value)/1000;
+    tl.progress(p);
+    setTraces(p);
+    var raw=p*5;
+    var nearest=Math.round(raw);
+    activeIndex=nearest;
+    if(markVisited){
+      for(var i=0;i<=Math.floor(raw+.08);i++) visited.add(i);
+      if(Math.abs(raw-nearest)<.09) visited.add(nearest);
+    }
+    steps.forEach(function(step,i){
+      step.classList.toggle('current',i===nearest);
+      step.classList.toggle('visited',visited.has(i));
+    });
+    visitedCount.textContent=visited.size+'/6';
+    readout.textContent=labels[nearest];
+    var sys=currentSystem(nearest);
+    document.querySelectorAll('.callout').forEach(function(el){el.classList.toggle('active',sys==='all'||el.dataset.system===sys);});
+    document.querySelectorAll('.track').forEach(function(el){el.classList.toggle('hot',sys==='all'||el.dataset.track===sys);});
+    var between=Math.abs(raw-nearest)>=.09;
+    continuity.textContent=between?'这是连续变化，不是统一生理阈值。':(nearest===5?'负重恢复后，平衡与力量仍需重新适应。':'当前节点是观察窗口，不是每个人的固定阈值。');
+    var done=visited.size===6;
+    conclusion.classList.toggle('visible',done);
+  }
+  function snap(){
+    var target=Math.round((Number(slider.value)/1000)*5)/5*1000;
+    if(reduced){slider.value=target;update(target,true);return;}
+    gsap.to(slider,{value:target,duration:.18,ease:'power2.out',onUpdate:function(){update(slider.value,true);}});
+  }
+  slider.addEventListener('input',function(){update(slider.value,true);});
+  slider.addEventListener('change',snap);
+  reset.addEventListener('click',function(){
+    gsap.killTweensOf(slider);visited=new Set([0]);slider.value=0;update(0,false);slider.focus();
+  });
+
+  if(reduced){
+    gsap.set(['.earth-glow','.body-wrap','.track-wrap'],{opacity:1,clearProps:'transform'});
+  }else{
+    var intro=gsap.timeline({defaults:{ease:'power2.out'}});
+    intro.from('.earth-glow',{y:70,opacity:0,duration:.55})
+      .from('.body-wrap',{opacity:0,y:16,duration:.5},'-=.2')
+      .from('.track-wrap',{opacity:0,duration:.42},'-=.1')
+      .from('#taskClock',{opacity:0,y:-10,duration:.28});
+  }
+  update(0,false);
+})();
+</script>
+</body>
+</html>

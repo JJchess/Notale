@@ -1,0 +1,268 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  #stage{position:relative;background:var(--bg)}
+  .page-head{height:112px;padding:24px 42px 12px;display:flex;align-items:flex-end;justify-content:space-between;border-bottom:1px solid var(--line)}
+  .kicker{color:var(--primary);font:700 var(--fs-label)/1.4 var(--font-mono);letter-spacing:.16em}
+  .page-head .lead{max-width:650px;margin:0 0 2px;text-align:right;color:var(--muted)}
+  newton-cannon-game{position:relative;display:block;flex:1;min-height:0;overflow:hidden;background:var(--panel-deep)}
+  newton-cannon-game>canvas{display:block;touch-action:none}
+  .scene-plate{position:absolute;z-index:1;inset:0 auto 0 0;width:66%;border-right:1px solid var(--line);background:linear-gradient(135deg,rgba(89,195,195,.035),transparent 56%);pointer-events:none}
+  .scene-overlay{position:absolute;inset:0;z-index:2;pointer-events:none}
+  .model-note{position:absolute;top:18px;right:28px;padding:7px 12px;border:1px solid var(--line);border-radius:var(--radius-1);background:rgba(7,16,24,.78);color:var(--muted);font-size:var(--fs-sec);line-height:1.4}
+  .progress-box{position:absolute;left:34px;bottom:26px;width:420px;padding:16px 18px;border:1px solid var(--line-strong);border-radius:var(--radius-2);background:rgba(9,22,32,.92);box-shadow:var(--shadow-panel);pointer-events:auto}
+  .progress-top{display:flex;align-items:baseline;justify-content:space-between;gap:16px}
+  .progress-value{color:var(--primary);font-size:var(--fs-lead);font-weight:750}
+  .progress-track{display:grid;grid-template-columns:repeat(5,1fr);margin-top:10px;border-top:2px solid var(--primary-line)}
+  .progress-track span{position:relative;padding-top:8px;color:var(--muted);font-size:var(--fs-label);text-align:center}
+  .progress-track span::before{position:absolute;top:-5px;left:50%;width:8px;height:8px;border-radius:50%;content:"";background:var(--line-strong);transform:translateX(-50%)}
+  .progress-track span.reached{color:var(--text)}
+  .progress-track span.reached::before{background:var(--primary);box-shadow:0 0 9px var(--primary)}
+  .tried{display:flex;align-items:center;gap:12px;margin-top:13px}
+  .trial-mark{display:inline-flex;align-items:center;gap:6px;color:var(--faint);font-size:var(--fs-label)}
+  .trial-mark::before{width:22px;height:8px;border:1px solid var(--line-strong);border-radius:50%;content:""}
+  .trial-mark.done{color:var(--text)}
+  .trial-mark.done::before{border-color:var(--primary);box-shadow:0 0 8px var(--primary-line)}
+  .controls{position:absolute;right:28px;bottom:26px;width:610px;padding:16px 18px;border:1px solid var(--line-strong);border-radius:var(--radius-2);background:rgba(9,22,32,.94);box-shadow:var(--shadow-panel);pointer-events:auto}
+  .lever-row{display:flex;align-items:center;gap:16px}
+  .lever-row label{color:var(--text);font-size:var(--fs-sec);font-weight:700}
+  #speedLever{flex:1;min-width:220px;height:30px;accent-color:var(--accent);cursor:pointer}
+  .speed-labels{display:grid;grid-template-columns:repeat(3,1fr);margin:0 176px 10px 104px;color:var(--muted);font-size:var(--fs-label);text-align:center}
+  .speed-labels .selected{color:var(--accent);font-weight:750}
+  .controls button{min-height:42px;padding:8px 18px;border:1px solid var(--line-strong);border-radius:var(--radius-1);color:var(--text);background:var(--panel-raised);font-size:var(--fs-sec);font-weight:700;cursor:pointer}
+  .controls button.primary-action{border-color:var(--accent);color:var(--bg);background:var(--accent)}
+  .controls button:disabled{cursor:not-allowed;opacity:.5}
+  .feedback{min-height:25px;margin-top:8px;color:var(--muted);font-size:var(--fs-sec);line-height:1.45}
+  .feedback.success{color:var(--primary)}
+  .feedback.impact{color:var(--accent)}
+  .comparison-wrap{position:absolute;top:74px;right:28px;width:610px;pointer-events:auto}
+  .k-comparison{--compare-n:3;max-height:204px;background:rgba(13,27,38,.91);box-shadow:var(--shadow-panel)}
+  .k-comparison>.hdr,.k-comparison>.dim,.k-comparison>.cell{padding:9px 12px}
+  .k-comparison>.hdr{font-size:var(--fs-sec)}
+  .k-comparison>.cell{font-size:var(--fs-sec)}
+  .k-comparison>.cell.active{background:var(--accent-soft);box-shadow:inset 0 3px 0 var(--accent)}
+  .core-claim{position:absolute;z-index:4;top:42%;left:50%;width:730px;padding:18px 28px;border:1px solid var(--primary);border-left:7px solid var(--primary);border-radius:var(--radius-2);background:rgba(9,22,32,.96);box-shadow:0 0 44px var(--primary-line);color:var(--text);font-size:var(--fs-lead);font-weight:750;line-height:1.5;text-align:center;opacity:0;pointer-events:none;transform:translate(-50%,-42%) translateY(18px);transition:opacity .45s ease,transform .45s ease}
+  .core-claim.show{opacity:1;transform:translate(-50%,-42%) translateY(0)}
+  .sr-only-status{font-size:var(--fs-sec)}
+  @media (prefers-reduced-motion:reduce){.core-claim{transition:none}}
+</style>
+</head>
+<body data-page="34" data-total="50">
+<div id="stage">
+  <header class="page-head shrink0">
+    <div>
+      <div class="kicker">ORBIT / FREE FALL</div>
+      <h1>一直落下，始终错过地面</h1>
+    </div>
+    <p class="lead">固定发射点与重力，只改变水平初速度。</p>
+  </header>
+
+  <newton-cannon-game class="min0" aria-label="牛顿大炮自由落体实验">
+    <div class="scene-plate" role="img" aria-label="剖面地球、山顶大炮与实时轨迹"></div>
+    <div class="scene-overlay">
+      <div class="model-note">理想模型：球形地球，无空气阻力</div>
+
+      <section class="comparison-wrap" aria-label="三档速度对照">
+        <div class="k-comparison">
+          <div class="hdr">水平初速度</div><div class="hdr speed-col">低</div><div class="hdr speed-col">中</div><div class="hdr speed-col">入轨所需</div>
+          <div class="rowline"></div>
+          <div class="dim">共同发生</div><div class="cell speed-col">持续向地心加速</div><div class="cell speed-col">轨迹向地心弯曲</div><div class="cell speed-col">仍向地心弯曲</div>
+          <div class="rowline"></div>
+          <div class="dim">与地面的结果</div><div class="cell speed-col">很快撞回地面</div><div class="cell speed-col">更远处撞地</div><div class="cell speed-col diff">不断错过地面</div>
+        </div>
+      </section>
+
+      <section class="progress-box" aria-label="实验进度">
+        <div class="progress-top"><span class="label">错过地面</span><output id="progressValue" class="progress-value">0 圈</output></div>
+        <div class="progress-track" aria-hidden="true"><span>0</span><span>¼</span><span>½</span><span>¾</span><span>1 圈</span></div>
+        <div class="tried"><span class="label">已试档位</span><span class="trial-mark" data-trial="0">低</span><span class="trial-mark" data-trial="1">中</span><span class="trial-mark" data-trial="2">入轨所需</span></div>
+      </section>
+
+      <section class="controls" aria-label="发射控制">
+        <div class="lever-row ctl">
+          <label for="speedLever">速度扳杆</label>
+          <input id="speedLever" type="range" min="0" max="2" step="1" value="0" aria-describedby="feedback">
+          <button id="launchBtn" class="primary-action" type="button">发射</button>
+          <button id="resetBtn" type="button">重置实验</button>
+        </div>
+        <div class="speed-labels" aria-hidden="true"><span class="selected">低</span><span>中</span><span>入轨所需</span></div>
+        <div id="feedback" class="feedback" aria-live="polite">选择一档水平初速度，然后发射。</div>
+      </section>
+
+      <div id="coreClaim" class="core-claim">入轨不是重力消失，而是向前足够快，让持续下落始终错过弯曲的地面。</div>
+    </div>
+  </newton-cannon-game>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script src="assets/lib/three.min.js"></script>
+<script>
+(function(){
+  'use strict';
+  const speedFactors = [0.35, 0.70, 1.00];
+  const speedNames = ['低', '中', '入轨所需'];
+
+  class NewtonCannonGame extends HTMLElement {
+    constructor(){
+      super();
+      this.attachShadow({mode:'open'}).innerHTML = '<style>:host{display:block;position:relative}</style><slot></slot>';
+      this.state = this.freshState();
+      this.stopLoop = null;
+    }
+    freshState(){
+      return {selected:0,running:false,progress:0,tried:[false,false,false],complete:false,result:'ready',trace:[]};
+    }
+    connectedCallback(){
+      this.cacheDom();
+      this.setupScene();
+      this.bindControls();
+      this.renderUi();
+      this.startRenderLoop();
+    }
+    cacheDom(){
+      this.lever=this.querySelector('#speedLever'); this.launchBtn=this.querySelector('#launchBtn'); this.resetBtn=this.querySelector('#resetBtn');
+      this.feedback=this.querySelector('#feedback'); this.progressValue=this.querySelector('#progressValue'); this.claim=this.querySelector('#coreClaim');
+    }
+    setupScene(){
+      const bg=Deck.token('--panel-deep'), primary=Deck.token('--primary'), accent=Deck.token('--accent'), line=Deck.token('--line-strong'), panel=Deck.token('--panel');
+      this.colors={bg,primary,accent,line,panel};
+      this.scene=new THREE.Scene(); this.scene.background=new THREE.Color(bg);
+      this.camera=new THREE.PerspectiveCamera(38,1,0.1,100); this.camera.position.set(0.4,1.15,11.8); this.camera.lookAt(0,-0.55,0);
+      this.renderer=new THREE.WebGLRenderer({antialias:true,alpha:false,powerPreference:'high-performance'});
+      this.renderer.setPixelRatio(Math.min(devicePixelRatio,2)); this.renderer.outputColorSpace=THREE.SRGBColorSpace;
+      this.renderer.domElement.className='cv-fill'; this.insertBefore(this.renderer.domElement,this.firstChild);
+      this.scene.add(new THREE.HemisphereLight(primary,panel,1.45));
+      const key=new THREE.DirectionalLight('#ffffff',1.8); key.position.set(-4,6,8); this.scene.add(key);
+      this.Rscene=3.05; this.center=new THREE.Vector3(-1.45,-1.28,0);
+      const earth=new THREE.Mesh(new THREE.SphereGeometry(this.Rscene,72,48),new THREE.MeshStandardMaterial({color:panel,roughness:.78,metalness:.12})); earth.position.copy(this.center); this.scene.add(earth);
+      const cut=new THREE.Mesh(new THREE.CircleGeometry(this.Rscene*.992,96),new THREE.MeshBasicMaterial({color:bg,transparent:true,opacity:.72,side:THREE.DoubleSide})); cut.position.set(this.center.x,this.center.y,.12); this.scene.add(cut);
+      [0.25,0.48,0.72,0.94].forEach((f,i)=>{
+        const curve=new THREE.EllipseCurve(this.center.x,this.center.y,this.Rscene*f,this.Rscene*f,0,Math.PI*2,false,0);
+        const pts=curve.getPoints(128).map(p=>new THREE.Vector3(p.x,p.y,.14+i*.002));
+        this.scene.add(new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(pts),new THREE.LineBasicMaterial({color:line,transparent:true,opacity:.42})));
+      });
+      const atmosphere=new THREE.Mesh(new THREE.SphereGeometry(this.Rscene*1.025,72,48),new THREE.MeshBasicMaterial({color:primary,wireframe:true,transparent:true,opacity:.11})); atmosphere.position.copy(this.center); this.scene.add(atmosphere);
+      this.launchAngle=2.36; this.launchRadius=this.Rscene*1.035;
+      this.launchPoint=new THREE.Vector3(this.center.x+this.launchRadius*Math.cos(this.launchAngle),this.center.y+this.launchRadius*Math.sin(this.launchAngle),.25);
+      this.makeCannon();
+      this.projectile=new THREE.Mesh(new THREE.SphereGeometry(.085,24,16),new THREE.MeshStandardMaterial({color:accent,emissive:accent,emissiveIntensity:.8,roughness:.28}));
+      this.projectile.position.copy(this.launchPoint); this.scene.add(this.projectile);
+      this.trailMaterial=new THREE.LineBasicMaterial({color:primary,transparent:true,opacity:.92});
+      this.impactRing=new THREE.Mesh(new THREE.RingGeometry(.08,.12,48),new THREE.MeshBasicMaterial({color:accent,transparent:true,opacity:0,side:THREE.DoubleSide})); this.impactRing.position.z=.3; this.scene.add(this.impactRing);
+      this.resize(); this.offResize=Deck.onResize(()=>this.resize());
+    }
+    makeCannon(){
+      const g=new THREE.Group(), accent=this.colors.accent, line=this.colors.line;
+      const tangent=new THREE.Vector3(Math.sin(this.launchAngle),-Math.cos(this.launchAngle),0).normalize();
+      const base=new THREE.Mesh(new THREE.CylinderGeometry(.14,.2,.18,20),new THREE.MeshStandardMaterial({color:line,metalness:.65,roughness:.35})); base.rotation.x=Math.PI/2; g.add(base);
+      const barrel=new THREE.Mesh(new THREE.CylinderGeometry(.075,.105,.58,20),new THREE.MeshStandardMaterial({color:accent,metalness:.72,roughness:.26}));
+      barrel.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),tangent); barrel.position.copy(tangent).multiplyScalar(.25); g.add(barrel);
+      g.position.copy(this.launchPoint); g.position.z=.2; this.scene.add(g);
+    }
+    bindControls(){
+      this.onLever=()=>{ if(this.state.running)return; this.state.selected=Number(this.lever.value); this.state.result='ready'; this.renderUi(); this.dispatchProgress('select'); };
+      this.onLaunch=()=>this.start(); this.onReset=()=>this.reset();
+      this.lever.addEventListener('input',this.onLever); this.launchBtn.addEventListener('click',this.onLaunch); this.resetBtn.addEventListener('click',this.onReset);
+    }
+    start(){
+      if(this.state.running)return;
+      this.clearCurrentTrail(); this.state.running=true; this.state.complete=false; this.state.result='running'; this.state.progress=0; this.state.trace=[];
+      this.claim.classList.remove('show'); this.impactRing.material.opacity=0; this.projectile.material.color.set(this.colors.accent); this.projectile.material.emissive.set(this.colors.accent);
+      const R=Lec.K.earth.meanRadius_m, mu=Lec.K.earth.gravitationalParameter_m3s2, r0=R*1.035;
+      const vCircular=Lec.P.circularOrbitSpeed(mu,r0), a=this.launchAngle, factor=speedFactors[this.state.selected];
+      this.phys={R,mu,x:r0*Math.cos(a),y:r0*Math.sin(a),vx:vCircular*factor*Math.sin(a),vy:-vCircular*factor*Math.cos(a),lastAngle:a,steps:0};
+      this.makeTrail(); this.addTracePoint(); this.renderUi();
+      this.dispatchEvent(new CustomEvent('game-start',{bubbles:true,composed:true,detail:{state:this.getState()}}));
+    }
+    makeTrail(){
+      this.trailPositions=new Float32Array(5400); this.trailGeometry=new THREE.BufferGeometry();
+      this.trailGeometry.setAttribute('position',new THREE.BufferAttribute(this.trailPositions,3)); this.trailGeometry.setDrawRange(0,0);
+      this.currentTrail=new THREE.Line(this.trailGeometry,this.trailMaterial.clone()); this.scene.add(this.currentTrail); this.trailCount=0;
+    }
+    addTracePoint(){
+      if(!this.phys||this.trailCount>=1800)return;
+      const s=this.Rscene/this.phys.R, i=this.trailCount*3;
+      this.trailPositions[i]=this.center.x+this.phys.x*s; this.trailPositions[i+1]=this.center.y+this.phys.y*s; this.trailPositions[i+2]=.29;
+      this.trailCount++; this.trailGeometry.attributes.position.needsUpdate=true; this.trailGeometry.setDrawRange(0,this.trailCount);
+      this.projectile.position.set(this.trailPositions[i],this.trailPositions[i+1],.31);
+    }
+    integrate(){
+      const p=this.phys, dt=5;
+      const r=Math.hypot(p.x,p.y), ax=-p.mu*p.x/(r*r*r), ay=-p.mu*p.y/(r*r*r);
+      p.vx+=ax*dt*.5; p.vy+=ay*dt*.5; p.x+=p.vx*dt; p.y+=p.vy*dt;
+      const r2=Math.hypot(p.x,p.y), ax2=-p.mu*p.x/(r2*r2*r2), ay2=-p.mu*p.y/(r2*r2*r2);
+      p.vx+=ax2*dt*.5; p.vy+=ay2*dt*.5; p.steps++;
+      const angle=Math.atan2(p.y,p.x); let d=angle-p.lastAngle; if(d>Math.PI)d-=Math.PI*2; if(d<-Math.PI)d+=Math.PI*2; p.lastAngle=angle;
+      this.state.progress=Math.max(0,this.state.progress-d/(Math.PI*2));
+      if(p.steps%3===0){ this.addTracePoint(); this.state.trace.push([p.x,p.y]); }
+      if(r2<=p.R && p.steps>8){ this.finishImpact(); }
+      else if(this.state.progress>=1){ this.finishOrbit(); }
+    }
+    finishImpact(){
+      this.state.running=false; this.state.result='impact'; this.state.tried[this.state.selected]=true;
+      this.impactRing.position.copy(this.projectile.position); this.impactRing.scale.setScalar(1); this.impactRing.material.opacity=1; this.impactAge=0;
+      this.preserveTrail(); this.renderUi(); this.dispatchProgress('impact');
+    }
+    finishOrbit(){
+      this.state.running=false; this.state.progress=1; this.state.result='orbit'; this.state.complete=true; this.state.tried[this.state.selected]=true;
+      this.currentTrail.material.color.set(this.colors.primary); this.currentTrail.material.opacity=1; this.projectile.material.color.set(this.colors.primary); this.projectile.material.emissive.set(this.colors.primary);
+      this.claim.classList.add('show'); this.preserveTrail(); this.renderUi();
+      this.dispatchEvent(new CustomEvent('game-complete',{bubbles:true,composed:true,detail:{score:1,metrics:{laps:1,selected:this.state.selected},trace:this.state.trace.slice()}}));
+    }
+    updateImpact(dt){
+      if(this.impactRing.material.opacity<=0)return; this.impactAge+=dt; this.impactRing.scale.setScalar(1+this.impactAge*2.8); this.impactRing.material.opacity=Math.max(0,1-this.impactAge*1.8);
+    }
+    startRenderLoop(){
+      let accumulator=0; const fixedTimeStep=1/120;
+      this.stopLoop=Deck.loop((t,dt)=>{
+        if(this.state.running){ accumulator+=Math.min(dt,.04); while(accumulator>=fixedTimeStep){this.integrate(); accumulator-=fixedTimeStep;} }
+        if(!Deck.reduced())this.updateImpact(dt);
+        this.renderer.render(this.scene,this.camera);
+        if(this.state.running)this.renderProgressOnly();
+      },{still:1});
+    }
+    renderProgressOnly(){
+      const q=Math.min(4,Math.floor(this.state.progress*4+.001));
+      const labels=['0 圈','¼ 圈','½ 圈','¾ 圈','1 圈']; this.progressValue.textContent=labels[q];
+      this.querySelectorAll('.progress-track span').forEach((el,i)=>el.classList.toggle('reached',i<=q));
+    }
+    renderUi(){
+      this.lever.value=String(this.state.selected); this.lever.disabled=this.state.running; this.launchBtn.disabled=this.state.running;
+      this.querySelectorAll('.speed-labels span').forEach((el,i)=>el.classList.toggle('selected',i===this.state.selected));
+      this.querySelectorAll('.speed-col').forEach((el,i)=>el.classList.toggle('active',i%3===this.state.selected));
+      this.querySelectorAll('.trial-mark').forEach((el,i)=>el.classList.toggle('done',this.state.tried[i]));
+      if(this.state.result==='running'){this.feedback.className='feedback';this.feedback.textContent='炮弹持续向地心弯曲……';}
+      else if(this.state.result==='impact'){this.feedback.className='feedback impact';this.feedback.textContent='速度不足：炮弹在地面弯离前与它相交。';}
+      else if(this.state.result==='orbit'){this.feedback.className='feedback success';this.feedback.textContent='仍在下落，也仍在错过地面。';}
+      else {this.feedback.className='feedback';this.feedback.textContent='选择一档水平初速度，然后发射。';}
+      this.renderProgressOnly();
+    }
+    dispatchProgress(action){
+      this.dispatchEvent(new CustomEvent('game-progress',{bubbles:true,composed:true,detail:{state:this.getState(),action,metrics:{progress:this.state.progress,selected:this.state.selected}}}));
+    }
+    reset(){
+      this.clearTrails(); this.state=this.freshState(); this.projectile.position.copy(this.launchPoint); this.projectile.material.color.set(this.colors.accent); this.projectile.material.emissive.set(this.colors.accent);
+      this.impactRing.material.opacity=0; this.claim.classList.remove('show'); this.renderUi();
+      this.dispatchEvent(new CustomEvent('game-reset',{bubbles:true,composed:true,detail:{state:this.getState()}}));
+    }
+    clearCurrentTrail(){ if(this.currentTrail){this.scene.remove(this.currentTrail);this.currentTrail.geometry.dispose();this.currentTrail.material.dispose();this.currentTrail=null;} }
+    clearTrails(){
+      this.scene.children.slice().forEach(o=>{if(o.userData.savedTrail){this.scene.remove(o);o.geometry.dispose();o.material.dispose();}}); this.clearCurrentTrail();
+    }
+    preserveTrail(){ if(this.currentTrail){this.currentTrail.userData.savedTrail=true;this.currentTrail=null;} }
+    resize(){
+      const w=Math.max(1,this.clientWidth),h=Math.max(1,this.clientHeight); this.camera.aspect=w/h; this.camera.updateProjectionMatrix(); this.renderer.setSize(w,h,false);
+    }
+    getState(){return JSON.parse(JSON.stringify(this.state));}
+    disconnectedCallback(){ if(this.stopLoop)this.stopLoop(); if(this.offResize)this.offResize(); this.renderer.dispose(); }
+  }
+  customElements.define('newton-cannon-game',NewtonCannonGame);
+  Deck.init({index:34,total:50});
+})();
+</script>
+</body>
+</html>

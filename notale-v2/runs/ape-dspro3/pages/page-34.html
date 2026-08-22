@@ -1,0 +1,665 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>第 34 页 · 互动讲义</title>
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<script src="assets/lib/echarts.min.js"></script>
+<style>
+  /* ---- 页面专属 ---- */
+  #main {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-2);
+    height: 100%;
+  }
+
+  /* 左右面板容器 */
+  .split-scene {
+    display: flex;
+    flex-direction: row;
+    gap: var(--sp-4);
+    flex: 1 1 0%;
+    min-height: 0;
+  }
+
+  .scene-panel {
+    flex: 1 1 0%;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-2);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--r-md);
+    padding: var(--sp-3) var(--sp-4);
+  }
+  .scene-panel.earth {
+    border-top: 3px solid #c4956a;
+  }
+  .scene-panel.moon {
+    border-top: 3px solid #7aa8c8;
+  }
+
+  .scene-header {
+    display: flex;
+    flex-direction: row;
+    align-items: baseline;
+    justify-content: center;
+    gap: var(--sp-3);
+    flex-shrink: 0;
+  }
+  .scene-label {
+    font-size: var(--fs-h2);
+    font-weight: 700;
+    color: var(--text);
+    line-height: 1.2;
+  }
+  .scene-sub {
+    font-size: var(--fs-label);
+    color: var(--text-dim);
+  }
+
+  /* 模拟画布容器 */
+  .sim-wrap {
+    position: relative;
+    flex: 1 1 0%;
+    min-height: 0;
+    background: var(--bg);
+    border-radius: var(--r-sm);
+    overflow: hidden;
+  }
+  .sim-wrap canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+  }
+  .ref-tag {
+    position: absolute;
+    right: 6px;
+    font-size: var(--fs-tick);
+    color: rgba(255,255,255,0.35);
+    pointer-events: none;
+    white-space: nowrap;
+    line-height: 1;
+  }
+
+  /* 读数行 */
+  .readout {
+    display: flex;
+    flex-direction: row;
+    gap: var(--sp-2);
+    justify-content: space-around;
+    flex-shrink: 0;
+    padding: var(--sp-1) 0;
+  }
+  .ro-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1px;
+  }
+  .ro-label {
+    font-size: var(--fs-label);
+    color: var(--text-dim);
+    line-height: 1.2;
+  }
+  .ro-val {
+    font-size: var(--fs-body);
+    font-weight: 600;
+    color: var(--text);
+    line-height: 1.2;
+    font-variant-numeric: tabular-nums;
+    font-family: var(--font-mono);
+  }
+
+  /* 对比条 */
+  .compare-strip {
+    flex-shrink: 0;
+    height: 72px;
+  }
+
+  /* 滑块行 */
+  .slider-row {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: var(--sp-4);
+    flex-shrink: 0;
+    padding: var(--sp-2) var(--sp-6);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--r-md);
+  }
+  .slider-label {
+    font-size: var(--fs-label);
+    font-weight: 600;
+    color: var(--text);
+    white-space: nowrap;
+  }
+  .slider-val {
+    font-size: var(--fs-body);
+    font-weight: 700;
+    color: var(--accent);
+    min-width: 56px;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+    font-family: var(--font-mono);
+  }
+  .slider-row input[type="range"] {
+    flex: 1 1 0%;
+    min-width: 0;
+    accent-color: var(--accent);
+    height: 6px;
+    cursor: pointer;
+  }
+  .btn-sm {
+    font-family: inherit;
+    font-size: var(--fs-label);
+    padding: 2px 10px;
+    border-radius: var(--r-sm);
+    border: 1px solid var(--border-strong);
+    background: var(--surface-raised);
+    color: var(--text);
+    cursor: pointer;
+    line-height: 1.4;
+    flex-shrink: 0;
+  }
+  .btn-sm:hover {
+    border-color: var(--accent-soft);
+  }
+  .btn-sm:focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 1px;
+  }
+
+  /* 洞察条 */
+  .insight-bar {
+    flex-shrink: 0;
+    font-size: var(--fs-sec);
+    color: var(--accent);
+    text-align: center;
+    padding: var(--sp-1) var(--sp-4);
+    background: rgba(77,166,255,0.08);
+    border-radius: var(--r-sm);
+    line-height: 1.4;
+    font-weight: 500;
+  }
+</style>
+</head>
+<body data-page="34" data-total="60">
+<div id="stage">
+<main id="main"></main>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script src="assets/lib/matter.min.js"></script>
+<script>
+(function() {
+  /* ============================================================
+     初始化底盘 & 页眉
+     ============================================================ */
+  Deck.init({ index: 34, total: 60 });
+  Lec.mount({
+    index: 34,
+    kicker: '宇航服效应',
+    title: '质量增加，跳得还高吗？',
+    take: '微重力补偿了宇航服质量带来的损失'
+  });
+
+  /* ============================================================
+     常量 & 计算
+     ============================================================ */
+  const ASTRONAUT_MASS = Lec.K.ASTRONAUT_MASS;           // 70 kg
+  const EVA_SUIT_MASS   = Lec.K.EVA_SUIT_MASS;           // 130 kg
+  const JUMP_V0         = Lec.K.HUMAN_JUMP_INITIAL_VELOCITY; // 2.5 m/s
+  const EARTH_G         = Lec.K.EARTH_GRAVITY;           // 9.8
+  const MOON_G          = Lec.K.MOON_GRAVITY;            // 1.62
+
+  // 肌肉最大输出动能（裸露身体）
+  const MAX_KE = Lec.P.kineticEnergy(ASTRONAUT_MASS, JUMP_V0);
+
+  // 裸露身体跳跃高度（参考线）
+  const BARE_EARTH_HEIGHT = Lec.P.jumpHeightFromVelocity(JUMP_V0, EARTH_G);
+  const BARE_MOON_HEIGHT  = Lec.P.jumpHeightFromVelocity(JUMP_V0, MOON_G);
+
+  /* ============================================================
+     构建 DOM
+     ============================================================ */
+  const main = document.getElementById('main');
+
+  // -- k-process 骨架 --
+  const kProc = document.createElement('div');
+  kProc.className = 'k-process';
+  kProc.style.flexShrink = '0';
+  kProc.innerHTML = `
+    <div class="axis"></div>
+    <div class="steps">
+      <div class="step current">质量增加</div>
+      <div class="arw">→</div>
+      <div class="step current">初速度降低</div>
+      <div class="arw">→</div>
+      <div class="step current">跳跃高度下降</div>
+    </div>`;
+  main.appendChild(kProc);
+
+  // -- 左右面板容器 --
+  const split = document.createElement('div');
+  split.className = 'split-scene';
+  main.appendChild(split);
+
+  // 地球面板
+  const earthPanel = document.createElement('div');
+  earthPanel.className = 'scene-panel earth';
+  earthPanel.innerHTML = `
+    <div class="scene-header">
+      <span class="scene-label">🌍 地球</span>
+      <span class="scene-sub">g = 9.8 m/s²</span>
+    </div>
+    <div class="sim-wrap" id="sim-earth">
+      <canvas id="cv-earth"></canvas>
+    </div>
+    <div class="readout" id="ro-earth"></div>`;
+  split.appendChild(earthPanel);
+
+  // 月球面板
+  const moonPanel = document.createElement('div');
+  moonPanel.className = 'scene-panel moon';
+  moonPanel.innerHTML = `
+    <div class="scene-header">
+      <span class="scene-label">🌙 月球</span>
+      <span class="scene-sub">g = 1.62 m/s²</span>
+    </div>
+    <div class="sim-wrap" id="sim-moon">
+      <canvas id="cv-moon"></canvas>
+    </div>
+    <div class="readout" id="ro-moon"></div>`;
+  split.appendChild(moonPanel);
+
+  // -- 对比条 (echarts) --
+  const compareDiv = document.createElement('div');
+  compareDiv.className = 'compare-strip';
+  compareDiv.id = 'compare-chart';
+  main.appendChild(compareDiv);
+
+  // -- 滑块行 --
+  const sliderRow = document.createElement('div');
+  sliderRow.className = 'slider-row';
+  sliderRow.innerHTML = `
+    <span class="slider-label">宇航服质量</span>
+    <button class="btn-sm" id="btn-minus" aria-label="减少 10 kg">−10</button>
+    <input type="range" id="suit-slider" min="0" max="200" value="130" step="1" aria-label="宇航服质量滑块">
+    <button class="btn-sm" id="btn-plus" aria-label="增加 10 kg">+10</button>
+    <span class="slider-val" id="slider-val">130 kg</span>`;
+  main.appendChild(sliderRow);
+
+  // -- 洞察条 --
+  const insight = document.createElement('div');
+  insight.className = 'insight-bar';
+  insight.id = 'insight-bar';
+  main.appendChild(insight);
+
+  /* ============================================================
+     Matter.js 双引擎
+     ============================================================ */
+  const { Engine, World, Bodies, Body, Composite } = Matter;
+
+  function createEngine(gravityVal) {
+    const engine = Engine.create();
+    engine.gravity.y = gravityVal;
+    engine.gravity.scale = 0.0005;  // 让动画速度合理
+    return engine;
+  }
+
+  const earthEngine = createEngine(EARTH_G);
+  const moonEngine  = createEngine(MOON_G);
+
+  // 缩放：1 米 = 100 像素，V_SCALE = sqrt(gravity.scale * 60 * PX_PER_M)
+  const PX_PER_M = 100;
+  const V_SCALE  = Math.sqrt(0.0005 * 60 * PX_PER_M); // ≈ 1.732
+
+  // 画布引用
+  const cvEarth = document.getElementById('cv-earth');
+  const cvMoon  = document.getElementById('cv-moon');
+
+  // 用 Deck.fit 初始化画布
+  let earthCtx, moonCtx;
+  let earthW, earthH, moonW, moonH;
+
+  function fitCanvases() {
+    earthCtx = Deck.fit(cvEarth);
+    moonCtx  = Deck.fit(cvMoon);
+    earthW = cvEarth.width  / (window.devicePixelRatio || 1);
+    earthH = cvEarth.height / (window.devicePixelRatio || 1);
+    moonW  = cvMoon.width  / (window.devicePixelRatio || 1);
+    moonH  = cvMoon.height / (window.devicePixelRatio || 1);
+  }
+  fitCanvases();
+
+  // 地面 Y（像素坐标，底部留 30px）
+  function groundY(h) { return h - 30; }
+
+  // 创建人物身体
+  function createPerson(world, gY, w) {
+    const cx = w / 2;
+    const y0 = gY - 20; // 站在地面上
+    const torso = Bodies.rectangle(cx, y0, 16, 36, {
+      render: { fillStyle: '#e8d5b7' }
+    });
+    const head = Bodies.circle(cx, y0 - 28, 10, {
+      render: { fillStyle: '#e8d5b7' }
+    });
+    const person = Body.create({
+      parts: [torso, head],
+      restitution: 0.05,
+      friction: 0.5
+    });
+    // 约束 x 位置防止漂移
+    person._anchorX = cx;
+    Composite.add(world, person);
+    return person;
+  }
+
+  // 创建地面
+  function createGround(world, gY, w) {
+    const ground = Bodies.rectangle(w / 2, gY + 20, w + 100, 40, {
+      isStatic: true,
+      render: { fillStyle: '#334455' }
+    });
+    Composite.add(world, ground);
+    return ground;
+  }
+
+  // 初始化场景
+  function initScene(engine, cv) {
+    const w = cv.width / (window.devicePixelRatio || 1);
+    const h = cv.height / (window.devicePixelRatio || 1);
+    const gY = groundY(h);
+    Composite.clear(engine.world, false);
+    const person = createPerson(engine.world, gY, w);
+    createGround(engine.world, gY, w);
+    return { person, gY, w, h };
+  }
+
+  let earthScene = initScene(earthEngine, cvEarth);
+  let moonScene  = initScene(moonEngine, cvMoon);
+
+  // 当前 suitMass 与动画状态
+  let suitMass = EVA_SUIT_MASS;
+  let jumpTriggered = false;
+  let earthPeakY = earthScene.gY;
+  let moonPeakY  = moonScene.gY;
+  let earthLanded = true;
+  let moonLanded  = true;
+
+  function computeSuitedVelocity(mass) {
+    if (mass <= 0.001) return JUMP_V0;
+    const totalMass = ASTRONAUT_MASS + mass;
+    return Math.sqrt(2 * MAX_KE / totalMass);
+  }
+
+  function triggerJump() {
+    const vSuited = computeSuitedVelocity(suitMass);
+    const vMatter = vSuited * V_SCALE;
+
+    // 地球
+    Body.setPosition(earthScene.person, { x: earthScene.w / 2, y: earthScene.gY - 20 });
+    Body.setVelocity(earthScene.person, { x: 0, y: -vMatter });
+    earthPeakY = earthScene.gY;
+    earthLanded = false;
+
+    // 月球
+    Body.setPosition(moonScene.person, { x: moonScene.w / 2, y: moonScene.gY - 20 });
+    Body.setVelocity(moonScene.person, { x: 0, y: -vMatter });
+    moonPeakY = moonScene.gY;
+    moonLanded = false;
+
+    jumpTriggered = true;
+  }
+
+  /* ============================================================
+     绘制场景
+     ============================================================ */
+  function drawScene(ctx, engine, scene, refHeightPx, personColor) {
+    const { gY, w, h } = scene;
+    ctx.clearRect(0, 0, w, h);
+
+    // 地面
+    ctx.fillStyle = '#334455';
+    ctx.fillRect(0, gY, w, h - gY);
+
+    // 地面线
+    ctx.strokeStyle = '#556677';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(0, gY);
+    ctx.lineTo(w, gY);
+    ctx.stroke();
+
+    // 参考虚线（裸露身体在地球上的跳跃高度）
+    if (refHeightPx > 4) {
+      const refY = gY - refHeightPx;
+      ctx.setLineDash([5, 5]);
+      ctx.strokeStyle = 'rgba(255,255,255,0.25)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(0, refY);
+      ctx.lineTo(w, refY);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // 参考标签
+      ctx.fillStyle = 'rgba(255,255,255,0.3)';
+      ctx.font = '14px ' + getComputedStyle(document.body).fontFamily;
+      ctx.fillText('地球裸跳参考', 6, refY - 4);
+    }
+
+    // 绘制人物
+    const bodies = Composite.allBodies(engine.world);
+    for (const body of bodies) {
+      if (body.isStatic) continue;
+      ctx.save();
+      for (const part of body.parts) {
+        const v = part.vertices;
+        ctx.fillStyle = personColor;
+        ctx.beginPath();
+        ctx.moveTo(v[0].x, v[0].y);
+        for (let j = 1; j < v.length; j++) {
+          ctx.lineTo(v[j].x, v[j].y);
+        }
+        ctx.closePath();
+        ctx.fill();
+      }
+      ctx.restore();
+    }
+  }
+
+  function drawBoth() {
+    const refPx = BARE_EARTH_HEIGHT * PX_PER_M;
+    drawScene(earthCtx, earthEngine, earthScene, refPx, '#e8c08a');
+    drawScene(moonCtx, moonEngine, moonScene, refPx, '#a8c8e8');
+  }
+
+  /* ============================================================
+     Echarts 对比条
+     ============================================================ */
+  const compareDom = document.getElementById('compare-chart');
+  const compareChart = echarts.init(compareDom, null, { renderer: 'svg' });
+
+  function updateCompareChart(earthH, moonH) {
+    const option = {
+      textStyle: { fontSize: 14, fontFamily: getComputedStyle(document.body).fontFamily },
+      grid: { top: 8, bottom: 4, left: 110, right: 30 },
+      xAxis: {
+        type: 'value',
+        name: '跳跃高度 (m)',
+        nameTextStyle: { fontSize: 14, color: '#8899aa' },
+        axisLabel: { fontSize: 13, color: '#8899aa' },
+        max: Math.max(2.2, Math.ceil(Math.max(earthH, moonH, BARE_EARTH_HEIGHT) * 1.3 * 10) / 10),
+        splitLine: { lineStyle: { color: '#243040' } }
+      },
+      yAxis: {
+        type: 'category',
+        data: ['地球裸跳\n(参考)', '月球\n穿宇航服', '地球\n穿宇航服'],
+        axisLabel: { fontSize: 14, color: '#a0b0c0', lineHeight: 14 },
+        axisLine: { show: false },
+        axisTick: { show: false }
+      },
+      series: [{
+        type: 'bar',
+        data: [
+          { value: BARE_EARTH_HEIGHT, itemStyle: { color: 'rgba(255,255,255,0.2)', borderColor: 'rgba(255,255,255,0.4)', borderWidth: 1, borderType: 'dashed' } },
+          { value: moonH,  itemStyle: { color: '#7aa8c8' } },
+          { value: earthH, itemStyle: { color: '#c4956a' } }
+        ],
+        barWidth: 16,
+        label: {
+          show: true,
+          position: 'right',
+          fontSize: 14,
+          color: '#e6edf5',
+          formatter: function(p) { return p.value.toFixed(2) + ' m'; }
+        }
+      }]
+    };
+    compareChart.setOption(option, { notMerge: true });
+  }
+
+  /* ============================================================
+     更新读数
+     ============================================================ */
+  function updateReadouts() {
+    const vSuited = computeSuitedVelocity(suitMass);
+    const totalMass = ASTRONAUT_MASS + suitMass;
+    const earthH = Lec.P.jumpHeightFromVelocity(vSuited, EARTH_G);
+    const moonH  = Lec.P.jumpHeightFromVelocity(vSuited, MOON_G);
+
+    function buildHTML(h, gLabel) {
+      return `
+        <div class="ro-item">
+          <span class="ro-label">总质量</span>
+          <span class="ro-val">${totalMass.toFixed(0)} kg</span>
+        </div>
+        <div class="ro-item">
+          <span class="ro-label">初速度</span>
+          <span class="ro-val">${vSuited.toFixed(2)} m/s</span>
+        </div>
+        <div class="ro-item">
+          <span class="ro-label">跳跃高度</span>
+          <span class="ro-val">${h.toFixed(2)} m</span>
+        </div>`;
+    }
+
+    document.getElementById('ro-earth').innerHTML = buildHTML(earthH);
+    document.getElementById('ro-moon').innerHTML  = buildHTML(moonH);
+
+    // 滑块值
+    document.getElementById('slider-val').textContent = suitMass.toFixed(0) + ' kg';
+
+    // 洞察条
+    const moonSuitedHigher = moonH > BARE_EARTH_HEIGHT;
+    if (suitMass < 0.5) {
+      insight.textContent = '不穿宇航服时，月球跳跃高度约 ' + BARE_MOON_HEIGHT.toFixed(1) + ' m，是地球的 6 倍。';
+    } else if (moonSuitedHigher) {
+      insight.textContent = '穿宇航服在月球上跳 ' + moonH.toFixed(2) + ' m，仍然比裸身在地球上跳 ' + BARE_EARTH_HEIGHT.toFixed(2) + ' m 更高——微重力补偿了质量带来的损失。';
+    } else {
+      insight.textContent = '质量太大，月球上的跳跃高度已低于地球裸跳参考线。试试减轻宇航服质量？';
+    }
+
+    updateCompareChart(earthH, moonH);
+    return { vSuited, earthH, moonH };
+  }
+
+  /* ============================================================
+     动画循环
+     ============================================================ */
+  function clampPerson(engine, scene, landedFlag) {
+    const body = scene.person;
+    const gY = scene.gY;
+    const anchorX = scene.w / 2;
+
+    // 锁定 x 位置
+    Body.setPosition(body, { x: anchorX, y: body.position.y });
+
+    // 检测是否落地
+    if (body.position.y >= gY - 20 && body.velocity.y >= 0) {
+      Body.setPosition(body, { x: anchorX, y: gY - 20 });
+      Body.setVelocity(body, { x: 0, y: 0 });
+      return true;
+    }
+    return false;
+  }
+
+  Deck.loop(function() {
+    Engine.update(earthEngine, 1000 / 60);
+    Engine.update(moonEngine, 1000 / 60);
+
+    earthLanded = clampPerson(earthEngine, earthScene, earthLanded);
+    moonLanded  = clampPerson(moonEngine, moonScene, moonLanded);
+
+    drawBoth();
+  });
+
+  /* ============================================================
+     滑块交互
+     ============================================================ */
+  const slider = document.getElementById('suit-slider');
+
+  function onMassChange(newMass) {
+    suitMass = Math.max(0, Math.min(200, newMass));
+    slider.value = suitMass;
+    updateReadouts();
+    triggerJump();
+  }
+
+  slider.addEventListener('input', function() {
+    onMassChange(parseFloat(this.value));
+  });
+
+  document.getElementById('btn-minus').addEventListener('click', function() {
+    onMassChange(suitMass - 10);
+  });
+
+  document.getElementById('btn-plus').addEventListener('click', function() {
+    onMassChange(suitMass + 10);
+  });
+
+  // 键盘微调
+  slider.addEventListener('keydown', function(e) {
+    if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') {
+      e.preventDefault();
+      onMassChange(suitMass - 5);
+    } else if (e.key === 'ArrowRight' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      onMassChange(suitMass + 5);
+    }
+  });
+
+  /* ============================================================
+     初始状态
+     ============================================================ */
+  updateReadouts();
+  triggerJump();
+
+  // 窗口大小变化时重新适配画布
+  window.addEventListener('resize', function() {
+    fitCanvases();
+    const gYE = groundY(earthH);
+    const gYM = groundY(moonH);
+    earthScene = { ...earthScene, gY: gYE, w: earthW, h: earthH };
+    moonScene  = { ...moonScene,  gY: gYM, w: moonW,  h: moonH  };
+    // 重建地面
+    Composite.clear(earthEngine.world, false);
+    Composite.clear(moonEngine.world, false);
+    earthScene.person = createPerson(earthEngine.world, gYE, earthW);
+    createGround(earthEngine.world, gYE, earthW);
+    moonScene.person = createPerson(moonEngine.world, gYM, moonW);
+    createGround(moonEngine.world, gYM, moonW);
+    triggerJump();
+    compareChart.resize();
+  });
+})();
+</script>
+</body>
+</html>

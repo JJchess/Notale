@@ -4,7 +4,31 @@
 #   api.999555999   6/8 成功   墙钟 180.8s   吞吐  2.0 次/分   2 次超时
 #   llmapi.paratera 8/8 成功   墙钟  12.8s   吞吐 37.4 次/分   0 次失败
 #
-# 差 18.7 倍。之前 20 并发跑 builder 累计空等 84 分钟,根源就是前者扛不住并发。
+# 差 18.7 倍。之前 20 并发跑 builder 累计空等 84 分钟,根源就是**前者**扛不住并发。
+#
+# **不要拿那 84 分钟去压 paratera 上的并发。** 那是 api.999555999 的账,
+# 而 paratera 实测 8/8 成功、37.4 次/分,并发上限 100。
+# 我一度把 builder 压到 6、spec 压到 8,结果 48 页的 builder 墙钟 37 分钟,
+# 其中绝大部分是排队,不是生成。
+# 2026-08-21 换路由。并行云(paratera)的账号被砍到只剩 8 个模型
+# (GLM-4-Flash / GLM-4.5-Flash / GLM-Z1-Flash / GLM-4V-Flash / GLM-CogView3-Flash /
+#  Intern-S2-Preview / PaddleOCR-VL-0.9B / PaddleOCR-VL-1.5),
+# `AWS-GPT-5.6-Sol` / `DeepSeek-V4-Flash` / `DeepSeek-V4-Pro` / `AWS-Claude-Sonnet-5`
+# 一律 403 team_model_access_denied。同一个模型 `gpt-5.6-sol` 在这条中转上还能用,
+# 所以只换路由不换模型 —— ape-g7 的基线因此仍然可比。
+#
+# **这条路由不支持 responses**:POST /v1/responses 回 200 + {"detail":"Internal server error"}。
+# 所以 wire_api 改成 chat,由 core/llm.py 的适配层冒充 responses 对象,
+# planner 和 builder 一行没改。
+#
+# 这条路由上还验过可用的:claude-opus-5 / claude-sonnet-5 / claude-opus-4-1 /
+# claude-sonnet-4-5 / claude-haiku-4-5 —— 但它们只在 Anthropic 风格的
+# /v1/messages 上(要另一个 wire 分支),不在 /v1/chat/completions 上。
+# 2026-08-21 晚:并行云权限**已恢复** —— 可用模型从 8 个回到 98 个,
+# AWS-GPT-5.6-Sol / DeepSeek-V4-Flash / DeepSeek-V4-Pro / AWS-Claude-Sonnet-5 都回来了。
+# 切回这条路由(它支持 responses)。中转那条(api.999555999.com + wire_api: chat)
+# 的适配层留着不动 —— core/llm.py 里 wire=="chat" 那条分支已经验过能跑完整轮,
+# 下次哪条路由再挂可以一行切回去。
 model:
   base_url: https://llmapi.paratera.com/v1
   name: AWS-GPT-5.6-Sol
@@ -18,4 +42,8 @@ planner:
   # 步骤顺序是从 nn-06 主 agent 的动作时间线抄下来的,不是设计的:
   #   探环境 → theme.css → lec.js → PLAN.md → CONTRACT.md → 建骨架
   # nn-03 是同一条线,两轮一致,所以固定成流水线而不是让模型自己决定。
-  reasoning_effort: high
+  #
+  # medium(原来是 high)。ape-smoke 那轮是 high 跑的,五步合计 978s,
+  # 产物 lec.js 25,922 / PLAN.md 16,413 / theme.css 14,585 / CONTRACT.md 7,581 字符。
+  # 换 medium 之后这些数会变小,**所以 ape-smoke 的规划质量不能直接当 medium 的基线**。
+  reasoning_effort: medium

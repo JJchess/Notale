@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+</head>
+<body data-page="13" data-total="32">
+<div id="stage">
+  <style>
+    .orbit-head{padding:26px 36px 12px;display:flex;align-items:flex-end;justify-content:space-between;gap:32px}
+    .orbit-head p{margin:5px 0 0;color:var(--muted)}
+    .scene-shell{position:relative;margin:0 36px 18px;overflow:hidden;border:1px solid var(--line);border-radius:var(--r-lg);background:radial-gradient(circle at 36% 48%,rgba(255,200,87,.08),transparent 22%),linear-gradient(160deg,var(--panel-deep),#050b13);box-shadow:0 18px 44px var(--shadow)}
+    #orbitCanvas{display:block;width:100%;height:100%}
+    .scene-label{position:absolute;pointer-events:none;padding:4px 8px;border-radius:var(--r-sm);background:rgba(7,17,31,.78);color:var(--muted);font-size:var(--fs-label);font-weight:650;line-height:1.35}
+    .fixed-meta{position:absolute;left:18px;top:18px;display:flex;gap:8px;flex-wrap:wrap;width:430px}
+    .fixed-meta .badge{background:rgba(7,17,31,.82)}
+    .meters{position:absolute;right:18px;bottom:18px;width:278px;padding:16px}
+    .meter-row{display:flex;justify-content:space-between;align-items:baseline;padding:7px 0;border-bottom:1px solid var(--line);font-size:var(--fs-sec)}
+    .meter-row:last-child{border:0}.meter-row strong{color:var(--orbit-bright);font:700 var(--fs-lead)/1.2 var(--font-mono)}
+    .checkpoint-strip{position:absolute;left:18px;right:318px;bottom:18px;padding:12px 14px;background:rgba(9,22,37,.9)}
+    .checkpoint-strip.k-process{gap:18px}
+    .checkpoint-strip .step{padding:8px 9px;text-align:center;background:rgba(13,27,45,.9);font-size:var(--fs-label);line-height:1.25}
+    .checkpoint-strip .step .tick{display:block;margin-top:3px;color:var(--muted)}
+    .checkpoint-strip .arw{right:-18px;width:16px;font-size:16px}
+    .control-band{height:116px;padding:0 36px 22px;display:flex;gap:16px;align-items:stretch}
+    .time-control{flex:1;padding:14px 20px}.time-control .ctl{height:44px}.time-control input{cursor:pointer}
+    .judge{width:480px;padding:12px 16px;display:flex;align-items:center;gap:10px}
+    .judge .prompt{flex:1;min-width:0}.feedback{font-size:var(--fs-sec);line-height:1.35;color:var(--muted)}
+    .feedback.good{color:var(--success)}.feedback.bad{color:var(--danger)}
+    .pulse{animation:pulse .7s ease-out}@keyframes pulse{50%{box-shadow:0 0 26px var(--sun-glow);border-color:var(--sun)}}
+    @media (prefers-reduced-motion:reduce){.pulse{animation:none}}
+  </style>
+
+  <header class="orbit-head" style="height:94px">
+    <div><div class="label orbit-color">ORBITAL MOTION · 水星</div><h1>一圈之内，速度在变</h1></div>
+    <p class="lead">变化的是沿轨道的速度，<span class="accent">不是换了一条轨道</span></p>
+  </header>
+
+  <main class="scene-shell grow min0 no-pan" aria-label="水星椭圆轨道交互示意图">
+    <canvas id="orbitCanvas" class="cv-fill"></canvas>
+    <div class="fixed-meta" aria-label="轨道参数">
+      <span class="badge">太阳位于焦点</span><span class="badge" id="axisBadge"></span>
+      <span class="badge" id="eccBadge"></span><span class="badge" id="periodBadge"></span>
+      <span class="badge" id="periBadge"></span><span class="badge" id="apoBadge"></span>
+    </div>
+    <div id="sunLabel" class="scene-label">太阳</div>
+    <div id="planetLabel" class="scene-label">水星</div>
+
+    <div class="checkpoint-strip panel k-process" style="--process-cols:6" aria-label="一圈内的速度变化过程">
+      <div class="axis"></div>
+      <div class="step" data-step="0">近日点<span class="tick"></span></div><div class="arw"></div>
+      <div class="step" data-step="1">高速离开<span class="tick"></span></div><div class="arw"></div>
+      <div class="step" data-step="2">继续减速<span class="tick"></span></div><div class="arw"></div>
+      <div class="step" data-step="3">远日点<span class="tick"></span></div><div class="arw"></div>
+      <div class="step" data-step="4">再次加速<span class="tick"></span></div><div class="arw"></div>
+      <div class="step" data-step="5">接近近日点<span class="tick"></span></div>
+    </div>
+
+    <aside class="meters panel" aria-live="polite">
+      <div class="meter-row"><span>当前日距</span><strong id="distanceOut"></strong></div>
+      <div class="meter-row"><span>当前速度</span><strong id="speedOut"></strong></div>
+      <div class="meter-row"><span>已过天数</span><strong id="dayOut"></strong></div>
+      <div class="meter-row"><span>判断进度</span><strong id="progressOut">0/2</strong></div>
+    </aside>
+  </main>
+
+  <section class="control-band">
+    <div class="time-control panel min0">
+      <div class="ctl"><label for="daySlider">拖动时间，扫过一整圈</label><input id="daySlider" type="range"><output id="sliderOut" class="readout"></output></div>
+      <div class="row justify-between tick muted"><span>近日点</span><span>远日点</span><span>回到近日点</span></div>
+    </div>
+    <div class="judge panel min0">
+      <div class="prompt"><div class="label" id="judgePrompt">把滑块停在近日点或远日点</div><div id="feedback" class="feedback">比较速度箭头长度，再判断更快或更慢。</div></div>
+      <button class="btn" data-answer="fast">更快</button><button class="btn" data-answer="slow">更慢</button>
+      <button id="resetBtn" class="btn primary" hidden>再扫一圈</button>
+    </div>
+  </section>
+
+  <script src="assets/lib/three.min.js"></script>
+  <script src="assets/lib/gsap.min.js"></script>
+  <script>
+  window.addEventListener('DOMContentLoaded',function(){
+    'use strict';
+    Deck.init({index:13,total:32});
+    var M=Lec.K.bodies.mercury,S=Lec.K.bodies.sun,P=Lec.P,K=Lec.K.math;
+    var ellipse=P.orbitEllipse(M.semimajorAxisAU,M.eccentricity);
+    var slider=document.getElementById('daySlider'), canvas=document.getElementById('orbitCanvas');
+    var shell=canvas.parentElement, clock={day:0}, judged={peri:false,apo:false}, tween;
+    var fmt=function(v,n){return P.significantFigures(v,n);};
+    slider.min=K.ZERO; slider.max=M.orbitalPeriodDays; slider.step=M.orbitalPeriodDays/(K.HUNDRED*K.TWO);
+    slider.value=K.ZERO;
+    axisBadge.textContent='半长轴 '+fmt(M.semimajorAxisAU,K.THREE)+' AU';
+    eccBadge.textContent='偏心率 '+fmt(M.eccentricity,K.THREE);
+    periodBadge.textContent='一圈 '+fmt(M.orbitalPeriodDays,K.FOUR)+' 天';
+    periBadge.textContent='近日点 '+fmt(P.periapsisDistance(M.semimajorAxisAU,M.eccentricity),K.THREE)+' AU';
+    apoBadge.textContent='远日点 '+fmt(P.apoapsisDistance(M.semimajorAxisAU,M.eccentricity),K.THREE)+' AU';
+
+    var renderer=new THREE.WebGLRenderer({canvas:canvas,antialias:true,alpha:true});
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio,K.TWO)); renderer.outputColorSpace=THREE.SRGBColorSpace;
+    var scene=new THREE.Scene(), camera=new THREE.PerspectiveCamera(38,1,.1,100);
+    camera.position.set(0,5.8,8.5); camera.lookAt(0,0,0);
+    var plane=new THREE.Group(); plane.rotation.x=-.98; scene.add(plane);
+    scene.add(new THREE.AmbientLight(0x8fd2ff,.55));
+    var sunLight=new THREE.PointLight(0xffc857,5,20); scene.add(sunLight);
+    var scale=8, orbitPts=[];
+    for(var i=0;i<=180;i++){var q=P.orbitPoint(M.semimajorAxisAU,M.eccentricity,i*K.TWO);orbitPts.push(new THREE.Vector3(q.x*scale,0,q.y*scale));}
+    var orbitGeo=new THREE.BufferGeometry().setFromPoints(orbitPts);
+    plane.add(new THREE.Line(orbitGeo,new THREE.LineBasicMaterial({color:0x55b9ff,transparent:true,opacity:.9})));
+    var sun=new THREE.Mesh(new THREE.SphereGeometry(.36,32,20),new THREE.MeshBasicMaterial({color:0xffc857})); plane.add(sun);
+    var mercury=new THREE.Mesh(new THREE.SphereGeometry(.13,24,16),new THREE.MeshStandardMaterial({color:0xb8c3cc,roughness:.8})); plane.add(mercury);
+    var trail=new THREE.Line(new THREE.BufferGeometry(),new THREE.LineBasicMaterial({color:0xffc857,transparent:true,opacity:.95}));plane.add(trail);
+    var arrow=new THREE.ArrowHelper(new THREE.Vector3(0,0,1),new THREE.Vector3(),1,0xffc857,.22,.12);plane.add(arrow);
+    var checkpointEls=Array.from(document.querySelectorAll('.checkpoint-strip .step'));
+    checkpointEls.forEach(function(el,idx){var deg=idx*K.DEG_PER_CIRCLE/checkpointEls.length,pt=P.orbitPoint(M.semimajorAxisAU,M.eccentricity,deg);var v=P.visVivaSpeedKmSAtAU(pt.radius,M.semimajorAxisAU,S.massKg);el.querySelector('.tick').textContent=fmt(v,K.THREE)+' km/s';});
+
+    function trueAnomaly(day){
+      var mean=K.TAU*(day/M.orbitalPeriodDays),E=mean;
+      for(var j=0;j<8;j++) E-=(E-M.eccentricity*Math.sin(E)-mean)/(K.ONE-M.eccentricity*Math.cos(E));
+      return Math.atan2(Math.sqrt(K.ONE-M.eccentricity*M.eccentricity)*Math.sin(E),Math.cos(E)-M.eccentricity)*K.DEG_PER_RAD;
+    }
+    function project(obj,el,dx,dy){var p=obj.getWorldPosition(new THREE.Vector3()).project(camera);el.style.left=((p.x+K.ONE)*shell.clientWidth/K.TWO+dx)+'px';el.style.top=((-p.y+K.ONE)*shell.clientHeight/K.TWO+dy)+'px';}
+    function renderOrbit(){
+      var day=((clock.day%M.orbitalPeriodDays)+M.orbitalPeriodDays)%M.orbitalPeriodDays;
+      var deg=trueAnomaly(day),pt=P.orbitPoint(M.semimajorAxisAU,M.eccentricity,deg),speed=P.visVivaSpeedKmSAtAU(pt.radius,M.semimajorAxisAU,S.massKg);
+      mercury.position.set(pt.x*scale,0,pt.y*scale);
+      var ahead=P.orbitPoint(M.semimajorAxisAU,M.eccentricity,deg+K.ONE),dir=new THREE.Vector3((ahead.x-pt.x)*scale,0,(ahead.y-pt.y)*scale).normalize();
+      arrow.position.copy(mercury.position);arrow.setDirection(dir);arrow.setLength(.55+speed/45,.22,.12);
+      var trailPts=[],trailDays=K.FOUR*K.TWO;
+      for(var t=12;t>=0;t--){var td=Math.max(K.ZERO,day-trailDays*t/12),tp=P.orbitPoint(M.semimajorAxisAU,M.eccentricity,trueAnomaly(td));trailPts.push(new THREE.Vector3(tp.x*scale,.01,tp.y*scale));}
+      trail.geometry.dispose();trail.geometry=new THREE.BufferGeometry().setFromPoints(trailPts);
+      document.getElementById('distanceOut').textContent=fmt(pt.radius,K.THREE)+' AU';
+      document.getElementById('speedOut').textContent=fmt(speed,K.THREE)+' km/s';
+      document.getElementById('dayOut').textContent=fmt(day,K.THREE)+' 天';
+      document.getElementById('sliderOut').textContent=fmt(day,K.THREE)+' 天'; slider.value=day;
+      var idx=Math.round((((deg%K.DEG_PER_CIRCLE)+K.DEG_PER_CIRCLE)%K.DEG_PER_CIRCLE)/(K.DEG_PER_CIRCLE/checkpointEls.length))%checkpointEls.length;
+      checkpointEls.forEach(function(el,k){el.classList.toggle('current',k===idx);el.classList.toggle('done',k<idx);});
+      renderer.render(scene,camera);project(sun,document.getElementById('sunLabel'),-30,24);project(mercury,document.getElementById('planetLabel'),12,-28);
+    }
+    function resize(){var w=shell.clientWidth,h=shell.clientHeight;renderer.setSize(w,h,false);camera.aspect=w/h;camera.updateProjectionMatrix();renderOrbit();}
+    Deck.onResize(resize);resize();
+    function start(){if(Deck.reduced()){clock.day=K.ZERO;renderOrbit();return;} if(tween)tween.kill();tween=gsap.to(clock,{day:M.orbitalPeriodDays,duration:12,ease:'none',repeat:-1,onUpdate:renderOrbit});}
+    slider.addEventListener('input',function(){if(tween)tween.pause();clock.day=Number(slider.value);renderOrbit();updatePrompt();});
+    slider.addEventListener('pointerdown',function(){if(tween)tween.pause();});
+    function endpoint(){var d=clock.day,tol=M.orbitalPeriodDays/30;if(d<tol||M.orbitalPeriodDays-d<tol)return 'peri';if(Math.abs(d-M.orbitalPeriodDays/K.TWO)<tol)return 'apo';return null;}
+    function updatePrompt(){var e=endpoint();document.getElementById('judgePrompt').textContent=e==='peri'?'近日点：这里更快还是更慢？':e==='apo'?'远日点：这里更快还是更慢？':'把滑块停在近日点或远日点';}
+    document.querySelectorAll('[data-answer]').forEach(function(btn){btn.addEventListener('click',function(){var e=endpoint(),correct=(e==='peri'&&btn.dataset.answer==='fast')||(e==='apo'&&btn.dataset.answer==='slow'),fb=document.getElementById('feedback');if(!e){fb.textContent='先把滑块停到近日点或远日点。';fb.className='feedback bad';return;}if(correct){judged[e]=true;fb.textContent=e==='peri'?'近日点更快：离太阳更近。':'远日点更慢：离太阳更远。';fb.className='feedback good';btn.classList.add('correct');shell.classList.add('pulse');setTimeout(function(){shell.classList.remove('pulse');},700);}else{fb.textContent='比较速度箭头长度：这里离太阳更近还是更远？';fb.className='feedback bad';gsap.fromTo(btn,{x:-7},{x:0,duration:.45,ease:'elastic.out(1,.35)'});}var n=(judged.peri?K.ONE:K.ZERO)+(judged.apo?K.ONE:K.ZERO);document.getElementById('progressOut').textContent=n+'/'+K.TWO;if(n===K.TWO){document.querySelectorAll('[data-answer]').forEach(function(b){b.hidden=true;});document.getElementById('resetBtn').hidden=false;if(!Deck.reduced()){clock.day=K.ZERO;if(tween)tween.kill();tween=gsap.to(clock,{day:M.orbitalPeriodDays,duration:12,ease:'none',onUpdate:renderOrbit});}}});});
+    document.getElementById('resetBtn').addEventListener('click',function(){judged={peri:false,apo:false};clock.day=K.ZERO;document.getElementById('progressOut').textContent=K.ZERO+'/'+K.TWO;document.getElementById('feedback').textContent='比较速度箭头长度，再判断更快或更慢。';document.getElementById('feedback').className='feedback';document.querySelectorAll('[data-answer]').forEach(function(b){b.hidden=false;b.classList.remove('correct');});this.hidden=true;renderOrbit();start();});
+    window.addEventListener('pagehide',function(){if(tween)tween.kill();renderer.dispose();});
+    start();
+  });
+  </script>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+</body>
+</html>

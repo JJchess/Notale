@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  #stage{padding:30px 42px 28px;gap:18px}
+  .page-head{display:flex;align-items:flex-end;justify-content:space-between;gap:28px}
+  .kicker{color:var(--amber);font:700 var(--fs-label)/1.4 var(--font-mono);letter-spacing:.12em}
+  .head-copy{display:flex;flex-direction:column;gap:6px;min-width:0}
+  .allocation{min-width:270px;text-align:right;color:var(--ink-muted);font-size:var(--fs-sec)}
+  .allocation strong{display:block;color:var(--teal);font:720 var(--fs-h2)/1.2 var(--font-mono)}
+  .ledger{padding:16px 20px 14px;display:flex;flex-direction:column;gap:10px}
+  #energy-ledger{flex:1;min-height:0;position:relative}
+  #energy-ledger svg{display:block;width:100%;height:100%;overflow:visible}
+  .svg-label{font:650 14px var(--font-sans);fill:var(--ink-muted)}
+  .svg-title{font:720 18px var(--font-sans);fill:var(--text)}
+  .svg-read{font:720 18px var(--font-mono);fill:var(--teal)}
+  .svg-tick{font:500 13px var(--font-mono);fill:var(--ink-faint)}
+  .handle{cursor:ew-resize;outline:none}
+  .handle:focus .handle-core{stroke:var(--focus);stroke-width:5px}
+  .handle-core{fill:var(--panel-hi);stroke:var(--amber);stroke-width:3px}
+  .goalbar{display:flex;align-items:center;justify-content:space-between;gap:18px;min-height:58px}
+  .goals{display:flex;gap:10px;align-items:center}
+  .goal{color:var(--ink-muted);border:1px solid var(--line-strong);border-radius:999px;padding:6px 12px;font-size:var(--fs-label);font-weight:700}
+  .goal.ok{color:var(--teal-soft);border-color:var(--teal)}
+  .message{flex:1;text-align:center;color:var(--amber-soft);font-size:var(--fs-sec);line-height:1.4}
+  .actions{display:flex;gap:10px}
+  .takeaway{display:flex;align-items:center;gap:18px;padding:13px 20px;border-left:8px solid var(--teal);background:var(--panel-hi);border-radius:0 var(--r-md) var(--r-md) 0}
+  .takeaway b{color:var(--teal-soft);font-size:var(--fs-lead)}
+  .takeaway span{color:var(--ink-muted);font-size:var(--fs-sec)}
+  .shake{animation:shake .18s ease-out}
+  @keyframes shake{25%{transform:translateX(-7px)}50%{transform:translateX(7px)}75%{transform:translateX(-4px)}}
+  @media(prefers-reduced-motion:reduce){.shake{animation:none}}
+</style>
+</head>
+<body data-page="15" data-total="45">
+<div id="stage">
+  <header class="page-head shrink0" style="height:84px">
+    <div class="head-copy min0">
+      <div class="kicker">CULTURE · ENERGY</div>
+      <h1>熟食重写一天</h1>
+      <p class="lead">用火和加工改变获取能量的路径，也改变一天怎样分配。</p>
+    </div>
+    <div class="allocation" aria-live="polite">已分配<strong id="allocated">—</strong></div>
+  </header>
+
+  <main class="panel ledger grow min0" style="flex:1">
+    <div class="row justify-between items-center shrink0">
+      <h2>拖动三个分隔柄，重分配固定的一天</h2>
+      <span class="chip is-current" id="step-label">步长：—</span>
+    </div>
+    <div id="energy-ledger" class="no-pan min0" aria-label="一天的时间与能量动态账本"></div>
+    <div class="goalbar shrink0">
+      <div class="goals" aria-label="目标两项">
+        <span class="label">目标 2 项</span>
+        <span class="goal" id="goal-energy">净余量目标</span>
+        <span class="goal" id="goal-rest">休息目标</span>
+      </div>
+      <div class="message" id="message" aria-live="polite">前段多花时间，可能换来后段较低负担，但没有免费收益。</div>
+      <div class="actions">
+        <button class="btn btn-primary" id="again" hidden>换一种分配</button>
+        <button class="btn" id="reset">重置</button>
+      </div>
+    </div>
+  </main>
+
+  <footer class="takeaway shrink0" style="height:72px">
+    <b>加工不是凭空制造能量。</b>
+    <span>它把时间与身体支出重新分配到“取得—加工—消化”的路径上。归一化教学模型，不是考古测量值。</span>
+  </footer>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script src="assets/lib/d3.min.js"></script>
+<script>
+(function(){
+  'use strict';
+  Deck.init({index:15,total:45});
+  var M=Lec.K.math;
+  var ZERO=M.ZERO, ONE=M.ONE, TWO=M.TWO, THREE=M.THREE, FOUR=M.FOUR;
+  var DAY=FOUR*THREE*TWO, ENERGY_MAX=M.HUNDRED+M.HUNDRED/(FOUR+ONE), STEP=ONE;
+  var TARGET=M.HUNDRED/TWO, REST_MIN=FOUR*TWO;
+  var initial=[THREE*TWO,ONE,FOUR+ONE,FOUR*THREE];
+  document.getElementById('step-label').textContent='步长：'+fmtNumber(STEP)+' 小时';
+  document.getElementById('goal-energy').textContent='净余量 ≥ '+fmtNumber(TARGET);
+  document.getElementById('goal-rest').textContent='休息 ≥ '+fmtNumber(REST_MIN)+' 小时';
+  var state={hours:initial.slice(),locked:false,won:false,before:null};
+  var fmt=d3.format('.0f');
+  function fmtNumber(v){return d3.format('.0f')(v)}
+  var colors={teal:'var(--teal)',tealDim:'var(--teal-dim)',amber:'var(--amber)',panel:'var(--panel-deep)',line:'var(--line-strong)',muted:'var(--ink-muted)',danger:'var(--danger)'};
+  var names=['采集','加工','消化','休息及其他'];
+  var svg=d3.select('#energy-ledger').append('svg').attr('viewBox','0 0 1120 560').attr('role','img').attr('aria-labelledby','chart-title chart-desc');
+  svg.append('title').attr('id','chart-title').text('一天的时间与能量路径');
+  svg.append('desc').attr('id','chart-desc').text('拖动时间段之间的分隔柄，能量取得、利用、吸收和净余量会同步重算。');
+  var x=d3.scaleLinear().domain([ZERO,DAY]).range([180,900]);
+  var energy=d3.scaleLinear().domain([ZERO,ENERGY_MAX]).range([ZERO,320]);
+  var root=svg.append('g');
+  root.append('text').attr('class','svg-title').attr('x',20).attr('y',46).text('身体外环 · 一天的时间');
+  var tickG=root.append('g');
+  tickG.selectAll('line').data(d3.range(ZERO,DAY+ONE,ONE)).join('line').attr('x1',x).attr('x2',x).attr('y1',62).attr('y2',76).attr('stroke',colors.line);
+  tickG.selectAll('text').data(d3.range(ZERO,DAY+ONE,FOUR)).join('text').attr('class','svg-tick').attr('x',x).attr('y',96).attr('text-anchor','middle').text(function(d){return d+'h'});
+  var timeG=root.append('g');
+  var flowG=root.append('g');
+  root.append('text').attr('class','svg-title').attr('x',20).attr('y',294).text('身体内环 · 能量流水');
+  root.append('line').attr('x1',180).attr('x2',1015).attr('y1',380).attr('y2',380).attr('stroke',colors.tealDim).attr('stroke-width',3);
+  var flowNames=['取得能量','可利用比例','已吸收能量','净余量'];
+  var flowX=[180,420,665,900];
+  flowX.slice(0,3).forEach(function(px,i){ root.append('text').attr('x',px+190).attr('y',386).attr('fill',colors.teal).attr('font-size',24).attr('font-weight',800).text('→'); });
+  var flowNodes=flowG.selectAll('g').data(flowNames).join('g').attr('transform',function(d,i){return 'translate('+flowX[i]+',320)'});
+  flowNodes.append('rect').attr('width',190).attr('height',122).attr('rx',12).attr('fill',colors.panel).attr('stroke',colors.line).attr('stroke-width',2);
+  flowNodes.append('text').attr('class','svg-label').attr('x',16).attr('y',28).text(function(d){return d});
+  flowNodes.append('rect').attr('class','bar').attr('x',16).attr('y',48).attr('height',18).attr('rx',9).attr('fill',colors.tealDim);
+  flowNodes.append('text').attr('class','svg-read').attr('x',16).attr('y',98);
+  var compare=root.append('g').attr('class','comparison').attr('transform','translate(180,472)').style('display','none');
+  compare.append('text').attr('class','svg-label').attr('y',0).text('完成前 → 完成后');
+  compare.append('text').attr('class','svg-read').attr('id','compare-text').attr('y',30);
+
+  function model(h){
+    var gathered=Math.min(ENERGY_MAX,h[0]*(M.HUNDRED/(FOUR+ONE)));
+    var usable=(M.HUNDRED/(TWO*M.HUNDRED))+(FOUR+ONE)/M.HUNDRED+(M.HUNDRED/(M.HUNDRED*(FOUR+ONE)*TWO))*Math.min(h[1],THREE);
+    var cap=Math.min(ONE,h[2]/FOUR);
+    var absorbed=gathered*usable*cap;
+    var net=absorbed-h[0]*FOUR-h[1]*THREE-h[2]*TWO;
+    return {gathered:gathered,usable:usable,absorbed:absorbed,net:net};
+  }
+  function boundaries(h){var s=ZERO;return h.map(function(v){s+=v;return s})}
+  function render(){
+    var h=state.hours, b=boundaries(h), m=model(h), starts=[ZERO,b[0],b[1],b[2]];
+    var seg=timeG.selectAll('g.segment').data(h).join(function(enter){
+      var g=enter.append('g').attr('class','segment');
+      g.append('rect').attr('y',118).attr('height',112).attr('rx',10).attr('stroke-width',2);
+      g.append('text').attr('class','svg-title').attr('y',153);
+      g.append('text').attr('class','svg-read').attr('y',190);
+      g.append('text').attr('class','svg-label').attr('y',215);
+      return g;
+    });
+    seg.attr('transform',function(d,i){return 'translate('+x(starts[i])+',0)'});
+    seg.select('rect').attr('width',function(d){return Math.max(ZERO,x(d)-x(ZERO)-6)}).attr('fill',colors.panel).attr('stroke',function(d,i){return i===ONE?colors.amber:colors.line});
+    seg.select('.svg-title').attr('x',12).text(function(d,i){return names[i]});
+    seg.select('.svg-read').attr('x',12).text(function(d){return fmt(d)+' 小时'});
+    seg.select('.svg-label').attr('x',12).text(function(d,i){return ['取得','改变利用','限制吸收','恢复与其他'][i]});
+    var handles=timeG.selectAll('g.handle').data([ZERO,ONE,TWO]).join(function(enter){
+      var g=enter.append('g').attr('class','handle').attr('tabindex',0).attr('role','slider').attr('aria-label',function(d){return names[d]+'与'+names[d+ONE]+'的分隔柄'});
+      g.append('rect').attr('class','handle-core').attr('x',-8).attr('y',105).attr('width',16).attr('height',138).attr('rx',8);
+      g.append('text').attr('x',0).attr('y',174).attr('text-anchor','middle').attr('fill',colors.amber).attr('font-size',18).text('↔');
+      return g;
+    }).attr('transform',function(d){return 'translate('+x(b[d])+',0)'}).attr('aria-valuemin',ONE).attr('aria-valuemax',DAY-THREE).attr('aria-valuenow',function(d){return b[d]});
+    handles.call(d3.drag().on('drag',function(event,i){if(state.locked)return;moveBoundary(i,Math.round(x.invert(event.x)))}));
+    handles.on('keydown',function(event,i){if(event.key==='ArrowLeft'||event.key==='ArrowRight'){event.preventDefault();moveBoundary(i,b[i]+(event.key==='ArrowRight'?STEP:-STEP));}});
+    var vals=[m.gathered,m.usable*M.HUNDRED,m.absorbed,Math.max(ZERO,m.net)];
+    flowNodes.select('.bar').attr('width',function(d,i){return Math.max(4,energy(Math.min(ENERGY_MAX,vals[i]))/2)}).attr('fill',function(d,i){return i===THREE&&m.net>=TARGET?colors.amber:colors.tealDim});
+    flowNodes.select('.svg-read').text(function(d,i){return i===ONE?fmt(vals[i])+'%':fmt(i===THREE?m.net:vals[i])+' 点'});
+    flowNodes.select('rect').attr('stroke',function(d,i){return i===THREE&&m.net>=TARGET?colors.amber:colors.line});
+    document.getElementById('allocated').textContent=fmt(d3.sum(h))+' / '+fmt(DAY)+' 小时';
+    var eok=m.net>=TARGET, rok=h[THREE]>=REST_MIN;
+    document.getElementById('goal-energy').classList.toggle('ok',eok);
+    document.getElementById('goal-rest').classList.toggle('ok',rok);
+    if(!rok) setMessage('净能量'+(eok?'够了，':'变化了，但')+'休息只剩 '+fmt(h[THREE])+' 小时。');
+    else if(!eok) setMessage('还有时间，但净余量只有 '+fmt(m.net)+' 点；继续比较路径。');
+    if(eok&&rok&&!state.won) complete(m);
+  }
+  function moveBoundary(i,target){
+    var b=boundaries(state.hours), lower=(i?b[i-ONE]:ZERO)+ONE, upper=b[i+ONE]-ONE;
+    var next=Math.max(lower,Math.min(upper,target));
+    if(next!==target){setMessage('这一天不能超过 '+fmt(DAY)+' 小时；每段至少保留 1 小时。');shake();}
+    var delta=next-b[i]; state.hours[i]+=delta; state.hours[i+ONE]-=delta; render();
+  }
+  function complete(m){
+    state.won=true;state.locked=true;
+    setMessage('两项目标都达到：观察前后路径，而不是只看最后一个数。');
+    d3.selectAll('.handle-core').attr('stroke',colors.teal);
+    flowNodes.select('rect').transition().duration(Deck.reduced()?ZERO:500).delay(function(d,i){return Deck.reduced()?ZERO:i*90}).attr('stroke',colors.teal);
+    compare.style('display',null);
+    d3.select('#compare-text').text('加工 '+fmt(initial[1])+'→'+fmt(state.hours[1])+'h ／ 消化 '+fmt(initial[2])+'→'+fmt(state.hours[2])+'h ／ 净余量 '+fmt(model(initial).net)+'→'+fmt(m.net));
+    document.getElementById('again').hidden=false;
+    setTimeout(function(){state.locked=false},Deck.reduced()?ZERO:1000);
+  }
+  function setMessage(t){document.getElementById('message').textContent=t}
+  function shake(){var el=document.querySelector('.ledger');el.classList.remove('shake');void el.offsetWidth;el.classList.add('shake')}
+  function reset(){state={hours:initial.slice(),locked:false,won:false,before:null};compare.style('display','none');document.getElementById('again').hidden=true;setMessage('前段多花时间，可能换来后段较低负担，但没有免费收益。');render()}
+  document.getElementById('reset').addEventListener('click',reset);
+  document.getElementById('again').addEventListener('click',function(){state.won=false;state.locked=false;compare.style('display','none');this.hidden=true;setMessage('继续寻找另一种同时满足两项目标的分配。');render()});
+  render();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  #main{display:flex;flex-direction:column;gap:12px}
+  .context{font-size:var(--fs-sec);line-height:var(--lh-sec);color:var(--ink-soft)}
+  float-sense-game{display:block;min-height:0;flex:1}
+  .game-shell{height:100%;display:flex;flex-direction:column;gap:10px}
+  .root-box{height:426px!important;padding:22px 20px 16px!important;display:flex;flex-direction:column;gap:10px}
+  .root-box>.bt{font-size:var(--fs-lead)!important;margin-top:-23px!important}
+  .playfield{display:flex;gap:18px;min-height:0;flex:1}
+  .figure{position:relative;flex:0 0 220px;min-width:0;border:1px solid var(--line);border-radius:var(--radius-md);background:linear-gradient(150deg,var(--accent-soft),var(--paper));overflow:hidden}
+  .orbit-frame{position:absolute;inset:26px;border:2px dashed var(--line-strong);border-radius:34% 46% 38% 42%;transform:rotate(-8deg)}
+  .person{position:absolute;inset:34px 40px 28px;transform:rotate(10deg)}
+  .head{position:absolute;left:58px;top:12px;width:54px;height:54px;border:4px solid var(--accent);border-radius:50%;background:var(--paper)}
+  .ear{position:absolute;left:91px;top:31px;width:12px;height:12px;border:3px solid var(--accent-2);border-radius:50%}
+  .torso{position:absolute;left:69px;top:70px;width:48px;height:94px;border:4px solid var(--accent);border-radius:45% 45% 20% 20%;background:var(--paper)}
+  .limb{position:absolute;height:4px;background:var(--accent);transform-origin:left center;border-radius:4px}
+  .arm1{left:75px;top:87px;width:82px;transform:rotate(-29deg)} .arm2{left:76px;top:104px;width:76px;transform:rotate(154deg)}
+  .leg1{left:88px;top:158px;width:86px;transform:rotate(43deg)} .leg2{left:94px;top:158px;width:88px;transform:rotate(112deg)}
+  .figure-note{position:absolute;bottom:10px;left:12px;right:12px;text-align:center;font-size:var(--fs-label);font-weight:680;color:var(--ink-soft)}
+  .branches{display:flex;gap:12px;flex:1;min-width:0}
+  .branch{--level:1;flex:1;min-width:0;height:100%;box-sizing:border-box;padding:18px 13px 12px!important;border-width:1px!important;transition:background .15s,border-color .15s}
+  .branch>.bt{font-size:var(--fs-body)!important;margin-top:-19px!important;padding:4px 10px!important}
+  .branch.is-target{border-color:var(--accent)!important;background:var(--accent-soft);box-shadow:0 0 0 3px rgb(0 109 119 / 14%)}
+  .cue{font-size:var(--fs-label);line-height:1.35;color:var(--ink-soft);min-height:42px}
+  .placed{display:flex;flex-direction:column;gap:6px;margin-top:8px}
+  .placed-item{padding:5px 8px;border-left:3px solid var(--good);background:rgb(57 115 79 / 8%);font-size:var(--fs-sec);line-height:1.35;font-weight:650}
+  .adapt{display:none;margin-top:8px;font-size:var(--fs-sec);line-height:1.4;color:var(--ink-soft)}
+  .branch.done .adapt{display:block}
+  .trayline{display:flex;align-items:center;gap:10px;min-height:74px}
+  .tray{display:flex;flex-wrap:wrap;gap:7px;flex:1;min-width:0;padding:7px;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--paper-2)}
+  .tray:focus{outline:3px solid var(--focus);outline-offset:2px}
+  .chip{touch-action:none;user-select:none;padding:5px 10px;border:1px solid var(--line-strong);border-radius:999px;background:var(--paper);font-size:var(--fs-label);font-weight:700;line-height:1.35;cursor:grab}
+  .chip.active{color:#fff;border-color:var(--accent);background:var(--accent)}
+  .chip.dragging{position:relative;z-index:5;cursor:grabbing;box-shadow:var(--shadow)}
+  .reset{min-height:42px;padding:8px 18px;color:#fff;font:700 var(--fs-label)/1.35 var(--font-sans);border:1px solid var(--accent);border-radius:var(--radius-sm);background:var(--accent);cursor:pointer}
+  .feedback{min-height:26px;font-size:var(--fs-sec);line-height:1.45;color:var(--ink-soft)}
+  .feedback.good{color:var(--good);font-weight:700}
+  @media (prefers-reduced-motion:reduce){.branch{transition:none}}
+</style>
+</head>
+<body data-page="34" data-total="48">
+<div id="stage">
+<main id="main">
+  <p class="context">身体仍带着在地球重力中形成的感觉与调节方式，但轨道环境中的输入已经改变。</p>
+  <float-sense-game aria-label="标注漂浮体感小游戏"></float-sense-game>
+</main>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script>
+class FloatSenseGame extends HTMLElement{
+  constructor(){super();this.state=this.fresh();this.drag=null;}
+  fresh(){return {selected:0,placed:{},attempts:0,complete:false};}
+  connectedCallback(){this.renderBase();this.bind();this.start();}
+  start(){this.dispatchEvent(new CustomEvent('game-start',{bubbles:true,composed:true}));this.paint();}
+  reset(){this.state=this.fresh();this.drag=null;this.paint();this.dispatchEvent(new CustomEvent('game-reset',{bubbles:true,composed:true}));}
+  getState(){return JSON.parse(JSON.stringify(this.state));}
+  renderBase(){
+    this.items=[
+      {n:'脸部发胀',z:0,e:'头面部充盈感可能增加。'},
+      {n:'鼻塞或头部充血感',z:0,e:'头面部液体分布改变。'},
+      {n:'腿部显得较细',z:0,e:'下肢液体相对减少，并非组织立即消失。'},
+      {n:'恶心或晕动感',z:1,e:'内耳、视觉与受力信息不一致。'},
+      {n:'转头时更不舒服',z:1,e:'姿态变化使感觉冲突更明显。'},
+      {n:'一时分不清朝向',z:2,e:'稳定的承重方向不再提供天然上下。'},
+      {n:'换参照面像身体转向',z:2,e:'视觉参照改变了同一姿态的体验。'}
+    ];
+    this.innerHTML=`<div class="game-shell"><section class="k-classification"><div class="box root-box"><div class="bt">漂浮环境中的体感变化</div><div class="playfield"><div class="figure" aria-hidden="true"><div class="orbit-frame"></div><div class="person"><div class="head"></div><div class="ear"></div><div class="torso"></div><i class="limb arm1"></i><i class="limb arm2"></i><i class="limb leg1"></i><i class="limb leg2"></i></div><div class="figure-note">头面部 · 内耳 · 舱壁参照</div></div><div class="branches"><section class="box branch lv" data-zone="0"><div class="bt">体液重新分布</div><div class="cue">比较头面部与下肢的液体分布。</div><div class="placed"></div><div class="adapt">身体会调整液体与容量调节；感觉缓解不等于恢复地面状态。</div></section><section class="box branch lv" data-zone="1"><div class="bt">前庭感觉冲突</div><div class="cue">比较内耳、视觉与身体受力信息。</div><div class="placed"></div><div class="adapt">大脑会重新加权多种感觉，部分不适可随适应减轻。</div></section><section class="box branch lv" data-zone="2"><div class="bt">方向线索缺失</div><div class="cue">判断天然上下是否被舱壁参照取代。</div><div class="placed"></div><div class="adapt">舱内标识、布局与共同约定可建立方向感。</div></section></div></div></section><div class="trayline"><div class="tray no-pan" tabindex="0" role="application" aria-label="体感标签。上下键选标签，左右键选成因，空格放置"></div><button class="reset" type="button">重新标注</button></div><div class="feedback" aria-live="polite">拖动标签到成因区域；键盘可用上下键选标签、左右键选区域、空格放置。</div></div>`;
+  }
+  bind(){
+    this.querySelector('.reset').addEventListener('click',()=>this.reset());
+    this.tray=this.querySelector('.tray');
+    this.tray.addEventListener('keydown',e=>this.keys(e));
+    this.tray.addEventListener('pointerdown',e=>this.down(e));
+    this.tray.addEventListener('pointermove',e=>this.move(e));
+    this.tray.addEventListener('pointerup',e=>this.up(e));
+    this.tray.addEventListener('pointercancel',()=>this.cancelDrag());
+  }
+  remaining(){return this.items.map((_,i)=>i).filter(i=>this.state.placed[i]===undefined);}
+  paint(){
+    const rem=this.remaining(); if(rem.length && !rem.includes(this.state.selected))this.state.selected=rem[0];
+    this.tray.innerHTML=rem.map(i=>`<span class="chip ${i===this.state.selected?'active':''}" data-i="${i}">${this.items[i].n}</span>`).join('');
+    for(let z=0;z<3;z++){
+      const b=this.querySelector(`[data-zone="${z}"]`), ids=Object.keys(this.state.placed).map(Number).filter(i=>this.items[i].z===z);
+      b.querySelector('.placed').innerHTML=ids.map(i=>`<div class="placed-item">${this.items[i].n}：${this.items[i].e}</div>`).join('');
+      b.classList.toggle('done',ids.length===this.items.filter(x=>x.z===z).length);
+      b.classList.toggle('is-target',this.target===z);
+    }
+  }
+  keys(e){
+    const rem=this.remaining(); if(!rem.length)return;
+    let p=rem.indexOf(this.state.selected);
+    if(e.key==='ArrowDown'||e.key==='ArrowUp'){e.preventDefault();p=(p+(e.key==='ArrowDown'?1:-1)+rem.length)%rem.length;this.state.selected=rem[p];this.paint();}
+    else if(e.key==='ArrowRight'||e.key==='ArrowLeft'){e.preventDefault();this.target=((this.target??0)+(e.key==='ArrowRight'?1:2))%3;this.paint();this.say('候选区域：'+['体液重新分布','前庭感觉冲突','方向线索缺失'][this.target]);}
+    else if(e.key==='Enter'||e.key===' '){e.preventDefault();if(this.target===undefined){this.target=0;this.paint();this.say('已拿起标签，请用左右键选择成因区域。');}else this.place(this.state.selected,this.target);}
+    else if(e.key==='Escape'){this.target=undefined;this.paint();this.say('已取消放置。');}
+  }
+  down(e){const c=e.target.closest('.chip');if(!c)return;const i=Number(c.dataset.i);this.state.selected=i;this.drag={i,start:Deck.pt(this,e),chip:c};c.setPointerCapture(e.pointerId);c.classList.add('dragging');for(const x of this.tray.querySelectorAll('.chip'))x.classList.toggle('active',x===c);}
+  move(e){if(!this.drag)return;const p=Deck.pt(this,e),d=this.drag;d.chip.style.transform=`translate(${p.x-d.start.x}px,${p.y-d.start.y}px)`;this.target=this.zoneAt(p);for(const b of this.querySelectorAll('.branch'))b.classList.toggle('is-target',Number(b.dataset.zone)===this.target);}
+  up(e){if(!this.drag)return;const p=Deck.pt(this,e),i=this.drag.i,z=this.zoneAt(p);this.cancelDrag();if(z!==undefined)this.place(i,z);else this.say('标签未进入成因区域，已返回。');}
+  cancelDrag(){this.drag=null;this.target=undefined;this.paint();}
+  zoneAt(p){const field=this.querySelector('.playfield');const fx=field.offsetLeft,fy=field.offsetTop;for(const b of this.querySelectorAll('.branch')){let x=fx+b.parentElement.offsetLeft+b.offsetLeft,y=fy+b.offsetTop;if(p.x>=x&&p.x<=x+b.offsetWidth&&p.y>=y&&p.y<=y+b.offsetHeight)return Number(b.dataset.zone);}return undefined;}
+  place(i,z){
+    this.state.attempts++;
+    if(this.items[i].z===z){this.state.placed[i]=z;this.target=undefined;this.state.complete=this.remaining().length===0;this.paint();this.say(this.state.complete?'这些反应可以同时出现，但主要解释不同。':'归位正确：'+this.items[i].e,true);this.emitProgress('place');if(this.state.complete)this.dispatchEvent(new CustomEvent('game-complete',{bubbles:true,composed:true,detail:{score:null,metrics:{attempts:this.state.attempts},trace:this.getState()}}));}
+    else{const hints=['先比较液体位于身体哪里。','先比较内耳、视觉和受力信息是否一致。','先判断参照面是否改变了朝向体验。'];this.target=undefined;this.paint();this.say('再想想：'+hints[this.items[i].z]);this.emitProgress('miss');}
+  }
+  emitProgress(action){this.dispatchEvent(new CustomEvent('game-progress',{bubbles:true,composed:true,detail:{state:this.getState(),action,metrics:{attempts:this.state.attempts}}}));}
+  say(t,good=false){const f=this.querySelector('.feedback');f.textContent=t;f.classList.toggle('good',good);}
+}
+customElements.define('float-sense-game',FloatSenseGame);
+Lec.mount({index:34,kicker:'BODY IN ORBIT',title:'漂浮时，不适来自同一个原因吗？',take:'体液重新分布、前庭冲突和方向线索缺失，会造成不同类型的不适与适应。'});
+Deck.init({index:34,total:48});
+</script>
+</body>
+</html>

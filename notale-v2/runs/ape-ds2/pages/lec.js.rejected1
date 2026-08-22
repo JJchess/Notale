@@ -1,0 +1,404 @@
+(function (global) {
+  'use strict';
+
+  // ===== 常量 =====
+  var K = {};
+
+  // 物理常量
+  K.c = 299792458;                // 光速 m/s
+  K.G = 6.67430e-11;              // 万有引力常数
+  K.g0 = 9.80665;                 // 标准重力 m/s²
+  K.h = 6.62607015e-34;           // 普朗克常数
+  K.k = 1.380649e-23;             // 玻尔兹曼常数
+  K.e = 1.602176634e-19;          // 元电荷
+  K.Na = 6.02214076e23;           // 阿伏伽德罗常数
+  K.mu0 = 1.25663706212e-6;       // 真空磁导率
+  K.eps0 = 8.8541878128e-12;      // 真空介电常数
+  K.u = 1.66053906660e-27;        // 原子质量单位
+
+  // 天文长度
+  K.AU = 149597870700;            // 天文单位 m
+  K.ly = 9.4607304725808e15;      // 光年 m
+  K.pc = 3.0856775814913673e16;   // 秒差距 m
+
+  // 地球
+  K.earthRadius = 6371000;                // 平均半径 m
+  K.earthEquatorialRadius = 6378137;
+  K.earthPolarRadius = 6356752;
+  K.earthMass = 5.9722e24;                // kg
+  K.earthSurfaceGravity = 9.80665;        // m/s²
+  K.earthOrbitRadius = 1.495978707e11;    // m
+  K.earthOrbitSpeed = 29780;              // m/s
+  K.earthCircumference = 40075017;        // m
+
+  // 月球
+  K.moonRadius = 1737400;
+  K.moonMass = 7.342e22;
+  K.moonSurfaceGravity = 1.62;
+  K.moonDistance = 384400000;             // 平均地月距离 m
+
+  // 太阳
+  K.sunRadius = 696340000;
+  K.sunMass = 1.98847e30;
+  K.sunSurfaceGravity = 274;
+
+  // 火星
+  K.marsRadius = 3389500;
+  K.marsMass = 6.4171e23;
+  K.marsSurfaceGravity = 3.711;
+  K.marsDistance = 2.279e11;              // 火星到太阳平均轨道半径 m
+
+  // 木星
+  K.jupiterRadius = 69911000;
+  K.jupiterMass = 1.89813e27;
+  K.jupiterSurfaceGravity = 24.79;
+  K.jupiterDistance = 7.785e11;           // 木星到太阳平均轨道半径 m
+
+  // 国际空间站
+  K.issAltitude = 408000;
+  K.issOrbitSpeed = 7660;
+
+  // 人体典型数值
+  K.humanWalkSpeed = 1.4;                 // m/s
+  K.humanRunSpeed = 3.7;                  // m/s
+  K.humanRestingHeartRate = 70;           // bpm
+  K.humanBreathsPerMinute = 12;
+  K.humanStepLength = 0.75;               // m
+
+  // 演化主题：Apeman → Spaceman
+  K.evolution = {
+    apemanBrainVolumeCm3: 400,
+    modernBrainVolumeCm3: 1350,
+    apemanHeightM: 1.1,
+    modernHeightM: 1.7,
+    apemanWalkSpeedMps: 1.4,
+    apemanTimeYears: 6e6                  // 约 600 万年
+  };
+
+  // 太空任务关键值
+  K.space = {
+    earthEscapeSpeedMps: 11186,
+    apolloMaxSpeedMps: 11082,
+    marsDistanceFromEarth: 2.25e11        // 平均地火距离 m
+  };
+
+  // 单位换算表
+  K.units = {
+    length: {
+      m: 1,
+      km: 1000,
+      cm: 0.01,
+      mm: 0.001,
+      in: 0.0254,
+      ft: 0.3048,
+      yd: 0.9144,
+      mi: 1609.344,
+      nmi: 1852,
+      au: 149597870700,
+      ly: 9.4607304725808e15,
+      pc: 3.0856775814913673e16
+    },
+    mass: {
+      kg: 1,
+      g: 0.001,
+      mg: 1e-6,
+      t: 1000,
+      lb: 0.45359237,
+      oz: 0.028349523125,
+      st: 6.35029318
+    },
+    time: {
+      s: 1,
+      min: 60,
+      h: 3600,
+      day: 86400,
+      week: 604800,
+      year: 31557600,
+      decade: 315576000,
+      century: 3155760000
+    },
+    speed: {
+      mps: 1,
+      kmh: 1 / 3.6,
+      mph: 0.44704,
+      knot: 0.5144444444444444,
+      fps: 0.3048,
+      mach: 343
+    }
+  };
+
+  // 温度换算参数
+  K.temperature = {
+    absoluteZeroC: -273.15,
+    fahrenheitSlope: 9 / 5,
+    fahrenheitIntercept: 32
+  };
+
+  // 力换算
+  K.newtonsPerPoundForce = 4.4482216152605;
+
+  // ===== 算法与公式 =====
+  var P = {};
+
+  // 数学工具
+  P.clamp = function (x, min, max) {
+    return Math.min(Math.max(x, min), max);
+  };
+
+  P.lerp = function (a, b, t) {
+    return a + (b - a) * t;
+  };
+
+  P.map = function (x, inMin, inMax, outMin, outMax) {
+    if (inMax === inMin) return outMin;
+    return outMin + (outMax - outMin) * (x - inMin) / (inMax - inMin);
+  };
+
+  P.percent = function (part, whole) {
+    if (whole === 0) return 0;
+    return part / whole * 100;
+  };
+
+  P.ratio = function (part, whole) {
+    if (whole === 0) return 0;
+    return part / whole;
+  };
+
+  // 通用单位换算
+  P.convert = function (value, fromUnit, toUnit) {
+    if (value === null || value === undefined) return null;
+    for (var category in K.units) {
+      if (!K.units.hasOwnProperty(category)) continue;
+      var table = K.units[category];
+      if (table.hasOwnProperty(fromUnit) && table.hasOwnProperty(toUnit)) {
+        return value * table[toUnit] / table[fromUnit];
+      }
+    }
+    return null;
+  };
+
+  // 常用换算
+  P.kmToMiles = function (km)       { return P.convert(km, 'km', 'mi'); };
+  P.milesToKm = function (mi)       { return P.convert(mi, 'mi', 'km'); };
+  P.mToFeet = function (m)          { return P.convert(m, 'm', 'ft'); };
+  P.feetToM = function (ft)         { return P.convert(ft, 'ft', 'm'); };
+  P.kgToLbs = function (kg)         { return P.convert(kg, 'kg', 'lb'); };
+  P.lbsToKg = function (lb)         { return P.convert(lb, 'lb', 'kg'); };
+
+  P.celsiusToFahrenheit = function (c) {
+    return c * K.temperature.fahrenheitSlope + K.temperature.fahrenheitIntercept;
+  };
+  P.fahrenheitToCelsius = function (f) {
+    return (f - K.temperature.fahrenheitIntercept) / K.temperature.fahrenheitSlope;
+  };
+  P.celsiusToKelvin = function (c) {
+    return c - K.temperature.absoluteZeroC;
+  };
+  P.kelvinToCelsius = function (k) {
+    return k + K.temperature.absoluteZeroC;
+  };
+
+  P.mpsToKmh = function (mps)       { return P.convert(mps, 'mps', 'kmh'); };
+  P.kmhToMps = function (kmh)       { return P.convert(kmh, 'kmh', 'mps'); };
+  P.mphToKmh = function (mph)       { return P.convert(mph, 'mph', 'kmh'); };
+  P.kmhToMph = function (kmh)       { return P.convert(kmh, 'kmh', 'mph'); };
+  P.knotsToKmh = function (knots)   { return P.convert(knots, 'knot', 'kmh'); };
+  P.kmhToKnots = function (kmh)     { return P.convert(kmh, 'kmh', 'knot'); };
+  P.machToKmh = function (mach)     { return P.convert(mach, 'mach', 'kmh'); };
+  P.kmhToMach = function (kmh)      { return P.convert(kmh, 'kmh', 'mach'); };
+
+  // 物理
+  P.weight = function (massKg, gravity) {
+    if (gravity === undefined) gravity = K.g0;
+    return massKg * gravity;
+  };
+
+  P.forceNewtonsToKgf = function (newtons) {
+    return newtons / K.g0;
+  };
+
+  P.forceNewtonsToLbf = function (newtons) {
+    return newtons / K.newtonsPerPoundForce;
+  };
+
+  P.kineticEnergy = function (massKg, velocityMps) {
+    return 0.5 * massKg * velocityMps * velocityMps;
+  };
+
+  P.gravityFromMassRadius = function (massKg, radiusM) {
+    return K.G * massKg / (radiusM * radiusM);
+  };
+
+  P.orbitalVelocity = function (radiusM, centralMassKg) {
+    return Math.sqrt(K.G * centralMassKg / radiusM);
+  };
+
+  P.escapeVelocity = function (radiusM, centralMassKg) {
+    return Math.sqrt(2 * K.G * centralMassKg / radiusM);
+  };
+
+  P.surfaceAreaSphere = function (radiusM) {
+    return 4 * Math.PI * radiusM * radiusM;
+  };
+
+  P.volumeSphere = function (radiusM) {
+    return (4 / 3) * Math.PI * radiusM * radiusM * radiusM;
+  };
+
+  P.density = function (massKg, volumeM3) {
+    return volumeM3 === 0 ? 0 : massKg / volumeM3;
+  };
+
+  // 主题相关
+  P.weightOnPlanet = function (massKg, body) {
+    var g;
+    switch (body) {
+      case 'earth':   g = K.earthSurfaceGravity;   break;
+      case 'moon':    g = K.moonSurfaceGravity;    break;
+      case 'mars':    g = K.marsSurfaceGravity;    break;
+      case 'jupiter': g = K.jupiterSurfaceGravity; break;
+      case 'sun':     g = K.sunSurfaceGravity;     break;
+      default:        g = K.g0;                    break;
+    }
+    return massKg * g;
+  };
+
+  P.brainVolume = function (species) {
+    switch (species) {
+      case 'apeman': return K.evolution.apemanBrainVolumeCm3;
+      default:       return K.evolution.modernBrainVolumeCm3;
+    }
+  };
+
+  P.height = function (species) {
+    switch (species) {
+      case 'apeman': return K.evolution.apemanHeightM;
+      default:       return K.evolution.modernHeightM;
+    }
+  };
+
+  P.distanceTo = function (target) {
+    switch (target) {
+      case 'moon':  return K.moonDistance;
+      case 'mars':  return K.space.marsDistanceFromEarth;
+      case 'sun':   return K.AU;
+      default:      return 0;
+    }
+  };
+
+  P.speedOf = function (vehicle) {
+    switch (vehicle) {
+      case 'walk':        return K.humanWalkSpeed;
+      case 'run':         return K.humanRunSpeed;
+      case 'apeman':      return K.evolution.apemanWalkSpeedMps;
+      case 'spaceShuttle': return K.issOrbitSpeed;
+      case 'apollo':      return K.space.apolloMaxSpeedMps;
+      case 'escapeEarth': return K.space.earthEscapeSpeedMps;
+      default:            return 0;
+    }
+  };
+
+  P.travelTime = function (distanceM, speedMps) {
+    return speedMps === 0 ? 0 : distanceM / speedMps;
+  };
+
+  P.maxHeartRate = function (age) {
+    return 220 - age;
+  };
+
+  P.bmi = function (weightKg, heightM) {
+    return heightM === 0 ? 0 : weightKg / (heightM * heightM);
+  };
+
+  P.walkingSteps = function (distanceM, stepLengthM) {
+    var step = stepLengthM || K.humanStepLength;
+    return step === 0 ? 0 : distanceM / step;
+  };
+
+  // ===== 统一挂载入口 =====
+  function mount(cfg) {
+    cfg = cfg || {};
+    var main = document.getElementById('main');
+    if (!main) return;
+
+    var stage = main.parentNode;
+    if (!stage) return;
+
+    var header = document.createElement('header');
+    var footer = document.createElement('footer');
+
+    header.className = 'lec-header' + (cfg.act ? ' lec-act-' + cfg.act : '');
+    footer.className = 'lec-footer' + (cfg.act ? ' lec-act-' + cfg.act : '');
+
+    // 页眉 kicker
+    if (cfg.sub) {
+      var kicker = document.createElement('div');
+      kicker.className = 'lec-kicker';
+      kicker.textContent = cfg.sub;
+      header.appendChild(kicker);
+    }
+
+    // 页眉标题
+    if (cfg.title) {
+      var title = document.createElement('h1');
+      title.className = 'lec-title';
+      title.textContent = cfg.title;
+      header.appendChild(title);
+    }
+
+    // 进度条：只从 body 的 data-page/data-total 读取，绝不拼出页码文本
+    var progressWrap = document.createElement('div');
+    progressWrap.className = 'lec-progress';
+
+    var progressBar = document.createElement('progress');
+    progressBar.className = 'lec-progress-bar';
+    progressBar.max = 100;
+    progressBar.value = 0;
+
+    var pageAttr = document.body ? document.body.getAttribute('data-page') : null;
+    var totalAttr = document.body ? document.body.getAttribute('data-total') : null;
+    var page = parseInt(pageAttr, 10);
+    var total = parseInt(totalAttr, 10);
+
+    if (isFinite(page) && isFinite(total) && total > 0) {
+      if (page < 1) page = 1;
+      if (page > total) page = total;
+      if (total === 1) {
+        progressBar.value = 100;
+      } else {
+        progressBar.value = Math.round((page - 1) / (total - 1) * 100);
+      }
+    }
+
+    progressBar.setAttribute('aria-hidden', 'true');
+    progressWrap.appendChild(progressBar);
+    header.appendChild(progressWrap);
+
+    // 页脚
+    if (cfg.foot) {
+      var foot = document.createElement('div');
+      foot.className = 'lec-foot';
+      foot.textContent = cfg.foot;
+      footer.appendChild(foot);
+    }
+
+    // 页眉页脚与 #main 成为兄弟，且都在正常流里
+    stage.insertBefore(header, main);
+    stage.insertBefore(footer, main.nextSibling);
+  }
+
+  // ===== 导出 =====
+  var Lec = {
+    K: K,
+    P: P,
+    mount: mount
+  };
+
+  if (typeof module !== 'undefined' && module.exports) {
+    module.exports = Lec;
+  }
+  if (global) {
+    global.Lec = Lec;
+  }
+
+})(typeof window !== 'undefined' ? window : (typeof global !== 'undefined' ? global : this));

@@ -1,0 +1,312 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  #main { --p31-row-h: 76px; }
+  .p31-shell { position: relative; display: flex; flex-direction: column; gap: 16px; width: 100%; height: 100%; }
+  .p31-intro { display: flex; align-items: flex-start; justify-content: space-between; gap: 32px; min-height: 68px; }
+  .p31-intro h2 { max-width: 760px; font-size: var(--fs-lead); line-height: var(--lh-body); }
+  .p31-intro p { max-width: 540px; color: var(--text-secondary); font-size: var(--fs-sec); line-height: var(--lh-sec); text-align: right; }
+  .p31-triptych { position: relative; display: flex; flex: 1 1 0; gap: 16px; min-height: 0; }
+  .p31-col { position: relative; z-index: 2; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+  .p31-tasks { flex: 0 0 268px; }
+  .p31-allocation { flex: 0 0 380px; }
+  .p31-burdens { flex: 1 1 0; }
+  .p31-head { display: flex; align-items: center; justify-content: space-between; min-height: 46px; padding: 0 14px; color: var(--text); background: var(--surface-soft); border-bottom: 1px solid var(--line); font-size: var(--fs-label); font-weight: 700; line-height: 1.35; }
+  .p31-progress { color: var(--primary); font-family: var(--font-mono); font-weight: 700; }
+  .p31-body { flex: 1 1 0; min-height: 0; padding: 8px 12px 10px; }
+  .p31-class-root { height: 100%; }
+  .p31-class-root > .lv { height: 100%; }
+  .p31-class-root .box { height: 100%; padding: 10px; }
+  .p31-class-root .box > .bt { margin: -10px -10px 8px; padding: 8px 12px; font-size: var(--fs-label); line-height: 1.35; }
+  .p31-list { display: flex; flex-direction: column; gap: 0; }
+  .p31-task, .p31-slider-row, .p31-matrix-row { box-sizing: border-box; height: var(--p31-row-h); border-bottom: 1px solid var(--line); }
+  .p31-task { display: flex; align-items: center; gap: 12px; padding: 0 10px; color: var(--text-secondary); font-size: var(--fs-sec); line-height: var(--lh-sec); }
+  .p31-task:last-child, .p31-slider-row:last-child, .p31-matrix-row:last-child { border-bottom: 0; }
+  .p31-status { flex: 0 0 auto; width: 12px; height: 12px; background: var(--surface-strong); border: 1px solid var(--line-strong); border-radius: 50%; }
+  .p31-task.is-checked { color: var(--text); }
+  .p31-task.is-checked .p31-status { background: var(--primary); border-color: var(--primary); box-shadow: 0 0 0 4px var(--primary-soft); }
+  .p31-task.is-current { color: var(--accent); }
+  .p31-slider-row { display: flex; flex-direction: column; justify-content: center; gap: 2px; padding: 4px 10px; }
+  .p31-slider-meta { display: flex; align-items: center; justify-content: space-between; gap: 12px; color: var(--text-secondary); font-size: var(--fs-label); line-height: 1.35; }
+  .p31-slider-meta output { color: var(--text); font-family: var(--font-mono); font-size: var(--fs-sec); font-weight: 700; }
+  .p31-slider-row.is-current .p31-slider-meta { color: var(--accent); }
+  .p31-slider-row input { height: 34px; }
+  .p31-scale { display: flex; justify-content: space-between; padding: 0 2px; color: var(--text-muted); font-family: var(--font-mono); font-size: var(--fs-tick); line-height: 1.35; }
+  .p31-matrix-head { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; height: 36px; }
+  .p31-category { display: flex; align-items: center; justify-content: center; color: var(--text-secondary); background: var(--surface); border: 1px solid var(--line); font-size: var(--fs-label); font-weight: 700; line-height: 1.35; }
+  .p31-category.is-lit { color: var(--accent); border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent-line); }
+  .p31-matrix { position: relative; flex: 1 1 0; min-height: 0; }
+  .p31-matrix svg { display: block; width: 100%; height: 100%; overflow: visible; }
+  .p31-static-matrix { position: absolute; inset: 0; display: flex; flex-direction: column; }
+  .p31-static-row { display: grid; flex: 1 1 0; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; min-height: 0; border-bottom: 1px solid var(--line); }
+  .p31-static-row:last-child { border-bottom: 0; }
+  .p31-static-cell { margin: 9px 0; background: var(--primary-soft); border: 1px solid var(--primary-line); }
+  .p31-matrix-row { position: absolute; right: 0; left: 0; pointer-events: none; }
+  .p31-links { position: absolute; z-index: 1; inset: 54px 0 10px; width: 100%; height: calc(100% - 64px); overflow: visible; pointer-events: none; }
+  .p31-link { fill: none; stroke: var(--line-strong); stroke-width: 1.5; opacity: .22; vector-effect: non-scaling-stroke; }
+  .p31-link.is-live { stroke: var(--accent); opacity: .85; stroke-dasharray: 5 7; animation: p31-flow 680ms linear 1; }
+  .p31-claim { display: flex; align-items: center; justify-content: space-between; gap: 24px; min-height: 58px; padding: 0 16px; background: var(--surface-soft); border-left: 5px solid var(--primary); }
+  .p31-claim strong { font-size: var(--fs-lead); line-height: var(--lh-body); }
+  .p31-feedback { color: var(--text-secondary); font-size: var(--fs-sec); line-height: var(--lh-sec); text-align: right; }
+  .p31-reset { flex: 0 0 auto; width: 44px; min-width: 44px; padding: 0; font-size: 25px; line-height: 1; }
+  .p31-unavailable { display: none; }
+  .p31-api-note { display: none; align-items: center; height: 100%; padding: 0 16px; color: var(--danger); background: #141a1c; border-left: 3px solid var(--danger); font-size: var(--fs-sec); line-height: var(--lh-sec); }
+  .p31-shell.is-unavailable .p31-api-note { display: flex; }
+  .p31-shell.is-unavailable button { pointer-events: none; opacity: .45; }
+  .p31-enter { opacity: 0; transform: translateY(12px); animation: p31-enter 520ms cubic-bezier(.2,.75,.25,1) forwards; }
+  .p31-enter:nth-child(2) { animation-delay: 80ms; }
+  .p31-enter:nth-child(3) { animation-delay: 160ms; }
+  @keyframes p31-enter { to { opacity: 1; transform: translateY(0); } }
+  @keyframes p31-flow { from { stroke-dashoffset: 24; } to { stroke-dashoffset: 0; } }
+  @media (prefers-reduced-motion: reduce) {
+    .p31-enter { opacity: 1; transform: none; animation: none; }
+    .p31-link.is-live { animation: none; }
+    * { scroll-behavior: auto; }
+  }
+</style>
+</head>
+<body data-page="31" data-total="44">
+<div id="stage">
+<main id="main">
+  <section class="p31-shell" aria-labelledby="p31-question">
+    <div class="p31-intro">
+      <h2 id="p31-question">拖动一项任务，观察它被归入哪些系统负担。</h2>
+      <p>一项任务通常同时牵动不止一种资源。色块面积表示相对增量；连线指出它落入的负担类别。</p>
+    </div>
+
+    <div class="p31-triptych" id="p31-triptych">
+      <svg class="p31-links" id="p31-links" aria-hidden="true"></svg>
+
+      <section class="p31-col p31-tasks panel min0 p31-enter" aria-labelledby="p31-task-title">
+        <div class="p31-head"><span id="p31-task-title">任务</span><span class="p31-progress" id="p31-progress">已检查 0 / 5</span></div>
+        <div class="p31-body k-classification p31-class-root">
+          <div class="lv"><div class="box"><div class="bt">舱内功能</div><div class="p31-list" id="p31-task-list"><div class="p31-task"><span class="p31-status"></span><span>基础生存</span></div><div class="p31-task"><span class="p31-status"></span><span>科学实验</span></div><div class="p31-task"><span class="p31-status"></span><span>舱外活动</span></div><div class="p31-task"><span class="p31-status"></span><span>通信</span></div><div class="p31-task"><span class="p31-status"></span><span>乘员锻炼</span></div></div></div></div>
+        </div>
+      </section>
+
+      <section class="p31-col p31-allocation panel min0 p31-enter" aria-labelledby="p31-allocation-title">
+        <div class="p31-head"><span id="p31-allocation-title">资源分配条</span><span class="text-muted">启用刻度 25%</span></div>
+        <div class="p31-body k-classification p31-class-root">
+          <div class="lv"><div class="box"><div class="bt">任务份额</div><div class="p31-list" id="p31-slider-list"><p class="p31-api-note">共享资源计算接口尚未载入，分配条暂不可计算。</p></div></div></div>
+        </div>
+      </section>
+
+      <section class="p31-col p31-burdens panel min0 p31-enter" aria-labelledby="p31-burden-title">
+        <div class="p31-head"><span id="p31-burden-title">负担分类矩阵</span><span class="text-muted">相对增量</span></div>
+        <div class="p31-body k-classification p31-class-root">
+          <div class="lv"><div class="box"><div class="bt">系统负担</div>
+            <div class="p31-matrix-head" id="p31-categories"><div class="p31-category">质量</div><div class="p31-category">能量</div><div class="p31-category">散热</div><div class="p31-category">维护</div></div>
+            <div class="p31-matrix" id="p31-matrix"><div class="p31-static-matrix" id="p31-static-matrix" aria-hidden="true"><div class="p31-static-row"><span class="p31-static-cell"></span><span class="p31-static-cell"></span><span class="p31-static-cell"></span><span class="p31-static-cell"></span></div><div class="p31-static-row"><span class="p31-static-cell"></span><span class="p31-static-cell"></span><span class="p31-static-cell"></span><span class="p31-static-cell"></span></div><div class="p31-static-row"><span class="p31-static-cell"></span><span class="p31-static-cell"></span><span class="p31-static-cell"></span><span class="p31-static-cell"></span></div><div class="p31-static-row"><span class="p31-static-cell"></span><span class="p31-static-cell"></span><span class="p31-static-cell"></span><span class="p31-static-cell"></span></div><div class="p31-static-row"><span class="p31-static-cell"></span><span class="p31-static-cell"></span><span class="p31-static-cell"></span><span class="p31-static-cell"></span></div></div><svg role="img" aria-label="五项任务在质量、能量、散热和维护四类负担中的相对增量"></svg></div>
+          </div></div>
+        </div>
+      </section>
+    </div>
+
+    <div class="p31-claim">
+      <strong>每增加一项任务，就会增加质量、能量、散热或维护负担。</strong>
+      <span class="p31-feedback" id="p31-feedback" aria-live="polite">航天器里的功能不是免费叠加。</span>
+      <button class="p31-reset" id="p31-reset" type="button" title="重置全部分配条" aria-label="重置全部分配条">↻</button>
+    </div>
+  </section>
+</main>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script src="assets/lib/d3.min.js"></script>
+<script>
+(function () {
+  'use strict';
+
+  var TAKE = '每增加一项任务，就会增加质量、能量、散热或维护负担。';
+  Lec.mount({
+    index: 31,
+    kicker: 'MISSION LOAD',
+    title: '每加一项任务，系统就多一组负担',
+    take: TAKE,
+    act: 'MISSION LOAD',
+    foot: TAKE
+  });
+
+  var shell = document.querySelector('.p31-shell');
+  var hasApi = Lec.K.P31_TASKS && Lec.K.P31_RESOURCE_TYPES &&
+    Lec.K.P31_BASE_LOADS && typeof Lec.P.resourceLoad === 'function' &&
+    typeof Lec.P.resourceTotals === 'function';
+
+  if (!hasApi) {
+    shell.classList.add('is-unavailable');
+    return;
+  }
+
+  var tasks = Lec.K.P31_TASKS;
+  var types = Lec.K.P31_RESOURCE_TYPES;
+  var state = tasks.map(function () { return 0; });
+  var checked = tasks.map(function () { return false; });
+  var current = -1;
+  var taskList = d3.select('#p31-task-list');
+  var sliderList = d3.select('#p31-slider-list');
+  var categoryList = d3.select('#p31-categories');
+  taskList.selectAll('*').remove();
+  sliderList.selectAll('*').remove();
+  categoryList.selectAll('*').remove();
+  var staticMatrix = document.getElementById('p31-static-matrix');
+  if (staticMatrix) staticMatrix.remove();
+  var matrixSvg = d3.select('#p31-matrix svg');
+  var linkSvg = d3.select('#p31-links');
+
+  function labelOf(item) {
+    return typeof item === 'string' ? item : (item.label || item.name || item.id);
+  }
+
+  function loadFor(task, share) {
+    return Lec.P.resourceLoad(task, share, Lec.K.P31_BASE_LOADS);
+  }
+
+  function valuesOf(load) {
+    if (Array.isArray(load)) return load;
+    return types.map(function (type) {
+      var key = typeof type === 'string' ? type : (type.id || type.key || type.name);
+      return Number(load[key]) || 0;
+    });
+  }
+
+  function allLoads() {
+    return tasks.map(function (task, i) { return valuesOf(loadFor(task, state[i] / 100)); });
+  }
+
+  taskList.selectAll('.p31-task').data(tasks).join('div')
+    .attr('class', 'p31-task')
+    .html(function (d) { return '<span class="p31-status" aria-hidden="true"></span><span>' + labelOf(d) + '</span>'; });
+
+  var sliderRows = sliderList.selectAll('.p31-slider-row').data(tasks).join('label')
+    .attr('class', 'p31-slider-row');
+  sliderRows.append('span').attr('class', 'p31-slider-meta')
+    .html(function (d, i) { return '<span>' + labelOf(d) + '</span><output id="p31-out-' + i + '">0%</output>'; });
+  sliderRows.append('input')
+    .attr('type', 'range').attr('min', 0).attr('max', 100).attr('step', 5).attr('value', 0)
+    .attr('aria-label', function (d) { return labelOf(d) + '资源份额'; })
+    .on('input', function (event, d) {
+      var i = tasks.indexOf(d);
+      state[i] = Number(event.target.value);
+      current = i;
+      render(false);
+    })
+    .on('change', function (event, d) {
+      var i = tasks.indexOf(d);
+      var value = Number(event.target.value);
+      if (!checked[i] && value > 0 && value < 25) value = 25;
+      state[i] = value;
+      event.target.value = value;
+      if (value >= 25) checked[i] = true;
+      current = i;
+      render(true);
+    });
+  sliderRows.append('span').attr('class', 'p31-scale').html('<span>0</span><span>25</span><span>100%</span>');
+
+  categoryList.selectAll('.p31-category').data(types).join('div')
+    .attr('class', 'p31-category').text(labelOf);
+
+  function render(pulse) {
+    var loads = allLoads();
+    var totals = Lec.P.resourceTotals(loads);
+    var totalValues = valuesOf(totals);
+    var maxValue = d3.max(loads.flat().concat(totalValues)) || 1;
+    var matrix = document.getElementById('p31-matrix');
+    var width = matrix.clientWidth;
+    var height = matrix.clientHeight;
+    var x = d3.scaleBand().domain(d3.range(types.length)).range([0, width]).paddingInner(.12);
+    var y = d3.scaleBand().domain(d3.range(tasks.length)).range([0, height]).paddingInner(.13);
+    var size = d3.scaleSqrt().domain([0, maxValue]).range([6, Math.min(x.bandwidth(), y.bandwidth()) * .78]);
+    var cells = [];
+
+    loads.forEach(function (row, ri) {
+      row.forEach(function (value, ci) { cells.push({ row: ri, col: ci, value: value }); });
+    });
+
+    matrixSvg.attr('viewBox', '0 0 ' + width + ' ' + height);
+    matrixSvg.selectAll('line.p31-guide').data(d3.range(1, 4)).join('line')
+      .attr('class', 'p31-guide').attr('x1', function (d) { return x(d) - x.step() * .06; })
+      .attr('x2', function (d) { return x(d) - x.step() * .06; }).attr('y1', 0).attr('y2', height)
+      .attr('stroke', 'var(--line)').attr('stroke-width', 1);
+
+    matrixSvg.selectAll('rect.p31-cell').data(cells, function (d) { return d.row + '-' + d.col; }).join('rect')
+      .attr('class', 'p31-cell')
+      .attr('x', function (d) { return x(d.col) + (x.bandwidth() - size(d.value)) / 2; })
+      .attr('y', function (d) { return y(d.row) + (y.bandwidth() - size(d.value)) / 2; })
+      .attr('width', function (d) { return size(d.value); })
+      .attr('height', function (d) { return size(d.value); })
+      .attr('rx', 2)
+      .attr('fill', function (d) { return d.row === current && d.value > 0 ? 'var(--accent)' : 'var(--primary)'; })
+      .attr('fill-opacity', function (d) { return d.value > 0 ? .35 + .6 * d.value / maxValue : .08; })
+      .attr('stroke', function (d) { return d.row === current && d.value > 0 ? 'var(--accent)' : 'var(--line-strong)'; });
+
+    d3.selectAll('.p31-task').classed('is-checked', function (d, i) { return checked[i]; })
+      .classed('is-current', function (d, i) { return i === current; });
+    d3.selectAll('.p31-slider-row').classed('is-current', function (d, i) { return i === current; });
+    d3.selectAll('.p31-slider-row output').text(function (d, i) { return state[i] + '%'; });
+    d3.select('#p31-progress').text('已检查 ' + checked.filter(Boolean).length + ' / ' + tasks.length);
+
+    var activeCols = current < 0 ? [] : loads[current].map(function (v, i) { return v > 0 ? i : -1; }).filter(function (i) { return i >= 0; });
+    d3.selectAll('.p31-category').classed('is-lit', function (d, i) { return activeCols.indexOf(i) >= 0; });
+    var feedback = '航天器里的功能不是免费叠加。';
+    if (current >= 0 && activeCols.length > 1) {
+      feedback = '这项任务还会增加：' + activeCols.slice(1).map(function (i) { return labelOf(types[i]); }).join('、') + '。';
+    }
+    if (checked.every(Boolean)) feedback = '一项任务通常同时牵动不止一种资源。';
+    d3.select('#p31-feedback').text(feedback);
+
+    drawLinks(loads, pulse);
+  }
+
+  function drawLinks(loads, pulse) {
+    var triptych = document.getElementById('p31-triptych');
+    var matrix = document.getElementById('p31-matrix');
+    var sliders = Array.prototype.slice.call(document.querySelectorAll('.p31-slider-row'));
+    var rect = triptych.getBoundingClientRect();
+    var scale = rect.width / triptych.offsetWidth;
+    var mRect = matrix.getBoundingClientRect();
+    var width = triptych.offsetWidth;
+    var height = triptych.offsetHeight - 64;
+    var links = [];
+    var colWidth = matrix.offsetWidth / types.length;
+    loads.forEach(function (row, ri) {
+      if (!state[ri]) return;
+      var sRect = sliders[ri].getBoundingClientRect();
+      row.forEach(function (value, ci) {
+        if (value <= 0) return;
+        links.push({
+          row: ri,
+          x1: (sRect.right - rect.left) / scale,
+          y1: (sRect.top + sRect.height / 2 - rect.top) / scale - 54,
+          x2: (mRect.left - rect.left) / scale + colWidth * (ci + .5),
+          y2: (mRect.top - rect.top) / scale - 54 + matrix.offsetHeight * (ri + .5) / tasks.length
+        });
+      });
+    });
+    linkSvg.attr('viewBox', '0 0 ' + width + ' ' + height);
+    linkSvg.selectAll('path').data(links, function (d) { return d.row + '-' + d.x2; }).join('path')
+      .attr('class', function (d) { return 'p31-link' + (d.row === current ? ' is-live' : ''); })
+      .attr('d', function (d) {
+        var mid = (d.x1 + d.x2) / 2;
+        return 'M' + d.x1 + ',' + d.y1 + ' C' + mid + ',' + d.y1 + ' ' + mid + ',' + d.y2 + ' ' + d.x2 + ',' + d.y2;
+      });
+    if (!pulse || Deck.reduced()) linkSvg.selectAll('.is-live').style('animation', 'none');
+  }
+
+  document.getElementById('p31-reset').addEventListener('click', function () {
+    state = tasks.map(function () { return 0; });
+    checked = tasks.map(function () { return false; });
+    current = -1;
+    d3.selectAll('.p31-slider-row input').property('value', 0);
+    render(false);
+  });
+
+  Deck.onResize(function () { render(false); });
+  render(false);
+}());
+</script>
+</body>
+</html>

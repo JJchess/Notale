@@ -1,0 +1,443 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+/* ===== Ledger (简报表单) ===== */
+.ledger {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  flex: 0 0 auto;
+  width: 100%;
+  overflow: hidden;
+}
+.lr-row {
+  display: flex;
+  align-items: center;
+  padding: 6px var(--space-4);
+  border-bottom: 1px solid var(--line);
+  min-height: 38px;
+}
+.lr-row:last-child {
+  border-bottom: none;
+}
+.lr-lbl {
+  flex: 0 0 120px;
+  font-size: var(--fs-label);
+  color: var(--muted);
+  font-weight: 700;
+  letter-spacing: .03em;
+}
+.lr-val {
+  flex: 1;
+  font-size: var(--fs-body);
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+.lr-row.emph .lr-val {
+  font-size: var(--fs-lead);
+  font-weight: 700;
+  color: var(--accent);
+}
+
+/* 出发时刻按钮组 */
+.btn-group {
+  display: flex;
+  gap: var(--space-2);
+}
+.dep-btn {
+  font-family: inherit;
+  font-size: var(--fs-label);
+  padding: 4px 10px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  color: var(--text);
+  text-align: center;
+  line-height: 1.3;
+  transition: border-color .15s, background .15s, color .15s;
+}
+.dep-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.dep-btn.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+.btn-sub {
+  display: block;
+  font-size: var(--fs-label);
+  opacity: .7;
+  font-weight: 400;
+}
+
+/* 进度条 */
+.progress-row {
+  border-top: 2px solid var(--line);
+  background: var(--accent-soft);
+}
+.prog-track {
+  width: 200px;
+  height: 8px;
+  background: var(--line);
+  border-radius: 4px;
+  overflow: hidden;
+  flex: 0 0 200px;
+}
+.prog-fill {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 4px;
+  transition: width .4s ease;
+  width: 0%;
+}
+.prog-label {
+  font-size: var(--fs-label);
+  font-weight: 700;
+  color: var(--accent);
+  min-width: 60px;
+}
+
+/* ===== 时间刻度条形账 ===== */
+.time-bars {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 0;
+  margin-top: auto;
+}
+.tb-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 5px 0;
+  min-height: 38px;
+  border-bottom: 1px solid var(--line);
+  transition: opacity .3s;
+}
+.tb-row:last-child {
+  border-bottom: none;
+}
+.tb-row.dim {
+  opacity: .35;
+}
+.tb-row.hl {
+  background: var(--accent-soft);
+  border-radius: var(--radius-sm);
+  margin: 2px 0;
+  padding: 5px var(--space-2);
+}
+.tb-lbl {
+  flex: 0 0 200px;
+  font-size: var(--fs-sec);
+  color: var(--text);
+  font-weight: 600;
+}
+.tb-track {
+  flex: 1;
+  height: 12px;
+  background: var(--line);
+  border-radius: 6px;
+  position: relative;
+  overflow: visible;
+  min-width: 0;
+}
+.tb-fill {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 6px;
+  transition: width .5s ease;
+  display: block;
+}
+.tb-row.hl .tb-fill {
+  background: var(--accent);
+}
+.tb-row:not(.hl) .tb-fill {
+  background: var(--muted);
+}
+.tb-dot {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--muted);
+  border: 1px solid var(--surface);
+}
+.tb-val {
+  flex: 0 0 90px;
+  font-size: var(--fs-sec);
+  color: var(--text);
+  text-align: right;
+  font-weight: 600;
+}
+.tb-ratio {
+  flex: 0 0 100px;
+  font-size: var(--fs-label);
+  color: var(--muted);
+  text-align: right;
+}
+.tb-ratio.accent {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+/* 标题行 */
+.tb-header {
+  font-size: var(--fs-label);
+  font-weight: 700;
+  color: var(--muted);
+  letter-spacing: .04em;
+  padding: var(--space-2) 0;
+  border-bottom: 2px solid var(--line);
+  margin-bottom: var(--space-1);
+}
+</style>
+</head>
+<body data-page="41" data-total="50">
+<div id="stage">
+<main id="main" class="col">
+  <!-- 任务简报 -->
+  <div class="ledger">
+    <div class="lr-row">
+      <span class="lr-lbl">目的地</span>
+      <span class="lr-val" id="td-dest">比邻星 · <span id="dest-ly">4.24</span> 光年 · 约 <span id="dest-km">4.0×10¹³</span> km</span>
+    </div>
+    <div class="lr-row">
+      <span class="lr-lbl">推进方式</span>
+      <span class="lr-val" id="td-prop">化学火箭 · 巡航速度 <span id="prop-speed">21.2</span> km/s (<span id="prop-c">0.00007</span> c)</span>
+    </div>
+    <div class="lr-row emph">
+      <span class="lr-lbl">预计耗时</span>
+      <span class="lr-val" id="td-mission">约 <span id="mission-years">6</span> 万年</span>
+    </div>
+    <div class="lr-row">
+      <span class="lr-lbl">出发时刻</span>
+      <span class="lr-val">
+        <span class="btn-group">
+          <button class="dep-btn active" data-dep="now">今天</button>
+          <button class="dep-btn" data-dep="farm">农业开始<br><span class="btn-sub">1.2 万年前</span></button>
+          <button class="dep-btn" data-dep="exodus">走出非洲<br><span class="btn-sub">6 万年前</span></button>
+        </span>
+      </span>
+    </div>
+    <div class="lr-row">
+      <span class="lr-lbl">到达时刻</span>
+      <span class="lr-val" id="td-arrival">约 6 万年后到达</span>
+    </div>
+    <div class="lr-row progress-row" id="progress-row" style="display:none">
+      <span class="lr-lbl">进度</span>
+      <span class="lr-val">
+        <span class="prog-track"><span class="prog-fill" id="prog-fill"></span></span>
+        <span class="prog-label" id="prog-label">已飞 0%</span>
+      </span>
+    </div>
+  </div>
+
+  <!-- 时间刻度条形账 -->
+  <div class="time-bars">
+    <div class="tb-header">同一段路 · 不同时间尺度</div>
+
+    <div class="tb-row" data-idx="0">
+      <span class="tb-lbl">光 · 同一段路</span>
+      <span class="tb-track">
+        <span class="tb-fill" id="bar-fill-0"></span>
+        <span class="tb-dot"></span>
+      </span>
+      <span class="tb-val" id="bar-val-0"></span>
+      <span class="tb-ratio" id="bar-ratio-0"></span>
+    </div>
+
+    <div class="tb-row hl" data-idx="1">
+      <span class="tb-lbl">化学火箭 · 同一段路</span>
+      <span class="tb-track">
+        <span class="tb-fill" id="bar-fill-1"></span>
+      </span>
+      <span class="tb-val" id="bar-val-1"></span>
+      <span class="tb-ratio accent" id="bar-ratio-1"></span>
+    </div>
+
+    <div class="tb-row" data-idx="2">
+      <span class="tb-lbl">一个人生</span>
+      <span class="tb-track">
+        <span class="tb-fill" id="bar-fill-2"></span>
+        <span class="tb-dot"></span>
+      </span>
+      <span class="tb-val" id="bar-val-2"></span>
+      <span class="tb-ratio" id="bar-ratio-2"></span>
+    </div>
+
+    <div class="tb-row" data-idx="3">
+      <span class="tb-lbl">农业史</span>
+      <span class="tb-track">
+        <span class="tb-fill" id="bar-fill-3"></span>
+      </span>
+      <span class="tb-val" id="bar-val-3"></span>
+      <span class="tb-ratio" id="bar-ratio-3"></span>
+    </div>
+
+    <div class="tb-row" data-idx="4">
+      <span class="tb-lbl">智人史</span>
+      <span class="tb-track">
+        <span class="tb-fill" id="bar-fill-4"></span>
+      </span>
+      <span class="tb-val" id="bar-val-4"></span>
+      <span class="tb-ratio" id="bar-ratio-4"></span>
+    </div>
+  </div>
+</main>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script>
+Lec.mount({
+  index: 41,
+  kicker: "四 · 光速",
+  title: "给比邻星的航行简报",
+  take: "化学火箭到最近的恒星要 6 万年——不是工程问题,是文明尺度问题。"
+});
+
+(function() {
+  // ---- 常数 ----
+  var CHEMICAL_ROCKET_SPEED_KMPS = 21.19;
+  var HUMAN_LIFETIME_YEARS = 80;
+  var EXODUS_FROM_AFRICA_YEARS = 60000;
+
+  var K = Lec.K;
+  var P = Lec.P;
+
+  // ---- 核心计算 ----
+  var distKm = P.lyToKm(K.NEAREST_STAR_LY);
+  var missionYears = P.travelTimeYears(distKm, CHEMICAL_ROCKET_SPEED_KMPS);
+  var lightYears = P.travelTimeYears(distKm, K.SPEED_OF_LIGHT_KMPS);
+  var missionYearsRounded = P.round(missionYears / 1000, 0); // 万年
+  var missionYearsExact = missionYears; // 精确值用于比例
+
+  // 各条目的时长(年)与比例
+  var items = [
+    { label: '光 · 同一段路',      years: lightYears,                    ratio: '约 ' + P.round(missionYearsExact / lightYears / 1000, 0) + ' 万倍' },
+    { label: '化学火箭 · 同一段路', years: missionYearsExact,             ratio: '基准' },
+    { label: '一个人生',            years: HUMAN_LIFETIME_YEARS,          ratio: P.round(missionYearsExact / HUMAN_LIFETIME_YEARS, 0) + ' 个人生' },
+    { label: '农业史',              years: K.AGRICULTURE_START_YEARS,     ratio: P.round(missionYearsExact / K.AGRICULTURE_START_YEARS, 0) + ' 倍' },
+    { label: '智人史',              years: K.HOMO_SAPIENS_YEARS,          ratio: '1/' + P.round(K.HOMO_SAPIENS_YEARS / missionYearsExact, 0) }
+  ];
+
+  // 格式化显示
+  var maxYears = K.HOMO_SAPIENS_YEARS;
+
+  function fmtYears(y) {
+    if (y < 1000) return P.round(y, 1) + ' 年';
+    if (y < 100000) return P.round(y / 1000, 0) + ' 万年';
+    return P.round(y / 10000, 0) + ' 万年';
+  }
+
+  // 填充条形账
+  for (var i = 0; i < items.length; i++) {
+    var it = items[i];
+    var pct = (it.years / maxYears) * 100;
+    var fill = document.getElementById('bar-fill-' + i);
+    var val = document.getElementById('bar-val-' + i);
+    var ratio = document.getElementById('bar-ratio-' + i);
+    if (fill) fill.style.width = (pct < 0.1 ? 0.1 : pct) + '%';
+    if (val) val.textContent = fmtYears(it.years);
+    if (ratio) ratio.textContent = it.ratio;
+  }
+
+  // 填充简报
+  // 目的地
+  var destKm = P.round(distKm / 1e13, 1);
+  document.getElementById('dest-ly').textContent = K.NEAREST_STAR_LY;
+  document.getElementById('dest-km').textContent = destKm + '×10¹³';
+
+  // 推进方式
+  var speedRatio = P.round(CHEMICAL_ROCKET_SPEED_KMPS / K.SPEED_OF_LIGHT_KMPS, 5);
+  document.getElementById('prop-speed').textContent = P.round(CHEMICAL_ROCKET_SPEED_KMPS, 1);
+  document.getElementById('prop-c').textContent = speedRatio;
+
+  // 预计耗时
+  document.getElementById('mission-years').textContent = missionYearsRounded;
+
+  // ---- 交互 ----
+  var departureBtns = document.querySelectorAll('.dep-btn');
+  var arrivalEl = document.getElementById('td-arrival');
+  var progressRow = document.getElementById('progress-row');
+  var progFill = document.getElementById('prog-fill');
+  var progLabel = document.getElementById('prog-label');
+  var barRows = document.querySelectorAll('.tb-row');
+
+  function setDeparture(dep) {
+    // 按钮状态
+    departureBtns.forEach(function(b) {
+      b.classList.toggle('active', b.dataset.dep === dep);
+    });
+
+    // 高亮行
+    barRows.forEach(function(r, idx) {
+      r.classList.remove('hl', 'dim');
+    });
+
+    var arrivalText, progressPct, highlightIdx, progressVisible;
+
+    if (dep === 'now') {
+      arrivalText = '约 6 万年后到达';
+      progressPct = 0;
+      highlightIdx = 1; // 任务行
+      progressVisible = false;
+    } else if (dep === 'farm') {
+      arrivalText = '已飞 20%,再 4.8 万年到达';
+      progressPct = 20;
+      highlightIdx = 3; // 农业史行
+      progressVisible = true;
+    } else { // exodus
+      arrivalText = '现在刚好抵达';
+      progressPct = 100;
+      highlightIdx = 4; // 智人史行
+      progressVisible = true;
+    }
+
+    arrivalEl.textContent = arrivalText;
+
+    // 进度条
+    if (progressVisible) {
+      progressRow.style.display = '';
+      progFill.style.width = progressPct + '%';
+      progLabel.textContent = '已飞 ' + progressPct + '%';
+    } else {
+      progressRow.style.display = 'none';
+    }
+
+    // 高亮对应行
+    barRows.forEach(function(r, idx) {
+      if (idx === highlightIdx) {
+        r.classList.add('hl');
+      } else {
+        r.classList.add('dim');
+      }
+    });
+  }
+
+  // 绑定按钮
+  departureBtns.forEach(function(b) {
+    b.addEventListener('click', function() {
+      setDeparture(b.dataset.dep);
+    });
+  });
+
+  // 初始状态:今天
+  setDeparture('now');
+})();
+</script>
+</body>
+</html>

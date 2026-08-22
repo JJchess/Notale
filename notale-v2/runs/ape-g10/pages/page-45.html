@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+#main{display:flex;flex-direction:column;gap:14px}
+.budget-head{height:60px;display:flex;align-items:center;justify-content:space-between;padding:0 18px;background:var(--surface);border:1px solid var(--primary-line);border-radius:var(--radius-md);box-shadow:var(--shadow)}
+.pool-title{display:flex;align-items:baseline;gap:20px}.pool-title strong{font-size:var(--fs-h2)}
+.metrics{display:flex;gap:28px;color:var(--muted);font-size:var(--fs-sec)}.metrics b{color:var(--primary);font-family:var(--font-mono);font-size:var(--fs-lead)}
+.budget-body{height:520px;display:flex;gap:18px}.ledger{position:relative;width:960px;height:520px;overflow:hidden;border-radius:var(--radius-md);background:var(--surface-deep);box-shadow:inset 0 0 0 1px var(--line-strong),var(--shadow)}
+#budget-canvas{position:absolute;inset:0}.row-labels{position:absolute;inset:16px 16px 16px 18px;display:flex;flex-direction:column;gap:6px;pointer-events:none}
+.row-label{height:86px;display:flex;align-items:center}.cat{width:114px;padding-left:14px}.cat strong{display:block;font-size:var(--fs-h2);line-height:1.2}.cat span{font-size:var(--fs-label);color:var(--muted)}
+.projects{width:320px;font-size:var(--fs-sec);line-height:1.4;color:#d7e6e9}.question{width:310px;font-size:var(--fs-sec);line-height:1.4;color:var(--muted)}.amount{margin-left:auto;width:108px;text-align:right;font-family:var(--font-mono)}.amount b{display:block;color:var(--primary);font-size:var(--fs-lead)}.amount span{font-size:var(--fs-label);color:var(--muted)}
+.keyboard-focus:focus-visible{outline:3px solid var(--focus);outline-offset:-5px}
+.side{width:430px;height:520px;display:flex;flex-direction:column;gap:14px}.side .box{flex:1;padding:16px}.side .bt{font-size:var(--fs-h2)}
+.fingerprint{height:114px;display:flex;align-items:flex-end;gap:10px;padding:10px 4px 0}.finger{flex:1;min-height:10px;background:var(--primary);border-top:3px solid var(--accent);transition:height 220ms ease-out}.finger span{display:block;transform:translateY(-25px);font:var(--fs-tick)/1.2 var(--font-mono);text-align:center;color:var(--text)}
+.prompt{font-size:var(--fs-lead);line-height:1.45;color:var(--text)}.explain{font-size:var(--fs-sec);line-height:1.5;color:var(--muted)}
+.actions{display:flex;align-items:center;justify-content:space-between;gap:12px}.hint{font-size:var(--fs-label);line-height:1.4;color:var(--muted)}
+.status{min-height:46px;padding:10px 12px;background:var(--surface-deep);border-left:4px solid var(--primary);font-size:var(--fs-sec);line-height:1.45}
+@media (prefers-reduced-motion:reduce){.finger{transition:none}}
+</style>
+</head>
+<body data-page="45" data-total="48">
+<div id="stage"><main id="main">
+  <section class="budget-head" aria-label="共同资金池">
+    <div class="pool-title"><strong>共同资金池</strong><span class="sec muted">总预算 <b id="total">—</b> 点 · 每枚筹码 <b id="chipValue">—</b> 点</span></div>
+    <div class="metrics"><span>已分配 <b id="allocated">—</b></span><span>剩余 <b id="remaining">—</b></span></div>
+  </section>
+  <div class="budget-body">
+    <section class="ledger no-pan keyboard-focus" id="ledger" tabindex="0" role="application" aria-label="航天公共预算分类账。方向键选择筹码和目标，回车移动；也可拖动筹码。">
+      <div id="budget-canvas" aria-hidden="true"></div>
+      <div class="row-labels" id="rowLabels"></div>
+    </section>
+    <aside class="side k-classification min0">
+      <div class="box"><div class="bt">预算指纹</div><div class="fingerprint" id="fingerprint" aria-label="五项目标预算份额"></div><p class="explain">同一笔预算按不同目标分类，会形成不同的任务清单与受益者。</p></div>
+      <div class="box"><div class="bt">选择意味着取舍</div><p class="prompt">说出你的第一优先与最大牺牲。</p><p class="explain">没有脱离价值判断的“最佳航天预算”；可比较的是选择、理由与放弃了什么。</p></div>
+      <div class="status" id="status" aria-live="polite">拖动任一筹码，在五项目标间重新分配。</div>
+      <div class="actions"><span class="hint">键盘：←→选筹码，↑↓选目标，Enter 移动</span><button id="reset" type="button">恢复平均分配</button></div>
+    </aside>
+  </div>
+</main></div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script src="assets/lib/konva.min.js"></script>
+<script>
+Lec.mount({index:45, kicker:"CHOOSING SPACE", title:"谁的太空优先？", take:"科学、防御、商业、声望与生存等目标会导向不同的航天优先级。预算分配不是技术自动给出的答案，而是公共价值的选择。"});
+const BUDGET_TOTAL=100, CHIP_VALUE=5, CHIP_COUNT=20;
+const cats=[
+ {name:'科学',projects:'天文观测、地球监测、行星探测',q:'能产生哪些可共享的新知识？'},
+ {name:'防御',projects:'预警、侦察、空间资产保护',q:'安全由谁定义，又保护谁？'},
+ {name:'商业',projects:'通信、发射服务、资源利用',q:'收益与风险由谁承担？'},
+ {name:'声望',projects:'标志性任务、国际展示',q:'可见成就是否值得机会成本？'},
+ {name:'生存',projects:'行星防御、生态备份、长期韧性',q:'风险多远、多大才值得现在投入？'}
+];
+let state={owners:Array.from({length:CHIP_COUNT},(_,i)=>Math.floor(i/4)),selected:0,target:0};
+const stage = new Konva.Stage({container:"budget-canvas", width:960, height:520});
+const layer=new Konva.Layer(); stage.add(layer); const chips=[];
+function counts(){return cats.map((_,i)=>state.owners.filter(x=>x===i).length*CHIP_VALUE)}
+function chipPos(i,owner){const peers=state.owners.slice(0,i).filter(x=>x===owner).length;return {x:475+(peers%10)*36,y:43+owner*92+Math.floor(peers/10)*28}}
+function build(){for(let r=0;r<5;r++){layer.add(new Konva.Rect({x:12,y:12+r*92,width:936,height:86,cornerRadius:10,fill:r%2?'#101D28':'#13222e',stroke:'rgba(66,199,194,.28)',strokeWidth:1}));layer.add(new Konva.Line({points:[458,25+r*92,458,85+r*92],stroke:'rgba(66,199,194,.24)',strokeWidth:1}));}
+ for(let i=0;i<CHIP_COUNT;i++){const p=chipPos(i,state.owners[i]);const c=new Konva.Circle({x:p.x,y:p.y,radius:13,fill:'#42C7C2',stroke:'#b7f3f0',strokeWidth:2,shadowColor:'#42C7C2',shadowBlur:9,draggable:true});c.on('dragstart',()=>{state.selected=i;c.stroke('#FFB547');c.scale({x:1.08,y:1.08});layer.draw()});c.on('dragend',()=>drop(i,c));chips.push(c);layer.add(c)}layer.draw()}
+function drop(i,c){const y=c.y(),row=Math.floor((y-12)/92);if(row>=0&&row<5){move(i,row,true)}else{status.textContent='预算总额固定：请移动已分配筹码，而不是新增预算。';snap(i,true)}}
+function snap(i,bad=false){const p=chipPos(i,state.owners[i]);const c=chips[i];c.stroke(bad?'#FFB547':'#b7f3f0');if(Deck.reduced()){c.position(p);c.scale({x:1,y:1});layer.draw()}else{c.to({x:p.x,y:p.y,scaleX:1,scaleY:1,duration:bad?.26:.18,easing:Konva.Easings.EaseOut,onFinish:()=>c.stroke('#b7f3f0')})}}
+function move(i,row,announce){const old=state.owners[i];state.owners[i]=row;state.target=row;chips.forEach((_,j)=>snap(j));render();if(announce)status.textContent=old===row?`${cats[row].name}预算保持不变。`:`已把 ${CHIP_VALUE} 点从${cats[old].name}移至${cats[row].name}；任务优先级随之改变。`}
+function render(){const vals=counts();document.getElementById('total').textContent=Lec.P.formatNumber(BUDGET_TOTAL);document.getElementById('chipValue').textContent=Lec.P.formatNumber(CHIP_VALUE);const used=vals.reduce((a,b)=>a+b,0);document.getElementById('allocated').textContent=`${Lec.P.formatNumber(used)}/${Lec.P.formatNumber(BUDGET_TOTAL)}`;document.getElementById('remaining').textContent=Lec.P.formatNumber(BUDGET_TOTAL-used);
+ document.getElementById('rowLabels').innerHTML=cats.map((c,i)=>`<div class="row-label"><div class="cat"><strong>${c.name}</strong><span>目标类别</span></div><div class="projects">${c.projects}</div><div class="question">${c.q}</div><div class="amount"><b>${Lec.P.formatNumber(vals[i])} 点</b><span>${Lec.P.percent(vals[i],BUDGET_TOTAL)}</span></div></div>`).join('');
+ document.getElementById('fingerprint').innerHTML=vals.map((v,i)=>`<div class="finger" style="height:${Math.max(12,v*2.4)}px" title="${cats[i].name} ${v} 点"><span>${v}</span></div>`).join('')}
+function reset(){state={owners:Array.from({length:CHIP_COUNT},(_,i)=>Math.floor(i/4)),selected:0,target:0};chips.forEach((_,i)=>snap(i));render();status.textContent='已恢复平均分配：五项目标各占同样份额。'}
+build();render();
+const ledger=document.getElementById('ledger'),status=document.getElementById('status');ledger.addEventListener('keydown',e=>{if(['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Enter',' '].includes(e.key))e.preventDefault();if(e.key==='ArrowLeft')state.selected=(state.selected+CHIP_COUNT-1)%CHIP_COUNT;if(e.key==='ArrowRight')state.selected=(state.selected+1)%CHIP_COUNT;if(e.key==='ArrowUp')state.target=(state.target+4)%5;if(e.key==='ArrowDown')state.target=(state.target+1)%5;if(e.key==='Enter'||e.key===' ')move(state.selected,state.target,true);chips.forEach((c,i)=>c.stroke(i===state.selected?'#FFB547':'#b7f3f0'));layer.draw();if(e.key.startsWith('Arrow'))status.textContent=`已选第 ${state.selected+1} 枚筹码；目标：${cats[state.target].name}。按 Enter 移动。`});
+document.getElementById('reset').addEventListener('click',reset);
+if(!Deck.reduced()){document.querySelector('.budget-head').animate([{opacity:0,transform:'translateY(-18px)'},{opacity:1,transform:'none'}],{duration:500,easing:'cubic-bezier(.2,.8,.2,1)'});document.querySelectorAll('.row-label').forEach((el,i)=>el.animate([{opacity:0,transform:'translateX(-18px)'},{opacity:1,transform:'none'}],{duration:420,delay:100+i*40,fill:'backwards',easing:'ease-out'}))}
+</script>
+</body>
+</html>

@@ -1,0 +1,980 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+:root {
+  --bg:        #0f1318;
+  --text:      #e8e8e8;
+  --font-sans: "Noto Sans SC", system-ui, sans-serif;
+}
+
+/* ── triptych layout for k-classification ── */
+.k-classification.triptych-layout {
+  flex-direction: row;
+  gap: var(--space-4);
+  align-items: stretch;
+  height: 100%;
+}
+.k-classification.triptych-layout > .box {
+  display: flex;
+  flex-direction: column;
+  border-color: rgba(255,255,255,0.12);
+  background: rgba(255,255,255,0.04);
+  padding: var(--space-4);
+  flex: 1;
+  min-width: 0;
+  position: relative;
+  overflow: visible;
+}
+.k-classification.triptych-layout > .box.lv-1 { flex: 0.9; }
+.k-classification.triptych-layout > .box.lv-2 { flex: 1.4; }
+.k-classification.triptych-layout > .box.lv-3 { flex: 0.9; }
+
+.k-classification.triptych-layout > .box > .bt {
+  color: var(--accent);
+  font-size: var(--fs-label);
+  margin-bottom: var(--space-3);
+  text-align: center;
+}
+
+/* ── column content ── */
+.col-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  position: relative;
+}
+
+/* ── person silhouette ── */
+.person-svg {
+  width: 60px;
+  height: 120px;
+  flex-shrink: 0;
+}
+.person-svg .body-fill { fill: rgba(200,200,200,0.5); }
+
+/* ── thought bubble ── */
+.thought-bubble {
+  background: rgba(255,255,255,0.08);
+  border: 1px solid rgba(255,255,255,0.15);
+  border-radius: 16px 16px 16px 4px;
+  padding: var(--space-3) var(--space-4);
+  position: relative;
+  max-width: 120px;
+  text-align: center;
+}
+.thought-bubble::after {
+  content: "";
+  position: absolute;
+  bottom: -8px;
+  left: 20px;
+  width: 12px;
+  height: 12px;
+  background: rgba(255,255,255,0.08);
+  border-right: 1px solid rgba(255,255,255,0.15);
+  border-bottom: 1px solid rgba(255,255,255,0.15);
+  transform: rotate(45deg);
+}
+.thought-bubble .modern-char {
+  font-size: var(--fs-h2);
+  font-weight: 700;
+  color: var(--text);
+}
+
+/* ── oracle bone ── */
+.oracle-bone-wrap {
+  position: relative;
+  width: 260px;
+  height: 180px;
+  flex-shrink: 0;
+}
+.oracle-bone-svg {
+  width: 100%;
+  height: 100%;
+}
+.oracle-bone-svg .bone-fill { fill: #d4a76a; }
+.oracle-bone-svg .bone-crack { stroke: #8b7355; stroke-width: 1; fill: none; opacity: 0.3; }
+.oracle-bone-svg .slot-bg { fill: rgba(0,0,0,0.2); stroke: rgba(255,255,255,0.2); stroke-width: 1; }
+.oracle-bone-svg .slot-bg.occupied { stroke: var(--accent); }
+
+/* ── glyph slots on bone ── */
+.glyph-slot {
+  position: absolute;
+  width: 40px;
+  height: 48px;
+  cursor: pointer;
+  border: 2px dashed rgba(255,255,255,0.2);
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 28px;
+  background: rgba(0,0,0,0.1);
+  transition: border-color 0.3s;
+  z-index: 5;
+}
+.glyph-slot.highlight {
+  border-color: var(--accent);
+  background: rgba(79,110,242,0.1);
+}
+.glyph-slot.filled {
+  border-style: solid;
+  border-color: var(--accent);
+  background: none;
+  cursor: default;
+}
+.glyph-slot .slot-glyph {
+  color: #8B4513;
+  font-size: 28px;
+  font-weight: 400;
+  pointer-events: none;
+}
+#slot1 { left: 70px; top: 50px; }
+#slot2 { left: 150px; top: 50px; }
+
+/* ── glyph tray ── */
+.glyph-tray {
+  display: flex;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  background: rgba(0,0,0,0.15);
+  border-radius: 8px;
+  border: 1px solid rgba(255,255,255,0.08);
+  flex-wrap: wrap;
+  justify-content: center;
+  min-height: 60px;
+}
+.glyph-card {
+  width: 44px;
+  height: 52px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(180,120,60,0.15);
+  border: 1px solid rgba(180,120,60,0.3);
+  border-radius: 6px;
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
+  transition: transform 0.15s, box-shadow 0.15s;
+  position: relative;
+  z-index: 10;
+}
+.glyph-card:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.glyph-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+}
+.glyph-card.dragging {
+  cursor: grabbing;
+  z-index: 100;
+  transform: scale(1.1);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+  opacity: 0.9;
+}
+.glyph-card .glyph-svg {
+  width: 32px;
+  height: 32px;
+}
+.glyph-card .glyph-svg .glyph-stroke {
+  stroke: #B8860B;
+  stroke-width: 2;
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.glyph-card .glyph-svg .glyph-fill {
+  fill: #B8860B;
+}
+.glyph-card .glyph-name {
+  display: none;
+}
+
+/* ── shake animation ── */
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-8px); }
+  40% { transform: translateX(8px); }
+  60% { transform: translateX(-6px); }
+  80% { transform: translateX(6px); }
+}
+.glyph-card.shake {
+  animation: shake 0.4s ease;
+}
+
+/* ── instruction text ── */
+.instruction-text {
+  font-size: var(--fs-sec);
+  color: var(--muted);
+  text-align: center;
+  padding: var(--space-2) var(--space-3);
+  border-radius: 6px;
+  background: rgba(255,255,255,0.04);
+  max-width: 280px;
+}
+
+/* ── attribute labels ── */
+.attr-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: var(--fs-label);
+  color: var(--muted);
+  text-align: center;
+  line-height: 1.4;
+}
+.attr-list .attr-key {
+  color: rgba(255,255,255,0.4);
+}
+.attr-list .attr-val {
+  color: var(--text);
+}
+
+/* ── right panel: reader ── */
+.right-hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+.modern-char-display {
+  font-size: var(--fs-h1);
+  font-weight: 700;
+  color: var(--text);
+  opacity: 0;
+}
+.modern-char-display.revealed {
+  opacity: 1;
+}
+.year-tag {
+  font-size: var(--fs-sec);
+  color: var(--accent);
+  opacity: 0;
+  padding: 2px 10px;
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  background: rgba(79,110,242,0.08);
+}
+.year-tag.revealed {
+  opacity: 1;
+}
+.magnifier-svg {
+  width: 80px;
+  height: 60px;
+  flex-shrink: 0;
+}
+.magnifier-svg .mag-stroke {
+  stroke: rgba(200,200,200,0.5);
+  stroke-width: 2;
+  fill: none;
+}
+.magnifier-svg .mag-glass {
+  fill: rgba(200,200,200,0.08);
+  stroke: rgba(200,200,200,0.5);
+  stroke-width: 1.5;
+}
+
+/* ── timeline bar ── */
+.timeline-bar {
+  height: 48px;
+  position: relative;
+  flex-shrink: 0;
+}
+.timeline-bar .tl-line {
+  position: absolute;
+  top: 50%;
+  left: 8%;
+  right: 8%;
+  height: 2px;
+  background: rgba(255,255,255,0.15);
+  transform: translateY(-50%);
+}
+.timeline-bar .tl-arrow {
+  position: absolute;
+  right: 8%;
+  top: 50%;
+  transform: translateY(-50%);
+  color: rgba(255,255,255,0.3);
+  font-size: 18px;
+}
+.timeline-bar .tl-event {
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  font-size: var(--fs-label);
+  line-height: 1.2;
+  color: rgba(255,255,255,0.3);
+  transition: color 0.5s;
+}
+.timeline-bar .tl-event .tl-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.2);
+  border: 2px solid rgba(255,255,255,0.15);
+  transition: all 0.5s;
+}
+.timeline-bar .tl-event.active .tl-dot {
+  background: var(--accent);
+  border-color: var(--accent);
+  box-shadow: 0 0 8px rgba(79,110,242,0.5);
+}
+.timeline-bar .tl-event.active {
+  color: var(--accent);
+}
+.timeline-bar .tl-event.done .tl-dot {
+  background: rgba(255,255,255,0.4);
+  border-color: rgba(255,255,255,0.3);
+}
+.timeline-bar .tl-event.done {
+  color: rgba(255,255,255,0.5);
+}
+#event1 { left: 18%; }
+#event2 { left: 50%; }
+#event3 { left: 82%; }
+
+/* ── reset button ── */
+.reset-btn-wrap {
+  position: absolute;
+  bottom: 4px;
+  right: 4px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.4s;
+  z-index: 20;
+}
+.reset-btn-wrap.visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+.reset-btn {
+  font-size: var(--fs-label);
+  padding: 6px 16px;
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  background: rgba(79,110,242,0.1);
+  color: var(--accent);
+  cursor: pointer;
+  transition: background 0.2s;
+}
+.reset-btn:hover {
+  background: rgba(79,110,242,0.2);
+}
+.reset-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ── weathering cracks overlay ── */
+.weathering-cracks {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 1.5s;
+}
+.weathering-cracks.visible {
+  opacity: 0.4;
+}
+.weathering-cracks svg {
+  width: 100%;
+  height: 100%;
+}
+.weathering-cracks .crack-line {
+  stroke: #6b5b4a;
+  stroke-width: 0.8;
+  fill: none;
+  opacity: 0.6;
+}
+
+/* ── oracle bone crack overlay ── */
+.oracle-cracks-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 2s;
+}
+.oracle-cracks-overlay.visible {
+  opacity: 0.5;
+}
+.oracle-cracks-overlay svg {
+  width: 100%;
+  height: 100%;
+}
+
+/* ── fit main within stage padding ── */
+#main {
+  width: 1408px;
+  height: 620px;
+  overflow: hidden;
+  margin: 0;
+  padding: 0;
+}
+
+/* ── caveat: reduce motion ── */
+@media (prefers-reduced-motion: reduce) {
+  .glyph-card { transition: none; }
+  .glyph-card.shake { animation: none; }
+  .weathering-cracks { transition: none; }
+  .oracle-cracks-overlay { transition: none; }
+  .timeline-bar .tl-event { transition: none; }
+  .reset-btn-wrap { transition: none; }
+  .modern-char-display { transition: none; }
+  .year-tag { transition: none; }
+  .right-hidden { transition: none; }
+}
+
+/* ── aria-live offscreen ── */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0,0,0,0);
+  border: 0;
+}
+</style>
+</head>
+<body data-page="30" data-total="50">
+<div id="stage">
+<main id="main"></main>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script src="assets/lib/gsap.min.js"></script>
+<script>
+(function () {
+  'use strict';
+
+  /* ── constants ── */
+  const ORACLE_BONE_YEARS_AGO = 3300; // 商代甲骨文，约公元前13世纪
+
+  /* ── mount header/footer ── */
+  Lec.mount({
+    index: 30,
+    kicker: 'EXTERNAL MEMORY',
+    title: '文字：把知识搬进介质',
+    take: '知识放在脑子里，寿命跟着人走；写在介质上，寿命就不再受个人限制。'
+  });
+
+  var main = document.getElementById('main');
+  if (!main) return;
+
+  /* ── build page content ── */
+  var page = document.createElement('div');
+  page.className = 'col';
+  page.style.cssText = 'width:1408px; height:620px; box-sizing:border-box; overflow:hidden;';
+
+  /* ── SVG glyph definitions ── */
+  function glyphSVG(type) {
+    var svgs = {
+      '日': '<svg viewBox="0 0 32 32" class="glyph-svg"><circle cx="16" cy="16" r="12" class="glyph-stroke"/><circle cx="16" cy="16" r="2" class="glyph-fill"/></svg>',
+      '月': '<svg viewBox="0 0 32 32" class="glyph-svg"><path d="M24 4 C16 4 10 10 10 16 C10 22 16 28 24 28 C20 26 18 22 18 16 C18 10 20 6 24 4Z" class="glyph-fill"/></svg>',
+      '山': '<svg viewBox="0 0 32 32" class="glyph-svg"><polyline points="2,24 10,6 16,16 22,8 30,24" class="glyph-stroke" fill="none"/><line x1="2" y1="24" x2="30" y2="24" class="glyph-stroke"/></svg>',
+      '水': '<svg viewBox="0 0 32 32" class="glyph-svg"><path d="M4 8 C8 12 12 4 16 8 C20 12 24 4 28 8" class="glyph-stroke"/><path d="M4 16 C8 20 12 12 16 16 C20 20 24 12 28 16" class="glyph-stroke"/><path d="M4 24 C8 28 12 20 16 24 C20 28 24 20 28 24" class="glyph-stroke"/></svg>'
+    };
+    return svgs[type] || '';
+  }
+
+  /* ── oracle bone SVG ── */
+  var oracleBoneSVG = [
+    '<svg viewBox="0 0 260 180" class="oracle-bone-svg">',
+    '<path d="M30 20 C60 5 200 5 230 20 C255 35 258 80 255 110 C252 140 240 160 220 170 C200 178 60 178 40 170 C20 160 8 140 5 110 C2 80 5 35 30 20Z" class="bone-fill" stroke="#b8956a" stroke-width="1.5"/>',
+    '<path d="M50 30 C80 20 100 15 130 18" class="bone-crack"/>',
+    '<path d="M180 25 C200 30 210 40 215 60" class="bone-crack"/>',
+    '<path d="M60 160 C90 155 110 150 140 155" class="bone-crack"/>',
+    '<path d="M190 150 C210 145 220 135 225 115" class="bone-crack"/>',
+    '<path d="M130 18 C135 40 140 60 130 90" class="bone-crack"/>',
+    '<path d="M40 80 C60 75 80 70 90 80" class="bone-crack"/>',
+    '<path d="M220 70 C210 90 200 100 190 120" class="bone-crack"/>',
+    '</svg>'
+  ].join('\n');
+
+  /* ── weathering cracks (extra overlay) ── */
+  var weatheringSVG = [
+    '<svg viewBox="0 0 260 180">',
+    '<path d="M20 40 C40 35 55 50 60 70" class="crack-line"/>',
+    '<path d="M200 20 C215 35 220 55 215 75" class="crack-line"/>',
+    '<path d="M45 150 C60 145 70 155 75 170" class="crack-line"/>',
+    '<path d="M195 155 C210 150 220 140 225 120" class="crack-line"/>',
+    '<path d="M100 10 C105 25 95 40 100 55" class="crack-line"/>',
+    '<path d="M160 165 C155 150 160 135 155 120" class="crack-line"/>',
+    '<path d="M30 100 C45 95 55 105 65 95" class="crack-line"/>',
+    '<path d="M225 90 C215 95 210 105 205 115" class="crack-line"/>',
+    '</svg>'
+  ].join('\n');
+
+  /* ── person silhouette ── */
+  function personSVG(facing, hasMagnifier) {
+    var flip = facing === 'left' ? '' : 'transform="scale(-1,1) translate(-60,0)"';
+    var mag = hasMagnifier ? [
+      '<g transform="translate(30,20)">',
+      '<circle cx="0" cy="0" r="14" class="mag-glass"/>',
+      '<line x1="10" y1="10" x2="20" y2="20" class="mag-stroke"/>',
+      '</g>'
+    ].join('\n') : '';
+    return [
+      '<svg viewBox="0 0 60 120" class="person-svg" xmlns="http://www.w3.org/2000/svg">',
+      '<g ' + flip + '>',
+      '<circle cx="30" cy="14" r="10" class="body-fill"/>',
+      '<rect x="22" y="24" width="16" height="34" rx="5" class="body-fill"/>',
+      '<line x1="38" y1="32" x2="52" y2="28" class="body-fill" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>',
+      '<line x1="38" y1="36" x2="52" y2="40" class="body-fill" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>',
+      '<line x1="26" y1="58" x2="22" y2="82" class="body-fill" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>',
+      '<line x1="34" y1="58" x2="38" y2="82" class="body-fill" stroke="currentColor" stroke-width="3" stroke-linecap="round"/>',
+      mag,
+      '</g>',
+      '</svg>'
+    ].join('\n');
+  }
+
+  /* ── build columns ── */
+
+  // Left column: 个体记忆层
+  var leftCol = document.createElement('div');
+  leftCol.className = 'box lv-1';
+  leftCol.innerHTML = [
+    '<div class="bt">个体记忆层</div>',
+    '<div class="col-content" id="leftContent">',
+    '<div class="thought-bubble" id="leftBubble"><span class="modern-char">日月</span></div>',
+    '<div id="leftPerson">' + personSVG('right', false) + '</div>',
+    '<div class="attr-list">',
+    '<div><span class="attr-key">承载者：</span><span class="attr-val">一个人的大脑</span></div>',
+    '<div><span class="attr-key">寿命：</span><span class="attr-val">一生</span></div>',
+    '</div>',
+    '</div>'
+  ].join('\n');
+
+  // Center column: 外部介质层 (interactive)
+  var centerCol = document.createElement('div');
+  centerCol.className = 'box lv-2';
+  centerCol.id = 'centerPanel';
+  centerCol.innerHTML = [
+    '<div class="bt">外部介质层</div>',
+    '<div class="col-content" style="gap:var(--space-3)">',
+    '<div class="oracle-bone-wrap" id="oracleBoneWrap">',
+    oracleBoneSVG,
+    '<div class="oracle-cracks-overlay" id="cracksOverlay">' + weatheringSVG + '</div>',
+    '<div class="glyph-slot" id="slot1" tabindex="0" role="button" aria-label="刻槽 1，放置「日」字"><span class="slot-glyph" id="slot1Glyph"></span></div>',
+    '<div class="glyph-slot" id="slot2" tabindex="0" role="button" aria-label="刻槽 2，放置「月」字"><span class="slot-glyph" id="slot2Glyph"></span></div>',
+    '</div>',
+    '<div class="instruction-text" id="instructionText">把「日」与「月」刻下来</div>',
+    '<div class="glyph-tray" id="glyphTray"></div>',
+    '<div class="attr-list">',
+    '<div><span class="attr-key">承载者：</span><span class="attr-val">龟甲</span></div>',
+    '<div><span class="attr-key">寿命：</span><span class="attr-val">千年</span></div>',
+    '</div>',
+    '</div>',
+    '<div class="reset-btn-wrap" id="resetWrap">',
+    '<button class="reset-btn" id="resetBtn" tabindex="0">再来一次</button>',
+    '</div>'
+  ].join('\n');
+
+  // Right column: 跨代累积层
+  var rightCol = document.createElement('div');
+  rightCol.className = 'box lv-3';
+  rightCol.innerHTML = [
+    '<div class="bt">跨代累积层</div>',
+    '<div class="col-content" id="rightContent">',
+    '<div id="rightReader" class="right-hidden">' + personSVG('left', true) + '</div>',
+    '<div class="modern-char-display" id="modernChars">日月</div>',
+    '<div class="year-tag" id="yearTag">约' + ORACLE_BONE_YEARS_AGO + '年前</div>',
+    '<div class="attr-list" id="rightAttrs" style="opacity:0">',
+    '<div><span class="attr-key">承载者：</span><span class="attr-val">一代代后人</span></div>',
+    '<div><span class="attr-key">寿命：</span><span class="attr-val">持续累积</span></div>',
+    '</div>',
+    '</div>'
+  ].join('\n');
+
+  // Timeline bar
+  var timeline = document.createElement('div');
+  timeline.className = 'timeline-bar';
+  timeline.innerHTML = [
+    '<div class="tl-line"></div>',
+    '<div class="tl-arrow">→</div>',
+    '<div class="tl-event" id="event1"><div class="tl-dot"></div><span>刻下</span></div>',
+    '<div class="tl-event" id="event2"><div class="tl-dot"></div><span>一生之后</span></div>',
+    '<div class="tl-event" id="event3"><div class="tl-dot"></div><span>约' + ORACLE_BONE_YEARS_AGO + '年</span></div>'
+  ].join('\n');
+
+  // ── assemble ──
+  var triptych = document.createElement('div');
+  triptych.className = 'k-classification triptych-layout';
+  triptych.style.cssText = 'height:555px; flex-shrink:0;';
+  triptych.appendChild(leftCol);
+  triptych.appendChild(centerCol);
+  triptych.appendChild(rightCol);
+
+  page.appendChild(triptych);
+  page.appendChild(timeline);
+
+  // Live region for screen reader
+  var liveRegion = document.createElement('div');
+  liveRegion.className = 'sr-only';
+  liveRegion.setAttribute('aria-live', 'polite');
+  liveRegion.id = 'liveRegion';
+  page.appendChild(liveRegion);
+
+  main.appendChild(page);
+
+  // ── populate glyph tray ──
+  var glyphs = [
+    { id: 'glyph-ri',  char: '日', name: '日' },
+    { id: 'glyph-yue', char: '月', name: '月' },
+    { id: 'glyph-shan',char: '山', name: '山' },
+    { id: 'glyph-shui',char: '水', name: '水' }
+  ];
+  var tray = document.getElementById('glyphTray');
+  var glyphElements = {};
+  glyphs.forEach(function (g) {
+    var el = document.createElement('div');
+    el.className = 'glyph-card';
+    el.id = g.id;
+    el.dataset.char = g.char;
+    el.setAttribute('tabindex', '0');
+    el.setAttribute('role', 'button');
+    el.setAttribute('aria-label', g.name + '字');
+    el.innerHTML = glyphSVG(g.char) + '<span class="glyph-name">' + g.name + '</span>';
+    tray.appendChild(el);
+    glyphElements[g.char] = el;
+  });
+
+  // ── game state ──
+  var state = {
+    slot1: null, // char placed in slot 1
+    slot2: null, // char placed in slot 2
+    completed: false,
+    dragging: null,
+    dragOffset: { x: 0, y: 0 },
+    dragClone: null
+  };
+
+  var slot1El = document.getElementById('slot1');
+  var slot2El = document.getElementById('slot2');
+  var slot1Glyph = document.getElementById('slot1Glyph');
+  var slot2Glyph = document.getElementById('slot2Glyph');
+  var live = document.getElementById('liveRegion');
+
+  function announce(msg) {
+    live.textContent = msg;
+  }
+
+  // ── drag: pointer events ──
+  function getSlotRect(el) {
+    return el.getBoundingClientRect();
+  }
+
+  function getTrayRect() {
+    return tray.getBoundingClientRect();
+  }
+
+  function isOverSlot(e, slotEl) {
+    var r = slotEl.getBoundingClientRect();
+    return e.clientX >= r.left && e.clientX <= r.right &&
+           e.clientY >= r.top && e.clientY <= r.bottom;
+  }
+
+  function getGlyphCenter(glyphEl) {
+    var r = glyphEl.getBoundingClientRect();
+    return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+  }
+
+  // keyboard: pick up glyph
+  document.querySelectorAll('.glyph-card').forEach(function (el) {
+    el.addEventListener('keydown', function (e) {
+      if (state.completed) return;
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        if (state.dragging === null) {
+          // pick up
+          state.dragging = el;
+          el.classList.add('dragging');
+          announce('选中了' + el.dataset.char + '字，请用 Tab 切换到刻槽后按 Enter 放置');
+        }
+      }
+    });
+  });
+
+  // keyboard: slot placement
+  [slot1El, slot2El].forEach(function (slotEl) {
+    slotEl.addEventListener('keydown', function (e) {
+      if (state.completed) return;
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        if (state.dragging) {
+          var char = state.dragging.dataset.char;
+          var slotId = slotEl.id;
+          placeGlyph(char, slotId);
+          state.dragging.classList.remove('dragging');
+          state.dragging = null;
+        }
+      }
+    });
+  });
+
+  // pointer drag
+  document.querySelectorAll('.glyph-card').forEach(function (el) {
+    el.addEventListener('pointerdown', function (e) {
+      if (state.completed) return;
+      e.preventDefault();
+      el.setPointerCapture(e.pointerId);
+      el.classList.add('dragging');
+      state.dragging = el;
+      var r = el.getBoundingClientRect();
+      state.dragOffset = { x: e.clientX - r.left, y: e.clientY - r.top };
+      announce('拖动' + el.dataset.char + '字');
+    });
+
+    el.addEventListener('pointermove', function (e) {
+      if (!state.dragging || state.dragging !== el) return;
+      el.style.position = 'fixed';
+      el.style.left = (e.clientX - state.dragOffset.x) + 'px';
+      el.style.top = (e.clientY - state.dragOffset.y) + 'px';
+      el.style.width = '44px';
+      el.style.height = '52px';
+      el.style.zIndex = '100';
+
+      // highlight slots
+      var over1 = isOverSlot(e, slot1El);
+      var over2 = isOverSlot(e, slot2El);
+      slot1El.classList.toggle('highlight', over1 && !state.slot1);
+      slot2El.classList.toggle('highlight', over2 && !state.slot2);
+    });
+
+    el.addEventListener('pointerup', function (e) {
+      if (!state.dragging || state.dragging !== el) return;
+      el.classList.remove('dragging');
+      el.style.position = '';
+      el.style.left = '';
+      el.style.top = '';
+      el.style.width = '';
+      el.style.height = '';
+      el.style.zIndex = '';
+
+      slot1El.classList.remove('highlight');
+      slot2El.classList.remove('highlight');
+
+      var char = el.dataset.char;
+      var over1 = isOverSlot(e, slot1El);
+      var over2 = isOverSlot(e, slot2El);
+
+      if (over1 && !state.slot1) {
+        placeGlyph(char, 'slot1');
+      } else if (over2 && !state.slot2) {
+        placeGlyph(char, 'slot2');
+      } else if (over1 || over2) {
+        // slot already filled, return
+        shakeGlyph(el);
+        announce('这个刻槽已经有字了');
+      } else {
+        // dropped elsewhere, return
+        el.classList.remove('dragging');
+      }
+      state.dragging = null;
+    });
+
+    el.addEventListener('pointercancel', function (e) {
+      el.classList.remove('dragging');
+      el.style.position = '';
+      el.style.left = '';
+      el.style.top = '';
+      el.style.width = '';
+      el.style.height = '';
+      el.style.zIndex = '';
+      slot1El.classList.remove('highlight');
+      slot2El.classList.remove('highlight');
+      state.dragging = null;
+    });
+  });
+
+  function shakeGlyph(el) {
+    el.classList.remove('shake');
+    void el.offsetWidth; // force reflow
+    el.classList.add('shake');
+    setTimeout(function () { el.classList.remove('shake'); }, 500);
+  }
+
+  function placeGlyph(char, slotId) {
+    var slotEl = slotId === 'slot1' ? slot1El : slot2El;
+    var slotGlyphEl = slotId === 'slot1' ? slot1Glyph : slot2Glyph;
+    var isCorrect = (slotId === 'slot1' && char === '日') || (slotId === 'slot2' && char === '月');
+
+    if (!isCorrect) {
+      // wrong glyph, return to tray
+      var glyphEl = glyphElements[char];
+      if (glyphEl) {
+        shakeGlyph(glyphEl);
+        announce(char + '字不适合这里，请再试试');
+      }
+      return;
+    }
+
+    // correct placement
+    slotGlyphEl.textContent = char;
+    slotEl.classList.add('filled');
+    if (slotId === 'slot1') state.slot1 = char;
+    else state.slot2 = char;
+
+    // hide the tray glyph
+    var placedGlyph = glyphElements[char];
+    if (placedGlyph) {
+      placedGlyph.style.display = 'none';
+      placedGlyph.setAttribute('tabindex', '-1');
+    }
+
+    announce(char + '字已刻入龟甲');
+
+    // check completion
+    if (state.slot1 === '日' && state.slot2 === '月') {
+      state.completed = true;
+      announce('刻写完成！知识已从记忆搬进介质');
+      onComplete();
+    }
+  }
+
+  // ── GSAP timeline ──
+  var tl = gsap.timeline({ paused: true });
+
+  function onComplete() {
+    document.getElementById('instructionText').textContent = '刻下了！';
+
+    // Mark event 1 active
+    document.getElementById('event1').classList.add('active');
+
+    tl
+      // Event 2: 一生之后 - left person and bubble fade out
+      .to('#leftPerson', { opacity: 0, duration: 1.5, ease: 'power2.out' })
+      .to('#leftBubble', { opacity: 0, duration: 1, ease: 'power2.in' }, '-=0.5')
+      .call(function () {
+        document.getElementById('event1').classList.add('done');
+        document.getElementById('event1').classList.remove('active');
+        document.getElementById('event2').classList.add('active');
+      })
+
+      // Weathering cracks appear
+      .to('#cracksOverlay', { opacity: 0.5, duration: 2 }, '+=0.5')
+
+      // Event 3: 约3300年后 - right reader appears
+      .to('#rightReader', { opacity: 1, duration: 1.5, ease: 'power2.out' }, '+=0.5')
+      .call(function () {
+        document.getElementById('event2').classList.add('done');
+        document.getElementById('event2').classList.remove('active');
+        document.getElementById('event3').classList.add('active');
+      })
+      .to('#modernChars', { opacity: 1, duration: 1, ease: 'power2.out' }, '-=0.5')
+      .to('#yearTag', { opacity: 1, duration: 1 }, '-=0.5')
+      .to('#rightAttrs', { opacity: 1, duration: 1 }, '-=0.5')
+      .call(function () {
+        document.getElementById('event3').classList.add('done');
+        document.getElementById('event3').classList.remove('active');
+        // Show reset button
+        document.getElementById('resetWrap').classList.add('visible');
+        announce('完成！三千多年前的字，今天还能读懂');
+      });
+
+    tl.play();
+  }
+
+  // ── reset ──
+  function resetGame() {
+    state.slot1 = null;
+    state.slot2 = null;
+    state.completed = false;
+    state.dragging = null;
+
+    // Reset slots
+    slot1El.classList.remove('filled');
+    slot2El.classList.remove('filled');
+    slot1Glyph.textContent = '';
+    slot2Glyph.textContent = '';
+
+    // Reset glyphs
+    document.querySelectorAll('.glyph-card').forEach(function (el) {
+      el.style.display = '';
+      el.setAttribute('tabindex', '0');
+      el.classList.remove('dragging');
+      el.style.position = '';
+      el.style.left = '';
+      el.style.top = '';
+      el.style.width = '';
+      el.style.height = '';
+      el.style.zIndex = '';
+    });
+
+    // Reset left person/bubble
+    var leftPerson = document.getElementById('leftPerson');
+    var leftBubble = document.getElementById('leftBubble');
+    if (leftPerson) leftPerson.style.opacity = '';
+    if (leftBubble) leftBubble.style.opacity = '';
+
+    // Reset right panel
+    document.getElementById('rightReader').style.opacity = '';
+    document.getElementById('modernChars').style.opacity = '';
+    document.getElementById('yearTag').style.opacity = '';
+    document.getElementById('rightAttrs').style.opacity = '';
+
+    // Reset cracks
+    document.getElementById('cracksOverlay').style.opacity = '';
+
+    // Reset timeline
+    document.querySelectorAll('.tl-event').forEach(function (el) {
+      el.classList.remove('active', 'done');
+    });
+
+    // Reset instruction
+    document.getElementById('instructionText').textContent = '把「日」与「月」刻下来';
+
+    // Hide reset button
+    document.getElementById('resetWrap').classList.remove('visible');
+
+    // Kill timeline and recreate
+    tl.kill();
+    // Recreate tl
+    tl = gsap.timeline({ paused: true });
+
+    announce('已重置，请重新拼配');
+  }
+
+  document.getElementById('resetBtn').addEventListener('click', resetGame);
+  document.getElementById('resetBtn').addEventListener('keydown', function (e) {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      resetGame();
+    }
+  });
+
+  // ── Also handle keyboard escape for drag cancel ──
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && state.dragging) {
+      state.dragging.classList.remove('dragging');
+      state.dragging.style.position = '';
+      state.dragging.style.left = '';
+      state.dragging.style.top = '';
+      state.dragging.style.width = '';
+      state.dragging.style.height = '';
+      state.dragging.style.zIndex = '';
+      state.dragging = null;
+      slot1El.classList.remove('highlight');
+      slot2El.classList.remove('highlight');
+      announce('已取消');
+    }
+  });
+
+})();
+</script>
+</body>
+</html>

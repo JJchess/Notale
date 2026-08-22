@@ -1,0 +1,293 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  .lec-progress{overflow:visible;padding:0;line-height:0}
+  .lec-progress::-webkit-progress-bar,.lec-progress::-webkit-progress-value{height:2px}
+  .address-page{position:relative;width:var(--content-w);height:var(--content-h);overflow:hidden}
+  .address-page.k-generalization{grid-template-rows:66px 344px 162px;gap:var(--sp-4)}
+  .address-page>.claim{width:960px;min-height:66px;text-align:center;opacity:.2;transition:opacity .35s ease,border-color .35s ease,background .35s ease}
+  .address-page.is-complete>.claim{opacity:1}
+  .address-page>.trunk{top:54px;bottom:28px}
+  .orbit-scene{position:relative;z-index:1;min-width:0;overflow:hidden;border:1px solid var(--line-strong);background:var(--surface-data)}
+  .orbit-map{position:absolute;inset:0;width:100%;height:100%}
+  .zone-fill{fill:var(--primary-soft);stroke:var(--primary-line);stroke-width:1}
+  .outer-fill{fill:var(--surface);stroke:var(--line-strong);stroke-width:1}
+  .orbit{fill:none;stroke:var(--line-strong);stroke-width:2;vector-effect:non-scaling-stroke;transition:opacity .3s,stroke .3s,stroke-width .3s}
+  .orbit.inner{stroke:var(--primary-line)}
+  .orbit.earth-orbit{stroke-dasharray:8 7}
+  .address-page.is-complete .orbit{opacity:.3}
+  .address-page.is-complete .orbit.earth-orbit{opacity:1;stroke:var(--accent);stroke-width:4;stroke-dasharray:none}
+  .sun-core{fill:var(--accent)}
+  .sun-glow{fill:var(--accent-soft);stroke:var(--accent);stroke-width:2}
+  .planet-dot{fill:var(--line-strong)}
+  .planet-dot.rocky{fill:var(--primary)}
+  .planet-dot.earth-dot{fill:var(--bg);stroke:var(--accent);stroke-width:3}
+  .zone-label,.scene-label,.planet-label{position:absolute;z-index:3;color:var(--text-muted);font-size:var(--fs-label);line-height:var(--lh-tight)}
+  .zone-label{top:14px;padding:var(--sp-2) var(--sp-3);border-bottom:2px solid var(--primary-line);font-weight:650}
+  .zone-label.inner-zone{left:206px;color:var(--primary)}
+  .zone-label.outer-zone{left:746px}
+  .scene-label.sun-label{left:70px;top:160px;color:var(--accent)}
+  .scene-label.target-label{left:410px;top:138px;color:var(--accent);opacity:.65}
+  .scene-note{position:absolute;z-index:3;right:24px;top:18px;width:300px;color:var(--text-muted);font-size:var(--fs-sec);line-height:var(--lh-body)}
+  .scene-note strong{color:var(--text);font-weight:650}
+  .scale-note{position:absolute;z-index:3;left:24px;bottom:16px;color:var(--text-muted);font-size:var(--fs-label);line-height:var(--lh-tight)}
+  .scale-line{display:inline-block;width:88px;margin-right:var(--sp-2);border-top:1px solid var(--primary);vertical-align:middle}
+  .route-band{position:absolute;z-index:2;left:152px;height:34px;border:1px solid var(--line-strong);border-left:4px solid var(--primary);background:var(--surface);color:var(--text-muted);font-size:var(--fs-label);font-weight:650;line-height:32px;padding-left:var(--sp-3);pointer-events:none;opacity:.86}
+  .route-band::after{position:absolute;top:11px;right:-12px;width:22px;height:10px;border-top:2px solid var(--primary-line);border-right:2px solid var(--primary-line);transform:rotate(45deg);content:""}
+  .route-system{top:58px;width:1040px}
+  .route-zone{top:98px;width:690px}
+  .route-type{top:238px;width:454px}
+  .route-member{top:278px;width:276px}
+  .address-page.is-complete .route-band{border-color:var(--accent);border-left-color:var(--accent);background:var(--accent-soft);color:var(--text)}
+  .earth-photo{position:absolute;z-index:1;left:375px;top:85px;width:112px;height:112px;border-radius:50%;object-fit:cover;opacity:0;filter:saturate(.9);box-shadow:0 0 24px var(--primary-line);transition:opacity .4s ease}
+  .address-page.is-complete .earth-photo{opacity:.9}
+  .globe-drag{position:absolute;z-index:5;width:92px;height:92px;min-height:92px;padding:0;border:2px solid var(--primary);border-radius:50%;background:var(--surface-data);touch-action:none;cursor:grab;box-shadow:0 0 20px var(--primary-line);transform:translate(1190px,226px);will-change:transform}
+  .globe-drag:active{cursor:grabbing}
+  .globe-drag canvas{display:block;width:88px;height:88px;border-radius:50%;pointer-events:none}
+  .globe-drag.is-wrong{animation:wrong-shake .3s ease}
+  .drag-caption{position:absolute;z-index:4;right:34px;bottom:18px;width:240px;color:var(--text);font-size:var(--fs-sec);line-height:var(--lh-body);text-align:center}
+  .feedback{position:absolute;z-index:4;right:28px;top:110px;width:300px;min-height:58px;color:var(--text-muted);font-size:var(--fs-sec);line-height:var(--lh-body)}
+  .feedback.is-error{color:var(--danger)}
+  .reset-btn{position:absolute;z-index:6;right:18px;bottom:16px;width:48px;min-height:48px;padding:0;font-size:24px;opacity:0;pointer-events:none;transition:opacity .25s}
+  .address-page.is-complete .reset-btn{opacity:1;pointer-events:auto}
+  .address-page>.supports{--support-cols:4;padding-top:var(--sp-5);gap:var(--sp-3)}
+  .address-page>.supports::before{right:12.5%;left:12.5%}
+  .address-page .support{min-height:132px;padding:var(--sp-3) var(--sp-4);border:1px dashed var(--line-strong);border-top:4px solid var(--line-strong);background:var(--surface);transition:border-color .3s,background .3s,color .3s}
+  .address-page .support::after{display:block;margin-top:var(--sp-2);color:var(--text-dim);font-size:var(--fs-sec);line-height:var(--lh-body)}
+  .support-system::after{content:"太阳与行星共同组成一个系统。"}
+  .support-zone::after{content:"它的轨道落在靠近太阳的一组。"}
+  .support-type::after{content:"组成类别把它归入岩石行星。"}
+  .support-member::after{content:"它绕太阳运行，不是系统中心。"}
+  .address-page .support .address-level{display:block;margin-bottom:var(--sp-1);color:var(--text-dim);font-size:var(--fs-label);font-weight:650;line-height:var(--lh-tight)}
+  .address-page .support strong{display:block;margin-bottom:var(--sp-1);color:var(--text-muted);font-size:var(--fs-body);line-height:var(--lh-tight)}
+  .address-page .support p{color:var(--text-dim);font-size:var(--fs-sec);line-height:var(--lh-body)}
+  .address-page.is-complete .support{border-top-color:var(--accent);background:var(--accent-soft);color:var(--text)}
+  .address-page.is-complete .support .address-level{color:var(--accent)}
+  .address-page.is-complete .support strong,.address-page.is-complete .support p{color:var(--text)}
+  @keyframes wrong-shake{0%,100%{margin-left:0}25%{margin-left:-10px}75%{margin-left:10px}}
+  @media (prefers-reduced-motion:reduce){.address-page *{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body data-page="11" data-total="50">
+<div id="stage">
+<main id="main">
+  <section class="address-page k-generalization min0" id="addressPage" aria-labelledby="addressClaim">
+    <div class="claim" id="addressClaim">地球只是太阳系骨架中位于内侧的一颗岩石行星。</div>
+    <div class="trunk" aria-hidden="true"></div>
+
+    <div class="orbit-scene no-pan min0" id="orbitScene">
+      <svg class="orbit-map" id="orbitMap" viewBox="0 0 1408 344" role="img" aria-label="以太阳为中心的八条压缩轨道。内侧四条属于内行星区，第三条是地球目标轨道。">
+        <rect class="zone-fill" x="138" y="22" width="465" height="300" rx="8"></rect>
+        <rect class="outer-fill" x="620" y="22" width="764" height="300" rx="8"></rect>
+        <g id="orbitLayer"></g>
+        <circle class="sun-glow" cx="112" cy="172" r="38"></circle>
+        <circle class="sun-core" cx="112" cy="172" r="19"></circle>
+        <g id="planetLayer"></g>
+      </svg>
+      <div class="zone-label inner-zone">内行星区 · 四条靠内轨道</div>
+      <div class="zone-label outer-zone">外行星区</div>
+      <div class="route-band route-system">太阳系 · 围绕同一颗太阳</div>
+      <div class="route-band route-zone">内行星区 · 轨道位于系统内侧</div>
+      <div class="route-band route-type">岩石行星 · 与水星、金星、火星同类</div>
+      <div class="route-band route-member">地球 · 第三条轨道上的成员</div>
+      <div class="scene-label sun-label">太阳 · 共同中心</div>
+      <div class="scene-label target-label">第 3 条轨道</div>
+      <p class="scene-note"><strong>把地球放回系统：</strong><br>拖到它绕太阳运行的正确轨道。也可用方向键移动，按 Enter 确认。</p>
+      <div class="feedback" id="feedback" aria-live="polite">先找内侧岩石行星的轨道组，再辨认地球的位置。</div>
+      <div class="scale-note"><span class="scale-line"></span>轨道间距已压缩，只表达分区与次序</div>
+      <img class="earth-photo" id="earthPhoto" alt="阿波罗 17 号拍摄的地球完整圆盘" title="NASA / Apollo 17 crew；Public Domain；Wikimedia Commons" src="data:image/jpeg;base64,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">
+      <button class="globe-drag" id="globeDrag" type="button" aria-label="可拖动的地球定位标记" title="拖动定位；方向键移动，Enter 确认"><canvas id="globeCanvas" width="88" height="88" aria-hidden="true"></canvas></button>
+      <div class="drag-caption" id="dragCaption">地球定位标记</div>
+      <button class="reset-btn" id="resetBtn" type="button" aria-label="重置定位" title="重置定位">↺</button>
+    </div>
+
+    <div class="supports" aria-label="地球的四级系统地址">
+      <article class="support support-system">层级 01 · 太阳系<br><strong>共同系统</strong><p>成员总数：<span id="planetCount">—</span> 颗行星</p></article>
+      <article class="support support-zone">层级 02 · 内行星区<br><strong>空间归属</strong><p>位于内侧轨道组</p></article>
+      <article class="support support-type">层级 03 · 岩石行星<br><strong>类型归属</strong><p>与水星、金星、火星同类</p></article>
+      <article class="support support-member">层级 04 · 地球<br><strong>具体成员</strong><p>第三条轨道上的行星</p></article>
+    </div>
+  </section>
+</main>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script>
+Lec.mount({
+  index: 11,
+  kicker: "SYSTEM ADDRESS",
+  title: "地球在太阳系的哪一层？",
+  take: "地球只是太阳系骨架中位于内侧的一颗岩石行星。"
+});
+
+(function () {
+  var page = document.getElementById('addressPage');
+  var scene = document.getElementById('orbitScene');
+  var drag = document.getElementById('globeDrag');
+  var feedback = document.getElementById('feedback');
+  var caption = document.getElementById('dragCaption');
+  var reset = document.getElementById('resetBtn');
+  var orbitLayer = document.getElementById('orbitLayer');
+  var planetLayer = document.getElementById('planetLayer');
+  var planets = Lec.K.PLANETS;
+  var earth = Lec.K.EARTH;
+  var rocky = Lec.P.planetsByType('terrestrial');
+  var rockyIds = new Set(rocky.map(function (p) { return p.id; }));
+  var earthIndex = planets.findIndex(function (p) { return p.id === earth.id || p.name === earth.name; });
+  var ns = 'http://www.w3.org/2000/svg';
+  var center = { x: 112, y: 172 };
+  var target = { x: 420, y: 121 };
+  var home = { x: 1190, y: 226 };
+  var pos = { x: home.x, y: home.y };
+  var completed = false;
+  var pointerId = null;
+  var offset = { x: 0, y: 0 };
+
+  document.getElementById('planetCount').textContent = Lec.P.round(planets.length, 0);
+
+  function svgEl(name, attrs) {
+    var el = document.createElementNS(ns, name);
+    Object.keys(attrs).forEach(function (key) { el.setAttribute(key, attrs[key]); });
+    return el;
+  }
+
+  var maxAU = Math.max.apply(null, planets.map(function (p) { return p.semimajorAU; }));
+  planets.forEach(function (planet, i) {
+    var normalized = Math.log(1 + planet.semimajorAU) / Math.log(1 + maxAU);
+    var rx = 88 + normalized * 1010;
+    if (i < 4) rx = 112 + i * 98;
+    var ry = 38 + i * 14;
+    var orbit = svgEl('path', {
+      d: 'M ' + center.x + ' ' + (center.y - ry) + ' A ' + rx + ' ' + ry + ' 0 0 1 ' + center.x + ' ' + (center.y + ry),
+      'class': 'orbit ' + (rockyIds.has(planet.id) ? 'inner ' : '') + (i === earthIndex ? 'earth-orbit' : '')
+    });
+    orbitLayer.appendChild(orbit);
+    var angle = -0.18 + i * 0.065;
+    var px = center.x + rx * Math.cos(angle);
+    var py = center.y + ry * Math.sin(angle);
+    if (i === earthIndex) { target.x = px; target.y = py; }
+    planetLayer.appendChild(svgEl('circle', {
+      cx: px, cy: py, r: i === earthIndex ? 8 : 5,
+      'class': 'planet-dot ' + (rockyIds.has(planet.id) ? 'rocky ' : '') + (i === earthIndex ? 'earth-dot' : '')
+    }));
+  });
+
+  function renderPosition() {
+    drag.style.transform = 'translate(' + pos.x + 'px,' + pos.y + 'px)';
+  }
+
+  function dragCenter() { return { x: pos.x + 46, y: pos.y + 46 }; }
+
+  function complete() {
+    completed = true;
+    pos.x = target.x - 46;
+    pos.y = target.y - 46;
+    renderPosition();
+    page.classList.add('is-complete');
+    feedback.className = 'feedback';
+    feedback.textContent = '地址接通：太阳系 → 内行星区 → 岩石行星 → 地球。';
+    caption.textContent = '真实地球 · 太阳系成员';
+    drag.setAttribute('aria-label', '已定位在第三条轨道上的地球');
+  }
+
+  function reject() {
+    feedback.className = 'feedback is-error';
+    feedback.textContent = '地球不在外行星区：请找靠近太阳的岩石行星轨道组。';
+    drag.classList.remove('is-wrong');
+    void drag.offsetWidth;
+    drag.classList.add('is-wrong');
+    pos.x = home.x;
+    pos.y = home.y;
+    renderPosition();
+  }
+
+  function evaluate() {
+    var c = dragCenter();
+    var dx = c.x - target.x;
+    var dy = c.y - target.y;
+    if (Math.hypot(dx, dy) < 82) complete(); else reject();
+  }
+
+  drag.addEventListener('pointerdown', function (e) {
+    if (completed) return;
+    pointerId = e.pointerId;
+    drag.setPointerCapture(pointerId);
+    var p = Deck.pt(scene, e);
+    offset.x = p.x - pos.x;
+    offset.y = p.y - pos.y;
+  });
+  drag.addEventListener('pointermove', function (e) {
+    if (pointerId !== e.pointerId || completed) return;
+    var p = Deck.pt(scene, e);
+    pos.x = Deck.clamp(p.x - offset.x, 0, scene.offsetWidth - 92);
+    pos.y = Deck.clamp(p.y - offset.y, 0, scene.offsetHeight - 92);
+    renderPosition();
+  });
+  drag.addEventListener('pointerup', function (e) {
+    if (pointerId !== e.pointerId || completed) return;
+    pointerId = null;
+    evaluate();
+  });
+  drag.addEventListener('keydown', function (e) {
+    if (completed) return;
+    var moved = true;
+    if (e.key === 'ArrowLeft') pos.x -= 24;
+    else if (e.key === 'ArrowRight') pos.x += 24;
+    else if (e.key === 'ArrowUp') pos.y -= 24;
+    else if (e.key === 'ArrowDown') pos.y += 24;
+    else moved = false;
+    if (moved) {
+      e.preventDefault();
+      pos.x = Deck.clamp(pos.x, 0, scene.offsetWidth - 92);
+      pos.y = Deck.clamp(pos.y, 0, scene.offsetHeight - 92);
+      renderPosition();
+    }
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); evaluate(); }
+  });
+  reset.addEventListener('click', function () {
+    completed = false;
+    page.classList.remove('is-complete');
+    feedback.className = 'feedback';
+    feedback.textContent = '先找内侧岩石行星的轨道组，再辨认地球的位置。';
+    caption.textContent = '地球定位标记';
+    drag.setAttribute('aria-label', '可拖动的地球定位标记');
+    pos.x = home.x; pos.y = home.y; renderPosition(); drag.focus();
+  });
+
+  var canvas = document.getElementById('globeCanvas');
+  var ctx = Deck.fit(canvas);
+  function drawGlobe(t) {
+    ctx = Deck.fit(canvas);
+    var w = canvas.offsetWidth || 88;
+    var h = canvas.offsetHeight || 88;
+    var r = 38;
+    var cx = w / 2, cy = h / 2;
+    ctx.clearRect(0, 0, w, h);
+    ctx.save();
+    ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.clip();
+    ctx.fillStyle = Deck.rgba('--primary', .28); ctx.fillRect(cx-r, cy-r, r*2, r*2);
+    ctx.strokeStyle = Deck.rgba('--primary', .72); ctx.lineWidth = 1.5;
+    for (var lat = -2; lat <= 2; lat++) {
+      ctx.beginPath(); ctx.ellipse(cx, cy + lat*12, Math.sqrt(Math.max(0, r*r-lat*lat*144)), 5, 0, 0, Math.PI*2); ctx.stroke();
+    }
+    var phase = ((t || 0) * .00035) % (Math.PI * 2);
+    for (var lon = 0; lon < 6; lon++) {
+      var x = Math.sin(phase + lon * Math.PI / 3) * r;
+      ctx.beginPath(); ctx.ellipse(cx + x * .18, cy, Math.max(2, Math.abs(Math.cos(phase + lon*Math.PI/3))*r*.22), r, 0, 0, Math.PI*2); ctx.stroke();
+    }
+    ctx.fillStyle = Deck.rgba('--bg', .62);
+    ctx.fillRect(cx + 8, cy-r, r, r*2);
+    ctx.restore();
+    ctx.strokeStyle = Deck.token('--primary'); ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI*2); ctx.stroke();
+  }
+  Deck.loop(function (t) { drawGlobe(t); }, { still: 4800 });
+  renderPosition();
+})();
+</script>
+</body>
+</html>

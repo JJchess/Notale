@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  #main{display:flex;gap:var(--sp-4)}
+  .work{flex:1 1 0;min-width:0;display:flex;flex-direction:column;gap:var(--sp-3)}
+  .result{flex:0 0 300px;min-width:0;display:flex;flex-direction:column;gap:var(--sp-3)}
+  .k-process{height:88px;--step-count:4;gap:44px}
+  .k-process>.step{padding:var(--sp-2) var(--sp-3);display:flex;flex-direction:column;justify-content:center}
+  .step b{font-size:var(--fs-sec);line-height:1.35}
+  .step span{font-size:var(--fs-label);line-height:1.35;color:var(--ink-soft)}
+  .network-panel{height:390px;min-height:0;padding:var(--sp-2) var(--sp-3);border:1px solid var(--line);border-radius:var(--radius-md);background:var(--paper)}
+  #network{display:block;width:100%;height:100%}
+  .ctl{grid-template-columns:auto auto auto 1fr;padding:0}
+  .ctl button.secondary-btn{color:var(--text);border-color:var(--line-strong);background:var(--paper)}
+  .hint{justify-self:end;color:var(--ink-soft);font-size:var(--fs-label);font-weight:600}
+  .result .panel{box-shadow:none}
+  .result h2{margin-bottom:var(--sp-3)}
+  .big-change{color:var(--accent);font-size:28px;font-weight:780;line-height:1.3;font-variant-numeric:tabular-nums}
+  .lost{margin-top:var(--sp-2);font-size:var(--fs-lead);font-weight:700;line-height:1.4}
+  #feedback{min-height:98px}
+  #node-info{min-height:74px}
+  svg text{font-family:var(--font-sans)}
+  .node:focus{outline:none;stroke:var(--focus);stroke-width:4px}
+</style>
+</head>
+<body data-page="45" data-total="48">
+<div id="stage">
+<main id="main">
+  <section class="work min0" aria-label="繁衍瓶颈抽样过程">
+    <div class="k-process" aria-label="原始群体到多样性结果的四步过程">
+      <div class="axis" aria-hidden="true"></div>
+      <div class="step is-current" id="step0"><b>1 原始群体</b><span id="step0v">准备中</span></div><div class="arw" aria-hidden="true"></div>
+      <div class="step" id="step1"><b>2 瓶颈抽样</b><span id="step1v">等待抽样</span></div><div class="arw" aria-hidden="true"></div>
+      <div class="step" id="step2"><b>3 小群体繁衍</b><span id="step2v">等待繁衍</span></div><div class="arw" aria-hidden="true"></div>
+      <div class="step" id="step3"><b>4 多样性结果</b><span id="step3v">等待结果</span></div>
+    </div>
+    <div class="network-panel min0">
+      <svg id="network" role="img" aria-labelledby="net-title net-desc"><title id="net-title">四列繁衍来源网络</title><desc id="net-desc">节点代表个体，连线代表来源；颜色和字母只表示中性遗传标记。</desc></svg>
+    </div>
+    <div class="ctl" aria-label="抽样控制">
+      <button id="run" type="button">开始抽样</button>
+      <button id="next" type="button" class="secondary-btn">下一次试验</button>
+      <button id="reset" type="button" class="secondary-btn">重置</button>
+      <span class="hint">颜色与字母只标记类别；节点大小恒定</span>
+    </div>
+  </section>
+  <aside class="result min0" aria-label="抽样结果">
+    <div class="panel">
+      <h2>多样性计数</h2>
+      <div class="big-change" id="change">等待抽样</div>
+      <div class="lost" id="lost">—</div>
+    </div>
+    <p class="note">这是观察随机抽样的简化情境，不是现实人口方案。</p>
+    <div class="panel" id="feedback" aria-live="polite">每个标记被抽中的机会相同；模拟不设置任何优势。</div>
+    <div class="panel secondary" id="node-info" aria-live="polite">用 Tab 聚焦节点，可读取它的代次、标记和来源。</div>
+  </aside>
+</main>
+</div>
+<script src="assets/lib/d3.min.js"></script>
+<script src="assets/lib/seedrandom.min.js"></script>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script>
+Lec.mount({
+  index:45,
+  kicker:"RANDOM DRIFT",
+  title:"少数个体留下后，谁消失可能只是抽样结果",
+  take:"小群体中的随机性会迅速改变遗传多样性，结果不等同于“更适应”。"
+});
+Deck.init({index:45,total:48});
+
+(function(){
+  function valid(value, fallback){
+    var n=Lec.P.finiteNumber(value, fallback);
+    n=Lec.P.positive(n, fallback);
+    return Math.max(1,Math.floor(n));
+  }
+  var sourceN=valid(Lec.K.PAGE45_SOURCE_POPULATION,24);
+  var variantN=valid(Lec.K.PAGE45_INITIAL_VARIANT_COUNT,6);
+  var bottleneckN=Math.min(sourceN,valid(Lec.K.PAGE45_BOTTLENECK_POPULATION,8));
+  var generations=valid(Lec.K.PAGE45_DESCENDANT_GENERATIONS,2);
+  var descendantN=valid(Lec.K.PAGE45_DESCENDANT_POPULATION,12);
+  var trialIndex=0, ran=false, generationsData=[], links=[];
+  var colors=["#006d77","#d97706","#39734f","#a43d3d","#665191","#2f6690","#8b5e34","#657153"];
+  var symbols="ABCDEFGHJKLMNPQRSTUVWXYZ".split("");
+  function source(){
+    var q=Math.floor(sourceN/variantN), r=sourceN%variantN, out=[], id=0;
+    for(var v=0;v<variantN;v++) for(var j=0;j<q+(v<r?1:0);j++) out.push({id:"g0-"+(id++),variant:v,gen:0,parent:null});
+    return out;
+  }
+  function shuffle(a,rng){
+    for(var i=a.length-1;i>0;i--){var j=Math.floor(rng()*(i+1)),t=a[i];a[i]=a[j];a[j]=t;} return a;
+  }
+  function countVariants(arr){return new Set(arr.map(function(d){return d.variant;})).size;}
+  function build(seed){
+    var rng=Math.seedrandom(seed), g0=source();
+    var picked=shuffle(g0.slice(),rng).slice(0,bottleneckN).map(function(p,i){return {id:"g1-"+i,variant:p.variant,gen:1,parent:p.id};});
+    generationsData=[g0,picked]; links=picked.map(function(d){return {source:d.parent,target:d.id};});
+    var prev=picked;
+    for(var k=0;k<generations;k++){
+      var next=d3.range(descendantN).map(function(i){var p=prev[Math.floor(rng()*prev.length)];return {id:"g"+(k+2)+"-"+i,variant:p.variant,gen:k+2,parent:p.id};});
+      next.forEach(function(d){links.push({source:d.parent,target:d.id});}); generationsData.push(next); prev=next;
+    }
+  }
+  function pct(a,b){return Lec.P.percent(Lec.P.fraction(a,b));}
+  function layoutAndDraw(animate){
+    var svg=d3.select("#network"), W=1010,H=370, top=62,bottom=350;
+    svg.attr("viewBox","0 0 "+W+" "+H); svg.selectAll("*").remove();
+    var cols=generationsData.length, xs=d3.range(cols).map(function(i){return 70+i*(W-140)/(cols-1);});
+    var byId=new Map();
+    generationsData.forEach(function(gen,gi){gen.forEach(function(d,i){d.x=xs[gi];d.y=top+(i+.5)*(bottom-top)/gen.length;byId.set(d.id,d);});});
+    svg.append("line").attr("x1",xs[0]).attr("x2",xs[xs.length-1]).attr("y1",38).attr("y2",38).attr("stroke","#8b948f").attr("stroke-width",2).attr("marker-end","url(#arrow)");
+    var defs=svg.append("defs"); defs.append("marker").attr("id","arrow").attr("viewBox","0 0 10 10").attr("refX",9).attr("refY",5).attr("markerWidth",6).attr("markerHeight",6).attr("orient","auto").append("path").attr("d","M0,0 L10,5 L0,10 Z").attr("fill","#006d77");
+    var labels=generationsData.map(function(g,i){return i===0?"原始群体":i===1?"瓶颈后":"后代第 "+(i-1)+" 代";});
+    svg.selectAll(".col-label").data(generationsData).join("text").attr("class","col-label").attr("x",function(d,i){return xs[i];}).attr("y",18).attr("text-anchor","middle").attr("font-size",15).attr("font-weight",700).attr("fill","#17212b").text(function(d,i){return labels[i]+" · "+countVariants(d)+" 种";});
+    var linkSel=svg.append("g").selectAll("line").data(links).join("line").attr("x1",function(d){return byId.get(d.source).x;}).attr("y1",function(d){return byId.get(d.source).y;}).attr("x2",function(d){return byId.get(d.target).x;}).attr("y2",function(d){return byId.get(d.target).y;}).attr("stroke",function(d){return colors[byId.get(d.target).variant%colors.length];}).attr("stroke-width",1.5).attr("opacity",.34);
+    if(animate&&!Deck.reduced()) linkSel.attr("stroke-dasharray",120).attr("stroke-dashoffset",120).transition().delay(function(d,i){return i*18;}).duration(380).attr("stroke-dashoffset",0);
+    var node=svg.append("g").selectAll("g").data(generationsData.flat()).join("g").attr("class","node").attr("transform",function(d){return "translate("+d.x+","+d.y+")";}).attr("tabindex",0).attr("role","button").attr("aria-label",nodeLabel).on("focus click",function(event,d){document.getElementById("node-info").textContent=nodeLabel(d);});
+    node.append("circle").attr("r",11).attr("fill",function(d){return colors[d.variant%colors.length];}).attr("stroke","#fffdf8").attr("stroke-width",2);
+    node.append("text").attr("text-anchor","middle").attr("dy",".35em").attr("font-size",14).attr("font-weight",800).attr("fill","#fff").text(function(d){return symbols[d.variant%symbols.length];});
+  }
+  function nodeLabel(d){var gen=d.gen===0?"原始群体":d.gen===1?"瓶颈后":"后代第 "+(d.gen-1)+" 代";return gen+"，中性标记 "+symbols[d.variant%symbols.length]+(d.parent?"，来源节点 "+d.parent:"，无上代来源");}
+  function update(animate){
+    layoutAndDraw(animate); var initial=variantN, retained=countVariants(generationsData[1]), final=countVariants(generationsData[generationsData.length-1]), lost=initial-final;
+    document.getElementById("step0v").textContent=sourceN+" 个体 · "+initial+" 种标记";
+    document.getElementById("step1v").textContent=bottleneckN+" 个体 · 仍有 "+retained+" 种";
+    document.getElementById("step2v").textContent=generations+" 代 · 每代 "+descendantN+" 个体";
+    document.getElementById("step3v").textContent="保留 "+pct(final,initial)+"%";
+    document.getElementById("change").textContent="初始 "+initial+" 种 → 末代 "+final+" 种";
+    document.getElementById("lost").textContent="有 "+lost+" 种未延续";
+    document.getElementById("feedback").textContent=lost>0?"一些标记没有延续，但模拟没有给任何标记设置优势。某种标记增多，只说明这次被抽中的后代更多。":"这次所有标记都延续了；规则仍未给任何标记设置优势。";
+    d3.selectAll(".step").classed("is-current",false).classed("is-done",true); d3.select("#step3").classed("is-current",true).classed("is-done",false);
+    ran=true; document.getElementById("run").textContent="重新抽样";
+  }
+  function showInitial(){generationsData=[source()];links=[];var svg=d3.select("#network"),W=1010,H=370;svg.attr("viewBox","0 0 "+W+" "+H).selectAll("*").remove();var g=generationsData[0];g.forEach(function(d,i){d.x=500;d.y=58+(i+.5)*290/g.length;});svg.append("text").attr("x",500).attr("y",25).attr("text-anchor","middle").attr("font-size",16).attr("font-weight",700).text("原始群体 · "+sourceN+" 个体 · "+variantN+" 种标记");var n=svg.selectAll("g").data(g).join("g").attr("class","node").attr("transform",function(d){return "translate("+d.x+","+d.y+")";}).attr("tabindex",0).attr("role","button").attr("aria-label",nodeLabel).on("focus click",function(e,d){document.getElementById("node-info").textContent=nodeLabel(d);});n.append("circle").attr("r",11).attr("fill",function(d){return colors[d.variant%colors.length];}).attr("stroke","#fffdf8").attr("stroke-width",2);n.append("text").attr("text-anchor","middle").attr("dy",".35em").attr("font-size",14).attr("font-weight",800).attr("fill","#fff").text(function(d){return symbols[d.variant%symbols.length];});document.getElementById("step0v").textContent=sourceN+" 个体 · "+variantN+" 种标记";}
+  document.getElementById("run").addEventListener("click",function(){build(trialIndex===0?"page-45":"page-45-"+trialIndex);update(true);});
+  document.getElementById("next").addEventListener("click",function(){trialIndex++;var before=ran?countVariants(generationsData[generationsData.length-1]):null;build("page-45-"+trialIndex);update(true);if(before!==null)document.getElementById("feedback").textContent+=" 规则没有改变，随机抽样本身就能产生不同结果。";});
+  document.getElementById("reset").addEventListener("click",function(){trialIndex=0;ran=false;document.getElementById("run").textContent="开始抽样";document.getElementById("change").textContent="等待抽样";document.getElementById("lost").textContent="—";document.getElementById("feedback").textContent="每个标记被抽中的机会相同；模拟不设置任何优势。";document.getElementById("node-info").textContent="用 Tab 聚焦节点，可读取它的代次、标记和来源。";[1,2,3].forEach(function(i){document.getElementById("step"+i+"v").textContent=i===1?"等待抽样":i===2?"等待繁衍":"等待结果";});d3.selectAll(".step").classed("is-current",false).classed("is-done",false);d3.select("#step0").classed("is-current",true);showInitial();});
+  showInitial();
+})();
+</script>
+</body>
+</html>

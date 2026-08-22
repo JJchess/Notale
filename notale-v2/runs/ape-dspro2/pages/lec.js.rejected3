@@ -1,0 +1,304 @@
+(function () {
+  'use strict';
+
+  // ========== 常量 K ==========
+  var K = {
+    // 物理常数 (SI)
+    c: 299792458,                // 真空光速 m/s
+    G: 6.67430e-11,              // 万有引力常数 m^3 kg^-1 s^-2
+    h: 6.62607015e-34,           // 普朗克常数 J·s
+    hbar: 1.054571817e-34,       // 约化普朗克常数
+    k: 1.380649e-23,             // 玻尔兹曼常数 J/K
+    sigma: 5.670367e-8,          // 斯蒂芬-玻尔兹曼常数 W m^-2 K^-4
+    b_wien: 2.897771955e-3,      // 维恩位移常数 m·K
+    NA: 6.02214076e23,           // 阿伏伽德罗常数 mol^-1
+    e: 1.602176634e-19,          // 基本电荷 C
+    me: 9.10938356e-31,          // 电子质量 kg
+    mp: 1.67262192369e-27,       // 质子质量 kg
+    mn: 1.67492749804e-27,       // 中子质量 kg
+    epsilon0: 8.8541878128e-12,  // 真空介电常数 F/m
+    mu0: 1.25663706212e-6,       // 真空磁导率 N/A^2 (4π×10^-7)
+
+    // 天文常数
+    AU: 1.495978707e11,          // 天文单位 m
+    ly: 9.4607304725808e15,      // 光年 m
+    pc: 3.085677581e16,          // 秒差距 m
+    M_sun: 1.98847e30,           // 太阳质量 kg
+    R_sun: 6.957e8,              // 太阳半径 m
+    L_sun: 3.828e26,             // 太阳光度 W
+    M_earth: 5.972168e24,        // 地球质量 kg
+    R_earth_mean: 6371000,       // 地球平均半径 m
+    R_earth_eq: 6378137,         // 地球赤道半径 m
+    R_earth_pole: 6356752,       // 地球极半径 m
+    g0: 9.80665,                 // 地球标准重力加速度 m/s^2
+    M_moon: 7.342e22,            // 月球质量 kg
+    R_moon: 1737400,             // 月球半径 m
+    a_moon: 384400000,           // 月球轨道半长轴 m
+    g_moon: 1.62,                // 月球表面重力加速度 m/s^2
+    M_mars: 6.4171e23,           // 火星质量 kg
+    R_mars: 3389500,             // 火星半径 m
+    a_mars: 2.2794e11,           // 火星轨道半长轴 m
+    g_mars: 3.72076,             // 火星表面重力加速度 m/s^2
+
+    // 时间与换算
+    SEC_PER_MIN: 60,
+    SEC_PER_HOUR: 3600,
+    SEC_PER_DAY: 86400,
+    SEC_PER_YEAR: 31557600,      // 儒略年
+    SIDEREAL_DAY: 86164.1,       // 地球恒星日 秒
+    SIDEREAL_MONTH: 27.321661,   // 恒星月 天
+    SYNODIC_MONTH: 29.530588,    // 朔望月 天
+
+    // 历史与进化事件（年份公元，负数为公元前）
+    SPUTNIK_YEAR: 1957,          // 第一颗人造卫星
+    GAGARIN_YEAR: 1961,          // 首次载人太空飞行
+    APOLLO11_YEAR: 1969,         // 首次登月
+    ISS_YEAR: 1998,              // 国际空间站开始建造
+    INDUSTRIAL_REVOLUTION_YEAR: 1760,  // 工业革命开始
+    AGRICULTURE_REVOLUTION_YEAR: -8000,// 农业革命（约公元前8000年）
+    OUT_OF_AFRICA_YEAR: -63000,  // 智人走出非洲 约65,000年前（公元前63000）
+    HOMO_SAPIENS_YEAR: -298000,  // 智人出现 约300,000年前（公元前298000）
+    HOMO_ERECTUS_YEAR: -1898000, // 直立人出现 约1.9 Mya
+    HOMO_HABILIS_YEAR: -2398000, // 能人出现 约2.4 Mya
+    AUSTRALOPITHECUS_YEAR: -3998000, // 南方古猿约4 Mya
+    HUMAN_CHIMP_DIVERGE_YEAR: -6498000, // 人-黑猩猩分歧约6.5 Mya
+    DINOSAUR_EXTINCTION_YEAR: -65998000, // 恐龙灭绝约66 Mya
+    CAMBRIAN_EXPLOSION_YEAR: -540980000, // 寒武纪大爆发约541 Mya
+    LIFE_ORIGIN_YEAR: -3799980000, // 生命起源约3.8 Ga
+    EARTH_FORMATION_YEAR: -4539980000, // 地球形成约4.54 Ga
+    UNIVERSE_BEGIN_YEAR: -13798000000 // 宇宙大爆炸约13.8 Ga
+  };
+
+  // 对一些常用值提供别名（方便记忆）
+  K.g_earth = K.g0;
+  K.R_earth = K.R_earth_mean;
+
+  // ========== 算法库 P ==========
+  var P = {};
+
+  /** 万有引力 F = G * m1 * m2 / r^2 */
+  P.gravityForce = function (m1, m2, r) {
+    return K.G * m1 * m2 / (r * r);
+  };
+
+  /** 轨道速度 v = sqrt(G*M/r) */
+  P.orbitalVelocity = function (M, r) {
+    return Math.sqrt(K.G * M / r);
+  };
+
+  /** 逃逸速度 v_esc = sqrt(2*G*M/r) */
+  P.escapeVelocity = function (M, r) {
+    return Math.sqrt(2 * K.G * M / r);
+  };
+
+  /** 自由落体时间 t = sqrt(2*h/g) */
+  P.freeFallTime = function (h, g) {
+    g = g || K.g0;
+    return Math.sqrt(2 * h / g);
+  };
+
+  /** 落体末速度 v = sqrt(2*g*h) */
+  P.freeFallSpeed = function (h, g) {
+    g = g || K.g0;
+    return Math.sqrt(2 * g * h);
+  };
+
+  /** 火箭方程 Δv = ve * ln(m0/mf) */
+  P.rocketEquation = function (exhaustVelocity, m0, mf) {
+    return exhaustVelocity * Math.log(m0 / mf);
+  };
+
+  /** 霍曼转移轨道参数
+   *  r1: 初始轨道半径, r2: 目标轨道半径, M: 中心天体质量
+   *  返回: { dv1, dv2, transferTime }  dv单位为 m/s, 时间秒
+   */
+  P.hohmannTransfer = function (r1, r2, M) {
+    var mu = K.G * M;
+    var v1 = Math.sqrt(mu / r1);
+    var v2 = Math.sqrt(mu / r2);
+    var a_trans = (r1 + r2) / 2;
+    var vp = Math.sqrt(mu * (2 / r1 - 1 / a_trans)); // 近点速度
+    var va = Math.sqrt(mu * (2 / r2 - 1 / a_trans)); // 远点速度
+    var dv1 = vp - v1;
+    var dv2 = v2 - va;
+    var T = Math.PI * Math.sqrt(a_trans * a_trans * a_trans / mu); // 转移时间（半周期）
+    return {
+      dv1: dv1,
+      dv2: dv2,
+      transferTime: T
+    };
+  };
+
+  /** 相对论时间膨胀 t' = t / sqrt(1 - v^2/c^2) */
+  P.timeDilation = function (properTime, velocity) {
+    var beta = velocity / K.c;
+    return properTime / Math.sqrt(1 - beta * beta);
+  };
+
+  /** 长度收缩 L' = L * sqrt(1 - v^2/c^2) */
+  P.lengthContraction = function (properLength, velocity) {
+    var beta = velocity / K.c;
+    return properLength * Math.sqrt(1 - beta * beta);
+  };
+
+  /** 相对论多普勒效应（纵向，接近为负速度？这里约定：观测者与源相对接近时 velocity 为正，返回观测频率） */
+  P.relativisticDoppler = function (sourceFrequency, velocity) {
+    var beta = velocity / K.c;
+    return sourceFrequency * Math.sqrt((1 + beta) / (1 - beta));
+  };
+
+  /** 维恩位移定律：峰值波长 λ_max = b / T (T 开尔文) */
+  P.wienPeak = function (temperature) {
+    return K.b_wien / temperature;
+  };
+
+  /** 斯特藩-玻尔兹曼定律：光度 L = 4π R^2 σ T^4 */
+  P.stefanBoltzmannLuminosity = function (radius, temperature) {
+    return 4 * Math.PI * radius * radius * K.sigma * Math.pow(temperature, 4);
+  };
+
+  /** 视星等 m = M + 5 * log10(d / 10pc) */
+  P.apparentMagnitude = function (absoluteMagnitude, distancePc) {
+    return absoluteMagnitude + 5 * Math.log10(distancePc / 10);
+  };
+
+  /** 绝对星等 M = m - 5 * log10(d / 10pc) */
+  P.absoluteMagnitude = function (apparentMagnitude, distancePc) {
+    return apparentMagnitude - 5 * Math.log10(distancePc / 10);
+  };
+
+  /** 距离模数 m - M */
+  P.distanceModulus = function (m, M) {
+    return m - M;
+  };
+
+  /** 光度距离 d_L = sqrt(L / (4πF))  F为观测流量 */
+  P.luminosityDistance = function (luminosity, flux) {
+    return Math.sqrt(luminosity / (4 * Math.PI * flux));
+  };
+
+  /** 碳-14 衰变年龄计算：t = (T_half / ln2) * ln(N0/N)  N0/N 为初始与当前比值 */
+  P.carbon14Age = function (ratioN0overN) {
+    var T_half = 5730 * K.SEC_PER_YEAR; // 半衰期秒
+    return (T_half / Math.LN2) * Math.log(ratioN0overN);
+  };
+
+  /** 简单指数衰变 N = N0 * e^(-λt)  给定 λ 和 t 返回剩余比例 */
+  P.exponentialDecay = function (lambda, time) {
+    return Math.exp(-lambda * time);
+  };
+
+  /** 通用年代计算：距今多少年 (now - eventYear) */
+  P.yearsSince = function (eventYear, now) {
+    if (now === undefined) {
+      now = new Date().getFullYear();
+    }
+    return now - eventYear;
+  };
+
+  /** 将秒转换为年（儒略年） */
+  P.secondsToYears = function (seconds) {
+    return seconds / K.SEC_PER_YEAR;
+  };
+
+  /** 将年转换为秒 */
+  P.yearsToSeconds = function (years) {
+    return years * K.SEC_PER_YEAR;
+  };
+
+  /** 公里转米 */
+  P.kmToM = function (km) {
+    return km * 1000;
+  };
+  /** 米转公里 */
+  P.mToKm = function (m) {
+    return m / 1000;
+  };
+  /** 天文单位转米 */
+  P.auToM = function (au) {
+    return au * K.AU;
+  };
+  /** 光年转米 */
+  P.lyToM = function (ly) {
+    return ly * K.ly;
+  };
+  /** 秒差距转米 */
+  P.pcToM = function (pc) {
+    return pc * K.pc;
+  };
+  /** 摄氏度转开尔文 */
+  P.celsiusToKelvin = function (c) {
+    return c + 273.15;
+  };
+  /** 开尔文转摄氏度 */
+  P.kelvinToCelsius = function (k) {
+    return k - 273.15;
+  };
+
+  // ========== 挂载函数 mount ==========
+  function mount(cfg) {
+    cfg = cfg || {};
+    var stage = document.getElementById('stage');
+    var main = document.getElementById('main');
+    if (!stage || !main) return;
+
+    var page = parseInt(document.body.getAttribute('data-page'), 10) || 0;
+    var total = parseInt(document.body.getAttribute('data-total'), 10) || 0;
+
+    // 页眉
+    var header = document.createElement('header');
+    header.className = 'lec-header';
+
+    if (cfg.kicker) {
+      var kickerEl = document.createElement('div');
+      kickerEl.className = 'lec-kicker';
+      kickerEl.textContent = cfg.kicker;
+      header.appendChild(kickerEl);
+    }
+    if (cfg.title) {
+      var titleEl = document.createElement('div');
+      titleEl.className = 'lec-title';
+      titleEl.textContent = cfg.title;
+      header.appendChild(titleEl);
+    }
+    if (cfg.sub) {
+      var subEl = document.createElement('div');
+      subEl.className = 'lec-sub';
+      subEl.textContent = cfg.sub;
+      header.appendChild(subEl);
+    }
+
+    // 进度条
+    var progress = document.createElement('div');
+    progress.className = 'lec-progress';
+    if (total > 0) {
+      var percent = (page / total) * 100;
+      var bar = document.createElement('div');
+      bar.className = 'lec-progress-bar';
+      bar.style.width = percent + '%';
+      progress.appendChild(bar);
+    }
+    header.appendChild(progress);
+
+    // 页脚
+    var footer = document.createElement('footer');
+    footer.className = 'lec-footer';
+    if (cfg.foot) {
+      var footEl = document.createElement('div');
+      footEl.className = 'lec-foot';
+      footEl.textContent = cfg.foot;
+      footer.appendChild(footEl);
+    }
+
+    // 插入 flows
+    stage.insertBefore(header, main);
+    stage.appendChild(footer);
+  }
+
+  // 暴露全局 Lec
+  window.Lec = {
+    K: K,
+    P: P,
+    mount: mount
+  };
+})();

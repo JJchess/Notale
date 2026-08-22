@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  body{height:100vh;overflow:hidden;background:var(--bg)}
+  #stage{position:relative;height:900px;padding:var(--sp-5) var(--sp-6);box-sizing:border-box}
+  .eyebrow{color:var(--track-blue);font:700 var(--fs-label)/1.4 var(--font-mono);letter-spacing:.12em}
+  .scene{position:relative;overflow:hidden;border:1px solid var(--line);border-radius:var(--radius-lg);background:var(--panel-deep);box-shadow:var(--shadow-panel)}
+  .zones{position:absolute;inset:118px var(--sp-5) 50px;display:flex;border:1px solid var(--line);border-radius:var(--radius-md);overflow:hidden}.zone{flex:1;padding:var(--sp-3);background:linear-gradient(180deg,var(--track-blue-soft),transparent);border-right:1px solid var(--line);font-size:var(--fs-label);color:var(--text-muted)}.zone:last-child{border-right:0}.zone b{display:block;color:var(--track-blue);font:700 var(--fs-sec)/1.4 var(--font-mono)}
+  .hud{position:absolute;z-index:5;top:var(--sp-4);right:var(--sp-4);left:var(--sp-4);display:flex;align-items:flex-start;justify-content:space-between;pointer-events:none}
+  .distance{font:750 44px/1.1 var(--font-mono);color:var(--sun-gold)}
+  .distance small{display:block;margin-bottom:var(--sp-1);font:650 var(--fs-label)/1.4 var(--font-sans);color:var(--text-muted)}
+  .walkway{position:absolute;right:0;bottom:106px;left:0;height:405px;overflow:hidden;background:repeating-linear-gradient(90deg,transparent 0,transparent 47px,var(--line) 48px,transparent 49px)}
+  .world{position:absolute;right:var(--sp-5);bottom:0;left:var(--sp-5);height:280px}
+  .ground{position:absolute;right:0;bottom:52px;left:0;height:2px;background:linear-gradient(90deg,var(--sun-gold),var(--track-blue));box-shadow:var(--glow-blue)}
+  .tickmark{position:absolute;bottom:43px;width:2px;height:20px;background:var(--track-blue);transition:height .2s,background .2s}
+  .tickmark.is-current{height:34px;background:var(--sun-gold);box-shadow:var(--glow-gold)}
+  .station{position:absolute;bottom:82px;transform:translateX(-50%);min-width:150px;text-align:center;color:var(--text-muted);font:650 var(--fs-label)/1.4 var(--font-sans)}
+  .station strong{display:block;color:var(--text);font:700 var(--fs-h2)/1.3 var(--font-mono)}
+  .sun{position:absolute;bottom:0;left:0;width:278px;height:278px;border-radius:50%;background:radial-gradient(circle at 62% 35%,#fff3bd 0 3%,var(--sun-gold) 25%,#e98b24 66%,#9d451d 100%);box-shadow:0 0 80px rgba(255,200,87,.52)}
+  .earth{position:absolute;bottom:46px;right:0;width:13px;height:13px;border:2px solid var(--track-blue);border-radius:50%;background:var(--track-blue);box-sizing:border-box;opacity:0}
+  .caliper{position:absolute;bottom:20px;right:0;width:58px;height:58px;display:none;opacity:0;color:var(--track-blue);font:650 var(--fs-label)/1.3 var(--font-sans);text-align:center;border-top:1px solid var(--track-blue)}
+  .caliper:before,.caliper:after{position:absolute;top:-7px;width:1px;height:14px;content:"";background:var(--track-blue)}
+  .caliper:before{left:22px}.caliper:after{right:22px}
+  .caliper span{position:absolute;top:9px;left:-22px;width:102px}
+  .window{position:absolute;z-index:4;bottom:128px;left:50%;width:260px;height:310px;transform:translateX(-50%);border-width:1px;border-style:solid;border-radius:var(--radius-md);pointer-events:none}
+  .window:before{position:absolute;top:-1px;left:50%;width:54px;height:3px;content:"";transform:translateX(-50%);background:var(--sun-gold)}
+  .window-label{position:absolute;right:0;bottom:100%;left:0;padding-bottom:var(--sp-1);text-align:center;color:var(--sun-gold);font:700 var(--fs-label)/1.4 var(--font-sans)}
+  .message{position:absolute;z-index:5;bottom:4px;left:50%;width:720px;transform:translateX(-50%);text-align:center}
+  .message .lead{font-weight:700}
+  .processbar{height:100px;align-items:center}
+  .processbar .step{padding:var(--sp-2) var(--sp-3);text-align:center}
+  .processbar .step b{display:block;font-size:var(--fs-sec)}
+  .processbar .step span{font-size:var(--fs-label);color:var(--text-muted)}
+  .final-summary{position:absolute;z-index:7;right:var(--sp-4);bottom:80px;left:var(--sp-4);display:none;align-items:center;gap:var(--sp-3);padding:var(--sp-3);opacity:0;pointer-events:none}
+  .final-summary .readout{flex:1;padding:var(--sp-2) var(--sp-3)}
+  .final-summary .value{font-size:var(--fs-sec)}
+  .reset{pointer-events:auto}
+  .reduced-controls{display:none;gap:var(--sp-2)}
+  @media (prefers-reduced-motion:reduce){body{height:100vh;overflow:hidden}.reduced-controls{display:flex}.scroll-hint{display:none}.world{will-change:auto}}
+</style>
+</head>
+<body data-page="08" data-total="32">
+<div id="stage">
+  <header class="row items-end justify-between shrink0" style="height:92px">
+    <div class="col gap-1"><div class="eyebrow">SCALE WALK · 1 : 10⁹</div><h1>走进十亿倍太阳系</h1></div>
+    <div class="row items-center gap-3"><span id="stationCount" class="chip is-current">第 1 站 / 4</span><span class="label scroll-hint">向下滚动，沿距离尺前进 ↓</span><div class="reduced-controls"><button id="prev" class="btn" type="button">返回</button><button id="next" class="btn is-primary" type="button">继续</button></div></div>
+  </header>
+
+  <main class="scene min0" style="flex:1">
+    <div class="zones" aria-hidden="true"><div class="zone"><b>0 → 50 m</b>从太阳出发</div><div class="zone"><b>50 → 100 m</b>只有空旷</div><div class="zone"><b>100 m → 地球</b>继续前进</div><div class="zone"><b class="zoneEarth">—</b>地球位置</div></div>
+    <div class="hud">
+      <div class="distance"><small>距太阳累计</small><span id="distanceValue">0 m</span></div>
+      <div class="note" id="status">比例锁定：太阳从这里开始</div>
+    </div>
+    <div class="window observation-window" aria-label="当前观察窗口"></div>
+    <div class="walkway" aria-label="十亿倍太阳系连续距离尺">
+      <div id="world" class="world" aria-hidden="true">
+        <div class="ground"></div>
+        <div class="sun" aria-hidden="true"></div>
+        <div class="tickmark" style="left:0"></div>
+        <div class="tickmark" style="left:33.4%"></div>
+        <div class="tickmark" style="left:66.8%"></div>
+        <div class="tickmark" style="right:0"></div>
+        <div class="earth" aria-hidden="true"></div><div class="caliper"><span id="earthDiameterCaliper">—</span></div>
+      </div>
+    </div>
+    <div class="message"><p id="message" class="lead">太阳直径约 <span id="sunDiameterInline" class="accent mono">—</span>，先把比例固定下来。</p></div>
+    <section id="finalSummary" class="final-summary panel" aria-label="十亿倍模型总结">
+      <div class="readout is-key"><span class="label">太阳</span><span id="sunFinal" class="value">—</span></div>
+      <div class="readout"><span class="label">地球</span><span id="earthFinal" class="value">—</span></div>
+      <div class="readout"><span class="label">间隔</span><span id="gapFinal" class="value">—</span></div>
+      <div class="readout"><span class="label">比例</span><span class="value">1 : 10⁹</span></div>
+      <button id="reset" class="btn reset" type="button">从太阳再走一次</button>
+    </section>
+  </main>
+
+  <section class="k-process processbar shrink0" style="height:104px" aria-label="模型步行四个阶段">
+    <div class="axis">
+      <div class="step is-current"><b>比例锁定</b><span>太阳起点</span></div><div class="arw"></div>
+      <div class="step"><b>离开太阳</b><span>空旷开始</span></div><div class="arw"></div>
+      <div class="step"><b>继续步行</b><span>地球仍不可见</span></div><div class="arw"></div>
+      <div class="step"><b>抵达地球</b><span>同一缩尺</span></div>
+    </div>
+  </section>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script src="assets/lib/gsap.min.js"></script>
+<script src="assets/lib/ScrollTrigger.min.js"></script>
+<script>
+(function(){
+  if('scrollRestoration' in history){history.scrollRestoration='manual';}
+  window.scrollTo(0,0);
+  Deck.init({index:8,total:32});
+  var earth=Lec.K.planets.filter(function(p){return p.key==='earth';})[0];
+  var scaledSun=Lec.P.scaleBodyDiameterForSunDiameter(Lec.K.sun.meanRadiusKm,1.3914);
+  var scaledEarth=Lec.P.scaleBodyDiameterForSunDiameter(earth.meanRadiusKm,1.3914);
+  var earthDistance=Lec.P.scaleDistanceForSunDiameter(earth.semimajorAxisAU,1.3914);
+  var fmt=function(v,n){return Lec.P.significantFigures(v,n);};
+  var sunText=fmt(scaledSun,3)+' m';
+  var earthText=fmt(scaledEarth*1000,3)+' mm';
+  var gapText=fmt(earthDistance,3)+' m';
+  document.getElementById('sunDiameterInline').textContent=sunText;
+  document.querySelector('.zoneEarth').textContent=gapText;
+  document.getElementById('earthDiameterCaliper').textContent=earthText;
+  document.getElementById('sunFinal').textContent=sunText;
+  document.getElementById('earthFinal').textContent=earthText;
+  document.getElementById('gapFinal').textContent=gapText;
+
+  var world=document.getElementById('world'), distance=document.getElementById('distanceValue');
+  var status=document.getElementById('status'), message=document.getElementById('message');
+  var count=document.getElementById('stationCount'), steps=[].slice.call(document.querySelectorAll('.processbar .step'));
+  var marks=[].slice.call(document.querySelectorAll('.tickmark'));
+  var earthEl=document.querySelector('.earth'), caliper=document.querySelector('.caliper'), summary=document.getElementById('finalSummary');
+  var state=0;
+  var distances=[0,50,100,earthDistance];
+  var messages=[
+    '太阳直径约 <span class="accent mono">'+sunText+'</span>，先把比例固定下来。',
+    '已走 <span class="accent mono">50.0 m</span>，还没到地球。',
+    '已走 <span class="accent mono">100 m</span>，仍需约 <span class="accent mono">'+fmt(earthDistance-100,3)+' m</span>。',
+    '若太阳直径约 <span class="accent mono">'+sunText+'</span>，地球只有约 <span class="track mono">'+earthText+'</span>，却在约 <span class="accent mono">'+gapText+'</span> 外。'
+  ];
+  var statuses=['比例锁定：太阳从这里开始','大片空旷：地球还在前方','继续沿同一把尺步行','抵达：大小与距离共用同一缩尺'];
+  function render(progress,forced){
+    progress=Deck.clamp(progress,0,1);
+    var idx=forced==null?Math.min(3,Math.round(progress*3)):forced;
+    state=idx;
+    var visual=forced==null?progress:idx/3;
+    gsap.set(world,{x:0});
+    gsap.set(document.querySelector('.window'),{x:(visual-.5)*1180});
+    distance.textContent=fmt(earthDistance*visual,3)+' m';
+    count.textContent='第 '+(idx+1)+' 站 / 4';
+    status.textContent=statuses[idx]; message.innerHTML=messages[idx];
+    steps.forEach(function(el,i){el.classList.toggle('is-current',i===idx);el.classList.toggle('is-past',i<idx);});
+    marks.forEach(function(el,i){el.classList.toggle('is-current',i===idx);});
+    gsap.set(earthEl,{opacity:idx===3?1:0});
+    gsap.set(caliper,{display:idx===3?'block':'none',opacity:idx===3?1:0});
+    gsap.set(summary,{display:idx===3?'flex':'none',opacity:idx===3?1:0,pointerEvents:idx===3?'auto':'none'});
+  }
+  render(0,0);
+  if(!Deck.reduced()){
+    gsap.registerPlugin(ScrollTrigger);
+    ScrollTrigger.create({trigger:document.body,start:'top top',end:'+=1',scrub:0.6,snap:{snapTo:[0,0.334,0.668,1],duration:{min:0.15,max:0.35},ease:'power1.inOut'}});
+    var virtualProgress=0, wheelTimer;
+    window.addEventListener('wheel',function(e){
+      e.preventDefault();
+      virtualProgress=Deck.clamp(virtualProgress+e.deltaY/1800,0,1);
+      render(virtualProgress);
+      clearTimeout(wheelTimer);
+      wheelTimer=setTimeout(function(){virtualProgress=Math.round(virtualProgress*3)/3;render(virtualProgress);},180);
+    },{passive:false});
+    window.addEventListener('keydown',function(e){if(e.key==='ArrowDown'||e.key==='PageDown'){virtualProgress=Math.min(1,virtualProgress+1/3);render(virtualProgress);}if(e.key==='ArrowUp'||e.key==='PageUp'){virtualProgress=Math.max(0,virtualProgress-1/3);render(virtualProgress);}});
+    gsap.from('.sun',{scale:.72,opacity:.25,duration:1.1,ease:'power2.out',transformOrigin:'center'});
+  }
+  function setStep(n){render(n/3,n);}
+  document.getElementById('next').addEventListener('click',function(){setStep(Math.min(3,state+1));});
+  document.getElementById('prev').addEventListener('click',function(){setStep(Math.max(0,state-1));});
+  document.getElementById('reset').addEventListener('click',function(){if(Deck.reduced()){setStep(0);}else{virtualProgress=0;render(0,0);}});
+})();
+</script>
+</body>
+</html>

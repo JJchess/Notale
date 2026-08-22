@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>从阶梯改画灌木</title>
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  .page10{height:100%;display:flex;flex-direction:column;gap:12px}
+  .page10.k-generalization{grid-template-rows:auto 1fr auto;gap:12px}
+  .page10 .claim{padding:10px 20px}
+  .workbench{position:relative;min-height:0;flex:1;background:var(--surface);border:1px solid var(--line);border-radius:var(--r-md);box-shadow:var(--shadow-soft);overflow:hidden}
+  .axis-title{position:absolute;z-index:4;left:16px;top:10px;color:var(--primary-strong);font-size:var(--fs-label);font-weight:750}
+  #network{position:absolute;inset:1px 2px 1px 104px}
+  #labels{position:absolute;z-index:3;inset:1px 2px 1px 104px;pointer-events:none}
+  .node-label{position:absolute;min-width:92px;box-sizing:border-box;padding:5px 9px;transform:translate(-50%,-50%);color:var(--text);background:rgb(255 255 255 / 94%);border:1px solid var(--line-strong);border-radius:var(--r-sm);font-size:14px;font-weight:700;line-height:1.35;text-align:center;white-space:nowrap}
+  .node-label.handle{border:2px solid var(--accent);box-shadow:0 3px 10px rgb(23 32 51 / 12%);pointer-events:auto;cursor:grab}
+  .node-label.handle:focus{outline:3px solid var(--focus);outline-offset:2px}
+  .node-label small{display:block;color:var(--muted);font-size:14px;font-weight:500}
+  .axis-tick{position:absolute;z-index:2;left:16px;width:74px;transform:translateY(-50%);color:var(--muted);font-size:13px;text-align:right}
+  .axis-tick::after{position:absolute;left:80px;top:50%;width:1280px;border-top:1px dashed var(--line);content:""}
+  .legendbar{position:absolute;z-index:4;left:124px;top:12px;display:flex;gap:20px;color:var(--muted);font-size:15px}
+  .legendbar span{display:inline-flex;align-items:center;gap:7px}
+  .linekey{width:28px;border-top:3px solid var(--primary)}
+  .linekey.dash{border-top-style:dashed;border-color:var(--accent)}
+  .instruction{position:absolute;z-index:4;left:124px;bottom:12px;max-width:720px;color:var(--muted);font-size:16px;line-height:1.4}
+  .actions{position:absolute;z-index:5;right:14px;bottom:12px;display:flex;gap:8px}
+  .actions button{min-width:76px;min-height:44px}
+  #feedback{position:absolute;z-index:4;right:14px;top:12px;max-width:360px;padding:8px 12px;border-radius:var(--r-sm);background:var(--surface-soft);color:var(--primary-strong);font-size:16px;line-height:1.4}
+  .supports.compact{--support-cols:4;gap:12px;padding-top:12px}
+  .supports.compact .trunk{right:5%;left:5%}
+  .supports.compact .trunk::before,.supports.compact .support::before{height:12px}
+  .supports.compact .support{padding:10px 12px;font-size:16px;line-height:1.35}
+  .support strong{display:block;color:var(--primary-strong);font-size:18px}
+</style>
+</head>
+<body data-page="10" data-total="45">
+<div id="stage">
+<main id="main">
+  <section class="page10 k-generalization" aria-labelledby="claim">
+    <div class="claim" id="claim">人类演化更像枝条繁茂、部分交汇的灌木，而非单列阶梯。</div>
+    <div class="workbench no-pan min0" aria-label="可编辑的人类谱系网络">
+      <div class="axis-title">时间向上 · 不代表等级</div>
+      <div class="legendbar"><span><i class="linekey"></i>谱系分支</span><span><i class="linekey dash"></i>少量交汇</span></div>
+      <div id="network" aria-hidden="true"></div>
+      <div id="labels"></div>
+      <div id="feedback" aria-live="polite">先把橙框节点横向拖开，打破单列。</div>
+      <p class="instruction">拖动三个橙框节点；键盘聚焦后可用 ← →。纵向年代已锁定，横向只为看清分支。</p>
+      <div class="actions ctl"><button id="undo" type="button">撤销</button><button id="reset" type="button">重置</button><button id="check" type="button">检查结构</button></div>
+    </div>
+    <div class="supports compact">
+      <div class="trunk" aria-hidden="true"></div>
+      <div class="support"><strong>分叉</strong>共同祖先可产生多个后继支系。</div>
+      <div class="support"><strong>并存</strong>近缘支系能处于同一时间带。</div>
+      <div class="support"><strong>终止</strong>灭绝的枝条并非“进化失败”。</div>
+      <div class="support"><strong>交汇</strong>少量虚线提醒：树有时接近网络。</div>
+    </div>
+  </section>
+</main>
+</div>
+<script src="assets/lib/d3.min.js"></script>
+<script src="assets/lib/konva.min.js"></script>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script>
+Lec.mount({index:10,kicker:"BRANCHING BUSH",title:"从阶梯改画灌木",take:"人类演化更像枝条繁茂、部分交汇的灌木，而非单列阶梯。"});
+
+(function(){
+  var W=1300,H=404, left=80, right=1176;
+  var K=Lec.K.evolution, P=Lec.P;
+  var oldest=K.humanChimpCommonAncestorYearsAgo;
+  var y=d3.scaleLinear().domain([oldest,0]).range([366,54]);
+  var nodes=[
+    {id:"ancestor",label:"共同祖先",t:oldest,x:540},
+    {id:"afar",label:"南方古猿阿法种",sub:P.roundTo(3.9,1)+"—"+P.roundTo(2.9,1)+" 百万年前",t:3.4e6,x:540,handle:true},
+    {id:"sideA",label:"同时代近缘支系",t:3.15e6,x:540},
+    {id:"homo",label:"早期人属",sub:"至少约 "+P.roundTo(K.genusHomoYearsAgo/1e6,1)+" 百万年前",t:K.genusHomoYearsAgo,x:540,handle:true},
+    {id:"endA",label:"终止支系",t:1.65e6,x:540},
+    {id:"sideB",label:"另一并存支系",t:1.2e6,x:540,handle:true},
+    {id:"endB",label:"终止",t:6e5,x:540},
+    {id:"sapiens",label:"智人",sub:"约 "+P.roundTo(K.homoSapiensYearsAgo/1e5,0)+"0 万年前",t:K.homoSapiensYearsAgo,x:540}
+  ];
+  var starts={afar:540,homo:540,sideB:540}, history=[];
+  var target={afar:330,homo:660,sideB:900};
+  var links=[
+    ["ancestor","afar"],["ancestor","sideA"],["afar","homo"],["afar","endA"],
+    ["homo","sideB"],["homo","sapiens"],["sideB","endB"]
+  ];
+  var stage=new Konva.Stage({container:"network",width:W,height:H});
+  var layer=new Konva.Layer(); stage.add(layer);
+  var labels=document.getElementById("labels");
+  var nodeMap={}; nodes.forEach(function(n){nodeMap[n.id]=n;});
+  function actualX(n){
+    if(n.handle)return n.x;
+    if(n.id==="ancestor")return 540;
+    if(n.id==="sideA")return 760-(nodeMap.afar.x-330)*.12;
+    if(n.id==="endA")return nodeMap.afar.x-120;
+    if(n.id==="endB")return nodeMap.sideB.x+80;
+    if(n.id==="sapiens")return nodeMap.homo.x+40;
+    return n.x;
+  }
+  function draw(){
+    layer.destroyChildren();
+    links.forEach(function(pair){var a=nodeMap[pair[0]],b=nodeMap[pair[1]];layer.add(new Konva.Line({points:[actualX(a),y(a.t),actualX(a),y((a.t+b.t)/2),actualX(b),y((a.t+b.t)/2),actualX(b),y(b.t)],stroke:"#145da0",strokeWidth:4,lineCap:"round",lineJoin:"round"}));});
+    var c=nodeMap.sideB,d=nodeMap.sapiens;
+    layer.add(new Konva.Line({points:[actualX(c),y(c.t),actualX(d),y(d.t)],stroke:"#d86b2b",strokeWidth:3,dash:[9,8]}));
+    nodes.forEach(function(n){layer.add(new Konva.Circle({x:actualX(n),y:y(n.t),radius:n.handle?10:7,fill:n.handle?"#d86b2b":"#145da0",stroke:"#fff",strokeWidth:3}));});
+    layer.draw(); renderLabels();
+  }
+  var labelShift={afar:-95,homo:96,endB:82,sapiens:-72};
+  function renderLabels(){
+    labels.innerHTML="";
+    nodes.forEach(function(n){var el=document.createElement(n.handle?"button":"div");el.className="node-label"+(n.handle?" handle":"");el.style.left=(actualX(n)+(labelShift[n.id]||0))+"px";el.style.top=y(n.t)+"px";el.innerHTML=n.label+(n.sub?"<small>"+n.sub+"</small>":"");if(n.handle){el.type="button";el.dataset.id=n.id;el.setAttribute("aria-label","拖动"+n.label+"，左右方向键也可移动");el.addEventListener("keydown",keyMove);bindDrag(el,n);}labels.appendChild(el);});
+  }
+  function bindDrag(el,n){
+    el.addEventListener("pointerdown",function(ev){ev.preventDefault();history.push({id:n.id,x:n.x});el.setPointerCapture(ev.pointerId);});
+    el.addEventListener("pointermove",function(ev){if(!el.hasPointerCapture(ev.pointerId))return;var r=labels.getBoundingClientRect();n.x=P.clamp((ev.clientX-r.left)/Deck.s-(labelShift[n.id]||0),left,right);draw();});
+    el.addEventListener("pointerup",function(ev){if(el.hasPointerCapture(ev.pointerId))el.releasePointerCapture(ev.pointerId);});
+  }
+  function keyMove(ev){if(ev.key!=="ArrowLeft"&&ev.key!=="ArrowRight")return;ev.preventDefault();var n=nodeMap[ev.currentTarget.dataset.id];history.push({id:n.id,x:n.x});n.x=P.clamp(n.x+(ev.key==="ArrowLeft"?-40:40),left,right);draw();document.querySelector('[data-id="'+n.id+'"]').focus();}
+  [7,6,5,4,3,2,1,0].forEach(function(m){var t=m*1e6,el=document.createElement("div");el.className="axis-tick";el.style.top=y(t)+"px";el.textContent=m+" 百万年前";document.querySelector(".workbench").appendChild(el);});
+  function evaluate(){
+    var spread=d3.extent([nodeMap.afar.x,nodeMap.homo.x,nodeMap.sideB.x]);
+    var branched=spread[1]-spread[0]>420;
+    var directions=nodeMap.afar.x<470&&nodeMap.homo.x>570;
+    var coexist=Math.abs(nodeMap.sideB.x-nodeMap.homo.x)>170;
+    return {branched:branched,directions:directions,coexist:coexist,ok:branched&&directions&&coexist};
+  }
+  document.getElementById("check").onclick=function(){var q=evaluate(),f=document.getElementById("feedback");if(q.ok){f.textContent="结构成立：分叉、并存、终止与虚线交汇都已可见。";f.style.background="var(--success-soft)";}else if(!q.branched){f.textContent="仍是单线：把三个橙框拉开。";}else if(!q.directions){f.textContent="横向只是辨认空间，不要排成高低等级。";}else{f.textContent="让并存支系与主线保持可辨的横向间隔。";}};
+  document.getElementById("reset").onclick=function(){history=[];Object.keys(starts).forEach(function(k){nodeMap[k].x=starts[k];});document.getElementById("feedback").textContent="先把橙框节点横向拖开，打破单列。";draw();};
+  document.getElementById("undo").onclick=function(){var s=history.pop();if(s){nodeMap[s.id].x=s.x;draw();}};
+  draw();
+})();
+</script>
+</body>
+</html>

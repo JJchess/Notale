@@ -1,0 +1,775 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+/* ---------- page-29 specific: 城市放置板 ---------- */
+:root {
+  --bg: #0b0e14;
+  --text: #e6e6e6;
+  --font-sans: "Noto Sans SC", system-ui, sans-serif;
+}
+
+/* ---- Game container: constrained to content area ---- */
+.game-wrap {
+  display: flex;
+  gap: var(--space-5);
+  max-width: var(--content-w);
+  height: var(--content-h);
+  margin: 0 auto;
+  align-items: stretch;
+}
+
+/* ---- Left: card pool ---- */
+.cards-pool {
+  flex: 0 0 380px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  justify-content: center;
+}
+
+.cards-pool .intro {
+  font-size: var(--fs-sec);
+  color: var(--muted);
+  line-height: 1.4;
+  margin-bottom: var(--space-1);
+}
+
+.card {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 12px 16px;
+  background: rgba(249, 250, 251, 0.06);
+  border: 1px solid rgba(208, 213, 221, 0.2);
+  border-left: 3px solid var(--accent);
+  border-radius: 0 10px 10px 0;
+  cursor: grab;
+  transition: background 0.25s, border-color 0.25s, opacity 0.3s, transform 0.2s;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
+}
+
+.card:hover {
+  background: rgba(79, 110, 242, 0.10);
+  border-color: var(--accent);
+}
+
+.card:active {
+  cursor: grabbing;
+  transform: scale(0.97);
+}
+
+.card.placed {
+  opacity: 0.25;
+  cursor: default;
+  pointer-events: none;
+  border-color: rgba(208, 213, 221, 0.06);
+}
+
+.card .card-icon {
+  flex: 0 0 40px;
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  background: rgba(79, 110, 242, 0.12);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+}
+
+.card .card-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.card .card-name {
+  font-size: var(--fs-body);
+  font-weight: 700;
+  color: var(--text);
+  line-height: 1.3;
+}
+
+.card .card-desc {
+  font-size: var(--fs-sec);
+  color: var(--muted);
+  line-height: 1.35;
+  margin-top: 1px;
+}
+
+.card .card-badge {
+  font-size: var(--fs-label);
+  color: var(--accent);
+  background: rgba(79, 110, 242, 0.12);
+  padding: 2px 10px;
+  border-radius: 4px;
+  white-space: nowrap;
+  flex: 0 0 auto;
+}
+
+/* ---- Right: city board ---- */
+.city-area {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: var(--space-3);
+}
+
+.city-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  position: relative;
+}
+
+/* Settlement base outline */
+.city-grid::before {
+  content: '';
+  position: absolute;
+  inset: -10px;
+  border: 2px dashed rgba(208, 213, 221, 0.15);
+  border-radius: 14px;
+  pointer-events: none;
+  transition: border-color 0.6s, box-shadow 0.8s;
+}
+
+.city-grid.all-placed::before {
+  border-color: var(--accent);
+  box-shadow: 0 0 30px rgba(79, 110, 242, 0.25), 0 0 60px rgba(79, 110, 242, 0.10);
+}
+
+.zone {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(208, 213, 221, 0.12);
+  border-radius: 10px;
+  background: rgba(249, 250, 251, 0.02);
+  min-height: 120px;
+  transition: background 0.5s, border-color 0.5s, box-shadow 0.5s;
+  overflow: hidden;
+}
+
+.zone.droppable {
+  border-color: rgba(79, 110, 242, 0.3);
+  background: rgba(79, 110, 242, 0.04);
+}
+
+.zone.filled {
+  border-color: rgba(79, 110, 242, 0.4);
+  background: rgba(79, 110, 242, 0.08);
+}
+
+.zone.filled::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 10px;
+  background: radial-gradient(ellipse at center, rgba(79, 110, 242, 0.08), transparent 70%);
+  pointer-events: none;
+}
+
+.zone .zone-label {
+  font-size: var(--fs-label);
+  color: rgba(102, 112, 133, 0.4);
+  transition: opacity 0.4s;
+}
+
+.zone.filled .zone-label { opacity: 0; }
+
+.zone .zone-building {
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  opacity: 0;
+  transform: scale(0.8);
+  transition: opacity 0.5s, transform 0.5s;
+}
+
+.zone.filled .zone-building {
+  display: flex;
+  opacity: 1;
+  transform: scale(1);
+}
+
+.zone .building-icon {
+  font-size: 32px;
+  line-height: 1;
+}
+
+.zone .building-name {
+  font-size: var(--fs-sec);
+  font-weight: 600;
+  color: var(--text);
+}
+
+/* ---- Surplus bar ---- */
+.surplus-wrap {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 4px 0;
+}
+
+.surplus-label {
+  font-size: var(--fs-label);
+  color: var(--muted);
+  white-space: nowrap;
+  flex: 0 0 auto;
+}
+
+.surplus-track {
+  flex: 1;
+  height: 18px;
+  display: flex;
+  gap: 4px;
+  min-width: 0;
+}
+
+.surplus-seg {
+  flex: 1;
+  border-radius: 4px;
+  background: rgba(79, 110, 242, 0.25);
+  border: 1px solid rgba(79, 110, 242, 0.3);
+  transition: background 0.4s, border-color 0.4s, opacity 0.4s;
+  min-width: 0;
+}
+
+.surplus-seg.spent {
+  background: rgba(208, 213, 221, 0.06);
+  border-color: rgba(208, 213, 221, 0.1);
+  opacity: 0.3;
+}
+
+.surplus-count {
+  font-size: var(--fs-label);
+  color: var(--accent);
+  font-weight: 600;
+  white-space: nowrap;
+  flex: 0 0 auto;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- Reset button ---- */
+.reset-wrap {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.btn-reset {
+  font-size: var(--fs-label);
+  color: rgba(102, 112, 133, 0.5);
+  background: none;
+  border: 1px solid rgba(208, 213, 221, 0.1);
+  border-radius: 6px;
+  padding: 3px 12px;
+  cursor: pointer;
+  transition: color 0.25s, border-color 0.25s, background 0.25s;
+  font-family: var(--font-sans);
+  line-height: 1.3;
+}
+
+.btn-reset:hover {
+  color: var(--muted);
+  border-color: rgba(208, 213, 221, 0.25);
+  background: rgba(249, 250, 251, 0.04);
+}
+
+.btn-reset:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ---- Completion overlay ---- */
+.city-overlay {
+  display: none;
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  gap: var(--space-3);
+}
+
+.city-overlay.show {
+  display: flex;
+}
+
+.city-overlay .city-title {
+  font-size: 48px;
+  font-weight: 800;
+  color: var(--text);
+  letter-spacing: 0.08em;
+  text-shadow: 0 0 30px rgba(79, 110, 242, 0.4), 0 0 60px rgba(79, 110, 242, 0.15);
+  opacity: 0;
+  animation: fadeInUp 0.8s 0.2s forwards;
+}
+
+.city-overlay .city-sub {
+  font-size: var(--fs-sec);
+  color: var(--muted);
+  text-align: center;
+  max-width: 480px;
+  line-height: 1.4;
+  opacity: 0;
+  animation: fadeInUp 0.8s 0.7s forwards;
+}
+
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ---- Drag ghost ---- */
+.drag-ghost {
+  position: fixed;
+  z-index: 999;
+  pointer-events: none;
+  opacity: 0.9;
+  transform: scale(1.05) rotate(2deg);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+  transition: none;
+}
+
+/* ---- Focus visible for keyboard ---- */
+.card:focus-visible,
+.zone:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ---- Constrain #main to fit inside padded stage ---- */
+#main {
+  width: 100%;
+  height: 100%;
+}
+
+/* ---- Reduced motion ---- */
+@media (prefers-reduced-motion: reduce) {
+  .card, .zone, .surplus-seg, .city-overlay .city-title,
+  .city-overlay .city-sub, .city-grid::before {
+    transition: none !important;
+    animation: none !important;
+  }
+  .city-overlay .city-title,
+  .city-overlay .city-sub {
+    opacity: 1;
+  }
+}
+</style>
+</head>
+<body data-page="29" data-total="50">
+<div id="stage">
+<main id="main"></main>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script>
+(function(){
+  'use strict';
+
+  // ---- 本页演示参数（非史实） ----
+  var DEMO_SURPLUS_UNITS = 4;
+  var COST_PER_ROLE = 1;
+
+  // ---- 职业数据 ----
+  var ROLES = [
+    { id: 'craftsman',  name: '工匠', desc: '制造工具、器物',      building: '作坊',   icon: '🔨' },
+    { id: 'soldier',    name: '士兵', desc: '保护聚落、维持安全',  building: '营房',   icon: '⚔️' },
+    { id: 'priest',     name: '祭司', desc: '主持仪式、连接神与秩序', building: '神庙', icon: '🕯️' },
+    { id: 'scribe',     name: '书吏', desc: '记账、计数、传递命令',  building: '书吏房', icon: '📜' }
+  ];
+
+  // ---- 游戏状态 ----
+  var gameState = {
+    placed: [],
+    surplus: DEMO_SURPLUS_UNITS,
+    complete: false
+  };
+
+  // ---- DOM refs ----
+  var cardsPoolEl, cityGridEl, zones, surplusSegs, surplusCountEl, overlayEl, resetBtnEl;
+  var dragGhost = null;
+  var dragRoleId = null;
+  var dragOffsetX = 0, dragOffsetY = 0;
+  var selectedCard = null;
+
+  // ---- 初始化 ----
+  function init() {
+    // Mount header/footer first
+    Lec.mount({
+      index: 29,
+      title: '不种地的人',
+      sub: '剩余粮食养活了不种地的人——城市分工由此起步'
+    });
+
+    Deck.init({ index: 29, total: 50 });
+
+    buildDOM();
+    bindEvents();
+    render();
+  }
+
+  // ---- 构建DOM ----
+  function buildDOM() {
+    var main = document.getElementById('main');
+    if (!main) return;
+    main.innerHTML = '';
+
+    // Game container
+    var wrap = ce('div', 'game-wrap');
+
+    // ---- Left: cards pool ----
+    var pool = ce('div', 'cards-pool k-enumeration');
+    pool.appendChild(ce('p', 'intro', '剩余粮食把人从土地中解放出来——这是城市分工的起点。'));
+
+    ROLES.forEach(function(r) {
+      var card = ce('div', 'card');
+      card.setAttribute('data-role', r.id);
+      card.setAttribute('tabindex', '0');
+      card.setAttribute('role', 'button');
+      card.setAttribute('aria-label', r.name + '：' + r.desc + '，对应建筑' + r.building);
+      card.innerHTML =
+        '<div class="card-icon">' + r.icon + '</div>' +
+        '<div class="card-body">' +
+          '<div class="card-name">' + r.name + '</div>' +
+          '<div class="card-desc">' + r.desc + '</div>' +
+        '</div>' +
+        '<span class="card-badge">' + r.building + '</span>';
+      pool.appendChild(card);
+    });
+    wrap.appendChild(pool);
+    cardsPoolEl = pool;
+
+    // ---- Right: city area ----
+    var cityArea = ce('div', 'city-area');
+
+    // Grid
+    var grid = ce('div', 'city-grid');
+    ROLES.forEach(function(r) {
+      var zone = ce('div', 'zone');
+      zone.setAttribute('data-role', r.id);
+      zone.setAttribute('tabindex', '0');
+      zone.setAttribute('role', 'button');
+      zone.setAttribute('aria-label', '放置' + r.name + '的空位');
+      zone.innerHTML =
+        '<span class="zone-label">⬜ ' + r.name + '</span>' +
+        '<div class="zone-building">' +
+          '<span class="building-icon">' + r.icon + '</span>' +
+          '<span class="building-name">' + r.building + '</span>' +
+        '</div>';
+      grid.appendChild(zone);
+    });
+    cityArea.appendChild(grid);
+    cityGridEl = grid;
+    zones = grid.querySelectorAll('.zone');
+
+    // Surplus bar
+    var surplusWrap = ce('div', 'surplus-wrap');
+    surplusWrap.appendChild(ce('span', 'surplus-label', '剩余粮食'));
+    var track = ce('div', 'surplus-track');
+    for (var i = 0; i < DEMO_SURPLUS_UNITS; i++) {
+      track.appendChild(ce('div', 'surplus-seg'));
+    }
+    surplusWrap.appendChild(track);
+    surplusCountEl = ce('span', 'surplus-count', '×' + DEMO_SURPLUS_UNITS);
+    surplusWrap.appendChild(surplusCountEl);
+    cityArea.appendChild(surplusWrap);
+    surplusSegs = track.querySelectorAll('.surplus-seg');
+
+    // Reset
+    var resetWrap = ce('div', 'reset-wrap');
+    resetBtnEl = ce('button', 'btn-reset', '↺ 重置');
+    resetBtnEl.setAttribute('type', 'button');
+    resetBtnEl.setAttribute('aria-label', '重新放置');
+    resetWrap.appendChild(resetBtnEl);
+    cityArea.appendChild(resetWrap);
+
+    // Overlay
+    var overlay = ce('div', 'city-overlay');
+    overlay.innerHTML =
+      '<div class="city-title">城 市</div>' +
+      '<div class="city-sub">工匠、士兵、祭司、书吏彼此不同、彼此独立，却一起构成了城市。<br>城市一旦成立，文明演化的速度就换挡了。</div>';
+    grid.appendChild(overlay);
+    overlayEl = overlay;
+
+    wrap.appendChild(cityArea);
+    main.appendChild(wrap);
+  }
+
+  // ---- 工具函数 ----
+  function ce(tag, cls, text) {
+    var e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text !== undefined) e.textContent = text;
+    return e;
+  }
+
+  function getCardEl(roleId) {
+    return cardsPoolEl.querySelector('.card[data-role="' + roleId + '"]');
+  }
+
+  function getZoneEl(roleId) {
+    return cityGridEl.querySelector('.zone[data-role="' + roleId + '"]');
+  }
+
+  // ---- 渲染 ----
+  function render() {
+    if (!surplusSegs || !surplusCountEl || !overlayEl || !cityGridEl) return;
+
+    // Cards
+    ROLES.forEach(function(r) {
+      var card = getCardEl(r.id);
+      if (!card) return;
+      card.classList.toggle('placed', gameState.placed.indexOf(r.id) !== -1);
+    });
+
+    // Zones
+    ROLES.forEach(function(r) {
+      var zone = getZoneEl(r.id);
+      if (!zone) return;
+      zone.classList.toggle('filled', gameState.placed.indexOf(r.id) !== -1);
+    });
+
+    // Surplus
+    for (var i = 0; i < DEMO_SURPLUS_UNITS; i++) {
+      if (surplusSegs[i]) {
+        surplusSegs[i].classList.toggle('spent', i >= gameState.surplus);
+      }
+    }
+    surplusCountEl.textContent = '×' + gameState.surplus;
+
+    // Grid glow
+    cityGridEl.classList.toggle('all-placed', gameState.complete);
+
+    // Overlay
+    overlayEl.classList.toggle('show', gameState.complete);
+
+    }
+
+  // ---- 放置逻辑 ----
+  function placeCard(roleId) {
+    if (gameState.placed.indexOf(roleId) !== -1) return;
+    if (gameState.complete) return;
+    if (gameState.surplus < COST_PER_ROLE) return;
+
+    gameState.placed.push(roleId);
+    gameState.surplus -= COST_PER_ROLE;
+
+    if (gameState.placed.length === DEMO_SURPLUS_UNITS) {
+      gameState.complete = true;
+    }
+
+    render();
+
+    // Dispatch game events
+    var evt = new CustomEvent('game-progress', {
+      bubbles: true, detail: { state: { placed: gameState.placed.slice(), surplus: gameState.surplus, complete: gameState.complete } }
+    });
+    document.dispatchEvent(evt);
+
+    if (gameState.complete) {
+      var evt2 = new CustomEvent('game-complete', {
+        bubbles: true, detail: { score: 1, trace: gameState.placed.slice() }
+      });
+      document.dispatchEvent(evt2);
+    }
+  }
+
+  function resetGame() {
+    // Clean up drag first
+    cleanupDrag();
+    selectedCard = null;
+
+    gameState.placed = [];
+    gameState.surplus = DEMO_SURPLUS_UNITS;
+    gameState.complete = false;
+
+    // Clear card outlines
+    var cards = cardsPoolEl.querySelectorAll('.card');
+    cards.forEach(function(c) { c.style.outline = ''; });
+    zones.forEach(function(z) { z.classList.remove('droppable'); });
+
+    render();
+
+    var evt = new CustomEvent('game-reset', { bubbles: true });
+    document.dispatchEvent(evt);
+  }
+
+  // ---- 事件绑定 ----
+  function bindEvents() {
+    var cards = cardsPoolEl.querySelectorAll('.card');
+
+    // ---- Pointer drag (mouse + touch) ----
+    cards.forEach(function(card) {
+      card.addEventListener('pointerdown', function(e) {
+        if (gameState.complete) return;
+        var roleId = card.getAttribute('data-role');
+        if (gameState.placed.indexOf(roleId) !== -1) return;
+        e.preventDefault();
+        card.setPointerCapture(e.pointerId);
+        // Clear keyboard selection
+        selectedCard = null;
+        cards.forEach(function(c) { c.style.outline = ''; });
+        zones.forEach(function(z) { z.classList.remove('droppable'); });
+        startDrag(e, roleId, card);
+      });
+    });
+
+    // Pointer move on document
+    document.addEventListener('pointermove', function(e) {
+      if (!dragGhost || !dragRoleId) return;
+      dragGhost.style.left = (e.clientX - dragOffsetX) + 'px';
+      dragGhost.style.top = (e.clientY - dragOffsetY) + 'px';
+
+      // Highlight droppable zone
+      var target = document.elementFromPoint(e.clientX, e.clientY);
+      var zone = target ? target.closest('.zone') : null;
+      zones.forEach(function(z) { z.classList.remove('droppable'); });
+      if (zone && !zone.classList.contains('filled')) {
+        zone.classList.add('droppable');
+      }
+    });
+
+    document.addEventListener('pointerup', function(e) {
+      if (!dragGhost || !dragRoleId) return;
+
+      // Find zone under pointer
+      var target = document.elementFromPoint(e.clientX, e.clientY);
+      var zone = target ? target.closest('.zone') : null;
+
+      if (zone && !zone.classList.contains('filled') && !gameState.complete) {
+        placeCard(dragRoleId);
+      }
+
+      cleanupDrag();
+    });
+
+    // ---- Keyboard: click to select, then click zone ----
+    cards.forEach(function(card) {
+      card.addEventListener('click', function(e) {
+        if (gameState.complete) return;
+        var roleId = card.getAttribute('data-role');
+        if (gameState.placed.indexOf(roleId) !== -1) return;
+
+        // If already selected, deselect
+        if (selectedCard === roleId) {
+          selectedCard = null;
+          cards.forEach(function(c) { c.style.outline = ''; });
+          zones.forEach(function(z) { z.classList.remove('droppable'); });
+          return;
+        }
+
+        // Clear drag state
+        cleanupDrag();
+
+        selectedCard = roleId;
+        cards.forEach(function(c) { c.style.outline = ''; });
+        card.style.outline = '2px solid var(--accent)';
+        card.style.outlineOffset = '2px';
+        zones.forEach(function(z) {
+          if (!z.classList.contains('filled')) {
+            z.classList.add('droppable');
+          }
+        });
+      });
+
+      card.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          card.click();
+        }
+      });
+    });
+
+    // Zone click for keyboard selection
+    zones.forEach(function(zone) {
+      zone.addEventListener('click', function(e) {
+        if (gameState.complete) return;
+        if (!selectedCard) return;
+        if (zone.classList.contains('filled')) return;
+        if (gameState.placed.indexOf(selectedCard) !== -1) return;
+        placeCard(selectedCard);
+        selectedCard = null;
+        cards.forEach(function(c) { c.style.outline = ''; });
+        zones.forEach(function(z) { z.classList.remove('droppable'); });
+      });
+
+      zone.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          zone.click();
+        }
+      });
+    });
+
+    // Reset
+    resetBtnEl.addEventListener('click', resetGame);
+    resetBtnEl.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        resetGame();
+      }
+    });
+  }
+
+  // ---- Drag helpers ----
+  function startDrag(e, roleId, card) {
+    cleanupDrag();
+    dragRoleId = roleId;
+    var rect = card.getBoundingClientRect();
+    dragOffsetX = e.clientX - rect.left;
+    dragOffsetY = e.clientY - rect.top;
+
+    dragGhost = card.cloneNode(true);
+    dragGhost.className = 'card drag-ghost';
+    dragGhost.style.width = rect.width + 'px';
+    dragGhost.style.left = (e.clientX - dragOffsetX) + 'px';
+    dragGhost.style.top = (e.clientY - dragOffsetY) + 'px';
+    document.body.appendChild(dragGhost);
+
+    card.style.opacity = '0.4';
+  }
+
+  function cleanupDrag() {
+    if (dragGhost) {
+      dragGhost.remove();
+      dragGhost = null;
+    }
+    if (dragRoleId) {
+      var card = getCardEl(dragRoleId);
+      if (card) card.style.opacity = '';
+      dragRoleId = null;
+    }
+    zones.forEach(function(z) { z.classList.remove('droppable'); });
+  }
+
+  // ---- Public API (mini-game contract) ----
+  window.gameStart = function() { render(); };
+  window.gameReset = resetGame;
+  window.gameGetState = function() {
+    return { placed: gameState.placed.slice(), surplus: gameState.surplus, complete: gameState.complete };
+  };
+
+  // ---- Boot ----
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
+})();
+</script>
+</body>
+</html>

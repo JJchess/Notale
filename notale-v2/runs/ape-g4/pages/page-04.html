@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    .timeline-page{position:relative;width:100%;height:100%;box-sizing:border-box}
+    .timeline-head{display:flex;align-items:center;justify-content:space-between;gap:var(--sp-5);height:48px}
+    .instruction{font-size:var(--fs-sec);line-height:var(--lh-copy);color:var(--muted)}
+    .state{flex:0 0 auto;padding:var(--sp-2) var(--sp-4);border:1px solid var(--line-strong);border-radius:var(--radius-sm);background:var(--surface);font-size:var(--fs-label);font-weight:700;color:var(--accent-strong)}
+    .timeline-shell{position:relative;height:464px;margin-top:var(--sp-3);background:var(--surface);border:1px solid var(--line);border-radius:var(--radius-lg);box-shadow:var(--shadow-soft);overflow:hidden}
+    .k-process.timeline-process{position:absolute;inset:0;display:block;padding:0}
+    .timeline-process>.axis{left:56px;right:56px;top:232px;height:4px;background:var(--accent)}
+    #timeline{position:absolute;inset:0;width:100%;height:100%}
+    #timeline text{font-family:var(--font-sans)}
+    .event-name{font-size:var(--fs-label);font-weight:720;fill:var(--text)}
+    .event-time{font-size:var(--fs-label);fill:var(--muted)}
+    .tick-text{font-size:var(--fs-tick);fill:var(--muted)}
+    .zoom-label{font-size:var(--fs-label);font-weight:720;fill:var(--accent-strong)}
+    .mapping{position:absolute;left:var(--sp-5);right:var(--sp-5);bottom:var(--sp-4);display:flex;align-items:center;justify-content:space-between;gap:var(--sp-4);font-size:var(--fs-sec);line-height:var(--lh-copy);color:var(--muted)}
+    .mapping strong{color:var(--text)}
+    .kbd{padding:var(--sp-1) var(--sp-2);border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--surface-soft);font-size:var(--fs-label)}
+  </style>
+</head>
+<body data-page="04" data-total="50">
+  <div id="stage"><main id="main"></main></div>
+
+  <script src="assets/base.js"></script>
+  <script src="assets/lec.js"></script>
+  <script src="assets/lib/d3.min.js"></script>
+  <script src="assets/lib/gsap.min.js"></script>
+  <script src="assets/lib/ScrollTrigger.min.js"></script>
+  <script>
+    Lec.mount({
+      index: 4,
+      kicker: "DEEP TIME / ONE DAY",
+      title: "如果人类史只有一天，航天发生在最后一瞬",
+      take: "把人类史压成一天，航天时代只占最后一瞬。"
+    });
+    Deck.init({ index: 4, total: 50 });
+
+    var main = document.getElementById("main");
+    main.innerHTML = '<section class="timeline-page" aria-label="把人类史线性压缩成一天">' +
+      '<div class="timeline-head"><p class="instruction">向下滚动压缩长卷；也可用方向键或 Page Up / Page Down。</p><div class="state" id="state" aria-live="polite">长卷</div></div>' +
+      '<div class="timeline-shell"><div class="k-process timeline-process"><div class="axis" aria-hidden="true"></div><svg id="timeline" role="img" aria-labelledby="svgTitle svgDesc"></svg></div>' +
+      '<div class="mapping"><span id="mapping"><strong></strong></span><span class="kbd">↓ 压缩　↑ 展开</span></div></div>' +
+      '</section>';
+
+    function kval(name,fallback){return Number.isFinite(Lec.K[name])?Lec.K[name]:fallback;}
+    var span = kval("homininEarliestYearsAgo",7000000);
+    var referenceYear = kval("courseReferenceYear",2025);
+    var flightYear = kval("firstHumanSpaceflightYear",1961);
+    var moonYear = kval("firstMoonLandingYear",1969);
+    var daySeconds = Lec.P.daysToSeconds(1);
+    var flightAgo = Lec.P.yearsAgo(flightYear, referenceYear);
+    var moonAgo = Lec.P.yearsAgo(moonYear, referenceYear);
+    var evidence = Lec.K.evidenceLabels;
+    function evidenceText(key, fallback){
+      if(Array.isArray(evidence)) return evidence[key] && (evidence[key].label || evidence[key].name || evidence[key]) || fallback;
+      if(evidence && typeof evidence === "object"){
+        var vals = Object.keys(evidence).map(function(k){return evidence[k] && (evidence[k].label || evidence[k].name || evidence[k]);});
+        return vals[key] || fallback;
+      }
+      return fallback;
+    }
+    var events = [
+      {name:"人族早期时间量级", ago:span, note:evidenceText(1,"有支持但仍争议")},
+      {name:"露西", ago:kval("australopithecusLucyYearsAgo",3200000)},
+      {name:"最早期人属化石记录", ago:kval("genusHomoEarliestYearsAgo",2800000), prefix:"目前已知化石记录约"},
+      {name:"较稳妥的控制用火证据", ago:kval("controlledFireEvidenceYearsAgo",400000), note:evidenceText(0,"较确定")},
+      {name:"智人早期记录", ago:kval("homoSapiensEarliestYearsAgo",300000)},
+      {name:"农业在不同地区出现", ago:kval("agricultureYearsAgo",12000), note:"不同地区并非同时发生"},
+      {name:"首次载人航天", ago:flightAgo, year:flightYear},
+      {name:"首次登月", ago:moonAgo, year:moonYear}
+    ];
+    events.forEach(function(d){
+      var elapsed = span - d.ago;
+      d.f = Lec.P.timelineFraction(elapsed, 0, span);
+      var rawClock=d.f*daySeconds;
+      d.clock = Lec.P.clamp(Lec.P.finite(rawClock)?rawClock:0, 0, daySeconds);
+      d.remaining = daySeconds - d.clock;
+    });
+    function num(v){ return Lec.P.formatNumber(v); }
+    function agoText(d){ return d.year ? String(d.year) : (d.prefix ? d.prefix + num(d.ago) + "年前" : "约" + num(d.ago) + "年前"); }
+    function clockText(sec){
+      sec = Lec.P.clamp(Lec.P.finite(sec)?sec:0,0,daySeconds);
+      var h=Math.floor(sec/3600), m=Math.floor((sec%3600)/60), s=sec%60;
+      return String(h).padStart(2,"0")+":"+String(m).padStart(2,"0")+":"+num(Lec.P.roundTo(s,2));
+    }
+    document.querySelector("#mapping strong").textContent = "约"+num(span)+"年 → 一天";
+
+    var svg=d3.select("#timeline").attr("viewBox","0 0 1406 464");
+    svg.append("title").attr("id","svgTitle").text("人类史压缩为一天的线性时间轴");
+    svg.append("desc").attr("id","svgDesc").text("八个事件保持真实线性比例和先后顺序；末端窗口放大农业与航天事件。 ");
+    var defs=svg.append("defs");
+    defs.append("marker").attr("id","arrow").attr("viewBox","0 0 10 10").attr("refX",9).attr("refY",5).attr("markerWidth",7).attr("markerHeight",7).attr("orient","auto-start-reverse").append("path").attr("d","M 0 0 L 10 5 L 0 10 z").attr("fill","var(--accent)");
+    var base=svg.append("g");
+    base.append("line").attr("x1",56).attr("x2",1350).attr("y1",232).attr("y2",232).attr("stroke","var(--accent)").attr("stroke-width",4).attr("marker-end","url(#arrow)");
+    var ev=base.selectAll("g.event").data(events).join("g").attr("class","event");
+    ev.append("line").attr("class","stem").attr("stroke","var(--line-strong)").attr("stroke-width",2);
+    ev.append("circle").attr("r",6).attr("fill","var(--surface)").attr("stroke","var(--accent)").attr("stroke-width",3);
+    ev.append("text").attr("class","event-name");
+    ev.append("text").attr("class","event-time");
+    var inset=svg.append("g").attr("class","inset");
+    inset.append("rect").attr("x",742).attr("y",276).attr("width",608).attr("height",142).attr("rx",14).attr("fill","var(--accent-soft)").attr("stroke","var(--accent)");
+    inset.append("text").attr("class","zoom-label").attr("x",762).attr("y",302).text("午夜前局部放大（仍来自同一条轴）");
+    inset.append("line").attr("x1",770).attr("x2",1324).attr("y1",362).attr("y2",362).attr("stroke","var(--accent)").attr("stroke-width",3).attr("marker-end","url(#arrow)");
+    var late=events.slice(5).concat([{name:"参考年",ago:0,year:referenceYear,f:1,clock:daySeconds,remaining:0}]);
+    var lateG=inset.selectAll("g.late").data(late).join("g").attr("class","late");
+    lateG.append("line").attr("y1",350).attr("y2",374).attr("stroke","var(--accent-strong)").attr("stroke-width",2);
+    lateG.append("circle").attr("cy",362).attr("r",5).attr("fill","var(--accent-strong)");
+    lateG.append("text").attr("class","tick-text").attr("text-anchor","middle").attr("x",function(d,i){return [0,-210,-82,0][i];});
+    inset.append("path").attr("d","M1325,236 C1325,255 1230,255 1230,276").attr("fill","none").attr("stroke","var(--accent)").attr("stroke-width",2).attr("stroke-dasharray","5 5");
+
+    function render(p){
+      p=Lec.P.clamp(Lec.P.finite(p)?p:0,0,1);
+      var phase=p<.32?"长卷":p<.68?"压缩中":p<.86?"一天":"午夜前放大";
+      document.getElementById("state").textContent=phase;
+      var clockMix=Lec.P.clamp((p-.48)/.30,0,1);
+      var zoomMix=Lec.P.clamp((p-.80)/.20,0,1);
+      var x0=56,x1=1350;
+      ev.attr("transform",function(d){return "translate("+(x0+d.f*(x1-x0))+",0)";});
+      ev.select("circle").attr("cy",232);
+      var nameY=[124,326,124,326,124,274,382,72];
+      ev.select("line.stem").attr("x1",0).attr("x2",0).attr("y1",232).attr("y2",function(d,i){return nameY[i]<232?nameY[i]+30:nameY[i]-20;});
+      ev.select("text.event-name").attr("x",function(d,i){return d.f>.92?-10:10;}).attr("text-anchor",function(d){return d.f>.92?"end":"start";}).attr("y",function(d,i){return nameY[i];}).text(function(d){return d.name;});
+      ev.select("text.event-time").attr("x",function(d){return d.f>.92?-10:10;}).attr("text-anchor",function(d){return d.f>.92?"end":"start";}).attr("y",function(d,i){return nameY[i]+22;}).text(function(d){return clockMix>.5?clockText(d.clock):agoText(d);});
+      ev.style("opacity",1-zoomMix).style("display",zoomMix>.99?"none":null);
+      inset.attr("opacity",zoomMix).style("display",zoomMix<.01?"none":null).style("pointer-events","none");
+      var minAgo=kval("agricultureYearsAgo",12000);
+      lateG.attr("transform",function(d){var f=1-(d.ago/minAgo); return "translate("+(770+f*554)+",0)";});
+      lateG.select("text").attr("y",function(d,i){return i%2?397:341;}).text(function(d){return d.name+" · "+(d.ago===0?d.year:clockText(d.clock));});
+    }
+    render(Deck.reduced()?1:0);
+    gsap.registerPlugin(ScrollTrigger);
+    var progress={value:Deck.reduced()?1:0};
+    var scrollDriver=ScrollTrigger.create({trigger:main,start:"top top",end:"bottom top",onUpdate:function(){render(progress.value);}});
+    function move(delta){
+      var next=Lec.P.clamp(progress.value+delta,0,1);
+      if(Deck.reduced()){progress.value=next;render(next);return;}
+      gsap.to(progress,{value:next,duration:.28,ease:"power1.out",overwrite:true,onUpdate:function(){render(progress.value);}});
+    }
+    main.addEventListener("wheel",function(e){e.preventDefault();move(e.deltaY>0?.08:-.08);},{passive:false});
+    window.addEventListener("keydown",function(e){
+      if(["ArrowDown","PageDown","ArrowUp","PageUp"].indexOf(e.key)<0)return;
+      e.preventDefault();
+      move((e.key==="ArrowDown"||e.key==="PageDown")?.12:-.12);
+    });
+  </script>
+</body>
+</html>

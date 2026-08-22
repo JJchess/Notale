@@ -1,0 +1,391 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+:root {
+  --bg: #f5f5f7;
+  --text: #1a1a2e;
+  --font-sans: "Noto Sans SC", system-ui, sans-serif;
+}
+
+/* main 用百分比而不是 vw/vh，避免在 padded stage 内溢出 */
+#main {
+  width: 100%;
+  height: 100%;
+}
+
+/* ===== split-tb layout for this page ===== */
+.split-tb {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  width: 100%;
+  height: 100%;
+  max-width: 1408px;
+  max-height: 620px;
+  margin: 0 auto;
+}
+.split-tb-top {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.split-tb-top img {
+  max-height: 200px;
+  width: auto;
+  border-radius: 8px;
+  object-fit: contain;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+}
+.split-tb-bottom {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+/* comparison table */
+.k-comparison {
+  --k-comp-cols: 3;
+  font-size: var(--fs-sec);
+  line-height: 1.35;
+}
+.k-comparison .hdr {
+  font-size: var(--fs-label);
+  text-align: center;
+}
+.k-comparison .dim {
+  font-size: var(--fs-label);
+  white-space: nowrap;
+  padding-right: 6px;
+}
+.k-comparison .orbit-cell {
+  text-align: center;
+  padding: 4px 6px;
+  border-radius: 4px;
+}
+.k-comparison .ground-cell {
+  text-align: center;
+  padding: 4px 6px;
+  color: var(--muted);
+}
+.k-comparison .return-cell {
+  text-align: center;
+  padding: 4px 6px;
+  color: var(--muted);
+}
+.k-comparison .crow > div {
+  min-width: 0;
+}
+
+/* slider control */
+.ctl-slider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 14px;
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.ctl-slider label {
+  font-size: var(--fs-label);
+  color: var(--muted);
+  white-space: nowrap;
+  font-weight: 600;
+}
+.ctl-slider input[type="range"] {
+  flex: 1;
+  min-width: 0;
+  height: 6px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: var(--border);
+  border-radius: 3px;
+  outline: none;
+  cursor: pointer;
+}
+.ctl-slider input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid #fff;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.2);
+  cursor: pointer;
+}
+.ctl-slider input[type="range"]::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid #fff;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.2);
+  cursor: pointer;
+}
+.slider-tick-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: var(--fs-label);
+  color: var(--muted);
+  padding: 0 2px;
+  margin-top: -2px;
+}
+.slider-tick-labels span {
+  flex: 1;
+  text-align: center;
+}
+.slider-tick-labels span.active {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+/* photo caption */
+.photo-caption {
+  font-size: var(--fs-sec);
+  color: var(--muted);
+  text-align: center;
+  margin-top: 4px;
+  line-height: 1.4;
+  max-width: 85%;
+}
+.photo-caption em {
+  color: var(--text);
+  font-style: normal;
+  font-weight: 600;
+}
+</style>
+</head>
+<body data-page="41" data-total="50">
+<div id="stage">
+<main id="main"></main>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script src="assets/lib/gsap.min.js"></script>
+<script>
+(function(){
+  'use strict';
+
+  Lec.mount({
+    index: 41,
+    kicker: 'ORBITAL BODY',
+    title: '在失重中，身体重新适应',
+    take: '离开地球，每个系统都在重新适应——有些变化第一天就出现，有些逐月累积，回到地球还要再倒一次时差。'
+  });
+
+  var main = document.getElementById('main');
+  if (!main) return;
+
+  // ── 本页研究常量（NASA 公开资料典型值） ──
+  var ISS_ALTITUDE_KM = 400;
+  var EARTH_RADIUS_M = Lec.K.EARTH_RADIUS_METERS || 6371000;
+
+  // ── 计算轨道参数（仅用于显示，不展示公式） ──
+  var r = EARTH_RADIUS_M + ISS_ALTITUDE_KM * 1000;
+  var v = Lec.P.orbitalVelocity(Lec.K.EARTH_MASS_KG, r);
+  var T = 2 * Math.PI * r / v;
+  var orbitMin = Math.round(T / 60);
+  var sunrises = Math.round(24 * 60 / (T / 60));
+
+  // ── 行数据 ──
+  var systems = [
+    {
+      id: 'circadian',
+      label: '昼夜节律',
+      ground: '24 小时一次日出日落',
+      orbit: [
+        '约 ' + orbitMin + ' 分钟一圈，每天约 ' + sunrises + ' 次日出日落',
+        '约 ' + orbitMin + ' 分钟一圈，每天约 ' + sunrises + ' 次日出日落',
+        '约 ' + orbitMin + ' 分钟一圈，每天约 ' + sunrises + ' 次日出日落'
+      ],
+      ret: '需数天重新同步',
+      changes: false
+    },
+    {
+      id: 'muscle',
+      label: '肌肉',
+      ground: '对抗重力持续工作',
+      orbit: [
+        '开始废用性流失',
+        '流失约 1–2%',
+        '累计流失约 10–20%<br>每天 2 小时锻炼只能减缓'
+      ],
+      ret: '数周至数月康复训练可恢复',
+      changes: true
+    },
+    {
+      id: 'bone',
+      label: '骨骼',
+      ground: '承受体重负荷，维持骨密度',
+      orbit: [
+        '尚无显著变化',
+        '髋部与腰椎骨密度流失约 1–1.5%',
+        '累计流失约 6–9%<br>运动无法完全阻止'
+      ],
+      ret: '恢复缓慢，部分流失可能不可逆',
+      changes: true
+    },
+    {
+      id: 'fluid',
+      label: '体液',
+      ground: '重力把体液拉向下肢',
+      orbit: [
+        '大量体液涌向头胸——面部浮肿、鼻塞、腿部变细（"鸟腿"）',
+        '大量体液涌向头胸——面部浮肿、鼻塞、腿部变细（"鸟腿"）',
+        '大量体液涌向头胸——面部浮肿、鼻塞、腿部变细（"鸟腿"）'
+      ],
+      ret: '数小时内恢复，但可能出现直立不耐受',
+      changes: false
+    },
+    {
+      id: 'spine',
+      label: '脊柱',
+      ground: '椎间盘受重力压缩',
+      orbit: [
+        '椎间盘伸展，身高增加约 2–5 cm',
+        '椎间盘伸展，身高增加约 2–5 cm',
+        '椎间盘伸展，身高增加约 2–5 cm'
+      ],
+      ret: '几天内缩回原状，伴腰背痛风险',
+      changes: false
+    },
+    {
+      id: 'vestibular',
+      label: '前庭系统',
+      ground: '内耳重力信号稳定',
+      orbit: [
+        '约半数宇航员出现空间适应综合征——恶心、眩晕',
+        '多数人已适应',
+        '适应完成'
+      ],
+      ret: '重新适应地球重力，初期站立不稳',
+      changes: true
+    }
+  ];
+
+  // ── 照片说明（每档位） ──
+  var captions = [
+    '体液涌向头胸，<em>面部浮肿</em>——失重第一天，身体已开始重新适应',
+    '肌肉与骨骼逐月流失——<em>每天 2 小时锻炼</em>只能减缓，不能阻止',
+    '<em>半年在轨，累计流失 10–20% 肌肉、6–9% 骨密度</em>——回到地球还要再适应一次'
+  ];
+
+  // ── 构建 DOM ──
+  var html = '';
+
+  html += '<div class="split-tb">';
+
+  // 上半：照片
+  html += '<div class="split-tb-top">';
+  html += '<img src="assets/img/p41/iss007e05847.jpg" alt="宇航员 Ed Lu 在 ISS 内漂浮，面部可见体液上涌导致的浮肿" title="Expedition 7 Science Officer Ed Lu in the Destiny laboratory, NASA/JSC (public domain)">';
+  html += '<p class="photo-caption" id="photo-caption">' + captions[0] + '</p>';
+  html += '</div>';
+
+  // 下半：对照表 + 控件
+  html += '<div class="split-tb-bottom">';
+
+  html += '<div class="k-comparison" id="comp-table">';
+
+  // 表头
+  html += '<div class="hdr"></div>';
+  html += '<div class="hdr">地面基准</div>';
+  html += '<div class="hdr" style="color:var(--accent);">轨道上</div>';
+  html += '<div class="hdr">返回后</div>';
+
+  html += '<div class="rowline"></div>';
+
+  // 数据行
+  for (var i = 0; i < systems.length; i++) {
+    var sys = systems[i];
+    html += '<div class="crow">';
+    html += '<div class="dim">' + sys.label + '</div>';
+    html += '<div class="ground-cell">' + sys.ground + '</div>';
+    var cls = 'orbit-cell' + (sys.changes ? ' diff' : '');
+    html += '<div class="' + cls + '" data-system="' + sys.id + '">' + sys.orbit[0] + '</div>';
+    html += '<div class="return-cell">' + sys.ret + '</div>';
+    html += '</div>';
+  }
+
+  html += '</div>'; // k-comparison
+
+  // 控件行
+  html += '<div class="ctl-slider">';
+  html += '<label>在轨时长</label>';
+  html += '<input type="range" id="duration-slider" min="0" max="2" step="1" value="0" aria-label="在轨时长：第 1 天 / 第 30 天 / 第 180 天">';
+  html += '</div>';
+  html += '<div class="slider-tick-labels" id="tick-labels">';
+  html += '<span class="active">第 1 天</span>';
+  html += '<span>第 30 天</span>';
+  html += '<span>第 180 天</span>';
+  html += '</div>';
+
+  html += '</div>'; // split-tb-bottom
+  html += '</div>'; // split-tb
+
+  main.innerHTML = html;
+
+  // ── 交互 ──
+  var slider = document.getElementById('duration-slider');
+  var tickLabels = document.getElementById('tick-labels').querySelectorAll('span');
+  var captionEl = document.getElementById('photo-caption');
+
+  function updateTable(pos) {
+    pos = parseInt(pos, 10);
+    if (isNaN(pos) || pos < 0) pos = 0;
+    if (pos > 2) pos = 2;
+
+    for (var i = 0; i < systems.length; i++) {
+      var sys = systems[i];
+      var cell = document.querySelector('[data-system="' + sys.id + '"]');
+      if (!cell) continue;
+      var newText = sys.orbit[pos];
+      if (newText.indexOf('<br>') !== -1) {
+        cell.innerHTML = newText;
+      } else {
+        gsap.to(cell, { autoAlpha: 0, duration: 0.12, onComplete: (function(c, t) {
+          return function() { c.textContent = t; gsap.to(c, { autoAlpha: 1, duration: 0.15 }); };
+        })(cell, newText) });
+      }
+    }
+
+    for (var j = 0; j < tickLabels.length; j++) {
+      tickLabels[j].classList.toggle('active', j === pos);
+    }
+
+    if (captionEl) {
+      gsap.to(captionEl, { autoAlpha: 0, duration: 0.12, onComplete: (function(c, txt) {
+        return function() { c.innerHTML = txt; gsap.to(c, { autoAlpha: 1, duration: 0.15 }); };
+      })(captionEl, captions[pos]) });
+    }
+  }
+
+  slider.addEventListener('input', function() {
+    updateTable(this.value);
+  });
+  slider.addEventListener('keydown', function(e) {
+    if (e.key === 'ArrowRight' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      var v = Math.min(parseInt(this.value, 10) + 1, 2);
+      this.value = v;
+      updateTable(v);
+    } else if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') {
+      e.preventDefault();
+      var v = Math.max(parseInt(this.value, 10) - 1, 0);
+      this.value = v;
+      updateTable(v);
+    }
+  });
+
+  updateTable(0);
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,288 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  #stage { padding: 34px 48px 28px; }
+  .page-head { border-bottom: 1px solid var(--line); }
+  .kicker { color: var(--primary); font: 700 var(--fs-label)/1.4 var(--font-mono); letter-spacing: .14em; }
+  .head-note { max-width: 540px; color: var(--muted); font-size: var(--fs-sec); line-height: 1.5; text-align: right; }
+  .knowledge-map { position: relative; overflow: hidden; border: 1px solid var(--line); border-radius: var(--radius-3); background: radial-gradient(circle at 50% 48%, var(--primary-soft), transparent 24%), var(--panel-deep); box-shadow: var(--shadow-panel); }
+  .knowledge-map::before { position: absolute; inset: 0; content: ""; pointer-events: none; background: repeating-linear-gradient(0deg, transparent 0, transparent 57px, rgba(89,195,195,.035) 58px, transparent 59px); }
+  #network { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .link { stroke: var(--primary); stroke-width: 1.5; stroke-opacity: .5; transition: stroke 320ms, opacity 320ms; }
+  .link.off { stroke: var(--faint); stroke-opacity: .16; }
+  .link.affected { stroke: var(--accent); stroke-width: 3; stroke-opacity: .9; }
+  .node { cursor: default; outline: none; }
+  .node.candidate { cursor: pointer; }
+  .node .shape { fill: var(--panel); stroke: var(--primary); stroke-width: 2; transition: r 240ms, fill 240ms, stroke 240ms, opacity 240ms; }
+  .node.role .shape { r: 18px; }
+  .node.org .shape { r: 25px; fill: var(--panel-raised); }
+  .node.center .shape { r: 55px; fill: var(--panel-raised); stroke-width: 3; }
+  .node.candidate .shape { stroke: var(--accent); }
+  .node.candidate:focus-visible .shape { stroke-width: 5; }
+  .node.removed .shape { r: 8px; fill: transparent; stroke: var(--faint); opacity: .55; }
+  .node.removed text { fill: var(--faint); opacity: .46; text-decoration: line-through; }
+  .node.invalid { animation: shake 180ms linear 1; }
+  .node text { fill: var(--text); font: 650 14px/1.3 var(--font-sans); paint-order: stroke; stroke: var(--bg); stroke-width: 4px; stroke-linejoin: round; }
+  .node.center text { fill: var(--text); font-size: 16px; font-weight: 750; }
+  .node .kind { fill: var(--muted); font: 500 14px/1.3 var(--font-mono); letter-spacing: .08em; }
+  .k-generalization .supports > .branch-tag { position: absolute; }
+  .branch-tag { z-index: 2; width: 184px; padding: 10px 14px; border: 1px solid var(--primary-line); border-radius: var(--radius-1); background: rgba(13,27,38,.92); pointer-events: none; }
+  .branch-tag strong { display: block; font: 700 var(--fs-sec)/1.35 var(--font-title); }
+  .branch-tag span { display: block; margin-top: 2px; color: var(--muted); font-size: 14px; line-height: 1.35; }
+  .branch-tag.disconnected { border-color: var(--accent); box-shadow: inset 3px 0 0 var(--accent); }
+  .branch-tag.flash { animation: flash 520ms ease-out; }
+  .tag-knowledge { top: 18px; left: 20px; }
+  .tag-making { top: 18px; right: 20px; }
+  .tag-rules { bottom: 18px; left: 20px; }
+  .tag-work { right: 20px; bottom: 18px; }
+  .center-lights { position: absolute; z-index: 3; top: 50%; left: 50%; display: grid; width: 322px; grid-template-columns: 1fr 1fr; gap: 8px 14px; padding: 132px 32px 18px; transform: translate(-50%,-50%); pointer-events: none; }
+  .light { display: flex; gap: 7px; align-items: center; justify-content: center; color: var(--muted); font-size: 14px; font-weight: 650; }
+  .light::before { width: 9px; height: 9px; flex: 0 0 auto; border: 2px solid var(--primary); border-radius: 50%; content: ""; background: var(--primary); }
+  .light.alt::before { background: transparent; }
+  .light.off { color: var(--accent); }
+  .light.off::before { border-color: var(--accent); background: transparent; box-shadow: 0 0 9px var(--accent); }
+  .gamebar { border-top: 1px solid var(--line); background: var(--panel); }
+  .progress-copy { min-width: 320px; }
+  .progress-copy .value { color: var(--accent); font: 700 var(--fs-body)/1.4 var(--font-mono); }
+  .meter { display: flex; flex: 1; gap: 9px; align-items: center; }
+  .meter i { height: 5px; flex: 1; border-radius: 99px; background: var(--line-strong); }
+  .meter i.used { background: var(--accent); }
+  .feedback { min-width: 400px; color: var(--text); font-size: var(--fs-sec); line-height: 1.45; text-align: right; }
+  .reset { min-height: 40px; padding: 7px 16px; border: 1px solid var(--accent); border-radius: var(--radius-1); color: var(--accent); background: var(--accent-soft); font-size: var(--fs-sec); cursor: pointer; }
+  .reset[hidden] { display: none; }
+  .knowledge-map.complete #network, .knowledge-map.complete .center-lights, .knowledge-map.complete .branch-tag { opacity: .22; }
+  .conclusion { position: absolute; z-index: 5; top: 50%; left: 50%; width: 620px; padding: 28px 34px; border: 1px solid var(--accent-line); border-left: 7px solid var(--accent); border-radius: var(--radius-2); color: var(--text); background: var(--panel-raised); box-shadow: var(--shadow-panel); font-size: var(--fs-lead); font-weight: 750; line-height: 1.5; transform: translate(-50%,-50%); text-align: center; }
+  .conclusion[hidden] { display: none; }
+  @keyframes shake { 0%,100%{transform:translateX(0)} 25%{transform:translateX(-6px)} 75%{transform:translateX(6px)} }
+  @keyframes flash { 0%{box-shadow:0 0 0 0 var(--accent)} 100%{box-shadow:0 0 0 14px transparent} }
+  @media (prefers-reduced-motion: reduce) { .node.invalid, .branch-tag.flash { animation: none; } .link, .node .shape { transition: none; } }
+</style>
+</head>
+<body data-page="24" data-total="50">
+<div id="stage">
+  <header class="page-head row items-end justify-between gap-5" style="height:82px">
+    <div>
+      <div class="kicker">DISTRIBUTED KNOWLEDGE · 24</div>
+      <h1>复杂技术，存在于网络里</h1>
+    </div>
+    <p class="head-note">点击有琥珀色轮廓的节点。观察一项能力何时失去连接。</p>
+  </header>
+
+  <main class="k-generalization min0" style="flex:1; padding-top:18px">
+    <div class="claim">可用的智能手机，不是某个人脑中的完整知识；它由分散的知识与组织连接共同支撑。</div>
+    <div class="trunk min0">
+      <div class="supports knowledge-map min0" style="--support-n:4">
+        <div class="support branch-tag tag-knowledge" data-branch="knowledge"><strong>专门知识</strong><span>计算 · 系统 · 无线通信</span></div>
+        <div class="support branch-tag tag-making" data-branch="making"><strong>制造条件</strong><span>芯片 · 屏幕 · 电池 · 整机</span></div>
+        <div class="support branch-tag tag-rules" data-branch="rules"><strong>共同规则</strong><span>设备互通 · 频段 · 安全</span></div>
+        <div class="support branch-tag tag-work" data-branch="work"><strong>持续协作</strong><span>交付 · 联网 · 更新 · 修复</span></div>
+        <svg id="network" role="group" aria-label="智能手机的分布式知识网络。琥珀色节点可拆除。"></svg>
+        <div class="center-lights" aria-label="四类支撑状态">
+          <span class="light" data-light="knowledge">专门知识：完整</span>
+          <span class="light" data-light="making">制造条件：完整</span>
+          <span class="light" data-light="rules">共同规则：完整</span>
+          <span class="light" data-light="work">持续协作：完整</span>
+        </div>
+        <div class="conclusion" id="conclusion" hidden>没有单一节点包含全部知识。韧性来自替代连接，可用性依赖这些连接持续存在。</div>
+      </div>
+    </div>
+  </main>
+
+  <footer class="gamebar row items-center gap-4" style="height:72px; padding:12px 18px">
+    <div class="progress-copy"><span class="label">已拆除 </span><span class="value" id="counter"></span></div>
+    <div class="meter" id="meter" aria-label="拆除次数刻度"></div>
+    <div class="feedback" id="feedback" aria-live="polite">目标：让四类支撑各断开一次。</div>
+    <button class="reset" id="reset" hidden type="button">按同一种子重置</button>
+  </footer>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script src="assets/lib/d3.min.js"></script>
+<script src="assets/lib/seedrandom.min.js"></script>
+<script>
+(function(){
+  'use strict';
+  Deck.init({index:24,total:50});
+
+  const branches = [
+    {id:'knowledge', label:'专门知识', loss:'无线通信', roles:['芯片设计师','软件工程师','射频工程师'], orgs:['设计团队','研究机构']},
+    {id:'making', label:'制造条件', loss:'芯片与整机', roles:['光刻工程师','材料工程师','装配技师'], orgs:['晶圆厂','零件供应商','装配厂']},
+    {id:'rules', label:'共同规则', loss:'设备互通', roles:['标准制定者','安全审核员'], orgs:['通信标准组织','认证机构']},
+    {id:'work', label:'持续协作', loss:'联网与修复', roles:['物流调度员','网络运维员','维修技师'], orgs:['物流网络','运营商','维修体系']}
+  ];
+  const branchCount = branches.length;
+  const actionLimit = branchCount + Math.floor(branchCount / 2);
+  const svgEl = document.getElementById('network');
+  const counter = document.getElementById('counter');
+  const feedback = document.getElementById('feedback');
+  const meter = document.getElementById('meter');
+  const resetBtn = document.getElementById('reset');
+  const conclusion = document.getElementById('conclusion');
+  let state, simulation, nodeSel, linkSel, nodes, links;
+  const candidateNames = new Set(['射频工程师','设计团队','晶圆厂','通信标准组织','物流网络','维修技师']);
+
+  function initialState(){ return {removed:[], observed:[], actions:0, complete:false, trace:[]}; }
+  function snapshot(){ return JSON.parse(JSON.stringify(state)); }
+  svgEl.start = function(){ svgEl.dispatchEvent(new CustomEvent('game-start',{bubbles:true,detail:{state:snapshot()}})); };
+  svgEl.reset = reset;
+  svgEl.getState = snapshot;
+
+  function buildData(){
+    const rng = new Math.seedrandom('page-24');
+    nodes = [{id:'phone', label:'可用的\n智能手机', type:'center', branch:'center'}];
+    links = [];
+    branches.forEach((b, bi) => {
+      const orgIds = b.orgs.map((name, oi) => {
+        const id = b.id+'-o'+oi;
+        nodes.push({id,label:name,type:'org',branch:b.id, candidate:candidateNames.has(name), jitter:rng()});
+        return id;
+      });
+      b.roles.forEach((name, ri) => {
+        const id = b.id+'-r'+ri;
+        nodes.push({id,label:name,type:'role',branch:b.id,candidate:candidateNames.has(name),jitter:rng()});
+        links.push({source:id,target:orgIds[ri % orgIds.length],branch:b.id});
+      });
+      for(let oi=1;oi<orgIds.length;oi++) links.push({source:orgIds[oi],target:orgIds[0],branch:b.id});
+      links.push({source:orgIds[0],target:'phone',branch:b.id, gateway:true});
+    });
+  }
+
+  function reachable(branch){
+    const removed = new Set(state.removed);
+    const branchNodes = nodes.filter(n => n.branch === branch && !removed.has(n.id));
+    const activeLinks = links.filter(l => l.branch === branch && !removed.has(l.source.id || l.source) && !removed.has(l.target.id || l.target));
+    const seen = new Set(['phone']);
+    let changed = true;
+    while(changed){
+      changed=false;
+      activeLinks.forEach(l => {
+        const s=l.source.id||l.source, t=l.target.id||l.target;
+        if(seen.has(s)&&!seen.has(t)){seen.add(t);changed=true;}
+        if(seen.has(t)&&!seen.has(s)){seen.add(s);changed=true;}
+      });
+    }
+    return branchNodes.some(n => seen.has(n.id));
+  }
+
+  function branchStatus(branch){
+    if(!reachable(branch)) return 'off';
+    return state.removed.some(id => nodes.find(n=>n.id===id)?.branch===branch) ? 'alt' : 'full';
+  }
+
+  function setupGraph(){
+    buildData();
+    const width = svgEl.clientWidth || 1500, height = svgEl.clientHeight || 500;
+    const svg = d3.select(svgEl).attr('viewBox',`0 0 ${width} ${height}`);
+    svg.selectAll('*').remove();
+    const cx=width/2, cy=height/2;
+    const targets = {
+      knowledge:[cx-360,cy-105], making:[cx+360,cy-105],
+      rules:[cx-360,cy+105], work:[cx+360,cy+105], center:[cx,cy]
+    };
+    nodes.forEach((n,i) => { const t=targets[n.branch]; n.x=t[0]+(n.jitter||0)*50-25; n.y=t[1]+((i%3)-1)*54; });
+
+    linkSel = svg.append('g').attr('aria-hidden','true').selectAll('line').data(links).join('line').attr('class','link');
+    nodeSel = svg.append('g').selectAll('g').data(nodes).join('g')
+      .attr('class',d=>'node '+d.type+(d.candidate?' candidate':''))
+      .attr('role',d=>d.candidate?'button':null)
+      .attr('tabindex',d=>d.candidate?0:null)
+      .attr('aria-label',d=>d.candidate?('拆除'+d.label):null)
+      .on('click',(event,d)=>act(d))
+      .on('keydown',(event,d)=>{ if((event.key==='Enter'||event.key===' ')&&d.candidate){event.preventDefault();act(d);} });
+    nodeSel.append('circle').attr('class','shape').attr('r',d=>d.type==='center'?55:d.type==='org'?25:18);
+    nodeSel.append('text').attr('text-anchor','middle').attr('dy',d=>d.type==='center'?-22:-30)
+      .selectAll('tspan').data(d=>d.label.split('\n').map((line,i)=>({line,i,parent:d}))).join('tspan')
+      .attr('x',0).attr('dy',d=>d.i?20:0).text(d=>d.line);
+    nodeSel.filter(d=>d.type!=='center').append('text').attr('class','kind').attr('text-anchor','middle').attr('dy',d=>d.type==='org'?42:35).text(d=>d.type==='org'?'机构':'角色');
+
+    simulation = d3.forceSimulation(nodes)
+      .force('link',d3.forceLink(links).id(d=>d.id).distance(92).strength(.8))
+      .force('charge',d3.forceManyBody().strength(-240))
+      .force('center',d3.forceCenter(width/2,height/2))
+      .force('collide',d3.forceCollide(30))
+      .force('labelCollide',d3.forceCollide(48))
+      .force('x',d3.forceX(d=>targets[d.branch][0]).strength(.34))
+      .force('y',d3.forceY(d=>targets[d.branch][1]).strength(.42))
+      .stop();
+    for(let i=0;i<260;i++) simulation.tick();
+    nodes.forEach(n=>{ n.x=Math.max(350,Math.min(width-350,n.x)); n.y=Math.max(118,Math.min(height-128,n.y)); });
+    drawPositions();
+    if(!Deck.reduced()){
+      nodeSel.style('opacity',0).transition().delay((d,i)=>Math.min(i*28,420)).duration(300).style('opacity',1);
+      linkSel.attr('stroke-dasharray','0 1000').transition().delay(120).duration(520).attr('stroke-dasharray',null);
+    }
+  }
+
+  function drawPositions(){
+    linkSel.attr('x1',d=>d.source.x).attr('y1',d=>d.source.y).attr('x2',d=>d.target.x).attr('y2',d=>d.target.y);
+    nodeSel.attr('transform',d=>`translate(${d.x},${d.y})`);
+  }
+
+  function act(d){
+    if(!d.candidate || d.type==='center') return invalid(d,'只能拆除角色或机构；成果是网络状态，不是一个节点。');
+    if(state.removed.includes(d.id)) return invalid(d,'这个节点已经拆除，请选择仍在连接中的节点。');
+    if(state.complete) return;
+    const before = branchStatus(d.branch);
+    state.removed.push(d.id); state.actions++;
+    const after = branchStatus(d.branch);
+    state.trace.push({node:d.label,branch:d.branch,status:after});
+    if(after==='off' && !state.observed.includes(d.branch)) state.observed.push(d.branch);
+    render(d,before,after);
+    svgEl.dispatchEvent(new CustomEvent('game-progress',{bubbles:true,detail:{state:snapshot(),action:{type:'remove',node:d.id},metrics:{observed:state.observed.length}}}));
+    if(state.observed.length===branchCount) complete();
+  }
+
+  function invalid(d,msg){
+    const el=nodeSel.filter(n=>n.id===d.id); el.classed('invalid',false); void el.node().getBoundingClientRect(); el.classed('invalid',true);
+    feedback.textContent=msg;
+    setTimeout(()=>el.classed('invalid',false),220);
+  }
+
+  function render(changed,before,after){
+    const removed=new Set(state.removed);
+    nodeSel.classed('removed',d=>removed.has(d.id)).attr('aria-disabled',d=>removed.has(d.id)?'true':null);
+    linkSel.classed('off',d=>removed.has(d.source.id)||removed.has(d.target.id)||branchStatus(d.branch)==='off')
+      .classed('affected',d=>d.branch===changed.branch && after==='off' && !removed.has(d.source.id) && !removed.has(d.target.id));
+    branches.forEach(b=>{
+      const status=branchStatus(b.id), light=document.querySelector(`[data-light="${b.id}"]`), tag=document.querySelector(`[data-branch="${b.id}"]`);
+      light.className='light '+(status==='full'?'':status);
+      light.textContent=b.label+'：'+(status==='full'?'完整':status==='alt'?'有替代':'断开');
+      tag.classList.toggle('disconnected',status==='off');
+    });
+    const tag=document.querySelector(`[data-branch="${changed.branch}"]`);
+    if(after==='off'&&before!=='off'){ tag.classList.remove('flash'); void tag.offsetWidth; tag.classList.add('flash'); }
+    counter.textContent=`${state.actions} / ${actionLimit}`;
+    [...meter.children].forEach((el,i)=>el.classList.toggle('used',i<state.actions));
+    const b=branches.find(x=>x.id===changed.branch);
+    feedback.textContent=after==='off'?`失去：${b.loss}。${b.label}已断开。`:`${changed.label}已拆除；${b.label}仍有替代连接。`;
+  }
+
+  function complete(){
+    state.complete=true;
+    conclusion.hidden=false;
+    conclusion.parentElement.classList.add('complete');
+    resetBtn.hidden=false;
+    nodeSel.classed('candidate',false).attr('tabindex',null).attr('role',null);
+    feedback.textContent='四类支撑都曾断开：结论已展开。';
+    svgEl.dispatchEvent(new CustomEvent('game-complete',{bubbles:true,detail:{score:Math.max(0,actionLimit-state.actions),metrics:{actions:state.actions},trace:state.trace.slice()}}));
+  }
+
+  function reset(){
+    state=initialState();
+    conclusion.hidden=true; conclusion.parentElement.classList.remove('complete'); resetBtn.hidden=true; feedback.textContent='目标：让四类支撑各断开一次。';
+    counter.textContent=`${state.actions} / ${actionLimit}`;
+    meter.innerHTML=''; for(let i=0;i<actionLimit;i++) meter.appendChild(document.createElement('i'));
+    setupGraph();
+    svgEl.dispatchEvent(new CustomEvent('game-reset',{bubbles:true,detail:{state:snapshot()}}));
+  }
+  resetBtn.addEventListener('click',reset);
+  state=initialState(); reset();
+  svgEl.start();
+})();
+</script>
+</body>
+</html>

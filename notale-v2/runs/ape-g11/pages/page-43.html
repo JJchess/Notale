@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  .budget-head{padding:22px 38px 12px;box-sizing:border-box}
+  .budget-main{padding:0 38px 16px;box-sizing:border-box}
+  .status-box{min-width:210px;text-align:right}
+  .process-strip>.step{padding:10px 12px;text-align:center;font-size:var(--fs-label);font-weight:700}
+  .process-strip>.arw{flex-basis:20px}
+  .workbench{display:flex;gap:18px;height:100%}
+  .allocation{flex:1.08;display:flex;flex-direction:column;padding:16px 18px}
+  .audit{flex:.92;display:flex;flex-direction:column;padding:16px 18px}
+  .fund-pool{display:flex;align-items:center;gap:8px;min-height:48px;padding:7px 12px;border:1px dashed var(--line);border-radius:var(--r-sm);background:var(--panel-deep)}
+  .token{width:24px;height:24px;border:2px solid var(--accent);border-radius:50%;background:var(--accent-soft);box-shadow:0 0 12px rgba(255,181,71,.25);transition:opacity 220ms ease,transform 220ms ease}
+  .token.spent{opacity:.18;transform:scale(.78)}
+  .ledger-list{display:flex;flex-direction:column;gap:7px;margin-top:10px}
+  .ledger-row{display:grid;grid-template-columns:310px 1fr 92px;align-items:center;gap:12px;min-height:54px;padding:6px 10px;border-left:3px solid var(--line);background:rgba(9,24,39,.72)}
+  .ledger-row.active{border-left-color:var(--primary);background:var(--primary-soft)}
+  .ledger-row.changed{border-left-color:var(--accent)}
+  .ledger-name{font-size:var(--fs-sec);font-weight:700}
+  .ledger-sub{color:var(--muted);font-size:var(--fs-label)}
+  .ledger-row input{width:100%;accent-color:var(--primary)}
+  .row-value{text-align:right;font:700 var(--fs-sec)/1.3 var(--font-mono);color:var(--primary-bright)}
+  .summary-ledgers{display:flex;gap:8px}
+  .summary-ledgers .readout{min-width:0;flex:1;padding:8px 10px}
+  #chart{flex:1;min-height:250px}
+  .actions{display:flex;align-items:center;gap:12px;min-height:50px}
+  .feedback{flex:1;color:var(--muted);font-size:var(--fs-sec);line-height:var(--lh-text)}
+  .feedback strong{color:var(--accent)}
+  .result-card{display:none;padding:10px 14px;border-left:4px solid var(--accent);background:var(--accent-soft);font-size:var(--fs-sec);line-height:var(--lh-text)}
+  .result-card.show{display:block}
+  .shake{animation:shake .32s ease}
+  @keyframes shake{25%{transform:translateX(-7px)}50%{transform:translateX(7px)}75%{transform:translateX(-4px)}}
+  .pulse{animation:pulse .4s ease}
+  @keyframes pulse{50%{box-shadow:inset 0 0 0 2px var(--primary),0 0 18px rgba(53,194,178,.32)}}
+  @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body data-page="43" data-total="48">
+<div id="stage">
+  <header class="budget-head row between items-center" style="height:90px">
+    <div class="min0">
+      <div class="chip">PUBLIC BUDGET · 教学审议</div>
+      <h1>十亿预算，投向哪里？</h1>
+    </div>
+    <div class="status-box">
+      <div class="fs-label muted">公共资金池</div>
+      <div class="fs-h2 mono"><span id="allocated">0</span> / <span class="total">10</span> 已分配</div>
+    </div>
+  </header>
+
+  <section class="k-process process-strip" style="height:64px;margin:0 38px 8px" aria-label="预算影响流程">
+    <div class="axis"></div>
+    <div class="step is-current">投入筹码</div><div class="arw"></div>
+    <div class="step">挤出其他用途</div><div class="arw"></div>
+    <div class="step">形成近期服务</div><div class="arw"></div>
+    <div class="step">积累长期能力</div><div class="arw"></div>
+    <div class="step">回看受益分布</div>
+  </section>
+
+  <main class="budget-main min0" style="flex:1">
+    <div class="workbench min0">
+      <section class="panel allocation min0" aria-labelledby="alloc-title">
+        <div class="row between items-center">
+          <div><h2 id="alloc-title">公共资金池 → 五本分类账</h2><div class="fs-sec muted">拖动每行滑杆分配筹码；总额不能超过预算。</div></div>
+          <div class="fund-pool" id="tokens" aria-label="未分配筹码"></div>
+        </div>
+        <div class="ledger-list" id="ledgerList"></div>
+        <div class="actions">
+          <button id="submit" class="is-target">审议结果</button>
+          <div id="feedback" class="feedback" aria-live="polite">还有 <strong><span id="remaining">10</span></strong> 枚未分配；每次投入都同时改写“得到”与“放弃”。</div>
+        </div>
+      </section>
+
+      <section class="panel audit min0 science-grid" aria-labelledby="audit-title">
+        <div class="row between items-center">
+          <div><h2 id="audit-title">三本分账 · 即时审计</h2><div class="fs-label muted">左：机会成本　｜　右：公共收益</div></div>
+          <span class="chip">课堂情境模型</span>
+        </div>
+        <div class="summary-ledgers" style="height:70px;margin-top:8px">
+          <div class="readout"><span class="readout-label">近期服务</span><span class="value" id="nearTotal">0</span></div>
+          <div class="readout"><span class="readout-label">长期能力</span><span class="value" id="longTotal">0</span></div>
+          <div class="readout"><span class="readout-label">机会成本</span><span class="value" id="costTotal">0</span></div>
+        </div>
+        <div id="chart" role="img" aria-label="五个投入方向的机会成本与公共收益双向条形图"></div>
+        <div id="result" class="result-card" aria-live="polite"></div>
+        <div class="note">教学模型权重可讨论，不是事实排名。近期可见与长期积累不是同一张账；收益由谁获得，也仍需回看。</div>
+      </section>
+    </div>
+  </main>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script src="assets/lib/echarts.min.js"></script>
+<script>
+(function(){
+  'use strict';
+  Deck.init({index:43,total:48});
+  var M=Lec.K.math, TOTAL=M.ten;
+  var items=[
+    {name:'通信基础设施',near:M.three,long:M.two,short:'偏远地区连接改善',future:'覆盖与维护能力积累',cost:'少一份其他公共服务'},
+    {name:'地球观测',near:M.four,long:M.three,short:'灾害、天气与环境信息增加',future:'长期连续数据更完整',cost:'压缩其他航天目标'},
+    {name:'导航与授时',near:M.four,long:M.three,short:'交通、物流与同步服务增强',future:'维护与更新承诺增加',cost:'增加后续维护承诺'},
+    {name:'基础科研',near:M.one,long:M.four,short:'近期应用较不确定',future:'新知识与人才可能累积',cost:'短期可见回报较少'},
+    {name:'深空探索',near:M.zero,long:M.four,short:'近期公共服务较弱',future:'工程经验与未知发现',cost:'挤出近地公共服务'}
+  ];
+  var state={values:items.map(function(){return M.one;}),submitted:false,last:-1};
+  var list=document.getElementById('ledgerList'), tokens=document.getElementById('tokens');
+  for(var t=M.zero;t<TOTAL;t++){var coin=document.createElement('span');coin.className='token';tokens.appendChild(coin);}
+  items.forEach(function(it,i){
+    var row=document.createElement('label'); row.className='ledger-row';
+    row.innerHTML='<span><span class="ledger-name">'+it.name+'</span><br><span class="ledger-sub">近期：'+it.short+' · 长期：'+it.future+'</span><br><span class="ledger-sub accent">取舍：'+it.cost+'</span></span><input type="range" min="0" max="10" value="1" step="1" aria-label="'+it.name+'筹码数"><span class="row-value"><b>0</b> 枚 · <em>0%</em></span>';
+    var input=row.querySelector('input');
+    input.addEventListener('input',function(){
+      var others=state.values.reduce(function(a,v,j){return a+(j===i?M.zero:v);},M.zero);
+      state.values[i]=Math.min(Number(input.value),TOTAL-others); input.value=state.values[i]; state.last=i; state.submitted=false; update();
+      row.classList.remove('pulse'); void row.offsetWidth; row.classList.add('pulse');
+    });
+    list.appendChild(row);
+  });
+  var chart=echarts.init(document.getElementById('chart'),null,{renderer:'svg'});
+  function sum(a){return a.reduce(function(x,y){return x+y;},M.zero);}
+  function percent(v){return Lec.P.formatPercent(Lec.P.ratio(v,TOTAL),M.zero);}
+  function weighted(key){return state.values.reduce(function(a,v,i){return a+v*items[i][key];},M.zero);}
+  function update(){
+    var used=sum(state.values), remain=TOTAL-used;
+    document.getElementById('allocated').textContent=used; document.getElementById('remaining').textContent=remain;
+    document.querySelectorAll('.total').forEach(function(e){e.textContent=TOTAL;});
+    Array.from(tokens.children).forEach(function(e,i){e.classList.toggle('spent',i<used);});
+    Array.from(list.children).forEach(function(row,i){
+      row.classList.toggle('active',state.values[i]>M.zero);row.classList.toggle('changed',i===state.last);
+      row.querySelector('b').textContent=state.values[i];row.querySelector('em').textContent=percent(state.values[i]);
+    });
+    document.getElementById('nearTotal').textContent=weighted('near');
+    document.getElementById('longTotal').textContent=weighted('long');
+    document.getElementById('costTotal').textContent=used;
+    var near=items.map(function(it,i){return state.values[i]*it.near/TOTAL;});
+    var lng=items.map(function(it,i){return state.values[i]*it.long/TOTAL;});
+    chart.setOption({
+      animationDuration:400,grid:{left:88,right:24,top:28,bottom:24},textStyle:{fontSize:16,color:'#E8F1F7'},
+      tooltip:{trigger:'axis',textStyle:{fontSize:16}},legend:{top:0,textStyle:{fontSize:14,color:'#A9C0CF'},data:['机会成本','近期','长期']},
+      xAxis:{type:'value',min:-10,max:10,axisLabel:{fontSize:14,color:'#A9C0CF'},splitLine:{lineStyle:{color:'rgba(53,194,178,.12)'}}},
+      yAxis:{type:'category',inverse:true,data:items.map(function(x){return x.name;}),axisLabel:{fontSize:14,color:'#E8F1F7'},axisLine:{lineStyle:{color:'#285068'}}},
+      series:[
+        {name:'机会成本',type:'bar',stack:'left',data:state.values.map(function(v){return-v;}),itemStyle:{color:function(p){return p.dataIndex===state.last?'#FFB547':'#7692A4';}}},
+        {name:'近期',type:'bar',stack:'right',data:near,itemStyle:{color:function(p){return p.dataIndex===state.last?'#FFB547':'#35C2B2';}}},
+        {name:'长期',type:'bar',stack:'right',data:lng,itemStyle:{color:'#285068'}}
+      ]
+    });
+    document.getElementById('result').classList.remove('show');
+    document.getElementById('submit').textContent='审议结果';
+    document.getElementById('feedback').innerHTML=remain?('还有 <strong>'+remain+'</strong> 枚未分配；总预算必须全部入账。'):'预算已全部入账。现在比较近期、长期与机会成本。';
+  }
+  document.getElementById('submit').addEventListener('click',function(){
+    if(state.submitted){state={values:items.map(function(){return M.zero;}),submitted:false,last:-1};Array.from(list.querySelectorAll('input')).forEach(function(x){x.value=M.zero;});update();return;}
+    var used=sum(state.values); if(used<TOTAL){var b=this;b.classList.remove('shake');void b.offsetWidth;b.classList.add('shake');document.getElementById('feedback').innerHTML='还有 <strong>'+ (TOTAL-used) +'</strong> 枚未分配；总预算必须全部入账。';return;}
+    state.submitted=true;
+    function strongest(key){var best=Math.max.apply(null,items.map(function(it,i){return state.values[i]*it[key];}));return items.filter(function(it,i){return state.values[i]*it[key]===best;}).map(function(x){return x.name;}).join('、');}
+    var min=Math.min.apply(null,state.values), compressed=items.filter(function(it,i){return state.values[i]===min;}).map(function(x){return x.name;}).join('、');
+    var result=document.getElementById('result');result.innerHTML='<strong>审议结论：</strong>近期最强项为 '+strongest('near')+'；长期最强项为 '+strongest('long')+'；相对被压缩的是 '+compressed+'。这不是唯一正确方案，而是一份取舍记录。';result.classList.add('show');this.textContent='一键重置';
+  });
+  window.addEventListener('resize',function(){chart.resize();});
+  update();
+})();
+</script>
+</body>
+</html>

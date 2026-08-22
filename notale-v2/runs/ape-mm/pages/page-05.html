@@ -1,0 +1,395 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  #stage { padding: 26px 38px 24px; gap: 14px; }
+  #stage.earth-arc::after { right: 0; bottom: 0; width: 210px; height: 210px; opacity: .45; }
+  .page-head { height: 78px; flex: 0 0 78px; display: flex; align-items: flex-end; justify-content: space-between; gap: var(--sp-5); }
+  .kicker { color: var(--primary); font-family: var(--font-mono); font-size: var(--fs-label); font-weight: 700; letter-spacing: .16em; }
+  .head-copy { display: flex; align-items: baseline; gap: var(--sp-4); }
+  .head-copy .lead { margin: 0; color: var(--muted); }
+  .progress-wrap { width: 360px; flex: 0 0 360px; padding-bottom: 3px; }
+  .progress-row { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); }
+  .progress-dots { display: flex; gap: 12px; }
+  .progress-dot { width: 15px; height: 15px; border: 2px solid var(--line-strong); border-radius: 50%; background: var(--panel-deep); transition: background 220ms ease-out, box-shadow 220ms ease-out, border-color 220ms ease-out; }
+  .progress-dot.done { border-color: var(--primary); background: var(--primary); box-shadow: 0 0 12px var(--primary-line); }
+  .progress-text { color: var(--text); font-family: var(--font-mono); font-size: var(--fs-sec); }
+
+  .main { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 12px; }
+  .workspace { flex: 1; min-height: 0; display: flex; gap: 18px; }
+  .tree-panel { flex: 1; min-width: 0; min-height: 0; }
+  .tree-panel.k-classification { gap: 0; }
+  .tree-panel.k-classification > .lv { flex: 1; min-height: 0; padding-left: 18px; margin-left: 0; }
+  .tree-panel.k-classification > .lv::before { top: 28px; width: 18px; }
+  .tree-panel .box { position: relative; flex: 1; min-height: 0; padding: 0; overflow: hidden; }
+  .tree-panel .box > .bt { height: 43px; margin: 0; padding: 7px 16px; display: flex; align-items: center; justify-content: space-between; font-size: var(--fs-sec); }
+  .tree-panel .bt .hint { color: var(--muted); font-family: var(--font-sans); font-size: var(--fs-label); font-weight: 600; }
+  #treeSvg { width: 100%; height: calc(100% - 43px); min-height: 0; outline: none; }
+  .tree-link { fill: none; stroke: var(--line-strong); stroke-width: 2; vector-effect: non-scaling-stroke; transition: stroke 240ms ease-out, opacity 240ms ease-out; }
+  .tree-link.connected { stroke: var(--primary); filter: drop-shadow(0 0 4px var(--primary-line)); }
+  .tree-link.pulse { stroke: var(--accent); stroke-width: 3; stroke-dasharray: 12 10; animation: link-flow 700ms ease-out both; }
+  .slot-ring { fill: var(--panel-deep); stroke: var(--line-strong); stroke-width: 2; vector-effect: non-scaling-stroke; transition: stroke 180ms ease-out, fill 180ms ease-out; }
+  .slot-hit { fill: transparent; cursor: pointer; }
+  .node-slot.selected .slot-ring { stroke: var(--accent); fill: var(--accent-soft); }
+  .node-slot.done .slot-ring { stroke: var(--primary); fill: var(--primary-soft); filter: drop-shadow(0 0 5px var(--primary-line)); }
+  .node-mark { fill: var(--faint); font: 700 18px var(--font-mono); text-anchor: middle; dominant-baseline: middle; pointer-events: none; }
+  .node-slot.done .node-mark { fill: var(--primary); }
+  .node-name { fill: var(--text); font: 700 16px var(--font-sans); dominant-baseline: middle; pointer-events: none; }
+  .node-hint { fill: var(--muted); font: 500 14px var(--font-sans); pointer-events: none; }
+  .node-date { fill: var(--primary); font: 600 14px var(--font-mono); pointer-events: none; }
+  .level-guide { stroke: var(--line); stroke-width: 1; stroke-dasharray: 4 8; vector-effect: non-scaling-stroke; }
+  .level-label { fill: var(--faint); font: 600 14px var(--font-sans); text-anchor: middle; }
+  .strata-tick { stroke: var(--primary-line); stroke-width: 1; vector-effect: non-scaling-stroke; }
+  .core-line { position: absolute; z-index: 4; left: 50%; bottom: 10px; width: 760px; max-width: 80%; padding: 14px 22px; border: 1px solid var(--accent-line); border-left: 6px solid var(--accent); border-radius: var(--radius-2); color: var(--text); background: var(--panel-raised); box-shadow: var(--shadow-panel); font-size: var(--fs-lead); font-weight: 750; line-height: 1.5; visibility: hidden; opacity: 0; pointer-events: none; transform: translateX(-50%) translateY(12px) scale(.98); transition: opacity 280ms ease-out, transform 280ms ease-out; }
+  .core-line.show { visibility: visible; opacity: 1; transform: translateX(-50%) translateY(0) scale(1); }
+
+  .side { width: 330px; flex: 0 0 330px; display: flex; flex-direction: column; gap: 14px; }
+  .side .panel { box-shadow: none; }
+  .relation { flex: 1; min-height: 0; }
+  .relation { padding: 16px; }
+  .relation h2 { margin-bottom: 6px; }
+  .relation .lv { gap: 4px; min-height: 0; margin-left: 6px; padding-left: 12px; }
+  .relation > .lv { overflow: hidden; }
+  .relation .lv::before { top: 13px; width: 9px; }
+  .relation .box { min-height: 0; padding: 5px 8px; background: var(--panel-deep); }
+  .relation .box > .bt { margin: -5px -8px 4px; padding: 4px 8px; font-size: var(--fs-sec); }
+  .relation .mini { color: var(--muted); font-size: var(--fs-sec); line-height: 1.35; }
+  .ladder { position: relative; height: 150px; flex: 0 0 150px; overflow: hidden; }
+  .ladder-title { color: var(--muted); font-size: var(--fs-label); font-weight: 700; }
+  .ladder-track { position: relative; display: flex; align-items: center; justify-content: space-around; height: 70px; color: var(--faint); font-size: var(--fs-sec); filter: grayscale(1); }
+  .ladder-track span + span::before { margin-right: 12px; content: "→"; color: var(--faint); }
+  .ladder-slash { position: absolute; left: 28px; right: 28px; top: 68px; height: 5px; border-radius: 99px; background: var(--accent); box-shadow: 0 0 12px var(--accent-line); opacity: 0; transform: rotate(-13deg) scaleX(0); transform-origin: left center; transition: transform 450ms ease-out, opacity 180ms ease-out; }
+  .ladder.crossed .ladder-slash { opacity: 1; transform: rotate(-13deg) scaleX(1); }
+  .ladder.crossed .ladder-track { opacity: .38; }
+
+  .feedback { min-height: 46px; flex: 0 0 46px; display: flex; align-items: center; padding: 9px 16px; border-left: 3px solid var(--primary); color: var(--text); background: var(--panel-deep); font-size: var(--fs-sec); line-height: 1.45; }
+  .feedback.error { border-left-color: var(--danger); color: var(--danger); }
+  .feedback.success { border-left-color: var(--accent); }
+  .tray { height: 122px; flex: 0 0 122px; display: flex; flex-direction: column; gap: 8px; padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--radius-2); background: linear-gradient(180deg, var(--panel), var(--panel-deep)); }
+  .tray-head { display: flex; align-items: center; justify-content: space-between; color: var(--muted); font-size: var(--fs-label); font-weight: 650; }
+  .cards { flex: 1; min-height: 0; display: flex; gap: 10px; }
+  .name-card { position: relative; flex: 1 1 0; min-width: 0; min-height: 68px; padding: 9px 10px; border: 1px solid var(--line-strong); border-radius: var(--radius-1); color: var(--text); background: var(--panel-raised); font-size: 16px; font-weight: 700; line-height: 1.35; text-align: left; cursor: grab; touch-action: none; transition: border-color 160ms ease-out, background 160ms ease-out, opacity 180ms ease-out, transform 180ms ease-out; }
+  .name-card:hover, .name-card:focus-visible, .name-card.selected { border-color: var(--accent); background: var(--accent-soft); }
+  .name-card.dragging { z-index: 20; cursor: grabbing; transition: none; box-shadow: var(--shadow-panel); }
+  .name-card.placed { visibility: hidden; opacity: 0; pointer-events: none; }
+  .name-card.reset-card { flex: 0 0 190px; align-self: center; text-align: center; cursor: pointer; border-color: var(--accent); background: var(--accent-soft); }
+  .card-date { display: block; margin-top: 3px; color: var(--primary); font-family: var(--font-mono); font-size: 14px; font-weight: 600; }
+  .shake { animation: shake-x 360ms ease-out; }
+  .footnote { height: 26px; flex: 0 0 26px; margin: 0; color: var(--muted); font-size: var(--fs-sec); line-height: 1.5; }
+  @keyframes shake-x { 0%,100%{transform:translateX(0)} 25%{transform:translateX(-10px)} 55%{transform:translateX(8px)} 78%{transform:translateX(-4px)} }
+  @keyframes link-flow { from{stroke-dashoffset:44} to{stroke-dashoffset:0} }
+  .enter-tree .tree-link, .enter-tree .node-slot { opacity: 0; animation: fade-rise 520ms ease-out forwards; }
+  .enter-tree .tree-link { stroke-dasharray: 800; stroke-dashoffset: 800; animation-name: grow-link; animation-duration: 900ms; }
+  .enter-tree .node-slot { animation-name: fade-only; animation-delay: 430ms; }
+  .enter-card { opacity: 0; transform: translateY(18px); animation: fade-rise 420ms ease-out forwards; }
+  @keyframes fade-rise { to{opacity:1;transform:translateY(0)} }
+  @keyframes fade-only { to{opacity:1} }
+  @keyframes grow-link { to{opacity:1;stroke-dashoffset:0} }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: 1ms !important; animation-delay: 0ms !important; transition-duration: 1ms !important; }
+    .enter-tree .tree-link, .enter-tree .node-slot, .enter-card { opacity: 1; transform: none; stroke-dashoffset: 0; }
+  }
+</style>
+</head>
+<body data-page="05" data-total="50">
+<div id="stage" class="earth-arc">
+  <header class="page-head">
+    <div class="col gap-1">
+      <div class="kicker">COMMON ANCESTRY</div>
+      <div class="head-copy"><h1>把阶梯拆成树</h1><p class="lead">把名称接到分叉位置，重建共同祖先模型。</p></div>
+    </div>
+    <div class="progress-wrap" aria-label="重建进度">
+      <div class="progress-row"><div id="progressDots" class="progress-dots" aria-hidden="true"></div><output id="progressText" class="progress-text" aria-live="polite"></output></div>
+    </div>
+  </header>
+
+  <main class="main min0">
+    <div class="workspace min0">
+      <section class="tree-panel k-classification min0" aria-labelledby="treeTitle">
+        <div class="lv min0">
+          <div class="box strata min0">
+            <div class="bt"><span id="treeTitle">共同祖先 → 姐妹分支 → 分支内继续分叉</span><span class="hint">同一纵列表示相近分叉层级，不表示进步高低</span></div>
+            <svg id="treeSvg" class="no-pan" viewBox="0 0 1120 570" role="img" tabindex="0" aria-labelledby="svgTitle svgDesc">
+              <title id="svgTitle">待重建的人类与黑猩猩谱系分叉树</title>
+              <desc id="svgDesc">选择下方名称卡，再点击相应空槽；也可在卡片上用方向键选择槽位，按回车放置。</desc>
+            </svg>
+            <div id="coreLine" class="core-line" aria-live="polite">人类不是从今天的猿升级而来；人类与其他现生猿类来自共同祖先。演化会分叉，也会有多个分支持续并存。</div>
+          </div>
+        </div>
+      </section>
+
+      <aside class="side min0">
+        <section class="relation panel k-classification">
+          <h2>看连线判断归属</h2>
+          <div class="lv"><div class="box"><div class="bt">共同祖先</div><div class="mini">不是现生黑猩猩，也不是现代人。</div>
+            <div class="lv"><div class="box"><div class="bt">姐妹分支</div><div class="mini">两支共享祖先，随后各自延续。</div>
+              <div class="lv"><div class="box"><div class="bt">分支内再分叉</div><div class="mini">树梢不是通向唯一终点的队列。</div></div>
+            </div></div>
+          </div></div>
+        </section>
+        <section id="ladder" class="ladder panel" aria-label="错误模型：进化阶梯">
+          <div class="ladder-title">错误旧图：按高低排队</div>
+          <div class="ladder-track"><span>猿</span><span>猿人</span><span>人</span></div>
+          <div class="ladder-slash" aria-hidden="true"></div>
+        </section>
+      </aside>
+    </div>
+
+    <div id="feedback" class="feedback" aria-live="assertive">先选择一张名称卡，再把它接到树上的关系槽位。</div>
+    <section class="tray" aria-labelledby="trayTitle">
+      <div class="tray-head"><span id="trayTitle">待归档的谱系名称</span><span>拖动，或先选卡片再点空槽</span></div>
+      <div id="cards" class="cards"></div>
+    </section>
+    <p class="footnote">位置为课堂简化谱系；连线表示共同祖先关系，不断言图中物种彼此都是直系祖先。</p>
+  </main>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script src="assets/lib/d3.min.js"></script>
+<script>
+(function () {
+  'use strict';
+  Deck.init({ index: 5, total: 50 });
+
+  var afar = Lec.P.speciesById('australopithecus-afarensis');
+  var sapiens = Lec.P.speciesById('homo-sapiens');
+  var split = Lec.P.evolutionMilestoneById('human-chimp-split');
+  var earlyHomo = Lec.P.evolutionMilestoneById('genus-homo');
+  var lowerSplit = Lec.K.evolution.species[0].endYearsAgo;
+
+  function mya(value, digits) {
+    return '约 ' + Lec.P.formatNumber(value / 1e6, digits == null ? 2 : digits) + ' 百万年前';
+  }
+  function spanMya(start, end) {
+    return '约 ' + Lec.P.formatNumber(start / 1e6, 2) + '—' + Lec.P.formatNumber(end / 1e6, 2) + ' 百万年前';
+  }
+
+  var data = [
+    { id: 'ancestor', parent: null, label: '人类与黑猩猩谱系的共同祖先种群', short: '共同祖先种群', hint: '根：不是现生黑猩猩', date: spanMya(lowerSplit, split.yearsAgo) },
+    { id: 'chimp', parent: 'ancestor', label: '黑猩猩谱系', short: '黑猩猩谱系', hint: '与人族并列的现生分支', date: '' },
+    { id: 'hominin', parent: 'ancestor', label: '人族谱系', short: '人族谱系', hint: '与黑猩猩谱系共享祖先', date: '' },
+    { id: 'afarensis', parent: 'hominin', label: '南方古猿阿法种', short: '南方古猿阿法种', hint: '早期人族的一条已知分支', date: spanMya(afar.endYearsAgo, afar.startYearsAgo) },
+    { id: 'early-homo', parent: 'hominin', label: '早期人属记录', short: '早期人属记录', hint: '人族树中的另一位置', date: mya(earlyHomo.yearsAgo, 2) },
+    { id: 'sapiens', parent: 'early-homo', label: '智人所在的人属后续分支', short: '智人所在分支', hint: '不是全树终点', date: mya(sapiens.startYearsAgo, 2) }
+  ];
+
+  var state = { placed: {}, selected: null, keyboardSlot: 0, complete: false, trace: [] };
+  var svg = d3.select('#treeSvg');
+  var cardsEl = document.getElementById('cards');
+  var feedback = document.getElementById('feedback');
+  var dotsEl = document.getElementById('progressDots');
+  var progressText = document.getElementById('progressText');
+  var reduced = Deck.reduced();
+
+  var hierarchy = d3.stratify().id(function (d) { return d.id; }).parentId(function (d) { return d.parent; })(data);
+  d3.tree().nodeSize([104, 180])(hierarchy);
+  hierarchy.each(function (d) {
+    d.vx = 92 + d.y;
+    d.vy = 285 + d.x;
+  });
+
+  var levels = [0, 180, 360, 540];
+  svg.append('g').selectAll('line').data(levels).join('line')
+    .attr('class', 'level-guide').attr('x1', function (d) { return 92 + d; }).attr('x2', function (d) { return 92 + d; }).attr('y1', 44).attr('y2', 528);
+  svg.append('g').selectAll('text').data(['共同祖先', '姐妹分支', '人族内分叉', '后续分支']).join('text')
+    .attr('class', 'level-label').attr('x', function (d, i) { return 92 + levels[i]; }).attr('y', 30).text(function (d) { return d; });
+  svg.append('g').selectAll('line').data(d3.range(16)).join('line')
+    .attr('class', 'strata-tick').attr('x1', 18).attr('x2', function (d) { return d % 4 === 0 ? 48 : 34; }).attr('y1', function (d) { return 48 + d * 31; }).attr('y2', function (d) { return 48 + d * 31; });
+
+  var linkGen = d3.linkHorizontal().x(function (d) { return d.x; }).y(function (d) { return d.y; });
+  var links = svg.append('g').attr('class', 'links').selectAll('path').data(hierarchy.links()).join('path')
+    .attr('class', 'tree-link').attr('data-child', function (d) { return d.target.id; })
+    .attr('d', function (d) { return linkGen({ source: { x: d.source.vx, y: d.source.vy }, target: { x: d.target.vx, y: d.target.vy } }); });
+
+  var nodes = svg.append('g').selectAll('g').data(hierarchy.descendants()).join('g')
+    .attr('class', 'node-slot').attr('data-id', function (d) { return d.id; })
+    .attr('transform', function (d) { return 'translate(' + d.vx + ',' + d.vy + ')'; })
+    .on('click', function (event, d) { event.stopPropagation(); attempt(d.id); });
+  nodes.append('rect').attr('class', 'slot-hit').attr('x', -30).attr('y', -38).attr('width', 315).attr('height', 76).attr('rx', 8);
+  nodes.append('circle').attr('class', 'slot-ring').attr('r', 26);
+  nodes.append('text').attr('class', 'node-mark').text('?');
+  nodes.append('text').attr('class', 'node-name').attr('x', 39).attr('y', -9).text('');
+  nodes.append('text').attr('class', 'node-hint').attr('x', 39).attr('y', 14).text(function (d) { return d.data.hint; });
+  nodes.append('text').attr('class', 'node-date').attr('x', 39).attr('y', 34).text(function (d) { return d.data.date; });
+  svg.classed('enter-tree', !reduced);
+
+  data.forEach(function (d, i) {
+    var dot = document.createElement('span');
+    dot.className = 'progress-dot';
+    dotsEl.appendChild(dot);
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'name-card' + (reduced ? '' : ' enter-card');
+    btn.style.animationDelay = reduced ? '0ms' : (520 + i * 65) + 'ms';
+    btn.dataset.id = d.id;
+    btn.setAttribute('aria-label', d.label + (d.date ? '，' + d.date : ''));
+    btn.innerHTML = '<span>' + d.label + '</span>' + (d.date ? '<span class="card-date">' + d.date + '</span>' : '');
+    cardsEl.appendChild(btn);
+    bindCard(btn);
+  });
+
+  function bindCard(btn) {
+    var drag = null;
+    btn.addEventListener('click', function () {
+      if (state.complete && btn.dataset.action === 'reset') { reset(); return; }
+      if (btn.dataset.dragged === 'yes') { btn.dataset.dragged = ''; return; }
+      selectCard(btn.dataset.id);
+    });
+    btn.addEventListener('keydown', function (event) {
+      if (state.complete && btn.dataset.action === 'reset') return;
+      if (event.key === 'ArrowRight' || event.key === 'ArrowDown') {
+        event.preventDefault(); selectCard(btn.dataset.id); state.keyboardSlot = (state.keyboardSlot + 1) % data.length; markKeyboardSlot();
+      } else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') {
+        event.preventDefault(); selectCard(btn.dataset.id); state.keyboardSlot = (state.keyboardSlot + data.length - 1) % data.length; markKeyboardSlot();
+      } else if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault(); selectCard(btn.dataset.id); attempt(data[state.keyboardSlot].id);
+      }
+    });
+    btn.addEventListener('pointerdown', function (event) {
+      if (state.complete || event.button !== 0) return;
+      drag = { x: event.clientX, y: event.clientY, moved: false };
+      btn.setPointerCapture(event.pointerId);
+      btn.classList.add('dragging');
+      selectCard(btn.dataset.id);
+    });
+    btn.addEventListener('pointermove', function (event) {
+      if (!drag) return;
+      var dx = (event.clientX - drag.x) / Deck.s;
+      var dy = (event.clientY - drag.y) / Deck.s;
+      if (Math.abs(dx) + Math.abs(dy) > 8) drag.moved = true;
+      btn.style.transform = 'translate(' + dx + 'px,' + dy + 'px)';
+    });
+    btn.addEventListener('pointerup', function (event) {
+      if (!drag) return;
+      var moved = drag.moved;
+      btn.classList.remove('dragging');
+      btn.style.transform = '';
+      drag = null;
+      if (moved) {
+        btn.dataset.dragged = 'yes';
+        btn.style.pointerEvents = 'none';
+        var target = document.elementFromPoint(event.clientX, event.clientY);
+        btn.style.pointerEvents = '';
+        var slot = target && target.closest ? target.closest('.node-slot') : null;
+        if (slot) attempt(slot.getAttribute('data-id'));
+        else setFeedback('没有接到槽位；卡片已回到归档托盘。', true);
+      }
+    });
+    btn.addEventListener('pointercancel', function () {
+      drag = null; btn.classList.remove('dragging'); btn.style.transform = '';
+    });
+  }
+
+  function selectCard(id) {
+    if (state.placed[id] || state.complete) return;
+    state.selected = id;
+    Array.from(cardsEl.children).forEach(function (el) { el.classList.toggle('selected', el.dataset.id === id); });
+    markKeyboardSlot();
+    var item = data.find(function (d) { return d.id === id; });
+    setFeedback('已选择“' + item.short + '”。现在点击它所属的关系槽位。', false);
+  }
+
+  function markKeyboardSlot() {
+    nodes.classed('selected', function (d, i) { return !!state.selected && !state.placed[d.id] && i === state.keyboardSlot; });
+  }
+
+  function errorMessage(cardId, slotId) {
+    if (cardId === 'chimp' && slotId === 'ancestor') return '这里会把现生黑猩猩当成人类祖先；请找与人族并列的分支。';
+    if (slotId === 'ancestor') return '根部应放共同祖先种群；其他名称都属于它下面的分支。';
+    if (slotId === 'chimp' || slotId === 'hominin') return '这一层是共享祖先之后并列的姐妹分支。';
+    if (slotId === 'afarensis' || slotId === 'early-homo') return '这个槽位位于人族分支之内，请检查卡片的归属层级。';
+    return '这个槽位是人属的后续分支，不是全树的进步终点。';
+  }
+
+  function attempt(slotId) {
+    if (state.complete) return;
+    if (!state.selected) { setFeedback('先从托盘选择一张名称卡。', true); shakeSlot(slotId); return; }
+    var cardId = state.selected;
+    if (cardId !== slotId) {
+      setFeedback(errorMessage(cardId, slotId), true);
+      shakeCard(cardId); shakeSlot(slotId);
+      state.trace.push({ action: 'wrong', card: cardId, slot: slotId });
+      dispatch('game-progress', { state: snapshot(), action: 'wrong', metrics: { connected: Object.keys(state.placed).length } });
+      return;
+    }
+    state.placed[cardId] = true;
+    state.trace.push({ action: 'connect', id: cardId });
+    state.selected = null;
+    var card = cardsEl.querySelector('[data-id="' + cardId + '"]');
+    card.classList.remove('selected'); card.classList.add('placed'); card.disabled = true;
+    var node = nodes.filter(function (d) { return d.id === cardId; }).classed('done', true).classed('selected', false);
+    node.select('.node-mark').text('✓');
+    node.select('.node-name').text(function (d) { return d.data.short; });
+    node.select('.node-hint').attr('y', 14);
+    if (cardId !== 'ancestor') {
+      var link = links.filter(function (d) { return d.target.id === cardId; }).classed('connected', true);
+      if (!reduced) { link.classed('pulse', true); setTimeout(function () { link.classed('pulse', false); }, 720); }
+    }
+    updateProgress();
+    setFeedback('已接通“' + data.find(function (d) { return d.id === cardId; }).short + '”及其祖先连线。', false, true);
+    dispatch('game-progress', { state: snapshot(), action: 'connect', metrics: { connected: Object.keys(state.placed).length } });
+    if (Object.keys(state.placed).length === data.length) complete();
+  }
+
+  function updateProgress() {
+    var count = Object.keys(state.placed).length;
+    Array.from(dotsEl.children).forEach(function (dot, i) { dot.classList.toggle('done', i < count); });
+    progressText.textContent = '已接通 ' + count + ' / ' + data.length;
+  }
+
+  function setFeedback(text, isError, isSuccess) {
+    feedback.textContent = text;
+    feedback.classList.toggle('error', !!isError);
+    feedback.classList.toggle('success', !!isSuccess);
+  }
+  function shakeCard(id) {
+    var el = cardsEl.querySelector('[data-id="' + id + '"]');
+    el.classList.remove('shake'); void el.offsetWidth; el.classList.add('shake');
+  }
+  function shakeSlot(id) {
+    var el = document.querySelector('.node-slot[data-id="' + id + '"]');
+    if (!el) return; el.classList.remove('shake'); void el.getBBox(); el.classList.add('shake');
+  }
+
+  function complete() {
+    state.complete = true;
+    setFeedback('树已重建：亲缘按分叉组织，不按高低排队。', false, true);
+    document.getElementById('ladder').classList.add('crossed');
+    var reveal = function () {
+      document.getElementById('coreLine').classList.add('show');
+      var first = cardsEl.firstElementChild;
+      Array.from(cardsEl.children).forEach(function (el, i) { if (i > 0) { el.hidden = true; } });
+      first.hidden = false; first.disabled = false; first.className = 'name-card reset-card'; first.dataset.action = 'reset'; first.innerHTML = '重建一次'; first.setAttribute('aria-label', '重建一次谱系树');
+      dispatch('game-complete', { score: data.length, metrics: { connected: data.length }, trace: state.trace.slice() });
+    };
+    if (reduced) reveal(); else setTimeout(reveal, 620);
+  }
+
+  function reset() {
+    state = { placed: {}, selected: null, keyboardSlot: 0, complete: false, trace: [] };
+    document.getElementById('coreLine').classList.remove('show');
+    document.getElementById('ladder').classList.remove('crossed');
+    links.classed('connected pulse', false);
+    nodes.classed('done selected shake', false);
+    nodes.select('.node-mark').text('?'); nodes.select('.node-name').text('');
+    Array.from(cardsEl.children).forEach(function (el, i) {
+      var d = data[i]; el.hidden = false; el.disabled = false; el.className = 'name-card'; el.dataset.id = d.id; delete el.dataset.action;
+      el.innerHTML = '<span>' + d.label + '</span>' + (d.date ? '<span class="card-date">' + d.date + '</span>' : '');
+      el.setAttribute('aria-label', d.label + (d.date ? '，' + d.date : ''));
+    });
+    updateProgress(); setFeedback('先选择一张名称卡，再把它接到树上的关系槽位。', false);
+    dispatch('game-reset', { state: snapshot() });
+  }
+
+  function snapshot() { return JSON.parse(JSON.stringify(state)); }
+  function dispatch(name, detail) { document.getElementById('stage').dispatchEvent(new CustomEvent(name, { bubbles: true, detail: detail })); }
+  window.lineageGame = { start: function () { dispatch('game-start', { state: snapshot() }); }, reset: reset, getState: snapshot };
+  updateProgress();
+  window.lineageGame.start();
+}());
+</script>
+</body>
+</html>

@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>拖高轨道：速度下降，周期拉长，能量仍要增加</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    html.lec-root{position:static;width:auto;height:auto;overflow:visible}
+    body.lec-page{position:static;width:auto;height:auto;overflow:visible}
+    .lec-header__inner{width:100%;display:flex;align-items:center;gap:24px;min-width:0}
+    .lec-header__identity{display:none}.lec-header__kicker,.lec-header__page{flex:0 0 auto;margin:0}
+    .lec-header__title{flex:1 1 auto;min-width:0}
+    .lec-footer__inner{width:100%;display:flex;align-items:center;gap:16px}.lec-footer__take-text{margin:0}
+    .orbit-page{height:100%;display:grid;grid-template-rows:324px 280px;gap:16px}
+    .orbit-stage{position:relative;overflow:hidden;border:1px solid var(--line);border-radius:var(--radius-lg);background:#101a2c;box-shadow:var(--shadow-panel)}
+    #orbit-canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
+    .scene-label{position:absolute;z-index:2;color:#f5f9ff;font-size:var(--fs-label);line-height:var(--lh-label);pointer-events:none}
+    .scene-label.radius{left:24px;top:20px;padding:8px 12px;border-left:3px solid #c86b28;background:rgb(16 26 44 / 78%)}
+    .scene-label.time{right:20px;top:18px;color:#dfe8f2}
+    .scene-label.motion{right:20px;bottom:18px;color:#c7d3e0}
+    .height-control{position:absolute;z-index:3;left:24px;right:24px;bottom:18px;max-width:720px;padding:10px 16px;border:1px solid rgb(199 211 224 / 38%);border-radius:var(--radius-md);background:rgb(16 26 44 / 88%);color:#f5f9ff}
+    .height-control .ctl{color:#f5f9ff}.height-control output{min-width:150px}.ends{display:flex;justify-content:space-between;margin-left:108px;color:#c7d3e0;font-size:var(--fs-label);line-height:var(--lh-label)}
+    .chain{height:100%;gap:34px}
+    .chain>section{padding:14px 12px;display:flex;flex-direction:column;justify-content:flex-start;box-shadow:none}
+    .chain>section::before{width:26px;height:26px;margin-bottom:7px}
+    .step-title{font-size:var(--fs-label);font-weight:750;line-height:var(--lh-label);color:var(--muted);margin-bottom:6px}
+    .step-value{font-size:var(--fs-body);font-weight:760;line-height:var(--lh-body);font-variant-numeric:tabular-nums;color:var(--text)}
+    .step-sub{font-size:var(--fs-label);line-height:var(--lh-label);color:var(--muted);margin-top:5px}
+    .trend{width:100%;height:42px;margin-top:auto;overflow:visible}.trend .base{stroke:var(--line);stroke-width:1;fill:none}.trend .trace{stroke:var(--accent);stroke-width:3;fill:none;stroke-linecap:round;stroke-linejoin:round}
+    .chain>section:last-child .trend .trace{stroke:var(--warning)}
+    .model-note{font-size:var(--fs-sec);line-height:var(--lh-sec);color:var(--muted);margin-top:5px}
+  </style>
+</head>
+<body data-page="29" data-total="48">
+  <div id="stage">
+    <main class="orbit-page" aria-label="轨道高度实时模型">
+      <section class="orbit-stage min0" aria-label="地球与当前圆轨道三维示意">
+        <canvas id="orbit-canvas" role="img" aria-label="地球位于中心，橙色圆环表示当前圆轨道，半径线连接地心与航天器。"></canvas>
+        <div class="scene-label radius" id="scene-radius">轨道半径</div>
+        <div class="scene-label time">理想、地心、共面圆轨道</div>
+        <div class="scene-label motion">动画已加速，不代表真实时间</div>
+        <div class="height-control">
+          <div class="ctl"><label for="height">轨道高度</label><input id="height" type="range" min="0" max="1000" value="112" step="1"><output id="height-out">—</output></div>
+          <div class="ends"><span>较低</span><span>较高</span></div>
+        </div>
+      </section>
+      <section class="k-process chain" aria-label="从高度到轨道读数的五步计算链" aria-live="polite">
+        <section data-state="current"><div class="step-title">地表以上高度 h</div><div class="step-value" id="h-read">—</div><div class="step-sub">拖动给出输入</div></section>
+        <section><div class="step-title">轨道半径 r</div><div class="step-value" id="r-read">—</div><div class="step-sub">地球半径 + 高度</div></section>
+        <section><div class="step-title">圆轨道速度 v</div><div class="step-value" id="v-read">—</div><div class="step-sub">高度 ↑ → 速度 ↓</div><svg class="trend" viewBox="0 0 180 42" aria-label="本次拖动的速度趋势"><path class="base" d="M2 39H178"/><path class="trace" id="v-trace"/></svg></section>
+        <section><div class="step-title">绕行周期 T</div><div class="step-value" id="t-read">—</div><div class="step-sub" id="day-read">高度 ↑ → 周期 ↑</div><svg class="trend" viewBox="0 0 180 42" aria-label="本次拖动的周期趋势"><path class="base" d="M2 39H178"/><path class="trace" id="t-trace"/></svg></section>
+        <section><div class="step-title">相对理想能量增量 Δε</div><div class="step-value" id="e-read">—</div><div class="step-sub">高度 ↑ → 机械能 ↑</div><svg class="trend" viewBox="0 0 180 42" aria-label="本次拖动的能量趋势"><path class="base" d="M2 39H178"/><path class="trace" id="e-trace"/></svg><div class="model-note">单位质量比较；不含效率、阻力、重力损失与转移过程。</div></section>
+      </section>
+    </main>
+  </div>
+  <script src="assets/lib/three.min.js"></script>
+  <script src="assets/base.js"></script>
+  <script src="assets/lec.js"></script>
+  <script>
+    Lec.mount({index:29,kicker:'ORBITAL ALTITUDE',title:'拖高轨道：速度下降，周期拉长，能量仍要增加',take:'轨道越高，速度通常越低、周期越长，但抵达它仍需增加轨道机械能。'});
+    Deck.init({index:29,total:48});
+
+    const slider=document.getElementById('height');
+    const hMin=Lec.K.spacecraft.lowEarthOrbitAltitude/2;
+    const hMax=6*Lec.K.earth.meanRadius;
+    const rMin=Lec.P.orbitalRadius(Lec.K.earth.meanRadius,hMin);
+    const vMin=Lec.P.circularOrbitVelocity(Lec.K.earth.mass,rMin);
+    const oneKm=Lec.P.kilometresToMetres(1), oneMJ=oneKm*oneKm;
+    let state, dragging=false, history=[];
+    function altitude(){const u=Number(slider.value)/1000;return hMin*Math.pow(hMax/hMin,u)}
+    function fmt(n){return Lec.P.formatNumber(n,3)}
+    function calculate(){
+      const h=altitude(),r=Lec.P.orbitalRadius(Lec.K.earth.meanRadius,h);
+      const v=Lec.P.circularOrbitVelocity(Lec.K.earth.mass,r);
+      const period=Lec.P.orbitalPeriod(Lec.K.earth.mass,r);
+      const energy=(vMin*vMin-v*v)/2;
+      return {h,r,v,period,energy,u:Number(slider.value)/1000};
+    }
+    function setText(s){
+      const hkm=Lec.P.metresToKilometres(s.h),rkm=Lec.P.metresToKilometres(s.r),vkm=s.v/oneKm,emj=s.energy/oneMJ;
+      document.getElementById('height-out').textContent=fmt(hkm)+' km';
+      document.getElementById('h-read').textContent=fmt(hkm)+' km';
+      document.getElementById('r-read').textContent=fmt(rkm)+' km';
+      document.getElementById('v-read').textContent=fmt(vkm)+' km/s';
+      document.getElementById('t-read').textContent=Lec.P.formatDuration(s.period);
+      document.getElementById('day-read').textContent='每天约 '+fmt(Lec.P.orbitsPerDay(s.period))+' 圈';
+      document.getElementById('e-read').textContent=fmt(emj)+' MJ/kg';
+      document.getElementById('scene-radius').textContent='半径 r：'+fmt(rkm)+' km';
+      return '高度 '+fmt(hkm)+' 千米，圆轨道速度 '+fmt(vkm)+' 千米每秒，周期 '+Lec.P.formatDuration(s.period)+'，相对能量增量 '+fmt(emj)+' 兆焦每千克。';
+    }
+    function traces(){
+      const defs=[['v-trace',x=>x.v],['t-trace',x=>x.period],['e-trace',x=>x.energy]];
+      defs.forEach(([id,get])=>{const vals=history.map(get),lo=Math.min(...vals),hi=Math.max(...vals),span=hi-lo||1;const d=history.map((p,i)=>{const x=2+(176*(history.length===1?0:i/(history.length-1)));const y=38-34*(get(p)-lo)/span;return(i?'L':'M')+x.toFixed(1)+' '+y.toFixed(1)}).join(' ');document.getElementById(id).setAttribute('d',d)});
+    }
+
+    const canvas=document.getElementById('orbit-canvas'), box=canvas.parentElement;
+    const renderer=new THREE.WebGLRenderer({canvas,antialias:true,alpha:true});renderer.outputColorSpace=THREE.SRGBColorSpace;renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+    const scene=new THREE.Scene();scene.background=new THREE.Color(0x101a2c);
+    const camera=new THREE.PerspectiveCamera(34,1,.1,100);
+    scene.add(new THREE.HemisphereLight(0xdcecff,0x172033,2.2));const key=new THREE.DirectionalLight(0xffffff,2.5);key.position.set(4,5,6);scene.add(key);
+    const earth=new THREE.Mesh(new THREE.SphereGeometry(1,48,32),new THREE.MeshStandardMaterial({color:0x0b73e0,roughness:.72,metalness:.08}));scene.add(earth);
+    const orbit=new THREE.Mesh(new THREE.TorusGeometry(2,0.018,10,128),new THREE.MeshBasicMaterial({color:0xc86b28}));orbit.rotation.x=Math.PI/2;scene.add(orbit);
+    const craft=new THREE.Mesh(new THREE.SphereGeometry(.075,18,12),new THREE.MeshBasicMaterial({color:0xfff0d5}));scene.add(craft);
+    const lineGeo=new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(),new THREE.Vector3(2,0,0)]);const radiusLine=new THREE.Line(lineGeo,new THREE.LineBasicMaterial({color:0xdfe8f2,transparent:true,opacity:.65}));scene.add(radiusLine);
+    let angle=.65;
+    function resize3(){const w=box.clientWidth,h=box.clientHeight;renderer.setSize(w,h,false);camera.aspect=w/h;camera.updateProjectionMatrix()}
+    function update3(s,dt){const visualR=1.35+1.35*s.u;orbit.scale.setScalar(visualR/2);const omega=.75*Math.pow(s.period/5400,-1);angle+=dt*omega;craft.position.set(visualR*Math.cos(angle),0,visualR*Math.sin(angle));radiusLine.geometry.setFromPoints([new THREE.Vector3(),craft.position.clone()]);camera.position.set(0,3.4+visualR*.18,5.7+visualR*.42);camera.lookAt(0,0,0);renderer.render(scene,camera)}
+    Deck.onResize(()=>{resize3();update3(state||calculate(),0)});resize3();
+    function update(announce){state=calculate();setText(state);if(dragging){history.push(state);if(history.length>42)history.shift()}if(!history.length)history=[state];traces();update3(state,0);if(announce)setText(state)}
+    slider.addEventListener('pointerdown',()=>{dragging=true;history=[]});
+    slider.addEventListener('input',()=>{if(!dragging){dragging=true;history=[]}update(false)});
+    function finish(){if(dragging){dragging=false;update(true)}}
+    slider.addEventListener('change',finish);slider.addEventListener('pointerup',finish);slider.addEventListener('blur',finish);
+    update(true);
+    Deck.loop((t,dt)=>update3(state,dt),{still:2400});
+  </script>
+</body>
+</html>

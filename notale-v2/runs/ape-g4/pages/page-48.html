@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    .p48{height:100%;display:flex;flex-direction:column;gap:var(--sp-3)}
+    .p48-top{display:flex;align-items:center;justify-content:space-between;gap:var(--sp-5)}
+    .p48-top p{font-size:var(--fs-sec);line-height:var(--lh-copy);color:var(--muted)}
+    .p48-matrix{--cmp-cols:minmax(150px,.55fr) repeat(3,minmax(0,1fr));grid-template-columns:var(--cmp-cols);flex:1 1 auto;align-content:stretch}
+    .p48-matrix > :nth-child(3n){border-right:1px solid var(--line)}
+    .p48-matrix > :nth-child(4n){border-right:0}
+    .p48-matrix>.hdr{min-height:52px;align-items:center;gap:var(--sp-2)}
+    .route-mark{font-weight:800;color:var(--accent-strong)}
+    .p48-matrix>.dim{justify-content:stretch;padding:var(--sp-2)}
+    .dim-btn{width:100%;min-height:40px;justify-content:space-between;text-align:left}
+    .dim-btn[aria-pressed="true"]{color:var(--accent-strong);background:var(--accent-soft);border-color:var(--accent)}
+    .p48-matrix>.cell{position:relative;flex-direction:column;align-items:stretch;justify-content:center;gap:var(--sp-2);font-size:var(--fs-sec);line-height:var(--lh-copy);transition:background .16s ease}
+    .p48-matrix>.cell.route-focus{background:var(--cyan-soft)}
+    .summary{font-weight:720;color:var(--text)}
+    .detail{display:none;color:var(--muted)}
+    .detail strong{color:var(--text)}
+    .p48-matrix.is-detail>.cell.active-row{background:var(--accent-soft)}
+    .p48-matrix.is-detail>.cell.active-row .detail{display:block}
+    .p48-matrix.is-detail>.cell:not(.active-row){padding-top:var(--sp-2);padding-bottom:var(--sp-2)}
+    .axis-slot{height:16px;position:relative;margin-top:var(--sp-1)}
+    .axis-slot svg{display:block;width:100%;height:16px;overflow:visible}
+    .p48-bottom{min-height:84px;display:grid;grid-template-columns:minmax(150px,.55fr) repeat(3,minmax(0,1fr));border:1px solid var(--line);border-radius:var(--radius-md);overflow:hidden;background:var(--surface)}
+    .p48-bottom>*{min-width:0;padding:var(--sp-3) var(--sp-4);border-right:1px solid var(--line)}
+    .p48-bottom>*:last-child{border-right:0}
+    .bottom-label{font-weight:740;color:var(--accent-strong);background:var(--surface-soft);display:flex;align-items:center}
+    .route-q{font-size:var(--fs-sec);line-height:var(--lh-copy);display:flex;align-items:center}
+    @media (prefers-reduced-motion:reduce){.p48-matrix>.cell{transition:none}}
+  </style>
+</head>
+<body data-page="48" data-total="50">
+  <div id="stage"><main id="main"></main></div>
+
+  <script src="assets/base.js"></script>
+  <script src="assets/lec.js"></script>
+  <script src="assets/lib/d3.min.js"></script>
+  <script>
+    Lec.mount({
+      index: 48,
+      kicker: "THREE ROUTES",
+      title: "改环境、改身体，还是改基因？",
+      take: "改环境、改身体和改基因具有不同的速度、可逆性、风险与治理问题，不能只问哪一种“更先进”。"
+    });
+    Deck.init({ index: 48, total: 50 });
+
+    var stage = document.getElementById("stage");
+    var main = document.getElementById("main");
+    var data = Lec.K.p48RouteComparison || Lec.K.routeComparison || {
+      routes:{environment:{label:'改环境',definition:'让旧身体仍能工作'},body:{label:'改身体',definition:'个体层面的干预'},gene:{label:'改基因',definition:'改变遗传材料'}},
+      dimensions:{
+        speed:{label:'速度',environment:{summary:'作用可快，部署受工程约束',range:[2,3],conditions:'系统已经建成并可靠运行',question:'谁决定部署顺序？'},body:{summary:'跨度较大，取决于干预',range:[0,3],conditions:'训练、药物与植入方式不同',question:'谁承担等待与试错？'},gene:{summary:'操作未必慢，可靠验证很慢',range:[0,1],conditions:'复杂性状需要长期验证',question:'何时才算证据充分？'}},
+        reversibility:{label:'可逆性',environment:{summary:'通常较可逆，设施可能锁定',range:[2,3],conditions:'允许停用、替换或撤离',question:'退出成本由谁承担？'},body:{summary:'从可逆到难逆',range:[0,3],conditions:'训练与手术后果不同',question:'接受者能否撤回？'},gene:{summary:'通常难以撤回',range:[0,1],conditions:'进入后代后更难控制',question:'谁代表后代作决定？'}},
+        risk:{label:'风险',environment:{summary:'系统故障、维护依赖',range:['系统','资源'],conditions:'风险落在系统与资源',question:'故障时谁优先受保护？'},body:{summary:'副作用、个体差异',range:['个体','制度'],conditions:'风险落在接受干预者',question:'拒绝会影响资格吗？'},gene:{summary:'非预期效应、长期未知',range:['个体','后代'],conditions:'影响可能跨代',question:'长期责任由谁承担？'}},
+        governance:{label:'治理',environment:{summary:'标准、维护与资源分配',conditions:'涉及共同基础设施',question:'谁定标准，谁付成本？'},body:{summary:'同意、拒绝与补偿',conditions:'任务压力可能限制选择',question:'知情同意是否真实？'},gene:{summary:'许可、可及与代际代表',conditions:'决定可能影响后代',question:'谁能决定哪些目标？'}}
+      },
+      ordinalDomains:{speed:['长期','较慢','较快','即时'],reversibility:['难逆','部分可逆','较可逆','可撤回']}
+    };
+    var selected = null;
+    var focusedRoute = null;
+
+    function entries(value){
+      if(Array.isArray(value)) return value.map(function(v,i){ return [v.key || v.id || String(i), v]; });
+      return Object.keys(value || {}).map(function(k){ return [k,value[k]]; });
+    }
+    var routes = entries(data.routes);
+    var dims = entries(data.dimensions);
+    function label(v, fallback){ return typeof v === "string" ? v : (v.label || v.title || v.name || fallback); }
+    function getCell(rk, dk){
+      var r = (data.routes || {})[rk] || {};
+      var d = (data.dimensions || {})[dk] || {};
+      return (d.routes && d.routes[rk]) || d[rk] || (r.dimensions && r.dimensions[dk]) || r[dk] || (data.cells && data.cells[dk] && data.cells[dk][rk]) || {};
+    }
+    function text(v){ return Array.isArray(v) ? v.join("、") : (v == null ? "" : String(v)); }
+
+    main.innerHTML = '<section class="p48" aria-label="三条改造路线比较">'+
+      '<div class="p48-top"><p>选择一个维度；再次选择即可并排查看。</p><p>同一行比较，不计总分。</p></div>'+
+      '<div id="matrix" class="k-comparison p48-matrix"></div>'+
+      '<div id="questions" class="p48-bottom" aria-live="polite"></div></section>';
+    var matrix = document.getElementById("matrix");
+    var questions = document.getElementById("questions");
+
+    function render(){
+      matrix.innerHTML = '<div class="hdr"></div>' + routes.map(function(re,ri){
+        return '<div class="hdr route-head" data-route="'+re[0]+'" tabindex="0"><span class="route-mark" aria-hidden="true">'+(ri===0?'□':ri===1?'○':'◇')+'</span>'+label(re[1],re[0])+'</div>';
+      }).join('');
+      dims.forEach(function(de){
+        var dk=de[0], active=selected===dk;
+        matrix.insertAdjacentHTML('beforeend','<div class="dim"><button type="button" class="dim-btn" data-dim="'+dk+'" aria-pressed="'+active+'"><span>'+label(de[1],dk)+'</span><span aria-hidden="true">'+(active?'×':'＋')+'</span></button></div>');
+        routes.forEach(function(re){
+          var c=getCell(re[0],dk), cond=text(c.conditions), q=text(c.question);
+          var aria=c.ariaDescription || [label(re[1],re[0]),label(de[1],dk),c.summary,cond,q].filter(Boolean).join('；');
+          matrix.insertAdjacentHTML('beforeend','<div class="cell '+(active?'active-row ':'')+(focusedRoute===re[0]?'route-focus ':'')+'" data-route="'+re[0]+'" aria-label="'+String(aria).replace(/"/g,'&quot;')+'"><div class="summary">'+text(c.summary || '取决于具体方案')+'</div><div class="axis-slot" data-route="'+re[0]+'" data-dim="'+dk+'" aria-hidden="true"></div><div class="detail">'+(cond?'<strong>成立条件：</strong>'+cond:'')+'</div></div>');
+        });
+        matrix.insertAdjacentHTML('beforeend','<div class="rowline"></div>');
+      });
+      matrix.classList.toggle('is-detail',!!selected);
+      drawRanges();
+      var current = selected ? (data.dimensions || {})[selected] : null;
+      questions.innerHTML='<div class="bottom-label">'+(selected ? label(current,selected)+'：关键问题' : '并排查看')+'</div>'+routes.map(function(re){
+        var c=selected?getCell(re[0],selected):{};
+        return '<div class="route-q">'+(selected ? text(c.question || c.conditions || '具体方案由谁决定，后果由谁承担？') : text((typeof re[1]==='object' && re[1].definition) || label(re[1],re[0])))+'</div>';
+      }).join('');
+      bind();
+    }
+    function drawRanges(){
+      d3.selectAll('.axis-slot').each(function(){
+        var el=d3.select(this), dk=this.dataset.dim, c=getCell(this.dataset.route,dk), range=c.range;
+        if(!range || !selected || selected!==dk){ el.selectAll('*').remove(); return; }
+        var vals=Array.isArray(range)?range:[range], domain=(data.ordinalDomains && data.ordinalDomains[dk]) || vals;
+        var valid=vals.map(function(v){ return typeof v==='number'?Lec.P.clamp(Lec.P.finite(v),0,domain.length-1):domain.indexOf(v); }).filter(function(v){return Number.isFinite(v)&&v>=0;});
+        var svg=el.append('svg').attr('viewBox','0 0 300 16');
+        svg.append('line').attr('x1',8).attr('x2',292).attr('y1',8).attr('y2',8).attr('stroke','var(--line-strong)').attr('stroke-width',2).attr('stroke-dasharray',this.dataset.route==='environment'?'0':this.dataset.route==='body'?'7 4':'2 4');
+        if(valid.length){var scale=d3.scaleLinear().domain([0,Math.max(1,domain.length-1)]).range([8,292]);var a=d3.min(valid),b=d3.max(valid);svg.append('line').attr('x1',scale(a)).attr('x2',scale(b)).attr('y1',8).attr('y2',8).attr('stroke','var(--accent)').attr('stroke-width',6);svg.selectAll('circle').data([a,b]).join('circle').attr('cx',scale).attr('cy',8).attr('r',5).attr('fill','var(--surface)').attr('stroke','var(--accent)').attr('stroke-width',3);}
+      });
+    }
+    function bind(){
+      matrix.querySelectorAll('.dim-btn').forEach(function(b){b.onclick=function(){selected=selected===b.dataset.dim?null:b.dataset.dim;render();};});
+      matrix.querySelectorAll('.route-head').forEach(function(h){
+        function set(on){focusedRoute=on?h.dataset.route:null;render(); if(on){var n=matrix.querySelector('.route-head[data-route="'+focusedRoute+'"]');if(n)n.focus();}}
+        h.onmouseenter=function(){set(true)};h.onmouseleave=function(){set(false)};h.onfocus=function(){focusedRoute=h.dataset.route;matrix.querySelectorAll('[data-route="'+focusedRoute+'"]').forEach(function(x){x.classList.add('route-focus')})};h.onblur=function(){focusedRoute=null;matrix.querySelectorAll('.route-focus').forEach(function(x){x.classList.remove('route-focus')})};
+      });
+    }
+    render();
+  </script>
+</body>
+</html>

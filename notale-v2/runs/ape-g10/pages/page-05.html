@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  #main{display:flex;flex-direction:column;gap:12px}
+  .lesson-intro{height:52px;display:flex;align-items:center;justify-content:space-between;gap:24px}
+  .lesson-intro p{font-size:var(--fs-lead);line-height:var(--lh-copy)}
+  .legend{display:flex;gap:18px;align-items:center;color:var(--muted);font-size:var(--fs-label);white-space:nowrap}
+  .legend i{display:inline-block;width:28px;height:3px;margin-right:7px;vertical-align:middle;background:var(--primary)}
+  .legend .wrong{background:var(--accent);border-top:2px dashed var(--bg)}
+  .workbench{height:430px;display:flex;gap:16px;min-height:0}
+  .tree-field{position:relative;flex:1 1 auto;min-width:0;overflow:hidden;background:linear-gradient(180deg,rgba(66,199,194,.05),transparent 36%),var(--surface-deep);border:1px solid var(--line);border-radius:var(--radius-md)}
+  #treeSvg{display:block;width:100%;height:100%}
+  #treeSvg text{font-family:var(--font-sans);font-size:16px;fill:var(--text)}
+  #treeSvg .small{font-size:15px;fill:var(--muted)}
+  #treeSvg .time-arrow{stroke:var(--primary);stroke-width:2;fill:none;opacity:.7}
+  #treeSvg .today{stroke:var(--line-strong);stroke-width:2;stroke-dasharray:7 7}
+  #treeSvg .branch{fill:none;stroke:var(--primary);stroke-width:4;filter:drop-shadow(0 0 5px rgba(66,199,194,.35))}
+  #treeSvg .branch-hit{fill:none;stroke:transparent;stroke-width:20;cursor:pointer}
+  #treeSvg .candidate{fill:none;stroke:var(--accent);stroke-width:5;stroke-dasharray:12 8;cursor:pointer;transition:opacity .22s ease,transform .22s ease;transform-box:fill-box;transform-origin:center}
+  #treeSvg .candidate:focus{outline:none;stroke-width:8}
+  #treeSvg .candidate.cut{opacity:0;transform:scaleX(.82);pointer-events:none}
+  #treeSvg .node{fill:var(--surface-high);stroke:var(--primary);stroke-width:3}
+  #treeSvg .fork{fill:var(--primary)}
+  #treeSvg .extinct{stroke:var(--muted);stroke-dasharray:5 5}
+  #treeSvg .cut-flash{fill:var(--accent);opacity:0;pointer-events:none}
+  #treeSvg .cut-flash.go{animation:flash .42s ease-out}
+  .tree-field.shake #treeSvg{animation:shake .28s ease-in-out}
+  @keyframes shake{25%{transform:translateX(-7px)}55%{transform:translateX(6px)}80%{transform:translateX(-3px)}}
+  @keyframes flash{0%{opacity:1;transform:scale(.5)}100%{opacity:0;transform:scale(2.3)}}
+  .side{width:292px;flex:0 0 292px;display:flex;flex-direction:column;gap:12px}
+  .progress-box{padding:16px;background:var(--surface);border:1px solid var(--line);border-radius:var(--radius-md)}
+  .counter{font-family:var(--font-mono);font-size:var(--fs-h2);font-weight:700;color:var(--accent)}
+  .tree-ticks{display:flex;gap:9px;margin-top:10px}
+  .tree-ticks span{width:54px;height:8px;border:1px solid var(--primary-line);border-radius:4px;background:var(--surface-deep)}
+  .tree-ticks span.on{background:var(--primary);box-shadow:0 0 10px rgba(66,199,194,.5)}
+  .toolbox{flex:1;padding:16px;background:var(--surface);border:1px solid var(--line);border-radius:var(--radius-md);display:flex;flex-direction:column;gap:12px}
+  #scissors{width:100%;min-height:58px;font-size:18px}
+  #scissors[aria-pressed="true"]{color:var(--bg);background:var(--accent);border-color:var(--accent)}
+  #status{min-height:70px;color:var(--text);font-size:var(--fs-sec);line-height:var(--lh-sec)}
+  .result{padding:10px 12px;border-left:4px solid var(--primary);background:var(--primary-soft);font-size:var(--fs-sec);line-height:var(--lh-sec)}
+  #reset{margin-top:auto;width:100%}
+  .k-process.process-strip{--process-cols:6;height:114px;gap:22px}
+  .k-process.process-strip .axis{top:20px}
+  .k-process.process-strip .step{padding:42px 10px 8px;border-radius:var(--radius-sm);font-size:var(--fs-label);line-height:1.35;background:rgba(16,29,40,.82)}
+  .k-process.process-strip .step::before{top:13px;left:14px;width:12px;height:12px}
+  .k-process.process-strip .arw{top:3px;right:-21px;width:20px;font-size:18px}
+  .step b{display:block;color:var(--text);font-size:var(--fs-sec);margin-bottom:2px}
+  @media (prefers-reduced-motion:reduce){#treeSvg .candidate,.tree-field.shake #treeSvg,#treeSvg .cut-flash.go{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body data-page="05" data-total="48">
+<div id="stage">
+<main id="main">
+  <div class="lesson-intro">
+    <p>拿起剪刀，剪除三条把支系串成“升级队伍”的橙色连线。</p>
+    <div class="legend" aria-label="图例"><span><i></i>分叉关系</span><span><i class="wrong"></i>错误串联</span></div>
+  </div>
+
+  <section class="workbench" aria-label="修剪演化树小游戏">
+    <div class="tree-field min0" id="treeField">
+      <svg id="treeSvg" viewBox="0 0 1080 430" role="img" aria-labelledby="treeTitle treeDesc">
+        <title id="treeTitle">匿名谱系分叉树</title>
+        <desc id="treeDesc">时间由下向上。祖先群体分成并行支系，其中一支再次分叉，三个橙色串联边需要剪除。</desc>
+      </svg>
+    </div>
+    <aside class="side min0">
+      <div class="progress-box">
+        <div class="label muted">修剪进度</div>
+        <div class="counter" id="counter">已修剪 0/3</div>
+        <div class="tree-ticks" aria-hidden="true"><span></span><span></span><span></span></div>
+      </div>
+      <div class="toolbox">
+        <button id="scissors" type="button" aria-pressed="false">✂ 拿起剪刀</button>
+        <div id="status" aria-live="polite">先拿起剪刀，再选择一条橙色连线。也可用 Tab 定位连线后按 Enter。</div>
+        <div class="result" id="result">箭头只表示时间向前，不表示高低等级。</div>
+        <button id="reset" type="button">重置树</button>
+      </div>
+    </aside>
+  </section>
+
+  <section class="k-process process-strip" aria-label="谱系形成的六个步骤">
+    <div class="axis" aria-hidden="true"></div>
+    <div class="step" data-step="1"><b>祖先群体 A</b>一个群体延续<span class="arw"></span></div>
+    <div class="step" data-step="2"><b>分叉 α</b>走上两条支系<span class="arw"></span></div>
+    <div class="step" data-step="3"><b>支系 B、C</b>分支同时存在<span class="arw"></span></div>
+    <div class="step" data-step="4"><b>分叉 β</b>还能再次分叉<span class="arw"></span></div>
+    <div class="step" data-step="5"><b>支系 B 消失</b>线止于过去<span class="arw"></span></div>
+    <div class="step" data-step="6"><b>现生端点 D、E</b>都位于树梢</div>
+  </section>
+</main>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script src="assets/lib/d3.min.js"></script>
+<script>
+Lec.mount({index: 5, kicker: "BRANCHING, NOT RANKING", title: "剪掉那架梯子", take: "谱系通过分叉形成；今天的物种位于树梢，不是过去物种排队升级的终点。"});
+
+const treeData={id:'A',name:'祖先群体 A',children:[{id:'B',name:'支系 B 消失'},{id:'C',name:'支系 C',children:[{id:'D',name:'现生端点 D'},{id:'E',name:'现生端点 E'}]}]};
+const width=900,height=410;
+const tree=d3.hierarchy(treeData);
+const layout=d3.tree().size([height - 96, width - 180]);
+const root=layout(tree);
+const svg=d3.select('#treeSvg');
+const positions={A:[510,365],B:[280,205],C:[660,245],D:[570,65],E:[815,65]};
+root.each(d=>{d.x=positions[d.data.id][0];d.y=positions[d.data.id][1]});
+
+svg.append('defs').append('marker').attr('id','arrowHead').attr('viewBox','0 0 10 10').attr('refX',8).attr('refY',5).attr('markerWidth',6).attr('markerHeight',6).attr('orient','auto-start-reverse').append('path').attr('d','M 0 0 L 10 5 L 0 10 z').attr('fill','#42C7C2');
+svg.append('line').attr('class','today').attr('x1',115).attr('x2',1005).attr('y1',65).attr('y2',65);
+svg.append('text').attr('class','small').attr('x',925).attr('y',48).text('今天');
+svg.append('path').attr('class','time-arrow').attr('d','M70,375 L70,75').attr('marker-end','url(#arrowHead)');
+svg.append('text').attr('class','small').attr('x',35).attr('y',230).attr('transform','rotate(-90 35 230)').text('时间向前');
+
+function elbow(d){const s=d.source,t=d.target;return `M${s.x},${s.y} V${(s.y+t.y)/2} H${t.x} V${t.y}`}
+const links=svg.selectAll('path.branch').data(root.links(),d=>d.target.data.id).join('path').attr('class',d=>d.target.data.id==='B'?'branch extinct':'branch').attr('d',elbow);
+svg.selectAll('path.branch-hit').data(root.links(),d=>d.target.data.id).join('path').attr('class','branch-hit').attr('d',elbow).attr('tabindex',0).attr('role','button').attr('aria-label',d=>`保留的分叉连接：通向${d.target.data.name}`).on('click',wrongAttempt).on('keydown',function(e){if(e.key==='Enter'||e.key===' '){e.preventDefault();wrongAttempt.call(this,e)}});
+
+const candidates=[
+ {id:'x1',d:'M280,205 Q425,150 570,65',cx:425,cy:145,label:'错误串联一'},
+ {id:'x2',d:'M280,205 Q550,120 815,65',cx:550,cy:125,label:'错误串联二'},
+ {id:'x3',d:'M570,65 Q695,118 815,65',cx:695,cy:94,label:'错误串联三'}
+];
+svg.selectAll('path.candidate').data(candidates,d=>d.id).join('path').attr('class','candidate').attr('d',d=>d.d).attr('tabindex',0).attr('role','button').attr('aria-label',d=>`剪除${d.label}`).on('click',cutCandidate).on('keydown',function(e,d){if(e.key==='Enter'||e.key===' '){e.preventDefault();cutCandidate.call(this,e,d)}});
+svg.selectAll('circle.cut-flash').data(candidates,d=>d.id).join('circle').attr('class','cut-flash').attr('cx',d=>d.cx).attr('cy',d=>d.cy).attr('r',9);
+
+const nodes=svg.selectAll('g.node-g').data(root.descendants(),d=>d.data.id).join('g').attr('class','node-g').attr('transform',d=>`translate(${d.x},${d.y})`);
+nodes.append('circle').attr('class',d=>d.children?'node fork':'node').attr('r',d=>d.children?10:13);
+nodes.append('text').attr('text-anchor','middle').attr('y',d=>d.data.id==='A'?34:-22).text(d=>d.data.name);
+svg.append('text').attr('class','small').attr('x',190).attr('y',245).text('止于过去');
+
+let state=freshState();
+function freshState(){return {armed:false,cut:[]}}
+const scissors=document.getElementById('scissors'), counter=document.getElementById('counter'), status=document.getElementById('status'), result=document.getElementById('result'), field=document.getElementById('treeField');
+scissors.addEventListener('click',()=>{state.armed=!state.armed;scissors.setAttribute('aria-pressed',String(state.armed));scissors.textContent=state.armed?'✂ 剪刀已就位':'✂ 拿起剪刀';status.textContent=state.armed?'选择橙色串联边；青色分叉边应当保留。':'剪刀已放下。再次拿起后继续修剪。'});
+function cutCandidate(event,d){
+ if(!state.armed){status.textContent='先拿起剪刀，再剪这条橙色串联边。';scissors.focus();return}
+ if(state.cut.includes(d.id))return;
+ state.cut.push(d.id);d3.select(this).classed('cut',true).attr('tabindex',-1);
+ const flash=svg.selectAll('.cut-flash').filter(x=>x.id===d.id);flash.classed('go',false);void flash.node().getBoundingClientRect();flash.classed('go',true);
+ update();
+}
+function wrongAttempt(){
+ if(!state.armed){status.textContent='先拿起剪刀，再判断连接。';return}
+ status.textContent='这条边属于分叉关系：应保留两个并行后代。';field.classList.remove('shake');void field.offsetWidth;field.classList.add('shake');
+}
+function update(){
+ const n=state.cut.length;counter.textContent=`已修剪 ${n}/3`;
+ document.querySelectorAll('.tree-ticks span').forEach((el,i)=>el.classList.toggle('on',i<n));
+ document.querySelectorAll('.process-strip .step').forEach((el,i)=>{el.classList.toggle('is-current',i===Math.min(n*2,5));el.classList.toggle('is-done',i<Math.min(n*2,5))});
+ if(n<3){status.textContent=`已剪除一条错误串联。还剩 ${3-n} 条橙色连线。`;result.textContent='分叉产生亲缘不同的支系，不是从“低级”通往“高级”的队伍。'}
+ else{state.armed=false;scissors.setAttribute('aria-pressed','false');scissors.textContent='✓ 修剪完成';status.textContent='多条支系，同一现在。';result.textContent='现生物种都位于树梢；没有谁充当另一个现生物种的过去阶段。';document.querySelectorAll('.process-strip .step').forEach(el=>{el.classList.add('is-done');el.classList.remove('is-current')});document.querySelector('.process-strip .step:last-child').classList.add('is-current')}
+}
+document.getElementById('reset').addEventListener('click',()=>{
+ state=freshState();svg.selectAll('.candidate').classed('cut',false).attr('tabindex',0);svg.selectAll('.cut-flash').classed('go',false);scissors.disabled=false;scissors.setAttribute('aria-pressed','false');scissors.textContent='✂ 拿起剪刀';status.textContent='先拿起剪刀，再选择一条橙色连线。也可用 Tab 定位连线后按 Enter。';result.textContent='箭头只表示时间向前，不表示高低等级。';update();
+});
+
+if(!Deck.reduced()){
+ links.attr('stroke-dasharray',function(){return this.getTotalLength()}).attr('stroke-dashoffset',function(){return this.getTotalLength()}).transition().delay((d,i)=>150+i*130).duration(650).ease(d3.easeCubicOut).attr('stroke-dashoffset',0).on('end',function(){d3.select(this).attr('stroke-dasharray',null)});
+ svg.selectAll('.candidate').attr('opacity',0).transition().delay(900).duration(350).attr('opacity',1);
+}
+update();
+</script>
+</body>
+</html>

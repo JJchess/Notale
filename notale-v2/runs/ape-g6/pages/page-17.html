@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>熟了，不等于一键变聪明</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    .lec-header__progress{font-size:0;line-height:0}
+    .p17{height:100%;display:flex;flex-direction:column;gap:16px}
+    .diet-compare{--compare-n:2;flex:0 0 258px}
+    .diet-compare>.hdr{min-height:48px;padding-top:8px;padding-bottom:8px;font-size:18px;align-items:center}
+    .diet-compare>.dim{justify-content:flex-start;text-align:left}
+    .diet-cell{display:flex;align-items:center;gap:18px}
+    .plate{width:126px;height:126px;flex:0 0 126px;border:7px solid var(--surface-3);border-radius:50%;background:conic-gradient(var(--warm) 0 var(--processed),var(--success) var(--processed) 100%);box-shadow:inset 0 0 0 3px var(--surface),var(--shadow)}
+    .diet-copy{display:flex;flex-direction:column;gap:8px;min-width:0}
+    .diet-copy strong{font-size:16px;line-height:1.4}
+    .key{display:flex;gap:14px;flex-wrap:wrap;color:var(--muted);font-size:15px;line-height:1.4}
+    .key span::before{content:"";display:inline-block;width:12px;height:12px;margin-right:6px;border-radius:50%;background:var(--success)}
+    .key span+span::before{background:var(--warm)}
+    .control-cell{flex-direction:column;align-items:stretch;justify-content:center;gap:8px}
+    .control-cell .ctl{width:100%}
+    .control-cell output{min-width:54px;font-size:18px;font-weight:750;color:var(--accent-strong);text-align:right}
+    .lower{position:relative;display:flex;flex:1 1 0;min-height:0;border:1px solid var(--line);border-radius:var(--radius-md);background:var(--surface);overflow:hidden}
+    .chart{flex:1 1 auto;min-width:0;height:100%}
+    .claim{position:absolute;right:18px;bottom:14px;z-index:2;padding:8px 14px;border-left:5px solid var(--warm);background:var(--warm-soft);font-size:18px;font-weight:760;line-height:1.4}
+    .model-note{position:absolute;left:205px;bottom:14px;z-index:2;color:var(--muted);font-size:14px;line-height:1.4}
+  </style>
+</head>
+<body data-page="17" data-total="48">
+  <div id="stage"><main id="main"></main></div>
+  <script src="assets/base.js"></script>
+  <script src="assets/lec.js"></script>
+  <script src="assets/lib/echarts.min.js"></script>
+  <script>
+    Lec.mount({
+      index: 17,
+      kicker: "FOOD PROCESSING / COSTS & RETURNS",
+      title: "熟了，不等于一键变聪明",
+      take: "加工食物会改变可获得能量与咀嚼成本，但不能化约成单一“变聪明按钮”。"
+    });
+    Deck.init({ index: 17, total: 48 });
+
+    Lec.P17 = {
+      RAW_SHARE_MIN: 0,
+      RAW_SHARE_MAX: 1,
+      RAW_SHARE_DEFAULT: 0.5,
+      RAW_SHARE_STEP: 0.05,
+      INDEX_BASE: 100,
+      ENERGY_PROCESSED_FACTOR: 1.2,
+      CHEWING_PROCESSED_FACTOR: 0.55,
+      DISPLAY_DECIMALS: 0
+    };
+    const C=Lec.P17;
+    const stage=document.getElementById("stage");
+    const main=document.getElementById("main");
+    main.innerHTML=`
+      <section class="p17" aria-label="食物加工成本与收益比较">
+        <div class="k-comparison diet-compare">
+          <div class="hdr">比较维度</div><div class="hdr">较少加工食谱</div><div class="hdr">较多加工食谱</div>
+          <div class="dim">食谱构成</div>
+          <div class="cell diet-cell min0">
+            <div class="plate" id="plateRaw" aria-hidden="true"></div>
+            <div class="diet-copy"><strong>更多保持原始结构</strong><div class="key"><span>原始结构</span><span>切碎、捣碎或加热</span></div></div>
+          </div>
+          <div class="cell diet-cell control-cell diff min0">
+            <div class="plate" id="plateProcessed" aria-hidden="true"></div>
+            <div class="ctl"><label for="share">较多加工比例</label><input id="share" type="range"><output id="shareOut"></output></div>
+            <div class="sec">拖动比例，同时看收益与成本的方向。</div>
+          </div>
+        </div>
+        <div class="lower min0">
+          <div id="chart" class="chart" role="img" aria-label="可获得能量与咀嚼成本的对齐比较图"></div>
+          <div class="model-note" id="live" aria-live="polite">课堂比较模型｜原始结构食物基准＝<span id="baseOut"></span></div>
+          <div class="claim">改变条件 ≠ 单一原因</div>
+        </div>
+      </section>`;
+
+    const input=document.getElementById("share");
+    input.min=C.RAW_SHARE_MIN; input.max=C.RAW_SHARE_MAX; input.step=C.RAW_SHARE_STEP; input.value=C.RAW_SHARE_DEFAULT;
+    document.getElementById("baseOut").textContent=Lec.P.round(Lec.P.finiteNumber(C.INDEX_BASE,C.INDEX_BASE),C.DISPLAY_DECIMALS);
+    const chart=echarts.init(document.getElementById("chart"),null,{renderer:"svg"});
+    const energyMin=C.INDEX_BASE, energyMax=C.INDEX_BASE*C.ENERGY_PROCESSED_FACTOR;
+    const chewMin=C.INDEX_BASE*C.CHEWING_PROCESSED_FACTOR, chewMax=C.INDEX_BASE;
+    function calc(value){
+      const p=Lec.P.clamp(Lec.P.finiteNumber(value,C.RAW_SHARE_DEFAULT),C.RAW_SHARE_MIN,C.RAW_SHARE_MAX);
+      const raw=C.RAW_SHARE_MAX-p;
+      return {p,energy:C.INDEX_BASE*(raw+p*C.ENERGY_PROCESSED_FACTOR),chew:C.INDEX_BASE*(raw+p*C.CHEWING_PROCESSED_FACTOR)};
+    }
+    function shown(v){return Lec.P.round(Lec.P.finiteNumber(v,C.INDEX_BASE),C.DISPLAY_DECIMALS)}
+    function update(){
+      const s=calc(input.value), pct=shown(s.p*C.INDEX_BASE);
+      document.getElementById("shareOut").textContent=pct+"%";
+      document.getElementById("plateRaw").style.setProperty("--processed",(C.RAW_SHARE_MIN*C.INDEX_BASE)+"%");
+      document.getElementById("plateProcessed").style.setProperty("--processed",pct+"%");
+      input.setAttribute("aria-valuetext",`较多加工${pct}%，可获得能量指数${shown(s.energy)}，咀嚼成本指数${shown(s.chew)}`);
+      document.getElementById("live").textContent=`课堂比较模型｜原始结构食物基准＝${shown(C.INDEX_BASE)}｜较多加工${pct}%`;
+      chart.setOption({
+        animationDuration:Deck.reduced()?C.RAW_SHARE_MIN:C.INDEX_BASE*3,
+        textStyle:{fontFamily:Deck.token("--font-sans"),fontSize:16,color:Deck.token("--text")},
+        grid:[{left:205,right:76,top:44,height:68},{left:205,right:76,top:166,height:68}],
+        xAxis:[
+          {type:"value",min:energyMin,max:energyMax,gridIndex:0,axisLabel:{fontSize:12},name:"相对指数",nameTextStyle:{fontSize:14},splitLine:{lineStyle:{color:Deck.token("--line")}}},
+          {type:"value",min:chewMin,max:chewMax,gridIndex:1,axisLabel:{fontSize:12},name:"相对指数",nameTextStyle:{fontSize:14},splitLine:{lineStyle:{color:Deck.token("--line")}}}
+        ],
+        yAxis:[
+          {type:"category",gridIndex:0,data:["可获得能量  通常提高"],axisLabel:{fontSize:16,fontWeight:700,color:Deck.token("--text")},axisTick:{show:false},axisLine:{show:false}},
+          {type:"category",gridIndex:1,data:["咀嚼成本  通常降低"],axisLabel:{fontSize:16,fontWeight:700,color:Deck.token("--text")},axisTick:{show:false},axisLine:{show:false}}
+        ],
+        tooltip:{trigger:"item",textStyle:{fontSize:16},formatter:params=>`较多加工比例：${pct}%<br>当前指数：${shown(params.value[0])}<br>方向性课堂模型，不代表所有食物具有相同幅度`},
+        series:[
+          {name:"能量变化",type:"line",xAxisIndex:0,yAxisIndex:0,data:[[C.INDEX_BASE,0],[s.energy,0]],symbol:"circle",symbolSize:18,lineStyle:{width:7,color:Deck.token("--accent")},itemStyle:{color:Deck.token("--accent")},label:{show:true,position:"top",fontSize:16,formatter:p=>shown(p.value[0])}},
+          {name:"咀嚼变化",type:"line",xAxisIndex:1,yAxisIndex:1,data:[[C.INDEX_BASE,0],[s.chew,0]],symbol:"diamond",symbolSize:20,lineStyle:{width:7,color:Deck.token("--warm")},itemStyle:{color:Deck.token("--warm")},label:{show:true,position:"top",fontSize:16,formatter:p=>shown(p.value[0])}}
+        ]
+      },true);
+    }
+    input.addEventListener("input",update);
+    update();
+    Deck.onResize(()=>chart.resize());
+  </script>
+</body>
+</html>

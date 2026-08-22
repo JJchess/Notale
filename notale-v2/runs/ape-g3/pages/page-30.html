@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>火箭先得运走自己的推进剂</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    body[data-page="30"]{width:1600px;height:900px;transform:translateY(-96px)}
+    .lec-header__inner{transform:translateY(4px)}
+    .mass-page{position:absolute;left:96px;top:var(--header-h);width:var(--content-w);height:var(--content-h);display:grid;grid-template-rows:64px 220px 1fr;gap:12px}
+    .intro{display:flex;align-items:center;justify-content:space-between;gap:24px}
+    .intro p{margin:0;max-width:880px}.formula{font-size:20px;font-weight:760;white-space:nowrap}.formula small{display:block;font-size:14px;font-weight:500;color:var(--muted)}
+    .stage-row{display:grid;grid-template-columns:1fr 1fr 260px;gap:16px;min-height:0}
+    .rocket-bin{position:relative;padding:16px;border:1px solid var(--line);border-radius:var(--radius-md);background:var(--surface);box-shadow:var(--shadow-panel)}
+    .rocket-bin[data-drop="yes"]{border-color:var(--accent);background:var(--accent-soft)}
+    .bin-head{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:10px}.bin-head h2{font-size:20px}.share{font-size:15px;color:var(--muted)}
+    .mass-stack{display:grid;grid-template-columns:repeat(5,54px);grid-auto-rows:50px;gap:7px;justify-content:center}
+    .mass{display:grid;place-items:center;border-radius:8px;font-size:14px;font-weight:750;line-height:1.2;user-select:none}
+    button.mass{min-height:50px;padding:0;cursor:grab}.mass.prop{border:1px solid var(--accent);background:var(--accent);color:#fff}.mass.structure{border:2px solid var(--line-strong);background:transparent;color:var(--muted)}.mass.payload{border:1px solid var(--warning);background:var(--warning);color:#fff}
+    .legend-line{display:flex;gap:16px;margin-top:10px;justify-content:center;color:var(--muted);font-size:14px}.key{display:inline-block;width:12px;height:12px;margin-right:5px;border-radius:3px;vertical-align:-1px}.key.p{background:var(--accent)}.key.s{border:2px solid var(--line-strong)}.key.l{background:var(--warning)}
+    .burn-zone{position:relative;overflow:hidden;border:1px solid var(--line);border-radius:var(--radius-md);background:linear-gradient(var(--surface-soft),var(--surface))}.burn-zone canvas{position:absolute;inset:0;width:100%;height:100%}.burn-label{position:absolute;z-index:2;top:12px;left:14px;font-size:15px;font-weight:700;color:var(--muted)}
+    .actions{position:absolute;z-index:3;right:10px;bottom:10px;display:flex;gap:8px}.actions button{background:var(--surface)}
+    .comparison-wrap{display:grid;grid-template-columns:1fr 335px;gap:16px;min-height:0}.k-comparison{--comparison-cols:2;grid-auto-rows:minmax(43px,auto);font-size:16px}.k-comparison>*{padding:8px 14px;display:flex;align-items:center}.k-comparison [data-heading]{font-size:19px}.value{font-weight:760;font-variant-numeric:tabular-nums}.delta{background:var(--accent-soft)}
+    .explain{padding:16px 18px}.explain p{margin:0 0 10px}.explain strong{color:var(--accent-strong)}.status{padding-top:10px;border-top:1px solid var(--line);color:var(--accent-strong);font-weight:700}
+    button:disabled{opacity:.55;cursor:not-allowed}
+  </style>
+</head>
+<body data-page="30" data-total="48">
+  <div id="stage">
+    <main class="mass-page">
+      <section class="intro">
+        <p class="fs-lead">火箭必须从起点开始加速自己的推进剂；推进剂越多，起初要推动的质量也越大。</p>
+        <div class="formula">Δv = vₑ ln(m<sub>湿</sub> / m<sub>干</sub>)<small>理想模型：忽略空气阻力、重力损失与发动机工作细节。</small></div>
+      </section>
+
+      <section class="stage-row" aria-label="调整两枚火箭的推进剂占比">
+        <div class="rocket-bin min0" id="binA" data-col="A"><div class="bin-head"><h2>较低推进剂占比</h2><span class="share" id="shareA"></span></div><div class="mass-stack" id="stackA"></div><div class="legend-line"><span><i class="key l"></i>载荷</span><span><i class="key s"></i>结构与发动机</span><span><i class="key p"></i>推进剂</span></div></div>
+        <div class="rocket-bin min0" id="binB" data-col="B"><div class="bin-head"><h2>较高推进剂占比</h2><span class="share" id="shareB"></span></div><div class="mass-stack" id="stackB"></div></div>
+        <div class="burn-zone min0" id="burnZone"><span class="burn-label">回收区 · 被消耗的推进剂</span><canvas id="pile" aria-hidden="true"></canvas><div class="actions"><button id="reset">重置</button><button id="burn" data-primary>燃烧</button></div></div>
+      </section>
+
+      <section class="comparison-wrap">
+        <div class="k-comparison min0" aria-label="两枚火箭四个维度的比较">
+          <div data-axis></div><div data-heading>较低占比</div><div data-heading data-diff>较高占比</div>
+          <div data-axis>初始总质量</div><div class="value" id="wetA"></div><div class="value" id="wetB" data-diff></div>
+          <div data-axis>燃尽质量</div><div class="value" id="dryA"></div><div class="value" id="dryB" data-diff></div>
+          <div data-axis>质量比 m湿 / m干</div><div class="value" id="ratioA"></div><div class="value" id="ratioB" data-diff></div>
+          <div data-axis>理想速度增量</div><div class="value" id="dvA"></div><div class="value" id="dvB" data-diff></div>
+          <div data-axis>无量纲 Δv / vₑ</div><div class="value" id="normA"></div><div class="value" id="normB" data-diff></div>
+        </div>
+        <aside class="panel explain min0"><p class="fs-body">拖动蓝色推进剂块到另一枚火箭。每移入一块，就等量替换该列的燃尽质量。</p><p class="fs-body">决定理想速度增量的不是推进剂吨数本身，而是<strong>湿质量与燃尽质量之比</strong>。</p><div class="status fs-sec" id="status" aria-live="polite"></div></aside>
+      </section>
+    </main>
+  </div>
+  <script src="assets/lib/matter.min.js"></script>
+  <script src="assets/base.js"></script>
+  <script src="assets/lec.js"></script>
+  <script>
+    Lec.mount({ index: 30, kicker: 'MASS CARRIES MASS', title: '火箭先得运走自己的推进剂', take: '火箭必须运送自己的推进剂，质量比因此成为核心约束' });
+    Deck.init({ index: 30, total: 48 });
+
+    const total = 10, payload = 1, effectiveExhaustVelocity = 3000;
+    let props = {A:4, B:7}, burning = false, dragged = null;
+    const $ = id => document.getElementById(id);
+    const fmt = n => Lec.P.formatNumber(n);
+    const percent = n => Lec.P.percent(n);
+    function calc(col){
+      const mWet=total, mDry=total-props[col], deltaV=Lec.P.rocketDeltaV(effectiveExhaustVelocity,mWet,mDry);
+      return {mWet,mDry,ratio:mWet/mDry,deltaV,norm:deltaV/effectiveExhaustVelocity};
+    }
+    function block(kind,col,i){
+      const el=document.createElement(kind==='prop'?'button':'span');
+      el.className='mass '+kind; el.textContent=kind==='prop'?'推进剂':kind==='payload'?'载荷':'结构';
+      if(kind==='prop'){
+        el.type='button'; el.draggable=!burning; el.dataset.col=col; el.dataset.i=i;
+        el.setAttribute('aria-label',`${col==='A'?'较低':'较高'}占比火箭的推进剂块；左右方向键选择目标，空格确认移动`);
+        el.addEventListener('dragstart',()=>{dragged=col});
+        el.addEventListener('keydown',e=>{if(e.key==='ArrowLeft'||e.key==='ArrowRight'){e.preventDefault();dragged=col; $('bin'+(col==='A'?'B':'A')).dataset.drop='yes'} if(e.key===' '){e.preventDefault();move(col,col==='A'?'B':'A')}});
+      }
+      return el;
+    }
+    function render(){
+      ['A','B'].forEach(col=>{
+        const stack=$('stack'+col); stack.innerHTML='';
+        stack.appendChild(block('payload',col,0));
+        for(let i=0;i<total-props[col]-payload;i++) stack.appendChild(block('structure',col,i));
+        for(let i=0;i<props[col];i++) stack.appendChild(block('prop',col,i));
+        const c=calc(col);
+        $('share'+col).textContent=`推进剂 ${percent(props[col]/total)} · 保留 ${percent(c.mDry/total)}`;
+        $('wet'+col).textContent=fmt(c.mWet)+' 相对质量单位'; $('dry'+col).textContent=fmt(c.mDry)+' 相对质量单位';
+        $('ratio'+col).textContent=fmt(c.ratio); $('dv'+col).textContent=fmt(c.deltaV)+' m/s'; $('norm'+col).textContent=fmt(c.norm);
+      });
+      const a=calc('A'),b=calc('B');
+      $('status').textContent=Math.abs(a.ratio-b.ratio)<1e-9?'质量比相同，理想速度增量相同。':`较高质量比的一列获得更大的理想速度增量，但增长不是线性的。`;
+      $('burn').disabled=burning;
+    }
+    function move(from,to){
+      $('binA').dataset.drop=''; $('binB').dataset.drop='';
+      if(burning||props[from]<=1||props[to]>=total-payload-1) return;
+      props[from]--; props[to]++; render();
+      const target=$('stack'+to).querySelector('button:last-of-type'); if(target) target.focus();
+    }
+    ['A','B'].forEach(col=>{
+      const bin=$('bin'+col); bin.addEventListener('dragover',e=>{e.preventDefault();bin.dataset.drop='yes'});
+      bin.addEventListener('dragleave',()=>bin.dataset.drop=''); bin.addEventListener('drop',e=>{e.preventDefault();if(dragged&&dragged!==col)move(dragged,col)});
+    });
+
+    const {Engine,World,Bodies}=Matter, engine=Engine.create(); engine.gravity.y=1.15;
+    const cv=$('pile'), zone=$('burnZone'); let bodies=[];
+    function setupWorld(){World.clear(engine.world,false); bodies=[]; const w=zone.clientWidth,h=zone.clientHeight; World.add(engine.world,[Bodies.rectangle(w/2,h+12,w,24,{isStatic:true}),Bodies.rectangle(-10,h/2,20,h,{isStatic:true}),Bodies.rectangle(w+10,h/2,20,h,{isStatic:true})]);}
+    function draw(){const ctx=Deck.fit(cv),w=zone.clientWidth,h=zone.clientHeight;ctx.clearRect(0,0,w,h);for(const b of bodies){ctx.save();ctx.translate(b.position.x,b.position.y);ctx.rotate(b.angle);ctx.fillStyle=Deck.token('--accent');ctx.strokeStyle=Deck.token('--accent-strong');ctx.lineWidth=2;ctx.fillRect(-12,-12,24,24);ctx.strokeRect(-12,-12,24,24);ctx.restore()}}
+    setupWorld(); draw(); Deck.onResize(()=>{setupWorld();draw()});
+    function burn(){if(burning)return;burning=true;render();setupWorld();let queue=[];['A','B'].forEach((col,ci)=>{for(let i=0;i<props[col];i++)queue.push({x:55+ci*145+i%3*30,y:45-Math.floor(i/3)*28})});let idx=0,acc=0;
+      if(Deck.reduced()){queue.forEach((p,i)=>{const b=Bodies.rectangle(p.x,145-(i%4)*25,24,24,{restitution:.15});bodies.push(b);World.add(engine.world,b)});for(let i=0;i<180;i++)Engine.update(engine,16.67);draw();$('status').textContent+=' 推进剂已进入回收区。';return}
+      Deck.loop((t,dt)=>{acc+=dt;if(idx<queue.length&&acc>100){acc=0;const p=queue[idx++],b=Bodies.rectangle(p.x,p.y,24,24,{restitution:.2,friction:.75});bodies.push(b);World.add(engine.world,b)}Engine.update(engine,Math.min(dt,20));draw()},{still:1});
+    }
+    $('burn').addEventListener('click',burn); $('reset').addEventListener('click',()=>{burning=false;props={A:4,B:7};setupWorld();draw();render()});
+    render();
+  </script>
+</body>
+</html>

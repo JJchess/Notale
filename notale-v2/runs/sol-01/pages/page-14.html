@@ -1,0 +1,733 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  .lec-progress {
+    overflow: visible;
+    appearance: none;
+    border: 0;
+  }
+  .lec-progress::-webkit-progress-bar { background: var(--line); }
+  .lec-progress::-webkit-progress-value { background: var(--primary); }
+  .orbit-page {
+    position: relative;
+    width: var(--content-w);
+    height: var(--content-h);
+    overflow: hidden;
+    border: 1px solid var(--line);
+    background: var(--surface);
+  }
+  .scene-wrap {
+    position: relative;
+    height: 430px;
+    overflow: hidden;
+    border-bottom: 1px solid var(--line);
+    background: var(--bg);
+  }
+  #orbit-canvas { cursor: crosshair; }
+  #orbit-canvas.is-dragging { cursor: grabbing; }
+  .scene-vignette {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background: linear-gradient(90deg, rgb(7 16 24 / 18%), transparent 35%, rgb(7 16 24 / 38%));
+  }
+  .scene-label {
+    position: absolute;
+    z-index: 3;
+    padding: var(--sp-2) var(--sp-3);
+    border-left: 2px solid var(--primary);
+    background: rgb(7 16 24 / 78%);
+    color: var(--text-muted);
+    font-size: var(--fs-label);
+    line-height: var(--lh-tight);
+    pointer-events: none;
+  }
+  .sun-label { left: 280px; top: 232px; }
+  .start-label { left: 856px; top: 292px; }
+  .telemetry-box {
+    position: absolute;
+    z-index: 4;
+    top: var(--sp-4);
+    right: var(--sp-4);
+    width: 270px;
+    padding: var(--sp-4);
+    border: 1px solid var(--line);
+    background: rgb(16 27 36 / 88%);
+  }
+  .telemetry-box .readout {
+    padding: var(--sp-2) var(--sp-3);
+  }
+  .task-box {
+    position: absolute;
+    z-index: 4;
+    top: var(--sp-4);
+    left: var(--sp-4);
+    width: 360px;
+    padding: var(--sp-4);
+    background: rgb(16 27 36 / 88%);
+  }
+  .task-box .label { margin-bottom: var(--sp-2); }
+  .task-title {
+    color: var(--accent);
+    font-size: var(--fs-lead);
+    font-weight: 650;
+    line-height: var(--lh-tight);
+  }
+  .task-copy {
+    margin-top: var(--sp-2);
+    color: var(--text-muted);
+    font-size: var(--fs-sec);
+    line-height: var(--lh-body);
+  }
+  .scene-controls {
+    position: absolute;
+    z-index: 5;
+    right: var(--sp-4);
+    bottom: var(--sp-4);
+    display: flex;
+    gap: var(--sp-3);
+  }
+  .scene-controls button { min-width: 112px; font-size: var(--fs-sec); }
+  #velocity-handle {
+    position: absolute;
+    z-index: 6;
+    left: 862px;
+    top: 250px;
+    width: 48px;
+    height: 48px;
+    border: 2px solid var(--accent);
+    border-radius: 50%;
+    background: var(--accent-soft);
+    cursor: grab;
+  }
+  #velocity-handle::before,
+  #velocity-handle::after {
+    position: absolute;
+    background: var(--accent);
+    content: "";
+  }
+  #velocity-handle::before { top: 21px; left: 8px; width: 28px; height: 2px; }
+  #velocity-handle::after { top: 8px; left: 21px; width: 2px; height: 28px; }
+  #velocity-handle:active { cursor: grabbing; }
+  .feedback {
+    position: absolute;
+    z-index: 5;
+    left: var(--sp-4);
+    bottom: var(--sp-4);
+    max-width: 570px;
+    min-height: var(--control-h);
+    padding: var(--sp-2) var(--sp-4);
+    border-left: 3px solid var(--primary);
+    background: rgb(16 27 36 / 90%);
+    color: var(--text);
+    font-size: var(--fs-sec);
+    line-height: var(--lh-body);
+  }
+  .feedback.is-error { border-left-color: var(--danger); }
+  .feedback.is-success { border-left-color: var(--success); }
+  .claim-float {
+    position: absolute;
+    z-index: 7;
+    right: 330px;
+    bottom: var(--sp-4);
+    left: var(--sp-4);
+    padding: var(--sp-3) var(--sp-4);
+    border-left: 5px solid var(--accent);
+    background: rgb(16 27 36 / 94%);
+    color: var(--text);
+    font-size: var(--fs-lead);
+    font-weight: 650;
+    line-height: var(--lh-body);
+  }
+  .comparison-strip {
+    --compare-cols: 3;
+    height: 188px;
+    grid-template-columns: 132px repeat(3, minmax(0, 1fr));
+    border: 0;
+  }
+  .comparison-strip > * { padding: var(--sp-2) var(--sp-3); }
+  .comparison-strip > .hdr {
+    min-height: 44px;
+    align-items: center;
+    font-size: var(--fs-body);
+  }
+  .comparison-strip > .dim { font-size: var(--fs-label); }
+  .comparison-strip > .cell {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+    font-size: var(--fs-sec);
+    line-height: var(--lh-tight);
+  }
+  .comparison-strip .status-mark {
+    flex: 0 0 10px;
+    width: 10px;
+    height: 10px;
+    border: 1px solid var(--line-strong);
+    border-radius: 50%;
+    background: var(--surface-data);
+  }
+  .comparison-strip .is-done {
+    border-color: var(--primary-line);
+    background: var(--primary-soft);
+  }
+  .comparison-strip .is-done .status-mark {
+    border-color: var(--primary);
+    background: var(--primary);
+  }
+  .comparison-strip .is-current {
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
+    background: var(--accent-soft);
+  }
+  .comparison-strip .is-current .status-mark {
+    border-color: var(--accent);
+    background: var(--accent);
+  }
+  .vector-glyph {
+    color: var(--primary);
+    font-family: var(--font-mono);
+    font-weight: 650;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    #orbit-canvas { cursor: default; }
+  }
+</style>
+</head>
+<body data-page="14" data-total="50">
+<div id="stage">
+<main id="main">
+  <section class="orbit-page min0" aria-label="同一位置不同初速度的轨迹实验">
+    <div class="scene-wrap min0 no-pan" id="scene-wrap" aria-label="太阳位于共同坐标系左侧，天体从一 AU 处出发。调整同一起点的速度矢量，可以形成撞向太阳、闭合椭圆或逃逸路径。">
+      <canvas id="orbit-canvas" class="cv-fill" aria-hidden="true"></canvas>
+      <div class="scene-vignette"></div>
+
+      <div class="task-box target is-current" id="task-box">
+        <div class="label">当前任务 <span class="mono" id="task-count">1 / 3</span></div>
+        <div class="task-title" id="task-title">造出：坠落</div>
+        <div class="task-copy" id="task-copy">拖动速度箭头，让路径与太阳表面相交。</div>
+      </div>
+
+      <div class="telemetry-box telemetry" aria-label="速度与结果遥测">
+        <div class="readout is-current">
+          <span class="name">初速度</span>
+          <span class="value" id="speed-readout">—</span>
+        </div>
+        <div class="readout">
+          <span class="name">方向</span>
+          <span class="value" id="angle-readout">—</span>
+        </div>
+        <div class="readout">
+          <span class="name">轨迹状态</span>
+          <span class="value" id="state-readout">待发射</span>
+        </div>
+      </div>
+
+      <div class="scene-label sun-label">太阳 · 引力中心</div>
+      <div class="scene-label start-label">共同起点 · 1 AU</div>
+      <button id="velocity-handle" type="button" aria-label="速度箭头端点。方向键调整速度，按 Enter 发射" title="拖动调整；方向键微调；Enter 发射"></button>
+
+      <div class="feedback" id="feedback" aria-live="polite">拖动黄色端点改变速度矢量，再按“发射”。</div>
+      <div class="claim-float" id="claim" hidden>同一位置并不对应唯一轨道：引力相同，初速度不同，去向就会改变。</div>
+      <div class="scene-controls ctl">
+        <button type="button" id="launch-btn">发射</button>
+        <button type="button" id="reset-btn" title="清空三条轨迹">重置</button>
+      </div>
+    </div>
+
+    <div class="k-comparison comparison-strip" id="comparison" aria-label="三种速度结果比较">
+      <div class="hdr">比较维度</div><div class="hdr" data-col="crash">坠落</div><div class="hdr" data-col="orbit">椭圆轨道</div><div class="hdr" data-col="escape">逃逸</div>
+      <div class="dim">初速度矢量</div><div class="cell" data-col="crash"><span class="status-mark"></span><span class="vector-glyph">↙</span>内指或切向不足</div><div class="cell" data-col="orbit"><span class="status-mark"></span><span class="vector-glyph">↑</span>切向持续错过</div><div class="cell" data-col="escape"><span class="status-mark"></span><span class="vector-glyph">⇈</span>速度足够大</div>
+      <div class="dim">轨迹形状</div><div class="cell" data-col="crash">与太阳表面相交</div><div class="cell" data-col="orbit">闭合并返回起点附近</div><div class="cell" data-col="escape">开放且不再折返</div>
+      <div class="dim">最终去向</div><div class="cell" data-col="crash">撞击</div><div class="cell" data-col="orbit">束缚运行</div><div class="cell" data-col="escape">离开当前视域</div>
+    </div>
+  </section>
+</main>
+</div>
+<script src="assets/lib/three.min.js"></script>
+<script src="assets/lib/gsap.min.js"></script>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script>
+Lec.mount({
+  index: 14,
+  kicker: "ORBIT / VELOCITY",
+  title: "同一地点，速度决定去向",
+  take: "同一位置并不对应唯一轨道；太阳的引力相同，初速度不同，后续路径就可能完全不同。"
+});
+
+(function () {
+  'use strict';
+
+  var KSun = Lec.K.SUN;
+  var KEarth = Lec.K.EARTH;
+  var KUnits = Lec.K.UNITS;
+  var KPhysics = Lec.K.PHYSICS;
+  var P = Lec.P;
+  var AU = KUnits.M_PER_AU;
+  var MU = KPhysics.G * KSun.massKg;
+  var startRadiusM = AU;
+  var solarRadiusM = KSun.radiusKm * KUnits.M_PER_KM;
+  var circularMS = P.orbitalSpeed(startRadiusM, KSun.massKg);
+  var escapeMS = P.escapeSpeed(KSun.massKg, startRadiusM);
+  var checkMS = P.visVivaSpeed(startRadiusM, startRadiusM, KSun.massKg);
+  var earthMass = KEarth.MASS_KG;
+
+  var tasks = [
+    { id: 'crash', title: '造出：坠落', copy: '拖动速度箭头，让路径与太阳表面相交.', preset: { vx: -0.78 * circularMS, vz: 0 } },
+    { id: 'orbit', title: '造出：椭圆轨道', copy: '让切向速度使天体持续错过太阳.', preset: { vx: 0, vz: 0.78 * circularMS } },
+    { id: 'escape', title: '造出：逃逸', copy: '把速度提高到轨迹不再折返.', preset: { vx: 0, vz: 1.04 * escapeMS } }
+  ];
+
+  var state = {
+    task: 0,
+    vx: tasks[0].preset.vx,
+    vz: tasks[0].preset.vz,
+    busy: false,
+    completed: { crash: false, orbit: false, escape: false },
+    traces: {},
+    trace: []
+  };
+
+  var wrap = document.getElementById('scene-wrap');
+  var canvas = document.getElementById('orbit-canvas');
+  var handle = document.getElementById('velocity-handle');
+  var launchBtn = document.getElementById('launch-btn');
+  var resetBtn = document.getElementById('reset-btn');
+  var feedback = document.getElementById('feedback');
+  var claim = document.getElementById('claim');
+  var speedReadout = document.getElementById('speed-readout');
+  var angleReadout = document.getElementById('angle-readout');
+  var stateReadout = document.getElementById('state-readout');
+  var taskTitle = document.getElementById('task-title');
+  var taskCopy = document.getElementById('task-copy');
+  var taskCount = document.getElementById('task-count');
+
+  var scene = new THREE.Scene();
+  scene.background = new THREE.Color(Deck.token('--bg'));
+  var camera = new THREE.PerspectiveCamera(39, 1, 0.1, 30);
+  camera.position.set(0.15, 5.1, 5.5);
+  camera.lookAt(0.15, 0, 0);
+
+  var renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true, alpha: false });
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+  renderer.setPixelRatio(1);
+
+  scene.add(new THREE.HemisphereLight(0x9ccad3, 0x071018, 1.35));
+  var sunLight = new THREE.PointLight(0xffd166, 16, 10, 2);
+  sunLight.position.set(-0.7, 0.3, 0);
+  scene.add(sunLight);
+
+  var plane = new THREE.Mesh(
+    new THREE.CircleGeometry(4.5, 96),
+    new THREE.MeshBasicMaterial({ color: new THREE.Color(Deck.token('--surface-data')), transparent: true, opacity: 0.3, side: THREE.DoubleSide })
+  );
+  plane.rotation.x = -Math.PI / 2;
+  plane.position.y = -0.025;
+  scene.add(plane);
+
+  var rings = new THREE.Group();
+  [0.5, 1, 1.5, 2].forEach(function (radius) {
+    var points = [];
+    for (var i = 0; i <= 128; i += 1) {
+      var a = i / 128 * Math.PI * 2;
+      points.push(new THREE.Vector3(-0.7 + Math.cos(a) * radius, 0, Math.sin(a) * radius));
+    }
+    var line = new THREE.Line(
+      new THREE.BufferGeometry().setFromPoints(points),
+      new THREE.LineBasicMaterial({ color: new THREE.Color(Deck.token('--primary')), transparent: true, opacity: radius === 1 ? 0.35 : 0.16 })
+    );
+    rings.add(line);
+  });
+  scene.add(rings);
+
+  var sun = new THREE.Mesh(
+    new THREE.SphereGeometry(0.19, 40, 24),
+    new THREE.MeshStandardMaterial({ color: new THREE.Color(Deck.token('--accent')), emissive: new THREE.Color(Deck.token('--accent')), emissiveIntensity: 1.8, roughness: 0.72 })
+  );
+  sun.position.set(-0.7, 0.02, 0);
+  scene.add(sun);
+
+  var launchPoint = new THREE.Vector3(0.3, 0.04, 0);
+  var body = new THREE.Mesh(
+    new THREE.SphereGeometry(0.048, 24, 16),
+    new THREE.MeshStandardMaterial({ color: new THREE.Color(Deck.token('--text')), roughness: 0.4, metalness: 0.15 })
+  );
+  body.position.copy(launchPoint);
+  scene.add(body);
+
+  var startMarker = new THREE.Mesh(
+    new THREE.RingGeometry(0.075, 0.095, 32),
+    new THREE.MeshBasicMaterial({ color: new THREE.Color(Deck.token('--accent')), side: THREE.DoubleSide })
+  );
+  startMarker.rotation.x = -Math.PI / 2;
+  startMarker.position.copy(launchPoint);
+  startMarker.position.y = 0.005;
+  scene.add(startMarker);
+
+  var arrow = new THREE.ArrowHelper(new THREE.Vector3(0, 0, 1), launchPoint, 0.55, new THREE.Color(Deck.token('--accent')).getHex(), 0.12, 0.065);
+  scene.add(arrow);
+  var activeLine = null;
+  var savedLines = {};
+
+  function resizeScene() {
+    var w = wrap.clientWidth;
+    var h = wrap.clientHeight;
+    renderer.setSize(w, h, false);
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
+    render();
+  }
+
+  function render() {
+    renderer.render(scene, camera);
+  }
+
+  function velocityMagnitude() {
+    return Math.sqrt(state.vx * state.vx + state.vz * state.vz);
+  }
+
+  function updateArrow() {
+    var speed = velocityMagnitude();
+    var maxShown = escapeMS * 1.35;
+    var length = 0.2 + 0.72 * Math.min(speed / maxShown, 1);
+    var dir = new THREE.Vector3(state.vx, 0, state.vz).normalize();
+    if (!isFinite(dir.x)) dir.set(0, 0, 1);
+    arrow.setDirection(dir);
+    arrow.setLength(length, 0.12, 0.065);
+    speedReadout.textContent = P.significant(speed / KUnits.M_PER_KM, 3) + ' km/s';
+    var angle = Math.atan2(state.vz, state.vx) * 180 / Math.PI;
+    angleReadout.textContent = P.round(angle, 0) + '°';
+    positionHandle(dir, length);
+    render();
+  }
+
+  function worldToLocalScreen(v) {
+    var p = v.clone().project(camera);
+    return { x: (p.x + 1) * wrap.clientWidth / 2, y: (-p.y + 1) * wrap.clientHeight / 2 };
+  }
+
+  function positionHandle(dir, length) {
+    var endpoint = launchPoint.clone().add(dir.clone().multiplyScalar(length));
+    var pt = worldToLocalScreen(endpoint);
+    handle.style.left = (pt.x - 24) + 'px';
+    handle.style.top = (pt.y - 24) + 'px';
+  }
+
+  function integrate(vx0, vz0) {
+    var x = startRadiusM;
+    var z = 0;
+    var vx = vx0;
+    var vz = vz0;
+    var dt = 21600;
+    var maxSteps = Math.ceil((3.2 * 365.256 * 86400) / dt);
+    var specificEnergy = 0.5 * (vx * vx + vz * vz) - MU / startRadiusM;
+    var points = [new THREE.Vector3(launchPoint.x, 0.045, 0)];
+    var result = specificEnergy >= 0 ? 'escape' : 'orbit';
+    var closest = startRadiusM;
+    var farthest = startRadiusM;
+
+    for (var i = 0; i < maxSteps; i += 1) {
+      var r = Math.sqrt(x * x + z * z);
+      var ax = -MU * x / Math.pow(r, 3);
+      var az = -MU * z / Math.pow(r, 3);
+      var prevX = x;
+      var prevZ = z;
+      vx += ax * dt;
+      vz += az * dt;
+      x += vx * dt;
+      z += vz * dt;
+      r = Math.sqrt(x * x + z * z);
+      var segX = x - prevX;
+      var segZ = z - prevZ;
+      var segLen2 = segX * segX + segZ * segZ;
+      var segT = segLen2 ? Deck.clamp(-(prevX * segX + prevZ * segZ) / segLen2, 0, 1) : 0;
+      var nearX = prevX + segT * segX;
+      var nearZ = prevZ + segT * segZ;
+      var segmentClosest = Math.sqrt(nearX * nearX + nearZ * nearZ);
+      closest = Math.min(closest, r, segmentClosest);
+      farthest = Math.max(farthest, r);
+
+      if (i % 12 === 0) points.push(new THREE.Vector3(-0.7 + x / AU, 0.045, z / AU));
+      if (r <= solarRadiusM || segmentClosest <= solarRadiusM) {
+        result = 'crash';
+        points.push(new THREE.Vector3(-0.7 + x / AU, 0.045, z / AU));
+        break;
+      }
+      if (specificEnergy >= 0 && r >= 2.75 * AU) {
+        result = 'escape';
+        break;
+      }
+      if (specificEnergy < 0 && i > 400 && z * (z - vz * dt) < 0 && x > 0.88 * AU) {
+        result = 'orbit';
+        break;
+      }
+    }
+    return { result: result, points: points, energy: specificEnergy, closest: closest, farthest: farthest };
+  }
+
+  function makeLine(points, colorToken, opacity) {
+    return new THREE.Line(
+      new THREE.BufferGeometry().setFromPoints(points),
+      new THREE.LineBasicMaterial({ color: new THREE.Color(Deck.token(colorToken)), transparent: true, opacity: opacity })
+    );
+  }
+
+  function resultName(id) {
+    return id === 'crash' ? '撞击' : id === 'orbit' ? '束缚运行' : '离开视域';
+  }
+
+  function mismatchMessage(actual, target) {
+    if (target === 'crash') return '当前得到“' + resultName(actual) + '”：速度仍太大或过于切向，没有撞上太阳。';
+    if (target === 'orbit' && actual === 'crash') return '速度过低或过于向内，轨迹撞向太阳。';
+    if (target === 'orbit') return '速度太大，轨迹开放并持续远离。';
+    return actual === 'crash' ? '速度过低，轨迹撞向太阳。' : '速度不足，轨迹仍会折返。';
+  }
+
+  function launch() {
+    if (state.busy) return;
+    state.busy = true;
+    launchBtn.disabled = true;
+    handle.disabled = true;
+    feedback.className = 'feedback';
+    stateReadout.textContent = '计算路径';
+
+    var outcome = integrate(state.vx, state.vz);
+    state.trace.push({ task: tasks[state.task].id, vx: state.vx, vz: state.vz, result: outcome.result });
+    if (activeLine) {
+      scene.remove(activeLine);
+      activeLine.geometry.dispose();
+      activeLine.material.dispose();
+    }
+    activeLine = makeLine(outcome.points, '--accent', 0.95);
+    scene.add(activeLine);
+
+    var progress = { value: Deck.reduced() ? 1 : 0 };
+    function drawBody() {
+      var idx = Math.min(outcome.points.length - 1, Math.floor(progress.value * (outcome.points.length - 1)));
+      body.position.copy(outcome.points[idx]);
+      render();
+    }
+
+    function finishLaunch() {
+      var target = tasks[state.task].id;
+      stateReadout.textContent = resultName(outcome.result);
+      if (outcome.result === target) succeed(outcome);
+      else fail(outcome, target);
+    }
+
+    if (Deck.reduced()) {
+      drawBody();
+      finishLaunch();
+    } else {
+      gsap.to(progress, { value: 1, duration: 1.45, ease: 'power1.inOut', onUpdate: drawBody, onComplete: finishLaunch });
+    }
+  }
+
+  function succeed(outcome) {
+    var id = tasks[state.task].id;
+    state.completed[id] = true;
+    if (savedLines[id]) scene.remove(savedLines[id]);
+    savedLines[id] = activeLine;
+    activeLine.material.color.set(Deck.token('--primary'));
+    activeLine.material.opacity = 0.72;
+    activeLine = null;
+    feedback.textContent = resultName(id) + '成立：这条路径已保留，可与后续结果叠合比较。';
+    feedback.className = 'feedback is-success';
+    updateComparison();
+
+    if (!Deck.reduced()) {
+      gsap.fromTo(savedLines[id].material, { opacity: 0.25 }, { opacity: 0.9, duration: 0.32, repeat: 1, yoyo: true, ease: 'power1.inOut' });
+    }
+
+    state.task += 1;
+    if (state.task >= tasks.length) {
+      state.busy = false;
+      launchBtn.disabled = true;
+      handle.disabled = false;
+      claim.hidden = false;
+      taskTitle.textContent = '三种去向已叠合';
+      taskCopy.textContent = '三条路径共享同一太阳与同一起点。';
+      taskCount.textContent = '3 / 3';
+      stateReadout.textContent = '比较完成';
+      feedback.hidden = true;
+      if (!Deck.reduced()) gsap.from(claim, { autoAlpha: 0, y: 12, duration: 0.5, ease: 'power2.out' });
+      render();
+      return;
+    }
+
+    var next = tasks[state.task];
+    state.vx = next.preset.vx;
+    state.vz = next.preset.vz;
+    body.position.copy(launchPoint);
+    updateTask();
+    state.busy = false;
+    launchBtn.disabled = false;
+    handle.disabled = false;
+    updateArrow();
+  }
+
+  function fail(outcome, target) {
+    feedback.textContent = mismatchMessage(outcome.result, target);
+    feedback.className = 'feedback is-error';
+    state.busy = false;
+    launchBtn.disabled = false;
+    handle.disabled = false;
+    if (Deck.reduced()) {
+      scene.remove(activeLine);
+      activeLine.geometry.dispose();
+      activeLine.material.dispose();
+      activeLine = null;
+      body.position.copy(launchPoint);
+      render();
+      return;
+    }
+    activeLine.material.color.set(Deck.token('--danger'));
+    gsap.to(activeLine.material, {
+      opacity: 0,
+      duration: 0.45,
+      delay: 0.45,
+      onComplete: function () {
+        scene.remove(activeLine);
+        activeLine.geometry.dispose();
+        activeLine.material.dispose();
+        activeLine = null;
+        body.position.copy(launchPoint);
+        render();
+      }
+    });
+    gsap.fromTo(handle, { x: -5 }, { x: 5, duration: 0.07, repeat: 5, yoyo: true, clearProps: 'transform' });
+  }
+
+  function updateTask() {
+    var t = tasks[Math.min(state.task, tasks.length - 1)];
+    taskTitle.textContent = t.title;
+    taskCopy.textContent = t.copy;
+    taskCount.textContent = (state.task + 1) + ' / 3';
+    stateReadout.textContent = '待发射';
+    updateComparison();
+  }
+
+  function updateComparison() {
+    ['crash', 'orbit', 'escape'].forEach(function (id, index) {
+      document.querySelectorAll('[data-col="' + id + '"]').forEach(function (cell) {
+        cell.classList.toggle('is-done', state.completed[id]);
+        cell.classList.toggle('is-current', state.task < 3 && index === state.task);
+      });
+    });
+  }
+
+  function setVelocityFromPointer(e) {
+    var p = Deck.pt(wrap, e);
+    var start = worldToLocalScreen(launchPoint);
+    var dx = p.x - start.x;
+    var dy = p.y - start.y;
+    var magnitudePx = Math.sqrt(dx * dx + dy * dy);
+    var speed = Deck.clamp(magnitudePx / 235 * escapeMS, 0.08 * circularMS, 1.35 * escapeMS);
+    var angle = Math.atan2(-dy, dx);
+    state.vx = Math.cos(angle) * speed;
+    state.vz = Math.sin(angle) * speed;
+    updateArrow();
+  }
+
+  var dragging = false;
+  handle.addEventListener('pointerdown', function (e) {
+    if (state.busy) return;
+    dragging = true;
+    canvas.classList.add('is-dragging');
+    handle.setPointerCapture(e.pointerId);
+    e.preventDefault();
+  });
+  handle.addEventListener('pointermove', function (e) {
+    if (!dragging) return;
+    setVelocityFromPointer(e);
+  });
+  handle.addEventListener('pointerup', function (e) {
+    dragging = false;
+    canvas.classList.remove('is-dragging');
+    if (handle.hasPointerCapture(e.pointerId)) handle.releasePointerCapture(e.pointerId);
+  });
+  handle.addEventListener('keydown', function (e) {
+    var step = e.shiftKey ? 0.05 : 0.015;
+    if (e.key === 'ArrowLeft') state.vx -= circularMS * step;
+    else if (e.key === 'ArrowRight') state.vx += circularMS * step;
+    else if (e.key === 'ArrowUp') state.vz += circularMS * step;
+    else if (e.key === 'ArrowDown') state.vz -= circularMS * step;
+    else if (e.key === 'Enter') { launch(); return; }
+    else return;
+    e.preventDefault();
+    updateArrow();
+  });
+
+  launchBtn.addEventListener('click', launch);
+  resetBtn.addEventListener('click', reset);
+
+  function reset() {
+    gsap.killTweensOf('*');
+    Object.keys(savedLines).forEach(function (id) {
+      scene.remove(savedLines[id]);
+      savedLines[id].geometry.dispose();
+      savedLines[id].material.dispose();
+    });
+    savedLines = {};
+    if (activeLine) {
+      scene.remove(activeLine);
+      activeLine.geometry.dispose();
+      activeLine.material.dispose();
+      activeLine = null;
+    }
+    state.task = 0;
+    state.vx = tasks[0].preset.vx;
+    state.vz = tasks[0].preset.vz;
+    state.busy = false;
+    state.completed = { crash: false, orbit: false, escape: false };
+    state.trace = [];
+    body.position.copy(launchPoint);
+    claim.hidden = true;
+    feedback.hidden = false;
+    feedback.className = 'feedback';
+    feedback.textContent = '拖动黄色端点改变速度矢量，再按“发射”。';
+    launchBtn.disabled = false;
+    handle.disabled = false;
+    updateTask();
+    updateArrow();
+  }
+
+  Deck.onResize(resizeScene);
+  resizeScene();
+  updateTask();
+  updateArrow();
+
+  if (!Deck.reduced()) {
+    gsap.from(sun.scale, { x: 0.25, y: 0.25, z: 0.25, duration: 0.8, ease: 'power2.out', onUpdate: render });
+    gsap.from(rings.children, { material: { opacity: 0 }, duration: 0.7, stagger: 0.12, ease: 'power1.out', onUpdate: render });
+  }
+
+  window.Page14 = {
+    launch: launch,
+    reset: reset,
+    setVelocity: function (vxKmS, vzKmS) {
+      state.vx = vxKmS * KUnits.M_PER_KM;
+      state.vz = vzKmS * KUnits.M_PER_KM;
+      updateArrow();
+    },
+    getState: function () {
+      return JSON.parse(JSON.stringify({
+        task: state.task,
+        completed: state.completed,
+        speedKmS: velocityMagnitude() / KUnits.M_PER_KM,
+        circularKmS: checkMS / KUnits.M_PER_KM,
+        escapeKmS: escapeMS / KUnits.M_PER_KM,
+        earthMassKg: earthMass,
+        trace: state.trace
+      }));
+    }
+  };
+}());
+</script>
+</body>
+</html>

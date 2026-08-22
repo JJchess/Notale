@@ -1,0 +1,636 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+/* ===== page-49: 未来分支决策树 ===== */
+
+:root {
+  --bg: #0b0e14;
+  --text: #e6e6e6;
+  --font-sans: "Noto Sans SC", system-ui, sans-serif;
+  --focus: #4f6ef2;
+}
+
+#main {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+#tree-canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none; /* clicks go to overlay */
+  z-index: 1;
+}
+
+#tree-labels {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 2;
+  pointer-events: none;
+}
+
+/* ---- root node ---- */
+.root-node {
+  position: absolute;
+  left: 50%;
+  top: 310px;
+  transform: translate(-50%, -50%);
+  font-size: var(--fs-h2);
+  font-weight: 700;
+  color: var(--text);
+  text-align: center;
+  letter-spacing: 0.08em;
+  text-shadow: 0 0 30px rgba(79, 110, 242, 0.4), 0 0 60px rgba(79, 110, 242, 0.15);
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+/* ---- branch nodes ---- */
+.branch {
+  position: absolute;
+  pointer-events: auto;
+  cursor: pointer;
+  text-align: center;
+  transition: opacity 0.6s ease;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.branch:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 4px;
+  border-radius: 4px;
+}
+
+.branch-title {
+  font-size: var(--fs-lead);
+  font-weight: 700;
+  color: var(--text);
+  letter-spacing: 0.04em;
+  text-shadow: 0 0 20px rgba(79, 110, 242, 0.3);
+  transition: color 0.5s ease, text-shadow 0.5s ease;
+}
+.branch.dim .branch-title {
+  color: rgba(230, 230, 230, 0.25);
+  text-shadow: none;
+}
+
+.branch-desc {
+  font-size: var(--fs-body);
+  color: rgba(230, 230, 230, 0.9);
+  line-height: 1.45;
+  margin-top: 8px;
+  max-width: 240px;
+  text-shadow: 0 0 12px rgba(0, 0, 0, 0.8);
+  opacity: 0;
+  transition: opacity 0.6s ease;
+}
+.branch.active .branch-desc {
+  opacity: 1;
+}
+.branch.dim .branch-desc {
+  opacity: 0 !important;
+}
+
+/* positions */
+.branch-0 { /* 火星 - upper left */
+  left: 80px;
+  top: 50px;
+}
+.branch-1 { /* 基因编辑 - upper right */
+  right: 80px;
+  top: 50px;
+}
+.branch-2 { /* AI 协作 - lower left */
+  left: 80px;
+  bottom: 120px;
+}
+.branch-3 { /* 留在地球 - lower right */
+  right: 80px;
+  bottom: 120px;
+}
+
+/* ---- show all button ---- */
+#show-all-btn {
+  position: absolute;
+  left: 50%;
+  bottom: 30px;
+  transform: translateX(-50%);
+  pointer-events: auto;
+  cursor: pointer;
+  font-size: var(--fs-label);
+  font-weight: 600;
+  color: var(--text);
+  background: rgba(79, 110, 242, 0.2);
+  border: 1px solid rgba(79, 110, 242, 0.5);
+  border-radius: 20px;
+  padding: 8px 28px;
+  letter-spacing: 0.06em;
+  transition: background 0.3s ease, border-color 0.3s ease;
+  opacity: 0;
+  pointer-events: none;
+}
+#show-all-btn.visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+#show-all-btn:hover {
+  background: rgba(79, 110, 242, 0.35);
+  border-color: rgba(79, 110, 242, 0.8);
+}
+#show-all-btn:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 3px;
+}
+
+/* ---- all-choice text ---- */
+#all-choice-text {
+  position: absolute;
+  left: 50%;
+  top: 370px;
+  transform: translateX(-50%);
+  font-size: var(--fs-body);
+  color: rgba(230, 230, 230, 0.8);
+  letter-spacing: 0.12em;
+  text-shadow: 0 0 20px rgba(79, 110, 242, 0.3);
+  opacity: 0;
+  transition: opacity 0.8s ease;
+  pointer-events: none;
+  white-space: nowrap;
+}
+#all-choice-text.visible {
+  opacity: 1;
+}
+
+/* ---- hint line ---- */
+.hint-line {
+  position: absolute;
+  left: 50%;
+  bottom: 60px;
+  transform: translateX(-50%);
+  font-size: var(--fs-sec);
+  color: rgba(230, 230, 230, 0.35);
+  letter-spacing: 0.04em;
+  opacity: 0;
+  transition: opacity 0.8s ease;
+  pointer-events: none;
+  white-space: nowrap;
+}
+.hint-line.visible {
+  opacity: 1;
+}
+
+/* ---- reduced motion ---- */
+@media (prefers-reduced-motion: reduce) {
+  .branch,
+  .branch-title,
+  .branch-desc,
+  #show-all-btn,
+  #all-choice-text,
+  .hint-line {
+    transition: none !important;
+  }
+}
+</style>
+</head>
+<body data-page="49" data-total="50">
+<div id="stage">
+<main id="main">
+  <canvas id="tree-canvas" class="cv-fill"></canvas>
+
+  <div id="tree-labels">
+    <!-- Root node -->
+    <div class="root-node">演化没有方向</div>
+
+    <!-- Branch 0: 殖民火星 -->
+    <div class="branch branch-0" data-branch="0" tabindex="0" role="button" aria-label="殖民火星">
+      <div class="branch-title">殖民火星</div>
+      <div class="branch-desc">把文明的备份放到另一颗行星——<br>离开地球，是不是也在逃离地球？</div>
+    </div>
+
+    <!-- Branch 1: 基因编辑 -->
+    <div class="branch branch-1" data-branch="1" tabindex="0" role="button" aria-label="基因编辑">
+      <div class="branch-title">基因编辑</div>
+      <div class="branch-desc">把演化写进自己手里——<br>改写后代的身体，替他们选择未来的代价。</div>
+    </div>
+
+    <!-- Branch 2: AI 协作 -->
+    <div class="branch branch-2" data-branch="2" tabindex="0" role="button" aria-label="AI 协作">
+      <div class="branch-title">AI 协作</div>
+      <div class="branch-desc">创造能和我们共享星球的智能体——<br>协作，还是让出了「人」的位置？</div>
+    </div>
+
+    <!-- Branch 3: 留在地球 -->
+    <div class="branch branch-3" data-branch="3" tabindex="0" role="button" aria-label="留在地球">
+      <div class="branch-title">留在地球</div>
+      <div class="branch-desc">守护唯一已确认的家——<br>把答案种回脚下的土壤里。</div>
+    </div>
+
+    <!-- Show all button -->
+    <button id="show-all-btn">四路同框</button>
+
+    <!-- All-choice text -->
+    <div id="all-choice-text">选择权在我们</div>
+
+    <!-- Hint -->
+    <div class="hint-line" id="hint-line">点击任意枝条，探索未来可能的路径</div>
+  </div>
+</main>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script src="assets/lib/seedrandom.min.js"></script>
+<script src="assets/lib/anime.min.js"></script>
+<script>
+(function() {
+  'use strict';
+
+  /* ===== mount ===== */
+  Lec.mount({
+    index: 49,
+    kicker: '第 7 章 · 回望',
+    title: '下一枚脚印踩在哪里',
+    take: '演化没有方向，但我们第一次有了选择'
+  });
+
+  /* ===== state ===== */
+  var state = {
+    selectedBranch: null,    // null | 0 | 1 | 2 | 3
+    viewedBranches: new Set(),
+    showAllMode: false,
+    showAllUnlocked: false,
+    animating: false
+  };
+
+  /* ===== canvas setup ===== */
+  var canvas = document.getElementById('tree-canvas');
+  var ctx = Deck.fit(canvas);
+  var W = 1408, H = 620;
+
+  /* ===== branch positions (relative to #main content area) ===== */
+  var centerX = 704, centerY = 310;
+  var branchPos = [
+    { x: 180, y: 80 },   // 0: 火星 upper-left
+    { x: 1228, y: 80 },  // 1: 基因编辑 upper-right
+    { x: 180, y: 540 },  // 2: AI 协作 lower-left
+    { x: 1228, y: 540 }  // 3: 留在地球 lower-right
+  ];
+
+  /* ===== starfield (seeded) ===== */
+  var rng = new Math.seedrandom('page-49');
+  var stars = [];
+  for (var i = 0; i < 120; i++) {
+    stars.push({
+      x: rng() * W,
+      y: rng() * H,
+      r: 0.3 + rng() * 1.7,
+      a: 0.2 + rng() * 0.5
+    });
+  }
+
+  /* ===== drawing ===== */
+  function drawBackground() {
+    // deep space gradient
+    var grad = ctx.createRadialGradient(704, 310, 30, 704, 310, 400);
+    grad.addColorStop(0, 'rgba(15, 20, 40, 1)');
+    grad.addColorStop(0.5, 'rgba(10, 14, 22, 1)');
+    grad.addColorStop(1, 'rgba(5, 8, 14, 1)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, W, H);
+
+    // stars
+    for (var i = 0; i < stars.length; i++) {
+      var s = stars[i];
+      ctx.globalAlpha = s.a;
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  function drawFootprint(x, y, size) {
+    var s = size;
+    ctx.save();
+    ctx.translate(x, y);
+
+    // glow
+    ctx.shadowColor = 'rgba(200, 180, 120, 0.6)';
+    ctx.shadowBlur = 30;
+    ctx.fillStyle = 'rgba(200, 180, 120, 0.9)';
+
+    // heel
+    ctx.beginPath();
+    ctx.ellipse(0, s * 0.55, s * 0.32, s * 0.28, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // ball of foot
+    ctx.beginPath();
+    ctx.ellipse(0, -s * 0.15, s * 0.42, s * 0.38, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // toes
+    ctx.shadowBlur = 20;
+    var toePos = [
+      [-s * 0.32, -s * 0.55],
+      [-s * 0.12, -s * 0.68],
+      [0, -s * 0.72],
+      [s * 0.12, -s * 0.68],
+      [s * 0.32, -s * 0.55]
+    ];
+    for (var i = 0; i < toePos.length; i++) {
+      ctx.beginPath();
+      ctx.arc(toePos[i][0], toePos[i][1], s * 0.11, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    ctx.restore();
+  }
+
+  function drawBranchPath(x1, y1, x2, y2, progress, isSelected, isDimmed, isShowAll) {
+    // control points for smooth curve
+    var dx = x2 - x1, dy = y2 - y1;
+    var cp1x = x1 + dx * 0.3, cp1y = y1 + dy * 0.2;
+    var cp2x = x1 + dx * 0.7, cp2y = y1 + dy * 0.8;
+
+    // compute endpoint based on progress
+    var endX, endY;
+    if (progress >= 1) {
+      endX = x2;
+      endY = y2;
+    } else {
+      // approximate: sample along bezier
+      var t = progress;
+      var mt = 1 - t;
+      endX = mt*mt*mt*x1 + 3*mt*mt*t*cp1x + 3*mt*t*t*cp2x + t*t*t*x2;
+      endY = mt*mt*mt*y1 + 3*mt*mt*t*cp1y + 3*mt*t*t*cp2y + t*t*t*y2;
+    }
+
+    // draw full path (ghost) first
+    if (isDimmed) {
+      ctx.globalAlpha = 0.08;
+    } else if (!isSelected && !isShowAll) {
+      ctx.globalAlpha = 0.12;
+    } else {
+      ctx.globalAlpha = 0.25;
+    }
+
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    ctx.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, x2, y2);
+    ctx.strokeStyle = isSelected || isShowAll ? 'rgba(79, 110, 242, 0.5)' : 'rgba(79, 110, 242, 0.3)';
+    ctx.lineWidth = isDimmed ? 1 : 1.5;
+    ctx.stroke();
+
+    // draw active path (glowing)
+    if (isSelected || isShowAll) {
+      // glow
+      ctx.shadowColor = 'rgba(79, 110, 242, 0.6)';
+      ctx.shadowBlur = 20;
+      ctx.globalAlpha = 0.6;
+      ctx.beginPath();
+      ctx.moveTo(x1, y1);
+      ctx.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, endX, endY);
+      ctx.strokeStyle = 'rgba(79, 110, 242, 0.8)';
+      ctx.lineWidth = 2.5;
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+
+      // bright core
+      ctx.globalAlpha = 0.9;
+      ctx.beginPath();
+      ctx.moveTo(x1, y1);
+      ctx.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, endX, endY);
+      ctx.strokeStyle = 'rgba(160, 180, 255, 0.9)';
+      ctx.lineWidth = 1.2;
+      ctx.stroke();
+    }
+
+    ctx.globalAlpha = 1;
+    ctx.shadowBlur = 0;
+  }
+
+  function draw() {
+    var reduced = Deck.reduced();
+
+    drawBackground();
+
+    // draw all branch paths
+    for (var i = 0; i < 4; i++) {
+      var bp = branchPos[i];
+      var isSelected = state.selectedBranch === i;
+      var isDimmed = state.selectedBranch !== null && !isSelected && !state.showAllMode;
+      var isShowAll = state.showAllMode;
+
+      var progress = 1;
+      if (state.branchProgress && state.branchProgress[i] !== undefined) {
+        progress = reduced ? 1 : state.branchProgress[i];
+      }
+
+      drawBranchPath(centerX, centerY, bp.x, bp.y, progress, isSelected, isDimmed, isShowAll);
+    }
+
+    // draw footprint
+    drawFootprint(centerX, centerY, 38);
+  }
+
+  /* ===== animation ===== */
+  var branchProgress = [0, 0, 0, 0];
+  state.branchProgress = branchProgress;
+
+  var currentAnim = null;
+
+  function animateBranch(index, callback) {
+    if (currentAnim) {
+      currentAnim.pause();
+      currentAnim = null;
+    }
+
+    // set initial progress to 0
+    branchProgress[index] = 0;
+
+    if (Deck.reduced()) {
+      branchProgress[index] = 1;
+      redraw();
+      if (callback) callback();
+      return;
+    }
+
+    currentAnim = anime({
+      targets: branchProgress,
+      [index]: 1,
+      duration: 800,
+      easing: 'easeInOutQuad',
+      update: function() {
+        redraw();
+      },
+      complete: function() {
+        currentAnim = null;
+        if (callback) callback();
+      }
+    });
+  }
+
+  function redraw() {
+    ctx.save();
+    draw();
+    ctx.restore();
+  }
+
+  /* ===== interaction ===== */
+  var branchEls = document.querySelectorAll('.branch');
+
+  function selectBranch(index) {
+    if (state.animating) return;
+    if (state.showAllMode) {
+      // exit show-all mode
+      state.showAllMode = false;
+      document.getElementById('show-all-btn').classList.remove('visible');
+      document.getElementById('all-choice-text').classList.remove('visible');
+    }
+
+    state.animating = true;
+    state.selectedBranch = index;
+    state.viewedBranches.add(index);
+
+    // update DOM classes
+    for (var i = 0; i < branchEls.length; i++) {
+      branchEls[i].classList.remove('active', 'dim');
+      if (i === index) {
+        branchEls[i].classList.add('active');
+      } else {
+        branchEls[i].classList.add('dim');
+      }
+    }
+
+    // hide hint
+    document.getElementById('hint-line').classList.remove('visible');
+
+    // animate the path
+    animateBranch(index, function() {
+      state.animating = false;
+
+      // check unlock
+      if (state.viewedBranches.size >= 4 && !state.showAllUnlocked) {
+        state.showAllUnlocked = true;
+        document.getElementById('show-all-btn').classList.add('visible');
+      }
+    });
+  }
+
+  function showAll() {
+    if (state.animating) return;
+    state.animating = true;
+
+    state.showAllMode = true;
+    state.selectedBranch = null;
+
+    // reset all branches: active, not dim
+    for (var i = 0; i < branchEls.length; i++) {
+      branchEls[i].classList.remove('active', 'dim');
+      branchEls[i].classList.add('active');
+    }
+
+    // hide button
+    document.getElementById('show-all-btn').classList.remove('visible');
+
+    // animate all branches
+    var allDone = 0;
+    for (var i = 0; i < 4; i++) {
+      if (branchProgress[i] >= 1) {
+        allDone++;
+        if (allDone >= 4) {
+          state.animating = false;
+          document.getElementById('all-choice-text').classList.add('visible');
+        }
+        continue;
+      }
+      (function(idx) {
+        branchProgress[idx] = 0;
+        if (Deck.reduced()) {
+          branchProgress[idx] = 1;
+          allDone++;
+          if (allDone >= 4) {
+            state.animating = false;
+            document.getElementById('all-choice-text').classList.add('visible');
+          }
+          redraw();
+          return;
+        }
+        anime({
+          targets: branchProgress,
+          [idx]: 1,
+          duration: 800,
+          easing: 'easeInOutQuad',
+          delay: idx * 200,
+          update: redraw,
+          complete: function() {
+            allDone++;
+            if (allDone >= 4) {
+              state.animating = false;
+              document.getElementById('all-choice-text').classList.add('visible');
+            }
+          }
+        });
+      })(i);
+    }
+  }
+
+  // click handlers
+  for (var i = 0; i < branchEls.length; i++) {
+    (function(idx, el) {
+      el.addEventListener('click', function(e) {
+        e.stopPropagation();
+        selectBranch(idx);
+      });
+      el.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          selectBranch(idx);
+        }
+      });
+    })(i, branchEls[i]);
+  }
+
+  document.getElementById('show-all-btn').addEventListener('click', function() {
+    showAll();
+  });
+
+  /* ===== initial draw ===== */
+  // set initial progress to 1 for all (show faint paths)
+  for (var i = 0; i < 4; i++) {
+    branchProgress[i] = 1;
+  }
+
+  // show hint after a moment
+  setTimeout(function() {
+    document.getElementById('hint-line').classList.add('visible');
+  }, 1200);
+
+  // initial draw
+  redraw();
+
+  /* ===== resize ===== */
+  Deck.onResize(function() {
+    ctx = Deck.fit(canvas);
+    redraw();
+  });
+
+})();
+</script>
+</body>
+</html>

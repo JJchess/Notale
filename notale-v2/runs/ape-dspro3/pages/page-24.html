@@ -1,0 +1,320 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>第 24 页 · 互动讲义</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <script src="assets/lib/echarts.min.js"></script>
+  <style>
+    /* ---- 页面布局 ---- */
+    #main { display: flex; flex-direction: column; height: 100%; }
+
+    #chart-wrap { flex: 0 0 390px; width: 100%; }
+
+    #detail-wrap { flex: 1 1 auto; display: flex; flex-direction: row; gap: var(--sp-6);
+                   padding: var(--sp-3) 0; min-height: 0; align-items: stretch; }
+
+    #detail-panel { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column;
+                    justify-content: center; }
+
+    #detail-prompt { font-size: var(--fs-sec); color: var(--text-dim); text-align: center; }
+
+    #detail-data { display: none; }
+
+    #detail-data .k-compact { width: 100%; border-collapse: collapse; }
+    #detail-data .k-compact th { font-size: var(--fs-body); font-weight: 600; color: var(--text);
+                                 padding: var(--sp-2) var(--sp-4); text-align: center;
+                                 border-bottom: 2px solid var(--border-strong); }
+    #detail-data .k-compact td { font-size: var(--fs-sec); color: var(--text-sec);
+                                 padding: var(--sp-2) var(--sp-4); text-align: center;
+                                 border-bottom: 1px solid var(--border); }
+    #detail-data .k-compact .dim { text-align: right; color: var(--text-dim); font-weight: 500; }
+    #detail-data .k-compact .val { color: var(--text); font-weight: 600; }
+
+    #photo-col { flex: 0 0 170px; display: flex; flex-direction: column; gap: var(--sp-3);
+                 justify-content: center; }
+    .photo-thumb { width: 100%; height: 100px; object-fit: cover; border-radius: var(--r-sm);
+                   border: 1px solid var(--border); }
+  </style>
+</head>
+<body data-page="24" data-total="60">
+  <div id="stage">
+    <main id="main">
+      <div id="chart-wrap"></div>
+      <div id="detail-wrap">
+        <div id="detail-panel" class="panel">
+          <p id="detail-prompt">👆 点击任一柱子，查看该群体的跳跃高度、初速度和力量/体重比</p>
+          <div id="detail-data"></div>
+        </div>
+        <div id="photo-col">
+          <img class="photo-thumb" src="assets/img/p24-athlete.jpg" alt="篮球运动员垂直起跳扣篮"
+               title="照片来源: Pixabay / taoonex — 免费许可">
+          <img class="photo-thumb" src="assets/img/p24-lucy.jpg" alt="南方古猿阿法种（露西）骨架重建"
+               title="图片来源: Wikimedia Commons / CC BY 4.0 — Bioanthropologist1">
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script src="assets/base.js"></script>
+  <script src="assets/lec.js"></script>
+  <script>
+  (function() {
+    Deck.init({ index: 24, total: 60 });
+
+    // ---- Mount header / footer ----
+    Lec.mount({
+      index: 24,
+      kicker: '第二章 · 地球跳跃实验室',
+      title: '演化遗产 vs 训练潜力',
+      take: '数百万年演化，不如几年训练',
+      foot: '跳跃高度由初速度决定；演化改变骨骼，训练改变力量'
+    });
+
+    // ---- Data ----
+    var G = Lec.K.EARTH_GRAVITY; // 9.8
+
+    // Hominid body data from Lec
+    var aus = Lec.P.getHominidData('australopithecus_afarensis');
+    var hab = Lec.P.getHominidData('homo_habilis');
+    var ere = Lec.P.getHominidData('homo_erectus');
+
+    // Jump height estimates (from deck: ~0.5m for Australopithecus, ~0.6m for Erectus)
+    var AUS_H = 0.48, HAB_H = 0.54, ERE_H = 0.60;
+    var UNT_H = Lec.K.HUMAN_VERTICAL_JUMP_EARTH; // 0.5
+    var AMA_H = 0.70, ELI_H = 1.20;
+
+    // Variation ranges (from plan)
+    var AUS_V = 0.15, HAB_V = 0.12, ERE_V = 0.18;
+    var UNT_V = 0.15, AMA_V = 0.10, ELI_V = 0.08;
+
+    // Compute initial velocities
+    var iv = Lec.P.initialVelocityForJumpHeight;
+    var AUS_V0 = iv(AUS_H, G), HAB_V0 = iv(HAB_H, G), ERE_V0 = iv(ERE_H, G);
+    var UNT_V0 = iv(UNT_H, G), AMA_V0 = iv(AMA_H, G), ELI_V0 = iv(ELI_H, G);
+
+    // Power-to-weight ratio (scaled so elite = 2.5)
+    var scale = 2.5 / ELI_H;
+    function ptw(h) { return +(h * scale).toFixed(2); }
+    var AUS_P = ptw(AUS_H), HAB_P = ptw(HAB_H), ERE_P = ptw(ERE_H);
+    var UNT_P = ptw(UNT_H), AMA_P = ptw(AMA_H), ELI_P = ptw(ELI_H);
+
+    // Population definitions
+    var pops = [
+      { name: '南方古猿\n阿法种',  group: 0, groupName: '猿人（演化）',
+        h: AUS_H, v: AUS_V, v0: AUS_V0, p: AUS_P, mass: aus.mass,
+        desc: '粗壮下肢，短跑爆发型', color: '#C4956A' },
+      { name: '能人',              group: 0, groupName: '猿人（演化）',
+        h: HAB_H, v: HAB_V, v0: HAB_V0, p: HAB_P, mass: hab.mass,
+        desc: '股骨角改善，足弓初现', color: '#D4A574' },
+      { name: '直立人',            group: 0, groupName: '猿人（演化）',
+        h: ERE_H, v: ERE_V, v0: ERE_V0, p: ERE_P, mass: ere.mass,
+        desc: '完全现代下肢，耐力奔跑', color: '#B8896E' },
+      { name: '智人\n(未训练)',    group: 1, groupName: '现代人（未训练）',
+        h: UNT_H, v: UNT_V, v0: UNT_V0, p: UNT_P, mass: 70,
+        desc: '现代骨骼，久坐生活方式', color: '#8E8E8E' },
+      { name: '智人\n(业余训练)',  group: 1, groupName: '现代人（未训练）',
+        h: AMA_H, v: AMA_V, v0: AMA_V0, p: AMA_P, mass: 70,
+        desc: '规律训练，神经适应', color: '#6B6B6B' },
+      { name: '精英\n运动员',      group: 2, groupName: '精英运动员',
+        h: ELI_H, v: ELI_V, v0: ELI_V0, p: ELI_P, mass: 80,
+        desc: '基因天赋 + 多年专项训练', color: '#E85D3A' }
+    ];
+
+    var categories = pops.map(function(p) { return p.name; });
+    var means = pops.map(function(p) { return +p.h.toFixed(2); });
+    var barColors = pops.map(function(p) { return p.color; });
+
+    // Error bar data: [mean, mean+var, mean-var] for each category
+    var errorData = pops.map(function(p) {
+      return [+p.h.toFixed(2), +(p.h + p.v).toFixed(2), +(p.h - p.v).toFixed(2)];
+    });
+
+    // ---- ECharts ----
+    var chartDom = document.getElementById('chart-wrap');
+    var chart = echarts.init(chartDom, null, { renderer: 'svg' });
+
+    var option = {
+      textStyle: { fontSize: 16 },
+      grid: { left: 60, right: 30, top: 60, bottom: 50 },
+      xAxis: {
+        type: 'category',
+        data: categories,
+        axisLabel: { fontSize: 15, color: '#a0b0c0', interval: 0 },
+        axisTick: { alignWithLabel: true },
+        axisLine: { lineStyle: { color: '#334455' } }
+      },
+      yAxis: {
+        type: 'value',
+        name: '跳跃高度 (m)',
+        nameTextStyle: { fontSize: 15, color: '#a0b0c0' },
+        min: 0,
+        max: 1.5,
+        interval: 0.25,
+        axisLabel: { fontSize: 14, color: '#8899aa' },
+        splitLine: { lineStyle: { color: '#1a2a38', type: 'dashed' } }
+      },
+      tooltip: {
+        trigger: 'axis',
+        axisPointer: { type: 'shadow' },
+        textStyle: { fontSize: 14 },
+        formatter: function(params) {
+          var idx = params[0].dataIndex;
+          var p = pops[idx];
+          return '<b>' + p.name.replace('\n','') + '</b><br/>' +
+            '跳跃高度: ' + p.h.toFixed(2) + ' ± ' + p.v.toFixed(2) + ' m<br/>' +
+            '初速度: ' + p.v0.toFixed(2) + ' m/s<br/>' +
+            '力量/体重比: ' + p.p.toFixed(2) + '<br/>' +
+            '体型: ' + p.mass + ' kg';
+        }
+      },
+      series: [
+        {
+          type: 'bar',
+          name: '跳跃高度',
+          data: means.map(function(v, i) {
+            return { value: v, itemStyle: { color: barColors[i], borderRadius: [4,4,0,0] } };
+          }),
+          barWidth: '50%',
+          emphasis: {
+            itemStyle: { color: '#ffb832', shadowBlur: 10, shadowColor: 'rgba(255,184,50,0.5)' }
+          },
+          markArea: {
+            silent: true,
+            label: { show: false },
+            itemStyle: { color: 'rgba(255,255,255,0.025)' },
+            data: [
+              [{ xAxis: '南方古猿\n阿法种' }, { xAxis: '直立人' }],
+              [{ xAxis: '智人\n(未训练)' }, { xAxis: '智人\n(业余训练)' }],
+              [{ xAxis: '精英\n运动员' }, { xAxis: '精英\n运动员' }]
+            ]
+          }
+        },
+        {
+          type: 'custom',
+          name: '变异范围',
+          renderItem: function(params, api) {
+            var idx = params.dataIndex;
+            var mean = api.value(0);
+            var high = api.value(1);
+            var low  = api.value(2);
+            var center = api.coord([idx, mean]);
+            var top    = api.coord([idx, high]);
+            var bottom = api.coord([idx, low]);
+            var hw = 10; // half-width of cap
+            return {
+              type: 'group',
+              children: [
+                { type: 'line', shape: { x1: center[0], y1: top[1], x2: center[0], y2: bottom[1] },
+                  style: { stroke: 'rgba(255,255,255,0.7)', lineWidth: 1.5 } },
+                { type: 'line', shape: { x1: center[0]-hw, y1: top[1], x2: center[0]+hw, y2: top[1] },
+                  style: { stroke: 'rgba(255,255,255,0.7)', lineWidth: 1.5 } },
+                { type: 'line', shape: { x1: center[0]-hw, y1: bottom[1], x2: center[0]+hw, y2: bottom[1] },
+                  style: { stroke: 'rgba(255,255,255,0.7)', lineWidth: 1.5 } }
+              ]
+            };
+          },
+          data: errorData,
+          z: 10
+        }
+      ],
+      graphic: [
+        { type: 'text', left: 370, top: 28, style: { text: '猿人（演化）', fontSize: 15, fill: '#C4956A', fontWeight: 'bold' } },
+        { type: 'text', left: 780, top: 28, style: { text: '现代人（未训练）', fontSize: 15, fill: '#8E8E8E', fontWeight: 'bold' } },
+        { type: 'text', left: 1190, top: 28, style: { text: '精英运动员', fontSize: 15, fill: '#E85D3A', fontWeight: 'bold' } }
+      ]
+    };
+
+    chart.setOption(option);
+
+    // ---- Interaction ----
+    var detailData = document.getElementById('detail-data');
+    var detailPrompt = document.getElementById('detail-prompt');
+
+    function buildComparisonTable(groupIdx) {
+      var members = pops.filter(function(p) { return p.group === groupIdx; });
+      var label = pops.filter(function(p) { return p.group === groupIdx; })[0].groupName;
+
+      var html = '<div style="margin-bottom:var(--sp-3);font-size:var(--fs-body);font-weight:600;color:var(--text);">' +
+                 label + '</div>';
+      html += '<table class="k-compact"><thead><tr>' +
+              '<th></th>';
+      members.forEach(function(m) {
+        html += '<th>' + m.name.replace('\n','') + '</th>';
+      });
+      html += '</tr></thead><tbody>';
+
+      // Row: 跳跃高度
+      html += '<tr><td class="dim">跳跃高度</td>';
+      members.forEach(function(m) {
+        html += '<td class="val">' + m.h.toFixed(2) + ' ± ' + m.v.toFixed(2) + ' m</td>';
+      });
+      html += '</tr>';
+
+      // Row: 初速度
+      html += '<tr><td class="dim">初速度</td>';
+      members.forEach(function(m) {
+        html += '<td class="val">' + m.v0.toFixed(2) + ' m/s</td>';
+      });
+      html += '</tr>';
+
+      // Row: 力量/体重比
+      html += '<tr><td class="dim">力量/体重比</td>';
+      members.forEach(function(m) {
+        html += '<td class="val">' + m.p.toFixed(2) + ' × 体重</td>';
+      });
+      html += '</tr>';
+
+      // Row: 体型
+      html += '<tr><td class="dim">体型</td>';
+      members.forEach(function(m) {
+        html += '<td class="val">' + m.mass + ' kg</td>';
+      });
+      html += '</tr>';
+
+      // Row: 关键因素
+      html += '<tr><td class="dim">关键因素</td>';
+      members.forEach(function(m) {
+        html += '<td style="font-size:var(--fs-sec);color:var(--text-dim);">' + m.desc + '</td>';
+      });
+      html += '</tr>';
+
+      html += '</tbody></table>';
+      return html;
+    }
+
+    chart.on('click', function(params) {
+      if (params.componentType === 'series' && params.seriesType === 'bar') {
+        var idx = params.dataIndex;
+        var pop = pops[idx];
+        var groupIdx = pop.group;
+
+        // Highlight the clicked bar's group, downplay others
+        chart.dispatchAction({ type: 'downplay', seriesIndex: 0 });
+        pops.forEach(function(p, i) {
+          if (p.group === groupIdx) {
+            chart.dispatchAction({ type: 'highlight', seriesIndex: 0, dataIndex: i });
+          }
+        });
+
+        // Update detail panel
+        detailPrompt.style.display = 'none';
+        detailData.style.display = 'block';
+        detailData.innerHTML = buildComparisonTable(groupIdx);
+      } else {
+        // Click on empty area or non-bar element: reset
+        chart.dispatchAction({ type: 'downplay', seriesIndex: 0 });
+        detailPrompt.style.display = 'block';
+        detailData.style.display = 'none';
+      }
+    });
+
+    // ---- Resize ----
+    window.addEventListener('resize', function() {
+      chart.resize();
+    });
+  })();
+  </script>
+</body>
+</html>

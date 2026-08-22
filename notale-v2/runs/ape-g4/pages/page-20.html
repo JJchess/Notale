@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    #stage{width:100%;height:100%;}
+    .detective{height:100%;display:flex;flex-direction:column;gap:var(--sp-3);}
+    .taskbar{display:flex;align-items:center;gap:var(--sp-4);min-height:58px;padding:var(--sp-3) var(--sp-4);}
+    .taskbar .instruction{flex:1 1 auto;min-width:0;}
+    .clue{flex:0 0 260px;min-height:48px;touch-action:none;user-select:none;cursor:grab;border-color:var(--accent);background:var(--accent-soft);font-size:var(--fs-body);}
+    .clue.is-dragging{cursor:grabbing;box-shadow:var(--shadow);}
+    .clue strong{color:var(--accent-strong);}
+    .k-classification.class-field{flex:1 1 auto;display:flex;flex-direction:row;gap:var(--sp-3);min-height:0;}
+    .class-field>.lv{flex:1 1 0;min-width:0;margin:0;padding-left:var(--sp-3);}
+    .class-field .box{height:100%;display:flex;flex-direction:column;}
+    .class-field .box>.bt{font-size:var(--fs-lead);padding:var(--sp-2) var(--sp-3);}
+    .class-field .box>.bc{flex:1 1 auto;display:flex;flex-direction:column;gap:var(--sp-2);padding:var(--sp-3);min-height:0;}
+    .toothviz{height:102px;min-height:102px;border-radius:var(--radius-sm);background:var(--surface-soft);}
+    .toothviz svg{display:block;width:100%;height:100%;}
+    .obs{font-size:var(--fs-sec);line-height:var(--lh-copy);color:var(--muted);}
+    .support{display:none;padding:var(--sp-2) var(--sp-3);font-size:var(--fs-sec);line-height:var(--lh-copy);background:var(--success-soft);border-radius:var(--radius-sm);color:var(--success);}
+    .box.is-filled{border-color:var(--success);}
+    .box.is-filled .support{display:block;}
+    .outlet{display:flex;align-items:stretch;gap:var(--sp-3);min-height:116px;}
+    .outlet .prompt{flex:0 0 300px;display:flex;flex-direction:column;justify-content:center;gap:var(--sp-2);padding:var(--sp-3) var(--sp-4);}
+    .choices{flex:1 1 auto;display:flex;gap:var(--sp-3);min-width:0;}
+    .choice{flex:1 1 0;min-width:0;padding:var(--sp-3);font-size:var(--fs-sec);line-height:var(--lh-copy);text-align:left;}
+    .choice.good-choice{border-color:var(--success);}
+    .choice.bad-choice{border-color:var(--danger);}
+    .feedback{flex:0 0 330px;display:flex;align-items:center;padding:var(--sp-3) var(--sp-4);font-size:var(--fs-sec);line-height:var(--lh-copy);}
+    .feedback[data-kind="good"]{background:var(--success-soft);color:var(--success);}
+    .feedback[data-kind="bad"]{background:var(--danger-soft);color:var(--danger);}
+    .evidence{font-weight:760;}
+    button:focus-visible,.clue:focus-visible{outline:3px solid var(--focus);outline-offset:2px;}
+  </style>
+</head>
+<body data-page="20" data-total="50">
+  <main id="main"><div id="stage"></div></main>
+
+  <script src="assets/base.js"></script>
+  <script src="assets/lec.js"></script>
+  <script src="assets/lib/d3.min.js"></script>
+  <script>
+    Lec.mount({
+      index: 20,
+      kicker: "TEETH AS CLUES",
+      title: "牙齿留下线索，不会留下完整菜单",
+      take: "牙齿能提供饮食线索，却不能单独还原一种固定菜单。"
+    });
+    Deck.init({ index: 20, total: 50 });
+
+    var stage = document.getElementById("stage");
+    stage.innerHTML = `
+      <section class="detective" aria-label="牙齿食谱侦探">
+        <div class="taskbar panel">
+          <p class="instruction body-copy">拖动线索到它直接记录的类别；也可用方向键选类别，按 Enter 归位。</p>
+          <div id="clue" class="clue ctl no-pan" tabindex="0" role="button" aria-label="待归类线索；左右方向键切换类别，回车确认"></div>
+        </div>
+        <div id="classes" class="k-classification class-field" aria-label="牙齿证据的三类来源">
+          <div class="lv min0"><section class="box" data-cat="shape"><h2 class="bt">牙齿形态</h2><div class="bc"><div class="toothviz" aria-hidden="true"></div><p class="obs">观察：牙冠形状、切缘、尖峰、磨面、牙釉质厚薄</p><p class="support">支持判断牙齿可能怎样切断、撕裂、压碎或研磨；不能推出唯一用途。</p></div></section></div>
+          <div class="lv min0"><section class="box" data-cat="wear"><h2 class="bt">使用痕迹</h2><div class="bc"><div class="toothviz" aria-hidden="true"></div><p class="obs">观察：磨平、崩缺、划痕、凹坑与抛光区域</p><p class="support">支持判断颗粒怎样作用于牙面；同一种磨损仍可能有多个成因。</p></div></section></div>
+          <div class="lv min0"><section class="box" data-cat="chem"><h2 class="bt">附着与化学信号</h2><div class="bc"><div class="toothviz" aria-hidden="true"></div><p class="obs">观察：牙石残留、组织化学差异、污染与保存状态</p><p class="support">支持来源大类和样本间比较；检出不等于经常吃，未检出不等于从未吃。</p></div></section></div>
+        </div>
+        <div class="outlet">
+          <div class="prompt panel"><strong>证据出口</strong><span class="secondary">三类归位后，选择牙齿证据能到达的结论。</span></div>
+          <div class="choices" aria-label="候选结论">
+            <button class="choice good-choice" type="button" data-answer="range" disabled>多类证据相容，可约束饮食范围</button>
+            <button class="choice bad-choice" type="button" data-answer="menu" disabled>由牙齿还原一份固定菜单</button>
+          </div>
+          <div id="feedback" class="feedback panel" aria-live="polite">先完成三类线索归位。</div>
+        </div>
+      </section>`;
+
+    var clues = [
+      {cat:"shape", key:"形状", text:"牙冠整体形状"},
+      {cat:"wear", key:"划痕", text:"牙面划痕与凹坑"},
+      {cat:"chem", key:"残留", text:"牙石中的微小残留"}
+    ];
+    var state = {index:0, placed:[], selected:0, done:false};
+    var clueEl = document.getElementById("clue");
+    var boxes = Array.from(document.querySelectorAll(".box"));
+    var feedback = document.getElementById("feedback");
+    var choices = Array.from(document.querySelectorAll(".choice"));
+    var labelsRaw = Lec.K.evidenceLabels;
+    var labels = Array.isArray(labelsRaw) ? labelsRaw : Object.values(labelsRaw || {});
+    function evidenceLabel(fragment){ return labels.find(function(x){return String(x).indexOf(fragment)>=0;}) || fragment; }
+
+    function drawTeeth(){
+      var data = [
+        {cat:"shape", mark:"outline"}, {cat:"wear", mark:"wear"}, {cat:"chem", mark:"chem"}
+      ];
+      d3.selectAll(".toothviz").each(function(_,i){
+        var d=data[i], svg=d3.select(this).append("svg").attr("viewBox","0 0 320 102");
+        svg.append("title").text(d.cat==="shape"?"牙冠轮廓取样":d.cat==="wear"?"牙面磨损位置":"牙石与化学取样点");
+        svg.append("path").attr("d","M110,16 C78,26 74,58 91,84 C111,106 126,73 160,73 C194,73 209,106 229,84 C246,58 242,26 210,16 C184,7 136,7 110,16Z").attr("fill",Deck.token("--surface")).attr("stroke",Deck.token("--line-strong")).attr("stroke-width",3);
+        if(d.mark==="outline") svg.append("path").attr("d","M110,16 C132,34 188,34 210,16").attr("fill","none").attr("stroke",Deck.token("--accent")).attr("stroke-width",7);
+        if(d.mark==="wear") svg.selectAll("line").data([[120,42,148,50],[150,38,182,48],[176,55,204,62]]).join("line").attr("x1",x=>x[0]).attr("y1",x=>x[1]).attr("x2",x=>x[2]).attr("y2",x=>x[3]).attr("stroke",Deck.token("--warning")).attr("stroke-width",5).attr("stroke-linecap","round");
+        if(d.mark==="chem") svg.selectAll("circle").data([[128,34],[164,28],[195,42]]).join("circle").attr("cx",x=>x[0]).attr("cy",x=>x[1]).attr("r",8).attr("fill",Deck.token("--cyan"));
+      });
+    }
+    drawTeeth();
+
+    function render(){
+      boxes.forEach(function(b,i){ b.classList.toggle("is-filled",state.placed.indexOf(b.dataset.cat)>=0); b.parentElement.style.borderLeftColor = i===state.selected ? Deck.token("--accent") : ""; });
+      if(state.index < clues.length){
+        var c=clues[state.index]; clueEl.hidden=false; clueEl.innerHTML="<strong>线索：</strong>"+c.text; clueEl.setAttribute("aria-label","待归类线索："+c.text+"；当前选择"+boxes[state.selected].querySelector(".bt").textContent);
+      } else { clueEl.hidden=true; }
+      choices.forEach(function(b){b.disabled=state.index<clues.length;});
+    }
+    function place(cat){
+      if(state.index>=clues.length)return;
+      var c=clues[state.index];
+      if(cat===c.cat){
+        state.placed.push(cat); state.index++; feedback.textContent=state.index<clues.length?"归类成立：观察对象与类别一致。继续下一条。":"三类观察已分开。现在判断这些证据能说到哪里。"; feedback.dataset.kind="good";
+      }else{
+        feedback.textContent="再看判断词“"+c.key+"”：它直接记录的是哪一种对象？"; feedback.dataset.kind="bad";
+      }
+      render();
+    }
+    clueEl.addEventListener("keydown",function(e){
+      if(e.key==="ArrowRight"||e.key==="ArrowDown"){e.preventDefault();state.selected=(state.selected+1)%3;render();}
+      if(e.key==="ArrowLeft"||e.key==="ArrowUp"){e.preventDefault();state.selected=(state.selected+2)%3;render();}
+      if(e.key==="Enter"||e.key===" "){e.preventDefault();place(boxes[state.selected].dataset.cat);}
+    });
+    clueEl.addEventListener("pointerdown",function(e){clueEl.setPointerCapture(e.pointerId);clueEl.classList.add("is-dragging");});
+    clueEl.addEventListener("pointermove",function(e){
+      if(!clueEl.hasPointerCapture(e.pointerId))return;
+      var p=Deck.pt(document.getElementById("classes"),e); var w=document.getElementById("classes").clientWidth; state.selected=Deck.clamp(Math.floor(p.x/(w/3)),0,2); render();
+    });
+    function drop(e){if(clueEl.hasPointerCapture(e.pointerId)){clueEl.releasePointerCapture(e.pointerId);clueEl.classList.remove("is-dragging");place(boxes[state.selected].dataset.cat);}}
+    clueEl.addEventListener("pointerup",drop); clueEl.addEventListener("pointercancel",function(e){clueEl.classList.remove("is-dragging");});
+    choices.forEach(function(btn){btn.addEventListener("click",function(){
+      if(btn.dataset.answer==="range"){
+        feedback.innerHTML='<span><span class="evidence">'+evidenceLabel("有支持")+'</span>：多类证据可互相校验，但结论仍是饮食范围。再次点击可重置。</span>'; feedback.dataset.kind="good"; state.done=true; btn.textContent="完成 · 点击重置"; choices[1].disabled=true;
+        btn.onclick=function(){reset();};
+      }else{
+        feedback.innerHTML='<span><span class="evidence">'+evidenceLabel("模型推测")+'</span>：证据没有走到“固定菜单”，请改选有边界的结论。</span>'; feedback.dataset.kind="bad";
+      }
+    });});
+    function reset(){state={index:0,placed:[],selected:0,done:false};feedback.textContent="先完成三类线索归位。";feedback.dataset.kind="";choices[0].textContent="多类证据相容，可约束饮食范围";choices[0].onclick=null;choices[1].disabled=true;render();clueEl.focus();}
+    render();
+  </script>
+</body>
+</html>

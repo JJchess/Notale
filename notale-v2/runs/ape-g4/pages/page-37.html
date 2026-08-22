@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    .orbital-page{position:relative;width:100%;height:100%;overflow:hidden;border-radius:var(--radius-lg);background:var(--surface-strong)}
+    .space-view{position:absolute;inset:0;overflow:hidden}
+    .space-view canvas{display:block;width:100%;height:100%}
+    .view-switch{position:absolute;z-index:5;top:var(--sp-3);left:50%;transform:translateX(-50%);box-shadow:var(--shadow)}
+    .view-switch button{min-width:210px}
+    .metric-panel{position:absolute;z-index:4;right:var(--sp-4);top:var(--sp-3);width:292px;padding:var(--sp-3) var(--sp-4);background:var(--surface);border:1px solid var(--line);border-radius:var(--radius-md);box-shadow:var(--shadow-soft)}
+    .metric-panel dl{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:var(--sp-1) var(--sp-3);margin:0}
+    .metric-panel dt{font-size:var(--fs-label);color:var(--muted)}
+    .metric-panel dd{margin:0;font-size:var(--fs-label);font-weight:760;font-variant-numeric:tabular-nums}
+    .scale-note{margin-top:var(--sp-1);font-size:var(--fs-label);color:var(--muted)}
+    .bridge{position:absolute;z-index:4;left:50%;top:92px;width:720px;transform:translateX(-50%);padding:var(--sp-2) var(--sp-4);text-align:center;background:var(--surface);border:1px solid var(--line);border-left:5px solid var(--accent);border-radius:var(--radius-sm);box-shadow:var(--shadow-soft);font-size:var(--fs-sec);line-height:var(--lh-copy)}
+    .comparison-wrap{position:absolute;z-index:4;left:var(--sp-4);right:var(--sp-4);bottom:var(--sp-4)}
+    .k-comparison{--cmp-cols:150px repeat(2,minmax(0,1fr));font-size:var(--fs-sec);line-height:1.35;box-shadow:var(--shadow)}
+    .k-comparison>*{padding:var(--sp-2) var(--sp-3)}
+    .k-comparison>.hdr{min-height:42px;font-size:var(--fs-body)}
+    .k-comparison>.dim{font-size:var(--fs-label)}
+    .k-comparison .cell{background:rgba(255,255,255,.94);transition:opacity 240ms ease,background 240ms ease}
+    .k-comparison[data-view="outside"] .inside,.k-comparison[data-view="inside"] .outside{opacity:.5}
+    .k-comparison[data-view="outside"] .outside,.k-comparison[data-view="inside"] .inside{background:var(--accent-soft);box-shadow:inset 4px 0 0 var(--accent)}
+    .pulse{animation:focusPulse 900ms ease-out}
+    @keyframes focusPulse{0%{box-shadow:inset 4px 0 0 var(--warning)}100%{box-shadow:inset 4px 0 0 var(--accent)}}
+    @media (prefers-reduced-motion:reduce){.k-comparison .cell{transition:none}.pulse{animation:none}}
+  </style>
+</head>
+<body data-page="37" data-total="50">
+  <div id="stage"><main id="main"></main></div>
+
+  <script src="assets/base.js"></script>
+  <script src="assets/lec.js"></script>
+  <script src="assets/lib/three.min.js"></script>
+  <script>
+    Lec.mount({
+      index: 37,
+      kicker: "ORBITAL FREE FALL",
+      title: "为什么一直坠落，却看起来在漂浮？",
+      take: "轨道中的“失重”主要是持续自由落体，不是远离了地球引力。"
+    });
+    Deck.init({ index: 37, total: 50 });
+
+    var stage = document.getElementById("stage");
+    var main = document.getElementById("main");
+    main.innerHTML = '<section class="orbital-page" aria-label="轨道自由落体的舱外与舱内对照">'+
+      '<div class="space-view" id="spaceView" aria-hidden="true"></div>'+
+      '<div class="ctl view-switch"><label for="viewToggle">观察视角</label><button type="button" id="viewToggle" class="primary" aria-pressed="false">共同坠落 → 切到彼此漂浮</button></div>'+
+      '<aside class="metric-panel" aria-label="同一轨道状态的读数"><dl><dt>演示高度</dt><dd id="altRead"></dd><dt>近地表标准重力</dt><dd id="g0Read"></dd><dt>此高度引力加速度</dt><dd id="gRead"></dd><dt>此高度的引力约为近地表的</dt><dd id="ratioRead"></dd></dl><p class="scale-note">空间尺度为教学放大，不按屏幕比例</p></aside>'+
+      '<p class="bridge" id="bridge">航天器、宇航员和舱内物体受到近乎相同的引力加速度，因此彼此之间缺少支撑力。</p>'+
+      '<div class="comparison-wrap"><div class="k-comparison" id="comparison" data-view="outside">'+
+        '<div class="hdr dim">比较维度</div><div class="hdr outside">从舱外看：共同坠落</div><div class="hdr inside">从舱内看：彼此漂浮</div><div class="rowline"></div>'+
+        '<div class="dim">地球引力</div><div class="cell outside">仍被显著拉向地心</div><div class="cell inside">引力没有消失，三者近乎同向加速</div><div class="rowline"></div>'+
+        '<div class="dim">运动状态</div><div class="cell outside">路径不断向地球弯曲</div><div class="cell inside">人与物相对舱体没有明显下落</div><div class="rowline"></div>'+
+        '<div class="dim">人与航天器</div><div class="cell outside">航天器和人一起坠落</div><div class="cell inside">地板不持续托住人</div><div class="rowline"></div>'+
+        '<div class="dim">测量结果</div><div class="cell outside">此高度仍有显著引力</div><div class="cell inside">舱内地板秤读数接近零</div>'+
+      '</div></div></section>';
+
+    function finite(v, fallback){ return Lec.P.finite(v)?v:fallback; }
+    function fmt(v, digits){ return Lec.P.formatNumber(finite(v,0), digits); }
+    var altitude=finite(Lec.K.spacecraft.issMeanAltitude,0);
+    var g0=finite(Lec.K.physics.standardGravity,0);
+    var grav=finite(Lec.P.gravityAtAltitude(Lec.K.earth.mass,Lec.K.earth.meanRadius,altitude),0);
+    var rat=finite(Lec.P.ratio(grav,g0),0);
+    rat=Lec.P.clamp(rat,0,1);
+    document.getElementById("altRead").textContent=fmt(altitude/1000,0)+" km";
+    document.getElementById("g0Read").textContent=fmt(g0,2)+" m/s²";
+    document.getElementById("gRead").textContent=fmt(grav,2)+" m/s²";
+    document.getElementById("ratioRead").textContent=fmt(Lec.P.clamp(Lec.P.percent(grav,g0),0,100),0)+"%";
+
+    var host=document.getElementById("spaceView");
+    var scene=new THREE.Scene(); scene.background=new THREE.Color(Deck.token("surface-strong"));
+    var camera=new THREE.PerspectiveCamera(42,host.clientWidth/host.clientHeight,.1,100);
+    var renderer=new THREE.WebGLRenderer({antialias:true,alpha:false});
+    renderer.setSize(host.clientWidth,host.clientHeight); renderer.outputColorSpace=THREE.SRGBColorSpace; host.appendChild(renderer.domElement);
+    scene.add(new THREE.HemisphereLight(Deck.token("surface"),Deck.token("muted"),2.2));
+    var sun=new THREE.DirectionalLight(Deck.token("surface"),3); sun.position.set(5,8,6); scene.add(sun);
+    var earth=new THREE.Mesh(new THREE.SphereGeometry(5,48,32),new THREE.MeshStandardMaterial({color:Deck.token("accent-strong"),roughness:.8,metalness:.05})); earth.position.set(0,-5.7,0); scene.add(earth);
+    var orbit=new THREE.Line(new THREE.BufferGeometry().setFromPoints(Array.from({length:46},function(_,i){var a=.25+i*.026;return new THREE.Vector3(6.15*Math.cos(a),-5.7+6.15*Math.sin(a),0)})),new THREE.LineBasicMaterial({color:Deck.token("cyan")})); scene.add(orbit);
+    var craft=new THREE.Group();
+    var body=new THREE.Mesh(new THREE.CylinderGeometry(.28,.28,1.25,20),new THREE.MeshStandardMaterial({color:Deck.token("surface"),metalness:.45,roughness:.3})); body.rotation.z=Math.PI/2; craft.add(body);
+    var panelMat=new THREE.MeshStandardMaterial({color:Deck.token("accent"),metalness:.2});
+    [-1,1].forEach(function(s){var p=new THREE.Mesh(new THREE.BoxGeometry(.95,.04,.44),panelMat);p.position.x=s*.92;craft.add(p)});
+    scene.add(craft);
+    var arrowMat=new THREE.MeshBasicMaterial({color:Deck.token("danger")});
+    var gravityArrow=new THREE.ArrowHelper(new THREE.Vector3(0,-1,0),new THREE.Vector3(),1.25,Deck.token("danger"),.28,.16); scene.add(gravityArrow);
+    var cabin=new THREE.Group();
+    var shell=new THREE.Mesh(new THREE.BoxGeometry(4.8,3.1,3.3),new THREE.MeshStandardMaterial({color:Deck.token("surface-soft"),transparent:true,opacity:.22,side:THREE.DoubleSide})); cabin.add(shell);
+    var person=new THREE.Group(); var suit=new THREE.MeshStandardMaterial({color:Deck.token("warning-soft")});
+    var torso=new THREE.Mesh(new THREE.CapsuleGeometry(.32,.75,6,12),suit); person.add(torso); var head=new THREE.Mesh(new THREE.SphereGeometry(.3,18,12),suit);head.position.y=.85;person.add(head); person.rotation.z=-.25;cabin.add(person);
+    var pen=new THREE.Mesh(new THREE.CylinderGeometry(.05,.05,.7,12),new THREE.MeshStandardMaterial({color:Deck.token("danger")}));pen.position.set(1.25,.55,.35);pen.rotation.z=1.1;cabin.add(pen);
+    var ball=new THREE.Mesh(new THREE.SphereGeometry(.22,18,12),new THREE.MeshStandardMaterial({color:Deck.token("cyan")}));ball.position.set(-1.3,.7,.2);cabin.add(ball);
+    cabin.visible=false;scene.add(cabin);
+    var inside=false, transition=1;
+    function resize(){var w=host.clientWidth,h=host.clientHeight;camera.aspect=w/h;camera.updateProjectionMatrix();renderer.setSize(w,h)}
+    Deck.onResize(resize);
+    document.getElementById("viewToggle").addEventListener("click",function(){inside=!inside;transition=0;this.setAttribute("aria-pressed",String(inside));this.textContent=inside?"彼此漂浮 → 切到共同坠落":"共同坠落 → 切到彼此漂浮";document.getElementById("comparison").dataset.view=inside?"inside":"outside";var cells=document.querySelectorAll(inside?".inside":".outside");cells.forEach(function(el){el.classList.remove("pulse");void el.offsetWidth;el.classList.add("pulse")})});
+    var reduced=Deck.reduced();
+    Deck.loop(function(t,dt){
+      var a=.78+(reduced?0:t*.00008); var x=6.15*Math.cos(a),y=-5.7+6.15*Math.sin(a);craft.position.set(x,y,0);craft.rotation.z=a+Math.PI/2;gravityArrow.position.set(x,y,0);gravityArrow.setDirection(new THREE.Vector3(-x,-y-5.7,0).normalize());
+      transition=reduced?1:Math.min(1,transition+dt/700);var e=transition*transition*(3-2*transition);
+      cabin.visible=inside||transition<1;earth.visible=!inside||transition<1;orbit.visible=earth.visible;craft.visible=earth.visible;gravityArrow.visible=earth.visible;
+      if(inside){camera.position.lerpVectors(new THREE.Vector3(0,1.5,13),new THREE.Vector3(0,0,6.7),e)}else{camera.position.lerpVectors(new THREE.Vector3(0,0,6.7),new THREE.Vector3(0,1.5,13),e)}
+      camera.lookAt(0,inside?0:-1.2,0); cabin.visible=inside; person.position.y=Math.sin(t*.001)*.08;pen.rotation.y=t*.0003;ball.position.y=.7+Math.sin(t*.0007)*.08;renderer.render(scene,camera)
+    },{still:900});
+  </script>
+</body>
+</html>

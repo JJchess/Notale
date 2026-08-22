@@ -1,0 +1,622 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+:root {
+  --bg: #05080c;
+  --text: #d6d8d0;
+  --font-sans: "Noto Sans SC", system-ui, sans-serif;
+}
+
+#main {
+  position: relative;
+  background: #05080c;
+  overflow: hidden;
+}
+
+#cvs {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+/* ── 左侧栈列表 ── */
+.stack-list {
+  position: absolute;
+  left: 20px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  z-index: 10;
+  pointer-events: none;
+}
+
+.stack-item {
+  display: flex;
+  flex-direction: column;
+  padding: 5px 10px 5px 8px;
+  border-radius: 4px;
+  border-left: 3px solid transparent;
+  transition: all 0.4s ease;
+  pointer-events: auto;
+}
+
+.stack-item .si-name {
+  font-size: var(--fs-sec);
+  font-weight: 600;
+  color: rgba(214, 216, 208, 0.4);
+  line-height: 1.3;
+  transition: color 0.4s ease;
+}
+
+.stack-item .si-span {
+  font-size: var(--fs-label);
+  color: rgba(214, 216, 208, 0.25);
+  line-height: 1.2;
+  transition: color 0.4s ease;
+}
+
+.stack-item.active {
+  background: rgba(11, 122, 117, 0.15);
+  border-left-color: var(--accent);
+}
+
+.stack-item.active .si-name {
+  color: #fff;
+}
+
+.stack-item.active .si-span {
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.stack-item.passed .si-name {
+  color: rgba(214, 216, 208, 0.25);
+}
+
+/* ── 底部信息栏 ── */
+.layer-info {
+  position: absolute;
+  bottom: 22px;
+  left: 50%;
+  transform: translateX(-50%);
+  text-align: center;
+  z-index: 10;
+  pointer-events: none;
+}
+
+.layer-info .li-name {
+  font-size: var(--fs-lead);
+  font-weight: 700;
+  color: #fff;
+  line-height: 1.4;
+  text-shadow: 0 0 12px rgba(0,0,0,0.8);
+}
+
+.layer-info .li-span {
+  font-size: var(--fs-sec);
+  color: rgba(255, 255, 255, 0.6);
+  line-height: 1.4;
+  text-shadow: 0 0 8px rgba(0,0,0,0.8);
+}
+
+/* ── 右下角控件 ── */
+.controls {
+  position: absolute;
+  bottom: 22px;
+  right: 24px;
+  display: flex;
+  gap: 10px;
+  z-index: 10;
+}
+
+.controls button {
+  padding: 7px 18px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(5, 8, 12, 0.75);
+  color: #d6d8d0;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: var(--fs-label);
+  font-family: inherit;
+  letter-spacing: 0.02em;
+  transition: all 0.2s ease;
+  user-select: none;
+  min-width: 64px;
+  text-align: center;
+}
+
+.controls button:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: #fff;
+  background: rgba(11, 122, 117, 0.2);
+}
+
+.controls button:disabled {
+  opacity: 0.25;
+  cursor: default;
+  pointer-events: none;
+}
+
+.controls button.primary {
+  background: rgba(11, 122, 117, 0.3);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.controls button.primary:hover:not(:disabled) {
+  background: rgba(11, 122, 117, 0.5);
+}
+</style>
+</head>
+<body data-page="39" data-total="50">
+<div id="stage">
+<main id="main">
+  <canvas id="cvs" class="cv-fill"></canvas>
+
+  <div class="stack-list" id="stackList"></div>
+
+  <div class="layer-info">
+    <div class="li-name" id="liName"></div>
+    <div class="li-span" id="liSpan"></div>
+  </div>
+
+  <div class="controls">
+    <button id="btnOut" disabled>−10×</button>
+    <button id="btnIn" class="primary">+10×</button>
+  </div>
+</main>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script>
+(function() {
+  'use strict';
+
+  // ── 常量 ──
+  var ANDROMEDA_LY = 2.5e6;        // 约 250 万光年（Lec.K 未收录，按 p39 规格补齐）
+  var OBSERVABLE_GALAXIES = 2e12;  // 约 2 万亿个星系（Lec.K 未收录，按 p39 规格补齐）
+  var OBSERVABLE_LY = Lec.K.OBSERVABLE_UNIVERSE_LY;  // 9.3e10
+
+  // ── 六层定义 ──
+  var LAYERS = [
+    { name: '本星系群',      span: ANDROMEDA_LY,           desc: '约 250 万光年' },
+    { name: '星系团集合',    span: ANDROMEDA_LY * 10,      desc: '约 2500 万光年' },
+    { name: '超星系团',      span: ANDROMEDA_LY * 100,     desc: '约 2.5 亿光年' },
+    { name: '大尺度纤维',    span: ANDROMEDA_LY * 1000,    desc: '约 25 亿光年' },
+    { name: '宇宙网',        span: ANDROMEDA_LY * 10000,   desc: '约 250 亿光年' },
+    { name: '可观测宇宙',    span: OBSERVABLE_LY,          desc: '约 930 亿光年' }
+  ];
+  var NUM_LAYERS = LAYERS.length;
+
+  // ── DOM 元素 ──
+  var main = document.getElementById('main');
+  var cvs = document.getElementById('cvs');
+  var stackList = document.getElementById('stackList');
+  var liName = document.getElementById('liName');
+  var liSpan = document.getElementById('liSpan');
+  var btnIn = document.getElementById('btnIn');
+  var btnOut = document.getElementById('btnOut');
+
+  // ── 状态 ──
+  var currentLayer = 0;
+  var points = [];          // 当前显示的点（含过渡态）
+  var pointCounts = [40, 100, 200, 350, 600, 1200];
+  var W, H, cx, cy, maxR;
+
+  // ── 格式化光年描述 ──
+  function formatSpan(ly) {
+    if (ly >= 1e8) {
+      var val = ly / 1e8;
+      return '约 ' + (val < 10 ? val.toFixed(1) : Math.round(val)) + ' 亿光年';
+    } else if (ly >= 1e4) {
+      var val = ly / 1e4;
+      return '约 ' + (val < 10 ? val.toFixed(1) : Math.round(val)) + ' 万光年';
+    }
+    return Math.round(ly) + ' 光年';
+  }
+
+  // ── 构建栈列表 ──
+  function buildStack() {
+    stackList.innerHTML = '';
+    for (var i = 0; i < NUM_LAYERS; i++) {
+      var item = document.createElement('div');
+      item.className = 'stack-item' + (i === 0 ? ' active' : '');
+      item.dataset.idx = i;
+      item.innerHTML = '<span class="si-name">' + LAYERS[i].name + '</span>' +
+                       '<span class="si-span">' + LAYERS[i].desc + '</span>';
+      stackList.appendChild(item);
+    }
+  }
+
+  function updateStack(activeIdx) {
+    var items = stackList.querySelectorAll('.stack-item');
+    for (var i = 0; i < items.length; i++) {
+      items[i].classList.toggle('active', i === activeIdx);
+      items[i].classList.toggle('passed', i < activeIdx);
+    }
+  }
+
+  function updateInfo(activeIdx) {
+    var layer = LAYERS[activeIdx];
+    liName.textContent = layer.name;
+    var spanLy = layer.span;
+    if (activeIdx === NUM_LAYERS - 1) {
+      liSpan.textContent = '直径 ' + formatSpan(OBSERVABLE_LY) +
+                          ' · 约 ' + (OBSERVABLE_GALAXIES / 1e12).toFixed(0) + ' 万亿个星系';
+    } else {
+      liSpan.textContent = '跨度 ' + formatSpan(spanLy);
+    }
+  }
+
+  function updateButtons(activeIdx) {
+    btnOut.disabled = (activeIdx === 0);
+    btnIn.disabled = (activeIdx === NUM_LAYERS - 1);
+    if (activeIdx === NUM_LAYERS - 1) {
+      btnIn.textContent = '到顶';
+      btnIn.className = '';
+    } else {
+      btnIn.textContent = '+10×';
+      btnIn.className = 'primary';
+    }
+  }
+
+  // ── 简易种子随机（mulberry32） ──
+  function seededRandom(seed) {
+    var s = 0;
+    for (var i = 0; i < seed.length; i++) {
+      s = ((s << 5) - s) + seed.charCodeAt(i);
+      s = s & s;
+    }
+    var state = s || 1;
+    return function() {
+      state |= 0;
+      state = state + 0x6D2B79F5 | 0;
+      var t = Math.imul(state ^ state >>> 15, 1 | state);
+      t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+      return ((t ^ t >>> 14) >>> 0) / 4294967296;
+    };
+  }
+
+  // ── 点云生成 ──
+  function generatePointsForLayer(layerIdx, count) {
+    var rng = seededRandom('page-39-layer-' + layerIdx);
+    var pts = [];
+    var spread = maxR * 0.42;
+
+    // 各层使用不同的分布模式
+    switch (layerIdx) {
+      case 0: // 本星系群：中心密集 + 少数卫星
+        for (var i = 0; i < count; i++) {
+          var angle = rng() * Math.PI * 2;
+          var r = Math.pow(rng(), 1.8) * spread * 0.35;
+          var size = 1.5 + rng() * 2.5;
+          var alpha = 0.5 + rng() * 0.5;
+          pts.push({ x: cx + Math.cos(angle) * r, y: cy + Math.sin(angle) * r, size: size, alpha: alpha });
+        }
+        // 加几个较亮的卫星
+        for (var i = 0; i < 5; i++) {
+          var angle = rng() * Math.PI * 2;
+          var r = spread * 0.3 + rng() * spread * 0.4;
+          pts.push({ x: cx + Math.cos(angle) * r, y: cy + Math.sin(angle) * r, size: 3 + rng() * 2, alpha: 0.7 + rng() * 0.3 });
+        }
+        break;
+
+      case 1: // 星系团集合：更分散，少量小簇
+        for (var i = 0; i < count; i++) {
+          var angle = rng() * Math.PI * 2;
+          var r = Math.pow(rng(), 1.3) * spread * 0.55;
+          var size = 1 + rng() * 2;
+          var alpha = 0.3 + rng() * 0.5;
+          pts.push({ x: cx + Math.cos(angle) * r, y: cy + Math.sin(angle) * r, size: size, alpha: alpha });
+        }
+        break;
+
+      case 2: // 超星系团：形成几个团块
+        var clusterCenters = [];
+        for (var c = 0; c < 4; c++) {
+          clusterCenters.push({
+            x: cx + (rng() - 0.5) * spread * 1.2,
+            y: cy + (rng() - 0.5) * spread * 1.2
+          });
+        }
+        for (var i = 0; i < count; i++) {
+          var cc = clusterCenters[Math.floor(rng() * clusterCenters.length)];
+          var angle = rng() * Math.PI * 2;
+          var r = Math.pow(rng(), 1.5) * spread * 0.3;
+          pts.push({
+            x: cc.x + Math.cos(angle) * r,
+            y: cc.y + Math.sin(angle) * r,
+            size: 1 + rng() * 2,
+            alpha: 0.3 + rng() * 0.5
+          });
+        }
+        break;
+
+      case 3: // 大尺度纤维：沿几条线分布
+        var numLines = 5;
+        var lineAngles = [];
+        for (var l = 0; l < numLines; l++) {
+          lineAngles.push(rng() * Math.PI);
+        }
+        for (var i = 0; i < count; i++) {
+          var la = lineAngles[Math.floor(rng() * numLines)];
+          var t = (rng() - 0.5) * 2.4;
+          var offset = (rng() - 0.5) * spread * 0.12;
+          var px = cx + Math.cos(la) * t * spread * 0.6;
+          var py = cy + Math.sin(la) * t * spread * 0.6;
+          px += Math.cos(la + Math.PI / 2) * offset;
+          py += Math.sin(la + Math.PI / 2) * offset;
+          pts.push({
+            x: px,
+            y: py,
+            size: 1 + rng() * 1.5,
+            alpha: 0.25 + rng() * 0.4
+          });
+        }
+        break;
+
+      case 4: // 宇宙网：网状+空洞
+        var gridSize = 8;
+        var cellW = spread * 2 / gridSize;
+        var cellH = spread * 2 / gridSize;
+        // 随机标记一些格子为空洞
+        var voids = [];
+        for (var g = 0; g < gridSize * gridSize; g++) {
+          voids.push(rng() > 0.6);
+        }
+        for (var i = 0; i < count; i++) {
+          var gx, gy, attempts = 0;
+          do {
+            gx = Math.floor(rng() * gridSize);
+            gy = Math.floor(rng() * gridSize);
+            attempts++;
+          } while (voids[gy * gridSize + gx] && attempts < 20);
+
+          var px = cx - spread + gx * cellW + rng() * cellW * 0.7;
+          var py = cy - spread + gy * cellH + rng() * cellH * 0.7;
+          pts.push({
+            x: px,
+            y: py,
+            size: 0.8 + rng() * 1.5,
+            alpha: 0.2 + rng() * 0.35
+          });
+        }
+        break;
+
+      case 5: // 可观测宇宙：均匀充满
+        for (var i = 0; i < count; i++) {
+          var px = cx - spread + rng() * spread * 2;
+          var py = cy - spread + rng() * spread * 2;
+          pts.push({
+            x: px,
+            y: py,
+            size: 0.5 + rng() * 1.2,
+            alpha: 0.15 + rng() * 0.25
+          });
+        }
+        break;
+    }
+
+    return pts;
+  }
+
+  // ── 绘制 ──
+  function draw() {
+    var ctx = cvsCtx;
+    ctx.clearRect(0, 0, W, H);
+
+    // 背景渐变
+    var grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, maxR * 1.2);
+    grad.addColorStop(0, 'rgba(10, 15, 30, 1)');
+    grad.addColorStop(0.5, 'rgba(5, 8, 15, 1)');
+    grad.addColorStop(1, 'rgba(2, 3, 8, 1)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, W, H);
+
+    for (var i = 0; i < points.length; i++) {
+      var p = points[i];
+      if (p.alpha <= 0 || p.size <= 0) continue;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(255, 255, 255, ' + p.alpha + ')';
+      ctx.fill();
+      if (p.size > 2.5) {
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.size * 2.5, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(180, 200, 255, ' + (p.alpha * 0.08) + ')';
+        ctx.fill();
+      }
+    }
+  }
+
+  // ── 动画状态 ──
+  var animating = false;
+  var animStop = null;
+  var animData = null; // { oldPts, newPts, startTime, duration, targetLayer, phase }
+
+  function easeInOutQuad(t) {
+    return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+  }
+
+  function startTransition(targetLayer) {
+    if (animating) return;
+    if (targetLayer < 0 || targetLayer >= NUM_LAYERS) return;
+    if (targetLayer === currentLayer) return;
+
+    var oldPts = points.slice();
+    var newPts = generatePointsForLayer(targetLayer, pointCounts[targetLayer]);
+    var duration = 1000;
+
+    // 为旧点设置目标：收缩到中心
+    for (var i = 0; i < oldPts.length; i++) {
+      oldPts[i].tx = cx;
+      oldPts[i].ty = cy;
+      oldPts[i].ts = 0;
+      oldPts[i].ta = 0;
+    }
+    // 为新点设置目标：从中心展开
+    for (var i = 0; i < newPts.length; i++) {
+      newPts[i].tx = newPts[i].x;
+      newPts[i].ty = newPts[i].y;
+      newPts[i].ts = newPts[i].size;
+      newPts[i].ta = newPts[i].alpha;
+      newPts[i].x = cx;
+      newPts[i].y = cy;
+      newPts[i].size = 0;
+      newPts[i].alpha = 0;
+    }
+
+    animating = true;
+    var half = duration / 2;
+    var startTime = performance.now();
+
+    // 停止之前的循环
+    if (animStop) animStop();
+
+    animStop = Deck.loop(function(now) {
+      var elapsed = now - startTime;
+
+      if (elapsed < half) {
+        // 第一阶段：旧点收缩，新点保持不可见
+        var t = easeInOutQuad(elapsed / half);
+        for (var i = 0; i < oldPts.length; i++) {
+          oldPts[i].x = oldPts[i].x + (oldPts[i].tx - oldPts[i].x) * t;
+          oldPts[i].y = oldPts[i].y + (oldPts[i].ty - oldPts[i].y) * t;
+          oldPts[i].size = oldPts[i].size * (1 - t);
+          oldPts[i].alpha = oldPts[i].alpha * (1 - t);
+        }
+        points = oldPts;
+        draw();
+
+      } else if (elapsed < duration) {
+        // 第二阶段：新点展开
+        if (points === oldPts) {
+          points = newPts;
+        }
+        var t = easeInOutQuad((elapsed - half) / half);
+        for (var i = 0; i < newPts.length; i++) {
+          newPts[i].x = cx + (newPts[i].tx - cx) * t;
+          newPts[i].y = cy + (newPts[i].ty - cy) * t;
+          newPts[i].size = newPts[i].ts * t;
+          newPts[i].alpha = newPts[i].ta * t;
+        }
+        draw();
+
+      } else {
+        // 完成
+        for (var i = 0; i < newPts.length; i++) {
+          newPts[i].x = newPts[i].tx;
+          newPts[i].y = newPts[i].ty;
+          newPts[i].size = newPts[i].ts;
+          newPts[i].alpha = newPts[i].ta;
+          delete newPts[i].tx;
+          delete newPts[i].ty;
+          delete newPts[i].ts;
+          delete newPts[i].ta;
+        }
+        points = newPts;
+        currentLayer = targetLayer;
+        animating = false;
+        updateStack(currentLayer);
+        updateInfo(currentLayer);
+        updateButtons(currentLayer);
+        draw();
+        if (animStop) animStop();
+      }
+    });
+  }
+
+  // ── 切换到指定层（无动画） ──
+  function jumpToLayer(idx) {
+    if (animating) return;
+    if (idx < 0 || idx >= NUM_LAYERS) return;
+    currentLayer = idx;
+    points = generatePointsForLayer(idx, pointCounts[idx]);
+    updateStack(idx);
+    updateInfo(idx);
+    updateButtons(idx);
+    draw();
+  }
+
+  // ── 初始化 ──
+  var cvsCtx;
+
+  function init() {
+    // 计算尺寸
+    W = main.offsetWidth;
+    H = main.offsetHeight;
+    if (W === 0) {
+      W = 1408; H = 620;
+    }
+    cx = W / 2;
+    cy = H / 2;
+    maxR = Math.min(W, H) * 0.45;
+
+    // 适配 canvas
+    cvsCtx = Deck.fit(cvs);
+    cvs.width = W;
+    cvs.height = H;
+
+    // 构建 UI
+    buildStack();
+    var saved = currentLayer;
+    currentLayer = -1;
+    jumpToLayer(saved);
+  }
+
+  // ── 事件绑定 ──
+  btnIn.addEventListener('click', function() {
+    if (animating) return;
+    if (currentLayer < NUM_LAYERS - 1) {
+      startTransition(currentLayer + 1);
+    }
+  });
+
+  btnOut.addEventListener('click', function() {
+    if (animating) return;
+    if (currentLayer > 0) {
+      startTransition(currentLayer - 1);
+    }
+  });
+
+  // 键盘支持
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'ArrowRight' || e.key === 'ArrowUp') {
+      if (!btnIn.disabled) btnIn.click();
+    } else if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') {
+      if (!btnOut.disabled) btnOut.click();
+    }
+  });
+
+  // 窗口变化
+  Deck.onResize(function() {
+    init();
+  });
+
+  // 启动
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
+
+  // ── Mount ──
+  if (typeof Lec !== 'undefined' && Lec.mount) {
+    Lec.mount({
+      index: 39,
+      kicker: 'COSMIC SCALE',
+      title: '十倍之外',
+      take: '可观测宇宙直径约 930 亿光年，其中约有 2 万亿个星系。从本星系群到宇宙边界，每放大十倍，上一层的整个视野就缩成一个点。'
+    });
+  }
+})();
+</script>
+</body>
+</html>

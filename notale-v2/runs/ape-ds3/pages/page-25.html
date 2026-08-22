@@ -1,0 +1,687 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+/* ===== page-25 dark theme ===== */
+:root {
+  --bg: #0b0e14;
+  --text: #e6e6e6;
+  --font-sans: "Noto Sans SC", system-ui, sans-serif;
+  --surface: rgba(255,255,255,0.06);
+  --muted: #7a7d76;
+  --line: rgba(230,230,230,0.12);
+  --accent: #0b7a75;
+  --accent-soft: rgba(11,122,117,0.15);
+  --warning: #c2410c;
+  --success: #2f6f3f;
+}
+
+#main {
+  position: relative;
+  overflow: hidden;
+}
+
+/* ===== Canvas ===== */
+#well-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+/* ===== Process chain overlay ===== */
+.k-process.steps-overlay {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  gap: 0;
+  padding: 0 var(--space-5);
+  height: 56px;
+  background: linear-gradient(transparent, rgba(11,14,20,0.80) 25%, rgba(11,14,20,0.95));
+  z-index: 10;
+  pointer-events: none;
+  counter-reset: step;
+}
+.k-process.steps-overlay > .step {
+  flex: 1;
+  min-width: 0;
+  position: relative;
+  z-index: 1;
+  text-align: center;
+  font-size: var(--fs-label);
+  line-height: 1.3;
+  color: var(--muted);
+  padding: var(--space-2) var(--space-1);
+  border: none;
+  background: none;
+  border-radius: 0;
+  box-shadow: none;
+  margin: 0;
+  transition: color 0.4s ease, text-shadow 0.4s ease;
+  pointer-events: auto;
+}
+.k-process.steps-overlay > .step::before {
+  counter-increment: step;
+  content: counter(step);
+  display: block;
+  font-size: var(--fs-tick);
+  color: var(--muted);
+  margin-bottom: 2px;
+  opacity: 0.5;
+  transition: color 0.4s, opacity 0.4s;
+}
+.k-process.steps-overlay > .step.current {
+  color: var(--text);
+  text-shadow: 0 0 8px rgba(255,255,255,0.12);
+}
+.k-process.steps-overlay > .step.current::before {
+  color: var(--accent);
+  opacity: 1;
+}
+.k-process.steps-overlay > .step.passed {
+  color: var(--muted);
+  opacity: 0.45;
+}
+.k-process.steps-overlay > .step.passed::before {
+  opacity: 0.35;
+}
+.k-process.steps-overlay > .step.active-step5 {
+  color: var(--accent);
+  text-shadow: 0 0 14px rgba(11,122,117,0.5);
+}
+.k-process.steps-overlay > .step.active-step5::before {
+  color: var(--accent);
+  opacity: 1;
+}
+.k-process.steps-overlay > .arw {
+  flex: 0 0 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--fs-label);
+  color: var(--muted);
+  position: relative;
+  z-index: 1;
+  opacity: 0.35;
+  pointer-events: none;
+}
+.k-process.steps-overlay > .arw::before {
+  content: "→";
+}
+
+/* ===== Slider panel ===== */
+#slider-panel {
+  position: absolute;
+  bottom: 70px;
+  right: var(--space-5);
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--space-2);
+  pointer-events: none;
+}
+#slider-panel > * {
+  pointer-events: auto;
+}
+#slider-panel label {
+  font-size: var(--fs-label);
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.slider-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+#mass-slider {
+  width: 200px;
+  height: 4px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: var(--line);
+  border-radius: 2px;
+  outline: none;
+  cursor: pointer;
+}
+#mass-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid var(--bg);
+  cursor: pointer;
+  transition: transform 0.1s;
+}
+#mass-slider::-webkit-slider-thumb:hover {
+  transform: scale(1.2);
+}
+#mass-slider::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid var(--bg);
+  cursor: pointer;
+}
+.slider-tickmarks {
+  display: flex;
+  justify-content: space-between;
+  width: 200px;
+  padding: 0 2px;
+  margin-top: -2px;
+}
+.slider-tickmarks .tick {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+.slider-tickmarks .tick .tick-line {
+  width: 1px;
+  height: 6px;
+  background: var(--muted);
+}
+.slider-tickmarks .tick .tick-label {
+  font-size: var(--fs-tick);
+  color: var(--muted);
+  line-height: 1;
+}
+.slider-tickmarks .tick.prominent .tick-line {
+  width: 2px;
+  height: 10px;
+  background: var(--accent);
+}
+.slider-tickmarks .tick.prominent .tick-label {
+  color: var(--accent);
+  font-weight: 700;
+}
+#slider-readout {
+  font-size: var(--fs-body);
+  font-weight: 700;
+  color: var(--text);
+  min-width: 52px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ===== Depth display ===== */
+#depth-display {
+  position: absolute;
+  z-index: 10;
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  font-size: var(--fs-body);
+  color: var(--muted);
+  pointer-events: none;
+}
+#depth-display .depth-num {
+  font-size: var(--fs-h2);
+  font-weight: 700;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ===== Well labels ===== */
+.well-label {
+  position: absolute;
+  z-index: 5;
+  font-size: var(--fs-label);
+  color: var(--muted);
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.well-label .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--muted);
+  flex-shrink: 0;
+}
+
+/* ===== "我们在这里" marker ===== */
+#here-marker {
+  position: absolute;
+  z-index: 10;
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+  pointer-events: none;
+  transform: translate(-50%, -100%);
+}
+#here-marker .marker-pulse {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--warning);
+  box-shadow: 0 0 16px rgba(194,65,12,0.7), 0 0 40px rgba(194,65,12,0.3);
+  animation: pulse 2s ease-in-out infinite;
+}
+#here-marker .marker-text {
+  font-size: var(--fs-body);
+  font-weight: 700;
+  color: var(--warning);
+  text-shadow: 0 0 12px rgba(0,0,0,0.8), 0 0 24px rgba(0,0,0,0.6);
+  text-align: center;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+@keyframes pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.65; transform: scale(1.35); }
+}
+</style>
+</head>
+<body data-page="25" data-total="50">
+<div id="stage">
+<main id="main">
+  <canvas id="well-canvas" class="cv-fill"></canvas>
+
+  <!-- Process chain at bottom -->
+  <div class="k-process steps-overlay" id="process-chain">
+    <div class="step" data-step="1">没有质量的路</div>
+    <div class="arw"></div>
+    <div class="step" data-step="2">质量压出凹陷</div>
+    <div class="arw"></div>
+    <div class="step" data-step="3">质量越大凹陷越深</div>
+    <div class="arw"></div>
+    <div class="step" data-step="4">行星质量压出深井</div>
+    <div class="arw"></div>
+    <div class="step" data-step="5" id="step-5">井底就是地球表面</div>
+  </div>
+
+  <!-- Slider panel -->
+  <div id="slider-panel">
+    <label>引力井质量</label>
+    <div class="slider-row">
+      <input type="range" id="mass-slider" min="0.25" max="8" step="0.05" value="1" aria-label="引力井质量倍数">
+      <span id="slider-readout">1.00×</span>
+    </div>
+    <div class="slider-tickmarks" id="tickmarks">
+      <div class="tick"><span class="tick-line"></span><span class="tick-label">0.25</span></div>
+      <div class="tick"><span class="tick-line"></span><span class="tick-label">0.5</span></div>
+      <div class="tick prominent"><span class="tick-line"></span><span class="tick-label">1</span></div>
+      <div class="tick"><span class="tick-line"></span><span class="tick-label">2</span></div>
+      <div class="tick"><span class="tick-line"></span><span class="tick-label">4</span></div>
+      <div class="tick"><span class="tick-line"></span><span class="tick-label">8</span></div>
+    </div>
+  </div>
+
+  <!-- Depth display -->
+  <div id="depth-display">
+    <span>井深</span>
+    <span class="depth-num" id="depth-value">--</span>
+    <span>km</span>
+  </div>
+
+  <!-- Well labels -->
+  <div class="well-label" id="mouth-label"><span class="dot"></span>井口</div>
+  <div class="well-label" id="bottom-label"><span class="dot"></span>井底</div>
+
+  <!-- "我们在这里" marker -->
+  <div id="here-marker">
+    <div class="marker-pulse"></div>
+    <div class="marker-text">地球表面<br>我们在这里</div>
+  </div>
+</main>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script>
+Lec.mount({
+  index: 25,
+  kicker: "逃离 / 引力井",
+  title: "我们住在井底",
+  take: "地球表面是一口极深引力井的井底"
+});
+
+(function() {
+  'use strict';
+
+  var canvas = document.getElementById('well-canvas');
+  var slider = document.getElementById('mass-slider');
+  var readout = document.getElementById('slider-readout');
+  var depthValue = document.getElementById('depth-value');
+  var hereMarker = document.getElementById('here-marker');
+  var mouthLabel = document.getElementById('mouth-label');
+  var bottomLabel = document.getElementById('bottom-label');
+  var depthDisplay = document.getElementById('depth-display');
+  var steps = document.querySelectorAll('.k-process.steps-overlay > .step');
+  var step5 = document.getElementById('step-5');
+
+  var EARTH_RADIUS = Lec.K.EARTH_RADIUS_KM;
+  var W = 1408, H = 620;
+  var cx = W / 2, cy = 380;
+  var PLANET_RADIUS = 50;
+  var WELL_TOP = 70;
+
+  var massRatio = 1.0;
+  var isAnimating = true;
+  var ctx = null;
+
+  // Colors from tokens
+  var bgColor = '#0b0e14';
+  var gridColor = 'rgba(230,230,230,0.06)';
+  var lineColor = 'rgba(230,230,230,0.18)';
+  var accentColor = '#0b7a75';
+
+  function getDepthKm(r) { return EARTH_RADIUS * r; }
+
+  function getVisualDepth(ratio) {
+    return 60 + 220 * Math.sqrt(ratio);
+  }
+
+  function getDisplacement(x, y, depth) {
+    var dx = x - cx, dy = y - cy;
+    var r = Math.sqrt(dx * dx + dy * dy);
+    if (r < PLANET_RADIUS) return depth;
+    if (r < 1) return depth;
+    return depth * PLANET_RADIUS / r;
+  }
+
+  function drawWell(ratio, progress) {
+    if (!ctx) return;
+
+    ctx.clearRect(0, 0, W, H);
+
+    // Background
+    ctx.fillStyle = bgColor;
+    ctx.fillRect(0, 0, W, H);
+
+    var effRatio = isAnimating ? ratio * progress : ratio;
+    var visualDepth = getVisualDepth(effRatio);
+    var depthKm = getDepthKm(effRatio);
+
+    // Stars
+    if (progress > 0.01) {
+      ctx.fillStyle = 'rgba(255,255,255,0.12)';
+      var s = 12345;
+      for (var i = 0; i < 60; i++) {
+        s = (s * 1664525 + 1013904223) & 0x7fffffff;
+        var sx = (s >>> 0) % W;
+        s = (s * 1664525 + 1013904223) & 0x7fffffff;
+        var sy = (s >>> 0) % Math.min(H * 0.35, WELL_TOP + 40);
+        var sz = 0.5 + ((s >>> 8) % 3) * 0.5;
+        ctx.beginPath();
+        ctx.arc(sx, sy, sz, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    // The well membrane surface (profile curve)
+    // Draw the well funnel as a filled shape
+    if (visualDepth > 3) {
+      ctx.beginPath();
+      ctx.moveTo(0, WELL_TOP);
+      for (var i = 0; i <= 200; i++) {
+        var x = (i / 200) * W;
+        var disp = getDisplacement(x, cy + PLANET_RADIUS, visualDepth);
+        var y = Math.min(WELL_TOP + disp, H - 2);
+        ctx.lineTo(x, y);
+      }
+      ctx.lineTo(W, H);
+      ctx.lineTo(0, H);
+      ctx.closePath();
+      var wellGrad = ctx.createRadialGradient(cx, cy + PLANET_RADIUS, 10, cx, cy + PLANET_RADIUS, 400);
+      wellGrad.addColorStop(0, 'rgba(11,122,117,0.06)');
+      wellGrad.addColorStop(0.5, 'rgba(11,122,117,0.02)');
+      wellGrad.addColorStop(1, 'rgba(11,14,20,0)');
+      ctx.fillStyle = wellGrad;
+      ctx.fill();
+    }
+
+    // Grid lines - horizontal
+    var gridSpacing = 50;
+    var numH = Math.floor(W / gridSpacing) + 2;
+    var numV = Math.floor(H / gridSpacing) + 2;
+
+    ctx.strokeStyle = gridColor;
+    ctx.lineWidth = 1;
+
+    for (var j = 0; j < numV; j++) {
+      var origY = j * gridSpacing + 10;
+      if (origY < WELL_TOP - 20) continue;
+      ctx.beginPath();
+      var first = true;
+      for (var i = 0; i <= numH; i++) {
+        var x = (i / numH) * W;
+        var disp = getDisplacement(x, origY, visualDepth);
+        var deformedY = Math.min(origY + disp, H - 2);
+        if (deformedY > H + 20) break;
+        var dx = x - cx, dy = origY - cy;
+        var r = Math.sqrt(dx * dx + dy * dy);
+        if (r < PLANET_RADIUS) {
+          if (!first) { ctx.stroke(); ctx.beginPath(); first = true; }
+          continue;
+        }
+        if (first) { ctx.moveTo(x, deformedY); first = false; }
+        else { ctx.lineTo(x, deformedY); }
+      }
+      if (!first) ctx.stroke();
+    }
+
+    // Grid lines - vertical
+    for (var i = 0; i <= numH; i++) {
+      var origX = (i / numH) * W;
+      ctx.beginPath();
+      var first = true;
+      for (var j = 0; j < numV; j++) {
+        var origY = j * gridSpacing + 10;
+        if (origY < WELL_TOP - 20) continue;
+        var disp = getDisplacement(origX, origY, visualDepth);
+        var deformedY = Math.min(origY + disp, H - 2);
+        if (deformedY > H + 20) break;
+        var dx = origX - cx, dy = origY - cy;
+        var r = Math.sqrt(dx * dx + dy * dy);
+        if (r < PLANET_RADIUS) {
+          if (!first) { ctx.stroke(); ctx.beginPath(); first = true; }
+          continue;
+        }
+        if (first) { ctx.moveTo(origX, deformedY); first = false; }
+        else { ctx.lineTo(origX, deformedY); }
+      }
+      if (!first) ctx.stroke();
+    }
+
+    // Well mouth reference line
+    if (visualDepth > 5) {
+      ctx.strokeStyle = lineColor;
+      ctx.lineWidth = 1;
+      ctx.setLineDash([4, 5]);
+      ctx.beginPath();
+      ctx.moveTo(0, WELL_TOP);
+      ctx.lineTo(W, WELL_TOP);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+
+    // Planet
+    var planetY = cy + PLANET_RADIUS;
+    if (planetY < H - 5 && progress > 0.05) {
+      // Atmosphere glow
+      var agrad = ctx.createRadialGradient(cx, planetY, PLANET_RADIUS * 0.7, cx, planetY, PLANET_RADIUS * 1.4);
+      agrad.addColorStop(0, 'rgba(11,122,117,0.12)');
+      agrad.addColorStop(1, 'rgba(11,122,117,0)');
+      ctx.beginPath();
+      ctx.arc(cx, planetY, PLANET_RADIUS * 1.4, 0, Math.PI * 2);
+      ctx.fillStyle = agrad;
+      ctx.fill();
+
+      // Planet body
+      var grad = ctx.createRadialGradient(cx - 10, planetY - 8, 5, cx, planetY, PLANET_RADIUS);
+      grad.addColorStop(0, '#1a9a93');
+      grad.addColorStop(0.4, '#0b7a75');
+      grad.addColorStop(1, '#064a46');
+      ctx.beginPath();
+      ctx.arc(cx, planetY, PLANET_RADIUS, 0, Math.PI * 2);
+      ctx.fillStyle = grad;
+      ctx.fill();
+
+      // Horizon highlight
+      ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.arc(cx, planetY, PLANET_RADIUS - 1, -0.3, 0.3);
+      ctx.stroke();
+    }
+
+    // Leader line from depth display to well
+    if (visualDepth > 10) {
+      var leaderX = W - 170;
+      ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+      ctx.lineWidth = 1;
+
+      // Vertical leader from well mouth to well bottom
+      ctx.beginPath();
+      ctx.moveTo(leaderX, WELL_TOP);
+      ctx.lineTo(leaderX, Math.min(planetY, H - 10));
+      ctx.stroke();
+
+      // Small horizontal marks
+      ctx.beginPath();
+      ctx.moveTo(leaderX - 4, WELL_TOP);
+      ctx.lineTo(leaderX + 4, WELL_TOP);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(leaderX - 4, Math.min(planetY, H - 10));
+      ctx.lineTo(leaderX + 4, Math.min(planetY, H - 10));
+      ctx.stroke();
+    }
+
+    // Update DOM labels
+    updateLabels(effRatio, visualDepth, depthKm, planetY);
+  }
+
+  function updateLabels(ratio, visualDepth, depthKm, planetY) {
+    // Depth display
+    depthValue.textContent = Math.round(depthKm);
+    depthDisplay.style.top = (WELL_TOP - 4) + 'px';
+    depthDisplay.style.right = '0px';
+    depthDisplay.style.display = visualDepth > 10 ? 'flex' : 'none';
+
+    // Well mouth label
+    var mouthY = WELL_TOP;
+    mouthLabel.style.top = (mouthY - 10) + 'px';
+    mouthLabel.style.left = (cx + 80) + 'px';
+    mouthLabel.style.display = visualDepth > 20 ? 'flex' : 'none';
+
+    // Well bottom label
+    var bottomY = Math.min(planetY, H - 15);
+    bottomLabel.style.top = (bottomY + 8) + 'px';
+    bottomLabel.style.left = (cx + 80) + 'px';
+    bottomLabel.style.display = (visualDepth > 20 && bottomY < 580) ? 'flex' : 'none';
+
+    // "我们在这里" marker - only at 1x and after animation
+    var isAtEarth = Math.abs(ratio - 1.0) < 0.025;
+    if (isAtEarth && !isAnimating) {
+      hereMarker.style.display = 'flex';
+      hereMarker.style.left = cx + 'px';
+      hereMarker.style.top = (planetY + 6) + 'px';
+    } else {
+      hereMarker.style.display = 'none';
+    }
+
+    // Process chain step states
+    var stepStates = [false, false, false, false, false];
+    if (ratio < 0.01) { /* none */ }
+    else if (ratio < 0.3) { stepStates[0] = true; }
+    else if (ratio < 0.6) { stepStates[0] = true; stepStates[1] = true; }
+    else if (ratio < 0.9) { stepStates[0] = true; stepStates[1] = true; stepStates[2] = true; }
+    else if (ratio < 1.05) { stepStates[0] = true; stepStates[1] = true; stepStates[2] = true; stepStates[3] = true; }
+    else { stepStates[0] = true; stepStates[1] = true; stepStates[2] = true; stepStates[3] = true; stepStates[4] = true; }
+
+    for (var i = 0; i < steps.length; i++) {
+      steps[i].classList.remove('passed', 'current', 'active-step5');
+    }
+    for (var i = 0; i < stepStates.length; i++) {
+      if (stepStates[i]) {
+        if (i < stepStates.length - 1) {
+          steps[i].classList.add('passed');
+        } else {
+          if (isAtEarth && !isAnimating) {
+            steps[i].classList.add('active-step5');
+          } else {
+            steps[i].classList.add('current');
+          }
+        }
+      }
+    }
+    if (isAtEarth && !isAnimating) {
+      step5.classList.remove('current');
+      step5.classList.add('active-step5');
+    } else if (ratio >= 1.05) {
+      step5.classList.add('current');
+    }
+  }
+
+  function redraw() {
+    massRatio = parseFloat(slider.value);
+    readout.textContent = massRatio.toFixed(2) + '×';
+    drawWell(massRatio, 1);
+  }
+
+  // Intro animation using Deck.loop
+  function startIntro() {
+    isAnimating = true;
+    slider.value = '1';
+    massRatio = 1;
+
+    var duration = 8000;
+
+    var stop = Deck.loop(function(t, dt) {
+      var progress = Math.min(t / duration, 1);
+      var eased = 1 - Math.pow(1 - progress, 3);
+
+      drawWell(massRatio, eased);
+
+      if (progress >= 1) {
+        stop();
+        isAnimating = false;
+        redraw();
+      }
+    });
+  }
+
+  function setup() {
+    ctx = Deck.fit(canvas);
+
+    // Setup
+    var bg = Deck.rgb('--bg');
+    if (bg) bgColor = 'rgb(' + bg[0] + ',' + bg[1] + ',' + bg[2] + ')';
+
+    startIntro();
+
+    slider.addEventListener('input', function() {
+      if (isAnimating) return;
+      redraw();
+    });
+  }
+
+  function onResize() {
+    ctx = Deck.fit(canvas);
+    if (!isAnimating) redraw();
+  }
+
+  Deck.onResize(onResize);
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', setup);
+  } else {
+    setup();
+  }
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,230 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+:root { --bg:#111417; --text:#edf2f0; --font-sans:Inter,"Noto Sans SC","Microsoft YaHei",sans-serif; }
+#main { padding-top:32px; padding-bottom:28px; }
+.hand-page { display:flex; flex-direction:column; width:100%; height:100%; gap:16px; }
+.model-zone { position:relative; flex:1 1 auto; min-height:0; overflow:hidden; background:#14191b; border:1px solid var(--line); border-radius:var(--radius-md); }
+.model-zone::after { position:absolute; right:0; bottom:0; left:0; height:72px; pointer-events:none; content:""; background:linear-gradient(180deg,transparent,rgba(85,194,176,.055)); border-top:1px solid rgba(85,194,176,.13); }
+#hand-canvas { position:absolute; inset:0; width:100%; height:100%; touch-action:none; cursor:crosshair; }
+.scene-heading { position:absolute; z-index:3; top:18px; left:22px; max-width:430px; }
+.scene-heading h2 { font-size:var(--fs-h2); }
+.scene-heading p { margin-top:4px; color:var(--text-secondary); font-size:var(--fs-sec); line-height:var(--lh-sec); }
+.status { position:absolute; z-index:4; top:18px; right:70px; display:flex; align-items:center; gap:10px; min-width:252px; padding:10px 14px; background:rgba(17,20,23,.9); border:1px solid var(--accent-line); border-left:3px solid var(--accent); border-radius:var(--radius-sm); }
+.status-label { color:var(--text-secondary); font-size:var(--fs-label); line-height:1.35; }
+#status-text { color:var(--accent); font-size:var(--fs-sec); font-weight:700; line-height:1.35; }
+.reset { position:absolute; z-index:5; top:17px; right:18px; width:44px; min-width:44px; padding:0; font-size:22px; line-height:1; }
+.controls { position:absolute; z-index:4; bottom:18px; left:22px; display:flex; gap:24px; padding:12px 16px; background:rgba(17,20,23,.9); border:1px solid var(--line-strong); border-radius:var(--radius-sm); }
+.control-unit { width:250px; }
+.control-head { display:flex; justify-content:space-between; align-items:baseline; gap:12px; color:var(--text-secondary); font-size:var(--fs-label); line-height:1.35; }
+.control-head output { color:var(--text); font-family:var(--font-mono); font-size:var(--fs-sec); }
+.control-unit input { height:32px; }
+.scene-tag { position:absolute; z-index:3; padding:3px 7px; color:var(--text-secondary); background:rgba(17,20,23,.8); border-left:2px solid var(--primary); font-size:var(--fs-label); line-height:1.35; pointer-events:none; }
+.tag-wrist { left:37%; top:55%; }
+.tag-target { left:67%; top:51%; color:var(--accent); border-left-color:var(--accent); }
+.tag-contact { left:57%; top:30%; }
+.claim { position:absolute; z-index:4; right:22px; bottom:20px; width:540px; padding:12px 16px; color:var(--text); background:rgba(20,26,28,.94); border-left:4px solid var(--primary); font-size:var(--fs-lead); font-weight:700; line-height:var(--lh-body); opacity:0; transform:translateY(10px); transition:opacity 240ms ease,transform 240ms ease; pointer-events:none; }
+.claim.is-visible { opacity:1; transform:translateY(0); }
+.flow-wrap { flex:0 0 164px; min-height:0; }
+.flow-label { display:flex; align-items:center; justify-content:space-between; color:var(--text-secondary); font-size:var(--fs-label); line-height:1.35; }
+.flow-label strong { color:var(--primary); font-size:var(--fs-sec); }
+.k-process { --process-gap:24px; height:126px; padding:10px 0 0; }
+.k-process > .step { display:flex; flex-direction:column; justify-content:center; padding:10px 11px; border-top-width:3px; }
+.step-no { color:var(--text-muted); font-family:var(--font-mono); font-size:var(--fs-tick); line-height:1.35; }
+.step-title { margin-top:3px; color:inherit; font-size:var(--fs-sec); font-weight:650; line-height:1.4; }
+.k-process > .step.is-done { filter:none; color:var(--primary); background:var(--primary-soft); border-color:var(--primary-line); border-top-color:var(--primary); }
+.k-process > .step.is-current .step-no { color:var(--accent); }
+.k-process > .arw { right:calc(var(--process-gap) * -1 + 5px); width:calc(var(--process-gap) - 10px); }
+.model-zone.is-error { animation:zone-shake 180ms ease-out; }
+@keyframes zone-shake { 35% { transform:translateX(-4px); } 70% { transform:translateX(4px); } }
+@media (prefers-reduced-motion:reduce) { *,*::before,*::after { animation:none!important; transition:none!important; } }
+</style>
+</head>
+<body data-page="15" data-total="44">
+<div id="stage">
+<main id="main">
+  <section class="hand-page" aria-label="手部自由度夹持模型">
+    <div class="model-zone no-pan min0" id="model-zone">
+      <canvas id="hand-canvas" aria-label="可环绕观察的三维手部夹持模型"></canvas>
+      <div class="scene-heading">
+        <h2>把自由度约束成一次稳定夹持</h2>
+        <p>移动指针校准视线，再调节手腕与拇指。</p>
+      </div>
+      <div class="status" aria-live="polite">
+        <span class="status-label">当前待完成</span>
+        <span id="status-text">视觉锁定夹持点</span>
+      </div>
+      <button class="reset" id="reset" type="button" title="重置手部姿态" aria-label="重置手部姿态">↺</button>
+      <div class="scene-tag tag-wrist">稳定基座</div>
+      <div class="scene-tag tag-target">目标夹持点</div>
+      <div class="scene-tag tag-contact">指腹接触</div>
+      <div class="controls" aria-label="关节控制环">
+        <label class="control-unit" for="wrist">
+          <span class="control-head"><span>手腕稳定环</span><output id="wrist-out">偏离</output></span>
+          <input id="wrist" type="range" min="-35" max="35" value="28" step="1">
+        </label>
+        <label class="control-unit" for="thumb">
+          <span class="control-head"><span>拇指对掌环</span><output id="thumb-out">展开</output></span>
+          <input id="thumb" type="range" min="0" max="100" value="24" step="1">
+        </label>
+      </div>
+      <p class="claim" id="claim">精细操作需要稳定的手腕、拇指对掌和视觉反馈共同参与。</p>
+    </div>
+    <div class="flow-wrap min0">
+      <div class="flow-label"><strong>动作链</strong><span>自由度更多，不等于动作更准确；它们必须被协调和约束。</span></div>
+      <div class="k-process" id="process" aria-label="从看见目标到稳定夹持的六步过程">
+        <div class="axis" aria-hidden="true"></div>
+        <div class="step is-current"><span class="step-no">01</span><span class="step-title">视觉确定<br>目标点</span><i class="arw" aria-hidden="true"></i></div>
+        <div class="step"><span class="step-no">02</span><span class="step-title">手腕建立<br>稳定基座</span><i class="arw" aria-hidden="true"></i></div>
+        <div class="step"><span class="step-no">03</span><span class="step-title">拇指转向<br>食指</span><i class="arw" aria-hidden="true"></i></div>
+        <div class="step"><span class="step-no">04</span><span class="step-title">两侧指腹<br>对齐目标</span><i class="arw" aria-hidden="true"></i></div>
+        <div class="step"><span class="step-no">05</span><span class="step-title">接触闭合<br>保持石片</span><i class="arw" aria-hidden="true"></i></div>
+        <div class="step"><span class="step-no">06</span><span class="step-title">依据偏差<br>继续微调</span></div>
+      </div>
+    </div>
+  </section>
+</main>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script src="assets/lib/three.min.js"></script>
+<script>
+Lec.mount({
+  index:15,
+  kicker:"HAND · CONTROL",
+  title:"精细操作不是拇指的独角戏",
+  take:"稳住，才能捏准"
+});
+
+(function () {
+  var zone=document.getElementById('model-zone');
+  var canvas=document.getElementById('hand-canvas');
+  var wristInput=document.getElementById('wrist');
+  var thumbInput=document.getElementById('thumb');
+  var wristOut=document.getElementById('wrist-out');
+  var thumbOut=document.getElementById('thumb-out');
+  var statusText=document.getElementById('status-text');
+  var claim=document.getElementById('claim');
+  var steps=Array.prototype.slice.call(document.querySelectorAll('#process .step'));
+  var state={wrist:28,thumb:24,gazeX:0.72,gazeY:0.54,holding:false,errorUntil:0};
+
+  var scene=new THREE.Scene();
+  scene.background=new THREE.Color(0x14191b);
+  scene.fog=new THREE.Fog(0x14191b,8,16);
+  var camera=new THREE.PerspectiveCamera(34,1,.1,30);
+  camera.position.set(0.2,4.6,9.4);
+  camera.lookAt(0,0.25,0);
+  var renderer=new THREE.WebGLRenderer({canvas:canvas,antialias:true,alpha:false});
+  renderer.outputColorSpace=THREE.SRGBColorSpace;
+  renderer.shadowMap.enabled=true;
+  renderer.shadowMap.type=THREE.PCFSoftShadowMap;
+
+  scene.add(new THREE.HemisphereLight(0xb9e5dc,0x171b1a,1.45));
+  var key=new THREE.DirectionalLight(0xffe5ad,2.3); key.position.set(4,7,5); key.castShadow=true; scene.add(key);
+  var rim=new THREE.DirectionalLight(0x55c2b0,1.8); rim.position.set(-5,3,-3); scene.add(rim);
+
+  var rockMat=new THREE.MeshStandardMaterial({color:0x222b2c,roughness:.9,metalness:.05});
+  var ground=new THREE.Mesh(new THREE.PlaneGeometry(18,9,24,12),rockMat);
+  ground.rotation.x=-Math.PI/2; ground.position.y=-1.44; ground.receiveShadow=true; scene.add(ground);
+  var grid=new THREE.GridHelper(16,32,0x305650,0x273638); grid.position.y=-1.42; scene.add(grid);
+
+  var skin=new THREE.MeshPhysicalMaterial({color:0x91c7bb,transparent:true,opacity:.32,roughness:.52,metalness:.05,side:THREE.DoubleSide});
+  var fingerMat=new THREE.MeshStandardMaterial({color:0x83bbae,roughness:.5,metalness:.08});
+  var jointMat=new THREE.MeshBasicMaterial({color:0x55c2b0,transparent:true,opacity:.88});
+  var amberMat=new THREE.MeshStandardMaterial({color:0xf2b84b,emissive:0x5a3510,roughness:.5});
+  var shardMat=new THREE.MeshStandardMaterial({color:0x71807e,roughness:.72,metalness:.18});
+  var contactMat=new THREE.MeshBasicMaterial({color:0xf2b84b});
+
+  function capsule(radius,length,material){
+    var mesh=new THREE.Mesh(new THREE.CapsuleGeometry(radius,length,8,16),material);
+    mesh.castShadow=true; return mesh;
+  }
+  function ring(radius,tube,material){ return new THREE.Mesh(new THREE.TorusGeometry(radius,tube,10,48),material); }
+
+  var hand=new THREE.Group(); hand.position.set(-.35,.15,0); scene.add(hand);
+  var forearm=capsule(.74,3.8,skin); forearm.rotation.z=Math.PI/2; forearm.position.x=-2.55; hand.add(forearm);
+  var palm=new THREE.Mesh(new THREE.BoxGeometry(2.25,.72,1.7),skin); palm.position.set(.05,0,0); palm.castShadow=true; hand.add(palm);
+  var wristGroup=new THREE.Group(); wristGroup.position.set(-1.12,0,0); hand.add(wristGroup);
+  var wristRing=ring(.86,.035,jointMat); wristRing.rotation.y=Math.PI/2; wristGroup.add(wristRing);
+  var wristAxis=new THREE.Mesh(new THREE.CylinderGeometry(.025,.025,2.2,10),jointMat); wristAxis.rotation.z=Math.PI/2; wristGroup.add(wristAxis);
+
+  var indexGroup=new THREE.Group(); indexGroup.position.set(.95,.19,-.42); hand.add(indexGroup);
+  var indexFinger=capsule(.32,2.35,fingerMat); indexFinger.rotation.z=Math.PI/2; indexFinger.position.x=1.25; indexGroup.add(indexFinger);
+  var indexTip=new THREE.Mesh(new THREE.SphereGeometry(.34,24,16),fingerMat); indexTip.position.x=2.43; indexGroup.add(indexTip);
+
+  var thumbPivot=new THREE.Group(); thumbPivot.position.set(.15,-.15,.77); hand.add(thumbPivot);
+  var thumbBase=capsule(.38,1.28,fingerMat); thumbBase.position.set(.65,-.35,.1); thumbBase.rotation.z=Math.PI/2.55; thumbPivot.add(thumbBase);
+  var thumbTip=new THREE.Mesh(new THREE.SphereGeometry(.39,24,16),fingerMat); thumbTip.position.set(1.18,-.76,.06); thumbPivot.add(thumbTip);
+  var thumbRing=ring(.7,.035,jointMat); thumbRing.rotation.x=Math.PI/2; thumbPivot.add(thumbRing);
+
+  var shard=new THREE.Mesh(new THREE.OctahedronGeometry(.56,0),shardMat); shard.scale.set(1.5,.22,.78); shard.position.set(2.12,-.54,.08); shard.rotation.set(.2,.1,-.2); shard.castShadow=true; scene.add(shard);
+  var targetDot=new THREE.Mesh(new THREE.SphereGeometry(.09,16,12),amberMat); targetDot.position.set(2.18,-.26,.11); scene.add(targetDot);
+  var contactRing=ring(.56,.045,contactMat); contactRing.position.copy(shard.position); contactRing.rotation.x=Math.PI/2; scene.add(contactRing);
+
+  var gazeGeom=new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,3.3,3.2),targetDot.position.clone()]);
+  var gazeLine=new THREE.Line(gazeGeom,new THREE.LineDashedMaterial({color:0xf2b84b,dashSize:.14,gapSize:.09,transparent:true,opacity:.8})); gazeLine.computeLineDistances(); scene.add(gazeLine);
+
+  function resize(){
+    var w=zone.clientWidth,h=zone.clientHeight;
+    camera.aspect=w/h; camera.updateProjectionMatrix();
+    renderer.setSize(w,h,false);
+  }
+  Deck.onResize(resize); resize();
+
+  function evaluate(){
+    var gaze=Math.hypot(state.gazeX-.67,state.gazeY-.51)<.18;
+    var stable=Math.abs(state.wrist)<=7;
+    var opposed=state.thumb>=68;
+    var aligned=gaze&&stable&&state.thumb>=82;
+    var contact=aligned&&state.thumb>=93;
+    return [gaze,stable,opposed,aligned,contact,contact];
+  }
+  function updateUI(announce){
+    var done=evaluate();
+    var first=done.indexOf(false); if(first<0) first=6;
+    var labels=['视觉锁定夹持点','让手腕回到稳定范围','转动拇指朝向食指','继续对齐两侧指腹','闭合接触并保持石片','依据偏差微调'];
+    steps.forEach(function(step,i){ step.classList.toggle('is-done',done[i]); step.classList.toggle('is-current',i===first || (first===6&&i===5)); });
+    statusText.textContent=first===6?'稳定夹持已建立':labels[first];
+    wristOut.textContent=Math.abs(state.wrist)<=7?'稳定':'偏离';
+    thumbOut.textContent=state.thumb>=93?'接触':state.thumb>=68?'对掌':'展开';
+    state.holding=done[4]; claim.classList.toggle('is-visible',state.holding);
+    contactRing.material.color.setHex(state.holding?0x55c2b0:0xf2b84b);
+    shardMat.emissive.setHex(state.holding?0x173b35:0x000000);
+    if(announce && first>0 && !done[first-1]){
+      zone.classList.remove('is-error'); void zone.offsetWidth; zone.classList.add('is-error');
+    }
+  }
+  function updateModel(t){
+    var wristRad=state.wrist*Math.PI/180;
+    hand.rotation.z=THREE.MathUtils.lerp(hand.rotation.z,wristRad,.12);
+    var opposition=state.thumb/100;
+    thumbPivot.rotation.y=THREE.MathUtils.lerp(thumbPivot.rotation.y,-opposition*.82,.14);
+    thumbPivot.rotation.z=THREE.MathUtils.lerp(thumbPivot.rotation.z,opposition*.58,.14);
+    thumbTip.position.x=1.18+opposition*.45;
+    thumbTip.position.y=-.76+opposition*.65;
+    if(!state.holding && !Deck.reduced()) shard.rotation.z=-.2+Math.sin(t*.003)*.055;
+    else shard.rotation.z=THREE.MathUtils.lerp(shard.rotation.z,-.2,.14);
+    targetDot.scale.setScalar(1+(!Deck.reduced()?Math.sin(t*.006)*.18:0));
+    gazeLine.material.opacity=.42+.35*(evaluate()[0]?1:0);
+    camera.position.x=THREE.MathUtils.lerp(camera.position.x,(state.gazeX-.5)*2.2,.05);
+    camera.lookAt(.2+(state.gazeX-.5)*.45,.12+(state.gazeY-.5)*.3,0);
+  }
+  wristInput.addEventListener('input',function(){state.wrist=Number(this.value);updateUI(true);});
+  thumbInput.addEventListener('input',function(){state.thumb=Number(this.value);updateUI(true);});
+  zone.addEventListener('pointermove',function(e){
+    if(e.target.closest && e.target.closest('.controls,button')) return;
+    var p=Deck.pt(zone,e); state.gazeX=Deck.clamp(p.x/zone.offsetWidth,0,1); state.gazeY=Deck.clamp(p.y/zone.offsetHeight,0,1); updateUI(false);
+  });
+  document.getElementById('reset').addEventListener('click',function(){
+    state.wrist=28;state.thumb=24;state.gazeX=.72;state.gazeY=.54;wristInput.value=28;thumbInput.value=24;updateUI(false);
+  });
+  updateUI(false);
+  Deck.loop(function(t){updateModel(t);renderer.render(scene,camera);},{still:1800});
+})();
+</script>
+</body>
+</html>

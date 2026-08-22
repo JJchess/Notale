@@ -1,0 +1,541 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>第 22 页 · 互动讲义</title>
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  /* ---- 页面专属 ---- */
+  #main {
+    display: flex;
+    flex-direction: row;
+    gap: var(--sp-8);
+    align-items: stretch;
+    height: 100%;
+  }
+
+  /* 左栏: 说明 + k-process + 滑块 + 图表 */
+  .left-col {
+    flex: 1 1 0%;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-5);
+    justify-content: flex-start;
+  }
+
+  .left-col .intro {
+    font-size: var(--fs-body);
+    color: var(--text);
+    line-height: 1.5;
+    margin: 0;
+  }
+
+  .left-col .intro em {
+    font-style: normal;
+    color: var(--accent);
+  }
+
+  /* k-process 适配: 更紧凑 */
+  .left-col .k-process {
+    gap: var(--sp-3);
+  }
+
+  .left-col .k-process .axis {
+    background: var(--border-strong);
+  }
+
+  .left-col .k-process .step {
+    font-size: var(--fs-label);
+    padding: var(--sp-2) var(--sp-2);
+    gap: var(--sp-1);
+  }
+
+  .left-col .k-process .step .val {
+    font-size: var(--fs-tick);
+    color: var(--text-dim);
+    font-family: var(--font-mono);
+  }
+
+  .left-col .k-process .step.current .val {
+    color: var(--accent);
+  }
+
+  .left-col .k-process .arw {
+    font-size: var(--fs-body);
+    padding-top: var(--sp-2);
+    width: 24px;
+  }
+
+  /* 滑块区域 */
+  .slider-area {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-2);
+  }
+
+  .slider-area .slider-labels {
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+    font-size: var(--fs-label);
+    color: var(--text-dim);
+  }
+
+  .slider-area .slider-labels span {
+    font-family: var(--font-mono);
+    font-size: var(--fs-tick);
+  }
+
+  /* 自定义 range input */
+  input[type="range"].gravity-slider {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    height: 8px;
+    background: linear-gradient(to right, #4da6ff 0%, #4da6ff var(--slider-pct, 40%), var(--border) var(--slider-pct, 40%), var(--border) 100%);
+    border-radius: 4px;
+    outline: none;
+    cursor: pointer;
+    margin: 0;
+  }
+
+  input[type="range"].gravity-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: var(--accent);
+    border: 2px solid var(--bg);
+    box-shadow: 0 0 8px rgba(77,166,255,0.5);
+    cursor: pointer;
+    transition: box-shadow 150ms var(--ease);
+  }
+
+  input[type="range"].gravity-slider::-webkit-slider-thumb:hover {
+    box-shadow: 0 0 16px rgba(77,166,255,0.7);
+  }
+
+  input[type="range"].gravity-slider::-moz-range-thumb {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: var(--accent);
+    border: 2px solid var(--bg);
+    box-shadow: 0 0 8px rgba(77,166,255,0.5);
+    cursor: pointer;
+  }
+
+  input[type="range"].gravity-slider:focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 4px;
+  }
+
+  /* echarts 容器 */
+  .chart-wrap {
+    flex: 1 1 0%;
+    min-height: 0;
+    position: relative;
+    min-height: 200px;
+    display: flex;
+    flex-direction: row;
+    align-items: stretch;
+  }
+
+  .chart-wrap .y-label {
+    writing-mode: vertical-rl;
+    text-orientation: mixed;
+    font-size: var(--fs-label);
+    color: var(--text-dim);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    flex-shrink: 0;
+    letter-spacing: 0.04em;
+  }
+
+  .chart-wrap .chart-body {
+    flex: 1 1 0%;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .chart-wrap .chart-body > div {
+    flex: 1 1 0%;
+    min-height: 0;
+  }
+
+  .chart-wrap .x-label {
+    font-size: var(--fs-label);
+    color: var(--text-dim);
+    text-align: center;
+    padding-top: 4px;
+    flex-shrink: 0;
+  }
+
+  /* 右栏: 读数面板 */
+  .right-col {
+    flex-shrink: 0;
+    width: 380px;
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-6);
+    justify-content: center;
+  }
+
+  .readout-panel {
+    background: var(--surface-raised);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--r-md);
+    padding: var(--sp-8) var(--sp-8);
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-6);
+    box-shadow: var(--shadow-md);
+  }
+
+  .readout-row {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-1);
+  }
+
+  .readout-row .label {
+    font-size: var(--fs-label);
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  .readout-row .value {
+    font-size: 38px;
+    font-weight: 700;
+    color: var(--text);
+    font-family: var(--font-mono);
+    line-height: 1.1;
+  }
+
+  .readout-row .value .unit {
+    font-size: var(--fs-body);
+    font-weight: 400;
+    color: var(--text-sec);
+    margin-left: var(--sp-1);
+  }
+
+  .readout-row .diff {
+    font-size: var(--fs-lead);
+    font-weight: 600;
+    line-height: 1.3;
+  }
+
+  .readout-row .diff.pos { color: var(--ok); }
+  .readout-row .diff.neg { color: var(--err); }
+  .readout-row .diff.zero { color: var(--text-dim); }
+
+  .readout-divider {
+    height: 1px;
+    background: var(--border);
+    margin: 0;
+  }
+</style>
+</head>
+<body data-page="22" data-total="60">
+<div id="stage">
+<main id="main"></main>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script src="assets/lib/echarts.min.js"></script>
+<script>
+(function() {
+  /* ---- 底盘初始化 ---- */
+  Deck.init({ index: 22, total: 60 });
+
+  /* ---- 常量: 重力加速度范围 ---- */
+  var gEq = (typeof Lec.K.EARTH_GRAVITY_EQUATOR === 'number')
+    ? Lec.K.EARTH_GRAVITY_EQUATOR : 9.78;
+  var gPo = (typeof Lec.K.EARTH_GRAVITY_POLES === 'number')
+    ? Lec.K.EARTH_GRAVITY_POLES : 9.83;
+  var gStd = Lec.K.EARTH_GRAVITY;          // 9.8
+  var v0 = Lec.K.HUMAN_JUMP_INITIAL_VELOCITY;
+
+  /* ---- 页眉 ---- */
+  Lec.mount({
+    kicker: '第二章 · 地球跳跃实验室',
+    title: '地球重力不是常数',
+    take: '赤道 9.78，两极 9.83——差异仅 0.5%，对跳跃高度的影响同样只有 0.5%'
+  });
+
+  /* ---- 构建 DOM ---- */
+  var main = document.getElementById('main');
+
+  // --- 左栏 ---
+  var leftCol = document.createElement('div');
+  leftCol.className = 'left-col';
+
+  // 说明句
+  var p1 = document.createElement('p');
+  p1.className = 'intro';
+  p1.innerHTML = '地球重力加速度<em>不是常数</em>——赤道 ' + gEq.toFixed(2) + ' m/s²，两极 ' + gPo.toFixed(2) + ' m/s²，差异约 <em>0.5%</em>。';
+  leftCol.appendChild(p1);
+
+  var p2 = document.createElement('p');
+  p2.className = 'intro';
+  p2.innerHTML = '这个差异对跳跃高度的影响也只有约 <em>0.5%</em>，在地球上<em>可以忽略</em>。';
+  leftCol.appendChild(p2);
+
+  // k-process: 三阶段参考点
+  var kproc = document.createElement('div');
+  kproc.className = 'k-process';
+
+  var axis = document.createElement('div');
+  axis.className = 'axis';
+  kproc.appendChild(axis);
+
+  var steps = document.createElement('div');
+  steps.className = 'steps';
+
+  var stepEq = document.createElement('div');
+  stepEq.className = 'step current';
+  stepEq.innerHTML = '赤道<div class="val">9.78</div>';
+  steps.appendChild(stepEq);
+
+  var arw1 = document.createElement('div');
+  arw1.className = 'arw';
+  arw1.textContent = '→';
+  steps.appendChild(arw1);
+
+  var stepMid = document.createElement('div');
+  stepMid.className = 'step';
+  stepMid.innerHTML = '中纬度<div class="val">9.80</div>';
+  steps.appendChild(stepMid);
+
+  var arw2 = document.createElement('div');
+  arw2.className = 'arw';
+  arw2.textContent = '→';
+  steps.appendChild(arw2);
+
+  var stepPo = document.createElement('div');
+  stepPo.className = 'step';
+  stepPo.innerHTML = '两极<div class="val">9.83</div>';
+  steps.appendChild(stepPo);
+
+  kproc.appendChild(steps);
+  leftCol.appendChild(kproc);
+
+  // 滑块区域
+  var sliderArea = document.createElement('div');
+  sliderArea.className = 'slider-area';
+
+  var sliderLabels = document.createElement('div');
+  sliderLabels.className = 'slider-labels';
+  sliderLabels.innerHTML = '<span>赤道 (0°)</span><span>中纬度 (45°)</span><span>两极 (90°)</span>';
+  sliderArea.appendChild(sliderLabels);
+
+  var slider = document.createElement('input');
+  slider.type = 'range';
+  slider.className = 'gravity-slider';
+  slider.min = '0';
+  slider.max = '100';
+  slider.value = '40';  // 对应标准重力 9.80
+  slider.step = '1';
+  slider.setAttribute('aria-label', '拖动调整纬度，观察重力加速度变化');
+  sliderArea.appendChild(slider);
+
+  leftCol.appendChild(sliderArea);
+
+  // echarts 容器
+  var chartWrap = document.createElement('div');
+  chartWrap.className = 'chart-wrap';
+
+  var yLabel = document.createElement('div');
+  yLabel.className = 'y-label';
+  yLabel.textContent = 'g (m/s²)';
+  chartWrap.appendChild(yLabel);
+
+  var chartBody = document.createElement('div');
+  chartBody.className = 'chart-body';
+
+  var chartDom = document.createElement('div');
+  chartBody.appendChild(chartDom);
+
+  var xLabel = document.createElement('div');
+  xLabel.className = 'x-label';
+  xLabel.textContent = '纬度 (°)';
+  chartBody.appendChild(xLabel);
+
+  chartWrap.appendChild(chartBody);
+  leftCol.appendChild(chartWrap);
+
+  main.appendChild(leftCol);
+
+  // --- 右栏 ---
+  var rightCol = document.createElement('div');
+  rightCol.className = 'right-col';
+
+  var panel = document.createElement('div');
+  panel.className = 'readout-panel';
+
+  // 重力加速度
+  var rowG = document.createElement('div');
+  rowG.className = 'readout-row';
+  rowG.innerHTML = '<div class="label">当前重力加速度</div><div class="value" id="val-g">9.80<span class="unit">m/s²</span></div>';
+  panel.appendChild(rowG);
+
+  var div1 = document.createElement('div');
+  div1.className = 'readout-divider';
+  panel.appendChild(div1);
+
+  // 跳跃高度
+  var rowH = document.createElement('div');
+  rowH.className = 'readout-row';
+  rowH.innerHTML = '<div class="label">跳跃高度（初速度不变）</div><div class="value" id="val-h">0.500<span class="unit">m</span></div>';
+  panel.appendChild(rowH);
+
+  var div2 = document.createElement('div');
+  div2.className = 'readout-divider';
+  panel.appendChild(div2);
+
+  // 差异百分比
+  var rowD = document.createElement('div');
+  rowD.className = 'readout-row';
+  rowD.innerHTML = '<div class="label">与标准重力 9.80 的差异</div><div class="diff zero" id="val-d">0.0%</div>';
+  panel.appendChild(rowD);
+
+  rightCol.appendChild(panel);
+  main.appendChild(rightCol);
+
+  /* ---- echarts 图表 ---- */
+  var chart = echarts.init(chartDom, null, {
+    renderer: 'svg'
+  });
+
+  // 生成纬度-重力曲线数据
+  function gravityAtLat(latDeg) {
+    var phi = latDeg * Math.PI / 180;
+    return gEq + (gPo - gEq) * Math.sin(phi) * Math.sin(phi);
+  }
+
+  var curveData = [];
+  for (var i = 0; i <= 90; i++) {
+    curveData.push([i, +gravityAtLat(i).toFixed(4)]);
+  }
+
+  function buildOption(latDeg, gVal) {
+    return {
+      textStyle: { fontSize: 16 },
+      grid: { left: 72, right: 32, top: 12, bottom: 40 },
+      xAxis: {
+        type: 'value',
+        name: '',
+        min: 0,
+        max: 90,
+        interval: 30,
+        axisLabel: { fontSize: 14, color: '#8899aa', margin: 8 },
+        axisLine: { lineStyle: { color: '#334455' } },
+        axisTick: { show: false },
+        splitLine: { show: false }
+      },
+      yAxis: {
+        type: 'value',
+        name: '',
+        min: gEq - 0.005,
+        max: gPo + 0.005,
+        interval: 0.02,
+        axisLabel: { fontSize: 14, color: '#8899aa', fontFamily: 'JetBrains Mono, monospace', margin: 8 },
+        axisLine: { lineStyle: { color: '#334455' } },
+        axisTick: { show: false },
+        splitLine: { show: false }
+      },
+      series: [
+        {
+          type: 'line',
+          data: curveData,
+          smooth: true,
+          symbol: 'none',
+          lineStyle: { color: '#334455', width: 2 },
+          areaStyle: {
+            color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+              { offset: 0, color: 'rgba(77,166,255,0.06)' },
+              { offset: 1, color: 'rgba(77,166,255,0.0)' }
+            ])
+          },
+          z: 1
+        },
+        {
+          type: 'scatter',
+          data: [[latDeg, gVal]],
+          symbolSize: 14,
+          symbol: 'circle',
+          itemStyle: {
+            color: '#60a5fa',
+            borderColor: '#0b1119',
+            borderWidth: 2,
+            shadowBlur: 10,
+            shadowColor: 'rgba(96,165,250,0.6)'
+          },
+          z: 4
+        }
+      ]
+    };
+  }
+
+  var initLat = 40;  // 对应标准重力 ~9.80
+  chart.setOption(buildOption(initLat, gStd));
+
+  /* ---- 交互逻辑 ---- */
+  var elG = document.getElementById('val-g');
+  var elH = document.getElementById('val-h');
+  var elD = document.getElementById('val-d');
+
+  var hStd = Lec.P.jumpHeightFromVelocity(v0, gStd);
+
+  function update(sliderVal) {
+    var t = sliderVal / 100;  // 0 → 1
+    var g = gEq + t * (gPo - gEq);
+    var h = Lec.P.jumpHeightFromVelocity(v0, g);
+    var diffPct = ((h - hStd) / hStd) * 100;
+    var latDeg = Math.round(t * 90);
+
+    // 更新读数
+    elG.innerHTML = g.toFixed(2) + '<span class="unit">m/s²</span>';
+    elH.innerHTML = h.toFixed(3) + '<span class="unit">m</span>';
+
+    var diffEl = elD;
+    if (Math.abs(diffPct) < 0.05) {
+      diffEl.textContent = '0.0%';
+      diffEl.className = 'diff zero';
+    } else if (diffPct > 0) {
+      diffEl.textContent = '+' + diffPct.toFixed(1) + '%';
+      diffEl.className = 'diff pos';
+    } else {
+      diffEl.textContent = diffPct.toFixed(1) + '%';
+      diffEl.className = 'diff neg';
+    }
+
+    // 更新 k-process 步骤高亮
+    stepEq.classList.toggle('current', t < 0.33);
+    stepMid.classList.toggle('current', t >= 0.33 && t < 0.67);
+    stepPo.classList.toggle('current', t >= 0.67);
+
+    // 更新滑块渐变
+    slider.style.setProperty('--slider-pct', (t * 100) + '%');
+
+    // 更新图表
+    chart.setOption(buildOption(latDeg, g), true);
+  }
+
+  slider.addEventListener('input', function() {
+    update(parseInt(this.value, 10));
+  });
+
+  // 初始更新
+  update(40);
+})();
+</script>
+</body>
+</html>

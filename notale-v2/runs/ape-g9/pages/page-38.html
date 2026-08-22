@@ -1,0 +1,240 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  .lec-progress{appearance:none;-webkit-appearance:none;font-size:0;line-height:0;vertical-align:top}
+  .lec-progress::-webkit-progress-inner-element,.lec-progress::-webkit-progress-bar,.lec-progress::-webkit-progress-value{height:4px;border:0;background:transparent}
+  #main{position:relative;display:flex;flex-direction:column;overflow:hidden;border:var(--border);border-radius:var(--radius-3);background:var(--surface-glass)}
+  #life-svg{position:absolute;inset:0;width:100%;height:100%;display:block}
+  .day-readout{position:absolute;top:18px;right:22px;z-index:2;display:flex;align-items:baseline;gap:var(--sp-3);padding:var(--sp-2) var(--sp-4);border-left:3px solid var(--accent);background:var(--surface-1)}
+  .day-readout .day-label{font-size:var(--fs-label);color:var(--text-muted)}
+  .day-readout .day-value{font:700 var(--fs-lead)/1.35 var(--font-mono);color:var(--accent)}
+  .interaction-rail{position:absolute;right:18px;bottom:18px;left:18px;z-index:3;display:flex;align-items:center;gap:var(--sp-4);min-width:0;padding:var(--sp-3) var(--sp-4);border:var(--border);border-left:3px solid var(--primary);border-radius:var(--radius-2);background:rgba(7,16,21,.96)}
+  .resource-pick{flex:0 0 150px}
+  .resource-pick select{width:100%}
+  .valve-control{display:flex;flex:1 1 0;align-items:center;gap:var(--sp-3);min-width:0}
+  .valve-control label{flex:0 0 auto;font-size:var(--fs-label);color:var(--text-muted)}
+  .valve-control input{min-width:180px}
+  .valve-value{flex:0 0 66px;text-align:right;font:700 var(--fs-body)/1.35 var(--font-mono);color:var(--accent)}
+  .interaction-rail .btn{flex:0 0 auto;font-size:var(--fs-sec)}
+  .result-line{position:absolute;right:26px;bottom:92px;z-index:2;width:392px;min-height:46px;box-sizing:border-box;padding:var(--sp-2) var(--sp-3);font-size:var(--fs-sec);line-height:var(--lh-copy);color:var(--text-strong);border-left:3px solid var(--accent);background:rgba(7,16,21,.9)}
+  .result-line[data-tone="ok"]{border-left-color:var(--success)}
+  .result-line[data-tone="bad"]{border-left-color:var(--danger)}
+  .result-line[data-tone="win"]{color:var(--text-strong);border-left-color:var(--accent);background:var(--surface-yellow)}
+  .legend{position:absolute;top:18px;left:22px;z-index:2;display:flex;gap:var(--sp-4);font-size:var(--fs-label)}
+  .legend-key{font-size:var(--fs-label)}
+  .process-key{position:absolute;left:26px;bottom:92px;z-index:2;width:680px;height:58px;--process-line-y:50%}
+  .process-key.k-process{gap:var(--sp-2)}
+  .process-key.k-process>.step{justify-content:center;padding:var(--sp-2) var(--sp-3);font-size:var(--fs-label);line-height:1.35;text-align:center;border-top-width:2px;background:rgba(13,26,32,.92)}
+  .process-key.k-process>.arw{flex-basis:18px;font-size:var(--fs-body)}
+  #life-svg text{font-family:var(--font-sans);letter-spacing:0}
+  #life-svg .svg-label{font-size:16px;font-weight:700;fill:var(--text-strong)}
+  #life-svg .svg-note{font-size:16px;fill:var(--text-muted)}
+  #life-svg .svg-value{font-size:16px;font-family:var(--font-mono);font-weight:700;fill:var(--text-strong)}
+  #life-svg .svg-small{font-size:14px;fill:var(--text-muted)}
+  #life-svg .node-shell{fill:var(--surface-1);stroke:var(--line-strong);stroke-width:2}
+  #life-svg .row-rule{stroke:var(--line);stroke-width:1}
+  #life-svg .status-track{fill:none;stroke:var(--surface-3);stroke-width:7}
+  #life-svg .status-fill{fill:none;stroke-width:7;stroke-linecap:square}
+  #life-svg .flow{fill:none;stroke-linecap:round;stroke-linejoin:round;opacity:.88}
+  #life-svg .energy-bus{fill:none;stroke:var(--accent);stroke-width:3;stroke-dasharray:10 8;opacity:.8}
+  #life-svg .body-shape{fill:var(--surface-teal);stroke:var(--primary);stroke-width:3}
+  #life-svg .pulse{fill:none;stroke-linecap:round;stroke-width:6;opacity:0}
+  @media (prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;transition-duration:0ms!important;animation:none!important}}
+</style>
+</head>
+<body data-page="38" data-total="52">
+<div id="stage">
+<main id="main"></main>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script src="assets/lib/d3.min.js"></script>
+<script>
+(function(){
+  "use strict";
+  Lec.mount({index:38,kicker:"CLOSED-LOOP LIFE SUPPORT",title:"舱内的每一天，都要重新平衡",take:"长期生存要求持续平衡水、氧、二氧化碳、食物、废物和能量。"});
+
+  const main=document.querySelector("#main");
+  main.insertAdjacentHTML("beforeend",`
+    <div class="legend" aria-label="状态图例">
+      <span class="legend-key"><i class="swatch" style="--swatch:#35C6B4"></i>本日平衡</span>
+      <span class="legend-key"><i class="swatch" style="--swatch:#FFCC4D"></i>当前调节</span>
+      <span class="legend-key"><i class="swatch" style="--swatch:#FF6B5F"></i>短缺或超支</span>
+    </div>
+    <div class="day-readout" aria-live="polite"><span class="day-label">连续稳定</span><span class="day-value" id="day-value"></span></div>
+    <div class="result-line" id="result-line" data-tone="idle" aria-live="polite">选择一项资源，调节阀门后推进一天。六项必须同时平衡。</div>
+    <div class="k-process process-key" aria-label="生命保障主循环：储存、人体消耗、排出、处理、返回储存">
+      <div class="axis" aria-hidden="true"></div><div class="step">储存</div><div class="arw" aria-hidden="true"></div><div class="step">人体消耗</div><div class="arw" aria-hidden="true"></div><div class="step">排出</div><div class="arw" aria-hidden="true"></div><div class="step">处理</div><div class="arw" aria-hidden="true"></div><div class="step">返回储存</div>
+    </div>
+    <div class="interaction-rail">
+      <div class="resource-pick ctl"><select id="resource-select" aria-label="选择要调节的资源"></select></div>
+      <div class="valve-control min0"><label for="valve">阀门开度</label><input id="valve" class="no-pan" type="range" min="0" max="100" step="1"><output id="valve-value" class="valve-value" for="valve"></output></div>
+      <button id="advance" class="btn is-primary" type="button">推进一天</button>
+      <button id="reset" class="btn icon-only" type="button" title="重置到第 0 天" aria-label="重置到第 0 天">↺</button>
+    </div>`);
+
+  const svg=d3.select("#main").insert("svg",":first-child").attr("id","life-svg").attr("viewBox","0 0 1440 760").attr("role","img").attr("aria-label","单人舱内一天的生命保障循环");
+  svg.append("title").text("单人舱内一天的生命保障循环");
+  svg.append("desc").text("储存经过人体消耗、排出和处理后返回。食物与能量需要外部输入，废物与废热进入暂存。右侧逐项显示每日结算。 ");
+
+  const COLORS={ok:"#35C6B4",active:"#FFCC4D",bad:"#FF6B5F"};
+  const foodStockDays=30;
+  const energyBudget=100;
+  const dailyInputWater=0.5;
+  const dailyInputOxygen=0.1;
+  const resourceData=[
+    {id:"water",name:"水",node:"水箱 · 净化器",base:()=>Lec.K.lifeSupportWaterPerPersonDayKg,unit:"kg",initial:70,threshold:84,path:[[245,210],[390,155],[540,250],[420,365],[245,310]],energy:.24},
+    {id:"oxygen",name:"氧",node:"氧箱 · 再生器",base:()=>Lec.K.lifeSupportOxygenPerPersonDayKg,unit:"kg",initial:72,threshold:89,path:[[320,105],[505,125],[540,250],[645,190],[565,100]],energy:.22},
+    {id:"co2",name:"二氧化碳",node:"舱内空气 · 吸收器",base:()=>Lec.K.lifeSupportCarbonDioxidePerPersonDayKg,unit:"kg",initial:76,threshold:100,path:[[540,250],[700,290],[670,410],[540,340]],energy:.20},
+    {id:"food",name:"食物",node:"食物柜 · 外部补给",base:()=>1,unit:"日份",initial:82,threshold:100,path:[[120,390],[305,380],[455,300],[540,250]],energy:0},
+    {id:"waste",name:"废物",node:"处理器 · 暂存箱",base:()=>1,unit:"日份",initial:65,threshold:75,path:[[540,285],[530,430],[345,470],[170,440]],energy:.18},
+    {id:"energy",name:"能量",node:"电源 · 处理设备",base:()=>energyBudget,unit:"单位",initial:70,threshold:0,path:[[120,520],[350,520],[580,500],[760,410]],energy:0}
+  ];
+  const labels=[
+    {x:205,y:185,t:"水箱",sub:"净化后返回"},{x:285,y:80,t:"氧箱",sub:"补入与再生"},{x:690,y:170,t:"空气处理",sub:"移除二氧化碳"},
+    {x:75,y:360,t:"食物柜",sub:"非闭合入口"},{x:125,y:455,t:"废物暂存",sub:"处理后仍存在"},{x:75,y:545,t:"电源母线",sub:"设备都要用能量"}
+  ];
+
+  const defs=svg.append("defs");
+  defs.append("marker").attr("id","arrow-ok").attr("viewBox","0 0 10 10").attr("refX",8).attr("refY",5).attr("markerWidth",6).attr("markerHeight",6).attr("orient","auto-start-reverse").append("path").attr("d","M 0 0 L 10 5 L 0 10 z").attr("fill",COLORS.ok);
+  const line=d3.line().curve(d3.curveBasis);
+  const widthScale=d3.scaleLinear().domain([0,3]).range([3,14]);
+  const diagram=svg.append("g").attr("aria-hidden","true");
+  diagram.append("path").attr("class","energy-bus").attr("d",line(resourceData[5].path));
+  const flows=diagram.selectAll("path.flow").data(resourceData.slice(0,5)).join("path").attr("class","flow").attr("d",d=>line(d.path)).attr("stroke",COLORS.active).attr("marker-end","url(#arrow-ok)");
+  const pulses=diagram.selectAll("path.pulse").data(resourceData.slice(0,5)).join("path").attr("class","pulse").attr("d",d=>line(d.path)).attr("stroke",COLORS.ok);
+
+  const body=diagram.append("g").attr("transform","translate(540,260)");
+  body.append("circle").attr("class","body-shape").attr("cx",0).attr("cy",-55).attr("r",28);
+  body.append("path").attr("class","body-shape").attr("d","M-31,-20 C-45,25 -39,91 -22,128 L-7,128 L0,54 L8,128 L24,128 C40,88 44,28 31,-20 Z");
+  body.append("text").attr("class","svg-label").attr("text-anchor","middle").attr("y",162).text("人体");
+  body.append("text").attr("class","svg-small").attr("text-anchor","middle").attr("y",184).text("消耗与排出持续发生");
+
+  const nodeG=diagram.selectAll("g.node").data(labels).join("g").attr("class","node").attr("transform",d=>`translate(${d.x},${d.y})`);
+  nodeG.append("rect").attr("class","node-shell").attr("x",-62).attr("y",-28).attr("width",124).attr("height",58).attr("rx",4);
+  nodeG.append("text").attr("class","svg-label").attr("text-anchor","middle").attr("y",-3).text(d=>d.t);
+  nodeG.append("text").attr("class","svg-small").attr("text-anchor","middle").attr("y",20).text(d=>d.sub);
+
+  const ledger=svg.append("g").attr("transform","translate(890,82)");
+  ledger.append("text").attr("class","svg-label").attr("x",0).attr("y",0).text("同一日 · 六项独立结算");
+  ledger.append("text").attr("class","svg-small").attr("x",405).attr("y",0).attr("text-anchor","end").text("不能互相抵消");
+  ledger.append("line").attr("x1",310).attr("x2",310).attr("y1",25).attr("y2",410).attr("stroke",COLORS.active).attr("stroke-width",2).attr("stroke-dasharray","5 6");
+  const rows=ledger.selectAll("g.resource-row").data(resourceData).join("g").attr("class","resource-row").attr("transform",(d,i)=>`translate(0,${42+i*66})`);
+  rows.append("line").attr("class","row-rule").attr("x1",0).attr("x2",405).attr("y1",37).attr("y2",37);
+  rows.append("text").attr("class","svg-label").attr("x",0).attr("y",0).text(d=>d.name);
+  rows.append("text").attr("class","svg-small node-name").attr("x",0).attr("y",24).text(d=>d.node);
+  rows.append("path").attr("class","status-track").attr("d","M 170 7 H 295");
+  rows.append("path").attr("class","status-fill").attr("d","M 170 7 H 170");
+  rows.append("circle").attr("class","day-dot").attr("cx",310).attr("cy",7).attr("r",7).attr("fill",COLORS.active);
+  rows.append("text").attr("class","svg-value row-value").attr("x",405).attr("y",12).attr("text-anchor","end");
+  rows.append("text").attr("class","svg-small row-state").attr("x",405).attr("y",31).attr("text-anchor","end");
+
+  const select=document.querySelector("#resource-select");
+  const slider=document.querySelector("#valve");
+  const sliderOut=document.querySelector("#valve-value");
+  const dayValue=document.querySelector("#day-value");
+  const resultLine=document.querySelector("#result-line");
+  resourceData.forEach(d=>select.add(new Option(d.name,d.id)));
+
+  function freshState(){return{day:0,stable:0,selected:"water",valves:Object.fromEntries(resourceData.map(d=>[d.id,d.initial])),last:null,complete:false,trace:[]};}
+  let state=freshState();
+
+  function pct(value){return Lec.P.roundTo(Lec.P.percent(value,100),0);}
+  function rounded(value,digits){return Lec.P.roundTo(value,digits);}
+  function energyDemand(){return resourceData.reduce((sum,d)=>sum+state.valves[d.id]*d.energy,0);}
+  function evaluate(){
+    const v=state.valves;
+    const waterNeed=resourceData[0].base();
+    const oxygenNeed=resourceData[1].base();
+    const co2Made=resourceData[2].base();
+    const waterRecovered=waterNeed*v.water/100;
+    const oxygenRestored=oxygenNeed*v.oxygen/100+dailyInputOxygen;
+    const co2Removed=co2Made*v.co2/100;
+    const wasteProcessed=v.waste/100;
+    const demand=energyDemand();
+    const allocated=v.energy;
+    return{
+      water:{balance:Lec.P.difference(dailyInputWater+waterRecovered,waterNeed),ok:Lec.P.difference(dailyInputWater+waterRecovered,waterNeed)>=0},
+      oxygen:{balance:Lec.P.difference(oxygenRestored,oxygenNeed),ok:Lec.P.difference(oxygenRestored,oxygenNeed)>=0},
+      co2:{balance:Lec.P.difference(co2Removed,co2Made),ok:Lec.P.difference(co2Removed,co2Made)>=0},
+      food:{balance:Lec.P.difference(foodStockDays,state.day+1),ok:v.food>=100&&Lec.P.difference(foodStockDays,state.day+1)>=0},
+      waste:{balance:Lec.P.difference(wasteProcessed,1),ok:wasteProcessed>=.75},
+      energy:{balance:Lec.P.difference(allocated,demand),ok:allocated<=energyBudget&&Lec.P.difference(allocated,demand)>=0},
+      demand
+    };
+  }
+  function displayValue(d,ev){
+    if(d.id==="food") return `${rounded(ev.food.balance,0)} 日库存`;
+    if(d.id==="energy") return `${rounded(ev.demand,0)} / ${energyBudget}`;
+    const n=ev[d.id].balance;
+    return `${n>=0?"+":""}${rounded(n,d.id==="water"?2:2)} ${d.unit}`;
+  }
+  function reason(ev){
+    if(!ev.water.ok)return"水：补入与净化回收低于今日消耗。";
+    if(!ev.oxygen.ok)return"氧：补入与再生低于今日消耗。";
+    if(!ev.co2.ok)return"二氧化碳：移除量低于今日产生量。";
+    if(!ev.food.ok)return"食物：今日供给不足；库存不能假装闭环。";
+    if(!ev.waste.ok)return"废物：处理能力不足；暂存量继续增加。";
+    if(!ev.energy.ok)return`能量：设备需要 ${rounded(ev.demand,0)} 单位，当前只分配 ${rounded(state.valves.energy,0)}。`;
+    return"六项本日平衡。储量、处理能力与能量仍需明天继续结算。";
+  }
+  function render(animate){
+    const ev=evaluate();
+    const duration=animate&&!Deck.reduced()?280:0;
+    dayValue.textContent=`${state.stable} / 7`;
+    slider.value=state.valves[state.selected];
+    sliderOut.value=`${pct(state.valves[state.selected])}%`;
+    const selected=resourceData.find(d=>d.id===state.selected);
+    slider.setAttribute("aria-label",`${selected.name}阀门开度`);
+    sliderOut.setAttribute("aria-label",`${selected.name}阀门开度 ${pct(state.valves[state.selected])}%`);
+
+    flows.transition().duration(duration).ease(d3.easeCubicOut)
+      .attr("stroke",d=>state.last?(ev[d.id].ok?COLORS.ok:COLORS.bad):(d.id===state.selected?COLORS.active:COLORS.ok))
+      .attr("stroke-width",d=>widthScale(d.base()*state.valves[d.id]/100));
+    rows.select(".status-fill").transition().duration(duration).ease(d3.easeCubicOut)
+      .attr("d",d=>`M 170 7 H ${170+125*state.valves[d.id]/100}`)
+      .attr("stroke",d=>state.last?(ev[d.id].ok?COLORS.ok:COLORS.bad):(d.id===state.selected?COLORS.active:COLORS.ok));
+    rows.select(".day-dot").transition().duration(duration).ease(d3.easeCubicOut).attr("fill",d=>state.last?(ev[d.id].ok?COLORS.ok:COLORS.bad):(d.id===state.selected?COLORS.active:"#728582"));
+    rows.select(".row-value").text(d=>displayValue(d,ev));
+    rows.select(".row-state").text(d=>state.last?(ev[d.id].ok?"本日平衡":"短缺 / 超支"):(d.id===state.selected?"正在调节":"等待日结"));
+    if(state.complete){resultLine.dataset.tone="win";resultLine.textContent="循环维持生存，但仍需要库存、能量与处理能力。";}
+  }
+  function pulse(ev){
+    const failed=resourceData.filter(d=>!ev[d.id].ok).map(d=>d.id);
+    pulses.attr("stroke",d=>failed.includes(d.id)?COLORS.bad:COLORS.ok).attr("opacity",0.9).attr("stroke-dasharray","18 260").attr("stroke-dashoffset",220);
+    if(Deck.reduced()){pulses.attr("opacity",0);return;}
+    pulses.transition().duration(280).ease(d3.easeCubicOut).attr("stroke-dashoffset",0).transition().duration(160).attr("opacity",0);
+  }
+  function advance(){
+    if(state.complete)return;
+    const ev=evaluate();
+    const allOk=resourceData.every(d=>ev[d.id].ok);
+    state.day+=1;
+    state.stable=allOk?state.stable+1:0;
+    state.last=ev;
+    state.complete=state.stable>=7;
+    state.trace.push({day:state.day,ok:allOk,valves:{...state.valves}});
+    resultLine.dataset.tone=allOk?"ok":"bad";
+    resultLine.textContent=reason(ev);
+    render(true);pulse(ev);
+    if(state.complete)document.querySelector("#advance").disabled=true;
+  }
+  function reset(){
+    state=freshState();select.value=state.selected;document.querySelector("#advance").disabled=false;
+    resultLine.dataset.tone="idle";resultLine.textContent="选择一项资源，调节阀门后推进一天。六项必须同时平衡。";
+    render(false);
+  }
+  select.addEventListener("change",()=>{state.selected=select.value;state.last=null;render(true);});
+  slider.addEventListener("input",()=>{state.valves[state.selected]=Number(slider.value);state.last=null;render(true);});
+  document.querySelector("#advance").addEventListener("click",advance);
+  document.querySelector("#reset").addEventListener("click",reset);
+  window.lifeSupportGame={start:()=>{},reset,getState:()=>JSON.parse(JSON.stringify(state)),advance};
+  reset();
+})();
+</script>
+</body>
+</html>

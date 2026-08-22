@@ -1,0 +1,622 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  #main {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .game-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    min-height: 42px;
+    gap: 24px;
+  }
+
+  .prompt {
+    color: var(--text-secondary);
+    font-size: var(--fs-sec);
+    line-height: var(--lh-sec);
+  }
+
+  .system-progress {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-width: 470px;
+  }
+
+  .segments {
+    display: flex;
+    flex: 1 1 auto;
+    gap: 6px;
+    height: 9px;
+  }
+
+  .segment {
+    flex: 1 1 0;
+    background: var(--surface-strong);
+    border: 1px solid var(--line-strong);
+    transition: background-color 180ms ease, box-shadow 180ms ease;
+  }
+
+  .segment.on {
+    background: var(--primary);
+    border-color: var(--primary);
+    box-shadow: 0 0 12px rgba(85, 194, 176, 0.32);
+  }
+
+  .progress-text {
+    min-width: 112px;
+    color: var(--text-secondary);
+    font-family: var(--font-mono);
+    font-size: var(--fs-sec);
+    line-height: var(--lh-sec);
+    text-align: right;
+  }
+
+  .classification-bay {
+    position: relative;
+    display: flex;
+    flex: 1 1 0;
+    flex-direction: column;
+    min-height: 0;
+    gap: 10px;
+    padding: 8px 18px 8px 64px;
+    overflow: hidden;
+    background: #151a1c;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-md);
+  }
+
+  .system-schematic {
+    position: absolute;
+    z-index: 0;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+  }
+
+  .branch.lv.min0 {
+    position: relative;
+    z-index: 1;
+    flex: 1 1 0;
+    margin-left: 0;
+    padding-left: 14px;
+  }
+
+  .branch.lv::before {
+    width: 10px;
+  }
+
+  .branch > .box {
+    display: grid;
+    flex: 1 1 0;
+    grid-template-columns: 122px minmax(0, 1fr) minmax(0, 1fr);
+    align-items: stretch;
+    gap: 12px;
+    min-height: 0;
+    padding: 10px 12px;
+  }
+
+  .branch > .box > .bt {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: center;
+    gap: 5px;
+    margin: -10px 0 -10px -12px;
+    padding: 10px 14px;
+    border-right: 1px solid var(--line);
+    border-bottom: 0;
+    font-size: var(--fs-lead);
+  }
+
+  .branch-code {
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+    font-size: var(--fs-label);
+    font-weight: 500;
+  }
+
+  .relation.lv {
+    display: grid;
+    flex: 1 1 0;
+    grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.25fr);
+    align-items: stretch;
+    gap: 8px;
+    margin-left: 0;
+    padding-left: 14px;
+    border-left-color: var(--line-strong);
+  }
+
+  .relation.lv + .relation.lv {
+    margin-top: 0;
+    padding-top: 0;
+    border-top: 0;
+  }
+
+  .relation.lv::before {
+    top: 50%;
+    width: 10px;
+    background: var(--line-strong);
+  }
+
+  .limit {
+    display: flex;
+    align-items: center;
+    padding: 10px 12px;
+    color: var(--text);
+    background: var(--surface-soft);
+    border: 1px solid var(--line);
+    border-left: 3px solid var(--line-strong);
+    font-size: var(--fs-sec);
+    font-weight: 650;
+    line-height: var(--lh-sec);
+  }
+
+  .chain {
+    display: flex;
+    align-items: stretch;
+    gap: 6px;
+    min-height: 70px;
+  }
+
+  .condition,
+  .drop-slot {
+    display: flex;
+    align-items: center;
+    min-width: 0;
+    padding: 9px 10px;
+    font-size: var(--fs-label);
+    line-height: 1.35;
+  }
+
+  .condition {
+    flex: 0 0 39%;
+    color: var(--text-muted);
+    background: #151b1d;
+    border: 1px solid var(--line);
+    border-left: 3px solid var(--line-strong);
+  }
+
+  .condition span {
+    opacity: 0;
+    transition: opacity 180ms ease;
+  }
+
+  .relation.connected .condition {
+    color: var(--text);
+    border-left-color: var(--primary);
+    background: var(--primary-soft);
+  }
+
+  .relation.connected .condition span {
+    opacity: 1;
+  }
+
+  .link-arrow {
+    display: flex;
+    align-items: center;
+    color: var(--line-strong);
+    font-size: 18px;
+    line-height: 1;
+  }
+
+  .relation.connected .link-arrow {
+    color: var(--primary);
+  }
+
+  .drop-slot {
+    flex: 1 1 0;
+    justify-content: center;
+    color: var(--text-muted);
+    text-align: center;
+    background: rgba(17, 20, 23, 0.56);
+    border: 1px dashed var(--line-strong);
+    border-radius: var(--radius-sm);
+  }
+
+  .drop-slot.is-target {
+    color: var(--accent);
+    border-color: var(--accent);
+    background: var(--accent-soft);
+  }
+
+  .drop-slot.filled {
+    color: var(--text);
+    background: var(--primary-soft);
+    border: 1px solid var(--primary);
+  }
+
+  .drop-slot.shake {
+    border-color: var(--danger);
+    animation: shake 180ms linear 2;
+  }
+
+  .module-rack {
+    flex: 0 0 auto;
+    padding-top: 10px;
+    border-top: 1px solid var(--line);
+  }
+
+  .rack-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+  }
+
+  .rack-title {
+    color: var(--text-secondary);
+    font-size: var(--fs-label);
+    font-weight: 700;
+    line-height: 1.35;
+  }
+
+  .rack-hint {
+    color: var(--text-muted);
+    font-size: var(--fs-label);
+    line-height: 1.35;
+  }
+
+  .modules {
+    display: flex;
+    gap: 8px;
+  }
+
+  .module {
+    display: flex;
+    flex: 1 1 0;
+    align-items: center;
+    justify-content: center;
+    min-width: 0;
+    min-height: 58px;
+    padding: 7px 10px;
+    color: var(--text);
+    background: var(--surface-soft);
+    border: 1px solid var(--accent-line);
+    border-left: 3px solid var(--accent);
+    border-radius: var(--radius-sm);
+    font-size: var(--fs-label);
+    font-weight: 650;
+    line-height: 1.35;
+    text-align: center;
+    cursor: grab;
+    user-select: none;
+    touch-action: none;
+    transition: opacity 140ms ease, border-color 140ms ease, background-color 140ms ease;
+  }
+
+  .module:active { cursor: grabbing; }
+  .module.selected {
+    background: var(--accent-soft);
+    border-color: var(--accent);
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+  .module.placed {
+    pointer-events: none;
+    opacity: 0.22;
+    border-color: var(--line);
+    border-left-color: var(--line-strong);
+  }
+  .module.wrong { animation: shake 180ms linear 2; }
+
+  .feedback-row {
+    display: flex;
+    align-items: center;
+    min-height: 46px;
+    gap: 16px;
+  }
+
+  .feedback {
+    flex: 1 1 auto;
+    color: var(--text-secondary);
+    font-size: var(--fs-sec);
+    line-height: var(--lh-sec);
+  }
+
+  .feedback.error { color: #f3a09a; }
+
+  .claim {
+    flex: 1 1 auto;
+    padding-left: 14px;
+    color: var(--text);
+    border-left: 4px solid var(--primary);
+    font-size: var(--fs-lead);
+    font-weight: 700;
+    line-height: var(--lh-body);
+    opacity: 0;
+    transform: translateY(5px);
+    transition: opacity 220ms ease, transform 220ms ease;
+  }
+
+  .claim.show {
+    opacity: 1;
+    transform: none;
+  }
+
+  .reset {
+    flex: 0 0 auto;
+    width: 44px;
+    padding: 0;
+    font-size: 22px;
+  }
+
+  @keyframes shake {
+    0%, 100% { transform: translateX(0); }
+    33% { transform: translateX(-5px); }
+    66% { transform: translateX(5px); }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .segment, .condition span, .module, .claim { transition: none; }
+    .drop-slot.shake, .module.wrong { animation: none; }
+  }
+</style>
+</head>
+<body data-page="37" data-total="44">
+<div id="stage">
+<main id="main">
+  <section class="game-head" aria-label="配对进度">
+    <p class="prompt">把工程模块接到它补偿的身体限制。键盘可先选模块，再选空位。</p>
+    <div class="system-progress">
+      <div class="segments" aria-hidden="true">
+        <span class="segment"></span><span class="segment"></span><span class="segment"></span>
+        <span class="segment"></span><span class="segment"></span><span class="segment"></span>
+      </div>
+      <span class="progress-text" id="progressText">已完成 0 / 6</span>
+    </div>
+  </section>
+
+  <section class="classification-bay k-classification no-pan" id="classification" aria-label="身体限制与工程补偿分类台">
+    <svg class="system-schematic" viewBox="0 0 1408 344" preserveAspectRatio="none" aria-hidden="true">
+      <path d="M18 22 H1372 Q1394 22 1394 44 V300 Q1394 322 1372 322 H18" fill="none" stroke="#3a4648" stroke-width="2"/>
+      <path d="M18 22 Q50 82 18 172 Q50 262 18 322" fill="none" stroke="#61716f" stroke-width="3"/>
+      <circle cx="39" cy="83" r="16" fill="none" stroke="#55c2b0" stroke-width="2"/>
+      <path d="M39 99 V145 M15 116 H63 M39 145 L21 190 M39 145 L57 190" fill="none" stroke="#55c2b0" stroke-width="2"/>
+      <path d="M58 72 H116 M58 172 H116 M58 272 H116" fill="none" stroke="#55c2b0" stroke-opacity=".55" stroke-width="3"/>
+      <circle cx="116" cy="72" r="4" fill="#55c2b0"/><circle cx="116" cy="172" r="4" fill="#55c2b0"/><circle cx="116" cy="272" r="4" fill="#55c2b0"/>
+    </svg>
+    <section class="branch lv min0">
+      <div class="box">
+        <h2 class="bt"><span>交换</span><span class="branch-code">EXCHANGE</span></h2>
+        <div class="relation lv" data-pair="air">
+          <div class="limit">身体限制：持续呼吸</div>
+          <div class="chain"><div class="condition"><span>气体成分与压力</span></div><span class="link-arrow">›</span><div class="drop-slot" tabindex="0" role="button" aria-label="持续呼吸的工程补偿空位" data-accept="air">接入补偿</div></div>
+        </div>
+        <div class="relation lv" data-pair="water">
+          <div class="limit">身体限制：摄入并排出</div>
+          <div class="chain"><div class="condition"><span>水、食物与废物通路</span></div><span class="link-arrow">›</span><div class="drop-slot" tabindex="0" role="button" aria-label="摄入并排出的工程补偿空位" data-accept="water">接入补偿</div></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="branch lv min0">
+      <div class="box">
+        <h2 class="bt"><span>保护</span><span class="branch-code">PROTECT</span></h2>
+        <div class="relation lv" data-pair="heat">
+          <div class="limit">身体限制：体温调节范围有限</div>
+          <div class="chain"><div class="condition"><span>可控热交换</span></div><span class="link-arrow">›</span><div class="drop-slot" tabindex="0" role="button" aria-label="体温调节的工程补偿空位" data-accept="heat">接入补偿</div></div>
+        </div>
+        <div class="relation lv" data-pair="radiation">
+          <div class="limit">身体限制：组织会累积辐射损伤</div>
+          <div class="chain"><div class="condition"><span>降低暴露剂量</span></div><span class="link-arrow">›</span><div class="drop-slot" tabindex="0" role="button" aria-label="辐射损伤的工程补偿空位" data-accept="radiation">接入补偿</div></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="branch lv min0">
+      <div class="box">
+        <h2 class="bt"><span>行动</span><span class="branch-code">ACT</span></h2>
+        <div class="relation lv" data-pair="anchor">
+          <div class="limit">身体限制：失重下不会自行定位</div>
+          <div class="chain"><div class="condition"><span>稳定支点</span></div><span class="link-arrow">›</span><div class="drop-slot" tabindex="0" role="button" aria-label="失重定位的工程补偿空位" data-accept="anchor">接入补偿</div></div>
+        </div>
+        <div class="relation lv" data-pair="load">
+          <div class="limit">身体限制：缺少持续承重刺激</div>
+          <div class="chain"><div class="condition"><span>维持肌肉与骨骼负荷</span></div><span class="link-arrow">›</span><div class="drop-slot" tabindex="0" role="button" aria-label="缺少承重刺激的工程补偿空位" data-accept="load">接入补偿</div></div>
+        </div>
+      </div>
+    </section>
+  </section>
+
+  <section class="module-rack" aria-label="工程补偿模块">
+    <div class="rack-head"><span class="rack-title">舱壁模块架 · 工程补偿</span><span class="rack-hint">拖到空位，或按 Enter 选择后再按空位</span></div>
+    <div class="modules" id="modules">
+      <div class="module" draggable="true" tabindex="0" role="button" data-id="radiation">屏蔽、监测与任务时长控制</div>
+      <div class="module" draggable="true" tabindex="0" role="button" data-id="anchor">扶手、脚扣与约束装置</div>
+      <div class="module" draggable="true" tabindex="0" role="button" data-id="air">密闭加压、供氧与二氧化碳去除</div>
+      <div class="module" draggable="true" tabindex="0" role="button" data-id="load">阻力训练与运动设备</div>
+      <div class="module" draggable="true" tabindex="0" role="button" data-id="heat">隔热、加热与散热系统</div>
+      <div class="module" draggable="true" tabindex="0" role="button" data-id="water">储存、处理与回收系统</div>
+    </div>
+  </section>
+
+  <section class="feedback-row">
+    <p class="feedback" id="feedback" aria-live="polite">先接通一条关系，条件会随正确配对显现。</p>
+    <p class="claim" id="claim">宇航员的能力来自身体与工程共同构成的整组关系。</p>
+    <button class="reset" id="reset" type="button" title="重置配对" aria-label="重置配对">↻</button>
+  </section>
+</main>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script>
+  Lec.mount({
+    index: 37,
+    kicker: "LIMIT → SUPPORT",
+    title: "每一种太空能力，都有支撑它的工程系统",
+    take: "宇航员能呼吸、工作和长期停留，不是因为身体摆脱了限制，而是工程系统持续补上这些限制。"
+  });
+
+  (function () {
+    const copy = {
+      air: "密闭加压、供氧与二氧化碳去除",
+      water: "储存、处理与回收系统",
+      heat: "隔热、加热与散热系统",
+      radiation: "屏蔽、监测与任务时长控制",
+      anchor: "扶手、脚扣与约束装置",
+      load: "阻力训练与运动设备"
+    };
+    const reason = {
+      air: "这套系统维持气体成分与压力。",
+      water: "这套系统维持水、食物与废物通路。",
+      heat: "热控系统建立可控热交换。",
+      radiation: "屏蔽与监测降低辐射暴露。",
+      anchor: "扶手、脚扣和约束提供稳定支点。",
+      load: "运动设备维持肌肉与骨骼负荷。"
+    };
+
+    const initialState = () => ({ placed: {}, selected: null, trace: [] });
+    let state = initialState();
+    let dragged = null;
+    const modules = Array.from(document.querySelectorAll(".module"));
+    const slots = Array.from(document.querySelectorAll(".drop-slot"));
+    const segments = Array.from(document.querySelectorAll(".segment"));
+    const progressText = document.getElementById("progressText");
+    const feedback = document.getElementById("feedback");
+    const claim = document.getElementById("claim");
+
+    function snapshot() {
+      return JSON.parse(JSON.stringify(state));
+    }
+
+    function render() {
+      const done = Object.keys(state.placed).length;
+      progressText.textContent = `已完成 ${done} / 6`;
+      segments.forEach((segment, index) => segment.classList.toggle("on", index < done));
+      modules.forEach(module => {
+        const id = module.dataset.id;
+        module.classList.toggle("placed", Boolean(state.placed[id]));
+        module.classList.toggle("selected", state.selected === id);
+        module.setAttribute("aria-pressed", state.selected === id ? "true" : "false");
+      });
+      slots.forEach(slot => {
+        const id = slot.dataset.accept;
+        const filled = Boolean(state.placed[id]);
+        slot.classList.toggle("filled", filled);
+        slot.classList.toggle("is-target", Boolean(state.selected) && !filled);
+        slot.textContent = filled ? copy[id] : "接入补偿";
+        slot.setAttribute("aria-disabled", filled ? "true" : "false");
+      });
+      document.querySelectorAll(".relation").forEach(rel => {
+        rel.classList.toggle("connected", Boolean(state.placed[rel.dataset.pair]));
+      });
+      claim.classList.toggle("show", done === 6);
+    }
+
+    function select(id) {
+      if (state.placed[id]) return;
+      state.selected = state.selected === id ? null : id;
+      feedback.className = "feedback";
+      feedback.textContent = state.selected ? `已选择“${copy[id]}”，现在选择一个身体限制。` : "已取消选择。";
+      render();
+    }
+
+    function attempt(id, slot) {
+      if (!id || state.placed[id] || slot.classList.contains("filled")) return;
+      const accept = slot.dataset.accept;
+      if (id !== accept) {
+        slot.classList.add("shake");
+        const module = document.querySelector(`.module[data-id="${id}"]`);
+        module.classList.add("wrong");
+        feedback.className = "feedback error";
+        feedback.textContent = `${reason[id]}它不能补偿这里的身体限制。`;
+        setTimeout(() => {
+          slot.classList.remove("shake");
+          module.classList.remove("wrong");
+        }, 420);
+        return;
+      }
+      state.placed[id] = accept;
+      state.selected = null;
+      state.trace.push({ action: "pair", id });
+      const done = Object.keys(state.placed).length;
+      feedback.className = "feedback";
+      feedback.textContent = done === 6
+        ? "六条关系已接通：能力来自身体限制、环境条件与工程补偿的共同作用。"
+        : `${reason[id]}这条支撑关系已接通。`;
+      render();
+      document.dispatchEvent(new CustomEvent(done === 6 ? "game-complete" : "game-progress", {
+        bubbles: true,
+        detail: done === 6
+          ? { score: 6, metrics: { completed: done }, trace: state.trace.slice() }
+          : { state: snapshot(), action: "pair", metrics: { completed: done } }
+      }));
+    }
+
+    modules.forEach(module => {
+      module.addEventListener("dragstart", event => {
+        dragged = module.dataset.id;
+        event.dataTransfer.setData("text/plain", dragged);
+        event.dataTransfer.effectAllowed = "move";
+        select(dragged);
+      });
+      module.addEventListener("dragend", () => {
+        dragged = null;
+        if (state.selected) { state.selected = null; render(); }
+      });
+      module.addEventListener("click", () => select(module.dataset.id));
+      module.addEventListener("keydown", event => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          select(module.dataset.id);
+        }
+      });
+    });
+
+    slots.forEach(slot => {
+      slot.addEventListener("dragover", event => {
+        event.preventDefault();
+        event.dataTransfer.dropEffect = "move";
+        slot.classList.add("is-target");
+      });
+      slot.addEventListener("dragleave", () => {
+        if (!state.selected) slot.classList.remove("is-target");
+      });
+      slot.addEventListener("drop", event => {
+        event.preventDefault();
+        attempt(event.dataTransfer.getData("text/plain") || dragged, slot);
+      });
+      slot.addEventListener("click", () => attempt(state.selected, slot));
+      slot.addEventListener("keydown", event => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          attempt(state.selected, slot);
+        }
+      });
+    });
+
+    document.getElementById("reset").addEventListener("click", () => {
+      state = initialState();
+      dragged = null;
+      feedback.className = "feedback";
+      feedback.textContent = "配对已重置。先接通一条关系，条件会随正确配对显现。";
+      render();
+      document.dispatchEvent(new CustomEvent("game-reset", { bubbles: true }));
+    });
+
+    window.Page37Game = {
+      start() {
+        document.dispatchEvent(new CustomEvent("game-start", { bubbles: true }));
+        return snapshot();
+      },
+      reset() { document.getElementById("reset").click(); },
+      getState: snapshot
+    };
+
+    render();
+    window.Page37Game.start();
+  })();
+</script>
+</body>
+</html>

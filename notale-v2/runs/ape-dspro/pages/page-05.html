@@ -1,0 +1,1002 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  /* ===== Page-specific dark theme ===== */
+  :root {
+    --p5-bg: #0f0f14;
+    --p5-glass: rgba(15, 15, 22, 0.62);
+    --p5-glass-border: rgba(255, 255, 255, 0.08);
+    --p5-glass-highlight: rgba(255, 255, 255, 0.06);
+    --p5-accent: #e8a840;
+    --p5-accent-dim: #c48a2a;
+    --p5-text: #e2e0d8;
+    --p5-text-dim: #8a8878;
+    --p5-crack: #d4a040;
+    --p5-danger: #e05540;
+    --p5-ground: #2a2820;
+    --p5-nut: #8B6914;
+    --p5-nut-dark: #5c4310;
+  }
+
+  #main {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    background: var(--p5-bg);
+    overflow: hidden;
+  }
+
+  /* ===== Canvas layers ===== */
+  #sim-canvas, #fx-canvas {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+  }
+  #sim-canvas { z-index: 1; }
+  #fx-canvas { z-index: 2; pointer-events: none; }
+
+  /* ===== Glass panel base ===== */
+  .glass-panel {
+    background: var(--p5-glass);
+    backdrop-filter: blur(18px);
+    -webkit-backdrop-filter: blur(18px);
+    border: 1px solid var(--p5-glass-border);
+    border-radius: 14px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.45), inset 0 1px 0 var(--p5-glass-highlight);
+    color: var(--p5-text);
+    z-index: 20;
+  }
+
+  /* ===== Stone selector ===== */
+  .stone-selector {
+    position: absolute;
+    bottom: 108px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    flex-direction: row;
+    gap: var(--sp-sm);
+    padding: var(--sp-sm) var(--sp-md);
+  }
+  .stone-btn {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    padding: 8px 12px;
+    border: 2px solid transparent;
+    border-radius: 10px;
+    background: rgba(255,255,255,0.04);
+    cursor: pointer;
+    transition: all 0.2s ease;
+    color: var(--p5-text-dim);
+    font-size: var(--fs-label);
+    line-height: var(--lh-tight);
+    min-width: 80px;
+  }
+  .stone-btn:hover {
+    background: rgba(255,255,255,0.08);
+    border-color: rgba(255,255,255,0.15);
+    color: var(--p5-text);
+  }
+  .stone-btn.active {
+    border-color: var(--p5-accent);
+    background: rgba(232,168,64,0.12);
+    color: var(--p5-accent);
+    font-weight: 600;
+  }
+  .stone-btn:focus-visible {
+    outline: 2px solid var(--p5-accent);
+    outline-offset: 2px;
+  }
+  .stone-thumb {
+    width: 48px;
+    height: 48px;
+    object-fit: cover;
+    border-radius: 6px;
+    background: rgba(0,0,0,0.3);
+    pointer-events: none;
+  }
+  .stone-label {
+    pointer-events: none;
+    white-space: nowrap;
+  }
+
+  /* ===== Info readout ===== */
+  .info-readout {
+    position: absolute;
+    top: 116px;
+    right: 80px;
+    padding: var(--sp-sm) var(--sp-md);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    min-width: 130px;
+    opacity: 0;
+    pointer-events: none;
+  }
+  .info-readout .force-num {
+    font-size: var(--fs-h2);
+    font-weight: 700;
+    color: var(--p5-accent);
+    font-variant-numeric: tabular-nums;
+    line-height: var(--lh-tight);
+  }
+  .info-readout .force-label {
+    font-size: var(--fs-label);
+    color: var(--p5-text-dim);
+  }
+  .info-readout .result {
+    font-size: var(--fs-lead);
+    font-weight: 700;
+    margin-top: 4px;
+    line-height: var(--lh-tight);
+  }
+  .info-readout .result.break { color: var(--p5-danger); }
+  .info-readout .result.safe { color: var(--p5-accent-dim); }
+
+  /* ===== Insight panel ===== */
+  .insight-panel {
+    position: absolute;
+    top: 116px;
+    left: 80px;
+    max-width: 340px;
+    padding: var(--sp-md);
+    font-size: var(--fs-sec);
+    line-height: var(--lh-normal);
+    color: var(--p5-text-dim);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.4s ease;
+  }
+  .insight-panel.show { opacity: 1; }
+
+  /* ===== Hint text ===== */
+  .hint-text {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: var(--fs-lead);
+    color: var(--p5-text-dim);
+    z-index: 15;
+    pointer-events: none;
+    text-align: center;
+    line-height: var(--lh-normal);
+    transition: opacity 0.5s ease;
+  }
+
+  /* ===== Reset button ===== */
+  .reset-btn {
+    position: absolute;
+    bottom: 108px;
+    right: 80px;
+    padding: 8px 18px;
+    border: 1px solid var(--p5-glass-border);
+    border-radius: 8px;
+    background: rgba(255,255,255,0.05);
+    cursor: pointer;
+    color: var(--p5-text-dim);
+    font-size: var(--fs-label);
+    line-height: var(--lh-tight);
+    transition: all 0.2s;
+    z-index: 20;
+  }
+  .reset-btn:hover {
+    background: rgba(255,255,255,0.1);
+    color: var(--p5-text);
+  }
+  .reset-btn:focus-visible {
+    outline: 2px solid var(--p5-accent);
+    outline-offset: 2px;
+  }
+
+  /* ===== Simulation frame ===== */
+  .sim-frame {
+    position: absolute;
+    top: 100px;
+    left: 76px;
+    right: 76px;
+    bottom: 106px;
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 10px;
+    pointer-events: none;
+    z-index: 3;
+  }
+  .sim-frame::before {
+    content: '';
+    position: absolute;
+    top: -1px; left: 40px; right: 40px;
+    height: 1px;
+    background: rgba(255,255,255,0.03);
+  }
+  .sim-frame::after {
+    content: '';
+    position: absolute;
+    bottom: -1px; left: 40px; right: 40px;
+    height: 1px;
+    background: rgba(255,255,255,0.03);
+  }
+</style>
+</head>
+<body data-page="05" data-total="40">
+<div id="stage">
+<main id="main">
+  <canvas id="sim-canvas"></canvas>
+  <canvas id="fx-canvas"></canvas>
+  <div class="sim-frame"></div>
+
+  <div class="hint-text" id="hint">选择一种石头，拖到坚果上方，松手试试</div>
+
+  <div class="insight-panel glass-panel" id="insight"></div>
+
+  <div class="info-readout glass-panel" id="readout">
+    <span class="force-label">接触力</span>
+    <span class="force-num" id="force-val">--</span>
+    <span class="result" id="result-txt"></span>
+  </div>
+
+  <div class="stone-selector glass-panel" id="selector" role="radiogroup" aria-label="选择石头形状">
+    <button class="stone-btn" data-type="round" role="radio" aria-checked="false" tabindex="0">
+      <img class="stone-thumb"
+        src="https://upload.wikimedia.org/wikipedia/commons/f/f1/Mesolithic_to_Neolithc_Pebble_Mace_or_Hammer_%28plan%2C_reverse_and_profile%29._%28FindID_185639%29.jpg"
+        alt="圆形河卵石"
+        title="照片: The Portable Antiquities Scheme, CC BY-SA 4.0, via Wikimedia Commons"
+        loading="lazy">
+      <span class="stone-label">圆形</span>
+    </button>
+    <button class="stone-btn" data-type="angular" role="radio" aria-checked="false" tabindex="-1">
+      <img class="stone-thumb"
+        src="https://upload.wikimedia.org/wikipedia/commons/3/3e/Neolithic_flint_flake_tool_%28FindID_401280%29.jpg"
+        alt="有棱角打制石片"
+        title="照片: The Portable Antiquities Scheme, CC BY-SA 4.0, via Wikimedia Commons"
+        loading="lazy">
+      <span class="stone-label">棱角</span>
+    </button>
+    <button class="stone-btn" data-type="pointed" role="radio" aria-checked="false" tabindex="-1">
+      <img class="stone-thumb"
+        src="https://upload.wikimedia.org/wikipedia/commons/4/45/Lithic_implement_-_Blade_or_burin._Dorsal_view._%28FindID_532154%29.jpg"
+        alt="尖头石锥"
+        title="照片: The Portable Antiquities Scheme, CC BY-SA 4.0, via Wikimedia Commons"
+        loading="lazy">
+      <span class="stone-label">尖头</span>
+    </button>
+    <button class="stone-btn" data-type="flat" role="radio" aria-checked="false" tabindex="-1">
+      <img class="stone-thumb"
+        src="https://upload.wikimedia.org/wikipedia/commons/1/1b/Hammerstone_%28FindID_811171%29.jpg"
+        alt="扁平石锤"
+        title="照片: The Portable Antiquities Scheme, CC BY-SA 4.0, via Wikimedia Commons"
+        loading="lazy">
+      <span class="stone-label">扁平</span>
+    </button>
+  </div>
+
+  <button class="reset-btn" id="reset-btn">重置</button>
+</main>
+</div>
+
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script src="assets/lib/matter.min.js"></script>
+<script src="assets/lib/gsap.min.js"></script>
+<script>
+(function() {
+  const { Engine, Bodies, Body, Composite, Events, Vector, Vertices } = Matter;
+
+  /* ===== Page mount ===== */
+  Lec.mount({
+    index: 5,
+    kicker: '第一章 · 拳头之外',
+    title: '砸坚果',
+    take: '好的工具让你用更少的力做更多的事，但代价是你要学会控制它。'
+  });
+
+  /* ===== DOM refs ===== */
+  const simCanvas = document.getElementById('sim-canvas');
+  const fxCtx = Deck.fit(document.getElementById('fx-canvas'));
+  const simCtx = Deck.fit(simCanvas);
+  const hintEl = document.getElementById('hint');
+  const insightEl = document.getElementById('insight');
+  const readoutEl = document.getElementById('readout');
+  const forceValEl = document.getElementById('force-val');
+  const resultTxtEl = document.getElementById('result-txt');
+  const selectorEl = document.getElementById('selector');
+  const resetBtn = document.getElementById('reset-btn');
+
+  /* ===== Constants ===== */
+  const NUT_BREAK_FORCE = Lec.P.NUT_BREAK_FORCE;   // 120 N
+  const STONE_MASS = Lec.P.STONE_MASS;               // 0.5 kg
+  const G = Lec.P.G;                                 // 9.81
+
+  /* ===== Physics engine ===== */
+  const engine = Engine.create({
+    gravity: { x: 0, y: 1, scale: 0.001 }
+  });
+
+  /* ===== Ground ===== */
+  const ground = Bodies.rectangle(800, 730, 1600, 48, {
+    isStatic: true,
+    friction: 0.8,
+    label: 'ground'
+  });
+
+  /* ===== Nut (polygon) ===== */
+  const nutVertices = [
+    { x: 0, y: -22 }, { x: 18, y: -14 }, { x: 26, y: 0 },
+    { x: 18, y: 14 }, { x: 0, y: 22 }, { x: -18, y: 14 },
+    { x: -26, y: 0 }, { x: -18, y: -14 }
+  ];
+  let nut = Bodies.fromVertices(800, 670, nutVertices, {
+    isStatic: true,
+    friction: 0.6,
+    label: 'nut'
+  });
+  labelAllParts(nut, 'nut', null);
+
+  /* ===== Helpers ===== */
+  function labelAllParts(body, label, plugin) {
+    body.label = label;
+    if (plugin) body.plugin = plugin;
+    if (body.parts) {
+      for (let i = 0; i < body.parts.length; i++) {
+        body.parts[i].label = label;
+        if (plugin) body.parts[i].plugin = plugin;
+      }
+    }
+  }
+
+  /* ===== Stone definitions ===== */
+  const stoneDefs = {
+    round: {
+      name: '圆形（河卵石）',
+      massMul: 1.0,
+      contactArea: 'wide',
+      create: (x, y) => {
+        const b = Bodies.circle(x, y, 28, {
+          mass: STONE_MASS * 1.0,
+          friction: 0.3,
+          restitution: 0.15,
+          label: 'stone'
+        });
+        b.plugin = { stoneType: 'round', contactArea: 'wide' };
+        return b;
+      }
+    },
+    angular: {
+      name: '有棱角（打制石片）',
+      massMul: 1.0,
+      contactArea: 'medium',
+      create: (x, y) => {
+        const verts = [
+          { x: -20, y: 16 }, { x: 8, y: 22 }, { x: 26, y: 4 },
+          { x: 14, y: -14 }, { x: -6, y: -22 }, { x: -24, y: -4 }
+        ];
+        const b = Bodies.fromVertices(x, y, verts, {
+          mass: STONE_MASS * 1.0,
+          friction: 0.35,
+          restitution: 0.12,
+          label: 'stone'
+        });
+        labelAllParts(b, 'stone', { stoneType: 'angular', contactArea: 'medium' });
+        return b;
+      }
+    },
+    pointed: {
+      name: '尖头（石锥）',
+      massMul: 0.6,
+      contactArea: 'narrow',
+      create: (x, y) => {
+        const verts = [
+          { x: 0, y: -36 }, { x: 8, y: -10 }, { x: 13, y: 10 },
+          { x: 5, y: 22 }, { x: -5, y: 22 }, { x: -13, y: 10 },
+          { x: -8, y: -10 }
+        ];
+        const b = Bodies.fromVertices(x, y, verts, {
+          mass: STONE_MASS * 0.6,
+          friction: 0.2,
+          restitution: 0.08,
+          label: 'stone'
+        });
+        labelAllParts(b, 'stone', { stoneType: 'pointed', contactArea: 'narrow' });
+        return b;
+      }
+    },
+    flat: {
+      name: '扁平（石锤）',
+      massMul: 1.6,
+      contactArea: 'medium-wide',
+      create: (x, y) => {
+        const b = Bodies.rectangle(x, y, 56, 22, {
+          mass: STONE_MASS * 1.6,
+          friction: 0.5,
+          restitution: 0.08,
+          chamfer: { radius: 8 },
+          label: 'stone'
+        });
+        b.plugin = { stoneType: 'flat', contactArea: 'medium-wide' };
+        return b;
+      }
+    }
+  };
+
+  /* ===== State ===== */
+  let currentStone = null;
+  let currentStoneType = null;
+  let isDragging = false;
+  let dragBody = null;
+  let forceArrowData = null;
+  let forceArrowStart = 0;
+  let crackData = null;
+  let crackStart = 0;
+  let fragments = [];
+  let lastInsight = '';
+  let nutBroken = false;
+
+  /* ===== Initialize world ===== */
+  Composite.add(engine.world, [ground, nut]);
+
+  /* ===== Drawing helpers ===== */
+  function drawBody(ctx, body) {
+    const verts = body.vertices;
+    ctx.beginPath();
+    ctx.moveTo(verts[0].x, verts[0].y);
+    for (let i = 1; i < verts.length; i++) {
+      ctx.lineTo(verts[i].x, verts[i].y);
+    }
+    ctx.closePath();
+
+    if (body.label === 'ground') {
+      ctx.fillStyle = '#2a2820';
+      ctx.fill();
+      ctx.strokeStyle = '#3a3830';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+      return;
+    }
+
+    if (body.label === 'nut' || body.label === 'nut-body') {
+      // Nut: warm brown with texture
+      const grad = ctx.createRadialGradient(
+        body.position.x, body.position.y, 5,
+        body.position.x, body.position.y, 30
+      );
+      grad.addColorStop(0, '#a07828');
+      grad.addColorStop(0.6, '#8B6914');
+      grad.addColorStop(1, '#5c4310');
+      ctx.fillStyle = grad;
+      ctx.fill();
+      ctx.strokeStyle = '#4a3410';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+
+      // Nut ridge lines
+      ctx.save();
+      ctx.clip();
+      ctx.strokeStyle = 'rgba(0,0,0,0.2)';
+      ctx.lineWidth = 1;
+      const cx = body.position.x;
+      const cy = body.position.y;
+      for (let i = -2; i <= 2; i++) {
+        ctx.beginPath();
+        ctx.moveTo(cx + i * 8, cy - 22);
+        ctx.quadraticCurveTo(cx + i * 10, cy, cx + i * 8, cy + 22);
+        ctx.stroke();
+      }
+      ctx.restore();
+      return;
+    }
+
+    if (body.label === 'stone') {
+      const stype = body.plugin ? body.plugin.stoneType : 'round';
+      if (stype === 'round') {
+        const grad = ctx.createRadialGradient(
+          body.position.x - 6, body.position.y - 8, 3,
+          body.position.x, body.position.y, 30
+        );
+        grad.addColorStop(0, '#b8b8a8');
+        grad.addColorStop(0.5, '#9e9e8e');
+        grad.addColorStop(1, '#6e6e60');
+        ctx.fillStyle = grad;
+      } else if (stype === 'pointed') {
+        const grad = ctx.createLinearGradient(
+          body.position.x, body.position.y - 36,
+          body.position.x, body.position.y + 22
+        );
+        grad.addColorStop(0, '#8a8a78');
+        grad.addColorStop(0.4, '#6a6a5a');
+        grad.addColorStop(1, '#5a5a4a');
+        ctx.fillStyle = grad;
+      } else if (stype === 'flat') {
+        const grad = ctx.createLinearGradient(
+          body.position.x, body.position.y - 11,
+          body.position.x, body.position.y + 11
+        );
+        grad.addColorStop(0, '#9a9a88');
+        grad.addColorStop(0.5, '#8a8a7a');
+        grad.addColorStop(1, '#6a6a5a');
+        ctx.fillStyle = grad;
+      } else {
+        // angular
+        const grad = ctx.createRadialGradient(
+          body.position.x - 4, body.position.y - 4, 2,
+          body.position.x, body.position.y, 28
+        );
+        grad.addColorStop(0, '#9a9a88');
+        grad.addColorStop(0.5, '#7a7a6a');
+        grad.addColorStop(1, '#5a5a4a');
+        ctx.fillStyle = grad;
+      }
+      ctx.fill();
+      ctx.strokeStyle = '#4a4a3e';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+      return;
+    }
+
+    if (body.label === 'fragment') {
+      ctx.fillStyle = '#8B6914';
+      ctx.fill();
+      ctx.strokeStyle = '#5c4310';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+      return;
+    }
+
+    // Default
+    ctx.fillStyle = '#666';
+    ctx.fill();
+    ctx.strokeStyle = '#444';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  }
+
+  function drawForceArrows(ctx, now) {
+    if (!forceArrowData) return;
+    const elapsed = (now - forceArrowStart) / 1000;
+    if (elapsed > 1.5) return;
+
+    const alpha = elapsed < 0.2 ? elapsed / 0.2 : (elapsed > 1.2 ? (1.5 - elapsed) / 0.3 : 1);
+
+    const { contactPoint, force, stoneType } = forceArrowData;
+    const arrowCount = stoneType === 'round' ? 6 : stoneType === 'pointed' ? 2 : stoneType === 'flat' ? 4 : 3;
+    const spreadAngle = stoneType === 'round' ? Math.PI * 0.6 : stoneType === 'pointed' ? Math.PI * 0.1 : stoneType === 'flat' ? Math.PI * 0.35 : Math.PI * 0.25;
+    const maxLen = Math.min(force / NUT_BREAK_FORCE * 80, 100);
+    const arrowThick = Math.max(2, Math.min(force / NUT_BREAK_FORCE * 8, 8));
+
+    for (let i = 0; i < arrowCount; i++) {
+      const angle = -Math.PI / 2 + (i - (arrowCount - 1) / 2) * (spreadAngle / (arrowCount - 1 || 1));
+      const dx = Math.cos(angle) * maxLen;
+      const dy = Math.sin(angle) * maxLen;
+      const sx = contactPoint.x;
+      const sy = contactPoint.y;
+      const ex = sx + dx;
+      const ey = sy + dy;
+
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      ctx.strokeStyle = force > NUT_BREAK_FORCE ? '#e05540' : '#e8a840';
+      ctx.lineWidth = arrowThick;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(sx, sy);
+      ctx.lineTo(ex, ey);
+      ctx.stroke();
+
+      // Arrowhead
+      const headLen = 10;
+      const headAngle = Math.PI / 6;
+      ctx.beginPath();
+      ctx.moveTo(ex, ey);
+      ctx.lineTo(
+        ex - headLen * Math.cos(angle - headAngle),
+        ey - headLen * Math.sin(angle - headAngle)
+      );
+      ctx.moveTo(ex, ey);
+      ctx.lineTo(
+        ex - headLen * Math.cos(angle + headAngle),
+        ey - headLen * Math.sin(angle + headAngle)
+      );
+      ctx.stroke();
+
+      ctx.restore();
+    }
+
+    // Contact highlight
+    ctx.save();
+    ctx.globalAlpha = alpha * 0.5;
+    const highlightR = stoneType === 'pointed' ? 6 : stoneType === 'round' ? 18 : 12;
+    const grad = ctx.createRadialGradient(contactPoint.x, contactPoint.y, 0, contactPoint.x, contactPoint.y, highlightR);
+    grad.addColorStop(0, 'rgba(255,200,80,0.7)');
+    grad.addColorStop(1, 'rgba(255,200,80,0)');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(contactPoint.x, contactPoint.y, highlightR, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  function drawCracks(ctx, now) {
+    if (!crackData) return;
+    const elapsed = (now - crackStart) / 1000;
+    if (elapsed > 3) return;
+
+    const alpha = Math.min(1, elapsed / 0.3);
+    const { center, force } = crackData;
+    const lineCount = Math.max(3, Math.floor(force / NUT_BREAK_FORCE * 6));
+
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.strokeStyle = '#d4a040';
+    ctx.lineWidth = 2;
+
+    for (let i = 0; i < lineCount; i++) {
+      const angle = (i / lineCount) * Math.PI * 2 + (Math.random() - 0.5) * 0.4;
+      const len = 18 + Math.random() * 22;
+      const wiggle = 3;
+      ctx.beginPath();
+      ctx.moveTo(center.x, center.y);
+      const midX = center.x + Math.cos(angle) * len * 0.5 + (Math.random() - 0.5) * wiggle;
+      const midY = center.y + Math.sin(angle) * len * 0.5 + (Math.random() - 0.5) * wiggle;
+      ctx.quadraticCurveTo(midX, midY,
+        center.x + Math.cos(angle) * len + (Math.random() - 0.5) * wiggle,
+        center.y + Math.sin(angle) * len + (Math.random() - 0.5) * wiggle
+      );
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  /* ===== Main render loop ===== */
+  Deck.loop(function(now) {
+    Engine.update(engine, 1000 / 60);
+
+    // Clear sim canvas
+    simCtx.clearRect(0, 0, simCanvas.width, simCanvas.height);
+
+    // Background
+    simCtx.fillStyle = '#0f0f14';
+    simCtx.fillRect(0, 0, simCanvas.width, simCanvas.height);
+
+    // Subtle ground shadow
+    simCtx.fillStyle = '#1a1a18';
+    simCtx.fillRect(0, 720, simCanvas.width, 30);
+
+    // Draw all bodies (skip parts of compound bodies)
+    const bodies = Composite.allBodies(engine.world);
+    for (const body of bodies) {
+      // Skip parts of compound bodies — they're drawn as part of the parent
+      if (body.parent && body.parent !== body) continue;
+      drawBody(simCtx, body);
+    }
+
+    // Clear fx canvas
+    fxCtx.clearRect(0, 0, simCanvas.width, simCanvas.height);
+
+    // Draw force arrows
+    drawForceArrows(fxCtx, now);
+
+    // Draw cracks
+    drawCracks(fxCtx, now);
+
+    // Remove expired fragments
+    fragments = fragments.filter(f => {
+      const age = (now - f.born) / 1000;
+      return age < 2.5;
+    });
+  });
+
+  /* ===== Collision detection ===== */
+  Events.on(engine, 'collisionStart', function(event) {
+    if (nutBroken) return;
+    for (const pair of event.pairs) {
+      const a = pair.bodyA;
+      const b = pair.bodyB;
+
+      // Check labels (may be on part or parent for compound bodies)
+      function getLabel(body) { return body.label || (body.parent && body.parent.label) || ''; }
+      function getPlugin(body) { return body.plugin || (body.parent && body.parent.plugin) || null; }
+
+      const aLabel = getLabel(a);
+      const bLabel = getLabel(b);
+
+      const stoneBody = (aLabel === 'stone') ? a : (bLabel === 'stone') ? b : null;
+      const nutBody = (aLabel === 'nut') ? a : (bLabel === 'nut') ? b : null;
+
+      if (!stoneBody || !nutBody) continue;
+      if (!currentStone) continue;
+
+      // Calculate impact force (approximate: mass * speed * 10 for display scaling)
+      const speed = Vector.magnitude(stoneBody.velocity);
+      const force = stoneBody.mass * speed * 10;
+
+      // Get contact point
+      const contact = pair.collision.supports && pair.collision.supports[0]
+        ? pair.collision.supports[0]
+        : pair.collision.depth > 0
+          ? { x: (stoneBody.position.x + nutBody.position.x) / 2,
+              y: (stoneBody.position.y + nutBody.position.y) / 2 }
+          : null;
+
+      if (!contact) continue;
+
+      const stype = getPlugin(stoneBody) ? getPlugin(stoneBody).stoneType : 'round';
+
+      // Show force arrows
+      forceArrowData = { contactPoint: contact, force: force, stoneType: stype };
+      forceArrowStart = performance.now();
+
+      // Update readout
+      forceValEl.textContent = Math.round(force) + ' N';
+      readoutEl.style.opacity = '1';
+
+      if (force > NUT_BREAK_FORCE) {
+        // Nut breaks!
+        resultTxtEl.textContent = '破裂!';
+        resultTxtEl.className = 'result break';
+        nutBroken = true;
+
+        // Crack data
+        crackData = { center: { x: nut.position.x, y: nut.position.y }, force: force };
+        crackStart = performance.now();
+
+        // Spawn fragments
+        const fragCount = 5;
+        for (let i = 0; i < fragCount; i++) {
+          const angle = (i / fragCount) * Math.PI * 2 + (Math.random() - 0.5) * 0.5;
+          const dist = 20 + Math.random() * 30;
+          const frag = Bodies.circle(
+            nut.position.x + Math.cos(angle) * 8,
+            nut.position.y + Math.sin(angle) * 8,
+            4 + Math.random() * 6,
+            {
+              mass: 0.02,
+              friction: 0.5,
+              restitution: 0.3,
+              label: 'fragment',
+              plugin: { born: performance.now() }
+            }
+          );
+          Body.setVelocity(frag, {
+            x: Math.cos(angle) * dist * 0.8,
+            y: Math.sin(angle) * dist * 0.8 - 15
+          });
+          Composite.add(engine.world, frag);
+          fragments.push({ body: frag, born: performance.now() });
+        }
+
+        // Remove nut body
+        Composite.remove(engine.world, nut);
+
+        // Show insight
+        showInsight('round_pointed');
+        // Also show the good-tool insight after a short delay
+        setTimeout(function() { showInsight('good_tool'); }, 2500);
+      } else {
+        // Not broken
+        resultTxtEl.textContent = '未破裂';
+        resultTxtEl.className = 'result safe';
+
+        // Show insight based on stone type
+        if (stype === 'round') {
+          showInsight('round');
+        } else if (stype === 'flat') {
+          showInsight('flat');
+        }
+      }
+
+      // Hide readout after 1.8s
+      gsap.to(readoutEl, { opacity: 0, delay: 1.8, duration: 0.4 });
+    }
+  });
+
+  /* ===== Insights ===== */
+  const insights = {
+    round: '力分散在弧面上，不容易破壳。同样的力，集中在一个点上效率才高。',
+    flat: '扁平适合砸而不是刺，力大但方向稳定。尖头容易偏，扁平不容易偏——效率和可控性是一对矛盾。',
+    round_pointed: '同样的力，尖头的石头能砸开坚果，圆形的石头不能——不是因为力更大，而是因为力更集中。',
+    good_tool: '好的工具让你用更少的力做更多的事，但代价是你要学会控制它。'
+  };
+
+  function showInsight(key) {
+    if (insights[key] && lastInsight !== key) {
+      lastInsight = key;
+      insightEl.textContent = insights[key];
+      insightEl.classList.add('show');
+      gsap.to(insightEl, { opacity: 0, delay: 4, duration: 0.6, onComplete: function() {
+        insightEl.classList.remove('show');
+      }});
+    }
+  }
+
+  /* ===== Drag interaction ===== */
+  simCanvas.addEventListener('mousedown', function(e) {
+    if (nutBroken && !currentStone) return;
+    const pt = Deck.pt(simCanvas, e);
+    const bodies = Composite.allBodies(engine.world);
+    for (const body of bodies) {
+      if (body.parent && body.parent !== body) continue; // skip parts
+      if (body.label === 'stone') {
+        if (Vertices.contains(body.vertices, pt)) {
+          isDragging = true;
+          dragBody = body;
+          Body.setStatic(body, true);
+          hintEl.style.opacity = '0';
+          break;
+        }
+      }
+    }
+  });
+
+  simCanvas.addEventListener('mousemove', function(e) {
+    if (!isDragging || !dragBody) return;
+    const pt = Deck.pt(simCanvas, e);
+    // Clamp to valid area
+    const cx = Math.max(120, Math.min(1480, pt.x));
+    const cy = Math.max(140, Math.min(630, pt.y));
+    Body.setPosition(dragBody, { x: cx, y: cy });
+  });
+
+  simCanvas.addEventListener('mouseup', function() {
+    if (!isDragging || !dragBody) return;
+    Body.setStatic(dragBody, false);
+    Body.setVelocity(dragBody, { x: 0, y: 0 });
+    isDragging = false;
+    dragBody = null;
+  });
+
+  // Touch support
+  simCanvas.addEventListener('touchstart', function(e) {
+    e.preventDefault();
+    if (nutBroken && !currentStone) return;
+    const pt = Deck.pt(simCanvas, e.touches[0]);
+    const bodies = Composite.allBodies(engine.world);
+    for (const body of bodies) {
+      if (body.parent && body.parent !== body) continue;
+      if (body.label === 'stone') {
+        if (Vertices.contains(body.vertices, pt)) {
+          isDragging = true;
+          dragBody = body;
+          Body.setStatic(body, true);
+          hintEl.style.opacity = '0';
+          break;
+        }
+      }
+    }
+  }, { passive: false });
+
+  simCanvas.addEventListener('touchmove', function(e) {
+    e.preventDefault();
+    if (!isDragging || !dragBody) return;
+    const pt = Deck.pt(simCanvas, e.touches[0]);
+    const cx = Math.max(120, Math.min(1480, pt.x));
+    const cy = Math.max(140, Math.min(630, pt.y));
+    Body.setPosition(dragBody, { x: cx, y: cy });
+  }, { passive: false });
+
+  simCanvas.addEventListener('touchend', function() {
+    if (!isDragging || !dragBody) return;
+    Body.setStatic(dragBody, false);
+    Body.setVelocity(dragBody, { x: 0, y: 0 });
+    isDragging = false;
+    dragBody = null;
+  });
+
+  /* ===== Stone selection ===== */
+  function removeOldStone() {
+    if (currentStone) {
+      Composite.remove(engine.world, currentStone);
+      currentStone = null;
+    }
+    // Clean up fragments
+    for (const f of fragments) {
+      Composite.remove(engine.world, f.body);
+    }
+    fragments = [];
+    forceArrowData = null;
+    crackData = null;
+    readoutEl.style.opacity = '0';
+    insightEl.classList.remove('show');
+    lastInsight = '';
+    hintEl.style.opacity = '1';
+  }
+
+  function resetNut() {
+    if (nutBroken) {
+      nut = Bodies.fromVertices(800, 670, nutVertices, {
+        isStatic: true,
+        friction: 0.6,
+        label: 'nut'
+      });
+      labelAllParts(nut, 'nut', null);
+      Composite.add(engine.world, nut);
+      nutBroken = false;
+    }
+    crackData = null;
+    forceArrowData = null;
+    readoutEl.style.opacity = '0';
+    insightEl.classList.remove('show');
+    lastInsight = '';
+    hintEl.style.opacity = '1';
+  }
+
+  function selectStone(type) {
+    removeOldStone();
+    resetNut();
+    const def = stoneDefs[type];
+    if (!def) return;
+    const stone = def.create(800, 200);
+    currentStone = stone;
+    currentStoneType = type;
+    Composite.add(engine.world, stone);
+
+    // Update selector UI
+    const buttons = selectorEl.querySelectorAll('.stone-btn');
+    buttons.forEach(function(btn) {
+      const isActive = btn.dataset.type === type;
+      btn.classList.toggle('active', isActive);
+      btn.setAttribute('aria-checked', isActive ? 'true' : 'false');
+    });
+
+    hintEl.textContent = '拖拽石头到坚果上方，松手试试';
+    hintEl.style.opacity = '1';
+  }
+
+  selectorEl.addEventListener('click', function(e) {
+    const btn = e.target.closest('.stone-btn');
+    if (!btn) return;
+    selectStone(btn.dataset.type);
+  });
+
+  // Keyboard support for selector
+  selectorEl.addEventListener('keydown', function(e) {
+    const btn = e.target.closest('.stone-btn');
+    if (!btn) return;
+    const types = ['round', 'angular', 'pointed', 'flat'];
+    const idx = types.indexOf(btn.dataset.type);
+    let nextIdx = idx;
+    if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+      nextIdx = (idx + 1) % 4;
+      e.preventDefault();
+    } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+      nextIdx = (idx - 1 + 4) % 4;
+      e.preventDefault();
+    } else if (e.key === 'Enter' || e.key === ' ') {
+      selectStone(btn.dataset.type);
+      e.preventDefault();
+      return;
+    }
+    if (nextIdx !== idx) {
+      const nextBtn = selectorEl.querySelector('[data-type="' + types[nextIdx] + '"]');
+      if (nextBtn) { nextBtn.focus(); nextBtn.setAttribute('tabindex', '0'); }
+      btn.setAttribute('tabindex', '-1');
+    }
+  });
+
+  /* ===== Reset ===== */
+  resetBtn.addEventListener('click', function() {
+    removeOldStone();
+    resetNut();
+    currentStoneType = null;
+    const buttons = selectorEl.querySelectorAll('.stone-btn');
+    buttons.forEach(function(btn) {
+      btn.classList.remove('active');
+      btn.setAttribute('aria-checked', 'false');
+    });
+    hintEl.textContent = '选择一种石头，拖到坚果上方，松手试试';
+    hintEl.style.opacity = '1';
+  });
+
+  /* ===== Initial hint ===== */
+  hintEl.style.opacity = '1';
+
+})();
+</script>
+</body>
+</html>

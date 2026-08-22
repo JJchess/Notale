@@ -1,0 +1,902 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  /* Page-specific layout */
+  #main {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 0 88px;
+    height: 100%;
+    padding-top: 100px;
+    padding-bottom: 92px;
+    box-sizing: border-box;
+    gap: 4px;
+  }
+
+  .triptych {
+    display: flex;
+    flex-direction: row;
+    gap: var(--sp-md);
+    width: 100%;
+    justify-content: center;
+  }
+
+  .bone-col {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    flex: 1;
+    min-width: 0;
+  }
+
+  .bone-canvas-wrap {
+    position: relative;
+    width: 400px;
+    height: 260px;
+    border-radius: 8px;
+    overflow: hidden;
+    border: 1px solid var(--color-border);
+    background: #1a1a1e;
+  }
+
+  .bone-canvas-wrap canvas {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    display: block;
+    cursor: grab;
+  }
+  .bone-canvas-wrap canvas:active {
+    cursor: grabbing;
+  }
+
+  .bone-col-title {
+    font-size: var(--fs-h2);
+    font-weight: 600;
+    color: var(--text);
+    margin-top: 4px;
+    margin-bottom: 1px;
+    text-align: center;
+    line-height: var(--lh-tight);
+  }
+
+  .bone-col-sub {
+    font-size: var(--fs-label);
+    color: var(--color-dim);
+    margin-bottom: 2px;
+    text-align: center;
+  }
+
+  .bone-tags {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 3px;
+    justify-content: center;
+    margin-top: 2px;
+  }
+
+  .bone-tag {
+    font-size: var(--fs-label);
+    line-height: 1.3;
+    padding: 2px 10px;
+    border-radius: 4px;
+    border: 1px solid var(--color-border);
+    background: var(--bg);
+    color: var(--text);
+    cursor: pointer;
+    transition: all 0.15s ease;
+    user-select: none;
+    white-space: nowrap;
+  }
+  .bone-tag:hover {
+    border-color: var(--color-accent);
+    color: var(--color-accent);
+  }
+  .bone-tag.active {
+    background: var(--color-accent);
+    color: #fff;
+    border-color: var(--color-accent);
+  }
+
+  .ctls-row {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: var(--sp-lg);
+    padding: 2px 0;
+    width: 100%;
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+
+  .mode-btns {
+    display: flex;
+    flex-direction: row;
+    gap: 0;
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+    overflow: hidden;
+  }
+  .mode-btn {
+    font-size: var(--fs-label);
+    padding: 4px 14px;
+    border: none;
+    background: var(--bg);
+    color: var(--text);
+    cursor: pointer;
+    border-right: 1px solid var(--color-border);
+    transition: all 0.15s ease;
+  }
+  .mode-btn:last-child { border-right: none; }
+  .mode-btn:hover { background: var(--color-surface); }
+  .mode-btn.active {
+    background: var(--color-accent);
+    color: #fff;
+  }
+
+  .time-ctl {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: var(--sp-sm);
+    font-size: var(--fs-label);
+    color: var(--text);
+  }
+  .time-ctl label {
+    font-size: var(--fs-label);
+    color: var(--color-dim);
+    white-space: nowrap;
+  }
+  .time-ctl input[type="range"] {
+    width: 160px;
+    accent-color: var(--color-accent);
+  }
+  .time-ctl .time-val {
+    font-size: var(--fs-tick);
+    font-variant-numeric: tabular-nums;
+    color: var(--color-dim);
+    min-width: 60px;
+    text-align: right;
+  }
+
+  .compare-table {
+    width: 100%;
+    max-width: 1100px;
+    grid-template-columns: 120px repeat(3, 1fr) !important;
+  }
+  .compare-table > .hdr,
+  .compare-table > .dim,
+  .compare-table > .cell {
+    font-size: var(--fs-sec) !important;
+    padding: 4px var(--sp-sm) !important;
+    line-height: var(--lh-tight);
+  }
+
+  .key-lines {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    width: 100%;
+    max-width: 1100px;
+  }
+  .key-line {
+    font-size: var(--fs-sec);
+    color: var(--text);
+    line-height: var(--lh-tight);
+    padding: 2px 0 2px var(--sp-md);
+    border-left: 3px solid var(--color-accent);
+  }
+  .key-line:nth-child(1) { border-left-color: #16a34a; }
+  .key-line:nth-child(2) { border-left-color: #d97706; }
+  .key-line:nth-child(3) { border-left-color: #7c3aed; }
+</style>
+</head>
+<body data-page="37" data-total="40">
+<div id="stage">
+<main id="main"></main>
+</div>
+<script src="assets/lib/three.min.js"></script>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script>
+(function() {
+  const main = document.getElementById('main');
+
+  // ── Lec.mount ──
+  Lec.mount({
+    index: 37,
+    kicker: 'INSIDE THE BONE',
+    title: '当壳开始往里面长',
+    take: '当骨骼不够用，我们开始换零件。壳不再只是外面那层，开始往里面长。'
+  });
+
+  // ── Build DOM ──
+  main.innerHTML = `
+    <div class="triptych">
+      <div class="bone-col" id="col-earth">
+        <div class="bone-canvas-wrap"><canvas id="cv-earth"></canvas></div>
+        <div class="bone-col-title">地球上的骨骼</div>
+        <div class="bone-col-sub">股骨近端 · 1g 重力</div>
+        <div class="bone-tags" data-col="earth">
+          <span class="bone-tag" data-tag="stress-line">应力线</span>
+          <span class="bone-tag" data-tag="trabecular-arch">骨小梁拱</span>
+          <span class="bone-tag" data-tag="cortical-shell">皮质外壳</span>
+        </div>
+      </div>
+      <div class="bone-col" id="col-space">
+        <div class="bone-canvas-wrap"><canvas id="cv-space"></canvas></div>
+        <div class="bone-col-title">空间站上的骨骼</div>
+        <div class="bone-col-sub">股骨近端 · 微重力</div>
+        <div class="bone-tags" data-col="space">
+          <span class="bone-tag" data-tag="trabecular-break">骨小梁断裂</span>
+          <span class="bone-tag" data-tag="cortical-thin">皮质变薄</span>
+          <span class="bone-tag" data-tag="stress-line-gone">应力线消失</span>
+        </div>
+      </div>
+      <div class="bone-col" id="col-implant">
+        <div class="bone-canvas-wrap"><canvas id="cv-implant"></canvas></div>
+        <div class="bone-col-title">人工植入物</div>
+        <div class="bone-col-sub">钛合金髋关节</div>
+        <div class="bone-tags" data-col="implant">
+          <span class="bone-tag" data-tag="porous-coating">多孔涂层</span>
+          <span class="bone-tag" data-tag="bone-ingrowth">骨长入界面</span>
+          <span class="bone-tag" data-tag="stress-shield">应力遮挡区</span>
+        </div>
+      </div>
+    </div>
+    <div class="ctls-row">
+      <div class="mode-btns" id="mode-btns">
+        <button class="mode-btn active" data-mode="surface">表面</button>
+        <button class="mode-btn" data-mode="heatmap">密度热力图</button>
+        <button class="mode-btn" data-mode="wireframe">结构线框</button>
+      </div>
+      <div class="time-ctl">
+        <label for="time-slider">在轨时间</label>
+        <input type="range" id="time-slider" min="0" max="12" value="6" step="1">
+        <span class="time-val" id="time-val">6 个月</span>
+      </div>
+    </div>
+    <div class="compare-table k-comparison" id="compare-table">
+      <span class="hdr"></span>
+      <span class="hdr">地球骨骼</span>
+      <span class="hdr">空间站骨骼</span>
+      <span class="hdr">人工植入物</span>
+      <span class="dim">密度</span>
+      <span class="cell">正常</span>
+      <span class="cell diff">−<span id="cv-bone-loss">9</span>%（6个月）</span>
+      <span class="cell">6.5× 天然骨</span>
+      <span class="dim">结构</span>
+      <span class="cell">有序拱形</span>
+      <span class="cell diff">崩解稀疏</span>
+      <span class="cell">人工规整</span>
+      <span class="dim">受力方式</span>
+      <span class="cell">压缩载荷</span>
+      <span class="cell diff">无重力载荷</span>
+      <span class="cell">应力遮挡</span>
+      <span class="dim">与身体关系</span>
+      <span class="cell">活的建筑</span>
+      <span class="cell diff">拆除自己</span>
+      <span class="cell">竞争关系</span>
+    </div>
+    <div class="key-lines">
+      <div class="key-line">地球上的骨骼是活的建筑，每一条骨小梁都沿着受力方向生长。</div>
+      <div class="key-line">空间站上，骨骼失去了受力方向，建筑开始拆除自己。</div>
+      <div class="key-line">人工植入物不会拆除自己，但它的刚度会抢走周围骨骼的活——壳不再只是外面那层，开始往里面长。</div>
+    </div>
+  `;
+
+  // ── Constants ──
+  const BONE_LOSS = Lec.K.BONE_LOSS; // 1.5%/month
+  const CANVAS_W = 400, CANVAS_H = 260;
+
+  // ── Shared state ──
+  let displayMode = 'surface';
+  let activeTag = null;
+  let orbitMonths = 6;
+
+  const boneScenes = {};
+
+  // ── Helper: create trabecular strut lattice ──
+  function createTrabecularLattice(density, disorder, boneHeight, boneRadius, boneHeadCY, boneHeadR) {
+    const group = new THREE.Group();
+    const strutGeom = new THREE.CylinderGeometry(0.025, 0.025, 0.15, 5);
+    const count = Math.floor(density * 600);
+    const meshes = [];
+
+    const mat = new THREE.MeshStandardMaterial({
+      color: 0xd4a574,
+      roughness: 0.55,
+      metalness: 0.05,
+      clippingPlanes: [new THREE.Plane(new THREE.Vector3(1, 0, 0), 0.02)],
+      clipShadows: true,
+    });
+
+    for (let i = 0; i < count; i++) {
+      const m = new THREE.Mesh(strutGeom, mat.clone());
+      // Position in cylindrical coords
+      const angle = (Math.random() * 2 * Math.PI);
+      const r = Math.random() * boneRadius * 0.85;
+      const y = (Math.random() - 0.5) * boneHeight;
+
+      // Check if inside bone volume
+      const inShaft = (r < boneRadius * 0.88);
+      const dxHead = 0, dyHead = y - boneHeadCY, dzHead = 0;
+      const distHead = Math.sqrt(dxHead*dxHead + dyHead*dyHead + dzHead*dzHead);
+      const inHead = (distHead < boneHeadR * 0.85 && y > boneHeight * 0.3);
+
+      if (!inShaft && !inHead) continue;
+
+      const x = Math.cos(angle) * r;
+      const z = Math.sin(angle) * r;
+
+      m.position.set(x, y, z);
+
+      // Orientation: vertical for shaft, radial for head
+      if (disorder > 0.5) {
+        m.rotation.set(Math.random() * Math.PI * 0.6, Math.random() * Math.PI * 2, Math.random() * Math.PI * 0.6);
+      } else {
+        if (inHead) {
+          m.lookAt(new THREE.Vector3(0, boneHeadCY, 0));
+          m.rotateX(Math.PI / 2);
+        }
+        // else: default vertical (cylinder is vertical)
+      }
+
+      m.userData = { type: 'trabecular', inHead: inHead };
+      group.add(m);
+      meshes.push(m);
+    }
+
+    return { group, meshes };
+  }
+
+  // ── Create bone model ──
+  function createBoneModel(type) {
+    const root = new THREE.Group();
+    const groups = { cortical: new THREE.Group(), trabecular: new THREE.Group(), special: new THREE.Group() };
+    const allMeshes = [];
+
+    const boneH = 3.5;
+    const boneR = 0.78;
+    const headCY = 1.75;
+    const headR = 0.95;
+
+    const clipPlane = new THREE.Plane(new THREE.Vector3(1, 0, 0), 0.02);
+
+    // ── Cortical shell ──
+    const shaftGeom = new THREE.CylinderGeometry(boneR, boneR * 0.9, boneH, 40, 1, true);
+    const headGeom = new THREE.SphereGeometry(headR, 32, 16, 0, Math.PI * 2, 0, Math.PI / 2);
+
+    if (type === 'implant') {
+      // Metallic implant stem
+      const stemGeom = new THREE.CylinderGeometry(0.35, 0.28, boneH * 0.85, 32);
+      const stemMat = new THREE.MeshStandardMaterial({
+        color: 0xc0c8d4,
+        roughness: 0.25,
+        metalness: 0.85,
+        clippingPlanes: [clipPlane],
+        clipShadows: true,
+      });
+      const stem = new THREE.Mesh(stemGeom, stemMat);
+      stem.position.y = -0.15;
+      stem.userData = { type: 'implant-stem' };
+      groups.cortical.add(stem);
+      allMeshes.push(stem);
+
+      // Implant head (ball)
+      const ballGeom = new THREE.SphereGeometry(0.52, 32, 16);
+      const ballMat = new THREE.MeshStandardMaterial({
+        color: 0xd8dce4,
+        roughness: 0.15,
+        metalness: 0.9,
+        clippingPlanes: [clipPlane],
+        clipShadows: true,
+      });
+      const ball = new THREE.Mesh(ballGeom, ballMat);
+      ball.position.y = boneH * 0.38;
+      ball.userData = { type: 'implant-head' };
+      groups.cortical.add(ball);
+      allMeshes.push(ball);
+
+      // Porous coating (small spheres on stem surface)
+      const poreGeom = new THREE.SphereGeometry(0.04, 4, 4);
+      const poreMat = new THREE.MeshStandardMaterial({
+        color: 0xa8b0bc,
+        roughness: 0.6,
+        metalness: 0.7,
+        clippingPlanes: [clipPlane],
+        clipShadows: true,
+      });
+      for (let i = 0; i < 200; i++) {
+        const angle = Math.random() * Math.PI * 2;
+        const y = (Math.random() - 0.5) * boneH * 0.7;
+        const pore = new THREE.Mesh(poreGeom, poreMat.clone());
+        pore.position.set(Math.cos(angle) * 0.38, y, Math.sin(angle) * 0.38);
+        pore.userData = { type: 'porous-coating' };
+        groups.special.add(pore);
+        allMeshes.push(pore);
+      }
+
+      // Bone around implant (thinner, stress-shielded)
+      const boneShellGeom = new THREE.CylinderGeometry(boneR, boneR * 0.9, boneH, 40, 1, true);
+      const boneShellMat = new THREE.MeshStandardMaterial({
+        color: 0xc8b898,
+        roughness: 0.6,
+        metalness: 0.05,
+        transparent: true,
+        opacity: 0.55,
+        side: THREE.DoubleSide,
+        clippingPlanes: [clipPlane],
+        clipShadows: true,
+      });
+      const boneShell = new THREE.Mesh(boneShellGeom, boneShellMat);
+      boneShell.userData = { type: 'stress-shielded-bone' };
+      groups.cortical.add(boneShell);
+      allMeshes.push(boneShell);
+
+      // Stress shielding zone indicator
+      const shieldGeom = new THREE.TorusGeometry(0.55, 0.06, 8, 32);
+      const shieldMat = new THREE.MeshStandardMaterial({
+        color: 0xef4444,
+        roughness: 0.4,
+        metalness: 0.1,
+        emissive: 0x441111,
+        emissiveIntensity: 0.3,
+        clippingPlanes: [clipPlane],
+        clipShadows: true,
+      });
+      const shieldRing = new THREE.Mesh(shieldGeom, shieldMat);
+      shieldRing.position.y = -0.5;
+      shieldRing.userData = { type: 'stress-shield' };
+      groups.special.add(shieldRing);
+      allMeshes.push(shieldRing);
+
+      // Interface line
+      const ifGeom = new THREE.TorusGeometry(0.42, 0.03, 8, 32);
+      const ifMat = new THREE.MeshStandardMaterial({
+        color: 0x22c55e,
+        roughness: 0.3,
+        metalness: 0.2,
+        emissive: 0x112211,
+        emissiveIntensity: 0.4,
+        clippingPlanes: [clipPlane],
+        clipShadows: true,
+      });
+      const ifRing = new THREE.Mesh(ifGeom, ifMat);
+      ifRing.position.y = 0.15;
+      ifRing.userData = { type: 'bone-ingrowth' };
+      groups.special.add(ifRing);
+      allMeshes.push(ifRing);
+
+    } else {
+      // Biological bone shell
+      const shellOpacity = type === 'space' ? 0.5 : 0.6;
+      const shellColor = type === 'space' ? 0xc8b898 : 0xe8d5b7;
+
+      const shaftShell = new THREE.Mesh(shaftGeom, new THREE.MeshStandardMaterial({
+        color: shellColor,
+        roughness: 0.6,
+        metalness: 0.05,
+        transparent: true,
+        opacity: shellOpacity,
+        side: THREE.DoubleSide,
+        clippingPlanes: [clipPlane],
+        clipShadows: true,
+      }));
+      shaftShell.userData = { type: 'cortical-shaft' };
+      groups.cortical.add(shaftShell);
+      allMeshes.push(shaftShell);
+
+      const headShell = new THREE.Mesh(headGeom, new THREE.MeshStandardMaterial({
+        color: shellColor,
+        roughness: 0.6,
+        metalness: 0.05,
+        transparent: true,
+        opacity: shellOpacity,
+        side: THREE.DoubleSide,
+        clippingPlanes: [clipPlane],
+        clipShadows: true,
+      }));
+      headShell.position.y = boneH * 0.45;
+      headShell.userData = { type: 'cortical-head' };
+      groups.cortical.add(headShell);
+      allMeshes.push(headShell);
+
+      // Cortical thickness indicator ring
+      const thicknessR = type === 'space' ? boneR * 0.82 : boneR * 0.72;
+      const thickGeom = new THREE.TorusGeometry(thicknessR, 0.03, 8, 32);
+      const thickMat = new THREE.MeshStandardMaterial({
+        color: type === 'space' ? 0xf59e0b : 0x22c55e,
+        roughness: 0.3,
+        metalness: 0.1,
+        emissive: type === 'space' ? 0x331100 : 0x112211,
+        emissiveIntensity: 0.35,
+        clippingPlanes: [clipPlane],
+        clipShadows: true,
+      });
+      const thickRing = new THREE.Mesh(thickGeom, thickMat);
+      thickRing.position.y = 0;
+      thickRing.userData = { type: 'cortical-thickness' };
+      groups.special.add(thickRing);
+      allMeshes.push(thickRing);
+    }
+
+    // ── Trabecular struts ──
+    if (type !== 'implant') {
+      const density = type === 'space' ? 0.42 : 0.85;
+      const disorder = type === 'space' ? 0.7 : 0.15;
+      const { group: tGroup, meshes: tMeshes } = createTrabecularLattice(density, disorder, boneH, boneR, headCY, headR);
+      groups.trabecular.add(tGroup);
+      allMeshes.push(...tMeshes);
+    }
+
+    // ── Cut surface plane ──
+    const cutGeom = new THREE.PlaneGeometry(boneR * 2.2, boneH * 1.3);
+    const cutMat = new THREE.MeshStandardMaterial({
+      color: type === 'implant' ? 0xb0a090 : 0xdcc8a8,
+      roughness: 0.7,
+      metalness: 0.02,
+      side: THREE.DoubleSide,
+    });
+    const cutPlane = new THREE.Mesh(cutGeom, cutMat);
+    cutPlane.position.set(-0.01, 0, 0);
+    cutPlane.rotation.y = Math.PI / 2;
+    cutPlane.userData = { type: 'cut-surface' };
+    groups.special.add(cutPlane);
+
+    root.add(groups.cortical);
+    root.add(groups.trabecular);
+    root.add(groups.special);
+
+    return { root, groups, allMeshes };
+  }
+
+  // ── Scene manager ──
+  class BoneScene {
+    constructor(canvas, type) {
+      this.canvas = canvas;
+      this.type = type;
+      this.rotation = { x: -0.25, y: 0.35 };
+      this.targetRot = { x: -0.25, y: 0.35 };
+      this.zoom = 4.2;
+      this.targetZoom = 4.2;
+      this.isDragging = false;
+      this.lastPt = { x: 0, y: 0 };
+      this.groups = {};
+      this.allMeshes = [];
+      this.rootGroup = null;
+
+      this.init();
+    }
+
+    init() {
+      const w = this.canvas.clientWidth || CANVAS_W;
+      const h = this.canvas.clientHeight || CANVAS_H;
+
+      this.renderer = new THREE.WebGLRenderer({ canvas: this.canvas, antialias: true, alpha: true });
+      this.renderer.setClearColor(0x1a1a1e, 1);
+      this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      this.renderer.setSize(w, h, false);
+      this.renderer.outputColorSpace = THREE.SRGBColorSpace;
+      this.renderer.localClippingEnabled = true;
+      this.renderer.shadowMap.enabled = true;
+      this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+      this.scene = new THREE.Scene();
+
+      this.camera = new THREE.PerspectiveCamera(38, w / h, 0.1, 20);
+      this.camera.position.set(3.2, 0.6, 3.8);
+      this.camera.lookAt(0, 0, 0);
+
+      // Lighting
+      const ambient = new THREE.AmbientLight(0xffffff, 0.45);
+      this.scene.add(ambient);
+
+      const key = new THREE.DirectionalLight(0xffffff, 1.8);
+      key.position.set(4, 5, 4);
+      key.castShadow = true;
+      key.shadow.mapSize.set(512, 512);
+      this.scene.add(key);
+
+      const fill = new THREE.DirectionalLight(0x8899cc, 0.6);
+      fill.position.set(-3, 1, -2);
+      this.scene.add(fill);
+
+      const rim = new THREE.DirectionalLight(0xaaccff, 0.5);
+      rim.position.set(0, -0.5, -4);
+      this.scene.add(rim);
+
+      // Create model
+      const { root, groups, allMeshes } = createBoneModel(this.type);
+      this.rootGroup = root;
+      this.groups = groups;
+      this.allMeshes = allMeshes;
+      this.scene.add(root);
+
+      // Events
+      this.canvas.addEventListener('pointerdown', this.onDown.bind(this));
+      this.canvas.addEventListener('pointermove', this.onMove.bind(this));
+      this.canvas.addEventListener('pointerup', this.onUp.bind(this));
+      this.canvas.addEventListener('pointerleave', this.onUp.bind(this));
+      this.canvas.addEventListener('wheel', this.onWheel.bind(this), { passive: false });
+    }
+
+    onDown(e) {
+      this.isDragging = true;
+      const pt = Deck.pt(this.canvas, e);
+      this.lastPt = { x: pt.x, y: pt.y };
+      this.canvas.setPointerCapture(e.pointerId);
+    }
+
+    onMove(e) {
+      if (!this.isDragging) return;
+      const pt = Deck.pt(this.canvas, e);
+      const dx = pt.x - this.lastPt.x;
+      const dy = pt.y - this.lastPt.y;
+      this.targetRot.y += dx * 0.008;
+      this.targetRot.x += dy * 0.008;
+      this.targetRot.x = Math.max(-1.2, Math.min(0.6, this.targetRot.x));
+      this.lastPt = { x: pt.x, y: pt.y };
+    }
+
+    onUp(e) {
+      this.isDragging = false;
+    }
+
+    onWheel(e) {
+      e.preventDefault();
+      this.targetZoom += e.deltaY * 0.005;
+      this.targetZoom = Math.max(2.5, Math.min(8, this.targetZoom));
+    }
+
+    setDisplayMode(mode) {
+      const isWire = mode === 'wireframe';
+      const isHeat = mode === 'heatmap';
+
+      this.allMeshes.forEach(m => {
+        if (m.material && m.material.isMaterial) {
+          if (Array.isArray(m.material)) {
+            m.material.forEach(mat => { mat.wireframe = isWire; });
+          } else {
+            m.material.wireframe = isWire;
+          }
+        }
+      });
+
+      if (isHeat && this.type !== 'implant') {
+        // Color-code by density: cortical warm, trabecular medium
+        this.allMeshes.forEach(m => {
+          if (m.userData.type === 'cortical-shaft' || m.userData.type === 'cortical-head') {
+            if (m.material.color) m.material.color.set(0xef4444);
+            if (m.material.emissive) m.material.emissive.set(0x330000);
+          } else if (m.userData.type === 'trabecular') {
+            if (m.material.color) m.material.color.set(m.userData.inHead ? 0xf59e0b : 0xeab308);
+            if (m.material.emissive) m.material.emissive.set(0x221100);
+          } else if (m.userData.type === 'cortical-thickness') {
+            if (m.material.emissive) m.material.emissiveIntensity = 0.6;
+          }
+        });
+      } else if (isHeat && this.type === 'implant') {
+        this.allMeshes.forEach(m => {
+          if (m.userData.type === 'implant-stem' || m.userData.type === 'implant-head') {
+            if (m.material.color) m.material.color.set(0xef4444);
+          } else if (m.userData.type === 'stress-shielded-bone') {
+            if (m.material.color) m.material.color.set(0x3b82f6);
+            if (m.material.emissive) m.material.emissive.set(0x001133);
+          }
+        });
+      } else if (!isHeat) {
+        // Reset colors
+        this.allMeshes.forEach(m => {
+          if (m.userData.type === 'cortical-shaft' || m.userData.type === 'cortical-head') {
+            if (m.material.color) m.material.color.set(this.type === 'space' ? 0xc8b898 : 0xe8d5b7);
+            if (m.material.emissive) m.material.emissive.set(0x000000);
+          } else if (m.userData.type === 'trabecular') {
+            if (m.material.color) m.material.color.set(0xd4a574);
+            if (m.material.emissive) m.material.emissive.set(0x000000);
+          } else if (m.userData.type === 'implant-stem') {
+            if (m.material.color) m.material.color.set(0xc0c8d4);
+          } else if (m.userData.type === 'stress-shielded-bone') {
+            if (m.material.color) m.material.color.set(0xc8b898);
+            if (m.material.emissive) m.material.emissive.set(0x000000);
+          } else if (m.userData.type === 'cortical-thickness') {
+            if (m.material.emissive) m.material.emissiveIntensity = 0.35;
+          }
+        });
+      }
+    }
+
+    highlight(tagType) {
+      // Reset all highlights
+      this.allMeshes.forEach(m => {
+        if (m.material.emissive && m.userData.type !== 'cortical-thickness' &&
+            m.userData.type !== 'stress-shield' && m.userData.type !== 'bone-ingrowth') {
+          m.material.emissive.set(0x000000);
+          m.material.emissiveIntensity = 0;
+        }
+      });
+
+      if (!tagType) return;
+
+      const typeMap = {
+        'stress-line': ['trabecular'],
+        'trabecular-arch': ['trabecular'],
+        'cortical-shell': ['cortical-shaft', 'cortical-head'],
+        'trabecular-break': ['trabecular'],
+        'cortical-thin': ['cortical-shaft', 'cortical-head', 'cortical-thickness'],
+        'stress-line-gone': ['trabecular'],
+        'porous-coating': ['porous-coating'],
+        'bone-ingrowth': ['bone-ingrowth'],
+        'stress-shield': ['stress-shield', 'stress-shielded-bone'],
+      };
+
+      const targets = typeMap[tagType] || [];
+      this.allMeshes.forEach(m => {
+        if (targets.includes(m.userData.type)) {
+          if (m.material.emissive) {
+            m.material.emissive.set(0xffcc00);
+            m.material.emissiveIntensity = 0.55;
+          }
+        }
+      });
+    }
+
+    updateTimeSlice(months) {
+      if (this.type !== 'space') return;
+      // Adjust trabecular density
+      const factor = 1 - (months / 12) * 0.5;
+      this.groups.trabecular.children.forEach(child => {
+        child.children.forEach((m, i) => {
+          const visible = i < Math.floor(child.children.length * factor);
+          m.visible = visible;
+        });
+      });
+      // Thin cortical shell
+      this.groups.cortical.children.forEach(m => {
+        if (m.userData.type === 'cortical-shaft' || m.userData.type === 'cortical-head') {
+          m.material.opacity = 0.5 - (months / 12) * 0.2;
+        }
+      });
+    }
+
+    render(time) {
+      // Smooth interpolation
+      this.rotation.x += (this.targetRot.x - this.rotation.x) * 0.12;
+      this.rotation.y += (this.targetRot.y - this.rotation.y) * 0.12;
+      this.zoom += (this.targetZoom - this.zoom) * 0.12;
+
+      if (this.rootGroup) {
+        this.rootGroup.rotation.set(0, 0, 0);
+        this.rootGroup.rotateX(this.rotation.x);
+        this.rootGroup.rotateY(this.rotation.y);
+      }
+
+      const r = this.zoom;
+      this.camera.position.set(
+        Math.sin(this.rotation.y) * r * 0.75,
+        0.6 + this.rotation.x * 1.5,
+        Math.cos(this.rotation.y) * r * 0.75
+      );
+      this.camera.lookAt(0, 0, 0);
+
+      this.renderer.render(this.scene, this.camera);
+    }
+
+    dispose() {
+      this.renderer.dispose();
+      this.allMeshes.forEach(m => {
+        if (m.geometry) m.geometry.dispose();
+        if (m.material) {
+          if (Array.isArray(m.material)) m.material.forEach(mat => mat.dispose());
+          else m.material.dispose();
+        }
+      });
+    }
+  }
+
+  // ── Initialize scenes ──
+  const cvEarth = document.getElementById('cv-earth');
+  const cvSpace = document.getElementById('cv-space');
+  const cvImplant = document.getElementById('cv-implant');
+
+  boneScenes.earth = new BoneScene(cvEarth, 'earth');
+  boneScenes.space = new BoneScene(cvSpace, 'space');
+  boneScenes.implant = new BoneScene(cvImplant, 'implant');
+
+  // ── Display mode buttons ──
+  document.getElementById('mode-btns').addEventListener('click', function(e) {
+    const btn = e.target.closest('.mode-btn');
+    if (!btn) return;
+    displayMode = btn.dataset.mode;
+    this.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    Object.values(boneScenes).forEach(s => s.setDisplayMode(displayMode));
+  });
+
+  // ── Time slider ──
+  const timeSlider = document.getElementById('time-slider');
+  const timeVal = document.getElementById('time-val');
+  const boneLossSpan = document.getElementById('cv-bone-loss');
+
+  timeSlider.addEventListener('input', function() {
+    orbitMonths = parseInt(this.value);
+    timeVal.textContent = orbitMonths + ' 个月';
+    const loss = (BONE_LOSS * orbitMonths).toFixed(1);
+    boneLossSpan.textContent = loss;
+    boneScenes.space.updateTimeSlice(orbitMonths);
+  });
+
+  // ── Tag clicks ──
+  main.addEventListener('click', function(e) {
+    const tag = e.target.closest('.bone-tag');
+    if (!tag) return;
+
+    const tagType = tag.dataset.tag;
+    const col = tag.closest('.bone-tags').dataset.col;
+
+    // Toggle
+    if (tag.classList.contains('active')) {
+      tag.classList.remove('active');
+      activeTag = null;
+      Object.values(boneScenes).forEach(s => s.highlight(null));
+      // Deactivate all tags
+      main.querySelectorAll('.bone-tag').forEach(t => t.classList.remove('active'));
+    } else {
+      main.querySelectorAll('.bone-tag').forEach(t => t.classList.remove('active'));
+      tag.classList.add('active');
+      activeTag = tagType;
+
+      // Map tag to highlight across all three columns
+      const crossMap = {
+        'stress-line': { earth: 'stress-line', space: 'stress-line-gone', implant: 'stress-shield' },
+        'trabecular-arch': { earth: 'trabecular-arch', space: 'trabecular-break', implant: 'porous-coating' },
+        'cortical-shell': { earth: 'cortical-shell', space: 'cortical-thin', implant: 'stress-shield' },
+        'trabecular-break': { earth: 'trabecular-arch', space: 'trabecular-break', implant: 'porous-coating' },
+        'cortical-thin': { earth: 'cortical-shell', space: 'cortical-thin', implant: 'stress-shield' },
+        'stress-line-gone': { earth: 'stress-line', space: 'stress-line-gone', implant: 'stress-shield' },
+        'porous-coating': { earth: 'cortical-shell', space: 'cortical-thin', implant: 'porous-coating' },
+        'bone-ingrowth': { earth: 'trabecular-arch', space: 'trabecular-break', implant: 'bone-ingrowth' },
+        'stress-shield': { earth: 'cortical-shell', space: 'cortical-thin', implant: 'stress-shield' },
+      };
+
+      const map = crossMap[tagType] || {};
+      Object.entries(boneScenes).forEach(([key, scene]) => {
+        scene.highlight(map[key] || null);
+      });
+
+      // Highlight corresponding tags in other columns
+      const colMap = { earth: 0, space: 1, implant: 2 };
+      const cols = main.querySelectorAll('.bone-tags');
+      Object.entries(map).forEach(([colKey, mappedTag]) => {
+        const idx = colMap[colKey];
+        if (idx !== undefined) {
+          const colTags = cols[idx].querySelectorAll('.bone-tag');
+          colTags.forEach(ct => {
+            if (ct.dataset.tag === mappedTag) ct.classList.add('active');
+          });
+        }
+      });
+    }
+  });
+
+  // ── Animation loop ──
+  Deck.loop(function(time) {
+    Object.values(boneScenes).forEach(s => s.render(time));
+  });
+
+  // ── Cleanup on unload ──
+  window.addEventListener('beforeunload', function() {
+    Object.values(boneScenes).forEach(s => s.dispose());
+  });
+
+})();
+</script>
+</body>
+</html>

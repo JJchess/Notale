@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <link rel="stylesheet" href="assets/lib/katex.min.css">
+  <style>
+    #main{display:flex;flex-direction:column;gap:14px}
+    .budget{display:grid;grid-template-columns:1fr 1fr 1fr 1fr auto;gap:12px;align-items:end}
+    .compact{padding:12px 16px}.compact .ctl{grid-template-columns:auto 1fr auto;padding:0}.compact label{white-space:nowrap}
+    .reset{height:42px;padding:0 20px;color:#fff;font:inherit;font-size:var(--fs-label);font-weight:720;border:1px solid var(--accent);border-radius:var(--radius-sm);background:var(--accent);cursor:pointer}
+    .loop-panel{position:relative;height:244px;padding:16px 20px;box-sizing:border-box}
+    .k-process.water{--step-count:6;height:112px;gap:30px;align-items:center}
+    .k-process.water>.step{padding:14px 10px;text-align:center;font-size:var(--fs-sec);font-weight:720;line-height:1.35}
+    .k-process.water>.arw::after{left:-27px}.k-process.water>.axis{height:var(--flow,5px);transition:height .24s ease-out}
+    .device{font:inherit;color:inherit;cursor:pointer}.device:focus-visible{outline:3px solid var(--focus);outline-offset:3px}
+    .device.bad{border-color:var(--danger)!important;background:#f7dddd!important}
+    .branches{display:grid;grid-template-columns:1fr 1fr 1fr;align-items:center;margin:8px 150px 0;gap:20px}
+    .branch{position:relative;padding:7px 12px;font-size:var(--fs-label);font-weight:700;border-radius:999px;text-align:center;background:var(--accent-soft);border:1px solid var(--accent)}
+    .branch.loss{background:var(--accent-warm);border-color:var(--accent-2)}
+    .branch::before{content:"↙";margin-right:8px}.branch.loss::before{content:"↘"}
+    .readout{text-align:center}.readout strong{color:var(--accent);font-size:var(--fs-h2)}
+    .costs{position:absolute;right:20px;bottom:12px;display:flex;gap:6px}.costs .badge{color:var(--ink-soft);border-color:var(--line)}
+    .lower{display:grid;grid-template-columns:430px minmax(0,1fr);gap:16px;min-height:0;flex:1}.lower>*{min-width:0}
+    .formula{padding:16px 20px}.formula h2{margin-bottom:8px}.math{font-size:20px;margin:5px 0}.formula p{font-size:var(--fs-sec);line-height:var(--lh-sec)}
+    .status{margin-top:8px;padding:8px 10px;border-left:4px solid var(--accent);background:var(--accent-soft);font-size:var(--fs-sec);line-height:1.4}
+    .chart-panel{position:relative;padding:8px 14px}.chart{width:100%;height:100%}
+    @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+  </style>
+</head>
+<body data-page="36" data-total="48">
+  <div id="stage"><main id="main">
+    <section class="budget" aria-label="水循环预算输入">
+      <div class="panel compact"><div class="ctl"><label for="recovery">回收率</label><input id="recovery" type="range" min="0" max="98" step="1"><output id="recoveryOut"></output></div></div>
+      <div class="panel compact"><div class="ctl"><label for="crew">人数</label><input id="crew" type="range" min="1" max="12" step="1" value="4"><output id="crewOut"></output></div></div>
+      <div class="panel compact"><div class="ctl"><label for="days">任务时长</label><input id="days" type="range" min="1" max="365" step="1" value="180"><output id="daysOut"></output></div></div>
+      <div class="panel compact"><div class="ctl"><label for="reserve">储备</label><input id="reserve" type="range" min="0" max="30" step="1"><output id="reserveOut"></output></div></div>
+      <button class="reset" id="reset" type="button">重置</button>
+    </section>
+
+    <section class="panel loop-panel" aria-label="闭合水循环流程">
+      <div class="k-process water" id="process">
+        <div class="axis"></div>
+        <div class="step">① 乘员使用</div><div class="arw"></div>
+        <div class="step">② 废水产生</div><div class="arw"></div>
+        <button class="step device" id="device" type="button" aria-pressed="false">③ 收集<br><span class="label">正常</span></button><div class="arw"></div>
+        <div class="step">④ 处理</div><div class="arw"></div>
+        <div class="step is-current">⑤ 回收 / 损失</div><div class="arw"></div>
+        <div class="step">⑥ 返回储水箱</div>
+      </div>
+      <div class="branches">
+        <div class="branch" id="returnBranch">返回水箱</div>
+        <div class="readout"><span class="label">设定 / 有效</span><br><strong id="rates"></strong></div>
+        <div class="branch loss" id="lossBranch">损失或暂不可用</div>
+      </div>
+      <div class="costs" aria-label="回收设备成本"><span class="badge">设备质量</span><span class="badge">能量需求</span><span class="badge">维护与备件</span></div>
+    </section>
+
+    <section class="lower">
+      <div class="panel formula">
+        <h2>从循环变成补给质量</h2>
+        <div id="eq1" class="math" aria-label="基础水量等于人数乘天数乘每人每天用水"></div>
+        <p>每人每天基础用水：<strong id="daily"></strong> kg/人·日。基础水量表示全部由携带水提供时的质量。</p>
+        <div id="eq2" class="math" aria-label="净补给等于基础水量乘一减有效回收率"></div>
+        <p>旋钮表示目标能力；故障后真正起作用的是有效回收率。储备不是回收率。</p>
+        <div class="status" id="status" aria-live="polite"></div>
+      </div>
+      <div class="panel chart-panel"><div id="chart" class="chart" role="img" aria-label="回收水、净补给与储备的任务水量堆叠条形图"></div></div>
+    </section>
+  </main></div>
+  <script src="assets/lib/echarts.min.js"></script>
+  <script src="assets/lib/katex.min.js"></script>
+  <script src="assets/base.js"></script>
+  <script src="assets/lec.js"></script>
+  <script>
+    Lec.mount({index:36,kicker:"PARTIAL CLOSURE",title:"水不是绕一圈就永远够用",take:"回收系统能减少补给，却无法达到绝对闭合，也会引入设备与故障成本。"});
+    Deck.init({index:36,total:48});
+    const $=id=>document.getElementById(id);
+    const WATER_RATE=Lec.K.lifeSupport.potableWaterKilogramsPerPersonDay;
+    const defaults={crew:4,days:180,recovery:0.90,reserve:0.10};
+    const chart=echarts.init($('chart'),null,{renderer:'svg'});
+    let failed=false;
+    function safe(id,def,min,max){const n=Lec.P.finiteNumber(Number($(id).value),def);return Lec.P.clamp(Lec.P.positive(n,def),min,max)}
+    function calc(rec,crew,days,reserve){
+      const base=Lec.P.resourceNeed(WATER_RATE,crew,days,0);
+      const checked=Lec.P.recoveredResourceNeed(WATER_RATE,crew,days,rec);
+      const recovered=Lec.P.finiteNumber(base*Lec.P.fraction(rec,1),0);
+      const net=Lec.P.finiteNumber(checked,base);
+      const stock=Lec.P.finiteNumber(net*reserve,0);
+      return {base,recovered,net,stock,total:net+stock};
+    }
+    function update(){
+      const crew=safe('crew',defaults.crew,1,12),days=safe('days',defaults.days,1,365);
+      const set=safe('recovery',defaults.recovery*100,0,98)/100,reserve=safe('reserve',defaults.reserve*100,0,30)/100;
+      const effective=failed?set*0.55:set;
+      const now=calc(effective,crew,days,reserve), normal=calc(set,crew,days,reserve), gap=Lec.P.finiteNumber(now.net-normal.net,0);
+      $('crewOut').value=crew+' 人';$('daysOut').value=days+' 日';$('recoveryOut').value=Deck.fmt(Lec.P.percent(set,1),0)+'%';$('reserveOut').value=Deck.fmt(Lec.P.percent(reserve,1),0)+'%';
+      $('daily').textContent=Deck.fmt(WATER_RATE,1);
+      $('rates').textContent=Deck.fmt(Lec.P.percent(set,1),0)+'% / '+Deck.fmt(Lec.P.percent(effective,1),0)+'%';
+      $('returnBranch').textContent='返回水箱 '+Deck.fmt(Lec.P.percent(effective,1),0)+'%';$('lossBranch').textContent='损失或暂不可用 '+Deck.fmt(Lec.P.percent(1-effective,1),0)+'%';
+      $('process').style.setProperty('--flow',(3+effective*8)+'px');
+      $('device').classList.toggle('bad',failed);$('device').setAttribute('aria-pressed',String(failed));$('device').querySelector('span').textContent=failed?'故障':'正常';
+      $('status').textContent=failed?'本轮未能返回可用水箱；额外补给缺口 +'+Deck.fmt(gap,0)+' kg。':(set>=.97?'接近闭合 ≠ 绝对闭合。任务越长，剩余缺口仍会累积。':'回收率越高，需要携带的新水越少；损失仍会随任务时长累积。');
+      chart.setOption({animation:!Deck.reduced(),animationDurationUpdate:240,textStyle:{fontSize:16,fontFamily:Deck.token('--font-sans')},tooltip:{trigger:'axis',textStyle:{fontSize:16},formatter:p=>p.map(x=>x.marker+x.seriesName+'：'+Deck.fmt(x.value,0)+' kg').join('<br>')+'<br>有效回收率：'+Deck.fmt(Lec.P.percent(effective,1),0)+'% · '+(failed?'故障':'正常')},legend:{top:2,textStyle:{fontSize:14},data:['回收水','必须携带的净补给','储备']},grid:{left:70,right:30,top:48,bottom:28},xAxis:{type:'value',axisLabel:{fontSize:13,formatter:v=>v+' kg'}},yAxis:{type:'category',data:['任务水量'],axisLabel:{fontSize:14}},series:[{name:'回收水',type:'bar',stack:'water',data:[now.recovered],itemStyle:{color:Deck.token('--accent')}},{name:'必须携带的净补给',type:'bar',stack:'water',data:[now.net],itemStyle:{color:Deck.token('--accent-2')}},{name:'储备',type:'bar',stack:'water',data:[now.stock],itemStyle:{color:Deck.token('--line-strong')}}]});
+    }
+    $('recovery').value=defaults.recovery*100;$('reserve').value=defaults.reserve*100;
+    ['recovery','crew','days','reserve'].forEach(id=>$(id).addEventListener('input',update));
+    $('device').addEventListener('click',()=>{failed=!failed;update()});
+    $('reset').addEventListener('click',()=>{$('crew').value=defaults.crew;$('days').value=defaults.days;$('recovery').value=defaults.recovery*100;$('reserve').value=defaults.reserve*100;failed=false;update()});
+    katex.render('基础水量 = 人数 \\times 天数 \\times 每人每天用水',$('eq1'),{throwOnError:false});
+    katex.render('净补给 = 基础水量 \\times (1-有效回收率)',$('eq2'),{throwOnError:false});
+    window.addEventListener('resize',()=>chart.resize());update();
+  </script>
+</body>
+</html>

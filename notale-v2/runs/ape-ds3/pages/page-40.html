@@ -1,0 +1,361 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+
+</head>
+<body data-page="40" data-total="50">
+<div id="stage">
+<main id="main"></main>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script src="assets/lib/seedrandom.min.js"></script>
+<script src="assets/lib/echarts.min.js"></script>
+<script>
+Lec.mount({
+  index: 40,
+  kicker: "四 光速",
+  title: "光速限速牌",
+  take: "光速是宇宙的限速牌：星际问题的第一性不是「我们还不够快」，而是「宇宙的尺子本身有上限」。"
+});
+
+(function() {
+  var main = document.getElementById('main');
+  main.innerHTML = '\
+    <div class="row items-stretch" style="padding:var(--space-5); gap:var(--space-5); height:100%;">\
+      <!-- 左栏 ~46% -->\
+      <div class="col min0" style="flex:0 0 46%;">\
+        <div class="grow min0" style="position:relative; border-radius:var(--radius-md); overflow:hidden; background:var(--bg);">\
+          <canvas id="ship-canvas" class="cv-fill no-pan"></canvas>\
+        </div>\
+        <div class="panel" style="margin-top:var(--space-4);">\
+          <div class="ctl row items-center gap-sm">\
+            <span style="font-size:var(--fs-label); white-space:nowrap;">飞船速度</span>\
+            <input type="range" id="speed-slider" min="0.10" max="0.999" step="0.001" value="0.50" style="flex:1; min-width:0;">\
+            <span id="speed-fraction" style="font-size:var(--fs-body); font-weight:700; min-width:60px; text-align:right; font-variant-numeric:tabular-nums;">0.500 c</span>\
+          </div>\
+          <div class="row items-center justify-between" style="margin-top:var(--space-2);">\
+            <span id="speed-value" style="font-size:var(--fs-sec); color:var(--muted); font-variant-numeric:tabular-nums;"></span>\
+            <span id="time-value" style="font-size:var(--fs-sec); color:var(--accent); font-weight:700; font-variant-numeric:tabular-nums;"></span>\
+          </div>\
+        </div>\
+      </div>\
+      <!-- 右栏 ~54% -->\
+      <div class="col min0" style="flex:0 0 54%;">\
+        <div class="grow min0" id="chart-container" style="width:100%;"></div>\
+        <div class="note" style="margin-top:var(--space-3);">\
+          <p style="font-size:var(--fs-sec); line-height:var(--lh-sec); margin:0;">\
+            旋钮越向右拧，旅行时间减少得越少——曲线已经贴到 <strong style="color:var(--accent);">光速地板</strong> 上。\
+            对更远的目标，这条地板还会更高：几十光年外的恒星，即使 99.9% 光速也要几十年起步。\
+          </p>\
+        </div>\
+      </div>\
+    </div>';
+
+  /* ========== Lec 常量 & 换算 ========== */
+  var D_LY = Lec.K.NEAREST_STAR_LY;          // 4.24 光年
+  var D_KM = Lec.P.lyToKm(D_LY);
+  var C_KMPS = Lec.K.SPEED_OF_LIGHT_KMPS;
+  var ASYMPTOTE_YEARS = Lec.P.travelTimeYears(D_KM, C_KMPS);
+
+  /* ========== 左栏：飞船画布 ========== */
+  var cv = document.getElementById('ship-canvas');
+  var stars = [];
+  var rng;
+
+  function generateStars(w, h) {
+    stars = [];
+    rng = new Math.seedrandom('page-40-stars');
+    for (var i = 0; i < 200; i++) {
+      stars.push({
+        x: rng() * w,
+        y: rng() * h,
+        z: 0.2 + rng() * 0.8,   // 深度：0.2(近) ~ 1.0(远)
+        b: 0.3 + rng() * 0.7
+      });
+    }
+  }
+
+  function drawShip(f) {
+    var ctx = Deck.fit(cv);
+    var w = cv.width, h = cv.height;
+    ctx.clearRect(0, 0, w, h);
+
+    // 首次生成星星
+    if (stars.length === 0) {
+      generateStars(w, h);
+    }
+
+    // 背景
+    ctx.fillStyle = Deck.token('--bg') || '#0b0e14';
+    ctx.fillRect(0, 0, w, h);
+
+    // 星迹 & 星点
+    var trailFactor = f * 90;
+    if (Deck.reduced()) trailFactor = 0;
+    for (var i = 0; i < stars.length; i++) {
+      var s = stars[i];
+      var parallax = 1.0 - s.z * 0.6;  // 近的星移动更多
+      var len = trailFactor * parallax;
+      var alpha = s.b * 0.7;
+
+      // 星迹
+      if (len > 2) {
+        ctx.beginPath();
+        ctx.moveTo(s.x, s.y);
+        ctx.lineTo(s.x - len, s.y);
+        ctx.strokeStyle = 'rgba(255,255,255,' + (alpha * 0.25) + ')';
+        ctx.lineWidth = 1.2;
+        ctx.stroke();
+      }
+
+      // 星点
+      ctx.fillStyle = 'rgba(255,255,255,' + alpha + ')';
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, 1.4, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // 飞船
+    var cx = w * 0.30;
+    var cy = h * 0.48;
+    ctx.save();
+    ctx.translate(cx, cy);
+
+    // 引擎辉光
+    var glow = Math.min(f * 0.7, 0.6);
+    ctx.fillStyle = 'rgba(255,180,50,' + glow + ')';
+    ctx.beginPath();
+    ctx.ellipse(-60, 0, 16, 10, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = 'rgba(255,240,200,' + (glow * 0.4) + ')';
+    ctx.beginPath();
+    ctx.ellipse(-60, 0, 24, 16, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // 船体——细长流线型
+    ctx.fillStyle = '#c8c8c8';
+    ctx.beginPath();
+    ctx.moveTo(55, 0);
+    ctx.lineTo(35, -14);
+    ctx.lineTo(-40, -12);
+    ctx.lineTo(-55, -4);
+    ctx.lineTo(-55, 4);
+    ctx.lineTo(-40, 12);
+    ctx.lineTo(35, 14);
+    ctx.closePath();
+    ctx.fill();
+
+    // 船体高光线
+    ctx.fillStyle = 'rgba(255,255,255,0.15)';
+    ctx.beginPath();
+    ctx.moveTo(55, 0);
+    ctx.lineTo(35, -8);
+    ctx.lineTo(-30, -7);
+    ctx.lineTo(-30, 0);
+    ctx.closePath();
+    ctx.fill();
+
+    // 舷窗
+    ctx.fillStyle = '#0b7a75';
+    ctx.beginPath();
+    ctx.ellipse(28, 0, 8, 6, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.3)';
+    ctx.beginPath();
+    ctx.ellipse(26, -2, 3, 2, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // 尾翼
+    ctx.fillStyle = '#a0a0a0';
+    ctx.beginPath();
+    ctx.moveTo(-40, -12);
+    ctx.lineTo(-48, -18);
+    ctx.lineTo(-35, -10);
+    ctx.closePath();
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(-40, 12);
+    ctx.lineTo(-48, 18);
+    ctx.lineTo(-35, 10);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.restore();
+  }
+
+  /* ========== 右栏：echarts 曲线 ========== */
+  var chartContainer = document.getElementById('chart-container');
+  var chart = echarts.init(chartContainer, null, { renderer: 'svg' });
+
+  // 生成曲线数据点
+  var curveData = [];
+  for (var fi = 0.10; fi <= 0.999; fi += 0.005) {
+    var v = Lec.P.speedFromFractionOfLight(fi);
+    var t = Lec.P.travelTimeYears(D_KM, v);
+    curveData.push([fi, Lec.P.round(t, 4)]);
+  }
+
+  function getOption(currentF, currentT) {
+    var fVal = currentF || 0.5;
+    var tVal = currentT || Lec.P.travelTimeYears(D_KM, Lec.P.speedFromFractionOfLight(0.5));
+    return {
+      animation: false,
+      grid: {
+        left: 60,
+        right: 70,
+        top: 30,
+        bottom: 50
+      },
+      xAxis: {
+        type: 'value',
+        name: '速度倍率 (c)',
+        nameTextStyle: { fontSize: 14, color: '#5c5e5a' },
+        min: 0.10,
+        max: 0.999,
+        axisLabel: { fontSize: 13, color: '#5c5e5a' },
+        splitLine: { show: false }
+      },
+      yAxis: {
+        type: 'value',
+        name: '旅行时间 (年)',
+        nameTextStyle: { fontSize: 14, color: '#5c5e5a' },
+        axisLabel: {
+          fontSize: 13,
+          color: '#5c5e5a',
+          formatter: function(v) { return v >= 0.1 ? v.toFixed(0) : v.toFixed(1); }
+        },
+        splitLine: { lineStyle: { color: 'rgba(216,218,210,0.2)' } }
+      },
+      tooltip: {
+        trigger: 'item',
+        formatter: function(p) {
+          if (p.seriesIndex === 2) return '光速地板: ' + p.value[1].toFixed(2) + ' 年';
+          return '速度 ' + (p.value[0] * 100).toFixed(1) + '% c<br>时间 ' + p.value[1].toFixed(2) + ' 年';
+        },
+        textStyle: { fontSize: 14 }
+      },
+      series: [
+        {
+          // 主曲线
+          name: '旅行时间',
+          type: 'line',
+          data: curveData,
+          smooth: true,
+          symbol: 'none',
+          lineStyle: {
+            width: 2.5,
+            color: '#0b7a75'
+          },
+          areaStyle: {
+            color: 'rgba(11,122,117,0.06)'
+          },
+          z: 1
+        },
+        {
+          // 渐近线（光速地板）
+          name: '光速地板',
+          type: 'line',
+          data: [[0.10, ASYMPTOTE_YEARS], [0.999, ASYMPTOTE_YEARS]],
+          lineStyle: {
+            type: 'dashed',
+            width: 1.5,
+            color: '#9a3412'
+          },
+          symbol: 'none',
+          z: 0,
+          label: {
+            show: true,
+            formatter: '光速地板 ' + ASYMPTOTE_YEARS.toFixed(2) + ' 年',
+            fontSize: 14,
+            color: '#9a3412',
+            position: 'end'
+          }
+        },
+        {
+          // 当前点
+          name: '当前',
+          type: 'scatter',
+          data: [[fVal, tVal]],
+          symbol: 'circle',
+          symbolSize: 12,
+          itemStyle: {
+            color: '#0b7a75',
+            borderColor: '#ffffff',
+            borderWidth: 2
+          },
+          z: 2,
+          label: {
+            show: true,
+            formatter: function(p) { return p.value[1].toFixed(2) + ' 年'; },
+            fontSize: 14,
+            color: '#0b7a75',
+            fontWeight: 700,
+            position: 'right'
+          }
+        }
+      ]
+    };
+  }
+
+  var initF = 0.5;
+  var initV = Lec.P.speedFromFractionOfLight(initF);
+  var initT = Lec.P.travelTimeYears(D_KM, initV);
+  chart.setOption(getOption(initF, initT));
+
+  /* ========== 更新函数 ========== */
+  function updateSpeed(f) {
+    var v = Lec.P.speedFromFractionOfLight(f);
+    var t = Lec.P.travelTimeYears(D_KM, v);
+
+    // 更新读数
+    document.getElementById('speed-fraction').textContent = f.toFixed(3) + ' c';
+    document.getElementById('speed-value').textContent = '实际速度: ' + Lec.P.round(v, 0) + ' km/s';
+    document.getElementById('time-value').textContent = '到比邻星: ' + Lec.P.round(t, 2) + ' 年';
+
+    // 更新画布
+    drawShip(f);
+
+    // 更新图表
+    chart.setOption({
+      series: [
+        {},
+        {},
+        {
+          data: [[f, t]],
+          label: {
+            formatter: Lec.P.round(t, 2) + ' 年'
+          }
+        }
+      ]
+    });
+  }
+
+  /* ========== 事件绑定 ========== */
+  var slider = document.getElementById('speed-slider');
+  slider.addEventListener('input', function() {
+    var f = parseFloat(this.value);
+    updateSpeed(f);
+  });
+
+  /* ========== 初始绘制 ========== */
+  updateSpeed(0.5);
+
+  /* ========== 窗口尺寸变化 ========== */
+  var chartTimer = null;
+  Deck.onResize(function() {
+    chart.resize();
+    stars = [];  // 下次 drawShip 重新生成
+    if (chartTimer) clearTimeout(chartTimer);
+    chartTimer = setTimeout(function() {
+      drawShip(parseFloat(slider.value));
+    }, 200);
+  });
+
+})();
+</script>
+</body>
+</html>

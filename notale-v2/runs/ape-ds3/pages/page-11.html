@@ -1,0 +1,449 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  :root {
+    --bg:        #0b0e14;
+    --text:      #e6e6e6;
+    --font-sans: "Noto Sans SC", system-ui, sans-serif;
+    --focus:     #d4a847;
+  }
+  #main {
+    --surface:     #181b22;
+    --surface-2:   #1f2229;
+    --accent:      #d4a847;
+    --accent-soft: #2a2418;
+    --line:        #2a2d35;
+    --muted:       #8a8f92;
+  }
+  /* 三栏 triptych */
+  .triptych {
+    display: flex;
+    flex-direction: row;
+    align-items: stretch;
+    justify-content: center;
+    gap: 0;
+    height: 100%;
+    padding: 0;
+  }
+  .triptych > .col {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-width: 0;
+  }
+  .col-left {
+    flex: 0 0 300px;
+    padding: 0 0 0 0;
+  }
+  .col-mid {
+    flex: 0 0 460px;
+    padding: 0 20px 0 20px;
+  }
+  .col-right {
+    flex: 1 1 auto;
+    padding: 0 0 0 24px;
+    min-width: 0;
+  }
+
+  /* 轮盘容器 */
+  .wheel-wrap {
+    position: relative;
+    width: 260px;
+    height: 260px;
+    cursor: grab;
+    touch-action: none;
+    user-select: none;
+  }
+  .wheel-wrap:active { cursor: grabbing; }
+  .wheel-wrap svg {
+    width: 100%;
+    height: 100%;
+    display: block;
+  }
+
+  /* 中栏读数 */
+  .big-number {
+    font-size: 64px;
+    font-weight: 700;
+    line-height: 1.1;
+    color: var(--accent);
+    letter-spacing: -0.02em;
+    transition: color .2s;
+  }
+  .big-unit {
+    font-size: 22px;
+    font-weight: 400;
+    color: var(--muted);
+    margin-top: 4px;
+  }
+  .bar-track {
+    width: 320px;
+    height: 6px;
+    background: var(--line);
+    border-radius: 3px;
+    margin-top: 20px;
+    position: relative;
+    overflow: hidden;
+  }
+  .bar-fill {
+    height: 100%;
+    background: var(--accent);
+    border-radius: 3px;
+    width: 0%;
+    transition: width 0.3s ease-out;
+  }
+  .bar-label {
+    display: flex;
+    justify-content: space-between;
+    width: 320px;
+    font-size: var(--fs-label);
+    color: var(--muted);
+    margin-top: 4px;
+  }
+  .ratio-pill {
+    font-size: var(--fs-sec);
+    color: var(--accent);
+    background: var(--accent-soft);
+    padding: 4px 14px;
+    border-radius: 20px;
+    margin-top: 16px;
+    font-weight: 500;
+    letter-spacing: 0.03em;
+  }
+
+  /* 右栏 */
+  .right-header {
+    font-size: var(--fs-label);
+    color: var(--accent);
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--line);
+    width: 100%;
+    margin-bottom: 12px;
+  }
+  .scale-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    width: 100%;
+    padding: 8px 0;
+    border-bottom: 1px solid rgba(42,45,53,0.5);
+    font-size: var(--fs-body);
+    line-height: 1.4;
+    transition: opacity .2s;
+  }
+  .scale-row .name {
+    color: var(--text);
+  }
+  .scale-row .val {
+    font-weight: 700;
+    color: var(--accent);
+    font-size: var(--fs-lead);
+  }
+  .scale-row .val .unit {
+    font-weight: 400;
+    font-size: var(--fs-sec);
+    color: var(--muted);
+  }
+  .scale-row.active {
+    opacity: 1;
+  }
+  .scale-row:not(.active) {
+    opacity: 0.55;
+  }
+
+  /* 轮盘文字 */
+  .wheel-label {
+    font-size: 14px;
+    fill: var(--muted);
+    text-anchor: middle;
+    dominant-baseline: central;
+    font-family: var(--font-sans);
+    pointer-events: none;
+  }
+  .wheel-label.active {
+    fill: var(--accent);
+    font-weight: 700;
+  }
+  .wheel-center-title {
+    fill: var(--text);
+    font-size: 14px;
+    text-anchor: middle;
+    dominant-baseline: central;
+    font-family: var(--font-sans);
+    font-weight: 600;
+  }
+  .wheel-center-sub {
+    fill: var(--accent);
+    font-size: 15px;
+    text-anchor: middle;
+    dominant-baseline: central;
+    font-family: var(--font-sans);
+    font-weight: 700;
+  }
+</style>
+</head>
+<body data-page="11" data-total="50">
+<div id="stage">
+<main id="main">
+  <div class="triptych">
+    <!-- 左栏：轮盘 -->
+    <div class="col col-left">
+      <div class="wheel-wrap" id="wheel" role="slider" aria-label="换算标尺选择" tabindex="0" aria-valuenow="0" aria-valuemin="0" aria-valuemax="3">
+        <svg viewBox="0 0 300 300" id="wheel-svg">
+          <!-- 外圈 -->
+          <circle cx="150" cy="150" r="130" fill="none" stroke="var(--line)" stroke-width="2"/>
+          <!-- 刻度标记 -->
+          <g id="ticks"></g>
+          <!-- 标尺标签 -->
+          <g id="labels"></g>
+          <!-- 指针 -->
+          <g id="pointer">
+            <line x1="150" y1="150" x2="150" y2="30" stroke="var(--accent)" stroke-width="3" stroke-linecap="round" id="pointer-line"/>
+            <circle cx="150" cy="150" r="6" fill="var(--accent)"/>
+          </g>
+          <!-- 中心文字 -->
+          <text x="150" y="142" class="wheel-center-title">恐龙统治</text>
+          <text x="150" y="162" class="wheel-center-sub" id="center-years">约1.6亿年</text>
+        </svg>
+      </div>
+    </div>
+
+    <!-- 中栏：当前读数 -->
+    <div class="col col-mid">
+      <div class="big-number" id="big-val">50</div>
+      <div class="big-unit" id="big-unit">分钟</div>
+      <div class="bar-track">
+        <div class="bar-fill" id="bar-fill" style="width:3.5%"></div>
+      </div>
+      <div class="bar-label">
+        <span id="bar-current">0</span>
+        <span id="bar-total">24 小时</span>
+      </div>
+      <div class="ratio-pill" id="ratio-pill">占地球史 3.5%</div>
+    </div>
+
+    <!-- 右栏：其余标尺读数 -->
+    <div class="col col-right">
+      <div class="right-header">公共比例 · 占地球史 3.5%</div>
+      <div id="scale-list"></div>
+    </div>
+  </div>
+</main>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script>
+(function() {
+  'use strict';
+
+  /* ---- 常量 ---- */
+  var DINOSAUR_REIGN_YEARS = 160e6; // 约1.6亿年, Lec.K 未提供此常量
+  var EARTH_AGE = Lec.K.EARTH_AGE_YEARS; // 45.4亿年
+  var RATIO = DINOSAUR_REIGN_YEARS / EARTH_AGE;
+
+  // 四把标尺: { name, total, unit, getVal }
+  var SCALES = [
+    { name: '一天',    total: 24,    unit: '小时',   valUnit: '分钟', fmt: function(r) { return (r * 24 * 60).toFixed(1); }, totalLabel: '24 小时' },
+    { name: '一本书',  total: 300,  unit: '页',     valUnit: '页',   fmt: function(r) { return (r * 300).toFixed(1); },       totalLabel: '300 页' },
+    { name: '一段路',  total: 1000, unit: '公里',   valUnit: '公里', fmt: function(r) { return (r * 1000).toFixed(1); },      totalLabel: '1000 公里' },
+    { name: '一部电影', total: 120,  unit: '分钟',   valUnit: '分钟', fmt: function(r) { return (r * 120).toFixed(1); },      totalLabel: '120 分钟' }
+  ];
+  var N = SCALES.length;
+  var activeIdx = 0;
+
+  /* ---- DOM 引用 ---- */
+  var wheel = document.getElementById('wheel');
+  var svg = document.getElementById('wheel-svg');
+  var ticksG = document.getElementById('ticks');
+  var labelsG = document.getElementById('labels');
+  var pointerLine = document.getElementById('pointer-line');
+  var bigVal = document.getElementById('big-val');
+  var bigUnit = document.getElementById('big-unit');
+  var barFill = document.getElementById('bar-fill');
+  var barCurrent = document.getElementById('bar-current');
+  var barTotal = document.getElementById('bar-total');
+  var ratioPill = document.getElementById('ratio-pill');
+  var scaleList = document.getElementById('scale-list');
+  var centerYears = document.getElementById('center-years');
+
+  /* ---- 百分比显示 ---- */
+  var pct = (RATIO * 100).toFixed(1);
+  ratioPill.textContent = '占地球史 ' + pct + '%';
+  centerYears.textContent = '约' + (DINOSAUR_REIGN_YEARS / 1e8).toFixed(1) + '亿年';
+
+  /* ---- 构建轮盘 ---- */
+  var CX = 150, CY = 150, R_OUTER = 130, R_INNER = 115, R_LABEL = 105;
+
+  // 刻度线
+  for (var i = 0; i < N; i++) {
+    var angle = (i / N) * 2 * Math.PI - Math.PI / 2;
+    var x1 = CX + Math.cos(angle) * R_INNER;
+    var y1 = CY + Math.sin(angle) * R_INNER;
+    var x2 = CX + Math.cos(angle) * R_OUTER;
+    var y2 = CY + Math.sin(angle) * R_OUTER;
+    var line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    line.setAttribute('x1', x1);
+    line.setAttribute('y1', y1);
+    line.setAttribute('x2', x2);
+    line.setAttribute('y2', y2);
+    line.setAttribute('stroke', 'var(--line)');
+    line.setAttribute('stroke-width', '2');
+    ticksG.appendChild(line);
+  }
+
+  // 标尺标签
+  for (var i = 0; i < N; i++) {
+    var angle = (i / N) * 2 * Math.PI - Math.PI / 2;
+    var x = CX + Math.cos(angle) * R_LABEL;
+    var y = CY + Math.sin(angle) * R_LABEL;
+    var text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    text.setAttribute('x', x);
+    text.setAttribute('y', y);
+    text.setAttribute('class', 'wheel-label');
+    text.setAttribute('data-idx', i);
+    text.textContent = SCALES[i].name;
+    labelsG.appendChild(text);
+  }
+
+  // 构建右栏列表
+  function buildRight() {
+    scaleList.innerHTML = '';
+    for (var i = 0; i < N; i++) {
+      var row = document.createElement('div');
+      row.className = 'scale-row' + (i === activeIdx ? ' active' : '');
+      row.setAttribute('data-idx', i);
+      var val = SCALES[i].fmt(RATIO);
+      row.innerHTML = '<span class="name">' + SCALES[i].name + '</span>' +
+        '<span class="val">约' + val + ' <span class="unit">' + SCALES[i].valUnit + '</span></span>';
+      scaleList.appendChild(row);
+    }
+  }
+
+  /* ---- 更新显示 ---- */
+  function update(idx) {
+    var s = SCALES[idx];
+    bigVal.textContent = '约' + s.fmt(RATIO);
+    bigUnit.textContent = s.valUnit;
+
+    // 长度条: ratio 占满全长的比例
+    var fillPct = RATIO * 100;
+    barFill.style.width = Math.min(fillPct, 100) + '%';
+    barCurrent.textContent = s.fmt(RATIO) + ' ' + s.valUnit;
+    barTotal.textContent = s.totalLabel;
+
+    // 指针旋转
+    var angle = (idx / N) * 360;
+    pointerLine.setAttribute('transform', 'rotate(' + angle + ' 150 150)');
+
+    // 标签高亮
+    var labels = labelsG.querySelectorAll('text');
+    for (var i = 0; i < N; i++) {
+      labels[i].classList.toggle('active', i === idx);
+    }
+
+    // 右栏高亮
+    var rows = scaleList.querySelectorAll('.scale-row');
+    for (var i = 0; i < N; i++) {
+      rows[i].classList.toggle('active', i === idx);
+    }
+
+    // aria
+    wheel.setAttribute('aria-valuenow', idx);
+
+    activeIdx = idx;
+  }
+
+  /* ---- 轮盘交互 ---- */
+  function getAngleFromCenter(clientX, clientY) {
+    var rect = svg.getBoundingClientRect();
+    var cx = rect.left + rect.width / 2;
+    var cy = rect.top + rect.height / 2;
+    var dx = clientX - cx;
+    var dy = clientY - cy;
+    return Math.atan2(dy, dx);
+  }
+
+  function angleToIdx(angle) {
+    // angle 是 atan2 结果, 范围 -π ~ π
+    // 将 atan2 的 0°(右) 映射到 0°(上), 并归一化
+    var deg = (angle / Math.PI * 180 + 90 + 360) % 360;
+    var sector = 360 / N;
+    var idx = Math.round(deg / sector) % N;
+    return idx;
+  }
+
+  var isDragging = false;
+
+  function onPointerDown(e) {
+    e.preventDefault();
+    isDragging = true;
+    wheel.setPointerCapture(e.pointerId);
+  }
+
+  function onPointerMove(e) {
+    if (!isDragging) return;
+    var angle = getAngleFromCenter(e.clientX, e.clientY);
+    var idx = angleToIdx(angle);
+    update(idx);
+  }
+
+  function onPointerUp(e) {
+    if (!isDragging) return;
+    isDragging = false;
+    wheel.releasePointerCapture(e.pointerId);
+    // snap to nearest
+    var angle = getAngleFromCenter(e.clientX, e.clientY);
+    var idx = angleToIdx(angle);
+    update(idx);
+  }
+
+  function onClick(e) {
+    // 点击直接跳转
+    var angle = getAngleFromCenter(e.clientX, e.clientY);
+    var idx = angleToIdx(angle);
+    update(idx);
+  }
+
+  // 键盘支持
+  function onKeyDown(e) {
+    var idx = activeIdx;
+    if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+      e.preventDefault();
+      idx = (idx + 1) % N;
+    } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      idx = (idx - 1 + N) % N;
+    }
+    if (idx !== activeIdx) update(idx);
+  }
+
+  wheel.addEventListener('pointerdown', onPointerDown);
+  wheel.addEventListener('pointermove', onPointerMove);
+  wheel.addEventListener('pointerup', onPointerUp);
+  wheel.addEventListener('pointercancel', onPointerUp);
+  wheel.addEventListener('click', onClick);
+  wheel.addEventListener('keydown', onKeyDown);
+
+  /* ---- 初始化 ---- */
+  buildRight();
+  update(0);
+
+  /* ---- mount ---- */
+  Lec.mount({
+    index: 11,
+    kicker: 'DEEP TIME',
+    title: '同一段深时，换一把尺子',
+    take: '深时数字在找到参照物之前，没有形状'
+  });
+})();
+</script>
+</body>
+</html>
