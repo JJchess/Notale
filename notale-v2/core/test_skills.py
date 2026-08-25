@@ -47,7 +47,7 @@ class WorkflowRegistryTests(unittest.TestCase):
             "build-learning-game": {"game-model-recipes.md"},
             "collect-visual-references": {"source-routing.md"},
             "compose-page": {"relationship-compositions.md", "framing-and-density.md"},
-            "design-interaction": {"interaction-recipes.md"},
+            "design-interaction": {"interactive-widget.md"},
             "design-motion": {"motion-engine-recipes.md"},
             "generate-illustration": {"prompt-and-integration.md"},
             "review-page": {"review-lenses.md"},
@@ -78,6 +78,19 @@ class WorkflowRegistryTests(unittest.TestCase):
                 text = (skills.WORKFLOWS / name / "SKILL.md").read_text(encoding="utf-8")
                 self.assertIn("read only the selected recipe", text.lower())
                 self.assertIn("Do not read an unselected recipe", text)
+
+    def test_design_interaction_loads_one_portable_widget_reference(self) -> None:
+        root = skills.WORKFLOWS / "design-interaction"
+        skill = (root / "SKILL.md").read_text(encoding="utf-8")
+        links = re.findall(r"\]\((references/[^)]+\.md)\)", skill)
+        self.assertEqual(links, ["references/interactive-widget.md"])
+        self.assertIn("completely in one `Read`", skill)
+
+        reference = (root / links[0]).read_text(encoding="utf-8")
+        for host_detail in ("#stage", "data-page", "data-total", "Deck.", "page-NN"):
+            self.assertNotIn(host_detail, reference)
+        self.assertIn("bounded interactive component, not a page", reference)
+        self.assertIn("function createWidget(root, host)", reference)
 
 
 if __name__ == "__main__":

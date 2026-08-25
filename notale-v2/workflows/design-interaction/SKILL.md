@@ -1,84 +1,78 @@
 ---
 name: design-interaction
-description: "Design and implement one focused learning interaction for a Notale lecture page, including controls, explicit state, visible feedback, keyboard and touch alternatives, deterministic reset, reduced-motion behavior, and cleanup. Use for sliders, toggles, step explorers, comparisons, reveals, drag manipulation, or other pages where the learner must act to understand a concept; do not use for decorative motion alone or a scored game loop."
+description: "Design and implement one bounded, reusable learning interaction inside an assigned Notale lecture page. Use when the learner must manipulate, test, compare, trace, or run something to understand the page claim; the workflow owns the widget's state, controls, visual evidence, feedback, accessibility, and lifecycle, while the page specification and shared theme continue to own the surrounding page. Do not use for decorative motion alone, a conventional chart whose encoding is the main problem, a physical/game simulation with its own specialist workflow, or an entirely static composition."
 ---
 
 # Design Interaction
 
-Build one short action–observation loop that makes the page's teaching point easier to discover. Keep the explanation legible before interaction and make every important state reachable without guessing.
+Build one coherent learning widget inside the assigned page. Treat the widget as a bounded component: the host page owns its title, surrounding explanation, outer layout, theme, navigation, and page metadata; the component owns its model, controls, evidence, state, feedback, and lifecycle.
 
 ## Reference routing
 
-Before any page mutation, including `Write`, `Edit`, `Patch`, or a modifying `Bash` command, read [interaction-recipes.md](references/interaction-recipes.md). Read only the sections that match the selected input, state, rendering, keyboard, and lifecycle paths. Do not load unrelated references.
+Before any page mutation, including `Write`, `Edit`, `Patch`, or a modifying `Bash` command, read [interactive-widget.md](references/interactive-widget.md) completely in one `Read`. It is the only reference for this workflow. Do not look for a second recipe or load an unrelated workflow reference.
 
-## 1. Establish the learning contract
+## 1. Read the host contract
 
-1. Read the page specification, shared contract, and `CHASSIS.md` before editing.
-2. Write one private sentence: “The learner **does X** to observe or compare **Y**, which demonstrates **Z**.”
-3. Name the initial state, allowed actions, meaningful intermediate states, terminal state if any, and exact reset state.
-4. Define the evidence that changes on screen: geometry, annotation, measured value, relationship, or conclusion. Do not count a glow, toast, or animation alone as evidence.
-5. Remove secondary controls that do not serve that sentence. Prefer one rich control over several unrelated widgets.
+1. Read the assigned page specification, shared contract, and `CHASSIS.md`.
+2. Preserve the specified lesson boundary, exact copy and values, allotted page region, theme semantics, `#stage`, `data-page`, `data-total`, and shared assets.
+3. Let the page specification determine the outer title zone and page skeleton. Do not use the widget reference to invent a parallel page composition or visual system.
+4. Identify the one region that will host the widget. If the specification includes supporting prose, place it in the prescribed outer region rather than turning it into widget chrome.
 
-## 2. Choose the smallest sound mechanism
+## 2. Define the component boundary
 
-- Prefer native buttons, radios, checkboxes, and ranges when their semantics fit.
-- Use DOM or SVG for discrete labeled objects and exact semantic geometry.
-- Use Canvas only for dense or continuously redrawn models; keep instructions, controls, values, and text alternatives in HTML.
-- Use drag only when position itself carries meaning. Always provide buttons, a range, or another keyboard-operable path to the same learning states.
-- Keep motion subordinate to state. If choreography rather than manipulation is the main task, use `design-motion` instead.
+Before coding, write a compact private contract using the fields from the reference:
 
-## 3. Model state before drawing
+- insight;
+- learner action;
+- manipulated quantity;
+- visible evidence;
+- meaningful states and reveal rule;
+- internal anatomy;
+- rendering medium;
+- exact reset and cleanup behavior.
 
-1. Create a fresh initial-state factory; never reuse a mutated object for reset.
-2. Route every learner action through one transition function or a small explicit set of named action handlers.
-3. Reject invalid actions without partially mutating state, then explain what is allowed near the control.
-4. Derive labels, readouts, selected styles, annotations, and completion from canonical state. Do not keep parallel DOM-only truth.
-5. Render the initial state before binding optional animation.
-6. Make reset cancel active work, restore the exact initial state, render once, restore a sensible focus target, and announce the reset.
-7. Seed any necessary randomization so reload and reset are reproducible. Avoid randomness when it does not teach anything.
+Create one component root inside the allotted region. Scope page-specific CSS beneath that root and scope selectors, state, timers, observers, and listeners to the component. The delivered file may contain the component inline, but its behavior must not depend on page-wide element lookup or leak styles and events into the host.
 
-## 4. Build one visible feedback loop
+## 3. Adapt the component to Notale
 
-Use this order for each action:
+- Fill the region assigned by the page; do not make the component decide the page's full-frame padding, navigation, or background.
+- Reuse the theme's tokens and semantic classes. Add only the component geometry and states the theme does not supply.
+- Use `Deck.pt()` for pointer coordinates on scaled custom surfaces.
+- Use the chassis resize or fitting helper that matches the renderer, such as `Deck.autofit()` for state-driven Canvas, and retain every returned stop function.
+- Use `Deck.loop()` or the documented page animation interface when continuous work is necessary; keep the component's still state meaningful under reduced motion.
+- Prevent interaction keys from reaching deck navigation only while a focused component control consumes them. Never capture deck keys globally.
+- Keep essential labels, instructions, controls, values, and accessible status in DOM or SVG even when the model is drawn on Canvas.
 
-1. Accept the input.
-2. Update canonical state.
-3. Redraw all derived views.
-4. Show the consequence next to the model, not only in a distant status panel.
-5. State the interpretation after enough evidence is visible; do not reveal the conclusion before the learner acts unless the specification requires it.
+## 4. Implement from state outward
 
-Keep controls visibly enabled, selected, disabled, and resettable. Preserve the theme's semantic color meanings and do not use color as the only state cue.
+1. Build the informative initial state and the primary visual evidence first.
+2. Route every input through the component's canonical state and one idempotent render/update path.
+3. Add the main action, then the intermediate, extreme, failure, reveal, and completion states required by the private contract.
+4. Add deterministic reset when the learner can leave the initial state. Reset must cancel active work before restoring and rendering state.
+5. Add keyboard/touch alternatives and textual feedback without creating a second interaction model.
+6. Centralize teardown so listeners, observers, timers, frames, pointer capture, and owned graphics can be safely released once or repeatedly.
 
-## 5. Make every path operable
+## 5. Integrate without expanding scope
 
-- Use `<button>` and labeled form controls instead of clickable generic elements whenever possible.
-- Keep `:focus-visible` intact and preserve a logical tab order.
-- Give the interactive region a concise instruction and expose changing textual status through a restrained `aria-live="polite"` region.
-- Support touch with Pointer Events and a hit area appropriate to the page scale. Add `.no-pan` only to the surface that truly consumes drag gestures.
-- Prevent interaction keys from leaking into deck navigation only while the interactive control owns them. Do not globally capture arrow keys.
-- For drag, support pointer capture, cancellation, and a non-drag alternative. Use `Deck.pt()` for coordinates inside the scaled stage.
-- Under reduced motion, update state instantly or with a subtle fade while keeping the same actions, information, and completion path.
+- Implement the required outer page copy and layout exactly as specified, then let the widget dominate its allotted teaching region.
+- Do not add another widget, dashboard, article section, page navigation, or decorative system to make the page feel fuller.
+- Do not modify shared assets or another page unless the task explicitly grants that scope.
+- Keep all essential component states inside the fixed `1600x900` page and avoid nested scrolling.
 
-## 6. Own the lifecycle
+## 6. Verify the component and its host
 
-Collect every listener removal, observer disconnect, timer cancellation, animation cancellation, `Deck.loop()` stop function, and graphics disposal in one idempotent cleanup routine. Cancel obsolete work before starting a replacement. Invoke cleanup on page teardown and before any re-initialization.
+Exercise and inspect at least:
 
-Avoid per-frame layout reads, overlapping event bindings, unbounded history, and detached nodes. Pause or stop work that is not visible; never let a hidden tab produce a large time jump.
+1. informative initial state;
+2. one primary pointer action;
+3. the equivalent keyboard or non-drag path;
+4. one meaningful extreme, negative, failure, or reveal state;
+5. reset followed by the primary action again;
+6. rapid repeated input and teardown-sensitive work;
+7. reduced-motion behavior when motion is present.
 
-## Deliverable contract
+Run the available page `Check` for every materially different visual state. Require zero JavaScript errors, failed resources, overflow, clipping, and unreachable controls. Inspect screenshots for component hierarchy and causal clarity; passing synthetic checks does not establish interaction quality.
 
-- Modify only the assigned page file unless the task explicitly grants other files.
-- Preserve `#stage`, `data-page`, `data-total`, and the shared asset interfaces.
-- Keep the complete state model, action handling, rendering, reset, and cleanup in the page-owned code.
-- Provide a visible reset control whenever the learner can change state.
-- Keep the page understandable at the initial and reduced-motion states; do not hide essential information behind hover.
-- Report the learning action, the implemented input paths, the reset behavior, and the checks actually run.
+## Deliverable
 
-## Minimal runtime smoke
-
-1. Open the initial state and confirm that the prompt, control, model, and current value or status are visible.
-2. Exercise one primary action and confirm that canonical state, visual evidence, and textual feedback all change.
-3. Exercise the keyboard or non-drag alternative and one touch/pointer path where applicable.
-4. Reset, repeat the primary action, and confirm the same starting state and result.
-5. Trigger actions rapidly and confirm that work does not stack or continue after reset.
-6. Run the available page `Check` for the initial state and each materially different state; require zero JavaScript errors and zero failed resources. Fix runtime, clipping, and unreachable-control failures. Treat aesthetic judgment as human review, not a synthetic hard gate.
+Modify only the assigned page file unless explicitly told otherwise. Report the component's learner action, the evidence it changes, supported input paths, reset/cleanup behavior, and the last checks actually run.
