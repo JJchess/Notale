@@ -124,6 +124,97 @@ def _anchors(e, pages: Path, tbl) -> tuple:
 
 
 
+def images(pages_dir: Path, plan_dir: Path) -> dict:
+    """图的四条账,全是文本可查的 —— 2026-08-23 加,因为这四件都在上一轮真的发生了。
+
+    这一轮之前没有任何一条被查过,而实测的样子是:
+      · 同一张图的 base64 被内联两遍 —— sol47 的 p11,8 张其实是 4 张,1.4MB 一半是重复
+      · `<img>` 全部没有 `title` —— 8/8 缺,而契约要求出处与许可写在那里
+      · 规格要图 10 页,页面只出 2 页(g11 全建 48 页)
+      · 整页底图压到 `opacity:.72`/`.78` —— 同类任务里协调者写的是 `.18`,差 4 倍
+    """
+    import base64 as _b64
+    pages = sorted(pages_dir.glob("page-*.html"))
+    dup = tot = notitle = 0
+    seen_hash: dict = {}
+    bright = []
+    got = set()
+    for f in pages:
+        t = f.read_text(encoding="utf-8", errors="replace")
+        # **`<image href>` 也算。** 只查 `<img>` 是判据比它声称的语义窄的又一例:
+        # sol50 的 p27 把抠好的彗星当交互 SVG 里的一个精灵用
+        # (`<image class="comet-img" href="assets/img/comet-67p.png" … title="…">`,
+        # 外面是代码画的轨道和尘尾),这一层报的却是「这一页漏图」。
+        for m in re.finditer(r'<(?:img|image)\b[^>]*>', t):
+            tag = m.group(0)
+            tot += 1
+            got.add(f.name[5:7])
+            if 'title="' not in tag:
+                notitle += 1
+            src = re.search(r'(?:src|href)="data:[^;]+;base64,([^"]{64,})"', tag)
+            if src:
+                h = hash(src.group(1))
+                seen_hash[h] = seen_hash.get(h, 0) + 1
+        # 整页底图压到多暗:铺满层(inset:0)上的 opacity
+        for m in re.finditer(r'\{[^{}]*inset:\s*0[^{}]*\}', t):
+            o = re.search(r'opacity:\s*([\d.]+)', m.group(0))
+            if o and float(o.group(1)) > .35:
+                bright.append((f.name[5:7], float(o.group(1))))
+    dup = sum(v - 1 for v in seen_hash.values() if v > 1)
+    # **只统计真的建过的页。** 第一版拿「规格要图的页」直接比「有图的页」,
+    # 于是部分 build(只建 12/50 页)时把 38 个空骨架全算成失败,报出 7/23 的假警,
+    # 而 12 个已建页里 7 页要图、7 页都出了图 —— 真值是 7/7。
+    built = {f.name[5:7] for f in pages if f.stat().st_size > 1000}
+    want = set()
+    for f in sorted(plan_dir.glob("p[0-9][0-9].md")):
+        t = f.read_text(encoding="utf-8")
+        if re.search(r'##\s*媒体', t) or re.search(r'assets/img/[\w.-]+\.(jpg|jpeg|png|webp)', t):
+            want.add(f.stem[1:])
+    return dict(tot=tot, dup=dup, notitle=notitle, bright=bright,
+                want=sorted(want & built), want_all=sorted(want),
+                built=len(built), got=sorted(got))
+
+
+def hand_drawn_svg(pages_dir: Path) -> dict:
+    """数「模型手画的静态 SVG」—— **只报不判,不接进 gate()。**
+
+    为什么要数它:sol48+sol49 的 24 页里 22 个 `<svg>`,元素构成是 40 个 `<ellipse>`、
+    30 个 `<path>`、29 个 `<circle>`,而 `<line>` 只有 3 个、`<text>` 5 个 ——
+    不是在画图表,是在画圆的东西(行星、轨道、盘、彗尾)。按「有没有被 JS 碰过」分开,
+    **16 个是纯静态的手画物体**(各 3–7 个圆/椭圆/路径,350–750 字符,全部连
+    `title`/`desc` 都没有),6 个是被交互驱动的(滑块驱动的原行星盘、d3 容器、量尺)。
+    后一类是 SVG 的正当用法,抠图替不了会变的东西。
+
+    判「静态」的办法是查 id/class 有没有在页内脚本里被引用。这比「有没有
+    `<script>`」准:一页里既有 d3 容器又有手画装饰是常态。
+
+    **为什么只报不判:** 这一轮配套的改动是提示词里一句引导(「先看图池里有没有它」),
+    不是硬闸 —— 那是定下来的口径。留这个数是为了下一轮有据:引导有效就有数据支持,
+    无效就有数据说该上闸。本项目里引导性措辞失效过("不要太满"×4 换来 7 轮零变化)。
+    """
+    pages = sorted(pages_dir.glob("page-*.html"))
+    n_static = n_live = 0
+    per_page: dict = {}
+    for f in pages:
+        if f.stat().st_size < 1000:
+            continue
+        txt = f.read_text(encoding="utf-8", errors="replace")
+        scripts = " ".join(re.findall(r"<script\b[^>]*>(.*?)</script>", txt, re.S))
+        for m in re.finditer(r"<svg\b.*?</svg>", txt, re.S):
+            s = m.group(0)
+            toks = set(re.findall(r'\bid="([\w-]+)"', s))
+            toks |= set(" ".join(re.findall(r'\bclass="([^"]+)"', s)).split())
+            live = any(re.search(r"[\"'.#]" + re.escape(x) + r"\b", scripts) for x in toks)
+            shapes = len(re.findall(r"<(?:ellipse|circle|path)\b", s))
+            if live:
+                n_live += 1
+            elif shapes >= 3:
+                n_static += 1
+                per_page[f.name[5:7]] = per_page.get(f.name[5:7], 0) + 1
+    return dict(static=n_static, live=n_live, per_page=per_page,
+                pages=len([f for f in pages if f.stat().st_size >= 1000]))
+
+
 def check(label: str, pages_dir: str, minutes: int | None) -> dict:
     root = ROOT / "runs" / label
     plan_p = root / "PLAN.md"
@@ -208,7 +299,11 @@ def check(label: str, pages_dir: str, minutes: int | None) -> dict:
     roster_same = (len({rmap.get(f"page-{int(n):02d}") for n in roster}) == 1
                    and len(roster) > 1)
 
+    # 用上面算好的绝对路径。第一版写 `Path(pages_dir)` —— 那是相对名("pages"),
+    # 相对当前目录去找,结果 tot=0/want=0,而 sol47 的 p11 明明有 8 张图。
+    r_img = images(pages, pages / "plan")
     return {
+        "img": r_img,
         "label": label, "pages_dir": pages_dir,
         "planned": len(entries), "delivered": len(rows),
         "missing": missing, "empty": empty, "extra": extra,
@@ -243,6 +338,36 @@ def report(r: dict) -> int:
 
     if r["uncovered"]:
         print(f"  \033[33m⚠ 章表没覆盖到的页: {' '.join(f'{i:02d}' for i in r['uncovered'])}\033[0m")
+
+    # ── 图的四条账。全是文本可查,而这一轮之前没有一条被查过。
+    im = r.get("img") or {}
+    if im:
+        want, got = set(im["want"]), set(im["got"])
+        hit = len(want & got)
+        rate = f"{hit}/{len(want)}" if want else "—"
+        print(f"  图: 共 {im['tot']} 张   规格要图 {len(im['want_all'])} 页,"
+              f"其中已建 {len(want)} 页 → 出图 {rate}（已建 {im['built']}/{r['planned']} 页）")
+        if want and hit < len(want) * 0.75:
+            print(f"    \033[31m✗ 到达率 {hit}/{len(want)} < 75% —— 没出图的页: "
+                  f"{' '.join(sorted(want - got))}\033[0m")
+            print("      规格该点名图池里已存在的文件,而不是写检索任务交给建页去搜"
+                  "(实测:点名的那条线 44 页出图 16 张,写检索任务的 48 页出 4 张)")
+            bad += 1
+        if im["dup"]:
+            print(f"    \033[31m✗ 同一张图的 base64 重复内联 {im['dup']} 处 —— 纯浪费字节\033[0m")
+            bad += 1
+        if im["notitle"] and im["tot"]:
+            pct = im["notitle"] * 100 // im["tot"]
+            tag = "\033[31m✗" if pct > 10 else "\033[33m⚠"
+            print(f"    {tag} {im['notitle']}/{im['tot']} 张缺 title —— "
+                  f"契约要求出处与许可写在那里\033[0m")
+            if pct > 10:
+                bad += 1
+        if im["bright"]:
+            worst = max(o for _, o in im["bright"])
+            print(f"    \033[31m✗ 整页底图压得太亮 {len(im['bright'])} 处,最亮 opacity {worst} "
+                  f"(要求 ≤.35;同类任务里协调者写 .18)\033[0m")
+            bad += 1
     if r["chapters"]:
         gap = "" if not r["minutes"] or r["budget"] == r["minutes"] else \
               f"  \033[33m⚠ 与目标 {r['minutes']} 分差 {r['budget']-r['minutes']:+d}\033[0m"

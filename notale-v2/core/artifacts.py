@@ -366,6 +366,7 @@ _ALIAS = {
     "pid": ("#", "页", "页号", "序号"),
     "stay": ("停留", "秒", "时长", "分钟"),
     "structure": ("知识结构", "结构", "骨架"),
+    "layout": ("版式", "布局", "layout"),
     "interaction": ("交互", "交互形式"),
     "claim": ("一句话", "主张", "take", "要让读者信什么"),
     "avoid": ("不许碰", "边界", "不讲"),
@@ -375,7 +376,7 @@ _ALIAS = {
     "act": ("幕", "幕次", "act"),
     "evidence": ("证据", "证据链", "证据节点", "节点"),
 }
-ROW_COLS = ("停留", "知识结构", "交互", "一句话", "不许碰")
+ROW_COLS = ("停留", "知识结构", "版式", "交互", "一句话", "不许碰")
 
 
 def _split_row(line: str) -> list:
@@ -414,6 +415,8 @@ class Row:
     interaction: str
     claim: str
     avoid: str
+    # 旧 PLAN.md 没有版式列，保留默认值以支持续跑；新规划会把它作为必填列。
+    layout: str = ""
     extra: dict = field(default_factory=dict)   # 模型多写的列,原样留着
     # 带默认值 —— 老的 PLAN.md 没有这两列,续跑旧 run 时不能因此炸掉。
     act: str = ""
@@ -437,7 +440,8 @@ class Row:
     @property
     def raw(self) -> str:
         base = (f"| {self.nn} | {self.act or '—'} | {self.evidence or '—'} "
-                f"| {self.stay:g} | {self.structure} | {self.interaction} "
+                f"| {self.stay:g} | {self.structure} | {self.layout or '—'} "
+                f"| {self.interaction} "
                 f"| {self.claim} | {self.avoid} |")
         if self.extra:
             base += "  (表里还有:" + "、".join(f"{k}={v}" for k, v in self.extra.items()) + ")"
@@ -445,7 +449,7 @@ class Row:
 
     def missing(self) -> list:
         bad = [] if self.stay else ["停留"]
-        for k, v in zip(ROW_COLS[1:], (self.structure, self.interaction,
+        for k, v in zip(ROW_COLS[1:], (self.structure, self.layout, self.interaction,
                                        self.claim, self.avoid)):
             if not v.strip():
                 bad.append(k)
@@ -489,6 +493,7 @@ def parse_table(text: str) -> list:
                        stay=float(sec.group(1)) if sec else None,
                        structure=g["structure"], interaction=g["interaction"],
                        claim=g["claim"], avoid=g["avoid"],
+                       layout=g.get("layout", "").strip(),
                        act=g.get("act", "").strip(),
                        evidence=g.get("evidence", "").strip(),
                        extra={names[i].strip("*` "): c for i, c in enumerate(cells)
@@ -695,5 +700,4 @@ def lec_api(js: str) -> str:
               f"若这一轮慢,先来看这里。")
         if names:
             out.append("Lec.P: " + "、".join(f"{n}()" for n in names))
-    out.append("Lec.mount({index, kicker, title, take})")
     return "\n".join(out)

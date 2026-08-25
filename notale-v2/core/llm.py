@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import os
+import re
 import random
 import time
 from dataclasses import dataclass
@@ -83,14 +84,23 @@ def to_responses(req: Request) -> dict:
     """
     instructions = "\n\n".join(b.text for b in req.system)
     parts: list[str] = []
+    imgs: list[dict] = []
     for m in req.messages:
         for b in m.content:
-            if getattr(b, "type", None) == "text":
+            t = getattr(b, "type", None)
+            if t == "text":
                 parts.append(b.text)
+            elif t == "image":
+                imgs.append({"type": "input_image",
+                             "image_url": f"data:{b.media_type};base64,{b.data}"})
+    # 有图就走结构化的 input;没图仍然是一个字符串 —— 不改已经跑通的那条路。
+    inp = ("\n\n".join(parts) if not imgs else
+           [{"role": "user",
+             "content": [{"type": "input_text", "text": "\n\n".join(parts)}] + imgs}])
     body = {
         "model": req.model,
         "instructions": instructions,
-        "input": "\n\n".join(parts),
+        "input": inp,
         "max_output_tokens": req.max_tokens,
     }
     effort = (req.output_config or {}).get("effort")
@@ -231,6 +241,22 @@ def _chat_history(items: list) -> list[dict]:
         elif ty == "message" or it.get("role"):
             c = it.get("content")
             if isinstance(c, list):
+                # 带图的消息要按 chat 的形状转,不能拍成字符串。
+                # builder 看图那条路就是「工具回一句话 + 紧跟一条带 input_image 的
+                # user 消息」(tool_result 在两条 wire 上都只装字符串),
+                # 这里拍平的话图会**静静地消失**,报告仍然显示它看过了。
+                if any(isinstance(x, dict) and x.get("type") == "input_image" for x in c):
+                    parts = []
+                    for x in c:
+                        if not isinstance(x, dict):
+                            continue
+                        if x.get("type") == "input_image":
+                            parts.append({"type": "image_url",
+                                          "image_url": {"url": x.get("image_url", "")}})
+                        elif x.get("text"):
+                            parts.append({"type": "text", "text": x["text"]})
+                    msgs.append({"role": it.get("role", "user"), "content": parts})
+                    continue
                 c = "".join(x.get("text", "") for x in c if isinstance(x, dict))
             msgs.append({"role": it.get("role", "assistant"), "content": c or ""})
     return msgs
@@ -479,15 +505,36 @@ def _once(body: dict) -> Reply:
     )
 
 
-def fill(text: str, **kw: object) -> str:
+_LEFTOVER = re.compile(r"\{[a-z_][a-z0-9_]*\}")
+
+
+def fill(text: str, _where: str = "?", **kw: object) -> str:
     """只替换指定的键,别的花括号原样留着。
 
     不能用 str.format:提示词里本来就有 `Lec.mount({index, kicker, title, take})`
     这种 JS 片段,format 会把它当占位符炸掉。提示词只会越来越多代码,
     所以换成字面替换,而不是每处去转义。
+
+    **替换完还剩下占位符长相的串就喊出来。** 这是量出来必须补的:
+    `prompts/contract.md` 里有一个 `{minutes}`,而 planner 调那一步时没传这个键 ——
+    字面替换不报错,于是 `{minutes}` 原样进了模型的输入,模型照抄进产物:
+    ape-g18 的 CONTRACT.md §1 里写着「重复讲会让 `{minutes}` 分钟塌掉」,
+    50 页每页都读到这一句。**这类漏配以前是完全静默的。**
+
+    只警告不抛异常:`{index}` 这种长相的串将来完全可能是提示词里的 JS,
+    为一个花括号打死一轮 50 页的规划不值得。喊出来就够了 —— 要的是别再静默。
     """
+    # 占位符要在**模板上**数,不能在替换完的结果上数。第一版数的是结果,
+    # 于是把注入进去的值里的花括号也算成漏配 —— `lec_api` 那段抄自 lec.js 的
+    # 接口正文里就带着 `{n}`,报了一条假警。模板要什么、调用处给了什么,
+    # 这两个集合相减才是真的漏配。
+    want = set(_LEFTOVER.findall(text))
+    miss = sorted(want - {"{" + k + "}" for k in kw})
     for k, v in kw.items():
         text = text.replace("{" + k + "}", str(v))
+    if miss:
+        print(f"      ⚠ 提示词 {_where} 里有 {' '.join(miss)},调用处没传这几个键 —— "
+              f"它们会原样进模型的输入,再原样出现在产物里。", flush=True)
     return text
 
 

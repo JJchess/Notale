@@ -13,7 +13,29 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-DEFAULT = Path("/data1/home/zhuyifan/ws2/Notale/notale/zero/.claude/skills")
+# **不指向 notale-v2 外面。** 以前这里是 `../notale/zero/.claude/skills`,
+# 那个目录被删掉之后:图池 0/12、45 份规格的「必用skill」全空、expand 静默抛
+# FileNotFoundError —— 一天里三次中断都出在这一类。
+# 现在 harness 的输入全部在 notale-v2/vendor 下,跟着这个包一起走。
+LEGACY = Path(__file__).resolve().parent.parent / "vendor" / "skills"
+WORKFLOWS = Path(__file__).resolve().parent.parent / "workflows"
+DEFAULT = LEGACY
+
+# Planner 只在这十个“建页工作流”里选一个。另两份各有单独职责：
+# set-visual-direction 属于全课主题阶段，review-page 只用于已有页面的修复。
+PAGE_WORKFLOWS = (
+    "build-learning-game",
+    "build-3d-scene",
+    "simulate-2d",
+    "visualize-data",
+    "design-interaction",
+    "design-motion",
+    "collect-visual-references",
+    "generate-illustration",
+    "shape-typography",
+    "compose-page",
+)
+ALL_WORKFLOWS = PAGE_WORKFLOWS + ("set-visual-direction", "review-page")
 _FM = re.compile(r"^---\s*\n(.*?)\n---\s*\n", re.S)
 
 
@@ -22,7 +44,12 @@ def _desc(text: str) -> str:
     if not m:
         return ""
     d = re.search(r"^description:\s*(.+?)\s*$", m.group(1), re.M)
-    return d.group(1).strip() if d else ""
+    if not d:
+        return ""
+    value = d.group(1).strip()
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+        value = value[1:-1]
+    return value
 
 
 def catalog(root: Path = DEFAULT) -> str:
@@ -45,6 +72,64 @@ def catalog(root: Path = DEFAULT) -> str:
             "**清单里有对应技法文档的,先读了再动手,不要自己从头摸索一套。**\n"
             "理由和库一样:每页各自重新试一遍,产出不稳定、也慢。\n"
             "清单里没有对应的,就自己写,不必硬凑。\n\n" + body)
+
+
+def available(root: Path) -> tuple[str, ...]:
+    """Return names that really exist under a Skill/workflow root."""
+    if not root.is_dir():
+        return ()
+    return tuple(sorted(d.name for d in root.iterdir() if (d / "SKILL.md").is_file()))
+
+
+def workflow_catalog(root: Path = WORKFLOWS) -> str:
+    """Compact Planner-facing catalog, in deterministic routing order."""
+    rows = []
+    existing = set(available(root))
+    for name in PAGE_WORKFLOWS:
+        if name not in existing:
+            continue
+        text = (root / name / "SKILL.md").read_text(encoding="utf-8", errors="replace")
+        desc = _desc(text)
+        rows.append(f"- {name}: {desc}" if desc else f"- {name}")
+    return "\n".join(rows)
+
+
+def assigned_workflow(name: str, root: Path = WORKFLOWS) -> str:
+    """Builder system block for one routed workflow; no catalog and no gate."""
+    f = root / name / "SKILL.md"
+    if not name or not f.is_file():
+        raise ValueError(f"未知主工作流 {name!r}; 可用: {', '.join(available(root))}")
+    desc = _desc(f.read_text(encoding="utf-8", errors="replace"))
+    row = f"- {name}: {desc}" if desc else f"- {name}"
+    return ("本页只装载下面一个 workflow。先用 Skill 工具读取它，再严格执行 SKILL.md "
+            "顶部的 Reference routing：所有基础必读项和已选分支项，都要在任何页面修改前"
+            "用 `Read` 读取，包括 `Write`、`Edit`、`Patch` 或会改文件的 `Bash`；不要读取"
+            "未选分支或无关 reference。scripts 只在 workflow 明确要求时使用。\n\n" + row)
+
+
+def assigned(names, root: Path = DEFAULT) -> str:
+    """只列这一页被指派的那几条 —— builder 侧用这个,不用全 49 条的 `catalog()`。
+
+    量出来的:16 轮里 builder 侧的**自选**合计 33 次,33 次全是 `web-access`,
+    而且 33 次里 33 次都已经指派了 `web-media-getter`。**那不是「发现规划漏指的技法」,
+    是在找第二条取图的路** —— 也就是本文件下面那段注释里记的那条绕行道
+    (绕过取图脚本,丢掉许可与出处记录)。图池修好之后 sol47/sol48/g14/g16 自选全是 0。
+
+    所以全清单在这一侧换来的唯一行为是一条我们不想要的绕行道,而它占每页 9,221 字符
+    (34 页一轮 = 313k)。**注意前提:这条只在「规划照旧逐页指派」时成立** ——
+    `nn11-low`/`nn11-med` 指派 0、模型自选 33/59 次,那时候清单是唯一入口,不能一起砍。
+    """
+    names = [n for n in dict.fromkeys(names) if n]
+    if not names:
+        return ("这一页没有指派技法文档,直接动手。需要什么技法自己写,不要去猜有哪些 skill 可调。")
+    rows = []
+    for n in names:
+        f = root / n / "SKILL.md"
+        d = _desc(f.read_text(encoding="utf-8", errors="replace")) if f.is_file() else ""
+        rows.append(f"- {n}: {d}" if d else f"- {n}")
+    # 措辞跟 catalog() 一致:硬措辞是量出来的,软措辞对应过四轮 0 次调用。
+    return ("下面这些技法文档是规划阶段按这一页的真实需要指派的,**不是可选项**。\n"
+            "用 Skill 工具把名字原样传进去,读完再动手。\n\n" + "\n".join(rows))
 
 
 # 技法文档里的路径占位符。**必须替换成真实绝对路径。**

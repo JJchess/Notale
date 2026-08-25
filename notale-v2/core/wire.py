@@ -34,6 +34,20 @@ class TextBlock(BaseModel):
     cache_control: CacheControl | None = None
 
 
+class ImageBlock(BaseModel):
+    """一张图。**端点两种线格式都验过支持**:探针图里写的 748291 被读对了、
+    两半颜色也说对了(rgb(196,78,42) 说橙红、rgb(12,74,88) 说深青)。
+
+    加它的理由很窄:同类任务里协调者在写 deck.css 之前,把要当整页底图用的
+    三张生成插画用 PIL 拼成一张 960×180 的联系表,然后**看了那张图**(它的第 22 次调用),
+    才定下暖近黑的底色。它没有看那 14 张照片 —— 照片它只读描述性标题。
+    所以这一条只服务一件事:让写 CSS 的那一步看见底图长什么样。
+    """
+    type: Literal["image"] = "image"
+    data: str                                  # base64,不带 data: 前缀
+    media_type: str = "image/jpeg"
+
+
 class ThinkingBlock(BaseModel):
     type: Literal["thinking"] = "thinking"
     thinking: str
@@ -62,7 +76,7 @@ class ToolResultBlock(BaseModel):
 
 
 Block = Annotated[
-    Union[TextBlock, ThinkingBlock, ToolUseBlock, ToolResultBlock],
+    Union[TextBlock, ImageBlock, ThinkingBlock, ToolUseBlock, ToolResultBlock],
     Field(discriminator="type"),
 ]
 
