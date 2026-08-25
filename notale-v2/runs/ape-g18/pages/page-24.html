@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+</head>
+<body data-page="24" data-total="50">
+<div id="stage">
+  <header style="height:112px">
+    <div style="color:var(--ochre);font-size:var(--fs-label);font-weight:700;letter-spacing:.12em">CHAPTER III · CULTURAL TRANSMISSION</div>
+    <h1 style="margin-top:8px">传到第六个人，石器口诀还剩多少？</h1>
+  </header>
+  <main class="min0" style="display:flex;flex-direction:column;gap:14px">
+    <culture-chain-game class="min0" style="flex:1;display:block"></culture-chain-game>
+  </main>
+  <footer style="height:84px;display:flex;align-items:flex-end;justify-content:space-between;gap:32px;border-top:1px solid var(--line);padding-top:14px">
+    <p class="lead" style="max-width:850px;margin:0">技能经模仿和教学传递时会出现误差、修正与保留，文化不是无损复制。</p>
+    <p class="small" style="max-width:530px;margin:0;text-align:right">这种会丢失、也能修正的复制，一旦在人群中传开，会跑多快？</p>
+  </footer>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script src="assets/lib/seedrandom.min.js"></script>
+<script>
+window.addEventListener('DOMContentLoaded', function () {
+  class CultureChainGame extends HTMLElement {
+    constructor() {
+      super();
+      this.attachShadow({mode:'open'}).innerHTML='<slot></slot>';
+      this._onClick = this._onClick.bind(this);
+      this._build();
+      this.reset(false);
+    }
+    _build() {
+      this.innerHTML = `
+        <style>
+          :host{color:var(--text);font-family:var(--font-sans);min-width:0;min-height:0}
+          *{box-sizing:border-box} button{font-family:inherit}
+          .game{height:100%;display:flex;flex-direction:column;gap:14px;min-height:0}
+          .top{height:100px;display:flex;align-items:center;justify-content:space-between;gap:24px;padding:14px 18px;border:1px solid var(--line-strong);border-radius:12px;background:var(--panel)}
+          .goal{font-size:var(--fs-body);line-height:1.45}.goal strong{color:var(--cyan)}
+          .params{color:var(--muted);font-size:var(--fs-sec);line-height:1.45;text-align:right}.params b{color:var(--text)}
+          .k-process{position:relative;display:flex;flex:1;align-items:stretch;min-width:0;min-height:0}
+          .axis{position:absolute;z-index:-1;top:50%;left:0;width:100%;height:2px;background:var(--cyan);opacity:.38}
+          .step{flex:1;min-width:0;padding:14px 12px;border-top:2px solid var(--line);background:transparent}
+          .step[aria-current="step"]{border-color:var(--cyan);box-shadow:inset 0 3px 0 rgba(69,214,232,.42)}
+          .step.done{opacity:.62}.step.pending .slot{color:var(--line-strong)}
+          .who{display:flex;align-items:center;justify-content:space-between;gap:6px;margin-bottom:12px;font-size:var(--fs-sec);font-weight:700}
+          .turn{font:600 var(--fs-label)/1.35 var(--font-mono);color:var(--muted)}
+          .slot{min-height:70px;padding:10px 9px;margin-top:8px;border:1px solid var(--line);border-radius:7px;font-size:var(--fs-sec);line-height:1.4;display:flex;align-items:center}
+          .slot.changed{border-color:var(--cyan);box-shadow:inset 3px 0 0 var(--cyan);color:var(--cyan)}
+          .score{margin-top:12px;color:var(--cyan);font:700 var(--fs-body)/1.4 var(--font-mono)}
+          .arw{flex:0 0 48px;display:flex;flex-direction:column;align-items:center;justify-content:center;color:var(--cyan);font-size:var(--fs-h2);line-height:1.2}
+          .arw span{width:68px;margin-top:8px;font-size:var(--fs-label);line-height:1.25;text-align:center;color:var(--muted)}
+          .bottom{height:92px;display:flex;align-items:center;justify-content:space-between;gap:20px;padding:14px 18px;border:1px solid var(--line-strong);border-radius:12px;background:var(--panel)}
+          .hint{font-size:var(--fs-label);line-height:1.45;color:var(--muted)}.hint:before{content:'›';color:var(--cyan);margin-right:.55em;font-weight:700}
+          .feedback{margin-top:6px;min-height:25px;font-size:var(--fs-sec);line-height:1.45;color:var(--text)}
+          .controls{display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:flex-end}
+          .btn{min-width:128px;min-height:48px;padding:9px 15px;border:1px solid var(--line-strong);border-radius:8px;background:transparent;color:var(--text);font-size:var(--fs-sec);font-weight:650;cursor:pointer}
+          .btn:hover,.btn:focus-visible{border-color:var(--cyan);color:var(--cyan)}.btn:focus-visible{outline:3px solid rgba(69,214,232,.3);outline-offset:2px}
+          .btn[aria-pressed="true"]{border-color:var(--cyan);color:var(--cyan);box-shadow:inset 0 -3px 0 var(--cyan)}
+          .btn:disabled{opacity:.45;cursor:not-allowed}
+          @media(prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+        </style>
+        <section class="game" aria-label="石器口诀传递游戏">
+          <div class="top">
+            <div class="goal"><div><strong>目标</strong>　五次交接后，至少保留原口诀的 <b>3 / 4</b> 个位置。</div><div style="margin-top:5px;color:var(--muted);font-size:var(--fs-sec)">保真只按同一位置与原口诀一致的格数计算。</div></div>
+            <div class="params">课堂示意参数：仅模仿时每格误差率 <b>20%</b>；<br>一次“教学修正”可把当次误差率降到 <b>5%</b>。<br>参数不代表史前人群的实测水平。</div>
+          </div>
+          <div class="k-process" id="chain" aria-label="六人口诀传递过程"><div class="axis"></div></div>
+          <div class="bottom">
+            <div><div class="hint">推进前可决定是否把唯一一次教学修正用在这一棒。</div><div class="feedback" id="feedback" aria-live="polite"></div></div>
+            <div class="controls">
+              <button class="btn" id="teach" type="button" aria-pressed="false">本次使用教学修正</button>
+              <button class="btn" id="next" type="button">传给下一人</button>
+              <button class="btn" id="reset" type="button">重新传递</button>
+            </div>
+          </div>
+        </section>`;
+      this.addEventListener('click', this._onClick);
+    }
+    _initialState() {
+      return {round:0, teachArmed:false, teachUsed:false, complete:false, versions:[["看台面","斜击边缘","转动石核","检查刃缘"]], labels:[], changed:[], trace:[]};
+    }
+    _shuffle(a, rng){
+      const out=a.slice();
+      for(let i=out.length-1;i>0;i--){const j=Math.floor(rng()*(i+1));[out[i],out[j]]=[out[j],out[i]];}
+      return out;
+    }
+    start(){ if(this.state.round===0) this._advance(); }
+    reset(emit=true){
+      this.rng=new Math.seedrandom('culture-chain-24');
+      this.substitutes=this._shuffle(["敲击台面","直击中央","换手握紧","看看形状","继续重击","翻转石块","磨平边缘","寻找裂纹"],this.rng);
+      this.subIndex=0; this.state=this._initialState(); this._render();
+      if(emit) this.dispatchEvent(new CustomEvent('game-reset',{bubbles:true,composed:true}));
+    }
+    getState(){return JSON.parse(JSON.stringify(this.state));}
+    _onClick(e){
+      const id=e.target.id;
+      if(id==='teach' && !this.state.teachUsed && !this.state.complete){this.state.teachArmed=!this.state.teachArmed;this._render();}
+      if(id==='next') this._advance();
+      if(id==='reset') this.reset();
+    }
+    _advance(){
+      if(this.state.complete) return;
+      const prev=this.state.versions[this.state.versions.length-1];
+      const next=prev.slice(); const kinds=[]; const changed=[]; const useTeach=this.state.teachArmed;
+      if(useTeach){
+        const wrong=[]; for(let i=0;i<4;i++) if(prev[i]!==this.state.versions[0][i]) wrong.push(i);
+        if(wrong.length){const fix=wrong[Math.floor(this.rng()*wrong.length)];next[fix]=this.state.versions[0][fix];changed.push(fix);kinds.push('修正');}
+      }
+      const rate=useTeach?0.05:0.20;
+      for(let i=0;i<4;i++){
+        if(this.rng()<rate){
+          if(this.rng()<0.5){next[i]='—（遗漏）';kinds.push('遗漏');}
+          else{next[i]=this.substitutes[this.subIndex++%this.substitutes.length];kinds.push('替换');}
+          if(!changed.includes(i)) changed.push(i);
+        }
+      }
+      if(!kinds.length) kinds.push('保留');
+      this.state.round++; this.state.versions.push(next); this.state.labels.push([...new Set(kinds)].join('／')); this.state.changed.push(changed);
+      this.state.trace.push({handoff:this.state.round,teaching:useTeach,changes:[...new Set(kinds)]});
+      if(useTeach){this.state.teachUsed=true;this.state.teachArmed=false;}
+      this.state.complete=this.state.round===5;
+      this._render();
+      const metrics={round:this.state.round,fidelity:this._fidelity()};
+      this.dispatchEvent(new CustomEvent(this.state.complete?'game-complete':'game-progress',{bubbles:true,composed:true,detail:this.state.complete?{score:metrics.fidelity,metrics,trace:this.state.trace}:{state:this.getState(),action:'handoff',metrics}}));
+    }
+    _fidelity(){const v=this.state.versions[this.state.versions.length-1],o=this.state.versions[0];return o.reduce((n,x,i)=>n+(v[i]===x),0);}
+    _render(){
+      const chain=this.querySelector('#chain'); const names=['示范者','学习者 1','学习者 2','学习者 3','学习者 4','学习者 5'];
+      let html='<div class="axis"></div>';
+      for(let i=0;i<6;i++){
+        const visible=i<=this.state.round; const current=i===this.state.round&&!this.state.complete; const cls='step '+(i<this.state.round?'done ':'')+(visible?'':'pending');
+        html+=`<article class="${cls}" ${current?'aria-current="step"':''}><div class="who"><span>${names[i]}</span><span class="turn">${i===0?'原版':'第 '+i+' 棒'}</span></div>`;
+        const version=visible?this.state.versions[i]:['尚未接收上一人的口诀','尚未接收上一人的口诀','尚未接收上一人的口诀','尚未接收上一人的口诀'];
+        version.forEach((x,j)=>{const c=i>0&&visible&&this.state.changed[i-1].includes(j)?' changed':'';html+=`<div class="slot${c}">${j+1} · ${['定位','敲击','转序','核对'][j]}<br>${x}</div>`;});
+        if(i===5&&this.state.complete) html+=`<div class="score">保真 ${this._fidelity()} / 4</div>`;
+        html+='</article>';
+        if(i<5) html+=`<div class="arw" aria-label="第${i+1}次交接">→<span>${i<this.state.labels.length?this.state.labels[i]:'等待相邻交接'}</span></div>`;
+      }
+      chain.innerHTML=html;
+      const teach=this.querySelector('#teach'),next=this.querySelector('#next');
+      teach.setAttribute('aria-pressed',String(this.state.teachArmed)); teach.disabled=this.state.teachUsed||this.state.complete;
+      teach.textContent=this.state.teachUsed?'教学修正已使用':'本次使用教学修正'; next.disabled=this.state.complete;
+      const f=this.querySelector('#feedback');
+      if(!this.state.round) f.textContent='示范者已给出四步原版，选择第一棒是否需要教学。';
+      else if(!this.state.complete) f.textContent=`已传到学习者 ${this.state.round}；上一棒：${this.state.labels[this.state.round-1]}。`;
+      else {const score=this._fidelity();f.textContent=score>=3?'达成：误差没有消失，但关键顺序被保留。':`未达成：误差从第 ${this.state.changed.findIndex(a=>a.length>0)+1} 棒开始累积。`;}
+    }
+  }
+  customElements.define('culture-chain-game', CultureChainGame);
+  Deck.init({index:24,total:50});
+});
+</script>
+</body>
+</html>

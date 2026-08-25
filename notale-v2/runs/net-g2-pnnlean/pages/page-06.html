@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>激活定出口</title>
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+#stage{gap:20px}
+.head{display:flex;align-items:flex-end;justify-content:space-between;flex:0 0 auto}
+h1{font-size:var(--fs-h1);margin:0 0 6px;letter-spacing:.02em} .lead{margin:0;max-width:850px}
+.shared{font:600 var(--fs-label)/1.35 var(--font-mono);padding:10px 16px;border-left:3px solid var(--attention);background:rgba(231,111,46,.07)}
+.workspace{flex:1;min-height:0;display:grid;grid-template-columns:310px 1fr;gap:28px}
+.controls{display:flex;flex-direction:column;gap:14px;padding-top:8px}
+.controls h2{font-size:var(--fs-h2);margin:0 0 2px}.hint{margin:0}
+.rule{width:100%;text-align:left;background:transparent;color:var(--text);border:2px solid rgba(35,43,54,.22);border-radius:8px;padding:16px 18px;cursor:pointer;font:700 var(--fs-body)/1.3 var(--font-sans);display:flex;justify-content:space-between;align-items:center}
+.rule span{font:600 var(--fs-label)/1 var(--font-mono);color:#5d6470}.rule[aria-selected="true"]{border-color:var(--attention);background:rgba(231,111,46,.08)}.rule[aria-selected="true"] span{color:var(--attention)}
+.rule:focus-visible{outline:3px solid var(--focus);outline-offset:3px}
+.explain{margin-top:auto;padding:18px 0 14px;border-top:1px solid rgba(35,43,54,.22)}
+.explain .tag{margin-bottom:10px}.explain p{font-size:var(--fs-body);line-height:1.45;margin:0}.adopt{font-family:var(--font-serif);font-size:var(--fs-sec)!important;margin-top:12px!important;color:var(--model)}
+.compare{display:flex;flex-direction:column;min-width:0;min-height:0;gap:14px}
+.plots{flex:1;min-height:0;display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.plot{min-width:0;display:flex;flex-direction:column;border:2px solid rgba(35,43,54,.16);border-radius:8px;background:rgba(255,255,255,.28);padding:15px 14px 12px;transition:border-color .15s,background .15s}
+.plot.active{border-color:var(--attention);background:rgba(255,255,255,.56)}
+.plothead{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:7px}.plot h2{font-size:var(--fs-h2);margin:0}.formula{font:600 var(--fs-label)/1.2 var(--font-mono);color:#5d6470}
+svg{display:block;width:100%;flex:1;min-height:250px;overflow:visible}.axis{stroke:#777f88;stroke-width:1}.grid{stroke:#c9c5bb;stroke-width:1}.curve{fill:none;stroke:#6e7680;stroke-width:3;vector-effect:non-scaling-stroke}.active .curve{stroke:var(--model);stroke-width:4}.guide{stroke:var(--attention);stroke-width:2;stroke-dasharray:5 5;vector-effect:non-scaling-stroke}.dot{fill:var(--attention);stroke:#fff;stroke-width:2}.rangeband{fill:rgba(36,87,166,.09)}.tick{font:13px var(--font-mono);fill:#646b73}.axlab{font:15px var(--font-sans);fill:#444b53}
+.readout{display:flex;align-items:center;justify-content:center;gap:8px;min-height:48px;border-radius:8px;background:rgba(36,87,166,.07);font:600 var(--fs-label)/1.2 var(--font-mono)}.readout strong{font-size:25px;color:var(--model)}.active .readout{box-shadow:inset 0 0 0 2px var(--model)}
+.chain{flex:0 0 64px;display:flex;align-items:center;justify-content:center;gap:16px;border-top:1px solid rgba(35,43,54,.18);font:700 22px/1 var(--font-mono)}.pill{padding:10px 16px;border:2px solid var(--model);border-radius:8px;color:var(--model);background:#fff}.arrow{font-size:28px;color:#68717a}.chain .current{border-color:var(--attention);color:var(--attention)}
+@media(prefers-reduced-motion:reduce){.plot{transition:none}}
+</style>
+</head>
+<body data-page="06" data-total="22">
+<div id="stage">
+  <header class="head">
+    <div><h1>同一个加权总和，激活规则决定出口</h1><p class="lead">切换规则，比较 <b>z = 0.2</b> 在同一坐标口径下落到哪里。</p></div>
+    <div class="shared">共同输入　z = 0.2</div>
+  </header>
+  <main class="workspace min0">
+    <section class="controls min0" aria-labelledby="choose-title">
+      <h2 id="choose-title">选择激活规则</h2>
+      <p class="hint">点击切换；聚焦后可用 ← → 键比较</p>
+      <div id="rules" role="listbox" aria-label="激活规则">
+        <button class="rule" role="option" data-rule="linear" aria-selected="false">直通 <span>linear</span></button>
+        <button class="rule" role="option" data-rule="step" aria-selected="false">阶跃 <span>step</span></button>
+        <button class="rule" role="option" data-rule="sigmoid" aria-selected="true">sigmoid <span>本课采用</span></button>
+      </div>
+      <div class="explain" aria-live="polite"><div class="tag" id="statusTag">当前：sigmoid</div><p id="meaning">平滑地把任何加权总和压到 0–1。</p><p class="adopt" id="adopt">后续单神经元统一使用 sigmoid。</p></div>
+    </section>
+    <section class="compare min0" aria-label="三种激活规则的同尺度比较">
+      <div class="plots" id="plots"></div>
+      <div class="chain" aria-live="polite"><span class="pill">0.2</span><span class="arrow">→</span><span class="pill current" id="chainRule">sigmoid</span><span class="arrow">→</span><span class="pill" id="chainOut">0.5498</span></div>
+    </section>
+  </main>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script>
+(()=>{
+'use strict';
+Deck.init({index:6,total:22,keys:false});
+const Z=0.2, X0=-4, X1=4, Y0=-1, Y1=4;
+const specs={
+ linear:{title:'直通',formula:'y = z',meaning:'输出等于加权总和，数值范围不受限。'},
+ step:{title:'阶跃',formula:'z ≥ 0 → 1',meaning:'跨过 0 就从 0 跳到 1，没有中间值。'},
+ sigmoid:{title:'sigmoid',formula:'0 < y < 1',meaning:'平滑地把任何加权总和压到 0–1。'}
+};
+const order=['linear','step','sigmoid'];
+const initialState=()=>({rule:'sigmoid'}); let state=initialState();
+const plots=document.getElementById('plots');
+const NS='http://www.w3.org/2000/svg';
+function val(name,x){
+ try{return Lec.P.activation(name,x)}catch(err){
+  if(name==='step') return x>=0?1:0;
+  throw err;
+ }
+}
+function fmt(name,v){return name==='sigmoid'?v.toFixed(4):v.toFixed(1)}
+function pathFor(name,sx,sy){let d=''; const n=name==='step'?160:180; for(let i=0;i<=n;i++){const x=X0+(X1-X0)*i/n,y=val(name,x);d+=(i?'L':'M')+sx(x)+' '+sy(y)+' '} return d}
+function makePlot(name){
+ const s=specs[name], out=val(name,Z); const card=document.createElement('article');card.className='plot';card.dataset.rule=name;
+ card.innerHTML=`<div class="plothead"><h2>${s.title}</h2><span class="formula">${s.formula}</span></div><svg viewBox="0 0 330 330" role="img" aria-label="${s.title}曲线，输入0.2时输出${fmt(name,out)}"></svg><div class="readout">z = 0.2　→　<strong>${fmt(name,out)}</strong></div>`;
+ const svg=card.querySelector('svg'), sx=x=>42+(x-X0)/(X1-X0)*270, sy=y=>282-(y-Y0)/(Y1-Y0)*250;
+ let html=''; for(let y=Y0;y<=Y1;y++)html+=`<line class="grid" x1="42" y1="${sy(y)}" x2="312" y2="${sy(y)}"/><text class="tick" x="34" y="${sy(y)+4}" text-anchor="end">${y}</text>`;
+ for(let x=-4;x<=4;x+=2)html+=`<line class="grid" x1="${sx(x)}" y1="32" x2="${sx(x)}" y2="282"/><text class="tick" x="${sx(x)}" y="302" text-anchor="middle">${x}</text>`;
+ if(name==='sigmoid')html+=`<rect class="rangeband" x="42" y="${sy(1)}" width="270" height="${sy(0)-sy(1)}"/><text class="axlab" x="304" y="${sy(1)-7}" text-anchor="end">0–1 范围</text>`;
+ html+=`<line class="axis" x1="42" y1="${sy(0)}" x2="312" y2="${sy(0)}"/><line class="axis" x1="${sx(0)}" y1="32" x2="${sx(0)}" y2="282"/><path class="curve" d="${pathFor(name,sx,sy)}"/><line class="guide" x1="${sx(Z)}" y1="282" x2="${sx(Z)}" y2="${sy(out)}"/><circle class="dot" cx="${sx(Z)}" cy="${sy(out)}" r="6"/><text class="axlab" x="310" y="320" text-anchor="end">z</text>`;
+ svg.innerHTML=html; plots.appendChild(card);
+}
+order.forEach(makePlot);
+function transition(old,a){if(a.type==='select'&&order.includes(a.rule)&&a.rule!==old.rule)return {rule:a.rule};return old}
+function dispatch(a){const next=transition(state,a);if(next===state)return;state=next;render()}
+function render(){
+ document.querySelectorAll('.rule').forEach(b=>{const on=b.dataset.rule===state.rule;b.setAttribute('aria-selected',on);b.tabIndex=on?0:-1});
+ document.querySelectorAll('.plot').forEach(p=>p.classList.toggle('active',p.dataset.rule===state.rule));
+ const s=specs[state.rule],o=val(state.rule,Z);document.getElementById('statusTag').textContent='当前：'+s.title;document.getElementById('meaning').textContent=s.meaning;
+ document.getElementById('adopt').hidden=state.rule!=='sigmoid';document.getElementById('chainRule').textContent=s.title;document.getElementById('chainOut').textContent=fmt(state.rule,o);
+}
+const events=new AbortController(); const buttons=[...document.querySelectorAll('.rule')];
+buttons.forEach((b,i)=>{b.addEventListener('click',()=>dispatch({type:'select',rule:b.dataset.rule}),{signal:events.signal});b.addEventListener('keydown',e=>{let d=e.key==='ArrowRight'?1:e.key==='ArrowLeft'?-1:0;if(!d)return;e.preventDefault();e.stopPropagation();const n=(i+d+order.length)%order.length;dispatch({type:'select',rule:order[n]});buttons[n].focus()},{signal:events.signal})});
+let destroyed=false;function destroy(){if(destroyed)return;destroyed=true;events.abort()}window.addEventListener('pagehide',destroy,{once:true});
+render();
+})();
+</script>
+</body>
+</html>

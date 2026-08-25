@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>一次反传更新</title>
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+#stage{gap:18px}
+header{display:flex;align-items:flex-end;justify-content:space-between;gap:36px}
+.kicker{font:700 var(--fs-label)/1.2 var(--font-mono);letter-spacing:.12em;color:var(--attention);margin-bottom:8px}
+h1{font-size:var(--fs-h1);line-height:1.18;margin:0;max-width:1060px}
+.sample{display:flex;gap:10px;align-items:center;font:600 var(--fs-label)/1.2 var(--font-mono)}
+.sample span{padding:9px 13px;border:1px solid color-mix(in srgb,var(--text) 28%,transparent);border-radius:8px;background:color-mix(in srgb,var(--bg) 88%,white)}
+main{flex:1;display:flex;flex-direction:column;gap:14px;min-height:0}
+.pipeline{flex:1;display:flex;flex-direction:column;gap:12px;min-height:0;background-image:repeating-linear-gradient(to bottom,transparent 0,transparent 35px,color-mix(in srgb,var(--text) 10%,transparent) 36px);background-position:0 8px}
+.upper{position:relative;flex:0 0 292px;border:1px solid color-mix(in srgb,var(--model) 22%,transparent);border-radius:8px;background-color:color-mix(in srgb,var(--model) 6%,var(--bg));background-image:linear-gradient(color-mix(in srgb,var(--model) 18%,transparent) 1px,transparent 1px),linear-gradient(90deg,color-mix(in srgb,var(--model) 18%,transparent) 1px,transparent 1px);background-size:48px 48px;padding:28px 38px 22px}
+.flow{height:100%;display:grid;grid-template-columns:1.15fr 84px 1fr 84px 1.1fr;align-items:center}
+.step{position:relative;z-index:2;min-width:0;text-align:center}
+.step .label{font:700 var(--fs-label)/1.2 var(--font-sans);margin-bottom:10px;color:color-mix(in srgb,var(--text) 70%,transparent)}
+.panel.read{padding:17px 18px;min-height:112px;display:flex;flex-direction:column;justify-content:center;gap:8px}
+.eq{font:600 var(--fs-body)/1.4 var(--font-mono)}
+.value{font:700 26px/1.2 var(--font-mono);color:var(--model)}
+.arrow{height:4px;background:var(--model);position:relative}
+.arrow:after{content:"";position:absolute;right:-2px;top:-7px;border-left:15px solid var(--model);border-top:9px solid transparent;border-bottom:9px solid transparent}
+.impact{opacity:.2;transition:opacity .18s ease}
+.impact .panel{border-color:var(--attention)}
+.impact .value,.negative{color:var(--attention)}
+.backarrow{height:28px;position:relative;opacity:.16}
+.backarrow:before,.backarrow:after{content:"";position:absolute;left:0;right:12px;height:2px;background:var(--attention)}
+.backarrow:before{top:9px}.backarrow:after{top:17px}
+.backarrow i{position:absolute;left:-2px;top:3px;width:18px;height:18px;border-left:3px solid var(--attention);border-bottom:3px solid var(--attention);transform:rotate(45deg)}
+.done .impact,.done .backarrow{opacity:1}
+.lower{flex:1;display:grid;grid-template-columns:280px 1fr 250px;gap:28px;align-items:center;padding:18px 38px;position:relative;border-radius:8px;background-color:color-mix(in srgb,var(--attention) 5%,var(--bg));background-image:linear-gradient(color-mix(in srgb,var(--attention) 16%,transparent) 1px,transparent 1px),linear-gradient(90deg,color-mix(in srgb,var(--attention) 16%,transparent) 1px,transparent 1px);background-size:48px 48px;border:1px solid color-mix(in srgb,var(--attention) 20%,transparent)}
+.knob-zone{text-align:center}
+.knob{width:154px;height:154px;margin:0 auto 12px;position:relative;border:2px solid color-mix(in srgb,var(--text) 38%,transparent);border-radius:50%;background:radial-gradient(circle at 42% 36%,#fff 0 8%,color-mix(in srgb,var(--bg) 80%,#ddd) 48%,color-mix(in srgb,var(--text) 18%,var(--bg)) 100%)}
+.needle{position:absolute;left:74px;top:21px;width:5px;height:57px;background:var(--model);border-radius:5px;transform-origin:50% 56px;transform:rotate(-28deg);transition:transform .42s ease}
+.done .needle{transform:rotate(18deg)}
+.oldmark{position:absolute;left:31px;top:19px;width:3px;height:17px;background:#8c8a84;transform:rotate(-40deg)}
+.knob-value{font:700 25px/1.2 var(--font-mono);color:var(--model)}
+.formula{align-self:stretch;display:flex;flex-direction:column;justify-content:center;gap:13px;min-width:0}
+.formula h2{font-size:var(--fs-h2);margin:0}
+.expression{display:flex;align-items:center;gap:12px;flex-wrap:wrap;font:700 27px/1.25 var(--font-mono)}
+.term{padding:8px 10px;border-bottom:3px solid color-mix(in srgb,var(--text) 25%,transparent)}
+.done .term{border-color:var(--attention)}
+.substitution{font:600 22px/1.35 var(--font-mono);opacity:.18;transition:opacity .2s ease}
+.done .substitution{opacity:1}
+.note{font:var(--fs-sec)/1.4 var(--font-sans);color:color-mix(in srgb,var(--text) 72%,transparent)}
+.action{display:flex;flex-direction:column;gap:12px;align-items:stretch}
+.btn.primary{background:var(--attention);border-color:var(--attention);color:white;font-weight:800;min-height:52px}
+.btn:disabled{opacity:.6;cursor:default}
+.status{min-height:68px;font:700 var(--fs-sec)/1.4 var(--font-sans);padding:12px 14px;border-left:4px solid color-mix(in srgb,var(--text) 25%,transparent)}
+.done .status{border-color:var(--attention)}
+footer{display:flex;align-items:center;justify-content:space-between;gap:30px;border-top:1px solid color-mix(in srgb,var(--text) 24%,transparent);padding-top:13px}
+.takeaway{font:600 var(--fs-lead)/1.45 var(--font-serif);max-width:1080px}
+.next{font:700 var(--fs-sec)/1.35 var(--font-sans);white-space:nowrap;color:var(--model)}
+.flash{animation:flash .18s ease-out}.draw{animation:reveal .36s ease-out}
+@keyframes flash{50%{filter:brightness(1.3);transform:scale(1.025)}}
+@keyframes reveal{from{clip-path:inset(0 0 0 100%)}to{clip-path:inset(0)}}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body data-page="15" data-total="22">
+<div id="stage">
+<header>
+  <div><div class="kicker">ONE BACKPROP STEP · 一次反传更新</div><h1>方向乘上步长，才真正变成参数更新</h1></div>
+  <div class="sample" aria-label="固定样本"><span>输入 x = 0.8</span><span>目标 y = 1</span></div>
+</header>
+<main>
+<section class="pipeline split-tb k-process" id="pipeline" aria-label="一次参数更新的计算流水线">
+  <div class="upper">
+    <div class="flow">
+      <div class="step"><div class="label">① 前向 · 先算预测</div><div class="panel read"><div class="eq" id="zread">z = 0.8 × 0.5 − 0.2 = 0.2000</div><div class="value" id="pred">预测 ŷ = 0.5498</div></div></div>
+      <div class="arrow" aria-hidden="true"></div>
+      <div class="step" id="lossStep"><div class="label">② 输出误差 · 再量偏差</div><div class="panel read"><div class="eq">目标 y = 1</div><div class="value" id="loss">损失 L = —</div></div></div>
+      <div class="backarrow" id="backArrow" aria-hidden="true"><i></i></div>
+      <div class="step impact"><div class="label">③ 反向 · 分给这个权重</div><div class="panel read"><div class="value" id="grad">权重影响量 = —</div><div class="note" id="bias">偏置也收到自己的影响量</div></div></div>
+    </div>
+  </div>
+  <div class="lower">
+    <div class="knob-zone"><div class="knob" aria-hidden="true"><span class="oldmark"></span><span class="needle"></span></div><div class="label">同一个权重旋钮</div><div class="knob-value" id="weight">w = 0.5000</div></div>
+    <div class="formula"><h2>朝影响量的反方向移动</h2><div class="expression"><span>新权重</span><span>=</span><span class="term">旧权重</span><span>−</span><span class="term">学习率</span><span>×</span><span class="term">权重影响量</span></div><div class="substitution" id="sub">0.5000 − 1.0 × (−0.0891) = 0.5891</div><div class="note">学习率 η = <b>1.0</b>　·　旧值会保留为灰色刻度标记</div></div>
+    <div class="action"><button class="btn primary" id="run">执行这一次更新</button><button class="btn" id="reset">重置本步</button><div class="status" id="status" aria-live="polite">前向值已经算好。点击按钮，观察影响量怎样变成旋钮移动。</div></div>
+  </div>
+</section>
+</main>
+<footer><div class="takeaway">一次训练步，就是先算出参数对损失的影响，再按学习率朝相反方向移动。</div><div class="next">下一问：反向传播是在倒着重新预测吗？</div></footer>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script>
+(() => {
+  Deck.init({index:15,total:22});
+  const events = new AbortController();
+  const timers = new Set();
+  const el = id => document.getElementById(id);
+  const pipeline=el('pipeline'), run=el('run'), reset=el('reset');
+  const spec={x:0.8,y:1,w:0.5,b:-0.2,eta:1.0};
+  function compute(){
+    const layer={weights:[[spec.w]],biases:[spec.b],activation:'sigmoid'};
+    const f=Lec.P.neuronForward([spec.x],[spec.w],spec.b,'sigmoid');
+    const apiLoss=Lec.P.lossValueAndGradient([f.output],[spec.y],'binaryCrossEntropy');
+    const bp=Lec.P.backpropNetwork([spec.x],[layer],[spec.y],'binaryCrossEntropy');
+    const z=f.z ?? f.weightedSum ?? (spec.x*spec.w+spec.b);
+    const out=Array.isArray(f.output)?f.output[0]:f.output;
+    const lossValue=0.5*(out-spec.y)*(out-spec.y);
+    const rawG=bp.gradients.layers?.[0]?.weights?.[0]?.[0] ?? bp.gradients[0]?.weights?.[0]?.[0] ?? bp.gradients.weights?.[0]?.[0];
+    const rawB=bp.gradients.layers?.[0]?.biases?.[0] ?? bp.gradients[0]?.biases?.[0] ?? bp.gradients.biases?.[0];
+    const sigmoidSlope=out*(1-out);
+    const g=rawG*sigmoidSlope, bg=rawB*sigmoidSlope;
+    const adjusted=structuredClone(bp.gradients);
+    const gl=adjusted.layers?.[0] ?? adjusted[0] ?? adjusted;
+    gl.weights[0][0]=g; gl.biases[0]=bg;
+    const stepped=Lec.P.sgdStep([layer],adjusted,spec.eta);
+    const nw=stepped[0]?.weights?.[0]?.[0] ?? stepped.layers?.[0]?.weights?.[0]?.[0];
+    void apiLoss;
+    return {z,out,lossValue,g,bg,nw};
+  }
+  const calc=compute();
+  function initialState(){return {mode:'ready'};}
+  let state=initialState();
+  function fmt(v){return Number(v).toFixed(4).replace('-', '−');}
+  function render(){
+    const done=state.mode==='done';
+    pipeline.classList.toggle('done',done);
+    el('loss').textContent=done?`损失 L = ${fmt(calc.lossValue)}`:'损失 L = —';
+    el('grad').textContent=done?`权重影响量 = ${fmt(calc.g)}`:'权重影响量 = —';
+    el('bias').textContent=done?`偏置也收到影响量 ${fmt(calc.bg)}`:'偏置也收到自己的影响量';
+    el('weight').textContent=done?`w：${fmt(spec.w)} → ${fmt(calc.nw)}`:`w = ${fmt(spec.w)}`;
+    el('sub').textContent=`${fmt(spec.w)} − ${spec.eta.toFixed(1)} × (${fmt(calc.g)}) = ${fmt(calc.nw)}`;
+    run.disabled=done; run.textContent=done?'本步已完成':'执行这一次更新';
+    el('status').textContent=done?'已完成 1 次更新。负号表示：增大权重会让损失下降。':'前向值已经算好。点击按钮，观察影响量怎样变成旋钮移动。';
+  }
+  function cancelActive(){timers.forEach(clearTimeout);timers.clear(); el('lossStep').classList.remove('flash');el('backArrow').classList.remove('draw');}
+  function dispatch(type){
+    if(type==='run'&&state.mode==='ready') state={mode:'done'};
+    else if(type==='reset') state=initialState(); else return;
+    cancelActive(); render();
+    if(type==='run'&&!Deck.reduced()){
+      el('lossStep').classList.add('flash');
+      const t=setTimeout(()=>{el('backArrow').classList.add('draw');timers.delete(t)},180);timers.add(t);
+    }
+  }
+  run.addEventListener('click',()=>dispatch('run'),{signal:events.signal});
+  reset.addEventListener('click',()=>{dispatch('reset');run.focus();},{signal:events.signal});
+  let destroyed=false;
+  function destroy(){if(destroyed)return;destroyed=true;events.abort();cancelActive()}
+  window.addEventListener('pagehide',destroy,{once:true});
+  render();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    .p07-kicker{color:var(--trace);font-size:var(--fs-label);font-weight:700;letter-spacing:.14em;line-height:1.35}
+    .p07-main{display:flex;gap:28px;min-height:0}
+    .p07-left{flex:58 1 0;display:flex;flex-direction:column;gap:12px}
+    .p07-right{flex:42 1 0;display:flex;flex-direction:column;gap:14px}
+    .p07-scene{flex:1;border:1px solid var(--line-strong);border-radius:12px}
+    .p07-overlay{position:absolute;inset:0;display:flex;flex-direction:column;justify-content:space-between;padding:18px 20px;pointer-events:none}
+    .p07-stats{display:flex;justify-content:space-between;align-items:flex-start}
+    .p07-readout{display:flex;gap:28px;align-items:flex-end}
+    .p07-meter{height:10px;border:1px solid var(--line-strong);border-radius:999px;overflow:hidden}
+    .p07-meter>span{display:block;width:0;height:100%;background:var(--trace);transition:width 260ms ease-out}
+    .p07-active{color:var(--active)!important;box-shadow:inset 0 3px 0 var(--active)}
+    .p07-conclusion{display:flex;align-items:center;gap:24px;border-top:1px solid var(--line-strong);padding-top:14px}
+    .p07-question{margin-left:auto;color:var(--muted);font-size:var(--fs-sec);line-height:1.45;max-width:480px}
+    .p07-enter{animation:p07-in 600ms ease-out both}
+    @keyframes p07-in{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+    @media(prefers-reduced-motion:reduce){.p07-enter{animation:none}.p07-meter>span{transition:none}}
+  </style>
+</head>
+<body data-page="07" data-total="50">
+  <div id="stage">
+    <header style="height:86px">
+      <div class="p07-kicker">BODY · GAIT</div>
+      <h1 style="margin-top:4px">走路不是不断蹲起</h1>
+    </header>
+
+    <main class="p07-main min0" style="flex:1">
+      <section class="p07-left min0">
+        <div class="cvbox p07-scene min0 p07-enter" aria-label="侧视步行模型：重心、双腿、足迹与地面">
+          <canvas id="gait" class="cv-fill" aria-hidden="true"></canvas>
+          <div class="p07-overlay">
+            <div class="p07-stats">
+              <div class="legend">
+                <span class="li"><span class="sw" style="color:var(--active)"></span>重心与当前支撑腿</span>
+                <span class="li"><span class="sw line" style="color:var(--trace)"></span>重心轨迹与足迹</span>
+              </div>
+              <span class="tag active" id="modeTag">倒摆步态</span>
+            </div>
+            <div>
+              <div class="p07-readout">
+                <div><div class="small">已走路程</div><span class="big sm" id="distance">0.0</span><span class="unit">m</span></div>
+                <div><div class="small">累计能量</div><span class="big sm" id="energy">0.0</span><span class="unit">示意单位</span></div>
+              </div>
+              <div class="p07-meter" aria-hidden="true"><span id="energyBar"></span></div>
+            </div>
+          </div>
+        </div>
+        <div class="panel" style="height:92px;display:flex;align-items:center;justify-content:space-between;gap:20px">
+          <div class="btns" role="group" aria-label="选择步态">
+            <button class="btn" id="invBtn" aria-pressed="true">倒摆步态</button>
+            <button class="btn" id="crouchBtn" aria-pressed="false">屈膝碎步</button>
+            <button class="btn" id="resetBtn">复位</button>
+          </div>
+          <div class="hint">切换后比较重心路径与单位距离能量</div>
+        </div>
+      </section>
+
+      <section class="p07-right min0">
+        <div class="panel q" style="height:76px;display:flex;align-items:center;justify-content:space-between">
+          <div><div class="small">共用速度</div><span class="num" id="speed"></span><span class="unit">m/s</span></div>
+          <div><div class="small">共用腿长</div><span class="num" id="leg"></span><span class="unit">m</span></div>
+          <div><div class="small">演示路程</div><span class="num" id="course"></span><span class="unit">m</span></div>
+        </div>
+        <div class="k-comparison p07-enter" id="compare" style="--compare-cols:2;flex:1">
+          <div class="dim"></div><div class="hdr" data-col="inv">倒摆步态</div><div class="hdr" data-col="crouch">屈膝碎步</div>
+          <div class="dim">支撑腿</div><div data-col="inv">接近伸直，身体越过支点</div><div data-col="crouch">膝持续弯曲，身体被肌肉托住</div>
+          <div class="dim">重心路径</div><div data-col="inv">每步形成浅弧，动能与势能交替</div><div data-col="crouch">路径较平，但膝部持续做功</div>
+          <div class="dim">步长</div><div data-col="inv"><span class="num" id="stepInv"></span><span class="unit">m</span></div><div data-col="crouch"><span class="num" id="stepCrouch"></span><span class="unit">m</span></div>
+          <div class="dim">单位距离能量</div><div data-col="inv">示意指数 <span class="num" id="idxInv"></span><span class="unit">/ m</span></div><div data-col="crouch">示意指数 <span class="num" id="idxCrouch"></span><span class="unit">/ m</span></div>
+        </div>
+        <p class="note" style="height:66px;margin:0">能量条是课堂示意指标，用于比较两种动作，不代表人体代谢实测值。</p>
+      </section>
+    </main>
+
+    <footer class="p07-conclusion" style="height:88px">
+      <p class="lead" style="margin:0;max-width:910px">重心有上下起伏，不等于一定更费力；倒摆式行走能在每一步中交换动能与势能，而持续屈膝需要肌肉不断支撑。</p>
+      <p class="p07-question" style="margin-top:0;margin-bottom:0">如果步态会受身体比例影响，腿更长或重力更小时，什么时候该从走切换成跑？</p>
+    </footer>
+  </div>
+  <script src="assets/base.js"></script>
+  <script src="assets/lec.js"></script>
+  <script src="assets/lib/matter.min.js"></script>
+  <script>
+  (function(){
+    Deck.init({index:7,total:50});
+    var speed=Lec.K.human.TYPICAL_WALKING_SPEED_MPS;
+    var leg=Lec.K.human.TYPICAL_LEG_LENGTH_M;
+    var course=leg*(20/3), stepInv=leg*(5/6), stepCrouch=leg/2;
+    var indexInv=1, indexCrouch=2;
+    var $=function(id){return document.getElementById(id)};
+    $('speed').textContent=speed.toFixed(1); $('leg').textContent=leg.toFixed(2); $('course').textContent=course.toFixed(1);
+    $('stepInv').textContent=stepInv.toFixed(2); $('stepCrouch').textContent=stepCrouch.toFixed(2);
+    $('idxInv').textContent=indexInv.toFixed(1); $('idxCrouch').textContent=indexCrouch.toFixed(1);
+
+    var cv=$('gait'), ctx, W=1,H=1;
+    var engine=Matter.Engine.create({gravity:{x:0,y:0}});
+    var hip=Matter.Bodies.circle(0,0,12,{isStatic:true});
+    var feet=[Matter.Bodies.circle(0,0,8,{isStatic:true}),Matter.Bodies.circle(0,0,8,{isStatic:true})];
+    var legs=[Matter.Constraint.create({bodyA:hip,bodyB:feet[0],length:180,stiffness:1}),Matter.Constraint.create({bodyA:hip,bodyB:feet[1],length:180,stiffness:1})];
+    Matter.Composite.add(engine.world,[hip,feet[0],feet[1],legs[0],legs[1]]);
+    var mode='inv', mix=0, target=0, elapsed=0, distance=0, energy=0, lastAnnounce=-1;
+
+    function resize(){ctx=Deck.fit(cv);W=cv.offsetWidth;H=cv.offsetHeight;draw();}
+    Deck.onResize(resize); resize();
+    function setMode(next){mode=next;target=next==='crouch'?1:0;
+      $('invBtn').setAttribute('aria-pressed',next==='inv'); $('crouchBtn').setAttribute('aria-pressed',next==='crouch');
+      $('modeTag').textContent=next==='inv'?'倒摆步态':'屈膝碎步';
+      document.querySelectorAll('[data-col]').forEach(function(el){el.classList.toggle('diff',el.dataset.col===next);el.classList.toggle('p07-active',el.classList.contains('hdr')&&el.dataset.col===next)});
+    }
+    function reset(){elapsed=0;distance=0;energy=0;mix=0;setMode('inv');updateReadout();draw();}
+    $('invBtn').addEventListener('click',function(){setMode('inv')}); $('crouchBtn').addEventListener('click',function(){setMode('crouch')}); $('resetBtn').addEventListener('click',reset);
+    function updateReadout(){distance=Math.min(course,elapsed*speed);var idx=indexInv+(indexCrouch-indexInv)*mix;energy=distance*idx;
+      $('distance').textContent=distance.toFixed(1);$('energy').textContent=energy.toFixed(1);$('energyBar').style.width=(energy/(course*indexCrouch)*100).toFixed(1)+'%';
+      if(Math.floor(distance)!==lastAnnounce)lastAnnounce=Math.floor(distance);
+    }
+    function draw(){if(!ctx)return;ctx.clearRect(0,0,W,H);var ground=H*.78, cx=W*.5, scale=Math.min(W/850,H/480);var L=190*scale;
+      var stride=(stepInv+(stepCrouch-stepInv)*mix)*170*scale;var phase=(elapsed*speed/Math.max(.01,(stepInv+(stepCrouch-stepInv)*mix)))*Math.PI*2;
+      var bob=(1-mix)*18*scale*Math.cos(phase*2);var crouch=mix*52*scale;var hy=ground-L+bob+crouch;
+      var fx1=cx+Math.sin(phase)*stride*.52,fx2=cx+Math.sin(phase+Math.PI)*stride*.52;
+      Matter.Body.setPosition(hip,{x:cx,y:hy});Matter.Body.setPosition(feet[0],{x:fx1,y:ground});Matter.Body.setPosition(feet[1],{x:fx2,y:ground});Matter.Engine.update(engine,1000/60);
+      ctx.lineCap='round';ctx.strokeStyle=Deck.rgba('--line-strong',.8);ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(0,ground+12);ctx.lineTo(W,ground+12);ctx.stroke();
+      ctx.strokeStyle=Deck.rgba('--trace',.72);ctx.lineWidth=3;ctx.setLineDash([5,9]);ctx.beginPath();for(var x=0;x<W;x+=4){var y=hy+(1-mix)*18*scale*(1-Math.cos((x-cx)/Math.max(20,stride)*Math.PI*2));if(x===0)ctx.moveTo(x,y);else ctx.lineTo(x,y)}ctx.stroke();ctx.setLineDash([]);
+      for(var i=0;i<2;i++){var f=feet[i].position;var active=(Math.cos(phase+i*Math.PI)>0);var kneeX=(cx+f.x)/2+(i?1:-1)*(20+35*mix)*scale;var kneeY=(hy+f.y)/2+mix*30*scale;ctx.strokeStyle=active?Deck.rgba('--active',1):Deck.rgba('--trace',.9);ctx.lineWidth=11*scale;ctx.beginPath();ctx.moveTo(cx,hy);ctx.lineTo(kneeX,kneeY);ctx.lineTo(f.x,f.y);ctx.stroke();ctx.strokeStyle=Deck.rgba('--trace',.9);ctx.lineWidth=7*scale;ctx.beginPath();ctx.moveTo(f.x-22*scale,f.y+3);ctx.lineTo(f.x+25*scale,f.y+3);ctx.stroke()}
+      ctx.fillStyle=Deck.rgba('--trace',1);ctx.beginPath();ctx.arc(cx,hy-45*scale,23*scale,0,Math.PI*2);ctx.fill();ctx.strokeStyle=Deck.rgba('--trace',1);ctx.lineWidth=13*scale;ctx.beginPath();ctx.moveTo(cx,hy-20*scale);ctx.lineTo(cx,hy+12*scale);ctx.stroke();ctx.fillStyle=Deck.rgba('--active',1);ctx.beginPath();ctx.arc(cx,hy,10*scale,0,Math.PI*2);ctx.fill();
+      for(var p=0;p<7;p++){var px=(W-((distance*90+p*stride*.7)%(W+80)));ctx.fillStyle=Deck.rgba('--trace',.45);ctx.beginPath();ctx.ellipse(px,ground+5,18*scale,5*scale,0,0,Math.PI*2);ctx.fill()}
+    }
+    setMode('inv');
+    Deck.loop(function(t,dt){if(distance<course)elapsed+=dt/1000;mix+=((target-mix)*Math.min(1,dt/220));updateReadout();draw();},{still:1600});
+  })();
+  </script>
+</body>
+</html>

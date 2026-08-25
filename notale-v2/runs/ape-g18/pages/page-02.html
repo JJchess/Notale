@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+</head>
+<body data-page="02" data-total="50">
+<div id="stage">
+  <style>
+    .page-kicker{color:var(--cyan);font-family:var(--font-mono);font-size:var(--fs-label);font-weight:700;letter-spacing:.14em;margin-bottom:4px}
+    survival-bets{display:flex;flex:1;min-height:0;flex-direction:column;gap:12px}
+    .gamebar{display:flex;align-items:center;gap:18px;padding:12px 16px}
+    .rounds{display:flex;gap:8px;align-items:center;min-width:250px}
+    .rounds .tag[aria-current="step"]{border-color:var(--cyan);color:var(--cyan);box-shadow:inset 0 -2px 0 var(--cyan)}
+    .stake-note{flex:1;color:var(--text);font-size:var(--fs-sec);line-height:1.4}
+    .stake-note strong{color:var(--cyan)}
+    .betbtn{position:relative;padding-right:48px!important;text-align:left}
+    .chips{position:absolute;right:10px;top:50%;transform:translateY(-50%);color:var(--cyan);font-size:var(--fs-sec);letter-spacing:1px;white-space:nowrap}
+    .matrix{grid-template-rows:52px repeat(3,1fr) 1px repeat(3,1.1fr);overflow:hidden}
+    .matrix .hdr:first-child{color:var(--muted);font-size:var(--fs-sec);text-align:right}
+    .matrix .cell,.matrix .dim{display:flex;align-items:center;font-size:var(--fs-lead)}
+    .matrix .dim{font-size:var(--fs-body)}
+    .matrix .dim{justify-content:flex-end}
+    .matrix .cell.pending{color:var(--muted)}
+    .matrix .cell.pending span{opacity:.42}
+    .matrix .cell.revealed{color:var(--text)}
+    .matrix .cell.winner{color:var(--cyan);border-color:var(--cyan);box-shadow:inset 3px 0 0 rgba(69,214,232,.68)}
+    .track{display:flex;gap:12px;align-items:center;min-height:28px;font-size:var(--fs-sec);color:var(--muted)}
+    .track strong{color:var(--text)}
+    button:focus-visible{outline:3px solid var(--focus);outline-offset:3px}
+    @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+  </style>
+  <header style="height:88px">
+    <div class="page-kicker">SURVIVAL BETS</div>
+    <h1>你把生存押在哪一种方案上？</h1>
+  </header>
+  <main class="min0" style="display:flex;flex-direction:column">
+    <survival-bets></survival-bets>
+  </main>
+  <footer style="height:66px;display:flex;align-items:flex-end;justify-content:space-between;gap:28px">
+    <p class="lead" style="margin:0">面对寒冷、缺氧与真空，身体变化、工具和环境系统是三种不同押注。</p>
+    <p class="small" style="margin:0;text-align:right;max-width:620px">先别选最终赢家——下一步先看，我们究竟在对抗哪些环境压力。</p>
+  </footer>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script>
+  class SurvivalBets extends HTMLElement{
+    constructor(){super();this.attachShadow({mode:'open'});this.shadowRoot.innerHTML='<slot></slot>';this.state=this.fresh();}
+    fresh(){return{round:0,remaining:5,bets:[0,0,0],locked:false,trace:[]};}
+    connectedCallback(){this.start();}
+    start(){this.state=this.fresh();this.render();this.dispatchEvent(new CustomEvent('game-start',{bubbles:true,composed:true}));}
+    reset(){this.state=this.fresh();this.render();this.dispatchEvent(new CustomEvent('game-reset',{bubbles:true,composed:true}));}
+    getState(){return JSON.parse(JSON.stringify(this.state));}
+    progress(action){this.dispatchEvent(new CustomEvent('game-progress',{bubbles:true,composed:true,detail:{state:this.getState(),action:action,metrics:{remaining:this.state.remaining}}}));}
+    add(i){if(this.state.locked||this.state.remaining<1)return;this.state.bets[i]++;this.state.remaining--;this.progress('bet');this.render();}
+    lock(){if(this.state.locked||this.state.remaining!==0)return;this.state.locked=true;this.state.trace.push({scene:this.state.round,bets:this.state.bets.slice()});this.progress('lock');this.render();}
+    next(){if(!this.state.locked)return;if(this.state.round===2){this.dispatchEvent(new CustomEvent('game-complete',{bubbles:true,composed:true,detail:{score:null,metrics:{rounds:this.state.trace.length},trace:this.state.trace.slice()}}));return;}this.state.round++;this.state.remaining=5;this.state.bets=[0,0,0];this.state.locked=false;this.progress('next');this.render();}
+    render(){
+      const scenes=['寒冷','缺氧','真空'];
+      const heads=['身体变化','工具','环境系统'];
+      const base=[
+        ['能力存放处','解剖与生理','可携带物与操作技能','被维持的局部环境'],
+        ['如何开始工作','身体本身承担','取用并正确操作','接通、密封并持续运行'],
+        ['持续依赖','生理资源','材料与技能','能源、边界与维护']
+      ];
+      const cases=[
+        ['寒冷','代谢、保温等身体反应','衣物、火','有热源的庇护空间'],
+        ['缺氧','短期调节或群体适应','便携供氧','控制空气与压力的空间'],
+        ['真空','无已知身体方案可单独跨越','单件器具只能承担局部功能','压力边界与生命保障共同维持']
+      ];
+      const max=this.state.locked?Math.max.apply(null,this.state.bets):-1;
+      let html='<section class="panel gamebar" aria-label="生存方案押注台">';
+      html+='<div class="rounds" aria-label="轮次">'+scenes.map((s,i)=>'<span class="tag '+(i<this.state.round?'neutral':'')+'" '+(i===this.state.round?'aria-current="step"':'')+'>'+s+'</span>').join('')+'</div>';
+      html+='<div class="stake-note" aria-live="polite">'+(this.state.locked?(this.state.round===2?'三轮已完成：比较你的押注轨迹。':'已锁定。展开本轮依赖后，继续下一种压力。'):'把 <strong>'+ '●'.repeat(this.state.remaining) +'</strong> 分给三种方案；全部用完再锁定。')+'<div class="small">每轮只横向比较同一种压力；筹码表达判断，不是科学评分。</div></div>';
+      html+='<div class="btns" style="gap:8px"><button class="btn" data-act="lock" '+(this.state.remaining||this.state.locked?'disabled':'')+'>锁定押注</button><button class="btn" data-act="'+(this.state.locked&&this.state.round<2?'next':'reset')+'">'+(this.state.locked&&this.state.round<2?'下一轮':'重新押注')+'</button></div></section>';
+      html+='<section class="k-comparison matrix min0" style="--compare-n:3" aria-label="三种生存方案按共同维度比较"><div class="hdr">共同维度</div>';
+      heads.forEach((h,i)=>{html+='<button class="hdr btn betbtn" data-bet="'+i+'" '+(this.state.locked||!this.state.remaining?'disabled':'')+' aria-label="给'+h+'投入一枚筹码">'+h+'<span class="chips" aria-hidden="true">'+'●'.repeat(this.state.bets[i])+'</span></button>';});
+      base.forEach(r=>{html+='<div class="dim">'+r[0]+'</div>'+r.slice(1).map(x=>'<div class="cell">'+x+'</div>').join('');});
+      html+='<div class="rowline"></div>';
+      cases.forEach((r,ri)=>{const shown=ri<this.state.round||(ri===this.state.round&&this.state.locked);html+='<div class="dim '+(ri===this.state.round?'diff':'')+'">'+r[0]+'</div>'+r.slice(1).map((x,ci)=>'<div class="cell '+(shown?'revealed':'pending')+' '+(ri===this.state.round&&this.state.locked&&this.state.bets[ci]===max?'winner':'')+'"><span>'+(shown?x:'锁定后展开依赖')+'</span></div>').join('');});
+      html+='</section><div class="track" aria-live="polite"><strong>个人押注轨迹</strong>'+(this.state.trace.length?this.state.trace.map(t=>'<span>'+scenes[t.scene]+'：'+heads.map((h,i)=>h+' '+('●'.repeat(t.bets[i])||'—')).join(' · ')+'</span>').join(''):'<span>锁定后记录在这里，不合计总冠军。</span>')+'<span style="margin-left:auto">外部方案扩大承受范围，也增加材料、能源或维护依赖。</span></div>';
+      this.innerHTML=html;
+      this.querySelectorAll('[data-bet]').forEach(b=>b.onclick=()=>this.add(Number(b.dataset.bet)));
+      this.querySelector('[data-act="lock"]')?.addEventListener('click',()=>this.lock());
+      this.querySelector('[data-act="next"]')?.addEventListener('click',()=>this.next());
+      this.querySelector('[data-act="reset"]')?.addEventListener('click',()=>this.reset());
+    }
+  }
+  customElements.define('survival-bets',SurvivalBets);
+</script>
+</body>
+</html>

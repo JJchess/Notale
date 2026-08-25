@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+:root{--bg:#11100E;--text:#F1ECE4;--font-sans:Inter,"Noto Sans SC","Microsoft YaHei",system-ui,sans-serif}
+#stage{padding:34px 44px 30px;gap:18px;background-image:linear-gradient(rgba(74,67,59,.14) 1px,transparent 1px),linear-gradient(90deg,rgba(74,67,59,.1) 1px,transparent 1px);background-size:100% 42px,80px 100%}
+.kicker{color:var(--ochre-pale);font:700 15px/1.2 var(--font-mono);letter-spacing:.16em}
+.headline{display:flex;align-items:flex-end;justify-content:space-between;gap:24px}.headline .lead{max-width:640px;color:var(--text-muted)}
+.workspace{display:flex;gap:20px;min-height:0}.audit{display:flex;flex-direction:column;min-height:0;padding:22px}.audit-top{display:flex;align-items:center;justify-content:space-between;gap:16px}.readout{font:720 24px/1.2 var(--font-mono);color:var(--cyan-pale)}
+.chip-wrap{position:relative;flex:1;min-height:0;margin-top:14px}.chip-svg{width:100%;height:100%;touch-action:none}.drag-line{cursor:ew-resize}.drag-line:focus{outline:none}.drag-line:focus .handle{stroke:var(--text-strong);stroke-width:4px}.statusline{display:flex;justify-content:space-between;align-items:center;gap:18px;padding-top:12px;border-top:1px solid var(--line)}
+.feedback{min-height:48px;color:var(--text);font-size:16px;line-height:1.45}.feedback strong{color:var(--cyan-pale)}
+.k-enumeration{grid-template-columns:1fr;grid-template-rows:repeat(4,minmax(0,1fr));gap:10px}.k-enumeration>.it{display:flex;flex-direction:column;justify-content:center;padding:14px 18px;border-top-width:2px}.k-enumeration>.it.current{border-color:var(--cyan);box-shadow:inset 3px 0 0 var(--cyan)}.itemline{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-top:6px}.itemline .big{font-size:28px}.itemline .unit{font-size:16px}.tags{display:flex;flex-wrap:wrap;gap:6px;margin-top:7px}.tags.reveal{opacity:.25}.done .tags.reveal{opacity:1}.conclusion{display:flex;align-items:center;justify-content:space-between;gap:24px;padding:15px 20px;border-left:6px solid var(--ochre);transition:border-color 220ms ease,background 220ms ease}.conclusion.done{border-left-color:var(--cyan);background:linear-gradient(90deg,var(--cyan-soft),var(--panel))}.conclusion p{font-size:19px;line-height:1.42}.next{white-space:nowrap;color:var(--text-muted);font-size:16px}
+@media(prefers-reduced-motion:reduce){*{transition-duration:0s!important}.chip{opacity:1!important;transform:none!important}}
+</style>
+</head>
+<body data-page="38" data-total="48">
+<div id="stage">
+  <header style="height:78px">
+    <div class="kicker">MASS AUDIT · E4</div>
+    <div class="headline"><h1 id="title">土星五号质量审计</h1><p class="lead">拖动电青分界线，圈出真正进入奔月轨道的质量。</p></div>
+  </header>
+  <main class="workspace min0" style="flex:1">
+    <section class="audit cvbox min0 no-pan" style="flex:2.35" aria-labelledby="audit-label">
+      <div class="audit-top"><h2 id="audit-label">一千格起飞质量账本</h2><div class="readout" id="liveRead" aria-live="polite"></div></div>
+      <div class="chip-wrap min0"><svg id="chips" class="chip-svg" role="img" aria-labelledby="chipTitle chipDesc"><title id="chipTitle">土星五号质量筹码账本</title><desc id="chipDesc">一千格代表全部起飞质量，可拖动分界线圈定进入奔月轨道的部分。</desc></svg></div>
+      <div class="statusline"><div><div class="hint">拖动分界线；也可聚焦后按左右方向键微调</div><div class="feedback" id="feedback" aria-live="polite"></div></div><button id="reset" class="btn" type="button">重新审计</button></div>
+    </section>
+    <section class="k-enumeration min0" style="flex:1" aria-label="四项同级质量账目">
+      <article class="it panel"><h3>起飞总账</h3><div class="itemline"><span>离开发射台时</span><span><b class="big" id="totalMass"></b><span class="unit">吨 · <span id="totalPct"></span></span></span></div><div class="tags"><span class="tag material">全部起飞质量</span></div></article>
+      <article class="it panel current"><h3>奔月账</h3><div class="itemline"><span>进入月球转移轨道</span><span><b class="big" id="selectedMass"></b><span class="unit">吨</span></span></div><div class="tags"><span class="tag action">继续奔月</span></div></article>
+      <article class="it panel"><h3>比例账</h3><div class="itemline"><span>每百份中继续奔月</span><span><b class="big" id="selectedPct"></b><span class="unit">份</span></span></div><div class="tags"><span class="tag context" id="pctTag"></span></div></article>
+      <article class="it panel" id="differenceItem"><h3>差额解释</h3><div class="itemline"><span>未随奔月段继续前进</span><span><b class="big" id="differenceMass"></b><span class="unit">吨</span></span></div><div class="tags reveal"><span class="tag material">推进剂</span><span class="tag material">结构</span><span class="tag context">任务系统</span></div></article>
+    </section>
+  </main>
+  <footer class="panel conclusion" id="conclusion" style="height:92px"><p id="conclusionText">完成审计后，账本结论会在这里锁定。</p><span class="next">下一页：微小偏角如何被持续纠正？</span></footer>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script src="assets/lib/d3.min.js"></script>
+<script>
+(function(){
+  'use strict';
+  Deck.init({index:38,total:48});
+  var K=Lec.K;
+  var total=K.units.metresPerKilometre*3-K.units.secondsPerMinute/2;
+  var target=K.moon.surfaceGravityMps2/K.units.centimetresPerMetre*K.units.metresPerKilometre*3;
+  var cells=K.units.metresPerKilometre;
+  var perCell=total/cells;
+  var targetCells=target/perCell;
+  var targetPct=target/total*K.units.centimetresPerMetre;
+  var state={cells:Math.round(targetCells*3),complete:false};
+  var svg=d3.select('#chips'), W=940,H=430, cols=40, rows=25, gap=3;
+  var cw=(W-39*gap)/cols, ch=(H-24*gap)/rows;
+  svg.attr('viewBox','0 0 '+W+' '+H);
+  var data=d3.range(cells);
+  var chipLayer=svg.append('g');
+  var chips=chipLayer.selectAll('rect').data(data).join('rect').attr('class','chip')
+    .attr('x',function(d){return (d%cols)*(cw+gap)}).attr('y',function(d){return Math.floor(d/cols)*(ch+gap)})
+    .attr('width',cw).attr('height',ch).attr('rx',2).attr('fill','var(--ochre)').attr('opacity',.76);
+  var line=svg.append('g').attr('class','drag-line').attr('tabindex',0).attr('role','slider').attr('aria-label','已圈定的质量筹码数量').attr('aria-valuemin',0).attr('aria-valuemax',cells);
+  line.append('line').attr('class','stem').attr('stroke','var(--cyan)').attr('stroke-width',4);
+  line.append('rect').attr('class','handle').attr('width',18).attr('height',52).attr('rx',7).attr('fill','var(--cyan)').attr('stroke','var(--bg)').attr('stroke-width',2);
+  function fmt(n,d){return n.toLocaleString('zh-CN',{minimumFractionDigits:d,maximumFractionDigits:d})}
+  function setText(id,v){document.getElementById(id).textContent=v}
+  setText('title',fmt(total,0)+' 吨，最后有多少继续奔月？');
+  setText('totalMass',fmt(total,0)); setText('totalPct',fmt(K.units.centimetresPerMetre,0)+'%');
+  function xFor(n){var clamped=Math.max(0,Math.min(cells,n));var col=clamped%cols;return col*(cw+gap)}
+  function update(announce){
+    var n=Math.max(0,Math.min(cells,state.cells)), mass=n*perCell, pct=mass/total*K.units.centimetresPerMetre;
+    chips.attr('fill',function(d){return d<n?'var(--cyan)':'var(--ochre)'}).attr('opacity',function(d){return state.complete&&d>=Math.ceil(targetCells)?0.25:0.76});
+    var boundary=Math.min(n,cells-1), bx=(boundary%cols)*(cw+gap), by=Math.floor(boundary/cols)*(ch+gap);
+    line.attr('transform','translate('+(bx-9)+','+Math.max(0,by-14)+')'); line.select('.stem').attr('x1',9).attr('x2',9).attr('y1',-12).attr('y2',ch+26);line.select('.handle').attr('x',0).attr('y',-14);
+    line.attr('aria-valuenow',n).attr('aria-valuetext',fmt(mass,1)+' 吨');
+    setText('liveRead','已圈定 '+fmt(mass,1)+' / '+fmt(total,0)+' 吨');
+    setText('selectedMass',fmt(mass,1));setText('selectedPct',fmt(pct,2));setText('pctTag','约 '+fmt(pct,1)+'%');
+    setText('differenceMass',fmt(total-mass,1));
+    var fb=document.getElementById('feedback');
+    if(state.complete){fb.innerHTML='<strong>审计完成：</strong>'+fmt(target,1)+' 吨只占一小角。'}
+    else if(n>targetCells){fb.textContent='圈多了：目标质量只占总账的一小角。'}
+    else{fb.textContent='圈少了：还没到目标质量。'}
+    if(announce) fb.focus;
+  }
+  function finish(){state.cells=targetCells;state.complete=true;document.getElementById('differenceItem').classList.add('done');document.getElementById('conclusion').classList.add('done');setText('conclusionText','约 '+fmt(total,0)+' 吨起飞质量中，约 '+fmt(target,1)+' 吨进入奔月轨道；其余是推进剂、结构和任务系统的共同代价，不能统称“浪费”。');update(true)}
+  var drag=d3.drag().on('drag',function(event){var col=Math.round(event.x/(cw+gap)),row=Math.round(event.y/(ch+gap));state.cells=Math.max(0,Math.min(cells,row*cols+col));state.complete=false;update(false)}).on('end',function(){if(Math.abs(state.cells-targetCells)<=4)finish();else{line.classed('wrong',true);setTimeout(function(){line.classed('wrong',false)},180);update(true)}});
+  line.call(drag);
+  line.on('keydown',function(event){if(event.key==='ArrowRight'||event.key==='ArrowLeft'){event.preventDefault();state.complete=false;state.cells+=event.key==='ArrowRight'?1:-1;update(true)}else if(event.key==='Enter'||event.key===' '){event.preventDefault();if(Math.abs(state.cells-targetCells)<=4)finish();}});
+  document.getElementById('reset').addEventListener('click',function(){state={cells:Math.round(targetCells*3),complete:false};document.getElementById('differenceItem').classList.remove('done');document.getElementById('conclusion').classList.remove('done');setText('conclusionText','完成审计后，账本结论会在这里锁定。');update(true)});
+  if(!Deck.reduced())chips.attr('opacity',0).attr('transform','translate(0,-16)').transition().delay(function(d){return Math.floor(d/40)*18}).duration(320).ease(d3.easeCubicOut).attr('opacity',.76).attr('transform','translate(0,0)');
+  update(false);
+  window.auditGame={start:function(){},reset:function(){document.getElementById('reset').click()},getState:function(){return JSON.parse(JSON.stringify(state))},complete:finish};
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>神经网络是怎么学会的</title>
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+:root{
+  --bg:#F6F1E7;
+  --text:#1E2A30;
+  --param:#246B8F;
+  --attention:#E56B3F;
+  --focus:#E56B3F;
+  --font-sans:"Noto Sans SC", "PingFang SC", system-ui, sans-serif;
+  --font-serif:"Noto Serif SC", Georgia, serif;
+  --font-mono:"SFMono-Regular", Consolas, monospace;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font-family:var(--font-sans)}
+#stage{
+  position:relative; display:flex; flex-direction:column; overflow:hidden;
+  padding:28px 56px; background:var(--bg);
+}
+.page-head{height:108px; flex:none; position:relative; border-bottom:1px solid rgba(30,42,48,.28); padding-top:3px}
+.kicker{margin:0 0 9px; color:var(--param); font:700 var(--fs-label)/1 var(--font-mono); letter-spacing:.15em}
+h1{margin:0; max-width:1120px; font-size:var(--fs-h1); line-height:1.26; font-weight:700; letter-spacing:-.025em}
+.focus.k-generalization{
+  flex:1; min-height:0; position:relative; display:flex; flex-direction:column; align-items:center;
+  padding-top:27px; padding-bottom:56px;
+}
+.axis{position:absolute; top:35px; bottom:30px; left:50%; width:1px; background:rgba(30,42,48,.18); transform:translateX(-50%)}
+.axis::before,.axis::after{content:""; position:absolute; left:50%; width:7px; height:7px; border-radius:50%; background:var(--bg); border:1px solid rgba(30,42,48,.42); transform:translateX(-50%)}
+.axis::before{top:0}.axis::after{bottom:0}
+.core-label{position:relative; z-index:1; display:flex; align-items:center; justify-content:center; width:760px; height:126px; margin-top:18px; border-radius:63px; color:#fff; background:var(--attention); font-size:var(--fs-h1); font-weight:700; letter-spacing:.08em}
+.cause-note{position:relative; z-index:1; margin-top:16px; padding:5px 13px; background:var(--bg); color:rgba(30,42,48,.72); font-size:var(--fs-label); line-height:1.35}
+.arrow-wrap{position:relative; z-index:1; width:100%; height:72px; display:flex; justify-content:center; align-items:center}
+.arrow-wrap svg{display:block; width:36px; height:100px; overflow:visible}
+.parameter.panel{position:relative; z-index:1; width:1340px; min-height:438px; padding:25px 42px 24px; border:3px solid var(--param); border-radius:0; background:var(--param); color:#F6F1E7; text-align:center; box-shadow:none}
+.parameter .smallcap{margin:0 0 9px; color:#F6F1E7; font:700 var(--fs-label)/1 var(--font-mono); letter-spacing:.14em}
+.parameter .param-name{margin:0; color:#F6F1E7; font-size:var(--fs-h1); line-height:1.25; font-weight:700; letter-spacing:.04em}
+.parameter-notes{display:flex; justify-content:center; margin:28px 0 0; border-top:1px solid rgba(246,241,231,.58); border-bottom:1px solid rgba(246,241,231,.58)}
+.parameter-notes div{width:25%; min-height:112px; padding:13px 19px; display:flex; flex-direction:column; justify-content:center; gap:5px; background:rgba(246,241,231,.12)}
+.parameter-notes div+div{border-left:1px solid rgba(246,241,231,.58)}
+.note-key{color:#F6F1E7; font:700 var(--fs-label)/1.15 var(--font-mono); letter-spacing:.08em}
+.note-copy{font-size:var(--fs-h2); line-height:1.25; font-weight:700; color:#F6F1E7}
+.note-detail{color:rgba(246,241,231,.88); font-size:var(--fs-label); line-height:1.35}
+.closing{position:relative; z-index:1; width:900px; margin:42px auto 0; padding:18px 0 0; border-top:1px solid rgba(246,241,231,.62); text-align:center; font:400 var(--fs-lead)/1.48 var(--font-serif)}
+.next-question{position:absolute; z-index:2; bottom:1px; left:50%; transform:translateX(-50%); width:720px; margin:0; text-align:center; color:rgba(30,42,48,.78); font-size:var(--fs-sec); line-height:1.4}
+.step-mark{position:absolute; right:0; bottom:0; display:flex; align-items:center; gap:9px; color:rgba(30,42,48,.62); font:700 var(--fs-tick)/1 var(--font-mono); letter-spacing:.08em}
+.step-mark::before{content:""; width:37px; height:1px; background:rgba(30,42,48,.42)}
+@media (prefers-reduced-motion:no-preference){
+  .page-head,.core-label,.cause-note,.arrow-wrap,.parameter,.closing,.next-question{animation:arrive .52s both ease-out}
+  .core-label{animation-delay:.10s}.cause-note{animation-delay:.16s}.arrow-wrap{animation-delay:.20s}.parameter{animation-delay:.26s}.closing{animation-delay:.34s}.next-question{animation-delay:.42s}
+  @keyframes arrive{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+  .next-question{animation-name:nextarrive}@keyframes nextarrive{from{opacity:0;transform:translate(-50%,10px)}to{opacity:1;transform:translate(-50%,0)}}
+}
+</style>
+</head>
+<body data-page="01" data-total="20">
+<div id="stage">
+  <header class="page-head">
+    <p class="kicker">CORE QUESTION</p>
+    <h1>神经网络“学会”的核心问题是：参数怎样因为犯错而改变。</h1>
+  </header>
+
+  <main class="focus k-generalization min0" aria-label="犯错导致参数改变的因果关系">
+    <div class="axis" aria-hidden="true"></div>
+    <div class="tag core-label">犯错</div>
+    <p class="cause-note">出现不该有的差距</p>
+    <div class="arrow-wrap" aria-hidden="true">
+      <svg viewBox="0 0 36 100" role="img" aria-label="犯错指向可调参数">
+        <path d="M18 4V77" fill="none" stroke="#1E2A30" stroke-width="3" stroke-linecap="round"/>
+        <path d="M7 74L18 90 29 74" fill="none" stroke="#1E2A30" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </div>
+    <section class="panel parameter" aria-label="可调参数">
+      <p class="smallcap">WHAT CAN CHANGE</p>
+      <p class="param-name">可调参数</p>
+      <div class="parameter-notes" aria-label="参数改变的含义">
+        <div><span class="note-key">CHANGEABLE</span><span class="note-copy">可以被调整</span><span class="note-detail">错误带来改动的理由</span><span class="note-detail">它不是固定不动的</span></div>
+        <div><span class="note-key">NOT AN ANSWER</span><span class="note-copy">不是答案本身</span><span class="note-detail">不能直接把答案塞进去</span><span class="note-detail">改变的是内部设置</span></div>
+        <div><span class="note-key">PERSISTENT</span><span class="note-copy">改变会被保留</span><span class="note-detail">一次改动不会立刻消失</span><span class="note-detail">学习留下可观察痕迹</span></div>
+        <div><span class="note-key">CONSEQUENTIAL</span><span class="note-copy">以后会有所不同</span><span class="note-detail">下一次的结果可能改变</span><span class="note-detail">仍要继续观察结果</span></div>
+      </div>
+      <p class="closing">学习不是神秘地记住答案，而是让可调参数因错误而发生改变。</p>
+    </section>
+    <p class="next-question">要追踪这次改变，得先走过哪五步？</p>
+  </main>
+  <div class="step-mark" aria-label="实验步数 01 / 20">01 / 20</div>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script>Deck.init({index:1,total:20});</script>
+</body>
+</html>

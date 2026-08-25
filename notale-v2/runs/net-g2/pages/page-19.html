@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+#stage{gap:14px}.head{display:flex;align-items:flex-end;justify-content:space-between;border-bottom:1px solid color-mix(in srgb,var(--text) 22%,transparent);padding-bottom:12px}.kicker{font:700 var(--fs-label)/1 var(--font-mono);letter-spacing:.14em;color:var(--attention);margin-bottom:8px}h1{font:700 var(--fs-h1)/1.2 var(--font-sans);margin:0}.conditions{font:var(--fs-label)/1.5 var(--font-mono);text-align:right;max-width:610px}.toolbar{display:flex;align-items:center;gap:14px}.toolbar .hint{margin-right:auto}.round{font:700 var(--fs-body)/1 var(--font-mono);color:var(--model);min-width:108px}.triptych{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;flex:1;min-height:0}.model{display:flex;flex-direction:column;gap:8px;min-width:0;padding:10px;border:2px solid transparent;border-radius:8px;transition:opacity 120ms,border-color 120ms}.model.focused{border-color:var(--attention)}.triptych.has-focus .model:not(.focused){opacity:.38}.model-head{display:flex;align-items:center;justify-content:space-between}.focus-btn{appearance:none;background:transparent;border:2px solid color-mix(in srgb,var(--text) 34%,transparent);border-radius:8px;padding:6px 12px;font:700 var(--fs-label)/1 var(--font-sans);color:var(--text);cursor:pointer}.focus-btn[aria-pressed=true]{border-color:var(--attention);color:var(--attention)}.net{width:100%;height:94px}.net line{stroke:color-mix(in srgb,var(--text) 35%,transparent);stroke-width:2}.net circle{fill:var(--bg);stroke:var(--model);stroke-width:3}.cvbox{position:relative;flex:1;min-height:305px;border:1px solid color-mix(in srgb,var(--text) 35%,transparent);background:#fff}.plot{width:100%;height:100%;display:block}.axis-note{position:absolute;left:9px;top:7px;background:color-mix(in srgb,var(--bg) 88%,transparent);padding:3px 6px;font:var(--fs-tick)/1.2 var(--font-mono)}.desc{min-height:48px;font:var(--fs-sec)/1.4 var(--font-sans);margin:0}.footer{display:grid;grid-template-columns:1fr auto;gap:24px;align-items:center;border-top:1px solid color-mix(in srgb,var(--text) 22%,transparent);padding-top:12px}.takeaway{font:700 var(--fs-lead)/1.35 var(--font-serif)}.next{font:var(--fs-sec)/1.35 var(--font-sans);text-align:right}.legend{display:flex;gap:16px;font:var(--fs-label)/1.2 var(--font-sans)}.dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:5px;border:2px solid var(--text)}.d1{background:var(--model)}.d0{background:var(--bg)}@media(prefers-reduced-motion:reduce){.model{transition:none}}
+</style>
+</head>
+<body data-page="19" data-total="22">
+<div id="stage">
+  <header class="head"><div><div class="kicker">DEPTH CHECK</div><h1>同样学，为什么有的网络画不出弯曲边界？</h1></div><div class="conditions">同一批 200 个样本｜两类各 100　固定种子 1<br>学习率 0.3｜小批量 16｜tanh 隐藏层｜sigmoid 输出｜阈值 0.5</div></header>
+  <section class="toolbar" aria-label="训练控制"><span class="hint">点击同时训练，观察三种结构在相同轮次下画出的边界。</span><span id="status" aria-live="polite" style="font:var(--fs-label)/1.2 var(--font-sans);min-width:190px;text-align:right"></span><span class="round" id="round">轮次 0</span><div class="btns"><button class="btn" id="train">同时训练</button><button class="btn" id="reset">重新开始</button></div></section>
+  <main class="triptych k-comparison min0" id="compare" aria-label="三种网络深度的同尺度比较"></main>
+  <footer class="footer"><div><div class="takeaway">对非直线分界，隐藏层能把多个局部响应组合成弯曲边界。</div><div class="legend"><span><i class="dot d0"></i>类别 0</span><span><i class="dot d1"></i>类别 1</span><span>底色表示输出概率，实线是 0.5 边界</span></div></div><div class="next">下一问：一次完整的“学习”，四个动作究竟按什么顺序发生？</div></footer>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script>
+(()=>{
+'use strict';
+Deck.init({index:19,total:22});
+const K=Lec.K;
+const SPEC=Object.freeze({count:200,half:100,seed:1,rate:0.3,batch:16,grid:80,threshold:0.5});
+const defs=[
+ {label:'2–1',layers:[1],note:'边界只能是一条直线，无法贴合弯曲分界',tag:'欠贴合'},
+ {label:'2–10–1',layers:[10,1],note:'可组合出弯曲边界，明显贴近两类样本',tag:'能弯曲'},
+ {label:'2–10–10–1',layers:[10,10,1],note:'可形成更细致的弯曲边界；不表示必然更好',tag:'更深 ≠ 必然更好'}
+];
+const compare=document.getElementById('compare');
+function netSVG(sizes){const xs=sizes.map((_,i)=>28+i*(414/(sizes.length-1)));let lines='',nodes='';sizes.forEach((n,i)=>{const shown=Math.min(n,5),ys=Array.from({length:shown},(_,j)=>47+(j-(shown-1)/2)*16);if(i){const pn=Math.min(sizes[i-1],5),pys=Array.from({length:pn},(_,j)=>47+(j-(pn-1)/2)*16);pys.forEach(y1=>ys.forEach(y2=>lines+=`<line x1="${xs[i-1]}" y1="${y1}" x2="${xs[i]}" y2="${y2}"/>`))}ys.forEach(y=>nodes+=`<circle cx="${xs[i]}" cy="${y}" r="6"/>`)});return `<svg class="net" viewBox="0 0 470 94" aria-hidden="true">${lines}${nodes}</svg>`}
+compare.innerHTML=defs.map((d,i)=>`<article class="model" data-i="${i}"><div class="model-head"><button class="focus-btn" data-focus="${i}" aria-pressed="false">${d.label}</button><span class="tag">${d.tag}</span></div>${netSVG([2,...d.layers])}<div class="cvbox"><canvas class="plot" data-cv="${i}" aria-label="${d.label} 的分类概率场与共同样本"></canvas><span class="axis-note">同一输入空间 · 80×80</span></div><p class="desc">${d.note}</p></article>`).join('');
+function rng(seed){let t=seed>>>0;return()=>{t+=0x6D2B79F5;let x=t;x=Math.imul(x^x>>>15,x|1);x^=x+Math.imul(x^x>>>7,x|61);return((x^x>>>14)>>>0)/4294967296}}
+function makeData(){const r=rng(SPEC.seed),out=[];for(let cls=0;cls<2;cls++)for(let i=0;i<SPEC.half;i++){const a=(i/SPEC.half)*Math.PI+(cls?Math.PI:0)+(r()-.5)*.12;const rad=.42+.42*r();out.push({x:Math.cos(a)*rad+(cls?-.12:.12),y:Math.sin(a)*rad+(cls?0.12:-.12),t:cls})}return out}
+const data=makeData();
+function makeLayers(shape,seed){const r=rng(seed),sizes=[2,...shape];return shape.map((n,li)=>({weights:Array.from({length:n},()=>Array.from({length:sizes[li]},()=> (r()*2-1)*.9)),biases:Array(n).fill(0),activation:li===shape.length-1?'sigmoid':'tanh'}))}
+function fresh(){return{round:0,running:false,focus:null,models:defs.map((d,i)=>makeLayers(d.layers,SPEC.seed+i*97))}}
+let state=fresh(),timer=0,raf=0,destroyed=false;const canvases=[...document.querySelectorAll('.plot')];
+function prob(model,x,y){const result=Lec.P.forwardNetwork([x,y],model);const out=Array.isArray(result)?result:(result.output||result.outputs||result.activations?.at(-1));return Number(Array.isArray(out)?out[0]:out)}
+function trainOne(model,offset){let next=model;for(let j=0;j<SPEC.batch;j++){const p=data[(offset+j)%data.length];const g=Lec.P.backpropNetwork([p.x,p.y],next,[p.t],'binaryCrossEntropy');const grads=g.gradients||g.layerGradients||g;next=Lec.P.sgdStep(next,grads,SPEC.rate)||next}return next}
+function paint(cv,index){const ctx=Deck.fit(cv),w=cv.offsetWidth,h=cv.offsetHeight,model=state.models[index],g=SPEC.grid,cw=w/g,ch=h/g;ctx.clearRect(0,0,w,h);for(let iy=0;iy<g;iy++)for(let ix=0;ix<g;ix++){const p=prob(model,-1+2*(ix+.5)/g,1-2*(iy+.5)/g);ctx.fillStyle=p>=.5?`rgba(36,87,166,${.08+.3*p})`:`rgba(231,111,46,${.05+.18*(1-p)})`;ctx.fillRect(ix*cw,iy*ch,cw+.6,ch+.6)}ctx.strokeStyle='#1d2a3a';ctx.lineWidth=2;ctx.beginPath();for(let iy=1;iy<g;iy++){let last=null;for(let ix=1;ix<g;ix++){const p=prob(model,-1+2*ix/g,1-2*iy/g);if(last!==null&&(p-.5)*(last-.5)<0){const x=ix*cw;ctx.moveTo(x,iy*ch-3);ctx.lineTo(x,iy*ch+3)}last=p}}ctx.stroke();data.forEach(p=>{const x=(p.x+1)*w/2,y=(1-p.y)*h/2;ctx.beginPath();ctx.arc(x,y,3.5,0,Math.PI*2);ctx.fillStyle=p.t?'#2457A6':'#F4F1E8';ctx.fill();ctx.strokeStyle='#1d2a3a';ctx.lineWidth=1.5;ctx.stroke()})}
+function render(){document.getElementById('round').textContent=`轮次 ${state.round}`;const train=document.getElementById('train');train.textContent=state.running?'暂停':'同时训练';train.setAttribute('aria-pressed',String(state.running));compare.classList.toggle('has-focus',state.focus!==null);document.querySelectorAll('.model').forEach((el,i)=>el.classList.toggle('focused',state.focus===i));document.querySelectorAll('.focus-btn').forEach((b,i)=>b.setAttribute('aria-pressed',String(state.focus===i)));canvases.forEach(paint)}
+function step(){const offset=(state.round*SPEC.batch)%data.length;state={...state,round:state.round+1,models:state.models.map(m=>trainOne(m,offset))};if(Deck.reduced()){render()}else{cancelAnimationFrame(raf);const start=performance.now();const tick=now=>{render();if(now-start<180)raf=requestAnimationFrame(tick)};raf=requestAnimationFrame(tick)}}
+function stop(){clearInterval(timer);timer=0;cancelAnimationFrame(raf);raf=0}
+function toggle(){state={...state,running:!state.running};if(state.running){step();timer=setInterval(step,220)}else stop();render();document.getElementById('status').textContent=state.running?'三种网络开始同步训练':'训练已暂停'}
+const events=new AbortController(),opt={signal:events.signal};document.getElementById('train').addEventListener('click',toggle,opt);document.getElementById('reset').addEventListener('click',()=>{stop();state=fresh();render();document.getElementById('train').focus();document.getElementById('status').textContent='已恢复种子 1、轮次 0 和三组初始参数'},opt);document.querySelectorAll('.focus-btn').forEach((b,i)=>b.addEventListener('click',()=>{state={...state,focus:state.focus===i?null:i};render()},opt));
+function destroy(){if(destroyed)return;destroyed=true;stop();events.abort()}window.addEventListener('pagehide',destroy,{once:true});render();
+})();
+</script>
+</body>
+</html>

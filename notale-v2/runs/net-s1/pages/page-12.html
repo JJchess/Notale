@@ -1,0 +1,388 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<script src="assets/lib/echarts.min.js"></script>
+<style>
+  #stage{ display:flex; flex-direction:column; }
+
+  .p12{ width:100%; height:100%; display:flex; flex-direction:column; gap:14px; }
+
+  .hd{ flex:0 0 auto; display:flex; flex-direction:column; gap:2px; }
+  .kicker{ font-family:var(--font-sans); font-size:var(--fs-label); letter-spacing:.12em;
+           color:var(--orange); font-weight:700; }
+  .hd h1{ margin:0; font-size:var(--fs-h1); line-height:1.25; color:var(--text); font-weight:700; }
+
+  .main{ flex:1; display:flex; flex-direction:column; gap:14px; min-height:0; }
+
+  .chart-wrap{ flex:1.32; position:relative; display:flex; min-height:0;
+               background:var(--panel-bg); border:1px solid var(--rule); border-radius:10px;
+               padding:10px 14px; box-sizing:border-box; transition:box-shadow .2s; }
+  .chart-wrap.diverged{ animation: flashRed .55s ease-in-out 4; border-color:var(--red); }
+  @keyframes flashRed{
+    0%,100%{ box-shadow:0 0 0 0 rgba(192,57,43,0); }
+    50%{ box-shadow:0 0 0 9px rgba(192,57,43,.45); }
+  }
+  #chart{ flex:1; min-width:0; min-height:0; }
+
+  .diverge-msg{ position:absolute; top:14px; right:14px; padding:6px 14px; border-radius:6px;
+                background:var(--red); color:#fff; font-size:var(--fs-sec); font-weight:700;
+                opacity:0; transform:translateY(-4px); transition:opacity .2s, transform .2s;
+                pointer-events:none; }
+  .diverge-msg.show{ opacity:1; transform:translateY(0); }
+
+  .formula-card{ position:absolute; left:20px; top:16px; background:var(--panel-bg);
+                  border:1px solid var(--rule); border-radius:8px; padding:8px 14px;
+                  font-family:var(--font-mono); font-size:var(--fs-sec); color:var(--text);
+                  line-height:1.55; z-index:5; }
+  .formula-card b{ color:var(--blue); font-family:var(--font-sans); font-weight:700;
+                    font-size:var(--fs-label); }
+
+  .legend{ position:absolute; right:16px; bottom:10px; display:flex; gap:14px; z-index:5; }
+  .legend .li{ display:flex; align-items:center; gap:6px; font-size:var(--fs-label); color:var(--text-dim); }
+  .legend .sw{ width:16px; height:3px; border-radius:2px; }
+  .legend .sw.curve{ background:var(--blue); }
+  .legend .sw.line{ background:var(--orange); border-top:2px dashed var(--orange); height:0; }
+  .legend .sw.dot{ width:9px; height:9px; border-radius:50%; background:var(--orange); }
+
+  .bottom{ flex:1; display:flex; gap:18px; min-height:0; }
+
+  .cmp-pane{ flex:1.25; min-width:0; display:flex; flex-direction:column; gap:8px; }
+  .cmp-title{ font-size:var(--fs-sec); color:var(--text-dim); }
+  .k-comparison{ flex:1; display:flex; flex-direction:column; justify-content:center;
+                 background:var(--panel-bg); border:1px solid var(--rule); border-radius:10px;
+                 padding:6px 18px; box-sizing:border-box; }
+  .k-comparison .hdr, .k-comparison .rowline{ display:flex; align-items:baseline;
+                 padding:9px 0; border-bottom:1px solid var(--rule); }
+  .k-comparison .rowline:last-child{ border-bottom:none; }
+  .k-comparison .hdr{ font-size:var(--fs-label); color:var(--text-dim); }
+  .k-comparison .dim{ flex:0 0 92px; font-family:var(--font-mono); font-size:var(--fs-body);
+                       color:var(--text); font-weight:700; }
+  .k-comparison .c2{ flex:0 0 130px; font-family:var(--font-mono); font-size:var(--fs-body); color:var(--text); }
+  .k-comparison .diff{ flex:0 0 150px; font-family:var(--font-mono); font-size:var(--fs-body);
+                        color:var(--orange); font-weight:700; }
+  .k-comparison .concl{ flex:1; font-size:var(--fs-sec); color:var(--text-dim); }
+  .k-comparison .rowline.active{ background:rgba(232,101,10,.08); border-radius:6px; }
+  .k-comparison .rowline.active .dim{ color:var(--orange); }
+  .k-comparison .rowline.active .concl{ color:var(--text); font-weight:700; }
+
+  .ctl-pane{ flex:1; min-width:0; display:flex; flex-direction:column; gap:7px;
+             background:var(--panel-bg); border:1px solid var(--rule); border-radius:10px;
+             padding:10px 18px 12px; box-sizing:border-box; }
+  .hint{ font-size:var(--fs-sec); color:var(--text-dim); line-height:1.4; }
+
+  .slider-row{ display:flex; flex-direction:column; gap:4px; }
+  .slider-row .lbl-row{ display:flex; justify-content:space-between; align-items:baseline; }
+  .slider-row label{ font-size:var(--fs-label); color:var(--text-dim); }
+  .slider-row .lr-big{ font-family:var(--font-mono); font-size:var(--fs-h2); color:var(--orange); font-weight:700; }
+  .slider-wrap{ position:relative; padding-bottom:16px; }
+  input[type=range]{ width:100%; display:block; }
+  .ticks{ position:relative; height:14px; }
+  .ticks .tk{ position:absolute; top:0; transform:translateX(-50%); font-size:var(--fs-tick);
+              color:var(--text-dim); font-family:var(--font-mono); }
+
+  .btns{ display:flex; gap:10px; }
+  .btn{ flex:1; }
+
+  .ledger{ display:grid; grid-template-columns:1fr 1fr; gap:0 18px; margin-top:0; flex:1; align-content:center; }
+  .ledger .entry{ display:flex; justify-content:space-between; align-items:baseline;
+                  padding:4px 0; border-bottom:1px solid var(--rule); }
+  .ledger .entry:last-child{ border-bottom:1px solid var(--rule); }
+  .ledger .k{ font-size:var(--fs-label); color:var(--text-dim); }
+  .ledger .v{ font-family:var(--font-mono); font-size:var(--fs-body); color:var(--text); font-weight:700; }
+
+  .closing{ flex:0 0 auto; padding-top:2px; border-top:1px solid var(--rule); }
+  .closing .lead{ margin:4px 0 2px; font-size:var(--fs-lead); color:var(--text); line-height:1.4; }
+  .closing .small{ margin:0; font-size:var(--fs-sec); color:var(--text-dim); }
+</style>
+</head>
+<body data-page="12" data-total="22">
+<div id="stage">
+  <div class="p12">
+    <div class="hd">
+      <span class="kicker">LEARNING RATE</span>
+      <h1>学习率：步子太大会跳过谷底，太小会走不到</h1>
+    </div>
+
+    <div class="main">
+      <div class="chart-wrap">
+        <div id="chart" role="img" aria-label="误差曲线 L(w)=(w-1)^2，及当前学习率下权重 w 的更新轨迹"></div>
+        <div class="formula-card">
+          <b>更新规则</b><br>
+          w ← w − lr·∇L(w)<br>
+          ∇L(w) = mseGrad(1,w) = 2(w−1)
+        </div>
+        <div class="diverge-msg" id="divergeMsg">⚠ 数值发散，已停止</div>
+        <div class="legend">
+          <span class="li"><span class="sw curve"></span>误差曲线 L(w)</span>
+          <span class="li"><span class="sw line"></span>谷底 w=1</span>
+          <span class="li"><span class="sw dot"></span>当前轨迹</span>
+        </div>
+      </div>
+
+      <div class="bottom">
+        <div class="cmp-pane">
+          <div class="cmp-title">三种学习率，走 8 步之后</div>
+          <div class="k-comparison" id="cmpTable"></div>
+        </div>
+
+        <div class="ctl-pane">
+          <div class="hint">拖动滑块选一个学习率，点"播放 8 步"看轨迹怎么走；三个吸附点对应"太慢 / 刚好 / 太大"三种直觉。</div>
+
+          <div class="slider-row">
+            <div class="lbl-row">
+              <label for="lrSlider">当前学习率 lr</label>
+              <span class="lr-big" id="lrVal">0.30</span>
+            </div>
+            <div class="slider-wrap">
+              <input type="range" id="lrSlider" min="0" max="1000" value="596" step="1">
+              <div class="ticks">
+                <span class="tk" id="tk1" style="left:0%">0.01</span>
+                <span class="tk" id="tk2" style="left:59.6%">0.3</span>
+                <span class="tk" id="tk3" style="left:100%">3.0</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="btns">
+            <button class="btn" id="btnStep">单步</button>
+            <button class="btn" id="btnPlay">▶ 播放8步</button>
+            <button class="btn" id="btnReset">重置</button>
+          </div>
+
+          <div class="ledger">
+            <div class="entry"><span class="k">步数</span><span class="v" id="stepVal">0 / 8</span></div>
+            <div class="entry"><span class="k">当前 w</span><span class="v" id="wVal">2.500</span></div>
+            <div class="entry"><span class="k">当前 loss</span><span class="v" id="lossVal">2.250</span></div>
+            <div class="entry"><span class="k">与谷底(w=1)距离</span><span class="v" id="distVal">1.500</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="closing">
+      <p class="lead">学习率决定每一步迈多大——太大会在谷底两侧来回跳、甚至越跳越远；太小要走很久才靠近谷底；中间有一段"刚好"的区间。</p>
+      <p class="small">如果要同时调整好几个权重，每个权重的步子又该怎么算？</p>
+    </div>
+  </div>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script>
+(function(){
+  Deck.init({ index:12, total:22 });
+
+  var root = getComputedStyle(document.documentElement);
+  var fsTick  = parseFloat(root.getPropertyValue('--fs-tick'))  || 13;
+  var fsLabel = parseFloat(root.getPropertyValue('--fs-label')) || 15;
+  var COL_BLUE = '#2B5FA6', COL_ORANGE = '#E8650A', COL_RULE = '#DDD3BE', COL_TEXT='#26241F';
+
+  var W0 = 2.5, TARGET = 1;
+  var LOGMIN = 0.01, LOGMAX = 3.0, LOGRATIO = LOGMAX / LOGMIN;
+
+  function posToLr(pos){ return LOGMIN * Math.pow(LOGRATIO, pos/1000); }
+  function lrToPos(lr){ return 1000 * Math.log(lr/LOGMIN) / Math.log(LOGRATIO); }
+
+  var PRESETS = [
+    { lr:0.01, label:'太慢' },
+    { lr:0.30, label:'刚好' },
+    { lr:3.00, label:'太大（发散）' }
+  ];
+
+  // ---------- chart ----------
+  var chart = echarts.init(document.getElementById('chart'), null, { renderer:'svg' });
+  var curveData = [];
+  for (var x=-3; x<=3.0001; x+=0.03){ curveData.push([Math.round(x*1000)/1000, Math.pow(x-1,2)]); }
+
+  function trajData(history){
+    var n = history.length;
+    return history.map(function(h,i){
+      var op = n===1 ? 1 : 0.22 + 0.78*(i/(n-1));
+      return { value:[h.w, h.loss], itemStyle:{ color:COL_ORANGE, opacity: op } };
+    });
+  }
+
+  function baseOption(){
+    return {
+      grid:{ left:56, right:24, top:22, bottom:44 },
+      xAxis:{
+        type:'value', min:-3, max:3, name:'权重 w', nameLocation:'middle', nameGap:26,
+        nameTextStyle:{ fontSize:fsLabel, color:COL_TEXT },
+        axisLabel:{ fontSize:fsTick, color:COL_TEXT },
+        axisLine:{ lineStyle:{ color:COL_RULE } },
+        splitLine:{ lineStyle:{ color:COL_RULE } }
+      },
+      yAxis:{
+        type:'value', min:0, max:16, name:'loss L(w)', nameLocation:'middle', nameGap:38,
+        nameTextStyle:{ fontSize:fsLabel, color:COL_TEXT },
+        axisLabel:{ fontSize:fsTick, color:COL_TEXT },
+        axisLine:{ lineStyle:{ color:COL_RULE } },
+        splitLine:{ lineStyle:{ color:COL_RULE } }
+      },
+      series:[
+        {
+          name:'L(w)', type:'line', data:curveData, showSymbol:false, z:1,
+          lineStyle:{ color:COL_BLUE, width:2.5 },
+          markLine:{
+            symbol:'none', silent:true,
+            lineStyle:{ color:COL_ORANGE, type:'dashed', width:1.5 },
+            label:{ formatter:'谷底 w=1', color:COL_ORANGE, fontSize:fsLabel, position:'insideEndTop' },
+            data:[{ xAxis:1 }]
+          }
+        },
+        {
+          name:'轨迹', type:'line', data:trajData([{w:W0, loss:Math.pow(W0-1,2)}]), z:3,
+          showSymbol:true, symbolSize:9,
+          lineStyle:{ color:COL_ORANGE, width:1.5, opacity:.5 },
+          itemStyle:{ color:COL_ORANGE }
+        }
+      ]
+    };
+  }
+  chart.setOption(baseOption());
+  Deck.onResize(function(){ chart.resize(); });
+
+  // ---------- state ----------
+  var lr = posToLr(596);
+  var w, step, diverged, history, playTimer;
+
+  function mse(w){ return Lec.P.mse(TARGET, w); }
+  function grad(w){ return Lec.P.mseGrad(TARGET, w); }
+  function update(w, lr){ return Lec.P.sgdUpdate(w, grad(w), lr); }
+
+  function resetState(){
+    w = W0; step = 0; diverged = false;
+    history = [{ w:W0, loss:mse(W0) }];
+    stopPlay();
+    renderChart();
+    renderReadouts();
+    document.querySelector('.chart-wrap').classList.remove('diverged');
+    document.getElementById('divergeMsg').classList.remove('show');
+  }
+
+  function renderChart(){
+    chart.setOption({ series:[ {}, { data: trajData(history) } ] });
+  }
+
+  function renderReadouts(){
+    document.getElementById('stepVal').textContent = step + ' / 8';
+    document.getElementById('wVal').textContent = w.toFixed(3);
+    document.getElementById('lossVal').textContent = mse(w).toFixed(3);
+    document.getElementById('distVal').textContent = diverged ? '已冲出图外' : Math.abs(w-1).toFixed(3);
+  }
+
+  function flashDiverge(){
+    var box = document.querySelector('.chart-wrap');
+    box.classList.add('diverged');
+    document.getElementById('divergeMsg').classList.add('show');
+  }
+
+  function performStep(){
+    if (diverged || step >= 8) return false;
+    var wNew = update(w, lr);
+    step++;
+    if (Math.abs(wNew) > 3){
+      w = wNew;
+      diverged = true;
+      renderReadouts();
+      flashDiverge();
+      stopPlay();
+      return false;
+    }
+    w = wNew;
+    history.push({ w:w, loss:mse(w) });
+    renderChart();
+    renderReadouts();
+    return true;
+  }
+
+  function stopPlay(){
+    if (playTimer){ clearInterval(playTimer); playTimer = null; }
+    document.getElementById('btnPlay').textContent = '▶ 播放8步';
+  }
+
+  function play8(){
+    resetState();
+    document.getElementById('btnPlay').textContent = '⏸ 播放中…';
+    playTimer = setInterval(function(){
+      var ok = performStep();
+      if (!ok || step >= 8){ stopPlay(); }
+    }, 250);
+  }
+
+  document.getElementById('btnStep').addEventListener('click', function(){ stopPlay(); performStep(); });
+  document.getElementById('btnPlay').addEventListener('click', function(){
+    if (playTimer){ stopPlay(); } else { play8(); }
+  });
+  document.getElementById('btnReset').addEventListener('click', resetState);
+
+  // ---------- slider ----------
+  var slider = document.getElementById('lrSlider');
+  var lrValEl = document.getElementById('lrVal');
+  var SNAP = 22;
+
+  function nearestPresetIdx(lrv){
+    var lp = Math.log(lrv);
+    var best = 0, bd = Infinity;
+    PRESETS.forEach(function(p,i){
+      var d = Math.abs(Math.log(p.lr) - lp);
+      if (d < bd){ bd = d; best = i; }
+    });
+    return best;
+  }
+
+  function refreshSliderUI(){
+    lrValEl.textContent = lr.toFixed(2);
+    var idx = nearestPresetIdx(lr);
+    document.querySelectorAll('.k-comparison .rowline').forEach(function(r,i){
+      r.classList.toggle('active', i === idx);
+    });
+  }
+
+  slider.addEventListener('input', function(){
+    var pos = parseFloat(slider.value);
+    PRESETS.forEach(function(p){
+      var pp = lrToPos(p.lr);
+      if (Math.abs(pos - pp) < SNAP){ pos = pp; slider.value = pos; }
+    });
+    lr = posToLr(pos);
+    refreshSliderUI();
+    resetState();
+  });
+
+  // ---------- static comparison table (computed once, at load) ----------
+  function simulate8(lrv){
+    var w = W0, div = false;
+    for (var i=0;i<8;i++){
+      var wNew = update(w, lrv);
+      if (Math.abs(wNew) > 3){ w = wNew; div = true; break; }
+      w = wNew;
+    }
+    return { w:w, diverged:div, dist: Math.abs(w-1) };
+  }
+
+  function buildTable(){
+    var box = document.getElementById('cmpTable');
+    var html = '<div class="hdr"><div class="dim">学习率</div><div class="c2">8步后 w</div>' +
+               '<div class="diff">与谷底距离</div><div class="concl">结论</div></div>';
+    PRESETS.forEach(function(p){
+      var r = simulate8(p.lr);
+      var wTxt = r.diverged ? r.w.toFixed(1) : r.w.toFixed(3);
+      var dTxt = r.diverged ? '冲出图外' : r.dist.toFixed(3);
+      html += '<div class="rowline"><div class="dim">' + p.lr.toFixed(2) + '</div>' +
+              '<div class="c2">' + wTxt + '</div>' +
+              '<div class="diff">' + dTxt + '</div>' +
+              '<div class="concl">' + p.label + '</div></div>';
+    });
+    box.innerHTML = html;
+  }
+
+  buildTable();
+  refreshSliderUI();
+  resetState();
+})();
+</script>
+</body>
+</html>

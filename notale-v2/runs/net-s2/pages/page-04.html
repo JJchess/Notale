@@ -1,0 +1,378 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  #stage{ gap:0; }
+
+  .p4-head{
+    flex:0 0 auto;
+    display:flex;
+    flex-direction:column;
+    gap:8px;
+    margin-bottom:16px;
+  }
+  .kicker{
+    font-family:var(--font-mono);
+    font-size:var(--fs-label);
+    letter-spacing:.14em;
+    color:var(--accent);
+    font-weight:700;
+    text-transform:uppercase;
+  }
+  .p4-head .lead{ color:var(--text); max-width:1200px; }
+
+  .p4-main{
+    flex:1;
+    min-height:0;
+    display:flex;
+    flex-direction:row;
+    gap:32px;
+  }
+
+  .plotwrap{
+    flex:1 1 auto;
+    min-width:0;
+    min-height:0;
+    position:relative;
+    background:var(--panel-bg);
+    border:2px solid var(--line);
+    border-radius:16px;
+    padding:14px;
+  }
+  .plotinner{ position:relative; width:100%; height:100%; min-width:0; min-height:0; }
+  .plotwrap{ display:flex; flex-direction:column; gap:8px; }
+  .plotcap{ flex:0 0 auto; font-size:var(--fs-tick); color:var(--muted); text-align:center; }
+
+  .handle{ fill:var(--primary); cursor:grab; touch-action:none; }
+  .handle.dragging{ fill:var(--accent); cursor:grabbing; }
+  .handle:focus-visible{ outline:3px solid var(--focus); outline-offset:2px; }
+  .pt.filled{ fill:var(--primary); stroke:var(--primary); stroke-width:1; }
+  .pt.hollow{ fill:none; stroke:var(--primary); stroke-width:2.4; }
+  .axisline{ stroke:var(--line-strong); stroke-dasharray:5 6; stroke-width:1.5; }
+  .boundary{ stroke:var(--primary); stroke-width:4.5; stroke-linecap:round; }
+
+  .p4-panel{
+    position:relative;
+    flex:0 0 428px;
+    min-width:0;
+    min-height:0;
+    display:flex;
+    flex-direction:column;
+    gap:16px;
+    justify-content:flex-start;
+  }
+  .p4-panel .cap{ font-size:var(--fs-sec); color:var(--muted); font-weight:600; }
+  .p4-panel .k-comparison .hdr{ margin-bottom:2px; }
+  .p4-panel .k-comparison .diff{ display:flex; align-items:baseline; gap:6px; }
+
+  .p4-foot{
+    flex:0 0 auto;
+    display:flex;
+    flex-direction:column;
+    gap:4px;
+    margin-top:14px;
+    padding-top:12px;
+    border-top:2px solid var(--line);
+  }
+  .p4-foot .hook{ color:var(--muted); }
+  .p4-foot .hook b{ color:var(--text); font-weight:600; }
+</style>
+</head>
+<body data-page="04" data-total="19">
+<div id="stage">
+
+  <div class="p4-head">
+    <div class="kicker">DRAG-THE-LINE</div>
+    <h1>同一条线，分对几个点？</h1>
+    <p class="lead">下面 40 个点是 40 次输入：实心点和空心点是两类不同的样本。拖动线两端的圆点，看这条由加权求和决定的分界线，怎么把点分到两边。</p>
+  </div>
+
+  <div class="p4-main">
+    <div class="plotwrap no-pan">
+      <div class="plotinner">
+        <svg id="plot" class="cv-fill" role="img" aria-label="散点图：40个点分布在平面上，一条可拖动的直线把它们分成两边">
+          <g id="axesLayer"></g>
+          <line id="boundary" class="boundary" x1="0" y1="0" x2="0" y2="0"></line>
+          <g id="pointsLayer"></g>
+          <circle id="h1" class="handle" r="12" tabindex="0" role="button" aria-label="端点A"></circle>
+          <circle id="h2" class="handle" r="12" tabindex="0" role="button" aria-label="端点B"></circle>
+        </svg>
+      </div>
+      <div class="plotcap">横轴 x1 · 纵轴 x2 —— 每个点就是一次输入 (x1, x2)，颜色是它本来的真实类别</div>
+    </div>
+
+    <div class="p4-panel">
+      <div class="cap">实时读数</div>
+
+      <div class="k-comparison" aria-live="polite" aria-atomic="true">
+        <div class="hdr"><span>当前分界线</span><span>数值</span></div>
+        <div class="rowline">
+          <span class="dim">w1 , w2 , b</span>
+          <span class="num" id="wbText">1.00 , 0.00 , 0.00</span>
+        </div>
+        <div class="rowline">
+          <span class="dim">分对点数</span>
+          <span class="diff"><b class="big accent" id="countText" style="font-size:var(--fs-big-sm);">32</b><span class="unit">/ 40</span></span>
+        </div>
+      </div>
+
+      <div class="legend">
+        <span class="li"><span class="sw"></span>实心 · label = +1 · 共20个</span>
+        <span class="li"><span class="sw hollow"></span>空心 · label = −1 · 共20个</span>
+      </div>
+
+      <p class="note">w1、w2 决定线的朝向，b 决定线离原点多远。三个数一变，线的位置就变，分对的点也跟着变。</p>
+
+      <p class="hint">拖动两个圆点，或用 Tab 聚焦后按方向键移动。</p>
+      <p class="hint">按住 Shift 移动更快；没有固定目标，随便试几种线的位置。</p>
+
+      <div class="btns">
+        <button id="resetBtn" class="btn" type="button">复位为竖直线</button>
+      </div>
+
+    </div>
+  </div>
+
+  <div class="p4-foot">
+    <p class="lead">分界线挪到哪，40个点里能分对多少个就跟着变——这就是加权判断落在平面上的样子。</p>
+    <p class="small hook">下一问：两条线都能<b>"分对30个"</b>，它们真的一样好吗？</p>
+  </div>
+
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script>
+(function(){
+  'use strict';
+
+  var svg = document.getElementById('plot');
+  var pointsLayer = document.getElementById('pointsLayer');
+  var axesLayer = document.getElementById('axesLayer');
+  var boundaryEl = document.getElementById('boundary');
+  var h1 = document.getElementById('h1');
+  var h2 = document.getElementById('h2');
+  var countText = document.getElementById('countText');
+  var wbText = document.getElementById('wbText');
+  var resetBtn = document.getElementById('resetBtn');
+
+  function initialState(){
+    return { p1:{x:0,y:-1}, p2:{x:0,y:1} };
+  }
+  var state = initialState();
+  var dragging = null; // 'p1' | 'p2'
+  var geom = { W:0, H:0, cx:0, cy:0, scale:1 };
+
+  // ---------- 数据：40 个点，规则见 plan ----------
+  function buildPoints(){
+    var pts = [];
+    var i;
+    for (i = 0; i < 16; i++) {
+      pts.push({ x: 0.4 + i * 0.1, y: (i % 2 === 0 ? 1 : -1) * 0.5, label: 1 });
+    }
+    var bx = [-0.25, -0.15, -0.1, -0.05], by = [0.2, -0.2, 0.3, -0.3];
+    for (i = 0; i < 4; i++) pts.push({ x: bx[i], y: by[i], label: 1 });
+    for (i = 0; i < 16; i++) {
+      pts.push({ x: -0.4 - i * 0.1, y: (i % 2 === 0 ? 1 : -1) * 0.5, label: -1 });
+    }
+    var rx = [0.25, 0.15, 0.1, 0.05], ry = [-0.2, 0.2, -0.3, 0.3];
+    for (i = 0; i < 4; i++) pts.push({ x: rx[i], y: ry[i], label: -1 });
+    return pts;
+  }
+  var pointsData = buildPoints();
+  var pointEls = [];
+
+  // ---------- 几何映射 ----------
+  function updateGeom(){
+    geom.W = svg.clientWidth || 800;
+    geom.H = svg.clientHeight || 500;
+    geom.cx = geom.W / 2;
+    geom.cy = geom.H / 2;
+    geom.scale = Math.min(geom.W / 4.8, geom.H / 2.8);
+  }
+  function toPx(x, y){ return { px: geom.cx + x * geom.scale, py: geom.cy - y * geom.scale }; }
+  function toData(px, py){ return { x: (px - geom.cx) / geom.scale, y: (geom.cy - py) / geom.scale }; }
+  function bbox(){
+    return {
+      xmin: -geom.cx / geom.scale,
+      xmax: (geom.W - geom.cx) / geom.scale,
+      ymin: (geom.cy - geom.H) / geom.scale,
+      ymax: geom.cy / geom.scale
+    };
+  }
+  function clamp(v, lo, hi){ return Math.max(lo, Math.min(hi, v)); }
+
+  // ---------- 参数与分类 ----------
+  function computeParams(){
+    var dx = state.p2.x - state.p1.x, dy = state.p2.y - state.p1.y;
+    var len = Math.hypot(dx, dy); if (len < 1e-6) len = 1e-6;
+    var w1 = dy / len, w2 = -dx / len;
+    var mx = (state.p1.x + state.p2.x) / 2, my = (state.p1.y + state.p2.y) / 2;
+    var b = -(w1 * mx + w2 * my);
+    return { w1: w1, w2: w2, b: b };
+  }
+  function classify(params){
+    var correct = 0;
+    for (var i = 0; i < pointsData.length; i++) {
+      var pt = pointsData[i];
+      var pred = Lec.P.weightedSum([pt.x, pt.y], [params.w1, params.w2], params.b);
+      if (pt.label === 1 ? pred > 0 : pred < 0) correct++;
+    }
+    return correct;
+  }
+  function clipLine(w1, w2, b){
+    var box = bbox();
+    var nx = w1, ny = w2, dx = -ny, dy = nx;
+    var p0x = -b * nx, p0y = -b * ny;
+    var tlo = -Infinity, thi = Infinity;
+    if (Math.abs(dx) > 1e-9) {
+      var tA = (box.xmin - p0x) / dx, tB = (box.xmax - p0x) / dx;
+      if (tA > tB) { var t = tA; tA = tB; tB = t; }
+      tlo = Math.max(tlo, tA); thi = Math.min(thi, tB);
+    } else if (p0x < box.xmin || p0x > box.xmax) return null;
+    if (Math.abs(dy) > 1e-9) {
+      var tC = (box.ymin - p0y) / dy, tD = (box.ymax - p0y) / dy;
+      if (tC > tD) { var t2 = tC; tC = tD; tD = t2; }
+      tlo = Math.max(tlo, tC); thi = Math.min(thi, tD);
+    } else if (p0y < box.ymin || p0y > box.ymax) return null;
+    if (tlo > thi) return null;
+    return [{ x: p0x + tlo * dx, y: p0y + tlo * dy }, { x: p0x + thi * dx, y: p0y + thi * dy }];
+  }
+
+  // ---------- 渲染 ----------
+  function renderStaticPoints(){
+    pointsLayer.innerHTML = '';
+    pointEls = [];
+    for (var i = 0; i < pointsData.length; i++) {
+      var pt = pointsData[i];
+      var el = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+      el.setAttribute('r', 8);
+      el.setAttribute('class', 'pt ' + (pt.label === 1 ? 'filled' : 'hollow'));
+      pointsLayer.appendChild(el);
+      pointEls.push(el);
+    }
+    positionPoints();
+  }
+  function positionPoints(){
+    for (var i = 0; i < pointsData.length; i++) {
+      var p = toPx(pointsData[i].x, pointsData[i].y);
+      pointEls[i].setAttribute('cx', p.px);
+      pointEls[i].setAttribute('cy', p.py);
+    }
+  }
+  function renderAxes(){
+    var box = bbox();
+    var top = toPx(0, box.ymax), bot = toPx(0, box.ymin);
+    var left = toPx(box.xmin, 0), right = toPx(box.xmax, 0);
+    axesLayer.innerHTML =
+      '<line class="axisline" x1="' + top.px + '" y1="' + top.py + '" x2="' + bot.px + '" y2="' + bot.py + '"></line>' +
+      '<line class="axisline" x1="' + left.px + '" y1="' + left.py + '" x2="' + right.px + '" y2="' + right.py + '"></line>';
+  }
+
+  function render(announce){
+    var params = computeParams();
+    var correct = classify(params);
+
+    var seg = clipLine(params.w1, params.w2, params.b);
+    if (seg) {
+      var a = toPx(seg[0].x, seg[0].y), b = toPx(seg[1].x, seg[1].y);
+      boundaryEl.setAttribute('x1', a.px); boundaryEl.setAttribute('y1', a.py);
+      boundaryEl.setAttribute('x2', b.px); boundaryEl.setAttribute('y2', b.py);
+      boundaryEl.style.display = '';
+    } else {
+      boundaryEl.style.display = 'none';
+    }
+
+    var hp1 = toPx(state.p1.x, state.p1.y), hp2 = toPx(state.p2.x, state.p2.y);
+    h1.setAttribute('cx', hp1.px); h1.setAttribute('cy', hp1.py);
+    h2.setAttribute('cx', hp2.px); h2.setAttribute('cy', hp2.py);
+    h1.setAttribute('aria-label', '端点A，坐标 x=' + state.p1.x.toFixed(2) + ' y=' + state.p1.y.toFixed(2) + '。方向键移动，Shift 加速。');
+    h2.setAttribute('aria-label', '端点B，坐标 x=' + state.p2.x.toFixed(2) + ' y=' + state.p2.y.toFixed(2) + '。方向键移动，Shift 加速。');
+
+    countText.textContent = correct;
+    wbText.textContent = params.w1.toFixed(2) + ' , ' + params.w2.toFixed(2) + ' , ' + params.b.toFixed(2);
+  }
+
+  // ---------- 交互：拖动 ----------
+  function movePointFromEvent(which, e){
+    var p = Deck.pt(svg, e);
+    var d = toData(p.x, p.y);
+    var box = bbox();
+    d.x = clamp(d.x, box.xmin, box.xmax);
+    d.y = clamp(d.y, box.ymin, box.ymax);
+    state[which] = d;
+    render(false);
+  }
+
+  function bindHandle(el, which){
+    el.addEventListener('pointerdown', function(e){
+      e.preventDefault();
+      try { el.setPointerCapture(e.pointerId); } catch (err) {}
+      el.classList.add('dragging');
+      dragging = which;
+      movePointFromEvent(which, e);
+    });
+    el.addEventListener('pointermove', function(e){
+      if (dragging !== which) return;
+      movePointFromEvent(which, e);
+    });
+    function end(e){
+      if (dragging !== which) return;
+      dragging = null;
+      el.classList.remove('dragging');
+      try { el.releasePointerCapture(e.pointerId); } catch (err) {}
+      render(true);
+    }
+    el.addEventListener('pointerup', end);
+    el.addEventListener('pointercancel', end);
+    el.addEventListener('keydown', function(e){
+      var step = e.shiftKey ? 0.2 : 0.05;
+      var dx = 0, dy = 0;
+      if (e.key === 'ArrowLeft') dx = -step;
+      else if (e.key === 'ArrowRight') dx = step;
+      else if (e.key === 'ArrowUp') dy = step;
+      else if (e.key === 'ArrowDown') dy = -step;
+      else return;
+      e.preventDefault();
+      e.stopPropagation();
+      var box = bbox();
+      var p = state[which];
+      state[which] = {
+        x: clamp(p.x + dx, box.xmin, box.xmax),
+        y: clamp(p.y + dy, box.ymin, box.ymax)
+      };
+      render(true);
+    });
+  }
+  bindHandle(h1, 'p1');
+  bindHandle(h2, 'p2');
+
+  resetBtn.addEventListener('click', function(){
+    dragging = null;
+    h1.classList.remove('dragging'); h2.classList.remove('dragging');
+    state = initialState();
+    render(false);
+    h1.focus();
+  });
+
+  function layoutAll(){
+    updateGeom();
+    positionPoints();
+    renderAxes();
+    render(false);
+  }
+
+  updateGeom();
+  renderStaticPoints();
+  renderAxes();
+  render(false);
+
+  Deck.onResize(function(){ layoutAll(); });
+
+  Deck.init({ index: 4, total: 19 });
+})();
+</script>
+</body>
+</html>

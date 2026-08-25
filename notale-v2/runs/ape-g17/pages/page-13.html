@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  .kicker{color:var(--ochre);font:650 var(--fs-label)/1.35 var(--font-mono);letter-spacing:.14em}
+  .page-head{height:94px}
+  .workbench{display:flex;gap:28px;min-height:0}
+  .compare-side{flex:1.38;display:flex;min-width:0;min-height:0}
+  .instrument{flex:1;display:flex;flex-direction:column;gap:12px;min-width:0;min-height:0}
+  .chart-head{display:flex;justify-content:space-between;align-items:flex-start;gap:16px}
+  .chart-head h2{margin:0}
+  .readouts{display:flex;gap:20px;align-items:flex-end}
+  .reading{flex:1;min-width:0}
+  .reading .small{margin-bottom:2px}
+  .chart{flex:1;min-height:260px;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+  .chart svg{display:block;width:100%;height:100%}
+  .controls{display:flex;flex-direction:column;gap:10px}
+  .ctl{gap:12px}
+  .footer{height:76px;display:flex;align-items:center;justify-content:space-between;gap:28px;border-top:1px solid var(--line)}
+  .footer .lead{margin:0;max-width:970px}
+  .handoff{max-width:430px;text-align:right}
+  .ochre{color:var(--ochre)}
+  .cyan{color:var(--cyan)}
+  .axis text,.lane-label{font-family:var(--font-sans);fill:var(--muted);font-size:14px}
+  .axis path,.axis line{stroke:var(--line-strong)}
+  .grid line{stroke:var(--line);stroke-dasharray:3 7}
+  .grid path{display:none}
+  @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body data-page="13" data-total="50">
+<div id="stage">
+  <header class="page-head" style="height:94px">
+    <div class="kicker">BODY / HEAT / WATER</div>
+    <h1>少一点体毛，多一笔水账</h1>
+  </header>
+
+  <main class="workbench" style="flex:1">
+    <section class="compare-side min0" aria-label="体毛与出汗策略比较">
+      <div class="k-comparison" style="--compare-n:2">
+        <div class="hdr dim">同一维度</div>
+        <div class="hdr ochre">较多体毛／较少出汗</div>
+        <div class="hdr diff">较少体毛／较多出汗</div>
+
+        <div class="dim">蒸发散热</div><div class="cell">汗液较难快速蒸发</div><div class="cell diff">裸露皮肤利于蒸发带走热量</div><div class="rowline"></div>
+        <div class="dim">长距离活动</div><div class="cell">热量更易积累</div><div class="cell diff">炎热时更能持续活动</div><div class="rowline"></div>
+        <div class="dim">水的代价</div><div class="cell">饮水压力较低</div><div class="cell diff">高强度活动可出汗约 <span id="sweatRange" class="num"></span></div><div class="rowline"></div>
+        <div class="dim">主要风险</div><div class="cell">过热迫使活动中断</div><div class="cell diff">缺水会让散热优势迅速消失</div>
+      </div>
+    </section>
+
+    <section class="instrument panel min0" aria-label="体毛覆盖率与饮水需求示意模型">
+      <div class="chart-head">
+        <div><h2>同一活动时段</h2><div class="small">课堂示意：汗液全部计入水耗</div></div>
+        <button class="btn" id="reset" type="button">复位</button>
+      </div>
+      <div class="readouts" aria-live="polite">
+        <div class="reading"><div class="small">出汗率</div><span class="big sm" id="rate"></span><span class="unit">L/h</span></div>
+        <div class="reading"><div class="small">可持续时间</div><span class="big sm" id="duration"></span><span class="unit">h</span></div>
+        <div class="reading"><div class="small">每小时</div><span class="big sm" id="bottles"></span><span class="unit">瓶</span></div>
+      </div>
+      <div class="legend" style="gap:22px">
+        <span class="li"><span class="sw line" style="color:var(--cyan)"></span>散热能力（出汗率）</span>
+        <span class="li"><span class="sw line" style="color:var(--ochre)"></span>剩余水量</span>
+        <span class="li"><span class="sw line" style="color:var(--cyan);border-top:2px dashed var(--cyan);background:none"></span>散热条件中断</span>
+      </div>
+      <div class="chart cvbox min0" id="chart"><svg role="img" aria-label="三小时内出汗率与剩余水量的共享时间轴"><title>散热能力与剩余水量</title><desc>拖动体毛覆盖率和携带水量，观察水耗尽时间如何变化。</desc></svg></div>
+      <div class="controls">
+        <div class="ctl"><label for="hair">体毛覆盖率</label><input class="no-pan" id="hair" type="range"><output id="hairOut" class="num"></output></div>
+        <div class="ctl"><label for="water">携带水量</label><input class="no-pan" id="water" type="range"><output id="waterOut" class="num"></output></div>
+      </div>
+      <div class="hint">拖动两项，比较曲线与水耗尽位置。</div>
+    </section>
+  </main>
+
+  <footer class="footer" style="height:76px">
+    <p class="lead">少毛不是单向“升级”：散热优势成立的条件，是能持续找到并补充水。</p>
+    <div class="small handoff">下一页：能走得更远之后，牙齿留下了怎样的饮食证据？</div>
+  </footer>
+  <script src="assets/lib/d3.min.js"></script>
+  <script>
+  document.addEventListener('DOMContentLoaded', function(){
+    Deck.init({index:13,total:50});
+    const pct=Lec.K.units.percentAsFraction;
+    const cfg={hairMin:20,hairMax:80,hairStep:1,hairDefault:40,waterMin:.5,waterMax:6,waterStep:.1,waterDefault:3,hours:3,bottle:.5,base:.4,gain:1.4};
+    const hair=document.getElementById('hair'), water=document.getElementById('water');
+    Object.assign(hair,{min:cfg.hairMin,max:cfg.hairMax,step:cfg.hairStep,value:cfg.hairDefault});
+    Object.assign(water,{min:cfg.waterMin,max:cfg.waterMax,step:cfg.waterStep,value:cfg.waterDefault});
+    document.getElementById('sweatRange').textContent='1–2 L/h（每小时约 2–4 瓶 500 mL 水）';
+    const svg=d3.select('#chart svg');
+    function model(){
+      const h=Number(hair.value)*pct, W=Number(water.value);
+      const s=cfg.base+cfg.gain*(1-h);
+      return {h,W,s,duration:W/s};
+    }
+    function update(){
+      const m=model();
+      document.getElementById('hairOut').textContent=(m.h/pct).toFixed(0)+'%';
+      document.getElementById('waterOut').textContent=m.W.toFixed(1)+' L';
+      document.getElementById('rate').textContent=m.s.toFixed(2);
+      document.getElementById('duration').textContent=m.duration.toFixed(2);
+      document.getElementById('bottles').textContent=(m.s/cfg.bottle).toFixed(1);
+      draw(m);
+    }
+    function draw(m){
+      const el=document.getElementById('chart');
+      const w=Math.max(520,el.clientWidth), h=Math.max(260,el.clientHeight);
+      svg.attr('viewBox',`0 0 ${w} ${h}`); svg.selectAll('g.plot').remove();
+      const margin={top:20,right:28,bottom:42,left:76}, iw=w-margin.left-margin.right, ih=h-margin.top-margin.bottom;
+      const g=svg.append('g').attr('class','plot').attr('transform',`translate(${margin.left},${margin.top})`);
+      const x=d3.scaleLinear().domain([0,cfg.hours]).range([0,iw]);
+      const topH=ih*.34, waterTop=ih*.53, waterH=ih*.47;
+      const yRate=d3.scaleLinear().domain([0,2]).range([topH,0]);
+      const yWater=d3.scaleLinear().domain([0,cfg.waterMax]).range([waterTop+waterH,waterTop]);
+      g.append('g').attr('class','grid').attr('transform',`translate(0,${ih})`).call(d3.axisBottom(x).ticks(3).tickSize(-ih).tickFormat(''));
+      g.append('g').attr('class','axis').attr('transform',`translate(0,${ih})`).call(d3.axisBottom(x).ticks(3).tickFormat(d=>d+' h'));
+      g.append('text').attr('class','lane-label').attr('x',-12).attr('y',14).attr('text-anchor','end').text('出汗率');
+      g.append('text').attr('class','lane-label').attr('x',-12).attr('y',waterTop+14).attr('text-anchor','end').text('剩余水');
+      g.append('line').attr('x1',0).attr('x2',iw).attr('y1',yRate(m.s)).attr('y2',yRate(m.s)).attr('stroke','var(--cyan)').attr('stroke-width',5);
+      g.append('circle').attr('cx',iw).attr('cy',yRate(m.s)).attr('r',7).attr('fill','var(--cyan)');
+      const end=Math.min(cfg.hours,m.duration), solid=[{t:0,w:m.W},{t:end,w:Math.max(0,m.W-m.s*end)}];
+      const line=d3.line().x(d=>x(d.t)).y(d=>yWater(d.w));
+      g.append('path').datum(solid).attr('d',line).attr('fill','none').attr('stroke','var(--ochre)').attr('stroke-width',5);
+      if(m.duration<cfg.hours){
+        g.append('path').datum([{t:m.duration,w:0},{t:cfg.hours,w:0}]).attr('d',line).attr('fill','none').attr('stroke','var(--cyan)').attr('stroke-width',4).attr('stroke-dasharray','10 9');
+        g.append('line').attr('x1',x(m.duration)).attr('x2',x(m.duration)).attr('y1',waterTop).attr('y2',ih).attr('stroke','var(--cyan)').attr('stroke-width',2);
+        g.append('text').attr('x',Math.min(iw-8,x(m.duration)+10)).attr('y',waterTop+22).attr('text-anchor',x(m.duration)>iw*.72?'end':'start').attr('fill','var(--cyan)').attr('font-size',16).text('散热条件中断');
+      }
+    }
+    hair.addEventListener('input',update); water.addEventListener('input',update);
+    document.getElementById('reset').addEventListener('click',()=>{hair.value=cfg.hairDefault;water.value=cfg.waterDefault;update();});
+    const ro=new ResizeObserver(update); ro.observe(document.getElementById('chart'));
+    update();
+    window.addEventListener('pagehide',()=>ro.disconnect(),{once:true});
+  });
+  </script>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+</body>
+</html>

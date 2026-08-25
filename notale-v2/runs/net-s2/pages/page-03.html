@@ -1,0 +1,350 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  #stage{ display:flex; flex-direction:column; gap:14px; }
+
+  .hd{ flex:0 0 auto; display:flex; flex-direction:column; gap:4px; }
+  .kicker{
+    font:700 15px/1.2 var(--font-sans);
+    letter-spacing:.12em; color:var(--accent); text-transform:uppercase;
+  }
+  .hd h1{
+    margin:0; font:700 34px/1.25 var(--font-sans); color:var(--text);
+  }
+
+  .main{ flex:1; min-height:0; display:flex; gap:20px; }
+
+  .left{ flex:1.35; min-width:0; display:flex; flex-direction:column; }
+  .right{ flex:1; min-width:0; display:flex; flex-direction:column; gap:14px; }
+
+  .panel{ height:100%; box-sizing:border-box; }
+
+  .diagram-cap{
+    font:400 15px/1.4 var(--font-sans); color:var(--muted); margin:0 0 4px 4px;
+  }
+  .svgwrap{ flex:1; min-height:0; }
+  .svgwrap svg{ width:100%; height:100%; display:block; }
+
+  .lbl-node{ font:600 16px/1.3 var(--font-sans); fill:var(--text); }
+  .lbl-sub{ font:400 14px/1.3 var(--font-sans); fill:var(--muted); }
+  .lbl-w{ font:700 17px/1 var(--font-mono); fill:var(--primary); }
+  .lbl-w.active{ fill:var(--accent); }
+  .lbl-sym{ font:700 30px/1 var(--font-serif); fill:var(--primary); }
+  .lbl-live{ font:700 17px/1 var(--font-mono); fill:var(--primary); }
+  .lbl-out{ font:700 20px/1.2 var(--font-sans); fill:var(--primary); }
+
+  .right .panel{
+    display:flex; flex-direction:column; gap:16px; padding:20px 22px;
+  }
+  .ctl-title{ font:700 16px/1.35 var(--font-sans); color:var(--text); margin:0 0 2px; }
+  .ctl-instr{ font:400 15px/1.45 var(--font-sans); color:var(--muted); margin:0; }
+
+  .sliders{ display:flex; flex-direction:column; gap:10px; }
+  .sliders .ctl{
+    display:flex !important; flex-direction:column !important; align-items:stretch !important; gap:4px;
+    padding:8px 10px; border-radius:8px; width:100%; box-sizing:border-box;
+    border:1px solid transparent; transition:border-color .15s, background-color .15s;
+  }
+  .ctl:focus-within{
+    border-color:var(--accent); background:rgba(232,98,44,0.07);
+  }
+  .ctl-row{ display:flex; justify-content:space-between; align-items:baseline; }
+  .ctl-row .name{ font:600 15px/1.3 var(--font-sans); color:var(--text); }
+  .ctl-row .val{ font:700 17px/1 var(--font-mono); color:var(--primary); }
+  .ctl:focus-within .ctl-row .val{ color:var(--accent); }
+  input[type=range]{
+    width:100%; accent-color:var(--accent); height:22px; cursor:pointer;
+  }
+  .range-scale{
+    display:flex; justify-content:space-between; width:100%;
+    font:400 13px/1 var(--font-mono); color:var(--muted);
+  }
+
+  .divider{ border-top:1px solid var(--line); margin:2px 0; }
+
+  .readout-row{
+    display:flex; align-items:baseline; gap:22px; flex-wrap:wrap;
+  }
+  .readout{ display:flex; flex-direction:column; gap:2px; }
+  .readout .cap{ font:400 14px/1.2 var(--font-sans); color:var(--muted); }
+  .readout .big{ font-family:var(--font-mono); }
+
+  .bar-wrap{ flex:1; min-width:120px; display:flex; flex-direction:column; gap:6px; }
+  .bar-track{
+    width:100%; height:16px; border-radius:8px; background:var(--line);
+    overflow:hidden; border:1px solid var(--line-strong);
+  }
+  .bar-fill{
+    height:100%; background:var(--primary); border-radius:8px 0 0 8px;
+    transition:width .08s linear;
+  }
+
+  .tag{
+    display:inline-flex; align-items:center; gap:8px;
+    padding:8px 16px; border-radius:999px;
+    border:2px solid var(--primary); color:var(--primary);
+    font:700 20px/1.1 var(--font-sans); background:var(--panel-bg);
+  }
+  .tag .dot{ width:10px; height:10px; border-radius:50%; background:var(--primary); }
+
+  .reset-row{ display:flex; justify-content:flex-end; }
+  .btn.reset{
+    font:600 14px/1.3 var(--font-sans);
+  }
+
+  .ft{ flex:0 0 auto; display:flex; flex-direction:column; gap:4px; }
+  .ft .note{
+    margin:0; font:400 18px/1.4 var(--font-sans); color:var(--text);
+  }
+  .ft .hint{
+    margin:0; font:400 15px/1.4 var(--font-sans); color:var(--muted);
+  }
+  .ft .hint b{ color:var(--accent); font-weight:700; }
+
+  .sr-status{ position:absolute; width:1px; height:1px; overflow:hidden; }
+</style>
+</head>
+<body data-page="03" data-total="19">
+<div id="stage">
+
+  <div class="hd">
+    <div class="kicker">NEURON MECHANISM</div>
+    <h1>一个神经元＝加权求和＋决策开关</h1>
+  </div>
+
+  <div class="main">
+
+    <div class="left">
+      <p class="diagram-cap">输入 → 加权求和 → 决策开关 → 输出，拖动右侧滑块，全链条数字一起变</p>
+      <div class="panel q svgwrap">
+        <svg id="diagram" viewBox="0 0 950 560" role="img" aria-label="神经元计算流程图：两个输入按权重求和得到 z，z 经过 sigmoid 开关得到置信度 a，再按 0.5 阈值输出带伞或不带伞">
+          <defs>
+            <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M0,0 L10,5 L0,10 z" fill="var(--primary)"></path>
+            </marker>
+          </defs>
+
+          <!-- connecting lines -->
+          <line x1="130" y1="170" x2="260" y2="235" stroke="var(--primary)" stroke-width="2.5" marker-end="url(#arrow)"></line>
+          <line x1="130" y1="390" x2="260" y2="325" stroke="var(--primary)" stroke-width="2.5" marker-end="url(#arrow)"></line>
+          <line x1="335" y1="120" x2="335" y2="208" stroke="var(--primary)" stroke-width="2.5" marker-end="url(#arrow)"></line>
+          <line x1="412" y1="280" x2="488" y2="280" stroke="var(--primary)" stroke-width="2.5" marker-end="url(#arrow)"></line>
+          <line x1="642" y1="280" x2="718" y2="280" stroke="var(--primary)" stroke-width="2.5" marker-end="url(#arrow)"></line>
+
+          <!-- weight / bias labels (with backing rect for legibility) -->
+          <g>
+            <rect x="140" y="182" width="86" height="24" rx="5" fill="var(--panel-bg)"></rect>
+            <text id="w1label" class="lbl-w" x="183" y="199" text-anchor="middle">w₁ = 1.50</text>
+          </g>
+          <g>
+            <rect x="140" y="332" width="86" height="24" rx="5" fill="var(--panel-bg)"></rect>
+            <text id="w2label" class="lbl-w" x="183" y="349" text-anchor="middle">w₂ = 0.50</text>
+          </g>
+          <g>
+            <rect x="292" y="128" width="86" height="24" rx="5" fill="var(--panel-bg)"></rect>
+            <text id="blabel" class="lbl-w" x="335" y="145" text-anchor="middle">b = −1.00</text>
+          </g>
+
+          <!-- input node x1 -->
+          <circle cx="80" cy="170" r="50" fill="var(--panel-bg)" stroke="var(--primary)" stroke-width="2.5"></circle>
+          <text class="lbl-node" x="80" y="163" text-anchor="middle">x₁</text>
+          <text class="lbl-live" x="80" y="184" text-anchor="middle">0.70</text>
+          <text class="lbl-sub" x="80" y="238" text-anchor="middle">降雨概率</text>
+
+          <!-- input node x2 -->
+          <circle cx="80" cy="390" r="50" fill="var(--panel-bg)" stroke="var(--primary)" stroke-width="2.5"></circle>
+          <text class="lbl-node" x="80" y="383" text-anchor="middle">x₂</text>
+          <text class="lbl-live" x="80" y="404" text-anchor="middle">0.40</text>
+          <text class="lbl-sub" x="80" y="458" text-anchor="middle">风力等级</text>
+
+          <!-- sum node -->
+          <rect x="260" y="210" width="152" height="140" rx="12" fill="var(--panel-bg)" stroke="var(--primary)" stroke-width="2.5"></rect>
+          <text class="lbl-sym" x="336" y="262" text-anchor="middle">Σ</text>
+          <text id="zNode" class="lbl-live" x="336" y="330" text-anchor="middle">z = 0.25</text>
+          <text class="lbl-sub" x="336" y="368" text-anchor="middle">加权求和</text>
+
+          <!-- sigmoid node -->
+          <rect x="488" y="210" width="154" height="140" rx="12" fill="var(--panel-bg)" stroke="var(--primary)" stroke-width="2.5"></rect>
+          <text class="lbl-sym" x="565" y="262" text-anchor="middle">σ</text>
+          <text id="aNode" class="lbl-live" x="565" y="330" text-anchor="middle">a = 56%</text>
+          <text class="lbl-sub" x="565" y="368" text-anchor="middle">决策开关</text>
+
+          <!-- output node -->
+          <rect x="718" y="228" width="182" height="104" rx="14" fill="var(--panel-bg)" stroke="var(--primary)" stroke-width="2.5"></rect>
+          <circle id="outDot" cx="750" cy="280" r="7" fill="var(--primary)"></circle>
+          <text id="outLabel" class="lbl-out" x="820" y="286" text-anchor="middle">带伞</text>
+          <text class="lbl-sub" x="809" y="315" text-anchor="middle">最终判断</text>
+        </svg>
+      </div>
+    </div>
+
+    <div class="right">
+      <div class="panel">
+        <p class="ctl-title">拖动三个滑块，观察全链条同步变化</p>
+        <p class="ctl-instr">权重决定输入的份量，偏置整体抬高或压低求和结果；三者一起决定 z，也就决定了最终判断。</p>
+
+        <div class="sliders">
+          <div class="ctl">
+            <div class="ctl-row">
+              <span class="name">w₁ 降雨概率的权重</span>
+              <span class="val" id="w1val">1.50</span>
+            </div>
+            <input type="range" id="w1" min="-2" max="2" step="0.1" value="1.5" aria-label="w1 降雨概率的权重，范围 负2 到 2">
+            <div class="range-scale"><span>−2.0</span><span>2.0</span></div>
+          </div>
+
+          <div class="ctl">
+            <div class="ctl-row">
+              <span class="name">w₂ 风力等级的权重</span>
+              <span class="val" id="w2val">0.50</span>
+            </div>
+            <input type="range" id="w2" min="-2" max="2" step="0.1" value="0.5" aria-label="w2 风力等级的权重，范围 负2 到 2">
+            <div class="range-scale"><span>−2.0</span><span>2.0</span></div>
+          </div>
+
+          <div class="ctl">
+            <div class="ctl-row">
+              <span class="name">b 偏置</span>
+              <span class="val" id="bval">−1.00</span>
+            </div>
+            <input type="range" id="b" min="-2" max="2" step="0.1" value="-1.0" aria-label="b 偏置，范围 负2 到 2">
+            <div class="range-scale"><span>−2.0</span><span>2.0</span></div>
+          </div>
+        </div>
+
+        <div class="reset-row">
+          <button class="btn reset" id="resetBtn" type="button">重置为默认值</button>
+        </div>
+
+        <div class="divider"></div>
+
+        <div class="readout-row" id="readoutRow" aria-live="polite">
+          <div class="readout">
+            <span class="cap">加权和 z</span>
+            <span class="big sm num" id="zBig">0.25</span>
+          </div>
+          <div class="bar-wrap">
+            <span class="cap">决策开关输出（置信度）<span class="num" id="aPct" style="font-family:var(--font-mono); color:var(--primary); font-weight:700;">56%</span></span>
+            <div class="bar-track"><div class="bar-fill" id="barFill" style="width:56%"></div></div>
+          </div>
+          <div class="readout">
+            <span class="cap">≥ 50% 判定为</span>
+            <span class="tag" id="tag"><span class="dot"></span><span id="tagText">带伞</span></span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="ft">
+    <p class="note">权重和偏置一变，加权和就变，决策开关吐出的判断——带不带伞——立刻跟着变。</p>
+    <p class="hint">下一问：<b>这个开关的判断，如果画在一张摆满点的图上，会长成什么样子？</b></p>
+  </div>
+
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script>
+(function(){
+  Deck.init({ index:3, total:19 });
+
+  var X1 = 0.7, X2 = 0.4;
+  var DEFAULT = { w1:1.5, w2:0.5, b:-1.0 };
+  var state = { w1:DEFAULT.w1, w2:DEFAULT.w2, b:DEFAULT.b };
+
+  var $w1 = document.getElementById('w1');
+  var $w2 = document.getElementById('w2');
+  var $b  = document.getElementById('b');
+
+  var els = {
+    w1val: document.getElementById('w1val'),
+    w2val: document.getElementById('w2val'),
+    bval:  document.getElementById('bval'),
+    w1label: document.getElementById('w1label'),
+    w2label: document.getElementById('w2label'),
+    blabel: document.getElementById('blabel'),
+    zNode: document.getElementById('zNode'),
+    aNode: document.getElementById('aNode'),
+    outLabel: document.getElementById('outLabel'),
+    outDot: document.getElementById('outDot'),
+    zBig: document.getElementById('zBig'),
+    aPct: document.getElementById('aPct'),
+    barFill: document.getElementById('barFill'),
+    tagText: document.getElementById('tagText'),
+    srStatus: null
+  };
+
+  function fmtSigned(v){
+    var s = v.toFixed(2);
+    if (v > 0) return '+' + s;
+    if (v === 0) return '0.00';
+    return '\u2212' + s.slice(1); // use minus sign glyph
+  }
+  function fmtPlain(v){
+    var s = v.toFixed(2);
+    return v < 0 ? '\u2212' + s.slice(1) : s;
+  }
+
+  var lastLabel = null;
+
+  function render(){
+    var w1 = state.w1, w2 = state.w2, b = state.b;
+    var z = Lec.P.weightedSum([X1, X2], [w1, w2], b);
+    var a = Lec.P.activate('sigmoid', z);
+    var pct = Math.round(a * 100);
+    var isUmbrella = a >= 0.5;
+    var label = isUmbrella ? '带伞' : '不带伞';
+
+    // slider readouts
+    els.w1val.textContent = fmtPlain(w1);
+    els.w2val.textContent = fmtPlain(w2);
+    els.bval.textContent  = fmtPlain(b);
+
+    // diagram labels
+    els.w1label.textContent = 'w₁ = ' + fmtPlain(w1);
+    els.w2label.textContent = 'w₂ = ' + fmtPlain(w2);
+    els.blabel.textContent  = 'b = '  + fmtPlain(b);
+    els.zNode.textContent = 'z = ' + fmtPlain(z);
+    els.aNode.textContent = 'a = ' + pct + '%';
+    els.outLabel.textContent = label;
+
+    // right readout row
+    els.zBig.textContent = fmtPlain(z);
+    els.aPct.textContent = pct + '%';
+    els.barFill.style.width = Deck.clamp(pct, 0, 100) + '%';
+    els.tagText.textContent = label;
+
+    if (label !== lastLabel){
+      lastLabel = label;
+    }
+  }
+
+  function bindActive(input, labelEl){
+    input.addEventListener('focus', function(){ labelEl.classList.add('active'); });
+    input.addEventListener('blur', function(){ labelEl.classList.remove('active'); });
+  }
+  bindActive($w1, els.w1label);
+  bindActive($w2, els.w2label);
+  bindActive($b, els.blabel);
+
+  $w1.addEventListener('input', function(){ state.w1 = parseFloat($w1.value); render(); });
+  $w2.addEventListener('input', function(){ state.w2 = parseFloat($w2.value); render(); });
+  $b.addEventListener('input', function(){ state.b = parseFloat($b.value); render(); });
+
+  document.getElementById('resetBtn').addEventListener('click', function(){
+    state.w1 = DEFAULT.w1; state.w2 = DEFAULT.w2; state.b = DEFAULT.b;
+    $w1.value = state.w1; $w2.value = state.w2; $b.value = state.b;
+    render();
+    $w1.focus();
+  });
+
+  render();
+})();
+</script>
+</body>
+</html>

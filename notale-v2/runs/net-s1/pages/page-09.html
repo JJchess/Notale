@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  #stage{ display:flex; flex-direction:column; }
+
+  .hd{ flex:0 0 auto; margin-bottom:18px; }
+  .kicker{
+    font-family: var(--font-mono);
+    font-size: var(--fs-label);
+    letter-spacing:.14em;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    margin-bottom:6px;
+  }
+
+  .main{ flex:1; min-height:0; display:flex; gap:36px; position:relative; padding-top:10px; }
+
+  .pane-fig{ flex:1; min-width:0; position:relative; }
+  .pane-fig svg{ width:100%; height:100%; display:block; }
+  .w1-slider{
+    position:absolute; inset:0;
+    width:100%; height:100%;
+    margin:0; padding:0;
+    opacity:0;
+    cursor:grab;
+    background:transparent;
+  }
+  .w1-slider:active{ cursor:grabbing; }
+
+  .pane-side{
+    flex:0 0 302px; min-width:0;
+    display:flex; flex-direction:column;
+    justify-content:center; gap:20px;
+  }
+  .readout{ display:flex; flex-direction:column; gap:20px; }
+  .rd{ display:flex; flex-direction:column; gap:2px; }
+  .rlbl{
+    font-size: var(--fs-label);
+    color: var(--text-dim);
+    font-family: var(--font-mono);
+  }
+  .readout .rd + .rd{ border-top:1px solid var(--rule); padding-top:18px; }
+
+  .ft{ flex:0 0 auto; margin-top:24px; display:flex; flex-direction:column; gap:3px; }
+
+  /* --- svg 内部样式 --- */
+  .axisline{ stroke: var(--text-dim); stroke-width:1.5; }
+  .tick{ stroke: var(--rule); stroke-width:1; }
+  .ticklabel{
+    font-family: var(--font-mono);
+    font-size: 13px;
+    fill: var(--text-dim);
+  }
+  .axistitle{
+    font-family: var(--font-sans);
+    font-size: 14px;
+    fill: var(--text-dim);
+  }
+  .curve{ fill:none; stroke: var(--blue); stroke-width:3.5; stroke-linecap:round; stroke-linejoin:round; }
+  .guide{ stroke: var(--text-dim); stroke-width:1; stroke-dasharray:5 5; opacity:.55; }
+  .halo{
+    fill:none; stroke: var(--orange); stroke-width:2; stroke-dasharray:4 4;
+    opacity:0; transition: opacity .12s;
+  }
+  .halo.active{ opacity:1; }
+  .dot{ fill: var(--orange); stroke:#fff; stroke-width:2.5; }
+</style>
+</head>
+<body data-page="09" data-total="22">
+<div id="stage">
+
+  <div class="hd">
+    <div class="kicker">ON THE CURVE</div>
+    <h1 class="h1">损失函数不是公式，是你能站上去的地形</h1>
+  </div>
+
+  <div class="main">
+    <div class="pane-fig min0">
+      <svg id="plot" viewBox="0 0 1000 600" preserveAspectRatio="xMidYMid meet"
+           role="img" aria-label="曲线图：横轴是权重 w1，纵轴是 loss，橙色点标出当前取值对应的失分程度">
+        <!-- y 轴刻度与网格 -->
+        <line class="tick" x1="90" y1="530" x2="960" y2="530"></line>
+        <line class="tick" x1="90" y1="372.5" x2="960" y2="372.5"></line>
+        <line class="tick" x1="90" y1="215" x2="960" y2="215"></line>
+        <line class="tick" x1="90" y1="57.5" x2="960" y2="57.5"></line>
+        <text class="ticklabel" x="76" y="534" text-anchor="end">0</text>
+        <text class="ticklabel" x="76" y="376.5" text-anchor="end">1</text>
+        <text class="ticklabel" x="76" y="219" text-anchor="end">2</text>
+        <text class="ticklabel" x="76" y="61.5" text-anchor="end">3</text>
+        <text class="axistitle" transform="rotate(-90,35,294)" x="35" y="294" text-anchor="middle">loss</text>
+
+        <!-- x 轴（w1 数轴） -->
+        <line class="axisline" x1="90" y1="530" x2="960" y2="530"></line>
+        <g class="ticklabel">
+          <line class="tick" x1="90" y1="525" x2="90" y2="535"></line>
+          <text x="90" y="552" text-anchor="middle">-3</text>
+          <line class="tick" x1="235" y1="525" x2="235" y2="535"></line>
+          <text x="235" y="552" text-anchor="middle">-2</text>
+          <line class="tick" x1="380" y1="525" x2="380" y2="535"></line>
+          <text x="380" y="552" text-anchor="middle">-1</text>
+          <line class="tick" x1="525" y1="525" x2="525" y2="535"></line>
+          <text x="525" y="552" text-anchor="middle">0</text>
+          <line class="tick" x1="670" y1="525" x2="670" y2="535"></line>
+          <text x="670" y="552" text-anchor="middle">1</text>
+          <line class="tick" x1="815" y1="525" x2="815" y2="535"></line>
+          <text x="815" y="552" text-anchor="middle">2</text>
+          <line class="tick" x1="960" y1="525" x2="960" y2="535"></line>
+          <text x="960" y="552" text-anchor="middle">3</text>
+        </g>
+        <text class="axistitle" x="840" y="518" text-anchor="end">权重 w₁</text>
+
+        <!-- y 轴竖线 -->
+        <line class="axisline" x1="90" y1="530" x2="90" y2="30"></line>
+
+        <!-- loss 曲线：一次性采样生成 -->
+        <path id="curvePath" class="curve" d=""></path>
+
+        <!-- 读数辅助线 -->
+        <line id="vGuide" class="guide" x1="742.5" y1="570" x2="742.5" y2="419.7"></line>
+        <line id="hGuide" class="guide" x1="90" y1="419.7" x2="742.5" y2="419.7"></line>
+
+        <circle id="halo" class="halo" cx="742.5" cy="419.7" r="17"></circle>
+        <circle id="dot" class="dot" cx="742.5" cy="419.7" r="10"></circle>
+      </svg>
+
+      <input type="range" id="w1Slider" class="w1-slider no-pan"
+             min="-3" max="3" step="0.01" value="1.5"
+             aria-label="拖动改变权重 w1 的取值，范围 -3 到 3，点会沿曲线移动">
+    </div>
+
+    <div class="pane-side min0">
+      <div class="err-badge" style="position:static;display:flex;margin-bottom:10px;">
+        <span class="lbl">loss</span>
+        <span class="num" id="badgeLoss">0.89</span>
+      </div>
+      <div class="panel q readout">
+        <div class="rd">
+          <span class="rlbl">w₁ =</span>
+          <span class="big num" id="w1Val">1.50</span>
+        </div>
+        <div class="rd">
+          <span class="rlbl">loss =</span>
+          <span class="big num err" id="lossVal">0.89</span>
+        </div>
+      </div>
+      <p class="hint">拖动橙色圆点（曲线区域内哪里都能拖），就是在改 w₁：横向位置是 w₁ 的读数，纵向位置由曲线本身给出对应的 loss——点始终贴在曲线上，脱不开它。</p>
+      <div class="btns">
+        <button class="btn" id="resetBtn" type="button">回到默认 w₁ = 1.5</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="ft">
+    <p class="lead">拖这个点就是在改权重——曲线上每一个位置，都对应一个具体的失分程度。</p>
+    <p class="note">曲线有高有低，往哪边走才能更快地降下去？</p>
+  </div>
+
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script>
+(function(){
+  'use strict';
+
+  var W1_MIN = -3, W1_MAX = 3;
+  var VB = { mL:90, mR:40, mT:30, mB:70, W:1000, H:600 };
+  var plotW = VB.W - VB.mL - VB.mR;
+  var plotH = VB.H - VB.mT - VB.mB;
+
+  function X(w){ return VB.mL + (w - W1_MIN) / (W1_MAX - W1_MIN) * plotW; }
+  function Y(l){
+    var c = Math.min(Math.max(l, 0), 3.2);
+    return VB.mT + plotH - (c / 3.2) * plotH;
+  }
+
+  // 样本 A: x=(1,0) y=0 ；样本 B: x=(1,1) y=1 ；w2=1.0 固定，bias=0 固定
+  function computeLoss(w1){
+    var a = Lec.P.activate('sigmoid', w1);        // 样本 A: z = w1*1 + w2*0 = w1
+    var b = Lec.P.activate('sigmoid', w1 + 1);    // 样本 B: z = w1*1 + w2*1 = w1+1
+    return (Lec.P.bce(0, a) + Lec.P.bce(1, b)) / 2;
+  }
+
+  // 预采样曲线，每 0.05 一点
+  var pts = [];
+  for (var i = 0; i <= 120; i++) {
+    var w = -3 + i * 0.05;
+    var l = computeLoss(w);
+    pts.push(X(w).toFixed(2) + ',' + Y(l).toFixed(2));
+  }
+  document.getElementById('curvePath').setAttribute('d', 'M' + pts.join(' L'));
+
+  var slider = document.getElementById('w1Slider');
+  var dot = document.getElementById('dot');
+  var halo = document.getElementById('halo');
+  var vGuide = document.getElementById('vGuide');
+  var hGuide = document.getElementById('hGuide');
+  var w1ValEl = document.getElementById('w1Val');
+  var lossValEl = document.getElementById('lossVal');
+  var badgeLossEl = document.getElementById('badgeLoss');
+
+  function render(w1){
+    var l = computeLoss(w1);
+    var x = X(w1), y = Y(l);
+    dot.setAttribute('cx', x); dot.setAttribute('cy', y);
+    halo.setAttribute('cx', x); halo.setAttribute('cy', y);
+    vGuide.setAttribute('x1', x); vGuide.setAttribute('x2', x);
+    vGuide.setAttribute('y1', VB.mT + plotH); vGuide.setAttribute('y2', y);
+    hGuide.setAttribute('x1', VB.mL); hGuide.setAttribute('x2', x);
+    hGuide.setAttribute('y1', y); hGuide.setAttribute('y2', y);
+    w1ValEl.textContent = w1.toFixed(2);
+    lossValEl.textContent = l.toFixed(2);
+    badgeLossEl.textContent = l.toFixed(2);
+  }
+
+  slider.addEventListener('input', function(){
+    render(parseFloat(slider.value));
+  });
+
+  ['pointerdown', 'touchstart'].forEach(function(evt){
+    slider.addEventListener(evt, function(){ halo.classList.add('active'); });
+  });
+  ['pointerup', 'pointercancel', 'touchend', 'touchcancel'].forEach(function(evt){
+    slider.addEventListener(evt, function(){ halo.classList.remove('active'); });
+  });
+
+  document.getElementById('resetBtn').addEventListener('click', function(){
+    slider.value = '1.5';
+    render(1.5);
+    slider.focus();
+  });
+
+  render(parseFloat(slider.value));
+
+  if (window.Deck && Deck.init) Deck.init({ index: 9, total: 22 });
+})();
+</script>
+</body>
+</html>

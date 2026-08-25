@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+#stage{gap:14px}.head{display:flex;align-items:flex-end;justify-content:space-between}.kicker{font:var(--fs-label)/1.2 var(--font-mono);letter-spacing:.18em;color:var(--star)}h1{font:600 var(--fs-h1)/1.2 var(--font-sans);margin:7px 0 0}.datebox{text-align:right}.datebox .tag{margin-bottom:7px}.date{font:600 28px/1 var(--font-mono);color:var(--accent)}
+.sky{position:relative;flex:1;min-height:0;border-top:1px solid var(--line);border-bottom:1px solid var(--line);overflow:hidden;background:linear-gradient(180deg,rgba(143,167,179,.035),transparent 45%)}svg{display:block;width:100%;height:100%}.band{fill:rgba(143,167,179,.045)}.ecliptic{fill:none;stroke:var(--star);stroke-width:3;stroke-dasharray:15 12;opacity:.68}.const{fill:none;stroke:var(--star);stroke-width:1.5;opacity:.35}.star{fill:var(--star)}.axis text{fill:var(--text);font:13px var(--font-mono);opacity:.65}.axis line{stroke:var(--line)}.axis path{display:none}.trail{fill:none;stroke:var(--accent);stroke-width:2;opacity:.33}.planet-dot{fill:var(--text)}.planet-ring{fill:none;stroke:var(--accent);stroke-width:3}.planet-label{fill:var(--text);font:600 16px var(--font-sans)}.edge{fill:var(--star);font:15px var(--font-sans)}
+.overlay{position:absolute;left:22px;top:18px;display:flex;gap:22px;align-items:center}.legend{font-size:var(--fs-label);background:rgba(7,11,18,.78);padding:9px 12px;border:1px solid var(--line);border-radius:8px}.legend b{color:var(--star)}.ringkey{display:inline-block;width:14px;height:14px;border:2px solid var(--accent);border-radius:50%;vertical-align:-2px;margin-right:6px}
+.controls{display:grid;grid-template-columns:220px 1fr 190px;gap:20px;align-items:center}.ctl{margin:0}.ctl label{display:flex;justify-content:space-between;margin-bottom:8px}.range{width:100%}.reset{justify-self:end}.hint{margin:0}.bottom{display:flex;justify-content:space-between;align-items:center;gap:30px}.take{font:600 var(--fs-lead)/1.4 var(--font-sans);margin:0;max-width:1020px}.next{font-size:var(--fs-sec);color:var(--star);white-space:nowrap}.moved .hint{color:var(--accent)}
+</style>
+</head>
+<body data-page="10" data-total="19">
+<div id="stage">
+  <header class="head"><div><div class="kicker">DATE SWEEP</div><h1>恒星不挪位，行星沿黄道慢慢换位置</h1></div><div class="datebox"><div class="tag">当前日期</div><div id="dateRead" class="date">2025-03-16</div></div></header>
+  <main class="sky canvas-full k-process min0" aria-label="日期变化中的黄道星图">
+    <svg id="chart" role="img" aria-labelledby="chartTitle chartDesc"><title id="chartTitle">黄道附近的恒星与三颗行星</title><desc id="chartDesc">恒星背景固定；改变日期时，火星、木星和土星的开放圆环位置改变。</desc></svg>
+    <div class="overlay"><div class="legend"><b>● 恒星：固定参照</b></div><div class="legend"><span class="ringkey"></span>行星：随日期换位</div><div class="legend">黄道附近 ±9°</div></div>
+  </main>
+  <section class="controls">
+    <p id="hint" class="hint" aria-live="polite">拖动日期，只盯住圆环与邻近恒星的距离</p>
+    <div class="ctl"><label for="dateRange"><span>日期</span><span>← 逐日 / PageUp 每次 10 日 →</span></label><input id="dateRange" class="range" type="range" min="0" max="120" value="60" step="1" aria-describedby="hint"></div>
+    <button id="reset" class="btn reset" type="button">回到 3 月 16 日</button>
+  </section>
+  <footer class="bottom"><p class="take">推动日期时，认准不动的恒星形状；沿黄道换位的亮点才是行星候选。</p><div class="next">今晚面对满天亮点，哪些值得先留下？</div></footer>
+</div>
+<script src="assets/base.js"></script><script src="assets/lec.js"></script><script src="assets/lib/d3.min.js"></script>
+<script>
+(()=>{
+Deck.init({index:10,total:19});
+const range=document.getElementById('dateRange'), read=document.getElementById('dateRead'), hint=document.getElementById('hint'), resetBtn=document.getElementById('reset');
+const svg=d3.select('#chart'), W=1488,H=590, margin={l:48,r:32,t:66,b:42}; svg.attr('viewBox',`0 0 ${W} ${H}`);
+const x=d3.scaleLinear().domain([0,360]).range([margin.l,W-margin.r]), y=d3.scaleLinear().domain([-9,9]).range([H-margin.b,margin.t]);
+const stars=d3.range(72).map(i=>({lon:(i*47.3+17)%360,lat:7*Math.sin(i*2.17)+1.3*Math.cos(i*.77),r:[2.2,3,4,5][i%4]}));
+const links=[[2,3],[3,4],[12,13],[13,14],[14,15],[28,29],[29,30],[45,46],[46,47],[60,61],[61,62]];
+svg.append('rect').attr('class','band').attr('x',margin.l).attr('y',y(9)).attr('width',W-margin.l-margin.r).attr('height',y(-9)-y(9));
+svg.append('g').selectAll('line').data(links).join('line').attr('class','const').attr('x1',d=>x(stars[d[0]].lon)).attr('y1',d=>y(stars[d[0]].lat)).attr('x2',d=>x(stars[d[1]].lon)).attr('y2',d=>y(stars[d[1]].lat));
+const starLayer=svg.append('g').attr('data-fixed','true'); starLayer.selectAll('circle').data(stars).join('circle').attr('class','star').attr('cx',d=>x(d.lon)).attr('cy',d=>y(d.lat)).attr('r',d=>d.r);
+svg.append('path').datum(d3.range(0,361,2).map(l=>[l,0])).attr('class','ecliptic').attr('d',d3.line().x(d=>x(d[0])).y(d=>y(d[1])));
+svg.append('text').attr('class','edge').attr('x',margin.l+8).attr('y',y(8)+2).text('+9°');svg.append('text').attr('class','edge').attr('x',margin.l+8).attr('y',y(-8)+2).text('−9°');
+svg.append('g').attr('class','axis').attr('transform',`translate(0,${H-margin.b})`).call(d3.axisBottom(x).tickValues([0,60,120,180,240,300,360]).tickFormat(d=>d+'°'));
+const trailLayer=svg.append('g'), planetLayer=svg.append('g');
+const names=[['mars','火星',.3],['jupiter','木星',1.8],['saturn','土星',-1.2]]; const epoch=Lec.P.julianDate(new Date('2000-01-01T12:00:00Z'));
+function pos(key,date,phase){const p=Lec.K.PLANETS[key], earth=Lec.K.PLANETS.earth, jd=Lec.P.julianDate(date), t=jd-epoch; const a=2*Math.PI*(t/p.siderealPeriodDays+phase), ae=2*Math.PI*(t/earth.siderealPeriodDays+.27); const px=p.semimajorAxisAU*Math.cos(a)-Math.cos(ae), py=p.semimajorAxisAU*Math.sin(a)-Math.sin(ae); return {lon:(Math.atan2(py,px)*180/Math.PI+360)%360,lat:Math.sin(a*.71)*Math.min(7,p.orbitalInclinationDeg||2)};}
+function dateAt(day){const d=new Date('2025-01-15T12:00:00Z');d.setUTCDate(d.getUTCDate()+day);return d} function iso(d){return d.toISOString().slice(0,10)}
+function initialState(){return {day:60,touched:false}} let state=initialState(), raf=0;
+function render(s){cancelAnimationFrame(raf);const date=dateAt(s.day);read.textContent=iso(date);range.value=s.day;document.body.classList.toggle('moved',s.touched);hint.textContent=s.touched?'背景没变，候选点换了位置':'拖动日期，只盯住圆环与邻近恒星的距离';
+ const trails=names.map(([key,label,phase])=>({key,pts:d3.range(Math.max(0,s.day-28),s.day+1,2).map(day=>pos(key,dateAt(day),phase))}));
+ trailLayer.selectAll('path').data(trails,d=>d.key).join('path').attr('class','trail').attr('d',d=>d3.line().x(p=>x(p.lon)).y(p=>y(p.lat))(d.pts));
+ const data=names.map(([key,label,phase])=>({key,label,...pos(key,date,phase)})); const g=planetLayer.selectAll('g').data(data,d=>d.key).join(e=>{const q=e.append('g');q.append('circle').attr('class','planet-ring').attr('r',13);q.append('circle').attr('class','planet-dot').attr('r',4);q.append('text').attr('class','planet-label').attr('x',18).attr('y',5);return q});
+ const apply=sel=>sel.attr('transform',d=>`translate(${x(d.lon)},${y(d.lat)})`); if(Deck.reduced())apply(g);else g.transition().duration(180).ease(d3.easeCubicOut).call(apply);g.select('text').text(d=>d.label);
+}
+function dispatch(day){state={day:Math.max(0,Math.min(120,day)),touched:true};render(state);}
+const events=new AbortController(); range.addEventListener('input',()=>dispatch(+range.value),{signal:events.signal});range.addEventListener('keydown',e=>{if(e.key==='PageUp'||e.key==='PageDown'){e.preventDefault();e.stopPropagation();dispatch(state.day+(e.key==='PageUp'?10:-10));}},{signal:events.signal});resetBtn.addEventListener('click',()=>{state=initialState();render(state);hint.textContent='已回到 3 月 16 日；拖动日期继续比较。';range.focus();},{signal:events.signal});
+function destroy(){events.abort();cancelAnimationFrame(raf);svg.selectAll('*').interrupt()}window.addEventListener('pagehide',destroy,{once:true});render(state);
+})();
+</script>
+</body></html>

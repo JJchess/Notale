@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>误差逐层回传</title>
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+#stage{gap:18px}
+.head{display:flex;align-items:flex-end;justify-content:space-between;gap:32px}
+h1{font-size:var(--fs-h1);margin:0;line-height:1.15}.lead{margin:8px 0 0;color:#3f4650}.stepread{font:700 var(--fs-label)/1 var(--font-mono);color:var(--attention);white-space:nowrap}
+.work{flex:1;display:flex;flex-direction:column;gap:18px;min-height:0}
+.trace{position:relative;flex:1;min-height:0;border-top:2px solid color-mix(in srgb,var(--text) 18%,transparent);border-bottom:2px solid color-mix(in srgb,var(--text) 18%,transparent);padding:26px 28px 24px;display:flex;flex-direction:column;justify-content:center;gap:30px;background:linear-gradient(90deg,transparent 0 8%,rgba(36,87,166,.035) 8% 92%,transparent 92%)}
+.forward,.back{display:grid;grid-template-columns:1.2fr 90px 1fr 90px 1fr 90px 1.05fr;align-items:center}
+.node{min-width:0;min-height:104px;display:flex;flex-direction:column;justify-content:center;text-align:center;border:2px solid color-mix(in srgb,var(--text) 42%,transparent);border-radius:8px;background:var(--bg);padding:17px 12px}
+.node strong{display:block;font-size:var(--fs-h2);line-height:1.15}.node span{display:block;font:var(--fs-label)/1.35 var(--font-mono);margin-top:8px;color:#555d67}.node.model{border-color:var(--model)}.node.model strong{color:var(--model)}
+.arrow{height:3px;background:var(--model);position:relative}.arrow:after{content:"";position:absolute;right:-1px;top:-6px;border-left:12px solid var(--model);border-top:7px solid transparent;border-bottom:7px solid transparent}.arrlabel{position:absolute;width:90px;left:0;top:-28px;text-align:center;font-size:var(--fs-tick);color:#555d67}
+.back{direction:rtl}.impact{direction:ltr;min-height:88px;display:flex;align-items:center;justify-content:center;text-align:center;border:2px solid transparent;border-radius:8px;padding:10px;font-size:var(--fs-sec);line-height:1.35;opacity:.72}.impact.on{opacity:1;border-color:var(--attention);background:color-mix(in srgb,var(--attention) 7%,var(--bg))}.impact strong{display:block;color:var(--attention);font:700 var(--fs-body)/1.3 var(--font-mono)}
+.rarrow{height:18px;position:relative;opacity:.14}.rarrow:before,.rarrow:after{content:"";position:absolute;left:5px;right:5px;height:2px;background:var(--attention)}.rarrow:before{top:5px}.rarrow:after{bottom:5px}.rarrow i{position:absolute;left:-3px;top:1px;width:15px;height:15px;border-left:3px solid var(--attention);border-bottom:3px solid var(--attention);transform:rotate(45deg)}.rarrow.on{opacity:1}
+.branch{display:flex;gap:8px;width:100%}.branch .mini{flex:1;min-width:0}.branch .mini strong{font-size:var(--fs-label)}.impact[data-step="3"]{min-height:118px}.impact[data-step="3"] .branch{flex-direction:column;gap:10px}.impact[data-step="3"] .mini{font-size:var(--fs-label)}.caption{text-align:center;font-size:var(--fs-label);color:#555d67;margin:0}
+.receipts{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;direction:ltr}.receipt{border:2px solid color-mix(in srgb,var(--text) 22%,transparent);border-top-width:5px;border-radius:8px;background:color-mix(in srgb,var(--text) 2%,var(--bg));padding:15px 16px;min-height:116px;opacity:1}.receipt b{display:block;font-size:var(--fs-label);margin-bottom:7px}.receipt span{font:var(--fs-sec)/1.35 var(--font-mono)}.receipt.on{opacity:1;border-color:var(--attention);background:color-mix(in srgb,var(--attention) 7%,var(--bg))}
+.bottom{display:flex;align-items:center;justify-content:space-between;gap:24px}.controls{display:flex;align-items:center;gap:12px}.btn{min-width:112px}.btn[disabled]{opacity:.38;cursor:not-allowed}.status{flex:1;font-family:var(--font-serif);font-size:var(--fs-lead);line-height:1.4;text-align:center}.rule{font-size:var(--fs-sec);max-width:390px;line-height:1.4;color:#4d545d}.rule b{color:var(--attention)}
+@media(prefers-reduced-motion:no-preference){.impact,.rarrow{transition:opacity .18s ease,background .18s ease}}
+</style>
+</head>
+<body data-page="14" data-total="22">
+<div id="stage">
+  <header class="head">
+    <div><h1>误差逐层回传</h1><p class="lead">沿着刚才的计算路径倒着走，观察最终误差如何分配到参数。</p></div>
+    <div class="stepread" id="stepread">追踪 0 / 4</div>
+  </header>
+  <main class="work min0">
+    <section class="trace" aria-label="前向计算与反向影响路径">
+      <div class="forward">
+        <div class="node"><strong>输入与参数</strong><span>x = 0.8　w = 0.5<br>b = −0.2</span></div>
+        <div class="arrow"><span class="arrlabel">加权相加</span></div>
+        <div class="node model"><strong>z = 0.2</strong><span>0.8 × 0.5 − 0.2</span></div>
+        <div class="arrow"><span class="arrlabel">Sigmoid</span></div>
+        <div class="node model"><strong id="pred">预测 0.5498</strong><span>把 z 压到 0～1</span></div>
+        <div class="arrow"><span class="arrlabel">与目标 1 比较</span></div>
+        <div class="node"><strong id="loss">损失 0.1013</strong><span>越小表示越接近目标</span></div>
+      </div>
+      <p class="caption">蓝色实线：前向计算，从输入得到损失</p>
+      <div class="back" id="backline">
+        <div class="impact" data-step="0"><span><strong>起点：0.1013</strong>从最终损失开始</span></div>
+        <div class="rarrow" data-step="1"><i></i></div>
+        <div class="impact" data-step="1"><span><strong>预测层</strong>预测偏低，影响为负</span></div>
+        <div class="rarrow" data-step="2"><i></i></div>
+        <div class="impact" data-step="2"><span><strong>z 的影响 −0.1114</strong>乘上激活环节的局部影响</span></div>
+        <div class="rarrow" data-step="3"><i></i></div>
+        <div class="impact" data-step="3"><div class="branch"><span class="mini"><strong>w：× x</strong>再乘输入 0.8</span><span class="mini"><strong>b：× 1</strong>直接相加</span></div></div>
+      </div>
+      <p class="caption">橙色双线空心箭头：反向分配影响，方向与前向相反</p>
+      <div class="receipts" aria-label="五步追踪记录">
+        <div class="receipt" data-receipt="0"><b>0 · 锁定损失</b><span>0.1013</span></div>
+        <div class="receipt" data-receipt="1"><b>1 · 回到预测</b><span>ŷ = 0.5498</span></div>
+        <div class="receipt" data-receipt="2"><b>2 · 穿过激活</b><span>z 影响 −0.1114</span></div>
+        <div class="receipt" data-receipt="3"><b>3 · 在加法处分叉</b><span>w × x ｜ b × 1</span></div>
+        <div class="receipt" data-receipt="4"><b>4 · 分到参数</b><span>w −0.0891 ｜ b −0.1114</span></div>
+      </div>
+    </section>
+    <div class="bottom">
+      <div class="controls" aria-label="追踪控制">
+        <button class="btn" id="prev" type="button">← 上一步</button>
+        <button class="btn" id="next" type="button">下一步 →</button>
+        <button class="btn" id="reset" type="button">重置</button>
+      </div>
+      <div class="status" id="status" aria-live="polite">先认出起点：损失 0.1013。</div>
+      <div class="rule"><b>只分配影响，不更新参数。</b><br>本页的 w 与 b 仍保持 0.5 和 −0.2。</div>
+    </div>
+  </main>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script>
+(() => {
+  'use strict';
+  Deck.init({index:14,total:22});
+  const C = {x:0.8,w:0.5,b:-0.2,target:1};
+  const z = Lec.P.weightedSum([C.x],[C.w],C.b);
+  const y = Lec.P.activation('sigmoid',z);
+  let lossPack;
+  for (const name of ['halfSquaredError','squaredError','meanSquaredError']) {
+    try { lossPack=Lec.P.lossValueAndGradient([y],[C.target],name); break; } catch (_) {}
+  }
+  const loss = lossPack ? Number(lossPack.value ?? lossPack.loss ?? lossPack[0]) : 0.5*(y-C.target)*(y-C.target);
+  const lossGrad = lossPack && (lossPack.gradient ?? lossPack.gradients ?? lossPack[1]);
+  const dy = lossGrad == null ? y-C.target : (Array.isArray(lossGrad) ? lossGrad[0] : lossGrad);
+  const dz = dy * Lec.P.activationDerivative('sigmoid',z,y);
+  const dw = dz * C.x;
+  const messages = [
+    `先认出起点：损失 ${loss.toFixed(4)}。`,
+    '先回到预测：预测比目标 1 小，所以需要增加预测，当前影响为负。',
+    `穿过激活环节后，z 对损失的影响是 ${dz.toFixed(4)}。`,
+    '在加权相加处分叉：w 的影响还要乘输入 x；b 的局部影响是 1。',
+    `责任分配完成：w 影响量 ${dw.toFixed(4)}，b 影响量 ${dz.toFixed(4)}。`
+  ];
+  const $ = s => document.querySelector(s);
+  const els = {prev:$('#prev'),next:$('#next'),reset:$('#reset'),status:$('#status'),read:$('#stepread')};
+  const events = new AbortController();
+  function initialState(){ return {step:0}; }
+  let state = initialState();
+  function transition(s,a){
+    if(a.type==='reset') return initialState();
+    if(a.type==='move') return {step:Math.max(0,Math.min(4,s.step+a.delta))};
+    return s;
+  }
+  function render(s){
+    els.read.textContent=`追踪 ${s.step} / 4`;
+    els.status.textContent=messages[s.step];
+    els.prev.disabled=s.step===0; els.next.disabled=s.step===4;
+    els.next.textContent=s.step===3?'完成分配 →':'下一步 →';
+    document.querySelectorAll('[data-step]').forEach(el=>el.classList.toggle('on',Number(el.dataset.step)<=s.step));
+    document.querySelectorAll('[data-receipt]').forEach(el=>el.classList.toggle('on',Number(el.dataset.receipt)<=s.step));
+    const final=document.querySelector('[data-step="3"]');
+    if(s.step===4) final.innerHTML=`<div class="branch"><span class="mini"><strong>w 影响量 ${dw.toFixed(4)}</strong></span><span class="mini"><strong>b 影响量 ${dz.toFixed(4)}</strong></span></div>`;
+    else final.innerHTML='<div class="branch"><span class="mini"><strong>w：× x</strong>再乘输入 0.8</span><span class="mini"><strong>b：× 1</strong>直接相加</span></div>';
+  }
+  function dispatch(a){const next=transition(state,a);if(next.step===state.step)return;state=next;render(state)}
+  els.prev.addEventListener('click',()=>dispatch({type:'move',delta:-1}),{signal:events.signal});
+  els.next.addEventListener('click',()=>dispatch({type:'move',delta:1}),{signal:events.signal});
+  els.reset.addEventListener('click',()=>{state=initialState();render(state);els.next.focus();}, {signal:events.signal});
+  let destroyed=false;function destroy(){if(destroyed)return;destroyed=true;events.abort()}
+  window.addEventListener('pagehide',destroy,{once:true});
+  render(state);
+})();
+</script>
+</body>
+</html>

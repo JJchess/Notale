@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+#stage{gap:18px}.head{display:flex;align-items:flex-end;justify-content:space-between;gap:32px}.head h1{margin:0;font-size:var(--fs-h1);line-height:1.15}.head p{margin:7px 0 0;font-size:var(--fs-lead);line-height:1.45}.step-read{font-family:var(--font-mono);font-size:var(--fs-label);padding:9px 14px;border-bottom:2px solid var(--attention);white-space:nowrap}.workspace{flex:1;display:flex;flex-direction:column;gap:14px;min-height:0}.controls{display:flex;align-items:center;gap:12px}.controls .hint{margin-left:auto;font-size:var(--fs-label)}.btn{min-width:108px}.charts{flex:1;display:grid;grid-template-columns:repeat(3,1fr);gap:18px;min-height:0}.chart{display:flex;flex-direction:column;min-width:0;padding:18px 18px 14px;border-top:3px solid #777;background:rgba(255,255,255,.38)}.chart[data-rate="1"]{border-top-color:var(--model)}.chart[data-rate="20"]{border-top-color:var(--attention)}.chart-head{display:flex;align-items:baseline;justify-content:space-between;gap:10px}.chart h2{margin:0;font-size:var(--fs-h2)}.verdict{font-size:var(--fs-label);font-weight:700}.plot{width:100%;flex:1;min-height:260px;margin-top:10px;overflow:visible}.axis{stroke:#6d6a63;stroke-width:1.5}.grid{stroke:#c8c2b7;stroke-width:1;stroke-dasharray:4 6}.trace{fill:none;stroke:var(--model);stroke-width:4;stroke-linecap:round;stroke-linejoin:round}.chart[data-rate="20"] .trace{stroke:var(--attention)}.dot{fill:var(--bg);stroke:var(--model);stroke-width:3}.chart[data-rate="20"] .dot{stroke:var(--attention)}.dot.now{fill:var(--model);stroke-width:5}.chart[data-rate="20"] .dot.now{fill:var(--attention)}.tick{font-family:var(--font-mono);font-size:13px;fill:var(--text)}.axis-label{font-size:15px;fill:var(--text)}.readouts{display:flex;justify-content:space-between;gap:8px;margin-top:8px;font-family:var(--font-mono);font-size:var(--fs-label)}.readouts b{color:var(--model)}.chart[data-rate="20"] .readouts b{color:var(--attention)}.conclusion{display:flex;align-items:center;gap:18px;min-height:64px;padding:0 18px;border-left:4px solid var(--attention);font-family:var(--font-serif);font-size:var(--fs-lead);line-height:1.4;background:rgba(255,255,255,.35)}.conclusion strong{font-family:var(--font-sans);font-size:var(--fs-label);white-space:nowrap;color:var(--attention)}
+</style>
+</head>
+<body data-page="11" data-total="22">
+<div id="stage">
+  <header class="head">
+    <div><h1>同一起点，三种步长</h1><p>让三组参数同时走 8 步，比较损失下降的速度与稳定性。</p></div>
+    <div class="step-read" id="stepRead">当前：第 0 / 8 步</div>
+  </header>
+  <main class="workspace min0">
+    <div class="controls" aria-label="过程控制">
+      <button class="btn" id="play" type="button">▶ 开始</button>
+      <button class="btn" id="single" type="button">单步前进</button>
+      <button class="btn" id="reset" type="button">重来</button>
+      <span class="hint">操作：播放或单步，观察三条损失轨迹。三个图使用同一坐标尺度。</span>
+    </div>
+    <section class="charts min0" id="charts" aria-label="三种学习率的同步比较"></section>
+    <div class="conclusion" id="conclusion"><strong>观察记录</strong><span id="message" aria-live="polite">起点完全相同：w = 0.500，损失 = 0.1013。先走一步，看看步长带来什么差别。</span></div>
+  </main>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script>
+(() => {
+  'use strict';
+  Deck.init({index:11,total:22});
+  const rates=[0.1,1,20], STEPS=8, x=Math.sqrt(0.08), w0=0.5;
+  const target=w0*x+Math.sqrt(0.2026);
+  function evaluate(w){
+    const z=Lec.P.weightedSum([x],[w],0);
+    const prediction=typeof z==='number'?z:(z.value??z.z??z.output);
+    const error=prediction-target;
+    return {w,prediction,loss:0.5*error*error,gradient:error*x};
+  }
+  function makePath(rate){const a=[evaluate(w0)];for(let i=0;i<STEPS;i++){const q=a[a.length-1];a.push(evaluate(q.w-rate*q.gradient));}return a}
+  const paths=rates.map(makePath);
+  function initialState(){return {step:0,playing:false}}
+  let state=initialState(), timer=0, destroyed=false;
+  const charts=document.getElementById('charts'),play=document.getElementById('play'),single=document.getElementById('single'),reset=document.getElementById('reset');
+  const stepRead=document.getElementById('stepRead'),message=document.getElementById('message');
+  const labels=['下降慢','稳定接近','跨过低点，来回震荡'];
+  function chartMarkup(rate,i){return `<article class="chart" data-rate="${rate}"><div class="chart-head"><h2>学习率 η = ${rate.toFixed(1)}</h2><span class="verdict">${labels[i]}</span></div><svg class="plot" viewBox="0 0 430 360" role="img" aria-label="学习率 ${rate} 的损失曲线"><line class="grid" x1="54" y1="42" x2="410" y2="42"/><line class="grid" x1="54" y1="177" x2="410" y2="177"/><line class="grid" x1="54" y1="312" x2="410" y2="312"/><line class="axis" x1="54" y1="26" x2="54" y2="312"/><line class="axis" x1="54" y1="312" x2="414" y2="312"/><text class="tick" x="10" y="47">0.10</text><text class="tick" x="10" y="182">0.05</text><text class="tick" x="24" y="317">0</text><text class="tick" x="50" y="338">0</text><text class="tick" x="397" y="338">8</text><text class="axis-label" x="64" y="22">损失</text><text class="axis-label" x="350" y="356">更新步数</text><polyline class="trace"/><g class="dots"></g></svg><div class="readouts"><span>w = <b class="wv">0.500</b></span><span>损失 = <b class="lv">0.1013</b></span></div></article>`}
+  charts.innerHTML=rates.map(chartMarkup).join('');
+  function yPos(loss){return 312-Math.min(loss,0.105)/0.105*270}
+  function render(){
+    stepRead.textContent=`当前：第 ${state.step} / ${STEPS} 步`;
+    [...charts.children].forEach((card,i)=>{const shown=paths[i].slice(0,state.step+1);const pts=shown.map((q,k)=>`${54+k*44.5},${yPos(q.loss)}`).join(' ');card.querySelector('.trace').setAttribute('points',pts);card.querySelector('.dots').innerHTML=shown.map((q,k)=>`<circle class="dot ${k===state.step?'now':''}" cx="${54+k*44.5}" cy="${yPos(q.loss)}" r="${k===state.step?7:5}"/>`).join('');const q=shown[shown.length-1];card.querySelector('.wv').textContent=q.w.toFixed(3);card.querySelector('.lv').textContent=q.loss.toFixed(4)});
+    play.textContent=state.playing?'Ⅱ 暂停':(state.step===STEPS?'▶ 再看一次':'▶ 开始');single.disabled=state.playing||state.step===STEPS;
+    if(state.step===0) message.textContent='起点完全相同：w = 0.500，损失 = 0.1013。先走一步，看看步长带来什么差别。';
+    else if(state.step<STEPS) message.textContent=`第 ${state.step} 步：小步移动谨慎；中等步长持续逼近低点；过大的步长跨过低点后折返。`;
+    else message.textContent='步长太小，8 步后仍离低点较远；步长适中，下降又快又稳；步长过大，会跨过低点并反复震荡。';
+  }
+  function stop(){if(timer){clearInterval(timer);timer=0}state={...state,playing:false}}
+  function advance(){if(state.step>=STEPS){stop();render();return}state={...state,step:state.step+1};if(state.step===STEPS)stop();render()}
+  function start(){if(state.step===STEPS)state=initialState();state={...state,playing:true};render();timer=setInterval(advance,Deck.reduced()?180:650)}
+  const events=new AbortController(),sig={signal:events.signal};
+  play.addEventListener('click',()=>{state.playing?(stop(),render()):start()},sig);
+  single.addEventListener('click',advance,sig);
+  reset.addEventListener('click',()=>{stop();state=initialState();render();play.focus()},sig);
+  function destroy(){if(destroyed)return;destroyed=true;events.abort();stop()}
+  window.addEventListener('pagehide',destroy,{once:true});
+  render();
+})();
+</script>
+</body>
+</html>

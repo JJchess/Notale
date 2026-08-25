@@ -1,0 +1,364 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  #stage{ gap:14px; }
+
+  .hd{ flex:0 0 auto; display:flex; flex-direction:column; gap:6px; }
+  .kicker{
+    font-family:var(--font-mono); font-size:var(--fs-label); font-weight:700;
+    color:var(--accent); letter-spacing:.12em;
+  }
+  .hd h1{ font-size:var(--fs-h1); }
+  .hd .lead{ color:var(--muted); }
+
+  .main{ flex:1; min-height:0; display:flex; flex-direction:row; gap:32px; }
+
+  .left{ flex:1 1 auto; min-width:0; min-height:0; display:flex; flex-direction:column; gap:10px; }
+
+  .cmp{ flex:0 0 auto; }
+  .cmp .hdr span:last-child{ text-align:right; flex:1; }
+  .cmp .rowline{ align-items:center; }
+  .cmp .dim{ flex:0 0 auto; font-size:var(--fs-sec); color:var(--text); display:flex; align-items:baseline; gap:8px; }
+  .cmp .shape{ flex:1; text-align:right; font-size:var(--fs-lead); color:var(--primary); font-weight:600; }
+
+  .cvwrap{ flex:1; min-height:0; display:flex; align-items:center; justify-content:center; }
+  .cvbox{ width:540px; height:540px; background:var(--panel-bg); border:2px solid var(--line); flex:0 0 auto; }
+
+  .legend{ flex:0 0 auto; }
+
+  .right{ flex:0 0 380px; min-width:0; min-height:0; display:flex; flex-direction:column; gap:18px; }
+
+  .ctl-block{ flex:0 0 auto; display:flex; flex-direction:column; gap:8px; }
+  .ctl-block .lbl{ font-size:var(--fs-sec); color:var(--text); font-weight:600; }
+  .ctl-block .ticks{ display:flex; justify-content:space-between; font-size:var(--fs-tick); color:var(--muted); font-family:var(--font-mono); }
+
+  .stack-block{ flex:0 0 auto; display:flex; flex-direction:column; gap:8px; }
+  .stack-block .lbl{ font-size:var(--fs-sec); color:var(--text); }
+  .stack-block .lbl b{ color:var(--accent); font-family:var(--font-mono); font-size:var(--fs-lead); }
+  .neuron-stack{ position:relative; height:118px; }
+  .ncard{
+    position:absolute; top:0; width:42px; height:118px;
+    background:var(--panel-bg); border:2px solid var(--line-strong); border-radius:9px;
+  }
+  .ncard .dir{
+    position:absolute; left:50%; top:50%; width:2px; height:32px;
+    background:var(--primary); transform-origin:center center;
+  }
+
+  .note-block{
+    flex:1; min-height:0; display:flex; align-items:center;
+    font-size:var(--fs-sec); line-height:1.5; color:var(--text);
+    border-top:1px solid var(--line); padding-top:16px;
+  }
+
+  .hint-block{ flex:0 0 auto; }
+
+  .ft{ flex:0 0 auto; display:flex; flex-direction:column; gap:4px; padding-top:8px; border-top:1px solid var(--line); }
+  .ft .lead{ color:var(--text); }
+  .ft .hook{ font-size:var(--fs-sec); color:var(--muted); }
+</style>
+</head>
+<body data-page="10" data-total="19">
+<div id="stage">
+
+  <div class="hd">
+    <div class="kicker">HIDDEN-WIDTH</div>
+    <h1>神经元从2个加到20个，边界从直线拧成曲线</h1>
+    <p class="lead small">拖动滑块调整隐藏层宽度，看同一批数据点周围的判定边界怎么变；坐标范围与数据点全程不变。</p>
+  </div>
+
+  <div class="main">
+
+    <section class="left">
+      <div class="cmp k-comparison">
+        <div class="hdr"><span>隐藏层宽度</span><span>决策边界形态</span></div>
+        <div class="rowline">
+          <div class="dim">n = <span class="big accent sm" id="nVal">2</span></div>
+          <div class="shape" id="shapeDesc">近乎一条直线</div>
+        </div>
+      </div>
+
+      <div class="cvwrap">
+        <figure class="cvbox" id="cvbox" style="margin:0;" role="img" aria-label="决策热力场：深蓝表示模型偏判为外圈类，米白表示偏判为内圈类；当前隐藏层宽度 n = 2，边界近乎一条直线。">
+          <canvas id="heat" class="cv-fill no-pan" aria-hidden="true"></canvas>
+          <svg id="overlay" class="cv-fill" viewBox="0 0 540 540" aria-hidden="true"></svg>
+        </figure>
+      </div>
+
+      <div class="legend">
+        <span class="li"><span class="sw hollow" style="border-color:var(--text)"></span>内圈点（类 A，r≈0.3）</span>
+        <span class="li"><span class="sw" style="background:var(--text)"></span>外圈点（类 B，r≈0.8）</span>
+        <span class="li"><span class="sw line"></span>0.5 判定边界</span>
+      </div>
+    </section>
+
+    <aside class="right">
+      <div class="ctl-block">
+        <label class="lbl" for="wSlider">隐藏层宽度（隐藏神经元个数）</label>
+        <input type="range" id="wSlider" min="2" max="20" step="1" value="2">
+        <div class="ticks"><span>2</span><span>20</span></div>
+      </div>
+
+      <div class="stack-block">
+        <div class="lbl">对应 <b id="nLabel">2</b> 个隐藏神经元，每个各朝一个方向</div>
+        <div class="neuron-stack" id="neuronStack"></div>
+      </div>
+
+      <p class="note-block">每个隐藏神经元只会画一条直线判断线；把它们的输出按权重加起来投给输出层，多条直线叠加投票，才能拧出弯曲的分界。</p>
+
+      <div class="hint-block">
+        <div class="hint">拖动中每 8 帧刷新一次边界；松开滑块立即刷新到最终状态。</div>
+      </div>
+    </aside>
+
+  </div>
+
+  <div class="ft">
+    <p class="lead">隐藏层越宽，层叠起来的加权投票就能拧出越弯的分界。</p>
+    <p class="hook">→ 这些弯出来的边界背后的权重，是怎么被学出来的？</p>
+  </div>
+
+</div>
+
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script>
+(function(){
+  'use strict';
+
+  var BOX = 540;
+  var DMIN = -1.2, DMAX = 1.2;
+  var N = 81; // 81 lattice points => 80x80 cells
+
+  var heatCv = document.getElementById('heat');
+  var svg = document.getElementById('overlay');
+  var slider = document.getElementById('wSlider');
+  var nVal = document.getElementById('nVal');
+  var nLabel = document.getElementById('nLabel');
+  var shapeDesc = document.getElementById('shapeDesc');
+  var cvbox = document.getElementById('cvbox');
+  var neuronStack = document.getElementById('neuronStack');
+
+  var ctx = Deck.fit(heatCv);
+  var bgRGB = Deck.rgb('--bg');
+  var prRGB = Deck.rgb('--primary');
+
+  function domX(i){ return DMIN + i * (DMAX - DMIN) / (N - 1); }
+  function domY(j){ return DMIN + j * (DMAX - DMIN) / (N - 1); }
+  function toPx(x){ return (x - DMIN) / (DMAX - DMIN) * BOX; }
+  function toPy(y){ return (y - DMIN) / (DMAX - DMIN) * BOX; }
+
+  // ---------- 网络构造：第i个隐藏神经元 angle_i = i*2pi/n ----------
+  function buildLayers(n){
+    var W = [], b = [];
+    for (var i = 0; i < n; i++){
+      var ang = i * 2 * Math.PI / n;
+      W.push([Math.cos(ang), Math.sin(ang)]);
+      b.push(-0.6);
+    }
+    var v = [];
+    for (var i2 = 0; i2 < n; i2++) v.push(Math.pow(-1, i2) / n);
+    return [
+      { W: W, b: b, activation: 'tanh' },
+      { W: [v], b: [0], activation: 'sigmoid' }
+    ];
+  }
+
+  function computeGrid(n){
+    var layers = buildLayers(n);
+    var grid = [];
+    for (var j = 0; j < N; j++){
+      var row = [];
+      var y = domY(j);
+      for (var i = 0; i < N; i++){
+        var x = domX(i);
+        var out = Lec.P.forwardNetwork(layers, [x, y]).output;
+        row.push(out[0]);
+      }
+      grid.push(row);
+    }
+    return grid;
+  }
+
+  function lerpColor(a, b, t){
+    t = Math.max(0, Math.min(1, t));
+    var r = Math.round(a[0] + (b[0] - a[0]) * t);
+    var g = Math.round(a[1] + (b[1] - a[1]) * t);
+    var bl = Math.round(a[2] + (b[2] - a[2]) * t);
+    return 'rgb(' + r + ',' + g + ',' + bl + ')';
+  }
+
+  function drawHeat(grid){
+    var cell = BOX / (N - 1);
+    for (var j = 0; j < N - 1; j++){
+      for (var i = 0; i < N - 1; i++){
+        var avg = (grid[j][i] + grid[j][i+1] + grid[j+1][i] + grid[j+1][i+1]) / 4;
+        ctx.fillStyle = lerpColor(bgRGB, prRGB, avg);
+        ctx.fillRect(i * cell, j * cell, cell + 0.6, cell + 0.6);
+      }
+    }
+  }
+
+  // ---------- Marching squares：0.5 等值线 ----------
+  function traceContour(grid){
+    var t = 0.5;
+    var segs = [];
+    for (var j = 0; j < N - 1; j++){
+      var yj = domY(j), yj1 = domY(j+1);
+      for (var i = 0; i < N - 1; i++){
+        var xi = domX(i), xi1 = domX(i+1);
+        var c0 = grid[j][i], c1 = grid[j][i+1], c2 = grid[j+1][i+1], c3 = grid[j+1][i];
+        var s = (c0 >= t ? 8 : 0) | (c1 >= t ? 4 : 0) | (c2 >= t ? 2 : 0) | (c3 >= t ? 1 : 0);
+        if (s === 0 || s === 15) continue;
+        function interp(vA, vB, a, b){ var f = (t - vA) / (vB - vA); return a + f * (b - a); }
+        var T = [interp(c0, c1, xi, xi1), yj];
+        var R = [xi1, interp(c1, c2, yj, yj1)];
+        var B = [interp(c3, c2, xi, xi1), yj1];
+        var L = [xi, interp(c0, c3, yj, yj1)];
+        var pairs = null;
+        switch (s){
+          case 1: pairs = [[L, B]]; break;
+          case 2: pairs = [[B, R]]; break;
+          case 3: pairs = [[L, R]]; break;
+          case 4: pairs = [[T, R]]; break;
+          case 5: pairs = [[T, L], [B, R]]; break;
+          case 6: pairs = [[T, B]]; break;
+          case 7: pairs = [[T, L]]; break;
+          case 8: pairs = [[T, L]]; break;
+          case 9: pairs = [[T, B]]; break;
+          case 10: pairs = [[T, R], [L, B]]; break;
+          case 11: pairs = [[T, R]]; break;
+          case 12: pairs = [[L, R]]; break;
+          case 13: pairs = [[B, R]]; break;
+          case 14: pairs = [[L, B]]; break;
+        }
+        for (var k = 0; k < pairs.length; k++){
+          var p1 = pairs[k][0], p2 = pairs[k][1];
+          segs.push([toPx(p1[0]), toPy(p1[1]), toPx(p2[0]), toPy(p2[1])]);
+        }
+      }
+    }
+    return segs;
+  }
+
+  var contourPath = null;
+  function ensureSvgStatic(){
+    // 固定数据点（内圈30空心 + 外圈30实心），只建一次
+    var pointsG = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    pointsG.setAttribute('id', 'pointsG');
+    var textColor = Deck.token('--text');
+    for (var k = 0; k < 30; k++){
+      var ang1 = k * 2 * Math.PI / 30;
+      var x1 = 0.3 * Math.cos(ang1), y1 = 0.3 * Math.sin(ang1);
+      var c1 = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+      c1.setAttribute('cx', toPx(x1)); c1.setAttribute('cy', toPy(y1)); c1.setAttribute('r', 5);
+      c1.setAttribute('fill', 'none'); c1.setAttribute('stroke', textColor); c1.setAttribute('stroke-width', 2);
+      pointsG.appendChild(c1);
+
+      var ang2 = k * 2 * Math.PI / 30 + Math.PI / 30;
+      var x2 = 0.8 * Math.cos(ang2), y2 = 0.8 * Math.sin(ang2);
+      var c2 = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+      c2.setAttribute('cx', toPx(x2)); c2.setAttribute('cy', toPy(y2)); c2.setAttribute('r', 5);
+      c2.setAttribute('fill', textColor);
+      pointsG.appendChild(c2);
+    }
+    svg.appendChild(pointsG);
+
+    contourPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    contourPath.setAttribute('fill', 'none');
+    contourPath.setAttribute('stroke', Deck.token('--primary'));
+    contourPath.setAttribute('stroke-width', 3.5);
+    contourPath.setAttribute('stroke-linecap', 'round');
+    svg.appendChild(contourPath);
+  }
+
+  function drawContour(grid){
+    var segs = traceContour(grid);
+    var d = '';
+    for (var i = 0; i < segs.length; i++){
+      var s = segs[i];
+      d += 'M' + s[0].toFixed(1) + ' ' + s[1].toFixed(1) + 'L' + s[2].toFixed(1) + ' ' + s[3].toFixed(1) + ' ';
+    }
+    contourPath.setAttribute('d', d);
+  }
+
+  function descFor(n){
+    if (n <= 3) return '近乎一条直线';
+    if (n <= 6) return '出现明显折角的折线';
+    if (n <= 11) return '开始环绕成弧形折线';
+    if (n <= 16) return '环绕原点的多折闭合曲线';
+    return '紧贴外圈的圆滑闭合曲线';
+  }
+
+  function updateReadouts(n){
+    nVal.textContent = n;
+    nLabel.textContent = n;
+    var d = descFor(n);
+    shapeDesc.textContent = d;
+    cvbox.setAttribute('aria-label', '决策热力场：深蓝表示模型偏判为外圈类，米白表示偏判为内圈类；当前隐藏层宽度 n = ' + n + '，边界' + d + '。');
+  }
+
+  function rebuildCards(n){
+    neuronStack.innerHTML = '';
+    var step = 14, cardW = 42, cardH = 118;
+    neuronStack.style.width = (cardW + (n - 1) * step) + 'px';
+    for (var i = 0; i < n; i++){
+      var ang = i * 2 * Math.PI / n;
+      var card = document.createElement('div');
+      card.className = 'ncard';
+      card.style.left = (i * step) + 'px';
+      card.style.zIndex = i;
+      var dir = document.createElement('div');
+      dir.className = 'dir';
+      dir.style.transform = 'translateX(-50%) rotate(' + (-ang * 180 / Math.PI) + 'deg)';
+      card.appendChild(dir);
+      neuronStack.appendChild(card);
+    }
+  }
+
+  var currentGrid = null;
+  function fullUpdate(n){
+    currentGrid = computeGrid(n);
+    drawHeat(currentGrid);
+    drawContour(currentGrid);
+    updateReadouts(n);
+    rebuildCards(n);
+  }
+
+  ensureSvgStatic();
+  fullUpdate(2);
+
+  // ---------- 交互：拖动节流每8帧一次，松手立即刷新 ----------
+  var dirty = false, pendingN = 2, frameCounter = 0;
+
+  slider.addEventListener('input', function(){
+    pendingN = +slider.value;
+    updateReadouts(pendingN);
+    rebuildCards(pendingN);
+    dirty = true;
+  });
+  slider.addEventListener('change', function(){
+    pendingN = +slider.value;
+    fullUpdate(pendingN);
+    dirty = false;
+  });
+
+  Deck.loop(function(){
+    frameCounter++;
+    if (dirty && frameCounter % 8 === 0){
+      currentGrid = computeGrid(pendingN);
+      drawHeat(currentGrid);
+      drawContour(currentGrid);
+      dirty = false;
+    }
+  });
+
+  Deck.init({ index: 10, total: 19 });
+})();
+</script>
+</body>
+</html>

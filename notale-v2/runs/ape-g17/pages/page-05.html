@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  .kicker{color:var(--cyan);font:650 var(--fs-label)/1.35 var(--font-mono);letter-spacing:.14em}
+  #timeline{display:block;width:100%;height:100%}
+  #timeline text{font-family:var(--font-sans);font-size:15px;fill:var(--muted)}
+  #timeline .mark-label{font-size:15px;fill:var(--text)}
+  #timeline .axis-line{stroke:var(--line-strong);stroke-width:2}
+  #timeline .tick-line{stroke:var(--line);stroke-width:1}
+  #timeline .bio-band{fill:var(--ochre);opacity:.72}
+  #timeline .tech-band{fill:var(--cyan);opacity:.82}
+  #timeline .edge{stroke:var(--cyan);stroke-width:4}
+  .pulse{animation:pulse 360ms ease-out}
+  @keyframes pulse{50%{transform:scale(1.025);color:var(--cyan)}}
+  .enter{animation:rise 520ms ease-out both}.enter2{animation:rise 700ms 160ms ease-out both}
+  @keyframes rise{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+  @media(prefers-reduced-motion:reduce){.enter,.enter2,.pulse{animation:none!important}*{transition:none!important}}
+</style>
+</head>
+<body data-page="05" data-total="50">
+<div id="stage">
+  <header class="enter" style="height:88px">
+    <div class="kicker">TIME SCALE</div>
+    <h1 style="margin:4px 0 0">一分钟与一千代</h1>
+  </header>
+
+  <main class="min0" style="display:flex;flex-direction:column;gap:12px">
+    <section class="k-comparison enter" style="--compare-n:2;flex:0 0 258px">
+      <div class="hdr" aria-hidden="true"></div><div class="hdr" style="color:var(--ochre)">生物变化</div><div class="hdr diff">装备故障</div>
+      <div class="dim">计时单位</div><div class="cell">1 代约 <span class="num" id="genYears"></span> 年</div><div class="cell diff"><span class="num" id="oneMinute"></span> 分钟</div>
+      <div class="rowline"></div>
+      <div class="dim">代表窗口</div><div class="cell"><span class="num" id="genCount"></span> 代＝<span class="num" id="bioYears"></span> 年</div><div class="cell diff"><span class="num" id="faultMinutes"></span> 分钟（课堂示意窗）</div>
+      <div class="rowline"></div>
+      <div class="dim">改变对象</div><div class="cell">多代种群中的身体特征</div><div class="cell diff">个体周围的压力、氧与热条件</div>
+      <div class="rowline"></div>
+      <div class="dim">相对 5 分钟</div><div class="cell"><span class="num" id="ratio"></span> 亿倍</div><div class="cell diff"><span class="num" id="oneRatio"></span> 倍</div>
+    </section>
+
+    <section class="panel min0 enter2" style="flex:1;display:flex;gap:20px;padding:14px 18px">
+      <div class="min0" style="flex:1;display:flex;flex-direction:column">
+        <div class="legend" style="height:30px;gap:24px">
+          <span class="li"><span class="sw" style="color:var(--ochre)"></span>生物变化窗口</span>
+          <span class="li"><span class="sw" style="color:var(--cyan)"></span>装备故障窗口</span>
+          <span class="li">共享同一条对数时间尺</span>
+        </div>
+        <div class="cvbox min0" style="flex:1"><svg id="timeline" role="img" aria-label="生物变化与装备故障共享的对数时间尺"></svg></div>
+      </div>
+      <div class="min0" style="flex:0 0 360px;display:flex;flex-direction:column;justify-content:center;gap:12px">
+        <div class="small">当前屏宽代表</div>
+        <output id="spanRead" class="big sm" aria-live="polite"></output>
+        <div class="ctl" style="display:block">
+          <label for="spanRange" style="display:block;margin-bottom:5px">屏宽代表时间</label>
+          <input id="spanRange" class="no-pan" type="range" min="0" max="1" step="0.001" aria-describedby="dragHint">
+        </div>
+        <div id="dragHint" class="hint">拖动尺柄，观察两个窗口如何被压缩。</div>
+        <div class="btns"><button id="reset" class="btn" type="button">复位到 1 天</button></div>
+      </div>
+    </section>
+  </main>
+
+  <footer style="height:112px;display:flex;align-items:center;gap:30px">
+    <p class="lead" style="flex:1;margin:0">同样是跨过生存门槛，两条通道的时钟并不相同。身体改变要经过许多代筛选；工程系统一旦中断，个体可能没有等待适应的时间。</p>
+    <p class="note" style="flex:0 0 475px;margin:0">生物变化常以千代计，装备故障却可能在几分钟内夺走生存条件。</p>
+  </footer>
+  <script src="assets/lib/d3.min.js"></script>
+  <script>
+  document.addEventListener('DOMContentLoaded',function(){
+    Deck.init({index:5,total:50});
+    var K=Lec.K,P=Lec.P;
+    var one=K.units.percentAsFraction/K.units.percentAsFraction;
+    var thousand=K.units.metresPerKilometre;
+    var million=thousand*thousand;
+    var genYears=K.human.typicalGenerationYears;
+    var genCount=thousand;
+    var bioYears=genYears*genCount;
+    var faultMinutes=one/K.human.restingCarbonDioxideOutputLitresPerMinute;
+    var minuteSeconds=K.units.secondsPerMinute;
+    var daySeconds=P.daysToSeconds(one);
+    var maxSeconds=P.yearsToSeconds(million);
+    var ratio=P.yearsToSeconds(bioYears)/(faultMinutes*minuteSeconds);
+    var values={genYears:genYears,oneMinute:one,genCount:genCount,bioYears:bioYears,faultMinutes:faultMinutes,ratio:ratio/100000000,oneRatio:one};
+    Object.keys(values).forEach(function(id){document.getElementById(id).textContent=values[id].toLocaleString('zh-CN',{maximumFractionDigits:id==='ratio'?1:0});});
+    var range=document.getElementById('spanRange'),read=document.getElementById('spanRead'),svg=d3.select('#timeline');
+    var logMin=Math.log10(minuteSeconds),logMax=Math.log10(maxSeconds),defaultV=(Math.log10(daySeconds)-logMin)/(logMax-logMin);
+    range.value=defaultV;
+    var marks=[
+      {s:minuteSeconds,l:'1 分钟'},{s:faultMinutes*minuteSeconds,l:'5 分钟'},
+      {s:daySeconds,l:'1 天'},{s:P.yearsToSeconds(genYears),l:'25 年＝1 代'},
+      {s:P.yearsToSeconds(bioYears),l:'25,000 年＝1,000 代'},
+      {s:maxSeconds,l:'1,000,000 年'}
+    ];
+    function formatSpan(s){
+      if(s<daySeconds)return Math.round(s/minuteSeconds).toLocaleString('zh-CN')+' 分钟';
+      if(s<P.yearsToSeconds(one))return Math.round(s/daySeconds).toLocaleString('zh-CN')+' 天';
+      return Math.round(s/P.yearsToSeconds(one)).toLocaleString('zh-CN')+' 年';
+    }
+    function draw(animate){
+      var w=document.getElementById('timeline').clientWidth||1000,h=document.getElementById('timeline').clientHeight||210;
+      svg.attr('viewBox','0 0 '+w+' '+h); svg.selectAll('*').remove();
+      var span=Math.pow(10,logMin+(logMax-logMin)*Number(range.value)); read.textContent=formatSpan(span);
+      var x=d3.scaleLog().domain([minuteSeconds,span]).range([24,w-24]).clamp(true);
+      var g=svg.append('g'),axisY=h-48, bioS=P.yearsToSeconds(bioYears), faultS=faultMinutes*minuteSeconds;
+      g.append('line').attr('class','axis-line').attr('x1',24).attr('x2',w-24).attr('y1',axisY).attr('y2',axisY);
+      function band(seconds,y,klass){var px=Math.max(one,x(Math.min(seconds,span))-x(minuteSeconds));g.append('rect').attr('class',klass+(px<=one?' edge':'' )).attr('x',24).attr('y',y).attr('width',px<=one?one:px).attr('height',18).attr('rx',px<=one?0:4);}
+      band(bioS,34,'bio-band');band(faultS,70,'tech-band');
+      g.append('text').attr('class','mark-label').attr('x',24).attr('y',27).text('1,000 代窗口');
+      g.append('text').attr('class','mark-label').attr('x',24).attr('y',64).text('5 分钟窗口');
+      marks.filter(function(d){return d.s<=span*1.001;}).forEach(function(d,i){var xx=x(d.s),anchor=xx>w-110?'end':(xx<110?'start':'middle');g.append('line').attr('class','tick-line').attr('x1',xx).attr('x2',xx).attr('y1',axisY-10).attr('y2',axisY+10);g.append('text').attr('x',xx).attr('y',axisY+31).attr('text-anchor',anchor).text(d.l);});
+      g.append('line').attr('class','edge').attr('x1',w-24).attr('x2',w-24).attr('y1',20).attr('y2',axisY+12);
+      if(animate&&!Deck.reduced())g.attr('opacity',0).transition().duration(220).attr('opacity',1);
+    }
+    range.addEventListener('input',function(){draw(false);});
+    range.addEventListener('change',function(){read.classList.remove('pulse');void read.offsetWidth;read.classList.add('pulse');});
+    document.getElementById('reset').addEventListener('click',function(){range.value=defaultV;draw(true);range.focus();});
+    var off=Deck.onResize(function(){draw(false);});draw(false);
+    window.addEventListener('pagehide',off,{once:true});
+  });
+  </script>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+</body>
+</html>

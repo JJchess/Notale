@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>下降不等于可靠</title>
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  #stage{display:flex;flex-direction:column;}
+  .head{height:104px;display:flex;align-items:flex-start;justify-content:space-between;gap:48px;border-bottom:1px solid rgba(31,43,55,.2);}
+  .head h1{margin:0;font-size:var(--fs-h1);line-height:1.18;letter-spacing:.01em;}
+  .head .lead{width:690px;margin:1px 0 0;font-size:var(--fs-lead);line-height:1.45;color:rgba(31,43,55,.78);}
+  .flow{flex:1;min-height:0;display:grid;grid-template-columns:440px 145px 440px 1fr;grid-template-rows:1fr 126px;column-gap:20px;position:relative;padding-top:34px;}
+  .step{min-width:0;min-height:0;position:relative;display:flex;flex-direction:column;}
+  .training{border-radius:8px;padding:24px 28px 26px;background:#D7E1F0;border-top:4px solid var(--model);}
+  .eyebrow{font:600 var(--fs-label)/1.2 var(--font-mono);letter-spacing:.08em;text-transform:uppercase;color:rgba(31,43,55,.62);margin-bottom:14px;}
+  .step h2{font-size:var(--fs-h2);line-height:1.3;margin:0 0 10px;}
+  .step p{font-size:var(--fs-body);line-height:1.5;margin:0;color:rgba(31,43,55,.82);}
+  .record{margin-top:27px;border-left:4px solid var(--model);padding:10px 0 10px 22px;background:rgba(255,255,255,.28);}
+  .loss{display:flex;align-items:baseline;gap:13px;margin-bottom:13px;color:var(--model);}
+  .loss strong{font:700 54px/1 var(--font-mono);}
+  .loss span{font-size:var(--fs-sec);}
+  .trace{height:135px;width:100%;margin-top:8px;overflow:visible;}
+  .trace .grid{stroke:rgba(31,43,55,.13);stroke-width:1;}
+  .trace .area{fill:rgba(36,87,166,.22);stroke:none;}
+  .trace .line{fill:none;stroke:var(--model);stroke-width:5;stroke-linecap:round;stroke-linejoin:round;}
+  .trace .dot{fill:var(--model);}
+  .caption{font-size:var(--fs-label)!important;color:rgba(31,43,55,.65)!important;margin-top:8px!important;}
+  .bridge{grid-column:2;grid-row:1;display:flex;align-items:center;justify-content:center;position:relative;}
+  .bridge:before{content:"";position:absolute;left:0;right:0;top:48%;border-top:3px solid rgba(31,43,55,.45);}
+  .bridge:after{content:"";position:absolute;right:1px;top:calc(48% - 8px);width:14px;height:14px;border-top:3px solid rgba(31,43,55,.45);border-right:3px solid rgba(31,43,55,.45);transform:rotate(45deg);}
+  .bridge span{z-index:1;background:var(--bg);padding:8px 10px;font-size:var(--fs-label);line-height:1.3;text-align:center;color:rgba(31,43,55,.68);}
+  .test{grid-column:3;grid-row:1;border:2px dashed rgba(31,43,55,.42);border-radius:8px;padding:24px 28px 26px;background:#F2D8CA;}
+  .unseen{display:grid;grid-template-columns:repeat(2,112px);gap:18px 22px;margin:32px 0 28px;justify-content:center;}
+  .sample{width:112px;height:92px;border:2px solid rgba(31,43,55,.5);border-radius:8px;background:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:9px;font:700 34px/1 var(--font-mono);}
+  .sample small{font:500 var(--fs-label)/1.2 var(--font-sans);color:rgba(31,43,55,.68);}
+  .sample:nth-child(2),.sample:nth-child(3),.sample:nth-child(4){transform:none}
+  .rule{display:flex;align-items:flex-start;gap:12px;margin-top:6px;padding-top:18px;border-top:1px solid rgba(31,43,55,.2);font-size:var(--fs-sec);line-height:1.45;}
+  .lock{flex:0 0 auto;width:28px;height:23px;border:2px solid var(--attention);border-radius:4px;position:relative;margin-top:6px;}
+  .lock:before{content:"";position:absolute;width:14px;height:12px;border:2px solid var(--attention);border-bottom:0;border-radius:10px 10px 0 0;left:5px;top:-12px;}
+  .verdict{grid-column:4;grid-row:1;margin-left:20px;padding:32px 30px;border-left:1px solid rgba(31,43,55,.22);border-radius:0 8px 8px 0;background:#D9D8D1;display:flex;flex-direction:column;justify-content:center;}
+  .verdict .pending{font:700 58px/1.05 var(--font-serif);color:var(--attention);margin:12px 0 22px;}
+  .boundary{margin-top:34px;padding-top:24px;border-top:2px solid rgba(31,43,55,.3);display:flex;flex-direction:column;gap:18px;}
+  .boundary div{font-size:var(--fs-sec);line-height:1.4;padding-left:22px;position:relative;}
+  .boundary div:before{content:"";position:absolute;left:0;top:8px;width:9px;height:9px;border-radius:50%;background:var(--attention);}
+  .facts{margin-top:18px;border-bottom:1px solid rgba(31,43,55,.24);}
+  .fact{min-height:42px;border-top:1px solid rgba(31,43,55,.24);display:grid;grid-template-columns:112px 1fr;align-items:center;gap:12px;font-size:var(--fs-sec);line-height:1.35;}
+  .fact b{font:600 var(--fs-label)/1.25 var(--font-mono);color:rgba(31,43,55,.62);letter-spacing:.04em;}
+  .verdict p{font-size:var(--fs-body);line-height:1.5;margin:0;}
+  .bottom{grid-column:1 / -1;grid-row:2;align-self:end;display:flex;align-items:center;justify-content:space-between;gap:44px;border-top:2px solid rgba(31,43,55,.72);padding:24px 4px 0;}
+  .training{background:#D7E1F0;color:var(--text);}
+  .training p,.training .caption,.training .eyebrow{color:rgba(31,43,55,.82)!important;}
+  .training .record{background:rgba(255,255,255,.3);border-left-color:var(--model);}
+  .training .loss{color:var(--model);}
+  .training .trace .grid{stroke:rgba(31,43,55,.16);}
+  .training .trace .area{fill:rgba(36,87,166,.18);}
+  .training .trace .line{stroke:var(--model);}.training .trace .dot{fill:var(--model);}
+  .training .fact,.training .facts{border-color:rgba(31,43,55,.28);}.training .fact b{color:rgba(31,43,55,.64);}
+  .test{background:#F2D8CA;color:var(--text);border-color:rgba(31,43,55,.5);}
+  .test p,.test .eyebrow{color:rgba(31,43,55,.82);}.test .rule,.test .fact,.test .facts{border-color:rgba(31,43,55,.28);}.test .fact b{color:rgba(31,43,55,.64);}.test .lock,.test .lock:before{border-color:var(--attention);}
+  .verdict{background:#303A43;color:#fff;}.verdict p,.verdict .eyebrow{color:rgba(255,255,255,.82);}.verdict .boundary{border-color:rgba(255,255,255,.3);}.verdict .pending{color:#FFD5BE;}
+  .bottom strong{font:700 27px/1.35 var(--font-serif);}
+  .bottom span{max-width:480px;font-size:var(--fs-sec);line-height:1.45;color:rgba(31,43,55,.68);}
+</style>
+</head>
+<body data-page="21" data-total="22">
+<div id="stage">
+  <header class="head">
+    <h1>下降不等于可靠</h1>
+    <p class="lead">训练记录回答“练习题订正得怎样”；可靠性还需要一份与调参无关的新证据。</p>
+  </header>
+
+  <main class="flow min0 k-process" aria-label="从训练改善到新样本检验的证据过程">
+    <section class="step training min0">
+      <div class="eyebrow">已有证据 · 参与过调参</div>
+      <h2>训练记录</h2>
+      <p>训练损失持续下降，说明训练目标改善了。</p>
+      <div class="record">
+        <div class="loss"><strong>↓</strong><span>训练损失<br>已经下降</span></div>
+        <svg class="trace" viewBox="0 0 390 120" role="img" aria-label="训练损失随轮次下降的简化记录">
+          <path class="grid" d="M4 25H386M4 60H386M4 95H386"/>
+          <path class="area" d="M10 18 C65 20 76 42 125 45 S191 69 233 73 S306 91 378 96 L378 115 L10 115 Z"/>
+          <path class="line" d="M10 18 C65 20 76 42 125 45 S191 69 233 73 S306 91 378 96"/>
+          <circle class="dot" cx="10" cy="18" r="6"/><circle class="dot" cx="378" cy="96" r="6"/>
+        </svg>
+        <p class="caption">这份记录来自网络反复见过的训练样本。</p>
+      </div>
+      <div class="facts" aria-label="训练证据的边界">
+        <div class="fact"><b>样本身份</b><span>参与过调参</span></div>
+        <div class="fact"><b>证据状态</b><span>已经获得</span></div>
+        <div class="fact"><b>解释边界</b><span>只证明训练目标改善</span></div>
+      </div>
+    </section>
+
+    <div class="bridge" aria-hidden="true"><span>换一批<br>未见样本</span></div>
+
+    <section class="step test min0">
+      <div class="eyebrow">待检验证据 · 未参与调参</div>
+      <h2>新样本检查</h2>
+      <p>把未见样本交给同一个网络，观察预测是否仍可靠。</p>
+      <div class="unseen" aria-label="四个未见的新样本">
+        <div class="sample">?<small>新样本 A</small></div><div class="sample">?<small>新样本 B</small></div><div class="sample">?<small>新样本 C</small></div><div class="sample">?<small>新样本 D</small></div>
+      </div>
+      <div class="rule"><i class="lock" aria-hidden="true"></i><span><strong>检验时不再调参数</strong><br>否则，新样本也会变成练习题。</span></div>
+      <div class="facts" aria-label="新样本证据的边界">
+        <div class="fact"><b>样本身份</b><span>没有参与调参</span></div>
+        <div class="fact"><b>证据状态</b><span>尚待检查</span></div>
+        <div class="fact"><b>观察目标</b><span>预测是否仍可靠</span></div>
+      </div>
+    </section>
+
+    <aside class="verdict min0">
+      <div class="eyebrow">谨慎结论</div>
+      <h2>可靠了吗？</h2>
+      <div class="pending">尚待检验</div>
+      <p>训练下降，不能自动替新样本检查作答。</p>
+      <div class="boundary">
+        <div>能说：训练目标改善了</div>
+        <div>不能说：新样本一定可靠</div>
+        <div>下一步：保持参数不变，独立检验</div>
+      </div>
+    </aside>
+
+    <footer class="bottom">
+      <strong>会订正练习题，不等于会做新题。</strong>
+      <span>先用训练记录确认“学过的在改善”，再用新样本检验“没见过的是否也可靠”。</span>
+    </footer>
+  </main>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script>Deck.init({index:21,total:22});</script>
+</body>
+</html>

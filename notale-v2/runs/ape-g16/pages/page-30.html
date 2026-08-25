@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    .kicker{color:var(--trace);font:650 var(--fs-label)/1.35 var(--font-mono);letter-spacing:.12em}
+    .head h1{margin:4px 0 0}
+    .drag-shell{height:100%;padding:14px 18px 16px!important;display:flex;flex-direction:column}
+    .drag-shell>.bt{display:flex;align-items:center;justify-content:space-between;margin:0 0 8px!important}
+    .formula{color:var(--muted);font:500 var(--fs-sec)/1.35 var(--font-mono)}
+    .branches{display:flex;gap:18px;flex:1;min-height:0}
+    .branch{flex:1;display:flex;flex-direction:column;min-width:0;padding:10px 14px!important}
+    .branch .bt{font-size:var(--fs-body)!important;margin-bottom:5px!important}
+    .branch-sub{color:var(--muted);font-size:var(--fs-label);line-height:1.35;margin-bottom:8px}
+    .viz{flex:1;min-height:112px;position:relative}
+    .viz svg{width:100%;height:100%;display:block;overflow:visible}
+    .choice-row{display:flex;gap:8px;margin-top:6px}
+    .choice-row span{flex:1;text-align:center;color:var(--muted);font-size:var(--fs-label);line-height:1.35}
+    .choice-row span.current{color:var(--active);font-weight:700}
+    select.btn{flex:1;min-width:0;font-size:var(--fs-sec);background:var(--bg)}
+    .result-row{height:156px;display:flex;gap:18px;margin-top:12px}
+    .result-panel{flex:0 0 420px;display:flex;align-items:center;justify-content:space-between}
+    .result-label{font-size:var(--fs-sec);color:var(--muted)}
+    .equiv{font-size:var(--fs-sec);line-height:1.45;color:var(--muted);text-align:right}
+    .insight{flex:1;display:flex;flex-direction:column;justify-content:center;gap:6px;padding-left:20px;border-left:2px solid var(--line-strong)}
+    .insight strong{font-size:var(--fs-lead);line-height:1.45;font-weight:680}
+    .insight span{font-size:var(--fs-sec);line-height:1.45;color:var(--muted)}
+    .footer-line{display:flex;align-items:center;justify-content:space-between;gap:30px}
+    .footer-line .lead{margin:0}
+    .next{color:var(--muted);font-size:var(--fs-sec);white-space:nowrap}
+    .enter{opacity:0;transform:translateY(14px)}
+    .ready .enter{opacity:1;transform:none;transition:opacity 520ms ease-out,transform 520ms ease-out}
+    .ready .branch:nth-child(2){transition-delay:80ms}.ready .branch:nth-child(3){transition-delay:160ms}
+    @media(prefers-reduced-motion:reduce){.enter,.ready .enter{opacity:1;transform:none;transition:none!important}}
+  </style>
+</head>
+<body data-page="30" data-total="50">
+  <div id="stage">
+    <header class="head" style="height:82px">
+      <div class="kicker">E3 · ATMOSPHERIC DRAG</div>
+      <h1>穿过大气密度层</h1>
+    </header>
+
+    <main class="k-classification min0" style="flex:1">
+      <section class="box drag-shell enter min0" aria-label="阻力的三类输入">
+        <div class="bt"><span>阻力</span><span class="formula">F = ½ρv²CdA</span></div>
+        <div class="lv branches min0">
+          <section class="box branch enter min0" data-branch="height">
+            <div class="bt">环境条件</div>
+            <div class="branch-sub">高度 → 空气密度 ρ</div>
+            <div class="viz cvbox"><svg id="densityViz" role="img" aria-label="三层空气密度带，地平线以上逐层变稀"></svg></div>
+            <div class="choice-row" aria-hidden="true"><span>海平面</span><span class="current">高空</span><span>平流层</span></div>
+            <div class="it btns">
+              <select id="heightChoice" class="btn" aria-label="选择高度">
+                <option value="0">海平面 · 0 km · 1.225 kg/m³</option>
+                <option value="1" selected>高空 · 10 km · 0.4135 kg/m³</option>
+                <option value="2">平流层 · 30 km · 0.0184 kg/m³</option>
+              </select>
+            </div>
+          </section>
+
+          <section class="box branch enter min0" data-branch="speed">
+            <div class="bt">运动条件</div>
+            <div class="branch-sub">速度按平方放大：v²</div>
+            <div class="viz cvbox"><svg id="speedViz" role="img" aria-label="速度平方刻度"></svg></div>
+            <div class="choice-row" aria-hidden="true"><span>较慢</span><span class="current">很快</span><span>极快</span></div>
+            <div class="it btns">
+              <select id="speedChoice" class="btn" aria-label="选择速度">
+                <option value="0">较慢 · 250 m/s</option>
+                <option value="1" selected>很快 · 1000 m/s</option>
+                <option value="2">极快 · 2000 m/s</option>
+              </select>
+            </div>
+          </section>
+
+          <section class="box branch enter min0" data-branch="shape">
+            <div class="bt">外形条件</div>
+            <div class="branch-sub">姿态 → 阻力系数 Cd × 迎风面积 A</div>
+            <div class="viz cvbox"><svg id="shapeViz" role="img" aria-label="三种姿态的迎风轮廓"></svg></div>
+            <div class="choice-row" aria-hidden="true"><span>收拢</span><span class="current">巡航</span><span>横展</span></div>
+            <div class="it btns">
+              <select id="shapeChoice" class="btn" aria-label="选择姿态">
+                <option value="0">收拢 · Cd 0.30 · 1.0 m²</option>
+                <option value="1" selected>巡航 · Cd 0.60 · 1.5 m²</option>
+                <option value="2">横展 · Cd 1.00 · 3.0 m²</option>
+              </select>
+            </div>
+          </section>
+        </div>
+
+        <div class="result-row min0">
+          <div class="panel result-panel enter" aria-live="polite">
+            <div><div class="result-label">三类输入汇合</div><div><span id="forceValue" class="big">186</span><span id="forceUnit" class="unit">kN</span></div></div>
+            <div class="equiv">约等于<br><span id="tonnesValue" class="num">19.0</span><span class="unit">吨重</span></div>
+          </div>
+          <div class="insight enter">
+            <strong>速度翻倍，其他条件不变，阻力变为四倍。</strong>
+            <span>高空空气更稀薄，但足够高的速度仍会产生显著阻力。</span>
+            <span class="hint">固定两项，只改变一项，再比较结果。</span>
+          </div>
+          <div class="btns" style="align-self:center"><button id="reset" class="btn" type="button">复位</button></div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer-line" style="height:70px">
+      <p class="lead">阻力随密度、速度平方和迎风面积共同增长；低层高速尤其昂贵。</p>
+      <div class="next">下一页：绕行，还是彻底逃逸？</div>
+    </footer>
+  </div>
+  <script src="assets/base.js"></script>
+  <script src="assets/lec.js"></script>
+  <script src="assets/lib/d3.min.js"></script>
+  <script>
+  (function(){
+    Deck.init({index:30,total:50});
+    var rho0=Lec.K.physics.SEA_LEVEL_AIR_DENSITY_KG_M3;
+    var heights=[{rho:rho0},{rho:rho0*(0.4135/1.225)},{rho:rho0*(0.0184/1.225)}];
+    var speeds=[250,1000,2000];
+    var shapes=[{cd:.30,a:1.0},{cd:.60,a:1.5},{cd:1.00,a:3.0}];
+    var defaults={height:1,speed:1,shape:1}, state={height:1,speed:1,shape:1};
+    var focus=Deck.token('--active'), trace=Deck.token('--trace'), muted=Deck.token('--muted'), line=Deck.token('--line-strong');
+    var reduced=Deck.reduced();
+
+    function baseSvg(id){var s=d3.select(id);s.selectAll('*').remove();s.attr('viewBox','0 0 400 130');return s;}
+    function drawDensity(){
+      var s=baseSvg('#densityViz'), idx=state.height;
+      var bands=[{y:72,h:42,o:.72},{y:40,h:31,o:.42},{y:16,h:23,o:.16}];
+      s.selectAll('rect.layer').data(bands).join('rect').attr('class','layer').attr('x',18).attr('y',d=>d.y).attr('width',364).attr('height',d=>d.h).attr('fill',trace).attr('opacity',(d,i)=>i===idx?d.o:Math.max(.07,d.o*.34));
+      s.append('line').attr('x1',10).attr('x2',390).attr('y1',114).attr('y2',114).attr('stroke',line).attr('stroke-width',2);
+      s.append('line').attr('x1',42).attr('x2',358).attr('y1',114-[0,48,88][idx]).attr('y2',114-[0,48,88][idx]).attr('stroke',focus).attr('stroke-width',4);
+    }
+    function drawSpeed(){
+      var s=baseSvg('#speedViz'), vals=[250,1000,2000], scale=d3.scaleLinear().domain([0,2000]).range([26,374]);
+      s.append('line').attr('x1',26).attr('x2',374).attr('y1',86).attr('y2',86).attr('stroke',line).attr('stroke-width',2);
+      s.selectAll('line.tickmark').data(vals).join('line').attr('x1',d=>scale(d)).attr('x2',d=>scale(d)).attr('y1',70).attr('y2',102).attr('stroke',(d,i)=>i===state.speed?focus:muted).attr('stroke-width',(d,i)=>i===state.speed?5:2);
+      var x=scale(vals[state.speed]);s.append('path').attr('d','M26,48 L'+x+',48').attr('stroke',focus).attr('stroke-width',8).attr('stroke-linecap','round');
+      s.append('path').attr('d','M'+(x-12)+',38 L'+x+',48 L'+(x-12)+',58').attr('fill','none').attr('stroke',focus).attr('stroke-width',4);
+    }
+    function drawShape(){
+      var s=baseSvg('#shapeViz'), dims=[30,52,88];
+      s.selectAll('rect.pose').data(dims).join('rect').attr('class','pose').attr('x',(d,i)=>75+i*125-d/2).attr('y',65).attr('width',d=>d).attr('height',d=>d*.55).attr('rx',5).attr('fill','none').attr('stroke',(d,i)=>i===state.shape?focus:trace).attr('stroke-width',(d,i)=>i===state.shape?5:2).attr('opacity',(d,i)=>i===state.shape?1:.55);
+      s.append('line').attr('x1',18).attr('x2',382).attr('y1',114).attr('y2',114).attr('stroke',line).attr('stroke-width',2);
+    }
+    function setLabels(){document.querySelectorAll('.branch').forEach(function(branch){var key=branch.dataset.branch;branch.querySelectorAll('.choice-row span').forEach(function(el,i){el.classList.toggle('current',i===state[key]);});});}
+    function update(animate){
+      drawDensity();drawSpeed();drawShape();setLabels();
+      var h=heights[state.height],v=speeds[state.speed],sh=shapes[state.shape];
+      var force=Lec.P.dragForce(h.rho,v,sh.cd,sh.a), old=Number(document.getElementById('forceValue').dataset.raw||force);
+      var out=force>=1000?force/1000:force, unit=force>=1000?'kN':'N';
+      document.getElementById('forceUnit').textContent=unit;
+      document.getElementById('forceValue').dataset.raw=force;
+      var target=document.getElementById('forceValue');
+      if(animate&&!reduced){d3.select(target).interrupt().transition().duration(300).ease(d3.easeCubicOut).tween('text',function(){var i=d3.interpolateNumber(old>=1000?old/1000:old,out);return function(t){target.textContent=(unit==='kN'?i(t).toFixed(i(t)<100?1:0):i(t).toFixed(0));};});}else target.textContent=unit==='kN'?out.toFixed(out<100?1:0):out.toFixed(0);
+      document.getElementById('tonnesValue').textContent=(force/Lec.K.physics.STANDARD_GRAVITY_MPS2/Lec.K.units.KILOGRAMS_PER_TONNE).toFixed(1);
+    }
+    ['height','speed','shape'].forEach(function(key){document.getElementById(key+'Choice').addEventListener('change',function(){state[key]=Number(this.value);update(true);});});
+    document.getElementById('reset').addEventListener('click',function(){Object.assign(state,defaults);document.getElementById('heightChoice').value=1;document.getElementById('speedChoice').value=1;document.getElementById('shapeChoice').value=1;update(true);});
+    update(false);
+    if(reduced){document.getElementById('stage').classList.add('ready');}else setTimeout(function(){document.getElementById('stage').classList.add('ready');},40);
+  }());
+  </script>
+</body>
+</html>

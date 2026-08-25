@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    .kicker{color:var(--orbit);font:700 var(--fs-label)/1.35 var(--font-mono);letter-spacing:.14em;margin-bottom:5px}
+    .compare-stage{--compare-cols:4;grid-template-columns:150px repeat(4,minmax(0,1fr));grid-template-rows:40px 1px 280px 1px minmax(170px,1fr);min-height:0;background:var(--line)}
+    .compare-stage>.hdr{font-size:var(--fs-body);padding:7px 12px}
+    .compare-stage>.dim{padding:12px 18px 12px 0}
+    .planet-cell{position:relative;display:flex;min-width:0;align-items:flex-end;justify-content:center;padding:10px 10px 36px!important;border-inline:1px solid rgba(76,201,240,.18);border-bottom:1px solid rgba(76,201,240,.18);background:linear-gradient(to top,rgba(76,201,240,.16) 0 72px,transparent 72px)}
+    .evidence-window{position:absolute;inset:0 0 34px;width:100%;height:calc(100% - 34px);object-fit:contain;opacity:.24;filter:grayscale(.35);border:1px solid var(--evidence)}
+    .planet-disc{position:absolute;z-index:1;bottom:42px;left:50%;width:var(--disc);height:var(--disc);max-width:210px;max-height:210px;border:2px solid var(--orbit);border-radius:50%;object-fit:contain;transform:translateX(-50%);filter:saturate(.9);box-shadow:0 0 22px var(--bg)}
+    .planet-disc.earth{object-fit:cover}
+    .diameter-read{position:absolute;right:8px;bottom:7px;left:8px;text-align:center;color:var(--text);font-size:var(--fs-sec)}
+    .model-label{position:absolute;top:9px;left:12px;color:var(--muted);font-size:var(--fs-label)}
+    .distance-cell{position:relative;display:flex;min-width:0;flex-direction:column;justify-content:center;padding:15px 12px!important;border-inline:1px solid rgba(76,201,240,.18);border-bottom:1px solid rgba(76,201,240,.18)}
+    .room{position:relative;height:124px;border:1px solid var(--line);border-right:3px solid var(--sun);background:linear-gradient(90deg,rgba(76,201,240,.34),rgba(76,201,240,.12))}
+    .room:before{position:absolute;top:50%;right:0;left:0;border-top:2px solid var(--orbit);content:""}
+    .room:after{position:absolute;top:0;right:0;width:28%;height:100%;background:repeating-linear-gradient(135deg,rgba(255,183,3,.28) 0 8px,rgba(255,183,3,.06) 8px 16px);content:""}
+    .room-tick{position:absolute;top:calc(50% + 8px);color:var(--evidence);font:var(--fs-tick)/1.35 var(--font-mono);transform:translateX(-50%)}
+    .room-tick:before{position:absolute;top:-10px;left:50%;height:8px;border-left:1px solid var(--orbit);content:""}
+    .sun-dot{position:absolute;top:50%;left:8px;width:12px;height:12px;border-radius:50%;background:var(--sun);transform:translateY(-50%);box-shadow:0 0 14px var(--sun)}
+    .beyond-ghost{position:absolute;z-index:0;top:5px;right:8px;width:116px;height:114px;border-radius:50%;object-fit:contain;opacity:.3;filter:grayscale(1)}
+    .far-arrow{position:absolute;z-index:2;top:50%;right:8px;color:var(--sun);font-size:26px;line-height:1;transform:translateY(-54%)}
+    .distance-read{margin-top:8px;color:var(--text);font-size:var(--fs-sec);text-align:center}
+    .distance-read .num{font-size:22px;font-weight:700}
+    .room-key{display:flex;justify-content:space-between;color:var(--muted);font:var(--fs-label)/1.4 var(--font-sans);margin-top:5px}
+    .control-panel{display:flex;align-items:center;gap:22px;padding:12px 18px}
+    .control-panel .ctl{flex:1}.control-panel .btn{flex:0 0 auto}
+    .takeaway{display:flex;align-items:center;justify-content:space-between;gap:30px;border-top:1px solid var(--line)}
+    .takeaway .lead{margin:0}.next{color:var(--muted);font-size:var(--fs-sec);white-space:nowrap}
+    @media(prefers-reduced-motion:reduce){.planet-disc,.far-arrow{transition:none!important}}
+  </style>
+</head>
+<body data-page="05" data-total="34">
+  <div id="stage">
+    <header style="height:82px">
+      <div class="kicker">SIZE ≠ DISTANCE</div>
+      <h1>行星能放上桌，轨道却放不进教室</h1>
+    </header>
+
+    <section class="panel control-panel" style="height:74px" aria-label="比例尺控制">
+      <div class="ctl min0">
+        <label for="earthSize">地球模型直径</label>
+        <input id="earthSize" type="range" min="0.2" max="2" step="0.1" value="1" aria-describedby="scaleHint">
+        <output id="earthOut" for="earthSize">1.0 cm</output>
+      </div>
+      <button class="btn" id="reset" type="button">复位</button>
+      <div class="hint" id="scaleHint">拖动后，直径与日距使用同一缩尺</div>
+    </section>
+
+    <main class="k-comparison compare-stage panel min0" style="flex:1;--compare-cols:4" aria-label="四颗行星的直径与同尺日距比较">
+      <div class="dim">比较维度</div>
+      <div class="hdr">地球</div><div class="hdr">火星</div><div class="hdr diff">木星</div><div class="hdr">土星</div>
+      <div class="rowline"></div>
+      <div class="dim">直径模型<br><span class="small">地球为基准</span><br><span class="tag structure" style="margin-top:20px">直径比固定</span></div>
+      <div class="planet-cell min0"><span class="model-label">直径模型</span><img class="planet-disc earth" data-key="earth" src="assets/img/earth-apollo17.jpg" alt="地球照片圆盘" title="Apollo 17 Harrison H. Schmitt and Tracy's Rock · Public domain"><div class="diameter-read"><span class="num"></span><span class="unit">cm</span></div></div>
+      <div class="planet-cell min0"><span class="model-label">直径模型</span><img class="planet-disc" data-key="mars" src="assets/img/mars-global.jpg" alt="火星照片圆盘" title="MARS-Viking.jpg · NASA/JPL/USGS · Public domain"><div class="diameter-read"><span class="num"></span><span class="unit">cm</span></div></div>
+      <div class="planet-cell min0 diff"><span class="model-label">直径模型</span><img class="planet-disc" data-key="jupiter" src="assets/img/jupiter-juno.jpg" alt="木星照片圆盘" title="Hubble Jupiter · NASA, ESA, J. Nichols · Public domain"><div class="diameter-read"><span class="num"></span><span class="unit">cm</span></div></div>
+      <div class="planet-cell min0"><span class="model-label">本体直径，不含环</span><img class="planet-disc" data-key="saturn" src="assets/img/saturn-cassini.jpg" alt="土星照片证据窗口" title="Saturn Aurora · NASA, ESA, A. Schaller · Public domain"><div class="diameter-read"><span class="num"></span><span class="unit">cm</span></div></div>
+      <div class="rowline"></div>
+      <div class="dim">同尺平均日距<br><span class="small">教室到此截断</span><br><span class="tag attention" style="margin-top:14px">全部越界</span></div>
+      <div class="distance-cell min0" data-key="earth"><div class="room"><i class="sun-dot"></i><b class="far-arrow">→</b></div><div class="distance-read"><span class="num"></span><span class="unit">m</span></div><div class="room-key"><span>太阳</span><span>10 m</span></div></div>
+      <div class="distance-cell min0" data-key="mars"><div class="room"><i class="sun-dot"></i><b class="far-arrow">→</b></div><div class="distance-read"><span class="num"></span><span class="unit">m</span></div><div class="room-key"><span>太阳</span><span>10 m</span></div></div>
+      <div class="distance-cell min0 diff" data-key="jupiter"><div class="room"><i class="sun-dot"></i><b class="far-arrow">→</b></div><div class="distance-read"><span class="num"></span><span class="unit">m</span></div><div class="room-key"><span>太阳</span><span>10 m</span></div></div>
+      <div class="distance-cell min0" data-key="saturn"><div class="room"><i class="sun-dot"></i><b class="far-arrow">→</b></div><div class="distance-read"><span class="num"></span><span class="unit">m</span></div><div class="room-key"><span>太阳</span><span>10 m</span></div></div>
+    </main>
+
+    <div class="note" style="height:34px">教室示意宽度：10 m；距离尺在 10 m 处截断，非轨道漫游。</div>
+    <footer class="takeaway" style="height:84px">
+      <p class="lead" id="conclusion">地球若是 1 cm，木星约 11 cm；但同一比例下，日地距离已约 117 m。</p>
+      <div class="next">接下来：体积最大，同样一升也一定最重吗？</div>
+    </footer>
+  </div>
+  <script src="assets/base.js"></script>
+  <script src="assets/lec.js"></script>
+  <script src="assets/lib/gsap.min.js"></script>
+  <script>
+    Deck.init({index:5,total:34});
+    (function(){
+      var keys=['earth','mars','jupiter','saturn'];
+      var earth=Lec.K.planets.earth;
+      var input=document.getElementById('earthSize');
+      var earthOut=document.getElementById('earthOut');
+      var conclusion=document.getElementById('conclusion');
+      document.querySelectorAll('.planet-disc').forEach(function(img){var evidence=img.cloneNode(false);evidence.className='evidence-window';evidence.removeAttribute('data-key');evidence.alt='';evidence.setAttribute('aria-hidden','true');img.parentElement.insertBefore(evidence,img);});
+      document.querySelectorAll('.room').forEach(function(room){var key=room.parentElement.dataset.key;var ghost=document.querySelector('.planet-disc[data-key="'+key+'"]').cloneNode(false);ghost.className='beyond-ghost';ghost.removeAttribute('data-key');ghost.alt='';ghost.setAttribute('aria-hidden','true');room.appendChild(ghost);[2.5,5,7.5].forEach(function(v){var tick=document.createElement('span');tick.className='room-tick';tick.style.left=(v*10)+'%';tick.textContent=v+' m';room.appendChild(tick);});});
+      var reduce=Deck.reduced();
+      function diameterCm(key, earthCm){return earthCm*Lec.K.planets[key].meanRadiusKm/earth.meanRadiusKm;}
+      function distanceM(key, earthCm){
+        var scaledAU=Lec.K.units.astronomicalUnitMetres*(earthCm/100)/(earth.meanRadiusKm*2*1000);
+        return Lec.K.planets[key].semimajorAxisAU*scaledAU;
+      }
+      function update(animate){
+        var size=Number(input.value);
+        earthOut.value=size.toFixed(1)+' cm';
+        keys.forEach(function(key){
+          var d=diameterCm(key,size), px=d*20;
+          var img=document.querySelector('.planet-disc[data-key="'+key+'"]');
+          var dr=img.parentElement.querySelector('.diameter-read .num');
+          var distCell=document.querySelector('.distance-cell[data-key="'+key+'"]');
+          var dist=distanceM(key,size);
+          dr.textContent=d.toFixed(key==='mars'?2:1);
+          distCell.querySelector('.distance-read .num').textContent=Math.round(dist).toString();
+          if(animate&&!reduce){
+            gsap.to(img,{width:px,height:px,duration:.32,ease:'power2.out',overwrite:'auto'});
+            gsap.fromTo(distCell.querySelector('.far-arrow'),{color:'var(--sun)',x:0},{x:7,duration:.18,yoyo:true,repeat:1,ease:'power1.out',overwrite:'auto'});
+          }else{ img.style.width=px+'px';img.style.height=px+'px'; }
+        });
+        var j=diameterCm('jupiter',size), eDist=distanceM('earth',size);
+        conclusion.textContent='地球若是 '+size.toFixed(1)+' cm，木星约 '+j.toFixed(1)+' cm；但同一比例下，日地距离已约 '+Math.round(eDist)+' m。';
+      }
+      input.addEventListener('input',function(){update(true);});
+      document.getElementById('reset').addEventListener('click',function(){input.value='1';update(true);input.focus();});
+      update(false);
+      if(!reduce){
+        gsap.from('.compare-stage .hdr',{scaleX:0,transformOrigin:'left center',duration:.55,ease:'power2.out'});
+        gsap.from('.planet-disc',{autoAlpha:0,scale:.72,duration:.45,stagger:{each:.1,from:'start'},delay:.25,ease:'power2.out'});
+      }
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,469 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  #stage{ gap:16px; }
+
+  .hd{ display:flex; align-items:baseline; gap:16px; flex:0 0 auto; }
+  .hd h1{ font-size: var(--fs-h1); }
+  .kicker{
+    font-family: var(--font-mono); font-size: var(--fs-label); font-weight:700;
+    color:#fff; background:var(--primary); padding:4px 12px; border-radius:999px;
+    letter-spacing:.02em; white-space:nowrap;
+  }
+
+  .stepbar{ flex:0 0 auto; display:flex; flex-direction:column; gap:10px; }
+  .stepbar .ctlrow{ display:flex; align-items:center; justify-content:space-between; gap:16px; }
+  #stepStatus{ min-width:0; }
+
+  .main{ flex:1; min-height:0; display:flex; gap:32px; }
+
+  .net-panel{ flex:0 0 638px; min-width:0; position:relative; display:flex; flex-direction:column; gap:8px; }
+  .net-box{ position:relative; flex:1; min-height:0; border-radius:16px; }
+  .net-box svg{ display:block; width:100%; height:100%; }
+
+  .side-panel{ flex:1; min-width:0; display:flex; flex-direction:column; gap:14px; }
+  .explain-panel .cap{ font-size:var(--fs-label); color:var(--muted); margin-bottom:6px; }
+  .explain-panel p{ font-size:var(--fs-lead); line-height:1.5; }
+
+  .rows{ flex:0 0 auto; display:flex; flex-direction:column; }
+  .rows .r{
+    display:flex; flex-direction:column; gap:6px; padding:11px 0;
+    border-bottom:1px solid var(--line);
+  }
+  .rows .r:last-child{ border-bottom:none; }
+  .rows .r .lab{ font-size:var(--fs-sec); color:var(--muted); font-weight:600; }
+  .rows .r .val{ font-family:var(--font-mono); font-size:var(--fs-body); color:var(--text); }
+  .rows .r .val .q{ color:var(--line-strong); font-weight:700; }
+  .rows .r.locked .lab{ color:var(--line-strong); }
+  .rows .r.active .lab{ color:var(--accent); }
+  .rows .r.active .val{ color:var(--accent); font-weight:700; }
+  .rows .r.done .val{ color:var(--primary); }
+
+  .mag-panel{ flex:1; min-height:0; display:flex; flex-direction:column; gap:10px; }
+  .mag-panel .cap{ font-size:var(--fs-label); color:var(--muted); }
+  .mag-rows{ flex:1; min-height:0; display:flex; flex-direction:column; justify-content:center; gap:16px; }
+  .mag-row{ display:flex; flex-direction:column; gap:6px; }
+  .mag-row .mlab{ display:flex; justify-content:space-between; font-size:var(--fs-sec); color:var(--text); }
+  .mag-row .mlab .mv{ font-family:var(--font-mono); font-weight:700; color:var(--primary); }
+  .mag-row.cur .mlab .mv{ color:var(--accent); }
+  .mag-track{ height:22px; border-radius:6px; background:var(--primary-08); border:1px solid var(--line); overflow:hidden; position:relative; }
+  .mag-fill{ position:absolute; left:0; top:0; height:100%; background:var(--primary); border-radius:6px 0 0 6px; transition:width .35s ease; width:0%; }
+  .mag-row.cur .mag-fill{ background:var(--accent); }
+  .mag-row.pending .mag-track{ background:var(--bg); }
+  .mag-row.pending .mlab .mv{ color:var(--line-strong); }
+
+  .foot{ flex:0 0 auto; display:flex; flex-direction:column; gap:2px; }
+
+  /* svg 内元素 */
+  .lnF{ stroke:var(--primary); stroke-width:3; fill:none; }
+  .lnB{ stroke:var(--accent); stroke-width:3; fill:none; stroke-dasharray:8 7; opacity:0; transition:opacity .25s; }
+  .lnB.active{ opacity:1; }
+  .card-bg{ fill:var(--panel-bg); stroke:var(--line); stroke-width:2; }
+  .nlabel{ font-family:var(--font-sans); font-size:15px; fill:var(--muted); transition:fill .25s; }
+  .nlabel.cur{ fill:var(--accent); font-weight:700; }
+  .nval{ font-family:var(--font-mono); font-size:17px; font-weight:700; fill:var(--text); transition:fill .25s; }
+  .nval.cur{ fill:var(--accent); }
+  .node{ stroke-width:3; transition:fill .25s, stroke .25s; }
+  .node.norm{ fill:var(--panel-bg); stroke:var(--primary); }
+  .node.cur{ fill:var(--accent); stroke:var(--accent); }
+  .glabel{ font-family:var(--font-mono); font-size:15px; font-weight:700; fill:var(--accent); opacity:0; transition:opacity .25s; }
+  .glabel.show{ opacity:1; }
+  .gbg{ fill:var(--bg); opacity:0; transition:opacity .25s; }
+  .gbg.show{ opacity:.92; }
+  .layertag{ font-family:var(--font-sans); font-size:14px; fill:var(--muted); }
+
+  @media (prefers-reduced-motion: reduce){
+    .lnB, .nlabel, .nval, .node, .glabel, .gbg{ transition:none; }
+  }
+</style>
+</head>
+<body data-page="12" data-total="19">
+<div id="stage">
+
+  <div class="hd">
+    <span class="kicker">IV · 责任分配</span>
+    <h1>反向传播：把输出端的错误，从后往前拆成每个权重该负的一份责任</h1>
+  </div>
+
+  <div class="stepbar">
+    <div class="k-process" id="axis">
+      <div class="step" data-s="1">① 正向算输出</div>
+      <div class="arw"></div>
+      <div class="step" data-s="2">② 算输出端误差</div>
+      <div class="arw"></div>
+      <div class="step" data-s="3">③ 回传到隐藏层</div>
+      <div class="arw"></div>
+      <div class="step" data-s="4">④ 算权重责任</div>
+    </div>
+    <div class="ctlrow">
+      <div class="btns">
+        <button id="btnNext" class="btn">下一步 →</button>
+        <button id="btnReset" class="btn">重置</button>
+      </div>
+      <div id="stepStatus" class="small" aria-live="polite">步骤 1 / 4：正向算出网络的猜测</div>
+    </div>
+  </div>
+
+  <div class="main">
+    <div class="net-panel min0">
+      <div class="net-box no-pan">
+        <svg id="netsvg" viewBox="0 0 640 580" preserveAspectRatio="xMidYMid meet" role="img"
+             aria-label="两输入两隐藏一输出的小网络，正向实线蓝色，反向虚线橙红，随步骤逐层高亮">
+          <defs>
+            <marker id="mF" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+              <path d="M0,0 L10,5 L0,10 Z" fill="#1B4B6B"></path>
+            </marker>
+            <marker id="mB" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M0,0 L10,5 L0,10 Z" fill="#E8622C"></path>
+            </marker>
+          </defs>
+
+          <!-- 三层卡片背景 -->
+          <rect class="card-bg" x="18" y="55" width="112" height="430" rx="16"></rect>
+          <rect class="card-bg" x="288" y="35" width="112" height="480" rx="16"></rect>
+          <rect class="card-bg" x="516" y="188" width="112" height="200" rx="16"></rect>
+          <text class="layertag" x="74" y="42" text-anchor="middle">输入层</text>
+          <text class="layertag" x="344" y="24" text-anchor="middle">隐藏层</text>
+          <text class="layertag" x="572" y="177" text-anchor="middle">输出层</text>
+
+          <!-- 正向连线（始终实线，蓝色）+ 反向叠加（虚线，橙红，按步骤显现） -->
+          <g id="linesF">
+            <line class="lnF" data-l="x1h1" x1="96" y1="150" x2="340" y2="120" marker-end="url(#mF)"></line>
+            <line class="lnF" data-l="x1h2" x1="96" y1="150" x2="340" y2="460" marker-end="url(#mF)"></line>
+            <line class="lnF" data-l="x2h1" x1="96" y1="430" x2="340" y2="120" marker-end="url(#mF)"></line>
+            <line class="lnF" data-l="x2h2" x1="96" y1="430" x2="340" y2="460" marker-end="url(#mF)"></line>
+            <line class="lnF" data-l="h1o"  x1="366" y1="120" x2="580" y2="290" marker-end="url(#mF)"></line>
+            <line class="lnF" data-l="h2o"  x1="366" y1="460" x2="580" y2="290" marker-end="url(#mF)"></line>
+          </g>
+          <g id="linesB">
+            <line class="lnB" data-l="x1h1" x1="96" y1="150" x2="340" y2="120" marker-start="url(#mB)"></line>
+            <line class="lnB" data-l="x1h2" x1="96" y1="150" x2="340" y2="460" marker-start="url(#mB)"></line>
+            <line class="lnB" data-l="x2h1" x1="96" y1="430" x2="340" y2="120" marker-start="url(#mB)"></line>
+            <line class="lnB" data-l="x2h2" x1="96" y1="430" x2="340" y2="460" marker-start="url(#mB)"></line>
+            <line class="lnB" data-l="h1o"  x1="366" y1="120" x2="580" y2="290" marker-start="url(#mB)"></line>
+            <line class="lnB" data-l="h2o"  x1="366" y1="460" x2="580" y2="290" marker-start="url(#mB)"></line>
+          </g>
+
+          <!-- W2 责任标注（隐藏→输出，step2 起显示） -->
+          <rect class="gbg" data-g="dw2-h1o" x="430" y="182" width="98" height="24" rx="6"></rect>
+          <text class="glabel" data-g="dw2-h1o" x="479" y="199" text-anchor="middle">?</text>
+          <rect class="gbg" data-g="dw2-h2o" x="430" y="372" width="98" height="24" rx="6"></rect>
+          <text class="glabel" data-g="dw2-h2o" x="479" y="389" text-anchor="middle">?</text>
+
+          <!-- 输出端误差力度（step2） -->
+          <rect class="gbg" data-g="dz2" x="524" y="330" width="100" height="24" rx="6"></rect>
+          <text class="glabel" data-g="dz2" x="574" y="347" text-anchor="middle">?</text>
+
+          <!-- dA1 隐藏层误差份额（step3） -->
+          <rect class="gbg" data-g="da1-h1" x="228" y="76" width="102" height="24" rx="6"></rect>
+          <text class="glabel" data-g="da1-h1" x="279" y="93" text-anchor="middle">?</text>
+          <rect class="gbg" data-g="da1-h2" x="228" y="486" width="102" height="24" rx="6"></rect>
+          <text class="glabel" data-g="da1-h2" x="279" y="503" text-anchor="middle">?</text>
+
+          <!-- W1 责任标注（输入→隐藏，step4 起显示） -->
+          <rect class="gbg" data-g="dw1-x1h1" x="150" y="98" width="86" height="22" rx="6"></rect>
+          <text class="glabel" data-g="dw1-x1h1" x="193" y="114" text-anchor="middle" font-size="13">?</text>
+          <rect class="gbg" data-g="dw1-x2h1" x="150" y="238" width="86" height="22" rx="6"></rect>
+          <text class="glabel" data-g="dw1-x2h1" x="193" y="254" text-anchor="middle" font-size="13">?</text>
+          <rect class="gbg" data-g="dw1-x1h2" x="150" y="330" width="86" height="22" rx="6"></rect>
+          <text class="glabel" data-g="dw1-x1h2" x="193" y="346" text-anchor="middle" font-size="13">?</text>
+          <rect class="gbg" data-g="dw1-x2h2" x="150" y="470" width="86" height="22" rx="6"></rect>
+          <text class="glabel" data-g="dw1-x2h2" x="193" y="486" text-anchor="middle" font-size="13">?</text>
+
+          <!-- 节点 -->
+          <circle class="node" data-n="x1" cx="70" cy="150" r="26"></circle>
+          <circle class="node" data-n="x2" cx="70" cy="430" r="26"></circle>
+          <circle class="node" data-n="h1" cx="340" cy="120" r="26"></circle>
+          <circle class="node" data-n="h2" cx="340" cy="460" r="26"></circle>
+          <circle class="node" data-n="out" cx="580" cy="290" r="30"></circle>
+
+          <text class="nlabel" data-nl="x1" x="70" y="103" text-anchor="middle">x₁（输入）</text>
+          <text class="nval"   data-nv="x1" x="70" y="156" text-anchor="middle">1.00</text>
+          <text class="nlabel" data-nl="x2" x="70" y="465" text-anchor="middle">x₂（输入）</text>
+          <text class="nval"   data-nv="x2" x="70" y="436" text-anchor="middle">0.50</text>
+
+          <text class="nlabel" data-nl="h1" x="340" y="68" text-anchor="middle">隐藏神经元①</text>
+          <text class="nval"   data-nv="h1" x="340" y="126" text-anchor="middle">.4219</text>
+          <text class="nlabel" data-nl="h2" x="340" y="512" text-anchor="middle">隐藏神经元②</text>
+          <text class="nval"   data-nv="h2" x="340" y="466" text-anchor="middle">.4621</text>
+
+          <text class="nlabel" data-nl="out" x="580" y="238" text-anchor="middle">网络的猜测</text>
+          <text class="nval"   data-nv="out" x="580" y="297" text-anchor="middle" font-size="19">0.5295</text>
+        </svg>
+      </div>
+      <div class="legend">
+        <span class="li"><span class="sw line"></span>正向：算出猜测</span>
+        <span class="li"><span class="sw line dash"></span>反向：往回传责任</span>
+        <span class="li"><span class="sw accent"></span>当前处理的这一层</span>
+      </div>
+    </div>
+
+    <div class="side-panel min0">
+      <div class="panel explain-panel">
+        <div class="cap">这一步在算什么</div>
+        <p id="stepExplain">网络把输入 x=[1, 0.5] 沿着连线往前算一遍：先算两个隐藏神经元，再算出最终这一个数——0.5295。这就是网络当前的猜测，目标是 1。</p>
+      </div>
+      <div class="panel rows" id="ledger">
+        <div class="r" data-r="1">
+          <div class="lab">① 正向 · 网络的猜测</div>
+          <div class="val"><span class="num">0.5295</span></div>
+        </div>
+        <div class="r locked" data-r="2">
+          <div class="lab">② 输出端 · 调整力度 / 两条输出连线的责任</div>
+          <div class="val"><span class="q">?</span></div>
+        </div>
+        <div class="r locked" data-r="3">
+          <div class="lab">③ 回传 · 两个隐藏神经元分到的误差</div>
+          <div class="val"><span class="q">?</span></div>
+        </div>
+        <div class="r locked" data-r="4">
+          <div class="lab">④ 隐藏层 · 四条输入连线各自的责任</div>
+          <div class="val"><span class="q">?</span></div>
+        </div>
+      </div>
+      <div class="panel mag-panel">
+        <div class="cap">责任的力度对比：越往回传，数值越小</div>
+        <div class="mag-rows">
+          <div class="mag-row pending" data-mr="2">
+            <div class="mlab"><span>② 输出端权重 dW2（平均绝对值）</span><span class="mv">?</span></div>
+            <div class="mag-track"><div class="mag-fill"></div></div>
+          </div>
+          <div class="mag-row pending" data-mr="3">
+            <div class="mlab"><span>③ 隐藏层误差 dA1（平均绝对值）</span><span class="mv">?</span></div>
+            <div class="mag-track"><div class="mag-fill"></div></div>
+          </div>
+          <div class="mag-row pending" data-mr="4">
+            <div class="mlab"><span>④ 隐藏层权重 dW1（平均绝对值）</span><span class="mv">?</span></div>
+            <div class="mag-track"><div class="mag-fill"></div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="foot">
+    <p class="note">每个权重分到的"责任"数值，就是它自己那一小步该往哪边挪、挪多少——本质仍是同一个下坡动作。</p>
+    <p class="small">这一次每个权重只挪了一点点——重复这个动作几百上千次，网络会学成什么样子？</p>
+  </div>
+
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script>
+(function(){
+  'use strict';
+
+  // ---------- 用 Lec.P 当场算出全部数值（固定网络参数，不预录结果） ----------
+  var layers = [
+    { W:[[0.4,0.1],[0.3,0.4]], b:[0,0], activation:'tanh' },
+    { W:[[0.6,-0.4]], b:[0.049844665770025845], activation:'sigmoid' }
+  ];
+  var x = [1, 0.5];
+  var yTrue = 1;
+
+  var fwd = Lec.P.forwardNetwork(layers, x);
+  var a2 = fwd.output[0];
+  var dLoss = Lec.P.mseGradient(fwd.output, [yTrue]); // dA2
+  var back = Lec.P.backwardNetwork(fwd.caches, dLoss);
+
+  var a1 = fwd.caches[1].x; // 隐藏层输出，即第二层输入
+  var dZ2 = back.grads[1].db[0];
+  var dW2 = back.grads[1].dW[0];      // [h1->out, h2->out]
+  var dA1 = back.dInput ? null : null;
+  // dA1（回传到隐藏层的误差，隐藏层反向前的 dA）需要单独取 layerBackward 的 dX
+  var back0 = Lec.P.layerBackward(dLoss, fwd.caches[1].z, 'sigmoid', fwd.caches[1].x, fwd.caches[1].W);
+  var dA1vals = back0.dX;              // [dA1_h1, dA1_h2]
+  var dW1 = back.grads[0].dW;          // [[x1->h1,x2->h1],[x1->h2,x2->h2]]
+
+  var magDW2 = (Math.abs(dW2[0]) + Math.abs(dW2[1])) / 2;
+  var magDA1 = (Math.abs(dA1vals[0]) + Math.abs(dA1vals[1])) / 2;
+  var magDW1 = (Math.abs(dW1[0][0]) + Math.abs(dW1[0][1]) + Math.abs(dW1[1][0]) + Math.abs(dW1[1][1])) / 4;
+  var magMax = Math.max(magDW2, magDA1, magDW1);
+
+  function fmt(v){ return Deck.fmt(v, 4); }
+  function abs4(v){ return v.toFixed(4); }
+
+  // ---------- 状态 ----------
+  var state = { step: 1 };
+  var TOTAL = 4;
+
+  var stepExplainText = {
+    1: '网络把输入 x=[1, 0.5] 沿着连线往前算一遍：先算两个隐藏神经元，再算出最终这一个数——' + abs4(a2) + '。这就是网络当前的猜测，目标是 1。',
+    2: '拿猜测 ' + abs4(a2) + ' 跟目标 1 比一比，算出输出这一步该往哪个方向、多大力度调——这个力度顺着两条连线，分给两个隐藏神经元对应的权重，变成它们各自该负的责任。',
+    3: '责任接着往回传一层：按两条连线原来的粗细（权重大小），把误差拆成两份，分别分给两个隐藏神经元。',
+    4: '责任继续往回传，落到最前面四条连线（输入到隐藏层的权重）上。可以看到这一层算出的责任数值比上一层更小——责任像水流一样，每往回传一层就被摊薄一次。'
+  };
+  var stepStatusText = {
+    1: '步骤 1 / 4：正向算出网络的猜测',
+    2: '步骤 2 / 4：算出输出端该调整的力度',
+    3: '步骤 3 / 4：误差回传到隐藏层',
+    4: '步骤 4 / 4：算出每个输入权重的责任'
+  };
+
+  var $ = function(sel, root){ return (root||document).querySelector(sel); };
+  var $$ = function(sel, root){ return Array.prototype.slice.call((root||document).querySelectorAll(sel)); };
+
+  var svg = $('#netsvg');
+  var nodeEls = {}; $$('[data-n]', svg).forEach(function(el){ nodeEls[el.getAttribute('data-n')] = el; });
+  var nlabelEls = {}; $$('[data-nl]', svg).forEach(function(el){ nlabelEls[el.getAttribute('data-nl')] = el; });
+  var nvalEls = {}; $$('[data-nv]', svg).forEach(function(el){ nvalEls[el.getAttribute('data-nv')] = el; });
+  var lnBEls = {}; $$('#linesB line', svg).forEach(function(el){ lnBEls[el.getAttribute('data-l')] = el; });
+  var gEls = {}; $$('[data-g]', svg).forEach(function(el){
+    var k = el.getAttribute('data-g');
+    gEls[k] = gEls[k] || {};
+    if (el.tagName === 'rect') gEls[k].bg = el; else gEls[k].label = el;
+  });
+
+  function setNodeVals(){
+    nvalEls.x1.textContent = x[0].toFixed(2);
+    nvalEls.x2.textContent = x[1].toFixed(2);
+    nvalEls.h1.textContent = a1[0].toFixed(4);
+    nvalEls.h2.textContent = a1[1].toFixed(4);
+    nvalEls.out.textContent = a2.toFixed(4);
+  }
+
+  function setG(key, text){
+    var g = gEls[key];
+    if (!g) return;
+    g.label.textContent = text;
+  }
+
+  function showG(key, show){
+    var g = gEls[key];
+    if (!g) return;
+    g.bg.classList.toggle('show', show);
+    g.label.classList.toggle('show', show);
+  }
+
+  var currentByStep = {
+    1: ['out'],
+    2: ['out'],
+    3: ['h1', 'h2'],
+    4: ['x1', 'x2']
+  };
+  var backLinesByStep = { 1: [], 2: ['h1o', 'h2o'], 3: ['h1o', 'h2o'], 4: ['h1o', 'h2o', 'x1h1', 'x1h2', 'x2h1', 'x2h2'] };
+
+  function render(){
+    var s = state.step;
+
+    // 节点高亮：当前层 accent，其余 muted
+    ['x1', 'x2', 'h1', 'h2', 'out'].forEach(function(n){
+      var isCur = currentByStep[s].indexOf(n) !== -1;
+      nodeEls[n].classList.toggle('cur', isCur);
+      nodeEls[n].classList.toggle('norm', !isCur);
+      nlabelEls[n].classList.toggle('cur', isCur);
+      nvalEls[n].classList.toggle('cur', isCur);
+    });
+
+    // 反向连线
+    Object.keys(lnBEls).forEach(function(k){
+      lnBEls[k].classList.toggle('active', backLinesByStep[s].indexOf(k) !== -1);
+    });
+
+    // 责任/误差标注
+    showG('dz2', s >= 2);
+    showG('dw2-h1o', s >= 2);
+    showG('dw2-h2o', s >= 2);
+    showG('da1-h1', s >= 3);
+    showG('da1-h2', s >= 3);
+    showG('dw1-x1h1', s >= 4);
+    showG('dw1-x2h1', s >= 4);
+    showG('dw1-x1h2', s >= 4);
+    showG('dw1-x2h2', s >= 4);
+
+    // 说明文字与状态
+    $('#stepExplain').textContent = stepExplainText[s];
+    $('#stepStatus').textContent = stepStatusText[s];
+
+    // 步骤轴
+    $$('.k-process .step', document).forEach(function(el){
+      el.classList.toggle('current', Number(el.getAttribute('data-s')) === s);
+    });
+
+    // 侧边台账
+    $$('.rows .r', document).forEach(function(el){
+      var r = Number(el.getAttribute('data-r'));
+      el.classList.toggle('locked', r > s);
+      el.classList.toggle('active', r === s);
+      el.classList.toggle('done', r < s);
+      var valEl = el.querySelector('.val');
+      if (r > s) {
+        valEl.innerHTML = '<span class="q">?</span>';
+      } else if (r === 1) {
+        valEl.innerHTML = '<span class="num">' + a2.toFixed(4) + '</span>';
+      } else if (r === 2) {
+        valEl.innerHTML = '<span class="num">' + fmt(dZ2) + '</span>　/　<span class="num">' + fmt(dW2[0]) + ', ' + fmt(dW2[1]) + '</span>';
+      } else if (r === 3) {
+        valEl.innerHTML = '<span class="num">' + fmt(dA1vals[0]) + ', ' + fmt(dA1vals[1]) + '</span>';
+      } else if (r === 4) {
+        valEl.innerHTML = '<span class="num">' + fmt(dW1[0][0]) + ', ' + fmt(dW1[0][1]) + ', ' + fmt(dW1[1][0]) + ', ' + fmt(dW1[1][1]) + '</span>';
+      }
+    });
+
+    // 力度对比条
+    $$('.mag-row', document).forEach(function(el){
+      var r = Number(el.getAttribute('data-mr'));
+      var reached = s >= r;
+      el.classList.toggle('pending', !reached);
+      el.classList.toggle('cur', reached && r === s);
+      var mv = el.querySelector('.mv');
+      var fill = el.querySelector('.mag-fill');
+      var mag = r === 2 ? magDW2 : (r === 3 ? magDA1 : magDW1);
+      if (reached) {
+        mv.textContent = mag.toFixed(4);
+        fill.style.width = Math.max(4, (mag / magMax) * 100) + '%';
+      } else {
+        mv.textContent = '?';
+        fill.style.width = '0%';
+      }
+    });
+
+    // 按钮状态
+    $('#btnNext').disabled = (s >= TOTAL);
+    $('#btnReset').disabled = (s <= 1);
+  }
+
+  function fillGraphLabels(){
+    setG('dz2', fmt(dZ2));
+    setG('dw2-h1o', fmt(dW2[0]));
+    setG('dw2-h2o', fmt(dW2[1]));
+    setG('da1-h1', fmt(dA1vals[0]));
+    setG('da1-h2', fmt(dA1vals[1]));
+    setG('dw1-x1h1', fmt(dW1[0][0]));
+    setG('dw1-x2h1', fmt(dW1[0][1]));
+    setG('dw1-x1h2', fmt(dW1[1][0]));
+    setG('dw1-x2h2', fmt(dW1[1][1]));
+  }
+
+  function next(){
+    if (state.step < TOTAL) { state.step += 1; render(); }
+  }
+  function reset(){
+    state.step = 1;
+    render();
+    $('#btnNext').focus();
+  }
+
+  $('#btnNext').addEventListener('click', next);
+  $('#btnReset').addEventListener('click', reset);
+
+  document.addEventListener('keydown', function(e){
+    var tag = (document.activeElement && document.activeElement.tagName) || '';
+    if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+    if (e.key === 'ArrowRight' || e.key === ' ') { e.preventDefault(); next(); }
+    else if (e.key === 'ArrowLeft') { e.preventDefault(); reset(); }
+  });
+
+  setNodeVals();
+  fillGraphLabels();
+  render();
+
+  Deck.init({ index: 12, total: 19 });
+})();
+</script>
+</body>
+</html>

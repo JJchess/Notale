@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  .kicker{color:var(--cyan);font:650 var(--fs-label)/1.35 var(--font-mono);letter-spacing:.12em;margin-bottom:4px}
+  orbit-shot-game{display:block;flex:1;min-height:0}
+  .orbit-layout{display:flex;height:100%;gap:22px;min-height:0}
+  .scene-shell{flex:2.15;display:flex;flex-direction:column;min-height:0}
+  .scene-shell .cvbox{flex:1;border:1px solid var(--line)}
+  .scene-shell canvas{display:block}
+  .hud{position:absolute;inset:16px 18px auto;display:flex;justify-content:space-between;align-items:flex-start;pointer-events:none}
+  .vector-labels{position:absolute;left:18px;bottom:16px;display:flex;gap:22px;color:var(--muted);font-size:var(--fs-label);line-height:1.4;pointer-events:none}
+  .swatch{display:inline-block;width:24px;height:3px;margin:0 7px 4px 0;background:var(--cyan)}
+  .swatch.gravity{background:var(--ochre)}
+  .side{flex:1;display:flex;flex-direction:column;gap:14px;min-height:0}
+  .side .panel{padding:16px 18px}
+  .readout{display:flex;align-items:baseline;gap:3px;margin:5px 0 10px}
+  .ctl{grid-template-columns:110px minmax(180px,1fr) 95px;gap:12px}
+  .support h3{margin:0 0 4px;color:var(--text);font-size:var(--fs-sec)}
+  .support p{margin:0;color:var(--muted);font-size:var(--fs-sec);line-height:1.42}
+  .supports{transition:opacity 500ms ease-out}
+  .statusline{display:flex;align-items:center;justify-content:space-between;gap:12px}
+  .question{margin:0;color:var(--muted);font-size:var(--fs-sec);line-height:1.4}
+  @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+</head>
+<body data-page="32" data-total="50">
+<div id="stage">
+  <header style="height:78px">
+    <div class="kicker">ORBIT / FREE FALL</div>
+    <h1>失重，是因为重力消失了吗？</h1>
+  </header>
+  <main class="k-generalization min0" style="grid-template-rows:auto 22px minmax(0,1fr)">
+    <div class="claim">轨道失重不是没有重力，而是人与航天器一起持续绕地球自由落体。</div>
+    <div class="trunk" aria-hidden="true"></div>
+    <div class="supports" style="--support-n:1">
+      <section class="support min0" style="padding:14px 0 0">
+        <orbit-shot-game></orbit-shot-game>
+      </section>
+    </div>
+  </main>
+  <footer style="height:48px;display:flex;align-items:flex-end;justify-content:space-between;gap:24px">
+    <p class="question">失重不是重力变成零，而是支撑力接近零；舱内物体共享同一次自由落体。</p>
+    <p class="question">下一步：身体内部哪些东西会最先改变分布？</p>
+  </footer>
+  <script src="assets/lib/three.min.js"></script>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded',function(){
+  Deck.init({index:32,total:50});
+  class OrbitShotGame extends HTMLElement{
+    constructor(){super();this.stop=null;this.state=this.fresh();}
+    fresh(){return {speed:5000,running:false,elapsed:0,angle:0,turns:0,status:'等待发射',result:'ready',trace:[]};}
+    connectedCallback(){
+      this.innerHTML=`<div class="orbit-layout">
+        <div class="scene-shell min0">
+          <div class="cvbox no-pan" aria-label="地球、横向炮弹、轨道与指向地心的重力箭头">
+            <canvas class="cv-fill"></canvas>
+            <div class="hud"><span class="tag active" id="stateTag">等待发射</span><span class="tag neutral" id="clock">任务钟 0.0 min</span></div>
+            <div class="note" style="position:absolute;right:18px;top:62px;width:220px">人与航天器同步转弯，彼此之间几乎没有支撑力。</div>
+            <div class="small" id="altitudeLabel" style="position:absolute;left:18px;top:62px">发射点高度 —</div>
+            <div class="note" style="position:absolute;left:18px;top:100px;width:250px">炮弹每一刻都向地心下落；速度足够大时，弯曲的地表也以同样节奏离开它。</div>
+            <div class="small" style="position:absolute;right:18px;bottom:54px;color:var(--cyan)">切向初速度 →</div>
+            <div class="vector-labels"><span><i class="swatch"></i>预测轨迹</span><span><i class="swatch gravity"></i>重力指向地心</span></div>
+          </div>
+          <div class="legend" style="height:34px;gap:26px"><span class="li">赭色炮弹：人和航天器</span><span class="li">青色弧线：地表不断弯离</span></div>
+        </div>
+        <aside class="side min0">
+          <div class="panel">
+            <div class="ctl"><label for="speed32">横向速度</label><input id="speed32" type="range" min="0" step="0.05" aria-describedby="speedHint"><output id="speedOut">5.00 km/s</output></div>
+            <div class="hint" id="speedHint" style="margin-top:8px">调速度后发射，找出不碰地完成一圈的区间。</div>
+            <div class="btns" style="gap:10px;margin-top:12px"><button class="btn lg" id="launch">发射</button><button class="btn" id="reset">复位</button></div>
+          </div>
+          <div class="panel" style="flex:1;display:flex;flex-direction:column;justify-content:space-between">
+            <div><span class="small">当前位置的重力</span><div class="readout"><strong class="big sm" id="gravity">—</strong><span class="unit">m/s²</span></div></div>
+            <div class="k-generalization" style="display:block">
+              <div class="supports" style="--support-n:3">
+                <div class="support"><h3>重力仍在</h3><p id="gravSupport">—</p></div>
+                <div class="support"><h3>横向够快</h3><p id="speedSupport">—</p></div>
+                <div class="support"><h3>一直在落</h3><p id="periodSupport">—</p></div>
+              </div>
+            </div>
+            <div class="statusline"><span class="tag active" id="resultTag">寻找闭合轨道</span><span class="small" id="turns">完成 0.00 圈</span></div>
+          </div>
+        </aside>
+      </div>`;
+      this.cv=this.querySelector('canvas'); this.range=this.querySelector('#speed32');
+      this.setupScene(); this.bind(); this.reset();
+      this.ro=Deck.onResize(()=>this.resize());
+    }
+    freshSpeed(){return 5*Lec.K.units.metresPerKilometre;}
+    setupScene(){
+      const T=THREE, css=n=>Deck.token(n); this.scene=new T.Scene();
+      this.camera=new T.PerspectiveCamera(40,1,.1,100);this.camera.position.set(0,7.8,11.5);this.camera.lookAt(0,0,0);
+      this.renderer=new T.WebGLRenderer({canvas:this.cv,antialias:true,alpha:true});this.renderer.outputColorSpace=T.SRGBColorSpace;
+      this.scene.add(new T.HemisphereLight(0xd8edf0,0x101418,1.5));
+      const light=new T.DirectionalLight(0xffffff,2.2);light.position.set(4,6,5);this.scene.add(light);
+      this.earth=new T.Mesh(new T.SphereGeometry(3,64,32),new T.MeshStandardMaterial({color:0x183843,roughness:.78,metalness:.08}));this.scene.add(this.earth);
+      const wire=new T.LineSegments(new T.EdgesGeometry(new T.SphereGeometry(3.015,24,12)),new T.LineBasicMaterial({color:0x35434a,transparent:true,opacity:.38}));this.scene.add(wire);
+      this.shot=new T.Mesh(new T.SphereGeometry(.13,20,12),new T.MeshStandardMaterial({color:0xc56a32,emissive:0x4a1808}));this.scene.add(this.shot);
+      this.pathGeom=new T.BufferGeometry();this.path=new T.Line(this.pathGeom,new T.LineBasicMaterial({color:0x45d6e8,transparent:true,opacity:.95}));this.scene.add(this.path);
+      this.gravityArrow=new T.ArrowHelper(new T.Vector3(-1,0,0),new T.Vector3(3.35,0,0),.72,0xc56a32,.16,.1);this.scene.add(this.gravityArrow);
+      this.resize();
+    }
+    resize(){const p=this.cv.parentElement,w=p.clientWidth,h=p.clientHeight;if(!w||!h)return;this.renderer.setPixelRatio(Math.min(devicePixelRatio||1,2));this.renderer.setSize(w,h,false);this.camera.aspect=w/h;this.camera.updateProjectionMatrix();this.renderer.render(this.scene,this.camera);}
+    bind(){
+      this.range.addEventListener('input',()=>{this.state.speed=Number(this.range.value)*Lec.K.units.metresPerKilometre;this.stopRun();this.state.running=false;this.state.elapsed=0;this.state.turns=0;this.state.result='ready';this.predict();this.paint();this.emitProgress('speed');});
+      this.querySelector('#launch').addEventListener('click',()=>this.start());
+      this.querySelector('#reset').addEventListener('click',()=>this.reset());
+    }
+    constants(){const K=Lec.K,R=K.earth.meanRadiusMetres,h=K.spaceflight.issMeanAltitudeMetres,r=R+h,mu=K.physics.gravitationalConstant*K.earth.massKilograms;return {K,R,h,r,mu,circ:Lec.P.orbitalVelocity(K.earth.massKilograms,R,h),period:Lec.P.orbitalPeriodSeconds(K.earth.massKilograms,R,h),escape:Lec.P.escapeVelocity(K.earth.massKilograms,r)};}
+    classify(v){const c=this.constants();if(v>=c.escape)return 'escape';if(v>=c.circ)return 'orbit';return 'impact';}
+    predict(){
+      const c=this.constants(), pts=[], v=this.state.speed, kind=this.classify(v);let x=c.r,y=0,vx=0,vy=v,t=0,dt=c.period/520;
+      for(let i=0;i<760;i++){const rr=Math.hypot(x,y),a=-c.mu/(rr*rr*rr);vx+=a*x*dt;vy+=a*y*dt;x+=vx*dt;y+=vy*dt;t+=dt;pts.push(new THREE.Vector3(3*x/c.r,0,3*y/c.r));if(rr<=c.R||rr>c.r*3.2||t>c.period*1.45)break;}
+      this.predicted=pts;this.pathGeom.setFromPoints(pts);this.shot.position.set(3.18,0,0);this.updateArrow(this.shot.position);this.renderer.render(this.scene,this.camera);return kind;
+    }
+    start(){
+      this.stopRun();this.state.running=true;this.state.elapsed=0;this.state.turns=0;this.state.status='飞行中';this.state.result=this.classify(this.state.speed);this.querySelector('#launch').disabled=true;this.range.disabled=true;this.dispatchEvent(new CustomEvent('game-start',{bubbles:true,composed:true}));
+      const duration=Deck.reduced()?0:7;let progress=0;
+      if(!duration){progress=1;this.finish();return;}
+      this.stop=Deck.loop((t,dt)=>{progress=Math.min(1,progress+dt/duration);this.advance(progress);if(progress>=1)this.finish();});
+    }
+    advance(p){const pts=this.predicted||[];if(!pts.length)return;const idx=Math.min(pts.length-1,Math.floor(p*(pts.length-1))),pos=pts[idx];this.shot.position.copy(pos);this.updateArrow(pos);const c=this.constants();this.state.elapsed=p*(this.state.result==='orbit'?c.period:c.period*1.1);this.state.turns=this.state.result==='orbit'?p:Math.atan2(pos.z,pos.x)/(Math.PI*2);this.path.geometry.setDrawRange(0,idx+1);this.paint();this.renderer.render(this.scene,this.camera);}
+    finish(){this.stopRun();this.state.running=false;this.querySelector('#launch').disabled=false;this.range.disabled=false;const ok=this.state.result==='orbit';this.state.status=ok?'仍在下落':(this.state.result==='escape'?'飞离地球':'撞回地球');if(ok)this.state.turns=1;this.paint();this.path.geometry.setDrawRange(0,Infinity);this.renderer.render(this.scene,this.camera);this.dispatchEvent(new CustomEvent('game-complete',{bubbles:true,composed:true,detail:{score:ok?1:0,metrics:{speed:this.state.speed,result:this.state.result},trace:[this.state.result]}}));}
+    updateArrow(pos){const dir=pos.clone().multiplyScalar(-1).normalize();this.gravityArrow.position.copy(pos);this.gravityArrow.setDirection(dir);}
+    paint(){const c=this.constants(),g=Lec.P.surfaceGravity(c.K.earth.massKilograms,c.r),ratio=g/c.K.earth.surfaceGravityMetresPerSecondSquared;
+      this.querySelector('#speedOut').textContent=(this.state.speed/c.K.units.metresPerKilometre).toFixed(2)+' km/s';this.querySelector('#altitudeLabel').textContent='发射点高度约 '+(c.h/c.K.units.metresPerKilometre).toFixed(0)+' km';this.querySelector('#gravity').textContent=g.toFixed(2);
+      this.querySelector('#gravSupport').textContent='高度约 '+(c.h/c.K.units.metresPerKilometre).toFixed(0)+' km，仍有地表约 '+(ratio*100).toFixed(0)+'% 的重力。';
+      this.querySelector('#speedSupport').textContent='圆轨道约 '+(c.circ/c.K.units.metresPerKilometre).toFixed(2)+' km/s：一边下落，一边错过地面。';
+      this.querySelector('#periodSupport').textContent='一圈约 '+(c.period/c.K.units.secondsPerMinute).toFixed(1)+' 分钟，自由落体没有停。';
+      this.querySelector('#stateTag').textContent=this.state.status;this.querySelector('#clock').textContent='任务钟 '+(this.state.elapsed/c.K.units.secondsPerMinute).toFixed(1)+' min';this.querySelector('#turns').textContent='完成 '+Math.max(0,this.state.turns).toFixed(2)+' 圈';
+      const rt=this.querySelector('#resultTag');rt.textContent=this.state.result==='ready'?'寻找闭合轨道':this.state.status;rt.className='tag '+(this.state.result==='orbit'?'active':'neutral');
+    }
+    reset(){this.stopRun();this.state=this.fresh();this.state.speed=this.freshSpeed();const c=this.constants();this.range.max=(c.escape/c.K.units.metresPerKilometre*1.015).toFixed(2);this.range.value=(this.state.speed/c.K.units.metresPerKilometre).toFixed(2);this.range.disabled=false;this.querySelector('#launch').disabled=false;this.predict();this.paint();this.dispatchEvent(new CustomEvent('game-reset',{bubbles:true,composed:true}));}
+    stopRun(){if(this.stop){this.stop();this.stop=null;}}
+    emitProgress(action){this.dispatchEvent(new CustomEvent('game-progress',{bubbles:true,composed:true,detail:{state:this.getState(),action,metrics:{speed:this.state.speed}}}));}
+    getState(){return JSON.parse(JSON.stringify(this.state));}
+    disconnectedCallback(){this.stopRun();if(this.ro)this.ro();if(this.renderer)this.renderer.dispose();}
+  }
+  customElements.define('orbit-shot-game',OrbitShotGame);
+});
+</script>
+</body>
+</html>

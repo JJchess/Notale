@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  .kicker{color:var(--ochre);font:650 var(--fs-label)/1.35 var(--font-mono);letter-spacing:.12em}
+  .scene{border:1px solid var(--line);border-radius:12px}
+  .overlay{position:absolute;inset:0;pointer-events:none}
+  .com-dot{position:absolute;width:34px;height:34px;margin:-17px 0 0 -17px;border:3px solid var(--bg);border-radius:50%;background:var(--cyan);box-shadow:0 0 0 2px var(--cyan),0 0 28px rgba(69,214,232,.42);pointer-events:auto;cursor:grab;touch-action:none}
+  .com-dot:focus-visible{outline:4px solid var(--focus);outline-offset:5px}
+  .com-dot:active{cursor:grabbing}
+  .near-label{position:absolute;color:var(--muted);font-size:var(--fs-label);line-height:1.35;transform:translate(-50%,-50%);white-space:nowrap}
+  .readout{position:absolute;top:18px;right:20px;display:flex;align-items:center;gap:12px}
+  .process-strip{position:absolute;right:20px;bottom:16px;left:20px;height:104px}
+  .process-strip .step{padding:12px 14px}
+  .process-strip .step strong{display:block;font-size:var(--fs-sec);line-height:1.35}
+  .process-strip .step span{display:block;color:var(--muted);font-size:var(--fs-label);line-height:1.35}
+  .process-strip .arw{flex-basis:56px;width:56px}
+  .connector{position:absolute;bottom:116px;left:50%;color:var(--muted);font-size:var(--fs-sec);line-height:1.4;transform:translateX(-50%);white-space:nowrap}
+  .enter{animation:rise .55s ease-out both}.enter2{animation:rise .55s .12s ease-out both}.enter3{animation:rise .55s .24s ease-out both}
+  @keyframes rise{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:none}}
+  @media(prefers-reduced-motion:reduce){.enter,.enter2,.enter3{animation:none}.com-dot{transition:none}}
+</style>
+</head>
+<body data-page="10" data-total="50">
+<div id="stage">
+  <header class="enter" style="height:84px">
+    <div class="kicker">BODY · GAIT</div>
+    <h1 style="margin:5px 0 0">重心怎样走出两步</h1>
+  </header>
+  <main class="min0" style="display:flex;gap:20px">
+    <section class="cvbox scene no-pan min0 enter2" id="scene" style="flex:1" aria-label="正面略俯视的双足步态交互场">
+      <canvas id="cv" class="cv-fill" aria-hidden="true"></canvas>
+      <div class="overlay">
+        <div class="near-label" id="bodyLabel">骨盆处重心</div>
+        <div class="near-label" id="leftLabel">左支撑区</div>
+        <div class="near-label" id="rightLabel">右支撑区</div>
+        <div class="readout"><span id="supportTag" class="tag bio">双脚支撑</span><span id="progressTag" class="tag active" aria-live="polite">0 / 2 步</span></div>
+        <div id="com" class="com-dot" role="slider" tabindex="0" aria-label="横向移动重心" aria-valuemin="-1" aria-valuemax="1" aria-valuenow="0" aria-valuetext="中央"></div>
+        <div class="connector">重心进入下一只支撑脚上方了吗？</div>
+        <div class="k-process process-strip" id="process" aria-label="双足步态三阶段">
+          <div class="axis"></div>
+          <div class="step" aria-current="step"><strong>初始双支撑</strong><span>重心向左移</span></div>
+          <div class="arw" aria-hidden="true"></div>
+          <div class="step"><strong>左脚支撑</strong><span>右脚前移落地</span></div>
+          <div class="arw" aria-hidden="true"></div>
+          <div class="step"><strong>右脚支撑</strong><span>左脚前移落地</span></div>
+        </div>
+      </div>
+    </section>
+    <aside class="panel min0 enter3" style="flex:0 0 318px;display:flex;flex-direction:column;justify-content:space-between">
+      <div>
+        <h2>先承重，再迈步</h2>
+        <p>走路不是上身保持不动，而是让重心不断越过左右支撑脚。</p>
+        <p>每迈出一脚，都要先由另一脚独自接住身体。</p>
+        <div class="legend" style="gap:18px;margin-top:20px">
+          <span class="li"><i class="sw" style="color:var(--ochre)"></i>脚印与支撑</span>
+          <span class="li"><i class="sw line" style="color:var(--cyan)"></i>当前重心轨迹</span>
+        </div>
+      </div>
+      <div>
+        <div class="hint" style="margin-bottom:14px">拖动电青点；也可聚焦后按左右方向键。</div>
+        <button class="btn lg" id="reset" type="button">重新走</button>
+      </div>
+    </aside>
+  </main>
+  <footer class="enter3" style="height:96px;display:flex;align-items:center;justify-content:space-between;gap:28px">
+    <p class="lead" style="margin:0;max-width:1040px">双足步态是重心在支撑脚上方循环转移的过程，而不是简单“把背挺直”。</p>
+    <p class="note" style="margin:0;max-width:370px">下一步：身体其他部分也会同步变成“现代型”吗？</p>
+  </footer>
+  <script src="assets/lib/matter.min.js"></script>
+  <script>
+  document.addEventListener('DOMContentLoaded',function(){
+    Deck.init({index:10,total:50,keys:false});
+    const {Engine,Bodies,Body,Composite}=Matter;
+    const engine=Engine.create({gravity:{x:0,y:0}});
+    const pelvis=Bodies.circle(0,0,18,{frictionAir:.14,inertia:Infinity});
+    Composite.add(engine.world,pelvis);
+    const scene=document.getElementById('scene'),cv=document.getElementById('cv'),dot=document.getElementById('com');
+    const leftLabel=document.getElementById('leftLabel'),rightLabel=document.getElementById('rightLabel'),bodyLabel=document.getElementById('bodyLabel');
+    const supportTag=document.getElementById('supportTag'),progressTag=document.getElementById('progressTag'),steps=[...document.querySelectorAll('#process .step')];
+    let W=0,H=0,target=0,pos=0,velocity=0,phase=0,stable=0,drag=false,trail=[],footLift=0,flash=0,last=0;
+    const range=1, support=.55, windowSize=.18;
+    function geometry(){return {cx:W*.5,span:W*.22,y:H*.38,ground:H*.61,lx:W*.5-W*.22*.55,rx:W*.5+W*.22*.55};}
+    function syncBody(){const g=geometry();Body.setPosition(pelvis,{x:g.cx+pos*g.span,y:g.y});Body.setVelocity(pelvis,{x:velocity*g.span,y:0});}
+    function setTarget(v){target=Deck.clamp(v,-range,range);dot.setAttribute('aria-valuenow',target.toFixed(2));dot.setAttribute('aria-valuetext',target<-.12?'偏左':target>.12?'偏右':'中央');}
+    function reset(){target=pos=velocity=0;phase=stable=0;trail=[];footLift=flash=0;syncBody();updateDOM();draw();}
+    function updateDOM(){
+      const g=geometry(),x=g.cx+pos*g.span;
+      dot.style.transform=`translate(${x}px,${g.y}px)`;bodyLabel.style.left=x+'px';bodyLabel.style.top=(g.y-46)+'px';
+      leftLabel.style.left=g.lx+'px';leftLabel.style.top=(g.ground+58)+'px';rightLabel.style.left=g.rx+'px';rightLabel.style.top=(g.ground+58)+'px';
+      progressTag.textContent=phase+' / 2 步';supportTag.textContent=phase===0?'双脚支撑':phase===1?'左脚支撑':'右脚支撑';
+      steps.forEach((s,i)=>{s.classList.toggle('done',i<phase);if(i===phase)s.setAttribute('aria-current','step');else s.removeAttribute('aria-current');});
+    }
+    function advance(){if(phase>=2)return;phase++;footLift=1;flash=1;stable=0;updateDOM();}
+    function tick(t,dt){
+      if(!last)last=t;const d=Math.min(dt||16,32)/16;
+      const accel=(target-pos)*.055*d;velocity=(velocity+accel)*Math.pow(.84,d);pos+=velocity*d;pos=Deck.clamp(pos,-1.08,1.08);syncBody();
+      const goal=phase===0?-support:phase===1?support:99;
+      if(phase<2&&Math.abs(pos-goal)<=windowSize&&Math.abs(velocity)<.014)stable+=dt;else stable=0;
+      if(stable>260)advance();footLift=Math.max(0,footLift-.035*d);flash=Math.max(0,flash-.045*d);
+      trail.push({x:pos,y:Math.abs(velocity)});if(trail.length>70)trail.shift();updateDOM();draw();
+    }
+    function draw(){
+      const ctx=Deck.fit(cv),g=geometry();ctx.clearRect(0,0,W,H);const och=Deck.rgb('--ochre'),cyan=Deck.rgb('--cyan');
+      ctx.strokeStyle=Deck.rgba('--line',.72);ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(W*.12,g.ground+30);ctx.lineTo(W*.88,g.ground+30);ctx.stroke();
+      function foot(x,y,active,lift){ctx.save();ctx.translate(x,y-lift*56);ctx.strokeStyle=active&&flash>0?`rgba(${cyan.join(',')},${.45+flash*.55})`:`rgba(${och.join(',')},.9)`;ctx.lineWidth=active&&flash>0?6:4;ctx.beginPath();ctx.ellipse(0,0,28,58,0,0,Math.PI*2);ctx.stroke();ctx.beginPath();ctx.ellipse(0,-52,17,13,0,0,Math.PI*2);ctx.stroke();ctx.restore();}
+      const leftY=g.ground-(phase===2?footLift*60:0),rightY=g.ground-(phase===1?footLift*60:0);foot(g.lx,leftY,phase===0||phase===2,phase===2?footLift:0);foot(g.rx,rightY,phase===1,phase===1?footLift:0);
+      const px=g.cx+pos*g.span,lean=Deck.clamp(velocity*340,-38,38);ctx.strokeStyle=Deck.rgba('--muted',.8);ctx.lineWidth=5;ctx.beginPath();ctx.moveTo(px,g.y+15);ctx.lineTo(g.lx,leftY-28);ctx.moveTo(px,g.y+15);ctx.lineTo(g.rx,rightY-28);ctx.moveTo(px,g.y);ctx.lineTo(px+lean,g.y-128);ctx.stroke();
+      if(trail.length>1){ctx.strokeStyle=Deck.rgba('--cyan',.72);ctx.lineWidth=4;ctx.beginPath();trail.forEach((p,i)=>{const tx=g.cx+p.x*g.span,ty=g.y+22+p.y*90;i?ctx.lineTo(tx,ty):ctx.moveTo(tx,ty)});ctx.stroke();}
+      ctx.strokeStyle=Deck.rgba('--cyan',.28);ctx.lineWidth=2;[g.lx,g.rx].forEach(x=>{ctx.beginPath();ctx.arc(x,g.ground,windowSize*g.span,0,Math.PI*2);ctx.stroke()});
+    }
+    function resize(){W=scene.clientWidth;H=scene.clientHeight;syncBody();updateDOM();draw();}
+    Deck.onResize(resize);resize();
+    function pointer(e){const p=Deck.pt(scene,e),g=geometry();setTarget((p.x-g.cx)/g.span);}
+    dot.addEventListener('pointerdown',e=>{drag=true;dot.setPointerCapture(e.pointerId);pointer(e)});
+    dot.addEventListener('pointermove',e=>{if(drag)pointer(e)});dot.addEventListener('pointerup',()=>drag=false);dot.addEventListener('pointercancel',()=>drag=false);
+    dot.addEventListener('keydown',e=>{if(e.key==='ArrowLeft'||e.key==='ArrowRight'){e.preventDefault();setTarget(target+(e.key==='ArrowLeft'?-.08:.08));}});
+    document.getElementById('reset').addEventListener('click',reset);
+    const stop=Deck.loop(tick,{still:1000});window.addEventListener('pagehide',()=>{stop();Matter.Engine.clear(engine)},{once:true});
+  });
+  </script>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+</body>
+</html>

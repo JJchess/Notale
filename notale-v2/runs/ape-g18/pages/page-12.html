@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  energy-ledger-game{display:flex;flex:1;min-width:0;min-height:0}
+  energy-ledger-game .game{display:flex;flex:1;flex-direction:column;min-width:0;min-height:0}
+  energy-ledger-game select{min-height:44px;padding:8px 12px;border:1px solid var(--line-strong);border-radius:8px;background:var(--bg);color:var(--text);font:inherit;font-size:var(--fs-sec)}
+  energy-ledger-game label{display:flex;flex-direction:column;gap:5px;color:var(--muted);font-size:var(--fs-label);line-height:1.4}
+  energy-ledger-game .step strong{display:block;margin-bottom:6px;font-size:var(--fs-sec)}
+  energy-ledger-game .step span{display:block;color:var(--muted);font-size:var(--fs-label);line-height:1.4}
+  energy-ledger-game .step output{color:var(--text);font-family:var(--font-mono);font-size:var(--fs-body)}
+  energy-ledger-game .status{padding:10px 12px;border-left:4px solid var(--cyan);font-size:var(--fs-sec);line-height:1.45}
+  energy-ledger-game .status.low{border-color:var(--ochre)}
+  energy-ledger-game .hint, energy-ledger-game .btn{font-size:var(--fs-sec)}
+</style>
+</head>
+<body data-page="12" data-total="50">
+<div id="stage">
+  <header style="height:90px;display:flex;align-items:flex-start;justify-content:space-between">
+    <div><div class="tag bio">ENERGY LEDGER</div><h1 style="margin-top:8px">走多远，才值得？</h1></div>
+    <p class="lead" style="width:760px;margin-top:10px">同一个 <span class="num">45 kg</span> 觅食者的一天：把收入和每笔支出放进同一本账。</p>
+  </header>
+  <main style="display:flex;flex-direction:column;gap:12px">
+    <energy-ledger-game></energy-ledger-game>
+  </main>
+  <footer style="height:82px;display:flex;align-items:center;justify-content:space-between;gap:32px">
+    <p class="small" style="margin:0;max-width:930px">行走效率只有放进“走多远、带回多少食物、热环境多贵”的同一本账里，才具有生存意义。</p>
+    <p class="small" style="margin:0;text-align:right">省下的行走能量可能被炎热重新收走——下一页看身体怎样用水换散热。</p>
+  </footer>
+  <script src="assets/lib/echarts.min.js"></script>
+  <script>
+  document.addEventListener('DOMContentLoaded', function(){
+    class EnergyLedgerGame extends HTMLElement{
+      constructor(){super();this.state=this.initial();this.trace=[]}
+      initial(){return {route:1,heat:1,gait:0,started:false,complete:false}}
+      connectedCallback(){
+        this.innerHTML=`<section class="game">
+          <div class="k-process" style="height:122px;flex:none">
+            <div class="axis"></div>
+            <div class="step"><strong>食物带回</strong><output id="food"></output><span>示意收益</span></div><div class="arw"></div>
+            <div class="step"><strong>基础支出</strong><output id="base"></output><span>课堂固定项</span></div><div class="arw"></div>
+            <div class="step" aria-current="step"><strong>行走支出</strong><output id="walk"></output><span id="coef"></span></div><div class="arw"></div>
+            <div class="step"><strong>热环境成本</strong><output id="heat"></output><span>示意情境参数</span></div><div class="arw"></div>
+            <div class="step"><strong>日结余</strong><output id="balance"></output><span>目标 ≥ +300 kcal</span></div>
+          </div>
+          <div style="display:flex;flex:1;gap:18px;min-height:0">
+            <div class="cvbox min0" style="flex:1;border:1px solid var(--line)"><div id="chart" style="width:100%;height:100%" role="img" aria-label="每日能量收入和各项支出的瀑布图"></div></div>
+            <aside class="panel min0" style="width:420px;display:flex;flex-direction:column;gap:8px">
+              <h2 style="margin:0">配置一天</h2>
+              <p class="hint" style="margin:0">选路线、时段和步态，争取留下明天的能量。</p>
+              <label>觅食路线<select id="route"><option value="0">近处稀少 · 4 km</option><option value="1">中距稳定 · 8 km</option><option value="2">远处丰盛 · 12 km</option></select></label>
+              <label>活动时段<select id="heatSel"><option value="0">清凉</option><option value="1">温热</option><option value="2">炎热</option></select></label>
+              <label>步态参照<select id="gait"><option value="0">人类代表步态</option><option value="1">黑猩猩参照步态</option></select></label>
+              <div><span class="small">今日结余</span><br><output class="big sm" id="big" aria-live="polite"></output><span class="unit">kcal</span></div>
+              <div class="status" id="status" aria-live="polite"></div>
+              <button class="btn" id="reset" type="button">复位账本</button>
+              <p class="small" style="margin:0">路线收益与热成本为示意模型参数。步态耗氧代表值来源：Sockol、Raichlen 与 Pontzer，2007。</p>
+            </aside>
+          </div>
+        </section>`;
+        this.chart=echarts.init(this.querySelector('#chart'),null,{renderer:'svg'});
+        ['route','heatSel','gait'].forEach(id=>this.querySelector('#'+id).addEventListener('change',e=>this.act(id,Number(e.target.value))));
+        this.querySelector('#reset').addEventListener('click',()=>this.reset());
+        this.off=Deck.onResize(()=>this.chart.resize()); this.render();
+      }
+      disconnectedCallback(){if(this.off)this.off();if(this.chart)this.chart.dispose()}
+      start(){if(!this.state.started){this.state.started=true;this.dispatchEvent(new CustomEvent('game-start',{bubbles:true,composed:true}))}}
+      act(id,value){this.start();let key=id==='heatSel'?'heat':id;this.state[key]=value;this.trace.push({action:key,value:value});this.render();this.dispatchEvent(new CustomEvent('game-progress',{bubbles:true,composed:true,detail:{state:this.getState(),action:key,metrics:this.metrics()}}))}
+      metrics(){
+        const routes=[{km:4,food:1800},{km:8,food:2400},{km:12,food:3000}], heats=[80,220,400], coefs=[0.20,0.75], mass=45, oxygenKcal=4.8, base=1400;
+        const r=routes[this.state.route], walk=coefs[this.state.gait]*mass*Lec.P.kilometresToMetres(r.km)/Lec.K.units.metresPerKilometre*oxygenKcal;
+        const balance=r.food-base-walk-heats[this.state.heat];
+        return {route:r,heat:heats[this.state.heat],coefficient:coefs[this.state.gait],base:base,walk:walk,balance:balance,joules:Lec.P.kilocaloriesToJoules(balance),won:balance>=300}
+      }
+      render(){
+        const m=this.metrics(), f=n=>Math.round(n).toLocaleString('zh-CN');
+        this.querySelector('#route').value=this.state.route;this.querySelector('#heatSel').value=this.state.heat;this.querySelector('#gait').value=this.state.gait;
+        this.querySelector('#food').textContent='+'+f(m.route.food)+' kcal';this.querySelector('#base').textContent='−'+f(m.base)+' kcal';this.querySelector('#walk').textContent='−'+f(m.walk)+' kcal';this.querySelector('#heat').textContent='−'+f(m.heat)+' kcal';
+        this.querySelector('#coef').textContent=m.coefficient.toFixed(2)+' mL O₂·kg⁻¹·m⁻¹';
+        const signed=(m.balance>=0?'+':'−')+f(Math.abs(m.balance));this.querySelector('#balance').textContent=signed+' kcal';this.querySelector('#big').textContent=signed;
+        const status=this.querySelector('#status');status.textContent=m.won?'达成目标：这一天还留有明天的能量。':'这套账无法覆盖明天';status.classList.toggle('low',!m.won);
+        const vals=[m.route.food,-m.base,-m.walk,-m.heat,m.balance], names=['食物带回','基础支出','行走支出','热成本','日结余'];
+        this.chart.setOption({animation:!Deck.reduced(),textStyle:{fontSize:16,color:'#E8EEF0'},tooltip:{trigger:'axis',textStyle:{fontSize:16},valueFormatter:v=>f(v)+' kcal'},grid:{left:82,right:34,top:40,bottom:62},xAxis:{type:'category',data:names,axisLabel:{fontSize:14,color:'#9CAAAF'},axisLine:{lineStyle:{color:'#62747B'}}},yAxis:{type:'value',name:'kcal/天',nameTextStyle:{fontSize:14,color:'#9CAAAF'},axisLabel:{fontSize:12,color:'#9CAAAF'},splitLine:{lineStyle:{color:'#35434A'}}},series:[{type:'bar',data:vals.map((v,i)=>({value:v,itemStyle:{color:i===0?'#C56A32':i===4?'#45D6E8':'#62747B'}})),label:{show:true,position:'outside',fontSize:16,color:'#E8EEF0',formatter:p=>(p.value>=0?'+':'−')+f(Math.abs(p.value))}}]});
+        if(m.won&&!this.state.complete){this.state.complete=true;this.dispatchEvent(new CustomEvent('game-complete',{bubbles:true,composed:true,detail:{score:Math.round(m.balance),metrics:m,trace:this.trace.slice()}}))}
+      }
+      reset(){this.state=this.initial();this.trace=[];this.render();this.dispatchEvent(new CustomEvent('game-reset',{bubbles:true,composed:true}))}
+      getState(){return JSON.parse(JSON.stringify(this.state))}
+    }
+    customElements.define('energy-ledger-game',EnergyLedgerGame);Deck.init({index:12,total:50});
+  });
+  </script>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+</body>
+</html>

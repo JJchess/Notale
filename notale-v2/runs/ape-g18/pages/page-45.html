@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+</head>
+<body data-page="45" data-total="50">
+<div id="stage">
+  <style>
+    .eyebrow{color:var(--cyan);font:650 var(--fs-label)/1.35 var(--font-mono);letter-spacing:.14em;margin-bottom:6px}
+    .scene-label{position:absolute;z-index:2;padding:5px 9px;border:1px solid var(--line-strong);border-radius:8px;background:var(--panel);color:var(--text);font-size:var(--fs-label);line-height:1.4;pointer-events:none}
+    .reading-label{color:var(--muted);font-size:var(--fs-label);line-height:1.4;margin-bottom:2px}
+    .formula{font:650 25px/1.35 var(--font-mono);color:var(--cyan);white-space:nowrap}
+    .readrow{display:flex;align-items:baseline;justify-content:space-between;gap:14px;padding-top:12px;border-top:1px solid var(--line)}
+    .k-process .step strong{display:block;margin-bottom:5px;font-size:var(--fs-sec);line-height:1.35;color:var(--cyan)}
+    .k-process .step span{display:block;font-size:var(--fs-sec);line-height:1.4}
+    @media (prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;transition:none!important}}
+  </style>
+  <header style="height:76px;display:flex;align-items:flex-start;justify-content:space-between;gap:28px">
+    <div class="min0">
+      <div class="eyebrow">SYSTEM TRADE-OFF</div>
+      <h1>半径与转速，怎样一起造出重力？</h1>
+    </div>
+    <div class="panel q" style="width:430px;padding:10px 16px">
+      <div class="reading-label">换算基准 · 地球标准重力</div>
+      <div><span id="standard-g" class="num" style="font-size:26px;line-height:1.35;color:var(--cyan)"></span><span class="unit">m/s² = 1g</span></div>
+    </div>
+  </header>
+
+  <main style="display:flex;gap:24px" class="min0">
+    <section class="cvbox min0" style="flex:2.4;border:1px solid var(--line)" aria-label="旋转人工重力三维模型">
+      <canvas id="three-canvas" class="cv-fill" aria-hidden="true"></canvas>
+      <div class="scene-label" style="left:18px;top:18px">旋转环舱 · 固定斜俯视</div>
+      <div class="scene-label" style="left:18px;bottom:18px">人物贴在外缘地板</div>
+      <div class="scene-label" style="right:18px;top:18px">环半径随设定线性变化</div>
+      <div class="box" style="position:absolute;z-index:2;left:18px;top:76px;width:290px;min-height:118px;background:rgba(11,15,18,.82);pointer-events:none">
+        <strong style="display:block;font-size:var(--fs-sec);line-height:1.35;color:var(--cyan);margin-bottom:8px">同一外缘的两条杠杆</strong>
+        <span style="display:block;font-size:var(--fs-sec);line-height:1.45">增大半径：每圈走得更远。</span>
+        <span style="display:block;font-size:var(--fs-sec);line-height:1.45">提高转速：加速度按转速平方增长。</span>
+      </div>
+      <div class="box" style="position:absolute;z-index:2;right:18px;top:92px;width:260px;min-height:94px;background:rgba(11,15,18,.82);pointer-events:none">
+        <strong style="display:block;font-size:var(--fs-sec);line-height:1.35;color:var(--cyan);margin-bottom:7px">保持相近的 g</strong>
+        <span style="display:block;font-size:var(--fs-sec);line-height:1.45">半径缩小 → 所需转速上升</span>
+        <span style="display:block;font-size:var(--fs-sec);line-height:1.45">结构代价与旋转代价互相交换</span>
+      </div>
+      <div class="scene-label" style="right:18px;bottom:18px;color:var(--cyan)">轴心 → 外缘：向心加速度</div>
+    </section>
+
+    <aside class="panel min0" style="flex:.9;display:flex;flex-direction:column;gap:14px" aria-label="人工重力控制与读数">
+      <div class="hint">拖动两个滑块，尝试用更快旋转补偿更小半径。</div>
+      <div class="ctl" style="gap:12px">
+        <label for="radius">半径</label>
+        <input id="radius" type="range" aria-label="环舱半径">
+        <output id="radius-out" class="num" for="radius"></output>
+      </div>
+      <div class="ctl" style="gap:12px">
+        <label for="rpm">转速</label>
+        <input id="rpm" type="range" aria-label="环舱转速">
+        <output id="rpm-out" class="num" for="rpm"></output>
+      </div>
+      <div class="readrow">
+        <div><div class="reading-label">向心加速度</div><div class="formula">a = ω²r</div></div>
+        <div><span id="accel" class="big sm" aria-live="polite"></span><span class="unit">m/s²</span></div>
+      </div>
+      <div class="readrow">
+        <div class="reading-label">等效地球重力</div>
+        <div><span id="g-read" class="big"></span><span class="unit">g</span></div>
+      </div>
+      <div class="readrow">
+        <div><div class="reading-label">当前半径达到 1g</div><div class="small">所需转速</div></div>
+        <div><span id="need-rpm" class="big sm"></span><span class="unit">rpm</span></div>
+      </div>
+      <div class="btns" style="justify-content:space-between;gap:12px;margin-top:auto">
+        <span class="tag neutral" id="baseline"></span>
+        <button id="reset" class="btn" type="button">复位示例</button>
+      </div>
+    </aside>
+  </main>
+
+  <section class="k-process" style="height:100px;margin-top:10px" aria-label="人工重力因果过程">
+    <div class="axis"></div>
+    <div class="step" aria-current="step"><strong>1 · 设定结构与旋转</strong><span>半径 r 与转速 rpm 同时作用于一个环舱。</span></div>
+    <div class="arw" aria-hidden="true"></div>
+    <div class="step"><strong>2 · 形成向心加速度</strong><span>外缘改变运动方向，a = ω²r。</span></div>
+    <div class="arw" aria-hidden="true"></div>
+    <div class="step"><strong>3 · 读取体验与代价</strong><span>换算等效 g，并查看达到 1g 所需转速。</span></div>
+  </section>
+
+  <footer style="height:64px;display:flex;align-items:flex-start;justify-content:space-between;gap:30px;padding-top:12px;border-top:1px solid var(--line)">
+    <div style="flex:1" class="min0"><p class="lead" style="margin-bottom:3px">人工重力取决于半径与转速；缩小结构可以靠加快旋转补偿，却会提高不适风险。</p><p class="small">转得越快，头部运动引起的科里奥利不适通常越明显；个体耐受不同。旋转人工重力：向心加速度模型。</p></div>
+    <div class="note min0" style="flex:.62">如果半径、屏蔽、水和备件都要质量，火星生存舱该先保哪一项？</div>
+  </footer>
+  <script src="assets/lib/three.min.js"></script>
+  <script>
+  document.addEventListener('DOMContentLoaded', function(){
+    Deck.init({index:45,total:50});
+    var K=Lec.K, P=Lec.P, U=K.units, G=K.physics.standardGravityMetresPerSecondSquared;
+    var defaults={radius:56,rpm:4};
+    var limits={r0:5,r1:100,rs:1,rpm0:1,rpm1:12,rpms:0.1};
+    var radius=document.getElementById('radius'), rpm=document.getElementById('rpm');
+    radius.min=limits.r0; radius.max=limits.r1; radius.step=limits.rs;
+    rpm.min=limits.rpm0; rpm.max=limits.rpm1; rpm.step=limits.rpms;
+    radius.value=defaults.radius; rpm.value=defaults.rpm;
+    document.getElementById('standard-g').textContent=G.toFixed(5);
+    var canvas=document.getElementById('three-canvas');
+    var renderer=new THREE.WebGLRenderer({canvas:canvas,antialias:true,alpha:true});
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,2));
+    renderer.outputColorSpace=THREE.SRGBColorSpace;
+    var scene=new THREE.Scene();
+    var camera=new THREE.PerspectiveCamera(38,1,.1,100);
+    camera.position.set(7.8,6.3,9.5); camera.lookAt(0,0,0);
+    scene.add(new THREE.HemisphereLight(0xE8EEF0,0x0B0F12,1.4));
+    var key=new THREE.DirectionalLight(0x45D6E8,2.1); key.position.set(5,8,7); scene.add(key);
+    var fill=new THREE.DirectionalLight(0xC56A32,1.1); fill.position.set(-5,2,-4); scene.add(fill);
+    var rotor=new THREE.Group(); scene.add(rotor);
+    var ring, spokes, person, arrow, deck;
+    var matRing=new THREE.MeshStandardMaterial({color:0x62747B,metalness:.72,roughness:.28});
+    var matCyan=new THREE.MeshStandardMaterial({color:0x45D6E8,emissive:0x12383D,metalness:.35,roughness:.35});
+    var matBody=new THREE.MeshStandardMaterial({color:0xC56A32,roughness:.62});
+    function rebuild(){
+      [ring,spokes,person,arrow,deck].forEach(function(o){if(o){rotor.remove(o);o.traverse(function(x){if(x.geometry)x.geometry.dispose();});}});
+      var rad=2.15+((+radius.value-limits.r0)/(limits.r1-limits.r0))*2.2;
+      ring=new THREE.Mesh(new THREE.TorusGeometry(rad,.28,18,96),matRing); ring.rotation.x=Math.PI/2; rotor.add(ring);
+      deck=new THREE.Mesh(new THREE.CylinderGeometry(rad-.28,rad-.28,.07,72),new THREE.MeshStandardMaterial({color:0x45D6E8,transparent:true,opacity:.16,metalness:.35,roughness:.55,side:THREE.DoubleSide})); rotor.add(deck);
+      spokes=new THREE.Group();
+      for(var i=0;i<4;i++){var beam=new THREE.Mesh(new THREE.BoxGeometry(rad*2,.07,.08),matCyan);beam.rotation.y=i*Math.PI/4;spokes.add(beam);} rotor.add(spokes);
+      person=new THREE.Group();
+      var torso=new THREE.Mesh(new THREE.CapsuleGeometry(.13,.38,5,10),matBody); torso.rotation.z=Math.PI/2; person.add(torso);
+      var head=new THREE.Mesh(new THREE.SphereGeometry(.13,16,12),matBody);head.position.x=.34;person.add(head);
+      person.position.set(rad,0,0); person.rotation.z=Math.PI/2; rotor.add(person);
+      arrow=new THREE.ArrowHelper(new THREE.Vector3(1,0,0),new THREE.Vector3(0,0,0),rad-.42,0x45D6E8,.34,.2);rotor.add(arrow);
+    }
+    function resize(){var w=canvas.clientWidth,h=canvas.clientHeight;if(canvas.width!==Math.round(w*renderer.getPixelRatio())||canvas.height!==Math.round(h*renderer.getPixelRatio()))renderer.setSize(w,h,false);camera.aspect=w/h;camera.updateProjectionMatrix();renderer.render(scene,camera);}
+    function update(){
+      var r=+radius.value, n=+rpm.value, a=P.artificialGravity(r,n), g=a/G, need=P.artificialGravityRpm(r,G);
+      document.getElementById('radius-out').textContent=r.toFixed(0)+' m';
+      document.getElementById('rpm-out').textContent=n.toFixed(1)+' rpm';
+      document.getElementById('accel').textContent=a.toFixed(2);
+      document.getElementById('g-read').textContent=g.toFixed(2);
+      document.getElementById('need-rpm').textContent=need.toFixed(2);
+      document.getElementById('baseline').textContent=defaults.radius.toFixed(0)+' m + '+defaults.rpm.toFixed(0)+' rpm ≈ 1g';
+      rebuild(); resize();
+    }
+    radius.addEventListener('input',update);rpm.addEventListener('input',update);
+    document.getElementById('reset').addEventListener('click',function(){radius.value=defaults.radius;rpm.value=defaults.rpm;update();});
+    var stop=Deck.loop(function(t,dt){if(!Deck.reduced())rotor.rotation.y-=((+rpm.value)*U.radiansPerRevolution/U.secondsPerMinute)*(dt/1000);renderer.render(scene,camera);},{still:1});
+    var off=Deck.onResize(resize); update();
+    window.addEventListener('pagehide',function(){stop();off();renderer.dispose();});
+  });
+  </script>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+</body>
+</html>

@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  :root{--bg:#0B0F12;--text:#E8EEF0;--font-sans:Inter,"Noto Sans SC","Microsoft YaHei",Arial,sans-serif;}
+  .kicker{color:var(--cyan);font-size:var(--fs-label);line-height:1.35;letter-spacing:.12em;font-weight:700;margin-bottom:4px}
+  .sim{display:flex;gap:18px;height:100%}
+  .work{position:relative;flex:1;display:flex;flex-direction:column;border:1px solid var(--line);border-radius:12px;overflow:hidden;min-width:0;min-height:0}.scene-photo{position:absolute;right:0;bottom:0;width:72%;height:100%;object-fit:cover;object-position:right bottom;opacity:.28;filter:saturate(.65);pointer-events:none}
+  .meters{width:360px;display:flex;flex-direction:column;gap:8px}.meters .panel{padding:10px 14px}.meters .big{font-size:var(--fs-read-sm)}.meters .row{display:flex;justify-content:space-between;align-items:flex-end;gap:10px}.meters .btns{gap:10px}
+  .meter-label{font-size:var(--fs-sec);color:var(--muted);line-height:1.35}
+  .fatigue .big{color:var(--ochre)}
+  .photo{height:108px;width:100%;object-fit:contain;object-position:right bottom;opacity:.62;filter:saturate(.7);border-top:1px solid var(--line)}
+  .game-canvas{touch-action:none;cursor:grab;outline:none}
+  .game-canvas:focus-visible{box-shadow:inset 0 0 0 3px var(--focus)}
+  .game-canvas:active{cursor:grabbing}
+  .status{position:absolute;left:20px;bottom:18px;right:20px;font-size:var(--fs-body);line-height:1.4;color:var(--text);pointer-events:none}
+  .process-step{opacity:0;transform:translateY(10px);animation:enter .45s ease-out forwards}
+  .process-step:nth-of-type(3){animation-delay:80ms}.process-step:nth-of-type(5){animation-delay:160ms}
+  .sim{opacity:0;animation:fade .55s 240ms ease-out forwards}
+  @keyframes enter{to{opacity:1;transform:none}}@keyframes fade{to{opacity:1}}
+  @media(prefers-reduced-motion:reduce){.process-step,.sim{animation:none;opacity:1;transform:none}*{transition:none!important}}
+</style>
+</head>
+<body data-page="37" data-total="50">
+<div id="stage">
+  <header style="height:82px">
+    <div class="kicker">EVA 操作代价</div>
+    <h1>戴着加压手套，拧紧一个接头</h1>
+  </header>
+  <section class="k-process" aria-label="维修过程" style="height:92px;flex:none">
+    <div class="axis"></div>
+    <div class="step process-step" id="step0" aria-current="step"><span class="tag active">1 对准</span><span class="small" style="margin-left:12px">缺口进入 ±<span class="num" id="tol">4</span>°</span></div>
+    <div class="arw" aria-hidden="true"></div>
+    <div class="step process-step" id="step1"><span class="tag neutral">2 压住</span><span class="small" style="margin-left:12px">持续握持 <span class="num" id="holdNeed">1.5</span> s</span></div>
+    <div class="arw" aria-hidden="true"></div>
+    <div class="step process-step" id="step2"><span class="tag neutral">3 旋紧</span><span class="small" style="margin-left:12px">沿青色圆弧转到锁定</span></div>
+  </section>
+  <main class="min0" style="padding-top:6px;padding-bottom:4px">
+    <eva-repair class="sim min0"></eva-repair>
+  </main>
+  <footer style="height:82px;display:flex;align-items:center;justify-content:space-between;gap:28px;border-top:1px solid var(--line)">
+    <p class="lead" style="margin:0;max-width:1010px">加压手套保住生命，也把简单维修变成灵巧度、疲劳与剩余时间的竞赛。</p>
+    <p class="small" style="margin:0;text-align:right">下一步：氧、水、二氧化碳和热量怎样接成生命保障环？</p>
+  </footer>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script>
+class EvaRepair extends HTMLElement{
+  constructor(){super();this.attachShadow({mode:'open'}).innerHTML='<slot></slot>';this.stopLoop=null;this.boundMove=e=>this.move(e);this.boundUp=e=>this.up(e)}
+  fresh(){return{running:false,ended:false,won:false,step:0,time:Lec.K.units.secondsPerMinute,fatigue:0,misses:0,angle:18,hold:0,turn:180,drag:false,lastAngle:null,status:'按“开始维修”，拖动手套指针对准缺口。'}}
+  connectedCallback(){
+    this.s=this.fresh();
+    this.innerHTML=`<div class="work min0"><img class="scene-photo" src="assets/img/emu-spacesuit.png" alt="NASA 舱外活动宇航服实物" title="NASA EMU 舱外活动服，公开任务影像"><div class="cvbox no-pan"><canvas class="cv-fill game-canvas" tabindex="0" role="application" aria-label="接头维修操作区。方向键调整，空格键按压。"></canvas><div class="status" aria-live="polite"></div></div><p class="hint" style="height:30px;margin:8px 18px 0">拖动青色手套指针；键盘可用方向键与空格。</p></div>
+      <aside class="meters min0"><div class="panel"><div class="row"><span class="meter-label">任务剩余</span><span><b class="big time">60</b><span class="unit">s</span></span></div></div><div class="panel fatigue"><div class="row"><span class="meter-label">疲劳</span><span><b class="big fat">0</b><span class="unit">/ 100</span></span></div></div><div class="panel"><div class="row"><span class="meter-label">失手</span><span><b class="big miss">0</b><span class="unit">次</span></span></div></div><div class="panel q"><p class="small">EVA 典型时长　约 <span class="num">6.5 h</span>（<span class="num">390 min</span>）</p><p class="small">EMU 系统质量　约 <span class="num">145 kg</span></p><p class="note">微重力中仍有惯性；不是向下的重量。</p></div><div class="btns"><button class="btn lg start">开始维修</button><button class="btn reset">重新开始</button></div></aside>`;
+    this.cv=this.querySelector('canvas');this.status=this.querySelector('.status');this.startBtn=this.querySelector('.start');
+    this.startBtn.onclick=()=>this.start();this.querySelector('.reset').onclick=()=>this.reset();
+    this.cv.addEventListener('pointerdown',e=>this.down(e));window.addEventListener('pointermove',this.boundMove);window.addEventListener('pointerup',this.boundUp);this.cv.addEventListener('keydown',e=>this.key(e));
+    this.offResize=Deck.autofit(this.cv,()=>this.draw());this.render();
+  }
+  disconnectedCallback(){if(this.stopLoop)this.stopLoop();if(this.offResize)this.offResize();window.removeEventListener('pointermove',this.boundMove);window.removeEventListener('pointerup',this.boundUp)}
+  start(){if(this.s.running||this.s.ended)return;this.s.running=true;this.startBtn.disabled=true;this.s.status='第 1 步：拖动指针，将缺口对准青色基准线。';this.dispatchEvent(new CustomEvent('game-start',{bubbles:true,composed:true}));let last=0;this.stopLoop=Deck.loop((t,dt)=>{if(!this.s.running)return;if(!last)last=t;this.s.time=Math.max(0,this.s.time-dt/1000);if(this.s.drag&&this.s.step===1){this.s.hold+=dt/1000;if(this.s.hold>=1.5)this.advance()}if(this.s.time<=0)this.finish(false);this.render()},{still:1});this.render()}
+  reset(){if(this.stopLoop)this.stopLoop();this.s=this.fresh();this.startBtn.disabled=false;this.updateSteps();this.render();this.dispatchEvent(new CustomEvent('game-reset',{bubbles:true,composed:true}))}
+  point(e){return Deck.pt(this.cv,e)}
+  geom(){return{w:this.cv.offsetWidth,h:this.cv.offsetHeight,cx:this.cv.offsetWidth*.54,cy:this.cv.offsetHeight*.48,r:145}}
+  ang(p){let g=this.geom();return Math.atan2(p.y-g.cy,p.x-g.cx)*180/Math.PI}
+  down(e){if(!this.s.running||this.s.ended)return;this.cv.setPointerCapture?.(e.pointerId);this.s.drag=true;this.s.lastAngle=this.ang(this.point(e));if(this.s.step===1)this.s.status='保持按住，不要离开青色抓握区。';this.move(e)}
+  move(e){if(!this.s.drag||!this.s.running)return;let p=this.point(e),g=this.geom(),a=this.ang(p),d=Math.hypot(p.x-g.cx,p.y-g.cy);
+    if(this.s.step===0){this.s.angle=Math.abs(a+90);if(this.s.angle>180)this.s.angle=360-this.s.angle;if(this.s.angle<=4)this.advance()}
+    else if(this.s.step===1){if(d>g.r*.72){this.penalty(6,'松脱：重新保持压力。');this.s.hold=0;this.s.drag=false}}
+    else{let delta=a-this.s.lastAngle;if(delta>180)delta-=360;if(delta<-180)delta+=360;if(d<g.r*.72||d>g.r*1.28||delta<0){this.s.turn=Math.min(180,this.s.turn+12);this.penalty(5,'离轨或反向：接头回退 12°。')}else{this.s.turn=Math.max(0,this.s.turn-delta);if(this.s.turn<=0)this.finish(true)}this.s.lastAngle=a}
+    this.render();this.progress('drag')}
+  up(){if(!this.s.drag)return;this.s.drag=false;if(this.s.step===1&&this.s.hold<1.5){this.s.hold=0;this.penalty(6,'松脱：本步重新计时。')}this.render()}
+  key(e){if(!this.s.running||this.s.ended)return;if(['ArrowLeft','ArrowRight','ArrowUp','ArrowDown',' '].includes(e.key))e.preventDefault();if(this.s.step===0){if(e.key==='ArrowLeft'||e.key==='ArrowDown')this.s.angle=Math.max(0,this.s.angle-2);if(e.key==='ArrowRight'||e.key==='ArrowUp')this.s.angle=Math.min(180,this.s.angle+2);if(this.s.angle<=4)this.advance()}else if(this.s.step===1&&e.key===' '){this.s.hold=1.5;this.advance()}else if(this.s.step===2){if(e.key==='ArrowRight'||e.key==='ArrowUp')this.s.turn=Math.max(0,this.s.turn-6);if(e.key==='ArrowLeft'||e.key==='ArrowDown'){this.s.turn=Math.min(180,this.s.turn+12);this.penalty(5,'反向：接头回退 12°。')}if(this.s.turn<=0)this.finish(true)}this.render();this.progress('keyboard')}
+  penalty(n,msg){this.s.fatigue=Math.min(100,this.s.fatigue+n);this.s.misses++;this.s.status=msg}
+  advance(){this.s.step++;this.s.drag=false;if(this.s.step===1)this.s.status='第 2 步：在接头中心持续按住 1.5 秒。';if(this.s.step===2)this.s.status='第 3 步：沿青色圆弧顺时针旋紧。';this.updateSteps();this.render()}
+  finish(win){this.s.running=false;this.s.ended=true;this.s.won=win;if(this.stopLoop)this.stopLoop();this.s.status=win?'锁定完成。动作没变，手套约束把误差变成了时间与体力成本。':'时间到：接头停在未完成位置。';this.dispatchEvent(new CustomEvent('game-complete',{detail:{score:win?Math.round(this.s.time):0,metrics:{time:this.s.time,fatigue:this.s.fatigue,misses:this.s.misses},trace:[]},bubbles:true,composed:true}));this.updateSteps();this.render()}
+  progress(action){this.dispatchEvent(new CustomEvent('game-progress',{detail:{state:this.getState(),action,metrics:{fatigue:this.s.fatigue,misses:this.s.misses}},bubbles:true,composed:true}))}
+  updateSteps(){for(let i=0;i<3;i++){let el=document.getElementById('step'+i);el.classList.toggle('done',i<this.s.step);el.toggleAttribute('aria-current',i===this.s.step&&!this.s.ended);el.querySelector('.tag').className='tag '+(i===this.s.step&&!this.s.ended?'active':i<this.s.step?'neutral':'neutral')}}
+  render(){this.querySelector('.time').textContent=Math.ceil(this.s.time);this.querySelector('.fat').textContent=Math.round(this.s.fatigue);this.querySelector('.miss').textContent=this.s.misses;this.status.textContent=this.s.status;this.draw()}
+  draw(){if(!this.cv)return;Deck.fit(this.cv);let c=this.cv.getContext('2d'),g=this.geom(),cyan=Deck.token('--cyan'),ochre=Deck.token('--ochre'),line=Deck.token('--line-strong'),text=Deck.token('--text');c.clearRect(0,0,g.w,g.h);c.save();c.translate(g.cx,g.cy);
+    c.fillStyle=Deck.rgba('--cyan',.10);c.beginPath();c.arc(0,0,g.r*1.28,0,Math.PI*2);c.arc(0,0,g.r*.68,0,Math.PI*2,true);c.fill();c.strokeStyle=Deck.rgba('--cyan',.38);c.lineWidth=3;c.beginPath();c.arc(0,0,g.r*1.22,0,Math.PI*2);c.stroke();c.setLineDash([8,10]);c.strokeStyle=line;c.beginPath();c.arc(0,0,g.r,0,Math.PI*2);c.stroke();c.setLineDash([]);
+    c.strokeStyle=cyan;c.lineWidth=7;c.beginPath();c.arc(0,0,g.r,-Math.PI/2,Math.PI/2);c.stroke();c.fillStyle=Deck.rgba('--line-strong',.34);c.beginPath();c.arc(0,0,118,0,Math.PI*2);c.fill();c.strokeStyle=line;c.lineWidth=18;c.beginPath();c.arc(0,0,84,0,Math.PI*2);c.stroke();c.strokeStyle=text;c.lineWidth=5;c.beginPath();c.arc(0,0,64,0,Math.PI*2);c.stroke();
+    c.strokeStyle=cyan;c.lineWidth=4;c.beginPath();c.moveTo(0,-118);c.lineTo(0,-78);c.stroke();
+    let a=this.s.step===0?(-90+this.s.angle):this.s.step===2?(-90+(180-this.s.turn)): -90,rad=a*Math.PI/180,x=Math.cos(rad)*g.r,y=Math.sin(rad)*g.r;
+    c.translate(x,y);c.rotate(rad+Math.PI/2);c.fillStyle=Deck.rgba('--cyan',.18);c.strokeStyle=cyan;c.lineWidth=3;Deck.rr(c,-42,-35,84,70,24);c.fill();c.stroke();c.beginPath();c.moveTo(-26,10);c.lineTo(-45,50);c.lineTo(22,50);c.lineTo(30,22);c.stroke();c.restore();
+    if(this.s.fatigue){c.fillStyle=ochre;c.fillRect(16,g.h-10,(g.w-32)*this.s.fatigue/100,5)}
+  }
+  getState(){return JSON.parse(JSON.stringify(this.s))}
+}
+customElements.define('eva-repair',EvaRepair);
+window.addEventListener('DOMContentLoaded',()=>{Deck.init({index:37,total:50});document.getElementById('tol').textContent=4;document.getElementById('holdNeed').textContent=(Lec.K.units.secondsPerMinute/40).toFixed(1)});
+</script>
+</body>
+</html>

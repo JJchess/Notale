@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+</head>
+<body data-page="11" data-total="50">
+<div id="stage">
+  <style>
+    .kicker{height:22px;color:var(--ochre);font:700 var(--fs-label)/1.35 var(--font-mono);letter-spacing:.14em}
+    .pagehead{height:64px;display:flex;align-items:flex-start;justify-content:space-between}
+    .pagehead h1{margin:0}.pagehead .hint{margin-top:9px}
+    .body-box{height:100%;position:relative;border:2px solid var(--cyan)!important;box-shadow:inset 0 0 34px rgba(69,214,232,.06)}
+    .body-box>.bt{display:flex!important;align-items:center;justify-content:space-between}
+    .progress{color:var(--muted);font-size:var(--fs-sec);font-weight:500}
+    .pool{height:116px;display:flex;align-items:center;justify-content:center;gap:12px;padding:10px 12px;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+    .piece{position:relative;z-index:3;min-height:44px;padding:8px 13px;cursor:grab;background:var(--bg)!important;font-family:var(--font-sans);font-size:var(--fs-sec)!important;transition:border-color .18s,color .18s,transform .18s}
+    .piece:focus-visible{outline:3px solid var(--focus);outline-offset:3px}.piece.dragging{cursor:grabbing;color:var(--cyan);border-color:var(--cyan);transition:none}.piece.shake{animation:shake .3s ease}
+    .categories{display:flex;height:330px;gap:18px;padding-top:10px}.category{position:relative;flex:1;display:flex;flex-direction:column;padding:12px 14px!important}.category.over{border-color:var(--cyan)}
+    .category>.bt{font-size:var(--fs-body)!important}.slot{position:relative;z-index:2;display:flex;flex-wrap:wrap;align-content:flex-start;gap:8px;min-height:88px;padding-top:8px}.aside{display:flex;flex:1;min-height:0;gap:12px}.aside .cvbox{flex:0 0 132px}.aside img{width:100%;height:100%;object-fit:contain;filter:saturate(.72) contrast(1.05)}
+    .category-note{min-height:48px;margin:8px 0 0;color:var(--muted);font-size:var(--fs-sec);line-height:1.45}.category-note.live{color:var(--text);border-left-color:var(--cyan)}
+    #links{position:absolute;z-index:1;inset:0;width:100%;height:100%;pointer-events:none;overflow:visible}.link{fill:none;stroke:var(--cyan);stroke-width:2;opacity:.7}
+    .footer{height:108px;display:flex;align-items:center;gap:24px}.takeaway{flex:1;margin:0;font-size:var(--fs-lead);line-height:1.5}.next{color:var(--muted);font-size:var(--fs-sec)}
+    @keyframes shake{25%{transform:translateX(-8px)}75%{transform:translateX(8px)}}
+    @media(prefers-reduced-motion:reduce){.piece{transition:none}.piece.shake{animation:none}}
+  </style>
+  <div class="kicker">MOSAIC BODY</div>
+  <header class="pagehead">
+    <h1>一具身体，不同节奏</h1>
+    <div class="hint">拖入类别；键盘用左右键选类别，按 Enter 放入</div>
+  </header>
+  <main class="k-classification min0">
+    <section class="box body-box min0" aria-label="早期人族身体特征分类">
+      <strong class="bt">早期人族的镶嵌身体 <span id="progress" class="progress" aria-live="polite">待拼装</span></strong>
+      <div class="pool no-pan" id="pool" aria-label="待拼装特征"></div>
+      <div class="lv categories min0">
+        <section class="box category min0" data-cat="climb"><strong class="bt">保留攀爬能力</strong><div class="slot"></div><p class="note category-note">支持攀援，不等于只在树上生活</p></section>
+        <section class="box category min0" data-cat="walk"><strong class="bt">适于地面双足</strong><div class="slot"></div><p class="note category-note">多处结构共同完成承重与前进</p></section>
+        <section class="box category min0" data-cat="mosaic"><strong class="bt">尚非现代人体</strong><div class="aside min0"><div class="cvbox" title="Australopithecus afarensis-MGL 95215-P5030041-black.jpg · Rama · CC BY-SA 3.0 fr"><img src="assets/img/afarensis-skull.jpg" alt="南方古猿阿法种头骨化石"></div><div class="slot"></div></div><p class="note category-note">双足并未等待现代大脑出现</p></section>
+      </div>
+      <svg id="links" aria-hidden="true"></svg>
+    </section>
+  </main>
+  <footer class="footer">
+    <p class="takeaway">早期人族同时保留攀爬特征与地面双足特征；演化不是整套零件同步升级。<br><span class="next">这种拼接出来的身体是否真的省力？下一页把它放进一天的觅食账本。</span></p>
+    <div class="btns"><button class="btn" id="reset" type="button">重新拼装</button></div>
+  </footer>
+  <script src="assets/lib/d3.min.js"></script>
+  <script>
+  document.addEventListener('DOMContentLoaded',function(){
+    Deck.init({index:11,total:50});
+    var brainMin=Lec.K.human.restingMetabolicPowerWatts*4;
+    var brainMax=Lec.K.human.typicalGenerationYears*20;
+    var data=[
+      {id:'shoulder',label:'肩关节朝向较高',cat:'climb'},
+      {id:'finger',label:'弯曲的指骨',cat:'climb'},
+      {id:'pelvis',label:'短而宽的骨盆',cat:'walk'},
+      {id:'femur',label:'股骨向膝部内收',cat:'walk'},
+      {id:'foot',label:'足部承担直立推进',cat:'walk'},
+      {id:'brain',label:'脑容量约 '+brainMin+'–'+brainMax+' cm³',cat:'mosaic'}
+    ];
+    var pool=document.getElementById('pool'), placed=new Map(), selected=0;
+    function make(){
+      data.forEach(function(d,i){var b=document.createElement('button');b.type='button';b.className='tag bio piece';b.textContent=d.label;b.dataset.id=d.id;b.dataset.cat=d.cat;b.setAttribute('aria-label',d.label+'；左右键选择类别，回车放入');b.addEventListener('keydown',function(e){if(e.key==='ArrowRight'||e.key==='ArrowLeft'){e.preventDefault();selected=(selected+(e.key==='ArrowRight'?1:2))%3;highlight();}else if(e.key==='Enter'||e.key===' '){e.preventDefault();place(b,document.querySelectorAll('.category')[selected]);}});pointerDrag(b);pool.appendChild(b);});
+    }
+    function highlight(){document.querySelectorAll('.category').forEach(function(c,i){c.classList.toggle('over',i===selected);});}
+    function pointerDrag(el){var sx=0,sy=0,moved=false;el.addEventListener('pointerdown',function(e){if(placed.has(el.dataset.id))return;sx=e.clientX;sy=e.clientY;moved=false;el.setPointerCapture(e.pointerId);el.classList.add('dragging');});el.addEventListener('pointermove',function(e){if(!el.hasPointerCapture(e.pointerId))return;var dx=(e.clientX-sx)/Deck.s,dy=(e.clientY-sy)/Deck.s;moved=moved||Math.abs(dx)+Math.abs(dy)>5;el.style.transform='translate('+dx+'px,'+dy+'px)';document.querySelectorAll('.category').forEach(function(c){var r=c.getBoundingClientRect();c.classList.toggle('over',e.clientX>=r.left&&e.clientX<=r.right&&e.clientY>=r.top&&e.clientY<=r.bottom);});});el.addEventListener('pointerup',function(e){el.releasePointerCapture(e.pointerId);el.classList.remove('dragging');var target=document.elementFromPoint(e.clientX,e.clientY);var cat=target&&target.closest('.category');el.style.transform='';document.querySelectorAll('.category').forEach(function(c){c.classList.remove('over');});if(moved&&cat)place(el,cat);});}
+    function place(el,cat){if(cat.dataset.cat===el.dataset.cat){cat.querySelector('.slot').appendChild(el);el.classList.remove('bio');el.classList.add('active');placed.set(el.dataset.id,cat.dataset.cat);cat.querySelector('.category-note').classList.add('live');document.getElementById('progress').textContent=placed.size+' / '+data.length+' 已归位';draw();}else{el.classList.remove('shake');void el.offsetWidth;el.classList.add('shake');cat.querySelector('.category-note').classList.add('live');setTimeout(function(){cat.querySelector('.category-note').classList.remove('live');},900);}}
+    function draw(){var host=document.querySelector('.body-box'),hr=host.getBoundingClientRect(),s=Deck.s;var lines=[];placed.forEach(function(cat,id){var el=document.querySelector('[data-id="'+id+'"]'),title=document.querySelector('[data-cat="'+cat+'"]>.bt'),a=el.getBoundingClientRect(),b=title.getBoundingClientRect();lines.push({x1:(a.left+a.width/2-hr.left)/s,y1:(a.top-hr.top)/s,x2:(b.left+b.width/2-hr.left)/s,y2:(b.bottom-hr.top)/s});});var svg=d3.select('#links').attr('viewBox','0 0 '+host.clientWidth+' '+host.clientHeight);svg.selectAll('path').data(lines).join('path').attr('class','link').attr('d',function(d){return 'M'+d.x1+','+d.y1+' C'+d.x1+','+(d.y1-18)+' '+d.x2+','+(d.y2+18)+' '+d.x2+','+d.y2;});}
+    document.getElementById('reset').addEventListener('click',function(){placed.clear();data.forEach(function(d){var el=document.querySelector('[data-id="'+d.id+'"]');el.className='tag bio piece';el.style.transform='';pool.appendChild(el);});document.querySelectorAll('.category-note').forEach(function(n){n.classList.remove('live');});document.getElementById('progress').textContent='待拼装';d3.select('#links').selectAll('*').remove();selected=0;});
+    make();highlight();Deck.onResize(draw);
+  });
+  </script>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+</body>
+</html>

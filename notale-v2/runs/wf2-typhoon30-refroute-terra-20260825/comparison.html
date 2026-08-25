@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Workflow reference routing · 同输入对照</title>
+<style>
+  :root { color-scheme: dark; --bg:#0d1117; --panel:#151b23; --line:#303844;
+    --text:#edf1f5; --muted:#98a3af; --base:#d2a85a; --new:#68c7b6; --bad:#e17c72; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:14px/1.5 system-ui,"Noto Sans SC",sans-serif; }
+  header { position:sticky; top:0; z-index:10; padding:14px 20px 12px; background:rgba(13,17,23,.96);
+    border-bottom:1px solid var(--line); backdrop-filter:blur(12px); }
+  .top { display:flex; align-items:flex-start; justify-content:space-between; gap:24px; }
+  h1 { margin:0 0 3px; font-size:18px; letter-spacing:.01em; }
+  .sub { color:var(--muted); font-size:12px; }
+  .stats { display:flex; gap:8px; flex-wrap:wrap; justify-content:flex-end; }
+  .stat { padding:6px 9px; border:1px solid var(--line); border-radius:6px; background:var(--panel); white-space:nowrap; }
+  .stat b { font-variant-numeric:tabular-nums; }
+  nav { display:flex; align-items:center; gap:5px; margin-top:11px; overflow-x:auto; padding-bottom:2px; }
+  nav button, .rate button, .step { border:1px solid var(--line); border-radius:5px; color:var(--text);
+    background:#111720; min-width:31px; height:30px; cursor:pointer; }
+  nav button.active { border-color:var(--new); color:var(--new); background:#10231f; }
+  .step { min-width:58px; }
+  main { padding:14px 18px 24px; }
+  .meta { display:grid; grid-template-columns:1fr auto; gap:16px; align-items:center; margin-bottom:10px;
+    padding:9px 12px; border:1px solid var(--line); border-radius:7px; background:var(--panel); }
+  .route { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; }
+  .refs { color:var(--new); }
+  .rate { display:flex; align-items:center; gap:6px; white-space:nowrap; }
+  .rate button { padding:0 11px; }
+  .rate button.active { border-color:var(--new); background:#153129; }
+  .rate button[data-value="worse"].active { border-color:var(--bad); background:#321b1b; }
+  .rate-summary { color:var(--muted); font-size:12px; margin-left:4px; }
+  .pair { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+  article { min-width:0; border:1px solid var(--line); border-radius:8px; overflow:hidden; background:var(--panel); }
+  article h2 { display:flex; justify-content:space-between; align-items:center; gap:12px; margin:0; padding:9px 12px;
+    font-size:13px; border-bottom:1px solid var(--line); }
+  article.base h2 { color:var(--base); } article.new h2 { color:var(--new); }
+  article a { color:inherit; font-weight:400; }
+  iframe { display:block; width:100%; aspect-ratio:16/9; border:0; background:white; }
+  .note { margin-top:10px; color:var(--muted); font-size:12px; }
+  @media (max-width:1000px) { .top { display:block; } .stats { justify-content:flex-start; margin-top:8px; }
+    .pair { grid-template-columns:1fr; } .meta { grid-template-columns:1fr; } }
+</style>
+</head>
+<body>
+<header>
+  <div class="top">
+    <div>
+      <h1>同一 Planner 输入 · Workflow reference routing 对照</h1>
+      <div class="sub">AWS-GPT-5.6-Terra · medium · 21 页完整运行 · 无中途干预</div>
+    </div>
+    <div class="stats">
+      <span class="stat">基线：<b>21/21</b> · refs <b>4</b> · median <b>20</b> · calls <b>389</b></span>
+      <span class="stat">实验：<b>21/21</b> · refs <b>31</b> · median <b>17</b> · calls <b>391</b></span>
+    </div>
+  </div>
+  <nav id="pages"><button class="step" id="prev">← 上一页</button><button class="step" id="next">下一页 →</button></nav>
+</header>
+<main>
+  <section class="meta">
+    <div><span id="page-id" class="route"></span> · <span id="route" class="route"></span><br>
+      <span id="calls"></span> · <span id="refs" class="refs"></span></div>
+    <div class="rate">实验版相对基线：
+      <button data-value="better">更好</button><button data-value="tie">相当</button><button data-value="worse">更差</button>
+      <span id="rate-summary" class="rate-summary"></span>
+    </div>
+  </section>
+  <section class="pair">
+    <article class="base"><h2>基线 · 原 reference 路由 <a id="base-link" target="_blank">单独打开 ↗</a></h2><iframe id="base-frame"></iframe></article>
+    <article class="new"><h2>实验 · 前置确定性路由 <a id="new-link" target="_blank">单独打开 ↗</a></h2><iframe id="new-frame"></iframe></article>
+  </section>
+  <p class="note">逐页比较构图、知识关系、交互完整度和视觉聚焦。评价仅保存在当前浏览器。page-13 / page-15 的规格分别指定 ECharts / D3，Planner 却都路由到 simulate-2d：前者读 renderer-routing 后没有加载不适用的引擎 recipe；后者虽然读取 Konva recipe，最终仍按规格使用 D3。这是下一阶段应处理的 Planner 路由错配，不是 reference 未加载。</p>
+</main>
+<script>
+const BASE = '../wf1-typhoon30-terra-20260825';
+const TREATMENT = '.';
+const ids = Array.from({length:21}, (_,i)=>`page-${String(i+1).padStart(2,'0')}`);
+const key = 'notale-reference-routing-ratings-v1';
+const ratings = JSON.parse(localStorage.getItem(key) || '{}');
+let current = Math.max(0, Math.min(20, Number(new URLSearchParams(location.search).get('page') || 1)-1));
+let baseSteps = {}, newSteps = {};
+
+function summary() {
+  const counts = {better:0,tie:0,worse:0};
+  Object.values(ratings).forEach(v => { if (v in counts) counts[v]++; });
+  document.querySelector('#rate-summary').textContent = `更好 ${counts.better} / 相当 ${counts.tie} / 更差 ${counts.worse}`;
+}
+function show(index) {
+  current = (index + ids.length) % ids.length;
+  const pid = ids[current], base = `${BASE}/pages/${pid}.html`, fresh = `${TREATMENT}/pages/${pid}.html`;
+  document.querySelector('#base-frame').src = base;
+  document.querySelector('#new-frame').src = fresh;
+  document.querySelector('#base-link').href = base;
+  document.querySelector('#new-link').href = fresh;
+  document.querySelector('#page-id').textContent = pid;
+  const oldRow = baseSteps[pid] || {}, row = newSteps[pid] || {};
+  document.querySelector('#route').textContent = row.primary_workflow || '—';
+  document.querySelector('#calls').textContent = `调用：${oldRow.calls ?? '—'} → ${row.calls ?? '—'}`;
+  const refs = row.reference_reads || [];
+  document.querySelector('#refs').textContent = `references：${refs.length ? refs.map(x=>x.split('/').pop()).join(' + ') : '无'}`;
+  document.querySelectorAll('#pages button[data-page]').forEach(b => b.classList.toggle('active', Number(b.dataset.page)===current));
+  document.querySelectorAll('.rate button').forEach(b => b.classList.toggle('active', ratings[pid]===b.dataset.value));
+  history.replaceState(null,'',`?page=${current+1}`);
+}
+
+const nav = document.querySelector('#pages');
+ids.forEach((_,i) => {
+  const button = document.createElement('button'); button.dataset.page=i; button.textContent=String(i+1).padStart(2,'0');
+  button.addEventListener('click',()=>show(i)); nav.insertBefore(button, document.querySelector('#next'));
+});
+document.querySelector('#prev').addEventListener('click',()=>show(current-1));
+document.querySelector('#next').addEventListener('click',()=>show(current+1));
+document.querySelectorAll('.rate button').forEach(button => button.addEventListener('click',()=>{
+  ratings[ids[current]]=button.dataset.value; localStorage.setItem(key,JSON.stringify(ratings)); summary(); show(current);
+}));
+addEventListener('keydown',event=>{ if(event.key==='ArrowLeft') show(current-1); if(event.key==='ArrowRight') show(current+1); });
+
+Promise.all([fetch(`${BASE}/steps.json`).then(r=>r.json()), fetch('steps.json').then(r=>r.json())])
+  .then(([a,b])=>{ baseSteps=a; newSteps=b; summary(); show(current); })
+  .catch(()=>{ summary(); show(current); });
+</script>
+</body>
+</html>

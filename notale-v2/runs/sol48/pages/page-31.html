@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    .kicker{color:var(--orbit);font:650 var(--fs-label)/1.2 var(--font-mono);letter-spacing:.14em;margin-bottom:5px}
+    .workbench{display:grid;grid-template-columns:150px minmax(0,1fr) 250px;gap:16px;min-height:0}
+    .condition-axis{display:grid;grid-template-rows:82px repeat(5,1fr);min-height:0;border-right:1px solid var(--line)}
+    .condition-axis .dim{display:flex;align-items:center;justify-content:flex-end;padding:8px 16px;color:var(--muted);font-size:var(--fs-sec);font-weight:620;line-height:1.35;text-align:right;border-bottom:1px solid rgba(76,201,240,.28)}
+    .condition-axis .axis-title{align-items:flex-end;color:var(--orbit);font-size:var(--fs-label)}
+    .matrix{--compare-cols:4;grid-template-columns:repeat(4,minmax(0,1fr));grid-template-rows:82px repeat(5,1fr);min-height:0;position:relative}
+    .matrix>*{padding:8px 10px}
+    .matrix .hdr{position:relative;display:flex;align-items:center;justify-content:center;border:1px dashed rgba(76,201,240,.5);border-bottom:2px solid var(--orbit);font-size:var(--fs-body);cursor:pointer}
+    .matrix .hdr:focus-visible,.world-card:focus-visible{outline:3px solid var(--focus);outline-offset:3px}
+    .matrix .hdr.targeted{border-color:var(--sun);color:var(--sun)}
+    .matrix .hdr.filled{border-style:solid;color:var(--text)}
+    .matrix .cell{display:flex;align-items:center;justify-content:center;text-align:center;border-bottom:1px solid rgba(76,201,240,.28);font-size:var(--fs-sec);line-height:1.35;color:var(--text);opacity:0;transform:translateY(-8px);transition:opacity .25s ease-out,transform .25s ease-out}
+    .matrix .cell.shown{opacity:1;transform:none}
+    .matrix .cell.diff{color:var(--sun);box-shadow:inset 3px 0 0 var(--sun)}
+    #links{position:absolute;inset:82px 0 0;width:100%;height:calc(100% - 82px);pointer-events:none;overflow:visible}
+    .tray{display:flex;min-height:0;flex-direction:column;gap:8px}
+    .tray-title{display:flex;align-items:center;justify-content:space-between;color:var(--muted);font-size:var(--fs-label)}
+    .world-card{display:grid;grid-template-columns:72px 1fr;gap:9px;align-items:center;min-height:74px;padding:7px;border:1px solid rgba(76,201,240,.48);border-radius:10px;background:var(--surface);color:var(--text);font:650 var(--fs-sec)/1.3 var(--font-sans);cursor:grab;touch-action:none;transition:transform .2s ease-out,opacity .2s ease-out,border-color .2s}
+    .world-card.selected{border-color:var(--sun);color:var(--sun)}
+    .world-card.placed{opacity:.28;pointer-events:none}
+    .world-card.dragging{position:relative;z-index:8;transition:none;cursor:grabbing}
+    .thumb{height:58px;display:flex;gap:2px}
+    .thumb img{width:100%;height:100%;object-fit:cover;display:block}
+    .thumb.duo img{width:calc(50% - 1px)}
+    .status{min-height:24px;color:var(--muted);font-size:var(--fs-sec);line-height:1.4}
+    .closing{display:flex;align-items:center;justify-content:space-between;gap:24px;border-top:1px solid var(--line);padding-top:10px}
+    .closing .lead{margin:0;max-width:920px}
+    .guardrail{margin:0;max-width:470px;color:var(--muted);font-size:var(--fs-sec);line-height:1.4;border-left:2px solid var(--sun);padding-left:14px}
+    @media (prefers-reduced-motion:reduce){.matrix .cell,.world-card{transition:none}}
+  </style>
+</head>
+<body data-page="31" data-total="34">
+  <div id="stage">
+    <header style="height:78px">
+      <div class="kicker">COMPARE WORLDS</div>
+      <h1 style="margin:0">宜居条件，不是一条距离尺</h1>
+    </header>
+
+    <div class="hint" style="height:34px">拖动世界卡到对应列头；也可选中卡片，再选择列头。</div>
+
+    <main class="workbench min0" style="flex:1">
+      <section class="condition-axis min0" aria-label="比较条件">
+        <div class="dim axis-title">同一条件</div>
+        <div class="dim">接收日照<br>地球＝1</div>
+        <div class="dim">液态水证据</div>
+        <div class="dim">外层环境</div>
+        <div class="dim">额外能量线索</div>
+        <div class="dim">可下的判断</div>
+      </section>
+
+      <section id="matrix" class="k-comparison matrix min0" aria-label="四世界宜居条件比较矩阵">
+        <button class="hdr" data-world="venus" aria-label="金星列，尚未放置">放入世界</button>
+        <button class="hdr" data-world="earth" aria-label="地球列，尚未放置">放入世界</button>
+        <button class="hdr" data-world="mars" aria-label="火星列，尚未放置">放入世界</button>
+        <button class="hdr" data-world="moons" aria-label="冰卫星列，尚未放置">放入世界</button>
+        <svg id="links" aria-hidden="true"></svg>
+      </section>
+
+      <aside class="tray panel min0" aria-label="待放世界卡">
+        <div class="tray-title"><span>真实影像 · 世界卡</span><button id="reset" class="btn">重新组建</button></div>
+        <button class="world-card no-pan" data-world="earth" aria-pressed="false">
+          <span class="cvbox thumb"><img src="assets/img/earth-apollo17.jpg" alt="地球真实影像" title="Apollo 17 Harrison H. Schmitt and Tracy's Rock - AS17-140-21493+AS17-140-21497 2025.jpg · Eugene A. CernanPhotomontage by User:Grunpfnul · Public domain"></span><span>地球</span>
+        </button>
+        <button class="world-card no-pan" data-world="venus" aria-pressed="false">
+          <span class="cvbox thumb"><img src="assets/img/venus-magellan.jpg" alt="金星雷达拼接影像" title="Cylindrical Map of Venus.jpg · NASA / Jet Propulsion Laboratory · Public domain"></span><span>金星</span>
+        </button>
+        <button class="world-card no-pan" data-world="mars" aria-pressed="false">
+          <span class="cvbox thumb"><img src="assets/img/mars-global.jpg" alt="火星全球影像" title="MARS-Viking.jpg · NASA/JPL/USGS · Public domain"></span><span>火星</span>
+        </button>
+        <button class="world-card no-pan" data-world="moons" aria-pressed="false">
+          <span class="cvbox thumb duo"><img src="assets/img/europa-galileo.jpg" alt="木卫二影像" title="Europa Hemispherical Globes PIA03526.jpg · NASA/JPL/USGS · Public domain"><img src="assets/img/enceladus-plumes.jpg" alt="土卫二羽流影像" title="Enceladus - November 21 2009 (37371602166).jpg · Kevin Gill · CC BY 2.0"></span><span>冰卫星<br><small style="color:var(--muted);font-size:var(--fs-label)">木卫二＋土卫二</small></span>
+        </button>
+        <div id="status" class="status" aria-live="polite">已归位 0 / 4</div>
+      </aside>
+    </main>
+
+    <footer class="closing" style="height:88px">
+      <p class="lead">地球、金星、火星和冰卫星说明：水、能量、大气与环境历史必须一起比较。</p>
+      <p class="guardrail">“潜在宜居”只表示部分条件值得检验，不表示已经发现生命。</p>
+    </footer>
+  </div>
+  <script src="assets/base.js"></script>
+  <script src="assets/lec.js"></script>
+  <script src="assets/lib/d3.min.js"></script>
+  <script>
+    Deck.init({index:31,total:34});
+    const planets=Lec.K.planets;
+    const flux=k=>Lec.P.solarFluxRelativeToEarth(planets[k].semimajorAxisAU).toFixed(2);
+    const celsius=k=>Math.round(planets[k].meanSurfaceTemperatureK-273.15);
+    const worlds={
+      venus:{name:'金星',rows:[flux('venus'),'今日表面无稳定液态水',`浓厚 CO₂，约 ${celsius('venus')}°C`,'强温室效应','极端表面环境']},
+      earth:{name:'地球',rows:[flux('earth'),'全球表面海洋','大气与水循环长期共存','适度大气保温','已知生命世界']},
+      mars:{name:'火星',rows:[flux('mars'),'古河道；今日以冰为主',`稀薄大气，约 ${celsius('mars')}°C`,'内部热量有限','曾经更湿润']},
+      moons:{name:'冰卫星',rows:['远低于 1','地下海洋证据','冰壳覆盖','潮汐加热','潜在宜居环境']}
+    };
+    const order=['venus','earth','mars','moons'];
+    const matrix=document.getElementById('matrix');
+    order.forEach((key,col)=>worlds[key].rows.forEach((text,row)=>{
+      const cell=document.createElement('div'); cell.className='cell'+((row===0&&key==='venus')||(row===3&&key==='moons')?' diff':'');
+      cell.dataset.world=key; cell.style.gridColumn=String(col+1); cell.style.gridRow=String(row+2); cell.textContent=text; matrix.appendChild(cell);
+    }));
+    let selected=null,placed=new Set();
+    const cards=[...document.querySelectorAll('.world-card')], headers=[...document.querySelectorAll('.hdr')];
+    function select(card){cards.forEach(c=>{const on=c===card;c.classList.toggle('selected',on);c.setAttribute('aria-pressed',on)});selected=card;document.getElementById('status').textContent=`已选择${worlds[card.dataset.world].name}；请选择列头。`;}
+    function place(card,header){
+      if(!card||placed.has(card.dataset.world))return;
+      const key=card.dataset.world;
+      if(header.dataset.world!==key){header.classList.add('targeted');setTimeout(()=>header.classList.remove('targeted'),220);card.animate([{transform:'translateX(-6px)'},{transform:'translateX(6px)'},{transform:'none'}],{duration:220});document.getElementById('status').textContent='这张卡与列头不匹配，再比较一次。';return;}
+      placed.add(key); header.textContent=worlds[key].name; header.classList.add('filled'); header.setAttribute('aria-label',worlds[key].name+'列，已归位');
+      document.querySelectorAll(`.cell[data-world="${key}"]`).forEach((c,i)=>setTimeout(()=>c.classList.add('shown'),Deck.reduced()?0:i*45));
+      card.classList.add('placed');card.classList.remove('selected');selected=null;drawLinks();
+      const done=placed.size===4;document.getElementById('status').textContent=done?'四列完成：判断来自多条件交叉，不是距离排序。':`已归位 ${placed.size} / 4`;
+    }
+    cards.forEach(card=>{
+      card.addEventListener('click',()=>select(card));
+      card.addEventListener('pointerdown',e=>{if(placed.has(card.dataset.world))return;card.setPointerCapture(e.pointerId);const start={x:e.clientX,y:e.clientY};card.classList.add('dragging');
+        const move=ev=>card.style.transform=`translate(${(ev.clientX-start.x)/Deck.s}px,${(ev.clientY-start.y)/Deck.s}px)`;
+        const up=ev=>{card.removeEventListener('pointermove',move);card.removeEventListener('pointerup',up);card.classList.remove('dragging');card.style.transform='';const hit=document.elementFromPoint(ev.clientX,ev.clientY)?.closest('.hdr');if(hit)place(card,hit);};
+        card.addEventListener('pointermove',move);card.addEventListener('pointerup',up);
+      });
+    });
+    headers.forEach(h=>h.addEventListener('click',()=>place(selected,h)));
+    function drawLinks(){const svg=d3.select('#links');svg.selectAll('*').remove();if(placed.size<4)return;const w=document.getElementById('links').clientWidth,h=document.getElementById('links').clientHeight;const ys=d3.scalePoint().domain([0,1,2,3]).range([h*.18,h*.82]);const line=d3.line().x((d,i)=>w*(i+.5)/4).y(d=>ys(d));svg.attr('viewBox',`0 0 ${w} ${h}`).append('path').attr('d',line([0,1,2,3])).attr('fill','none').attr('stroke','var(--orbit)').attr('stroke-width',3).attr('stroke-dasharray',Deck.reduced()?null:'8 7');}
+    document.getElementById('reset').addEventListener('click',()=>{placed.clear();selected=null;cards.forEach(c=>{c.classList.remove('placed','selected');c.setAttribute('aria-pressed','false')});headers.forEach(h=>{h.textContent='放入世界';h.classList.remove('filled');h.setAttribute('aria-label',worlds[h.dataset.world].name+'列，尚未放置')});document.querySelectorAll('.cell').forEach(c=>c.classList.remove('shown'));d3.select('#links').selectAll('*').remove();document.getElementById('status').textContent='已归位 0 / 4';});
+    window.addEventListener('resize',drawLinks);
+    if(!Deck.reduced()){document.querySelectorAll('.condition-axis .dim').forEach((el,i)=>el.animate([{opacity:0,transform:'translateX(-18px)'},{opacity:1,transform:'none'}],{duration:420,delay:i*45,fill:'both',easing:'ease-out'}));cards.forEach((el,i)=>el.animate([{opacity:0,transform:'translateX(18px)'},{opacity:1,transform:'none'}],{duration:420,delay:300+i*55,fill:'both',easing:'ease-out'}));}
+  </script>
+</body>
+</html>

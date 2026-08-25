@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>偏置把门槛整体平移</title>
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+#stage{display:flex;flex-direction:column;gap:22px}
+header{display:flex;align-items:flex-end;justify-content:space-between;border-bottom:1px solid color-mix(in srgb,var(--text) 22%,transparent);padding-bottom:16px}
+h1{font:700 var(--fs-h1)/1.2 var(--font-sans);margin:0;color:var(--text)}
+.kicker{font:600 var(--fs-label)/1.3 var(--font-mono);letter-spacing:.08em;color:var(--attention);margin:0 0 7px}
+header .lead{max-width:650px;text-align:right;margin:0;color:color-mix(in srgb,var(--text) 76%,transparent)}
+main{flex:1;display:grid;grid-template-columns:470px 1fr;gap:34px;min-height:0;overflow:hidden}
+.control-side{display:flex;flex-direction:column;gap:10px}
+.fixed-row{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.fixed{padding:15px 18px;background:color-mix(in srgb,var(--model) 7%,transparent);border-left:4px solid var(--model)}
+.fixed span{display:block;font:var(--fs-label)/1.3 var(--font-sans);color:color-mix(in srgb,var(--text) 65%,transparent)}
+.fixed strong{font:700 28px/1.2 var(--font-mono);color:var(--model)}
+.panel.control{padding:22px 24px;border:2px solid var(--attention);box-shadow:none}
+.ctl-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:18px}
+.ctl-head label{font:700 var(--fs-body)/1.3 var(--font-sans)}
+.value{font:700 31px/1 var(--font-mono);color:var(--attention);font-variant-numeric:tabular-nums}
+input[type=range]{width:100%;accent-color:var(--attention)}
+.range-labels{display:flex;justify-content:space-between;font:var(--fs-tick)/1.2 var(--font-mono);margin-top:7px}
+.actions{display:flex;align-items:center;justify-content:space-between;margin-top:18px}
+.actions .hint{margin:0;max-width:260px}
+.btn{min-width:92px}
+.equation{padding:20px 24px;background:color-mix(in srgb,var(--model) 6%,transparent);border-radius:8px}
+.reference{padding:10px 20px;border-top:2px solid var(--text)}.reference h2{font-size:var(--fs-body);margin-bottom:6px}.ref-row{display:grid;grid-template-columns:1fr 1fr 1.35fr;gap:8px;padding:5px 0;border-top:1px solid color-mix(in srgb,var(--text) 18%,transparent);font:var(--fs-label)/1.25 var(--font-mono)}.ref-row span:last-child{font-family:var(--font-sans)}
+.eq-main{display:flex;align-items:baseline;justify-content:center;gap:12px;font:700 28px/1.25 var(--font-mono);white-space:nowrap}
+.eq-main .vary{color:var(--attention)}
+.eq-main .result{color:var(--model)}
+.eq-note{margin:10px 0 0;text-align:center;font:var(--fs-sec)/1.4 var(--font-sans);color:color-mix(in srgb,var(--text) 70%,transparent)}
+.viz{display:flex;flex-direction:column;min-height:0;padding:26px 30px 22px;border:2px solid color-mix(in srgb,var(--text) 38%,transparent);border-top:3px solid var(--text);border-radius:8px;background:rgba(255,255,255,.26)}
+.viz-head{display:flex;align-items:flex-start;justify-content:space-between;gap:24px}
+h2{font:700 var(--fs-h2)/1.25 var(--font-sans);margin:0 0 5px}
+.viz-head p{margin:0}
+.threshold-read{font:700 25px/1.2 var(--font-mono);color:var(--attention);white-space:nowrap}
+.scale-wrap{flex:1;display:flex;align-items:center;min-height:300px}
+.scale{position:relative;width:100%;height:245px;margin:0 58px}
+.axis{position:absolute;left:0;right:0;top:120px;height:4px;background:var(--text)}
+.zone{box-sizing:border-box;position:absolute;top:40px;height:160px;overflow:hidden;font-size:0;line-height:0;border-top:2px dashed currentColor;border-bottom:2px dashed currentColor}
+.zone.neg{left:0;color:var(--text);background:repeating-linear-gradient(135deg,transparent 0 18px,color-mix(in srgb,var(--text) 8%,transparent) 18px 20px)}
+.zone.pos{right:0;color:var(--model);background:repeating-linear-gradient(45deg,color-mix(in srgb,var(--model) 7%,transparent) 0 18px,color-mix(in srgb,var(--model) 16%,transparent) 18px 20px)}
+.tick{position:absolute;top:110px;width:2px;height:24px;background:var(--text)}
+.tick-label{position:absolute;top:145px;transform:translateX(-50%);font:var(--fs-label)/1 var(--font-mono)}
+.marker{position:absolute;transform:translateX(-50%);text-align:center;transition:left .16s ease}
+.marker::after{content:"";display:block;margin:8px auto 0;width:3px;height:76px;background:currentColor}
+.marker.baseline{left:0;top:8px;color:var(--text);transform:none;text-align:left}
+.marker.current{top:14px;color:var(--attention);font:700 var(--fs-label)/1.25 var(--font-sans)}
+.marker.current.merged{top:64px;transform:none;text-align:left}.marker.current.merged::after{height:28px}
+.marker.input{left:80%;top:128px;padding-top:72px;color:var(--model);font:700 var(--fs-label)/1.25 var(--font-sans)}
+.marker.input::after{position:absolute;top:0;left:50%;margin:0;height:64px}
+.offscale{position:absolute;top:40px;font:700 var(--fs-label)/1.35 var(--font-sans);color:var(--attention);padding:8px 10px;border:2px solid var(--attention);border-radius:8px;background:var(--bg)}
+.offscale.left{left:0;transform:translateX(-42%)}.offscale.right{right:0;transform:translateX(42%)}
+.legend{display:flex;gap:24px;justify-content:center;font:var(--fs-label)/1.3 var(--font-sans)}
+.legend span{display:flex;align-items:center;gap:8px}.legend i{display:inline-block;width:18px;height:3px;background:var(--text)}.legend .cur i{background:var(--attention)}.legend .inp i{background:var(--model)}
+.sum-strip{display:grid;grid-template-columns:1fr 54px 1fr 54px 1fr;align-items:stretch;margin-top:24px}
+.sum-cell{border:1px solid color-mix(in srgb,var(--text) 30%,transparent);border-radius:8px;padding:15px 18px;min-height:82px;background:var(--bg)}
+.sum-cell span{display:block;font:var(--fs-label)/1.3 var(--font-sans);color:color-mix(in srgb,var(--text) 65%,transparent)}
+.sum-cell strong{display:block;margin-top:6px;font:700 25px/1.15 var(--font-mono)}
+.sum-cell.att strong{color:var(--attention)}.sum-cell.model strong{color:var(--model)}
+.sum-arrow{display:flex;align-items:center;justify-content:center;font:700 25px/1 var(--font-sans)}
+.statusline{margin:17px 0 0;text-align:center;font:600 var(--fs-sec)/1.4 var(--font-sans);min-height:24px}
+.conclusion{margin:0;padding:11px 22px;border-left:5px solid var(--attention);font:600 var(--fs-lead)/1.4 var(--font-serif);background:color-mix(in srgb,var(--attention) 7%,transparent)}
+@media (prefers-reduced-motion:reduce){.marker{transition:none}}
+</style>
+</head>
+<body data-page="05" data-total="22">
+<div id="stage">
+<header>
+  <div><p class="kicker">单个神经元 · 参数观察</p><h1>偏置把门槛整体平移</h1></div>
+  <p class="lead">保持输入和权重不动，只调偏置。观察加权总和与“刚好等于 0”的输入位置。</p>
+</header>
+<main>
+  <section class="control-side min0" aria-label="偏置控制与计算">
+    <div class="fixed-row">
+      <div class="fixed"><span>输入 · 锁定</span><strong>x = 0.8</strong></div>
+      <div class="fixed"><span>权重 · 锁定</span><strong>w = 0.5</strong></div>
+    </div>
+    <div class="panel control">
+      <div class="ctl-head"><label for="bias">调节偏置 b</label><output id="biasOut" class="value" for="bias">−0.2</output></div>
+      <input id="bias" type="range" min="-0.4" max="0.4" step="0.1" value="-0.2" aria-describedby="rangeHint">
+      <div class="range-labels"><span>−0.4</span><span>0</span><span>+0.4</span></div>
+      <div class="actions"><p id="rangeHint" class="hint">拖动滑块，或用方向键每次调一格。</p><button id="reset" class="btn" type="button">恢复 −0.2</button></div>
+    </div>
+    <div class="equation" aria-label="当前加权总和">
+      <div class="eq-main"><span>0.8 × 0.5</span><span class="vary" id="eqBias">− 0.2</span><span>=</span><span class="result" id="zOut">0.2</span></div>
+      <p class="eq-note">当前加权总和 z</p>
+    </div>
+    <div class="reference" aria-label="三个位置的对照记录">
+      <h2>对照记录</h2>
+      <div class="ref-row"><span>b</span><span>z</span><span>门槛 x</span></div>
+      <div class="ref-row"><span>−0.2</span><span id="refZn">0.2</span><span id="refTn">0.4 · 向右</span></div>
+      <div class="ref-row"><span>0.0</span><span id="refZ0">0.4</span><span>0.0 · 基准</span></div>
+      <div class="ref-row"><span>+0.2</span><span id="refZp">0.6</span><span id="refTp">−0.4 · 向左</span></div>
+    </div>
+    <p class="conclusion" id="conclusion">偏置为负，门槛从 0 向右移到 0.4；输入仍固定在 0.8。</p>
+  </section>
+  <section class="viz min0" aria-labelledby="scaleTitle">
+    <div class="viz-head"><div><h2 id="scaleTitle">同一条输入标尺：0 到 1</h2><p class="small">门槛：使加权总和刚好为 0 的输入位置</p></div><div class="threshold-read">门槛 x = <span id="thresholdOut">0.4</span></div></div>
+    <div class="sum-strip" aria-label="当前计算过程">
+      <div class="sum-cell"><span>固定的加权部分</span><strong>0.8 × 0.5 = 0.4</strong></div>
+      <div class="sum-arrow">＋</div>
+      <div class="sum-cell att"><span>可调的整体偏移</span><strong id="stripBias">b = −0.2</strong></div>
+      <div class="sum-arrow">＝</div>
+      <div class="sum-cell model"><span>当前加权总和</span><strong id="stripZ">z = 0.2</strong></div>
+    </div>
+    <div class="scale-wrap">
+      <div class="scale" aria-hidden="true">
+        <div id="zoneNeg" class="zone neg" aria-label="门槛左侧：加权总和小于零"></div><div id="zonePos" class="zone pos" aria-label="门槛右侧：加权总和大于零"></div>
+        <div class="axis"></div>
+        <div class="tick" style="left:0"></div><span class="tick-label" style="left:0">0.0</span>
+        <div class="tick" style="left:20%"></div><span class="tick-label" style="left:20%">0.2</span>
+        <div class="tick" style="left:40%"></div><span class="tick-label" style="left:40%">0.4</span>
+        <div class="tick" style="left:60%"></div><span class="tick-label" style="left:60%">0.6</span>
+        <div class="tick" style="left:80%"></div><span class="tick-label" style="left:80%">0.8</span>
+        <div class="tick" style="left:100%"></div><span class="tick-label" style="left:100%">1.0</span>
+        <div class="marker baseline">b = 0 的门槛</div>
+        <div id="currentMarker" class="marker current">当前门槛</div>
+        <div class="marker input">固定输入 x = 0.8</div>
+        <div id="offscale" class="offscale left" hidden></div>
+      </div>
+    </div>
+    <div class="legend"><span><i></i>b = 0 基准</span><span class="cur"><i></i>当前门槛</span><span class="inp"><i></i>固定输入</span></div>
+    <p id="status" class="statusline" aria-live="polite">偏置 −0.2，加权总和 0.2，门槛 0.4。</p>
+  </section>
+</main>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script>
+(() => {
+  'use strict';
+  const defaults = { x: 0.8, w: 0.5, biasMin: -0.4, biasMax: 0.4, biasStep: 0.1, biasInitial: -0.2 };
+  const supplied = (window.Lec && Lec.K && (Lec.K.page05 || Lec.K.p05 || Lec.K.bias)) || {};
+  const K = Object.assign({}, defaults, supplied);
+  const initialState = () => ({ bias: K.biasInitial });
+  let state = initialState();
+  const $ = id => document.getElementById(id);
+  const bias = $('bias'), reset = $('reset'), marker = $('currentMarker'), offscale = $('offscale');
+  const fmt = n => (Math.abs(n) < 1e-9 ? '0.0' : n.toFixed(1).replace('-', '−'));
+  const signedTerm = n => n < 0 ? '− ' + Math.abs(n).toFixed(1) : '+ ' + n.toFixed(1);
+  function transition(s, action){
+    if(action.type === 'set') return { bias: Math.max(K.biasMin, Math.min(K.biasMax, Math.round(action.value * 10) / 10)) };
+    if(action.type === 'reset') return initialState();
+    return s;
+  }
+  function render(){
+    const b = state.bias;
+    const z = Lec.P.weightedSum([K.x], [K.w], b);
+    const threshold = -b / K.w;
+    bias.value = String(b);
+    $('biasOut').textContent = fmt(b);
+    $('eqBias').textContent = signedTerm(b);
+    $('zOut').textContent = fmt(z);
+    $('stripBias').textContent = 'b = ' + fmt(b);
+    $('stripZ').textContent = 'z = ' + fmt(z);
+    $('thresholdOut').textContent = fmt(threshold);
+    const inRange = threshold >= 0 && threshold <= 1;
+    const cut = Math.max(0, Math.min(1, threshold)) * 100;
+    $('zoneNeg').style.width = cut + '%';
+    $('zonePos').style.width = (100 - cut) + '%';
+    $('zoneNeg').hidden = cut < 8;
+    $('zonePos').hidden = cut > 92;
+    marker.hidden = !inRange;
+    offscale.hidden = inRange;
+    marker.classList.toggle('merged', inRange && Math.abs(threshold) < 1e-9);
+    marker.textContent = inRange && Math.abs(threshold) < 1e-9 ? '当前门槛（与基准重合）' : '当前门槛';
+    if(inRange) marker.style.left = (threshold * 100) + '%';
+    else {
+      offscale.className = 'offscale ' + (threshold < 0 ? 'left' : 'right');
+      offscale.textContent = (threshold < 0 ? '← ' : '→ ') + '门槛在标尺外：x = ' + fmt(threshold);
+    }
+    let movement = Math.abs(b) < 1e-9 ? '与 b = 0 的基准重合' : (b > 0 ? '从 0 向左移到 ' + fmt(threshold) : '从 0 向右移到 ' + fmt(threshold));
+    $('conclusion').textContent = Math.abs(b) < 1e-9 ? '偏置为 0，门槛就在 x = 0；输入仍固定在 0.8。' : '偏置' + (b > 0 ? '增大' : '减小') + '，门槛' + movement + '；输入仍固定在 0.8。';
+    $('status').textContent = '偏置 ' + fmt(b) + '，加权总和 ' + fmt(z) + '，门槛 ' + fmt(threshold) + '。';
+  }
+  function dispatch(action){ state = transition(state, action); render(); }
+  const events = new AbortController();
+  bias.addEventListener('input', e => dispatch({type:'set', value:Number(e.target.value)}), {signal:events.signal});
+  reset.addEventListener('click', () => { dispatch({type:'reset'}); bias.focus(); $('status').textContent += ' 已恢复默认状态。'; }, {signal:events.signal});
+  let destroyed = false;
+  function destroy(){ if(destroyed) return; destroyed = true; events.abort(); }
+  window.addEventListener('pagehide', destroy, {once:true});
+  render();
+  Deck.init({index:5,total:22});
+})();
+</script>
+</body>
+</html>

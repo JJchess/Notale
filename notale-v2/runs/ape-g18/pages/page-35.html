@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+</head>
+<body data-page="35" data-total="50">
+<div id="stage">
+  <style>
+    .kicker{color:var(--cyan);font:650 var(--fs-label)/1.35 var(--font-mono);letter-spacing:.12em;margin-bottom:5px}
+    .game-layout{display:flex;gap:24px;height:100%;min-height:0}
+    .sim{flex:1.16;display:flex;flex-direction:column;gap:10px;min-height:0}
+    .compare-wrap{flex:.84;display:flex;flex-direction:column;min-height:0}
+    #world{position:relative;flex:1;min-height:0;border:1px solid var(--line);border-radius:12px;overflow:hidden;background:rgba(20,29,34,.34)}
+    #world canvas{position:absolute;inset:0;width:100%;height:100%}
+    .beam{position:absolute;left:5%;right:5%;top:30%;height:42%;pointer-events:none;z-index:3}
+    .beam svg{width:100%;height:100%;overflow:visible}
+    .slot-label{position:absolute;z-index:4;right:4%;top:18%;color:var(--muted);font-size:var(--fs-label);line-height:1.35}
+    .palette-labels{position:absolute;z-index:4;left:4%;bottom:4%;right:4%;display:flex;justify-content:space-around;pointer-events:none}
+    .palette-labels span{font-size:var(--fs-label);font-weight:650;color:var(--text)}
+    .readouts{display:flex;align-items:center;gap:20px;padding:12px 16px}
+    .metric{flex:1;min-width:0}.metric b{display:block;font-size:var(--fs-label);color:var(--muted)}
+    .metric output{font:650 28px/1.2 var(--font-mono);white-space:nowrap}
+    .status{flex:1.35;font-size:var(--fs-sec);line-height:1.4;color:var(--cyan)}
+    .controls{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+    .table-title{display:flex;justify-content:space-between;align-items:end;margin-bottom:5px}
+    .k-comparison{grid-template-rows:auto repeat(3,1fr);column-gap:8px}
+    .k-comparison>.hdr{padding:7px 8px 8px;font-size:var(--fs-body)}
+    .k-comparison>.dim{padding:8px 8px 8px 0;font-size:var(--fs-sec)}
+    .k-comparison>.cell{padding:8px;font-size:var(--fs-sec);line-height:1.4}
+    .formula{font-family:var(--font-mono);font-size:var(--fs-label)}
+    .foot{display:flex;gap:26px;align-items:center;border-top:1px solid var(--line);padding-top:10px}
+    .foot .lead{flex:1;margin:0}.next{color:var(--muted);font-size:var(--fs-sec);margin:0;white-space:nowrap}
+    button.material{min-width:90px}
+    @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+  </style>
+  <header style="height:82px">
+    <div class="kicker">RADIATION SHIELDING</div>
+    <h1>墙越厚，辐射剂量就一定越低吗？</h1>
+  </header>
+  <main style="flex:1" class="min0">
+    <div class="game-layout">
+      <section class="sim min0" aria-label="辐射屏蔽堆叠实验">
+        <div class="controls" style="height:48px">
+          <span class="hint">拖动材料块进入右侧屏蔽槽；也可聚焦材料按钮后按 Enter。</span>
+          <div class="btns" role="group" aria-label="入射粒子能量" style="gap:8px;margin-left:auto">
+            <button class="btn energy" data-energy="low" aria-pressed="false">较低能</button>
+            <button class="btn energy" data-energy="high" aria-pressed="true">高能</button>
+          </div>
+          <button class="btn" id="reset">重置</button>
+        </div>
+        <div id="world" class="cvbox no-pan" aria-label="三种材料块可拖入右侧屏蔽槽">
+          <div class="slot-label">入射粒子 →　屏蔽槽（最多三层）</div>
+          <div class="beam" aria-hidden="true"><svg id="tracks" viewBox="0 0 760 220" preserveAspectRatio="none"></svg></div>
+          <div class="palette-labels"><span>铝</span><span>聚乙烯</span><span>水</span></div>
+        </div>
+        <div class="controls" style="height:46px" aria-label="键盘添加材料">
+          <span class="small">键盘添加</span>
+          <button class="btn material" data-mat="al">铝</button>
+          <button class="btn material" data-mat="pe">聚乙烯</button>
+          <button class="btn material" data-mat="water">水</button>
+        </div>
+        <div class="panel readouts" style="height:82px">
+          <div class="metric"><b>总面密度</b><output id="mass">0 kg/m²</output></div>
+          <div class="metric"><b>剂量指数</b><output id="dose" aria-live="polite">100.00</output></div>
+          <div class="metric"><b>穿透主粒子</b><output id="primary">100</output></div>
+          <div class="status" id="status" aria-live="polite">目标：高能模式下，≤12 kg/m² 且剂量指数 ≤60</div>
+        </div>
+      </section>
+      <section class="compare-wrap min0" aria-label="相同面密度下三种材料比较">
+        <div class="table-title"><h2 style="margin:0">共同基准：每层 4 kg/m²</h2><span class="tag neutral">归一化课堂模型</span></div>
+        <div class="k-comparison" style="--compare-n:3">
+          <div class="hdr"></div><div class="hdr">铝</div><div class="hdr">聚乙烯</div><div class="hdr">水</div>
+          <div class="dim">氢质量占比</div><div class="cell">0%</div><div class="cell">约 14.4%</div><div class="cell">约 11.1%</div>
+          <div class="dim">较低能：每层</div><div class="cell formula">D→0.55D+6</div><div class="cell formula">D→0.65D+2</div><div class="cell formula">D→0.62D+3</div>
+          <div class="dim diff">高能：每层<br>二次辐射倾向</div><div class="cell diff"><span class="formula">D→0.88D+13</span><br>较高</div><div class="cell diff"><span class="formula">D→0.78D+3</span><br>较低</div><div class="cell diff"><span class="formula">D→0.80D+4</span><br>较低</div>
+        </div>
+        <p class="note" style="margin:8px 0 0">同样的面密度与入射能量下，碰撞后产生的分叉短线表示二次辐射。近地轨道约 0.3–1.0 mSv/天；深空巡航约 1.8 mSv/天。<span title="NASA Space Radiation；Zeitlin 等，2013">短出处</span></p>
+      </section>
+    </div>
+  </main>
+  <footer class="foot" style="height:72px">
+    <p class="lead">屏蔽效果取决于粒子能量、材料组成与碰撞产生的二次辐射，而不只取决于厚度。</p>
+    <p class="next">挡住辐射还不够——下一层生存边界，必须穿在身上。</p>
+  </footer>
+  <script src="assets/lib/matter.min.js"></script>
+  <script>
+  document.addEventListener('DOMContentLoaded',function(){
+    Deck.init({index:35,total:50});
+    const M=Matter, box=document.getElementById('world'), tracks=document.getElementById('tracks');
+    const model={energy:'high',layers:[],complete:false};
+    const C={al:{name:'铝',low:[.55,6],high:[.88,13],sec:5},pe:{name:'聚乙烯',low:[.65,2],high:[.78,3],sec:2},water:{name:'水',low:[.62,3],high:[.80,4],sec:2}};
+    let engine,render,stopLoop,mouse,blocks=[],dims={w:0,h:0};
+    function snapshot(){return JSON.parse(JSON.stringify(model))}
+    function calc(){let d=100;model.layers.forEach(k=>{const q=C[k][model.energy];d=q[0]*d+q[1]});return d}
+    function drawTracks(d){
+      const n=Math.max(20,Math.round(d)), branches=model.layers.reduce((s,k)=>s+C[k].sec,0)*(model.energy==='high'?1:.45);
+      let s='<path d="M20 110 L730 110" stroke="var(--cyan)" stroke-width="4" fill="none" opacity=".9"/>';
+      const count=Math.min(18,Math.round(branches));for(let i=0;i<count;i++){const x=520+(i%3)*34,y=110;s+='<path d="M'+x+' '+y+' l'+(55+(i%4)*8)+' '+((i%2?1:-1)*(18+(i%5)*7))+'" stroke="var(--ochre)" stroke-width="2" fill="none" opacity=".72"/>'}
+      s+='<text x="24" y="92" fill="var(--muted)" font-size="16">'+(model.energy==='high'?'高能':'较低能')+'主粒子</text><text x="555" y="196" fill="var(--muted)" font-size="16">分叉＝二次辐射</text>';
+      tracks.innerHTML=s;
+    }
+    function update(action){const d=calc(),mass=model.layers.length*4;document.getElementById('mass').textContent=mass+' kg/m²';document.getElementById('dose').textContent=d.toFixed(2);document.getElementById('primary').textContent=Math.max(0,Math.round(d));drawTracks(d);
+      const st=document.getElementById('status');if(model.energy==='high'&&d<=60&&mass<=12){model.complete=true;st.textContent='达标：材料选择改变了结果';document.querySelectorAll('.material').forEach(b=>b.disabled=true);document.querySelectorAll('.energy').forEach(b=>b.disabled=true)}else{st.textContent=model.layers.length===3?'未达标：重置后换一种材料组合':'目标：高能模式下，≤12 kg/m² 且剂量指数 ≤60'}
+      window.dispatchEvent(new CustomEvent(model.complete?'game-complete':'game-progress',{detail:{state:snapshot(),action:action,metrics:{dose:d,mass:mass}},bubbles:true}));
+    }
+    function add(k){if(model.complete)return;if(model.layers.length>=3){document.getElementById('status').textContent='预算已满：屏蔽块弹回';return}model.layers.push(k);update('add-'+k)}
+    function reset(){model.energy='high';model.layers=[];model.complete=false;document.querySelectorAll('.material,.energy').forEach(b=>b.disabled=false);document.querySelectorAll('.energy').forEach(b=>b.setAttribute('aria-pressed',b.dataset.energy==='high'));update('reset');window.dispatchEvent(new CustomEvent('game-reset',{detail:{state:snapshot()},bubbles:true}))}
+    function initPhysics(){
+      const w=box.clientWidth,h=box.clientHeight;if(!w||!h)return;if(render){if(stopLoop)stopLoop();M.World.clear(engine.world,false);M.Engine.clear(engine);render.canvas.remove()}
+      dims={w,h};engine=M.Engine.create();engine.gravity.y=.75;render=M.Render.create({element:box,engine:engine,options:{width:w,height:h,wireframes:false,background:'transparent',pixelRatio:1}});
+      const wall=M.Bodies.rectangle(w*.79,h*.53,w*.18,12,{isStatic:true,render:{fillStyle:'#35434A'}});const floor=M.Bodies.rectangle(w/2,h+20,w,40,{isStatic:true,render:{visible:false}});const xs=[w*.18,w*.42,w*.66],keys=['al','pe','water'];blocks=keys.map((k,i)=>M.Bodies.rectangle(xs[i],h*.82,112,50,{label:k,restitution:.35,render:{fillStyle:i===0?'#62747B':i===1?'#45D6E8':'#C56A32'}}));M.Composite.add(engine.world,[wall,floor,...blocks]);
+      mouse=M.Mouse.create(render.canvas);const mc=M.MouseConstraint.create(engine,{mouse:mouse,constraint:{stiffness:.18,render:{visible:false}}});M.Composite.add(engine.world,mc);render.mouse=mouse;
+      M.Events.on(mc,'enddrag',e=>{const b=e.body;if(!b)return;if(b.position.x>w*.68&&b.position.y<h*.72)add(b.label);M.Body.setPosition(b,{x:xs[keys.indexOf(b.label)],y:h*.82});M.Body.setVelocity(b,{x:0,y:0})});stopLoop=Deck.loop(function(t,dt){M.Engine.update(engine,Math.min(33,dt||16.67));M.Render.world(render)});
+    }
+    document.querySelectorAll('.energy').forEach(b=>b.addEventListener('click',()=>{if(model.complete)return;model.energy=b.dataset.energy;document.querySelectorAll('.energy').forEach(x=>x.setAttribute('aria-pressed',x===b));update('energy-'+model.energy)}));
+    document.querySelectorAll('.material').forEach(b=>b.addEventListener('click',()=>add(b.dataset.mat)));document.getElementById('reset').addEventListener('click',reset);
+    initPhysics();const off=Deck.onResize(()=>{if(box.clientWidth!==dims.w||box.clientHeight!==dims.h)initPhysics()});update('start');window.dispatchEvent(new CustomEvent('game-start',{detail:{state:snapshot()},bubbles:true}));
+    window.shieldGame={start:()=>update('start'),reset:reset,getState:snapshot};window.addEventListener('pagehide',()=>{off();if(stopLoop)stopLoop();M.World.clear(engine.world,false);M.Engine.clear(engine)},{once:true});
+  });
+  </script>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+</body>
+</html>

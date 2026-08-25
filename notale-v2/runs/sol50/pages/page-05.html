@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  .kicker{color:var(--orbit);font:700 var(--fs-label)/1.35 var(--font-mono);letter-spacing:.14em;margin-bottom:6px}
+  .scene-shell{position:relative;display:flex;flex:1;min-height:0;border:1px solid var(--line);border-radius:14px;overflow:hidden;background:var(--bg)}
+  #space{display:block;width:100%;height:100%;cursor:grab}
+  #space:active{cursor:grabbing}
+  #space:focus-visible{outline:3px solid var(--focus);outline-offset:-4px}
+  .readout{position:absolute;top:18px;right:18px;width:190px;pointer-events:none}
+  .readout .unit{font-size:var(--fs-label)}
+  .labels{position:absolute;inset:0;pointer-events:none}
+  .planet-label{position:absolute;transform:translate(10px,-50%);padding:2px 6px;color:var(--text);background:rgba(7,11,24,.78);border-left:2px solid var(--orbit);font-size:var(--fs-label);line-height:1.35;white-space:nowrap}
+  .scene-note{position:absolute;left:18px;bottom:16px;color:var(--muted);font-size:var(--fs-sec);line-height:1.4}
+  .controls{position:absolute;right:18px;bottom:16px;display:flex;align-items:center;gap:14px}
+  .controls .hint{background:rgba(7,11,24,.78);padding:5px 8px}
+  .k-process{flex:none;height:128px;margin-top:10px}
+  .k-process>.step{padding:12px 18px;justify-content:flex-start;border-top:1px solid var(--line-soft)}
+  .step strong{font-size:var(--fs-sec);line-height:1.35}
+  .step span{color:var(--muted);font-size:var(--fs-sec);line-height:1.4;margin-top:4px}
+  .k-process>.step.current span{color:var(--text)}
+  .inclinations{font-family:var(--font-mono);font-size:var(--fs-label)!important;white-space:normal}
+  .conclusion{display:flex;height:58px;align-items:center;justify-content:space-between;gap:28px;border-top:1px solid var(--line);margin-top:8px}
+  .conclusion .lead{margin:0;font-weight:700}
+  .handoff{margin:0;color:var(--muted);font-size:var(--fs-sec);line-height:1.4;white-space:nowrap}
+</style>
+</head>
+<body data-page="05" data-total="30">
+<div id="stage">
+  <header style="height:78px">
+    <div class="kicker">SYSTEM / ORBIT PLANE</div>
+    <h1>八颗行星为什么像在同一张薄盘上运行？</h1>
+  </header>
+
+  <main class="scene-shell min0">
+    <canvas id="space" class="no-pan" tabindex="0" role="img" aria-label="八颗行星轨道的可旋转三维模型。上下方向键改变仰角，左右方向键绕太阳系旋转。"></canvas>
+    <div class="labels" id="labels" aria-hidden="true"></div>
+    <div class="panel q readout">
+      <div class="small">当前观察仰角</div>
+      <div><span class="big sm" id="angle">18</span><span class="unit">°</span></div>
+      <div class="small" id="viewName">稍微抬高</div>
+    </div>
+    <div class="scene-note">轨道间距已压缩；箭头只表示方向，不表示速度。</div>
+    <div class="controls">
+      <span class="hint">在轨道盘上拖动视角；也可用方向键</span>
+      <button class="btn" id="reset" type="button">复位视角</button>
+    </div>
+  </main>
+
+  <section class="k-process" aria-label="观察过程">
+    <div class="axis"></div>
+    <div class="step" data-step="0"><strong>1　转到侧视 · 0°</strong><span>八条轨道压成一条很薄的带</span></div>
+    <div class="arw" aria-hidden="true"></div>
+    <div class="step current" data-step="1"><strong>2　稍微抬高 · 18°</strong><span class="inclinations" id="incs">水星 7.00°　金星 3.39°　地球 0°　火星 1.85°<br>木星 1.30°　土星 2.49°　天王星 0.77°　海王星 1.77°</span></div>
+    <div class="arw" aria-hidden="true"></div>
+    <div class="step" data-step="2"><strong>3　转到俯视 · 90°</strong><span>从太阳系北侧看，八颗行星都逆时针公转</span></div>
+  </section>
+
+  <footer class="conclusion">
+    <p class="lead">八颗行星的轨道大体共面且同向公转，这是共同起源的重要线索。</p>
+    <p class="handoff">下一问：同向公转，是否等于自身也同向旋转？</p>
+  </footer>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script src="assets/lib/three.min.js"></script>
+<script>
+(function(){
+  'use strict';
+  Deck.init({index:5,total:30});
+  var canvas=document.getElementById('space'), wrap=canvas.parentElement;
+  var renderer=new THREE.WebGLRenderer({canvas:canvas,antialias:true,alpha:false});
+  renderer.outputColorSpace=THREE.SRGBColorSpace;
+  renderer.setClearColor(new THREE.Color(Deck.token('--bg')),1);
+  var scene=new THREE.Scene();
+  var camera=new THREE.PerspectiveCamera(42,1,.1,100);
+  var root=new THREE.Group(); scene.add(root);
+  scene.add(new THREE.AmbientLight(0xffffff,.5));
+  var lamp=new THREE.PointLight(new THREE.Color(Deck.token('--sun')),14,30,2); lamp.position.set(0,1,0); scene.add(lamp);
+  var sun=new THREE.Mesh(new THREE.SphereGeometry(.28,32,20),new THREE.MeshStandardMaterial({color:new THREE.Color(Deck.token('--sun')),emissive:new THREE.Color(Deck.token('--sun')),emissiveIntensity:1.7,roughness:.75})); root.add(sun);
+  var planets=Lec.P.planetsInOrder();
+  var tilts=[7,3.39,0,1.85,1.3,2.49,.77,1.77];
+  var radii=[.8,1.2,1.6,2.05,2.65,3.3,4,4.7];
+  var markers=[], orbitMat=new THREE.LineBasicMaterial({color:new THREE.Color(Deck.token('--orbit')),transparent:true,opacity:.72});
+  planets.forEach(function(p,i){
+    var pts=[]; for(var j=0;j<=160;j++){var a=j/160*Math.PI*2;pts.push(new THREE.Vector3(Math.cos(a)*radii[i],0,Math.sin(a)*radii[i]));}
+    var orbit=new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts),orbitMat); orbit.rotation.z=tilts[i]*Math.PI/180; root.add(orbit);
+    var theta=(i*.81+.45); var marker=new THREE.Mesh(new THREE.SphereGeometry(.075,14,10),new THREE.MeshStandardMaterial({color:new THREE.Color(Deck.token('--text')),roughness:.55}));
+    marker.position.set(Math.cos(theta)*radii[i],0,Math.sin(theta)*radii[i]); marker.rotation.z=tilts[i]*Math.PI/180; root.add(marker); markers.push(marker);
+    var cone=new THREE.Mesh(new THREE.ConeGeometry(.075,.2,12),new THREE.MeshBasicMaterial({color:new THREE.Color(Deck.token('--orbit'))}));
+    var aa=theta+.65; cone.position.set(Math.cos(aa)*radii[i],.02,Math.sin(aa)*radii[i]); cone.rotation.x=Math.PI/2; cone.rotation.z=-aa; root.add(cone);
+    var el=document.createElement('span'); el.className='planet-label'; el.textContent=p.nameZh; document.getElementById('labels').appendChild(el); marker.userData.label=el;
+  });
+  var elev=18,az=24,targetElev=18,targetAz=24,drag=false,last=null;
+  function placeCamera(){var e=elev*Math.PI/180,a=az*Math.PI/180,d=8.8;camera.position.set(Math.cos(e)*Math.sin(a)*d,Math.sin(e)*d,Math.cos(e)*Math.cos(a)*d);camera.lookAt(0,0,0);}
+  function resize(){var w=wrap.clientWidth,h=wrap.clientHeight;renderer.setPixelRatio(Math.min(window.devicePixelRatio||1,2));renderer.setSize(w,h,false);camera.aspect=w/h;camera.updateProjectionMatrix();}
+  function updateUI(){document.getElementById('angle').textContent=Math.round(elev);var step=elev<8?0:(elev>62?2:1);document.getElementById('viewName').textContent=step===0?'侧视：看见薄带':step===2?'俯视：辨认同向':'稍微抬高：比较倾斜';document.querySelectorAll('.step').forEach(function(el,i){el.classList.toggle('current',i===step);el.classList.toggle('past',i<step);});}
+  function render(){placeCamera();renderer.render(scene,camera);var w=wrap.clientWidth,h=wrap.clientHeight;markers.forEach(function(m){var v=m.getWorldPosition(new THREE.Vector3()).project(camera);m.userData.label.style.left=((v.x*.5+.5)*w)+'px';m.userData.label.style.top=((-v.y*.5+.5)*h)+'px';m.userData.label.style.display=v.z<1?'block':'none';});updateUI();}
+  function down(e){drag=true;last=Deck.pt(canvas,e);canvas.setPointerCapture(e.pointerId);}
+  function move(e){if(!drag)return;var p=Deck.pt(canvas,e);targetAz+=(p.x-last.x)*.25;targetElev=Deck.clamp(targetElev-(p.y-last.y)*.22,0,90);last=p;}
+  function up(){drag=false;last=null;}
+  canvas.addEventListener('pointerdown',down);canvas.addEventListener('pointermove',move);canvas.addEventListener('pointerup',up);canvas.addEventListener('pointercancel',up);
+  canvas.addEventListener('keydown',function(e){if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].indexOf(e.key)<0)return;e.preventDefault();if(e.key==='ArrowUp')targetElev=Deck.clamp(targetElev+3,0,90);if(e.key==='ArrowDown')targetElev=Deck.clamp(targetElev-3,0,90);if(e.key==='ArrowLeft')targetAz-=5;if(e.key==='ArrowRight')targetAz+=5;});
+  document.getElementById('reset').addEventListener('click',function(){targetElev=18;targetAz=24;});
+  Deck.onResize(function(){resize();render();});resize();
+  Deck.loop(function(t,dt){if(Deck.reduced()){elev=targetElev;az=targetAz;}else{var k=1-Math.pow(.002,Math.min(dt,.05));elev+=(targetElev-elev)*k;az+=(targetAz-az)*k;}render();},{still:1});
+})();
+</script>
+</body>
+</html>

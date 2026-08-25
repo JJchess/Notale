@@ -1,0 +1,227 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<link rel="stylesheet" href="assets/lib/katex.min.css">
+<style>
+  /* ---- 本页专用（结构性，非新公共组件） ---- */
+  .p5-hd { flex: 0 0 auto; display: flex; flex-direction: column; gap: 6px; margin-bottom: 18px; }
+  .p5-kicker {
+    display: inline-block; align-self: flex-start;
+    font-size: var(--fs-label); font-weight: 700; letter-spacing: .12em;
+    color: var(--orange); background: var(--orange-soft);
+    padding: 3px 10px; border-radius: 4px;
+  }
+  .p5-hd h1 { max-width: 1100px; }
+
+  .p5-main { flex: 1; min-height: 0; }
+  .p5-chartwrap { flex: 1; min-height: 0; position: relative; }
+  .p5-chart { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .p5-legend { flex: 0 0 auto; margin-top: 10px; }
+
+  .p5-formula { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; margin-bottom: 8px; }
+  .p5-formula .katex { font-size: 22px !important; color: var(--text); }
+  .p5-deriv { font-size: var(--fs-sec); color: var(--text-dim); margin-bottom: 16px; }
+  .p5-deriv b { color: var(--orange); font-family: var(--font-mono); font-weight: 700; }
+
+  .p5-table-cap { font-size: var(--fs-label); color: var(--text-dim); margin-bottom: 4px; }
+  #p5-table .hdr, #p5-table .rowline {
+    grid-template-columns: 64px 1fr 1fr;
+    column-gap: 14px;
+    padding: 6px 0;
+    font-size: var(--fs-tick);
+  }
+  #p5-table .num { font-size: var(--fs-tick); white-space: nowrap; font-variant-numeric: tabular-nums; }
+  #p5-table .dim { font-size: var(--fs-tick); }
+  #p5-table .diff { font-size: var(--fs-tick); }
+  .p5-diffnotes { display: flex; flex-direction: column; gap: 6px; margin-top: 12px; }
+  .p5-diffnotes .row { font-size: var(--fs-sec); color: var(--text-dim); line-height: 1.45; }
+
+  .p5-ft { flex: 0 0 auto; margin-top: 18px; display: flex; flex-direction: column; gap: 6px; }
+
+  .p5-fade { animation: p5FadeIn .7s ease-out both; }
+  @keyframes p5FadeIn {
+    from { opacity: 0; transform: translateY(8px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .p5-fade { animation: none; }
+  }
+</style>
+</head>
+<body data-page="05" data-total="22">
+<div id="stage">
+
+  <div class="p5-hd p5-fade">
+    <span class="p5-kicker">ACTIVATION</span>
+    <h1>sigmoid：把任意实数压进 0 到 1，永不越界</h1>
+  </div>
+
+  <div class="split-lr p5-main p5-fade">
+
+    <div class="pane-l min0">
+      <div class="p5-chartwrap min0">
+        <div id="p5chart" class="p5-chart no-pan"></div>
+      </div>
+      <div class="legend p5-legend">
+        <span class="li"><span class="sw line"></span>曲线：a = σ(z)</span>
+        <span class="li"><span class="sw line" style="background:var(--rule);"></span>渐近线 a=0 / a=1（永不相交）</span>
+        <span class="li"><span class="sw orange"></span>z=0，斜率最大处</span>
+      </div>
+    </div>
+
+    <div class="pane-r min0">
+      <div class="panel q">
+        <div class="p5-formula">
+          <span id="p5-katex"></span>
+        </div>
+        <div class="p5-deriv">
+          z = 0 处斜率最大，σ'(0) = <b id="p5-maxderiv">0.25</b>（越往两端，斜率越接近 0，曲线越平）
+        </div>
+
+        <div class="p5-table-cap">七个代表 z 值，与其压缩后的 a 值（Δa 为相对上一 z 的变化量）</div>
+        <div class="k-comparison" id="p5-table">
+          <div class="hdr"><div>z</div><div>a = σ(z)</div><div>Δa（较上一 z）</div></div>
+          <div id="p5-rows"></div>
+        </div>
+
+        <div class="p5-diffnotes">
+          <div class="row">两端 z 差 4（−10→−6），a 几乎不变；中段 z 差仅 2（−2→0），a 却大幅跳动——这就是「压扁」的意思：两端早已挤在一起，中段还留着坡度。</div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="p5-ft p5-fade">
+    <div class="lead">无论输入多大或多小，sigmoid 输出都锁在 0 和 1 之间，且永远够不到两端。</div>
+    <div class="note">这个被压扁的数字，接下来要走进神经元的哪一步？</div>
+  </div>
+
+</div>
+
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script src="assets/lib/echarts.min.js"></script>
+<script src="assets/lib/katex.min.js"></script>
+<script>
+(function () {
+  Deck.init({ index: 5, total: 22 });
+
+  var sigmoid = function (z) { return Lec.P.activate('sigmoid', z); };
+  var maxDeriv = Lec.K.SIGMOID_MAX_DERIV;
+  document.getElementById('p5-maxderiv').textContent = maxDeriv.toFixed(2);
+
+  // ---- KaTeX 公式 ----
+  katex.render('\\sigma(z) \\;=\\; \\dfrac{1}{1 + e^{-z}}', document.getElementById('p5-katex'), {
+    throwOnError: false
+  });
+
+  // ---- 七个代表点 ----
+  var pts = [-10, -6, -2, 0, 2, 6, 10];
+  var decimals = { '-10': 7, '-6': 5, '-2': 4, '0': 1, '2': 4, '6': 5, '10': 7 };
+  var avals = pts.map(function (z) { return sigmoid(z); });
+
+  var rows = document.getElementById('p5-rows');
+  var rowsHtml = '';
+  pts.forEach(function (z, i) {
+    var d = decimals[String(z)];
+    var aStr = avals[i].toFixed(d);
+    var diffStr = '—';
+    var diffCls = 'num';
+    if (i > 0) {
+      var delta = avals[i] - avals[i - 1];
+      diffStr = '+' + delta.toFixed(4);
+      if (i === 1 || i === 3) diffCls = 'num diff';
+    }
+    rowsHtml += '<div class="rowline"><div class="dim">' + z + '</div><div class="num">' + aStr + '</div><div class="' + diffCls + '">' + diffStr + '</div></div>';
+  });
+  rows.innerHTML = rowsHtml;
+
+  // ---- ECharts 折线图 ----
+  var chartEl = document.getElementById('p5chart');
+  var chart = echarts.init(chartEl, null, { renderer: 'svg' });
+
+  var textDim = Deck.token('--text-dim').trim();
+  var rule = Deck.token('--rule').trim();
+  var blue = Deck.token('--blue').trim();
+  var orange = Deck.token('--orange').trim();
+
+  var curve = [];
+  for (var z = -10; z <= 10 + 1e-9; z += 0.05) {
+    curve.push([Math.round(z * 100) / 100, sigmoid(z)]);
+  }
+
+  var option = {
+    animation: true,
+    animationDuration: 700,
+    grid: { left: 54, right: 30, top: 34, bottom: 46 },
+    tooltip: { show: false },
+    xAxis: {
+      type: 'value',
+      name: 'z',
+      nameLocation: 'end',
+      nameGap: 6,
+      nameTextStyle: { color: textDim, fontSize: 13 },
+      min: -10, max: 10,
+      interval: 2,
+      axisLine: { lineStyle: { color: rule } },
+      axisTick: { lineStyle: { color: rule } },
+      splitLine: { show: false },
+      axisLabel: { color: textDim, fontSize: 13 }
+    },
+    yAxis: {
+      type: 'value',
+      name: 'a',
+      nameLocation: 'end',
+      nameGap: 14,
+      nameTextStyle: { color: textDim, fontSize: 13 },
+      min: 0, max: 1,
+      interval: 0.25,
+      axisLine: { lineStyle: { color: rule } },
+      axisTick: { lineStyle: { color: rule } },
+      splitLine: { lineStyle: { color: rule, opacity: .5 } },
+      axisLabel: { color: textDim, fontSize: 13 }
+    },
+    series: [
+      {
+        type: 'line',
+        data: curve,
+        showSymbol: false,
+        smooth: false,
+        lineStyle: { color: blue, width: 3 },
+        z: 3,
+        markLine: {
+          symbol: 'none',
+          silent: true,
+          animation: false,
+          lineStyle: { color: rule, type: 'dashed', width: 1.5 },
+          data: [
+            { yAxis: 0, label: { color: textDim, fontSize: 13, position: 'insideStartTop', formatter: 'a=0' } },
+            { yAxis: 1, label: { color: textDim, fontSize: 13, position: 'insideStartBottom', formatter: 'a=1' } }
+          ]
+        },
+        markPoint: {
+          symbol: 'circle',
+          symbolSize: 14,
+          animation: false,
+          itemStyle: { color: orange },
+          label: {
+            show: true, color: orange, fontSize: 13, fontWeight: 700,
+            position: 'top', distance: 10,
+            formatter: function () { return 'z=0, a=0.5'; }
+          },
+          data: [{ coord: [0, 0.5] }]
+        }
+      }
+    ]
+  };
+  chart.setOption(option);
+
+  Deck.onResize(function () { chart.resize(); });
+})();
+</script>
+</body>
+</html>

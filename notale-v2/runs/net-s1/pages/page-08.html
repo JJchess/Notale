@@ -1,0 +1,365 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<link rel="stylesheet" href="assets/lib/katex.min.css">
+<style>
+  .pagehead{ flex:0 0 auto; display:flex; flex-direction:column; gap:6px; margin-bottom:18px; }
+  .kicker{
+    font-family: var(--font-sans); font-size: var(--fs-label); font-weight:700;
+    letter-spacing:.14em; color: var(--orange); text-transform:uppercase;
+  }
+  .pagehead h1{ font-size: var(--fs-h1); line-height:1.25; max-width:1100px; }
+
+  .stage3d{
+    flex:1; min-height:0; position:relative;
+    border-radius:14px; overflow:hidden;
+    background: rgba(255,255,255,.35);
+    border:1px solid var(--rule);
+  }
+  .stage3d canvas{ cursor:grab; }
+  .stage3d.dragging canvas{ cursor:grabbing; }
+  .viewhint{
+    position:absolute; left:14px; bottom:12px;
+    font-size: var(--fs-label); color: var(--text-dim);
+    background: rgba(255,255,255,.78); padding:5px 10px; border-radius:8px;
+    line-height:1.35; pointer-events:none;
+  }
+  .resetview{
+    position:absolute; right:14px; top:14px;
+  }
+  .axiscap{
+    flex:0 0 auto; margin-top:10px; font-size: var(--fs-label); color: var(--text-dim); line-height:1.4;
+  }
+
+  .formula-card{
+    flex:0 0 auto; margin-bottom:18px; padding-bottom:16px; border-bottom:1px solid var(--rule);
+  }
+  .formula-card .lbl{ font-size: var(--fs-label); color: var(--text-dim); margin-bottom:8px; }
+  .formula-card .kx{ font-size:20px; }
+
+  .tblwrap{ flex:0 0 auto; }
+  #cmpTable .hdr, #cmpTable .rowline{ grid-template-columns: 118px repeat(5, 1fr); }
+  .k-comparison .rowline .lbl-cell{ display:flex; align-items:center; gap:8px; font-size:var(--fs-sec); color:var(--text); }
+  .k-comparison .rowline .lbl-cell .dot{ width:11px; height:11px; border-radius:50%; flex:none; display:inline-block; }
+  .k-comparison .hdr .lbl-cell{ font-size: var(--fs-sec); }
+  .k-comparison .num{ font-size: var(--fs-body); }
+
+  .tbl-note{ flex:0 0 auto; margin-top:16px; font-size: var(--fs-label); color: var(--text-dim); line-height:1.45; border-left:3px solid var(--blue); padding:4px 10px; }
+
+  .footer{
+    flex:0 0 auto; margin-top:18px; padding-top:14px; border-top:1px solid var(--rule);
+    display:flex; flex-direction:column; gap:6px;
+  }
+  .footer .claim{ font-size: var(--fs-lead); font-weight:700; color: var(--text); line-height:1.5; }
+  .footer .nextq{ font-size: var(--fs-sec); color: var(--text-dim); font-style:italic; line-height:1.4; }
+</style>
+</head>
+<body data-page="08" data-total="22">
+<div id="stage">
+
+  <div class="pagehead">
+    <div class="kicker">LOSS LANDSCAPE</div>
+    <h1>把误差画成一座山：高处错得多，低处错得少</h1>
+  </div>
+
+  <div class="split-lr">
+    <div class="pane-l">
+      <div class="stage3d no-pan" id="stage3d">
+        <canvas class="cv-fill" id="cv3d"></canvas>
+        <div class="viewhint">拖动曲面旋转视角 · 双击或点按钮复位</div>
+        <button class="btn resetview" id="resetBtn">复位视角</button>
+      </div>
+      <div class="axiscap">
+        横轴 <b>w1</b>、深度轴 <b>w2</b>，两者都在 [−2, 2] 之间取值；竖直高度 = 这一组
+        (w1, w2) 算出来的 loss（误差）。同一个输入 x=[1,1]、同一个真值 y=1，山的每一个点
+        都是「猜错了多少」的读数。旋转只换观察角度，山的形状、三个标记点、右边的表格数值都不会变。
+      </div>
+    </div>
+
+    <div class="pane-r">
+      <div class="formula-card">
+        <div class="lbl">这座山的「海拔」怎么算——二分类交叉熵（BCE）</div>
+        <div class="kx" id="kx-bce"></div>
+      </div>
+
+      <div class="tblwrap">
+        <div class="k-comparison" id="cmpTable">
+          <div class="hdr">
+            <div class="lbl-cell">情形</div>
+            <div class="dim">w1</div>
+            <div class="dim">w2</div>
+            <div class="dim">z</div>
+            <div class="dim">a=σ(z)</div>
+            <div class="dim">loss</div>
+          </div>
+          <!-- rows injected by JS -->
+        </div>
+      </div>
+
+      <div class="tbl-note">
+        三行共用同一个坐标尺度：w1、w2 都取自 [−2, 2]，loss 都是同一个 BCE 公式算出来的。
+        猜得越错，loss 越大——从 0.018 一路涨到 4.017，落差就是山从谷底爬到山顶的高度。
+      </div>
+    </div>
+  </div>
+
+  <div class="footer">
+    <div class="claim">同一对权重只对应山上一个点的高度——学习，就是在这座山上找最低点。</div>
+    <div class="nextq">下一问：如果你正站在这座山上的某一点，你的误差到底是多少？</div>
+  </div>
+
+</div>
+
+<script src="assets/lib/three.min.js"></script>
+<script src="assets/lib/katex.min.js"></script>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script>
+(function(){
+  'use strict';
+
+  // ---------- 公式 ----------
+  try {
+    katex.render(
+      "L=-[y\\log a+(1{-}y)\\log(1{-}a)],\\ \\ a=\\sigma(z)",
+      document.getElementById('kx-bce'),
+      { throwOnError:false, displayMode:false }
+    );
+  } catch(e){}
+
+  // ---------- 三个样本点：全部由 Lec.P 现算 ----------
+  var SAMPLES = [
+    { label:'高（猜错很多）', w1:-2, w2:-2, color:'--red',    dot:'--orange', ring:'--red'   },
+    { label:'中（不确定）',   w1: 0, w2: 0, color:'--orange', dot:'--orange', ring:null      },
+    { label:'低（猜对很多）', w1: 2, w2: 2, color:'--green',  dot:'--orange', ring:'--green' }
+  ];
+  var X = [1,1], YTRUE = 1, ACT = 'sigmoid';
+
+  SAMPLES.forEach(function(s){
+    var fwd = Lec.P.neuronForward(X, [s.w1, s.w2], 0, ACT);
+    s.z = fwd.z; s.a = fwd.a;
+    s.loss = Lec.P.bce(YTRUE, fwd.a);
+  });
+
+  // ---------- 填充对比表 ----------
+  (function buildTable(){
+    var table = document.getElementById('cmpTable');
+    SAMPLES.forEach(function(s){
+      var row = document.createElement('div');
+      row.className = 'rowline';
+      row.innerHTML =
+        '<div class="lbl-cell"><span class="dot" style="background:var(' + s.color + ')"></span>' + s.label + '</div>' +
+        '<div class="num">' + s.w1.toFixed(1) + '</div>' +
+        '<div class="num">' + s.w2.toFixed(1) + '</div>' +
+        '<div class="num">' + s.z.toFixed(1) + '</div>' +
+        '<div class="num">' + s.a.toFixed(3) + '</div>' +
+        '<div class="num diff">' + s.loss.toFixed(3) + '</div>';
+      table.appendChild(row);
+    });
+  })();
+
+  // ---------- three.js 曲面 ----------
+  var wrap = document.getElementById('stage3d');
+  var canvas = document.getElementById('cv3d');
+
+  var renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias:true, alpha:true });
+  renderer.setClearColor(0x000000, 0);
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio||1, 2));
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+  var scene = new THREE.Scene();
+  var camera = new THREE.PerspectiveCamera(50, 1, 0.1, 100);
+
+  // 光照
+  scene.add(new THREE.AmbientLight(0xffffff, 0.58));
+  var key = new THREE.DirectionalLight(0xffffff, 1.35);
+  key.position.set(4.2, 7.5, 5.0);
+  key.castShadow = true;
+  key.shadow.mapSize.set(1024, 1024);
+  key.shadow.bias = -0.0015;
+  scene.add(key);
+  var rim = new THREE.DirectionalLight(0x9fc2e8, 0.45);
+  rim.position.set(-4.5, 3.0, -4.0);
+  scene.add(rim);
+
+  // ---------- 网格数据：41×41，w1,w2 ∈ [-2,2]，高度=loss ----------
+  var N = 41, LO = -2, HI = 2, STEP = (HI - LO) / (N - 1);
+  var lossGrid = new Float32Array(N * N);
+  var maxLoss = 0, sumLoss = 0;
+  for (var i = 0; i < N; i++) {
+    var w2 = LO + i * STEP;
+    for (var j = 0; j < N; j++) {
+      var w1 = LO + j * STEP;
+      var fwd = Lec.P.neuronForward(X, [w1, w2], 0, ACT);
+      var loss = Lec.P.bce(YTRUE, fwd.a);
+      var idx = i * N + j;
+      lossGrid[idx] = loss;
+      if (loss > maxLoss) maxLoss = loss;
+      sumLoss += loss;
+    }
+  }
+  var avgLoss = sumLoss / (N * N);
+
+  function mix(rgb, target, t){
+    return [0,1,2].map(function(k){ return rgb[k] + (target[k]-rgb[k]) * t; });
+  }
+  var blueRGB = Deck.rgb('--blue');
+  var lightBlue = mix(blueRGB, [255,255,255], 0.58);
+  var darkBlue  = mix(blueRGB, [0,0,0], 0.30);
+
+  var geo = new THREE.BufferGeometry();
+  var positions = new Float32Array(N * N * 3);
+  var colors = new Float32Array(N * N * 3);
+  for (i = 0; i < N; i++) {
+    for (j = 0; j < N; j++) {
+      var w1v = LO + j * STEP, w2v = LO + i * STEP;
+      var idx2 = i * N + j;
+      var y = lossGrid[idx2];
+      positions[idx2*3] = w1v;
+      positions[idx2*3+1] = y;
+      positions[idx2*3+2] = w2v;
+      var band = (y / maxLoss) < 0.5 ? lightBlue : darkBlue;
+      colors[idx2*3] = band[0]/255; colors[idx2*3+1] = band[1]/255; colors[idx2*3+2] = band[2]/255;
+    }
+  }
+  var indices = [];
+  for (i = 0; i < N-1; i++) {
+    for (j = 0; j < N-1; j++) {
+      var a = i*N+j, b = i*N+j+1, c = (i+1)*N+j, d = (i+1)*N+j+1;
+      indices.push(a, c, b);
+      indices.push(c, d, b);
+    }
+  }
+  geo.setIndex(indices);
+  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+  geo.computeVertexNormals();
+
+  var mat = new THREE.MeshStandardMaterial({
+    vertexColors: true, flatShading: true, roughness: 0.78, metalness: 0.04,
+    side: THREE.FrontSide, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1
+  });
+  var mesh = new THREE.Mesh(geo, mat);
+  mesh.castShadow = true;
+  scene.add(mesh);
+
+  // 网格线（呼应全页方格母题），不含对角线
+  var gridColor = new THREE.Color(0.16, 0.28, 0.42);
+  var linePos = [];
+  for (i = 0; i < N; i++) {
+    for (j = 0; j < N-1; j++) {
+      var p1 = (i*N+j)*3, p2 = (i*N+j+1)*3;
+      linePos.push(positions[p1],positions[p1+1],positions[p1+2], positions[p2],positions[p2+1],positions[p2+2]);
+    }
+  }
+  for (j = 0; j < N; j++) {
+    for (i = 0; i < N-1; i++) {
+      var q1 = (i*N+j)*3, q2 = ((i+1)*N+j)*3;
+      linePos.push(positions[q1],positions[q1+1],positions[q1+2], positions[q2],positions[q2+1],positions[q2+2]);
+    }
+  }
+  var lineGeo = new THREE.BufferGeometry();
+  lineGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(linePos), 3));
+  var lineMat = new THREE.LineBasicMaterial({ color: gridColor, transparent:true, opacity:0.4 });
+  var gridLines = new THREE.LineSegments(lineGeo, lineMat);
+  scene.add(gridLines);
+
+  // 地面阴影承接板
+  var floor = new THREE.Mesh(
+    new THREE.PlaneGeometry(7, 7),
+    new THREE.ShadowMaterial({ opacity: 0.16 })
+  );
+  floor.rotation.x = -Math.PI/2;
+  floor.position.y = -0.15;
+  floor.receiveShadow = true;
+  scene.add(floor);
+
+  // 三个样本标记点
+  function colorHex(varName){
+    var rgb = Deck.rgb(varName);
+    return (rgb[0]<<16) + (rgb[1]<<8) + rgb[2];
+  }
+  SAMPLES.forEach(function(s){
+    var sph = new THREE.Mesh(
+      new THREE.SphereGeometry(0.1, 20, 16),
+      new THREE.MeshStandardMaterial({ color: colorHex(s.dot), emissive: colorHex(s.dot), emissiveIntensity:0.35, roughness:0.4, metalness:0.1 })
+    );
+    sph.position.set(s.w1, s.loss, s.w2);
+    sph.castShadow = true;
+    scene.add(sph);
+    if (s.ring) {
+      var ring = new THREE.Mesh(
+        new THREE.TorusGeometry(0.17, 0.025, 8, 32),
+        new THREE.MeshStandardMaterial({ color: colorHex(s.ring), emissive: colorHex(s.ring), emissiveIntensity:0.4, roughness:0.4, metalness:0.1 })
+      );
+      ring.rotation.x = Math.PI/2;
+      ring.position.set(s.w1, s.loss, s.w2);
+      scene.add(ring);
+    }
+  });
+
+  // ---------- 相机轨道（仅旋转，无缩放/平移） ----------
+  var R = 8.6;
+  var target = new THREE.Vector3(0, maxLoss * 0.42, 0);
+  var DEFAULT_AZ = 50 * Math.PI/180, DEFAULT_EL = 24 * Math.PI/180;
+  var azimuth = DEFAULT_AZ, elevation = DEFAULT_EL;
+  var EL_MIN = 10 * Math.PI/180, EL_MAX = 80 * Math.PI/180;
+
+  function updateCamera(){
+    var x = target.x + R * Math.cos(elevation) * Math.sin(azimuth);
+    var y = target.y + R * Math.sin(elevation);
+    var z = target.z + R * Math.cos(elevation) * Math.cos(azimuth);
+    camera.position.set(x, y, z);
+    camera.lookAt(target);
+  }
+
+  function resize(){
+    var w = Math.max(1, wrap.clientWidth), h = Math.max(1, wrap.clientHeight);
+    renderer.setSize(w, h, false);
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
+    renderOnce();
+  }
+  function renderOnce(){ renderer.render(scene, camera); }
+
+  updateCamera();
+  Deck.onResize(resize);
+  resize();
+
+  // ---------- 拖拽交互 ----------
+  var dragging = false, last = null;
+  wrap.addEventListener('pointerdown', function(e){
+    dragging = true;
+    wrap.classList.add('dragging');
+    last = Deck.pt(wrap, e);
+    try{ wrap.setPointerCapture(e.pointerId); }catch(err){}
+  });
+  window.addEventListener('pointermove', function(e){
+    if (!dragging) return;
+    var p = Deck.pt(wrap, e);
+    var dx = p.x - last.x, dy = p.y - last.y;
+    azimuth += dx * 0.006;
+    elevation = Deck.clamp(elevation - dy * 0.006, EL_MIN, EL_MAX);
+    last = p;
+    updateCamera();
+    renderOnce();
+  });
+  window.addEventListener('pointerup', function(){
+    dragging = false;
+    wrap.classList.remove('dragging');
+  });
+  function resetView(){
+    azimuth = DEFAULT_AZ; elevation = DEFAULT_EL;
+    updateCamera(); renderOnce();
+  }
+  wrap.addEventListener('dblclick', resetView);
+  document.getElementById('resetBtn').addEventListener('click', resetView);
+
+})();
+</script>
+</body>
+</html>

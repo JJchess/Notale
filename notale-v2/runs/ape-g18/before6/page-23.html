@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+</head>
+<body data-page="23" data-total="50">
+<div id="stage">
+  <style>
+    .kicker{color:var(--ochre);font:650 var(--fs-label)/1.35 var(--font-mono);letter-spacing:.14em}
+    .pool{display:flex;align-items:center;gap:18px;padding:14px 18px;border:1px dashed var(--line-strong);border-radius:10px}
+    .pieces{display:flex;flex-wrap:wrap;gap:10px;align-content:center;min-height:76px;flex:1}
+    .meat{width:104px;height:54px;border:2px solid var(--ochre);border-radius:46% 54% 42% 58%;background:rgba(197,106,50,.22);color:var(--text);display:grid;place-items:center;font:700 var(--fs-sec)/1 var(--font-mono);cursor:grab;user-select:none;touch-action:none}
+    .meat[aria-selected="true"]{border-color:var(--cyan);box-shadow:0 0 0 3px rgba(69,214,232,.2);color:var(--cyan)}
+    .meat.dragging{opacity:.58;cursor:grabbing}
+    .classrow{display:flex;gap:18px;flex:1;min-height:0}
+    .classrow>.box{flex:1;display:flex;flex-direction:column;transition:border-color .2s,box-shadow .2s}
+    .classrow>.box.ready{border-color:var(--cyan)}
+    .classrow>.box.alert{border-color:var(--ochre)}
+    .classrow>.box.complete{border-color:var(--cyan);box-shadow:inset 0 0 0 2px rgba(69,214,232,.18)}
+    .role{color:var(--muted);font-size:var(--fs-sec);line-height:1.5}.lv{display:flex;flex-direction:column;flex:1;justify-content:space-around}.roleline{padding:8px 0;border-top:1px solid var(--line);font-size:var(--fs-body);line-height:1.4}.function{padding:10px 0;color:var(--muted);font-size:var(--fs-sec);line-height:1.5}
+    .reading{margin-top:auto;padding-top:12px;border-top:1px solid var(--line);font-size:var(--fs-body);line-height:1.4;font-weight:680}
+    .dropzone{min-height:76px}
+    .actions{display:flex;align-items:center;justify-content:space-between;gap:20px}
+    .status{flex:1;margin:0;font-size:var(--fs-body);line-height:1.45;color:var(--text)}
+    .risk-ring .box{border-color:var(--cyan)}
+    .risk-ring .box:not(:last-child)::after{content:"↔";position:absolute;right:-27px;top:48%;z-index:3;color:var(--cyan);font-size:var(--fs-h2)}
+    @media (prefers-reduced-motion:reduce){.classrow>.box{transition:none}}
+  </style>
+  <header style="height:102px">
+    <div class="kicker">RISK POOL</div>
+    <h1>谁能分到这份猎物？</h1>
+  </header>
+  <main class="k-classification min0" style="gap:14px">
+    <section class="pool panel no-pan" aria-label="中央待分配区">
+      <strong style="font-size:var(--fs-h2)">待分配</strong>
+      <div id="pieces" class="pieces" role="listbox" tabindex="0" aria-label="十块肉；用左右键选择，回车选中"></div>
+      <span id="remaining" class="tag bio">待分配</span>
+    </section>
+    <p class="hint" style="height:25px;margin:0">拖动肉块；或用左右键选肉、回车选中，再按下一个承担类别。</p>
+    <div style="height:48px;display:flex;gap:18px" aria-label="分类问题">
+      <div class="it min0" style="flex:1">谁在维持下一轮资源？</div>
+      <div class="it min0" style="flex:1">谁暂时不能亲自获取？</div>
+      <div class="it min0" style="flex:1">谁的本轮贡献尚待核实？</div>
+    </div>
+    <section id="classrow" class="classrow min0" aria-label="承担方式分类">
+      <article class="box min0" data-zone="guard">
+        <span class="bt">获取与守护</span>
+        <div class="lv">
+          <div class="roleline">追猎者｜取得共享资源</div>
+          <div class="roleline">守夜者｜保护资源与同伴</div>
+          <div style="font-size:var(--fs-h2);line-height:1.4;color:var(--cyan)">获取 → 守护 → 再获取</div>
+          <div class="it">承担：获取成本与守护成本</div>
+          <div class="small">功能门槛　□ □ □ □</div>
+          <div class="pieces dropzone" aria-label="获取与守护所得肉块"></div>
+        </div>
+        <div id="guardRead" class="reading num">获取与守护</div>
+      </article>
+      <article class="box min0" data-zone="care">
+        <span class="bt">照料与保障</span>
+        <div class="lv">
+          <div class="roleline">照料者｜承担照料时间</div>
+          <div class="roleline">受伤者｜暂时无法获取</div>
+          <div class="roleline">幼者｜尚无获取能力</div>
+          <div style="font-size:var(--fs-h2);line-height:1.4;color:var(--cyan)">受伤 → 分享 → 存活</div>
+          <div class="it">承担：照料时间与食物缺口</div>
+          <div class="small">功能门槛　□ □ □ □</div>
+          <div class="pieces dropzone" aria-label="照料与保障所得肉块"></div>
+        </div>
+        <div id="careRead" class="reading num">照料与保障</div>
+      </article>
+      <article class="box min0" data-zone="claim">
+        <span class="bt">贡献未核实</span>
+        <div class="lv">
+          <div class="roleline">申领者｜本轮贡献尚未核实</div>
+          <div style="font-size:var(--fs-h2);line-height:1.4;color:var(--ochre)">申领 → 压力 → 核实</div>
+          <div class="it">张力：领取与承担可能不对称</div>
+          <div class="small">可控上限　□ □</div>
+          <div class="pieces dropzone" aria-label="未核实申领所得肉块"></div>
+        </div>
+        <div id="claimRead" class="reading num">未核实申领</div>
+      </article>
+    </section>
+    <div class="actions panel" style="height:64px;padding-top:8px;padding-bottom:8px">
+      <p id="status" class="status" aria-live="polite">分享不是额外的善意装饰，而是一种群体保险。</p>
+      <div class="btns" style="gap:8px">
+        <button class="btn" data-assign="guard">分给获取与守护</button>
+        <button class="btn" data-assign="care">分给照料与保障</button>
+        <button class="btn" data-assign="claim">分给未核实申领</button>
+        <button id="reset" class="btn">重新分配</button>
+      </div>
+    </div>
+  </main>
+  <footer style="height:88px;display:flex;align-items:flex-end;justify-content:space-between;gap:32px">
+    <p class="lead" style="max-width:980px;margin:0">分享把饥饿、受伤和照料风险从个人转给群体；群体也因此必须处理只领取、不承担的问题。</p>
+    <p class="note" style="max-width:430px;margin:0">示意局：公平不是人人相同，而是群体功能被覆盖、利用压力仍可控。<br>分配规则如何越过个人记忆——下一页看它怎样被传下去。</p>
+  </footer>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded',()=>{
+  Deck.init({index:23,total:50});
+  const total='肉肉肉肉肉肉肉肉肉肉'.length, limits={guard:'守护获取'.length,care:'照料保障'.length,claim:'申领'.length};
+  const state={places:Array(total).fill('pool'),selected:0,started:false,complete:false,trace:[]};
+  const pool=document.querySelector('#pieces'), row=document.querySelector('#classrow'), status=document.querySelector('#status');
+  const zones={pool,guard:document.querySelector('[data-zone="guard"] .dropzone'),care:document.querySelector('[data-zone="care"] .dropzone'),claim:document.querySelector('[data-zone="claim"] .dropzone')};
+  const fresh=()=>({places:Array(total).fill('pool'),selected:0,started:false,complete:false,trace:[]});
+  function metrics(){const m={guard:0,care:0,claim:0,pool:0};state.places.forEach(x=>m[x]++);return m}
+  function act(i,to){if(i<0||!zones[to])return;if(!state.started){state.started=true;document.dispatchEvent(new CustomEvent('game-start',{bubbles:true,detail:{state:getState()}}))}state.places[i]=to;state.selected=i;state.trace.push({piece:i,to});render();document.dispatchEvent(new CustomEvent(state.complete?'game-complete':'game-progress',{bubbles:true,detail:state.complete?{score:1,metrics:metrics(),trace:[...state.trace]}:{state:getState(),action:{piece:i,to},metrics:metrics()}}))}
+  function getState(){return JSON.parse(JSON.stringify(state))}
+  function render(){
+    Object.values(zones).forEach(z=>z.textContent='');
+    state.places.forEach((place,i)=>{const b=document.createElement('div');b.className='meat';b.textContent=i+1;b.dataset.i=i;b.setAttribute('role','option');b.setAttribute('aria-selected',String(i===state.selected));b.title='肉块 '+(i+1);zones[place].appendChild(b)});
+    const m=metrics();
+    document.querySelector('#remaining').textContent='待分配 '+m.pool+'/'+total;
+    document.querySelector('#guardRead').textContent='获取与守护 '+m.guard+'/'+limits.guard;
+    document.querySelector('#careRead').textContent='照料与保障 '+m.care+'/'+limits.care;
+    document.querySelector('#claimRead').textContent='未核实申领 '+m.claim+'/'+limits.claim;
+    const done=m.pool===0&&m.guard>=limits.guard&&m.care>=limits.care&&m.claim<=limits.claim;state.complete=done;
+    row.classList.toggle('risk-ring',done);
+    document.querySelectorAll('[data-zone]').forEach(box=>{const k=box.dataset.zone,v=m[k],ok=k==='claim'?v<=limits[k]:v>=limits[k];box.classList.toggle('ready',ok);box.classList.toggle('alert',!ok&&m.pool===0);box.classList.toggle('complete',done)});
+    if(done) status.textContent='本局完成：获取与照料都被覆盖，利用压力仍可控。';
+    else if(m.claim>limits.claim) status.textContent='未核实申领超过门槛：搭便车压力上升。';
+    else if(m.pool===0&&m.guard<limits.guard) status.textContent='获取与守护尚未覆盖：下一次获取可能中断。';
+    else if(m.pool===0&&m.care<limits.care) status.textContent='照料与保障尚未覆盖：暂时不能获取者面临风险。';
+    else status.textContent='保险能覆盖受伤与照料成本，也会产生谁承担、谁领取的持续张力。';
+  }
+  let drag=null;
+  row.addEventListener('pointerdown',start);pool.addEventListener('pointerdown',start);
+  function start(e){const p=e.target.closest('.meat');if(!p)return;drag=Number(p.dataset.i);state.selected=drag;p.classList.add('dragging');p.setPointerCapture(e.pointerId)}
+  document.addEventListener('pointerup',e=>{if(drag===null)return;const hit=document.elementFromPoint(e.clientX,e.clientY);const box=hit&&hit.closest('[data-zone]');const target=box?box.dataset.zone:(hit&&hit.closest('#pieces')?'pool':null);if(target)act(drag,target);drag=null});
+  pool.addEventListener('keydown',e=>{if(e.key==='ArrowRight'||e.key==='ArrowLeft'){e.preventDefault();state.selected=(state.selected+(e.key==='ArrowRight'?1:total-1))%total;render()}else if(e.key==='Enter'||e.key===' '){e.preventDefault();render()}});
+  document.querySelectorAll('[data-assign]').forEach(b=>b.addEventListener('click',()=>act(state.selected,b.dataset.assign)));
+  document.querySelector('#reset').addEventListener('click',()=>{Object.assign(state,fresh());render();document.dispatchEvent(new CustomEvent('game-reset',{bubbles:true,detail:{state:getState()}}))});
+  render();
+});
+</script>
+</body>
+</html>

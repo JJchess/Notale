@@ -1,0 +1,390 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  #stage{ position:relative; display:flex; flex-direction:column; }
+
+  .p07-page{ width:100%; height:100%; display:flex; flex-direction:column; }
+
+  .p07-head{
+    flex:0 0 auto;
+    display:flex; align-items:baseline; gap:14px;
+    padding-bottom:6px;
+    border-bottom:1px solid var(--rule);
+  }
+  .p07-kicker{
+    font-size:15px; font-weight:700; color:var(--text-dim);
+    letter-spacing:.5px; white-space:nowrap;
+  }
+  .p07-kicker .bar{ color:var(--orange); margin-right:6px; }
+
+  .p07-badge{
+    position:absolute; top:0; right:0;
+    display:flex; align-items:baseline; gap:8px;
+    padding:8px 16px;
+    background:var(--panel-bg);
+    border:1px solid var(--rule);
+    border-radius:10px;
+  }
+  .p07-badge .eb-lb{ font-size:15px; color:var(--text-dim); font-family:var(--font-sans); }
+  .p07-badge .eb-val{
+    font-size:22px; font-family:var(--font-mono); font-weight:700; color:var(--orange);
+  }
+
+  .p07-main{
+    flex:1; min-height:0;
+    display:flex; flex-direction:column; align-items:center; justify-content:flex-start;
+    gap:8px;
+    padding-top:0px;
+  }
+
+  .p07-claim{
+    margin:0; text-align:center;
+    font-size:36px; font-weight:700; line-height:1.25;
+    color:var(--text);
+    max-width:1450px;
+    flex:0 0 auto;
+  }
+
+  .p07-panel{
+    width:100%; flex:1; min-height:0;
+    display:flex; flex-direction:column; align-items:stretch; justify-content:center;
+    gap:14px;
+    border:4px solid var(--blue);
+    border-radius:20px;
+    background:var(--panel-bg);
+    padding:16px 40px 14px;
+    box-sizing:border-box;
+    position:relative;
+    overflow:visible;
+  }
+  .p07-panel::before{
+    content:""; position:absolute; inset:0;
+    background:
+      repeating-linear-gradient(0deg, rgba(43,95,166,.05) 0 1px, transparent 1px 34px),
+      repeating-linear-gradient(90deg, rgba(43,95,166,.05) 0 1px, transparent 1px 34px),
+      linear-gradient(90deg, rgba(43,95,166,.14) 0%, rgba(43,95,166,.14) 60%, rgba(232,101,10,.16) 100%);
+    pointer-events:none;
+  }
+
+  /* ---- figure: inputs -> neuron -> ? ---- */
+  .p07-fig{
+    display:flex; align-items:center; justify-content:center; gap:0;
+    width:100%; flex:0 0 auto; position:relative; z-index:1;
+  }
+
+  .p07-sumwire{
+    flex:1 1 auto; min-width:70px; max-width:150px;
+    display:flex; flex-direction:column; align-items:center; gap:6px;
+  }
+  .p07-sumwire .sig{
+    font-family:var(--font-mono); font-size:26px; font-weight:700; color:var(--blue); opacity:.85;
+  }
+  .p07-sumwire .ln{
+    width:100%; height:8px; border-radius:4px; background:var(--blue); opacity:.6;
+    position:relative;
+    transform-origin:left; transform:scaleX(0);
+    animation: p07-draw .2s ease-out .28s both;
+  }
+  .p07-sumwire .ln::after{
+    content:""; position:absolute; right:-1px; top:50%; transform:translateY(-50%);
+    border-left:16px solid var(--blue); border-top:9px solid transparent; border-bottom:9px solid transparent;
+    opacity:.9;
+  }
+
+  .p07-inputs{
+    display:flex; flex-direction:column; justify-content:center; gap:18px;
+    animation: p07-fadein .3s ease-out both;
+    height:100%;
+  }
+  .p07-in-row{
+    display:flex; align-items:center; gap:14px;
+  }
+  .p07-in-node{
+    width:120px; height:120px; border-radius:50%; flex:0 0 auto;
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    border:5px solid var(--blue); background:rgba(43,95,166,.6);
+    opacity:1; filter:saturate(.9);
+    font-family:var(--font-mono); color:#fff;
+  }
+  .p07-in-node .xv{ font-size:28px; font-weight:700; }
+  .p07-in-node .xn{ font-size:16px; font-weight:600; opacity:.95; margin-top:1px; color:#eef3fa; }
+  .p07-in-wire{
+    position:relative; width:172px; height:10px; border-radius:5px; background:var(--blue); opacity:.7;
+    flex:0 0 auto;
+  }
+  .p07-in-wire .wlabel{
+    position:absolute; left:50%; top:-30px; transform:translateX(-50%);
+    font-family:var(--font-mono); font-size:21px; font-weight:700;
+    color:var(--blue); white-space:nowrap;
+  }
+  .p07-in-wire .wval{
+    position:absolute; left:50%; top:14px; transform:translateX(-50%);
+    font-family:var(--font-mono); font-size:17px; font-weight:600;
+    color:var(--text-dim); white-space:nowrap;
+  }
+  .p07-in-wire.neg .wlabel{ color:var(--red); }
+  .p07-in-wire.neg{ background:var(--red); }
+
+  .p07-node-col{ display:flex; flex-direction:column; align-items:center; justify-content:center; gap:10px; flex:0 0 auto; }
+
+  .p07-neuron{
+    width:300px; height:300px; border-radius:50%; flex:0 0 auto;
+    display:flex; align-items:center; justify-content:center;
+    border:10px solid var(--blue);
+    background:radial-gradient(circle at 38% 32%, rgba(43,95,166,.62), rgba(43,95,166,.76));
+    position:relative;
+    opacity:1; filter:saturate(.95);
+    animation: p07-fadein .3s ease-out both;
+    box-shadow:0 0 0 11px rgba(43,95,166,.16);
+  }
+  .p07-neuron .a-label{
+    font-family:var(--font-mono); font-size:80px; font-weight:700; color:#fff;
+  }
+
+  .p07-out-wire{
+    position:relative; flex:1 1 auto; min-width:70px; max-width:170px; height:9px; border-radius:4px;
+    background:var(--blue); opacity:.6;
+    transform-origin:left; transform:scaleX(0);
+    animation: p07-draw .2s ease-out .3s both;
+  }
+  .p07-out-wire::after{
+    content:""; position:absolute; right:-1px; top:50%; transform:translateY(-50%);
+    border-left:17px solid var(--blue); border-top:10px solid transparent; border-bottom:10px solid transparent;
+    opacity:.9;
+  }
+
+  .p07-qmark{
+    width:300px; height:300px; border-radius:50%; flex:0 0 auto;
+    display:flex; align-items:center; justify-content:center;
+    border:10px dashed var(--orange);
+    background:radial-gradient(circle at 40% 34%, rgba(232,101,10,.50), rgba(232,101,10,.66));
+    font-size:180px; font-weight:800; line-height:1; color:#fff;
+    transform:scale(.8);
+    box-sizing:border-box;
+    animation: p07-bounce .15s ease-out .5s both;
+    box-shadow:0 0 0 11px rgba(232,101,10,.16);
+  }
+
+  .p07-tag{
+    font-size:15px; font-weight:600; padding:3px 14px; border-radius:20px;
+    white-space:nowrap;
+  }
+  .p07-tag.k{ color:#fff; border:1px solid var(--blue); background:var(--blue); }
+  .p07-tag.u{ color:#fff; border:1px solid var(--orange); background:var(--orange);
+    opacity:0; animation:p07-fadein2 .25s ease-out .6s both; }
+
+  /* ---- formula chip row ---- */
+  .p07-chips{
+    display:flex; align-items:center; justify-content:center; gap:10px;
+    flex:0 0 auto; position:relative; z-index:1;
+    flex-wrap:nowrap;
+  }
+  .p07-chip{
+    display:flex; flex-direction:column; align-items:center; gap:3px;
+    padding:11px 20px; border-radius:11px;
+    border:3px solid var(--blue); background:rgba(43,95,166,.30);
+    font-family:var(--font-mono); font-size:21px; font-weight:700; color:var(--blue);
+    white-space:nowrap;
+  }
+  .p07-chip.neg{ border-color:var(--red); color:var(--red); background:rgba(192,57,43,.30); }
+  .p07-chip.op{ border:none; background:none; font-size:23px; color:var(--text-dim); padding:0 2px; }
+  .p07-chip.f{ border-color:var(--text-dim); color:var(--text); background:rgba(0,0,0,.12); }
+  .p07-chip .sub{ font-family:var(--font-sans); font-size:14px; font-weight:500; color:var(--text-dim); }
+  .p07-chip.orange{ border-color:var(--orange); color:var(--orange); background:rgba(232,101,10,.30); }
+
+  .p07-below{
+    flex:0 0 auto;
+    width:100%; max-width:1320px;
+    display:flex; flex-direction:column; align-items:center; gap:7px;
+    padding-top:4px;
+  }
+
+  .p07-attempts{
+    display:flex; justify-content:center; gap:20px;
+    width:100%; max-width:1460px;
+    align-self:center;
+    flex:0 0 auto; position:relative; z-index:1;
+  }
+  .p07-attempt{
+    flex:1 1 0; display:flex; flex-direction:column; align-items:center; gap:5px;
+    border:3px solid var(--blue); border-radius:13px;
+    padding:11px 16px 12px;
+    background:rgba(43,95,166,.16);
+  }
+  .p07-attempt .at-name{
+    font-size:15px; font-weight:700; color:var(--text-dim); letter-spacing:.3px;
+  }
+  .p07-attempt .at-w{
+    font-family:var(--font-mono); font-size:17px; font-weight:700; color:var(--blue);
+  }
+  .p07-attempt .at-a{
+    font-family:var(--font-mono); font-size:16px; color:var(--text-dim);
+  }
+  .p07-attempt .at-q{
+    font-size:18px; font-weight:800; color:var(--orange);
+  }
+
+  .p07-trunk-cap{
+    margin:0; text-align:center; font-size:20px; line-height:1.5;
+    color:var(--text); max-width:1420px;
+  }
+  .p07-trunk-cap b{ color:var(--blue); font-family:var(--font-mono); }
+
+  .p07-support{
+    margin:0; text-align:center; font-size:19px; line-height:1.5;
+    color:var(--text-dim); max-width:1420px;
+  }
+  .p07-support b{ color:var(--blue); font-family:var(--font-mono); font-weight:700; }
+  .p07-support em{ color:var(--orange); font-style:normal; font-weight:700; }
+
+  .p07-foot{
+    flex:0 0 auto;
+    padding-top:6px; margin-top:0px;
+    border-top:1px solid var(--rule);
+    display:flex; flex-direction:column; align-items:center; gap:5px;
+    text-align:center;
+  }
+  .p07-lead{
+    margin:0; font-size:22px; font-weight:600; line-height:1.4;
+    color:var(--text); max-width:1450px;
+  }
+  .p07-next{
+    margin:0; font-size:19px; line-height:1.35; font-style:italic;
+    color:var(--text-dim); max-width:1250px;
+  }
+
+  @keyframes p07-fadein{ from{opacity:0} to{opacity:.9} }
+  @keyframes p07-fadein2{ from{opacity:0} to{opacity:1} }
+  @keyframes p07-draw{ from{transform:scaleX(0)} to{transform:scaleX(1)} }
+  @keyframes p07-bounce{ 0%{transform:scale(.8)} 70%{transform:scale(1.05)} 100%{transform:scale(1)} }
+
+  @media (prefers-reduced-motion: reduce){
+    .p07-inputs, .p07-neuron, .p07-out-wire, .p07-qmark, .p07-tag.u{
+      animation:none !important; opacity:.9; transform:scaleX(1) scale(1);
+    }
+    .p07-qmark{ transform:scale(1); opacity:1; }
+    .p07-tag.u{ opacity:1; }
+  }
+</style>
+</head>
+<body data-page="07" data-total="22">
+<div id="stage">
+
+  <div class="p07-page">
+
+    <div class="p07-head">
+      <div class="p07-kicker"><span class="bar">III</span>· 误差与目标</div>
+    </div>
+
+    <div class="p07-badge">
+      <span class="eb-lb">loss</span>
+      <span class="eb-val">?</span>
+    </div>
+
+    <div class="p07-main">
+      <h1 class="p07-claim">神经元会算，但它凭什么知道权重该设多少？</h1>
+
+      <div class="p07-panel">
+        <div class="p07-fig" role="img"
+             aria-label="图示：三路输入 x1、x2、x3 分别乘上权重 w1、w2、w3（其中 w2 为负权重）送入神经元，算出数值 a；神经元用一条线连向一个放大的橙色问号，表示这个 a 到底对不对，没人告诉过它">
+
+          <div class="p07-node-col">
+            <div class="p07-inputs">
+              <div class="p07-in-row">
+                <div class="p07-in-node"><span class="xv">x₁</span><span class="xn">= 1.0</span></div>
+                <div class="p07-in-wire"><span class="wlabel">w₁</span><span class="wval">0.8</span></div>
+              </div>
+              <div class="p07-in-row">
+                <div class="p07-in-node"><span class="xv">x₂</span><span class="xn">= 0.6</span></div>
+                <div class="p07-in-wire neg"><span class="wlabel">w₂</span><span class="wval">−0.5</span></div>
+              </div>
+              <div class="p07-in-row">
+                <div class="p07-in-node"><span class="xv">x₃</span><span class="xn">= 0.4</span></div>
+                <div class="p07-in-wire"><span class="wlabel">w₃</span><span class="wval">0.3</span></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="p07-sumwire">
+            <span class="sig">Σ</span>
+            <span class="ln"></span>
+          </div>
+
+          <div class="p07-node-col">
+            <div class="p07-neuron">
+              <span class="a-label">a</span>
+            </div>
+            <span class="p07-tag k">已经会算</span>
+          </div>
+
+          <div class="p07-out-wire"></div>
+
+          <div class="p07-node-col">
+            <div class="p07-qmark">?</div>
+            <span class="p07-tag u">没人打分</span>
+          </div>
+        </div>
+
+        <div class="p07-chips">
+          <div class="p07-chip">0.8×1.0<span class="sub">w₁x₁</span></div>
+          <div class="p07-chip op">+</div>
+          <div class="p07-chip neg">−0.5×0.6<span class="sub">w₂x₂ 负号=抑制</span></div>
+          <div class="p07-chip op">+</div>
+          <div class="p07-chip">0.3×0.4<span class="sub">w₃x₃</span></div>
+          <div class="p07-chip op">=</div>
+          <div class="p07-chip f">0.32<span class="sub">加权和</span></div>
+          <div class="p07-chip op">→</div>
+          <div class="p07-chip f">f(0.32)<span class="sub">压缩函数</span></div>
+          <div class="p07-chip op">=</div>
+          <div class="p07-chip">a ≈ 0.58<span class="sub">神经元的输出</span></div>
+          <div class="p07-chip op" style="color:var(--orange)">→</div>
+          <div class="p07-chip orange">对不对？<span class="sub">没有数能回答</span></div>
+        </div>
+
+        <div class="p07-attempts">
+          <div class="p07-attempt">
+            <span class="at-name">试一组权重</span>
+            <span class="at-w">w = (0.8, −0.5, 0.3)</span>
+            <span class="at-a">→ a ≈ 0.58</span>
+            <span class="at-q">依然没人打分？</span>
+          </div>
+          <div class="p07-attempt">
+            <span class="at-name">换一组权重</span>
+            <span class="at-w">w = (0.2, 0.9, −0.4)</span>
+            <span class="at-a">→ a ≈ 0.63</span>
+            <span class="at-q">依然没人打分？</span>
+          </div>
+          <div class="p07-attempt">
+            <span class="at-name">再换一组</span>
+            <span class="at-w">w = (−0.6, 0.1, 0.7)</span>
+            <span class="at-a">→ a ≈ 0.41</span>
+            <span class="at-q">依然没人打分？</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="p07-below">
+        <p class="p07-trunk-cap">神经元已经会算：一堆输入乘上权重、加起来、压缩一下，就吐出一个数 <b>a</b>——权重可正可负，正负号本身就是"支持"还是"反对"这路输入的信号。</p>
+        <p class="p07-support">但 <b>a</b> 算得对不对、离该有的答案还差多少，<em>没人告诉过它</em>——它自己不知道。权重是它唯一能调的东西，可它连"该往哪个方向调"都还没有一个数能说清楚。</p>
+      </div>
+    </div>
+
+    <div class="p07-foot">
+      <p class="p07-lead">光会计算不等于会学习——还缺一个能告诉权重“错在哪、错多少”的数值，那就是误差。</p>
+      <p class="p07-next">如果把“错得多少”画成一张地图，它会是什么样子？</p>
+    </div>
+
+  </div>
+
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script>
+  Deck.init({ index:7, total:22 });
+</script>
+</body>
+</html>

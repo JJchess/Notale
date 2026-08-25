@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  .kicker{color:var(--cyan);font:650 var(--fs-label)/1.35 var(--font-mono);letter-spacing:.14em}
+  .flow-title{display:flex;align-items:center;justify-content:space-between;gap:24px}
+  .flow-title h2{margin:0}.flow-title p{margin:0;color:var(--muted);font-size:var(--fs-sec)}
+  .scene{position:relative;height:100%;border-radius:10px;overflow:hidden;border:1px solid var(--line)}
+  .scene img{width:100%;height:100%;object-fit:cover;object-position:center 43%;opacity:.58}
+  .heat-overlay{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+  .heat-overlay text{font:650 16px var(--font-sans);paint-order:stroke;stroke:var(--bg);stroke-width:5px;stroke-linejoin:round}
+  .heat-path{transition:opacity .18s ease}.heat-path.off{opacity:.13}
+  .controls{display:flex;flex-direction:column;justify-content:center;gap:10px}
+  .switchline{display:grid;grid-template-columns:1fr auto;align-items:center;gap:14px;padding:10px 0;border-top:1px solid var(--line)}
+  .switchline:first-child{border-top:0}.switchline strong{font-size:var(--fs-body)}
+  .switchline span{display:block;color:var(--muted);font-size:var(--fs-sec);line-height:1.4}
+  .toggle{min-width:118px}.toggle:focus-visible{outline:3px solid var(--focus);outline-offset:3px}
+  #chart{height:100%;min-height:180px}
+  .reading{display:flex;align-items:baseline;gap:10px}.reading-label{font-size:var(--fs-sec);color:var(--muted)}
+  .conclusion{border-top:1px solid var(--line);padding-top:10px}
+  @media (prefers-reduced-motion:reduce){.heat-path{transition:none}}
+</style>
+</head>
+<body data-page="31" data-total="50">
+<div id="stage">
+  <header style="height:94px">
+    <div class="kicker">VACUUM HEAT</div>
+    <h1>真空不会让你瞬间冻住</h1>
+  </header>
+  <main class="k-process vertical" style="gap:0">
+    <div class="axis" aria-hidden="true"></div>
+    <section class="step" style="flex:0 0 76px">
+      <div class="flow-title">
+        <h2>1　体内产热</h2>
+        <p>静息代谢持续产热：<strong class="num" id="metabolic-inline"></strong></p>
+      </div>
+    </section>
+    <div class="arw" aria-hidden="true"></div>
+    <section class="step min0" id="path-step" aria-current="step" style="flex:1">
+      <div class="flow-title" style="height:38px"><h2>2　热量离开</h2><p>开关只改变传热路径，不改变产热基准</p></div>
+      <div style="display:flex;height:calc(100% - 38px);gap:22px">
+        <div class="scene min0" style="flex:1.45" title="人体处于真空边界中的科学示意插画">
+          <img src="assets/img/illus-vacuum-boundary.png" alt="真空边界中的人体示意">
+          <svg class="heat-overlay" viewBox="0 0 760 310" role="img" aria-label="辐射和接触传导可带走热量，真空中没有对流">
+            <defs><marker id="arrow-c" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="var(--cyan)"/></marker><marker id="arrow-o" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="var(--ochre)"/></marker></defs>
+            <g id="rad-arrow" class="heat-path"><path d="M380 90 C490 50 555 46 650 58" fill="none" stroke="var(--cyan)" stroke-width="5" marker-end="url(#arrow-c)"/><text x="505" y="38" fill="var(--cyan)">辐射｜跨越真空</text></g>
+            <g id="cond-arrow" class="heat-path"><path d="M385 220 C470 250 535 258 630 245" fill="none" stroke="var(--ochre)" stroke-width="5" marker-end="url(#arrow-o)"/><text x="482" y="286" fill="var(--ochre)">传导｜沿接触结构</text></g>
+            <g id="conv-arrow" class="heat-path off"><path d="M360 150 C500 125 570 140 670 155" fill="none" stroke="var(--muted)" stroke-width="4" stroke-dasharray="10 9"/><text x="505" y="132" fill="var(--muted)">对流｜无流体，路径中断</text></g>
+          </svg>
+        </div>
+        <div class="panel controls min0" style="flex:.72">
+          <p class="hint">切换两条可用路径，观察净热流</p>
+          <div class="switchline"><div><strong>辐射视野</strong><span id="rad-status">开启｜向外辐射</span></div><button class="btn toggle" id="rad" aria-pressed="true">已开启</button></div>
+          <div class="switchline"><div><strong>接触传导</strong><span id="cond-status">开启｜接触结构</span></div><button class="btn toggle" id="cond" aria-pressed="true">已开启</button></div>
+          <div class="switchline"><div><strong>真空对流</strong><span>0 W｜无流体</span></div><button class="btn toggle" disabled aria-pressed="false">固定关闭</button></div>
+          <button class="btn" id="reset">复位到热平衡</button>
+        </div>
+      </div>
+    </section>
+    <div class="arw" aria-hidden="true"></div>
+    <section class="step min0" style="flex:0 0 250px">
+      <div style="display:flex;height:100%;gap:22px">
+        <div class="min0" style="flex:1.5"><h2>3　看净热流</h2><div id="chart" role="img" aria-label="各路径功率与净热流的横向发散条形图"></div></div>
+        <aside class="panel min0" style="flex:.68;display:flex;flex-direction:column;justify-content:center;gap:10px">
+          <div class="reading-label">净热流（产热 − 散热）</div>
+          <div class="reading" aria-live="polite"><span class="big sm" id="net"></span><span class="unit">W</span></div>
+          <div class="reading-label">10 分钟净积热</div>
+          <div class="reading"><span class="big sm" id="stored"></span><span class="unit">kJ</span></div>
+          <div class="small" id="equation"></div>
+          <div class="note">课堂示意工况，不是人体固定测量值。零点只表示此刻平衡。</div>
+        </aside>
+      </div>
+    </section>
+  </main>
+  <footer style="height:72px;display:flex;align-items:flex-end;justify-content:space-between;gap:28px">
+    <p class="lead conclusion" style="margin:0;flex:1">真空切断的是对流；辐射仍能跨越空间，传导仍能沿接触结构搬运热量。</p>
+    <p class="small" style="margin:0;text-align:right">下一问：轨道里的人为什么会漂浮——真的是没有重力吗？</p>
+  </footer>
+  <script src="assets/lib/echarts.min.js"></script>
+  <script>
+  document.addEventListener('DOMContentLoaded', function(){
+    Deck.init({index:31,total:50});
+    var metabolic=Lec.K.human.restingMetabolicPowerWatts;
+    var seconds=Lec.K.units.secondsPerMinute*10;
+    var radiation=metabolic*0.65;
+    var conduction=metabolic-radiation;
+    var state={rad:true,cond:true};
+    var chart=echarts.init(document.getElementById('chart'),null,{renderer:'svg'});
+    document.getElementById('metabolic-inline').textContent='+'+metabolic.toFixed(0)+' W';
+    function signed(v){return (v>0?'+':'')+v.toFixed(0)}
+    function render(){
+      var rad=state.rad?radiation:0, cond=state.cond?conduction:0;
+      var net=metabolic-rad-cond;
+      var stored=Lec.P.metabolicHeatJoules(1,seconds,net)/Lec.K.units.joulesPerKilojoule;
+      document.getElementById('net').textContent=signed(net);
+      document.getElementById('stored').textContent=signed(stored);
+      document.getElementById('equation').textContent=metabolic.toFixed(0)+' W × '+(seconds/Lec.K.units.secondsPerMinute).toFixed(0)+' min = '+(Lec.P.metabolicHeatJoules(1,seconds,metabolic)/Lec.K.units.joulesPerKilojoule).toFixed(0)+' kJ 代谢产热';
+      ['rad','cond'].forEach(function(k){var b=document.getElementById(k);b.setAttribute('aria-pressed',String(state[k]));b.textContent=state[k]?'已开启':'已关闭'});
+      document.getElementById('rad-status').textContent=state.rad?'开启｜向外辐射':'关闭｜视野受遮挡';
+      document.getElementById('cond-status').textContent=state.cond?'开启｜接触结构':'关闭｜没有接触';
+      document.getElementById('rad-arrow').classList.toggle('off',!state.rad);
+      document.getElementById('cond-arrow').classList.toggle('off',!state.cond);
+      chart.setOption({animation:!Deck.reduced(),textStyle:{fontSize:16,fontFamily:getComputedStyle(document.documentElement).getPropertyValue('--font-sans')},grid:{left:92,right:42,top:8,bottom:34},xAxis:{type:'value',min:-metabolic,max:metabolic,axisLabel:{fontSize:14,formatter:'{value} W'},splitLine:{lineStyle:{color:'#35434A'}},axisLine:{lineStyle:{color:'#62747B'}}},yAxis:{type:'category',data:['净热流','对流','传导','辐射','代谢产热'],axisLabel:{fontSize:14,color:'#E8EEF0'},axisTick:{show:false},axisLine:{show:false}},tooltip:{trigger:'axis',axisPointer:{type:'shadow'},textStyle:{fontSize:16}},series:[{type:'bar',barWidth:18,data:[{value:net,itemStyle:{color:'#45D6E8'}},{value:0,itemStyle:{color:'#9CAAAF'}},{value:-cond,itemStyle:{color:'#C56A32'}},{value:-rad,itemStyle:{color:'#45D6E8'}},{value:metabolic,itemStyle:{color:'#C56A32'}}],label:{show:true,position:function(p){return p.value>=0?'right':'left'},formatter:function(p){return signed(p.value)+' W'},fontSize:14,color:'#E8EEF0'}}]});
+    }
+    document.getElementById('rad').addEventListener('click',function(){state.rad=!state.rad;render()});
+    document.getElementById('cond').addEventListener('click',function(){state.cond=!state.cond;render()});
+    document.getElementById('reset').addEventListener('click',function(){state.rad=true;state.cond=true;render()});
+    Deck.onResize(function(){chart.resize()});
+    render();
+  });
+  </script>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+</body>
+</html>

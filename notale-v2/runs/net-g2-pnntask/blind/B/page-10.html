@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+#stage{gap:18px}
+.head{display:flex;align-items:flex-end;justify-content:space-between;gap:30px}
+h1{margin:0;font-size:var(--fs-h1);line-height:1.2} .lead{margin:8px 0 0;max-width:930px}
+.fixed{font:var(--fs-label)/1.4 var(--font-mono);color:color-mix(in srgb,var(--text) 72%,transparent);white-space:nowrap}
+.lab{display:flex;align-items:center;gap:8px}.dot{width:9px;height:9px;border-radius:50%;background:var(--model)}
+.main{flex:1;display:grid;grid-template-columns:1010px 1fr;gap:28px;min-height:0}
+.plot{position:relative;display:flex;flex-direction:column;padding:22px 24px 18px;background:rgba(255,255,255,.28);border-radius:8px}
+.plothead{display:flex;align-items:center;justify-content:space-between}.plothead h2,.side h2{font-size:var(--fs-h2);margin:0}.legend{font-size:var(--fs-label)}
+svg{width:100%;flex:1;min-height:0;overflow:visible}.axis{stroke:color-mix(in srgb,var(--text) 55%,transparent);stroke-width:2}.grid{stroke:color-mix(in srgb,var(--text) 13%,transparent);stroke-width:1}.curve{fill:none;stroke:var(--model);stroke-width:5}.guide{stroke:var(--attention);stroke-width:2;stroke-dasharray:7 7}.pt{stroke:var(--bg);stroke-width:4}.pt.wait{fill:var(--bg);stroke:var(--text);stroke-width:2}.tick{font:13px var(--font-mono);fill:var(--text)}.ann{font:15px var(--font-mono);fill:var(--text)}.ann strong{fill:var(--attention)}
+.controls{display:flex;align-items:center;justify-content:center;gap:14px;margin-top:8px}.btn{min-width:190px}.btn[disabled]{opacity:.45;cursor:not-allowed}.btn.active{border-color:var(--attention);box-shadow:0 0 0 2px color-mix(in srgb,var(--attention) 18%,transparent)}
+.side{display:flex;flex-direction:column;gap:14px}.step{position:relative;padding:17px 18px 17px 46px;border-left:3px solid color-mix(in srgb,var(--text) 20%,transparent);min-height:102px}.step::before{content:attr(data-n);position:absolute;left:10px;top:16px;width:24px;height:24px;border:2px solid var(--text);border-radius:50%;display:grid;place-items:center;font:14px var(--font-mono)}.step.on{border-left-color:var(--attention)}.step.on::before{border-color:var(--attention);color:var(--attention)}.step h3{font-size:var(--fs-body);margin:0 0 8px}.step p{font-size:var(--fs-sec);line-height:1.4;margin:0}.readrow{display:flex;gap:9px;margin-top:9px}.reading{flex:1;padding:8px 9px;border:1px solid color-mix(in srgb,var(--text) 25%,transparent);border-radius:8px;font:15px/1.3 var(--font-mono)}.reading b{display:block;color:var(--model);font-size:18px}.reading.new{border:2px solid var(--attention)}
+.choose{display:flex;gap:9px;margin-top:10px}.choose .btn{min-width:0;flex:1}.result{margin-top:auto;padding:16px 18px;border-left:4px solid var(--model);font:18px/1.45 var(--font-serif);min-height:82px}.result.idle{border-left-color:color-mix(in srgb,var(--text) 20%,transparent);color:color-mix(in srgb,var(--text) 70%,transparent)}
+.foot{display:flex;justify-content:space-between;align-items:center;min-height:40px}.hint{margin:0}.reset{min-width:110px}
+</style>
+</head>
+<body data-page="10" data-total="22">
+<div id="stage">
+  <header class="head">
+    <div><h1>左右试一步：哪边让损失更小？</h1><p class="lead">从 <b>w = 0.5</b> 出发，分别试探相邻位置。先比较损失，再决定旋钮往哪边转。</p></div>
+    <div class="fixed"><span class="lab"><span class="dot"></span>x = 0.8　b = −0.2　目标 = 1</span></div>
+  </header>
+  <main class="main min0">
+    <section class="plot min0" aria-labelledby="curve-title">
+      <div class="plothead"><h2 id="curve-title">权重附近的损失</h2><span class="legend">纵轴：损失　横轴：权重 w</span></div>
+      <svg id="chart" viewBox="0 0 950 520" role="img" aria-label="权重从零点二到零点八时的损失曲线，当前位于零点五"></svg>
+      <div class="controls" aria-label="试探相邻权重">
+        <button class="btn" id="tryLeft">← 试 w = 0.4</button>
+        <button class="btn" id="tryRight">试 w = 0.6 →</button>
+      </div>
+    </section>
+    <aside class="side min0" aria-label="试探记录">
+      <h2>实验记录</h2>
+      <section class="step on" data-n="1"><h3>起点</h3><p>w = 0.5 时，当前损失是多少？</p><div class="readrow"><div class="reading"><span>w = 0.5</span><b id="baseLoss">0.1013</b></div></div></section>
+      <section class="step" id="compareStep" data-n="2"><h3>左右各试一次</h3><p>点击两侧按钮，把结果放到同一尺度上比较。</p><div class="readrow"><div class="reading" id="leftRead"><span>w = 0.4</span><b>待试</b></div><div class="reading" id="rightRead"><span>w = 0.6</span><b>待试</b></div></div></section>
+      <section class="step" id="chooseStep" data-n="3"><h3>选择移动方向</h3><p id="chooseHint">两次试探完成后再选择。</p><div class="choose"><button class="btn" id="goLeft" disabled>向左一步</button><button class="btn" id="goRight" disabled>向右一步</button></div></section>
+      <div class="result idle" id="result" aria-live="polite">先试探 w = 0.4 和 w = 0.6，证据会留在曲线上。</div>
+    </aside>
+  </main>
+  <footer class="foot"><p class="hint">操作：用按钮试探两个位置；Tab 聚焦后按 Enter 或空格同样可操作。</p><button class="btn reset" id="reset">退回重来</button></footer>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script>
+(() => {
+  'use strict';
+  Deck.init({index:10,total:22});
+  const K = (() => {
+    const defaults={x:.8,b:-.2,target:1,start:.5,left:.4,right:.6};
+    const p=(Lec.K && (Lec.K.page10||Lec.K.p10||Lec.K.lossProbe))||{};
+    return {...defaults,...p};
+  })();
+  const lossAt = w => {
+    const y=Lec.P.neuronForward([K.x],[w],K.b,'sigmoid');
+    const pred=typeof y==='number'?y:(y.output ?? y.value ?? y.outputs?.[0]);
+    const gap=pred-K.target;
+    return 0.5*gap*gap;
+  };
+  const losses={left:lossAt(K.left),base:lossAt(K.start),right:lossAt(K.right)};
+  const initialState=()=>({left:false,right:false,moved:null});
+  let state=initialState();
+  const $=id=>document.getElementById(id), svg=$('chart');
+  const els={tryLeft:$('tryLeft'),tryRight:$('tryRight'),goLeft:$('goLeft'),goRight:$('goRight'),reset:$('reset'),leftRead:$('leftRead'),rightRead:$('rightRead'),compare:$('compareStep'),choose:$('chooseStep'),hint:$('chooseHint'),result:$('result')};
+  const X=w=>80+(w-.2)/.6*800, Y=l=>450-(l-.075)/.055*370;
+  function draw(){
+    let grid=''; [0.08,0.10,0.12].forEach(v=>grid+=`<line class="grid" x1="80" y1="${Y(v)}" x2="880" y2="${Y(v)}"/><text class="tick" x="18" y="${Y(v)+5}">${v.toFixed(2)}</text>`);
+    [.2,.3,.4,.5,.6,.7,.8].forEach(v=>grid+=`<line class="grid" x1="${X(v)}" y1="70" x2="${X(v)}" y2="450"/><text class="tick" text-anchor="middle" x="${X(v)}" y="482">${v.toFixed(1)}</text>`);
+    const pts=[]; for(let i=0;i<=60;i++){const w=.2+i*.01;pts.push(`${i?'L':'M'}${X(w).toFixed(1)},${Y(lossAt(w)).toFixed(1)}`)}
+    const mark=(w,l,label,shown,kind)=> shown?`<line class="guide" x1="${X(w)}" y1="${Y(l)}" x2="${X(w)}" y2="450"/><circle class="pt" fill="${kind==='base'?'var(--model)':'var(--attention)'}" cx="${X(w)}" cy="${Y(l)}" r="10"/><text class="ann" text-anchor="middle" x="${X(w)}" y="${Y(l)-20}">${label} · ${l.toFixed(4)}</text>`:'';
+    svg.innerHTML=`${grid}<line class="axis" x1="80" y1="450" x2="900" y2="450"/><line class="axis" x1="80" y1="460" x2="80" y2="55"/><path class="curve" d="${pts.join(' ')}"/>${mark(K.start,losses.base,'起点',true,'base')}${mark(K.left,losses.left,'左试',state.left,'probe')}${mark(K.right,losses.right,state.moved==='right'?'移动后':'右试',state.right,'probe')}`;
+  }
+  function render(){
+    draw(); const both=state.left&&state.right;
+    els.tryLeft.disabled=state.left||!!state.moved; els.tryRight.disabled=state.right||!!state.moved;
+    els.leftRead.querySelector('b').textContent=state.left?losses.left.toFixed(4):'待试';
+    els.rightRead.querySelector('b').textContent=state.right?losses.right.toFixed(4):'待试';
+    els.leftRead.classList.toggle('new',state.left); els.rightRead.classList.toggle('new',state.right);
+    els.compare.classList.toggle('on',!both); els.choose.classList.toggle('on',both&&!state.moved);
+    els.goLeft.disabled=!both||!!state.moved; els.goRight.disabled=!both||!!state.moved;
+    els.hint.textContent=both?'0.0927 比 0.1013 更小；0.1105 比它更大。':'两次试探完成后再选择。';
+    els.result.classList.toggle('idle',!state.moved);
+    if(state.moved==='right') els.result.innerHTML=`向右一步到 <b>w = 0.6</b>：损失降到 <b>${losses.right.toFixed(4)}</b>。局部试探给出了下降方向。`;
+    else if(state.moved==='left') els.result.innerHTML=`向左一步会到 <b>${losses.left.toFixed(4)}</b>，损失反而升高。比较记录后，可以退回重来。`;
+    else els.result.textContent=both?'现在根据三个损失读数，选择移动方向。':'先试探 w = 0.4 和 w = 0.6，证据会留在曲线上。';
+  }
+  function dispatch(type){
+    if(type==='left'&&!state.left&&!state.moved) state={...state,left:true};
+    else if(type==='right'&&!state.right&&!state.moved) state={...state,right:true};
+    else if(type==='moveLeft'&&state.left&&state.right&&!state.moved) state={...state,moved:'left'};
+    else if(type==='moveRight'&&state.left&&state.right&&!state.moved) state={...state,moved:'right'};
+    else return; render();
+  }
+  const events=new AbortController(), opt={signal:events.signal};
+  els.tryLeft.addEventListener('click',()=>dispatch('left'),opt); els.tryRight.addEventListener('click',()=>dispatch('right'),opt);
+  els.goLeft.addEventListener('click',()=>dispatch('moveLeft'),opt); els.goRight.addEventListener('click',()=>dispatch('moveRight'),opt);
+  els.reset.addEventListener('click',()=>{state=initialState();render();els.tryLeft.focus();els.result.textContent='已退回起点。请重新试探左右两侧。';},opt);
+  let dead=false; function destroy(){if(dead)return;dead=true;events.abort();} window.addEventListener('pagehide',destroy,{once:true});
+  $('baseLoss').textContent=losses.base.toFixed(4); render();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+</head>
+<body data-page="41" data-total="50">
+<div id="stage">
+  <style>
+    .mission-head{display:flex;align-items:flex-end;justify-content:space-between;gap:28px}
+    .kicker{color:var(--cyan);font-family:var(--font-mono);font-size:var(--fs-label);font-weight:700;letter-spacing:.16em}
+    .ledger-head,.resource-row{display:grid;grid-template-columns:120px 180px minmax(320px,1fr) 150px 160px;gap:18px;align-items:center}
+    .ledger-head{padding:0 12px 8px;color:var(--muted);font-size:var(--fs-label);font-weight:650}
+    .resource-row{min-height:44px;margin-top:1px;padding:4px 12px;border:1px solid var(--line);border-radius:10px;font-size:var(--fs-sec);background:linear-gradient(90deg,color-mix(in srgb,var(--cyan) 13%,transparent) 0 var(--pct),transparent var(--pct) 100%)}
+    .resource-row.short{border-left:4px solid var(--ochre);padding-left:8px}
+    .resource-row.ready{border-left:4px solid var(--cyan);padding-left:8px}
+    .resource-name{font-size:var(--fs-body);font-weight:680}
+    .load-control{display:grid;grid-template-columns:minmax(180px,1fr) 72px;gap:12px;align-items:center}
+    input[type=range]{width:100%;accent-color:var(--cyan)}
+    .track{height:7px;margin-top:5px;border:1px solid var(--line-strong);border-radius:999px;overflow:hidden}
+    .fill{height:100%;background:var(--cyan)}
+    .short .fill{background:var(--ochre)}
+    .status-panel{display:flex;align-items:center;justify-content:space-between;gap:28px}
+    .status-copy{max-width:600px;font-size:var(--fs-body);line-height:1.45}
+    .category-label{color:var(--muted);font-size:var(--fs-label);font-weight:700;letter-spacing:.08em}
+    .footline{display:flex;align-items:center;justify-content:space-between;gap:28px}
+    .footline p{margin:0}
+    .k-classification .lv.panel{margin-top:4px;padding:14px 18px;background:var(--panel)}
+    @media (prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;transition:none!important}}
+  </style>
+
+  <header class="mission-head" style="height:92px">
+    <div class="min0"><div class="kicker">MISSION LEDGER</div><h1>七天补给，少一项都不行</h1></div>
+    <div class="tag active">固定任务：<span class="num" id="crewTag"></span> 人 × <span class="num" id="daysTag"></span> 天</div>
+  </header>
+
+  <main class="k-classification min0" style="display:flex;gap:12px">
+    <section class="box min0" style="flex:1;display:flex;flex-direction:column">
+      <div class="bt" style="display:flex;justify-content:space-between;align-items:center;gap:20px">
+        <span>4 人 × 7 天生存方案</span>
+        <span class="hint">拖动五项装载量，让每一行都达到任务需求</span>
+      </div>
+      <div class="ledger-head" aria-hidden="true"><span>归属</span><span>资源</span><span>需求／已装载</span><span>缺口</span><span>可维持</span></div>
+      <div class="lv panel min0" style="flex:1;display:flex;flex-direction:column;justify-content:flex-start">
+        <div class="category-label">输入资源</div>
+        <div id="inputs"></div>
+        <div class="category-label" style="margin-top:8px">输出容纳</div>
+        <div id="outputs"></div>
+      </div>
+    </section>
+
+    <section class="panel status-panel" style="height:132px" aria-live="polite">
+      <div><div class="small">整套方案最短可维持</div><div><span class="big" id="survival">—</span><span class="unit">天</span></div></div>
+      <div class="status-copy"><strong id="resultTitle">检查装载短板</strong><br><span class="small" id="resultText"></span></div>
+      <button class="btn lg" id="resetBtn" type="button">复位装载</button>
+    </section>
+  </main>
+
+  <footer class="footline" style="height:76px">
+    <p class="lead">生存时长由最先耗尽的资源决定，而不是由总补给量决定。</p>
+    <p class="note">水采用任务入口需求上限口径；电力与废物为课堂示意假设，不代表特定航天器。<br>下一问：数量都装够了，若二氧化碳去除能力开始下降，会发生什么？</p>
+  </footer>
+
+  <script>
+  document.addEventListener('DOMContentLoaded', function () {
+    Deck.init({index:41,total:50});
+    const CREW = 4, DAYS = 7, MAX = 150;
+    const initial = {water:100, food:80, oxygen:20, power:75, waste:25};
+    const specs = [
+      {id:'water', group:'inputs', name:'水', rate:4.0, unit:'L', per:'4.0 L/人/天', note:'饮用与食物入口用水，按需求上限装载。', need:()=>Lec.P.crewWaterNeedLitres(CREW,DAYS) * (4.0 / Lec.P.crewWaterNeedLitres(1,1))},
+      {id:'food', group:'inputs', name:'食物', rate:3, unit:'餐', per:'3 餐/人/天', note:'每位乘员每天按三餐连续供应。', need:()=>3*CREW*DAYS},
+      {id:'oxygen', group:'inputs', name:'氧气', rate:0.84, unit:'kg', per:'0.84 kg/人/天', note:'代谢消耗持续发生，余量不能由食物替代。', need:()=>0.84*CREW*DAYS},
+      {id:'power', group:'inputs', name:'电力', rate:3.0, unit:'kWh', per:'3.0 kWh/人/天', note:'持续供电采用课堂示意预算。', need:()=>3.0*CREW*DAYS},
+      {id:'waste', group:'outputs', name:'废物容量', rate:1.0, unit:'kg', per:'1.0 kg/人/天', note:'容纳空间耗尽，同样会终止生存方案。', need:()=>1.0*CREW*DAYS}
+    ];
+    let state = {...initial};
+    const trace = [];
+    const root = document.querySelector('.k-classification');
+    document.getElementById('crewTag').textContent = CREW;
+    document.getElementById('daysTag').textContent = DAYS;
+
+    function fmt(v){ return Number.isInteger(v) ? String(v) : v.toFixed(2).replace(/0+$/,'').replace(/\.$/,''); }
+    function row(s){
+      const need=s.need();
+      const el=document.createElement('div'); el.className='resource-row'; el.dataset.id=s.id;
+      el.innerHTML=`${s.group==='inputs'?'输入':'输出'}
+        <span class="resource-name">${s.name}<small class="small" style="display:block">${s.per}</small></span>
+        <span><span class="load-control"><input type="range" min="0" max="${MAX}" step="1" value="${state[s.id]}" aria-label="${s.name}装载量"><span class="num loaded"></span></span><span class="small">需求 <span class="num need">${fmt(need)}</span> ${s.unit}</span><span class="track"><span class="fill" style="display:block"></span></span></span>
+        <span class="gap num"></span><span class="duration num"></span>`;
+      el.querySelector('input').addEventListener('input',e=>transition(s.id,Number(e.target.value)));
+      document.getElementById(s.group).appendChild(el);
+    }
+    specs.forEach(row);
+
+    function metrics(){
+      const rows=specs.map(s=>({s,need:s.need(),loaded:state[s.id],days:Lec.P.resourceDurationDays(state[s.id],s.rate,CREW)}));
+      const min=Math.min(...rows.map(r=>r.days));
+      const limiting=rows.filter(r=>Math.abs(r.days-min)<1e-9);
+      return {rows,min,limiting,complete:rows.every(r=>r.loaded>=r.need)};
+    }
+    function render(){
+      const m=metrics();
+      m.rows.forEach(r=>{
+        const el=document.querySelector(`[data-id="${r.s.id}"]`), deficit=Math.max(0,r.need-r.loaded);
+        el.classList.toggle('short',r.days===m.min && !m.complete); el.classList.toggle('ready',r.loaded>=r.need);
+        el.querySelector('.loaded').textContent=fmt(r.loaded)+' '+r.s.unit;
+        el.querySelector('.gap').textContent=deficit>0?'缺 '+fmt(deficit)+' '+r.s.unit:'已满足';
+        el.querySelector('.duration').textContent=fmt(r.days)+' 天';
+        const pct=Math.min(100,r.loaded/r.need*100);
+        el.querySelector('.fill').style.width=pct+'%'; el.style.setProperty('--pct',pct+'%');
+      });
+      document.getElementById('survival').textContent=fmt(m.min);
+      document.getElementById('resultTitle').textContent=m.complete?'七天方案成立':'最先耗尽：'+m.limiting.map(r=>r.s.name).join('、');
+      document.getElementById('resultText').textContent=m.complete?'五项都覆盖七天需求。':'多装其他资源，不能抵消这一项的缺口。';
+      root.dataset.result=m.complete?'win':'shortfall';
+      return m;
+    }
+    function transition(id,value){
+      state={...state,[id]:value}; trace.push({id,value}); const m=render();
+      root.dispatchEvent(new CustomEvent('game-progress',{bubbles:true,detail:{state:{...state},action:{id,value},metrics:{days:m.min,complete:m.complete}}}));
+      if(m.complete) root.dispatchEvent(new CustomEvent('game-complete',{bubbles:true,detail:{score:m.min,metrics:{days:m.min},trace:trace.slice()}}));
+    }
+    function reset(){state={...initial};trace.length=0;specs.forEach(s=>document.querySelector(`[data-id="${s.id}"] input`).value=state[s.id]);render();root.dispatchEvent(new CustomEvent('game-reset',{bubbles:true,detail:{state:{...state}}}));}
+    document.getElementById('resetBtn').addEventListener('click',reset);
+    root.start=()=>root.dispatchEvent(new CustomEvent('game-start',{bubbles:true,detail:{state:{...state}}}));
+    root.reset=reset; root.getState=()=>JSON.parse(JSON.stringify(state));
+    render(); root.start();
+  });
+  </script>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+</body>
+</html>

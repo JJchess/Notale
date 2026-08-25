@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+</head>
+<body data-page="29" data-total="50">
+  <div id="stage">
+    <style>
+      .vac-head{height:106px;display:flex;align-items:flex-end;justify-content:space-between;border-bottom:1px solid var(--line)}
+      .vac-kicker{font-size:var(--fs-label);letter-spacing:.16em;color:var(--cyan);margin-bottom:8px}
+      .vac-head h1{font-size:var(--fs-h1);margin:0 0 18px;line-height:1.15}
+      .vac-main{flex:1;display:flex;gap:28px;padding-top:24px;min-height:0}
+      .sim{flex:1;display:flex;flex-direction:column;gap:16px;min-width:0}
+      .chamber{height:412px;position:relative;border:1px solid var(--line);border-radius:var(--radius-lg);overflow:hidden;background:var(--surface-1)}
+      .chamber canvas{z-index:1}.chamber-art{position:absolute;inset:22px 170px 26px 62px;width:calc(100% - 232px);height:calc(100% - 48px);object-fit:contain;z-index:2;opacity:.76;pointer-events:none}
+      .boundary{position:absolute;inset:20px;border:2px solid var(--cyan);border-radius:var(--radius-lg);z-index:3;pointer-events:none}
+      .valve-track{position:absolute;right:42px;top:66px;width:112px;height:270px;z-index:5;border-right:3px solid var(--line)}
+      .valve{position:absolute;right:-24px;top:0;width:52px;height:52px;border-radius:50%;border:3px solid var(--cyan);background:var(--bg);color:var(--text);cursor:grab;font-size:18px;touch-action:none;display:grid;place-items:center}
+      .valve:focus-visible{outline:4px solid var(--focus);outline-offset:4px}.valve-label{position:absolute;right:26px;top:8px;font-size:var(--fs-label);white-space:nowrap;text-align:right}
+      .person-note{position:absolute;left:42px;bottom:28px;z-index:4;font-size:var(--fs-label);color:var(--muted)}
+      .risk-strip{position:absolute;left:42px;top:30px;z-index:4;display:flex;gap:18px}.risk-item{width:242px;border-top:3px solid var(--cyan);padding-top:8px;font-size:var(--fs-label);line-height:1.35}.risk-item strong{display:block;font-size:var(--fs-sec);color:var(--text)}
+      .axis-wrap{height:170px;position:relative;padding:12px 8px 0}
+      .k-process.vac-process{height:148px;position:relative;display:flex;align-items:flex-start;gap:0;padding-top:38px}
+      .vac-process .axis{position:absolute;left:2%;right:2%;top:49px;height:2px;background:var(--line)}
+      .vac-process .step{flex:1;position:relative;padding:30px 14px 0;border:0;font-size:var(--fs-sec);line-height:1.35}
+      .vac-process .step:before{content:"";position:absolute;top:5px;left:14px;width:13px;height:13px;border-radius:50%;background:var(--bg);border:3px solid var(--muted)}
+      .vac-process .step.done:before,.vac-process .step[aria-current="step"]:before{border-color:var(--cyan);background:var(--cyan)}
+      .tick{position:absolute;top:-26px;left:14px;font-size:var(--fs-tick);color:var(--muted)}
+      .side{width:356px;display:flex;flex-direction:column;gap:16px;min-width:0}
+      .readouts{padding:18px 22px}.readout{padding:9px 0;border-top:1px solid var(--line)}.readout:first-child{border-top:0;padding-top:0}
+      .readout-label{font-size:var(--fs-sec);color:var(--muted)}.readout .big{margin-top:4px}
+      .objective{font-size:var(--fs-body);line-height:1.45;margin:0 0 14px}.status{min-height:54px;font-size:var(--fs-sec);line-height:1.4;color:var(--cyan)}
+      .ref{height:72px;display:flex;gap:14px;align-items:center;border-top:1px solid var(--line);padding-top:6px}.ref img{width:62px;height:64px;object-fit:contain}.ref p{font-size:var(--fs-label);line-height:1.35;margin:0;color:var(--muted)}
+      .vac-foot{height:76px;display:flex;align-items:center;justify-content:space-between;border-top:1px solid var(--line);gap:28px}.takeaway{font-size:var(--fs-lead);line-height:1.35;max-width:1000px}.next{font-size:var(--fs-sec);color:var(--cyan);max-width:390px;text-align:right}
+      @media(prefers-reduced-motion:reduce){.valve{transition:none}}
+    </style>
+    <header class="vac-head">
+      <div><div class="vac-kicker">VACUUM EXPOSURE</div><h1>阀门打开后，先失去的是什么？</h1></div>
+      <div class="note">教学模拟，不代表特定舱体或阀门</div>
+    </header>
+    <main class="vac-main">
+      <section class="sim min0" aria-label="真空暴露过程模拟">
+        <div class="chamber no-pan" id="chamber">
+          <canvas id="field" class="cv-fill" aria-hidden="true"></canvas>
+          <img class="chamber-art" src="assets/img/illus-vacuum-boundary.png" alt="真空舱内人体与压力边界剖面" title="（已存在）">
+          <div class="boundary" id="boundary"></div>
+          <div class="risk-strip"><div class="risk-item"><strong>缺氧</strong>氧分压随总压同步下降</div><div class="risk-item"><strong>低压沸腾</strong>暴露湿润组织出现风险，不是人体整体“煮沸”</div></div>
+          <div class="person-note">人体不会爆炸；危险来自维持生命条件的丧失</div>
+          <div class="valve-track" id="track"><div class="valve-label">向外拖阀柄<br>开度 <strong id="opening">0%</strong></div><button class="valve" id="valve" aria-label="泄压阀，方向键调节，点击关闭" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">↕</button></div>
+        </div>
+        <div class="axis-wrap">
+          <div class="k-process vac-process">
+            <div class="axis"></div>
+            <div class="step" id="s1" aria-current="step"><span class="tick" id="t0"></span><strong>压力边界破裂</strong><br>阀门开启</div>
+            <div class="step" id="s2"><span class="tick" id="t4"></span><strong>舱压与氧分压下降</strong><br>开度越大，下降越快</div>
+            <div class="step" id="s3"><span class="tick" id="t10"></span><strong>两种危险并行</strong><br>缺氧＋低压沸腾风险</div>
+            <div class="step" id="s4"><span class="tick" id="t15"></span><strong>未及时复压</strong><br>可能失去有效意识</div>
+            <div class="step" id="s5"><span class="tick" id="t20"></span><strong>继续暴露</strong><br>可致命</div>
+          </div>
+        </div>
+      </section>
+      <aside class="side min0">
+        <div class="panel readouts">
+          <div class="readout"><div class="readout-label">舱内总压</div><div class="big sm"><span id="pressure">—</span> <span class="unit">kPa</span></div></div>
+          <div class="readout"><div class="readout-label">氧分压</div><div class="big sm"><span id="oxygen">—</span> <span class="unit">kPa</span></div></div>
+          <div class="readout"><div class="readout-label">剩余可行动时间</div><div class="big"><span id="remaining">—</span> <span class="unit">s</span></div></div>
+        </div>
+        <div class="panel q">
+          <p class="objective">目标：在行动窗口归零前重新关闭阀门。</p>
+          <div class="status" id="status" aria-live="polite">阀门关闭。拖动阀柄，观察三项读数。</div>
+          <div class="btns"><button class="btn" id="reset">重新开始</button></div>
+        </div>
+        <div class="ref"><img src="assets/img/emu-spacesuit.png" alt="舱外机动宇航服 EMU" title="（已存在）"><p><strong>边界仍完整</strong><br>EMU 把可呼吸、受压的微环境带到真空中。<br>NASA；USAF 航空航天医学口径</p></div>
+      </aside>
+    </main>
+    <footer class="vac-foot"><div class="takeaway">真空不会让人体立刻爆炸，却会使缺氧、失压与低压沸腾迅速成为致命问题。</div><div class="next">下一问：舱内该用多大总压、多少氧？</div></footer>
+  </div>
+  <script src="assets/base.js"></script>
+  <script src="assets/lec.js"></script>
+  <script>
+  document.addEventListener('DOMContentLoaded',()=>{
+    Deck.init({index:29,total:50});
+    const K=Lec.K;
+    const pick=(patterns,fallback)=>{for(const [k,v] of Object.entries(K)){if(typeof v==='number'&&patterns.some(r=>r.test(k)))return v}return fallback};
+    const ATM=pick([/standard.*pressure/i,/atmos.*pa/i,/sea.*level.*pressure/i],101325);
+    const O2=pick([/oxygen.*fraction/i,/o2.*fraction/i],0.2095);
+    const ARM=pick([/armstrong/i,/ebullism.*pressure/i],6300);
+    const WINDOW=pick([/vacuum.*conscious/i,/useful.*conscious/i],15);
+    const state={opening:0,elapsed:0,pressure:ATM,running:false,ended:false,saved:null,last:0};
+    const $=id=>document.getElementById(id), valve=$('valve'), track=$('track');
+    ['t0','t4','t10','t15','t20'].forEach((id,i)=>$(id).textContent=[0,4,10,15,20][i]+' s');
+    function pressureAt(){return ATM*Math.exp(-state.elapsed*(0.045+state.opening*0.0028));}
+    function setOpening(v){state.opening=Deck.clamp(v,0,100);state.running=state.opening>0&&!state.ended;render();}
+    function render(){
+      state.pressure=pressureAt(); const po2=Lec.P.oxygenPartialPressure(state.pressure,O2); const rem=Math.max(0,WINDOW-state.elapsed);
+      $('pressure').textContent=(state.pressure/1000).toFixed(1);$('oxygen').textContent=(po2/1000).toFixed(2);$('remaining').textContent=rem.toFixed(1);$('opening').textContent=Math.round(state.opening)+'%';
+      valve.style.transform=`translateY(${state.opening*2.18}px)`;valve.setAttribute('aria-valuenow',Math.round(state.opening));
+      $('boundary').style.borderStyle=state.opening?'dashed':'solid';
+      const step=state.elapsed<4?1:state.pressure>ARM?2:state.elapsed<WINDOW?3:state.elapsed<20?4:5;
+      for(let i=1;i<=5;i++){const el=$('s'+i);el.classList.toggle('done',i<step);if(i===step)el.setAttribute('aria-current','step');else el.removeAttribute('aria-current')}
+      if(state.ended) $('status').textContent='已失去行动能力。重新开始后再试。';
+      else if(state.saved!==null) $('status').textContent='阀门已关闭：保住 '+state.saved.toFixed(1)+' 秒行动窗口。';
+      else if(state.opening) $('status').textContent=state.pressure<ARM?'已低于低压沸腾风险阈值；尽快关闭。':'压力与氧分压正在一起下降。';
+      draw();
+    }
+    function closeValve(){if(state.running&&!state.ended)state.saved=Math.max(0,WINDOW-state.elapsed);state.opening=0;state.running=false;render()}
+    let dragging=false;
+    valve.addEventListener('pointerdown',e=>{dragging=true;valve.setPointerCapture(e.pointerId)});
+    valve.addEventListener('pointermove',e=>{if(!dragging)return;const p=Deck.pt(track,e);setOpening((p.y-26)/2.18)});
+    valve.addEventListener('pointerup',()=>dragging=false);valve.addEventListener('click',()=>{if(!dragging&&state.opening>0)closeValve()});
+    valve.addEventListener('keydown',e=>{if(e.key==='ArrowDown'||e.key==='ArrowUp'){e.preventDefault();setOpening(state.opening+(e.key==='ArrowDown'?5:-5))}else if(e.key==='Enter'||e.key===' '){e.preventDefault();closeValve()}});
+    $('reset').addEventListener('click',()=>{Object.assign(state,{opening:0,elapsed:0,pressure:ATM,running:false,ended:false,saved:null,last:0});render()});
+    const cv=$('field'),ctx=Deck.fit(cv);function draw(){const c=Deck.fit(cv),w=cv.offsetWidth,h=cv.offsetHeight;c.clearRect(0,0,w,h);const density=state.pressure/ATM;c.fillStyle=Deck.rgba('--cyan',.035+.1*density);c.fillRect(0,0,w,h);c.strokeStyle=Deck.rgba('--cyan',.12+.35*density);c.lineWidth=2;for(let x=40;x<w;x+=62){for(let y=36;y<h;y+=56){c.beginPath();c.arc(x+(y%3)*6,y,2+density*3,0,Math.PI*2);c.stroke()}}if(state.opening){c.strokeStyle=Deck.rgba('--cyan',.75);for(let i=0;i<5;i++)Deck.arrow(c,w-115,120+i*38,w-28,110+i*42,9)}}
+    Deck.autofit(cv,draw);
+    Deck.loop((t,dt)=>{if(state.running){state.elapsed+=dt/1000;if(state.elapsed>=WINDOW){state.elapsed=WINDOW;state.ended=true;state.running=false}render()}},{still:1});
+    render();
+  });
+  </script>
+</body>
+</html>

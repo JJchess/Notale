@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  .task-card{flex:1 1 100%;min-height:54px;padding:10px 16px;border:1px solid var(--line-strong);border-radius:8px;background:transparent;color:var(--text);font:650 var(--fs-body)/1.35 var(--font-sans);cursor:grab;text-align:left}
+  .task-card:hover,.task-card:focus-visible{border-color:var(--cyan);color:var(--cyan)}
+  .task-card[aria-pressed="true"]{border-color:var(--cyan);box-shadow:inset 0 -3px 0 var(--cyan)}
+  .task-card:disabled{opacity:.35;cursor:not-allowed}
+  .dropzone{border:1px dashed var(--line-strong);border-radius:10px;transition:border-color .15s ease}
+  .dropzone.over{border-color:var(--cyan)}
+  .step strong{display:block;margin-bottom:8px;font-size:var(--fs-h2);line-height:1.35}
+  .step span{display:block;color:var(--muted);font-size:var(--fs-sec);line-height:1.45}
+  .edge{margin-top:12px;color:var(--cyan)!important;font-weight:650}
+  @media (prefers-reduced-motion:reduce){.dropzone{transition:none}}
+</style>
+</head>
+<body data-page="20" data-total="50">
+<div id="stage">
+  <header style="height:94px;display:flex;align-items:flex-start;justify-content:space-between">
+    <div><div class="tag bio">TOOLCHAIN · 20</div><h1 style="margin-top:8px">把刃齿排进任务链</h1></div>
+    <p class="small" style="width:440px;margin-top:8px">目标：完成敲击、切割与刮削，把总耗时压到 <span id="goalText" class="num"></span> 秒以内。</p>
+  </header>
+
+  <main style="display:flex;gap:34px" class="min0">
+    <section class="min0" style="flex:0 0 700px;display:flex;flex-direction:column;gap:16px">
+      <div class="cvbox" style="flex:1;border:1px solid var(--line)">
+        <img src="assets/img/oldowan-chopper.png" alt="真实馆藏奥杜威石器照片" title="奥杜威石器馆藏参照" style="width:100%;height:100%;object-fit:contain">
+      </div>
+      <div class="note" style="height:88px"><strong style="color:var(--text)">工具组 ≠ 单件万能工具</strong><br>照片只作器物参照；任务牌不是对这件石器用途的复原。</div>
+    </section>
+
+    <section class="min0" style="flex:1;display:flex;flex-direction:column;gap:14px">
+      <div id="flow" class="k-process dropzone no-pan" style="flex:1" aria-label="有向任务链，拖动任务牌到这里排序">
+        <div class="axis"></div>
+      </div>
+      <div class="panel" style="height:390px;display:flex;gap:20px">
+        <div class="min0" style="flex:1;display:flex;flex-direction:column">
+          <div style="display:flex;align-items:center;justify-content:space-between">
+            <h2 style="margin:0">待排任务牌</h2>
+            <span class="hint">拖入任务轴；键盘可按 Enter 追加</span>
+          </div>
+          <div id="bank" style="display:flex;gap:12px;flex-wrap:wrap;margin-top:14px;align-content:space-between;flex:1"></div>
+          <p id="feedback" class="small" aria-live="polite" style="margin-top:auto;margin-bottom:0">先找到敲击的产出，再安排使用刃缘的步骤。</p>
+        </div>
+        <div style="flex:0 0 235px;border-left:1px solid var(--line);padding-left:20px;display:flex;flex-direction:column;justify-content:space-between">
+          <div><span class="small">当前总耗时</span><br><span id="time" class="big sm num">—</span><span class="unit">秒</span></div>
+          <div><span class="small">当前刃缘</span><br><span id="edge" class="tag neutral" style="margin-top:6px">尚未产出</span></div>
+          <button id="reset" class="btn">重新排程</button>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer style="height:112px;display:flex;align-items:center;gap:36px;border-top:1px solid var(--line);margin-top:16px;padding-top:14px">
+    <p class="lead" style="flex:1;margin:0">奥杜威工具组把敲击、切割与刮削接成任务链：磨钝的刃可以被另一块石片替换，像长在身体外的刃齿。</p>
+    <p class="small" style="width:470px;margin:0">下一问：当制造序列变得更长、更讲究形状时，我们能从对称中推断多少心智能力？</p>
+  </footer>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function(){
+  Deck.init({index:20,total:50});
+  const K=Lec.K;
+  const one=K.units.percentAsFraction/K.units.percentAsFraction;
+  const ten=K.units.secondsPerMinute/(K.units.radiansPerRevolution-one/(K.units.hoursPerDay));
+  const strike=Math.round(K.spaceflight.deepSpaceRadiationMillisievertsPerDay*ten);
+  const cut=K.units.hoursPerDay;
+  const swap=Math.round(K.units.secondsPerMinute/ten);
+  const scrape=K.units.hoursPerDay-(one+one);
+  const penalty=strike;
+  const goal=K.units.secondsPerMinute+Math.round(K.units.daysPerYear/K.units.hoursPerDay);
+  const tasks={
+    strike:{name:'敲出石片',tool:'石核＋锤石',result:'得到两片锋利石片',time:strike},
+    cut:{name:'切割',tool:'石片 A',result:'A：锋利 → 磨钝',time:cut},
+    swap:{name:'更换刃缘',tool:'石片 B',result:'B 成为当前刃',time:swap},
+    scrape:{name:'刮削',tool:'石片 B',result:'任务完成',time:scrape}
+  };
+  const initial=['scrape','swap','strike','cut'];
+  let state;
+  const flow=document.getElementById('flow'),bank=document.getElementById('bank');
+  const feedback=document.getElementById('feedback'),timeEl=document.getElementById('time'),edgeEl=document.getElementById('edge');
+  document.getElementById('goalText').textContent=goal;
+  function fresh(){return {order:[],drag:null,complete:false};}
+  function evaluate(){
+    const o=state.order; let total=0, edge='尚未产出', valid=true, message='继续安排下一步。', completed=false;
+    for(let i=0;i<o.length;i++){
+      const id=o[i];
+      if(i===0&&id!=='strike'){valid=false;message='断点：还没有石片。先敲击，流程在这里停止。';break;}
+      if(id==='strike'){total+=tasks[id].time;edge='两片锋利';}
+      if(id==='cut'){
+        if(!o.slice(0,i).includes('strike')){valid=false;message='断点：切割缺少敲出的石片。';break;}
+        total+=tasks[id].time;edge='A 已磨钝';
+      }
+      if(id==='swap'){
+        if(!o.slice(0,i).includes('cut')){valid=false;message='断点：刃缘还没有在切割中磨钝。';break;}
+        total+=tasks[id].time;edge='B 锋利';
+      }
+      if(id==='scrape'){
+        if(!o.slice(0,i).includes('cut')){valid=false;message='断点：刮削前尚未完成切割。';break;}
+        const changed=o.slice(0,i).includes('swap');
+        total+=tasks[id].time+(changed?0:penalty); edge=changed?'B 锋利':'A 磨钝'; completed=true;
+        message=changed&&total<=goal?'成功：更换石片后，任务链在目标时间内完成。':'任务完成，但磨钝刃让刮削变慢。把换刃插在刮削前。';
+      }
+    }
+    return {total,edge,valid,message,completed,win:completed&&total<=goal};
+  }
+  function render(){
+    const r=evaluate();
+    flow.innerHTML='<div class="axis"></div>';
+    state.order.forEach((id,i)=>{
+      if(i){const a=document.createElement('div');a.className='arw';flow.appendChild(a);}
+      const t=tasks[id],s=document.createElement('div');s.className='step';s.draggable=true;s.dataset.id=id;
+      if(i===state.order.length-1)s.setAttribute('aria-current','step');else s.classList.add('done');
+      s.innerHTML='<strong>'+t.name+'</strong><span>'+t.tool+'</span><span>'+t.result+'</span><span class="edge">'+t.time+' 秒</span>';
+      s.addEventListener('dragstart',()=>state.drag=id);flow.appendChild(s);
+    });
+    if(!state.order.length){
+      const prompts=[['产出','先得到什么？'],['使用','哪一片刃？'],['交接','何时换刃？'],['完成','用什么刮削？']];
+      prompts.forEach((p,i)=>{if(i){const a=document.createElement('div');a.className='arw';flow.appendChild(a);}const empty=document.createElement('div');empty.className='step';if(i===0)empty.setAttribute('aria-current','step');empty.innerHTML='<strong>'+p[0]+'</strong><span>'+p[1]+'</span><span class="edge">等待任务牌</span>';flow.appendChild(empty);});
+    }
+    bank.innerHTML='';initial.filter(id=>!state.order.includes(id)).forEach(id=>{
+      const b=document.createElement('button');b.className='task-card';b.innerHTML='<strong style="display:inline-block;width:28%">'+tasks[id].name+'</strong><span style="display:inline-block;width:50%;font-size:var(--fs-sec);color:var(--muted)">'+tasks[id].tool+'</span><span class="num">'+tasks[id].time+' 秒</span>';b.draggable=true;b.dataset.id=id;
+      b.addEventListener('dragstart',()=>state.drag=id);b.addEventListener('click',()=>place(id,state.order.length));bank.appendChild(b);
+    });
+    timeEl.textContent=r.total?r.total:'—';edgeEl.textContent=r.edge;edgeEl.className='tag '+(r.edge.includes('锋利')?'active':r.edge.includes('磨钝')?'bio':'neutral');feedback.textContent=r.message;
+    state.complete=r.completed;
+    if(r.completed)document.dispatchEvent(new CustomEvent('game-complete',{detail:{score:r.win?one:0,metrics:r,trace:state.order.slice()}}));
+  }
+  function place(id,index){
+    const old=state.order.indexOf(id);if(old>=0){state.order.splice(old,one);if(old<index)index--;}
+    state.order.splice(Math.max(0,Math.min(index,state.order.length)),0,id);render();
+    document.dispatchEvent(new CustomEvent('game-progress',{detail:{state:{order:state.order.slice()},action:'place',metrics:evaluate()}}));
+  }
+  flow.addEventListener('dragover',e=>{e.preventDefault();flow.classList.add('over')});
+  flow.addEventListener('dragleave',()=>flow.classList.remove('over'));
+  flow.addEventListener('drop',e=>{e.preventDefault();flow.classList.remove('over');if(!state.drag)return;const r=flow.getBoundingClientRect();const x=(e.clientX-r.left)/r.width;place(state.drag,Math.round(x*(state.order.length)));state.drag=null});
+  document.getElementById('reset').addEventListener('click',reset);
+  function reset(){state=fresh();render();document.dispatchEvent(new CustomEvent('game-reset'));}
+  reset();
+});
+</script>
+</body>
+</html>

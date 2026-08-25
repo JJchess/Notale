@@ -1,0 +1,379 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  #stage{ display:flex; flex-direction:column; gap:14px; }
+
+  .head{ flex:0 0 auto; display:flex; flex-direction:column; gap:4px; }
+  .kicker{
+    font-family: var(--font-mono, monospace);
+    font-size: 15px; letter-spacing: .12em; color: var(--accent);
+    font-weight:700;
+  }
+  .h1{ font-size: var(--fs-h1); line-height:1.3; color: var(--text); font-weight:700; margin:0; }
+
+  .main{ flex:1; display:flex; gap:28px; min-height:0; }
+
+  .panel-left{ flex:0 0 470px; display:flex; flex-direction:column; gap:16px; min-height:0; }
+  .panel-right{ flex:1; display:flex; flex-direction:column; gap:8px; min-height:0; }
+
+  .instr{ font-size: var(--fs-body); line-height:1.45; color: var(--text); }
+  .instr b{ color: var(--accent); }
+
+  /* 滑块区 */
+  .slider-box{ display:flex; flex-direction:column; gap:8px; }
+  .slider-row{ display:flex; align-items:center; gap:14px; }
+  .slider-row input[type=range]{ flex:1; }
+  .lr-readout{ display:flex; align-items:baseline; gap:6px; min-width:118px; justify-content:flex-end; }
+  .lr-readout .big{ font-family: var(--font-mono); font-size: var(--fs-big-sm); color: var(--accent); font-weight:700; }
+  .lr-readout .unit{ font-size: var(--fs-label); color: var(--muted); }
+
+  .tagrow{ display:flex; gap:10px; }
+  .tagrow .tag{
+    font-size: var(--fs-label); padding:6px 14px; border-radius:8px;
+    border:1px solid var(--line-strong); background:var(--panel-bg); color:var(--text);
+    cursor:pointer; font-family: var(--font-mono); font-weight:600;
+  }
+  .tagrow .tag:hover{ border-color:var(--accent); }
+  .tagrow .tag:focus-visible{ outline:2px solid var(--focus); outline-offset:2px; }
+  .tagrow .tag.active{ background:var(--accent); border-color:var(--accent); color:#fff; }
+
+  /* 学习率轴 */
+  .axis-panel{ background:var(--panel-bg); border:1px solid var(--line); border-radius:10px; padding:14px 18px 12px; }
+  .axis-hdr{ font-size: var(--fs-sec); color:var(--text); font-weight:600; margin-bottom:14px; }
+  .axis-track{ position:relative; height:34px; margin:0 4px 6px; }
+  .axis-line{ position:absolute; left:0; right:0; top:16px; height:2px; background:var(--line-strong); }
+  .axis-tick{ position:absolute; top:8px; width:2px; height:18px; background:var(--muted); transform:translateX(-1px); }
+  .axis-ticklabel{ position:absolute; top:-16px; font-size: var(--fs-tick); color:var(--muted); font-family: var(--font-mono); transform:translateX(-50%); white-space:nowrap; }
+  .axis-marker{ position:absolute; top:2px; width:0; height:0; border-left:8px solid transparent; border-right:8px solid transparent; border-top:12px solid var(--accent); transform:translateX(-8px); transition:left .05s linear; }
+
+  .k-comparison{ display:flex; flex-direction:column; gap:0; }
+  .rowline{
+    display:flex; align-items:baseline; justify-content:space-between;
+    padding:7px 4px; border-top:1px solid var(--line); font-size: var(--fs-label);
+  }
+  .rowline:first-of-type{ border-top:1px solid var(--line); margin-top:2px; }
+  .rowline .lbl{ font-family: var(--font-mono); color:var(--text); font-weight:600; min-width:64px; }
+  .rowline .dim{ color:var(--muted); flex:1; text-align:left; padding-left:10px; }
+  .rowline .diff{ font-family: var(--font-mono); font-weight:700; min-width:92px; text-align:right; }
+  .rowline.current .lbl{ color:var(--accent); }
+  .rowline.current{ background:rgba(232,98,44,0.07); border-radius:6px; }
+
+  .live-readout{ display:flex; gap:22px; align-items:baseline; }
+  .live-readout .cell{ display:flex; flex-direction:column; gap:2px; }
+  .live-readout .cell .num{ font-family: var(--font-mono); font-size: var(--fs-big); color:var(--text); font-weight:700; }
+  .live-readout .cell .num.accent{ color:var(--accent); }
+  .live-readout .cell .lbl{ font-size: var(--fs-label); color:var(--muted); }
+
+  .chart-hdr{ display:flex; align-items:baseline; justify-content:space-between; flex:0 0 auto; }
+  .chart-hdr .title{ font-size: var(--fs-sec); color:var(--text); font-weight:600; }
+  .legend-inline{ display:flex; gap:16px; font-size: var(--fs-label); color:var(--muted); }
+  .legend-inline .sw{ display:inline-block; width:16px; height:3px; margin-right:5px; vertical-align:middle; }
+  .legend-inline .sw.cur{ background:var(--accent); }
+  .legend-inline .sw.prev{ background:var(--line-strong); border-top:2px dashed var(--muted); height:0; }
+
+  #chart{ flex:1; min-height:0; }
+
+  .foot{ flex:0 0 auto; display:flex; flex-direction:column; gap:6px; padding-top:4px; border-top:1px solid var(--line); }
+  .conclude{ font-size: var(--fs-lead); color:var(--text); line-height:1.4; }
+  .conclude b{ color: var(--primary); }
+  .hook{ font-size: var(--fs-body); color:var(--muted); }
+
+</style>
+</head>
+<body data-page="08" data-total="19">
+<div id="stage">
+
+  <div class="head">
+    <div class="kicker">LEARNING RATE</div>
+    <h1 class="h1">步子太小挪不动，步子太大会飞出去</h1>
+  </div>
+
+  <div class="main">
+
+    <div class="panel-left min0">
+      <p class="instr">拖动滑块调节学习率（步长），或点下面的预设值。曲线从<b>同一个起点</b>出发，走同样的 20 步，只有步长不同。</p>
+
+      <div class="slider-box no-pan">
+        <div class="slider-row">
+          <input type="range" id="lrSlider" min="0" max="1000" step="1" value="450"
+                 aria-label="学习率，对数刻度，0.01 到 5" aria-valuetext="学习率 0.16">
+          <div class="lr-readout"><span class="big" id="lrBig">0.16</span><span class="unit">学习率</span></div>
+        </div>
+        <div class="tagrow" role="group" aria-label="预设学习率">
+          <button type="button" class="tag" data-lr="0.01">0.01</button>
+          <button type="button" class="tag" data-lr="0.3">0.3</button>
+          <button type="button" class="tag" data-lr="5">5</button>
+        </div>
+      </div>
+
+      <div class="axis-panel">
+        <div class="axis-hdr">同一条学习率轴（对数刻度），三档参照 + 当前位置</div>
+        <div class="axis-track" aria-hidden="true">
+          <div class="axis-line"></div>
+          <div class="axis-tick" style="left:0%"></div>
+          <div class="axis-ticklabel" style="left:0%">0.01</div>
+          <div class="axis-tick" style="left:54.73%"></div>
+          <div class="axis-ticklabel" style="left:54.73%">0.3</div>
+          <div class="axis-tick" style="left:100%"></div>
+          <div class="axis-ticklabel" style="left:100%">5</div>
+          <div class="axis-marker" id="axisMarker" style="left:45%"></div>
+        </div>
+
+        <div class="k-comparison">
+          <div class="rowline" data-preset="0.01">
+            <span class="lbl">0.01</span>
+            <span class="dim">几乎不动</span>
+            <span class="diff" id="diff-001"></span>
+          </div>
+          <div class="rowline" data-preset="0.3">
+            <span class="lbl">0.3</span>
+            <span class="dim">稳稳收敛</span>
+            <span class="diff" id="diff-03"></span>
+          </div>
+          <div class="rowline" data-preset="5">
+            <span class="lbl">5</span>
+            <span class="dim">震荡冲飞</span>
+            <span class="diff" id="diff-5"></span>
+          </div>
+        </div>
+      </div>
+
+      <div class="live-readout" id="liveReadout" aria-live="polite">
+        <div class="cell"><span class="num accent" id="liveLoss">—</span><span class="lbl">第 20 步 loss</span></div>
+        <div class="cell"><span class="num" id="liveDelta">—</span><span class="lbl">相对起点变化</span></div>
+      </div>
+
+    </div>
+
+    <div class="panel-right min0">
+      <div class="chart-hdr">
+        <div class="title">loss 随步数变化（起点相同，量程固定 0–4）</div>
+        <div class="legend-inline">
+          <span><span class="sw cur"></span>当前档</span>
+          <span><span class="sw prev"></span>上一次</span>
+        </div>
+      </div>
+      <div id="chart" class="min0 no-pan"></div>
+    </div>
+
+  </div>
+
+  <div class="foot">
+    <p class="conclude">学习率 0.01 几乎不动，5 来回震荡甚至冲飞，<b>0.3 左右才能在 20 步内稳稳收敛</b>——下坡的方向对不等于走得快。</p>
+    <p class="hook">这个"步长不能瞎大"的道理，换到几百个权重的多层网络里，还会不会一样成立？</p>
+  </div>
+
+</div>
+
+<script src="assets/lib/echarts.min.js"></script>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script>
+(function(){
+  'use strict';
+
+  // ---------- 误差地形：一个可调权重 w，loss(w) = a*w^2，起点 loss0 = 2.5 ----------
+  var CURVATURE = 0.21;
+  var X0 = Math.sqrt(2.5 / CURVATURE);           // ≈3.45，起点权重
+  var STEPS = 20;
+  function gradFn(x){ return 2 * CURVATURE * x; }
+  function lossFn(x){ return CURVATURE * x * x; }
+  var LOSS0 = lossFn(X0);                         // 2.5
+
+  var LOG_MIN = Math.log10(0.01), LOG_MAX = Math.log10(5);
+  function lrFromT(t){ return Math.pow(10, LOG_MIN + (LOG_MAX - LOG_MIN) * t); }
+  function tFromLr(lr){ return (Math.log10(lr) - LOG_MIN) / (LOG_MAX - LOG_MIN); }
+
+  function traceLoss(lr){
+    var path = Lec.P.gradientDescentTrace(X0, gradFn, lr, STEPS);
+    return path.map(function(p){ return lossFn(p.x); });
+  }
+
+  // 三档静态参照（与滑块位置无关，只算一次）
+  var PRESET_LOSSES = {
+    '0.01': traceLoss(0.01),
+    '0.3':  traceLoss(0.3),
+    '5':    traceLoss(5)
+  };
+
+  function fmtLr(lr){
+    if (lr >= 1) return lr.toFixed(2);
+    if (lr >= 0.1) return lr.toFixed(2);
+    return lr.toFixed(3);
+  }
+
+  // ---------- state ----------
+  var state = {
+    lr: lrFromT(0.45),
+    curLoss: null,
+    prevLr: null,
+    prevLoss: null
+  };
+
+  // ---------- DOM refs ----------
+  var slider = document.getElementById('lrSlider');
+  var lrBig = document.getElementById('lrBig');
+  var axisMarker = document.getElementById('axisMarker');
+  var liveLoss = document.getElementById('liveLoss');
+  var liveDelta = document.getElementById('liveDelta');
+  var liveReadout = document.getElementById('liveReadout');
+  var tags = Array.prototype.slice.call(document.querySelectorAll('.tag'));
+
+  document.getElementById('diff-001').textContent = Deck.fmt(PRESET_LOSSES['0.01'][STEPS] - LOSS0, 2);
+  document.getElementById('diff-03').textContent  = Deck.fmt(PRESET_LOSSES['0.3'][STEPS]  - LOSS0, 2);
+  document.getElementById('diff-5').textContent   = Deck.fmt(PRESET_LOSSES['5'][STEPS]    - LOSS0, 2);
+
+  // ---------- chart ----------
+  var chartEl = document.getElementById('chart');
+  var chart = echarts.init(chartEl, null, { renderer: 'svg' });
+
+  var accent = Deck.token('--accent');
+  var lineStrong = Deck.token('--line-strong');
+  var muted = Deck.token('--muted');
+  var textCol = Deck.token('--text');
+
+  function buildSeries(lossArr){
+    var steps = [];
+    for (var i = 0; i <= STEPS; i++) steps.push(i);
+    var cutIdx = -1;
+    for (var j = 0; j <= STEPS; j++){
+      if (lossArr[j] > 4){ cutIdx = j; break; }
+    }
+    var data;
+    if (cutIdx === -1){
+      data = steps.map(function(s, i){ return [s, lossArr[i]]; });
+    } else {
+      data = [];
+      for (var k = 0; k <= cutIdx; k++){
+        var v = (k === cutIdx) ? 4 : lossArr[k];
+        data.push([steps[k], v]);
+      }
+    }
+    return { data: data, cutIdx: cutIdx };
+  }
+
+  function render(){
+    var curArr = traceLoss(state.lr);
+    state.curLoss = curArr[STEPS];
+    var curBuilt = buildSeries(curArr);
+
+    var series = [];
+
+    if (state.prevLoss){
+      var prevBuilt = buildSeries(state.prevLoss);
+      series.push({
+        name: '上一次',
+        type: 'line',
+        data: prevBuilt.data,
+        showSymbol: false,
+        lineStyle: { color: lineStrong, width: 2, type: 'dashed' },
+        z: 1
+      });
+    }
+
+    var curSeriesObj = {
+      name: '当前档',
+      type: 'line',
+      data: curBuilt.data,
+      showSymbol: false,
+      lineStyle: { color: accent, width: 3 },
+      z: 2
+    };
+    if (curBuilt.cutIdx !== -1){
+      curSeriesObj.markPoint = {
+        symbol: 'circle',
+        symbolSize: 8,
+        itemStyle: { color: accent },
+        label: {
+          formatter: '↑ 冲出图外',
+          position: 'top',
+          distance: 6,
+          color: accent,
+          fontSize: 14,
+          fontWeight: 700
+        },
+        data: [{ coord: [curBuilt.cutIdx, 4] }]
+      };
+    }
+    series.push(curSeriesObj);
+
+    chart.setOption({
+      animation: !Deck.reduced(),
+      grid: { left: 56, right: 24, top: 26, bottom: 44 },
+      textStyle: { fontSize: 16, color: textCol },
+      xAxis: {
+        type: 'value', min: 0, max: 20,
+        name: '第几步', nameLocation: 'middle', nameGap: 26,
+        nameTextStyle: { fontSize: 14, color: muted },
+        axisLabel: { fontSize: 12, color: muted },
+        splitLine: { lineStyle: { color: 'rgba(0,0,0,0.06)' } }
+      },
+      yAxis: {
+        type: 'value', min: 0, max: 4,
+        name: 'loss', nameLocation: 'middle', nameGap: 36,
+        nameTextStyle: { fontSize: 14, color: muted },
+        axisLabel: { fontSize: 12, color: muted },
+        splitLine: { lineStyle: { color: 'rgba(0,0,0,0.06)' } }
+      },
+      series: series
+    }, true);
+
+    lrBig.textContent = fmtLr(state.lr);
+    var t = tFromLr(state.lr);
+    axisMarker.style.left = (Deck.clamp(t, 0, 1) * 100) + '%';
+    slider.setAttribute('aria-valuetext', '学习率 ' + fmtLr(state.lr));
+
+    liveLoss.textContent = state.curLoss.toFixed(2);
+    var delta = state.curLoss - LOSS0;
+    liveDelta.textContent = Deck.fmt(delta, 2);
+
+    tags.forEach(function(btn){
+      var isActive = Math.abs(parseFloat(btn.dataset.lr) - state.lr) < 1e-6;
+      btn.classList.toggle('active', isActive);
+    });
+    document.querySelectorAll('.rowline').forEach(function(row){
+      var isActive = Math.abs(parseFloat(row.dataset.preset) - state.lr) < 1e-6;
+      row.classList.toggle('current', isActive);
+    });
+
+    liveReadout.setAttribute('data-status', '学习率 ' + fmtLr(state.lr) + '，第 20 步 loss ' + state.curLoss.toFixed(2) +
+      '，相对起点 ' + Deck.fmt(delta, 2));
+  }
+
+  function setLr(newLr){
+    newLr = Deck.clamp(newLr, 0.01, 5);
+    if (state.curLoss !== null){
+      state.prevLr = state.lr;
+      state.prevLoss = traceLoss(state.lr);
+    }
+    state.lr = newLr;
+    render();
+  }
+
+  slider.addEventListener('input', function(){
+    var t = parseFloat(slider.value) / 1000;
+    setLr(lrFromT(t));
+  });
+
+  tags.forEach(function(btn){
+    btn.addEventListener('click', function(){
+      var lr = parseFloat(btn.dataset.lr);
+      slider.value = Math.round(tFromLr(lr) * 1000);
+      setLr(lr);
+    });
+  });
+
+  Deck.onResize(function(){ chart.resize(); });
+
+  // initial render (no previous curve yet)
+  render();
+
+  Deck.init({ index: 8, total: 19 });
+})();
+</script>
+</body>
+</html>
