@@ -22,20 +22,20 @@ WORKFLOWS = Path(__file__).resolve().parent.parent / "workflows"
 DEFAULT = LEGACY
 
 # Planner 只在这十个“建页工作流”里选一个。另两份各有单独职责：
-# set-visual-direction 属于全课主题阶段，review-page 只用于已有页面的修复。
+# plan-direction 属于全课主题阶段，check-page 只用于已有页面的修复。
 PAGE_WORKFLOWS = (
     "build-learning-game",
     "build-3d-scene",
-    "simulate-2d",
-    "visualize-data",
-    "design-interaction",
-    "design-motion",
-    "collect-visual-references",
-    "generate-illustration",
-    "shape-typography",
-    "compose-page",
+    "build-2d-sim",
+    "build-chart",
+    "build-interaction",
+    "build-motion",
+    "get-photo-ref",
+    "get-illustration",
+    "plan-typography",
+    "build-page",
 )
-ALL_WORKFLOWS = PAGE_WORKFLOWS + ("set-visual-direction", "review-page")
+ALL_WORKFLOWS = PAGE_WORKFLOWS + ("plan-direction", "check-page")
 _FM = re.compile(r"^---\s*\n(.*?)\n---\s*\n", re.S)
 
 
@@ -99,10 +99,10 @@ def workflow_catalog(root: Path = WORKFLOWS) -> str:
 # 量出来的:一页只装载一个 workflow(core/builder.py:286-289 硬拦),所以每条通用规则
 # 经 skill 能覆盖到几页,取决于路由。拿 wf2 那轮 21 页的真实路由数:
 #
-#     占用 45%/85%          只有 compose-page 写了        8/21
-#     字号地板 16/14/12      只有 shape-typography 写了    0/21  ← 那一轮没路由到它
-#     .min0 / .cv-fill      只有 compose-page 写了        8/21
-#     data-page/data-total  只有 design-interaction 写了  9/21
+#     占用 45%/85%          只有 build-page 写了        8/21
+#     字号地板 16/14/12      只有 plan-typography 写了    0/21  ← 那一轮没路由到它
+#     .min0 / .cv-fill      只有 build-page 写了        8/21
+#     data-page/data-total  只有 build-interaction 写了  9/21
 #     Lec.K / Lec.P 口径     12 份 SKILL.md 一份都没写      0/21
 #
 # **12 个 workflow 不是 CONTRACT 的超集,是 12 个互相重叠的子集。**
@@ -112,7 +112,7 @@ def workflow_catalog(root: Path = WORKFLOWS) -> str:
 # 全都是「两个来源各说一遍」造成的。
 #
 # 它存在是为了让「先补 skill 侧覆盖,再砍 CONTRACT」那一步可对照:
-# B 臂打开这个开关,确认非 compose-page 路由页的占用比/字号不退,才谈得上砍 CONTRACT。
+# B 臂打开这个开关,确认非 build-page 路由页的占用比/字号不退,才谈得上砍 CONTRACT。
 # 照 --philosophy 的先例做成开关而不是直接写死(core/builder.py:376-379:
 # 「文件留着不删,随时能把它加回来做对照」)。
 FLOORS = """无论装载哪个 workflow,下面这几条对每一页都成立:

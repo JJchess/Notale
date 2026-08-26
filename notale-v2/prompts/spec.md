@@ -96,11 +96,11 @@
 
 按主要难点选择，不按页面上出现过的元素凑清单。多个都像时按以下优先级取第一个：
 
-`build-learning-game` → `build-3d-scene` → `simulate-2d` → `visualize-data` →
-`design-interaction` → `design-motion` → `collect-visual-references` →
-`generate-illustration` → `shape-typography` → `compose-page`。
+`build-learning-game` → `build-3d-scene` → `build-2d-sim` → `build-chart` →
+`build-interaction` → `build-motion` → `get-photo-ref` →
+`get-illustration` → `plan-typography` → `build-page`。
 
-库名仍写在“表征形式”，不算 workflow。没有更专门的难点时选 `compose-page`。
+库名仍写在“表征形式”，不算 workflow。没有更专门的难点时选 `build-page`。
 可选 workflow：
 
 {workflows}
@@ -146,7 +146,7 @@
 
 需要图片时出现。优先点名图池中的 `assets/img/...`，写用途、裁切方式和需要照抄的 `title`。
 整页底图使用主题 `.backdrop`，保持弱对比。只有图池没有所需素材时才给简短检索词或生成提示词，
-如果取得或生成素材就是本页的主要难点，分别选 `collect-visual-references` 或
-`generate-illustration`；否则不要为了媒体再增加第二个 workflow。出处和许可只进 `title` 或低干扰层。
+如果取得或生成素材就是本页的主要难点，分别选 `get-photo-ref` 或
+`get-illustration`；否则不要为了媒体再增加第二个 workflow。出处和许可只进 `title` 或低干扰层。
 
 只输出本页规格正文，不写解释，不加 Markdown 围栏，不重复页表。

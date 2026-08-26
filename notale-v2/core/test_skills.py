@@ -24,16 +24,16 @@ class WorkflowRegistryTests(unittest.TestCase):
         lines = skills.workflow_catalog().splitlines()
         names = [line[2:].split(":", 1)[0] for line in lines]
         self.assertEqual(names, list(skills.PAGE_WORKFLOWS))
-        self.assertNotIn("review-page", names)
-        self.assertNotIn("set-visual-direction", names)
+        self.assertNotIn("check-page", names)
+        self.assertNotIn("plan-direction", names)
 
     def test_builder_assignment_contains_one_workflow(self) -> None:
-        block = skills.assigned_workflow("compose-page")
-        self.assertIn("- compose-page:", block)
-        self.assertNotIn("design-motion", block)
+        block = skills.assigned_workflow("build-page")
+        self.assertIn("- build-page:", block)
+        self.assertNotIn("build-motion", block)
 
     def test_builder_assignment_requires_routed_references_before_edit(self) -> None:
-        block = skills.assigned_workflow("compose-page")
+        block = skills.assigned_workflow("build-page")
         self.assertIn("Reference routing", block)
         self.assertIn("任何页面修改前", block)
         for tool in ("`Write`", "`Edit`", "`Patch`", "`Bash`"):
@@ -46,17 +46,17 @@ class WorkflowRegistryTests(unittest.TestCase):
             "build-3d-scene": {"renderer-routing.md", "three-core-recipe.md",
                                "globe-recipe.md"},
             "build-learning-game": {"game-model-recipes.md"},
-            "collect-visual-references": {"source-routing.md"},
-            "compose-page": {"relationship-compositions.md", "framing-and-density.md"},
-            "design-interaction": {"interactive-widget.md"},
-            "design-motion": {"motion-engine-recipes.md"},
-            "generate-illustration": {"prompt-and-integration.md"},
-            "review-page": {"review-lenses.md"},
-            "set-visual-direction": {"direction-recipes.md", "material-and-effects.md"},
-            "shape-typography": {"projected-type-system.md", "cjk-numeric-math.md"},
-            "simulate-2d": {"renderer-routing.md", "konva-recipe.md",
+            "get-photo-ref": {"source-routing.md"},
+            "build-page": {"relationship-compositions.md", "framing-and-density.md"},
+            "build-interaction": {"interactive-widget.md"},
+            "build-motion": {"motion-engine-recipes.md"},
+            "get-illustration": {"prompt-and-integration.md"},
+            "check-page": {"review-lenses.md"},
+            "plan-direction": {"direction-recipes.md", "material-and-effects.md"},
+            "plan-typography": {"projected-type-system.md", "cjk-numeric-math.md"},
+            "build-2d-sim": {"renderer-routing.md", "konva-recipe.md",
                             "matter-recipe.md", "pixi-recipe.md"},
-            "visualize-data": {"renderer-routing.md", "echarts-recipe.md",
+            "build-chart": {"renderer-routing.md", "echarts-recipe.md",
                                "d3-relations-recipe.md"},
         }
         for name in skills.ALL_WORKFLOWS:
@@ -74,14 +74,14 @@ class WorkflowRegistryTests(unittest.TestCase):
                     self.assertTrue(target.is_file(), target)
 
     def test_renderer_workflows_select_one_recipe(self) -> None:
-        for name in ("simulate-2d", "visualize-data"):
+        for name in ("build-2d-sim", "build-chart"):
             with self.subTest(workflow=name):
                 text = (skills.WORKFLOWS / name / "SKILL.md").read_text(encoding="utf-8")
                 self.assertIn("read only the selected recipe", text.lower())
                 self.assertIn("Do not read an unselected recipe", text)
 
     def test_design_interaction_loads_one_portable_widget_reference(self) -> None:
-        root = skills.WORKFLOWS / "design-interaction"
+        root = skills.WORKFLOWS / "build-interaction"
         skill = (root / "SKILL.md").read_text(encoding="utf-8")
         links = re.findall(r"\]\((references/[^)]+\.md)\)", skill)
         self.assertEqual(links, ["references/interactive-widget.md"])
@@ -96,7 +96,7 @@ class WorkflowRegistryTests(unittest.TestCase):
     def test_workflow_reference_read_returns_the_complete_file_once(self) -> None:
         with tempfile.TemporaryDirectory() as td:
             root = Path(td) / "workflows"
-            reference = root / "design-interaction" / "references" / "large.md"
+            reference = root / "build-interaction" / "references" / "large.md"
             reference.parent.mkdir(parents=True)
             body = "START\n" + ("substantial guidance\n" * 4000) + "UNIQUE EOF CONTENT"
             reference.write_text(body, encoding="utf-8")

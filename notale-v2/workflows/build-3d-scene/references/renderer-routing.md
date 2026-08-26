@@ -6,8 +6,8 @@ Require a spatial reason before choosing 3D.
 |---|---|---|
 | Inspect a solid, assembly, layered structure, terrain, particle volume, construction sequence, or environmental system | Three.js | A flat labelled diagram communicates the same relationship |
 | Plot points, routes, polygons, or regions whose real latitude and longitude matter | globe.gl after Three.js | The sphere is only a generic “network” symbol |
-| Conventional quantitative chart | Neither | Route to `visualize-data` |
-| Flat physical model or thousands of 2D sprites | Neither | Route to `simulate-2d` |
+| Conventional quantitative chart | Neither | Route to `build-chart` |
+| Flat physical model or thousands of 2D sprites | Neither | Route to `build-2d-sim` |
 
 ## Active dependencies
 

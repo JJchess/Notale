@@ -35,7 +35,7 @@ BASELINE_CHARS = {
 PROMPT_ARGS = {
     "brief": dict(query="Q", pid="page-01", assets="/tmp/assets",
                   contract="/tmp/CONTRACT.md", total=12, spec="/tmp/p01.md",
-                  assignment="## 主工作流\n  - compose-page", stay="60 秒"),
+                  assignment="## 主工作流\n  - build-page", stay="60 秒"),
     "contract": dict(n_pages=12, minutes=30, audience="高中生", scenario="课堂投影",
                      spine="主线", world="视觉世界", canvas_w=1600, canvas_h=900,
                      libs="库清单", lec_api="Lec API"),
@@ -145,7 +145,7 @@ class ValidatorTests(unittest.TestCase):
 | B | 18 | m |
 
 ## 主工作流
-compose-page ← 主要难点是把比较关系组织成清楚的单页构图
+build-page ← 主要难点是把比较关系组织成清楚的单页构图
 
 ## 不许碰
 不解释差异机制；机制留给 p02。
@@ -156,15 +156,15 @@ compose-page ← 主要难点是把比较关系组织成清楚的单页构图
 
     def test_spec_requires_exactly_one_known_workflow(self) -> None:
         missing = self._spec().replace(
-            "\n## 主工作流\ncompose-page ← 主要难点是把比较关系组织成清楚的单页构图\n", "\n")
+            "\n## 主工作流\nbuild-page ← 主要难点是把比较关系组织成清楚的单页构图\n", "\n")
         self.assertIn("主工作流", _valid_spec(missing))
 
         multiple = self._spec().replace(
-            "compose-page ← 主要难点是把比较关系组织成清楚的单页构图",
-            "compose-page ← 构图\ndesign-motion ← 动效")
+            "build-page ← 主要难点是把比较关系组织成清楚的单页构图",
+            "build-page ← 构图\nbuild-motion ← 动效")
         self.assertIn("只能有一行", _valid_spec(multiple))
 
-        unknown = self._spec().replace("compose-page ←", "not-a-workflow ←")
+        unknown = self._spec().replace("build-page ←", "not-a-workflow ←")
         self.assertIn("未知主工作流", _valid_spec(unknown))
 
     def test_pointer_cells_are_not_gated_at_all(self) -> None:
