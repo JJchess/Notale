@@ -36,6 +36,18 @@ CHANGE = re.compile(r"随之|同步(更新|变化)|跟着变|实时(显示|更�
 RESET = re.compile(r"复位|重置|重来|一键|恢复初|回到初始|重看|重新")
 
 
+# 「交给下一页的问题」原来是规格里的一个独立小节,现在 prompts/spec.md:66 把它
+# 作为 `## 照这个写` 表里的 `下一问` 行交付。旧判据只认那个已经不存在的小节标题,
+# 于是「有『交给下一页』的份」在每一轮都读 0 —— 实测 runs/wf2-... 是
+# `## 交给下一页的问题` 0/21、`下一问` 21/21。**一个恒读 0 的判据只会掩盖它本该
+# 验的那次修复**(PLAN-QUALITY.md:151-169 把这一项从 0% 修到了 100%)。两种写法都认。
+_HANDOFF_ROW = re.compile(r"^\|\s*下一问\s*\|\s*(\S[^|]*?)\s*\|", re.M)
+
+
+def _has_handoff(t: str) -> bool:
+    return "## 交给下一页的问题" in t or bool(_HANDOFF_ROW.search(t))
+
+
 def interact(t: str) -> tuple:
     """(这一节的字符数, 有正确状态, 说清什么跟着变, 有复位) —— 没有这一节返回 None。"""
     m = re.search(r"##\s*交互[^\n]*\n(.*?)(?=\n##\s|\Z)", t, re.S)
@@ -147,7 +159,7 @@ def one(label: str) -> dict | None:
                        / max(sum(1 for _, c in lit_ptr if c), 1)),
         scene=sum("## 场景构图" in t for t in texts),
         check=sum(("## 核对" in t or "核对(" in t or "核对（" in t) for t in texts),
-        handoff=sum("## 交给下一页的问题" in t for t in texts),
+        handoff=sum(_has_handoff(t) for t in texts),
         inter=sum("## 交互" in t for t in texts),
         named=len(named), n_cls=len(cls),
         util=sum(1 for c in cls if UTIL.match(c)),

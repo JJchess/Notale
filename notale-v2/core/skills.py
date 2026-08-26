@@ -94,14 +94,56 @@ def workflow_catalog(root: Path = WORKFLOWS) -> str:
     return "\n".join(rows)
 
 
-def assigned_workflow(name: str, root: Path = WORKFLOWS) -> str:
-    """Builder system block for one routed workflow; no catalog and no gate."""
+# 通用地板。**默认不注入** —— 它今天不是覆盖修复,是第三份副本。
+#
+# 量出来的:一页只装载一个 workflow(core/builder.py:286-289 硬拦),所以每条通用规则
+# 经 skill 能覆盖到几页,取决于路由。拿 wf2 那轮 21 页的真实路由数:
+#
+#     占用 45%/85%          只有 compose-page 写了        8/21
+#     字号地板 16/14/12      只有 shape-typography 写了    0/21  ← 那一轮没路由到它
+#     .min0 / .cv-fill      只有 compose-page 写了        8/21
+#     data-page/data-total  只有 design-interaction 写了  9/21
+#     Lec.K / Lec.P 口径     12 份 SKILL.md 一份都没写      0/21
+#
+# **12 个 workflow 不是 CONTRACT 的超集,是 12 个互相重叠的子集。**
+# 但这不构成今天就注入的理由:CONTRACT.md 实测 21/21 页都读,上面每一条它都有。
+# 所以现在打开这个开关只会让同一条规则出现第三次 —— 而仓库里记录在案的重复伤害
+# (core/planner.py:343-345 的场景构图、core/builder.py:369-374 的哲学与占用闸)
+# 全都是「两个来源各说一遍」造成的。
+#
+# 它存在是为了让「先补 skill 侧覆盖,再砍 CONTRACT」那一步可对照:
+# B 臂打开这个开关,确认非 compose-page 路由页的占用比/字号不退,才谈得上砍 CONTRACT。
+# 照 --philosophy 的先例做成开关而不是直接写死(core/builder.py:376-379:
+# 「文件留着不删,随时能把它加回来做对照」)。
+FLOORS = """无论装载哪个 workflow,下面这几条对每一页都成立:
+
+- 逻辑画布固定 1600×900,不滚动。只改 `#stage` 内容,保留 `data-page` 和 `data-total`。
+- `#stage` 是 flex 列;主内容区 `flex:1` 且 `min-height:0`,需要收缩的 flex/grid 子元素加 `.min0`。
+- 画面占用保持在 45%–85%。低于 45% 先查失控的 flex 空隙,再放大有教学意义的关系;
+  不得靠加装饰、缩字号、压行高或压间距来凑。
+- 字号只用主题 token:正文与成句说明 ≥16px,控件标签、图例、图注和提示 ≥14px,
+  纯数字刻度 ≥12px,多行文字行高 ≥1.35。
+- 不移除或覆盖 `.min0`、`.cv-fill`、`.no-pan` 的机制;缩放画布内禁止 `position:fixed`。
+  Canvas 用 `Deck.fit()` / `Deck.autofit()`,指针坐标用 `Deck.pt()`,动画用 `Deck.loop()`。
+- 教学常量、范围和初值来自 `Lec.K`;要推导的结果当场调用 `Lec.P`。
+  禁止硬编码预录结果或伪造数据;随机过程必须固定种子。
+"""
+
+
+def assigned_workflow(name: str, root: Path = WORKFLOWS,
+                      floors: bool = False) -> str:
+    """Builder system block for one routed workflow; no catalog and no gate.
+
+    `floors=True` 在前面拼上 FLOORS —— 只给对照臂用,见 FLOORS 上面的账。
+    """
     f = root / name / "SKILL.md"
     if not name or not f.is_file():
         raise ValueError(f"未知主工作流 {name!r}; 可用: {', '.join(available(root))}")
     desc = _desc(f.read_text(encoding="utf-8", errors="replace"))
     row = f"- {name}: {desc}" if desc else f"- {name}"
-    return ("本页只装载下面一个 workflow。先用 Skill 工具读取它，再严格执行 SKILL.md "
+    head = (FLOORS + "\n") if floors else ""
+    return (head
+            + "本页只装载下面一个 workflow。先用 Skill 工具读取它，再严格执行 SKILL.md "
             "顶部的 Reference routing：所有基础必读项和已选分支项，都要在任何页面修改前"
             "用 `Read` 读取，包括 `Write`、`Edit`、`Patch` 或会改文件的 `Bash`；不要读取"
             "未选分支或无关 reference。scripts 只在 workflow 明确要求时使用。\n\n" + row)

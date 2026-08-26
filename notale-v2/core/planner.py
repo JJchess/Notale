@@ -62,6 +62,9 @@ class Run:
     label: str
     scenario: str = ""
     canvas: tuple[int, int] = (1600, 900)
+    # 提示词目录可换。理由同下面 --skills 那段注释:三个外部依赖要么都能换,要么都不能换。
+    # 这一条是为了能一键切两套模板做对照臂,而不必对 prompts/ 做 git 体操。
+    prompts: Path = PROMPTS
     root: Path = field(init=False)
     log: Writer = field(init=False)
 
@@ -74,7 +77,7 @@ class Run:
     assets = property(lambda self: self.root / "pages" / "assets")
 
     def prompt(self, name: str, **kw: object) -> str:
-        return fill((PROMPTS / f"{name}.md").read_text(encoding="utf-8"),
+        return fill((self.prompts / f"{name}.md").read_text(encoding="utf-8"),
                     _where=f"{name}.md", **kw)
 
 
@@ -1329,7 +1332,6 @@ def briefs(run: Run, rows: list, workflow_root: Path = skills.WORKFLOWS) -> list
     out = [Brief(f"Build {r.pid}", run.prompt(
         "brief", query=run.query, pid=r.pid, total=len(rows),
         contract=run.root / "CONTRACT.md", assets=run.assets,
-        deck=run.pages / "plan" / "deck.md",
         spec=run.pages / "plan" / f"p{r.nn}.md",
         stay=f"{r.stay:g} 秒",
         assignment=_assignment_block(run, r, workflow_root))) for r in rows]
@@ -1515,7 +1517,16 @@ def main() -> None:
     # 一轮跑完才看得出来。三个外部依赖要么都能换,要么都不能换。
     a.add_argument("--skills", default=str(skills.DEFAULT))
     a.add_argument("--workflows", default=str(skills.WORKFLOWS))
+    a.add_argument("--prompts", default=str(PROMPTS),
+                   help="提示词模板目录,用来跑模板对照臂;默认 notale-v2/prompts")
     n = a.parse_args()
+    if not Path(n.prompts).is_dir():
+        raise SystemExit(f"✗ --prompts 指的 {n.prompts} 不是目录")
+    missing = [f"{x}.md" for x in ("brief", "contract", "lec", "plan", "spec", "theme")
+               if not (Path(n.prompts) / f"{x}.md").is_file()]
+    if missing:
+        raise SystemExit(f"✗ --prompts 指的 {n.prompts} 缺 {', '.join(missing)} —— "
+                         f"缺哪份要当场报错,不能等跑到那一步才 FileNotFoundError。")
     if not Path(n.skills).is_dir():
         raise SystemExit(f"✗ --skills 指的 {n.skills} 不是目录 —— "
                          f"缺了它图池会全空、逐页规格也点不到技法文档,而那两条都只报警。")
@@ -1539,7 +1550,8 @@ def main() -> None:
             raise SystemExit(f"✗ {_why}的脚本不在:{_p}")
     llm.override(name=n.model)
     if n.effort: config()["planner"]["reasoning_effort"] = n.effort
-    r = plan_run(Run(n.query, n.minutes, n.audience, n.label, n.scenario),
+    r = plan_run(Run(n.query, n.minutes, n.audience, n.label, n.scenario,
+                     prompts=Path(n.prompts)),
                  Path(n.chassis), Path(n.lib), Path(n.skills), workflow_root)
     # 退出码带上自检结果:产物全留着,但起 builder 之前必须先看到这个。
     if r.get("gate_failures"):

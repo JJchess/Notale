@@ -377,6 +377,12 @@ def main() -> None:
     a.add_argument("--philosophy", default="",
                    help="设计哲学 12 块的路径。**默认不注入**(见代码里的实测)。"
                         "给了路径就整份注入每页 agent 的 system,用来做对照实验。")
+    # 通用地板(占用/字号/底盘机制/Lec 口径)前置到 system 块。**默认关。**
+    # 今天 CONTRACT.md 21/21 页都读、上面每条它都有,所以打开只是第三份副本;
+    # 它是给「先补 skill 侧覆盖,再砍 CONTRACT」那一步做对照臂用的。
+    # 账记在 core/skills.py 的 FLOORS 上面。
+    a.add_argument("--skill-floors", action="store_true",
+                   help="在指派块前拼上通用地板(对照臂用,默认不拼)")
     a.add_argument("--model")
     a.add_argument("--rebuild", action="store_true", help="已建好的也重做")
     n = a.parse_args()
@@ -418,7 +424,8 @@ def main() -> None:
         philosophy = pp.read_text(encoding="utf-8")
     base = IDENTITY + (("\n\n" + philosophy) if philosophy else "")
     skill_blocks = {
-        p.pid: (skills.assigned_workflow(p.primary_workflow, workflow_root)
+        p.pid: (skills.assigned_workflow(p.primary_workflow, workflow_root,
+                                         floors=n.skill_floors)
                 if p.skill_mode == "workflow"
                 else skills.assigned(p.required, legacy_root))
         for p in pages
@@ -429,7 +436,8 @@ def main() -> None:
     modes = Counter(p.skill_mode for p in pages)
     print(f"\n▸ builder · {n.label}\n  {len(pages)} 页,并发 {n.concurrency},"
           f"model={model},effort={effort},模式 {dict(modes)}\n"
-          f"  指导块 {sb[0]}–{sb[-1]} 字符/页(中位 {sb[len(sb)//2]})\n"
+          f"  指导块 {sb[0]}–{sb[-1]} 字符/页(中位 {sb[len(sb)//2]})"
+          f"{'  含通用地板' if n.skill_floors else ''}\n"
           f"  system 块 {len(base):,} 字符"
           f"({'含设计哲学 ' + str(len(philosophy)) + ' 字符' if philosophy else '不含设计哲学'})\n")
 

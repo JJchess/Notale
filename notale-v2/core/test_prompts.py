@@ -17,20 +17,24 @@ from core.planner import MAX_CHARS, _valid_css, _valid_spec  # noqa: E402
 import plan_quality  # noqa: E402
 
 
+# 每份提示词的字符数上限。**只降不升** —— 这一栏在 2026-08-26 精简 contract/brief/spec
+# 之后重定过一次,同时修掉一个一直存在的错:原来的数(brief 1457 / contract 5646 / spec 11150)
+# 是按 `wc -c` 的**字节**定的,而这道闸比的是 `len(text)` 的**字符**。中文 3 字节/字,
+# 于是上限一直比本意宽了约一倍 —— 契约实际 1,998 字符却挂着 5,646 的天花板,
+# 这道闸事实上从没拦过任何东西。现在按真实字符数 + 约 10% 余量重定。
 BASELINE_CHARS = {
-    "brief": 1457,
-    "contract": 5646,
-    "lec": 1401,
-    "philosophy": 5665,
-    "plan": 10101,
-    "spec": 11150,
-    "theme": 11890,
+    "brief": 700,
+    "contract": 2200,
+    "lec": 700,
+    "philosophy": 2100,
+    "plan": 3200,
+    "spec": 3000,
+    "theme": 3200,
 }
 
 PROMPT_ARGS = {
     "brief": dict(query="Q", pid="page-01", assets="/tmp/assets",
                   contract="/tmp/CONTRACT.md", total=12, spec="/tmp/p01.md",
-                  deck="/tmp/deck.md",
                   assignment="## 主工作流\n  - compose-page", stay="60 秒"),
     "contract": dict(n_pages=12, minutes=30, audience="高中生", scenario="课堂投影",
                      spine="主线", world="视觉世界", canvas_w=1600, canvas_h=900,
