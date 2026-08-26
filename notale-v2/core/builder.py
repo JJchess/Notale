@@ -106,6 +106,16 @@ class Page:
     images: int = 0      # 这一页进上下文的图片张数(Opus 那条线是每页 6.0 张)
     evicted: int = 0     # 被挤出上下文的图片张数
 
+    # token 账。2026-08-26 之前这三个数一个都没记,于是「前缀缓存到底生效没有」
+    # 只能靠离线探针 —— 而实测这条路由自动缓存能到 99.9%,一次淘汰却会把它打回 0。
+    # 没有这三个数就看不见那件事,所以先记再谈优化。
+    tok_in: int = 0      # 累计输入 token(每步都含被重发的全部历史)
+    tok_cached: int = 0  # 其中命中前缀缓存的部分(读,便宜)
+    tok_write: int = 0   # 其中写进缓存的部分(写,通常带溢价 —— 和读不是一个价)
+    tok_out: int = 0     # 累计输出 token
+    tok_max: int = 0     # 单步输入峰值 —— 判 CONTEXT_SOFT 用
+    cache_seen: bool = False   # 这条路由到底报不报 cached;不报和没命中要分得开
+
     def __post_init__(self):
         self.steps = []
         self.steps_arg = {}
@@ -148,7 +158,27 @@ def page_from_brief(raw: dict, workflow_root: Path = skills.WORKFLOWS,
     return Page(pid, prompt, tuple(dict.fromkeys(old)))
 
 
-KEEP_IMAGES = 2  # hist 里同时保留几张图
+KEEP_IMAGES = 2  # 真触发淘汰时,hist 里留几张图
+
+# 淘汰的触发线:上一次调用的真实输入 token 超过它才清图,否则**一个字节都不动历史**。
+#
+# 2026-08-26 改的。原来是「图片数 > KEEP_IMAGES 就淘汰」,于是淘汰频率≈截图张数
+# (wf2 那轮 143 张图、102 次挤出)。而 evict_images 是原地改写 hist[i],
+# 实测「未改写 100% 命中 → 淘汰当次 0% → 下一次 99.9%」——
+# **每次淘汰 = 一次全价重算整段前缀**,按 trace 里的真实 input_tokens 折算,
+# 图多的轮次有 28–34% 的输入 token 是这么烧掉的。
+#
+# 换成按上下文大小判,理由是三条实测:
+#   · 上下文窗口 ≥375,011 token(超额请求回 context_length_exceeded,逐级试到 375k 仍通过);
+#     而实测输入峰值只有 36k–70k,不到 19%。
+#   · evict_images 的 docstring 里那句「11/16 个 subagent 上下文撑爆」写的是
+#     **lab 那条线** —— 那条线有自动压缩、是另一个 harness。这条路由上从没发生过。
+#   · 缓存命中的 input token 按折扣计费。留着旧图 = 每轮多花「几千 token × 折扣价」;
+#     淘汰 = 下一次全价重算约两万 token。**自动缓存生效时,留着比扔掉便宜。**
+#
+# 150k 是峰值的两倍多,仍不到已验证下限的 40%。正常轮次一次都不触发。
+# 判据晚一步(先调用才知道大小)无害:150k → 155k 离 375k 仍很远。
+CONTEXT_SOFT = 150_000
 
 
 def _is_image_msg(m) -> bool:
@@ -158,19 +188,30 @@ def _is_image_msg(m) -> bool:
                     for b in m["content"]))
 
 
-def evict_images(hist: list) -> int:
-    """`hist` 里只留最近 KEEP_IMAGES 张图,更早的换成一句话。
+def evict_images(hist: list, tok_in: int) -> int:
+    """输入超过 `CONTEXT_SOFT` 时,`hist` 里只留最近 KEEP_IMAGES 张图,更早的换成一句话。
+
+    **触发条件 2026-08-26 从「图片数」改成「真实输入 token」** —— 理由见 CONTEXT_SOFT
+    上面那段账。下面这段是原来的记录,它解释的是**为什么要有这个机制**,仍然成立;
+    但「什么时候该动手」已经不再由图片数决定。
 
     **这不是省钱,是防炸,而且是量出来的**(原始记录在 zzz/selfcheck.py 的 docstring 里):
     lab 那条线一轮 171 张截图约 324k token,而图片随每一步重发、**永久占上下文** ——
     结果 11/16 个 subagent 上下文撑爆被自动压缩,整轮墙钟拉长 1.9 倍。
     我们这条线没有自动压缩,撑爆就是撞 max_output_tokens 或者直接 400。
 
-    换成一句话而不是整条删掉:function_call / function_call_output 是配对的,
-    这条 user 消息虽然不在那个配对里,删元素会让 parentUuid 那条链和步数对不上;
-    而留一句话还能告诉模型「那张图我拿走了,要看再拍」。
+    换成一句话而不是整条删掉,理由只剩一条:**告诉模型那张图被拿走了**,
+    否则它会凭记忆改页面。原先还写着「删元素会让 parentUuid 那条链和步数对不上」——
+    2026-08-26 查证不成立:`parentUuid` 在 trace.py 里按**轮次**串(Writer.prev),
+    与 `hist` 下标无关;`page.calls` / `page.steps` 也都不由 `hist` 长度推导。
+    不过这不构成改写法的理由 —— **删元素和改写元素一样会断前缀缓存**,
+    所以保持原样,只把触发条件挪到 CONTEXT_SOFT 上。
     确定的事 harness 做 —— 这属于确定的事。
     """
+    if tok_in <= CONTEXT_SOFT:
+        # **没超线就一个字节都不碰。** 动了历史(改写或删除都算)前缀缓存就断,
+        # 而这条路由的自动缓存实测能到 99.9%。
+        return 0
     idx = [i for i, m in enumerate(hist) if _is_image_msg(m)]
     n = 0
     for i in idx[:-KEEP_IMAGES] if len(idx) > KEEP_IMAGES else []:
@@ -234,12 +275,22 @@ def build_one(page: Page, pages_dir: Path, trace: Path, skill_root: Path,
         started = _now()
         r = respond(instructions, hist, spec, effort, tag=page.pid)
         page.calls += 1
-        u = getattr(r, "usage", None)
+        tin, tout, cached = llm.usage_of(r)
+        page.tok_in += tin
+        page.tok_out += tout
+        page.tok_write += llm.cache_write_of(r)
+        page.tok_max = max(page.tok_max, tin)
+        if cached is not None:
+            page.cache_seen = True
+            page.tok_cached += cached
         calls = [o for o in r.output if getattr(o, "type", "") == "function_call"]
         log.add([{"type": "text", "text": page.prompt if page.calls == 1 else "(tool results)"}],
                 text_of(r),
-                {"input_tokens": int(getattr(u, "input_tokens", 0) or 0),
-                 "output_tokens": int(getattr(u, "output_tokens", 0) or 0)},
+                # 键名用 wire.Usage 已有的那两个 —— trace.usage_of() 会把未知键
+                # 静默丢掉(core/trace.py:97),写 `cached_tokens` 读不回来。
+                {"input_tokens": tin, "output_tokens": tout,
+                 "cache_read_input_tokens": cached or 0,
+                 "cache_creation_input_tokens": llm.cache_write_of(r)},
                 getattr(r, "id", None) or f"req_{uuid.uuid4().hex[:16]}",
                 started, _now(),
                 {"page": page.pid,
@@ -331,7 +382,7 @@ def build_one(page: Page, pages_dir: Path, trace: Path, skill_root: Path,
                 hist.append({"role": "user", "content": [
                     {"type": "input_image", "image_url": f"data:{mt};base64,{b64}"}]})
                 page.images += 1
-            page.evicted += evict_images(hist)
+            page.evicted += evict_images(hist, page.tok_max)
 
     page.seconds = time.time() - t0
     n_sc = page.steps.count("SELFCHECK") + page.steps.count("Check")
@@ -384,13 +435,17 @@ def main() -> None:
     a.add_argument("--skill-floors", action="store_true",
                    help="在指派块前拼上通用地板(对照臂用,默认不拼)")
     a.add_argument("--model")
+    # Anthropic 系必须走 messages 才拿得到 cache_control;走 responses 是全额计费,
+    # 而且**不会有任何报错** —— 实测 Sonnet 在 responses 上连打三次前缀,三次 cached=0。
+    a.add_argument("--wire", choices=("responses", "chat", "messages"),
+                   help="覆盖 wire_api;Anthropic 系模型要用 messages")
     a.add_argument("--rebuild", action="store_true", help="已建好的也重做")
     n = a.parse_args()
     cfg = config()
     builder_cfg = cfg.get("builder", {})
     model = n.model or builder_cfg.get("model") or cfg["model"]["name"]
     effort = n.effort or builder_cfg.get("reasoning_effort", "medium")
-    llm.override(name=model)
+    llm.override(name=model, wire_api=n.wire)
 
     root = ROOT / "runs" / n.label
     briefs = json.loads((root / "briefs.json").read_text(encoding="utf-8"))
@@ -476,6 +531,15 @@ def main() -> None:
     n_img = sum(p.images for p in done)
     print(f"  进上下文的图 {n_img} 张(每页 {n_img / max(1, len(done)):.1f};"
           f"Opus 那条线是 6.0),被挤出 {sum(p.evicted for p in done)} 张")
+    t_in = sum(p.tok_in for p in done)
+    t_ca = sum(p.tok_cached for p in done)
+    t_mx = max((p.tok_max for p in done), default=0)
+    if not any(p.cache_seen for p in done):
+        # 不报和没命中要分得开 —— 报 0% 会让人以为缓存失效,其实是这条路由不给数。
+        print(f"  输入 {t_in:,} tok,峰值 {t_mx:,}   ⚠ 这条路由没报 cached_tokens,命中率未知")
+    else:
+        print(f"  输入 {t_in:,} tok,峰值 {t_mx:,}   缓存命中 {t_ca:,} "
+              f"({t_ca / max(t_in, 1) * 100:.0f}%)")
     asg = sum(len(p.required) for p in done)
     hit = sum(len(set(p.required) & set(p.loaded_skills)) for p in done)
     print(f"  指派指导 {asg} 项,实际读到 {hit} 项；reference 读取 "
@@ -492,6 +556,10 @@ def main() -> None:
                      "steps": p.steps, "args": p.steps_arg,
                      "required": list(p.required), "stray": p.stray,
                      "images": p.images, "evicted": p.evicted,
+                     "tok_in": p.tok_in, "tok_cached": p.tok_cached,
+                     "tok_write": p.tok_write, "tok_out": p.tok_out,
+                     "tok_max": p.tok_max,
+                     "cache_reported": p.cache_seen,
                      "skill_mode": p.skill_mode,
                      "primary_workflow": p.primary_workflow or None,
                      "loaded_workflows": ([x for x in p.loaded_skills

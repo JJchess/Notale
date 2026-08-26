@@ -29,6 +29,19 @@
 # 切回这条路由(它支持 responses)。中转那条(api.999555999.com + wire_api: chat)
 # 的适配层留着不动 —— core/llm.py 里 wire=="chat" 那条分支已经验过能跑完整轮,
 # 下次哪条路由再挂可以一行切回去。
+# 2026-08-26 量了这条路由的缓存行为,三条要记住:
+#
+#   AWS-GPT-5.6-Sol / Terra   走 responses,自动前缀缓存,同前缀第二次命中 99.9%
+#                             —— 白拿的,不需要任何请求侧的提示
+#   AWS-Claude-Sonnet-5       走 responses **一分钱不省**(三次同前缀全部 cached=0)。
+#                             Anthropic 系不做自动缓存,要显式 cache_control,
+#                             而 to_responses() 在那一侧没有对应物只能丢掉。
+#                             所以它必须配 `wire_api: messages`(或 builder --wire messages),
+#                             那条走裸 /v1/messages,实测第二次 cache_read 4,582。
+#   **换模型不换 wire 不会报错,只会静默变成全额计费。** 用 core/check_cache.py 验。
+#
+# 上下文窗口实测 ≥375,011 token(超额回 context_length_exceeded,逐级试到 375k 仍通过);
+# 而 builder 的实测输入峰值只有 36k–70k。core/builder.py 的 CONTEXT_SOFT 就是按这个定的。
 model:
   base_url: https://llmapi.paratera.com/v1
   name: AWS-GPT-5.6-Sol

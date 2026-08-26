@@ -15,10 +15,12 @@
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import random
 import time
+import urllib.request
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
@@ -72,6 +74,7 @@ class Reply:
     text: str
     input_tokens: int = 0
     output_tokens: int = 0
+    cached_tokens: int = 0
     raw: object = None
     truncated: bool = False
 
@@ -121,6 +124,8 @@ def to_responses(req: Request) -> dict:
 
 
 def wire() -> str:
+    # 三个取值:responses(默认) / chat(中转路由用) / messages(Anthropic 系,
+    # 唯一能拿到 cache_control 的那条 —— 见 to_messages 上面的账)。
     return str(config()["model"].get("wire_api", "responses")).lower()
 
 
@@ -181,9 +186,17 @@ def _adapt_chat(r, want: int | None = None) -> _Resp:
     # responses 是 input_tokens/output_tokens。不换名的话上层读到的全是 0 ——
     # 而那两个数是日志、成本和「输出打满没打满」的判据,读成 0 等于这些判据全瞎。
     u = getattr(r, "usage", None)
+    # 缓存命中数也要搬。chat 把它放在 `prompt_tokens_details.cached_tokens`,
+    # 而上层统一读 `input_tokens_details` —— 不搬的话 chat wire 永远报 0,
+    # 且分不清「这条路由不报」和「报了但没命中」。照本文件的惯例:
+    # **没见过的形状要吵**,所以缺字段时留 None 往上传,不静默补 0。
+    det = getattr(u, "prompt_tokens_details", None)
+    cached = getattr(det, "cached_tokens", None) if det is not None else None
     usage = SimpleNamespace(
         input_tokens=int(getattr(u, "prompt_tokens", 0) or 0),
-        output_tokens=int(getattr(u, "completion_tokens", 0) or 0))
+        output_tokens=int(getattr(u, "completion_tokens", 0) or 0),
+        input_tokens_details=SimpleNamespace(
+            cached_tokens=None if cached is None else int(cached)))
     # **截断不能只信 `finish_reason`。** 实测这条路由会撒谎:
     # `max_tokens=16` 打满、正文切在半句话("……身体可近"),
     # 它照样报 `finish_reason: "stop"`。而截断识别驱动着 OUTPUT_CEILING 的自动加倍,
@@ -412,6 +425,8 @@ def respond(instructions: str, history: list, tools: list[dict], effort: str,
                   flush=True)
             time.sleep(w)
         try:
+            if wire() == "messages":
+                return _post_messages(body)
             if wire() == "chat":
                 cb = _chat_body(body)
                 return _adapt_chat(
@@ -483,8 +498,179 @@ def text_of(r) -> str:
     return "".join(out)
 
 
+# 一次响应里的三个数。两条 wire 的字段名不同,取法也不同:
+#   responses  usage.input_tokens_details.cached_tokens
+#   chat       usage.prompt_tokens_details.cached_tokens
+#
+# **返回 None 表示「这条路由没报这个字段」,0 表示「报了,但没命中」。**
+# 这两件事必须分得开:2026-08-26 审计时全仓一个 cached 数都没有,
+# 于是「缓存到底生效没有」只能靠离线探针量 —— 静默补 0 就会把这个盲区固化下来。
+def cache_write_of(r) -> int:
+    """写进缓存的输入 token。**它和读取是两个价** —— 写入通常带溢价
+    (Anthropic 5 分钟档是 1.25×),所以算钱时不能和普通输入混成一个数。
+    responses 报 `input_tokens_details.cache_write_tokens`,
+    messages 报 `cache_creation_input_tokens`。"""
+    u = getattr(r, "usage", None)
+    if u is None:
+        return 0
+    d = getattr(u, "input_tokens_details", None)
+    if d is not None and getattr(d, "cache_write_tokens", None) is not None:
+        return int(getattr(d, "cache_write_tokens") or 0)
+    return int(getattr(u, "cache_creation_input_tokens", 0) or 0)
+
+
+# --------------------------------------------------------------------------
+# messages wire —— Anthropic 原生。**存在的唯一理由是 cache_control。**
+#
+# 实测(2026-08-26,paratera 同一条路由):
+#     AWS-Claude-Sonnet-5 走 responses,连打三次同一个 7,632 token 前缀,三次 cached=0
+#     同一模型走 /v1/messages 带 cache_control,第二次 cache_read 4,582 —— 全额变折扣
+# Anthropic 系不做自动前缀缓存,断点是唯一入口;而 to_responses() 把断点丢了
+# (在那一侧确实没有对应物)。所以不是换个 base_url 就行,要单独一条 wire。
+#
+# `core/wire.py` 的 CacheControl / TextBlock.cache_control 本来就是为这条建的
+# —— wire 是对 Claude Code 抓包的减法。这里是把设计意图接回去,不是新增概念。
+# --------------------------------------------------------------------------
+
+_ANTHROPIC_VERSION = "2023-06-01"
+
+
+def to_messages(body: dict) -> dict:
+    """responses 形态的请求体 → Anthropic /v1/messages 形态。
+
+    三处形状不一样,都得翻:
+      instructions(str)      → system: [{type:text, text, cache_control}]
+      function_call          → assistant 的 tool_use 块
+      function_call_output   → user 的 tool_result 块
+    并且 Anthropic 要求同 role 连续的块合进一条消息,不能一条一条发。
+    """
+    msgs: list[dict] = []
+
+    def push(role: str, block: dict) -> None:
+        if msgs and msgs[-1]["role"] == role:
+            msgs[-1]["content"].append(block)
+        else:
+            msgs.append({"role": role, "content": [block]})
+
+    for it in body.get("input") or []:
+        if not isinstance(it, dict):
+            continue
+        kind = it.get("type")
+        if kind == "function_call":
+            try:
+                args = json.loads(it.get("arguments") or "{}")
+            except json.JSONDecodeError:
+                args = {}
+            push("assistant", {"type": "tool_use", "id": it.get("call_id", ""),
+                               "name": it.get("name", ""), "input": args})
+        elif kind == "function_call_output":
+            push("user", {"type": "tool_result", "tool_use_id": it.get("call_id", ""),
+                          "content": str(it.get("output", ""))})
+        elif kind == "reasoning":
+            continue          # 推理块不回传 —— 和 chat 那条同一个理由
+        elif it.get("role") in ("user", "assistant"):
+            c = it.get("content")
+            if isinstance(c, str):
+                push(it["role"], {"type": "text", "text": c})
+                continue
+            for b in c or []:
+                if not isinstance(b, dict):
+                    continue
+                if b.get("type") in ("input_text", "output_text", "text"):
+                    push(it["role"], {"type": "text", "text": b.get("text", "")})
+                elif b.get("type") == "input_image":
+                    url = b.get("image_url") or ""
+                    if url.startswith("data:"):
+                        head, _, b64 = url.partition(",")
+                        push(it["role"], {"type": "image", "source": {
+                            "type": "base64",
+                            "media_type": head[5:].split(";")[0],
+                            "data": b64}})
+
+    # **两个断点,不是一个。**
+    # 只打 system 是不够的 —— 实测(Sonnet 建一页)system 那段只有 2,346 token,
+    # 而单步输入是 36,603,命中率 6.4%,对比 GPT 自动缓存的 91% 基本等于没有。
+    # 大头是每轮增长的 history,所以要在**历史末尾**再打一个滚动断点:
+    # 这一轮写进去的缓存,正好是下一轮的前缀(history 只追加不改写)。
+    # Anthropic 上限 4 个,这里用 2 个,留余量。
+    if msgs and msgs[-1].get("content"):
+        msgs[-1]["content"][-1]["cache_control"] = {"type": "ephemeral"}
+    out = {"model": body["model"], "max_tokens": body.get("max_output_tokens", 4096),
+           # system 逐页固定,是最稳的那一段,单独占一个断点。
+           "system": [{"type": "text", "text": body.get("instructions", ""),
+                       "cache_control": {"type": "ephemeral"}}],
+           "messages": msgs}
+    tools = body.get("tools") or []
+    if tools:
+        # 工具 schema 的键名也不一样:parameters → input_schema。
+        out["tools"] = [{"name": s["name"], "description": s.get("description", ""),
+                         "input_schema": s.get("parameters")
+                         or {"type": "object", "properties": {}}}
+                        for s in tools]
+    return out
+
+
+def _adapt_messages(r: dict) -> _Resp:
+    """Anthropic 响应 → 冒充 Responses 对象,让 planner/builder 一行不用改。"""
+    out: list[_Item] = []
+    for b in r.get("content") or []:
+        if b.get("type") == "text" and (b.get("text") or "").strip():
+            out.append(_Item("message", text=b["text"]))
+        elif b.get("type") == "tool_use":
+            out.append(_Item("function_call", name=b.get("name", ""),
+                             arguments=json.dumps(b.get("input") or {}, ensure_ascii=False),
+                             call_id=b.get("id", ""), id_=b.get("id", "")))
+    u = r.get("usage") or {}
+    usage = SimpleNamespace(
+        # cache_read 不计进 input_tokens(Anthropic 分开报),要自己加回去,
+        # 否则「输入总量」会随命中率上升而虚降,成本账就读反了。
+        input_tokens=int(u.get("input_tokens", 0) or 0)
+        + int(u.get("cache_read_input_tokens", 0) or 0)
+        + int(u.get("cache_creation_input_tokens", 0) or 0),
+        output_tokens=int(u.get("output_tokens", 0) or 0),
+        input_tokens_details=SimpleNamespace(
+            cached_tokens=int(u.get("cache_read_input_tokens", 0) or 0)),
+        cache_read_input_tokens=int(u.get("cache_read_input_tokens", 0) or 0),
+        cache_creation_input_tokens=int(u.get("cache_creation_input_tokens", 0) or 0))
+    return _Resp(out, usage, r.get("stop_reason") == "max_tokens", r.get("id", "") or "")
+
+
+def _post_messages(body: dict) -> _Resp:
+    m = config()["model"]
+    url = str(m["base_url"]).rstrip("/") + "/messages"
+    key = os.environ[m["api_key_env"]]
+    req = urllib.request.Request(
+        url, method="POST", data=json.dumps(to_messages(body)).encode(),
+        headers={"Content-Type": "application/json", "x-api-key": key,
+                 "anthropic-version": _ANTHROPIC_VERSION,
+                 "Authorization": f"Bearer {key}"})
+    with urllib.request.urlopen(req, timeout=m["http_timeout_sec"]) as resp:
+        return _adapt_messages(json.loads(resp.read()))
+
+
+def usage_of(r) -> tuple[int, int, int | None]:
+    """→ (输入, 输出, 命中缓存的输入)。写入缓存的量另见 `cache_write_of()`。"""
+    u = getattr(r, "usage", None)
+    if u is None:
+        return 0, 0, None
+    tin = int(getattr(u, "input_tokens", 0) or getattr(u, "prompt_tokens", 0) or 0)
+    tout = int(getattr(u, "output_tokens", 0) or getattr(u, "completion_tokens", 0) or 0)
+    cached = None
+    for attr in ("input_tokens_details", "prompt_tokens_details"):
+        d = getattr(u, attr, None)
+        if d is not None and getattr(d, "cached_tokens", None) is not None:
+            cached = int(getattr(d, "cached_tokens") or 0)
+            break
+    # Anthropic 那条(messages wire)用的是另一套名字,顺手也认。
+    if cached is None and getattr(u, "cache_read_input_tokens", None) is not None:
+        cached = int(getattr(u, "cache_read_input_tokens") or 0)
+    return tin, tout, cached
+
+
 def _once(body: dict) -> Reply:
-    if wire() == "chat":
+    if wire() == "messages":
+        r = _post_messages(body)
+    elif wire() == "chat":
         cb = _chat_body(body)
         r = _adapt_chat(client().chat.completions.create(**cb), cb.get("max_tokens"))
     else:
@@ -495,10 +681,12 @@ def _once(body: dict) -> Reply:
     # **必须显式拿出来** —— 截断的产物看上去是一份正常文件,只是结尾没了,
     # 而下游(theme/contract/brief)会照着这份残缺的规划一路建二十多页。
     det = getattr(r, "incomplete_details", None)
+    tin, tout, cached = usage_of(r)
     return Reply(
         text=text_of(r).strip(),
-        input_tokens=int(getattr(u, "input_tokens", 0) or 0),
-        output_tokens=int(getattr(u, "output_tokens", 0) or 0),
+        input_tokens=tin,
+        output_tokens=tout,
+        cached_tokens=cached or 0,
         raw=r,
         truncated=(getattr(r, "status", None) == "incomplete"
                    or getattr(det, "reason", None) == "max_output_tokens"),

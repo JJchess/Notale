@@ -196,10 +196,16 @@ def call(run: Run, step: str, prompt: str, min_chars: int = 1,
     t0, started = time.time(), _now()
     r = ask(req, min_chars=min_chars)
     run.log.add([b.model_dump() for msg in req.messages for b in msg.content], r.text,
-                {"input_tokens": r.input_tokens, "output_tokens": r.output_tokens},
+                # 键名照 wire.Usage —— trace.usage_of() 只认它声明过的字段。
+                {"input_tokens": r.input_tokens, "output_tokens": r.output_tokens,
+                 "cache_read_input_tokens": r.cached_tokens},
                 getattr(r.raw, "id", None) or f"req_{uuid.uuid4().hex[:16]}",
                 started, _now(), {"step": step})
-    print(f"  {step:<12} {time.time()-t0:6.1f}s  out={r.output_tokens:>6,} tok  {len(r.text):>7,} 字符")
+    # planner 这一侧的六步各写各的提示词,前缀几乎不共享,所以 cached 通常接近 0;
+    # 打出来是为了能一眼看出「这一步是不是重试撞上了缓存」,以及跟 builder 那侧对照。
+    print(f"  {step:<12} {time.time()-t0:6.1f}s  in={r.input_tokens:>7,}"
+          f"{'(cached ' + format(r.cached_tokens, ',') + ')' if r.cached_tokens else '':>16}"
+          f"  out={r.output_tokens:>6,} tok  {len(r.text):>7,} 字符")
     return strip_fence(r.text)
 
 
