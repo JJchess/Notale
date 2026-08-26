@@ -5,13 +5,14 @@ from __future__ import annotations
 
 import re
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from core import skills  # noqa: E402
+from core import skills, tools  # noqa: E402
 
 
 class WorkflowRegistryTests(unittest.TestCase):
@@ -91,6 +92,27 @@ class WorkflowRegistryTests(unittest.TestCase):
             self.assertNotIn(host_detail, reference)
         self.assertIn("bounded interactive component, not a page", reference)
         self.assertIn("function createWidget(root, host)", reference)
+
+    def test_workflow_reference_read_returns_the_complete_file_once(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td) / "workflows"
+            reference = root / "design-interaction" / "references" / "large.md"
+            reference.parent.mkdir(parents=True)
+            body = "START\n" + ("substantial guidance\n" * 4000) + "UNIQUE EOF CONTENT"
+            reference.write_text(body, encoding="utf-8")
+
+            result = tools.run(
+                "Read",
+                {"file_path": str(reference), "offset": 3000, "limit": 1},
+                Path(td),
+                root,
+            )
+
+        self.assertIsInstance(result, str)
+        self.assertIn("START", result)
+        self.assertIn("UNIQUE EOF CONTENT", result)
+        self.assertIn("reference 全文结束", result)
+        self.assertNotIn("已截断", result)
 
 
 if __name__ == "__main__":

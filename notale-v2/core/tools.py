@@ -48,8 +48,9 @@ from pathlib import Path
 
 from . import skills
 
-CAP = 30_000  # 单个 tool_result 的字符上限。实测 nn-06 最大一个 679,500 字符,
+CAP = 30_000  # 普通 tool_result 的字符上限。实测 nn-06 最大一个 679,500 字符,
               # 不截断的话一次就把上下文灌爆。
+WORKFLOW_REFERENCE_CAP = 160_000
 TIMEOUT = 120
 SHOT_TIMEOUT = 300   # 渲染要起无头 Chromium,还可能带几个 --after 状态,给宽一点
 
@@ -76,12 +77,24 @@ class Out:
     images: list[tuple[str, str]] = field(default_factory=list)  # (media_type, base64)
 
 
-def _cap(s: str) -> str:
-    return s if len(s) <= CAP else s[:CAP] + f"\n…（已截断，原文 {len(s):,} 字符）"
+def _cap(s: str, cap: int = CAP) -> str:
+    return s if len(s) <= cap else s[:cap] + f"\n…（已截断，原文 {len(s):,} 字符）"
+
+
+def _is_workflow_reference(path: Path, skill_root: Path) -> bool:
+    """A routed workflow reference is a deliberate one-shot context load."""
+    try:
+        rel = path.resolve().relative_to(skill_root.resolve())
+    except (OSError, ValueError):
+        return False
+    return (len(rel.parts) == 3 and rel.parts[1] == "references"
+            and path.suffix.lower() == ".md")
 
 
 SCHEMAS = [
-    {"name": "Read", "description": "读一个文件。文本回带行号的内容;png/jpg 回图片本身。",
+    {"name": "Read", "description":
+        "读一个文件。普通文本回带行号的内容;png/jpg 回图片本身。"
+        "工作流 references/*.md 总是一次返回全文并明确标记 EOF,不要分段重读。",
      "parameters": {"type": "object", "properties": {
          "file_path": {"type": "string", "description": "绝对路径"},
          "offset": {"type": "integer", "description": "从第几行开始读"},
@@ -153,7 +166,11 @@ def specs() -> list[dict]:
 def run(name: str, args: dict, cwd: Path, skill_root: Path) -> str | Out:
     try:
         r = _dispatch(name, args, cwd, skill_root)
-        return Out(_cap(r.text), r.images) if isinstance(r, Out) else _cap(r)
+        cap = CAP
+        if name == "Read" and args.get("file_path") \
+                and _is_workflow_reference(Path(args["file_path"]), skill_root):
+            cap = WORKFLOW_REFERENCE_CAP
+        return Out(_cap(r.text, cap), r.images) if isinstance(r, Out) else _cap(r, cap)
     except Exception as e:  # 工具出错要回给模型让它自己修,不能把循环打断
         return f"{type(e).__name__}: {e}"
 
@@ -324,6 +341,12 @@ def _dispatch(name: str, a: dict, cwd: Path, skill_root: Path) -> str | Out:
         p = Path(a["file_path"])
         if p.suffix.lower() in IMG_EXT:
             return _image(p)
+        if _is_workflow_reference(p, skill_root):
+            text = p.read_text(encoding="utf-8", errors="replace")
+            n = text.count("\n") + 1
+            return (f"（工作流 reference 全文开始：{p.name}，共 {n} 行）\n"
+                    + text
+                    + f"\n（工作流 reference 全文结束：{p.name} · EOF）")
         lines = p.read_text(encoding="utf-8", errors="replace").split("\n")
         off = max(0, int(a.get("offset") or 1) - 1)
         lines = lines[off:off + int(a.get("limit") or 2000)]
