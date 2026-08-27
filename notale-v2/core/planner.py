@@ -34,8 +34,7 @@ from pathlib import Path
 
 from . import skills
 from . import imgcut
-from .artifacts import (Brief, _JS_BUILTIN, _fn_body, lec_api, lec_values,
-                        parse_table)
+from .artifacts import Brief, parse_table
 from . import llm
 from .llm import ROOT, ask, config, fill, strip_fence
 
@@ -88,11 +87,10 @@ class Run:
 #     PLAN.md      24,056 / 20,440 / 21,964
 #     CONTRACT.md  11,591 / 14,602 / 10,413
 #     theme.css    20,979 / 21,566 / 20,777
-#     lec.js       40,517 / 41,924 / 47,851
 # 阈值取实测最小值的**约 1/6**。刻意定得这么松:这道闸只该抓
 # "0 字符 / out=229 tok" 那种灾难性空响应,不该去评判 Sonnet 写得简不简洁 ——
 # 换模型后产物合理地小一截是可能的,把正常产出判死的代价比漏判高得多。
-MIN_CHARS = {"lec.js": 6000, "PLAN.md": 3500, "theme.css": 3500,
+MIN_CHARS = {"PLAN.md": 3500, "theme.css": 3500,
              "CONTRACT.md": 1800, "spec": 400}
 # 产物**字符数**的上限,和 MIN_CHARS 对称。`MAX_OUT` 管的是输出 token,
 # 从来没有管过产物有多长 —— 而产物长度才是下游成本:CONTRACT.md 会被每个建页 agent
@@ -137,10 +135,6 @@ MAX_CHARS: dict[str, int] = {}
 # 撞上上限不会静默 —— llm.py 会把 status=incomplete 抛出来。
 # PLAN.md 从 48,000 提到 64,000:DeepSeek-V4-Flash 实测打满 47,998 被截断闸拦下。
 # 86–107 tok/s × 900s 超时 ≈ 77,000 的天花板,64,000 仍在其下。
-# lec.js 从 40,000 提到 64,000:DeepSeek-V4-Flash 实测打满 39,999 被截断闸拦下 ——
-# 它把几万 token 花在正文里推演,代码写到一半就断。100 tok/s × 900s ≈ 90,000 的
-# 天花板,64,000 仍在其下。**这是最后一次单纯加额度** —— 再截断就说明
-# 这个模型在这条链路上不适合当 planner,而不是额度不够。
 # theme.css 从 28,000 提到 48,000。**接口块改成八节之后这一步的产物几乎全是中文,
 # 而中文和 CSS 的 token 密度差四倍以上** —— 拿整份文件的均值去估会算少三倍:
 #     sol-low-20260827   out= 6,048 tok  产物 16,457 字符  均值 2.72 字符/tok
@@ -150,7 +144,7 @@ MAX_CHARS: dict[str, int] = {}
 # 合计约 20,100 —— 对 28,000 只剩 1.4× 余量,而**推理 token 也算在这个额度里**
 # (同一步 sonnet-full 吐 8,870 tok 只产出 17,897 字符,比 Sol 高 47%)。
 # 48,000 在 70 tok/s × 900s 超时的天花板(约 63,000)之下。
-MAX_OUT = {"lec.js": 64000, "PLAN.md": 64000, "theme.css": 48000,
+MAX_OUT = {"PLAN.md": 64000, "theme.css": 48000,
            "CONTRACT.md": 60000, "spec": 60000}
 # CONTRACT.md 从 16,000 提到 60,000。**它是全流程最重的一份提示词** ——
 # 18,222 字符,注入了 CHASSIS 全文 + LIBS.md + lec_api + lec_dom + 受众场合。
@@ -235,60 +229,20 @@ def _looks_like_prose(text: str) -> str:
     return ""
 
 
-def _valid_js_syntax(text: str) -> str:
-    """`node --check` 真跑一遍。语法不过的 lec.js 会让每一页静默失效 ——
-    页面照样出 200,只是 `Lec` 这个全局根本不存在。"""
-    with tempfile.NamedTemporaryFile("w", suffix=".js", delete=False,
-                                     encoding="utf-8") as f:
-        f.write(text)
-        tmp = f.name
-    try:
-        r = subprocess.run(["node", "--check", tmp], capture_output=True, text=True)
-        if r.returncode:
-            first = (r.stderr.strip().splitlines() or ["?"])[-1][:160]
-            return f"node --check 不过:{first}"
-    except FileNotFoundError:
-        pass                      # 没装 node 就不查,别把闸变成环境依赖
-    finally:
-        os.unlink(tmp)
-    return ""
-
-
-def _valid_js(text: str) -> str:
-    """lec.js 的闸。
-
-    **mount 那条已经删掉。** 2026-08-21 起 lec.js 只提供 `Lec.K` / `Lec.P`,
-    不再生成页眉页脚 —— 标题写在哪、组件摆在哪全由建页的 agent 决定。
-    所以「mount() 必须返回内容容器」和配套的 `_repair_lec` 都没有对象了。
-
-    **但那次只删了一半,代价两个月后才量出来。** `artifacts.py: lec_api()` 末尾还留着
-    一行 `out.append("Lec.mount({index, kicker, title, take})")`,而那份 API 清单
-    被注入写规格那一步 —— 于是 48/48 份规格照抄了这个不存在的调用,48 个页面
-    一个都没调用,结果**主标题到达 46/48 页,而每页那句「要让读者信什么」只到达 5/48**
-    (删 chrome 之前那一轮是 48/48)。2026-08-23 删掉了那一行。
-    教训:删一个接口,要连**广告它的那张清单**一起删。
-
-    留下的两条和版面归谁定无关:是不是推理稿、语法过不过,
-    以及**页码不许被拼成字符串印出来**。后者是量出来的,两种写法都出现过:
-        `ui: { pageLabel: 'Page' }`  → 每页印着「Page 38」
-        `page + '/' + total`         → 每页印着「50/50」
-    `data-page` / `data-total` 只该用来算进度和键盘翻页。
-    """
-    bad = _looks_like_prose(text)
-    if bad:
-        return bad
-    bad = _valid_js_syntax(text)
-    if bad:
-        return bad
-    if re.search(r"""(?x)
-            (page|index)\s*\+\s*['"]\s*/\s*['"]        # page + '/' + total
-          | ['"]\s*/\s*['"]\s*\+\s*(total|count)         # '/' + total
-          | pageLabel | takeLabel | kickerLabel            # 字段名当标签
-        """, text):
-        return ("lec.js 把页码或字段名拼成了要显示的字符串"
-                "(page+'/'+total 或 pageLabel/takeLabel 之类)—— "
-                "页码总数一概不显示,data-page/data-total 只用来算进度和翻页")
-    return ""
+# `lec.js` 及其两道闸(`_valid_js_syntax` / `_valid_js`)2026-08-28 整条删除。
+#
+# **删的时候连"广告它的那张清单"一起删了** —— 这是上一次只删一半的教训:
+# 2026-08-21 去掉 `Lec.mount` 时,`artifacts.py: lec_api()` 末尾还留着一行
+# `out.append("Lec.mount({index, kicker, title, take})")`,而那份 API 清单被注入
+# 写规格那一步,于是 48/48 份规格照抄了这个不存在的调用、48 个页面一个都没调用,
+# 结果**主标题到达 46/48 页,而每页那句「要让读者信什么」只到达 5/48**。
+# 代价两个月后才量出来。所以这一次同步清掉了:`prompts/lec.md`、
+# `artifacts.py` 的 `lec_api`/`lec_values`/`lec_dom`、`{lec_api}` 三个槽位、
+# `skills.FLOORS` 里的 Lec 口径、`scrub-visual-slop.md` 里那条。
+#
+# 数值一致性改由**每页散文自带真实数值、单位与出处**承担;
+# 「禁止预录结果或伪造数据、随机过程固定种子」那半条规则本身与 Lec 无关,
+# 已经留在静态技术契约里,没有跟着删。
 
 
 _IFACE = re.compile(r"/\*\s*=+\s*INTERFACE\s*=+(.*?)=+\s*/?INTERFACE\s*=+\s*\*/",
@@ -465,7 +419,7 @@ def _valid_spec(text: str,
 
 
 
-CHECKS = {"lec.js": _valid_js, "theme.css": _valid_css, "spec": _valid_spec}
+CHECKS = {"theme.css": _valid_css, "spec": _valid_spec}
 REPAIRS = {}
 
 _FENCE = re.compile(r"```[a-zA-Z]*\n(.*?)```", re.S)
@@ -669,13 +623,12 @@ def skeletons(run: Run, n: int) -> None:
            # 原来还有 `<main id="main">`,那是给 mount 往前后插页眉页脚用的;
            # 页眉页脚删掉之后它没有对象了,版面由建页的 agent 自己定。
            '<div id="stage"></div>\n'
-           '<script src="assets/base.js"></script>\n'
-           '<script src="assets/lec.js"></script>\n</body>\n</html>\n')
+           '<script src="assets/base.js"></script>\n</body>\n</html>\n')
     for i in range(1, n + 1):
         p = run.pages / f"page-{i:02d}.html"
         if not p.exists():
             p.write_text(tpl.format(i=i, n=n), encoding="utf-8")
-    print(f"  skeletons    {n} 个骨架,已接 base/theme/lec,data-total={n:02d}")
+    print(f"  skeletons    {n} 个骨架,已接 base/theme,data-total={n:02d}")
 
 
 @functools.lru_cache(maxsize=1)
@@ -1100,7 +1053,7 @@ def check_table(run: Run, rows: list, plan_text: str = "") -> None:
               f"改完重跑 PLAN.md 这一步即可(后面几步命中缓存)。\033[0m")
 
 
-def expand(run: Run, rows: list, deck: str, api: str = "", vals: str = "",
+def expand(run: Run, rows: list, deck: str,
            theme_api: str = "", img_pool: str = "", workflow_root=None) -> None:
     """按幕分批、幕之间并行,把页表展开成 `plan/pNN.md`。
 
@@ -1151,7 +1104,6 @@ def expand(run: Run, rows: list, deck: str, api: str = "", vals: str = "",
                             deck=deck, rows_block=_rows_block(batch),
                             workflows=skills.workflow_catalog(
                                 workflow_root or skills.WORKFLOWS),
-                            lec_api=api, lec_values=vals,
                             theme_api=theme_api, img_pool=img_pool)
         req = Request(model=m["name"], system=[TextBlock(text=IDENTITY)],
                       messages=[Message(role="user", content=[TextBlock(text=prompt)])],
@@ -1588,12 +1540,6 @@ def plan_run(run: Run, chassis: Path, lib: Path,
     libs = seed(run, chassis, lib)
     w, h = run.canvas
 
-    lec = cached(run, "lec.js", run.assets / "lec.js", run.prompt("lec", query=run.query))
-    api = lec_api(lec)
-    # mount() 注入的 DOM 契约。theme.css 必须按这些类名写选择器,否则页眉页脚裸着,
-    # 而各页会去 grep 一个不存在的东西(实测 ape-smoke 的 page-05:92 次调用、
-    # 64 分钟、0 产出)。三个独立调用之间的接线,只能由 harness 搬。
-
     # PLAN 必须在 theme 之前。上一轮是反的,结果写 theme 的模型不知道这 20 页要讲什么,
     # 只能造一个万能两栏 —— 实测 `.split` 在 20/20 页出现。现在 theme 拿得到版式清单。
     # **规划阶段不再注入设计哲学。** 这是单变量消融量出来的:
@@ -1616,7 +1562,7 @@ def plan_run(run: Run, chassis: Path, lib: Path,
     text = cached(run, "PLAN.md", run.root / "PLAN.md",
                   run.prompt("plan", query=run.query, minutes=run.minutes,
                              audience=run.audience, scenario=run.scenario,
-                             libs=libs, lec_api=api))
+                             libs=libs))
     rows = parse_table(text)
     if not rows:
         raise RuntimeError("PLAN.md 第 1 节读不出页表 —— 六列的 markdown 表格没匹配上。"
@@ -1728,7 +1674,7 @@ def plan_run(run: Run, chassis: Path, lib: Path,
     # theme.css 给的是可拼装的 token 和骨架类,不再有一份"必须覆盖"的类名清单。
     cached(run, "CONTRACT.md", run.root / "CONTRACT.md",
            run.prompt("contract", n_pages=len(rows), canvas_w=w, canvas_h=h,
-                      libs=libs, lec_api=api, minutes=run.minutes,
+                      libs=libs, minutes=run.minutes,
                       # ↑ minutes 以前没传。`fill()` 是字面 replace,占位符没配上不会报错 ——
                       # 于是 `{minutes}` 原样留在提示词里,模型照抄进产物:
                       # 实测 ape-g18 的 CONTRACT.md §1 里写着「会让 `{minutes}` 分钟塌掉」,
@@ -1746,10 +1692,12 @@ def plan_run(run: Run, chassis: Path, lib: Path,
     # 「这一页用哪套骨架」由 48 个并行建页 agent 各自现场决定一次。
     # 墙钟代价≈0:theme.css 是一次串行调用(实测 ~220 秒),expand 本身 20–50 路并行 98 秒。
     #
-    # 喂进去的是三样:lec 的接口签名、常量的**实际值**、theme 的 INTERFACE 块。
-    # 值那一样是消融验过的:只给键名时规格只能写「去 Lec.K.timeline 里取」,
-    # 给了值之后同一个建页模型 Edit 6.5→1.1、画布占满 24/48→44/44、占用比 51%→63%。
-    expand(run, rows, deck, api, lec_values(lec), img_pool=pool,
+    # 喂进去的是 theme 的 INTERFACE 块。
+    # **原来还喂 lec 的接口签名和常量实际值,`lec.js` 删掉之后这两样没有了。**
+    # 那次消融验过的是「给值比给键名好」(同一建页模型 Edit 6.5→1.1、
+    # 画布占满 24/48→44/44、占用比 51%→63%),这条结论仍然成立 ——
+    # 只是承载它的地方从 `Lec.K` 换成了每页散文自己写出真实数值。
+    expand(run, rows, deck, img_pool=pool,
            theme_api=(m.group(1).strip() if m else
                       "（theme.css 没写 INTERFACE 块,这一轮点不了名）"),
            workflow_root=workflow_root)

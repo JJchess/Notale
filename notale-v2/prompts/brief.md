@@ -2,14 +2,13 @@
 
 工作目录是 `{assets}/..`，所有命令都在这里执行。
 
-开工要用的三份材料**已经全文放在你的 system 提示里**，不需要也不要再 `Read`：
+开工要用的三份**已在你的 system 提示里**，不要再 `Read`（只会拿到指路，白花一次往返）：
 
-1. `<chassis>`（`{assets}/CHASSIS.md`）：`base.css`、`base.js`、`theme.css`、`lec.js` 的公开接口。
+1. `<chassis>`（`{assets}/CHASSIS.md`）：`base.css`、`base.js`、`theme.css` 的接口。
 2. `<contract>`（`{contract}`）：全套 {total} 页共享的版面、视觉、交互和技术契约。
 3. `<page_spec>`（`{spec}`）：本页的内容、结构、文字、数据、交互和边界。
 
-往上翻就是，内容与磁盘上的文件逐字相同。再去 `Read` 这三个路径只会拿到一句指路，
-白花一次往返。开工前先把这三份读完再动手。
+往上翻即可，与磁盘上逐字相同。先读完再动手。
 
 仅在需要确认库版本时读 `{assets}/lib/LIBS.md`。
 不要读取其他 `page-*.html`、`PLAN.md`，也不要打开 `assets/` 下 CSS、JS 或库文件的实现源码。
