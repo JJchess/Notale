@@ -619,6 +619,13 @@ def to_messages(body: dict) -> dict:
     # 又会变成一个只能靠探针回答的问题。
     eff = (body.get("reasoning") or {}).get("effort")
     budget = {"low": 0, "medium": 4096, "high": 16384}.get(str(eff or "").lower(), 0)
+    if not budget:
+        # **必须显式关。** 这个模型在这条路由上**默认就开着 extended thinking**:
+        # 不传 thinking 时,流里第一个 content_block 的类型就是 `thinking`,
+        # 然后连续几十个 ping、一个 delta 都没有 —— 实测 PLAN.md 那种规划任务
+        # 光思考就超过 4 分钟,而非流式请求要等思考全部结束才返回,于是表现为「卡死」。
+        # 传 {"type":"disabled"} 之后首块类型直接是 text。
+        out["thinking"] = {"type": "disabled"}
     if budget:
         # **预算要加在原额度之上,不能从里面切。**
         # Anthropic 的 thinking token 是从 max_tokens 里扣的。2026-08-27 实测:

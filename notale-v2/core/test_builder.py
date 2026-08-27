@@ -360,6 +360,17 @@ class MessagesWireTests(unittest.TestCase):
         # low 不开思考,额度就不该被改
         self.assertEqual(llm.to_messages(self._body("low"))["max_tokens"], base)
 
+    def test_low_effort_disables_thinking_explicitly(self) -> None:
+        """**不传 thinking ≠ 关闭。** 这个模型在这条路由上默认就开着 extended thinking:
+        流里第一个 content_block 类型就是 `thinking`,然后几十个 ping、零个 delta。
+        PLAN.md 那步光思考超 4 分钟,非流式要等思考全结束才返回 —— 表现为卡死。
+        实测同一请求:不关 400s 无返回;关掉 71s 出 4,765 字符。
+        """
+        m = llm.to_messages(self._body("low"))
+        self.assertEqual(m["thinking"], {"type": "disabled"})
+        m2 = llm.to_messages(self._body())          # 完全不给 effort 也要关
+        self.assertEqual(m2["thinking"], {"type": "disabled"})
+
     def test_planner_string_input_becomes_one_user_message(self) -> None:
         """planner 的 to_responses 无图时返回**纯字符串** —— 逐字符遍历会让 messages 变空。"""
         m = llm.to_messages({"model": "M", "instructions": "S",
