@@ -131,6 +131,10 @@ class Page:
         self.reference_reads = []
         self.workflow_script_runs = []
         self.termination = ""
+        # 预置之后模型仍然去 Read 的那几份。**这是判「预置到底省没省下调用」的读数** ——
+        # 仿真省 25.8% 的前提是这 3 次往返真的消失了,而提示词管不住行为。
+        # 这个数不为零,就说明 brief 那几句没起作用,收益要按实测重算。
+        self.preload_reads = []
 
 
 def _section_items(prompt: str, heading: str) -> list[str] | None:
@@ -231,6 +235,99 @@ def evict_images(hist: list, tok_in: int) -> int:
 _PAGE_RE = re.compile(r"page-\d+\.html$")
 
 
+# ── 确定性备料:预置进 system 块,而不是让每页各花一次往返去 Read ────────────
+#
+# **这三份是 21/21 页都读的,而且是 `prompts/brief.md` 自己明文命令模型去读的。**
+# 把它们留在历史里由模型 Read,代价量出来是三份(runs/iface8-20260827,21 页 376 次调用):
+#
+#   · **每页 3 次纯搬运的往返** —— 76 次调用里这 3 类占 55 次,占全部调用的 15%
+#   · **每页那一次缓存失效要把它们重付一遍。** 失效点是 `Write` 之后切工具面那一步
+#     (见 build_one 里 spec_norewrite 上面那段);实测失效时**只有 system 块保住缓存**
+#     (page-11 第 8 步:输入 42,991,命中只剩 4,380 = system 块大小),
+#     工具面之后的整段历史全部重付。全轮 22 次失效事件、每页正好 1.0 次,
+#     合计重付 593,513 tok = **付全价支出的 38%**。放进 system 块就躲开这一笔。
+#   · **CHASSIS.md 和 CONTRACT.md 跨页逐字节相同**,却因为排在按页不同的 brief 之后,
+#     永远吃不到跨页前缀缓存 —— 21 页各付一次全价。进了 system 块就只付第一次。
+#     (实测 system 块本身跨页命中:第 1 步输入 4,684、命中 4,186 = 89%。)
+#
+# 仿真(按 trace 逐步重算,校准偏差 +4%):付全价 1,603,359 → 1,189,378,**-25.8%**。
+#
+# **`Skill` 那一次故意不预置。** 再省 4.3pp、再少 21 次调用,但它会把
+# `loaded_skills` / 「指派指导 N 项,实际读到 N 项」那条读数变成空判 ——
+# 这个仓库反复栽在「采集了不打印/恒读同一个值的判据」上(见 plan_quality.py 的
+# handoff 计数、planner.py 的 chassis= 参数)。少 4.3pp 换一条还活着的观测项,值。
+#
+# **`pNN.md` 绝对不能进 system 块 —— 这是量出来的,我第一版就是这么写的,错了。**
+#
+# 这条路由的自动前缀缓存**按整个 `instructions` 字段粗粒度匹配**,不做细粒度的
+# 最长公共前缀。证据是基线自己的数(runs/iface8-20260827 第 1 步的命中量):
+#     page-12(build-chart) cached=4,139   page-20/21(build-page) cached=4,162
+# 同一个 workflow 的页命中量一模一样、不同 workflow 的不一样 —— 因为基线的
+# system 块里没有任何按页内容,同 workflow 的 `instructions` 逐字节相同,所以能跨页共享。
+#
+# 我把 `pNN.md` 拼在 system 块尾部之后,每一页的 `instructions` 都成了独一份,
+# **跨页共享被整条掐死**。3 页对照实测(runs/preload-smoke):
+#     page-12  步1 cached=15,614 ✓  失效步 cached=15,239 ✓  全价 -48%
+#              ← 它命中只是因为前一次单页冒烟用完全相同的块预热过
+#     page-20  步1 cached=0 ✗  失效步 cached=0 ✗  全价 +19%
+#     page-21  步1 cached=0 ✗  失效步 cached=0 ✗  全价 +37%
+# 三页合计付全价只降 3.5%,而仿真按细粒度前缀算出的是 -25.8%。
+#
+# 所以规矩是:**system 块里只许放同 workflow 逐字相同的东西。**
+#     IDENTITY + anti_slop(+philosophy)   ← 21 页逐字相同
+#     CHASSIS.md + CONTRACT.md            ← 21 页逐字相同(本次新增)
+#     指派 workflow 块                     ← 按 workflow 分组,组内逐字相同
+# `pNN.md` 改为拼进 brief(首条 user 消息)。它本来就每页唯一,放那里不损失任何共享;
+# 代价只是它会跟着历史在失效步被重付一次(约 1,253 tok/页),
+# 远小于换回来的「13.6k 共享块 × 20 页」。
+PRELOAD_TAGS = (("chassis", "CHASSIS.md"), ("contract", "CONTRACT.md"))
+
+
+def _wrap(tag: str, path: Path) -> str:
+    """读一份文件,包一层标签。和 skills.anti_slop_block 同一条确定性路径:
+    读原文、不摘要、路径给错就报错 —— 静默跳过会让人以为预置了其实没有。"""
+    if not path.is_file():
+        raise FileNotFoundError(f"预置 <{tag}> 需要 {path},但它不存在")
+    return f"<{tag}>\n{path.read_text(encoding='utf-8', errors='replace').strip()}\n</{tag}>"
+
+
+def shared_preload(root: Path) -> tuple[str, dict]:
+    """21 页共享的那两份(CHASSIS.md / CONTRACT.md)。返回(文本, 路径表)。
+
+    路径表给 build_one 做兜底:模型仍然去 Read 这些路径时,回一句指路而不是再灌一遍全文。
+    """
+    paths = {"CHASSIS.md": root / "pages" / "assets" / "CHASSIS.md",
+             "CONTRACT.md": root / "CONTRACT.md"}
+    text = "\n\n".join(_wrap(tag, paths[name]) for tag, name in PRELOAD_TAGS)
+    return text, paths
+
+
+def spec_preload(root: Path, pid: str) -> tuple[str, Path]:
+    """本页规格 pNN.md。**拼进 brief,不进 system 块** —— 见上面那段实测。"""
+    p = root / "pages" / "plan" / f"{pid.replace('page-', 'p')}.md"
+    return _wrap("page_spec", p), p
+
+
+def _preloaded_hit(preloaded: dict | None, args: dict, pages_dir: Path) -> str:
+    """这次 `Read` 要的是不是已经预置进 system 块的文件?命中就回它的名字。
+
+    按**解析后的绝对路径**比,不比字符串:brief 给的是绝对路径,而模型也可能
+    用相对路径(工作目录是 `pages/assets/..`)或者绕一圈的写法。比字符串会漏,
+    而漏了就等于这条兜底不存在。
+    """
+    if not preloaded:
+        return ""
+    raw = str(args.get("file_path") or "")
+    if not raw:
+        return ""
+    p = Path(raw)
+    try:
+        target = (p if p.is_absolute() else pages_dir / p).resolve()
+    except OSError:
+        return ""
+    return preloaded.get(target, "")
+
+
 def stray(pages_dir: Path) -> list[str]:
     """`pages/` 下既不是 `page-NN.html`、也不在 `assets/` 里的文件。
 
@@ -255,7 +352,8 @@ def stray(pages_dir: Path) -> list[str]:
 
 
 def build_one(page: Page, pages_dir: Path, trace: Path, skill_root: Path,
-              instructions: str, effort: str, compose_effort: str = "") -> Page:
+              instructions: str, effort: str, compose_effort: str = "",
+              preloaded: dict | None = None) -> Page:
     """一页的完整循环。
 
     历史只增不改 —— 每步追加一个 function_call 和一个 function_call_output。
@@ -365,6 +463,8 @@ def build_one(page: Page, pages_dir: Path, trace: Path, skill_root: Path,
             page.steps.append(c.name if c.name != "Bash"
                               else ("SELFCHECK" if "selfcheck" in str(args.get("command", ""))
                                     else "Bash"))
+            pre_hit = (_preloaded_hit(preloaded, args, pages_dir)
+                       if c.name == "Read" else "")
             if (c.name == "Skill" and page.skill_mode == "workflow"
                     and args.get("skill") != page.primary_workflow):
                 res = (f"本页只装载 `{page.primary_workflow}`；不能读取 "
@@ -384,6 +484,19 @@ def build_one(page: Page, pages_dir: Path, trace: Path, skill_root: Path,
                        "现在只能用 `Patch`(一次改好几处,首选)或 `Edit`(改一处)。"
                        "如果你想大改,就把它拆成若干处 Patch —— "
                        "整体覆盖会连已经改对的地方一起冲掉。")
+            elif pre_hit:
+                # 已经预置进 system 块的那几份,回一句指路,不再灌第二遍全文。
+                #
+                # **这条兜底是整个预置改动能不能省下钱的前提。** brief 改成了
+                # 「不要再 Read」,但提示词管的是意图、不是行为:模型仍然可能出于
+                # 「保险」去读一次,而那一次会把同一份内容第二次放进历史 ——
+                # 既白付一次全价,又让它重新落到那个会被失效重付的位置上,
+                # 等于把这次改动的收益整条抹掉。指路而不是静默回空:
+                # 静默会让模型以为文件真的没了,然后自己发明一份契约。
+                page.preload_reads.append(pre_hit)
+                res = (f"`{pre_hit}` 的全文已经在你的 system 提示里了"
+                       f"(标签 `<chassis>` / `<contract>` / `<page_spec>`),内容逐字相同。"
+                       f"往上翻即可,不用再 Read —— 这一次 Read 没有给你任何新信息。")
             else:
                 res = tools.run(c.name, args, pages_dir, skill_root)
                 if (c.name == "Write"
@@ -485,6 +598,12 @@ def main() -> None:
     # 账记在 core/skills.py 的 FLOORS 上面。
     a.add_argument("--skill-floors", action="store_true",
                    help="在指派块前拼上通用地板(对照臂用,默认不拼)")
+    # 确定性备料预置。**默认开** —— 账记在 shared_preload 上面(仿真 -25.8% 全价)。
+    # 留 --no-preload-docs 是因为这次改动的主要风险是行为性的
+    # (模型可能仍然去 Read),而那要真实两臂才量得出来,不是仿真能回答的。
+    a.add_argument("--no-preload-docs", dest="preload_docs", action="store_false",
+                   help="不把 CHASSIS/CONTRACT/pNN 预置进 system 块,退回让每页自己 Read"
+                        "(对照臂用;默认预置)")
     a.add_argument("--model")
     # Anthropic 系必须走 messages 才拿得到 cache_control;走 responses 是全额计费,
     # 而且**不会有任何报错** —— 实测 Sonnet 在 responses 上连打三次前缀,三次 cached=0。
@@ -543,15 +662,63 @@ def main() -> None:
     }
     roots = {p.pid: workflow_root if p.skill_mode == "workflow" else legacy_root
              for p in pages}
+    # ── 确定性备料预置(见 shared_preload 上面那段账)────────────────
+    # 共享的两份拼在 base 尾部(仍是 21 页逐字相同的前缀),按页唯一的 pNN.md
+    # 拼在指派块之后 —— 顺序不能换,换了跨页公共前缀就被按页内容截断。
+    spec_blocks: dict = {}
+    preloaded: dict = {}
+    if n.preload_docs:
+        # 老 run 的目录布局不一样 —— 抽查过:`ape-01` 没有 CONTRACT.md 和 pNN.md,
+        # `orbit-01` 没有 CHASSIS.md。预置是**默认开**的,所以缺文件不能让整轮起不来:
+        # 断点续跑是刚需(见上面 done_already 那段),为了一个省钱的优化把老 run
+        # 的续跑打死是不划算的。**但也不能静默退化** —— 那样就分不清
+        # 「预置了」和「以为预置了」,而这正是这个仓库反复栽过的形状。
+        # 所以:响亮地说一声,然后按没预置继续。
+        try:
+            shared, shared_paths = shared_preload(root)
+            spec = {p.pid: spec_preload(root, p.pid) for p in pages}
+        except FileNotFoundError as e:
+            print(f"  ⚠ 预置备料关闭:{e}\n"
+                  f"    这一轮按老办法跑(每页自己 Read 那三份)。"
+                  f"新 run 不该走到这里 —— 走到了说明 planner 没产出这几份。")
+            n.preload_docs = False
+        else:
+            base = base + "\n\n" + shared
+            preloaded = {p.resolve(): name for name, p in shared_paths.items()}
+            for p in pages:
+                blk, sp = spec[p.pid]
+                spec_blocks[p.pid] = blk
+                preloaded[sp.resolve()] = sp.name
+                # 规格进 brief(首条 user 消息),不进 system 块 —— 见 PRELOAD_TAGS
+                # 上面那段:进了 system 块会让每页的 instructions 独一份,
+                # 把跨页前缀共享整条掐死(3 页实测 -3.5%,而不是仿真的 -25.8%)。
+                p.prompt = p.prompt + "\n\n" + blk
+    # brief 和这个开关必须说同一件事。**不一致是 fail-wrong,不是不方便:**
+    # brief 里写着「三份已在 system 提示里,不要再 Read」而实际没预置,模型会去找
+    # `<chassis>`、找不到、然后自己发明一份契约 —— 而它不会报错。
+    # briefs.json 是 planner 烧进去的,所以对照臂要么配一份旧模板
+    # (Run.prompts 支持换目录),要么就别用 --no-preload-docs 跑新 brief。
+    if not n.preload_docs and any("<chassis>" in p.prompt for p in pages):
+        print("  ⚠ brief 说三份材料已在 system 提示里,但这一轮没有预置 —— "
+              "两边不一致。\n    模型会去找 `<chassis>` 而找不到,可能自己编一份契约。"
+              "对照臂请用旧 brief 模板(Run.prompts 可换目录)重生成 briefs.json。")
     sb = sorted(len(v) for v in skill_blocks.values()) or [0]
     modes = Counter(p.skill_mode for p in pages)
+    # 同 workflow 的 system 块必须逐字相同,所以这里报的是**按 workflow 分组的组数**
+    # 和每组的块长 —— 组数就是跨页缓存能分几摊。组内出现不同长度就说明混进了按页内容。
+    groups = Counter(base + "\n\n" + skill_blocks[p.pid] for p in pages)
+    per_page = sorted(len(k) for k in groups) or [0]
     print(f"\n▸ builder · {n.label}\n  {len(pages)} 页,并发 {n.concurrency},"
           f"model={model},effort={compose_effort}(构图)/{effort}(修复),"
           f"模式 {dict(modes)}\n"
           f"  指导块 {sb[0]}–{sb[-1]} 字符/页(中位 {sb[len(sb)//2]})"
           f"{'  含通用地板' if n.skill_floors else ''}\n"
           f"  system 块 {len(base):,} 字符"
-          f"({'含设计哲学 ' + str(len(philosophy)) + ' 字符' if philosophy else '不含设计哲学'})\n")
+          f"({'含设计哲学 ' + str(len(philosophy)) + ' 字符' if philosophy else '不含设计哲学'}"
+          f"{'；已预置 CHASSIS+CONTRACT' if n.preload_docs else '；未预置备料'})\n"
+          f"  完整 system {per_page[0]:,}–{per_page[-1]:,} 字符,"
+          f"按 workflow 分 {len(groups)} 组共享(组内逐字相同,跨页缓存分这几摊)"
+          f"{'；本页规格已拼进 brief' if spec_blocks else ''}\n")
 
     t0 = time.time()
     def guard(p):
@@ -562,10 +729,11 @@ def main() -> None:
         每页本来就是独立的一次尝试,单页失败该记下来继续,而不是全局判死。
         """
         try:
+            # instructions 到这里为止只含同 workflow 逐字相同的内容 —— 本页规格
+            # 已经在上面拼进 p.prompt 了,不能再往 system 块里加任何按页不同的东西。
             return build_one(p, root / "pages", root / "trace.jsonl",
-                             roots[p.pid],
-                             base + "\n\n" + skill_blocks[p.pid], effort,
-                             compose_effort)
+                             roots[p.pid], base + "\n\n" + skill_blocks[p.pid],
+                             effort, compose_effort, preloaded)
         except Exception as e:                     # noqa: BLE001
             p.why = f"{type(e).__name__}: {str(e)[:90]}"
             p.termination = "agent_exception"
@@ -576,7 +744,10 @@ def main() -> None:
         done = list(ex.map(guard, pages))
 
     ok = [p for p in done if p.ok]
-    calls = sorted(p.calls for p in done)
+    # `or [0]` 和上面 `sb` 那行同一个理由:整轮全被 done_already 跳过时 done 是空的,
+    # 而 `calls[0]` 会抛 IndexError —— 于是一次合法的空操作(对已建好的 run 再跑一次)
+    # 以一段 traceback 收场,连 steps.json 都写不出来。
+    calls = sorted(p.calls for p in done) or [0]
     print(f"\n  {len(ok)}/{len(done)} 页交付   墙钟 {(time.time()-t0)/60:.1f} 分")
     print(f"  每页调用数 {calls[0]}–{calls[-1]},中位 {calls[len(calls)//2]}   "
           f"合计 {sum(calls)}")
@@ -603,6 +774,18 @@ def main() -> None:
     print(f"  指派指导 {asg} 项,实际读到 {hit} 项；reference 读取 "
           f"{sum(len(p.reference_reads) for p in done)} 次，workflow script "
           f"{sum(len(p.workflow_script_runs) for p in done)} 次")
+    # 预置到底省没省下那 3 次往返 —— 这是本次改动唯一的行为性判据。
+    # 不为零说明 brief 那几句没管住,收益要按实测重算,别拿仿真的 -25.8% 交差。
+    if n.preload_docs:
+        pr = Counter(x for p in done for x in p.preload_reads)
+        n_pr = sum(pr.values())
+        if n_pr:
+            print(f"  ⚠ 已预置的文件仍被 Read {n_pr} 次"
+                  f"({', '.join(f'{k}×{v}' for k, v in pr.most_common())})"
+                  f" —— 每次都白花一次往返,brief 的措辞没管住,预置收益要按实测重算")
+        else:
+            print(f"  ✓ 预置生效:没有一页去重读 CHASSIS/CONTRACT/pNN"
+                  f"(省下约 {len(done) * 3} 次搬运往返)")
     # ── 把每页做过什么落盘。**这是量出来必须补的。** ──────────────
     # `trace.jsonl` 里 2,836 个块**全是 text,一个 tool_use 都没有** —— 它不记工具调用。
     # 于是「哪次 Read 读了哪个文件」磁盘上没有记录,而 `page.steps_arg` 一直只在内存里。
@@ -626,6 +809,7 @@ def main() -> None:
                      "loaded_skills": p.loaded_skills,
                      "reference_reads": p.reference_reads,
                      "workflow_script_runs": p.workflow_script_runs,
+                     "preload_reads": p.preload_reads,
                      "termination": p.termination,
                      "why": p.why} for p in done}
     (root / "steps.json").write_text(
