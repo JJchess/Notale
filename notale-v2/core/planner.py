@@ -1417,7 +1417,12 @@ def plan_run(run: Run, chassis: Path, lib: Path,
                               audience=run.audience, scenario=run.scenario or "（没写）",
                               img_pool=("\n".join(back_rows) or "（这一轮没有底图）"),
                               layouts=("\n".join(f"    {u}" for u in used_layouts)
-                                       or "    （页表没有声明版式）")),
+                                       or "    （页表没有声明版式）"),
+                              font_floor=skills.FONT_FLOOR,
+                              # plan-direction 全文内联。它讲的是整课视觉世界,
+                              # 对应的就是这一步 —— 而它此前不在 PAGE_WORKFLOWS 里,
+                              # 任何代码路径都到不了 builder。见 skills.direction_block。
+                              direction=skills.direction_block(workflow_root)),
                    sheet=sheet if sheet.exists() else None)
     # theme.css 自报的 INTERFACE 块 → 追加进 CHASSIS.md,让它真的到达每一页。
     #
@@ -1465,7 +1470,8 @@ def plan_run(run: Run, chassis: Path, lib: Path,
                       # 50 页每页都读到这一句。**占位符对不上必须是可见的错**,见下面的自检。
                       spine=spine(text) or "（PLAN.md 里没读出主线那一节）",
                       world=world or "（PLAN.md 里没读出视觉世界那一节）",
-                      audience=run.audience, scenario=run.scenario))
+                      audience=run.audience, scenario=run.scenario,
+                      font_floor=skills.FONT_FLOOR))
     # 这里原来还传 chassis=CHASSIS.md 全文(约 6KB)。删掉了:契约改成指路,
     # 底盘接口由每页自己读 `assets/CHASSIS.md`。留着传参不会报错(fill 是字面替换),
     # 但那 6KB 会白进一次提示词,而且模型看见了就会想抄。

@@ -29,6 +29,8 @@ BASELINE_CHARS = {
     "philosophy": 2100,
     "plan": 3200,
     "spec": 3000,
+    # theme 里内联了 plan-direction 全文(约 14.7KB) —— 见 skills.direction_block。
+    # 这不是模板变啰嗦,是把一份此前到不了任何地方的视觉指导接进了流水线。
     "theme": 3200,
 }
 
@@ -38,7 +40,7 @@ PROMPT_ARGS = {
                   assignment="## 主工作流\n  - build-page", stay="60 秒"),
     "contract": dict(n_pages=12, minutes=30, audience="高中生", scenario="课堂投影",
                      spine="主线", world="视觉世界", canvas_w=1600, canvas_h=900,
-                     libs="库清单", lec_api="Lec API"),
+                     libs="库清单", lec_api="Lec API", font_floor="字号地板"),
     "lec": dict(query="Q"),
     "philosophy": {},
     "plan": dict(query="Q", minutes=30, audience="高中生", scenario="课堂投影",
@@ -49,7 +51,8 @@ PROMPT_ARGS = {
                  lec_values="K 值", stay="60", structure="comparison",
                  workflows="workflow 清单"),
     "theme": dict(n_pages=12, world="视觉世界", audience="高中生", scenario="课堂投影",
-                  layouts="focus\nsplit-lr", img_pool="无", canvas_w=1600, canvas_h=900),
+                  layouts="focus\nsplit-lr", img_pool="无", canvas_w=1600, canvas_h=900,
+                  font_floor="字号地板", direction="(视觉方向)"),
 }
 
 

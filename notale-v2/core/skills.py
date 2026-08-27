@@ -131,14 +131,23 @@ def workflow_catalog(root: Path = WORKFLOWS) -> str:
 # B 臂打开这个开关,确认非 build-page 路由页的占用比/字号不退,才谈得上砍 CONTRACT。
 # 照 --philosophy 的先例做成开关而不是直接写死(core/builder.py:376-379:
 # 「文件留着不删,随时能把它加回来做对照」)。
-FLOORS = """无论装载哪个 workflow,下面这几条对每一页都成立:
+# 字号地板的唯一事实来源。之前这行数字(16/14/12px、行高 1.35)在
+# prompts/contract.md、prompts/theme.md、这里的 FLOORS 里各手写一份 ——
+# 三份至今没有真的说岔,但没有任何机制保证不会:FLOORS 默认关闭、theme.md
+# 不下发给 builder,所以还没咬人,可一旦 --skill-floors 变成默认开,
+# 或者 theme.md 的字阶单独调过没跟着改 contract.md,三份就会悄悄分裂。
+# 现在 contract.md / theme.md 里的这行改成 `{font_floor}` 占位符,由
+# core/planner.py 传这个常量填进去;FLOORS 也在这里引用同一个字符串。
+FONT_FLOOR = ("正文与成句说明 ≥16px，控件标签、图例、图注和提示 ≥14px，"
+              "纯数字刻度 ≥12px，多行文字行高 ≥1.35。")
+
+FLOORS = f"""无论装载哪个 workflow,下面这几条对每一页都成立:
 
 - 逻辑画布固定 1600×900,不滚动。只改 `#stage` 内容,保留 `data-page` 和 `data-total`。
 - `#stage` 是 flex 列;主内容区 `flex:1` 且 `min-height:0`,需要收缩的 flex/grid 子元素加 `.min0`。
 - 画面占用保持在 45%–85%。低于 45% 先查失控的 flex 空隙,再放大有教学意义的关系;
   不得靠加装饰、缩字号、压行高或压间距来凑。
-- 字号只用主题 token:正文与成句说明 ≥16px,控件标签、图例、图注和提示 ≥14px,
-  纯数字刻度 ≥12px,多行文字行高 ≥1.35。
+- 字号只用主题 token:{FONT_FLOOR}
 - 不移除或覆盖 `.min0`、`.cv-fill`、`.no-pan` 的机制;缩放画布内禁止 `position:fixed`。
   Canvas 用 `Deck.fit()` / `Deck.autofit()`,指针坐标用 `Deck.pt()`,动画用 `Deck.loop()`。
 - 教学常量、范围和初值来自 `Lec.K`;要推导的结果当场调用 `Lec.P`。
@@ -146,6 +155,42 @@ FLOORS = """无论装载哪个 workflow,下面这几条对每一页都成立:
 """
 
 # tag 名和文件名的对应关系是唯一事实来源；改文件名要跟着改这里。
+# `plan-direction` 的正文,注入**写 theme.css 那一步**(不是 builder)。
+#
+# 2026-08-27 审出来的:这份 workflow 有 14,369 字符的真视觉指导 —— 七部分方向契约
+# (Palette / Material / Geometry / Type roles / Signature / Media / Motion)、
+# 11 行材质选择表、配色推导步骤 —— 但它**不在 PAGE_WORKFLOWS 里,任何代码路径都到不了**。
+# 更讽刺的是 scrub-visual-slop.md:5 写着「plan-direction 已经禁止了 generic 那些,
+# 这份是补空缺」——它假设前者在跑。于是「补空缺」补的其实是整片空地。
+#
+# **为什么注入 planner 而不是 builder 的 system 块。**
+# 它讲的是整课视觉世界(自己的 description 也写着「before composing pages」),
+# 对应的正是 theme.css 那一步 —— 一次调用,一次成本。塞进 system 块要每步重发 14KB,
+# 而 anti_slop_block 那 4,991 字符已经把输入中位从 17.5k 推到 28.2k 了。
+#
+# 走确定性拼接,不走「让 agent 自己 Read」—— 同 anti_slop_block 的理由:
+# 那条路径生不生效取决于 agent 愿不愿意先调 Read,是概率性的。
+DIRECTION_FILES = (
+    "plan-direction/SKILL.md",
+    "plan-direction/references/direction-recipes.md",
+    "plan-direction/references/material-and-effects.md",
+)
+
+
+def direction_block(root: Path = WORKFLOWS) -> str:
+    """把 plan-direction 全文拼成一块,给 prompts/theme.md 用。"""
+    parts = ["下面是视觉方向的作业方法,已**原文内联**,不需要再去读任何文件。",
+             "它规定的是这套讲义的视觉世界:配色、材质、几何、字体角色、标志性元素、"
+             "媒体处理和动效基调。按它做,不要另起一套。"]
+    for rel in DIRECTION_FILES:
+        f = root / rel
+        if not f.is_file():
+            raise FileNotFoundError(f"direction_block 需要 {f}，但它不存在")
+        parts.append(f"<direction src=\"{rel}\">\n"
+                     + f.read_text(encoding="utf-8").strip() + "\n</direction>")
+    return "\n\n".join(parts)
+
+
 ANTI_SLOP_FILES = (
     ("anti_ai_slop_copy", "scrub-copy-slop.md"),
     ("anti_ai_slop_visual", "scrub-visual-slop.md"),
