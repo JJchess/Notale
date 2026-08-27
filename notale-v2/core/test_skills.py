@@ -53,7 +53,6 @@ class WorkflowRegistryTests(unittest.TestCase):
             "get-illustration": {"prompt-and-integration.md"},
             "check-page": {"review-lenses.md"},
             "plan-direction": {"direction-recipes.md", "material-and-effects.md"},
-            "plan-typography": {"projected-type-system.md", "cjk-numeric-math.md"},
             "build-2d-sim": {"renderer-routing.md", "konva-recipe.md",
                             "matter-recipe.md", "pixi-recipe.md"},
             "build-chart": {"renderer-routing.md", "echarts-recipe.md",

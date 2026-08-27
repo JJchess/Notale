@@ -21,10 +21,14 @@ LEGACY = Path(__file__).resolve().parent.parent / "vendor" / "skills"
 WORKFLOWS = Path(__file__).resolve().parent.parent / "workflows"
 DEFAULT = LEGACY
 
-# Planner 只在这九个“建页工作流”里选一个。另两份各有单独职责：
+# Planner 只在这八个“建页工作流”里选一个。另两份各有单独职责：
 # plan-direction 属于全课主题阶段，check-page 只用于已有页面的修复。
 # build-motion 已并入 build-page（构图与动效互斥单选是错误建模——静态页
 # 几乎都同时需要两者），不再是独立候选。
+# plan-typography 已挪去 attic/（见该目录 README）：wf2 那轮 21 页 0/21 命中,
+# 字号地板已经在 CONTRACT.md 里对每页强制生效、不依赖这条路由；真正打不到的是
+# 它更深的排版规则，而这类判断只有正文写出来之后(build 阶段)才看得见，
+# 不该指望 planner 提前预判。
 PAGE_WORKFLOWS = (
     "build-learning-game",
     "build-3d-scene",
@@ -33,7 +37,6 @@ PAGE_WORKFLOWS = (
     "build-interaction",
     "get-photo-ref",
     "get-illustration",
-    "plan-typography",
     "build-page",
 )
 ALL_WORKFLOWS = PAGE_WORKFLOWS + ("plan-direction", "check-page")

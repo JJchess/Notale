@@ -98,7 +98,7 @@
 
 `build-learning-game` → `build-3d-scene` → `build-2d-sim` → `build-chart` →
 `build-interaction` → `get-photo-ref` →
-`get-illustration` → `plan-typography` → `build-page`。
+`get-illustration` → `build-page`。
 
 库名仍写在“表征形式”，不算 workflow。没有更专门的难点时选 `build-page`。
 可选 workflow：
