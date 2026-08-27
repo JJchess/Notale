@@ -555,7 +555,13 @@ def to_messages(body: dict) -> dict:
         else:
             msgs.append({"role": role, "content": [block]})
 
-    for it in body.get("input") or []:
+    inp = body.get("input") or []
+    # **planner 那条路传的是一个纯字符串**(to_responses 无图时就返回 str) ——
+    # 直接遍历会把它拆成一个个字符、全被 isinstance 跳过,messages 变空,
+    # 而 Anthropic 要求至少一条消息。builder 传的才是 item 列表。
+    if isinstance(inp, str):
+        inp = [{"role": "user", "content": inp}]
+    for it in inp:
         if not isinstance(it, dict):
             continue
         kind = it.get("type")
@@ -613,8 +619,19 @@ def to_messages(body: dict) -> dict:
     # 又会变成一个只能靠探针回答的问题。
     eff = (body.get("reasoning") or {}).get("effort")
     budget = {"low": 0, "medium": 4096, "high": 16384}.get(str(eff or "").lower(), 0)
-    if budget and budget < out["max_tokens"]:
+    if budget:
+        # **预算要加在原额度之上,不能从里面切。**
+        # Anthropic 的 thinking token 是从 max_tokens 里扣的。2026-08-27 实测:
+        # max_tokens=8000 + budget=4096 → thinking 吃掉 6070,正文只剩 4,283 字符、
+        # stop_reason=max_tokens;planner 的 lec.js 那一步(要一万多字符)因此直接
+        # 返回空正文,触发 EmptyReply 退避。
+        #
+        # 另外更正一条我先前写错的结论:这条网关**是转发 thinking 的**。
+        # 之前判它「不转发」用的是几十 token 的玩具提示 —— 模型不需要思考,
+        # thinking_tokens 自然是 0。换成真实任务立刻就有 6,070。
+        # **拿玩具样本判一个只在负载下才显现的行为,判据本身是空的。**
         out["thinking"] = {"type": "enabled", "budget_tokens": budget}
+        out["max_tokens"] = out["max_tokens"] + budget
 
     tools = body.get("tools") or []
     if tools:

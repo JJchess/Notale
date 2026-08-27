@@ -347,6 +347,27 @@ class MessagesWireTests(unittest.TestCase):
             th = llm.to_messages(self._body(eff)).get("thinking")
             self.assertEqual(th, {"type": "enabled", "budget_tokens": budget})
 
+    def test_thinking_budget_is_added_on_top_of_max_tokens(self) -> None:
+        """Anthropic 的 thinking token 从 max_tokens 里扣 —— 不加额度就会挤空正文。
+
+        实测:max_tokens=8000 + budget=4096,thinking 吃掉 6070,正文只剩 4,283 字符、
+        stop_reason=max_tokens;planner 的 lec.js 那一步因此返回空正文触发 EmptyReply。
+        """
+        base = self._body("medium")["max_output_tokens"]
+        m = llm.to_messages(self._body("medium"))
+        self.assertEqual(m["thinking"], {"type": "enabled", "budget_tokens": 4096})
+        self.assertEqual(m["max_tokens"], base + 4096)
+        # low 不开思考,额度就不该被改
+        self.assertEqual(llm.to_messages(self._body("low"))["max_tokens"], base)
+
+    def test_planner_string_input_becomes_one_user_message(self) -> None:
+        """planner 的 to_responses 无图时返回**纯字符串** —— 逐字符遍历会让 messages 变空。"""
+        m = llm.to_messages({"model": "M", "instructions": "S",
+                             "max_output_tokens": 64, "input": "规划一套讲义"})
+        self.assertEqual(len(m["messages"]), 1)
+        self.assertEqual(m["messages"][0]["role"], "user")
+        self.assertEqual(m["messages"][0]["content"][0]["text"], "规划一套讲义")
+
     def test_system_and_rolling_breakpoints_both_present(self) -> None:
         """只打 system 断点实测只有 8.7% 命中,滚动断点才到 100%。两个都要在。"""
         m = llm.to_messages(self._body())

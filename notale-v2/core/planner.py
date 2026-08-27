@@ -1516,6 +1516,10 @@ def main() -> None:
     a.add_argument("--chassis", default=str(VENDOR / "chassis"))
     a.add_argument("--model")
     a.add_argument("--effort")
+    # Anthropic 系必须走 messages 才拿得到 cache_control;走 responses 是全额计费,
+    # 而且不会有任何报错。builder 侧同名参数。
+    a.add_argument("--wire", choices=("responses", "chat", "messages"),
+                   help="覆盖 wire_api;Anthropic 系模型要用 messages")
     a.add_argument("--lib", default=str(VENDOR / "chassis" / "lib"))
     # --chassis / --lib 一直可以换,skill 根却写死在 skills.DEFAULT 里。
     # 代价实测:skill 目录不在时,`webmedia.py` 和 `gen.py` 一起消失,
@@ -1554,7 +1558,7 @@ def main() -> None:
     for _p, _why in ((_WEBMEDIA, "取照片"), (_GEN, "生成插画")):
         if not _p.exists():
             raise SystemExit(f"✗ {_why}的脚本不在:{_p}")
-    llm.override(name=n.model)
+    llm.override(name=n.model, wire_api=n.wire)
     if n.effort: config()["planner"]["reasoning_effort"] = n.effort
     r = plan_run(Run(n.query, n.minutes, n.audience, n.label, n.scenario,
                      prompts=Path(n.prompts)),
