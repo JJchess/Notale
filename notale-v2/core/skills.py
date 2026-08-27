@@ -195,6 +195,11 @@ ANTI_SLOP_FILES = (
     ("anti_ai_slop_copy", "scrub-copy-slop.md"),
     ("anti_ai_slop_visual", "scrub-visual-slop.md"),
 )
+# **`scrub-theme-slop.md` 故意不在上面那个元组里。** 它管的是整套视觉系统的配色决定,
+# 而那个决定只发生一次 —— 在写 `theme.css` 那一步。塞进 builder 的 system 块等于
+# 让 21 页 × 每一步都重发一份它们无权执行的规则:页面只能消费主题给的 token,
+# 改不了调色板。按决定发生在哪一层切,每份只加载一次。
+THEME_SLOP_FILE = ("anti_ai_slop_theme", "scrub-theme-slop.md")
 
 
 def anti_slop_block(root: Path = WORKFLOWS) -> str:
@@ -211,6 +216,19 @@ def anti_slop_block(root: Path = WORKFLOWS) -> str:
         text = f.read_text(encoding="utf-8", errors="replace").strip()
         parts.append(f"<{tag}>\n{text}\n</{tag}>")
     return "\n\n".join(parts)
+
+
+def theme_slop_block(root: Path = WORKFLOWS) -> str:
+    """配色禁用清单,只给写 `theme.css` 那一步。
+
+    和 `anti_slop_block()` 同一条确定性路径:读原文、包 XML 标签、不摘要、
+    路径给错就报错。**不要把它加进 `ANTI_SLOP_FILES`** —— 见那里的注释。
+    """
+    tag, fname = THEME_SLOP_FILE
+    f = root / fname
+    if not f.is_file():
+        raise FileNotFoundError(f"theme_slop_block 需要 {f}，但它不存在")
+    return f"<{tag}>\n{f.read_text(encoding='utf-8', errors='replace').strip()}\n</{tag}>"
 
 
 def assigned_workflow(name: str, root: Path = WORKFLOWS,

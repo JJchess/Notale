@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>损失给错误记分</title>
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+:root{
+  --bg:#F4F1E8;--text:#1E252B;--muted:#596168;--rule:#9CA1A1;--rule-soft:#D5D2C9;
+  --surface:#EBE7DD;--prediction:#2457A6;--attention:#E56B2F;--focus:#E56B2F;
+  --font-sans:"DejaVu Sans","Noto Sans CJK SC",sans-serif;
+  --font-serif:"DejaVu Serif","Noto Serif CJK SC",serif;
+  --font-mono:"DejaVu Sans Mono","Noto Sans CJK SC",monospace;
+}
+*{box-sizing:border-box}
+#stage{padding:28px 56px;gap:24px;background:var(--bg);color:var(--text);overflow:hidden}
+.page-head{height:112px;display:flex;flex-direction:column;justify-content:flex-start;border-bottom:1px solid var(--rule);padding-bottom:16px}
+.kicker{font-family:var(--font-mono);font-size:15px;line-height:1.35;letter-spacing:.08em;color:var(--muted);margin:0 0 8px}
+h1{font-family:var(--font-sans);font-size:54px;line-height:1.08;margin:0;font-weight:700;letter-spacing:-.02em}
+.split-tb{flex:1;display:flex;flex-direction:column;gap:24px;min-height:0}
+.rule-strip{height:132px;display:grid;grid-template-columns:260px 1fr 430px;align-items:stretch;border:1px solid var(--rule);background:var(--surface)}
+.truth{display:flex;align-items:center;justify-content:center;gap:16px;border-right:1px solid var(--rule);padding:24px}
+.truth-label{font-size:18px;color:var(--muted);line-height:1.4}
+.truth .num{font-family:var(--font-mono);font-size:54px;line-height:1;color:var(--text);font-variant-numeric:tabular-nums}
+.rule-copy{padding:20px 24px;display:flex;flex-direction:column;justify-content:center;gap:8px}
+.rule-copy strong{font-size:21px;line-height:1.35;font-weight:700}
+.rule-copy p{font-size:18px;line-height:1.4;color:var(--muted);margin:0}
+.formula{font-family:var(--font-mono);font-size:21px;font-variant-numeric:tabular-nums}
+.scale-note{padding:20px 24px;border-left:1px solid var(--rule);display:flex;align-items:center;font-family:var(--font-serif);font-size:24px;line-height:1.4}
+.workbench{flex:1;display:grid;grid-template-columns:minmax(0,1fr) 420px;gap:40px;min-height:0}
+.chart-panel{min-width:0;min-height:0;border:1px solid var(--rule);display:flex;flex-direction:column;padding:16px 20px 12px;background:transparent}
+.figure-head{display:flex;align-items:baseline;justify-content:space-between;gap:24px;height:38px}
+.figure-head h2{font-size:28px;line-height:1.2;margin:0}
+.legend{display:flex;gap:24px;font-size:15px;color:var(--muted)}
+.li{display:flex;align-items:center;gap:8px}
+.sw{display:inline-block;width:24px;height:12px;border:1px solid var(--rule);background:var(--surface)}
+.sw.current{border:3px solid var(--attention);background:var(--surface)}
+#chart{flex:1;min-height:0;width:100%}
+figcaption{height:28px;font-size:15px;line-height:1.35;color:var(--muted)}
+.instrument{border:1px solid var(--rule);background:var(--surface);padding:16px 24px;display:flex;flex-direction:column;gap:8px;min-height:0}
+.instrument h2{font-size:28px;line-height:1.2;margin:0 0 4px}
+.btns{display:flex;gap:8px;flex-wrap:wrap}
+.btn{appearance:none;border:1px solid var(--rule);background:var(--bg);color:var(--text);border-radius:8px;padding:10px 17px;font-family:var(--font-mono);font-size:18px;line-height:1.2;cursor:pointer}
+.btn:hover{border-color:var(--text)}
+.btn[aria-pressed="true"]{border:3px solid var(--attention);padding:8px 15px}
+.btn.utility{font-family:var(--font-sans);font-size:15px;padding:10px 14px}
+.btn.utility[aria-pressed="true"]{padding:8px 12px}
+.readout{border-top:1px solid var(--rule);border-bottom:1px solid var(--rule);padding:12px 0;display:grid;grid-template-columns:1fr auto;align-items:end;gap:16px}
+.readout-label{font-size:18px;color:var(--muted)}
+.big{display:flex;align-items:baseline;gap:8px}
+.big .num{font-family:var(--font-mono);font-size:54px;line-height:1;font-variant-numeric:tabular-nums;color:var(--attention)}
+.big .unit{font-size:15px;color:var(--muted)}
+.probability-copy{font-size:18px;line-height:1.42;margin:0;min-height:52px}
+.data-table{width:100%;border-collapse:collapse;font-size:15px;line-height:1.35;font-variant-numeric:tabular-nums;margin-top:auto}
+.data-table caption{text-align:left;color:var(--muted);padding-bottom:8px}
+.data-table th,.data-table td{border-top:1px solid var(--rule);padding:4px 8px;text-align:right}
+.data-table th:first-child,.data-table td:first-child{text-align:left}
+.data-table tr[aria-current="true"]{outline:2px solid var(--attention);outline-offset:-2px}
+.closing{height:72px;border-top:1px solid var(--rule);display:grid;grid-template-columns:1fr 560px;gap:40px;align-items:center}
+.claim{font-family:var(--font-serif);font-size:21px;line-height:1.4;margin:0}
+.next{font-size:18px;line-height:1.4;color:var(--muted);margin:0}
+.next strong{color:var(--text)}
+:focus-visible{outline:3px solid var(--focus);outline-offset:3px}
+@media (prefers-reduced-motion:reduce){*{scroll-behavior:auto!important}}
+</style>
+</head>
+<body data-page="07" data-total="21">
+<div id="stage">
+  <header class="page-head">
+    <p class="kicker">LOSS LOG · ONE SAMPLE</p>
+    <h1>损失把预测错得多严重压成一个可比较的数</h1>
+  </header>
+
+  <main class="split-tb min0">
+    <section class="rule-strip" aria-labelledby="rule-title">
+      <div class="truth">
+        <span class="truth-label">真实答案<br><strong>固定为</strong></span>
+        <span class="num">1</span>
+      </div>
+      <div class="rule-copy">
+        <strong id="rule-title">本页使用二元交叉熵</strong>
+        <p>真实答案为 1 时，<span class="formula">损失 = −ln(预测概率)</span>。</p>
+      </div>
+      <div class="scale-note">把它当作一把记分尺即可：越小越好。</div>
+    </section>
+
+    <section class="workbench min0" aria-label="三次预测押注的损失比较">
+      <figure class="chart-panel min0" aria-labelledby="chart-title chart-caption">
+        <div class="figure-head">
+          <h2 id="chart-title">同一把尺上的三次押注</h2>
+          <div class="legend" aria-label="图例">
+            <span class="li"><i class="sw" aria-hidden="true"></i>全部损失</span>
+            <span class="li"><i class="sw current" aria-hidden="true"></i>当前选择</span>
+          </div>
+        </div>
+        <div id="chart" role="img" aria-label="真实答案为一时，预测概率零点九、零点五、零点一对应的二元交叉熵柱图"></div>
+        <figcaption id="chart-caption">横轴保持预测顺序 0.9 → 0.5 → 0.1；纵轴从 0 起，单位为损失/样本。</figcaption>
+      </figure>
+
+      <aside class="instrument" aria-labelledby="instrument-title">
+        <h2 id="instrument-title">选择预测概率</h2>
+        <div class="btns" id="prob-buttons" aria-label="预测概率选项"></div>
+        <div class="btns">
+          <button class="btn utility" id="play" type="button" aria-pressed="false">依次播放</button>
+          <button class="btn utility" id="reset" type="button">复位到 0.5</button>
+        </div>
+        <div class="readout" aria-live="polite" aria-atomic="true">
+          <span class="readout-label">当前损失</span>
+          <span class="big"><span class="num" id="loss-value">—</span><span class="unit">/ 样本</span></span>
+        </div>
+        <p class="probability-copy" id="probability-copy"></p>
+        <table class="data-table" aria-label="三次预测押注及损失数据">
+          <caption>数值替代：真实答案均为 1</caption>
+          <thead><tr><th>预测</th><th>损失/样本</th></tr></thead>
+          <tbody id="data-body"></tbody>
+        </table>
+      </aside>
+    </section>
+  </main>
+
+  <footer class="closing">
+    <p class="claim">当真实答案是 1，给 1 的概率越低，损失越大；自信地答错会受到更重惩罚。</p>
+    <p class="next"><strong>下一问：</strong>知道当前损失以后，怎样判断某个参数往左还是往右调会更好？</p>
+  </footer>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script src="assets/lib/echarts.min.js"></script>
+<script>
+(function(){
+  'use strict';
+  Deck.init({index:7,total:21});
+  var probabilities=[0.9,0.5,0.1];
+  var readings={
+    '0.9':'约 100 次相似情况中有 90 次回答“是”',
+    '0.5':'约 100 次相似情况中有 50 次回答“是”',
+    '0.1':'约 100 次相似情况中有 10 次回答“是”'
+  };
+  var records=probabilities.map(function(p){
+    return {id:'p-'+String(p).replace('.','-'),probability:p,loss:Lec.P.binaryCrossEntropy([p],[1]).value,reading:readings[p.toFixed(1)]};
+  });
+  var state={selected:1,playing:false};
+  var timer=null;
+  var host=document.getElementById('chart');
+  var buttons=document.getElementById('prob-buttons');
+  var tbody=document.getElementById('data-body');
+  var play=document.getElementById('play');
+  var reset=document.getElementById('reset');
+  var lossValue=document.getElementById('loss-value');
+  var probabilityCopy=document.getElementById('probability-copy');
+  var css=getComputedStyle(document.documentElement);
+  function token(name){return css.getPropertyValue(name).trim();}
+
+  records.forEach(function(record,index){
+    var button=document.createElement('button');
+    button.type='button';button.className='btn';button.textContent=record.probability.toFixed(1);
+    button.setAttribute('aria-label','选择预测概率 '+record.probability.toFixed(1));
+    button.addEventListener('click',function(){stopPlay();setState({selected:index});});
+    buttons.appendChild(button);
+    var row=document.createElement('tr');
+    row.innerHTML='<td>'+record.probability.toFixed(1)+'</td><td>'+record.loss.toFixed(3)+'</td>';
+    tbody.appendChild(row);
+  });
+
+  var chart=echarts.init(host,null,{renderer:'svg'});
+  function optionFor(s){
+    return {
+      animation:false,
+      animationDurationUpdate:Deck.reduced()?0:220,
+      textStyle:{fontFamily:'DejaVu Sans, Noto Sans CJK SC, sans-serif',fontSize:16,color:token('--text')},
+      aria:{enabled:true,description:'真实答案固定为一。三根柱依次表示预测概率零点九、零点五和零点一的损失。概率越低，损失越大。'},
+      grid:{left:82,right:34,top:48,bottom:58,containLabel:false},
+      tooltip:{trigger:'item',confine:true,backgroundColor:token('--bg'),borderColor:token('--rule'),borderWidth:1,textStyle:{fontSize:16,color:token('--text')},formatter:function(params){var r=records[params.dataIndex];return '预测 '+r.probability.toFixed(1)+'<br>损失/样本 '+r.loss.toFixed(3);}},
+      xAxis:{type:'category',name:'预测概率',nameLocation:'middle',nameGap:38,nameTextStyle:{fontSize:15,color:token('--muted')},data:records.map(function(r){return r.probability.toFixed(1);}),axisLine:{lineStyle:{color:token('--rule'),width:1}},axisTick:{alignWithLabel:true,lineStyle:{color:token('--rule')}},axisLabel:{fontFamily:'DejaVu Sans Mono, Noto Sans CJK SC, monospace',fontSize:16,color:token('--text'),margin:12}},
+      yAxis:{type:'value',min:0,max:2.5,interval:0.5,name:'损失 / 样本',nameLocation:'end',nameGap:18,nameTextStyle:{fontSize:15,color:token('--muted'),align:'right'},axisLine:{show:true,lineStyle:{color:token('--rule'),width:1}},axisTick:{show:true,lineStyle:{color:token('--rule')}},axisLabel:{fontFamily:'DejaVu Sans Mono, Noto Sans CJK SC, monospace',fontSize:12,color:token('--muted')},splitLine:{show:true,lineStyle:{color:token('--rule-soft'),width:1}}},
+      series:[{id:'loss-bars',name:'损失/样本',type:'bar',barWidth:'42%',data:records.map(function(r,i){return {value:r.loss,itemStyle:{color:token('--surface'),borderColor:i===s.selected?token('--attention'):token('--rule'),borderWidth:i===s.selected?3:1}};}),label:{show:true,position:'top',distance:8,fontFamily:'DejaVu Sans Mono, Noto Sans CJK SC, monospace',fontSize:16,color:token('--text'),formatter:function(params){return records[params.dataIndex].loss.toFixed(3);}},emphasis:{disabled:true},markPoint:{symbol:'circle',symbolSize:10,silent:true,label:{show:false},data:[{coord:[s.selected,records[s.selected].loss],itemStyle:{color:token('--attention')}}]}}]
+    };
+  }
+  function render(s){
+    chart.setOption(optionFor(s),{notMerge:true});
+    Array.prototype.forEach.call(buttons.children,function(button,i){button.setAttribute('aria-pressed',i===s.selected?'true':'false');});
+    Array.prototype.forEach.call(tbody.children,function(row,i){row.setAttribute('aria-current',i===s.selected?'true':'false');});
+    var record=records[s.selected];
+    lossValue.textContent=record.loss.toFixed(3);
+    probabilityCopy.textContent=record.reading;
+    play.setAttribute('aria-pressed',s.playing?'true':'false');
+    play.textContent=s.playing?'停止播放':'依次播放';
+  }
+  function setState(patch){state={selected:patch.selected===undefined?state.selected:patch.selected,playing:patch.playing===undefined?state.playing:patch.playing};render(state);}
+  function stopPlay(){if(timer!==null){clearInterval(timer);timer=null;}if(state.playing){setState({playing:false});}}
+  function startPlay(){
+    stopPlay();setState({selected:0,playing:true});
+    timer=setInterval(function(){setState({selected:(state.selected+1)%records.length,playing:true});},800);
+  }
+  play.addEventListener('click',function(){state.playing?stopPlay():startPlay();});
+  reset.addEventListener('click',function(){stopPlay();setState({selected:1,playing:false});});
+  chart.on('click',function(params){if(params.seriesId==='loss-bars'){stopPlay();setState({selected:params.dataIndex});}});
+  var observer=new ResizeObserver(function(){chart.resize();});observer.observe(host);
+  window.addEventListener('pagehide',cleanup,{once:true});
+  function cleanup(){stopPlay();observer.disconnect();chart.dispose();}
+  render(state);
+})();
+</script>
+</body>
+</html>

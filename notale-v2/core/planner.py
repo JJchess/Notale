@@ -141,7 +141,16 @@ MAX_CHARS: dict[str, int] = {}
 # 它把几万 token 花在正文里推演,代码写到一半就断。100 tok/s × 900s ≈ 90,000 的
 # 天花板,64,000 仍在其下。**这是最后一次单纯加额度** —— 再截断就说明
 # 这个模型在这条链路上不适合当 planner,而不是额度不够。
-MAX_OUT = {"lec.js": 64000, "PLAN.md": 64000, "theme.css": 28000,
+# theme.css 从 28,000 提到 48,000。**接口块改成八节之后这一步的产物几乎全是中文,
+# 而中文和 CSS 的 token 密度差四倍以上** —— 拿整份文件的均值去估会算少三倍:
+#     sol-low-20260827   out= 6,048 tok  产物 16,457 字符  均值 2.72 字符/tok
+#     其中 CSS 14,483 字符 ≈ 3,900 tok(约 3.9 字符/tok)
+#         接口块 1,929 字符 ≈ 2,100 tok(约 0.85 字符/tok)
+# 八节接口块目标约 13,600 字符,几乎全是中文 ≈ 16,000 tok,加 CSS 约 4,100,
+# 合计约 20,100 —— 对 28,000 只剩 1.4× 余量,而**推理 token 也算在这个额度里**
+# (同一步 sonnet-full 吐 8,870 tok 只产出 17,897 字符,比 Sol 高 47%)。
+# 48,000 在 70 tok/s × 900s 超时的天花板(约 63,000)之下。
+MAX_OUT = {"lec.js": 64000, "PLAN.md": 64000, "theme.css": 48000,
            "CONTRACT.md": 60000, "spec": 60000}
 # CONTRACT.md 从 16,000 提到 60,000。**它是全流程最重的一份提示词** ——
 # 18,222 字符,注入了 CHASSIS 全文 + LIBS.md + lec_api + lec_dom + 受众场合。
@@ -282,6 +291,36 @@ def _valid_js(text: str) -> str:
     return ""
 
 
+_IFACE = re.compile(r"/\*\s*=+\s*INTERFACE\s*=+(.*?)=+\s*/?INTERFACE\s*=+\s*\*/",
+                    re.S | re.I)
+
+# 接口块必须交付的八节。**这是 theme.css 到建页 agent 的唯一通道** ——
+# brief 明令不许读 assets/ 下的 CSS 源码,所以块里没写的东西,21 个并行 agent
+# 就当它不存在,然后各自发明一个。实测代价(runs/sol-low-20260827,21 页):
+#   块 1,929 字符,点到 33/61 个类、18/23 个 token,平均每条 45 字符
+#   → 页面内联 CSS 466 个自造类 / 86,411 字符,是共享主题的 5.3 倍
+#     .btn 被 10 页各自重定义,.claim 9 页,.kicker 8 页
+# 八节的形状取自 frontend-slides 那 34 份 design.md —— 抄的是**它逼作者声明的字段**
+# (12 个 ## 小节、32/34 顺序相同),不是它已经做好的决定(colors 键名交集为 0)。
+IFACE_SECTIONS = ("视觉论点", "调色板", "字阶与字体角色", "形与处理",
+                  "层次语言", "类名录", "不许", "加新东西时")
+
+
+def _interface(css: str):
+    """theme.css 自报的 INTERFACE 块。两处要用同一份:追加进 CHASSIS.md(给建页),
+    以及注入写规格那一步(给规划)。后者是 2026-08-23 加的 —— 在那之前
+    `theme.css` 排在 `expand()` **之后**,规格点名版面类在因果上不可能,
+    实测五种骨架类全都生成了、页面 46/48 在用,而 48 份规格一份都没点过名。"""
+    return _IFACE.search(css)
+
+
+def _iface_section(block: str, title: str) -> str:
+    """取接口块里某一节的正文。取不到返回空串。"""
+    m = re.search(rf"^[ \t]*##[ \t]*{re.escape(title)}[ \t]*$(.*?)(?=^[ \t]*##[ \t]|\Z)",
+                  block or "", re.S | re.M)
+    return m.group(1) if m else ""
+
+
 def _valid_css(text: str) -> str:
     """theme.css 的闸:得是 CSS,而且**必须把 `#stage` 设成 flex 列**。
 
@@ -317,21 +356,59 @@ def _valid_css(text: str) -> str:
         return ("`#stage` 没有设置 padding —— 主题必须在共享层定义统一版心，"
                 "否则每页会各自决定外边距。至少保留 "
                 "`padding: var(--pad-y) var(--pad-x)`")
+
+    # ---- 接口块的结构闸 ----
+    #
+    # **只判小节在不在,不判每节写了几条。** `:376` 记着「可算的约束会被贴边满足」;
+    # 「`## 不许` 至少 8 条」这种计数闸换来的只会是八条废话。
+    # 而且这里的硬闸风险很实:`cached()` 重试时**原样重发同一个提示词**,`bad` 只打印、
+    # 不回灌 —— 模型三次做不到同一件事,整轮就死了(上面那段 `#stage` 注释记的正是这个)。
+    # 所以硬拦的必须是提示词里给了完整样例、照抄就能满足的东西:小节标题。
+    m = _IFACE.search(text)
+    if not m:
+        return ("文件顶部没有 INTERFACE 块 —— 它是 theme.css 到建页 agent 的唯一通道，"
+                "brief 明令不许读 assets/ 下的 CSS 源码，块里没写的类下游就当它不存在")
+    block = m.group(1)
+    missing = [x for x in IFACE_SECTIONS if not _iface_section(block, x).strip()]
+    if missing:
+        return ("INTERFACE 块缺小节：" + "、".join(f"`## {x}`" for x in missing)
+                + f"（要齐的是这八节：{'、'.join(IFACE_SECTIONS)}）。"
+                "缺一节，21 个并行建页 agent 就少一整类判断依据，只能各自发明")
     return ""
 
 
 def _chassis_names(theme_api: str) -> tuple:
-    """从 theme.css 的 INTERFACE 块里取出可点名的 class。
+    r"""从 theme.css 的 INTERFACE 块里取出可点名的 class。
 
     只取 `.foo` 形式的类名,不取 token(`--fs-body`)—— 规格点名的是版面骨架和读数组件,
     token 是 CSS 内部的事。返回元组以便 partial 绑定后仍可哈希。
+
+    **只从 `## 类名录` 那一节刮,而且只认反引号里以 `.` 开头的那一段。**
+    接口块从 1,929 涨到一万多字符之后大半是散文,原来那句全块 `\.([a-z][a-z0-9-]{2,})`
+    会把「`assets/theme.css`」刮成一个叫 `.css` 的类。
+
+    这份名单现在只喂一个读数:接口块的名录点到了 CSS 里几个类(基线 29/53)。
+    它**不是闸** —— `plan_run()` 里那个 `chassis=` 参数绑了很久,而 `_valid_spec`
+    的函数体从来没读过它,2026-08-27 一并删掉了。
+
+    下限从 3 个字符放宽到 2 个:`.li`、`.sw`、`.bt`、`.lv`、`.fb`、`.it` 都是这套系统里
+    真实存在的类,原来一个都进不了名单,覆盖率因此系统性偏低。只报不拦,放宽没有误拦风险。
+    旧轮次的接口块没有「类名录」这一节,退回全块扫描保持可读。
     """
-    return tuple(sorted(set(re.findall(r"\.([a-z][a-z0-9-]{2,})", theme_api or ""))))
+    catalog = _iface_section(theme_api, "类名录")
+    if catalog.strip():
+        names: list[str] = []
+        for span in re.findall(r"`([^`\n]+)`", catalog):
+            if span.startswith("."):        # 名录条目是选择器;路径、文件名不是
+                names += re.findall(r"\.([a-z][a-z0-9-]+)", span)
+        if names:
+            return tuple(sorted(set(names)))
+    return tuple(sorted(set(re.findall(r"\.([a-z][a-z0-9-]+)", theme_api or ""))))
 
 
 
 
-def _valid_spec(text: str, chassis: tuple = (),
+def _valid_spec(text: str,
                 workflow_names: tuple = skills.PAGE_WORKFLOWS) -> str:
     """逐页规格的最低限度:不能是推理稿,而且必须带上必填小节。
 
@@ -576,18 +653,6 @@ def seed(run: Run, chassis: Path, lib: Path) -> str:
     return (lib / "LIBS.md").read_text(encoding="utf-8")
 
 
-_IFACE = re.compile(r"/\*\s*=+\s*INTERFACE\s*=+(.*?)=+\s*/?INTERFACE\s*=+\s*\*/",
-                    re.S | re.I)
-
-
-def _interface(css: str):
-    """theme.css 自报的 INTERFACE 块。两处要用同一份:追加进 CHASSIS.md(给建页),
-    以及注入写规格那一步(给规划)。后者是 2026-08-23 加的 —— 在那之前
-    `theme.css` 排在 `expand()` **之后**,规格点名版面类在因果上不可能,
-    实测五种骨架类全都生成了、页面 46/48 在用,而 48 份规格一份都没点过名。"""
-    return _IFACE.search(css)
-
-
 def skeletons(run: Run, n: int) -> None:
     """建骨架。
 
@@ -770,41 +835,111 @@ def visual_world(plan_text: str) -> str:
     return m.group(0).strip() if m else ""
 
 
-def check_visual_world(block: str) -> None:
-    """只报不判。判据是可算的:有几个 hex、有几条母题。
+# 一行是不是「字段标题」:可选的项目符号和粗体之后,15 个字以内出现冒号。
+# 实测两种写法都要认 —— `- 母题：a；b；c`(标题和正文同一行)
+# 和 `**否决方向：**` 后面空一行再列(标题独占一行)。
+_FIELD = re.compile(r"\s*(?:[-*]\s*)?\*{0,2}[^：:\n]{1,15}[：:]")
+_BULLET = re.compile(r"\s*(?:[-*]|\d+[.、)])\s+")
 
-    「给具体取值不要形容词」是散文,而散文的服从度因模型而异 ——
-    所以这里把它变成两个能数出来的数。缺了不判死:这一节是给下游做参照的,
+
+def _count_items(block: str, head: str) -> int:
+    r"""数「head」那一项底下有几条。
+
+    ## 为什么不是一句正则
+
+    这个函数改过三版,前两版都在**模型实际用的排版上归零**:
+
+      一、只按行数数 —— 而实测模型是一行用「；」隔开几条,数出 0 条、报了个假警。
+      二、改成一句 `head…(.*?)(?=\n\s*\n|\Z)` 加按 `[;；、\n]` 切 —— 撞上两件事:
+          `**否决方向：**` 是标题独占一行、正文空一行才开始,那个 `\n\s*\n`
+          把正文整段判在外面,**只数到标题末尾残留的 `**`,报「1 条」**;
+          而条目带解释时(「样本 / 模型 —— 要分清哪个是给定的、哪个是学出来的」)
+          句中的顿号又把一条切成两条。
+
+    所以改成按行走:找到字段标题那一行,正文 = 该行冒号之后的部分 + 随后所有
+    **不是另一个字段标题**的行,直到下一个 markdown 小节。这样两种排版都认,
+    也不会把标题自己数进去。
+
+    切分只用分号和换行。只有在切完只剩一条、且那条读起来像枚举(没有解释标记)时,
+    才退回按顿号切 —— 「参数旋钮、样本卡、损失坡面」这种写法仍然数得对。
+    阈值取 2 个字:「星空」「火光」这种两字条目完全正常,卡 3 会把它们滤掉。
+    """
+    lines = block.splitlines()
+    i = next((k for k, l in enumerate(lines)
+              if head in l and _FIELD.match(l)), None)
+    if i is None:
+        return 0
+    first = lines[i]
+    body = [first[first.index("：") + 1:] if "：" in first
+            else (first[first.index(":") + 1:] if ":" in first else "")]
+    for l in lines[i + 1:]:
+        if l.lstrip().startswith("#") or (l.strip() and _FIELD.match(l)):
+            break
+        body.append(l)
+    # **有项目符号就只数项目符号那几行。** 否则条目一换行,续行会被数成新的一条 ——
+    # 实测旧格式的「否决方向」3 条被数成 4 条、「形状语言」5 条被数成 7 条,
+    # 而新格式的概念对带解释、同样会换行。没有项目符号时才退回按行数。
+    raw = re.split(r"[;；\n]+", "\n".join(body))
+    bullets = [x for x in raw if _BULLET.match(x)]
+    items = [_strip_item(x) for x in (bullets or raw)]
+    items = [x for x in items if len(x) >= 2]
+    if len(items) == 1 and "、" in items[0] and not re.search(r"——|—|：|:", items[0]):
+        items = [x.strip() for x in items[0].split("、") if len(x.strip()) >= 2]
+    return len(items)
+
+
+def _strip_item(x: str) -> str:
+    """剥掉条目外面的项目符号和粗体标记,免得把残留的 `**` 数成一条。"""
+    return re.sub(r"^\s*[-*]\s*", "", x).strip().strip("*").strip()
+
+
+def check_visual_world(block: str) -> None:
+    """只报不判。判据全部是能数出来的数。
+
+    「给具体要求不要形容词」是散文,而散文的服从度因模型而异 ——
+    所以这里把它变成几个计数。缺了不判死:这一节是给 theme.css 做参照的,
     没有它下游会退回「用强调色」那种写法,但不会建不出页来。
+
+    ## 2026-08-27:判据从「≥3 个 hex」翻成「0 个 hex」
+
+    §0.5 改成只声明视觉**要求**、不做视觉**决定**之后,hex 归 theme.css 挑。
+    原来那条 `len(hexes) >= 3` 会**恒红** —— 而恒红的判据等于没有判据,
+    这条流水线上已经栽过四次(handoff 计数找一节已删的标题、BASELINE_CHARS
+    按字节定按字符比、strip_skills 的正则匹配过时措辞、`_valid_spec` 那个
+    从没被读过的 `chassis` 参数)。所以翻过来:**出现 hex 才是问题**,
+    它说明这一步又在替 theme.css 做决定了。
     """
     if not block:
         print("  \033[33m⚠ PLAN.md 里没有「视觉世界」一节 —— "
-              "逐页规格将无从引用母题,场景构图会退回通用分栏\033[0m")
+              "theme.css 将不知道这一课需要区分什么,只能自己发明一套\033[0m")
         return
     hexes = set(re.findall(r"#[0-9a-fA-F]{6}\b", block))
-    # **母题不一定分行写。** 我第一版按行数数,而实测模型是一行用「；」隔开五条 ——
-    # 于是数出 0 条、报了个假警。分隔符按分号/顿号/换行一起算,别假定排版。
-    # 取「母题」之后到下一个字段名或小节为止。两种排版都要认:
-    #   一行分号隔开(实测 gpt-5.6-sol 就是这样) / 每条一行(我第一版只认这种)
-    # 别假定排版 —— 假定一次就报一次假警。
-    m = re.search(r"母题[^\S\n]*[:：]?(.*)", block, re.S)
-    body = (m.group(1) if m else "").strip()
-    # 阈值 2 而不是 3:「星空」「火光」这种两字母题完全正常,
-    # 卡 3 会把它们滤掉 —— 判据本身错了,不是产物错了。
-    n_motif = len([x for x in re.split(r"[;；、\n]+", body) if len(x.strip()) >= 2])
-    # 「现实参照」和「形状语言」是 2026-08-24 加的两项,加它们是因为量到:
-    # 只要求一组颜色,辨识度就只能靠强调色,而那条路的终点是「近黑底 + 一个
-    # 高饱和荧光色」——满街可见的那个样子。**只报不判**,和上面两项一个规格:
-    # 这一节是给下游做参照的,缺了下游会退化,但不影响能不能建出页来。
     has_ref = bool(re.search(r"现实参照|视觉传统", block))
-    m2 = re.search(r"形状语言[^\S\n]*[:：]?(.*?)(?=\n\s*\n|\Z)", block, re.S)
-    n_shape = len([x for x in re.split(r"[;；、\n]+", (m2.group(1) if m2 else ""))
-                   if len(x.strip()) >= 2])
-    ok = len(hexes) >= 3 and n_motif >= 3 and has_ref and n_shape >= 3
-    print(f"  验视觉世界   {len(hexes)} 个 hex、{n_motif} 条母题、"
-          f"{'有' if has_ref else '无'}现实参照、{n_shape} 条形状语言"
-          + ("  ✓" if ok else "  \033[33m⚠ 要求 ≥3 个 hex、≥3 条母题、"
-                             "点名一个现实参照、≥3 条形状语言\033[0m"))
+    n_pair = _count_items(block, "概念对")
+    n_slot = _count_items(block, "需要专属色的概念")
+    n_motif = _count_items(block, "母题")
+    n_veto = _count_items(block, "否决")
+    ok = (not hexes) and has_ref and n_pair >= 3 and n_slot >= 2 and n_motif >= 3 and n_veto >= 2
+    print(f"  验视觉世界   {'有' if has_ref else '无'}现实参照、{n_pair} 组概念对、"
+          f"{n_slot} 个色槽位、{n_motif} 条母题、{n_veto} 条否决"
+          + (f"、\033[33m{len(hexes)} 个 hex\033[0m" if hexes else "")
+          + ("  ✓" if ok else ""))
+    if not ok:
+        why = []
+        if hexes:
+            why.append(f"**出现了 {len(hexes)} 个 hex** —— 取值是 theme.css 的活,"
+                       "这一节只声明要求")
+        if not has_ref:
+            why.append("没点名现实参照")
+        if n_pair < 3:
+            why.append(f"概念对只有 {n_pair} 组(要 ≥3)")
+        if n_slot < 2:
+            why.append(f"色槽位只有 {n_slot} 个(要 ≥2)")
+        if n_motif < 3:
+            why.append(f"母题只有 {n_motif} 条(要 ≥3)")
+        if n_veto < 2:
+            why.append(f"否决方向只有 {n_veto} 条(要 ≥2)")
+        print("               \033[33m⚠ " + "；".join(why) + "\033[0m")
 
 
 def check_table(run: Run, rows: list, plan_text: str = "") -> None:
@@ -993,7 +1128,13 @@ def expand(run: Run, rows: list, deck: str, api: str = "", vals: str = "",
     eff = config()["planner"]["reasoning_effort"]
     # 闸按行绑定:交互页才查反馈闭环那四件。`CHECKS` 只按步名取函数、拿不到行信息,
     # 而「这一页有没有交互」只有行里有 —— 所以在这里绑,不塞进全局。
-    chk = partial(CHECKS["spec"], chassis=_chassis_names(theme_api),
+    # **`chassis=_chassis_names(theme_api)` 删了。** 它绑了很久,而 `_valid_spec`
+    # 的函数体里一次都没读过这个参数 —— 「规格点名的类是否真实存在」这道闸
+    # 从来就不存在,只是看起来存在。同一形状的第四次(handoff 计数找一节已删的标题、
+    # BASELINE_CHARS 按字节定按字符比、strip_skills 的 BLOCK 正则匹配过时措辞)。
+    # **没顺手把它接起来**:`cached()` 重试是原样重发,新造一道闸误拦一份规格
+    # 就要赔掉三次调用,而这不是这次改动的题目。要接就单独接,并先量误拦率。
+    chk = partial(CHECKS["spec"],
                   workflow_names=tuple(
                       n for n in skills.PAGE_WORKFLOWS
                       if n in set(skills.available(workflow_root or skills.WORKFLOWS))))
@@ -1506,6 +1647,13 @@ def plan_run(run: Run, chassis: Path, lib: Path,
     theme = cached(run, "theme.css", run.assets / "theme.css",
                    run.prompt("theme", canvas_w=w, canvas_h=h, n_pages=len(rows),
                               world=world or "（PLAN.md 没有声明,你自己定）",
+                              # **这一步原来不知道这门课在讲什么。** 它收到的是视觉世界、
+                              # 受众、场合、版式名、页数 —— 没有题目,没有主线,没有页表。
+                              # 症状量得到:iface8-20260827 的接口块里 `## 视觉论点` 只有
+                              # 94 字符,几乎就是把 PLAN.md 的「现实参照」重述一遍 ——
+                              # 它没法为一门自己不知道内容的课论证一套视觉。
+                              # `spine()` 是现成的(CONTRACT.md 那一步在用),不另写提取。
+                              query=run.query, spine=spine(text) or "（PLAN.md 里没读出主线）",
                               audience=run.audience, scenario=run.scenario or "（没写）",
                               img_pool=("\n".join(back_rows) or "（这一轮没有底图）"),
                               layouts=("\n".join(f"    {u}" for u in used_layouts)
@@ -1514,7 +1662,14 @@ def plan_run(run: Run, chassis: Path, lib: Path,
                               # plan-direction 全文内联。它讲的是整课视觉世界,
                               # 对应的就是这一步 —— 而它此前不在 PAGE_WORKFLOWS 里,
                               # 任何代码路径都到不了 builder。见 skills.direction_block。
-                              direction=skills.direction_block(workflow_root)),
+                              direction=skills.direction_block(workflow_root),
+                              # 配色禁用清单。**只挂在这一步** —— 配色决定每轮只发生
+                              # 一次,而建页 agent 只能消费这里给的 token、改不了调色板。
+                              # 实测依据:58 份 theme.css 里 26 份的 --bg 会被
+                              # impeccable 的 isCreamColor() 判成 cream-palette,
+                              # 另有 27 份是近黑暗底(其中 25 份带青辅助色)——
+                              # 93% 落在两套已被记录在案的模型默认里。
+                              theme_bans=skills.theme_slop_block(workflow_root)),
                    sheet=sheet if sheet.exists() else None)
     # theme.css 自报的 INTERFACE 块 → 追加进 CHASSIS.md,让它真的到达每一页。
     #
@@ -1522,14 +1677,6 @@ def plan_run(run: Run, chassis: Path, lib: Path,
     # 9 个小节,第一节就是 `Chrome.mount(cfg) → 返回 <main class="page-main">`。
     # 我们这条链路上各步互不记忆,所以由 harness 搬 —— 但搬的是**模型刻意写出来的接口块**,
     # 不是 harness 去 grep 选择器。后者试过,只能猜到类名,猜不到"这个 token 许用在哪"。
-    m = _interface(theme)
-    if m:
-        ch = run.assets / "CHASSIS.md"
-        ch.write_text(ch.read_text(encoding="utf-8").rstrip()
-                      + "\n\n---\n\n## 本轮追加:`theme.css` 提供的 token 与 class\n\n"
-                      + "```\n" + m.group(1).strip() + "\n```\n", encoding="utf-8")
-        n_if = len([l for l in m.group(1).splitlines() if l.strip()])
-        print(f"  接口交接     theme.css 的 INTERFACE 块 {n_if} 行 → CHASSIS.md")
     # 已知陷阱也搬过去。**这是绕开改 `base.js` 的办法** —— 那份是两条线逐字节
     # 同一份的冻结层,改了就失去「同一个 base」这个单变量前提,而陷阱是真的:
     # `Deck.fmt` 的签名注释没说它带符号,于是有一页把年代印成「约 +366 万年前」19 处。
@@ -1544,10 +1691,36 @@ def plan_run(run: Run, chassis: Path, lib: Path,
 实测代价：一页把年代印成「约 +366 万年前」，19 处。
 ''', encoding="utf-8")
         print("  接口交接     已知陷阱（Deck.fmt 带符号）→ CHASSIS.md")
+
+    m = _interface(theme)
+    if m:
+        block = m.group(1).strip()
+        ch = run.assets / "CHASSIS.md"
+        # **不再套代码围栏。** 块里现在是八节 markdown(`## 视觉论点`…`## 加新东西时`),
+        # 围起来就变成一大段等宽死文本,小节标题不成标题、名录里的 `.foo` 不成代码。
+        # 追加的层级和 CHASSIS.md 本身一致(都是 `## `),读起来是同一份文档的后半段。
+        ch.write_text(ch.read_text(encoding="utf-8").rstrip()
+                      + "\n\n---\n\n# 本轮追加:`theme.css` 提供的视觉系统\n\n"
+                      + "下面这一段是 `theme.css` 自己声明的。**你读不到 CSS 源码**"
+                      + "（brief 明令不许打开 assets/ 下的实现），所以这里没写的东西，"
+                      + "就是这套系统里没有的东西 —— 不要自己发明一个补上。\n\n"
+                      + block + "\n", encoding="utf-8")
+        named = _chassis_names(block)
+        # 覆盖率只报不拦:它取决于模型怎么数状态修饰类(.panel.q、.btn.on),
+        # 拿它当硬闸会为了 6 个修饰类赔掉整轮 —— 而重试是原样重发,拦住了也改不了。
+        # 这个数是「接口块够不够用」的主判据,留给实验去看(基线 33/61)。
+        bare = re.sub(r"/\*.*?\*/", "", theme, flags=re.S)
+        defined = set(re.findall(r"\.([a-z][a-z0-9-]+)",
+                                 " ".join(re.findall(r"([^{}]*)\{", bare))))
+        hit = len(defined & set(named))
+        print(f"  接口交接     INTERFACE 块 {len(block):,} 字符、{len(IFACE_SECTIONS)} 节 "
+              f"→ CHASSIS.md；名录覆盖 {hit}/{len(defined)} 个类"
+              f"（{hit / max(len(defined), 1) * 100:.0f}%）")
     else:
+        # 走不到这里 —— `_valid_css` 已经把没有接口块的 theme.css 拦在前面了。
+        # 留着是因为 `cached()` 命中已存在文件时会跳过闸,旧轮次续跑仍可能撞上。
         print("  接口交接     ✗ theme.css 里没有 INTERFACE 块 —— "
               "各页只能自己去 grep 选择器,而 token 的适用范围它猜不到")
-
     # 闸:theme.css 必须真的给 mount 注入的那套类名写了样式。
     #
     # **mount 类名覆盖那道闸删了。** 它查的是「theme.css 有没有给 mount 注入的

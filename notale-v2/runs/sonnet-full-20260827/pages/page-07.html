@@ -1,0 +1,369 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  .p07-body{ flex:1; display:flex; flex-direction:column; gap:14px; min-height:0; }
+  .p07-terrain{
+    flex:1; min-height:0; position:relative;
+    border:1px solid var(--line); border-radius:14px;
+    background:var(--paper); overflow:hidden;
+  }
+  .p07-terrain .cv-fill{ position:absolute; inset:0; width:100%; height:100%; }
+  #chart{ z-index:1; }
+  #overlay{ z-index:2; pointer-events:none; }
+  #overlay .curve-x{ stroke:var(--line); stroke-width:1; }
+  .marker-hit{ pointer-events:auto; cursor:grab; fill:transparent; }
+  .marker-hit:active{ cursor:grabbing; }
+  .marker-dot{ fill:var(--accent); stroke:var(--paper); stroke-width:2; pointer-events:none; }
+  .marker-dot.focus-ring{ outline:none; }
+  .marker-hit:focus-visible + .marker-dot,
+  .marker-hit:focus-visible ~ .marker-ring{ }
+  .marker-ring{ fill:none; stroke:var(--focus); stroke-width:2; opacity:0; pointer-events:none; }
+  .marker-hit:focus-visible ~ .marker-ring{ opacity:1; }
+  .arrow-line{ stroke:var(--accent); stroke-width:3; stroke-linecap:round; }
+  .arrow-head{ fill:var(--accent); }
+  .float-box{ position:absolute; z-index:3; }
+  .readbox-float{ top:14px; right:16px; display:flex; flex-direction:column; gap:8px; align-items:flex-end; }
+  .readbox-float .readbox{ padding:8px 14px; }
+  .readbox-float .unit{ margin-left:0; margin-right:6px; }
+  .legend-float{ top:16px; left:16px; gap:16px; background:rgba(255,253,247,.9); padding:6px 12px; border-radius:10px; }
+  .p07-hint{ bottom:16px; left:16px; background:rgba(255,253,247,.9); padding:4px 10px; border-radius:8px; }
+  .coda-block{ flex:0 0 auto; display:flex; flex-direction:column; gap:4px; }
+  .coda-block .lead{ margin:0; }
+  .coda-block .small{ margin:0; }
+</style>
+</head>
+<body data-page="07" data-total="18">
+<div id="stage">
+  <div class="head-stack">
+    <span class="kicker">LOSS AS TERRAIN</span>
+    <h1>损失可以画成一座山</h1>
+  </div>
+
+  <div class="p07-body">
+    <div class="p07-terrain no-pan" id="terrainWrap">
+      <div id="chart" class="cv-fill"></div>
+
+      <svg id="overlay" class="cv-fill" aria-hidden="true">
+        <g id="arrowG"></g>
+        <circle id="markerRing" class="marker-ring" r="14" cx="0" cy="0"></circle>
+        <circle id="markerHit" class="marker-hit" r="18" cx="0" cy="0"
+          tabindex="0" role="slider" aria-label="曲线上的权重标记点"
+          aria-valuemin="-2" aria-valuemax="2.5" aria-valuenow="0" aria-valuetext="w = 0.00,损失 = 0.140"></circle>
+        <circle id="markerDot" class="marker-dot" r="8" cx="0" cy="0"></circle>
+      </svg>
+
+      <div class="float-box legend-float legend">
+        <span class="li"><span class="sw line" style="background:var(--text)"></span>损失曲线（越高损失越大）</span>
+        <span class="li"><span class="sw" style="background:var(--accent)"></span>当前权重位置</span>
+        <span class="li"><span class="sw line" style="background:var(--accent)"></span>下坡方向（梯度）</span>
+      </div>
+
+      <div class="float-box readbox-float">
+        <div class="readbox">
+          <span class="unit">w =</span><span class="num" id="wVal">0.00</span>
+        </div>
+        <div class="readbox">
+          <span class="unit">损失 =</span><span class="num" id="lossVal">0.140</span>
+        </div>
+      </div>
+
+      <div class="float-box p07-hint hint">左右拖动红点，或聚焦后用方向键移动</div>
+
+      <div id="liveRegion" class="sr-only" aria-live="polite"></div>
+
+      <table class="sr-only" id="fallbackTable" style="left:-9999px; top:-9999px;">
+        <caption>损失随权重 w 变化的取样点（AND 任务，第二个权重与偏置固定）</caption>
+        <thead><tr><th>权重 w</th><th>损失（MSE）</th></tr></thead>
+        <tbody id="fallbackBody"></tbody>
+      </table>
+    </div>
+
+    <div class="coda-block">
+      <p class="lead">山坡最陡的下坡方向，就是梯度指的方向——它告诉你往哪挪权重损失才会变小</p>
+      <p class="small">知道了方向，一步该迈多大？</p>
+    </div>
+  </div>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script src="assets/lib/echarts.min.js"></script>
+<script>
+(function(){
+  'use strict';
+
+  // ---------- 教学数据口径：复用 p04-p05 的 AND 任务 ----------
+  // 四个样本 [0,0]/[0,1]/[1,0]/[1,1]，AND 目标 [0,0,0,1]。
+  // 拖动的权重是第一个输入的权重 w；第二个权重 w2 与偏置 bias 固定，
+  // 让谷底落在坡腰 w≈1.25 附近，两侧都能看到明显的上坡。
+  var INPUTS = Lec.K.LOGIC_INPUTS;
+  var TARGETS = Lec.K.AND_TARGETS;
+  var W2 = 1.5;
+  var BIAS = -2;
+  var ACT = 'sigmoid';
+  var W_MIN = -2, W_MAX = 2.5;
+
+  function forwardAll(w){
+    var preds = [];
+    var zs = [];
+    for (var i = 0; i < INPUTS.length; i++){
+      var fwd = Lec.P.neuronForward(INPUTS[i], [w, W2], BIAS, ACT);
+      zs.push(fwd.z);
+      preds.push(fwd.a);
+    }
+    return { preds: preds, zs: zs };
+  }
+
+  function lossAt(w){
+    var f = forwardAll(w);
+    return Lec.P.mse(f.preds, TARGETS);
+  }
+
+  // 该点斜率：dLoss/dw = sum_i dLoss/da_i * da_i/dz_i * dz_i/dw
+  // dz_i/dw 就是样本 i 里第一个输入分量（因为 w 只乘这个输入）
+  function slopeAt(w){
+    var f = forwardAll(w);
+    var dLda = Lec.P.mseDeriv(f.preds, TARGETS);
+    var slope = 0;
+    for (var i = 0; i < INPUTS.length; i++){
+      slope += dLda[i] * Lec.P.sigmoidDeriv(f.zs[i]) * INPUTS[i][0];
+    }
+    return slope;
+  }
+
+  // ---------- 采样曲线：60 点，w 从 -2 到 2.5 ----------
+  var N = 60;
+  var curve = [];
+  for (var i = 0; i < N; i++){
+    var w = W_MIN + (W_MAX - W_MIN) * i / (N - 1);
+    curve.push([Math.round(w * 1000) / 1000, lossAt(w)]);
+  }
+  var lossMin = Infinity, lossMax = -Infinity;
+  curve.forEach(function(p){
+    if (p[1] < lossMin) lossMin = p[1];
+    if (p[1] > lossMax) lossMax = p[1];
+  });
+  // 给上下留一点边界，避免曲线贴边
+  var yPad = (lossMax - lossMin) * 0.18 || 0.02;
+  var yMin = Math.max(0, lossMin - yPad);
+  var yMax = lossMax + yPad;
+
+  // ---------- ECharts：损失-权重曲线（山丘剖面） ----------
+  var chartHost = document.getElementById('chart');
+  var chart = echarts.init(chartHost, null, { renderer: 'svg' });
+
+  function buildOption(){
+    return {
+      animation: false,
+      grid: { left: 68, right: 32, top: 64, bottom: 60 },
+      textStyle: { fontSize: 16 },
+      xAxis: {
+        type: 'value',
+        name: '权重 w',
+        nameLocation: 'middle',
+        nameGap: 28,
+        nameTextStyle: { fontSize: 14, color: 'var(--muted)'.replace('var(--muted)', '#6b6558') },
+        min: W_MIN, max: W_MAX,
+        axisLabel: { fontSize: 12, color: '#6b6558' },
+        axisLine: { lineStyle: { color: '#c9c2b2' } },
+        splitLine: { show: false }
+      },
+      yAxis: {
+        type: 'value',
+        name: '损失',
+        nameLocation: 'middle',
+        nameGap: 40,
+        nameTextStyle: { fontSize: 14, color: '#6b6558' },
+        min: yMin, max: yMax,
+        axisLabel: { fontSize: 12, color: '#6b6558', formatter: function(v){ return v.toFixed(2); } },
+        axisLine: { lineStyle: { color: '#c9c2b2' } },
+        splitLine: { lineStyle: { color: '#ddd6c5', type: 'dashed' } }
+      },
+      series: [
+        {
+          type: 'line',
+          data: curve,
+          showSymbol: false,
+          smooth: true,
+          lineStyle: { color: '#22242a', width: 2.5 },
+          areaStyle: { color: 'rgba(43,76,126,.08)' },
+          z: 1,
+          silent: true
+        }
+      ]
+    };
+  }
+  chart.setOption(buildOption());
+
+  // ---------- 坐标换算：数据坐标 -> overlay SVG 像素坐标 ----------
+  // overlay 与 chart 共享同一容器尺寸（都是 .cv-fill），不用 viewBox 缩放，
+  // 直接用 ECharts 算出的像素值，圆点和箭头不会因非等比缩放变形。
+  function dataToPixel(w, loss){
+    var px = chart.convertToPixel({ xAxisIndex: 0, yAxisIndex: 0 }, [w, loss]);
+    return { x: px[0], y: px[1] };
+  }
+
+  // ---------- 状态：当前权重 ----------
+  var state = { w: 0 };
+
+  var wValEl = document.getElementById('wVal');
+  var lossValEl = document.getElementById('lossVal');
+  var markerHit = document.getElementById('markerHit');
+  var markerDot = document.getElementById('markerDot');
+  var markerRing = document.getElementById('markerRing');
+  var arrowG = document.getElementById('arrowG');
+  var liveRegion = document.getElementById('liveRegion');
+
+  var ARROW_LEN_MAX = 64;   // 像素单位箭头最大长度
+  var ARROW_LEN_MIN = 10;
+  var SLOPE_REF = 0.07;     // 参考最大斜率（当场计算所得），用于缩放箭头长度
+
+  function render(){
+    var w = state.w;
+    var loss = lossAt(w);
+    var slope = slopeAt(w);
+
+    var pos = dataToPixel(w, loss);
+
+    markerHit.setAttribute('cx', pos.x);
+    markerHit.setAttribute('cy', pos.y);
+    markerDot.setAttribute('cx', pos.x);
+    markerDot.setAttribute('cy', pos.y);
+    markerRing.setAttribute('cx', pos.x);
+    markerRing.setAttribute('cy', pos.y);
+
+    // 箭头：方向取斜率符号的反方向（下坡），长度随 |slope| 缩放并设上限
+    var dir = slope > 0 ? -1 : (slope < 0 ? 1 : 0); // slope>0 时下坡在左(-x)，slope<0 时下坡在右(+x)
+    var mag = Math.min(1, Math.abs(slope) / SLOPE_REF);
+    var len = dir === 0 ? 0 : (ARROW_LEN_MIN + (ARROW_LEN_MAX - ARROW_LEN_MIN) * mag);
+
+    arrowG.innerHTML = '';
+    if (len > 2){
+      var x1 = pos.x, y1 = pos.y + 22;
+      var x2 = pos.x + dir * len;
+      var line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+      line.setAttribute('class', 'arrow-line');
+      line.setAttribute('x1', x1); line.setAttribute('y1', y1);
+      line.setAttribute('x2', x2); line.setAttribute('y2', y1);
+      arrowG.appendChild(line);
+
+      var headSize = 9;
+      var hx = x2, hy = y1;
+      var back = dir > 0 ? hx - headSize : hx + headSize;
+      var tri = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+      var pts = [
+        [hx, hy],
+        [back, hy - headSize * 0.6],
+        [back, hy + headSize * 0.6]
+      ].map(function(p){ return p[0] + ',' + p[1]; }).join(' ');
+      tri.setAttribute('points', pts);
+      tri.setAttribute('class', 'arrow-head');
+      arrowG.appendChild(tri);
+    }
+
+    wValEl.textContent = w.toFixed(2);
+    lossValEl.textContent = loss.toFixed(3);
+    markerHit.setAttribute('aria-valuenow', w.toFixed(2));
+    markerHit.setAttribute('aria-valuetext', 'w = ' + w.toFixed(2) + '，损失 = ' + loss.toFixed(3));
+  }
+
+  function announce(w, loss){
+    liveRegion.textContent = 'w = ' + w.toFixed(2) + '，损失 = ' + loss.toFixed(3);
+  }
+
+  function setW(nextW, doAnnounce){
+    state.w = Deck.clamp(nextW, W_MIN, W_MAX);
+    render();
+    if (doAnnounce) announce(state.w, lossAt(state.w));
+  }
+
+  // ---------- 拖拽：指针坐标（经 Deck.pt 换算）-> 权重值 ----------
+  var overlay = document.getElementById('overlay');
+  var dragging = false;
+
+  function pixelXToW(px){
+    var dataPt = chart.convertFromPixel({ xAxisIndex: 0 }, [px, 0]);
+    return dataPt[0];
+  }
+
+  function onPointerMove(e){
+    if (!dragging) return;
+    e.preventDefault();
+    var pt = Deck.pt(overlay, e);
+    var w = pixelXToW(pt.x);
+    setW(w, false);
+  }
+
+  function onPointerUp(e){
+    if (!dragging) return;
+    dragging = false;
+    announce(state.w, lossAt(state.w));
+    window.removeEventListener('pointermove', onPointerMove);
+    window.removeEventListener('pointerup', onPointerUp);
+    window.removeEventListener('touchmove', onPointerMove);
+    window.removeEventListener('touchend', onPointerUp);
+  }
+
+  function onPointerDown(e){
+    dragging = true;
+    e.preventDefault();
+    markerHit.focus();
+    var pt = Deck.pt(overlay, e);
+    var w = pixelXToW(pt.x);
+    setW(w, false);
+    window.addEventListener('pointermove', onPointerMove);
+    window.addEventListener('pointerup', onPointerUp);
+    window.addEventListener('touchmove', onPointerMove, { passive: false });
+    window.addEventListener('touchend', onPointerUp);
+  }
+
+  markerHit.addEventListener('pointerdown', onPointerDown);
+  markerHit.addEventListener('touchstart', onPointerDown, { passive: false });
+
+  // 键盘：左右方向键移动，步长 0.05
+  markerHit.addEventListener('keydown', function(e){
+    var step = 0.05;
+    if (e.key === 'ArrowLeft' || e.key === 'ArrowDown'){
+      e.preventDefault();
+      setW(state.w - step, true);
+    } else if (e.key === 'ArrowRight' || e.key === 'ArrowUp'){
+      e.preventDefault();
+      setW(state.w + step, true);
+    } else if (e.key === 'Home'){
+      e.preventDefault();
+      setW(W_MIN, true);
+    } else if (e.key === 'End'){
+      e.preventDefault();
+      setW(W_MAX, true);
+    }
+  });
+
+  // ---------- 无障碍回退表 ----------
+  var fbBody = document.getElementById('fallbackBody');
+  [-2, -0.5, 0, 1.2, 2.5].forEach(function(w){
+    var tr = document.createElement('tr');
+    var td1 = document.createElement('td'); td1.textContent = w.toFixed(2);
+    var td2 = document.createElement('td'); td2.textContent = lossAt(w).toFixed(3);
+    tr.appendChild(td1); tr.appendChild(td2);
+    fbBody.appendChild(tr);
+  });
+
+  // ---------- 尺寸变化：resize 图表并重新定位标记 ----------
+  var resizeObserver = new ResizeObserver(function(){
+    chart.resize();
+    render();
+  });
+  resizeObserver.observe(chartHost);
+  Deck.onResize(function(){ chart.resize(); render(); });
+
+  // ---------- 初始状态：w=0 附近的坡腰 ----------
+  setW(0, false);
+
+  Deck.init({ index: 7, total: 18 });
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>前向传播，只是逐层重复同一个动作</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    #stage{gap:18px}
+    .p16-head{height:86px;display:flex;flex-direction:column;justify-content:flex-end;gap:5px}
+    .p16-head .kicker{font:600 var(--fs-label)/1 var(--font-mono);letter-spacing:.12em;color:var(--forward)}
+    .p16-head h1{margin:0;font:700 var(--fs-h1)/1.18 var(--font-sans);color:var(--text)}
+    .p16-widget{flex:1;min-height:0;display:flex;flex-direction:column;gap:12px}
+    .p16-canvas{flex:1;min-height:0;border:1px solid var(--line);background:rgba(255,255,255,.22);position:relative;overflow:hidden}
+    .p16-canvas svg{display:block;width:100%;height:100%}
+    .p16-widget .stage-label{font:600 15px/1.2 var(--font-sans);fill:var(--muted)}
+    .p16-widget .step-no{font:600 14px/1 var(--font-mono);fill:var(--muted)}
+    .p16-widget .box{fill:var(--panel-bg);stroke:var(--line);stroke-width:1.5}
+    .p16-widget .neuron{fill:var(--paper,#F4F1E8);stroke:var(--line);stroke-width:1.5}
+    .p16-widget .current{stroke:var(--focus);stroke-width:4}
+    .p16-widget .done{stroke:var(--forward);stroke-width:2.5}
+    .p16-widget .node-title{font:650 16px/1 var(--font-sans);fill:var(--text)}
+    .p16-widget .formula{font:500 14px/1.25 var(--font-mono);fill:var(--text)}
+    .p16-widget .value{font:700 17px/1 var(--font-mono);fill:var(--forward)}
+    .p16-widget .muted{fill:var(--muted)}
+    .p16-widget .arrow{fill:none;stroke:var(--line);stroke-width:2;marker-end:url(#p16-arrow)}
+    .p16-widget .arrow.active{stroke:var(--forward);stroke-width:3;stroke-dasharray:500;animation:p16draw 360ms ease both}
+    .p16-widget .inner-line{stroke:var(--line);stroke-width:1}
+    .p16-widget .inner-active{stroke:var(--forward);stroke-width:2}
+    .p16-widget .reveal{animation:p16reveal 220ms ease both}
+    .p16-widget .loss-move{animation:p16move 300ms ease both}
+    @keyframes p16draw{from{stroke-dashoffset:500}to{stroke-dashoffset:0}}
+    @keyframes p16reveal{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+    @keyframes p16move{from{opacity:0;transform:translateX(-36px)}to{opacity:1;transform:translateX(0)}}
+    @media(prefers-reduced-motion:reduce){.p16-widget *{animation-duration:1ms!important;animation-delay:0ms!important}}
+    .p16-rail{height:58px;display:flex;align-items:center;gap:10px;border-top:1px solid var(--line);padding-top:10px}
+    .p16-rail .progress{display:flex;align-items:center;gap:8px;margin-right:auto}
+    .p16-rail .dot{width:30px;height:6px;background:var(--line)}
+    .p16-rail .dot.done{background:var(--forward)}
+    .p16-rail .dot.now{height:10px;background:var(--focus)}
+    .p16-rail .read{min-width:112px;font:600 var(--fs-label)/1 var(--font-mono);color:var(--muted)}
+    .p16-rail .btn{min-width:104px}
+    .p16-foot{height:73px;display:grid;grid-template-columns:1fr 450px;gap:48px;align-items:start;border-top:1px solid var(--line);padding-top:12px}
+    .p16-foot p{margin:0;font:500 var(--fs-sec)/1.4 var(--font-sans)}
+    .p16-foot .claim{color:var(--text)}
+    .p16-foot .next{color:var(--muted)}
+    .p16-status{position:absolute;left:0;top:0;width:320px;height:30px;opacity:0;pointer-events:none;white-space:nowrap}
+  </style>
+</head>
+<body data-page="16" data-total="21">
+  <div id="stage">
+    <header class="p16-head">
+      <div class="kicker">FORWARD PASS</div>
+      <h1>前向传播，只是逐层重复同一个动作</h1>
+    </header>
+
+    <section class="p16-widget min0" data-p16-widget aria-label="前向传播逐步演示">
+      <div class="p16-canvas min0">
+        <svg data-view viewBox="0 0 1488 560" role="img" aria-labelledby="p16-svg-title p16-svg-desc">
+          <title id="p16-svg-title">固定样本在多层网络中的前向传播</title>
+          <desc id="p16-svg-desc">使用上一步和下一步，观察输入依次经过隐藏层加权汇合、激活、输出层和损失计算。</desc>
+          <defs><marker id="p16-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="context-stroke"/></marker></defs>
+          <g class="stage-label"><text x="42" y="32">输入样本</text><text x="322" y="32">隐藏层</text><text x="875" y="32">输出层</text><text x="1130" y="32">预测</text><text x="1326" y="32">损失</text></g>
+          <g class="step-no"><text x="42" y="55">01</text><text x="322" y="55">02 — 03</text><text x="875" y="55">04</text><text x="1326" y="55">05</text></g>
+
+          <g data-inputs>
+            <rect class="box" data-step-box="1" x="42" y="104" width="188" height="222"/>
+            <text class="node-title" x="66" y="142">固定观察值</text>
+            <text class="formula" x="66" y="190">x₁ = 1</text><text class="formula" x="66" y="230">x₂ = 0</text>
+            <line class="inner-line" x1="66" y1="256" x2="206" y2="256"/>
+            <text class="formula" x="66" y="296">真实答案 y = 1</text>
+          </g>
+
+          <path class="arrow" data-edge="2" d="M230 174 C270 174 278 148 322 148"/>
+          <path class="arrow" data-edge="2" d="M230 242 C270 242 278 365 322 365"/>
+          <g data-hidden="1">
+            <path class="neuron" data-step-box="2" d="M346 82 H690 L724 112 V240 L690 270 H346 L312 240 V112 Z"/>
+            <text class="node-title" x="340" y="113">h₁</text><text class="stage-label" x="390" y="113">加权汇合 → sigmoid</text>
+            <text class="formula" data-at="2" x="340" y="158">1×0.8 + 0×(−0.4) + 0.2 = 1.000</text>
+            <line class="inner-line" data-inner="3" x1="340" y1="184" x2="690" y2="184"/>
+            <text class="formula" data-at="3" x="340" y="222">sigmoid(1.000) = </text><text class="value" data-at="3" x="550" y="222">0.731</text>
+          </g>
+          <g data-hidden="2">
+            <path class="neuron" data-step-box="2" d="M346 294 H690 L724 324 V452 L690 482 H346 L312 452 V324 Z"/>
+            <text class="node-title" x="340" y="325">h₂</text><text class="stage-label" x="390" y="325">加权汇合 → sigmoid</text>
+            <text class="formula" data-at="2" x="340" y="370">1×(−0.2) + 0×0.5 + 0.2 = 0.000</text>
+            <line class="inner-line" data-inner="3" x1="340" y1="396" x2="690" y2="396"/>
+            <text class="formula" data-at="3" x="340" y="434">sigmoid(0.000) = </text><text class="value" data-at="3" x="550" y="434">0.500</text>
+          </g>
+
+          <path class="arrow" data-edge="4" d="M724 176 C780 176 800 232 854 256"/>
+          <path class="arrow" data-edge="4" d="M724 388 C780 388 800 332 854 308"/>
+          <g>
+            <path class="neuron" data-step-box="4" d="M888 144 H1060 L1092 174 V390 L1060 420 H888 L856 390 V174 Z"/>
+            <text class="node-title" x="884" y="184">输出神经元</text>
+            <text class="formula" data-at="4" x="884" y="238">0.731×1.0 +</text><text class="formula" data-at="4" x="884" y="270">0.500×(−1.0) + 0</text><text class="value" data-at="4" x="884" y="306">= 0.231</text>
+            <line class="inner-line" data-inner="4" x1="884" y1="330" x2="1064" y2="330"/>
+            <text class="formula" data-at="4" x="884" y="370">sigmoid → </text><text class="value" data-at="4" x="986" y="370">0.558</text>
+          </g>
+          <path class="arrow" data-edge="4" d="M1092 282 H1130"/>
+          <g data-at="4"><rect class="box" x="1130" y="194" width="160" height="176"/><text class="node-title" x="1154" y="230">预测</text><text class="value" x="1154" y="283">0.558</text><text class="formula muted" x="1154" y="326">约 56 次判为 1</text></g>
+          <path class="arrow" data-edge="5" d="M1290 282 H1324"/>
+          <g data-at="5" class="loss-move"><rect class="box" data-step-box="5" x="1324" y="170" width="128" height="224"/><text class="node-title" x="1346" y="208">交叉熵</text><text class="formula" x="1346" y="250">y = 1</text><text class="formula" x="1346" y="284">ŷ = 0.558</text><line class="inner-line" x1="1346" y1="308" x2="1430" y2="308"/><text class="value" x="1346" y="352">0.584</text></g>
+        </svg>
+      </div>
+      <div class="p16-rail">
+        <div class="progress" aria-hidden="true"><i class="dot"></i><i class="dot"></i><i class="dot"></i><i class="dot"></i><i class="dot"></i></div>
+        <output class="read" data-read>步骤 01 / 05</output>
+        <div class="btns">
+          <button class="btn" type="button" data-prev>上一步</button>
+          <button class="btn" type="button" data-next>下一步</button>
+          <button class="btn" type="button" data-play>自动播放</button>
+          <button class="btn" type="button" data-reset>重新开始</button>
+        </div>
+      </div>
+      <div class="p16-status" data-status aria-live="polite"></div>
+    </section>
+
+    <footer class="p16-foot">
+      <p class="claim">每一层都做“加权汇合—激活”；最后得到预测，再与真实答案合成一个损失数。</p>
+      <p class="next">已经知道错了多少，怎样把修改责任送回每一层？</p>
+    </footer>
+  </div>
+  <script src="assets/base.js"></script>
+  <script src="assets/lec.js"></script>
+  <script>
+  (()=>{
+    const root=document.querySelector('[data-p16-widget]'); if(!root||!window.Lec) return;
+    const hidden1=Lec.P.neuronForward([1,0],[0.8,-0.4],0.2,'sigmoid');
+    const hidden2=Lec.P.neuronForward([1,0],[-0.2,0.5],0.2,'sigmoid');
+    const output=Lec.P.neuronForward([hidden1.output,hidden2.output],[1,-1],0,'sigmoid');
+    const loss=Lec.P.binaryCrossEntropy([output.output],[1]);
+    const labels=['输入样本已固定','隐藏层完成加权汇合','隐藏层完成激活','输出层得到预测','真实答案与预测合成损失'];
+    const initial=()=>({step:1,running:false}); let state=initial(), timer=0, destroyed=false;
+    const q=s=>root.querySelector(s), qa=s=>[...root.querySelectorAll(s)];
+    const view=q('[data-view]'), read=q('[data-read]'), status=q('[data-status]'), play=q('[data-play]');
+    function stop(){if(timer) clearTimeout(timer);timer=0;state.running=false;}
+    function render(announce=false){
+      qa('[data-at]').forEach(el=>{const on=state.step>=+el.dataset.at;el.style.display=on?'':'none';if(on) el.classList.add('reveal')});
+      qa('[data-edge]').forEach(el=>{const on=state.step>=+el.dataset.edge;el.style.visibility=on?'visible':'hidden';el.classList.toggle('active',on)});
+      qa('[data-step-box]').forEach(el=>{const n=+el.dataset.stepBox;el.classList.toggle('current',n===state.step);el.classList.toggle('done',n<state.step)});
+      qa('[data-inner]').forEach(el=>el.classList.toggle('inner-active',state.step>=+el.dataset.inner));
+      qa('.dot').forEach((el,i)=>{el.classList.toggle('done',i+1<state.step);el.classList.toggle('now',i+1===state.step)});
+      read.textContent=`步骤 ${String(state.step).padStart(2,'0')} / 05`;
+      q('[data-prev]').disabled=state.step===1;q('[data-next]').disabled=state.step===5;
+      play.textContent=state.running?'暂停':'自动播放';
+      if(announce) status.textContent=labels[state.step-1];
+    }
+    function setStep(n,announce=true){state.step=Math.max(1,Math.min(5,n));render(announce);}
+    function advance(){if(state.step<5){setStep(state.step+1);return true}stop();render();return false}
+    function schedule(){if(!state.running)return;timer=setTimeout(()=>{timer=0;if(advance()&&state.step<5)schedule();else{stop();render()}},740)}
+    function togglePlay(){if(state.running){stop();render(true)}else if(state.step<5){state.running=true;render(true);schedule()}}
+    function prev(){stop();setStep(state.step-1)} function next(){stop();setStep(state.step+1)}
+    function reset(){stop();state=initial();render(true)}
+    q('[data-prev]').addEventListener('click',prev);q('[data-next]').addEventListener('click',next);play.addEventListener('click',togglePlay);q('[data-reset]').addEventListener('click',reset);
+    function keys(e){if(!root.contains(document.activeElement))return;if(e.key==='ArrowLeft'){e.preventDefault();e.stopPropagation();prev()}else if(e.key==='ArrowRight'){e.preventDefault();e.stopPropagation();next()}else if(e.key===' '){e.preventDefault();e.stopPropagation();togglePlay()}else if(e.key==='Home'){e.preventDefault();e.stopPropagation();reset()}}
+    root.addEventListener('keydown',keys);
+    root.dataset.computed=`${hidden1.output},${hidden2.output},${output.output},${loss.value}`;
+    render();
+    root.destroyP16=()=>{if(destroyed)return;destroyed=true;stop();q('[data-prev]').removeEventListener('click',prev);q('[data-next]').removeEventListener('click',next);play.removeEventListener('click',togglePlay);q('[data-reset]').removeEventListener('click',reset);root.removeEventListener('keydown',keys);delete root.destroyP16};
+    Deck.init({index:16,total:21});
+  })();
+  </script>
+</body>
+</html>

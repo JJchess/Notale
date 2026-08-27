@@ -1,0 +1,225 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>同一旋钮试两边，罚分更小的一边就是下坡</title>
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  #stage{gap:18px;}
+  .p11-head{flex:0 0 104px;display:flex;flex-direction:column;justify-content:flex-end;border-bottom:1px solid var(--line);padding-bottom:18px;}
+  .p11-kicker{font:700 var(--fs-label)/1 var(--font-mono);letter-spacing:.13em;color:var(--accent);margin-bottom:10px;}
+  .p11-head h1{margin:0;font:700 var(--fs-h1)/1.16 var(--font-sans);color:var(--text);}
+  .p11-widget{--iw-side:var(--accent);--iw-loss:var(--error);flex:1;min-height:0;display:grid;grid-template-rows:238px minmax(0,1fr) 82px;gap:16px;}
+  .p11-widget *{box-sizing:border-box;}
+  .p11-widget .iw-upper{display:grid;grid-template-columns:420px minmax(0,1fr);gap:42px;min-width:0;}
+  .p11-widget .iw-conditions{display:flex;flex-direction:column;justify-content:center;padding:20px 26px;border:1px solid var(--line);border-radius:14px;background:#E8E3D7;}
+  .p11-widget .iw-conditions h2{margin:0 0 14px;font:700 var(--fs-h2)/1.2 var(--font-sans);}
+  .p11-widget .iw-condition{display:flex;align-items:baseline;gap:10px;padding:7px 0;font:var(--fs-sec)/1.35 var(--font-sans);color:var(--muted);}
+  .p11-widget .iw-condition+.iw-condition{border-top:1px solid color-mix(in srgb,var(--line) 70%,transparent);}
+  .p11-widget .iw-condition strong{color:var(--text);font-family:var(--font-mono);font-weight:650;}
+  .p11-widget .iw-instrument{display:grid;grid-template-columns:190px 1fr 190px;align-items:center;gap:22px;min-width:0;padding:14px 24px;border:1px solid var(--line);border-radius:14px;background:#E8E3D7;}
+  .p11-widget .iw-probe{height:62px;border:1px solid var(--line);background:transparent;border-radius:10px;font:650 var(--fs-body)/1 var(--font-sans);color:var(--text);cursor:pointer;transition:background .14s ease,border-color .14s ease,transform .14s ease;}
+  .p11-widget .iw-probe:hover{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 8%,transparent);}
+  .p11-widget .iw-probe:active{transform:translateY(1px);}
+  .p11-widget .iw-probe[aria-pressed="true"]{border-color:var(--accent);color:var(--accent);background:color-mix(in srgb,var(--accent) 9%,transparent);}
+  .p11-widget .iw-knob-area{height:208px;position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;}
+  .p11-widget .iw-knob-label{position:absolute;top:7px;font:600 var(--fs-label)/1 var(--font-sans);color:var(--muted);}
+  .p11-widget .iw-knob{width:132px;height:132px;border-radius:50%;position:relative;background:color-mix(in srgb,var(--text) 8%,var(--bg));border:2px solid var(--text);box-shadow:inset 0 0 0 12px color-mix(in srgb,var(--bg) 85%,transparent);}
+  .p11-widget .iw-knob::before{content:"";position:absolute;left:50%;top:16px;width:4px;height:49px;border-radius:3px;background:var(--accent);transform-origin:2px 50px;transform:translateX(-2px) rotate(var(--turn,0deg));transition:transform .24s ease;}
+  .p11-widget .iw-knob::after{content:"w₁";position:absolute;inset:0;display:grid;place-items:center;padding-top:28px;font:700 24px/1 var(--font-mono);color:var(--text);}
+  .p11-widget .iw-tick{position:absolute;top:90px;font:var(--fs-tick)/1 var(--font-mono);color:var(--muted);}
+  .p11-widget .iw-tick.left{left:8px}.p11-widget .iw-tick.mid{left:50%;transform:translateX(-50%)}.p11-widget .iw-tick.right{right:8px}
+  .p11-widget .iw-origin{position:absolute;bottom:4px;font:600 var(--fs-sec)/1 var(--font-mono);color:var(--text);}
+  .p11-widget .iw-compare{position:relative;display:grid;grid-template-columns:1fr 1fr 1fr;align-items:stretch;min-height:0;border-top:1px solid var(--line);border-bottom:1px solid var(--line);}
+  .p11-widget .iw-calibration{position:absolute;inset:8px 0;z-index:0;width:100%;height:calc(100% - 16px);pointer-events:none;opacity:.34;}
+  .p11-widget .iw-col{z-index:1;}
+  .p11-widget .iw-col{position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;min-width:0;margin:12px;padding:18px 32px;text-align:center;border-radius:12px;background:#E3DED2;}
+  .p11-widget .iw-col+.iw-col{border-left:1px solid var(--line);}
+  .p11-widget .iw-col[data-state="pending"]{color:var(--muted);}
+  .p11-widget .iw-col[data-state="lower"]{background:color-mix(in srgb,var(--signal) 8%,transparent);}
+  .p11-widget .iw-col[data-state="lower"]::after{content:"下坡";position:absolute;top:14px;right:18px;padding:4px 10px;border:1px solid var(--signal);border-radius:999px;font:700 var(--fs-label)/1 var(--font-sans);color:var(--signal);}
+  .p11-widget .iw-side{font:650 var(--fs-body)/1.2 var(--font-sans);margin-bottom:8px;}
+  .p11-widget .iw-param{font:600 var(--fs-sec)/1.2 var(--font-mono);color:var(--muted);min-height:20px;}
+  .p11-widget .iw-loss-label{margin-top:20px;font:var(--fs-label)/1.2 var(--font-sans);color:var(--muted);}
+  .p11-widget .iw-reading{height:65px;display:flex;align-items:baseline;justify-content:center;color:var(--error);font-family:var(--font-mono);font-variant-numeric:tabular-nums;}
+  .p11-widget .iw-reading .num{font-size:44px;font-weight:700;letter-spacing:-.03em;}
+  .p11-widget .iw-reading.pending{color:var(--muted);font-size:30px;letter-spacing:.08em;}
+  .p11-widget .iw-lossbar{width:92%;height:76px;position:relative;margin:4px 0 10px;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:repeating-linear-gradient(90deg,#EEE9DE 0 calc(10% - 1px),#B9B3A7 calc(10% - 1px) 10%);}
+  .p11-widget .iw-lossbar::after{content:"";position:absolute;left:0;top:0;bottom:0;width:var(--fill,0%);background:repeating-linear-gradient(135deg,#D9B7B2 0 10px,#C99D97 10px 12px);border-right:2px solid var(--error);transition:width .22s ease;}
+  .p11-widget .iw-lossbar.pending::after{display:none;}
+  .p11-widget .iw-lossbar.pending{background:repeating-linear-gradient(135deg,transparent 0 10px,color-mix(in srgb,var(--line) 30%,transparent) 10px 12px);}
+  .p11-widget .iw-scale{width:88%;display:flex;justify-content:space-between;font:var(--fs-tick)/1 var(--font-mono);color:var(--muted);}
+  .p11-widget .iw-delta{min-height:26px;font:650 var(--fs-sec)/1.3 var(--font-mono);color:var(--muted);}
+  .p11-widget .iw-delta.down{color:var(--signal);}.p11-widget .iw-delta.up{color:var(--error);}
+  .p11-widget .iw-bottom{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:28px;min-width:0;}
+  .p11-widget .iw-message{font:600 var(--fs-lead)/1.38 var(--font-serif);color:var(--text);}
+  .p11-widget .iw-message strong{color:var(--signal);font-family:var(--font-sans);}
+  .p11-widget .iw-actions{display:flex;align-items:center;gap:12px;}
+  .p11-widget .iw-reset{min-width:132px;height:46px;border:1px solid var(--line);border-radius:9px;background:transparent;color:var(--text);font:600 var(--fs-label)/1 var(--font-sans);cursor:pointer;}
+  .p11-widget .iw-reset:hover{border-color:var(--accent);}
+  .p11-widget button:focus-visible{outline:3px solid var(--focus);outline-offset:3px;}
+  .p11-widget .iw-footer{font:var(--fs-sec)/1.35 var(--font-sans);color:var(--muted);border-top:1px solid var(--line);padding-top:12px;display:flex;justify-content:space-between;gap:32px;}
+  .p11-widget .iw-footer .conclusion{color:var(--text);}
+  .p11-widget .iw-next{white-space:nowrap;}
+  @media (prefers-reduced-motion:reduce){.p11-widget .iw-knob::before,.p11-widget .iw-probe{transition:none;}}
+</style>
+</head>
+<body data-page="11" data-total="22">
+<div id="stage">
+  <header class="p11-head">
+    <div class="p11-kicker">ONE KNOB · TWO SIDES</div>
+    <h1>同一旋钮试两边，罚分更小的一边就是下坡</h1>
+  </header>
+
+  <main class="p11-widget min0" data-p11-widget>
+    <section class="iw-upper min0" aria-label="探路操作区">
+      <div class="iw-conditions">
+        <h2>固定条件</h2>
+        <div class="iw-condition"><span>试探步长</span><strong>0.01</strong></div>
+        <div class="iw-condition"><span>只改变</span><strong>w₁</strong></div>
+        <div class="iw-condition"><span>保持不动</span><strong>w₂=0.40，b=−0.20</strong></div>
+        <div class="iw-condition"><span>比较口径</span><strong>4 个样本的平均罚分</strong></div>
+      </div>
+
+      <div class="iw-instrument min0">
+        <button class="iw-probe" type="button" data-probe="left" aria-pressed="false">试 −0.01</button>
+        <div class="iw-knob-area" aria-label="w₁ 旋钮，出发位置负 0.80">
+          <div class="iw-knob-label">临时试探，随后回到原点</div>
+          <div class="iw-knob" data-knob aria-hidden="true"></div>
+          <span class="iw-tick left">−0.81</span><span class="iw-tick mid">−0.80</span><span class="iw-tick right">−0.79</span>
+          <div class="iw-origin" data-knob-value>w₁ = −0.80</div>
+        </div>
+        <button class="iw-probe" type="button" data-probe="right" aria-pressed="false">试 +0.01</button>
+      </div>
+    </section>
+
+    <section class="iw-compare k-comparison min0" aria-label="三个位置的平均罚分对照">
+      <svg class="iw-calibration" viewBox="0 0 1488 330" preserveAspectRatio="none" aria-hidden="true">
+        <g fill="none" stroke="#8E918F" stroke-width="1">
+          <path d="M0 55H1488M0 110H1488M0 165H1488M0 220H1488M0 275H1488" stroke-dasharray="8 10"/>
+          <path d="M248 0V330M744 0V330M1240 0V330"/>
+        </g>
+      </svg>
+      <article class="iw-col" data-col="left" data-state="pending">
+        <div class="iw-side">左边</div><div class="iw-param" data-param>等待试探</div>
+        <div class="iw-loss-label">平均罚分</div><div class="iw-reading pending" data-reading>····</div>
+        <div class="iw-lossbar pending" data-bar style="--fill:76%"></div><div class="iw-scale"><span>0.875</span><span>0.895</span></div>
+        <div class="iw-delta" data-delta>与原点比较</div>
+      </article>
+      <article class="iw-col" data-col="origin" data-state="origin">
+        <div class="iw-side">原点</div><div class="iw-param">w₁ = −0.80</div>
+        <div class="iw-loss-label">平均罚分</div><div class="iw-reading"><span class="num">0.8868</span></div>
+        <div class="iw-lossbar" style="--fill:58.8%"></div><div class="iw-scale"><span>0.875</span><span>0.895</span></div>
+        <div class="iw-delta">出发位置</div>
+      </article>
+      <article class="iw-col" data-col="right" data-state="pending">
+        <div class="iw-side">右边</div><div class="iw-param" data-param>等待试探</div>
+        <div class="iw-loss-label">平均罚分</div><div class="iw-reading pending" data-reading>····</div>
+        <div class="iw-lossbar pending" data-bar style="--fill:76%"></div><div class="iw-scale"><span>0.875</span><span>0.895</span></div>
+        <div class="iw-delta" data-delta>与原点比较</div>
+      </article>
+    </section>
+
+    <section class="iw-bottom" aria-label="探路判断">
+      <div class="iw-message" data-message aria-live="polite">先任选一边试探，再到另一边核对。</div>
+      <div class="iw-actions"><button class="iw-reset" type="button" data-reset>重新探路</button></div>
+    </section>
+
+    <footer class="iw-footer">
+      <div class="conclusion">不必先知道复杂公式：把参数轻推向两边，比较罚分，就能判断该往哪边改。</div>
+      <div class="iw-next">找到下坡方向后，算法怎样真正迈出一步？</div>
+    </footer>
+  </main>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script>
+(() => {
+  const root = document.querySelector('[data-p11-widget]');
+  if (!root) return;
+
+  const expected = Object.freeze({
+    origin: { w: -0.80, loss: 0.886756844 },
+    left:   { w: -0.81, loss: 0.890203942 },
+    right:  { w: -0.79, loss: 0.883320381 }
+  });
+  const initial = () => ({ triedLeft:false, triedRight:false, pulse:null });
+  let state = initial();
+  let returnTimer = 0;
+  let destroyed = false;
+
+  const knob = root.querySelector('[data-knob]');
+  const knobValue = root.querySelector('[data-knob-value]');
+  const message = root.querySelector('[data-message]');
+  const buttons = {
+    left: root.querySelector('[data-probe="left"]'),
+    right: root.querySelector('[data-probe="right"]')
+  };
+  const cols = {
+    left: root.querySelector('[data-col="left"]'),
+    right: root.querySelector('[data-col="right"]')
+  };
+  const reset = root.querySelector('[data-reset]');
+
+  function fmtW(v){ return (v < 0 ? '−' : '') + Math.abs(v).toFixed(2); }
+  function renderColumn(side){
+    const shown = side === 'left' ? state.triedLeft : state.triedRight;
+    const col = cols[side];
+    const rec = expected[side];
+    const reading = col.querySelector('[data-reading]');
+    const delta = col.querySelector('[data-delta]');
+    const bar = col.querySelector('[data-bar]');
+    col.querySelector('[data-param]').textContent = shown ? `w₁ = ${fmtW(rec.w)}` : '等待试探';
+    reading.className = `iw-reading${shown ? '' : ' pending'}`;
+    reading.innerHTML = shown ? `<span class="num">${rec.loss.toFixed(4)}</span>` : '····';
+    bar.classList.toggle('pending', !shown);
+    if (!shown){ delta.textContent='与原点比较'; delta.className='iw-delta'; col.dataset.state='pending'; return; }
+    const d = rec.loss - expected.origin.loss;
+    delta.textContent = `${d > 0 ? '+' : '−'}${Math.abs(d).toFixed(4)} · 罚分${d > 0 ? '升高' : '降低'}`;
+    delta.className = `iw-delta ${d > 0 ? 'up' : 'down'}`;
+    col.dataset.state = state.triedLeft && state.triedRight && side === 'right' ? 'lower' : 'shown';
+  }
+  function render(){
+    renderColumn('left'); renderColumn('right');
+    buttons.left.setAttribute('aria-pressed', String(state.triedLeft));
+    buttons.right.setAttribute('aria-pressed', String(state.triedRight));
+    const turn = state.pulse === 'left' ? -20 : state.pulse === 'right' ? 20 : 0;
+    knob.style.setProperty('--turn', `${turn}deg`);
+    knobValue.textContent = state.pulse ? `w₁ = ${fmtW(expected[state.pulse].w)}` : 'w₁ = −0.80';
+    if (state.triedLeft && state.triedRight) message.innerHTML='<strong>+0.01 方向是下坡</strong>：右边的平均罚分最低。';
+    else if (state.triedLeft || state.triedRight) message.textContent='还差另一边；两边都试过，方向判断才成立。';
+    else message.textContent='先任选一边试探，再到另一边核对。';
+  }
+  function stopPulse(){
+    if (returnTimer) window.clearTimeout(returnTimer);
+    returnTimer = 0;
+  }
+  function probe(side){
+    if (destroyed) return;
+    stopPulse();
+    state = {...state, [side === 'left' ? 'triedLeft' : 'triedRight']:true, pulse:side};
+    render();
+    const rec = expected[side];
+    returnTimer = window.setTimeout(() => { state={...state,pulse:null}; render(); returnTimer=0; }, Deck.reduced() ? 0 : 420);
+  }
+  function onLeft(){ probe('left'); }
+  function onRight(){ probe('right'); }
+  function onReset(){ stopPulse(); state=initial(); render(); }
+  buttons.left.addEventListener('click',onLeft);
+  buttons.right.addEventListener('click',onRight);
+  reset.addEventListener('click',onReset);
+  render();
+  root.destroyP11 = () => {
+    if (destroyed) return; destroyed=true; stopPulse();
+    buttons.left.removeEventListener('click',onLeft);
+    buttons.right.removeEventListener('click',onRight);
+    reset.removeEventListener('click',onReset);
+    delete root.destroyP11;
+  };
+  Deck.init({index:11,total:22});
+})();
+</script>
+</body>
+</html>

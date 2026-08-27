@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>梯度把下坡写成方向与敏感度</title>
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+:root{--bg:#F4F1E8;--text:#1E252B;--font-sans:"DejaVu Sans","Noto Sans CJK SC",sans-serif;--focus:#E56B2F}
+#stage{padding:28px 56px;display:flex;flex-direction:column;gap:16px;overflow:hidden}
+.head{height:96px;display:flex;flex-direction:column;justify-content:flex-start;border-bottom:1px solid var(--rule);padding-bottom:8px}
+.kicker{margin:0 0 8px;color:var(--muted);font-family:var(--font-mono);font-size:var(--fs-label);font-weight:700;letter-spacing:.12em}
+h1{margin:0;font-family:var(--font-sans);font-size:var(--fs-h1);line-height:1.08;letter-spacing:-.02em}
+.main{flex:1;display:grid;grid-template-columns:430px minmax(0,1fr);gap:64px;min-height:0}
+.controls{display:flex;flex-direction:column;gap:8px;min-height:0}
+.sample{font-size:var(--fs-sec);line-height:1.4;color:var(--muted)}
+.sample strong{color:var(--text);font-weight:700}
+.panel.instrument{padding:16px 24px;border:1px solid var(--rule);background:var(--surface);display:flex;flex-direction:column;gap:8px}
+.labelrow{display:flex;justify-content:space-between;align-items:baseline;gap:16px}
+.ctl-label{font-size:var(--fs-label);font-weight:700;color:var(--muted)}
+.knob{border:2px solid var(--text);border-radius:18px;padding:8px 24px;display:flex;align-items:baseline;justify-content:space-between;background:var(--bg)}
+.knob.on{border-width:3px;border-color:var(--attention)}
+.knob .symbol{font-family:var(--font-mono);font-size:var(--fs-body);font-weight:700}
+.knob .num{font-size:var(--fs-h2);color:var(--attention)}
+input[type=range]{width:100%;accent-color:var(--attention);height:28px;margin:0}
+.range-ends{display:flex;justify-content:space-between;font-family:var(--font-mono);font-size:var(--fs-label);color:var(--muted)}
+.btns{display:flex;gap:8px}.btn{font-size:var(--fs-label);min-height:42px;padding:8px 16px}
+.btn.grow{flex:1}.btn.reset{align-self:flex-start;background:transparent}
+.readouts{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.big{padding:8px 16px;border:1px solid var(--rule);background:var(--bg);min-width:0}
+.big .read-label{font-size:var(--fs-label);color:var(--muted);font-weight:700;margin-bottom:8px}
+.big .num{font-size:30px;line-height:1.05}.big.prediction .num{color:var(--prediction)}
+.meter{border-top:1px solid var(--rule);padding-top:8px;display:flex;flex-direction:column;gap:4px}
+.meter .bigline{display:flex;justify-content:space-between;align-items:baseline;gap:16px}
+.meter .grad{font-family:var(--font-mono);font-size:var(--fs-h2);font-variant-numeric:tabular-nums}
+.interpret{font-size:var(--fs-body);line-height:1.4;font-weight:700}.interpret .dir{color:var(--attention)}
+.explain{font-size:var(--fs-sec);line-height:1.45;color:var(--muted);margin:0}
+.visual{display:flex;flex-direction:column;gap:16px;min-width:0;min-height:0}
+.figure{margin:0;display:flex;flex-direction:column;gap:8px;min-height:0;flex:1}
+.chart{height:400px;min-height:0;border-bottom:1px solid var(--rule)}
+figcaption{font-size:var(--fs-label);color:var(--muted);line-height:1.35}
+.probes{display:grid;grid-template-columns:1fr 1fr 1fr;border:1px solid var(--rule)}
+.probe{padding:16px 20px;min-width:0}.probe+.probe{border-left:1px solid var(--rule)}
+.probe.current{border-top:3px solid var(--attention);padding-top:14px}
+.probe .name{font-size:var(--fs-label);font-weight:700;color:var(--muted);margin-bottom:8px}
+.probe .wv{font-family:var(--font-mono);font-size:var(--fs-sec);font-weight:700}
+.probe .loss{font-size:var(--fs-body);line-height:1.35;margin-top:4px}.probe .loss span{font-family:var(--font-mono);font-variant-numeric:tabular-nums}
+.note-row{display:flex;justify-content:space-between;gap:24px;align-items:flex-start}
+.note-row .note{max-width:70%;line-height:1.4}.micro{font-family:var(--font-mono);font-size:var(--fs-label);color:var(--muted);white-space:nowrap}
+.foot{height:96px;border-top:1px solid var(--rule);padding-top:8px;display:grid;grid-template-columns:minmax(0,1fr) 470px;gap:40px;align-items:start}
+.claim{font-family:var(--font-serif);font-size:var(--fs-lead);line-height:1.35;margin:0}
+.next{font-size:var(--fs-sec);color:var(--muted);line-height:1.4;max-width:470px;text-align:right}
+button:focus-visible,input:focus-visible{outline:3px solid var(--focus);outline-offset:3px}
+@media (prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;transition:none!important}}
+</style>
+</head>
+<body data-page="10" data-total="21">
+<div id="stage">
+  <header class="head">
+    <p class="kicker">PROBE · LOCAL</p>
+    <h1>梯度把下坡写成方向与敏感度</h1>
+  </header>
+
+  <main class="main min0">
+    <section class="controls min0" aria-label="坡面探针控制">
+      <div class="sample"><strong>固定样本</strong>　x = 1，偏置 b = 0；预测 ŷ = sigmoid(w)</div>
+      <div class="panel instrument">
+        <div class="labelrow"><span class="ctl-label">选择真实答案 y</span><span class="ctl-label">当前样本</span></div>
+        <div class="btns" role="group" aria-label="真实答案">
+          <button class="btn grow" id="target1" type="button" aria-pressed="true">真实答案 1</button>
+          <button class="btn grow" id="target0" type="button" aria-pressed="false">真实答案 0</button>
+        </div>
+        <div class="knob on" aria-label="当前参数">
+          <span class="symbol">参数 w</span><span class="num" id="wRead">−1.00</span>
+        </div>
+        <label class="ctl-label" for="wRange">拖动参数，比较当前位置两侧的损失</label>
+        <input id="wRange" type="range" min="-4" max="4" step="0.1" value="-1" aria-describedby="liveStatus">
+        <div class="range-ends"><span>−4.00</span><span>0</span><span>4.00</span></div>
+        <div class="readouts">
+          <div class="big prediction"><div class="read-label">预测 ŷ</div><span class="num" id="predRead">0.269</span></div>
+          <div class="big"><div class="read-label">当前损失 L</div><span class="num" id="lossRead">1.313</span></div>
+        </div>
+        <div class="meter" aria-label="梯度仪表">
+          <div class="bigline"><span class="ctl-label">局部梯度</span><span class="grad" id="gradRead">−0.731</span></div>
+          <div class="interpret"><span class="dir" id="dirRead">下坡：向右</span>　<span id="sensRead">敏感度：0.731</span></div>
+          <p class="explain">梯度先读成“参数轻微变化时，损失变化的方向和快慢”。符号给出上升方向；更新应取相反方向。绝对值表示此刻的局部敏感度。</p>
+        </div>
+        <button class="btn reset" id="reset" type="button">复位探针</button>
+      </div>
+    </section>
+
+    <section class="visual min0" aria-label="一维损失曲线与探针">
+      <figure class="figure" aria-labelledby="chartCaption">
+        <div id="chart" class="chart" data-chart role="img" aria-label="参数 w 从负四到正四时当前样本损失的曲线，标出左试、当前和右试三个位置以及下坡方向"></div>
+        <figcaption id="chartCaption">横轴是参数 w，纵轴是这个样本的损失 L。橙色箭头从当前点指向局部下坡方向。</figcaption>
+      </figure>
+      <div class="probes k-comparison" aria-label="三个探针的同尺度读数">
+        <div class="probe"><div class="name">左试 · w − 0.25</div><div class="wv" id="leftW">w = −1.25</div><div class="loss">损失 <span id="leftLoss">≈ 1.502</span></div></div>
+        <div class="probe current"><div class="name">当前 · w</div><div class="wv" id="curW">w = −1.00</div><div class="loss">损失 <span id="curLoss">≈ 1.313</span></div></div>
+        <div class="probe"><div class="name">右试 · w + 0.25</div><div class="wv" id="rightW">w = −0.75</div><div class="loss">损失 <span id="rightLoss">≈ 1.137</span></div></div>
+      </div>
+      <div class="note-row">
+        <div id="liveStatus" class="note" aria-live="polite">当前探针读数将在这里同步更新。</div>
+        <div class="micro">数值近似 · 计算步长 0.00001</div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="foot">
+    <p class="claim">梯度可以先读成两件事：旋钮该往哪边转，以及损失对此刻的转动有多敏感。</p>
+    <div class="next">下一问：一个模型有多个旋钮时，这些建议怎样合在一起？</div>
+  </footer>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script src="assets/lib/echarts.min.js"></script>
+<script>
+(function(){
+  'use strict';
+  Deck.init({index:10,total:21});
+  var host=document.getElementById('chart');
+  var chart=echarts.init(host,null,{renderer:'svg'});
+  var state={w:-1,target:1};
+  var probeOffset=0.25;
+  var els={
+    range:document.getElementById('wRange'),w:document.getElementById('wRead'),pred:document.getElementById('predRead'),loss:document.getElementById('lossRead'),grad:document.getElementById('gradRead'),dir:document.getElementById('dirRead'),sens:document.getElementById('sensRead'),
+    leftW:document.getElementById('leftW'),curW:document.getElementById('curW'),rightW:document.getElementById('rightW'),leftLoss:document.getElementById('leftLoss'),curLoss:document.getElementById('curLoss'),rightLoss:document.getElementById('rightLoss'),live:document.getElementById('liveStatus'),t1:document.getElementById('target1'),t0:document.getElementById('target0')
+  };
+  function minus(s){return String(s).replace(/-/g,'−')}
+  function fixed(v,n){return minus(Number(v).toFixed(n))}
+  function predict(w){return Lec.P.neuronForward([1],[w],0,'sigmoid').output}
+  function lossAt(w,target){return Lec.P.binaryCrossEntropy([predict(w)],[target]).value}
+  function gradientAt(w,target){return Lec.P.finiteDifferenceGradient(function(values){return lossAt(values[0],target)},[w],Lec.K.FINITE_DIFFERENCE_STEP)[0]}
+  function curveFor(target){var out=[];for(var i=0;i<=160;i++){var w=-4+i*0.05;out.push([Number(w.toFixed(2)),lossAt(w,target)])}return out}
+  function render(){
+    var w=state.w,t=state.target,p=predict(w),loss=lossAt(w,t),g=gradientAt(w,t);
+    var lw=Math.max(-4,w-probeOffset),rw=Math.min(4,w+probeOffset);
+    var ll=lossAt(lw,t),rl=lossAt(rw,t);
+    var downhill=g>0?'向左':'向右';
+    els.range.value=String(w);els.w.textContent=fixed(w,2);els.pred.textContent=p.toFixed(3);els.loss.textContent=loss.toFixed(3);els.grad.textContent=fixed(g,3);els.dir.textContent='下坡：'+downhill;els.sens.textContent='敏感度：'+Math.abs(g).toFixed(3);
+    els.leftW.textContent='w = '+fixed(lw,2);els.curW.textContent='w = '+fixed(w,2);els.rightW.textContent='w = '+fixed(rw,2);els.leftLoss.textContent='≈ '+ll.toFixed(3);els.curLoss.textContent='≈ '+loss.toFixed(3);els.rightLoss.textContent='≈ '+rl.toFixed(3);
+    els.t1.setAttribute('aria-pressed',String(t===1));els.t0.setAttribute('aria-pressed',String(t===0));els.t1.classList.toggle('on',t===1);els.t0.classList.toggle('on',t===0);
+    var step=(g>0?-0.65:0.65),endW=Math.max(-4,Math.min(4,w+step)),endLoss=lossAt(endW,t);
+    chart.setOption({
+      animation:false,
+      textStyle:{fontFamily:'DejaVu Sans, Noto Sans CJK SC, sans-serif',fontSize:16,color:'#1E252B'},
+      grid:{left:74,right:34,top:34,bottom:58,containLabel:false},
+      tooltip:{trigger:'item',confine:true,backgroundColor:'#F4F1E8',borderColor:'#9CA1A1',textStyle:{fontSize:16,color:'#1E252B'},formatter:function(q){var d=q.value;return q.seriesName+'<br>w = '+fixed(d[0],2)+'<br>损失 L = '+Number(d[1]).toFixed(3)}},
+      xAxis:{type:'value',name:'参数 w',min:-4,max:4,interval:1,nameLocation:'middle',nameGap:38,nameTextStyle:{fontSize:15,fontWeight:700,color:'#596168'},axisLabel:{fontSize:12,color:'#596168',formatter:function(v){return minus(v)}},axisLine:{lineStyle:{color:'#596168'}},axisTick:{lineStyle:{color:'#9CA1A1'}},splitLine:{show:false}},
+      yAxis:{type:'value',name:'样本损失 L',min:0,max:4.2,interval:1,nameGap:44,nameLocation:'middle',nameTextStyle:{fontSize:15,fontWeight:700,color:'#596168'},axisLabel:{fontSize:12,color:'#596168'},axisLine:{show:true,lineStyle:{color:'#596168'}},axisTick:{show:true,lineStyle:{color:'#9CA1A1'}},splitLine:{show:true,lineStyle:{color:'#D5D2C9',width:1}}},
+      series:[
+        {id:'loss-curve',name:'损失曲线',type:'line',data:curveFor(t),showSymbol:false,smooth:false,lineStyle:{color:'#1E252B',width:2},silent:true},
+        {id:'probe-points',name:'探针',type:'scatter',symbolSize:function(v,params){return params.dataIndex===1?17:12},data:[[lw,ll],[w,loss],[rw,rl]],itemStyle:{color:function(params){return params.dataIndex===1?'#E56B2F':'#F4F1E8'},borderColor:'#1E252B',borderWidth:2},z:4},
+        {id:'downhill',name:'下坡方向',type:'line',data:[[w,loss],[endW,endLoss]],symbol:['none','arrow'],symbolSize:14,lineStyle:{color:'#E56B2F',width:3},itemStyle:{color:'#E56B2F'},silent:true,z:5}
+      ]
+    },{notMerge:true});
+    els.live.textContent='参数 w '+fixed(w,2)+'，真实答案 '+t+'，预测 '+p.toFixed(3)+'，损失 '+loss.toFixed(3)+'，梯度 '+fixed(g,3)+'，下坡'+downhill;
+  }
+  function setState(patch){state={w:patch.w!==undefined?patch.w:state.w,target:patch.target!==undefined?patch.target:state.target};render()}
+  els.range.addEventListener('input',function(){setState({w:Number(this.value)})});
+  els.t1.addEventListener('click',function(){setState({target:1})});
+  els.t0.addEventListener('click',function(){setState({target:0})});
+  document.getElementById('reset').addEventListener('click',function(){setState({w:-1,target:1})});
+  var ro=new ResizeObserver(function(){chart.resize()});ro.observe(host);
+  window.addEventListener('pagehide',function cleanup(){ro.disconnect();chart.dispose()},{once:true});
+  render();
+})();
+</script>
+</body>
+</html>

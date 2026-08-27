@@ -14,6 +14,7 @@
 - Keep paragraph measures readable and labels close to their referents.
 - Verify projected size after stage scaling, not only CSS declarations.
 - Give formulas enough base size for nested KaTeX glyphs.
+- Cross-check visible prose against `workflows/scrub-copy-slop.md`: opening filler, transition filler, unearned praise-frame claims, and unsourced citations.
 
 ## Interaction and states
 
@@ -29,6 +30,7 @@
 - Remove decoration that does not clarify subject, hierarchy, state, or atmosphere.
 - Prefer the subject's materials and instruments over generic gradients and dashboard styling.
 - Check that motion has an explanatory job and that reduced motion preserves information.
+- Cross-check against `workflows/scrub-visual-slop.md`: gradient-fill headings, three-column icon grids, colored side-stripe borders, italic display headings, fabricated numbers with no traceable source, redrawn device/browser chrome, decorative-only sparklines/rings.
 
 ## Evidence format
 

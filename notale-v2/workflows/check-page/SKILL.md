@@ -9,7 +9,7 @@ Review the rendered artifact, not the source alone. Diagnose first, then make th
 
 ## Reference routing
 
-Before any page mutation for the repair, including `Write`, `Edit`, `Patch`, or a modifying `Bash` command, read [review-lenses.md](references/review-lenses.md). Capture the required page states first when rendered evidence is needed for diagnosis. Do not load unrelated references.
+Before any page mutation for the repair, including `Write`, `Edit`, `Patch`, or a modifying `Bash` command, read [review-lenses.md](references/review-lenses.md). Capture the required page states first when rendered evidence is needed for diagnosis. Also read `workflows/scrub-copy-slop.md` and `workflows/scrub-visual-slop.md` before rewriting copy or visual treatment as part of a repair. Do not load unrelated references.
 
 ## 1. Recover the page contract
 

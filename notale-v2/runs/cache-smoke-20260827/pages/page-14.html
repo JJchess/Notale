@@ -1,0 +1,261 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+#stage{gap:16px}
+.page-head{height:92px;display:flex;flex-direction:column;justify-content:center;gap:7px}
+.page-head .kicker{font-size:var(--fs-label);font-weight:700;letter-spacing:.16em;color:var(--muted)}
+.page-head h1{margin:0;font-size:var(--fs-h1);line-height:1.18;font-weight:700;max-width:1260px}
+#network-builder{flex:1;min-height:0;display:flex;flex-direction:column;gap:14px}
+#network-builder .control-rail{height:52px;display:flex;align-items:center;gap:12px}
+#network-builder .control-rail .hint{margin-right:auto}
+#network-builder .step-btn{min-width:202px;display:inline-flex;justify-content:space-between;gap:14px}
+#network-builder .step-btn strong{font-family:var(--font-mono);font-size:var(--fs-label);font-weight:600}
+#network-builder .step-btn.is-next{border-color:var(--focus);box-shadow:0 0 0 2px color-mix(in srgb,var(--focus) 24%,transparent)}
+#network-builder .step-btn:disabled{opacity:.58;cursor:not-allowed}
+#network-builder .step-btn.is-done:disabled{opacity:1;border-style:dashed;background:transparent}
+#network-builder .reset-btn{margin-left:6px}
+#network-builder .network-field{position:relative;flex:1;min-height:0;border:1px solid var(--line-soft);border-radius:14px;background:color-mix(in srgb,var(--panel-bg) 48%,transparent);overflow:hidden}
+#network-builder .layer-bands{position:absolute;inset:18px 24px 14px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:72px;pointer-events:none}
+#network-builder .layer-band{border:1px solid color-mix(in srgb,var(--line-soft) 60%,transparent);border-radius:12px;background:color-mix(in srgb,var(--paper) 54%,transparent)}
+#network-builder .connections{position:absolute;inset:0;width:100%;height:100%;z-index:1;overflow:visible}
+#network-builder .path{fill:none;stroke:var(--line);stroke-width:3;marker-end:url(#nb-arrow);vector-effect:non-scaling-stroke}
+#network-builder .path.enter{stroke:var(--focus);stroke-dasharray:530;stroke-dashoffset:530;animation:draw-path 220ms ease-out forwards;animation-delay:var(--delay)}
+#network-builder .path.fresh{stroke:var(--focus)}
+@keyframes draw-path{to{stroke-dashoffset:0}}
+#network-builder .layer-grid{position:absolute;inset:18px 24px 14px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:72px;z-index:2}
+#network-builder .layer{min-width:0;display:grid;grid-template-rows:54px minmax(0,1fr) 52px;align-items:center;text-align:center}
+#network-builder .layer-head{display:flex;align-items:center;justify-content:center;gap:10px}
+#network-builder .count{font-family:var(--font-mono);font-size:var(--fs-h2);font-weight:700;color:var(--text)}
+#network-builder .nodes{height:100%;position:relative;display:flex;flex-direction:column;align-items:center;justify-content:space-evenly}
+#network-builder .sample,#network-builder .neuron{position:relative;z-index:2;display:flex;align-items:center;justify-content:center;text-align:center;font-size:var(--fs-label);line-height:1.2;background:var(--paper)}
+#network-builder .sample{width:92px;height:74px}
+#network-builder .neuron{width:82px;height:82px;padding:6px}
+#network-builder .node-new{border-color:var(--focus);color:var(--text);animation:node-in 180ms ease-out both}
+#network-builder .node-fresh{border-color:var(--focus)}
+@keyframes node-in{from{opacity:0;transform:translateX(-12px)}to{opacity:1;transform:translateX(0)}}
+#network-builder .layer-note{align-self:end;min-height:44px;padding:0 16px;font-size:var(--fs-sec);line-height:1.35;color:var(--muted);display:flex;align-items:center;justify-content:center}
+#network-builder .layer-note.pending{color:var(--line-soft)}
+#network-builder .builder-foot{min-height:70px;display:grid;grid-template-columns:320px minmax(0,1fr);gap:24px;align-items:center}
+#network-builder .structure-readout{font-family:var(--font-mono);font-size:30px;font-weight:700;letter-spacing:.08em;color:var(--model);min-height:46px;display:flex;align-items:center}
+#network-builder .claim{margin:0;font-family:var(--font-serif);font-size:var(--fs-lead);line-height:1.4}
+.next-question{min-height:62px;border-top:1px solid var(--line-soft);display:flex;align-items:center;gap:18px;font-size:var(--fs-body)}
+.next-question .label{font-weight:700;color:var(--muted);white-space:nowrap}
+.next-question p{margin:0;font-family:var(--font-serif);font-size:var(--fs-lead)}
+@media (prefers-reduced-motion:reduce){
+  #network-builder .node-new,#network-builder .path.enter{animation:none;stroke-dashoffset:0}
+}
+</style>
+</head>
+<body data-page="14" data-total="21">
+<div id="stage">
+  <header class="page-head">
+    <div class="kicker">LAYER BY LAYER</div>
+    <h1>多层网络没有换算法，只是把神经元接成下一层的输入</h1>
+  </header>
+
+  <main id="network-builder" class="min0" aria-label="搭接三层神经网络">
+    <div class="control-rail">
+      <span class="hint" id="network-status" aria-live="polite">按顺序搭接，观察上一层的输出接到哪里。</span>
+      <button class="btn step-btn is-next" type="button" data-add-hidden><span>搭上隐藏层</span><strong>未搭接</strong></button>
+      <button class="btn step-btn" type="button" data-add-output disabled><span>搭上输出层</span><strong>未搭接</strong></button>
+      <button class="btn reset-btn" type="button" data-reset>重置本页</button>
+    </div>
+
+    <section class="network-field min0" aria-describedby="network-status">
+      <div class="layer-bands" aria-hidden="true"><div class="layer-band"></div><div class="layer-band"></div><div class="layer-band"></div></div>
+      <svg class="connections" viewBox="0 0 1440 430" preserveAspectRatio="none" aria-hidden="true">
+        <defs><marker id="nb-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="context-stroke"></path></marker></defs>
+        <g data-hidden-paths hidden>
+          <path class="path" style="--delay:0ms" d="M267 148 C405 148 515 105 645 105"></path>
+          <path class="path" style="--delay:35ms" d="M267 148 C420 148 505 215 645 215"></path>
+          <path class="path" style="--delay:70ms" d="M267 148 C430 148 505 325 645 325"></path>
+          <path class="path" style="--delay:105ms" d="M267 282 C430 282 505 105 645 105"></path>
+          <path class="path" style="--delay:140ms" d="M267 282 C420 282 505 215 645 215"></path>
+          <path class="path" style="--delay:175ms" d="M267 282 C405 282 515 325 645 325"></path>
+        </g>
+        <g data-output-paths hidden>
+          <path class="path" style="--delay:0ms" d="M727 105 C875 105 1000 215 1137 215"></path>
+          <path class="path" style="--delay:35ms" d="M727 215 L1137 215"></path>
+          <path class="path" style="--delay:70ms" d="M727 325 C875 325 1000 215 1137 215"></path>
+        </g>
+      </svg>
+
+      <div class="layer-grid triptych k-classification">
+        <section class="layer" aria-label="输入层，2 个输入">
+          <div class="layer-head"><span class="tag">输入层</span><span class="count">2</span></div>
+          <div class="nodes"><div class="sample">输入 1</div><div class="sample">输入 2</div></div>
+          <div class="layer-note">两个数值进入网络</div>
+        </section>
+        <section class="layer" aria-label="隐藏层，3 个神经元">
+          <div class="layer-head"><span class="tag">隐藏层</span><span class="count" data-hidden-count>—</span></div>
+          <div class="nodes" data-hidden-nodes hidden><div class="neuron">神经元 A</div><div class="neuron">神经元 B</div><div class="neuron">神经元 C</div></div>
+          <div class="layer-note pending" data-hidden-note>等待搭接</div>
+        </section>
+        <section class="layer" aria-label="输出层，1 个神经元">
+          <div class="layer-head"><span class="tag">输出层</span><span class="count" data-output-count>—</span></div>
+          <div class="nodes" data-output-node hidden><div class="neuron">输出神经元</div></div>
+          <div class="layer-note pending" data-output-note>等待搭接</div>
+        </section>
+      </div>
+    </section>
+
+    <div class="builder-foot">
+      <div class="structure-readout" data-structure aria-label="网络结构数量"></div>
+      <p class="claim" data-claim hidden>每个神经元仍做熟悉的计算；“多层”只表示它的输出还会被后面的神经元继续使用。</p>
+    </div>
+  </main>
+
+  <aside class="next-question">
+    <span class="label">下一问</span>
+    <p>神经元变多、层数变深，真的能解决一条直线解决不了的问题吗？</p>
+  </aside>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script>
+(() => {
+  const root = document.getElementById('network-builder');
+  if (!root) return;
+  const view = {
+    addHidden: root.querySelector('[data-add-hidden]'),
+    addOutput: root.querySelector('[data-add-output]'),
+    reset: root.querySelector('[data-reset]'),
+    hiddenNodes: root.querySelector('[data-hidden-nodes]'),
+    outputNode: root.querySelector('[data-output-node]'),
+    hiddenPaths: root.querySelector('[data-hidden-paths]'),
+    outputPaths: root.querySelector('[data-output-paths]'),
+    hiddenCount: root.querySelector('[data-hidden-count]'),
+    outputCount: root.querySelector('[data-output-count]'),
+    hiddenNote: root.querySelector('[data-hidden-note]'),
+    outputNote: root.querySelector('[data-output-note]'),
+    structure: root.querySelector('[data-structure]'),
+    claim: root.querySelector('[data-claim]'),
+    status: root.querySelector('#network-status')
+  };
+  const reduce = window.matchMedia('(prefers-reduced-motion: reduce)');
+  const timers = new Set();
+  let state = { step: 0, phase: 'ready' };
+  let destroyed = false;
+
+  function later(fn, ms) {
+    const id = window.setTimeout(() => { timers.delete(id); if (!destroyed) fn(); }, ms);
+    timers.add(id);
+  }
+  function cancelWork() { timers.forEach(id => clearTimeout(id)); timers.clear(); }
+  function setButton(button, label, status, kind) {
+    button.querySelector('span').textContent = label;
+    button.querySelector('strong').textContent = status;
+    button.classList.toggle('is-next', kind === 'next');
+    button.classList.toggle('is-done', kind === 'done');
+  }
+  function setFresh(group, fresh, entering) {
+    if (!group) return;
+    group.querySelectorAll('.path').forEach(el => {
+      el.classList.toggle('fresh', fresh && !entering);
+      el.classList.toggle('enter', entering);
+    });
+  }
+  function setNodeFresh(group, fresh, entering) {
+    if (!group) return;
+    group.querySelectorAll('.neuron').forEach(el => {
+      el.classList.toggle('node-fresh', fresh && !entering);
+      el.classList.toggle('node-new', entering);
+    });
+  }
+  function render() {
+    const hiddenVisible = state.step >= 1;
+    const outputVisible = state.step >= 2;
+    const hiddenEntering = state.phase === 'hidden-nodes';
+    const hiddenDrawing = state.phase === 'hidden-lines';
+    const outputEntering = state.phase === 'output-nodes';
+    const outputDrawing = state.phase === 'output-lines';
+    const hiddenFresh = state.phase === 'hidden-fresh';
+    const outputFresh = state.phase === 'output-fresh';
+    const busy = /nodes|lines|fresh/.test(state.phase);
+
+    view.hiddenNodes.hidden = !hiddenVisible;
+    if (hiddenVisible && !hiddenEntering) view.hiddenPaths.removeAttribute('hidden');
+    else view.hiddenPaths.setAttribute('hidden', '');
+    view.outputNode.hidden = !outputVisible;
+    if (outputVisible && !outputEntering) view.outputPaths.removeAttribute('hidden');
+    else view.outputPaths.setAttribute('hidden', '');
+    view.hiddenCount.textContent = hiddenVisible ? '3' : '—';
+    view.outputCount.textContent = outputVisible ? '1' : '—';
+    view.hiddenNote.textContent = hiddenVisible ? '每个神经元接收上一层的输出' : '等待搭接';
+    view.hiddenNote.classList.toggle('pending', !hiddenVisible);
+    view.outputNote.textContent = outputVisible ? '再把隐藏层的三个输出合在一起' : '等待搭接';
+    view.outputNote.classList.toggle('pending', !outputVisible);
+    setNodeFresh(view.hiddenNodes, hiddenFresh || hiddenDrawing, hiddenEntering);
+    setNodeFresh(view.outputNode, outputFresh || outputDrawing, outputEntering);
+    setFresh(view.hiddenPaths, hiddenFresh, hiddenDrawing);
+    setFresh(view.outputPaths, outputFresh, outputDrawing);
+
+    if (state.step === 0) {
+      setButton(view.addHidden, '搭上隐藏层', '未搭接', 'next');
+      setButton(view.addOutput, '搭上输出层', '未搭接', 'idle');
+      view.addHidden.disabled = false; view.addOutput.disabled = true;
+    } else if (state.step === 1) {
+      setButton(view.addHidden, '隐藏层', '已搭接', 'done');
+      setButton(view.addOutput, '搭上输出层', '未搭接', busy ? 'idle' : 'next');
+      view.addHidden.disabled = true; view.addOutput.disabled = busy;
+    } else {
+      setButton(view.addHidden, '隐藏层', '已搭接', 'done');
+      setButton(view.addOutput, '输出层', '已搭接', 'done');
+      view.addHidden.disabled = true; view.addOutput.disabled = true;
+    }
+    view.structure.textContent = outputVisible ? '2 → 3 → 1' : '';
+    view.claim.hidden = !outputVisible || state.phase !== 'complete';
+  }
+  function commit(next, announce) {
+    state = next; render();
+    if (announce) view.status.textContent = announce;
+  }
+  function addHidden() {
+    if (state.step !== 0 || state.phase !== 'ready') return;
+    cancelWork();
+    if (reduce.matches) {
+      commit({ step: 1, phase: 'hidden-done' }, '隐藏层已搭接：两个输入分别接入三个神经元，共六条连接。');
+      return;
+    }
+    commit({ step: 1, phase: 'hidden-nodes' });
+    later(() => commit({ step: 1, phase: 'hidden-lines' }), 180);
+    later(() => commit({ step: 1, phase: 'hidden-fresh' }), 595);
+    later(() => commit({ step: 1, phase: 'hidden-done' }, '隐藏层已搭接：两个输入分别接入三个神经元，共六条连接。'), 1045);
+  }
+  function addOutput() {
+    if (state.step !== 1 || state.phase !== 'hidden-done') return;
+    cancelWork();
+    if (reduce.matches) {
+      commit({ step: 2, phase: 'complete' }, '网络已完成：结构为二接三接一，隐藏层三个输出都接入输出神经元。');
+      return;
+    }
+    commit({ step: 2, phase: 'output-nodes' });
+    later(() => commit({ step: 2, phase: 'output-lines' }), 180);
+    later(() => commit({ step: 2, phase: 'output-fresh' }), 470);
+    later(() => commit({ step: 2, phase: 'complete' }, '网络已完成：结构为二接三接一，隐藏层三个输出都接入输出神经元。'), 920);
+  }
+  function reset() {
+    cancelWork();
+    commit({ step: 0, phase: 'ready' }, '已重置：仅有两个输入节点。可以搭上隐藏层。');
+  }
+  function destroy() {
+    if (destroyed) return;
+    destroyed = true; cancelWork();
+    view.addHidden.removeEventListener('click', addHidden);
+    view.addOutput.removeEventListener('click', addOutput);
+    view.reset.removeEventListener('click', reset);
+  }
+  view.addHidden.addEventListener('click', addHidden);
+  view.addOutput.addEventListener('click', addOutput);
+  view.reset.addEventListener('click', reset);
+  root.destroyNetworkBuilder = destroy;
+  render();
+  Deck.init({ index: 14, total: 21 });
+})();
+</script>
+</body>
+</html>

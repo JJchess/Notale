@@ -1,0 +1,283 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>同一个样本逐层变形，最后成为一次预测</title>
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  #stage{gap:18px;}
+  .p15-head{flex:0 0 82px;display:flex;flex-direction:column;justify-content:flex-end;gap:5px;}
+  .p15-kicker{font:700 var(--fs-label)/1 var(--font-mono);letter-spacing:.12em;color:var(--accent);}
+  .p15-head h1{margin:0;font:700 var(--fs-h1)/1.2 var(--font-sans);color:var(--text);}
+  .forward-widget{flex:0 0 610px;height:610px;min-height:610px;display:grid;grid-template-columns:318px minmax(0,1fr);gap:42px;align-items:stretch;outline:none;}
+  .forward-widget .fw-side{display:flex;flex-direction:column;justify-content:space-between;min-width:0;padding:24px 0 10px;}
+  .forward-widget .sample-area{position:relative;min-height:230px;border-top:1px solid var(--line);border-bottom:1px solid var(--line);padding:22px 0;}
+  .forward-widget .side-label{font:600 var(--fs-label)/1.3 var(--font-sans);color:var(--muted);letter-spacing:.04em;}
+  .forward-widget .sample-card{position:absolute;left:0;top:74px;width:226px;padding:18px 20px;border:2px solid var(--accent);border-radius:12px;background:var(--bg);transition:transform 320ms ease,border-color 160ms ease;}
+  .forward-widget .sample-card.launched{transform:translateX(48px);border-color:var(--signal);}
+  .forward-widget .sample-name{font:700 var(--fs-body)/1.3 var(--font-sans);color:var(--text);margin-bottom:10px;}
+  .forward-widget .sample-values{font:700 22px/1.2 var(--font-mono);font-variant-numeric:tabular-nums;color:var(--text);white-space:nowrap;}
+  .forward-widget .tray{position:absolute;left:0;right:44px;bottom:28px;height:8px;border:1px solid var(--line);border-top:0;border-radius:0 0 8px 8px;}
+  .forward-widget .controls{display:flex;flex-direction:column;gap:13px;}
+  .forward-widget .btns{display:grid;grid-template-columns:1.3fr .8fr 1fr;gap:8px;}
+  .forward-widget .btn{min-height:44px;padding:8px 10px;font-size:var(--fs-label);white-space:nowrap;}
+  .forward-widget .btn.primary{background:var(--accent);border-color:var(--accent);color:var(--bg);font-weight:700;}
+  .forward-widget .btn[disabled]{opacity:.45;cursor:not-allowed;}
+  .forward-widget .progress-head{display:flex;align-items:baseline;justify-content:space-between;gap:12px;font:600 var(--fs-label)/1.3 var(--font-sans);}
+  .forward-widget .progress-head output{font-family:var(--font-mono);font-variant-numeric:tabular-nums;color:var(--signal);}
+  .forward-widget input[type="range"]{width:100%;accent-color:var(--accent);}
+  .forward-widget .stage-names{display:grid;grid-template-columns:repeat(3,1fr);font:var(--fs-tick)/1.2 var(--font-sans);color:var(--muted);text-align:center;}
+  .forward-widget .keyhint{font:var(--fs-label)/1.4 var(--font-sans);color:var(--muted);}
+  .forward-widget .fw-main{position:relative;width:100%;height:100%;min-width:0;min-height:0;align-self:stretch;border:1px solid var(--line);border-radius:16px;background:rgba(255,255,255,.24);overflow:hidden;}
+  .forward-widget .network-title{position:absolute;z-index:3;left:28px;top:22px;font:600 var(--fs-label)/1.3 var(--font-sans);color:var(--muted);}
+  .forward-widget svg{position:absolute;inset:0;width:100%;height:100%;display:block;}
+  .forward-widget .edge{fill:none;stroke:var(--line);stroke-width:2;vector-effect:non-scaling-stroke;marker-end:url(#fw-arrow-neutral);}
+  .forward-widget .edge.passed{stroke:var(--signal);stroke-width:3;marker-end:url(#fw-arrow-signal);}
+  .forward-widget .edge.current{stroke:var(--signal);stroke-width:4;stroke-dasharray:9 8;marker-end:url(#fw-arrow-signal);animation:fw-flow 520ms linear 1;}
+  .forward-widget .signal-dot{fill:var(--signal);opacity:0;}
+  .forward-widget .signal-dot.go{opacity:1;animation:fw-dot 520ms ease-out 1 forwards;}
+  @keyframes fw-flow{from{stroke-dashoffset:34}to{stroke-dashoffset:0}}
+  @keyframes fw-dot{0%{opacity:0;offset-distance:0%}15%{opacity:1}90%{opacity:1}100%{opacity:0;offset-distance:100%}}
+  .forward-widget .layer-label{font:700 16px var(--font-sans);fill:var(--muted);text-anchor:middle;}
+  .forward-widget .node{fill:var(--bg);stroke:var(--line);stroke-width:2;rx:12;vector-effect:non-scaling-stroke;transition:fill 180ms ease,stroke 180ms ease;}
+  .forward-widget .node.passed{fill:rgba(31,90,122,.08);stroke:var(--signal);}
+  .forward-widget .node.current{fill:rgba(217,119,6,.10);stroke:var(--accent);stroke-width:4;}
+  .forward-widget .node-name{font:700 16px var(--font-sans);fill:var(--text);text-anchor:middle;}
+  .forward-widget .node-value{font:700 16px var(--font-mono);fill:var(--signal);text-anchor:middle;font-variant-numeric:tabular-nums;}
+  .forward-widget .node-value.empty{fill:var(--muted);}
+  .forward-widget .node-rule{font:15px var(--font-sans);fill:var(--muted);text-anchor:middle;}
+  .forward-widget .note-box{position:absolute;z-index:3;font:var(--fs-sec)/1.4 var(--font-sans);color:var(--muted);}
+  .forward-widget .hidden-note{left:310px;top:83px;width:300px;}
+  .forward-widget .decision-note{right:26px;bottom:28px;width:222px;text-align:center;}
+  .forward-widget .prediction{position:absolute;z-index:4;right:24px;top:118px;width:240px;padding:18px 18px 16px;border:1px solid var(--line);border-radius:12px;background:var(--bg);opacity:.36;transition:opacity 240ms ease,border-color 240ms ease;}
+  .forward-widget .prediction.visible{opacity:1;border-color:var(--signal);}
+  .forward-widget .prediction .cap{font:600 var(--fs-label)/1.3 var(--font-sans);color:var(--muted);}
+  .forward-widget .prediction .answer{margin:8px 0 10px;font:700 28px/1.15 var(--font-sans);color:var(--signal);}
+  .forward-widget .prediction .freq{font:var(--fs-sec)/1.4 var(--font-sans);color:var(--text);}
+  .p15-foot{flex:0 0 86px;display:grid;grid-template-columns:1.15fr .85fr;gap:44px;align-items:start;border-top:1px solid var(--line);padding-top:14px;}
+  .p15-foot .conclusion{margin:0;font-size:var(--fs-body);line-height:1.45;}
+  .p15-next{font:600 var(--fs-sec)/1.45 var(--font-sans);color:var(--text);}
+  .p15-next span{color:var(--accent);margin-right:8px;}
+  @media (prefers-reduced-motion:reduce){
+    .forward-widget .sample-card,.forward-widget .node,.forward-widget .prediction{transition:none;}
+    .forward-widget .edge.current,.forward-widget .signal-dot.go{animation:none;}
+  }
+</style>
+</head>
+<body data-page="15" data-total="22">
+<div id="stage">
+  <header class="p15-head">
+    <div class="p15-kicker">FORWARD PASS</div>
+    <h1>同一个样本逐层变形，最后成为一次预测</h1>
+  </header>
+
+  <section class="forward-widget min0 k-process" data-forward-widget tabindex="0" aria-label="逐层查看一次前向传播">
+    <aside class="fw-side min0">
+      <div class="sample-area">
+        <div class="side-label">固定输入 · 每次重新开始都相同</div>
+        <div class="sample-card" data-sample>
+          <div class="sample-name">投入样本</div>
+          <div class="sample-values">x₁=1　x₂=0</div>
+        </div>
+        <div class="tray" aria-hidden="true"></div>
+      </div>
+
+      <div class="controls" aria-label="传播控制">
+        <div class="btns">
+          <button class="btn primary" type="button" data-play>投入样本</button>
+          <button class="btn" type="button" data-pause disabled>暂停</button>
+          <button class="btn" type="button" data-reset>重新开始</button>
+        </div>
+        <div class="progress-head"><label for="fw-progress">传播进度</label><output data-progress-text aria-live="polite">0 / 3 · 等待投入</output></div>
+        <input id="fw-progress" data-progress type="range" min="0" max="3" step="1" value="0" aria-label="传播进度：输入、隐藏、输出">
+        <div class="stage-names" aria-hidden="true"><span>输入</span><span>隐藏</span><span>输出</span></div>
+        <div class="keyhint">拖动进度回看；焦点在本图时，空格播放，左右键逐段移动。</div>
+      </div>
+    </aside>
+
+    <div class="fw-main min0" aria-label="二输入、三隐藏、一输出的小网络">
+      <div class="network-title">信号始终从左向右；网络连接保持不变</div>
+      <svg viewBox="0 0 1120 520" role="img" aria-labelledby="fw-svg-title fw-svg-desc">
+        <title id="fw-svg-title">一次前向传播的稳定网络图</title>
+        <desc id="fw-svg-desc">固定样本先进入两个输入节点，再到三个隐藏神经元，最后到一个输出节点。当前阶段显示计算值。</desc>
+        <defs>
+          <marker id="fw-arrow-neutral" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10Z" fill="var(--line)"/></marker>
+          <marker id="fw-arrow-signal" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10Z" fill="var(--signal)"/></marker>
+        </defs>
+        <g aria-hidden="true">
+          <path class="edge" data-edge="ih" d="M220 212 L420 170"/><path class="edge" data-edge="ih" d="M220 212 L420 270"/><path class="edge" data-edge="ih" d="M220 212 L420 370"/>
+          <path class="edge" data-edge="ih" d="M220 332 L420 170"/><path class="edge" data-edge="ih" d="M220 332 L420 270"/><path class="edge" data-edge="ih" d="M220 332 L420 370"/>
+          <path class="edge" data-edge="ho" d="M610 170 L770 270"/><path class="edge" data-edge="ho" d="M610 270 L770 270"/><path class="edge" data-edge="ho" d="M610 370 L770 270"/>
+          <circle class="signal-dot" data-dot="ih" r="6" style="offset-path:path('M220 212 L420 170')"/><circle class="signal-dot" data-dot="ih" r="6" style="offset-path:path('M220 332 L420 370')"/>
+          <circle class="signal-dot" data-dot="ho" r="6" style="offset-path:path('M610 170 L770 270')"/><circle class="signal-dot" data-dot="ho" r="6" style="offset-path:path('M610 370 L770 270')"/>
+        </g>
+        <text class="layer-label" x="160" y="112">输入层</text><text class="layer-label" x="515" y="112">隐藏层</text><text class="layer-label" x="855" y="112">输出层</text>
+        <g data-group="input">
+          <rect class="node" data-node x="100" y="174" width="120" height="76" rx="12"/><text class="node-name" x="160" y="202">x₁</text><text class="node-value empty" data-val="x1" x="160" y="230">—</text>
+          <rect class="node" data-node x="100" y="294" width="120" height="76" rx="12"/><text class="node-name" x="160" y="322">x₂</text><text class="node-value empty" data-val="x2" x="160" y="350">—</text>
+          <text class="node-rule" x="160" y="406">原样接收两路输入</text>
+        </g>
+        <g data-group="hidden">
+          <rect class="node" data-node x="420" y="132" width="190" height="76" rx="12"/><text class="node-name" x="515" y="158">H₁</text><text class="node-value empty" data-val="h1" x="515" y="187">—</text>
+          <rect class="node" data-node x="420" y="232" width="190" height="76" rx="12"/><text class="node-name" x="515" y="258">H₂</text><text class="node-value empty" data-val="h2" x="515" y="287">—</text>
+          <rect class="node" data-node x="420" y="332" width="190" height="76" rx="12"/><text class="node-name" x="515" y="358">H₃</text><text class="node-value empty" data-val="h3" x="515" y="387">—</text>
+          <text class="node-rule" x="515" y="447">先汇总，再压缩</text>
+        </g>
+        <g data-group="output">
+          <rect class="node" data-node x="770" y="222" width="170" height="96" rx="12"/><text class="node-name" x="855" y="252">输出</text><text class="node-value empty" data-val="out" x="855" y="284">—</text><text class="node-rule" x="855" y="306">汇总三个隐藏信号</text>
+        </g>
+      </svg>
+      <div class="note-box hidden-note">每个神经元看到的是同一份输入，但使用不同的连接强度。</div>
+      <div class="prediction" data-prediction>
+        <div class="cap">预测牌</div>
+        <div class="answer" data-answer>预测：—</div>
+        <div class="freq" data-frequency>等待输出信号</div>
+      </div>
+      <div class="note-box decision-note">p≥0.5，回答“1”。</div>
+    </div>
+  </section>
+
+  <footer class="p15-foot">
+    <p class="conclusion">前向传播只做一件事：把输入依次交给后面的神经元计算，直到得到预测。</p>
+    <div class="p15-next"><span>下一问</span>预测已经算出；如果它错了，前面的连接怎样知道自己该负责多少？</div>
+  </footer>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script>
+(() => {
+  const script = document.currentScript;
+  const root = document.querySelector('[data-forward-widget]');
+  if (!root) return;
+
+  const q = s => root.querySelector(s);
+  const qa = s => Array.from(root.querySelectorAll(s));
+  const playBtn = q('[data-play]');
+  const pauseBtn = q('[data-pause]');
+  const resetBtn = q('[data-reset]');
+  const progress = q('[data-progress]');
+  const progressText = q('[data-progress-text]');
+  const sample = q('[data-sample]');
+  const prediction = q('[data-prediction]');
+  const answer = q('[data-answer]');
+  const frequency = q('[data-frequency]');
+  const status = progressText;
+
+  const sigmoid = value => 1 / (1 + Math.exp(-value));
+  const x = [1, 0];
+  const hidden = [
+    { z: 1.2 * x[0] - 0.7 * x[1] - 0.2 },
+    { z: -0.8 * x[0] + 0.6 * x[1] + 0.4 },
+    { z: 0.5 * x[0] + 0.9 * x[1] - 0.1 }
+  ].map(item => ({ z:item.z, h:sigmoid(item.z) }));
+  const outputZ = 1.1 * hidden[0].h - 0.9 * hidden[1].h + 0.7 * hidden[2].h - 0.3;
+  const outputP = sigmoid(outputZ);
+  const values = {
+    x1:'1', x2:'0',
+    h1:`z=${hidden[0].z.toFixed(3)} → h=${hidden[0].h.toFixed(3)}`,
+    h2:`z=−${Math.abs(hidden[1].z).toFixed(3)} → h=${hidden[1].h.toFixed(3)}`,
+    h3:`z=${hidden[2].z.toFixed(3)} → h=${hidden[2].h.toFixed(3)}`,
+    out:`z=${outputZ.toFixed(3)} → p=${outputP.toFixed(3)}`
+  };
+  const names = ['等待投入','输入已接收','隐藏层已计算','输出已形成'];
+  let state = { step:0, running:false };
+  let timer = 0;
+  let destroyed = false;
+
+  function cancelTimer(){ if(timer){ clearTimeout(timer); timer = 0; } }
+  function setNodeState(groupName, relation){
+    const group = q(`[data-group="${groupName}"]`);
+    Array.from(group.querySelectorAll('[data-node]')).forEach(node => {
+      node.classList.toggle('passed', relation === 'passed');
+      node.classList.toggle('current', relation === 'current');
+    });
+  }
+  function relation(layerStep){ return state.step > layerStep ? 'passed' : state.step === layerStep ? 'current' : 'future'; }
+  function showValue(key, visible){
+    const node = q(`[data-val="${key}"]`);
+    node.textContent = visible ? values[key] : '—';
+    node.classList.toggle('empty', !visible);
+  }
+  function render(announce=false){
+    progress.value = String(state.step);
+    progressText.textContent = `${state.step} / 3 · ${names[state.step]}`;
+    sample.classList.toggle('launched', state.step > 0);
+    setNodeState('input', relation(1));
+    setNodeState('hidden', relation(2));
+    setNodeState('output', relation(3));
+    showValue('x1', state.step >= 1); showValue('x2', state.step >= 1);
+    showValue('h1', state.step >= 2); showValue('h2', state.step >= 2); showValue('h3', state.step >= 2);
+    showValue('out', state.step >= 3);
+    qa('[data-edge="ih"]').forEach(edge => { edge.classList.toggle('passed', state.step > 2); edge.classList.toggle('current', state.step === 2); });
+    qa('[data-edge="ho"]').forEach(edge => { edge.classList.toggle('passed', state.step > 3); edge.classList.toggle('current', state.step === 3); });
+    qa('[data-dot="ih"]').forEach(dot => dot.classList.toggle('go', state.step === 2 && state.running));
+    qa('[data-dot="ho"]').forEach(dot => dot.classList.toggle('go', state.step === 3 && state.running));
+    prediction.classList.toggle('visible', state.step === 3);
+    answer.textContent = state.step === 3 ? '预测：1' : '预测：—';
+    frequency.textContent = state.step === 3 ? '约每 100 次中有 64 次回答“1”' : '等待输出信号';
+    playBtn.textContent = state.step === 0 ? '投入样本' : state.step === 3 ? '再次播放' : '继续传播';
+    pauseBtn.disabled = !state.running;
+    if(announce) status.textContent = `传播进度 ${state.step} / 3，${names[state.step]}。`;
+  }
+  function schedule(){
+    cancelTimer();
+    if(!state.running) return;
+    if(state.step >= 3){ state.running = false; render(true); return; }
+    const delay = state.step === 0 ? 320 : state.step === 1 ? 520 : 520;
+    timer = setTimeout(() => {
+      timer = 0;
+      if(!state.running || destroyed) return;
+      state.step += 1;
+      render(true);
+      schedule();
+    }, Deck.reduced() ? 80 : delay + 220);
+  }
+  function play(){
+    cancelTimer();
+    if(state.step >= 3) state.step = 0;
+    state.running = true;
+    render(true);
+    schedule();
+  }
+  function pause(){ cancelTimer(); state.running = false; render(true); }
+  function setStep(step, announce=true){
+    cancelTimer();
+    state = { step:Math.max(0,Math.min(3,Math.round(step))), running:false };
+    render(announce);
+  }
+  function reset(){ setStep(0,true); }
+  function onRootKey(event){
+    if(event.target.matches('button,input')) return;
+    if(event.key === ' '){ event.preventDefault(); event.stopPropagation(); state.running ? pause() : play(); }
+    else if(event.key === 'ArrowLeft'){ event.preventDefault(); event.stopPropagation(); setStep(state.step - 1); }
+    else if(event.key === 'ArrowRight'){ event.preventDefault(); event.stopPropagation(); setStep(state.step + 1); }
+  }
+  function onVisibility(){ if(document.hidden && state.running) pause(); }
+
+  playBtn.addEventListener('click', play);
+  pauseBtn.addEventListener('click', pause);
+  resetBtn.addEventListener('click', reset);
+  progress.addEventListener('input', () => setStep(Number(progress.value), false));
+  progress.addEventListener('change', () => setStep(Number(progress.value), true));
+  root.addEventListener('keydown', onRootKey);
+  document.addEventListener('visibilitychange', onVisibility);
+  render();
+  Deck.init({index:15,total:22});
+
+  root.destroyForwardWidget = () => {
+    if(destroyed) return;
+    destroyed = true;
+    cancelTimer();
+    playBtn.removeEventListener('click', play);
+    pauseBtn.removeEventListener('click', pause);
+    resetBtn.removeEventListener('click', reset);
+    root.removeEventListener('keydown', onRootKey);
+    document.removeEventListener('visibilitychange', onVisibility);
+    delete root.destroyForwardWidget;
+  };
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+:root{
+  --bg:#F4F1E8;
+  --text:#1E252B;
+  --muted:#596168;
+  --rule:#9CA1A1;
+  --rule-soft:#D5D2C9;
+  --surface:#EBE7DD;
+  --prediction:#2457A6;
+  --attention:#E56B2F;
+  --focus:#E56B2F;
+  --font-sans:"DejaVu Sans","Noto Sans CJK SC",sans-serif;
+  --font-serif:"DejaVu Serif","Noto Serif CJK SC",serif;
+  --font-mono:"DejaVu Sans Mono","Noto Sans CJK SC",monospace;
+}
+*{box-sizing:border-box}
+#stage{
+  width:1600px;height:900px;padding:28px 56px;
+  display:flex;flex-direction:column;overflow:hidden;
+  background:var(--bg);color:var(--text);
+}
+.page-head{height:104px;flex:0 0 104px;display:flex;flex-direction:column;justify-content:flex-start;border-bottom:1px solid var(--rule-soft)}
+.kicker{font-family:var(--font-mono);font-size:15px;line-height:1.2;letter-spacing:.12em;color:var(--muted);margin:0 0 8px}
+h1{font-family:var(--font-sans);font-size:54px;line-height:1.05;margin:0;font-weight:700;letter-spacing:-.02em}
+.page-main{flex:1;min-height:0;display:flex;justify-content:center;padding-top:24px}
+.focus-sheet{width:1240px;min-height:0;display:flex;flex-direction:column;align-items:stretch}
+.terrain{height:386px;flex:0 0 386px;position:relative}
+.terrain svg{display:block;width:100%;height:100%;overflow:visible}
+.slope-line{fill:none;stroke:var(--text);stroke-width:3;stroke-linecap:round}
+.guide{fill:none;stroke:var(--rule-soft);stroke-width:1;stroke-dasharray:7 9}
+.level{fill:none;stroke:var(--rule);stroke-width:1}
+.tick{font-family:var(--font-mono);font-size:15px;fill:var(--muted)}
+.axis-label{font-family:var(--font-sans);font-size:18px;fill:var(--muted)}
+.current-point{fill:var(--bg);stroke:var(--text);stroke-width:3}
+.target-point{fill:var(--attention);stroke:var(--bg);stroke-width:5;paint-order:stroke}
+.arrow-shaft{fill:none;stroke:var(--attention);stroke-width:5;stroke-linecap:round;stroke-linejoin:round}
+.arrow-head{fill:none;stroke:var(--attention);stroke-width:5;stroke-linecap:round;stroke-linejoin:round}
+.knob-ring{fill:var(--surface);stroke:var(--text);stroke-width:2}
+.knob-tick{stroke:var(--rule);stroke-width:2}
+.knob-pointer{stroke:var(--text);stroke-width:5;stroke-linecap:round}
+.svg-label{font-family:var(--font-sans);font-size:21px;fill:var(--text);font-weight:650}
+.svg-small{font-family:var(--font-sans);font-size:18px;fill:var(--muted)}
+.svg-mono{font-family:var(--font-mono);font-size:18px;fill:var(--text)}
+.target-label{fill:var(--attention)}
+.descent-arrow,.next-state{opacity:0}
+.descent-arrow{transform:translate(-48px,-28px);transform-box:fill-box;transform-origin:center;transition:opacity 180ms ease-out 120ms,transform 360ms cubic-bezier(.22,.8,.3,1) 120ms}
+.next-state{transform:translateY(-8px);transition:opacity 180ms ease-out 480ms,transform 180ms ease-out 480ms}
+[data-state="settled"] .descent-arrow,[data-state="settled"] .next-state{opacity:1;transform:translate(0,0)}
+.k-generalization{height:232px;flex:0 0 232px;position:relative;display:flex;flex-direction:column;align-items:center}
+.claim{width:970px;min-height:78px;display:flex;align-items:center;justify-content:center;text-align:center;border-top:2px solid var(--text);border-bottom:1px solid var(--text);font-family:var(--font-serif);font-size:28px;line-height:1.4;padding:14px 40px;background:transparent}
+.claim strong{font-family:var(--font-sans);font-weight:700}
+.trunk{width:1px;height:28px;background:var(--rule);flex:0 0 28px}
+.supports{width:970px;display:grid;grid-template-columns:1fr 1fr;position:relative;border-top:1px solid var(--rule)}
+.supports:before,.supports:after{content:"";position:absolute;top:-1px;width:1px;height:16px;background:var(--rule)}
+.supports:before{left:25%}.supports:after{left:75%}
+.support{padding:22px 40px 0;text-align:center;min-width:0}
+.support:first-child{border-right:1px solid var(--rule-soft)}
+.support-label{font-family:var(--font-mono);font-size:15px;letter-spacing:.08em;color:var(--muted);margin-bottom:8px}
+.support-copy{font-size:21px;line-height:1.35;margin:0;color:var(--text)}
+.support-copy b{font-weight:750}
+.next-question{height:58px;flex:0 0 58px;border-top:1px solid var(--rule-soft);display:flex;align-items:center;justify-content:center;gap:16px;font-size:18px;line-height:1.35;color:var(--muted)}
+.next-question .mark{font-family:var(--font-mono);font-size:15px;letter-spacing:.08em;color:var(--attention)}
+@media (prefers-reduced-motion:reduce){
+  .descent-arrow,.next-state{transition-duration:1ms!important;transition-delay:0ms!important}
+}
+</style>
+</head>
+<body data-page="09" data-total="21">
+<div id="stage" data-state="ready">
+  <header class="page-head">
+    <div class="kicker">ACT III · DESCENT</div>
+    <h1>下坡箭头接管参数更新</h1>
+  </header>
+
+  <main class="page-main min0">
+    <section class="focus focus-sheet min0" aria-label="参数从损失坡面当前位置移向更低落点">
+      <div class="terrain" aria-hidden="true">
+        <svg viewBox="0 0 1240 386" role="img" aria-label="一个参数旋钮位于损失坡面的当前点，短箭头指向右下方更低的下一落点">
+          <path class="guide" d="M80 330 H1160"/>
+          <path class="guide" d="M130 258 H1110"/>
+          <path class="guide" d="M190 186 H1050"/>
+          <path class="guide" d="M270 114 H970"/>
+          <text class="axis-label" x="72" y="48">损失 L</text>
+          <path class="level" d="M96 62 V334 H1178"/>
+          <text class="axis-label" x="1062" y="365">参数位置</text>
+          <path class="slope-line" d="M146 82 C278 100 382 142 486 196 C590 250 678 287 786 307 C892 327 1006 329 1140 329"/>
+
+          <path class="guide" d="M526 216 V330"/>
+          <path class="guide" d="M688 291 V330"/>
+          <text class="tick" x="508" y="354">当前</text>
+          <text class="tick next-state target-label" x="674" y="354">下一步</text>
+
+          <g transform="translate(526 216)">
+            <circle class="knob-ring" cx="0" cy="0" r="53"/>
+            <path class="knob-tick" d="M-39 -36 L-32 -29 M0 -53 V-43 M39 -36 L32 -29 M53 0 H43 M39 36 L32 29 M-39 36 L-32 29 M-53 0 H-43"/>
+            <path class="knob-pointer" d="M0 8 L22 -21"/>
+            <circle class="current-point" cx="0" cy="0" r="8"/>
+          </g>
+          <text class="svg-label" x="438" y="105">参数旋钮</text>
+          <text class="svg-small" x="423" y="134">当前位置</text>
+          <path class="level" d="M485 145 L507 174"/>
+
+          <g class="descent-arrow">
+            <path class="arrow-shaft" d="M579 241 C612 258 639 270 672 283"/>
+            <path class="arrow-head" d="M653 263 L676 285 L646 288"/>
+          </g>
+          <g class="next-state">
+            <circle class="target-point" cx="688" cy="291" r="10"/>
+            <path class="level" d="M698 286 L737 264"/>
+            <text class="svg-label target-label" x="748" y="259">较低的落点</text>
+            <text class="svg-small" x="748" y="288">只移动一小步</text>
+          </g>
+        </svg>
+      </div>
+
+      <div class="k-generalization">
+        <div class="claim">参数不再靠猜：先看损失往哪边下降，再沿那个方向<strong>改一点</strong>。</div>
+        <div class="trunk" aria-hidden="true"></div>
+        <div class="supports">
+          <div class="support min0">
+            <div class="support-label">MEASURE</div>
+            <p class="support-copy"><b>先测方向</b>：比较当前位置附近，哪边的损失更低。</p>
+          </div>
+          <div class="support min0">
+            <div class="support-label">UPDATE</div>
+            <p class="support-copy"><b>再改一点</b>：沿下降方向移动，保留下一次复查的余地。</p>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="next-question">
+    <span class="mark">NEXT</span>
+    <span>怎样把“下坡箭头”读成每个旋钮的具体修改建议？</span>
+  </footer>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script>
+(function(){
+  const stage=document.getElementById('stage');
+  let raf=0;
+  function ready(){
+    cancelAnimationFrame(raf);
+    stage.dataset.state='ready';
+  }
+  function settled(){
+    cancelAnimationFrame(raf);
+    stage.dataset.state='settled';
+  }
+  function play(){
+    ready();
+    if(Deck.reduced()){ settled(); return; }
+    raf=requestAnimationFrame(()=>{ raf=requestAnimationFrame(settled); });
+  }
+  window.__p09={ready,settled,play};
+  play();
+  window.addEventListener('pagehide',()=>cancelAnimationFrame(raf),{once:true});
+  Deck.init({index:9,total:21});
+})();
+</script>
+</body>
+</html>

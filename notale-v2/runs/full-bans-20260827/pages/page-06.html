@@ -1,0 +1,265 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  #stage{display:flex;flex-direction:column;gap:16px;padding:var(--pad-y) var(--pad-x);}
+  .p06-head{position:relative;flex:0 0 96px;display:flex;flex-direction:column;justify-content:flex-start;gap:8px;}
+  .p06-head .kicker{margin:0;color:var(--muted);letter-spacing:.08em;}
+  .p06-head h1{margin:0;font:700 var(--fs-h1)/1.1 var(--font-sans);color:var(--text);}
+  .loss-widget{flex:1;min-height:0;display:grid;grid-template-rows:64px minmax(0,1fr) 142px;gap:16px;}
+  .loss-widget .question-row{display:flex;align-items:center;justify-content:space-between;gap:24px;border-bottom:1px solid var(--rule);padding-bottom:16px;}
+  .loss-widget .question{margin:0;font:700 var(--fs-h2)/1.15 var(--font-sans);color:var(--text);}
+  .loss-widget .question small{display:inline;margin-left:24px;font:var(--fs-sec)/1.2 var(--font-sans);color:var(--muted);}
+  .loss-widget .quiz{display:flex;align-items:center;gap:16px;margin:0;}
+  .loss-widget .opt{min-width:260px;min-height:56px;padding:8px 24px;font:600 var(--fs-body)/1.2 var(--font-sans);cursor:pointer;}
+  .loss-widget .opt[data-correct="true"]{border-style:double;border-width:3px;border-color:var(--rule-strong);}
+  .loss-widget .compare-stage{position:relative;display:grid;grid-template-columns:1fr 1fr;gap:40px;min-height:0;}
+  .loss-widget .case{position:relative;min-width:0;display:grid;grid-template-columns:280px minmax(0,1fr);grid-template-rows:auto minmax(0,1fr);column-gap:24px;border:1px solid var(--rule);border-radius:8px;padding:16px 24px;background:var(--paper);}
+  .loss-widget .loss-map{position:absolute;left:210px;right:40px;top:198px;width:calc(100% - 250px);height:96px;pointer-events:none;z-index:2;}
+  .loss-widget .loss-map path{fill:none;stroke:var(--prediction);stroke-width:2;vector-effect:non-scaling-stroke;}
+  .loss-widget .loss-map circle{fill:var(--paper);stroke:var(--prediction);stroke-width:2;vector-effect:non-scaling-stroke;}
+  .loss-widget .case-title{grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--rule);padding-bottom:8px;}
+  .loss-widget .case-title h2{margin:0;font:650 var(--fs-h2)/1.05 var(--font-sans);}
+  .loss-widget .case-note{font:var(--fs-sec)/1.35 var(--font-sans);color:var(--muted);}
+  .loss-widget .pair{position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:32px;}
+  .loss-widget .pair-guide{position:absolute;inset:8px 0;width:100%;height:calc(100% - 16px);pointer-events:none;}
+  .loss-widget .pair-guide .gap-field{fill:color-mix(in srgb,var(--rule) 28%,transparent);stroke:none;}
+  .loss-widget .pair-guide path{fill:none;stroke:var(--rule-strong);stroke-width:2;stroke-dasharray:6 6;vector-effect:non-scaling-stroke;}
+  .loss-widget .object-row{display:grid;grid-template-columns:144px 1fr;align-items:center;gap:16px;width:100%;}
+  .loss-widget .mark-target,.loss-widget .mark-pred{display:flex;align-items:center;justify-content:center;width:136px;height:136px;}
+  .loss-widget .mark-target{color:var(--target);font:700 32px/1 var(--font-num);}
+  .loss-widget .mark-pred{color:var(--prediction);font:700 29px/1 var(--font-num);}
+  .loss-widget .mark-label{font:600 var(--fs-label)/1.25 var(--font-sans);color:var(--muted);}
+  .loss-widget .scale-wrap{position:relative;min-height:0;padding:16px 12px 28px 28px;}
+  .loss-widget .scale-ink{position:absolute;left:48px;right:8px;top:24px;bottom:40px;width:calc(100% - 56px);height:calc(100% - 64px);overflow:visible;}
+  .loss-widget .scale-ink line{stroke:var(--rule);stroke-width:1;vector-effect:non-scaling-stroke;}
+  .loss-widget .scale-ink .major{stroke:var(--rule-strong);stroke-width:2;}
+  .loss-widget .scale{position:absolute;left:48px;top:24px;bottom:40px;width:2px;background:var(--rule-strong);}
+  .loss-widget .scale::before,.loss-widget .scale::after{content:"";position:absolute;left:-7px;width:16px;border-top:1px solid var(--rule-strong);}
+  .loss-widget .scale::before{bottom:0}.loss-widget .scale::after{top:0}
+  .loss-widget .zero{position:absolute;left:4px;bottom:24px;font:var(--fs-tick)/1 var(--font-num);color:var(--muted);}
+  .loss-widget .loss-marker{position:absolute;left:38px;bottom:40px;width:22px;height:22px;border-radius:50%;background:var(--paper);border:3px solid var(--loss);transform:translateY(50%);opacity:0;}
+  .loss-widget .loss-line{position:absolute;left:58px;right:0;bottom:40px;border-top:3px solid var(--loss);opacity:0;}
+  .loss-widget .loss-readout{position:absolute;left:76px;bottom:22px;display:flex;align-items:baseline;gap:8px;color:var(--loss);opacity:0;white-space:nowrap;}
+  .loss-widget .loss-readout .num{font-size:36px;font-weight:700;}
+  .loss-widget .loss-readout .unit{font:var(--fs-label)/1.2 var(--font-sans);color:var(--muted);}
+  .loss-widget .mask-note{position:absolute;left:76px;bottom:52px;font:650 var(--fs-body)/1.25 var(--font-sans);color:var(--muted);}
+  .loss-widget .scale-caption{position:absolute;left:76px;right:8px;display:flex;flex-direction:column;gap:16px;font:var(--fs-sec)/1.35 var(--font-sans);color:var(--muted);}
+  .loss-widget .scale-caption strong{font:650 var(--fs-body)/1.3 var(--font-sans);color:var(--text);}
+  .loss-widget[data-state="revealed"] .scale-caption{opacity:.34;}
+  .loss-widget[data-state="revealed"] .mask-note{display:none;}
+  .loss-widget[data-state="revealed"] .loss-marker,.loss-widget[data-state="revealed"] .loss-line,.loss-widget[data-state="revealed"] .loss-readout{opacity:1;}
+  .loss-widget[data-state="revealed"] .case-a .loss-marker,.loss-widget[data-state="revealed"] .case-a .loss-line,.loss-widget[data-state="revealed"] .case-a .loss-readout{bottom:var(--loss-a-y);transition:bottom 320ms ease,opacity 120ms ease;}
+  .loss-widget[data-state="revealed"] .case-b .loss-marker,.loss-widget[data-state="revealed"] .case-b .loss-line,.loss-widget[data-state="revealed"] .case-b .loss-readout{bottom:var(--loss-b-y);transition:bottom 520ms ease 80ms,opacity 120ms ease 80ms;}
+  .loss-widget .evidence{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(240px,.65fr) auto;gap:40px;align-items:start;border-top:1px solid var(--rule);padding-top:16px;}
+  .loss-widget .formula-block{min-width:0;}
+  .loss-widget .formula{margin:0 0 8px;font:600 var(--fs-lead)/1.25 var(--font-sans);color:var(--text);}
+  .loss-widget .formula .loss-ink{color:var(--loss);}
+  .loss-widget .explain{margin:0;font:var(--fs-sec)/1.35 var(--font-sans);color:var(--muted);}
+  .loss-widget .calibration{border-left:2px solid var(--rule-strong);padding-left:16px;}
+  .loss-widget .calibration .tag{display:block;margin-bottom:8px;}
+  .loss-widget .calibration p{margin:0;font:600 var(--fs-body)/1.35 var(--font-sans);}
+  .loss-widget .calibration .small{margin-top:8px;color:var(--muted);}
+  .loss-widget .feedback{margin:0 0 8px;font:650 var(--fs-body)/1.35 var(--font-sans);color:var(--text);min-height:27px;max-width:360px;}
+  .loss-widget .reset{visibility:hidden;min-height:44px;padding:8px 16px;}
+  .loss-widget[data-state="revealed"] .reset{visibility:visible;}
+  .p06-foot{flex:0 0 52px;display:grid;grid-template-columns:1.25fr .75fr;align-items:center;gap:40px;border-top:2px solid var(--rule-strong);padding-top:8px;}
+  .p06-foot .logic{display:flex;gap:24px;margin-top:4px;font:600 var(--fs-label)/1.2 var(--font-sans);color:var(--muted);}
+  .p06-foot .logic span{padding-right:24px;border-right:1px solid var(--rule);}
+  .p06-foot .logic span:last-child{border-right:0;}
+  .p06-foot .claim{margin:0;font:600 var(--fs-body)/1.35 var(--font-sans);color:var(--text);}
+  .p06-foot .next{margin:0;font:var(--fs-sec)/1.35 var(--font-sans);color:var(--muted);text-align:right;}
+  @media (prefers-reduced-motion:reduce){.loss-widget *{transition:none!important;}}
+</style>
+</head>
+<body data-page="06" data-total="20">
+<div id="stage">
+  <header class="p06-head">
+    <p class="kicker">ACT II · 误差记分</p>
+    <h1>同一个正确答案，预测越偏离，损失越大</h1>
+  </header>
+
+  <main class="loss-widget min0" data-loss-widget data-state="ready">
+    <div class="question-row">
+      <p class="question">哪一个错题分更高？<small>先判断，再同时揭晓两列读数</small></p>
+      <div class="quiz" role="group" aria-label="选择损失更大的预测">
+        <button class="opt" type="button" data-choice="a" aria-selected="false">预测 90%</button>
+        <button class="opt" type="button" data-choice="b" aria-selected="false">预测 10%</button>
+      </div>
+    </div>
+
+    <section class="compare-stage k-comparison min0" aria-label="两个预测的同尺度损失比较">
+      <article class="case case-a panel min0">
+        <div class="case-title"><h2>预测 90%</h2><span class="case-note">很接近答案</span></div>
+        <svg class="loss-map" viewBox="0 0 420 96" preserveAspectRatio="none" aria-hidden="true"><circle cx="8" cy="48" r="7"/><path d="M16 48 H386 M370 34 L386 48 L370 62"/></svg>
+        <div class="pair">
+          <div class="object-row"><div class="mark-target">1</div><span class="mark-label">正确答案 y</span></div>
+          <div class="object-row"><div class="mark-pred">0.9</div><span class="mark-label">预测 p</span></div>
+          <svg class="pair-guide" viewBox="0 0 280 300" preserveAspectRatio="none" aria-hidden="true"><rect class="gap-field" x="150" y="44" width="102" height="212"/><path d="M150 44 H252 V256 H150"/><path d="M238 244 L252 256 L266 244"/></svg>
+        </div>
+        <div class="scale-wrap error-scale" aria-hidden="true">
+          <svg class="scale-ink" viewBox="0 0 320 260" preserveAspectRatio="none" aria-hidden="true"><line class="major" x1="0" y1="260" x2="320" y2="260"/><line x1="0" y1="208" x2="320" y2="208"/><line x1="0" y1="156" x2="320" y2="156"/><line x1="0" y1="104" x2="320" y2="104"/><line x1="0" y1="52" x2="320" y2="52"/><line class="major" x1="0" y1="0" x2="320" y2="0"/><line x1="64" y1="0" x2="64" y2="260"/><line x1="128" y1="0" x2="128" y2="260"/><line x1="192" y1="0" x2="192" y2="260"/><line x1="256" y1="0" x2="256" y2="260"/><line x1="320" y1="0" x2="320" y2="260"/></svg>
+          <div class="scale"></div><span class="zero">0</span>
+          <div class="scale-caption"><strong>同一把损失刻度</strong><span>代入 y = 1</span><span>L = −ln(0.9)</span><span>预测靠近答案，标记靠近刻度起点</span></div>
+          <span class="loss-marker"></span><span class="loss-line"></span>
+          <div class="loss-readout big sm"><span class="num" data-loss-a>?</span><span class="unit">损失 L</span></div>
+          <span class="mask-note">损失待揭晓</span>
+        </div>
+      </article>
+
+      <article class="case case-b panel min0">
+        <div class="case-title"><h2>预测 10%</h2><span class="case-note">远离答案</span></div>
+        <svg class="loss-map" viewBox="0 0 420 96" preserveAspectRatio="none" aria-hidden="true"><circle cx="8" cy="48" r="7"/><path d="M16 48 H386 M370 34 L386 48 L370 62"/></svg>
+        <div class="pair">
+          <div class="object-row"><div class="mark-target">1</div><span class="mark-label">正确答案 y</span></div>
+          <div class="object-row"><div class="mark-pred">0.1</div><span class="mark-label">预测 p</span></div>
+          <svg class="pair-guide" viewBox="0 0 280 300" preserveAspectRatio="none" aria-hidden="true"><rect class="gap-field" x="150" y="44" width="102" height="212"/><path d="M150 44 H252 V256 H150"/><path d="M238 244 L252 256 L266 244"/></svg>
+        </div>
+        <div class="scale-wrap error-scale" aria-hidden="true">
+          <svg class="scale-ink" viewBox="0 0 320 260" preserveAspectRatio="none" aria-hidden="true"><line class="major" x1="0" y1="260" x2="320" y2="260"/><line x1="0" y1="208" x2="320" y2="208"/><line x1="0" y1="156" x2="320" y2="156"/><line x1="0" y1="104" x2="320" y2="104"/><line x1="0" y1="52" x2="320" y2="52"/><line class="major" x1="0" y1="0" x2="320" y2="0"/><line x1="64" y1="0" x2="64" y2="260"/><line x1="128" y1="0" x2="128" y2="260"/><line x1="192" y1="0" x2="192" y2="260"/><line x1="256" y1="0" x2="256" y2="260"/><line x1="320" y1="0" x2="320" y2="260"/></svg>
+          <div class="scale"></div><span class="zero">0</span>
+          <div class="scale-caption"><strong>同一把损失刻度</strong><span>代入 y = 1</span><span>L = −ln(0.1)</span><span>预测远离答案，标记移向刻度高处</span></div>
+          <span class="loss-marker"></span><span class="loss-line"></span>
+          <div class="loss-readout big sm"><span class="num" data-loss-b>?</span><span class="unit">损失 L</span></div>
+          <span class="mask-note">损失待揭晓</span>
+        </div>
+      </article>
+    </section>
+
+    <section class="evidence">
+      <div class="formula-block">
+        <p class="formula"><span class="loss-ink">损失 L</span> = −[y ln(p) + (1−y) ln(1−p)]</p>
+        <p class="explain">y 是正确答案，p 是预测；ln 由计算器完成，不要求手算。</p>
+      </div>
+      <div class="calibration">
+        <span class="tag">刻度校准</span>
+        <p>p = 0.5 时，L = <span class="num" data-half-loss>?</span></p>
+        <p class="small">与课件基准值一致</p>
+      </div>
+      <div>
+        <p class="feedback" data-feedback aria-live="polite">先选一个预测，再同时查看两列损失。</p>
+        <button class="btn reset" type="button" data-reset>再猜一次</button>
+      </div>
+    </section>
+  </main>
+
+  <footer class="p06-foot">
+    <div><p class="claim">损失就是“错题分”：它把预测与正确答案的不一致压成一个可比较的数。</p><div class="logic"><span>固定 y = 1</span><span>比较 p</span><span>得到 L</span></div></div>
+    <p class="next">只知道哪边损失更低，怎样决定权重往哪边走？</p>
+  </footer>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script>
+(() => {
+  const root = document.querySelector('[data-loss-widget]');
+  if (!root) return;
+  const choices = Array.from(root.querySelectorAll('[data-choice]'));
+  const resetButton = root.querySelector('[data-reset]');
+  const feedback = root.querySelector('[data-feedback]');
+  const outA = root.querySelector('[data-loss-a]');
+  const outB = root.querySelector('[data-loss-b]');
+  const halfOut = root.querySelector('[data-half-loss]');
+  let destroyed = false;
+  let state = { mode: 'ready', choice: null };
+
+  function constant(name) {
+    return typeof Lec.K === 'function' ? Lec.K(name) : Lec.K[name];
+  }
+  function numeric(value) {
+    if (typeof value === 'number' && Number.isFinite(value)) return value;
+    if (Array.isArray(value) && value.length === 1) return numeric(value[0]);
+    if (value && typeof value === 'object') {
+      for (const key of ['loss','value','result','mean']) {
+        const n = numeric(value[key]);
+        if (Number.isFinite(n)) return n;
+      }
+    }
+    return NaN;
+  }
+  function findLossRunner() {
+    const expected = Number(constant('BINARY_CROSS_ENTROPY_AT_HALF'));
+    const pool = typeof Lec.P === 'function' ? [Lec.P] : Object.values(Lec.P || {}).filter(v => typeof v === 'function');
+    const forms = [
+      (fn,p,t) => fn([p],[t],'binaryCrossEntropy'),
+      (fn,p,t) => fn([p],[t],'crossEntropy'),
+      (fn,p,t) => fn(p,t),
+      (fn,p,t) => fn(t,p),
+      (fn,p,t) => fn({p,y:t}),
+      (fn,p,t) => fn({prediction:p,target:t}),
+      (fn,p,t) => fn([p],[t]),
+      (fn,p,t) => fn([t],[p])
+    ];
+    for (const fn of pool) {
+      for (const call of forms) {
+        try {
+          const probe = numeric(call(fn, 0.5, 1));
+          if (Number.isFinite(probe) && Math.abs(probe - expected) < 1e-6) {
+            return (p,t) => numeric(call(fn,p,t));
+          }
+        } catch (_) {}
+      }
+    }
+    throw new Error('Lec.P 未提供可用的二分类交叉熵入口');
+  }
+
+  const loss = findLossRunner();
+  const epsilon = Number(constant('LOSS_CLIP_EPSILON'));
+  const clipped = p => Math.max(epsilon, Math.min(1 - epsilon, p));
+  const lossA = loss(clipped(0.9), 1);
+  const lossB = loss(clipped(0.1), 1);
+  const scaleMax = Math.max(lossA, lossB);
+  root.style.setProperty('--loss-a-y', `${40 + (lossA / scaleMax) * 250}px`);
+  root.style.setProperty('--loss-b-y', `${40 + (lossB / scaleMax) * 250}px`);
+  outA.textContent = lossA.toFixed(3);
+  outB.textContent = lossB.toFixed(3);
+  halfOut.textContent = loss(clipped(0.5), 1).toFixed(3);
+
+  function render() {
+    root.dataset.state = state.mode;
+    choices.forEach(button => {
+      const selected = button.dataset.choice === state.choice;
+      button.setAttribute('aria-selected', String(selected));
+      button.disabled = state.mode === 'revealed';
+      if (state.mode === 'revealed' && button.dataset.choice === 'b') button.dataset.correct = 'true';
+      else delete button.dataset.correct;
+    });
+    if (state.mode === 'revealed') {
+      outA.setAttribute('data-anim','count');
+      outB.setAttribute('data-anim','count');
+      feedback.textContent = '10% 离正确答案 1 更远，因此损失更大';
+    } else {
+      outA.removeAttribute('data-anim');
+      outB.removeAttribute('data-anim');
+      feedback.textContent = '先选一个预测，再同时查看两列损失。';
+    }
+  }
+  function choose(event) {
+    if (state.mode !== 'ready') return;
+    state = { mode: 'revealed', choice: event.currentTarget.dataset.choice };
+    render();
+  }
+  function reset() {
+    state = { mode: 'ready', choice: null };
+    render();
+    choices[0].focus();
+  }
+  choices.forEach(button => button.addEventListener('click', choose));
+  resetButton.addEventListener('click', reset);
+  render();
+
+  root.destroyLossWidget = () => {
+    if (destroyed) return;
+    destroyed = true;
+    choices.forEach(button => button.removeEventListener('click', choose));
+    resetButton.removeEventListener('click', reset);
+    delete root.destroyLossWidget;
+  };
+  Deck.init({ index: 6, total: 20 });
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+:root{--bg:#E7EEF0;--text:#17292F;--font-sans:"DejaVu Sans","Noto Sans CJK SC",sans-serif;--focus:#5A48A6}
+#stage{display:flex;flex-direction:column;padding:var(--pad-y) var(--pad-x);overflow:hidden}
+.page-head{height:132px;flex:0 0 132px;display:flex;flex-direction:column;justify-content:flex-start}
+.page-head .kicker{margin:0 0 8px;color:var(--muted);font:700 var(--fs-label)/1 var(--font-sans);letter-spacing:.16em}
+h1{margin:0;font:700 var(--fs-h1)/1.12 var(--font-sans);color:var(--text)}
+.main{flex:1;min-height:0;display:grid;grid-template-columns:minmax(0,1.85fr) minmax(400px,.95fr);gap:40px}
+.board-col{display:flex;flex-direction:column;min-width:0;min-height:0}
+.board-top{height:44px;display:flex;align-items:flex-start;justify-content:space-between;color:var(--muted);font:400 var(--fs-sec)/1.35 var(--font-sans)}
+.board-top strong{color:var(--text);font-weight:700}
+.board-shell{position:relative;flex:1;min-height:0;border:2px solid var(--rule-strong);border-radius:4px;background:rgba(246,249,249,.38);overflow:hidden;outline:none}
+.board-shell:focus-visible{outline:3px solid var(--focus);outline-offset:3px}
+#konva{position:absolute;inset:0}
+.axis-label{position:absolute;z-index:2;color:var(--muted);font:700 var(--fs-label)/1 var(--font-sans);pointer-events:none}
+.axis-x{right:18px;bottom:44px}.axis-y{left:74px;top:18px}
+.drag-hint{position:absolute;z-index:2;left:88px;bottom:16px;color:var(--muted);font:400 var(--fs-label)/1.3 var(--font-sans);pointer-events:none}
+.side{display:flex;flex-direction:column;min-width:0;min-height:0;border-top:2px solid var(--text)}
+.readouts{display:grid;grid-template-columns:1fr 1fr;border-bottom:1px solid var(--rule)}
+.readout{padding:24px 0 20px}
+.readout+ .readout{padding-left:24px;border-left:1px solid var(--rule)}
+.tag{display:block;margin-bottom:8px}
+.big .num{font-size:52px;line-height:1;color:var(--text);font-variant-numeric:tabular-nums}
+#errorNow{color:var(--loss)}
+.scale{padding:20px 0 16px;border-bottom:1px solid var(--rule)}
+.scale-title{display:flex;justify-content:space-between;align-items:center;font:700 var(--fs-label)/1 var(--font-sans);color:var(--muted)}
+.error-scale{position:relative;height:48px;margin-top:8px}
+.error-scale .rail{position:absolute;left:10px;right:10px;top:18px;height:2px;background:var(--rule-strong)}
+.error-scale .ticks{position:absolute;inset:0 0 auto;display:flex;justify-content:space-between;color:var(--muted);font:400 var(--fs-tick)/1 var(--font-num)}
+.error-scale .ticks span{position:relative;padding-top:30px;width:20px;text-align:center}
+.error-scale .ticks span:before{content:"";position:absolute;top:13px;left:9px;width:1px;height:10px;background:var(--rule-strong)}
+.error-scale .marker{position:absolute;top:10px;width:3px;height:20px;background:var(--loss);transform:translateX(-1px);transition:left .12s ease-out}
+.status{min-height:94px;padding:20px 0 16px;border-bottom:1px solid var(--rule)}
+.status strong{display:block;margin-bottom:8px;font:700 var(--fs-body)/1.3 var(--font-sans);color:var(--text)}
+.status p{margin:0;color:var(--muted);font:400 var(--fs-sec)/1.4 var(--font-sans)}
+.controls{padding-top:20px}
+.control-line{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;gap:16px}
+.control-line .tag{margin:0;white-space:nowrap}
+.btns{display:flex;gap:8px}.btn{min-width:76px;padding:10px 14px;font-size:var(--fs-label)}
+.params{display:flex;justify-content:space-between;margin-top:16px;padding-top:16px;border-top:1px solid var(--rule);font:400 var(--fs-label)/1.4 var(--font-sans);color:var(--muted)}
+.params b{font-family:var(--font-num);font-variant-numeric:tabular-nums;color:var(--text)}
+.reset-row{display:flex;align-items:center;justify-content:space-between;margin-top:auto;padding-top:16px}
+.reset-row .hint{max-width:265px;line-height:1.35}
+.foot{height:84px;flex:0 0 84px;display:flex;align-items:flex-end;justify-content:space-between;border-top:2px solid var(--text);margin-top:24px;padding-top:16px}
+.claim{margin:0;max-width:1020px;font:700 var(--fs-lead)/1.3 var(--font-sans);color:var(--text)}
+.next{margin:0;text-align:right;color:var(--muted);font:700 var(--fs-sec)/1.3 var(--font-sans)}
+@media (prefers-reduced-motion:reduce){.error-scale .marker{transition:none}}
+</style>
+</head>
+<body data-page="15" data-total="20">
+<div id="stage">
+  <header class="page-head">
+    <p class="kicker">LINE LIMIT</p>
+    <h1>一条直线分不开异或的四个点</h1>
+  </header>
+  <main class="main">
+    <section class="board-col min0" aria-labelledby="planeTitle">
+      <div class="board-top"><span id="planeTitle"><strong>固定样本</strong>：对角同类，直线正侧预测 1</span><span>坐标范围 −1.3 至 1.3</span></div>
+      <div id="board" class="board-shell sample-plane no-pan" tabindex="0" role="application" aria-label="异或样本平面。拖动直线平移，拖动端点旋转；也可使用方向键和方括号键。">
+        <div id="konva" aria-hidden="true"></div>
+        <span class="axis-label axis-x">输入 x</span><span class="axis-label axis-y">输入 y</span>
+        <span class="drag-hint">拖直线改变位置；拖圆形端点改变角度</span>
+      </div>
+    </section>
+    <aside class="side min0" aria-label="挑战状态与控制">
+      <div class="readouts k-comparison">
+        <div class="readout"><span class="tag">当前错几个</span><div class="big"><span class="num" id="errorNow">2</span><span class="unit"> / 4</span></div></div>
+        <div class="readout"><span class="tag">历史最好</span><div class="big"><span class="num" id="bestNow">2</span><span class="unit"> / 4</span></div></div>
+      </div>
+      <div class="scale">
+        <div class="scale-title"><span>错误数</span><span>少一些更好</span></div>
+        <div class="error-scale" aria-hidden="true"><div class="rail"></div><div class="ticks"><span>0</span><span>1</span><span>2</span><span>3</span><span>4</span></div><div class="marker" id="errorMarker"></div></div>
+      </div>
+      <div class="status" aria-live="polite"><strong id="statusTitle">先移动这条直线</strong><p id="statusText">每次调整都会重新检查四个固定样本。试着把错误数降到 1。</p></div>
+      <div class="controls">
+        <div class="control-line"><span class="tag">平移边界</span><div class="btns"><button class="btn" id="moveNeg" type="button">向 0 侧移</button><button class="btn" id="movePos" type="button">向 1 侧移</button></div></div>
+        <div class="control-line"><span class="tag">旋转边界</span><div class="btns"><button class="btn" id="rotLeft" type="button">逆时针 2°</button><button class="btn" id="rotRight" type="button">顺时针 2°</button></div></div>
+        <div class="params"><span>角度 θ　<b id="thetaVal">90°</b></span><span>位置 b　<b id="bVal">0.00</b></span></div>
+      </div>
+      <div class="reset-row"><span class="hint">键盘：方向键平移，<b>[</b> 与 <b>]</b> 旋转</span><button class="btn" id="resetBtn" type="button">复位挑战</button></div>
+    </aside>
+  </main>
+  <footer class="foot"><p class="claim">无论怎样移动直线，单个线性神经元都至少会分错一个异或样本。</p><p class="next">多条简单边界怎样合成答案？</p></footer>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script src="assets/lib/konva.min.js"></script>
+<script>
+(function(){
+  'use strict';
+  Deck.init({index:15,total:20});
+  var samples=[{x:-.8,y:-.8,t:0},{x:-.8,y:.8,t:1},{x:.8,y:-.8,t:1},{x:.8,y:.8,t:0}];
+  var board=document.getElementById('board'), host=document.getElementById('konva');
+  var stageK, layer, refs={}, dragStart=null, destroyed=false;
+  function initial(){return {theta:90,b:0,best:2,turn:0,phase:'playing',feedback:'每次调整都会重新检查四个固定样本。试着把错误数降到 1。'};}
+  var state=initial();
+  function classify(st){var r=st.theta*Math.PI/180,c=Math.cos(r),s=Math.sin(r);return samples.map(function(p){return p.x*c+p.y*s+st.b>=0?1:0;});}
+  function metrics(st){var pred=classify(st),errors=0;pred.forEach(function(v,i){if(v!==samples[i].t)errors++;});return {pred:pred,errors:errors};}
+  function transition(st,a){
+    if(a.type==='reset') return initial();
+    var nt=st.theta, nb=st.b;
+    if(a.type==='rotate') nt=Math.max(0,Math.min(180,st.theta+a.value));
+    if(a.type==='setTheta') nt=Math.max(0,Math.min(180,a.value));
+    if(a.type==='move') nb=Math.max(-1.8,Math.min(1.8,st.b+a.value));
+    if(a.type==='setB') nb=Math.max(-1.8,Math.min(1.8,a.value));
+    if(nt===st.theta&&nb===st.b){return Object.assign({},st,{feedback:a.type.indexOf('rotate')>=0?'角度已到边界，请向另一方向旋转。':'位置已到边界，请向另一侧平移。'});}
+    var next={theta:nt,b:nb,best:st.best,turn:st.turn+1,phase:'playing',feedback:'直线改变后，四个点已按所在一侧重新预测。'};
+    var e=metrics(next).errors;next.best=Math.min(st.best,e);
+    if(next.best===1){next.phase='complete';next.feedback=e===1?'已达到直线极限：仍有 1 点无法分开。':'你曾把错误降到 1；继续移动会改变被分错的是哪个点。';}
+    return next;
+  }
+  function act(a){state=transition(state,a);render();}
+  function dims(){return {w:host.clientWidth,h:host.clientHeight,l:72,r:34,t:34,bm:60};}
+  function map(p,d){return {x:d.l+(p.x+1.3)/2.6*(d.w-d.l-d.r),y:d.t+(1.3-p.y)/2.6*(d.h-d.t-d.bm)};}
+  function unmap(p,d){return {x:(p.x-d.l)/(d.w-d.l-d.r)*2.6-1.3,y:1.3-(p.y-d.t)/(d.h-d.t-d.bm)*2.6};}
+  function clipPositive(st){
+    var poly=[{x:-1.3,y:-1.3},{x:1.3,y:-1.3},{x:1.3,y:1.3},{x:-1.3,y:1.3}],r=st.theta*Math.PI/180,nx=Math.cos(r),ny=Math.sin(r);
+    function val(p){return p.x*nx+p.y*ny+st.b;}
+    var out=[];
+    for(var i=0;i<poly.length;i++){var a=poly[i],b=poly[(i+1)%poly.length],va=val(a),vb=val(b),ina=va>=0,inb=vb>=0;
+      if(ina)out.push(a);if(ina!==inb){var q=va/(va-vb);out.push({x:a.x+(b.x-a.x)*q,y:a.y+(b.y-a.y)*q});}}
+    return out;
+  }
+  function intersections(st){
+    var r=st.theta*Math.PI/180,nx=Math.cos(r),ny=Math.sin(r),p0={x:-st.b*nx,y:-st.b*ny},tx=-ny,ty=nx,vals=[];
+    if(Math.abs(tx)>1e-8){[-1.3,1.3].forEach(function(x){var q=(x-p0.x)/tx,y=p0.y+q*ty;if(y>=-1.3001&&y<=1.3001)vals.push({x:x,y:y});});}
+    if(Math.abs(ty)>1e-8){[-1.3,1.3].forEach(function(y){var q=(y-p0.y)/ty,x=p0.x+q*tx;if(x>=-1.3001&&x<=1.3001)vals.push({x:x,y:y});});}
+    var uniq=[];vals.forEach(function(v){if(!uniq.some(function(u){return Math.abs(u.x-v.x)<.001&&Math.abs(u.y-v.y)<.001;}))uniq.push(v);});return uniq.slice(0,2);
+  }
+  function makeScene(){
+    var d=dims();stageK=new Konva.Stage({container:'konva',width:d.w,height:d.h});layer=new Konva.Layer();stageK.add(layer);
+    refs.region=new Konva.Line({closed:true,fill:'rgba(23,105,166,.11)',listening:false});layer.add(refs.region);
+    var plot1=map({x:-1.3,y:-1.3},d),plot2=map({x:1.3,y:1.3},d);
+    layer.add(new Konva.Rect({x:plot1.x,y:plot2.y,width:plot2.x-plot1.x,height:plot1.y-plot2.y,stroke:'#6F858B',strokeWidth:2,listening:false}));
+    var zero=map({x:0,y:0},d);layer.add(new Konva.Line({points:[plot1.x,zero.y,plot2.x,zero.y],stroke:'#AABBC0',strokeWidth:1,listening:false}));layer.add(new Konva.Line({points:[zero.x,plot2.y,zero.x,plot1.y],stroke:'#AABBC0',strokeWidth:1,listening:false}));
+    [-.8,.8].forEach(function(v){var vx=map({x:v,y:0},d).x,vy=map({x:0,y:v},d).y;layer.add(new Konva.Line({points:[vx,zero.y-5,vx,zero.y+5],stroke:'#6F858B',strokeWidth:1,listening:false}));layer.add(new Konva.Line({points:[zero.x-5,vy,zero.x+5,vy],stroke:'#6F858B',strokeWidth:1,listening:false}));});
+    refs.pointGroups=samples.map(function(s){var p=map(s,d),g=new Konva.Group({x:p.x,y:p.y,listening:false});
+      var miss1=new Konva.Circle({radius:27,stroke:'#17292F',strokeWidth:1,visible:false}),miss2=new Konva.Circle({radius:23,stroke:'#17292F',strokeWidth:1,visible:false});
+      var outer=new Konva.Rect({x:-15,y:-15,width:30,height:30,stroke:'#8B2F72',strokeWidth:2});var inner=new Konva.Rect({x:-11,y:-11,width:22,height:22,stroke:'#8B2F72',strokeWidth:1});
+      var t=new Konva.Text({x:-8,y:-10,width:16,align:'center',text:String(s.t),fontFamily:'DejaVu Sans Mono',fontSize:16,fontStyle:'bold',fill:'#8B2F72'});
+      var diamond=new Konva.RegularPolygon({x:31,y:-26,sides:4,radius:13,rotation:45,stroke:'#1769A6',strokeWidth:2,fill:'#F6F9F9'});
+      var pt=new Konva.Text({x:24,y:-33,width:14,align:'center',text:'0',fontFamily:'DejaVu Sans Mono',fontSize:14,fontStyle:'bold',fill:'#1769A6'});
+      g.add(miss1,miss2,outer,inner,t,diamond,pt);layer.add(g);return {miss1:miss1,miss2:miss2,pred:pt};});
+    refs.line=new Konva.Line({stroke:'#17292F',strokeWidth:5,lineCap:'round',draggable:true,hitStrokeWidth:24});layer.add(refs.line);
+    refs.handles=[0,1].map(function(){var c=new Konva.Circle({radius:11,fill:'#F6F9F9',stroke:'#5A48A6',strokeWidth:3,draggable:true});layer.add(c);return c;});
+    refs.line.on('dragstart',function(){var p=stageK.getPointerPosition();dragStart={p:unmap(p,dims()),b:state.b};});
+    refs.line.on('dragmove',function(){var p=unmap(stageK.getPointerPosition(),dims()),r=state.theta*Math.PI/180;state=transition(state,{type:'setB',value:dragStart.b-((p.x-dragStart.p.x)*Math.cos(r)+(p.y-dragStart.p.y)*Math.sin(r))});refs.line.position({x:0,y:0});render();});
+    refs.line.on('dragend',function(){dragStart=null;board.focus();});
+    refs.handles.forEach(function(h){h.on('dragmove',function(){var p=unmap(stageK.getPointerPosition(),dims()),r=state.theta*Math.PI/180,center={x:-state.b*Math.cos(r),y:-state.b*Math.sin(r)},dx=p.x-center.x,dy=p.y-center.y,nx=-dy,ny=dx;if(ny<0){nx=-nx;ny=-ny;}var ang=Math.atan2(ny,nx)*180/Math.PI;state=transition(state,{type:'setTheta',value:ang});render();});h.on('dragend',function(){board.focus();});});
+    layer.draw();
+  }
+  function render(){
+    if(destroyed)return;var d=dims(),m=metrics(state),poly=clipPositive(state).map(function(p){return map(p,d);}),flat=[];poly.forEach(function(p){flat.push(p.x,p.y);});refs.region.points(flat);
+    var ins=intersections(state).map(function(p){return map(p,d);});if(ins.length===2){refs.line.points([ins[0].x,ins[0].y,ins[1].x,ins[1].y]);refs.handles[0].position(ins[0]);refs.handles[1].position(ins[1]);}
+    refs.pointGroups.forEach(function(g,i){var miss=m.pred[i]!==samples[i].t;g.miss1.visible(miss);g.miss2.visible(miss);g.pred.text(String(m.pred[i]));});
+    layer.batchDraw();
+    document.getElementById('errorNow').textContent=m.errors;document.getElementById('bestNow').textContent=state.best;document.getElementById('errorMarker').style.left=(10+(m.errors/4)*(document.querySelector('.error-scale').clientWidth-20))+'px';
+    document.getElementById('thetaVal').textContent=Math.round(state.theta)+'°';document.getElementById('bVal').textContent=(Math.abs(state.b)<.005?'0.00':state.b.toFixed(2));
+    document.getElementById('statusTitle').textContent=state.best===1?'直线极限已经出现':(state.turn?'继续调整，比较哪几个点被分错':'先移动这条直线');document.getElementById('statusText').textContent=state.feedback;
+    stage.dispatchEvent(new CustomEvent('notale:learning-state',{bubbles:true,composed:true,detail:{action:'render',phase:state.phase,turn:state.turn,complete:state.phase==='complete',errors:m.errors,best:state.best}}));
+  }
+  document.getElementById('moveNeg').addEventListener('click',function(){act({type:'move',value:-.1});});
+  document.getElementById('movePos').addEventListener('click',function(){act({type:'move',value:.1});});
+  document.getElementById('rotLeft').addEventListener('click',function(){act({type:'rotate',value:2});});
+  document.getElementById('rotRight').addEventListener('click',function(){act({type:'rotate',value:-2});});
+  document.getElementById('resetBtn').addEventListener('click',function(){state=transition(state,{type:'reset'});render();board.focus();});
+  board.addEventListener('keydown',function(e){var a=null;if(e.key==='ArrowUp'||e.key==='ArrowRight')a={type:'move',value:.1};if(e.key==='ArrowDown'||e.key==='ArrowLeft')a={type:'move',value:-.1};if(e.key==='[')a={type:'rotate',value:2};if(e.key===']')a={type:'rotate',value:-2};if(a){e.preventDefault();act(a);}});
+  var offResize=Deck.onResize(function(){if(!stageK)return;var d=dims();stageK.size({width:d.w,height:d.h});stageK.destroy();stageK=null;refs={};makeScene();render();});
+  function destroy(){if(destroyed)return;destroyed=true;offResize();dragStart=null;if(stageK)stageK.destroy();stageK=null;}
+  window.addEventListener('pagehide',destroy,{once:true});makeScene();render();
+})();
+</script>
+</body>
+</html>

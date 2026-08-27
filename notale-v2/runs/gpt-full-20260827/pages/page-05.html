@@ -1,0 +1,315 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>门槛一移动，同一份输入总分也可能得到不同回答</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    #stage{gap:18px;}
+    .p05-head{height:112px;display:flex;flex-direction:column;justify-content:flex-end;gap:7px;}
+    .p05-kicker{font:700 var(--fs-label)/1 var(--font-mono);letter-spacing:.11em;color:var(--accent);}
+    .p05-head h1{margin:0;font:700 var(--fs-h1)/1.18 var(--font-sans);color:var(--text);}
+    .p05-main{flex:1;display:flex;gap:34px;min-height:0;}
+    .p05-widget{flex:1;min-width:0;display:grid;grid-template-columns:minmax(0,1fr) 350px;gap:34px;}
+    .p05-instrument{min-width:0;min-height:0;display:flex;flex-direction:column;gap:14px;}
+    .p05-axis-title{display:flex;align-items:baseline;justify-content:space-between;gap:18px;}
+    .p05-axis-title h2{margin:0;font:700 var(--fs-h2)/1.25 var(--font-sans);}
+    .p05-axis-title p{margin:0;color:var(--muted);font:400 var(--fs-label)/1.35 var(--font-sans);}
+    .p05-axis-wrap{flex:1;min-height:0;position:relative;border-top:1px solid var(--line);border-bottom:1px solid var(--line);background:rgba(255,255,255,.18);}
+    .p05-axis{display:block;width:100%;height:100%;min-height:390px;touch-action:none;user-select:none;outline:none;}
+    .p05-axis:focus-visible{outline:3px solid var(--focus);outline-offset:-4px;}
+    .p05-axis .axis-line{stroke:var(--text);stroke-width:2;}
+    .p05-axis .tick{stroke:var(--line);stroke-width:1.5;}
+    .p05-axis .tick.major{stroke:var(--muted);stroke-width:2;}
+    .p05-axis .tick-label{fill:var(--muted);font:15px var(--font-mono);text-anchor:middle;}
+    .p05-axis .fixed-line{stroke:var(--signal);stroke-width:3;stroke-dasharray:7 6;}
+    .p05-axis .fixed-dot{fill:var(--signal);stroke:var(--bg);stroke-width:4;}
+    .p05-axis .theta-line{stroke:var(--accent);stroke-width:3;}
+    .p05-axis .theta-mark{fill:var(--accent);}
+    .p05-axis .hit{fill:transparent;cursor:ew-resize;}
+    .p05-axis .distance{stroke:var(--accent);stroke-width:9;stroke-linecap:round;opacity:.28;}
+    .p05-axis .distance-cap{stroke:var(--accent);stroke-width:2;}
+    .p05-axis .label-strong{font:700 18px var(--font-sans);fill:var(--text);}
+    .p05-axis .label-fixed{font:700 18px var(--font-sans);fill:var(--signal);}
+    .p05-axis .label-theta{font:700 18px var(--font-sans);fill:var(--accent);}
+    .p05-axis .rel-label{font:600 16px var(--font-sans);fill:var(--text);text-anchor:middle;}
+    .p05-axis .zone{font:600 15px var(--font-sans);fill:var(--muted);text-anchor:middle;}
+    .p05-controls{display:flex;align-items:center;gap:16px;min-height:54px;}
+    .p05-controls .ctl{flex:1;display:flex;align-items:center;gap:12px;margin:0;}
+    .p05-controls label{font:600 var(--fs-label)/1.2 var(--font-sans);white-space:nowrap;}
+    .p05-controls input[type="range"]{flex:1;min-width:160px;accent-color:var(--accent);}
+    .p05-theta-output{min-width:88px;text-align:right;font:700 var(--fs-body)/1 var(--font-mono);color:var(--accent);font-variant-numeric:tabular-nums;}
+    .p05-controls .btn{white-space:nowrap;}
+    .p05-result{min-width:0;min-height:0;display:flex;flex-direction:column;gap:16px;padding:24px 26px;border:1px solid var(--line);border-radius:16px;background:rgba(255,255,255,.34);}
+    .p05-result h2{margin:0;font:700 var(--fs-h2)/1.25 var(--font-sans);}
+    .p05-answer{height:142px;display:flex;align-items:center;justify-content:center;border-top:1px solid var(--line);border-bottom:1px solid var(--line);color:var(--signal);font:800 72px/1 var(--font-sans);}
+    .p05-answer[data-value="否"]{color:var(--error);}
+    .p05-ledger{display:flex;flex-direction:column;gap:0;margin:0;}
+    .p05-row{display:grid;grid-template-columns:112px 1fr;gap:12px;align-items:baseline;padding:12px 0;border-bottom:1px solid var(--line);}
+    .p05-row dt{color:var(--muted);font:500 var(--fs-label)/1.35 var(--font-sans);}
+    .p05-row dd{margin:0;text-align:right;font:650 var(--fs-body)/1.35 var(--font-mono);font-variant-numeric:tabular-nums;color:var(--text);}
+    .p05-row.result-z dd{color:var(--signal);}
+    .p05-rule{margin:0;padding-top:2px;color:var(--muted);font:500 var(--fs-sec)/1.5 var(--font-sans);}
+    .p05-rule strong{color:var(--text);}
+    .p05-state{margin:auto 0 0;min-height:48px;font:650 var(--fs-sec)/1.45 var(--font-sans);color:var(--text);}
+    .p05-foot{height:90px;display:grid;grid-template-columns:minmax(0,1fr) 500px;gap:48px;align-items:center;border-top:1px solid var(--line);}
+    .p05-conclusion{margin:0;font:600 var(--fs-lead)/1.45 var(--font-serif);color:var(--text);}
+    .p05-next{margin:0;text-align:right;color:var(--muted);font:500 var(--fs-sec)/1.45 var(--font-sans);}
+    @media (prefers-reduced-motion:no-preference){
+      .p05-answer,.p05-axis .theta-mark,.p05-axis .theta-line{transition:color .16s ease,fill .16s ease,stroke .16s ease;}
+    }
+  </style>
+</head>
+<body data-page="05" data-total="22">
+  <div id="stage">
+    <header class="p05-head">
+      <div class="p05-kicker">ONE NEURON · BIAS</div>
+      <h1>门槛一移动，同一份输入总分也可能得到不同回答</h1>
+    </header>
+
+    <main class="p05-main min0">
+      <section class="p05-widget k-comparison min0" data-bias-widget aria-label="移动神经元决定门槛的交互仪器">
+        <div class="p05-instrument min0">
+          <div class="p05-axis-title">
+            <h2>同一份输入总分，换一个门槛</h2>
+            <p>固定不变：输入总分 = 1.2</p>
+          </div>
+
+          <div class="p05-axis-wrap min0">
+            <svg class="p05-axis no-pan" data-axis viewBox="0 0 930 410" role="slider" tabindex="0" aria-label="决定门槛 θ" aria-valuemin="-3" aria-valuemax="3" aria-valuenow="0.5" aria-valuetext="门槛 0.5">
+              <title>输入总分与决定门槛共用的数轴</title>
+              <desc>蓝色圆点固定在输入总分 1.2；拖动琥珀色三角可改变门槛。</desc>
+              <g aria-hidden="true">
+                <text class="zone" x="237" y="91">门槛低于总分 → 是</text>
+                <text class="zone" x="700" y="91">门槛高于总分 → 否</text>
+                <line class="axis-line" x1="70" y1="218" x2="860" y2="218"/>
+                <g data-ticks></g>
+                <line class="distance" data-distance x1="0" y1="218" x2="0" y2="218"/>
+                <line class="distance-cap" data-cap-a x1="0" y1="207" x2="0" y2="229"/>
+                <line class="distance-cap" data-cap-b x1="0" y1="207" x2="0" y2="229"/>
+                <text class="rel-label" data-relative x="0" y="278"></text>
+                <line class="fixed-line" data-fixed-line x1="0" y1="128" x2="0" y2="218"/>
+                <circle class="fixed-dot" data-fixed-dot cx="0" cy="218" r="11"/>
+                <text class="label-fixed" data-fixed-label x="0" y="120" text-anchor="middle">输入总分 = 1.2</text>
+                <line class="theta-line" data-theta-line x1="0" y1="218" x2="0" y2="325"/>
+                <path class="theta-mark" data-theta-mark d=""/>
+                <text class="label-theta" data-theta-label x="0" y="355" text-anchor="middle">决定门槛 θ = 0.5</text>
+              </g>
+              <rect class="hit" data-hit x="45" y="172" width="840" height="205" rx="16" aria-hidden="true"/>
+            </svg>
+          </div>
+
+          <div class="p05-controls">
+            <div class="ctl">
+              <label for="p05-threshold">决定门槛 θ</label>
+              <input id="p05-threshold" data-range type="range" min="-3" max="3" step="0.1" value="0.5" aria-describedby="p05-hint">
+              <output class="p05-theta-output" data-theta-output for="p05-threshold">θ = 0.5</output>
+            </div>
+            <button class="btn" data-reset type="button">回到 θ = 0.5</button>
+          </div>
+          <p class="hint" id="p05-hint">左右拖动门槛；也可用方向键微调</p>
+        </div>
+
+        <aside class="p05-result panel" aria-label="神经元当前计算结果">
+          <h2>神经元当前回答</h2>
+          <div class="p05-answer" data-answer data-value="是">是</div>
+          <dl class="p05-ledger">
+            <div class="p05-row"><dt>偏置</dt><dd data-bias>b = −0.5</dd></div>
+            <div class="p05-row"><dt>最终总分</dt><dd data-formula>z = 1.2 + (−0.5)</dd></div>
+            <div class="p05-row result-z"><dt>计算结果</dt><dd data-z>z = 0.7</dd></div>
+          </dl>
+          <p class="p05-rule"><strong>判断规则：</strong>z ≥ 0：是；z &lt; 0：否</p>
+          <p class="p05-state" data-state aria-live="polite">输入总分高于门槛 0.7，回答“是”。</p>
+        </aside>
+      </section>
+    </main>
+
+    <footer class="p05-foot">
+      <p class="p05-conclusion">同一总分下，门槛越低越容易回答“是”；偏置就是决定这个门槛的旋钮。</p>
+      <p class="p05-next">如果不只回答“是”或“否”，神经元怎样表达自己有多确定？</p>
+    </footer>
+  </div>
+
+  <script src="assets/base.js"></script>
+  <script src="assets/lec.js"></script>
+  <script>
+  (() => {
+    const root = document.querySelector('[data-bias-widget]');
+    if (!root) return;
+
+    const view = {
+      axis: root.querySelector('[data-axis]'),
+      hit: root.querySelector('[data-hit]'),
+      ticks: root.querySelector('[data-ticks]'),
+      range: root.querySelector('[data-range]'),
+      reset: root.querySelector('[data-reset]'),
+      thetaOutput: root.querySelector('[data-theta-output]'),
+      thetaLine: root.querySelector('[data-theta-line]'),
+      thetaMark: root.querySelector('[data-theta-mark]'),
+      thetaLabel: root.querySelector('[data-theta-label]'),
+      fixedLine: root.querySelector('[data-fixed-line]'),
+      fixedDot: root.querySelector('[data-fixed-dot]'),
+      fixedLabel: root.querySelector('[data-fixed-label]'),
+      distance: root.querySelector('[data-distance]'),
+      capA: root.querySelector('[data-cap-a]'),
+      capB: root.querySelector('[data-cap-b]'),
+      relative: root.querySelector('[data-relative]'),
+      answer: root.querySelector('[data-answer]'),
+      bias: root.querySelector('[data-bias]'),
+      formula: root.querySelector('[data-formula]'),
+      z: root.querySelector('[data-z]'),
+      state: root.querySelector('[data-state]')
+    };
+
+    const initialTheta = 0.5;
+    const inputSum = 1.2;
+    const axisLeft = 70;
+    const axisRight = 860;
+    let state = { theta: initialTheta };
+    let pointerId = null;
+    let destroyed = false;
+
+    const clamp = value => Math.max(-3, Math.min(3, Math.round(value * 10) / 10));
+    const xFor = value => axisLeft + (value + 3) / 6 * (axisRight - axisLeft);
+    const signed = value => value < 0 ? `−${Math.abs(value).toFixed(1)}` : value.toFixed(1);
+    const wrapped = value => value < 0 ? `(${signed(value)})` : value.toFixed(1);
+
+    function makeTicks() {
+      const ns = 'http://www.w3.org/2000/svg';
+      for (let value = -3; value <= 3; value += 1) {
+        const x = xFor(value);
+        const line = document.createElementNS(ns, 'line');
+        line.setAttribute('class', 'tick major');
+        line.setAttribute('x1', x); line.setAttribute('x2', x);
+        line.setAttribute('y1', 205); line.setAttribute('y2', 231);
+        const text = document.createElementNS(ns, 'text');
+        text.setAttribute('class', 'tick-label');
+        text.setAttribute('x', x); text.setAttribute('y', 254);
+        text.textContent = value < 0 ? `−${Math.abs(value)}` : String(value);
+        view.ticks.append(line, text);
+      }
+    }
+
+    function transition(current, action) {
+      if (action.type === 'set-theta') return { theta: clamp(action.value) };
+      if (action.type === 'reset') return { theta: initialTheta };
+      return current;
+    }
+
+    function render(announce) {
+      const theta = state.theta;
+      const bias = -theta;
+      const z = Math.round((inputSum + bias) * 10) / 10;
+      const yes = z >= 0;
+      const tx = xFor(theta);
+      const fx = xFor(inputSum);
+      const mid = (tx + fx) / 2;
+      const gap = Math.abs(inputSum - theta);
+
+      view.thetaLine.setAttribute('x1', tx); view.thetaLine.setAttribute('x2', tx);
+      view.thetaMark.setAttribute('d', `M ${tx} 202 L ${tx - 13} 178 L ${tx + 13} 178 Z`);
+      view.thetaLabel.setAttribute('x', tx);
+      view.thetaLabel.textContent = `决定门槛 θ = ${signed(theta)}`;
+      view.fixedLine.setAttribute('x1', fx); view.fixedLine.setAttribute('x2', fx);
+      view.fixedDot.setAttribute('cx', fx);
+      view.fixedLabel.setAttribute('x', fx);
+      view.distance.setAttribute('x1', tx); view.distance.setAttribute('x2', fx);
+      view.capA.setAttribute('x1', tx); view.capA.setAttribute('x2', tx);
+      view.capB.setAttribute('x1', fx); view.capB.setAttribute('x2', fx);
+      view.relative.setAttribute('x', mid);
+      view.relative.textContent = gap === 0 ? '总分正好等于门槛' : `相差 ${gap.toFixed(1)}`;
+
+      view.range.value = theta.toFixed(1);
+      view.thetaOutput.textContent = `θ = ${signed(theta)}`;
+      view.axis.setAttribute('aria-valuenow', theta.toFixed(1));
+      view.axis.setAttribute('aria-valuetext', `门槛 ${signed(theta)}`);
+      view.answer.textContent = yes ? '是' : '否';
+      view.answer.dataset.value = yes ? '是' : '否';
+      view.bias.textContent = `b = ${signed(bias)}`;
+      view.formula.textContent = `z = 1.2 + ${wrapped(bias)}`;
+      view.z.textContent = `z = ${signed(z)}`;
+
+      if (theta === inputSum) {
+        view.state.textContent = '总分正好踩在门槛上；按 z ≥ 0，仍回答“是”。';
+      } else if (yes) {
+        view.state.textContent = `输入总分高于门槛 ${gap.toFixed(1)}，回答“是”。`;
+      } else {
+        view.state.textContent = `门槛高于输入总分 ${gap.toFixed(1)}，回答“否”。`;
+      }
+      if (announce) view.state.setAttribute('aria-label', `门槛 ${signed(theta)}，偏置 ${signed(bias)}，最终总分 ${signed(z)}，回答${yes ? '是' : '否'}`);
+    }
+
+    function dispatch(action, announce = false) {
+      if (destroyed) return;
+      state = transition(state, action);
+      render(announce);
+    }
+
+    function thetaFromPointer(event) {
+      const point = Deck.pt(view.axis, event);
+      const svgX = point.x * 930 / Math.max(1, view.axis.offsetWidth);
+      return -3 + (svgX - axisLeft) / (axisRight - axisLeft) * 6;
+    }
+
+    function onPointerDown(event) {
+      if (event.button !== undefined && event.button !== 0) return;
+      pointerId = event.pointerId;
+      view.hit.setPointerCapture(pointerId);
+      dispatch({ type: 'set-theta', value: thetaFromPointer(event) });
+    }
+    function onPointerMove(event) {
+      if (event.pointerId !== pointerId) return;
+      dispatch({ type: 'set-theta', value: thetaFromPointer(event) });
+    }
+    function finishPointer(event) {
+      if (event.pointerId !== pointerId) return;
+      if (view.hit.hasPointerCapture(pointerId)) view.hit.releasePointerCapture(pointerId);
+      pointerId = null;
+      render(true);
+    }
+    function onAxisKey(event) {
+      let next = null;
+      if (event.key === 'ArrowLeft' || event.key === 'ArrowDown') next = state.theta - 0.1;
+      if (event.key === 'ArrowRight' || event.key === 'ArrowUp') next = state.theta + 0.1;
+      if (event.key === 'Home') next = -3;
+      if (event.key === 'End') next = 3;
+      if (next === null) return;
+      event.preventDefault(); event.stopPropagation();
+      dispatch({ type: 'set-theta', value: next }, true);
+    }
+    function onRangeInput() { dispatch({ type: 'set-theta', value: Number(view.range.value) }); }
+    function onRangeChange() { render(true); }
+    function onReset() { pointerId = null; dispatch({ type: 'reset' }, true); }
+
+    makeTicks();
+    view.hit.addEventListener('pointerdown', onPointerDown);
+    view.hit.addEventListener('pointermove', onPointerMove);
+    view.hit.addEventListener('pointerup', finishPointer);
+    view.hit.addEventListener('pointercancel', finishPointer);
+    view.axis.addEventListener('keydown', onAxisKey);
+    view.range.addEventListener('input', onRangeInput);
+    view.range.addEventListener('change', onRangeChange);
+    view.reset.addEventListener('click', onReset);
+    render(false);
+
+    root.destroyBiasWidget = () => {
+      if (destroyed) return;
+      destroyed = true;
+      pointerId = null;
+      view.hit.removeEventListener('pointerdown', onPointerDown);
+      view.hit.removeEventListener('pointermove', onPointerMove);
+      view.hit.removeEventListener('pointerup', finishPointer);
+      view.hit.removeEventListener('pointercancel', finishPointer);
+      view.axis.removeEventListener('keydown', onAxisKey);
+      view.range.removeEventListener('input', onRangeInput);
+      view.range.removeEventListener('change', onRangeChange);
+      view.reset.removeEventListener('click', onReset);
+      delete root.destroyBiasWidget;
+    };
+  })();
+  Deck.init({ index: 5, total: 22 });
+  </script>
+</body>
+</html>

@@ -18,6 +18,11 @@ import sys
 from pathlib import Path
 
 from core.artifacts import parse_table
+# **接口块的正则和小节表从 planner 取,不抄第二份。** 这里原来复制了一份 `_IFACE`,
+# 块格式一改两边必然漂移,而漂移出来的判据会安静地读一个恒定值 —— 这条流水线上
+# 已经撞见过三次同款(handoff 计数找一节已删的标题、BASELINE_CHARS 按字节定按字符比、
+# strip_skills 的 BLOCK 正则匹配的是过时措辞)。
+from core.planner import IFACE_SECTIONS, _IFACE, _chassis_names, _iface_section
 
 ROOT = Path(__file__).parent
 
@@ -110,8 +115,15 @@ def one(label: str) -> dict | None:
     css_path = run / "pages" / "assets" / "theme.css"
     css = css_path.read_text(encoding="utf-8") if css_path.exists() else ""
     cls = css_classes(css)
-    iface = re.search(r"/\*\s*=+\s*INTERFACE\s*=+(.*?)=+\s*/?INTERFACE\s*=+\s*\*/",
-                      css, re.S | re.I)
+    iface = _IFACE.search(css)
+    iblock = iface.group(1) if iface else ""
+    # 八节齐不齐,以及名录点到了 CSS 里几个类 —— 后者是「接口块够不够用」的主判据。
+    # 建页 agent 不许读 CSS 源码,块里没点名的类对它们就是不存在的。
+    iface_secs = sum(bool(_iface_section(iblock, x).strip()) for x in IFACE_SECTIONS)
+    _bare = re.sub(r"/\*.*?\*/", "", css, flags=re.S)
+    _defined = set(re.findall(r"\.([a-z][a-z0-9-]+)",
+                              " ".join(re.findall(r"([^{}]*)\{", _bare))))
+    iface_named = len(_defined & set(_chassis_names(iblock)))
     named = [c for c in cls if any(f".{c}" in t for t in texts)]
     plan = (run / "PLAN.md")
     plan_t = plan.read_text(encoding="utf-8") if plan.exists() else ""
@@ -168,7 +180,8 @@ def one(label: str) -> dict | None:
         named=len(named), n_cls=len(cls),
         util=sum(1 for c in cls if UTIL.match(c)),
         gauge=sum(1 for g in GAUGES if g[1:] in cls),
-        css=len(css), iface=len(iface.group(1)) if iface else 0,
+        css=len(css), iface=len(iblock),
+        iface_secs=iface_secs, iface_named=iface_named, n_defined=len(_defined),
         plan_chars=len(plan_t),
         layouts=len(set(layouts)),
         layout_missing=sum(not r.layout for r in plan_rows),
@@ -195,10 +208,18 @@ ROWS = (
     ("  有「正确状态」的比率",    "{right}%",                         "≤40%"),
     ("  说清「什么跟着变」",      "{change}%",                        "≥80%"),
     ("  有复位/重来",             "{reset}%",                         "≥70%"),
-    ("theme.css 字符",            "{css:,}",                          "≤13000"),
+    # ≤13000 是按更早的产物定的,而实测三轮都在 16,457–17,897 —— 这条一直是红的,
+    # 也就一直没起过约束作用。接口块改成八节之后目标产物约 28,000–30,600,阈值跟着走。
+    ("theme.css 字符",            "{css:,}",                          "≤34000"),
     ("  其中 utility 类",         "{util}",                           "0"),
     ("  仪表类齐几样(共 8)",      "{gauge}/8",                        "8"),
-    ("  INTERFACE 块字符",        "{iface}",                          "≥2000"),
+    # ≥5000。我第一版按 frontend-slides 那 34 份 design.md 的字符中位数推了 ≥8000,
+    # **那是英文**:同样的内容中文只要一半字符。实测新模板第一轮 6,233 字,
+    # 而它的「字阶与字体角色」442 字里已经塞下了比例、依据、七档角色和中西配对。
+    # 拿英文的字符数去卡中文产物,就是又造一条恒红判据。基线 1,929。
+    ("  INTERFACE 块字符",        "{iface:,}",                        "≥5000"),
+    ("  八节齐几节",              "{iface_secs}/8",                   "8"),
+    ("  名录点到 CSS 里几个类",   "{iface_named}/{n_defined}",        "≥90%"),
     ("PLAN.md 字符",              "{plan_chars:,}",                   "≤10000"),
     ("  版式种类 / 缺失 / 相邻重复", "{layouts} / {layout_missing} / {layout_adj}", "≥4 / 0 / 0"),
     ("  split-lr 页数",           "{split_lr}",                      "≤总页数 1/3"),

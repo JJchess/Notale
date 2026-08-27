@@ -16,6 +16,8 @@ Complete this routing before any page mutation, including `Write`, `Edit`, `Patc
 3. Once Step 6 below selects a motion engine, also read [motion-engine-recipes.md](references/motion-engine-recipes.md) — read only the section for the one engine chosen (CSS, Web Animations API, GSAP, Canvas, or Lottie).
 4. Do not load other workflow references.
 
+The `<anti_ai_slop_copy>` and `<anti_ai_slop_visual>` blocks already in this system prompt apply to every page claim, label, explanatory sentence, composition, and surface treatment — they are not conditional reading, follow them directly.
+
 ## Preserve the Notale contract
 
 - Work in the `1600x900` logical coordinate system and keep the stage free of scrolling.

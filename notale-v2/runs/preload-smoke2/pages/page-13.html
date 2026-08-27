@@ -1,0 +1,276 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>重复四步，误差才会持续下降</title>
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  #stage{padding:var(--pad-y) var(--pad-x);gap:16px;}
+  .p13-head{flex:0 0 144px;display:flex;flex-direction:column;justify-content:flex-start;gap:8px;}
+  .p13-head .kicker{margin:0;color:var(--muted);font:700 var(--fs-label)/1.2 var(--font-mono);letter-spacing:.12em;}
+  .p13-head h1{margin:0;font:700 var(--fs-h1)/1.12 var(--font-sans);color:var(--text);}
+  .p13-head .p13-deck{margin:0;color:var(--muted);font:400 var(--fs-body)/1.35 var(--font-sans);}
+  .p13-widget{flex:1;min-height:0;display:grid;grid-template-rows:150px minmax(0,1fr) 56px;gap:16px;border-top:2px solid var(--text);border-bottom:1px solid var(--rule);padding:16px 0;}
+  .p13-widget *{box-sizing:border-box;}
+  .p13-process{position:relative;display:grid;grid-template-columns:1fr 48px 1fr 48px 1fr 48px 1fr;align-items:stretch;min-width:0;}
+  .p13-process .step{position:relative;border:1px solid var(--rule);padding:16px 16px 12px;background:transparent;transition:border-color 180ms linear,border-width 180ms linear;}
+  .p13-process .step[aria-current="step"]{border:3px solid var(--attention);padding:14px 14px 10px;}
+  .p13-step-top{display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin-bottom:8px;}
+  .p13-step-no{font:700 var(--fs-label)/1 var(--font-mono);color:var(--muted);}
+  .p13-process .step[aria-current="step"] .p13-step-no{color:var(--attention);}
+  .p13-step-name{font:700 var(--fs-body)/1.2 var(--font-sans);color:var(--text);}
+  .p13-step-copy{margin:0;color:var(--muted);font:400 var(--fs-sec)/1.35 var(--font-sans);}
+  .p13-step-out{display:block;margin-top:8px;color:var(--text);font:700 var(--fs-label)/1.2 var(--font-sans);}
+  .p13-process .arw{align-self:center;height:2px;background:var(--rule);position:relative;margin:0 8px;}
+  .p13-process .arw::after{content:"";position:absolute;right:-1px;top:-5px;border-left:8px solid var(--rule);border-top:6px solid transparent;border-bottom:6px solid transparent;}
+  .p13-work{display:grid;grid-template-columns:520px minmax(0,1fr);gap:40px;min-height:0;}
+  .p13-readings{display:grid;grid-template-rows:auto minmax(0,1fr);gap:16px;min-height:0;}
+  .p13-ledger{display:grid;grid-template-columns:repeat(3,1fr);border:1px solid var(--rule);min-height:80px;}
+  .p13-param{padding:12px 16px;border-right:1px solid var(--rule);}
+  .p13-param:last-child{border-right:0;}
+  .p13-param-label{display:block;color:var(--muted);font:700 var(--fs-label)/1.2 var(--font-sans);margin-bottom:5px;}
+  .p13-param .num{font:700 var(--fs-body)/1.2 var(--font-mono);color:var(--text);}
+  .p13-param .p13-grad{display:block;margin-top:4px;color:var(--muted);font:400 var(--fs-label)/1.2 var(--font-mono);}
+  .p13-samples{min-height:0;border-top:1px solid var(--rule);}
+  .p13-sample-head,.p13-sample{display:grid;grid-template-columns:80px 80px 92px 1fr;align-items:center;min-height:36px;border-bottom:1px solid var(--rule-soft);}
+  .p13-sample-head{color:var(--muted);font:700 var(--fs-label)/1.2 var(--font-sans);}
+  .p13-sample{font:400 var(--fs-sec)/1.2 var(--font-sans);}
+  .p13-sample>span{padding:0 12px;}
+  .p13-sample .pred{color:var(--prediction);font:700 var(--fs-sec)/1 var(--font-mono);}
+  .p13-loss-row{display:flex;align-items:baseline;justify-content:space-between;gap:16px;padding-top:10px;}
+  .p13-loss-row .label{color:var(--muted);font:400 var(--fs-sec)/1.2 var(--font-sans);}
+  .p13-loss-row .num{color:var(--text);font:700 var(--fs-lead)/1 var(--font-mono);}
+  .p13-chart-wrap{position:relative;display:grid;grid-template-rows:36px minmax(0,1fr);min-width:0;min-height:0;border-left:1px solid var(--rule);padding-left:24px;}
+  .p13-chart-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;}
+  .p13-chart-title{font:700 var(--fs-body)/1.2 var(--font-sans);color:var(--text);}
+  .p13-counter{font:400 var(--fs-label)/1.2 var(--font-mono);color:var(--muted);}
+  #p13-chart{width:100%;height:100%;min-height:0;}
+  .p13-empty{position:absolute;left:120px;right:48px;top:47%;transform:translateY(-50%);display:flex;flex-direction:column;align-items:center;gap:8px;text-align:center;color:var(--muted);pointer-events:none;}
+  .p13-empty strong{color:var(--text);font:700 var(--fs-body)/1.3 var(--font-sans);}
+  .p13-empty span{max-width:620px;font:400 var(--fs-sec)/1.4 var(--font-sans);}
+  .p13-controls{display:flex;align-items:center;gap:16px;min-width:0;}
+  .p13-controls .btn{min-width:148px;}
+  .p13-controls .btn[data-run][aria-pressed="true"]{border:3px solid var(--attention);}
+  .p13-controls .hint{margin-left:auto;max-width:570px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .p13-foot{flex:0 0 72px;display:flex;align-items:center;justify-content:space-between;gap:40px;}
+  .p13-summary{margin:0;max-width:1010px;color:var(--text);font:400 var(--fs-body)/1.4 var(--font-serif);}
+  .p13-next{margin:0;max-width:410px;color:var(--muted);font:700 var(--fs-sec)/1.35 var(--font-sans);text-align:right;}
+  @media (prefers-reduced-motion: reduce){.p13-process .step{transition:none;}}
+</style>
+</head>
+<body data-page="13" data-total="21">
+<div id="stage">
+  <header class="p13-head">
+    <p class="kicker">LOOP · REPEAT</p>
+    <h1>重复四步，误差才会持续下降</h1>
+    <p class="p13-deck">一次更新只改一次参数；连续留下的损失点，才让下降趋势可检查。</p>
+  </header>
+
+  <main class="p13-widget min0" data-training-widget aria-label="单神经元四步训练台">
+    <section class="p13-process k-process stage-cards" aria-label="训练循环的四个步骤">
+      <article class="step" data-step="0" aria-current="step">
+        <div class="p13-step-top"><span class="p13-step-no">01</span><span class="p13-step-name">预测</span></div>
+        <p class="p13-step-copy">用当前参数算出 4 个预测<span class="p13-step-out">产出：4 个 0–1 输出</span></p>
+      </article>
+      <span class="arw forward" aria-hidden="true"></span>
+      <article class="step" data-step="1">
+        <div class="p13-step-top"><span class="p13-step-no">02</span><span class="p13-step-name">计错</span></div>
+        <p class="p13-step-copy">把 4 个样本的损失取平均<span class="p13-step-out">产出：当前平均损失</span></p>
+      </article>
+      <span class="arw forward" aria-hidden="true"></span>
+      <article class="step" data-step="2">
+        <div class="p13-step-top"><span class="p13-step-no">03</span><span class="p13-step-name">求方向</span></div>
+        <p class="p13-step-copy">为 w₁、w₂、b 各测一条下坡建议<span class="p13-step-out">产出：3 条梯度读数</span></p>
+      </article>
+      <span class="arw forward" aria-hidden="true"></span>
+      <article class="step" data-step="3">
+        <div class="p13-step-top"><span class="p13-step-no">04</span><span class="p13-step-name">更新</span></div>
+        <p class="p13-step-copy">新参数 = 旧参数 − 0.3 × 梯度读数<span class="p13-step-out">产出：新参数与曲线新点</span></p>
+      </article>
+    </section>
+
+    <section class="p13-work min0">
+      <div class="p13-readings min0">
+        <div class="p13-ledger ledger" aria-label="参数与梯度账页">
+          <div class="p13-param"><span class="p13-param-label">w₁</span><span class="num" data-param="0">0.000000</span><span class="p13-grad" data-grad="0">梯度 —</span></div>
+          <div class="p13-param"><span class="p13-param-label">w₂</span><span class="num" data-param="1">0.000000</span><span class="p13-grad" data-grad="1">梯度 —</span></div>
+          <div class="p13-param"><span class="p13-param-label">b</span><span class="num" data-param="2">0.000000</span><span class="p13-grad" data-grad="2">梯度 —</span></div>
+        </div>
+        <div class="p13-samples" role="table" aria-label="固定四个二元样本及当前预测">
+          <div class="p13-sample-head" role="row"><span role="columnheader">x₁</span><span role="columnheader">x₂</span><span role="columnheader">真实 y</span><span role="columnheader">当前预测 ŷ</span></div>
+          <div class="p13-sample" role="row"><span>0</span><span>0</span><span>0</span><span class="pred" data-pred="0">0.500000</span></div>
+          <div class="p13-sample" role="row"><span>0</span><span>1</span><span>0</span><span class="pred" data-pred="1">0.500000</span></div>
+          <div class="p13-sample" role="row"><span>1</span><span>0</span><span>0</span><span class="pred" data-pred="2">0.500000</span></div>
+          <div class="p13-sample" role="row"><span>1</span><span>1</span><span>1</span><span class="pred" data-pred="3">0.500000</span></div>
+          <div class="p13-loss-row"><span class="label">当前平均损失 L</span><span class="num" data-loss>0.693147</span></div>
+        </div>
+      </div>
+
+      <div class="p13-chart-wrap min0">
+        <div class="p13-chart-head"><span class="p13-counter">损失曲线 · 参数更新 <strong data-count>0</strong> 次</span></div>
+        <div id="p13-chart" role="img" aria-label="横轴为参数更新次数，纵轴为平均损失的曲线"></div>
+        <div class="p13-empty" data-empty><strong>记录规则：完成“更新”后才落点</strong><span>更新前损失 0.693147 只作对照；第 n 次更新完成后，在横轴 n 处记录新的平均损失。</span></div>
+      </div>
+    </section>
+
+    <div class="p13-controls">
+      <button class="btn" type="button" data-next>执行下一步</button>
+      <button class="btn" type="button" data-run aria-pressed="false">连续训练 12 次</button>
+      <button class="btn" type="button" data-reset>重新开始</button>
+      <div class="hint" data-hint aria-live="polite">当前：01 预测 · 固定 4 个样本与学习率 0.3</div>
+    </div>
+  </main>
+
+  <footer class="p13-foot">
+    <p class="p13-summary">单神经元的训练，就是反复执行“预测—计错—求方向—更新”，并把每次损失记入曲线。</p>
+    <p class="p13-next">参数变多、排成多层后，学习方法会换吗？</p>
+  </footer>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script src="assets/lib/echarts.min.js"></script>
+<script>
+(() => {
+  const root = document.querySelector('[data-training-widget]');
+  if (!root || !window.Lec || !window.echarts) return;
+
+  const samples = [
+    {x:[0,0], y:0}, {x:[0,1], y:0}, {x:[1,0], y:0}, {x:[1,1], y:1}
+  ];
+  const learningRate = 0.3;
+  const fdStep = 0.00001;
+  const stepNames = ['01 预测','02 计错','03 求方向','04 更新'];
+  const initialParams = [0,0,0];
+  const abort = new AbortController();
+  const signal = abort.signal;
+  let timer = 0;
+  let destroyed = false;
+  let runTarget = null;
+
+  const view = {
+    steps:[...root.querySelectorAll('[data-step]')],
+    params:[...root.querySelectorAll('[data-param]')],
+    grads:[...root.querySelectorAll('[data-grad]')],
+    preds:[...root.querySelectorAll('[data-pred]')],
+    loss:root.querySelector('[data-loss]'), count:root.querySelector('[data-count]'),
+    next:root.querySelector('[data-next]'), run:root.querySelector('[data-run]'),
+    reset:root.querySelector('[data-reset]'), hint:root.querySelector('[data-hint]'),
+    empty:root.querySelector('[data-empty]')
+  };
+  const chart = echarts.init(root.querySelector('#p13-chart'), null, {renderer:'svg'});
+
+  function predictionsFor(params){
+    return samples.map(s => Lec.P.neuronForward(s.x, [params[0],params[1]], params[2], 'sigmoid').output);
+  }
+  function lossFor(params){
+    const predictions = predictionsFor(params);
+    return predictions.reduce((sum,p,i) => sum + Lec.P.binaryCrossEntropy([p],[samples[i].y]).value, 0) / samples.length;
+  }
+  function makeInitialState(){
+    const params = initialParams.slice();
+    return {step:0, params, predictions:predictionsFor(params), loss:lossFor(params), gradients:null, updates:0, history:[], running:false};
+  }
+  const initialLoss = lossFor(initialParams);
+  let state = makeInitialState();
+
+  function calcGradients(params){
+    return Lec.P.finiteDifferenceGradient(values => lossFor(values), params.slice(), fdStep);
+  }
+  function transition(current){
+    if(current.step === 0){
+      return {...current, predictions:predictionsFor(current.params), step:1};
+    }
+    if(current.step === 1){
+      return {...current, loss:lossFor(current.params), step:2};
+    }
+    if(current.step === 2){
+      return {...current, gradients:calcGradients(current.params), step:3};
+    }
+    const gradients = current.gradients || calcGradients(current.params);
+    const params = current.params.map((v,i) => v - learningRate * gradients[i]);
+    const predictions = predictionsFor(params);
+    const loss = lossFor(params);
+    const updates = current.updates + 1;
+    return {step:0, params, predictions, loss, gradients:null, updates, history:[...current.history,{n:updates,loss}], running:current.running};
+  }
+  function formatSigned(v){
+    const clean = Math.abs(v) < 0.0000005 ? 0 : v;
+    return clean.toFixed(6);
+  }
+  function renderChart(){
+    chart.setOption({
+      animation: !Deck.reduced(), animationDuration:180,
+      grid:{left:72,right:24,top:20,bottom:54,containLabel:false},
+      textStyle:{fontFamily:'DejaVu Sans, Noto Sans CJK SC, sans-serif',fontSize:15,color:'#596168'},
+      xAxis:{type:'category',name:'参数更新次数',nameLocation:'middle',nameGap:34,data:state.history.map(d=>String(d.n)),axisLine:{lineStyle:{color:'#9CA1A1'}},axisTick:{show:true},axisLabel:{fontSize:12,color:'#596168',interval:(index)=>index===0 || index===state.history.length-1},nameTextStyle:{fontSize:15,color:'#596168'}},
+      yAxis:{type:'value',name:'平均损失',nameLocation:'middle',nameRotate:90,nameGap:54,min:0,max:initialLoss,axisLine:{show:true,lineStyle:{color:'#9CA1A1'}},splitLine:{show:true,lineStyle:{color:'#D5D2C9'}},axisLabel:{fontSize:12,color:'#596168',formatter:v=>Number(v).toFixed(3)},nameTextStyle:{fontSize:15,color:'#596168'}},
+      tooltip:{trigger:'axis',textStyle:{fontSize:15},formatter:items=>items.length ? `第 ${items[0].axisValue} 次更新<br>平均损失 ${Number(items[0].value).toFixed(6)}` : ''},
+      series:[{type:'line',data:state.history.map(d=>d.loss),symbol:'circle',symbolSize:9,showSymbol:true,lineStyle:{width:2,color:'#1E252B'},itemStyle:{color:'#E56B2F',borderColor:'#1E252B',borderWidth:1},emphasis:{disabled:true}}]
+    }, true);
+  }
+  function render(announce){
+    view.steps.forEach((el,i) => i === state.step ? el.setAttribute('aria-current','step') : el.removeAttribute('aria-current'));
+    view.params.forEach((el,i) => el.textContent = formatSigned(state.params[i]));
+    view.grads.forEach((el,i) => el.textContent = `梯度 ${state.gradients ? formatSigned(state.gradients[i]) : '—'}`);
+    view.preds.forEach((el,i) => el.textContent = state.predictions[i].toFixed(6));
+    view.loss.textContent = state.loss.toFixed(6);
+    view.count.textContent = String(state.updates);
+    view.run.setAttribute('aria-pressed', String(state.running));
+    view.run.textContent = state.running ? '暂停连续训练' : '连续训练 12 次';
+    view.hint.textContent = `当前：${stepNames[state.step]} · 固定 4 个样本与学习率 0.3`;
+    view.empty.hidden = state.history.length > 0;
+    renderChart();
+    if(announce) view.hint.setAttribute('aria-label', `${stepNames[state.step]}，已更新 ${state.updates} 次，平均损失 ${state.loss.toFixed(6)}`);
+  }
+  function stopRun(announce){
+    if(timer) window.clearTimeout(timer);
+    timer = 0; runTarget = null;
+    if(state.running){state = {...state,running:false}; render(announce);}
+  }
+  function advance(announce=true){
+    if(destroyed) return;
+    state = transition(state);
+    render(announce);
+  }
+  function scheduleRun(){
+    if(!state.running || destroyed) return;
+    if(runTarget !== null && state.updates >= runTarget && state.step === 0){stopRun(true);return;}
+    timer = window.setTimeout(() => {timer=0; advance(false); scheduleRun();}, Deck.reduced() ? 80 : 360);
+  }
+  function startRun(){
+    if(state.running){stopRun(true);return;}
+    runTarget = state.updates + 12;
+    state = {...state,running:true};
+    render(true);
+    scheduleRun();
+  }
+  function reset(){
+    stopRun(false);
+    state = makeInitialState();
+    render(true);
+  }
+  function onNext(){stopRun(false);advance(true);}
+
+  view.next.addEventListener('click',onNext,{signal});
+  view.run.addEventListener('click',startRun,{signal});
+  view.reset.addEventListener('click',reset,{signal});
+  const offResize = Deck.onResize(() => chart.resize());
+
+  function destroy(){
+    if(destroyed) return;
+    destroyed = true;
+    if(timer) window.clearTimeout(timer);
+    timer = 0;
+    abort.abort();
+    offResize();
+    chart.dispose();
+  }
+  root.destroyTrainingWidget = destroy;
+  window.addEventListener('pagehide',destroy,{once:true});
+  Deck.init({index:13,total:21});
+  render(false);
+})();
+</script>
+</body>
+</html>

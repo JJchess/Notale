@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>学习率把方向变成一步的距离</title>
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+:root{--bg:#F4F1E8;--text:#1E252B;--muted:#596168;--rule:#9CA1A1;--rule-soft:#D5D2C9;--surface:#EBE7DD;--prediction:#2457A6;--attention:#E56B2F;--focus:#E56B2F;--font-sans:"DejaVu Sans","Noto Sans CJK SC",sans-serif;--font-mono:"DejaVu Sans Mono","Noto Sans CJK SC",monospace}
+#stage{box-sizing:border-box;padding:28px 56px;display:flex;flex-direction:column;gap:16px;background:var(--bg);color:var(--text);overflow:hidden}
+header{height:104px;display:flex;align-items:flex-start;justify-content:space-between;border-bottom:1px solid var(--rule);padding-bottom:16px}
+.title-stack{display:flex;flex-direction:column;gap:8px}.kicker{font:700 var(--fs-label)/1.2 var(--font-mono);letter-spacing:.12em;color:var(--muted)}
+h1{margin:0;font:700 var(--fs-h1)/1.06 var(--font-sans);letter-spacing:-.02em}.formula{align-self:flex-end;margin-bottom:5px;font:500 21px/1.35 var(--font-sans);white-space:nowrap}.formula b{font-family:var(--font-mono);font-weight:700}
+.workspace{flex:1;display:grid;grid-template-columns:minmax(0,1fr) 400px;gap:40px;min-height:0}.figure-panel{min-width:0;min-height:0;display:flex;flex-direction:column;border:1px solid var(--rule);background:transparent}.figure-head{height:56px;display:flex;align-items:center;justify-content:space-between;padding:0 24px;border-bottom:1px solid var(--rule-soft)}
+.figure-head h2{margin:0;font:700 21px/1.2 var(--font-sans)}.legend{display:flex;gap:24px;align-items:center;font-size:15px}.li{display:flex;align-items:center;gap:8px}.sw{width:28px;height:0;border-top:2px solid var(--text)}.sw.slow{border-top-style:dashed}.sw.fit{border-color:var(--prediction)}.sw.fast{border-top:3px double var(--text)}
+.chart-wrap{position:relative;flex:1;min-height:0}.chart{position:absolute;inset:0}.edge-note{position:absolute;right:18px;top:12px;color:var(--muted);font:15px/1.3 var(--font-sans);pointer-events:none}
+figcaption{height:42px;border-top:1px solid var(--rule-soft);padding:10px 24px;font:15px/1.35 var(--font-sans);color:var(--muted)}
+.controls{min-width:0;display:flex;flex-direction:column;gap:8px}.panel{padding:16px;border:1px solid var(--rule);background:var(--surface)}.panel.q{background:transparent}.ctl-title{margin:0 0 8px;font:700 18px/1.25 var(--font-sans)}
+.rate-group{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}.knob{appearance:none;box-sizing:border-box;min-width:0;width:auto;min-height:62px;border:1px solid var(--rule);border-radius:18px;background:var(--bg);color:var(--text);font:700 20px/1 var(--font-mono);cursor:pointer}.knob[aria-pressed="true"]{border:3px solid var(--attention);color:var(--attention)}
+.readouts{display:grid;grid-template-columns:1fr 1fr;gap:8px}.big{padding:8px 12px;border:1px solid var(--rule);background:var(--bg);min-height:66px}.read-label{display:block;margin-bottom:4px;color:var(--muted);font:15px/1.2 var(--font-sans)}.num{font:700 25px/1.2 var(--font-mono);font-variant-numeric:tabular-nums}.gradient-line{margin-top:12px;font:16px/1.35 var(--font-sans);color:var(--muted)}
+.btns{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}.btn{min-width:0;min-height:44px;border:1px solid var(--text);border-radius:8px;background:var(--bg);color:var(--text);font:700 15px/1.2 var(--font-sans);cursor:pointer}.btn.primary{background:var(--text);color:var(--bg)}.btn:disabled{opacity:.45;cursor:not-allowed}.reset{width:auto;margin-top:0}
+.status{min-height:24px;margin-top:8px;padding-top:8px;border-top:1px solid var(--rule-soft);font:16px/1.4 var(--font-sans)}.status strong{color:var(--attention)}
+.evidence{padding:8px 16px}.evidence table{width:100%;border-collapse:collapse;font:15px/1.25 var(--font-sans)}.evidence th,.evidence td{text-align:left;padding:4px;border-bottom:1px solid var(--rule-soft)}.evidence th{color:var(--muted);font-weight:600}.evidence td:first-child{font-family:var(--font-mono);font-weight:700}.evidence td:nth-child(2){font-family:var(--font-mono);font-size:14px}
+footer{height:76px;border-top:2px solid var(--text);display:flex;align-items:center;justify-content:space-between;gap:40px}.claim{max-width:1080px;font:600 21px/1.4 var(--font-sans)}.next{font:700 18px/1.35 var(--font-sans);color:var(--muted);white-space:nowrap}
+button:focus-visible{outline:3px solid var(--focus);outline-offset:3px}@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body data-page="12" data-total="21">
+<div id="stage" class="canvas-full">
+  <header>
+    <div class="title-stack"><div class="kicker">STEP SIZE · RATE</div><h1>学习率把方向变成一步的距离</h1></div>
+    <div class="formula" aria-label="更新公式">新参数 = 旧参数 − <b>学习率</b> × 梯度读数</div>
+  </header>
+
+  <main class="workspace min0">
+    <figure class="figure-panel min0" aria-labelledby="chart-title" aria-describedby="chart-caption">
+      <div class="figure-head"><h2 id="chart-title">同一初值、目标与损失坡面上的参数轨迹</h2><div class="legend" aria-label="轨迹图例"><span class="li"><i class="sw slow"></i>η 0.03</span><span class="li"><i class="sw fit"></i>η 0.3</span><span class="li"><i class="sw fast"></i>η 30</span></div></div>
+      <div class="chart-wrap min0"><div id="chart" class="chart" role="img" aria-label="三种学习率在五次更新内的参数位置折线图，横轴为更新次数，纵轴固定为负四到四"></div><div class="edge-note">纵轴固定 −4…4；越界值在边缘写出原数</div></div>
+      <figcaption id="chart-caption">目标参数 w = 1 以中性双线标出。三条轨迹都从 w = 0、初始梯度约 −2 出发。</figcaption>
+    </figure>
+
+    <aside class="controls min0" aria-label="学习率实验控制">
+      <section class="panel">
+        <h2 class="ctl-title">选择学习率 η（切换后回到 w = 0）</h2>
+        <div class="rate-group" role="group" aria-label="学习率三个档位">
+          <button class="knob" type="button" data-rate="0.03" aria-pressed="false">0.03</button>
+          <button class="knob" type="button" data-rate="0.3" aria-pressed="true">0.3</button>
+          <button class="knob" type="button" data-rate="30" aria-pressed="false">30</button>
+        </div>
+      </section>
+      <section class="panel q">
+        <div class="readouts">
+          <div class="big"><span class="read-label">当前参数 w</span><span class="num" id="w-read">0.000</span></div>
+          <div class="big"><span class="read-label">当前损失 L</span><span class="num" id="loss-read">1.0000</span></div>
+        </div>
+        <div class="gradient-line">更新 <span class="num" id="step-read">0</span> 次 · 当前梯度读数 <span class="num" id="grad-read">−2.000</span></div>
+        <div class="btns" style="margin-top:12px"><button id="step-btn" class="btn primary" type="button">更新一步</button><button id="run-btn" class="btn" type="button">连续 5 次</button><button id="reset-btn" class="btn reset" type="button">全部重置</button></div>
+        <div id="status" class="status" role="status" aria-live="polite">η = 0.3：在本例中稳定下降。</div>
+      </section>
+      <section class="evidence panel q" aria-label="第五次更新证据表">
+        <table><thead><tr><th>η</th><th>第 5 次</th><th>判读</th></tr></thead><tbody>
+          <tr><td>0.03</td><td>w≈0.266 · L≈0.539</td><td>下降慢</td></tr>
+          <tr><td>0.3</td><td>w≈0.990 · L≈0.000105</td><td>本例稳定</td></tr>
+          <tr><td>30</td><td>第 2 次 w=−3480</td><td>越跨越远</td></tr>
+        </tbody></table>
+      </section>
+    </aside>
+  </main>
+
+  <footer><div class="claim">同一份梯度建议，学习率太小会走得慢，合适时可稳定下降，太大则可能反复跨过低处。</div><div class="next">下一问：一步会下降，怎样变成持续的学习？</div></footer>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script src="assets/lib/echarts.min.js"></script>
+<script>
+(function(){
+  'use strict';
+  Deck.init({index:12,total:21});
+  const rates=[0.03,0.3,30];
+  const colors={text:'#1E252B',muted:'#596168',rule:'#9CA1A1',soft:'#D5D2C9',prediction:'#2457A6',attention:'#E56B2F',bg:'#F4F1E8'};
+  const lossAt=w=>Lec.P.meanSquaredError([w],[1]).value;
+  const gradientAt=w=>Lec.P.finiteDifferenceGradient(v=>lossAt(v[0]),[w],Lec.K.FINITE_DIFFERENCE_STEP)[0];
+  function trajectory(rate){
+    const out=[{step:0,w:0,loss:lossAt(0),gradient:gradientAt(0)}];
+    let w=0;
+    for(let i=1;i<=5;i++){
+      const g=gradientAt(w); w=w-rate*g;
+      out.push({step:i,w,loss:lossAt(w),gradient:gradientAt(w)});
+      if(rate===30&&i===2) break;
+    }
+    return out;
+  }
+  const records=rates.map(rate=>({id:'rate-'+rate,rate,points:trajectory(rate)}));
+  const initial={rate:0.3,step:0,running:false};
+  let state={...initial},timer=0;
+  const host=document.getElementById('chart');
+  const chart=echarts.init(host,null,{renderer:'svg'});
+  const clamp=v=>Math.max(-4,Math.min(4,v));
+  const fmtW=v=>Math.abs(v)>=100?Math.round(v).toLocaleString('en-US'):v.toFixed(3);
+  const fmtLoss=v=>v>=1000?Math.round(v).toLocaleString('en-US'):(v<0.001?v.toFixed(6):v.toFixed(4));
+  const seriesBase=records.map(rec=>({
+    id:rec.id,name:'η '+rec.rate,type:'line',clip:true,showSymbol:true,symbolSize:rec.rate===30?9:7,
+    data:rec.points.map(p=>[p.step,clamp(p.w),p.w,p.loss]),
+    lineStyle:{width:rec.rate===0.3?3:2,color:rec.rate===0.3?colors.prediction:colors.text,type:rec.rate===0.03?'dashed':'solid'},
+    itemStyle:{color:rec.rate===0.3?colors.prediction:colors.text},
+    emphasis:{lineStyle:{width:4}},
+    markPoint:rec.rate===30?{silent:true,symbol:'diamond',symbolSize:13,itemStyle:{color:colors.text},label:{show:true,color:colors.text,fontSize:14,fontWeight:700,backgroundColor:colors.bg,padding:[3,5],formatter:p=>p.data.value},data:[{coord:[1,4],value:'w = 60 · 超出图框',label:{position:'insideTopRight'}},{coord:[2,-4],value:'w = −3,480 · 超出图框',label:{position:'insideBottomRight'}}]}:undefined
+  }));
+  function option(){
+    const rec=records.find(r=>r.rate===state.rate),p=rec.points[Math.min(state.step,rec.points.length-1)];
+    return {animation:!Deck.reduced(),animationDurationUpdate:240,textStyle:{fontFamily:'DejaVu Sans, Noto Sans CJK SC, sans-serif',fontSize:16,color:colors.text},grid:{left:82,right:48,top:54,bottom:62,containLabel:false},tooltip:{trigger:'item',confine:true,textStyle:{fontSize:16},formatter:q=>{const d=q.data;return q.seriesName+'<br>更新 '+d[0]+' 次<br>w = '+fmtW(d[2])+'<br>L = '+fmtLoss(d[3]);}},xAxis:{type:'value',name:'更新次数',nameLocation:'middle',nameGap:38,min:0,max:5,interval:1,nameTextStyle:{fontSize:15,color:colors.muted},axisLabel:{fontSize:12,color:colors.muted},axisLine:{lineStyle:{color:colors.rule}},splitLine:{show:false}},yAxis:{type:'value',name:'参数位置 w',nameLocation:'middle',nameGap:52,min:-4,max:4,interval:1,nameTextStyle:{fontSize:15,color:colors.muted},axisLabel:{fontSize:12,color:colors.muted},axisLine:{show:true,lineStyle:{color:colors.rule}},splitLine:{lineStyle:{color:colors.soft}}},series:[...seriesBase,{id:'target',name:'目标 w=1',type:'line',silent:true,symbol:'none',data:[[0,0.97],[5,0.97]],lineStyle:{width:1,color:colors.rule,type:'solid'},markLine:{silent:true,symbol:'none',label:{show:true,formatter:'目标 w = 1',position:'insideEndTop',fontSize:14,color:colors.muted},lineStyle:{color:colors.rule,width:3,type:'double'},data:[{yAxis:1}]}},{id:'current',name:'当前位置',type:'scatter',z:10,symbolSize:18,data:[[p.step,clamp(p.w),p.w,p.loss]],itemStyle:{color:colors.attention,borderColor:colors.bg,borderWidth:3}}]};
+  }
+  function currentPoint(){const rec=records.find(r=>r.rate===state.rate);return rec.points[Math.min(state.step,rec.points.length-1)];}
+  function statusText(p){
+    if(state.rate===0.03)return state.step===0?'η = 0.03：方向相同，步长较小。':'η = 0.03：方向对，但下降慢。';
+    if(state.rate===0.3)return state.step===0?'η = 0.3：在本例中稳定下降。':'η = 0.3：本例中损失持续下降。';
+    if(state.step>=2)return '<strong>数值仍有效，但步子正在放大误差。</strong>';
+    if(state.step===1)return '<strong>第一步到 w = 60，已经跨过低处。</strong>';
+    return 'η = 30：观察越界数值，不缩放纵轴。';
+  }
+  function render(){
+    const p=currentPoint(); chart.setOption(option(),{notMerge:true});
+    document.querySelectorAll('.knob').forEach(b=>b.setAttribute('aria-pressed',String(Number(b.dataset.rate)===state.rate)));
+    window.clearTimeout(timer);timer=window.setTimeout(()=>{
+      document.getElementById('w-read').textContent=fmtW(p.w);
+      document.getElementById('loss-read').textContent=fmtLoss(p.loss);
+      document.getElementById('step-read').textContent=state.step;
+      document.getElementById('grad-read').textContent=(p.gradient<0?'−':'')+Math.abs(p.gradient).toFixed(3);
+      document.getElementById('status').innerHTML=statusText(p);
+    },Deck.reduced()?0:120);
+    const max=state.rate===30?2:5;
+    document.getElementById('step-btn').disabled=state.running||state.step>=max;
+    document.getElementById('run-btn').disabled=state.running||state.step>=max;
+  }
+  function setState(patch){state={...state,...patch};render();}
+  function advance(){const max=state.rate===30?2:5;if(state.step<max)setState({step:state.step+1});}
+  document.querySelectorAll('.knob').forEach(b=>b.addEventListener('click',()=>{window.clearInterval(runTimer);setState({rate:Number(b.dataset.rate),step:0,running:false});}));
+  document.getElementById('step-btn').addEventListener('click',advance);
+  let runTimer=0;
+  document.getElementById('run-btn').addEventListener('click',()=>{
+    const max=state.rate===30?2:5;setState({running:true});
+    const tick=()=>{if(state.step>=max){window.clearInterval(runTimer);setState({running:false});return;}state={...state,step:state.step+1};render();if(state.step>=max){window.clearInterval(runTimer);window.setTimeout(()=>setState({running:false}),Deck.reduced()?0:260);}};
+    tick();if(state.step<max)runTimer=window.setInterval(tick,Deck.reduced()?20:360);
+  });
+  document.getElementById('reset-btn').addEventListener('click',()=>{window.clearInterval(runTimer);setState({...initial});});
+  const ro=new ResizeObserver(()=>chart.resize());ro.observe(host);
+  window.addEventListener('pagehide',()=>{window.clearTimeout(timer);window.clearInterval(runTimer);ro.disconnect();chart.dispose();},{once:true});
+  render();
+})();
+</script>
+</body>
+</html>

@@ -13,7 +13,8 @@ Complete this routing before any page mutation, including `Write`, `Edit`, `Patc
 
 1. Read [direction-recipes.md](references/direction-recipes.md).
 2. Also read [material-and-effects.md](references/material-and-effects.md) when the direction uses glass, tactile surfaces, technical frames, particles, grids, dithering, glow, or another atmospheric effect.
-3. Do not load unrelated references.
+3. Also read `workflows/scrub-visual-slop.md` before committing the direction contract.
+4. Do not load unrelated references.
 
 ## Preserve the Notale contract
 

@@ -405,14 +405,36 @@ def report(name: str, states: list) -> None:
                   f"   文本块 {probe.get('texts', 0)} 个")
             occ_pct = occ * 100 // cells
             n_text = probe.get("texts", 0)
+            # **2026-08-27:这两条从 ✗ 降成参考行。** 上面那段账没有删,它记的是
+            # 「为什么当初给了数」;下面记的是「为什么它不能是这一页的合格线」。
+            #
+            # 出路不在建页 agent 手里。原文写着「要么把该讲的讲透,要么和相邻页合并」——
+            # 内容量由 pNN.md 定死,合并页是 planner 的决定,**两条它都无权执行**。
+            # 而 `prompts/brief.md` 要求「反复改到不再报 ✗ 为止」,于是这个循环在
+            # 每轮 3–7 页上根本无法终止。
+            #
+            # 代价按模型分裂,这才是真正的问题:
+            #   AWS-GPT-5.6-Sol       无视这条,照常收尾 —— 20 页 19.2 分 / 1,343 万 tok
+            #   AWS-Claude-Sonnet-5   照办 —— page-09 打满 100 步,其中 Patch 39 次、
+            #                         整页却只有 3 处真 ✗;它在步 61/91/100 的自述是
+            #                         「调整字号间距边际效益递减」「initial 提升到 59%
+            #                         了但出现叠压」「144 个文本块…让我数一下」。
+            #                         92 分钟 5,195 万 tok 只交付 8 页。
+            # **一条只有肯违反指令的模型才能通过的闸,不是闸,是陷阱。**
+            #
+            # 另外它和 system 块自相矛盾,这一点 core/builder.py 早就记下了:
+            # `page-rhythm` 写着「允许有意保持内容较少的页面」,这里判它不合格。
+            #
+            # 数字继续打印 —— 它仍然是有用的体检项(plan_quality 和 check_palette
+            # 读的是 JSON 里的 occupied/cells,不受影响),只是判归判、报归报。
             if occ_pct < OCC_FLOOR:
-                print(f"   ✗ 画面太空:占用比 {occ_pct}% < 下限 {OCC_FLOOR}%。"
-                      f"不是让你把字号调大或加装饰 —— 是这一页承载的东西太少,"
-                      f"要么把该讲的讲透(多一层结构、多一个维度、把过程展开),"
-                      f"要么和相邻页合并")
+                print(f"   参考 密度偏低:占用比 {occ_pct}% < 目标 {OCC_FLOOR}%。"
+                      f"**这不是本页的失败项** —— 内容量由 pNN.md 定,合并页是规划的事。"
+                      f"不要为它反复调字号、间距或加装饰;真正该改的是页表,不是这一页")
             if n_text and not (TEXT_LO <= n_text <= TEXT_HI):
-                which = "太少" if n_text < TEXT_LO else "太多"
-                print(f"   ✗ 文本块 {n_text} 个,{which}(区间 {TEXT_LO}–{TEXT_HI})")
+                which = "偏少" if n_text < TEXT_LO else "偏多"
+                print(f"   参考 文本块 {n_text} 个,{which}(参考区间 {TEXT_LO}–{TEXT_HI}),"
+                      f"同上,不是失败项")
             flags = []
             if probe.get("overlap"):
                 flags.append(f"文字叠压 {probe['overlap']} 处")

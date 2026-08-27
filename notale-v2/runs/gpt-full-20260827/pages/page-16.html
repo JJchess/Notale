@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  #stage{gap:18px}
+  .p16-head{height:102px;display:flex;flex-direction:column;justify-content:flex-end;gap:5px}
+  .p16-kicker{font:700 var(--fs-label)/1 var(--font-mono);letter-spacing:.12em;color:var(--accent)}
+  .p16-head h1{margin:0;font:700 var(--fs-h1)/1.2 var(--font-sans);color:var(--text)}
+  .p16-widget{flex:1;min-height:0;display:grid;grid-template-rows:minmax(0,1fr) auto auto;gap:14px}
+  .p16-widget .p16-panel{min-height:0;padding:18px 22px 16px;display:grid;grid-template-columns:minmax(0,1fr) 330px;gap:28px;overflow:hidden}
+  .p16-network{min-width:0;min-height:0;display:grid;grid-template-rows:42px minmax(0,1fr);gap:4px}
+  .p16-cols{display:grid;grid-template-columns:repeat(5,1fr);padding-left:118px;color:var(--muted);font:600 var(--fs-label)/1.2 var(--font-sans);text-align:center;align-items:end}
+  .p16-svg{display:block;width:100%;height:100%;min-height:0}
+  .p16-svg text{font-family:var(--font-sans);fill:var(--text)}
+  .p16-svg .row-label{font-size:17px;font-weight:700}
+  .p16-svg .node-label{font-size:15px;font-weight:650;text-anchor:middle;dominant-baseline:middle}
+  .p16-svg .lane{stroke:var(--line);stroke-width:1;stroke-dasharray:3 8}
+  .p16-svg .node{fill:var(--bg);stroke:var(--line);stroke-width:1.5;rx:12}
+  .p16-svg .node.done-f{fill:color-mix(in srgb,var(--signal) 10%,var(--bg));stroke:var(--signal);stroke-width:2}
+  .p16-svg .node.done-b{fill:color-mix(in srgb,var(--error) 9%,var(--bg));stroke:var(--error);stroke-width:2}
+  .p16-svg .node.current{fill:color-mix(in srgb,var(--accent) 14%,var(--bg));stroke:var(--accent);stroke-width:4}
+  .p16-svg .edge-f{fill:none;stroke:var(--line);stroke-width:3}
+  .p16-svg .edge-f.done{stroke:var(--signal)}
+  .p16-svg .edge-f.current{stroke:var(--accent);stroke-width:5}
+  .p16-svg .edge-b{fill:none;stroke:var(--line);stroke-width:2;stroke-dasharray:5 7;opacity:.42}
+  .p16-svg .edge-b.done{stroke:var(--error);stroke-dasharray:none;opacity:1}
+  .p16-svg .edge-b.current{stroke:var(--accent);stroke-width:5;stroke-dasharray:none;opacity:1}
+  .p16-svg .tagbox{fill:var(--bg);stroke:var(--line);stroke-width:1}
+  .p16-svg .tagtext{font-size:14px;font-weight:700;text-anchor:middle;dominant-baseline:middle}
+  .p16-readout{border-left:1px solid var(--line);padding-left:28px;display:flex;flex-direction:column;justify-content:center;min-width:0}
+  .p16-step{font:700 var(--fs-label)/1 var(--font-mono);color:var(--accent);letter-spacing:.06em}
+  .p16-pos{margin:12px 0 8px;font:700 var(--fs-h2)/1.25 var(--font-sans);color:var(--text)}
+  .p16-event{min-height:62px;margin:0;font:500 var(--fs-lead)/1.45 var(--font-sans);color:var(--text)}
+  .p16-dir{margin-top:22px;display:flex;align-items:center;gap:10px;color:var(--muted);font:600 var(--fs-label)/1.2 var(--font-sans)}
+  .p16-dir i{display:block;width:48px;height:0;border-top:3px solid var(--signal);position:relative}
+  .p16-dir i:after{content:"";position:absolute;right:-1px;top:-6px;border-left:9px solid var(--signal);border-top:5px solid transparent;border-bottom:5px solid transparent}
+  .p16-dir.back i{border-top:2px solid var(--error)}
+  .p16-dir.back i:after{right:auto;left:-1px;border-left:0;border-right:9px solid var(--error)}
+  .p16-controls{display:flex;align-items:center;gap:18px;min-height:56px}
+  .p16-controls label{font:650 var(--fs-label)/1.2 var(--font-sans);white-space:nowrap}
+  .p16-controls input{flex:1;min-width:0}
+  .p16-ticks{margin:-10px 108px 0 116px;display:flex;justify-content:space-between;color:var(--muted);font:500 var(--fs-tick)/1 var(--font-mono)}
+  .p16-reset{white-space:nowrap}
+  .p16-foot{display:grid;grid-template-columns:1fr 1fr;gap:28px;align-items:start}
+  .p16-conclusion{margin:0;font:600 var(--fs-sec)/1.45 var(--font-serif);color:var(--text)}
+  .p16-next{margin:0;text-align:right;font:500 var(--fs-sec)/1.45 var(--font-sans);color:var(--muted)}
+  .p16-next strong{color:var(--accent)}
+  @media (prefers-reduced-motion:no-preference){.p16-svg .node,.p16-svg path{transition:fill 160ms ease,stroke 160ms ease,stroke-width 160ms ease,opacity 160ms ease}}
+</style>
+</head>
+<body data-page="16" data-total="22">
+<div id="stage">
+  <header class="p16-head">
+    <div class="p16-kicker">FORWARD ↔ BACKWARD</div>
+    <h1>预测向前算，责任按相反顺序往回传</h1>
+  </header>
+
+  <main class="p16-widget min0" data-p16-widget>
+    <section class="panel p16-panel min0" aria-label="前向传播与反向传播对照仪器">
+      <div class="p16-network min0">
+        <div class="p16-cols" aria-hidden="true"><span>输入</span><span>隐藏层 1</span><span>隐藏层 2</span><span>输出</span><span>损失</span></div>
+        <svg class="p16-svg" viewBox="0 0 1080 400" role="img" aria-labelledby="p16-title p16-desc">
+          <title id="p16-title">同一网络上的前向信号与反向责任</title>
+          <desc id="p16-desc">上行信号从输入向损失传播，下行责任沿同一路径从损失返回。拖动下方时间轴逐步查看。</desc>
+          <defs>
+            <marker id="p16-f-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10Z" fill="context-stroke"/></marker>
+            <marker id="p16-b-arrow" viewBox="0 0 10 10" refX="2" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M9 1L1 5L9 9Z" fill="var(--bg)" stroke="context-stroke" stroke-width="1.5"/></marker>
+          </defs>
+          <line class="lane" x1="120" y1="120" x2="1040" y2="120"/><line class="lane" x1="120" y1="292" x2="1040" y2="292"/>
+          <text class="row-label" x="0" y="88">前向：算预测</text><text class="row-label" x="0" y="260">反向：分责任</text>
+          <g aria-hidden="true"><rect class="tagbox" x="16" y="103" width="72" height="30" rx="15"/><text class="tagtext" x="52" y="119">信号 →</text><rect class="tagbox" x="16" y="275" width="72" height="30" rx="15"/><text class="tagtext" x="52" y="291">← 责任</text></g>
+          <g data-forward-edges></g><g data-backward-edges></g><g data-forward-nodes></g><g data-backward-nodes></g>
+        </svg>
+      </div>
+      <aside class="p16-readout" aria-live="off">
+        <div class="p16-step" data-step>第 0 步 · 前向传播</div>
+        <h2 class="p16-pos" data-pos>输入</h2>
+        <p class="p16-event" data-event>样本 x₁=1，x₂=0</p>
+        <div class="p16-dir" data-dir><i></i><span>信号向右，计算预测</span></div>
+      </aside>
+    </section>
+
+    <div>
+      <div class="p16-controls">
+        <label for="p16-time">传播时间点</label>
+        <input id="p16-time" type="range" min="0" max="8" step="1" value="0" aria-label="传播时间点；用左右方向键逐步移动">
+        <button type="button" class="btn p16-reset" data-reset>回到输入</button>
+      </div>
+      <div class="p16-ticks" aria-hidden="true"><span>0 输入</span><span>1</span><span>2</span><span>3</span><span>4 折返</span><span>5</span><span>6</span><span>7</span><span>8 全部</span></div>
+    </div>
+
+    <footer class="p16-foot">
+      <p class="p16-conclusion">前向传播回答“预测是多少”；反向传播回答“每处对这次错误影响多大”。</p>
+      <p class="p16-next"><strong>下一问</strong>　回到一条具体连接时，前后两边的信息怎样合成它的更新方向？</p>
+    </footer>
+  </main>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script>
+(() => {
+  const root = document.querySelector('[data-p16-widget]');
+  if (!root) return;
+  const svg = root.querySelector('.p16-svg');
+  const fEdgesG = root.querySelector('[data-forward-edges]');
+  const bEdgesG = root.querySelector('[data-backward-edges]');
+  const fNodesG = root.querySelector('[data-forward-nodes]');
+  const bNodesG = root.querySelector('[data-backward-nodes]');
+  const slider = root.querySelector('#p16-time');
+  const reset = root.querySelector('[data-reset]');
+  const stepEl = root.querySelector('[data-step]');
+  const posEl = root.querySelector('[data-pos]');
+  const eventEl = root.querySelector('[data-event]');
+  const dirEl = root.querySelector('[data-dir]');
+  const NS = 'http://www.w3.org/2000/svg';
+  const xs = [170, 380, 590, 800, 1010];
+  const labels = ['输入', '隐藏层 1', '隐藏层 2', '输出', '损失'];
+  const events = [
+    '样本 x₁=1，x₂=0', '接收输入信号', '继续组合信号', '预测 p=0.730',
+    '目标 t=1；罚分 L=0.315', '预测对罚分影响多大？', '这一层对错误影响多大？',
+    '再把责任传给更前一层', '每个参数都得到一个更新方向'
+  ];
+  const positions = ['输入','隐藏层 1','隐藏层 2','输出','损失','输出','隐藏层 2','隐藏层 1','全部连接'];
+  const fEdges = [], bEdges = [], fNodes = [], bNodes = [];
+  let state = {step:0};
+  let destroyed = false;
+
+  function el(name, attrs, parent){ const n=document.createElementNS(NS,name); Object.entries(attrs).forEach(([k,v])=>n.setAttribute(k,v)); parent.appendChild(n); return n; }
+  for(let i=0;i<4;i++){
+    fEdges.push(el('path',{d:`M${xs[i]+50} 120 H${xs[i+1]-50}`,class:'edge-f','marker-end':'url(#p16-f-arrow)'},fEdgesG));
+    bEdges.push(el('path',{d:`M${xs[i+1]-50} 292 H${xs[i]+50}`,class:'edge-b','marker-end':'url(#p16-b-arrow)'},bEdgesG));
+  }
+  function makeNodes(parent,y,store){
+    labels.forEach((label,i)=>{ const g=el('g',{},parent); const r=el('rect',{x:xs[i]-48,y:y-31,width:96,height:62,class:'node'},g); const t=el('text',{x:xs[i],y:y+1,class:'node-label'},g); t.textContent=label==='隐藏层 1'?'隐藏 1':label==='隐藏层 2'?'隐藏 2':label; store.push(r); });
+  }
+  makeNodes(fNodesG,120,fNodes); makeNodes(bNodesG,292,bNodes);
+
+  function render(announce=false){
+    const s=state.step;
+    fNodes.forEach((n,i)=>n.setAttribute('class','node'+(i<=Math.min(s,4)?' done-f':'')+(s<=4&&i===s?' current':'')));
+    fEdges.forEach((e,i)=>e.setAttribute('class','edge-f'+(i<s&&s<=4||s>4?' done':'')+(s>0&&s<=4&&i===s-1?' current':'')));
+    bNodes.forEach((n,i)=>{ const reached=s>=5 ? 4-(s-4) : -1; const done=s===8 || (s>=5 && i>=Math.max(reached,1)); const current=s>=5&&s<=7&&i===reached; n.setAttribute('class','node'+(done?' done-b':'')+(current?' current':'')); });
+    bEdges.forEach((e,i)=>{ const done=s===8 || (s>=5 && i>=8-s); const current=s>=5&&s<=8&&i===8-s; e.setAttribute('class','edge-b'+(done?' done':'')+(current?' current':'')); });
+    slider.value=String(s);
+    const direction=s<=4?'前向传播':'反向传播';
+    stepEl.textContent=`第 ${s} 步 · ${direction}`;
+    posEl.textContent=positions[s]; eventEl.textContent=events[s];
+    dirEl.classList.toggle('back',s>=5);
+    dirEl.querySelector('span').textContent=s<=4?'信号向右，计算预测':'责任向左，判断影响';
+    if(s===8) dirEl.querySelector('span').textContent='各连接已有更新方向，尚未更新';
+    slider.setAttribute('aria-valuetext',`第 ${s} 步，${direction}，${positions[s]}，${events[s]}`);
+  }
+  function setStep(value,announce){ if(destroyed)return; state={step:Math.max(0,Math.min(8,Math.round(value)))}; render(announce); }
+  function onInput(){setStep(Number(slider.value),false)}
+  function onChange(){setStep(Number(slider.value),true)}
+  function onReset(){setStep(0,true)}
+  slider.addEventListener('input',onInput); slider.addEventListener('change',onChange); reset.addEventListener('click',onReset);
+  render(false);
+  root.destroyP16=()=>{ if(destroyed)return; destroyed=true; slider.removeEventListener('input',onInput);slider.removeEventListener('change',onChange);reset.removeEventListener('click',onReset);delete root.destroyP16; };
+  Deck.init({index:16,total:22});
+})();
+</script>
+</body>
+</html>

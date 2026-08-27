@@ -559,7 +559,12 @@ def main() -> None:
     a = argparse.ArgumentParser()
     a.add_argument("--label", required=True)
     a.add_argument("--only", action="append", help="只跑某几页,可多次给")
-    a.add_argument("--concurrency", type=int, default=50)   # 端点支持到 100
+    # 并发上限 100 —— config.yaml 顶部那段实测记的就是这条路由的上限,
+    # 而默认值一直卡在 50。**排队损耗是纯亏**:22 页并发 8 要排三批,
+    # 实测墙钟被长尾页拖到约 45 分钟,而并发拉满时墙钟等于最慢那一页。
+    # 注意那段注释里的另一半:20 并发空等 84 分钟是 api.999555999 的账,
+    # 不是 paratera 的 —— 别拿那笔账来压这条路由的并发。
+    a.add_argument("--concurrency", type=int, default=100)
     a.add_argument("--effort", help="修复循环的推理档(整页写完之后)")
     a.add_argument("--compose-effort",
                    help="构图阶段的推理档(整页 Write 之前);不给就跟 --effort 同档")

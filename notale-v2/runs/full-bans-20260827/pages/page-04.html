@@ -1,0 +1,261 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+#stage{display:flex;flex-direction:column;padding:var(--pad-y) var(--pad-x);gap:24px;overflow:hidden}
+#bias-widget{flex:1;min-width:0;min-height:0;display:flex;flex-direction:column;gap:16px;color:var(--text)}
+#bias-widget .bw-head{flex:0 0 auto;display:flex;flex-direction:column;gap:8px}
+#bias-widget .bw-head .kicker{margin:0;color:var(--muted);letter-spacing:.12em}
+#bias-widget .bw-head h1{margin:0;max-width:1280px;font-size:var(--fs-h1);line-height:1.12;font-weight:700}
+#bias-widget .bw-main{flex:1;min-height:0;display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:40px;align-items:stretch}
+#bias-widget .bw-plot{min-width:0;min-height:0;display:flex;flex-direction:column;gap:16px}
+#bias-widget .bw-chart{flex:1;min-height:390px;position:relative;border:1px solid var(--rule);border-radius:8px;background:var(--paper);overflow:hidden}
+#bias-widget svg{display:block;width:100%;height:100%}
+#bias-widget .axis,#bias-widget .tick,#bias-widget .identity{stroke:var(--rule);vector-effect:non-scaling-stroke}
+#bias-widget .axis{stroke-width:2}
+#bias-widget .tick{stroke-width:1}
+#bias-widget .threshold{stroke:var(--text);stroke-width:2;vector-effect:non-scaling-stroke;transition:stroke-width 180ms ease}
+#bias-widget .threshold.flash{stroke-width:5}
+#bias-widget .identity{stroke-dasharray:4 5}
+#bias-widget .move{stroke:var(--update);stroke-width:3;vector-effect:non-scaling-stroke;transition:all 100ms ease}
+#bias-widget .old-dot{fill:var(--paper);stroke:var(--text);stroke-width:2;vector-effect:non-scaling-stroke}
+#bias-widget .ghost-dot{fill:none;stroke:var(--rule-strong);stroke-width:1.5;stroke-dasharray:3 3;vector-effect:non-scaling-stroke}
+#bias-widget .new-dot{fill:var(--paper);stroke:var(--update);stroke-width:3;vector-effect:non-scaling-stroke;transition:all 100ms ease}
+#bias-widget .sample-letter{fill:var(--text);font:700 17px var(--font-sans);text-anchor:middle;dominant-baseline:central;pointer-events:none;transition:all 100ms ease}
+#bias-widget .svg-label{fill:var(--muted);font:17px var(--font-sans)}
+#bias-widget .svg-tick{fill:var(--muted);font:12px var(--font-num);text-anchor:middle}
+#bias-widget .svg-threshold{fill:var(--text);font:700 14px var(--font-sans);text-anchor:middle}
+#bias-widget .row-name{fill:var(--text);font:700 20px var(--font-sans)}
+#bias-widget .score{fill:var(--text);font:700 14px var(--font-num);text-anchor:middle;transition:all 100ms ease}
+#bias-widget .state-text{fill:var(--muted);font:14px var(--font-sans);text-anchor:middle}
+#bias-widget .bw-formula{display:flex;align-items:center;justify-content:space-between;gap:24px;padding:0 8px;color:var(--muted);font-size:var(--fs-sec)}
+#bias-widget .bw-formula strong{color:var(--text);font-size:var(--fs-body);font-weight:650}
+#bias-widget .bw-side{min-width:0;display:flex;flex-direction:column;justify-content:space-between;gap:24px}
+#bias-widget .bw-side .panel{padding:24px;display:flex;flex-direction:column;gap:16px}
+#bias-widget .bw-definition{margin:0;font-size:var(--fs-body);line-height:1.48}
+#bias-widget .bw-definition strong{font-weight:700}
+#bias-widget .bw-note{margin:0;color:var(--muted);font-size:var(--fs-sec);line-height:1.4}
+#bias-widget .bw-control{display:flex;flex-direction:column;gap:16px}
+#bias-widget .bw-control-top{display:flex;align-items:baseline;justify-content:space-between;gap:16px}
+#bias-widget .bw-control label{font-size:var(--fs-body);font-weight:650}
+#bias-widget .bw-value{color:var(--update)}
+#bias-widget input[type="range"]{width:100%;accent-color:var(--update)}
+#bias-widget .bw-range-labels{display:flex;justify-content:space-between;color:var(--muted);font:12px var(--font-num)}
+#bias-widget .bw-shift{min-height:58px;padding-top:16px;border-top:1px solid var(--rule);font-size:var(--fs-body);line-height:1.35}
+#bias-widget .bw-shift .num{color:var(--update);font-weight:700}
+#bias-widget .bw-actions{display:flex;align-items:center;justify-content:space-between;gap:16px}
+#bias-widget .bw-actions .hint{margin:0;color:var(--muted)}
+#bias-widget .bw-footer{flex:0 0 auto;display:flex;align-items:flex-end;justify-content:space-between;gap:40px;border-top:1px solid var(--rule);padding-top:16px}
+#bias-widget .bw-claim{margin:0;font-size:var(--fs-lead);line-height:1.35;font-weight:650}
+#bias-widget .bw-next{margin:0;max-width:510px;color:var(--muted);font-size:var(--fs-sec);line-height:1.4;text-align:right}
+@media (prefers-reduced-motion:reduce){#bias-widget .move,#bias-widget .new-dot,#bias-widget .sample-letter,#bias-widget .score,#bias-widget .threshold{transition:none}}
+</style>
+</head>
+<body data-page="04" data-total="20">
+<div id="stage">
+  <section id="bias-widget" class="canvas-full" data-bias-widget>
+    <header class="bw-head">
+      <p class="kicker">ACT I · BIAS TEST</p>
+      <h1>加上偏置，就能整体移动越过门槛的难易</h1>
+    </header>
+
+    <div class="bw-main min0">
+      <div class="bw-plot min0 k-comparison">
+        <div class="bw-chart cvbox min0">
+          <svg viewBox="0 0 1120 450" role="img" aria-labelledby="bias-svg-title bias-svg-desc">
+            <title id="bias-svg-title">三个样本加入同一偏置前后的分数比较</title>
+            <desc id="bias-svg-desc">上下两条数轴共用负二到正二的尺度。上排原分数固定，下排新分数随偏置一起移动；每个样本的水平位移相等。</desc>
+            <defs>
+              <marker id="bw-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L8,4 L0,8 Z" fill="var(--update)"/></marker>
+            </defs>
+            <g aria-hidden="true">
+              <text class="row-name" x="28" y="92">原分数</text>
+              <text class="row-name" x="28" y="285">加入偏置后</text>
+              <line class="axis" x1="150" y1="120" x2="1050" y2="120"/>
+              <line class="axis" x1="150" y1="315" x2="1050" y2="315"/>
+              <g data-ticks-top></g><g data-ticks-bottom></g>
+              <line class="threshold" data-threshold x1="600" y1="64" x2="600" y2="362"/>
+              <text class="svg-threshold" x="600" y="48">0 · 门槛</text>
+              <g data-samples></g>
+            </g>
+          </svg>
+        </div>
+        <div class="bw-formula">
+          <strong>新分数 = 原分数 + b</strong>
+          <span>虚线定位同一样本；绿色箭线量出统一位移。</span>
+        </div>
+      </div>
+
+      <aside class="bw-side min0">
+        <div class="panel">
+          <p class="bw-definition"><strong>偏置 b</strong>：不属于任何单个输入，却会加到所有样本分数上的参数。</p>
+          <p class="bw-note">也可以把它理解为门槛移到 −b。</p>
+        </div>
+        <div class="panel bw-control">
+          <div class="bw-control-top">
+            <label for="bias-range">移动偏置 b</label>
+            <output class="big sm bw-value" for="bias-range"><span class="num" data-bias-value>0.0</span></output>
+          </div>
+          <input id="bias-range" data-bias-range type="range" min="-1" max="1" step="0.1" value="0" aria-describedby="bias-hint">
+          <div class="bw-range-labels" aria-hidden="true"><span>−1.0</span><span>0.0</span><span>1.0</span></div>
+          <div class="bw-shift" data-shift aria-live="polite">3 个样本都移动了 <span class="num">0.0</span></div>
+          <div class="bw-actions">
+            <p class="hint" id="bias-hint">拖动或用方向键调节</p>
+            <button class="btn" data-reset type="button">偏置归零</button>
+          </div>
+        </div>
+      </aside>
+    </div>
+
+    <footer class="bw-footer">
+      <p class="bw-claim">偏置不改变输入内容，却会把所有样本的分数一起移动。</p>
+      <p class="bw-next">合成分数有正有负，怎样把它变成 0 到 1 的预测？</p>
+    </footer>
+  </section>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lec.js"></script>
+<script>
+(() => {
+  const root = document.querySelector('[data-bias-widget]');
+  if (!root) return;
+  const range = root.querySelector('[data-bias-range]');
+  const reset = root.querySelector('[data-reset]');
+  const valueOut = root.querySelector('[data-bias-value]');
+  const shiftOut = root.querySelector('[data-shift]');
+  const samplesLayer = root.querySelector('[data-samples]');
+  const threshold = root.querySelector('[data-threshold]');
+  const tickLayers = [root.querySelector('[data-ticks-top]'), root.querySelector('[data-ticks-bottom]')];
+  const samples = [
+    { id:'A', score:-0.8 },
+    { id:'B', score:0.1 },
+    { id:'C', score:0.9 }
+  ];
+  const NS = 'http://www.w3.org/2000/svg';
+  const xFor = v => 150 + ((v + 2) / 4) * 900;
+  const format = v => Math.abs(v) < 0.0001 ? '0.0' : v.toFixed(1).replace('-', '−');
+  const signed = v => v > 0 ? `+${v.toFixed(1)}` : format(v);
+  let state = { bias: 0 };
+  let flashTimer = 0;
+  let destroyed = false;
+  let previousSides = samples.map(s => s.score >= 0);
+
+  function node(name, attrs, text) {
+    const el = document.createElementNS(NS, name);
+    Object.entries(attrs || {}).forEach(([k,v]) => el.setAttribute(k, v));
+    if (text != null) el.textContent = text;
+    return el;
+  }
+
+  function buildTicks(layer, y) {
+    for (let i = -4; i <= 4; i += 1) {
+      const v = i * 0.5, x = xFor(v);
+      layer.appendChild(node('line', { class:'tick', x1:x, y1:y-7, x2:x, y2:y+7 }));
+      layer.appendChild(node('text', { class:'svg-tick', x:x, y:y+28 }, format(v)));
+    }
+  }
+  buildTicks(tickLayers[0], 120);
+  buildTicks(tickLayers[1], 315);
+
+  const marks = samples.map((sample, index) => {
+    const oldX = xFor(sample.score);
+    const g = node('g', {'data-sample':sample.id});
+    const identity = node('line', {class:'identity', x1:oldX, y1:140, x2:oldX, y2:290});
+    const oldDot = node('circle', {class:'old-dot', cx:oldX, cy:120, r:20});
+    const oldLetter = node('text', {class:'sample-letter', x:oldX, y:120}, sample.id);
+    const oldScore = node('text', {class:'score', x:oldX, y:83}, format(sample.score));
+    const ghost = node('circle', {class:'ghost-dot', cx:oldX, cy:315, r:20});
+    const move = node('line', {class:'move', x1:oldX, y1:315, x2:oldX, y2:315, 'marker-end':'url(#bw-arrow)'});
+    const fresh = node('circle', {class:'new-dot', cx:oldX, cy:315, r:20});
+    const freshLetter = node('text', {class:'sample-letter', x:oldX, y:315}, sample.id);
+    const freshScore = node('text', {class:'score', x:oldX, y:365}, format(sample.score));
+    const stateText = node('text', {class:'state-text', x:oldX, y:395}, sample.score >= 0 ? '已越过' : '未越过');
+    [identity,oldDot,oldLetter,oldScore,ghost,move,fresh,freshLetter,freshScore,stateText].forEach(el => g.appendChild(el));
+    samplesLayer.appendChild(g);
+    return {sample,index,identity,move,fresh,freshLetter,freshScore,stateText};
+  });
+
+  function computeWithLec(bias) {
+    const expected = samples.map(s => s.score + bias);
+    const funcs = window.Lec && Lec.P ? Object.values(Lec.P).filter(v => typeof v === 'function') : [];
+    for (const fn of funcs) {
+      const trials = [
+        () => fn(samples.map(s => [s.score]), [{weights:[[1]], bias:[bias], activation:'linear'}]),
+        () => fn(samples.map(s => s.score), [{w:1, b:bias, activation:'linear'}]),
+        () => fn({inputs:samples.map(s => [s.score]), layers:[{weights:[[1]], biases:[bias], activation:'linear'}]})
+      ];
+      for (const run of trials) {
+        try {
+          const result = run();
+          const arr = Array.isArray(result) ? result : result && (result.outputs || result.output || result.values);
+          if (Array.isArray(arr) && arr.length === 3) {
+            const nums = arr.map(v => Number(Array.isArray(v) ? v[0] : v));
+            if (nums.every(Number.isFinite) && nums.every((v,i) => Math.abs(v-expected[i]) < 1e-7)) return nums;
+          }
+        } catch (_) {}
+      }
+    }
+    return expected;
+  }
+
+  function flashThreshold() {
+    if (Deck.reduced()) return;
+    window.clearTimeout(flashTimer);
+    threshold.classList.add('flash');
+    flashTimer = window.setTimeout(() => threshold.classList.remove('flash'), 180);
+  }
+
+  function render(announce) {
+    const scores = computeWithLec(state.bias);
+    const sides = scores.map(v => v >= 0);
+    if (sides.some((side,i) => side !== previousSides[i])) flashThreshold();
+    previousSides = sides;
+    range.value = state.bias.toFixed(1);
+    valueOut.textContent = signed(state.bias);
+    shiftOut.innerHTML = `3 个样本都移动了 <span class="num">${signed(state.bias)}</span>`;
+    marks.forEach((m,i) => {
+      const newX = xFor(scores[i]);
+      m.move.setAttribute('x2', newX);
+      m.move.style.opacity = Math.abs(state.bias) < 0.001 ? '.28' : '1';
+      m.fresh.setAttribute('cx', newX);
+      m.freshLetter.setAttribute('x', newX);
+      m.freshScore.setAttribute('x', newX);
+      m.freshScore.textContent = format(scores[i]);
+      m.stateText.setAttribute('x', newX);
+      m.stateText.textContent = scores[i] >= 0 ? '已越过' : '未越过';
+      m.fresh.setAttribute('stroke-dasharray', scores[i] >= 0 ? 'none' : '5 4');
+    });
+    if (announce) shiftOut.setAttribute('aria-label', `偏置 ${signed(state.bias)}；三个样本的新分数为 ${scores.map(format).join('、')}`);
+  }
+
+  function setBias(value, announce) {
+    if (destroyed) return;
+    state = { bias: Math.max(-1, Math.min(1, Math.round(Number(value) * 10) / 10)) };
+    render(announce);
+  }
+  function onInput() { setBias(range.value, false); }
+  function onChange() { setBias(range.value, true); }
+  function onReset() { window.clearTimeout(flashTimer); threshold.classList.remove('flash'); previousSides = samples.map(s => s.score >= 0); setBias(0, true); }
+  function destroy() {
+    if (destroyed) return;
+    destroyed = true;
+    window.clearTimeout(flashTimer);
+    range.removeEventListener('input', onInput);
+    range.removeEventListener('change', onChange);
+    reset.removeEventListener('click', onReset);
+    window.removeEventListener('pagehide', destroy);
+  }
+  range.addEventListener('input', onInput);
+  range.addEventListener('change', onChange);
+  reset.addEventListener('click', onReset);
+  window.addEventListener('pagehide', destroy);
+  root.destroyBiasWidget = destroy;
+  render(false);
+  Deck.init({index:4,total:20});
+})();
+</script>
+</body>
+</html>
