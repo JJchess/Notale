@@ -161,7 +161,7 @@ build-page ← 主要难点是把比较关系组织成清楚的单页构图
 
         multiple = self._spec().replace(
             "build-page ← 主要难点是把比较关系组织成清楚的单页构图",
-            "build-page ← 构图\nbuild-motion ← 动效")
+            "build-page ← 构图\nbuild-chart ← 图表")
         self.assertIn("只能有一行", _valid_spec(multiple))
 
         unknown = self._spec().replace("build-page ←", "not-a-workflow ←")

@@ -30,7 +30,7 @@ class WorkflowRegistryTests(unittest.TestCase):
     def test_builder_assignment_contains_one_workflow(self) -> None:
         block = skills.assigned_workflow("build-page")
         self.assertIn("- build-page:", block)
-        self.assertNotIn("build-motion", block)
+        self.assertNotIn("build-chart", block)
 
     def test_builder_assignment_requires_routed_references_before_edit(self) -> None:
         block = skills.assigned_workflow("build-page")
@@ -47,9 +47,9 @@ class WorkflowRegistryTests(unittest.TestCase):
                                "globe-recipe.md"},
             "build-learning-game": {"game-model-recipes.md"},
             "get-photo-ref": {"source-routing.md"},
-            "build-page": {"relationship-compositions.md", "framing-and-density.md"},
+            "build-page": {"relationship-compositions.md", "framing-and-density.md",
+                           "motion-engine-recipes.md"},
             "build-interaction": {"interactive-widget.md"},
-            "build-motion": {"motion-engine-recipes.md"},
             "get-illustration": {"prompt-and-integration.md"},
             "check-page": {"review-lenses.md"},
             "plan-direction": {"direction-recipes.md", "material-and-effects.md"},

@@ -51,10 +51,10 @@ Reject a thesis made only from mood words such as “premium,” “futuristic,�
 
 Define a compact direction contract before coding:
 
-1. **Palette:** choose a background family, readable text, neutrals, and only the semantic hues the lesson needs.
+1. **Palette:** choose a background family, readable text, neutrals, and only the semantic hues the lesson needs. Commit to one dominant color with a sharp accent rather than spreading emphasis evenly across many timid hues — an evenly-distributed palette reads as indecisive under projection.
 2. **Material:** choose one surface logic such as paper, instrument glass, field notebook, engraved metal, specimen tray, or plain flat color.
 3. **Geometry:** choose one edge/radius and line-weight family. Reuse it across panels, controls, and diagrams.
-4. **Type roles:** name display, body, and optional numeric/utility roles; leave detailed shaping to `plan-typography`.
+4. **Type roles:** name display, body, and optional numeric/utility roles; leave detailed shaping to `plan-typography`. Source distinctive fonts (Google Fonts, Fontshare, or another already-installed family) rather than defaulting to Inter, Roboto, Arial, or the system font stack — reserve a monospace/system look for a deliberate technical-instrument direction, not as the fallback when nothing else was chosen.
 5. **Signature:** choose one memorable visual device that embodies the topic, not a decorative effect pasted over it.
 6. **Media:** define crop, contrast, tint, annotation, and attribution behavior.
 7. **Motion:** state what motion communicates, or explicitly choose a static direction.
@@ -87,7 +87,7 @@ Check that:
 - the central relationship reads before the decoration;
 - foreground text and diagram lines remain clear on a dim or washed-out display;
 - palette, edge logic, material, and type roles remain consistent across pages;
-- no generic dark-gradient, purple-glow, glass-card, or card-grid default has replaced subject-specific reasoning;
+- no generic dark-gradient, purple-glow (including the reflexive `#6366f1` indigo), glass-card, or card-grid default has replaced subject-specific reasoning;
 - the still frame works with animation disabled;
 - focus and selected states remain unmistakable without relying on glow alone.
 

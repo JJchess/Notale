@@ -103,7 +103,7 @@ class BuilderRoutingTests(unittest.TestCase):
 
     def test_workflow_mode_rejects_other_skill_without_restarting(self) -> None:
         wrong = FakeCall(type="function_call", name="Skill",
-                         arguments='{"skill":"build-motion"}', call_id="call_wrong")
+                         arguments='{"skill":"build-chart"}', call_id="call_wrong")
         first = SimpleNamespace(output=[wrong], usage=None, id="req_wrong")
 
         with tempfile.TemporaryDirectory() as td:

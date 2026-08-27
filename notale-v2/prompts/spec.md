@@ -97,7 +97,7 @@
 按主要难点选择，不按页面上出现过的元素凑清单。多个都像时按以下优先级取第一个：
 
 `build-learning-game` → `build-3d-scene` → `build-2d-sim` → `build-chart` →
-`build-interaction` → `build-motion` → `get-photo-ref` →
+`build-interaction` → `get-photo-ref` →
 `get-illustration` → `plan-typography` → `build-page`。
 
 库名仍写在“表征形式”，不算 workflow。没有更专门的难点时选 `build-page`。

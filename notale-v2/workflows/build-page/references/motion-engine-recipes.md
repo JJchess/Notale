@@ -19,6 +19,22 @@ Use classes or data attributes to represent semantic states:
 
 Toggle one state attribute in JavaScript. Listen for `transitionend` only when the next semantic beat depends on completion, and add a cancellation-safe fallback rather than treating the event as guaranteed.
 
+For the one-time page-load entrance, stagger a shared reveal class instead of hand-timing each element:
+
+```css
+.reveal {
+  opacity: 0;
+  transform: translateY(30px);
+  transition: opacity .6s cubic-bezier(.16,1,.3,1), transform .6s cubic-bezier(.16,1,.3,1);
+}
+[data-state="ready"] .reveal { opacity: 1; transform: translateY(0); }
+.reveal:nth-child(1) { transition-delay: .1s; }
+.reveal:nth-child(2) { transition-delay: .2s; }
+.reveal:nth-child(3) { transition-delay: .3s; }
+```
+
+This is for the page's own one-time entrance only — the moment the composition first becomes visible. Do not reuse `.reveal`/stagger timing to mark a teaching state change; state changes use the `[data-state]` toggle above so replay and reset stay exact.
+
 ## Web Animations API
 
 Retain and cancel every animation before replay:
