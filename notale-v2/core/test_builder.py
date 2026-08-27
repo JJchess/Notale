@@ -220,5 +220,65 @@ class CacheAccountingTests(unittest.TestCase):
         self.assertIn("cache_read_input_tokens", wire.Usage.model_fields)
 
 
+class MessagesWireTests(unittest.TestCase):
+    """messages wire 的两条:参数别静默丢,异常别绕过退避阶梯。"""
+
+    def setUp(self) -> None:
+        # override 写的是模块级 _OVERRIDE,不还原会污染同进程的后续测试。
+        self._saved = dict(llm._OVERRIDE)
+
+    def tearDown(self) -> None:
+        llm._OVERRIDE.clear()
+        llm._OVERRIDE.update(self._saved)
+        llm.config.cache_clear()
+        llm.client.cache_clear()
+
+    def _body(self, effort=None):
+        b = {"model": "M", "instructions": "SYS", "max_output_tokens": 128_000,
+             "input": [{"role": "user", "content": "a"}]}
+        if effort:
+            b["reasoning"] = {"effort": effort}
+        return b
+
+    def test_effort_is_translated_not_dropped(self) -> None:
+        """--effort 在这条 wire 上曾经静默无效。别再退回去。"""
+        self.assertIsNone(llm.to_messages(self._body("low")).get("thinking"))
+        for eff, budget in (("medium", 4096), ("high", 16384)):
+            th = llm.to_messages(self._body(eff)).get("thinking")
+            self.assertEqual(th, {"type": "enabled", "budget_tokens": budget})
+
+    def test_system_and_rolling_breakpoints_both_present(self) -> None:
+        """只打 system 断点实测只有 8.7% 命中,滚动断点才到 100%。两个都要在。"""
+        m = llm.to_messages(self._body())
+        self.assertEqual(m["system"][0]["cache_control"], {"type": "ephemeral"})
+        self.assertEqual(m["messages"][-1]["content"][-1]["cache_control"],
+                         {"type": "ephemeral"})
+
+    def test_http_errors_become_sdk_types_so_the_ladder_retries(self) -> None:
+        """urllib 的异常不翻译的话,这条 wire 一次重试都没有。"""
+        import io
+        import urllib.error
+        from openai import (APIConnectionError, BadRequestError,
+                            InternalServerError, RateLimitError)
+
+        def raiser(code):
+            def _open(req, timeout=None):
+                raise urllib.error.HTTPError(req.full_url, code, "boom", {},
+                                             io.BytesIO(b"{}"))
+            return _open
+
+        llm.override(name="AWS-Claude-Sonnet-5", wire_api="messages")
+        for code, want in ((500, InternalServerError), (429, RateLimitError),
+                           (400, BadRequestError)):
+            with patch("urllib.request.urlopen", raiser(code)):
+                with self.assertRaises(want):
+                    llm._post_messages(self._body())
+        with patch("urllib.request.urlopen",
+                   lambda r, timeout=None: (_ for _ in ()).throw(
+                       urllib.error.URLError("down"))):
+            with self.assertRaises(APIConnectionError):
+                llm._post_messages(self._body())
+
+
 if __name__ == "__main__":
     unittest.main()

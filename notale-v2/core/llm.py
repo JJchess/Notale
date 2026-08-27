@@ -20,6 +20,8 @@ import os
 import re
 import random
 import time
+import socket
+import urllib.error
 import urllib.request
 from dataclasses import dataclass
 from functools import lru_cache
@@ -27,6 +29,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from urllib.parse import urlsplit, urlunsplit
 
+import httpx
 import yaml
 from dotenv import load_dotenv
 from openai import (APIConnectionError, APITimeoutError, BadRequestError,
@@ -649,16 +652,41 @@ def _adapt_messages(r: dict) -> _Resp:
 
 
 def _post_messages(body: dict) -> _Resp:
+    """裸 HTTP 打 /v1/messages,**并把 urllib 的异常翻成 SDK 的类型**。
+
+    翻译不是洁癖,是必需的:respond() / ask() 的退避阶梯捕的是 openai 那几个
+    异常类,而 urllib 抛的是 HTTPError / URLError / TimeoutError ——
+    不翻的话**这条 wire 一次重试都没有**。而这条网关实测会抖
+    (trim-net 那轮日志里就有「[page-18] InternalServerError 等 6s 重试 1/8」),
+    同样的抖动在 responses 上退避八次,在这里会直接把那一页打死。
+    翻过之后 400 抖动特征识别和超时档位上限也一并复用,两条 wire 行为一致。
+    """
     m = config()["model"]
     url = str(m["base_url"]).rstrip("/") + "/messages"
     key = os.environ[m["api_key_env"]]
+    payload = json.dumps(to_messages(body)).encode()
     req = urllib.request.Request(
-        url, method="POST", data=json.dumps(to_messages(body)).encode(),
+        url, method="POST", data=payload,
         headers={"Content-Type": "application/json", "x-api-key": key,
                  "anthropic-version": _ANTHROPIC_VERSION,
                  "Authorization": f"Bearer {key}"})
-    with urllib.request.urlopen(req, timeout=m["http_timeout_sec"]) as resp:
-        return _adapt_messages(json.loads(resp.read()))
+    hreq = httpx.Request("POST", url)
+    try:
+        with urllib.request.urlopen(req, timeout=m["http_timeout_sec"]) as resp:
+            return _adapt_messages(json.loads(resp.read()))
+    except urllib.error.HTTPError as e:
+        detail = e.read()[:600].decode(errors="replace")
+        hresp = httpx.Response(e.code, request=hreq, text=detail)
+        cls = (RateLimitError if e.code == 429 else
+               InternalServerError if e.code >= 500 else
+               BadRequestError if e.code == 400 else None)
+        if cls is None:
+            raise
+        raise cls(f"{e.code} {detail}", response=hresp, body=None) from e
+    except (TimeoutError, socket.timeout) as e:
+        raise APITimeoutError(request=hreq) from e
+    except urllib.error.URLError as e:
+        raise APIConnectionError(request=hreq) from e
 
 
 def usage_of(r) -> tuple[int, int, int | None]:
