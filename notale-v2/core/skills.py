@@ -40,6 +40,18 @@ PAGE_WORKFLOWS = (
     "build-page",
 )
 ALL_WORKFLOWS = PAGE_WORKFLOWS + ("plan-direction", "check-page")
+# scrub-copy-slop.md / scrub-visual-slop.md 不是 workflow —— 没有 SKILL.md,不会被
+# `Skill` 工具或 available() 发现。之所以不挂靠成第 13/14 个 workflow:`Skill` 工具在
+# builder 循环里被硬拦到只能读 page.primary_workflow(core/builder.py:345-347),而这
+# 两份从不是任何页面的 primary_workflow,挂成 workflow 只会让正文变成没有代码路径
+# 会读到的死文本。
+#
+# 也不再靠"在别的 workflow 的 Reference routing 里点名一行 Read"这条路径——
+# 那条路径能不能生效,取决于 agent 愿不愿意在改页面前先调 Read,是概率性的。
+# 这两份内容管的是每一页都成立的底线（不看 workflow 路由结果都不该出现的 AI 味），
+# 跟 FLOORS 是同一类东西，所以走同一条确定性路径：`anti_slop_block()` 把两份原文
+# 整段读出来，包 XML 标签后拼进每页 agent 的 system 块（core/builder.py 的 `base`），
+# 从第一次请求起就在场，且随每一步重发——不依赖 agent 主动去读。
 _FM = re.compile(r"^---\s*\n(.*?)\n---\s*\n", re.S)
 
 
@@ -132,6 +144,28 @@ FLOORS = """无论装载哪个 workflow,下面这几条对每一页都成立:
 - 教学常量、范围和初值来自 `Lec.K`;要推导的结果当场调用 `Lec.P`。
   禁止硬编码预录结果或伪造数据;随机过程必须固定种子。
 """
+
+# tag 名和文件名的对应关系是唯一事实来源；改文件名要跟着改这里。
+ANTI_SLOP_FILES = (
+    ("anti_ai_slop_copy", "scrub-copy-slop.md"),
+    ("anti_ai_slop_visual", "scrub-visual-slop.md"),
+)
+
+
+def anti_slop_block(root: Path = WORKFLOWS) -> str:
+    """把两份去 AI 味参考文件整段读出来，各自包一层 XML 标签，拼成一块。
+
+    不做任何裁剪或摘要——摘要过的版本和原文不同步是自找的维护负担，直接注入原文。
+    路径给错要报错，不要静默跳过：那样会让人以为注入了其实没有。
+    """
+    parts = []
+    for tag, fname in ANTI_SLOP_FILES:
+        f = root / fname
+        if not f.is_file():
+            raise FileNotFoundError(f"anti_slop_block 需要 {f}，但它不存在")
+        text = f.read_text(encoding="utf-8", errors="replace").strip()
+        parts.append(f"<{tag}>\n{text}\n</{tag}>")
+    return "\n\n".join(parts)
 
 
 def assigned_workflow(name: str, root: Path = WORKFLOWS,

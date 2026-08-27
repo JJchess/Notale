@@ -52,7 +52,13 @@ def _now() -> str:
 IDENTITY = """你是这套互动讲义的单页构建 agent。你只负责一个 HTML 文件。
 
 按 brief 说的做:先读契约和规划,再施工,完工前用 Check 自检到干净为止。
-不写说明文档、不写测试、不写总结。做完直接结束,不要问问题。"""
+不写说明文档、不写测试、不写总结。做完直接结束,不要问问题。
+
+施工分两段,工具面会跟着变,不必自己记:
+1. **一次 `Write` 落成整页。** 读完契约、规划和 workflow 之后,把整页一次写出来。
+   这一段里只有 `Write` 能改页面 —— 没有 `Patch` 和 `Edit`,不要试图用增量方式起页。
+2. **此后只增量改。** `Write` 从工具面消失,改用 `Patch`(一次改好几处,首选)或 `Edit`。
+   对着 `Check` 报的问题逐条改,不要重写整页 —— 重写会连已经改对的地方一起冲掉。"""
 
 
 def _tag_of(c) -> str:
@@ -114,6 +120,7 @@ class Page:
     tok_write: int = 0   # 其中写进缓存的部分(写,通常带溢价 —— 和读不是一个价)
     tok_out: int = 0     # 累计输出 token
     tok_max: int = 0     # 单步输入峰值 —— 判 CONTEXT_SOFT 用
+    wrote: bool = False  # 整页 Write 已经发生过一次(此后只许 Edit/Patch)
     cache_seen: bool = False   # 这条路由到底报不报 cached;不报和没命中要分得开
 
     def __post_init__(self):
@@ -248,7 +255,7 @@ def stray(pages_dir: Path) -> list[str]:
 
 
 def build_one(page: Page, pages_dir: Path, trace: Path, skill_root: Path,
-              instructions: str, effort: str) -> Page:
+              instructions: str, effort: str, compose_effort: str = "") -> Page:
     """一页的完整循环。
 
     历史只增不改 —— 每步追加一个 function_call 和一个 function_call_output。
@@ -259,7 +266,23 @@ def build_one(page: Page, pages_dir: Path, trace: Path, skill_root: Path,
     # 开工前先记下已有的野文件 —— 并发时别人留下的不算这一页的账。
     seen_stray = set(stray(pages_dir))
     hist: list = [{"role": "user", "content": page.prompt}]
-    spec = tools.specs()
+    spec_full = tools.specs()
+    # 整页写过之后就把 `Write` 从工具面里摘掉,而不是等它生成完再拒。
+    #
+    # **拒绝发生在模型已经把整页内容吐出来之后** —— Sonnet 那次第二个 Write
+    # 输出了 7,282 tok,全作废,还要再花一轮改成 Patch。而输出 token 是最贵的一类,
+    # 更糟的是它可能一再尝试重写,每次都付这笔钱。工具不在面里就不会去生成。
+    #
+    # 代价量过:改工具列表会让前缀缓存失效**一次**(实测 100% → 0% → 下一步回到 100%),
+    # 每页只发生一次。用一次缓存失效换掉一次(可能多次)整页生成,划算。
+    spec_norewrite = [s for s in spec_full if s["name"] != "Write"]
+    # 反过来的那一半:**整页写成之前,不给 `Patch` / `Edit`。**
+    #
+    # 光在 IDENTITY 里写「先 Write」不够 —— 实测 Sonnet 的 page-12 第 6 步用 `Edit`
+    # 把骨架从 320 字节改成 5,123 字节,等于用 Edit 做了整页写入,绕开了单次 Write 闸
+    # (那条闸只认 Write)。把这两个工具在第一段里摘掉,「先 Write」就从劝导变成
+    # 唯一可行路径,而且不浪费任何生成 —— 模型看不见,就不会先去想增量方案。
+    spec_compose = [s for s in spec_full if s["name"] not in ("Patch", "Edit")]
     t0 = time.time()
 
     while True:
@@ -273,7 +296,15 @@ def build_one(page: Page, pages_dir: Path, trace: Path, skill_root: Path,
             break
 
         started = _now()
-        r = respond(instructions, hist, spec, effort, tag=page.pid)
+        # **两档推理:构图一次用高档,之后的修复循环用低档。**
+        #
+        # 调用之前无法知道这一步会不会是 Write,所以只能按「整页写过没有」分段 ——
+        # 写之前那几步是读契约、读 skill、想构图,值得多想;写完之后是对着 Check
+        # 的报告一处一处改,那是机械活。实测 Sonnet 的 page-12:第 3 步 Write 之后
+        # 的 54 步里,每步输出中位只有 ~400 tok、多是 `Patch ×1`,却全程按高档在推理。
+        eff = compose_effort if (compose_effort and not page.wrote) else effort
+        spec = spec_norewrite if page.wrote else spec_compose
+        r = respond(instructions, hist, spec, eff, tag=page.pid)
         page.calls += 1
         tin, tout, cached = llm.usage_of(r)
         page.tok_in += tin
@@ -338,8 +369,26 @@ def build_one(page: Page, pages_dir: Path, trace: Path, skill_root: Path,
                     and args.get("skill") != page.primary_workflow):
                 res = (f"本页只装载 `{page.primary_workflow}`；不能读取 "
                        f"`{args.get('skill', '')}`。请继续使用已指派 workflow。")
+            elif c.name in ("Patch", "Edit") and not page.wrote:
+                # 兜底,同上:正路是 spec_compose 把这两个摘掉。
+                # 真走到这里说明模型硬喊了一个不在工具面里的工具。
+                res = ("整页还没写过 —— 这一段只能用 `Write` 一次落成整页。"
+                       "`Patch` / `Edit` 要等整页写出来之后才可用,"
+                       "现在用它们等于在空骨架上拼页面,会得到一个半成品。")
+            elif (c.name == "Write" and page.wrote
+                    and _PAGE_RE.search(str(args.get("file_path", "")))):
+                # 兜底。正路是上面把 Write 从工具面里摘掉(spec_norewrite),
+                # 那样模型根本不会生成整页内容;但工具不在面里不等于它一定不喊,
+                # 所以这条留着 —— 真走到这里说明摘工具那条没生效,值得在 steps 里留痕。
+                res = ("本页的整页 `Write` 已经用过一次,不能再覆盖重写。"
+                       "现在只能用 `Patch`(一次改好几处,首选)或 `Edit`(改一处)。"
+                       "如果你想大改,就把它拆成若干处 Patch —— "
+                       "整体覆盖会连已经改对的地方一起冲掉。")
             else:
                 res = tools.run(c.name, args, pages_dir, skill_root)
+                if (c.name == "Write"
+                        and _PAGE_RE.search(str(args.get("file_path", "")))):
+                    page.wrote = True
                 if c.name == "Skill" and args.get("skill"):
                     page.loaded_skills.append(str(args["skill"]))
 
@@ -398,7 +447,9 @@ def main() -> None:
     a.add_argument("--label", required=True)
     a.add_argument("--only", action="append", help="只跑某几页,可多次给")
     a.add_argument("--concurrency", type=int, default=50)   # 端点支持到 100
-    a.add_argument("--effort")
+    a.add_argument("--effort", help="修复循环的推理档(整页写完之后)")
+    a.add_argument("--compose-effort",
+                   help="构图阶段的推理档(整页 Write 之前);不给就跟 --effort 同档")
     a.add_argument("--skills", default=str(skills.DEFAULT))
     a.add_argument("--workflows", default=str(skills.WORKFLOWS))
     # **默认不注入设计哲学。** 这条是数出来的,原来的说法(下面留着)是错的。
@@ -445,6 +496,8 @@ def main() -> None:
     builder_cfg = cfg.get("builder", {})
     model = n.model or builder_cfg.get("model") or cfg["model"]["name"]
     effort = n.effort or builder_cfg.get("reasoning_effort", "medium")
+    compose_effort = (n.compose_effort or builder_cfg.get("compose_effort", "")
+                      or effort)
     llm.override(name=model, wire_api=n.wire)
 
     root = ROOT / "runs" / n.label
@@ -477,7 +530,10 @@ def main() -> None:
             raise FileNotFoundError(f"--philosophy 指的 {pp} 不存在 —— "
                                     f"不注入就别给这个参数,给了就必须能读到")
         philosophy = pp.read_text(encoding="utf-8")
-    base = IDENTITY + (("\n\n" + philosophy) if philosophy else "")
+    # 去 AI 味两份是每页都成立的底线,不看 workflow 路由结果 —— 跟 skill_blocks 不同,
+    # 这条不走"agent 自己 Read"，直接确定性拼进 system 块，见 skills.anti_slop_block。
+    base = (IDENTITY + "\n\n" + skills.anti_slop_block(workflow_root)
+            + (("\n\n" + philosophy) if philosophy else ""))
     skill_blocks = {
         p.pid: (skills.assigned_workflow(p.primary_workflow, workflow_root,
                                          floors=n.skill_floors)
@@ -490,7 +546,8 @@ def main() -> None:
     sb = sorted(len(v) for v in skill_blocks.values()) or [0]
     modes = Counter(p.skill_mode for p in pages)
     print(f"\n▸ builder · {n.label}\n  {len(pages)} 页,并发 {n.concurrency},"
-          f"model={model},effort={effort},模式 {dict(modes)}\n"
+          f"model={model},effort={compose_effort}(构图)/{effort}(修复),"
+          f"模式 {dict(modes)}\n"
           f"  指导块 {sb[0]}–{sb[-1]} 字符/页(中位 {sb[len(sb)//2]})"
           f"{'  含通用地板' if n.skill_floors else ''}\n"
           f"  system 块 {len(base):,} 字符"
@@ -507,7 +564,8 @@ def main() -> None:
         try:
             return build_one(p, root / "pages", root / "trace.jsonl",
                              roots[p.pid],
-                             base + "\n\n" + skill_blocks[p.pid], effort)
+                             base + "\n\n" + skill_blocks[p.pid], effort,
+                             compose_effort)
         except Exception as e:                     # noqa: BLE001
             p.why = f"{type(e).__name__}: {str(e)[:90]}"
             p.termination = "agent_exception"

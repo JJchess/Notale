@@ -220,6 +220,106 @@ class CacheAccountingTests(unittest.TestCase):
         self.assertIn("cache_read_input_tokens", wire.Usage.model_fields)
 
 
+class WriteOnceAndEffortTests(unittest.TestCase):
+    """整页只许写一次;构图与修复用不同推理档。"""
+
+    def _call(self, name, **args):
+        return FakeCall(type="function_call", name=name,
+                        arguments=json.dumps(args), call_id=f"c{name}")
+
+    def _run(self, calls, effort="low", compose="medium"):
+        """跑 build_one,返回 (page, 每步用的 effort, 每步 tools.run 收到的工具名)."""
+        efforts, ran = [], []
+        self.surfaces = []
+        responses = [SimpleNamespace(output=[c], usage=None, id=f"r{i}")
+                     for i, c in enumerate(calls)]
+        responses.append(done_response())
+
+        def fake_respond(instr, hist, spec, eff, tag="-"):
+            efforts.append(eff)
+            self.surfaces.append({s["name"] for s in spec})
+            return responses.pop(0)
+
+        def fake_run(name, args, cwd, root):
+            ran.append(name)
+            return "ok"
+
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "page-01.html").write_text("<html></html>", encoding="utf-8")
+            page = builder.Page("page-01", "Build", ("build-page",),
+                                primary_workflow="build-page", skill_mode="workflow")
+            with patch.object(builder, "respond", fake_respond), \
+                    patch.object(builder.tools, "run", fake_run):
+                builder.build_one(page, root, root / "trace.jsonl", root,
+                                  "instructions", effort, compose)
+        return page, efforts, ran
+
+    def test_second_whole_page_write_is_refused(self) -> None:
+        page, _, ran = self._run([
+            self._call("Write", file_path="/x/page-01.html", content="a"),
+            self._call("Write", file_path="/x/page-01.html", content="b"),
+        ])
+        # 第一次真的执行了,第二次没有走到 tools.run
+        self.assertEqual(ran, ["Write"])
+        self.assertTrue(page.wrote)
+        # 但它仍然记进步数 —— 事后要查得到「它试过重写」
+        self.assertEqual(page.steps.count("Write"), 2)
+
+    def test_patch_still_allowed_after_write(self) -> None:
+        _, _, ran = self._run([
+            self._call("Write", file_path="/x/page-01.html", content="a"),
+            self._call("Patch", page="page-01.html", edits=[{"old": "x", "new": "y"}]),
+            self._call("Edit", file_path="/x/page-01.html", old_string="x", new_string="y"),
+        ])
+        self.assertEqual(ran, ["Write", "Patch", "Edit"])
+
+    def test_effort_drops_to_repair_tier_after_the_write(self) -> None:
+        _, efforts, _ = self._run([
+            self._call("Read", file_path="/x/CONTRACT.md"),
+            self._call("Write", file_path="/x/page-01.html", content="a"),
+            self._call("Patch", page="page-01.html", edits=[{"old": "x", "new": "y"}]),
+        ], effort="low", compose="medium")
+        # 第 1、2 步在 Write 之前 → 构图档;第 3 步及以后 → 修复档
+        self.assertEqual(efforts[:2], ["medium", "medium"])
+        self.assertTrue(all(e == "low" for e in efforts[2:]), efforts)
+
+    def test_patch_and_edit_are_absent_before_the_first_write(self) -> None:
+        """先 Write 不能只靠 IDENTITY 劝 —— 实测 Sonnet 会用 Edit 整页写入绕过去。"""
+        _, _, ran = self._run([
+            self._call("Read", file_path="/x/CONTRACT.md"),
+            self._call("Edit", file_path="/x/page-01.html",
+                       old_string="a", new_string="b"),
+            self._call("Write", file_path="/x/page-01.html", content="a"),
+        ])
+        self.assertIn("Write", self.surfaces[0])
+        for s in self.surfaces[:2]:                 # Write 之前
+            self.assertNotIn("Patch", s)
+            self.assertNotIn("Edit", s)
+        # Read 照常执行;硬喊的那次 Edit 被兜底拦下,没有走到 tools.run
+        self.assertEqual(ran, ["Read", "Write"])
+
+    def test_write_leaves_the_tool_surface_after_first_use(self) -> None:
+        """正路是**摘掉工具**,不是等它生成完整页再拒 —— 后者白烧一次输出。"""
+        self._run([
+            self._call("Read", file_path="/x/CONTRACT.md"),
+            self._call("Write", file_path="/x/page-01.html", content="a"),
+            self._call("Patch", page="page-01.html", edits=[{"old": "x", "new": "y"}]),
+        ])
+        self.assertIn("Write", self.surfaces[0])
+        self.assertIn("Write", self.surfaces[1])          # 这一步才发生 Write
+        for s in self.surfaces[2:]:
+            self.assertNotIn("Write", s)                  # 之后不再出现在工具面里
+            self.assertIn("Patch", s)                     # 改页的路换成这两个
+            self.assertIn("Edit", s)
+
+    def test_compose_effort_defaults_to_single_tier(self) -> None:
+        _, efforts, _ = self._run([
+            self._call("Write", file_path="/x/page-01.html", content="a"),
+        ], effort="low", compose="")
+        self.assertTrue(all(e == "low" for e in efforts), efforts)
+
+
 class MessagesWireTests(unittest.TestCase):
     """messages wire 的两条:参数别静默丢,异常别绕过退避阶梯。"""
 
