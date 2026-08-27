@@ -342,7 +342,10 @@ class MessagesWireTests(unittest.TestCase):
 
     def test_effort_is_translated_not_dropped(self) -> None:
         """--effort 在这条 wire 上曾经静默无效。别再退回去。"""
-        self.assertIsNone(llm.to_messages(self._body("low")).get("thinking"))
+        # low = 显式 disabled,不是"不传" —— 不传等于放任模型默认开思考,
+        # 那正是 PLAN.md 卡死 400 秒的原因。
+        self.assertEqual(llm.to_messages(self._body("low"))["thinking"],
+                         {"type": "disabled"})
         for eff, budget in (("medium", 4096), ("high", 16384)):
             th = llm.to_messages(self._body(eff)).get("thinking")
             self.assertEqual(th, {"type": "enabled", "budget_tokens": budget})
