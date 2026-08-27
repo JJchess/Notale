@@ -600,6 +600,19 @@ def to_messages(body: dict) -> dict:
            "system": [{"type": "text", "text": body.get("instructions", ""),
                        "cache_control": {"type": "ephemeral"}}],
            "messages": msgs}
+    # reasoning.effort → Anthropic 的 thinking。**必须显式翻,不能默默丢。**
+    # 静默丢参数是这个文件反复栽过的形状(见 _adapt_chat 那段 reasoning 的账)。
+    #
+    # 注意实测结论:**这条网关目前不转发 thinking** —— 2026-08-27 验过,
+    # 传 {"type":"enabled","budget_tokens":2000} 与完全不传,
+    # `output_tokens_details.thinking_tokens` 都是 0。所以这段翻译现在是空转。
+    # 留着是因为(a)换路由就生效,(b)不留的话「--effort 到底管不管用」
+    # 又会变成一个只能靠探针回答的问题。
+    eff = (body.get("reasoning") or {}).get("effort")
+    budget = {"low": 0, "medium": 4096, "high": 16384}.get(str(eff or "").lower(), 0)
+    if budget and budget < out["max_tokens"]:
+        out["thinking"] = {"type": "enabled", "budget_tokens": budget}
+
     tools = body.get("tools") or []
     if tools:
         # 工具 schema 的键名也不一样:parameters → input_schema。
