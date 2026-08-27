@@ -42,10 +42,21 @@ ROOT = Path(__file__).resolve().parents[1]
 
 _OVERRIDE: dict = {}
 
+# Anthropic 系模型名的特征词。不做完整枚举 —— 三条实测记录(config.yaml:36-41、
+# core/check_cache.py:11-21、core/llm.py:526-536)都在说同一件事:这一族模型走默认的
+# responses wire 时前缀缓存 100% 失效,而且**不报任何错误**,只是悄悄全额计费。
+# messages 那条 wire 和两个 cache_control 断点都已经写好、验证过(to_messages()),
+# 缺的只是「换模型时有没有人记得手动传 --wire messages」—— 这道判断补在这里。
+_ANTHROPIC_RE = re.compile(r"claude|sonnet|opus|haiku", re.I)
+
 
 def override(**kw) -> None:
     """按轮覆盖模型/端点。同一套 harness 要跑不同模型做对照,
     写死在 config.yaml 里就只能改文件、跑一轮、再改回来 —— 那样并发对照做不了。"""
+    if kw.get("name") and not kw.get("wire_api") and _ANTHROPIC_RE.search(kw["name"]):
+        kw["wire_api"] = "messages"
+        print(f"  ⚠ {kw['name']} 是 Anthropic 系,自动切到 wire_api=messages"
+              f"(默认 wire 下前缀缓存 100% 失效且不报错)")
     _OVERRIDE.update({k: v for k, v in kw.items() if v})
     config.cache_clear()
     client.cache_clear()
