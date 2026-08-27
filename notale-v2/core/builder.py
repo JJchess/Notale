@@ -280,7 +280,13 @@ _PAGE_RE = re.compile(r"page-\d+\.html$")
 # `pNN.md` 改为拼进 brief(首条 user 消息)。它本来就每页唯一,放那里不损失任何共享;
 # 代价只是它会跟着历史在失效步被重付一次(约 1,253 tok/页),
 # 远小于换回来的「13.6k 共享块 × 20 页」。
-PRELOAD_TAGS = (("chassis", "CHASSIS.md"), ("contract", "CONTRACT.md"))
+# `theme.css` 2026-08-28 加进来:**把 CSS 源码整份给建页 agent。**
+# 在此之前 brief 明令不许打开 assets/ 下的 CSS,唯一通道是 theme.css 自报的
+# INTERFACE 块 —— 而那个块因此被迫承担整套视觉系统的声明,一度被推到八节、
+# 近 7,000 字符,还配了一道会把整轮判死的硬闸。实测这份 CSS 本身也才 16,467 字符,
+# 直接给源码比让它转述一遍更便宜也更准。给了源码之后八节和硬闸就都不需要了。
+PRELOAD_TAGS = (("chassis", "CHASSIS.md"), ("contract", "CONTRACT.md"),
+                ("theme_css", "theme.css"))
 
 
 def _wrap(tag: str, path: Path) -> str:
@@ -292,12 +298,13 @@ def _wrap(tag: str, path: Path) -> str:
 
 
 def shared_preload(root: Path) -> tuple[str, dict]:
-    """21 页共享的那两份(CHASSIS.md / CONTRACT.md)。返回(文本, 路径表)。
+    """21 页共享的那三份(CHASSIS.md / CONTRACT.md / theme.css)。返回(文本, 路径表)。
 
     路径表给 build_one 做兜底:模型仍然去 Read 这些路径时,回一句指路而不是再灌一遍全文。
     """
     paths = {"CHASSIS.md": root / "pages" / "assets" / "CHASSIS.md",
-             "CONTRACT.md": root / "CONTRACT.md"}
+             "CONTRACT.md": root / "CONTRACT.md",
+             "theme.css": root / "pages" / "assets" / "theme.css"}
     text = "\n\n".join(_wrap(tag, paths[name]) for tag, name in PRELOAD_TAGS)
     return text, paths
 
@@ -495,8 +502,9 @@ def build_one(page: Page, pages_dir: Path, trace: Path, skill_root: Path,
                 # 静默会让模型以为文件真的没了,然后自己发明一份契约。
                 page.preload_reads.append(pre_hit)
                 res = (f"`{pre_hit}` 的全文已经在你的 system 提示里了"
-                       f"(标签 `<chassis>` / `<contract>` / `<page_spec>`),内容逐字相同。"
-                       f"往上翻即可,不用再 Read —— 这一次 Read 没有给你任何新信息。")
+                       f"(标签 `<chassis>` / `<contract>` / `<theme_css>` / `<page_spec>`),"
+                       f"内容逐字相同。往上翻即可,不用再 Read —— "
+                       f"这一次 Read 没有给你任何新信息。")
             else:
                 res = tools.run(c.name, args, pages_dir, skill_root)
                 if (c.name == "Write"

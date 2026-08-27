@@ -249,31 +249,24 @@ def _looks_like_prose(text: str) -> str:
 _IFACE = re.compile(r"/\*\s*=+\s*INTERFACE\s*=+(.*?)=+\s*/?INTERFACE\s*=+\s*\*/",
                     re.S | re.I)
 
-# 接口块必须交付的八节。**这是 theme.css 到建页 agent 的唯一通道** ——
-# brief 明令不许读 assets/ 下的 CSS 源码,所以块里没写的东西,21 个并行 agent
-# 就当它不存在,然后各自发明一个。实测代价(runs/sol-low-20260827,21 页):
-#   块 1,929 字符,点到 33/61 个类、18/23 个 token,平均每条 45 字符
-#   → 页面内联 CSS 466 个自造类 / 86,411 字符,是共享主题的 5.3 倍
-#     .btn 被 10 页各自重定义,.claim 9 页,.kicker 8 页
-# 八节的形状取自 frontend-slides 那 34 份 design.md —— 抄的是**它逼作者声明的字段**
-# (12 个 ## 小节、32/34 顺序相同),不是它已经做好的决定(colors 键名交集为 0)。
-IFACE_SECTIONS = ("视觉论点", "调色板", "字阶与字体角色", "形与处理",
-                  "层次语言", "类名录", "不许", "加新东西时")
+# 八节 `IFACE_SECTIONS` 和 `_iface_section` / `_chassis_names` 2026-08-28 一起删。
+#
+# 它们那一轮解决的问题是真的:接口块 1,929 字符只点到 33/61 个类、18/23 个 token,
+# 于是页面内联 CSS 长出 466 个自造类 / 86,411 字符(共享主题的 5.3 倍),
+# `.btn` 被 10 页各自重定义。但那个问题的成因是**建页 agent 读不到 CSS 源码**,
+# 而现在源码整份进了 builder 的 system 块 —— 病根没了,这副药也就不用吃了。
+# 接口块本身留着,只是不再需要八节格式、也不再有硬闸。
 
 
 def _interface(css: str):
-    """theme.css 自报的 INTERFACE 块。两处要用同一份:追加进 CHASSIS.md(给建页),
-    以及注入写规格那一步(给规划)。后者是 2026-08-23 加的 —— 在那之前
-    `theme.css` 排在 `expand()` **之后**,规格点名版面类在因果上不可能,
-    实测五种骨架类全都生成了、页面 46/48 在用,而 48 份规格一份都没点过名。"""
+    """theme.css 自报的 INTERFACE 块 —— 注入写规格那一步,让规格点得出版面类。
+
+    2026-08-23 加的:在那之前 `theme.css` 排在 `expand()` **之后**,
+    规格点名版面类在因果上不可能,实测五种骨架类全都生成了、页面 46/48 在用,
+    而 48 份规格一份都没点过名。
+    (追加进 CHASSIS.md 那一路 2026-08-28 去掉了 —— CSS 源码现在直接给 builder。)
+    """
     return _IFACE.search(css)
-
-
-def _iface_section(block: str, title: str) -> str:
-    """取接口块里某一节的正文。取不到返回空串。"""
-    m = re.search(rf"^[ \t]*##[ \t]*{re.escape(title)}[ \t]*$(.*?)(?=^[ \t]*##[ \t]|\Z)",
-                  block or "", re.S | re.M)
-    return m.group(1) if m else ""
 
 
 def _valid_css(text: str) -> str:
@@ -312,55 +305,15 @@ def _valid_css(text: str) -> str:
                 "否则每页会各自决定外边距。至少保留 "
                 "`padding: var(--pad-y) var(--pad-x)`")
 
-    # ---- 接口块的结构闸 ----
+    # 接口块的八节结构闸 2026-08-28 删除,和 `prompts/theme.md` 的八节模板一起。
     #
-    # **只判小节在不在,不判每节写了几条。** `:376` 记着「可算的约束会被贴边满足」;
-    # 「`## 不许` 至少 8 条」这种计数闸换来的只会是八条废话。
-    # 而且这里的硬闸风险很实:`cached()` 重试时**原样重发同一个提示词**,`bad` 只打印、
-    # 不回灌 —— 模型三次做不到同一件事,整轮就死了(上面那段 `#stage` 注释记的正是这个)。
-    # 所以硬拦的必须是提示词里给了完整样例、照抄就能满足的东西:小节标题。
-    m = _IFACE.search(text)
-    if not m:
-        return ("文件顶部没有 INTERFACE 块 —— 它是 theme.css 到建页 agent 的唯一通道，"
-                "brief 明令不许读 assets/ 下的 CSS 源码，块里没写的类下游就当它不存在")
-    block = m.group(1)
-    missing = [x for x in IFACE_SECTIONS if not _iface_section(block, x).strip()]
-    if missing:
-        return ("INTERFACE 块缺小节：" + "、".join(f"`## {x}`" for x in missing)
-                + f"（要齐的是这八节：{'、'.join(IFACE_SECTIONS)}）。"
-                "缺一节，21 个并行建页 agent 就少一整类判断依据，只能各自发明")
+    # 那道闸的前提是「接口块是 theme.css 到建页 agent 的**唯一通道**」——
+    # 因为 brief 明令不许读 assets/ 下的 CSS 源码。现在源码整份直接进 builder 的
+    # system 块,那个前提没有了:块里没写的类,agent 自己能在源码里看到。
+    # 接口块本身保留(它写的是源码里读不出来的东西:用途、关系、什么时候拿哪个),
+    # 但它不再是唯一通道,也就不值得用一道会把整轮判死的硬闸去守
+    # —— `cached()` 重试是原样重发,拦住了模型也收不到反馈。
     return ""
-
-
-def _chassis_names(theme_api: str) -> tuple:
-    r"""从 theme.css 的 INTERFACE 块里取出可点名的 class。
-
-    只取 `.foo` 形式的类名,不取 token(`--fs-body`)—— 规格点名的是版面骨架和读数组件,
-    token 是 CSS 内部的事。返回元组以便 partial 绑定后仍可哈希。
-
-    **只从 `## 类名录` 那一节刮,而且只认反引号里以 `.` 开头的那一段。**
-    接口块从 1,929 涨到一万多字符之后大半是散文,原来那句全块 `\.([a-z][a-z0-9-]{2,})`
-    会把「`assets/theme.css`」刮成一个叫 `.css` 的类。
-
-    这份名单现在只喂一个读数:接口块的名录点到了 CSS 里几个类(基线 29/53)。
-    它**不是闸** —— `plan_run()` 里那个 `chassis=` 参数绑了很久,而 `_valid_spec`
-    的函数体从来没读过它,2026-08-27 一并删掉了。
-
-    下限从 3 个字符放宽到 2 个:`.li`、`.sw`、`.bt`、`.lv`、`.fb`、`.it` 都是这套系统里
-    真实存在的类,原来一个都进不了名单,覆盖率因此系统性偏低。只报不拦,放宽没有误拦风险。
-    旧轮次的接口块没有「类名录」这一节,退回全块扫描保持可读。
-    """
-    catalog = _iface_section(theme_api, "类名录")
-    if catalog.strip():
-        names: list[str] = []
-        for span in re.findall(r"`([^`\n]+)`", catalog):
-            if span.startswith("."):        # 名录条目是选择器;路径、文件名不是
-                names += re.findall(r"\.([a-z][a-z0-9-]+)", span)
-        if names:
-            return tuple(sorted(set(names)))
-    return tuple(sorted(set(re.findall(r"\.([a-z][a-z0-9-]+)", theme_api or ""))))
-
-
 
 
 def _valid_spec(text: str,
@@ -1639,35 +1592,18 @@ def plan_run(run: Run, chassis: Path, lib: Path,
 ''', encoding="utf-8")
         print("  接口交接     已知陷阱（Deck.fmt 带符号）→ CHASSIS.md")
 
+    # CSS 源码现在整份进 builder 的 system 块,所以**不再把 INTERFACE 块追加进
+    # CHASSIS.md**。那条搬运存在的唯一理由是「建页 agent 读不到 CSS 源码」,
+    # 理由没了搬运也就没了 —— 留着只会让同一份声明在上下文里出现两遍。
+    # 接口块本身仍然有用(它写的是源码里读不出来的:用途、关系、何时用哪个),
+    # 由 `_interface()` 取出来喂给写规格那一步。
     m = _interface(theme)
     if m:
-        block = m.group(1).strip()
-        ch = run.assets / "CHASSIS.md"
-        # **不再套代码围栏。** 块里现在是八节 markdown(`## 视觉论点`…`## 加新东西时`),
-        # 围起来就变成一大段等宽死文本,小节标题不成标题、名录里的 `.foo` 不成代码。
-        # 追加的层级和 CHASSIS.md 本身一致(都是 `## `),读起来是同一份文档的后半段。
-        ch.write_text(ch.read_text(encoding="utf-8").rstrip()
-                      + "\n\n---\n\n# 本轮追加:`theme.css` 提供的视觉系统\n\n"
-                      + "下面这一段是 `theme.css` 自己声明的。**你读不到 CSS 源码**"
-                      + "（brief 明令不许打开 assets/ 下的实现），所以这里没写的东西，"
-                      + "就是这套系统里没有的东西 —— 不要自己发明一个补上。\n\n"
-                      + block + "\n", encoding="utf-8")
-        named = _chassis_names(block)
-        # 覆盖率只报不拦:它取决于模型怎么数状态修饰类(.panel.q、.btn.on),
-        # 拿它当硬闸会为了 6 个修饰类赔掉整轮 —— 而重试是原样重发,拦住了也改不了。
-        # 这个数是「接口块够不够用」的主判据,留给实验去看(基线 33/61)。
-        bare = re.sub(r"/\*.*?\*/", "", theme, flags=re.S)
-        defined = set(re.findall(r"\.([a-z][a-z0-9-]+)",
-                                 " ".join(re.findall(r"([^{}]*)\{", bare))))
-        hit = len(defined & set(named))
-        print(f"  接口交接     INTERFACE 块 {len(block):,} 字符、{len(IFACE_SECTIONS)} 节 "
-              f"→ CHASSIS.md；名录覆盖 {hit}/{len(defined)} 个类"
-              f"（{hit / max(len(defined), 1) * 100:.0f}%）")
+        print(f"  接口交接     INTERFACE 块 {len(m.group(1).strip()):,} 字符 → 写规格那一步")
     else:
-        # 走不到这里 —— `_valid_css` 已经把没有接口块的 theme.css 拦在前面了。
-        # 留着是因为 `cached()` 命中已存在文件时会跳过闸,旧轮次续跑仍可能撞上。
-        print("  接口交接     ✗ theme.css 里没有 INTERFACE 块 —— "
-              "各页只能自己去 grep 选择器,而 token 的适用范围它猜不到")
+        print("  接口交接     ⚠ theme.css 里没有 INTERFACE 块 —— "
+              "规格点不了版面类,建页 agent 只能自己从 CSS 源码里找")
+
     # 闸:theme.css 必须真的给 mount 注入的那套类名写了样式。
     #
     # **mount 类名覆盖那道闸删了。** 它查的是「theme.css 有没有给 mount 注入的

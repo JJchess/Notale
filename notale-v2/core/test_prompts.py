@@ -16,8 +16,7 @@ sys.path.insert(0, str(ROOT))
 from core.artifacts import parse_table  # noqa: E402
 from core.llm import fill  # noqa: E402
 from core import skills  # noqa: E402
-from core.planner import (IFACE_SECTIONS, MAX_CHARS, _chassis_names,  # noqa: E402
-                          _valid_css, _valid_spec, check_visual_world)
+from core.planner import MAX_CHARS, _valid_css, _valid_spec  # noqa: E402
 
 
 # 每份提示词的字符数上限。**只降不升** —— 这一栏在 2026-08-26 精简 contract/brief/spec
@@ -31,15 +30,10 @@ BASELINE_CHARS = {
     "philosophy": 2100,
     "plan": 3200,
     "spec": 3000,
-    # theme 里内联了 plan-direction 全文(约 14.7KB) —— 见 skills.direction_block。
-    # 这不是模板变啰嗦,是把一份此前到不了任何地方的视觉指导接进了流水线。
-    #
-    # 3200 → 9000。**这一栏"只降不升",这是唯一一次破例,理由要留在这里。**
-    # 涨的部分是接口块八节的格式说明加一份完整样例,而样例正是这次改动的载体:
-    # 交付物的详细程度只能靠样例带,写「要详细」不产生任何约束(`planner.py:376`
-    # 那条「可算的约束会被贴边满足」的另一面 —— 不可算的形容词干脆不起作用)。
-    # 而且这一份提示词只发一次;真正按页复制的是 brief 和 contract,那两条没动。
-    "theme": 9000,
+    # 9000 → 3400。八节接口块那一版 2026-08-28 回退了:CSS 源码现在整份进 builder 的
+    # system 块,接口块不再是唯一通道,格式说明和完整样例也就不必挂在提示词里。
+    # 「只降不升」的规矩因此恢复 —— 上次那条破例连同它的理由一起作废。
+    "theme": 3400,
 }
 
 PROMPT_ARGS = {
@@ -87,13 +81,12 @@ class PromptTemplateTests(unittest.TestCase):
         self.assertEqual(MAX_CHARS, {})
 
 
+# 回退后的接口块是自由格式(见 prompts/theme.md 的「接口注释」),不再有八节结构。
 IFACE_OK = ("/* ==== INTERFACE ====\n"
-            + "".join(f"\n## {x}\n\n占位正文。\n" for x in IFACE_SECTIONS[:-3])
-            + "\n## 类名录\n\n"
-            + "".join(f"`.x{i}`  —— 用途｜什么时候拿｜和谁组合\n" for i in range(8))
-            + "\n## 不许\n\n不要加投影。这套系统的纵深来自留白。\n"
-            + "\n## 加新东西时\n\n任何新容器都是 `.panel`,不要新建卡片类。\n"
-            + "\n==== /INTERFACE ==== */\n")
+            "   token    --model #2457A6   当前模型算出的值\n"
+            "   版式     .focus            单焦点构图\n"
+            "   组件     .panel            读数与控件容器\n"
+            "   ==== /INTERFACE ==== */\n")
 
 
 class AntiSlopWiringTests(unittest.TestCase):
@@ -151,43 +144,6 @@ class ValidatorTests(unittest.TestCase):
 
         bad = self._css("#stage{display:flex;flex-direction:column;}")
         self.assertIn("padding", _valid_css(bad))
-
-    def test_css_requires_an_interface_block(self) -> None:
-        """接口块是 theme.css 到建页 agent 的唯一通道 —— 缺了它 21 页各自发明。"""
-        self.assertIn("INTERFACE", _valid_css(self._css(self.STAGE_OK, iface="")))
-
-    def test_css_requires_every_interface_section(self) -> None:
-        """八节缺一节,下游就少一整类判断依据。逐节挖掉,每一节都要被点名。"""
-        for section in IFACE_SECTIONS:
-            with self.subTest(section=section):
-                holed = IFACE_OK.replace(f"## {section}\n", "## 别的\n", 1)
-                bad = _valid_css(self._css(self.STAGE_OK, iface=holed))
-                self.assertIn(section, bad)
-
-    def test_css_gate_does_not_count_entries(self) -> None:
-        """闸只判小节在不在,**不判每节写了几条**。
-
-        两个理由,都是踩出来的:「可算的约束会被贴边满足」(planner.py:376),
-        以及 `cached()` 重试时原样重发同一个提示词 —— 拦住了模型也收不到反馈,
-        三次做不到同一件事整轮就死了。
-        """
-        thin = IFACE_OK.replace("不要加投影。这套系统的纵深来自留白。", "无。")
-        self.assertEqual(_valid_css(self._css(self.STAGE_OK, iface=thin)), "")
-
-    def test_chassis_names_only_scrapes_the_catalog_section(self) -> None:
-        """块从 1,929 涨到一万多字符之后大半是散文,原来那句全块扫描会把
-        `assets/theme.css` 刮成一个叫 `.css` 的类,名录覆盖率这个读数就被虚高地污染。
-        """
-        block = ("\n## 视觉论点\n\n参见 `assets/theme.css` 和 `pages/plan/p01.md`。\n"
-                 "\n## 类名录\n\n`.panel`  容器\n`.legend > .li > .sw`  图例\n")
-        got = _chassis_names(block)
-        self.assertEqual(got, ("legend", "li", "panel", "sw"))
-        self.assertNotIn("css", got)
-
-    def test_chassis_names_falls_back_for_old_runs(self) -> None:
-        """旧轮次的接口块没有「类名录」那一节,退回全块扫描,续跑不炸。"""
-        self.assertEqual(_chassis_names("组件 .panel 读数容器"), ("panel",))
-
 
 # §0.5 的新形状:声明视觉**要求**,不做视觉**决定**。
 WORLD_OK = """## 0.5 视觉世界

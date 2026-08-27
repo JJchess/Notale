@@ -2,16 +2,17 @@
 
 工作目录是 `{assets}/..`，所有命令都在这里执行。
 
-开工要用的三份**已在你的 system 提示里**，不要再 `Read`（只会拿到指路，白花一次往返）：
+开工要用的四份**已在你的 system 提示里**，不要再 `Read`（只会拿到指路，白花一次往返）：
 
-1. `<chassis>`（`{assets}/CHASSIS.md`）：`base.css`、`base.js`、`theme.css` 的接口。
-2. `<contract>`（`{contract}`）：全套 {total} 页共享的版面、视觉、交互和技术契约。
-3. `<page_spec>`（`{spec}`）：本页的内容、结构、文字、数据、交互和边界。
+1. `<chassis>`：`base.css`、`base.js` 的接口。
+2. `<contract>`：全套 {total} 页共享的版面、视觉、交互和技术契约。
+3. `<theme_css>`：共享主题的**完整源码**，类和 token 以它为准。
+4. `<page_spec>`：本页的内容、结构、文字、数据、交互和边界。
 
-往上翻即可，与磁盘上逐字相同。先读完再动手。
+先读完再动手。
 
 仅在需要确认库版本时读 `{assets}/lib/LIBS.md`。
-不要读取其他 `page-*.html`、`PLAN.md`，也不要打开 `assets/` 下 CSS、JS 或库文件的实现源码。
+不要读取其他 `page-*.html`、`PLAN.md`，也不要打开 `assets/` 下 JS 或库文件的实现源码。
 
 {assignment}
 
