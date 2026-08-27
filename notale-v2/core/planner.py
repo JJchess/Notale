@@ -178,9 +178,10 @@ SPEC_CONCURRENCY = 50
 # 展开这一步每路都带 deck 全文(约 6KB),比 builder 的单页调用重得多,所以单独降一档。
 # builder 那边保持 50 —— 它每页是一串小调用,压力形态不一样。
 
-# 单页停留上限,秒。和 core/check_coverage.py 里那个是同一个数 —— 从那里取,
-# 别抄第二份:抄两份必然漂移,而漂移出来的闸没人会怀疑。
-from .check_coverage import STAY_CEILING  # noqa: E402
+# 单页停留上限,秒。原来从 `core/check_coverage.py` 取(那边是同一个数,不抄第二份),
+# 2026-08-28 那个模块整个删掉了,所以内联到这里 —— 现在这是唯一一份。
+# **这个数要留着**:把页数从 18 推到 41 的正是它,而不是页表的九列。
+STAY_CEILING = 150.0
 
 
 def call(run: Run, step: str, prompt: str, min_chars: int = 1,
@@ -1709,19 +1710,12 @@ def plan_run(run: Run, chassis: Path, lib: Path,
 
     print(f"\n  合计 {time.time()-t0:.0f}s  →  {run.root}")
 
-    # plan 层自检。**纯文本、35 毫秒**,而在接上之前它只是手工习惯 ——
-    # 后果很实:`artifacts.py` 里那行 `Lec.mount` 鬼签名躺了两个月、
-    # `MAX_CHARS["spec"]` 两个月没生效、`theme.css` 悄悄长出第三级表面,
-    # 三件都是文本判据本来就能抓、但没人跑那个判据。
-    bad = 0
-    try:
-        sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-        import plan_quality
-        plan_quality.main_table([run.label])
-        bad = plan_quality.gate(run.label)
-    except Exception as e:                      # 自检本身不该弄死一轮
-        print(f"  自检         ⚠ 跑不起来:{type(e).__name__}: {str(e)[:80]}")
-    return {"pages": len(rows), "root": str(run.root), "gate_failures": bad}
+    # 这里原来跑 `plan_quality` 的进程内自检。**2026-08-28 连同整套 plan 层仪器一起删。**
+    # 27 行判据里 18 行读的是 `PLAN.md` / `plan/pNN.md`,而这两样在新形状里不存在;
+    # `check_coverage` 更是缺 `PLAN.md` 就 `sys.exit`。留着只会全表熄灭 ——
+    # 而一个恒读同一个值的判据比没有判据更坏,这条这个仓库栽过不止一次。
+    # 真正的判据要按新产物重建,不是把旧的凑合着接上。
+    return {"pages": len(rows), "root": str(run.root)}
 
 
 def main() -> None:
@@ -1779,12 +1773,9 @@ def main() -> None:
             raise SystemExit(f"✗ {_why}的脚本不在:{_p}")
     llm.override(name=n.model, wire_api=n.wire)
     if n.effort: config()["planner"]["reasoning_effort"] = n.effort
-    r = plan_run(Run(n.query, n.minutes, n.audience, n.label, n.scenario,
-                     prompts=Path(n.prompts)),
-                 Path(n.chassis), Path(n.lib), Path(n.skills), workflow_root)
-    # 退出码带上自检结果:产物全留着,但起 builder 之前必须先看到这个。
-    if r.get("gate_failures"):
-        sys.exit(1)
+    plan_run(Run(n.query, n.minutes, n.audience, n.label, n.scenario,
+                 prompts=Path(n.prompts)),
+             Path(n.chassis), Path(n.lib), Path(n.skills), workflow_root)
 
 
 if __name__ == "__main__":

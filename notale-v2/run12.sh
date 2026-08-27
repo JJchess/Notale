@@ -32,10 +32,11 @@ run() {
     return 1
   fi
   echo "[$label] ✓ 完成  $(find "runs/$label/pages" -name 'page-*.html' 2>/dev/null | wc -l) 页"
-  # 覆盖闸:三条已有的闸都不管「讲够了没有」,而那正是弱模型最大的短板
-  # (nn-06 Opus 20 页 vs nn-07 Sonnet 14 页,同一份指令)。只报,不改变退出码 ——
-  # 缺页要人来决定是补页还是改规划,不该由脚本判死。
-  python3 -m core.check_coverage --label "$label" --minutes 45 || true
+  # 覆盖闸 2026-08-28 删除。它读 PLAN.md 的页表来对账「讲够了没有」,
+  # 而 planner 塌缩成一次调用之后没有页表了 —— 缺 PLAN.md 它直接 sys.exit。
+  # 判据要按新产物重建,不是把旧的凑合着接上。
+  # (run3–run11 是归档的对照臂,那几行留着不动:它们都带 `|| true`,
+  #  模块没了只会打一行错继续走,而改它们等于篡改当时跑的是什么。)
 }
 
 # 这条链路是并行云的 Responses API,不是 Anthropic 直连 ——
