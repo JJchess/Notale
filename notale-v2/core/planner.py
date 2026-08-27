@@ -421,6 +421,62 @@ def _extract_spec(text: str, check) -> str:
     return cands[1] if len(cands) > 1 else text.strip()
 
 
+def _group_acts(rows: list, cap: int = 8, blind: int = 6) -> list[list]:
+    """把页表按「幕」切成连续的批,每批一次调用展开。
+
+    分批的单位是幕而不是页,理由是量出来的:一页一调时 22 路的 input 合计
+    169,442 tok 且**缓存 0 命中** —— 同一份约 7,692 tok 的共享前缀
+    (deck 全文 + lec_api + lec_values + theme_api + img_pool)被原样付了 22 遍。
+    并发发出,第一个请求的缓存还没写完后面 21 个就已出发,谁也吃不到谁的。
+
+    也不做成一次性全出:`expand()` 里那条「一页不过不许杀掉整轮」是踩出来的
+    (p03 三次不过 → planner 死 → 43 份已写好的规格一起没了),一次性会把
+    失败半径重新放大到整轮;而 50 页一次约 55k tok 输出也贴着 MAX_OUT 的 60k。
+
+    `cap`:单批页数上限。幕本身可以很长(实测有 7 页的幕),超了就按连续顺序切开,
+    宁可牺牲一点幕内连续性,也不让单次输出跑到不安全的长度。
+
+    `blind`:**旧 PLAN.md 没有幕列**(`Row.act` 默认空串)。这时按固定条数分批,
+    绝不能让「全是空串」退化成一个大批 —— 那正好就是我们不要的一次性全出。
+    """
+    if not rows:
+        return []
+    if not any((r.act or "").strip() for r in rows):
+        return [rows[i:i + blind] for i in range(0, len(rows), blind)]
+    out: list[list] = []
+    for r in rows:
+        key = (r.act or "").strip()
+        if out and (out[-1][0].act or "").strip() == key and len(out[-1]) < cap:
+            out[-1].append(r)
+        else:
+            out.append([r])
+    return out
+
+
+def _split_specs(text: str, nns) -> dict:
+    """把一次回复里的多份规格按 `# page-NN` 切开,返回 `{nn: 正文}`。
+
+    **按页号映射,不按位置** —— 模型可能乱序输出,按位置对齐会把 p07 的正文
+    存进 p05.md,而两份都「看起来正常」,这种错没有任何下游闸能发现。
+
+    同一页号出现多次取**最后一次**:沿用 `_extract_spec` 的同一条经验,
+    越靠后越可能是「最终答案」,前面那些是写废的草稿。
+
+    第一个 `# page-` 之前的前言直接丢掉(模型爱写「好的,下面是这一幕的规格」)。
+    """
+    want = {str(n).zfill(2) for n in nns}
+    body = strip_fence(text.strip())
+    hits = list(re.finditer(r"(?m)^#\s+page-(\d+)", body))
+    out: dict[str, str] = {}
+    for i, m in enumerate(hits):
+        nn = m.group(1).zfill(2)
+        if nn not in want:
+            continue
+        end = hits[i + 1].start() if i + 1 < len(hits) else len(body)
+        out[nn] = body[m.start():end].strip()      # 后出现的覆盖先出现的
+    return out
+
+
 def _extract_code(text: str, check) -> str:
     """从可能夹着推理稿的回复里把产物捞出来。**只用于代码产物。**
 
@@ -911,77 +967,113 @@ def check_table(run: Run, rows: list, plan_text: str = "") -> None:
 
 def expand(run: Run, rows: list, deck: str, api: str = "", vals: str = "",
            theme_api: str = "", img_pool: str = "", workflow_root=None) -> None:
-    """N 路并行把页表每一行展开成 `plan/pNN.md`。
+    """按幕分批、幕之间并行,把页表展开成 `plan/pNN.md`。
 
     两段式的理由:全局约束(停留加总、交互不撞车、相邻不同结构、归属不重叠)只有
-    看到整张表才能判,所以 A 段必须是**一次**调用;而逐页展开彼此独立,是这条流水线
-    上最大的一块串行时间 —— nn-11 (Opus 5 × Claude Code) 那轮 43.7 分钟的规划阶段里,
+    看到整张表才能判,所以 A 段必须是**一次**调用;而逐页展开是这条流水线上最大的
+    一块串行时间 —— nn-11 (Opus 5 × Claude Code) 那轮 43.7 分钟的规划阶段里,
     逐份写 44 个 pNN.md 就占了约 25 分钟。所以 A 段串行、B 段并行。
 
-    每一路的输入是 **deck 全文 + 自己那一行**,不是整张表的展开 ——
-    它要知道邻居是谁(deck 里含页表),但不需要邻居的正文。
+    **B 段的单位是幕,不是页。** 一页一调时量到两件事(runs/net-g2, 22 页):
+      · 22 次调用 input 合计 169,442 tok,**cached 0** —— 同一份约 7,692 tok 的
+        共享前缀(deck 全文 + lec_api + lec_values + theme_api + img_pool)付了 22 遍;
+        并发发出,第一个的缓存还没写完后面 21 个就已出发,谁也吃不到谁的。
+      · 每一路只看得到自己那一行,看不到邻居的**实际措辞** —— 于是第 N 页的「下一问」
+        和第 N+1 页的「主标题」各写各的,kicker 跨页撞词无人管,同一个术语被多页
+        各自「首次解释」一遍。
+    一幕一调之后 input 降到约 38k(省 77%),而连续性要求写进了 spec.md 的
+    「本幕内的连续性」一节 —— 那是这次改动真正的收益,省钱只是附带。
+
+    不做成一次性全出:那会把下面那条「一批不过不许杀掉整轮」的失败半径重新放大到
+    整轮,而 50 页一次约 55k tok 输出也贴着 MAX_OUT 的 60k。
     """
     d = run.pages / "plan"
+    d.mkdir(parents=True, exist_ok=True)   # 正路上 split_deck() 已经建好;不靠它,少一处隐式依赖
     m = config()["model"]
     eff = config()["planner"]["reasoning_effort"]
+    # 闸按行绑定:交互页才查反馈闭环那四件。`CHECKS` 只按步名取函数、拿不到行信息,
+    # 而「这一页有没有交互」只有行里有 —— 所以在这里绑,不塞进全局。
+    chk = partial(CHECKS["spec"], chassis=_chassis_names(theme_api),
+                  workflow_names=tuple(
+                      n for n in skills.PAGE_WORKFLOWS
+                      if n in set(skills.available(workflow_root or skills.WORKFLOWS))))
 
-    def one(r):
-        f = d / f"p{r.nn}.md"
-        if f.exists() and f.stat().st_size > 200:
-            return f, 0, True
-        prompt = run.prompt("spec", num=int(r.nn), nn=r.nn, query=run.query,
-                            minutes=run.minutes, audience=run.audience,
-                            scenario=run.scenario, deck=deck, row=r.raw,
+    def _rows_block(batch) -> str:
+        return "\n".join(
+            f"{r.raw}\n    版式:{r.layout or '未指定（旧页表；在 `## 存疑` 中报告）'}"
+            for r in batch)
+
+    def _ask_batch(batch, act: str):
+        """跑一批,返回 (切好的 {nn: 正文}, 输出 tok, 最后一次原始回复)。"""
+        prompt = run.prompt("spec", act=act, query=run.query, minutes=run.minutes,
+                            audience=run.audience, scenario=run.scenario,
+                            deck=deck, rows_block=_rows_block(batch),
                             workflows=skills.workflow_catalog(
                                 workflow_root or skills.WORKFLOWS),
                             lec_api=api, lec_values=vals,
-                            theme_api=theme_api, img_pool=img_pool,
-                            stay=f"{r.stay:g}", structure=r.structure,
-                            layout=(r.layout or "未指定（旧页表；在 `## 存疑` 中报告）"))
+                            theme_api=theme_api, img_pool=img_pool)
         req = Request(model=m["name"], system=[TextBlock(text=IDENTITY)],
                       messages=[Message(role="user", content=[TextBlock(text=prompt)])],
                       max_tokens=MAX_OUT.get("spec", 8000),
                       output_config={"effort": eff})
-        # 闸按这一行绑定:交互页才查反馈闭环那四件。
-        # `CHECKS` 只按步名取函数、拿不到行信息,而「这一页有没有交互」只有行里有 ——
-        # 所以在这里绑,而不是把 interactive 塞进全局。
-        chk = partial(CHECKS["spec"], chassis=_chassis_names(theme_api),
-                      workflow_names=tuple(
-                          n for n in skills.PAGE_WORKFLOWS
-                          if n in set(skills.available(workflow_root or skills.WORKFLOWS))))
-        out_tok = 0
+        # min_chars 按页数放大:一批 7 页只回 400 字符是灾难性空响应,不是「写得简洁」。
+        rep = ask(req, min_chars=MIN_CHARS.get("spec", 400) * len(batch))
+        return _split_specs(rep.text, [r.nn for r in batch]), rep, req
+
+    def one_batch(batch):
+        act = (batch[0].act or "").strip() or "—"
+        files = {r.nn: d / f"p{r.nn}.md" for r in batch}
+        # 整批都在就整批跳过。部分在则整批重做 —— 只补缺的那几页就等于放弃这一幕的
+        # 连续性,而连续性正是分批的目的。
+        if all(f.exists() and f.stat().st_size > 200 for f in files.values()):
+            return [(f, 0, True) for f in files.values()]
+        out_tok, got, rep, req = 0, {}, None, None
         for attempt in range(1, 4):
-            rep = ask(req, min_chars=MIN_CHARS.get("spec", 400))
+            got, rep, req = _ask_batch(batch, act)
             out_tok += rep.output_tokens
-            txt = _extract_spec(rep.text, chk)
-            bad = chk(txt)
+            bad = {r.nn: (chk(got[r.nn]) if r.nn in got else "这一页没出现在回复里")
+                   for r in batch}
+            bad = {nn: why for nn, why in bad.items() if why}
             if not bad:
                 break
-            print(f"  展开 p{r.nn}     ✗ 第 {attempt} 次不是有效规格:{bad}", flush=True)
-        else:
-            # **一页不过不许杀掉整轮。** 实测代价:p03 三次不过,planner 直接死,
-            # 43 份已经写好的规格一起没了 —— 而判据本来就是「下游能不能便宜地撤销」:
-            # 一份缺了一行的规格,那一页照它建出来最多是那一页差点;
-            # 而整轮挂掉是 44 页全无。builder 那边早有 guard() 兜单页崩溃,
-            # 这里漏了同一条。
-            print(f"  展开 p{r.nn}     ⚠ 3 次都不合格,**保留最后一次**继续往下走"
-                  f"(最后一次:{bad})", flush=True)
+            print(f"  展开 幕{act}     ✗ 第 {attempt} 次有 {len(bad)}/{len(batch)} 页不合格:"
+                  + "、".join(f"p{nn}({why[:24]})" for nn, why in bad.items()), flush=True)
+        if req is not None and rep is not None:
+            run.log.add([b.model_dump() for msg in req.messages for b in msg.content],
+                        rep.text,
+                        {"input_tokens": rep.input_tokens, "output_tokens": out_tok},
+                        getattr(rep.raw, "id", None) or f"req_{uuid.uuid4().hex[:16]}",
+                        _now(), _now(), {"step": f"spec-act-{act}"})
+        # **一批不过不许杀掉整轮。** 实测代价:p03 三次不过,planner 直接死,
+        # 43 份已经写好的规格一起没了 —— 判据是「下游能不能便宜地撤销」:一份差点的
+        # 规格最多让那一页差点,而整轮挂掉是 44 页全无。
+        # 切出来的照写(合格与否都比没有强);**整页缺失的单独回落到一页一调** ——
+        # 必须保证每页都有文件,否则 briefs() 里的 `_workflow_row` 会直接
+        # FileNotFoundError,又变成一页拖垮整轮。
+        res = []
+        for r in batch:
+            f = files[r.nn]
+            if r.nn in got:
+                f.write_text(got[r.nn].rstrip() + "\n", encoding="utf-8")
+                res.append((f, 0, False))
+                continue
+            print(f"  展开 p{r.nn}     ⚠ 幕{act} 三次都没写出这一页,回落到单页展开",
+                  flush=True)
+            solo, srep, _ = _ask_batch([r], act)
+            out_tok += srep.output_tokens
+            txt = solo.get(r.nn) or _extract_spec(srep.text, chk)
             f.write_text(txt.rstrip() + "\n", encoding="utf-8")
-            return f, out_tok, False
-        rep = rep._replace(output_tokens=out_tok) if hasattr(rep, "_replace") else rep
-        f.write_text(txt.rstrip() + "\n", encoding="utf-8")
-        run.log.add([b.model_dump() for msg in req.messages for b in msg.content], rep.text,
-                    {"input_tokens": rep.input_tokens, "output_tokens": rep.output_tokens},
-                    getattr(rep.raw, "id", None) or f"req_{uuid.uuid4().hex[:16]}",
-                    _now(), _now(), {"step": f"spec-{r.nn}"})
-        return f, rep.output_tokens, False
+            res.append((f, 0, False))
+        return [(f, out_tok if i == 0 else 0, c) for i, (f, _, c) in enumerate(res)]
 
+    batches = _group_acts(rows)
     t0 = time.time()
     with ThreadPoolExecutor(max_workers=SPEC_CONCURRENCY) as ex:
-        got = list(ex.map(one, rows))
+        got = [x for chunk in ex.map(one_batch, batches) for x in chunk]
     n_new = sum(1 for _, _, cached_ in got if not cached_)
     sizes = sorted(f.stat().st_size for f, _, _ in got)
-    print(f"  展开规格     {len(rows)} 份({n_new} 新建/{len(rows)-n_new} 复用)"
+    print(f"  展开规格     {len(rows)} 份 / {len(batches)} 批"
+          f"({n_new} 新建/{len(rows)-n_new} 复用)"
           f"  {time.time()-t0:.0f}s  out={sum(o for _, o, _ in got):,} tok"
           f"  {sizes[0]:,}–{sizes[-1]:,}B")
 
