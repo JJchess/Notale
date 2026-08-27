@@ -26,7 +26,7 @@ from core.planner import MAX_CHARS, _valid_css, _valid_spec  # noqa: E402
 # 这道闸事实上从没拦过任何东西。现在按真实字符数 + 约 10% 余量重定。
 BASELINE_CHARS = {
     "brief": 700,
-    "contract": 2200,
+    "tech": 2200,
     "philosophy": 2100,
     "plan": 3200,
     "spec": 3000,
@@ -38,11 +38,10 @@ BASELINE_CHARS = {
 
 PROMPT_ARGS = {
     "brief": dict(query="Q", pid="page-01", assets="/tmp/assets",
-                  contract="/tmp/CONTRACT.md", total=12, spec="/tmp/p01.md",
+                  total=12, spec="/tmp/p01.md",
                   assignment="## 主工作流\n  - build-page", stay="60 秒"),
-    "contract": dict(n_pages=12, minutes=30, audience="高中生", scenario="课堂投影",
-                     spine="主线", world="视觉世界", canvas_w=1600, canvas_h=900,
-                     libs="库清单", font_floor="字号地板"),
+    "tech": dict(n_pages=12, canvas_w=1600, canvas_h=900,
+                 libs="库清单", font_floor="字号地板"),
     "philosophy": {},
     "plan": dict(query="Q", minutes=30, audience="高中生", scenario="课堂投影",
                  libs="库清单"),
@@ -144,24 +143,6 @@ class ValidatorTests(unittest.TestCase):
 
         bad = self._css("#stage{display:flex;flex-direction:column;}")
         self.assertIn("padding", _valid_css(bad))
-
-# §0.5 的新形状:声明视觉**要求**,不做视觉**决定**。
-WORLD_OK = """## 0.5 视觉世界
-
-- 现实参照：工程实验记录本。
-- 必须靠形状区分的概念对：
-  观察量 / 可调量 —— 一个是读数一个是能拖的，混起来读者不知道该动哪个
-  前向传播 / 反向传播 —— 方向反了整个梯度就讲错了
-  样本 / 模型 —— 这一课全程要分清哪个是给定的、哪个是学出来的
-- 需要专属色的概念：
-  模型当前产生的预测或前向信息
-  此刻需要观察或操作的位置
-- 母题：参数旋钮；样本卡到预测框的流向；损失坡面；更新前后的账页
-- 否决方向：
-  霓虹赛博大脑 —— 会把「学习」误导成神秘的类脑活动
-  纯黑板粉笔推导 —— 暗示需要连续公式推导，这批受众没有微积分基础
-"""
-
 
 # `PageTableLayoutTests` / `VisualWorldGateTests` / `SpecGateTests` 2026-08-28 删除。
 # 三组断言的对象分别是 PLAN.md 的九列页表、PLAN.md §0.5 视觉世界、逐页 pNN.md 的

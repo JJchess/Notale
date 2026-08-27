@@ -285,8 +285,20 @@ _PAGE_RE = re.compile(r"page-\d+\.html$")
 # INTERFACE 块 —— 而那个块因此被迫承担整套视觉系统的声明,一度被推到八节、
 # 近 7,000 字符,还配了一道会把整轮判死的硬闸。实测这份 CSS 本身也才 16,467 字符,
 # 直接给源码比让它转述一遍更便宜也更准。给了源码之后八节和硬闸就都不需要了。
-PRELOAD_TAGS = (("chassis", "CHASSIS.md"), ("contract", "CONTRACT.md"),
-                ("theme_css", "theme.css"))
+PRELOAD_TAGS = (("chassis", "CHASSIS.md"), ("theme_css", "theme.css"))
+
+# 技术契约 2026-08-28 从「每轮让模型写一份 CONTRACT.md」改成**仓库常量**
+# `prompts/tech.md`,由 builder 填几个槽位。
+#
+# 它本来就几乎全是跳轮不变的东西(画布尺寸、flex 规则、字号地板、库表、禁 CDN),
+# 每轮重新生成一遍既花一次调用,又让 21 页共享的那段前缀按轮次变化、吃不到跨轮缓存。
+# 而按轮次真正会变的两节(§1 全课主线、§7 文字风格口径)交给每页自己的内容承载。
+#
+# **同时替掉了 `skills.FLOORS`。** 那两份是同一批规则的两份副本,而 FLOORS 默认不注入 ——
+# `runs/floors-ab-experiment.json` 的结论是 `reject_no_effect`,并写着「不要靠 system 块
+# 前言去替代 CONTRACT.md」。注意那次搬的是**摘要式前言**、CONTRACT 原文仍在(所以只是
+# 第三份副本,自然无效应);这次是把契约原文本身放进 system 块,不是同一件事。
+TECH_SLOTS = dict(canvas_w=1600, canvas_h=900)
 
 
 def _wrap(tag: str, path: Path) -> str:
@@ -297,16 +309,48 @@ def _wrap(tag: str, path: Path) -> str:
     return f"<{tag}>\n{path.read_text(encoding='utf-8', errors='replace').strip()}\n</{tag}>"
 
 
-def shared_preload(root: Path) -> tuple[str, dict]:
-    """21 页共享的那三份(CHASSIS.md / CONTRACT.md / theme.css)。返回(文本, 路径表)。
+_LIBS_INDEX = "## 按「要做的事」查"
+
+
+def _libs_index(root: Path) -> str:
+    """只取 LIBS.md 开头那张「要做的事 → 引用哪一行」的路由表。
+
+    **不注入 LIBS.md 全文。** 那份 8,321 字符里大半是用法细节(mlp.js 怎么用、
+    tf 的适用边界、katex 必须连 CSS 一起引…),按需读就行 —— `prompts/brief.md`
+    本来就写着「仅在需要确认库版本时读 LIBS.md」。常驻块里放路由表:
+    告诉它有什么、该引哪一行;细节留在一次 `Read` 后面。
+    旧流程是让写 CONTRACT 的模型把它压成短表,现在这一步不存在了,改由 harness 切。
+    """
+    f = root / "pages" / "assets" / "lib" / "LIBS.md"
+    if not f.is_file():
+        return "(这一轮没有 LIBS.md)"
+    text = f.read_text(encoding="utf-8")
+    if _LIBS_INDEX not in text:
+        return text.strip()          # 格式变了就整份给,别静默给空
+    body = text.split(_LIBS_INDEX, 1)[1]
+    body = body.split("\n## ", 1)[0]
+    return (body.strip()
+            + "\n\n用法细节、版本和适用边界在 `assets/lib/LIBS.md`,需要时再读。")
+
+
+def tech_block(root: Path, n_pages: int, prompts: Path = None) -> str:
+    """静态技术契约,填上这一轮的页数和库路由表。见 TECH_SLOTS 上面那段账。"""
+    tpl = ((prompts or ROOT / "prompts") / "tech.md").read_text(encoding="utf-8")
+    return "<tech>\n" + llm.fill(
+        tpl, _where="tech.md", n_pages=n_pages, font_floor=skills.FONT_FLOOR,
+        libs=_libs_index(root), **TECH_SLOTS).strip() + "\n</tech>"
+
+
+def shared_preload(root: Path, n_pages: int, prompts: Path = None) -> tuple[str, dict]:
+    """21 页共享的那几份。返回(文本, 路径表)。
 
     路径表给 build_one 做兜底:模型仍然去 Read 这些路径时,回一句指路而不是再灌一遍全文。
+    `tech.md` 不进路径表 —— 它是仓库常量,不在 run 目录下,模型没有路径可读。
     """
     paths = {"CHASSIS.md": root / "pages" / "assets" / "CHASSIS.md",
-             "CONTRACT.md": root / "CONTRACT.md",
              "theme.css": root / "pages" / "assets" / "theme.css"}
     text = "\n\n".join(_wrap(tag, paths[name]) for tag, name in PRELOAD_TAGS)
-    return text, paths
+    return text + "\n\n" + tech_block(root, n_pages, prompts), paths
 
 
 def spec_preload(root: Path, pid: str) -> tuple[str, Path]:
@@ -605,18 +649,6 @@ def main() -> None:
     a.add_argument("--philosophy", default="",
                    help="设计哲学 12 块的路径。**默认不注入**(见代码里的实测)。"
                         "给了路径就整份注入每页 agent 的 system,用来做对照实验。")
-    # 通用地板(占用/字号/底盘机制/Lec 口径)前置到 system 块。**默认关。**
-    # 今天 CONTRACT.md 21/21 页都读、上面每条它都有,所以打开只是第三份副本;
-    # 它是给「先补 skill 侧覆盖,再砍 CONTRACT」那一步做对照臂用的。
-    # 账记在 core/skills.py 的 FLOORS 上面。
-    a.add_argument("--skill-floors", action="store_true",
-                   help="在指派块前拼上通用地板(对照臂用,默认不拼)")
-    # 确定性备料预置。**默认开** —— 账记在 shared_preload 上面(仿真 -25.8% 全价)。
-    # 留 --no-preload-docs 是因为这次改动的主要风险是行为性的
-    # (模型可能仍然去 Read),而那要真实两臂才量得出来,不是仿真能回答的。
-    a.add_argument("--no-preload-docs", dest="preload_docs", action="store_false",
-                   help="不把 CHASSIS/CONTRACT/pNN 预置进 system 块,退回让每页自己 Read"
-                        "(对照臂用;默认预置)")
     a.add_argument("--model")
     # Anthropic 系必须走 messages 才拿得到 cache_control;走 responses 是全额计费,
     # 而且**不会有任何报错** —— 实测 Sonnet 在 responses 上连打三次前缀,三次 cached=0。
@@ -667,8 +699,7 @@ def main() -> None:
     base = (IDENTITY + "\n\n" + skills.anti_slop_block(workflow_root)
             + (("\n\n" + philosophy) if philosophy else ""))
     skill_blocks = {
-        p.pid: (skills.assigned_workflow(p.primary_workflow, workflow_root,
-                                         floors=n.skill_floors)
+        p.pid: (skills.assigned_workflow(p.primary_workflow, workflow_root)
                 if p.skill_mode == "workflow"
                 else skills.assigned(p.required, legacy_root))
         for p in pages
@@ -688,7 +719,7 @@ def main() -> None:
         # 「预置了」和「以为预置了」,而这正是这个仓库反复栽过的形状。
         # 所以:响亮地说一声,然后按没预置继续。
         try:
-            shared, shared_paths = shared_preload(root)
+            shared, shared_paths = shared_preload(root, len(briefs))
             spec = {p.pid: spec_preload(root, p.pid) for p in pages}
         except FileNotFoundError as e:
             print(f"  ⚠ 预置备料关闭:{e}\n"
@@ -725,7 +756,7 @@ def main() -> None:
           f"model={model},effort={compose_effort}(构图)/{effort}(修复),"
           f"模式 {dict(modes)}\n"
           f"  指导块 {sb[0]}–{sb[-1]} 字符/页(中位 {sb[len(sb)//2]})"
-          f"{'  含通用地板' if n.skill_floors else ''}\n"
+          f"\n"
           f"  system 块 {len(base):,} 字符"
           f"({'含设计哲学 ' + str(len(philosophy)) + ' 字符' if philosophy else '不含设计哲学'}"
           f"{'；已预置 CHASSIS+CONTRACT' if n.preload_docs else '；未预置备料'})\n"

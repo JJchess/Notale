@@ -110,85 +110,21 @@ def workflow_catalog(root: Path = WORKFLOWS) -> str:
     return "\n".join(rows)
 
 
-# 通用地板。**默认不注入** —— 它今天不是覆盖修复,是第三份副本。
-#
-# 量出来的:一页只装载一个 workflow(core/builder.py:286-289 硬拦),所以每条通用规则
-# 经 skill 能覆盖到几页,取决于路由。拿 wf2 那轮 21 页的真实路由数:
-#
-#     占用 45%/85%          只有 build-page 写了        8/21
-#     字号地板 16/14/12      只有 plan-typography 写了    0/21  ← 那一轮没路由到它
-#     .min0 / .cv-fill      只有 build-page 写了        8/21
-#     data-page/data-total  只有 build-interaction 写了  9/21
-#     Lec.K / Lec.P 口径     12 份 SKILL.md 一份都没写      0/21
-#
-# **12 个 workflow 不是 CONTRACT 的超集,是 12 个互相重叠的子集。**
-# 但这不构成今天就注入的理由:CONTRACT.md 实测 21/21 页都读,上面每一条它都有。
-# 所以现在打开这个开关只会让同一条规则出现第三次 —— 而仓库里记录在案的重复伤害
-# (core/planner.py:343-345 的场景构图、core/builder.py:369-374 的哲学与占用闸)
-# 全都是「两个来源各说一遍」造成的。
-#
-# 它存在是为了让「先补 skill 侧覆盖,再砍 CONTRACT」那一步可对照:
-# B 臂打开这个开关,确认非 build-page 路由页的占用比/字号不退,才谈得上砍 CONTRACT。
-# 照 --philosophy 的先例做成开关而不是直接写死(core/builder.py:376-379:
-# 「文件留着不删,随时能把它加回来做对照」)。
-# 字号地板的唯一事实来源。之前这行数字(16/14/12px、行高 1.35)在
-# prompts/contract.md、prompts/theme.md、这里的 FLOORS 里各手写一份 ——
-# 三份至今没有真的说岔,但没有任何机制保证不会:FLOORS 默认关闭、theme.md
-# 不下发给 builder,所以还没咬人,可一旦 --skill-floors 变成默认开,
-# 或者 theme.md 的字阶单独调过没跟着改 contract.md,三份就会悄悄分裂。
-# 现在 contract.md / theme.md 里的这行改成 `{font_floor}` 占位符,由
-# core/planner.py 传这个常量填进去;FLOORS 也在这里引用同一个字符串。
+# 字号地板。**唯一一份**,由 `prompts/tech.md` 的 `{font_floor}` 槽位引用 ——
+# 抄成第二份就会悄悄分裂(theme.md 的字阶单独调过而契约没跟着改,这种事发生过)。
 FONT_FLOOR = ("正文与成句说明 ≥16px，控件标签、图例、图注和提示 ≥14px，"
               "纯数字刻度 ≥12px，多行文字行高 ≥1.35。")
 
-FLOORS = f"""无论装载哪个 workflow,下面这几条对每一页都成立:
 
-- 逻辑画布固定 1600×900,不滚动。只改 `#stage` 内容,保留 `data-page` 和 `data-total`。
-- `#stage` 是 flex 列;主内容区 `flex:1` 且 `min-height:0`,需要收缩的 flex/grid 子元素加 `.min0`。
-- 画面占用保持在 45%–85%。低于 45% 先查失控的 flex 空隙,再放大有教学意义的关系;
-  不得靠加装饰、缩字号、压行高或压间距来凑。
-- 字号只用主题 token:{FONT_FLOOR}
-- 不移除或覆盖 `.min0`、`.cv-fill`、`.no-pan` 的机制;缩放画布内禁止 `position:fixed`。
-  Canvas 用 `Deck.fit()` / `Deck.autofit()`,指针坐标用 `Deck.pt()`,动画用 `Deck.loop()`。
-- 教学常量、范围和初值以本页规格给出的真实数值为准,要推导的结果当场算。
-  禁止预录结果或伪造数据;随机过程必须固定种子。
-"""
-
-# tag 名和文件名的对应关系是唯一事实来源；改文件名要跟着改这里。
-# `plan-direction` 的正文,注入**写 theme.css 那一步**(不是 builder)。
-#
-# 2026-08-27 审出来的:这份 workflow 有 14,369 字符的真视觉指导 —— 七部分方向契约
-# (Palette / Material / Geometry / Type roles / Signature / Media / Motion)、
-# 11 行材质选择表、配色推导步骤 —— 但它**不在 PAGE_WORKFLOWS 里,任何代码路径都到不了**。
-# 更讽刺的是 scrub-visual-slop.md:5 写着「plan-direction 已经禁止了 generic 那些,
-# 这份是补空缺」——它假设前者在跑。于是「补空缺」补的其实是整片空地。
-#
-# **为什么注入 planner 而不是 builder 的 system 块。**
-# 它讲的是整课视觉世界(自己的 description 也写着「before composing pages」),
-# 对应的正是 theme.css 那一步 —— 一次调用,一次成本。塞进 system 块要每步重发 14KB,
-# 而 anti_slop_block 那 4,991 字符已经把输入中位从 17.5k 推到 28.2k 了。
-#
-# 走确定性拼接,不走「让 agent 自己 Read」—— 同 anti_slop_block 的理由:
-# 那条路径生不生效取决于 agent 愿不愿意先调 Read,是概率性的。
-DIRECTION_FILES = (
-    "plan-direction/SKILL.md",
-    "plan-direction/references/direction-recipes.md",
-    "plan-direction/references/material-and-effects.md",
-)
-
-
-def direction_block(root: Path = WORKFLOWS) -> str:
-    """把 plan-direction 全文拼成一块,给 prompts/theme.md 用。"""
-    parts = ["下面是视觉方向的作业方法,已**原文内联**,不需要再去读任何文件。",
-             "它规定的是这套讲义的视觉世界:配色、材质、几何、字体角色、标志性元素、"
-             "媒体处理和动效基调。按它做,不要另起一套。"]
-    for rel in DIRECTION_FILES:
-        f = root / rel
-        if not f.is_file():
-            raise FileNotFoundError(f"direction_block 需要 {f}，但它不存在")
-        parts.append(f"<direction src=\"{rel}\">\n"
-                     + f.read_text(encoding="utf-8").strip() + "\n</direction>")
-    return "\n\n".join(parts)
+# `FLOORS` 2026-08-28 删除。它和 CONTRACT §5 一直是同一批规则的两份副本,
+# 而现在那批规则有了唯一正本:`prompts/tech.md`,由 builder 直接拼进 system 块、
+# 覆盖 21/21 页。原来那段账记的正是覆盖问题 —— 通用规则经 workflow 只能到 8/21 或 0/21 页:
+#     占用 45%/85%          只有 build-page 写了        8/21
+#     字号地板              只有 plan-typography 写了    0/21(那一轮没路由到它)
+#     data-page/data-total  只有 build-interaction 写了  9/21
+# `--skill-floors` 那条对照臂一并删掉:它的实验早就出了结论
+# (runs/floors-ab-experiment.json,reject_no_effect),而结论成立的前提
+# ——「CONTRACT 才是唯一覆盖 21/21 页的载体」—— 现在由 tech.md 承担了。
 
 
 ANTI_SLOP_FILES = (
@@ -231,20 +167,14 @@ def theme_slop_block(root: Path = WORKFLOWS) -> str:
     return f"<{tag}>\n{f.read_text(encoding='utf-8', errors='replace').strip()}\n</{tag}>"
 
 
-def assigned_workflow(name: str, root: Path = WORKFLOWS,
-                      floors: bool = False) -> str:
-    """Builder system block for one routed workflow; no catalog and no gate.
-
-    `floors=True` 在前面拼上 FLOORS —— 只给对照臂用,见 FLOORS 上面的账。
-    """
+def assigned_workflow(name: str, root: Path = WORKFLOWS) -> str:
+    """Builder system block for one routed workflow; no catalog and no gate."""
     f = root / name / "SKILL.md"
     if not name or not f.is_file():
         raise ValueError(f"未知主工作流 {name!r}; 可用: {', '.join(available(root))}")
     desc = _desc(f.read_text(encoding="utf-8", errors="replace"))
     row = f"- {name}: {desc}" if desc else f"- {name}"
-    head = (FLOORS + "\n") if floors else ""
-    return (head
-            + "本页只装载下面一个 workflow。先用 Skill 工具读取它，再严格执行 SKILL.md "
+    return ("本页只装载下面一个 workflow。先用 Skill 工具读取它，再严格执行 SKILL.md "
             "顶部的 Reference routing：所有基础必读项和已选分支项，都要在任何页面修改前"
             "用 `Read` 读取，包括 `Write`、`Edit`、`Patch` 或会改文件的 `Bash`；不要读取"
             "未选分支或无关 reference。scripts 只在 workflow 明确要求时使用。\n\n" + row)

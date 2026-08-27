@@ -90,8 +90,7 @@ class Run:
 # 阈值取实测最小值的**约 1/6**。刻意定得这么松:这道闸只该抓
 # "0 字符 / out=229 tok" 那种灾难性空响应,不该去评判 Sonnet 写得简不简洁 ——
 # 换模型后产物合理地小一截是可能的,把正常产出判死的代价比漏判高得多。
-MIN_CHARS = {"PLAN.md": 3500, "theme.css": 3500,
-             "CONTRACT.md": 1800, "spec": 400}
+MIN_CHARS = {"PLAN.md": 3500, "theme.css": 3500, "spec": 400}
 # 产物**字符数**的上限,和 MIN_CHARS 对称。`MAX_OUT` 管的是输出 token,
 # 从来没有管过产物有多长 —— 而产物长度才是下游成本:CONTRACT.md 会被每个建页 agent
 # 各读两遍,一份 31,493 字符的契约在 50 页上就是 3.1MB 的重复输入。
@@ -144,8 +143,7 @@ MAX_CHARS: dict[str, int] = {}
 # 合计约 20,100 —— 对 28,000 只剩 1.4× 余量,而**推理 token 也算在这个额度里**
 # (同一步 sonnet-full 吐 8,870 tok 只产出 17,897 字符,比 Sol 高 47%)。
 # 48,000 在 70 tok/s × 900s 超时的天花板(约 63,000)之下。
-MAX_OUT = {"PLAN.md": 64000, "theme.css": 48000,
-           "CONTRACT.md": 60000, "spec": 60000}
+MAX_OUT = {"PLAN.md": 64000, "theme.css": 48000, "spec": 60000}
 # CONTRACT.md 从 16,000 提到 60,000。**它是全流程最重的一份提示词** ——
 # 18,222 字符,注入了 CHASSIS 全文 + LIBS.md + lec_api + lec_dom + 受众场合。
 # 实测 DeepSeek-V4-Flash 在这一步:
@@ -1476,7 +1474,7 @@ def briefs(run: Run, rows: list, workflow_root: Path = skills.WORKFLOWS) -> list
     """
     out = [Brief(f"Build {r.pid}", run.prompt(
         "brief", query=run.query, pid=r.pid, total=len(rows),
-        contract=run.root / "CONTRACT.md", assets=run.assets,
+        assets=run.assets,
         spec=run.pages / "plan" / f"p{r.nn}.md",
         stay=f"{r.stay:g} 秒",
         assignment=_assignment_block(run, r, workflow_root))) for r in rows]
@@ -1609,20 +1607,10 @@ def plan_run(run: Run, chassis: Path, lib: Path,
     # **mount 类名覆盖那道闸删了。** 它查的是「theme.css 有没有给 mount 注入的
     # 每个类名写样式」,而 mount 已经不存在 —— 版面由建页的 agent 自己定,
     # theme.css 给的是可拼装的 token 和骨架类,不再有一份"必须覆盖"的类名清单。
-    cached(run, "CONTRACT.md", run.root / "CONTRACT.md",
-           run.prompt("contract", n_pages=len(rows), canvas_w=w, canvas_h=h,
-                      libs=libs, minutes=run.minutes,
-                      # ↑ minutes 以前没传。`fill()` 是字面 replace,占位符没配上不会报错 ——
-                      # 于是 `{minutes}` 原样留在提示词里,模型照抄进产物:
-                      # 实测 ape-g18 的 CONTRACT.md §1 里写着「会让 `{minutes}` 分钟塌掉」,
-                      # 50 页每页都读到这一句。**占位符对不上必须是可见的错**,见下面的自检。
-                      spine=spine(text) or "（PLAN.md 里没读出主线那一节）",
-                      world=world or "（PLAN.md 里没读出视觉世界那一节）",
-                      audience=run.audience, scenario=run.scenario,
-                      font_floor=skills.FONT_FLOOR))
-    # 这里原来还传 chassis=CHASSIS.md 全文(约 6KB)。删掉了:契约改成指路,
-    # 底盘接口由每页自己读 `assets/CHASSIS.md`。留着传参不会报错(fill 是字面替换),
-    # 但那 6KB 会白进一次提示词,而且模型看见了就会想抄。
+    # CONTRACT.md 那一步 2026-08-28 删掉:技术契约改成仓库常量 `prompts/tech.md`,
+    # 由 builder 填页数和库清单直接进 system 块(见 core/builder.py 的 TECH_SLOTS)。
+    # 每轮重写一份跳轮不变的东西,既多一次调用,又让 21 页共享的前缀按轮次变化。
+
     # **规格排在 theme.css 和 CONTRACT.md 之后。** 2026-08-23 调的序,理由是量出来的:
     # 原来 expand() 在 theme 之前,所以写规格时 `theme.css` 还不存在 ——
     # 五种骨架类全都生成了、带排版原语、页面 46/48 在用,而 **48 份规格一份都没点过名**,
