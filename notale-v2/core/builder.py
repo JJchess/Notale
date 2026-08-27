@@ -100,9 +100,6 @@ def _replay(item: dict) -> dict:
 class Page:
     pid: str
     prompt: str
-    required: tuple = ()          # 旧 brief 的多 skill 兼容字段
-    primary_workflow: str = ""
-    skill_mode: str = "legacy"
     calls: int = 0
     steps: list[str] = None
     ok: bool = False
@@ -137,36 +134,14 @@ class Page:
         self.preload_reads = []
 
 
-def _section_items(prompt: str, heading: str) -> list[str] | None:
-    """Read bullet names from one explicit Markdown section."""
-    m = re.search(rf"^##\s*{re.escape(heading)}\s*$\n(.*?)(?=^##\s|\Z)",
-                  prompt, re.S | re.M)
-    if not m:
-        return None
-    return [x for x in re.findall(r"^\s*-\s*([a-z0-9][a-z0-9.-]*)\b", m.group(1), re.M)]
+def page_from_brief(raw: dict) -> Page:
+    """A brief is now just an id and its prose. 2026-08-28 起不再解析任何指派。
 
-
-def page_from_brief(raw: dict, workflow_root: Path = skills.WORKFLOWS,
-                    legacy_root: Path = skills.DEFAULT) -> Page:
-    """Parse new single-workflow briefs and old multi-skill briefs."""
-    pid = raw["description"].replace("Build ", "")
-    prompt = raw["prompt"]
-    routed = _section_items(prompt, "主工作流")
-    if routed is not None:
-        if len(routed) != 1:
-            raise ValueError(f"{pid} 的 `## 主工作流` 必须且只能有一项，实际 {routed}")
-        name = routed[0]
-        allowed = set(skills.available(workflow_root)) & set(skills.PAGE_WORKFLOWS)
-        if name not in allowed:
-            raise ValueError(f"{pid} 指派了未知主工作流 {name!r}")
-        return Page(pid, prompt, (name,), primary_workflow=name, skill_mode="workflow")
-
-    old = _section_items(prompt, "必用skill")
-    if old is None:
-        # 旧版 brief 没有小节标题，只把指派项作为缩进 bullet 插进正文。
-        known = set(skills.available(legacy_root))
-        old = [x for x in re.findall(r"^\s{2,}-\s+(\S+)$", prompt, re.M) if x in known]
-    return Page(pid, prompt, tuple(dict.fromkeys(old)))
+    原来这里认两种形状:新 brief 的 `## 主工作流`(必须且只有一项)和旧 brief 的
+    `## 必用skill`。两种都没了 —— 技法文档由建页 agent 自己从清单里挑。
+    老 run 的 briefs.json 里那几节还在,但不再被读;它们只是正文里的几行字。
+    """
+    return Page(raw["description"].replace("Build ", ""), raw["prompt"])
 
 
 KEEP_IMAGES = 2  # 真触发淘汰时,hist 里留几张图
@@ -516,11 +491,12 @@ def build_one(page: Page, pages_dir: Path, trace: Path, skill_root: Path,
                                     else "Bash"))
             pre_hit = (_preloaded_hit(preloaded, args, pages_dir)
                        if c.name == "Read" else "")
-            if (c.name == "Skill" and page.skill_mode == "workflow"
-                    and args.get("skill") != page.primary_workflow):
-                res = (f"本页只装载 `{page.primary_workflow}`；不能读取 "
-                       f"`{args.get('skill', '')}`。请继续使用已指派 workflow。")
-            elif c.name in ("Patch", "Edit") and not page.wrote:
+            # 「本页只装载被指派的那一个 workflow」那道硬拦 2026-08-28 删除。
+            # 规划不再逐页指派 workflow(每页只有一段散文,没有 `## 主工作流` 那一行),
+            # 改由建页 agent 读完内容自己从清单里挑。挑错的代价是读了一份不太贴的
+            # 技法文档;而硬拦的代价是**规划替它做了一个规划看不见的判断** ——
+            # 那一行原本由写规格的模型凭一句话猜,现在由真正要动手的 agent 来定。
+            if c.name in ("Patch", "Edit") and not page.wrote:
                 # 兜底,同上:正路是 spec_compose 把这两个摘掉。
                 # 真走到这里说明模型硬喊了一个不在工具面里的工具。
                 res = ("整页还没写过 —— 这一段只能用 `Write` 一次落成整页。"
@@ -557,23 +533,25 @@ def build_one(page: Page, pages_dir: Path, trace: Path, skill_root: Path,
                 if c.name == "Skill" and args.get("skill"):
                     page.loaded_skills.append(str(args["skill"]))
 
-            if page.skill_mode == "workflow" and page.primary_workflow:
-                wf_dir = (skill_root / page.primary_workflow).resolve()
-                if c.name == "Read" and args.get("file_path"):
-                    path = Path(str(args["file_path"]))
-                    path = path if path.is_absolute() else pages_dir / path
-                    try:
-                        rel = path.resolve().relative_to(wf_dir)
-                        if rel.parts and rel.parts[0] == "references":
-                            page.reference_reads.append(str(rel))
-                    except ValueError:
-                        pass
-                if c.name == "Bash":
-                    command = str(args.get("command", ""))
-                    for script in sorted((wf_dir / "scripts").glob("*")):
-                        if script.is_file() and (str(script) in command
-                                                 or f"scripts/{script.name}" in command):
-                            page.workflow_script_runs.append(script.name)
+            # reference / script 的观测项:**对整个 workflow 根解析,不再只认被指派的那一个。**
+            # 指派没了,但这两个读数要留着 —— 它们回答的是「装了技法文档之后,
+            # 它真的去读分支参考了吗」,而这个问题和谁来选 workflow 无关。
+            # 跟着指派一起删会让它们恒读 0,那比没有这个读数更坏。
+            if c.name == "Read" and args.get("file_path"):
+                path = Path(str(args["file_path"]))
+                path = path if path.is_absolute() else pages_dir / path
+                try:
+                    rel = path.resolve().relative_to(skill_root.resolve())
+                    if len(rel.parts) == 3 and rel.parts[1] == "references":
+                        page.reference_reads.append("/".join(rel.parts[-2:]))
+                except (OSError, ValueError):
+                    pass
+            if c.name == "Bash":
+                command = str(args.get("command", ""))
+                for script in sorted(skill_root.glob("*/scripts/*")):
+                    if script.is_file() and (str(script) in command
+                                             or f"scripts/{script.name}" in command):
+                        page.workflow_script_runs.append(script.name)
             out, imgs = ((res.text, res.images) if isinstance(res, tools.Out)
                          else (res, []))
             # 野文件当场喂回去,别等到收尾才发现 —— 和畸形工具参数同一套处理方式:
@@ -666,13 +644,10 @@ def main() -> None:
 
     root = ROOT / "runs" / n.label
     briefs = json.loads((root / "briefs.json").read_text(encoding="utf-8"))
-    legacy_root = Path(n.skills)
     workflow_root = Path(n.workflows)
-    if not legacy_root.is_dir():
-        raise FileNotFoundError(f"--skills 指的目录不存在: {legacy_root}")
     if not workflow_root.is_dir():
         raise FileNotFoundError(f"--workflows 指的目录不存在: {workflow_root}")
-    pages = [page_from_brief(b, workflow_root, legacy_root) for b in briefs]
+    pages = [page_from_brief(b) for b in briefs]
     if n.only:
         pages = [p for p in pages if p.pid in set(n.only)]
     if not n.rebuild:
@@ -698,14 +673,20 @@ def main() -> None:
     # 这条不走"agent 自己 Read"，直接确定性拼进 system 块，见 skills.anti_slop_block。
     base = (IDENTITY + "\n\n" + skills.anti_slop_block(workflow_root)
             + (("\n\n" + philosophy) if philosophy else ""))
-    skill_blocks = {
-        p.pid: (skills.assigned_workflow(p.primary_workflow, workflow_root)
-                if p.skill_mode == "workflow"
-                else skills.assigned(p.required, legacy_root))
-        for p in pages
-    }
-    roots = {p.pid: workflow_root if p.skill_mode == "workflow" else legacy_root
-             for p in pages}
+    # **技法清单从此是全局一份,不再按页指派。**
+    # 规划那边每页只剩一段散文,没有 `## 主工作流` 那一行了;由建页 agent
+    # 读完内容自己挑。`workflow_catalog()` 本来就在(skills.py),原样复用。
+    #
+    # 副作用是好的:每页的 system 块从此**逐字节相同**,跨页公共前缀不再按
+    # workflow 分组 —— 下面那个 `groups` 会从 3 组塌到 1 组。
+    catalog = (
+        "下面这些技法文档可以用 `Skill` 工具取正文。**先读完本页内容,判断它属于哪一类,"
+        "再挑一份读了动手**;清单里没有对应的就自己写,不必硬凑。\n"
+        "读完 SKILL.md 要严格执行它顶部的 Reference routing:基础必读项和已选分支项,"
+        "都要在任何页面修改前用 `Read` 读取;不要读未选分支或无关 reference。\n\n"
+        + skills.workflow_catalog(workflow_root))
+    skill_blocks = {p.pid: catalog for p in pages}
+    roots = {p.pid: workflow_root for p in pages}
     # ── 确定性备料预置(见 shared_preload 上面那段账)────────────────
     # 共享的两份拼在 base 尾部(仍是 21 页逐字相同的前缀),按页唯一的 pNN.md
     # 拼在指派块之后 —— 顺序不能换,换了跨页公共前缀就被按页内容截断。
@@ -747,15 +728,13 @@ def main() -> None:
               "两边不一致。\n    模型会去找 `<chassis>` 而找不到,可能自己编一份契约。"
               "对照臂请用旧 brief 模板(Run.prompts 可换目录)重生成 briefs.json。")
     sb = sorted(len(v) for v in skill_blocks.values()) or [0]
-    modes = Counter(p.skill_mode for p in pages)
     # 同 workflow 的 system 块必须逐字相同,所以这里报的是**按 workflow 分组的组数**
     # 和每组的块长 —— 组数就是跨页缓存能分几摊。组内出现不同长度就说明混进了按页内容。
     groups = Counter(base + "\n\n" + skill_blocks[p.pid] for p in pages)
     per_page = sorted(len(k) for k in groups) or [0]
     print(f"\n▸ builder · {n.label}\n  {len(pages)} 页,并发 {n.concurrency},"
-          f"model={model},effort={compose_effort}(构图)/{effort}(修复),"
-          f"模式 {dict(modes)}\n"
-          f"  指导块 {sb[0]}–{sb[-1]} 字符/页(中位 {sb[len(sb)//2]})"
+          f"model={model},effort={compose_effort}(构图)/{effort}(修复)\n"
+          f"  技法清单 {sb[-1]:,} 字符(全局一份,各页自选)"
           f"\n"
           f"  system 块 {len(base):,} 字符"
           f"({'含设计哲学 ' + str(len(philosophy)) + ' 字符' if philosophy else '不含设计哲学'}"
@@ -813,11 +792,14 @@ def main() -> None:
     else:
         print(f"  输入 {t_in:,} tok,峰值 {t_mx:,}   缓存命中 {t_ca:,} "
               f"({t_ca / max(t_in, 1) * 100:.0f}%)")
-    asg = sum(len(p.required) for p in done)
-    hit = sum(len(set(p.required) & set(p.loaded_skills)) for p in done)
-    print(f"  指派指导 {asg} 项,实际读到 {hit} 项；reference 读取 "
-          f"{sum(len(p.reference_reads) for p in done)} 次，workflow script "
-          f"{sum(len(p.workflow_script_runs) for p in done)} 次")
+    # 各页**自选**了哪份 workflow。指派没了,这个分布就是新的观测项 ——
+    # 它回答「让 agent 自己挑,挑出来的是什么形状」,以及有没有页面一份都不读。
+    picked = Counter(x for p in done for x in p.loaded_skills)
+    none_read = [p.pid for p in done if not p.loaded_skills]
+    print(f"  自选 workflow  {dict(picked) or '无'}"
+          f"{('；一份都没读: ' + ' '.join(none_read)) if none_read else ''}")
+    print(f"  reference 读取 {sum(len(p.reference_reads) for p in done)} 次，"
+          f"workflow script {sum(len(p.workflow_script_runs) for p in done)} 次")
     # 预置到底省没省下那 3 次往返 —— 这是本次改动唯一的行为性判据。
     # 不为零说明 brief 那几句没管住,收益要按实测重算,别拿仿真的 -25.8% 交差。
     if n.preload_docs:
@@ -839,17 +821,12 @@ def main() -> None:
     # 没有这份文件就根本没法判它有没有生效。
     steps = {p.pid: {"ok": p.ok, "calls": p.calls, "seconds": round(p.seconds, 1),
                      "steps": p.steps, "args": p.steps_arg,
-                     "required": list(p.required), "stray": p.stray,
+                     "stray": p.stray,
                      "images": p.images, "evicted": p.evicted,
                      "tok_in": p.tok_in, "tok_cached": p.tok_cached,
                      "tok_write": p.tok_write, "tok_out": p.tok_out,
                      "tok_max": p.tok_max,
                      "cache_reported": p.cache_seen,
-                     "skill_mode": p.skill_mode,
-                     "primary_workflow": p.primary_workflow or None,
-                     "loaded_workflows": ([x for x in p.loaded_skills
-                                           if x == p.primary_workflow]
-                                          if p.skill_mode == "workflow" else []),
                      "loaded_skills": p.loaded_skills,
                      "reference_reads": p.reference_reads,
                      "workflow_script_runs": p.workflow_script_runs,

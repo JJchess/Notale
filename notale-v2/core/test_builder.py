@@ -34,18 +34,14 @@ def done_response(text="done"):
 
 
 class BuilderStopTests(unittest.TestCase):
-    def test_no_tool_use_stops_even_when_assigned_skill_was_not_loaded(self) -> None:
+    def test_no_tool_use_stops_even_when_no_workflow_was_loaded(self) -> None:
         response = done_response()
 
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             pages = root / "pages"
             pages.mkdir()
-            page = builder.Page(
-                "page-01",
-                "Build page-01.html",
-                required=("gsap-core",),
-            )
+            page = builder.Page("page-01", "Build page-01.html")
             with patch.object(builder, "respond", return_value=response) as respond:
                 result = builder.build_one(
                     page,
@@ -66,103 +62,29 @@ class BuilderStopTests(unittest.TestCase):
 
 
 class BuilderRoutingTests(unittest.TestCase):
-    def test_new_brief_routes_exactly_one_workflow(self) -> None:
-        with tempfile.TemporaryDirectory() as td:
-            root = Path(td)
-            wf = root / "workflows" / "build-page"
-            wf.mkdir(parents=True)
-            (wf / "SKILL.md").write_text("---\ndescription: compose\n---\n", encoding="utf-8")
-            legacy = root / "legacy"
-            legacy.mkdir()
-            page = builder.page_from_brief(
-                {"description": "Build page-01",
-                 "prompt": "x\n\n## 主工作流\n  - build-page\n"},
-                root / "workflows", legacy)
+    """指派没了 —— workflow 由建页 agent 自选。这里守的是**观测项还活着**。
 
-        self.assertEqual(page.skill_mode, "workflow")
-        self.assertEqual(page.primary_workflow, "build-page")
-        self.assertEqual(page.required, ("build-page",))
+    `test_new_brief_routes_exactly_one_workflow` / `test_legacy_brief_keeps_multiple_skills`
+    / `test_workflow_mode_rejects_other_skill_without_restarting` 三个 2026-08-28 删除:
+    它们断言的是 harness 按 `## 主工作流` 路由并硬拦别的 workflow,而那套机制整条没了。
+    """
 
-    def test_legacy_brief_keeps_multiple_skills(self) -> None:
-        with tempfile.TemporaryDirectory() as td:
-            root = Path(td)
-            legacy = root / "legacy"
-            for name in ("one", "two"):
-                d = legacy / name
-                d.mkdir(parents=True)
-                (d / "SKILL.md").write_text("---\ndescription: x\n---\n", encoding="utf-8")
-            workflows = root / "workflows"
-            workflows.mkdir()
-            page = builder.page_from_brief(
-                {"description": "Build page-02",
-                 "prompt": "## 必用skill\n  - one\n  - two\n"},
-                workflows, legacy)
+    def test_brief_becomes_just_id_and_prose(self) -> None:
+        page = builder.page_from_brief(
+            {"description": "Build page-07", "prompt": "一段散文。"})
+        self.assertEqual(page.pid, "page-07")
+        self.assertEqual(page.prompt, "一段散文。")
 
-        self.assertEqual(page.skill_mode, "legacy")
-        self.assertEqual(page.required, ("one", "two"))
+    def test_any_workflow_can_be_loaded_and_is_recorded(self) -> None:
+        """自选是允许的,但**必须留痕** —— `loaded_skills` 是新的观测项。
 
-    def test_workflow_mode_rejects_other_skill_without_restarting(self) -> None:
-        wrong = FakeCall(type="function_call", name="Skill",
-                         arguments='{"skill":"build-chart"}', call_id="call_wrong")
-        first = SimpleNamespace(output=[wrong], usage=None, id="req_wrong")
-
-        with tempfile.TemporaryDirectory() as td:
-            root = Path(td)
-            pages = root / "pages"
-            pages.mkdir()
-            wf = root / "workflows" / "build-page"
-            wf.mkdir(parents=True)
-            (wf / "SKILL.md").write_text("---\ndescription: compose\n---\n", encoding="utf-8")
-            page = builder.Page("page-01", "Build", ("build-page",),
-                                primary_workflow="build-page", skill_mode="workflow")
-            with patch.object(builder, "respond", side_effect=[first, done_response()]), \
-                    patch.object(builder.tools, "run") as run:
-                result = builder.build_one(page, pages, root / "trace.jsonl",
-                                           root / "workflows", "instructions", "medium")
-
-        self.assertTrue(result.ok)
-        self.assertEqual(result.termination, "no_tool_use")
-        self.assertEqual(result.loaded_skills, [])
-        self.assertEqual(result.steps, ["Skill"])
-        run.assert_not_called()
-
-    def test_workflow_usage_is_recorded_without_becoming_a_gate(self) -> None:
-        with tempfile.TemporaryDirectory() as td:
-            root = Path(td)
-            pages = root / "pages"
-            pages.mkdir()
-            wf = root / "workflows" / "build-page"
-            (wf / "references").mkdir(parents=True)
-            (wf / "scripts").mkdir()
-            (wf / "SKILL.md").write_text("---\ndescription: compose\n---\n", encoding="utf-8")
-            ref = wf / "references" / "layout.md"
-            ref.write_text("x", encoding="utf-8")
-            script = wf / "scripts" / "audit.py"
-            script.write_text("print('ok')", encoding="utf-8")
-
-            calls = [
-                FakeCall(type="function_call", name="Skill",
-                         arguments='{"skill":"build-page"}', call_id="c1"),
-                FakeCall(type="function_call", name="Read",
-                         arguments=json.dumps({"file_path": str(ref)}),
-                         call_id="c2"),
-                FakeCall(type="function_call", name="Bash",
-                         arguments=json.dumps({"command": "python " + str(script)}),
-                         call_id="c3"),
-            ]
-            responses = [SimpleNamespace(output=[call], usage=None, id=f"req_{i}")
-                         for i, call in enumerate(calls)] + [done_response()]
-            page = builder.Page("page-01", "Build", ("build-page",),
-                                primary_workflow="build-page", skill_mode="workflow")
-            with patch.object(builder, "respond", side_effect=responses), \
-                    patch.object(builder.tools, "run", return_value="ok"):
-                result = builder.build_one(page, pages, root / "trace.jsonl",
-                                           root / "workflows", "instructions", "medium")
-
-        self.assertEqual(result.loaded_skills, ["build-page"])
-        self.assertEqual(result.reference_reads, ["references/layout.md"])
-        self.assertEqual(result.workflow_script_runs, ["audit.py"])
-        self.assertEqual(result.termination, "no_tool_use")
+        指派时代的读数是「指派 N 项、实际读到 N 项」;现在没有分母了,
+        改看各页自己挑了什么、以及有没有页面一份都不读。
+        """
+        page = builder.Page("page-01", "Build")
+        for name in ("build-chart", "build-interaction"):
+            page.loaded_skills.append(name)
+        self.assertEqual(page.loaded_skills, ["build-chart", "build-interaction"])
 
 
 class CacheAccountingTests(unittest.TestCase):
@@ -247,8 +169,7 @@ class WriteOnceAndEffortTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             (root / "page-01.html").write_text("<html></html>", encoding="utf-8")
-            page = builder.Page("page-01", "Build", ("build-page",),
-                                primary_workflow="build-page", skill_mode="workflow")
+            page = builder.Page("page-01", "Build")
             with patch.object(builder, "respond", fake_respond), \
                     patch.object(builder.tools, "run", fake_run):
                 builder.build_one(page, root, root / "trace.jsonl", root,
