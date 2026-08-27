@@ -13,10 +13,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from core.artifacts import parse_table  # noqa: E402
 from core.llm import fill  # noqa: E402
 from core import skills  # noqa: E402
-from core.planner import MAX_CHARS, _valid_css, _valid_spec  # noqa: E402
+from core.planner import MAX_CHARS, _valid_css, _valid_deck, segment  # noqa: E402
 
 
 # 每份提示词的字符数上限。**只降不升** —— 这一栏在 2026-08-26 精简 contract/brief/spec
@@ -28,31 +27,19 @@ BASELINE_CHARS = {
     "brief": 700,
     "tech": 2200,
     "philosophy": 2100,
-    "plan": 3200,
-    "spec": 3000,
-    # 9000 → 3400。八节接口块那一版 2026-08-28 回退了:CSS 源码现在整份进 builder 的
-    # system 块,接口块不再是唯一通道,格式说明和完整样例也就不必挂在提示词里。
-    # 「只降不升」的规矩因此恢复 —— 上次那条破例连同它的理由一起作废。
-    "theme": 3400,
+    "deck": 5200,
 }
 
 PROMPT_ARGS = {
     "brief": dict(query="Q", pid="page-01", assets="/tmp/assets",
-                  total=12, spec="/tmp/p01.md",
-                  assignment="## 主工作流\n  - build-page", stay="60 秒"),
+                  total=12, spec="/tmp/p01.md"),
     "tech": dict(n_pages=12, canvas_w=1600, canvas_h=900,
                  libs="库清单", font_floor="字号地板"),
     "philosophy": {},
-    "plan": dict(query="Q", minutes=30, audience="高中生", scenario="课堂投影",
-                 libs="库清单"),
-    "spec": dict(act="I", query="Q", minutes=30, audience="高中生",
-                 scenario="课堂投影", deck="deck", img_pool="图池",
-                 theme_api="theme API", rows_block="页表行",
-                 workflows="workflow 清单"),
-    "theme": dict(n_pages=12, world="视觉世界", audience="高中生", scenario="课堂投影",
-                  layouts="focus\nsplit-lr", img_pool="无", canvas_w=1600, canvas_h=900,
-                  font_floor="字号地板", direction="(视觉方向)",
-                  query="Q", spine="(主线)", theme_bans="(配色禁令)"),
+    "deck": dict(query="Q", minutes=30, audience="高中生", scenario="课堂投影",
+                 libs="库清单", canvas_w=1600, canvas_h=900, stay_ceiling=150.0,
+                 n_lo=12, n_hi=40, n_target=20, direction="(视觉方向)",
+                 theme_bans="(配色禁令)", font_floor="字号地板"),
 }
 
 
@@ -148,6 +135,71 @@ class ValidatorTests(unittest.TestCase):
 # 三组断言的对象分别是 PLAN.md 的九列页表、PLAN.md §0.5 视觉世界、逐页 pNN.md 的
 # 小节格式 —— planner 塌缩成一次调用之后这三样都不存在了。测试要跟着被测对象走,
 # 留着只会变成断言一个不再发生的形状。
+
+
+
+def _deck(n=5, end=True, css="#stage{display:flex;flex-direction:column;padding:1px;}"
+                             + "".join(f".x{i}{{color:red;}}" for i in range(8)),
+          pages=None):
+    """拼一份合规的单次调用产物,供下面几条各自挖洞。"""
+    pages = pages if pages is not None else {
+        f"{i:02d}": "这一页要让读者看见 " + "细节。" * 30 for i in range(1, n + 1)}
+    body = "\n\n".join(f"# page-{k}\n{v}" for k, v in sorted(pages.items()))
+    return (f"页数: {n}\n=== IMAGES ===\n本套无需图池\n"
+            f"=== CSS ===\n```css\n{css}\n```\n"
+            f"=== PAGES ===\n{body}\n" + ("=== END ===\n" if end else ""))
+
+
+class DeckSegmentTests(unittest.TestCase):
+    """一次调用的切分与闸 —— 这套机器是整次重构的承重墙。"""
+
+    def test_a_clean_reply_splits_into_three_parts(self) -> None:
+        got = segment(_deck(5))
+        self.assertEqual(got["n"], 5)
+        self.assertEqual(sorted(got["pages"]), ["01", "02", "03", "04", "05"])
+        self.assertIn("#stage", got["css"])
+        self.assertFalse(got["truncated"])
+        self.assertEqual(_valid_deck(_deck(5)), "")
+
+    def test_css_is_extracted_from_its_own_slice_only(self) -> None:
+        """**不能对全文跑 `_extract_code`。**
+
+        `_valid_css` 只看前 400 字符像不像散文,拿整篇回复喂给它会被判通过 ——
+        于是「页数 + 图表 + CSS + 全部散文」被整个当成一份样式表写进 theme.css。
+        切片之后 CSS 段里不该混进任何一页的正文。
+        """
+        css = segment(_deck(5))["css"]
+        self.assertNotIn("page-01", css)
+        self.assertNotIn("这一页要让读者看见", css)
+
+    def test_pages_map_by_number_not_position(self) -> None:
+        """乱序输出必须按页号落位 —— 按位置对齐会把 p07 的正文存进 p05.md,
+        而两份都「看起来正常」,没有任何下游闸能发现。"""
+        out = {f"{i:02d}": f"第{i}页 " + "内容。" * 30 for i in (5, 1, 3, 2, 4)}
+        got = segment(_deck(5, pages=out))
+        self.assertIn("第3页", got["pages"]["03"])
+        self.assertIn("第1页", got["pages"]["01"])
+
+    def test_truncated_tail_is_flagged_not_fatal(self) -> None:
+        """截断要被认出来,但认出来之后是丢残块、不是判死整轮。"""
+        full = {f"{i:02d}": "完整的一页。" * 20 for i in range(1, 5)}
+        d = _deck(5, end=False, pages={**full, "05": "半句"})
+        got = segment(d)
+        self.assertTrue(got["truncated"])
+        self.assertEqual(got["short"], ["05"])
+
+    def test_gate_names_what_to_fix(self) -> None:
+        """每条拦的都必须是提示词里给了样例、照抄就能满足的东西 ——
+        `cached()` 重试原样重发,拦一件模型不知道怎么改的事就是三次之后判死整轮。"""
+        self.assertIn("页数", _valid_deck(_deck(5).replace("页数: 5\n", "")))
+        self.assertIn("CSS", _valid_deck(_deck(5).replace("=== CSS ===", "=== 样式 ===")))
+        gap = _deck(5, pages={f"{i:02d}": "一页。" * 30 for i in (1, 2, 4, 5)})
+        self.assertIn("page-03", _valid_deck(gap))
+
+    def test_missing_end_marker_still_yields_pages(self) -> None:
+        """分隔行丢一条只影响那一段 —— 不能因为少一行 `=== END ===` 丢掉全部页面。"""
+        self.assertEqual(len(segment(_deck(5, end=False))["pages"]), 5)
+
 
 
 if __name__ == "__main__":

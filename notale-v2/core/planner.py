@@ -16,6 +16,7 @@ import argparse
 import base64
 import collections
 import functools
+import math
 import json
 import re
 import os
@@ -34,7 +35,7 @@ from pathlib import Path
 
 from . import skills
 from . import imgcut
-from .artifacts import Brief, parse_table
+from .artifacts import Brief
 from . import llm
 from .llm import ROOT, ask, config, fill, strip_fence
 
@@ -90,7 +91,7 @@ class Run:
 # 阈值取实测最小值的**约 1/6**。刻意定得这么松:这道闸只该抓
 # "0 字符 / out=229 tok" 那种灾难性空响应,不该去评判 Sonnet 写得简不简洁 ——
 # 换模型后产物合理地小一截是可能的,把正常产出判死的代价比漏判高得多。
-MIN_CHARS = {"PLAN.md": 3500, "theme.css": 3500, "spec": 400}
+MIN_CHARS = {"deck": 6000}
 # 产物**字符数**的上限,和 MIN_CHARS 对称。`MAX_OUT` 管的是输出 token,
 # 从来没有管过产物有多长 —— 而产物长度才是下游成本:CONTRACT.md 会被每个建页 agent
 # 各读两遍,一份 31,493 字符的契约在 50 页上就是 3.1MB 的重复输入。
@@ -143,7 +144,11 @@ MAX_CHARS: dict[str, int] = {}
 # 合计约 20,100 —— 对 28,000 只剩 1.4× 余量,而**推理 token 也算在这个额度里**
 # (同一步 sonnet-full 吐 8,870 tok 只产出 17,897 字符,比 Sol 高 47%)。
 # 48,000 在 70 tok/s × 900s 超时的天花板(约 63,000)之下。
-MAX_OUT = {"PLAN.md": 64000, "theme.css": 48000, "spec": 60000}
+# `deck` 定 28,000 而不是 48/64k:`llm.py` 只在 `cap*2 <= OUTPUT_CEILING(60,000)`
+# 时自动升一档,28k 保住了一级升额空间(→56k);64k 一级都没有,而且本身已超过
+# 这条链路能吐的量(最慢实测 70 tok/s × 900s 超时 ≈ 63,000)。
+# 实测需求:CSS 6,048 tok + 页表 5,583 tok,合并后约 10–12k,加推理仍在 28k 之下。
+MAX_OUT = {"deck": 28000}
 # CONTRACT.md 从 16,000 提到 60,000。**它是全流程最重的一份提示词** ——
 # 18,222 字符,注入了 CHASSIS 全文 + LIBS.md + lec_api + lec_dom + 受众场合。
 # 实测 DeepSeek-V4-Flash 在这一步:
@@ -170,7 +175,6 @@ MAX_OUT = {"PLAN.md": 64000, "theme.css": 48000, "spec": 60000}
 # 20 → 50。实测:44 份规格 177s、52 份 419s —— 后者要排三批,时间翻倍多。
 # 而 builder 那边并发 50、排队实测 0 秒(墙钟严格等于最慢那一页),
 # 说明端点吃得下,瓶颈不在这里。
-SPEC_CONCURRENCY = 50
 # 从 50 降到 20。端点整体支持 100 并发,但**这一步不是瓶颈在端点,而在单模型配额**:
 # 77 路一起打上去,DeepSeek 那边大面积 RateLimitError,退避 5s→15s→40s 全是白等墙钟。
 # 展开这一步每路都带 deck 全文(约 6KB),比 builder 的单页调用重得多,所以单独降一档。
@@ -314,126 +318,103 @@ def _valid_css(text: str) -> str:
     return ""
 
 
-def _valid_spec(text: str,
-                workflow_names: tuple = skills.PAGE_WORKFLOWS) -> str:
-    """逐页规格的最低限度:不能是推理稿,而且必须带上必填小节。
+# ── 一次调用的产物:切分与闸 ──────────────────────────────────────────
+#
+# 单次回复里装三样东西,用三条分隔行隔开(见 prompts/deck.md 的「输出格式」):
+#     页数: N
+#     === IMAGES ===   图池表,或者一行「本套无需图池」
+#     === CSS ===      ```css 整份 theme.css ```
+#     === PAGES ===    # page-01 …  # page-NN,每页一段散文
+#     === END ===
+#
+# **顺序是设计过的:不可分割的先出,可分割的最后出。** CSS 写一半等于全废、
+# 而且它卡住每一页;散文截了尾巴仍然能交前 N-k 页。所以截断时损失最小的排法
+# 是 CSS 在前、页面在后,而且可以**局部接受**。
+_N_DECL = re.compile(r"^\s*页数[:：]\s*(\d+)", re.M)
+_MARK = {k: re.compile(rf"^===\s*{k}\s*===\s*$", re.M)
+         for k in ("IMAGES", "CSS", "PAGES", "END")}
 
-    这一步原来没有闸,后果实测很实:DeepSeek-V4-Flash 43 份 pNN.md 全部是推理稿
-    开头 —— `p01.md` 第一句是「我们需要输出p01规格。需要遵循模板。…短标题如"尺度两端"」,
-    而 p04/p05/p06 分别 66,197 / 60,106 / 51,681 字节的斟酌。
-    spec 的上限从 8,000 一路加到 40,000 每一档都打满,**加额度只是让它写得更长**。
-    lec.js / theme.css 那两步早就有同款闸,漏了这一步。
+# 一页散文短于这个字符数,就当它是被截断的残块。
+# 60 是保守值:实测一段合格的页面散文在 200–400 字符,而「# page-21」加半句话
+# 大约 20–40 字符。定在中间,宁可放过也不要把写得短的正常页丢掉。
+PAGE_MIN = 60
+# 页数的合理区间由 `--minutes` 推,见 plan_run。这两个数只兜「模型把 N 写飞了」。
+N_FLOOR, N_CEIL = 4, 60
+
+
+def _slice(text: str, a: str, b: str | None) -> str:
+    """取两条分隔行之间的正文。`a` 找不到就返回空串。"""
+    m = _MARK[a].search(text)
+    if not m:
+        return ""
+    rest = text[m.end():]
+    if b:
+        n = _MARK[b].search(rest)
+        if n:
+            return rest[:n.start()]
+    return rest
+
+
+def segment(text: str) -> dict:
+    """把一次回复切成 {n, images, css, pages, truncated}。
+
+    三个锚点各自独立:哪一段的分隔行丢了,只影响那一段,不会连累另外两段。
+    `pages` 复用 `_split_specs` —— 它已经是按页号而非位置映射、同页号取最后一次、
+    丢弃前言,正是这里要的行为(`# page-NN` 这个标题形状就是为了原样复用它才定的)。
+    """
+    m = _N_DECL.search(text)
+    n = int(m.group(1)) if m else 0
+    images = _slice(text, "IMAGES", "CSS").strip()
+    css_raw = _slice(text, "CSS", "PAGES")
+    # **只对 CSS 那一段跑 `_extract_code`,不要对全文跑。**
+    # `_valid_css` 只看前 400 字符像不像散文,拿整篇回复喂给它会被判通过,
+    # 于是把「页数 + 图表 + CSS + 全部散文」当成一份样式表写进 theme.css。
+    css = _extract_code(css_raw, _valid_css) if css_raw.strip() else ""
+    body = _slice(text, "PAGES", "END") or _slice(text, "PAGES", None)
+    if not body.strip():
+        # 分隔行丢了就退回第一个 `# page-NN`,别因为一行标记丢掉全部页面。
+        h = re.search(r"(?m)^#\s+page-\d+", text)
+        body = text[h.start():] if h else ""
+    pages = _split_specs(body, range(1, N_CEIL + 1)) if body.strip() else {}
+    # 截断判定:缺 END、或块数不够、或最后一块太短。
+    # **判出来也不判死** —— 丢掉残块、按完整块数继续,详见 plan_run 里的处理。
+    short = [k for k, v in pages.items() if len(v) < PAGE_MIN]
+    truncated = (not _MARK["END"].search(text)) or bool(short) or (n and len(pages) < n)
+    return {"n": n, "images": images, "css": css, "pages": pages,
+            "truncated": truncated, "short": sorted(short)}
+
+
+def _valid_deck(text: str) -> str:
+    """一次调用产物的闸。
+
+    每一条拦的都是**提示词里给了完整样例、照抄就能满足**的东西 ——
+    `cached()` 重试是原样重发同一个提示词、`bad` 只打印不回灌,
+    所以拦一件模型不知道怎么改的事,等于三次之后把整轮判死。
     """
     bad = _looks_like_prose(text)
     if bad:
         return bad
-    if len(text) < MIN_CHARS.get("spec", 400):
-        # **提取之后必须再查长度。** MIN_CHARS 只在 ask() 里对原始回复生效,
-        # 而从推理稿里切出来的候选可能是一个被丢弃的草稿标题:实测 p05/p06
-        # 分别被切成 293 / 209 字符,小节齐全但内容是空的。
-        return f"只有 {len(text)} 字符(要求 ≥{MIN_CHARS.get('spec', 400)}),像是切到了草稿"
-    # 「场景构图」2026-08-23 拿掉了:它和「知识结构」各描述一遍画面、互不引用,
-    # 建页只能把两套叠起来 —— 实测页面上互不相干的定位系统中位 4 个(协调者那条线 2 个),
-    # 而叠压里 4/5 处是「做完了」的提示条砸在内容标签上。母题并进了知识结构。
-    # 内容契约的通用必填是四节；`主工作流` 在下方单独校验。
-    # 「动效」2026-08-23 从这里拿掉了 —— 提示词已经改成
-    # 「静态页整节不要出现」,而这道闸还在要它,两边打架的代价是实的:
-    # 重跑 50 份规格,十几份因为「缺必填小节 动效」被退回,每份白烧 3 次重试。
-    # 更早的例子同理:7 节必填 → 50/50 份全填满 → 静态页也有动效、
-    # 没有正确答案的交互页也有复位按钮、没东西可填的 `必用skill` 被填上库名。
-    # **可算的约束会被贴边满足,所以只该把真的每页都要的东西放进来。**
-    need = ["照这个写", "知识结构", "表征形式", "不许碰"]
-    miss = [k for k in need if f"## {k}" not in text and f"## {k}：" not in text]
-    if miss:
-        return f"缺必填小节 {'/'.join(miss)}"
-    m = re.search(r"^##\s*主工作流\s*$\n(.*?)(?=^##\s|\Z)", text, re.S | re.M)
-    if not m:
-        return "缺必填小节 主工作流"
-    lines = [line.strip().lstrip("-* ") for line in m.group(1).splitlines()
-             if line.strip()]
-    if len(lines) != 1:
-        return f"主工作流必须且只能有一行，实际 {len(lines)} 行"
-    route = re.match(r"^([a-z0-9][a-z0-9.-]*)\s*(?:←|<-)\s*(.+)$", lines[0])
-    if not route or not route.group(2).strip():
-        return "主工作流格式必须是 `workflow-name ← 本页主要实现难点`"
-    if route.group(1) not in set(workflow_names):
-        return f"未知主工作流 {route.group(1)}"
-    # 指针格这条闸 2026-08-24 **整条删掉了**(当场退回、事后硬判、报表行,三处都删)。
-    # 判据分不开两种情况:
-    # 测试里那个真缺陷(`| C | `Lec.K.values` 中对应条目 | m |`,和 12/18 同列)
-    # 和 p09 里合法的 `| loss(w₁) | 对两样本的 `Lec.P.bce` 取平均 |`(loss 是函数不是常量,
-    # 下一张表就给了 8 个采样值)—— 表格几何上一模一样,区别在语义,判据看不见。
-    # 退回的代价还不止浪费 token:p16 被退回后指针格从 1 个变成 5 个,
-    # **模型在按一个说不清的判据瞎改**,那比漏过更坏。
-    # 事后统计留在 `plan_quality` 的 HARD 里(它只影响退出码,不改产物)。
+    got = segment(text)
+    if not got["n"]:
+        return "第一行缺 `页数: N` —— 它是页数校验的唯一依据,照输出格式原样写一行"
+    if not (N_FLOOR <= got["n"] <= N_CEIL):
+        return f"`页数: {got['n']}` 不合理(应在 {N_FLOOR}–{N_CEIL} 之间)"
+    if not got["css"]:
+        return ("`=== CSS ===` 和 `=== PAGES ===` 之间没有取出可用的样式表 —— "
+                "要在这两条分隔行之间放一个 ```css 围栏,里面是完整的 theme.css")
+    if not got["pages"]:
+        return "`=== PAGES ===` 之后没有 `# page-NN` 块 —— 每页一个,页号两位、从 01 连续编"
+    nn = sorted(int(k) for k in got["pages"])
+    if nn != list(range(1, len(nn) + 1)):
+        miss = sorted(set(range(1, max(nn) + 1)) - set(nn))
+        return f"页号不连续,缺 {' '.join(f'page-{x:02d}' for x in miss)} —— 从 01 编到 N，不跳号"
     return ""
 
 
-
-
-CHECKS = {"theme.css": _valid_css, "spec": _valid_spec}
+CHECKS = {"theme.css": _valid_css, "deck": _valid_deck}
 REPAIRS = {}
 
 _FENCE = re.compile(r"```[a-zA-Z]*\n(.*?)```", re.S)
-
-
-def _extract_spec(text: str, check) -> str:
-    """从可能夹着推理稿的回复里把**逐页规格**捞出来。
-
-    和 `_extract_code` 同一套「候选 + 校验」做法,但候选不一样:规格是 markdown,
-    它的可靠锚点是首行那个 `# page-NN · …`,而不是 ``` 围栏或 `(function`。
-
-    这一步的必要性是量出来的:DeepSeek-V4-Flash 43 份 pNN.md **全部**是推理稿开头,
-    而正文就跟在后面 —— 直接判死等于白丢 43 份可用的规格。
-
-    候选顺序:
-      1. 整段(最常见:模型只给了规格)
-      2. 从最后一个 `# page-NN` 切到末尾(越靠后越可能是「最终答案」)
-      3. 从第一个 `# page-NN` 切到末尾
-      4. markdown 围栏里的内容
-    """
-    cands = [text.strip()]
-    hits = list(re.finditer(r"(?m)^#\s+page-\d+", text))
-    for m in reversed(hits):
-        cands.append(text[m.start():].strip())
-    for blk in re.findall(r"```(?:markdown|md)?\n(.*?)```", text, re.S):
-        cands.append(blk.strip())
-    for c in cands:
-        if c and not check(c):
-            return c
-    return cands[1] if len(cands) > 1 else text.strip()
-
-
-def _group_acts(rows: list, cap: int = 8, blind: int = 6) -> list[list]:
-    """把页表按「幕」切成连续的批,每批一次调用展开。
-
-    分批的单位是幕而不是页,理由是量出来的:一页一调时 22 路的 input 合计
-    169,442 tok 且**缓存 0 命中** —— 同一份约 7,692 tok 的共享前缀
-    (deck 全文 + lec_api + lec_values + theme_api + img_pool)被原样付了 22 遍。
-    并发发出,第一个请求的缓存还没写完后面 21 个就已出发,谁也吃不到谁的。
-
-    也不做成一次性全出:`expand()` 里那条「一页不过不许杀掉整轮」是踩出来的
-    (p03 三次不过 → planner 死 → 43 份已写好的规格一起没了),一次性会把
-    失败半径重新放大到整轮;而 50 页一次约 55k tok 输出也贴着 MAX_OUT 的 60k。
-
-    `cap`:单批页数上限。幕本身可以很长(实测有 7 页的幕),超了就按连续顺序切开,
-    宁可牺牲一点幕内连续性,也不让单次输出跑到不安全的长度。
-
-    `blind`:**旧 PLAN.md 没有幕列**(`Row.act` 默认空串)。这时按固定条数分批,
-    绝不能让「全是空串」退化成一个大批 —— 那正好就是我们不要的一次性全出。
-    """
-    if not rows:
-        return []
-    if not any((r.act or "").strip() for r in rows):
-        return [rows[i:i + blind] for i in range(0, len(rows), blind)]
-    out: list[list] = []
-    for r in rows:
-        key = (r.act or "").strip()
-        if out and (out[-1][0].act or "").strip() == key and len(out[-1]) < cap:
-            out[-1].append(r)
-        else:
-            out.append([r])
-    return out
 
 
 def _split_specs(text: str, nns) -> dict:
@@ -603,534 +584,10 @@ def _lib_stems() -> frozenset:
     return frozenset(p.name.split(".")[0] for p in d.iterdir()) if d.is_dir() else frozenset()
 
 
-def _skill_list_row(run: Run, r) -> str:
-    """从并行展开出来的 `plan/pNN.md` 里读这一页指派的技法文档。
-
-    指派为什么放到展开那一步:页表那一层还不知道这个交互具体要怎么做,
-    而 skill 该按「这个交互缺哪一块知识」来指派 —— 那是展开时才有的信息。
-    页表只管全局(停留加总、交互不撞车),不管这种逐页判断。
-    """
-    f = run.pages / "plan" / f"p{r.nn}.md"
-    if not f.is_file():
-        return ""
-    m = re.search(r"^##\s*必用skill\s*\n(.*?)(?=^##\s|\Z)",
-                  f.read_text(encoding="utf-8"), re.S | re.M)
-    if not m:
-        return ""
-    # **逐行取 `←` 左边。** 规格现在的格式是
-    #     mini-game  ← 「传话链」那一局的回合结构、判定与复位
-    # 整节按空白切分会把落点那句话切成一串「假名字」,日志被假警刷满。
-    raw, unbound = [], []
-    for line in m.group(1).splitlines():
-        if not line.strip():
-            continue
-        head, sep, tail = re.split(r"(←|<-|→|:|：)", line, 1) + ["", ""] if False else (
-            (lambda parts: (parts[0], parts[1] if len(parts) > 1 else "",
-                            parts[2] if len(parts) > 2 else ""))(
-                re.split(r"(←|<-)", line, 1)))
-        names = [x.strip(" `、,，。-*") for x in re.split(r"[,，、\s]+", head.strip())]
-        names = [x for x in names if x and x not in ("无", "None", "-", "——", "、")]
-        raw += names
-        if not tail.strip():
-            # **落点这条只管真 skill。** 不然整句散文(「无交互 纯静态收束页」)
-            # 会既被报成「没写落点」又被报成「两处都没有」,同一件事说两遍。
-            unbound += [x for x in names if x in _skill_names()]
-    # 只报不判:一项没有落点 = 这份规格没想清楚它要那份文档干什么。
-    if unbound:
-        print(f"  规格 p{r.nn}      必用skill 有 {len(unbound)} 项没写落点"
-              f"({' '.join(unbound)}) —— 格式是 `名字 ← 这一页的哪一块用它`")
-    real, libs, junk = [], [], []
-    for x in raw:
-        if x in _skill_names():
-            real.append(x)
-        elif x.split(".")[0] in _lib_stems():
-            libs.append(x)
-        else:
-            junk.append(x)
-    # 「散文」和「假名字」要分开报。**这是量出来的**:改完拿 1,196 份规格重跑,
-    # 38 份「剔完变成空指派」里绝大多数是 DeepSeek 那两轮把整句话写进了这一栏
-    # (「无交互 纯静态收束页」、「纯静态排版页 没有动画 图表 插画...」)——
-    # 那是模型**正确地**说了「这页不需要」,只是没写「无」。按空白切分会把一句话
-    # 切成五个「名字」,报成「两处都没有 5 个」就把「说对了」误报成「写错了」。
-    prose = bool(junk) and not real and not libs and (
-        len(" ".join(junk)) > 24 or any(len(x) > 12 for x in junk))
-    if prose:
-        print(f"  规格 p{r.nn}      必用skill 写成了整句散文,视作无指派:"
-              f"「{' '.join(junk)[:44]}」")
-    elif libs or junk:
-        bits = []
-        if libs:
-            bits.append(f"{len(libs)} 个是库名({' '.join(libs)})，应写进 `## 表征形式`")
-        if junk:
-            bits.append(f"{len(junk)} 个两处都没有({' '.join(junk)[:40]})")
-        print(f"  规格 p{r.nn}      必用skill 里 " + "、".join(bits)
-              + (" —— 已剔除" if real else " —— 已剔除,这一页变成空指派"))
-    return "\n".join(f"  - {n}" for n in real)
-
-
-def _workflow_row(run: Run, r, workflow_root: Path) -> str:
-    """Read the one validated route from a new pNN spec."""
-    f = run.pages / "plan" / f"p{r.nn}.md"
-    if not f.is_file():
-        raise FileNotFoundError(f)
-    text = f.read_text(encoding="utf-8")
-    m = re.search(r"^##\s*主工作流\s*$\n(.*?)(?=^##\s|\Z)", text, re.S | re.M)
-    if not m:
-        return ""
-    lines = [line.strip().lstrip("-* ") for line in m.group(1).splitlines()
-             if line.strip()]
-    if len(lines) != 1:
-        raise ValueError(f"p{r.nn} 的主工作流必须且只能有一行")
-    hit = re.match(r"^([a-z0-9][a-z0-9.-]*)\s*(?:←|<-)\s*(.+)$", lines[0])
-    if not hit or not hit.group(2).strip():
-        raise ValueError(f"p{r.nn} 的主工作流格式错误")
-    name = hit.group(1)
-    allowed = set(skills.available(workflow_root)) & set(skills.PAGE_WORKFLOWS)
-    if name not in allowed:
-        raise ValueError(f"p{r.nn} 指派了未知主工作流 {name!r}")
-    return f"  - {name}"
-
-
-def _assignment_block(run: Run, r, workflow_root: Path) -> str:
-    """New runs route one workflow; cached old runs keep their legacy skills."""
-    routed = _workflow_row(run, r, workflow_root)
-    if routed:
-        return "## 主工作流\n" + routed
-    legacy = _skill_list_row(run, r)
-    return "## 必用skill\n" + (legacy or "  (无)")
-
-
-def split_deck(run: Run, text: str) -> str:
-    """把 PLAN.md 原样落成 `plan/deck.md` —— 整套共享的部分(主线/页表/归属/口径)。
-
-    现在 PLAN.md 里已经没有逐页正文了(第 1 节只是一张表),所以这一步只是复制。
-    逐页规格由 expand() 并行写成 plan/pNN.md。
-    """
-    d = run.pages / "plan"
-    d.mkdir(parents=True, exist_ok=True)
-    (d / "deck.md").write_text(text.rstrip() + "\n", encoding="utf-8")
-    return text
-
-
-def spine(plan_text: str) -> str:
-    """从 PLAN.md 里取出「主线」那一节（含章表和证据链）。
-
-    这一节要到 `CONTRACT.md`。**它原来到不了** —— 契约那一步只收到
-    `n_pages / canvas_w / canvas_h / libs / lec_api / audience / scenario`,
-    于是全课主张根本传不进契约。而同类任务里协调者把它放在共享契约的**第 1 节**,
-    标题就叫「这堂课在讲什么（你那一页必须服务于这个主张）」。
-    我们这一节一直只在 `deck.md` 里,而 2026-08-24 我把 brief 里的 deck.md 降成
-    「需要时才读」之后,实测 6/6 页一次都没读 —— 主张对建页 agent 直接消失了。
-    """
-    m = re.search(r"^#{2,3}\s*[\d.]*\s*(?:这套讲义的)?主线\s*$(.*?)(?=^#{2,3}\s|\Z)",
-                  plan_text, re.S | re.M)
-    return m.group(0).strip() if m else ""
-
-
-def visual_world(plan_text: str) -> str:
-    """从 PLAN.md 里取出「视觉世界」那一节。
-
-    这一节要到两处:每一份逐页规格(`expand()` 已经把 deck 全文传过去,免费到达),
-    以及 `theme.css` 那一步 —— **后者原来收不到 deck**,它在独立发明主题。
-    结果是逐页规格只能写「用全页唯一强调色」,因为规格写在 theme.css 之前、
-    主题还不存在,它无从专属。
-    """
-    m = re.search(r"^#{2,3}\s*[\d.]*\s*视觉世界\s*$(.*?)(?=^#{2,3}\s|\Z)",
-                  plan_text, re.S | re.M)
-    return m.group(0).strip() if m else ""
-
-
-# 一行是不是「字段标题」:可选的项目符号和粗体之后,15 个字以内出现冒号。
-# 实测两种写法都要认 —— `- 母题：a；b；c`(标题和正文同一行)
-# 和 `**否决方向：**` 后面空一行再列(标题独占一行)。
 _FIELD = re.compile(r"\s*(?:[-*]\s*)?\*{0,2}[^：:\n]{1,15}[：:]")
 _BULLET = re.compile(r"\s*(?:[-*]|\d+[.、)])\s+")
 
 
-def _count_items(block: str, head: str) -> int:
-    r"""数「head」那一项底下有几条。
-
-    ## 为什么不是一句正则
-
-    这个函数改过三版,前两版都在**模型实际用的排版上归零**:
-
-      一、只按行数数 —— 而实测模型是一行用「；」隔开几条,数出 0 条、报了个假警。
-      二、改成一句 `head…(.*?)(?=\n\s*\n|\Z)` 加按 `[;；、\n]` 切 —— 撞上两件事:
-          `**否决方向：**` 是标题独占一行、正文空一行才开始,那个 `\n\s*\n`
-          把正文整段判在外面,**只数到标题末尾残留的 `**`,报「1 条」**;
-          而条目带解释时(「样本 / 模型 —— 要分清哪个是给定的、哪个是学出来的」)
-          句中的顿号又把一条切成两条。
-
-    所以改成按行走:找到字段标题那一行,正文 = 该行冒号之后的部分 + 随后所有
-    **不是另一个字段标题**的行,直到下一个 markdown 小节。这样两种排版都认,
-    也不会把标题自己数进去。
-
-    切分只用分号和换行。只有在切完只剩一条、且那条读起来像枚举(没有解释标记)时,
-    才退回按顿号切 —— 「参数旋钮、样本卡、损失坡面」这种写法仍然数得对。
-    阈值取 2 个字:「星空」「火光」这种两字条目完全正常,卡 3 会把它们滤掉。
-    """
-    lines = block.splitlines()
-    i = next((k for k, l in enumerate(lines)
-              if head in l and _FIELD.match(l)), None)
-    if i is None:
-        return 0
-    first = lines[i]
-    body = [first[first.index("：") + 1:] if "：" in first
-            else (first[first.index(":") + 1:] if ":" in first else "")]
-    for l in lines[i + 1:]:
-        if l.lstrip().startswith("#") or (l.strip() and _FIELD.match(l)):
-            break
-        body.append(l)
-    # **有项目符号就只数项目符号那几行。** 否则条目一换行,续行会被数成新的一条 ——
-    # 实测旧格式的「否决方向」3 条被数成 4 条、「形状语言」5 条被数成 7 条,
-    # 而新格式的概念对带解释、同样会换行。没有项目符号时才退回按行数。
-    raw = re.split(r"[;；\n]+", "\n".join(body))
-    bullets = [x for x in raw if _BULLET.match(x)]
-    items = [_strip_item(x) for x in (bullets or raw)]
-    items = [x for x in items if len(x) >= 2]
-    if len(items) == 1 and "、" in items[0] and not re.search(r"——|—|：|:", items[0]):
-        items = [x.strip() for x in items[0].split("、") if len(x.strip()) >= 2]
-    return len(items)
-
-
-def _strip_item(x: str) -> str:
-    """剥掉条目外面的项目符号和粗体标记,免得把残留的 `**` 数成一条。"""
-    return re.sub(r"^\s*[-*]\s*", "", x).strip().strip("*").strip()
-
-
-def check_visual_world(block: str) -> None:
-    """只报不判。判据全部是能数出来的数。
-
-    「给具体要求不要形容词」是散文,而散文的服从度因模型而异 ——
-    所以这里把它变成几个计数。缺了不判死:这一节是给 theme.css 做参照的,
-    没有它下游会退回「用强调色」那种写法,但不会建不出页来。
-
-    ## 2026-08-27:判据从「≥3 个 hex」翻成「0 个 hex」
-
-    §0.5 改成只声明视觉**要求**、不做视觉**决定**之后,hex 归 theme.css 挑。
-    原来那条 `len(hexes) >= 3` 会**恒红** —— 而恒红的判据等于没有判据,
-    这条流水线上已经栽过四次(handoff 计数找一节已删的标题、BASELINE_CHARS
-    按字节定按字符比、strip_skills 的正则匹配过时措辞、`_valid_spec` 那个
-    从没被读过的 `chassis` 参数)。所以翻过来:**出现 hex 才是问题**,
-    它说明这一步又在替 theme.css 做决定了。
-    """
-    if not block:
-        print("  \033[33m⚠ PLAN.md 里没有「视觉世界」一节 —— "
-              "theme.css 将不知道这一课需要区分什么,只能自己发明一套\033[0m")
-        return
-    hexes = set(re.findall(r"#[0-9a-fA-F]{6}\b", block))
-    has_ref = bool(re.search(r"现实参照|视觉传统", block))
-    n_pair = _count_items(block, "概念对")
-    n_slot = _count_items(block, "需要专属色的概念")
-    n_motif = _count_items(block, "母题")
-    n_veto = _count_items(block, "否决")
-    ok = (not hexes) and has_ref and n_pair >= 3 and n_slot >= 2 and n_motif >= 3 and n_veto >= 2
-    print(f"  验视觉世界   {'有' if has_ref else '无'}现实参照、{n_pair} 组概念对、"
-          f"{n_slot} 个色槽位、{n_motif} 条母题、{n_veto} 条否决"
-          + (f"、\033[33m{len(hexes)} 个 hex\033[0m" if hexes else "")
-          + ("  ✓" if ok else ""))
-    if not ok:
-        why = []
-        if hexes:
-            why.append(f"**出现了 {len(hexes)} 个 hex** —— 取值是 theme.css 的活,"
-                       "这一节只声明要求")
-        if not has_ref:
-            why.append("没点名现实参照")
-        if n_pair < 3:
-            why.append(f"概念对只有 {n_pair} 组(要 ≥3)")
-        if n_slot < 2:
-            why.append(f"色槽位只有 {n_slot} 个(要 ≥2)")
-        if n_motif < 3:
-            why.append(f"母题只有 {n_motif} 条(要 ≥3)")
-        if n_veto < 2:
-            why.append(f"否决方向只有 {n_veto} 条(要 ≥2)")
-        print("               \033[33m⚠ " + "；".join(why) + "\033[0m")
-
-
-def check_table(run: Run, rows: list, plan_text: str = "") -> None:
-    """页表的全局校验。**只报不判 —— 唯一判死的是「一行都读不出来」。**
-
-    降级的理由是成本不对称:页表是一个几 KB 的文本文件,错了改完重跑 PLAN.md
-    那一步就行(实测 78.6s,而且后面几步都命中缓存)。而判死的代价是整轮 planner 挂掉。
-    真正该判死的是那些**没有便宜手工修法**的东西 —— lec.js 是推理稿、PLAN.md 被截断、
-    theme.css 不覆盖 mount 类名 —— 那时 44 个 builder 会照着错的底子并行建页。
-    判据就是这一条:下游能不能便宜地撤销。
-
-    每一条不合格都**连原始行一起打出来**。这是必须的:这道闸头两次触发,
-    两次都是解析器自己看错了 ——
-      · 第 0 节的分章表被当成页表(`| 00 开场 | 01–03 | … |` 第一列以数字开头),
-        报出「14 行字段不全」,看着像模型没填;
-      · 交互名判重用了整串,`无〔focus〕` 和 `无〔technical-wireframe〕` 被算成撞车。
-    原始行一旦印出来,这两种一眼就能和模型的错分开。
-    """
-    if not rows:
-        raise RuntimeError("页表一行都读不出来 —— 六列表头没找到,或者格式对不上。"
-                           f"看 {run.root / 'PLAN.md'} 第 1 节")
-    want = run.minutes * 60
-    tot = sum(r.stay or 0 for r in rows)
-    noi = [r.pid for r in rows if not r.interaction_key]
-    print(f"  验页表       {len(rows)} 行  停留合计 {tot:g}/{want} 秒"
-          + ("  ✓" if tot == want else f"  \033[33m⚠ 差 {tot-want:+g}\033[0m")
-          + f"   无交互 {len(noi)} 页")
-
-    def show(title, items):
-        print(f"  \033[33m⚠ {title}\033[0m")
-        for pid, why, raw in items[:6]:
-            print(f"      {pid} {why}\n        {raw}")
-        if len(items) > 6:
-            print(f"      …另有 {len(items)-6} 行")
-
-    bad = [(r.pid, f"缺 {'/'.join(r.missing())}", r.raw) for r in rows if r.missing()]
-    if bad:
-        show(f"{len(bad)} 行字段不全", bad)
-
-    # enumeration 2026-08-23 删掉:同类任务里协调者 44 页用了 0 次并写明理由,
-    # 我们上一轮 48 页用了 9 次,其中部分-整体的分解被标成并列,规格只好为错的结构辩护。
-    legal = {"process", "comparison", "classification", "generalization"}
-    ill = [(r.pid, f"知识结构 {r.structure!r} 不在四种之内"
-            + ("（enumeration 已删 —— 看着像并列的按 classification 做）"
-               if r.structure.lower() == "enumeration" else ""), r.raw)
-           for r in rows if r.structure.lower() not in legal]
-    if ill:
-        show(f"{len(ill)} 行知识结构非法", ill)
-
-    legal_layouts = {"split-lr", "split-tb", "canvas-full", "triptych",
-                     "focus", "ledger", "stage-cards"}
-    bad_layouts = [(r.pid, f"版式 {r.layout!r} 不在允许集合内", r.raw)
-                   for r in rows if r.layout not in legal_layouts]
-    if bad_layouts:
-        show(f"{len(bad_layouts)} 行版式缺失或非法", bad_layouts)
-    used_layouts = {r.layout for r in rows if r.layout in legal_layouts}
-    if len(used_layouts) < 4:
-        print(f"  \033[33m⚠ 版式只有 {len(used_layouts)} 种: "
-              f"{' '.join(sorted(used_layouts)) or '（无）'}；要求至少 4 种\033[0m")
-    adj_layout = [rows[i].pid for i in range(1, len(rows))
-                  if rows[i].layout and rows[i].layout == rows[i - 1].layout]
-    if adj_layout:
-        print(f"  \033[33m⚠ 相邻同版式 {len(adj_layout)} 处: "
-              f"{' '.join(adj_layout)}\033[0m")
-    n_split = sum(r.layout == "split-lr" for r in rows)
-    if n_split * 3 > len(rows):
-        print(f"  \033[33m⚠ split-lr 使用 {n_split}/{len(rows)} 页，超过三分之一\033[0m")
-
-    over = [(r.pid, f"停留 {r.stay:g} 秒 > 上限 {STAY_CEILING:g}", r.raw)
-            for r in rows if r.stay and r.stay > STAY_CEILING]
-    if over:
-        show(f"{len(over)} 页超过单页上限(装了不止一件事)", over)
-
-    seen = collections.defaultdict(list)
-    for r in rows:
-        if r.interaction_key:
-            seen[r.interaction_key].append(r)
-    dup = [(rs[0].pid, f"交互 {k!r} 在 {' '.join(x.pid for x in rs)} 重复", rs[0].raw)
-           for k, rs in seen.items() if len(rs) > 1]
-    if dup:
-        show(f"{len(dup)} 个交互名重复(同一件事会被讲两遍)", dup)
-
-    pids = [r.pid for r in rows]
-    if pids != [f"page-{i:02d}" for i in range(1, len(rows) + 1)]:
-        print(f"  \033[33m⚠ 页号不连续或跳号: {' '.join(pids)}\033[0m")
-    adj = [rows[i].pid for i in range(1, len(rows))
-           if rows[i].structure == rows[i - 1].structure]
-    if adj:
-        print(f"  \033[33m⚠ 相邻同结构 {len(adj)} 处: {' '.join(adj)}\033[0m")
-    if len({r.stay for r in rows if r.pid in noi}) == 1 and len(noi) > 1:
-        print("  \033[33m⚠ 无交互页停留全是同一个数 —— 标题页和章节转场承担的事不一样\033[0m")
-    # ── 证据链与幕的对账 ────────────────────────────────────────
-    # 从 Opus 那条线量来的两样。**判死的只有「引用了没声明的节点」** ——
-    # 那是唯一有正确答案、且下游撤销不了的一种错:展开那一步会拿着一个不存在的编号
-    # 去写规格,而 20 路并行各自都看不见这个矛盾。
-    # 「有节点没页覆盖」「幕不连续」只报 —— 缺页要人决定是补页还是改规划,
-    # 这是先前有意定下的口径,不改。
-    # **不要假定排版。** 第一版写的是 `^\s*(E\d+)\b` —— 要求编号顶在行首,
-    # 而实测模型写的是 `- **E1**：…`(列表符 + 加粗 + 全角冒号),于是声明数出 0 个,
-    # 45 页全部被判成「引用了不存在的节点」,**整轮在 PLAN.md 就挂了**。
-    # 模型写的是对的,判据错 —— 和上面 `_nodes` 那条 `E1–E4` 是同一类。
-    # 现在放过行首的列表符 / 引用号 / 表格竖线 / 反引号 / 加粗。
-    # 仍然锚在行首:句子中间提到的 E1 不算声明,那是引用。
-    declared = set(re.findall(r"^[ \t]*(?:[-*+>]|\|)?[ \t]*[`*_]{0,2}(E\d+)\b",
-                              plan_text, re.M))
-
-    def _nodes(cell: str) -> set:
-        """一个单元格里引用的全部节点。
-
-        **不能把整格当成一个节点。** 这是踩出来的:一页综合迁移页写了 `E1–E4`
-        (它要学生用全部四条证据解释所得系统),而整格比对把 'E1–E4' 当成一个
-        没声明的节点,**整轮在 PLAN.md 就判死了** —— 模型写的是对的,判据错。
-        区间也展开,否则「有节点没页覆盖」那一行会误报。
-        """
-        got = set(re.findall(r"E\d+", cell or ""))
-        for a, b in re.findall(r"E(\d+)\s*[–—~-]\s*E?(\d+)", cell or ""):
-            got |= {f"E{i}" for i in range(int(a), int(b) + 1)}
-        return got
-
-    used = set()
-    for r in rows:
-        if r.evidence not in ("", "—", "-", "无"):
-            used |= _nodes(r.evidence)
-    if declared or used:
-        ghost = [(r.pid, f"证据 {r.evidence!r} 没在证据链里声明"
-                         f"(声明过的:{' '.join(sorted(declared)) or '一个都没有'})", r.raw)
-                 for r in rows if _nodes(r.evidence) - declared]
-        if ghost:
-            # **降级成只报。** 原来这一条判死,理由写的是「展开是并行的,各自看不见矛盾」。
-            # 实测两次触发,**两次都是判据自己看错了**:一次把 `E1–E4` 整格当成一个节点,
-            # 一次是声明写成 `- **E1**：…` 而正则要求编号顶行首 —— 45 页全被判成引用
-            # 不存在的节点,整轮在 PLAN.md 就停了。
-            # 而真出现幽灵节点的代价其实很小:规格里多一个对不上的编号,页面照样建得出来,
-            # 事后改 PLAN.md 一行就行。**判死的成本远大于漏过的成本,那就不该判死。**
-            show(f"{len(ghost)} 行引用了没声明的证据节点", ghost)
-            print(f"  \033[33m⚠ 页表用到 {sorted(used - declared)},证据链里没声明 —— "
-                  f"只报不判。要么补声明,要么改页表的「证据」列\033[0m")
-        naked = sorted(declared - used)
-        if naked:
-            print(f"  \033[33m⚠ 有证据节点没有任何页覆盖: {' '.join(naked)}"
-                  f" —— 要么补页,要么这条节点本来就不该在链上\033[0m")
-        n_ev = sum(1 for r in rows if r.evidence in used)
-        print(f"  验证据链     声明 {len(declared)} 条,页表用到 {len(used)} 条,"
-              f"承担论证的页 {n_ev}/{len(rows)}")
-    acts = [r.act for r in rows if r.act]
-    if acts:
-        runs_ = [k for i, k in enumerate(acts) if i == 0 or k != acts[i - 1]]
-        if len(runs_) != len(set(runs_)):
-            print(f"  \033[33m⚠ 幕不连续(同一幕的页被别的幕隔开): "
-                  f"{' '.join(runs_)}\033[0m")
-        else:
-            print(f"  验幕结构     {len(set(acts))} 幕,页序连续 ✓")
-
-    n_bad = (len(bad) + len(ill) + len(bad_layouts) + len(over) + len(dup)
-             + (0 if tot == want else 1))
-    if n_bad:
-        print(f"  \033[33m  以上 {n_bad} 项都没有判死 —— 页表是个小文本文件,"
-              f"改完重跑 PLAN.md 这一步即可(后面几步命中缓存)。\033[0m")
-
-
-def expand(run: Run, rows: list, deck: str,
-           theme_api: str = "", img_pool: str = "", workflow_root=None) -> None:
-    """按幕分批、幕之间并行,把页表展开成 `plan/pNN.md`。
-
-    两段式的理由:全局约束(停留加总、交互不撞车、相邻不同结构、归属不重叠)只有
-    看到整张表才能判,所以 A 段必须是**一次**调用;而逐页展开是这条流水线上最大的
-    一块串行时间 —— nn-11 (Opus 5 × Claude Code) 那轮 43.7 分钟的规划阶段里,
-    逐份写 44 个 pNN.md 就占了约 25 分钟。所以 A 段串行、B 段并行。
-
-    **B 段的单位是幕,不是页。** 一页一调时量到两件事(runs/net-g2, 22 页):
-      · 22 次调用 input 合计 169,442 tok,**cached 0** —— 同一份约 7,692 tok 的
-        共享前缀(deck 全文 + lec_api + lec_values + theme_api + img_pool)付了 22 遍;
-        并发发出,第一个的缓存还没写完后面 21 个就已出发,谁也吃不到谁的。
-      · 每一路只看得到自己那一行,看不到邻居的**实际措辞** —— 于是第 N 页的「下一问」
-        和第 N+1 页的「主标题」各写各的,kicker 跨页撞词无人管,同一个术语被多页
-        各自「首次解释」一遍。
-    一幕一调之后 input 降到约 38k(省 77%),而连续性要求写进了 spec.md 的
-    「本幕内的连续性」一节 —— 那是这次改动真正的收益,省钱只是附带。
-
-    不做成一次性全出:那会把下面那条「一批不过不许杀掉整轮」的失败半径重新放大到
-    整轮,而 50 页一次约 55k tok 输出也贴着 MAX_OUT 的 60k。
-    """
-    d = run.pages / "plan"
-    d.mkdir(parents=True, exist_ok=True)   # 正路上 split_deck() 已经建好;不靠它,少一处隐式依赖
-    m = config()["model"]
-    eff = config()["planner"]["reasoning_effort"]
-    # 闸按行绑定:交互页才查反馈闭环那四件。`CHECKS` 只按步名取函数、拿不到行信息,
-    # 而「这一页有没有交互」只有行里有 —— 所以在这里绑,不塞进全局。
-    # **`chassis=_chassis_names(theme_api)` 删了。** 它绑了很久,而 `_valid_spec`
-    # 的函数体里一次都没读过这个参数 —— 「规格点名的类是否真实存在」这道闸
-    # 从来就不存在,只是看起来存在。同一形状的第四次(handoff 计数找一节已删的标题、
-    # BASELINE_CHARS 按字节定按字符比、strip_skills 的 BLOCK 正则匹配过时措辞)。
-    # **没顺手把它接起来**:`cached()` 重试是原样重发,新造一道闸误拦一份规格
-    # 就要赔掉三次调用,而这不是这次改动的题目。要接就单独接,并先量误拦率。
-    chk = partial(CHECKS["spec"],
-                  workflow_names=tuple(
-                      n for n in skills.PAGE_WORKFLOWS
-                      if n in set(skills.available(workflow_root or skills.WORKFLOWS))))
-
-    def _rows_block(batch) -> str:
-        return "\n".join(
-            f"{r.raw}\n    版式:{r.layout or '未指定（旧页表；在 `## 存疑` 中报告）'}"
-            for r in batch)
-
-    def _ask_batch(batch, act: str):
-        """跑一批,返回 (切好的 {nn: 正文}, 输出 tok, 最后一次原始回复)。"""
-        prompt = run.prompt("spec", act=act, query=run.query, minutes=run.minutes,
-                            audience=run.audience, scenario=run.scenario,
-                            deck=deck, rows_block=_rows_block(batch),
-                            workflows=skills.workflow_catalog(
-                                workflow_root or skills.WORKFLOWS),
-                            theme_api=theme_api, img_pool=img_pool)
-        req = Request(model=m["name"], system=[TextBlock(text=IDENTITY)],
-                      messages=[Message(role="user", content=[TextBlock(text=prompt)])],
-                      max_tokens=MAX_OUT.get("spec", 8000),
-                      output_config={"effort": eff})
-        # min_chars 按页数放大:一批 7 页只回 400 字符是灾难性空响应,不是「写得简洁」。
-        rep = ask(req, min_chars=MIN_CHARS.get("spec", 400) * len(batch))
-        return _split_specs(rep.text, [r.nn for r in batch]), rep, req
-
-    def one_batch(batch):
-        act = (batch[0].act or "").strip() or "—"
-        files = {r.nn: d / f"p{r.nn}.md" for r in batch}
-        # 整批都在就整批跳过。部分在则整批重做 —— 只补缺的那几页就等于放弃这一幕的
-        # 连续性,而连续性正是分批的目的。
-        if all(f.exists() and f.stat().st_size > 200 for f in files.values()):
-            return [(f, 0, True) for f in files.values()]
-        out_tok, got, rep, req = 0, {}, None, None
-        for attempt in range(1, 4):
-            got, rep, req = _ask_batch(batch, act)
-            out_tok += rep.output_tokens
-            bad = {r.nn: (chk(got[r.nn]) if r.nn in got else "这一页没出现在回复里")
-                   for r in batch}
-            bad = {nn: why for nn, why in bad.items() if why}
-            if not bad:
-                break
-            print(f"  展开 幕{act}     ✗ 第 {attempt} 次有 {len(bad)}/{len(batch)} 页不合格:"
-                  + "、".join(f"p{nn}({why[:24]})" for nn, why in bad.items()), flush=True)
-        if req is not None and rep is not None:
-            run.log.add([b.model_dump() for msg in req.messages for b in msg.content],
-                        rep.text,
-                        {"input_tokens": rep.input_tokens, "output_tokens": out_tok},
-                        getattr(rep.raw, "id", None) or f"req_{uuid.uuid4().hex[:16]}",
-                        _now(), _now(), {"step": f"spec-act-{act}"})
-        # **一批不过不许杀掉整轮。** 实测代价:p03 三次不过,planner 直接死,
-        # 43 份已经写好的规格一起没了 —— 判据是「下游能不能便宜地撤销」:一份差点的
-        # 规格最多让那一页差点,而整轮挂掉是 44 页全无。
-        # 切出来的照写(合格与否都比没有强);**整页缺失的单独回落到一页一调** ——
-        # 必须保证每页都有文件,否则 briefs() 里的 `_workflow_row` 会直接
-        # FileNotFoundError,又变成一页拖垮整轮。
-        res = []
-        for r in batch:
-            f = files[r.nn]
-            if r.nn in got:
-                f.write_text(got[r.nn].rstrip() + "\n", encoding="utf-8")
-                res.append((f, 0, False))
-                continue
-            print(f"  展开 p{r.nn}     ⚠ 幕{act} 三次都没写出这一页,回落到单页展开",
-                  flush=True)
-            solo, srep, _ = _ask_batch([r], act)
-            out_tok += srep.output_tokens
-            txt = solo.get(r.nn) or _extract_spec(srep.text, chk)
-            f.write_text(txt.rstrip() + "\n", encoding="utf-8")
-            res.append((f, 0, False))
-        return [(f, out_tok if i == 0 else 0, c) for i, (f, _, c) in enumerate(res)]
-
-    batches = _group_acts(rows)
-    t0 = time.time()
-    with ThreadPoolExecutor(max_workers=SPEC_CONCURRENCY) as ex:
-        got = [x for chunk in ex.map(one_batch, batches) for x in chunk]
-    n_new = sum(1 for _, _, cached_ in got if not cached_)
-    sizes = sorted(f.stat().st_size for f, _, _ in got)
-    print(f"  展开规格     {len(rows)} 份 / {len(batches)} 批"
-          f"({n_new} 新建/{len(rows)-n_new} 复用)"
-          f"  {time.time()-t0:.0f}s  out={sum(o for _, o, _ in got):,} tok"
-          f"  {sizes[0]:,}–{sizes[-1]:,}B")
-
-
-# 图池的两个外部工具。**不复制它们的实现** —— 它们是 skill,builder 侧也在用同一份,
-# 复制一份出来就会分叉(这个项目为 selfcheck 分叉吃过一次亏:两份实现,三轮仪器改进
-# 一条都没进到真实 harness)。
-# **只从有出处的机构源取。** 这一条是踩出来的,而且关键不是「无出处图库图质差」——
-# 是**限源把「错图」变成「没图」**:机构源 403 的时候(实测 wikimedia/openverse 都 403 过),
-# 限了源就返回空、那一行进「没取到」栏、规格不点名它;不限源就只剩无出处图库有结果,
-# 于是「取第一个候选」悄悄变成了一张土星照片贴在讲阿舍利手斧的页上。
-# 上一轮 10 张照片里 8 张来自无出处图库,3 张语义完全不符。fail-visible 对 fail-wrong。
 _SOURCES = "wikimedia,nasa,met,loc,internetarchive"
 
 
@@ -1194,16 +651,16 @@ _IMG_ROW = re.compile(r"^\s*\|\s*([\w.-]+\.(?:jpg|jpeg|png|webp))\s*\|([^|]*)\|(
 
 
 def img_plan(plan_text: str) -> list[dict]:
-    """PLAN.md 第 0.7 节那张表 → 逐行的取图任务。
+    """图池表 → 逐行的取图任务。
 
     只认「第一列是个文件名」的行,所以表头和分隔行自动被跳过,
     也不怕模型多写或少写一列的说明文字。
+
+    2026-08-28 起入参是 `=== IMAGES ===` 那一段(见 `segment()`),
+    不再需要先去 PLAN.md 里找 `## 0.7` —— 那一节和 PLAN.md 一起没了。
     """
-    m = re.search(r"##\s*0\.7[^\n]*\n(.*?)(?=\n##\s|\Z)", plan_text, re.S)
-    if not m:
-        return []
     out = []
-    for line in m.group(1).splitlines():
+    for line in (plan_text or "").splitlines():
         r = _IMG_ROW.match(line)
         if not r:
             continue
@@ -1465,19 +922,38 @@ def assets(run: Run, plan_text: str) -> str:
     return txt
 
 
-def briefs(run: Run, rows: list, workflow_root: Path = skills.WORKFLOWS) -> list[Brief]:
-    """按模板填。
+def _img_lines(pool: str, nn: str) -> str:
+    """这一页能用哪几张图 —— 从图池表的「用在哪几页」列**确定性**地取。
+
+    **不靠散文去点名文件。** 实测代价:规格写检索任务而不是文件名时,48 页出图 4 张;
+    点名已存在的文件时出图 16 张(`assets()` 上面那段账)。页面正文现在是自由散文,
+    没有字段可写,所以这条由 harness 接 —— 它本来就是确定的事。
+    """
+    rows = []
+    for task in img_plan(pool or ""):
+        pages = {x.strip().zfill(2) for x in task["pages"].replace("，", ",").split(",")}
+        if nn in pages:
+            rows.append(f"- `assets/img/{task['name']}`（{task['use']}）")
+    if not rows:
+        return ""
+    return ("\n\n## 本页可用的图\n\n" + "\n".join(rows)
+            + "\n\n用法和 `title=` 见 `assets/img/IMG.md`。不要另找图,也不要重新生成。")
+
+
+def briefs(run: Run, nns: list, pool: str = "") -> list[Brief]:
+    """按模板填。每页 = 那一段散文 + 该页的图片清单。
 
     **全流程唯一一处没照抄 Claude Code 的地方**,理由是量出来的:nn-03 里主 agent
     逐字手写 14 份 brief,派发时刻拉开 6:24,而 brief 之间七成内容一样。
     要换回原样,把这里改成一次模型调用即可 —— 信息一致,只是慢。
     """
-    out = [Brief(f"Build {r.pid}", run.prompt(
-        "brief", query=run.query, pid=r.pid, total=len(rows),
-        assets=run.assets,
-        spec=run.pages / "plan" / f"p{r.nn}.md",
-        stay=f"{r.stay:g} 秒",
-        assignment=_assignment_block(run, r, workflow_root))) for r in rows]
+    out = []
+    for nn in nns:
+        pid = f"page-{nn}"
+        out.append(Brief(f"Build {pid}", run.prompt(
+            "brief", query=run.query, pid=pid, total=len(nns),
+            assets=run.assets, spec=run.pages / "plan" / f"p{nn}.md")
+            + _img_lines(pool, nn)))
     lens = sorted(len(b.prompt) for b in out)
     print(f"  briefs       {len(out)} 份,{lens[0]}–{lens[-1]} 字符,中位 {lens[len(lens)//2]}")
     return out
@@ -1485,161 +961,75 @@ def briefs(run: Run, rows: list, workflow_root: Path = skills.WORKFLOWS) -> list
 
 def plan_run(run: Run, chassis: Path, lib: Path,
              skill_root: Path = None, workflow_root: Path = None) -> dict:
-    skill_root = skill_root or skills.DEFAULT
+    """**一次模型调用**,产出每页一段散文 + 一份 theme.css。
+
+    2026-08-28 之前这里是 7+ 次串行调用(lec.js → PLAN.md → 图池 → theme.css →
+    CONTRACT.md → 逐幕规格),外加一整套围绕页表和规格建立的闸与仪器。
+    塌缩掉的不只是调用次数:页表那九列、逐页规格的小节格式、以及它们各自的判据,
+    都是"为了让下一步能解析上一步"而存在的中间形态。
+    """
     workflow_root = workflow_root or skills.WORKFLOWS
     print(f"\n▸ planner · {run.label}\n  {run.query}  /  {run.minutes} 分钟\n")
     t0 = time.time()
     libs = seed(run, chassis, lib)
     w, h = run.canvas
+    # 页数预算从 `--minutes` 推。**这个数要留着** —— 把页数从 18 推到 41 的
+    # 正是单页 150 秒那条,而不是页表的九列(见 STAY_CEILING 上面那段)。
+    total = run.minutes * 60
+    n_lo, n_hi = math.ceil(total / STAY_CEILING), int(total / 45)
+    text = cached(run, "deck", run.root / "DECK.md",
+                  run.prompt("deck", query=run.query, minutes=run.minutes,
+                             audience=run.audience, scenario=run.scenario or "（没写）",
+                             libs=libs, canvas_w=w, canvas_h=h,
+                             stay_ceiling=STAY_CEILING, n_lo=n_lo, n_hi=n_hi,
+                             n_target=round(total / 90),
+                             direction=skills.direction_block(workflow_root),
+                             theme_bans=skills.theme_slop_block(workflow_root),
+                             font_floor=skills.FONT_FLOOR))
+    got = segment(text)
+    pages = dict(got["pages"])
+    # **截断就丢残块,不判死整轮。** 散文是可分割的,交 18/21 页远好过交 0 页;
+    # 而这一次调用是唯一一次,判死就没有第二次机会了(旧形状里 43 份规格能扛住单页失败)。
+    if got["short"]:
+        for k in got["short"]:
+            pages.pop(k, None)
+        print(f"  ⚠ 丢掉 {len(got['short'])} 个残块(短于 {PAGE_MIN} 字符): "
+              f"{' '.join('page-' + k for k in got['short'])}")
+    nns = sorted(pages)
+    if got["n"] and len(nns) != got["n"]:
+        print(f"  ⚠ 声明 {got['n']} 页,实际取到 {len(nns)} 页 —— 按实际的走")
+    if not (n_lo <= len(nns) <= n_hi):
+        print(f"  ⚠ {len(nns)} 页不在 {n_lo}–{n_hi} 的预算区间内(只报不拦)")
+    print(f"  切分         {len(nns)} 页散文,CSS {len(got['css']):,} 字符"
+          f"{'(声明 ' + str(got['n']) + ' 页)' if got['n'] else ''}")
 
-    # PLAN 必须在 theme 之前。上一轮是反的,结果写 theme 的模型不知道这 20 页要讲什么,
-    # 只能造一个万能两栏 —— 实测 `.split` 在 20/20 页出现。现在 theme 拿得到版式清单。
-    # **规划阶段不再注入设计哲学。** 这是单变量消融量出来的:
-    # 同一份 lec.js、同一个模型、只剥掉 CLAUDE.md 那一块(提示词 29,989 → 24,212 字符),
-    # 事前写死的每一项判据两臂都无法区分 ——
-    #     页数 41 / 40      停留合计 90 / 90     停留中位 2.25 / 2.25
-    #     bullet 中位 3 / 3  take 中位字数 31 / 30
-    #     版式种类 7 / 7     相邻同版式 0 / 0     字段有缺 0 / 0
-    # 无哲学那臂的 take 甚至更锐利(其中一页直接是「把『猿到人』改写成一句不含阶梯的话」
-    # 这样的练习题),而这不是哲学要求的。
-    #
-    # 真正把页数从 18 推到 41 的是「任何一页不超过 2.5 分钟」那一个数 ——
-    # 两轮都注入了同一份哲学、一字未改,而 page-rhythm 里逐字写着
-    # 「不要为了减少页数,把多个本来应该分开处理的认知步骤压缩到同一页」,
-    # 那句话在场,模型照样压成 18 页、14 页恰好 5 条。
-    #
-    # 注意边界:**只切规划这一步**。builder 侧仍然整份注入 ——
-    # pedagogical-restraint / words-and-pictures-one-model / interaction-is-cognitive
-    # 都是 scope="page",那一层没测过,不能顺手一起切。
-    text = cached(run, "PLAN.md", run.root / "PLAN.md",
-                  run.prompt("plan", query=run.query, minutes=run.minutes,
-                             audience=run.audience, scenario=run.scenario,
-                             libs=libs))
-    rows = parse_table(text)
-    if not rows:
-        raise RuntimeError("PLAN.md 第 1 节读不出页表 —— 六列的 markdown 表格没匹配上。"
-                           f"看 {run.root / 'PLAN.md'}")
-    check_table(run, rows, text)
-    world = visual_world(text)
-    check_visual_world(world)
-    used_structures = sorted({r.structure for r in rows})
-    used_layouts = sorted({r.layout for r in rows if r.layout})
-    print(f"  验页表       {len(rows)} 行,知识结构 {len(used_structures)} 种: "
-          f"{' '.join(used_structures)}；版式 {len(used_layouts)} 种: "
-          f"{' '.join(used_layouts) or '（未声明）'}")
-    deck = split_deck(run, text)
-    # 图池排在 theme.css 之前,两个理由:写 theme 的那一步能拿到图的尺寸和平均色;
-    # 而更要紧的是排在 expand() 之前 —— 规格要能点名已经存在的文件。
-    pool = assets(run, text)
+    (run.pages / "plan").mkdir(parents=True, exist_ok=True)
+    for nn in nns:
+        (run.pages / "plan" / f"p{nn}.md").write_text(pages[nn] + "\n", encoding="utf-8")
+    (run.assets / "theme.css").write_text(got["css"].strip() + "\n", encoding="utf-8")
+    lens = sorted(len(pages[nn]) for nn in nns)
+    print(f"  逐页内容     {lens[0]}–{lens[-1]} 字符,中位 {lens[len(lens)//2]}")
 
-    # **给写 CSS 的那一步的是「一张联系表 + 几行字」,不是整张图池表。**
-    # 整张表里「用在哪几页」「title=」这些列是给规格用的,对定配色是冗余;
-    # 而底图长什么样看一眼就知道,不必用平均色和 p95 去描述。
-    sheet = run.assets / "img" / "backdrops.jpg"
-    back_rows = [l for l in (pool or "").splitlines() if "底图" in l]
-    # **audience / scenario 以前没传给这一步。** 决定全套长相的就是这一步,
-    # 而它收不到「读者是谁、在什么场合看」—— 因果上不可能按受众定风格,
-    # 只能照 {world} 抄,或者退回上一次见过的那套。
-    # 同一个模型两轮给出过相反的底色(暗教室→暖近黑;开灯的教室大屏→纸色底),
-    # 两次的理由都是场合的物理条件。所以这两个字段是这一步的判据,不是背景。
-    theme = cached(run, "theme.css", run.assets / "theme.css",
-                   run.prompt("theme", canvas_w=w, canvas_h=h, n_pages=len(rows),
-                              world=world or "（PLAN.md 没有声明,你自己定）",
-                              # **这一步原来不知道这门课在讲什么。** 它收到的是视觉世界、
-                              # 受众、场合、版式名、页数 —— 没有题目,没有主线,没有页表。
-                              # 症状量得到:iface8-20260827 的接口块里 `## 视觉论点` 只有
-                              # 94 字符,几乎就是把 PLAN.md 的「现实参照」重述一遍 ——
-                              # 它没法为一门自己不知道内容的课论证一套视觉。
-                              # `spine()` 是现成的(CONTRACT.md 那一步在用),不另写提取。
-                              query=run.query, spine=spine(text) or "（PLAN.md 里没读出主线）",
-                              audience=run.audience, scenario=run.scenario or "（没写）",
-                              img_pool=("\n".join(back_rows) or "（这一轮没有底图）"),
-                              layouts=("\n".join(f"    {u}" for u in used_layouts)
-                                       or "    （页表没有声明版式）"),
-                              font_floor=skills.FONT_FLOOR,
-                              # plan-direction 全文内联。它讲的是整课视觉世界,
-                              # 对应的就是这一步 —— 而它此前不在 PAGE_WORKFLOWS 里,
-                              # 任何代码路径都到不了 builder。见 skills.direction_block。
-                              direction=skills.direction_block(workflow_root),
-                              # 配色禁用清单。**只挂在这一步** —— 配色决定每轮只发生
-                              # 一次,而建页 agent 只能消费这里给的 token、改不了调色板。
-                              # 实测依据:58 份 theme.css 里 26 份的 --bg 会被
-                              # impeccable 的 isCreamColor() 判成 cream-palette,
-                              # 另有 27 份是近黑暗底(其中 25 份带青辅助色)——
-                              # 93% 落在两套已被记录在案的模型默认里。
-                              theme_bans=skills.theme_slop_block(workflow_root)),
-                   sheet=sheet if sheet.exists() else None)
-    # theme.css 自报的 INTERFACE 块 → 追加进 CHASSIS.md,让它真的到达每一页。
-    #
-    # 这是 nn-11 (Opus 5 × Claude Code) 的行为:协调者主动往 CHASSIS.md 追加了 7,365B、
-    # 9 个小节,第一节就是 `Chrome.mount(cfg) → 返回 <main class="page-main">`。
-    # 我们这条链路上各步互不记忆,所以由 harness 搬 —— 但搬的是**模型刻意写出来的接口块**,
-    # 不是 harness 去 grep 选择器。后者试过,只能猜到类名,猜不到"这个 token 许用在哪"。
-    # 已知陷阱也搬过去。**这是绕开改 `base.js` 的办法** —— 那份是两条线逐字节
-    # 同一份的冻结层,改了就失去「同一个 base」这个单变量前提,而陷阱是真的:
-    # `Deck.fmt` 的签名注释没说它带符号,于是有一页把年代印成「约 +366 万年前」19 处。
+    # 取图排在切分之后:图池表和 CSS 出自同一次调用,所以这一轮 CSS 看不到底图。
+    # 那是「一次调用」换来的代价,已知并接受(旧形状里 backdrops.jpg 会作为图片
+    # 喂给写 theme 的那一步)。图片本身仍然按表抓、按页发。
+    pool = assets(run, got["images"])
+
     ch = run.assets / "CHASSIS.md"
     if "已知陷阱" not in ch.read_text(encoding="utf-8"):
         ch.write_text(ch.read_text(encoding="utf-8").rstrip() + '''
-
-## 已知陷阱
-
 `Deck.fmt(v, d)` **给非负数加 `+`** —— 它是给增量用的（`+3.2%`、`余量 +0.42 cm`）。
 **绝对量不要用它**：年代、质量、温度、距离一律 `v.toFixed(d)`。
 实测代价：一页把年代印成「约 +366 万年前」，19 处。
 ''', encoding="utf-8")
         print("  接口交接     已知陷阱（Deck.fmt 带符号）→ CHASSIS.md")
 
-    # CSS 源码现在整份进 builder 的 system 块,所以**不再把 INTERFACE 块追加进
-    # CHASSIS.md**。那条搬运存在的唯一理由是「建页 agent 读不到 CSS 源码」,
-    # 理由没了搬运也就没了 —— 留着只会让同一份声明在上下文里出现两遍。
-    # 接口块本身仍然有用(它写的是源码里读不出来的:用途、关系、何时用哪个),
-    # 由 `_interface()` 取出来喂给写规格那一步。
-    m = _interface(theme)
-    if m:
-        print(f"  接口交接     INTERFACE 块 {len(m.group(1).strip()):,} 字符 → 写规格那一步")
-    else:
-        print("  接口交接     ⚠ theme.css 里没有 INTERFACE 块 —— "
-              "规格点不了版面类,建页 agent 只能自己从 CSS 源码里找")
-
-    # 闸:theme.css 必须真的给 mount 注入的那套类名写了样式。
-    #
-    # **mount 类名覆盖那道闸删了。** 它查的是「theme.css 有没有给 mount 注入的
-    # 每个类名写样式」,而 mount 已经不存在 —— 版面由建页的 agent 自己定,
-    # theme.css 给的是可拼装的 token 和骨架类,不再有一份"必须覆盖"的类名清单。
-    # CONTRACT.md 那一步 2026-08-28 删掉:技术契约改成仓库常量 `prompts/tech.md`,
-    # 由 builder 填页数和库清单直接进 system 块(见 core/builder.py 的 TECH_SLOTS)。
-    # 每轮重写一份跳轮不变的东西,既多一次调用,又让 21 页共享的前缀按轮次变化。
-
-    # **规格排在 theme.css 和 CONTRACT.md 之后。** 2026-08-23 调的序,理由是量出来的:
-    # 原来 expand() 在 theme 之前,所以写规格时 `theme.css` 还不存在 ——
-    # 五种骨架类全都生成了、带排版原语、页面 46/48 在用,而 **48 份规格一份都没点过名**,
-    # 「这一页用哪套骨架」由 48 个并行建页 agent 各自现场决定一次。
-    # 墙钟代价≈0:theme.css 是一次串行调用(实测 ~220 秒),expand 本身 20–50 路并行 98 秒。
-    #
-    # 喂进去的是 theme 的 INTERFACE 块。
-    # **原来还喂 lec 的接口签名和常量实际值,`lec.js` 删掉之后这两样没有了。**
-    # 那次消融验过的是「给值比给键名好」(同一建页模型 Edit 6.5→1.1、
-    # 画布占满 24/48→44/44、占用比 51%→63%),这条结论仍然成立 ——
-    # 只是承载它的地方从 `Lec.K` 换成了每页散文自己写出真实数值。
-    expand(run, rows, deck, img_pool=pool,
-           theme_api=(m.group(1).strip() if m else
-                      "（theme.css 没写 INTERFACE 块,这一轮点不了名）"),
-           workflow_root=workflow_root)
-
-    skeletons(run, len(rows))
+    skeletons(run, len(nns))
     (run.root / "briefs.json").write_text(
-        json.dumps([b.as_tool_input() for b in briefs(run, rows, workflow_root)],
+        json.dumps([b.as_tool_input() for b in briefs(run, nns, pool)],
                    ensure_ascii=False, indent=2), encoding="utf-8")
-
     print(f"\n  合计 {time.time()-t0:.0f}s  →  {run.root}")
-
-    # 这里原来跑 `plan_quality` 的进程内自检。**2026-08-28 连同整套 plan 层仪器一起删。**
-    # 27 行判据里 18 行读的是 `PLAN.md` / `plan/pNN.md`,而这两样在新形状里不存在;
-    # `check_coverage` 更是缺 `PLAN.md` 就 `sys.exit`。留着只会全表熄灭 ——
-    # 而一个恒读同一个值的判据比没有判据更坏,这条这个仓库栽过不止一次。
-    # 真正的判据要按新产物重建,不是把旧的凑合着接上。
-    return {"pages": len(rows), "root": str(run.root)}
+    return {"pages": len(nns), "root": str(run.root)}
 
 
 def main() -> None:
@@ -1669,14 +1059,14 @@ def main() -> None:
     n = a.parse_args()
     if not Path(n.prompts).is_dir():
         raise SystemExit(f"✗ --prompts 指的 {n.prompts} 不是目录")
-    missing = [f"{x}.md" for x in ("brief", "contract", "lec", "plan", "spec", "theme")
+    missing = [f"{x}.md" for x in ("brief", "deck")
                if not (Path(n.prompts) / f"{x}.md").is_file()]
     if missing:
         raise SystemExit(f"✗ --prompts 指的 {n.prompts} 缺 {', '.join(missing)} —— "
                          f"缺哪份要当场报错,不能等跑到那一步才 FileNotFoundError。")
     if not Path(n.skills).is_dir():
         raise SystemExit(f"✗ --skills 指的 {n.skills} 不是目录 —— "
-                         f"缺了它图池会全空、逐页规格也点不到技法文档,而那两条都只报警。")
+                         f"缺了它取图脚本找不到,图池会全空,而那条只报警。")
     workflow_root = Path(n.workflows)
     if not workflow_root.is_dir():
         raise SystemExit(f"✗ --workflows 指的 {workflow_root} 不是目录")

@@ -11,13 +11,14 @@
 
 先读完再动手。
 
-仅在需要确认库版本时读 `{assets}/lib/LIBS.md`。
-不要读取其他 `page-*.html`、`PLAN.md`，也不要打开 `assets/` 下 JS 或库文件的实现源码。
+需要库的用法细节时读 `{assets}/lib/LIBS.md`。
+不要读取其他 `page-*.html`，也不要打开 `assets/` 下 JS 或库文件的实现源码。
 
-{assignment}
+技法文档的清单在 system 提示里。**先判断这一页属于哪一类，再用 `Skill` 取一份读了动手**；
+清单里没有对应的就自己写，不必硬凑。
 
 把现有空骨架改成完整页面。保留 `#stage`、`data-page` 和 `data-total`，不要修改 `assets/`，
-也不要新建其他文件。本页预计停留 {stay}，内容量应与此相称。
+也不要新建其他文件。
 
 完成前用 `Check` 检查 `{pid}.html` 的真实渲染，反复改到不再报 ✗ 为止。
 有交互时覆盖每个主要状态；只检查初始状态不算完成。不要另写 Playwright 脚本。

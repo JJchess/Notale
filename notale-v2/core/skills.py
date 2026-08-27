@@ -127,6 +127,27 @@ FONT_FLOOR = ("正文与成句说明 ≥16px，控件标签、图例、图注和
 # ——「CONTRACT 才是唯一覆盖 21/21 页的载体」—— 现在由 tech.md 承担了。
 
 
+DIRECTION_FILES = (
+    "plan-direction/SKILL.md",
+    "plan-direction/references/direction-recipes.md",
+    "plan-direction/references/material-and-effects.md",
+)
+
+
+def direction_block(root: Path = WORKFLOWS) -> str:
+    """把 plan-direction 全文拼成一块,给 prompts/theme.md 用。"""
+    parts = ["下面是视觉方向的作业方法,已**原文内联**,不需要再去读任何文件。",
+             "它规定的是这套讲义的视觉世界:配色、材质、几何、字体角色、标志性元素、"
+             "媒体处理和动效基调。按它做,不要另起一套。"]
+    for rel in DIRECTION_FILES:
+        f = root / rel
+        if not f.is_file():
+            raise FileNotFoundError(f"direction_block 需要 {f}，但它不存在")
+        parts.append(f"<direction src=\"{rel}\">\n"
+                     + f.read_text(encoding="utf-8").strip() + "\n</direction>")
+    return "\n\n".join(parts)
+
+
 ANTI_SLOP_FILES = (
     ("anti_ai_slop_copy", "scrub-copy-slop.md"),
     ("anti_ai_slop_visual", "scrub-visual-slop.md"),
