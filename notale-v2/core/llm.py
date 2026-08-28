@@ -623,33 +623,41 @@ def to_messages(body: dict) -> dict:
     # reasoning.effort → Anthropic 的 thinking。**必须显式翻,不能默默丢。**
     # 静默丢参数是这个文件反复栽过的形状(见 _adapt_chat 那段 reasoning 的账)。
     #
-    # 注意实测结论:**这条网关目前不转发 thinking** —— 2026-08-27 验过,
-    # 传 {"type":"enabled","budget_tokens":2000} 与完全不传,
-    # `output_tokens_details.thinking_tokens` 都是 0。所以这段翻译现在是空转。
-    # 留着是因为(a)换路由就生效,(b)不留的话「--effort 到底管不管用」
-    # 又会变成一个只能靠探针回答的问题。
-    eff = (body.get("reasoning") or {}).get("effort")
-    budget = {"low": 0, "medium": 4096, "high": 16384}.get(str(eff or "").lower(), 0)
-    if not budget:
+    # **2026-08-28:这条网关换了控制思考的接口。**
+    # 原来的 {"type":"enabled","budget_tokens":N} 现在直接 400:
+    #   「"***.***.enabled" is not supported for this model.
+    #     Use "***.***.adaptive" and "output_config.effort" to control
+    #     thinking behavior.」
+    # 而且它照旧被误判成网关抖动特征,按退避梯子重试八次才放弃 ——
+    # 看起来像网络不稳,其实是请求体的形状过期了。
+    #
+    # 当天逐个探针实测(AWS-Claude-Sonnet-5,裸 /v1/messages):
+    #   不传 thinking                    → 200,首块就是 thinking(**默认开着**)
+    #   {"type":"disabled"}              → 200,只有 text
+    #   {"type":"enabled",budget_tokens} → **400,已不支持**
+    #   {"type":"adaptive"}              → 200
+    #   {"type":"adaptive"} + output_config.effort=low/medium/high → 200(三档都收)
+    # max_tokens=128000 在 adaptive 和 disabled 下都收 —— 不再往上加预算,
+    # 也就不会再撞 128,000 的硬上限。
+    #
+    # budget_tokens 这个概念在这条路由上没有了,所以「预算加在 max_tokens 之上」
+    # 那套(677152d)一并作废;low 仍旧走 disabled,理由见下。
+    eff = str((body.get("reasoning") or {}).get("effort") or "").lower()
+    if eff not in ("medium", "high"):
         # **必须显式关。** 这个模型在这条路由上**默认就开着 extended thinking**:
         # 不传 thinking 时,流里第一个 content_block 的类型就是 `thinking`,
         # 然后连续几十个 ping、一个 delta 都没有 —— 实测 PLAN.md 那种规划任务
         # 光思考就超过 4 分钟,而非流式请求要等思考全部结束才返回,于是表现为「卡死」。
         # 传 {"type":"disabled"} 之后首块类型直接是 text。
         out["thinking"] = {"type": "disabled"}
-    if budget:
-        # **预算要加在原额度之上,不能从里面切。**
-        # Anthropic 的 thinking token 是从 max_tokens 里扣的。2026-08-27 实测:
-        # max_tokens=8000 + budget=4096 → thinking 吃掉 6070,正文只剩 4,283 字符、
-        # stop_reason=max_tokens;planner 的 lec.js 那一步(要一万多字符)因此直接
-        # 返回空正文,触发 EmptyReply 退避。
+    else:
+        # medium/high 才开思考。**开的方式是 adaptive + output_config.effort**,
+        # 由模型自己决定想多久,请求侧不再给 token 预算。
         #
-        # 另外更正一条我先前写错的结论:这条网关**是转发 thinking 的**。
-        # 之前判它「不转发」用的是几十 token 的玩具提示 —— 模型不需要思考,
-        # thinking_tokens 自然是 0。换成真实任务立刻就有 6,070。
-        # **拿玩具样本判一个只在负载下才显现的行为,判据本身是空的。**
-        out["thinking"] = {"type": "enabled", "budget_tokens": budget}
-        out["max_tokens"] = out["max_tokens"] + budget
+        # ponytail: 档位原样透传给网关(它 low/medium/high 三档都收),
+        # 不在这边再做一层映射 —— 多一层映射就多一处会和上游漂移的东西。
+        out["thinking"] = {"type": "adaptive"}
+        out["output_config"] = {"effort": eff}
 
     tools = body.get("tools") or []
     if tools:

@@ -263,27 +263,46 @@ class MessagesWireTests(unittest.TestCase):
         return b
 
     def test_effort_is_translated_not_dropped(self) -> None:
-        """--effort 在这条 wire 上曾经静默无效。别再退回去。"""
-        # low = 显式 disabled,不是"不传" —— 不传等于放任模型默认开思考,
-        # 那正是 PLAN.md 卡死 400 秒的原因。
+        """--effort 在这条 wire 上曾经静默无效。别再退回去。
+
+        2026-08-28 起网关换了接口:medium/high 要用 adaptive + output_config.effort,
+        原来的 {"type":"enabled","budget_tokens":N} 会 400。low 仍旧显式 disabled ——
+        不传等于放任模型默认开思考,那正是 PLAN.md 卡死 400 秒的原因。
+        """
         self.assertEqual(llm.to_messages(self._body("low"))["thinking"],
                          {"type": "disabled"})
-        for eff, budget in (("medium", 4096), ("high", 16384)):
-            th = llm.to_messages(self._body(eff)).get("thinking")
-            self.assertEqual(th, {"type": "enabled", "budget_tokens": budget})
+        for eff in ("medium", "high"):
+            m = llm.to_messages(self._body(eff))
+            self.assertEqual(m["thinking"], {"type": "adaptive"})
+            self.assertEqual(m["output_config"], {"effort": eff})
 
-    def test_thinking_budget_is_added_on_top_of_max_tokens(self) -> None:
-        """Anthropic 的 thinking token 从 max_tokens 里扣 —— 不加额度就会挤空正文。
+    def test_enabled_with_budget_tokens_is_never_sent(self) -> None:
+        """**这条形状现在是 400。** 逐个探针实测(AWS-Claude-Sonnet-5,裸 /v1/messages):
 
-        实测:max_tokens=8000 + budget=4096,thinking 吃掉 6070,正文只剩 4,283 字符、
-        stop_reason=max_tokens;planner 的 lec.js 那一步因此返回空正文触发 EmptyReply。
+            不传 thinking                    → 200,首块就是 thinking(默认开着)
+            {"type":"disabled"}              → 200,只有 text
+            {"type":"enabled",budget_tokens} → 400 「not supported for this model」
+            {"type":"adaptive"}              → 200
+            {"type":"adaptive"} + output_config.effort → 200(low/medium/high 都收)
+
+        400 还会被误判成网关抖动、按退避梯子重试八次,看起来像网络问题。
         """
-        base = self._body("medium")["max_output_tokens"]
-        m = llm.to_messages(self._body("medium"))
-        self.assertEqual(m["thinking"], {"type": "enabled", "budget_tokens": 4096})
-        self.assertEqual(m["max_tokens"], base + 4096)
-        # low 不开思考,额度就不该被改
-        self.assertEqual(llm.to_messages(self._body("low"))["max_tokens"], base)
+        for eff in ("low", "medium", "high"):
+            m = llm.to_messages(self._body(eff))
+            self.assertNotEqual(m["thinking"].get("type"), "enabled")
+            self.assertNotIn("budget_tokens", m["thinking"])
+
+    def test_max_tokens_is_left_alone(self) -> None:
+        """没有 token 预算了,就不该再动 max_tokens —— 动了就会撞 128,000 的硬上限。
+
+        2026-08-27 那轮 Sonnet 正是 128000+4096=132096 撞上
+        「max_tokens: 132096 > 128000, which is the maximum allowed number of
+        output tokens for ***.claude-sonnet-5」,而 medium 恰好是构图档,
+        症状是「首次 Write 一开 medium 就整页崩」。
+        """
+        base = self._body()["max_output_tokens"]
+        for eff in (None, "low", "medium", "high"):
+            self.assertEqual(llm.to_messages(self._body(eff))["max_tokens"], base)
 
     def test_low_effort_disables_thinking_explicitly(self) -> None:
         """**不传 thinking ≠ 关闭。** 这个模型在这条路由上默认就开着 extended thinking:

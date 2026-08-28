@@ -1,0 +1,68 @@
+{
+  "date": "2026-08-28",
+  "question": "AWS-Claude-Sonnet-5 现在能不能端到端跑通 planner + builder（plan/首次 Write = medium，其余 low）",
+  "verdict": "能。planner 20 页跑通，builder 3/3 交付、全部自己收尾、渲染干净。",
+
+  "model": "AWS-Claude-Sonnet-5",
+  "wire": "messages",
+  "effort": "planner=medium；builder compose=medium（首次 Write 及之前）/ repair=low（之后）",
+  "note_on_effort": "这个二分由 builder.py:433 的 page.wrote 判据实现，按页独立，精确等于用户要的语义；且已是 config.yaml:70-71 的默认值。",
+
+  "blocker_1_api_changed": {
+    "症状": "planner 一起步就 400，被误判成网关抖动特征「error doing the fallback」，按退避梯子重试八次才放弃 —— 看起来像网络不稳，其实是请求体形状过期。",
+    "原文": "\"***.***.enabled\" is not supported for this model. Use \"***.***.adaptive\" and \"output_config.effort\" to control thinking behavior.",
+    "探针实测": {
+      "不传 thinking": "200，首块就是 thinking（默认开着，e6479cc 的结论仍成立）",
+      "{type:disabled}": "200，只有 text",
+      "{type:enabled,budget_tokens}": "400，已不支持",
+      "{type:adaptive}": "200",
+      "{type:adaptive}+output_config.effort": "200，low/medium/high 三档都收"
+    },
+    "改法": "core/llm.py：medium/high → {type:adaptive} + output_config.effort（原样透传档位）；low 仍旧 {type:disabled}。budget_tokens 概念在这条路由上没有了，677152d 那套「预算加在 max_tokens 之上」一并作废，max_tokens 保持 base 不动。",
+    "顺带作废": "2026-08-27 那个 128000+4096=132096 撞 128,000 硬上限的 400 现在够不着了 —— 不再往上加预算就不会越界。我先写的 clamp 因此被这版改动取代。"
+  },
+
+  "blocker_2_environment": {
+    "症状": "会话中途 /home/zhuyifan 整个目录被删（/home 是 /dev/vda1 上的普通目录，不是挂载，无 fstab/autofs 条目；同级 ganhongwen/lixujun 等都还在）。项目的 python 及其依赖在里面，一起没了。",
+    "修法": "往幸存的 /data1/home/zhuyifan/miniforge3 装回 openai/PyYAML/python-dotenv/numpy/opencv-python-headless/playwright/pytest + playwright chromium；在 PATH 首位 /data1/home/zhuyifan/.local/bin 加 python3/python 软链。",
+    "隐藏的第二层": "该 miniforge 的 OpenSSL 证书路径是编译进去的，指向已删的 /home/zhuyifan/miniforge3/ssl/cert.pem，于是 urllib 报 CERTIFICATE_VERIFY_FAILED → 被包装成 APIConnectionError 退避八次。只打在用 urllib 的 messages wire 上；httpx/openai 那条自带 certifi 不受影响，所以症状只在 Sonnet 上出现。用 sitecustomize.py 兜底指回 sys.prefix/ssl/cert.pem。"
+  },
+
+  "planner": {
+    "seconds": 363, "exit": 0, "pages": 20,
+    "tool_calls": ["pages.md", "theme.css"],
+    "tok_in": 19415, "tok_out": 34444,
+    "逐页内容字符": "420–638，中位 542",
+    "theme_css": "257 行，首行不是围栏，_valid_css 通过，含 --pad-x",
+    "对照": "GPT-5.6-Sol 同题 103s / out 7,896 tok。Sonnet 慢 3.5×、输出多 4.4×，但产物合格。"
+  },
+
+  "builder": {
+    "design": "跑在 GPT 刚跑过的同一套 deck 的拷贝上（runs/deck-tool-20260828 → sonnet-3p-20260828），同一份逐页规格，GPT/Sonnet 直接对打。",
+    "delivered": "3/3", "wall_minutes": 7.0, "calls_total": 47,
+    "per_page": [
+      {"page": "page-06", "sonnet_calls": 9,  "sonnet_min": 2.8, "gpt_calls": 9, "gpt_min": 2.0, "termination": "no_tool_use"},
+      {"page": "page-09", "sonnet_calls": 19, "sonnet_min": 6.4, "gpt_calls": 7, "gpt_min": 1.7, "termination": "no_tool_use"},
+      {"page": "page-16", "sonnet_calls": 19, "sonnet_min": 7.0, "gpt_calls": 7, "gpt_min": 1.3, "termination": "no_tool_use"}
+    ],
+    "termination": "三页全是 no_tool_use —— 自己收尾，没有一页被 max_steps 掐停",
+    "tok_in": 1421526, "tok_out": 46873, "cache_hit": "87%",
+    "gpt_same_three_pages_tok_in": 532780,
+    "render": "3/3 渲染无报错、无溢出、无裁切；真失败 0、主题告警 0（密度偏低是「参考」不是失败项）"
+  },
+
+  "the_big_change_vs_0827": {
+    "上一轮": "88 分钟只结束 8/18 页，5 成 3 败，4 页靠闸掐停，单页最长 60 分钟",
+    "另一套 deck 的 sonB-nodense-20260828": "page-06 = 100 次调用 / 44.5 分 / max_steps 掐停；一页输入 9,138,408 tok",
+    "这一轮": "同样这三个页号 9/19/19 次调用，全部自己收尾，合计 7 分钟",
+    "诚实的话": "deck 不同、n=1/臂，读不出「哪一项改动带来的」。但「必被掐停」变成「全部自己收尾」这个量级差，不像噪声。"
+  },
+
+  "new_finding_worth_chasing": {
+    "现象": "Sonnet 这三页 **Skill 用了 0 次、reference 读了 0 次** —— workflow/技法文档整条被绕过。GPT 同一套 deck 上每页都 skill 1、20 页共读 94 次 reference。",
+    "为什么要紧": "刚做的 interactive-widget 切分、以及整个 workflow 路由，对 Sonnet 这一轮完全没起作用；它是靠自己写完的。所以这轮的收敛改善不能归功于切分。",
+    "还有": "Bash 仍在用（页均 2–8 次），但这次没出现上一轮那种跑去别的 run 目录翻文件、写 test_marker 的游荡。"
+  },
+
+  "not_answered": "n=1/臂、3 页不是 20 页。答的是「修掉 400 之后 builder 收不收敛」，不是完整交付率。要交付率得铺全量 20 页。"
+}
