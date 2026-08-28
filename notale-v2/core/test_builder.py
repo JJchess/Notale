@@ -34,6 +34,27 @@ def done_response(text="done"):
     return SimpleNamespace(output=[message], usage=None, id="req_done")
 
 
+class DeckMapPreloadTests(unittest.TestCase):
+    def test_shared_preload_carries_the_deck_map(self) -> None:
+        """整份页表进 system 块 —— builder 第一次看得见邻页在讲什么。
+
+        传整份而不是相邻两页是缓存决定的:整份对所有页逐字节相同,走跨页共享;
+        按页裁剪会让 system 块按页不同,正是 8-28 修掉的那个杀缓存 bug。
+        """
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "pages" / "assets").mkdir(parents=True)
+            (root / "pages" / "plan").mkdir()
+            (root / "pages" / "assets" / "CHASSIS.md").write_text("chassis", encoding="utf-8")
+            (root / "pages" / "assets" / "theme.css").write_text(":root{}", encoding="utf-8")
+            (root / "pages" / "plan" / "pages.md").write_text(
+                "# page-01 [标题页]\n开场。", encoding="utf-8")
+            text, paths = builder.shared_preload(root, 2)
+        self.assertIn("<deck_map>", text)
+        self.assertIn("开场。", text)
+        self.assertIn("pages.md", paths)      # pre_hit 指路要认识它
+
+
 class BuilderStopTests(unittest.TestCase):
     def test_no_tool_use_stops_even_when_no_workflow_was_loaded(self) -> None:
         response = done_response()

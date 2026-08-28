@@ -269,7 +269,14 @@ _PAGE_RE = re.compile(r"page-\d+\.html$")
 # 2,334,700 → 3,790,345(+62%)。机制:system 块逐字节跨页共享、缓存命中 88-91%,
 # 而 Read 回来的全文落在每页自己的历史里,几乎全价、还驻留到该页结束。
 # 「省 system 块」和「省总输入」不是一回事,后者才是钱。
-PRELOAD_TAGS = (("chassis", "CHASSIS.md"), ("theme_css", "theme.css"))
+# <deck_map> 2026-08-29 加入:整份 pages.md(全部页的标签+一句话)。
+# 页间一致性以前全靠 planner 写规格时的先见 —— builder 看不见邻页在讲什么,
+# deck.md 要求"相邻页不重复论证",可执行的人从没拿到过页表。
+# 传**整份**而不是相邻两页,是缓存决定的:整份对所有页逐字节相同,走 system 块
+# 跨页共享;按页裁剪的"邻页版"要么进 brief(只有局部视野)、要么让 system 块
+# 按页不同 —— 后者正是 8-28 修掉的那个杀缓存 bug。极简规格下整份只有 ~4KB。
+PRELOAD_TAGS = (("chassis", "CHASSIS.md"), ("theme_css", "theme.css"),
+                ("deck_map", "pages.md"))
 
 # 技术契约 2026-08-28 从「每轮让模型写一份 CONTRACT.md」改成**仓库常量**
 # `prompts/tech.md`,由 builder 填几个槽位。
@@ -332,7 +339,8 @@ def shared_preload(root: Path, n_pages: int, prompts: Path = None) -> tuple[str,
     `tech.md` 不进路径表 —— 它是仓库常量,不在 run 目录下,模型没有路径可读。
     """
     paths = {"CHASSIS.md": root / "pages" / "assets" / "CHASSIS.md",
-             "theme.css": root / "pages" / "assets" / "theme.css"}
+             "theme.css": root / "pages" / "assets" / "theme.css",
+             "pages.md": root / "pages" / "plan" / "pages.md"}
     text = "\n\n".join(_wrap(tag, paths[name]) for tag, name in PRELOAD_TAGS)
     return text + "\n\n" + tech_block(root, n_pages, prompts), paths
 
@@ -531,7 +539,7 @@ def build_one(page: Page, pages_dir: Path, trace: Path, skill_root: Path,
                 # 静默会让模型以为文件真的没了,然后自己发明一份契约。
                 page.preload_reads.append(pre_hit)
                 res = (f"`{pre_hit}` 的全文已经在你的 system 提示里了"
-                       f"(标签 `<chassis>` / `<contract>` / `<theme_css>` / `<page_spec>`),"
+                       f"(标签 `<chassis>` / `<theme_css>` / `<deck_map>` / `<page_spec>`),"
                        f"内容逐字相同。往上翻即可,不用再 Read —— "
                        f"这一次 Read 没有给你任何新信息。")
             else:
