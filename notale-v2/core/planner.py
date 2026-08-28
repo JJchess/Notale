@@ -35,6 +35,7 @@ from pathlib import Path
 
 from . import skills
 from . import imgcut
+from . import tools
 from .artifacts import Brief
 from . import llm
 from .llm import ROOT, ask, config, fill, strip_fence
@@ -91,7 +92,9 @@ class Run:
 # 阈值取实测最小值的**约 1/6**。刻意定得这么松:这道闸只该抓
 # "0 字符 / out=229 tok" 那种灾难性空响应,不该去评判 Sonnet 写得简不简洁 ——
 # 换模型后产物合理地小一截是可能的,把正常产出判死的代价比漏判高得多。
-MIN_CHARS = {"deck": 6000}
+# 走工具之后两份产物各有各的下限。CSS 约 12k 字符、散文 20 页约 7k。
+# 取实测的约 1/3,只抓灾难性空响应,不评判写得简不简洁。
+MIN_CHARS = {"theme.css": 3000, "pages.md": 2500}
 # 产物**字符数**的上限,和 MIN_CHARS 对称。`MAX_OUT` 管的是输出 token,
 # 从来没有管过产物有多长 —— 而产物长度才是下游成本:CONTRACT.md 会被每个建页 agent
 # 各读两遍,一份 31,493 字符的契约在 50 页上就是 3.1MB 的重复输入。
@@ -334,100 +337,102 @@ def _valid_css(text: str) -> str:
     return ""
 
 
-# ── 一次调用的产物:切分与闸 ──────────────────────────────────────────
+# ── 一次调用的产物:由模型用 `Write` 工具直接写文件 ──────────────────────
 #
-# 单次回复里装三样东西,用三条分隔行隔开(见 prompts/deck.md 的「输出格式」):
-#     页数: N
-#     === IMAGES ===   图池表,或者一行「本套无需图池」
-#     === CSS ===      ```css 整份 theme.css ```
-#     === PAGES ===    # page-01 …  # page-NN,每页一段散文
-#     === END ===
+# **2026-08-28 从「分隔行 + 从散文里抠」改成走工具。这是根因修复,不是加判据。**
 #
-# **顺序是设计过的:不可分割的先出,可分割的最后出。** CSS 写一半等于全废、
-# 而且它卡住每一页;散文截了尾巴仍然能交前 N-k 页。所以截断时损失最小的排法
-# 是 CSS 在前、页面在后,而且可以**局部接受**。
-_N_DECL = re.compile(r"^\s*页数[:：]\s*(\d+)", re.M)
-_MARK = {k: re.compile(rf"^===\s*{k}\s*===\s*$", re.M)
-         for k in ("IMAGES", "CSS", "PAGES", "END")}
+# 原来的形状是模型吐一篇复合散文(`=== CSS ===` / `=== PAGES ===` 分隔行),
+# harness 再用 `_extract_code` 的候选启发式把 CSS 切出来。代价当天就付了:
+# CSS 首行残留一个 markdown 围栏,浏览器把它当选择器、连同紧随的 `:root` 一起
+# 丢弃,**整套 token 失效、20 页全部无样式渲染**,而所有既有判据都报绿
+# (文件在、HTTP 200、解析出 89 条规则、`_valid_css` 的文本检查全过、
+#  selfcheck 报 0 失败、占用比因为元素散开反而更高)。
+#
+# 走工具之后文件内容是 tool call 的 JSON 字符串字段:**没有围栏可言,
+# 没有分隔行要找,没有候选要猜** —— 这一整类 bug 消失,而不是被判据兜住。
+#
+# 仍然是**一次模型调用**:一个响应里带多个 tool call 在这条路由上是实测可行的
+# (builder 日志里的 `步 2 Read Read Read`)。大号工具参数也是实测过的 ——
+# builder 常规地把整页 HTML 当 `Write` 的参数写出去,iface8 那轮 21 次 Write
+# 输出中位 5,253 tok、最大 7,893,而这里的 theme.css 约 3,110 tok。
+#
+# **只发两个 Write,不是每页一个。** 一次响应里发 21 个 tool call 在这条路由上
+# 没有实测证据(观察到的最大是 5 个小 Read);而按 `# page-NN` 切散文**不是**
+# 出过问题的地方 —— 那里没有围栏、没有代码,`_split_specs` 已经跑了很多轮。
+# 只把出过事的那一份挪到工具上,改动面最小。
+PAGE_MIN = 60          # 一页散文短于这个字符数就当是被截断的残块
+N_FLOOR, N_CEIL = 4, 60  # 只兜「模型把页数写飞了」;真正的区间由 --minutes 推
 
-# 一页散文短于这个字符数,就当它是被截断的残块。
-# 60 是保守值:实测一段合格的页面散文在 200–400 字符,而「# page-21」加半句话
-# 大约 20–40 字符。定在中间,宁可放过也不要把写得短的正常页丢掉。
-PAGE_MIN = 60
-# 页数的合理区间由 `--minutes` 推,见 plan_run。这两个数只兜「模型把 N 写飞了」。
-N_FLOOR, N_CEIL = 4, 60
-
-
-def _slice(text: str, a: str, b: str | None) -> str:
-    """取两条分隔行之间的正文。`a` 找不到就返回空串。"""
-    m = _MARK[a].search(text)
-    if not m:
-        return ""
-    rest = text[m.end():]
-    if b:
-        n = _MARK[b].search(rest)
-        if n:
-            return rest[:n.start()]
-    return rest
+CSS_REL = "pages/assets/theme.css"
+PAGES_REL = "pages/plan/pages.md"
 
 
-def segment(text: str) -> dict:
-    """把一次回复切成 {n, images, css, pages, truncated}。
+def write_targets(run: Run) -> dict:
+    """允许模型写的两个目标。**白名单,不是建议。**
 
-    三个锚点各自独立:哪一段的分隔行丢了,只影响那一段,不会连累另外两段。
-    `pages` 复用 `_split_specs` —— 它已经是按页号而非位置映射、同页号取最后一次、
-    丢弃前言,正是这里要的行为(`# page-NN` 这个标题形状就是为了原样复用它才定的)。
+    `tools.run` 的 `Write` 会写任意绝对路径 —— 不限死就等于把 run 目录以外
+    也交给模型。builder 那边靠 `stray()` 事后扫野文件,这里更严:只许这两个,
+    写别处当场拒绝并把理由回喂(和 builder 处理畸形工具参数同一套做法)。
     """
-    m = _N_DECL.search(text)
-    n = int(m.group(1)) if m else 0
-    images = _slice(text, "IMAGES", "CSS").strip()
-    css_raw = _slice(text, "CSS", "PAGES")
-    # **只对 CSS 那一段跑 `_extract_code`,不要对全文跑。**
-    # `_valid_css` 只看前 400 字符像不像散文,拿整篇回复喂给它会被判通过,
-    # 于是把「页数 + 图表 + CSS + 全部散文」当成一份样式表写进 theme.css。
-    css = _extract_code(css_raw, _valid_css) if css_raw.strip() else ""
-    body = _slice(text, "PAGES", "END") or _slice(text, "PAGES", None)
-    if not body.strip():
-        # 分隔行丢了就退回第一个 `# page-NN`,别因为一行标记丢掉全部页面。
-        h = re.search(r"(?m)^#\s+page-\d+", text)
-        body = text[h.start():] if h else ""
-    pages = _split_specs(body, range(1, N_CEIL + 1)) if body.strip() else {}
-    # 截断判定:缺 END、或块数不够、或最后一块太短。
-    # **判出来也不判死** —— 丢掉残块、按完整块数继续,详见 plan_run 里的处理。
-    short = [k for k, v in pages.items() if len(v) < PAGE_MIN]
-    truncated = (not _MARK["END"].search(text)) or bool(short) or (n and len(pages) < n)
-    return {"n": n, "images": images, "css": css, "pages": pages,
-            "truncated": truncated, "short": sorted(short)}
+    return {(run.root / CSS_REL).resolve(): "theme.css",
+            (run.root / PAGES_REL).resolve(): "pages.md"}
 
 
-def _valid_deck(text: str) -> str:
-    """一次调用产物的闸。
+def take_writes(calls, run: Run) -> tuple[dict, list]:
+    """把一次响应里的 `Write` 调用收下来。返回({目标名: 内容}, [拒绝原因])。
 
-    每一条拦的都是**提示词里给了完整样例、照抄就能满足**的东西 ——
-    `cached()` 重试是原样重发同一个提示词、`bad` 只打印不回灌,
-    所以拦一件模型不知道怎么改的事,等于三次之后把整轮判死。
+    只收白名单里的两个目标;别的记成拒绝原因,交给上层决定重试还是报错。
     """
+    allow = write_targets(run)
+    got, refused = {}, []
+    for c in calls:
+        if c.name != "Write":
+            refused.append(f"只给了 `Write` 工具,不该调 `{c.name}`")
+            continue
+        try:
+            a = json.loads(c.arguments or "{}")
+        except json.JSONDecodeError as ex:
+            refused.append(f"Write 的参数不是合法 JSON({ex}) —— 多半是被截断了")
+            continue
+        raw = str(a.get("file_path") or "")
+        try:
+            target = Path(raw).resolve()
+        except OSError:
+            target = None
+        name = allow.get(target)
+        if not name:
+            refused.append(f"不许写 `{raw}`;这一步只能写 {CSS_REL} 和 {PAGES_REL}")
+            continue
+        got[name] = str(a.get("content") or "")
+    return got, refused
+
+
+def split_pages(text: str) -> dict:
+    """`pages.md` → `{nn: 正文}`。复用 `_split_specs`:按页号而非位置映射、
+    同页号取最后一次、丢弃前言。切散文不是出过问题的地方,原样用。"""
+    return _split_specs(text, range(1, N_CEIL + 1))
+
+
+def _valid_pages(text: str) -> str:
+    """`pages.md` 的闸。只拦提示词里给了样例、照抄就能满足的东西 ——
+    `cached()` 重试是原样重发、`bad` 只打印不回灌,拦一件模型不知道怎么改的事
+    等于三次之后判死整轮。"""
     bad = _looks_like_prose(text)
     if bad:
         return bad
-    got = segment(text)
-    if not got["n"]:
-        return "第一行缺 `页数: N` —— 它是页数校验的唯一依据,照输出格式原样写一行"
-    if not (N_FLOOR <= got["n"] <= N_CEIL):
-        return f"`页数: {got['n']}` 不合理(应在 {N_FLOOR}–{N_CEIL} 之间)"
-    if not got["css"]:
-        return ("`=== CSS ===` 和 `=== PAGES ===` 之间没有取出可用的样式表 —— "
-                "要在这两条分隔行之间放一个 ```css 围栏,里面是完整的 theme.css")
-    if not got["pages"]:
-        return "`=== PAGES ===` 之后没有 `# page-NN` 块 —— 每页一个,页号两位、从 01 连续编"
-    nn = sorted(int(k) for k in got["pages"])
+    pages = split_pages(text)
+    if not pages:
+        return "没有 `# page-NN` 块 —— 每页一个,页号两位、从 01 连续编"
+    nn = sorted(int(k) for k in pages)
+    if not (N_FLOOR <= len(nn) <= N_CEIL):
+        return f"页数 {len(nn)} 不合理(应在 {N_FLOOR}–{N_CEIL} 之间)"
     if nn != list(range(1, len(nn) + 1)):
         miss = sorted(set(range(1, max(nn) + 1)) - set(nn))
-        return f"页号不连续,缺 {' '.join(f'page-{x:02d}' for x in miss)} —— 从 01 编到 N，不跳号"
+        return f"页号不连续,缺 {' '.join(f'page-{x:02d}' for x in miss)} —— 从 01 编到 N,不跳号"
     return ""
 
 
-CHECKS = {"theme.css": _valid_css, "deck": _valid_deck}
+CHECKS = {"theme.css": _valid_css, "pages.md": _valid_pages}
 REPAIRS = {}
 
 _FENCE = re.compile(r"```[a-zA-Z]*\n(.*?)```", re.S)
@@ -531,6 +536,72 @@ def cached(run: Run, step: str, path: Path, prompt: str,
     raise RuntimeError(
         f"{step} 连续 3 次产出的都不是有效内容(最后一次:{bad})。"
         f"被拒的存在 {run.assets.parent}/{step}.rejectedN,看一眼就知道模型在写什么。")
+
+
+def deck_call(run: Run, prompt: str) -> tuple[str, str]:
+    """**一次带 `Write` 工具的调用**,拿回 (theme.css 内容, pages.md 内容)。
+
+    和 `cached()` 同一套重试骨架(三次、写 rejectedN、三次不过就报错),
+    但产物来自 tool call 的参数,不经任何文本切分 —— 见 write_targets 上面那段账。
+
+    续跑判据是两份产物都在且都过闸;删掉任一份即可强制重做。
+    """
+    css_p, pages_p = run.root / CSS_REL, run.root / PAGES_REL
+    if css_p.exists() and pages_p.exists():
+        css, pages = css_p.read_text(encoding="utf-8"), pages_p.read_text(encoding="utf-8")
+        if (len(css) >= MIN_CHARS["theme.css"] and len(pages) >= MIN_CHARS["pages.md"]
+                and not _valid_css(css) and not _valid_pages(pages)):
+            print(f"  deck         已存在,跳过        CSS {len(css):,} / 散文 {len(pages):,} 字符")
+            return css, pages
+        print("  deck         已存在但不完整或不过闸,重做")
+
+    spec = [s for s in tools.specs() if s["name"] == "Write"]
+    for attempt in range(1, 4):
+        t0, started = time.time(), _now()
+        r = llm.respond(IDENTITY, [{"role": "user", "content": prompt}],
+                        spec, config()["planner"]["reasoning_effort"], tag="deck")
+        calls = [o for o in r.output if getattr(o, "type", "") == "function_call"]
+        tin, tout, cached_tok = llm.usage_of(r)
+        run.log.add([{"type": "text", "text": prompt}], llm.text_of(r),
+                    {"input_tokens": tin, "output_tokens": tout,
+                     "cache_read_input_tokens": cached_tok or 0},
+                    getattr(r, "id", None) or f"req_{uuid.uuid4().hex[:16]}",
+                    started, _now(),
+                    {"step": "deck", "tools": [{"name": c.name} for c in calls]})
+        got, refused = take_writes(calls, run)
+        print(f"  deck         {time.time()-t0:6.1f}s  in={tin:>7,}  out={tout:>6,} tok  "
+              f"{len(calls)} 个工具调用 → {sorted(got) or '无产物'}")
+        for why in refused:
+            print(f"               ⚠ {why}")
+
+        bad = []
+        if "theme.css" not in got:
+            bad.append(f"没有写 {CSS_REL}")
+        elif _valid_css(got["theme.css"]):
+            bad.append(f"{CSS_REL}: {_valid_css(got['theme.css'])}")
+        if "pages.md" not in got:
+            bad.append(f"没有写 {PAGES_REL}")
+        elif _valid_pages(got["pages.md"]):
+            bad.append(f"{PAGES_REL}: {_valid_pages(got['pages.md'])}")
+
+        if not bad:
+            css_p.parent.mkdir(parents=True, exist_ok=True)
+            pages_p.parent.mkdir(parents=True, exist_ok=True)
+            # **逐字节落盘,不做任何剥离。** 内容来自 JSON 字符串字段,
+            # 不存在围栏 —— 这正是走工具要换来的那件事。
+            css_p.write_text(got["theme.css"], encoding="utf-8")
+            pages_p.write_text(got["pages.md"], encoding="utf-8")
+            return got["theme.css"], got["pages.md"]
+
+        print(f"  deck         ✗ 第 {attempt} 次不合格:{';'.join(bad)}", flush=True)
+        (run.root / f"deck.rejected{attempt}").write_text(
+            json.dumps({"refused": refused, "bad": bad,
+                        **{k: v for k, v in got.items()}},
+                       ensure_ascii=False, indent=1), encoding="utf-8")
+
+    raise RuntimeError(
+        f"deck 连续 3 次没能用 `Write` 交付两份合格产物(最后一次:{';'.join(bad)})。"
+        f"被拒的存在 {run.root}/deck.rejectedN。")
 
 
 def seed(run: Run, chassis: Path, lib: Path) -> str:
@@ -996,43 +1067,39 @@ def plan_run(run: Run, chassis: Path, lib: Path,
     # 正是单页 150 秒那条,而不是页表的九列(见 STAY_CEILING 上面那段)。
     total = run.minutes * 60
     n_lo, n_hi = math.ceil(total / STAY_CEILING), int(total / 45)
-    text = cached(run, "deck", run.root / "DECK.md",
-                  run.prompt("deck", query=run.query, minutes=run.minutes,
-                             audience=run.audience, scenario=run.scenario or "（没写）",
-                             libs=libs, canvas_w=w, canvas_h=h,
-                             stay_ceiling=STAY_CEILING, n_lo=n_lo, n_hi=n_hi,
-                             n_target=round(total / 90),
-                             direction=skills.direction_block(workflow_root),
-                             theme_bans=skills.theme_slop_block(workflow_root),
-                             font_floor=skills.FONT_FLOOR))
-    got = segment(text)
-    pages = dict(got["pages"])
-    # **截断就丢残块,不判死整轮。** 散文是可分割的,交 18/21 页远好过交 0 页;
-    # 而这一次调用是唯一一次,判死就没有第二次机会了(旧形状里 43 份规格能扛住单页失败)。
-    if got["short"]:
-        for k in got["short"]:
-            pages.pop(k, None)
-        print(f"  ⚠ 丢掉 {len(got['short'])} 个残块(短于 {PAGE_MIN} 字符): "
-              f"{' '.join('page-' + k for k in got['short'])}")
+    css, pages_doc = deck_call(run, run.prompt(
+        "deck", query=run.query, minutes=run.minutes,
+        audience=run.audience, scenario=run.scenario or "（没写）",
+        libs=libs, canvas_w=w, canvas_h=h,
+        stay_ceiling=STAY_CEILING, n_lo=n_lo, n_hi=n_hi,
+        n_target=round(total / 90), css_path=run.root / CSS_REL,
+        pages_path=run.root / PAGES_REL,
+        direction=skills.direction_block(workflow_root),
+        theme_bans=skills.theme_slop_block(workflow_root),
+        font_floor=skills.FONT_FLOOR))
+
+    pages = split_pages(pages_doc)
+    # 残块照旧丢掉、不判死整轮:散文可分割,交 18/21 页远好过交 0 页。
+    short = sorted(k for k, v in pages.items() if len(v) < PAGE_MIN)
+    for k in short:
+        pages.pop(k)
+    if short:
+        print(f"  ⚠ 丢掉 {len(short)} 个残块(短于 {PAGE_MIN} 字符): "
+              f"{' '.join('page-' + k for k in short)}")
     nns = sorted(pages)
-    if got["n"] and len(nns) != got["n"]:
-        print(f"  ⚠ 声明 {got['n']} 页,实际取到 {len(nns)} 页 —— 按实际的走")
     if not (n_lo <= len(nns) <= n_hi):
         print(f"  ⚠ {len(nns)} 页不在 {n_lo}–{n_hi} 的预算区间内(只报不拦)")
-    print(f"  切分         {len(nns)} 页散文,CSS {len(got['css']):,} 字符"
-          f"{'(声明 ' + str(got['n']) + ' 页)' if got['n'] else ''}")
 
     (run.pages / "plan").mkdir(parents=True, exist_ok=True)
     for nn in nns:
         (run.pages / "plan" / f"p{nn}.md").write_text(pages[nn] + "\n", encoding="utf-8")
-    (run.assets / "theme.css").write_text(got["css"].strip() + "\n", encoding="utf-8")
     lens = sorted(len(pages[nn]) for nn in nns)
-    print(f"  逐页内容     {lens[0]}–{lens[-1]} 字符,中位 {lens[len(lens)//2]}")
+    print(f"  逐页内容     {len(nns)} 页,{lens[0]}–{lens[-1]} 字符,中位 {lens[len(lens)//2]}")
 
     # 取图排在切分之后:图池表和 CSS 出自同一次调用,所以这一轮 CSS 看不到底图。
     # 那是「一次调用」换来的代价,已知并接受(旧形状里 backdrops.jpg 会作为图片
     # 喂给写 theme 的那一步)。图片本身仍然按表抓、按页发。
-    pool = assets(run, got["images"])
+    pool = assets(run, pages_doc.split("# page-", 1)[0])
 
     ch = run.assets / "CHASSIS.md"
     if "已知陷阱" not in ch.read_text(encoding="utf-8"):

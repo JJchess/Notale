@@ -7,6 +7,7 @@ import contextlib
 import io
 import re
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -15,7 +16,8 @@ sys.path.insert(0, str(ROOT))
 
 from core.llm import fill  # noqa: E402
 from core import skills  # noqa: E402
-from core.planner import MAX_CHARS, _valid_css, _valid_deck, segment  # noqa: E402
+from core.planner import (MAX_CHARS, _valid_css, _valid_pages,  # noqa: E402
+                          split_pages, take_writes)
 
 
 # 每份提示词的字符数上限。**只降不升** —— 这一栏在 2026-08-26 精简 contract/brief/spec
@@ -39,7 +41,9 @@ PROMPT_ARGS = {
     "deck": dict(query="Q", minutes=30, audience="高中生", scenario="课堂投影",
                  libs="库清单", canvas_w=1600, canvas_h=900, stay_ceiling=150.0,
                  n_lo=12, n_hi=40, n_target=20, direction="(视觉方向)",
-                 theme_bans="(配色禁令)", font_floor="字号地板"),
+                 theme_bans="(配色禁令)", font_floor="字号地板",
+                 css_path="/tmp/r/pages/assets/theme.css",
+                 pages_path="/tmp/r/pages/plan/pages.md"),
 }
 
 
@@ -138,89 +142,98 @@ class ValidatorTests(unittest.TestCase):
 
 
 
-def _deck(n=5, end=True, css=":root{--pad-x:56px;}#stage{display:flex;flex-direction:column;padding:1px;}"
-                             + "".join(f".x{i}{{color:red;}}" for i in range(8)),
-          pages=None):
-    """拼一份合规的单次调用产物,供下面几条各自挖洞。"""
-    pages = pages if pages is not None else {
-        f"{i:02d}": "这一页要让读者看见 " + "细节。" * 30 for i in range(1, n + 1)}
-    body = "\n\n".join(f"# page-{k}\n{v}" for k, v in sorted(pages.items()))
-    return (f"页数: {n}\n=== IMAGES ===\n本套无需图池\n"
-            f"=== CSS ===\n```css\n{css}\n```\n"
-            f"=== PAGES ===\n{body}\n" + ("=== END ===\n" if end else ""))
+class _FakeCall:
+    """伪造一次 `Write` 的 function_call —— 形状照 core/builder.py 里真实用到的那几个字段。"""
+
+    def __init__(self, path, content, name="Write"):
+        import json as _j
+        self.name = name
+        self.arguments = _j.dumps({"file_path": str(path), "content": content})
 
 
-class DeckSegmentTests(unittest.TestCase):
-    """一次调用的切分与闸 —— 这套机器是整次重构的承重墙。"""
+class _FakeRun:
+    def __init__(self, root):
+        from pathlib import Path as _P
+        self.root = _P(root)
+        self.pages = self.root / "pages"
+        self.assets = self.pages / "assets"
 
-    def test_a_clean_reply_splits_into_three_parts(self) -> None:
-        got = segment(_deck(5))
-        self.assertEqual(got["n"], 5)
-        self.assertEqual(sorted(got["pages"]), ["01", "02", "03", "04", "05"])
-        self.assertIn("#stage", got["css"])
-        self.assertFalse(got["truncated"])
-        self.assertEqual(_valid_deck(_deck(5)), "")
 
-    def test_css_is_extracted_from_its_own_slice_only(self) -> None:
-        """**不能对全文跑 `_extract_code`。**
+CSS_OK = (":root{--pad-x:56px;--pad-y:28px;}"
+          "#stage{display:flex;flex-direction:column;padding:var(--pad-y) var(--pad-x);}"
+          + "".join(f".x{i}{{color:red;}}" for i in range(8)))
+PAGES_OK = "本套无需图池\n\n" + "\n\n".join(
+    f"# page-{i:02d}\n第{i}页要让读者看见的东西。" + "具体内容。" * 20 for i in range(1, 6))
 
-        `_valid_css` 只看前 400 字符像不像散文,拿整篇回复喂给它会被判通过 ——
-        于是「页数 + 图表 + CSS + 全部散文」被整个当成一份样式表写进 theme.css。
-        切片之后 CSS 段里不该混进任何一页的正文。
-        """
-        css = segment(_deck(5))["css"]
-        self.assertNotIn("page-01", css)
-        self.assertNotIn("这一页要让读者看见", css)
 
-    def test_pages_map_by_number_not_position(self) -> None:
-        """乱序输出必须按页号落位 —— 按位置对齐会把 p07 的正文存进 p05.md,
+class DeckWriteTests(unittest.TestCase):
+    """产物由模型用 `Write` 工具直接写。
+
+    **这一整组替换了原来的 `DeckSegmentTests`(分隔行 + 从散文里抠)。**
+    换掉的理由是量出来的:那条路上 CSS 首行残留一个 markdown 围栏,
+    浏览器把它连同 `:root` 一起丢弃,20 页全部无样式渲染而所有判据报绿。
+    走工具之后内容是 JSON 字符串字段 —— 没有围栏可言,也就没有这一类 bug。
+    """
+
+    def test_two_writes_land_verbatim(self) -> None:
+        """**逐字节落盘,不做任何剥离** —— 这正是走工具要换来的那件事。"""
+        with tempfile.TemporaryDirectory() as td:
+            run = _FakeRun(td)
+            got, refused = take_writes([
+                _FakeCall(run.root / "pages/assets/theme.css", CSS_OK),
+                _FakeCall(run.root / "pages/plan/pages.md", PAGES_OK)], run)
+            self.assertEqual(refused, [])
+            self.assertEqual(got["theme.css"], CSS_OK)     # 逐字节
+            self.assertEqual(got["pages.md"], PAGES_OK)
+
+    def test_writes_outside_the_allowlist_are_refused(self) -> None:
+        """`tools.run` 的 Write 会写任意绝对路径 —— 不限死就等于把 run 目录以外
+        也交给模型。白名单是硬拦,不是建议。"""
+        with tempfile.TemporaryDirectory() as td:
+            run = _FakeRun(td)
+            got, refused = take_writes([
+                _FakeCall("/tmp/somewhere-else.css", CSS_OK),
+                _FakeCall(run.root / "pages/plan/pages.md", PAGES_OK)], run)
+            self.assertNotIn("theme.css", got)
+            self.assertIn("pages.md", got)
+            self.assertTrue(any("不许写" in r for r in refused))
+
+    def test_a_non_write_tool_is_refused(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            run = _FakeRun(td)
+            _, refused = take_writes([_FakeCall("/x", "y", name="Read")], run)
+            self.assertTrue(any("不该调" in r for r in refused))
+
+    def test_truncated_arguments_do_not_crash(self) -> None:
+        """参数被截断 = JSON 不合法。要记成拒绝原因让上层重试,不能抛出去。"""
+        class Broken:
+            name = "Write"
+            arguments = '{"file_path": "/x", "content": "半句'
+        with tempfile.TemporaryDirectory() as td:
+            got, refused = take_writes([Broken()], _FakeRun(td))
+            self.assertEqual(got, {})
+            self.assertTrue(any("截断" in r for r in refused))
+
+    def test_pages_split_by_number_not_position(self) -> None:
+        """乱序输出必须按页号落位 —— 按位置对齐会把 p05 的正文存进 p03.md,
         而两份都「看起来正常」,没有任何下游闸能发现。"""
-        out = {f"{i:02d}": f"第{i}页 " + "内容。" * 30 for i in (5, 1, 3, 2, 4)}
-        got = segment(_deck(5, pages=out))
-        self.assertIn("第3页", got["pages"]["03"])
-        self.assertIn("第1页", got["pages"]["01"])
+        doc = "\n\n".join(f"# page-{i:02d}\n第{i}页。" + "内容。" * 20
+                          for i in (5, 1, 3, 2, 4))
+        pages = split_pages(doc)
+        self.assertEqual(sorted(pages), ["01", "02", "03", "04", "05"])
+        self.assertIn("第3页", pages["03"])
 
-    def test_truncated_tail_is_flagged_not_fatal(self) -> None:
-        """截断要被认出来,但认出来之后是丢残块、不是判死整轮。"""
-        full = {f"{i:02d}": "完整的一页。" * 20 for i in range(1, 5)}
-        d = _deck(5, end=False, pages={**full, "05": "半句"})
-        got = segment(d)
-        self.assertTrue(got["truncated"])
-        self.assertEqual(got["short"], ["05"])
+    def test_pages_gate_names_the_missing_page(self) -> None:
+        gap = "\n\n".join(f"# page-{i:02d}\n第{i}页。" + "内容。" * 20
+                          for i in (1, 2, 4, 5))
+        self.assertIn("page-03", _valid_pages(gap))
+        self.assertEqual(_valid_pages(PAGES_OK), "")
 
-    def test_gate_names_what_to_fix(self) -> None:
-        """每条拦的都必须是提示词里给了样例、照抄就能满足的东西 ——
-        `cached()` 重试原样重发,拦一件模型不知道怎么改的事就是三次之后判死整轮。"""
-        self.assertIn("页数", _valid_deck(_deck(5).replace("页数: 5\n", "")))
-        self.assertIn("CSS", _valid_deck(_deck(5).replace("=== CSS ===", "=== 样式 ===")))
-        gap = _deck(5, pages={f"{i:02d}": "一页。" * 30 for i in (1, 2, 4, 5)})
-        self.assertIn("page-03", _valid_deck(gap))
-
-
-    def test_fenced_css_is_rejected_so_the_stripper_takes_over(self) -> None:
-        """**首行围栏必须判死。** 代价量过:一整轮 20 页无样式跑完,还报了 0 失败。
-
-        浏览器把 ```css 当选择器,注释跳过后它和紧随的 `:root` 连成一个非法选择器,
-        整个 token 块被丢弃 —— 版心 padding、字阶、配色一起失效,而页面 HTML
-        完全正确。旧流程靠 `call()` 末尾的 strip_fence 兜住;塌缩之后回复是复合文档、
-        围栏在**内层**,整篇 strip 不掉,所以闸必须自己认得。
-
-        闸诚实之后 `_extract_code` 的候选机制自动接手(候选 1 整段判死 →
-        候选 2 strip_fence 通过),所以 `segment()` 落盘的 CSS 不带围栏。
-        """
-        body = ValidatorTests.STAGE_OK + "".join(
-            f".x{i}{{color:red;}}" for i in range(8))
-        self.assertIn("围栏", _valid_css("```css\n" + body + "\n```"))
-        self.assertEqual(_valid_css(body), "")          # 剥掉之后同一份是合格的
-
-        css = segment(_deck(5))["css"]                  # _deck 产出的就是带围栏的形状
-        self.assertFalse(css.lstrip().startswith("```"))
-        self.assertIn(":root", css)
-
-    def test_missing_end_marker_still_yields_pages(self) -> None:
-        """分隔行丢一条只影响那一段 —— 不能因为少一行 `=== END ===` 丢掉全部页面。"""
-        self.assertEqual(len(segment(_deck(5, end=False))["pages"]), 5)
-
+    def test_fenced_css_is_still_rejected_as_a_backstop(self) -> None:
+        """走工具之后围栏不该再出现;这条留着当兜底 —— 真触发就说明模型把围栏
+        写进了字符串里,那是另一回事,值得知道。代价记在 _valid_css 里。"""
+        self.assertIn("围栏", _valid_css("```css\n" + CSS_OK + "\n```"))
+        self.assertEqual(_valid_css(CSS_OK), "")
 
 
 if __name__ == "__main__":

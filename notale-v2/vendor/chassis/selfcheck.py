@@ -204,7 +204,18 @@ PROBE = """() => {
     });
   }
   const tiny = boxes.filter(b => b.area < 0.01).length;
-  return {clipped: clipped.slice(0, 25), escaped: escaped.slice(0, 25), sizes,
+
+  // 主题到底有没有落到元素上。**判据必须落在 token 解析上,不能落在
+  // `#stage` 的 computed padding 上** —— 实测 20 页里有 5 页在页内 <style> 里
+  // 硬写了字面值 `#stage{padding:28px 56px}`,主题整份失效时它们照样显示
+  // 28px 56px,会把失败完全掩盖掉;而 `--pad-x` 在那 5 页上全是空。
+  const padX = getComputedStyle(document.documentElement)
+                 .getPropertyValue('--pad-x').trim();
+  const stageEl = document.getElementById('stage');
+  const stagePad = stageEl ? getComputedStyle(stageEl).padding : '';
+
+  return {theme: {padX: padX, stagePad: stagePad},
+          clipped: clipped.slice(0, 25), escaped: escaped.slice(0, 25), sizes,
           canvases: document.querySelectorAll('canvas').length,
           boxes: boxes.length, texts: texts.length, overlap: overlap,
           overlap_pairs: pairs.slice(0, 4), tiny: tiny,
@@ -435,6 +446,20 @@ def report(name: str, states: list) -> None:
                 which = "偏少" if n_text < TEXT_LO else "偏多"
                 print(f"   参考 文本块 {n_text} 个,{which}(参考区间 {TEXT_LO}–{TEXT_HI}),"
                       f"同上,不是失败项")
+        # 主题有没有生效。**报参考,不报 ✗** —— 页面无权改 `assets/`(brief 明令),
+        # 报 ✗ 就复制了占用比那个陷阱(它降级为参考的理由正是「出路不在建页 agent
+        # 手里」)。这条的代价量过:theme.css 首行残留一个 markdown 围栏,浏览器把它
+        # 连同 `:root` 一起丢弃,20 页全部无样式渲染,而当时所有判据都报绿。
+        th = probe.get("theme") or {}
+        if not th.get("padX"):
+            print("   参考 主题 token 没生效:`--pad-x` 在 :root 上解析不出来。"
+                  "**这不是本页能修的** —— 去看 `assets/theme.css` 是不是坏了"
+                  "(首行残留代码围栏、语法错误吞掉 :root 之类)，页面无权改它")
+        elif th.get("stagePad") in ("0px", "", None):
+            print(f"   参考 版心 padding 是 {th.get('stagePad')!r},而主题声明了 "
+                  f"--pad-x={th['padX']} —— 查一下本页 <style> 是不是覆盖了 "
+                  f"`#stage` 的 padding")
+
             flags = []
             if probe.get("overlap"):
                 flags.append(f"文字叠压 {probe['overlap']} 处")
