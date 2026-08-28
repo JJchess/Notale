@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    :root{--bg:#E8EEF1;--paper:#F8FAFA;--text:#17262D;--muted:#526770;--line:#A8B8BE;--model:#145C74;--target:#A53F2B;--attention:#D88416;--sample:#486B35;--focus:#B36A08;--font-sans:"Noto Sans CJK SC","Microsoft YaHei",sans-serif;--font-num:"IBM Plex Mono",Consolas,monospace;--fs-h1:42px;--fs-h2:26px;--fs-lead:22px;--fs-body:19px;--fs-sec:17px;--fs-label:15px;--fs-tick:13px}
+    html,body{margin:0;width:100%;height:100%;overflow:hidden;background:var(--bg);color:var(--text);font-family:var(--font-sans)}
+    #stage{box-sizing:border-box;width:1600px;height:900px;padding:28px 56px;display:flex;flex-direction:column;transform-origin:top left}
+    h1,h2,p{margin:0} h1{font-size:var(--fs-h1);line-height:1.16;font-weight:800;letter-spacing:-.02em} h2{font-size:var(--fs-h2)}
+    .title-stack{display:flex;flex-direction:column}.kicker{color:var(--model);font-size:var(--fs-label);font-weight:800;letter-spacing:.11em;margin-bottom:7px}
+    .btn{min-height:44px;padding:9px 17px;border:2px solid var(--text);border-radius:6px;background:var(--paper);color:var(--text);font-size:var(--fs-label);font-weight:800;cursor:pointer}.btn[aria-pressed="true"]{border-color:var(--attention);background:#FFF1D8}.btn:disabled{opacity:.45}.btn:focus-visible{outline:4px solid var(--focus);outline-offset:3px}
+    .tag{display:inline-flex;padding:4px 10px;border:1px solid currentColor;border-radius:4px;font-size:var(--fs-label);font-weight:800}.sample-text{color:var(--sample)}.target-text{color:var(--target)}.model-text{color:var(--model)}
+    #loss-widget{flex:1;min-height:0;display:grid;grid-template-rows:auto minmax(0,1fr) auto;gap:16px;margin-top:18px}
+    #loss-widget .question{display:flex;align-items:center;justify-content:space-between;gap:24px;padding:14px 0;border-top:2px solid var(--text);border-bottom:1px solid var(--line)}
+    #loss-widget .prompt{font-size:var(--fs-lead);font-weight:750}
+    #loss-widget .vote{display:flex;align-items:center;gap:10px;flex:0 0 auto}
+    #loss-widget .samples{display:grid;grid-template-columns:1fr 1fr;gap:34px;min-height:0}
+    #loss-widget .sample{display:grid;grid-template-rows:auto auto minmax(160px,1fr) auto;gap:14px;padding:22px 26px;background:var(--paper);border:2px solid var(--line);border-radius:8px}
+    #loss-widget .sample.chosen{border-color:var(--attention);outline:3px solid rgba(216,132,22,.2)}
+    #loss-widget .sample-head{display:flex;align-items:baseline;justify-content:space-between;gap:16px}
+    #loss-widget .sample-name{font-size:var(--fs-h2);font-weight:800}
+    #loss-widget .pair{display:flex;gap:28px;align-items:baseline}
+    #loss-widget .datum{display:flex;align-items:baseline;gap:7px;font-size:var(--fs-sec);font-weight:750}
+    #loss-widget .datum .num{font-size:30px}
+    #loss-widget .meter{position:relative;display:flex;flex-direction:column;justify-content:center;gap:14px}
+    #loss-widget .track{position:relative;height:62px;border:2px solid var(--line);background:var(--bg);overflow:hidden}
+    #loss-widget .fill{position:absolute;inset:0 auto 0 0;width:0;background:var(--target);transition:width 520ms ease}
+    #loss-widget.revealed .fill{width:var(--w)}
+    #loss-widget .loss-label{position:relative;z-index:1;display:flex;align-items:baseline;justify-content:space-between;padding:12px 16px;color:var(--muted);font-weight:800}
+    #loss-widget.revealed .loss-label{color:#fff}
+    #loss-widget .loss-value{font-family:var(--font-num);font-size:30px;font-variant-numeric:tabular-nums}
+    #loss-widget .axis{display:grid;grid-template-columns:1fr 1fr 1fr;color:var(--muted);font:var(--fs-tick)/1.2 var(--font-num)}
+    #loss-widget .axis span:nth-child(2){text-align:center} #loss-widget .axis span:last-child{text-align:right}
+    #loss-widget .formula{font-family:var(--font-num);font-size:var(--fs-sec);line-height:1.5;color:var(--muted)}
+    #loss-widget .result{min-height:48px;display:flex;align-items:center;justify-content:space-between;gap:24px;border-top:2px solid var(--line);padding-top:12px}
+    #loss-widget .conclusion{font-size:var(--fs-lead);font-weight:800;color:var(--target);visibility:hidden}
+    #loss-widget.revealed .conclusion{visibility:visible}
+    #loss-widget .foot{font-size:var(--fs-label);color:var(--muted);white-space:nowrap}
+    #loss-widget:not(.revealed) .loss-value{visibility:hidden}
+    #loss-widget:not(.revealed) .fill{visibility:hidden}
+  </style>
+</head>
+<body data-page="07" data-total="20">
+  <div id="stage">
+    <header class="title-stack">
+      <div class="kicker">比较预测与目标</div>
+      <h1>误差告诉我们：猜得有多不好</h1>
+    </header>
+
+    <section id="loss-widget" aria-label="比较两个预测的二元交叉熵损失">
+      <div class="question">
+        <p class="prompt">先投票：哪次猜测应受更大调整？</p>
+        <div class="vote" role="group" aria-label="选择应受更大调整的样本">
+          <button class="btn" type="button" data-vote="A" aria-pressed="false">样本 A</button>
+          <button class="btn" type="button" data-vote="B" aria-pressed="false">样本 B</button>
+          <button class="btn" type="button" data-reset disabled>重新投票</button>
+        </div>
+      </div>
+
+      <div class="samples">
+        <article class="sample min0" data-sample="A">
+          <div class="sample-head"><h2 class="sample-name">样本 A</h2><span class="tag sample-text">同一真实标签</span></div>
+          <div class="pair">
+            <div class="datum target-text">目标 y = <span class="num">1</span></div>
+            <div class="datum model-text">预测 ŷ = <span class="num">0.80</span></div>
+          </div>
+          <div class="meter" aria-label="样本 A 损失 0.223，共用标尺 0 到 1.8">
+            <div class="track"><div class="fill" style="--w:12.39%"></div><div class="loss-label"><span>损失 L</span><span class="loss-value">0.223</span></div></div>
+            <div class="axis"><span>0</span><span>0.9</span><span>1.8</span></div>
+          </div>
+          <p class="formula">L = −[1 ln(0.80) + 0 ln(0.20)]</p>
+        </article>
+
+        <article class="sample min0" data-sample="B">
+          <div class="sample-head"><h2 class="sample-name">样本 B</h2><span class="tag sample-text">同一真实标签</span></div>
+          <div class="pair">
+            <div class="datum target-text">目标 y = <span class="num">1</span></div>
+            <div class="datum model-text">预测 ŷ = <span class="num">0.20</span></div>
+          </div>
+          <div class="meter" aria-label="样本 B 损失 1.609，共用标尺 0 到 1.8">
+            <div class="track"><div class="fill" style="--w:89.39%"></div><div class="loss-label"><span>损失 L</span><span class="loss-value">1.609</span></div></div>
+            <div class="axis"><span>0</span><span>0.9</span><span>1.8</span></div>
+          </div>
+          <p class="formula">L = −[1 ln(0.20) + 0 ln(0.80)]</p>
+        </article>
+      </div>
+
+      <div class="result">
+        <p class="conclusion">样本 B 离目标更远，损失更大，调整信号也应更强。</p>
+        <p class="foot">自然对数；数值四舍五入到 3 位小数</p>
+      </div>
+    </section>
+  </div>
+  <script src="assets/base.js"></script>
+  <script>
+  (()=>{
+    const root=document.getElementById('loss-widget');
+    const votes=[...root.querySelectorAll('[data-vote]')];
+    const reset=root.querySelector('[data-reset]');
+    let state={choice:null,revealed:false};
+    function render(){
+      root.classList.toggle('revealed',state.revealed);
+      votes.forEach(b=>{const on=b.dataset.vote===state.choice;b.setAttribute('aria-pressed',String(on));b.disabled=state.revealed;});
+      root.querySelectorAll('[data-sample]').forEach(el=>el.classList.toggle('chosen',el.dataset.sample===state.choice));
+      reset.disabled=!state.revealed;
+    }
+    function vote(e){state={choice:e.currentTarget.dataset.vote,revealed:true};render();}
+    function restore(){state={choice:null,revealed:false};render();}
+    votes.forEach(b=>b.addEventListener('click',vote)); reset.addEventListener('click',restore); render();
+    root.destroyLossWidget=()=>{votes.forEach(b=>b.removeEventListener('click',vote));reset.removeEventListener('click',restore);delete root.destroyLossWidget;};
+    Deck.init({index:7,total:20});
+  })();
+  </script>
+</body>
+</html>

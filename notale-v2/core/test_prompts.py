@@ -138,7 +138,7 @@ class ValidatorTests(unittest.TestCase):
 
 
 
-def _deck(n=5, end=True, css="#stage{display:flex;flex-direction:column;padding:1px;}"
+def _deck(n=5, end=True, css=":root{--pad-x:56px;}#stage{display:flex;flex-direction:column;padding:1px;}"
                              + "".join(f".x{i}{{color:red;}}" for i in range(8)),
           pages=None):
     """拼一份合规的单次调用产物,供下面几条各自挖洞。"""
@@ -195,6 +195,27 @@ class DeckSegmentTests(unittest.TestCase):
         self.assertIn("CSS", _valid_deck(_deck(5).replace("=== CSS ===", "=== 样式 ===")))
         gap = _deck(5, pages={f"{i:02d}": "一页。" * 30 for i in (1, 2, 4, 5)})
         self.assertIn("page-03", _valid_deck(gap))
+
+
+    def test_fenced_css_is_rejected_so_the_stripper_takes_over(self) -> None:
+        """**首行围栏必须判死。** 代价量过:一整轮 20 页无样式跑完,还报了 0 失败。
+
+        浏览器把 ```css 当选择器,注释跳过后它和紧随的 `:root` 连成一个非法选择器,
+        整个 token 块被丢弃 —— 版心 padding、字阶、配色一起失效,而页面 HTML
+        完全正确。旧流程靠 `call()` 末尾的 strip_fence 兜住;塌缩之后回复是复合文档、
+        围栏在**内层**,整篇 strip 不掉,所以闸必须自己认得。
+
+        闸诚实之后 `_extract_code` 的候选机制自动接手(候选 1 整段判死 →
+        候选 2 strip_fence 通过),所以 `segment()` 落盘的 CSS 不带围栏。
+        """
+        body = ValidatorTests.STAGE_OK + "".join(
+            f".x{i}{{color:red;}}" for i in range(8))
+        self.assertIn("围栏", _valid_css("```css\n" + body + "\n```"))
+        self.assertEqual(_valid_css(body), "")          # 剥掉之后同一份是合格的
+
+        css = segment(_deck(5))["css"]                  # _deck 产出的就是带围栏的形状
+        self.assertFalse(css.lstrip().startswith("```"))
+        self.assertIn(":root", css)
 
     def test_missing_end_marker_still_yields_pages(self) -> None:
         """分隔行丢一条只影响那一段 —— 不能因为少一行 `=== END ===` 丢掉全部页面。"""

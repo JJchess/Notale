@@ -287,6 +287,22 @@ def _valid_css(text: str) -> str:
     bad = _looks_like_prose(text)
     if bad:
         return bad
+    # **首行是 markdown 围栏 = 这份 CSS 是坏的,必须判死。** 这条是量出来的,
+    # 代价是一整轮 20 页(runs/deck-sol-low-20260828 第一版):
+    # 文件首行 ```css,浏览器把它当选择器,注释被跳过后它和紧随的 `:root` 连成一个
+    # 非法选择器 —— **整个 `:root` 块被丢弃**,所有 token(版心 padding、字阶、
+    # 配色)一起失效。页面本身完全正确,但渲染出来没有版心、字号全是默认值。
+    #
+    # 旧流程不会撞上:`call()` 末尾 `strip_fence(r.text)`,而那时整个回复就是这一份
+    # 产物。塌缩成一次调用之后回复是复合文档、围栏在**内层**,整篇 strip 不掉。
+    #
+    # 判死而不是顺手剥掉,是因为 `_extract_code` 的候选机制已经处理了剥离
+    # (候选 1 整段、候选 2 strip_fence):这里诚实地说"整段不是 CSS",
+    # 候选 2 就自动接手。**闸接受一份坏产物,比没有闸更坏** —— 它让 20 页
+    # 全部无样式地跑完、还报了 0 失败。
+    if text.lstrip().startswith("```"):
+        return ("首行是 markdown 代码围栏 —— 它会让浏览器把第一条规则连同 `:root` "
+                "一起当成非法选择器丢掉,整套 token 失效。只输出 CSS 本身,不要围栏")
     if text.count("{") < 8 or ":" not in text:
         return f"不像 CSS(只有 {text.count('{')} 个规则块)"
     # **先剥注释再找。** 这一条是踩出来的:INTERFACE 块里有一句
