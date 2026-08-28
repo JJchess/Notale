@@ -7,6 +7,7 @@ import copy
 import json
 import sys
 import tempfile
+import ast
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -334,6 +335,51 @@ class MessagesWireTests(unittest.TestCase):
                        urllib.error.URLError("down"))):
             with self.assertRaises(APIConnectionError):
                 llm._post_messages(self._body())
+
+
+class ArgparseSurfaceTests(unittest.TestCase):
+    """`main()` 读的每个 `n.<attr>`,都必须真有一个 `add_argument` 定义它。
+
+    **这条是踩出来的,一天之内同一形状踩了三次。** 按注释边界去切一段代码删除时,
+    很容易把紧挨着的下一个定义一起带走 —— 已经这样丢过 `skills.FONT_FLOOR`、
+    `skills.direction_block` 和 `--no-preload-docs`。前两个当场就 ImportError,
+    第三个不会:argparse 少一个选项不报错,`n.preload_docs` 要等 main() 跑到那一行
+    才 AttributeError,**而那时 planner 已经跑完、builder 刚起**,白丢一轮。
+
+    静态查:解析源码,把 `add_argument` 的 dest 和 `n.X` 的读取对起来。
+    """
+
+    @staticmethod
+    def _surface(mod) -> tuple[set, set]:
+        src = Path(mod.__file__).read_text(encoding="utf-8")
+        tree = ast.parse(src)
+        fn = next(f for f in ast.walk(tree)
+                  if isinstance(f, ast.FunctionDef) and f.name == "main")
+        defined, read = set(), set()
+        for node in ast.walk(fn):
+            if (isinstance(node, ast.Call)
+                    and isinstance(node.func, ast.Attribute)
+                    and node.func.attr == "add_argument"):
+                dest = next((k.value.value for k in node.keywords if k.arg == "dest"), None)
+                if dest:
+                    defined.add(dest)
+                elif node.args:
+                    defined.add(node.args[-1].value.lstrip("-").replace("-", "_"))
+            if (isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name)
+                    and node.value.id == "n" and isinstance(node.ctx, ast.Load)):
+                read.add(node.attr)
+        return defined, read
+
+    def test_builder_reads_only_flags_it_defines(self) -> None:
+        defined, read = self._surface(builder)
+        self.assertEqual(read - defined, set(),
+                         f"main() 读了未定义的参数:{sorted(read - defined)}")
+
+    def test_planner_reads_only_flags_it_defines(self) -> None:
+        from core import planner
+        defined, read = self._surface(planner)
+        self.assertEqual(read - defined, set(),
+                         f"main() 读了未定义的参数:{sorted(read - defined)}")
 
 
 if __name__ == "__main__":

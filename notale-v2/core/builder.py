@@ -627,6 +627,12 @@ def main() -> None:
     a.add_argument("--philosophy", default="",
                    help="设计哲学 12 块的路径。**默认不注入**(见代码里的实测)。"
                         "给了路径就整份注入每页 agent 的 system,用来做对照实验。")
+    # 确定性备料预置。**默认开** —— 账记在 shared_preload 上面。
+    # 留 --no-preload-docs 是因为这次改动的主要风险是行为性的(模型可能仍然去 Read),
+    # 而那要真实两臂才量得出来,不是仿真能回答的。
+    a.add_argument("--no-preload-docs", dest="preload_docs", action="store_false",
+                   help="不把 CHASSIS/theme.css/tech 预置进 system 块,退回让每页自己 Read"
+                        "(对照臂用;默认预置)")
     a.add_argument("--model")
     # Anthropic 系必须走 messages 才拿得到 cache_control;走 responses 是全额计费,
     # 而且**不会有任何报错** —— 实测 Sonnet 在 responses 上连打三次前缀,三次 cached=0。
@@ -704,7 +710,7 @@ def main() -> None:
             spec = {p.pid: spec_preload(root, p.pid) for p in pages}
         except FileNotFoundError as e:
             print(f"  ⚠ 预置备料关闭:{e}\n"
-                  f"    这一轮按老办法跑(每页自己 Read 那三份)。"
+                  f"    这一轮按老办法跑(每页自己 Read)。"
                   f"新 run 不该走到这里 —— 走到了说明 planner 没产出这几份。")
             n.preload_docs = False
         else:
@@ -738,7 +744,7 @@ def main() -> None:
           f"\n"
           f"  system 块 {len(base):,} 字符"
           f"({'含设计哲学 ' + str(len(philosophy)) + ' 字符' if philosophy else '不含设计哲学'}"
-          f"{'；已预置 CHASSIS+CONTRACT' if n.preload_docs else '；未预置备料'})\n"
+          f"{'；已预置 CHASSIS+theme.css+tech' if n.preload_docs else '；未预置备料'})\n"
           f"  完整 system {per_page[0]:,}–{per_page[-1]:,} 字符,"
           f"按 workflow 分 {len(groups)} 组共享(组内逐字相同,跨页缓存分这几摊)"
           f"{'；本页规格已拼进 brief' if spec_blocks else ''}\n")
@@ -810,7 +816,7 @@ def main() -> None:
                   f"({', '.join(f'{k}×{v}' for k, v in pr.most_common())})"
                   f" —— 每次都白花一次往返,brief 的措辞没管住,预置收益要按实测重算")
         else:
-            print(f"  ✓ 预置生效:没有一页去重读 CHASSIS/CONTRACT/pNN"
+            print(f"  ✓ 预置生效:没有一页去重读 CHASSIS/theme.css/本页规格"
                   f"(省下约 {len(done) * 3} 次搬运往返)")
     # ── 把每页做过什么落盘。**这是量出来必须补的。** ──────────────
     # `trace.jsonl` 里 2,836 个块**全是 text,一个 tool_use 都没有** —— 它不记工具调用。
