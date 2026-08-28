@@ -241,12 +241,16 @@ _PAGE_RE = re.compile(r"page-\d+\.html$")
 # system 块里没有任何按页内容,同 workflow 的 `instructions` 逐字节相同,所以能跨页共享。
 #
 # 我把 `pNN.md` 拼在 system 块尾部之后,每一页的 `instructions` 都成了独一份,
-# **跨页共享被整条掐死**。3 页对照实测(runs/preload-smoke):
+# **跨页共享被整条掐死**。3 页对照实测(2026-08-27 runs/preload-smoke,
+# 目录 2026-08-28 已删;逐步 cached 只在 trace.jsonl 里,而 trace 按 .gitignore
+# 不入库 —— 所以下面这几个数**不可复核**,以此处转述为准):
 #     page-12  步1 cached=15,614 ✓  失效步 cached=15,239 ✓  全价 -48%
 #              ← 它命中只是因为前一次单页冒烟用完全相同的块预热过
 #     page-20  步1 cached=0 ✗  失效步 cached=0 ✗  全价 +19%
 #     page-21  步1 cached=0 ✗  失效步 cached=0 ✗  全价 +37%
 # 三页合计付全价只降 3.5%,而仿真按细粒度前缀算出的是 -25.8%。
+# 同条件复跑一次(runs/preload-smoke2,同样已删)结论相同,不是 n=1:
+# page-12 步1 cached=14,011,page-20/21 两页步1 均为 0。
 #
 # 所以规矩是:**system 块里只许放同 workflow 逐字相同的东西。**
 #     IDENTITY + anti_slop(+philosophy)   ← 21 页逐字相同
