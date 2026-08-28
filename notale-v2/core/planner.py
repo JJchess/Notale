@@ -96,7 +96,11 @@ class Run:
 # 换模型后产物合理地小一截是可能的,把正常产出判死的代价比漏判高得多。
 # 走工具之后两份产物各有各的下限。CSS 约 12k 字符、散文 20 页约 7k。
 # 取实测的约 1/3,只抓灾难性空响应,不评判写得简不简洁。
-MIN_CHARS = {"theme.css": 3000, "pages.md": 2500}
+# pages.md 2026-08-28 从「每页一段散文」改成「一个标签加一句话」,合理体量从
+# 8,000 掉到约 1,300(22 页 × 60 字符),旧的 2500 会把合格产物判死。
+# **截断真正靠的不是字数,是 `_valid_pages` 的页号连续性检查** —— 那条与格式无关,
+# 半截产物一定缺尾部页号。这里留 400 只为挡住「几乎什么都没输出」。
+MIN_CHARS = {"theme.css": 3000, "pages.md": 400}
 # 产物**字符数**的上限,和 MIN_CHARS 对称。`MAX_OUT` 管的是输出 token,
 # 从来没有管过产物有多长 —— 而产物长度才是下游成本:CONTRACT.md 会被每个建页 agent
 # 各读两遍,一份 31,493 字符的契约在 50 页上就是 3.1MB 的重复输入。
@@ -327,6 +331,24 @@ def _valid_css(text: str) -> str:
         return ("`#stage` 没有设置 padding —— 主题必须在共享层定义统一版心，"
                 "否则每页会各自决定外边距。至少保留 "
                 "`padding: var(--pad-y) var(--pad-x)`")
+    # **接口完整性闸(2026-08-29)。** 建页 agent 从此只拿到 INTERFACE 注释块,
+    # 拿不到规则体(见 builder._theme_interface)—— 所以接口写漏一个类,那个类
+    # 对所有页都等于不存在。这里逐个校验:正文里定义的每个类名都必须出现在
+    # 接口块文本里。按基名判(.btn:hover/.btn.active 都算 .btn),
+    # svg 防覆盖那行的选择器豁免(它是保护规则,不是供页面选用的组件)。
+    if "==== INTERFACE ====" not in text or "==== /INTERFACE ====" not in text:
+        return ("缺 INTERFACE 接口块 —— 文件第一段必须是 "
+                "`/* ==== INTERFACE ==== … ==== /INTERFACE ==== */`。"
+                "建页 agent 只拿到这个块,拿不到规则体,没有它整套类都没法用")
+    iface = text.split("==== /INTERFACE ====", 1)[0]
+    svg_guard = set(re.findall(r"svg\s+\.([A-Za-z][\w-]*)", bare))
+    defined = {m for m in re.findall(r"\.([A-Za-z][\w-]*)", bare)} - svg_guard
+    missing = sorted(c for c in defined if f".{c}" not in iface and c not in iface)
+    if missing:
+        return ("接口块不完整,正文里定义了但 INTERFACE 没列的类: "
+                + " ".join("." + c for c in missing[:20])
+                + " —— 建页 agent 只拿到接口块,没列的类等于不存在。"
+                  "每个都补一行「组件/版式 名字 一句用法或几何」,或者删掉那个类")
 
     # 接口块的八节结构闸 2026-08-28 删除,和 `prompts/theme.md` 的八节模板一起。
     #
@@ -362,7 +384,8 @@ def _valid_css(text: str) -> str:
 # 没有实测证据(观察到的最大是 5 个小 Read);而按 `# page-NN` 切散文**不是**
 # 出过问题的地方 —— 那里没有围栏、没有代码,`_split_specs` 已经跑了很多轮。
 # 只把出过事的那一份挪到工具上,改动面最小。
-PAGE_MIN = 60          # 一页散文短于这个字符数就当是被截断的残块
+PAGE_MIN = 12          # 一页短于这个字符数就当是被截断的残块。极简格式下一页
+                       # 只有一句话(实测 20–60 字符),旧值 60 会把正常页当残块丢掉
 N_FLOOR, N_CEIL = 4, 60  # 只兜「模型把页数写飞了」;真正的区间由 --minutes 推
 
 CSS_REL = "pages/assets/theme.css"

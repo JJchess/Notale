@@ -264,11 +264,15 @@ _PAGE_RE = re.compile(r"page-\d+\.html$")
 # INTERFACE 块 —— 而那个块因此被迫承担整套视觉系统的声明,一度被推到八节、
 # 近 7,000 字符,还配了一道会把整轮判死的硬闸。实测这份 CSS 本身也才 16,467 字符,
 # 直接给源码比让它转述一遍更便宜也更准。给了源码之后八节和硬闸就都不需要了。
-# theme.css 必须**整份**预置,不要换成索引 —— 试过,输了(sol-slim,2026-08-29):
-# 索引 2,410 字符看着省,结果 **24/24 页各自去 Read 了一遍全文**,总输入
-# 2,334,700 → 3,790,345(+62%)。机制:system 块逐字节跨页共享、缓存命中 88-91%,
-# 而 Read 回来的全文落在每页自己的历史里,几乎全价、还驻留到该页结束。
-# 「省 system 块」和「省总输入」不是一回事,后者才是钱。
+# theme.css 的注入形态,两次实验的账:
+# 第一次(sol-slim,2026-08-29)输了:注入敷衍的 INTERFACE + **裸类名清单**
+# (没有用法),还明说「要看规则值就 Read」—— 24/24 页各自 Read 回全文,
+# 总输入 +62%。机制:system 块跨页共享缓存,Read 回来的全文落在每页历史里全价驻留。
+# 第二次(同日)改掉三个败因再试:(a) 接口升级成完整语义表(每个 token 带 hex+语义、
+# 每个版式带几何、每个组件带用法),由 planner._valid_css 的完整性闸强制;
+# (b) **硬禁**读 theme.css(pre_hit 拦 Read 和 Bash,拒绝并指路回接口块);
+# (c) 不再邀请 Read。失败形态因此变成质量而非 Read 计数 —— 判据看渲染/占用比/
+# 撞禁次数,质量退就回退整案。
 # <deck_map> 2026-08-29 加入:整份 pages.md(全部页的标签+一句话)。
 # 页间一致性以前全靠 planner 写规格时的先见 —— builder 看不见邻页在讲什么,
 # deck.md 要求"相邻页不重复论证",可执行的人从没拿到过页表。
@@ -332,6 +336,19 @@ def tech_block(root: Path, n_pages: int, prompts: Path = None) -> str:
         libs=_libs_index(root), **TECH_SLOTS).strip() + "\n</tech>"
 
 
+def _theme_interface(path: Path) -> str:
+    """theme.css 的 INTERFACE 注释块(到 `/INTERFACE ==== */` 为止,含定界符)。
+
+    没有定界符就整份返回 —— 老 deck 断点续跑的兜底,照 _libs_index
+    「格式不对就整份给」的先例;静默给空会让 builder 以为主题什么都没有。
+    """
+    text = path.read_text(encoding="utf-8", errors="replace")
+    end = "==== /INTERFACE ==== */"
+    if end not in text:
+        return text.strip()
+    return text.split(end, 1)[0] + end
+
+
 def shared_preload(root: Path, n_pages: int, prompts: Path = None) -> tuple[str, dict]:
     """21 页共享的那几份。返回(文本, 路径表)。
 
@@ -341,7 +358,10 @@ def shared_preload(root: Path, n_pages: int, prompts: Path = None) -> tuple[str,
     paths = {"CHASSIS.md": root / "pages" / "assets" / "CHASSIS.md",
              "theme.css": root / "pages" / "assets" / "theme.css",
              "pages.md": root / "pages" / "plan" / "pages.md"}
-    text = "\n\n".join(_wrap(tag, paths[name]) for tag, name in PRELOAD_TAGS)
+    text = "\n\n".join(
+        (f"<{tag}>\n{_theme_interface(paths[name]).strip()}\n</{tag}>"
+         if name == "theme.css" else _wrap(tag, paths[name]))
+        for tag, name in PRELOAD_TAGS)
     return text + "\n\n" + tech_block(root, n_pages, prompts), paths
 
 
@@ -362,6 +382,13 @@ def _preloaded_hit(preloaded: dict | None, args: dict, pages_dir: Path) -> str:
         return ""
     raw = str(args.get("file_path") or "")
     if not raw:
+        # Bash 也拦:`cat theme.css` 和 Read theme.css 是同一件事,只拦一个
+        # 等于给硬禁留了后门(sonB 那轮就是用 cat/awk 绕开 Read 的)。
+        # 按预置文件的**基名**扫命令串 —— 挡老实写法,通配符照旧挡不住。
+        cmd = str(args.get("command") or "")
+        for path, name in preloaded.items():
+            if name in cmd:
+                return name
         return ""
     p = Path(raw)
     try:
@@ -507,7 +534,7 @@ def build_one(page: Page, pages_dir: Path, trace: Path, skill_root: Path,
                               else ("SELFCHECK" if "selfcheck" in str(args.get("command", ""))
                                     else "Bash"))
             pre_hit = (_preloaded_hit(preloaded, args, pages_dir)
-                       if c.name == "Read" else "")
+                       if c.name in ("Read", "Bash") else "")
             # 「本页只装载被指派的那一个 workflow」那道硬拦 2026-08-28 删除。
             # 规划不再逐页指派 workflow(每页只有一段散文,没有 `## 主工作流` 那一行),
             # 改由建页 agent 读完内容自己从清单里挑。挑错的代价是读了一份不太贴的
@@ -538,10 +565,19 @@ def build_one(page: Page, pages_dir: Path, trace: Path, skill_root: Path,
                 # 等于把这次改动的收益整条抹掉。指路而不是静默回空:
                 # 静默会让模型以为文件真的没了,然后自己发明一份契约。
                 page.preload_reads.append(pre_hit)
-                res = (f"`{pre_hit}` 的全文已经在你的 system 提示里了"
-                       f"(标签 `<chassis>` / `<theme_css>` / `<deck_map>` / `<page_spec>`),"
-                       f"内容逐字相同。往上翻即可,不用再 Read —— "
-                       f"这一次 Read 没有给你任何新信息。")
+                if pre_hit == "theme.css":
+                    # 2026-08-29 起 theme 只预置 INTERFACE 接口块,规则体不提供。
+                    # 接口的完整性由 planner._valid_css 的闸保证(正文每个类都必须
+                    # 入表),所以这里可以硬拒 —— 接口没有的东西,规则体里也不该有。
+                    res = ("拒绝:theme.css 的规则体不提供。它的接口块已经在你的 "
+                           "system 提示里(`<theme_css>`):每个 token 带 hex 和语义、"
+                           "每个版式带几何、每个组件带用法,类照描述直接用即可。"
+                           "canvas 取色用 `Deck.rgb()`/`Deck.rgba()`,不需要源码。")
+                else:
+                    res = (f"`{pre_hit}` 的全文已经在你的 system 提示里了"
+                           f"(标签 `<chassis>` / `<deck_map>` / `<page_spec>`),"
+                           f"内容逐字相同。往上翻即可,不用再读 —— "
+                           f"这一次没有给你任何新信息。")
             else:
                 res = tools.run(c.name, args, pages_dir, skill_root, page.pid)
                 if (c.name == "Write"

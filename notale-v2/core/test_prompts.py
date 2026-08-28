@@ -97,7 +97,8 @@ IFACE_OK = ("/* ==== INTERFACE ====\n"
             "   token    --model #2457A6   当前模型算出的值\n"
             "   版式     .focus            单焦点构图\n"
             "   组件     .panel            读数与控件容器\n"
-            "   ==== /INTERFACE ==== */\n")
+            + "".join(f"   组件     .x{i}              测试用组件\n" for i in range(8))
+            + "   ==== /INTERFACE ==== */\n")
 
 
 class AntiSlopWiringTests(unittest.TestCase):
@@ -150,6 +151,18 @@ class ValidatorTests(unittest.TestCase):
                 "#stage{display:flex;flex-direction:column;"
                 "padding:var(--pad-y) var(--pad-x);}")
 
+    def test_interface_must_list_every_defined_class(self) -> None:
+        """建页 agent 只拿到接口块 —— 正文里定义而接口没列的类,对所有页等于不存在。"""
+        css = self._css(self.STAGE_OK) + ".ghost{color:blue;}"
+        msg = _valid_css(css)
+        self.assertIn(".ghost", msg)          # 缺谁报谁,重试才补得上
+        # svg 防覆盖规则的选择器豁免 —— 它是保护规则,不是供页面选用的组件
+        css2 = self._css(self.STAGE_OK) + "svg .bar{width:auto;}"
+        self.assertEqual(_valid_css(css2), "")
+
+    def test_interface_block_is_required(self) -> None:
+        self.assertIn("INTERFACE", _valid_css(self._css(self.STAGE_OK, iface="")))
+
     def test_css_requires_shared_stage_padding(self) -> None:
         self.assertEqual(_valid_css(self._css(self.STAGE_OK)), "")
 
@@ -180,7 +193,8 @@ class _FakeRun:
         self.assets = self.pages / "assets"
 
 
-CSS_OK = (":root{--pad-x:56px;--pad-y:28px;}"
+CSS_OK = (IFACE_OK
+          + ":root{--pad-x:56px;--pad-y:28px;}"
           "#stage{display:flex;flex-direction:column;padding:var(--pad-y) var(--pad-x);}"
           + "".join(f".x{i}{{color:red;}}" for i in range(8)))
 PAGES_OK = "本套无需图池\n\n" + "\n\n".join(

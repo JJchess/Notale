@@ -5,7 +5,7 @@
 技法指引的边际价值反而更高;拿 Opus 的 0 次去否定弱模型的需要,是取错了样本。
 
 成本不构成理由:49 份的名字加描述合计约 9k 字符,一个 system 块装得下。
-正文合计 486k、单份中位 6.4k —— 所以只注入清单,正文按需由 Skill 工具取。
+正文合计 486k、单份中位 6.4k —— 所以只注入清单,正文按需由 `Skill` 工具取。
 """
 
 from __future__ import annotations
@@ -88,7 +88,7 @@ def catalog(root: Path = DEFAULT) -> str:
     # 那句话对应的实测是 **Skill 调用在 nn-03 / nn-06 / nn-07 / nn-09 四轮全是 0 次**
     # (换成 Sonnet 照样 0,不是 Opus 的怪癖)。库那边是同一条规律:预置了 4 轮、
     # 用量 2/1/3/0,改成硬禁令之后手写 canvas 降 80%。所以这里也改成硬措辞。
-    return ("下面这些 skill 可以通过 Skill 工具调用,调用后会把那份技法文档的正文给你。\n"
+    return ("下面这些 skill 可以通过 `Skill` 工具调用,调用后会把那份技法文档的正文给你。\n"
             "**清单里有对应技法文档的,先读了再动手,不要自己从头摸索一套。**\n"
             "理由和库一样:每页各自重新试一遍,产出不稳定、也慢。\n"
             "清单里没有对应的,就自己写,不必硬凑。\n\n" + body)
@@ -101,16 +101,23 @@ def available(root: Path) -> tuple[str, ...]:
     return tuple(sorted(d.name for d in root.iterdir() if (d / "SKILL.md").is_file()))
 
 
-def workflow_catalog(root: Path = WORKFLOWS) -> str:
-    """Compact Planner-facing catalog, in deterministic routing order."""
+def workflow_catalog(root: Path = WORKFLOWS, paths: bool = False) -> str:
+    """Compact catalog, in deterministic routing order.
+
+    `paths=True` 给绝对路径而不是裸名字 —— `Skill` 工具删掉之后建页侧要用这一种。
+    清单只给名字、而 SKILL.md 正文里的 reference 却是路径,这个不一致正是
+    sonnet-full2-20260828 那 5 次错用的来源(见 core/tools.py 那段账):
+    模型照着正文的形状往工具里传了 `widget-core`。两边都给路径就没有这个歧义。
+    """
     rows = []
     existing = set(available(root))
     for name in PAGE_WORKFLOWS:
         if name not in existing:
             continue
-        text = (root / name / "SKILL.md").read_text(encoding="utf-8", errors="replace")
-        desc = _desc(text)
-        rows.append(f"- {name}: {desc}" if desc else f"- {name}")
+        f = root / name / "SKILL.md"
+        desc = _desc(f.read_text(encoding="utf-8", errors="replace"))
+        head = str(f.resolve()) if paths else name
+        rows.append(f"- {head}: {desc}" if desc else f"- {head}")
     return "\n".join(rows)
 
 
@@ -226,7 +233,7 @@ def assigned_workflow(name: str, root: Path = WORKFLOWS) -> str:
         raise ValueError(f"未知主工作流 {name!r}; 可用: {', '.join(available(root))}")
     desc = _desc(f.read_text(encoding="utf-8", errors="replace"))
     row = f"- {name}: {desc}" if desc else f"- {name}"
-    return ("本页只装载下面一个 workflow。先用 Skill 工具读取它，再严格执行 SKILL.md "
+    return ("本页只装载下面一个 workflow。先用 `Skill` 工具读取它，再严格执行 SKILL.md "
             "顶部的 Reference routing：所有基础必读项和已选分支项，都要在任何页面修改前"
             "用 `Read` 读取，包括 `Write`、`Edit`、`Patch` 或会改文件的 `Bash`；不要读取"
             "未选分支或无关 reference。scripts 只在 workflow 明确要求时使用。\n\n" + row)
@@ -254,7 +261,7 @@ def assigned(names, root: Path = DEFAULT) -> str:
         rows.append(f"- {n}: {d}" if d else f"- {n}")
     # 措辞跟 catalog() 一致:硬措辞是量出来的,软措辞对应过四轮 0 次调用。
     return ("下面这些技法文档是规划阶段按这一页的真实需要指派的,**不是可选项**。\n"
-            "用 Skill 工具把名字原样传进去,读完再动手。\n\n" + "\n".join(rows))
+            "用 `Skill` 工具把名字原样传进去,读完再动手。\n\n" + "\n".join(rows))
 
 
 # 技法文档里的路径占位符。**必须替换成真实绝对路径。**
@@ -278,14 +285,15 @@ _PATH_HINTS = (
 )
 
 
-def load(name: str, root: Path = DEFAULT) -> str:
-    f = root / name / "SKILL.md"
-    if not f.is_file():
-        avail = ", ".join(sorted(p.name for p in root.iterdir() if (p / "SKILL.md").is_file()))
-        return f"没有名为 {name!r} 的 skill。可用的: {avail}"
-    t = f.read_text(encoding="utf-8", errors="replace")
-    d = (root / name).resolve()
-    t = t.replace("<skill-dir>", str(d))
+def inline_paths(text: str, skill_dir: Path) -> str:
+    """把 SKILL.md 里的路径占位符换成真实绝对路径。
+
+    从 `load()` 里抽出来,是因为 `Read` 到 SKILL.md 时也要做同一件事 ——
+    它管的是「文档里写的命令能不能真的跑」,和模型用哪个工具读无关。
+    两条路都要走它,少一条就是那条路上静默退化成「命令指向不存在的位置」。
+    """
+    d = skill_dir.resolve()
+    t = text.replace("<skill-dir>", str(d))
     t = t.replace("(in this dir)", f"(在 {d}/ 下)").replace("（in this dir）", f"(在 {d}/ 下)")
     # 文档里裸写的脚本名(webmedia.py / gen.py / freesound-fetch.py …)也补成绝对路径,
     # 否则「`webmedia.py "rocket launch"`」这种示例照抄下来还是跑不了。
@@ -295,3 +303,67 @@ def load(name: str, root: Path = DEFAULT) -> str:
             t = re.sub(rf"(?<![\w/.-]){re.escape(bare)}", str(script), t)
     return (t + f"\n\n---\n\n**路径已由 harness 解析:这份文档所在目录是 `{d}`,"
             f"上面出现的脚本路径都是可以直接跑的绝对路径。**\n")
+
+
+def _wrap_reference(f: Path) -> str:
+    """reference 一次给全文,带 EOF 标记 —— 和 `tools._dispatch` 的 Read 分支同一形状。
+
+    两条路给出来的东西必须长得一样,否则模型换个工具读同一份文件会看到不同的边界,
+    又得自己判断「读全了没有」。
+    """
+    text = f.read_text(encoding="utf-8", errors="replace")
+    n = text.count("\n") + 1
+    return (f"（工作流 reference 全文开始：{f.name}，共 {n} 行）\n" + text
+            + f"\n（工作流 reference 全文结束：{f.name} · EOF）")
+
+
+def load(name: str, root: Path = DEFAULT) -> str:
+    """按名字取一份技法文档的正文。
+
+    **解析顺序是照模型实际传进来的形状定的,不是照我们希望它传的形状。**
+    实测 sonnet-full2-20260828 那轮 15 次调用里有 5 次传的是 reference 的名字
+    (`widget-core` ×2、`pattern-routing` ×2、`relationship-compositions` ×1)——
+    因为它刚在 SKILL.md 正文里读到 `[widget-core.md](references/widget-core.md)`,
+    照着那个形状传是完全合理的推断。原来的实现只认第 1 种,于是这 5 次全部撞死、
+    page-07 就此放弃、一份 reference 都没读。
+
+    所以这里认四种,依次尝试:
+      1. workflow 名          `build-page`
+      2. 相对路径             `build-interaction/references/widget-core.md`
+      3. workflow 名/SKILL.md `build-page/SKILL.md`
+      4. 裸 reference 名      `widget-core` / `widget-core.md`(全局唯一才认)
+    第 4 种撞名时不猜,把候选列出来让它自己选 —— 猜错会静默给错文档,比报错更坏。
+    """
+    raw = (name or "").strip().strip("/")
+    if not raw:
+        return "Skill 需要一个名字。可用的 workflow: " + ", ".join(available(root))
+
+    # 1 / 3:workflow 名,或 workflow 名/SKILL.md
+    head = raw[:-len("/SKILL.md")] if raw.endswith("/SKILL.md") else raw
+    f = root / head / "SKILL.md"
+    if f.is_file():
+        return inline_paths(f.read_text(encoding="utf-8", errors="replace"), root / head)
+
+    # 2:相对路径直指 reference
+    p = (root / raw)
+    if p.is_file() and p.suffix.lower() == ".md":
+        try:
+            rel = p.resolve().relative_to(root.resolve())
+        except (OSError, ValueError):
+            rel = None
+        if rel and len(rel.parts) == 3 and rel.parts[1] == "references":
+            return _wrap_reference(p)
+
+    # 4:裸 reference 名 —— 全局唯一才认,撞名列出候选
+    stem = raw[:-3] if raw.lower().endswith(".md") else raw
+    hits = [q for q in sorted(root.glob(f"*/references/{stem}.md")) if q.is_file()]
+    if len(hits) == 1:
+        return _wrap_reference(hits[0])
+    if len(hits) > 1:
+        opts = ", ".join(f"{q.parent.parent.name}/references/{q.name}" for q in hits)
+        return (f"{stem!r} 在多个 workflow 下都有,不替你猜。指定是哪一份: {opts}")
+
+    avail = ", ".join(available(root))
+    return (f"没有名为 {raw!r} 的技法文档。\n"
+            f"workflow 传名字即可: {avail}\n"
+            f"reference 传 `<workflow>/references/<文件名>.md`,或它的裸名字。")

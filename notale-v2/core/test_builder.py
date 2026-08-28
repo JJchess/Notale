@@ -46,13 +46,38 @@ class DeckMapPreloadTests(unittest.TestCase):
             (root / "pages" / "assets").mkdir(parents=True)
             (root / "pages" / "plan").mkdir()
             (root / "pages" / "assets" / "CHASSIS.md").write_text("chassis", encoding="utf-8")
-            (root / "pages" / "assets" / "theme.css").write_text(":root{}", encoding="utf-8")
+            (root / "pages" / "assets" / "theme.css").write_text(
+                "/* ==== INTERFACE ====\n   组件 .panel 读数容器\n"
+                "   ==== /INTERFACE ==== */\n.panel{padding:12px;color:red;}",
+                encoding="utf-8")
             (root / "pages" / "plan" / "pages.md").write_text(
                 "# page-01 [标题页]\n开场。", encoding="utf-8")
             text, paths = builder.shared_preload(root, 2)
         self.assertIn("<deck_map>", text)
         self.assertIn("开场。", text)
         self.assertIn("pages.md", paths)      # pre_hit 指路要认识它
+        # theme 只进接口块,规则体不进(sol-slim 第一次实验输掉后的第二版形态)
+        self.assertIn(".panel 读数容器", text)
+        self.assertNotIn("padding:12px", text)
+        self.assertIn("theme.css", paths)     # 硬禁靠 pre_hit,它必须认识这份
+
+    def test_theme_interface_falls_back_to_full_file(self) -> None:
+        """老 deck 没有定界符 → 整份注入,不静默给空。"""
+        with tempfile.TemporaryDirectory() as td:
+            f = Path(td) / "theme.css"
+            f.write_text(":root{--x:1px;}", encoding="utf-8")
+            self.assertIn("--x:1px", builder._theme_interface(f))
+
+    def test_preloaded_hit_catches_bash_too(self) -> None:
+        """硬禁的一致性:`cat theme.css` 和 Read theme.css 是同一件事。
+        sonB 那轮就是用 cat/awk 绕开 Read 的。"""
+        pre = {Path("/r/pages/assets/theme.css").resolve(): "theme.css"}
+        hit = builder._preloaded_hit(pre, {"command": "sed -n '1,40p' assets/theme.css"},
+                                     Path("/r/pages"))
+        self.assertEqual(hit, "theme.css")
+        miss = builder._preloaded_hit(pre, {"command": "grep stage page-06.html"},
+                                      Path("/r/pages"))
+        self.assertEqual(miss, "")
 
 
 class BuilderStopTests(unittest.TestCase):

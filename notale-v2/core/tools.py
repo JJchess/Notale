@@ -137,6 +137,23 @@ def _is_workflow_reference(path: Path, skill_root: Path) -> bool:
             and path.suffix.lower() == ".md")
 
 
+def _workflow_skill_dir(path: Path, skill_root: Path) -> Path | None:
+    """`<skill_root>/<workflow>/SKILL.md` → 那个 workflow 的目录;否则 None。
+
+    `Skill` 工具删掉之后 SKILL.md 走 `Read`,所以它原来那两项保障要在这条路上补回来:
+    **一次给全文**(不分页、不截断)和 **路径占位符替换**(`skills.inline_paths`)。
+    少任何一项都是静默退化 —— 分页会让模型分三次读同一份文档,
+    占位符不换会让文档里的脚本命令指向不存在的位置(实测那一轮 0 张图)。
+    """
+    try:
+        rel = path.resolve().relative_to(skill_root.resolve())
+    except (OSError, ValueError):
+        return None
+    if len(rel.parts) == 2 and rel.parts[1] == "SKILL.md":
+        return (skill_root / rel.parts[0]).resolve()
+    return None
+
+
 SCHEMAS = [
     {"name": "Read", "description":
         "读一个文件。普通文本回带行号的内容;png/jpg 回图片本身。"
@@ -198,9 +215,29 @@ SCHEMAS = [
          "command": {"type": "string", "description": "要执行的命令"},
          "description": {"type": "string", "description": "一句话说明这条命令做什么"}},
          "required": ["command"], "additionalProperties": False}},
-    {"name": "Skill", "description": "取一份技法文档的正文。名字从清单里选。",
+    # `Skill` 留着。2026-08-28 一度删掉、当天撤回 —— 撤回的理由值得记下来。
+    #
+    # 删它的证据是 sonnet-full2-20260828 那轮 15 次调用里 5 次(33%)把 reference 的
+    # 名字当 skill 名传(`widget-core` ×2、`pattern-routing` ×2、
+    # `relationship-compositions` ×1),全返回「没有名为…的 skill」,page-07 就此放弃。
+    # **但那是 n=1:** 同一个工具、同一份清单措辞,sonnet-plan-20260828 那轮
+    # 18 次调用错用 **0** 次。拿单轮的错用率判一个工具的存废,和这个仓库自己
+    # 反复记的教训(占用比 12.1pp 噪声底、menus ablation 1:1 判「没测出来」)相矛盾。
+    #
+    # 而且这个工具面是**照 Claude Code 对齐的**(见本文件抬头那句「我们本来就是超集」):
+    # 模型的后训练里就有 `Skill`,拿掉它是在跟先验对着干,换来的只是把同一件事
+    # 挪到 `Read` 上做。
+    #
+    # 真正的问题不是「要不要这个工具」,是**它太脆**:`skills.load()` 原来只拼
+    # `root/<name>/SKILL.md`,模型在 SKILL.md 正文里读到
+    # `[widget-core.md](references/widget-core.md)` 照着传就撞死。
+    # 修的是这一处(见 skills.load 的解析顺序),不是把工具删掉。
+    {"name": "Skill", "description":
+        "取一份技法文档的正文。传 workflow 名(如 `build-page`)取它的 SKILL.md;"
+        "传 reference 名或相对路径(如 `widget-core` 或 "
+        "`build-interaction/references/widget-core.md`)取那一份 reference。",
      "parameters": {"type": "object", "properties": {
-         "skill": {"type": "string", "description": "skill 名字"}},
+         "skill": {"type": "string", "description": "workflow 名、reference 名或相对路径"}},
          "required": ["skill"], "additionalProperties": False}},
 ]
 
@@ -406,6 +443,14 @@ def _dispatch(name: str, a: dict, cwd: Path, skill_root: Path) -> str | Out:
             return (f"（工作流 reference 全文开始：{p.name}，共 {n} 行）\n"
                     + text
                     + f"\n（工作流 reference 全文结束：{p.name} · EOF）")
+        skill_dir = _workflow_skill_dir(p, skill_root)
+        if skill_dir is not None:
+            text = skills.inline_paths(
+                p.read_text(encoding="utf-8", errors="replace"), skill_dir)
+            n = text.count("\n") + 1
+            return (f"（技法文档全文开始：{skill_dir.name}/SKILL.md，共 {n} 行）\n"
+                    + text
+                    + f"\n（技法文档全文结束：{skill_dir.name}/SKILL.md · EOF）")
         lines = p.read_text(encoding="utf-8", errors="replace").split("\n")
         off = max(0, int(a.get("offset") or 1) - 1)
         lines = lines[off:off + int(a.get("limit") or 2000)]

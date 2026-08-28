@@ -21,6 +21,29 @@ class WorkflowRegistryTests(unittest.TestCase):
         available = set(skills.available(skills.WORKFLOWS))
         self.assertEqual(set(skills.ALL_WORKFLOWS), available)
 
+    def test_skill_resolves_the_shapes_models_actually_send(self) -> None:
+        """`Skill` 不能只认 workflow 名 —— 模型会照 SKILL.md 正文的形状传 reference。
+
+        这三个字符串是 sonnet-full2-20260828 真实传进来的(15 次调用里的 5 次):
+        `widget-core` ×2、`pattern-routing` ×2、`relationship-compositions` ×1。
+        当时全部返回「没有名为…的 skill」,page-07 就此放弃、一份 reference 都没读。
+        它们不是乱传:模型刚在 SKILL.md 里读到
+        `[widget-core.md](references/widget-core.md)`,照着传是合理推断。
+        """
+        for arg in ("widget-core", "pattern-routing", "relationship-compositions",
+                    "widget-core.md", "build-interaction/references/widget-core.md",
+                    "build-page", "build-page/SKILL.md"):
+            with self.subTest(arg=arg):
+                out = skills.load(arg, skills.WORKFLOWS)
+                self.assertFalse(out.startswith("没有名为"), out[:80])
+                self.assertGreater(len(out), 500)
+
+    def test_skill_does_not_guess_on_ambiguous_reference(self) -> None:
+        """撞名要列候选,不能挑一个给。给错文档是静默的,比报错更坏。"""
+        out = skills.load("renderer-routing", skills.WORKFLOWS)
+        self.assertIn("不替你猜", out)
+        self.assertIn("build-chart/references/renderer-routing.md", out)
+
     def test_direction_menus_are_off_by_default(self) -> None:
         """两张选项菜单表默认不注入,`--direction-menus` 才接回。
 
