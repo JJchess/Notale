@@ -9,7 +9,22 @@ Build one coherent learning widget inside the assigned page. Treat the widget as
 
 ## Reference routing
 
-Before any page mutation, including `Write`, `Edit`, `Patch`, or a modifying `Bash` command, read [interactive-widget.md](references/interactive-widget.md) completely in one `Read`. It is the only reference for this workflow. Do not look for a second recipe or load an unrelated workflow reference.
+Complete this routing before any page mutation, including `Write`, `Edit`, `Patch`, or a modifying `Bash` command. Do not defer it until implementation is already underway.
+
+1. Read [widget-core.md](references/widget-core.md) — the operating premise, the private contract, evidence design, composition, state architecture, and input/accessibility. Always read it.
+2. Read [pattern-routing.md](references/pattern-routing.md), then read **only the one pattern family it selects**:
+   - [pattern-tune.md](references/pattern-tune.md) — set a value, watch it propagate (Instrument, Transformation)
+   - [pattern-build.md](references/pattern-build.md) — move or assemble things in space (Manipulator, Constructor)
+   - [pattern-observe.md](references/pattern-observe.md) — follow what a system is doing (Tracer, Inspector, Live system)
+   - [pattern-judge.md](references/pattern-judge.md) — weigh alternatives or predict, then see (Synchronized comparison, Counterexample, Prediction and reveal)
+3. Read a conditional reference only when the brief contains the matching feature:
+   - [craft-render.md](references/craft-render.md) once step 4 below picks a rendering medium, or when aligning to host-theme detail
+   - [motion.md](references/motion.md) when change over time carries part of the teaching point
+   - [recipes.md](references/recipes.md) when you hit one of the fragile mechanics it names; read the recipes you need, not all of them
+   - [worked-example.md](references/worked-example.md) when you are unsure how a whole component fits together and want one complete skeleton to read
+   - [studies.md](references/studies.md) when you want precedent for a mechanism; optional
+4. Read [delivery.md](references/delivery.md) after the component works and before you deliver.
+5. Do not read an unselected pattern family. Do not read unmatched conditional references. Do not load an unrelated workflow reference.
 
 ## 1. Read the host contract
 
