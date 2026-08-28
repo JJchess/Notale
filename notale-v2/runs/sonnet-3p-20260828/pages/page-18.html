@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    #xor-lab{min-height:0}
+    #xor-lab .field-wrap{display:flex;flex-direction:column;min-height:0;gap:10px}
+    #xor-lab .plot{position:relative;flex:1;min-height:0;background:var(--paper);border:var(--rule) solid var(--line);border-radius:var(--r);overflow:hidden}
+    #xor-lab .plot canvas{position:absolute;inset:18px 24px 32px 42px;width:calc(100% - 66px);height:calc(100% - 50px)}
+    #xor-lab .axis-x{position:absolute;left:42px;right:24px;bottom:7px;text-align:center;font-size:var(--fs-label);color:var(--muted)}
+    #xor-lab .axis-y{position:absolute;left:8px;top:50%;transform:translateY(-50%) rotate(-90deg);font-size:var(--fs-label);color:var(--muted)}
+    #xor-lab .corner{position:absolute;font:600 var(--fs-tick)/1 var(--font-num);color:var(--muted)}
+    #xor-lab .c1{left:42px;bottom:32px} #xor-lab .c2{right:24px;bottom:32px}
+    #xor-lab .legend{justify-content:center;gap:22px;color:var(--muted)}
+    #xor-lab .mark{width:15px;height:15px;border:3px solid currentColor;background:var(--paper);display:inline-block}
+    #xor-lab .mark.circle{border-radius:50%}.mark.diamond{transform:rotate(45deg)}
+    #xor-lab .region{width:25px;height:14px;display:inline-block;border:1px solid var(--line)}
+    #xor-lab .region.r0{background:rgba(23,92,120,.22)} #xor-lab .region.r1{background:rgba(212,85,40,.22)}
+    #xor-lab .rail{display:flex;flex-direction:column;gap:16px;min-height:0}
+    #xor-lab .controls{display:flex;gap:10px;flex-wrap:wrap}
+    #xor-lab .metrics{display:grid;grid-template-columns:1fr 1fr;border-top:var(--rule) solid var(--line);border-bottom:var(--rule) solid var(--line)}
+    #xor-lab .metric{padding:14px 4px}.metric:nth-child(odd){border-right:var(--rule) solid var(--line)}
+    #xor-lab .metric:nth-child(-n+2){border-bottom:var(--rule) solid var(--line)}
+    #xor-lab .metric-label{font-size:var(--fs-label);color:var(--muted);margin-bottom:6px}
+    #xor-lab .metric-value{font:750 29px/1 var(--font-num);font-variant-numeric:tabular-nums;color:var(--model)}
+    #xor-lab .history{height:150px;position:relative;border-bottom:var(--rule) solid var(--line);padding-bottom:22px}
+    #xor-lab .history canvas{width:100%;height:100%}
+    #xor-lab .history-label{position:absolute;left:0;bottom:0;font-size:var(--fs-label);color:var(--muted)}
+    #xor-lab .status{min-height:48px;font-size:var(--fs-sec);line-height:1.4;color:var(--text);font-weight:650}
+    #xor-lab .status.warn{color:var(--attention)}
+    #xor-lab .invariant{margin-top:auto;padding-top:12px;border-top:var(--rule) solid var(--line)}
+  </style>
+</head>
+<body data-page="18" data-total="20">
+  <div id="stage">
+    <header>
+      <div class="kicker">真实运行 · XOR</div>
+      <h1>现在，看一个小网络真的学会</h1>
+    </header>
+    <main id="xor-lab" class="lab min0" aria-label="XOR 神经网络实时训练实验">
+      <section class="field-wrap min0">
+        <div class="plot min0">
+          <canvas id="field" role="img" aria-label="XOR 数据点与神经网络实时决策边界"></canvas>
+          <span class="corner c1">−1.3</span><span class="corner c2">+1.3</span>
+          <div class="axis-x">输入 x₁</div><div class="axis-y">输入 x₂</div>
+        </div>
+        <div class="legend" aria-label="图例">
+          <span class="li" style="color:var(--data)"><i class="mark circle"></i>数据类别 0</span>
+          <span class="li" style="color:var(--attention)"><i class="mark diamond"></i>数据类别 1</span>
+          <span class="li"><i class="region r0"></i>模型预测 0 区域</span>
+          <span class="li"><i class="region r1"></i>模型预测 1 区域</span>
+        </div>
+      </section>
+      <aside class="rail panel min0">
+        <p class="lead">2 → 10 → 10 → 1</p>
+        <p class="small">每一帧都执行小批量反向传播；边界与读数来自当前权重。</p>
+        <div class="controls" aria-label="训练控制">
+          <button class="btn" id="toggle" type="button" aria-pressed="false">训练</button>
+          <button class="btn" id="step" type="button">单步</button>
+          <button class="btn" id="reset" type="button">重置</button>
+        </div>
+        <div class="metrics" aria-label="实时训练指标">
+          <div class="metric"><div class="metric-label">epoch</div><div class="metric-value" id="epoch">0.00</div></div>
+          <div class="metric"><div class="metric-label">交叉熵 loss</div><div class="metric-value" id="loss">0.000</div></div>
+          <div class="metric"><div class="metric-label">准确率 acc</div><div class="metric-value" id="acc">0.0%</div></div>
+          <div class="metric"><div class="metric-label">已处理样本</div><div class="metric-value" id="seen">0</div></div>
+        </div>
+        <div class="history">
+          <canvas id="lossChart" role="img" aria-label="训练过程中的交叉熵 loss 折线"></canvas>
+          <span class="history-label">loss 历史（越低越好）</span>
+        </div>
+        <div id="status" class="status" role="status" aria-live="polite">尚未学会。点击“训练”观察边界如何弯曲并分开两类数据。</div>
+        <p class="note invariant">固定项：同一批 200 个样本、同一种子；重置只恢复网络，不更换数据。</p>
+      </aside>
+    </main>
+  </div>
+  <script src="assets/base.js"></script>
+  <script src="assets/lib/seedrandom.min.js"></script>
+  <script src="assets/lib/mlp.js"></script>
+  <script>
+  (function(){
+    'use strict';
+    Deck.init({index:18,total:20});
+    var root=document.getElementById('xor-lab');
+    var fieldCv=root.querySelector('#field'), lossCv=root.querySelector('#lossChart');
+    var els={toggle:root.querySelector('#toggle'),step:root.querySelector('#step'),reset:root.querySelector('#reset'),epoch:root.querySelector('#epoch'),loss:root.querySelector('#loss'),acc:root.querySelector('#acc'),seen:root.querySelector('#seen'),status:root.querySelector('#status')};
+    var rng=new Math.seedrandom('page-18-xor'), trainSet=[];
+    for(var i=0;i<200;i++){
+      var t=i%2, corner=(Math.floor(i/2)%2), sx=corner?1:-1, sy=(corner^t)?1:-1;
+      var jx=(rng()-.5)*.42, jy=(rng()-.5)*.42;
+      trainSet.push({x:[sx*.78+jx,sy*.78+jy],t:t});
+    }
+    var net=MLP.create({sizes:[2,10,10,1],act:'tanh',lr:0.3,seed:18});
+    var state={running:false,frames:0,seen:0,history:[],field:null,metrics:null,stop:null,destroyed:false};
+    var colors={model:'#175C78',attention:'#D45528',data:'#5A7045',paper:'#F8FAFA',line:'#A8B7BB',text:'#17262B'};
+    function refreshField(){state.field=net.field(-1.3,-1.3,1.3,1.3,80,80)}
+    function evaluate(){state.metrics=net.evaluate(trainSet);return state.metrics}
+    function drawField(){
+      var ctx=Deck.fit(fieldCv), w=fieldCv.offsetWidth,h=fieldCv.offsetHeight;if(!w||!h)return;
+      ctx.clearRect(0,0,w,h);var a=state.field,cw=w/80,ch=h/80;
+      if(a)for(var y=0;y<80;y++)for(var x=0;x<80;x++){
+        var p=a[y*80+x],alpha=.08+Math.abs(p-.5)*.38;
+        ctx.fillStyle=p>=.5?'rgba(212,85,40,'+alpha+')':'rgba(23,92,120,'+alpha+')';ctx.fillRect(x*cw,y*ch,cw+1,ch+1);
+      }
+      ctx.strokeStyle=colors.line;ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(w/2,0);ctx.lineTo(w/2,h);ctx.moveTo(0,h/2);ctx.lineTo(w,h/2);ctx.stroke();
+      trainSet.forEach(function(d){var px=(d.x[0]+1.3)/2.6*w,py=h-(d.x[1]+1.3)/2.6*h;ctx.save();ctx.translate(px,py);ctx.fillStyle=colors.paper;ctx.strokeStyle=d.t?colors.attention:colors.data;ctx.lineWidth=2.2;ctx.beginPath();if(d.t){ctx.rotate(Math.PI/4);ctx.rect(-4,-4,8,8)}else ctx.arc(0,0,4.5,0,Math.PI*2);ctx.fill();ctx.stroke();ctx.restore()});
+    }
+    function drawLoss(){
+      var ctx=Deck.fit(lossCv),w=lossCv.offsetWidth,h=lossCv.offsetHeight;ctx.clearRect(0,0,w,h);ctx.strokeStyle=colors.line;ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(0,h-1);ctx.lineTo(w,h-1);ctx.stroke();
+      if(state.history.length<2)return;var max=Math.max(.8,state.history[0]),min=0,n=state.history.length;ctx.strokeStyle=colors.model;ctx.lineWidth=3;ctx.beginPath();state.history.forEach(function(v,i){var x=i/(n-1)*w,y=h-8-(v-min)/(max-min)*(h-18);if(i===0)ctx.moveTo(x,y);else ctx.lineTo(x,y)});ctx.stroke();
+    }
+    function render(announce){var m=evaluate();els.epoch.textContent=(state.seen/200).toFixed(2);els.loss.textContent=isFinite(m.loss)?m.loss.toFixed(3):'—';els.acc.textContent=isFinite(m.acc)?(m.acc*100).toFixed(1)+'%':'—';els.seen.textContent=String(state.seen);els.toggle.textContent=state.running?'暂停':'训练';els.toggle.setAttribute('aria-pressed',String(state.running));els.step.disabled=state.running||net.diverged;
+      if(net.diverged){els.status.textContent='数值崩溃：权重出现非有限值或超过安全范围。请重置网络。';els.status.className='status warn';pause(false)}
+      else if(m.acc>=.9){els.status.textContent='网络已学会：当前边界把 XOR 的四个区域分开。';els.status.className='status'}
+      else {els.status.textContent='尚未学会：准确率仍接近随机猜测时，继续训练或观察 loss。';els.status.className='status'}
+      drawField();drawLoss();if(announce)els.status.setAttribute('aria-atomic','true');
+    }
+    function logicalStep(batches){if(net.diverged)return;for(var k=0;k<batches;k++){net.step(trainSet,16);state.seen+=16}state.frames++;var m=evaluate();state.history.push(m.loss);if(state.history.length>120)state.history.shift();if(state.frames%8===0||batches===1)refreshField();render(false)}
+    function pause(doRender){if(state.stop){state.stop();state.stop=null}state.running=false;if(doRender!==false)render(true)}
+    function start(){if(state.running||net.diverged)return;state.running=true;render(true);state.stop=Deck.loop(function(){if(!state.running)return;logicalStep(12)},{still:1})}
+    function reset(){pause(false);net.reset();state.frames=0;state.seen=0;state.history=[];refreshField();render(true)}
+    els.toggle.addEventListener('click',function(){state.running?pause(true):start()});
+    els.step.addEventListener('click',function(){pause(false);logicalStep(1);render(true)});
+    els.reset.addEventListener('click',reset);
+    Deck.onResize(function(){drawField();drawLoss()});
+    refreshField();render(false);
+    window.addEventListener('pagehide',function(){pause(false);state.destroyed=true},{once:true});
+  })();
+  </script>
+</body>
+</html>

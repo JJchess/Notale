@@ -21,6 +21,22 @@ class WorkflowRegistryTests(unittest.TestCase):
         available = set(skills.available(skills.WORKFLOWS))
         self.assertEqual(set(skills.ALL_WORKFLOWS), available)
 
+    def test_direction_menus_are_off_by_default(self) -> None:
+        """两张选项菜单表默认不注入,`--direction-menus` 才接回。
+
+        这个开关是**有期限的**,见 skills.direction_block 的 docstring:出了结论就要
+        和 prompts/direction-menus.md 一起删掉。这条测试守的是默认值别被翻过去 ——
+        对照臂的默认值一旦悄悄翻转,两条臂就都不是它们自称的那条了。
+        """
+        off, on = skills.direction_block(), skills.direction_block(menus=True)
+        self.assertNotIn("Direction families", off)
+        self.assertNotIn("Selection table", off)
+        self.assertIn("Direction families", on)
+        self.assertIn("Selection table", on)
+        # 菜单文件抬头那段中文是给人看的账,不进模型输入。
+        self.assertNotIn("有期限的", on)
+        self.assertTrue(on.startswith(off[:200]))
+
     def test_planner_catalog_contains_only_page_routes_in_priority_order(self) -> None:
         lines = skills.workflow_catalog().splitlines()
         names = [line[2:].split(":", 1)[0] for line in lines]
@@ -57,7 +73,6 @@ class WorkflowRegistryTests(unittest.TestCase):
                                   "worked-example.md", "studies.md", "delivery.md"},
             "get-illustration": {"prompt-and-integration.md"},
             "check-page": {"review-lenses.md"},
-            "plan-direction": {"direction-recipes.md", "material-and-effects.md"},
             "build-2d-sim": {"renderer-routing.md", "konva-recipe.md",
                             "matter-recipe.md", "pixi-recipe.md"},
             "build-chart": {"renderer-routing.md", "echarts-recipe.md",

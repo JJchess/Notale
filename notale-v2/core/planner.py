@@ -66,6 +66,8 @@ class Run:
     # 提示词目录可换。理由同下面 --skills 那段注释:三个外部依赖要么都能换,要么都不能换。
     # 这一条是为了能一键切两套模板做对照臂,而不必对 prompts/ 做 git 体操。
     prompts: Path = PROMPTS
+    # 两张选项菜单表接不接回 direction 块。**有期限的开关**,见 skills.direction_block。
+    direction_menus: bool = False
     root: Path = field(init=False)
     log: Writer = field(init=False)
 
@@ -604,9 +606,19 @@ def deck_call(run: Run, prompt: str) -> tuple[str, str]:
         f"被拒的存在 {run.root}/deck.rejectedN。")
 
 
-def seed(run: Run, chassis: Path, lib: Path) -> str:
+def seed(run: Run, chassis: Path, lib: Path) -> None:
     """探环境。nn-06 在这里花了 4 次模型调用去 Read 文件 —— 纯读取没有判断,
-    harness 直接做掉。返回库清单,后面三步都要用。"""
+    harness 直接做掉。
+
+    **2026-08-28 起不再返回 LIBS.md 正文。** 它以前是喂给写 theme/pages 那一步的
+    `{libs}`,8,341 字符、占那次提示词的 26%,而里面大半是 API 用法(mlp.js 怎么用、
+    katex 必须连 CSS 一起引、精确版本…)—— 那是建页 agent 的事,不是规划的事。
+    builder 侧早就切开了:`builder._libs_index()` 只把开头那张「按要做的事查」路由表
+    拼进 `prompts/tech.md`(覆盖每一页),细节留给一次 `Read`(`prompts/brief.md` 指路)。
+    规划这一步现在只在 deck.md 里读到一句「库由 harness 预置,选型和 API 归建页 agent」。
+    代价记在 runs/direction-trim-experiment.json:散文里不再出现
+    `MLP.create({sizes:…})` / `renderer:'svg'` 这类 API 级细节,跨页选库一致性会松。
+    """
     # 底盘件一律从 --chassis 取,**不留第二份实现**。
     # 以前 selfcheck 在 notale-v2 里另存了一份 tools_selfcheck.py,结果分叉了:
     # 那份 6,984B、zzz 那份 15,220B,密度(占用比/容器数/文本块数/叠压)、
@@ -624,7 +636,6 @@ def seed(run: Run, chassis: Path, lib: Path) -> str:
     if not (run.assets / "lib").exists():
         shutil.copytree(lib, run.assets / "lib")
     print(f"  seed         底盘已就位,库 {len(list(lib.glob('*.js')))} 个（真拷贝,非软链接）")
-    return (lib / "LIBS.md").read_text(encoding="utf-8")
 
 
 def skeletons(run: Run, n: int) -> None:
@@ -1061,7 +1072,7 @@ def plan_run(run: Run, chassis: Path, lib: Path,
     workflow_root = workflow_root or skills.WORKFLOWS
     print(f"\n▸ planner · {run.label}\n  {run.query}  /  {run.minutes} 分钟\n")
     t0 = time.time()
-    libs = seed(run, chassis, lib)
+    seed(run, chassis, lib)
     w, h = run.canvas
     # 页数预算从 `--minutes` 推。**这个数要留着** —— 把页数从 18 推到 41 的
     # 正是单页 150 秒那条,而不是页表的九列(见 STAY_CEILING 上面那段)。
@@ -1070,11 +1081,11 @@ def plan_run(run: Run, chassis: Path, lib: Path,
     css, pages_doc = deck_call(run, run.prompt(
         "deck", query=run.query, minutes=run.minutes,
         audience=run.audience, scenario=run.scenario or "（没写）",
-        libs=libs, canvas_w=w, canvas_h=h,
+        canvas_w=w, canvas_h=h,
         stay_ceiling=STAY_CEILING, n_lo=n_lo, n_hi=n_hi,
         n_target=round(total / 90), css_path=run.root / CSS_REL,
         pages_path=run.root / PAGES_REL,
-        direction=skills.direction_block(workflow_root),
+        direction=skills.direction_block(run.prompts, menus=run.direction_menus),
         theme_bans=skills.theme_slop_block(workflow_root),
         font_floor=skills.FONT_FLOOR))
 
@@ -1142,6 +1153,10 @@ def main() -> None:
     a.add_argument("--workflows", default=str(skills.WORKFLOWS))
     a.add_argument("--prompts", default=str(PROMPTS),
                    help="提示词模板目录,用来跑模板对照臂;默认 notale-v2/prompts")
+    # **有期限的开关**,出了结论就要和 prompts/direction-menus.md 一起删掉。
+    # 见 skills.direction_block 的 docstring。
+    a.add_argument("--direction-menus", action="store_true",
+                   help="把两张选项菜单表接回 direction 块(对照臂用);默认不接")
     n = a.parse_args()
     if not Path(n.prompts).is_dir():
         raise SystemExit(f"✗ --prompts 指的 {n.prompts} 不是目录")
@@ -1174,7 +1189,7 @@ def main() -> None:
     llm.override(name=n.model, wire_api=n.wire)
     if n.effort: config()["planner"]["reasoning_effort"] = n.effort
     plan_run(Run(n.query, n.minutes, n.audience, n.label, n.scenario,
-                 prompts=Path(n.prompts)),
+                 prompts=Path(n.prompts), direction_menus=n.direction_menus),
              Path(n.chassis), Path(n.lib), Path(n.skills), workflow_root)
 
 

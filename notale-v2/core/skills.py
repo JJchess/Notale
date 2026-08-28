@@ -19,6 +19,7 @@ from pathlib import Path
 # 现在 harness 的输入全部在 notale-v2/vendor 下,跟着这个包一起走。
 LEGACY = Path(__file__).resolve().parent.parent / "vendor" / "skills"
 WORKFLOWS = Path(__file__).resolve().parent.parent / "workflows"
+PROMPTS = Path(__file__).resolve().parent.parent / "prompts"
 DEFAULT = LEGACY
 
 # Planner 只在这八个“建页工作流”里选一个。另两份各有单独职责：
@@ -39,7 +40,10 @@ PAGE_WORKFLOWS = (
     "get-illustration",
     "build-page",
 )
-ALL_WORKFLOWS = PAGE_WORKFLOWS + ("plan-direction", "check-page")
+# plan-direction 2026-08-28 迁出:它从来不是建页 workflow(builder 硬拦到只能装载
+# page.primary_workflow),唯一的消费者是 planner 的 `{direction}`,所以合成
+# `prompts/direction.md` 之后就不再是 workflow 了。见 DIRECTION_FILE 上面那段。
+ALL_WORKFLOWS = PAGE_WORKFLOWS + ("check-page",)
 # scrub-copy-slop.md / scrub-visual-slop.md 不是 workflow —— 没有 SKILL.md,不会被
 # `Skill` 工具或 available() 发现。之所以不挂靠成第 13/14 个 workflow:`Skill` 工具在
 # builder 循环里被硬拦到只能读 page.primary_workflow(core/builder.py:345-347),而这
@@ -127,24 +131,51 @@ FONT_FLOOR = ("正文与成句说明 ≥16px，控件标签、图例、图注和
 # ——「CONTRACT 才是唯一覆盖 21/21 页的载体」—— 现在由 tech.md 承担了。
 
 
-DIRECTION_FILES = (
-    "plan-direction/SKILL.md",
-    "plan-direction/references/direction-recipes.md",
-    "plan-direction/references/material-and-effects.md",
-)
+# 视觉方向 2026-08-28 从 `workflows/plan-direction/` 的三份文件合成 `prompts/direction.md`。
+#
+# 三份文件一直是被 `direction_block()` 按顺序原文拼起来送进同一次调用的,所以文件边界
+# 带来的东西全是纯开销:那节 `## Reference routing`(449 字符)让模型先去 `Read` 两份
+# **已经内联在它后面**的文件 —— 而同一个块的开场白写的是「已原文内联,不需要再去读任何
+# 文件」,自相矛盾;两份 reference 各自的「Read this reference when…」开场同理;
+# 再加包三层标签的开销。合成一份之后这些一起消失,plan-direction 也就不再是 workflow
+# (它本来也不在 PAGE_WORKFLOWS 里,builder 永远路由不到它)。
+DIRECTION_FILE = "direction.md"
+DIRECTION_MENUS_FILE = "direction-menus.md"
+# 菜单表正文从这一行开始 —— 文件抬头那段中文是给人看的账,不进模型输入。
+_MENUS_START = "## Direction families"
 
 
-def direction_block(root: Path = WORKFLOWS) -> str:
-    """把 plan-direction 全文拼成一块,给 prompts/theme.md 用。"""
+def direction_block(root: Path = PROMPTS, menus: bool = False) -> str:
+    """把视觉方向拼成一块,给 `prompts/deck.md` 的 `{direction}` 用。
+
+    确定性路径,和 `anti_slop_block()` 同一套:读原文、包一层标签、不摘要、
+    路径给错就报错 —— 静默跳过会让人以为注入了其实没有。
+
+    `menus=True` 把两张选项菜单表接回来(`--direction-menus`)。**这个开关是有期限的。**
+    它存在的唯一理由是让「那两张表留还是删」变成一次 flag 对照,而不是 git revert:
+    上一轮删掉它们的那一臂因为两个 planner 并发写同一个 run 目录而作废,而白得的那组
+    同条件重复采样恰好证明 `check_palette` 的判据在 n=1 下读不出效应
+    (家族在「暗底科技」和「其他」之间跳,语义色明度极差在 5pp 和 57pp 之间跳)。
+    实验出结论之后 —— 留就把两张表并回 `direction.md`、删就按
+    `attic/plan-typography/README.md` 的先例挪进 `attic/` 并写清为什么 ——
+    这个参数、`--direction-menus` 和 `prompts/direction-menus.md` 要一起删掉,
+    不许留成永久配置项。见 `runs/direction-trim-experiment.json`。
+    """
     parts = ["下面是视觉方向的作业方法,已**原文内联**,不需要再去读任何文件。",
              "它规定的是这套讲义的视觉世界:配色、材质、几何、字体角色、标志性元素、"
              "媒体处理和动效基调。按它做,不要另起一套。"]
-    for rel in DIRECTION_FILES:
+    rels = [DIRECTION_FILE] + ([DIRECTION_MENUS_FILE] if menus else [])
+    for rel in rels:
         f = root / rel
         if not f.is_file():
             raise FileNotFoundError(f"direction_block 需要 {f}，但它不存在")
-        parts.append(f"<direction src=\"{rel}\">\n"
-                     + f.read_text(encoding="utf-8").strip() + "\n</direction>")
+        text = f.read_text(encoding="utf-8")
+        if rel == DIRECTION_MENUS_FILE:
+            if _MENUS_START not in text:
+                raise ValueError(f"{f} 里没有 {_MENUS_START!r} —— 格式变了就不要静默注入抬头那段账")
+            text = text.split(_MENUS_START, 1)[1]
+            text = _MENUS_START + text
+        parts.append(f"<direction src=\"{rel}\">\n" + text.strip() + "\n</direction>")
     return "\n\n".join(parts)
 
 

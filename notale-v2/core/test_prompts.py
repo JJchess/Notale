@@ -25,11 +25,22 @@ from core.planner import (MAX_CHARS, _valid_css, _valid_pages,  # noqa: E402
 # 是按 `wc -c` 的**字节**定的,而这道闸比的是 `len(text)` 的**字符**。中文 3 字节/字,
 # 于是上限一直比本意宽了约一倍 —— 契约实际 1,998 字符却挂着 5,646 的天花板,
 # 这道闸事实上从没拦过任何东西。现在按真实字符数 + 约 10% 余量重定。
+#
+# **这一栏只量模板本身,量不到注入块** —— 而 deck 的注入块比模板大好几倍。
+# 2026-08-28 deck 从 5,146 涨到 5,253、破了 5,200 的顶,原因恰恰是砍输入:
+# `{libs}` 那 8,341 字符的 LIBS.md 全文换成了模板里 145 字符的一句话
+# (「选库和 API 归建页 agent」),**渲染后的提示词净降 8,196 字符**。
+# 所以这里破顶不是退化,把顶抬到 5,300 并把账记在这儿;
+# 注入块那一侧的顶在 `core/test_skills.py` 的 `test_direction_block_stays_small`。
 BASELINE_CHARS = {
     "brief": 700,
     "tech": 2200,
     "philosophy": 2100,
-    "deck": 5200,
+    "deck": 5300,
+    # `direction.md` 2026-08-28 从 workflows/plan-direction/ 三份文件合成进来。
+    # 它以前是「注入块」、不受这一栏管 —— 而它当时是 14,656 字符、占那次提示词的 45%,
+    # 从来没有任何上限。现在它是一份普通的 prompts 模板,归这一栏管。
+    "direction": 5700,
 }
 
 PROMPT_ARGS = {
@@ -38,8 +49,9 @@ PROMPT_ARGS = {
     "tech": dict(n_pages=12, canvas_w=1600, canvas_h=900,
                  libs="库清单", font_floor="字号地板"),
     "philosophy": {},
+    "direction": {},
     "deck": dict(query="Q", minutes=30, audience="高中生", scenario="课堂投影",
-                 libs="库清单", canvas_w=1600, canvas_h=900, stay_ceiling=150.0,
+                 canvas_w=1600, canvas_h=900, stay_ceiling=150.0,
                  n_lo=12, n_hi=40, n_target=20, direction="(视觉方向)",
                  theme_bans="(配色禁令)", font_floor="字号地板",
                  css_path="/tmp/r/pages/assets/theme.css",

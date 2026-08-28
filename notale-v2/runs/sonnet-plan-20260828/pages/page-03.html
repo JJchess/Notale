@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<link rel="stylesheet" href="assets/lib/katex.min.css">
+<style>
+  #stage{ gap:0; }
+  .hdr{ flex:none; display:flex; flex-direction:column; gap:4px; margin-bottom:14px; }
+  .z-ctl{
+    flex:none; display:flex; align-items:center; gap:16px; margin-bottom:16px;
+    background:var(--paper); border:1.5px solid var(--line-strong); border-radius:var(--radius);
+    padding:12px 20px;
+  }
+  .z-ctl label{ font-family:var(--font-mono); font-size:var(--fs-label); color:var(--muted); flex:none; white-space:nowrap; }
+  .z-ctl input[type=range]{ flex:1; }
+  .z-readout{ font-family:var(--font-mono); font-size:20px; font-weight:600; color:var(--text); font-variant-numeric:tabular-nums; flex:none; min-width:120px; text-align:right; }
+  .panel-title{ display:flex; align-items:baseline; justify-content:space-between; gap:12px; }
+  .formula{ font-size:20px; color:var(--text); flex:none; margin:2px 0 6px; }
+  .chart-box{ flex:1; min-height:0; }
+  .readout-line{ flex:none; font-family:var(--font-mono); font-size:20px; color:var(--text); font-variant-numeric:tabular-nums; margin-top:8px; }
+  .readout-line .lbl{ font-family:var(--font-sans); font-size:var(--fs-label); color:var(--muted); margin-right:8px; }
+  .sig-color{ color:var(--forward); }
+  .tanh-color{ color:var(--backward); }
+</style>
+</head>
+<body data-page="03" data-total="20">
+<div id="stage">
+  <div class="hdr">
+    <span class="kicker">激活函数 · 把加权和压进一个范围</span>
+    <h1>加权和可以是任意实数,激活函数把它压进固定区间</h1>
+  </div>
+
+  <div class="z-ctl">
+    <label for="zRange">拖动游标改变输入 z</label>
+    <input type="range" id="zRange" min="-6" max="6" step="0.1" value="1.5" aria-label="z 的取值,范围 -6 到 6">
+    <span class="z-readout"><span class="num" id="zVal">z = 1.50</span></span>
+  </div>
+
+  <div class="layout-compare" style="flex:1;">
+    <div class="panel min0" style="display:flex;">
+      <div class="panel-title">
+        <h2><span class="sig-color">sigmoid</span>:压进 (0,1),适合当"概率"</h2>
+      </div>
+      <div class="formula" id="sigFormula"></div>
+      <div class="chart-box cvbox"><div id="sigChart" style="width:100%;height:100%;"></div></div>
+      <div class="readout-line"><span class="lbl">读数</span><span class="num sig-color" id="sigReadout">σ(1.50) = 0.818</span></div>
+    </div>
+    <div class="panel min0" style="display:flex;">
+      <div class="panel-title">
+        <h2><span class="tanh-color">tanh</span>:压进 (-1,1),零点对称</h2>
+      </div>
+      <div class="formula" id="tanhFormula"></div>
+      <div class="chart-box cvbox"><div id="tanhChart" style="width:100%;height:100%;"></div></div>
+      <div class="readout-line"><span class="lbl">读数</span><span class="num tanh-color" id="tanhReadout">tanh(1.50) = 0.905</span></div>
+    </div>
+  </div>
+</div>
+
+<script src="assets/base.js"></script>
+<script src="assets/lib/katex.min.js"></script>
+<script src="assets/lib/echarts.min.js"></script>
+<script>
+(function(){
+  katex.render("\\sigma(z)=\\frac{1}{1+e^{-z}}", document.getElementById('sigFormula'), { throwOnError:false });
+  katex.render("\\tanh(z)=\\frac{e^{z}-e^{-z}}{e^{z}+e^{-z}}", document.getElementById('tanhFormula'), { throwOnError:false });
+
+  function sigmoid(z){ return 1/(1+Math.exp(-z)); }
+  function tanhf(z){ return Math.tanh(z); }
+
+  const N = 121;
+  const xs = [];
+  for(let i=0;i<N;i++){ xs.push(-6 + i*12/(N-1)); }
+  const sigData = xs.map(z=>[z, sigmoid(z)]);
+  const tanhData = xs.map(z=>[z, tanhf(z)]);
+
+  const forward = Deck.token('--forward');
+  const backward = Deck.token('--backward');
+  const text = Deck.token('--text');
+  const muted = Deck.token('--muted');
+  const line = Deck.token('--line');
+
+  const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  const sigHost = document.getElementById('sigChart');
+  const tanhHost = document.getElementById('tanhChart');
+  const sigChart = echarts.init(sigHost, null, { renderer:'svg' });
+  const tanhChart = echarts.init(tanhHost, null, { renderer:'svg' });
+
+  function baseOption(color, data, yMin, yMax, marker){
+    return {
+      animation: !reduced,
+      textStyle: { fontSize: 16, color: text },
+      grid: { left: 46, right: 20, top: 20, bottom: 36 },
+      xAxis: {
+        name: 'z', nameLocation:'end', nameTextStyle:{ fontSize:14, color: muted },
+        min:-6, max:6, axisLabel:{ fontSize:14, color: muted },
+        axisLine:{ lineStyle:{ color: line } }, splitLine:{ show:false }
+      },
+      yAxis: {
+        min:yMin, max:yMax, axisLabel:{ fontSize:12, color: muted },
+        axisLine:{ lineStyle:{ color: line } }, splitLine:{ lineStyle:{ color: line } }
+      },
+      series: [
+        { id:'curve', type:'line', data, showSymbol:false, lineStyle:{ color, width:3 }, silent:true, z:1 },
+        { id:'marker', type:'scatter', data:[marker], symbolSize:14,
+          itemStyle:{ color, borderColor:'#fff', borderWidth:2 }, z:2,
+          markLine: {
+            symbol:'none', silent:true,
+            lineStyle:{ color: muted, type:'dashed', width:1 },
+            data: [ { xAxis: marker[0] } ]
+          }
+        }
+      ]
+    };
+  }
+
+  function render(z){
+    const sv = sigmoid(z);
+    const tv = tanhf(z);
+    sigChart.setOption(baseOption(forward, sigData, 0, 1, [z, sv]), { notMerge:true });
+    tanhChart.setOption(baseOption(backward, tanhData, -1, 1, [z, tv]), { notMerge:true });
+    document.getElementById('zVal').textContent = 'z = ' + z.toFixed(2);
+    document.getElementById('sigReadout').textContent = '\u03c3(' + z.toFixed(2) + ') = ' + sv.toFixed(3);
+    document.getElementById('tanhReadout').textContent = 'tanh(' + z.toFixed(2) + ') = ' + tv.toFixed(3);
+  }
+
+  const range = document.getElementById('zRange');
+  range.addEventListener('input', ()=> render(parseFloat(range.value)));
+
+  render(parseFloat(range.value));
+
+  const ro = new ResizeObserver(()=>{ sigChart.resize(); tanhChart.resize(); });
+  ro.observe(sigHost);
+  ro.observe(tanhHost);
+
+  Deck.init({ index:3, total:20 });
+})();
+</script>
+</body>
+</html>

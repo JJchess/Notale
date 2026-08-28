@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  #stage{ display:flex; flex-direction:column; gap:22px; }
+  .head{ flex:none; display:flex; flex-direction:column; gap:6px; }
+  .head h1{ max-width:1100px; }
+  .body-row{ flex:1; display:flex; gap:40px; min-height:0; }
+  .gen-col{ flex:1; min-width:0; }
+  .side-col{ width:380px; flex:none; display:flex; flex-direction:column; gap:12px; min-height:0; }
+  .side-panel{ flex:1; display:flex; flex-direction:column; gap:10px; min-height:0; }
+  .side-panel .cvwrap{ flex:1; min-height:0; position:relative; }
+</style>
+</head>
+<body data-page="20" data-total="20">
+<div id="stage">
+
+  <div class="head">
+    <span class="kicker">回到开头那张乱糟糟的图</span>
+    <h1>现在你知道它是怎么变干净的了</h1>
+  </div>
+
+  <div class="body-row">
+
+    <div class="gen-col k-generalization">
+      <div class="claim">一个神经元的加权和加激活函数，靠损失和梯度不断微调，就能学会画出复杂的分界线。</div>
+      <div class="trunk">
+        <div class="supports">
+          <div class="support">单个神经元 = 加权和 + 激活函数（第二、三页）</div>
+          <div class="support">单层只能画直线，画不出棋盘格（第五页）</div>
+          <div class="support">多层能把直线拼成弯的边界（第六页）</div>
+          <div class="support">损失衡量错得多少，梯度告诉每个权重该往哪动（第八至十一页）</div>
+          <div class="support">一次次小更新叠加起来就是训练（第十二至十四页）</div>
+          <div class="support">学习率、网络容量都是要调的旋钮，调错会不学或者记错（第十三、十七页）</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="side-col">
+      <div class="panel side-panel">
+        <div class="small">同一批点、同一个 seed，训练之后的决策边界</div>
+        <div class="cvwrap">
+          <div class="cvbox" style="position:absolute;inset:0;">
+            <canvas id="cv" class="cv-fill"></canvas>
+          </div>
+        </div>
+        <div class="legend">
+          <span class="li"><span class="sw" style="background:var(--backward)"></span>类别 0</span>
+          <span class="li"><span class="sw" style="background:var(--forward)"></span>类别 1</span>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lib/seedrandom.min.js"></script>
+<script src="assets/lib/mlp.js"></script>
+<script>
+(function(){
+  Math.seedrandom('page-15');
+
+  // 与第十五页同一批点：四象限棋盘格（第一、三象限=1，第二、四象限=0）
+  function label(x, y){
+    var q1 = x >= 0, q2 = y >= 0;
+    return (q1 === q2) ? 1 : 0;
+  }
+
+  var pts = [];
+  for (var i = 0; i < 200; i++){
+    var x = Math.random() * 2.6 - 1.3;
+    var y = Math.random() * 2.6 - 1.3;
+    pts.push({ x:[x,y], t:label(x,y) });
+  }
+
+  var net = MLP.create({ sizes:[2,10,10,1], act:'tanh', lr:0.3, seed:15 });
+  for (var s = 0; s < 900; s++){
+    net.step(pts, 16);
+  }
+
+  var RES = 90;
+  var field = net.field(-1.3, -1.3, 1.3, 1.3, RES, RES);
+
+  function lerp(a,b,t){ return a + (b-a)*t; }
+
+  function draw(ctx, w, h){
+    ctx.clearRect(0,0,w,h);
+    var fc = Deck.rgb('--forward');
+    var bc = Deck.rgb('--backward');
+    var cw = w / RES, ch = h / RES;
+    for (var r = 0; r < RES; r++){
+      for (var c = 0; c < RES; c++){
+        var v = field[r*RES + c]; // 0~1
+        var rr = lerp(bc[0], fc[0], v);
+        var gg = lerp(bc[1], fc[1], v);
+        var bb = lerp(bc[2], fc[2], v);
+        ctx.fillStyle = 'rgb(' + (rr|0) + ',' + (gg|0) + ',' + (bb|0) + ')';
+        ctx.fillRect(c*cw, (RES-1-r)*ch, cw+1, ch+1);
+      }
+    }
+    // 训练点
+    for (var i = 0; i < pts.length; i++){
+      var p = pts[i];
+      var px = (p.x[0] + 1) / 2 * w;
+      var py = (1 - (p.x[1] + 1) / 2) * h;
+      ctx.beginPath();
+      ctx.arc(px, py, 3, 0, Math.PI*2);
+      ctx.fillStyle = p.t === 1 ? Deck.rgba('--forward', 1) : Deck.rgba('--backward', 1);
+      ctx.strokeStyle = 'rgba(255,255,255,0.85)';
+      ctx.lineWidth = 1;
+      ctx.fill();
+      ctx.stroke();
+    }
+  }
+
+  var cv = document.getElementById('cv');
+  Deck.autofit(cv, draw);
+})();
+</script>
+</body>
+</html>
+</content>

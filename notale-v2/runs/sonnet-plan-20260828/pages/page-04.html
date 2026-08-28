@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<script src="assets/lib/d3.min.js"></script>
+<script src="assets/lib/seedrandom.min.js"></script>
+<style>
+  #stage{ }
+  .p04-title{ display:flex; flex-direction:column; gap:6px; margin-bottom:18px; }
+  .p04-sliders{ display:flex; flex-direction:column; gap:16px; }
+  .p04-slider .row{ display:flex; justify-content:space-between; align-items:baseline; font-family:var(--font-mono); font-size:var(--fs-label); color:var(--muted); }
+  .p04-slider .row .val{ color:var(--text); font-weight:600; }
+  .p04-readout{ margin-top: 6px; }
+  .p04-readout .lbl{ font-size:var(--fs-label); color:var(--muted); margin-bottom:4px; }
+  .p04-hint{ margin-top:10px; min-height: 40px; }
+  .p04-vis{ flex:1; display:flex; flex-direction:column; min-height:0; }
+  .p04-vis .cvbox{ flex:1; min-height:0; }
+  .p04-legend{ margin-top:10px; }
+</style>
+</head>
+<body data-page="04" data-total="20">
+<div id="stage">
+  <div class="p04-title">
+    <span class="kicker">一个神经元 · 决策边界</span>
+    <h1>加上 sigmoid 的神经元,几何上就是一条直线</h1>
+  </div>
+
+  <div class="layout-split" style="flex:1; min-height:0;">
+    <div class="col-text min0">
+      <p class="lead">调整 w1、w2、b,右边的直线会随之转动和平移。把它调到刚好分开两簇点的位置。</p>
+
+      <div class="p04-sliders">
+        <div class="p04-slider">
+          <div class="row"><span>w1</span><span class="val num" id="v-w1">1.20</span></div>
+          <input type="range" id="s-w1" min="-2" max="2" step="0.01" value="1.2">
+        </div>
+        <div class="p04-slider">
+          <div class="row"><span>w2</span><span class="val num" id="v-w2">-0.80</span></div>
+          <input type="range" id="s-w2" min="-2" max="2" step="0.01" value="-0.8">
+        </div>
+        <div class="p04-slider">
+          <div class="row"><span>b</span><span class="val num" id="v-b">0.20</span></div>
+          <input type="range" id="s-b" min="-2" max="2" step="0.01" value="0.2">
+        </div>
+      </div>
+
+      <div class="panel q p04-readout">
+        <div class="lbl">原点处 sigmoid 输出 σ(w1·0 + w2·0 + b)</div>
+        <div class="big sm num" id="origin-out">0.55</div>
+      </div>
+
+      <div class="p04-hint" id="hint-box" aria-live="polite"></div>
+    </div>
+
+    <div class="col-vis p04-vis min0">
+      <div class="cvbox">
+        <svg id="p04-svg" width="100%" height="100%" role="img" aria-label="平面上40个点按右上/左下规则着色,叠加当前权重决定的决策边界直线"></svg>
+      </div>
+      <div class="legend p04-legend">
+        <span class="li"><span class="sw" style="background:var(--forward)"></span>判为 1(模型输出 ≥ 0.5)</span>
+        <span class="li"><span class="sw" style="background:var(--muted)"></span>判为 0(模型输出 &lt; 0.5)</span>
+      </div>
+    </div>
+  </div>
+</div>
+<script src="assets/base.js"></script>
+<script>
+(function(){
+  // ---- 数据:固定种子生成 40 个点,按“右上/左下为1,其余为0”真值规则标记 ----
+  var rng = new Math.seedrandom('page-04');
+  var N = 40;
+  var points = [];
+  for (var i=0;i<N;i++){
+    var x = (rng()*2-1)*1.5;
+    var y = (rng()*2-1)*1.5;
+    // 右上半区(x+y>0)为 1,左下半区(x+y<0)为 0 —— 一条对角线就能分开
+    var truth = (x + y > 0) ? 1 : 0;
+    points.push({x:x, y:y, truth:truth});
+  }
+
+  // ---- 状态 ----
+  var state = { w1: 1.2, w2: -0.8, b: 0.2 };
+
+  function sigmoid(z){ return 1/(1+Math.exp(-z)); }
+
+  // ---- d3 场景搭建(一次性) ----
+  var svg = d3.select('#p04-svg');
+  var vb = 600;
+  svg.attr('viewBox', '0 0 ' + vb + ' ' + vb).attr('preserveAspectRatio','xMidYMid meet');
+
+  var margin = 40;
+  var plot = vb - margin*2;
+  var scale = d3.scaleLinear().domain([-1.5,1.5]).range([margin, margin+plot]);
+  var scaleY = d3.scaleLinear().domain([-1.5,1.5]).range([margin+plot, margin]); // 翻转 y
+
+  var g = svg.append('g');
+
+  // 坐标轴网格线(原点为中心的浅十字)
+  g.append('line')
+    .attr('x1', margin).attr('x2', margin+plot)
+    .attr('y1', scaleY(0)).attr('y2', scaleY(0))
+    .attr('stroke', 'var(--line-strong)').attr('stroke-width', 1);
+  g.append('line')
+    .attr('x1', scale(0)).attr('x2', scale(0))
+    .attr('y1', margin).attr('y2', margin+plot)
+    .attr('stroke', 'var(--line-strong)').attr('stroke-width', 1);
+
+  // 边框
+  g.append('rect')
+    .attr('x', margin).attr('y', margin).attr('width', plot).attr('height', plot)
+    .attr('fill', 'none').attr('stroke', 'var(--line)').attr('stroke-width', 1);
+
+  // 刻度标注
+  [-1.5,-1,0,1,1.5].forEach(function(t){
+    g.append('text').attr('x', scale(t)).attr('y', margin+plot+18)
+      .attr('text-anchor','middle').attr('font-family','var(--font-mono)')
+      .attr('font-size','12').attr('fill','var(--muted)').text(t);
+    if (t!==0){
+      g.append('text').attr('x', margin-10).attr('y', scaleY(t)+4)
+        .attr('text-anchor','end').attr('font-family','var(--font-mono)')
+        .attr('font-size','12').attr('fill','var(--muted)').text(t);
+    }
+  });
+
+  // 决策边界直线
+  var boundaryLine = g.append('line')
+    .attr('stroke', 'var(--backward)').attr('stroke-width', 2.5);
+
+  // 散点
+  var dots = g.selectAll('circle.pt').data(points).enter().append('circle')
+    .attr('class','pt')
+    .attr('cx', function(d){ return scale(d.x); })
+    .attr('cy', function(d){ return scaleY(d.y); })
+    .attr('r', 6)
+    .attr('stroke', 'var(--paper)')
+    .attr('stroke-width', 1.2);
+
+  function classify(d){
+    var z = state.w1*d.x + state.w2*d.y + state.b;
+    return sigmoid(z) >= 0.5 ? 1 : 0;
+  }
+
+  var LIM = 1.5;
+
+  function lineIntersectsBox(w1, w2, b){
+    // w1*x + w2*y + b = 0, 求与正方形 [-LIM,LIM]^2 边界的交点(最多两个)
+    var pts = [];
+    function tryX(x){
+      if (Math.abs(w2) < 1e-6) return;
+      var y = -(w1*x + b)/w2;
+      if (y >= -LIM-1e-6 && y <= LIM+1e-6) pts.push([x, Deck.clamp(y,-LIM,LIM)]);
+    }
+    function tryY(y){
+      if (Math.abs(w1) < 1e-6) return;
+      var x = -(w2*y + b)/w1;
+      if (x >= -LIM-1e-6 && x <= LIM+1e-6) pts.push([Deck.clamp(x,-LIM,LIM), y]);
+    }
+    tryX(-LIM); tryX(LIM); tryY(-LIM); tryY(LIM);
+    // 去重(浮点容差)
+    var uniq = [];
+    pts.forEach(function(p){
+      if (!uniq.some(function(q){ return Math.abs(q[0]-p[0])<1e-4 && Math.abs(q[1]-p[1])<1e-4; })) uniq.push(p);
+    });
+    return uniq;
+  }
+
+  function updateBoundary(){
+    var pts = lineIntersectsBox(state.w1, state.w2, state.b);
+    if (pts.length < 2){
+      boundaryLine.attr('x1', -9999).attr('y1', -9999).attr('x2', -9999).attr('y2', -9999);
+      return;
+    }
+    boundaryLine
+      .attr('x1', scale(pts[0][0])).attr('y1', scaleY(pts[0][1]))
+      .attr('x2', scale(pts[1][0])).attr('y2', scaleY(pts[1][1]));
+  }
+
+  function checkSeparated(){
+    for (var i=0;i<points.length;i++){
+      if (classify(points[i]) !== points[i].truth) return false;
+    }
+    return true;
+  }
+
+  function render(){
+    dots.attr('fill', function(d){
+      var pred = classify(d);
+      return pred===1 ? 'var(--forward)' : 'var(--muted)';
+    });
+    updateBoundary();
+
+    var origin = sigmoid(state.b);
+    document.getElementById('origin-out').textContent = origin.toFixed(2);
+
+    var hint = document.getElementById('hint-box');
+    if (checkSeparated()){
+      hint.innerHTML = '<span class="hint">调对了——这两类点本来就能被一条直线分开</span>';
+    } else {
+      hint.innerHTML = '';
+    }
+  }
+
+  function bindSlider(id, valId, key){
+    var el = document.getElementById(id);
+    var out = document.getElementById(valId);
+    el.addEventListener('input', function(){
+      state[key] = parseFloat(el.value);
+      out.textContent = state[key].toFixed(2);
+      render();
+    });
+  }
+  bindSlider('s-w1','v-w1','w1');
+  bindSlider('s-w2','v-w2','w2');
+  bindSlider('s-b','v-b','b');
+
+  render();
+})();
+</script>
+</body>
+</html>

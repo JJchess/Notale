@@ -2,7 +2,7 @@
 
 > 来源:`Nutlope/hallmark`(slop-test.md / anti-patterns.md)、`pbakaus/impeccable`(craft-floor.md)。原表大量是落地页专属门禁(nav/footer 指纹、hero 折叠线、CTA、定价表、见证墙、SEO/LCP)——固定 1600×900 不滚动的教学画布不存在这些容器,已全部剔除。这里只留下容器无关、真正的装饰/构图通病,以及经打磨后适配 notale-v2 页面契约的条目。
 
-这份清单管的是**具体、可判断的形状**,不是"要有品味"这种原则性要求。检查方式是渲染后逐条比对,不是设计前默念清单。`plan-direction`/`check-page` 已经禁止 generic 深色渐变背景、purple-glow、glass-card、card-grid 默认项,这份清单是**补空缺**,不是重复劳动。命中判断同样看形状而非孤立元素:一个元素单独出现通常正常,遇到下面点名的具体组合才是问题。
+这份清单管的是**具体、可判断的形状**,不是"要有品味"这种原则性要求。检查方式是渲染后逐条比对,不是设计前默念清单。`scrub-theme-slop.md` 已经禁止 generic 深色渐变背景、purple-glow、glass-card、card-grid 默认项(它由 `skills.theme_slop_block()` 注入写 `theme.css` 那一次调用,和本清单不在同一层),这份清单是**补空缺**,不是重复劳动。命中判断同样看形状而非孤立元素:一个元素单独出现通常正常,遇到下面点名的具体组合才是问题。
 
 ## 检查顺序
 

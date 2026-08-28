@@ -1,0 +1,200 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<link rel="stylesheet" href="assets/lib/katex.min.css">
+<style>
+  header.pgh{ margin-bottom:16px; flex:none; }
+  header.pgh h1{ margin-top:6px; max-width:1200px; }
+
+  .netpanel{ flex:1; min-height:0; display:flex; flex-direction:column; gap:10px; }
+  .netbox{ flex:1; min-height:0; display:flex; align-items:center; justify-content:center; padding:10px; }
+  .netbox svg{ width:100%; height:100%; max-height:100%; }
+
+  .wire{ stroke:var(--weight); stroke-width:2; fill:none; transition:stroke .2s, stroke-width .2s, opacity .2s; }
+  .wire.done{ stroke:var(--forward); stroke-width:3; opacity:.5; }
+  .wire.active{ stroke:var(--forward); stroke-width:5; opacity:1; animation:wirepulse .5s ease-out; }
+  @keyframes wirepulse{ 0%{ stroke-width:2; } 45%{ stroke-width:6.5; } 100%{ stroke-width:5; } }
+
+  .biasdot{ fill:var(--muted); }
+
+  .node circle{ fill:var(--paper); stroke:var(--line-strong); stroke-width:2; transition:stroke .2s, stroke-width .2s; }
+  .node.active circle{ stroke:var(--forward); stroke-width:3.5; }
+  .node .lbl{ font-family:var(--font-mono); font-size:14px; fill:var(--muted); text-anchor:middle; }
+  .node .main{ font-family:var(--font-mono); font-size:17px; font-weight:600; fill:var(--text); text-anchor:middle; }
+  .node .sig{ font-family:var(--font-display); font-size:14px; font-style:italic; fill:var(--muted); text-anchor:middle; }
+  .val{ font-family:var(--font-mono); font-size:14px; font-weight:600; fill:var(--forward); text-anchor:middle; }
+
+  .wlabel{ font-family:var(--font-mono); font-size:14px; fill:var(--muted); }
+
+  .stepswrap{ flex:1; min-height:0; display:flex; flex-direction:column; gap:0; overflow:auto; }
+  .stepline{ padding:9px 2px; border-bottom:1px solid var(--line); }
+  .stepline .katex{ font-size:20px; }
+
+  #finalMsg{ display:none; }
+
+  .legend{ margin-top:2px; }
+</style>
+</head>
+<body data-page="07" data-total="20">
+<div id="stage">
+
+  <header class="pgh">
+    <span class="kicker">统一算例 · 前向传播</span>
+    <h1>输入怎么变成一个数字：一步步算完整个前向传播</h1>
+  </header>
+
+  <div class="layout-split" style="flex:1; min-height:0;">
+
+    <div class="col-text min0">
+      <div class="netpanel panel">
+        <div class="netbox min0">
+          <svg viewBox="0 0 500 480" preserveAspectRatio="xMidYMid meet">
+            <!-- bias stubs (drawn first, under nodes) -->
+            <line id="e-b-h1" class="wire" x1="240" y1="18" x2="240" y2="100"></line>
+            <line id="e-b-h2" class="wire" x1="240" y1="462" x2="240" y2="380"></line>
+            <line id="e-b-out" class="wire" x1="420" y1="150" x2="420" y2="240"></line>
+            <circle class="biasdot" cx="240" cy="18" r="4"></circle>
+            <circle class="biasdot" cx="240" cy="462" r="4"></circle>
+            <circle class="biasdot" cx="420" cy="150" r="4"></circle>
+
+            <!-- main wires -->
+            <line id="e-x1-h1" class="wire" x1="50" y1="140" x2="240" y2="100"></line>
+            <line id="e-x2-h1" class="wire" x1="50" y1="340" x2="240" y2="100"></line>
+            <line id="e-x1-h2" class="wire" x1="50" y1="140" x2="240" y2="380"></line>
+            <line id="e-x2-h2" class="wire" x1="50" y1="340" x2="240" y2="380"></line>
+            <line id="e-h1-out" class="wire" x1="240" y1="100" x2="420" y2="240"></line>
+            <line id="e-h2-out" class="wire" x1="240" y1="380" x2="420" y2="240"></line>
+
+            <!-- weight labels -->
+            <text class="wlabel" x="98" y="115">w11=0.5</text>
+            <text class="wlabel" x="98" y="270">w12=-0.6</text>
+            <text class="wlabel" x="185" y="310">w21=0.3</text>
+            <text class="wlabel" x="98" y="372">w22=0.8</text>
+            <text class="wlabel" x="304" y="145">v1=0.7</text>
+            <text class="wlabel" x="304" y="342">v2=-0.4</text>
+            <text class="wlabel" x="248" y="56">b1=0.1</text>
+            <text class="wlabel" x="248" y="440">b2=-0.2</text>
+            <text class="wlabel" x="402" y="190" style="font-size:13px">b_out=0.2</text>
+
+            <!-- nodes -->
+            <g class="node" id="n-x1">
+              <text class="lbl" x="50" y="98">x1</text>
+              <circle cx="50" cy="140" r="28"></circle>
+              <text class="main" x="50" y="146">1</text>
+            </g>
+            <g class="node" id="n-x2">
+              <text class="lbl" x="50" y="298">x2</text>
+              <circle cx="50" cy="340" r="28"></circle>
+              <text class="main" x="50" y="346">0</text>
+            </g>
+            <g class="node" id="n-h1">
+              <circle cx="240" cy="100" r="30"></circle>
+              <text class="main" x="240" y="106">h1</text>
+              <text class="sig" x="264" y="76">σ</text>
+              <text class="val" id="val-h1" x="240" y="146"></text>
+            </g>
+            <g class="node" id="n-h2">
+              <circle cx="240" cy="380" r="30"></circle>
+              <text class="main" x="240" y="386">h2</text>
+              <text class="sig" x="264" y="356">σ</text>
+              <text class="val" id="val-h2" x="240" y="426"></text>
+            </g>
+            <g class="node" id="n-out">
+              <circle cx="420" cy="240" r="32"></circle>
+              <text class="main" x="420" y="247">ŷ</text>
+              <text class="sig" x="446" y="212">σ</text>
+              <text class="val" id="val-out" x="420" y="288"></text>
+            </g>
+          </svg>
+        </div>
+        <div class="legend">
+          <span class="li"><span class="sw" style="background:var(--forward)"></span>正在计算的导线</span>
+          <span class="li">输入固定为 x=(1, 0)</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-vis min0">
+      <p class="lead">每点一次「下一步」，展开一行计算，对应的导线在左边亮起来。</p>
+      <div class="stepswrap panel q" id="steps"></div>
+      <div id="finalMsg" class="hint">预测 ŷ=0.609，接近 1</div>
+      <div class="btns">
+        <button class="btn primary" id="nextBtn">下一步</button>
+      </div>
+    </div>
+
+  </div>
+
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lib/katex.min.js"></script>
+<script>
+  const steps = [
+    { tex:"z_{h1}=0.5\\times 1+(-0.6)\\times 0+0.1=0.60", wires:["e-x1-h1","e-x2-h1","e-b-h1"] },
+    { tex:"h_1=\\sigma(0.60)=0.645", nodes:["n-h1"], set:{id:"val-h1", text:"0.645"} },
+    { tex:"z_{h2}=0.3\\times 1+0.8\\times 0-0.2=0.10", wires:["e-x1-h2","e-x2-h2","e-b-h2"] },
+    { tex:"h_2=\\sigma(0.10)=0.525", nodes:["n-h2"], set:{id:"val-h2", text:"0.525"} },
+    { tex:"z_{out}=0.7\\times 0.645+(-0.4)\\times 0.525+0.2=0.442", wires:["e-h1-out","e-h2-out","e-b-out"] },
+    { tex:"\\hat{y}=\\sigma(0.442)=0.609", nodes:["n-out"], set:{id:"val-out", text:"0.609"}, final:true }
+  ];
+
+  const btn = document.getElementById('nextBtn');
+  const stepsEl = document.getElementById('steps');
+  const finalMsg = document.getElementById('finalMsg');
+  let idx = 0;
+
+  function clearActive(){
+    document.querySelectorAll('.wire.active').forEach(w=>{ w.classList.remove('active'); w.classList.add('done'); });
+    document.querySelectorAll('.node.active').forEach(n=>n.classList.remove('active'));
+  }
+
+  function revealNext(){
+    if(idx >= steps.length){
+      resetAll();
+      return;
+    }
+    clearActive();
+    const step = steps[idx];
+    (step.wires||[]).forEach(id=>{
+      const el = document.getElementById(id);
+      if(el) el.classList.add('active');
+    });
+    (step.nodes||[]).forEach(id=>{
+      const el = document.getElementById(id);
+      if(el) el.classList.add('active');
+    });
+    const line = document.createElement('div');
+    line.className = 'stepline';
+    stepsEl.appendChild(line);
+    katex.render(step.tex, line, { throwOnError:false, displayMode:false });
+    stepsEl.scrollTop = stepsEl.scrollHeight;
+    if(step.set){
+      const t = document.getElementById(step.set.id);
+      if(t) t.textContent = step.set.text;
+    }
+    idx++;
+    if(idx === steps.length){
+      btn.textContent = '重新开始';
+      finalMsg.style.display = 'block';
+    }
+  }
+
+  function resetAll(){
+    idx = 0;
+    stepsEl.innerHTML = '';
+    document.querySelectorAll('.wire').forEach(w=>w.classList.remove('active','done'));
+    document.querySelectorAll('.node').forEach(n=>n.classList.remove('active'));
+    ['val-h1','val-h2','val-out'].forEach(id=>{ document.getElementById(id).textContent = ''; });
+    finalMsg.style.display = 'none';
+    btn.textContent = '下一步';
+  }
+
+  btn.addEventListener('click', revealNext);
+
+  Deck.init({ index:7, total:20 });
+</script>
+</body>
+</html>

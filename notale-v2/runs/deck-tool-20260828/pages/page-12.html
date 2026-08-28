@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <link rel="stylesheet" href="assets/lib/katex.min.css">
+  <style>
+    #gradient-widget{min-height:0}
+    #gradient-widget .field{display:flex;flex-direction:column;min-height:0}
+    #gradient-widget .plot{flex:1;min-height:0;background:var(--paper);border:var(--rule) solid var(--line);border-radius:var(--r);box-shadow:0 5px 14px rgba(23,38,43,.08);overflow:hidden}
+    #gradient-widget svg{display:block;width:100%;height:100%}
+    #gradient-widget .grid{stroke:var(--line);stroke-width:1;opacity:.32}
+    #gradient-widget .axis{stroke:var(--text);stroke-width:2}
+    #gradient-widget .contour{fill:none;stroke:var(--model);stroke-width:2;opacity:.48}
+    #gradient-widget .contour.major{stroke-width:3;opacity:.7}
+    #gradient-widget .gradient{stroke:var(--attention);stroke-width:5;fill:none}
+    #gradient-widget .update{stroke:var(--data);stroke-width:6;fill:none}
+    #gradient-widget .trail{fill:none;stroke:var(--data);stroke-width:3;stroke-dasharray:8 7;opacity:.72}
+    #gradient-widget .point{fill:var(--paper);stroke:var(--text);stroke-width:5}
+    #gradient-widget .next{fill:var(--data);stroke:var(--paper);stroke-width:3}
+    #gradient-widget svg text{font-family:var(--font-sans);fill:var(--text);font-size:17px}
+    #gradient-widget svg .muted{fill:var(--muted);font-size:15px}
+    #gradient-widget svg .att{fill:var(--attention);font-weight:700}
+    #gradient-widget svg .dat{fill:var(--data);font-weight:700}
+    #gradient-widget .underplot{display:flex;align-items:center;justify-content:space-between;gap:18px;margin-top:14px}
+    #gradient-widget .readout{font-size:var(--fs-sec);color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}
+    #gradient-widget .side{display:flex;flex-direction:column;gap:18px;align-self:center}
+    #gradient-widget .formula{font-size:34px;color:var(--model);padding:18px 0;border-top:3px solid var(--model);border-bottom:var(--rule) solid var(--line)}
+    #gradient-widget .plain{display:grid;gap:13px;margin:2px 0 4px}
+    #gradient-widget .plain p{display:grid;grid-template-columns:24px 1fr;gap:10px;font-size:var(--fs-body)}
+    #gradient-widget .plain b{color:var(--model)}
+    #gradient-widget .calc{padding-top:13px;border-top:var(--rule) solid var(--line);display:grid;gap:7px;font-size:var(--fs-sec);font-variant-numeric:tabular-nums}
+    #gradient-widget .calc strong{color:var(--attention)}
+    #gradient-widget .side .btns{margin-top:4px}
+    #gradient-widget .status{min-height:48px;color:var(--muted);font-size:var(--fs-label);line-height:1.4}
+  </style>
+</head>
+<body data-page="12" data-total="20">
+  <div id="stage">
+    <header>
+      <div class="kicker">从一个坡度到一组坡度</div>
+      <h1>参数很多时，梯度是一组方向提示</h1>
+    </header>
+    <main class="board min0" id="gradient-widget">
+      <section class="field min0" aria-label="二次损失的等高线与更新路径">
+        <div class="plot min0">
+          <svg id="landscape" viewBox="0 0 940 610" role="img" aria-labelledby="plot-title plot-desc">
+            <title id="plot-title">损失函数等高线上的梯度下降</title>
+            <desc id="plot-desc">当前位置、梯度方向与沿梯度反方向的一步更新。</desc>
+            <defs>
+              <marker id="arrow-grad-p12" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M0,0 L10,5 L0,10 Z" fill="#D45528"/></marker>
+              <marker id="arrow-step-p12" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M0,0 L10,5 L0,10 Z" fill="#5A7045"/></marker>
+              <clipPath id="clip-p12"><rect x="70" y="32" width="820" height="520"/></clipPath>
+            </defs>
+            <g id="grid"></g><g id="contours" clip-path="url(#clip-p12)"></g>
+            <line class="axis" x1="70" y1="552" x2="900" y2="552"/><line class="axis" x1="70" y1="32" x2="70" y2="552"/>
+            <text x="886" y="586">w₁</text><text x="35" y="48">w₂</text>
+            <g id="history" clip-path="url(#clip-p12)"></g>
+            <g id="vectors" clip-path="url(#clip-p12)">
+              <line id="gradArrow" class="gradient" marker-end="url(#arrow-grad-p12)"/>
+              <line id="stepArrow" class="update" marker-end="url(#arrow-step-p12)"/>
+              <circle id="nextPoint" class="next" r="8"/>
+              <circle id="point" class="point" r="10"/>
+            </g>
+            <text id="hereLabel" class="att"></text>
+            <text id="gradLabel" class="att">梯度 ∇L</text>
+            <text id="stepLabel" class="dat">更新 −η∇L</text>
+            <text x="782" y="76" class="muted">越靠中心，损失越小</text>
+          </svg>
+        </div>
+        <div class="underplot">
+          <div class="legend" aria-hidden="true"><span class="li" style="color:var(--attention)"><i class="sw line"></i>梯度方向</span><span class="li" style="color:var(--data)"><i class="sw line"></i>参数更新</span></div>
+          <div class="readout" id="readout"></div>
+        </div>
+      </section>
+      <aside class="side min0">
+        <div class="formula" id="formula" aria-label="参数向量等于参数向量减去学习率乘梯度"></div>
+        <div class="plain">
+          <p><b>1</b><span>每个参数各有一个坡度</span></p>
+          <p><b>2</b><span>合在一起叫梯度</span></p>
+          <p><b>3</b><span>沿反方向通常会下坡</span></p>
+        </div>
+        <div class="calc">
+          <div>损失：<span class="num">L = w₁² + 2w₂²</span></div>
+          <div>梯度：<strong id="gradientValue"></strong></div>
+          <div>学习率：<span class="num">η = 0.15</span></div>
+        </div>
+        <div class="btns">
+          <button class="btn" id="stepBtn" type="button">走一步</button>
+          <button class="btn" id="resetBtn" type="button">复位</button>
+        </div>
+        <p class="status" id="status" aria-live="polite">两支箭头从同一点出发，方向正好相反。</p>
+        <p class="note">这里只看方向与更新；链式法则留到第 15 页。</p>
+      </aside>
+    </main>
+  </div>
+  <script src="assets/lib/katex.min.js"></script>
+  <script src="assets/base.js"></script>
+  <script>
+  (()=>{
+    const root=document.getElementById('gradient-widget');
+    const $=s=>root.querySelector(s);
+    const initial=()=>({w1:-1.2,w2:1.0,iteration:0,history:[[-1.2,1.0]]});
+    let state=initial(), destroyed=false;
+    const x=w=>70+(w+2.2)/4.4*820, y=w=>32+(1.7-w)/3.4*520;
+    const ns='http://www.w3.org/2000/svg';
+    function line(parent,x1,y1,x2,y2,cls){const e=document.createElementNS(ns,'line');e.setAttribute('class',cls);e.setAttribute('x1',x1);e.setAttribute('y1',y1);e.setAttribute('x2',x2);e.setAttribute('y2',y2);parent.appendChild(e)}
+    function setup(){
+      const g=$('#grid');[-2,-1,0,1,2].forEach(v=>{line(g,x(v),32,x(v),552,'grid');const t=document.createElementNS(ns,'text');t.setAttribute('x',x(v));t.setAttribute('y',578);t.setAttribute('text-anchor','middle');t.setAttribute('class','muted');t.textContent=v;g.appendChild(t)});[-1,0,1].forEach(v=>{line(g,70,y(v),890,y(v),'grid');const t=document.createElementNS(ns,'text');t.setAttribute('x',58);t.setAttribute('y',y(v)+6);t.setAttribute('text-anchor','end');t.setAttribute('class','muted');t.textContent=v;g.appendChild(t)});
+      const c=$('#contours');[.2,.5,1,2,3,5,7].forEach((L,i)=>{const e=document.createElementNS(ns,'ellipse');e.setAttribute('cx',x(0));e.setAttribute('cy',y(0));e.setAttribute('rx',Math.sqrt(L)/4.4*820);e.setAttribute('ry',Math.sqrt(L/2)/3.4*520);e.setAttribute('class','contour '+(i===3?'major':''));c.appendChild(e)});
+      katex.render('\\mathbf w\\leftarrow\\mathbf w-\\eta\\nabla L',$('#formula'),{throwOnError:false});
+    }
+    function render(){
+      const {w1,w2,iteration,history}=state, gx=2*w1, gy=4*w2, nw1=w1-.15*gx, nw2=w2-.15*gy;
+      const px=x(w1),py=y(w2), scale=46, gl=Math.hypot(gx,gy), ux=gx/gl,uy=gy/gl;
+      const gradEnd=[px+ux*105,py-uy*105], stepEnd=[x(nw1),y(nw2)];
+      [['point',px,py],['nextPoint',...stepEnd]].forEach(([id,cx,cy])=>{const e=$('#'+id);e.setAttribute('cx',cx);e.setAttribute('cy',cy)});
+      [['gradArrow',px,py,...gradEnd],['stepArrow',px,py,...stepEnd]].forEach(([id,x1,y1,x2,y2])=>{const e=$('#'+id);e.setAttribute('x1',x1);e.setAttribute('y1',y1);e.setAttribute('x2',x2);e.setAttribute('y2',y2)});
+      const here=$('#hereLabel');here.setAttribute('x',px+14);here.setAttribute('y',py-15);here.textContent=`当前位置 (${w1.toFixed(2)}, ${w2.toFixed(2)})`;
+      const gr=$('#gradLabel');gr.setAttribute('x',gradEnd[0]+8);gr.setAttribute('y',gradEnd[1]-8);
+      const st=$('#stepLabel');st.setAttribute('x',(px+stepEnd[0])/2+12);st.setAttribute('y',(py+stepEnd[1])/2+22);
+      $('#history').innerHTML=history.length>1?`<polyline class="trail" points="${history.map(p=>x(p[0])+','+y(p[1])).join(' ')}"/>`:'';
+      const L=w1*w1+2*w2*w2, nextL=nw1*nw1+2*nw2*nw2;
+      $('#gradientValue').textContent=`∇L = (${gx.toFixed(2)}, ${gy.toFixed(2)})`;
+      $('#readout').textContent=`第 ${iteration} 步　L = ${L.toFixed(3)}　下一步 = ${nextL.toFixed(3)}`;
+      $('#status').textContent=iteration===0?'两支箭头从同一点出发，方向正好相反。':`更新后损失降到 ${L.toFixed(3)}；下一步仍按当前位置重算梯度。`;
+    }
+    function dispatch(type){if(destroyed)return;if(type==='step'){const gx=2*state.w1,gy=4*state.w2;const p=[state.w1-.15*gx,state.w2-.15*gy];state={w1:p[0],w2:p[1],iteration:state.iteration+1,history:[...state.history,p].slice(-12)}}else if(type==='reset'){state=initial()}render()}
+    const onStep=()=>dispatch('step'),onReset=()=>dispatch('reset');$('#stepBtn').addEventListener('click',onStep);$('#resetBtn').addEventListener('click',onReset);
+    root.destroy=()=>{if(destroyed)return;destroyed=true;$('#stepBtn').removeEventListener('click',onStep);$('#resetBtn').removeEventListener('click',onReset)};
+    setup();render();Deck.init({index:12,total:20});
+  })();
+  </script>
+</body>
+</html>

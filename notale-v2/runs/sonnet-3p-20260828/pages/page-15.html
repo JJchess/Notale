@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <link rel="stylesheet" href="assets/lib/katex.min.css">
+  <style>
+    #bp-widget{flex:1;min-height:0;display:flex;flex-direction:column;gap:18px;margin-top:18px}
+    #bp-widget .toolbar{display:flex;align-items:center;gap:12px}
+    #bp-widget .toolbar .hint{margin-left:10px;flex:1}
+    #bp-widget .trace-stage{flex:1;min-height:0;position:relative;background:var(--paper);border:var(--rule) solid var(--line);border-radius:var(--r);padding:24px 36px 20px;box-shadow:0 5px 14px rgba(23,38,43,.08);display:grid;grid-template-rows:44px minmax(0,1fr) 54px 112px;overflow:hidden}
+    #bp-widget .direction{display:flex;align-items:center;font-weight:750;font-size:var(--fs-sec);letter-spacing:.01em}
+    #bp-widget .direction.forward{color:var(--model);justify-content:flex-start}
+    #bp-widget .direction.backward{color:var(--attention);justify-content:flex-end}
+    #bp-widget .direction .shaft{height:3px;background:currentColor;position:relative;width:230px;margin:0 14px}
+    #bp-widget .direction.forward .shaft:after{content:"";position:absolute;right:-1px;top:-6px;border-left:12px solid currentColor;border-top:7px solid transparent;border-bottom:7px solid transparent}
+    #bp-widget .direction.backward .shaft:before{content:"";position:absolute;left:-1px;top:-6px;border-right:12px solid currentColor;border-top:7px solid transparent;border-bottom:7px solid transparent}
+    #bp-widget .k-process{align-items:center;gap:0;padding:0 10px}
+    #bp-widget .step{border:0;padding:0;display:flex;align-items:center;justify-content:center;position:relative;height:150px;opacity:.72;transition:opacity .18s ease,transform .18s ease}
+    #bp-widget .nodebox{min-width:190px;height:104px;border:3px solid var(--line);border-radius:var(--r);background:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;font-size:var(--fs-h2);font-weight:750;transition:border-color .18s ease,background .18s ease,box-shadow .18s ease}
+    #bp-widget .step:first-child .nodebox,#bp-widget .step:last-child .nodebox{min-width:142px}
+    #bp-widget .node-sub{font-size:var(--fs-label);color:var(--muted);font-weight:650}
+    #bp-widget .edge{flex:0 0 94px;height:4px;background:var(--line);position:relative;transition:background .18s ease}
+    #bp-widget .edge:after{content:"";position:absolute;right:-1px;top:-7px;border-left:14px solid var(--line);border-top:9px solid transparent;border-bottom:9px solid transparent;transition:border-left-color .18s ease}
+    #bp-widget .step.fwd{opacity:1;transform:translateY(-3px)}
+    #bp-widget .step.fwd .nodebox{border-color:var(--model);background:#e4eef1;box-shadow:0 0 0 3px rgba(23,92,120,.12)}
+    #bp-widget .edge.fwd{background:var(--model)}#bp-widget .edge.fwd:after{border-left-color:var(--model)}
+    #bp-widget .step.back{opacity:1;transform:translateY(3px)}
+    #bp-widget .step.back .nodebox{border-color:var(--attention);background:#f7e9e3;box-shadow:0 0 0 3px rgba(212,85,40,.12)}
+    #bp-widget .edge.back{background:var(--attention)}#bp-widget .edge.back:after{border-left-color:var(--attention)}
+    #bp-widget .grads{display:grid;grid-template-columns:142px 94px 190px 94px 190px 94px 142px;align-items:start;padding:0 10px;color:var(--attention);font-family:var(--font-num);font-size:var(--fs-sec);font-weight:700}
+    #bp-widget .grad{text-align:center;opacity:.45;transition:opacity .18s ease,transform .18s ease}
+    #bp-widget .grad.active{opacity:1;transform:translateY(-3px)}
+    #bp-widget .grad.g1{grid-column:6}#bp-widget .grad.g2{grid-column:4}#bp-widget .grad.g3{grid-column:2}
+    #bp-widget .formula-row{border-top:var(--rule) solid var(--line);display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:8px 28px;padding-top:8px}
+    #bp-widget .formula{font-size:30px;color:var(--text);white-space:nowrap}
+    #bp-widget .formula-note{grid-column:1/-1;text-align:center;font-size:var(--fs-sec);color:var(--muted);white-space:nowrap}
+    #bp-widget .adjust{justify-self:start;color:var(--attention);font-size:var(--fs-body);font-weight:800;opacity:0;transform:translateX(10px);transition:.2s ease;white-space:nowrap}
+    #bp-widget .adjust.show{opacity:1;transform:none}
+    #bp-widget .status{min-width:260px;text-align:right;font-size:var(--fs-label);color:var(--muted);font-weight:650}
+  </style>
+</head>
+<body data-page="15" data-total="20">
+  <div id="stage">
+    <header>
+      <div class="kicker">链式法则</div>
+      <h1>反向传播的核心：误差沿计算链往回分配</h1>
+    </header>
+    <section id="bp-widget" aria-label="前向与反向传播路径演示">
+      <div class="toolbar">
+        <button class="btn" type="button" data-action="forward">前向</button>
+        <button class="btn" type="button" data-action="backward">反向</button>
+        <button class="btn" type="button" data-action="reset">复位</button>
+        <span class="hint">先看预测怎样生成，再看每段局部影响怎样往回相乘。</span>
+        <span class="status" aria-live="polite">完整计算链已就位</span>
+      </div>
+      <div class="trace-stage min0">
+        <div class="direction forward"><span>前向：算预测</span><i class="shaft" aria-hidden="true"></i></div>
+        <div class="k-process" aria-label="x 到损失 L 的计算链">
+          <div class="step" data-node="0"><div class="nodebox"><span>输入 x</span><span class="node-sub">已知数据</span></div></div>
+          <i class="edge" data-edge="0" aria-hidden="true"></i>
+          <div class="step" data-node="1"><div class="nodebox"><span>z = wx + b</span><span class="node-sub">线性组合</span></div></div>
+          <i class="edge" data-edge="1" aria-hidden="true"></i>
+          <div class="step" data-node="2"><div class="nodebox"><span>p = σ(z)</span><span class="node-sub">得到预测</span></div></div>
+          <i class="edge" data-edge="2" aria-hidden="true"></i>
+          <div class="step" data-node="3"><div class="nodebox"><span>损失 L</span><span class="node-sub">预测与目标之差</span></div></div>
+        </div>
+        <div class="grads" aria-label="反向传播的三个局部导数">
+          <span class="grad g1" data-grad="0">∂L/∂p</span><span class="grad g2" data-grad="1">∂p/∂z</span><span class="grad g3" data-grad="2">∂z/∂w</span>
+        </div>
+        <div class="formula-row">
+          <div class="direction backward"><i class="shaft" aria-hidden="true"></i><span>反向：分配误差</span></div>
+          <div class="formula" id="chain-formula" aria-label="L 对 w 的偏导等于三个局部偏导相乘"></div>
+          <div class="adjust">w 旁：该调多少</div>
+          <div class="formula-note">每一段只回答“局部改变会影响下一站多少”；沿链相乘，就得到 w 对损失的总影响。</div>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script src="assets/base.js"></script>
+  <script src="assets/lib/katex.min.js"></script>
+  <script>
+    Deck.init({index:15,total:20});
+    (()=>{
+      const root=document.getElementById('bp-widget');
+      const nodes=[...root.querySelectorAll('[data-node]')], edges=[...root.querySelectorAll('[data-edge]')], grads=[...root.querySelectorAll('[data-grad]')];
+      const status=root.querySelector('.status'), adjust=root.querySelector('.adjust');
+      const buttons={forward:root.querySelector('[data-action="forward"]'),backward:root.querySelector('[data-action="backward"]'),reset:root.querySelector('[data-action="reset"]')};
+      let state={mode:'ready',step:-1}, timers=[];
+      katex.render(String.raw`\frac{\partial L}{\partial w}=\left(\frac{\partial L}{\partial p}\right)\left(\frac{\partial p}{\partial z}\right)\left(\frac{\partial z}{\partial w}\right)`,document.getElementById('chain-formula'),{throwOnError:false,displayMode:false});
+      function cancel(){timers.forEach(clearTimeout);timers=[];}
+      function render(){
+        nodes.forEach((n,i)=>{n.classList.toggle('fwd',state.mode==='forward'&&i<=state.step);n.classList.toggle('back',state.mode==='backward'&&i>=3-state.step)});
+        edges.forEach((e,i)=>{e.classList.toggle('fwd',state.mode==='forward'&&i<state.step);e.classList.toggle('back',state.mode==='backward'&&i>=3-state.step)});
+        grads.forEach((g,i)=>g.classList.toggle('active',state.mode==='backward'&&i<state.step));
+        adjust.classList.toggle('show',state.mode==='backward'&&state.step>=3);
+        buttons.forward.setAttribute('aria-pressed',String(state.mode==='forward'));buttons.backward.setAttribute('aria-pressed',String(state.mode==='backward'));
+      }
+      function run(mode){cancel();state={mode,step:0};render();status.textContent=mode==='forward'?'前向：输入 x':'反向：从损失 L 开始';
+        const labels=mode==='forward'?['输入 x','算出 z','得到预测 p','得到损失 L']:['从损失 L 开始','局部影响 ∂L/∂p','局部影响 ∂p/∂z','局部影响 ∂z/∂w；得到 w 该调多少'];
+        const delay=Deck.reduced()?0:430;
+        for(let i=1;i<4;i++)timers.push(setTimeout(()=>{state.step=i;render();status.textContent=labels[i]},delay*i));
+      }
+      function reset(){cancel();state={mode:'ready',step:-1};render();status.textContent='完整计算链已就位'}
+      buttons.forward.addEventListener('click',()=>run('forward'));buttons.backward.addEventListener('click',()=>run('backward'));buttons.reset.addEventListener('click',reset);
+      document.addEventListener('visibilitychange',()=>{if(document.hidden)cancel()});
+      render();
+    })();
+  </script>
+</body>
+</html>

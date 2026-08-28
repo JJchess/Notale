@@ -1,0 +1,339 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  #stage{ gap:16px; }
+
+  .head{ display:flex; flex-direction:column; gap:6px; flex:none; max-width:1100px; }
+
+  .ctlrow{
+    flex:none; display:flex; align-items:center; gap:18px; flex-wrap:wrap;
+    padding:12px 16px; background:var(--paper); border:1.5px solid var(--line-strong);
+    border-radius:var(--radius);
+  }
+  .ctlrow .grp{ display:flex; align-items:center; gap:8px; }
+  .ctlrow .grp-label{ font-family:var(--font-mono); font-size:var(--fs-label); color:var(--muted); }
+  .presetbtn{ display:flex; flex-direction:column; align-items:flex-start; gap:2px; min-width:118px; }
+  .presetbtn .pname{ font-weight:700; }
+  .presetbtn .peta{ font-family:var(--font-mono); font-size:var(--fs-tick); color:var(--muted); }
+  .presetbtn.selected .peta{ color:var(--forward); }
+  .sep{ width:1px; height:32px; background:var(--line); flex:none; }
+
+  .main{ flex:1; min-height:0; }
+  .main > .panel{ min-width:0; }
+
+  .chart-wrap{ flex:1; min-height:0; position:relative; }
+  .chart-wrap .cvhost{ position:absolute; inset:0; }
+
+  .panel-title{ font-family:var(--font-mono); font-size:var(--fs-label); color:var(--muted);
+    letter-spacing:.04em; text-transform:uppercase; flex:none; }
+
+  .readout-body{ flex:1; display:flex; flex-direction:column; gap:14px; justify-content:center; }
+  .readout-row{ display:flex; align-items:baseline; gap:10px; }
+  .readout-row .rlabel{ font-size:var(--fs-sec); color:var(--muted); width:96px; flex:none; }
+  .diverge-tag{
+    font-family:var(--font-mono); font-size:var(--fs-label); border:1px solid var(--line-strong);
+    border-radius:var(--radius-sm); padding:3px 10px; display:inline-block;
+  }
+  .diverge-tag.ok{ color:var(--forward); border-color:var(--forward); }
+  .diverge-tag.bad{ color:var(--backward); border-color:var(--backward); }
+
+  .frame-note{ font-family:var(--font-mono); font-size:var(--fs-label); color:var(--muted); }
+
+  .reveal-box{
+    margin-top:4px; padding:10px 12px; border-radius:var(--radius-sm);
+    background:var(--forward-soft); font-size:var(--fs-sec); color:var(--text);
+    display:none;
+  }
+  .reveal-box.show{ display:block; }
+  .reveal-box.warn{ background:var(--backward-soft); }
+
+  .hintbar{ flex:none; }
+</style>
+</head>
+<body data-page="13" data-total="20">
+<div id="stage">
+
+  <div class="head">
+    <span class="kicker">学习率</span>
+    <h1>同一张棋盘,同一个网络,三种学习率给出三种命运</h1>
+    <p class="lead">选一个 η,让网络在同样的 200 个棋盘格样本上跑 60 帧 mini-batch 训练——曲线和权重会说出结果,不用再靠手算。</p>
+  </div>
+
+  <div class="ctlrow">
+    <span class="grp-label">学习率预设</span>
+    <div class="grp" id="presetGrp">
+      <button class="btn presetbtn" data-lr="0.01" id="btn-small">
+        <span class="pname">太小 η=0.01</span>
+        <span class="peta">几乎学不动</span>
+      </button>
+      <button class="btn presetbtn" data-lr="0.3" id="btn-good">
+        <span class="pname">合适 η=0.3</span>
+        <span class="peta">平稳收敛</span>
+      </button>
+      <button class="btn presetbtn" data-lr="30" id="btn-big">
+        <span class="pname">太大 η=30</span>
+        <span class="peta">权重狂涨</span>
+      </button>
+    </div>
+    <div class="sep"></div>
+    <div class="grp">
+      <button class="btn primary" id="btn-train" disabled>训练 60 帧</button>
+      <button class="btn" id="btn-reset" disabled>重置</button>
+    </div>
+    <div class="sep"></div>
+    <span class="frame-note" id="frameNote">未选择预设</span>
+  </div>
+
+  <div class="main layout-compare">
+    <div class="panel">
+      <span class="panel-title">验证集准确率 · net.evaluate(valSet).acc</span>
+      <div class="chart-wrap"><div class="cvhost" id="chart"></div></div>
+    </div>
+    <div class="panel">
+      <span class="panel-title">权重与数值状态</span>
+      <div class="readout-body">
+        <div class="readout-row">
+          <span class="rlabel">|w| 均值</span>
+          <span class="big" id="wVal">0.00</span>
+        </div>
+        <div class="readout-row">
+          <span class="rlabel">是否 diverged</span>
+          <span class="diverge-tag ok" id="divTag">否 · 数值正常</span>
+        </div>
+        <div class="readout-row">
+          <span class="rlabel">当前准确率</span>
+          <span class="big sm" id="accVal">0.500</span>
+        </div>
+        <div class="reveal-box" id="revealBox"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="hintbar">
+    <span class="hint" id="hintText">「学得动」和「没跑飞」是两件不同的事:diverged 只查数值是否崩了,不查有没有学到东西。</span>
+  </div>
+
+</div>
+<script src="assets/lib/seedrandom.min.js"></script>
+<script src="assets/lib/mlp.js"></script>
+<script src="assets/lib/echarts.min.js"></script>
+<script src="assets/base.js"></script>
+<script>
+(function(){
+  "use strict";
+
+  // ---- 数据:第十五页会正式引入的同一份棋盘格样本 ----
+  Math.seedrandom('page-13');
+  var ALL = [];
+  for (var i = 0; i < 200; i++) {
+    var x = (Math.random() * 2 - 1) * 1.3;
+    var y = (Math.random() * 2 - 1) * 1.3;
+    var t = (x * y > 0) ? 1 : 0;
+    ALL.push({ x: [x, y], t: t });
+  }
+  var TRAIN = ALL.slice(0, 160);
+  var VAL = ALL.slice(160);
+
+  var PRESETS = {
+    "0.01": { key: "small", lr: 0.01, label: "太小 η=0.01" },
+    "0.3":  { key: "good",  lr: 0.3,  label: "合适 η=0.3" },
+    "30":   { key: "big",   lr: 30,   label: "太大 η=30" }
+  };
+
+  var FRAMES = 60, MB = 4, BATCH = 24, FRAME_MS = 90;
+
+  var els = {
+    presetBtns: [document.getElementById('btn-small'), document.getElementById('btn-good'), document.getElementById('btn-big')],
+    train: document.getElementById('btn-train'),
+    reset: document.getElementById('btn-reset'),
+    frameNote: document.getElementById('frameNote'),
+    wVal: document.getElementById('wVal'),
+    accVal: document.getElementById('accVal'),
+    divTag: document.getElementById('divTag'),
+    reveal: document.getElementById('revealBox'),
+    hint: document.getElementById('hintText')
+  };
+
+  var chart = echarts.init(document.getElementById('chart'), null, { renderer: 'svg' });
+  function chartOption(history) {
+    return {
+      textStyle: { fontSize: 16, fontFamily: 'IBM Plex Sans, sans-serif' },
+      grid: { left: 46, right: 20, top: 20, bottom: 34 },
+      animation: false,
+      xAxis: {
+        type: 'value', min: 0, max: FRAMES, name: '帧',
+        nameTextStyle: { fontSize: 14, color: '#5B6B78' },
+        axisLabel: { fontSize: 12, color: '#5B6B78' },
+        splitLine: { lineStyle: { color: '#C3CDD5' } }
+      },
+      yAxis: {
+        type: 'value', min: 0, max: 1, name: '准确率',
+        nameTextStyle: { fontSize: 14, color: '#5B6B78' },
+        axisLabel: { fontSize: 12, color: '#5B6B78' },
+        splitLine: { lineStyle: { color: '#C3CDD5' } }
+      },
+      series: [{
+        type: 'line', showSymbol: false, lineStyle: { width: 2.5, color: '#2457A6' },
+        areaStyle: { color: 'rgba(36,87,166,0.08)' },
+        data: history.map(function (d) { return [d.frame, d.acc]; })
+      }]
+    };
+  }
+  chart.setOption(chartOption([]));
+  window.addEventListener('resize', function () { chart.resize(); });
+  Deck.onResize && Deck.onResize(function () { chart.resize(); });
+
+  // ---- 状态 ----
+  var state = {
+    presetLr: null,
+    net: null,
+    history: [],
+    frame: 0,
+    running: false,
+    done: false,
+    diverged: false
+  };
+  var loopStop = null, acc = 0;
+
+  function meanAbsW(net) {
+    var sum = 0, n = 0;
+    net.layers.forEach(function (ly) {
+      for (var i = 0; i < ly.W.length; i++) { sum += Math.abs(ly.W[i]); n++; }
+    });
+    return sum / n;
+  }
+
+  function setPresetSelected(lr) {
+    els.presetBtns.forEach(function (b) {
+      var on = b.dataset.lr === String(lr);
+      b.classList.toggle('selected', on);
+      b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+  }
+
+  function selectPreset(lrKey) {
+    if (state.running) return;
+    var p = PRESETS[lrKey];
+    if (!p) return;
+    stopLoop();
+    state.presetLr = p.lr;
+    state.net = MLP.create({ sizes: [2, 10, 10, 1], act: 'tanh', lr: p.lr, seed: 13 });
+    state.history = [];
+    state.frame = 0;
+    state.running = false;
+    state.done = false;
+    state.diverged = false;
+    setPresetSelected(p.lr);
+    els.train.disabled = false;
+    els.train.textContent = '训练 60 帧';
+    els.reset.disabled = true;
+    els.frameNote.textContent = '已选 ' + p.label + ' · 0 / ' + FRAMES + ' 帧';
+    els.reveal.classList.remove('show', 'warn');
+    render();
+  }
+
+  function render() {
+    var w = state.net ? meanAbsW(state.net) : 0;
+    var a = state.history.length ? state.history[state.history.length - 1].acc : 0.5;
+    els.wVal.textContent = w.toFixed(2);
+    els.accVal.textContent = a.toFixed(3);
+    els.divTag.textContent = state.diverged ? '是 · 数值崩了' : '否 · 数值正常';
+    els.divTag.classList.toggle('ok', !state.diverged);
+    els.divTag.classList.toggle('bad', state.diverged);
+    chart.setOption(chartOption(state.history));
+  }
+
+  function stopLoop() {
+    if (loopStop) { loopStop(); loopStop = null; }
+    state.running = false;
+  }
+
+  function stepOnce() {
+    var net = state.net;
+    for (var i = 0; i < MB; i++) net.step(TRAIN, BATCH);
+    var ev = net.evaluate(VAL);
+    state.diverged = net.diverged;
+    state.frame++;
+    state.history.push({ frame: state.frame, acc: state.diverged ? 0 : ev.acc });
+    render();
+    els.frameNote.textContent = '训练中 · ' + state.frame + ' / ' + FRAMES + ' 帧';
+  }
+
+  function finishTraining() {
+    stopLoop();
+    state.done = true;
+    els.train.disabled = false;
+    els.train.textContent = '重新训练 60 帧';
+    els.reset.disabled = false;
+    els.frameNote.textContent = '训练完成 · ' + FRAMES + ' / ' + FRAMES + ' 帧';
+    var finalAcc = state.history.length ? state.history[state.history.length - 1].acc : 0;
+    var w = meanAbsW(state.net);
+    var box = els.reveal;
+    box.classList.add('show');
+    if (state.diverged) {
+      box.classList.add('warn');
+      box.textContent = '权重数值已经崩了(diverged),这种情况准确率无意义。';
+    } else if (finalAcc >= 0.9) {
+      box.classList.remove('warn');
+      box.textContent = '准确率 ' + finalAcc.toFixed(3) + ',|w| 均值 ' + w.toFixed(1) + ' —— 学到了,而且数值稳。';
+    } else if (state.presetLr >= 10) {
+      box.classList.add('warn');
+      box.textContent = '准确率卡在 ' + finalAcc.toFixed(3) + ',但 |w| 均值涨到 ' + w.toFixed(1) + '、diverged 仍是否——数值没崩,只是没学会。';
+    } else {
+      box.classList.remove('warn');
+      box.textContent = '准确率停在 ' + finalAcc.toFixed(3) + ',|w| 均值只有 ' + w.toFixed(2) + ' —— 步子太小,60 帧还没走出多远。';
+    }
+    render();
+  }
+
+  function startTraining() {
+    if (state.running || !state.net) return;
+    if (state.frame >= FRAMES) {
+      // 重新训练:同一预设,重新初始化网络
+      var lr = state.presetLr;
+      state.net = MLP.create({ sizes: [2, 10, 10, 1], act: 'tanh', lr: lr, seed: 13 });
+      state.history = [];
+      state.frame = 0;
+      state.done = false;
+      els.reveal.classList.remove('show', 'warn');
+    }
+    state.running = true;
+    els.train.disabled = true;
+    els.reset.disabled = true;
+    els.presetBtns.forEach(function (b) { b.disabled = true; });
+    acc = 0;
+    loopStop = Deck.loop(function (t, dt) {
+      if (state.diverged) { finishTraining(); return; }
+      acc += dt * 1000;
+      while (acc >= FRAME_MS && state.frame < FRAMES) {
+        acc -= FRAME_MS;
+        stepOnce();
+        if (state.diverged) break;
+      }
+      if (state.frame >= FRAMES || state.diverged) {
+        els.presetBtns.forEach(function (b) { b.disabled = false; });
+        finishTraining();
+      }
+    });
+  }
+
+  function resetAll() {
+    if (state.presetLr == null) return;
+    selectPreset(String(state.presetLr));
+  }
+
+  els.presetBtns.forEach(function (b) {
+    b.addEventListener('click', function () { selectPreset(b.dataset.lr); });
+  });
+  els.train.addEventListener('click', startTraining);
+  els.reset.addEventListener('click', resetAll);
+
+  render();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,253 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  #stage { gap: 18px; }
+  .p15-head { flex: none; display: flex; flex-direction: column; gap: 4px; max-width: 1100px; }
+  .p15-main { flex: 1; min-height: 0; }
+  .p15-canvas-wrap { flex: 1; min-height: 0; }
+  .p15-side-panel { display: flex; flex-direction: column; gap: 16px; }
+  .p15-metric { display: flex; flex-direction: column; gap: 2px; }
+  .p15-metric .big { line-height: 1; }
+  .p15-legend-row { margin-top: 4px; }
+  .p15-status { font-family: var(--font-mono); font-size: var(--fs-label); color: var(--muted); min-height: 18px; }
+  .sr-only-live { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); }
+</style>
+</head>
+<body data-page="15" data-total="20">
+<div id="stage">
+
+  <div class="p15-head">
+    <span class="kicker">反向传播 · 完整闭环</span>
+    <h1>整块决策边界,从模糊到裂开成四块</h1>
+    <p class="lead">点击"开始训练",观察同一批四象限样本上的分类边界如何从模糊的灰色收紧成清晰的棋盘格。</p>
+  </div>
+
+  <div class="layout-focus p15-main">
+    <div class="stage-main">
+      <div class="cvbox p15-canvas-wrap">
+        <canvas id="p15-cv" class="cv-fill" aria-label="决策边界热力场与训练样本散点"></canvas>
+      </div>
+      <div class="legend p15-legend-row">
+        <span class="li"><span class="sw" style="background:var(--forward)"></span>类别 0</span>
+        <span class="li"><span class="sw" style="background:var(--backward)"></span>类别 1</span>
+        <span class="li"><span class="sw" style="background:linear-gradient(90deg,var(--forward),var(--bg) 50%,var(--backward))"></span>预测置信度(蓝→暖)</span>
+      </div>
+    </div>
+
+    <div class="stage-side">
+      <div class="panel p15-side-panel">
+        <div class="p15-metric">
+          <span class="small">准确率</span>
+          <span class="big num" id="p15-acc">50.0<span class="unit">%</span></span>
+        </div>
+        <div class="p15-metric">
+          <span class="small">已训练帧数</span>
+          <span class="big num sm" id="p15-frame">0</span>
+        </div>
+        <div class="btns">
+          <button class="btn primary" id="p15-start" type="button">开始训练</button>
+          <button class="btn" id="p15-reset" type="button">重置</button>
+        </div>
+        <p class="note">网络结构 2-10-10-1,tanh 激活,学习率 0.3。每帧推进 12 个 mini-batch,决策边界每 8 帧重算一次。</p>
+      </div>
+      <div class="p15-status" id="p15-status" aria-live="polite"></div>
+    </div>
+  </div>
+
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lib/seedrandom.min.js"></script>
+<script src="assets/lib/mlp.js"></script>
+<script>
+(function(){
+  "use strict";
+
+  // ---- 数据:四象限棋盘格,与第五、六页同款规则 ----
+  var rng = new Math.seedrandom('page-15');
+  var trainSet = [];
+  for (var i = 0; i < 200; i++) {
+    var x = (rng() * 2 - 1) * 1.15;
+    var y = (rng() * 2 - 1) * 1.15;
+    var t = ((x > 0) === (y > 0)) ? 1 : 0;
+    trainSet.push({ x: [x, y], t: t });
+  }
+
+  var net = MLP.create({ sizes: [2, 10, 10, 1], act: 'tanh', lr: 0.3, seed: 15 });
+
+  var FIELD_MIN = -1.3, FIELD_MAX = 1.3, FIELD_N = 80;
+
+  var state = {
+    frame: 0,
+    acc: 0.5,
+    field: null,
+    running: false
+  };
+
+  function computeField() {
+    state.field = net.field(FIELD_MIN, FIELD_MIN, FIELD_MAX, FIELD_MAX, FIELD_N, FIELD_N);
+  }
+  function computeAcc() {
+    state.acc = net.evaluate(trainSet).acc;
+  }
+
+  computeField();
+  computeAcc();
+
+  // ---- 颜色:forward 蓝 → 中性纸面 → backward 暖橙 ----
+  var cForward = Deck.rgb('--forward');
+  var cBack = Deck.rgb('--backward');
+  var cNeutral = Deck.rgb('--bg');
+
+  function mixColor(c1, c2, t) {
+    return [
+      Math.round(c1[0] + (c2[0] - c1[0]) * t),
+      Math.round(c1[1] + (c2[1] - c1[1]) * t),
+      Math.round(c1[2] + (c2[2] - c1[2]) * t)
+    ];
+  }
+  function fieldColor(v) {
+    var c = v < 0.5 ? mixColor(cForward, cNeutral, v / 0.5) : mixColor(cNeutral, cBack, (v - 0.5) / 0.5);
+    return 'rgb(' + c[0] + ',' + c[1] + ',' + c[2] + ')';
+  }
+
+  var cv = document.getElementById('p15-cv');
+  var ctxRef = null;
+
+  function draw(ctx) {
+    ctxRef = ctx;
+    var w = cv.clientWidth, h = cv.clientHeight;
+    if (!w || !h) return;
+    ctx.clearRect(0, 0, w, h);
+
+    // 热力场
+    var n = FIELD_N;
+    var cellW = w / n, cellH = h / n;
+    var field = state.field;
+    for (var row = 0; row < n; row++) {
+      var dataY = FIELD_MAX - (row / (n - 1)) * (FIELD_MAX - FIELD_MIN); // 上到下,y 从大到小
+      for (var col = 0; col < n; col++) {
+        var v = field[row * n + col];
+        ctx.fillStyle = fieldColor(v);
+        ctx.fillRect(col * cellW, row * cellH, cellW + 0.5, cellH + 0.5);
+      }
+    }
+
+    // 中轴参考线(x=0, y=0)
+    ctx.strokeStyle = 'rgba(23,35,47,0.35)';
+    ctx.lineWidth = 1;
+    var midX = ((0 - FIELD_MIN) / (FIELD_MAX - FIELD_MIN)) * w;
+    var midY = h - ((0 - FIELD_MIN) / (FIELD_MAX - FIELD_MIN)) * h;
+    ctx.beginPath();
+    ctx.moveTo(midX, 0); ctx.lineTo(midX, h);
+    ctx.moveTo(0, midY); ctx.lineTo(w, midY);
+    ctx.stroke();
+
+    // 散点样本
+    for (var i = 0; i < trainSet.length; i++) {
+      var s = trainSet[i];
+      var px = ((s.x[0] - FIELD_MIN) / (FIELD_MAX - FIELD_MIN)) * w;
+      var py = h - ((s.x[1] - FIELD_MIN) / (FIELD_MAX - FIELD_MIN)) * h;
+      ctx.beginPath();
+      ctx.arc(px, py, 3.6, 0, Math.PI * 2);
+      ctx.fillStyle = s.t === 1 ? 'rgb(' + cBack[0] + ',' + cBack[1] + ',' + cBack[2] + ')' : 'rgb(' + cForward[0] + ',' + cForward[1] + ',' + cForward[2] + ')';
+      ctx.fill();
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = '#FFFFFF';
+      ctx.stroke();
+    }
+  }
+
+  Deck.autofit(cv, draw);
+
+  // ---- 读数 ----
+  var elAcc = document.getElementById('p15-acc');
+  var elFrame = document.getElementById('p15-frame');
+  var elStatus = document.getElementById('p15-status');
+  var btnStart = document.getElementById('p15-start');
+  var btnReset = document.getElementById('p15-reset');
+
+  function renderReadouts() {
+    elAcc.innerHTML = (state.acc * 100).toFixed(1) + '<span class="unit">%</span>';
+    elFrame.textContent = state.frame;
+  }
+  function renderAll() {
+    if (ctxRef) draw(ctxRef);
+    renderReadouts();
+  }
+  renderAll();
+
+  function setStatus(msg) { elStatus.textContent = msg; }
+
+  var stopLoop = null;
+
+  function trainOneFrame() {
+    for (var i = 0; i < 12; i++) net.step(trainSet, 16);
+    state.frame++;
+    if (state.frame % 8 === 0) computeField();
+    computeAcc();
+  }
+
+  function updateButtons() {
+    btnStart.disabled = state.running;
+    btnStart.textContent = state.running ? '训练中…' : '开始训练';
+  }
+
+  function finishIfDone() {
+    if (state.acc >= 0.99 || state.frame >= 600) {
+      if (stopLoop) { stopLoop(); stopLoop = null; }
+      state.running = false;
+      updateButtons();
+      setStatus('训练结束,已训练 ' + state.frame + ' 帧,准确率 ' + (state.acc * 100).toFixed(1) + '%');
+      return true;
+    }
+    return false;
+  }
+
+  function startTraining() {
+    if (state.running) return;
+    state.running = true;
+    updateButtons();
+    setStatus('开始训练');
+
+    if (Deck.reduced()) {
+      while (state.frame < 600 && state.acc < 0.99) trainOneFrame();
+      renderAll();
+      state.running = false;
+      updateButtons();
+      setStatus('训练结束,已训练 ' + state.frame + ' 帧,准确率 ' + (state.acc * 100).toFixed(1) + '%');
+      return;
+    }
+
+    stopLoop = Deck.loop(function () {
+      trainOneFrame();
+      renderAll();
+      finishIfDone();
+    });
+  }
+
+  function resetAll() {
+    if (stopLoop) { stopLoop(); stopLoop = null; }
+    state.running = false;
+    net.reset();
+    state.frame = 0;
+    computeField();
+    computeAcc();
+    renderAll();
+    updateButtons();
+    setStatus('已重置,边界回到初始的模糊状态');
+  }
+
+  btnStart.addEventListener('click', startTraining);
+  btnReset.addEventListener('click', resetAll);
+
+  updateButtons();
+
+  Deck.init({ index: 15, total: 20 });
+})();
+</script>
+</body>
+</html>

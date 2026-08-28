@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <link rel="stylesheet" href="assets/lib/katex.min.css">
+  <style>
+    #slope-lab{height:100%;min-height:0}
+    #slope-lab .plot{height:100%;background:var(--paper);border:var(--rule) solid var(--line);border-radius:var(--r);position:relative;overflow:hidden}
+    #slope-lab svg{display:block;width:100%;height:100%}
+    #slope-lab .grid{stroke:var(--line);stroke-width:1;opacity:.42}
+    #slope-lab .axis{stroke:var(--text);stroke-width:2}
+    #slope-lab .curve{fill:none;stroke:var(--model);stroke-width:6}
+    #slope-lab .tangent{stroke:var(--attention);stroke-width:5}
+    #slope-lab .drop{stroke:var(--line);stroke-width:2;stroke-dasharray:7 7}
+    #slope-lab .trail{fill:none;stroke:var(--data);stroke-width:4;stroke-dasharray:8 8}
+    #slope-lab .point{fill:var(--attention);stroke:var(--paper);stroke-width:5}
+    #slope-lab .minimum{fill:var(--data);stroke:var(--paper);stroke-width:4}
+    #slope-lab .tick{font:13px var(--font-num);fill:var(--muted)}
+    #slope-lab .label{font:700 15px var(--font-sans);fill:var(--text)}
+    #slope-lab .ann{font:700 17px var(--font-sans);fill:var(--attention)}
+    #slope-lab .drag-hit{fill:transparent;cursor:ew-resize;touch-action:none}
+    #slope-lab .rail{display:flex;flex-direction:column;gap:16px;height:100%}
+    #slope-lab .reading{padding-bottom:16px;border-bottom:var(--rule) solid var(--line)}
+    #slope-lab .reading:last-of-type{border-bottom:0}
+    #slope-lab .reading .name{font-size:var(--fs-label);font-weight:700;color:var(--muted);margin-bottom:6px}
+    #slope-lab .formula{font-size:24px;min-height:42px;color:var(--text)}
+    #slope-lab .ctl{margin-top:auto}
+    #slope-lab .btns{display:grid;grid-template-columns:1fr 92px}
+    #slope-lab .btn{white-space:nowrap}
+    #slope-lab .status{min-height:48px;font-size:var(--fs-sec);color:var(--data);font-weight:700}
+    .page-head{flex:0 0 auto}.page-head .lead{margin-top:8px;color:var(--muted);font-weight:500}
+  </style>
+</head>
+<body data-page="10" data-total="20">
+  <div id="stage">
+    <header class="page-head">
+      <div class="kicker">梯度的方向</div>
+      <h1>调哪边？先看坡度</h1>
+      <p class="lead">把损失曲线想成斜坡：局部坡度告诉我们，权重往哪边调会下坡。</p>
+    </header>
+    <main id="slope-lab" class="lab min0">
+      <section class="plot min0" aria-label="损失随单一权重变化的曲线；可拖动曲线上的当前位置">
+        <svg id="plot" viewBox="0 0 1080 650" role="img" aria-labelledby="plotTitle plotDesc">
+          <title id="plotTitle">单参数损失曲线</title>
+          <desc id="plotDesc">U 形示意曲线 L 等于 w 的平方。当前点、切线和局部斜率随权重变化。</desc>
+          <g id="grid"></g><g id="axes"></g>
+          <path id="curve" class="curve"></path>
+          <path id="trail" class="trail"></path>
+          <line id="drop" class="drop"></line><line id="tan" class="tangent"></line>
+          <circle id="minPt" class="minimum" r="9"></circle>
+          <text id="minLabel" class="label">最低点 w=0，L=0</text>
+          <circle id="pt" class="point" r="13"></circle>
+          <circle id="hit" class="drag-hit" r="34" tabindex="0" role="slider" aria-label="权重 w" aria-valuemin="-2.5" aria-valuemax="2.5" aria-valuenow="-1.5"></circle>
+          <text id="pointLabel" class="ann"></text>
+          <text x="1030" y="620" class="label">权重 w</text><text x="44" y="36" class="label">损失 L</text>
+        </svg>
+      </section>
+      <aside class="panel rail min0" aria-label="权重与梯度读数">
+        <p class="note">为建立直觉的单参数示意；真实神经网络的损失不一定是 U 形。</p>
+        <div class="reading"><div class="name">当前位置</div><div><span id="wRead" class="big sm">−1.50</span><span class="unit">w</span></div></div>
+        <div class="reading"><div class="name">当前损失</div><div><span id="lRead" class="big sm">2.25</span><span class="unit">L</span></div></div>
+        <div class="reading"><div class="name">局部斜率</div><div><span id="gRead" class="big sm">−3.0</span><span class="unit">dL/dw</span></div></div>
+        <div id="formula" class="formula" aria-label="更新公式"></div>
+        <label class="ctl" for="wRange">拖动权重 w
+          <input id="wRange" type="range" min="-2.5" max="2.5" step="0.05" value="-1.5">
+        </label>
+        <div class="btns"><button id="stepBtn" class="btn">沿负梯度走一步</button><button id="resetBtn" class="btn">复位</button></div>
+        <div id="status" class="status" aria-live="polite">当前坡度为负，负梯度指向右侧。</div>
+      </aside>
+    </main>
+  </div>
+  <script src="assets/base.js"></script>
+  <script src="assets/lib/katex.min.js"></script>
+  <script>
+  (()=>{
+    const root=document.getElementById('slope-lab');
+    const $=s=>root.querySelector(s);
+    const els={svg:$('#plot'),curve:$('#curve'),trail:$('#trail'),drop:$('#drop'),tan:$('#tan'),pt:$('#pt'),hit:$('#hit'),pointLabel:$('#pointLabel'),minPt:$('#minPt'),minLabel:$('#minLabel'),w:$('#wRead'),l:$('#lRead'),g:$('#gRead'),range:$('#wRange'),step:$('#stepBtn'),reset:$('#resetBtn'),status:$('#status')};
+    const box={l:86,r:1028,t:48,b:590}, x=w=>box.l+(w+2.5)/5*(box.r-box.l), y=L=>box.b-L/6.25*(box.b-box.t), invX=px=>(px-box.l)/(box.r-box.l)*5-2.5;
+    let state={w:-1.5,from:null,anim:null}, raf=0, pointer=null;
+    const fmt=(n,d)=>Math.abs(n)<.0001?(0).toFixed(d):(n<0?'−':'')+Math.abs(n).toFixed(d);
+    function staticDraw(){
+      let d='';for(let i=0;i<=100;i++){const w=-2.5+i*.05;d+=(i?'L':'M')+x(w)+' '+y(w*w)+' '}els.curve.setAttribute('d',d);
+      let grid='';[-2,-1,0,1,2].forEach(v=>grid+=`<line class="grid" x1="${x(v)}" y1="${box.t}" x2="${x(v)}" y2="${box.b}"/><text class="tick" x="${x(v)}" y="615" text-anchor="middle">${v}</text>`);[0,1,2,3,4,5,6].forEach(v=>grid+=`<line class="grid" x1="${box.l}" y1="${y(v)}" x2="${box.r}" y2="${y(v)}"/><text class="tick" x="68" y="${y(v)+5}" text-anchor="end">${v}</text>`);$('#grid').innerHTML=grid;$('#axes').innerHTML=`<line class="axis" x1="${box.l}" y1="${box.b}" x2="${box.r}" y2="${box.b}"/><line class="axis" x1="${box.l}" y1="${box.b}" x2="${box.l}" y2="${box.t}"/>`;
+      els.minPt.setAttribute('cx',x(0));els.minPt.setAttribute('cy',y(0));els.minLabel.setAttribute('x',x(0)+18);els.minLabel.setAttribute('y',y(0)-18);
+    }
+    function render(announce=false){const w=state.w,L=w*w,g=2*w,px=x(w),py=y(L);els.pt.setAttribute('cx',px);els.pt.setAttribute('cy',py);els.hit.setAttribute('cx',px);els.hit.setAttribute('cy',py);els.hit.setAttribute('aria-valuenow',w.toFixed(2));els.drop.setAttribute('x1',px);els.drop.setAttribute('x2',px);els.drop.setAttribute('y1',py);els.drop.setAttribute('y2',box.b);let lo=Math.max(-.72,-2.5-w),hi=Math.min(.72,2.5-w);if(g>0){lo=Math.max(lo,-L/g);hi=Math.min(hi,(6.25-L)/g)}else if(g<0){lo=Math.max(lo,(6.25-L)/g);hi=Math.min(hi,-L/g)}els.tan.setAttribute('x1',x(w+lo));els.tan.setAttribute('y1',y(L+g*lo));els.tan.setAttribute('x2',x(w+hi));els.tan.setAttribute('y2',y(L+g*hi));els.pointLabel.setAttribute('x',px+(w>1.5?-190:22));els.pointLabel.setAttribute('y',Math.max(45,py-20));els.pointLabel.textContent=`切线斜率 ${fmt(g,1)}`;els.w.textContent=fmt(w,2);els.l.textContent=L.toFixed(2);els.g.textContent=fmt(g,1);els.range.value=w;let td='';if(state.from!==null){const a=state.from,b=w;for(let i=0;i<=30;i++){const q=a+(b-a)*i/30;td+=(i?'L':'M')+x(q)+' '+y(q*q)+' '}}els.trail.setAttribute('d',td);if(announce)els.status.textContent=Math.abs(w)<.025?'坡度为 0，当前位置就是最低点。':`w=${fmt(w,2)}，损失 ${L.toFixed(2)}，坡度 ${fmt(g,1)}。`;}
+    function setW(v,announce=false){cancel();state.w=Math.max(-2.5,Math.min(2.5,v));state.from=null;render(announce)}
+    function cancel(){if(raf){cancelAnimationFrame(raf);raf=0}state.anim=null}
+    function step(){cancel();const from=state.w,to=Math.max(-2.5,Math.min(2.5,from-.2*(2*from)));state.from=from;if(Deck.reduced()){state.w=to;render();els.status.textContent=`按 w←w−η(dL/dw)：${fmt(from,1)} 走到 ${fmt(to,1)}，损失降到 ${(to*to).toFixed(2)}。`;return}const start=performance.now(),dur=520;function frame(now){const p=Math.min(1,(now-start)/dur),e=1-Math.pow(1-p,3);state.w=from+(to-from)*e;render();if(p<1)raf=requestAnimationFrame(frame);else{raf=0;state.w=to;render();els.status.textContent=`按 w←w−η(dL/dw)：${fmt(from,1)} 走到 ${fmt(to,1)}，损失降到 ${(to*to).toFixed(2)}。`}}raf=requestAnimationFrame(frame)}
+    function reset(){cancel();state={w:-1.5,from:null,anim:null};render();els.status.textContent='已复位：w=−1.50，局部斜率为 −3.0。'}
+    els.range.addEventListener('input',e=>setW(+e.target.value));els.range.addEventListener('change',()=>render(true));els.step.addEventListener('click',step);els.reset.addEventListener('click',reset);
+    els.svg.addEventListener('pointerdown',e=>{if(e.target!==els.hit)return;pointer=e.pointerId;els.hit.setPointerCapture(pointer)});els.svg.addEventListener('pointermove',e=>{if(e.pointerId!==pointer)return;const p=Deck.pt(els.svg,e);setW(invX(p.x))});els.svg.addEventListener('pointerup',e=>{if(e.pointerId===pointer){pointer=null;render(true)}});els.svg.addEventListener('pointercancel',()=>{pointer=null});els.hit.addEventListener('keydown',e=>{if(e.key==='ArrowLeft'||e.key==='ArrowRight'){e.preventDefault();e.stopPropagation();setW(state.w+(e.key==='ArrowRight'?.05:-.05),true)}});
+    staticDraw();render();katex.render(String.raw`w \leftarrow w-\eta\frac{dL}{dw}\quad (\eta=0.2)`,document.getElementById('formula'),{throwOnError:false});Deck.init({index:10,total:20});
+    window.addEventListener('pagehide',cancel,{once:true});
+  })();
+  </script>
+</body>
+</html>

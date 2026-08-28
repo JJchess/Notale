@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>一个神经元：先加权，再做决定</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <link rel="stylesheet" href="assets/lib/katex.min.css">
+  <style>
+    #stage{overflow:hidden}
+    .split{grid-template-columns:minmax(0,.74fr) minmax(0,1.26fr);gap:44px}
+    .explain{display:flex;flex-direction:column;justify-content:center;gap:24px;padding:8px 0 20px}
+    .formula{font-size:32px;line-height:1.35;color:var(--model);padding:22px 0;border-top:var(--rule) solid var(--line);border-bottom:var(--rule) solid var(--line)}
+    .values{display:grid;grid-template-columns:1fr 1fr;gap:10px 20px;font-family:var(--font-num);font-size:20px;font-variant-numeric:tabular-nums}
+    .calc{font:750 29px/1.35 var(--font-num);color:var(--attention)}
+    .boundary{color:var(--muted);font-size:var(--fs-sec);padding-top:16px;border-top:var(--rule) solid var(--line)}
+    .diagram{display:flex;flex-direction:column;min-height:0;gap:12px}
+    .diagram-head{display:flex;align-items:center;justify-content:space-between;gap:20px}
+    .diagram-title{font-size:var(--fs-h2);font-weight:750}
+    .canvas{flex:1;min-height:0;position:relative;background:var(--paper);border:var(--rule) solid var(--line);border-radius:var(--r);overflow:hidden}
+    .canvas svg{width:100%;height:100%;display:block}
+    .basewire{fill:none;stroke:var(--line);stroke-width:8;stroke-linecap:round;opacity:.42}
+    .activewire{fill:none;stroke:var(--model);stroke-width:8;stroke-linecap:round;stroke-dasharray:1;stroke-dashoffset:1}
+    .outwire{stroke:var(--attention)}
+    .input-node{fill:var(--paper);stroke:var(--data);stroke-width:5}
+    .sum-node{fill:var(--paper);stroke:var(--model);stroke-width:6}
+    .bias-node{fill:var(--paper);stroke:var(--attention);stroke-width:5}
+    .output-node{fill:var(--paper);stroke:var(--attention);stroke-width:6}
+    .svg-label{font:650 20px var(--font-sans);fill:var(--text)}
+    .svg-sub{font:600 16px var(--font-sans);fill:var(--muted)}
+    .svg-num{font:750 25px var(--font-num);fill:var(--model)}
+    .sum-symbol{font:750 38px var(--font-num);fill:var(--model)}
+    .result{font:800 34px var(--font-num);fill:var(--attention)}
+    .status{min-height:24px;color:var(--muted);font-size:var(--fs-label)}
+    @media (prefers-reduced-motion:reduce){.activewire{stroke-dashoffset:0!important}}
+  </style>
+</head>
+<body data-page="03" data-total="20">
+  <div id="stage">
+    <header>
+      <div class="kicker">单个神经元的计算</div>
+      <h1>一个神经元：先加权，再做决定</h1>
+    </header>
+    <main class="split min0">
+      <section class="explain min0" aria-labelledby="formula-title">
+        <h2 id="formula-title">它是一条算式</h2>
+        <div id="formula" class="formula" aria-label="z 等于 w1 x1 加 w2 x2 加 b">z=w_1x_1+w_2x_2+b</div>
+        <div class="values" aria-label="代入数值">
+          <span>x₁ = 3</span><span>w₁ = 1</span>
+          <span>x₂ = 6.5</span><span>w₂ = 0.2</span>
+          <span>b = −4</span>
+        </div>
+        <div class="calc">z = 3 + 1.3 − 4 = 0.3</div>
+        <p class="boundary">这一页只算出分数 z。如何用它做决定，留到下一页的激活函数。</p>
+      </section>
+      <section class="diagram min0" aria-labelledby="diagram-title">
+        <div class="diagram-head">
+          <h2 id="diagram-title" class="diagram-title">输入沿线路汇合</h2>
+          <button id="replay" class="btn" type="button">重播计算路径</button>
+        </div>
+        <div class="canvas" role="img" aria-label="学习小时和睡眠小时分别乘权重，再与偏置相加，得到分数零点三">
+          <svg viewBox="0 0 880 610" aria-hidden="true">
+            <path class="basewire" d="M150 155 C285 155 310 255 430 290"/>
+            <path class="basewire" d="M150 445 C285 445 310 345 430 310"/>
+            <path class="basewire" d="M440 510 L440 365"/>
+            <path class="basewire" d="M505 300 L710 300"/>
+            <path id="p1" class="activewire" pathLength="1" d="M150 155 C285 155 310 255 430 290"/>
+            <path id="p2" class="activewire" pathLength="1" d="M150 445 C285 445 310 345 430 310"/>
+            <path id="pb" class="activewire outwire" pathLength="1" d="M440 510 L440 365"/>
+            <path id="po" class="activewire outwire" pathLength="1" d="M505 300 L710 300"/>
+
+            <circle class="input-node" cx="112" cy="155" r="38"/><text class="svg-num" x="112" y="164" text-anchor="middle">3</text>
+            <text class="svg-label" x="40" y="92">学习小时 x₁</text><text class="svg-sub" x="200" y="137">权重 w₁ = 1</text>
+            <circle class="input-node" cx="112" cy="445" r="38"/><text class="svg-num" x="112" y="454" text-anchor="middle">6.5</text>
+            <text class="svg-label" x="40" y="382">睡眠小时 x₂</text><text class="svg-sub" x="200" y="470">权重 w₂ = 0.2</text>
+
+            <circle class="sum-node" cx="455" cy="300" r="54"/><text class="sum-symbol" x="455" y="312" text-anchor="middle">Σ</text>
+            <text class="svg-label" x="455" y="224" text-anchor="middle">加权求和</text>
+            <circle class="bias-node" cx="440" cy="535" r="35"/><text class="svg-num" x="440" y="544" text-anchor="middle">−4</text>
+            <text class="svg-label" x="440" y="594" text-anchor="middle">偏置 b</text>
+
+            <circle class="output-node" cx="758" cy="300" r="50"/><text class="result" x="758" y="312" text-anchor="middle">0.3</text>
+            <text class="svg-label" x="758" y="224" text-anchor="middle">分数 z</text>
+            <text class="svg-sub" x="608" y="278" text-anchor="middle">3 + 1.3 − 4</text>
+          </svg>
+        </div>
+        <div id="status" class="status" aria-live="polite">完整算式已显示；线路将按输入到输出依次加深。</div>
+      </section>
+    </main>
+  </div>
+  <script src="assets/lib/katex.min.js"></script>
+  <script src="assets/base.js"></script>
+  <script>
+    Deck.init({index:3,total:20});
+    katex.render(String.raw`z=w_1x_1+w_2x_2+b`, document.getElementById('formula'), {throwOnError:false,displayMode:true});
+    const paths=[document.getElementById('p1'),document.getElementById('p2'),document.getElementById('pb'),document.getElementById('po')];
+    const status=document.getElementById('status');
+    const replay=document.getElementById('replay');
+    let active=[];
+    function cancel(){active.forEach(a=>a.cancel());active=[];}
+    function settled(){paths.forEach(p=>p.style.strokeDashoffset='0');status.textContent='两个加权输入与偏置汇合，得到 z = 0.3。';}
+    function play(){
+      cancel(); paths.forEach(p=>p.style.strokeDashoffset='1');
+      if(Deck.reduced()){settled();return;}
+      status.textContent='先计算两个输入各自的加权结果。';
+      paths.forEach((p,i)=>{
+        const delay=i<2?i*330:660+(i-2)*430;
+        const a=p.animate([{strokeDashoffset:1},{strokeDashoffset:0}],{duration:520,delay,easing:'cubic-bezier(.22,.8,.3,1)',fill:'forwards'});
+        active.push(a);
+        if(i===2)a.onfinish=()=>status.textContent='再加入偏置 b。';
+        if(i===3)a.onfinish=settled;
+      });
+    }
+    replay.addEventListener('click',play);
+    window.addEventListener('pagehide',cancel,{once:true});
+    requestAnimationFrame(play);
+  </script>
+</body>
+</html>

@@ -1,0 +1,330 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<script src="assets/lib/seedrandom.min.js"></script>
+<script src="assets/lib/mlp.js"></script>
+<style>
+  #stage{ display:flex; flex-direction:column; gap:14px; }
+
+  .p17-head{ flex:none; display:flex; flex-direction:column; gap:8px; }
+  .p17-toprow{ display:flex; align-items:flex-end; justify-content:space-between; gap:24px; flex-wrap:wrap; }
+
+  .p17-compare{ flex:1; min-height:0; }
+  .p17-panel{ }
+  .p17-panel-head{ flex:none; display:flex; align-items:baseline; justify-content:space-between; gap:10px; }
+  .p17-panel-head h2{ font-size:18px; }
+  .p17-cvbox{ flex:1; }
+  .p17-readouts{ flex:none; display:flex; gap:24px; }
+  .p17-readout{ display:flex; flex-direction:column; gap:2px; }
+
+  .p17-foot{ flex:none; display:flex; align-items:center; gap:28px; }
+  .p17-foot .k-comparison{ flex:1; }
+  .p17-epoch{ flex:none; white-space:nowrap; }
+
+  .p17-legend-sw{ display:inline-block; width:12px; height:12px; border-radius:50%; margin-right:5px; vertical-align:-1px; }
+  .p17-legend-sw.sq{ border-radius:0; transform:rotate(45deg); }
+  .p17-legend-sw.ring{ background:none; border:2px solid var(--backward); width:10px; height:10px; }
+</style>
+</head>
+<body data-page="17" data-total="20">
+<div id="stage">
+
+  <header class="p17-head">
+    <span class="kicker">容量与噪声</span>
+    <div class="p17-toprow">
+      <div style="max-width:900px;">
+        <h1>小网络学不会规律,大网络记住了噪声</h1>
+        <p class="lead" style="margin-top:6px;">同一批棋盘格数据,训练集里 10%(16 个)的标签被随机翻转。点击训练,比较两个网络在训练集和验证集上的准确率如何分开。</p>
+      </div>
+      <div style="display:flex; flex-direction:column; align-items:flex-end; gap:8px;">
+        <div class="btns">
+          <button class="btn primary" id="btnTrain" type="button">同时训练两者</button>
+          <button class="btn" id="btnReset" type="button">重置两个网络</button>
+        </div>
+        <div class="legend">
+          <span class="li"><span class="p17-legend-sw" style="background:var(--forward);"></span>类别 1</span>
+          <span class="li"><span class="p17-legend-sw" style="background:var(--text);"></span>类别 0</span>
+          <span class="li"><span class="p17-legend-sw ring"></span>标签被翻转</span>
+          <span class="li"><span class="p17-legend-sw sq" style="background:var(--muted);"></span>验证点(方块)</span>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <div class="layout-compare p17-compare">
+
+    <div class="panel p17-panel">
+      <div class="p17-panel-head">
+        <h2>小网络</h2>
+        <span class="tag">sizes 2-2-1</span>
+      </div>
+      <div class="cvbox p17-cvbox min0">
+        <canvas class="min0 cv-fill" id="cvSmall"></canvas>
+      </div>
+      <div class="p17-readouts">
+        <div class="p17-readout">
+          <span class="small">训练集准确率</span>
+          <span class="big sm num" id="accTrainSmall">0.50</span>
+        </div>
+        <div class="p17-readout">
+          <span class="small">验证集准确率</span>
+          <span class="big sm num" id="accValSmall">0.50</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel p17-panel">
+      <div class="p17-panel-head">
+        <h2>大网络</h2>
+        <span class="tag">sizes 2-10-10-1</span>
+      </div>
+      <div class="cvbox p17-cvbox min0">
+        <canvas class="min0 cv-fill" id="cvBig"></canvas>
+      </div>
+      <div class="p17-readouts">
+        <div class="p17-readout">
+          <span class="small">训练集准确率</span>
+          <span class="big sm num" id="accTrainBig">0.50</span>
+        </div>
+        <div class="p17-readout">
+          <span class="small">验证集准确率</span>
+          <span class="big sm num" id="accValBig">0.50</span>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="p17-foot">
+    <div class="k-comparison">
+      <div class="hdr">
+        <div class="dim">指标</div>
+        <div class="dim">小网络</div>
+        <div class="dim">大网络</div>
+      </div>
+      <div class="rowline">
+        <div>训练-验证准确率差距</div>
+        <div class="num diff" id="cmpDiffSmall">+0.00</div>
+        <div class="num diff" id="cmpDiffBig">+0.00</div>
+      </div>
+    </div>
+    <div class="small p17-epoch" id="epochLabel">已训练 0 轮(每轮 40 帧 × 12 个 mini-batch)</div>
+  </div>
+
+  <div class="sr-only" id="liveRegion" aria-live="polite"></div>
+</div>
+
+<script src="assets/base.js"></script>
+<script>
+(function(){
+  "use strict";
+
+  // ---- 数据:棋盘格 + 10% 标签翻转噪声 ----
+  var rng = new Math.seedrandom('page-17');
+  function checkerLabel(x, y){
+    var cell = 0.5;
+    var ix = Math.floor((x + 1) / cell);
+    var iy = Math.floor((y + 1) / cell);
+    return (ix + iy) % 2;
+  }
+
+  var trainSet = [];
+  for (var i = 0; i < 160; i++) {
+    var x = rng() * 2 - 1, y = rng() * 2 - 1;
+    trainSet.push({ x: [x, y], t: checkerLabel(x, y) });
+  }
+  var valSet = [];
+  for (var j = 0; j < 40; j++) {
+    var vx = rng() * 2 - 1, vy = rng() * 2 - 1;
+    valSet.push({ x: [vx, vy], t: checkerLabel(vx, vy) });
+  }
+  var flippedIdx = {};
+  var flippedCount = 0;
+  while (flippedCount < 16) {
+    var idx = Math.floor(rng() * 160);
+    if (!flippedIdx[idx]) { flippedIdx[idx] = true; flippedCount++; }
+  }
+  Object.keys(flippedIdx).forEach(function(k){
+    trainSet[k].t = 1 - trainSet[k].t;
+  });
+
+  // ---- 两个网络,共享种子/结构不同 ----
+  var netSmall = MLP.create({ sizes: [2, 2, 1], act: 'tanh', lr: 0.3, seed: 17 });
+  var netBig   = MLP.create({ sizes: [2, 10, 10, 1], act: 'tanh', lr: 0.3, seed: 17 });
+
+  var cvSmall = document.getElementById('cvSmall');
+  var cvBig   = document.getElementById('cvBig');
+
+  var accTrainSmall = document.getElementById('accTrainSmall');
+  var accValSmall   = document.getElementById('accValSmall');
+  var accTrainBig   = document.getElementById('accTrainBig');
+  var accValBig     = document.getElementById('accValBig');
+  var cmpDiffSmall  = document.getElementById('cmpDiffSmall');
+  var cmpDiffBig    = document.getElementById('cmpDiffBig');
+  var epochLabel    = document.getElementById('epochLabel');
+  var liveRegion    = document.getElementById('liveRegion');
+  var btnTrain      = document.getElementById('btnTrain');
+  var btnReset      = document.getElementById('btnReset');
+
+  var epochs = 0;
+  var training = false;
+
+  function lerp(a, b, t) { return a + (b - a) * t; }
+
+  function drawNet(cv, net) {
+    var ctx = Deck.fit(cv);
+    var W = cv.clientWidth, H = cv.clientHeight;
+    if (W === 0 || H === 0) return;
+
+    var paper = Deck.rgb('--paper');
+    var fwd = Deck.rgb('--forward');
+    var txt = Deck.rgb('--text');
+
+    ctx.clearRect(0, 0, W, H);
+    ctx.fillStyle = 'rgb(' + paper[0] + ',' + paper[1] + ',' + paper[2] + ')';
+    ctx.fillRect(0, 0, W, H);
+
+    var res = 56;
+    var field = net.field(-1, -1, 1, 1, res, res);
+    var cellW = W / res, cellH = H / res;
+    for (var row = 0; row < res; row++) {
+      for (var col = 0; col < res; col++) {
+        var v = field[row * res + col];
+        var r, g, b, t;
+        if (v >= 0.5) {
+          t = (v - 0.5) * 2;
+          r = lerp(paper[0], fwd[0], t); g = lerp(paper[1], fwd[1], t); b = lerp(paper[2], fwd[2], t);
+        } else {
+          t = (0.5 - v) * 2;
+          r = lerp(paper[0], txt[0], t); g = lerp(paper[1], txt[1], t); b = lerp(paper[2], txt[2], t);
+        }
+        ctx.fillStyle = 'rgb(' + (r | 0) + ',' + (g | 0) + ',' + (b | 0) + ')';
+        var px = col * cellW;
+        var py = H - (row + 1) * cellH;
+        ctx.fillRect(px, py, cellW + 1, cellH + 1);
+      }
+    }
+
+    function toPx(px0, py0) {
+      return [ (px0 + 1) / 2 * W, H - (py0 + 1) / 2 * H ];
+    }
+
+    trainSet.forEach(function(p, idx) {
+      var pos = toPx(p.x[0], p.x[1]);
+      ctx.fillStyle = p.t === 1 ? Deck.rgba('--forward', 1) : Deck.rgba('--text', 1);
+      ctx.strokeStyle = '#fff';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.arc(pos[0], pos[1], 3.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      if (flippedIdx[idx]) {
+        ctx.beginPath();
+        ctx.arc(pos[0], pos[1], 6, 0, Math.PI * 2);
+        ctx.strokeStyle = Deck.rgba('--backward', 1);
+        ctx.lineWidth = 2;
+        ctx.stroke();
+      }
+    });
+
+    valSet.forEach(function(p) {
+      var pos = toPx(p.x[0], p.x[1]);
+      ctx.save();
+      ctx.translate(pos[0], pos[1]);
+      ctx.rotate(Math.PI / 4);
+      ctx.fillStyle = p.t === 1 ? Deck.rgba('--forward', 1) : Deck.rgba('--text', 1);
+      ctx.strokeStyle = '#fff';
+      ctx.lineWidth = 1;
+      ctx.fillRect(-3.4, -3.4, 6.8, 6.8);
+      ctx.strokeRect(-3.4, -3.4, 6.8, 6.8);
+      ctx.restore();
+    });
+  }
+
+  function updateReadouts() {
+    var rs = netSmall.evaluate(trainSet), rsv = netSmall.evaluate(valSet);
+    var rb = netBig.evaluate(trainSet), rbv = netBig.evaluate(valSet);
+
+    accTrainSmall.textContent = rs.acc.toFixed(2);
+    accValSmall.textContent = rsv.acc.toFixed(2);
+    accTrainBig.textContent = rb.acc.toFixed(2);
+    accValBig.textContent = rbv.acc.toFixed(2);
+
+    var diffSmall = rs.acc - rsv.acc;
+    var diffBig = rb.acc - rbv.acc;
+    cmpDiffSmall.textContent = Deck.fmt(diffSmall, 2);
+    cmpDiffBig.textContent = Deck.fmt(diffBig, 2);
+
+    return { rs: rs, rsv: rsv, rb: rb, rbv: rbv };
+  }
+
+  function drawAll() {
+    drawNet(cvSmall, netSmall);
+    drawNet(cvBig, netBig);
+  }
+
+  function paintAll() {
+    updateReadouts();
+    drawAll();
+  }
+
+  Deck.onResize(drawAll);
+
+  function trainBoth() {
+    if (training) return;
+    training = true;
+    btnTrain.disabled = true;
+    btnReset.disabled = true;
+    var frame = 0;
+    var totalFrames = 40;
+
+    function tick() {
+      if (frame < totalFrames) {
+        for (var b = 0; b < 12; b++) {
+          netSmall.step(trainSet, 16);
+          netBig.step(trainSet, 16);
+        }
+        frame++;
+        var r = updateReadouts();
+        if (frame % 3 === 0 || frame === totalFrames) {
+          drawAll();
+        }
+        requestAnimationFrame(tick);
+      } else {
+        training = false;
+        btnTrain.disabled = false;
+        btnReset.disabled = false;
+        epochs++;
+        epochLabel.textContent = '已训练 ' + epochs + ' 轮(每轮 40 帧 × 12 个 mini-batch)';
+        var r2 = updateReadouts();
+        drawAll();
+        liveRegion.textContent = '第 ' + epochs + ' 轮训练完成。小网络训练集准确率 ' + r2.rs.acc.toFixed(2) +
+          ',验证集 ' + r2.rsv.acc.toFixed(2) + ';大网络训练集准确率 ' + r2.rb.acc.toFixed(2) +
+          ',验证集 ' + r2.rbv.acc.toFixed(2) + '。';
+      }
+    }
+    requestAnimationFrame(tick);
+  }
+
+  function resetBoth() {
+    if (training) return;
+    netSmall.reset();
+    netBig.reset();
+    epochs = 0;
+    epochLabel.textContent = '已训练 0 轮(每轮 40 帧 × 12 个 mini-batch)';
+    paintAll();
+    liveRegion.textContent = '两个网络已重置为初始权重。';
+  }
+
+  btnTrain.addEventListener('click', trainBoth);
+  btnReset.addEventListener('click', resetBoth);
+
+  paintAll();
+  Deck.init({ index: 17, total: 20 });
+})();
+</script>
+</body>
+</html>

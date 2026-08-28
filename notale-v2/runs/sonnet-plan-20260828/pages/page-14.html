@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<script src="assets/lib/seedrandom.min.js"></script>
+<script src="assets/lib/mlp.js"></script>
+<script src="assets/lib/echarts.min.js"></script>
+<style>
+  .p14-main { display:flex; flex-direction:column; gap:12px; }
+  .p14-main .lead { max-width: 900px; }
+  #p14-chart { flex:1; }
+  .p14-readout { display:flex; flex-direction:column; gap:4px; }
+  .p14-readout .small { color:var(--muted); }
+  #p14-status { min-height: 18px; }
+</style>
+</head>
+<body data-page="14" data-total="20">
+<div id="stage">
+  <div class="layout-focus">
+    <div class="stage-main p14-main min0">
+      <div>
+        <span class="kicker">训练曲线</span>
+        <h1>损失从 0.69 降到 0.05,只用了几十帧</h1>
+      </div>
+      <p class="lead">播放之后,每一帧对 16 个样本做一次小批量更新、连续十二次,再在验证集上重新算一次损失。曲线记录的是每一帧结束时那一次损失。</p>
+      <div class="cvbox min0" id="p14-chart" role="img" aria-label="验证集损失随训练帧数变化的折线图"></div>
+    </div>
+    <div class="stage-side">
+      <div class="panel p14-readout">
+        <span class="small">已训练帧数</span>
+        <span class="big num" id="p14-frame">0</span>
+      </div>
+      <div class="panel p14-readout">
+        <span class="small">验证集损失</span>
+        <span class="big num" id="p14-loss">0.6900</span>
+      </div>
+      <div class="btns">
+        <button class="btn primary" id="p14-play">播放</button>
+        <button class="btn" id="p14-pause">暂停</button>
+        <button class="btn" id="p14-reset">重置</button>
+      </div>
+      <p class="note">初始损失理论值 −ln 0.5 ≈ 0.693,权重随机、和瞎猜一样。</p>
+      <p class="note" id="p14-status" aria-live="polite">尚未开始训练。</p>
+    </div>
+  </div>
+</div>
+<script src="assets/base.js"></script>
+<script>
+(function(){
+  // ---- 数据:200 点,固定种子,160 训练 / 40 验证 ----
+  function makeData(){
+    var rng = new Math.seedrandom('page-14');
+    var pts = [];
+    for (var i = 0; i < 200; i++) {
+      var x = rng() * 2 - 1;
+      var y = rng() * 2 - 1;
+      var t = (x * y > 0) ? 1 : 0;
+      pts.push({ x: [x, y], t: t });
+    }
+    var train = [], val = [];
+    pts.forEach(function (p, i) {
+      if (i % 5 === 4) val.push(p); else train.push(p);
+    });
+    return { train: train, val: val };
+  }
+
+  var data = makeData();
+  var net = MLP.create({ sizes: [2, 10, 10, 1], act: 'tanh', lr: 0.3, seed: 14 });
+
+  var MAX_FRAMES = 400;
+  var frame = 0;
+  var running = false;
+  var stopFn = null;
+  var lossHistory = [];
+
+  var chartEl = document.getElementById('p14-chart');
+  var chart = echarts.init(chartEl, null, { renderer: 'svg' });
+
+  var frameEl = document.getElementById('p14-frame');
+  var lossEl = document.getElementById('p14-loss');
+  var statusEl = document.getElementById('p14-status');
+  var playBtn = document.getElementById('p14-play');
+  var pauseBtn = document.getElementById('p14-pause');
+  var resetBtn = document.getElementById('p14-reset');
+
+  function renderChart() {
+    chart.setOption({
+      animation: false,
+      textStyle: { fontSize: 16 },
+      grid: { left: 64, right: 24, top: 20, bottom: 52 },
+      xAxis: {
+        type: 'value', name: '已训练帧数', nameLocation: 'middle', nameGap: 30,
+        min: 0, max: MAX_FRAMES,
+        axisLabel: { fontSize: 14 }, nameTextStyle: { fontSize: 14 }
+      },
+      yAxis: {
+        type: 'value', name: '验证集损失', nameLocation: 'middle', nameGap: 46,
+        min: 0,
+        axisLabel: { fontSize: 14 }, nameTextStyle: { fontSize: 14 }
+      },
+      series: [{
+        type: 'line', data: lossHistory, showSymbol: false,
+        lineStyle: { color: '#2457A6', width: 2.5 }
+      }]
+    }, true);
+  }
+
+  function updateReadouts(loss) {
+    frameEl.textContent = frame;
+    lossEl.textContent = loss.toFixed(4);
+  }
+
+  function tick() {
+    for (var i = 0; i < 12; i++) net.step(data.train, 16);
+    frame++;
+    var r = net.evaluate(data.val);
+    lossHistory.push([frame, r.loss]);
+    renderChart();
+    updateReadouts(r.loss);
+    if (frame >= MAX_FRAMES) {
+      pauseTraining();
+      statusEl.textContent = '已到达 ' + MAX_FRAMES + ' 帧,曲线已经趋平,自动暂停。';
+    }
+  }
+
+  function startTraining() {
+    if (running) return;
+    if (frame >= MAX_FRAMES) return;
+    running = true;
+    playBtn.disabled = true;
+    pauseBtn.disabled = false;
+    statusEl.textContent = '训练中……';
+    stopFn = Deck.loop(function () {
+      tick();
+    }, { still: 0 });
+  }
+
+  function pauseTraining() {
+    if (!running) return;
+    running = false;
+    if (stopFn) { stopFn(); stopFn = null; }
+    playBtn.disabled = false;
+    pauseBtn.disabled = true;
+    statusEl.textContent = '已暂停。';
+  }
+
+  function resetTraining() {
+    pauseTraining();
+    net.reset();
+    frame = 0;
+    lossHistory = [];
+    var r = net.evaluate(data.val);
+    lossHistory.push([0, r.loss]);
+    renderChart();
+    updateReadouts(r.loss);
+    playBtn.disabled = false;
+    pauseBtn.disabled = true;
+    statusEl.textContent = '已重置。';
+  }
+
+  playBtn.addEventListener('click', startTraining);
+  pauseBtn.addEventListener('click', pauseTraining);
+  resetBtn.addEventListener('click', resetTraining);
+
+  // ---- 初始状态:首帧就展示理论初始损失 ----
+  var r0 = net.evaluate(data.val);
+  lossHistory.push([0, r0.loss]);
+  renderChart();
+  updateReadouts(r0.loss);
+  pauseBtn.disabled = true;
+
+  Deck.onResize(function () { chart.resize(); });
+
+  Deck.init({ index: 14, total: 20 });
+})();
+</script>
+</body>
+</html>
