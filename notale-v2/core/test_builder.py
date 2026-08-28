@@ -163,7 +163,7 @@ class WriteOnceAndEffortTests(unittest.TestCase):
             self.surfaces.append({s["name"] for s in spec})
             return responses.pop(0)
 
-        def fake_run(name, args, cwd, root):
+        def fake_run(name, args, cwd, root, pid):
             ran.append(name)
             return "ok"
 

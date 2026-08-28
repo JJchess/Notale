@@ -530,7 +530,7 @@ def build_one(page: Page, pages_dir: Path, trace: Path, skill_root: Path,
                        f"内容逐字相同。往上翻即可,不用再 Read —— "
                        f"这一次 Read 没有给你任何新信息。")
             else:
-                res = tools.run(c.name, args, pages_dir, skill_root)
+                res = tools.run(c.name, args, pages_dir, skill_root, page.pid)
                 if (c.name == "Write"
                         and _PAGE_RE.search(str(args.get("file_path", "")))):
                     page.wrote = True

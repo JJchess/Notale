@@ -8,6 +8,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -143,6 +144,7 @@ class WorkflowRegistryTests(unittest.TestCase):
                 {"file_path": str(reference), "offset": 3000, "limit": 1},
                 Path(td),
                 root,
+                "page-01",
             )
 
         self.assertIsInstance(result, str)
@@ -150,6 +152,82 @@ class WorkflowRegistryTests(unittest.TestCase):
         self.assertIn("UNIQUE EOF CONTENT", result)
         self.assertIn("reference 全文结束", result)
         self.assertNotIn("已截断", result)
+
+
+class OutOfBoundsTests(unittest.TestCase):
+    """本页只能碰自己 run 的 pages/,page-*.html 里只能碰自己那一页。
+
+    2026-08-28 Sonnet 全量那轮 page-06 花了 46 步、43 次 Bash、**一次 Write 都没有**;
+    同模型 sonB 那轮留下了参数,能看见它 `cd` 去别的 run `cat` 页面、
+    `diff` 两个 run 的 CHASSIS.md、`echo BASHTEST >` 往别的 run 写文件。
+    tools.py 顶上写着「cwd 钉死」,但 `cd` 一下就不算数 —— 这组测试守的是它现在算数了。
+    """
+
+    PID = "page-06"
+
+    def setUp(self) -> None:
+        self.td = tempfile.TemporaryDirectory()
+        self.cwd = Path(self.td.name) / "runs" / "mine" / "pages"
+        (self.cwd / "assets" / "lib").mkdir(parents=True)
+        self.other = Path(self.td.name) / "runs" / "other" / "pages"
+        self.other.mkdir(parents=True)
+
+    def tearDown(self) -> None:
+        self.td.cleanup()
+
+    def blocked(self, args):
+        return tools._out_of_bounds(args, self.cwd, self.PID)
+
+    def test_other_pages_are_refused(self) -> None:
+        self.assertEqual(self.blocked({"file_path": "page-05.html"}), "page-05.html")
+        self.assertEqual(self.blocked({"page": "page-09.html"}), "page-09.html")
+
+    def test_same_name_in_another_run_is_refused(self) -> None:
+        """**只比基名挡不住这一条。** 别的 run 里也有 page-06.html。"""
+        off = self.blocked({"file_path": str(self.other / "page-06.html")})
+        self.assertIsNotNone(off)
+        self.assertIn("run 目录之外", off)
+
+    def test_bash_cd_into_another_run_is_refused(self) -> None:
+        off = self.blocked({"command": f"cd {self.other} && cat page-06.html"})
+        self.assertIsNotNone(off)
+        self.assertIn("run 目录之外", off)
+
+    def test_bash_writing_into_another_run_is_refused(self) -> None:
+        """sonB 那轮真发生过:`echo BASHTEST > 别的run/pages/test_marker.txt`。"""
+        self.assertIsNotNone(self.blocked({"command": f"echo X > {self.other}/t.txt"}))
+
+    def test_own_page_and_own_run_pass(self) -> None:
+        """**别把自己也挡了。** 审计过的 1,024 次 Bash 里 263 次是读回自己的页。"""
+        for args in ({"file_path": "page-06.html"},
+                     {"page": "page-06.html"},
+                     {"command": "sed -n '1,40p' page-06.html"},
+                     {"command": "grep -n stage page-06.html | head -20"},
+                     {"command": f"cat {self.cwd}/assets/lib/LIBS.md"},
+                     {"file_path": ".shots/page-06-after2.png"},
+                     {"skill": "build-interaction"}):
+            with self.subTest(args=args):
+                self.assertIsNone(self.blocked(args))
+
+    def test_relative_path_is_not_mistaken_for_absolute(self) -> None:
+        """`assets/lib/mlp.js` 里那个斜杠一度被当成绝对路径 `/lib/mlp.js` 而误拦。"""
+        self.assertIsNone(self.blocked({"command": "cat assets/lib/mlp.js"}))
+
+    def test_page_content_is_not_a_reference(self) -> None:
+        """扫的是**引用**不是**内容** —— 正文里出现别页名不算跨页访问。"""
+        self.assertIsNone(self.blocked(
+            {"file_path": "page-06.html", "content": "<a href='page-05.html'>x</a>"}))
+        self.assertIsNone(self.blocked(
+            {"page": "page-06.html", "edits": [{"old": "page-05.html", "new": "x"}]}))
+
+    def test_run_refuses_without_dispatching(self) -> None:
+        """拒绝要发生在 _dispatch 之前 —— 否则文件已经被读/写过了。"""
+        with patch.object(tools, "_dispatch") as d:
+            res = tools.run("Read", {"file_path": "page-05.html"},
+                            self.cwd, self.cwd, self.PID)
+        d.assert_not_called()
+        self.assertIn("page-05.html", res)
+        self.assertIn(self.PID, res)
 
 
 if __name__ == "__main__":

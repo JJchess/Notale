@@ -55,6 +55,52 @@ TIMEOUT = 120
 SHOT_TIMEOUT = 300   # 渲染要起无头 Chromium,还可能带几个 --after 状态,给宽一点
 
 IMG_EXT = {".png", ".jpg", ".jpeg", ".webp", ".gif"}
+
+# ── 越界访问 ────────────────────────────────────────────────────────
+# 上面那段说三条护栏是「cwd 钉死、超时、输出截断」,但 **`cd` 一下 cwd 就不算数了**。
+# 2026-08-28 实测(sonB 那轮 page-06 的 44 次 Bash):模型 `cd` 去别的 run 目录
+# `cat` 页面、`diff` 两个 run 的 CHASSIS.md、`echo BASHTEST >` 往别的 run 写文件。
+# 同一天 Sonnet 全量那轮 page-06 花了 46 步、43 次 Bash,**一次 Write 都没有**。
+#
+# 所以这不是新加一条策略,是把已经声明过的那条护栏补成真的:
+#     本页只能碰自己 run 的 pages/,page-*.html 里只能碰自己那一页。
+#
+# **仍然不是沙箱,也不是白名单。** 限制的是**位置**不是**能跑什么命令** ——
+# 上面拒绝给 Bash 上白名单的理由(挡住任何一类都会逼模型绕路)照旧成立:
+# selfcheck、原地改页、cat/sed 读回自己的页、grep、ls 全在 run 目录内,一个不受影响。
+# `cat page-0*.html` 这种通配符、变量拼接、heredoc 里的 python 都挡不住 ——
+# 挡的是老实写法。模型不是对手,是在照指令行事,挡住老实写法就够。
+_PAGE_FILE = re.compile(r"page-\d+\.html")
+# 绝对路径必须是**一个 token 的开头**。写成 `/[\w./-]+` 会把 `assets/lib/mlp.js`
+# 里那个斜杠当成绝对路径 `/lib/mlp.js`,于是正常的相对读被误拦 —— 这个坑踩过一次。
+_ABS_PATH = re.compile(r"(?:^|[\s'\"=(:])(/[\w./-]+)")
+# 正文型参数不参与判定:它们是**内容**不是**引用**。页面正文里出现 `page-05.html`
+# 字样(比如写进一个链接)不该被当成跨页访问。
+# 用「排除正文型」而不是「枚举引用型」是故意的 —— 将来新工具带引用参数会自动被管住
+# (fail-closed);带正文参数最多误拦一次,看得见、改得动。
+_CONTENT_KEYS = frozenset({"content", "old_string", "new_string", "edits"})
+
+
+def _out_of_bounds(args: dict, cwd: Path, pid: str) -> str | None:
+    """→ 越界的那个东西(用于拒绝语),没越界就 None。"""
+    root = cwd.resolve()
+    for k, v in args.items():
+        if k in _CONTENT_KEYS:
+            continue
+        s = str(v)
+        if k == "command":
+            # Bash 只能扫命令串 —— 逃出 run 目录的绝对路径就拒。
+            outside = [p for p in _ABS_PATH.findall(s)
+                       if not Path(p).resolve().is_relative_to(root)]
+        else:
+            # 路径型参数能解析,就精确判。**只比基名挡不住「别的 run 里的同名页」。**
+            outside = [] if (cwd / s).resolve().is_relative_to(root) else [s]
+        if outside:
+            return f"{outside[0]}(在本页的 run 目录之外)"
+        for m in _PAGE_FILE.findall(s):
+            if m != f"{pid}.html":
+                return m
+    return None
 IMG_MAX_W = 1600     # 比这更宽的图先缩到这个宽度再进上下文。素材图有 3000px 的,
                      # 原样 base64 一张就能顶掉半个上下文,而看清版面并不需要那些像素。
 MAX_IMAGES = 2       # 一次工具调用最多内联几张图。builder 那边 hist 只留最近 2 张
@@ -163,7 +209,20 @@ def specs() -> list[dict]:
     return [{"type": "function", **s} for s in SCHEMAS]
 
 
-def run(name: str, args: dict, cwd: Path, skill_root: Path) -> str | Out:
+def run(name: str, args: dict, cwd: Path, skill_root: Path, pid: str) -> str | Out:
+    """`pid` 是本页的 id(形如 `page-06`),**必填**。
+
+    不给默认值是故意的:默认值等于「忘了传就静默不设防」,而静默退化正是这个仓库
+    反复栽过的形状 —— 分不清「设防了」和「以为设防了」。
+    """
+    off = _out_of_bounds(args, cwd, pid)
+    if off:
+        return (f"拒绝:`{off}` 不在你负责的范围内。你只负责 `{pid}.html`,"
+                f"只能读写自己 run 的 `pages/` 目录。\n"
+                f"别的页现在多半还是空骨架 —— 整套是并发建的,它不一定已经建好;"
+                f"而且照抄邻页会让整套页面长得一个样。\n"
+                f"这一页要用的数据、文字和边界都在 brief 的 `<page_spec>` 里,"
+                f"库的用法在 `assets/lib/LIBS.md`。")
     try:
         r = _dispatch(name, args, cwd, skill_root)
         cap = CAP
