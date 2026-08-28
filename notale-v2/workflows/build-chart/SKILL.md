@@ -1,6 +1,6 @@
 ---
 name: build-chart
-description: "Turn quantitative or relational teaching material into truthful, accessible, interactive web visualizations. Use for conventional charts with axes, legends, or tooltips; custom networks, hierarchies, flows, and other data-driven SVG relations; or an existing visualization that needs better encoding, interaction, responsiveness, or validation."
+description: "Truthful interactive charts from quantitative or relational data (ECharts/d3). Not for decorative graphics or physics simulations."
 ---
 
 # Visualize Data

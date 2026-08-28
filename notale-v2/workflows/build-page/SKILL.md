@@ -1,6 +1,6 @@
 ---
 name: build-page
-description: "Turn a lesson claim and its evidence into a clear 1600x900 Notale page composition, including any motion that expresses state change. Use when planning, implementing, or repairing the spatial hierarchy, knowledge relationship, explanatory visual, controls, annotations, density, and purposeful motion of a projected interactive lecture page — staged explanations, state transitions, animated diagrams, playback controls, and coordinated timelines all stay in this one workflow."
+description: "Compose the whole 1600x900 page: layout, typography, and motion that expresses state. The default for static and narrative pages."
 ---
 
 # Build Page

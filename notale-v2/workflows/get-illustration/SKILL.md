@@ -1,6 +1,6 @@
 ---
 name: get-illustration
-description: Generate and integrate a coherent explanatory illustration for an interactive lecture page. Use for atmosphere, settings, materials, metaphors, or stylized generic objects that have no required photograph and no exact geometry learners must verify.
+description: "Generate and integrate one explanatory illustration (atmosphere, setting, material). Not for data or precise geometry."
 ---
 
 # Generate Illustration

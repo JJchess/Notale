@@ -1,6 +1,6 @@
 ---
 name: build-2d-sim
-description: "Build deterministic, visually legible interactive 2D teaching models with explicit rules, controls, feedback, and reset behavior. Use when learners must manipulate a physical system, explore collisions or constraints, drag meaningful objects, or observe thousands of animated 2D elements; includes separating physics bodies from polished custom visuals when familiar objects must remain recognizable."
+description: "Interactive 2D physics or system simulations (Matter/Konva/Pixi) with explicit rules, controls, and reset. Not for static diagrams or data charts."
 ---
 
 # Simulate in 2D

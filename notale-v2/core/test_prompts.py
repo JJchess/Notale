@@ -33,7 +33,12 @@ from core.planner import (MAX_CHARS, _valid_css, _valid_pages,  # noqa: E402
 # 所以这里破顶不是退化,把顶抬到 5,300 并把账记在这儿;
 # 注入块那一侧的顶在 `core/test_skills.py` 的 `test_direction_block_stays_small`。
 BASELINE_CHARS = {
-    "brief": 700,
+    # 700 → 710(2026-08-28)。brief.md 实际 701,超 1 个字符,来源是 `<page_spec>`
+    # 那一行从「本页的内容、结构、文字、数据、交互和边界」改成
+    # 「本页教什么——标签加一句话。其余由你定,不是漏写」(+4)。
+    # 这一栏本来只有 3 个字符的余量,已经紧到一次正常改措辞就会撞线 ——
+    # 那不是闸在起作用,是闸卡在了噪声上。给到 710(约 1.5% 余量)。
+    "brief": 710,
     "tech": 2200,
     "philosophy": 2100,
     "deck": 5300,

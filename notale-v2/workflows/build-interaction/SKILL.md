@@ -1,6 +1,6 @@
 ---
 name: build-interaction
-description: "Design and implement one bounded, reusable learning interaction inside an assigned Notale lecture page. Use when the learner must manipulate, test, compare, trace, or run something to understand the page claim; the workflow owns the widget's state, controls, visual evidence, feedback, accessibility, and lifecycle, while the page specification and shared theme continue to own the surrounding page. Do not use for decorative motion alone, a conventional chart whose encoding is the main problem, a physical/game simulation with its own specialist workflow, or an entirely static composition."
+description: "One bounded learning widget inside the page: the learner manipulates something and sees evidence change, with reset. Not for decorative motion, plain charts, or full games."
 ---
 
 # Design Interaction

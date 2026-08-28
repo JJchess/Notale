@@ -1,6 +1,6 @@
 ---
 name: build-3d-scene
-description: "Build recognizable, meaningful, performant, accessible 3D teaching scenes with local Three.js or globe.gl. Use when real depth, occlusion, orbiting, spatial assembly, terrain, weather, architecture, a named physical object, or geographic position on Earth is necessary to explain the subject, including scenes that need stronger silhouette, construction detail, deterministic state, interaction, fallback, performance, or cleanup."
+description: "3D teaching scenes with local Three.js or globe.gl. Use when real depth, occlusion, or geography carries the point; not for flat relations a diagram shows better."
 ---
 
 # Build a 3D Scene

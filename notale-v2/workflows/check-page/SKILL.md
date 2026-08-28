@@ -1,6 +1,6 @@
 ---
 name: check-page
-description: Inspect and repair an existing interactive lecture page using rendered evidence. Use when a page needs a composition, typography, projection readability, interaction-state, responsive-scaling, accessibility, or visual-coherence review rather than a new concept or implementation from scratch.
+description: "Inspect and repair an existing page from rendered evidence: composition, typography, overflow, interaction bugs."
 ---
 
 # Review Page

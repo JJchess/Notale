@@ -1,6 +1,6 @@
 ---
 name: get-photo-ref
-description: Find, verify, download, and document real visual evidence for an interactive lecture page. Use for named people, documented places or events, historical objects, specimens, instruments, spacecraft, or any subject whose identity and provenance matter more than an invented impression.
+description: "Find, verify, and document real photo evidence for named people, places, artifacts. Not for invented or generic imagery."
 ---
 
 # Collect Visual References

@@ -1,6 +1,6 @@
 ---
 name: build-learning-game
-description: "Turn one learning objective into a compact, playful, rule-driven learning game on a Notale lecture page with persistent world state, consequential choices, immediate evidence-based feedback, a meaningful completion condition, deterministic replay/reset, and accessible controls. Use for resource trade-offs, route building, spatial challenges, construction, systems, or small simulations where actions change the next decision. Do not use for conventional quizzes, flashcards, independent classification questions, or matching exercises whose world does not change."
+description: "A compact rule-driven learning game with goals, feedback, and persistent state. Only when play itself teaches the objective; a single slider or widget is not a game."
 ---
 
 # Build Learning Game

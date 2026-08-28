@@ -1,7 +1,5 @@
 # 技术契约
 
-这一份对每一页都成立，与本页讲什么无关。它是仓库常量，不按轮次生成。
-
 ## 固定骨架
 
     <!doctype html>
@@ -19,7 +17,7 @@
 
 ## 版面
 
-- 只修改 `#stage` 内容；保留两位 `data-page` 和 `data-total`，不把页码显示给读者。
+- 只修改 `#stage` 内容；不把页码显示给读者。
 - 逻辑画布固定 {canvas_w} × {canvas_h}，不得滚动。`#stage` 是 flex 列；
   顶层区块给固定高度或 flex 份额，主内容区 `flex:1` 且 `min-height:0`，
   需要收缩的 flex/grid 子元素加 `.min0`。
@@ -40,7 +38,6 @@
 
 - 自包含：只引用 `pages/` 内的相对路径，不用 CDN。
 - 图表优先用已安装库，不重复实现成熟能力；ECharts 必须用 SVG renderer 并显式设置可读字号。
-- Canvas 用 `Deck.fit()` / `Deck.autofit()`，指针坐标用 `Deck.pt()`，动画用 `Deck.loop()`。
 
 可用库：
 
@@ -54,6 +51,5 @@
 
 ## 图片
 
-优先使用 `assets/img/IMG.md` 已登记的素材，不重复下载或生成。
-按索引填写 `<img title="…">`；出处和许可不进入主画面。
-生成插画的“AI生成”角标不得被内容遮挡。
+优先用 `assets/img/IMG.md` 已登记的素材，按索引填 `<img title="…">`；
+出处、许可不进主画面；插画的“AI生成”角标不得被遮挡。
