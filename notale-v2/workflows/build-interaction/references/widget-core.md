@@ -139,7 +139,7 @@ The host owns:
 
 - page title, kicker, narrative copy, chapter labels, page numbers, navigation, footer;
 - full-frame grid, outer padding, page background, base type roles, and general color mode;
-- shared image assets, the page specification, and any required citations;
+- shared image assets and any required citations;
 - host frame identifiers, page metadata, host-scale behavior, and shared lifecycle adapters.
 
 The component owns:

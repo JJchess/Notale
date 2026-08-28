@@ -13,7 +13,7 @@ Before any page mutation for the repair, including `Write`, `Edit`, `Patch`, or 
 
 ## 1. Recover the page contract
 
-Read the page specification and shared chassis contract. State the page's one learning question, one takeaway, intended stay time, primary action, and states that must work. Treat those as the review baseline; do not redesign toward a different lesson.
+Read the brief — the page spec is one tag plus one sentence naming what this page teaches. The chassis and tech contract are already in your system prompt. From the page itself, state its one learning question, one takeaway, primary action, and states that must work. Treat the spec sentence as the lesson boundary; repair the page toward it, do not redesign toward a different lesson.
 
 ## 2. Capture representative states
 

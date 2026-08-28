@@ -11,7 +11,7 @@ Build a spatial model, not a decorative background. Keep 3D only when changing v
 
 Complete this routing before any page mutation, including `Write`, `Edit`, `Patch`, or a modifying `Bash` command. Do not defer it until implementation is already underway.
 
-1. Read the assigned brief, page specification, shared contract, `CHASSIS.md`, and chassis `LIBS.md`.
+1. Read the brief. The page spec in it is one tag plus one sentence — title, copy, numbers, layout, and interaction design are yours to decide. `CHASSIS.md`, the tech contract, and the theme source are already in your system prompt; read `assets/lib/LIBS.md` when you need library details.
 2. State what the learner understands by rotating, selecting, assembling, or changing the scene.
 3. Read [renderer-routing.md](references/renderer-routing.md).
 4. Select one active renderer:

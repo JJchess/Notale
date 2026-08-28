@@ -28,10 +28,10 @@ Complete this routing before any page mutation, including `Write`, `Edit`, `Patc
 
 ## 1. Read the host contract
 
-1. Read the assigned page specification, shared contract, and `CHASSIS.md`.
-2. Preserve the specified lesson boundary, exact copy and values, allotted page region, theme semantics, `#stage`, `data-page`, `data-total`, and shared assets.
-3. Let the page specification determine the outer title zone and page skeleton. Do not use the widget reference to invent a parallel page composition or visual system.
-4. Identify the one region that will host the widget. If the specification includes supporting prose, place it in the prescribed outer region rather than turning it into widget chrome.
+1. Read the brief. The page spec in it is one tag plus one sentence naming what this page teaches; `CHASSIS.md`, the tech contract, and the theme source are already in your system prompt.
+2. Title, copy, numbers, page layout, and the widget's design are yours to decide. Preserve the lesson boundary the spec sentence names, theme semantics, `#stage`, `data-page`, `data-total`, and shared assets.
+3. Design the outer page (title zone, supporting prose, skeleton) as a page first, then place the widget — do not let widget chrome swallow the whole page or invent a visual system that fights the theme.
+4. Decide which one region hosts the widget; keep supporting prose in the outer page rather than turning it into widget chrome.
 
 ## 2. Define the component boundary
 

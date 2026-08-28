@@ -49,7 +49,7 @@ Cap the reading load a viewer takes in per beat the same way: prefer 4–6 short
 
 ### 2. Confirm the knowledge geometry
 
-The relationship type is decided upstream, in the page's knowledge structure — do not choose a new one here. Confirm which relationship the brief already specifies, then map it to a geometry:
+Choose the relationship type this page's claim actually needs — the brief no longer specifies one; that decision is yours. Then map it to a geometry:
 
 - **Process:** show direction, order, causality, or state progression with a path or axis.
 - **Comparison:** put alternatives on a shared dimension, scale, baseline, or aligned row.
