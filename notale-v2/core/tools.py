@@ -244,7 +244,11 @@ SCHEMAS = [
         "传 reference 名或相对路径(如 `widget-core` 或 "
         "`build-interaction/references/widget-core.md`)取那一份 reference。",
      "parameters": {"type": "object", "properties": {
-         "skill": {"type": "string", "description": "workflow 名、reference 名或相对路径"}},
+         "skill": {"anyOf": [{"type": "string"}, {"type": "array", "items": {"type": "string"}}],
+                   "description": "workflow 名、reference 名或相对路径。"
+                                  "**一次可以传一个数组把要用的几份一起取** —— "
+                                  "按 SKILL.md 的 Reference routing 选好之后一次取齐,"
+                                  "比一份一次少几倍来回"}},
          "required": ["skill"], "additionalProperties": False}},
     {"name": "ImageSearch", "description":
         "搜可追溯来源的真实图片。默认只回候选表(标题/尺寸/许可/链接);确认要哪批后"
@@ -545,6 +549,11 @@ def _dispatch(name: str, a: dict, cwd: Path, skill_root: Path) -> str | Out:
         return out.strip() or f"(无输出,退出码 {r.returncode})"
 
     if name == "Skill":
-        return skills.load(a["skill"], skill_root)
+        # 一次可以取多份。实测(sol-slim2)61.4% 的调用花在装文档上,最贵那页
+        # 写第一行代码前打了 6 次 Skill —— 而每次调用都要把已积累的历史重发一遍,
+        # 成本随调用数超线性(7 调用 17k/次 → 12 调用 26.7k/次)。
+        want = a["skill"]
+        names = want if isinstance(want, list) else [want]
+        return "\n\n".join(skills.load(n, skill_root) for n in names)
 
     return f"未知工具 {name}"

@@ -25,6 +25,7 @@ Complete this routing before any page mutation, including `Write`, `Edit`, `Patc
    - [studies.md](references/studies.md) when you want precedent for a mechanism; optional
 4. Read [delivery.md](references/delivery.md) after the component works and before you deliver.
 5. Do not read an unselected pattern family. Do not read unmatched conditional references. Do not load an unrelated workflow reference.
+6. **Fetch them in one `Skill` call**, passing the list you selected in steps 1–4 — not one call per file.
 
 ## 1. Read the host contract
 

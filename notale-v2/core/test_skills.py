@@ -256,6 +256,16 @@ class OutOfBoundsTests(unittest.TestCase):
         self.assertIsNone(self.blocked(
             {"page": "page-06.html", "edits": [{"old": "page-05.html", "new": "x"}]}))
 
+    def test_skill_takes_a_list_in_one_call(self) -> None:
+        """一次取多份。实测 61.4% 的调用花在装文档上,而成本随调用数超线性
+        (sol-slim2:7 调用 17k/次 → 12 调用 26.7k/次,历史每次重发)。"""
+        one = tools._dispatch("Skill", {"skill": "build-page"},
+                              Path("."), skills.WORKFLOWS)
+        many = tools._dispatch("Skill", {"skill": ["build-page", "build-chart"]},
+                               Path("."), skills.WORKFLOWS)
+        self.assertGreater(len(many), len(one))     # 两份都在
+        self.assertIn(one[:80], many)               # 单份形态没坏
+
     def test_image_tools_are_on_the_surface(self) -> None:
         """搜图/生图 2026-08-29 从 workflow 升格为工具 —— schema 必须在面上。"""
         names = [s["name"] for s in tools.SCHEMAS]
