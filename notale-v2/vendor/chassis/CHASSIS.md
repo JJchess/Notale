@@ -58,8 +58,7 @@ Deck.init(cfg)           可选,只做键盘翻页和 document.title,不生成�
 
 ```js
 Deck.init({ index:3, total:14 });                 // 通常只需要这一行
-Deck.init({ index:3, total:14, keys:false });     // 不要键盘翻页
-Deck.init({ index:3, total:14, href:n => 'p'+n+'.html' });
+Deck.init({ index:3, total:14, keys:false });     // 不要键盘翻页;另有 href:n=>… 自定义跳转
 ```
 
 ### canvas 与指针
@@ -106,7 +105,3 @@ Deck.arrow(ctx,x1,y1,x2,y2,size)    带箭头的线段
 
 顶栏、导航、进度指示、阶段与时间线、面板、按钮、滑块、卡片、标签、图例、要点列表、
 版式模板 —— 一律没有，也不会替你画。页面之间的叙事属于每次生成自己的设计。
-
-**如果这一轮另外做了共享文件**（比如统一的顶栏和进度轨、统一的数字格式化、
-共用的底纹），把它的接口按上面这个格式追加到本文件末尾。多个页面各自
-`cat` 一遍源码去认接口，是纯浪费。

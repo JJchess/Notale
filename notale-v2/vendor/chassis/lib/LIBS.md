@@ -11,28 +11,31 @@
 
 ## 按「要做的事」查
 
-| 要做的事 | 引用这一行 | 全局对象 |
+引法:`<script src="assets/lib/<文件>"></script>`;`.css` 用 `<link rel="stylesheet">`。
+第二列写了「X 之后」的,必须排在 X 的 script 之后。
+
+| 要做的事 | 文件 | 全局对象 |
 |---|---|---|
-| 物体下落、碰撞、摆动、堆叠、拖拽、约束 | `<script src="assets/lib/matter.min.js"></script>` | `Matter` |
-| 三维场景、可旋转的立体结构、光照材质 | `<script src="assets/lib/three.min.js"></script>` | `THREE` |
-| 三维地球、球面上的点/弧线/区块 | three 之后再引 `<script src="assets/lib/globe.gl.min.js"></script>` | `Globe` |
-| 生成式动画背景 | three 之后再引 `<script src="assets/lib/vanta.net.min.js"></script>` | `VANTA` |
-| 坐标轴 + 刻度 + 图例的常规图表(折线、柱、散点、面积、饼、热力) | `<script src="assets/lib/echarts.min.js"></script>` | `echarts` |
-| 可拖拽、可命中检测的二维场景(形状、分组、变换、层) | `<script src="assets/lib/konva.min.js"></script>` | `Konva` |
-| 节点连线图、精确控制的矢量图形、数据绑定 | `<script src="assets/lib/d3.min.js"></script>` | `d3` |
-| 成千上万个元素同时运动 | `<script src="assets/lib/pixi.min.js"></script>` | `PIXI` |
-| 分步动画、依次出现、路径描绘、形变 | `<script src="assets/lib/anime.min.js"></script>` | `anime` |
-| 多个动画按一条时间线精确编排 | `<script src="assets/lib/gsap.min.js"></script>` | `gsap` |
-| 动画进度绑定到滚动位置 | gsap 之后再引 `<script src="assets/lib/ScrollTrigger.min.js"></script>` | `ScrollTrigger` |
-| 播放矢量动画文件 | `<script src="assets/lib/lottie.min.js"></script>` | `lottie` |
-| 伪三维插画 | `<script src="assets/lib/zdog.min.js"></script>` | `Zdog` |
-| 元素跟随指针倾斜 | `<script src="assets/lib/vanilla-tilt.min.js"></script>` | `VanillaTilt` |
-| 进入视野时淡入 | `<script src="assets/lib/aos.js"></script>` | `AOS` |
-| 数学公式排版 | `<link rel="stylesheet" href="assets/lib/katex.min.css">` 加 `<script src="assets/lib/katex.min.js"></script>` | `katex` |
-| 矩阵乘法、行列式、求逆、特征分解 | `<script src="assets/lib/ml-matrix.umd.js"></script>` | `mlMatrix` |
-| 可复现的随机(同种子同序列) | `<script src="assets/lib/seedrandom.min.js"></script>` | `Math.seedrandom` |
-| 在页面上实时训练一个小神经网络、画决策边界 | `<script src="assets/lib/mlp.js"></script>` | `MLP` |
-| 加载预训练模型、在真图片上跑卷积、需要 GPU 的大矩阵 | `<script src="assets/lib/tf.min.js"></script>` | `tf` |
+| 物体下落、碰撞、摆动、堆叠、拖拽、约束 | `matter.min.js` | `Matter` |
+| 三维场景、可旋转的立体结构、光照材质 | `three.min.js` | `THREE` |
+| 三维地球、球面上的点/弧线/区块 | three 之后 · `globe.gl.min.js` | `Globe` |
+| 生成式动画背景 | three 之后 · `vanta.net.min.js` | `VANTA` |
+| 坐标轴 + 刻度 + 图例的常规图表(折线、柱、散点、面积、饼、热力) | `echarts.min.js` | `echarts` |
+| 可拖拽、可命中检测的二维场景(形状、分组、变换、层) | `konva.min.js` | `Konva` |
+| 节点连线图、精确控制的矢量图形、数据绑定 | `d3.min.js` | `d3` |
+| 成千上万个元素同时运动 | `pixi.min.js` | `PIXI` |
+| 分步动画、依次出现、路径描绘、形变 | `anime.min.js` | `anime` |
+| 多个动画按一条时间线精确编排 | `gsap.min.js` | `gsap` |
+| 动画进度绑定到滚动位置 | gsap 之后 · `ScrollTrigger.min.js` | `ScrollTrigger` |
+| 播放矢量动画文件 | `lottie.min.js` | `lottie` |
+| 伪三维插画 | `zdog.min.js` | `Zdog` |
+| 元素跟随指针倾斜 | `vanilla-tilt.min.js` | `VanillaTilt` |
+| 进入视野时淡入 | `aos.js` | `AOS` |
+| 数学公式排版 | `katex.min.css + katex.min.js` | `katex` |
+| 矩阵乘法、行列式、求逆、特征分解 | `ml-matrix.umd.js` | `mlMatrix` |
+| 可复现的随机(同种子同序列) | `seedrandom.min.js` | `Math.seedrandom` |
+| 在页面上实时训练一个小神经网络、画决策边界 | `mlp.js` | `MLP` |
+| 加载预训练模型、在真图片上跑卷积、需要 GPU 的大矩阵 | `tf.min.js` | `tf` |
 
 ## mlp.js 怎么用
 

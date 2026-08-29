@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import copy
 import json
+import shutil
 import sys
 import tempfile
 import ast
@@ -60,6 +61,23 @@ class DeckMapPreloadTests(unittest.TestCase):
         self.assertIn(".panel 读数容器", text)
         self.assertNotIn("padding:12px", text)
         self.assertIn("theme.css", paths)     # 硬禁靠 pre_hit,它必须认识这份
+
+    def test_libs_index_still_finds_its_anchor(self) -> None:
+        """`_libs_index` 靠 `## 按「要做的事」查` 切表 —— 锚点丢了它会**静默整份注入**
+        (8KB 而不是 1.2KB)。2026-08-29 改过表头格式,这条守着别再动坏。
+        """
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            lib = root / "pages" / "assets" / "lib"
+            lib.mkdir(parents=True)
+            src = Path(__file__).resolve().parents[1] / "vendor/chassis/lib/LIBS.md"
+            shutil.copy(src, lib / "LIBS.md")
+            idx = builder._libs_index(root)
+        self.assertLess(len(idx), 2000)                 # 切到了,不是整份
+        self.assertIn("matter.min.js", idx)             # 20 行都在
+        self.assertIn("tf.min.js", idx)
+        # 引法在表头说一次,不再每行重复一遍(20 行样板 = 632 字符)
+        self.assertEqual(idx.count("<script src="), 1)
 
     def test_theme_interface_falls_back_to_full_file(self) -> None:
         """老 deck 没有定界符 → 整份注入,不静默给空。"""
