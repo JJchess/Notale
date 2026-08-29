@@ -52,6 +52,7 @@ CAP = 30_000  # 普通 tool_result 的字符上限。实测 nn-06 最大一个 6
               # 不截断的话一次就把上下文灌爆。
 WORKFLOW_REFERENCE_CAP = 160_000
 TIMEOUT = 120
+IMG_TIMEOUT = 300    # 搜图要打外网、生图 n=2 实测可超 120s —— 照 SHOT_TIMEOUT 先例单列
 SHOT_TIMEOUT = 300   # 渲染要起无头 Chromium,还可能带几个 --after 状态,给宽一点
 
 IMG_EXT = {".png", ".jpg", ".jpeg", ".webp", ".gif"}
@@ -78,7 +79,9 @@ _ABS_PATH = re.compile(r"(?:^|[\s'\"=(:])(/[\w./-]+)")
 # 字样(比如写进一个链接)不该被当成跨页访问。
 # 用「排除正文型」而不是「枚举引用型」是故意的 —— 将来新工具带引用参数会自动被管住
 # (fail-closed);带正文参数最多误拦一次,看得见、改得动。
-_CONTENT_KEYS = frozenset({"content", "old_string", "new_string", "edits"})
+_CONTENT_KEYS = frozenset({"content", "old_string", "new_string", "edits",
+                           "query", "prompt"})  # 检索词/生图提示词是内容不是路径引用:
+                           # 以 / 开头的 prompt 会被当成绝对路径误拦
 
 
 def _out_of_bounds(args: dict, cwd: Path, pid: str) -> str | None:
@@ -109,6 +112,10 @@ MAX_IMAGES = 2       # 一次工具调用最多内联几张图。builder 那边 
                      # 不静默丢弃:静默丢弃正是这一轮修的那个 bug 的形状。
 
 SELFCHECK = "assets/selfcheck.py"
+# 搜图/生图工具的执行体 —— 和 planner 图池(planner._WEBMEDIA/_GEN)同一份实现,
+# 不留第二份(selfcheck 分叉那次的教训,见 planner.seed 的注释)。
+_WEBMEDIA = skills.DEFAULT / "web-media-getter" / "webmedia.py"
+_IMGGEN = skills.DEFAULT / "make-illustration" / "scripts" / "gen.py"
 
 
 @dataclass
@@ -239,6 +246,31 @@ SCHEMAS = [
      "parameters": {"type": "object", "properties": {
          "skill": {"type": "string", "description": "workflow 名、reference 名或相对路径"}},
          "required": ["skill"], "additionalProperties": False}},
+    {"name": "ImageSearch", "description":
+        "搜可追溯来源的真实图片。默认只回候选表(标题/尺寸/许可/链接);确认要哪批后"
+        "再调一次,加 download=true + out=assets/img,按当前 query/source/count 落盘。"
+        "来源路由:nasa=天文地球 · met,loc=文物档案 · wikimedia=通用 · "
+        "internetarchive=史料。具名人物、真实器物、遗址用这个,不要生成。"
+        "落盘结果里的 title 要原样写进 <img title>,出处许可不进主画面。",
+     "parameters": {"type": "object", "properties": {
+         "query": {"type": "string", "description": "3–5 个英文词"},
+         "source": {"type": "string",
+                    "description": "逗号分隔,默认 wikimedia,nasa,met,loc,internetarchive"},
+         "count": {"type": "integer", "description": "候选数,默认 8"},
+         "download": {"type": "boolean", "description": "true 时把候选下载到 out 目录"},
+         "out": {"type": "string", "description": "下载目录,默认 assets/img"}},
+         "required": ["query"], "additionalProperties": False}},
+    {"name": "ImageGen", "description":
+        "生成解释性插画 —— 只用于无法拍摄的场景或抽象过程;具名人物、真实器物和"
+        "精确几何禁止生成(前者用 ImageSearch,后者自己画 SVG/图表)。"
+        "生成图右下角自带「AI生成」角标,排版不得遮挡。组件素材要在 prompt 里"
+        "写明孤立黑背景,便于抠图。",
+     "parameters": {"type": "object", "properties": {
+         "prompt": {"type": "string", "description": "写明主题、材质、配色和「无文字」"},
+         "out": {"type": "string", "description": "输出路径,例 assets/img/xxx.png;多张自动加 -1 -2"},
+         "n": {"type": "integer", "description": "生成几张,默认 2,取好的"},
+         "size": {"type": "string", "description": "默认 2048x1152(16:9,贴合画布)"}},
+         "required": ["prompt", "out"], "additionalProperties": False}},
 ]
 
 
@@ -483,6 +515,28 @@ def _dispatch(name: str, a: dict, cwd: Path, skill_root: Path) -> str | Out:
 
     if name == "Look":
         return _look(cwd, a)
+
+    if name == "ImageSearch":
+        # 薄包装,不重写逻辑:planner 图池和旧 get-photo-ref workflow 用的同一份脚本。
+        cmd = [sys.executable, str(_WEBMEDIA), str(a["query"]),
+               "--type", "image", "--count", str(int(a.get("count") or 8)),
+               "--source", str(a.get("source") or "wikimedia,nasa,met,loc,internetarchive"),
+               "--json"]
+        if a.get("download"):
+            cmd += ["--download", "--out", str(a.get("out") or "assets/img")]
+        r = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True,
+                           timeout=IMG_TIMEOUT)
+        out = (r.stdout or "") + (("\n[stderr]\n" + r.stderr) if r.stderr else "")
+        return out.strip() or f"(无输出,退出码 {r.returncode})"
+
+    if name == "ImageGen":
+        cmd = [sys.executable, str(_IMGGEN), str(a["prompt"]),
+               "--out", str(a["out"]), "--n", str(int(a.get("n") or 2)),
+               "--size", str(a.get("size") or "2048x1152")]
+        r = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True,
+                           timeout=IMG_TIMEOUT)
+        out = (r.stdout or "") + (("\n[stderr]\n" + r.stderr) if r.stderr else "")
+        return out.strip() or f"(无输出,退出码 {r.returncode})"
 
     if name == "Bash":
         r = subprocess.run(a["command"], shell=True, cwd=cwd, capture_output=True,

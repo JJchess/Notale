@@ -36,19 +36,20 @@ PAGE_WORKFLOWS = (
     "build-2d-sim",
     "build-chart",
     "build-interaction",
-    "get-photo-ref",
-    "get-illustration",
     "build-page",
 )
-# plan-direction 2026-08-28 迁出:它从来不是建页 workflow(builder 硬拦到只能装载
-# page.primary_workflow),唯一的消费者是 planner 的 `{direction}`,所以合成
-# `prompts/direction.md` 之后就不再是 workflow 了。见 DIRECTION_FILE 上面那段。
+# plan-direction 2026-08-28 迁出:唯一的消费者是 planner 的 `{direction}`,
+# 合成 `prompts/direction.md` 之后就不再是 workflow 了。见 DIRECTION_FILE 上面那段。
+# get-photo-ref / get-illustration 2026-08-29 迁出:它们的正文是教 agent 用 Bash
+# 拼 webmedia.py / gen.py 的命令行 —— 确定性的命令拼装不该靠说明书教。
+# 升格成 tools.py 的 ImageSearch / ImageGen 两个工具(schema 校验参数、
+# 越界检查覆盖 out 路径),原文归档 attic/。
 ALL_WORKFLOWS = PAGE_WORKFLOWS + ("check-page",)
 # scrub-copy-slop.md / scrub-visual-slop.md 不是 workflow —— 没有 SKILL.md,不会被
-# `Skill` 工具或 available() 发现。之所以不挂靠成第 13/14 个 workflow:`Skill` 工具在
-# builder 循环里被硬拦到只能读 page.primary_workflow(core/builder.py:345-347),而这
-# 两份从不是任何页面的 primary_workflow,挂成 workflow 只会让正文变成没有代码路径
-# 会读到的死文本。
+# `Skill` 工具或 available() 发现。之所以不挂靠成 workflow:
+# 它们管的是每一页都成立的底线,不该依赖 agent 愿不愿意去装载。
+# (旧注释说 Skill 被硬拦到只能读 primary_workflow —— 那道拦 2026-08-28 已删,
+# 现在是全清单自选;但"底线不走自选"这个理由照旧成立。)
 #
 # 也不再靠"在别的 workflow 的 Reference routing 里点名一行 Read"这条路径——
 # 那条路径能不能生效,取决于 agent 愿不愿意在改页面前先调 Read,是概率性的。

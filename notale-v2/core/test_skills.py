@@ -86,7 +86,6 @@ class WorkflowRegistryTests(unittest.TestCase):
             "build-3d-scene": {"renderer-routing.md", "three-core-recipe.md",
                                "globe-recipe.md"},
             "build-learning-game": {"game-model-recipes.md"},
-            "get-photo-ref": {"source-routing.md"},
             "build-page": {"relationship-compositions.md", "framing-and-density.md",
                            "motion-engine-recipes.md"},
             "build-interaction": {"widget-core.md", "pattern-routing.md",
@@ -94,7 +93,6 @@ class WorkflowRegistryTests(unittest.TestCase):
                                   "pattern-observe.md", "pattern-judge.md",
                                   "craft-render.md", "motion.md", "recipes.md",
                                   "worked-example.md", "studies.md", "delivery.md"},
-            "get-illustration": {"prompt-and-integration.md"},
             "check-page": {"review-lenses.md"},
             "build-2d-sim": {"renderer-routing.md", "konva-recipe.md",
                             "matter-recipe.md", "pixi-recipe.md"},
@@ -257,6 +255,37 @@ class OutOfBoundsTests(unittest.TestCase):
             {"file_path": "page-06.html", "content": "<a href='page-05.html'>x</a>"}))
         self.assertIsNone(self.blocked(
             {"page": "page-06.html", "edits": [{"old": "page-05.html", "new": "x"}]}))
+
+    def test_image_tools_are_on_the_surface(self) -> None:
+        """搜图/生图 2026-08-29 从 workflow 升格为工具 —— schema 必须在面上。"""
+        names = [s["name"] for s in tools.SCHEMAS]
+        self.assertIn("ImageSearch", names)
+        self.assertIn("ImageGen", names)
+        # 执行体与 planner 图池同一份实现,不留第二份
+        self.assertTrue(tools._WEBMEDIA.is_file())
+        self.assertTrue(tools._IMGGEN.is_file())
+
+    def test_prompt_and_query_are_content_not_references(self) -> None:
+        """以 / 开头的生图 prompt 不是绝对路径,不许被越界检查误拦。"""
+        self.assertIsNone(tools._out_of_bounds(
+            {"prompt": "/输入/输出对比示意,无文字", "out": "assets/img/x.png"},
+            self.cwd, self.PID))
+        # 但 out 逃出 run 目录仍然要拦
+        off = tools._out_of_bounds(
+            {"prompt": "x", "out": str(self.other / "x.png")}, self.cwd, self.PID)
+        self.assertIsNotNone(off)
+
+    def test_imagegen_dispatch_invokes_the_shared_script(self) -> None:
+        """分发是薄 subprocess 包装 —— 打桩验证,不真调生图 API。"""
+        import unittest.mock as m
+        with m.patch.object(tools.subprocess, "run") as run:
+            run.return_value = type("R", (), {"stdout": "ok", "stderr": "", "returncode": 0})()
+            out = tools._dispatch("ImageGen",
+                                  {"prompt": "p", "out": "assets/img/a.png"},
+                                  self.cwd, self.cwd)
+        cmd = run.call_args[0][0]
+        self.assertIn(str(tools._IMGGEN), cmd)
+        self.assertEqual(out, "ok")
 
     def test_run_refuses_without_dispatching(self) -> None:
         """拒绝要发生在 _dispatch 之前 —— 否则文件已经被读/写过了。"""
