@@ -46,7 +46,6 @@
 ## base.js
 
 引入方式：`<script src="assets/base.js"></script>`。全局对象 `Deck`。
-页面里只要有 `#stage`，引入即开始工作（缩放监听在文件末尾自动装好）。
 
 ### 尺寸与缩放
 

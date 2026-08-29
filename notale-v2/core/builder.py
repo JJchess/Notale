@@ -51,11 +51,12 @@ def _now() -> str:
 
 IDENTITY = """你是这套互动讲义的单页构建 agent。你只负责一个 HTML 文件。
 
-按 brief 说的做:先读契约和规划,再施工,完工前用 Check 自检到干净为止。
+技术契约、主题接口、全套页表和本页规格都已经在你的 system 提示里,直接用,不用去读。
+按 brief 说的做,完工前用 Check 自检到干净为止。
 不写说明文档、不写测试、不写总结。做完直接结束,不要问问题。
 
 施工分两段,工具面会跟着变,不必自己记:
-1. **一次 `Write` 落成整页。** 读完契约、规划和 workflow 之后,把整页一次写出来。
+1. **一次 `Write` 落成整页。** 想清楚这一页怎么摆、需要哪份技法文档之后,把整页一次写出来。
    这一段里只有 `Write` 能改页面 —— 没有 `Patch` 和 `Edit`,不要试图用增量方式起页。
 2. **此后只增量改。** `Write` 从工具面消失,改用 `Patch`(一次改好几处,首选)或 `Edit`。
    对着 `Check` 报的问题逐条改,不要重写整页 —— 重写会连已经改对的地方一起冲掉。"""
@@ -336,6 +337,22 @@ def tech_block(root: Path, n_pages: int, prompts: Path = None) -> str:
         libs=_libs_index(root), **TECH_SLOTS).strip() + "\n</tech>"
 
 
+# 和 planner.assets() 判「无需图池」用的是同一条正则(planner.py:892),不另造一个。
+_POOL_MARK = re.compile(r"无需图池|不需要图池|不用图|无图池")
+
+
+def _deck_map(path: Path) -> str:
+    """pages.md 去掉开头的图池段,只留页表。
+
+    图池表/「本套无需图池」是 planner 自己那一步的产物,对建页 agent 是
+    看着像指令的噪声 —— 它要的是「全套每页在讲什么」。第一个 `# page-` 之前
+    的东西一律不进 <deck_map>。
+    """
+    text = path.read_text(encoding="utf-8", errors="replace")
+    i = text.find("# page-")
+    return text[i:].strip() if i > 0 else text.strip()
+
+
 def _theme_interface(path: Path) -> str:
     """theme.css 的 INTERFACE 注释块(到 `/INTERFACE ==== */` 为止,含定界符)。
 
@@ -360,7 +377,9 @@ def shared_preload(root: Path, n_pages: int, prompts: Path = None) -> tuple[str,
              "pages.md": root / "pages" / "plan" / "pages.md"}
     text = "\n\n".join(
         (f"<{tag}>\n{_theme_interface(paths[name]).strip()}\n</{tag}>"
-         if name == "theme.css" else _wrap(tag, paths[name]))
+         if name == "theme.css" else
+         f"<{tag}>\n{_deck_map(paths[name])}\n</{tag}>"
+         if name == "pages.md" else _wrap(tag, paths[name]))
         for tag, name in PRELOAD_TAGS)
     return text + "\n\n" + tech_block(root, n_pages, prompts), paths
 

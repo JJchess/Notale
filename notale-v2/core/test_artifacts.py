@@ -61,12 +61,14 @@ for h, _ in plan.sections:
     if h:
         print(f"      {h.strip()}")
 
-print("\n5. brief 就是 Agent 工具的入参,一个字段不多")
-briefs = [Brief(**{k: v for k, v in b.items() if k in ("description", "prompt", "subagent_type")})
+print("\n5. brief 只有 id 和散文两个字段")
+briefs = [Brief(**{k: v for k, v in b.items() if k in ("description", "prompt")})
           for b in json.loads((SRC / "briefs.json").read_text())]
 lens = sorted(len(b.prompt) for b in briefs)
 print(f"  ok  {len(briefs)} 份 brief,prompt 最短 {lens[0]} / 中位 {lens[len(lens)//2]} / 最长 {lens[-1]} 字符")
-assert all(set(b.as_tool_input()) == {"description", "prompt", "subagent_type"} for b in briefs)
-print("  ok  as_tool_input() 的键与实测抓包完全一致")
+# subagent_type 2026-08-29 删除:Agent-工具时代的遗留字段,
+# builder 直接读 briefs.json(page_from_brief 只取 description/prompt),从没读过它。
+assert all(set(b.as_tool_input()) == {"description", "prompt"} for b in briefs)
+print("  ok  brief 只有 description/prompt 两个键,没有死字段")
 
 print("\n全部通过")

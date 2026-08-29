@@ -225,13 +225,11 @@ def parse_contract(text: str) -> Contract:
 class Brief:
     description: str
     prompt: str
-    subagent_type: str = "general-purpose"
 
     def as_tool_input(self) -> dict:
         return {
             "description": self.description,
             "prompt": self.prompt,
-            "subagent_type": self.subagent_type,
         }
 
 

@@ -147,7 +147,7 @@ token 都在那里写清 hex、唯一含义和允许出现的位置，建页 age
 
 文件末尾加入 SVG 防覆盖规则：
 
-    svg .bar, svg .step, svg .cell, svg .box, svg .arw { width:auto; height:auto; }
+    svg .bar, svg .cell, svg .box { width:auto; height:auto; }
 
 ## 接口注释
 
