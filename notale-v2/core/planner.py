@@ -340,9 +340,16 @@ def _valid_css(text: str) -> str:
         return ("缺 INTERFACE 接口块 —— 文件第一段必须是 "
                 "`/* ==== INTERFACE ==== … ==== /INTERFACE ==== */`。"
                 "建页 agent 只拿到这个块,拿不到规则体,没有它整套类都没法用")
-    iface = text.split("==== /INTERFACE ====", 1)[0]
-    svg_guard = set(re.findall(r"svg\s+\.([A-Za-z][\w-]*)", bare))
-    defined = {m for m in re.findall(r"\.([A-Za-z][\w-]*)", bare)} - svg_guard
+    iface = text.split("==== /INTERFACE ==== */", 1)[0]
+    # **先剥 url() 和字符串再找类名。** 2026-08-30 这条闸把一轮跑死了:
+    # theme.css 里有 `@import url(https://fonts.googleapis.com/...)`,
+    # 而 `\.([A-Za-z][\w-]*)` 把 `fonts.googleapis.com` 里的点也当成类选择器,
+    # 报出 `.googleapis` / `.com` 两个**不存在的类**。模型三次重试都修不掉
+    # (它没法给一个不存在的类补接口行),整轮死在一条不可满足的闸上 ——
+    # 和 page-06 那次同形。闸判不出来的东西,不能要求模型去满足。
+    sel = re.sub(r"url\([^)]*\)|\"[^\"]*\"|'[^']*'", " ", bare)
+    svg_guard = set(re.findall(r"svg\s+\.([A-Za-z][\w-]*)", sel))
+    defined = {m for m in re.findall(r"\.([A-Za-z][\w-]*)", sel)} - svg_guard
     missing = sorted(c for c in defined if f".{c}" not in iface and c not in iface)
     if missing:
         return ("接口块不完整,正文里定义了但 INTERFACE 没列的类: "
@@ -1100,13 +1107,13 @@ def plan_run(run: Run, chassis: Path, lib: Path,
     # 页数预算从 `--minutes` 推。**这个数要留着** —— 把页数从 18 推到 41 的
     # 正是单页 150 秒那条,而不是页表的九列(见 STAY_CEILING 上面那段)。
     total = run.minutes * 60
-    n_lo, n_hi = math.ceil(total / STAY_CEILING), int(total / 45)
+    # 页数不再给区间:给了数字模型就先定数再往里填。改由「4–6 章 × 每章几页」
+    # 从内容推出来(见 prompts/deck.md 的页数节)。
     css, pages_doc = deck_call(run, run.prompt(
         "deck", query=run.query, minutes=run.minutes,
         audience=run.audience, scenario=run.scenario or "（没写）",
         canvas_w=w, canvas_h=h,
-        stay_ceiling=STAY_CEILING, n_lo=n_lo, n_hi=n_hi,
-        n_target=round(total / 90), css_path=run.root / CSS_REL,
+        css_path=run.root / CSS_REL,
         pages_path=run.root / PAGES_REL,
         direction=skills.direction_block(run.prompts, menus=run.direction_menus),
         theme_bans=skills.theme_slop_block(workflow_root),
@@ -1121,8 +1128,6 @@ def plan_run(run: Run, chassis: Path, lib: Path,
         print(f"  ⚠ 丢掉 {len(short)} 个残块(短于 {PAGE_MIN} 字符): "
               f"{' '.join('page-' + k for k in short)}")
     nns = sorted(pages)
-    if not (n_lo <= len(nns) <= n_hi):
-        print(f"  ⚠ {len(nns)} 页不在 {n_lo}–{n_hi} 的预算区间内(只报不拦)")
 
     (run.pages / "plan").mkdir(parents=True, exist_ok=True)
     for nn in nns:
@@ -1165,6 +1170,11 @@ def main() -> None:
     a.add_argument("--effort")
     # Anthropic 系必须走 messages 才拿得到 cache_control;走 responses 是全额计费,
     # 而且不会有任何报错。builder 侧同名参数。
+    # 路由会挂。2026-08-21 和 08-30 各挂过一次(paratera 配额被砍回 8 个免费模型,
+    # 403 team_model_access_denied),而 config.yaml 是共享状态,为一次跑改它不合适。
+    # override() 本来就能把任意 kwargs 灌进 model 配置,这里只是把它接到命令行。
+    a.add_argument("--base-url", help="覆盖 base_url,路由挂了时切备用线")
+    a.add_argument("--key-env", help="覆盖 api_key_env,配合 --base-url")
     a.add_argument("--wire", choices=("responses", "chat", "messages"),
                    help="覆盖 wire_api;Anthropic 系模型要用 messages")
     a.add_argument("--lib", default=str(VENDOR / "chassis" / "lib"))
@@ -1209,7 +1219,7 @@ def main() -> None:
     for _p, _why in ((_WEBMEDIA, "取照片"), (_GEN, "生成插画")):
         if not _p.exists():
             raise SystemExit(f"✗ {_why}的脚本不在:{_p}")
-    llm.override(name=n.model, wire_api=n.wire)
+    llm.override(name=n.model, wire_api=n.wire, base_url=n.base_url, api_key_env=n.key_env)
     if n.effort: config()["planner"]["reasoning_effort"] = n.effort
     plan_run(Run(n.query, n.minutes, n.audience, n.label, n.scenario,
                  prompts=Path(n.prompts), direction_menus=n.direction_menus),

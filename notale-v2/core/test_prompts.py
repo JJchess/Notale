@@ -160,6 +160,16 @@ class ValidatorTests(unittest.TestCase):
         css2 = self._css(self.STAGE_OK) + "svg .bar{width:auto;}"
         self.assertEqual(_valid_css(css2), "")
 
+    def test_url_and_strings_are_not_class_selectors(self) -> None:
+        """2026-08-30 这条闸把一轮跑死了:`@import url(https://fonts.googleapis.com/…)`
+        里的点被当成类选择器,报出 `.googleapis`/`.com` 两个不存在的类,
+        模型三次重试都修不掉(没法给不存在的类补接口行)——不可满足的闸,
+        和 page-06 那次同形。"""
+        css = (self._css(self.STAGE_OK)
+               + "@import url(https://fonts.googleapis.com/css2?family=X);"
+               + 'a::after{content:".foo";}')
+        self.assertEqual(_valid_css(css), "")
+
     def test_interface_block_is_required(self) -> None:
         self.assertIn("INTERFACE", _valid_css(self._css(self.STAGE_OK, iface="")))
 
