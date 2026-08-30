@@ -16,6 +16,7 @@ sys.path.insert(0, str(ROOT))
 
 from core.llm import fill  # noqa: E402
 from core import skills  # noqa: E402
+from core import planner
 from core.planner import (MAX_CHARS, _valid_css, _valid_pages,  # noqa: E402
                           split_pages, take_writes)
 
@@ -151,14 +152,24 @@ class ValidatorTests(unittest.TestCase):
                 "#stage{display:flex;flex-direction:column;"
                 "padding:var(--pad-y) var(--pad-x);}")
 
-    def test_interface_must_list_every_defined_class(self) -> None:
-        """建页 agent 只拿到接口块 —— 正文里定义而接口没列的类,对所有页等于不存在。"""
+    def test_interface_gaps_are_reported_not_rejected(self) -> None:
+        """漏列的类**只报不拦**。2026-08-30 降级:这条当硬闸时连杀两轮 Sonnet ——
+        它写的 CSS 更细碎(状态类、内部子块),13 个漏列三次补不齐,
+        而同一条闸 GPT-Sol 一次就过。**只有某个模型能过的闸是模型指纹,不是质量判据。**
+        接口不全的后果是软的(builder 少几个可选类),不值得判死整轮。
+        """
         css = self._css(self.STAGE_OK) + ".ghost{color:blue;}"
-        msg = _valid_css(css)
-        self.assertIn(".ghost", msg)          # 缺谁报谁,重试才补得上
-        # svg 防覆盖规则的选择器豁免 —— 它是保护规则,不是供页面选用的组件
-        css2 = self._css(self.STAGE_OK) + "svg .bar{width:auto;}"
-        self.assertEqual(_valid_css(css2), "")
+        self.assertEqual(_valid_css(css), "")            # 不拦
+        self.assertIn("ghost", planner.iface_gaps(css))  # 但报出来
+
+    def test_state_classes_do_not_count_as_gaps(self) -> None:
+        """`.is-active` 这类状态类归宿主组件,不单独上接口表。"""
+        css = self._css(self.STAGE_OK) + ".panel.is-active{color:red;}"
+        self.assertNotIn("is-active", planner.iface_gaps(css))
+
+    def test_svg_guard_rule_is_exempt(self) -> None:
+        css = self._css(self.STAGE_OK) + "svg .bar{width:auto;}"
+        self.assertEqual(planner.iface_gaps(css), [])
 
     def test_url_and_strings_are_not_class_selectors(self) -> None:
         """2026-08-30 这条闸把一轮跑死了:`@import url(https://fonts.googleapis.com/…)`

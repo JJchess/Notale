@@ -331,40 +331,10 @@ def _valid_css(text: str) -> str:
         return ("`#stage` 没有设置 padding —— 主题必须在共享层定义统一版心，"
                 "否则每页会各自决定外边距。至少保留 "
                 "`padding: var(--pad-y) var(--pad-x)`")
-    # **接口完整性闸(2026-08-29)。** 建页 agent 从此只拿到 INTERFACE 注释块,
-    # 拿不到规则体(见 builder._theme_interface)—— 所以接口写漏一个类,那个类
-    # 对所有页都等于不存在。这里逐个校验:正文里定义的每个类名都必须出现在
-    # 接口块文本里。按基名判(.btn:hover/.btn.active 都算 .btn),
-    # svg 防覆盖那行的选择器豁免(它是保护规则,不是供页面选用的组件)。
     if "==== INTERFACE ====" not in text or "==== /INTERFACE ====" not in text:
         return ("缺 INTERFACE 接口块 —— 文件第一段必须是 "
                 "`/* ==== INTERFACE ==== … ==== /INTERFACE ==== */`。"
                 "建页 agent 只拿到这个块,拿不到规则体,没有它整套类都没法用")
-    iface = text.split("==== /INTERFACE ==== */", 1)[0]
-    # **先剥 url() 和字符串再找类名。** 2026-08-30 这条闸把一轮跑死了:
-    # theme.css 里有 `@import url(https://fonts.googleapis.com/...)`,
-    # 而 `\.([A-Za-z][\w-]*)` 把 `fonts.googleapis.com` 里的点也当成类选择器,
-    # 报出 `.googleapis` / `.com` 两个**不存在的类**。模型三次重试都修不掉
-    # (它没法给一个不存在的类补接口行),整轮死在一条不可满足的闸上 ——
-    # 和 page-06 那次同形。闸判不出来的东西,不能要求模型去满足。
-    sel = re.sub(r"url\([^)]*\)|\"[^\"]*\"|'[^']*'", " ", bare)
-    svg_guard = set(re.findall(r"svg\s+\.([A-Za-z][\w-]*)", sel))
-    defined = {m for m in re.findall(r"\.([A-Za-z][\w-]*)", sel)} - svg_guard
-    missing = sorted(c for c in defined if f".{c}" not in iface and c not in iface)
-    if missing:
-        return ("接口块不完整,正文里定义了但 INTERFACE 没列的类: "
-                + " ".join("." + c for c in missing[:20])
-                + " —— 建页 agent 只拿到接口块,没列的类等于不存在。"
-                  "每个都补一行「组件/版式 名字 一句用法或几何」,或者删掉那个类")
-
-    # 接口块的八节结构闸 2026-08-28 删除,和 `prompts/theme.md` 的八节模板一起。
-    #
-    # 那道闸的前提是「接口块是 theme.css 到建页 agent 的**唯一通道**」——
-    # 因为 brief 明令不许读 assets/ 下的 CSS 源码。现在源码整份直接进 builder 的
-    # system 块,那个前提没有了:块里没写的类,agent 自己能在源码里看到。
-    # 接口块本身保留(它写的是源码里读不出来的东西:用途、关系、什么时候拿哪个),
-    # 但它不再是唯一通道,也就不值得用一道会把整轮判死的硬闸去守
-    # —— `cached()` 重试是原样重发,拦住了模型也收不到反馈。
     return ""
 
 
@@ -462,6 +432,31 @@ def _valid_pages(text: str) -> str:
         miss = sorted(set(range(1, max(nn) + 1)) - set(nn))
         return f"页号不连续,缺 {' '.join(f'page-{x:02d}' for x in miss)} —— 从 01 编到 N,不跳号"
     return ""
+
+
+def iface_gaps(text: str) -> list[str]:
+    """正文里定义了、但 INTERFACE 没列的类。**只报不拦。**
+
+    2026-08-29 这条是硬闸,2026-08-30 降级 —— 它连着杀了两轮 Sonnet:
+    第一次是我的正则把 `url(https://fonts.googleapis.com/…)` 里的点当成类
+    (报 `.googleapis`,模型永远修不掉,已修);第二次是 Sonnet 写的 CSS 更细碎
+    (`.is-active`/`.is-selected` 这类状态类、`.ctl-row`/`.col-text` 这类内部子块),
+    13 个漏列它三次都补不齐,而同一条闸 GPT-Sol 一次就过。
+    **一条只有某个模型能过的闸,是模型指纹,不是质量判据**(同 selfcheck 密度那条的教训)。
+
+    接口不全的后果是软的:builder 少几个可选的类,自己写页内样式。
+    比起为此判死整轮(3 次调用 + 一次规划全废),报出来让人看见更划算。
+    """
+    if "==== /INTERFACE ==== */" not in text:
+        return []
+    bare = re.sub(r"/\*.*?\*/", "", text, flags=re.S)
+    sel = re.sub(r"url\([^)]*\)|\"[^\"]*\"|'[^']*'", " ", bare)
+    iface = text.split("==== /INTERFACE ==== */", 1)[0]
+    svg_guard = set(re.findall(r"svg\s+\.([A-Za-z][\w-]*)", sel))
+    defined = {m for m in re.findall(r"\.([A-Za-z][\w-]*)", sel)} - svg_guard
+    # 状态类归它的宿主组件,不单独上表
+    defined = {c for c in defined if not c.startswith(("is-", "has-"))}
+    return sorted(c for c in defined if f".{c}" not in iface and c not in iface)
 
 
 CHECKS = {"theme.css": _valid_css, "pages.md": _valid_pages}
@@ -1127,6 +1122,10 @@ def plan_run(run: Run, chassis: Path, lib: Path,
     if short:
         print(f"  ⚠ 丢掉 {len(short)} 个残块(短于 {PAGE_MIN} 字符): "
               f"{' '.join('page-' + k for k in short)}")
+    gaps = iface_gaps(css)
+    if gaps:
+        print(f"  ⚠ 接口块漏列 {len(gaps)} 个类(只报不拦,builder 会少几个可选项): "
+              f"{' '.join('.' + c for c in gaps[:12])}")
     nns = sorted(pages)
 
     (run.pages / "plan").mkdir(parents=True, exist_ok=True)
