@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Prepare and run the fixed AdaBoost four-route Builder smoke.
 
-This entry point never invokes Planner. It materializes the same eight-page
-plan and cold-gray theme for every run, then asks Builder to build one page for
-each routed workflow.
+This entry point never invokes Planner. It materializes the same sixteen-page
+plan and cold-gray theme used by the 2026-08-31 four-route run, then asks
+Builder to rebuild the same four page topics under the current route schema.
 """
 
 from __future__ import annotations
@@ -25,8 +25,8 @@ BRIEF = ROOT / "prompts" / "brief.md"
 DEFAULT_RUNS = ROOT / "runs"
 
 QUERY = "AdaBoosting算法"
-PAGES = ("page-01", "page-03", "page-04", "page-06")
-TOTAL = 8
+PAGES = ("page-01", "page-08", "page-12", "page-14")
+TOTAL = 16
 
 
 def _sha256(path: Path) -> str:

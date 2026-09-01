@@ -62,9 +62,10 @@ mini bundle 和 catalog 元数据继续保留，但只有显式传入 Builder �
 - 不创建 `page-NN.html`。
 
 Planner 质量评估与 workflow skill 对照分开。四路 Builder smoke 不调用 Planner，固定使用
-`fixtures/adaboost-cold-gray/`：页表沿用已经生成的 8 页 AdaBoost 结果，`theme.css` 固定为
-冷灰实验台版本（SHA-256 `52c2e8df…40ab`）。每个新 run 只机械复制该 fixture；因此 sample
-加载策略变化不会再同时改变主题或页表。
+`fixtures/adaboost-cold-gray/`：页表逐字沿用 2026-08-31 四路实验的 16 页 AdaBoost 输出，
+`theme.css` 继续使用同轮冷灰实验台版本（SHA-256 `52c2e8df…40ab`）。唯一 schema 迁移是
+page-14 从旧的 `[交互页]` 改标为当前 `[代码页]`，正文仍为“代码实操AdaBoosting算法”。
+每个新 run 只机械复制该 fixture；因此 workflow 变化不会同时改变页面 query、章节上下文或主题。
 
 ### Builder
 
@@ -91,7 +92,7 @@ Planner 质量评估与 workflow skill 对照分开。四路 Builder smoke 不�
 ## 运行顺序
 
 1. 静态验证：四份 skill quick validation、43 份 bundle 一致性、core regression。
-2. 单页 smoke：从冷灰 frozen fixture 取 page-01、03、04、06，分别覆盖
+2. 单页 smoke：从冷灰 frozen fixture 取 page-01、08、12、14，分别覆盖
    cover、page、interaction、code，使用 `sonnet5-low` profile；不运行 Planner。
 3. 审计第一轮 sample routing、首轮并行 Read、target 边界、真实渲染、调用数与 token。
 4. smoke 通过后，Planner 的整套输出质量另开实验验证；不把新生成的 Planner 产物混入
@@ -125,16 +126,34 @@ python3 experiments/workflow-skills-next/frozen_four_route.py run --label RUN \
 python3 dump_page.py --label RUN --page page-NN --out /tmp/page-NN.md
 ```
 
-## 2026-09-01 收敛验证
+## 2026-09-01 失真预实验（不计入对照）
 
 冻结夹具的首轮 11-response smoke 中，cover、interaction、code 分别以 7、5、5 次
 `no_tool_use` 结束；page 因截图后连续 6 次单点 `Edit` 在第 11 次触发 `max_steps`。轨迹显示
 它在逐项手算并修正自造数据，而非 Check、网络或 workspace 故障。基于该证据，普通页删除
 与 `Patch` 重叠的 `Edit`，并要求首次 Write 前核对确定性数据、公式与预期输出。
 
-复验 run `adaboost-four-route-converge11-v2-sonnet5-low-20260901` 使用相同冷灰 theme、页表、
-main-only samples 和 `sonnet5-low`：cover/page/interaction/code 分别以 4/10/5/6 次
+复验 run `adaboost-four-route-converge11-v2-sonnet5-low-20260901` 使用了正确冷灰 theme，
+但误用了后来生成的 8 页细化页表：cover/page/interaction/code 分别以 4/10/5/6 次
 `no_tool_use` 结束，合计 25 次；4/4 留下产物，独立审计无致命错误或视觉警告。实际读取为
 `generative + neural-signal-network`、`general + escapement`、`general + lawn-path`、
-`code + code-core-bundle`，没有 Aux/mini 或额外 reference。该结果是固定单题 smoke，证明当前
-路径可在上限内完成，不代表跨题目的统计保证。
+`code + code-core-bundle`，没有 Aux/mini 或额外 reference。由于 pNN 与 2026-08-31 四路输入
+不一致，这两轮只保留为 harness 诊断，不用于 workflow 质量或成本对照。
+
+## 2026-09-01 正确 fixture 复验
+
+run `adaboost-four-route-correct-fixture-sonnet5-low-20260901` 使用原始 16 页 pNN、同一份冷灰
+`theme.css` 和默认 main-only routing。cover/page/interaction/code 分别消耗 6/10/11/11 个
+model response，合计 38 个；前三路以 `no_tool_use` 结束，代码页在第 11 个 response 完成第三次
+`Check` 后仍未主动停止，因此 termination 为 `max_steps`。四页均留下产物，独立审计均无 fatal
+error 或 visual warning，代码工作台的 execution、错误处理、timeout recovery、native view sandbox、
+固定布局与键盘操作自检全部通过。故本轮产物完成度为 4/4，严格收敛为 3/4，不能记作四路全通过。
+
+首轮读取分别为 `generative + neural-signal-network`、`general + escapement`、
+`general + lawn-path`、`code + code-core-bundle`，未读取 Aux/mini 或额外 reference。交互页的按钮
+逐轮枚举轴对齐 decision stump，按当前样本权重最小化加权误差，计算 alpha、归一化更新权重并累积
+ensemble score；截图中的权重、弱分类器与组合边界均来自该状态，而非预制动画。
+
+本轮同时暴露两个尚未解决的收敛浪费：interaction 在首次 Write 前连续用了 5 个 Bash 做可合并的
+数据验算；code 在首次 Check 后以多次零散 Edit 修正测试夹具，虽然最终自检干净，仍吃满 11 个
+response。后续收敛改动须以这条正确 fixture 轨迹为依据，不再参考上述 8 页失真预实验的轮数。
