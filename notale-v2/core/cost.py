@@ -42,8 +42,8 @@ from core.llm import ROOT, config  # noqa: E402
 
 
 def tally(label: str) -> dict:
-    """从 steps.json 取四类 token。它是 builder 写的,每页一条,不需要重放 trace。"""
-    f = ROOT / "runs" / label / "steps.json"
+    """Read per-page token totals from the current Builder result artifact."""
+    f = ROOT / "runs" / label / "builder-results.json"
     if not f.is_file():
         raise SystemExit(f"✗ 找不到 {f}")
     d = json.loads(f.read_text(encoding="utf-8"))

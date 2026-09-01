@@ -233,6 +233,11 @@ def _chat_body(body: dict) -> dict:
         msgs += _chat_history(inp or [])
     out = {"model": body["model"], "messages": msgs,
            "max_tokens": body.get("max_output_tokens")}
+    effort = str((body.get("reasoning") or {}).get("effort") or "").strip().lower()
+    if effort:
+        # SiliconFlow and OpenAI-compatible reasoning models accept this field directly.
+        # Dropping it made a profile logged as ``low`` run at the provider default instead.
+        out["reasoning_effort"] = effort
     if body.get("tools"):
         # responses 的工具是平铺 {name, description, parameters};
         # chat 要包一层 {"type":"function","function":{...}}。

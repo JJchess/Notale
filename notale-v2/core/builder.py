@@ -4,21 +4,8 @@ planner 能做成固定流水线,是因为 nn-03 和 nn-06 两轮动作序列完
 builder 不行:实测每页 16–73 次调用,相差 4.6 倍,工具配比也各不相同
 (page-09 是 Bash×22,page-20 是 Edit×26)。所以这里只能是循环。
 
-循环在什么上收敛也是数出来的:nn-06 里 `Write` 恒等于 1,之后全是 Edit + Bash + Read,
-而 Bash 的 67% 是 selfcheck。每页跑 3–10 次 selfcheck,中位 8。
-**写一次 + 闸驱动收敛。**
-
-⚠ 「Write 恒等于 1」这条**已被 nn-09 推翻,不要再当判据用**。同样是 Opus 5、
-同样的指令骨架,nn-09 的 subagent 侧是 `Bash 302 / Read 187 / Write 5 / Edit 3`
-—— Edit 从 133 掉到 3,页面改用 `cat > page-XX.html <<EOF` 整页重写,
-16 页约 156 次整页写入(每页 ~10 次)。
-
-所以收敛机制的可迁移部分只有后半句:**闸驱动**(每页反复 selfcheck 直到干净)。
-前半句「写一次」是 nn-06 的偶然形状,不是这类任务的性质。
-判「这一页收敛了没有」要看闸过没过,不要看 Write 的次数。
-
-终止照抄 Claude Code:模型不再要求调工具就结束。Skill 是提示和事后观测项,
-不在模型停止之后再补催或反过来判交付失败。
+模型不再要求工具就结束。Harness 不补催、不重启，也不把工作顺序变成状态机；
+最终产物与一次独立审计分别记录。
 
     python3 -m core.builder --label orbit-01 [--only page-01] [--concurrency 20]
 """
@@ -26,7 +13,9 @@ builder 不行:实测每页 16–73 次调用,相差 4.6 倍,工具配比也各�
 from __future__ import annotations
 
 import argparse
+import html
 import json
+import os
 import re
 import time
 import uuid
@@ -36,7 +25,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
-from . import skills, tools
+from . import code_runtime, skills, tools
 from . import llm
 from .llm import ROOT, config, respond, text_of
 from .trace import Writer
@@ -49,17 +38,26 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
 
-IDENTITY = """你是这套互动讲义的单页构建 agent。你只负责一个 HTML 文件。
+IDENTITY = """你是这套互动讲义的单页构建 agent。你只负责当前页面。
 
-技术契约、主题接口、全套页表和本页规格都已经在你的 system 提示里,直接用,不用去读。
-按 brief 说的做,完工前用 Check 自检到干净为止。
-不写说明文档、不写测试、不写总结。做完直接结束,不要问问题。
+技术契约、主题接口、全套章节提纲、当前章节页表和与页面标签唯一对应的 SKILL.md 都已经在
+你的提示里。第一轮按 SKILL.md 当前注册的加载规则并行 Read reference 和 sample。
+按 brief 完成目标页面；需要判断真实渲染时使用 Check。
+不写额外说明文档、构建日志或旁路测试。做完直接结束,不要问问题。
 
-施工分两段,工具面会跟着变,不必自己记:
-1. **一次 `Write` 落成整页。** 想清楚这一页怎么摆、需要哪份技法文档之后,把整页一次写出来。
-   这一段里只有 `Write` 能改页面 —— 没有 `Patch` 和 `Edit`,不要试图用增量方式起页。
-2. **此后只增量改。** `Write` 从工具面消失,改用 `Patch`(一次改好几处,首选)或 `Edit`。
-   对着 `Check` 报的问题逐条改,不要重写整页 —— 重写会连已经改对的地方一起冲掉。"""
+代码页调用 CodeScaffold，之后只编辑它返回的 lesson 文件；外层页面、固定运行时、主题和
+其他页面都是只读的。`lesson/tests.py` 是可选学习内容，不属于旁路测试。"""
+
+
+LABEL_WORKFLOWS = {
+    "标题页": "build-cover",
+    "内容页": "build-page",
+    "交互页": "build-interaction",
+    "代码页": "build-code",
+}
+_SPEC_HEADING = re.compile(
+    r"^#\s+(page-(\d+))\s+\[(标题页|内容页|交互页|代码页)\]\s*$", re.M
+)
 
 
 def _tag_of(c) -> str:
@@ -68,8 +66,8 @@ def _tag_of(c) -> str:
         a = json.loads(c.arguments or "{}")
     except Exception:
         return ""
-    if c.name == "Skill":
-        return str(a.get("skill", ""))
+    if c.name == "CodeScaffold":
+        return "fixed-python-workbench"
     if c.name == "Bash":
         return str(a.get("command", ""))[:120]
     if c.name == "Check":
@@ -103,7 +101,6 @@ class Page:
     prompt: str
     calls: int = 0
     steps: list[str] = None
-    ok: bool = False
     why: str = ""
     seconds: float = 0.0
 
@@ -118,30 +115,55 @@ class Page:
     tok_write: int = 0   # 其中写进缓存的部分(写,通常带溢价 —— 和读不是一个价)
     tok_out: int = 0     # 累计输出 token
     tok_max: int = 0     # 单步输入峰值 —— 判 CONTEXT_SOFT 用
-    wrote: bool = False  # 整页 Write 已经发生过一次(此后只许 Edit/Patch)
+    artifact_present: bool = False
+    audit: dict | None = None
     cache_seen: bool = False   # 这条路由到底报不报 cached;不报和没命中要分得开
+    label: str = ""
+    workflow: str = ""
+    spec_text: str = ""
+    total: int = 0
 
     def __post_init__(self):
         self.steps = []
         self.steps_arg = {}
-        self.stray = []
-        self.loaded_skills = []
         self.reference_reads = []
-        self.workflow_script_runs = []
         self.termination = ""
-        # 预置之后模型仍然去 Read 的那几份。**这是判「预置到底省没省下调用」的读数** ——
-        # 仿真省 25.8% 的前提是这 3 次往返真的消失了,而提示词管不住行为。
-        # 这个数不为零,就说明 brief 那几句没起作用,收益要按实测重算。
-        self.preload_reads = []
+
+
+def route_page(root: Path, page: Page) -> Page:
+    """Read the planner-owned pNN heading and assign exactly one production workflow."""
+    path = root / "pages" / "plan" / f"{page.pid.replace('page-', 'p')}.md"
+    if not path.is_file():
+        raise FileNotFoundError(f"cannot route {page.pid}: missing planner spec {path}")
+    text = path.read_text(encoding="utf-8", errors="replace")
+    matches = list(_SPEC_HEADING.finditer(text))
+    if len(matches) != 1:
+        raise ValueError(
+            f"cannot route {page.pid}: expected one "
+            "'# page-NN [标题页|内容页|交互页|代码页]' heading"
+        )
+    heading_pid, digits, label = matches[0].groups()
+    if heading_pid != page.pid or int(digits) != int(page.pid.split("-")[1]):
+        raise ValueError(f"planner spec id {heading_pid!r} does not match {page.pid!r}")
+    page.label = label
+    page.workflow = LABEL_WORKFLOWS[label]
+    page.spec_text = text
+    return page
+
+
+def _lesson_title(page: Page) -> str:
+    """Derive a concise scaffold title from the planner prose without another model choice."""
+    for raw in page.spec_text.splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or line.startswith("<"):
+            continue
+        line = re.sub(r"^[\-*]\s*", "", line)
+        return line[:80]
+    return page.pid
 
 
 def page_from_brief(raw: dict) -> Page:
-    """A brief is now just an id and its prose. 2026-08-28 起不再解析任何指派。
-
-    原来这里认两种形状:新 brief 的 `## 主工作流`(必须且只有一项)和旧 brief 的
-    `## 必用skill`。两种都没了 —— 技法文档由建页 agent 自己从清单里挑。
-    老 run 的 briefs.json 里那几节还在,但不再被读;它们只是正文里的几行字。
-    """
+    """A brief contains only the target id and the Planner's compact prose."""
     return Page(raw["description"].replace("Build ", ""), raw["prompt"])
 
 
@@ -208,80 +230,10 @@ def evict_images(hist: list, tok_in: int) -> int:
     return n
 
 
-_PAGE_RE = re.compile(r"page-\d+\.html$")
-
-
-# ── 确定性备料:预置进 system 块,而不是让每页各花一次往返去 Read ────────────
-#
-# **这三份是 21/21 页都读的,而且是 `prompts/brief.md` 自己明文命令模型去读的。**
-# 把它们留在历史里由模型 Read,代价量出来是三份(runs/iface8-20260827,21 页 376 次调用):
-#
-#   · **每页 3 次纯搬运的往返** —— 76 次调用里这 3 类占 55 次,占全部调用的 15%
-#   · **每页那一次缓存失效要把它们重付一遍。** 失效点是 `Write` 之后切工具面那一步
-#     (见 build_one 里 spec_norewrite 上面那段);实测失效时**只有 system 块保住缓存**
-#     (page-11 第 8 步:输入 42,991,命中只剩 4,380 = system 块大小),
-#     工具面之后的整段历史全部重付。全轮 22 次失效事件、每页正好 1.0 次,
-#     合计重付 593,513 tok = **付全价支出的 38%**。放进 system 块就躲开这一笔。
-#   · **CHASSIS.md 和 CONTRACT.md 跨页逐字节相同**,却因为排在按页不同的 brief 之后,
-#     永远吃不到跨页前缀缓存 —— 21 页各付一次全价。进了 system 块就只付第一次。
-#     (实测 system 块本身跨页命中:第 1 步输入 4,684、命中 4,186 = 89%。)
-#
-# 仿真(按 trace 逐步重算,校准偏差 +4%):付全价 1,603,359 → 1,189,378,**-25.8%**。
-#
-# **`Skill` 那一次故意不预置。** 再省 4.3pp、再少 21 次调用,但它会把
-# `loaded_skills` / 「指派指导 N 项,实际读到 N 项」那条读数变成空判 ——
-# 这个仓库反复栽在「采集了不打印/恒读同一个值的判据」上(见 plan_quality.py 的
-# handoff 计数、planner.py 的 chassis= 参数)。少 4.3pp 换一条还活着的观测项,值。
-#
-# **`pNN.md` 绝对不能进 system 块 —— 这是量出来的,我第一版就是这么写的,错了。**
-#
-# 这条路由的自动前缀缓存**按整个 `instructions` 字段粗粒度匹配**,不做细粒度的
-# 最长公共前缀。证据是基线自己的数(runs/iface8-20260827 第 1 步的命中量):
-#     page-12(build-chart) cached=4,139   page-20/21(build-page) cached=4,162
-# 同一个 workflow 的页命中量一模一样、不同 workflow 的不一样 —— 因为基线的
-# system 块里没有任何按页内容,同 workflow 的 `instructions` 逐字节相同,所以能跨页共享。
-#
-# 我把 `pNN.md` 拼在 system 块尾部之后,每一页的 `instructions` 都成了独一份,
-# **跨页共享被整条掐死**。3 页对照实测(2026-08-27 runs/preload-smoke,
-# 目录 2026-08-28 已删;逐步 cached 只在 trace.jsonl 里,而 trace 按 .gitignore
-# 不入库 —— 所以下面这几个数**不可复核**,以此处转述为准):
-#     page-12  步1 cached=15,614 ✓  失效步 cached=15,239 ✓  全价 -48%
-#              ← 它命中只是因为前一次单页冒烟用完全相同的块预热过
-#     page-20  步1 cached=0 ✗  失效步 cached=0 ✗  全价 +19%
-#     page-21  步1 cached=0 ✗  失效步 cached=0 ✗  全价 +37%
-# 三页合计付全价只降 3.5%,而仿真按细粒度前缀算出的是 -25.8%。
-# 同条件复跑一次(runs/preload-smoke2,同样已删)结论相同,不是 n=1:
-# page-12 步1 cached=14,011,page-20/21 两页步1 均为 0。
-#
-# 所以规矩是:**system 块里只许放同 workflow 逐字相同的东西。**
-#     IDENTITY + anti_slop(+philosophy)   ← 21 页逐字相同
-#     CHASSIS.md + CONTRACT.md            ← 21 页逐字相同(本次新增)
-#     指派 workflow 块                     ← 按 workflow 分组,组内逐字相同
-# `pNN.md` 改为拼进 brief(首条 user 消息)。它本来就每页唯一,放那里不损失任何共享;
-# 代价只是它会跟着历史在失效步被重付一次(约 1,253 tok/页),
-# 远小于换回来的「13.6k 共享块 × 20 页」。
-# `theme.css` 2026-08-28 加进来:**把 CSS 源码整份给建页 agent。**
-# 在此之前 brief 明令不许打开 assets/ 下的 CSS,唯一通道是 theme.css 自报的
-# INTERFACE 块 —— 而那个块因此被迫承担整套视觉系统的声明,一度被推到八节、
-# 近 7,000 字符,还配了一道会把整轮判死的硬闸。实测这份 CSS 本身也才 16,467 字符,
-# 直接给源码比让它转述一遍更便宜也更准。给了源码之后八节和硬闸就都不需要了。
-# theme.css 的注入形态,两次实验的账:
-# 第一次(sol-slim,2026-08-29)输了:注入敷衍的 INTERFACE + **裸类名清单**
-# (没有用法),还明说「要看规则值就 Read」—— 24/24 页各自 Read 回全文,
-# 总输入 +62%。机制:system 块跨页共享缓存,Read 回来的全文落在每页历史里全价驻留。
-# 第二次(同日)改掉三个败因再试:(a) 接口升级成完整语义表(每个 token 带 hex+语义、
-# 每个版式带几何、每个组件带用法),由 planner._valid_css 的完整性闸强制;
-# (b) **硬禁**读 theme.css(pre_hit 拦 Read 和 Bash,拒绝并指路回接口块);
-# (c) 不再邀请 Read。失败形态因此变成质量而非 Read 计数 —— 判据看渲染/占用比/
-# 撞禁次数,质量退就回退整案。
-# <deck_map> 2026-08-29 加入:整份 pages.md(全部页的标签+一句话)。
-# 页间一致性以前全靠 planner 写规格时的先见 —— builder 看不见邻页在讲什么,
-# deck.md 要求"相邻页不重复论证",可执行的人从没拿到过页表。
-# 传**整份**而不是相邻两页,是缓存决定的:整份对所有页逐字节相同,走 system 块
-# 跨页共享;按页裁剪的"邻页版"要么进 brief(只有局部视野)、要么让 system 块
-# 按页不同 —— 后者正是 8-28 修掉的那个杀缓存 bug。极简规格下整份只有 ~4KB。
+# Shared material stays byte-identical across pages for prefix caching. Per-page
+# chapter context stays in the first user message.
 PRELOAD_TAGS = (("chassis", "CHASSIS.md"), ("theme_css", "theme.css"),
-                ("deck_map", "pages.md"))
+                ("deck_outline", "pages.md"))
 
 # 技术契约 2026-08-28 从「每轮让模型写一份 CONTRACT.md」改成**仓库常量**
 # `prompts/tech.md`,由 builder 填几个槽位。
@@ -309,20 +261,13 @@ _LIBS_INDEX = "## 按「要做的事」查"
 
 
 def _libs_index(root: Path) -> str:
-    """只取 LIBS.md 开头那张「要做的事 → 引用哪一行」的路由表。
-
-    **不注入 LIBS.md 全文。** 那份 8,321 字符里大半是用法细节(mlp.js 怎么用、
-    tf 的适用边界、katex 必须连 CSS 一起引…),按需读就行 —— `prompts/brief.md`
-    本来就写着「仅在需要确认库版本时读 LIBS.md」。常驻块里放路由表:
-    告诉它有什么、该引哪一行;细节留在一次 `Read` 后面。
-    旧流程是让写 CONTRACT 的模型把它压成短表,现在这一步不存在了,改由 harness 切。
-    """
+    """Inject only the dependency routing table, not every library's API details."""
     f = root / "pages" / "assets" / "lib" / "LIBS.md"
     if not f.is_file():
-        return "(这一轮没有 LIBS.md)"
+        raise FileNotFoundError(f"dependency index is missing: {f}")
     text = f.read_text(encoding="utf-8")
     if _LIBS_INDEX not in text:
-        return text.strip()          # 格式变了就整份给,别静默给空
+        raise ValueError(f"dependency index anchor {_LIBS_INDEX!r} is missing: {f}")
     body = text.split(_LIBS_INDEX, 1)[1]
     body = body.split("\n## ", 1)[0]
     return (body.strip()
@@ -337,141 +282,199 @@ def tech_block(root: Path, n_pages: int, prompts: Path = None) -> str:
         libs=_libs_index(root), **TECH_SLOTS).strip() + "\n</tech>"
 
 
-# 和 planner.assets() 判「无需图池」用的是同一条正则(planner.py:892),不另造一个。
-_POOL_MARK = re.compile(r"无需图池|不需要图池|不用图|无图池")
+def _page_entries(text: str) -> list[tuple[str, str, str]]:
+    """Parse planner's compact page blocks into ``(pid, label, body)`` rows."""
+    hits = list(_SPEC_HEADING.finditer(text))
+    rows = []
+    for i, match in enumerate(hits):
+        pid, _, label = match.groups()
+        end = hits[i + 1].start() if i + 1 < len(hits) else len(text)
+        rows.append((pid, label, text[match.end():end].strip()))
+    return rows
 
 
-def _deck_map(path: Path) -> str:
-    """pages.md 去掉开头的图池段,只留页表。
+def _xml_page(pid: str, label: str, body: str, current: bool = False) -> str:
+    attrs = f'id="{html.escape(pid, quote=True)}" label="{html.escape(label, quote=True)}"'
+    if current:
+        attrs += ' current="true"'
+    return f"  <page {attrs}>{html.escape(body, quote=False)}</page>"
 
-    图池表/「本套无需图池」是 planner 自己那一步的产物,对建页 agent 是
-    看着像指令的噪声 —— 它要的是「全套每页在讲什么」。第一个 `# page-` 之前
-    的东西一律不进 <deck_map>。
+
+def _deck_outline(path: Path) -> str:
+    """Return only title-page boundaries from ``pages.md`` as compact XML.
+
+    The image-pool preface and content-page details do not belong in the shared system
+    prefix. Title pages are enough to show the whole-deck arc; current-chapter details
+    arrive separately in ``<chapter_context>``.
     """
-    text = path.read_text(encoding="utf-8", errors="replace")
-    i = text.find("# page-")
-    return text[i:].strip() if i > 0 else text.strip()
+    rows = _page_entries(path.read_text(encoding="utf-8", errors="replace"))
+    titles = [_xml_page(pid, label, body) for pid, label, body in rows if label == "标题页"]
+    return "<deck_outline>\n" + "\n".join(titles) + "\n</deck_outline>"
+
+
+def chapter_preloads(root: Path, n_pages: int) -> dict[str, str]:
+    """Build one XML chapter block per page from the Planner's ``pNN.md`` files.
+
+    Every ``[标题页]`` starts a chapter group. The opening cover therefore travels with
+    the first chapter, while a final closing title may form a one-page group. Each
+    result is appended to that page's first user message.
+    """
+    rows: list[tuple[str, str, str, Path]] = []
+    for nn in range(1, n_pages + 1):
+        pid = f"page-{nn:02d}"
+        path = root / "pages" / "plan" / f"p{nn:02d}.md"
+        if not path.is_file():
+            raise FileNotFoundError(f"预置 <chapter_context> 需要 {path},但它不存在")
+        entries = _page_entries(path.read_text(encoding="utf-8", errors="replace"))
+        if len(entries) != 1 or entries[0][0] != pid:
+            raise ValueError(f"{path} 必须且只能包含 {pid} 的一份规格")
+        entry_pid, label, body = entries[0]
+        rows.append((entry_pid, label, body, path))
+
+    groups: list[list[tuple[str, str, str, Path]]] = []
+    group: list[tuple[str, str, str, Path]] = []
+    for row in rows:
+        if row[1] == "标题页" and group:
+            groups.append(group)
+            group = []
+        group.append(row)
+    if group:
+        groups.append(group)
+
+    out: dict[str, str] = {}
+    for chapter in groups:
+        for current_pid, _, _, _ in chapter:
+            body = "\n".join(
+                _xml_page(pid, label, prose, pid == current_pid)
+                for pid, label, prose, _ in chapter
+            )
+            out[current_pid] = (
+                f'<chapter_context current="{current_pid}">\n{body}\n</chapter_context>'
+            )
+    return out
 
 
 def _theme_interface(path: Path) -> str:
-    """theme.css 的 INTERFACE 注释块(到 `/INTERFACE ==== */` 为止,含定界符)。
-
-    没有定界符就整份返回 —— 老 deck 断点续跑的兜底,照 _libs_index
-    「格式不对就整份给」的先例;静默给空会让 builder 以为主题什么都没有。
-    """
+    """Return the validated theme interface rather than the full CSS implementation."""
     text = path.read_text(encoding="utf-8", errors="replace")
     end = "==== /INTERFACE ==== */"
     if end not in text:
-        return text.strip()
+        raise ValueError(f"theme interface delimiter is missing: {path}")
     return text.split(end, 1)[0] + end
 
 
-def shared_preload(root: Path, n_pages: int, prompts: Path = None) -> tuple[str, dict]:
-    """21 页共享的那几份。返回(文本, 路径表)。
-
-    路径表给 build_one 做兜底:模型仍然去 Read 这些路径时,回一句指路而不是再灌一遍全文。
-    `tech.md` 不进路径表 —— 它是仓库常量,不在 run 目录下,模型没有路径可读。
-    """
+def shared_preload(root: Path, n_pages: int, prompts: Path = None) -> str:
+    """Return the byte-identical shared Builder prefix for every page."""
     paths = {"CHASSIS.md": root / "pages" / "assets" / "CHASSIS.md",
              "theme.css": root / "pages" / "assets" / "theme.css",
              "pages.md": root / "pages" / "plan" / "pages.md"}
     text = "\n\n".join(
         (f"<{tag}>\n{_theme_interface(paths[name]).strip()}\n</{tag}>"
          if name == "theme.css" else
-         f"<{tag}>\n{_deck_map(paths[name])}\n</{tag}>"
+         _deck_outline(paths[name])
          if name == "pages.md" else _wrap(tag, paths[name]))
         for tag, name in PRELOAD_TAGS)
-    return text + "\n\n" + tech_block(root, n_pages, prompts), paths
+    return text + "\n\n" + tech_block(root, n_pages, prompts)
 
 
-def spec_preload(root: Path, pid: str) -> tuple[str, Path]:
-    """本页规格 pNN.md。**拼进 brief,不进 system 块** —— 见上面那段实测。"""
-    p = root / "pages" / "plan" / f"{pid.replace('page-', 'p')}.md"
-    return _wrap("page_spec", p), p
+def environment_context(pages_dir: Path, page: Page, resource_root: Path) -> str:
+    """Describe the real working directory in the same user message as the brief."""
+    target = pages_dir / f"{page.pid}.html"
+    return (
+        "<environment_context>\n"
+        f"  <cwd>{html.escape(str(pages_dir.resolve()))}</cwd>\n"
+        f"  <target>{html.escape(str(target.resolve()))}</target>\n"
+        "  <target_state>absent</target_state>\n"
+        f"  <read_only_skill>{html.escape(str(resource_root.resolve()))}</read_only_skill>\n"
+        "</environment_context>"
+    )
 
 
-def _preloaded_hit(preloaded: dict | None, args: dict, pages_dir: Path) -> str:
-    """这次 `Read` 要的是不是已经预置进 system 块的文件?命中就回它的名字。
-
-    按**解析后的绝对路径**比,不比字符串:brief 给的是绝对路径,而模型也可能
-    用相对路径(工作目录是 `pages/assets/..`)或者绕一圈的写法。比字符串会漏,
-    而漏了就等于这条兜底不存在。
-    """
-    if not preloaded:
-        return ""
-    raw = str(args.get("file_path") or "")
-    if not raw:
-        # Bash 也拦:`cat theme.css` 和 Read theme.css 是同一件事,只拦一个
-        # 等于给硬禁留了后门(sonB 那轮就是用 cat/awk 绕开 Read 的)。
-        # 按预置文件的**基名**扫命令串 —— 挡老实写法,通配符照旧挡不住。
-        cmd = str(args.get("command") or "")
-        for path, name in preloaded.items():
-            if name in cmd:
-                return name
-        return ""
-    p = Path(raw)
-    try:
-        target = (p if p.is_absolute() else pages_dir / p).resolve()
-    except OSError:
-        return ""
-    return preloaded.get(target, "")
+_FATAL_PREFIX = re.compile(
+    r"^(?:失败:|拒绝[：:]|Traceback|TimeoutExpired:|[A-Za-z]+Error:)"
+)
+_FATAL_CHECK = re.compile(
+    r"✗.*(?:JS 报错|console\.error|资源加载失败|无法渲染|代码工作台自检失败)"
+)
 
 
-def stray(pages_dir: Path) -> list[str]:
-    """`pages/` 下既不是 `page-NN.html`、也不在 `assets/` 里的文件。
-
-    **量出来的:** `ape-ds3` 的 pages/ 里留了 10 个 `test_*.html`
-    (`test_upper`、`test_dots`、`test_notransform` —— 某页在调缩放和字符渲染),
-    `ape-dspro3` 留了 1 个 `page-22-test.html`。后果是实的:
-    覆盖闸把它们当页数、`make_deck.py` 把它们拼成幻灯片(实际拼出过 60 页而不是 50)、
-    而 `skeletons()` 又不会覆盖同名文件。
-
-    **不做写入白名单。** 实测这三轮里 `Write` 用了 43/86/72 次、`Bash` 用了 260/630 次,
-    两条路都能造文件 —— 只堵 Write 只堵住一半。扫一遍目录能同时盖住两条,
-    而且是一处实现。
-    """
-    out = []
-    for f in pages_dir.iterdir():
-        if f.is_dir():
+def _audit_lines(report: str) -> tuple[list[str], list[str]]:
+    fatal, visual = [], []
+    for raw in report.splitlines():
+        line = raw.strip()
+        if not line:
             continue
-        if _PAGE_RE.search(f.name):
-            continue
-        out.append(f.name)
-    return sorted(out)
+        if _FATAL_PREFIX.search(line) or _FATAL_CHECK.search(line):
+            fatal.append(line)
+        elif line.startswith("✗"):
+            visual.append(line)
+    return fatal, visual
 
 
-def build_one(page: Page, pages_dir: Path, trace: Path, skill_root: Path,
-              instructions: str, effort: str, compose_effort: str = "",
-              preloaded: dict | None = None) -> Page:
-    """一页的完整循环。
+def audit_delivery(
+    pages_dir: Path,
+    page: Page,
+    resource_root: Path,
+) -> dict:
+    """Audit once after the agent stops; never feed the result back into its loop."""
+    target = pages_dir / f"{page.pid}.html"
+    if not target.is_file() or target.stat().st_size == 0:
+        return {
+            "fatal_errors": [f"target missing: {target}"],
+            "visual_warnings": [],
+            "code_result": None,
+        }
 
-    历史只增不改 —— 每步追加一个 function_call 和一个 function_call_output。
-    Claude Code 每步追加三条,第三条是 `role: system` 的剩余 token 提醒;
-    那属于 CLI 自省,状态在 harness 手里,砍掉。
-    """
+    checked = tools.run(
+        "Check",
+        {"page": target.name, "shot": False},
+        pages_dir,
+        resource_root,
+        page.pid,
+    )
+    report = checked.text if isinstance(checked, tools.Out) else str(checked)
+    fatal, visual = _audit_lines(report)
+    code_result = None
+    if page.workflow == "build-code":
+        code_result, _ = code_runtime.run_browser_check(pages_dir, page.pid, False)
+        code_fatal, code_visual = _audit_lines(code_result)
+        fatal.extend(code_fatal)
+        visual.extend(code_visual)
+    return {
+        "fatal_errors": fatal,
+        "visual_warnings": visual,
+        "code_result": code_result,
+    }
+
+
+def build_one(
+    page: Page,
+    pages_dir: Path,
+    trace: Path,
+    workflow_root: Path,
+    instructions: str,
+    effort: str,
+    vision_input: bool = True,
+) -> Page:
+    """Run one unconstrained agent loop and record its artifact separately."""
     log = Writer(trace, str(uuid.uuid4()))
-    # 开工前先记下已有的野文件 —— 并发时别人留下的不算这一页的账。
-    seen_stray = set(stray(pages_dir))
+    resource_root = (
+        workflow_root / page.workflow if page.workflow else workflow_root
+    ).resolve()
     hist: list = [{"role": "user", "content": page.prompt}]
-    spec_full = tools.specs()
-    # 整页写过之后就把 `Write` 从工具面里摘掉,而不是等它生成完再拒。
-    #
-    # **拒绝发生在模型已经把整页内容吐出来之后** —— Sonnet 那次第二个 Write
-    # 输出了 7,282 tok,全作废,还要再花一轮改成 Patch。而输出 token 是最贵的一类,
-    # 更糟的是它可能一再尝试重写,每次都付这笔钱。工具不在面里就不会去生成。
-    #
-    # 代价量过:改工具列表会让前缀缓存失效**一次**(实测 100% → 0% → 下一步回到 100%),
-    # 每页只发生一次。用一次缓存失效换掉一次(可能多次)整页生成,划算。
-    spec_norewrite = [s for s in spec_full if s["name"] != "Write"]
-    # 反过来的那一半:**整页写成之前,不给 `Patch` / `Edit`。**
-    #
-    # 光在 IDENTITY 里写「先 Write」不够 —— 实测 Sonnet 的 page-12 第 6 步用 `Edit`
-    # 把骨架从 320 字节改成 5,123 字节,等于用 Edit 做了整页写入,绕开了单次 Write 闸
-    # (那条闸只认 Write)。把这两个工具在第一段里摘掉,「先 Write」就从劝导变成
-    # 唯一可行路径,而且不浪费任何生成 —— 模型看不见,就不会先去想增量方案。
-    spec_compose = [s for s in spec_full if s["name"] not in ("Patch", "Edit")]
-    t0 = time.time()
 
+    specs = tools.specs()
+    if not vision_input:
+        specs = [row for row in specs if row["name"] != "Look"]
+    if page.workflow == "build-code":
+        allowed = {"Read", "Write", "Edit", "Check"}
+        if vision_input:
+            allowed.add("Look")
+        specs = [code_runtime.tool_schema()] + [
+            row for row in specs if row["name"] in allowed
+        ]
+
+    t0 = time.time()
     while True:
         if page.calls >= MAX_STEPS:
             page.why = f"打到步数上限 {MAX_STEPS}"
@@ -483,449 +486,443 @@ def build_one(page: Page, pages_dir: Path, trace: Path, skill_root: Path,
             break
 
         started = _now()
-        # **两档推理:构图一次用高档,之后的修复循环用低档。**
-        #
-        # 调用之前无法知道这一步会不会是 Write,所以只能按「整页写过没有」分段 ——
-        # 写之前那几步是读契约、读 skill、想构图,值得多想;写完之后是对着 Check
-        # 的报告一处一处改,那是机械活。实测 Sonnet 的 page-12:第 3 步 Write 之后
-        # 的 54 步里,每步输出中位只有 ~400 tok、多是 `Patch ×1`,却全程按高档在推理。
-        eff = compose_effort if (compose_effort and not page.wrote) else effort
-        spec = spec_norewrite if page.wrote else spec_compose
-        r = respond(instructions, hist, spec, eff, tag=page.pid)
+        response = respond(instructions, hist, specs, effort, tag=page.pid)
         page.calls += 1
-        tin, tout, cached = llm.usage_of(r)
+        tin, tout, cached = llm.usage_of(response)
         page.tok_in += tin
         page.tok_out += tout
-        page.tok_write += llm.cache_write_of(r)
+        page.tok_write += llm.cache_write_of(response)
         page.tok_max = max(page.tok_max, tin)
         if cached is not None:
             page.cache_seen = True
             page.tok_cached += cached
-        calls = [o for o in r.output if getattr(o, "type", "") == "function_call"]
-        log.add([{"type": "text", "text": page.prompt if page.calls == 1 else "(tool results)"}],
-                text_of(r),
-                # 键名用 wire.Usage 已有的那两个 —— trace.usage_of() 会把未知键
-                # 静默丢掉(core/trace.py:97),写 `cached_tokens` 读不回来。
-                {"input_tokens": tin, "output_tokens": tout,
-                 "cache_read_input_tokens": cached or 0,
-                 "cache_creation_input_tokens": llm.cache_write_of(r)},
-                getattr(r, "id", None) or f"req_{uuid.uuid4().hex[:16]}",
-                started, _now(),
-                {"page": page.pid,
-                 # 记名字也记关键参数:只记工具名的话,「调了 Skill 11 次」查得到,
-                 # 「调了哪个 skill」查不到 —— 而后者才是这一轮要观测的东西。
-                 "tools": [{"name": c.name, "arg": _tag_of(c)} for c in calls]})
+
+        calls = [
+            item for item in response.output
+            if getattr(item, "type", "") == "function_call"
+        ]
+        log.add(
+            [{"type": "text", "text": page.prompt if page.calls == 1 else "(tool results)"}],
+            text_of(response),
+            {
+                "input_tokens": tin,
+                "output_tokens": tout,
+                "cache_read_input_tokens": cached or 0,
+                "cache_creation_input_tokens": llm.cache_write_of(response),
+            },
+            getattr(response, "id", None) or f"req_{uuid.uuid4().hex[:16]}",
+            started,
+            _now(),
+            {
+                "page": page.pid,
+                "tools": [{"name": call.name, "arg": _tag_of(call)} for call in calls],
+            },
+        )
 
         if not calls:
-            # 模型不再要工具 = 它认为做完了(照抄 Claude Code 的终止条件)。
-            # Skill 是给 agent 的指导与事后观测项,不是终止闸。
-            # 漏读不再补催、不再把已经停止的 agent 重新拉起来。
-            page.ok = True
-            page.why = (text_of(r)).strip()[:200]
+            page.why = text_of(response).strip()[:200]
             page.termination = "no_tool_use"
             break
 
-        print(f"      {page.pid} 步{page.calls:>3}  "
-              f"{' '.join(c.name for c in calls)[:52]}", flush=True)
-        hist += [_replay(o.model_dump()) for o in r.output]
-        for c in calls:
-            try:
-                args = json.loads(c.arguments or "{}")
-            except json.JSONDecodeError as e:
-                # 模型把工具参数吐成了畸形 JSON。**这不该让整页死。**
-                # 实测:V4-Flash 的 page-24 就是这么丢的 ——
-                #   JSONDecodeError: Unterminated string starting at line 1 column 103
-                # 参数被截断,通常是那一次输出撞了上限、停在字符串中间。
-                # 正常的 agent 循环该把错误当工具输出喂回去,让它重调一次。
-                # 而且**必须**喂回去:history 里每个 function_call 都要配一条
-                # function_call_output,少一条上游会报 must be passed back to the api
-                # (那正好是我们网关抖动特征词里的一条,会被误当成抖动重试八次)。
-                print(f"      {page.pid} 工具参数不是合法 JSON,已把错误喂回去让它重调:"
-                      f"{e}", flush=True)
-                hist.append({"type": "function_call_output", "call_id": c.call_id,
-                             "output": f"你这次 {c.name} 的 arguments 不是合法 JSON:{e}。"
-                                       f"很可能是参数太长被截断了。把同一个调用重发一次,"
-                                       f"内容写短些、分次写。"})
-                page.steps.append(f"{c.name}!badjson")
-                continue
-            page.steps_arg.setdefault(c.name, []).append(_tag_of(c))
-            page.steps.append(c.name if c.name != "Bash"
-                              else ("SELFCHECK" if "selfcheck" in str(args.get("command", ""))
-                                    else "Bash"))
-            pre_hit = (_preloaded_hit(preloaded, args, pages_dir)
-                       if c.name in ("Read", "Bash") else "")
-            # 「本页只装载被指派的那一个 workflow」那道硬拦 2026-08-28 删除。
-            # 规划不再逐页指派 workflow(每页只有一段散文,没有 `## 主工作流` 那一行),
-            # 改由建页 agent 读完内容自己从清单里挑。挑错的代价是读了一份不太贴的
-            # 技法文档;而硬拦的代价是**规划替它做了一个规划看不见的判断** ——
-            # 那一行原本由写规格的模型凭一句话猜,现在由真正要动手的 agent 来定。
-            if c.name in ("Patch", "Edit") and not page.wrote:
-                # 兜底,同上:正路是 spec_compose 把这两个摘掉。
-                # 真走到这里说明模型硬喊了一个不在工具面里的工具。
-                res = ("整页还没写过 —— 这一段只能用 `Write` 一次落成整页。"
-                       "`Patch` / `Edit` 要等整页写出来之后才可用,"
-                       "现在用它们等于在空骨架上拼页面,会得到一个半成品。")
-            elif (c.name == "Write" and page.wrote
-                    and _PAGE_RE.search(str(args.get("file_path", "")))):
-                # 兜底。正路是上面把 Write 从工具面里摘掉(spec_norewrite),
-                # 那样模型根本不会生成整页内容;但工具不在面里不等于它一定不喊,
-                # 所以这条留着 —— 真走到这里说明摘工具那条没生效,值得在 steps 里留痕。
-                res = ("本页的整页 `Write` 已经用过一次,不能再覆盖重写。"
-                       "现在只能用 `Patch`(一次改好几处,首选)或 `Edit`(改一处)。"
-                       "如果你想大改,就把它拆成若干处 Patch —— "
-                       "整体覆盖会连已经改对的地方一起冲掉。")
-            elif pre_hit:
-                # 已经预置进 system 块的那几份,回一句指路,不再灌第二遍全文。
-                #
-                # **这条兜底是整个预置改动能不能省下钱的前提。** brief 改成了
-                # 「不要再 Read」,但提示词管的是意图、不是行为:模型仍然可能出于
-                # 「保险」去读一次,而那一次会把同一份内容第二次放进历史 ——
-                # 既白付一次全价,又让它重新落到那个会被失效重付的位置上,
-                # 等于把这次改动的收益整条抹掉。指路而不是静默回空:
-                # 静默会让模型以为文件真的没了,然后自己发明一份契约。
-                page.preload_reads.append(pre_hit)
-                if pre_hit == "theme.css":
-                    # 2026-08-29 起 theme 只预置 INTERFACE 接口块,规则体不提供。
-                    # 接口的完整性由 planner._valid_css 的闸保证(正文每个类都必须
-                    # 入表),所以这里可以硬拒 —— 接口没有的东西,规则体里也不该有。
-                    res = ("拒绝:theme.css 的规则体不提供。它的接口块已经在你的 "
-                           "system 提示里(`<theme_css>`):每个 token 带 hex 和语义、"
-                           "每个版式带几何、每个组件带用法,类照描述直接用即可。"
-                           "canvas 取色用 `Deck.rgb()`/`Deck.rgba()`,不需要源码。")
-                else:
-                    res = (f"`{pre_hit}` 的全文已经在你的 system 提示里了"
-                           f"(标签 `<chassis>` / `<deck_map>` / `<page_spec>`),"
-                           f"内容逐字相同。往上翻即可,不用再读 —— "
-                           f"这一次没有给你任何新信息。")
-            else:
-                res = tools.run(c.name, args, pages_dir, skill_root, page.pid)
-                if (c.name == "Write"
-                        and _PAGE_RE.search(str(args.get("file_path", "")))):
-                    page.wrote = True
-                if c.name == "Skill" and args.get("skill"):
-                    page.loaded_skills.append(str(args["skill"]))
+        print(
+            f"      {page.pid} 步{page.calls:>3}  "
+            f"{' '.join(call.name for call in calls)[:52]}",
+            flush=True,
+        )
+        hist += [_replay(item.model_dump()) for item in response.output]
+        pending_images: list[tuple[str, str]] = []
 
-            # reference / script 的观测项:**对整个 workflow 根解析,不再只认被指派的那一个。**
-            # 指派没了,但这两个读数要留着 —— 它们回答的是「装了技法文档之后,
-            # 它真的去读分支参考了吗」,而这个问题和谁来选 workflow 无关。
-            # 跟着指派一起删会让它们恒读 0,那比没有这个读数更坏。
-            if c.name == "Read" and args.get("file_path"):
+        for call in calls:
+            try:
+                args = json.loads(call.arguments or "{}")
+            except json.JSONDecodeError as exc:
+                hist.append(
+                    {
+                        "type": "function_call_output",
+                        "call_id": call.call_id,
+                        "output": (
+                            f"{call.name} arguments 不是合法 JSON：{exc}。"
+                            "请缩短内容并重发同一调用。"
+                        ),
+                    }
+                )
+                page.steps.append(f"{call.name}!badjson")
+                continue
+
+            page.steps.append(
+                call.name
+                if call.name != "Bash"
+                else (
+                    "SELFCHECK"
+                    if "selfcheck" in str(args.get("command", ""))
+                    else "Bash"
+                )
+            )
+            page.steps_arg.setdefault(call.name, []).append(_tag_of(call))
+
+            if call.name == "CodeScaffold":
+                try:
+                    made = code_runtime.scaffold(
+                        pages_dir,
+                        page.pid,
+                        _lesson_title(page),
+                        page.total,
+                    )
+                    result: str | tools.Out = json.dumps(
+                        made, ensure_ascii=False, indent=2
+                    )
+                except (OSError, RuntimeError, ValueError) as exc:
+                    result = f"CodeScaffold 失败：{type(exc).__name__}: {exc}"
+            else:
+                actual_args = dict(args)
+                if call.name == "Check":
+                    if vision_input:
+                        actual_args.setdefault("shot", True)
+                    else:
+                        actual_args["shot"] = False
+
+                denied = None
+                if page.workflow == "build-code":
+                    denied = code_runtime.tool_guard(
+                        call.name,
+                        actual_args,
+                        pages_dir,
+                        page.pid,
+                        resource_root,
+                    )
+                if denied:
+                    result = "拒绝：" + denied
+                else:
+                    result = tools.run(
+                        call.name,
+                        actual_args,
+                        pages_dir,
+                        resource_root,
+                        page.pid,
+                    )
+                    if page.workflow == "build-code" and call.name == "Check":
+                        base_text, base_images = (
+                            (result.text, list(result.images))
+                            if isinstance(result, tools.Out)
+                            else (str(result), [])
+                        )
+                        extra, shots = code_runtime.run_browser_check(
+                            pages_dir,
+                            page.pid,
+                            bool(actual_args.get("shot")) and vision_input,
+                        )
+                        for shot in shots[: max(0, tools.MAX_IMAGES - len(base_images))]:
+                            base_images.extend(tools._image(shot).images)
+                        result = tools.Out(base_text + "\n\n" + extra, base_images)
+
+            if call.name == "Read" and args.get("file_path"):
                 path = Path(str(args["file_path"]))
                 path = path if path.is_absolute() else pages_dir / path
                 try:
-                    rel = path.resolve().relative_to(skill_root.resolve())
-                    if len(rel.parts) == 3 and rel.parts[1] == "references":
-                        page.reference_reads.append("/".join(rel.parts[-2:]))
+                    rel = path.resolve().relative_to(resource_root)
+                    if (
+                        rel.parts[:1] == ("references",)
+                        or rel.parts[:2] == ("samples", "bundles")
+                    ):
+                        page.reference_reads.append(rel.as_posix())
                 except (OSError, ValueError):
                     pass
-            if c.name == "Bash":
-                command = str(args.get("command", ""))
-                for script in sorted(skill_root.glob("*/scripts/*")):
-                    if script.is_file() and (str(script) in command
-                                             or f"scripts/{script.name}" in command):
-                        page.workflow_script_runs.append(script.name)
-            out, imgs = ((res.text, res.images) if isinstance(res, tools.Out)
-                         else (res, []))
-            # 野文件当场喂回去,别等到收尾才发现 —— 和畸形工具参数同一套处理方式:
-            # 能说清的问题就说给它,让它自己收拾,不要判死也不要事后由人手动清。
-            new_stray = [x for x in stray(pages_dir) if x not in seen_stray]
-            if new_stray:
-                seen_stray.update(new_stray)
-                page.stray += new_stray
-                out += ("\n\n⚠ 你在 `pages/` 下建了 " + "、".join(new_stray)
-                        + "。**那是交付目录**,里面除了 `page-NN.html` 和 `assets/` "
-                          "不该有别的东西 —— 多出来的文件会被当成讲义的一页。"
-                          "要临时试就写到 `/tmp/` 下,或者现在删掉。")
-            hist.append({"type": "function_call_output", "call_id": c.call_id,
-                         "output": out})
-            # 图片走**另一条 user 消息**,不塞进 tool_result —— responses 和 chat
-            # 两条 wire 的 tool_result 都只装字符串。Opus 那条线是 Read 一张 png
-            # 直接回 image 块(632 次 Read 里 455 次是 png),我们这边等价于
-            # 「工具回一句话,紧跟一条带图的消息」。
-            for mt, b64 in imgs:
-                hist.append({"role": "user", "content": [
-                    {"type": "input_image", "image_url": f"data:{mt};base64,{b64}"}]})
-                page.images += 1
-            page.evicted += evict_images(hist, page.tok_max)
 
+            output, images = (
+                (result.text, result.images)
+                if isinstance(result, tools.Out)
+                else (str(result), [])
+            )
+            if images and not vision_input:
+                images = []
+                output += "\n\n（当前模型不接收图片输入；仅保留文本报告。）"
+            hist.append(
+                {
+                    "type": "function_call_output",
+                    "call_id": call.call_id,
+                    "output": output,
+                }
+            )
+            pending_images.extend(images)
+
+        for media_type, encoded in pending_images:
+            hist.append(
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "input_image",
+                            "image_url": f"data:{media_type};base64,{encoded}",
+                        }
+                    ],
+                }
+            )
+            page.images += 1
+        page.evicted += evict_images(hist, page.tok_max)
+
+    target = pages_dir / f"{page.pid}.html"
+    page.artifact_present = target.is_file() and target.stat().st_size > 0
+    page.audit = audit_delivery(pages_dir, page, resource_root)
     page.seconds = time.time() - t0
-    n_sc = page.steps.count("SELFCHECK") + page.steps.count("Check")
-    print(f"  {page.pid}  {'✓' if page.ok else '✗'}  {page.calls:>3} 次调用  "
-          f"{page.seconds/60:>5.1f} 分  自检 {n_sc:>2}  "
-          f"图 {page.images:>2}  skill {page.steps.count('Skill')}  "
-          f"{page.why[:60]}", flush=True)
+    mark = "✓" if page.artifact_present else "✗"
+    print(
+        f"  {page.pid}  {mark}  {page.calls:>3} 次调用  "
+        f"{page.seconds / 60:>5.1f} 分  图 {page.images:>2}  "
+        f"{page.termination}",
+        flush=True,
+    )
     return page
 
 
+def resolve_builder_profile(cfg: dict, requested: str | None = None) -> dict:
+    """Resolve one complete Builder model profile without mutating global model config."""
+    builder_cfg = cfg.get("builder") or {}
+    profile_id = requested or builder_cfg.get("default_profile")
+    profiles = builder_cfg.get("profiles") or {}
+    if not profile_id or profile_id not in profiles:
+        choices = ", ".join(sorted(profiles)) or "(none)"
+        raise ValueError(f"unknown builder profile {profile_id!r}; choices: {choices}")
+    profile = dict(profiles[profile_id] or {})
+    required = ("model", "api_key_env", "wire_api", "reasoning_effort", "vision_input")
+    missing = [key for key in required if key not in profile]
+    if missing:
+        raise ValueError(f"builder profile {profile_id!r} missing: {', '.join(missing)}")
+    env_name = str(profile.get("base_url_env") or "")
+    base_url = (os.getenv(env_name) if env_name else "") or profile.get("base_url")
+    if not base_url:
+        raise ValueError(f"builder profile {profile_id!r} has no base_url")
+    if profile["wire_api"] not in ("responses", "chat", "messages"):
+        raise ValueError(f"builder profile {profile_id!r} has invalid wire_api")
+    profile.update({"id": profile_id, "base_url": str(base_url),
+                    "vision_input": bool(profile["vision_input"])})
+    return profile
+
+
 def main() -> None:
-    a = argparse.ArgumentParser()
-    a.add_argument("--label", required=True)
-    a.add_argument("--only", action="append", help="只跑某几页,可多次给")
-    # 并发上限 100 —— config.yaml 顶部那段实测记的就是这条路由的上限,
-    # 而默认值一直卡在 50。**排队损耗是纯亏**:22 页并发 8 要排三批,
-    # 实测墙钟被长尾页拖到约 45 分钟,而并发拉满时墙钟等于最慢那一页。
-    # 注意那段注释里的另一半:20 并发空等 84 分钟是 api.999555999 的账,
-    # 不是 paratera 的 —— 别拿那笔账来压这条路由的并发。
-    a.add_argument("--concurrency", type=int, default=100)
-    a.add_argument("--effort", help="修复循环的推理档(整页写完之后)")
-    a.add_argument("--compose-effort",
-                   help="构图阶段的推理档(整页 Write 之前);不给就跟 --effort 同档")
-    a.add_argument("--skills", default=str(skills.DEFAULT))
-    a.add_argument("--workflows", default=str(skills.WORKFLOWS))
-    # **默认不注入设计哲学。** 这条是数出来的,原来的说法(下面留着)是错的。
-    #
-    # 原来的注释写着「lab 那边它经 CLAUDE.md **逐字到达每一个并行 subagent**(抓包实测)」。
-    # 把 lab 那条线**全部** 76 个建页 subagent 的轨迹翻了一遍(3 个会话,
-    # ~/.claude/projects/-data1-home-zhuyifan-exp-lecture/*/subagents/):
-    #
-    #   · 哲学正文在 subagent 的 system 提示里出现 **0/76** 次
-    #   · 唯一到达路径是编排者把它写进了 PLAN.md,而 subagent 恰好去 Read 了 ——
-    #     **17/76**,且全部集中在 `2a85af6c` **一个会话**里
-    #   · brief 里提到 Mayer 的 **1/76**,而且是压成了一条具体的禁令
-    #     (「不要做要点回顾/总结清单(Mayer 的完成标准是 transfer 不是 retention)」),
-    #     不是发一份纲领下去
-    #   · **我们照抄结构的那一轮 nn-11(会话 `1f77c220`,43 个 subagent,
-    #     唯一读 SHARED.md 的那个会话)—— 43/43 一个字哲学都没看到**
-    #
-    # 而代价是确定的:整份 5,665 字符 = system 块的 **93%**,`instructions` 每一步重发,
-    # 实测占建页阶段输入 token 的 **22%**(第五态 61 次调用里约 244k/1,092k)。
-    #
-    # 更硬的一条:最大的那块 `page-rhythm`(823 字符)写着「不要把每一个页面理解成
-    # 需要被填满的容器」「允许有意保持内容较少的页面」,而 `selfcheck.py` 对同一页硬判
-    # 「✗ 画面太空:占用比 41% < 下限 45%」。**同一次请求里,system 块说可以留空,
-    # 闸说留空不合格。** 这不是冗余,是互相矛盾的指令。
-    #
-    # 文件留着不删,`--philosophy prompts/philosophy.md` 随时能把它加回来做对照。
-    a.add_argument("--philosophy", default="",
-                   help="设计哲学 12 块的路径。**默认不注入**(见代码里的实测)。"
-                        "给了路径就整份注入每页 agent 的 system,用来做对照实验。")
-    # 确定性备料预置。**默认开** —— 账记在 shared_preload 上面。
-    # 留 --no-preload-docs 是因为这次改动的主要风险是行为性的(模型可能仍然去 Read),
-    # 而那要真实两臂才量得出来,不是仿真能回答的。
-    a.add_argument("--no-preload-docs", dest="preload_docs", action="store_false",
-                   help="不把 CHASSIS/theme.css/tech 预置进 system 块,退回让每页自己 Read"
-                        "(对照臂用;默认预置)")
-    a.add_argument("--model")
-    # Anthropic 系必须走 messages 才拿得到 cache_control;走 responses 是全额计费,
-    # 而且**不会有任何报错** —— 实测 Sonnet 在 responses 上连打三次前缀,三次 cached=0。
-    a.add_argument("--wire", choices=("responses", "chat", "messages"),
-                   help="覆盖 wire_api;Anthropic 系模型要用 messages")
-    a.add_argument("--rebuild", action="store_true", help="已建好的也重做")
-    n = a.parse_args()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--label", required=True)
+    parser.add_argument("--only", action="append", help="只跑指定页面，可重复")
+    parser.add_argument("--concurrency", type=int, default=100)
+    parser.add_argument("--profile", help="config.yaml 中的 Builder profile")
+    parser.add_argument("--workflows", default=str(skills.WORKFLOWS))
+    parser.add_argument(
+        "--aux-samples",
+        action="store_true",
+        help="实验开关：在 Main 之外注册可选 mini samples；默认关闭",
+    )
+    args = parser.parse_args()
+
     cfg = config()
-    builder_cfg = cfg.get("builder", {})
-    model = n.model or builder_cfg.get("model") or cfg["model"]["name"]
-    effort = n.effort or builder_cfg.get("reasoning_effort", "medium")
-    compose_effort = (n.compose_effort or builder_cfg.get("compose_effort", "")
-                      or effort)
-    llm.override(name=model, wire_api=n.wire)
+    profile = resolve_builder_profile(cfg, args.profile)
+    llm.override(
+        name=profile["model"],
+        base_url=profile["base_url"],
+        api_key_env=profile["api_key_env"],
+        wire_api=profile["wire_api"],
+    )
 
-    root = ROOT / "runs" / n.label
+    root = ROOT / "runs" / args.label
     briefs = json.loads((root / "briefs.json").read_text(encoding="utf-8"))
-    workflow_root = Path(n.workflows)
-    if not workflow_root.is_dir():
-        raise FileNotFoundError(f"--workflows 指的目录不存在: {workflow_root}")
-    pages = [page_from_brief(b) for b in briefs]
-    if n.only:
-        pages = [p for p in pages if p.pid in set(n.only)]
-    if not n.rebuild:
-        # 已经建好的跳过。和 planner 的 cached() 同一条理由:这条链路会中途挂,
-        # 断点续跑是刚需,没道理把已完成的页重烧一遍。--rebuild 强制重做。
-        done_already = [p for p in pages
-                        if (root / "pages" / f"{p.pid}.html").stat().st_size > 1000]
-        if done_already:
-            print(f"  跳过已建好的 {len(done_already)} 页: "
-                  f"{' '.join(p.pid for p in done_already)}")
-        pages = [p for p in pages if p not in done_already]
+    workflow_root = Path(args.workflows).resolve()
+    missing = [
+        name
+        for name in skills.PAGE_WORKFLOWS
+        if not (workflow_root / name / "SKILL.md").is_file()
+    ]
+    if missing:
+        raise FileNotFoundError(
+            "生产 workflow 未安装完整: " + ", ".join(missing)
+        )
 
-    # 给了 --philosophy 就整份注入,不挑块 —— 挑了就不是一个干净的对照条件。
-    # 路径给错要报错:静默跑一个「以为注入了其实没有」的版本,会让整轮对照白做。
-    philosophy = ""
-    if n.philosophy:
-        pp = Path(n.philosophy)
-        if not pp.exists():
-            raise FileNotFoundError(f"--philosophy 指的 {pp} 不存在 —— "
-                                    f"不注入就别给这个参数,给了就必须能读到")
-        philosophy = pp.read_text(encoding="utf-8")
-    # 去 AI 味两份是每页都成立的底线,不看 workflow 路由结果 —— 跟 skill_blocks 不同,
-    # 这条不走"agent 自己 Read"，直接确定性拼进 system 块，见 skills.anti_slop_block。
-    base = (IDENTITY + "\n\n" + skills.anti_slop_block(workflow_root)
-            + (("\n\n" + philosophy) if philosophy else ""))
-    # **技法清单从此是全局一份,不再按页指派。**
-    # 规划那边每页只剩一段散文,没有 `## 主工作流` 那一行了;由建页 agent
-    # 读完内容自己挑。`workflow_catalog()` 本来就在(skills.py),原样复用。
-    #
-    # 副作用是好的:每页的 system 块从此**逐字节相同**,跨页公共前缀不再按
-    # workflow 分组 —— 下面那个 `groups` 会从 3 组塌到 1 组。
-    catalog = (
-        "下面这些技法文档可以用 `Skill` 工具取正文。**先读完本页内容,判断它属于哪一类,"
-        "再挑一份读了动手**;清单里没有对应的就自己写,不必硬凑。\n"
-        "读完 SKILL.md 要严格执行它顶部的 Reference routing:基础必读项和已选分支项,"
-        "都要在任何页面修改前用 `Read` 读取;不要读未选分支或无关 reference。\n\n"
-        + skills.workflow_catalog(workflow_root))
-    skill_blocks = {p.pid: catalog for p in pages}
-    roots = {p.pid: workflow_root for p in pages}
-    # ── 确定性备料预置(见 shared_preload 上面那段账)────────────────
-    # 共享的两份拼在 base 尾部(仍是 21 页逐字相同的前缀),按页唯一的 pNN.md
-    # 拼在指派块之后 —— 顺序不能换,换了跨页公共前缀就被按页内容截断。
-    spec_blocks: dict = {}
-    preloaded: dict = {}
-    if n.preload_docs:
-        # 老 run 的目录布局不一样 —— 抽查过:`ape-01` 没有 CONTRACT.md 和 pNN.md,
-        # `orbit-01` 没有 CHASSIS.md。预置是**默认开**的,所以缺文件不能让整轮起不来:
-        # 断点续跑是刚需(见上面 done_already 那段),为了一个省钱的优化把老 run
-        # 的续跑打死是不划算的。**但也不能静默退化** —— 那样就分不清
-        # 「预置了」和「以为预置了」,而这正是这个仓库反复栽过的形状。
-        # 所以:响亮地说一声,然后按没预置继续。
+    pages = [route_page(root, page_from_brief(raw)) for raw in briefs]
+    for page in pages:
+        page.total = len(briefs)
+    if args.only:
+        wanted = set(args.only)
+        pages = [page for page in pages if page.pid in wanted]
+
+    manifest_path = root / "builder-manifest.json"
+    if manifest_path.exists():
+        raise FileExistsError(
+            f"{manifest_path} 已存在；新实验请使用新的 run label"
+        )
+    pages_dir = root / "pages"
+    for page in pages:
+        target = pages_dir / f"{page.pid}.html"
+        lesson = code_runtime.lesson_root(pages_dir, page.pid)
+        if target.exists() or lesson.exists():
+            raise FileExistsError(
+                f"{page.pid} 已有构建产物；新实验必须从 absent target 开始"
+            )
+
+    manifest = {
+        "schemaVersion": 2,
+        "label": args.label,
+        "profile": profile["id"],
+        "model": profile["model"],
+        "baseUrl": profile["base_url"],
+        "apiKeyEnv": profile["api_key_env"],
+        "wireApi": profile["wire_api"],
+        "reasoningEffort": profile["reasoning_effort"],
+        "visionInput": profile["vision_input"],
+        "auxiliarySamples": args.aux_samples,
+        "pages": [page.pid for page in pages],
+        "startedAt": _now(),
+    }
+    manifest_path.write_text(
+        json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+    base = IDENTITY + "\n\n" + skills.anti_slop_block(workflow_root)
+    shared = shared_preload(root, len(briefs))
+    base += "\n\n" + shared
+    chapters = chapter_preloads(root, len(briefs))
+    routed_blocks = {
+        name: skills.routed_workflow(
+            name,
+            workflow_root,
+            include_aux=args.aux_samples,
+        )
+        for name in skills.PAGE_WORKFLOWS
+    }
+    for page in pages:
+        resource_root = workflow_root / page.workflow
+        page.prompt = (
+            environment_context(pages_dir, page, resource_root)
+            + "\n\n"
+            + page.prompt
+            + "\n\n"
+            + chapters[page.pid]
+        )
+
+    instructions = {
+        page.pid: base + "\n\n" + routed_blocks[page.workflow]
+        for page in pages
+    }
+    groups = Counter(instructions.values())
+    lengths = sorted(map(len, groups)) or [0]
+    print(
+        f"\n▸ builder · {args.label}\n"
+        f"  {len(pages)} 页，并发 {args.concurrency}，"
+        f"profile={profile['id']}，model={profile['model']}，"
+        f"effort={profile['reasoning_effort']}，"
+        f"vision={'on' if profile['vision_input'] else 'off'}，"
+        f"aux-samples={'on' if args.aux_samples else 'off'}\n"
+        f"  完整 system {lengths[0]:,}–{lengths[-1]:,} 字符，"
+        f"按 workflow 分 {len(groups)} 组共享\n"
+    )
+
+    started = time.time()
+
+    def guard(page: Page) -> Page:
         try:
-            shared, shared_paths = shared_preload(root, len(briefs))
-            spec = {p.pid: spec_preload(root, p.pid) for p in pages}
-        except FileNotFoundError as e:
-            print(f"  ⚠ 预置备料关闭:{e}\n"
-                  f"    这一轮按老办法跑(每页自己 Read)。"
-                  f"新 run 不该走到这里 —— 走到了说明 planner 没产出这几份。")
-            n.preload_docs = False
-        else:
-            base = base + "\n\n" + shared
-            preloaded = {p.resolve(): name for name, p in shared_paths.items()}
-            for p in pages:
-                blk, sp = spec[p.pid]
-                spec_blocks[p.pid] = blk
-                preloaded[sp.resolve()] = sp.name
-                # 规格进 brief(首条 user 消息),不进 system 块 —— 见 PRELOAD_TAGS
-                # 上面那段:进了 system 块会让每页的 instructions 独一份,
-                # 把跨页前缀共享整条掐死(3 页实测 -3.5%,而不是仿真的 -25.8%)。
-                p.prompt = p.prompt + "\n\n" + blk
-    # brief 和这个开关必须说同一件事。**不一致是 fail-wrong,不是不方便:**
-    # brief 里写着「三份已在 system 提示里,不要再 Read」而实际没预置,模型会去找
-    # `<chassis>`、找不到、然后自己发明一份契约 —— 而它不会报错。
-    # briefs.json 是 planner 烧进去的,所以对照臂要么配一份旧模板
-    # (Run.prompts 支持换目录),要么就别用 --no-preload-docs 跑新 brief。
-    if not n.preload_docs and any("<chassis>" in p.prompt for p in pages):
-        print("  ⚠ brief 说三份材料已在 system 提示里,但这一轮没有预置 —— "
-              "两边不一致。\n    模型会去找 `<chassis>` 而找不到,可能自己编一份契约。"
-              "对照臂请用旧 brief 模板(Run.prompts 可换目录)重生成 briefs.json。")
-    sb = sorted(len(v) for v in skill_blocks.values()) or [0]
-    # 同 workflow 的 system 块必须逐字相同,所以这里报的是**按 workflow 分组的组数**
-    # 和每组的块长 —— 组数就是跨页缓存能分几摊。组内出现不同长度就说明混进了按页内容。
-    groups = Counter(base + "\n\n" + skill_blocks[p.pid] for p in pages)
-    per_page = sorted(len(k) for k in groups) or [0]
-    print(f"\n▸ builder · {n.label}\n  {len(pages)} 页,并发 {n.concurrency},"
-          f"model={model},effort={compose_effort}(构图)/{effort}(修复)\n"
-          f"  技法清单 {sb[-1]:,} 字符(全局一份,各页自选)"
-          f"\n"
-          f"  system 块 {len(base):,} 字符"
-          f"({'含设计哲学 ' + str(len(philosophy)) + ' 字符' if philosophy else '不含设计哲学'}"
-          f"{'；已预置 CHASSIS+theme.css+tech' if n.preload_docs else '；未预置备料'})\n"
-          f"  完整 system {per_page[0]:,}–{per_page[-1]:,} 字符,"
-          f"按 workflow 分 {len(groups)} 组共享(组内逐字相同,跨页缓存分这几摊)"
-          f"{'；本页规格已拼进 brief' if spec_blocks else ''}\n")
+            return build_one(
+                page,
+                pages_dir,
+                root / "trace.jsonl",
+                workflow_root,
+                instructions[page.pid],
+                profile["reasoning_effort"],
+                profile["vision_input"],
+            )
+        except Exception as exc:  # noqa: BLE001
+            page.why = f"{type(exc).__name__}: {str(exc)[:160]}"
+            page.termination = "agent_exception"
+            target = pages_dir / f"{page.pid}.html"
+            page.artifact_present = target.is_file() and target.stat().st_size > 0
+            page.audit = audit_delivery(
+                pages_dir, page, workflow_root / page.workflow
+            )
+            print(
+                f"  {page.pid}  ✗ agent_exception，不影响其他页：{page.why}",
+                flush=True,
+            )
+            return page
 
-    t0 = time.time()
-    def guard(p):
-        """一页崩掉不许带走整轮。
+    with ThreadPoolExecutor(max_workers=args.concurrency) as pool:
+        done = list(pool.map(guard, pages))
 
-        实测:一个 subagent 撞上网关的 fallback 型 400,异常经 ThreadPoolExecutor.map
-        传出来,**整个 builder 停掉、剩下 38 路一起没了** —— 52 页只交付 21 页。
-        每页本来就是独立的一次尝试,单页失败该记下来继续,而不是全局判死。
-        """
-        try:
-            # instructions 到这里为止只含同 workflow 逐字相同的内容 —— 本页规格
-            # 已经在上面拼进 p.prompt 了,不能再往 system 块里加任何按页不同的东西。
-            return build_one(p, root / "pages", root / "trace.jsonl",
-                             roots[p.pid], base + "\n\n" + skill_blocks[p.pid],
-                             effort, compose_effort, preloaded)
-        except Exception as e:                     # noqa: BLE001
-            p.why = f"{type(e).__name__}: {str(e)[:90]}"
-            p.termination = "agent_exception"
-            print(f"  {p.pid}  ✗ 这一页崩了,不影响其它页: {p.why}", flush=True)
-            return p
+    wall = time.time() - started
+    delivered = [page for page in done if page.artifact_present]
+    calls = sorted(page.calls for page in done) or [0]
+    print(
+        f"\n  {len(delivered)}/{len(done)} 页留下产物，墙钟 {wall / 60:.1f} 分\n"
+        f"  每页调用数 {calls[0]}–{calls[-1]}，"
+        f"中位 {calls[len(calls) // 2]}，合计 {sum(calls)}"
+    )
+    fatal_pages = [
+        page.pid
+        for page in done
+        if page.audit and page.audit.get("fatal_errors")
+    ]
+    warning_pages = [
+        page.pid
+        for page in done
+        if page.audit and page.audit.get("visual_warnings")
+    ]
+    print(
+        f"  独立审计：致命错误 {len(fatal_pages)} 页，"
+        f"视觉警告 {len(warning_pages)} 页"
+    )
 
-    with ThreadPoolExecutor(max_workers=n.concurrency) as ex:
-        done = list(ex.map(guard, pages))
+    results = {
+        page.pid: {
+            "calls": page.calls,
+            "seconds": round(page.seconds, 1),
+            "label": page.label,
+            "workflow": page.workflow,
+            "termination": page.termination,
+            "artifact_present": page.artifact_present,
+            "audit": page.audit,
+            "steps": page.steps,
+            "args": page.steps_arg,
+            "reference_reads": page.reference_reads,
+            "images": page.images,
+            "evicted": page.evicted,
+            "tok_in": page.tok_in,
+            "tok_cached": page.tok_cached,
+            "tok_write": page.tok_write,
+            "tok_out": page.tok_out,
+            "tok_max": page.tok_max,
+            "cache_reported": page.cache_seen,
+            "why": page.why,
+        }
+        for page in done
+    }
+    (root / "builder-results.json").write_text(
+        json.dumps(results, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
 
-    ok = [p for p in done if p.ok]
-    # `or [0]` 和上面 `sb` 那行同一个理由:整轮全被 done_already 跳过时 done 是空的,
-    # 而 `calls[0]` 会抛 IndexError —— 于是一次合法的空操作(对已建好的 run 再跑一次)
-    # 以一段 traceback 收场,连 steps.json 都写不出来。
-    calls = sorted(p.calls for p in done) or [0]
-    print(f"\n  {len(ok)}/{len(done)} 页交付   墙钟 {(time.time()-t0)/60:.1f} 分")
-    print(f"  每页调用数 {calls[0]}–{calls[-1]},中位 {calls[len(calls)//2]}   "
-          f"合计 {sum(calls)}")
-    print(f"  自检合计 {sum(p.steps.count('SELFCHECK') + p.steps.count('Check') for p in done)}"
-          f"(Check {sum(p.steps.count('Check') for p in done)} / "
-          f"经 Bash {sum(p.steps.count('SELFCHECK') for p in done)})   "
-          f"Patch {sum(p.steps.count('Patch') for p in done)}   "
-          f"Edit {sum(p.steps.count('Edit') for p in done)}   "
-          f"Skill 合计 {sum(p.steps.count('Skill') for p in done)}")
-    n_img = sum(p.images for p in done)
-    print(f"  进上下文的图 {n_img} 张(每页 {n_img / max(1, len(done)):.1f};"
-          f"Opus 那条线是 6.0),被挤出 {sum(p.evicted for p in done)} 张")
-    t_in = sum(p.tok_in for p in done)
-    t_ca = sum(p.tok_cached for p in done)
-    t_mx = max((p.tok_max for p in done), default=0)
-    if not any(p.cache_seen for p in done):
-        # 不报和没命中要分得开 —— 报 0% 会让人以为缓存失效,其实是这条路由不给数。
-        print(f"  输入 {t_in:,} tok,峰值 {t_mx:,}   ⚠ 这条路由没报 cached_tokens,命中率未知")
-    else:
-        print(f"  输入 {t_in:,} tok,峰值 {t_mx:,}   缓存命中 {t_ca:,} "
-              f"({t_ca / max(t_in, 1) * 100:.0f}%)")
-    # 各页**自选**了哪份 workflow。指派没了,这个分布就是新的观测项 ——
-    # 它回答「让 agent 自己挑,挑出来的是什么形状」,以及有没有页面一份都不读。
-    picked = Counter(x for p in done for x in p.loaded_skills)
-    none_read = [p.pid for p in done if not p.loaded_skills]
-    print(f"  自选 workflow  {dict(picked) or '无'}"
-          f"{('；一份都没读: ' + ' '.join(none_read)) if none_read else ''}")
-    print(f"  reference 读取 {sum(len(p.reference_reads) for p in done)} 次，"
-          f"workflow script {sum(len(p.workflow_script_runs) for p in done)} 次")
-    # 预置到底省没省下那 3 次往返 —— 这是本次改动唯一的行为性判据。
-    # 不为零说明 brief 那几句没管住,收益要按实测重算,别拿仿真的 -25.8% 交差。
-    if n.preload_docs:
-        pr = Counter(x for p in done for x in p.preload_reads)
-        n_pr = sum(pr.values())
-        if n_pr:
-            print(f"  ⚠ 已预置的文件仍被 Read {n_pr} 次"
-                  f"({', '.join(f'{k}×{v}' for k, v in pr.most_common())})"
-                  f" —— 每次都白花一次往返,brief 的措辞没管住,预置收益要按实测重算")
-        else:
-            print(f"  ✓ 预置生效:没有一页去重读 CHASSIS/theme.css/本页规格"
-                  f"(省下约 {len(done) * 3} 次搬运往返)")
-    # ── 把每页做过什么落盘。**这是量出来必须补的。** ──────────────
-    # `trace.jsonl` 里 2,836 个块**全是 text,一个 tool_use 都没有** —— 它不记工具调用。
-    # 于是「哪次 Read 读了哪个文件」磁盘上没有记录,而 `page.steps_arg` 一直只在内存里。
-    # 代价是实的:我曾从 trace 里 grep 出「webmedia.py 8 次」当成调用次数,
-    # 那其实是这个字符串在**文本块**里出现的次数(提示词、skill 文档正文、模型的散文都算进去了)。
-    # 上下文瘦身那条改动的判据是「CHASSIS.md 的引用次数」——
-    # 没有这份文件就根本没法判它有没有生效。
-    steps = {p.pid: {"ok": p.ok, "calls": p.calls, "seconds": round(p.seconds, 1),
-                     "steps": p.steps, "args": p.steps_arg,
-                     "stray": p.stray,
-                     "images": p.images, "evicted": p.evicted,
-                     "tok_in": p.tok_in, "tok_cached": p.tok_cached,
-                     "tok_write": p.tok_write, "tok_out": p.tok_out,
-                     "tok_max": p.tok_max,
-                     "cache_reported": p.cache_seen,
-                     "loaded_skills": p.loaded_skills,
-                     "reference_reads": p.reference_reads,
-                     "workflow_script_runs": p.workflow_script_runs,
-                     "preload_reads": p.preload_reads,
-                     "termination": p.termination,
-                     "why": p.why} for p in done}
-    (root / "steps.json").write_text(
-        json.dumps(steps, ensure_ascii=False, indent=1), encoding="utf-8")
-    reads = Counter()
-    for p in done:
-        for t in p.steps_arg.get("Read", []):
-            reads[t] += 1
-    top = "  ".join(f"{k} {v}" for k, v in reads.most_common(6))
-    print(f"  读取次数(前 6):{top or '无'}")
-    n_stray = sorted({x for p in done for x in p.stray})
-    if n_stray:
-        print(f"  ⚠ pages/ 下多出 {len(n_stray)} 个非页面文件: {' '.join(n_stray[:8])}"
-              f"  —— 会被当成讲义的一页,已在过程中提醒过对应的页")
-    for p in done:
-        if not p.ok:
-            print(f"  ✗ {p.pid}: {p.why}")
+    manifest.update(
+        {
+            "completedAt": _now(),
+            "wallSeconds": round(wall, 1),
+            "artifacts": len(delivered),
+            "attempted": len(done),
+            "fatalAuditPages": fatal_pages,
+            "visualWarningPages": warning_pages,
+            "inputTokens": sum(page.tok_in for page in done),
+            "outputTokens": sum(page.tok_out for page in done),
+            "checkCalls": sum(page.steps.count("Check") for page in done),
+        }
+    )
+    manifest_path.write_text(
+        json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+    reads = Counter(
+        tag
+        for page in done
+        for tag in page.steps_arg.get("Read", [])
+    )
+    top = "  ".join(f"{name} {count}" for name, count in reads.most_common(8))
+    print(f"  读取次数(前 8)：{top or '无'}")
+    for page in done:
+        if not page.artifact_present:
+            print(f"  ✗ {page.pid}: 没有产物；{page.termination} {page.why}")
 
 
 if __name__ == "__main__":

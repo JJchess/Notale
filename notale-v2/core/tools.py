@@ -1,39 +1,4 @@
-"""builder 的工具面。
-
-给哪几个,是数出来的。lab 那条线**全部**建页 subagent 的轨迹数完了 ——
-3 个会话、**76 个建页 agent、1,688 次工具调用** —— 它们用过的只有四个工具:
-
-    Bash 1,024(command 1024 / description 235) · Read 632(只用过 file_path)
-    Write 27 · Edit 5
-
-没有 Monitor、没有 run_in_background、没有 Grep/Glob/WebFetch,Read 也从没用过
-offset/limit。(这个文件以前写着「nn-06 用了 5 个,含 Monitor」—— 那是**单轮**的数。)
-所以名字上我们本来就是超集:Read/Write/Edit/Bash 再加一个我们自己的 Skill。
-
-**不完备的地方在四个工具的行为里,只有一处,但它是最大的一处:Read 读不了图。**
-Opus 那 632 次 Read 里 **455 次是 `.png`(72%)**、3 次 `.jpg` —— 折合每页看 6 张图,
-文件名说明它在看什么:page-NN.png 196 · page-NN-afterNN.png 72(交互之后的状态) ·
-crop/marked/lit 一批(裁出来放大的局部)。而我们这边 Read 是 `read_text` ——
-喂一张 png 进去会回 30,000 个替换字符,比不给更坏。实测我们 g17 的 374 次 Read
-一张图都没有,`--shot` 只用过 1 次 / 304 次自检(0.3%),Opus 是 338 / 595(57%)。
-不是模型不想看,是这条路不通。现在通了(`Out.images` → builder 追加一条带图消息)。
-
-另外三个工具(Check / Patch / Look)不是 Opus 缺的工具,是它**每页用 Bash 现搓**
-的三段代码,这里固化成工具,做法不改:
-
-    Check ← 595 条 selfcheck 的 shell 拼装(其中 305 条在手工 `| head/tail` 自己的报告)
-    Patch ← 279 条 `python3 - <<PY  s=s.replace(old,new)`,63% 一条改 ≥2 处、
-            39% 带 `assert old in s`、**82% 同一条命令里紧跟 selfcheck**
-    Look  ← 37 条 `Image.open(shot).crop(box).resize(box*zoom)`,分布在 11 页
-
-Bash 不设白名单。审计过那 1,024 次的真实用途:
-
-    selfcheck 595 · 原地改页 279 · cat/sed 读回自己的页 263 · grep 60 · ls 33
-
-白名单要覆盖这些就等于放开全部,挡住任何一类都会逼模型绕路 —— 禁掉 heredoc
-它就没法做轨道数值验算。改成三条护栏:cwd 钉死、超时、输出截断。
-这不是沙箱:模型仍然写得到目录外。忠实照抄和绝对安全在这里不可兼得。
-"""
+"""Small, workspace-scoped tool surface for page Builders."""
 
 from __future__ import annotations
 
@@ -42,17 +7,13 @@ import io
 import re
 import subprocess
 import sys
-import threading
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from . import skills
-
 CAP = 30_000  # 普通 tool_result 的字符上限。实测 nn-06 最大一个 679,500 字符,
               # 不截断的话一次就把上下文灌爆。
-WORKFLOW_REFERENCE_CAP = 160_000
+WORKFLOW_RESOURCE_CAP = 160_000
 TIMEOUT = 120
-IMG_TIMEOUT = 300    # 搜图要打外网、生图 n=2 实测可超 120s —— 照 SHOT_TIMEOUT 先例单列
 SHOT_TIMEOUT = 300   # 渲染要起无头 Chromium,还可能带几个 --after 状态,给宽一点
 
 IMG_EXT = {".png", ".jpg", ".jpeg", ".webp", ".gif"}
@@ -79,12 +40,16 @@ _ABS_PATH = re.compile(r"(?:^|[\s'\"=(:])(/[\w./-]+)")
 # 字样(比如写进一个链接)不该被当成跨页访问。
 # 用「排除正文型」而不是「枚举引用型」是故意的 —— 将来新工具带引用参数会自动被管住
 # (fail-closed);带正文参数最多误拦一次,看得见、改得动。
-_CONTENT_KEYS = frozenset({"content", "old_string", "new_string", "edits",
-                           "query", "prompt"})  # 检索词/生图提示词是内容不是路径引用:
-                           # 以 / 开头的 prompt 会被当成绝对路径误拦
+_CONTENT_KEYS = frozenset({"content", "old_string", "new_string", "edits"})
 
 
-def _out_of_bounds(args: dict, cwd: Path, pid: str) -> str | None:
+def _out_of_bounds(
+    name: str,
+    args: dict,
+    cwd: Path,
+    pid: str,
+    resource_root: Path | None = None,
+) -> str | None:
     """→ 越界的那个东西(用于拒绝语),没越界就 None。"""
     root = cwd.resolve()
     for k, v in args.items():
@@ -97,7 +62,12 @@ def _out_of_bounds(args: dict, cwd: Path, pid: str) -> str | None:
                        if not Path(p).resolve().is_relative_to(root)]
         else:
             # 路径型参数能解析,就精确判。**只比基名挡不住「别的 run 里的同名页」。**
-            outside = [] if (cwd / s).resolve().is_relative_to(root) else [s]
+            target = (Path(s) if Path(s).is_absolute() else cwd / s).resolve()
+            allowed_resource = (
+                name == "Read"
+                and _is_workflow_resource(target, resource_root)
+            )
+            outside = [] if target.is_relative_to(root) or allowed_resource else [s]
         if outside:
             return f"{outside[0]}(在本页的 run 目录之外)"
         for m in _PAGE_FILE.findall(s):
@@ -112,12 +82,6 @@ MAX_IMAGES = 2       # 一次工具调用最多内联几张图。builder 那边 
                      # 不静默丢弃:静默丢弃正是这一轮修的那个 bug 的形状。
 
 SELFCHECK = "assets/selfcheck.py"
-# 搜图/生图工具的执行体 —— 和 planner 图池(planner._WEBMEDIA/_GEN)同一份实现,
-# 不留第二份(selfcheck 分叉那次的教训,见 planner.seed 的注释)。
-_WEBMEDIA = skills.DEFAULT / "web-media-getter" / "webmedia.py"
-_IMGGEN = skills.DEFAULT / "make-illustration" / "scripts" / "gen.py"
-
-
 @dataclass
 class Out:
     """一次工具调用的结果。
@@ -134,31 +98,21 @@ def _cap(s: str, cap: int = CAP) -> str:
     return s if len(s) <= cap else s[:cap] + f"\n…（已截断，原文 {len(s):,} 字符）"
 
 
-def _is_workflow_reference(path: Path, skill_root: Path) -> bool:
-    """A routed workflow reference is a deliberate one-shot context load."""
+def _is_workflow_resource(path: Path, resource_root: Path | None) -> bool:
+    """References and generated sample bundles are deliberate full-file reads."""
+    if resource_root is None:
+        return False
     try:
-        rel = path.resolve().relative_to(skill_root.resolve())
+        rel = path.resolve().relative_to(resource_root.resolve())
     except (OSError, ValueError):
         return False
-    return (len(rel.parts) == 3 and rel.parts[1] == "references"
-            and path.suffix.lower() == ".md")
-
-
-def _workflow_skill_dir(path: Path, skill_root: Path) -> Path | None:
-    """`<skill_root>/<workflow>/SKILL.md` → 那个 workflow 的目录;否则 None。
-
-    `Skill` 工具删掉之后 SKILL.md 走 `Read`,所以它原来那两项保障要在这条路上补回来:
-    **一次给全文**(不分页、不截断)和 **路径占位符替换**(`skills.inline_paths`)。
-    少任何一项都是静默退化 —— 分页会让模型分三次读同一份文档,
-    占位符不换会让文档里的脚本命令指向不存在的位置(实测那一轮 0 张图)。
-    """
-    try:
-        rel = path.resolve().relative_to(skill_root.resolve())
-    except (OSError, ValueError):
-        return None
-    if len(rel.parts) == 2 and rel.parts[1] == "SKILL.md":
-        return (skill_root / rel.parts[0]).resolve()
-    return None
+    return (
+        path.suffix.lower() == ".md"
+        and (
+            (len(rel.parts) == 2 and rel.parts[0] == "references")
+            or (len(rel.parts) >= 3 and rel.parts[:2] == ("samples", "bundles"))
+        )
+    )
 
 
 SCHEMAS = [
@@ -166,25 +120,26 @@ SCHEMAS = [
         "读一个文件。普通文本回带行号的内容;png/jpg 回图片本身。"
         "工作流 references/*.md 总是一次返回全文并明确标记 EOF,不要分段重读。",
      "parameters": {"type": "object", "properties": {
-         "file_path": {"type": "string", "description": "绝对路径"},
+         "file_path": {"type": "string", "description": "相对 pages/ 的路径；也接受绝对路径"},
          "offset": {"type": "integer", "description": "从第几行开始读"},
          "limit": {"type": "integer", "description": "读多少行"}},
          "required": ["file_path"], "additionalProperties": False}},
-    {"name": "Write", "description": "写文件,已存在则整体覆盖。",
+    {"name": "Write", "description":
+        "写入完整文件，适合首次创建或确需整体重构；已有页面的局部修正优先用 Patch/Edit。",
      "parameters": {"type": "object", "properties": {
-         "file_path": {"type": "string", "description": "绝对路径"},
+         "file_path": {"type": "string", "description": "相对 pages/ 的路径；也接受绝对路径"},
          "content": {"type": "string", "description": "完整内容"}},
          "required": ["file_path", "content"], "additionalProperties": False}},
     {"name": "Edit", "description": "精确字符串替换。old_string 必须唯一匹配,否则失败。"
                                     "要一次改好几处就用 Patch。",
      "parameters": {"type": "object", "properties": {
-         "file_path": {"type": "string", "description": "绝对路径"},
+         "file_path": {"type": "string", "description": "相对 pages/ 的路径；也接受绝对路径"},
          "old_string": {"type": "string", "description": "要被替换的原文"},
          "new_string": {"type": "string", "description": "替换成什么"},
          "replace_all": {"type": "boolean", "description": "替换全部出现处"}},
          "required": ["file_path", "old_string", "new_string"], "additionalProperties": False}},
     {"name": "Patch", "description":
-        "一次改页面里的好几处,然后默认立刻重新自检。"
+        "一次原子地改页面里的好几处。"
         "任何一处的 old 找不到就整批不写,并告诉你是哪一处 —— 不会改一半。"
         "这是改页的首选:比一处一次地 Edit 少几倍来回。",
      "parameters": {"type": "object", "properties": {
@@ -194,17 +149,18 @@ SCHEMAS = [
                        "old": {"type": "string", "description": "原文,要能在文件里找到"},
                        "new": {"type": "string", "description": "替换成什么"}},
                        "required": ["old", "new"], "additionalProperties": False}},
-         "check": {"type": "boolean", "description": "改完是否立刻自检,默认 true"}},
+         },
          "required": ["page", "edits"], "additionalProperties": False}},
     {"name": "Check", "description":
         "把页面真渲染一遍并报告:JS 报错、超出画布、被裁、字号地板、画面占用比。"
-        "after 每给一段 JS 就**多测一个状态**(点按钮、拖滑块),交互之后的版面同样要合格。",
+        "after 只覆盖用户能主动触发且会改变学习结果或版面的主要状态；"
+        "不要为了被动循环动画反复截取相邻帧。",
      "parameters": {"type": "object", "properties": {
          "page": {"type": "string", "description": "页面文件名,例 page-07.html"},
          "after": {"type": "array", "items": {"type": "string"},
-                   "description": "在页面里依次跑的 JS,每段之后重测一遍。"
+                   "description": "在页面里依次跑的 JS,每段之后重测一遍主要交互状态。"
                                   "例 [\"document.getElementById('go').click()\"]"},
-         "shot": {"type": "boolean", "description": "顺便把 800×450 的整页截图给你看"}},
+         "shot": {"type": "boolean", "description": "是否返回 800×450 整页截图；视觉模型默认 true"}},
          "required": ["page"], "additionalProperties": False}},
     {"name": "Look", "description":
         "把画面里的一块裁出来放大看。box 用 Check 报告里 @x,y w×h 那四个数。"
@@ -222,59 +178,6 @@ SCHEMAS = [
          "command": {"type": "string", "description": "要执行的命令"},
          "description": {"type": "string", "description": "一句话说明这条命令做什么"}},
          "required": ["command"], "additionalProperties": False}},
-    # `Skill` 留着。2026-08-28 一度删掉、当天撤回 —— 撤回的理由值得记下来。
-    #
-    # 删它的证据是 sonnet-full2-20260828 那轮 15 次调用里 5 次(33%)把 reference 的
-    # 名字当 skill 名传(`widget-core` ×2、`pattern-routing` ×2、
-    # `relationship-compositions` ×1),全返回「没有名为…的 skill」,page-07 就此放弃。
-    # **但那是 n=1:** 同一个工具、同一份清单措辞,sonnet-plan-20260828 那轮
-    # 18 次调用错用 **0** 次。拿单轮的错用率判一个工具的存废,和这个仓库自己
-    # 反复记的教训(占用比 12.1pp 噪声底、menus ablation 1:1 判「没测出来」)相矛盾。
-    #
-    # 而且这个工具面是**照 Claude Code 对齐的**(见本文件抬头那句「我们本来就是超集」):
-    # 模型的后训练里就有 `Skill`,拿掉它是在跟先验对着干,换来的只是把同一件事
-    # 挪到 `Read` 上做。
-    #
-    # 真正的问题不是「要不要这个工具」,是**它太脆**:`skills.load()` 原来只拼
-    # `root/<name>/SKILL.md`,模型在 SKILL.md 正文里读到
-    # `[widget-core.md](references/widget-core.md)` 照着传就撞死。
-    # 修的是这一处(见 skills.load 的解析顺序),不是把工具删掉。
-    {"name": "Skill", "description":
-        "取一份技法文档的正文。传 workflow 名(如 `build-page`)取它的 SKILL.md;"
-        "传 reference 名或相对路径(如 `widget-core` 或 "
-        "`build-interaction/references/widget-core.md`)取那一份 reference。",
-     "parameters": {"type": "object", "properties": {
-         "skill": {"anyOf": [{"type": "string"}, {"type": "array", "items": {"type": "string"}}],
-                   "description": "workflow 名、reference 名或相对路径。"
-                                  "**一次可以传一个数组把要用的几份一起取** —— "
-                                  "按 SKILL.md 的 Reference routing 选好之后一次取齐,"
-                                  "比一份一次少几倍来回"}},
-         "required": ["skill"], "additionalProperties": False}},
-    {"name": "ImageSearch", "description":
-        "搜可追溯来源的真实图片。默认只回候选表(标题/尺寸/许可/链接);确认要哪批后"
-        "再调一次,加 download=true + out=assets/img,按当前 query/source/count 落盘。"
-        "来源路由:nasa=天文地球 · met,loc=文物档案 · wikimedia=通用 · "
-        "internetarchive=史料。具名人物、真实器物、遗址用这个,不要生成。"
-        "落盘结果里的 title 要原样写进 <img title>,出处许可不进主画面。",
-     "parameters": {"type": "object", "properties": {
-         "query": {"type": "string", "description": "3–5 个英文词"},
-         "source": {"type": "string",
-                    "description": "逗号分隔,默认 wikimedia,nasa,met,loc,internetarchive"},
-         "count": {"type": "integer", "description": "候选数,默认 8"},
-         "download": {"type": "boolean", "description": "true 时把候选下载到 out 目录"},
-         "out": {"type": "string", "description": "下载目录,默认 assets/img"}},
-         "required": ["query"], "additionalProperties": False}},
-    {"name": "ImageGen", "description":
-        "生成解释性插画 —— 只用于无法拍摄的场景或抽象过程;具名人物、真实器物和"
-        "精确几何禁止生成(前者用 ImageSearch,后者自己画 SVG/图表)。"
-        "生成图右下角自带「AI生成」角标,排版不得遮挡。组件素材要在 prompt 里"
-        "写明孤立黑背景,便于抠图。",
-     "parameters": {"type": "object", "properties": {
-         "prompt": {"type": "string", "description": "写明主题、材质、配色和「无文字」"},
-         "out": {"type": "string", "description": "输出路径,例 assets/img/xxx.png;多张自动加 -1 -2"},
-         "n": {"type": "integer", "description": "生成几张,默认 2,取好的"},
-         "size": {"type": "string", "description": "默认 2048x1152(16:9,贴合画布)"}},
-         "required": ["prompt", "out"], "additionalProperties": False}},
 ]
 
 
@@ -282,26 +185,37 @@ def specs() -> list[dict]:
     return [{"type": "function", **s} for s in SCHEMAS]
 
 
-def run(name: str, args: dict, cwd: Path, skill_root: Path, pid: str) -> str | Out:
+def run(
+    name: str,
+    args: dict,
+    cwd: Path,
+    resource_root: Path | None,
+    pid: str,
+) -> str | Out:
     """`pid` 是本页的 id(形如 `page-06`),**必填**。
 
     不给默认值是故意的:默认值等于「忘了传就静默不设防」,而静默退化正是这个仓库
     反复栽过的形状 —— 分不清「设防了」和「以为设防了」。
     """
-    off = _out_of_bounds(args, cwd, pid)
+    off = _out_of_bounds(name, args, cwd, pid, resource_root)
     if off:
-        return (f"拒绝:`{off}` 不在你负责的范围内。你只负责 `{pid}.html`,"
-                f"只能读写自己 run 的 `pages/` 目录。\n"
-                f"别的页现在多半还是空骨架 —— 整套是并发建的,它不一定已经建好;"
-                f"而且照抄邻页会让整套页面长得一个样。\n"
-                f"这一页要用的数据、文字和边界都在 brief 的 `<page_spec>` 里,"
-                f"库的用法在 `assets/lib/LIBS.md`。")
+        return (f"拒绝:`{off}` 不在当前页面的工作范围内。"
+                f"只能修改 `{pid}.html` 及宿主明确授予的代码 lesson 文件；"
+                f"当前 workflow 资源只读。")
+    # The scope guard has always interpreted relative file paths from ``pages/``.  Dispatch
+    # must use the same base.  Otherwise a valid ``page-08.html`` passes the guard and is then
+    # written relative to the harness process cwd, outside the run it was checked against.
+    call_args = dict(args)
+    if name in {"Read", "Write", "Edit"} and call_args.get("file_path"):
+        path = Path(str(call_args["file_path"]))
+        if not path.is_absolute():
+            call_args["file_path"] = str((cwd / path).resolve())
     try:
-        r = _dispatch(name, args, cwd, skill_root)
+        r = _dispatch(name, call_args, cwd, resource_root)
         cap = CAP
-        if name == "Read" and args.get("file_path") \
-                and _is_workflow_reference(Path(args["file_path"]), skill_root):
-            cap = WORKFLOW_REFERENCE_CAP
+        if name == "Read" and call_args.get("file_path") \
+                and _is_workflow_resource(Path(call_args["file_path"]), resource_root):
+            cap = WORKFLOW_RESOURCE_CAP
         return Out(_cap(r.text, cap), r.images) if isinstance(r, Out) else _cap(r, cap)
     except Exception as e:  # 工具出错要回给模型让它自己修,不能把循环打断
         return f"{type(e).__name__}: {e}"
@@ -330,44 +244,6 @@ def _image(p: Path) -> Out:
 
 
 # ── 自检 ────────────────────────────────────────────────────────────
-# 每页最近一次 Check 的计数,给 Patch 做「改前 → 改后」的差。
-# builder 是每页一个线程,键是页面的绝对路径,所以同一个键不会被两个线程写。
-_LAST: dict[str, dict] = {}
-_LOCK = threading.Lock()
-
-_COUNT_RE = {
-    "超出画布": re.compile(r"✗ 超出画布"),
-    "被裁": re.compile(r"✗ 被裁"),
-    "JS 报错": re.compile(r"✗ (?:JS 报错|console\.error)"),
-    "资源加载失败": re.compile(r"✗ 资源加载失败"),
-}
-
-
-def _counts(report: str) -> dict:
-    """从报告的**初始状态那一段**里取几个可比的数。交互后的状态不算进来 ——
-    那几段的多少取决于这次给了几个 after,拿来做差会得出假的「变好了」。"""
-    head = report.split("┄", 1)[0]
-    d = {k: len(r.findall(head)) for k, r in _COUNT_RE.items()}
-    m = re.search(r"画面占用 (\d+)%", head)
-    d["占用%"] = int(m.group(1)) if m else None
-    m = re.search(r"文字叠压 (\d+) 处", head)
-    d["文字叠压"] = int(m.group(1)) if m else 0
-    return d
-
-
-def _delta(page_key: str, report: str) -> str:
-    """和上一次 Check 比。**只报变了的项** —— 没变的项写出来只是噪声。"""
-    now = _counts(report)
-    with _LOCK:
-        was = _LAST.get(page_key)
-        _LAST[page_key] = now
-    if not was:
-        return ""
-    parts = [f"{k} {was[k]} → {now[k]}" for k in now
-             if was.get(k) != now[k] and was.get(k) is not None and now[k] is not None]
-    return ("\n和上次自检相比:" + "、".join(parts)) if parts else "\n和上次自检相比:这几项没变"
-
-
 def _selfcheck(cwd: Path, page: str, after=(), shot=False, crop=None, zoom=2) -> str:
     if not (cwd / SELFCHECK).exists():
         return f"失败:找不到 {SELFCHECK} —— 自检脚本应该在 pages/assets/ 下"
@@ -394,7 +270,6 @@ def _shot_paths(report: str, kind: str) -> list[Path]:
 def _check(cwd: Path, a: dict) -> Out:
     page = str(a["page"])
     rep = _selfcheck(cwd, page, a.get("after") or (), shot=bool(a.get("shot")))
-    rep += _delta(str((cwd / page).resolve()), rep)
     imgs: list[tuple[str, str]] = []
     if a.get("shot"):
         shots = [p for p in _shot_paths(rep, "截图") if p.exists()]
@@ -461,32 +336,21 @@ def _patch(cwd: Path, a: dict) -> str | Out:
     msg = (f"{page} 改了 {len(edits)} 处,共 {sum(hits)} 次替换"
            + (f"(注意有的不止一次:{tail})" if tail else "") + "。")
 
-    if a.get("check", True) is False:
-        return msg
-    rep = _selfcheck(cwd, page)
-    return msg + _delta(str(p.resolve()), rep) + "\n\n" + rep
+    return msg
 
 
 # ── 分发 ────────────────────────────────────────────────────────────
-def _dispatch(name: str, a: dict, cwd: Path, skill_root: Path) -> str | Out:
+def _dispatch(name: str, a: dict, cwd: Path, resource_root: Path | None) -> str | Out:
     if name == "Read":
         p = Path(a["file_path"])
         if p.suffix.lower() in IMG_EXT:
             return _image(p)
-        if _is_workflow_reference(p, skill_root):
+        if _is_workflow_resource(p, resource_root):
             text = p.read_text(encoding="utf-8", errors="replace")
             n = text.count("\n") + 1
-            return (f"（工作流 reference 全文开始：{p.name}，共 {n} 行）\n"
+            return (f"（工作流资源全文开始：{p.name}，共 {n} 行）\n"
                     + text
-                    + f"\n（工作流 reference 全文结束：{p.name} · EOF）")
-        skill_dir = _workflow_skill_dir(p, skill_root)
-        if skill_dir is not None:
-            text = skills.inline_paths(
-                p.read_text(encoding="utf-8", errors="replace"), skill_dir)
-            n = text.count("\n") + 1
-            return (f"（技法文档全文开始：{skill_dir.name}/SKILL.md，共 {n} 行）\n"
-                    + text
-                    + f"\n（技法文档全文结束：{skill_dir.name}/SKILL.md · EOF）")
+                    + f"\n（工作流资源全文结束：{p.name} · EOF）")
         lines = p.read_text(encoding="utf-8", errors="replace").split("\n")
         off = max(0, int(a.get("offset") or 1) - 1)
         lines = lines[off:off + int(a.get("limit") or 2000)]
@@ -520,40 +384,10 @@ def _dispatch(name: str, a: dict, cwd: Path, skill_root: Path) -> str | Out:
     if name == "Look":
         return _look(cwd, a)
 
-    if name == "ImageSearch":
-        # 薄包装,不重写逻辑:planner 图池和旧 get-photo-ref workflow 用的同一份脚本。
-        cmd = [sys.executable, str(_WEBMEDIA), str(a["query"]),
-               "--type", "image", "--count", str(int(a.get("count") or 8)),
-               "--source", str(a.get("source") or "wikimedia,nasa,met,loc,internetarchive"),
-               "--json"]
-        if a.get("download"):
-            cmd += ["--download", "--out", str(a.get("out") or "assets/img")]
-        r = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True,
-                           timeout=IMG_TIMEOUT)
-        out = (r.stdout or "") + (("\n[stderr]\n" + r.stderr) if r.stderr else "")
-        return out.strip() or f"(无输出,退出码 {r.returncode})"
-
-    if name == "ImageGen":
-        cmd = [sys.executable, str(_IMGGEN), str(a["prompt"]),
-               "--out", str(a["out"]), "--n", str(int(a.get("n") or 2)),
-               "--size", str(a.get("size") or "2048x1152")]
-        r = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True,
-                           timeout=IMG_TIMEOUT)
-        out = (r.stdout or "") + (("\n[stderr]\n" + r.stderr) if r.stderr else "")
-        return out.strip() or f"(无输出,退出码 {r.returncode})"
-
     if name == "Bash":
         r = subprocess.run(a["command"], shell=True, cwd=cwd, capture_output=True,
                            text=True, timeout=TIMEOUT)
         out = (r.stdout or "") + (("\n[stderr]\n" + r.stderr) if r.stderr else "")
         return out.strip() or f"(无输出,退出码 {r.returncode})"
-
-    if name == "Skill":
-        # 一次可以取多份。实测(sol-slim2)61.4% 的调用花在装文档上,最贵那页
-        # 写第一行代码前打了 6 次 Skill —— 而每次调用都要把已积累的历史重发一遍,
-        # 成本随调用数超线性(7 调用 17k/次 → 12 调用 26.7k/次)。
-        want = a["skill"]
-        names = want if isinstance(want, list) else [want]
-        return "\n\n".join(skills.load(n, skill_root) for n in names)
 
     return f"未知工具 {name}"

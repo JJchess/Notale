@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+ <meta charset="utf-8">
+ <meta name="viewport" content="width=device-width, initial-scale=1">
+ <title>机械钟为什么不会一下走完？｜Notale</title>
+ <link rel="icon" href="data:,">
+ <link rel="stylesheet" href="assets/base.css">
+ <style>:root {
+ --paper: #f8f8f6; --ink: #414647; --muted: #747a79; --quiet: #a6abaa; --line: #d9dcda;
+ --teal: #62bfb2; --teal-edge: #2d7770; --blue: #64a8df; --blue-edge: #2f6792;
+ --violet: #ca8ed7; --violet-edge: #7f4d8b; --ruby: #f28aa0; --ruby-edge: #ab4158;
+ --yellow: #f2bf43; --yellow-edge: #9d7518; --red: #e5655d; --pad-x: 68px;
+ --font-sans: "PingFang SC", "Noto Sans SC", "Microsoft YaHei", Arial, sans-serif;
+ --font-mono: "SFMono-Regular", "Roboto Mono", Consolas, monospace;
+}
+body { background: #e9eae7; }
+button, input { font: inherit; }
+#stage { padding: 0 var(--pad-x); overflow: hidden; background: var(--paper); color: var(--ink); font-family: var(--font-sans); }
+.intro { position: absolute; left: 68px; right: 68px; top: 37px; height: 122px; }
+h1 { position: absolute; left: 0; top: 33px; color: #363a3b; font-size: 52px; font-weight: 520; letter-spacing: -.045em; line-height: 1.08; }
+.mechanism { position: absolute; left: 40px; top: 155px; width: 1520px; height: 610px; margin: 0; border-top: 1px solid var(--line); }
+.render-shell { position: absolute; left: 50px; top: 43px; width: 1420px; height: 466px; overflow: hidden; cursor: grab; touch-action: none; }
+.render-shell[data-dragging="true"] { cursor: grabbing; }
+#mechanismCanvas, .fallback-svg, .annotation-layer { position: absolute; inset: 0; width: 100%; height: 100%; }
+#mechanismCanvas { display: block; outline: none; }
+.annotation-layer { z-index: 3; overflow: visible; pointer-events: none; }
+.annotation-label { fill: var(--muted); font-family: var(--font-sans); font-size: 15px; }
+.annotation-strong { fill: var(--ink); font-weight: 650; }
+.annotation-red { fill: var(--red); font-weight: 650; }
+.component-callout { color: var(--ink); }
+.component-callout text { fill: var(--ink); stroke: var(--paper); stroke-width: 4px; paint-order: stroke fill; font-family: var(--font-sans); font-size: 18px; font-weight: 650; letter-spacing: .01em; }
+.component-callout.wheel { color: var(--teal-edge); }
+.component-callout.fork { color: var(--blue-edge); }
+.component-callout.balance { color: var(--violet-edge); }
+.component-callout.pallets { color: var(--ruby-edge); }
+.callout-swatch, .callout-leader { fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; }
+.callout-swatch { stroke-width: 5px; }
+.callout-leader { stroke-width: 1.5px; opacity: .72; }
+.callout-dot { fill: currentColor; stroke: var(--paper); stroke-width: 3px; }
+.fallback-svg { display: none; }
+.webgl-failed .fallback-svg { display: block; }
+.webgl-failed #mechanismCanvas { display: none; }
+.fallback-note { display: none; position: absolute; left: 26px; bottom: 9px; z-index: 5; color: var(--ruby-edge); font-size: 12px; }
+.webgl-failed .fallback-note { display: block; }
+figcaption { position: absolute; left: 66px; right: 66px; bottom: 11px; height: 84px; display: grid; grid-template-columns: 185px 1fr 265px; align-items: center; gap: 28px; }
+.state-heading h2 { color: #353a3a; font-size: 35px; font-weight: 560; letter-spacing: -.035em; line-height: 1; }
+.state-copy { max-width: 750px; color: #5d6463; font-size: 19px; line-height: 1.65; }
+.state-copy strong { color: var(--ink); font-weight: 650; }
+.wheel-reading { padding-left: 25px; border-left: 1px solid var(--line); }
+.wheel-reading b { display: block; margin-top: 3px; color: var(--teal-edge); font-size: 29px; font-weight: 600; letter-spacing: -.035em; }
+.controls { position: absolute; left: 68px; right: 68px; bottom: 22px; height: 100px; display: grid; grid-template-columns: 235px 1fr 190px; align-items: center; gap: 35px; border-top: 1px solid var(--line); }
+.transport { display: flex; align-items: center; gap: 13px; }
+.play-button { width: 52px; height: 52px; flex: 0 0 auto; display: grid; place-items: center; border: 0; border-radius: 50%; background: var(--yellow); color: #433b21; box-shadow: 0 0 0 1px rgba(157, 117, 24, .18); cursor: pointer; }
+.play-button:hover { background: #f5c956; }
+.play-icon { width: 0; height: 0; margin-left: 4px; border-top: 7px solid transparent; border-bottom: 7px solid transparent; border-left: 11px solid currentColor; }
+.play-button[data-playing="true"] .play-icon { width: 11px; height: 15px; margin-left: 0; border: 0; border-left: 3px solid currentColor; border-right: 3px solid currentColor; }
+.transport-copy strong { display: block; font-size: 15px; font-weight: 650; }
+.timeline-wrap { position: relative; height: 76px; }
+.track, .track-fill { position: absolute; left: 10px; right: 10px; top: 24px; height: 3px; border-radius: 2px; pointer-events: none; }
+.track { background: var(--line); }
+.track-fill { background: var(--teal); transform: scaleX(0); transform-origin: left center; }
+#timeline { position: absolute; left: 0; top: 12px; width: 100%; height: 26px; margin: 0; appearance: none; -webkit-appearance: none; background: transparent; cursor: pointer; }
+#timeline::-webkit-slider-runnable-track { height: 3px; background: transparent; }
+#timeline::-moz-range-track { height: 3px; background: transparent; }
+#timeline::-webkit-slider-thumb { width: 22px; height: 22px; margin-top: -9px; appearance: none; -webkit-appearance: none; border: 4px solid var(--paper); border-radius: 50%; background: var(--yellow); box-shadow: 0 0 0 1px var(--yellow-edge); }
+#timeline::-moz-range-thumb { width: 15px; height: 15px; border: 4px solid var(--paper); border-radius: 50%; background: var(--yellow); box-shadow: 0 0 0 1px var(--yellow-edge); }
+.beats { position: absolute; left: 0; right: 0; top: 43px; display: grid; grid-template-columns: repeat(4, 1fr); }
+.beat { position: relative; min-width: 0; padding: 7px 4px; border: 0; background: transparent; color: var(--quiet); font-size: 13px; cursor: pointer; }
+.beat::before { content: ""; position: absolute; left: 50%; top: -19px; width: 1px; height: 7px; background: #c8ccca; }
+.beat:hover { color: var(--ink); }
+.beat[aria-current="step"] { color: var(--teal-edge); font-weight: 650; }
+.reset-area { justify-self: end; text-align: right; }
+.reset-button { padding: 7px 0; border: 0; border-bottom: 1px solid #bfc4c1; background: transparent; color: var(--muted); font-size: 13px; cursor: pointer; }
+button:focus-visible, input:focus-visible { outline: 3px solid rgba(47, 103, 146, .32); outline-offset: 4px; }
+
+  @media (prefers-reduced-motion: reduce) {*, *::before, *::after { scroll-behavior: auto !important; transition-duration: .001ms !important; animation-duration: .001ms !important; }
+
+  }
+ </style>
+</head>
+<body>
+ <main id="stage" aria-label="机械钟擒纵机构解释页">
+  <header class="intro">
+   <h1>机械钟为什么不会一下走完？</h1>
+  </header>
+  <figure class="mechanism" aria-labelledby="stateTitle">
+   <div id="renderShell" class="render-shell" data-dragging="false">
+    <canvas id="mechanismCanvas" role="img" aria-label="可轻微拖动查看的三维擒纵机构：青绿色擒纵轮、蓝色擒纵叉、紫色摆轮、游丝和两块红宝石锁瓦。"></canvas>
+    <svg class="annotation-layer" viewBox="0 0 1420 466" aria-hidden="true">
+     <text x="22" y="223" class="annotation-label annotation-red">发条一直在推</text>
+     <text x="364" y="28" class="annotation-label annotation-strong">一齿距</text>
+     <g class="component-callout wheel">
+      <text x="145" y="76">擒纵轮</text>
+      <path class="callout-swatch" d="M145 88H195"/>
+      <path id="wheelCalloutLine" class="callout-leader" d="M208 82H270L320 96L340 100"/>
+      <circle id="wheelCalloutDot" class="callout-dot" cx="340" cy="100" r="4"/>
+     </g>
+     <g class="component-callout pallets">
+      <text x="540" y="52">锁瓦 ×2</text>
+      <path class="callout-swatch" d="M540 64H590"/>
+      <path class="callout-leader" d="M603 58L626 78"/>
+      <path id="entryCalloutLine" class="callout-leader" d="M626 78L600 92"/>
+      <path id="exitCalloutLine" class="callout-leader" d="M626 78V298L600 315"/>
+      <circle id="entryCalloutDot" class="callout-dot" cx="600" cy="92" r="4"/>
+      <circle id="exitCalloutDot" class="callout-dot" cx="600" cy="315" r="4"/>
+     </g>
+     <g class="component-callout balance">
+      <text x="1210" y="70">摆轮</text>
+      <path class="callout-swatch" d="M1210 82H1255"/>
+      <path id="balanceCalloutLine" class="callout-leader" d="M1196 78L1174 78L1160 120"/>
+      <circle id="balanceCalloutDot" class="callout-dot" cx="1160" cy="120" r="4"/>
+     </g>
+     <g class="component-callout fork">
+      <text x="740" y="430">擒纵叉</text>
+      <path class="callout-swatch" d="M740 442H795"/>
+      <path id="forkCalloutLine" class="callout-leader" d="M725 424L710 380V230L710 210"/>
+      <circle id="forkCalloutDot" class="callout-dot" cx="710" cy="210" r="4"/>
+     </g>
+    </svg>
+    <svg class="fallback-svg" viewBox="0 0 1420 466" role="img" aria-label="擒纵机构决定性静帧">
+     <g transform="translate(412 228)" fill="none" stroke-linejoin="round">
+      <circle r="158" stroke="#2d7770" stroke-width="34"/>
+      <circle r="158" stroke="#62bfb2" stroke-width="26"/>
+      <g stroke="#62bfb2" stroke-width="18">
+       <path d="M0-37V-148"/><path d="M0-37V-148" transform="rotate(72)"/><path d="M0-37V-148" transform="rotate(144)"/><path d="M0-37V-148" transform="rotate(216)"/><path d="M0-37V-148" transform="rotate(288)"/>
+      </g>
+      <circle r="37" fill="#62bfb2" stroke="#2d7770" stroke-width="3"/>
+     </g>
+     <path d="M716 208C680 171 655 139 631 111L589 151L649 197C669 219 669 237 649 259L589 305L631 345C655 317 680 285 716 248L949 248L1008 230L949 208Z" fill="#64a8df" stroke="#2f6792" stroke-width="3"/>
+     <g fill="#f28aa0" stroke="#ab4158" stroke-width="3">
+      <rect x="573" y="127" width="74" height="26" rx="4" transform="rotate(8 610 140)"/>
+      <rect x="573" y="300" width="74" height="26" rx="4" transform="rotate(-35 610 313)"/>
+     </g>
+     <g transform="translate(1082 228)" fill="none" stroke-linejoin="round">
+      <circle r="174" stroke="#7f4d8b" stroke-width="34"/>
+      <circle r="174" stroke="#ca8ed7" stroke-width="26"/>
+      <g stroke="#ca8ed7" stroke-width="16">
+       <path d="M0-38V-161"/><path d="M0-38V-161" transform="rotate(120)"/><path d="M0-38V-161" transform="rotate(240)"/>
+      </g>
+      <circle r="42" fill="#ca8ed7" stroke="#7f4d8b" stroke-width="3"/>
+     </g>
+    </svg>
+    <p class="fallback-note">当前浏览器使用静态机构图。</p>
+   </div>
+   <figcaption aria-live="polite">
+    <div class="state-heading">
+     <h2 id="stateTitle">锁住</h2>
+    </div>
+    <p id="stateCopy" class="state-copy"><strong>上方锁瓦顶住齿尖。</strong>发条仍在施力，但擒纵轮的位移是零。</p>
+    <p class="wheel-reading"><b id="wheelReading">停住 · 0 齿</b></p>
+   </figcaption>
+  </figure>
+  <section class="controls" aria-label="擒纵周期控制">
+   <div class="transport">
+    <button id="playButton" class="play-button" type="button" aria-label="播放一个完整擒纵周期" data-playing="false">
+     <span class="play-icon" aria-hidden="true"></span>
+    </button>
+    <div class="transport-copy"><strong id="playLabel">播放一个周期</strong></div>
+   </div>
+   <div id="timelineWrap" class="timeline-wrap">
+    <div class="track"></div><div class="track-fill"></div>
+    <input id="timeline" type="range" min="0" max="3" step="0.001" value="0" aria-label="拖动查看擒纵周期">
+    <div class="beats" role="group" aria-label="直接查看四个状态">
+     <button class="beat" type="button" data-state="0" aria-current="step">1 锁住</button>
+     <button class="beat" type="button" data-state="1">2 放开</button>
+     <button class="beat" type="button" data-state="2">3 走一齿</button>
+     <button class="beat" type="button" data-state="3">4 再锁住</button>
+    </div>
+   </div>
+   <div class="reset-area">
+    <button id="resetButton" class="reset-button" type="button">回到开始</button>
+   </div>
+  </section>
+ </main>
+ <script src="assets/base.js"></script>
+ <script src="assets/lib/three.min.js"></script>
+ <script src="mechanism.js"></script>
+</body>
+</html>

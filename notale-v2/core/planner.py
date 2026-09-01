@@ -1,11 +1,7 @@
-"""planner —— 固定流水线。
+"""Planner: one model call produces the shared theme and the ordered page list.
 
-步骤顺序不是设计的,是从 nn-06 主 agent 的动作时间线抄下来的:
-
-    探环境 → theme.css → lec.js → PLAN.md → CONTRACT.md → 建骨架 → 出 brief
-
-nn-03 走的是同一条线,两轮完全一致。跨两轮稳定复现的行为才固定成流水线;
-builder 那边每页 16–73 次调用、相差 4.6 倍,所以那边只能是循环。
+The harness materializes only deterministic planning artifacts.  Page HTML is
+intentionally absent until the routed Builder creates it.
 
     python3 -m core.planner --query "…" --minutes 90 --label orbit-01
 """
@@ -13,20 +9,12 @@ builder 那边每页 16–73 次调用、相差 4.6 倍,所以那边只能是循
 from __future__ import annotations
 
 import argparse
-import base64
-import collections
-import functools
-import math
 import json
 import re
-import os
 import shutil
 import urllib.request
 import sys
-from concurrent.futures import ThreadPoolExecutor
-from functools import partial
 import subprocess
-import tempfile
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -35,20 +23,32 @@ from pathlib import Path
 
 from . import skills
 from . import imgcut
-from . import tools
 from .artifacts import Brief
 from . import llm
-from .llm import ROOT, ask, config, fill, strip_fence
+from .llm import ROOT, config, fill, strip_fence
 
 # harness 的全部外部输入(底盘、库、技法文档)都在这下面,**不指向 notale-v2 外面**。
 # 以前是三条写死的绝对路径,指向同级的 `notale/zzz` 和 `notale/zero`;那两个目录
 # 一消失,一天里三次中断:图池 0/12、规格的技法文档全空、expand 静默抛异常。
 VENDOR = Path(__file__).resolve().parent.parent / "vendor"
 from .trace import Writer
-from .wire import ImageBlock, Message, Request, TextBlock
 
 PROMPTS = ROOT / "prompts"
 IDENTITY = "你在为一套互动讲义做规划。只输出被要求的东西,不写说明、不写总结、不加围栏。"
+PLANNER_WRITE_SPEC = [{
+    "type": "function",
+    "name": "Write",
+    "description": "写完整文件",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "file_path": {"type": "string", "description": "绝对路径"},
+            "content": {"type": "string", "description": "完整内容"},
+        },
+        "required": ["file_path", "content"],
+        "additionalProperties": False,
+    },
+}]
 
 
 def _now() -> str:
@@ -73,6 +73,9 @@ class Run:
 
     def __post_init__(self) -> None:
         self.root = ROOT / "runs" / self.label
+        if self.root.exists():
+            raise FileExistsError(
+                f"run already exists: {self.root}; use a new --label for a fresh test")
         self.assets.mkdir(parents=True, exist_ok=True)
         self.log = Writer(self.root / "trace.jsonl", str(uuid.uuid4()))
 
@@ -84,257 +87,19 @@ class Run:
                     _where=f"{name}.md", **kw)
 
 
-# 每一步产物的最小**字符**数(不是字节 —— 中文 3 字节/字,按字节定会差三倍)。
-# 低于它就是没生成出来,不是"生成得简洁"。
-#
-# 三轮实测的字符数:
-#     PLAN.md      24,056 / 20,440 / 21,964
-#     CONTRACT.md  11,591 / 14,602 / 10,413
-#     theme.css    20,979 / 21,566 / 20,777
-# 阈值取实测最小值的**约 1/6**。刻意定得这么松:这道闸只该抓
-# "0 字符 / out=229 tok" 那种灾难性空响应,不该去评判 Sonnet 写得简不简洁 ——
-# 换模型后产物合理地小一截是可能的,把正常产出判死的代价比漏判高得多。
-# 走工具之后两份产物各有各的下限。CSS 约 12k 字符、散文 20 页约 7k。
-# 取实测的约 1/3,只抓灾难性空响应,不评判写得简不简洁。
-# pages.md 2026-08-28 从「每页一段散文」改成「一个标签加一句话」,合理体量从
-# 8,000 掉到约 1,300(22 页 × 60 字符),旧的 2500 会把合格产物判死。
-# **截断真正靠的不是字数,是 `_valid_pages` 的页号连续性检查** —— 那条与格式无关,
-# 半截产物一定缺尾部页号。这里留 400 只为挡住「几乎什么都没输出」。
-MIN_CHARS = {"theme.css": 3000, "pages.md": 400}
-# 产物**字符数**的上限,和 MIN_CHARS 对称。`MAX_OUT` 管的是输出 token,
-# 从来没有管过产物有多长 —— 而产物长度才是下游成本:CONTRACT.md 会被每个建页 agent
-# 各读两遍,一份 31,493 字符的契约在 50 页上就是 3.1MB 的重复输入。
-#
-# 取值有实测依据,**一律按字符算,不按字节** —— 中文 3 字节/字,两个单位混用会差三倍
-# (我第一版就把 nn-11 的 SHARED.md 写成「9,463」,那是字节,字符只有 5,220)。
-#
-#     nn-11(Opus)  PLAN.md 7,501 + plan/SHARED.md 5,220 = 12,721 字符
-#     ape-g6       deck.md 11,713 + CONTRACT.md 13,549  = 25,262  (2.0×)
-#     ape-ds3      deck.md  8,960 + CONTRACT.md 18,881  = 27,841  (2.2×)
-#     ape-dspro3   CONTRACT.md 6,796                     (本来就精简,不该被拒)
-#
-# CONTRACT.md 提示词现在明确要求 ≤6,000，闸与产物契约保持一致。
-# 这个上限仍高于 nn-11 的 5,220 字符共享契约，并能拒掉 13.5k 和 18.9k 的跑飞产物。
-# **注意这一条只治了一半** —— g6 的共享文本大头有一半在 deck.md(11,713 字符),
-# 那要靠「给每页切 deck 片」来治,是另一个改动,不在这一轮。
-# 逐页 spec 的 1,600:Opus 中位 1,178,我们是 3,116 / 1,998 / 1,984。
-# **字数上限已经去掉。** 它拦掉的从来不是跑飞的产物,而是「差 1.9%」——
-# CONTRACT.md 连续三次 6,190 / 6,057 / 6,115,上限 6,000,整轮就停在这里。
-# 长度是成本问题,该由提示词里的目标字数去引导(那是模型能配合的),
-# 不该由一条硬闸去终止一轮实验。真正跑飞的产物会被 MAX_OUT(输出 token)
-# 和 MIN_CHARS(空响应)兜住,那两条各有实测依据。
-MAX_CHARS: dict[str, int] = {}
-# CONTRACT.md 从 16,000 提到 60,000。**它是全流程最重的一份提示词** ——
-# 18,222 字符,注入了 CHASSIS 全文 + LIBS.md + lec_api + lec_dom + 受众场合。
-# 实测 DeepSeek-V4-Flash 在这一步:
-#     effort=low     52s   out= 5,101 tok  正文  8,842 字符  completed
-#     effort=medium 184s   out=23,600 tok  正文 12,891 字符  completed
-# medium 要 23,600(一万多是推理),而上限 16,000 直接打满、自动升到 32,000 仍打满。
-# 我先前把 spec 提到 60,000 时漏了这一项 —— 那一轮 51 份 pNN.md 全部正常,
-# 唯一的截断在这里,而我一直以为死在 spec 那步(看错了调用栈:call() 不是 expand())。
-
-# 每一步的输出上限。config 里的 128,000 对这条链路是**跑飞的空间**:
-# 实测这个端点约 70 tok/s(小请求 52 tok/3.6s、中请求 4,587 tok/65.2s),
-# 而 http_timeout_sec 是 900s —— 也就是一次请求最多只来得及吐约 63,000 token。
-# 上限给到 128,000,模型就可以生成到永远也回不来:ape-01 的 PLAN.md 连续三次
-# 900s 超时、累计死等 1,806s 毫无进展,端点本身却是健康的。
-#
-# 这些数取实测需求的 1.3–1.6 倍(冒烟那轮:PLAN.md 35,749 / theme.css 17,377 /
-# CONTRACT.md 6,659 / lec.js 27,136 tok),都远在 63,000 的天花板之下。
-# 撞上上限不会静默 —— llm.py 会把 status=incomplete 抛出来。
-# PLAN.md 从 48,000 提到 64,000:DeepSeek-V4-Flash 实测打满 47,998 被截断闸拦下。
-# 86–107 tok/s × 900s 超时 ≈ 77,000 的天花板,64,000 仍在其下。
-# theme.css 从 28,000 提到 48,000。**接口块改成八节之后这一步的产物几乎全是中文,
-# 而中文和 CSS 的 token 密度差四倍以上** —— 拿整份文件的均值去估会算少三倍:
-#     sol-low-20260827   out= 6,048 tok  产物 16,457 字符  均值 2.72 字符/tok
-#     其中 CSS 14,483 字符 ≈ 3,900 tok(约 3.9 字符/tok)
-#         接口块 1,929 字符 ≈ 2,100 tok(约 0.85 字符/tok)
-# 八节接口块目标约 13,600 字符,几乎全是中文 ≈ 16,000 tok,加 CSS 约 4,100,
-# 合计约 20,100 —— 对 28,000 只剩 1.4× 余量,而**推理 token 也算在这个额度里**
-# (同一步 sonnet-full 吐 8,870 tok 只产出 17,897 字符,比 Sol 高 47%)。
-# 48,000 在 70 tok/s × 900s 超时的天花板(约 63,000)之下。
-# `deck` 定 28,000 而不是 48/64k:`llm.py` 只在 `cap*2 <= OUTPUT_CEILING(60,000)`
-# 时自动升一档,28k 保住了一级升额空间(→56k);64k 一级都没有,而且本身已超过
-# 这条链路能吐的量(最慢实测 70 tok/s × 900s 超时 ≈ 63,000)。
-# 实测需求:CSS 6,048 tok + 页表 5,583 tok,合并后约 10–12k,加推理仍在 28k 之下。
-MAX_OUT = {"deck": 28000}
-# CONTRACT.md 从 16,000 提到 60,000。**它是全流程最重的一份提示词** ——
-# 18,222 字符,注入了 CHASSIS 全文 + LIBS.md + lec_api + lec_dom + 受众场合。
-# 实测 DeepSeek-V4-Flash 在这一步:
-#     effort=low     52s   out= 5,101 tok  正文  8,842 字符  completed
-#     effort=medium 184s   out=23,600 tok  正文 12,891 字符  completed
-# medium 要 23,600(一万多是推理),而上限 16,000 直接打满、自动升到 32,000 仍打满。
-# 我先前把 spec 提到 60,000 时漏了这一项 —— 那一轮 51 份 pNN.md 全部正常,
-# 唯一的截断在这里,而我一直以为死在 spec 那步(看错了调用栈:call() 不是 expand())。
-# spec 一路 8,000 → 20,000 → 40,000。
-# 8,000 是按 GPT-5.6-Sol 的实测量定的(48 份 pNN.md 2,161–9,168B,
-# 合计 out=110,283 tok,平均约 2,300 tok/份),而 DeepSeek-V4-Flash 直接打满被截断闸
-# 拦下 —— 它把推理也算在输出里。20,000 下它能跑,再翻一倍留足余量。
-# 40,000 在 100 tok/s × 900s 超时的天花板(约 90,000)之下,并发 8 下最坏一轮约 400s。
-#
-# 这是同一形状的第三次:**按一个模型实测定的数,换模型就不够**
-# (max_output_tokens 128k → 按步收紧;lec.js 40k → 64k;spec 8k → 40k)。
-# 这些数不该当常量,该当「按最慢的模型定」的下界。
-
-# 逐页展开的并发。端点(llmapi.paratera)支持到 100 并发,两路实验同时跑时各给 50(合计 100,打满)。
-#
-# 先前压到 8 是我拿错了教训:config.yaml 里那条「20 并发累计空等 84 分钟」
-# 归因的是**旧端点 api.999555999**(实测 6/8 成功、2 次超时),
-# 而 paratera 那次是 8/8 成功、37.4 次/分。压低并发换不来稳定,只是白等墙钟。
-# 20 → 50。实测:44 份规格 177s、52 份 419s —— 后者要排三批,时间翻倍多。
-# 而 builder 那边并发 50、排队实测 0 秒(墙钟严格等于最慢那一页),
-# 说明端点吃得下,瓶颈不在这里。
-# 从 50 降到 20。端点整体支持 100 并发,但**这一步不是瓶颈在端点,而在单模型配额**:
-# 77 路一起打上去,DeepSeek 那边大面积 RateLimitError,退避 5s→15s→40s 全是白等墙钟。
-# 展开这一步每路都带 deck 全文(约 6KB),比 builder 的单页调用重得多,所以单独降一档。
-# builder 那边保持 50 —— 它每页是一串小调用,压力形态不一样。
-
-# 单页停留上限,秒。原来从 `core/check_coverage.py` 取(那边是同一个数,不抄第二份),
-# 2026-08-28 那个模块整个删掉了,所以内联到这里 —— 现在这是唯一一份。
-# **这个数要留着**:把页数从 18 推到 41 的正是它,而不是页表的九列。
-STAY_CEILING = 150.0
-
-
-def call(run: Run, step: str, prompt: str, min_chars: int = 1,
-         sheet: Path | None = None) -> str:
-    m = config()["model"]
-    body: list = [TextBlock(text=prompt)]
-    if sheet and sheet.exists():
-        # 同类任务里协调者在写 deck.css 之前把要当底图用的插画拼成一张联系表、
-        # 然后**看了那张图**(它的第 22 次调用),才定下底色。它没看那 14 张照片。
-        body.append(ImageBlock(
-            data=base64.b64encode(sheet.read_bytes()).decode(), media_type="image/jpeg"))
-    req = Request(model=m["name"], system=[TextBlock(text=IDENTITY)],
-                  messages=[Message(role="user", content=body)],
-                  max_tokens=MAX_OUT.get(step, m["max_output_tokens"]),
-                  output_config={"effort": config()["planner"]["reasoning_effort"]})
-    t0, started = time.time(), _now()
-    r = ask(req, min_chars=min_chars)
-    run.log.add([b.model_dump() for msg in req.messages for b in msg.content], r.text,
-                # 键名照 wire.Usage —— trace.usage_of() 只认它声明过的字段。
-                {"input_tokens": r.input_tokens, "output_tokens": r.output_tokens,
-                 "cache_read_input_tokens": r.cached_tokens},
-                getattr(r.raw, "id", None) or f"req_{uuid.uuid4().hex[:16]}",
-                started, _now(), {"step": step})
-    # planner 这一侧的六步各写各的提示词,前缀几乎不共享,所以 cached 通常接近 0;
-    # 打出来是为了能一眼看出「这一步是不是重试撞上了缓存」,以及跟 builder 那侧对照。
-    print(f"  {step:<12} {time.time()-t0:6.1f}s  in={r.input_tokens:>7,}"
-          f"{'(cached ' + format(r.cached_tokens, ',') + ')' if r.cached_tokens else '':>16}"
-          f"  out={r.output_tokens:>6,} tok  {len(r.text):>7,} 字符")
-    return strip_fence(r.text)
-
-
-def _looks_like_prose(text: str) -> str:
-    """产物是不是把思考过程当成文件内容写出来了。返回原因,空串表示没问题。
-
-    实测(ape-ds / DeepSeek-V4-Flash):`lec.js` 整个 23,351 字符是模型的推理稿 ——
-    开头「我们被要求为互动讲义规划一个计算模块…题目是什么?可能是关于"猿人"…」,
-    中间「现在,我们应规划好完整的输出…这是最终答案。但在输出前,让我们再检查一遍代码」。
-    提示词里写着「只输出 JS 文件内容本身,不要任何解释」——**散文约束不起作用**,
-    而 MIN_CHARS 和截断闸都放行了,因为两万多字符的散文在字数上完全合格。
-    """
-    head = text.lstrip()[:400]
-    for pat in ("我们被要求", "我们需要", "首先,", "首先，", "让我们", "题目要求",
-                "这是最终答案", "现在,我们", "现在，我们"):
-        if pat in head:
-            return f"开头像推理稿(命中「{pat}」)"
-    return ""
-
-
-# `lec.js` 及其两道闸(`_valid_js_syntax` / `_valid_js`)2026-08-28 整条删除。
-#
-# **删的时候连"广告它的那张清单"一起删了** —— 这是上一次只删一半的教训:
-# 2026-08-21 去掉 `Lec.mount` 时,`artifacts.py: lec_api()` 末尾还留着一行
-# `out.append("Lec.mount({index, kicker, title, take})")`,而那份 API 清单被注入
-# 写规格那一步,于是 48/48 份规格照抄了这个不存在的调用、48 个页面一个都没调用,
-# 结果**主标题到达 46/48 页,而每页那句「要让读者信什么」只到达 5/48**。
-# 代价两个月后才量出来。所以这一次同步清掉了:`prompts/lec.md`、
-# `artifacts.py` 的 `lec_api`/`lec_values`/`lec_dom`、`{lec_api}` 三个槽位、
-# `skills.FLOORS` 里的 Lec 口径、`scrub-visual-slop.md` 里那条。
-#
-# 数值一致性改由**每页散文自带真实数值、单位与出处**承担;
-# 「禁止预录结果或伪造数据、随机过程固定种子」那半条规则本身与 Lec 无关,
-# 已经留在静态技术契约里,没有跟着删。
-
-
-_IFACE = re.compile(r"/\*\s*=+\s*INTERFACE\s*=+(.*?)=+\s*/?INTERFACE\s*=+\s*\*/",
-                    re.S | re.I)
-
-# 八节 `IFACE_SECTIONS` 和 `_iface_section` / `_chassis_names` 2026-08-28 一起删。
-#
-# 它们那一轮解决的问题是真的:接口块 1,929 字符只点到 33/61 个类、18/23 个 token,
-# 于是页面内联 CSS 长出 466 个自造类 / 86,411 字符(共享主题的 5.3 倍),
-# `.btn` 被 10 页各自重定义。但那个问题的成因是**建页 agent 读不到 CSS 源码**,
-# 而现在源码整份进了 builder 的 system 块 —— 病根没了,这副药也就不用吃了。
-# 接口块本身留着,只是不再需要八节格式、也不再有硬闸。
-
-
-def _interface(css: str):
-    """theme.css 自报的 INTERFACE 块 —— 注入写规格那一步,让规格点得出版面类。
-
-    2026-08-23 加的:在那之前 `theme.css` 排在 `expand()` **之后**,
-    规格点名版面类在因果上不可能,实测五种骨架类全都生成了、页面 46/48 在用,
-    而 48 份规格一份都没点过名。
-    (追加进 CHASSIS.md 那一路 2026-08-28 去掉了 —— CSS 源码现在直接给 builder。)
-    """
-    return _IFACE.search(css)
-
-
 def _valid_css(text: str) -> str:
-    """theme.css 的闸:得是 CSS,而且**必须把 `#stage` 设成 flex 列**。
-
-    后面这一条是全套里最要紧的一行 CSS,也是量出来的干净二分:
-        Opus 那条线 44 页  `#stage` 是 flex   子元素高度之和 = 900px 的 100%(44/44)
-        我们        52 页  `#stage` 是 block  中位只有 89%(0/52 达 95%)
-    block 布局下子元素按内容取高,剩下的就是死空间、没有任何东西要求填它;
-    flex 列布局下子元素必须把 900px 分完 —— 「填满版心」从判断变成几何后果。
-    占用比 51% 对 63% 的差距,一大块就是这 11%。
-    而且 block 下「填满」要靠人一遍遍量高度,实测建页 agent 平均 17 次 Edit/页。
-
-    所以它值得一道闸:一行 CSS,可算,漏了整套 44 页都填不满。
-    """
-    bad = _looks_like_prose(text)
-    if bad:
-        return bad
-    # **首行是 markdown 围栏 = 这份 CSS 是坏的,必须判死。** 这条是量出来的,
-    # 代价是一整轮 20 页(runs/deck-sol-low-20260828 第一版):
-    # 文件首行 ```css,浏览器把它当选择器,注释被跳过后它和紧随的 `:root` 连成一个
-    # 非法选择器 —— **整个 `:root` 块被丢弃**,所有 token(版心 padding、字阶、
-    # 配色)一起失效。页面本身完全正确,但渲染出来没有版心、字号全是默认值。
-    #
-    # 旧流程不会撞上:`call()` 末尾 `strip_fence(r.text)`,而那时整个回复就是这一份
-    # 产物。塌缩成一次调用之后回复是复合文档、围栏在**内层**,整篇 strip 不掉。
-    #
-    # 判死而不是顺手剥掉,是因为 `_extract_code` 的候选机制已经处理了剥离
-    # (候选 1 整段、候选 2 strip_fence):这里诚实地说"整段不是 CSS",
-    # 候选 2 就自动接手。**闸接受一份坏产物,比没有闸更坏** —— 它让 20 页
-    # 全部无样式地跑完、还报了 0 失败。
+    """Validate the shared CSS contract that every page depends on."""
     if text.lstrip().startswith("```"):
-        return ("首行是 markdown 代码围栏 —— 它会让浏览器把第一条规则连同 `:root` "
-                "一起当成非法选择器丢掉,整套 token 失效。只输出 CSS 本身,不要围栏")
-    if text.count("{") < 8 or ":" not in text:
-        return f"不像 CSS(只有 {text.count('{')} 个规则块)"
-    # **先剥注释再找。** 这一条是踩出来的:INTERFACE 块里有一句
-    # 「版心 内容区 1488×844,由 `#stage { padding:28px 56px }` 定死」,
-    # 而 `re.search` 取第一个匹配 —— 它抓到的是注释里那段样例(没有 display:flex),
-    # 真正的规则在第 54 行、写得完全正确。结果 theme.css 三次全被退回、整轮死掉,
-    # 而模型没做错任何事。**闸要判 CSS,不该判散文。**
+        return "theme.css 不能包含 markdown 代码围栏"
     bare = re.sub(r"/\*.*?\*/", "", text, flags=re.S)
     body = " ".join(m.group(1) for m in re.finditer(r"#stage\s*\{([^}]*)\}", bare, re.S))
     if not (re.search(r"display\s*:\s*flex", body)
             and re.search(r"flex-direction\s*:\s*column", body)):
-        return ("`#stage` 没有设成 flex 列 —— 必须有 "
-                "`#stage { display: flex; flex-direction: column; }`。"
-                "缺了它子元素按内容取高、剩下的画布就是死空间,"
-                "实测这样的一轮 52 页里 0 页把 900px 用满(对照:另一条线 44/44 页用满)")
+        return "`#stage` 必须设置 `display:flex` 和 `flex-direction:column`"
     if not re.search(r"padding\s*:", body):
-        return ("`#stage` 没有设置 padding —— 主题必须在共享层定义统一版心，"
-                "否则每页会各自决定外边距。至少保留 "
-                "`padding: var(--pad-y) var(--pad-x)`")
+        return "`#stage` 必须在共享层设置 padding"
     if "==== INTERFACE ====" not in text or "==== /INTERFACE ====" not in text:
-        return ("缺 INTERFACE 接口块 —— 文件第一段必须是 "
-                "`/* ==== INTERFACE ==== … ==== /INTERFACE ==== */`。"
-                "建页 agent 只拿到这个块,拿不到规则体,没有它整套类都没法用")
+        return "缺少完整的 INTERFACE 接口块"
     return ""
 
 
@@ -361,30 +126,21 @@ def _valid_css(text: str) -> str:
 # 没有实测证据(观察到的最大是 5 个小 Read);而按 `# page-NN` 切散文**不是**
 # 出过问题的地方 —— 那里没有围栏、没有代码,`_split_specs` 已经跑了很多轮。
 # 只把出过事的那一份挪到工具上,改动面最小。
-PAGE_MIN = 12          # 一页短于这个字符数就当是被截断的残块。极简格式下一页
-                       # 只有一句话(实测 20–60 字符),旧值 60 会把正常页当残块丢掉
-N_FLOOR, N_CEIL = 4, 60  # 只兜「模型把页数写飞了」;真正的区间由 --minutes 推
+N_CEIL = 60  # resource cap; the Planner otherwise decides page count
+PAGE_LABELS = frozenset({"标题页", "内容页", "交互页", "代码页"})
 
 CSS_REL = "pages/assets/theme.css"
 PAGES_REL = "pages/plan/pages.md"
 
 
 def write_targets(run: Run) -> dict:
-    """允许模型写的两个目标。**白名单,不是建议。**
-
-    `tools.run` 的 `Write` 会写任意绝对路径 —— 不限死就等于把 run 目录以外
-    也交给模型。builder 那边靠 `stray()` 事后扫野文件,这里更严:只许这两个,
-    写别处当场拒绝并把理由回喂(和 builder 处理畸形工具参数同一套做法)。
-    """
+    """Return the Planner's two exact output targets."""
     return {(run.root / CSS_REL).resolve(): "theme.css",
             (run.root / PAGES_REL).resolve(): "pages.md"}
 
 
 def take_writes(calls, run: Run) -> tuple[dict, list]:
-    """把一次响应里的 `Write` 调用收下来。返回({目标名: 内容}, [拒绝原因])。
-
-    只收白名单里的两个目标;别的记成拒绝原因,交给上层决定重试还是报错。
-    """
+    """Collect one response's writes and report every protocol violation."""
     allow = write_targets(run)
     got, refused = {}, []
     for c in calls:
@@ -411,26 +167,32 @@ def take_writes(calls, run: Run) -> tuple[dict, list]:
 
 def split_pages(text: str) -> dict:
     """`pages.md` → `{nn: 正文}`。复用 `_split_specs`:按页号而非位置映射、
-    同页号取最后一次、丢弃前言。切散文不是出过问题的地方,原样用。"""
+    同页号取最后一次、丢弃前言。"""
     return _split_specs(text, range(1, N_CEIL + 1))
 
 
 def _valid_pages(text: str) -> str:
-    """`pages.md` 的闸。只拦提示词里给了样例、照抄就能满足的东西 ——
-    `cached()` 重试是原样重发、`bad` 只打印不回灌,拦一件模型不知道怎么改的事
-    等于三次之后判死整轮。"""
-    bad = _looks_like_prose(text)
-    if bad:
-        return bad
+    """Validate only the page-list protocol used for routing and materialization."""
     pages = split_pages(text)
     if not pages:
         return "没有 `# page-NN` 块 —— 每页一个,页号两位、从 01 连续编"
     nn = sorted(int(k) for k in pages)
-    if not (N_FLOOR <= len(nn) <= N_CEIL):
-        return f"页数 {len(nn)} 不合理(应在 {N_FLOOR}–{N_CEIL} 之间)"
+    if len(nn) > N_CEIL:
+        return f"页数超过资源上限 {N_CEIL}"
     if nn != list(range(1, len(nn) + 1)):
         miss = sorted(set(range(1, max(nn) + 1)) - set(nn))
         return f"页号不连续,缺 {' '.join(f'page-{x:02d}' for x in miss)} —— 从 01 编到 N,不跳号"
+    for key, page in pages.items():
+        m = re.match(rf"#\s+page-{key}\s+\[([^\]]+)\]\s*\n(.+)", page, re.S)
+        if not m:
+            return f"page-{key} 必须只有 `[标签]` 标题行和非空主题"
+        label, topic = m.group(1).strip(), m.group(2).strip()
+        if label not in PAGE_LABELS:
+            return f"page-{key} 使用未知标签 `[{label}]`"
+        if not topic:
+            return f"page-{key} 的主题为空"
+        if key == "01" and label != "标题页":
+            return "page-01 必须是 `[标题页]`"
     return ""
 
 
@@ -459,12 +221,6 @@ def iface_gaps(text: str) -> list[str]:
     return sorted(c for c in defined if f".{c}" not in iface and c not in iface)
 
 
-CHECKS = {"theme.css": _valid_css, "pages.md": _valid_pages}
-REPAIRS = {}
-
-_FENCE = re.compile(r"```[a-zA-Z]*\n(.*?)```", re.S)
-
-
 def _split_specs(text: str, nns) -> dict:
     """把一次回复里的多份规格按 `# page-NN` 切开,返回 `{nn: 正文}`。
 
@@ -489,146 +245,47 @@ def _split_specs(text: str, nns) -> dict:
     return out
 
 
-def _extract_code(text: str, check) -> str:
-    """从可能夹着推理稿的回复里把产物捞出来。**只用于代码产物。**
-
-    做法是**候选 + 校验**,不是靠比例或位置去猜:按可能性排好候选,
-    返回第一个能通过 `check` 的。校验器本身就是守卫,所以不需要
-    "最大块得占全文多少"这种门槛 —— 那个门槛试过,反而把
-    「几万字散文 + 一个小围栏」这种正确形状挡在外面。
-
-    候选顺序:
-      1. 整段(最常见:模型老老实实只给了文件)
-      2. 开头就是围栏 → strip_fence
-      3. 所有 ``` 块,按长度从大到小
-      4. 每个 `(function` 处切到文件末尾,从最后一个往前
-
-    第 4 条是实测逼出来的:DeepSeek-V4-Flash 连续三次交出几万字符的推理稿,
-    真正的代码在**文件末尾**、而且紧接在散文后面同一行开始
-    (`…Ensure no markdown.(function (global) {`),所以不能锚在行首。
-    越靠后的 `(function` 越可能是"最终答案",前面那些是它写废的草稿。
-
-    **绝不能用在 markdown 产物上** —— PLAN.md / CONTRACT.md 本身就含代码块
-    (实测 CONTRACT.md 里有 26 处围栏),取块会把整份文件毁掉。
-    所以只在 CHECKS 里那几步上调用。
-    """
-    t = text.strip()
-    cands = [t]
-    if t.startswith("```"):
-        cands.append(strip_fence(t))
-    blocks = sorted(_FENCE.findall(t), key=len, reverse=True)
-    cands += [b.strip() + "\n" for b in blocks]
-    for m in reversed(list(re.finditer(r";?\(function\b", t))):
-        cand = t[m.start():].strip()
-        if len(cand) >= 500:
-            cands.append(cand + "\n")
-    for c in cands:
-        if c and not check(c):
-            return c
-    return t
-
-
-def cached(run: Run, step: str, path: Path, prompt: str,
-           sheet: Path | None = None) -> str:
-    """产物已经在就跳过。单步就是几分钟(theme.css 实测 220s),后面挂掉时
-    没有理由把前面全部重烧一遍。删掉对应文件即可强制重做。"""
-    lo = MIN_CHARS.get(step, 1)
-    if path.exists() and path.stat().st_size:
-        text = path.read_text(encoding="utf-8")
-        # 上一轮留下的残缺产物不能当成"已完成"。空文件和过短文件都重做 ——
-        # 否则一次空响应会被缓存下来,后面每次续跑都跳过它。
-        if len(text) >= lo:
-            print(f"  {step:<12} 已存在,跳过        {len(text):>7,} 字符")
-            return text
-        print(f"  {step:<12} 已存在但只有 {len(text):,} 字符(<{lo:,}),重做")
-    check = CHECKS.get(step)
-    for attempt in range(1, 4):
-        text = call(run, step, prompt, min_chars=lo, sheet=sheet)
-        if check:
-            pulled = _extract_code(text, check)
-            if pulled != text.strip():
-                print(f"  {step:<12} 回复里夹着别的东西,已把产物取出来"
-                      f"({len(text):,} → {len(pulled):,} 字符)", flush=True)
-                text = pulled
-        fix = REPAIRS.get(step)
-        if fix:
-            text = fix(text)
-        bad = check(text) if check else ""
-        if not bad:
-            path.write_text(text, encoding="utf-8")
-            return text
-        print(f"  {step:<12} ✗ 第 {attempt} 次产物不是有效的 {step}:{bad}", flush=True)
-        (run.assets.parent / f"{step}.rejected{attempt}").write_text(text, encoding="utf-8")
-
-    raise RuntimeError(
-        f"{step} 连续 3 次产出的都不是有效内容(最后一次:{bad})。"
-        f"被拒的存在 {run.assets.parent}/{step}.rejectedN,看一眼就知道模型在写什么。")
-
-
 def deck_call(run: Run, prompt: str) -> tuple[str, str]:
-    """**一次带 `Write` 工具的调用**,拿回 (theme.css 内容, pages.md 内容)。
-
-    和 `cached()` 同一套重试骨架(三次、写 rejectedN、三次不过就报错),
-    但产物来自 tool call 的参数,不经任何文本切分 —— 见 write_targets 上面那段账。
-
-    续跑判据是两份产物都在且都过闸;删掉任一份即可强制重做。
-    """
+    """Make one model call, validate once, then atomically materialize its two writes."""
     css_p, pages_p = run.root / CSS_REL, run.root / PAGES_REL
-    if css_p.exists() and pages_p.exists():
-        css, pages = css_p.read_text(encoding="utf-8"), pages_p.read_text(encoding="utf-8")
-        if (len(css) >= MIN_CHARS["theme.css"] and len(pages) >= MIN_CHARS["pages.md"]
-                and not _valid_css(css) and not _valid_pages(pages)):
-            print(f"  deck         已存在,跳过        CSS {len(css):,} / 散文 {len(pages):,} 字符")
-            return css, pages
-        print("  deck         已存在但不完整或不过闸,重做")
+    t0, started = time.time(), _now()
+    r = llm.respond(IDENTITY, [{"role": "user", "content": prompt}],
+                    PLANNER_WRITE_SPEC, config()["planner"]["reasoning_effort"], tag="deck")
+    calls = [o for o in r.output if getattr(o, "type", "") == "function_call"]
+    tin, tout, cached_tok = llm.usage_of(r)
+    run.log.add([{"type": "text", "text": prompt}], llm.text_of(r),
+                {"input_tokens": tin, "output_tokens": tout,
+                 "cache_read_input_tokens": cached_tok or 0},
+                getattr(r, "id", None) or f"req_{uuid.uuid4().hex[:16]}",
+                started, _now(),
+                {"step": "deck", "tools": [{"name": c.name} for c in calls]})
+    got, refused = take_writes(calls, run)
+    print(f"  deck         {time.time()-t0:6.1f}s  in={tin:>7,}  out={tout:>6,} tok  "
+          f"{len(calls)} 个工具调用 → {sorted(got) or '无产物'}")
 
-    spec = [s for s in tools.specs() if s["name"] == "Write"]
-    for attempt in range(1, 4):
-        t0, started = time.time(), _now()
-        r = llm.respond(IDENTITY, [{"role": "user", "content": prompt}],
-                        spec, config()["planner"]["reasoning_effort"], tag="deck")
-        calls = [o for o in r.output if getattr(o, "type", "") == "function_call"]
-        tin, tout, cached_tok = llm.usage_of(r)
-        run.log.add([{"type": "text", "text": prompt}], llm.text_of(r),
-                    {"input_tokens": tin, "output_tokens": tout,
-                     "cache_read_input_tokens": cached_tok or 0},
-                    getattr(r, "id", None) or f"req_{uuid.uuid4().hex[:16]}",
-                    started, _now(),
-                    {"step": "deck", "tools": [{"name": c.name} for c in calls]})
-        got, refused = take_writes(calls, run)
-        print(f"  deck         {time.time()-t0:6.1f}s  in={tin:>7,}  out={tout:>6,} tok  "
-              f"{len(calls)} 个工具调用 → {sorted(got) or '无产物'}")
-        for why in refused:
-            print(f"               ⚠ {why}")
+    bad = list(refused)
+    css_bad = _valid_css(got["theme.css"]) if "theme.css" in got else ""
+    pages_bad = _valid_pages(got["pages.md"]) if "pages.md" in got else ""
+    if "theme.css" not in got:
+        bad.append(f"没有写 {CSS_REL}")
+    elif css_bad:
+        bad.append(f"{CSS_REL}: {css_bad}")
+    if "pages.md" not in got:
+        bad.append(f"没有写 {PAGES_REL}")
+    elif pages_bad:
+        bad.append(f"{PAGES_REL}: {pages_bad}")
+    if bad:
+        rejected = run.root / "deck.rejected.json"
+        rejected.write_text(json.dumps(
+            {"bad": bad, **{k: v for k, v in got.items()}},
+            ensure_ascii=False, indent=1), encoding="utf-8")
+        raise RuntimeError(f"deck 交付不合格: {'; '.join(bad)}。诊断见 {rejected}")
 
-        bad = []
-        if "theme.css" not in got:
-            bad.append(f"没有写 {CSS_REL}")
-        elif _valid_css(got["theme.css"]):
-            bad.append(f"{CSS_REL}: {_valid_css(got['theme.css'])}")
-        if "pages.md" not in got:
-            bad.append(f"没有写 {PAGES_REL}")
-        elif _valid_pages(got["pages.md"]):
-            bad.append(f"{PAGES_REL}: {_valid_pages(got['pages.md'])}")
-
-        if not bad:
-            css_p.parent.mkdir(parents=True, exist_ok=True)
-            pages_p.parent.mkdir(parents=True, exist_ok=True)
-            # **逐字节落盘,不做任何剥离。** 内容来自 JSON 字符串字段,
-            # 不存在围栏 —— 这正是走工具要换来的那件事。
-            css_p.write_text(got["theme.css"], encoding="utf-8")
-            pages_p.write_text(got["pages.md"], encoding="utf-8")
-            return got["theme.css"], got["pages.md"]
-
-        print(f"  deck         ✗ 第 {attempt} 次不合格:{';'.join(bad)}", flush=True)
-        (run.root / f"deck.rejected{attempt}").write_text(
-            json.dumps({"refused": refused, "bad": bad,
-                        **{k: v for k, v in got.items()}},
-                       ensure_ascii=False, indent=1), encoding="utf-8")
-
-    raise RuntimeError(
-        f"deck 连续 3 次没能用 `Write` 交付两份合格产物(最后一次:{';'.join(bad)})。"
-        f"被拒的存在 {run.root}/deck.rejectedN。")
+    css_p.parent.mkdir(parents=True, exist_ok=True)
+    pages_p.parent.mkdir(parents=True, exist_ok=True)
+    css_p.write_text(got["theme.css"], encoding="utf-8")
+    pages_p.write_text(got["pages.md"], encoding="utf-8")
+    return got["theme.css"], got["pages.md"]
 
 
 def seed(run: Run, chassis: Path, lib: Path) -> None:
@@ -661,50 +318,6 @@ def seed(run: Run, chassis: Path, lib: Path) -> None:
     if not (run.assets / "lib").exists():
         shutil.copytree(lib, run.assets / "lib")
     print(f"  seed         底盘已就位,库 {len(list(lib.glob('*.js')))} 个（真拷贝,非软链接）")
-
-
-def skeletons(run: Run, n: int) -> None:
-    """建骨架。
-
-    比 nn-06 的空骨架多了资源接线和 `#stage` —— 这几行没有任何判断成分,
-    而漏掉的代价很实:base.js 的契约是「页面里只要有 #stage 就开始工作」,
-    没有它整套缩放和 canvas 适配都不生效。nn-03 里还有三个 subagent 各自把
-    data-page 写成 "3" 再改成 "03",白花 8 次编辑。确定性的事 harness 做掉。
-    """
-    tpl = ('<!doctype html>\n<html lang="zh">\n<head>\n<meta charset="utf-8">\n'
-           '<link rel="stylesheet" href="assets/base.css">\n'
-           '<link rel="stylesheet" href="assets/theme.css">\n</head>\n'
-           '<body data-page="{i:02d}" data-total="{n:02d}">\n'
-           # 只留 `#stage` —— base.js 靠它做整体缩放,里面是空的。
-           # 原来还有 `<main id="main">`,那是给 mount 往前后插页眉页脚用的;
-           # 页眉页脚删掉之后它没有对象了,版面由建页的 agent 自己定。
-           '<div id="stage"></div>\n'
-           '<script src="assets/base.js"></script>\n</body>\n</html>\n')
-    for i in range(1, n + 1):
-        p = run.pages / f"page-{i:02d}.html"
-        if not p.exists():
-            p.write_text(tpl.format(i=i, n=n), encoding="utf-8")
-    print(f"  skeletons    {n} 个骨架,已接 base/theme,data-total={n:02d}")
-
-
-@functools.lru_cache(maxsize=1)
-def _skill_names() -> frozenset:
-    # 也是吃 `skills.DEFAULT` 的一处。`main()` 会按 `--skills` 重绑它,
-    # 但这个函数带 lru_cache —— **重绑之后必须清缓存**,否则第一次调用的结果
-    # 会一直用下去。目录不在就返回空集:这只是用来校验规格里点的 skill 名对不对,
-    # 拿不到清单该是「这一条查不了」,不该是整轮炸掉。
-    root = skills.DEFAULT
-    if not root.is_dir():
-        return frozenset()
-    return frozenset(d.name for d in root.iterdir()
-                     if (d / "SKILL.md").is_file())
-
-
-@functools.lru_cache(maxsize=1)
-def _lib_stems() -> frozenset:
-    """库文件名去掉扩展名。`konva.min.js` → `konva`。"""
-    d = VENDOR / "chassis" / "lib"
-    return frozenset(p.name.split(".")[0] for p in d.iterdir()) if d.is_dir() else frozenset()
 
 
 _FIELD = re.compile(r"\s*(?:[-*]\s*)?\*{0,2}[^：:\n]{1,15}[：:]")
@@ -1067,7 +680,7 @@ def _img_lines(pool: str, nn: str) -> str:
 
 
 def briefs(run: Run, nns: list, pool: str = "") -> list[Brief]:
-    """按模板填。每页 = 那一段散文 + 该页的图片清单。
+    """按模板填。每页 = 标签与主题 + 该页的图片清单。
 
     **全流程唯一一处没照抄 Claude Code 的地方**,理由是量出来的:nn-03 里主 agent
     逐字手写 14 份 brief,派发时刻拉开 6:24,而 brief 之间七成内容一样。
@@ -1077,8 +690,7 @@ def briefs(run: Run, nns: list, pool: str = "") -> list[Brief]:
     for nn in nns:
         pid = f"page-{nn}"
         out.append(Brief(f"Build {pid}", run.prompt(
-            "brief", query=run.query, pid=pid, total=len(nns),
-            assets=run.assets, spec=run.pages / "plan" / f"p{nn}.md")
+            "brief", query=run.query, pid=pid, total=len(nns))
             + _img_lines(pool, nn)))
     lens = sorted(len(b.prompt) for b in out)
     print(f"  briefs       {len(out)} 份,{lens[0]}–{lens[-1]} 字符,中位 {lens[len(lens)//2]}")
@@ -1086,8 +698,8 @@ def briefs(run: Run, nns: list, pool: str = "") -> list[Brief]:
 
 
 def plan_run(run: Run, chassis: Path, lib: Path,
-             skill_root: Path = None, workflow_root: Path = None) -> dict:
-    """**一次模型调用**,产出每页一段散文 + 一份 theme.css。
+             workflow_root: Path = None) -> dict:
+    """**一次模型调用**,产出每页的标签与主题 + 一份 theme.css。
 
     2026-08-28 之前这里是 7+ 次串行调用(lec.js → PLAN.md → 图池 → theme.css →
     CONTRACT.md → 逐幕规格),外加一整套围绕页表和规格建立的闸与仪器。
@@ -1099,11 +711,6 @@ def plan_run(run: Run, chassis: Path, lib: Path,
     t0 = time.time()
     seed(run, chassis, lib)
     w, h = run.canvas
-    # 页数预算从 `--minutes` 推。**这个数要留着** —— 把页数从 18 推到 41 的
-    # 正是单页 150 秒那条,而不是页表的九列(见 STAY_CEILING 上面那段)。
-    total = run.minutes * 60
-    # 页数不再给区间:给了数字模型就先定数再往里填。改由「4–6 章 × 每章几页」
-    # 从内容推出来(见 prompts/deck.md 的页数节)。
     css, pages_doc = deck_call(run, run.prompt(
         "deck", query=run.query, minutes=run.minutes,
         audience=run.audience, scenario=run.scenario or "（没写）",
@@ -1115,13 +722,6 @@ def plan_run(run: Run, chassis: Path, lib: Path,
         font_floor=skills.FONT_FLOOR))
 
     pages = split_pages(pages_doc)
-    # 残块照旧丢掉、不判死整轮:散文可分割,交 18/21 页远好过交 0 页。
-    short = sorted(k for k, v in pages.items() if len(v) < PAGE_MIN)
-    for k in short:
-        pages.pop(k)
-    if short:
-        print(f"  ⚠ 丢掉 {len(short)} 个残块(短于 {PAGE_MIN} 字符): "
-              f"{' '.join('page-' + k for k in short)}")
     gaps = iface_gaps(css)
     if gaps:
         print(f"  ⚠ 接口块漏列 {len(gaps)} 个类(只报不拦,builder 会少几个可选项): "
@@ -1148,7 +748,6 @@ def plan_run(run: Run, chassis: Path, lib: Path,
 ''', encoding="utf-8")
         print("  接口交接     已知陷阱（Deck.fmt 带符号）→ CHASSIS.md")
 
-    skeletons(run, len(nns))
     (run.root / "briefs.json").write_text(
         json.dumps([b.as_tool_input() for b in briefs(run, nns, pool)],
                    ensure_ascii=False, indent=2), encoding="utf-8")
@@ -1211,8 +810,7 @@ def main() -> None:
     # 只加一个 `--skills` 参数,取图那两行仍然指着旧路径,属于「改了参数不生效」。
     # 所以这里显式重绑,并且立刻验证两个脚本真的在。
     global _WEBMEDIA, _GEN
-    skills.DEFAULT = Path(n.skills)      # `_skill_names()` 和别处还在读它
-    _skill_names.cache_clear()           # 它带 lru_cache,不清就用旧路径的结果
+    skills.DEFAULT = Path(n.skills)
     _WEBMEDIA = Path(n.skills) / "web-media-getter" / "webmedia.py"
     _GEN = Path(n.skills) / "make-illustration" / "scripts" / "gen.py"
     for _p, _why in ((_WEBMEDIA, "取照片"), (_GEN, "生成插画")):
@@ -1222,7 +820,7 @@ def main() -> None:
     if n.effort: config()["planner"]["reasoning_effort"] = n.effort
     plan_run(Run(n.query, n.minutes, n.audience, n.label, n.scenario,
                  prompts=Path(n.prompts), direction_menus=n.direction_menus),
-             Path(n.chassis), Path(n.lib), Path(n.skills), workflow_root)
+             Path(n.chassis), Path(n.lib), workflow_root)
 
 
 if __name__ == "__main__":

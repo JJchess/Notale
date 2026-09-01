@@ -1,27 +1,28 @@
-你负责构建互动讲义《{query}》中的一页：`{pid}.html`。
+构建互动讲义《{query}》的 `{pid}.html`。
 
-工作目录固定为 `{assets}/..`。
+工作目录是当前 run 的 `pages/`；路径均相对于它。
 
-开工要用的五份**已在你的 system 提示里**，不要再 `Read`：
+system 已含以下四块，无需为了确认而重复读取源文件：
 
-1. `<chassis>`：`base.css`、`base.js` 的接口。
-2. `<tech>`：全套 {total} 页共享的版面、视觉、运行和数据契约。
-3. `<theme_css>`：主题接口——token、版式、组件的语义和用法，照它用。
-4. `<page_spec>`：本页教什么——标签加一句话。其余由你定，不是漏写。
-5. `<deck_map>`：全套页表。别重复邻页讲过的。
+1. `<chassis>`：`base.css`、`base.js` 接口。
+2. `<tech>`：{total} 页共享的技术契约。
+3. `<theme_css>`：主题 token、版式与组件接口。
+4. `<deck_outline>`：全套章节边界。
 
-先读完再动手。
+末尾 `<chapter_context>` 是当前章页表，`current="true"` 是本页。别重复邻页；
+未细写的部分由你决定。
 
-需要库的用法细节时读 `{assets}/lib/LIBS.md`。
-它答不了再读 `assets/lib/` 下的自家源码。不要读其他 `page-*.html` 或 `*.min.js`。
+`<tech>` 已给本地依赖索引，按索引直接引用；只有确需索引未提供的 API 细节时才读
+`assets/lib/LIBS.md`，不要用 Bash/Read 枚举依赖，也不要读其他 `page-*.html` 或 `*.min.js`。
 
-技法文档的清单在 system 提示里。**先判断这一页属于哪一类，再用 `Skill` 取一份读了动手**；
-清单里没有对应的就自己写，不必硬凑。
+system 也含本页标签对应的 `SKILL.md`。第一轮按它当前注册的加载规则和精确路径并行 `Read`
+reference 与 sample。
 
-把现有空骨架改成完整页面。保留 `#stage`、`data-page` 和 `data-total`，不要修改 `assets/`，
-也不要新建其他文件。
+普通页的目标文件尚不存在：直接创建完整 HTML，并包含 `#stage`、`data-page`、
+`data-total`、`assets/base.css`、`assets/theme.css` 和 `assets/base.js`。不修改 `assets/`
+或新建旁路文件。`[代码页]` 按 `CodeScaffold` 边界，只编辑当前页 `lesson/`。
 
-完成前用 `Check` 检查 `{pid}.html` 的真实渲染，反复改到不再报 ✗ 为止。
-有交互时覆盖每个主要状态；只检查初始状态不算完成。不要另写 Playwright 脚本。
+需要判断真实渲染或主要主动交互状态时使用 `Check`；不要为被动循环动画反复截相邻帧，
+也不要另写 Playwright 脚本。
 
-最终只交付 `{pid}.html`。回复一行：本页做了什么；最后一次页面检查的结果。
+完成后直接结束。

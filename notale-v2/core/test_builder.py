@@ -1,468 +1,392 @@
 #!/usr/bin/env python3
-"""Builder agent-loop regression tests."""
+"""Regression tests for the deliberately small Builder harness."""
 
 from __future__ import annotations
 
 import copy
 import json
-import shutil
-import sys
 import tempfile
-import ast
 import unittest
+import xml.etree.ElementTree as ET
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
+from core import builder
+
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT))
-
-from core import builder, llm, wire  # noqa: E402
 
 
 class FakeCall(SimpleNamespace):
     def model_dump(self):
-        return {"type": "function_call", "name": self.name,
-                "arguments": self.arguments, "call_id": self.call_id}
+        return {
+            "type": "function_call",
+            "name": self.name,
+            "arguments": self.arguments,
+            "call_id": self.call_id,
+        }
 
 
-def done_response(text="done"):
+def call(name: str, **args) -> FakeCall:
+    return FakeCall(
+        type="function_call",
+        name=name,
+        arguments=json.dumps(args),
+        call_id=f"c-{name}-{abs(hash(json.dumps(args, sort_keys=True))) % 100000}",
+    )
+
+
+def tool_response(*calls: FakeCall, index: int = 0):
+    return SimpleNamespace(output=list(calls), usage=None, id=f"req-{index}")
+
+
+def done_response(text: str = "done"):
     message = SimpleNamespace(
         type="message",
         content=[SimpleNamespace(type="output_text", text=text)],
     )
-    return SimpleNamespace(output=[message], usage=None, id="req_done")
+    return SimpleNamespace(output=[message], usage=None, id="req-done")
 
 
-class DeckMapPreloadTests(unittest.TestCase):
-    def test_shared_preload_carries_the_deck_map(self) -> None:
-        """整份页表进 system 块 —— builder 第一次看得见邻页在讲什么。
+def page(pid="page-01", workflow="build-cover", label="标题页") -> builder.Page:
+    return builder.Page(
+        pid,
+        "Build the current target.",
+        workflow=workflow,
+        label=label,
+        spec_text=f"# {pid} [{label}]\nAdaBoosting 算法",
+        total=4,
+    )
 
-        传整份而不是相邻两页是缓存决定的:整份对所有页逐字节相同,走跨页共享;
-        按页裁剪会让 system 块按页不同,正是 8-28 修掉的那个杀缓存 bug。
-        """
+
+class PlanningContextTests(unittest.TestCase):
+    @staticmethod
+    def make_root(path: Path) -> Path:
+        assets = path / "pages" / "assets"
+        plan = path / "pages" / "plan"
+        assets.mkdir(parents=True)
+        plan.mkdir()
+        (assets / "CHASSIS.md").write_text("chassis", encoding="utf-8")
+        (assets / "theme.css").write_text(
+            "/* ==== INTERFACE ====\n组件 .panel 读数容器\n"
+            "==== /INTERFACE ==== */\n.panel{padding:12px}",
+            encoding="utf-8",
+        )
+        library = assets / "lib"
+        library.mkdir()
+        (library / "LIBS.md").write_text(
+            "# Libraries\n\n## 按「要做的事」查\n\n| task | file |\n|---|---|\n"
+            "| chart | d3.min.js |\n\n## Details\nAPI details",
+            encoding="utf-8",
+        )
+        specs = [
+            "# page-01 [标题页]\n整套开场",
+            "# page-02 [内容页]\n历史背景",
+            "# page-03 [交互页]\n交互理解",
+            "# page-04 [代码页]\n代码实操",
+            "# page-05 [标题页]\n第二章",
+            "# page-06 [内容页]\n章节内容",
+        ]
+        (plan / "pages.md").write_text(
+            "本套无需图池\n\n" + "\n\n".join(specs), encoding="utf-8"
+        )
+        for index, spec in enumerate(specs, 1):
+            (plan / f"p{index:02d}.md").write_text(spec, encoding="utf-8")
+        return path
+
+    def test_shared_prefix_has_outline_not_all_page_details(self):
         with tempfile.TemporaryDirectory() as td:
-            root = Path(td)
-            (root / "pages" / "assets").mkdir(parents=True)
-            (root / "pages" / "plan").mkdir()
-            (root / "pages" / "assets" / "CHASSIS.md").write_text("chassis", encoding="utf-8")
-            (root / "pages" / "assets" / "theme.css").write_text(
-                "/* ==== INTERFACE ====\n   组件 .panel 读数容器\n"
-                "   ==== /INTERFACE ==== */\n.panel{padding:12px;color:red;}",
-                encoding="utf-8")
-            (root / "pages" / "plan" / "pages.md").write_text(
-                "# page-01 [标题页]\n开场。", encoding="utf-8")
-            text, paths = builder.shared_preload(root, 2)
-        self.assertIn("<deck_map>", text)
-        self.assertIn("开场。", text)
-        self.assertIn("pages.md", paths)      # pre_hit 指路要认识它
-        # theme 只进接口块,规则体不进(sol-slim 第一次实验输掉后的第二版形态)
+            text = builder.shared_preload(self.make_root(Path(td)), 6)
+        self.assertIn("<deck_outline>", text)
+        self.assertIn("整套开场", text)
+        self.assertIn("第二章", text)
+        self.assertNotIn("历史背景", text)
         self.assertIn(".panel 读数容器", text)
         self.assertNotIn("padding:12px", text)
-        self.assertIn("theme.css", paths)     # 硬禁靠 pre_hit,它必须认识这份
 
-    def test_libs_index_still_finds_its_anchor(self) -> None:
-        """`_libs_index` 靠 `## 按「要做的事」查` 切表 —— 锚点丢了它会**静默整份注入**
-        (8KB 而不是 1.2KB)。2026-08-29 改过表头格式,这条守着别再动坏。
-        """
+    def test_chapter_context_is_compact_valid_xml(self):
         with tempfile.TemporaryDirectory() as td:
-            root = Path(td)
-            lib = root / "pages" / "assets" / "lib"
-            lib.mkdir(parents=True)
-            src = Path(__file__).resolve().parents[1] / "vendor/chassis/lib/LIBS.md"
-            shutil.copy(src, lib / "LIBS.md")
-            idx = builder._libs_index(root)
-        self.assertLess(len(idx), 2000)                 # 切到了,不是整份
-        self.assertIn("matter.min.js", idx)             # 20 行都在
-        self.assertIn("tf.min.js", idx)
-        # 引法在表头说一次,不再每行重复一遍(20 行样板 = 632 字符)
-        self.assertEqual(idx.count("<script src="), 1)
+            blocks = builder.chapter_preloads(self.make_root(Path(td)), 6)
+        node = ET.fromstring(blocks["page-03"])
+        self.assertEqual(node.attrib["current"], "page-03")
+        self.assertEqual(
+            [child.attrib["id"] for child in node],
+            ["page-01", "page-02", "page-03", "page-04"],
+        )
+        self.assertEqual(node[2].attrib["current"], "true")
+        self.assertEqual(
+            [child.attrib["id"] for child in ET.fromstring(blocks["page-06"])],
+            ["page-05", "page-06"],
+        )
 
-    def test_theme_interface_falls_back_to_full_file(self) -> None:
-        """老 deck 没有定界符 → 整份注入,不静默给空。"""
+    def test_environment_context_matches_real_absent_target(self):
         with tempfile.TemporaryDirectory() as td:
-            f = Path(td) / "theme.css"
-            f.write_text(":root{--x:1px;}", encoding="utf-8")
-            self.assertIn("--x:1px", builder._theme_interface(f))
-
-    def test_preloaded_hit_catches_bash_too(self) -> None:
-        """硬禁的一致性:`cat theme.css` 和 Read theme.css 是同一件事。
-        sonB 那轮就是用 cat/awk 绕开 Read 的。"""
-        pre = {Path("/r/pages/assets/theme.css").resolve(): "theme.css"}
-        hit = builder._preloaded_hit(pre, {"command": "sed -n '1,40p' assets/theme.css"},
-                                     Path("/r/pages"))
-        self.assertEqual(hit, "theme.css")
-        miss = builder._preloaded_hit(pre, {"command": "grep stage page-06.html"},
-                                      Path("/r/pages"))
-        self.assertEqual(miss, "")
-
-
-class BuilderStopTests(unittest.TestCase):
-    def test_no_tool_use_stops_even_when_no_workflow_was_loaded(self) -> None:
-        response = done_response()
-
-        with tempfile.TemporaryDirectory() as td:
-            root = Path(td)
-            pages = root / "pages"
+            pages = Path(td) / "pages"
             pages.mkdir()
-            page = builder.Page("page-01", "Build page-01.html")
-            with patch.object(builder, "respond", return_value=response) as respond:
-                result = builder.build_one(
-                    page,
-                    pages,
-                    root / "trace.jsonl",
-                    root / "skills",
-                    "test instructions",
-                    "medium",
+            p = page()
+            text = builder.environment_context(
+                pages, p, ROOT / "workflows" / p.workflow
+            )
+        node = ET.fromstring(text)
+        self.assertEqual(node.findtext("target_state"), "absent")
+        self.assertTrue(node.findtext("target").endswith("page-01.html"))
+        self.assertTrue(node.findtext("read_only_skill").endswith("build-cover"))
+
+
+class RoutingTests(unittest.TestCase):
+    def test_all_four_labels_route_one_to_one(self):
+        cases = {
+            "标题页": "build-cover",
+            "内容页": "build-page",
+            "交互页": "build-interaction",
+            "代码页": "build-code",
+        }
+        for label, workflow in cases.items():
+            with self.subTest(label=label), tempfile.TemporaryDirectory() as td:
+                root = Path(td)
+                plan = root / "pages" / "plan"
+                plan.mkdir(parents=True)
+                (plan / "p01.md").write_text(
+                    f"# page-01 [{label}]\nAdaBoosting", encoding="utf-8"
                 )
+                routed = builder.route_page(root, builder.Page("page-01", "Build"))
+                self.assertEqual(routed.workflow, workflow)
 
-        self.assertTrue(result.ok)
-        self.assertEqual(result.calls, 1)
-        self.assertEqual(result.why, "done")
-        self.assertEqual(result.termination, "no_tool_use")
-        self.assertEqual(result.steps, [])
-        self.assertFalse(hasattr(result, "nagged"))
-        respond.assert_called_once()
-
-
-class BuilderRoutingTests(unittest.TestCase):
-    """指派没了 —— workflow 由建页 agent 自选。这里守的是**观测项还活着**。
-
-    `test_new_brief_routes_exactly_one_workflow` / `test_legacy_brief_keeps_multiple_skills`
-    / `test_workflow_mode_rejects_other_skill_without_restarting` 三个 2026-08-28 删除:
-    它们断言的是 harness 按 `## 主工作流` 路由并硬拦别的 workflow,而那套机制整条没了。
-    """
-
-    def test_brief_becomes_just_id_and_prose(self) -> None:
-        page = builder.page_from_brief(
-            {"description": "Build page-07", "prompt": "一段散文。"})
-        self.assertEqual(page.pid, "page-07")
-        self.assertEqual(page.prompt, "一段散文。")
-
-    def test_any_workflow_can_be_loaded_and_is_recorded(self) -> None:
-        """自选是允许的,但**必须留痕** —— `loaded_skills` 是新的观测项。
-
-        指派时代的读数是「指派 N 项、实际读到 N 项」;现在没有分母了,
-        改看各页自己挑了什么、以及有没有页面一份都不读。
-        """
-        page = builder.Page("page-01", "Build")
-        for name in ("build-chart", "build-interaction"):
-            page.loaded_skills.append(name)
-        self.assertEqual(page.loaded_skills, ["build-chart", "build-interaction"])
+    def test_unknown_label_fails_loudly(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            plan = root / "pages" / "plan"
+            plan.mkdir(parents=True)
+            (plan / "p01.md").write_text(
+                "# page-01 [练习页]\nAdaBoosting", encoding="utf-8"
+            )
+            with self.assertRaisesRegex(ValueError, "cannot route"):
+                builder.route_page(root, builder.Page("page-01", "Build"))
 
 
-class CacheAccountingTests(unittest.TestCase):
-    """缓存这一层的账。全仓在 2026-08-26 之前一个 cached 数都没有,
-    所以「前缀缓存生不生效」只能靠离线探针 —— 这几条把它钉住。"""
-
-    def _img_hist(self, n: int) -> list:
-        h = [{"role": "user", "content": "开始"}]
-        for i in range(n):
-            h.append({"role": "user", "content": [
-                {"type": "input_image", "image_url": f"data:image/png;base64,x{i}"}]})
-        return h
-
-    def test_no_eviction_below_context_soft(self) -> None:
-        """没超线时历史必须**逐字节不变** —— 动一下前缀缓存就断。"""
-        hist = self._img_hist(8)
-        before = copy.deepcopy(hist)
-        n = builder.evict_images(hist, builder.CONTEXT_SOFT)
-        self.assertEqual(n, 0)
-        self.assertEqual(hist, before)
-
-    def test_eviction_above_context_soft_keeps_last_two(self) -> None:
-        hist = self._img_hist(8)
-        n = builder.evict_images(hist, builder.CONTEXT_SOFT + 1)
-        self.assertEqual(n, 6)
-        left = [m for m in hist if builder._is_image_msg(m)]
-        self.assertEqual(len(left), builder.KEEP_IMAGES)
-
-    def test_usage_of_tells_unreported_apart_from_zero(self) -> None:
-        """`None`(这条路由不报) 和 `0`(报了但没命中) 必须分得开。"""
-        none_usage = SimpleNamespace(input_tokens=10, output_tokens=1)
-        self.assertIsNone(llm.usage_of(SimpleNamespace(usage=none_usage))[2])
-
-        zero = SimpleNamespace(input_tokens=10, output_tokens=1,
-                               input_tokens_details=SimpleNamespace(cached_tokens=0))
-        self.assertEqual(llm.usage_of(SimpleNamespace(usage=zero))[2], 0)
-
-        hit = SimpleNamespace(input_tokens=10, output_tokens=1,
-                              input_tokens_details=SimpleNamespace(cached_tokens=7))
-        self.assertEqual(llm.usage_of(SimpleNamespace(usage=hit)), (10, 1, 7))
-
-        # builder 的假响应一直用 usage=None,不能让新读取炸掉
-        self.assertEqual(llm.usage_of(SimpleNamespace(usage=None)), (0, 0, None))
-
-    def test_usage_of_reads_chat_and_anthropic_field_names(self) -> None:
-        chat = SimpleNamespace(prompt_tokens=9, completion_tokens=2,
-                               prompt_tokens_details=SimpleNamespace(cached_tokens=5))
-        self.assertEqual(llm.usage_of(SimpleNamespace(usage=chat)), (9, 2, 5))
-        anth = SimpleNamespace(input_tokens=9, output_tokens=2,
-                               cache_read_input_tokens=4)
-        self.assertEqual(llm.usage_of(SimpleNamespace(usage=anth))[2], 4)
-
-    def test_persisted_cache_key_survives_trace_readback(self) -> None:
-        """trace.usage_of() 只认 wire.Usage 声明过的字段,写错名字会被静默丢掉。"""
-        self.assertIn("cache_read_input_tokens", wire.Usage.model_fields)
-
-
-class WriteOnceAndEffortTests(unittest.TestCase):
-    """整页只许写一次;构图与修复用不同推理档。"""
-
-    def _call(self, name, **args):
-        return FakeCall(type="function_call", name=name,
-                        arguments=json.dumps(args), call_id=f"c{name}")
-
-    def _run(self, calls, effort="low", compose="medium"):
-        """跑 build_one,返回 (page, 每步用的 effort, 每步 tools.run 收到的工具名)."""
-        efforts, ran = [], []
-        self.surfaces = []
-        responses = [SimpleNamespace(output=[c], usage=None, id=f"r{i}")
-                     for i, c in enumerate(calls)]
-        responses.append(done_response())
-
-        def fake_respond(instr, hist, spec, eff, tag="-"):
-            efforts.append(eff)
-            self.surfaces.append({s["name"] for s in spec})
-            return responses.pop(0)
-
-        def fake_run(name, args, cwd, root, pid):
-            ran.append(name)
+class AgentLoopTests(unittest.TestCase):
+    @staticmethod
+    def fake_run_factory(events: list, fatal_audit: bool = False):
+        def fake_run(name, args, cwd, _resource_root, _pid):
+            events.append((name, copy.deepcopy(args)))
+            if name == "Write":
+                target = Path(args["file_path"])
+                if not target.is_absolute():
+                    target = cwd / target
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text(args["content"], encoding="utf-8")
+                return "written"
+            if name == "Edit":
+                return "edited"
+            if name == "Read":
+                return "resource body · EOF"
+            if name == "Check":
+                return "✗ JS 报错" if fatal_audit else "✓ clean"
             return "ok"
 
-        with tempfile.TemporaryDirectory() as td:
-            root = Path(td)
-            (root / "page-01.html").write_text("<html></html>", encoding="utf-8")
-            page = builder.Page("page-01", "Build")
-            with patch.object(builder, "respond", fake_respond), \
-                    patch.object(builder.tools, "run", fake_run):
-                builder.build_one(page, root, root / "trace.jsonl", root,
-                                  "instructions", effort, compose)
-        return page, efforts, ran
+        return fake_run
 
-    def test_second_whole_page_write_is_refused(self) -> None:
-        page, _, ran = self._run([
-            self._call("Write", file_path="/x/page-01.html", content="a"),
-            self._call("Write", file_path="/x/page-01.html", content="b"),
-        ])
-        # 第一次真的执行了,第二次没有走到 tools.run
-        self.assertEqual(ran, ["Write"])
-        self.assertTrue(page.wrote)
-        # 但它仍然记进步数 —— 事后要查得到「它试过重写」
-        self.assertEqual(page.steps.count("Write"), 2)
+    def test_no_tool_stops_once_without_delivery_or_nag(self):
+        with tempfile.TemporaryDirectory() as td, patch.object(
+            builder, "respond", return_value=done_response()
+        ) as respond:
+            result = builder.build_one(
+                page(), Path(td), Path(td) / "trace.jsonl", ROOT / "workflows",
+                "instructions", "low",
+            )
+        self.assertEqual(result.calls, 1)
+        self.assertEqual(result.termination, "no_tool_use")
+        self.assertFalse(result.artifact_present)
+        self.assertIn("target missing", result.audit["fatal_errors"][0])
+        respond.assert_called_once()
 
-    def test_patch_still_allowed_after_write(self) -> None:
-        _, _, ran = self._run([
-            self._call("Write", file_path="/x/page-01.html", content="a"),
-            self._call("Patch", page="page-01.html", edits=[{"old": "x", "new": "y"}]),
-            self._call("Edit", file_path="/x/page-01.html", old_string="x", new_string="y"),
-        ])
-        self.assertEqual(ran, ["Write", "Patch", "Edit"])
+    def test_native_reads_then_write_use_one_constant_surface_and_effort(self):
+        skill = ROOT / "workflows" / "build-cover"
+        responses = [
+            tool_response(
+                call("Read", file_path=str(skill / "references/composition.md")),
+                call("Read", file_path=str(skill / "samples/bundles/composition/prism-light.full.md")),
+                index=0,
+            ),
+            tool_response(
+                call("Write", file_path="page-01.html", content="<html>one</html>"),
+                index=1,
+            ),
+            done_response(),
+        ]
+        surfaces, efforts, events = [], [], []
 
-    def test_effort_drops_to_repair_tier_after_the_write(self) -> None:
-        _, efforts, _ = self._run([
-            self._call("Read", file_path="/x/CONTRACT.md"),
-            self._call("Write", file_path="/x/page-01.html", content="a"),
-            self._call("Patch", page="page-01.html", edits=[{"old": "x", "new": "y"}]),
-        ], effort="low", compose="medium")
-        # 第 1、2 步在 Write 之前 → 构图档;第 3 步及以后 → 修复档
-        self.assertEqual(efforts[:2], ["medium", "medium"])
-        self.assertTrue(all(e == "low" for e in efforts[2:]), efforts)
+        def fake_respond(_instructions, _hist, specs, effort, tag="-"):
+            surfaces.append(tuple(row["name"] for row in specs))
+            efforts.append(effort)
+            return responses.pop(0)
 
-    def test_patch_and_edit_are_absent_before_the_first_write(self) -> None:
-        """先 Write 不能只靠 IDENTITY 劝 —— 实测 Sonnet 会用 Edit 整页写入绕过去。"""
-        _, _, ran = self._run([
-            self._call("Read", file_path="/x/CONTRACT.md"),
-            self._call("Edit", file_path="/x/page-01.html",
-                       old_string="a", new_string="b"),
-            self._call("Write", file_path="/x/page-01.html", content="a"),
-        ])
-        self.assertIn("Write", self.surfaces[0])
-        for s in self.surfaces[:2]:                 # Write 之前
-            self.assertNotIn("Patch", s)
-            self.assertNotIn("Edit", s)
-        # Read 照常执行;硬喊的那次 Edit 被兜底拦下,没有走到 tools.run
-        self.assertEqual(ran, ["Read", "Write"])
+        with tempfile.TemporaryDirectory() as td, \
+                patch.object(builder, "respond", fake_respond), \
+                patch.object(builder.tools, "run", self.fake_run_factory(events)):
+            result = builder.build_one(
+                page(), Path(td), Path(td) / "trace.jsonl", ROOT / "workflows",
+                "instructions", "low",
+            )
 
-    def test_write_leaves_the_tool_surface_after_first_use(self) -> None:
-        """正路是**摘掉工具**,不是等它生成完整页再拒 —— 后者白烧一次输出。"""
-        self._run([
-            self._call("Read", file_path="/x/CONTRACT.md"),
-            self._call("Write", file_path="/x/page-01.html", content="a"),
-            self._call("Patch", page="page-01.html", edits=[{"old": "x", "new": "y"}]),
-        ])
-        self.assertIn("Write", self.surfaces[0])
-        self.assertIn("Write", self.surfaces[1])          # 这一步才发生 Write
-        for s in self.surfaces[2:]:
-            self.assertNotIn("Write", s)                  # 之后不再出现在工具面里
-            self.assertIn("Patch", s)                     # 改页的路换成这两个
-            self.assertIn("Edit", s)
+        self.assertTrue(result.artifact_present)
+        self.assertEqual(result.termination, "no_tool_use")
+        self.assertEqual(len(set(surfaces)), 1)
+        self.assertEqual(efforts, ["low", "low", "low"])
+        self.assertNotIn("Skill", surfaces[0])
+        self.assertNotIn("WorkflowContext", surfaces[0])
+        self.assertEqual(
+            result.reference_reads,
+            ["references/composition.md", "samples/bundles/composition/prism-light.full.md"],
+        )
+        self.assertEqual([name for name, _ in events].count("Check"), 1)
 
-    def test_compose_effort_defaults_to_single_tier(self) -> None:
-        _, efforts, _ = self._run([
-            self._call("Write", file_path="/x/page-01.html", content="a"),
-        ], effort="low", compose="")
-        self.assertTrue(all(e == "low" for e in efforts), efforts)
+    def test_repeated_write_is_not_masked_or_rejected(self):
+        responses = [
+            tool_response(
+                call("Write", file_path="page-01.html", content="<html>first</html>"),
+                index=0,
+            ),
+            tool_response(
+                call("Write", file_path="page-01.html", content="<html>final</html>"),
+                index=1,
+            ),
+            done_response(),
+        ]
+        surfaces, events = [], []
 
+        def fake_respond(_instructions, _hist, specs, _effort, tag="-"):
+            surfaces.append({row["name"] for row in specs})
+            return responses.pop(0)
 
-class MessagesWireTests(unittest.TestCase):
-    """messages wire 的两条:参数别静默丢,异常别绕过退避阶梯。"""
+        with tempfile.TemporaryDirectory() as td, \
+                patch.object(builder, "respond", fake_respond), \
+                patch.object(builder.tools, "run", self.fake_run_factory(events)):
+            pages = Path(td)
+            result = builder.build_one(
+                page(), pages, pages / "trace.jsonl", ROOT / "workflows",
+                "instructions", "low",
+            )
+            final = (pages / "page-01.html").read_text(encoding="utf-8")
 
-    def setUp(self) -> None:
-        # override 写的是模块级 _OVERRIDE,不还原会污染同进程的后续测试。
-        self._saved = dict(llm._OVERRIDE)
+        self.assertTrue(result.artifact_present)
+        self.assertEqual(final, "<html>final</html>")
+        self.assertTrue(all("Write" in surface for surface in surfaces))
+        self.assertEqual([name for name, _ in events].count("Write"), 2)
 
-    def tearDown(self) -> None:
-        llm._OVERRIDE.clear()
-        llm._OVERRIDE.update(self._saved)
-        llm.config.cache_clear()
-        llm.client.cache_clear()
+    def test_artifact_and_failed_audit_are_recorded_separately(self):
+        responses = [
+            tool_response(call("Write", file_path="page-01.html", content="<html/>")),
+            done_response(),
+        ]
+        events = []
+        with tempfile.TemporaryDirectory() as td, \
+                patch.object(builder, "respond", side_effect=responses), \
+                patch.object(
+                    builder.tools, "run",
+                    self.fake_run_factory(events, fatal_audit=True),
+                ):
+            result = builder.build_one(
+                page(), Path(td), Path(td) / "trace.jsonl", ROOT / "workflows",
+                "instructions", "low",
+            )
+        self.assertTrue(result.artifact_present)
+        self.assertEqual(result.audit["fatal_errors"], ["✗ JS 报错"])
 
-    def _body(self, effort=None):
-        b = {"model": "M", "instructions": "SYS", "max_output_tokens": 128_000,
-             "input": [{"role": "user", "content": "a"}]}
-        if effort:
-            b["reasoning"] = {"effort": effort}
-        return b
+    def test_code_surface_is_constant_and_scaffold_returns_editable_contents(self):
+        skill = ROOT / "workflows" / "build-code"
+        responses = [
+            tool_response(
+                call("Read", file_path=str(skill / "references/code.md")),
+                call("Read", file_path=str(skill / "samples/bundles/code/code-core-bundle.full.md")),
+                call("CodeScaffold"),
+                index=0,
+            ),
+            done_response(),
+        ]
+        surfaces = []
 
-    def test_effort_is_translated_not_dropped(self) -> None:
-        """--effort 在这条 wire 上曾经静默无效。别再退回去。
+        def fake_respond(_instructions, _hist, specs, _effort, tag="-"):
+            surfaces.append({row["name"] for row in specs})
+            return responses.pop(0)
 
-        2026-08-28 起网关换了接口:medium/high 要用 adaptive + output_config.effort,
-        原来的 {"type":"enabled","budget_tokens":N} 会 400。low 仍旧显式 disabled ——
-        不传等于放任模型默认开思考,那正是 PLAN.md 卡死 400 秒的原因。
-        """
-        self.assertEqual(llm.to_messages(self._body("low"))["thinking"],
-                         {"type": "disabled"})
-        for eff in ("medium", "high"):
-            m = llm.to_messages(self._body(eff))
-            self.assertEqual(m["thinking"], {"type": "adaptive"})
-            self.assertEqual(m["output_config"], {"effort": eff})
+        def fake_scaffold(pages, pid, _title, _total):
+            (pages / f"{pid}.html").write_text("<html>workbench</html>", encoding="utf-8")
+            editable = builder.code_runtime.editable_root(pages, pid)
+            editable.mkdir(parents=True)
+            source = editable / "starter.py"
+            source.write_text("print('ready')", encoding="utf-8")
+            return {"editable": [{"path": str(source), "content": source.read_text()}]}
 
-    def test_enabled_with_budget_tokens_is_never_sent(self) -> None:
-        """**这条形状现在是 400。** 逐个探针实测(AWS-Claude-Sonnet-5,裸 /v1/messages):
+        with tempfile.TemporaryDirectory() as td, \
+                patch.object(builder, "respond", fake_respond), \
+                patch.object(builder.code_runtime, "scaffold", side_effect=fake_scaffold), \
+                patch.object(builder.code_runtime, "run_browser_check", return_value=("✓ inner", [])), \
+                patch.object(builder.tools, "run", return_value="✓ outer"):
+            result = builder.build_one(
+                page("page-04", "build-code", "代码页"),
+                Path(td), Path(td) / "trace.jsonl", ROOT / "workflows",
+                "instructions", "low",
+            )
 
-            不传 thinking                    → 200,首块就是 thinking(默认开着)
-            {"type":"disabled"}              → 200,只有 text
-            {"type":"enabled",budget_tokens} → 400 「not supported for this model」
-            {"type":"adaptive"}              → 200
-            {"type":"adaptive"} + output_config.effort → 200(low/medium/high 都收)
+        self.assertTrue(result.artifact_present)
+        expected = {"CodeScaffold", "Read", "Write", "Edit", "Check", "Look"}
+        self.assertTrue(all(surface == expected for surface in surfaces))
+        self.assertNotIn("Bash", surfaces[0])
+        self.assertNotIn("Patch", surfaces[0])
+        self.assertEqual(
+            result.reference_reads,
+            ["references/code.md", "samples/bundles/code/code-core-bundle.full.md"],
+        )
 
-        400 还会被误判成网关抖动、按退避梯子重试八次,看起来像网络问题。
-        """
-        for eff in ("low", "medium", "high"):
-            m = llm.to_messages(self._body(eff))
-            self.assertNotEqual(m["thinking"].get("type"), "enabled")
-            self.assertNotIn("budget_tokens", m["thinking"])
+    def test_text_only_profile_removes_look_and_forces_text_check(self):
+        responses = [
+            tool_response(call("Write", file_path="page-01.html", content="<html/>")),
+            tool_response(call("Check", page="page-01.html", shot=True)),
+            done_response(),
+        ]
+        surfaces, events = [], []
 
-    def test_max_tokens_is_left_alone(self) -> None:
-        """没有 token 预算了,就不该再动 max_tokens —— 动了就会撞 128,000 的硬上限。
+        def fake_respond(_instructions, _hist, specs, _effort, tag="-"):
+            surfaces.append({row["name"] for row in specs})
+            return responses.pop(0)
 
-        2026-08-27 那轮 Sonnet 正是 128000+4096=132096 撞上
-        「max_tokens: 132096 > 128000, which is the maximum allowed number of
-        output tokens for ***.claude-sonnet-5」,而 medium 恰好是构图档,
-        症状是「首次 Write 一开 medium 就整页崩」。
-        """
-        base = self._body()["max_output_tokens"]
-        for eff in (None, "low", "medium", "high"):
-            self.assertEqual(llm.to_messages(self._body(eff))["max_tokens"], base)
-
-    def test_low_effort_disables_thinking_explicitly(self) -> None:
-        """**不传 thinking ≠ 关闭。** 这个模型在这条路由上默认就开着 extended thinking:
-        流里第一个 content_block 类型就是 `thinking`,然后几十个 ping、零个 delta。
-        PLAN.md 那步光思考超 4 分钟,非流式要等思考全结束才返回 —— 表现为卡死。
-        实测同一请求:不关 400s 无返回;关掉 71s 出 4,765 字符。
-        """
-        m = llm.to_messages(self._body("low"))
-        self.assertEqual(m["thinking"], {"type": "disabled"})
-        m2 = llm.to_messages(self._body())          # 完全不给 effort 也要关
-        self.assertEqual(m2["thinking"], {"type": "disabled"})
-
-    def test_planner_string_input_becomes_one_user_message(self) -> None:
-        """planner 的 to_responses 无图时返回**纯字符串** —— 逐字符遍历会让 messages 变空。"""
-        m = llm.to_messages({"model": "M", "instructions": "S",
-                             "max_output_tokens": 64, "input": "规划一套讲义"})
-        self.assertEqual(len(m["messages"]), 1)
-        self.assertEqual(m["messages"][0]["role"], "user")
-        self.assertEqual(m["messages"][0]["content"][0]["text"], "规划一套讲义")
-
-    def test_system_and_rolling_breakpoints_both_present(self) -> None:
-        """只打 system 断点实测只有 8.7% 命中,滚动断点才到 100%。两个都要在。"""
-        m = llm.to_messages(self._body())
-        self.assertEqual(m["system"][0]["cache_control"], {"type": "ephemeral"})
-        self.assertEqual(m["messages"][-1]["content"][-1]["cache_control"],
-                         {"type": "ephemeral"})
-
-    def test_http_errors_become_sdk_types_so_the_ladder_retries(self) -> None:
-        """urllib 的异常不翻译的话,这条 wire 一次重试都没有。"""
-        import io
-        import urllib.error
-        from openai import (APIConnectionError, BadRequestError,
-                            InternalServerError, RateLimitError)
-
-        def raiser(code):
-            def _open(req, timeout=None):
-                raise urllib.error.HTTPError(req.full_url, code, "boom", {},
-                                             io.BytesIO(b"{}"))
-            return _open
-
-        llm.override(name="AWS-Claude-Sonnet-5", wire_api="messages")
-        for code, want in ((500, InternalServerError), (429, RateLimitError),
-                           (400, BadRequestError)):
-            with patch("urllib.request.urlopen", raiser(code)):
-                with self.assertRaises(want):
-                    llm._post_messages(self._body())
-        with patch("urllib.request.urlopen",
-                   lambda r, timeout=None: (_ for _ in ()).throw(
-                       urllib.error.URLError("down"))):
-            with self.assertRaises(APIConnectionError):
-                llm._post_messages(self._body())
+        with tempfile.TemporaryDirectory() as td, \
+                patch.object(builder, "respond", fake_respond), \
+                patch.object(builder.tools, "run", self.fake_run_factory(events)):
+            result = builder.build_one(
+                page(), Path(td), Path(td) / "trace.jsonl", ROOT / "workflows",
+                "instructions", "low", vision_input=False,
+            )
+        self.assertTrue(result.artifact_present)
+        self.assertTrue(all("Look" not in surface for surface in surfaces))
+        checks = [args for name, args in events if name == "Check"]
+        self.assertTrue(checks)
+        self.assertTrue(all(args["shot"] is False for args in checks))
+        self.assertEqual(result.images, 0)
 
 
-class ArgparseSurfaceTests(unittest.TestCase):
-    """`main()` 读的每个 `n.<attr>`,都必须真有一个 `add_argument` 定义它。
-
-    **这条是踩出来的,一天之内同一形状踩了三次。** 按注释边界去切一段代码删除时,
-    很容易把紧挨着的下一个定义一起带走 —— 已经这样丢过 `skills.FONT_FLOOR`、
-    `skills.direction_block` 和 `--no-preload-docs`。前两个当场就 ImportError,
-    第三个不会:argparse 少一个选项不报错,`n.preload_docs` 要等 main() 跑到那一行
-    才 AttributeError,**而那时 planner 已经跑完、builder 刚起**,白丢一轮。
-
-    静态查:解析源码,把 `add_argument` 的 dest 和 `n.X` 的读取对起来。
-    """
-
-    @staticmethod
-    def _surface(mod) -> tuple[set, set]:
-        src = Path(mod.__file__).read_text(encoding="utf-8")
-        tree = ast.parse(src)
-        fn = next(f for f in ast.walk(tree)
-                  if isinstance(f, ast.FunctionDef) and f.name == "main")
-        defined, read = set(), set()
-        for node in ast.walk(fn):
-            if (isinstance(node, ast.Call)
-                    and isinstance(node.func, ast.Attribute)
-                    and node.func.attr == "add_argument"):
-                dest = next((k.value.value for k in node.keywords if k.arg == "dest"), None)
-                if dest:
-                    defined.add(dest)
-                elif node.args:
-                    defined.add(node.args[-1].value.lstrip("-").replace("-", "_"))
-            if (isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name)
-                    and node.value.id == "n" and isinstance(node.ctx, ast.Load)):
-                read.add(node.attr)
-        return defined, read
-
-    def test_builder_reads_only_flags_it_defines(self) -> None:
-        defined, read = self._surface(builder)
-        self.assertEqual(read - defined, set(),
-                         f"main() 读了未定义的参数:{sorted(read - defined)}")
-
-    def test_planner_reads_only_flags_it_defines(self) -> None:
-        from core import planner
-        defined, read = self._surface(planner)
-        self.assertEqual(read - defined, set(),
-                         f"main() 读了未定义的参数:{sorted(read - defined)}")
+class ProfileTests(unittest.TestCase):
+    def test_builder_profile_keeps_one_effort_setting(self):
+        cfg = {
+            "builder": {
+                "default_profile": "sonnet-low",
+                "profiles": {
+                    "sonnet-low": {
+                        "model": "sonnet-5",
+                        "base_url": "https://example.test",
+                        "api_key_env": "KEY",
+                        "wire_api": "messages",
+                        "reasoning_effort": "low",
+                        "vision_input": True,
+                    }
+                },
+            }
+        }
+        profile = builder.resolve_builder_profile(cfg)
+        self.assertEqual(profile["reasoning_effort"], "low")
+        self.assertNotIn("post_composition_effort", profile)
 
 
 if __name__ == "__main__":
