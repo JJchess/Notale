@@ -70,6 +70,10 @@ page-14 从旧的 `[交互页]` 改标为当前 `[代码页]`，正文仍为“�
 ### Builder
 
 - 普通页始终使用同一组 `Read/Write/Patch/Check/Look/Bash`；`Patch` 同时覆盖单处与多处局部修正，不再提供会诱导逐项往返的同义 `Edit`；代码页始终使用 `CodeScaffold/Read/Write/Edit/Check/Look`；
+- Builder 只依赖 profile-bound `ModelRuntime` 的 canonical `respond/replay` 接口，不识别模型名、
+  endpoint 或上游 API 方言。`ResponsesAdapter`、`ChatAdapter` 与 `MessagesAdapter` 在模型边界内
+  分别负责请求转换、provider 选项和原生 assistant/tool/thinking 历史重放；切换模型只新增或更换
+  `config.yaml` profile，不再调用全局 `llm.override`，也不修改 Builder 循环；
 - `low` 从第一轮到最后一轮始终是 `low`，不按施工阶段切 effort；
 - 不使用读取顺序、首次 Write、再次 Write、Check clean 或停止前确认等状态闸门；
 - 模型不再调用工具就立即停止，不补催、不重启；提示词强制要求最多 11 个 response，harness
@@ -123,6 +127,7 @@ python3 -m unittest discover -s core -p 'test_*.py'
 python3 experiments/workflow-skills-next/frozen_four_route.py prepare --label RUN
 python3 experiments/workflow-skills-next/frozen_four_route.py run --label RUN \
   --profile sonnet5-low
+# 同一冻结输入的 GLM 对照：--profile glm53-flash-low
 # 仅做 Aux 对照时在 run 子命令显式追加：--aux-samples
 python3 dump_page.py --label RUN --page page-NN --out /tmp/page-NN.md
 ```
@@ -173,3 +178,27 @@ cover/page/interaction/code 分别为 14/4/7/6 个 response，合计 31 个；�
 在 7 次内完成真实 stump 搜索、加权误差、alpha、样本权重更新和 ensemble 决策区域；code 在
 6 次内一次性写入 scaffold 文件并通过 Check。后续优化对象应是 cover 的 clean-check 后漫游，
 不应恢复第 11 次硬截断。
+
+## 2026-09-01 GLM-5.3-Flash low 对照
+
+API Adapter 落地后，run `adaboost-four-route-glm53-flash-low-20260901` 机械复用上述 frozen
+fixture；plan、theme 与 brief template 的 SHA-256 均与 Sonnet natural-stop run 相同，Planner
+没有重跑。profile 使用 Paratera 的 `GLM-5.3-Flash`、Chat API、`reasoning_effort: low`、原生
+图片输入和 `thinking.enabled + clear_thinking:false`。真实两回合探针确认 function call、call id、
+缓存 usage 与 opaque `reasoning_content` 可经 Adapter 往返；四页 Check 截图也实际进入后续模型
+回合。
+
+cover/page/interaction/code 分别自然使用 7/6/21/8 个 response，合计 42；墙钟 527.3 秒，
+3/4 达成 ≤11。4/4 留下目标文件，但只有 3/4 通过独立审计：代码页 `trace.py` 最终引用未定义的
+`previous_rounds`，自检失败；随后模型输出与任务无关的 jailbreak/酒驾拒答并停止，故不能将该页
+算作交付成功。interaction 的真实算法成立，但第一轮只读 `general.md`、漏读强制 Main sample，
+并以 8 次 Patch、7 次 Check、3 次回读目标文件扩张到 21 个 response。cover 也违反 workspace
+约束，用 3 次 Bash 探索无关的 `lib/serial`、`tools` 与 assets。这里没有 runtime 第 11 次 kill，
+也没有 adapter/network retry；不收敛来自模型的动作选择。
+
+相同输入下，Sonnet 为 31 response、236.4 秒、4/4 审计通过；GLM 为 42 response、527.3 秒、
+3/4 审计通过。GLM 累计输入 1,170,430 token（其中 cache hit 866,560），输出 41,429；按
+2026-09-01 Z.AI 限时单价估算为 `$0.0461`（非 Paratera 实际账单），活动后 list price 为
+`$0.0923`。Sonnet 按当前官方 `$2/$10` 和 5 分钟 cache write/read 单价估算为 `$1.1123`。
+因此 GLM 的价格优势很大，但这一次在速度、协议遵循、收敛和最终可靠性上都不满足替代 Sonnet
+的门槛；保留该 profile 作为便宜实验臂，不设为默认 Builder。

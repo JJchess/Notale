@@ -12,7 +12,6 @@ from __future__ import annotations
 import argparse
 import html
 import json
-import os
 import re
 import time
 import uuid
@@ -463,6 +462,7 @@ def build_one(
     instructions: str,
     effort: str,
     vision_input: bool = True,
+    runtime: llm.ModelRuntime | None = None,
 ) -> Page:
     """Run one free-form agent loop to natural stop and audit separately."""
     log = Writer(trace, str(uuid.uuid4()))
@@ -495,7 +495,11 @@ def build_one(
             break
 
         started = _now()
-        response = respond(instructions, hist, specs, effort, tag=page.pid)
+        response = (
+            runtime.respond(instructions, hist, specs, tag=page.pid)
+            if runtime
+            else respond(instructions, hist, specs, effort, tag=page.pid)
+        )
         page.calls += 1
         tin, tout, cached = llm.usage_of(response)
         page.tok_in += tin
@@ -538,7 +542,12 @@ def build_one(
             f"{' '.join(call.name for call in calls)[:52]}",
             flush=True,
         )
-        hist += [_replay(item.model_dump()) for item in response.output]
+        replay = (
+            runtime.replay(response)
+            if runtime
+            else [item.model_dump() for item in response.output]
+        )
+        hist += [_replay(item) for item in replay]
         pending_images: list[tuple[str, str]] = []
 
         for call in calls:
@@ -683,30 +692,6 @@ def build_one(
     return page
 
 
-def resolve_builder_profile(cfg: dict, requested: str | None = None) -> dict:
-    """Resolve one complete Builder model profile without mutating global model config."""
-    builder_cfg = cfg.get("builder") or {}
-    profile_id = requested or builder_cfg.get("default_profile")
-    profiles = builder_cfg.get("profiles") or {}
-    if not profile_id or profile_id not in profiles:
-        choices = ", ".join(sorted(profiles)) or "(none)"
-        raise ValueError(f"unknown builder profile {profile_id!r}; choices: {choices}")
-    profile = dict(profiles[profile_id] or {})
-    required = ("model", "api_key_env", "wire_api", "reasoning_effort", "vision_input")
-    missing = [key for key in required if key not in profile]
-    if missing:
-        raise ValueError(f"builder profile {profile_id!r} missing: {', '.join(missing)}")
-    env_name = str(profile.get("base_url_env") or "")
-    base_url = (os.getenv(env_name) if env_name else "") or profile.get("base_url")
-    if not base_url:
-        raise ValueError(f"builder profile {profile_id!r} has no base_url")
-    if profile["wire_api"] not in ("responses", "chat", "messages"):
-        raise ValueError(f"builder profile {profile_id!r} has invalid wire_api")
-    profile.update({"id": profile_id, "base_url": str(base_url),
-                    "vision_input": bool(profile["vision_input"])})
-    return profile
-
-
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--label", required=True)
@@ -722,13 +707,8 @@ def main() -> None:
     args = parser.parse_args()
 
     cfg = config()
-    profile = resolve_builder_profile(cfg, args.profile)
-    llm.override(
-        name=profile["model"],
-        base_url=profile["base_url"],
-        api_key_env=profile["api_key_env"],
-        wire_api=profile["wire_api"],
-    )
+    profile = llm.resolve_builder_profile(cfg, args.profile)
+    runtime = llm.ModelRuntime(profile)
 
     root = ROOT / "runs" / args.label
     briefs = json.loads((root / "briefs.json").read_text(encoding="utf-8"))
@@ -765,15 +745,15 @@ def main() -> None:
             )
 
     manifest = {
-        "schemaVersion": 2,
+        "schemaVersion": 3,
         "label": args.label,
-        "profile": profile["id"],
-        "model": profile["model"],
-        "baseUrl": profile["base_url"],
-        "apiKeyEnv": profile["api_key_env"],
-        "wireApi": profile["wire_api"],
-        "reasoningEffort": profile["reasoning_effort"],
-        "visionInput": profile["vision_input"],
+        "profile": profile.id,
+        "model": profile.model,
+        "baseUrl": profile.base_url,
+        "apiKeyEnv": profile.api_key_env,
+        "adapter": profile.adapter,
+        "reasoningEffort": profile.reasoning_effort,
+        "visionInput": profile.vision_input,
         "auxiliarySamples": args.aux_samples,
         "pages": [page.pid for page in pages],
         "startedAt": _now(),
@@ -814,9 +794,9 @@ def main() -> None:
     print(
         f"\n▸ builder · {args.label}\n"
         f"  {len(pages)} 页，并发 {args.concurrency}，"
-        f"profile={profile['id']}，model={profile['model']}，"
-        f"effort={profile['reasoning_effort']}，"
-        f"vision={'on' if profile['vision_input'] else 'off'}，"
+        f"profile={profile.id}，model={profile.model}，"
+        f"adapter={profile.adapter}，effort={profile.reasoning_effort}，"
+        f"vision={'on' if profile.vision_input else 'off'}，"
         f"aux-samples={'on' if args.aux_samples else 'off'}\n"
         f"  完整 system {lengths[0]:,}–{lengths[-1]:,} 字符，"
         f"按 workflow 分 {len(groups)} 组共享\n"
@@ -832,8 +812,9 @@ def main() -> None:
                 root / "trace.jsonl",
                 workflow_root,
                 instructions[page.pid],
-                profile["reasoning_effort"],
-                profile["vision_input"],
+                profile.reasoning_effort,
+                profile.vision_input,
+                runtime,
             )
         except Exception as exc:  # noqa: BLE001
             page.why = f"{type(exc).__name__}: {str(exc)[:160]}"

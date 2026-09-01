@@ -23,7 +23,7 @@ import time
 import socket
 import urllib.error
 import urllib.request
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
 from types import SimpleNamespace
@@ -60,6 +60,7 @@ def override(**kw) -> None:
     _OVERRIDE.update({k: v for k, v in kw.items() if v})
     config.cache_clear()
     client.cache_clear()
+    default_runtime.cache_clear()
 
 
 @lru_cache(maxsize=1)
@@ -70,6 +71,14 @@ def config() -> dict:
     return c
 
 
+def _normalized_base_url(value: str) -> str:
+    """Return an SDK base URL with a concrete API path."""
+    p = urlsplit(value.strip())
+    return urlunsplit(
+        (p.scheme, p.netloc, p.path.rstrip("/") or "/v1", p.query, p.fragment)
+    )
+
+
 @lru_cache(maxsize=1)
 def client() -> OpenAI:
     m = config()["model"]
@@ -77,9 +86,8 @@ def client() -> OpenAI:
     if not key:
         raise RuntimeError(f"环境变量 {m['api_key_env']} 没有值,检查 .env.local")
     # base_url 没写路径时要补 /v1 —— 直接用裸域名会 503。notale 那边同样处理。
-    p = urlsplit(m["base_url"].strip())
-    base = urlunsplit((p.scheme, p.netloc, p.path.rstrip("/") or "/v1", p.query, p.fragment))
-    return OpenAI(api_key=key, base_url=base, timeout=m["http_timeout_sec"],
+    return OpenAI(api_key=key, base_url=_normalized_base_url(m["base_url"]),
+                  timeout=m["http_timeout_sec"],
                   max_retries=0)  # 重试由我们自己管,不让 SDK 和上层各退避一次
 
 
@@ -91,6 +99,94 @@ class Reply:
     cached_tokens: int = 0
     raw: object = None
     truncated: bool = False
+
+
+@dataclass(frozen=True)
+class ModelProfile:
+    """One resolved model endpoint and its provider-specific API policy.
+
+    Builder consumes only ``ModelRuntime``. Model names, credentials, API
+    dialects, vision support and request quirks stay on this side of the
+    boundary, so adding a model profile cannot grow Builder conditionals.
+    """
+
+    id: str
+    model: str
+    base_url: str
+    api_key_env: str
+    adapter: str
+    reasoning_effort: str
+    vision_input: bool
+    http_timeout_sec: int = 900
+    max_output_tokens: int = 128000
+    request_options: dict = field(default_factory=dict)
+    replay_reasoning: bool = False
+
+
+def resolve_builder_profile(cfg: dict, requested: str | None = None) -> ModelProfile:
+    """Resolve a Builder profile without mutating global model configuration."""
+    builder_cfg = cfg.get("builder") or {}
+    profile_id = requested or builder_cfg.get("default_profile")
+    profiles = builder_cfg.get("profiles") or {}
+    if not profile_id or profile_id not in profiles:
+        choices = ", ".join(sorted(profiles)) or "(none)"
+        raise ValueError(f"unknown builder profile {profile_id!r}; choices: {choices}")
+
+    raw = dict(profiles[profile_id] or {})
+    required = (
+        "model", "api_key_env", "adapter", "reasoning_effort", "vision_input"
+    )
+    missing = [key for key in required if key not in raw]
+    if missing:
+        raise ValueError(f"builder profile {profile_id!r} missing: {', '.join(missing)}")
+
+    adapter = str(raw["adapter"]).lower()
+    if adapter not in ("responses", "chat", "messages"):
+        raise ValueError(f"builder profile {profile_id!r} has invalid adapter {adapter!r}")
+    env_name = str(raw.get("base_url_env") or "")
+    base_url = (os.getenv(env_name) if env_name else "") or raw.get("base_url")
+    if not base_url:
+        raise ValueError(f"builder profile {profile_id!r} has no base_url")
+
+    defaults = cfg.get("model") or {}
+    return ModelProfile(
+        id=str(profile_id),
+        model=str(raw["model"]),
+        base_url=str(base_url),
+        api_key_env=str(raw["api_key_env"]),
+        adapter=adapter,
+        reasoning_effort=str(raw["reasoning_effort"]),
+        vision_input=bool(raw["vision_input"]),
+        http_timeout_sec=int(raw.get("http_timeout_sec")
+                             or defaults.get("http_timeout_sec") or 900),
+        max_output_tokens=int(raw.get("max_output_tokens")
+                              or defaults.get("max_output_tokens") or 128000),
+        request_options=dict(raw.get("request_options") or {}),
+        # Chat reasoning models generally require their opaque reasoning field
+        # in the next assistant turn. Preserve it by default; a profile may
+        # explicitly opt out for a gateway that rejects the field.
+        replay_reasoning=bool(raw.get("replay_reasoning", adapter == "chat")),
+    )
+
+
+def _default_model_profile(cfg: dict | None = None) -> ModelProfile:
+    """Adapt the legacy top-level Planner model block to the same runtime API."""
+    source = cfg or config()
+    raw = source["model"]
+    adapter = str(raw.get("adapter") or raw.get("wire_api") or "responses").lower()
+    return ModelProfile(
+        id="default",
+        model=str(raw["name"]),
+        base_url=str(raw["base_url"]),
+        api_key_env=str(raw["api_key_env"]),
+        adapter=adapter,
+        reasoning_effort=str(raw.get("reasoning_effort") or "medium"),
+        vision_input=bool(raw.get("vision_input", True)),
+        http_timeout_sec=int(raw.get("http_timeout_sec") or 900),
+        max_output_tokens=int(raw.get("max_output_tokens") or 128000),
+        request_options=dict(raw.get("request_options") or {}),
+        replay_reasoning=bool(raw.get("replay_reasoning", adapter == "chat")),
+    )
 
 
 def to_responses(req: Request) -> dict:
@@ -162,8 +258,10 @@ class _Item:
 class _Resp:
     """冒充 Responses 的响应对象。"""
 
-    def __init__(self, output, usage, truncated, rid):
+    def __init__(self, output, usage, truncated, rid, replay_items=None, raw=None):
         self.output, self.usage, self.id = output, usage, rid
+        self.replay_items = list(replay_items or [])
+        self.raw = raw
         self.status = "incomplete" if truncated else "completed"
         self.incomplete_details = (SimpleNamespace(reason="max_output_tokens")
                                    if truncated else None)
@@ -176,7 +274,12 @@ class _Resp:
 _CHAT_REASONING_KEYS = ("reasoning", "reasoning_content", "thinking")
 
 
-def _adapt_chat(r, want: int | None = None) -> _Resp:
+def _adapt_chat(
+    r,
+    want: int | None = None,
+    *,
+    replay_reasoning: bool = False,
+) -> _Resp:
     ch = (getattr(r, "choices", None) or [None])[0]
     msg = getattr(ch, "message", None)
     out: list[_Item] = []
@@ -218,7 +321,40 @@ def _adapt_chat(r, want: int | None = None) -> _Resp:
     # 所以再加一条可算的判据:输出 token 顶到上限就是打满 —— 别信自报,量。
     fin = getattr(ch, "finish_reason", None)
     hit_cap = bool(want) and usage.output_tokens >= want
-    return _Resp(out, usage, fin == "length" or hit_cap, getattr(r, "id", "") or "")
+    replay_items = []
+    if msg is not None:
+        replay_message: dict = {
+            "role": "assistant",
+            "content": txt if isinstance(txt, str) else None,
+        }
+        if getattr(msg, "tool_calls", None):
+            replay_message["tool_calls"] = [
+                {
+                    "id": getattr(tc, "id", ""),
+                    "type": "function",
+                    "function": {
+                        "name": getattr(getattr(tc, "function", None), "name", ""),
+                        "arguments": getattr(
+                            getattr(tc, "function", None), "arguments", "{}"
+                        ),
+                    },
+                }
+                for tc in msg.tool_calls
+            ]
+        if replay_reasoning:
+            for key in _CHAT_REASONING_KEYS:
+                value = getattr(msg, key, None)
+                if value:
+                    replay_message[key] = value
+        replay_items.append({"type": "chat_assistant", "message": replay_message})
+    return _Resp(
+        out,
+        usage,
+        fin == "length" or hit_cap,
+        getattr(r, "id", "") or "",
+        replay_items=replay_items,
+        raw=r,
+    )
 
 
 def _chat_body(body: dict) -> dict:
@@ -261,7 +397,11 @@ def _chat_history(items: list) -> list[dict]:
         if not isinstance(it, dict):
             continue
         ty = it.get("type")
-        if ty == "function_call":
+        if ty == "chat_assistant":
+            message = dict(it.get("message") or {})
+            message["role"] = "assistant"
+            msgs.append(message)
+        elif ty == "function_call":
             msgs.append({"role": "assistant", "content": None,
                          "tool_calls": [{"id": it.get("call_id") or it.get("id") or "",
                                          "type": "function",
@@ -422,46 +562,14 @@ def ask(req: Request, min_chars: int = 1) -> Reply:
 
 def respond(instructions: str, history: list, tools: list[dict], effort: str,
             tag: str = "-"):
-    """带工具的一次调用,返回原始 response 对象。builder 的每一步都是一次这个。
+    """Compatibility entry point for Planner and old tests.
 
-    历史用 Responses 自己的 item 形态存,不经 wire.Message 转一道。
-    理由很实际:`function_call` item 带 `call_id` 和内部 `id`,原样回传是已验证可行的
-    路径;手工重建这些字段是没必要的风险。wire.py 仍是我们描述上下文的标准形式,
-    但在这条链路上它只用于**记录**,不用于**重放**。
+    Production Builder creates an explicit ``ModelRuntime`` from its profile,
+    so concurrent model runs never mutate this module's global configuration.
     """
-    m = config()
-    body = {"model": m["model"]["name"], "instructions": instructions,
-            "input": history, "tools": tools, "store": False,
-            "max_output_tokens": m["model"]["max_output_tokens"],
-            "reasoning": {"effort": effort}}
-    last: Exception | None = None
-    for i, wait in enumerate((0,) + LADDER):
-        if wait:
-            # 抖动 ±30%。没有抖动时并发的 worker 会齐步退避、齐步重来,撞在一起
-            # 继续限流 —— 实测 20 并发下累计空等 84 分钟,相当一部分是这么来的。
-            w = wait * (0.7 + 0.6 * random.random())
-            print(f"      [{tag}] {type(last).__name__} 等 {w:.0f}s 重试 {i}/{len(LADDER)}",
-                  flush=True)
-            time.sleep(w)
-        try:
-            if wire() == "messages":
-                return _post_messages(body)
-            if wire() == "chat":
-                cb = _chat_body(body)
-                return _adapt_chat(
-                    client().chat.completions.create(**cb), cb.get("max_tokens"))
-            return client().responses.create(**body)
-        except BadRequestError as e:
-            hint = _is_gateway_flake(e)
-            if not hint:
-                raise
-            last = e
-            print(f"      [{tag}] 400 命中网关抖动特征「{hint}」,重试。原文: "
-                  f"{' '.join(str(e).split())[:300]}", flush=True)
-        except (RateLimitError, InternalServerError, APIConnectionError, APITimeoutError) as e:
-            last = e
-    print(f"      [{tag}] 退避耗尽: {type(last).__name__}", flush=True)
-    raise last
+    return default_runtime().respond(
+        instructions, history, tools, effort=effort, tag=tag
+    )
 
 
 # output item 的白名单/黑名单。**只认列出来的,其余一律吵。**
@@ -581,7 +689,11 @@ def to_messages(body: dict) -> dict:
         if not isinstance(it, dict):
             continue
         kind = it.get("type")
-        if kind == "function_call":
+        if kind == "anthropic_assistant":
+            for block in it.get("content") or []:
+                if isinstance(block, dict):
+                    push("assistant", dict(block))
+        elif kind == "function_call":
             try:
                 args = json.loads(it.get("arguments") or "{}")
             except json.JSONDecodeError:
@@ -696,10 +808,20 @@ def _adapt_messages(r: dict) -> _Resp:
             cached_tokens=int(u.get("cache_read_input_tokens", 0) or 0)),
         cache_read_input_tokens=int(u.get("cache_read_input_tokens", 0) or 0),
         cache_creation_input_tokens=int(u.get("cache_creation_input_tokens", 0) or 0))
-    return _Resp(out, usage, r.get("stop_reason") == "max_tokens", r.get("id", "") or "")
+    return _Resp(
+        out,
+        usage,
+        r.get("stop_reason") == "max_tokens",
+        r.get("id", "") or "",
+        replay_items=[{
+            "type": "anthropic_assistant",
+            "content": list(r.get("content") or []),
+        }],
+        raw=r,
+    )
 
 
-def _post_messages(body: dict) -> _Resp:
+def _post_messages_for(profile: ModelProfile, body: dict) -> _Resp:
     """裸 HTTP 打 /v1/messages,**并把 urllib 的异常翻成 SDK 的类型**。
 
     翻译不是洁癖,是必需的:respond() / ask() 的退避阶梯捕的是 openai 那几个
@@ -709,10 +831,15 @@ def _post_messages(body: dict) -> _Resp:
     同样的抖动在 responses 上退避八次,在这里会直接把那一页打死。
     翻过之后 400 抖动特征识别和超时档位上限也一并复用,两条 wire 行为一致。
     """
-    m = config()["model"]
-    url = str(m["base_url"]).rstrip("/") + "/messages"
-    key = os.environ[m["api_key_env"]]
-    payload = json.dumps(to_messages(body)).encode()
+    url = _normalized_base_url(profile.base_url).rstrip("/") + "/messages"
+    key = os.getenv(profile.api_key_env)
+    if not key:
+        raise RuntimeError(
+            f"环境变量 {profile.api_key_env} 没有值,检查 .env.local"
+        )
+    translated = to_messages(body)
+    translated.update(profile.request_options)
+    payload = json.dumps(translated).encode()
     req = urllib.request.Request(
         url, method="POST", data=payload,
         headers={"Content-Type": "application/json", "x-api-key": key,
@@ -720,7 +847,7 @@ def _post_messages(body: dict) -> _Resp:
                  "Authorization": f"Bearer {key}"})
     hreq = httpx.Request("POST", url)
     try:
-        with urllib.request.urlopen(req, timeout=m["http_timeout_sec"]) as resp:
+        with urllib.request.urlopen(req, timeout=profile.http_timeout_sec) as resp:
             return _adapt_messages(json.loads(resp.read()))
     except urllib.error.HTTPError as e:
         detail = e.read()[:600].decode(errors="replace")
@@ -735,6 +862,171 @@ def _post_messages(body: dict) -> _Resp:
         raise APITimeoutError(request=hreq) from e
     except urllib.error.URLError as e:
         raise APIConnectionError(request=hreq) from e
+
+
+class ModelAdapter:
+    """Provider boundary: complete one canonical request and return one response."""
+
+    name = "base"
+
+    def complete(self, body: dict):  # pragma: no cover - abstract boundary
+        raise NotImplementedError
+
+
+class ResponsesAdapter(ModelAdapter):
+    name = "responses"
+
+    def __init__(self, profile: ModelProfile, sdk_client=None):
+        self.profile = profile
+        self.client = sdk_client or _sdk_client(profile)
+
+    def complete(self, body: dict):
+        request = dict(body)
+        if self.profile.request_options:
+            request["extra_body"] = dict(self.profile.request_options)
+        return self.client.responses.create(**request)
+
+
+class ChatAdapter(ModelAdapter):
+    name = "chat"
+
+    def __init__(self, profile: ModelProfile, sdk_client=None):
+        self.profile = profile
+        self.client = sdk_client or _sdk_client(profile)
+
+    def complete(self, body: dict) -> _Resp:
+        request = _chat_body(body)
+        if self.profile.request_options:
+            request["extra_body"] = dict(self.profile.request_options)
+        raw = self.client.chat.completions.create(**request)
+        return _adapt_chat(
+            raw,
+            request.get("max_tokens"),
+            replay_reasoning=self.profile.replay_reasoning,
+        )
+
+
+class MessagesAdapter(ModelAdapter):
+    name = "messages"
+
+    def __init__(self, profile: ModelProfile, _sdk_client=None):
+        self.profile = profile
+
+    def complete(self, body: dict) -> _Resp:
+        return _post_messages_for(self.profile, body)
+
+
+def _sdk_client(profile: ModelProfile) -> OpenAI:
+    load_dotenv(ROOT / ".env.local")
+    key = os.getenv(profile.api_key_env)
+    if not key:
+        raise RuntimeError(
+            f"环境变量 {profile.api_key_env} 没有值,检查 .env.local"
+        )
+    return OpenAI(
+        api_key=key,
+        base_url=_normalized_base_url(profile.base_url),
+        timeout=profile.http_timeout_sec,
+        max_retries=0,
+    )
+
+
+_ADAPTERS = {
+    ResponsesAdapter.name: ResponsesAdapter,
+    ChatAdapter.name: ChatAdapter,
+    MessagesAdapter.name: MessagesAdapter,
+}
+
+
+class ModelRuntime:
+    """A profile-bound model session used by Builder without global mutation."""
+
+    def __init__(self, profile: ModelProfile, sdk_client=None):
+        try:
+            adapter_type = _ADAPTERS[profile.adapter]
+        except KeyError as exc:
+            raise ValueError(f"unknown model adapter {profile.adapter!r}") from exc
+        self.profile = profile
+        self.adapter = adapter_type(profile, sdk_client)
+
+    def complete(self, body: dict):
+        return self.adapter.complete(body)
+
+    def respond(
+        self,
+        instructions: str,
+        history: list,
+        tools: list[dict],
+        *,
+        effort: str | None = None,
+        tag: str = "-",
+    ):
+        """Run one tool-capable turn with the shared transport retry policy."""
+        body = {
+            "model": self.profile.model,
+            "instructions": instructions,
+            "input": history,
+            "tools": tools,
+            "store": False,
+            "max_output_tokens": self.profile.max_output_tokens,
+            "reasoning": {
+                "effort": effort or self.profile.reasoning_effort
+            },
+        }
+        last: Exception | None = None
+        for i, wait in enumerate((0,) + LADDER):
+            if wait:
+                # Jitter prevents concurrent pages from retrying in lockstep.
+                seconds = wait * (0.7 + 0.6 * random.random())
+                print(
+                    f"      [{tag}] {type(last).__name__} 等 {seconds:.0f}s "
+                    f"重试 {i}/{len(LADDER)}",
+                    flush=True,
+                )
+                time.sleep(seconds)
+            try:
+                return self.complete(body)
+            except BadRequestError as exc:
+                hint = _is_gateway_flake(exc)
+                if not hint:
+                    raise
+                last = exc
+                print(
+                    f"      [{tag}] 400 命中网关抖动特征「{hint}」,重试。原文: "
+                    f"{' '.join(str(exc).split())[:300]}",
+                    flush=True,
+                )
+            except (
+                RateLimitError,
+                InternalServerError,
+                APIConnectionError,
+                APITimeoutError,
+            ) as exc:
+                last = exc
+        print(
+            f"      [{tag}] 退避耗尽: {type(last).__name__}", flush=True
+        )
+        raise last
+
+    @staticmethod
+    def replay(response) -> list[dict]:
+        """Return the adapter's lossless assistant turn for the next request."""
+        opaque = getattr(response, "replay_items", None)
+        if opaque:
+            return list(opaque)
+        items = []
+        for item in getattr(response, "output", None) or []:
+            try:
+                items.append(item.model_dump(exclude_none=True))
+            except TypeError:
+                items.append(item.model_dump())
+        return items
+
+
+@lru_cache(maxsize=1)
+def default_runtime() -> ModelRuntime:
+    """Legacy singleton for Planner; Builder always constructs its own runtime."""
+    return ModelRuntime(_default_model_profile())
 
 
 def usage_of(r) -> tuple[int, int, int | None]:
@@ -757,13 +1049,7 @@ def usage_of(r) -> tuple[int, int, int | None]:
 
 
 def _once(body: dict) -> Reply:
-    if wire() == "messages":
-        r = _post_messages(body)
-    elif wire() == "chat":
-        cb = _chat_body(body)
-        r = _adapt_chat(client().chat.completions.create(**cb), cb.get("max_tokens"))
-    else:
-        r = client().responses.create(**body)
+    r = default_runtime().complete(body)
     u = getattr(r, "usage", None)
     # 撞上 max_output_tokens 的截断。Responses API 会给
     # status="incomplete" + incomplete_details.reason="max_output_tokens"。

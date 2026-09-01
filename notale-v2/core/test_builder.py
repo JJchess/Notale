@@ -12,7 +12,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from core import builder
+from core import builder, llm
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -423,16 +423,16 @@ class ProfileTests(unittest.TestCase):
                         "model": "sonnet-5",
                         "base_url": "https://example.test",
                         "api_key_env": "KEY",
-                        "wire_api": "messages",
+                        "adapter": "messages",
                         "reasoning_effort": "low",
                         "vision_input": True,
                     }
                 },
             }
         }
-        profile = builder.resolve_builder_profile(cfg)
-        self.assertEqual(profile["reasoning_effort"], "low")
-        self.assertNotIn("post_composition_effort", profile)
+        profile = llm.resolve_builder_profile(cfg)
+        self.assertEqual(profile.reasoning_effort, "low")
+        self.assertFalse(hasattr(profile, "post_composition_effort"))
 
 
 if __name__ == "__main__":
