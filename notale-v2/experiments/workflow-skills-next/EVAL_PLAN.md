@@ -72,7 +72,8 @@ page-14 从旧的 `[交互页]` 改标为当前 `[代码页]`，正文仍为“�
 - 普通页始终使用同一组 `Read/Write/Patch/Check/Look/Bash`；`Patch` 同时覆盖单处与多处局部修正，不再提供会诱导逐项往返的同义 `Edit`；代码页始终使用 `CodeScaffold/Read/Write/Edit/Check/Look`；
 - `low` 从第一轮到最后一轮始终是 `low`，不按施工阶段切 effort；
 - 不使用读取顺序、首次 Write、再次 Write、Check clean 或停止前确认等状态闸门；
-- 模型不再调用工具就立即停止，不补催、不重启；
+- 模型不再调用工具就立即停止，不补催、不重启；提示词强制要求最多 11 个 response，harness
+  不在第 11 个 response 截断，只在自然结束后记录是否达标；
 - 重复整页 `Write` 是普通模型选择，不屏蔽第二次；
 - Agent 产物与 harness 独立审计分开记录；停止后只自动执行一次审计，不把结果反馈给 Agent；
 - 目标缺失就是没有交付；有目标但审计失败仍分别记录 artifact 与 fatal audit。
@@ -145,9 +146,10 @@ python3 dump_page.py --label RUN --page page-NN --out /tmp/page-NN.md
 run `adaboost-four-route-correct-fixture-sonnet5-low-20260901` 使用原始 16 页 pNN、同一份冷灰
 `theme.css` 和默认 main-only routing。cover/page/interaction/code 分别消耗 6/10/11/11 个
 model response，合计 38 个；前三路以 `no_tool_use` 结束，代码页在第 11 个 response 完成第三次
-`Check` 后仍未主动停止，因此 termination 为 `max_steps`。四页均留下产物，独立审计均无 fatal
+`Check` 后被旧 harness 截断，因此 termination 为 `max_steps`。四页均留下产物，独立审计均无 fatal
 error 或 visual warning，代码工作台的 execution、错误处理、timeout recovery、native view sandbox、
-固定布局与键盘操作自检全部通过。故本轮产物完成度为 4/4，严格收敛为 3/4，不能记作四路全通过。
+固定布局与键盘操作自检全部通过。该 run 可用于产物审计，但不能用于判断代码页的自然停止轮数；
+11 response 应是提示词行为目标，而非 runtime cap。
 
 首轮读取分别为 `generative + neural-signal-network`、`general + escapement`、
 `general + lawn-path`、`code + code-core-bundle`，未读取 Aux/mini 或额外 reference。交互页的按钮
@@ -157,3 +159,17 @@ ensemble score；截图中的权重、弱分类器与组合边界均来自该状
 本轮同时暴露两个尚未解决的收敛浪费：interaction 在首次 Write 前连续用了 5 个 Bash 做可合并的
 数据验算；code 在首次 Check 后以多次零散 Edit 修正测试夹具，虽然最终自检干净，仍吃满 11 个
 response。后续收敛改动须以这条正确 fixture 轨迹为依据，不再参考上述 8 页失真预实验的轮数。
+
+移除 runtime 11-response cap 后，以完全相同 fixture 新跑
+`adaboost-four-route-natural-stop-sonnet5-low-20260901`。四路均自然以 `no_tool_use` 结束，
+cover/page/interaction/code 分别为 14/4/7/6 个 response，合计 31 个；响应目标达成 3/4，
+4/4 有产物且独立审计无 fatal error 或 visual warning，代码工作台自检全部通过。该结果证明
+11 是行为目标而不是 termination：旧 run 中被第 11 次截断的 code 在新轨迹中只用了 6 次；
+新轨迹真正超标的是 cover，它在 clean Check 后又做 Look、Bash、Patch 和第三次 Check，直到
+第 14 次才主动停止。
+
+本轮实际读取为 `generative + magnetic-field`、`general + escapement`、
+`general + lawn-path`、`code + code-core-bundle`，仍无 Aux/mini 或额外 reference。interaction
+在 7 次内完成真实 stump 搜索、加权误差、alpha、样本权重更新和 ensemble 决策区域；code 在
+6 次内一次性写入 scaffold 文件并通过 Check。后续优化对象应是 cover 的 clean-check 后漫游，
+不应恢复第 11 次硬截断。

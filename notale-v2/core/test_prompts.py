@@ -79,7 +79,8 @@ class PromptTests(unittest.TestCase):
         self.assertNotIn("使用 `Check`", brief)
         self.assertNotIn("WorkflowContext", brief)
 
-        self.assertEqual(builder.MAX_STEPS, 11)
+        self.assertEqual(builder.RESPONSE_TARGET, 11)
+        self.assertIn("最多有 11 次响应", builder.IDENTITY)
         self.assertIn("通常应在 4–7 次内完成", builder.IDENTITY)
         self.assertIn("同一响应中的多个工具调用会按列出顺序执行", builder.IDENTITY)
         self.assertIn("首次 Write 前先核对确定性数据", builder.IDENTITY)

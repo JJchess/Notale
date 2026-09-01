@@ -201,20 +201,26 @@ class AgentLoopTests(unittest.TestCase):
         self.assertIn("target missing", result.audit["fatal_errors"][0])
         respond.assert_called_once()
 
-    def test_hard_cap_counts_model_responses_and_fails_open_loop(self):
-        response = tool_response(call("Read", file_path="missing.md"))
+    def test_response_target_is_not_a_runtime_cap(self):
+        responses = [
+            tool_response(
+                call("Read", file_path=f"missing-{index}.md"),
+                index=index,
+            )
+            for index in range(builder.RESPONSE_TARGET + 1)
+        ] + [done_response()]
         events = []
         with tempfile.TemporaryDirectory() as td, \
-                patch.object(builder, "respond", return_value=response) as respond, \
+                patch.object(builder, "respond", side_effect=responses) as respond, \
                 patch.object(builder.tools, "run", self.fake_run_factory(events)):
             result = builder.build_one(
                 page(), Path(td), Path(td) / "trace.jsonl", ROOT / "workflows",
                 "instructions", "low",
             )
 
-        self.assertEqual(result.calls, builder.MAX_STEPS)
-        self.assertEqual(respond.call_count, builder.MAX_STEPS)
-        self.assertEqual(result.termination, "max_steps")
+        self.assertEqual(result.calls, builder.RESPONSE_TARGET + 2)
+        self.assertEqual(respond.call_count, builder.RESPONSE_TARGET + 2)
+        self.assertEqual(result.termination, "no_tool_use")
         self.assertFalse(result.artifact_present)
 
     def test_tools_in_one_response_execute_in_listed_order(self):

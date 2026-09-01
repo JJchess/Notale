@@ -1,8 +1,8 @@
 """builder —— 每页一个自由循环,并发跑。
 
 Harness 不把创作过程做成状态机,也不补催、不重启。模型不再要求工具就结束；
-11 次响应是防失控的失败上限,正常路径依靠批量工具调用在 4–7 次内收敛。
-最终产物与一次独立审计分别记录。
+提示词要求最多 11 次响应并在 4–7 次内完成，但 harness 不在第 11 次截断，
+而是让模型自然结束并事后记录是否超出目标。最终产物与一次独立审计分别记录。
 
     python3 -m core.builder --label orbit-01 [--only page-01] [--concurrency 20]
 """
@@ -27,7 +27,7 @@ from . import llm
 from .llm import ROOT, config, respond, text_of
 from .trace import Writer
 
-MAX_STEPS = 11       # 含最终 no-tool 响应；打满仍在用工具就记失败,不静默交付
+RESPONSE_TARGET = 11  # 行为目标与事后指标，不是运行时熔断
 MAX_SECONDS = 3600
 
 
@@ -464,7 +464,7 @@ def build_one(
     effort: str,
     vision_input: bool = True,
 ) -> Page:
-    """Run one free-form agent loop within the response cap and audit separately."""
+    """Run one free-form agent loop to natural stop and audit separately."""
     log = Writer(trace, str(uuid.uuid4()))
     resource_root = (
         workflow_root / page.workflow if page.workflow else workflow_root
@@ -489,10 +489,6 @@ def build_one(
 
     t0 = time.time()
     while True:
-        if page.calls >= MAX_STEPS:
-            page.why = f"打到步数上限 {MAX_STEPS}"
-            page.termination = "max_steps"
-            break
         if time.time() - t0 > MAX_SECONDS:
             page.why = f"超过单页时限 {MAX_SECONDS}s"
             page.termination = "max_seconds"
@@ -864,6 +860,11 @@ def main() -> None:
         f"  每页调用数 {calls[0]}–{calls[-1]}，"
         f"中位 {calls[len(calls) // 2]}，合计 {sum(calls)}"
     )
+    over_target = [page.pid for page in done if page.calls > RESPONSE_TARGET]
+    print(
+        f"  响应目标 ≤{RESPONSE_TARGET}："
+        f"{len(done) - len(over_target)}/{len(done)} 达成"
+    )
     fatal_pages = [
         page.pid
         for page in done
@@ -882,6 +883,7 @@ def main() -> None:
     results = {
         page.pid: {
             "calls": page.calls,
+            "within_response_target": page.calls <= RESPONSE_TARGET,
             "seconds": round(page.seconds, 1),
             "label": page.label,
             "workflow": page.workflow,
@@ -916,6 +918,7 @@ def main() -> None:
             "attempted": len(done),
             "fatalAuditPages": fatal_pages,
             "visualWarningPages": warning_pages,
+            "overResponseTargetPages": over_target,
             "inputTokens": sum(page.tok_in for page in done),
             "outputTokens": sum(page.tok_out for page in done),
             "checkCalls": sum(page.steps.count("Check") for page in done),
