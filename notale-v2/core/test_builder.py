@@ -201,6 +201,44 @@ class AgentLoopTests(unittest.TestCase):
         self.assertIn("target missing", result.audit["fatal_errors"][0])
         respond.assert_called_once()
 
+    def test_hard_cap_counts_model_responses_and_fails_open_loop(self):
+        response = tool_response(call("Read", file_path="missing.md"))
+        events = []
+        with tempfile.TemporaryDirectory() as td, \
+                patch.object(builder, "respond", return_value=response) as respond, \
+                patch.object(builder.tools, "run", self.fake_run_factory(events)):
+            result = builder.build_one(
+                page(), Path(td), Path(td) / "trace.jsonl", ROOT / "workflows",
+                "instructions", "low",
+            )
+
+        self.assertEqual(result.calls, builder.MAX_STEPS)
+        self.assertEqual(respond.call_count, builder.MAX_STEPS)
+        self.assertEqual(result.termination, "max_steps")
+        self.assertFalse(result.artifact_present)
+
+    def test_tools_in_one_response_execute_in_listed_order(self):
+        responses = [
+            tool_response(
+                call("Write", file_path="page-01.html", content="<html>one</html>"),
+                call("Check", page="page-01.html", after=[]),
+            ),
+            done_response(),
+        ]
+        events = []
+        with tempfile.TemporaryDirectory() as td, \
+                patch.object(builder, "respond", side_effect=responses), \
+                patch.object(builder.tools, "run", self.fake_run_factory(events)):
+            result = builder.build_one(
+                page(), Path(td), Path(td) / "trace.jsonl", ROOT / "workflows",
+                "instructions", "low",
+            )
+
+        self.assertEqual(result.calls, 2)
+        self.assertEqual(result.termination, "no_tool_use")
+        self.assertEqual([name for name, _ in events[:2]], ["Write", "Check"])
+        self.assertTrue(result.artifact_present)
+
     def test_native_reads_then_write_use_one_constant_surface_and_effort(self):
         skill = ROOT / "workflows" / "build-cover"
         responses = [
@@ -236,6 +274,8 @@ class AgentLoopTests(unittest.TestCase):
         self.assertEqual(efforts, ["low", "low", "low"])
         self.assertNotIn("Skill", surfaces[0])
         self.assertNotIn("WorkflowContext", surfaces[0])
+        self.assertNotIn("Edit", surfaces[0])
+        self.assertIn("Patch", surfaces[0])
         self.assertEqual(
             result.reference_reads,
             ["references/composition.md", "samples/bundles/composition/prism-light.full.md"],

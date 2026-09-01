@@ -39,4 +39,4 @@ In your first response, issue parallel `Read` calls for the selected reference a
   - Interaction: each note changes the deterministic interval sequence and produces audible, spatial, and corrective evidence.
   - Main: `<skill-dir>/samples/bundles/general/motif-match.full.md`
 
-Follow the selected reference as the construction contract. Preserve the supplied chassis, theme interface, page brief, and output path. Use `Check` to inspect the initial state and consequential states when useful; finish by leaving the complete page at the target path.
+Follow the selected reference as the construction contract. Preserve the supplied chassis, theme interface, page brief, and output path.

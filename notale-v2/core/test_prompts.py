@@ -10,7 +10,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from core import planner, skills
+from core import builder, planner, skills
 from core.llm import fill
 
 
@@ -70,13 +70,20 @@ class PromptTests(unittest.TestCase):
         self.assertNotIn("每章排 3–5 个内容页", deck)
         self.assertNotIn("4–6 章", deck)
 
-    def test_builder_prompt_uses_native_reads_and_absent_target(self):
+    def test_builder_prompt_separates_global_loop_from_page_facts(self):
         brief = (ROOT / "prompts/brief.md").read_text(encoding="utf-8")
-        self.assertIn("第一轮按它当前注册的加载规则和精确路径并行 `Read`", brief)
         self.assertIn("目标文件尚不存在", brief)
         self.assertIn("CodeScaffold", brief)
         self.assertIn("不要用 Bash/Read 枚举依赖", brief)
+        self.assertNotIn("第一轮", brief)
+        self.assertNotIn("使用 `Check`", brief)
         self.assertNotIn("WorkflowContext", brief)
+
+        self.assertEqual(builder.MAX_STEPS, 11)
+        self.assertIn("通常应在 4–7 次内完成", builder.IDENTITY)
+        self.assertIn("同一响应中的多个工具调用会按列出顺序执行", builder.IDENTITY)
+        self.assertIn("首次 Write 前先核对确定性数据", builder.IDENTITY)
+        self.assertIn("下一次响应直接结束", builder.IDENTITY)
 
     def test_anti_slop_guidance_is_split_by_decision_owner(self):
         builder_block = skills.anti_slop_block(skills.WORKFLOWS)

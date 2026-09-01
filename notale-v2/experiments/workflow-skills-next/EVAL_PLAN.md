@@ -68,7 +68,7 @@ Planner 质量评估与 workflow skill 对照分开。四路 Builder smoke 不�
 
 ### Builder
 
-- 普通页始终使用同一组 `Read/Write/Edit/Patch/Check/Look/Bash`；代码页始终使用 `CodeScaffold/Read/Write/Edit/Check/Look`；
+- 普通页始终使用同一组 `Read/Write/Patch/Check/Look/Bash`；`Patch` 同时覆盖单处与多处局部修正，不再提供会诱导逐项往返的同义 `Edit`；代码页始终使用 `CodeScaffold/Read/Write/Edit/Check/Look`；
 - `low` 从第一轮到最后一轮始终是 `low`，不按施工阶段切 effort；
 - 不使用读取顺序、首次 Write、再次 Write、Check clean 或停止前确认等状态闸门；
 - 模型不再调用工具就立即停止，不补催、不重启；
@@ -124,3 +124,17 @@ python3 experiments/workflow-skills-next/frozen_four_route.py run --label RUN \
 # 仅做 Aux 对照时在 run 子命令显式追加：--aux-samples
 python3 dump_page.py --label RUN --page page-NN --out /tmp/page-NN.md
 ```
+
+## 2026-09-01 收敛验证
+
+冻结夹具的首轮 11-response smoke 中，cover、interaction、code 分别以 7、5、5 次
+`no_tool_use` 结束；page 因截图后连续 6 次单点 `Edit` 在第 11 次触发 `max_steps`。轨迹显示
+它在逐项手算并修正自造数据，而非 Check、网络或 workspace 故障。基于该证据，普通页删除
+与 `Patch` 重叠的 `Edit`，并要求首次 Write 前核对确定性数据、公式与预期输出。
+
+复验 run `adaboost-four-route-converge11-v2-sonnet5-low-20260901` 使用相同冷灰 theme、页表、
+main-only samples 和 `sonnet5-low`：cover/page/interaction/code 分别以 4/10/5/6 次
+`no_tool_use` 结束，合计 25 次；4/4 留下产物，独立审计无致命错误或视觉警告。实际读取为
+`generative + neural-signal-network`、`general + escapement`、`general + lawn-path`、
+`code + code-core-bundle`，没有 Aux/mini 或额外 reference。该结果是固定单题 smoke，证明当前
+路径可在上限内完成，不代表跨题目的统计保证。

@@ -150,6 +150,11 @@ class ToolSurfaceTests(unittest.TestCase):
         self.assertNotIn("ImageSearch", names)
         self.assertNotIn("ImageGen", names)
 
+    def test_check_schema_exposes_reload_and_batched_state_semantics(self):
+        check = next(row for row in tools.specs() if row["name"] == "Check")
+        self.assertIn("1.2 秒", check["description"])
+        self.assertIn("同一次 after", check["description"])
+
     def test_workflow_resource_read_is_full_and_read_only(self):
         with tempfile.TemporaryDirectory() as td:
             base = Path(td)

@@ -66,4 +66,4 @@ In your first response, choose one category and issue parallel `Read` calls for 
   - Visual: material height, light, and wave response make a tactile WebGL field without dashboard chrome.
   - Main: `<skill-dir>/samples/bundles/generative/tactile-grid.full.md`
 
-Follow the selected reference as the construction contract. Preserve the supplied chassis, theme interface, page brief, and output path. Use `Check` when you need rendered evidence; finish by leaving the complete page at the target path.
+Follow the selected reference as the construction contract. Preserve the supplied chassis, theme interface, page brief, and output path.

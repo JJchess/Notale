@@ -1,10 +1,7 @@
-"""builder —— 每页一个循环,并发跑。
+"""builder —— 每页一个自由循环,并发跑。
 
-planner 能做成固定流水线,是因为 nn-03 和 nn-06 两轮动作序列完全一致。
-builder 不行:实测每页 16–73 次调用,相差 4.6 倍,工具配比也各不相同
-(page-09 是 Bash×22,page-20 是 Edit×26)。所以这里只能是循环。
-
-模型不再要求工具就结束。Harness 不补催、不重启，也不把工作顺序变成状态机；
+Harness 不把创作过程做成状态机,也不补催、不重启。模型不再要求工具就结束；
+11 次响应是防失控的失败上限,正常路径依靠批量工具调用在 4–7 次内收敛。
 最终产物与一次独立审计分别记录。
 
     python3 -m core.builder --label orbit-01 [--only page-01] [--concurrency 20]
@@ -30,7 +27,7 @@ from . import llm
 from .llm import ROOT, config, respond, text_of
 from .trace import Writer
 
-MAX_STEPS = 100      # 实测最多 73;打满记为失败,不静默交付
+MAX_STEPS = 11       # 含最终 no-tool 响应；打满仍在用工具就记失败,不静默交付
 MAX_SECONDS = 3600
 
 
@@ -41,8 +38,19 @@ def _now() -> str:
 IDENTITY = """你是这套互动讲义的单页构建 agent。你只负责当前页面。
 
 技术契约、主题接口、全套章节提纲、当前章节页表和与页面标签唯一对应的 SKILL.md 都已经在
-你的提示里。第一轮按 SKILL.md 当前注册的加载规则并行 Read reference 和 sample。
-按 brief 完成目标页面；需要判断真实渲染时使用 Check。
+你的提示里。严格遵守 SKILL.md 的第一轮加载规则,按 brief 完成目标页面。
+
+你最多有 11 次响应（包含最后一次不调用工具的结束响应），通常应在 4–7 次内完成。
+同一响应中的多个工具调用会按列出顺序执行：首次创作可先 Write、再 Check；修正时把所有
+已确认问题合并为一次 Patch。代码页可在同一响应写完多个 lesson 文件,再 Check。
+首次 Write 前先核对确定性数据、公式和预期输出的一致性,不要把能事先算清的逻辑矛盾留到
+截图后逐项修补。
+
+一次 Check 用 after 覆盖所有主要主动状态。成品先完整检查一次；只有报告出现明确的 ✗，
+或截图中存在你能具体指出的 brief、视觉或交互违约时,才统一修复并做一次回归 Check。
+若报告没有 ✗ 且截图没有上述具体违约,下一次响应直接结束。不得为了“再优化一点”读取
+自己刚写的目标文件,或继续 Look、Bash、Edit、重复 Check。
+
 不写额外说明文档、构建日志或旁路测试。做完直接结束,不要问问题。
 
 代码页调用 CodeScaffold，之后只编辑它返回的 lesson 文件；外层页面、固定运行时、主题和
@@ -456,7 +464,7 @@ def build_one(
     effort: str,
     vision_input: bool = True,
 ) -> Page:
-    """Run one unconstrained agent loop and record its artifact separately."""
+    """Run one free-form agent loop within the response cap and audit separately."""
     log = Writer(trace, str(uuid.uuid4()))
     resource_root = (
         workflow_root / page.workflow if page.workflow else workflow_root
@@ -473,6 +481,11 @@ def build_one(
         specs = [code_runtime.tool_schema()] + [
             row for row in specs if row["name"] in allowed
         ]
+    else:
+        # Patch covers both one and many local page edits. Keeping Edit as a
+        # second equivalent choice induced low-effort agents to repair one
+        # literal per response; normal pages therefore expose only Patch.
+        specs = [row for row in specs if row["name"] != "Edit"]
 
     t0 = time.time()
     while True:

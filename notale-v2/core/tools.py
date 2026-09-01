@@ -153,8 +153,8 @@ SCHEMAS = [
          "required": ["page", "edits"], "additionalProperties": False}},
     {"name": "Check", "description":
         "把页面真渲染一遍并报告:JS 报错、超出画布、被裁、字号地板、画面占用比。"
-        "after 只覆盖用户能主动触发且会改变学习结果或版面的主要状态；"
-        "不要为了被动循环动画反复截取相邻帧。",
+        "每次都会重新加载页面并在加载约 1.2 秒后采样初态,不是等待或调试被动动画的工具。"
+        "把用户能主动触发且会改变学习结果或版面的主要状态合并进同一次 after,不要拆成多次 Check。",
      "parameters": {"type": "object", "properties": {
          "page": {"type": "string", "description": "页面文件名,例 page-07.html"},
          "after": {"type": "array", "items": {"type": "string"},

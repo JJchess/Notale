@@ -74,4 +74,4 @@ In your first response, issue parallel `Read` calls for exactly one reference an
   - Visual: synchronized spatial and profile views connect position, height, and quantity.
   - Main: `<skill-dir>/samples/bundles/3d/population-mountains.full.md`
 
-Follow the selected reference as the construction contract. Preserve the supplied chassis, theme interface, page brief, and output path. Use `Check` when you need rendered evidence; finish by leaving the complete page at the target path.
+Follow the selected reference as the construction contract. Preserve the supplied chassis, theme interface, page brief, and output path.
