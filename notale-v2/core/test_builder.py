@@ -435,5 +435,30 @@ class ProfileTests(unittest.TestCase):
         self.assertFalse(hasattr(profile, "post_composition_effort"))
 
 
+    def test_workflow_profiles_route_only_listed_workflows(self):
+        prof = {"base_url": "https://example.test", "api_key_env": "KEY",
+                "adapter": "messages", "vision_input": True}
+        cfg = {"builder": {
+            "default_profile": "a",
+            "workflow_profiles": {"build-code": "b"},
+            "profiles": {"a": {**prof, "model": "m-a", "reasoning_effort": "low"},
+                         "b": {**prof, "model": "m-b", "reasoning_effort": "high"}},
+        }}
+        default = llm.resolve_builder_profile(cfg)
+        original = llm.ModelRuntime.__init__
+        llm.ModelRuntime.__init__ = lambda self, profile, sdk_client=None: setattr(self, "profile", profile)
+        try:
+            runtimes = builder.workflow_runtimes(cfg, default)
+            self.assertEqual({k: v.profile.id for k, v in runtimes.items()},
+                             {"build-cover": "a", "build-page": "a",
+                              "build-interaction": "a", "build-code": "b"})
+            self.assertEqual(runtimes["build-code"].profile.reasoning_effort, "high")
+            self.assertIs(runtimes["build-cover"], runtimes["build-page"])
+            cfg["builder"]["workflow_profiles"] = {"build-3d": "b"}
+            with self.assertRaises(ValueError):
+                builder.workflow_runtimes(cfg, default)
+        finally:
+            llm.ModelRuntime.__init__ = original
+
 if __name__ == "__main__":
     unittest.main()

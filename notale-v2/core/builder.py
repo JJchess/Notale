@@ -694,6 +694,22 @@ def build_one(
     return page
 
 
+def workflow_runtimes(cfg: dict, default: llm.ModelProfile) -> dict[str, llm.ModelRuntime]:
+    """One runtime per workflow. ``builder.workflow_profiles`` overrides the default per page type."""
+    overrides = (cfg.get("builder") or {}).get("workflow_profiles") or {}
+    unknown = sorted(set(overrides) - set(skills.PAGE_WORKFLOWS))
+    if unknown:
+        raise ValueError(f"workflow_profiles names unknown workflows: {unknown}")
+    cache = {default.id: llm.ModelRuntime(default)}
+    out = {}
+    for name in skills.PAGE_WORKFLOWS:
+        pid = overrides.get(name, default.id)
+        if pid not in cache:
+            cache[pid] = llm.ModelRuntime(llm.resolve_builder_profile(cfg, pid))
+        out[name] = cache[pid]
+    return out
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--label", required=True)
@@ -710,7 +726,7 @@ def main() -> None:
 
     cfg = config()
     profile = llm.resolve_builder_profile(cfg, args.profile)
-    runtime = llm.ModelRuntime(profile)
+    runtimes = workflow_runtimes(cfg, profile)
 
     root = ROOT / "runs" / args.label
     briefs = json.loads((root / "briefs.json").read_text(encoding="utf-8"))
@@ -756,6 +772,7 @@ def main() -> None:
         "adapter": profile.adapter,
         "reasoningEffort": profile.reasoning_effort,
         "visionInput": profile.vision_input,
+        "workflowProfiles": {name: rt.profile.id for name, rt in runtimes.items()},
         "auxiliarySamples": args.aux_samples,
         "pages": [page.pid for page in pages],
         "startedAt": _now(),
@@ -799,7 +816,8 @@ def main() -> None:
         f"profile={profile.id}，model={profile.model}，"
         f"adapter={profile.adapter}，effort={profile.reasoning_effort}，"
         f"vision={'on' if profile.vision_input else 'off'}，"
-        f"aux-samples={'on' if args.aux_samples else 'off'}\n"
+        + "".join(f"{n}→{rt.profile.id}，" for n, rt in runtimes.items() if rt.profile.id != profile.id)
+        + f"aux-samples={'on' if args.aux_samples else 'off'}\n"
         f"  完整 system {lengths[0]:,}–{lengths[-1]:,} 字符，"
         f"按 workflow 分 {len(groups)} 组共享\n"
     )
@@ -807,6 +825,7 @@ def main() -> None:
     started = time.time()
 
     def guard(page: Page) -> Page:
+        rt = runtimes[page.workflow]
         try:
             return build_one(
                 page,
@@ -814,9 +833,9 @@ def main() -> None:
                 root / "trace.jsonl",
                 workflow_root,
                 instructions[page.pid],
-                profile.reasoning_effort,
-                profile.vision_input,
-                runtime,
+                rt.profile.reasoning_effort,
+                rt.profile.vision_input,
+                rt,
             )
         except Exception as exc:  # noqa: BLE001
             page.why = f"{type(exc).__name__}: {str(exc)[:160]}"
@@ -870,6 +889,7 @@ def main() -> None:
             "seconds": round(page.seconds, 1),
             "label": page.label,
             "workflow": page.workflow,
+            "profile": runtimes[page.workflow].profile.id,
             "termination": page.termination,
             "artifact_present": page.artifact_present,
             "audit": page.audit,
