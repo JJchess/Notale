@@ -1,0 +1,413 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+#stage{
+  display:flex;
+  flex-direction:column;
+  gap:16px;
+}
+.head{ flex:0 0 auto; }
+.body{
+  flex:1;
+  min-height:0;
+  display:flex;
+  gap:24px;
+}
+.side{
+  flex:0 0 372px;
+  min-height:0;
+  display:flex;
+  flex-direction:column;
+  gap:14px;
+}
+.main{
+  flex:1;
+  min-width:0;
+  min-height:0;
+  display:flex;
+  gap:20px;
+}
+.boardwrap{
+  flex:1;
+  min-width:0;
+  min-height:0;
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+}
+.boardtitle{
+  font-size:var(--fs-label);
+  color:var(--muted);
+  display:flex;
+  justify-content:space-between;
+  align-items:baseline;
+}
+.boardtitle b{ color:var(--text); font-weight:600; }
+.cvhold{
+  flex:1;
+  min-height:0;
+  position:relative;
+  border-radius:var(--radius);
+  overflow:hidden;
+  background:var(--surface);
+  box-shadow:inset 0 0 0 var(--line) var(--rule);
+}
+.stump-list{
+  display:flex;
+  flex-direction:column;
+  gap:6px;
+  overflow-y:auto;
+}
+.stump{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  padding:8px 10px;
+  border-radius:6px;
+  cursor:pointer;
+  background:var(--surface);
+  transition:background .12s ease;
+  user-select:none;
+}
+.stump:hover{ background:var(--surface-strong); }
+.stump.on{ background:var(--surface-strong); }
+.stump .chk{
+  width:16px;height:16px;
+  border-radius:4px;
+  flex:0 0 auto;
+  box-shadow:inset 0 0 0 2px var(--rule);
+  position:relative;
+}
+.stump.on .chk{
+  background:var(--weak);
+  box-shadow:none;
+}
+.stump.on .chk::after{
+  content:"";
+  position:absolute;
+  left:4px; top:1px;
+  width:5px; height:9px;
+  border:2px solid #fff;
+  border-top:0; border-left:0;
+  transform:rotate(40deg);
+}
+.stump .lbl{
+  flex:1;
+  font-size:var(--fs-label);
+  font-family:var(--font-mono);
+}
+.stump .acc{
+  font-size:var(--fs-label);
+  font-family:var(--font-mono);
+  color:var(--muted);
+  flex:0 0 auto;
+}
+.stump.on .acc{ color:var(--weak); font-weight:600; }
+.statrow{
+  display:flex;
+  gap:12px;
+}
+.statbox{
+  flex:1;
+  min-width:0;
+}
+.legend{ margin-top:2px; }
+</style>
+</head>
+<body data-page="04" data-total="26">
+<div id="stage">
+  <div class="head">
+    <div class="kicker">组合弱学习器</div>
+    <h1 style="font-size:var(--fs-h1);font-weight:700;margin:2px 0 4px;">单独一个树桩不够，勾选组合就够了</h1>
+    <p class="lead" style="font-size:var(--fs-lead);color:var(--muted);max-width:1100px;">
+      同一批 40 个点分两类，8 个候选弱学习器都只是一条竖线或横线阈值（决策树桩），单独用哪一个都只能对六七成。
+      左边勾选多个，右边按多数投票合成的分类面会跟着更新。
+    </p>
+  </div>
+
+  <div class="body">
+    <div class="side">
+      <div class="panel q" style="padding:14px 16px;">
+        <div class="statrow">
+          <div class="statbox">
+            <div class="small" style="color:var(--muted);font-size:var(--fs-label);">已勾选</div>
+            <div class="big" id="numOn"><span class="num">0</span></div>
+          </div>
+          <div class="statbox">
+            <div class="small" style="color:var(--muted);font-size:var(--fs-label);">组合准确率</div>
+            <div class="big" id="ensAcc" style="color:var(--ensemble);"><span class="num">—</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel" style="padding:12px 12px;flex:1;min-height:0;display:flex;flex-direction:column;gap:8px;">
+        <div class="small" style="color:var(--muted);">8 个候选弱学习器（勾选加入投票）</div>
+        <div class="stump-list" id="stumpList"></div>
+      </div>
+
+      <div class="legend legend" style="display:flex;gap:16px;font-size:var(--fs-label);color:var(--muted);">
+        <span class="li" style="display:inline-flex;align-items:center;gap:6px;"><span class="sw" style="width:11px;height:11px;border-radius:50%;background:var(--text);display:inline-block;"></span>类别 A</span>
+        <span class="li" style="display:inline-flex;align-items:center;gap:6px;"><span class="sw" style="width:11px;height:2px;background:var(--text);display:inline-block;transform:rotate(45deg);"></span>类别 B（叉）</span>
+        <span class="li" style="display:inline-flex;align-items:center;gap:6px;"><span class="sw" style="width:11px;height:11px;border-radius:50%;background:var(--focus);display:inline-block;"></span>判错的点</span>
+      </div>
+    </div>
+
+    <div class="main">
+      <div class="boardwrap">
+        <div class="boardtitle">
+          <span>单个弱学习器 <b id="singleName">——</b></span>
+          <span>准确率 <b class="num" id="singleAccTxt">—</b></span>
+        </div>
+        <div class="cvhold"><canvas class="cv-fill no-pan" id="cvSingle"></canvas></div>
+      </div>
+      <div class="boardwrap">
+        <div class="boardtitle">
+          <span style="color:var(--ensemble);font-weight:600;">组合投票（已选 <b id="numOn2">0</b> 个）</span>
+          <span>准确率 <b class="num" id="ensAccTxt" style="color:var(--ensemble);">—</b></span>
+        </div>
+        <div class="cvhold"><canvas class="cv-fill no-pan" id="cvEnsemble"></canvas></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="assets/base.js"></script>
+<script src="assets/lib/seedrandom.min.js"></script>
+<script>
+(function(){
+"use strict";
+
+/* ---------- 数据：40 个点，两个交错的簇，任何单一轴对齐阈值都分不干净 ---------- */
+var rng = new Math.seedrandom("page-04-adaboost");
+var DOMAIN = { x0:-6, x1:6, y0:-6, y1:6 };
+
+function gauss(){
+  var u=0,v=0;
+  while(u===0) u=rng();
+  while(v===0) v=rng();
+  return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v);
+}
+
+var points = [];
+// 类别 A（label +1）：两个簇，左上和右下
+var centersA = [ [-3.2, 2.6], [3.0, -2.4] ];
+centersA.forEach(function(c, ci){
+  for(var i=0;i<10;i++){
+    points.push({ x: c[0]+gauss()*1.15, y: c[1]+gauss()*1.15, label:1 });
+  }
+});
+// 类别 B（label -1）：两个簇，右上和左下 —— 与 A 交错分布
+var centersB = [ [3.2, 2.8], [-3.0, -2.6] ];
+centersB.forEach(function(c, ci){
+  for(var i=0;i<10;i++){
+    points.push({ x: c[0]+gauss()*1.15, y: c[1]+gauss()*1.15, label:-1 });
+  }
+});
+// 裁到画布范围内
+points.forEach(function(p){
+  p.x = Math.max(DOMAIN.x0+0.3, Math.min(DOMAIN.x1-0.3, p.x));
+  p.y = Math.max(DOMAIN.y0+0.3, Math.min(DOMAIN.y1-0.3, p.y));
+});
+
+/* ---------- 8 个候选弱学习器：轴对齐阈值树桩 ---------- */
+// axis: 'x' 或 'y'；thresh：阈值；side: +1 表示 (val>thresh)→+1，-1 表示 (val>thresh)→-1
+var stumps = [
+  { id:0, axis:'x', thresh:-1.0, side: 1, name:"x > -1.0 → A" },
+  { id:1, axis:'x', thresh: 1.0, side:-1, name:"x > 1.0 → B" },
+  { id:2, axis:'y', thresh:-1.0, side: 1, name:"y > -1.0 → A" },
+  { id:3, axis:'y', thresh: 1.0, side:-1, name:"y > 1.0 → B" },
+  { id:4, axis:'x', thresh:-3.5, side: 1, name:"x > -3.5 → A" },
+  { id:5, axis:'x', thresh: 3.5, side:-1, name:"x > 3.5 → B" },
+  { id:6, axis:'y', thresh:-3.5, side: 1, name:"y > -3.5 → A" },
+  { id:7, axis:'y', thresh: 3.5, side:-1, name:"y > 3.5 → B" },
+];
+
+function stumpPredict(s, x, y){
+  var val = (s.axis==='x') ? x : y;
+  return (val > s.thresh) ? s.side : -s.side;
+}
+
+function stumpAccuracy(s){
+  var correct = 0;
+  points.forEach(function(p){
+    if(stumpPredict(s, p.x, p.y) === p.label) correct++;
+  });
+  return correct / points.length;
+}
+stumps.forEach(function(s){ s.acc = stumpAccuracy(s); });
+
+/* ---------- 状态 ---------- */
+var state = {
+  on: new Set(),        // 勾选的树桩 id
+  focus: 0               // 左侧"单个弱学习器"展示用哪一个：当前最后点击的，默认第一个
+};
+
+/* ---------- 组合投票 ---------- */
+function ensemblePredict(onIds, x, y){
+  if(onIds.length===0) return 0;
+  var sum = 0;
+  onIds.forEach(function(id){
+    sum += stumpPredict(stumps[id], x, y);
+  });
+  return sum >= 0 ? 1 : -1;
+}
+
+function ensembleAccuracy(onIds){
+  if(onIds.length===0) return null;
+  var correct = 0;
+  points.forEach(function(p){
+    if(ensemblePredict(onIds, p.x, p.y) === p.label) correct++;
+  });
+  return correct/points.length;
+}
+
+/* ---------- 坐标映射 ---------- */
+function toPx(w,h,x,y){
+  return {
+    px: (x - DOMAIN.x0)/(DOMAIN.x1-DOMAIN.x0) * w,
+    py: h - (y - DOMAIN.y0)/(DOMAIN.y1-DOMAIN.y0) * h
+  };
+}
+
+/* ---------- 画一张分类面板：region 着色 + 点 + 判错标记 ---------- */
+function drawPanel(ctx, w, h, predictFn, title){
+  ctx.clearRect(0,0,w,h);
+
+  // 背景决策区域，网格采样
+  var cellsX = 48, cellsY = 48;
+  var cw = w/cellsX, ch = h/cellsY;
+  var colA = Deck.rgba('weak', 0.16);
+  var colB = Deck.rgba('weight', 0.13);
+  for(var i=0;i<cellsX;i++){
+    for(var j=0;j<cellsY;j++){
+      var cx = DOMAIN.x0 + (i+0.5)/cellsX*(DOMAIN.x1-DOMAIN.x0);
+      var cy = DOMAIN.y1 - (j+0.5)/cellsY*(DOMAIN.y1-DOMAIN.y0);
+      var pred = predictFn(cx, cy);
+      ctx.fillStyle = pred>=0 ? colA : colB;
+      ctx.fillRect(i*cw, j*ch, cw+0.6, ch+0.6);
+    }
+  }
+
+  // 坐标轴参考线（0,0）
+  ctx.strokeStyle = Deck.rgba('rule', 0.5);
+  ctx.lineWidth = 1;
+  var zero = toPx(w,h,0,0);
+  ctx.beginPath();
+  ctx.moveTo(0, zero.py); ctx.lineTo(w, zero.py);
+  ctx.moveTo(zero.px, 0); ctx.lineTo(zero.px, h);
+  ctx.stroke();
+
+  // 数据点
+  var colText = Deck.token('text');
+  var colFocus = Deck.token('focus');
+  points.forEach(function(p){
+    var pt = toPx(w,h,p.x,p.y);
+    var pred = predictFn(p.x, p.y);
+    var wrong = pred !== p.label;
+    var r = 6.5;
+    ctx.lineWidth = 2.2;
+    if(wrong){
+      ctx.strokeStyle = colFocus;
+      ctx.fillStyle = colFocus;
+    } else {
+      ctx.strokeStyle = colText;
+      ctx.fillStyle = colText;
+    }
+    if(p.label === 1){
+      ctx.beginPath();
+      ctx.arc(pt.px, pt.py, r, 0, Math.PI*2);
+      if(wrong){ ctx.fill(); } else { ctx.stroke(); }
+    } else {
+      ctx.beginPath();
+      ctx.moveTo(pt.px-r, pt.py-r); ctx.lineTo(pt.px+r, pt.py+r);
+      ctx.moveTo(pt.px+r, pt.py-r); ctx.lineTo(pt.px-r, pt.py+r);
+      ctx.stroke();
+    }
+  });
+}
+
+/* ---------- canvas 接线 ---------- */
+var cvSingle = document.getElementById('cvSingle');
+var cvEnsemble = document.getElementById('cvEnsemble');
+
+var fitSingle = Deck.autofit(cvSingle, function(ctx,w,h){
+  var s = stumps[state.focus];
+  drawPanel(ctx, w, h, function(x,y){ return stumpPredict(s,x,y); });
+});
+var fitEnsemble = Deck.autofit(cvEnsemble, function(ctx,w,h){
+  var onIds = Array.from(state.on);
+  drawPanel(ctx, w, h, function(x,y){ return ensemblePredict(onIds, x, y); });
+});
+
+/* ---------- 控件 ---------- */
+var listEl = document.getElementById('stumpList');
+stumps.forEach(function(s){
+  var row = document.createElement('div');
+  row.className = 'stump';
+  row.dataset.id = s.id;
+  row.innerHTML =
+    '<span class="chk"></span>' +
+    '<span class="lbl">'+s.name+'</span>' +
+    '<span class="acc">'+Math.round(s.acc*100)+'%</span>';
+  listEl.appendChild(row);
+});
+
+function fmtPct(v){
+  return (v===null || v===undefined) ? "—" : Math.round(v*100)+"%";
+}
+
+function render(){
+  var onIds = Array.from(state.on);
+  // 左侧列表状态
+  Array.prototype.forEach.call(listEl.children, function(row){
+    var id = +row.dataset.id;
+    row.classList.toggle('on', state.on.has(id));
+  });
+  // 顶部统计
+  document.getElementById('numOn').querySelector('.num').textContent = onIds.length;
+  document.getElementById('numOn2').textContent = onIds.length;
+  var eAcc = ensembleAccuracy(onIds);
+  document.getElementById('ensAcc').querySelector('.num').textContent = fmtPct(eAcc);
+  document.getElementById('ensAccTxt').textContent = fmtPct(eAcc);
+
+  // 左图：当前 focus 弱学习器
+  var s = stumps[state.focus];
+  document.getElementById('singleName').textContent = s.name;
+  document.getElementById('singleAccTxt').textContent = Math.round(s.acc*100)+"%";
+
+  fitSingle.redraw();
+  fitEnsemble.redraw();
+}
+
+listEl.addEventListener('click', function(e){
+  var row = e.target.closest('.stump');
+  if(!row) return;
+  var id = +row.dataset.id;
+  if(state.on.has(id)) state.on.delete(id);
+  else state.on.add(id);
+  state.focus = id; // 最近操作的树桩作为单独展示对象
+  render();
+});
+listEl.addEventListener('keydown', function(e){
+  if(e.key!=='Enter' && e.key!==' ') return;
+  var row = e.target.closest('.stump');
+  if(!row) return;
+  e.preventDefault();
+  row.click();
+});
+// 使每一行可键盘聚焦
+Array.prototype.forEach.call(listEl.children, function(row){ row.tabIndex = 0; });
+
+// 默认预置：勾选两个互补方向差的树桩，展示局部提升，再留其余给学习者继续加
+state.on.add(0);
+state.focus = 0;
+render();
+
+})();
+</script>
+</body>
+</html>

@@ -9,6 +9,78 @@
  <title>机械钟为什么不会一下走完？｜Notale</title>
  <link rel="icon" href="data:,">
  <link rel="stylesheet" href="assets/base.css">
+ <style>:root {
+ --paper: #f8f8f6; --ink: #414647; --muted: #747a79; --quiet: #a6abaa; --line: #d9dcda;
+ --teal: #62bfb2; --teal-edge: #2d7770; --blue: #64a8df; --blue-edge: #2f6792;
+ --violet: #ca8ed7; --violet-edge: #7f4d8b; --ruby: #f28aa0; --ruby-edge: #ab4158;
+ --yellow: #f2bf43; --yellow-edge: #9d7518; --red: #e5655d; --pad-x: 68px;
+ --font-sans: "PingFang SC", "Noto Sans SC", "Microsoft YaHei", Arial, sans-serif;
+ --font-mono: "SFMono-Regular", "Roboto Mono", Consolas, monospace;
+}
+body { background: #e9eae7; }
+button, input { font: inherit; }
+#stage { padding: 0 var(--pad-x); overflow: hidden; background: var(--paper); color: var(--ink); font-family: var(--font-sans); }
+.intro { position: absolute; left: 68px; right: 68px; top: 37px; height: 122px; }
+h1 { position: absolute; left: 0; top: 33px; color: #363a3b; font-size: 52px; font-weight: 520; letter-spacing: -.045em; line-height: 1.08; }
+.mechanism { position: absolute; left: 40px; top: 155px; width: 1520px; height: 610px; margin: 0; border-top: 1px solid var(--line); }
+.render-shell { position: absolute; left: 50px; top: 43px; width: 1420px; height: 466px; overflow: hidden; cursor: grab; touch-action: none; }
+.render-shell[data-dragging="true"] { cursor: grabbing; }
+#mechanismCanvas, .fallback-svg, .annotation-layer { position: absolute; inset: 0; width: 100%; height: 100%; }
+#mechanismCanvas { display: block; outline: none; }
+.annotation-layer { z-index: 3; overflow: visible; pointer-events: none; }
+.annotation-label { fill: var(--muted); font-family: var(--font-sans); font-size: 15px; }
+.annotation-strong { fill: var(--ink); font-weight: 650; }
+.annotation-red { fill: var(--red); font-weight: 650; }
+.component-callout { color: var(--ink); }
+.component-callout text { fill: var(--ink); stroke: var(--paper); stroke-width: 4px; paint-order: stroke fill; font-family: var(--font-sans); font-size: 18px; font-weight: 650; letter-spacing: .01em; }
+.component-callout.wheel { color: var(--teal-edge); }
+.component-callout.fork { color: var(--blue-edge); }
+.component-callout.balance { color: var(--violet-edge); }
+.component-callout.pallets { color: var(--ruby-edge); }
+.callout-swatch, .callout-leader { fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; }
+.callout-swatch { stroke-width: 5px; }
+.callout-leader { stroke-width: 1.5px; opacity: .72; }
+.callout-dot { fill: currentColor; stroke: var(--paper); stroke-width: 3px; }
+.fallback-svg { display: none; }
+.webgl-failed .fallback-svg { display: block; }
+.webgl-failed #mechanismCanvas { display: none; }
+.fallback-note { display: none; position: absolute; left: 26px; bottom: 9px; z-index: 5; color: var(--ruby-edge); font-size: 12px; }
+.webgl-failed .fallback-note { display: block; }
+figcaption { position: absolute; left: 66px; right: 66px; bottom: 11px; height: 84px; display: grid; grid-template-columns: 185px 1fr 265px; align-items: center; gap: 28px; }
+.state-heading h2 { color: #353a3a; font-size: 35px; font-weight: 560; letter-spacing: -.035em; line-height: 1; }
+.state-copy { max-width: 750px; color: #5d6463; font-size: 19px; line-height: 1.65; }
+.state-copy strong { color: var(--ink); font-weight: 650; }
+.wheel-reading { padding-left: 25px; border-left: 1px solid var(--line); }
+.wheel-reading b { display: block; margin-top: 3px; color: var(--teal-edge); font-size: 29px; font-weight: 600; letter-spacing: -.035em; }
+.controls { position: absolute; left: 68px; right: 68px; bottom: 22px; height: 100px; display: grid; grid-template-columns: 235px 1fr 190px; align-items: center; gap: 35px; border-top: 1px solid var(--line); }
+.transport { display: flex; align-items: center; gap: 13px; }
+.play-button { width: 52px; height: 52px; flex: 0 0 auto; display: grid; place-items: center; border: 0; border-radius: 50%; background: var(--yellow); color: #433b21; box-shadow: 0 0 0 1px rgba(157, 117, 24, .18); cursor: pointer; }
+.play-button:hover { background: #f5c956; }
+.play-icon { width: 0; height: 0; margin-left: 4px; border-top: 7px solid transparent; border-bottom: 7px solid transparent; border-left: 11px solid currentColor; }
+.play-button[data-playing="true"] .play-icon { width: 11px; height: 15px; margin-left: 0; border: 0; border-left: 3px solid currentColor; border-right: 3px solid currentColor; }
+.transport-copy strong { display: block; font-size: 15px; font-weight: 650; }
+.timeline-wrap { position: relative; height: 76px; }
+.track, .track-fill { position: absolute; left: 10px; right: 10px; top: 24px; height: 3px; border-radius: 2px; pointer-events: none; }
+.track { background: var(--line); }
+.track-fill { background: var(--teal); transform: scaleX(0); transform-origin: left center; }
+#timeline { position: absolute; left: 0; top: 12px; width: 100%; height: 26px; margin: 0; appearance: none; -webkit-appearance: none; background: transparent; cursor: pointer; }
+#timeline::-webkit-slider-runnable-track { height: 3px; background: transparent; }
+#timeline::-moz-range-track { height: 3px; background: transparent; }
+#timeline::-webkit-slider-thumb { width: 22px; height: 22px; margin-top: -9px; appearance: none; -webkit-appearance: none; border: 4px solid var(--paper); border-radius: 50%; background: var(--yellow); box-shadow: 0 0 0 1px var(--yellow-edge); }
+#timeline::-moz-range-thumb { width: 15px; height: 15px; border: 4px solid var(--paper); border-radius: 50%; background: var(--yellow); box-shadow: 0 0 0 1px var(--yellow-edge); }
+.beats { position: absolute; left: 0; right: 0; top: 43px; display: grid; grid-template-columns: repeat(4, 1fr); }
+.beat { position: relative; min-width: 0; padding: 7px 4px; border: 0; background: transparent; color: var(--quiet); font-size: 13px; cursor: pointer; }
+.beat::before { content: ""; position: absolute; left: 50%; top: -19px; width: 1px; height: 7px; background: #c8ccca; }
+.beat:hover { color: var(--ink); }
+.beat[aria-current="step"] { color: var(--teal-edge); font-weight: 650; }
+.reset-area { justify-self: end; text-align: right; }
+.reset-button { padding: 7px 0; border: 0; border-bottom: 1px solid #bfc4c1; background: transparent; color: var(--muted); font-size: 13px; cursor: pointer; }
+button:focus-visible, input:focus-visible { outline: 3px solid rgba(47, 103, 146, .32); outline-offset: 4px; }
+
+  @media (prefers-reduced-motion: reduce) {*, *::before, *::after { scroll-behavior: auto !important; transition-duration: .001ms !important; animation-duration: .001ms !important; }
+
+  }
+ </style>
 </head>
 <body>
  <main id="stage" aria-label="机械钟擒纵机构解释页">

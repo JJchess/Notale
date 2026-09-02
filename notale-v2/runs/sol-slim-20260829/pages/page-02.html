@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>学习路线｜神经网络是怎么学会的</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    .head{flex:0 0 auto;display:flex;align-items:flex-end;justify-content:space-between;gap:40px;padding-bottom:20px;border-bottom:1px solid var(--rule)}
+    .head-copy{min-width:0}
+    .head .lead{max-width:560px;padding-bottom:2px;text-align:right;color:var(--muted)}
+    .map{flex:1;min-height:0;display:grid;grid-template-rows:minmax(0,1fr) 176px;margin-top:24px;border:2px solid var(--rule);border-radius:var(--radius);background:var(--paper)}
+    .route{position:relative;min-height:0;padding:40px 48px 26px;display:flex;flex-direction:column;justify-content:center}
+    .route-label{display:flex;justify-content:space-between;align-items:center;margin-bottom:28px;color:var(--muted);font-size:var(--fs-label);font-weight:650;letter-spacing:.04em}
+    .route-label strong{color:var(--text);font-size:var(--fs-sec);letter-spacing:0}
+    .stations{position:relative;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:14px;align-items:start}
+    .track{position:absolute;left:9%;right:9%;top:49px;height:2px;background:var(--rule);pointer-events:none}
+    .track::after{content:"";position:absolute;right:-1px;top:-6px;width:12px;height:12px;border-top:2px solid var(--rule-strong);border-right:2px solid var(--rule-strong);transform:rotate(45deg)}
+    .station{position:relative;z-index:1;min-width:0;border:0;background:transparent;color:var(--text);font:inherit;text-align:center;cursor:pointer;padding:0 6px}
+    .station:focus-visible{outline:3px solid var(--focus);outline-offset:5px;border-radius:var(--radius)}
+    .node{width:96px;height:96px;margin:0 auto 18px;display:grid;place-items:center;border:2px solid var(--rule-strong);border-radius:50%;background:var(--paper);color:var(--muted)}
+    .node svg{width:48px;height:48px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+    .station[data-family="model"] .node{color:var(--model)}
+    .station[data-family="loss"] .node{color:var(--loss)}
+    .station[aria-current="step"] .node{border:4px solid var(--attention);color:var(--attention);box-shadow:0 0 0 7px var(--attention-soft)}
+    .station[aria-current="step"] .name{color:var(--attention)}
+    .name{display:block;font-family:var(--font-display);font-size:24px;font-weight:650;line-height:1.2}
+    .question{display:block;max-width:210px;margin:9px auto 0;color:var(--muted);font-size:var(--fs-sec);line-height:1.45}
+    .detail{min-height:0;border-top:2px solid var(--rule);display:grid;grid-template-columns:226px minmax(0,1fr) 318px;align-items:center;gap:28px;padding:22px 34px;background:var(--bg)}
+    .detail-label{align-self:stretch;display:flex;flex-direction:column;justify-content:center;border-right:1px solid var(--rule)}
+    .detail-label .eyebrow{color:var(--attention);font-size:var(--fs-label);font-weight:700;letter-spacing:.06em}
+    .detail-label strong{margin-top:5px;font-family:var(--font-display);font-size:var(--fs-h2);line-height:1.15}
+    .detail-main{min-width:0}
+    .detail-main p{font-size:var(--fs-lead);line-height:1.4}
+    .detail-main .answer{margin-top:7px;color:var(--muted);font-size:var(--fs-sec)}
+    .training{min-width:0;padding-left:28px;border-left:1px solid var(--rule)}
+    .training b{display:block;margin-bottom:7px;font-size:var(--fs-label);letter-spacing:.04em}
+    .training p{color:var(--muted);font-size:var(--fs-sec);line-height:1.5}
+    .forward{color:var(--model)}
+    .backward{color:var(--loss)}
+    @media (prefers-reduced-motion: reduce){*{scroll-behavior:auto!important}}
+  </style>
+</head>
+<body data-page="02" data-total="24">
+  <div id="stage">
+    <header class="head">
+      <div class="head-copy min0">
+        <p class="kicker">学习路线</p>
+        <h1>五个问题，串起神经网络的一次学习</h1>
+      </div>
+      <p class="lead min0">先拆开每个概念，再把它们接成一次完整的参数更新。</p>
+    </header>
+
+    <main class="map min0" aria-label="本讲学习路线">
+      <section class="route min0" aria-labelledby="route-title">
+        <div class="route-label"><strong id="route-title">按概念依次学习</strong><span>选择任一站，查看它要解决的问题</span></div>
+        <div class="stations" role="list">
+          <div class="track" aria-hidden="true"></div>
+          <button class="station" type="button" role="listitem" data-key="neuron" data-family="model" aria-current="step">
+            <span class="node" aria-hidden="true"><svg viewBox="0 0 48 48"><circle cx="24" cy="24" r="11"/><path d="M3 13h10M3 24h10M3 35h10M35 24h10M13 13l6 6M13 24h0M13 35l6-6"/></svg></span>
+            <span class="name">单个神经元</span><span class="question">一次预测怎样算出？</span>
+          </button>
+          <button class="station" type="button" role="listitem" data-key="forward" data-family="model" aria-current="false">
+            <span class="node" aria-hidden="true"><svg viewBox="0 0 48 48"><circle cx="8" cy="24" r="4"/><circle cx="24" cy="13" r="4"/><circle cx="24" cy="35" r="4"/><circle cx="40" cy="24" r="4"/><path d="M12 22l8-6M12 26l8 6M28 15l8 6M28 33l8-6"/></svg></span>
+            <span class="name">前向传播</span><span class="question">多层怎样接力计算？</span>
+          </button>
+          <button class="station" type="button" role="listitem" data-key="loss" data-family="loss" aria-current="false">
+            <span class="node" aria-hidden="true"><svg viewBox="0 0 48 48"><path d="M6 38h36M9 34l9-9 7 5 14-18"/><path d="M31 12h8v8"/></svg></span>
+            <span class="name">损失</span><span class="question">预测究竟差了多少？</span>
+          </button>
+          <button class="station" type="button" role="listitem" data-key="descent" data-family="loss" aria-current="false">
+            <span class="node" aria-hidden="true"><svg viewBox="0 0 48 48"><path d="M5 10c12 0 9 28 22 28s8-20 16-20"/><path d="M19 25l8 13 7-13"/></svg></span>
+            <span class="name">梯度下降</span><span class="question">参数应该往哪边改？</span>
+          </button>
+          <button class="station" type="button" role="listitem" data-key="backprop" data-family="loss" aria-current="false">
+            <span class="node" aria-hidden="true"><svg viewBox="0 0 48 48"><circle cx="8" cy="24" r="4"/><circle cx="24" cy="13" r="4"/><circle cx="24" cy="35" r="4"/><circle cx="40" cy="24" r="4"/><path d="M36 22l-8-6M36 26l-8 6M20 15l-8 6M20 33l-8-6"/></svg></span>
+            <span class="name">反向传播</span><span class="question">每层要分担多少误差？</span>
+          </button>
+        </div>
+      </section>
+
+      <section class="detail" aria-live="polite" aria-atomic="true">
+        <div class="detail-label min0"><span class="eyebrow">当前站</span><strong id="detail-title">单个神经元</strong></div>
+        <div class="detail-main min0">
+          <p id="detail-question">输入乘以权重、加上偏置后，怎样变成输出？</p>
+          <p class="answer" id="detail-answer">从最小计算单元开始，认清参数如何控制一次预测。</p>
+        </div>
+        <aside class="training min0" aria-label="概念顺序与训练顺序">
+          <b>实际训练的计算顺序</b>
+          <p><span class="forward">前向传播 → 损失</span>；<span class="backward">反向传播 → 梯度下降</span>；然后再次前向。</p>
+        </aside>
+      </section>
+    </main>
+  </div>
+  <script src="assets/base.js"></script>
+  <script>
+    Deck.init({index:2,total:24});
+    const content={
+      neuron:{title:'单个神经元',question:'输入乘以权重、加上偏置后，怎样变成输出？',answer:'从最小计算单元开始，认清参数如何控制一次预测。'},
+      forward:{title:'前向传播',question:'一层的输出，怎样成为下一层的输入？',answer:'沿连接方向逐层计算，得到网络最终的预测。'},
+      loss:{title:'损失',question:'怎样把“预测不准”写成一个可计算的数？',answer:'比较预测与目标，用损失量化两者的差距。'},
+      descent:{title:'梯度下降',question:'知道坡度之后，参数该往哪个方向移动？',answer:'沿损失下降的方向更新参数，并用学习率控制步幅。'},
+      backprop:{title:'反向传播',question:'输出端的误差，怎样传回每一层参数？',answer:'用链式法则逐层计算梯度，再交给梯度下降更新参数。'}
+    };
+    const buttons=[...document.querySelectorAll('.station')];
+    const title=document.getElementById('detail-title');
+    const question=document.getElementById('detail-question');
+    const answer=document.getElementById('detail-answer');
+    buttons.forEach((button,i)=>{
+      button.addEventListener('click',()=>{
+        buttons.forEach(b=>b.setAttribute('aria-current','false'));
+        button.setAttribute('aria-current','step');
+        const d=content[button.dataset.key];
+        title.textContent=d.title;question.textContent=d.question;answer.textContent=d.answer;
+      });
+      button.addEventListener('keydown',e=>{
+        if(e.key==='ArrowRight'||e.key==='ArrowLeft'){
+          e.preventDefault();
+          const next=(i+(e.key==='ArrowRight'?1:-1)+buttons.length)%buttons.length;
+          buttons[next].focus();buttons[next].click();
+        }
+      });
+    });
+  </script>
+</body>
+</html>

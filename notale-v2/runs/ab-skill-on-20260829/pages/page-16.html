@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>第四章：反向传播怎样分配责任</title>
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  #stage{
+    background-image:none;
+  }
+  .chapter{
+    flex:1;
+    min-height:0;
+    display:flex;
+    flex-direction:column;
+    position:relative;
+  }
+  .chapter-head{
+    flex:0 0 auto;
+    width:1120px;
+    padding-top:34px;
+  }
+  .chapter-head .kicker{
+    margin-bottom:12px;
+    color:var(--gradient);
+  }
+  .chapter-head h1{
+    max-width:1100px;
+    font-size:72px;
+    line-height:1.08;
+    letter-spacing:-.04em;
+  }
+  .chapter-head .lead{
+    max-width:1060px;
+    margin-top:20px;
+    color:var(--muted);
+  }
+  .chapter-head .lead strong{
+    color:var(--text);
+    font-weight:650;
+  }
+  .relationship{
+    flex:1;
+    min-height:0;
+    display:flex;
+    align-items:flex-end;
+    padding:24px 0 18px;
+  }
+  .diagram-field{
+    position:relative;
+    width:100%;
+    height:410px;
+    border-top:1px solid var(--rule-soft);
+    border-bottom:1px solid var(--rule-soft);
+  }
+  .diagram-field svg{
+    display:block;
+    width:100%;
+    height:100%;
+  }
+  .side-index{
+    position:absolute;
+    right:0;
+    top:40px;
+    color:var(--rule);
+    font-family:var(--font-num);
+    font-size:108px;
+    line-height:1;
+    font-weight:600;
+    letter-spacing:-.06em;
+    pointer-events:none;
+  }
+  .legend-line{
+    position:absolute;
+    left:0;
+    bottom:17px;
+    display:flex;
+    gap:30px;
+    align-items:center;
+  }
+  .legend-item{
+    display:flex;
+    align-items:center;
+    gap:10px;
+    color:var(--muted);
+    font-size:var(--fs-label);
+    font-weight:600;
+  }
+  .legend-item i{
+    display:block;
+    width:34px;
+    height:3px;
+    background:currentColor;
+  }
+  .legend-item.forward{color:var(--model)}
+  .legend-item.backward{color:var(--gradient)}
+  .svg-label{
+    font-family:var(--font-sans);
+    fill:var(--text);
+    font-size:19px;
+    font-weight:650;
+  }
+  .svg-small{
+    font-family:var(--font-sans);
+    fill:var(--muted);
+    font-size:15px;
+    font-weight:600;
+  }
+  .svg-math{
+    font-family:var(--font-num);
+    fill:var(--text);
+    font-size:24px;
+    font-weight:600;
+  }
+  .svg-gradient{
+    font-family:var(--font-num);
+    fill:var(--gradient);
+    font-size:18px;
+    font-weight:600;
+  }
+</style>
+</head>
+<body data-page="16" data-total="25">
+<div id="stage">
+  <section class="chapter" aria-labelledby="page-title">
+    <header class="chapter-head">
+      <p class="kicker">第四章 · BACKPROPAGATION</p>
+      <h1 id="page-title">反向传播怎样分配责任</h1>
+      <p class="lead">输出端产生一个误差；它沿计算链返回，<strong>为每个参数算出自己的梯度。</strong></p>
+    </header>
+
+    <main class="relationship min0">
+      <figure class="diagram-field" aria-labelledby="diagram-caption">
+        <svg viewBox="0 0 1488 410" role="img" aria-labelledby="diagram-title diagram-desc">
+          <title id="diagram-title">误差沿计算链反向返回</title>
+          <desc id="diagram-desc">上方蓝色箭头表示输入经过参数和中间结果到达输出，下方橙色箭头从损失返回，并在每个参数下方形成对应梯度。</desc>
+          <defs>
+            <marker id="arrow-blue" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto" markerUnits="strokeWidth">
+              <path d="M0,0 L10,5 L0,10 Z" fill="#1F5FAE"/>
+            </marker>
+            <marker id="arrow-orange" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto" markerUnits="strokeWidth">
+              <path d="M0,0 L10,5 L0,10 Z" fill="#C94F20"/>
+            </marker>
+          </defs>
+
+          <text x="0" y="43" class="svg-small">前向：计算预测</text>
+          <path d="M116 110 H1215" fill="none" stroke="#1F5FAE" stroke-width="4" marker-end="url(#arrow-blue)"/>
+
+          <g transform="translate(72 72)">
+            <circle cx="38" cy="38" r="38" fill="#E4F1EC" stroke="#24705A" stroke-width="2"/>
+            <text x="38" y="46" text-anchor="middle" class="svg-math">x</text>
+            <text x="38" y="108" text-anchor="middle" class="svg-small">输入</text>
+          </g>
+
+          <g transform="translate(324 64)">
+            <rect width="148" height="92" rx="10" fill="#FFFFFF" stroke="#1F5FAE" stroke-width="3"/>
+            <text x="74" y="39" text-anchor="middle" class="svg-label">参数</text>
+            <text x="74" y="69" text-anchor="middle" class="svg-math">w</text>
+          </g>
+          <g transform="translate(605 64)">
+            <rect width="148" height="92" rx="10" fill="#FFFFFF" stroke="#1F5FAE" stroke-width="3"/>
+            <text x="74" y="39" text-anchor="middle" class="svg-label">中间结果</text>
+            <text x="74" y="69" text-anchor="middle" class="svg-math">z</text>
+          </g>
+          <g transform="translate(886 64)">
+            <rect width="148" height="92" rx="10" fill="#FFFFFF" stroke="#1F5FAE" stroke-width="3"/>
+            <text x="74" y="39" text-anchor="middle" class="svg-label">参数</text>
+            <text x="74" y="69" text-anchor="middle" class="svg-math">v</text>
+          </g>
+          <g transform="translate(1215 64)">
+            <rect width="170" height="92" rx="46" fill="#FBE9E2" stroke="#C94F20" stroke-width="3"/>
+            <text x="85" y="39" text-anchor="middle" class="svg-label">输出误差</text>
+            <text x="85" y="70" text-anchor="middle" class="svg-math">L</text>
+          </g>
+
+          <text x="0" y="223" class="svg-small">反向：分配责任</text>
+          <path d="M1295 250 H405" fill="none" stroke="#C94F20" stroke-width="5" marker-end="url(#arrow-orange)"/>
+          <path d="M960 250 V291" fill="none" stroke="#C94F20" stroke-width="3" marker-end="url(#arrow-orange)"/>
+          <path d="M398 250 V291" fill="none" stroke="#C94F20" stroke-width="3" marker-end="url(#arrow-orange)"/>
+
+          <g transform="translate(286 302)">
+            <rect width="224" height="58" rx="8" fill="#FFFFFF" stroke="#C94F20" stroke-width="2"/>
+            <text x="112" y="37" text-anchor="middle" class="svg-gradient">∂L/∂w</text>
+          </g>
+          <g transform="translate(848 302)">
+            <rect width="224" height="58" rx="8" fill="#FFFFFF" stroke="#C94F20" stroke-width="2"/>
+            <text x="112" y="37" text-anchor="middle" class="svg-gradient">∂L/∂v</text>
+          </g>
+          <text x="1180" y="343" class="svg-small">每个参数得到自己的梯度</text>
+        </svg>
+        <div class="side-index" aria-hidden="true">04</div>
+        <figcaption id="diagram-caption" class="legend-line">
+          <span class="legend-item forward"><i></i>前向计算</span>
+          <span class="legend-item backward"><i></i>误差反传</span>
+        </figcaption>
+      </figure>
+    </main>
+  </section>
+</div>
+<script src="assets/base.js"></script>
+<script>Deck.init({index:16,total:25});</script>
+</body>
+</html>

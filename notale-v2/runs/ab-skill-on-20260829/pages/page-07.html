@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>激活函数把加权和变成神经元输出</title>
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  #activation-lab{display:flex;flex-direction:column;min-height:0;gap:16px;width:100%;height:100%}
+  #activation-lab .lab-head{display:flex;align-items:end;justify-content:space-between;gap:28px}
+  #activation-lab .lab-head .lead{max-width:970px}
+  #activation-lab .formula-key{flex:0 0 auto;display:flex;gap:22px;align-items:center;color:var(--muted);font-size:var(--fs-label)}
+  #activation-lab .formula-key span{display:inline-flex;align-items:center;gap:8px}
+  #activation-lab .formula-key i{display:inline-block;width:24px;border-top:4px solid currentColor}
+  #activation-lab .formula-key .sig{color:var(--model)}
+  #activation-lab .formula-key .relu{color:var(--gradient)}
+  #activation-lab .instrument{flex:1;min-height:0;display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:22px}
+  #activation-lab .stage-panel{position:relative;min-height:0;padding:12px 18px 10px}
+  #activation-lab .plot{width:100%;height:100%;display:block;touch-action:none;cursor:ew-resize;user-select:none}
+  #activation-lab .plot:focus-visible{outline:4px solid var(--focus);outline-offset:-4px;border-radius:8px}
+  #activation-lab .plot text{font-family:var(--font-sans);fill:var(--muted);font-size:15px}
+  #activation-lab .plot .numtxt{font-family:var(--font-num)}
+  #activation-lab .plot .lane-title{fill:var(--text);font-size:19px;font-weight:700}
+  #activation-lab .plot .lane-note{font-size:15px}
+  #activation-lab .plot .axis{stroke:var(--rule);stroke-width:2;vector-effect:non-scaling-stroke}
+  #activation-lab .plot .tick{stroke:var(--rule);stroke-width:1.4;vector-effect:non-scaling-stroke}
+  #activation-lab .plot .curve{fill:none;stroke-width:5;vector-effect:non-scaling-stroke}
+  #activation-lab .plot .guide{stroke:var(--attention);stroke-width:3;stroke-dasharray:8 7;vector-effect:non-scaling-stroke}
+  #activation-lab .plot .project{stroke-width:2;stroke-dasharray:5 5;vector-effect:non-scaling-stroke;opacity:.7}
+  #activation-lab .plot .dot{stroke:var(--surface);stroke-width:4;vector-effect:non-scaling-stroke}
+  #activation-lab .plot .handle{fill:var(--attention);stroke:var(--text);stroke-width:2;vector-effect:non-scaling-stroke}
+  #activation-lab .plot .handle-hit{fill:transparent;cursor:ew-resize}
+  #activation-lab .plot .value-bg{fill:var(--surface);stroke:var(--rule);stroke-width:1.5}
+  #activation-lab .plot .value-text{fill:var(--text);font-family:var(--font-num);font-size:16px;font-weight:600}
+  #activation-lab .rail{display:flex;flex-direction:column;gap:18px;min-height:0}
+  #activation-lab .readout{padding:20px;display:flex;flex-direction:column;gap:14px}
+  #activation-lab .zline{display:flex;align-items:baseline;justify-content:space-between;border-bottom:1px solid var(--rule-soft);padding-bottom:14px}
+  #activation-lab .zline strong{font-size:var(--fs-sec)}
+  #activation-lab .outputs{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  #activation-lab .out{min-width:0}
+  #activation-lab .out .name{display:block;color:var(--muted);font-size:var(--fs-label);margin-bottom:6px}
+  #activation-lab .out .big{font-size:42px}
+  #activation-lab .out.relu .big{color:var(--gradient)}
+  #activation-lab .control-panel{display:flex;flex-direction:column;gap:14px;padding:20px}
+  #activation-lab .ticks{display:flex;justify-content:space-between;color:var(--muted);font-family:var(--font-num);font-size:var(--fs-tick);margin-top:-8px}
+  #activation-lab .presets{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+  #activation-lab .presets .btn:last-child{grid-column:1/-1}
+  #activation-lab .explain{margin-top:auto;min-height:95px;padding-top:16px;border-top:1px solid var(--rule-soft)}
+  #activation-lab .explain strong{display:block;font-size:var(--fs-sec);margin-bottom:6px}
+  #activation-lab .explain p{color:var(--muted);font-size:var(--fs-label);line-height:1.45}
+</style>
+</head>
+<body data-page="07" data-total="25">
+<div id="stage">
+  <section class="diagram">
+    <header>
+      <div class="kicker">激活函数 · 从加权和到输出</div>
+      <h1>激活函数决定神经元如何“放行”得分</h1>
+    </header>
+    <main class="min0">
+      <div id="activation-lab">
+        <div class="lab-head">
+          <p class="lead">拖动同一个加权和 <span class="num">z</span>：Sigmoid 把任意得分压进 <span class="num">0–1</span>，ReLU 则把负数截为 <span class="num">0</span>。</p>
+          <div class="formula-key" aria-label="函数图例">
+            <span class="sig"><i></i>σ(z)=1/(1+e<sup>−z</sup>)</span>
+            <span class="relu"><i></i>ReLU(z)=max(0,z)</span>
+          </div>
+        </div>
+        <div class="instrument min0">
+          <div class="stage-panel panel min0">
+            <svg class="plot no-pan" id="activation-plot" viewBox="0 0 1160 500" role="slider" tabindex="0" aria-label="加权和 z，可用左右方向键调整" aria-valuemin="-6" aria-valuemax="6" aria-valuenow="1.5">
+              <g aria-hidden="true">
+                <text class="lane-title" x="18" y="42">Sigmoid</text>
+                <text class="lane-note" x="18" y="65">连续压缩</text>
+                <text class="lane-title" x="18" y="292">ReLU</text>
+                <text class="lane-note" x="18" y="315">负值截断</text>
+                <line class="axis" x1="110" y1="220" x2="1120" y2="220"/>
+                <line class="axis" x1="615" y1="54" x2="615" y2="220"/>
+                <line class="axis" x1="110" y1="465" x2="1120" y2="465"/>
+                <line class="axis" x1="615" y1="300" x2="615" y2="465"/>
+                <g id="ticks"></g>
+                <path id="sigmoid-curve" class="curve" stroke="var(--model)"/>
+                <path id="relu-curve" class="curve" stroke="var(--gradient)"/>
+                <line id="cursor-line" class="guide" y1="32" y2="465"/>
+                <line id="sig-project" class="project" stroke="var(--model)"/>
+                <line id="relu-project" class="project" stroke="var(--gradient)"/>
+                <circle id="sig-dot" class="dot" r="9" fill="var(--model)"/>
+                <circle id="relu-dot" class="dot" r="9" fill="var(--gradient)"/>
+                <g id="sig-label"><rect class="value-bg" rx="6" width="90" height="34"/><text class="value-text" x="45" y="23" text-anchor="middle"></text></g>
+                <g id="relu-label"><rect class="value-bg" rx="6" width="90" height="34"/><text class="value-text" x="45" y="23" text-anchor="middle"></text></g>
+                <rect id="handle-hit" class="handle-hit" y="18" width="44" height="465"/>
+                <path id="handle" class="handle" d="M-13 0H13V20L0 32L-13 20Z"/>
+                <text id="z-tag" class="value-text" y="22" text-anchor="middle"></text>
+              </g>
+            </svg>
+          </div>
+          <aside class="rail min0">
+            <div class="readout panel">
+              <div class="zline"><strong>当前加权和 z</strong><span id="z-readout" class="big sm">1.50</span></div>
+              <div class="outputs">
+                <div class="out"><span class="name">Sigmoid 输出</span><span id="sig-readout" class="big">0.82</span></div>
+                <div class="out relu"><span class="name">ReLU 输出</span><span id="relu-readout" class="big">1.50</span></div>
+              </div>
+            </div>
+            <div class="control-panel panel q">
+              <label class="ctl" for="z-range">移动加权和，观察两个输出
+                <input id="z-range" type="range" min="-6" max="6" step="0.1" value="1.5">
+              </label>
+              <div class="ticks" aria-hidden="true"><span>−6</span><span>0</span><span>+6</span></div>
+              <div class="presets" aria-label="诊断位置">
+                <button class="btn" type="button" data-z="-6">查看负饱和</button>
+                <button class="btn" type="button" data-z="6">查看正饱和</button>
+                <button class="btn" type="button" data-reset>复位到 z = 1.5</button>
+              </div>
+              <div class="explain" aria-live="polite" aria-atomic="true">
+                <strong id="state-title">两种函数都给出正输出</strong>
+                <p id="state-copy">Sigmoid 已开始趋近 1；ReLU 在正区间原样传递 z。</p>
+              </div>
+            </div>
+          </aside>
+        </div>
+      </div>
+    </main>
+  </section>
+</div>
+<script src="assets/base.js"></script>
+<script>
+(() => {
+  Deck.init({index:7,total:25});
+  const root = document.getElementById('activation-lab');
+  const svg = root.querySelector('#activation-plot');
+  const range = root.querySelector('#z-range');
+  const els = Object.fromEntries(['cursor-line','sig-project','relu-project','sig-dot','relu-dot','sig-label','relu-label','handle-hit','handle','z-tag','z-readout','sig-readout','relu-readout','state-title','state-copy','ticks','sigmoid-curve','relu-curve'].map(id => [id.replace(/-([a-z])/g,(_,c)=>c.toUpperCase()), root.querySelector('#'+id)]));
+  const initial = 1.5;
+  let state = { z: initial };
+  let pointerId = null;
+  const X0=110, X1=1120, W=X1-X0, sigTop=54, sigBottom=220, reluTop=300, reluBottom=465;
+  const xOf = z => X0 + (z+6)/12*W;
+  const sig = z => 1/(1+Math.exp(-z));
+  const sigY = v => sigBottom-v*(sigBottom-sigTop);
+  const reluY = v => reluBottom-(v/6)*(reluBottom-reluTop);
+  const fmtSigned = v => (v>0?'+':'') + v.toFixed(1);
+  function pathFor(fn, yFn){
+    let d='';
+    for(let i=0;i<=180;i++){const z=-6+i/15; d+=(i?'L':'M')+xOf(z).toFixed(2)+' '+yFn(fn(z)).toFixed(2)+' ';}
+    return d;
+  }
+  function buildStatic(){
+    els.sigmoidCurve.setAttribute('d',pathFor(sig,sigY));
+    els.reluCurve.setAttribute('d',pathFor(z=>Math.max(0,z),reluY));
+    let html='';
+    [-6,-3,0,3,6].forEach(z=>{const x=xOf(z);html+=`<line class="tick" x1="${x}" y1="220" x2="${x}" y2="228"/><line class="tick" x1="${x}" y1="465" x2="${x}" y2="473"/><text class="numtxt" x="${x}" y="246" text-anchor="middle">${z}</text><text class="numtxt" x="${x}" y="493" text-anchor="middle">${z}</text>`});
+    html+='<text class="numtxt" x="602" y="70" text-anchor="end">1</text><text class="numtxt" x="602" y="217" text-anchor="end">0</text><text class="numtxt" x="602" y="313" text-anchor="end">6</text><text class="numtxt" x="602" y="462" text-anchor="end">0</text>';
+    els.ticks.innerHTML=html;
+  }
+  function interpretation(z){
+    if(z<=-4) return ['负得分进入饱和区','Sigmoid 已非常接近 0；ReLU 把负值直接截为 0。'];
+    if(z<0) return ['同一个负得分，两种处理不同','Sigmoid 保留一个小的正输出；ReLU 输出严格等于 0。'];
+    if(Math.abs(z)<0.051) return ['加权和到达分界点','Sigmoid 输出 0.5；ReLU 从这里开始放行正值。'];
+    if(z>=4) return ['正得分让 Sigmoid 饱和','Sigmoid 趋近 1；ReLU 仍随 z 线性增大。'];
+    return ['两种函数都给出正输出','Sigmoid 已开始趋近 1；ReLU 在正区间原样传递 z。'];
+  }
+  function render(announce=false){
+    const z=state.z, x=xOf(z), sv=sig(z), rv=Math.max(0,z), sy=sigY(sv), ry=reluY(rv);
+    els.cursorLine.setAttribute('x1',x); els.cursorLine.setAttribute('x2',x);
+    els.handleHit.setAttribute('x',x-22); els.handle.setAttribute('transform',`translate(${x} 23)`);
+    els.zTag.setAttribute('x',x); els.zTag.textContent='z '+fmtSigned(z);
+    els.sigDot.setAttribute('cx',x); els.sigDot.setAttribute('cy',sy);
+    els.reluDot.setAttribute('cx',x); els.reluDot.setAttribute('cy',ry);
+    els.sigProject.setAttribute('x1',615);els.sigProject.setAttribute('x2',x);els.sigProject.setAttribute('y1',sy);els.sigProject.setAttribute('y2',sy);
+    els.reluProject.setAttribute('x1',615);els.reluProject.setAttribute('x2',x);els.reluProject.setAttribute('y1',ry);els.reluProject.setAttribute('y2',ry);
+    const lx=Math.min(1065,Math.max(115,x+14));
+    els.sigLabel.setAttribute('transform',`translate(${lx} ${Math.max(45,Math.min(188,sy-40))})`);
+    els.reluLabel.setAttribute('transform',`translate(${lx} ${Math.max(292,Math.min(429,ry-40))})`);
+    els.sigLabel.querySelector('text').textContent=sv.toFixed(3);
+    els.reluLabel.querySelector('text').textContent=rv.toFixed(2);
+    els.zReadout.textContent=z.toFixed(2);els.sigReadout.textContent=sv.toFixed(2);els.reluReadout.textContent=rv.toFixed(2);
+    range.value=z;svg.setAttribute('aria-valuenow',z.toFixed(1));svg.setAttribute('aria-valuetext',`加权和 ${z.toFixed(1)}`);
+    const [title,copy]=interpretation(z);els.stateTitle.textContent=title;els.stateCopy.textContent=copy;
+  }
+  function setZ(v,announce=false){state={z:Math.max(-6,Math.min(6,Math.round(Number(v)*10)/10))};render(announce)}
+  function xToZ(e){const p=Deck.pt(svg,e);return ((p.x/svg.offsetWidth)*1160-X0)/W*12-6}
+  function onDown(e){if(e.button!==undefined&&e.button!==0)return;pointerId=e.pointerId;svg.setPointerCapture(pointerId);setZ(xToZ(e));e.preventDefault()}
+  function onMove(e){if(e.pointerId!==pointerId)return;setZ(xToZ(e));e.preventDefault()}
+  function onEnd(e){if(e.pointerId!==pointerId)return;if(svg.hasPointerCapture(pointerId))svg.releasePointerCapture(pointerId);pointerId=null;render(true)}
+  svg.addEventListener('pointerdown',onDown);svg.addEventListener('pointermove',onMove);svg.addEventListener('pointerup',onEnd);svg.addEventListener('pointercancel',onEnd);
+  svg.addEventListener('keydown',e=>{if(!['ArrowLeft','ArrowRight','Home','End'].includes(e.key))return;e.preventDefault();e.stopPropagation();if(e.key==='Home')setZ(-6,true);else if(e.key==='End')setZ(6,true);else setZ(state.z+(e.key==='ArrowRight'?0.1:-0.1),true)});
+  range.addEventListener('input',()=>setZ(range.value));range.addEventListener('change',()=>render(true));
+  root.querySelectorAll('[data-z]').forEach(btn=>btn.addEventListener('click',()=>setZ(btn.dataset.z,true)));
+  root.querySelector('[data-reset]').addEventListener('click',()=>{if(pointerId!==null&&svg.hasPointerCapture(pointerId))svg.releasePointerCapture(pointerId);pointerId=null;setZ(initial,true)});
+  buildStatic();render();
+  window.addEventListener('pagehide',()=>{pointerId=null},{once:true});
+})();
+</script>
+</body>
+</html>

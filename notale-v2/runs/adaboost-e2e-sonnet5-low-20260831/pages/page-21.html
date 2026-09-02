@@ -1,0 +1,348 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  html,body{ background:var(--bg); }
+  #stage{
+    position:relative;
+    background:var(--bg);
+    overflow:hidden;
+    font-family:var(--font-sans);
+    color:var(--text);
+  }
+  #field{ position:absolute; inset:0; }
+  .veil{
+    position:absolute; inset:0; z-index:2; pointer-events:none;
+    background:
+      radial-gradient(620px 480px at 30% 46%, rgba(233,239,242,.94), rgba(233,239,242,.72) 46%, transparent 74%),
+      linear-gradient(100deg, rgba(233,239,242,.5) 0%, rgba(233,239,242,.08) 46%, transparent 66%);
+  }
+  .hero{
+    position:absolute; z-index:5; left:56px; top:0; bottom:0;
+    width:720px; display:flex; flex-direction:column; justify-content:center;
+    pointer-events:none;
+  }
+  .kicker{
+    color:var(--ensemble); font:600 15px var(--font-mono); letter-spacing:.08em;
+  }
+  h1{
+    margin:16px 0 0; font-size:64px; font-weight:700; line-height:1.08;
+    letter-spacing:-.01em; color:var(--text);
+  }
+  h1 .accent{ color:var(--ensemble); }
+  .rule{ width:64px; height:var(--line); background:var(--rule); margin:26px 0; }
+  .lead{
+    font-size:var(--fs-lead); line-height:1.6; color:var(--muted); max-width:560px;
+  }
+  .lead b{ color:var(--text); font-weight:600; }
+  .legend{
+    position:absolute; z-index:5; left:56px; bottom:40px;
+    display:flex; gap:28px; font:14px var(--font-mono); color:var(--muted);
+    pointer-events:none;
+  }
+  .legend .li{ display:flex; align-items:center; gap:9px; }
+  .legend .sw{ width:12px; height:12px; border-radius:50%; flex:none; }
+  .readout{
+    position:absolute; z-index:5; right:56px; bottom:40px;
+    display:flex; gap:36px; text-align:right; font-family:var(--font-mono);
+    pointer-events:none;
+  }
+  .readout dt{ color:var(--muted); font-size:13px; letter-spacing:.06em; }
+  .readout dd{ margin:6px 0 0; font-size:24px; color:var(--text); }
+  .readout dd.on{ color:var(--weight); }
+  .hint{
+    position:absolute; z-index:5; right:56px; top:32px;
+    font-size:var(--fs-label); color:var(--muted); text-align:right;
+    pointer-events:none;
+  }
+</style>
+</head>
+<body data-page="21" data-total="26">
+<div id="stage" tabindex="0" aria-label="AdaBoost 权重场。移动指针扫描样本，点击或按回车触发一轮弱学习器划分与权重更新，R 重置。">
+  <canvas id="field" class="cv-fill no-pan" aria-hidden="true"></canvas>
+  <div class="veil" aria-hidden="true"></div>
+
+  <p class="hint" aria-hidden="true">点击场景触发一轮训练 · R 重置</p>
+
+  <header class="hero">
+    <p class="kicker">第五章</p>
+    <h1>用 Python<br>跑通 <span class="accent">AdaBoost</span></h1>
+    <div class="rule"></div>
+    <p class="lead">
+      每一轮弱学习器划过样本场，答错的点被<b>重新加权</b>后变亮变大——
+      这一章把这套权重更新流程接进 <b>scikit-learn</b>，
+      训练、评估、诊断都要在代码里跑一遍。
+    </p>
+  </header>
+
+  <div class="legend" aria-hidden="true">
+    <span class="li"><span class="sw" style="background:var(--weak)"></span>正确划分</span>
+    <span class="li"><span class="sw" style="background:var(--weight)"></span>误判后加权</span>
+    <span class="li"><span class="sw" style="background:var(--ensemble)"></span>当前弱学习器</span>
+  </div>
+
+  <dl class="readout" aria-hidden="true">
+    <div><dt>样本</dt><dd id="ro-n">0</dd></div>
+    <div><dt>训练轮次</dt><dd id="ro-round">0</dd></div>
+    <div><dt>总权重偏移</dt><dd id="ro-shift">0.00</dd></div>
+  </dl>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lib/seedrandom.min.js"></script>
+<script>
+(() => {
+  "use strict";
+
+  // ---- 概念:样本在二维特征场中固定分布(两类),每一轮一个线性弱学习器
+  // 划过场景;划分错误的一侧样本被重新加权(半径与亮度上升),权重场随轮次
+  // 累积漂移。视觉证据 = 样本半径/亮度的分布 + 划分线的角度序列。全部来自
+  // 固定种子,可重放、可重置。
+
+  const CONFIG = Object.freeze({
+    seed: "adaboost-ch5-cover-v1",
+    n: 260,
+    margin: 40,
+    driftSpeed: 5.4,          // 样本缓慢漂移速度(像素/秒),保持场面"活"
+    roundInterval: 5200,      // 自动触发一轮的间隔(ms)
+    maxRounds: 999,
+    weightGain: 1.9,          // 单轮误判后的权重放大系数
+    weightDecay: 0.988        // 每帧权重向 1 缓慢回落,避免无限增长
+  });
+
+  const stage = document.getElementById("stage");
+  const canvas = document.getElementById("field");
+  const roN = document.getElementById("ro-n");
+  const roRound = document.getElementById("ro-round");
+  const roShift = document.getElementById("ro-shift");
+
+  const reducedMotion = Deck.reduced();
+  const aborter = new AbortController();
+  const { n: N, margin: MARGIN } = CONFIG;
+
+  const px = new Float32Array(N);
+  const py = new Float32Array(N);
+  const vx = new Float32Array(N);
+  const vy = new Float32Array(N);
+  const label = new Int8Array(N);     // -1 / +1 两类
+  const weight = new Float32Array(N); // 样本权重,基线 1
+  const flashUntil = new Float32Array(N); // 误判高亮结束时刻
+
+  let W = 1600, H = 900;
+  let ctx = null;
+  let disposed = false;
+  let clock = 0;
+  let round = 0;
+  let totalShift = 0;
+  let nextAuto = 3200;
+
+  // 当前弱学习器:一条直线 a*x + b*y = c,角度随轮次变化
+  let learner = { angle: 0.32, offset: 0.02, sweep: 0, active: false, startedAt: -1 };
+
+  const titleBox = { x0: 40, y0: 0, x1: 800, y1: 900 }; // hero 覆盖区,降低该区密度与亮度
+
+  function inTitleField(x, y) {
+    if (x < titleBox.x0 || x > titleBox.x1) return 0;
+    const cx = (titleBox.x0 + titleBox.x1) / 2;
+    const d = Math.abs(x - cx) / ((titleBox.x1 - titleBox.x0) / 2);
+    return Deck.clamp(1 - d, 0, 1);
+  }
+
+  function resetModel() {
+    const rand = new Math.seedrandom(CONFIG.seed);
+    for (let i = 0; i < N; i++) {
+      px[i] = MARGIN + rand() * (W - 2 * MARGIN);
+      py[i] = MARGIN + rand() * (H - 2 * MARGIN);
+      const ang = rand() * Math.PI * 2;
+      const spd = CONFIG.driftSpeed * (0.4 + rand() * 0.9);
+      vx[i] = Math.cos(ang) * spd;
+      vy[i] = Math.sin(ang) * spd;
+      // 两类的真实分界大致沿 y = 0.62x + 140 有一个重叠带,制造"不是一刀切"的场
+      const boundary = 0.55 * px[i] + 130;
+      const noisy = boundary + (rand() - 0.5) * 220;
+      label[i] = py[i] < noisy ? -1 : 1;
+      weight[i] = 1;
+      flashUntil[i] = -1;
+    }
+    round = 0;
+    totalShift = 0;
+    clock = 0;
+    nextAuto = 3200;
+    learner = { angle: 0.32, offset: 0.02, sweep: 0, active: false, startedAt: -1 };
+    updateReadouts();
+  }
+
+  function classify(i, ang, off) {
+    // 直线方向向量 (cos,sin);法线判正负
+    const nx = Math.sin(ang), ny = -Math.cos(ang);
+    const cx = W * 0.5, cy = H * 0.5;
+    const v = nx * (px[i] - cx) + ny * (py[i] - cy) - off * 260;
+    return v >= 0 ? 1 : -1;
+  }
+
+  function triggerRound() {
+    round++;
+    const rand = new Math.seedrandom(CONFIG.seed + ":" + round);
+    const angle = 0.15 + rand() * 1.35;
+    const offset = (rand() - 0.5) * 0.9;
+    learner = { angle, offset, sweep: 0, active: true, startedAt: clock };
+    for (let i = 0; i < N; i++) {
+      const pred = classify(i, angle, offset);
+      if (pred !== label[i]) {
+        const before = weight[i];
+        weight[i] = Math.min(6, weight[i] * CONFIG.weightGain);
+        totalShift += (weight[i] - before);
+        flashUntil[i] = clock + 1400;
+      }
+    }
+    updateReadouts();
+  }
+
+  function updateReadouts() {
+    roN.textContent = N;
+    roRound.textContent = round;
+    roShift.textContent = totalShift.toFixed(2);
+    roRound.className = round > 0 ? "on" : "";
+    roShift.className = totalShift > 0.01 ? "on" : "";
+  }
+
+  function advance(deltaMs) {
+    const dt = Math.min(deltaMs, 50) / 1000;
+    for (let i = 0; i < N; i++) {
+      px[i] += vx[i] * dt;
+      py[i] += vy[i] * dt;
+      if (px[i] < MARGIN || px[i] > W - MARGIN) { vx[i] *= -1; px[i] = Deck.clamp(px[i], MARGIN, W - MARGIN); }
+      if (py[i] < MARGIN || py[i] > H - MARGIN) { vy[i] *= -1; py[i] = Deck.clamp(py[i], MARGIN, H - MARGIN); }
+      weight[i] = 1 + (weight[i] - 1) * CONFIG.weightDecay;
+    }
+    if (learner.active) {
+      learner.sweep = Math.min(1, (clock - learner.startedAt) / 900);
+      if (learner.sweep >= 1 && clock - learner.startedAt > 1700) learner.active = false;
+    }
+  }
+
+  function draw() {
+    if (!ctx || disposed) return;
+    ctx.clearRect(0, 0, W, H);
+
+    const weakColor = Deck.rgb("weak");
+    const weightColor = Deck.rgb("weight");
+    const ensembleColor = Deck.rgb("ensemble");
+    const ruleColor = Deck.rgb("rule");
+
+    // 背景细网格,呼应"特征场"但保持极低对比度
+    ctx.strokeStyle = `rgba(${ruleColor[0]},${ruleColor[1]},${ruleColor[2]},0.08)`;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (let x = 0; x <= W; x += 80) { ctx.moveTo(x, 0); ctx.lineTo(x, H); }
+    for (let y = 0; y <= H; y += 80) { ctx.moveTo(0, y); ctx.lineTo(W, y); }
+    ctx.stroke();
+
+    // 当前弱学习器分割线,从左扫到右
+    if (learner.active || clock - learner.startedAt < 1700) {
+      const ang = learner.angle, off = learner.offset;
+      const nx = Math.sin(ang), ny = -Math.cos(ang);
+      const cx = W * 0.5 + off * 260 * nx;
+      const cy = H * 0.5 + off * 260 * ny;
+      const dx = Math.cos(ang), dy = Math.sin(ang);
+      const len = 1400;
+      const ease = 1 - Math.pow(1 - learner.sweep, 3);
+      ctx.save();
+      ctx.globalAlpha = Deck.clamp(1.3 - Math.max(0, (clock - learner.startedAt - 900) / 800), 0, 1);
+      ctx.strokeStyle = `rgba(${ensembleColor[0]},${ensembleColor[1]},${ensembleColor[2]},0.85)`;
+      ctx.lineWidth = 2.4;
+      ctx.beginPath();
+      ctx.moveTo(cx - dx * len * ease, cy - dy * len * ease);
+      ctx.lineTo(cx + dx * len * ease, cy + dy * len * ease);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    // 样本点
+    for (let i = 0; i < N; i++) {
+      const density = 1 - inTitleField(px[i], py[i]) * 0.86;
+      const flashing = flashUntil[i] > clock;
+      const flashT = flashing ? (flashUntil[i] - clock) / 1400 : 0;
+      const w = weight[i];
+      const radius = (2.1 + Math.min(3.4, (w - 1) * 2.6)) * (0.55 + density * 0.45);
+      let color = weakColor;
+      let alpha = 0.5 * density;
+      if (flashing) {
+        color = weightColor;
+        alpha = (0.55 + 0.4 * flashT) * density;
+      } else if (w > 1.06) {
+        color = weightColor;
+        alpha = (0.36 + 0.28 * Math.min(1, (w - 1))) * density;
+      }
+      ctx.beginPath();
+      ctx.fillStyle = `rgba(${color[0]},${color[1]},${color[2]},${alpha.toFixed(3)})`;
+      ctx.arc(px[i], py[i], radius, 0, Math.PI * 2);
+      ctx.fill();
+
+      // 类别形状提示:+1 用圆环,-1 用实心(极轻量,不抢主对比)
+      if (label[i] === 1 && density > 0.4) {
+        ctx.beginPath();
+        ctx.strokeStyle = `rgba(${color[0]},${color[1]},${color[2]},${(alpha * 0.7).toFixed(3)})`;
+        ctx.lineWidth = 1;
+        ctx.arc(px[i], py[i], radius + 2.4, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+    }
+  }
+
+  function frame(_t, deltaMs) {
+    clock += reducedMotion ? 0 : Math.min(deltaMs, 50);
+    if (!reducedMotion) {
+      advance(deltaMs);
+      if (clock >= nextAuto) {
+        triggerRound();
+        nextAuto = clock + CONFIG.roundInterval;
+      }
+    }
+    draw();
+  }
+
+  function resizeCanvas() {
+    ctx = Deck.fit(canvas);
+    W = Deck.W; H = Deck.H;
+  }
+
+  function listen(target, type, handler) {
+    target.addEventListener(type, handler, { signal: aborter.signal });
+  }
+
+  listen(stage, "pointerdown", () => {
+    stage.focus({ preventScroll: true });
+    triggerRound();
+    if (reducedMotion) draw();
+  });
+  listen(stage, "keydown", (e) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      triggerRound();
+      if (reducedMotion) draw();
+    } else if (e.key.toLowerCase() === "r") {
+      resetModel();
+      draw();
+    }
+  });
+  listen(window, "pagehide", () => { disposed = true; });
+
+  Deck.init({ index: 21, total: 26 });
+  resizeCanvas();
+  resetModel();
+  Deck.onResize(() => { resizeCanvas(); draw(); });
+
+  if (reducedMotion) {
+    // 静止画面:先跑一轮,呈现代表性状态
+    triggerRound();
+    draw();
+  } else {
+    Deck.loop(frame, { still: 1200 });
+  }
+})();
+</script>
+</body>
+</html>

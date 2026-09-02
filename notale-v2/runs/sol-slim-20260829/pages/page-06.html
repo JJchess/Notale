@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    #stage > header{flex:0 0 auto}
+    #activation-lab{flex:1;min-height:0;margin-top:18px;display:flex;flex-direction:column;gap:14px;padding:18px 22px 16px}
+    #activation-lab .rail{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:22px;padding-bottom:14px;border-bottom:1px solid var(--rule)}
+    #activation-lab .input-group{display:grid;grid-template-columns:150px minmax(320px,1fr) 92px;align-items:center;gap:16px}
+    #activation-lab .input-label{font-size:var(--fs-body);font-weight:650}
+    #activation-lab output{font-family:var(--font-num);font-size:28px;font-weight:650;color:var(--attention);text-align:right;font-variant-numeric:tabular-nums}
+    #activation-lab .presets{display:flex;align-items:center;gap:8px}
+    #activation-lab .preset{min-width:74px}
+    #activation-lab .plot-wrap{flex:1;min-height:0;position:relative}
+    #activation-lab svg{display:block;width:100%;height:100%;min-height:420px}
+    #activation-lab .plot-bg{fill:var(--paper)}
+    #activation-lab .divider,#activation-lab .axis,#activation-lab .tick{stroke:var(--rule);stroke-width:1.5;vector-effect:non-scaling-stroke}
+    #activation-lab .zero{stroke:var(--rule-strong);stroke-width:1.5;stroke-dasharray:5 6;vector-effect:non-scaling-stroke}
+    #activation-lab .curve{fill:none;stroke:var(--model);stroke-width:4;stroke-linecap:round;stroke-linejoin:round;vector-effect:non-scaling-stroke}
+    #activation-lab .cursor{stroke:var(--attention);stroke-width:2;vector-effect:non-scaling-stroke}
+    #activation-lab .dot{fill:var(--paper);stroke:var(--attention);stroke-width:4;vector-effect:non-scaling-stroke}
+    #activation-lab .t-title{font:650 25px var(--font-display);fill:var(--text)}
+    #activation-lab .formula{font:500 17px var(--font-num);fill:var(--muted)}
+    #activation-lab .axis-label{font:500 13px var(--font-num);fill:var(--muted)}
+    #activation-lab .read-label{font:600 15px var(--font-sans);fill:var(--muted)}
+    #activation-lab .read-value{font:650 23px var(--font-num);fill:var(--model)}
+    #activation-lab .slope-value{font:600 17px var(--font-num);fill:var(--text)}
+    #activation-lab .state-note{font:600 16px var(--font-sans);fill:var(--attention)}
+    #activation-lab .footer{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:20px;min-height:40px}
+    #activation-lab .finding{font-size:var(--fs-sec);color:var(--text);line-height:1.4}
+    #activation-lab .finding strong{color:var(--attention)}
+    #activation-lab .scale-note{font-size:var(--fs-label);color:var(--muted);white-space:nowrap}
+  </style>
+</head>
+<body data-page="06" data-total="24">
+  <div id="stage">
+    <header>
+      <div class="kicker">激活函数实验</div>
+      <h1>同一个激活前数值，会遇到截断、饱和或平滑响应</h1>
+      <p class="lead" style="margin-top:10px">拖动 <span class="num">z</span>，比较 ReLU、Sigmoid 与 Tanh 的输出和局部斜率。</p>
+    </header>
+
+    <section id="activation-lab" class="panel min0" aria-label="激活函数响应比较器">
+      <div class="rail">
+        <label class="input-group" for="z-range">
+          <span class="input-label">激活前数值 <span class="num">z</span></span>
+          <input id="z-range" type="range" min="-6" max="6" step="0.1" value="-2" aria-label="激活前数值 z，范围负六到正六，方向键步长零点一">
+          <output id="z-out" for="z-range">−2.0</output>
+        </label>
+        <div class="presets" aria-label="诊断位置">
+          <button class="btn preset" type="button" data-z="-6">负端 −6</button>
+          <button class="btn preset" type="button" data-z="0">拐点 0</button>
+          <button class="btn preset" type="button" data-z="6">正端 +6</button>
+          <button class="btn" id="reset" type="button">恢复初值</button>
+        </div>
+      </div>
+      <div class="plot-wrap min0">
+        <svg id="activation-svg" viewBox="0 0 1440 470" role="img" aria-labelledby="plot-title plot-desc" preserveAspectRatio="none">
+          <title id="plot-title">三种激活函数在同一输入值下的响应</title>
+          <desc id="plot-desc">三幅并排曲线共享横轴负六到正六。橙色竖线标出当前输入，圆点标出各函数输出。</desc>
+          <rect class="plot-bg" x="0" y="0" width="1440" height="470" rx="4"/>
+          <line class="divider" x1="480" y1="20" x2="480" y2="450"/>
+          <line class="divider" x1="960" y1="20" x2="960" y2="450"/>
+          <g id="plots"></g>
+        </svg>
+      </div>
+
+      <div class="footer">
+        <p id="finding" class="finding" aria-live="polite"></p>
+        <p class="scale-note">三图共享横轴 <span class="num">z ∈ [−6, 6]</span>；纵轴按各函数范围标注</p>
+      </div>
+    </section>
+  </div>
+  <script src="assets/base.js"></script>
+  <script>
+  (() => {
+    const root = document.getElementById('activation-lab');
+    const range = root.querySelector('#z-range');
+    const zOut = root.querySelector('#z-out');
+    const plots = root.querySelector('#plots');
+    const finding = root.querySelector('#finding');
+    const reset = root.querySelector('#reset');
+    const presets = [...root.querySelectorAll('[data-z]')];
+    const NS = 'http://www.w3.org/2000/svg';
+    const initial = -2;
+    let state = { z: initial };
+    let destroyed = false;
+
+    const specs = [
+      {name:'ReLU', formula:'max(0, z)', ymin:-1, ymax:6.5, f:z=>Math.max(0,z), d:z=>z>0?1:(z<0?0:NaN)},
+      {name:'Sigmoid', formula:'1 / (1 + e⁻ᶻ)', ymin:-.08, ymax:1.08, f:z=>1/(1+Math.exp(-z)), d:z=>{const y=1/(1+Math.exp(-z));return y*(1-y)}},
+      {name:'Tanh', formula:'tanh(z)', ymin:-1.15, ymax:1.15, f:z=>Math.tanh(z), d:z=>1-Math.tanh(z)**2}
+    ];
+    const geom = {top:106,bottom:374,left:52,right:428};
+    const el = (tag, attrs={}, text='') => { const n=document.createElementNS(NS,tag); Object.entries(attrs).forEach(([k,v])=>n.setAttribute(k,v)); if(text)n.textContent=text; return n; };
+    const xPos = z => geom.left + (z+6)/12*(geom.right-geom.left);
+    const yPos = (v,s) => geom.bottom-(v-s.ymin)/(s.ymax-s.ymin)*(geom.bottom-geom.top);
+    const fmt = v => (Math.abs(v)<.0005?'0.000':v.toFixed(3)).replace('-', '−');
+    const fmtZ = v => (v>0?'+':'')+v.toFixed(1).replace('-', '−');
+
+    specs.forEach((s,i) => {
+      const g=el('g',{transform:`translate(${i*480},0)`,'data-i':i});
+      g.append(el('text',{class:'t-title',x:32,y:39},s.name));
+      g.append(el('text',{class:'formula',x:32,y:68},s.formula));
+      const y0=yPos(0,s);
+      g.append(el('line',{class:'axis',x1:geom.left,y1:geom.bottom,x2:geom.right,y2:geom.bottom}));
+      g.append(el('line',{class:'zero',x1:geom.left,y1:y0,x2:geom.right,y2:y0}));
+      [-6,0,6].forEach(t=>{
+        const x=xPos(t); g.append(el('line',{class:'tick',x1:x,y1:geom.bottom,x2:x,y2:geom.bottom+7}));
+        g.append(el('text',{class:'axis-label',x,y:geom.bottom+25,'text-anchor':'middle'},t===6?'+6':String(t).replace('-', '−')));
+      });
+      g.append(el('text',{class:'axis-label',x:geom.left-9,y:yPos(s.ymax,s)+5,'text-anchor':'end'},String(s.ymax).replace('-', '−')));
+      g.append(el('text',{class:'axis-label',x:geom.left-9,y:yPos(s.ymin,s)+5,'text-anchor':'end'},String(s.ymin).replace('-', '−')));
+      let d=''; for(let k=0;k<=180;k++){const z=-6+12*k/180;d+=(k?'L':'M')+xPos(z)+' '+yPos(s.f(z),s)}
+      g.append(el('path',{class:'curve',d}));
+      g.append(el('line',{class:'cursor',x1:0,y1:geom.top,x2:0,y2:geom.bottom,'data-role':'cursor'}));
+      g.append(el('circle',{class:'dot',cx:0,cy:0,r:8,'data-role':'dot'}));
+      g.append(el('text',{class:'read-label',x:32,y:428},'输出 a'));
+      g.append(el('text',{class:'read-value',x:105,y:429,'data-role':'value'},''));
+      g.append(el('text',{class:'read-label',x:250,y:428},'局部斜率'));
+      g.append(el('text',{class:'slope-value',x:348,y:428,'data-role':'slope'},''));
+      g.append(el('text',{class:'state-note',x:428,y:68,'text-anchor':'end','data-role':'note'},''));
+      plots.append(g);
+    });
+
+    function interpretation(z){
+      if(z<0) return z<=-4.5 ? '<strong>负端：</strong>ReLU 已截断为 0；Sigmoid 与 Tanh 的斜率接近 0，进入饱和。' : '<strong>负输入：</strong>ReLU 直接截断；两条平滑曲线仍连续变化。';
+      if(z===0) return '<strong>零点：</strong>ReLU 出现折角，导数不唯一；Sigmoid 与 Tanh 仍平滑。';
+      return z>=4.5 ? '<strong>正端：</strong>ReLU 保持斜率 1；Sigmoid 与 Tanh 逐渐变平，进入饱和。' : '<strong>正输入：</strong>ReLU 线性增长；两条平滑曲线的斜率随位置改变。';
+    }
+    function noteFor(i,z){
+      if(i===0) return z<0?'截断区':z===0?'折角':'线性区';
+      return Math.abs(z)>=4.5?'饱和区':'平滑变化';
+    }
+    function render(){
+      if(destroyed)return;
+      const z=state.z; range.value=String(z); zOut.textContent=fmtZ(z);
+      specs.forEach((s,i)=>{
+        const g=plots.querySelector(`[data-i="${i}"]`), x=xPos(z), y=yPos(s.f(z),s), slope=s.d(z);
+        const c=g.querySelector('[data-role="cursor"]'); c.setAttribute('x1',x);c.setAttribute('x2',x);
+        const dot=g.querySelector('[data-role="dot"]');dot.setAttribute('cx',x);dot.setAttribute('cy',y);
+        g.querySelector('[data-role="value"]').textContent=fmt(s.f(z));
+        g.querySelector('[data-role="slope"]').textContent=Number.isNaN(slope)?'不唯一':fmt(slope);
+        g.querySelector('[data-role="note"]').textContent=noteFor(i,z);
+      });
+      presets.forEach(b=>b.setAttribute('aria-pressed',Number(b.dataset.z)===z?'true':'false'));
+      finding.innerHTML=interpretation(z);
+    }
+    function setZ(v, announce=false){
+      state={z:Math.round(Math.max(-6,Math.min(6,Number(v)))*10)/10}; render();
+      if(announce) finding.setAttribute('aria-label',finding.textContent);
+    }
+    range.addEventListener('input',e=>setZ(e.target.value));
+    range.addEventListener('change',e=>setZ(e.target.value,true));
+    presets.forEach(b=>b.addEventListener('click',()=>setZ(b.dataset.z,true)));
+    reset.addEventListener('click',()=>setZ(initial,true));
+    window.addEventListener('pagehide',()=>{destroyed=true;},{once:true});
+    render();
+    Deck.init({index:6,total:24});
+  })();
+  </script>
+</body>
+</html>

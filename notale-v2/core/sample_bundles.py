@@ -1,8 +1,8 @@
 """Build model-readable sample bundles without changing runnable originals.
 
-The deck theme owns ordinary styling, so Builder context omits standalone CSS
-and inline ``<style>`` blocks while preserving structure, state, algorithms,
-rendering, and motion code.
+Visual workflows preserve the catalog-selected source verbatim, including CSS,
+because composition and motion depend on it.  The fixed code workbench remains
+the exception: its host owns view styling, so author-layer CSS stays omitted.
 """
 
 from __future__ import annotations
@@ -15,7 +15,13 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOWS = ROOT / "workflows"
+VISUAL_WORKFLOWS = frozenset({
+    "build-cover",
+    "build-page",
+    "build-interaction",
+})
 LANGUAGES = {
+    ".css": "css",
     ".html": "html",
     ".js": "javascript",
     ".json": "json",
@@ -31,7 +37,9 @@ def _fence(text: str) -> str:
     return "`" * max(3, longest + 1)
 
 
-def _context_text(path: Path) -> str | None:
+def _context_text(path: Path, *, include_css: bool) -> str | None:
+    if include_css:
+        return path.read_text(encoding="utf-8")
     if path.suffix.lower() == ".css":
         return None
     text = path.read_text(encoding="utf-8")
@@ -40,6 +48,7 @@ def _context_text(path: Path) -> str | None:
 
 def _variant(skill_dir: Path, row: dict, name: str, spec: dict) -> str:
     root = (skill_dir / spec["root"]).resolve()
+    include_css = skill_dir.name in VISUAL_WORKFLOWS
     source_total = 0
     files: list[tuple[Path, str]] = []
     for rel in spec["files"]:
@@ -47,7 +56,7 @@ def _variant(skill_dir: Path, row: dict, name: str, spec: dict) -> str:
         path.relative_to(root)
         raw = path.read_text(encoding="utf-8")
         source_total += len(raw)
-        text = _context_text(path)
+        text = _context_text(path, include_css=include_css)
         if text is not None:
             files.append((path, text))
     if source_total != spec["chars"]:

@@ -9,6 +9,228 @@
   <meta name="color-scheme" content="dark">
   <title>解剖一束光</title>
   <link rel="stylesheet" href="assets/base.css">
+  <style>
+    :root {
+      --bg: #11110f;
+      --text: #f3f7f8;
+      --font-sans: "Noto Sans CJK SC", "Source Han Sans SC", "Microsoft YaHei", system-ui, sans-serif;
+      --font-display: "Noto Serif CJK SC", "Source Han Serif SC", "Songti SC", STSong, serif;
+      --field-deep: #10110f;
+      --field-mid: #181814;
+      --ink-muted: #aaa79d;
+      --focus: #f0e5ca;
+      --ease-out: cubic-bezier(.16, 1, .3, 1);
+    }
+
+    html, body { background: #090908; }
+
+    #stage {
+      isolation: isolate;
+      background:linear-gradient(124deg,var(--field-mid) 0,var(--field-deep) 54%,#0b0c0a 100%);
+      contain: layout paint;
+    }
+
+    #stage::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      z-index: 8;
+      pointer-events: none;
+      box-shadow:inset 0 0 150px rgba(0,0,0,.48);
+    }
+
+    #stage:focus-visible {
+      outline: 3px solid var(--focus);
+      outline-offset: -8px;
+    }
+
+    .cover-copy {
+      position: absolute;
+      left: 112px;
+      top: 104px;
+      width: 620px;
+      z-index: 6;
+      pointer-events: none;
+    }
+
+    .cover-title {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      width: max-content;
+      max-width: 100%;
+      color: #f2f5f5;
+      font-family: var(--font-display);
+      font-weight: 600;
+      letter-spacing: -.075em;
+    }
+
+    .title-prefix {
+      font-size: 108px;
+      line-height: .98;
+      white-space: nowrap;
+    }
+
+    .title-light {
+      margin-top: 14px;
+      font-size: 188px;
+      line-height: .84;
+      letter-spacing: -.12em;
+    }
+
+    .cover-subtitle {
+      margin-top: 48px;
+      color: var(--ink-muted);
+      font-size: 25px;
+      font-weight: 400;
+      line-height: 1.5;
+      letter-spacing: .095em;
+      white-space: nowrap;
+    }
+
+    .cover-subtitle::before {
+      content: "";
+      display: inline-block;
+      width: 38px;
+      height: 1px;
+      margin: 0 18px 8px 2px;
+      background:rgba(230,224,207,.58);
+    }
+
+    .scene {
+      z-index: 3;
+      overflow: hidden;
+      pointer-events: none;
+    }
+
+    .spectrum-wrap {
+      position: absolute;
+      left: 1240px;
+      top: 376px;
+      z-index: 2;
+      width: 360px;
+      height: 462px;
+      overflow: visible;
+      opacity: .92;
+      mix-blend-mode: screen;
+      pointer-events: none;
+      transform-origin: 0 34%;
+    }
+
+    .spectrum-fan,
+    .spectrum-fan::before {
+      position: absolute;
+      inset: 0;
+      clip-path: polygon(0 31.4%, 100% 1.8%, 100% 98%, 0 36.8%);
+      background: conic-gradient(
+        from 70deg at 0 34%,
+        #ff352c 0deg,
+        #ff6f29 8deg,
+        #ffb622 15deg,
+        #f5e94a 22deg,
+        #57df69 30deg,
+        #2bd9cf 38deg,
+        #268eff 46deg,
+        #554cff 53deg,
+        #9b3dff 60deg
+      );
+      -webkit-mask-image: linear-gradient(90deg, rgba(0, 0, 0, .72) 0, #000 20%, #000 82%, rgba(0, 0, 0, .8) 100%);
+      mask-image: linear-gradient(90deg, rgba(0, 0, 0, .72) 0, #000 20%, #000 82%, rgba(0, 0, 0, .8) 100%);
+    }
+
+    .spectrum-fan::before {
+      content: "";
+      filter:blur(12px);
+      opacity:.2;
+      transform: scaleY(1.04);
+    }
+
+    .field-reflection {
+      opacity: .48;
+      mix-blend-mode: screen;
+    }
+
+    .incident-halo,
+    .incident-body,
+    .incident-core,
+    .prism-group {
+      transform-box: fill-box;
+    }
+
+    .incident-halo,
+    .incident-body,
+    .incident-core {
+      transform-origin: right center;
+    }
+
+    .prism-group { transform-origin: 1062px 454px; }
+
+    .glass-sheen { animation: sheen-breathe 8s ease-in-out infinite alternate; }
+
+    .is-entering .cover-title { animation: title-settle 1050ms var(--ease-out) both; }
+    .is-entering .cover-subtitle { animation: subtitle-settle 900ms 180ms var(--ease-out) both; }
+    .is-entering .prism-group { animation: prism-settle 1350ms 80ms var(--ease-out) both; }
+
+    .is-entering .incident-halo,
+    .is-entering .incident-body,
+    .is-entering .incident-core {
+      animation: beam-settle 1200ms 160ms var(--ease-out) both;
+    }
+
+    .is-entering .spectrum-wrap { animation: spectrum-settle 1450ms 300ms var(--ease-out) both; }
+
+    .is-paused .glass-sheen,
+    .is-paused .spectrum-wrap {
+      animation-play-state: paused !important;
+    }
+
+    @keyframes title-settle {
+      from { opacity: .82; transform: translateY(12px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    @keyframes subtitle-settle {
+      from { opacity: .68; transform: translateY(8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    @keyframes prism-settle {
+      from { opacity: .86; transform: translate(12px, -7px) scale(.987); }
+      to { opacity: 1; transform: translate(0, 0) scale(1); }
+    }
+
+    @keyframes beam-settle {
+      from { opacity: .58; transform: scaleX(.975); }
+      to { opacity: 1; transform: scaleX(1); }
+    }
+
+    @keyframes spectrum-settle {
+      from { opacity: .62; transform: scaleX(.94); }
+      to { opacity: .92; transform: scaleX(1); }
+    }
+
+    @keyframes sheen-breathe {
+      from { opacity: .18; transform: translateX(-5px); }
+      to { opacity: .34; transform: translateX(8px); }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .glass-sheen,
+      .spectrum-wrap,
+      .cover-title,
+      .cover-subtitle,
+      .prism-group,
+      .incident-halo,
+      .incident-body,
+      .incident-core {
+        animation: none !important;
+        opacity: 1;
+        transform: none;
+      }
+
+      .spectrum-wrap { opacity: .92; }
+    }
+  </style>
 </head>
 <body>
   <main id="stage" tabindex="0" aria-labelledby="cover-title" aria-describedby="cover-subtitle">

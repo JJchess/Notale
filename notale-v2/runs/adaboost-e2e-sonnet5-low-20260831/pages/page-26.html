@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  :root{
+    --bg:#E9EFF2; --text:#172329; --font-sans:"IBM Plex Sans","Noto Sans SC",sans-serif;
+  }
+  #stage{
+    display:flex; flex-direction:column;
+    padding:28px 56px; gap:0; position:relative; overflow:hidden;
+  }
+  .field{
+    position:absolute; inset:0; z-index:0; pointer-events:none;
+  }
+  .content{
+    position:relative; z-index:2;
+    display:flex; flex-direction:column;
+    height:100%;
+  }
+  .head{
+    display:flex; flex-direction:column; gap:8px;
+    padding-top:36px;
+  }
+  .kicker{
+    font-size:15px; color:var(--muted); letter-spacing:.06em; font-weight:600;
+  }
+  h1{
+    margin:0; font-size:52px; line-height:1.08; font-weight:700; color:var(--text);
+    letter-spacing:-.01em;
+  }
+  h1 strong{ color:var(--ensemble); font-weight:700; }
+  .lead{
+    margin-top:10px; font-size:22px; line-height:1.5; color:var(--muted); max-width:900px;
+  }
+  .rows{
+    margin-top:auto;
+    display:flex; flex-direction:column; gap:0;
+    padding-bottom:20px;
+  }
+  .row{
+    display:flex; align-items:baseline; gap:24px;
+    padding:14px 0;
+    border-top:1px solid var(--rule);
+  }
+  .row:first-child{ border-top:1px solid var(--rule); }
+  .row .n{
+    font-family:var(--font-mono);
+    font-size:15px; color:var(--muted); width:26px; flex:none;
+  }
+  .row .q{
+    font-size:19px; font-weight:600; color:var(--text); width:300px; flex:none;
+  }
+  .row .a{
+    font-size:17px; color:var(--muted); line-height:1.5; flex:1;
+  }
+  .row .a b{ color:var(--text); font-weight:600; }
+  .row .a .w{ color:var(--weak); font-weight:600; }
+  .row .a .wt{ color:var(--weight); font-weight:600; }
+  .row .a .e{ color:var(--ensemble); font-weight:600; }
+</style>
+</head>
+<body data-page="26" data-total="26">
+<div id="stage">
+  <svg class="field" viewBox="0 0 1600 900" preserveAspectRatio="none" aria-hidden="true"></svg>
+  <div class="content">
+    <div class="head">
+      <div class="kicker">课程收束</div>
+      <h1>把很多个「勉强及格」的弱学习器，<br>加权累加成一个<strong>可靠的强分类器</strong>。</h1>
+      <p class="lead">AdaBoost 的全部机制都服务于同一件事：让下一个弱学习器更关注上一个学习器分错的样本，再按各自的表现分配发言权。</p>
+    </div>
+    <div class="rows" id="rows"></div>
+  </div>
+</div>
+<script src="assets/base.js"></script>
+<script>
+(function(){
+  // ---- decision-boundary convergence field ----
+  // Several weak thresholds (weak-colored) overlaid, converging toward one
+  // strong weighted boundary (ensemble-colored). Purely a visual echo of the
+  // whole course's idea: many weak splits -> one strong combined boundary.
+  var svg = document.querySelector('.field');
+  var W = 1600, H = 900;
+  var NS = 'http://www.w3.org/2000/svg';
+  function el(tag, attrs){
+    var e = document.createElementNS(NS, tag);
+    for (var k in attrs) e.setAttribute(k, attrs[k]);
+    return e;
+  }
+
+  // Fixed seed-like deterministic sample cloud (two classes), same spirit as ch.1-3.
+  var pts = [];
+  var rng = (function(seed){
+    var s = seed;
+    return function(){ s = (s * 1664525 + 1013904223) % 4294967296; return s / 4294967296; };
+  })(20260831);
+  for (var i = 0; i < 46; i++){
+    var cls = i % 2 === 0 ? 1 : -1;
+    var cx = cls === 1 ? 560 : 1040;
+    var cy = 560;
+    var x = cx + (rng()-0.5) * 620;
+    var y = cy + (rng()-0.5) * 420;
+    pts.push({x:x, y:y, c: (x < 800 ? 1 : -1) === cls ? cls : cls}); // class fixed by generator
+    pts[pts.length-1].cls = cls;
+  }
+
+  var root = el('g', {transform:'translate(120,180)'});
+  svg.appendChild(root);
+  var plotW = 1360, plotH = 560;
+
+  // weak learner lines: near-vertical thresholds at varying x, slightly tilted, faint
+  var weakLines = [
+    {x1:470,y1:0,x2:430,y2:560},
+    {x1:560,y1:0,x2:610,y2:560},
+    {x1:660,y1:0,x2:600,y2:560},
+    {x1:520,y1:0,x2:560,y2:560}
+  ];
+  weakLines.forEach(function(l, idx){
+    root.appendChild(el('line', {
+      x1:l.x1, y1:l.y1, x2:l.x2, y2:l.y2,
+      stroke:'#52712D', 'stroke-width':2, 'stroke-dasharray':'2 7',
+      opacity: 0.30 + idx*0.03
+    }));
+  });
+
+  // ensemble boundary: the converged strong curve (slightly bowed), solid
+  var strongPath = 'M 540 0 C 560 160, 585 260, 600 340 C 615 420, 610 500, 590 560';
+  root.appendChild(el('path', {
+    d: strongPath, fill:'none', stroke:'#175D8A', 'stroke-width':4.5,
+    'stroke-linecap':'round', opacity:0.92
+  }));
+
+  // sample points, colored by class, sized to hint sample weight variety
+  pts.forEach(function(p, idx){
+    var r = 5 + (idx % 5 === 0 ? 3.5 : 0); // a few "heavier" misclassified-then-corrected samples
+    var color = p.cls === 1 ? '#175D8A' : '#C45E12';
+    var g = el('g', {opacity:0.9});
+    g.appendChild(el('circle', {cx:p.x, cy:p.y, r:r, fill: p.cls===1 ? '#175D8A' : 'none',
+      stroke: color, 'stroke-width': p.cls===1 ? 0 : 2.4}));
+    root.appendChild(g);
+  });
+
+  // fade the whole field toward the right/bottom so text stays legible
+  var fade = el('defs');
+  var grad = el('linearGradient', {id:'fieldFade', x1:'0%', y1:'0%', x2:'0%', y2:'100%'});
+  grad.appendChild(el('stop', {offset:'0%', 'stop-color':'#E9EFF2', 'stop-opacity':'0'}));
+  grad.appendChild(el('stop', {offset:'62%', 'stop-color':'#E9EFF2', 'stop-opacity':'0'}));
+  grad.appendChild(el('stop', {offset:'100%', 'stop-color':'#E9EFF2', 'stop-opacity':'0.94'}));
+  fade.appendChild(grad);
+  svg.insertBefore(fade, svg.firstChild);
+  svg.appendChild(el('rect', {x:0,y:0,width:W,height:H, fill:'url(#fieldFade)'}));
+
+  svg.style.opacity = '0.5';
+
+  // ---- four-row recap, one row per course chapter question ----
+  var rows = [
+    {n:'01', q:'为什么要组合学习器', a:'单个简单分类器只能划出一条粗糙的边界，遇到<b>重叠或复杂分布</b>就系统性出错；把多个弱学习器按权重叠加，能纠正单个模型覆盖不到的区域。'},
+    {n:'02', q:'下一轮更关注谁', a:'每个样本带一个权重；一轮训练后，<span class="w">被分错的样本权重上调</span>，<span class="w">分对的样本权重下调</span>，下一个弱学习器被迫在加权误差上优化。'},
+    {n:'03', q:'流程如何衔接', a:'反复执行「<span class="wt">训练弱学习器 → 算加权误差 → 定模型权重 → 更新样本权重</span>」，直到轮数用完；预测时按每个弱学习器的<span class="e">模型权重</span>加权投票。'},
+    {n:'04', q:'边界在哪里', a:'AdaBoost 等价于在<b>指数损失</b>上做逐步优化，分类间隔随轮数扩大，在<b>干净、可分数据</b>上稳定有效；但会被<b>标签噪声</b>放大误差，训练轮数与树深都需要控制。'}
+  ];
+  var wrap = document.getElementById('rows');
+  rows.forEach(function(r){
+    var row = document.createElement('div');
+    row.className = 'row';
+    row.innerHTML = '<span class="n">'+r.n+'</span><span class="q">'+r.q+'</span><span class="a">'+r.a+'</span>';
+    wrap.appendChild(row);
+  });
+
+  Deck.init({ index:26, total:26, keys:false });
+})();
+</script>
+</body>
+</html>

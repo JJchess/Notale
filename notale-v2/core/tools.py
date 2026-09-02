@@ -16,6 +16,21 @@ WORKFLOW_RESOURCE_CAP = 160_000
 TIMEOUT = 120
 SHOT_TIMEOUT = 300   # 渲染要起无头 Chromium,还可能带几个 --after 状态,给宽一点
 
+VISUAL_SAMPLE_WORKFLOWS = frozenset({
+    "build-cover",
+    "build-page",
+    "build-interaction",
+})
+VISUAL_SAMPLE_USE = """<sample_use>
+This sample demonstrates the expected level of visual and implementation
+quality. Learn selectively from techniques that suit the current page.
+
+Design from the current subject, purpose, and supplied theme. Do not preserve
+the sample's composition, visual motif, wording, data, labels, palette, or
+interaction model. The result should be an independent page with comparable
+care and completeness.
+</sample_use>"""
+
 IMG_EXT = {".png", ".jpg", ".jpeg", ".webp", ".gif"}
 
 # ── 越界访问 ────────────────────────────────────────────────────────
@@ -112,6 +127,21 @@ def _is_workflow_resource(path: Path, resource_root: Path | None) -> bool:
             (len(rel.parts) == 2 and rel.parts[0] == "references")
             or (len(rel.parts) >= 3 and rel.parts[:2] == ("samples", "bundles"))
         )
+    )
+
+
+def _visual_main_sample(path: Path, resource_root: Path | None) -> bool:
+    """True only for full Main bundles in the three visual page workflows."""
+    if resource_root is None or resource_root.name not in VISUAL_SAMPLE_WORKFLOWS:
+        return False
+    try:
+        rel = path.resolve().relative_to(resource_root.resolve())
+    except (OSError, ValueError):
+        return False
+    return (
+        len(rel.parts) >= 3
+        and rel.parts[:2] == ("samples", "bundles")
+        and path.name.endswith(".full.md")
     )
 
 
@@ -348,7 +378,13 @@ def _dispatch(name: str, a: dict, cwd: Path, resource_root: Path | None) -> str 
         if _is_workflow_resource(p, resource_root):
             text = p.read_text(encoding="utf-8", errors="replace")
             n = text.count("\n") + 1
-            return (f"（工作流资源全文开始：{p.name}，共 {n} 行）\n"
+            guidance = (
+                VISUAL_SAMPLE_USE + "\n\n"
+                if _visual_main_sample(p, resource_root)
+                else ""
+            )
+            return (guidance
+                    + f"（工作流资源全文开始：{p.name}，共 {n} 行）\n"
                     + text
                     + f"\n（工作流资源全文结束：{p.name} · EOF）")
         lines = p.read_text(encoding="utf-8", errors="replace").split("\n")

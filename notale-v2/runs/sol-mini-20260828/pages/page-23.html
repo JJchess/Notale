@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>训练故障诊断</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    #stage{gap:20px}
+    .pagehead{flex:0 0 auto;display:flex;align-items:flex-end;justify-content:space-between;gap:34px;border-bottom:2px solid var(--rule-strong);padding-bottom:16px}
+    .headcopy{min-width:0}
+    .pagehead .lead{margin-top:10px;max-width:48em;color:var(--muted)}
+    .case-nav{display:flex;gap:8px;align-items:center;flex:0 0 auto;padding-bottom:2px}
+    .case-nav .btn{min-width:112px}
+    .case-nav .btn[aria-selected="true"]{border-color:var(--attention);box-shadow:inset 0 -4px 0 var(--attention);background:var(--paper)}
+    .diagnostic{flex:1;min-height:0;display:grid;grid-template-columns:minmax(0,1.48fr) minmax(360px,.72fr);gap:28px}
+    .evidence{min-width:0;min-height:0;display:grid;grid-template-rows:minmax(0,1.24fr) minmax(0,.76fr);gap:18px}
+    .plot-area{min-width:0;min-height:0;display:grid;grid-template-columns:minmax(0,1fr) 270px;gap:22px}
+    .curve-wrap{position:relative;min-width:0;min-height:0;padding:18px 18px 10px;border-bottom:2px solid var(--rule-strong)}
+    .curve-title{position:absolute;left:22px;top:14px;z-index:2;font-weight:700;font-size:var(--fs-body)}
+    #curve{width:100%;height:100%;display:block}
+    .readings{display:flex;flex-direction:column;justify-content:center;gap:18px;padding:18px 0}
+    .reading{padding-bottom:15px;border-bottom:2px solid var(--rule)}
+    .reading:last-child{border-bottom:0}
+    .reading .label{display:block;color:var(--muted);font-size:var(--fs-label);font-weight:700;margin-bottom:4px}
+    .reading .value{font-size:var(--fs-lead);font-weight:700;line-height:1.25}
+    .reading .sub{display:block;margin-top:4px;color:var(--muted);font-size:var(--fs-label);line-height:1.35}
+    .gradient-map{min-width:0;min-height:0;display:grid;grid-template-columns:190px minmax(0,1fr);gap:22px;align-items:center;border-top:2px solid var(--rule);padding-top:16px}
+    .gradient-map h2{margin-bottom:7px}
+    .layers{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;align-items:end;height:100%;min-height:118px}
+    .layer{display:flex;flex-direction:column;justify-content:flex-end;gap:8px;min-width:0;height:100%}
+    .barbox{height:76px;border-bottom:2px solid var(--rule-strong);display:flex;align-items:flex-end;padding:0 10px}
+    .bar{width:100%;height:var(--level);min-height:3px;background:var(--gradient);transition:height .28s ease}
+    .layer-name{text-align:center;color:var(--muted);font-size:var(--fs-label);font-weight:700}
+    .rail{min-width:0;min-height:0;display:flex;flex-direction:column}
+    .rail.panel{padding:22px 24px}
+    .prompt{font-size:var(--fs-lead);font-weight:700;line-height:1.4;margin-bottom:15px}
+    .clue{color:var(--muted);font-size:var(--fs-sec);line-height:1.48;margin-bottom:18px}
+    .choices{display:grid;gap:11px}
+    .choice{position:relative;width:100%;min-height:58px;padding:12px 14px;border:2px solid var(--rule-strong);border-radius:var(--radius);background:transparent;color:var(--text);text-align:left;font-size:var(--fs-sec);font-weight:700;cursor:pointer}
+    .choice:hover{background:var(--paper-strong)}
+    .choice[aria-pressed="true"]{border-color:var(--attention);background:var(--attention-soft);box-shadow:inset 5px 0 0 var(--attention)}
+    .choice:focus-visible{outline:none;box-shadow:0 0 0 3px var(--paper),0 0 0 6px var(--focus)}
+    .rail-actions{display:flex;gap:10px;margin-top:16px}
+    .rail-actions .btn{flex:1}
+    #feedback{margin-top:18px;padding-top:16px;border-top:2px solid var(--rule);min-height:116px;color:var(--muted);font-size:var(--fs-sec);line-height:1.5}
+    #feedback strong{display:block;color:var(--text);font-size:var(--fs-body);margin-bottom:4px}
+    #feedback.good strong{color:var(--model)}
+    #feedback.bad strong{color:var(--gradient)}
+    .progress-note{margin-top:auto;padding-top:12px;color:var(--muted);font-size:var(--fs-label)}
+    .axis-label{font-family:var(--font-sans);font-size:15px;fill:var(--muted)}
+    .gridline{stroke:var(--rule);stroke-width:1}
+    .curve-line{fill:none;stroke:var(--model);stroke-width:5;stroke-linecap:round;stroke-linejoin:round;transition:d .28s ease}
+    .curve-point{fill:var(--paper);stroke:var(--model);stroke-width:3}
+    @media (prefers-reduced-motion:reduce){.bar,.curve-line{transition:none}}
+  </style>
+</head>
+<body data-page="23" data-total="24">
+  <div id="stage">
+    <header class="pagehead">
+      <div class="headcopy min0">
+        <span class="kicker">训练故障诊断台</span>
+        <h1>从损失曲线与梯度读数定位训练故障</h1>
+        <p class="lead">切换三份训练记录，先读证据，再选择最可能的故障。</p>
+      </div>
+      <nav class="case-nav" aria-label="训练记录">
+        <button class="btn" data-case="0" aria-selected="true">记录 A</button>
+        <button class="btn" data-case="1" aria-selected="false">记录 B</button>
+        <button class="btn" data-case="2" aria-selected="false">记录 C</button>
+      </nav>
+    </header>
+
+    <main class="diagnostic min0">
+      <section class="evidence min0" aria-label="训练证据">
+        <div class="plot-area min0">
+          <div class="curve-wrap min0">
+            <div class="curve-title">损失随训练推进的变化</div>
+            <svg id="curve" viewBox="0 0 760 370" role="img" aria-labelledby="curveDesc">
+              <title id="curveDesc">记录 A 的损失曲线反复跳动并抬升</title>
+              <line class="gridline" x1="72" y1="78" x2="728" y2="78"/>
+              <line class="gridline" x1="72" y1="180" x2="728" y2="180"/>
+              <line class="gridline" x1="72" y1="282" x2="728" y2="282"/>
+              <line x1="72" y1="44" x2="72" y2="316" stroke="var(--rule-strong)" stroke-width="2"/>
+              <line x1="72" y1="316" x2="728" y2="316" stroke="var(--rule-strong)" stroke-width="2"/>
+              <text class="axis-label" x="18" y="57">损失</text>
+              <text class="axis-label" x="636" y="349">训练推进</text>
+              <path id="curvePath" class="curve-line" d="M82 184 L145 112 L208 238 L271 86 L334 258 L397 65 L460 273 L523 48 L586 290 L649 37 L714 302"/>
+              <g id="points"></g>
+            </svg>
+          </div>
+          <div class="readings" aria-label="关键读数">
+            <div class="reading">
+              <span class="label">损失形态</span>
+              <span class="value" id="lossRead">剧烈振荡并抬升</span>
+              <span class="sub" id="lossSub">更新后频繁越过低损失区域</span>
+            </div>
+            <div class="reading">
+              <span class="label">激活状态</span>
+              <span class="value" id="actRead">响应区内</span>
+              <span class="sub" id="actSub">激活函数仍能传递变化</span>
+            </div>
+            <div class="reading">
+              <span class="label">参数更新</span>
+              <span class="value" id="updateRead">幅度过大</span>
+              <span class="sub" id="updateSub">梯度存在，但每次跨得太远</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="gradient-map min0">
+          <div>
+            <h2>反向梯度</h2>
+            <p class="small" id="gradSummary">各层都有明显梯度，方向频繁翻转。</p>
+          </div>
+          <div class="layers" aria-label="从输出层传向浅层的梯度强弱">
+            <div class="layer"><div class="barbox"><div class="bar" data-bar="0" style="--level:78%"></div></div><div class="layer-name">输出层</div></div>
+            <div class="layer"><div class="barbox"><div class="bar" data-bar="1" style="--level:68%"></div></div><div class="layer-name">深层</div></div>
+            <div class="layer"><div class="barbox"><div class="bar" data-bar="2" style="--level:72%"></div></div><div class="layer-name">中层</div></div>
+            <div class="layer"><div class="barbox"><div class="bar" data-bar="3" style="--level:62%"></div></div><div class="layer-name">浅层</div></div>
+          </div>
+        </div>
+      </section>
+
+      <aside class="rail panel min0" aria-label="诊断操作">
+        <p class="prompt">哪一种故障最符合这组证据？</p>
+        <p class="clue">曲线说明训练结果，激活与梯度读数说明故障发生在哪里。</p>
+        <div class="choices" role="group" aria-label="故障选项">
+          <button class="choice" data-answer="lr" aria-pressed="false">学习率不当</button>
+          <button class="choice" data-answer="sat" aria-pressed="false">激活饱和</button>
+          <button class="choice" data-answer="vanish" aria-pressed="false">梯度消失</button>
+        </div>
+        <div class="rail-actions">
+          <button class="btn" id="checkBtn" disabled>核对诊断</button>
+          <button class="btn" id="resetBtn">清除选择</button>
+        </div>
+        <div id="feedback" role="status" aria-live="polite">选择一种故障后核对。三类故障可能都让损失降不动，但梯度证据不同。</div>
+        <div class="progress-note" id="progress">已诊断：未开始</div>
+      </aside>
+    </main>
+  </div>
+  <script src="assets/base.js"></script>
+  <script>
+    Deck.init({index:23,total:24});
+    const cases = [
+      {
+        answer:'lr', title:'记录 A 的损失曲线反复跳动并抬升',
+        path:'M82 184 L145 112 L208 238 L271 86 L334 258 L397 65 L460 273 L523 48 L586 290 L649 37 L714 302',
+        loss:'剧烈振荡并抬升', lossSub:'更新后频繁越过低损失区域',
+        act:'响应区内', actSub:'激活函数仍能传递变化',
+        update:'幅度过大', updateSub:'梯度存在，但每次跨得太远',
+        bars:['78%','68%','72%','62%'], grad:'各层都有明显梯度，方向频繁翻转。',
+        why:'梯度没有消失，激活也未贴住上下限。损失反复越过低点，说明参数更新步幅过大。应先调低学习率。'
+      },
+      {
+        answer:'sat', title:'记录 B 的损失曲线很快进入平台',
+        path:'M82 104 C150 166 208 220 278 247 C362 276 469 280 714 282',
+        loss:'很快进入平台', lossSub:'后续训练几乎不再改善',
+        act:'贴近上下限', actSub:'激活导数接近于零',
+        update:'局部受阻', updateSub:'信号在饱和单元处被截断',
+        bars:['72%','14%','12%','10%'], grad:'输出端有梯度，经过饱和激活后骤降。',
+        why:'梯度在饱和激活处突然变弱，同时激活值贴近函数上下限。故障位置明确指向激活饱和。可调整输入尺度或更换激活函数。'
+      },
+      {
+        answer:'vanish', title:'记录 C 的损失缓慢下降后停滞',
+        path:'M82 92 C174 126 236 161 322 194 C415 229 504 248 714 260',
+        loss:'缓慢下降后停滞', lossSub:'浅层参数几乎停止学习',
+        act:'未集中贴边', actSub:'没有单个饱和点可解释全部衰减',
+        update:'逐层缩小', updateSub:'越靠近输入端，更新越弱',
+        bars:['76%','46%','20%','4%'], grad:'梯度从输出层向浅层持续衰减。',
+        why:'梯度不是在一个激活点骤降，而是反向传播时逐层变弱；浅层几乎收不到学习信号。这是梯度消失。可考虑残差连接、归一化或调整初始化。'
+      }
+    ];
+    let current=0, selected=null;
+    const solved=new Set();
+    const $=s=>document.querySelector(s);
+    const $$=s=>[...document.querySelectorAll(s)];
+    function showCase(i){
+      current=i; selected=null;
+      const c=cases[i];
+      $$('.case-nav .btn').forEach((b,n)=>b.setAttribute('aria-selected',String(n===i)));
+      $$('.choice').forEach(b=>b.setAttribute('aria-pressed','false'));
+      $('#checkBtn').disabled=true;
+      $('#feedback').className='';
+      $('#feedback').textContent='选择一种故障后核对。三类故障可能都让损失降不动，但梯度证据不同。';
+      $('#curvePath').setAttribute('d',c.path); $('#curveDesc').textContent=c.title;
+      $('#lossRead').textContent=c.loss; $('#lossSub').textContent=c.lossSub;
+      $('#actRead').textContent=c.act; $('#actSub').textContent=c.actSub;
+      $('#updateRead').textContent=c.update; $('#updateSub').textContent=c.updateSub;
+      $('#gradSummary').textContent=c.grad;
+      $$('[data-bar]').forEach((b,n)=>b.style.setProperty('--level',c.bars[n]));
+    }
+    $$('.case-nav .btn').forEach((b,i)=>b.addEventListener('click',()=>showCase(i)));
+    $$('.choice').forEach(b=>b.addEventListener('click',()=>{
+      selected=b.dataset.answer;
+      $$('.choice').forEach(x=>x.setAttribute('aria-pressed',String(x===b)));
+      $('#checkBtn').disabled=false;
+      $('#feedback').className='';
+      $('#feedback').textContent='已选择。核对后会指出证据链。';
+    }));
+    $('#checkBtn').addEventListener('click',()=>{
+      const ok=selected===cases[current].answer;
+      if(ok) solved.add(current);
+      $('#feedback').className=ok?'good':'bad';
+      $('#feedback').innerHTML='<strong>'+(ok?'诊断正确':'诊断不符')+'</strong>'+(ok?cases[current].why:'再比较梯度在哪一段变弱，以及激活是否贴近上下限。');
+      $('#progress').textContent=solved.size===3?'已诊断：三份记录全部完成':'已诊断：'+(solved.size?['一','二'][solved.size-1]+'份记录':'未完成');
+    });
+    $('#resetBtn').addEventListener('click',()=>showCase(current));
+  </script>
+</body>
+</html>

@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>预测、目标与损失</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    #stage{background-image:none}
+    .page{flex:1;min-height:0;display:flex;flex-direction:column;gap:22px}
+    .page>header{flex:0 0 auto;display:flex;flex-direction:column;gap:8px;max-width:1260px}
+    .lead{color:var(--muted)}
+    .lesson{flex:1;min-height:0;display:grid;grid-template-rows:minmax(0,1fr) 176px;border:2px solid var(--rule);border-radius:10px;background:var(--surface);box-shadow:0 7px 18px rgba(23,33,43,.08);overflow:hidden}
+    .measure{position:relative;min-height:0;padding:28px 44px 20px;display:flex;flex-direction:column}
+    .measure-top{display:flex;align-items:flex-start;justify-content:space-between;gap:28px}
+    .measure-title{font-size:var(--fs-h2);font-weight:650}
+    .formula{font-family:var(--font-num);font-size:var(--fs-body);font-weight:600;color:var(--gradient);padding-top:4px}
+    .axis-wrap{position:relative;flex:1;min-height:310px;margin-top:8px}
+    .axis{position:absolute;left:7%;right:7%;top:48%;height:3px;background:var(--text)}
+    .axis::before,.axis::after{content:"";position:absolute;top:-6px;width:3px;height:15px;background:var(--text)}
+    .axis::before{left:0}.axis::after{right:0}
+    .pred,.target{position:absolute;top:calc(48% - 2px);transform:translate(-50%,-50%);display:flex;flex-direction:column;align-items:center}
+    .pred{left:34%;color:var(--model)}
+    .target{left:72%;color:var(--observed)}
+    .marker{width:26px;height:26px;border-radius:50%;background:currentColor;border:5px solid var(--surface);box-shadow:0 0 0 3px currentColor}
+    .target .marker{width:5px;height:86px;border:0;border-radius:0;box-shadow:none}
+    .marker-label{position:absolute;bottom:44px;white-space:nowrap;text-align:center}
+    .marker-label strong{display:block;font-family:var(--font-display);font-size:var(--fs-h2);line-height:1.2;color:currentColor}
+    .marker-label span{display:block;margin-top:6px;color:var(--muted);font-size:var(--fs-label);line-height:1.35}
+    .gap{position:absolute;left:34%;width:38%;top:calc(48% + 74px);height:56px;color:var(--gradient)}
+    .gap-line{position:absolute;left:0;right:0;top:0;height:3px;background:currentColor}
+    .gap-line::before,.gap-line::after{content:"";position:absolute;top:-7px;width:3px;height:17px;background:currentColor}
+    .gap-line::before{left:0}.gap-line::after{right:0}
+    .gap-arrow-l,.gap-arrow-r{position:absolute;top:-5px;width:12px;height:12px;border-top:3px solid currentColor}
+    .gap-arrow-l{left:1px;border-left:3px solid currentColor;transform:rotate(-45deg)}
+    .gap-arrow-r{right:1px;border-right:3px solid currentColor;transform:rotate(45deg)}
+    .gap-label{position:absolute;top:18px;left:50%;transform:translateX(-50%);white-space:nowrap;text-align:center}
+    .gap-label strong{display:block;font-size:var(--fs-h2);line-height:1.2;color:var(--gradient)}
+    .gap-label span{display:block;margin-top:5px;color:var(--muted);font-size:var(--fs-label)}
+    .axis-caption{position:absolute;left:7%;right:7%;bottom:8px;display:flex;justify-content:space-between;color:var(--muted);font-family:var(--font-num);font-size:var(--fs-label)}
+    .roles{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));border-top:2px solid var(--rule);background:var(--bg)}
+    .role{min-width:0;padding:20px 26px;display:grid;grid-template-columns:auto 1fr;column-gap:13px;align-content:start}
+    .role+.role{border-left:1px solid var(--rule)}
+    .role-key{width:14px;height:14px;margin-top:7px;border:3px solid currentColor;border-radius:50%}
+    .role.loss .role-key{border-radius:2px}
+    .role h2{font-size:var(--fs-body);line-height:1.3;color:currentColor}
+    .role p{grid-column:2;margin-top:7px;color:var(--text);font-size:var(--fs-sec);line-height:1.45}
+    .role.prediction{color:var(--model)}
+    .role.goal{color:var(--observed)}
+    .role.loss{color:var(--gradient)}
+    .verdict{position:absolute;right:44px;bottom:20px;padding:10px 14px;border:1px solid var(--rule);background:var(--surface);font-size:var(--fs-label);line-height:1.4;font-weight:600;color:var(--text)}
+    .verdict b{color:var(--gradient)}
+  </style>
+</head>
+<body data-page="09" data-total="25">
+  <div id="stage">
+    <section class="page">
+      <header>
+        <div class="kicker">从输出到误差</div>
+        <h1>损失不是第三个答案，它只量预测离目标有多远</h1>
+        <p class="lead">先分清三个角色，再看神经网络依据什么调整参数。</p>
+      </header>
+
+      <main class="lesson min0" aria-label="预测、目标和损失的关系图">
+        <section class="measure min0">
+          <div class="measure-top">
+            <h2 class="measure-title">把预测与目标放在同一把标尺上</h2>
+            <div class="formula" aria-label="损失是预测和目标的函数">L(ŷ, y) = 距离规则(ŷ, y)</div>
+          </div>
+
+          <div class="axis-wrap" role="img" aria-label="预测值和目标值位于同一输出标尺上，二者之间的间隔由损失函数转换成一个数">
+            <div class="axis"></div>
+            <div class="pred">
+              <div class="marker-label"><strong>预测 ŷ</strong><span>网络当前算出的答案</span></div>
+              <div class="marker"></div>
+            </div>
+            <div class="target">
+              <div class="marker-label"><strong>目标 y</strong><span>数据给出的参照答案</span></div>
+              <div class="marker"></div>
+            </div>
+            <div class="gap" aria-hidden="true">
+              <div class="gap-line"></div><i class="gap-arrow-l"></i><i class="gap-arrow-r"></i>
+              <div class="gap-label"><strong>损失 L</strong><span>按选定规则量出差距</span></div>
+            </div>
+            <div class="axis-caption"><span>输出较小</span><span>同一输出尺度</span><span>输出较大</span></div>
+          </div>
+          <div class="verdict"><b>损失只评分</b>，不会替网络生成另一个答案。</div>
+        </section>
+
+        <section class="roles" aria-label="三个概念的职责对照">
+          <div class="role prediction min0">
+            <span class="role-key" aria-hidden="true"></span>
+            <h2>预测：模型产物</h2>
+            <p>由输入和当前参数计算；参数一变，预测也会变。</p>
+          </div>
+          <div class="role goal min0">
+            <span class="role-key" aria-hidden="true"></span>
+            <h2>目标：外部参照</h2>
+            <p>来自训练样本的标签；本轮计算中不由模型改写。</p>
+          </div>
+          <div class="role loss min0">
+            <span class="role-key" aria-hidden="true"></span>
+            <h2>损失：差距读数</h2>
+            <p>把预测与目标的差距压成一个数，供后续更新参数。</p>
+          </div>
+        </section>
+      </main>
+    </section>
+  </div>
+  <script src="assets/base.js"></script>
+  <script>Deck.init({index:9,total:25});</script>
+</body>
+</html>

@@ -1,0 +1,486 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+:root{
+  --bg:#EEF1F5; --text:#111820; --font-sans:"Noto Sans CJK SC",ui-sans-serif,system-ui,sans-serif;
+}
+#stage{
+  width:1600px;height:900px;padding:28px 56px;box-sizing:border-box;
+  display:flex;flex-direction:column;gap:14px;
+  font-family:var(--font-sans);color:var(--text);
+}
+h1{
+  font-family:"Clear Sans","Noto Sans CJK SC",sans-serif;
+  font-size:34px;margin:0;font-weight:700;letter-spacing:.2px;
+}
+.lead{font-size:18px;color:var(--muted);margin:2px 0 0;line-height:1.4;}
+.body-row{flex:1;min-height:0;display:flex;gap:20px;}
+.left{flex:0 0 640px;min-height:0;display:flex;flex-direction:column;gap:12px;}
+.right{flex:1;min-width:0;display:flex;flex-direction:column;gap:12px;}
+
+.panel{
+  background:#FAFBFC;border:1px solid #C8D0DB;border-radius:4px;
+  padding:16px 18px;box-sizing:border-box;
+}
+.stage-evidence{flex:1;min-height:0;display:flex;flex-direction:column;}
+.cvbox{position:relative;flex:1;min-height:0;border-radius:3px;overflow:hidden;}
+canvas{display:block;}
+
+.controls{display:flex;align-items:center;gap:14px;justify-content:space-between;}
+.btns{display:flex;gap:10px;}
+.btn{
+  font-family:var(--font-sans);font-size:15px;font-weight:600;
+  border:1px solid #111820;background:#FAFBFC;color:#111820;
+  padding:9px 18px;border-radius:3px;cursor:pointer;
+}
+.btn:hover:not(:disabled){background:#111820;color:#FAFBFC;}
+.btn:disabled{opacity:.35;cursor:default;}
+.btn.primary{background:#164E9B;color:#fff;border-color:#164E9B;}
+.btn.primary:hover:not(:disabled){background:#0f3d7c;}
+.round-indicator{font-family:var(--font-mono,monospace);font-size:15px;color:#657181;}
+.round-indicator b{color:#111820;font-weight:700;}
+
+.readouts{display:flex;gap:0;border-top:1px solid #C8D0DB;padding-top:10px;}
+.readout{flex:1;padding:0 14px;border-right:1px solid #C8D0DB;}
+.readout:last-child{border-right:none;}
+.readout .rlabel{font-size:14px;color:#657181;display:block;margin-bottom:4px;}
+.readout .rval{font-family:"JetBrains Mono",ui-monospace,monospace;font-size:25px;font-weight:700;color:#111820;}
+.readout .rval.err{color:#C64232;}
+.readout .rval.wt{color:#164E9B;}
+.readout .runit{font-size:14px;color:#657181;margin-left:2px;}
+
+.stumptext{
+  font-family:"JetBrains Mono",ui-monospace,monospace;font-size:15px;
+  background:#EEF1F5;border:1px solid #C8D0DB;border-radius:3px;
+  padding:8px 12px;color:#111820;margin-top:2px;
+}
+
+.legend{display:flex;gap:18px;flex-wrap:wrap;font-size:14px;color:#657181;margin-top:2px;}
+.legend .li{display:flex;align-items:center;gap:6px;}
+.legend .sw{width:14px;height:14px;border-radius:50%;display:inline-block;flex:0 0 auto;}
+.legend .sw.line{width:18px;height:2px;border-radius:0;}
+
+.small{font-size:14px;color:#657181;line-height:1.45;}
+.note{font-size:14px;color:#657181;margin-top:8px;}
+
+.errchart{flex:0 0 150px;}
+.errchart-title{font-size:14px;color:#657181;margin-bottom:4px;}
+</style>
+</head>
+<body data-page="12" data-total="16">
+<div id="stage">
+  <div>
+    <h1>模拟训练：一步步看 AdaBoost 收敛</h1>
+    <p class="lead">16 个二维样本，线性不完全可分。每点一次「训练下一轮」，算法就真实计算当前加权误差最小的分割线、它的权重 α，并更新全部样本权重。</p>
+  </div>
+
+  <div class="body-row">
+    <div class="left">
+      <div class="panel" style="flex:0 0 auto;">
+        <div class="controls">
+          <div class="btns">
+            <button class="btn primary" id="stepBtn">训练下一轮</button>
+            <button class="btn" id="resetBtn">重置</button>
+          </div>
+          <div class="round-indicator">第 <b id="roundNow">0</b> / 4 轮</div>
+        </div>
+      </div>
+
+      <div class="panel" style="flex:0 0 auto;">
+        <div class="small" id="stumpLabel">尚未训练。点击「训练下一轮」，算法会遍历所有候选分割线，挑出加权误差最小的一条。</div>
+        <div class="stumptext" id="stumpText">—</div>
+      </div>
+
+      <div class="panel" style="flex:1;min-height:0;">
+        <div class="readouts">
+          <div class="readout">
+            <span class="rlabel">本轮加权误差 ε</span>
+            <span class="rval err" id="epsVal">—</span>
+          </div>
+          <div class="readout">
+            <span class="rlabel">分类器权重 α</span>
+            <span class="rval wt" id="alphaVal">—</span>
+          </div>
+          <div class="readout">
+            <span class="rlabel">组合模型训练误差</span>
+            <span class="rval" id="trainErrVal">—</span>
+          </div>
+        </div>
+        <div class="note" id="explainNote">α = ½ ln((1−ε)/ε)：误差越小，这一轮分类器的话语权越大。分错的样本权重会乘以 e^α 变大，分对的乘以 e^(−α) 变小，再整体归一化。</div>
+        <div class="errchart">
+          <div class="errchart-title">组合模型训练误差随轮次变化</div>
+          <div class="cvbox" id="errChartBox" style="height:100px;">
+            <canvas class="cv-fill" id="errChart"></canvas>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="right">
+      <div class="panel stage-evidence" style="flex:1;">
+        <div class="legend" style="margin-bottom:8px;">
+          <span class="li"><span class="sw" style="background:#294E86;"></span>正类 +1</span>
+          <span class="li"><span class="sw" style="background:#C64232;"></span>负类 −1（点越大＝当前权重越高）</span>
+          <span class="li"><span class="sw line" style="background:#164E9B;"></span>本轮弱分类器</span>
+          <span class="li"><span class="sw line" style="background:#111820;"></span>累计组合边界</span>
+          <span class="li"><span class="sw" style="background:#C64232;border-radius:2px;width:10px;height:10px;transform:rotate(45deg);"></span>组合模型仍分错</span>
+        </div>
+        <div class="cvbox" id="mainBox" style="flex:1;">
+          <canvas class="cv-fill" id="mainCanvas"></canvas>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="assets/base.js"></script>
+<script>
+(() => {
+"use strict";
+
+// ---------- 数据：16 个二维样本，线性不完全可分 ----------
+const RAW = [
+  [-6, 5, 1], [-4, 6, 1], [-2, 5, 1], [-5, 1, 1],
+  [-3, -2, 1], [1, 6, 1], [5, 4, 1], [6, -1, 1],
+  [-1, -5, -1], [1, -6, -1], [4, -4, -1], [-6, -3, -1],
+  [0, 1, -1], [2, 1, -1], [-2, 2, -1], [3, 5, -1],
+];
+const X = RAW.map(p => [p[0], p[1]]);
+const Y = RAW.map(p => p[2]);
+const N = Y.length;
+const MAX_ROUNDS = 4;
+const RANGE = 7.5; // 坐标范围 [-7.5, 7.5]
+
+// ---------- 候选弱分类器：轴对齐 stump ----------
+function genStumps() {
+  const stumps = [];
+  for (const axis of [0, 1]) {
+    const vals = [...new Set(X.map(p => p[axis]))].sort((a, b) => a - b);
+    for (let i = 0; i < vals.length - 1; i++) {
+      const thr = (vals[i] + vals[i + 1]) / 2;
+      for (const dir of [1, -1]) stumps.push({ axis, thr, dir });
+    }
+  }
+  return stumps;
+}
+const STUMPS = genStumps();
+
+function stumpPredict(s, pts) {
+  return pts.map(p => (p[s.axis] <= s.thr ? 1 : -1) * s.dir);
+}
+
+// ---------- 权威状态 ----------
+function createInitialState() {
+  return {
+    round: 0,
+    w: new Array(N).fill(1 / N),
+    ensemble: [], // { stump, alpha, err, pred }
+    cumScore: new Array(N).fill(0),
+  };
+}
+let state = createInitialState();
+
+function trainOneRound() {
+  const w = state.w;
+  let best = null;
+  for (const s of STUMPS) {
+    const pred = stumpPredict(s, X);
+    let err = 0;
+    for (let i = 0; i < N; i++) if (pred[i] !== Y[i]) err += w[i];
+    if (best === null || err < best.err - 1e-9) best = { err, s, pred };
+  }
+  const { err, s, pred } = best;
+  const epsSafe = Math.min(Math.max(err, 1e-6), 1 - 1e-6);
+  const alpha = 0.5 * Math.log((1 - epsSafe) / epsSafe);
+  const wRaw = w.map((wi, i) => wi * Math.exp(-alpha * Y[i] * pred[i]));
+  const sum = wRaw.reduce((a, b) => a + b, 0);
+  const wNew = wRaw.map(v => v / sum);
+
+  const cumScore = state.cumScore.map((c, i) => c + alpha * pred[i]);
+
+  state.ensemble.push({ stump: s, alpha, err, pred, wBefore: w.slice() });
+  state.w = wNew;
+  state.cumScore = cumScore;
+  state.round += 1;
+}
+
+function combinedTrainError() {
+  let wrong = 0;
+  const wrongIdx = [];
+  for (let i = 0; i < N; i++) {
+    const pred = state.cumScore[i] >= 0 ? 1 : -1;
+    if (pred !== Y[i]) { wrong++; wrongIdx.push(i); }
+  }
+  return { rate: wrong / N, wrongIdx };
+}
+
+// ---------- 坐标映射 ----------
+function toPix(x, y, w, h) {
+  const px = (x + RANGE) / (2 * RANGE) * w;
+  const py = h - (y + RANGE) / (2 * RANGE) * h;
+  return [px, py];
+}
+
+// ---------- 主画布 ----------
+const mainCanvas = document.getElementById("mainCanvas");
+let mainFit = null;
+
+function drawMain(ctx, w, h) {
+  ctx.clearRect(0, 0, w, h);
+  ctx.fillStyle = "#FAFBFC";
+  ctx.fillRect(0, 0, w, h);
+
+  // 网格
+  ctx.strokeStyle = "#C8D0DB";
+  ctx.lineWidth = 1;
+  for (let g = -7; g <= 7; g += 1) {
+    if (g % 7 === 0) continue;
+    const [gx] = toPix(g, 0, w, h);
+    const [, gy] = toPix(0, g, w, h);
+    ctx.beginPath(); ctx.moveTo(gx + 0.5, 0); ctx.lineTo(gx + 0.5, h); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0, gy + 0.5); ctx.lineTo(w, gy + 0.5); ctx.stroke();
+  }
+  // 坐标轴
+  ctx.strokeStyle = "#657181";
+  ctx.lineWidth = 1.5;
+  const [ax] = toPix(0, 0, w, h);
+  const [, ay] = toPix(0, 0, w, h);
+  ctx.beginPath(); ctx.moveTo(ax + 0.5, 0); ctx.lineTo(ax + 0.5, h); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(0, ay + 0.5); ctx.lineTo(w, ay + 0.5); ctx.stroke();
+
+  // 组合决策边界：对全平面网格采样，画出符号变化的等高线（用像素采样近似）
+  if (state.ensemble.length > 0) {
+    const res = 3;
+    ctx.save();
+    for (let py = 0; py < h; py += res) {
+      for (let px = 0; px < w; px += res) {
+        const lx = (px / w) * 2 * RANGE - RANGE;
+        const ly = RANGE - (py / h) * 2 * RANGE;
+        let score = 0;
+        for (const m of state.ensemble) {
+          const pv = (m.stump.axis === 0 ? lx : ly) <= m.stump.thr ? 1 : -1;
+          score += m.alpha * pv * m.stump.dir;
+        }
+        // 只在边界附近画细线：检测和右/下邻居符号是否不同
+        if (px + res < w) {
+          const lx2 = ((px + res) / w) * 2 * RANGE - RANGE;
+          let score2 = 0;
+          for (const m of state.ensemble) {
+            const pv = (m.stump.axis === 0 ? lx2 : ly) <= m.stump.thr ? 1 : -1;
+            score2 += m.alpha * pv * m.stump.dir;
+          }
+          if ((score >= 0) !== (score2 >= 0)) {
+            ctx.fillStyle = "#111820";
+            ctx.fillRect(px, py, res * 2, res);
+          }
+        }
+        if (py + res < h) {
+          const ly2 = RANGE - ((py + res) / h) * 2 * RANGE;
+          let score3 = 0;
+          for (const m of state.ensemble) {
+            const pv = (m.stump.axis === 0 ? lx : ly2) <= m.stump.thr ? 1 : -1;
+            score3 += m.alpha * pv * m.stump.dir;
+          }
+          if ((score >= 0) !== (score3 >= 0)) {
+            ctx.fillStyle = "#111820";
+            ctx.fillRect(px, py, res, res * 2);
+          }
+        }
+      }
+    }
+    ctx.restore();
+  }
+
+  // 本轮弱分类器：一条蓝线（贯穿整个画布的轴对齐线）
+  const last = state.ensemble[state.ensemble.length - 1];
+  if (last) {
+    ctx.strokeStyle = "#164E9B";
+    ctx.lineWidth = 3;
+    ctx.setLineDash([]);
+    if (last.stump.axis === 0) {
+      const [lx] = toPix(last.stump.thr, 0, w, h);
+      ctx.beginPath(); ctx.moveTo(lx, 0); ctx.lineTo(lx, h); ctx.stroke();
+    } else {
+      const [, ly] = toPix(0, last.stump.thr, w, h);
+      ctx.beginPath(); ctx.moveTo(0, ly); ctx.lineTo(w, ly); ctx.stroke();
+    }
+  }
+
+  // 样本点：半径按当前权重，颜色按类别；组合仍分错的点加叉号标记
+  const { wrongIdx } = combinedTrainError();
+  const wrongSet = new Set(wrongIdx);
+  const maxW = Math.max(...state.w);
+  for (let i = 0; i < N; i++) {
+    const [px, py] = toPix(X[i][0], X[i][1], w, h);
+    const wt = state.w[i];
+    const r = 7 + (wt / maxW) * 13;
+    ctx.beginPath();
+    ctx.arc(px, py, r, 0, Math.PI * 2);
+    ctx.fillStyle = Y[i] === 1 ? "#294E86" : "#C64232";
+    ctx.globalAlpha = 0.85;
+    ctx.fill();
+    ctx.globalAlpha = 1;
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = "#FAFBFC";
+    ctx.stroke();
+
+    if (state.ensemble.length > 0 && wrongSet.has(i)) {
+      ctx.strokeStyle = "#C64232";
+      ctx.lineWidth = 2.5;
+      const d = r * 0.55;
+      ctx.beginPath();
+      ctx.moveTo(px - d, py - d); ctx.lineTo(px + d, py + d);
+      ctx.moveTo(px - d, py + d); ctx.lineTo(px + d, py - d);
+      ctx.stroke();
+    }
+  }
+}
+
+function redrawMain() {
+  if (mainFit) mainFit.redraw();
+}
+
+// ---------- 误差曲线（小型 canvas） ----------
+const errCanvas = document.getElementById("errChart");
+let errFit = null;
+
+function drawErrChart(ctx, w, h) {
+  ctx.clearRect(0, 0, w, h);
+  ctx.fillStyle = "#FAFBFC";
+  ctx.fillRect(0, 0, w, h);
+  const pad = { l: 30, r: 12, t: 10, b: 20 };
+  const iw = w - pad.l - pad.r, ih = h - pad.t - pad.b;
+
+  ctx.strokeStyle = "#C8D0DB";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(pad.l, pad.t); ctx.lineTo(pad.l, pad.t + ih); ctx.lineTo(pad.l + iw, pad.t + ih);
+  ctx.stroke();
+
+  ctx.fillStyle = "#657181";
+  ctx.font = "12px 'JetBrains Mono',monospace";
+  ctx.textAlign = "right";
+  ctx.fillText("0.5", pad.l - 4, pad.t + 4);
+  ctx.fillText("0", pad.l - 4, pad.t + ih + 2);
+
+  const errs = [0.5]; // 初始未训练时视为随机猜测基线仅作参照，不画入序列点
+  const seq = [];
+  let cum = new Array(N).fill(0);
+  for (const m of state.ensemble) {
+    cum = cum.map((c, i) => c + m.alpha * m.pred[i]);
+    let wrong = 0;
+    for (let i = 0; i < N; i++) if ((cum[i] >= 0 ? 1 : -1) !== Y[i]) wrong++;
+    seq.push(wrong / N);
+  }
+
+  ctx.strokeStyle = "#111820";
+  ctx.lineWidth = 1;
+  ctx.setLineDash([3, 3]);
+  const y0 = pad.t + ih * (1 - 0 / 0.5);
+  ctx.beginPath(); ctx.moveTo(pad.l, y0); ctx.lineTo(pad.l + iw, y0); ctx.stroke();
+  ctx.setLineDash([]);
+
+  if (seq.length === 0) {
+    ctx.fillStyle = "#657181";
+    ctx.font = "13px 'Noto Sans CJK SC',sans-serif";
+    ctx.textAlign = "left";
+    ctx.fillText("训练后这里会出现折线", pad.l + 8, pad.t + ih / 2);
+    return;
+  }
+
+  ctx.strokeStyle = "#164E9B";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  seq.forEach((v, i) => {
+    const px = pad.l + (i / (MAX_ROUNDS - 1)) * iw;
+    const py = pad.t + ih * (1 - Math.min(v, 0.5) / 0.5);
+    if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+  });
+  ctx.stroke();
+  seq.forEach((v, i) => {
+    const px = pad.l + (i / (MAX_ROUNDS - 1)) * iw;
+    const py = pad.t + ih * (1 - Math.min(v, 0.5) / 0.5);
+    ctx.beginPath();
+    ctx.arc(px, py, 3.5, 0, Math.PI * 2);
+    ctx.fillStyle = "#164E9B";
+    ctx.fill();
+  });
+}
+
+function redrawErr() {
+  if (errFit) errFit.redraw();
+}
+
+// ---------- UI 更新 ----------
+const ui = {
+  stepBtn: document.getElementById("stepBtn"),
+  resetBtn: document.getElementById("resetBtn"),
+  roundNow: document.getElementById("roundNow"),
+  stumpLabel: document.getElementById("stumpLabel"),
+  stumpText: document.getElementById("stumpText"),
+  epsVal: document.getElementById("epsVal"),
+  alphaVal: document.getElementById("alphaVal"),
+  trainErrVal: document.getElementById("trainErrVal"),
+  explainNote: document.getElementById("explainNote"),
+};
+
+const AXIS_NAME = { 0: "x", 1: "y" };
+
+function updateUI() {
+  ui.roundNow.textContent = state.round;
+  ui.stepBtn.disabled = state.round >= MAX_ROUNDS;
+  ui.stepBtn.textContent = state.round >= MAX_ROUNDS ? "已训练 4 轮" : "训练下一轮";
+
+  if (state.ensemble.length === 0) {
+    ui.stumpLabel.textContent = "尚未训练。点击「训练下一轮」，算法会遍历所有候选分割线，挑出加权误差最小的一条。";
+    ui.stumpText.textContent = "—";
+    ui.epsVal.textContent = "—";
+    ui.alphaVal.textContent = "—";
+    ui.trainErrVal.textContent = "—";
+  } else {
+    const last = state.ensemble[state.ensemble.length - 1];
+    const dirWord = last.stump.dir === 1 ? "≤ 时判 +1" : "≤ 时判 −1";
+    ui.stumpLabel.textContent = `第 ${state.round} 轮：在全部候选分割线中，这一条的加权误差最小。`;
+    ui.stumpText.textContent =
+      `stump: ${AXIS_NAME[last.stump.axis]} ≤ ${last.stump.thr.toFixed(1)}，${dirWord}`;
+    ui.epsVal.textContent = last.err.toFixed(4);
+    ui.alphaVal.textContent = last.alpha.toFixed(4);
+    const { rate } = combinedTrainError();
+    ui.trainErrVal.textContent = (rate * 100).toFixed(1) + "%";
+  }
+}
+
+// ---------- 交互 ----------
+function step() {
+  if (state.round >= MAX_ROUNDS) return;
+  trainOneRound();
+  updateUI();
+  redrawMain();
+  redrawErr();
+}
+
+function reset() {
+  state = createInitialState();
+  updateUI();
+  redrawMain();
+  redrawErr();
+}
+
+ui.stepBtn.addEventListener("click", step);
+ui.resetBtn.addEventListener("click", reset);
+
+function init() {
+  mainFit = Deck.autofit(mainCanvas, (ctx, w, h) => drawMain(ctx, w, h));
+  errFit = Deck.autofit(errCanvas, (ctx, w, h) => drawErrChart(ctx, w, h));
+  updateUI();
+}
+
+init();
+})();
+</script>
+</body>
+</html>

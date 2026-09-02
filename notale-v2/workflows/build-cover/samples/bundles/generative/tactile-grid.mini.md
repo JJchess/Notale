@@ -31,6 +31,53 @@
 </html>
 ```
   </file>
+  <file path="samples/generative/tactile-grid/mini/pages/assets/style.css">
+```css
+@font-face { font-family: Inter; src: url(fonts/Inter-Regular.otf); }
+@font-face { font-family: Inter; src: url(fonts/Inter-Bold.otf); font-weight: 700; }
+:root {
+	--bg: #858585;
+	--text: #050505;
+	--focus: #064fff;
+	--font-sans: Inter, "Noto Sans SC", sans-serif;
+}
+#stage { position: fixed; background: var(--bg); color: var(--text); touch-action: none; }
+#webgl, .static-fallback { position: absolute; inset: 0; width: 100%; height: 100%; }
+.static-fallback { display: none; z-index: 1; background: #858585; }
+.webgl-fallback #webgl { display: none; }
+.webgl-fallback .static-fallback { display: block; }
+.overlay { position: absolute; inset: 0; z-index: 2; pointer-events: none; }
+.topline {
+	position: absolute;
+	inset: 0 0 auto;
+	display: grid;
+	grid-template-columns: 36% 1fr 2fr;
+	gap: 16px;
+	padding: 16px 32px;
+	background: #ffffff42;
+}
+h1 {
+	font-size: 88px;
+	font-weight: 700;
+	line-height: .95;
+	letter-spacing: -.07em;
+}
+.tags, .count { color: #565656; font-size: 18px; line-height: 1.25; }
+.count { text-align: right; }
+.statement {
+	position: absolute;
+	left: 36%;
+	right: 10%;
+	top: 40%;
+	font-size: 32px;
+	line-height: 1.15;
+	letter-spacing: -.035em;
+}
+.statement span { color: #565656; }
+footer { position: absolute; left: 32px; bottom: 32px; font-size: 16px; }
+#stage:focus-visible { outline: 4px solid var(--focus); outline-offset: -8px; }
+```
+  </file>
   <file path="samples/generative/tactile-grid/mini/pages/assets/app.mjs">
 ```javascript
 import * as THREE from "three";

@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>分叉相加，串联相乘</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    #stage { gap: 20px; }
+    .page-head { flex: 0 0 auto; }
+    .page-head h1 { max-width: 1080px; }
+    .page-head .lead { margin-top: 10px; max-width: 52em; color: var(--muted); }
+    .rule-board {
+      flex: 1 1 auto;
+      min-height: 0;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 80px minmax(0, 1fr);
+      grid-template-rows: minmax(0, 1fr) auto;
+      column-gap: 0;
+      row-gap: 18px;
+      align-items: stretch;
+    }
+    .rule {
+      min-width: 0;
+      min-height: 0;
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr) auto;
+      gap: 14px;
+      padding: 22px 26px 20px;
+      border: 2px solid var(--rule-strong);
+      border-radius: var(--radius);
+      background: var(--paper);
+      box-shadow: 0 5px 0 var(--shadow);
+    }
+    .rule-head { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; }
+    .rule-name { display: flex; align-items: baseline; gap: 12px; }
+    .rule-name h2 { color: var(--text); }
+    .verb {
+      font-family: var(--font-display);
+      font-size: 38px;
+      font-weight: 700;
+      line-height: 1;
+    }
+    .fork .verb { color: var(--gradient); }
+    .chain .verb { color: var(--model); }
+    .micro { color: var(--muted); font-size: var(--fs-label); font-weight: 600; }
+    .diagram { min-height: 0; display: grid; place-items: center; }
+    .diagram svg { width: 100%; height: 100%; min-height: 250px; }
+    .node { fill: var(--bg); stroke: var(--text); stroke-width: 2.5; }
+    .node.hot { fill: var(--gradient-soft); stroke: var(--gradient); stroke-width: 4; }
+    .node.model { fill: var(--model-soft); stroke: var(--model); stroke-width: 4; }
+    .forward { fill: none; stroke: var(--rule-strong); stroke-width: 3; }
+    .back { fill: none; stroke: var(--gradient); stroke-width: 5; }
+    .factor { fill: var(--paper); stroke: var(--model); stroke-width: 2; }
+    .svg-label { font: 600 18px var(--font-sans); fill: var(--text); text-anchor: middle; dominant-baseline: middle; }
+    .svg-note { font: 600 15px var(--font-sans); fill: var(--muted); text-anchor: middle; }
+    .svg-grad { font: 600 17px var(--font-mono); fill: var(--gradient); text-anchor: middle; }
+    .svg-factor { font: 600 16px var(--font-mono); fill: var(--model); text-anchor: middle; dominant-baseline: middle; }
+    .equation {
+      display: flex;
+      align-items: baseline;
+      justify-content: center;
+      flex-wrap: wrap;
+      gap: 10px;
+      min-height: 68px;
+      padding-top: 14px;
+      border-top: 2px solid var(--rule);
+      font-family: var(--font-mono);
+      font-size: 25px;
+      font-weight: 600;
+      line-height: 1.35;
+    }
+    .equation .op { color: var(--attention); font-size: 34px; }
+    .equation .grad { color: var(--gradient); }
+    .equation .model { color: var(--model); }
+    .bridge { position: relative; min-width: 0; min-height: 0; display: grid; place-items: center; }
+    .bridge-line { width: 100%; height: 2px; background: var(--text); }
+    .bridge-mark {
+      position: absolute;
+      display: grid;
+      place-items: center;
+      width: 42px;
+      height: 42px;
+      border: 2px solid var(--text);
+      border-radius: 50%;
+      background: var(--bg);
+      font-family: var(--font-display);
+      font-size: 30px;
+      font-weight: 700;
+    }
+    .summary {
+      grid-column: 1 / -1;
+      display: grid;
+      grid-template-columns: auto 1fr auto;
+      gap: 20px;
+      align-items: center;
+      padding: 18px 24px;
+      border-top: 4px solid var(--text);
+      border-bottom: 2px solid var(--text);
+    }
+    .summary strong { font-size: var(--fs-lead); line-height: 1.35; }
+    .summary .map { display: flex; gap: 14px; align-items: center; color: var(--muted); font-size: var(--fs-sec); }
+    .map-part { padding: 7px 10px; border-bottom: 3px solid var(--rule-strong); font-weight: 700; }
+    .map-part.sum { border-color: var(--gradient); color: var(--gradient); }
+    .map-part.mul { border-color: var(--model); color: var(--model); }
+    .summary .note { max-width: 28em; text-align: right; }
+  </style>
+</head>
+<body data-page="18" data-total="24">
+  <div id="stage">
+    <header class="page-head">
+      <span class="kicker">反向传播 · 两条合并规则</span>
+      <h1>分叉处的梯度相加，串联处的梯度相乘</h1>
+      <p class="lead">反向传播沿计算图倒着走。遇到汇合就收齐各条路径的贡献，沿同一路径则接上每一段的局部导数。</p>
+    </header>
+
+    <main class="rule-board min0" aria-label="反向传播的分叉与串联规则">
+      <section class="rule fork min0" aria-labelledby="fork-title">
+        <div class="rule-head">
+          <div class="rule-name"><h2 id="fork-title">两条路径汇到同一变量</h2><span class="verb">相加</span></div>
+          <span class="micro">路径贡献不能漏算</span>
+        </div>
+        <div class="diagram min0">
+          <svg viewBox="0 0 620 280" role="img" aria-label="变量 x 分叉到 a 和 b，反向梯度从两条路径回到 x 并相加">
+            <defs>
+              <marker id="fwdA" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 Z" fill="#687E84"/></marker>
+              <marker id="backA" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 Z" fill="#C64F2B"/></marker>
+            </defs>
+            <path class="forward" d="M144 140 C225 140 235 72 315 72" marker-end="url(#fwdA)"/>
+            <path class="forward" d="M144 140 C225 140 235 208 315 208" marker-end="url(#fwdA)"/>
+            <path class="forward" d="M385 72 C455 72 464 118 520 128" marker-end="url(#fwdA)"/>
+            <path class="forward" d="M385 208 C455 208 464 162 520 152" marker-end="url(#fwdA)"/>
+            <path class="back" d="M315 94 C236 101 226 127 146 132" marker-end="url(#backA)"/>
+            <path class="back" d="M315 186 C236 179 226 153 146 148" marker-end="url(#backA)"/>
+            <circle class="node hot" cx="110" cy="140" r="38"/>
+            <circle class="node" cx="350" cy="72" r="35"/>
+            <circle class="node" cx="350" cy="208" r="35"/>
+            <circle class="node" cx="554" cy="140" r="38"/>
+            <text class="svg-label" x="110" y="140">x</text>
+            <text class="svg-label" x="350" y="72">a</text>
+            <text class="svg-label" x="350" y="208">b</text>
+            <text class="svg-label" x="554" y="140">L</text>
+            <text class="svg-grad" x="236" y="88">来自 a 的贡献</text>
+            <text class="svg-grad" x="236" y="202">来自 b 的贡献</text>
+            <text class="svg-note" x="110" y="202">在 x 汇合</text>
+          </svg>
+        </div>
+        <div class="equation" aria-label="损失对 x 的梯度等于路径 a 的贡献加路径 b 的贡献">
+          <span class="grad">∂L/∂x</span><span>=</span><span>路径 a 的贡献</span><span class="op">+</span><span>路径 b 的贡献</span>
+        </div>
+      </section>
+
+      <div class="bridge" aria-hidden="true"><div class="bridge-line"></div><div class="bridge-mark">与</div></div>
+
+      <section class="rule chain min0" aria-labelledby="chain-title">
+        <div class="rule-head">
+          <div class="rule-name"><h2 id="chain-title">多段运算连成一条路径</h2><span class="verb">相乘</span></div>
+          <span class="micro">每段局部导数都要接上</span>
+        </div>
+        <div class="diagram min0">
+          <svg viewBox="0 0 620 280" role="img" aria-label="x 经 h 到损失 L，反向梯度沿路径将两段局部导数相乘">
+            <defs>
+              <marker id="fwdB" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 Z" fill="#687E84"/></marker>
+              <marker id="backB" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 Z" fill="#C64F2B"/></marker>
+            </defs>
+            <path class="forward" d="M145 140 L276 140" marker-end="url(#fwdB)"/>
+            <path class="forward" d="M344 140 L487 140" marker-end="url(#fwdB)"/>
+            <path class="back" d="M487 109 L346 109" marker-end="url(#backB)"/>
+            <path class="back" d="M276 109 L147 109" marker-end="url(#backB)"/>
+            <circle class="node model" cx="110" cy="140" r="38"/>
+            <circle class="node" cx="310" cy="140" r="35"/>
+            <circle class="node" cx="522" cy="140" r="38"/>
+            <text class="svg-label" x="110" y="140">x</text>
+            <text class="svg-label" x="310" y="140">h</text>
+            <text class="svg-label" x="522" y="140">L</text>
+            <rect class="factor" x="174" y="54" width="88" height="34" rx="4"/>
+            <rect class="factor" x="382" y="54" width="92" height="34" rx="4"/>
+            <text class="svg-factor" x="218" y="71">∂h/∂x</text>
+            <text class="svg-factor" x="428" y="71">∂L/∂h</text>
+            <text class="svg-grad" x="315" y="236">反向经过同一路径</text>
+          </svg>
+        </div>
+        <div class="equation" aria-label="损失对 x 的梯度等于损失对 h 的导数乘 h 对 x 的导数">
+          <span class="grad">∂L/∂x</span><span>=</span><span class="model">∂L/∂h</span><span class="op">×</span><span class="model">∂h/∂x</span>
+        </div>
+      </section>
+
+      <section class="summary" aria-label="两条规则覆盖整张网络">
+        <strong>整张网络，就是分叉与串联的组合。</strong>
+        <div class="map" aria-hidden="true"><span class="map-part sum">汇合相加</span><span>组合</span><span class="map-part mul">沿链相乘</span></div>
+        <p class="note">从损失出发逐节点倒推，重复这两条规则，就能得到每个参数的梯度。</p>
+      </section>
+    </main>
+  </div>
+  <script src="assets/base.js"></script>
+  <script>Deck.init({ index: 18, total: 24 });</script>
+</body>
+</html>

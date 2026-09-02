@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  #stage{ gap:16px; }
+  .head{ flex:0 0 auto; }
+  .stagearea{ flex:1; min-height:0; display:flex; }
+  .diagram-wrap{ flex:1; min-width:0; min-height:0; position:relative; border:var(--hair) solid var(--rule); border-radius:var(--radius-lg); background:var(--paper); }
+  .diagram-wrap svg{ display:block; width:100%; height:100%; }
+
+  .layer-cap{ font-family:var(--font-mono); font-size:var(--fs-label); fill:var(--muted); text-transform:uppercase; letter-spacing:1px; }
+  .node circle{ fill:var(--paper); stroke:var(--rule-strong); stroke-width:2; }
+  .node text{ font-family:var(--font-mono); font-size:18px; fill:var(--text); text-anchor:middle; dominant-baseline:middle; }
+
+  .edge{ fill:none; stroke-width:3; transition:stroke .2s; }
+
+  .askbox{ pointer-events:none; }
+  .askbox rect{ fill:var(--paper); stroke:var(--rule); stroke-width:1; rx:4; }
+  .askbox text{ font-family:var(--font-sans); font-size:16px; fill:var(--text); line-height:1.35; }
+  .askbox .chev{ font-family:var(--font-mono); font-size:22px; font-weight:700; text-anchor:middle; dominant-baseline:middle; }
+
+  .foot{ flex:0 0 auto; display:flex; align-items:center; justify-content:space-between; gap:28px; }
+  .foot .leftcol{ display:flex; flex-direction:column; gap:10px; }
+  .foot .modebtn{ font-size:20px; padding:16px 40px; font-weight:600; }
+  .foot .rightcol{ display:flex; flex-direction:column; gap:10px; align-items:flex-end; }
+  .modetag{ font-family:var(--font-mono); font-size:var(--fs-label); color:var(--muted); }
+  .modetag .val{ font-weight:600; }
+  .modetag .val.fwd{ color:var(--forward); }
+  .modetag .val.bwd{ color:var(--backward); }
+</style>
+</head>
+<body data-page="11" data-total="20">
+<div id="stage">
+
+  <div class="head">
+    <span class="kicker">反向传播 · 方向感</span>
+    <h1>反向传播：同一张网，另一个方向</h1>
+  </div>
+
+  <div class="stagearea">
+    <div class="diagram-wrap">
+      <svg id="net" viewBox="0 0 1600 620" preserveAspectRatio="xMidYMid meet" role="img"
+           aria-label="网络结构图，输入层两个节点、隐藏层两个节点、输出层一个节点，连线方向随正向反向切换">
+        <defs>
+          <marker id="arrow-fwd" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="9" markerHeight="9" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 Z" fill="var(--forward)"></path>
+          </marker>
+          <marker id="arrow-bwd" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="9" markerHeight="9" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 Z" fill="var(--backward)"></path>
+          </marker>
+        </defs>
+
+        <text class="layer-cap" x="300" y="44" text-anchor="middle">输入层</text>
+        <text class="layer-cap" x="800" y="44" text-anchor="middle">隐藏层</text>
+        <text class="layer-cap" x="1300" y="44" text-anchor="middle">输出层</text>
+
+        <g id="edges"></g>
+
+        <g class="node"><circle cx="300" cy="180" r="46"></circle><text x="300" y="180">x1</text></g>
+        <g class="node"><circle cx="300" cy="440" r="46"></circle><text x="300" y="440">x2</text></g>
+        <g class="node"><circle cx="800" cy="140" r="46"></circle><text x="800" y="140">h1</text></g>
+        <g class="node"><circle cx="800" cy="480" r="46"></circle><text x="800" y="480">h2</text></g>
+        <g class="node"><circle cx="1300" cy="310" r="50"></circle><text x="1300" y="310">ŷ</text></g>
+
+        <g class="askbox" transform="translate(452,258)">
+          <rect x="0" y="0" width="220" height="104" rx="4"></rect>
+          <text class="chev" id="chev1" x="20" y="30">▶</text>
+          <text x="42" y="24">这一层在问：如果我</text>
+          <text x="42" y="46">改变一点点，最终的</text>
+          <text x="42" y="68">损失会怎么变？</text>
+        </g>
+
+        <g class="askbox" transform="translate(958,258)">
+          <rect x="0" y="0" width="220" height="104" rx="4"></rect>
+          <text class="chev" id="chev2" x="20" y="30">▶</text>
+          <text x="42" y="24">这一层在问：如果我</text>
+          <text x="42" y="46">改变一点点，最终的</text>
+          <text x="42" y="68">损失会怎么变？</text>
+        </g>
+      </svg>
+    </div>
+  </div>
+
+  <div class="foot">
+    <div class="leftcol">
+      <button id="modeBtn" class="btn primary modebtn" aria-pressed="false">切到反向</button>
+      <span class="hint" id="hintText">正向：从输入算到输出。点按钮，看误差怎么沿同一张网往回走。</span>
+    </div>
+    <div class="rightcol">
+      <div class="modetag">当前方向：<span class="val fwd" id="modeVal">正向</span></div>
+      <div class="legend">
+        <span class="li"><span class="sw"></span>正向：蓝色实线，箭头由输入指向输出</span>
+        <span class="li"><span class="sw line"></span>反向：锈红虚线，箭头由输出指向输入</span>
+      </div>
+    </div>
+  </div>
+
+</div>
+<script src="assets/base.js"></script>
+<script>
+  const svgns = "http://www.w3.org/2000/svg";
+  const edgesG = document.getElementById('edges');
+
+  // [x1,y1, x2,y2] each pair is (source -> target) in FORWARD sense
+  const edgeDefs = [
+    [300,180, 800,140],
+    [300,180, 800,480],
+    [300,440, 800,140],
+    [300,440, 800,480],
+    [800,140, 1300,310],
+    [800,480, 1300,310],
+  ];
+
+  const paths = edgeDefs.map(() => {
+    const p = document.createElementNS(svgns, 'path');
+    p.setAttribute('class', 'edge');
+    edgesG.appendChild(p);
+    return p;
+  });
+
+  let mode = 'fwd'; // 'fwd' | 'bwd'
+
+  function render() {
+    const isFwd = mode === 'fwd';
+    edgeDefs.forEach((d, i) => {
+      const [sx, sy, tx, ty] = d;
+      const p = paths[i];
+      if (isFwd) {
+        p.setAttribute('d', `M${sx},${sy} L${tx},${ty}`);
+        p.setAttribute('marker-end', 'url(#arrow-fwd)');
+        p.setAttribute('stroke', 'var(--forward)');
+        p.removeAttribute('stroke-dasharray');
+      } else {
+        p.setAttribute('d', `M${tx},${ty} L${sx},${sy}`);
+        p.setAttribute('marker-end', 'url(#arrow-bwd)');
+        p.setAttribute('stroke', 'var(--backward)');
+        p.setAttribute('stroke-dasharray', '9 7');
+      }
+    });
+
+    const chev1 = document.getElementById('chev1');
+    const chev2 = document.getElementById('chev2');
+    const modeVal = document.getElementById('modeVal');
+    const btn = document.getElementById('modeBtn');
+    const hint = document.getElementById('hintText');
+
+    if (isFwd) {
+      chev1.textContent = '▶'; chev2.textContent = '▶';
+      chev1.style.fill = 'var(--forward)'; chev2.style.fill = 'var(--forward)';
+      modeVal.textContent = '正向';
+      modeVal.className = 'val fwd';
+      btn.textContent = '切到反向';
+      btn.setAttribute('aria-pressed', 'false');
+      hint.textContent = '正向：从输入算到输出。点按钮，看误差怎么沿同一张网往回走。';
+    } else {
+      chev1.textContent = '◀'; chev2.textContent = '◀';
+      chev1.style.fill = 'var(--backward)'; chev2.style.fill = 'var(--backward)';
+      modeVal.textContent = '反向';
+      modeVal.className = 'val bwd';
+      btn.textContent = '切到正向';
+      btn.setAttribute('aria-pressed', 'true');
+      hint.textContent = '反向：同一张网，箭头从输出走回输入——这就是误差回传的方向。';
+    }
+  }
+
+  document.getElementById('modeBtn').addEventListener('click', () => {
+    mode = mode === 'fwd' ? 'bwd' : 'fwd';
+    render();
+  });
+
+  render();
+  Deck.init({ index: 11, total: 20 });
+</script>
+</body>
+</html>

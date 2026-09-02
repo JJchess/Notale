@@ -1,0 +1,323 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>AdaBoost 算法讲解</title>
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  :root{
+    --bg:#EEF1F5; --text:#111820; --font-sans:"Noto Sans CJK SC",ui-sans-serif,system-ui,sans-serif;
+  }
+  #stage{
+    display:flex; flex-direction:column;
+    padding:28px 56px; box-sizing:border-box;
+    font-family:var(--font-sans); color:var(--text);
+  }
+  h1{
+    font-family:"Clear Sans","Noto Sans CJK SC",sans-serif;
+    font-size:38px; font-weight:700; margin:0 0 4px;
+    letter-spacing:0.2px;
+  }
+  .lead{
+    font-size:18px; color:var(--muted); margin:0 0 18px;
+    max-width:1100px; line-height:1.45;
+  }
+  .body{
+    flex:1; min-height:0; display:flex; gap:24px;
+  }
+  /* left: step list */
+  .steps{
+    width:300px; flex:none; display:flex; flex-direction:column; gap:8px;
+  }
+  .step{
+    display:flex; align-items:flex-start; gap:12px;
+    padding:12px 14px; border:1px solid var(--line); border-radius:2px;
+    background:transparent; cursor:pointer; text-align:left;
+    font-family:var(--font-sans); color:var(--text);
+    transition:background 120ms linear, border-color 120ms linear;
+  }
+  .step:hover{ background:rgba(22,78,155,0.05); }
+  .step[aria-current="step"]{
+    border-color:var(--weight); background:rgba(22,78,155,0.07);
+  }
+  .step .idx{
+    font-family:var(--font-mono); font-size:14px; color:var(--muted);
+    flex:none; width:20px; padding-top:2px;
+  }
+  .step[aria-current="step"] .idx{ color:var(--weight); font-weight:700; }
+  .step .txt{ font-size:15px; line-height:1.4; }
+  .step .txt b{ display:block; font-size:16px; margin-bottom:2px; }
+
+  /* right: evidence stage */
+  .evidence{
+    flex:1; min-width:0; display:flex; flex-direction:column;
+    background:var(--surface); border:1px solid var(--line);
+    padding:20px 26px; box-sizing:border-box;
+  }
+  .evi-head{
+    display:flex; align-items:baseline; justify-content:space-between;
+    margin-bottom:10px;
+  }
+  .evi-head h2{
+    font-size:22px; margin:0; font-family:"Clear Sans","Noto Sans CJK SC",sans-serif;
+  }
+  .evi-head .round-tag{
+    font-family:var(--font-mono); font-size:14px; color:var(--weight); font-weight:700;
+  }
+  .evi-copy{
+    font-size:16px; line-height:1.5; color:var(--text); margin:0 0 14px;
+    min-height:44px;
+  }
+  .stage-svg-wrap{ flex:1; min-height:0; position:relative; }
+  svg.diagram{ width:100%; height:100%; display:block; }
+
+  .formula-row{
+    display:flex; gap:28px; align-items:center; margin-top:12px;
+    padding-top:12px; border-top:1px solid var(--line);
+  }
+  .formula-row .fbox{
+    font-family:var(--font-mono); font-size:16px; color:var(--text);
+  }
+  .formula-row .fbox .num{
+    font-weight:700; color:var(--weight);
+  }
+  .formula-row .flabel{
+    font-size:13px; color:var(--muted); margin-top:2px;
+  }
+
+  .nav-btns{
+    display:flex; gap:10px; margin-top:14px;
+  }
+  .btn{
+    font-family:var(--font-sans); font-size:14px; color:var(--text);
+    background:var(--surface); border:1px solid var(--line);
+    padding:8px 16px; cursor:pointer; border-radius:2px;
+  }
+  .btn:hover{ border-color:var(--weight); }
+  .btn:disabled{ opacity:0.4; cursor:default; }
+</style>
+</head>
+<body data-page="08" data-total="16">
+<div id="stage">
+  <h1>AdaBoost：一轮迭代做了什么</h1>
+  <p class="lead">每一轮只做四件事：用当前权重训练一个弱分类器，算出它的错误率，把错误率换算成这个分类器该有多大话语权，再用这个话语权重新分配样本权重——被错分的样本权重变大，下一轮会被更用心地对待。</p>
+
+  <div class="body">
+    <div class="steps" role="group" aria-label="算法步骤">
+      <button class="step" type="button" data-step="0" aria-current="step">
+        <span class="idx">1</span>
+        <span class="txt"><b>训练弱分类器 G_m</b>用当前样本权重 D_m 训练一个弱分类器，只要求正确率略高于随机猜。</span>
+      </button>
+      <button class="step" type="button" data-step="1">
+        <span class="idx">2</span>
+        <span class="txt"><b>计算加权错误率 e_m</b>把分错样本的权重加总，得到这一轮弱分类器的加权错误率。</span>
+      </button>
+      <button class="step" type="button" data-step="2">
+        <span class="idx">3</span>
+        <span class="txt"><b>计算分类器权重 α_m</b>错误率越低，α_m 越大——这个弱分类器在最终投票里的话语权由此决定。</span>
+      </button>
+      <button class="step" type="button" data-step="3">
+        <span class="idx">4</span>
+        <span class="txt"><b>更新样本权重 D_{m+1}</b>分对的样本权重按 e^{-α_m} 缩小，分错的按 e^{α_m} 放大，再归一化。</span>
+      </button>
+    </div>
+
+    <div class="evidence">
+      <div class="evi-head">
+        <h2 id="stepTitle">训练弱分类器 G_m</h2>
+        <span class="round-tag">第 m 轮</span>
+      </div>
+      <p class="evi-copy" id="stepCopy">弱分类器只看当前这一轮的样本权重分布 D_m：权重大的样本，分类器会更倾向于把它分对，因为分对高权重样本对降低加权错误率贡献更大。</p>
+      <div class="stage-svg-wrap">
+        <svg class="diagram" viewBox="0 0 1120 420" id="diagramSvg" role="img" aria-label="AdaBoost 一轮迭代的四步流程图"></svg>
+      </div>
+      <div class="formula-row" id="formulaRow"></div>
+    </div>
+  </div>
+</div>
+<script src="assets/base.js"></script>
+<script>
+(function(){
+  const NS = 'http://www.w3.org/2000/svg';
+  const svg = document.getElementById('diagramSvg');
+  const stepTitle = document.getElementById('stepTitle');
+  const stepCopy = document.getElementById('stepCopy');
+  const formulaRow = document.getElementById('formulaRow');
+  const buttons = [...document.querySelectorAll('.step')];
+
+  // ---- fixed numeric example, computed once, reused across all 4 steps ----
+  // 10 samples, current weights before this round (uniform-ish, from a prior round)
+  const N = 10;
+  const weights = [0.06,0.06,0.06,0.20,0.06,0.06,0.20,0.06,0.06,0.18]; // sums to 1.00
+  // this round's weak classifier misclassifies samples at index 3 and 6 (the two heavy ones)
+  const wrongIdx = [3,6];
+  const correctIdx = weights.map((_,i)=>i).filter(i=>!wrongIdx.includes(i));
+  const em = wrongIdx.reduce((s,i)=>s+weights[i],0); // weighted error
+  const alpha = 0.5*Math.log((1-em)/em);
+  // updated (unnormalized) weights
+  const rawUpdated = weights.map((w,i)=> wrongIdx.includes(i) ? w*Math.exp(alpha) : w*Math.exp(-alpha));
+  const Z = rawUpdated.reduce((a,b)=>a+b,0);
+  const updated = rawUpdated.map(w=>w/Z);
+
+  const fmt = (x,d=3)=>x.toFixed(d);
+
+  const STEPS = [
+    {
+      title:'训练弱分类器 G_m',
+      copy:'弱分类器只看当前这一轮的样本权重分布 D_m：权重大的样本，分类器会更倾向于把它分对，因为分对高权重样本对降低加权错误率贡献更大。',
+      formula: [
+        {label:'本轮样本数', val:'N = '+N},
+        {label:'权重较高的样本', val:'#4, #7（w=0.20）'}
+      ]
+    },
+    {
+      title:'计算加权错误率 e_m',
+      copy:'弱分类器把 #4 和 #7 分错了（图中红色）。把它们的权重加总，就是这一轮的加权错误率：0.20 + 0.20 = 0.40。',
+      formula: [
+        {label:'e_m = Σ(分错样本的权重)', val:'e_m = '+fmt(em,2)},
+      ]
+    },
+    {
+      title:'计算分类器权重 α_m',
+      copy:'α_m = ½ · ln((1−e_m)/e_m)。错误率 0.40 时 α_m ≈ 0.203；错误率越接近 0，α_m 越大，这个弱分类器在最终投票里就越有话语权。',
+      formula: [
+        {label:'α_m = ½·ln((1−e_m)/e_m)', val:'α_m = '+fmt(alpha,3)},
+      ]
+    },
+    {
+      title:'更新样本权重 D_{m+1}',
+      copy:'分错的 #4、#7 权重乘 e^{α_m}（变大，红色上升）；分对的样本权重乘 e^{−α_m}（变小，蓝色下降）；归一化后进入下一轮，下一轮的弱分类器会被迫更关注 #4、#7。',
+      formula: [
+        {label:'分错样本新权重(各)', val:fmt(updated[3],3)},
+        {label:'分对样本新权重(如#0)', val:fmt(updated[0],3)}
+      ]
+    }
+  ];
+
+  function el(tag, attrs, parent){
+    const e = document.createElementNS(NS, tag);
+    for(const k in attrs) e.setAttribute(k, attrs[k]);
+    if(parent) parent.appendChild(e);
+    return e;
+  }
+
+  // layout: 10 sample bars along x, height encodes weight
+  const chartX = 60, chartW = 1000, chartY = 40, chartH = 260;
+  const barGap = 14;
+  const barW = (chartW - barGap*(N-1)) / N;
+  const maxW = 0.24; // scale ceiling for bar height mapping
+
+  function barX(i){ return chartX + i*(barW+barGap); }
+  function barH(w){ return (w/maxW) * chartH; }
+
+  function colorFor(step, i){
+    // step0: all neutral weak-input color
+    // step1: correct=blue(correct token), wrong=error(red)
+    // step2: same as step1 but with alpha annotation (still colored)
+    // step3: transitioning weights -> use weight color for wrong(grew), muted for correct(shrunk)
+    if(step===0) return 'var(--weak)';
+    if(step===1 || step===2) return wrongIdx.includes(i) ? 'var(--error)' : 'var(--correct)';
+    return wrongIdx.includes(i) ? 'var(--error)' : 'var(--muted)';
+  }
+
+  function weightAt(step,i){
+    return step===3 ? updated[i] : weights[i];
+  }
+
+  function render(step){
+    svg.innerHTML='';
+    const g = el('g',{},svg);
+
+    // baseline
+    el('line',{x1:chartX-10, y1:chartY+chartH, x2:chartX+chartW+10, y2:chartY+chartH, stroke:'var(--line)', 'stroke-width':1}, g);
+    el('text',{x:chartX-10, y:chartY-14, 'font-family':'var(--font-mono)', 'font-size':12, fill:'var(--muted)'}, g).textContent = '样本权重（柱高）';
+
+    for(let i=0;i<N;i++){
+      const x = barX(i);
+      const w = weightAt(step,i);
+      const h = barH(w);
+      const y = chartY + chartH - h;
+      const color = colorFor(step,i);
+      el('rect',{x:x, y:y, width:barW, height:Math.max(h,2), fill:color, stroke:'none'}, g);
+      // label sample index
+      el('text',{x:x+barW/2, y:chartY+chartH+22, 'text-anchor':'middle', 'font-family':'var(--font-mono)', 'font-size':13, fill:'var(--muted)'}, g).textContent = '#'+i;
+      // weight value on top of bar
+      el('text',{x:x+barW/2, y:y-8, 'text-anchor':'middle', 'font-family':'var(--font-mono)', 'font-size':12, fill:color}, g).textContent = fmt(w,2);
+    }
+
+    // annotation for step 1/2: bracket over wrong samples showing e_m
+    if(step===1 || step===2){
+      const x1 = barX(wrongIdx[0]);
+      const x2 = barX(wrongIdx[1]) + barW;
+      const yLine = chartY - 30;
+      el('line',{x1:x1, y1:yLine, x2:x2, y2:yLine, stroke:'var(--error)', 'stroke-width':2}, g);
+      el('line',{x1:x1, y1:yLine, x2:x1, y2:yLine+8, stroke:'var(--error)', 'stroke-width':2}, g);
+      el('line',{x1:x2, y1:yLine, x2:x2, y2:yLine+8, stroke:'var(--error)', 'stroke-width':2}, g);
+      const t = el('text',{x:(x1+x2)/2, y:yLine-10, 'text-anchor':'middle', 'font-family':'var(--font-mono)', 'font-size':14, fill:'var(--error)', 'font-weight':'700'}, g);
+      t.textContent = '分错 · e_m = '+fmt(em,2);
+    }
+
+    if(step===2){
+      // show alpha as a horizontal "voting weight" bar below the chart
+      const ay = chartY + chartH + 60;
+      const aw = Math.min(400, alpha/0.6*400);
+      el('text',{x:chartX-10, y:ay-10, 'font-family':'var(--font-mono)', 'font-size':13, fill:'var(--muted)'}, g).textContent = '这一轮分类器的投票权重 α_m';
+      el('rect',{x:chartX, y:ay, width:400, height:18, fill:'none', stroke:'var(--line)', 'stroke-width':1}, g);
+      el('rect',{x:chartX, y:ay, width:aw, height:18, fill:'var(--weight)'}, g);
+      el('text',{x:chartX+410, y:ay+14, 'font-family':'var(--font-mono)', 'font-size':14, fill:'var(--weight)', 'font-weight':'700'}, g).textContent = 'α_m = '+fmt(alpha,3);
+    }
+
+    if(step===3){
+      // draw arrows showing direction of change from old weight to new weight
+      for(let i=0;i<N;i++){
+        const x = barX(i)+barW/2;
+        const oldH = barH(weights[i]);
+        const newH = barH(updated[i]);
+        const oldY = chartY+chartH-oldH;
+        const newY = chartY+chartH-newH;
+        if(Math.abs(oldH-newH) < 1) continue;
+        const up = newY < oldY;
+        el('line',{x1:x, y1:oldY-6, x2:x, y2:newY - (up?10:-10), stroke: wrongIdx.includes(i)?'var(--error)':'var(--muted)', 'stroke-width':1.5, 'stroke-dasharray':'3,3'}, g);
+      }
+      el('text',{x:chartX-10, y:chartY-14, 'font-family':'var(--font-mono)', 'font-size':12, fill:'var(--muted)'}, g).textContent = '样本权重（更新后，柱高）';
+    }
+  }
+
+  function renderFormula(step){
+    formulaRow.innerHTML='';
+    STEPS[step].formula.forEach(f=>{
+      const box = document.createElement('div');
+      box.className='fbox';
+      box.innerHTML = '<span class="num">'+f.val+'</span><div class="flabel">'+f.label+'</div>';
+      formulaRow.appendChild(box);
+    });
+  }
+
+  function goTo(step){
+    buttons.forEach((b,i)=>{
+      if(i===step) b.setAttribute('aria-current','step');
+      else b.removeAttribute('aria-current');
+    });
+    stepTitle.textContent = STEPS[step].title;
+    stepCopy.textContent = STEPS[step].copy;
+    render(step);
+    renderFormula(step);
+  }
+
+  buttons.forEach(b=>{
+    b.addEventListener('click', ()=> goTo(Number(b.dataset.step)));
+  });
+
+  document.addEventListener('keydown', (e)=>{
+    const cur = buttons.findIndex(b=>b.getAttribute('aria-current')==='step');
+    if(e.key==='ArrowRight'){ e.preventDefault(); goTo(Math.min(3,cur+1)); }
+    else if(e.key==='ArrowLeft'){ e.preventDefault(); goTo(Math.max(0,cur-1)); }
+  });
+
+  goTo(0);
+  Deck.init({ index:7, total:16, keys:false });
+})();
+</script>
+</body>
+</html>

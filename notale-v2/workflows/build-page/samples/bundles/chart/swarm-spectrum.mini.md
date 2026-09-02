@@ -36,6 +36,33 @@
 </html>
 ```
   </file>
+  <file path="samples/chart/swarm-spectrum/mini/pages/styles.css">
+```css
+:root{
+  --stage-w:1600px;--stage-h:900px;--bg:#fff;--text:#1a1d21;--focus:#1a1d21;
+  --font-sans:-apple-system,BlinkMacSystemFont,Helvetica,Arial,sans-serif;
+  --bubble:oklch(.79 .20 301);--edge:oklch(.45 .12 301)
+}
+#stage{background:#fff;padding-top:1px}
+.swarm{position:relative;width:100%;margin:31px auto 0;padding:0 16px;user-select:none}
+.chart{position:relative}#chart{width:100%;height:auto;cursor:pointer}
+.annotation{position:absolute;inset:0 0 auto;display:flex;justify-content:space-between;padding:0 16px;text-transform:uppercase;font-size:12px}
+.legend{position:absolute;top:0;left:50%;transform:translateX(-50%);display:flex;align-items:center;flex-direction:column;text-transform:uppercase;font-size:12px}
+.legend div{display:flex;align-items:center;gap:4px}.legend i{display:block;border-radius:50%;background:var(--bubble)}
+.legend i:nth-child(1){width:12.65px;height:12.65px}.legend i:nth-child(2){width:17.89px;height:17.89px}.legend i:nth-child(3){width:25.3px;height:25.3px}
+figcaption{text-align:center;margin-top:16px;font-size:12px;line-height:1.2;text-transform:uppercase}
+.bubble{fill:var(--bubble)}
+.label{fill:#fff;stroke:var(--edge);stroke-width:4px;stroke-linejoin:round;paint-order:stroke fill;font-weight:bold;text-anchor:middle;dominant-baseline:central;pointer-events:none}
+.tick{font-size:11px;fill:currentColor;opacity:.8;font-variant-numeric:tabular-nums}.tick line{stroke:currentColor}
+.hit{fill:transparent}.node:focus{outline:none}.node:focus .bubble,.node[aria-current] .bubble{stroke:var(--text);stroke-width:3px}
+.tooltip{position:absolute;z-index:3;width:168px;padding:10px 14px;border:2px solid var(--text);border-radius:4px;background:#fff;font-size:12px;line-height:1.35;pointer-events:none}
+.tooltip strong,.tooltip span{display:block}.tooltip strong{color:var(--edge)}
+.takeaway{width:600px;margin:16px auto 0;font:18px/1.6 Iowan Old Style,Times New Roman,serif}
+.fallback{position:absolute;inset:48px 16px 80px;z-index:4;background:#fff;padding:80px 120px;font:18px/1.55 var(--font-sans)}
+.fallback h1{font-size:30px;margin-bottom:16px}.fallback p{margin-bottom:12px}.js .fallback{display:none}
+html:not(.js) .fallback{position:fixed;inset:0;padding:140px 180px}
+```
+  </file>
   <file path="samples/chart/swarm-spectrum/mini/pages/swarm.js">
 ```javascript
 (function () {

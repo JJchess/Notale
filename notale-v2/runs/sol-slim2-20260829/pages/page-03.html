@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>一个神经元的计算</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    .page-head{flex:0 0 auto;max-width:1120px}
+    .page-head .lead{margin-top:12px;color:var(--muted)}
+    .neuron-sheet{display:flex;flex-direction:column;gap:18px;min-height:0;padding:22px 28px 20px}
+    .diagram{flex:1;min-height:0;position:relative}
+    .diagram svg{width:100%;height:100%;display:block;overflow:visible}
+    .diagram text{font-family:var(--font-sans);fill:var(--text)}
+    .diagram .math{font-family:var(--font-num);font-variant-numeric:tabular-nums}
+    .diagram .label{font-size:17px;font-weight:650;letter-spacing:.02em}
+    .diagram .minor{font-size:15px;fill:var(--muted)}
+    .diagram .symbol{font-size:25px;font-weight:650}
+    .diagram .node-title{font-family:var(--font-display);font-size:27px;font-weight:650}
+    .diagram .node-note{font-size:17px;fill:var(--muted)}
+    .diagram .wire{fill:none;stroke:var(--rule-strong);stroke-width:2.5}
+    .diagram .forward{fill:none;stroke:var(--model);stroke-width:4}
+    .diagram .input-dot{fill:var(--paper);stroke:var(--text);stroke-width:2.5}
+    .diagram .sum-node{fill:var(--model-soft);stroke:var(--model);stroke-width:3}
+    .diagram .act-node{fill:var(--paper);stroke:var(--model);stroke-width:3}
+    .diagram .bias-node{fill:var(--attention-soft);stroke:var(--attention);stroke-width:3}
+    .diagram .guide{stroke:var(--rule);stroke-width:1.5;stroke-dasharray:5 7}
+    .formula-row{flex:0 0 146px;display:grid;grid-template-columns:minmax(0,1fr) 44px minmax(0,1fr) 44px minmax(0,1fr);align-items:center;border-top:1px solid var(--rule);padding-top:18px}
+    .formula-part{min-width:0;text-align:center}
+    .formula-part .mathline{font-family:var(--font-num);font-size:29px;font-weight:600;line-height:1.25;white-space:nowrap}
+    .formula-part .small{margin-top:7px}
+    .formula-part.sum .mathline{color:var(--model)}
+    .formula-part.bias .mathline{color:#8A4800}
+    .formula-part.out .mathline{color:var(--model)}
+    .join{color:var(--rule-strong);font-family:var(--font-display);font-size:33px;text-align:center}
+    .takeaway{flex:0 0 auto;display:flex;align-items:baseline;justify-content:space-between;gap:24px;padding-top:2px}
+    .takeaway strong{font-family:var(--font-display);font-size:22px;font-weight:650}
+    .takeaway .note{text-align:right;max-width:620px}
+  </style>
+</head>
+<body data-page="03" data-total="24">
+  <div id="stage">
+    <header class="page-head">
+      <p class="kicker">计算单元</p>
+      <h1>一个神经元：把多个输入汇总成一个输出</h1>
+      <p class="lead">每个输入先乘以自己的权重；加总后再加入偏置，最后由激活函数产生输出。</p>
+    </header>
+
+    <main class="focus min0">
+      <section class="panel neuron-sheet min0" aria-label="神经元从输入到输出的计算路径">
+        <div class="diagram min0">
+          <svg viewBox="0 0 1420 430" role="img" aria-labelledby="svg-title svg-desc">
+            <title id="svg-title">神经元的计算路径</title>
+            <desc id="svg-desc">输入 x1、x2 到 xn 分别乘权重 w1、w2 到 wn，进入加权求和节点；偏置 b 加入结果，随后经过激活函数 f，得到输出 y。</desc>
+            <defs>
+              <marker id="arrow-model" markerWidth="11" markerHeight="11" refX="9" refY="5.5" orient="auto" markerUnits="strokeWidth">
+                <path d="M0,0 L10,5.5 L0,11 Z" fill="#2457A6"></path>
+              </marker>
+            </defs>
+
+            <text x="105" y="38" text-anchor="middle" class="label">输入</text>
+            <text x="355" y="38" text-anchor="middle" class="label">乘以各自的权重</text>
+            <text x="716" y="38" text-anchor="middle" class="label">加权汇总</text>
+            <text x="1045" y="38" text-anchor="middle" class="label">产生输出</text>
+
+            <line x1="105" y1="79" x2="105" y2="360" class="guide"></line>
+            <circle cx="105" cy="105" r="28" class="input-dot"></circle>
+            <circle cx="105" cy="210" r="28" class="input-dot"></circle>
+            <circle cx="105" cy="350" r="28" class="input-dot"></circle>
+            <text x="105" y="114" text-anchor="middle" class="symbol math">x₁</text>
+            <text x="105" y="219" text-anchor="middle" class="symbol math">x₂</text>
+            <text x="105" y="359" text-anchor="middle" class="symbol math">xₙ</text>
+            <text x="105" y="286" text-anchor="middle" class="symbol" fill="#4E5F68">⋮</text>
+
+            <path d="M133 105 L620 189" class="wire"></path>
+            <path d="M133 210 L618 210" class="wire"></path>
+            <path d="M133 350 L620 231" class="wire"></path>
+            <text x="334" y="126" class="symbol math">× w₁</text>
+            <text x="334" y="199" class="symbol math">× w₂</text>
+            <text x="334" y="332" class="symbol math">× wₙ</text>
+
+            <circle cx="690" cy="210" r="72" class="sum-node"></circle>
+            <text x="690" y="207" text-anchor="middle" class="node-title">求和</text>
+            <text x="690" y="239" text-anchor="middle" class="node-note math">Σ wᵢxᵢ</text>
+
+            <circle cx="690" cy="367" r="35" class="bias-node"></circle>
+            <text x="690" y="376" text-anchor="middle" class="symbol math">b</text>
+            <text x="744" y="374" class="minor">偏置</text>
+            <path d="M690 332 L690 284" class="forward" marker-end="url(#arrow-model)"></path>
+            <text x="713" y="316" class="minor">再加上</text>
+
+            <path d="M762 210 L923 210" class="forward" marker-end="url(#arrow-model)"></path>
+            <circle cx="1014" cy="210" r="72" class="act-node"></circle>
+            <text x="1014" y="204" text-anchor="middle" class="node-title">激活函数</text>
+            <text x="1014" y="239" text-anchor="middle" class="node-note math">f( · )</text>
+
+            <path d="M1086 210 L1251 210" class="forward" marker-end="url(#arrow-model)"></path>
+            <circle cx="1304" cy="210" r="46" class="sum-node"></circle>
+            <text x="1304" y="220" text-anchor="middle" class="symbol math">y</text>
+            <text x="1304" y="286" text-anchor="middle" class="label">输出</text>
+          </svg>
+        </div>
+
+        <div class="formula-row" aria-label="神经元计算公式拆解">
+          <div class="formula-part sum">
+            <div class="mathline">z = Σ wᵢxᵢ</div>
+            <p class="small">权重决定每个输入影响多大</p>
+          </div>
+          <div class="join">+</div>
+          <div class="formula-part bias">
+            <div class="mathline">b</div>
+            <p class="small">偏置整体移动汇总结果</p>
+          </div>
+          <div class="join">→</div>
+          <div class="formula-part out">
+            <div class="mathline">y = f(z + b)</div>
+            <p class="small">激活函数把结果变成输出</p>
+          </div>
+        </div>
+
+        <div class="takeaway">
+          <strong>权重管“各输入占多少”，偏置管“整体往哪移”。</strong>
+          <p class="note">训练神经网络，就是逐步调整这些权重与偏置。</p>
+        </div>
+      </section>
+    </main>
+  </div>
+  <script src="assets/base.js"></script>
+  <script>Deck.init({index:3,total:24});</script>
+</body>
+</html>

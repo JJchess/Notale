@@ -1,0 +1,292 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>沿负梯度下坡</title>
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css" disabled>
+<script>
+/* Load the shared theme locally while omitting its optional web-font import. */
+(() => { const r=new XMLHttpRequest(); r.open('GET','assets/theme.css',false); r.send(); const s=document.createElement('style'); s.textContent=r.responseText.replace(/^@import[^\n]*\n/m,''); document.head.appendChild(s); })();
+</script>
+<style>
+#stage{gap:20px}
+.page-head{display:flex;flex-direction:column;gap:7px;flex:0 0 auto;max-width:1250px}
+.page-head .lead{color:var(--muted)}
+#descentLab{flex:1;min-height:0;display:grid;grid-template-columns:minmax(0,1fr) 340px;background:var(--surface);border:2px solid var(--rule);border-radius:10px;box-shadow:0 7px 18px rgba(23,33,43,.08);overflow:hidden}
+#descentLab .plot-wrap{position:relative;min-width:0;min-height:0;padding:18px 12px 12px 18px}
+#descentLab svg{display:block;width:100%;height:100%;min-height:0;touch-action:none;user-select:none}
+#descentLab .rail{min-width:0;min-height:0;border-left:2px solid var(--rule);padding:24px 24px 20px;display:flex;flex-direction:column;gap:20px;background:#fbfcfd}
+#descentLab .readouts{display:grid;grid-template-columns:1fr 1fr;gap:14px 18px;padding-bottom:18px;border-bottom:1px solid var(--rule-soft)}
+#descentLab .readout{display:grid;gap:4px}
+#descentLab .readout.wide{grid-column:1/-1}
+#descentLab .readout span:first-child{font-size:var(--fs-label);color:var(--muted)}
+#descentLab .readout output{font-family:var(--font-num);font-size:25px;font-weight:600;color:var(--text);font-variant-numeric:tabular-nums}
+#descentLab .readout output.grad{color:var(--gradient)}
+#descentLab .control-block{display:grid;gap:10px}
+#descentLab .control-title{font-size:var(--fs-label);font-weight:650;color:var(--text)}
+#descentLab .range-row{display:flex;justify-content:space-between;color:var(--muted);font-family:var(--font-num);font-size:var(--fs-tick)}
+#descentLab .btns{display:grid;grid-template-columns:1fr}
+#descentLab .btn.negative{border-color:var(--model);color:var(--model)}
+#descentLab .btn.positive{border-color:var(--gradient);color:var(--gradient);box-shadow:none}
+#descentLab .btn.reset{border-color:var(--rule);color:var(--muted);box-shadow:none}
+#descentLab .feedback{min-height:82px;padding-top:16px;border-top:1px solid var(--rule-soft);display:grid;align-content:start;gap:7px}
+#descentLab .feedback strong{font-size:var(--fs-sec);line-height:1.4}
+#descentLab .feedback p{font-size:var(--fs-label);line-height:1.45;color:var(--muted)}
+#descentLab .formula{margin-top:auto;font-family:var(--font-num);font-size:var(--fs-label);line-height:1.55;color:var(--muted)}
+#descentLab .formula b{color:var(--model);font-weight:600}
+#descentLab .gridline{stroke:var(--rule-soft);stroke-width:1}
+#descentLab .axis{stroke:var(--rule);stroke-width:2}
+#descentLab .tick-label{fill:var(--muted);font:13px var(--font-num)}
+#descentLab .axis-label{fill:var(--text);font:600 15px var(--font-sans)}
+#descentLab .curve{fill:none;stroke:var(--text);stroke-width:4}
+#descentLab .tangent{stroke:var(--gradient);stroke-width:4;stroke-dasharray:11 8}
+#descentLab .slope-leg{stroke:var(--gradient);stroke-width:2.5;fill:none}
+#descentLab .slope-text{fill:var(--gradient);font:600 15px var(--font-num)}
+#descentLab .trail{fill:none;stroke:var(--model);stroke-width:4;stroke-dasharray:8 7}
+#descentLab .old-point{fill:var(--surface);stroke:var(--model);stroke-width:3}
+#descentLab .current-point{fill:var(--attention);stroke:var(--text);stroke-width:4;cursor:grab}
+#descentLab .current-point.dragging{cursor:grabbing}
+#descentLab .hit{fill:transparent;cursor:crosshair}
+#descentLab .point-label{fill:var(--text);font:600 15px var(--font-sans)}
+#descentLab .loss-change{font:600 17px var(--font-num)}
+#descentLab .guide{stroke:var(--rule);stroke-width:1.5;stroke-dasharray:5 6}
+#descentLab .handle-focus{fill:none;stroke:var(--focus);stroke-width:5;opacity:0}
+#descentLab .handle-group:focus .handle-focus{opacity:1}
+#descentLab .legend-inline{position:absolute;left:40px;top:26px;display:flex;gap:20px;pointer-events:none;color:var(--muted);font-size:var(--fs-label)}
+#descentLab .legend-inline span{display:flex;align-items:center;gap:7px}
+#descentLab .legend-inline i{display:block;width:26px;border-top:4px solid var(--gradient)}
+#descentLab .legend-inline span:last-child i{border-color:var(--model);border-top-style:dashed}
+@media (prefers-reduced-motion:reduce){#descentLab *{transition:none!important}}
+</style>
+</head>
+<body data-page="14" data-total="25">
+<div id="stage">
+  <header class="page-head">
+    <div class="kicker">梯度下降 · 一步实验</div>
+    <h1>负梯度给出损失下降的局部方向</h1>
+    <p class="lead">在曲线上选一个起点，再比较沿 <span style="color:var(--gradient);font-family:var(--font-num)">−∇L</span> 与 <span style="color:var(--gradient);font-family:var(--font-num)">+∇L</span> 走一步的结果。</p>
+  </header>
+
+  <main id="descentLab" aria-label="损失曲线上的梯度下降实验">
+    <section class="plot-wrap min0" aria-label="可交互损失曲线">
+      <div class="legend-inline" aria-hidden="true"><span><i></i>当前位置的切线</span><span><i></i>参数更新轨迹</span></div>
+      <svg id="lossPlot" viewBox="0 0 1080 590" role="img" aria-labelledby="plotTitle plotDesc">
+        <title id="plotTitle">参数 w 与损失 L 的曲线</title>
+        <desc id="plotDesc">拖动曲线上的黄色点选择参数位置。切线显示当前位置的梯度，更新后蓝色轨迹连接前后位置。</desc>
+        <defs>
+          <clipPath id="p14clip"><rect x="92" y="54" width="920" height="462" rx="4"/></clipPath>
+          <marker id="p14arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L10,5 L0,10 z" fill="var(--model)"/></marker>
+        </defs>
+        <g id="gridLayer"></g>
+        <g id="curveLayer" clip-path="url(#p14clip)">
+          <path id="curve" class="curve"/>
+          <line id="tangent" class="tangent"/>
+          <path id="slopeLeg" class="slope-leg"/>
+          <g id="history"></g>
+        </g>
+        <g id="annotationLayer">
+          <line id="xGuide" class="guide"/>
+          <text id="slopeText" class="slope-text"></text>
+          <text id="deltaText" class="loss-change"></text>
+          <g id="handle" class="handle-group" role="slider" tabindex="0" aria-label="选择参数 w" aria-valuemin="-3.6" aria-valuemax="4.5" aria-valuenow="3.4">
+            <circle id="focusRing" class="handle-focus" r="18"/>
+            <circle id="point" class="current-point" r="11"/>
+          </g>
+          <text id="pointLabel" class="point-label"></text>
+        </g>
+        <rect id="plotHit" class="hit" x="92" y="54" width="920" height="462" aria-hidden="true"/>
+      </svg>
+    </section>
+
+    <aside class="rail min0" aria-label="参数与更新控制">
+      <div class="readouts">
+        <div class="readout"><span>当前位置 w</span><output id="wOut">3.40</output></div>
+        <div class="readout"><span>当前损失 L</span><output id="lOut">3.54</output></div>
+        <div class="readout wide"><span>当前位置梯度 ∇L</span><output id="gOut" class="grad">+2.18</output></div>
+      </div>
+
+      <label class="ctl" for="wRange">拖动曲线圆点，或精确选择 w
+        <input id="wRange" type="range" min="-3.6" max="4.5" step="0.05" value="3.4">
+        <span class="range-row"><span>−3.6</span><span>最小值 0.8</span><span>4.5</span></span>
+      </label>
+
+      <div class="control-block">
+        <div class="control-title">固定学习率 η = 0.60，选择更新方向</div>
+        <div class="btns">
+          <button id="downBtn" class="btn negative" type="button">沿 −η∇L 走一步</button>
+          <button id="upBtn" class="btn positive" type="button">沿 +η∇L 试一步</button>
+          <button id="resetBtn" class="btn reset" type="button">恢复初始位置</button>
+        </div>
+      </div>
+
+      <div class="feedback" aria-live="polite" aria-atomic="true">
+        <strong id="feedbackTitle">先看切线的倾斜方向</strong>
+        <p id="feedbackBody">当前梯度为正，因此负梯度指向参数减小的一侧。</p>
+      </div>
+
+      <div class="formula"><b>w′ = w − η∇L(w)</b><br>L(w) = 0.42(w − 0.8)² + 0.70</div>
+    </aside>
+  </main>
+</div>
+<script src="assets/base.js"></script>
+<script>
+(() => {
+  const root = document.getElementById('descentLab');
+  const q = s => root.querySelector(s);
+  const svg = q('#lossPlot');
+  const hit = q('#plotHit');
+  const handle = q('#handle');
+  const point = q('#point');
+  const range = q('#wRange');
+  const downBtn = q('#downBtn');
+  const upBtn = q('#upBtn');
+  const resetBtn = q('#resetBtn');
+  const aborter = new AbortController();
+  const sig = {signal: aborter.signal};
+  const box = {x:92, y:54, w:920, h:462};
+  const domain = {xmin:-3.6, xmax:4.5, ymin:0, ymax:9.3};
+  const initial = () => ({w:3.4, history:[], last:null, dragging:false});
+  let state = initial();
+  let activePointer = null;
+
+  const loss = w => 0.42 * (w - 0.8) ** 2 + 0.70;
+  const grad = w => 0.84 * (w - 0.8);
+  const sx = w => box.x + (w-domain.xmin)/(domain.xmax-domain.xmin)*box.w;
+  const sy = l => box.y + box.h - (l-domain.ymin)/(domain.ymax-domain.ymin)*box.h;
+  const fmtSigned = v => (v >= 0 ? '+' : '−') + Math.abs(v).toFixed(2);
+
+  function makeStatic(){
+    let html = '';
+    [0,2,4,6,8].forEach(v => {
+      const y=sy(v); html += `<line class="gridline" x1="${box.x}" y1="${y}" x2="${box.x+box.w}" y2="${y}"/><text class="tick-label" x="${box.x-16}" y="${y+5}" text-anchor="end">${v}</text>`;
+    });
+    [-3,-2,-1,0,1,2,3,4].forEach(v => {
+      const x=sx(v); html += `<line class="gridline" x1="${x}" y1="${box.y}" x2="${x}" y2="${box.y+box.h}"/><text class="tick-label" x="${x}" y="${box.y+28}" text-anchor="middle">${v}</text>`;
+    });
+    html += `<line class="axis" x1="${box.x}" y1="${box.y+box.h}" x2="${box.x+box.w}" y2="${box.y+box.h}"/><line class="axis" x1="${box.x}" y1="${box.y}" x2="${box.x}" y2="${box.y+box.h}"/><text class="axis-label" x="${box.x+box.w}" y="${box.y+box.h+48}" text-anchor="end">参数 w</text><text class="axis-label" x="${box.x-8}" y="${box.y-17}">损失 L</text>`;
+    q('#gridLayer').innerHTML = html;
+    const pts=[];
+    for(let i=0;i<=220;i++){ const w=domain.xmin+(domain.xmax-domain.xmin)*i/220; pts.push(`${i?'L':'M'}${sx(w).toFixed(2)},${sy(loss(w)).toFixed(2)}`); }
+    q('#curve').setAttribute('d',pts.join(' '));
+  }
+
+  function render(){
+    const w=state.w, l=loss(w), g=grad(w), x=sx(w), y=sy(l);
+    q('#wOut').textContent=w.toFixed(2);
+    q('#lOut').textContent=l.toFixed(2);
+    q('#gOut').textContent=fmtSigned(g);
+    range.value=w.toFixed(2);
+    handle.setAttribute('aria-valuenow',w.toFixed(2));
+    handle.setAttribute('aria-valuetext',`参数 ${w.toFixed(2)}，损失 ${l.toFixed(2)}，梯度 ${fmtSigned(g)}`);
+    handle.setAttribute('transform',`translate(${x} ${y})`);
+    point.classList.toggle('dragging',state.dragging);
+    q('#xGuide').setAttribute('x1',x); q('#xGuide').setAttribute('x2',x);
+    q('#xGuide').setAttribute('y1',y+14); q('#xGuide').setAttribute('y2',box.y+box.h);
+    q('#pointLabel').setAttribute('x',Math.min(x+18,box.x+box.w-130));
+    q('#pointLabel').setAttribute('y',Math.max(y-18,box.y+24));
+    q('#pointLabel').textContent=`w = ${w.toFixed(2)}`;
+
+    const dx=1.15, w1=Math.max(domain.xmin,w-dx), w2=Math.min(domain.xmax,w+dx);
+    const tl1=l+g*(w1-w), tl2=l+g*(w2-w);
+    const tangent=q('#tangent');
+    tangent.setAttribute('x1',sx(w1)); tangent.setAttribute('y1',sy(tl1));
+    tangent.setAttribute('x2',sx(w2)); tangent.setAttribute('y2',sy(tl2));
+    const legW = w + (g >= 0 ? .72 : -.72);
+    q('#slopeLeg').setAttribute('d',`M${x},${y} L${sx(legW)},${y} L${sx(legW)},${sy(l+g*(legW-w))}`);
+    q('#slopeText').setAttribute('x',g>=0?x+84:x-178);
+    q('#slopeText').setAttribute('y',Math.max(box.y+28,y-24));
+    q('#slopeText').textContent=`斜率 ${fmtSigned(g)}`;
+
+    let trails='';
+    state.history.forEach((s,i) => {
+      const x1=sx(s.from), y1=sy(loss(s.from)), x2=sx(s.to), y2=sy(loss(s.to));
+      trails += `<circle class="old-point" cx="${x1}" cy="${y1}" r="7"/><path class="trail" d="M${x1},${y1} L${x2},${y1} L${x2},${y2}" marker-end="url(#p14arrow)" opacity="${0.38+0.62*(i+1)/state.history.length}"/>`;
+    });
+    q('#history').innerHTML=trails;
+
+    const nearMin=Math.abs(g)<0.025;
+    downBtn.disabled=nearMin; upBtn.disabled=nearMin;
+    q('#deltaText').textContent='';
+    if(state.last){
+      const dL=loss(state.last.to)-loss(state.last.from);
+      const fell=dL<0;
+      q('#feedbackTitle').textContent=fell?'这一步让损失下降':'这一步让损失上升';
+      q('#feedbackTitle').style.color=fell?'var(--model)':'var(--gradient)';
+      q('#feedbackBody').textContent=`w：${state.last.from.toFixed(2)} → ${state.last.to.toFixed(2)}；损失变化 ${fmtSigned(dL)}。${fell?'更新方向与梯度相反。':'更新方向与梯度相同。'}`;
+      q('#deltaText').setAttribute('x',Math.min(sx(state.last.to)+20,box.x+box.w-180));
+      q('#deltaText').setAttribute('y',Math.max(sy(loss(state.last.to))-40,box.y+35));
+      q('#deltaText').setAttribute('fill',fell?'var(--model)':'var(--gradient)');
+      q('#deltaText').textContent=`ΔL ${fmtSigned(dL)}`;
+    } else if(nearMin){
+      q('#feedbackTitle').textContent='这里的梯度接近 0';
+      q('#feedbackTitle').style.color='var(--text)';
+      q('#feedbackBody').textContent='当前位置已在曲线最低处附近，两个方向都没有可用的局部坡度。';
+    } else {
+      q('#feedbackTitle').textContent='先看切线的倾斜方向';
+      q('#feedbackTitle').style.color='var(--text)';
+      q('#feedbackBody').textContent=`当前梯度为${g>0?'正':'负'}，因此负梯度指向参数${g>0?'减小':'增大'}的一侧。`;
+    }
+  }
+
+  function setW(w, source){
+    const next=Deck.clamp(Number(w),domain.xmin,domain.xmax);
+    if(!Number.isFinite(next)) return;
+    state.w=next; state.history=[]; state.last=null;
+    render();
+    if(source==='commit') q('#feedbackBody').textContent=`已选择 w = ${next.toFixed(2)}。现在任选一个方向走一步。`;
+  }
+
+  function fromPointer(e){
+    const p=Deck.pt(svg,e);
+    const w=domain.xmin+(Deck.clamp(p.x,box.x,box.x+box.w)-box.x)/box.w*(domain.xmax-domain.xmin);
+    return Math.round(w/0.05)*0.05;
+  }
+
+  function beginDrag(e){
+    if(e.button!==undefined && e.button!==0) return;
+    activePointer=e.pointerId;
+    hit.setPointerCapture?.(activePointer);
+    state.dragging=true; setW(fromPointer(e));
+  }
+  hit.addEventListener('pointerdown',beginDrag,sig);
+  hit.addEventListener('pointermove',e=>{if(e.pointerId===activePointer)setW(fromPointer(e));},sig);
+  const endDrag=e=>{
+    if(e.pointerId!==activePointer)return;
+    try{hit.releasePointerCapture(activePointer)}catch(_){}
+    activePointer=null; state.dragging=false; render();
+    q('#feedbackBody').textContent=`已选择 w = ${state.w.toFixed(2)}。现在任选一个方向走一步。`;
+  };
+  hit.addEventListener('pointerup',endDrag,sig);
+  hit.addEventListener('pointercancel',endDrag,sig);
+  range.addEventListener('input',()=>setW(range.value),sig);
+  range.addEventListener('change',()=>setW(range.value,'commit'),sig);
+
+  handle.addEventListener('keydown',e=>{
+    let d=0;
+    if(e.key==='ArrowLeft'||e.key==='ArrowDown')d=-0.05;
+    if(e.key==='ArrowRight'||e.key==='ArrowUp')d=0.05;
+    if(e.key==='Home'){e.preventDefault();setW(domain.xmin,'commit');return;}
+    if(e.key==='End'){e.preventDefault();setW(domain.xmax,'commit');return;}
+    if(d){e.preventDefault();e.stopPropagation();setW(state.w+d,'commit');}
+  },sig);
+
+  function step(sign){
+    const from=state.w;
+    const to=Deck.clamp(from-sign*0.60*grad(from),domain.xmin,domain.xmax);
+    const move={from,to};
+    state.w=to; state.last=move; state.history=[...state.history.slice(-4),move];
+    render();
+  }
+  downBtn.addEventListener('click',()=>step(1),sig);
+  upBtn.addEventListener('click',()=>step(-1),sig);
+  resetBtn.addEventListener('click',()=>{state=initial();activePointer=null;render();},sig);
+
+  makeStatic(); render();
+  window.addEventListener('pagehide',()=>aborter.abort(),{once:true});
+  Deck.init({index:14,total:25});
+})();
+</script>
+</body>
+</html>

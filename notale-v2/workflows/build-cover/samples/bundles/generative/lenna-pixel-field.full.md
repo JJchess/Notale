@@ -8,6 +8,49 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Can Data Die? — Pixel Field</title>
   <link rel="stylesheet" href="assets/base.css">
+  <style>
+    :root {
+      --stage-w: 1600px;
+      --stage-h: 900px;
+      --bg: #220619;
+      --text: #fff2e8;
+      --font-sans: "Liberation Mono", "DejaVu Sans Mono", monospace;
+      --pad-x: 110px;
+      --grid: #390a29;
+      --red: #a64153;
+      --green: #79a695;
+      --blue: #586fa6;
+      --tan: #f2c299;
+      --orange: #d96666;
+      --focus: #f2c299;
+    }
+
+    #stage {
+      isolation: isolate;
+      background: var(--bg);
+      padding: 0 var(--pad-x);
+    }
+
+    #field {
+      z-index: 0;
+      max-width: none;
+      cursor: crosshair;
+      image-rendering: pixelated;
+    }
+
+    h1 {
+      position: absolute;
+      z-index: 1;
+      left: 110px;
+      top: 90px;
+      width: 400px;
+      color: var(--text);
+      font: 400 135px/125px var(--font-sans);
+      letter-spacing: 0;
+      pointer-events: none;
+      user-select: none;
+    }
+  </style>
 </head>
 <body>
   <main id="stage">

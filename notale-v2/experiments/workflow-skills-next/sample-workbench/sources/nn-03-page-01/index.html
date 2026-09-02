@@ -1,0 +1,996 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>神经网络 · 第 01 页 · 会自己调参数的机器</title>
+<style>
+/* ==========================================================================
+   神经网络 · 交互讲义 —— 共享设计系统 (deck.css)
+   所有页面统一 <link> 引用。禁止修改本文件；页面私有样式写在各自 <style> 中。
+   画布固定 1600 × 900，由 deck.js 缩放铺满视口。
+   ========================================================================== */
+
+:root{
+  /* —— 底色 —— */
+  --bg:        #04050A;
+  --bg-2:      #090C15;
+  --panel:     rgba(255,255,255,.035);
+  --panel-2:   rgba(255,255,255,.06);
+  --line:      rgba(255,255,255,.10);
+  --line-soft: rgba(255,255,255,.055);
+
+  /* —— 文字 —— */
+  --ink:       #E9EFF8;
+  --ink-dim:   #8E9BB0;
+  --ink-faint: #58627A;
+
+  /* —— 语义色：全套讲义统一，不得改用途 —— */
+  --sig:   #00E5FF;   /* 前向信号 / 激活值 */
+  --grad:  #FF2E88;   /* 误差 / 梯度 / 反向传播 */
+  --param: #FFB020;   /* 权重 / 偏置 / 一切可调参数 */
+  --ok:    #3DE08B;   /* 正确 / 收敛 / 目标值 */
+  --clsA:  #00E5FF;   /* 二分类·类别 A */
+  --clsB:  #A97BFF;   /* 二分类·类别 B */
+
+  --sig-d:   rgba(0,229,255,.16);
+  --grad-d:  rgba(255,46,136,.16);
+  --param-d: rgba(255,176,32,.16);
+  --ok-d:    rgba(61,224,139,.16);
+
+  --r:   14px;
+  --r-s: 9px;
+
+  --sans: "PingFang SC","HarmonyOS Sans SC","Microsoft YaHei","Noto Sans SC",
+          -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  --mono: "JetBrains Mono","SF Mono","Menlo","DejaVu Sans Mono",Consolas,monospace;
+}
+
+*,*::before,*::after{ box-sizing:border-box; }
+
+html,body{
+  margin:0; padding:0; width:100%; height:100%;
+  overflow:hidden;
+  background:var(--bg);
+  color:var(--ink);
+  font-family:var(--sans);
+  -webkit-font-smoothing:antialiased;
+  text-rendering:optimizeLegibility;
+}
+
+/* ---------- 舞台：1600×900，由 deck.js 居中缩放 ---------- */
+.stage{
+  position:absolute; left:50%; top:50%;
+  width:1600px; height:900px;
+  transform-origin:50% 50%;
+  transform:translate(-50%,-50%);
+  overflow:hidden;
+  background:
+    radial-gradient(1100px 620px at 76% -12%, rgba(0,229,255,.075), transparent 62%),
+    radial-gradient(900px 560px at 6% 108%, rgba(169,123,255,.065), transparent 60%),
+    linear-gradient(180deg, var(--bg-2) 0%, var(--bg) 62%);
+  display:flex; flex-direction:column;
+}
+/* 统一的底纹：细网格 + 暗角，让所有页面站在同一块地面上 */
+.stage::before{
+  content:""; position:absolute; inset:0; pointer-events:none; z-index:0;
+  background-image:
+    linear-gradient(rgba(255,255,255,.028) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,.028) 1px, transparent 1px);
+  background-size:64px 64px, 64px 64px;
+  mask-image:radial-gradient(120% 88% at 50% 42%, #000 25%, transparent 88%);
+  -webkit-mask-image:radial-gradient(120% 88% at 50% 42%, #000 25%, transparent 88%);
+}
+.stage::after{
+  content:""; position:absolute; inset:0; pointer-events:none; z-index:60;
+  box-shadow:inset 0 0 220px rgba(0,0,0,.62);
+}
+
+/* 页面自绘的背景层（canvas / svg 放这里） */
+.bgfx{ position:absolute; inset:0; z-index:0; pointer-events:none; }
+
+/* ---------- 页眉 ---------- */
+.deck-head{
+  position:relative; z-index:5;
+  padding:44px 68px 0;
+  flex:0 0 auto;
+}
+.kicker{
+  display:inline-flex; align-items:center; gap:10px;
+  font-family:var(--mono); font-size:12.5px; letter-spacing:.22em;
+  text-transform:uppercase; color:var(--sig);
+  opacity:.92;
+}
+.kicker::before{
+  content:""; width:26px; height:2px; border-radius:2px;
+  background:linear-gradient(90deg,var(--sig),transparent);
+}
+.deck-head .title{
+  margin:12px 0 0; font-size:42px; line-height:1.14; font-weight:700;
+  letter-spacing:-.012em; color:#fff;
+}
+.deck-head .title em{ font-style:normal; color:var(--sig); }
+.deck-head .dek{
+  margin:10px 0 0; font-size:16.5px; line-height:1.55; color:var(--ink-dim);
+  max-width:1080px;
+}
+
+/* ---------- 主体 ---------- */
+.deck-body{
+  position:relative; z-index:5;
+  flex:1 1 auto; min-height:0;
+  padding:26px 68px 12px;
+  display:flex; gap:26px;
+}
+
+/* ---------- 页脚：品牌 + 进度轨 + 页码 ---------- */
+.deck-foot{
+  position:relative; z-index:5;
+  flex:0 0 auto; height:62px;
+  padding:0 68px 20px;
+  display:flex; align-items:center; gap:26px;
+}
+.deck-foot .brand{
+  font-family:var(--mono); font-size:11.5px; letter-spacing:.16em;
+  color:var(--ink-faint); white-space:nowrap;
+}
+.rail{ flex:1 1 auto; display:flex; align-items:center; gap:5px; }
+.rail a{
+  flex:1 1 0; height:3px; border-radius:3px;
+  background:rgba(255,255,255,.10);
+  transition:background .25s, box-shadow .25s, height .25s;
+  text-decoration:none;
+}
+.rail a:hover{ background:rgba(255,255,255,.28); }
+.rail a.done{ background:rgba(0,229,255,.30); }
+.rail a.now{
+  background:var(--sig); height:5px;
+  box-shadow:0 0 12px rgba(0,229,255,.75);
+}
+.pageno{
+  font-family:var(--mono); font-size:15px; letter-spacing:.08em;
+  color:var(--ink); white-space:nowrap;
+}
+.pageno span{ color:var(--ink-faint); margin-left:2px; }
+
+/* ---------- 面板 ---------- */
+.panel{
+  position:relative;
+  background:linear-gradient(180deg, rgba(255,255,255,.055), rgba(255,255,255,.022));
+  border:1px solid var(--line);
+  border-radius:var(--r);
+  backdrop-filter:blur(9px); -webkit-backdrop-filter:blur(9px);
+  box-shadow:0 18px 44px rgba(0,0,0,.42), inset 0 1px 0 rgba(255,255,255,.075);
+}
+.panel--flush{ background:rgba(4,5,10,.42); }
+.panel-h{
+  display:flex; align-items:center; justify-content:space-between; gap:12px;
+  padding:14px 18px; border-bottom:1px solid var(--line-soft);
+}
+.panel-h h3{
+  margin:0; font-size:13px; font-weight:600; letter-spacing:.13em;
+  text-transform:uppercase; font-family:var(--mono); color:var(--ink-dim);
+}
+.panel-b{ padding:18px; }
+
+/* ---------- 提示条：告诉读者"这里能动" ---------- */
+.hint{
+  display:inline-flex; align-items:center; gap:9px;
+  padding:8px 15px 8px 12px; border-radius:999px;
+  background:rgba(0,229,255,.075);
+  border:1px solid rgba(0,229,255,.28);
+  color:var(--sig); font-size:13.5px; letter-spacing:.01em;
+}
+.hint::before{
+  content:""; width:8px; height:8px; border-radius:50%;
+  background:var(--sig); box-shadow:0 0 10px var(--sig);
+  animation:hint-pulse 1.9s ease-in-out infinite;
+}
+@keyframes hint-pulse{ 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.35;transform:scale(.72)} }
+
+/* ---------- 控件 ---------- */
+.ctrl{ display:flex; flex-direction:column; gap:7px; }
+.ctrl-top{ display:flex; align-items:baseline; justify-content:space-between; gap:10px; }
+.ctrl-lb{ font-size:13px; color:var(--ink-dim); letter-spacing:.02em; }
+.ctrl-val{
+  font-family:var(--mono); font-size:14px; color:var(--param);
+  font-variant-numeric:tabular-nums;
+}
+
+input[type=range]{
+  -webkit-appearance:none; appearance:none; width:100%; height:20px;
+  background:transparent; cursor:pointer; margin:0;
+}
+input[type=range]::-webkit-slider-runnable-track{
+  height:4px; border-radius:4px;
+  background:rgba(255,255,255,.13); border:none;
+}
+input[type=range]::-moz-range-track{
+  height:4px; border-radius:4px; background:rgba(255,255,255,.13);
+}
+input[type=range]::-webkit-slider-thumb{
+  -webkit-appearance:none; appearance:none;
+  width:15px; height:15px; margin-top:-5.5px; border-radius:50%;
+  background:var(--param); border:2px solid #0B0E17;
+  box-shadow:0 0 0 1px rgba(255,176,32,.55), 0 0 14px rgba(255,176,32,.55);
+  transition:transform .12s;
+}
+input[type=range]::-moz-range-thumb{
+  width:15px; height:15px; border-radius:50%;
+  background:var(--param); border:2px solid #0B0E17;
+  box-shadow:0 0 0 1px rgba(255,176,32,.55), 0 0 14px rgba(255,176,32,.55);
+}
+input[type=range]:hover::-webkit-slider-thumb{ transform:scale(1.14); }
+input[type=range]:focus-visible{ outline:none; }
+input[type=range]:focus-visible::-webkit-slider-thumb{
+  box-shadow:0 0 0 3px rgba(255,176,32,.35), 0 0 16px rgba(255,176,32,.7);
+}
+/* 信号色滑杆变体 */
+input[type=range].sig::-webkit-slider-thumb{
+  background:var(--sig); box-shadow:0 0 0 1px rgba(0,229,255,.55), 0 0 14px rgba(0,229,255,.55);
+}
+input[type=range].sig::-moz-range-thumb{ background:var(--sig); }
+
+.btn{
+  appearance:none; cursor:pointer; font-family:var(--sans);
+  display:inline-flex; align-items:center; justify-content:center; gap:8px;
+  padding:9px 17px; border-radius:var(--r-s);
+  font-size:13.5px; font-weight:500; letter-spacing:.02em;
+  color:var(--ink);
+  background:rgba(255,255,255,.06);
+  border:1px solid var(--line);
+  transition:background .18s, border-color .18s, color .18s, transform .1s;
+}
+.btn:hover{ background:rgba(255,255,255,.12); border-color:rgba(255,255,255,.24); }
+.btn:active{ transform:translateY(1px); }
+.btn[disabled]{ opacity:.38; cursor:not-allowed; }
+.btn.primary{
+  color:#02141A; font-weight:600;
+  background:linear-gradient(180deg,#5CF0FF,var(--sig));
+  border-color:rgba(0,229,255,.6);
+  box-shadow:0 6px 22px rgba(0,229,255,.28);
+}
+.btn.primary:hover{ background:linear-gradient(180deg,#7FF4FF,#22EAFF); }
+.btn.danger{ color:var(--grad); border-color:rgba(255,46,136,.4); background:rgba(255,46,136,.09); }
+.btn.danger:hover{ background:rgba(255,46,136,.17); }
+
+/* 分段选择器 */
+.seg{
+  display:inline-flex; padding:3px; gap:3px;
+  background:rgba(255,255,255,.05);
+  border:1px solid var(--line); border-radius:11px;
+}
+.seg button{
+  appearance:none; cursor:pointer; font-family:var(--sans);
+  padding:7px 15px; border:none; border-radius:8px; background:transparent;
+  color:var(--ink-dim); font-size:13px; letter-spacing:.02em;
+  transition:background .18s,color .18s;
+}
+.seg button:hover{ color:var(--ink); }
+.seg button.on{
+  background:rgba(0,229,255,.16); color:var(--sig);
+  box-shadow:inset 0 0 0 1px rgba(0,229,255,.34);
+}
+
+/* 开关 */
+.switch{ display:inline-flex; align-items:center; gap:10px; cursor:pointer; font-size:13px; color:var(--ink-dim); }
+.switch input{ display:none; }
+.switch .track{
+  width:38px; height:21px; border-radius:999px; background:rgba(255,255,255,.12);
+  border:1px solid var(--line); position:relative; transition:background .2s;
+}
+.switch .track::after{
+  content:""; position:absolute; top:2px; left:2px; width:15px; height:15px;
+  border-radius:50%; background:var(--ink-faint); transition:transform .2s, background .2s;
+}
+.switch input:checked + .track{ background:rgba(0,229,255,.28); }
+.switch input:checked + .track::after{ transform:translateX(17px); background:var(--sig); box-shadow:0 0 10px var(--sig); }
+
+/* ---------- 数值读出 ---------- */
+.readout{
+  font-family:var(--mono); font-variant-numeric:tabular-nums;
+  letter-spacing:.01em;
+}
+.stat{ display:flex; flex-direction:column; gap:4px; }
+.stat .k{ font-size:11.5px; letter-spacing:.14em; text-transform:uppercase; color:var(--ink-faint); font-family:var(--mono); }
+.stat .v{ font-family:var(--mono); font-size:26px; font-variant-numeric:tabular-nums; color:var(--ink); }
+
+/* ---------- 公式 ---------- */
+.formula{
+  font-family:var(--mono); font-size:19px; letter-spacing:.01em;
+  color:var(--ink-dim); line-height:1.7;
+}
+.formula .tk-sig{ color:var(--sig); }
+.formula .tk-param{ color:var(--param); }
+.formula .tk-grad{ color:var(--grad); }
+.formula .tk-ok{ color:var(--ok); }
+.formula .tk-lit{ text-shadow:0 0 14px currentColor; }
+
+/* ---------- 图例 ---------- */
+.legend{ display:flex; flex-wrap:wrap; gap:8px 20px; font-size:12.5px; color:var(--ink-dim); }
+.legend i{ display:inline-flex; align-items:center; gap:7px; font-style:normal; }
+.legend i::before{
+  content:""; width:9px; height:9px; border-radius:50%;
+  background:currentColor; box-shadow:0 0 9px currentColor;
+}
+.legend .l-sig{ color:var(--sig); } .legend .l-grad{ color:var(--grad); }
+.legend .l-param{ color:var(--param); } .legend .l-ok{ color:var(--ok); }
+.legend .l-a{ color:var(--clsA); } .legend .l-b{ color:var(--clsB); }
+
+/* ---------- 正文排版 ---------- */
+.note{ font-size:14.5px; line-height:1.72; color:var(--ink-dim); }
+.note b, .note strong{ color:var(--ink); font-weight:600; }
+.note .c-sig{ color:var(--sig); } .note .c-grad{ color:var(--grad); }
+.note .c-param{ color:var(--param); } .note .c-ok{ color:var(--ok); }
+.tag{
+  display:inline-block; padding:3px 9px; border-radius:6px;
+  font-family:var(--mono); font-size:11.5px; letter-spacing:.1em;
+  background:rgba(255,255,255,.06); border:1px solid var(--line); color:var(--ink-dim);
+}
+
+/* ---------- 封面/收尾用的通栏变体 ---------- */
+.stage--bare .deck-head, .stage--bare .deck-body{ padding-top:0; }
+.stage--bare .deck-body{ padding:0; }
+
+canvas{ display:block; }
+::selection{ background:rgba(0,229,255,.3); color:#fff; }
+</style>
+<style>
+  /* ===== 版式 E：全屏沉浸。页眉绝对定位到画面中央偏左，主体让给全屏视觉 ===== */
+  .stage{ cursor:crosshair; }
+
+  #net{ width:100%; height:100%; display:block; }
+
+  /* 标题区背后的暗场，保证文字在活体网络之上依然可读 */
+  .scrim{
+    position:absolute; inset:0; z-index:2; pointer-events:none;
+    background:
+      radial-gradient(760px 520px at 27% 48%, rgba(4,5,10,.90) 0%, rgba(4,5,10,.62) 42%, transparent 72%),
+      linear-gradient(90deg, rgba(4,5,10,.72) 0%, rgba(4,5,10,.28) 34%, transparent 58%);
+  }
+
+  .deck-head{
+    position:absolute; z-index:6; pointer-events:none;
+    left:104px; top:0; bottom:0; width:720px; padding:0;
+    display:flex; flex-direction:column; justify-content:center;
+    transform:translateY(-18px);
+  }
+  .deck-head .kicker{ align-self:flex-start; }
+
+  .deck-head .title{
+    margin:22px 0 0;
+    font-size:112px; line-height:.98; letter-spacing:-.03em; font-weight:700;
+    text-shadow:0 0 60px rgba(0,229,255,.16), 0 8px 40px rgba(0,0,0,.7);
+  }
+  .deck-head .title em{
+    color:var(--sig);
+    text-shadow:0 0 34px rgba(0,229,255,.55), 0 0 90px rgba(0,229,255,.25);
+  }
+
+  .rule{
+    width:74px; height:2px; margin:26px 0 0; border-radius:2px;
+    background:linear-gradient(90deg,var(--sig),rgba(0,229,255,0));
+  }
+
+  .deck-head .dek{
+    margin:20px 0 0; max-width:560px;
+    font-size:19px; line-height:1.68; color:var(--ink-dim);
+  }
+  .deck-head .dek b{ color:var(--ink); font-weight:600; }
+  .deck-head .dek .c-sig{ color:var(--sig); }
+
+  .meta{
+    margin:24px 0 0; display:flex; align-items:center; gap:14px;
+    font-family:var(--mono); font-size:11.5px; letter-spacing:.2em;
+    text-transform:uppercase; color:var(--ink-faint);
+  }
+  .meta span{ width:5px; height:5px; border-radius:50%; background:var(--ink-faint); opacity:.55; }
+
+  /* 右下角的活体读数：由页面自己算出来的数字 */
+  .live{
+    position:absolute; right:68px; bottom:96px; z-index:6; pointer-events:none;
+    display:flex; gap:34px; text-align:right;
+  }
+  .live .k{
+    font-family:var(--mono); font-size:10.5px; letter-spacing:.18em;
+    text-transform:uppercase; color:var(--ink-faint);
+  }
+  .live .v{
+    font-family:var(--mono); font-size:21px; color:var(--ink-dim);
+    font-variant-numeric:tabular-nums; margin-top:5px;
+  }
+  .live .v.on{ color:var(--sig); }
+</style>
+</head>
+<body data-page="01" data-total="14">
+  <div class="stage">
+    <div class="bgfx"><canvas id="net"></canvas></div>
+    <div class="scrim"></div>
+
+    <header class="deck-head">
+      <div class="kicker">第一幕 · 进门</div>
+      <h1 class="title">神经<em>网络</em></h1>
+      <div class="rule"></div>
+      <p class="dek">让万千经验穿过层层连接，在计算深处沉淀为<span class="c-sig">直觉</span>。</p>
+      <div class="meta">十四页<span></span>六幕<span></span>每一页都要你动手</div>
+    </header>
+
+    <div class="live">
+      <div>
+        <div class="k">节点</div>
+        <div class="v" id="vNodes">0</div>
+      </div>
+      <div>
+        <div class="k">活跃连线</div>
+        <div class="v" id="vLinks">0</div>
+      </div>
+      <div>
+        <div class="k">已注入信号</div>
+        <div class="v" id="vPulse">0</div>
+      </div>
+    </div>
+
+    <footer class="deck-foot">
+      <div class="brand">神经网络 · 交互讲义</div>
+      <div class="rail"></div>
+      <div class="pageno"></div>
+    </footer>
+  </div>
+
+  <script>
+/* ==========================================================================
+   神经网络 · 交互讲义 —— 共享运行时 (deck.js)
+   所有页面统一 <script> 引用。禁止修改本文件。
+   职责：舞台缩放铺满视口 / 页脚进度轨 / 翻页导航 / HiDPI canvas 助手
+   ========================================================================== */
+(function (global) {
+  'use strict';
+
+  var STAGE_W = 1600, STAGE_H = 900;
+
+  var Deck = {
+    W: STAGE_W,
+    H: STAGE_H,
+    scale: 1,
+    page: 1,
+    total: 1,
+    _canvases: []
+  };
+
+  /* ---------- 舞台缩放 ---------- */
+  function fit() {
+    var stage = document.querySelector('.stage');
+    if (!stage) return;
+    var s = Math.min(window.innerWidth / STAGE_W, window.innerHeight / STAGE_H);
+    Deck.scale = s;
+    stage.style.transform = 'translate(-50%,-50%) scale(' + s + ')';
+    for (var i = 0; i < Deck._canvases.length; i++) Deck._canvases[i]();
+  }
+
+  /* ---------- 页脚进度轨 ---------- */
+  function buildRail() {
+    var rail = document.querySelector('.rail');
+    if (!rail) return;
+    rail.innerHTML = '';
+    for (var i = 1; i <= Deck.total; i++) {
+      var a = document.createElement('a');
+      a.href = pageHref(i);
+      a.title = '第 ' + i + ' 页';
+      if (i < Deck.page) a.className = 'done';
+      else if (i === Deck.page) a.className = 'now';
+      rail.appendChild(a);
+    }
+    var no = document.querySelector('.pageno');
+    if (no && !no.dataset.custom) {
+      no.innerHTML = pad(Deck.page) + '<span>/' + pad(Deck.total) + '</span>';
+    }
+  }
+
+  function pad(n) { return (n < 10 ? '0' : '') + n; }
+  function pageHref(n) { return 'page-' + pad(n) + '.html'; }
+
+  /* ---------- 翻页 ---------- */
+  function go(n) {
+    if (n < 1 || n > Deck.total || n === Deck.page) return;
+    location.href = pageHref(n);
+  }
+
+  function onKey(e) {
+    var t = e.target;
+    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+    if (e.key === 'ArrowRight' || e.key === 'PageDown') { go(Deck.page + 1); }
+    else if (e.key === 'ArrowLeft' || e.key === 'PageUp') { go(Deck.page - 1); }
+  }
+
+  /* ---------- HiDPI canvas 助手 ----------
+     用法： var ctx = Deck.canvas(el);           // 按 CSS 尺寸自适应，返回已缩放的 2d ctx
+            Deck.canvas(el, function(ctx,w,h){}) // 尺寸变化时回调重绘（w/h 为 CSS 像素）
+     绘图时直接用 CSS 像素坐标，无需关心 dpr。                                     */
+  function canvas(el, onResize) {
+    var ctx = el.getContext('2d');
+    function resize() {
+      var r = el.getBoundingClientRect();
+      var w = Math.max(1, Math.round(r.width / (Deck.scale || 1)));
+      var h = Math.max(1, Math.round(r.height / (Deck.scale || 1)));
+      if (!r.width) { w = el.clientWidth || el.width; h = el.clientHeight || el.height; }
+      var dpr = Math.min(2.5, (global.devicePixelRatio || 1) * Math.max(1, Deck.scale));
+      el.width = Math.round(w * dpr);
+      el.height = Math.round(h * dpr);
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      el._cssW = w; el._cssH = h;
+      if (onResize) onResize(ctx, w, h);
+    }
+    Deck._canvases.push(resize);
+    resize();
+    return ctx;
+  }
+
+  /* ---------- 把鼠标事件换算成 canvas 的 CSS 像素坐标（已处理舞台缩放） ---------- */
+  function pointer(el, ev) {
+    var r = el.getBoundingClientRect();
+    var s = Deck.scale || 1;
+    var p = (ev.touches && ev.touches[0]) ? ev.touches[0] : ev;
+    return { x: (p.clientX - r.left) / s, y: (p.clientY - r.top) / s };
+  }
+
+  /* ---------- 小工具 ---------- */
+  function clamp(v, a, b) { return v < a ? a : v > b ? b : v; }
+  function lerp(a, b, t) { return a + (b - a) * t; }
+  function fmt(v, d) { d = d == null ? 2 : d; var s = v.toFixed(d); return (v >= 0 ? ' ' : '') + s; }
+
+  Deck.fit = fit;
+  Deck.go = go;
+  Deck.canvas = canvas;
+  Deck.pointer = pointer;
+  Deck.clamp = clamp;
+  Deck.lerp = lerp;
+  Deck.fmt = fmt;
+
+  function init() {
+    var b = document.body;
+    Deck.page = parseInt(b.getAttribute('data-page') || '1', 10);
+    Deck.total = parseInt(b.getAttribute('data-total') || '1', 10);
+    buildRail();
+    fit();
+    window.addEventListener('resize', fit);
+    window.addEventListener('keydown', onKey);
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else { init(); }
+
+  global.Deck = Deck;
+})(window);
+</script>
+  <script>
+  /* ==========================================================================
+     page-01 · 全屏活体网络
+     - 数百个节点缓慢漂浮，距离小于阈值时生成连线，透明度随距离衰减
+     - 鼠标半径内的节点被点亮，并被指针轻微排开
+     - 点击注入一次信号：波前沿「连线网络」向外传播（Dijkstra 得到每个节点
+       的到达时刻，边在波前经过时点亮并跑出一颗前沿光点）
+     ========================================================================== */
+  (function () {
+    'use strict';
+
+    function start() {
+      var cv = document.getElementById('net');
+      var elN = document.getElementById('vNodes');
+      var elL = document.getElementById('vLinks');
+      var elP = document.getElementById('vPulse');
+
+      var W = 1600, H = 900;
+      var ctx = Deck.canvas(cv, function (c, w, h) { W = w; H = h; });
+
+      /* ---------- 参数 ---------- */
+      var N        = 760;    // 节点数
+      var LINK     = 78;     // 连线阈值（像素）
+      var MARGIN   = 34;     // 节点可以漂出画面外一点，避免边界处连线突然稀疏
+      var PTR_R    = 168;    // 指针影响半径
+      var SPEED    = 840;    // 信号沿连线的传播速度 px/s
+      var MAXPAIR  = 14000;  // 每帧连线上限
+      var MAXPULSE = 5;      // 同时存在的脉冲上限
+
+      /* ---------- 节点状态 ---------- */
+      var px = new Float32Array(N), py = new Float32Array(N);
+      var ang = new Float32Array(N), spd = new Float32Array(N);
+      var rad = new Float32Array(N), glow = new Float32Array(N);
+      var i, j, k;
+      for (i = 0; i < N; i++) {
+        px[i] = -MARGIN + Math.random() * (W + MARGIN * 2);
+        py[i] = -MARGIN + Math.random() * (H + MARGIN * 2);
+        ang[i] = Math.random() * Math.PI * 2;
+        spd[i] = 5 + Math.random() * 15;
+        rad[i] = 0.75 + Math.random() * 1.35;
+      }
+
+      /* ---------- 空间网格（邻居查询） ---------- */
+      var CELL = LINK;
+      var GW = Math.ceil((W + MARGIN * 2) / CELL) + 1;
+      var GH = Math.ceil((H + MARGIN * 2) / CELL) + 1;
+      var cellHead, cellNext = new Int32Array(N);
+
+      function rebuildGrid() {
+        GW = Math.ceil((W + MARGIN * 2) / CELL) + 1;
+        GH = Math.ceil((H + MARGIN * 2) / CELL) + 1;
+        if (!cellHead || cellHead.length !== GW * GH) cellHead = new Int32Array(GW * GH);
+        cellHead.fill(-1);
+        for (var n = 0; n < N; n++) {
+          var cx = ((px[n] + MARGIN) / CELL) | 0;
+          var cy = ((py[n] + MARGIN) / CELL) | 0;
+          if (cx < 0) cx = 0; else if (cx >= GW) cx = GW - 1;
+          if (cy < 0) cy = 0; else if (cy >= GH) cy = GH - 1;
+          var c = cy * GW + cx;
+          cellNext[n] = cellHead[c];
+          cellHead[c] = n;
+        }
+      }
+
+      /* ---------- 每帧的连线表 ---------- */
+      var pa = new Int32Array(MAXPAIR), pb = new Int32Array(MAXPAIR);
+      var pd = new Float32Array(MAXPAIR);
+      var pairCount = 0;
+
+      // 只向 4 个方向的邻格 + 本格（j>i）配对，避免重复
+      var DX = [1, -1, 0, 1], DY = [0, 1, 1, 1];
+
+      function buildPairs() {
+        pairCount = 0;
+        var L2 = LINK * LINK;
+        for (var cy = 0; cy < GH; cy++) {
+          for (var cx = 0; cx < GW; cx++) {
+            var a = cellHead[cy * GW + cx];
+            while (a >= 0) {
+              // 本格内部
+              var b = cellNext[a];
+              while (b >= 0) {
+                var dx = px[a] - px[b], dy = py[a] - py[b];
+                var d2 = dx * dx + dy * dy;
+                if (d2 < L2 && pairCount < MAXPAIR) {
+                  pa[pairCount] = a; pb[pairCount] = b; pd[pairCount] = Math.sqrt(d2); pairCount++;
+                }
+                b = cellNext[b];
+              }
+              // 四个邻格
+              for (var q = 0; q < 4; q++) {
+                var nx = cx + DX[q], ny = cy + DY[q];
+                if (nx < 0 || nx >= GW || ny < 0 || ny >= GH) continue;
+                var m = cellHead[ny * GW + nx];
+                while (m >= 0) {
+                  var ex = px[a] - px[m], ey = py[a] - py[m];
+                  var e2 = ex * ex + ey * ey;
+                  if (e2 < L2 && pairCount < MAXPAIR) {
+                    pa[pairCount] = a; pb[pairCount] = m; pd[pairCount] = Math.sqrt(e2); pairCount++;
+                  }
+                  m = cellNext[m];
+                }
+              }
+              a = cellNext[a];
+            }
+          }
+        }
+      }
+
+      /* ---------- 邻接表（点击时按当前连线现场构建） ---------- */
+      var offs = new Int32Array(N + 1);
+      var cursor = new Int32Array(N + 1);
+      var adjN = new Int32Array(MAXPAIR * 2);
+      var adjW = new Float32Array(MAXPAIR * 2);
+
+      function buildAdj() {
+        offs.fill(0);
+        for (var t = 0; t < pairCount; t++) { offs[pa[t]]++; offs[pb[t]]++; }
+        var s = 0, cnt;
+        for (var n = 0; n < N; n++) { cnt = offs[n]; offs[n] = s; s += cnt; }
+        offs[N] = s;
+        for (n = 0; n <= N; n++) cursor[n] = offs[n];
+        for (t = 0; t < pairCount; t++) {
+          var a = pa[t], b = pb[t], w = pd[t] / SPEED;
+          adjN[cursor[a]] = b; adjW[cursor[a]] = w; cursor[a]++;
+          adjN[cursor[b]] = a; adjW[cursor[b]] = w; cursor[b]++;
+        }
+      }
+
+      /* ---------- 脉冲 ---------- */
+      var pulses = [];
+      var pulseCount = 0;
+      var visited = new Uint8Array(N);
+
+      function nearestNode(x, y) {
+        var best = -1, bd = Infinity;
+        for (var n = 0; n < N; n++) {
+          var dx = px[n] - x, dy = py[n] - y;
+          var d = dx * dx + dy * dy;
+          if (d < bd) { bd = d; best = n; }
+        }
+        return best;
+      }
+
+      // Dijkstra：得到波前抵达每个节点的时刻（秒，相对脉冲起点）
+      function arrivalTimes(src) {
+        var arr = new Float32Array(N);
+        for (var n = 0; n < N; n++) { arr[n] = Infinity; visited[n] = 0; }
+        arr[src] = 0;
+        for (var iter = 0; iter < N; iter++) {
+          var u = -1, bu = Infinity;
+          for (n = 0; n < N; n++) {
+            if (!visited[n] && arr[n] < bu) { bu = arr[n]; u = n; }
+          }
+          if (u < 0 || bu === Infinity || bu > 3.4) break; // 超过 3.4s 的远端不再展开
+          visited[u] = 1;
+          for (var e = offs[u], en = offs[u + 1]; e < en; e++) {
+            var v = adjN[e], nd = bu + adjW[e];
+            if (nd < arr[v]) arr[v] = nd;
+          }
+        }
+        return arr;
+      }
+
+      function inject(x, y, amp) {
+        if (pairCount === 0) return;
+        buildAdj();
+        var src = nearestNode(x, y);
+        if (src < 0) return;
+        if (pulses.length >= MAXPULSE) pulses.shift();
+        pulses.push({ arr: arrivalTimes(src), t0: now, amp: amp, sx: px[src], sy: py[src] });
+        pulseCount++;
+        elP.textContent = pulseCount;
+        elP.className = 'v on';
+      }
+
+      /* ---------- 指针 ---------- */
+      var mx = -9999, my = -9999, mOn = 0;
+      var stage = document.querySelector('.stage');
+
+      stage.addEventListener('mousemove', function (ev) {
+        var p = Deck.pointer(cv, ev);
+        mx = p.x; my = p.y; mOn = 1;
+      });
+      stage.addEventListener('mouseleave', function () { mOn = 0; });
+      stage.addEventListener('mousedown', function (ev) {
+        if (ev.target.closest && ev.target.closest('.deck-foot')) return;
+        var p = Deck.pointer(cv, ev);
+        mx = p.x; my = p.y; mOn = 1;
+        inject(p.x, p.y, 1);
+      });
+      stage.addEventListener('touchstart', function (ev) {
+        var p = Deck.pointer(cv, ev);
+        mx = p.x; my = p.y; mOn = 1;
+        inject(p.x, p.y, 1);
+      }, { passive: true });
+      stage.addEventListener('touchmove', function (ev) {
+        var p = Deck.pointer(cv, ev);
+        mx = p.x; my = p.y; mOn = 1;
+      }, { passive: true });
+
+      /* ---------- 辉光贴图（预渲染，避免每帧建渐变） ---------- */
+      var GS = 64;
+      var gspr = document.createElement('canvas');
+      gspr.width = gspr.height = GS;
+      (function () {
+        var g = gspr.getContext('2d');
+        var rg = g.createRadialGradient(GS / 2, GS / 2, 0, GS / 2, GS / 2, GS / 2);
+        rg.addColorStop(0.00, 'rgba(190,250,255,1)');
+        rg.addColorStop(0.16, 'rgba(0,229,255,.86)');
+        rg.addColorStop(0.44, 'rgba(0,229,255,.22)');
+        rg.addColorStop(1.00, 'rgba(0,229,255,0)');
+        g.fillStyle = rg;
+        g.fillRect(0, 0, GS, GS);
+      })();
+
+      /* ---------- 主循环 ---------- */
+      var now = 0, last = performance.now() / 1000;
+      var nextAuto = 1.4;                 // 首次自动脉冲：加载后 1.4s，先示范一次
+      var BUCKETS = 5;
+      var bucketAlpha = [0.030, 0.058, 0.092, 0.132, 0.180];
+
+      elN.textContent = N;
+
+      function frame(tms) {
+        var t = tms / 1000;
+        var dt = t - last; last = t;
+        if (dt > 0.05) dt = 0.05;
+        now += dt;
+
+        /* --- 漂浮 + 指针排斥 --- */
+        var lo = -MARGIN, hiX = W + MARGIN, hiY = H + MARGIN;
+        for (i = 0; i < N; i++) {
+          ang[i] += (Math.random() - 0.5) * 1.9 * dt;
+          px[i] += Math.cos(ang[i]) * spd[i] * dt;
+          py[i] += Math.sin(ang[i]) * spd[i] * dt;
+
+          if (px[i] < lo) { px[i] = lo; ang[i] = Math.PI - ang[i]; }
+          else if (px[i] > hiX) { px[i] = hiX; ang[i] = Math.PI - ang[i]; }
+          if (py[i] < lo) { py[i] = lo; ang[i] = -ang[i]; }
+          else if (py[i] > hiY) { py[i] = hiY; ang[i] = -ang[i]; }
+
+          glow[i] = 0;
+        }
+
+        /* --- 指针：点亮 + 轻微排开 --- */
+        if (mOn) {
+          var R2 = PTR_R * PTR_R;
+          for (i = 0; i < N; i++) {
+            var dx = px[i] - mx, dy = py[i] - my;
+            var d2 = dx * dx + dy * dy;
+            if (d2 < R2) {
+              var d = Math.sqrt(d2) || 0.001;
+              var f = 1 - d / PTR_R;
+              px[i] += (dx / d) * f * f * 46 * dt;
+              py[i] += (dy / d) * f * f * 46 * dt;
+              var g = f * f * 1.15;
+              if (g > 1) g = 1;
+              glow[i] = g;
+            }
+          }
+        }
+
+        rebuildGrid();
+        buildPairs();
+
+        /* --- 脉冲：节点亮度 --- */
+        for (k = pulses.length - 1; k >= 0; k--) {
+          var P = pulses[k];
+          var age = now - P.t0;
+          if (age > 5.0) { pulses.splice(k, 1); continue; }
+          var fade = age < 4.0 ? 1 : 1 - (age - 4.0) / 1.0;
+          var arr = P.arr;
+          for (i = 0; i < N; i++) {
+            var a = arr[i];
+            if (a === Infinity) continue;
+            var da = age - a;
+            if (da < 0 || da > 1.5) continue;
+            var gg = Math.exp(-da * 2.7) * P.amp * fade;
+            if (gg > glow[i]) glow[i] = gg;
+          }
+        }
+
+        /* --- 绘制：连线（按透明度分桶批量描边） --- */
+        ctx.clearRect(0, 0, W, H);
+        ctx.lineCap = 'round';
+
+        var bStart = [], bi;
+        for (bi = 0; bi < BUCKETS; bi++) bStart[bi] = [];
+        var lit = [];
+
+        for (k = 0; k < pairCount; k++) {
+          var A = pa[k], B = pb[k];
+          var tt = 1 - pd[k] / LINK;          // 0..1，越近越亮
+          var bidx = (tt * BUCKETS) | 0;
+          if (bidx > BUCKETS - 1) bidx = BUCKETS - 1;
+          bStart[bidx].push(k);
+          if (glow[A] > 0.12 || glow[B] > 0.12) lit.push(k);
+        }
+
+        ctx.lineWidth = 1;
+        for (bi = 0; bi < BUCKETS; bi++) {
+          var list = bStart[bi];
+          if (!list.length) continue;
+          ctx.strokeStyle = 'rgba(96,196,224,' + bucketAlpha[bi] + ')';
+          ctx.beginPath();
+          for (j = 0; j < list.length; j++) {
+            var kk = list[j];
+            ctx.moveTo(px[pa[kk]], py[pa[kk]]);
+            ctx.lineTo(px[pb[kk]], py[pb[kk]]);
+          }
+          ctx.stroke();
+        }
+
+        /* --- 绘制：被指针 / 脉冲点亮的连线 --- */
+        if (lit.length) {
+          ctx.lineWidth = 1.15;
+          ctx.strokeStyle = 'rgba(0,229,255,.30)';
+          ctx.beginPath();
+          for (j = 0; j < lit.length; j++) {
+            var kl = lit[j];
+            ctx.moveTo(px[pa[kl]], py[pa[kl]]);
+            ctx.lineTo(px[pb[kl]], py[pb[kl]]);
+          }
+          ctx.stroke();
+        }
+
+        /* --- 绘制：波前正在经过的边（沿边扩散的核心） --- */
+        var frontX = [], frontY = [], frontI = [];
+        if (pulses.length) {
+          ctx.lineWidth = 1.6;
+          ctx.strokeStyle = 'rgba(0,229,255,.85)';
+          ctx.beginPath();
+          var drew = false;
+          for (k = 0; k < pulses.length; k++) {
+            var Q = pulses[k];
+            var qage = now - Q.t0;
+            var qfade = qage < 4.0 ? 1 : Math.max(0, 1 - (qage - 4.0));
+            if (qfade <= 0) continue;
+            var qa = Q.arr;
+            for (j = 0; j < pairCount; j++) {
+              var u = pa[j], v = pb[j];
+              var tu = qa[u], tv = qa[v];
+              if (tu === Infinity || tv === Infinity) continue;
+              var s = tu < tv ? tu : tv;
+              var e = tu < tv ? tv : tu;
+              if (qage < s || qage > e + 0.32) continue;
+              drew = true;
+              ctx.moveTo(px[u], py[u]);
+              ctx.lineTo(px[v], py[v]);
+              if (qage <= e && e > s) {
+                var fr = (qage - s) / (e - s);
+                var na = tu < tv ? u : v, nb = tu < tv ? v : u;
+                frontX.push(px[na] + (px[nb] - px[na]) * fr);
+                frontY.push(py[na] + (py[nb] - py[na]) * fr);
+                frontI.push(Q.amp * qfade);
+              }
+            }
+          }
+          if (drew) ctx.stroke();
+        }
+
+        /* --- 绘制：暗节点（一次成批） --- */
+        ctx.fillStyle = 'rgba(158,206,224,.34)';
+        ctx.beginPath();
+        for (i = 0; i < N; i++) {
+          if (glow[i] > 0.06) continue;
+          ctx.moveTo(px[i] + rad[i], py[i]);
+          ctx.arc(px[i], py[i], rad[i], 0, 6.2832);
+        }
+        ctx.fill();
+
+        /* --- 绘制：亮节点（辉光贴图 + 亮核） --- */
+        var litN = 0;
+        ctx.globalCompositeOperation = 'lighter';
+        for (i = 0; i < N; i++) {
+          var gv = glow[i];
+          if (gv <= 0.06) continue;
+          litN++;
+          var size = 10 + 30 * gv;
+          ctx.globalAlpha = 0.28 + 0.62 * gv;
+          ctx.drawImage(gspr, px[i] - size / 2, py[i] - size / 2, size, size);
+        }
+        ctx.globalAlpha = 1;
+        ctx.fillStyle = 'rgba(214,252,255,.95)';
+        ctx.beginPath();
+        for (i = 0; i < N; i++) {
+          if (glow[i] <= 0.06) continue;
+          var rr = rad[i] + glow[i] * 1.3;
+          ctx.moveTo(px[i] + rr, py[i]);
+          ctx.arc(px[i], py[i], rr, 0, 6.2832);
+        }
+        ctx.fill();
+
+        /* --- 绘制：波前光点 --- */
+        if (frontX.length) {
+          ctx.fillStyle = 'rgba(224,253,255,.92)';
+          ctx.beginPath();
+          for (j = 0; j < frontX.length; j++) {
+            ctx.moveTo(frontX[j] + 2.1, frontY[j]);
+            ctx.arc(frontX[j], frontY[j], 2.1, 0, 6.2832);
+          }
+          ctx.fill();
+        }
+        ctx.globalCompositeOperation = 'source-over';
+
+        /* --- 读数 --- */
+        elL.textContent = pairCount;
+        elN.className = litN > 0 ? 'v on' : 'v';
+
+        /* --- 无人操作时也保持一点生命感：偶尔自发一次弱脉冲 --- */
+        if (now > nextAuto) {
+          inject(Math.random() * W, Math.random() * H, 0.42);
+          pulseCount--;                       // 自发的不计入"已注入"
+          elP.textContent = pulseCount;
+          if (pulseCount === 0) elP.className = 'v';
+          nextAuto = now + 7 + Math.random() * 6;
+        }
+
+        requestAnimationFrame(frame);
+      }
+
+      requestAnimationFrame(frame);
+    }
+
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', start);
+    } else { start(); }
+  })();
+  </script>
+</body>
+</html>

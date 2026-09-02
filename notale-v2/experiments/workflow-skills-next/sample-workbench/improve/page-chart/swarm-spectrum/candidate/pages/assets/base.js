@@ -1,0 +1,1 @@
+../../../../../../../build-page/samples/chart/swarm-spectrum/pages/assets/base.js

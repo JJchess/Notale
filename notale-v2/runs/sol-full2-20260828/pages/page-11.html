@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>计算图：先把值存下来</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    #stage{background-image:none}
+    .sequence{gap:14px}
+    .head{display:flex;align-items:flex-end;justify-content:space-between;gap:28px;border-bottom:2px solid var(--rule-strong);padding-bottom:14px}
+    .head h1{margin-bottom:0}
+    .head-copy{max-width:980px}
+    .head .lead{max-width:510px;margin:0 0 2px;color:var(--muted);text-align:right;font-size:var(--fs-sec)}
+    .graph-shell{min-height:0;display:grid;grid-template-rows:minmax(0,1fr) auto;gap:14px}
+    .graph{position:relative;min-height:0;border-top:1px solid var(--rule);border-bottom:1px solid var(--rule);background:rgba(248,251,253,.42);overflow:hidden}
+    .wires{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+    .wire{fill:none;stroke:var(--rule-strong);stroke-width:2.5}
+    .wire.live{stroke:var(--model);stroke-width:4;transition:stroke .2s ease,stroke-width .2s ease}
+    .wire.target{stroke:var(--target)}
+    .junction{fill:var(--paper-strong);stroke:var(--rule-strong);stroke-width:2}
+    .node{position:absolute;width:170px;min-height:116px;transform:translate(-50%,-50%);padding:13px 14px 11px;border:2px solid var(--rule-strong);border-radius:var(--radius);background:var(--paper);box-shadow:0 4px 10px var(--shadow);transition:opacity .2s ease,border-color .2s ease,box-shadow .2s ease}
+    .node .name{display:block;margin-bottom:5px;font:700 var(--fs-label)/1.2 var(--font-display);color:var(--muted)}
+    .node .value{display:block;font:650 25px/1.2 var(--font-num);font-variant-numeric:tabular-nums;white-space:nowrap}
+    .node .store{display:block;margin-top:8px;padding-top:7px;border-top:1px solid var(--rule);font-size:var(--fs-label);line-height:1.25;color:var(--gradient);font-weight:650}
+    .node[data-kind="input"]{width:144px;min-height:100px}
+    .node[data-kind="target"]{width:128px;min-height:90px;border-color:var(--target)}
+    .node[data-kind="loss"]{width:196px;min-height:120px;border-color:var(--target)}
+    .node.current{border-color:var(--attention);box-shadow:0 0 0 3px rgba(215,122,0,.16),0 5px 14px var(--shadow)}
+    .node.future{opacity:.28}
+    .node.done{opacity:1}
+    .x{left:6.3%;top:25%}.w{left:6.3%;top:72%}.mul{left:25%;top:48%}.b{left:25%;top:82%}.add{left:44%;top:48%}.sig{left:63%;top:48%}.target-node{left:63%;top:82%}.compare-node{left:78.5%;top:48%}.loss-node{left:92%;top:48%}
+    .compare-node{width:150px}
+    .node .unit{font-size:var(--fs-label)}
+    .flow-label{position:absolute;top:7%;left:3%;font-size:var(--fs-label);font-weight:700;color:var(--model);letter-spacing:.04em}
+    .target-label{position:absolute;left:57%;bottom:4%;font-size:var(--fs-label);color:var(--target);font-weight:700}
+    .controlbar{display:grid;grid-template-columns:220px minmax(0,1fr) auto;gap:22px;align-items:center;padding:12px 0}
+    .progress-text{font-size:var(--fs-sec);color:var(--muted)}
+    .progress-text strong{display:block;color:var(--text);font-size:var(--fs-body)}
+    .step-rail{height:10px;background:var(--rule);position:relative}
+    .step-rail span{position:absolute;left:0;top:0;bottom:0;width:100%;background:var(--model);transform-origin:left center;transition:transform .2s ease}
+    .btn.primary{border-color:var(--attention);background:var(--paper)}
+    .footnote{display:flex;justify-content:space-between;gap:24px;color:var(--muted);font-size:var(--fs-label)}
+    .footnote .formula{color:var(--text)}
+    @media (prefers-reduced-motion: reduce){.node,.wire.live,.step-rail span{transition:none}}
+  </style>
+</head>
+<body data-page="11" data-total="22">
+  <div id="stage">
+    <main class="sequence min0" aria-labelledby="page-title">
+      <header class="head min0">
+        <div class="head-copy min0">
+          <span class="kicker">前向传播 · 数值链</span>
+          <h1 id="page-title">计算图：先把值存下来</h1>
+        </div>
+        <p class="lead">反向传播会再次使用 <span class="formula">x、w、b、wx、z、ŷ</span>；前向计算结束时不能丢掉它们。</p>
+      </header>
+
+      <section class="graph-shell min0" aria-label="从输入到二元交叉熵的计算图">
+        <div class="graph min0" id="graph" data-step="6">
+          <span class="flow-label">前向值从左向右</span>
+          <span class="target-label">外部标签只参与比较</span>
+          <svg class="wires" viewBox="0 0 1488 610" preserveAspectRatio="none" aria-hidden="true">
+            <defs>
+              <marker id="arrowModel" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10Z" fill="#165D9C"/></marker>
+              <marker id="arrowTarget" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10Z" fill="#B2482F"/></marker>
+            </defs>
+            <path class="wire edge e1" d="M164 153 C225 153 235 255 290 288" marker-end="url(#arrowModel)"/>
+            <path class="wire edge e1" d="M164 439 C225 439 235 355 290 312" marker-end="url(#arrowModel)"/>
+            <path class="wire edge e2" d="M456 300 L567 300" marker-end="url(#arrowModel)"/>
+            <path class="wire edge e2" d="M372 500 C458 500 478 345 567 316" marker-end="url(#arrowModel)"/>
+            <path class="wire edge e3" d="M738 300 L850 300" marker-end="url(#arrowModel)"/>
+            <path class="wire edge e4" d="M1021 300 L1083 300" marker-end="url(#arrowModel)"/>
+            <path class="wire edge e4 target" d="M936 500 C1038 500 1016 352 1083 322" marker-end="url(#arrowTarget)"/>
+            <path class="wire edge e5" d="M1238 300 L1272 300" marker-end="url(#arrowModel)"/>
+          </svg>
+
+          <div class="node x done" data-order="0" data-kind="input"><span class="name">输入 x</span><span class="value is-model">2.000</span><span class="store">反向时会复用</span></div>
+          <div class="node w done" data-order="0" data-kind="input"><span class="name">权重 w</span><span class="value is-model">0.500</span><span class="store">反向时会复用</span></div>
+          <div class="node mul done" data-order="1"><span class="name">乘法 wx</span><span class="value is-model">1.000</span><span class="store">反向时会复用</span></div>
+          <div class="node b done" data-order="0" data-kind="input"><span class="name">偏置 b</span><span class="value is-model">−0.200</span><span class="store">反向时会复用</span></div>
+          <div class="node add done" data-order="2"><span class="name">加法 z = wx + b</span><span class="value is-model">0.800</span><span class="store">反向时会复用</span></div>
+          <div class="node sig done" data-order="3"><span class="name">sigmoid ŷ</span><span class="value is-model">0.690</span><span class="store">反向时会复用</span></div>
+          <div class="node target-node done" data-order="0" data-kind="target"><span class="name is-target">标签 y</span><span class="value is-target">1</span><span class="store">比较时使用</span></div>
+          <div class="node compare-node done" data-order="4"><span class="name">与 y = 1 比较</span><span class="value">−ln(ŷ)</span><span class="store">保留 ŷ</span></div>
+          <div class="node loss-node done" data-order="5" data-kind="loss"><span class="name">二元交叉熵 L</span><span class="value is-target">0.371 <small class="unit">nat</small></span><span class="store">反向时从这里开始</span></div>
+        </div>
+
+        <div>
+          <div class="controlbar">
+            <div class="progress-text" id="status" role="status" aria-live="polite"><strong>数值链已完整保存</strong>6 个计算位置均可复算</div>
+            <div class="step-rail" aria-hidden="true"><span id="bar" style="transform:scaleX(1)"></span></div>
+            <div class="btns">
+              <button class="btn" id="reset" type="button">从输入开始</button>
+              <button class="btn primary" id="next" type="button" disabled>下一项计算</button>
+            </div>
+          </div>
+          <div class="footnote">
+            <span>所有输入与中间量无量纲；损失的单位是 <span class="formula">nat</span>。</span>
+            <span class="formula">sigmoid(0.800) = 0.689974…　−ln(0.689974…) = 0.371101…</span>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+  <script src="assets/base.js"></script>
+  <script>
+    Deck.init({index:11,total:22});
+    (()=>{
+      const graph=document.getElementById('graph');
+      const nodes=[...graph.querySelectorAll('.node')];
+      const edges=[...graph.querySelectorAll('.edge')];
+      const reset=document.getElementById('reset');
+      const next=document.getElementById('next');
+      const status=document.getElementById('status');
+      const bar=document.getElementById('bar');
+      const labels=[
+        ['输入值已保存','x、w、b 与标签 y 已就位'],
+        ['乘法结果已保存','w × x = 1.000'],
+        ['加法结果已保存','z = 1.000 − 0.200 = 0.800'],
+        ['预测值已保存','sigmoid(0.800) = 0.690'],
+        ['预测与标签比较','y = 1，因此 L = −ln(ŷ)'],
+        ['损失已算出','L = 0.371 nat；数值链可供反向复用']
+      ];
+      let step=5;
+      function render(){
+        graph.dataset.step=String(step);
+        nodes.forEach(n=>{
+          const o=Number(n.dataset.order);
+          n.classList.toggle('future',o>step);
+          n.classList.toggle('done',o<step || o===0);
+          n.classList.toggle('current',o===step && step>0);
+        });
+        edges.forEach((e,i)=>e.classList.toggle('live',i<step+2));
+        status.innerHTML='<strong>'+labels[step][0]+'</strong>'+labels[step][1];
+        bar.style.transform='scaleX('+((step+1)/6)+')';
+        next.disabled=step>=5;
+        next.textContent=step>=5?'计算完成':'下一项计算';
+      }
+      reset.addEventListener('click',()=>{step=0;render();next.focus();});
+      next.addEventListener('click',()=>{if(step<5){step++;render();}});
+      render();
+    })();
+  </script>
+</body>
+</html>

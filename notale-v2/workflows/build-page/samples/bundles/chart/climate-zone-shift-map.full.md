@@ -9,6 +9,45 @@
   <meta name="description" content="Present-day and projected 2070 Köppen climate zones, with 70 global cities.">
   <title>Climate zones are moving</title>
   <link rel="stylesheet" href="assets/base.css">
+  <style>
+    :root{--bg:#e8e9ea;--text:#111315;--font-sans:Arial,Helvetica,sans-serif;--focus:#111315;--pad-x:0px}
+    #stage{background:#e8e9ea;isolation:isolate}
+    .maps{position:absolute;inset:0}.map-native{position:absolute;left:8px;top:0;width:1584px;height:900px}
+    .map-canvas{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+    #futureMap{opacity:0;transition:opacity 2s linear}.is-future #futureMap{opacity:1}
+    .top-wash,.bottom-wash{position:absolute;z-index:2;pointer-events:none}
+    .top-wash{inset:0 auto auto 0;width:660px;height:230px;background:linear-gradient(115deg,rgba(232,233,234,.99) 0 72%,rgba(232,233,234,.72) 84%,transparent 100%)}
+    .bottom-wash{inset:auto 0 0 0;height:128px;background:linear-gradient(0deg,rgba(232,233,234,.98),rgba(232,233,234,.78) 58%,transparent)}
+    header{position:absolute;z-index:5;left:34px;top:27px;width:570px}
+    h1{font-size:46px;line-height:.98;letter-spacing:-2.1px;max-width:560px}
+    .deck{margin-top:13px;width:525px;font-size:17px;line-height:1.35}
+    .facts{display:flex;align-items:flex-end;gap:18px;margin-top:15px}
+    .fact{display:grid;grid-template-columns:auto auto;align-items:baseline;gap:7px;padding-right:18px;border-right:1px solid #777}
+    .fact:last-child{border:0}.fact strong{font-size:25px;letter-spacing:-.8px}.fact span{font-size:13px;line-height:1.08;width:84px}
+    .projection-note{margin-top:10px;width:540px;font-size:13px;line-height:1.3;color:#45484a}
+    .years{position:absolute;z-index:8;top:24px;left:50%;transform:translateX(-50%);display:flex;gap:7px;padding:4px;border-radius:999px;background:rgba(247,247,247,.86);box-shadow:0 1px 8px #0002}
+    .years button{border:0;border-radius:999px;background:transparent;padding:8px 18px;font-size:20px;font-weight:700;cursor:pointer;min-width:96px;transition:background .3s,color .3s}
+    .years button[aria-pressed=true]{background:#111315;color:#fff}
+    .state-note{position:absolute;z-index:7;top:80px;left:50%;width:300px;height:20px;transform:translateX(-50%);opacity:0;pointer-events:none;font-size:13px;text-align:center}
+    .hotspots{position:absolute;z-index:4;left:8px;top:0;width:1584px;height:900px}.city{position:absolute;width:22px;height:22px;border:0;border-radius:50%;padding:0;background:transparent;cursor:crosshair}
+    .city:focus-visible{outline:2px solid #111315;outline-offset:2px;background:#fff9}
+    .tip{position:absolute;z-index:12;width:292px;padding:12px 14px;background:#111315;color:#fff;border-radius:3px;box-shadow:0 5px 18px #0004;pointer-events:none}
+    .tip b{display:block;font-size:17px;margin-bottom:6px}.tip p{font-size:13px;line-height:1.4}.tip .temp{margin-top:5px;color:#d9dcde}
+    .legend{position:absolute;z-index:8;left:34px;bottom:30px;display:flex;align-items:end;gap:14px}
+    .legend-title{width:100px;padding-bottom:5px;font-size:12px;line-height:1.2;text-transform:uppercase;letter-spacing:.7px}
+    .zone{width:126px;border:0;border-bottom:2px solid transparent;background:transparent;padding:5px 4px 7px;text-align:left;cursor:pointer;transition:opacity .2s,border-color .2s}
+    .has-focus .zone:not([aria-pressed=true]){opacity:.38}.zone[aria-pressed=true]{border-color:#111315}
+    .ramp{display:block;height:8px;margin-bottom:6px;border:1px solid #0002}
+    .zone span:last-child{font-size:13px;font-weight:700}
+    [data-zone=tropical] .ramp{background:linear-gradient(90deg,#eaf4af 0 33%,#aff4c5 33% 66%,#daf4af 66%)}
+    [data-zone=arid] .ramp{background:linear-gradient(90deg,#ffb098 0 25%,#ffe870 25% 50%,#ffd5a4 50% 75%,#ffd0c1 75%)}
+    [data-zone=temperate] .ramp{background:linear-gradient(90deg,#bcf7ff 0 11%,#bfdbf0 11% 22%,#969600 22% 33%,#bcc7ff 33% 44%,#79c7ff 44% 55%,#e8e8e8 55% 66%,#3690d1 66% 77%,#bcdfff 77% 88%,#96ff96 88%)}
+    [data-zone=cold] .ramp{background:linear-gradient(90deg,#ffc0cb 0 8%,#e6e6fa 8% 16%,#da70d6 16% 24%,#ba55d3 24% 32%,#f8cbff 32% 40%,#d8bfd8 40% 48%,#dda0dd 48% 56%,#ee82ee 56% 64%,#cbd6ff 64% 73%,#e2cbff 73% 82%,#c71585 82% 91%,#ff69b4 91%)}
+    [data-zone=polar] .ramp{background:linear-gradient(90deg,#ececec 0 50%,#f6f6f6 50%)}
+    .render-fallback{position:absolute;z-index:3;left:50%;top:50%;transform:translate(-50%,-50%);padding:10px 14px;background:#e8e9ea;border:1px solid #777b7e;font-size:14px}
+    footer{position:absolute;z-index:8;right:15px;bottom:9px;font-size:11px;color:#55595c;text-align:right}footer a{color:inherit}
+    @media(prefers-reduced-motion:reduce){.climate-map,.years button,.state-note{transition:none!important}}
+  </style>
 </head>
 <body>
 <main id="stage" class="is-present" aria-labelledby="title">

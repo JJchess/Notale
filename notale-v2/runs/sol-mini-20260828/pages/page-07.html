@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>预测、目标与损失</title>
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  .page-head{flex:0 0 auto;padding-bottom:20px;border-bottom:2px solid var(--rule)}
+  .page-head h1{max-width:1120px}
+  .page-head .lead{margin-top:12px;color:var(--muted);max-width:980px}
+  .lesson{flex:1;min-height:0;display:grid;grid-template-rows:minmax(0,1fr) auto;gap:24px;padding-top:24px}
+  .map{min-height:0;display:grid;grid-template-columns:minmax(0,1fr) 96px minmax(0,.92fr);align-items:stretch}
+  .inputs{min-width:0;display:grid;grid-template-rows:1fr 1fr;gap:18px}
+  .quantity{position:relative;display:grid;grid-template-columns:126px minmax(0,1fr);align-items:center;gap:22px;padding:22px 26px;border:2px solid var(--rule-strong);border-radius:var(--radius);background:var(--paper)}
+  .quantity.model{border-color:var(--model)}
+  .quantity.target{border-color:var(--target)}
+  .symbol{font-family:var(--font-mono);font-size:62px;font-weight:600;line-height:1;text-align:center}
+  .quantity.model .symbol,.quantity.model h2{color:var(--model)}
+  .quantity.target .symbol,.quantity.target h2{color:var(--target)}
+  .quantity p{margin-top:8px;color:var(--muted);font-size:var(--fs-sec);line-height:1.5}
+  .origin{display:inline-block;margin-bottom:8px;color:var(--muted);font-family:var(--font-mono);font-size:var(--fs-label);font-weight:600;letter-spacing:.04em}
+  .merge{position:relative;min-width:0}
+  .merge svg{width:100%;height:100%;overflow:visible}
+  .loss{min-width:0;display:flex;flex-direction:column;justify-content:center;padding:28px 32px;border:4px solid var(--gradient);border-radius:var(--radius);background:var(--paper)}
+  .loss .origin{color:var(--gradient)}
+  .loss h2{color:var(--gradient);font-size:34px}
+  .formula{display:flex;align-items:baseline;gap:15px;margin:22px 0 18px;font-family:var(--font-mono);font-size:42px;font-weight:600;line-height:1.15;color:var(--text);white-space:nowrap}
+  .formula .pred{color:var(--model)}
+  .formula .targ{color:var(--target)}
+  .formula .out{color:var(--gradient)}
+  .loss p{max-width:30em;font-size:var(--fs-body);line-height:1.55}
+  .loss .scalar{margin-top:18px;padding-top:16px;border-top:2px solid var(--rule);font-weight:700}
+  .distinctions{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));border-top:4px solid var(--text);border-bottom:2px solid var(--rule-strong)}
+  .dist{min-width:0;padding:16px 22px}
+  .dist+.dist{border-left:2px solid var(--rule)}
+  .dist .term{display:flex;align-items:baseline;gap:10px;margin-bottom:6px;font-weight:700}
+  .dist .term b{font-family:var(--font-mono);font-size:25px}
+  .dist p{color:var(--muted);font-size:var(--fs-sec);line-height:1.45}
+  .dist.model .term{color:var(--model)}
+  .dist.target .term{color:var(--target)}
+  .dist.gradient .term{color:var(--gradient)}
+  .axis-label{fill:var(--muted);font-family:var(--font-sans);font-size:15px;font-weight:600}
+  @media (prefers-reduced-motion:reduce){*{scroll-behavior:auto}}
+</style>
+</head>
+<body data-page="07" data-total="24">
+<div id="stage">
+  <header class="page-head">
+    <span class="kicker">从输出到学习信号</span>
+    <h1>损失把“预测偏了多少”压成一个可优化的标量</h1>
+    <p class="lead">预测来自模型，目标来自数据；损失函数读取两者的差异，但不等同于其中任何一个。</p>
+  </header>
+
+  <main class="lesson min0" aria-label="预测、目标与损失的关系图">
+    <section class="map min0">
+      <div class="inputs min0">
+        <article class="quantity model">
+          <div class="symbol" aria-hidden="true">ŷ</div>
+          <div class="min0">
+            <span class="origin">MODEL OUTPUT</span>
+            <h2>预测</h2>
+            <p>模型根据当前参数算出的答案；参数改变，预测也会改变。</p>
+          </div>
+        </article>
+        <article class="quantity target">
+          <div class="symbol" aria-hidden="true">y</div>
+          <div class="min0">
+            <span class="origin">DATA LABEL</span>
+            <h2>目标</h2>
+            <p>训练样本给出的参照答案；它告诉模型应该靠近哪里。</p>
+          </div>
+        </article>
+      </div>
+
+      <div class="merge" aria-hidden="true">
+        <svg viewBox="0 0 96 460" preserveAspectRatio="none">
+          <path d="M2 115 H36 Q54 115 54 145 V215 Q54 230 72 230 H90" fill="none" stroke="var(--model)" stroke-width="4"/>
+          <path d="M2 345 H36 Q54 345 54 315 V245 Q54 230 72 230 H90" fill="none" stroke="var(--target)" stroke-width="4"/>
+          <path d="M78 220 L92 230 L78 240" fill="none" stroke="var(--gradient)" stroke-width="4"/>
+          <text x="48" y="212" text-anchor="middle" class="axis-label">比较</text>
+        </svg>
+      </div>
+
+      <article class="loss">
+        <span class="origin">LOSS FUNCTION</span>
+        <h2>损失</h2>
+        <div class="formula" aria-label="损失 L 等于损失函数作用于预测 y hat 与目标 y">
+          <span class="out">L</span><span>= ℓ(</span><span class="pred">ŷ</span><span>,</span><span class="targ">y</span><span>)</span>
+        </div>
+        <p>损失函数规定如何衡量偏差，把预测与目标之间可能很复杂的差异汇总为一个量。</p>
+        <p class="scalar">优化器只需寻找让 <span class="is-gradient num">L</span> 变小的参数方向。</p>
+      </article>
+    </section>
+
+    <section class="distinctions" aria-label="三个概念的职责">
+      <div class="dist model">
+        <div class="term"><b>ŷ</b><span>谁给出的？</span></div>
+        <p>模型给出，可随参数更新。</p>
+      </div>
+      <div class="dist target">
+        <div class="term"><b>y</b><span>拿什么作参照？</span></div>
+        <p>训练数据给出，本轮比较时保持不变。</p>
+      </div>
+      <div class="dist gradient">
+        <div class="term"><b>L</b><span>优化什么？</span></div>
+        <p>优化一个标量，而不是直接“优化目标”。</p>
+      </div>
+    </section>
+  </main>
+</div>
+<script src="assets/base.js"></script>
+<script>Deck.init({index:7,total:24});</script>
+</body>
+</html>

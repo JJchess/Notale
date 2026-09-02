@@ -1,0 +1,1 @@
+../../../../../../../../workflow-skills-next-dev/sample-metadata/build-page/samples/chart/lenna-scroll-bars/pages/assets/new-pages.py

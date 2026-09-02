@@ -49,7 +49,7 @@ Planner 只决定顺序、标签与主题，不提前指定页面变量、控件
 - `build-interaction/3d` 暂无批准 sample，只读 reference；
 - `build-code` 固定一次读取 `code.md` 和含四个 author layer 的 `code-core-bundle.full.md`，同时调用 `CodeScaffold`。
 
-mini bundle 和 catalog 元数据继续保留，但只有显式传入 Builder 的 `--aux-samples` 才会把 mini 路径作为独立 `<aux_sample_catalog>` 注入；该开关默认关闭并写入 `builder-manifest.json`。没有 `WorkflowContext` 或 `Skill` 选择工具，也没有字符预算字段。每份生成 bundle 用独立 `<sample>` 包裹，内部以 `<file path="…">` 保留文件身份。运行原件完整保留但不在 Builder 可读面内；进入上下文的 bundle 只移除独立 CSS 文件和 HTML 内联 `<style>`，不改 HTML/JS/算法/状态逻辑。
+mini bundle 和 catalog 元数据继续保留，但只有显式传入 Builder 的 `--aux-samples` 才会把 mini 路径作为独立 `<aux_sample_catalog>` 注入；该开关默认关闭并写入 `builder-manifest.json`。没有 `WorkflowContext` 或 `Skill` 选择工具，也没有字符预算字段。每份生成 bundle 用独立 `<sample>` 包裹，内部以 `<file path="…">` 保留文件身份。运行原件完整保留但不在 Builder 可读面内；三个视觉 workflow 的 bundle 保留 catalog 已选文件及 HTML 内联 `<style>`，让构图、层级和动效代码完整进入上下文；`build-code` 仍移除独立 CSS 和内联 `<style>`，因为固定 runtime/template 拥有其视觉层。
 
 ## Harness 边界
 

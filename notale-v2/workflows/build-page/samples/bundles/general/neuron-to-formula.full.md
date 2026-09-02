@@ -10,6 +10,230 @@
   <link rel="icon" href="data:,">
   <link rel="stylesheet" href="assets/base.css">
   <title>一颗神经元，可以写成一行计算</title>
+  <style>
+    :root {
+      --bg:#dbe2dd;
+      --text:#15231f;
+      --muted:#60716b;
+      --rule:#9eada7;
+      --signal:#d84836;
+      --parameter:#99631a;
+      --paper:#e7ece8;
+      --focus:#b42f20;
+      --font-sans:"PingFang SC","Noto Sans CJK SC","Microsoft YaHei",system-ui,sans-serif;
+      --font-math:"Times New Roman","STIX Two Math",serif;
+    }
+
+    #stage { isolation:isolate; }
+
+    #stage::before {
+      content:"";
+      position:absolute;
+      inset:0;
+      z-index:-1;
+      background:linear-gradient(180deg,rgba(255,255,255,.13),transparent 38%);
+      pointer-events:none;
+    }
+
+    .masthead {
+      position:absolute;
+      inset:42px 70px auto;
+      display:grid;
+      grid-template-columns:780px 1fr;
+      align-items:end;
+      gap:60px;
+    }
+
+    h1 {
+      max-width:760px;
+      font-size:52px;
+      line-height:1.08;
+      letter-spacing:-.045em;
+      font-weight:720;
+    }
+
+    .claim {
+      margin-top:12px;
+      max-width:630px;
+      color:var(--muted);
+      font-size:17px;
+      line-height:1.55;
+    }
+
+    .formula {
+      justify-self:end;
+      padding-bottom:4px;
+      color:rgba(21,35,31,.34);
+      font:48px/1 var(--font-math);
+      letter-spacing:.01em;
+      white-space:nowrap;
+    }
+
+    .formula span { transition:color .25s ease,opacity .25s ease; }
+    .formula [data-ready="true"] { color:var(--text); }
+    .formula [data-current="true"] { color:var(--signal); }
+    .formula [data-kind="parameter"][data-current="true"] { color:var(--parameter); }
+
+    .evidence {
+      position:absolute;
+      inset:154px 68px auto;
+      height:552px;
+    }
+
+    #visual { width:100%; height:100%; }
+
+    .renderer-fallback {
+      height:100%;
+      padding:54px 68px;
+      border-top:1px solid var(--rule);
+      border-bottom:1px solid var(--rule);
+      background:rgba(231,236,232,.72);
+    }
+
+    .renderer-fallback h2 { font-size:29px; line-height:1.15; }
+    .renderer-fallback p { margin-top:12px; font:31px/1.2 var(--font-math); }
+    .renderer-fallback ol {
+      margin-top:28px;
+      padding-left:24px;
+      columns:2;
+      column-gap:72px;
+      color:var(--muted);
+      font-size:17px;
+      line-height:1.55;
+    }
+    .renderer-fallback li { margin-bottom:9px; break-inside:avoid; }
+
+    .controller {
+      position:absolute;
+      inset:720px 68px auto;
+      height:142px;
+      border-top:1px solid rgba(21,35,31,.24);
+      display:grid;
+      grid-template-columns:470px 1fr;
+      gap:54px;
+      padding-top:22px;
+    }
+
+    .explanation { min-width:0; }
+
+    .state-name {
+      color:var(--signal);
+      font-size:28px;
+      line-height:1.1;
+      font-weight:720;
+      letter-spacing:-.025em;
+    }
+
+    .state-copy {
+      margin-top:8px;
+      max-width:450px;
+      color:var(--text);
+      font-size:17px;
+      line-height:1.5;
+    }
+
+    .sequence {
+      display:grid;
+      grid-template-columns:1fr auto;
+      align-content:start;
+      gap:20px 28px;
+    }
+
+    .beats {
+      position:relative;
+      display:grid;
+      grid-template-columns:repeat(7,1fr);
+      gap:0;
+    }
+
+    .beats::before {
+      content:"";
+      position:absolute;
+      left:7px;
+      right:7px;
+      top:31px;
+      height:1px;
+      background:var(--rule);
+    }
+
+    .beat {
+      position:relative;
+      min-width:0;
+      padding:0 2px 28px;
+      border:0;
+      background:none;
+      color:var(--muted);
+      font-size:14px;
+      cursor:pointer;
+    }
+
+    .beat::after {
+      content:"";
+      position:absolute;
+      left:50%;
+      bottom:22px;
+      width:7px;
+      height:7px;
+      border:1px solid var(--muted);
+      border-radius:50%;
+      background:var(--bg);
+      transform:translateX(-50%);
+      transition:background .2s ease,border-color .2s ease,transform .2s ease;
+    }
+
+    .beat:hover { color:var(--text); }
+
+    .beat[aria-current="step"] {
+      color:var(--text);
+      font-weight:700;
+    }
+
+    .beat[aria-current="step"]::after {
+      border-color:var(--signal);
+      background:var(--signal);
+      transform:translateX(-50%) scale(1.28);
+    }
+
+    .actions {
+      display:flex;
+      align-items:flex-start;
+      gap:18px;
+    }
+
+    .action {
+      min-width:84px;
+      padding:8px 0 7px;
+      border:0;
+      border-bottom:1px solid var(--text);
+      background:none;
+      color:var(--text);
+      font-size:14px;
+      cursor:pointer;
+    }
+
+    .action:hover { color:var(--signal); border-color:var(--signal); }
+    .action:active { transform:translateY(1px); }
+    .action:disabled { opacity:.45; cursor:default; }
+
+    .readout {
+      grid-column:1 / -1;
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      color:var(--muted);
+      font-size:12px;
+      letter-spacing:.02em;
+    }
+
+    .readout output {
+      color:var(--text);
+      font-variant-numeric:tabular-nums;
+    }
+
+    @media (prefers-reduced-motion:reduce) {
+      .formula span,.beat::after { transition:none; }
+    }
+  </style>
 </head>
 <body>
   <main id="stage">

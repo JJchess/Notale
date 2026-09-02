@@ -1,0 +1,246 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<link rel="stylesheet" href="assets/lib/katex.min.css">
+<style>
+  :root{ --bg:#E9EFF2; --text:#172329; --font-sans:"IBM Plex Sans","Noto Sans SC",sans-serif; }
+
+  #stage{ display:flex; flex-direction:column; gap:16px; }
+
+  .head{ flex:0 0 auto; }
+  .kicker{ font-size:15px; color:var(--muted); letter-spacing:.02em; font-weight:600; }
+  h1{ margin:2px 0 0; font-size:42px; line-height:1.15; font-weight:750; color:var(--text); }
+  .lead{ margin-top:8px; font-size:22px; line-height:1.4; color:var(--text); max-width:1250px; }
+  .lead b{ color:var(--ensemble); }
+
+  .split{ flex:1; min-height:0; display:flex; gap:20px; }
+  .col-chart{ flex:0 0 56%; min-width:0; }
+  .col-side{ flex:1; min-width:0; display:flex; flex-direction:column; gap:14px; }
+
+  .panel{ background:var(--surface); border-radius:8px; padding:18px 22px; }
+  .panel.q{ background:transparent; padding:18px 22px; }
+
+  .chart-panel{ height:100%; display:flex; flex-direction:column; }
+  .chart-head{ display:flex; align-items:baseline; justify-content:space-between; gap:16px; flex:0 0 auto; }
+  .chart-head .q{ font-size:17px; color:var(--muted); line-height:1.4; }
+  .legend{ display:flex; gap:18px; flex:0 0 auto; }
+  .legend .li{ display:flex; align-items:center; gap:6px; font-size:15px; color:var(--text); }
+  .legend .sw{ width:22px; height:3px; border-radius:2px; display:inline-block; }
+  .legend .sw.dash{ background:repeating-linear-gradient(90deg, currentColor 0 6px, transparent 6px 10px); height:3px; }
+
+  #chart{ flex:1; min-height:0; margin-top:6px; }
+
+  .formula-row{ display:flex; align-items:center; justify-content:center; gap:20px; padding:10px 0 4px; flex:0 0 auto; }
+  .formula-box{ font-size:19px; color:var(--text); }
+
+  .note-strip{ display:flex; gap:14px; flex:0 0 auto; padding-top:6px; border-top:1px solid var(--rule); }
+  .note-strip .dot{ width:9px; height:9px; border-radius:50%; margin-top:6px; flex:0 0 auto; }
+  .note-strip .dot.weak{ background:var(--weak); }
+  .note-strip .dot.ens{ background:var(--ensemble); }
+  .note-strip p{ font-size:15px; line-height:1.5; color:var(--muted); margin:0; }
+
+  .side-panel h2{ margin:0 0 8px; font-size:22px; font-weight:700; color:var(--text); }
+  .side-panel .sub{ font-size:17px; color:var(--muted); margin:0 0 12px; line-height:1.4; }
+
+  .chain{ display:flex; flex-direction:column; gap:10px; }
+  .step{ display:flex; gap:12px; align-items:flex-start; }
+  .step .k{ flex:0 0 auto; font-family:var(--font-mono); font-size:15px; color:var(--weight); background:rgba(196,94,18,.12); border-radius:6px; padding:3px 9px; white-space:nowrap; margin-top:1px; }
+  .step .v{ font-size:16px; line-height:1.45; color:var(--text); }
+  .step .v b{ color:var(--weight); font-weight:700; }
+
+  .equiv{ flex:1; min-height:0; display:flex; flex-direction:column; justify-content:center; gap:10px; }
+  .equiv .row{ display:flex; align-items:center; gap:10px; font-size:17px; color:var(--text); }
+  .equiv .row .tag{ font-size:14px; color:var(--muted); font-family:var(--font-mono); }
+  .equiv hr{ border:none; border-top:1px solid var(--rule); margin:2px 0; }
+
+  .katex{ font-size:1em; }
+</style>
+</head>
+<body data-page="17" data-total="26">
+<div id="stage">
+
+  <div class="head">
+    <div class="kicker">有效性来源</div>
+    <h1>AdaBoost 在做一件事：逐轮压低指数损失</h1>
+    <p class="lead">样本权重不是凑出来的调节旋钮：第 <span class="num">t+1</span> 轮的权重 <b>正比于当前累积模型在该样本上的指数损失</b>，AdaBoost 的每一步都是在给这个损失做贪心下降。</p>
+  </div>
+
+  <div class="split">
+
+    <div class="col-chart min0">
+      <div class="panel chart-panel">
+        <div class="chart-head">
+          <div class="q">同一个样本，间隔 <span class="num">margin = y·F(x)</span> 越负，两种损失差多少？</div>
+          <div class="legend">
+            <span class="li"><i class="sw" style="background:var(--ensemble)"></i>指数损失 e^(−margin)</span>
+            <span class="li"><i class="sw dash" style="color:var(--muted)"></i>0-1 损失（分类错误率）</span>
+          </div>
+        </div>
+        <div id="chart"></div>
+        <div class="formula-row">
+          <div class="formula-box" id="fEmp"></div>
+        </div>
+        <div class="note-strip">
+          <span class="dot weak"></span>
+          <p>0-1 损失只关心对错，跨过 margin=0 才罚 1 分；指数损失是它的光滑上界，误分类越深，惩罚以指数速度飙升 —— 这正是错分样本权重会陡增的原因。</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-side min0">
+
+      <div class="panel side-panel" style="flex:0 0 auto;">
+        <h2>权重更新 = 损失的加权体现</h2>
+        <p class="sub">把第 t 轮的权重更新公式拆开看，每一步都对应指数损失的一个量：</p>
+        <div class="chain">
+          <div class="step"><span class="k">D_t(i)</span><span class="v">样本 i 当前的<b>权重</b>，即它在累积模型 F 下的指数损失（归一化后）</span></div>
+          <div class="step"><span class="k">y_i h_t(x_i)</span><span class="v">弱学习器 h_t 判对记 <b>+1</b>，判错记 <b>−1</b></span></div>
+          <div class="step"><span class="k">exp(−α_t·y_i h_t(x_i))</span><span class="v">判对时因子 <b>&lt;1</b>，权重下调；判错时因子 <b>&gt;1</b>，权重上调</span></div>
+          <div class="step"><span class="k">D_{t+1}(i)</span><span class="v">归一化后，就是累积模型 <b>F_t = Σα_kh_k</b> 在该样本上的新指数损失份额</span></div>
+        </div>
+      </div>
+
+      <div class="panel q equiv" id="equivBox">
+      </div>
+
+    </div>
+
+  </div>
+
+</div>
+
+<script src="assets/lib/katex.min.js"></script>
+<script src="assets/lib/echarts.min.js"></script>
+<script src="assets/base.js"></script>
+<script>
+(function(){
+  Deck.init({ index:17, total:26, keys:false });
+
+  // ---- formula ----
+  katex.render(
+    "\\text{AdaBoost 逐轮最小化 } L=\\sum_{i=1}^{N} e^{-y_i F(x_i)}\\text{，}F=\\sum_{k=1}^{t}\\alpha_k h_k",
+    document.getElementById('fEmp'),
+    { throwOnError:false }
+  );
+
+  var eqRows = [
+    ["权重 D_t(i)", "e^{-y_i F_{t-1}(x_i)} \\big/ Z_{t-1}"],
+    ["选 h_t", "\\arg\\min_h \\sum_i D_t(i)\\,\\mathbb{1}[y_i\\neq h(x_i)]"],
+    ["选 \\alpha_t", "\\arg\\min_\\alpha \\sum_i D_t(i)\\,e^{-\\alpha y_i h_t(x_i)}"]
+  ];
+  var box = document.getElementById('equivBox');
+  var titleEl = document.createElement('div');
+  titleEl.innerHTML = '<h2 style="margin:0 0 10px;font-size:20px;font-weight:700;color:#172329;">逐轮在算什么</h2>';
+  box.appendChild(titleEl);
+  var wrap = document.createElement('div');
+  wrap.className = 'equiv';
+  eqRows.forEach(function(r, idx){
+    var row = document.createElement('div');
+    row.className = 'row';
+    var tag = document.createElement('span');
+    tag.className = 'tag';
+    tag.textContent = r[0];
+    var math = document.createElement('span');
+    row.appendChild(tag);
+    row.appendChild(math);
+    wrap.appendChild(row);
+    katex.render(r[1], math, { throwOnError:false });
+    if(idx < eqRows.length-1){
+      var hr = document.createElement('hr');
+      wrap.appendChild(hr);
+    }
+  });
+  box.appendChild(wrap);
+  var tail = document.createElement('p');
+  tail.style.cssText = 'font-size:15px;color:#52636B;margin-top:10px;line-height:1.5;';
+  tail.textContent = '三步各自贪心，串起来就是指数损失沿加法模型方向的逐步下降 —— 这也是为什么“弱”学习器够用：每轮只需比随机猜好一点，损失就会往下走。';
+  box.appendChild(tail);
+
+  // ---- chart: exponential loss vs 0-1 loss over margin ----
+  var host = document.getElementById('chart');
+  var chart = echarts.init(host, null, { renderer:'svg' });
+
+  var margins = [];
+  var expLoss = [];
+  var zeroOne = [];
+  for(var m=-3; m<=3.001; m+=0.06){
+    var mv = Math.round(m*100)/100;
+    margins.push(mv);
+    expLoss.push(Math.exp(-mv));
+    zeroOne.push(mv < 0 ? 1 : 0);
+  }
+
+  function render(){
+    chart.setOption({
+      animation:false,
+      backgroundColor:'transparent',
+      grid:{ left:56, right:24, top:18, bottom:44 },
+      textStyle:{ fontFamily:'IBM Plex Sans, Noto Sans SC, sans-serif' },
+      xAxis:{
+        type:'value', min:-3, max:3, interval:1,
+        name:'margin = y·F(x)', nameLocation:'middle', nameGap:28,
+        nameTextStyle:{ fontSize:15, color:'#172329' },
+        axisLine:{ lineStyle:{ color:'#91A2AA' } },
+        axisLabel:{ fontSize:13, color:'#52636B' },
+        splitLine:{ show:false }
+      },
+      yAxis:{
+        type:'value', min:0, max:6,
+        name:'损失', nameLocation:'end', nameGap:14,
+        nameTextStyle:{ fontSize:15, color:'#172329', align:'right' },
+        axisLine:{ show:false },
+        axisLabel:{ fontSize:13, color:'#52636B' },
+        splitLine:{ lineStyle:{ color:'rgba(23,35,41,.08)' } }
+      },
+      series:[
+        {
+          type:'line', data: margins.map(function(x,i){return [x, zeroOne[i]];}),
+          showSymbol:false, step:'end',
+          lineStyle:{ color:'#52636B', width:2.5, type:[6,5] },
+          z:2
+        },
+        {
+          type:'line', data: margins.map(function(x,i){return [x, Math.min(expLoss[i],6)];}),
+          showSymbol:false, smooth:false,
+          lineStyle:{ color:'#175D8A', width:4 },
+          areaStyle:{ color:'rgba(23,93,138,.08)' },
+          z:3
+        },
+        {
+          type:'scatter',
+          data:[[-1.2, Math.min(Math.exp(1.2),6)]],
+          symbolSize:11,
+          itemStyle:{ color:'#C45E12', borderColor:'#F7FAFB', borderWidth:2 },
+          z:5,
+          markLine:{
+            silent:true, symbol:'none',
+            lineStyle:{ color:'#C45E12', type:'solid', width:1.5 },
+            data:[{ xAxis:-1.2 }]
+          }
+        }
+      ]
+    }, { notMerge:true });
+  }
+  render();
+
+  var ro = new ResizeObserver(function(){ chart.resize(); });
+  ro.observe(host);
+  Deck.onResize(function(){ chart.resize(); });
+
+  // annotate the orange point meaning via graphic
+  chart.setOption({
+    graphic:[{
+      type:'text', left:'62%', top:'12%',
+      style:{
+        text:'margin=−1.2（误判且间隔较大）\ne^{1.2} ≈ 3.32 → 该样本权重被放大约 3.3 倍',
+        fontSize:14, fill:'#C45E12', lineHeight:19, fontFamily:'IBM Plex Mono, monospace'
+      }
+    }]
+  });
+})();
+</script>
+</body>
+</html>

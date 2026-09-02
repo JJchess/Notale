@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  .pagehead{flex:0 0 auto;margin-bottom:22px}
+  .pagehead h1{max-width:1120px}
+  .pagehead .lead{margin-top:10px;color:var(--muted);max-width:48em}
+  .lab{flex:1;min-height:0;display:grid;grid-template-columns:minmax(0,1.55fr) minmax(360px,.62fr);gap:30px}
+  .machine{min-width:0;min-height:0;display:grid;grid-template-rows:auto minmax(0,1fr) auto;gap:16px}
+  .formula{display:flex;align-items:center;justify-content:space-between;gap:20px;padding-bottom:12px;border-bottom:var(--line) solid var(--rule)}
+  .formula strong{font-family:var(--font-mono);font-size:var(--fs-lead);font-weight:600}
+  .diagram{position:relative;min-height:0;display:grid;grid-template-columns:190px minmax(220px,1fr) 180px;gap:34px;align-items:center}
+  .input-stack{display:grid;gap:46px}
+  .input-item{display:grid;gap:9px}
+  .input-label{display:flex;justify-content:space-between;gap:10px;font-size:var(--fs-sec);font-weight:700}
+  .signal{height:18px;border:var(--line) solid var(--rule-strong);border-radius:2px;background:var(--paper);overflow:hidden}
+  .signal i{display:block;height:100%;background:var(--target)}
+  .signal.a i{width:78%}.signal.b i{width:46%}
+  .input-item .note{font-size:var(--fs-label)}
+  .combine{position:relative;height:100%;min-height:340px;display:grid;place-items:center}
+  .wire{position:absolute;left:0;right:0;height:3px;background:var(--rule-strong);transform-origin:right center}
+  .wire.top{top:30%;transform:rotate(15deg)}
+  .wire.bottom{bottom:30%;transform:rotate(-15deg)}
+  .wire.bias{left:50%;right:auto;top:60%;width:3px;height:25%;background:var(--gradient)}
+  .wire::after{content:'';position:absolute;right:-1px;top:-5px;width:10px;height:10px;border-top:3px solid currentColor;border-right:3px solid currentColor;transform:rotate(45deg);color:var(--rule-strong)}
+  .wire.bias::after{right:-4px;top:-2px;transform:rotate(-45deg);color:var(--gradient)}
+  .contrib{position:absolute;left:8%;padding:4px 8px;background:var(--bg);font-family:var(--font-mono);font-size:var(--fs-label);font-weight:600}
+  .contrib.top{top:23%;color:var(--model)}.contrib.bottom{bottom:23%;color:var(--model)}
+  .node{position:relative;z-index:2;width:178px;height:178px;border:var(--line-strong) solid var(--text);border-radius:50%;background:var(--paper);display:grid;place-items:center;text-align:center}
+  .node .sum{font-family:var(--font-display);font-size:54px;font-weight:700;line-height:1}
+  .node .small{font-size:var(--fs-label)}
+  .bias-chip{position:absolute;left:calc(50% + 18px);bottom:7%;color:var(--gradient);font-family:var(--font-mono);font-size:var(--fs-label);font-weight:600}
+  .out{display:grid;justify-items:center;gap:14px;text-align:center}
+  .out-arrow{width:100%;height:3px;background:var(--model);position:relative}
+  .out-arrow::after{content:'';position:absolute;right:0;top:-5px;width:10px;height:10px;border-top:3px solid var(--model);border-right:3px solid var(--model);transform:rotate(45deg)}
+  .out-gauge{width:104px;height:214px;border:var(--line-strong) solid var(--text);border-radius:52px;position:relative;overflow:hidden;background:var(--paper)}
+  .out-fill{position:absolute;left:0;right:0;bottom:0;height:50%;background:var(--model);transition:height .22s ease-out}
+  .out-line{position:absolute;left:10px;right:10px;top:50%;border-top:2px dashed var(--text);z-index:2}
+  .out-name{font-weight:700;font-size:var(--fs-lead)}
+  .out-state{color:var(--model);font-weight:700}
+  .strip{display:grid;grid-template-columns:auto 1fr auto;gap:16px;align-items:center;padding-top:14px;border-top:var(--line) solid var(--rule)}
+  .strip .swatch{width:16px;height:16px;background:var(--target);border:var(--line) solid var(--rule-strong)}
+  .controls{min-width:0;min-height:0;display:flex;flex-direction:column;gap:18px;padding:22px 24px;border:var(--line) solid var(--rule-strong);border-radius:var(--radius);background:var(--paper);box-shadow:0 5px 0 var(--shadow)}
+  .controls h2{margin-bottom:2px}
+  .control-block{display:grid;gap:8px;padding-bottom:17px;border-bottom:var(--line) solid var(--rule)}
+  .control-block:last-of-type{border-bottom:0;padding-bottom:0}
+  .control-top{display:flex;align-items:baseline;justify-content:space-between;gap:12px}
+  .control-top label{font-size:var(--fs-sec);font-weight:700}
+  .word-value{font-family:var(--font-mono);font-size:var(--fs-label);font-weight:600;color:var(--model)}
+  .control-block.bias .word-value{color:var(--gradient)}
+  .ends{display:flex;justify-content:space-between;color:var(--muted);font-size:var(--fs-label)}
+  .presets{margin-top:auto;display:grid;gap:10px}
+  .presets .btns{display:grid;grid-template-columns:repeat(3,1fr)}
+  .presets .btn{padding-left:8px;padding-right:8px}
+  .feedback{min-height:70px;padding-top:14px;border-top:var(--line-strong) solid var(--text);font-size:var(--fs-sec);line-height:1.45}
+  .feedback strong{color:var(--text)}
+</style>
+</head>
+<body data-page="04" data-total="24">
+<div id="stage">
+  <header class="pagehead">
+    <span class="kicker">单个神经元 · 参数实验</span>
+    <h1>同一组输入，权重与偏置决定它被推向哪里</h1>
+    <p class="lead">拖动三个参数。输入保持不变，观察各路贡献怎样汇入神经元，再改变输出。</p>
+  </header>
+
+  <main class="lab min0">
+    <section class="machine min0" aria-labelledby="diagram-title">
+      <div class="formula">
+        <h2 id="diagram-title">从输入到输出</h2>
+        <strong aria-label="输出等于激活函数作用于加权输入与偏置之和">y = σ(w₁x₁ + w₂x₂ + b)</strong>
+      </div>
+
+      <div class="diagram min0">
+        <div class="input-stack" aria-label="固定输入">
+          <div class="input-item">
+            <div class="input-label"><span>输入 x₁</span><span class="is-target">较强</span></div>
+            <div class="signal a" aria-hidden="true"><i></i></div>
+            <p class="note">本轮保持不变</p>
+          </div>
+          <div class="input-item">
+            <div class="input-label"><span>输入 x₂</span><span class="is-target">中等</span></div>
+            <div class="signal b" aria-hidden="true"><i></i></div>
+            <p class="note">本轮保持不变</p>
+          </div>
+        </div>
+
+        <div class="combine" aria-hidden="true">
+          <div class="wire top"></div><span class="contrib top" id="c1">正向推动</span>
+          <div class="wire bottom"></div><span class="contrib bottom" id="c2">轻微抑制</span>
+          <div class="wire bias"></div><span class="bias-chip" id="bc">偏置：接近零</span>
+          <div class="node"><div><div class="sum">Σ</div><div class="small">加权求和<br>再经激活函数</div></div></div>
+        </div>
+
+        <div class="out" aria-live="polite">
+          <div class="out-arrow" aria-hidden="true"></div>
+          <div class="out-gauge" aria-hidden="true"><div class="out-line"></div><div class="out-fill" id="fill"></div></div>
+          <div><div class="out-name">神经元输出</div><div class="out-state" id="state">中等</div></div>
+        </div>
+      </div>
+
+      <div class="strip">
+        <span class="swatch" aria-hidden="true"></span>
+        <p class="small">紫色输入条始终不动；蓝色输出只响应参数变化。</p>
+        <span class="tag" id="direction">合力偏正</span>
+      </div>
+    </section>
+
+    <aside class="controls min0" aria-labelledby="control-title">
+      <div>
+        <h2 id="control-title">改变参数</h2>
+        <p class="small">负权重抑制输入，正权重放大输入；偏置整体平移判断门槛。</p>
+      </div>
+
+      <div class="control-block">
+        <div class="control-top"><label for="w1">权重 w₁</label><output class="word-value" id="w1v">较强正向</output></div>
+        <input id="w1" type="range" min="-100" max="100" value="65" aria-describedby="w1ends">
+        <div class="ends" id="w1ends"><span>抑制 x₁</span><span>放大 x₁</span></div>
+      </div>
+
+      <div class="control-block">
+        <div class="control-top"><label for="w2">权重 w₂</label><output class="word-value" id="w2v">轻微抑制</output></div>
+        <input id="w2" type="range" min="-100" max="100" value="-25" aria-describedby="w2ends">
+        <div class="ends" id="w2ends"><span>抑制 x₂</span><span>放大 x₂</span></div>
+      </div>
+
+      <div class="control-block bias">
+        <div class="control-top"><label for="bias">偏置 b</label><output class="word-value" id="bv">接近零</output></div>
+        <input id="bias" type="range" min="-100" max="100" value="0" aria-describedby="bends">
+        <div class="ends" id="bends"><span>整体下压</span><span>整体上推</span></div>
+      </div>
+
+      <div class="presets">
+        <span class="hint">也可以直接比较三种参数组合</span>
+        <div class="btns" role="group" aria-label="参数组合">
+          <button class="btn" data-set="suppress">都抑制</button>
+          <button class="btn" data-set="mixed">一推一拉</button>
+          <button class="btn" data-set="amplify">都放大</button>
+        </div>
+      </div>
+
+      <div class="feedback" id="feedback" aria-live="polite"><strong>当前：</strong>x₁ 的正向推动占上风，输出处在中间偏上。</div>
+    </aside>
+  </main>
+</div>
+<script src="assets/base.js"></script>
+<script>
+  Deck.init({index:4,total:24});
+  const els = {
+    w1: document.getElementById('w1'), w2: document.getElementById('w2'), b: document.getElementById('bias'),
+    w1v: document.getElementById('w1v'), w2v: document.getElementById('w2v'), bv: document.getElementById('bv'),
+    c1: document.getElementById('c1'), c2: document.getElementById('c2'), bc: document.getElementById('bc'),
+    fill: document.getElementById('fill'), state: document.getElementById('state'), direction: document.getElementById('direction'), feedback: document.getElementById('feedback')
+  };
+  function weightWord(v){
+    if(v < -55) return '较强抑制'; if(v < -12) return '轻微抑制'; if(v <= 12) return '接近零'; if(v <= 55) return '轻微正向'; return '较强正向';
+  }
+  function biasWord(v){
+    if(v < -55) return '明显下压'; if(v < -12) return '轻微下压'; if(v <= 12) return '接近零'; if(v <= 55) return '轻微上推'; return '明显上推';
+  }
+  function contribution(v, strong){
+    if(Math.abs(v) <= .12) return '几乎不贡献';
+    const level = Math.abs(v) > .55 && strong ? '强' : '轻微';
+    return v > 0 ? level + '正向推动' : level + '抑制';
+  }
+  function update(){
+    const w1=+els.w1.value/100, w2=+els.w2.value/100, b=+els.b.value/100;
+    const z=w1*.78+w2*.46+b*.72, y=1/(1+Math.exp(-3*z));
+    const ww1=weightWord(+els.w1.value), ww2=weightWord(+els.w2.value), bw=biasWord(+els.b.value);
+    els.w1v.value=ww1; els.w1v.textContent=ww1; els.w2v.value=ww2; els.w2v.textContent=ww2; els.bv.value=bw; els.bv.textContent=bw;
+    els.w1.setAttribute('aria-valuetext',ww1); els.w2.setAttribute('aria-valuetext',ww2); els.b.setAttribute('aria-valuetext',bw);
+    els.c1.textContent=contribution(w1,true); els.c2.textContent=contribution(w2,false); els.bc.textContent='偏置：'+bw;
+    els.fill.style.height=(8+y*84)+'%';
+    let state, dir, why;
+    if(y<.34){state='较低';dir='合力偏负';why='抑制与下压占上风，输出被压低。';}
+    else if(y>.66){state='较高';dir='合力偏正';why='正向推动与上推占上风，输出升高。';}
+    else {state='中等';dir='两侧接近';why='推动与抑制大致抵消，输出停在中间。';}
+    els.state.textContent=state; els.direction.textContent=dir;
+    els.feedback.innerHTML='<strong>当前：</strong>'+why;
+    document.querySelectorAll('[data-set]').forEach(btn=>btn.classList.remove('is-selected'));
+  }
+  [els.w1,els.w2,els.b].forEach(el=>el.addEventListener('input',update));
+  const presets={suppress:[-70,-65,-45],mixed:[65,-25,0],amplify:[70,65,40]};
+  document.querySelectorAll('[data-set]').forEach(btn=>btn.addEventListener('click',()=>{
+    const v=presets[btn.dataset.set]; els.w1.value=v[0];els.w2.value=v[1];els.b.value=v[2];update();btn.classList.add('is-selected');
+  }));
+  update();
+</script>
+</body>
+</html>

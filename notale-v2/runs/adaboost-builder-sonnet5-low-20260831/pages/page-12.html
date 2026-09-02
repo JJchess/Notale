@@ -1,0 +1,505 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  :root{
+    --bg:#EEF1F5; --text:#111820; --font-sans:"Noto Sans CJK SC",ui-sans-serif,system-ui,sans-serif;
+  }
+  #stage{
+    display:flex; flex-direction:column; gap:16px;
+    padding:28px 56px; box-sizing:border-box;
+  }
+  .head{ flex:0 0 auto; display:flex; flex-direction:column; gap:4px; }
+  .head h1{
+    margin:0; font-family:var(--font-display),var(--font-sans);
+    font-size:32px; font-weight:700; letter-spacing:-.01em; color:var(--text);
+  }
+  .head p.lead{
+    margin:0; font-size:var(--fs-lead); color:var(--muted); line-height:1.4; max-width:1100px;
+  }
+  .main{ flex:1; min-height:0; display:flex; gap:20px; }
+
+  /* 左：主证据舞台 */
+  .stage-evidence{
+    flex:0 0 720px; min-height:0; display:flex; flex-direction:column; gap:12px;
+  }
+  .panel{
+    background:var(--surface); border:1px solid var(--line); border-radius:2px;
+  }
+  .board-wrap{ flex:1; min-height:0; position:relative; }
+  .board-wrap canvas{ position:absolute; inset:0; width:100%; height:100%; }
+
+  .legend{ display:flex; align-items:center; gap:18px; padding:10px 16px; font-size:var(--fs-label); color:var(--muted); flex-wrap:wrap; }
+  .legend .li{ display:flex; align-items:center; gap:6px; }
+  .legend .sw{ width:12px; height:12px; border-radius:50%; display:inline-block; flex:0 0 auto; }
+
+  /* 右：控制与证据带 */
+  .side{ flex:1; min-height:0; display:flex; flex-direction:column; gap:14px; }
+
+  .ctl-panel{ padding:16px 20px; display:flex; flex-direction:column; gap:12px; flex:0 0 auto; }
+  .round-row{ display:flex; align-items:baseline; justify-content:space-between; }
+  .round-row .big{ font-family:var(--font-mono); font-size:34px; font-weight:700; color:var(--weight); line-height:1; }
+  .round-row .unit{ font-size:var(--fs-label); color:var(--muted); margin-left:6px; }
+  .round-row .label{ font-size:var(--fs-label); color:var(--muted); letter-spacing:.02em; }
+
+  .btns{ display:flex; gap:10px; }
+  .btn{
+    font-family:var(--font-sans); font-size:15px; font-weight:600; padding:9px 16px;
+    border:1px solid var(--text); background:var(--text); color:#fff; border-radius:2px; cursor:pointer;
+    transition:opacity .15s;
+  }
+  .btn.ghost{ background:transparent; color:var(--text); border:1px solid var(--line); }
+  .btn:disabled{ opacity:.35; cursor:default; }
+  .btn:hover:not(:disabled){ opacity:.85; }
+
+  .stump-panel{ flex:0 0 auto; padding:14px 20px; display:flex; flex-direction:column; gap:8px; }
+  .stump-panel h2{ margin:0; font-size:var(--fs-h2); font-weight:700; color:var(--text); }
+  .stump-row{ display:flex; justify-content:space-between; font-size:var(--fs-body); }
+  .stump-row .k{ color:var(--muted); }
+  .stump-row .v{ font-family:var(--font-mono); font-weight:600; color:var(--weight); }
+  .stump-row .v.err{ color:var(--error); }
+
+  .err-panel{ flex:1; min-height:0; padding:14px 20px; display:flex; flex-direction:column; gap:8px; }
+  .err-panel h2{ margin:0; font-size:var(--fs-h2); font-weight:700; color:var(--text); }
+  .err-chart-wrap{ flex:1; min-height:0; position:relative; }
+  .err-chart-wrap canvas{ position:absolute; inset:0; width:100%; height:100%; }
+
+  .note{ font-size:var(--fs-sec); color:var(--muted); line-height:1.5; }
+  .weight-note{ font-size:var(--fs-label); color:var(--muted); }
+</style>
+</head>
+<body data-page="12" data-total="16">
+<div id="stage">
+  <div class="head">
+    <h1>模拟训练 AdaBoost：一轮一轮看权重怎么变</h1>
+    <p class="lead">10 个样本无法被任何一条水平或垂直分界线一次分对。每点一次「训练下一轮」，算法会在全部候选分界线里挑加权误差最小的一条，算出它的话语权，再把分错的样本权重调大。</p>
+  </div>
+
+  <div class="main">
+    <div class="stage-evidence">
+      <div class="panel board-wrap" id="boardWrap">
+        <canvas id="board"></canvas>
+      </div>
+      <div class="panel legend">
+        <span class="li"><span class="sw" style="background:var(--correct)"></span>正类样本</span>
+        <span class="li"><span class="sw" style="background:var(--error)"></span>负类样本</span>
+        <span class="li">气泡大小 = 当前样本权重</span>
+        <span class="li" id="boundaryLegend">深蓝虚线 = 本轮弱分类器　黑色实线 = 组合分类器边界</span>
+      </div>
+    </div>
+
+    <div class="side">
+      <div class="panel ctl-panel">
+        <div class="round-row">
+          <div><span class="big" id="roundNum">0</span><span class="unit">/ 10 轮</span></div>
+          <div class="label" id="phaseLabel">初始状态：权重均匀</div>
+        </div>
+        <div class="btns">
+          <button class="btn" id="stepBtn">训练下一轮</button>
+          <button class="btn ghost" id="resetBtn">重置</button>
+        </div>
+        <p class="note" id="statusNote">全部 10 个样本权重相同，都是 0.100。点击「训练下一轮」让算法自己找出第一条分界线。</p>
+      </div>
+
+      <div class="panel stump-panel">
+        <h2>本轮弱分类器</h2>
+        <div class="stump-row"><span class="k">分界线</span><span class="v" id="stumpRule">—</span></div>
+        <div class="stump-row"><span class="k">加权误差 ε</span><span class="v err" id="stumpErr">—</span></div>
+        <div class="stump-row"><span class="k">分类器权重 α = ½ln((1-ε)/ε)</span><span class="v" id="stumpAlpha">—</span></div>
+      </div>
+
+      <div class="panel err-panel">
+        <h2>组合分类器的训练误差</h2>
+        <div class="err-chart-wrap"><canvas id="errChart"></canvas></div>
+        <p class="weight-note" id="errNote">尚未开始训练。</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="assets/base.js"></script>
+<script>
+(() => {
+  "use strict";
+
+  /* ---------- 数据：故意让单条水平/垂直线分不开 ---------- */
+  // 特征范围 x,y ∈ [0,10]；标签 +1 / -1。构造成近似 XOR 分布：
+  // 左下+右上偏正类，左上+右下偏负类，但每个象限混入一个反例，逼迫多轮组合。
+  const DATA = [
+    { x: 1.5, y: 1.8, y_: +1 },
+    { x: 2.6, y: 3.0, y_: +1 },
+    { x: 3.2, y: 1.2, y_: +1 },
+    { x: 7.6, y: 7.8, y_: +1 },
+    { x: 8.6, y: 6.6, y_: +1 },
+    { x: 6.8, y: 8.6, y_: +1 },
+    { x: 1.8, y: 8.2, y_: -1 },
+    { x: 3.0, y: 7.0, y_: -1 },
+    { x: 8.2, y: 2.0, y_: -1 },
+    { x: 7.0, y: 3.4, y_: -1 },
+  ];
+  const N = DATA.length;
+  const MAX_ROUNDS = 10;
+  const DOMAIN = [0, 10];
+
+  const byId = (id) => document.getElementById(id);
+  const ui = {
+    board: byId("board"),
+    errChart: byId("errChart"),
+    roundNum: byId("roundNum"),
+    phaseLabel: byId("phaseLabel"),
+    stepBtn: byId("stepBtn"),
+    resetBtn: byId("resetBtn"),
+    statusNote: byId("statusNote"),
+    stumpRule: byId("stumpRule"),
+    stumpErr: byId("stumpErr"),
+    stumpAlpha: byId("stumpAlpha"),
+    errNote: byId("errNote"),
+  };
+
+  /* ---------- 候选弱分类器：所有 (维度, 阈值, 方向) 的轴对齐树桩 ---------- */
+  function buildStumpCandidates() {
+    const stumps = [];
+    for (const dim of ["x", "y"]) {
+      const vals = [...new Set(DATA.map(p => p[dim]))].sort((a, b) => a - b);
+      const thresholds = [];
+      for (let i = 0; i < vals.length - 1; i++) thresholds.push((vals[i] + vals[i + 1]) / 2);
+      thresholds.push(DOMAIN[0] - 0.5, DOMAIN[1] + 0.5); // 极端阈值，覆盖全正/全负情形
+      for (const th of thresholds) {
+        for (const dir of [1, -1]) {
+          // dir=1: 特征值 > th 判为 +1；dir=-1: 特征值 > th 判为 -1
+          stumps.push({ dim, th, dir });
+        }
+      }
+    }
+    return stumps;
+  }
+  const CANDIDATES = buildStumpCandidates();
+
+  function predictStump(stump, p) {
+    const v = p[stump.dim];
+    return (v > stump.th) ? stump.dir : -stump.dir;
+  }
+
+  /* ---------- 规范状态 ---------- */
+  function createInitialState() {
+    return {
+      round: 0,
+      weights: new Array(N).fill(1 / N),
+      ensemble: [],       // [{stump, alpha}, ...]
+      errHistory: [],     // 组合分类器在每一轮之后的训练误差(0/1 误差)
+      lastStump: null,
+      lastErr: null,
+      lastAlpha: null,
+      done: false,
+    };
+  }
+  let state = createInitialState();
+
+  /* ---------- 核心算法：选出加权误差最小的树桩 ---------- */
+  function pickBestStump(weights) {
+    let best = null;
+    for (const stump of CANDIDATES) {
+      let err = 0;
+      for (let i = 0; i < N; i++) {
+        const pred = predictStump(stump, DATA[i]);
+        if (pred !== DATA[i].y_) err += weights[i];
+      }
+      if (best === null || err < best.err - 1e-12) best = { stump, err };
+    }
+    return best;
+  }
+
+  function ensemblePredict(ensemble, p) {
+    let sum = 0;
+    for (const { stump, alpha } of ensemble) sum += alpha * predictStump(stump, p);
+    return Math.sign(sum) || 1;
+  }
+
+  function trainingError(ensemble) {
+    let wrong = 0;
+    for (const p of DATA) if (ensemblePredict(ensemble, p) !== p.y_) wrong++;
+    return wrong / N;
+  }
+
+  function stepRound() {
+    if (state.done) return;
+    const { stump, err } = pickBestStump(state.weights);
+    const epsClamped = Math.min(Math.max(err, 1e-6), 1 - 1e-6);
+    const alpha = 0.5 * Math.log((1 - epsClamped) / epsClamped);
+
+    // 更新样本权重
+    const newWeights = state.weights.map((w, i) => {
+      const pred = predictStump(stump, DATA[i]);
+      return w * Math.exp(-alpha * DATA[i].y_ * pred);
+    });
+    const Z = newWeights.reduce((a, b) => a + b, 0);
+    const normWeights = newWeights.map(w => w / Z);
+
+    state.ensemble.push({ stump, alpha });
+    state.weights = normWeights;
+    state.round += 1;
+    state.lastStump = stump;
+    state.lastErr = err;
+    state.lastAlpha = alpha;
+    const trainErr = trainingError(state.ensemble);
+    state.errHistory.push(trainErr);
+    if (state.round >= MAX_ROUNDS || trainErr === 0) state.done = true;
+  }
+
+  function resetState() {
+    state = createInitialState();
+  }
+
+  /* ---------- 画布：分类结果散点 + 决策边界 ---------- */
+  const CLR = {
+    correct: Deck.token("correct"),
+    error: Deck.token("error"),
+    weight: Deck.token("weight"),
+    weak: Deck.token("weak"),
+    text: Deck.token("text"),
+    line: Deck.token("line"),
+    muted: Deck.token("muted"),
+  };
+
+  const PAD = 44;
+  function toPx(x, y, w, h) {
+    const sx = PAD + (x - DOMAIN[0]) / (DOMAIN[1] - DOMAIN[0]) * (w - PAD * 2);
+    const sy = h - PAD - (y - DOMAIN[0]) / (DOMAIN[1] - DOMAIN[0]) * (h - PAD * 2);
+    return [sx, sy];
+  }
+
+  let boardFit = null;
+  function drawBoard(ctx, w, h) {
+    ctx.clearRect(0, 0, w, h);
+
+    // 组合分类器的决策区域背景（网格采样）
+    if (state.ensemble.length > 0) {
+      const res = 60;
+      for (let iy = 0; iy < res; iy++) {
+        for (let ix = 0; ix < res; ix++) {
+          const gx = DOMAIN[0] + (ix + 0.5) / res * (DOMAIN[1] - DOMAIN[0]);
+          const gy = DOMAIN[0] + (iy + 0.5) / res * (DOMAIN[1] - DOMAIN[0]);
+          const pred = ensemblePredict(state.ensemble, { x: gx, y: gy });
+          const [px, py] = toPx(gx, gy, w, h);
+          const cellW = (w - PAD * 2) / res;
+          const cellH = (h - PAD * 2) / res;
+          ctx.fillStyle = pred > 0 ? "rgba(41,78,134,0.08)" : "rgba(198,66,50,0.07)";
+          ctx.fillRect(px - cellW / 2, py - cellH / 2, cellW + 0.6, cellH + 0.6);
+        }
+      }
+    }
+
+    // 坐标轴框
+    ctx.strokeStyle = CLR.line;
+    ctx.lineWidth = 1;
+    ctx.strokeRect(PAD, PAD, w - PAD * 2, h - PAD * 2);
+
+    // 历史弱分类器边界（淡）
+    ctx.save();
+    ctx.setLineDash([5, 4]);
+    for (let i = 0; i < state.ensemble.length - 1; i++) {
+      drawStumpLine(ctx, state.ensemble[i].stump, w, h, "rgba(97,124,168,0.35)", 1.5);
+    }
+    // 当前（最新）弱分类器边界（深蓝虚线，醒目）
+    if (state.ensemble.length > 0) {
+      drawStumpLine(ctx, state.ensemble[state.ensemble.length - 1].stump, w, h, CLR.weight, 2.5);
+    }
+    ctx.restore();
+
+    // 组合分类器边界：在网格上找符号翻转的等值线（简化为逐行/列扫描描点）
+    if (state.ensemble.length > 0) drawEnsembleBoundary(ctx, w, h);
+
+    // 样本点：气泡大小 = 权重，颜色 = 真实标签，边框 = 当前组合是否分类正确
+    const maxW = Math.max(...state.weights);
+    for (let i = 0; i < N; i++) {
+      const p = DATA[i];
+      const [px, py] = toPx(p.x, p.y, w, h);
+      const r = 7 + (state.weights[i] / maxW) * 13;
+      const correct = state.ensemble.length === 0 ? true : ensemblePredict(state.ensemble, p) === p.y_;
+      ctx.beginPath();
+      ctx.arc(px, py, r, 0, Math.PI * 2);
+      ctx.fillStyle = p.y_ > 0 ? "rgba(41,78,134,0.75)" : "rgba(198,66,50,0.75)";
+      ctx.fill();
+      ctx.lineWidth = correct ? 1.5 : 3;
+      ctx.strokeStyle = correct ? "#FAFBFC" : CLR.error;
+      ctx.stroke();
+    }
+
+    // 轴刻度标签
+    ctx.fillStyle = CLR.muted;
+    ctx.font = "12px " + getComputedStyle(document.body).fontFamily;
+    ctx.textAlign = "center";
+    ctx.fillText("特征 x →", w / 2, h - 12);
+    ctx.save();
+    ctx.translate(16, h / 2);
+    ctx.rotate(-Math.PI / 2);
+    ctx.fillText("特征 y →", 0, 0);
+    ctx.restore();
+  }
+
+  function drawStumpLine(ctx, stump, w, h, color, lw) {
+    ctx.strokeStyle = color;
+    ctx.lineWidth = lw;
+    ctx.beginPath();
+    if (stump.dim === "x") {
+      const [px] = toPx(stump.th, 0, w, h);
+      ctx.moveTo(px, PAD);
+      ctx.lineTo(px, h - PAD);
+    } else {
+      const [, py] = toPx(0, stump.th, w, h);
+      ctx.moveTo(PAD, py);
+      ctx.lineTo(w - PAD, py);
+    }
+    ctx.stroke();
+  }
+
+  function drawEnsembleBoundary(ctx, w, h) {
+    const res = 140;
+    ctx.fillStyle = CLR.text;
+    // marching-square 风格：检测相邻网格符号变化处描点
+    const grid = new Float32Array((res + 1) * (res + 1));
+    for (let iy = 0; iy <= res; iy++) {
+      for (let ix = 0; ix <= res; ix++) {
+        const gx = DOMAIN[0] + ix / res * (DOMAIN[1] - DOMAIN[0]);
+        const gy = DOMAIN[0] + iy / res * (DOMAIN[1] - DOMAIN[0]);
+        let sum = 0;
+        for (const { stump, alpha } of state.ensemble) sum += alpha * predictStump(stump, { x: gx, y: gy });
+        grid[iy * (res + 1) + ix] = sum;
+      }
+    }
+    ctx.save();
+    ctx.strokeStyle = CLR.text;
+    ctx.lineWidth = 2.4;
+    ctx.beginPath();
+    for (let iy = 0; iy <= res; iy++) {
+      for (let ix = 0; ix < res; ix++) {
+        const a = grid[iy * (res + 1) + ix];
+        const b = grid[iy * (res + 1) + ix + 1];
+        if ((a > 0) !== (b > 0)) {
+          const gx = DOMAIN[0] + (ix + 0.5) / res * (DOMAIN[1] - DOMAIN[0]);
+          const gy = DOMAIN[0] + iy / res * (DOMAIN[1] - DOMAIN[0]);
+          const [px, py] = toPx(gx, gy, w, h);
+          ctx.moveTo(px, py - 3); ctx.lineTo(px, py + 3);
+        }
+      }
+    }
+    for (let ix = 0; ix <= res; ix++) {
+      for (let iy = 0; iy < res; iy++) {
+        const a = grid[iy * (res + 1) + ix];
+        const b = grid[(iy + 1) * (res + 1) + ix];
+        if ((a > 0) !== (b > 0)) {
+          const gx = DOMAIN[0] + ix / res * (DOMAIN[1] - DOMAIN[0]);
+          const gy = DOMAIN[0] + (iy + 0.5) / res * (DOMAIN[1] - DOMAIN[0]);
+          const [px, py] = toPx(gx, gy, w, h);
+          ctx.moveTo(px - 3, py); ctx.lineTo(px + 3, py);
+        }
+      }
+    }
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  /* ---------- 误差曲线 ---------- */
+  let errFit = null;
+  function drawErrChart(ctx, w, h) {
+    ctx.clearRect(0, 0, w, h);
+    const pad = { l: 40, r: 14, t: 14, b: 26 };
+    const plotW = w - pad.l - pad.r;
+    const plotH = h - pad.t - pad.b;
+
+    ctx.strokeStyle = CLR.line;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(pad.l, pad.t); ctx.lineTo(pad.l, h - pad.b); ctx.lineTo(w - pad.r, h - pad.b);
+    ctx.stroke();
+
+    ctx.fillStyle = CLR.muted;
+    ctx.font = "11px " + getComputedStyle(document.body).fontFamily;
+    ctx.textAlign = "right";
+    [0, 0.25, 0.5].forEach(v => {
+      const y = h - pad.b - v / 0.5 * plotH;
+      ctx.fillText(v.toFixed(2), pad.l - 6, y + 3);
+      ctx.strokeStyle = "rgba(200,208,219,0.5)";
+      ctx.beginPath(); ctx.moveTo(pad.l, y); ctx.lineTo(w - pad.r, y); ctx.stroke();
+    });
+
+    ctx.textAlign = "center";
+    for (let r = 0; r <= MAX_ROUNDS; r++) {
+      const x = pad.l + (r / MAX_ROUNDS) * plotW;
+      ctx.fillText(String(r), x, h - pad.b + 16);
+    }
+
+    const pts = [0.5, ...state.errHistory]; // 第0轮视为随机猜测的基线0.5（未训练）——实际首轮前无预测，仅作可视起点
+    if (state.errHistory.length === 0) return;
+
+    ctx.strokeStyle = CLR.weight;
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    state.errHistory.forEach((e, i) => {
+      const x = pad.l + ((i + 1) / MAX_ROUNDS) * plotW;
+      const y = h - pad.b - Math.min(e, 0.5) / 0.5 * plotH;
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    });
+    ctx.stroke();
+
+    state.errHistory.forEach((e, i) => {
+      const x = pad.l + ((i + 1) / MAX_ROUNDS) * plotW;
+      const y = h - pad.b - Math.min(e, 0.5) / 0.5 * plotH;
+      ctx.beginPath();
+      ctx.arc(x, y, 4, 0, Math.PI * 2);
+      ctx.fillStyle = e === 0 ? CLR.correct : CLR.weight;
+      ctx.fill();
+    });
+  }
+
+  /* ---------- 渲染入口 ---------- */
+  function render() {
+    ui.roundNum.textContent = state.round;
+    ui.stepBtn.disabled = state.done;
+    ui.stepBtn.textContent = state.done ? "已完成训练" : "训练下一轮";
+
+    if (state.round === 0) {
+      ui.phaseLabel.textContent = "初始状态：权重均匀";
+      ui.statusNote.textContent = "全部 10 个样本权重相同，都是 0.100。点击「训练下一轮」让算法自己找出第一条分界线。";
+      ui.stumpRule.textContent = "—";
+      ui.stumpErr.textContent = "—";
+      ui.stumpAlpha.textContent = "—";
+      ui.errNote.textContent = "尚未开始训练。";
+    } else {
+      const dimLabel = state.lastStump.dim === "x" ? "x" : "y";
+      const dirLabel = state.lastStump.dir > 0 ? `${dimLabel} > ${state.lastStump.th.toFixed(1)} 判正` : `${dimLabel} > ${state.lastStump.th.toFixed(1)} 判负`;
+      ui.phaseLabel.textContent = `第 ${state.round} 轮已完成`;
+      ui.stumpRule.textContent = dirLabel;
+      ui.stumpErr.textContent = state.lastErr.toFixed(3);
+      ui.stumpAlpha.textContent = state.lastAlpha.toFixed(3);
+      const curErr = state.errHistory[state.errHistory.length - 1];
+      const maxWIdx = state.weights.indexOf(Math.max(...state.weights));
+      ui.statusNote.textContent = state.done
+        ? `训练误差已降到 ${(curErr * 100).toFixed(0)}%${curErr === 0 ? "，全部样本被正确分类。" : "，已达到 " + MAX_ROUNDS + " 轮上限。"}`
+        : `组合分类器当前训练误差 ${(curErr * 100).toFixed(0)}%。权重最高的是样本 #${maxWIdx + 1}（${state.weights[maxWIdx].toFixed(3)}），它被上一轮弱分类器分错，下一轮会被优先照顾。`;
+      ui.errNote.textContent = curErr === 0
+        ? "10 个样本全部分类正确，加权投票已经完全纠正错误。"
+        : `每一轮的 α 由该轮加权误差 ε 决定：ε 越小，α 越大，这一轮分类器在投票里话语权越重。`;
+    }
+
+    boardFit && boardFit.redraw();
+    errFit && errFit.redraw();
+  }
+
+  /* ---------- 接线 ---------- */
+  function init() {
+    boardFit = Deck.autofit(ui.board, (ctx, w, h) => drawBoard(ctx, w, h));
+    errFit = Deck.autofit(ui.errChart, (ctx, w, h) => drawErrChart(ctx, w, h));
+    ui.stepBtn.addEventListener("click", () => { stepRound(); render(); });
+    ui.resetBtn.addEventListener("click", () => { resetState(); render(); });
+    render();
+  }
+
+  init();
+})();
+</script>
+</body>
+</html>

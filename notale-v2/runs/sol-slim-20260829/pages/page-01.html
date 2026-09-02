@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>一个参数怎样变好｜神经网络是怎么学会的</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    .page-head{flex:0 0 116px;display:flex;align-items:flex-end;justify-content:space-between;gap:48px;border-bottom:1px solid var(--rule);padding-bottom:20px}
+    .title-block{min-width:0}
+    .page-head h1{font-size:var(--fs-h1)}
+    .head-note{flex:0 0 450px;color:var(--muted);font-size:var(--fs-sec);line-height:1.45;text-align:right}
+    .main{flex:1;min-height:0;display:flex;flex-direction:column;gap:18px;padding-top:18px}
+    .question-row{flex:0 0 72px;display:flex;align-items:center;justify-content:space-between;gap:28px}
+    .question{font-family:var(--font-display);font-size:var(--fs-h2);font-weight:650;line-height:1.2}
+    .question strong{color:var(--attention);font-weight:700}
+    .mode-controls{display:flex;align-items:center;gap:10px}
+    .mode-label{margin-right:6px;color:var(--muted);font-size:var(--fs-label)}
+    .model-field{position:relative;flex:1;min-height:0;border:2px solid var(--rule);border-radius:var(--radius);background:var(--paper);overflow:hidden}
+    .model-field svg{display:block;width:100%;height:100%}
+    .node-box{fill:var(--paper);stroke:var(--rule-strong);stroke-width:2}
+    .node-box.param{stroke:var(--attention);stroke-width:3}
+    .node-box.pred{stroke:var(--model)}
+    .node-box.loss{stroke:var(--loss)}
+    .node-title{fill:var(--text);font:650 24px var(--font-display)}
+    .node-sub{fill:var(--muted);font:17px var(--font-sans)}
+    .symbol{fill:var(--text);font:600 34px var(--font-num)}
+    .symbol.model{fill:var(--model)}
+    .symbol.loss{fill:var(--loss)}
+    .forward{fill:none;stroke:var(--model);stroke-width:5;stroke-linecap:round;stroke-linejoin:round}
+    .backward{fill:none;stroke:var(--loss);stroke-width:5;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:10 9;opacity:.16;transition:opacity 280ms ease}
+    .f-label{fill:var(--model);font:650 16px var(--font-sans)}
+    .b-label{fill:var(--loss);font:650 16px var(--font-sans);opacity:.28;transition:opacity 280ms ease}
+    .local-note{fill:var(--attention);font:650 17px var(--font-sans);opacity:0;transition:opacity 280ms ease}
+    .forward-group{transition:opacity 280ms ease}
+    .model-field[data-mode="backward"] .backward,.model-field[data-mode="backward"] .b-label,.model-field[data-mode="backward"] .local-note{opacity:1}
+    .model-field[data-mode="backward"] .forward-group{opacity:.34}
+    .field-caption{position:absolute;left:20px;bottom:16px;display:flex;align-items:center;gap:22px;color:var(--muted);font-size:var(--fs-label);line-height:1.35}
+    .key{display:inline-flex;align-items:center;gap:8px}.key i{display:block;width:26px;height:0;border-top:4px solid var(--model)}.key.loss i{border-top-color:var(--loss);border-top-style:dashed}
+    .status{position:absolute;right:22px;bottom:14px;max-width:560px;color:var(--muted);font-size:var(--fs-sec);line-height:1.4;text-align:right}
+    .status strong{color:var(--text)}
+    .course-map{flex:0 0 166px;display:grid;grid-template-columns:180px minmax(0,1fr);gap:24px;align-items:stretch}
+    .map-intro{padding-top:16px}
+    .map-intro h2{font-size:var(--fs-h2)}
+    .map-intro p{margin-top:8px;color:var(--muted);font-size:var(--fs-label);line-height:1.4}
+    .route{position:relative;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:0;border-top:1px solid var(--rule);border-bottom:1px solid var(--rule)}
+    .route::before{content:"";position:absolute;left:10%;right:10%;top:43px;border-top:2px solid var(--rule)}
+    .stop{position:relative;min-width:0;padding:17px 22px 10px;border-right:1px solid var(--rule)}
+    .stop:last-child{border-right:0}
+    .dot{position:relative;z-index:1;width:18px;height:18px;margin:18px 0 12px;border:3px solid var(--rule-strong);border-radius:50%;background:var(--bg)}
+    .stop:first-child .dot{border-color:var(--attention);background:var(--attention-soft)}
+    .stop:last-child .dot{border-color:var(--loss);background:var(--loss-soft)}
+    .stop h3{font-size:22px;line-height:1.15}
+    .stop p{margin-top:5px;color:var(--muted);font-size:var(--fs-label);line-height:1.35}
+    @media (prefers-reduced-motion:reduce){.backward,.b-label,.local-note,.forward-group{transition:none}}
+  </style>
+</head>
+<body data-page="01" data-total="24">
+  <div id="stage">
+    <header class="page-head">
+      <div class="title-block min0">
+        <p class="kicker">课程入口｜神经网络是怎么学会的</p>
+        <h1>一个参数，怎样一步步变好？</h1>
+      </div>
+      <p class="head-note">从单个权重出发，追到误差把调整方向送回网络中的每个权重。</p>
+    </header>
+
+    <main class="main min0">
+      <div class="question-row">
+        <p class="question">权重 <strong>w</strong> 应该调大还是调小，谁来告诉它？</p>
+        <div class="mode-controls" role="group" aria-label="切换计算方向">
+          <span class="mode-label">观察路径</span>
+          <button class="btn" id="forwardBtn" type="button" aria-pressed="true">先看预测怎么产生</button>
+          <button class="btn" id="backBtn" type="button" aria-pressed="false">再看误差怎么传回</button>
+        </div>
+      </div>
+
+      <section class="model-field min0" id="modelField" data-mode="forward" aria-label="预测的前向计算与误差的反向传播">
+        <svg viewBox="0 0 1484 392" role="img" aria-describedby="diagramDesc">
+          <desc id="diagramDesc">输入乘以权重，经过神经元得到预测，预测与目标比较形成误差；反向时，误差信号沿计算关系返回权重。</desc>
+          <defs>
+            <marker id="blueArrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L12,6 L0,12 Z" fill="#2457A6"/></marker>
+            <marker id="redArrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L12,6 L0,12 Z" fill="#A33D3D"/></marker>
+          </defs>
+
+          <g class="forward-group">
+            <path class="forward" d="M176 178 H336" marker-end="url(#blueArrow)"/>
+            <path class="forward" d="M542 178 H712" marker-end="url(#blueArrow)"/>
+            <path class="forward" d="M928 178 H1089" marker-end="url(#blueArrow)"/>
+            <text class="f-label" x="224" y="151">参与计算</text>
+            <text class="f-label" x="585" y="151">得到预测</text>
+            <text class="f-label" x="972" y="151">与目标比较</text>
+          </g>
+
+          <g>
+            <rect class="node-box" x="36" y="116" width="140" height="124" rx="6"/>
+            <text class="node-title" x="106" y="158" text-anchor="middle">输入</text>
+            <text class="symbol" x="106" y="204" text-anchor="middle">x</text>
+          </g>
+          <g>
+            <rect class="node-box param" x="336" y="102" width="206" height="152" rx="6"/>
+            <text class="node-title" x="439" y="145" text-anchor="middle">待学习的权重</text>
+            <text class="symbol" x="439" y="197" text-anchor="middle">w</text>
+            <text class="node-sub" x="439" y="228" text-anchor="middle">它该往哪边改？</text>
+          </g>
+          <g>
+            <rect class="node-box pred" x="712" y="102" width="216" height="152" rx="6"/>
+            <text class="node-title" x="820" y="145" text-anchor="middle">神经元的预测</text>
+            <text class="symbol model" x="820" y="197" text-anchor="middle">ŷ</text>
+            <text class="node-sub" x="820" y="228" text-anchor="middle">由当前参数算出</text>
+          </g>
+          <g>
+            <rect class="node-box loss" x="1089" y="102" width="254" height="152" rx="6"/>
+            <text class="node-title" x="1216" y="145" text-anchor="middle">预测误差</text>
+            <text class="symbol loss" x="1216" y="197" text-anchor="middle">L(ŷ, y)</text>
+            <text class="node-sub" x="1216" y="228" text-anchor="middle">预测离目标还有多远</text>
+          </g>
+
+          <path class="backward" d="M1216 285 C1120 345 925 345 820 285" marker-end="url(#redArrow)"/>
+          <path class="backward" d="M820 285 C715 355 548 355 439 285" marker-end="url(#redArrow)"/>
+          <text class="b-label" x="1008" y="338" text-anchor="middle">预测怎样影响误差</text>
+          <text class="b-label" x="630" y="353" text-anchor="middle">权重怎样影响预测</text>
+          <text class="local-note" x="439" y="294" text-anchor="middle">合并两段影响，得到 w 的调整方向</text>
+        </svg>
+        <div class="field-caption" aria-hidden="true">
+          <span class="key"><i></i>前向：算出预测</span>
+          <span class="key loss"><i></i>反向：传回误差影响</span>
+        </div>
+        <p class="status" id="status" aria-live="polite"><strong>当前：</strong>输入沿蓝线前进，网络用现有权重算出预测与误差。</p>
+      </section>
+
+      <section class="course-map min0" aria-labelledby="mapTitle">
+        <div class="map-intro">
+          <h2 id="mapTitle">全课路线</h2>
+          <p>四个问题连成一条因果链</p>
+        </div>
+        <div class="route min0">
+          <article class="stop min0"><div class="dot"></div><h3>权重改变了什么</h3><p>先看一个神经元怎样算预测</p></article>
+          <article class="stop min0"><div class="dot"></div><h3>怎样衡量预测错了</h3><p>用损失把差距变成数值</p></article>
+          <article class="stop min0"><div class="dot"></div><h3>怎样找到调整方向</h3><p>沿计算关系逐段求影响</p></article>
+          <article class="stop min0"><div class="dot"></div><h3>怎样传到每个权重</h3><p>把误差信号送回整张网络</p></article>
+        </div>
+      </section>
+    </main>
+  </div>
+  <script src="assets/base.js"></script>
+  <script>
+    Deck.init({index:1,total:24});
+    const field=document.getElementById('modelField');
+    const forwardBtn=document.getElementById('forwardBtn');
+    const backBtn=document.getElementById('backBtn');
+    const status=document.getElementById('status');
+    function setMode(mode){
+      const backward=mode==='backward';
+      field.dataset.mode=mode;
+      forwardBtn.setAttribute('aria-pressed',String(!backward));
+      backBtn.setAttribute('aria-pressed',String(backward));
+      status.innerHTML=backward
+        ? '<strong>最终要解释：</strong>误差沿红色虚线逐段传回，为每个权重算出调整方向。'
+        : '<strong>当前：</strong>输入沿蓝线前进，网络用现有权重算出预测与误差。';
+    }
+    forwardBtn.addEventListener('click',()=>setMode('forward'));
+    backBtn.addEventListener('click',()=>setMode('backward'));
+  </script>
+</body>
+</html>

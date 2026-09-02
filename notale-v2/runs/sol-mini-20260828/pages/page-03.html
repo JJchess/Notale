@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>单个神经元：加权汇总与偏置</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    #stage{gap:20px}
+    .page-head{flex:0 0 auto;display:flex;justify-content:space-between;align-items:flex-end;border-bottom:2px solid var(--rule-strong);padding-bottom:18px}
+    .head-copy{min-width:0;max-width:1080px}
+    .head-note{width:300px;padding:0 0 3px 24px;color:var(--muted);font-size:var(--fs-sec);line-height:1.45}
+    .board{flex:1;min-height:0;display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:30px}
+    .diagram{min-width:0;min-height:0;position:relative;border-bottom:2px solid var(--rule-strong)}
+    .diagram svg{width:100%;height:100%;display:block}
+    .rail{min-width:0;min-height:0;display:flex;flex-direction:column;justify-content:space-between;gap:18px;padding:24px 0 8px}
+    .formula{padding:22px 0;border-top:4px solid var(--text);border-bottom:2px solid var(--rule-strong)}
+    .formula-label{margin-bottom:14px;color:var(--muted);font-family:var(--font-mono);font-size:var(--fs-label);font-weight:600;letter-spacing:.05em}
+    .formula-main{font-family:var(--font-mono);font-size:34px;font-weight:600;line-height:1.35;white-space:nowrap}
+    .formula-main .sum{color:var(--model)}
+    .formula-main .bias{color:var(--attention)}
+    .reading{display:grid;gap:16px}
+    .reading-row{display:grid;grid-template-columns:22px 1fr;gap:12px;align-items:start;padding-bottom:15px;border-bottom:1px solid var(--rule)}
+    .reading-row:last-child{border-bottom:0}
+    .marker{width:14px;height:14px;margin-top:7px;border:2px solid currentColor;border-radius:50%}
+    .reading-row h2{font-size:var(--fs-body);margin-bottom:4px}
+    .reading-row p{color:var(--muted);font-size:var(--fs-sec);line-height:1.45}
+    .plain-claim{padding:18px 20px;border:2px solid var(--target);border-radius:var(--radius);color:var(--text);font-size:var(--fs-sec);font-weight:600;line-height:1.5;background:var(--target-soft)}
+    .plain-claim strong{color:var(--target)}
+    .svg-label{font-family:var(--font-sans);font-size:17px;fill:var(--muted)}
+    .svg-title{font-family:var(--font-sans);font-size:20px;font-weight:700;fill:var(--text)}
+    .svg-var{font-family:var(--font-mono);font-size:24px;font-weight:600;fill:var(--text)}
+    .svg-small{font-family:var(--font-sans);font-size:15px;font-weight:600;fill:var(--muted)}
+    .svg-input{fill:var(--paper);stroke:var(--rule-strong);stroke-width:2}
+    .svg-weight{fill:var(--model-soft);stroke:var(--model);stroke-width:2}
+    .svg-sum{fill:var(--paper);stroke:var(--text);stroke-width:4}
+    .svg-bias{fill:var(--attention-soft);stroke:var(--attention);stroke-width:2}
+    .svg-output{fill:var(--model);stroke:var(--model);stroke-width:2}
+    .wire{fill:none;stroke:var(--rule-strong);stroke-width:2.5}
+    .wire-model{fill:none;stroke:var(--model);stroke-width:3}
+    .wire-attn{fill:none;stroke:var(--attention);stroke-width:3}
+  </style>
+</head>
+<body data-page="03" data-total="24">
+  <div id="stage">
+    <header class="page-head">
+      <div class="head-copy min0">
+        <span class="kicker">一个人工神经元</span>
+        <h1>它不思考，只把输入加权汇总，再加一个偏置</h1>
+      </div>
+      <p class="head-note">每条输入先乘自己的权重；偏置再把整体结果平移。</p>
+    </header>
+
+    <main class="board min0">
+      <section class="diagram min0" aria-label="人工神经元的计算流程图">
+        <svg viewBox="0 0 1080 650" role="img" aria-labelledby="svg-title svg-desc">
+          <title id="svg-title">输入经过权重后汇总，再加入偏置，得到输出</title>
+          <desc id="svg-desc">三个输入分别乘以三个权重，结果进入求和节点。偏置从下方加入，最后得到输出 z。</desc>
+          <defs>
+            <marker id="arrow-neutral" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 Z" fill="#687E84"/></marker>
+            <marker id="arrow-model" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 Z" fill="#1D5C78"/></marker>
+            <marker id="arrow-attn" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 Z" fill="#D98B16"/></marker>
+          </defs>
+
+          <text x="58" y="48" class="svg-title">输入</text>
+          <text x="292" y="48" class="svg-title">各自乘权重</text>
+          <text x="658" y="48" class="svg-title">汇总</text>
+          <text x="924" y="48" class="svg-title">输出</text>
+
+          <path class="wire" d="M156 145 H278" marker-end="url(#arrow-neutral)"/>
+          <path class="wire" d="M156 285 H278" marker-end="url(#arrow-neutral)"/>
+          <path class="wire" d="M156 425 H278" marker-end="url(#arrow-neutral)"/>
+          <path class="wire-model" d="M430 145 C535 145 555 220 642 270" marker-end="url(#arrow-model)"/>
+          <path class="wire-model" d="M430 285 H636" marker-end="url(#arrow-model)"/>
+          <path class="wire-model" d="M430 425 C535 425 555 350 642 300" marker-end="url(#arrow-model)"/>
+          <path class="wire-attn" d="M704 510 V357" marker-end="url(#arrow-attn)"/>
+          <path class="wire-model" d="M776 285 H916" marker-end="url(#arrow-model)"/>
+
+          <circle cx="110" cy="145" r="46" class="svg-input"/>
+          <circle cx="110" cy="285" r="46" class="svg-input"/>
+          <circle cx="110" cy="425" r="46" class="svg-input"/>
+          <text x="110" y="153" text-anchor="middle" class="svg-var">x₁</text>
+          <text x="110" y="293" text-anchor="middle" class="svg-var">x₂</text>
+          <text x="110" y="433" text-anchor="middle" class="svg-var">x₃</text>
+
+          <rect x="278" y="105" width="152" height="80" rx="6" class="svg-weight"/>
+          <rect x="278" y="245" width="152" height="80" rx="6" class="svg-weight"/>
+          <rect x="278" y="385" width="152" height="80" rx="6" class="svg-weight"/>
+          <text x="354" y="153" text-anchor="middle" class="svg-var">× w₁</text>
+          <text x="354" y="293" text-anchor="middle" class="svg-var">× w₂</text>
+          <text x="354" y="433" text-anchor="middle" class="svg-var">× w₃</text>
+          <text x="354" y="207" text-anchor="middle" class="svg-small">权重决定影响大小</text>
+
+          <circle cx="704" cy="285" r="72" class="svg-sum"/>
+          <text x="704" y="278" text-anchor="middle" class="svg-var">Σ</text>
+          <text x="704" y="310" text-anchor="middle" class="svg-small">全部相加</text>
+
+          <rect x="639" y="510" width="130" height="72" rx="6" class="svg-bias"/>
+          <text x="704" y="554" text-anchor="middle" class="svg-var">+ b</text>
+          <text x="704" y="610" text-anchor="middle" class="svg-small">偏置平移总和</text>
+
+          <circle cx="972" cy="285" r="56" class="svg-output"/>
+          <text x="972" y="294" text-anchor="middle" class="svg-var" style="fill:#fff">z</text>
+          <text x="972" y="367" text-anchor="middle" class="svg-label">一个数值</text>
+        </svg>
+      </section>
+
+      <aside class="rail min0" aria-label="公式与读图说明">
+        <section class="formula">
+          <p class="formula-label">计算写成一行</p>
+          <p class="formula-main"><span class="sum">z = Σ wᵢxᵢ</span> <span class="bias">+ b</span></p>
+        </section>
+
+        <section class="reading" aria-label="符号含义">
+          <div class="reading-row">
+            <span class="marker is-model" aria-hidden="true"></span>
+            <div><h2>权重 w</h2><p>控制某个输入对结果影响多大，以及影响方向。</p></div>
+          </div>
+          <div class="reading-row">
+            <span class="marker is-attention" aria-hidden="true"></span>
+            <div><h2>偏置 b</h2><p>不依赖输入，直接移动汇总后的结果。</p></div>
+          </div>
+          <div class="reading-row">
+            <span class="marker" aria-hidden="true"></span>
+            <div><h2>输出 z</h2><p>仍然只是计算得到的数值，不是想法或判断。</p></div>
+          </div>
+        </section>
+
+        <p class="plain-claim"><strong>“神经元”只是借名。</strong><br>这里没有生物细胞，也没有意识；只有乘法、加法和可调整的参数。</p>
+      </aside>
+    </main>
+  </div>
+  <script src="assets/base.js"></script>
+  <script>Deck.init({index:3,total:24});</script>
+</body>
+</html>

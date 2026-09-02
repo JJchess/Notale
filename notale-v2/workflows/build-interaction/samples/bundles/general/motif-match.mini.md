@@ -8,6 +8,48 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>共享旋律 mini</title>
 <link rel="stylesheet" href="assets/base.css">
+<style>
+:root{
+ --bg:#252222;--text:#f7f4ef;--muted:#bdb7b2;--line:#625c59;
+ --focus:#f4db24;--error:#ff8066;--font-sans:Arial,Helvetica,sans-serif
+}
+#stage{padding:52px 70px}
+h1{font-size:42px;font-weight:750}
+main{display:grid;grid-template-columns:500px 1fr;gap:68px;padding-top:38px}
+.references{display:grid;gap:14px;margin-top:17px}
+.clip{position:relative;height:80px;padding:13px 16px;border:1px solid #77706d;
+ border-radius:6px;background:#efede9;color:#252222}
+.rail{position:absolute;left:17px;right:17px;bottom:18px;height:2px;background:#8f8a86}
+.marker{position:absolute;left:var(--x);top:50%;width:22px;height:22px;border:2px solid #252222;
+ border-radius:50%;background:#efede9;line-height:18px;text-align:center;transform:translate(-50%,-50%);
+ transition:.16s ease}
+.marker.on{background:var(--focus);transform:translate(-50%,-68%)}
+.target{float:right;color:var(--muted)}
+.target b{margin-left:12px;color:var(--text)}
+#slots{display:grid;grid-template-columns:86px 1fr 86px 1fr 86px 1fr 86px;
+ align-items:center;margin-top:24px}
+.slot{height:64px;border:0;border-bottom:2px solid #85807d;background:none;font-size:21px;font-weight:800}
+.slot:disabled{color:var(--text)}.slot.selected{border-color:var(--focus);color:var(--focus)}
+.interval{color:var(--muted);text-align:center}.interval.bad{color:var(--error);font-weight:700}
+.feedback{min-height:70px;margin-top:25px}
+#message{font-size:17px;line-height:1.45}#audioState{color:var(--muted)}
+.actions{display:flex;gap:10px;margin-top:15px}
+.actions button{height:41px;padding:0 18px;border:1px solid #8a8380;background:none;font-weight:750}
+#check{border-color:var(--focus);background:var(--focus);color:#252222}
+.piano-wrap{grid-column:1/-1;margin-top:32px}.piano-wrap h2{margin-bottom:11px}
+.piano{position:relative;height:286px;overflow:hidden;background:#0b1013}
+.key{position:absolute;top:0;padding:0;border:0;transition:transform .08s ease}
+.white{height:270px;z-index:1;border-right:2px solid #747779;border-radius:0 0 8px 8px;
+ background:linear-gradient(90deg,#c8cace,#fff 15%,#e7e7e4);box-shadow:inset 2px 0 #fff,0 7px #858989}
+.black{height:176px;z-index:2;border-radius:0 0 5px 5px;
+ background:linear-gradient(90deg,#080d12,#434a55,#080d12);box-shadow:8px 11px 5px #0007}
+.key:after{content:attr(data-name);position:absolute;inset:auto 0 12px;color:#272727;
+ font-weight:800;text-align:center}
+.black:after{bottom:8px;color:#fff;opacity:.7}
+.key.down{transform:translateY(4px)}.white.down{box-shadow:inset 0 0 0 4px var(--focus),0 3px #707575}
+.black.down{box-shadow:inset 0 0 0 3px var(--focus)}
+@media(prefers-reduced-motion:reduce){.key,.marker{transition:none!important}}
+</style>
 </head>
 <body><div id="stage" data-phase="build">
 <h1>四个音，共用一组音程</h1><main>

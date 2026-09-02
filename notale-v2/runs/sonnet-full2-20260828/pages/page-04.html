@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  .stagearea.layout-split{ gap:40px; }
+  .k-process .step{ cursor:pointer; justify-content:center; gap:10px; padding:16px 18px; transition:border-color .15s, box-shadow .15s; }
+  .k-process .step .val{ font-family:var(--font-mono); font-size:var(--fs-sec); color:var(--text); line-height:1.4; font-variant-numeric:tabular-nums; }
+  .k-process .step.is-active .val{ color:var(--forward); font-weight:600; }
+  .const-block{ margin-top:12px; }
+  .const-block .small{ display:block; }
+  .const-block .num{ display:block; }
+</style>
+</head>
+<body data-page="04" data-total="20">
+<div id="stage">
+
+  <div class="layout-focus">
+    <div class="head">
+      <span class="kicker">从一个神经元到一层</span>
+      <h1>一层,就是并排放着、共享同一份输入的神经元</h1>
+      <p class="lead">两个神经元各拿一份权重,同时看着同一个输入向量,各自算出一个输出——互不干扰。</p>
+    </div>
+
+    <div class="stagearea layout-split">
+      <div class="col-a">
+        <div class="panel">
+          <h2 style="margin-bottom:10px">这一层的例子</h2>
+          <div class="const-block">
+            <span class="small">输入向量(两个神经元共享这一份)</span>
+            <span class="num" style="font-size:20px">x = [1.0, 2.0]</span>
+          </div>
+          <div class="const-block">
+            <span class="small">权重矩阵 —— 每一行属于一个神经元</span>
+            <span class="num" style="font-size:20px">W = [[0.5, −0.3], [0.2, 0.4]]</span>
+          </div>
+          <div class="const-block">
+            <span class="small">偏置向量 —— 每个神经元各有一个</span>
+            <span class="num" style="font-size:20px">b = [0.1, −0.1]</span>
+          </div>
+        </div>
+        <p class="small">第一行权重 [0.5, −0.3] 和偏置 0.1 属于第一个神经元;第二行权重 [0.2, 0.4] 和偏置 −0.1 属于第二个神经元。两行分别算,输出各自独立。</p>
+      </div>
+
+      <div class="col-b">
+        <div class="k-process" id="proc" style="flex:1">
+          <div class="step" id="step0" tabindex="0" role="button" aria-label="查看第一阶段:输入向量">
+            <span class="st-label">输入向量</span>
+            <span class="val" id="val0"></span>
+          </div>
+          <div class="arw"></div>
+          <div class="step" id="step1" tabindex="0" role="button" aria-label="查看第二阶段:乘以权重矩阵">
+            <span class="st-label">乘以权重矩阵</span>
+            <span class="val" id="val1"></span>
+          </div>
+          <div class="arw"></div>
+          <div class="step" id="step2" tabindex="0" role="button" aria-label="查看第三阶段:加上偏置向量">
+            <span class="st-label">加上偏置向量</span>
+            <span class="val" id="val2"></span>
+          </div>
+          <div class="arw"></div>
+          <div class="step" id="step3" tabindex="0" role="button" aria-label="查看第四阶段:逐元素激活">
+            <span class="st-label">逐元素做激活</span>
+            <span class="val" id="val3"></span>
+          </div>
+        </div>
+
+        <div class="btns" style="margin-top:14px">
+          <button class="btn primary" id="nextBtn">下一步</button>
+          <button class="btn" id="resetBtn">复位</button>
+        </div>
+        <div class="hint" id="hintText">点击已经算过的阶段方框,可以回看那一步的数字。</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+<script src="assets/base.js"></script>
+<script>
+(function(){
+  function fmt(v, d){
+    var p = Math.pow(10, d);
+    var t = Math.trunc(v * p) / p;
+    return t.toFixed(d);
+  }
+  function sigmoid(v){ return 1 / (1 + Math.exp(-v)); }
+
+  var values = [
+    'x = [1.0, 2.0]',
+    'Wx = [' + fmt(-0.1, 2) + ', ' + fmt(1.0, 2) + ']',
+    'z = Wx + b = [' + fmt(0.0, 1) + ', ' + fmt(0.9, 1) + ']',
+    'a = sigmoid(z) = [' + fmt(sigmoid(0), 3) + ', ' + fmt(sigmoid(0.9), 3) + ']'
+  ];
+  var locked = [
+    '给定,直接可读',
+    '尚未算到这一步',
+    '尚未算到这一步',
+    '尚未算到这一步'
+  ];
+
+  var steps = [
+    document.getElementById('step0'),
+    document.getElementById('step1'),
+    document.getElementById('step2'),
+    document.getElementById('step3')
+  ];
+  var vals = [
+    document.getElementById('val0'),
+    document.getElementById('val1'),
+    document.getElementById('val2'),
+    document.getElementById('val3')
+  ];
+  var nextBtn = document.getElementById('nextBtn');
+  var resetBtn = document.getElementById('resetBtn');
+  var hintText = document.getElementById('hintText');
+
+  var maxStage = 0;
+  var viewStage = 0;
+
+  function render(){
+    for (var i = 0; i < 4; i++){
+      steps[i].classList.toggle('is-active', i === viewStage);
+      if (i <= maxStage){
+        vals[i].textContent = values[i];
+        vals[i].style.opacity = 1;
+      } else {
+        vals[i].textContent = locked[i];
+        vals[i].style.opacity = .5;
+      }
+    }
+    nextBtn.disabled = maxStage >= 3;
+    if (maxStage >= 3){
+      hintText.textContent = '四个阶段都算完了。四个方框摆在一起,就是这一层的完整计算。';
+    } else {
+      hintText.textContent = '点击已经算过的阶段方框,可以回看那一步的数字。';
+    }
+  }
+
+  nextBtn.addEventListener('click', function(){
+    if (maxStage < 3){
+      maxStage++;
+      viewStage = maxStage;
+      render();
+    }
+  });
+  resetBtn.addEventListener('click', function(){
+    maxStage = 0;
+    viewStage = 0;
+    render();
+  });
+
+  steps.forEach(function(el, i){
+    el.addEventListener('click', function(){
+      if (i <= maxStage){
+        viewStage = i;
+        render();
+      }
+    });
+    el.addEventListener('keydown', function(e){
+      if (e.key === 'Enter' || e.key === ' '){
+        e.preventDefault();
+        if (i <= maxStage){
+          viewStage = i;
+          render();
+        }
+      }
+    });
+  });
+
+  render();
+  Deck.init({ index: 4, total: 20 });
+})();
+</script>
+</body>
+</html>

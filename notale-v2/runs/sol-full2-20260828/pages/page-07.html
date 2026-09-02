@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+#stage{background-image:none}
+.page-head{display:flex;align-items:flex-end;justify-content:space-between;gap:32px}
+.page-head .title-block{min-width:0}
+.page-head h1{margin-bottom:8px}
+.page-head .lead{margin:0;max-width:980px;color:var(--muted)}
+.formula-strip{flex:0 0 auto;padding:10px 16px;border-top:2px solid var(--rule-strong);border-bottom:2px solid var(--rule-strong);font-size:20px;background:rgba(248,251,253,.72);white-space:nowrap}
+.bench{min-height:0}
+.chart-figure{height:100%;margin:0;display:grid;grid-template-rows:minmax(0,1fr) auto;gap:10px}
+.chart-shell{position:relative;min-width:0;min-height:0;border-top:2px solid var(--rule-strong);border-bottom:2px solid var(--rule-strong);background:rgba(248,251,253,.52)}
+#lossChart{position:absolute;inset:0}
+.chart-caption{display:flex;justify-content:space-between;gap:24px;color:var(--muted);font-size:var(--fs-label);line-height:1.4}
+.chart-caption strong{color:var(--text)}
+.controls{display:flex;flex-direction:column;gap:18px;justify-content:flex-start}
+.control-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding-bottom:14px;border-bottom:1px solid var(--rule)}
+.control-head h2{margin:0}
+.target-tag{color:var(--target);font-weight:700;font-size:var(--fs-label)}
+.readout{padding:8px 0 4px}
+.readout-label{display:block;margin-bottom:6px;color:var(--muted);font-size:var(--fs-label);font-weight:650}
+.readout-row{display:flex;align-items:baseline;gap:8px;white-space:nowrap}
+.readout-row .equals{font-size:26px;color:var(--muted)}
+.readout-row .loss{color:var(--gradient)}
+.slider-block{padding:14px 0;border-top:1px solid var(--rule);border-bottom:1px solid var(--rule)}
+.slider-block label{display:flex;justify-content:space-between;align-items:baseline;gap:12px;font-size:var(--fs-label);font-weight:700}
+.slider-block output{color:var(--model);font-family:var(--font-num);font-size:22px;font-weight:700}
+.slider-block input{margin:10px 0 4px}
+.range-ends{display:flex;justify-content:space-between;color:var(--muted);font-family:var(--font-num);font-size:var(--fs-tick)}
+.benchmarks{width:100%;border-collapse:collapse;font-size:var(--fs-sec);font-variant-numeric:tabular-nums}
+.benchmarks caption{text-align:left;margin-bottom:7px;color:var(--muted);font-size:var(--fs-label)}
+.benchmarks th,.benchmarks td{padding:8px 6px;border-bottom:1px solid var(--rule);text-align:right}
+.benchmarks th:first-child,.benchmarks td:first-child{text-align:left}
+.benchmarks th{color:var(--muted);font-size:var(--fs-label)}
+.claim{margin:0;padding-top:12px;border-top:2px solid var(--text);font-size:var(--fs-lead);line-height:1.4;font-weight:700}
+.claim .continuous{text-decoration:underline;text-decoration-color:var(--attention);text-decoration-thickness:3px;text-underline-offset:5px}
+.btn{align-self:flex-start}
+@media (prefers-reduced-motion:reduce){*{scroll-behavior:auto!important}}
+</style>
+</head>
+<body data-page="07" data-total="22">
+<div id="stage">
+  <main class="workbench min0" aria-labelledby="page-title">
+    <header class="page-head">
+      <div class="title-block min0">
+        <span class="kicker">二分类 · 目标固定为 y = 1</span>
+        <h1 id="page-title">损失：把“错多少”压成一个数</h1>
+        <p class="lead">拖动预测概率 <span class="num">p</span>：越不相信正确目标，损失越大；越接近目标，损失越小。</p>
+      </div>
+      <div class="formula-strip formula" aria-label="二元交叉熵公式">L = −[y ln p + (1−y) ln(1−p)]</div>
+    </header>
+
+    <section class="bench min0" aria-label="交叉熵损失实验台">
+      <figure class="chart-figure min0" aria-labelledby="chart-cap">
+        <div class="chart-shell min0">
+          <div id="lossChart" role="img" aria-label="目标 y 等于 1 时，二元交叉熵损失随预测概率 p 增大而连续下降的曲线。当前 p 等于 0.50，损失等于 0.693 nat。"></div>
+        </div>
+        <figcaption class="chart-caption" id="chart-cap">
+          <span><strong>位置编码：</strong>横轴是预测为 <span class="num">1</span> 的概率，纵轴是损失 <span class="num">L</span>（nat）。</span>
+          <span>数值按自然对数公式计算，显示三位小数。</span>
+        </figcaption>
+      </figure>
+
+      <aside class="panel controls min0" aria-label="预测概率控制与读数">
+        <div class="control-head">
+          <h2>沿标尺取一个预测</h2>
+          <span class="target-tag">目标：p = 1</span>
+        </div>
+
+        <div class="readout" aria-live="polite" aria-atomic="true">
+          <span class="readout-label">当前预测与损失</span>
+          <div class="readout-row">
+            <span class="big sm is-model" id="pRead">0.50</span>
+            <span class="equals">→</span>
+            <span class="big sm loss" id="lossRead">0.693<span class="unit">nat</span></span>
+          </div>
+        </div>
+
+        <div class="slider-block">
+          <label for="pSlider">预测概率 p <output id="pOut" for="pSlider">0.50</output></label>
+          <input id="pSlider" type="range" min="1" max="99" step="1" value="50" aria-describedby="sliderHint">
+          <div class="range-ends" aria-hidden="true"><span>0.01</span><span>0.99</span></div>
+          <p class="hint" id="sliderHint">拖动滑杆，比较曲线上的连续读数。</p>
+        </div>
+
+        <button class="btn" id="resetBtn" type="button">复位 p=0.50</button>
+
+        <table class="benchmarks" aria-label="三个校准读数">
+          <caption>三个校准点，均由 <span class="formula">L = −ln p</span> 得到</caption>
+          <thead><tr><th scope="col">p</th><th scope="col">L（nat）</th></tr></thead>
+          <tbody>
+            <tr><td class="num">0.10</td><td class="num">2.303</td></tr>
+            <tr><td class="num">0.50</td><td class="num">0.693</td></tr>
+            <tr><td class="num">0.90</td><td class="num">0.105</td></tr>
+          </tbody>
+        </table>
+
+        <p class="claim">损失不是对错按钮，而是一把<span class="continuous">可比较、可下降</span>的连续标尺。</p>
+      </aside>
+    </section>
+  </main>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lib/echarts.min.js"></script>
+<script>
+(function(){
+  'use strict';
+  Deck.init({index:7,total:22});
+
+  var slider=document.getElementById('pSlider');
+  var pRead=document.getElementById('pRead');
+  var pOut=document.getElementById('pOut');
+  var lossRead=document.getElementById('lossRead');
+  var reset=document.getElementById('resetBtn');
+  var chartEl=document.getElementById('lossChart');
+  var state={p:0.50};
+  var curve=[];
+  for(var i=1;i<=99;i++){var p=i/100;curve.push([p,-Math.log(p)]);}
+
+  var chart=echarts.init(chartEl,null,{renderer:'svg'});
+  var css=getComputedStyle(document.documentElement);
+  function token(name){return css.getPropertyValue(name).trim();}
+
+  function option(s){
+    var loss=-Math.log(s.p);
+    return {
+      animation:false,
+      textStyle:{fontFamily:token('--font-sans'),fontSize:16,color:token('--text')},
+      grid:{left:82,right:48,top:42,bottom:72,containLabel:false},
+      tooltip:{show:false},
+      xAxis:{
+        type:'value',min:0,max:1,interval:0.2,name:'预测概率 p',nameLocation:'middle',nameGap:44,
+        nameTextStyle:{fontSize:16,fontWeight:650,color:token('--text')},
+        axisLine:{lineStyle:{color:token('--rule-strong'),width:2}},
+        axisTick:{lineStyle:{color:token('--rule-strong')}},
+        axisLabel:{fontSize:14,color:token('--muted'),formatter:function(v){return v.toFixed(1);}},
+        splitLine:{show:false}
+      },
+      yAxis:{
+        type:'value',min:0,max:5,interval:1,name:'损失 L（nat）',nameLocation:'middle',nameGap:54,
+        nameTextStyle:{fontSize:16,fontWeight:650,color:token('--text')},
+        axisLine:{show:true,lineStyle:{color:token('--rule-strong'),width:2}},
+        axisTick:{show:true,lineStyle:{color:token('--rule-strong')}},
+        axisLabel:{fontSize:14,color:token('--muted')},
+        splitLine:{lineStyle:{color:token('--rule'),width:1}}
+      },
+      series:[
+        {
+          name:'二元交叉熵',type:'line',data:curve,showSymbol:false,silent:true,
+          lineStyle:{color:token('--gradient'),width:5},
+          markLine:{
+            silent:true,symbol:['none','none'],
+            label:{show:true,fontSize:15,fontWeight:700,color:token('--target'),formatter:'目标 p = 1',position:'insideEndTop'},
+            lineStyle:{color:token('--target'),width:3,type:'solid'},
+            data:[{xAxis:1}]
+          }
+        },
+        {
+          name:'当前读数',type:'scatter',data:[[s.p,loss]],symbolSize:18,z:5,
+          itemStyle:{color:token('--attention'),borderColor:token('--paper-strong'),borderWidth:3},
+          label:{show:true,position:s.p>0.72?'left':'right',distance:12,fontSize:16,fontWeight:700,color:token('--text'),backgroundColor:token('--paper-strong'),borderColor:token('--rule-strong'),borderWidth:1,borderRadius:4,padding:[7,9],formatter:'p = '+s.p.toFixed(2)+'\nL = '+loss.toFixed(3)+' nat'},
+          markLine:{silent:true,symbol:['none','none'],label:{show:false},lineStyle:{color:token('--attention'),width:2,type:'dashed'},data:[{xAxis:s.p},{yAxis:loss}]}
+        }
+      ]
+    };
+  }
+
+  function render(){
+    var loss=-Math.log(state.p);
+    var pText=state.p.toFixed(2);
+    var lText=loss.toFixed(3);
+    pRead.textContent=pText;
+    pOut.textContent=pText;
+    lossRead.innerHTML=lText+'<span class="unit">nat</span>';
+    slider.value=Math.round(state.p*100);
+    chartEl.setAttribute('aria-label','目标 y 等于 1 时，二元交叉熵损失随预测概率 p 增大而连续下降的曲线。当前 p 等于 '+pText+'，损失等于 '+lText+' nat。');
+    chart.setOption(option(state),true);
+  }
+  function setState(patch){state=Object.assign({},state,patch);render();}
+  slider.addEventListener('input',function(){setState({p:Number(slider.value)/100});});
+  reset.addEventListener('click',function(){setState({p:0.50});slider.focus();});
+  var ro=new ResizeObserver(function(){chart.resize();});
+  ro.observe(chartEl);
+  window.addEventListener('pagehide',function cleanup(){ro.disconnect();chart.dispose();},{once:true});
+  render();
+})();
+</script>
+</body>
+</html>

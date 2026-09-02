@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>偏置与权重的职责</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    .page { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 20px; }
+    .page > header { flex: 0 0 auto; display: flex; flex-direction: column; gap: 8px; }
+    .lead { max-width: 1260px; color: var(--muted); }
+    .equation-strip {
+      flex: 0 0 104px; display: flex; align-items: center; justify-content: center; gap: 34px;
+      background: var(--surface); border: 2px solid var(--rule); border-radius: 10px;
+      box-shadow: 0 7px 18px rgba(23,33,43,.08);
+    }
+    .equation { font-family: var(--font-num); font-size: 34px; line-height: 1; font-weight: 600; letter-spacing: -.025em; }
+    .equation .w { color: var(--model); }
+    .equation .b { color: var(--attention); }
+    .gate { display: flex; align-items: center; gap: 12px; padding-left: 34px; border-left: 2px solid var(--rule-soft); }
+    .gate strong { font-family: var(--font-num); font-size: 23px; color: var(--observed); }
+    .compare-main { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 40px; }
+    .side { min-width: 0; min-height: 0; display: grid; grid-template-rows: auto minmax(0,1fr) auto; gap: 14px; }
+    .side.bias { border-left: 2px dashed var(--rule); padding-left: 40px; }
+    .side-head { display: flex; align-items: baseline; justify-content: space-between; gap: 20px; }
+    .side-head h2 { display: flex; align-items: center; gap: 12px; }
+    .mark { width: 14px; height: 14px; display: inline-block; background: var(--model); }
+    .bias .mark { background: var(--attention); }
+    .side-head .formula { font-family: var(--font-num); font-size: var(--fs-sec); color: var(--muted); white-space: nowrap; }
+    .diagram-box { min-height: 0; position: relative; overflow: hidden; background: rgba(255,255,255,.72); border: 1px solid var(--rule); border-radius: 10px; }
+    .diagram-box svg { display: block; width: 100%; height: 100%; }
+    .summary { min-height: 76px; display: flex; align-items: center; gap: 16px; padding: 14px 18px; border-top: 2px solid var(--rule); }
+    .summary strong { flex: 0 0 auto; font-size: var(--fs-lead); }
+    .summary p { color: var(--muted); font-size: var(--fs-sec); line-height: 1.42; }
+    .summary.weight strong { color: var(--model); }
+    .summary.shift strong { color: #9B6500; }
+    svg text { font-family: var(--font-sans); fill: var(--text); }
+    svg .mono { font-family: var(--font-num); }
+    svg .muted { fill: var(--muted); }
+    svg .model { fill: var(--model); }
+    svg .attention { fill: #9B6500; }
+    svg .observed { fill: var(--observed); }
+    svg .axis { stroke: var(--text); stroke-width: 2; }
+    svg .guide { stroke: var(--rule); stroke-width: 2; stroke-dasharray: 7 7; }
+    svg .old { stroke: var(--model); stroke-width: 5; fill: none; }
+    svg .new { stroke: var(--attention); stroke-width: 6; fill: none; }
+    svg .thin-model { stroke: var(--model); stroke-width: 3; fill: none; }
+    svg .thin-attn { stroke: var(--attention); stroke-width: 3; fill: none; }
+    svg .observed-line { stroke: var(--observed); stroke-width: 4; fill: none; }
+  </style>
+</head>
+<body data-page="06" data-total="25">
+  <div id="stage">
+    <section class="page">
+      <header>
+        <div class="kicker">参数分工</div>
+        <h1>权重改变输入证据；偏置平移触发门槛</h1>
+        <p class="lead">固定所有输入和权重后，改变偏置会给总分统一加上同一个量。它不代表一项新的输入证据。</p>
+      </header>
+
+      <div class="equation-strip" aria-label="神经元加权求和公式">
+        <div class="equation">z = <span class="w">Σ wᵢxᵢ</span> + <span class="b">b</span></div>
+        <div class="gate"><span class="small">触发条件</span><strong>z ≥ 0</strong></div>
+      </div>
+
+      <main class="compare-main min0">
+        <section class="side min0" aria-labelledby="weight-title">
+          <div class="side-head">
+            <h2 id="weight-title"><span class="mark" aria-hidden="true"></span>改权重：重算输入贡献</h2>
+            <span class="formula">Δz = Δw · x</span>
+          </div>
+          <div class="diagram-box min0">
+            <svg viewBox="0 0 700 390" role="img" aria-label="改变权重时，输入相同但贡献长度改变，变化量取决于输入值">
+              <defs>
+                <marker id="arrow-blue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0L10 5L0 10Z" fill="#1F5FAE"/></marker>
+                <marker id="arrow-gold" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0L10 5L0 10Z" fill="#E3A51A"/></marker>
+              </defs>
+              <text x="48" y="48" font-size="17" font-weight="600" class="observed">同一个输入 x</text>
+              <rect x="48" y="70" width="132" height="58" rx="8" fill="#E4F1EC" stroke="#24705A" stroke-width="2"/>
+              <text x="114" y="106" text-anchor="middle" font-size="22" font-weight="700" class="mono observed">x</text>
+              <line x1="180" y1="99" x2="316" y2="99" class="observed-line" marker-end="url(#arrow-blue)"/>
+              <text x="250" y="82" text-anchor="middle" font-size="15" class="muted">输入不变</text>
+
+              <text x="350" y="48" font-size="17" font-weight="600">乘上不同权重</text>
+              <rect x="330" y="70" width="116" height="58" rx="8" fill="#E4EEF9" stroke="#1F5FAE" stroke-width="2"/>
+              <text x="388" y="106" text-anchor="middle" font-size="20" class="mono model">w</text>
+              <rect x="500" y="70" width="130" height="58" rx="8" fill="#FFF2C6" stroke="#E3A51A" stroke-width="3"/>
+              <text x="565" y="106" text-anchor="middle" font-size="20" class="mono attention">w + Δw</text>
+
+              <text x="48" y="185" font-size="17" font-weight="600">贡献大小随权重改变</text>
+              <line x1="62" y1="238" x2="390" y2="238" class="old" marker-end="url(#arrow-blue)"/>
+              <text x="62" y="222" font-size="15" class="model mono">wx</text>
+              <line x1="62" y1="300" x2="568" y2="300" class="new" marker-end="url(#arrow-gold)"/>
+              <text x="62" y="284" font-size="15" class="attention mono">(w + Δw)x</text>
+              <line x1="390" y1="250" x2="568" y2="288" class="guide"/>
+              <text x="478" y="255" text-anchor="middle" font-size="16" class="muted mono">差值 = Δw·x</text>
+              <text x="350" y="357" text-anchor="middle" font-size="17" font-weight="600" class="model">x 不同，权重变化带来的分数变化也不同</text>
+            </svg>
+          </div>
+          <div class="summary weight">
+            <strong>职责</strong>
+            <p>权重决定每项输入在总分里算多少；输入值会参与这次变化。</p>
+          </div>
+        </section>
+
+        <section class="side bias min0" aria-labelledby="bias-title">
+          <div class="side-head">
+            <h2 id="bias-title"><span class="mark" aria-hidden="true"></span>改偏置：整体移动门槛</h2>
+            <span class="formula">Δz = Δb</span>
+          </div>
+          <div class="diagram-box min0">
+            <svg viewBox="0 0 700 390" role="img" aria-label="改变偏置时，加权证据不变，得分线平行移动，所有输入对应的得分都增加相同的量">
+              <defs>
+                <marker id="arrow-axis" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#17212B"/></marker>
+                <marker id="arrow-shift" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#E3A51A"/></marker>
+              </defs>
+              <line x1="82" y1="326" x2="650" y2="326" class="axis" marker-end="url(#arrow-axis)"/>
+              <line x1="82" y1="346" x2="82" y2="48" class="axis" marker-end="url(#arrow-axis)"/>
+              <text x="650" y="356" text-anchor="end" font-size="15" class="muted">加权输入证据 Σwᵢxᵢ</text>
+              <text x="55" y="54" text-anchor="middle" font-size="16" class="mono">z</text>
+              <line x1="82" y1="222" x2="650" y2="222" class="guide"/>
+              <text x="94" y="211" font-size="15" class="muted mono">z = 0</text>
+
+              <line x1="126" y1="308" x2="560" y2="108" class="old"/>
+              <line x1="126" y1="238" x2="560" y2="38" class="new"/>
+              <text x="638" y="107" text-anchor="end" font-size="15" class="model mono">原来：e + b</text>
+              <text x="638" y="43" text-anchor="end" font-size="15" class="attention mono">现在：e + b + Δb</text>
+
+              <line x1="414" y1="176" x2="414" y2="109" class="thin-attn" marker-end="url(#arrow-shift)"/>
+              <text x="430" y="148" font-size="16" font-weight="600" class="attention mono">同加 Δb</text>
+
+              <circle cx="314" cy="222" r="7" fill="#1F5FAE"/>
+              <circle cx="162" cy="222" r="8" fill="#E3A51A"/>
+              <line x1="162" y1="222" x2="162" y2="326" class="thin-attn" stroke-dasharray="6 6"/>
+              <line x1="314" y1="222" x2="314" y2="326" class="thin-model" stroke-dasharray="6 6"/>
+              <path d="M302 354 C270 376 208 376 174 354" fill="none" stroke="#E3A51A" stroke-width="3" marker-end="url(#arrow-shift)"/>
+              <text x="238" y="349" text-anchor="middle" font-size="16" font-weight="600" class="attention">触发门槛平移</text>
+            </svg>
+          </div>
+          <div class="summary shift">
+            <strong>职责</strong>
+            <p>偏置不读取新的输入；它让每组输入的总分同时增加或减少同一个量。</p>
+          </div>
+        </section>
+      </main>
+    </section>
+  </div>
+  <script src="assets/base.js"></script>
+  <script>Deck.init({ index: 6, total: 25 });</script>
+</body>
+</html>

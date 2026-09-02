@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>斜率决定参数下一步往哪走</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    .page11{display:grid;grid-template-rows:auto minmax(0,1fr);gap:20px;flex:1;min-height:0}
+    .page11 header{display:flex;align-items:flex-end;justify-content:space-between;gap:36px;border-bottom:2px solid var(--rule);padding-bottom:15px}
+    .page11 .headcopy{min-width:0}
+    .page11 .headnote{max-width:500px;color:var(--muted);font-size:var(--fs-sec);line-height:1.45;text-align:right}
+    .lab{display:grid;grid-template-columns:minmax(0,1fr) 354px;gap:28px;min-height:0}
+    .plot-shell{position:relative;min-width:0;min-height:0;border:2px solid var(--rule-strong);border-radius:var(--radius);background:var(--paper);overflow:hidden}
+    #plot{display:block;width:100%;height:100%;touch-action:none;cursor:ew-resize}
+    #plot:focus-visible{outline:4px solid var(--focus);outline-offset:-4px}
+    .plot-tip{position:absolute;left:24px;top:18px;color:var(--muted);font-size:var(--fs-label);pointer-events:none}
+    .rail{display:flex;flex-direction:column;gap:16px;min-width:0;min-height:0}
+    .state{padding:18px 20px;border:2px solid var(--rule);border-radius:var(--radius);background:var(--paper);box-shadow:0 5px 0 var(--shadow)}
+    .state h2{margin-bottom:14px}
+    .readrow{display:grid;grid-template-columns:1fr auto;gap:12px;align-items:baseline;padding:11px 0;border-bottom:1px solid var(--rule)}
+    .readrow:last-child{border-bottom:0}
+    .readrow .label{color:var(--muted);font-size:var(--fs-label);font-weight:700}
+    .readrow output{font-family:var(--font-mono);font-size:var(--fs-body);font-weight:600;font-variant-numeric:tabular-nums}
+    #slopeOut{color:var(--gradient)}
+    #dirOut{color:var(--model)}
+    .control{display:grid;gap:13px;padding:18px 20px;border:2px solid var(--rule);border-radius:var(--radius)}
+    .control label{font-size:var(--fs-label);font-weight:700}
+    .control input{width:100%;accent-color:var(--attention)}
+    .presets{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+    .presets .btn{padding-inline:10px}
+    .rulebox{margin-top:auto;padding:17px 20px;border-top:4px solid var(--text);border-bottom:2px solid var(--rule-strong)}
+    .rulebox .formula{margin:8px 0 6px;font-family:var(--font-mono);font-size:var(--fs-lead);font-weight:600;color:var(--text)}
+    .rulebox p{font-size:var(--fs-sec);line-height:1.45}
+    .legendbar{position:absolute;left:24px;bottom:18px;display:flex;gap:20px;align-items:center;color:var(--muted);font-size:var(--fs-label);pointer-events:none}
+    .key{display:inline-flex;align-items:center;gap:7px}.key i{display:block;width:25px;height:0;border-top:4px solid var(--c)}
+  </style>
+</head>
+<body data-page="11" data-total="24">
+  <div id="stage">
+    <main class="page11">
+      <header>
+        <div class="headcopy">
+          <span class="kicker">参数更新实验</span>
+          <h1>斜率告诉参数：下一步该往哪走</h1>
+        </div>
+        <p class="headnote">拖动橙色参数点。比较切线的倾斜方向与蓝色更新箭头；到最低点时，二者都会停下。</p>
+      </header>
+
+      <section class="lab min0" aria-label="一维损失曲线实验">
+        <div class="plot-shell min0">
+          <svg id="plot" tabindex="0" role="application" aria-label="可拖动的一维损失曲线。左右方向键微调参数，Home 键回到起点。" viewBox="0 0 1080 650" preserveAspectRatio="none">
+            <g id="drawing"></g>
+          </svg>
+          <p class="plot-tip">在曲线上拖动，或用左右方向键微调</p>
+          <div class="legendbar" aria-hidden="true">
+            <span class="key"><i style="--c:var(--text)"></i>损失曲线</span>
+            <span class="key"><i style="--c:var(--gradient)"></i>当前位置的切线</span>
+            <span class="key"><i style="--c:var(--model)"></i>下一步方向</span>
+          </div>
+        </div>
+
+        <aside class="rail min0">
+          <section class="state" aria-live="polite">
+            <h2>当前位置</h2>
+            <div class="readrow"><span class="label">参数 w</span><output id="wOut">−2.00</output></div>
+            <div class="readrow"><span class="label">斜率 dL/dw</span><output id="slopeOut">−6.00</output></div>
+            <div class="readrow"><span class="label">下一步</span><output id="dirOut">向右，靠近最低点</output></div>
+          </section>
+
+          <section class="control">
+            <label for="wRange">拖动参数 w</label>
+            <input id="wRange" type="range" min="-3" max="3" step="0.05" value="-2" aria-describedby="rangeHint">
+            <div class="presets">
+              <button class="btn" type="button" data-w="-2">左侧斜坡</button>
+              <button class="btn" type="button" data-w="2.4">右侧斜坡</button>
+              <button class="btn" type="button" data-w="1">放到最低点</button>
+              <button class="btn" type="button" id="reset">重置实验</button>
+            </div>
+            <p class="hint" id="rangeHint">斜率为负时向右更新；斜率为正时向左更新。</p>
+          </section>
+
+          <section class="rulebox">
+            <span class="kicker">梯度下降规则</span>
+            <div class="formula">w<sub>next</sub> = w − η · dL/dw</div>
+            <p>更新方向与斜率符号相反。这里用 <span class="num">η = 0.15</span> 预览一步。</p>
+          </section>
+        </aside>
+      </section>
+    </main>
+  </div>
+  <script src="assets/base.js"></script>
+  <script>
+    (() => {
+      const svg = document.getElementById('plot');
+      const drawing = document.getElementById('drawing');
+      const range = document.getElementById('wRange');
+      const wOut = document.getElementById('wOut');
+      const slopeOut = document.getElementById('slopeOut');
+      const dirOut = document.getElementById('dirOut');
+      const NS = 'http://www.w3.org/2000/svg';
+      const W = 1080, H = 650, left = 86, right = 42, top = 76, bottom = 88;
+      const xMin = -3, xMax = 3, yMax = 8.6, eta = .15;
+      let w = -2, dragging = false;
+      const loss = x => .5 * (x - 1) * (x - 1) + .65;
+      const grad = x => x - 1;
+      const X = x => left + (x - xMin) / (xMax - xMin) * (W - left - right);
+      const Y = y => H - bottom - y / yMax * (H - top - bottom);
+      const el = (name, attrs = {}, text = '') => {
+        const n = document.createElementNS(NS, name);
+        Object.entries(attrs).forEach(([k,v]) => n.setAttribute(k, v));
+        if (text) n.textContent = text;
+        return n;
+      };
+      const css = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+      const fmt = n => Math.abs(n) < .005 ? '0.00' : (n < 0 ? '−' : '+') + Math.abs(n).toFixed(2);
+
+      function draw(){
+        drawing.replaceChildren();
+        const text = css('--text'), muted = css('--muted'), rule = css('--rule'), gradient = css('--gradient'), model = css('--model'), attention = css('--attention'), paper = css('--paper');
+        const axisY = H - bottom;
+        drawing.append(el('line',{x1:left,y1:axisY,x2:W-right,y2:axisY,stroke:muted,'stroke-width':2}));
+        drawing.append(el('line',{x1:left,y1:top,x2:left,y2:axisY,stroke:muted,'stroke-width':2}));
+        [-3,-2,-1,0,1,2,3].forEach(t => {
+          drawing.append(el('line',{x1:X(t),y1:axisY,x2:X(t),y2:axisY+9,stroke:muted,'stroke-width':2}));
+          drawing.append(el('text',{x:X(t),y:axisY+34,fill:muted,'font-size':18,'text-anchor':'middle','font-family':'var(--font-mono)'},String(t)));
+        });
+        [2,4,6,8].forEach(t => {
+          drawing.append(el('line',{x1:left-8,y1:Y(t),x2:left,y2:Y(t),stroke:muted,'stroke-width':2}));
+          drawing.append(el('text',{x:left-16,y:Y(t)+6,fill:muted,'font-size':17,'text-anchor':'end','font-family':'var(--font-mono)'},String(t)));
+          drawing.append(el('line',{x1:left,y1:Y(t),x2:W-right,y2:Y(t),stroke:rule,'stroke-width':1,'stroke-dasharray':'5 9',opacity:.55}));
+        });
+        drawing.append(el('text',{x:W-right,y:axisY+60,fill:text,'font-size':20,'font-weight':700,'text-anchor':'end'},'参数 w'));
+        drawing.append(el('text',{x:left-38,y:top-22,fill:text,'font-size':20,'font-weight':700},'损失 L'));
+        let d='';
+        for(let i=0;i<=160;i++){ const xx=xMin+(xMax-xMin)*i/160; d += (i?'L':'M')+X(xx).toFixed(1)+' '+Y(loss(xx)).toFixed(1)+' '; }
+        drawing.append(el('path',{d,fill:'none',stroke:text,'stroke-width':5,'stroke-linecap':'round'}));
+
+        const g = grad(w), l = loss(w), next = Math.max(xMin,Math.min(xMax,w-eta*g));
+        const span=1.05, tx1=Math.max(xMin,w-span), tx2=Math.min(xMax,w+span);
+        const tangentY = x => l + g*(x-w);
+        drawing.append(el('line',{x1:X(tx1),y1:Y(tangentY(tx1)),x2:X(tx2),y2:Y(tangentY(tx2)),stroke:gradient,'stroke-width':5,'stroke-linecap':'round'}));
+        drawing.append(el('line',{x1:X(w),y1:axisY-3,x2:X(w),y2:Y(l)+4,stroke:attention,'stroke-width':2,'stroke-dasharray':'7 7'}));
+
+        if(Math.abs(g) >= .02){
+          const yArrow = Math.max(top+56, Y(l)-66);
+          drawing.append(el('line',{x1:X(w),y1:yArrow,x2:X(next),y2:yArrow,stroke:model,'stroke-width':7,'stroke-linecap':'round'}));
+          const dir = next>w ? 1 : -1;
+          drawing.append(el('path',{d:`M ${X(next)} ${yArrow} l ${-dir*15} -11 l 0 22 Z`,fill:model}));
+          drawing.append(el('circle',{cx:X(next),cy:Y(loss(next)),r:10,fill:paper,stroke:model,'stroke-width':5}));
+          drawing.append(el('text',{x:(X(w)+X(next))/2,y:yArrow-18,fill:model,'font-size':18,'font-weight':700,'text-anchor':'middle'},'一步更新'));
+        } else {
+          drawing.append(el('text',{x:X(w),y:Y(l)-60,fill:model,'font-size':20,'font-weight':700,'text-anchor':'middle'},'斜率为 0，更新停止'));
+        }
+        drawing.append(el('circle',{cx:X(w),cy:Y(l),r:18,fill:attention,stroke:paper,'stroke-width':6}));
+        drawing.append(el('circle',{cx:X(w),cy:Y(l),r:24,fill:'none',stroke:attention,'stroke-width':2}));
+        drawing.append(el('text',{x:X(1),y:Y(loss(1))+52,fill:muted,'font-size':18,'font-weight':700,'text-anchor':'middle'},'最低点 w*'));
+
+        wOut.textContent = fmt(w).replace('+','');
+        slopeOut.textContent = fmt(g);
+        dirOut.textContent = Math.abs(g)<.02 ? '停止，已在最低点' : g<0 ? '向右，靠近最低点' : '向左，靠近最低点';
+        range.value = w;
+        svg.setAttribute('aria-valuetext',`参数 ${w.toFixed(2)}，斜率 ${g.toFixed(2)}，${dirOut.textContent}`);
+      }
+      function setW(v){ w=Math.max(xMin,Math.min(xMax,Math.round(v*20)/20)); draw(); }
+      function fromPointer(e){ const p=Deck.pt(svg,e); const vx=p.x/svg.offsetWidth*W; setW(xMin + Math.max(0,Math.min(1,(vx-left)/(W-left-right))) * (xMax-xMin)); }
+      svg.addEventListener('pointerdown',e=>{dragging=true;svg.setPointerCapture(e.pointerId);fromPointer(e)});
+      svg.addEventListener('pointermove',e=>{if(dragging)fromPointer(e)});
+      svg.addEventListener('pointerup',()=>dragging=false);
+      svg.addEventListener('pointercancel',()=>dragging=false);
+      svg.addEventListener('keydown',e=>{
+        if(e.key==='ArrowLeft'||e.key==='ArrowRight'){e.preventDefault();setW(w+(e.key==='ArrowRight'?.05:-.05));}
+        if(e.key==='Home'){e.preventDefault();setW(-2);}
+      });
+      range.addEventListener('input',()=>setW(Number(range.value)));
+      document.querySelectorAll('[data-w]').forEach(b=>b.addEventListener('click',()=>setW(Number(b.dataset.w))));
+      document.getElementById('reset').addEventListener('click',()=>setW(-2));
+      draw();
+      Deck.init({index:11,total:24});
+    })();
+  </script>
+</body>
+</html>

@@ -125,6 +125,594 @@
 </html>
 ```
   </file>
+  <file path="samples/chart/solar-storage/pages/styles.css">
+```css
+:root{
+  --stage-w:1600px;
+  --stage-h:900px;
+  --bg:#11130f;
+  --text:#f4f0e3;
+  --font-sans:"PingFang SC","Microsoft YaHei","Noto Sans CJK SC",system-ui,sans-serif;
+  --focus:#ffdb69;
+  --surface:#181b16;
+  --line:#41473d;
+  --muted:#adb0a5;
+  --solar:#ffd35c;
+  --demand:#edf5ef;
+  --surplus:#8fc49b;
+  --surplus-soft:rgba(143,196,155,.18);
+  --gap:#ff826f;
+  --gap-soft:rgba(255,130,111,.17);
+}
+
+body{ background:#090a08; }
+
+#stage{
+  isolation:isolate;
+  background:linear-gradient(180deg, #171914 0%, var(--bg) 68%, #0b0c0a 100%);
+}
+
+.masthead{
+  position:absolute;
+  left:70px;
+  right:70px;
+  top:46px;
+  height:106px;
+  display:grid;
+  grid-template-columns:minmax(0,1fr);
+  align-items:start;
+  gap:36px;
+}
+
+h1{
+  margin-top:15px;
+  font-size:51px;
+  line-height:1.05;
+  letter-spacing:-.045em;
+  font-weight:760;
+}
+
+.dek{
+  margin-top:10px;
+  color:#c7d4cf;
+  font-size:18px;
+  line-height:1.5;
+  letter-spacing:.01em;
+}
+
+.composition{
+  position:absolute;
+  left:70px;
+  right:70px;
+  top:174px;
+  height:620px;
+  display:grid;
+  grid-template-columns:minmax(0,1fr) 322px;
+  gap:30px;
+}
+
+.chart-figure{
+  position:relative;
+  display:grid;
+  grid-template-rows:58px minmax(0,1fr) 34px;
+  border-top:1px solid var(--line);
+  border-bottom:1px solid var(--line);
+}
+
+.chart-figure::before{
+  content:"";
+  position:absolute;
+  inset:58px 0 34px;
+  pointer-events:none;
+  background:
+    linear-gradient(90deg,
+      rgba(11,29,50,.46) 0%,
+      rgba(16,43,48,.18) 25%,
+      rgba(205,148,47,.075) 48%,
+      rgba(231,169,48,.10) 63%,
+      rgba(76,41,52,.17) 78%,
+      rgba(11,29,50,.42) 100%);
+}
+
+.figure-head{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:20px;
+  padding:0 8px 0 2px;
+}
+
+.reader-question{
+  color:#d6e2dd;
+  font-size:17px;
+  line-height:1.35;
+}
+
+.reader-question strong{ color:var(--text); font-weight:700; }
+
+.legend{
+  display:flex;
+  gap:22px;
+  align-items:center;
+  color:#c7d4cf;
+  font-size:14px;
+  white-space:nowrap;
+}
+
+.legend-item{ display:flex; align-items:center; gap:8px; }
+
+.legend-line{
+  width:28px;
+  height:3px;
+  border-radius:3px;
+  background:currentColor;
+  position:relative;
+}
+
+.legend-line::after{
+  content:"";
+  position:absolute;
+  width:7px;
+  height:7px;
+  border-radius:50%;
+  left:10px;
+  top:-2px;
+  background:currentColor;
+}
+
+.legend-item.solar{ color:var(--solar); }
+.legend-item.demand{ color:var(--demand); }
+
+.plot-wrap{
+  position:relative;
+  overflow:hidden;
+}
+
+.daylight-strip{
+  position:absolute;
+  left:72px;
+  right:48px;
+  top:46px;
+  height:4px;
+  z-index:0;
+  border-radius:8px;
+  background:linear-gradient(90deg,
+    rgba(131,158,165,.22) 0 24%,
+    rgba(255,211,92,.35) 34%,
+    rgba(255,211,92,.88) 58%,
+    rgba(255,130,111,.52) 76%,
+    rgba(131,158,165,.18) 88%);
+}
+
+.daylight-strip::before,
+.daylight-strip::after{
+  position:absolute;
+  top:-25px;
+  color:var(--muted);
+  font-size:12px;
+  letter-spacing:.1em;
+}
+
+.daylight-strip::before{ content:"日照窗口"; left:46%; }
+.daylight-strip::after{ content:"入夜"; right:8%; color:#cf9b96; }
+
+#chart{
+  position:absolute;
+  inset:0;
+  z-index:2;
+}
+
+.graphic-layer{
+  position:absolute;
+  inset:0;
+  width:100%;
+  height:100%;
+  overflow:visible;
+  pointer-events:none;
+}
+
+#bandOverlay{ z-index:1; }
+#routeOverlay{ z-index:3; }
+
+.surplus-shape{
+  fill:var(--surplus-soft);
+  stroke:rgba(98,216,173,.45);
+  stroke-width:1.5;
+}
+
+.gap-shape{
+  fill:var(--gap-soft);
+  stroke:rgba(255,130,111,.4);
+  stroke-width:1.5;
+}
+
+.measure-bracket{
+  fill:none;
+  stroke-width:2;
+  stroke-linecap:round;
+  opacity:.9;
+}
+
+.noon-bracket{ stroke:var(--surplus); }
+.evening-bracket{ stroke:var(--gap); }
+
+.guide-line{
+  fill:none;
+  stroke:rgba(231,244,238,.28);
+  stroke-width:1;
+  stroke-dasharray:3 7;
+}
+
+.transfer-base{
+  fill:none;
+  stroke:rgba(255,211,92,.7);
+  stroke-width:2.5;
+  stroke-linecap:round;
+  filter:none;
+}
+
+.transfer-flow{
+  fill:none;
+  stroke:var(--solar);
+  stroke-width:4;
+  stroke-linecap:round;
+  stroke-dasharray:1 16;
+  opacity:.4;
+}
+
+.annotation{
+  position:absolute;
+  z-index:4;
+  pointer-events:none;
+  border-left:0;
+  padding:6px 0;
+  text-shadow:none;
+  transition:opacity .25s ease, transform .25s ease, filter .25s ease;
+}
+
+.annotation strong{
+  display:block;
+  font-size:22px;
+  line-height:1;
+  letter-spacing:-.02em;
+}
+
+.annotation span{
+  display:block;
+  margin-top:5px;
+  color:#d2ded9;
+  font-size:13px;
+  line-height:1.25;
+  white-space:nowrap;
+}
+
+#noonTag{ width:164px; color:var(--surplus); }
+#eveningTag{ width:170px; color:var(--gap); }
+
+#transferTag{
+  width:250px;
+  padding:7px 12px;
+  border:1px solid rgba(255,211,92,.45);
+  border-radius:2px;
+  color:var(--solar);
+  background:rgba(17,19,15,.92);
+  text-align:center;
+  box-shadow:none;
+}
+
+#transferTag strong{
+  display:flex;
+  justify-content:center;
+  align-items:center;
+  gap:8px;
+  font-size:15px;
+  line-height:1.2;
+  letter-spacing:.03em;
+}
+
+#transferTag span{
+  color:#c8d6d0;
+  font-size:12px;
+  margin-top:3px;
+}
+
+.battery-icon{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  width:25px;
+  height:14px;
+  border:1.5px solid var(--solar);
+  border-radius:3px;
+  position:relative;
+}
+
+.battery-icon::before{
+  content:"";
+  position:absolute;
+  right:-4px;
+  width:3px;
+  height:6px;
+  border-radius:0 2px 2px 0;
+  background:var(--solar);
+}
+
+.battery-icon::after{
+  content:"";
+  width:13px;
+  height:6px;
+  border-radius:1px;
+  background:var(--solar);
+  opacity:.75;
+}
+
+.figure-note{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:18px;
+  padding:0 8px 0 72px;
+  color:var(--muted);
+  font-size:12px;
+  line-height:1.25;
+}
+
+.figure-note .truth-note{ color:#d1dcd7; }
+
+.fallback{
+  position:absolute;
+  z-index:8;
+  inset:72px 70px 72px;
+  display:flex;
+  flex-direction:column;
+  justify-content:center;
+  gap:12px;
+  padding:34px;
+  border:1px solid var(--line);
+  background:var(--surface);
+  color:var(--text);
+}
+
+.fallback strong{ font-size:24px; }
+.fallback p{ font-size:17px; line-height:1.55; color:#c8d5d0; }
+
+.thesis{
+  display:flex;
+  flex-direction:column;
+  padding:4px 0 0 22px;
+  border-left:1px solid var(--line);
+}
+
+.thesis h2{
+  margin-top:0;
+  max-width:290px;
+  font-size:29px;
+  line-height:1.2;
+  letter-spacing:-.025em;
+  font-weight:720;
+}
+
+.peak-shift{
+  position:relative;
+  margin-top:22px;
+  padding:18px 0 17px;
+  border-top:1px solid var(--line);
+  border-bottom:1px solid var(--line);
+  display:grid;
+  grid-template-columns:1fr 76px 1fr;
+  align-items:center;
+  gap:8px;
+}
+
+.peak{
+  transition:opacity .25s ease, transform .25s ease, filter .25s ease;
+}
+
+.peak .time{
+  display:block;
+  font-size:30px;
+  line-height:1;
+  font-weight:750;
+  letter-spacing:-.04em;
+}
+
+.peak .kind{
+  display:block;
+  margin-top:7px;
+  color:var(--muted);
+  font-size:13px;
+  line-height:1.35;
+}
+
+.peak.solar-peak .time{ color:var(--solar); }
+.peak.demand-peak .time{ color:var(--demand); }
+
+.shift-arrow{
+  position:relative;
+  color:var(--solar);
+  text-align:center;
+  font-size:13px;
+  font-weight:700;
+}
+
+.shift-arrow::before{
+  content:"";
+  position:absolute;
+  left:7px;
+  right:7px;
+  top:22px;
+  height:1px;
+  background:linear-gradient(90deg, var(--solar), var(--gap));
+}
+
+.shift-arrow::after{
+  content:"›";
+  position:absolute;
+  right:3px;
+  top:10px;
+  color:var(--gap);
+  font-size:22px;
+}
+
+.shift-arrow span{
+  display:block;
+  margin-top:31px;
+  color:#c6d3ce;
+  font-size:12px;
+  font-weight:500;
+  white-space:nowrap;
+}
+
+.principle{
+  margin-top:19px;
+  padding:15px 0;
+  border-top:1px solid rgba(143,196,155,.36);
+  border-bottom:1px solid rgba(143,196,155,.36);
+  background:transparent;
+  transition:opacity .25s ease, transform .25s ease, filter .25s ease;
+}
+
+.principle-main{
+  margin-top:8px;
+  font-size:24px;
+  line-height:1.25;
+  font-weight:720;
+  letter-spacing:-.02em;
+}
+
+.principle-main .arrow{ color:var(--solar); padding:0 4px; }
+
+.principle p{
+  margin-top:9px;
+  color:#b9c9c3;
+  font-size:14px;
+  line-height:1.5;
+}
+
+.caution{
+  margin-top:16px;
+  display:grid;
+  grid-template-columns:8px 1fr;
+  gap:11px;
+  color:#d0dbd6;
+  font-size:14px;
+  line-height:1.55;
+}
+
+.caution::before{
+  content:"";
+  width:8px;
+  height:8px;
+  margin-top:6px;
+  border-radius:50%;
+  background:var(--gap);
+  box-shadow:none;
+}
+
+.controls{
+  margin-top:auto;
+  display:flex;
+  gap:10px;
+  align-items:center;
+  padding-top:13px;
+  border-top:1px solid var(--line);
+}
+
+#liveStatus{
+  margin-top:11px;
+  min-height:34px;
+  color:var(--muted);
+  font-size:12px;
+  line-height:1.4;
+}
+
+button{
+  min-height:42px;
+  border:1px solid var(--line);
+  border-radius:6px;
+  background:transparent;
+  color:var(--text);
+  cursor:pointer;
+  padding:0 14px;
+  font-size:14px;
+  font-weight:650;
+  transition:border-color .2s ease, background .2s ease, transform .2s ease;
+}
+
+button:hover{ border-color:#8d9286; background:rgba(255,255,255,.025); }
+button:active{ transform:translateY(1px); }
+#replayBtn{ flex:1; border-color:rgba(255,211,92,.48); color:var(--solar); }
+#resetBtn{ width:74px; padding:0 8px; }
+button[aria-pressed="true"]{ background:rgba(255,211,92,.12); }
+
+.footer{
+  position:absolute;
+  left:70px;
+  right:70px;
+  bottom:32px;
+  height:46px;
+  display:grid;
+  grid-template-columns:1fr auto;
+  align-items:end;
+  gap:30px;
+  color:var(--muted);
+  font-size:12px;
+  line-height:1.55;
+}
+
+.source strong{ color:#cad7d2; font-weight:600; }
+#stage[data-beat="surplus"] .gap-shape,
+#stage[data-beat="surplus"] #eveningTag,
+#stage[data-beat="surplus"] .demand-peak,
+#stage[data-beat="surplus"] .principle{
+  opacity:.25;
+  filter:saturate(.5);
+}
+
+#stage[data-beat="surplus"] #noonTag,
+#stage[data-beat="surplus"] .solar-peak{
+  transform:translateY(-3px);
+  filter:none;
+}
+
+#stage[data-beat="transfer"] .gap-shape,
+#stage[data-beat="transfer"] .surplus-shape{ opacity:.72; }
+
+#stage[data-beat="transfer"] #noonTag,
+#stage[data-beat="transfer"] #eveningTag{ opacity:.55; }
+
+#stage[data-beat="transfer"] #transferTag,
+#stage[data-beat="transfer"] .principle{
+  transform:translateY(-3px);
+  filter:none;
+}
+
+#stage[data-beat="transfer"] .transfer-flow{
+  opacity:1;
+  animation:energy-flow .72s linear infinite;
+}
+
+#stage[data-beat="gap"] .surplus-shape,
+#stage[data-beat="gap"] #noonTag,
+#stage[data-beat="gap"] .solar-peak,
+#stage[data-beat="gap"] .principle{
+  opacity:.25;
+  filter:saturate(.5);
+}
+
+#stage[data-beat="gap"] #eveningTag,
+#stage[data-beat="gap"] .demand-peak{
+  transform:translateY(-3px);
+  filter:none;
+}
+
+@keyframes energy-flow{ to{ stroke-dashoffset:-34; } }
+
+@media (prefers-reduced-motion:reduce){
+  .transfer-flow{ animation:none !important; stroke-dasharray:none; opacity:.65; }
+}
+```
+  </file>
   <file path="samples/chart/solar-storage/pages/solar-storage.js">
 ```javascript
 (function () {

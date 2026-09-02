@@ -8,6 +8,62 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>陀螺仪为什么能保持方向？｜真实刚体演算</title>
   <link rel="stylesheet" href="assets/base.css">
+  <style>
+    :root{
+      --bg:#edf2f3;--scene:#dbe4e6;--ink:#172326;--soft:#46595f;--faint:#6c7d82;
+      --line:#bdc9cc;--line-hi:#87999e;--outer:#315e69;--middle:#718d8d;--inner:#99928a;
+      --rotor:#c65a34;--still:#9f3f35;--housing:#46565b;--steel:#dce4e5;--rotor-dark:#6f301d;
+      --marker:#fff0c8;--housing-edge:#23383d;--outer-edge:#183e47;--middle-edge:#405f60;
+      --inner-edge:#5e5852;--rotor-edge:#7d2e18;
+      --sans:"PingFang SC","Microsoft YaHei","Noto Sans CJK SC",system-ui,sans-serif;
+      --mono:"SFMono-Regular","Cascadia Mono","Roboto Mono",monospace;
+    }
+    #stage{color:var(--ink);font-family:var(--sans);isolation:isolate;background:var(--bg)}
+
+    .topbar{position:absolute;left:34px;right:34px;top:27px;height:83px;border-bottom:1px solid var(--line);padding-bottom:16px}
+    h1{margin:0;font-size:43px;line-height:1.02;letter-spacing:-.04em;font-weight:760}
+    .claim{margin:10px 0 0;color:var(--soft);font-size:19px;line-height:1.4}.claim strong{color:var(--ink);font-weight:680}
+
+    .scene-panel{position:absolute;left:34px;top:128px;width:1116px;height:652px;overflow:hidden;border:1px solid var(--line);background:radial-gradient(circle at 46% 43%,#eef3f4 0,#dbe4e6 62%,#ced9dc 100%)}
+    #scene-canvas{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none;cursor:grab}#scene-canvas:active{cursor:grabbing}#scene-canvas.is-locked{cursor:default}
+    .scene-head{position:absolute;left:21px;top:18px;z-index:5;pointer-events:none}
+    .scene-status{color:var(--soft);font:600 14px/1 var(--sans);letter-spacing:.015em}
+    .phase-card{position:absolute;right:22px;top:20px;z-index:5;width:340px;padding:14px 14px 15px;border-top:2px solid var(--rotor);background:rgba(237,242,243,.92);pointer-events:none}
+    .phase-kicker{color:var(--rotor);font-size:15px;line-height:1.2;font-weight:760}
+    .phase-title{margin-top:8px;font-size:24px;line-height:1.2;font-weight:720;letter-spacing:-.02em}
+    .phase-copy{margin-top:8px;color:var(--soft);font-size:16px;line-height:1.5}
+    .axis-tag{position:absolute;z-index:6;min-width:154px;padding:7px 9px;background:rgba(237,242,243,.88);border-bottom:1px solid var(--line-hi);font-size:15px;line-height:1.2;pointer-events:none;transform:translate(-2px,-50%)}
+    .axis-tag small{display:block;margin-bottom:4px;color:var(--soft);font-size:13px;line-height:1.1;font-weight:700;letter-spacing:.02em}
+    .part-legend{position:absolute;left:21px;bottom:18px;z-index:6;display:flex;gap:25px;align-items:center;pointer-events:none;color:var(--soft);font-size:15px;line-height:1.2}
+    .part-chip{display:flex;align-items:center;gap:8px;white-space:nowrap}.part-chip::before{content:"";width:18px;height:3px;background:var(--outer)}
+    .part-chip:nth-child(2)::before{background:var(--middle)}.part-chip:nth-child(3)::before{background:var(--inner)}.part-chip:nth-child(4)::before{background:var(--rotor)}
+    .part-chip b{color:var(--ink);font:700 14px/1 var(--mono)}
+    .progress-track{position:absolute;left:0;right:0;bottom:0;z-index:7;height:3px;background:rgba(23,35,38,.1);pointer-events:none}.progress-fill{width:100%;height:100%;transform-origin:left center;background:var(--rotor)}
+
+    .evidence-panel{position:absolute;left:1182px;top:128px;width:384px;height:652px;padding:2px 0 0 28px;border-left:1px solid var(--line);overflow:hidden}
+    .panel-title{font-size:27px;line-height:1.2;font-weight:740;letter-spacing:-.025em}
+    .equation{margin-top:22px;padding-bottom:22px;border-bottom:1px solid var(--line)}
+    .equation-main{color:var(--rotor);font:54px/1 Georgia,"Times New Roman",serif;letter-spacing:.01em}.equation p{margin:12px 0 0;color:var(--soft);font-size:17px;line-height:1.5}
+    .equation-condition{margin-top:13px;color:var(--ink);font:600 14px/1.4 var(--mono);letter-spacing:0}
+    .comparison{margin-top:22px}.comparison h2{margin:0;font-size:21px;line-height:1.3;font-weight:720}
+    .comparison-note{display:flex;justify-content:space-between;gap:10px;margin-top:7px;color:var(--faint);font-size:15px;line-height:1.4}.comparison-note b{color:var(--soft);font:600 14px/1.4 var(--mono)}
+    .compare-row{margin-top:18px}.compare-top{display:flex;justify-content:space-between;align-items:baseline;gap:14px}.compare-top span{color:var(--soft);font-size:17px}.compare-top strong{font:720 29px/1 var(--mono)}.spin strong{color:var(--outer)}.still strong{color:var(--still)}
+    .bar{height:7px;margin-top:9px;background:#d2dcde;overflow:hidden}.bar i{display:block;height:100%;width:var(--value,0%);transition:width .18s linear}.spin .bar i{background:var(--outer)}.still .bar i{background:var(--still)}
+    .metrics{margin-top:27px;display:grid;grid-template-columns:1fr 1fr;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+    .metric{min-height:99px;padding:16px 8px 14px 0}.metric+ .metric{padding-left:18px;border-left:1px solid var(--line)}.metric span{display:block;color:var(--soft);font-size:15px;line-height:1.3}.metric strong{display:block;margin-top:12px;font:720 29px/1 var(--mono)}.metric:last-child strong{color:var(--rotor)}
+    .solver-note{margin-top:15px;color:var(--faint);font-size:14px;line-height:1.45}
+
+    .controls{position:absolute;left:34px;right:34px;top:800px;height:72px;display:grid;grid-template-columns:repeat(4,186px) 1fr 190px 112px;gap:0;align-items:stretch;border-top:1px solid var(--line)}
+    .view-btn,.action-btn{position:relative;border:0;background:transparent;color:var(--soft);cursor:pointer;transition:background .16s ease,color .16s ease}
+    .view-btn{font-size:17px;font-weight:650;text-align:left;padding:0 14px}.view-btn:first-child{padding-left:0}.view-btn:hover,.action-btn:hover{color:var(--ink);background:rgba(23,35,38,.045)}
+    .view-btn[aria-pressed="true"]{color:var(--ink);font-weight:760}.view-btn[aria-pressed="true"]::after{content:"";position:absolute;left:14px;right:14px;bottom:-1px;height:4px;background:var(--rotor)}.view-btn:first-child[aria-pressed="true"]::after{left:0}
+    .control-spacer{min-width:0}.action-btn{font-size:17px;font-weight:700;border-left:1px solid var(--line)}.action-btn.primary{background:var(--rotor);color:#fff}.action-btn.primary:hover{background:#a94728;color:#fff}.action-btn.primary.is-running{background:var(--ink);color:#fff}
+    button:focus-visible{outline:3px solid var(--outer);outline-offset:-3px}
+
+    #fallback{position:absolute;inset:0;z-index:12;display:grid;grid-template-columns:minmax(0,1.2fr) minmax(380px,.8fr);align-items:center;gap:36px;padding:54px;background:var(--scene)}#fallback svg{width:100%;height:auto}
+    .fallback-copy h2{margin:0;font-size:30px;line-height:1.2}.fallback-copy p{margin:15px 0 0;color:var(--soft);font-size:17px;line-height:1.65}.fallback-copy strong{color:var(--rotor)}
+    .loading{position:absolute;inset:0;z-index:11;display:grid;place-items:center;background:var(--scene);color:var(--soft);font-size:16px}
+  </style>
 </head>
 <body>
   <main id="stage" aria-labelledby="page-title">

@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>学习发生的因果链</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    #stage{gap:22px}
+    .page-head{flex:0 0 auto;display:flex;align-items:flex-end;justify-content:space-between;gap:36px;padding-bottom:18px;border-bottom:2px solid var(--rule)}
+    .head-copy{min-width:0}
+    .page-head h1{max-width:1040px}
+    .page-head .small{max-width:390px;padding-bottom:3px;text-align:right}
+    .recap{flex:1;min-height:0;display:grid;grid-template-rows:minmax(0,1fr) 190px;gap:20px}
+    .chain-zone{position:relative;min-height:0;display:flex;flex-direction:column;justify-content:center;padding:28px 34px 22px;border-top:4px solid var(--text);border-bottom:2px solid var(--rule-strong)}
+    .chain-label{margin-bottom:22px;color:var(--muted);font-size:var(--fs-label);font-weight:700;letter-spacing:.04em}
+    .chain{display:grid;grid-template-columns:minmax(150px,1fr) 96px minmax(150px,1fr) 96px minmax(150px,1fr) 96px minmax(150px,1fr) 96px minmax(150px,1fr);align-items:center;gap:0}
+    .node{position:relative;min-height:168px;padding:20px 16px;border:2px solid var(--rule-strong);border-radius:var(--radius);background:transparent;color:var(--text);text-align:left;cursor:pointer;transition:border-color .18s ease,background .18s ease,transform .18s ease}
+    .node:hover{background:var(--paper)}
+    .node:focus-visible{outline:3px solid var(--focus);outline-offset:4px}
+    .node.is-on{border-color:var(--text);background:var(--paper);transform:translateY(-5px);box-shadow:0 6px 0 var(--shadow)}
+    .node .term{display:block;margin-bottom:10px;font-family:var(--font-display);font-size:34px;font-weight:700;line-height:1}
+    .node .desc{display:block;color:var(--muted);font-size:var(--fs-sec);line-height:1.45}
+    .node[data-node="parameter"] .term,.node[data-node="prediction"] .term{color:var(--model)}
+    .node[data-node="loss"] .term{color:var(--target)}
+    .node[data-node="gradient"] .term{color:var(--gradient)}
+    .node[data-node="update"] .term{color:var(--attention)}
+    .link{position:relative;height:42px;border:0;background:transparent;color:var(--rule-strong);cursor:pointer;padding:0}
+    .link::before{content:"";position:absolute;left:12px;right:18px;top:20px;height:4px;background:currentColor}
+    .link::after{content:"";position:absolute;right:13px;top:14px;width:12px;height:12px;border-top:4px solid currentColor;border-right:4px solid currentColor;transform:rotate(45deg)}
+    .link:hover,.link:focus-visible,.link.is-on{color:var(--attention)}
+    .link:focus-visible{outline:3px solid var(--focus);outline-offset:4px}
+    .link .sr-only{font-size:var(--fs-label)}
+    .relation-strip{display:grid;grid-template-columns:1fr auto;gap:26px;align-items:center;min-width:0}
+    .relation-copy{min-width:0;display:grid;grid-template-columns:172px minmax(0,1fr);gap:24px;align-items:center;padding:18px 0}
+    .relation-tag{color:var(--muted);font-family:var(--font-mono);font-size:var(--fs-label);font-weight:600;letter-spacing:.05em}
+    .relation-text{font-size:var(--fs-lead);font-weight:700;line-height:1.45}
+    .relation-text strong{color:var(--attention)}
+    .controls{display:flex;align-items:center;gap:10px}
+    .controls .btn{min-width:92px}
+    .progress{min-width:82px;color:var(--muted);font-family:var(--font-mono);font-size:var(--fs-label);text-align:center;font-variant-numeric:tabular-nums}
+    .footer-line{position:absolute;right:34px;bottom:16px;color:var(--muted);font-size:var(--fs-label)}
+    @media (prefers-reduced-motion:reduce){.node{transition:none}}
+  </style>
+</head>
+<body data-page="24" data-total="24">
+  <div id="stage">
+    <header class="page-head">
+      <div class="head-copy min0">
+        <span class="kicker">全课收束 · 学习循环</span>
+        <h1>一次更好的预测，来自一条完整的因果链</h1>
+      </div>
+      <p class="small">点选节点或连线，沿着模型学习的顺序复述。</p>
+    </header>
+
+    <main class="recap min0">
+      <section class="chain-zone min0" aria-labelledby="chain-title">
+        <h2 id="chain-title" class="chain-label">从当前参数出发</h2>
+        <div class="chain" role="group" aria-label="神经网络学习因果链">
+          <button class="node" type="button" data-node="parameter" data-index="0" aria-pressed="false">
+            <span class="term">参数</span><span class="desc">保存模型当前的连接强弱</span>
+          </button>
+          <button class="link" type="button" data-rel="0" aria-label="参数产生预测"></button>
+          <button class="node" type="button" data-node="prediction" data-index="1" aria-pressed="false">
+            <span class="term">预测</span><span class="desc">前向计算给出模型的答案</span>
+          </button>
+          <button class="link" type="button" data-rel="1" aria-label="损失衡量预测偏差"></button>
+          <button class="node" type="button" data-node="loss" data-index="2" aria-pressed="false">
+            <span class="term">损失</span><span class="desc">把预测与目标的偏差化成量</span>
+          </button>
+          <button class="link" type="button" data-rel="2" aria-label="梯度分配误差责任"></button>
+          <button class="node" type="button" data-node="gradient" data-index="3" aria-pressed="false">
+            <span class="term">梯度</span><span class="desc">指出各参数该往哪边改、改多少</span>
+          </button>
+          <button class="link" type="button" data-rel="3" aria-label="更新促成更好预测"></button>
+          <button class="node" type="button" data-node="update" data-index="4" aria-pressed="false">
+            <span class="term">更新</span><span class="desc">调整参数，送入下一轮前向计算</span>
+          </button>
+        </div>
+        <p class="footer-line">更新后的参数重新进入预测</p>
+      </section>
+
+      <section class="relation-strip" aria-live="polite">
+        <div class="relation-copy">
+          <span class="relation-tag" id="relationTag">当前关系</span>
+          <p class="relation-text" id="relationText">参数参与前向计算，<strong>产生预测</strong>。</p>
+        </div>
+        <div class="controls" aria-label="切换因果关系">
+          <button class="btn" id="prev" type="button">上一关系</button>
+          <span class="progress" id="progress">一 / 四</span>
+          <button class="btn" id="next" type="button">下一关系</button>
+          <button class="btn" id="whole" type="button">完整复述</button>
+        </div>
+      </section>
+    </main>
+  </div>
+  <script src="assets/base.js"></script>
+  <script>
+    (() => {
+      const relations = [
+        { text: '参数参与前向计算，<strong>产生预测</strong>。', nodes: [0, 1] },
+        { text: '损失比较预测与目标，<strong>衡量偏差</strong>。', nodes: [1, 2] },
+        { text: '梯度沿计算路径反传，<strong>分配责任</strong>。', nodes: [2, 3] },
+        { text: '参数按梯度得到更新，<strong>促成下一次更好的预测</strong>。', nodes: [3, 4] }
+      ];
+      const words = ['一','二','三','四'];
+      const nodes = [...document.querySelectorAll('.node')];
+      const links = [...document.querySelectorAll('.link')];
+      const text = document.getElementById('relationText');
+      const progress = document.getElementById('progress');
+      const prev = document.getElementById('prev');
+      const next = document.getElementById('next');
+      const whole = document.getElementById('whole');
+      let current = 0;
+      let all = false;
+
+      function show(index){
+        current = (index + relations.length) % relations.length;
+        all = false;
+        const active = relations[current].nodes;
+        nodes.forEach((node, i) => {
+          const on = active.includes(i);
+          node.classList.toggle('is-on', on);
+          node.setAttribute('aria-pressed', String(on));
+        });
+        links.forEach((link, i) => link.classList.toggle('is-on', i === current));
+        text.innerHTML = relations[current].text;
+        progress.textContent = `${words[current]} / 四`;
+        whole.setAttribute('aria-pressed','false');
+      }
+
+      function showWhole(){
+        all = true;
+        nodes.forEach(node => { node.classList.add('is-on'); node.setAttribute('aria-pressed','true'); });
+        links.forEach(link => link.classList.add('is-on'));
+        text.innerHTML = '参数产生预测；损失衡量偏差；梯度分配责任；更新促成<strong>下一次更好的预测</strong>。';
+        progress.textContent = '完整链';
+        whole.setAttribute('aria-pressed','true');
+      }
+
+      links.forEach((link, i) => link.addEventListener('click', () => show(i)));
+      nodes.forEach((node, i) => node.addEventListener('click', () => show(Math.min(i, relations.length - 1))));
+      prev.addEventListener('click', () => show(current - 1));
+      next.addEventListener('click', () => show(current + 1));
+      whole.addEventListener('click', () => all ? show(0) : showWhole());
+      show(0);
+      Deck.init({ index: 24, total: 24 });
+    })();
+  </script>
+</body>
+</html>

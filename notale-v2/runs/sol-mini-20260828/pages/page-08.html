@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  #stage { gap: 22px; }
+  .page-head { flex: 0 0 auto; }
+  .page-head .lead { margin-top: 10px; color: var(--muted); }
+  .lab { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 390px; gap: 28px; }
+  .plot-panel { min-width: 0; min-height: 0; display: grid; grid-template-rows: minmax(0, 1fr) auto; gap: 18px; padding: 22px 26px 20px; border: var(--line) solid var(--rule); border-radius: var(--radius); background: var(--paper); box-shadow: 0 5px 0 var(--shadow); }
+  .diagram { min-width: 0; min-height: 0; position: relative; }
+  .diagram svg { width: 100%; height: 100%; display: block; overflow: visible; }
+  .axis { stroke: var(--rule-strong); stroke-width: 2; }
+  .guide { stroke: var(--rule); stroke-width: 2; stroke-dasharray: 7 8; }
+  .curve { fill: none; stroke: var(--text); stroke-width: 4; }
+  .loss-fill { fill: var(--attention-soft); }
+  .target-line { stroke: var(--target); stroke-width: 4; }
+  .prediction-line { stroke: var(--model); stroke-width: 4; }
+  .distance-line { stroke: var(--attention); stroke-width: 6; stroke-linecap: round; }
+  .target-dot { fill: var(--target); }
+  .prediction-dot { fill: var(--model); stroke: var(--paper-strong); stroke-width: 5; }
+  .loss-dot { fill: var(--attention); stroke: var(--paper-strong); stroke-width: 5; }
+  .svg-label { font-family: var(--font-sans); font-size: 17px; font-weight: 700; fill: var(--text); }
+  .svg-note { font-family: var(--font-sans); font-size: 15px; font-weight: 600; fill: var(--muted); }
+  .svg-model { fill: var(--model); }
+  .svg-target { fill: var(--target); }
+  .svg-attention { fill: var(--attention); }
+  .control-strip { padding-top: 18px; border-top: var(--line) solid var(--rule); }
+  .control-strip .ctl { grid-template-columns: 188px minmax(240px, 1fr) 142px; }
+  .control-strip output { color: var(--model); font-weight: 700; text-align: right; }
+  .rail { min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: 18px; }
+  .readout { display: grid; gap: 14px; }
+  .status-word { color: var(--attention); font-size: 38px; font-weight: 700; line-height: 1.1; }
+  .formula { padding: 16px 0; border-top: var(--line) solid var(--rule); border-bottom: var(--line) solid var(--rule); font-family: var(--font-mono); font-size: 29px; font-weight: 600; color: var(--text); }
+  .formula .pred { color: var(--model); }
+  .formula .truth { color: var(--target); }
+  .meter { height: 18px; border: var(--line) solid var(--rule-strong); background: var(--bg); overflow: hidden; }
+  .meter > span { display: block; width: 0; height: 100%; background: var(--attention); transition: width 120ms ease-out; }
+  .observations { display: grid; gap: 13px; padding: 2px 0; }
+  .observation { display: grid; grid-template-columns: 34px 1fr; gap: 10px; align-items: start; font-size: var(--fs-sec); }
+  .observation .mark { width: 26px; height: 4px; margin-top: 11px; background: var(--rule-strong); }
+  .observation.active { font-weight: 700; color: var(--text); }
+  .observation.active .mark { background: var(--attention); }
+  .rail .btns { margin-top: auto; }
+  .rail .btn { width: 100%; }
+  .move-hint { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: var(--fs-label); }
+  .key { min-width: 28px; padding: 2px 7px; border: 1px solid var(--rule-strong); border-radius: 3px; background: var(--paper); color: var(--text); font-family: var(--font-mono); text-align: center; }
+</style>
+</head>
+<body data-page="08" data-total="24">
+<div id="stage">
+  <header class="page-head">
+    <span class="kicker">损失函数 · 亲手移动预测</span>
+    <h1>预测偏得越远，损失通常越高</h1>
+    <p class="lead">拖动模型的预测值。目标值保持不动，右侧会即时显示误差带来的代价。</p>
+  </header>
+
+  <main class="lab min0" aria-label="预测值与平方损失互动实验">
+    <section class="plot-panel min0" aria-labelledby="plot-title">
+      <div class="diagram min0">
+        <svg id="lossPlot" viewBox="0 0 980 520" role="img" aria-labelledby="svgTitle svgDesc">
+          <title id="svgTitle">预测值与目标值的距离决定平方损失</title>
+          <desc id="svgDesc">下方横轴显示固定目标和可移动预测，上方曲线显示预测当前位置对应的损失。</desc>
+          <path class="loss-fill" d="M100 105 Q490 615 880 105 L880 430 L100 430 Z" opacity=".46"></path>
+          <path class="curve" d="M100 105 Q490 615 880 105"></path>
+          <line class="axis" x1="78" y1="430" x2="902" y2="430"></line>
+          <line class="target-line" x1="490" y1="76" x2="490" y2="454" opacity=".62"></line>
+          <text class="svg-note" x="80" y="42">当前损失落在曲线上的高度</text>
+          <text class="svg-target" x="490" y="494" text-anchor="middle" style="font:700 17px var(--font-sans)">目标值 y</text>
+          <line id="predGuide" class="guide" x1="735" y1="260" x2="735" y2="430"></line>
+          <line id="distLine" class="distance-line" x1="490" y1="430" x2="735" y2="430"></line>
+          <circle class="target-dot" cx="490" cy="430" r="11"></circle>
+          <circle id="lossDot" class="loss-dot" cx="735" cy="260" r="13"></circle>
+          <circle id="predDot" class="prediction-dot" cx="735" cy="430" r="15"></circle>
+          <text id="lossLabel" class="svg-label svg-attention" x="755" y="243">当前损失</text>
+          <text id="predLabel" class="svg-label svg-model" x="735" y="466" text-anchor="middle">预测值 ŷ</text>
+        </svg>
+      </div>
+      <div class="control-strip">
+        <label class="ctl" for="prediction">
+          <span>移动预测值 ŷ</span>
+          <input id="prediction" type="range" min="-100" max="100" value="62" step="1" aria-describedby="rangeHelp">
+          <output id="positionText" for="prediction">在目标右侧</output>
+        </label>
+        <p id="rangeHelp" class="hint" style="margin-top:8px">也可用方向键逐步移动，观察橙色距离与曲线高度如何同步变化。</p>
+      </div>
+    </section>
+
+    <aside class="rail min0" aria-live="polite">
+      <section class="panel readout">
+        <span class="kicker">即时读数</span>
+        <div>
+          <div class="small">预测与目标的距离</div>
+          <div id="distanceStatus" class="status-word">较远</div>
+        </div>
+        <div class="meter" aria-hidden="true"><span id="meterFill"></span></div>
+        <div class="formula"><span>L</span> = (<span class="pred">ŷ</span> − <span class="truth">y</span>)²</div>
+        <p id="feedback" class="small">预测在目标右侧，距离被平方后形成较高损失。</p>
+      </section>
+
+      <section class="panel q observations" aria-label="观察线索">
+        <div id="obsNear" class="observation"><span class="mark"></span><span>靠近目标：损失迅速下降</span></div>
+        <div id="obsHit" class="observation"><span class="mark"></span><span>对准目标：平方损失最低</span></div>
+        <div id="obsFar" class="observation active"><span class="mark"></span><span>远离目标：损失向上弯曲</span></div>
+      </section>
+
+      <div class="move-hint" aria-hidden="true"><span class="key">←</span><span class="key">→</span><span>键盘可精细移动</span></div>
+      <div class="btns"><button id="alignBtn" class="btn" type="button">让预测值对准目标</button></div>
+    </aside>
+  </main>
+</div>
+<script src="assets/base.js"></script>
+<script>
+(() => {
+  const slider = document.getElementById('prediction');
+  const predDot = document.getElementById('predDot');
+  const lossDot = document.getElementById('lossDot');
+  const predGuide = document.getElementById('predGuide');
+  const distLine = document.getElementById('distLine');
+  const predLabel = document.getElementById('predLabel');
+  const lossLabel = document.getElementById('lossLabel');
+  const meterFill = document.getElementById('meterFill');
+  const distanceStatus = document.getElementById('distanceStatus');
+  const positionText = document.getElementById('positionText');
+  const feedback = document.getElementById('feedback');
+  const alignBtn = document.getElementById('alignBtn');
+  const observations = {
+    near: document.getElementById('obsNear'),
+    hit: document.getElementById('obsHit'),
+    far: document.getElementById('obsFar')
+  };
+
+  function setActive(which) {
+    Object.entries(observations).forEach(([key, el]) => el.classList.toggle('active', key === which));
+  }
+
+  function update() {
+    const value = Number(slider.value);
+    const magnitude = Math.abs(value) / 100;
+    const x = 490 + value * 3.9;
+    const y = 360 - 255 * magnitude * magnitude;
+    const side = value < 0 ? '左侧' : value > 0 ? '右侧' : '同一位置';
+
+    predDot.setAttribute('cx', x);
+    lossDot.setAttribute('cx', x);
+    lossDot.setAttribute('cy', y);
+    predGuide.setAttribute('x1', x);
+    predGuide.setAttribute('x2', x);
+    predGuide.setAttribute('y1', y);
+    distLine.setAttribute('x2', x);
+    predLabel.setAttribute('x', x);
+    predLabel.setAttribute('y', value === 0 ? 405 : 466);
+    lossLabel.setAttribute('x', value > 72 ? x - 18 : x + 20);
+    lossLabel.setAttribute('y', Math.max(58, y - 18));
+    lossLabel.setAttribute('text-anchor', value > 72 ? 'end' : 'start');
+    meterFill.style.width = `${magnitude * magnitude * 100}%`;
+    positionText.textContent = value === 0 ? '与目标重合' : `在目标${side}`;
+
+    if (magnitude <= 0.035) {
+      distanceStatus.textContent = '重合';
+      feedback.textContent = '预测与目标重合，平方损失降到最低点。';
+      setActive('hit');
+      slider.setAttribute('aria-valuetext', '预测值与目标重合，损失最低');
+    } else if (magnitude < 0.42) {
+      distanceStatus.textContent = '较近';
+      feedback.textContent = `预测在目标${side}，继续靠近会让损失快速下降。`;
+      setActive('near');
+      slider.setAttribute('aria-valuetext', `预测值在目标${side}且较近，损失较低`);
+    } else {
+      distanceStatus.textContent = '较远';
+      feedback.textContent = `预测在目标${side}，距离被平方后形成较高损失。`;
+      setActive('far');
+      slider.setAttribute('aria-valuetext', `预测值在目标${side}且较远，损失较高`);
+    }
+  }
+
+  slider.addEventListener('input', update);
+  alignBtn.addEventListener('click', () => {
+    slider.value = 0;
+    update();
+    slider.focus();
+  });
+  update();
+  Deck.init({ index: 8, total: 24 });
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,256 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>AdaBoosting算法</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    :root{
+      --bg:#EEF1F5; --surface:#FAFBFC; --text:#111820; --muted:#657181;
+      --weak:#617CA8; --correct:#294E86; --weight:#164E9B; --error:#C64232;
+      --line:#C8D0DB; --focus:#164E9B;
+      --font-sans:"Noto Sans CJK SC",ui-sans-serif,system-ui,sans-serif;
+      --font-mono:"JetBrains Mono",ui-monospace,Consolas,monospace;
+      --font-display:"Clear Sans","Noto Sans CJK SC",ui-sans-serif,sans-serif;
+      --stage-w:1600px; --stage-h:900px;
+    }
+    #stage{background:var(--bg);color:var(--text);font-family:var(--font-sans);}
+    .cover{position:absolute;inset:0;}
+    .title-block{
+      position:absolute;left:80px;top:196px;width:620px;
+      background:none;
+    }
+    .title-block h1{
+      margin:0;font-family:var(--font-display);font-size:96px;line-height:1.06;
+      font-weight:700;color:var(--text);letter-spacing:1px;
+    }
+    .title-block h1 .boost{color:var(--weight);}
+    .subtitle{
+      margin:26px 0 0;font-size:25px;line-height:1.45;color:var(--muted);
+      max-width:540px;
+    }
+    .subtitle b{color:var(--error);font-weight:600;}
+    .legend{
+      position:absolute;right:64px;bottom:52px;display:flex;gap:36px;align-items:center;
+      font-size:14px;color:var(--muted);
+    }
+    .legend .item{display:flex;gap:9px;align-items:center;}
+    .sw{width:22px;height:12px;}
+    .sw.line{height:0;border-top:3px solid var(--weight);}
+    .sw.dot{width:11px;height:11px;border-radius:50%;background:var(--correct);}
+    .sw.mis{width:12px;height:12px;border-radius:50%;background:none;border:2.5px solid var(--error);}
+    .round-note{
+      position:absolute;right:64px;top:64px;font-family:var(--font-mono);
+      font-size:14px;color:var(--muted);text-align:right;line-height:1.7;
+    }
+    .round-note .num{color:var(--weight);font-size:22px;font-weight:600;}
+  </style>
+</head>
+<body data-page="01" data-total="16">
+  <div id="stage">
+    <div class="cover">
+      <canvas id="field" class="cv-fill" aria-hidden="true"></canvas>
+      <section class="title-block">
+        <h1>Ada<span class="boost">Boost</span>ing<br>算法</h1>
+        <p class="subtitle">多个弱分类器加权组合成一个强分类器：每一轮训练都<b>更关注上一轮分错的样本</b>，把这些样本的权重调高，让下一个弱分类器专门补上前一个的漏洞。</p>
+      </section>
+      <div class="round-note" aria-hidden="true">
+        训练轮次<br><span class="num"><span id="roundNow">0</span> / 6</span>
+      </div>
+      <div class="legend" aria-hidden="true">
+        <span class="item"><span class="sw line"></span>弱分类器（决策桩）</span>
+        <span class="item"><span class="sw dot"></span>样本（大小 = 权重）</span>
+        <span class="item"><span class="sw mis"></span>本轮被分错</span>
+      </div>
+    </div>
+  </div>
+  <script src="assets/lib/seedrandom.min.js"></script>
+  <script src="assets/base.js"></script>
+  <script>
+(function () {
+  'use strict';
+  var W = 1600, H = 900;
+  var CONFIG = Object.freeze({
+    seed: 'adaboost-cover-01',
+    nPoints: 78,
+    rounds: 6,
+    roundMs: 950,
+    plot: Object.freeze({ x0: 700, y0: 130, x1: 1540, y1: 780 }),
+    titleQuiet: Object.freeze({ cx: 390, cy: 400, rx: 430, ry: 330 })
+  });
+
+  var canvas = document.getElementById('field');
+  var roundNow = document.getElementById('roundNow');
+  var ctx = null, samples = [], stumps = [], startTime = 0, stopLoop = function(){}, offResize = function(){};
+  var COLORS = {};
+
+  function quietDist(x, y) {
+    var q = CONFIG.titleQuiet;
+    var d = Math.sqrt((x - q.cx) * (x - q.cx) / (q.rx * q.rx) + (y - q.cy) * (y - q.cy) / (q.ry * q.ry));
+    if (d < 1) { d = 1; }
+    return d;
+  }
+  function inTitle(x, y) { return x < 660 && y > 150 && y < 700; }
+  function rgba(c, a) { return 'rgba(' + c[0] + ',' + c[1] + ',' + c[2] + ',' + a + ')'; }
+
+  // 生成固定种子的样本：两个主类簇 + 交界处的重叠样本（正是 AdaBoost 发力的地方）
+  function buildSamples() {
+    var rng = new Math.seedrandom(CONFIG.seed + '/samples');
+    var pts = [];
+    var P = CONFIG.plot;
+    var tries = 0;
+    while (pts.length < CONFIG.nPoints && tries < 4000) {
+      tries++;
+      var x = P.x0 + 40 + rng() * (P.x1 - P.x0 - 80);
+      var y = P.y0 + 30 + rng() * (P.y1 - P.y0 - 60);
+      if (quietDist(x, y) < 1.05) continue;
+      // 类别由“x + 少量噪声”决定：横向特征越强越偏向 A 类
+      var label = (x + (rng() - 0.5) * 300) > 1150 ? 1 : 0;
+      pts.push({ x: x, y: y, label: label, w: 1, miss: 0 });
+    }
+    // 初始权重均匀
+    pts.forEach(function (p) { p.w = 1 / pts.length; });
+    return pts;
+  }
+
+  // 一轮：选一个垂直决策桩，把分错样本圈出来、加重权重
+  function trainRound(samples, round) {
+    var P = CONFIG.plot;
+    var best = null;
+    for (var t = P.x0 + 40; t <= P.x1 - 40; t += 22) {
+      var err = 0;
+      samples.forEach(function (p) {
+        var pred = p.x > t ? 1 : 0;
+        if (pred !== p.label) err += p.w;
+      });
+      if (!best || err < best.err) best = { x: t, err: err };
+    }
+    var mis = [];
+    samples.forEach(function (p) {
+      var pred = p.x > best.x ? 1 : 0;
+      p.miss = (pred !== p.label) ? 1 : 0;
+      if (p.miss) mis.push(p);
+    });
+    // 权重更新：分错的乘大系数，分对的缩小，再归一化
+    var alpha = 0.5 * Math.log((1 - best.err) / Math.max(best.err, 1e-6));
+    var bump = 2.2, shrink = 0.72, total = 0;
+    samples.forEach(function (p) {
+      p.w *= p.miss ? bump : shrink;
+      total += p.w;
+    });
+    samples.forEach(function (p) { p.w /= total; });
+    return { x: best.x, alpha: alpha, round: round };
+  }
+
+  function radius(w) {
+    var wmax = 1 / 18; // 大致权重上限，作视觉缩放
+    return 3.4 + 13 * Math.min(1, Math.sqrt(w / wmax));
+  }
+
+  function drawFrame(roundsShown, animFrac) {
+    ctx.clearRect(0, 0, W, H);
+    var P = CONFIG.plot;
+
+    // 绘图区基线
+    ctx.strokeStyle = rgba(COLORS.line, 0.55);
+    ctx.lineWidth = 1;
+    ctx.strokeRect(P.x0, P.y0, P.x1 - P.x0, P.y1 - P.y0);
+
+    // 决策桩（从旧到新）
+    for (var r = 0; r < roundsShown; r++) {
+      var s = stumps[r];
+      var isNew = (r === roundsShown - 1);
+      ctx.strokeStyle = rgba(COLORS.weight, isNew ? 0.9 : 0.32);
+      ctx.lineWidth = isNew ? 3 : 1.6;
+      ctx.setLineDash(isNew ? [] : [7, 7]);
+      ctx.beginPath();
+      ctx.moveTo(s.x, P.y0);
+      ctx.lineTo(s.x, P.y1);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      if (isNew && animFrac > 0.4) {
+        ctx.fillStyle = rgba(COLORS.weight, 0.95);
+        ctx.font = '600 13px "JetBrains Mono", monospace';
+        ctx.fillText('h' + (r + 1), s.x + 8, P.y0 + 22);
+      }
+    }
+
+    // 样本
+    samples.forEach(function (p) {
+      var rad = radius(p.w);
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, rad, 0, Math.PI * 2);
+      ctx.fillStyle = rgba(p.label === 1 ? COLORS.correct : COLORS.weak, 0.85);
+      ctx.fill();
+      if (roundsShown > 0 && p.miss) {
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, rad + 5, 0, Math.PI * 2);
+        ctx.strokeStyle = rgba(COLORS.error, 0.9);
+        ctx.lineWidth = 2.4;
+        ctx.stroke();
+      }
+    });
+  }
+
+  function paintStaticLayer() {
+    // 静态：仅画标题侧的低密度刻度纹理，保持安静区
+    ctx.save();
+    ctx.strokeStyle = rgba(COLORS.line, 0.5);
+    ctx.lineWidth = 1;
+    for (var gx = 80; gx <= 600; gx += 65) {
+      for (var gy = 90; gy <= 840; gy += 65) {
+        if (quietDist(gx, gy) < 1.15) continue;
+        ctx.beginPath();
+        ctx.moveTo(gx - 2.5, gy);
+        ctx.lineTo(gx + 2.5, gy);
+        ctx.stroke();
+      }
+    }
+    ctx.restore();
+  }
+
+  function rebuild() {
+    ctx = Deck.fit(canvas);
+    COLORS.bg = Deck.rgb('bg');
+    COLORS.line = Deck.rgb('line');
+    COLORS.weak = Deck.rgb('weak');
+    COLORS.correct = Deck.rgb('correct');
+    COLORS.weight = Deck.rgb('weight');
+    COLORS.error = Deck.rgb('error');
+    samples = buildSamples();
+    stumps = [];
+    paintStaticLayer();
+    for (var r = 0; r < CONFIG.rounds; r++) stumps.push(trainRound(samples, r));
+    // 重置权重到初态，动画从第 0 轮重放
+    samples = buildSamples();
+    drawFrame(0, 0);
+    roundNow.textContent = '0';
+  }
+
+  function startMotion() {
+    stopLoop();
+    if (Deck.reduced()) {
+      drawFrame(CONFIG.rounds, 1);
+      roundNow.textContent = CONFIG.rounds;
+      return;
+    }
+    startTime = 0;
+    stopLoop = Deck.loop(function (elapsed) {
+      if (!startTime) startTime = elapsed;
+      var t = elapsed - startTime;
+      var r = Math.min(CONFIG.rounds, Math.floor(t / CONFIG.roundMs));
+      var frac = (t % CONFIG.roundMs) / CONFIG.roundMs;
+      drawFrame(r, frac);
+      if (String(r) !== roundNow.textContent) roundNow.textContent = r;
+    }, { still: 0 });
+  }
+
+  rebuild();
+  startMotion();
+  offResize = Deck.onResize(function () { rebuild(); startMotion(); });
+  Deck.init({ index: 0, total: 16 });
+})();
+  </script>
+</body>
+</html>

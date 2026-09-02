@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>把一次更新嵌回训练循环</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    #stage{gap:22px}
+    .page-head{flex:0 0 auto;max-width:1160px}
+    .page-head h1{max-width:1120px}
+    .page-head .lead{margin-top:12px;max-width:52em;color:var(--muted)}
+    .loop-layout{flex:1;min-height:0;display:grid;grid-template-columns:minmax(0,1.58fr) minmax(340px,.58fr);gap:30px}
+    .loop-board{position:relative;min-width:0;min-height:0;border-top:var(--line-strong) solid var(--text);border-bottom:var(--line) solid var(--rule-strong);background:rgba(247,250,250,.46)}
+    .loop-board svg{display:block;width:100%;height:100%}
+    .rail{min-width:0;min-height:0;display:flex;flex-direction:column;gap:18px}
+    .cycle-key{display:flex;align-items:center;gap:12px;padding-bottom:15px;border-bottom:var(--line) solid var(--rule)}
+    .cycle-key .ring{width:42px;height:42px;flex:0 0 auto;border:var(--line-strong) solid var(--model);border-right-color:var(--gradient);border-radius:50%;position:relative}
+    .cycle-key .ring:after{content:'';position:absolute;right:-5px;top:5px;width:9px;height:9px;border-top:var(--line) solid var(--gradient);border-right:var(--line) solid var(--gradient);transform:rotate(28deg)}
+    .cycle-key strong{display:block;font-size:var(--fs-body)}
+    .cycle-key span{display:block;color:var(--muted);font-size:var(--fs-label);margin-top:3px}
+    .equations{display:grid;gap:0;border-top:var(--line-strong) solid var(--text)}
+    .eq{display:grid;grid-template-columns:105px 1fr;gap:12px;align-items:baseline;padding:14px 0;border-bottom:var(--line) solid var(--rule)}
+    .eq .label{font-size:var(--fs-label);font-weight:700;color:var(--muted)}
+    .eq code{font-family:var(--font-mono);font-size:var(--fs-sec);color:var(--text);white-space:nowrap}
+    .eq.gradient code{color:var(--gradient)}
+    .eq.model code{color:var(--model)}
+    .takeaway{margin-top:auto;padding:18px 20px;border:var(--line-strong) solid var(--text);border-radius:var(--radius);font-size:var(--fs-lead);font-weight:700;line-height:1.42;background:var(--paper)}
+    .takeaway em{font-style:normal;color:var(--gradient)}
+    .svg-title{font-family:var(--font-sans);font-size:23px;font-weight:700;fill:var(--text)}
+    .svg-small{font-family:var(--font-sans);font-size:16px;font-weight:500;fill:var(--muted)}
+    .svg-mono{font-family:var(--font-mono);font-size:18px;font-weight:600;fill:var(--text)}
+    .svg-index{font-family:var(--font-mono);font-size:14px;font-weight:600;fill:var(--muted);letter-spacing:.04em}
+    .node{fill:var(--paper);stroke:var(--rule-strong);stroke-width:2}
+    .node-model{stroke:var(--model);stroke-width:4}
+    .node-grad{stroke:var(--gradient);stroke-width:4}
+    .path-forward{fill:none;stroke:var(--model);stroke-width:5}
+    .path-back{fill:none;stroke:var(--gradient);stroke-width:5}
+    .path-neutral{fill:none;stroke:var(--rule-strong);stroke-width:3}
+    .carry{fill:var(--attention-soft);stroke:var(--attention);stroke-width:3}
+    .loop-caption{font-family:var(--font-sans);font-size:16px;font-weight:700;fill:var(--gradient)}
+  </style>
+</head>
+<body data-page="20" data-total="24">
+  <div id="stage">
+    <header class="page-head">
+      <span class="kicker">训练循环 · 参数更新之后</span>
+      <h1>新参数不是终点，它会立刻进入下一轮预测</h1>
+      <p class="lead">每一轮都使用当前参数重算预测、损失和梯度；更新后的参数改变下一轮的计算。</p>
+    </header>
+
+    <main class="loop-layout min0" aria-label="多轮训练循环图解">
+      <section class="loop-board min0" aria-label="从当前参数到下一轮参数的训练循环">
+        <svg viewBox="0 0 1040 610" role="img" aria-label="当前参数经过预测、计算损失、求梯度和更新，成为新参数，并回到下一轮预测">
+          <defs>
+            <marker id="arrowModel" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L10,5 L0,10 Z" fill="#1D5C78"/></marker>
+            <marker id="arrowGrad" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L10,5 L0,10 Z" fill="#C64F2B"/></marker>
+            <marker id="arrowRule" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L10,5 L0,10 Z" fill="#687E84"/></marker>
+          </defs>
+
+          <text x="62" y="58" class="svg-index">本轮开始</text>
+          <rect x="62" y="78" width="202" height="112" rx="6" class="node node-model"/>
+          <text x="163" y="118" text-anchor="middle" class="svg-title">当前参数</text>
+          <text x="163" y="156" text-anchor="middle" class="svg-mono">wₖ, bₖ</text>
+
+          <path d="M264 134 H345" class="path-forward" marker-end="url(#arrowModel)"/>
+          <rect x="360" y="78" width="202" height="112" rx="6" class="node node-model"/>
+          <text x="461" y="118" text-anchor="middle" class="svg-title">重算预测</text>
+          <text x="461" y="156" text-anchor="middle" class="svg-mono">ŷₖ = f(x)</text>
+
+          <path d="M562 134 H643" class="path-neutral" marker-end="url(#arrowRule)"/>
+          <rect x="658" y="78" width="250" height="112" rx="6" class="node"/>
+          <text x="783" y="118" text-anchor="middle" class="svg-title">与目标比较</text>
+          <text x="783" y="156" text-anchor="middle" class="svg-mono">Lₖ = loss(ŷₖ, y)</text>
+
+          <path d="M783 190 V274" class="path-back" marker-end="url(#arrowGrad)"/>
+          <rect x="658" y="290" width="250" height="112" rx="6" class="node node-grad"/>
+          <text x="783" y="330" text-anchor="middle" class="svg-title">求当前梯度</text>
+          <text x="783" y="368" text-anchor="middle" class="svg-mono">∇Lₖ</text>
+
+          <path d="M658 346 H577" class="path-back" marker-end="url(#arrowGrad)"/>
+          <rect x="360" y="290" width="202" height="112" rx="6" class="node node-grad"/>
+          <text x="461" y="330" text-anchor="middle" class="svg-title">更新参数</text>
+          <text x="461" y="368" text-anchor="middle" class="svg-mono">wₖ₊₁, bₖ₊₁</text>
+
+          <path d="M360 346 H279" class="path-neutral" marker-end="url(#arrowRule)"/>
+          <rect x="62" y="290" width="202" height="112" rx="6" class="carry"/>
+          <text x="163" y="330" text-anchor="middle" class="svg-title">新参数</text>
+          <text x="163" y="368" text-anchor="middle" class="svg-small">下一轮的起点</text>
+
+          <path d="M163 402 V492 Q163 540 211 540 H852 Q900 540 900 492 V438" class="path-back"/>
+          <path d="M900 438 Q900 498 840 498 H166 Q105 498 105 437 V214 Q105 205 114 205 H163 V190" class="path-back" marker-end="url(#arrowGrad)"/>
+          <text x="522" y="526" text-anchor="middle" class="loop-caption">带着新参数回到预测，下一轮重新计算整条链</text>
+
+          <text x="304" y="116" text-anchor="middle" class="svg-small">前向</text>
+          <text x="610" y="328" text-anchor="middle" class="svg-small">反向</text>
+        </svg>
+      </section>
+
+      <aside class="rail min0" aria-label="训练循环的计算关系">
+        <div class="cycle-key">
+          <span class="ring" aria-hidden="true"></span>
+          <div><strong>轮次变化，计算也变化</strong><span>下标 k 表示当前轮，k+1 表示下一轮</span></div>
+        </div>
+
+        <div class="equations" aria-label="每轮的三个关键计算">
+          <div class="eq model"><span class="label">重算预测</span><code>ŷₖ = f(x; wₖ,bₖ)</code></div>
+          <div class="eq gradient"><span class="label">重算梯度</span><code>gₖ = ∇L(wₖ,bₖ)</code></div>
+          <div class="eq gradient"><span class="label">得到新参数</span><code>θₖ₊₁ = θₖ − ηgₖ</code></div>
+        </div>
+
+        <p class="small">不能沿用上一轮的预测或梯度：参数已经改变，它们对应的计算结果也要改变。</p>
+
+        <div class="takeaway">多轮学习，就是反复执行<em>预测 → 梯度 → 更新</em>，再把新参数送回循环。</div>
+      </aside>
+    </main>
+  </div>
+  <script src="assets/base.js"></script>
+  <script>Deck.init({index:20,total:24});</script>
+</body>
+</html>

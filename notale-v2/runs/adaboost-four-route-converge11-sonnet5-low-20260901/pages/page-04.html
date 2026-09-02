@@ -1,0 +1,426 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  :root{
+    --bg:#EEF1F5; --text:#111820; --font-sans:"Noto Sans CJK SC",ui-sans-serif,system-ui,sans-serif;
+  }
+  #stage{
+    width:1600px;height:900px;padding:28px 56px;box-sizing:border-box;
+    display:flex;flex-direction:column;gap:16px;font-family:var(--font-sans);color:var(--text);
+  }
+  h1{font-family:"Clear Sans","Noto Sans CJK SC",sans-serif;font-size:25px;font-weight:700;margin:0;letter-spacing:.2px;}
+  .lead{font-size:18px;color:var(--muted,#657181);margin:2px 0 0;line-height:1.4;max-width:1100px;}
+  .body{flex:1;min-height:0;display:flex;gap:24px;}
+  .left{flex:0 0 40%;min-width:0;display:flex;flex-direction:column;gap:14px;}
+  .right{flex:1;min-width:0;display:flex;flex-direction:column;gap:10px;}
+
+  .panel{
+    background:#FAFBFC;border:1px solid #C8D0DB;border-radius:4px;padding:16px 18px;
+  }
+  .panel h2{font-size:16px;font-weight:700;margin:0 0 8px;color:#111820;}
+  .step-label{font-size:14px;color:#657181;font-weight:600;letter-spacing:.3px;}
+
+  .btns{display:flex;gap:10px;margin-top:10px;}
+  .btn{
+    appearance:none;border:1px solid #164E9B;background:#FAFBFC;color:#164E9B;
+    font-family:var(--font-sans);font-size:14px;font-weight:600;padding:9px 16px;
+    border-radius:2px;cursor:pointer;letter-spacing:.2px;transition:background .15s,color .15s;
+  }
+  .btn:hover:not(:disabled){background:#164E9B;color:#fff;}
+  .btn:disabled{opacity:.4;cursor:not-allowed;}
+  .btn.primary{background:#164E9B;color:#fff;}
+  .btn.primary:hover:not(:disabled){background:#0f3a75;}
+
+  .readout{display:flex;flex-direction:column;gap:10px;margin-top:4px;}
+  .rline{display:flex;justify-content:space-between;align-items:baseline;font-size:14px;color:#657181;}
+  .rline .num{font-family:"JetBrains Mono",ui-monospace,monospace;font-size:22px;color:#111820;font-weight:600;}
+  .rline .num.err{color:#C64232;}
+  .rline .num.wt{color:#164E9B;}
+  .unit{font-size:13px;color:#657181;margin-left:2px;}
+
+  .note{font-size:14px;color:#657181;line-height:1.5;margin:0;}
+  .note strong{color:#111820;}
+
+  .stage-evidence{flex:1;min-height:0;display:flex;flex-direction:column;background:#FAFBFC;border:1px solid #C8D0DB;border-radius:4px;padding:14px 18px;}
+  .evidence-top{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px;}
+  .evidence-top .cap{font-size:14px;color:#657181;font-weight:600;}
+  .cvwrap{flex:1;min-height:0;position:relative;}
+  #board{position:absolute;inset:0;width:100%;height:100%;cursor:ew-resize;touch-action:none;}
+
+  .legend{display:flex;gap:22px;font-size:14px;color:#657181;margin-top:6px;flex-wrap:wrap;}
+  .legend .li{display:flex;align-items:center;gap:6px;}
+  .sw{width:12px;height:12px;border-radius:50%;display:inline-block;}
+  .sw.pos{background:#294E86;}
+  .sw.neg{background:#C64232;}
+  .sw.stump{width:14px;height:2px;border-radius:0;background:#164E9B;}
+  .sw.newstump{width:14px;height:2px;border-radius:0;background:#617CA8;border-top:2px dashed #617CA8;background:none;border-bottom:2px dashed #164E9B;height:0;}
+
+  .sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);}
+</style>
+</head>
+<body data-page="04" data-total="8">
+<div id="stage">
+  <div>
+    <h1>拖动分类线，找到让"加权错误"最小的位置</h1>
+    <p class="lead">左边 10 个点已经跑过第 1 轮弱分类器，错分的点被 AdaBoost 加大了权重（圆点变大）。现在移动竖线，看新一轮弱分类器会不会被这些点"拽"过去。</p>
+  </div>
+
+  <div class="body">
+    <div class="left">
+      <div class="panel">
+        <h2>第一轮：弱分类器 1 已经训练好</h2>
+        <p class="note">竖线在 <strong>x = 3.0</strong>，规则是"x &lt; 3.0 判正类"。10 个点里错分了 <strong>3 个</strong>（图中红圈），初始权重都是 1/10。</p>
+        <div class="btns">
+          <button class="btn primary" id="reweight">按 AdaBoost 公式更新权重</button>
+          <button class="btn" id="reset">重置</button>
+        </div>
+        <p class="step-label" id="stepFlag" style="margin-top:10px;">尚未更新权重</p>
+      </div>
+
+      <div class="panel">
+        <h2>当前权重状态</h2>
+        <div class="readout">
+          <div class="rline"><span>轮 1 加权错误率 e₁</span><span class="num" id="e1">—</span></div>
+          <div class="rline"><span>分类器权重 α₁ = ½ln((1−e₁)/e₁)</span><span class="num wt" id="alpha1">—</span></div>
+          <div class="rline"><span>错分点权重放大倍数 e^α₁</span><span class="num wt" id="boost">—</span></div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h2>你正在训练：弱分类器 2</h2>
+        <div class="readout">
+          <div class="rline"><span>当前分割线位置 x</span><span class="num" id="curX">3.00</span></div>
+          <div class="rline"><span>此处加权错误率</span><span class="num err" id="curErr">—</span></div>
+          <div class="rline"><span>全区间最小加权错误率</span><span class="num" id="minErr">—</span></div>
+        </div>
+        <p class="note" id="verdict" style="margin-top:10px;">先点击上方按钮更新权重，再拖动右侧竖线。</p>
+      </div>
+    </div>
+
+    <div class="right">
+      <div class="stage-evidence">
+        <div class="evidence-top">
+          <span class="cap">数据分布与两轮分类线</span>
+          <span class="cap" id="modeCap">拖动灰色竖线，找到加权错误最小的分割位置</span>
+        </div>
+        <div class="cvwrap">
+          <canvas id="board" class="cv-fill no-pan" tabindex="0" role="slider"
+            aria-label="拖动竖直分割线选择 x 位置" aria-valuemin="0" aria-valuemax="10"
+            aria-valuenow="3"></canvas>
+        </div>
+        <div class="legend">
+          <span class="li"><span class="sw pos"></span>正类样本（y=+1）</span>
+          <span class="li"><span class="sw neg"></span>负类样本（y=−1）</span>
+          <span class="li"><span class="sw stump"></span>弱分类器 1（x=3.0，固定）</span>
+          <span class="li" id="newLineLegend" style="display:none"><span class="sw" style="width:14px;height:2px;background:repeating-linear-gradient(90deg,#164E9B 0 6px,transparent 6px 10px)"></span>你拖动的弱分类器 2</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="assets/base.js"></script>
+<script>
+(() => {
+  "use strict";
+
+  // ---- 数据：固定种子，10 个点，一维特征 x（0~10），标签 y=+1/-1 ----
+  // 规则：x<3 应为 +1（多数），但故意放 3 个"跨界"点制造错分，复现真实弱分类器场景
+  const POINTS = [
+    { x: 0.6, y: 1 },
+    { x: 1.4, y: 1 },
+    { x: 2.1, y: 1 },
+    { x: 2.7, y: -1 },   // 错分：在 stump1 判正区但真实是负
+    { x: 3.6, y: -1 },
+    { x: 4.3, y: -1 },
+    { x: 5.5, y: 1 },    // 错分：在 stump1 判负区但真实是正
+    { x: 6.8, y: -1 },
+    { x: 8.0, y: 1 },    // 错分：在 stump1 判负区但真实是正
+    { x: 9.1, y: -1 },
+  ];
+  const N = POINTS.length;
+  const STUMP1_X = 3.0; // x < 3.0 -> predict +1, else -1
+  const XMIN = 0, XMAX = 10;
+
+  function predictStump1(x) { return x < STUMP1_X ? 1 : -1; }
+
+  // ---- 权重更新（真实 AdaBoost 公式）----
+  function computeRound1() {
+    const w0 = POINTS.map(() => 1 / N);
+    let err = 0;
+    const wrong = POINTS.map((p, i) => {
+      const miss = predictStump1(p.x) !== p.y;
+      if (miss) err += w0[i];
+      return miss;
+    });
+    const eps = Math.min(Math.max(err, 1e-6), 1 - 1e-6);
+    const alpha = 0.5 * Math.log((1 - eps) / eps);
+    const boost = Math.exp(alpha);
+    // 新权重：正确 * e^-alpha, 错误 * e^alpha, 再归一化
+    const raw = POINTS.map((p, i) => wrong[i] ? w0[i] * Math.exp(alpha) : w0[i] * Math.exp(-alpha));
+    const Z = raw.reduce((a, b) => a + b, 0);
+    const w1 = raw.map(v => v / Z);
+    return { err, alpha, boost, wrong, w0, w1 };
+  }
+  const ROUND1 = computeRound1();
+
+  // ---- 状态 ----
+  function createInitialState() {
+    return {
+      reweighted: false,
+      splitX: STUMP1_X,     // 学习者拖动的新 stump 位置
+      dragging: false,
+    };
+  }
+  let state = createInitialState();
+
+  // ---- 加权误差计算（用于新 stump 在给定权重下的表现）----
+  // 候选 stump 方向：与 stump1 一致 "x<split -> +1"；也测试反向，取更优方向
+  function weightedErrorAt(splitX, weights) {
+    let errA = 0, errB = 0; // A: x<split->+1 ; B: x<split->-1
+    for (let i = 0; i < N; i++) {
+      const p = POINTS[i];
+      const predA = p.x < splitX ? 1 : -1;
+      const predB = -predA;
+      if (predA !== p.y) errA += weights[i];
+      if (predB !== p.y) errB += weights[i];
+    }
+    return errA <= errB ? { err: errA, dir: 1 } : { err: errB, dir: -1 };
+  }
+
+  function currentWeights() {
+    return state.reweighted ? ROUND1.w1 : ROUND1.w0;
+  }
+
+  function findMinError() {
+    let best = { err: Infinity, x: STUMP1_X, dir: 1 };
+    const weights = currentWeights();
+    // 候选切点：所有点的中点 + 边界
+    const xs = POINTS.map(p => p.x).sort((a, b) => a - b);
+    const candidates = [XMIN + 0.05];
+    for (let i = 0; i < xs.length - 1; i++) candidates.push((xs[i] + xs[i + 1]) / 2);
+    candidates.push(XMAX - 0.05);
+    for (const cx of candidates) {
+      const r = weightedErrorAt(cx, weights);
+      if (r.err < best.err - 1e-9) best = { err: r.err, x: cx, dir: r.dir };
+    }
+    return best;
+  }
+
+  // ---- DOM refs ----
+  const el = (id) => document.getElementById(id);
+  const ui = {
+    board: el("board"),
+    reweight: el("reweight"),
+    reset: el("reset"),
+    stepFlag: el("stepFlag"),
+    e1: el("e1"),
+    alpha1: el("alpha1"),
+    boost: el("boost"),
+    curX: el("curX"),
+    curErr: el("curErr"),
+    minErr: el("minErr"),
+    verdict: el("verdict"),
+    newLineLegend: el("newLineLegend"),
+    modeCap: el("modeCap"),
+  };
+
+  ui.e1.textContent = ROUND1.err.toFixed(3);
+  ui.alpha1.textContent = ROUND1.alpha.toFixed(3);
+  ui.boost.textContent = "×" + ROUND1.boost.toFixed(2);
+
+  // ---- canvas 绘制 ----
+  const PAD = { l: 60, r: 40, t: 40, b: 60 };
+  function toPx(x, w) { return PAD.l + (x - XMIN) / (XMAX - XMIN) * (w - PAD.l - PAD.r); }
+  function toX(px, w) { return XMIN + (px - PAD.l) / (w - PAD.l - PAD.r) * (XMAX - XMIN); }
+
+  function radiusFor(w) {
+    // 半径映射：把权重范围映射到可读的视觉半径 8~26px
+    const w0 = 1 / N;
+    const scale = w / w0; // 1.0 = 基准
+    return Deck.clamp(9 + (scale - 1) * 7, 8, 28);
+  }
+
+  function draw(ctx, w, h) {
+    ctx.clearRect(0, 0, w, h);
+    const midY = h / 2;
+
+    // 坐标轴
+    ctx.strokeStyle = "#C8D0DB";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(PAD.l, midY); ctx.lineTo(w - PAD.r, midY);
+    ctx.stroke();
+
+    // x 刻度
+    ctx.fillStyle = "#657181";
+    ctx.font = "12px 'JetBrains Mono',monospace";
+    ctx.textAlign = "center";
+    for (let v = 0; v <= 10; v += 2) {
+      const px = toPx(v, w);
+      ctx.beginPath();
+      ctx.moveTo(px, midY - 4); ctx.lineTo(px, midY + 4);
+      ctx.strokeStyle = "#C8D0DB"; ctx.stroke();
+      ctx.fillText(String(v), px, midY + 22);
+    }
+    ctx.textAlign = "left";
+    ctx.fillText("x", w - PAD.r + 14, midY + 4);
+
+    // 上/下分区标签
+    ctx.fillStyle = "#657181";
+    ctx.font = "14px 'Noto Sans CJK SC',sans-serif";
+    ctx.textAlign = "right";
+    ctx.fillText("y = +1", PAD.l - 12, midY - h * 0.24);
+    ctx.fillText("y = −1", PAD.l - 12, midY + h * 0.24 + 6);
+
+    // stump1 竖线（固定，弱色）
+    const sx1 = toPx(STUMP1_X, w);
+    ctx.strokeStyle = "#617CA8";
+    ctx.lineWidth = 2;
+    ctx.setLineDash([]);
+    ctx.beginPath();
+    ctx.moveTo(sx1, PAD.t); ctx.lineTo(sx1, h - PAD.b);
+    ctx.stroke();
+    ctx.fillStyle = "#617CA8";
+    ctx.font = "13px 'JetBrains Mono',monospace";
+    ctx.textAlign = "center";
+    ctx.fillText("弱分类器1", sx1, PAD.t - 10);
+
+    // 学习者拖动的新 stump（当已重新加权时才有意义，但始终可拖）
+    const sx2 = toPx(state.splitX, w);
+    ctx.strokeStyle = "#164E9B";
+    ctx.lineWidth = 3;
+    ctx.setLineDash([9, 6]);
+    ctx.beginPath();
+    ctx.moveTo(sx2, PAD.t); ctx.lineTo(sx2, h - PAD.b);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    // 拖手柄
+    ctx.fillStyle = "#164E9B";
+    Deck.rr(ctx, sx2 - 9, PAD.t - 26, 18, 18, 3);
+    ctx.fill();
+    ctx.fillStyle = "#fff";
+    ctx.font = "11px sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText("⇕", sx2, PAD.t - 13);
+
+    // 数据点
+    const weights = currentWeights();
+    for (let i = 0; i < N; i++) {
+      const p = POINTS[i];
+      const px = toPx(p.x, w);
+      const py = p.y === 1 ? midY - h * 0.24 : midY + h * 0.24;
+      const r = radiusFor(weights[i]);
+      const isWrong1 = ROUND1.wrong[i];
+
+      ctx.beginPath();
+      ctx.arc(px, py, r, 0, Math.PI * 2);
+      ctx.fillStyle = p.y === 1 ? "#294E86" : "#C64232";
+      ctx.globalAlpha = 0.88;
+      ctx.fill();
+      ctx.globalAlpha = 1;
+
+      if (isWrong1) {
+        ctx.beginPath();
+        ctx.arc(px, py, r + 4, 0, Math.PI * 2);
+        ctx.strokeStyle = "#C64232";
+        ctx.lineWidth = 2;
+        ctx.setLineDash([3, 3]);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+    }
+  }
+
+  const fit = Deck.autofit(ui.board, (ctx, w, h) => draw(ctx, w, h));
+
+  // ---- 派生量与渲染 ----
+  function render() {
+    const weights = currentWeights();
+    const r = weightedErrorAt(state.splitX, weights);
+    const minInfo = findMinError();
+
+    ui.curX.textContent = state.splitX.toFixed(2);
+    ui.curErr.textContent = r.err.toFixed(3);
+    ui.minErr.textContent = minInfo.err.toFixed(3);
+
+    const close = Math.abs(r.err - minInfo.err) < 0.005;
+    if (close) {
+      ui.verdict.innerHTML = `<strong>找到了。</strong>此处加权错误率 ${r.err.toFixed(3)} 已经是全区间最小值，这就是弱分类器 2 会落在的位置。`;
+    } else if (r.err < 0.3) {
+      ui.verdict.textContent = "错误率已经不高，继续微调试试能否更接近最优分割点。";
+    } else {
+      ui.verdict.textContent = "错误率偏高，试着把线移到大圆点密集分界的地方——那里是权重最重的错分点。";
+    }
+
+    ui.stepFlag.textContent = state.reweighted
+      ? "权重已更新：错分点（虚线圈）变大，正确点变小"
+      : "尚未更新权重：所有点大小相同（各占 1/10）";
+    ui.modeCap.textContent = state.reweighted
+      ? "拖动深蓝虚线，找到新权重下加权错误最小的位置"
+      : "先点击左侧按钮更新权重，圆点大小会随之改变";
+    ui.reweight.disabled = state.reweighted;
+    ui.board.setAttribute("aria-valuenow", state.splitX.toFixed(2));
+
+    fit.redraw();
+  }
+
+  // ---- 交互：拖动竖线 ----
+  let dragging = false;
+  function setSplitFromEvent(e) {
+    const p = Deck.pt(ui.board, e);
+    const w = ui.board.getBoundingClientRect().width;
+    const x = Deck.clamp(toX(p.x, w), XMIN + 0.05, XMAX - 0.05);
+    state.splitX = x;
+    render();
+  }
+
+  ui.board.addEventListener("pointerdown", (e) => {
+    dragging = true;
+    ui.board.setPointerCapture?.(e.pointerId);
+    setSplitFromEvent(e);
+  });
+  ui.board.addEventListener("pointermove", (e) => { if (dragging) setSplitFromEvent(e); });
+  function endDrag(e) {
+    if (!dragging) return;
+    dragging = false;
+    if (ui.board.hasPointerCapture?.(e.pointerId)) ui.board.releasePointerCapture(e.pointerId);
+  }
+  ui.board.addEventListener("pointerup", endDrag);
+  ui.board.addEventListener("pointercancel", endDrag);
+
+  // 键盘可达：方向键移动分割线
+  ui.board.addEventListener("keydown", (e) => {
+    let delta = 0;
+    if (e.key === "ArrowLeft") delta = -0.1;
+    else if (e.key === "ArrowRight") delta = 0.1;
+    else if (e.key === "ArrowUp") delta = 0.5;
+    else if (e.key === "ArrowDown") delta = -0.5;
+    else return;
+    e.preventDefault();
+    state.splitX = Deck.clamp(state.splitX + delta, XMIN + 0.05, XMAX - 0.05);
+    render();
+  });
+
+  ui.reweight.addEventListener("click", () => {
+    if (state.reweighted) return;
+    state.reweighted = true;
+    ui.newLineLegend.style.display = "flex";
+    render();
+  });
+
+  ui.reset.addEventListener("click", () => {
+    state = createInitialState();
+    ui.newLineLegend.style.display = "none";
+    render();
+  });
+
+  render();
+})();
+</script>
+</body>
+</html>

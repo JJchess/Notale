@@ -1,0 +1,286 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<link rel="stylesheet" href="assets/lib/katex.min.css">
+<style>
+  .lr-head { flex: 0 0 auto; display: flex; flex-direction: column; gap: 6px; }
+  .lr-body { flex: 1; display: flex; gap: 32px; min-height: 0; margin-top: 10px; }
+
+  .lr-colA { flex: 0 0 400px; display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+  .lr-colB { flex: 1; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+
+  .lr-formula { display: flex; flex-direction: column; gap: 10px; }
+  .lr-formula .fline { display: flex; align-items: baseline; gap: 10px; font-size: var(--fs-body); }
+  .lr-formula .flabel { font-family: var(--font-mono); font-size: var(--fs-label); color: var(--muted); flex: 0 0 78px; }
+
+  .lr-btns .btn { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 10px 8px; }
+  .lr-btns .btn .eta-val { font-family: var(--font-mono); font-size: 18px; font-weight: 600; }
+  .lr-btns .btn .eta-tag { font-size: 12px; color: var(--muted); }
+
+  .lr-readout { display: flex; flex-direction: column; gap: 10px; flex: 1; min-height: 0; overflow: auto; }
+  .lr-seq-block { border-top: var(--hair) solid var(--rule); padding-top: 8px; }
+  .lr-seq-title { display: flex; align-items: center; gap: 8px; font-size: var(--fs-label); margin-bottom: 6px; }
+  .lr-seq-title .sw { width: 14px; height: 3px; border-radius: 2px; }
+  .lr-seq-vals { display: flex; flex-wrap: wrap; gap: 6px 10px; font-family: var(--font-mono); font-size: var(--fs-sec); }
+  .lr-seq-vals span { color: var(--text); }
+  .lr-seq-note { font-size: var(--fs-sec); color: var(--muted); margin-top: 4px; }
+
+  .lr-plot-wrap { flex: 1; min-height: 0; position: relative; }
+  .lr-plot-wrap canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+
+  .lr-empty { color: var(--muted); font-size: var(--fs-sec); text-align: center; margin-top: 40px; }
+</style>
+</head>
+<body data-page="08" data-total="20">
+<div id="stage" style="display:flex; flex-direction:column;">
+
+  <div class="lr-head">
+    <span class="kicker">梯度下降 · 步长的选择</span>
+    <h1>学习率：走多大一步</h1>
+    <p class="lead">同一个方向，走多大一步决定结局：η=0.1 稳步靠近，η=0.5 一步到位，η=1.05 越走越远。</p>
+  </div>
+
+  <div class="lr-body">
+
+    <div class="lr-colA">
+      <div class="panel lr-formula">
+        <div class="fline"><span class="flabel">损失</span><span id="f-loss"></span></div>
+        <div class="fline"><span class="flabel">导数</span><span id="f-grad"></span></div>
+        <div class="fline"><span class="flabel">更新</span><span id="f-upd"></span></div>
+        <div class="fline"><span class="flabel">起点</span><span class="num">w₀ = 0</span></div>
+      </div>
+
+      <div class="btns lr-btns" role="group" aria-label="选择学习率">
+        <button class="btn" data-eta="0.1" aria-pressed="false">
+          <span class="eta-val">η = 0.1</span><span class="eta-tag">小步慢走</span>
+        </button>
+        <button class="btn" data-eta="0.5" aria-pressed="false">
+          <span class="eta-val">η = 0.5</span><span class="eta-tag">恰好到位</span>
+        </button>
+        <button class="btn" data-eta="1.05" aria-pressed="false">
+          <span class="eta-val">η = 1.05</span><span class="eta-tag">越走越远</span>
+        </button>
+      </div>
+      <div class="btns">
+        <button class="btn" id="btn-reset">复位</button>
+      </div>
+
+      <div class="lr-readout" id="readout">
+        <p class="lr-empty">点击上面任意一个学习率，看轨迹 w₀ → w₁ → w₂ … 怎么走</p>
+      </div>
+    </div>
+
+    <div class="lr-colB">
+      <div class="panel lr-plot-wrap cvbox min0" id="plotbox">
+        <canvas id="cv" class="cv-fill" aria-hidden="true"></canvas>
+      </div>
+      <div class="legend" id="legend">
+        <div class="li"><span class="sw" style="background:var(--forward)"></span>η = 0.1</div>
+        <div class="li"><span class="sw" style="background:var(--attention)"></span>η = 0.5</div>
+        <div class="li"><span class="sw line" style="border-top-color:var(--forward)"></span>η = 1.05（虚线，越跳越远）</div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script src="assets/base.js"></script>
+<script src="assets/lib/katex.min.js"></script>
+<script>
+(function(){
+  // ---- 公式 ----
+  try {
+    katex.render("L(w) = (w-4)^2", document.getElementById('f-loss'), {throwOnError:false});
+    katex.render("\\dfrac{dL}{dw} = 2(w-4)", document.getElementById('f-grad'), {throwOnError:false});
+    katex.render("w \\leftarrow w - \\eta \\cdot \\dfrac{dL}{dw}", document.getElementById('f-upd'), {throwOnError:false});
+  } catch(e) {}
+
+  // ---- 模型 ----
+  function L(w){ return (w-4)*(w-4); }
+  function grad(w){ return 2*(w-4); }
+  function seq(eta){
+    var w = 0, arr = [w];
+    for (var i = 0; i < 6; i++){
+      w = w - eta * grad(w);
+      arr.push(w);
+    }
+    return arr;
+  }
+
+  var ETAS = ['0.1', '0.5', '1.05'];
+  var COLOR_KEY = { '0.1': '--forward', '0.5': '--attention', '1.05': '--forward' };
+  var active = {}; // eta string -> bool
+
+  var cv = document.getElementById('cv');
+  var ctx = null;
+
+  // 绘图域
+  var W_MIN = -6, W_MAX = 12, L_MIN = 0, L_MAX = 100;
+  var PAD = { l: 54, r: 24, t: 20, b: 40 };
+
+  function draw(w, h){
+    ctx.clearRect(0, 0, w, h);
+    var plotW = w - PAD.l - PAD.r;
+    var plotH = h - PAD.t - PAD.b;
+
+    function X(wv){ return PAD.l + (wv - W_MIN) / (W_MAX - W_MIN) * plotW; }
+    function Y(Lv){ return PAD.t + plotH - (Lv - L_MIN) / (L_MAX - L_MIN) * plotH; }
+
+    // 网格
+    ctx.strokeStyle = Deck.rgba('--rule', 1);
+    ctx.lineWidth = 1;
+    ctx.font = '13px ' + Deck.token('--font-mono');
+    ctx.fillStyle = Deck.rgba('--muted', 1);
+    for (var wt = -6; wt <= 12; wt += 2){
+      var x = X(wt);
+      ctx.beginPath(); ctx.moveTo(x, PAD.t); ctx.lineTo(x, PAD.t + plotH); ctx.stroke();
+      ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+      ctx.fillText(wt.toString(), x, PAD.t + plotH + 8);
+    }
+    for (var Lt = 0; Lt <= 100; Lt += 20){
+      var y = Y(Lt);
+      ctx.beginPath(); ctx.moveTo(PAD.l, y); ctx.lineTo(PAD.l + plotW, y); ctx.stroke();
+      ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+      ctx.fillText(Lt.toString(), PAD.l - 8, y);
+    }
+
+    // 坐标轴标签
+    ctx.fillStyle = Deck.rgba('--muted', 1);
+    ctx.font = '14px ' + Deck.token('--font-mono');
+    ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+    ctx.fillText('w', PAD.l + plotW - 6, PAD.t + plotH + 30);
+    ctx.save();
+    ctx.translate(16, PAD.t + 10);
+    ctx.fillText('L(w)', 0, 0);
+    ctx.restore();
+
+    // w=4 最优解虚线
+    var x4 = X(4);
+    ctx.save();
+    ctx.setLineDash([5, 5]);
+    ctx.strokeStyle = Deck.rgba('--rule-strong', 1);
+    ctx.beginPath(); ctx.moveTo(x4, PAD.t); ctx.lineTo(x4, PAD.t + plotH); ctx.stroke();
+    ctx.restore();
+    ctx.fillStyle = Deck.rgba('--text', 1);
+    ctx.font = '13px ' + Deck.token('--font-mono');
+    ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+    ctx.fillText('w=4（最优解）', x4, PAD.t + 14);
+
+    // 损失曲线
+    ctx.beginPath();
+    ctx.strokeStyle = Deck.rgba('--muted', 1);
+    ctx.lineWidth = 2;
+    var first = true;
+    for (var wv = W_MIN; wv <= W_MAX; wv += 0.1){
+      var lv = L(wv);
+      if (lv > L_MAX) continue;
+      var px = X(wv), py = Y(lv);
+      if (first){ ctx.moveTo(px, py); first = false; } else { ctx.lineTo(px, py); }
+    }
+    ctx.stroke();
+
+    // 轨迹
+    ETAS.forEach(function(etaStr){
+      if (!active[etaStr]) return;
+      var eta = parseFloat(etaStr);
+      var pts = seq(eta);
+      var color = Deck.rgba(COLOR_KEY[etaStr], 1);
+      var dashed = etaStr === '1.05';
+
+      ctx.save();
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 2.4;
+      if (dashed) ctx.setLineDash([8, 6]);
+      ctx.beginPath();
+      pts.forEach(function(pv, i){
+        var lv = Math.min(L(pv), L_MAX);
+        var px = X(Math.max(W_MIN, Math.min(W_MAX, pv)));
+        var py = Y(lv);
+        if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+      });
+      ctx.stroke();
+      ctx.restore();
+
+      pts.forEach(function(pv, i){
+        var lv = Math.min(L(pv), L_MAX);
+        var px = X(Math.max(W_MIN, Math.min(W_MAX, pv)));
+        var py = Y(lv);
+        var r = 3.5 + i * 0.6;
+        ctx.beginPath();
+        ctx.fillStyle = color;
+        ctx.arc(px, py, r, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = Deck.rgba('--paper', 1);
+        ctx.lineWidth = 1.2;
+        ctx.stroke();
+      });
+    });
+  }
+
+  var stopAutofit = Deck.autofit(cv, function(c, w, h){ ctx = c; draw(w, h); });
+
+  // ---- 读数区 ----
+  function fmt(v){ return v.toFixed(2); }
+
+  function renderReadout(){
+    var box = document.getElementById('readout');
+    var anyActive = ETAS.some(function(e){ return active[e]; });
+    if (!anyActive){
+      box.innerHTML = '<p class="lr-empty">点击上面任意一个学习率，看轨迹 w₀ → w₁ → w₂ … 怎么走</p>';
+      return;
+    }
+    var html = '';
+    ETAS.forEach(function(etaStr){
+      if (!active[etaStr]) return;
+      var eta = parseFloat(etaStr);
+      var pts = seq(eta);
+      var factor = 1 - 2 * eta;
+      var colorVar = COLOR_KEY[etaStr];
+      var behavior;
+      if (Math.abs(factor) < 0.001) behavior = '误差归零 —— 一步落在最优解上';
+      else if (Math.abs(factor) < 1) behavior = '误差每步缩小到原来的 ' + Math.round(Math.abs(factor) * 100) + '%，逼近最优解';
+      else behavior = '误差每步放大到原来的 ' + (Math.abs(factor) * 100).toFixed(0) + '%，逐步远离最优解';
+
+      html += '<div class="lr-seq-block">';
+      html += '<div class="lr-seq-title"><span class="sw" style="background:' + 'var(' + colorVar + ')' + '"></span>η = ' + etaStr + ' ／ 收敛因子 1−2η = ' + factor.toFixed(2) + '</div>';
+      html += '<div class="lr-seq-vals">';
+      pts.forEach(function(pv, i){
+        html += '<span>w' + i + '=' + fmt(pv) + '</span>';
+      });
+      html += '</div>';
+      html += '<div class="lr-seq-note">' + behavior + '</div>';
+      html += '</div>';
+    });
+    box.innerHTML = html;
+  }
+
+  function redrawAll(){
+    if (ctx) draw(cv.clientWidth, cv.clientHeight);
+    renderReadout();
+  }
+
+  document.querySelectorAll('.lr-btns .btn').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      var eta = btn.getAttribute('data-eta');
+      active[eta] = !active[eta];
+      btn.setAttribute('aria-pressed', active[eta] ? 'true' : 'false');
+      redrawAll();
+    });
+  });
+
+  document.getElementById('btn-reset').addEventListener('click', function(){
+    ETAS.forEach(function(e){ active[e] = false; });
+    document.querySelectorAll('.lr-btns .btn').forEach(function(btn){
+      btn.setAttribute('aria-pressed', 'false');
+    });
+    redrawAll();
+  });
+
+  Deck.init({ index: 8, total: 20 });
+})();
+</script>
+</body>
+</html>

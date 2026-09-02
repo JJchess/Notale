@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <title>样本梯度与批量平均</title>
+  <style>
+    .page22{flex:1;min-height:0;display:grid;grid-template-rows:auto minmax(0,1fr) auto;gap:18px}
+    .head{display:flex;align-items:end;justify-content:space-between;gap:36px;padding-bottom:14px;border-bottom:2px solid var(--rule-strong)}
+    .head-copy{min-width:0}
+    .head .lead{max-width:44em;color:var(--muted);font-size:var(--fs-sec);margin-top:9px}
+    .formula{flex:0 0 auto;display:flex;align-items:baseline;gap:12px;padding:9px 0 7px;color:var(--model);font-family:var(--font-mono);font-size:27px;font-weight:600;white-space:nowrap}
+    .formula small{color:var(--muted);font-family:var(--font-sans);font-size:var(--fs-label);font-weight:600}
+    .board{min-height:0;display:grid;grid-template-columns:minmax(0,.92fr) 70px minmax(0,1.08fr);align-items:stretch}
+    .scene{min-width:0;min-height:0;display:grid;grid-template-rows:auto minmax(0,1fr);gap:12px}
+    .scene-head{display:flex;align-items:baseline;justify-content:space-between;gap:20px}
+    .scene-head p{color:var(--muted);font-size:var(--fs-label)}
+    .scene h2 .mono{font-family:var(--font-mono);color:var(--gradient)}
+    .scene.batch h2 .mono{color:var(--model)}
+    .diagram{position:relative;min-height:0;border-top:4px solid var(--text);border-bottom:2px solid var(--rule-strong);background:rgba(247,250,250,.48)}
+    .diagram svg{display:block;width:100%;height:100%}
+    .bridge{position:relative;display:flex;align-items:center;justify-content:center;color:var(--rule-strong)}
+    .bridge::before{content:"";width:48px;height:2px;background:currentColor}
+    .bridge::after{content:"";width:11px;height:11px;border-top:2px solid currentColor;border-right:2px solid currentColor;transform:rotate(45deg);margin-left:-11px}
+    .bridge span{position:absolute;top:48%;transform:translateY(-46px);width:70px;text-align:center;color:var(--muted);font-size:var(--fs-label);font-weight:700;line-height:1.35}
+    .caption{position:absolute;left:20px;bottom:16px;right:20px;display:flex;justify-content:space-between;gap:18px;color:var(--muted);font-size:var(--fs-label);pointer-events:none}
+    .caption strong{color:var(--text)}
+    .evidence{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);border-top:4px solid var(--text);border-bottom:2px solid var(--rule-strong)}
+    .ev{min-width:0;padding:14px 20px 13px;display:grid;grid-template-columns:auto 1fr;gap:16px;align-items:center}
+    .ev+ .ev{border-left:2px solid var(--rule)}
+    .mark{font-family:var(--font-mono);font-size:24px;font-weight:600;color:var(--gradient);white-space:nowrap}
+    .ev:last-child .mark{color:var(--model)}
+    .ev h3{margin-bottom:3px}
+    .ev p{color:var(--muted);font-size:var(--fs-label);line-height:1.4}
+    .axis{stroke:var(--rule-strong);stroke-width:2}
+    .gridline{stroke:var(--rule);stroke-width:1;opacity:.55}
+    .sample{stroke:var(--gradient);stroke-width:5;fill:none;stroke-linecap:round}
+    .sample-faint{stroke:var(--gradient);stroke-width:4;fill:none;stroke-linecap:round;opacity:.54}
+    .mean{stroke:var(--model);stroke-width:7;fill:none;stroke-linecap:round}
+    .mean-alt{stroke:var(--model);stroke-width:5;fill:none;stroke-linecap:round;stroke-dasharray:10 8;opacity:.72}
+    .origin{fill:var(--text)}
+    .target-zone{fill:var(--model-soft);stroke:var(--model);stroke-width:2}
+    .svg-label{font-family:var(--font-sans);font-size:16px;font-weight:700;fill:var(--text)}
+    .svg-note{font-family:var(--font-sans);font-size:14px;font-weight:600;fill:var(--muted)}
+    .svg-mono{font-family:var(--font-mono);font-size:17px;font-weight:600;fill:var(--model)}
+  </style>
+</head>
+<body data-page="22" data-total="24">
+  <div id="stage">
+    <main class="page22">
+      <header class="head">
+        <div class="head-copy min0">
+          <span class="kicker">从样本到批量</span>
+          <h1>平均梯度压低单个样本的偏差，但不会消除批次差异</h1>
+          <p class="lead">每个样本都给参数一个更新方向；训练时先把同批方向求平均，再沿平均方向更新。</p>
+        </div>
+        <div class="formula" aria-label="批量梯度等于批内样本梯度之和除以批量大小">
+          <span>ḡ = Σgᵢ / B</span><small>批内平均</small>
+        </div>
+      </header>
+
+      <section class="board" aria-label="单样本梯度与批量平均梯度的对照图">
+        <article class="scene min0">
+          <div class="scene-head">
+            <h2>单个样本：<span class="mono">gᵢ</span></h2>
+            <p>方向随样本而变</p>
+          </div>
+          <div class="diagram">
+            <svg viewBox="0 0 650 440" role="img" aria-labelledby="singleTitle singleDesc">
+              <title id="singleTitle">同一点出发的多个样本梯度</title>
+              <desc id="singleDesc">多个橙色箭头从同一参数位置伸向不同方向，表示不同样本给出的梯度可能差异很大。</desc>
+              <defs>
+                <marker id="arrowG" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L10,5 L0,10 z" fill="var(--gradient)"/></marker>
+              </defs>
+              <line class="gridline" x1="70" y1="110" x2="600" y2="110"/><line class="gridline" x1="70" y1="220" x2="600" y2="220"/><line class="gridline" x1="70" y1="330" x2="600" y2="330"/>
+              <line class="gridline" x1="180" y1="55" x2="180" y2="380"/><line class="gridline" x1="325" y1="55" x2="325" y2="380"/><line class="gridline" x1="470" y1="55" x2="470" y2="380"/>
+              <line class="axis" x1="55" y1="330" x2="610" y2="330"/><line class="axis" x1="180" y1="390" x2="180" y2="45"/>
+              <path class="sample-faint" d="M180 330 L292 88" marker-end="url(#arrowG)"/>
+              <path class="sample" d="M180 330 L480 135" marker-end="url(#arrowG)"/>
+              <path class="sample-faint" d="M180 330 L552 294" marker-end="url(#arrowG)"/>
+              <path class="sample-faint" d="M180 330 L384 355" marker-end="url(#arrowG)"/>
+              <circle class="origin" cx="180" cy="330" r="7"/>
+              <text class="svg-label" x="196" y="359">同一参数位置</text>
+              <text class="svg-note" x="302" y="73">样本不同，箭头会散开</text>
+            </svg>
+            <div class="caption"><span><strong>每支箭头</strong>来自一个样本</span><span>容易受该样本特征影响</span></div>
+          </div>
+        </article>
+
+        <div class="bridge" aria-hidden="true"><span>同批求平均</span></div>
+
+        <article class="scene batch min0">
+          <div class="scene-head">
+            <h2>一批样本：<span class="mono">ḡ</span></h2>
+            <p>平均后更集中，换批仍会移动</p>
+          </div>
+          <div class="diagram">
+            <svg viewBox="0 0 760 440" role="img" aria-labelledby="batchTitle batchDesc">
+              <title id="batchTitle">样本梯度平均成批量梯度</title>
+              <desc id="batchDesc">淡橙色样本箭头围绕蓝色平均箭头分布；另一批的虚线蓝箭头略有偏移，表示批量训练仍有波动。</desc>
+              <defs>
+                <marker id="arrowGF" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L10,5 L0,10 z" fill="var(--gradient)"/></marker>
+                <marker id="arrowM" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L10,5 L0,10 z" fill="var(--model)"/></marker>
+              </defs>
+              <line class="gridline" x1="75" y1="110" x2="700" y2="110"/><line class="gridline" x1="75" y1="220" x2="700" y2="220"/><line class="gridline" x1="75" y1="330" x2="700" y2="330"/>
+              <line class="gridline" x1="190" y1="55" x2="190" y2="380"/><line class="gridline" x1="350" y1="55" x2="350" y2="380"/><line class="gridline" x1="510" y1="55" x2="510" y2="380"/>
+              <line class="axis" x1="55" y1="330" x2="715" y2="330"/><line class="axis" x1="190" y1="390" x2="190" y2="45"/>
+              <ellipse class="target-zone" cx="503" cy="173" rx="110" ry="63" opacity=".58"/>
+              <path class="sample-faint" d="M190 330 L438 105" marker-end="url(#arrowGF)"/>
+              <path class="sample-faint" d="M190 330 L588 183" marker-end="url(#arrowGF)"/>
+              <path class="sample-faint" d="M190 330 L526 248" marker-end="url(#arrowGF)"/>
+              <path class="sample-faint" d="M190 330 L463 211" marker-end="url(#arrowGF)"/>
+              <path class="mean" d="M190 330 L512 171" marker-end="url(#arrowM)"/>
+              <path class="mean-alt" d="M190 330 L548 209" marker-end="url(#arrowM)"/>
+              <circle class="origin" cx="190" cy="330" r="7"/>
+              <text class="svg-mono" x="522" y="151">本批 ḡ</text>
+              <text class="svg-note" x="554" y="231">换一批后的 ḡ</text>
+              <text class="svg-label" x="421" y="77">平均方向落在一片集中区域</text>
+            </svg>
+            <div class="caption"><span><strong>实线</strong>是本批平均</span><span><strong>虚线</strong>提示换批后的偏移</span></div>
+          </div>
+        </article>
+      </section>
+
+      <section class="evidence" aria-label="结论">
+        <div class="ev">
+          <div class="mark">gᵢ</div>
+          <div><h3>单样本梯度更容易偏</h3><p>一个样本的特殊之处会直接改变本次更新方向。</p></div>
+        </div>
+        <div class="ev">
+          <div class="mark">ḡ</div>
+          <div><h3>批量平均更稳定，仍有波动</h3><p>相反偏差会互相抵消；不同批次的样本组成不同，平均方向仍会变化。</p></div>
+        </div>
+      </section>
+    </main>
+  </div>
+  <script src="assets/base.js"></script>
+  <script>Deck.init({index:22,total:24});</script>
+</body>
+</html>

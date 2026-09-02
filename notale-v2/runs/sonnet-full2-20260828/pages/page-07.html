@@ -1,0 +1,369 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  .head { flex: 0 0 auto; margin-bottom: 16px; max-width: 1200px; }
+  .body-split { flex: 1; display: flex; gap: 40px; min-height: 0; }
+  .body-split > .col-a { flex: 0 0 34%; display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+  .body-split > .col-b { flex: 1; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+
+  .readout-row { display: flex; align-items: baseline; gap: 20px; flex-wrap: wrap; }
+  .readout { display: flex; flex-direction: column; gap: 2px; }
+  .readout .rk { font-family: var(--font-mono); font-size: var(--fs-label); color: var(--muted); }
+
+  .scale-legend { display: flex; align-items: center; gap: 10px; }
+  .scale-bar { width: 120px; height: 12px; border-radius: 3px; border: var(--hair) solid var(--rule);
+    background: linear-gradient(90deg, #DCE6F2 0%, #14335f 100%); }
+  .scale-legend .sl-lab { font-size: var(--fs-label); color: var(--muted); font-family: var(--font-mono); }
+
+  .target-sw { width: 12px; height: 12px; border: var(--wire) solid var(--rule-strong); display: inline-block; transform: rotate(45deg); }
+
+  #contourCanvas { cursor: crosshair; }
+  #contourCanvas:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+
+  .status-line { font-size: var(--fs-sec); color: var(--muted); min-height: 22px; }
+  .status-line.done { color: var(--attention); font-weight: 600; }
+</style>
+</head>
+<body data-page="07" data-total="20">
+<div id="stage">
+
+  <div class="head">
+    <span class="kicker">梯度下降 · 空间直觉</span>
+    <h1>损失是一片地形</h1>
+    <p class="lead">把损失函数画成地形图，坡度指向哪，走的方向就反过来。</p>
+  </div>
+
+  <div class="body-split">
+    <div class="col-a">
+      <p class="small">
+        这张图画的是一个示意损失函数 L(w₁, w₂) = (w₁−3)² + (w₂+1)²，颜色越深代表损失越高，
+        最低点在 (3, −1)。点击地形图选一个起点，按下面的下山，一个点会沿着当前所在位置坡度
+        最陡下降的方向，一步一步走向最低点。
+      </p>
+
+      <div class="panel">
+        <div class="readout-row">
+          <div class="readout">
+            <span class="rk">w₁</span>
+            <span class="big sm num" id="rW1">−2.00</span>
+          </div>
+          <div class="readout">
+            <span class="rk">w₂</span>
+            <span class="big sm num" id="rW2">2.00</span>
+          </div>
+          <div class="readout">
+            <span class="rk">损失 L</span>
+            <span class="big sm att num" id="rLoss">34.00</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="legend" style="flex-direction:column; gap:10px; align-items:flex-start;">
+        <div class="scale-legend">
+          <span class="sl-lab">低</span>
+          <span class="scale-bar"></span>
+          <span class="sl-lab">高（损失）</span>
+        </div>
+        <div class="legend">
+          <span class="li"><span class="sw dot"></span>当前位置</span>
+          <span class="li"><span class="sw"></span>下降轨迹</span>
+          <span class="li"><span class="target-sw"></span>最低点 (3, −1)</span>
+        </div>
+      </div>
+
+      <div class="btns">
+        <button class="btn primary" id="btnGo">下山</button>
+        <button class="btn" id="btnReset">重置</button>
+      </div>
+      <p class="hint" id="statusLine">点击右侧地形图任意一点作为起点，或让它获得焦点后用方向键移动。</p>
+    </div>
+
+    <div class="col-b">
+      <div class="cvbox min0" style="flex:1; background:var(--paper); border:var(--hair) solid var(--rule); border-radius:var(--radius-lg);">
+        <canvas id="contourCanvas" class="cv-fill" tabindex="0"
+          aria-label="损失地形图，横轴 w1 纵轴 w2，可点击选择起点，聚焦后用方向键移动起点，方框颜色越深损失越高"></canvas>
+      </div>
+    </div>
+  </div>
+
+</div>
+<script src="assets/base.js"></script>
+<script>
+(function(){
+  // ---- domain ----
+  var W1MIN=-6, W1MAX=10, W2MIN=-9, W2MAX=7;
+  var CX=3, CY=-1; // minimum
+  var DEFAULT_START = { w1:-2, w2:2 };
+
+  function clamp(v,a,b){ return Math.max(a, Math.min(b,v)); }
+  function loss(w1,w2){ return (w1-CX)*(w1-CX) + (w2-CY)*(w2-CY); }
+
+  function worldToPx(w1,w2,W,H){
+    var x = (w1 - W1MIN) / (W1MAX - W1MIN) * W;
+    var y = H - (w2 - W2MIN) / (W2MAX - W2MIN) * H;
+    return {x:x, y:y};
+  }
+  function pxToWorld(x,y,W,H){
+    var w1 = W1MIN + (x / W) * (W1MAX - W1MIN);
+    var w2 = W2MIN + (1 - y / H) * (W2MAX - W2MIN);
+    return { w1: clamp(w1, W1MIN, W1MAX), w2: clamp(w2, W2MIN, W2MAX) };
+  }
+
+  function lerpColor(c1, c2, t){
+    var r = Math.round(c1[0] + (c2[0]-c1[0])*t);
+    var g = Math.round(c1[1] + (c2[1]-c1[1])*t);
+    var b = Math.round(c1[2] + (c2[2]-c1[2])*t);
+    return 'rgb('+r+','+g+','+b+')';
+  }
+
+  var LIGHT = [220,230,242]; // --forward-soft
+  var DARK  = [20,51,95];    // darker navy
+
+  var canvas = document.getElementById('contourCanvas');
+
+  var state = {
+    start: { w1: DEFAULT_START.w1, w2: DEFAULT_START.w2 },
+    path: [ { w1: DEFAULT_START.w1, w2: DEFAULT_START.w2 } ],
+    idx: 0,
+    running: false,
+    stopLoop: null
+  };
+
+  function computePath(start){
+    var w1 = start.w1, w2 = start.w2;
+    var path = [ { w1:w1, w2:w2 } ];
+    var alpha = 0.12;
+    for (var i=0;i<80;i++){
+      var g1 = 2*(w1-CX), g2 = 2*(w2-CY);
+      var mag = Math.hypot(g1,g2);
+      if (mag < 0.03) break;
+      w1 = w1 - alpha*g1;
+      w2 = w2 - alpha*g2;
+      path.push({ w1:w1, w2:w2 });
+    }
+    return path;
+  }
+
+  var rW1 = document.getElementById('rW1');
+  var rW2 = document.getElementById('rW2');
+  var rLoss = document.getElementById('rLoss');
+  var statusLine = document.getElementById('statusLine');
+  var btnGo = document.getElementById('btnGo');
+  var btnReset = document.getElementById('btnReset');
+
+  function updateReadouts(){
+    var p = state.path[state.idx];
+    rW1.textContent = p.w1.toFixed(2);
+    rW2.textContent = p.w2.toFixed(2);
+    rLoss.textContent = loss(p.w1,p.w2).toFixed(2);
+  }
+
+  var lastW = 800, lastH = 600;
+
+  function drawScene(ctx, W, H){
+    lastW = W; lastH = H;
+    ctx.clearRect(0,0,W,H);
+    ctx.fillStyle = '#F8FAFB';
+    ctx.fillRect(0,0,W,H);
+
+    // concentric square contour bands
+    var maxK = 9.5;
+    var step = 0.5;
+    for (var k = maxK; k > 0; k -= step){
+      var t = k / maxK;
+      var color = lerpColor(LIGHT, DARK, t);
+      var p1 = worldToPx(CX-k, CY+k, W, H);
+      var p2 = worldToPx(CX+k, CY-k, W, H);
+      ctx.fillStyle = color;
+      ctx.fillRect(p1.x, p1.y, p2.x-p1.x, p2.y-p1.y);
+      ctx.strokeStyle = 'rgba(195,203,211,0.35)';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(p1.x, p1.y, p2.x-p1.x, p2.y-p1.y);
+    }
+
+    // grid + axis labels
+    ctx.font = '13px "IBM Plex Mono", monospace';
+    ctx.fillStyle = '#5B6674';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    var xt = [-6,-2,2,6,10];
+    for (var i=0;i<xt.length;i++){
+      var px = worldToPx(xt[i], W2MIN, W, H);
+      ctx.fillText(String(xt[i]), px.x, H-18);
+    }
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    var yt = [-9,-5,-1,3,7];
+    for (var j=0;j<yt.length;j++){
+      var py = worldToPx(W1MIN, yt[j], W, H);
+      ctx.fillText(String(yt[j]), py.x+4, py.y);
+    }
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'bottom';
+    ctx.fillStyle = '#1B2733';
+    ctx.font = '600 14px "Space Grotesk", sans-serif';
+    ctx.fillText('w\u2081 \u2192', W-8, H-4);
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    ctx.fillText('\u2191 w\u2082', 6, 4);
+
+    // target marker
+    var tp = worldToPx(CX, CY, W, H);
+    ctx.save();
+    ctx.translate(tp.x, tp.y);
+    ctx.rotate(Math.PI/4);
+    ctx.strokeStyle = '#9AA6B2';
+    ctx.lineWidth = 2.5;
+    ctx.strokeRect(-7,-7,14,14);
+    ctx.restore();
+
+    // trajectory
+    var pts = state.path.slice(0, state.idx+1);
+    if (pts.length > 1){
+      ctx.strokeStyle = '#2457A6';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      for (var m=0;m<pts.length;m++){
+        var pp = worldToPx(pts[m].w1, pts[m].w2, W, H);
+        if (m===0) ctx.moveTo(pp.x,pp.y); else ctx.lineTo(pp.x,pp.y);
+      }
+      ctx.stroke();
+    }
+    for (var n=0;n<pts.length-1;n++){
+      var dp = worldToPx(pts[n].w1, pts[n].w2, W, H);
+      ctx.beginPath();
+      ctx.arc(dp.x, dp.y, 3.5, 0, Math.PI*2);
+      ctx.fillStyle = 'rgba(36,87,166,0.55)';
+      ctx.fill();
+    }
+
+    // current marker
+    var cur = state.path[state.idx];
+    var cp = worldToPx(cur.w1, cur.w2, W, H);
+    ctx.beginPath();
+    ctx.arc(cp.x, cp.y, 7, 0, Math.PI*2);
+    ctx.fillStyle = '#1B8A82';
+    ctx.fill();
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = '#F8FAFB';
+    ctx.stroke();
+  }
+
+  var fitHandle = Deck.autofit(canvas, drawScene);
+
+  function redraw(){
+    if (fitHandle && fitHandle.draw) { fitHandle.draw(); }
+    else { drawScene(canvas.getContext('2d'), lastW, lastH); }
+    updateReadouts();
+  }
+  // fallback: force one redraw via resize dispatch semantics not needed; call directly
+  drawScene(canvas.getContext('2d'), canvas.clientWidth||800, canvas.clientHeight||600);
+  updateReadouts();
+
+  function stopAnimation(){
+    if (state.stopLoop) { state.stopLoop(); state.stopLoop = null; }
+    state.running = false;
+    btnGo.disabled = false;
+    btnReset.disabled = false;
+  }
+
+  function setStart(w1, w2){
+    if (state.running) return;
+    state.start = { w1: w1, w2: w2 };
+    state.path = [ { w1:w1, w2:w2 } ];
+    state.idx = 0;
+    statusLine.textContent = '起点已选在 (' + w1.toFixed(2) + ', ' + w2.toFixed(2) + ')，按下山看它怎么走。';
+    statusLine.classList.remove('done');
+    drawScene(canvas.getContext('2d'), canvas.clientWidth, canvas.clientHeight);
+    updateReadouts();
+  }
+
+  canvas.addEventListener('pointerdown', function(e){
+    if (state.running) return;
+    var pt = Deck.pt(canvas, e);
+    var w = pxToWorld(pt.x, pt.y, canvas.clientWidth, canvas.clientHeight);
+    setStart(w.w1, w.w2);
+  });
+
+  canvas.addEventListener('keydown', function(e){
+    if (state.running) return;
+    var cur = state.path[state.idx];
+    var d = e.shiftKey ? 1.2 : 0.4;
+    var w1 = cur.w1, w2 = cur.w2;
+    var handled = true;
+    if (e.key === 'ArrowLeft') w1 -= d;
+    else if (e.key === 'ArrowRight') w1 += d;
+    else if (e.key === 'ArrowUp') w2 += d;
+    else if (e.key === 'ArrowDown') w2 -= d;
+    else if (e.key === 'Home') { w1 = DEFAULT_START.w1; w2 = DEFAULT_START.w2; }
+    else handled = false;
+    if (handled){
+      e.preventDefault();
+      w1 = clamp(w1, W1MIN, W1MAX);
+      w2 = clamp(w2, W2MIN, W2MAX);
+      setStart(w1, w2);
+    }
+  });
+
+  btnGo.addEventListener('click', function(){
+    if (state.running) return;
+    var full = computePath(state.start);
+    state.path = full;
+    state.idx = 0;
+    state.running = true;
+    btnGo.disabled = true;
+    statusLine.textContent = '正在沿坡度反方向下降……';
+    statusLine.classList.remove('done');
+
+    var stepInterval = 90; // ms per step
+    var elapsed = 0;
+
+    if (Deck.reduced()){
+      state.idx = full.length - 1;
+      drawScene(canvas.getContext('2d'), canvas.clientWidth, canvas.clientHeight);
+      updateReadouts();
+      finishRun();
+      return;
+    }
+
+    var stop = Deck.loop(function(t, dt){
+      elapsed += dt * 1000;
+      var targetIdx = Math.min(full.length - 1, Math.floor(elapsed / stepInterval));
+      if (targetIdx !== state.idx){
+        state.idx = targetIdx;
+        drawScene(canvas.getContext('2d'), canvas.clientWidth, canvas.clientHeight);
+        updateReadouts();
+      }
+      if (state.idx >= full.length - 1){
+        stop();
+        state.stopLoop = null;
+        finishRun();
+      }
+    });
+    state.stopLoop = stop;
+  });
+
+  function finishRun(){
+    state.running = false;
+    btnGo.disabled = false;
+    var last = state.path[state.path.length-1];
+    statusLine.textContent = '停在 (' + last.w1.toFixed(2) + ', ' + last.w2.toFixed(2) + ') 附近，损失 ≈ ' + loss(last.w1,last.w2).toFixed(3) + '。';
+    statusLine.classList.add('done');
+  }
+
+  btnReset.addEventListener('click', function(){
+    stopAnimation();
+    setStart(DEFAULT_START.w1, DEFAULT_START.w2);
+    statusLine.textContent = '已清空轨迹，点击地形图或用方向键重新选一个起点。';
+    statusLine.classList.remove('done');
+  });
+
+  Deck.init({ index: 7, total: 20 });
+})();
+</script>
+</body>
+</html>

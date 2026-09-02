@@ -1,0 +1,309 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AdaBoost｜集成的力量</title>
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+#stage{
+  position:relative;
+  overflow:hidden;
+  background:var(--bg);
+}
+.field{
+  position:absolute;
+  inset:0;
+  z-index:1;
+}
+.field canvas{ pointer-events:none; }
+
+.cover-copy{
+  position:absolute;
+  left:56px;
+  top:130px;
+  z-index:5;
+  width:640px;
+  pointer-events:none;
+}
+.kicker{
+  color:var(--weak);
+  font-family:var(--font-mono);
+  font-size:var(--fs-label);
+  letter-spacing:.12em;
+  font-weight:600;
+}
+h1{
+  margin:18px 0 0;
+  font-family:var(--font-sans);
+  font-weight:700;
+  font-size:78px;
+  line-height:1.06;
+  letter-spacing:-.01em;
+  color:var(--text);
+}
+h1 .accent{ color:var(--ensemble); }
+.lead{
+  margin-top:26px;
+  max-width:560px;
+  color:var(--muted);
+  font-size:var(--fs-lead);
+  line-height:1.55;
+}
+.lead strong{
+  color:var(--text);
+  font-weight:600;
+}
+
+.legend-box{
+  position:absolute;
+  left:56px;
+  bottom:44px;
+  z-index:5;
+  display:flex;
+  gap:28px;
+  align-items:center;
+}
+.legend-item{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  font-family:var(--font-mono);
+  font-size:var(--fs-label);
+  color:var(--muted);
+}
+.legend-swatch{
+  width:22px;
+  height:2px;
+  border-radius:2px;
+}
+.legend-swatch.weak{ background:var(--weak); opacity:.65; }
+.legend-swatch.ensemble{ background:var(--ensemble); height:3px; }
+</style>
+</head>
+<body data-page="01" data-total="26">
+<div id="stage">
+  <figure class="field" role="img" aria-label="多条围绕真实分界线上下波动的弱预测曲线相互抵消误差，叠加平均后收敛出一条稳定贴合真实边界的集成曲线。">
+    <canvas id="weak-canvas" class="cv-fill" aria-hidden="true"></canvas>
+    <canvas id="ensemble-canvas" class="cv-fill" aria-hidden="true"></canvas>
+  </figure>
+
+  <div class="cover-copy">
+    <p class="kicker">第一章 · 为什么要组合</p>
+    <h1>单个学习器太弱<br>组合起来<span class="accent">刚好够用</span></h1>
+    <p class="lead">每一条<strong>弱学习器</strong>的判断都在真实边界两侧摆动、各自都不可靠；把足够多条这样的判断按权重叠加平均，摆动相互抵消，剩下的就是一条贴近真实边界的<strong>集成判断</strong>。</p>
+  </div>
+
+  <div class="legend-box">
+    <span class="legend-item"><span class="legend-swatch weak"></span>单个弱学习器</span>
+    <span class="legend-item"><span class="legend-swatch ensemble"></span>集成后的判断</span>
+  </div>
+</div>
+<script src="assets/base.js"></script>
+<script>
+(function(){
+  'use strict';
+
+  var CONFIG = Object.freeze({
+    seed: 7331,
+    weakCount: 9,
+    samples: 160,
+    noiseFreq: 2.6,
+    representativeTime: 5200
+  });
+  var STILL = CONFIG.representativeTime;
+  var TAU = Math.PI * 2;
+
+  var titleZone = { x: 40, y: 96, w: 660, h: 430 };
+
+  function rngFrom(seed){
+    var state = (seed >>> 0) || 1;
+    return function(){
+      state += 0x6D2B79F5;
+      var t = state;
+      t = Math.imul(t ^ (t >>> 15), t | 1);
+      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+
+  // 真实边界:一条平滑曲线,只作为生成依据,不直接绘制
+  function trueBoundary(x){
+    var u = x / 1600;
+    return 470 + Math.sin(u * Math.PI * 1.5 + 0.6) * 150 + Math.sin(u * Math.PI * 4.1) * 34;
+  }
+
+  function insideTitle(x, y){
+    return x > titleZone.x && x < titleZone.x + titleZone.w &&
+           y > titleZone.y && y < titleZone.y + titleZone.h;
+  }
+
+  var weakCanvas = document.getElementById('weak-canvas');
+  var ensembleCanvas = document.getElementById('ensemble-canvas');
+  var stage = document.getElementById('stage');
+  var model = null;
+  var weakFit = null, ensembleFit = null;
+  var ensembleCtx = null;
+  var motionStop = null;
+  var media = window.matchMedia ? window.matchMedia('(prefers-reduced-motion: reduce)') : null;
+
+  function buildModel(){
+    var random = rngFrom(CONFIG.seed);
+    var xs = [];
+    for (var i = 0; i <= CONFIG.samples; i++) xs.push(1600 * i / CONFIG.samples);
+
+    var learners = [];
+    for (var k = 0; k < CONFIG.weakCount; k++){
+      var phase = random() * TAU;
+      var freq = CONFIG.noiseFreq * (0.6 + random() * 0.9);
+      var amp = 60 + random() * 90;
+      var bias = (random() - 0.5) * 70;
+      var jitterSeed = random() * 1000;
+      var ys = xs.map(function(x){
+        var u = x / 1600;
+        var wobble = Math.sin(u * TAU * freq + phase) * amp;
+        var drift = Math.sin(u * Math.PI * 2 + jitterSeed) * 14;
+        return trueBoundary(x) + bias + wobble + drift;
+      });
+      learners.push({ ys: ys, phase: phase, weight: 0.7 + random() * 0.6 });
+    }
+
+    var totalWeight = learners.reduce(function(sum, l){ return sum + l.weight; }, 0);
+    var ensembleYs = xs.map(function(_, idx){
+      var acc = 0;
+      for (var k = 0; k < learners.length; k++) acc += learners[k].ys[idx] * learners[k].weight;
+      return acc / totalWeight;
+    });
+
+    return { xs: xs, learners: learners, ensembleYs: ensembleYs };
+  }
+
+  function color(name, alpha){ return Deck.rgba(name, alpha); }
+
+  function drawBackground(ctx, w, h){
+    var grad = ctx.createLinearGradient(0, 0, 0, h);
+    grad.addColorStop(0, Deck.token('--bg'));
+    grad.addColorStop(1, Deck.token('--surface-strong'));
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, w, h);
+
+    // 静态坐标网格,弱化,仅作氛围参照
+    ctx.save();
+    ctx.strokeStyle = color('rule', 0.14);
+    ctx.lineWidth = 1;
+    for (var gx = 0; gx <= w; gx += 100){
+      ctx.beginPath(); ctx.moveTo(gx, 0); ctx.lineTo(gx, h); ctx.stroke();
+    }
+    for (var gy = 0; gy <= h; gy += 100){
+      ctx.beginPath(); ctx.moveTo(0, gy); ctx.lineTo(w, gy); ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  function drawWeakLearners(ctx){
+    for (var k = 0; k < model.learners.length; k++){
+      var learner = model.learners[k];
+      ctx.beginPath();
+      var started = false;
+      for (var i = 0; i < model.xs.length; i++){
+        var x = model.xs[i], y = learner.ys[i];
+        if (insideTitle(x, y)){ started = false; continue; }
+        if (!started){ ctx.moveTo(x, y); started = true; }
+        else ctx.lineTo(x, y);
+      }
+      ctx.strokeStyle = color('weak', 0.34 + (k % 3) * 0.05);
+      ctx.lineWidth = 1.6;
+      ctx.stroke();
+    }
+  }
+
+  function drawStatic(ctx, w, h){
+    if (!model) return;
+    ctx.clearRect(0, 0, w, h);
+    drawBackground(ctx, w, h);
+    drawWeakLearners(ctx);
+  }
+
+  // 集成曲线随时间从对齐弱学习器逐步"收敛显现",随后保持稳定
+  function ensembleReveal(t){
+    var span = 2600;
+    return Deck.clamp(t / span, 0, 1);
+  }
+
+  function drawAmbient(time){
+    if (!ensembleCtx || !model) return;
+    var ctx = ensembleCtx, w = 1600, h = 900;
+    ctx.clearRect(0, 0, w, h);
+
+    var reveal = ensembleReveal(time);
+    var xs = model.xs, ys = model.ensembleYs;
+    var n = Math.max(2, Math.floor(xs.length * reveal));
+
+    ctx.save();
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+
+    // 外发光层
+    ctx.beginPath();
+    var started = false;
+    for (var i = 0; i < n; i++){
+      var x = xs[i], y = ys[i];
+      if (insideTitle(x, y)){ started = false; continue; }
+      if (!started){ ctx.moveTo(x, y); started = true; }
+      else ctx.lineTo(x, y);
+    }
+    ctx.strokeStyle = color('ensemble', 0.18);
+    ctx.lineWidth = 9;
+    ctx.stroke();
+
+    ctx.beginPath();
+    started = false;
+    for (i = 0; i < n; i++){
+      x = xs[i]; y = ys[i];
+      if (insideTitle(x, y)){ started = false; continue; }
+      if (!started){ ctx.moveTo(x, y); started = true; }
+      else ctx.lineTo(x, y);
+    }
+    ctx.strokeStyle = color('ensemble', 0.94);
+    ctx.lineWidth = 3.4;
+    ctx.stroke();
+
+    // 曲线前端的位置点,标示当前汇聚进度
+    if (n < xs.length && n > 0){
+      var hx = xs[n - 1], hy = ys[n - 1];
+      if (!insideTitle(hx, hy)){
+        ctx.fillStyle = color('ensemble', 0.94);
+        ctx.beginPath();
+        ctx.arc(hx, hy, 4.4, 0, TAU);
+        ctx.fill();
+      }
+    }
+    ctx.restore();
+  }
+
+  function startMotion(){
+    if (motionStop){ motionStop(); motionStop = null; }
+    motionStop = Deck.loop(function(t){
+      drawAmbient(t % (CONFIG.representativeTime + 1400));
+    }, { still: STILL });
+  }
+
+  Deck.init({ index: 1, total: 26, keys: false });
+  model = buildModel();
+  weakFit = Deck.autofit(weakCanvas, drawStatic);
+  ensembleFit = Deck.autofit(ensembleCanvas, function(ctx){
+    ensembleCtx = ctx;
+    drawAmbient(Deck.reduced() ? STILL : 0);
+  });
+  startMotion();
+
+  window.addEventListener('pagehide', function(){
+    if (motionStop) motionStop();
+    if (weakFit) weakFit.stop();
+    if (ensembleFit) ensembleFit.stop();
+  }, { once: true });
+})();
+</script>
+</body>
+</html>

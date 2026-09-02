@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>分叉网络的梯度要沿路径相加</title>
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+#stage{background-image:none}
+.workbench{grid-template-columns:minmax(0,1.55fr) minmax(430px,.72fr);gap:20px 30px}
+.workbench>header{max-width:1260px}
+.lead{color:var(--muted)}
+.experiment{display:flex;flex-direction:column;gap:12px}
+.board{flex:1;min-height:0;background:var(--surface);border:2px solid var(--rule);border-radius:10px;box-shadow:0 7px 18px rgba(23,33,43,.08);padding:18px 20px 14px;display:flex;flex-direction:column}
+.board-top{display:flex;align-items:center;justify-content:space-between;gap:20px;min-height:40px}
+.board-top h2{font-size:var(--fs-h2)}
+.network{flex:1;min-height:0;width:100%;display:block}
+.network text{font-family:var(--font-sans);fill:var(--text)}
+.network .mono{font-family:var(--font-num);font-weight:600}
+.network .edge{fill:none;stroke:var(--model);stroke-width:4}
+.network .back{fill:none;stroke:var(--gradient);stroke-width:5;stroke-dasharray:10 8;opacity:0;transition:opacity .25s ease}
+.network .node{fill:var(--surface);stroke:var(--text);stroke-width:2.5}
+.network .sum{fill:var(--model-soft);stroke:var(--model);stroke-width:3}
+.network .target{fill:var(--observed-soft);stroke:var(--observed);stroke-width:3}
+.network .weight{fill:var(--surface);stroke:var(--model);stroke-width:2}
+.network .gradbox{fill:var(--gradient-soft);stroke:var(--gradient);stroke-width:2;opacity:0;transition:opacity .25s ease}
+.network .gradtext{fill:var(--gradient);opacity:0;transition:opacity .25s ease}
+.network .branch-value{fill:var(--muted);font-size:var(--fs-label)}
+.network .lab{font-size:var(--fs-sec);font-weight:600}
+.network .smalllab{font-size:var(--fs-label);fill:var(--muted)}
+.network .value{font-size:var(--fs-lead);font-weight:600}
+.board.revealed .back,.board.revealed .gradbox,.board.revealed .gradtext{opacity:1}
+.legend{padding-top:5px;border-top:1px solid var(--rule-soft)}
+.controls{display:flex;flex-direction:column;gap:14px}
+.controls.panel{padding:20px}
+.question{display:flex;flex-direction:column;gap:7px}
+.question .lead{color:var(--text);font-size:var(--fs-body);font-weight:650}
+.quiz{gap:9px}
+.opt{min-height:54px;padding:10px 12px}
+.opt b{font-family:var(--font-num);color:var(--model);min-width:66px}
+.result{border-top:1px solid var(--rule);padding-top:14px;display:grid;gap:10px;min-height:220px}
+.result-title{display:flex;justify-content:space-between;align-items:baseline;gap:12px}
+.result-title h2{font-size:var(--fs-h2)}
+.state{font-size:var(--fs-label);font-weight:700;color:var(--muted)}
+.state.good{color:var(--observed)}
+.state.adjust{color:var(--gradient)}
+.derivation{display:grid;gap:6px}
+.eq{font-family:var(--font-num);font-size:var(--fs-sec);line-height:1.4;white-space:nowrap}
+.eq strong{color:var(--gradient);font-size:var(--fs-body)}
+.paths{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.path{padding-top:8px;border-top:3px solid var(--gradient);min-width:0}
+.path .name{font-family:var(--font-num);font-weight:600;font-size:var(--fs-label)}
+.path .val{font-family:var(--font-num);font-weight:600;font-size:var(--fs-h2);color:var(--gradient);line-height:1.2}
+.path .why{font-size:var(--fs-label);color:var(--muted);line-height:1.35}
+.fb{min-height:62px;padding:10px 12px}
+.btns{justify-content:flex-end}
+.btn{min-height:42px}
+@media (prefers-reduced-motion:reduce){.network .back,.network .gradbox,.network .gradtext{transition:none}}
+</style>
+</head>
+<body data-page="20" data-total="25">
+<div id="stage">
+  <section class="workbench">
+    <header>
+      <div class="kicker">误差分配 · 分叉网络</div>
+      <h1>分叉处的梯度按路径相加，不按参数大小分摊</h1>
+      <p class="lead">先判断三个参数应收到多少误差信号，再查看每条反向路径的乘积。</p>
+    </header>
+
+    <div class="experiment min0">
+      <div class="board" id="board">
+        <div class="board-top">
+          <h2>同一中间量送入两条分支</h2>
+          <span class="tag">损失 L = ½(ŷ − y)²</span>
+        </div>
+        <svg class="network" viewBox="0 0 930 510" role="img" aria-labelledby="net-title net-desc">
+          <title id="net-title">带共享参数的分叉计算图</title>
+          <desc id="net-desc">输入一乘参数 w0 得到零点八，分别乘 v1 和 v2 后相加得到预测一点六，目标是一，反向梯度沿两条路径回传并在 w0 处相加。</desc>
+          <defs>
+            <marker id="forwardHead" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L0,6 L9,3 z" fill="#1F5FAE"/></marker>
+            <marker id="backHead" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L0,6 L9,3 z" fill="#C94F20"/></marker>
+          </defs>
+          <!-- forward graph -->
+          <path class="edge" marker-end="url(#forwardHead)" d="M105 252 H246"/>
+          <path class="edge" marker-end="url(#forwardHead)" d="M346 252 C430 252 428 136 520 136"/>
+          <path class="edge" marker-end="url(#forwardHead)" d="M346 252 C430 252 428 366 520 366"/>
+          <path class="edge" marker-end="url(#forwardHead)" d="M620 136 C710 136 700 222 756 242"/>
+          <path class="edge" marker-end="url(#forwardHead)" d="M620 366 C710 366 700 282 756 262"/>
+          <path d="M836 252 H896" stroke="var(--observed)" stroke-width="3" stroke-dasharray="6 6"/>
+
+          <circle class="node" cx="70" cy="252" r="35"/>
+          <text x="70" y="247" text-anchor="middle" class="lab">输入 x</text>
+          <text x="70" y="270" text-anchor="middle" class="mono value">1.0</text>
+
+          <rect class="node" x="246" y="212" width="100" height="80" rx="10"/>
+          <text x="296" y="242" text-anchor="middle" class="lab">共享 h</text>
+          <text x="296" y="271" text-anchor="middle" class="mono value">0.8</text>
+
+          <rect class="node" x="520" y="101" width="100" height="70" rx="10"/>
+          <text x="570" y="130" text-anchor="middle" class="lab">上支 z₁</text>
+          <text x="570" y="155" text-anchor="middle" class="mono value">1.2</text>
+          <rect class="node" x="520" y="331" width="100" height="70" rx="10"/>
+          <text x="570" y="360" text-anchor="middle" class="lab">下支 z₂</text>
+          <text x="570" y="385" text-anchor="middle" class="mono value">0.4</text>
+
+          <circle class="sum" cx="796" cy="252" r="42"/>
+          <text x="796" y="246" text-anchor="middle" class="lab">预测 ŷ</text>
+          <text x="796" y="273" text-anchor="middle" class="mono value">1.6</text>
+          <rect class="target" x="858" y="205" width="62" height="94" rx="10"/>
+          <text x="889" y="239" text-anchor="middle" class="lab">目标</text>
+          <text x="889" y="270" text-anchor="middle" class="mono value">1.0</text>
+
+          <!-- weight labels -->
+          <rect class="weight" x="128" y="216" width="92" height="38" rx="7"/>
+          <text x="174" y="241" text-anchor="middle" class="mono lab">w₀=0.8</text>
+          <rect class="weight" x="397" y="137" width="92" height="38" rx="7"/>
+          <text x="443" y="162" text-anchor="middle" class="mono lab">v₁=1.5</text>
+          <rect class="weight" x="397" y="329" width="92" height="38" rx="7"/>
+          <text x="443" y="354" text-anchor="middle" class="mono lab">v₂=0.5</text>
+          <text x="671" y="119" text-anchor="middle" class="branch-value">z₁ = h·v₁</text>
+          <text x="671" y="405" text-anchor="middle" class="branch-value">z₂ = h·v₂</text>
+
+          <!-- backward paths, revealed after choice -->
+          <path class="back" marker-end="url(#backHead)" d="M765 218 C706 186 688 161 626 151"/>
+          <path class="back" marker-end="url(#backHead)" d="M626 121 C507 57 420 156 338 220"/>
+          <path class="back" marker-end="url(#backHead)" d="M765 286 C706 318 688 343 626 353"/>
+          <path class="back" marker-end="url(#backHead)" d="M626 383 C507 447 420 348 338 284"/>
+          <path class="back" marker-end="url(#backHead)" d="M246 276 H112"/>
+
+          <rect class="gradbox" x="724" y="65" width="152" height="42" rx="7"/>
+          <text class="gradtext mono lab" x="800" y="92" text-anchor="middle">∂L/∂ŷ = 0.6</text>
+          <rect class="gradbox" x="363" y="53" width="160" height="42" rx="7"/>
+          <text class="gradtext mono lab" x="443" y="80" text-anchor="middle">路径因子 1.5</text>
+          <rect class="gradbox" x="363" y="415" width="160" height="42" rx="7"/>
+          <text class="gradtext mono lab" x="443" y="442" text-anchor="middle">路径因子 0.5</text>
+          <text class="gradtext mono lab" x="201" y="328" text-anchor="middle">0.6×1.5 + 0.6×0.5</text>
+        </svg>
+        <div class="legend" aria-label="图例">
+          <span class="li" style="color:var(--model)"><span class="sw line"></span>前向计算</span>
+          <span class="li" style="color:var(--gradient)"><span class="sw line"></span>误差反传</span>
+          <span class="li" style="color:var(--observed)"><span class="sw"></span>外部目标</span>
+        </div>
+      </div>
+    </div>
+
+    <aside class="controls panel min0" aria-label="梯度判断">
+      <div class="question">
+        <h2>先判断梯度大小</h2>
+        <p class="lead">哪组更接近 ∂L/∂w₀、∂L/∂v₁、∂L/∂v₂？</p>
+        <p class="small">当前 ŷ = 1.6，目标 y = 1.0。</p>
+      </div>
+      <div class="quiz" role="radiogroup" aria-label="选择梯度关系">
+        <button class="opt" type="button" role="radio" aria-checked="false" data-choice="paths"><b>A</b><span>w₀ 最大；v₁ 与 v₂ 相等</span></button>
+        <button class="opt" type="button" role="radio" aria-checked="false" data-choice="forward"><b>B</b><span>v₁ 最大；它的前向贡献最大</span></button>
+        <button class="opt" type="button" role="radio" aria-checked="false" data-choice="weights"><b>C</b><span>按 0.8∶1.5∶0.5 分摊</span></button>
+      </div>
+
+      <div class="result" aria-live="polite">
+        <div class="result-title">
+          <h2>路径求和</h2>
+          <span class="state" id="state">选择后显示</span>
+        </div>
+        <div class="derivation">
+          <div class="eq">δ = ∂L/∂ŷ = ŷ − y = <strong>0.6</strong></div>
+          <div class="eq">∂L/∂w₀ = δ·v₁ + δ·v₂ = <strong>1.20</strong></div>
+        </div>
+        <div class="paths" aria-label="三个参数的梯度">
+          <div class="path"><div class="name">w₀</div><div class="val">1.20</div><div class="why">两条路径相加</div></div>
+          <div class="path"><div class="name">v₁</div><div class="val">0.48</div><div class="why">0.6 × h</div></div>
+          <div class="path"><div class="name">v₂</div><div class="val">0.48</div><div class="why">0.6 × h</div></div>
+        </div>
+        <div class="fb" id="feedback">先选一组。正向贡献大，不一定表示该参数收到的梯度更大。</div>
+      </div>
+      <div class="btns"><button class="btn" id="reset" type="button" disabled>重置判断</button></div>
+    </aside>
+  </section>
+</div>
+<script src="assets/base.js"></script>
+<script>
+Deck.init({index:20,total:25});
+const board=document.getElementById('board');
+const state=document.getElementById('state');
+const feedback=document.getElementById('feedback');
+const reset=document.getElementById('reset');
+const options=[...document.querySelectorAll('.opt')];
+const messages={
+  paths:'判断正确。w₀ 位于分叉之前，接收两条路径的梯度之和；v₁、v₂ 的局部导数都等于同一个 h。',
+  forward:'前向贡献 1.2 较大，是因为 v₁ 较大；但 ∂L/∂v₁ 与 ∂L/∂v₂ 都是 δ·h，因此相等。',
+  weights:'梯度不按参数值比例分配。它等于上游误差乘局部导数；遇到分叉前的参数，还要把各路径结果相加。'
+};
+options.forEach(btn=>btn.addEventListener('click',()=>{
+  options.forEach(o=>o.setAttribute('aria-checked',String(o===btn)));
+  const correct=btn.dataset.choice==='paths';
+  state.textContent=correct?'判断吻合':'用路径校正';
+  state.className='state '+(correct?'good':'adjust');
+  feedback.textContent=messages[btn.dataset.choice];
+  feedback.dataset.state=correct?'correct':'incorrect';
+  board.classList.add('revealed');
+  reset.disabled=false;
+}));
+reset.addEventListener('click',()=>{
+  options.forEach(o=>o.setAttribute('aria-checked','false'));
+  state.textContent='选择后显示'; state.className='state';
+  feedback.textContent='先选一组。正向贡献大，不一定表示该参数收到的梯度更大。';
+  feedback.removeAttribute('data-state'); board.classList.remove('revealed'); reset.disabled=true;
+});
+</script>
+</body>
+</html>

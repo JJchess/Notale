@@ -114,15 +114,18 @@ class WorkflowRegistryTests(unittest.TestCase):
 
 
 class BundleTests(unittest.TestCase):
-    def test_generated_bundles_are_current_and_css_free(self):
+    def test_generated_bundles_are_current_and_keep_visual_css(self):
         rendered = sample_bundles.render_all()
         self.assertEqual(len(rendered), 43)
         for path, expected in rendered.items():
             with self.subTest(path=path):
                 self.assertEqual(path.read_text(encoding="utf-8"), expected)
-                self.assertNotRegex(expected, r"(?i)<style\b|```css")
                 self.assertIn("<sample ", expected)
                 self.assertIn("<file path=", expected)
+                if "build-code" in path.parts:
+                    self.assertNotRegex(expected, r"(?i)<style\b|```css")
+                else:
+                    self.assertRegex(expected, r"(?i)<style\b|```css")
 
     def test_main_only_and_combined_code_contracts(self):
         interaction = json.loads(
@@ -182,6 +185,34 @@ class ToolSurfaceTests(unittest.TestCase):
         self.assertIn("UNIQUE EOF", result)
         self.assertIn("EOF", result)
         self.assertIn("拒绝", denied)
+
+    def test_sample_use_frames_only_visual_full_main_bundles(self):
+        with tempfile.TemporaryDirectory() as td:
+            base = Path(td)
+            pages = base / "run/pages"
+            pages.mkdir(parents=True)
+
+            def read(workflow: str, name: str) -> str:
+                resource_root = base / "workflows" / workflow
+                sample = resource_root / "samples/bundles/general" / name
+                sample.parent.mkdir(parents=True, exist_ok=True)
+                sample.write_text("<sample>body</sample>", encoding="utf-8")
+                return tools.run(
+                    "Read",
+                    {"file_path": str(sample)},
+                    pages,
+                    resource_root,
+                    "page-01",
+                )
+
+            visual_full = read("build-page", "example.full.md")
+            visual_mini = read("build-page", "example.mini.md")
+            code_full = read("build-code", "example.full.md")
+
+        self.assertTrue(visual_full.startswith("<sample_use>"))
+        self.assertIn("independent page with comparable", visual_full)
+        self.assertNotIn("<sample_use>", visual_mini)
+        self.assertNotIn("<sample_use>", code_full)
 
     def test_raw_sample_sources_are_not_builder_readable(self):
         with tempfile.TemporaryDirectory() as td:

@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<script src="assets/lib/echarts.min.js"></script>
+<style>
+  .layout-split{ gap:36px; }
+  .col-a .panel{ display:flex; flex-direction:column; gap:14px; }
+  .readouts{ display:flex; flex-direction:column; gap:10px; }
+  .readout-row{ display:flex; align-items:baseline; justify-content:space-between; gap:10px; }
+  .readout-row .rname{ font-family:var(--font-mono); font-size:var(--fs-label); color:var(--muted); display:flex; align-items:center; gap:8px; }
+  .readout-row .sw{ width:14px; height:3px; border-radius:2px; display:inline-block; }
+  .sw.sigmoid{ background:var(--forward); }
+  .sw.tanh{ background:none; height:0; border-top:var(--wire) dashed var(--backward); width:16px; }
+  .sw.relu{ background:none; height:0; border-top:var(--wire) solid var(--attention); width:16px; }
+  .readout-row .rval{ font-family:var(--font-mono); font-size:22px; font-variant-numeric:tabular-nums; color:var(--text); }
+  #chart{ flex:1; min-height:0; }
+  .straight-note{ font-size: var(--fs-sec); color:var(--muted); line-height:1.5; }
+</style>
+</head>
+<body data-page="03" data-total="20">
+<div id="stage">
+  <div class="layout-split">
+    <div class="col-a min0">
+      <span class="kicker">激活函数 · 为什么必须弯一下</span>
+      <h1>没有非线性，网络只能画直线</h1>
+      <p class="lead">线性变换叠线性变换，结果还是线性变换。无论堆多少层全连接，只做加权求和，整张网络能表达的边界仍是一条（超）直线。激活函数把每层输出弯一下，才能拼出弯曲的决策边界。</p>
+      <p class="straight-note">拖动滑块，看同一个输入 <span class="num">z</span> 在三种激活函数下被送到哪里 —— sigmoid 把它压进 0 到 1 之间、tanh 压进 −1 到 1 之间，ReLU 只在 z&lt;0 时把它拍成 0，z&gt;0 时原样放行，唯独这一段仍是直的。</p>
+      <div class="panel">
+        <div class="ctl">
+          <div class="ctl-label"><span>输入 z</span><span id="zLabel" class="num">0.00</span></div>
+          <input type="range" class="dial" id="zSlider" min="-4" max="4" step="0.01" value="0" aria-label="输入 z 的取值，范围 −4 到 4">
+        </div>
+        <div class="readouts">
+          <div class="readout-row">
+            <span class="rname"><span class="sw sigmoid"></span>sigmoid(z)</span>
+            <span class="rval" id="valSigmoid">0.500</span>
+          </div>
+          <div class="readout-row">
+            <span class="rname"><span class="sw tanh"></span>tanh(z)</span>
+            <span class="rval" id="valTanh">0.000</span>
+          </div>
+          <div class="readout-row">
+            <span class="rname"><span class="sw relu"></span>ReLU(z)</span>
+            <span class="rval" id="valRelu">0.000</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="col-b min0">
+      <div id="chart" class="min0"></div>
+    </div>
+  </div>
+</div>
+<script src="assets/base.js"></script>
+<script>
+Deck.init({ index: 3, total: 20 });
+
+function sigmoid(z){ return 1/(1+Math.exp(-z)); }
+function tanhf(z){ return Math.tanh(z); }
+function relu(z){ return Math.max(0, z); }
+
+// 生成曲线数据
+var pts = [];
+for (var i = -400; i <= 400; i++){
+  var z = i/100;
+  pts.push(z);
+}
+var sigData = pts.map(function(z){ return [z, sigmoid(z)]; });
+var tanhData = pts.map(function(z){ return [z, tanhf(z)]; });
+var reluData = pts.map(function(z){ return [z, relu(z)]; });
+
+var chartEl = document.getElementById('chart');
+var chart = echarts.init(chartEl, null, { renderer: 'svg' });
+
+var forward = Deck.token('--forward');
+var backward = Deck.token('--backward');
+var attention = Deck.token('--attention');
+var muted = Deck.token('--muted');
+var rule = Deck.token('--rule');
+var text = Deck.token('--text');
+
+function markPointFor(color, symbolOffset){
+  return {
+    symbol: 'circle',
+    symbolSize: 12,
+    itemStyle: { color: color, borderColor: '#fff', borderWidth: 2 },
+    label: { show: false }
+  };
+}
+
+var option = {
+  animation: false,
+  grid: { left: 56, right: 24, top: 30, bottom: 46 },
+  textStyle: { fontSize: 16, color: text },
+  legend: {
+    top: 0, left: 'center',
+    textStyle: { fontSize: 14, color: muted },
+    data: ['sigmoid', 'tanh', 'ReLU']
+  },
+  xAxis: {
+    type: 'value', name: 'z', nameLocation: 'middle', nameGap: 28,
+    min: -4, max: 4,
+    nameTextStyle: { fontSize: 14, color: muted },
+    axisLabel: { fontSize: 12, color: muted },
+    axisLine: { lineStyle: { color: rule } },
+    splitLine: { lineStyle: { color: rule, opacity: .5 } }
+  },
+  yAxis: {
+    type: 'value', name: '输出', nameLocation: 'middle', nameGap: 40,
+    min: -2, max: 4,
+    nameTextStyle: { fontSize: 14, color: muted },
+    axisLabel: { fontSize: 12, color: muted },
+    axisLine: { lineStyle: { color: rule } },
+    splitLine: { lineStyle: { color: rule, opacity: .5 } }
+  },
+  series: [
+    {
+      name: 'sigmoid', type: 'line', data: sigData, showSymbol: false,
+      lineStyle: { color: forward, width: 3 },
+      itemStyle: { color: forward },
+      markPoint: { data: [{ coord: [0, sigmoid(0)] }], symbolSize: 12, itemStyle: { color: forward, borderColor: '#fff', borderWidth: 2 }, label: { show: false } }
+    },
+    {
+      name: 'tanh', type: 'line', data: tanhData, showSymbol: false,
+      lineStyle: { color: backward, width: 3, type: 'dashed' },
+      itemStyle: { color: backward },
+      markPoint: { data: [{ coord: [0, tanhf(0)] }], symbolSize: 12, itemStyle: { color: backward, borderColor: '#fff', borderWidth: 2 }, label: { show: false } }
+    },
+    {
+      name: 'ReLU', type: 'line', data: reluData, showSymbol: false,
+      lineStyle: { color: attention, width: 3 },
+      itemStyle: { color: attention },
+      markPoint: { data: [{ coord: [0, relu(0)] }], symbolSize: 12, itemStyle: { color: attention, borderColor: '#fff', borderWidth: 2 }, label: { show: false } }
+    }
+  ]
+};
+chart.setOption(option);
+
+var slider = document.getElementById('zSlider');
+var zLabel = document.getElementById('zLabel');
+var valSigmoid = document.getElementById('valSigmoid');
+var valTanh = document.getElementById('valTanh');
+var valRelu = document.getElementById('valRelu');
+
+function fmt(v){ return v.toFixed(3); }
+
+function update(z){
+  zLabel.textContent = z.toFixed(2);
+  var s = sigmoid(z), t = tanhf(z), r = relu(z);
+  valSigmoid.textContent = fmt(s);
+  valTanh.textContent = fmt(t);
+  valRelu.textContent = fmt(r);
+  chart.setOption({
+    series: [
+      { markPoint: { data: [{ coord: [z, s] }] } },
+      { markPoint: { data: [{ coord: [z, t] }] } },
+      { markPoint: { data: [{ coord: [z, r] }] } }
+    ]
+  });
+}
+
+slider.addEventListener('input', function(){
+  update(parseFloat(slider.value));
+});
+
+update(0);
+
+var ro = new ResizeObserver(function(){ chart.resize(); });
+ro.observe(chartEl);
+
+Deck.onResize(function(){ chart.resize(); });
+</script>
+</body>
+</html>

@@ -9,6 +9,24 @@
   <meta name="description" content="Climate Zones map title cover">
   <title>Climate Zones</title>
   <link rel="stylesheet" href="assets/base.css">
+  <style>
+    @font-face{font-family:GoMono;src:url("assets/fonts/go-mono.ttf") format("truetype");font-display:block}
+    :root{--bg:#f7f7f7;--text:#000;--font-sans:Arial,Helvetica,sans-serif;color-scheme:light}
+    #stage{isolation:isolate}
+    .native-map{position:absolute;inset:0;z-index:0;pointer-events:none}
+    .map-base{z-index:0}.map-zone{z-index:1;will-change:opacity}.map-detail{z-index:2}
+    .title{position:absolute;z-index:2;left:200px;top:223.125px;width:1200px;pointer-events:none}
+    .tape{position:absolute;z-index:3;left:600px;top:765.078px;width:400px;height:110px;text-align:center;font:400 24.5px/1.4 GoMono,"Courier New",monospace}
+    .tape p{width:380px;height:100%;margin-inline:auto}
+    .tape span{padding:15px 0 8px;box-shadow:15px 0 transparent,-15px 0 transparent;-webkit-box-decoration-break:clone;box-decoration-break:clone}
+    .tape .fg{position:absolute;left:50%;top:-5px;z-index:1;transform:translateX(-50%);color:#fff}
+    .tape .fg span{padding:11px 0 8px}
+    .tape .bg span{border-radius:5px;background:#000;box-shadow:15px 0 #000,-15px 0 #000}
+    .tape svg{display:inline-block;width:50px;height:35px;padding-top:10px}
+    .tape .bg svg{opacity:0}
+    .credit{position:absolute;z-index:3;left:103px;bottom:10px;color:rgba(48,48,48,.78);font:13px/1 Arial,Helvetica,sans-serif;letter-spacing:.005em}
+    @media(prefers-reduced-motion:reduce){.map-zone{will-change:auto}}
+  </style>
 </head>
 <body>
   <main id="stage" aria-label="Climate Zones">

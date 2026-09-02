@@ -1,0 +1,225 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>让一个神经元真的学 OR</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    #trainer { min-height:0; }
+    #trainer .head { display:flex; align-items:flex-end; justify-content:space-between; gap:32px; }
+    #trainer .head-copy { min-width:0; }
+    #trainer h1 { margin-bottom:8px; }
+    #trainer .lead { margin:0; color:var(--muted); }
+    #trainer .formula-note { flex:0 0 auto; margin-bottom:4px; color:var(--muted); font-size:var(--fs-label); }
+    #trainer .bench { grid-template-columns:minmax(0,1fr) 410px; }
+    #trainer .plot-panel { min-height:0; display:grid; grid-template-rows:auto minmax(0,1fr); gap:12px; padding:18px 20px 16px; border:var(--line) solid var(--rule-strong); border-radius:var(--radius); background:rgba(248,251,253,.68); }
+    #trainer .plot-head { display:flex; align-items:center; justify-content:space-between; gap:24px; }
+    #trainer .plot-head h2 { margin:0; }
+    #trainer .plot-head .legend { justify-content:flex-end; }
+    #trainer .plot-wrap { min-height:0; display:grid; grid-template-columns:minmax(0,1fr) 250px; gap:20px; }
+    #trainer .chart { position:relative; min-width:0; min-height:0; }
+    #trainer svg { width:100%; height:100%; display:block; }
+    #trainer .sample-list { min-width:0; display:flex; flex-direction:column; justify-content:center; gap:10px; }
+    #trainer .sample { padding:10px 0; border-bottom:1px solid var(--rule); }
+    #trainer .sample:last-child { border-bottom:0; }
+    #trainer .sample-top { display:flex; align-items:center; justify-content:space-between; gap:12px; font-size:var(--fs-sec); }
+    #trainer .truth { font-weight:700; }
+    #trainer .prob { display:block; margin-top:3px; color:var(--muted); font-size:var(--fs-label); }
+    #trainer .instrument { min-height:0; display:flex; flex-direction:column; padding:20px 22px; }
+    #trainer .instrument h2 { margin-bottom:14px; }
+    #trainer .step-loss { display:flex; align-items:flex-end; justify-content:space-between; gap:16px; padding-bottom:16px; border-bottom:var(--line) solid var(--rule); }
+    #trainer .metric-label { color:var(--muted); font-size:var(--fs-label); font-weight:650; }
+    #trainer .loss-read { color:var(--target); }
+    #trainer .step-read { text-align:right; }
+    #trainer .step-read .num { display:block; font-size:32px; line-height:1.05; }
+    #trainer .params { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); margin:18px 0 16px; }
+    #trainer .param { padding:0 12px; border-right:1px solid var(--rule); }
+    #trainer .param:first-child { padding-left:0; }
+    #trainer .param:last-child { padding-right:0; border-right:0; }
+    #trainer .param .num { display:block; margin-top:4px; font-size:25px; }
+    #trainer .gradbox { padding:14px 0; border-top:1px solid var(--rule); border-bottom:1px solid var(--rule); }
+    #trainer .gradline { margin-top:5px; font-size:var(--fs-label); line-height:1.45; color:var(--gradient); overflow-wrap:anywhere; }
+    #trainer .rate { display:flex; justify-content:space-between; align-items:center; margin-top:13px; font-size:var(--fs-label); }
+    #trainer .status { min-height:44px; margin:12px 0 10px; color:var(--muted); font-size:var(--fs-sec); line-height:1.4; }
+    #trainer .btns { margin-top:auto; }
+    #trainer .btn { flex:1 1 112px; }
+    #trainer .btn.primary { color:var(--paper-strong); border-color:var(--model); background:var(--model); }
+    #trainer .btn.run { color:var(--gradient); border-color:var(--gradient); }
+    #trainer .footline { display:flex; justify-content:space-between; align-items:center; gap:20px; color:var(--muted); font-size:var(--fs-label); }
+    #trainer .footline strong { color:var(--text); }
+    #trainer .axis-label { font-size:15px; font-weight:650; fill:var(--muted); }
+    #trainer .plot-label { font-size:14px; font-family:var(--font-num); fill:var(--muted); }
+    #trainer .point-label { font-size:15px; font-weight:700; }
+    #trainer .boundary-label { font-size:14px; font-weight:700; fill:var(--gradient); }
+  </style>
+</head>
+<body data-page="15" data-total="22">
+  <div id="stage">
+    <main id="trainer" class="workbench" aria-labelledby="page-title">
+      <header class="head">
+        <div class="head-copy min0">
+          <span class="kicker">单神经元 · 全批次梯度下降</span>
+          <h1 id="page-title">让一个神经元真的学 OR</h1>
+          <p class="lead">每次都用四个样本算平均梯度，再让参数沿损失下降的方向移动。</p>
+        </div>
+        <div class="formula-note formula">p = σ(w₁x₁ + w₂x₂ + b)</div>
+      </header>
+
+      <section class="bench min0" aria-label="OR 神经元训练台">
+        <div class="plot-panel min0">
+          <div class="plot-head">
+            <h2>四个样本与 <span class="is-gradient">p = 0.5</span> 边界</h2>
+            <div class="legend" aria-label="图例">
+              <span class="li is-target"><i class="sw"></i>目标 1</span>
+              <span class="li"><i class="sw" style="background:var(--paper-strong)"></i>目标 0</span>
+              <span class="li is-gradient"><i class="sw line"></i>决策边界</span>
+            </div>
+          </div>
+          <div class="plot-wrap min0">
+            <div class="chart min0">
+              <svg id="plot" viewBox="0 0 690 500" role="img" aria-labelledby="plotTitle plotDesc">
+                <title id="plotTitle">OR 四个样本和 sigmoid 决策边界</title>
+                <desc id="plotDesc">初始时所有位置预测概率都是 0.5。训练后背景概率和决策边界随参数改变。</desc>
+                <defs>
+                  <linearGradient id="probGrad" x1="0" y1="1" x2="1" y2="0">
+                    <stop id="g0" offset="0" stop-color="#B2482F" stop-opacity=".08"/>
+                    <stop id="g1" offset="1" stop-color="#165D9C" stop-opacity=".28"/>
+                  </linearGradient>
+                  <clipPath id="clip"><rect x="92" y="32" width="530" height="410" rx="4"/></clipPath>
+                </defs>
+                <rect x="92" y="32" width="530" height="410" rx="4" fill="url(#probGrad)" stroke="var(--rule-strong)" stroke-width="2"/>
+                <g stroke="var(--rule)" stroke-width="1">
+                  <line x1="180" y1="32" x2="180" y2="442"/><line x1="534" y1="32" x2="534" y2="442"/>
+                  <line x1="92" y1="374" x2="622" y2="374"/><line x1="92" y1="100" x2="622" y2="100"/>
+                </g>
+                <g id="boundary" clip-path="url(#clip)"></g>
+                <g id="points"></g>
+                <g class="plot-label">
+                  <text x="180" y="468" text-anchor="middle">0</text><text x="534" y="468" text-anchor="middle">1</text>
+                  <text x="68" y="379" text-anchor="end">0</text><text x="68" y="105" text-anchor="end">1</text>
+                </g>
+                <text class="axis-label" x="357" y="494" text-anchor="middle">输入 x₁</text>
+                <text class="axis-label" transform="translate(22 237) rotate(-90)" text-anchor="middle">输入 x₂</text>
+              </svg>
+            </div>
+            <div id="samples" class="sample-list" aria-label="四个样本的预测概率"></div>
+          </div>
+        </div>
+
+        <aside class="panel instrument min0" aria-labelledby="readout-title">
+          <h2 id="readout-title">训练读数</h2>
+          <div class="step-loss">
+            <div>
+              <span class="metric-label">平均二元交叉熵</span>
+              <span id="loss" class="big sm loss-read">0.693<span class="unit">nat</span></span>
+            </div>
+            <div class="step-read"><span class="metric-label">已更新</span><span id="step" class="num">0</span><span class="small">步</span></div>
+          </div>
+          <div class="params" aria-label="模型参数">
+            <div class="param"><span class="metric-label">w₁</span><span id="w1" class="num is-model">0.000</span></div>
+            <div class="param"><span class="metric-label">w₂</span><span id="w2" class="num is-model">0.000</span></div>
+            <div class="param"><span class="metric-label">b</span><span id="bias" class="num is-model">0.000</span></div>
+          </div>
+          <div class="gradbox">
+            <span class="metric-label">本步使用的平均梯度</span>
+            <div id="grad" class="gradline formula">等待第一次更新</div>
+          </div>
+          <div class="rate"><span>学习率 η</span><strong class="num">1.00</strong></div>
+          <p id="status" class="status" role="status" aria-live="polite">四点当前都得到 p = 0.500，模型还没有形成规则。</p>
+          <div class="btns">
+            <button id="one" class="btn primary" type="button">训练一步</button>
+            <button id="many" class="btn run" type="button">连续训练 20 步</button>
+            <button id="reset" class="btn" type="button">全部复位</button>
+          </div>
+        </aside>
+      </section>
+
+      <div class="footline">
+        <span><strong>同一条公式持续运行：</strong>预测 → 求平均梯度 → 更新参数</span>
+        <span>数据：OR 真值表；不含隐藏层</span>
+      </div>
+    </main>
+  </div>
+  <script src="assets/base.js"></script>
+  <script>
+  (() => {
+    const root = document.getElementById('trainer');
+    const $ = s => root.querySelector(s);
+    const samples = [
+      {x1:0,x2:0,y:0}, {x1:0,x2:1,y:1},
+      {x1:1,x2:0,y:1}, {x1:1,x2:1,y:1}
+    ];
+    const state = {w1:0,w2:0,b:0,step:0,lastGrad:null,timer:null};
+    const sigmoid = z => 1 / (1 + Math.exp(-z));
+    const prob = s => sigmoid(state.w1*s.x1 + state.w2*s.x2 + state.b);
+    const loss = () => samples.reduce((a,s) => {
+      const p = Math.max(1e-12, Math.min(1-1e-12, prob(s)));
+      return a - (s.y*Math.log(p) + (1-s.y)*Math.log(1-p));
+    },0) / samples.length;
+    const gradient = () => samples.reduce((g,s) => {
+      const e = prob(s)-s.y;
+      g[0] += e*s.x1/4; g[1] += e*s.x2/4; g[2] += e/4;
+      return g;
+    },[0,0,0]);
+    const fmt = v => (Math.abs(v) < .0005 ? 0 : v).toFixed(3);
+    const sx = x => 180 + x*354, sy = y => 374 - y*274;
+
+    function drawPlot(){
+      const ps = samples.map(prob);
+      $('#g0').setAttribute('stop-color', ps[0] >= .5 ? '#165D9C' : '#B2482F');
+      $('#g0').setAttribute('stop-opacity', String(.08 + Math.abs(ps[0]-.5)*.55));
+      $('#g1').setAttribute('stop-color', ps[3] >= .5 ? '#165D9C' : '#B2482F');
+      $('#g1').setAttribute('stop-opacity', String(.12 + Math.abs(ps[3]-.5)*.55));
+      const boundary = $('#boundary');
+      if(state.step === 0){
+        boundary.innerHTML = '<rect x="96" y="36" width="522" height="402" fill="none" stroke="var(--gradient)" stroke-width="4" stroke-dasharray="10 8"/><text class="boundary-label" x="357" y="64" text-anchor="middle">全平面 p = 0.5</text>';
+      } else {
+        const candidates=[];
+        const xmin=-.25,xmax=1.25,ymin=-.25,ymax=1.25;
+        if(Math.abs(state.w2)>1e-9){ for(const x of [xmin,xmax]){ const y=-(state.w1*x+state.b)/state.w2; if(y>=ymin&&y<=ymax)candidates.push([x,y]); } }
+        if(Math.abs(state.w1)>1e-9){ for(const y of [ymin,ymax]){ const x=-(state.w2*y+state.b)/state.w1; if(x>=xmin&&x<=xmax)candidates.push([x,y]); } }
+        if(candidates.length>=2){
+          const a=candidates[0], c=candidates.find(q=>q[0]!==a[0]||q[1]!==a[1])||candidates[1];
+          boundary.innerHTML=`<line x1="${sx(a[0])}" y1="${sy(a[1])}" x2="${sx(c[0])}" y2="${sy(c[1])}" stroke="var(--gradient)" stroke-width="5" stroke-dasharray="11 8"/><text class="boundary-label" x="112" y="60">p = 0.5</text>`;
+        } else boundary.innerHTML = '<text class="boundary-label" x="357" y="64" text-anchor="middle">p = 0.5 边界暂在图外</text>';
+      }
+      $('#points').innerHTML = samples.map((s,i) => {
+        const x=sx(s.x1), y=sy(s.x2), fill=s.y?'var(--target)':'var(--paper-strong)', stroke=s.y?'var(--target)':'var(--text)';
+        const ly=s.x2 ? y+34 : y-24;
+        return `<circle cx="${x}" cy="${y}" r="17" fill="${fill}" stroke="${stroke}" stroke-width="4"/><text class="point-label" x="${x}" y="${ly}" text-anchor="middle" fill="var(--text)">p=${fmt(ps[i])}</text>`;
+      }).join('');
+      $('#samples').innerHTML = samples.map((s,i)=>`<div class="sample"><div class="sample-top"><span class="num">(${s.x1}, ${s.x2})</span><span class="truth is-target">目标 ${s.y}</span></div><span class="prob">预测 p = <b class="num">${fmt(ps[i])}</b></span></div>`).join('');
+    }
+    function render(){
+      $('#w1').textContent=fmt(state.w1); $('#w2').textContent=fmt(state.w2); $('#bias').textContent=fmt(state.b);
+      $('#loss').innerHTML=`${fmt(loss())}<span class="unit">nat</span>`; $('#step').textContent=state.step;
+      $('#grad').textContent=state.lastGrad ? `(∂L/∂w₁, ∂L/∂w₂, ∂L/∂b) = (${state.lastGrad.map(fmt).join(', ')})` : '等待第一次更新';
+      const ps=samples.map(prob), correct=ps.filter((p,i)=>(p>=.5?1:0)===samples[i].y).length;
+      if(state.step===0) $('#status').textContent='四点当前都得到 p = 0.500，模型还没有形成规则。';
+      else if(state.step===1) $('#status').textContent='第一次更新把平均损失降到 0.540 nat；此时 (0, 0) 仍会判错。';
+      else $('#status').textContent=`当前按 0.5 划分可判对 ${correct}/4 个样本；反复更新正在把边界推向 OR 的分隔位置。`;
+      drawPlot();
+    }
+    function trainOne(){
+      const g=gradient(); state.lastGrad=g.slice();
+      state.w1-=g[0]; state.w2-=g[1]; state.b-=g[2]; state.step++;
+      render();
+    }
+    function stop(){ if(state.timer!==null){ clearInterval(state.timer); state.timer=null; } $('#one').disabled=false; $('#many').disabled=false; }
+    function runMany(){
+      stop(); let left=20; $('#one').disabled=true; $('#many').disabled=true;
+      state.timer=setInterval(()=>{ trainOne(); if(--left===0) stop(); },70);
+    }
+    function reset(){ stop(); Object.assign(state,{w1:0,w2:0,b:0,step:0,lastGrad:null}); render(); $('#one').focus(); }
+    $('#one').addEventListener('click',trainOne);
+    $('#many').addEventListener('click',runMany);
+    $('#reset').addEventListener('click',reset);
+    window.addEventListener('pagehide',stop,{once:true});
+    render();
+    Deck.init({index:15,total:22});
+  })();
+  </script>
+</body>
+</html>

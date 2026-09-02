@@ -1,0 +1,389 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<link rel="stylesheet" href="assets/lib/katex.min.css">
+<style>
+  #stage{
+    display:flex;
+    flex-direction:column;
+    gap:16px;
+  }
+  .head{ flex:0 0 auto; }
+  .body{
+    flex:1;
+    min-height:0;
+    display:flex;
+    gap:28px;
+  }
+  .flowcol{
+    flex:0 0 860px;
+    min-height:0;
+    position:relative;
+  }
+  .flowcol svg{
+    position:absolute;
+    inset:0;
+    width:100%;
+    height:100%;
+  }
+  .detail{
+    flex:1;
+    min-width:0;
+    display:flex;
+    flex-direction:column;
+    gap:14px;
+  }
+  .step-node{ cursor:pointer; }
+  .step-node .box{
+    fill: var(--surface);
+    stroke: var(--rule);
+    stroke-width: var(--line);
+    transition: stroke .15s, fill .15s;
+  }
+  .step-node.active .box{
+    stroke: var(--ensemble);
+    fill: #DCE9F0;
+  }
+  .step-node text{
+    fill: var(--text);
+    font-family: var(--font-sans);
+    font-size: 17px;
+    pointer-events:none;
+  }
+  .step-node .idx{
+    fill: var(--muted);
+    font-family: var(--font-mono);
+    font-size: 14px;
+    pointer-events:none;
+  }
+  .step-node.active .idx{ fill: var(--ensemble); }
+  .flow-edge{
+    fill:none;
+    stroke: var(--rule);
+    stroke-width: var(--line);
+  }
+  .flow-edge.loop{
+    stroke: var(--weight);
+  }
+  .flow-edge.exit{
+    stroke: var(--ensemble);
+  }
+  .edge-label{
+    fill: var(--muted);
+    font-family: var(--font-sans);
+    font-size: 14px;
+  }
+  .edge-label.loop{ fill: var(--weight); }
+  .edge-label.exit{ fill: var(--ensemble); }
+  .panel.detail-panel{
+    flex: 1;
+    min-height:0;
+    display:flex;
+    flex-direction:column;
+    gap:10px;
+    overflow:auto;
+  }
+  .detail-title{
+    font-size: var(--fs-h2);
+    font-weight:700;
+    color:var(--text);
+    display:flex;
+    align-items:baseline;
+    gap:10px;
+  }
+  .detail-title .n{
+    font-family: var(--font-mono);
+    font-size: 16px;
+    color: var(--ensemble);
+    font-weight:600;
+  }
+  .detail-formula{
+    background: var(--surface-strong);
+    border-radius: var(--radius);
+    padding: 14px 18px;
+    font-size: 19px;
+    overflow-x:auto;
+  }
+  .detail-text{
+    font-size: var(--fs-body);
+    color: var(--text);
+    line-height:1.5;
+  }
+  .detail-text b{ color: var(--weight); font-weight:600; }
+  .detail-note{
+    font-size: var(--fs-sec);
+    color: var(--muted);
+    line-height:1.5;
+  }
+  .nav-hint{
+    font-size: var(--fs-label);
+    color: var(--muted);
+  }
+  .legend{ flex:0 0 auto; }
+</style>
+</head>
+<body data-page="12" data-total="26">
+<div id="stage">
+
+  <div class="head">
+    <div class="kicker">AdaBoost 训练流程</div>
+    <h1 style="font-size:var(--fs-h1);font-weight:700;color:var(--text);margin-top:2px;">
+      一轮弱学习器训练，换来一次样本权重的重新分配
+    </h1>
+    <p class="lead" style="margin-top:6px;">
+      T 轮循环共享同一套动作：训练、称重、再分配。点击流程图中的每一步查看对应公式。
+    </p>
+  </div>
+
+  <div class="body">
+    <div class="flowcol">
+      <svg id="flow" viewBox="0 0 860 700" preserveAspectRatio="xMidYMid meet"></svg>
+    </div>
+
+    <div class="detail">
+      <div class="panel detail-panel" id="detailPanel"></div>
+      <div class="legend panel q" style="display:flex;gap:24px;padding:10px 18px;">
+        <div class="legend" style="display:flex;gap:20px;">
+          <div class="li" style="display:flex;align-items:center;gap:8px;">
+            <span class="sw line" style="width:20px;height:2px;background:var(--rule);display:inline-block;"></span>
+            <span class="small" style="color:var(--muted);">单轮内顺序</span>
+          </div>
+          <div class="li" style="display:flex;align-items:center;gap:8px;">
+            <span class="sw line" style="width:20px;height:2px;background:var(--weight);display:inline-block;"></span>
+            <span class="small" style="color:var(--muted);">回到下一轮</span>
+          </div>
+          <div class="li" style="display:flex;align-items:center;gap:8px;">
+            <span class="sw line" style="width:20px;height:2px;background:var(--ensemble);display:inline-block;"></span>
+            <span class="small" style="color:var(--muted);">达到 T 轮后退出</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lib/katex.min.js"></script>
+<script>
+(function(){
+  "use strict";
+
+  // ---- canonical step data (single source of truth) ----
+  var STEPS = [
+    {
+      id: 'init',
+      label: '初始化样本权重',
+      formula: 'w_i^{(1)} = \\dfrac{1}{N}, \\quad i = 1, \\dots, N',
+      text: 'N 个训练样本一开始被<b>同等看待</b>，每个样本的权重都是 1/N，谁也不占优势。',
+      note: '只在第 1 轮之前发生一次，此后不再重复。'
+    },
+    {
+      id: 'train',
+      label: '按当前权重训练弱学习器',
+      formula: 'G_m(x) = \\arg\\min_{G} \\sum_{i=1}^{N} w_i^{(m)}\\, \\mathbb{1}\\big(y_i \\neq G(x_i)\\big)',
+      text: '弱学习器 G_m 在带权样本上训练，训练目标是让<b>权重高的样本</b>被优先分类正确，而不是让样本数量最多的类别被分类正确。',
+      note: '弱学习器通常很简单，例如一层决策树（决策树桩）。'
+    },
+    {
+      id: 'error',
+      label: '计算加权分类误差',
+      formula: 'e_m = \\sum_{i=1}^{N} w_i^{(m)}\\, \\mathbb{1}\\big(y_i \\neq G_m(x_i)\\big)',
+      text: '把这一轮里所有被 G_m 分错的样本权重加起来，得到 e_m。<b>权重越高的样本分错，e_m 涨得越多</b>。',
+      note: 'e_m 落在 (0, 1) 区间；e_m = 0.5 意味着这个弱学习器和随机猜测没有区别。'
+    },
+    {
+      id: 'alpha',
+      label: '计算该学习器的模型权重',
+      formula: '\\alpha_m = \\dfrac{1}{2}\\ln\\dfrac{1 - e_m}{e_m}',
+      text: '误差 e_m 越小，α_m 越大——这个弱学习器在最终投票里的<b>话语权</b>就越大。',
+      note: 'e_m = 0.5 时 α_m = 0；e_m 越接近 0，α_m 越大，趋向正无穷。'
+    },
+    {
+      id: 'update',
+      label: '更新每个样本的权重',
+      formula: 'w_i^{(m+1)} = w_i^{(m)} \\cdot \\exp\\big(-\\alpha_m\\, y_i\\, G_m(x_i)\\big)',
+      text: '被 G_m <b>分对</b>的样本权重按 e^{-α_m} 缩小；被<b>分错</b>的样本权重按 e^{α_m} 放大，让下一轮更关注它们。',
+      note: 'y_i, G_m(x_i) ∈ {-1, +1}；分对时 y_i G_m(x_i)=1，分错时为 -1。'
+    },
+    {
+      id: 'norm',
+      label: '归一化权重，进入下一轮',
+      formula: 'w_i^{(m+1)} \\leftarrow \\dfrac{w_i^{(m+1)}}{\\sum_{j=1}^{N} w_j^{(m+1)}}',
+      text: '让全部样本权重重新加起来等于 1，回到"训练弱学习器"重复整套动作，直到跑满 T 轮。',
+      note: '归一化不改变样本之间的相对比例，只是让总和恢复为 1。'
+    }
+  ];
+
+  var detailPanel = document.getElementById('detailPanel');
+  var svg = document.getElementById('flow');
+  var NS = 'http://www.w3.org/2000/svg';
+
+  function el(tag, attrs){
+    var e = document.createElementNS(NS, tag);
+    for (var k in attrs) e.setAttribute(k, attrs[k]);
+    return e;
+  }
+
+  // ---- geometry: vertical loop with an exit branch ----
+  var W = 860, boxW = 560, boxH = 78, gap = 34;
+  var startY = 20;
+  var cx = W/2;
+  var nodes = [];
+  for (var i = 0; i < STEPS.length; i++){
+    nodes.push({ x: cx - boxW/2, y: startY + i*(boxH+gap), w: boxW, h: boxH, step: STEPS[i] });
+  }
+
+  var defs = el('defs');
+  ['rule','weight','ensemble'].forEach(function(role){
+    var color = Deck.token('--' + role);
+    var marker = el('marker', { id:'arrow-'+role, viewBox:'0 0 10 10', refX:'8', refY:'5',
+      markerWidth:'7', markerHeight:'7', orient:'auto-start-reverse' });
+    var path = el('path', { d:'M0,0 L10,5 L0,10 z', fill: color });
+    marker.appendChild(path);
+    defs.appendChild(marker);
+  });
+  svg.appendChild(defs);
+
+  var edgeLayer = el('g');
+  var nodeLayer = el('g');
+  svg.appendChild(edgeLayer);
+  svg.appendChild(nodeLayer);
+
+  // sequential edges (train -> error -> alpha -> update -> norm)
+  for (var i = 0; i < nodes.length - 1; i++){
+    var a = nodes[i], b = nodes[i+1];
+    var path = el('path', {
+      class: 'flow-edge',
+      d: 'M'+cx+','+(a.y+a.h)+' L'+cx+','+b.y,
+      'marker-end': 'url(#arrow-rule)'
+    });
+    edgeLayer.appendChild(path);
+  }
+  // init -> train special (already covered by loop above since init is nodes[0])
+
+  // loop-back edge: norm (last) -> train (index 1), routed on the left
+  var lastNode = nodes[nodes.length-1];
+  var trainNode = nodes[1];
+  var loopX = cx - boxW/2 - 60;
+  var loopPath = 'M'+(cx-boxW/2)+','+(lastNode.y+lastNode.h/2)+
+    ' L'+loopX+','+(lastNode.y+lastNode.h/2)+
+    ' L'+loopX+','+(trainNode.y+trainNode.h/2)+
+    ' L'+(cx-boxW/2)+','+(trainNode.y+trainNode.h/2);
+  edgeLayer.appendChild(el('path', { class:'flow-edge loop', d: loopPath, 'marker-end':'url(#arrow-weight)' }));
+  var loopLabel = el('text', { class:'edge-label loop', x: loopX-8, y: (lastNode.y+trainNode.y)/2 + trainNode.h/2, 'text-anchor':'end' });
+  var tspans = ['未到 T 轮，', '带新权重再走一遍'];
+  tspans.forEach(function(t, idx){
+    var ts = el('tspan', { x: loopX-8, dy: idx===0 ? 0 : 18 });
+    ts.textContent = t;
+    loopLabel.appendChild(ts);
+  });
+  edgeLayer.appendChild(loopLabel);
+
+  // exit edge: norm (last) -> "输出集成模型" box on the right
+  var exitBoxY = (trainNode.y + lastNode.y)/2 + lastNode.h/2 - 40;
+  var exitX = cx + boxW/2 + 60;
+  var exitPath = 'M'+(cx+boxW/2)+','+(lastNode.y+lastNode.h/2)+
+    ' L'+exitX+','+(lastNode.y+lastNode.h/2)+
+    ' L'+exitX+','+exitBoxY+40;
+  edgeLayer.appendChild(el('path', { class:'flow-edge exit', d: exitPath, 'marker-end':'url(#arrow-ensemble)' }));
+  var exitLabel = el('text', { class:'edge-label exit', x: exitX+8, y: (lastNode.y+trainNode.y)/2 + trainNode.h/2, 'text-anchor':'start' });
+  ['达到 T 轮，', '输出集成模型'].forEach(function(t, idx){
+    var ts = el('tspan', { x: exitX+8, dy: idx===0 ? 0 : 18 });
+    ts.textContent = t;
+    exitLabel.appendChild(ts);
+  });
+  edgeLayer.appendChild(exitLabel);
+
+  // exit terminal box
+  var exitBox = { x: exitX - 96, y: exitBoxY + 40 + 14, w: 192, h: 56 };
+  var exitGroup = el('g');
+  exitGroup.appendChild(el('rect', {
+    x: exitBox.x, y: exitBox.y, width: exitBox.w, height: exitBox.h, rx: 8,
+    fill: 'var(--surface-strong)', stroke: 'var(--ensemble)', 'stroke-width': 2
+  }));
+  var exitText = el('text', { x: exitBox.x + exitBox.w/2, y: exitBox.y + exitBox.h/2 + 5,
+    'text-anchor':'middle', 'font-family':'var(--font-sans)', 'font-size':'16px',
+    fill:'var(--ensemble)', 'font-weight':'700' });
+  exitText.textContent = '集成模型 G(x)';
+  exitGroup.appendChild(exitText);
+  nodeLayer.appendChild(exitGroup);
+
+  var maxY = lastNode.y + lastNode.h;
+  var viewH = Math.max(maxY + 20, exitBox.y + exitBox.h + 20);
+  svg.setAttribute('viewBox', '0 -10 '+W+' '+(viewH+20));
+
+  // step nodes
+  var activeId = STEPS[0].id;
+  var nodeGroups = {};
+
+  function renderDetail(step){
+    detailPanel.innerHTML = '';
+    var title = document.createElement('div');
+    title.className = 'detail-title';
+    var n = document.createElement('span');
+    n.className = 'n';
+    n.textContent = '#' + (STEPS.indexOf(step)+1);
+    var t = document.createElement('span');
+    t.textContent = step.label;
+    title.appendChild(n);
+    title.appendChild(t);
+    detailPanel.appendChild(title);
+
+    var formula = document.createElement('div');
+    formula.className = 'detail-formula';
+    detailPanel.appendChild(formula);
+    katex.render(step.formula, formula, { throwOnError:false, displayMode:true });
+
+    var text = document.createElement('div');
+    text.className = 'detail-text';
+    text.innerHTML = step.text;
+    detailPanel.appendChild(text);
+
+    var note = document.createElement('div');
+    note.className = 'detail-note';
+    note.textContent = step.note;
+    detailPanel.appendChild(note);
+
+    var hint = document.createElement('div');
+    hint.className = 'nav-hint';
+    hint.textContent = '点击流程图中任意一步，查看对应公式与说明。';
+    detailPanel.appendChild(hint);
+  }
+
+  function setActive(id){
+    activeId = id;
+    for (var k in nodeGroups){
+      if (k === id) nodeGroups[k].classList.add('active');
+      else nodeGroups[k].classList.remove('active');
+    }
+    var step = STEPS.filter(function(s){ return s.id === id; })[0];
+    renderDetail(step);
+  }
+
+  nodes.forEach(function(n, idx){
+    var g = el('g', { class: 'step-node', tabindex:'0', role:'button',
+      'aria-label': n.step.label });
+    var box = el('rect', { class:'box', x:n.x, y:n.y, width:n.w, height:n.h, rx:'8' });
+    g.appendChild(box);
+    var idxText = el('text', { class:'idx', x:n.x+18, y:n.y+28 });
+    idxText.textContent = '#' + (idx+1);
+    g.appendChild(idxText);
+    var labelText = el('text', { x:n.x+18, y:n.y+54 });
+    labelText.textContent = n.step.label;
+    g.appendChild(labelText);
+    g.addEventListener('click', function(){ setActive(n.step.id); });
+    g.addEventListener('keydown', function(e){
+      if (e.key === 'Enter' || e.key === ' '){ e.preventDefault(); setActive(n.step.id); }
+    });
+    nodeLayer.appendChild(g);
+    nodeGroups[n.step.id] = g;
+  });
+
+  setActive(STEPS[0].id);
+})();
+</script>
+</body>
+</html>

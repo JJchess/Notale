@@ -1,0 +1,253 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>学习率同时决定下降速度与稳定性</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    #lr-lab{display:flex;flex-direction:column;flex:1;min-height:0;margin-top:18px}
+    #lr-lab .instrument{display:grid;grid-template-columns:minmax(0,1fr) 350px;gap:28px;flex:1;min-height:0}
+    #lr-lab .stage-panel{display:flex;flex-direction:column;min-width:0;min-height:0;padding:16px 18px 14px}
+    #lr-lab .stage-top{display:flex;align-items:center;justify-content:space-between;gap:18px;margin-bottom:8px}
+    #lr-lab .stage-top h2{font-size:var(--fs-h2)}
+    #lr-lab .legend{justify-content:flex-end}
+    #lr-lab .legend .current{color:var(--model)}
+    #lr-lab .legend .previous{color:var(--muted)}
+    #lr-lab .plot{flex:1;min-height:0;background:var(--paper);border-radius:var(--radius)}
+    #lr-lab svg{display:block;width:100%;height:100%}
+    #lr-lab .axis,#lr-lab .tick{stroke:var(--rule);stroke-width:1.5;vector-effect:non-scaling-stroke}
+    #lr-lab .bowl{fill:none;stroke:var(--text);stroke-width:3;vector-effect:non-scaling-stroke}
+    #lr-lab .prior-path{fill:none;stroke:var(--muted);stroke-width:3;stroke-dasharray:8 8;opacity:.72;vector-effect:non-scaling-stroke}
+    #lr-lab .run-path{fill:none;stroke:var(--model);stroke-width:4;stroke-linejoin:round;stroke-linecap:round;vector-effect:non-scaling-stroke}
+    #lr-lab .jump{stroke:var(--model);stroke-width:2;opacity:.5;vector-effect:non-scaling-stroke}
+    #lr-lab .pt{fill:var(--paper);stroke:var(--model);stroke-width:3;vector-effect:non-scaling-stroke}
+    #lr-lab .pt.now{fill:var(--attention);stroke:var(--paper);stroke-width:3}
+    #lr-lab .start{fill:var(--text);stroke:var(--paper);stroke-width:3}
+    #lr-lab .optimum{fill:var(--loss)}
+    #lr-lab .svg-label{font:15px var(--font-sans);fill:var(--muted)}
+    #lr-lab .svg-num{font:14px var(--font-num);fill:var(--muted)}
+    #lr-lab .svg-strong{font:650 16px var(--font-sans);fill:var(--text)}
+    #lr-lab .offscale{fill:var(--loss)}
+    #lr-lab .history{height:74px;margin-top:10px;display:grid;grid-template-columns:104px 1fr;gap:12px;align-items:center}
+    #lr-lab .history-label{font-size:var(--fs-label);line-height:1.35;color:var(--muted)}
+    #lr-lab .bars{height:58px;display:flex;align-items:flex-end;gap:6px;border-bottom:1px solid var(--rule);position:relative}
+    #lr-lab .bar-step{flex:1;min-width:0;background:var(--model);opacity:.72;border-radius:2px 2px 0 0;transition:height .16s ease-out}
+    #lr-lab .bar-step.over{background:var(--loss)}
+    #lr-lab .rail{display:flex;flex-direction:column;gap:18px;min-width:0;min-height:0}
+    #lr-lab .control-panel{padding:20px 20px 18px}
+    #lr-lab .control-head{display:flex;justify-content:space-between;align-items:baseline;gap:12px;margin-bottom:12px}
+    #lr-lab .control-head label{font-weight:650;font-size:var(--fs-body)}
+    #lr-lab .eta{color:var(--attention);font-family:var(--font-num);font-size:32px;font-weight:650;line-height:1}
+    #lr-lab .scale{display:flex;justify-content:space-between;color:var(--muted);font:var(--fs-tick) var(--font-num);margin-top:2px}
+    #lr-lab .regimes{display:grid;grid-template-columns:1fr 1fr 1fr;margin-top:11px;color:var(--muted);font-size:var(--fs-label);line-height:1.25}
+    #lr-lab .regimes span:nth-child(2){text-align:center}
+    #lr-lab .regimes span:last-child{text-align:right;color:var(--loss)}
+    #lr-lab .btns{margin-top:18px}
+    #lr-lab .btn.primary{border-color:var(--model);background:var(--model);color:white}
+    #lr-lab .metrics{display:grid;gap:0;padding:0 20px}
+    #lr-lab .metric{padding:15px 0;border-bottom:1px solid var(--rule)}
+    #lr-lab .metric:last-child{border-bottom:0}
+    #lr-lab .metric-label{display:block;color:var(--muted);font-size:var(--fs-label);margin-bottom:4px}
+    #lr-lab .metric-value{font-family:var(--font-num);font-size:30px;font-weight:600;line-height:1.15}
+    #lr-lab .metric-value.loss{color:var(--loss)}
+    #lr-lab .feedback{min-height:90px;padding:16px 20px;border-top:2px solid var(--rule)}
+    #lr-lab .feedback strong{display:block;font-size:var(--fs-lead);line-height:1.25;margin-bottom:6px}
+    #lr-lab .feedback p{color:var(--muted);font-size:var(--fs-sec);line-height:1.45}
+    #lr-lab .formula{font-family:var(--font-num);font-size:var(--fs-label);color:var(--muted);text-align:center}
+    @media (prefers-reduced-motion:reduce){#lr-lab .bar-step{transition:none}}
+  </style>
+</head>
+<body data-page="14" data-total="24">
+  <div id="stage">
+    <header>
+      <p class="kicker">梯度下降实验</p>
+      <h1>学习率同时决定下降速度与稳定性</h1>
+    </header>
+
+    <main id="lr-lab" aria-label="学习率与梯度下降轨迹实验">
+      <div class="instrument">
+        <section class="panel stage-panel min0" aria-labelledby="landscape-title">
+          <div class="stage-top">
+            <h2 id="landscape-title">同一损失曲面，同一起点</h2>
+            <div class="legend" aria-label="轨迹图例">
+              <span class="li current"><i class="sw line"></i>当前学习率</span>
+              <span class="li previous"><i class="sw line"></i>上次设置</span>
+            </div>
+          </div>
+          <div class="plot min0">
+            <svg id="landscape" viewBox="0 0 1040 500" role="img" aria-labelledby="plot-title plot-desc">
+              <title id="plot-title">梯度下降在二次损失曲面上的轨迹</title>
+              <desc id="plot-desc">所有实验从权重八开始，目标是到达权重零。蓝线显示当前学习率下十四次更新的位置。</desc>
+              <defs>
+                <clipPath id="lr-clip"><rect x="70" y="28" width="920" height="410"></rect></clipPath>
+              </defs>
+              <g aria-hidden="true">
+                <line class="axis" x1="70" y1="438" x2="990" y2="438"></line>
+                <line class="axis" x1="530" y1="28" x2="530" y2="438"></line>
+                <line class="tick" x1="70" y1="438" x2="70" y2="446"></line>
+                <line class="tick" x1="300" y1="438" x2="300" y2="446"></line>
+                <line class="tick" x1="530" y1="438" x2="530" y2="446"></line>
+                <line class="tick" x1="760" y1="438" x2="760" y2="446"></line>
+                <line class="tick" x1="990" y1="438" x2="990" y2="446"></line>
+                <text class="svg-num" x="70" y="468" text-anchor="middle">−10</text>
+                <text class="svg-num" x="300" y="468" text-anchor="middle">−5</text>
+                <text class="svg-num" x="530" y="468" text-anchor="middle">0</text>
+                <text class="svg-num" x="760" y="468" text-anchor="middle">5</text>
+                <text class="svg-num" x="990" y="468" text-anchor="middle">10</text>
+                <text class="svg-label" x="1000" y="466">权重 w</text>
+                <text class="svg-label" x="82" y="48">损失 L</text>
+                <path id="bowl" class="bowl"></path>
+                <circle class="optimum" cx="530" cy="438" r="7"></circle>
+                <text class="svg-strong" x="530" y="414" text-anchor="middle">最低点</text>
+              </g>
+              <g clip-path="url(#lr-clip)">
+                <path id="priorPath" class="prior-path"></path>
+                <path id="runPath" class="run-path"></path>
+                <g id="jumps"></g>
+                <g id="points"></g>
+              </g>
+              <g id="offscale"></g>
+            </svg>
+          </div>
+          <div class="history" aria-label="每步权重绝对值">
+            <div class="history-label">每步离最低点<br>还有多远</div>
+            <div id="bars" class="bars"></div>
+          </div>
+        </section>
+
+        <aside class="rail min0">
+          <section class="panel control-panel">
+            <div class="control-head">
+              <label for="eta">调节每次更新的步长</label>
+              <output id="etaOut" class="eta" for="eta">η 0.35</output>
+            </div>
+            <input id="eta" type="range" min="0.05" max="2.40" step="0.05" value="0.35" aria-describedby="etaHelp">
+            <div class="scale" aria-hidden="true"><span>0.05</span><span>1.00</span><span>2.00</span><span>2.40</span></div>
+            <div class="regimes" aria-hidden="true"><span>慢</span><span>快速到达</span><span>不稳定</span></div>
+            <p id="etaHelp" class="hint" style="margin-top:12px">拖动滑块或用方向键调整，再运行 14 次更新。</p>
+            <div class="btns">
+              <button id="run" class="btn primary" type="button">运行 14 次更新</button>
+              <button id="reset" class="btn" type="button">恢复初始实验</button>
+            </div>
+          </section>
+
+          <section class="panel metrics" aria-label="轨迹读数">
+            <div class="metric">
+              <span class="metric-label">每步保留的距离倍数 |1 − η|</span>
+              <span id="factor" class="metric-value">0.65</span>
+            </div>
+            <div class="metric">
+              <span class="metric-label">14 步后离最低点 |w|</span>
+              <span id="distance" class="metric-value">0.019</span>
+            </div>
+            <div id="feedback" class="feedback" aria-live="polite">
+              <strong>稳定收敛</strong>
+              <p>每一步都向最低点靠近，但步长还可以更大。</p>
+            </div>
+          </section>
+          <p class="formula">wₜ₊₁ = wₜ − η·∂L/∂w　｜　L(w)=½w²</p>
+        </aside>
+      </div>
+    </main>
+  </div>
+  <script src="assets/base.js"></script>
+  <script>
+  (() => {
+    const root = document.getElementById('lr-lab');
+    const $ = s => root.querySelector(s);
+    const els = {
+      eta: $('#eta'), etaOut: $('#etaOut'), run: $('#run'), reset: $('#reset'),
+      bowl: $('#bowl'), prior: $('#priorPath'), path: $('#runPath'), jumps: $('#jumps'),
+      points: $('#points'), off: $('#offscale'), bars: $('#bars'), factor: $('#factor'),
+      distance: $('#distance'), feedback: $('#feedback'), desc: $('#plot-desc')
+    };
+    const NS = 'http://www.w3.org/2000/svg';
+    const initialEta = 0.35, steps = 14, startW = 8;
+    let state = { eta: initialEta, shown: steps, running: false, previousEta: null };
+    let timer = 0, destroyed = false;
+
+    const sx = w => 530 + w * 46;
+    const sy = w => 438 - Math.min(410, 5.05 * w * w);
+    const trajectory = eta => {
+      const a = [startW];
+      for (let i=0;i<steps;i++) a.push((1-eta)*a[a.length-1]);
+      return a;
+    };
+    const visiblePoint = w => ({x: sx(Math.max(-10,Math.min(10,w))), y: sy(Math.max(-9,Math.min(9,w))) });
+    const pathFor = (arr, count) => arr.slice(0,count+1).map((w,i) => {
+      const p=visiblePoint(w); return `${i?'L':'M'}${p.x.toFixed(1)},${p.y.toFixed(1)}`;
+    }).join(' ');
+    const svgEl = (name, attrs) => { const n=document.createElementNS(NS,name); Object.entries(attrs).forEach(([k,v])=>n.setAttribute(k,v)); return n; };
+
+    function regime(eta, finalAbs){
+      if (eta > 2) return ['正在发散','步长越过最低点后，离最低点反而越来越远。','loss'];
+      if (eta === 2) return ['持续振荡','每步都跨到对侧，距离保持不变。','loss'];
+      if (eta > 1) return ['振荡着收敛','每步跨过最低点，但摆幅逐步缩小。',''];
+      if (eta >= .75) return ['快速收敛','较大的稳定步长让轨迹很快贴近最低点。',''];
+      if (finalAbs < .1) return ['稳定收敛','每一步都向最低点靠近，但步长还可以更大。',''];
+      return ['稳定但较慢','方向正确；十四步后仍离最低点较远。',''];
+    }
+
+    function render(){
+      if (destroyed) return;
+      const eta=state.eta, arr=trajectory(eta), shown=Math.min(state.shown,steps);
+      els.eta.value=eta.toFixed(2); els.etaOut.textContent=`η ${eta.toFixed(2)}`;
+      els.factor.textContent=Math.abs(1-eta).toFixed(2);
+      const finalAbs=Math.abs(arr[steps]);
+      els.distance.textContent=finalAbs < .001 ? '< 0.001' : finalAbs.toFixed(finalAbs<10?3:1);
+      els.distance.classList.toggle('loss',eta>=2);
+      const [title,text,kind]=regime(eta,finalAbs);
+      els.feedback.dataset.state=kind;
+      els.feedback.innerHTML=`<strong>${title}</strong><p>${text}</p>`;
+      els.path.setAttribute('d',pathFor(arr,shown));
+      els.prior.setAttribute('d',state.previousEta==null?'':pathFor(trajectory(state.previousEta),steps));
+      els.jumps.replaceChildren(); els.points.replaceChildren(); els.off.replaceChildren();
+      for(let i=0;i<=shown;i++){
+        const w=arr[i], p=visiblePoint(w);
+        if(i>0){
+          const q=visiblePoint(arr[i-1]);
+          els.jumps.appendChild(svgEl('line',{x1:q.x,y1:q.y,x2:p.x,y2:p.y,class:'jump'}));
+        }
+        if(Math.abs(w)<=10){
+          els.points.appendChild(svgEl('circle',{cx:p.x,cy:p.y,r:i===shown?7:5,class:`pt ${i===shown?'now':''} ${i===0?'start':''}`}));
+        } else if(i===shown || Math.abs(arr[i-1])<=10){
+          const right=w>0, x=right?986:74;
+          els.off.appendChild(svgEl('path',{d:right?`M${x},42 l-18,-10 v20 z`:`M${x},42 l18,-10 v20 z`,class:'offscale'}));
+          const t=svgEl('text',{x:right?968:92,y:76,'text-anchor':right?'end':'start',class:'svg-strong'}); t.textContent='轨迹超出坐标'; els.off.appendChild(t);
+        }
+      }
+      els.bars.replaceChildren();
+      arr.slice(1,shown+1).forEach(w=>{
+        const b=document.createElement('span'); b.className='bar-step'+(Math.abs(w)>startW?' over':'');
+        b.style.height=`${Math.max(3,Math.min(58,Math.abs(w)/startW*58))}px`; b.title=`|w| = ${Math.abs(w).toFixed(3)}`; els.bars.appendChild(b);
+      });
+      els.run.textContent=state.running?'暂停':'运行 14 次更新';
+      els.desc.textContent=`学习率 ${eta.toFixed(2)}，从权重 8 开始；当前显示第 ${shown} 步，十四步后权重绝对值 ${finalAbs.toFixed(3)}。`;
+    }
+
+    function cancel(){ if(timer){clearInterval(timer);timer=0;} state.running=false; }
+    function run(){
+      if(state.running){cancel();render();return;}
+      cancel(); state.shown=0; state.running=true; render();
+      if(Deck.reduced()) { state.shown=steps; state.running=false; render(); return; }
+      timer=setInterval(()=>{ state.shown++; if(state.shown>=steps){cancel();} render(); },150);
+    }
+    function setEta(v){
+      cancel(); const next=Math.max(.05,Math.min(2.4,Number(v)));
+      if(next!==state.eta) state.previousEta=state.eta;
+      state.eta=next; state.shown=steps; render();
+    }
+    function reset(){ cancel(); state={eta:initialEta,shown:steps,running:false,previousEta:null}; render(); }
+    function destroy(){ if(destroyed)return; destroyed=true; cancel(); els.eta.removeEventListener('input',onInput); els.run.removeEventListener('click',run); els.reset.removeEventListener('click',reset); }
+    function onInput(e){setEta(e.target.value)}
+
+    let bowl=''; for(let i=0;i<=80;i++){const w=-9+i*18/80; bowl+=(i?'L':'M')+sx(w).toFixed(1)+','+sy(w).toFixed(1)+' ';} els.bowl.setAttribute('d',bowl);
+    els.eta.addEventListener('input',onInput); els.run.addEventListener('click',run); els.reset.addEventListener('click',reset);
+    window.addEventListener('pagehide',destroy,{once:true});
+    Deck.init({index:14,total:24}); render();
+  })();
+  </script>
+</body>
+</html>

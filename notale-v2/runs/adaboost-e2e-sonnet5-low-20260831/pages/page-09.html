@@ -1,0 +1,283 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+#stage{
+  display:flex;
+  flex-direction:column;
+  gap:16px;
+}
+.head{
+  flex:0 0 auto;
+}
+.body{
+  flex:1;
+  min-height:0;
+  display:grid;
+  grid-template-columns:56% 44%;
+  gap:20px;
+}
+.plot-panel{
+  min-width:0;
+  min-height:0;
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+}
+.plot-head{
+  display:flex;
+  justify-content:space-between;
+  align-items:baseline;
+}
+#chart-host{
+  flex:1;
+  min-height:0;
+  border-radius:var(--radius);
+  background:var(--surface);
+}
+.side{
+  min-width:0;
+  min-height:0;
+  display:flex;
+  flex-direction:column;
+  gap:14px;
+}
+.formula-box{
+  display:flex;
+  flex-direction:column;
+  gap:10px;
+}
+.formula-box .row{
+  display:flex;
+  align-items:center;
+  gap:14px;
+}
+.formula-box .lab{
+  font-size:var(--fs-label);
+  color:var(--muted);
+  min-width:78px;
+}
+table.walk{
+  width:100%;
+  border-collapse:collapse;
+  font-size:var(--fs-sec);
+}
+table.walk th, table.walk td{
+  padding:7px 8px;
+  text-align:right;
+  border-bottom:1px solid var(--rule);
+}
+table.walk th:first-child, table.walk td:first-child{
+  text-align:left;
+}
+table.walk thead th{
+  color:var(--muted);
+  font-weight:500;
+  font-size:var(--fs-label);
+}
+table.walk td.num, table.walk th.num{
+  font-family:var(--font-mono);
+}
+table.walk tr.hi td{
+  color:var(--ensemble);
+}
+table.walk tr.neg td{
+  color:var(--weight);
+}
+</style>
+</head>
+<body data-page="09" data-total="26">
+<div id="stage">
+
+  <div class="head">
+    <div class="kicker">弱学习器的话语权</div>
+    <h1 style="font-size:var(--fs-h1);margin:0 0 6px;color:var(--text);">
+      分类误差 ε 越小，模型权重 α 越大——且这个换算不是线性的
+    </h1>
+    <div class="lead" style="color:var(--muted);max-width:1100px;">
+      每轮训练出弱学习器后，AdaBoost 用它的加权误差 ε 算一个权重
+      <span class="num">α = ½ ln((1−ε)/ε)</span>，决定它在最终投票里说话的分量。
+      ε 越接近 0（分得越准），α 越大；ε 越接近 0.5（近乎瞎猜），α 迅速掉向 0；
+      ε 超过 0.5（比瞎猜还差）时，α 变成负数——它的投票会被反着算。
+    </div>
+  </div>
+
+  <div class="body">
+
+    <div class="panel plot-panel">
+      <div class="plot-head">
+        <div class="small" style="color:var(--text);font-weight:600;">
+          模型权重 α 随分类误差 ε 变化
+        </div>
+        <div class="tag">α = ½ ln((1−ε)/ε)</div>
+      </div>
+      <div id="chart-host"></div>
+    </div>
+
+    <div class="side">
+
+      <div class="panel formula-box">
+        <div class="small" style="color:var(--text);font-weight:600;">三个弱学习器，三种权重</div>
+        <table class="walk" id="walk-table">
+          <thead>
+            <tr><th>弱学习器</th><th class="num">ε</th><th class="num">1−ε</th><th class="num">α</th></tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+        <div class="note" style="color:var(--muted);">
+          A 几乎全对，得到最大话语权；B 接近瞎猜（ε≈0.5），几乎不计票；
+          C 系统性地把标签反了（ε&gt;0.5），α 为负——它的判断会被当作反向证据使用。
+        </div>
+      </div>
+
+      <div class="panel.q panel formula-box" style="background:var(--surface);">
+        <div class="small" style="color:var(--text);font-weight:600;">读这条曲线的三个关键点</div>
+        <div class="row"><span class="lab">ε → 0</span><span class="small" style="color:var(--muted);">α → +∞，几乎完美的弱学习器权重不设上限</span></div>
+        <div class="row"><span class="lab">ε = 0.5</span><span class="small" style="color:var(--muted);">α = 0，和瞎猜等价的学习器不参与投票</span></div>
+        <div class="row"><span class="lab">ε → 1</span><span class="small" style="color:var(--muted);">α → −∞，稳定猜反的学习器被当作强烈反向信号</span></div>
+      </div>
+
+    </div>
+
+  </div>
+
+</div>
+<script src="assets/lib/echarts.min.js"></script>
+<script src="assets/base.js"></script>
+<script>
+(function(){
+  "use strict";
+  Deck.init({ index:9, total:26, keys:false });
+
+  // 三个具体弱学习器的样本
+  var learners = [
+    { name:"弱学习器 A", eps:0.08 },
+    { name:"弱学习器 B", eps:0.47 },
+    { name:"弱学习器 C", eps:0.72 }
+  ];
+  function alpha(eps){ return 0.5 * Math.log((1 - eps) / eps); }
+  learners.forEach(function(d){ d.alpha = alpha(d.eps); });
+
+  // 曲线数据：eps 从 0.02 到 0.98，避开 0/1 处的无穷
+  var curve = [];
+  for (var i = 2; i <= 98; i++){
+    var eps = i / 100;
+    curve.push([eps, alpha(eps)]);
+  }
+
+  var host = document.getElementById("chart-host");
+  var chart = echarts.init(host, null, { renderer:"svg" });
+
+  var colorEnsemble = Deck.token("--ensemble");
+  var colorWeak = Deck.token("--weak");
+  var colorWeight = Deck.token("--weight");
+  var colorRule = Deck.token("--rule");
+  var colorText = Deck.token("--text");
+  var colorMuted = Deck.token("--muted");
+
+  function markPointColor(eps){
+    if (eps < 0.5) return colorEnsemble;
+    if (Math.abs(eps - 0.5) < 0.01) return colorMuted;
+    return colorWeight;
+  }
+
+  function option(){
+    return {
+      animation:false,
+      grid:{ left:56, right:28, top:24, bottom:52 },
+      xAxis:{
+        type:"value", min:0, max:1, interval:0.1,
+        name:"分类误差 ε", nameLocation:"middle", nameGap:32,
+        nameTextStyle:{ color:colorMuted, fontSize:15, fontFamily:"IBM Plex Sans, Noto Sans SC, sans-serif" },
+        axisLine:{ lineStyle:{ color:colorRule } },
+        axisLabel:{ color:colorMuted, fontSize:13, fontFamily:"IBM Plex Mono, monospace" },
+        splitLine:{ show:false }
+      },
+      yAxis:{
+        type:"value", min:-2, max:2, interval:1,
+        name:"模型权重 α", nameLocation:"middle", nameGap:40,
+        nameTextStyle:{ color:colorMuted, fontSize:15, fontFamily:"IBM Plex Sans, Noto Sans SC, sans-serif" },
+        axisLine:{ show:true, lineStyle:{ color:colorRule } },
+        axisLabel:{ color:colorMuted, fontSize:13, fontFamily:"IBM Plex Mono, monospace" },
+        splitLine:{ lineStyle:{ color:colorRule, opacity:0.25 } }
+      },
+      series:[
+        {
+          id:"zero-line",
+          type:"line",
+          data:[[0,0],[1,0]],
+          showSymbol:false,
+          lineStyle:{ color:colorRule, width:1, type:"dashed" },
+          silent:true,
+          z:1
+        },
+        {
+          id:"half-line",
+          type:"line",
+          data:[[0.5,-2],[0.5,2]],
+          showSymbol:false,
+          lineStyle:{ color:colorRule, width:1, type:"dashed" },
+          silent:true,
+          z:1
+        },
+        {
+          id:"alpha-curve",
+          type:"line",
+          data:curve,
+          showSymbol:false,
+          smooth:false,
+          lineStyle:{ color:colorEnsemble, width:3 },
+          z:2
+        },
+        {
+          id:"learners",
+          type:"scatter",
+          data:learners.map(function(d){
+            return { value:[d.eps, d.alpha], name:d.name, itemStyle:{ color:markPointColor(d.eps) } };
+          }),
+          symbolSize:14,
+          z:3,
+          label:{
+            show:true,
+            formatter:function(p){ return p.data.name; },
+            position:"top",
+            distance:10,
+            color:colorText,
+            fontSize:15,
+            fontFamily:"IBM Plex Sans, Noto Sans SC, sans-serif"
+          }
+        }
+      ]
+    };
+  }
+
+  chart.setOption(option());
+
+  var ro = new ResizeObserver(function(){ chart.resize(); });
+  ro.observe(host);
+
+  // 表格
+  var tbody = document.querySelector("#walk-table tbody");
+  learners.forEach(function(d){
+    var tr = document.createElement("tr");
+    if (d.eps < 0.5 && d.eps < 0.2) tr.className = "hi";
+    if (d.eps > 0.5) tr.className = "neg";
+    tr.innerHTML =
+      "<td>" + d.name + "</td>" +
+      "<td class='num'>" + d.eps.toFixed(2) + "</td>" +
+      "<td class='num'>" + (1 - d.eps).toFixed(2) + "</td>" +
+      "<td class='num'>" + (d.alpha >= 0 ? "+" : "") + d.alpha.toFixed(2) + "</td>";
+    tbody.appendChild(tr);
+  });
+
+  window.addEventListener("pagehide", function(){
+    ro.disconnect();
+    chart.dispose();
+  }, { once:true });
+})();
+</script>
+</body>
+</html>

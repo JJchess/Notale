@@ -8,6 +8,54 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>草坪路线修复 mini</title>
 <link rel="stylesheet" href="assets/base.css">
+<style>
+:root{
+ --bg:#171918;--text:#f2f0e9;--muted:#a9afa9;--line:#414642;
+ --focus:#f0df55;
+ --font-sans:Arial,"PingFang SC",sans-serif
+}
+#stage{padding:52px 70px}
+h1{font-size:42px}
+main{display:grid;grid-template-columns:560px 1fr;gap:76px;padding-top:30px}
+.board-wrap{
+ position:relative;width:560px;height:560px;background:#40984b
+}
+#board,.fallback{width:100%;height:100%}
+.fallback{display:grid;grid-template-columns:repeat(8,1fr)}
+.cell{position:relative;background:#399d46;border:1px solid #287d37}
+.cell.mowed{background:#2e7039}
+.cell.rock{background:radial-gradient(ellipse at 40% 30%,#91a0b7,#4b5a72 55%,#26344c 60%)}
+.cell.player{outline:4px solid var(--focus);outline-offset:-7px}
+#mower{
+ position:absolute;left:0;top:0;width:42px;height:29px;z-index:3;
+ border:3px solid #982244;background:#d84d70;pointer-events:none;
+ box-shadow:0 5px 0 #13362266;transition:transform .18s ease
+}
+#mower:before{
+ content:"";position:absolute;left:-19px;top:-17px;width:27px;height:25px;
+ border-left:4px solid #f4d456;border-top:4px solid #f4d456;transform:skewY(35deg)
+}
+.reject{animation:reject .18s ease}
+@keyframes reject{50%{transform:translateX(-5px)}}
+.side h2{font-size:29px}
+.readouts{
+ display:grid;grid-template-columns:repeat(3,1fr);gap:22px;margin-top:30px;
+ padding:19px 0;border-block:1px solid var(--line)
+}
+.readout b{display:block;margin-top:6px;font-size:34px;font-weight:400}
+#status{min-height:50px;margin-top:22px;font-size:17px;line-height:1.45}
+.controls{display:flex;gap:28px;margin-top:18px}
+.dpad{display:grid;grid-template-columns:repeat(3,50px);gap:7px}
+.dpad button{height:50px;border:1px solid #606660;background:#262a27;font-size:22px}
+.dpad :first-child{grid-column:2}
+.dpad :nth-child(n+2){grid-row:2}
+.actions button{height:43px;padding:0 16px;border:1px solid #747a74;background:none}
+#assess{border-color:var(--focus);background:var(--focus);color:#202113}
+#assess:disabled{opacity:.35}
+#result{margin-top:23px;padding-top:17px;border-top:1px solid var(--line);font-size:18px}
+#result strong{color:var(--focus);font-size:30px}
+@media(prefers-reduced-motion:reduce){#mower{transition:none}.reject{animation:none}}
+</style>
 </head>
 <body><div id="stage">
 <header><h1>修好最后五格</h1></header>

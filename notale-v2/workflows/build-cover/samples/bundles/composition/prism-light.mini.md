@@ -124,6 +124,104 @@
 </html>
 ```
   </file>
+  <file path="samples/composition/prism-light/mini/pages/assets/style.css">
+```css
+:root {
+	--bg: #11110f;
+	--text: #f3f7f8;
+	--muted: #aaa79d;
+	--focus: #f0e5ca;
+	--font-sans: "Noto Sans CJK SC", "Source Han Sans SC", "Microsoft YaHei", sans-serif;
+	--font-display: "Noto Serif CJK SC", "Source Han Serif SC", "Songti SC", serif;
+	--settle: cubic-bezier(.16, 1, .3, 1);
+}
+#stage {
+	isolation: isolate;
+	contain: layout paint;
+	background: linear-gradient(124deg, #181814 0, #10110f 54%, #0b0c0a 100%);
+}
+#stage::before {
+	content: "";
+	position: absolute;
+	inset: 0;
+	z-index: 8;
+	pointer-events: none;
+	box-shadow: inset 0 0 150px rgba(0, 0, 0, .48);
+}
+#stage:focus-visible { outline: 3px solid var(--focus); outline-offset: -8px; }
+.cover-copy {
+	position: absolute;
+	z-index: 6;
+	left: 112px;
+	top: 104px;
+	pointer-events: none;
+}
+h1 {
+	display: flex;
+	width: max-content;
+	flex-direction: column;
+	align-items: flex-start;
+	color: #f2f5f5;
+	font-family: var(--font-display);
+	font-weight: 600;
+	letter-spacing: -.075em;
+}
+h1 span { font-size: 108px; line-height: .98; white-space: nowrap; }
+h1 strong {
+	margin-top: 14px;
+	font-size: 188px;
+	font-weight: inherit;
+	line-height: .84;
+	letter-spacing: -.12em;
+}
+.cover-copy p {
+	margin-top: 48px;
+	color: var(--muted);
+	font-size: 25px;
+	line-height: 1.5;
+	letter-spacing: .095em;
+	white-space: nowrap;
+}
+.cover-copy p::before {
+	content: "";
+	display: inline-block;
+	width: 38px;
+	height: 1px;
+	margin: 0 18px 8px 2px;
+	background: rgba(230, 224, 207, .58);
+}
+.scene { z-index: 3; overflow: hidden; pointer-events: none; }
+.prism, .beam, .spectrum { transform-box: fill-box; }
+.prism { transform-origin: center; }
+.beam { transform-origin: right center; }
+.spectrum { transform-origin: left center; mix-blend-mode: screen; }
+.spectrum-halo { opacity: .24; }
+.settled .sheen { animation: sheen-drift 8s ease-in-out infinite alternate; }
+.entering .prism { animation: prism-settle 1050ms var(--settle) both; }
+.entering .beam { animation: beam-settle 950ms 180ms var(--settle) both; }
+.entering .spectrum { animation: spectrum-settle 1150ms 420ms var(--settle) both; }
+.paused .sheen { animation-play-state: paused; }
+@keyframes prism-settle {
+	from { opacity: .82; transform: translate(12px, -7px) scale(.986); }
+	to { opacity: 1; transform: none; }
+}
+@keyframes beam-settle {
+	from { opacity: .54; transform: scaleX(.97); }
+	to { opacity: 1; transform: none; }
+}
+@keyframes spectrum-settle {
+	from { opacity: .45; transform: scaleX(.91); }
+	to { opacity: 1; transform: none; }
+}
+@keyframes sheen-drift {
+	from { opacity: .18; transform: translateX(-5px); }
+	to { opacity: .35; transform: translateX(8px); }
+}
+@media (prefers-reduced-motion: reduce) {
+	.prism, .beam, .spectrum, .sheen { animation: none !important; opacity: 1; transform: none; }
+}
+```
+  </file>
   <file path="samples/composition/prism-light/mini/pages/assets/app.js">
 ```javascript
 (() => {

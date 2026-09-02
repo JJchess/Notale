@@ -26,6 +26,38 @@
 </html>
 ```
   </file>
+  <file path="samples/composition/grid-to-preview/pages/assets/style.css">
+```css
+@font-face{font-family:DejaVu;src:url(DejaVuSerif.ttf) format("truetype");font-display:block}
+:root{--paper:#efefef;--ink:#000;--fit:1;font-family:DejaVu,serif;color:var(--ink);background:var(--paper)}
+*{box-sizing:border-box}
+html,body{width:100%;height:100%;margin:0;overflow:hidden}
+body{background:var(--paper);-webkit-font-smoothing:antialiased}
+button{font:inherit;color:inherit;border:0;padding:0;background:none}
+img{display:block;width:100%;height:100%;object-fit:cover;object-position:50% 50%}
+.viewport{position:fixed;inset:0;overflow:hidden}
+.stage{position:absolute;left:50%;top:50%;width:1600px;height:900px;overflow:hidden;background:var(--paper);transform:translate(-50%,-50%) scale(var(--fit));transform-origin:center}
+.cover-title{position:absolute;z-index:1;left:66px;top:7px;margin:0;font-size:80px;font-weight:400;line-height:1.08;letter-spacing:-.06em;white-space:nowrap}
+.composition{position:absolute;inset:76px 18px 18px;overflow:hidden}
+.object-grid,.preview-grid{position:absolute;inset:24px 48px 14px;margin:0;padding:0;display:grid;grid-template-columns:repeat(4,1fr);grid-template-rows:repeat(2,1fr);column-gap:80px;row-gap:80px;list-style:none}
+.object{position:relative;width:100%;height:100%;contain:size;cursor:pointer;outline:0;touch-action:manipulation}
+.object::after{content:"";position:absolute;inset:-5px;border:2px solid transparent;pointer-events:none}
+.object:focus-visible::after{border-color:var(--ink)}
+.object-image{pointer-events:none}
+.preview-grid{pointer-events:none;z-index:2}
+.preview{position:relative;grid-row:1/span 2;grid-column:auto/span 2;width:100%;height:100%;opacity:0;will-change:transform,opacity}
+.preview.--left{grid-column:1/span 2}.preview.--right{grid-column:3/span 2}
+.preview-images{display:grid;width:100%;height:100%;overflow:hidden}
+.preview-image{grid-area:1/1;opacity:0;will-change:opacity}
+.preview-name{position:absolute;z-index:4;top:calc(100% + 7px);left:0;margin:0;font-size:10px;line-height:1.35;letter-spacing:.025em;text-transform:uppercase;white-space:nowrap}
+.masked-preview{position:absolute;z-index:3;inset:0;background:var(--paper);will-change:clip-path}
+.loading::before,.loading::after{content:"";position:fixed;z-index:20;pointer-events:none}
+.loading::before{inset:0;background:var(--paper)}
+.loading::after{top:50%;left:50%;width:100px;height:1px;margin-left:-50px;background:var(--ink);animation:load 1.5s ease-in-out infinite alternate}
+@keyframes load{from{transform:scaleX(0)}to{transform:scaleX(1)}}
+@media(prefers-reduced-motion:reduce){.loading::after{animation:none}}
+```
+  </file>
   <file path="samples/composition/grid-to-preview/pages/assets/app.js">
 ```javascript
 (() => {

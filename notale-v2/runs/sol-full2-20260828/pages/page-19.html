@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>多层网络仍是同一件事，只是矩阵化了</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    #stage{gap:18px}
+    .page-head{flex:0 0 auto;display:flex;align-items:flex-end;justify-content:space-between;gap:36px;border-bottom:1px solid var(--rule);padding-bottom:16px}
+    .page-head .titles{min-width:0}
+    .page-head h1{margin-bottom:7px}
+    .page-head .lead{margin:0;color:var(--muted)}
+    #matrix-widget{flex:1;min-height:0;display:grid;grid-template-columns:minmax(0,1fr) 410px;gap:30px;align-items:stretch}
+    .path-controls{flex:0 0 auto;padding-bottom:2px}
+    .path-controls .hint{margin:0 0 8px;text-align:right}
+    .path-controls .btns{justify-content:flex-end}
+    .graph-area{min-width:0;min-height:0;display:grid;grid-template-rows:minmax(0,1fr) auto;gap:16px}
+    .network-panel{position:relative;min-height:0;border:var(--line) solid var(--rule-strong);border-radius:var(--radius);background:rgba(248,251,253,.7);overflow:hidden}
+    .network-panel svg{display:block;width:100%;height:100%}
+    .network-panel .layer-label{font-size:15px;font-weight:700;letter-spacing:.04em;fill:var(--muted)}
+    .network-panel .shape-label{font-family:var(--font-num);font-size:16px;font-weight:600;fill:var(--text)}
+    .network-panel .node{fill:var(--paper-strong);stroke:var(--rule-strong);stroke-width:3}
+    .network-panel .edge{fill:none;stroke:var(--rule-strong);stroke-width:2.5;opacity:.55;transition:stroke .16s ease,opacity .16s ease,stroke-width .16s ease}
+    .network-panel .node,.network-panel .signal-arrow{transition:stroke .16s ease,fill .16s ease,opacity .16s ease}
+    .network-panel .signal-arrow{fill:none;stroke:var(--rule-strong);stroke-width:4;marker-end:url(#arrow-neutral)}
+    .network-panel .back-arrow{opacity:0;fill:none;stroke:var(--gradient);stroke-width:4;stroke-dasharray:10 8;marker-end:url(#arrow-back);transition:opacity .16s ease}
+    #matrix-widget[data-mode="forward"] .edge,#matrix-widget[data-mode="forward"] .signal-arrow{stroke:var(--model);opacity:1}
+    #matrix-widget[data-mode="forward"] .signal-arrow{marker-end:url(#arrow-forward)}
+    #matrix-widget[data-mode="forward"] .node{stroke:var(--model)}
+    #matrix-widget[data-mode="backward"] .edge,#matrix-widget[data-mode="backward"] .signal-arrow{opacity:.2}
+    #matrix-widget[data-mode="backward"] .node{stroke:var(--gradient)}
+    #matrix-widget[data-mode="backward"] .back-arrow{opacity:1}
+    .equation-strip{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));border-top:var(--line) solid var(--rule-strong);border-bottom:var(--line) solid var(--rule-strong)}
+    .eq-step{min-width:0;padding:14px 16px;border-right:1px solid var(--rule);transition:background .16s ease,opacity .16s ease}
+    .eq-step:last-child{border-right:0}
+    .eq-step .tagline{display:block;margin-bottom:5px;color:var(--muted);font-size:var(--fs-label);font-weight:700}
+    .eq-step .formula{display:block;font-size:19px;line-height:1.35;font-weight:650;white-space:nowrap}
+    .eq-step .shape{display:block;margin-top:5px;color:var(--muted);font-family:var(--font-num);font-size:15px}
+    #matrix-widget[data-mode="forward"] .eq-step{background:rgba(22,93,156,.055)}
+    #matrix-widget[data-mode="backward"] .eq-step{opacity:.5}
+    .reverse-rail{min-width:0;border-left:var(--line) solid var(--rule);padding-left:26px;display:flex;flex-direction:column}
+    .reverse-rail h2{margin:0 0 4px}
+    .reverse-rail .rail-intro{margin:0 0 14px;color:var(--muted);font-size:var(--fs-sec)}
+    .reverse-list{display:flex;flex-direction:column;gap:0;flex:1;justify-content:center}
+    .reverse-step{position:relative;padding:15px 12px 15px 28px;border-bottom:1px solid var(--rule);opacity:.5;transition:opacity .16s ease,background .16s ease}
+    .reverse-step:first-child{border-top:1px solid var(--rule)}
+    .reverse-step::before{content:"";position:absolute;left:7px;top:23px;width:9px;height:9px;border-radius:50%;border:2px solid var(--gradient);background:var(--bg)}
+    .reverse-step .formula{font-size:17px;line-height:1.42;font-weight:650;white-space:nowrap}
+    .reverse-step .shape-note{margin-top:4px;color:var(--muted);font-size:var(--fs-label)}
+    #matrix-widget[data-mode="backward"] .reverse-step{opacity:1;background:rgba(114,81,111,.055)}
+    .claim{margin:16px 0 0;padding-top:13px;border-top:var(--line) solid var(--rule-strong);font-size:var(--fs-sec);line-height:1.45;font-weight:650}
+    .status{margin-top:8px;color:var(--muted);font-size:var(--fs-label);line-height:1.4}
+    @media (prefers-reduced-motion:reduce){#matrix-widget *{transition:none!important}}
+  </style>
+</head>
+<body data-page="19" data-total="22">
+  <div id="stage">
+    <header class="page-head">
+      <div class="titles min0">
+        <span class="kicker">从标量链到矩阵计算图</span>
+        <h1>多层网络仍是同一件事，只是矩阵化了</h1>
+        <p class="lead">前向传值，反向传梯度；每个矩阵的形状都能检查链式法则是否接得上。</p>
+      </div>
+      <div class="path-controls" aria-label="路径显示控制">
+        <p class="hint">切换路径，比较同一张计算图的两个方向</p>
+        <div class="btns">
+          <button class="btn" type="button" data-mode-btn="forward" aria-pressed="true">前向</button>
+          <button class="btn" type="button" data-mode-btn="backward" aria-pressed="false">反向</button>
+        </div>
+      </div>
+    </header>
+
+    <main id="matrix-widget" class="matrix min0" data-mode="forward" aria-label="两层神经网络的矩阵化前向与反向路径">
+      <section class="graph-area min0" aria-label="两层网络计算图">
+        <div class="network-panel">
+          <svg viewBox="0 0 1020 430" role="img" aria-labelledby="net-title net-desc">
+            <title id="net-title">输入、隐藏层与输出组成的两层网络</title>
+            <desc id="net-desc">输入向量有两个分量，第一层权重为二乘二矩阵，隐藏向量有两个分量，第二层权重为一乘二矩阵，输出为标量。蓝色表示前向路径，紫色虚线表示反向梯度路径。</desc>
+            <defs>
+              <marker id="arrow-neutral" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10Z" fill="#718A9A"/></marker>
+              <marker id="arrow-forward" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10Z" fill="#165D9C"/></marker>
+              <marker id="arrow-back" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10Z" fill="#72516F"/></marker>
+            </defs>
+
+            <text x="105" y="45" text-anchor="middle" class="layer-label">输入向量</text>
+            <text x="480" y="45" text-anchor="middle" class="layer-label">第 1 层 · ReLU</text>
+            <text x="850" y="45" text-anchor="middle" class="layer-label">第 2 层 · sigmoid</text>
+            <text x="105" y="78" text-anchor="middle" class="shape-label">x ∈ ℝ²</text>
+            <text x="480" y="78" text-anchor="middle" class="shape-label">a¹ ∈ ℝ²</text>
+            <text x="850" y="78" text-anchor="middle" class="shape-label">ŷ ∈ ℝ</text>
+
+            <path class="edge" d="M145 155 C255 155 325 155 435 155"/>
+            <path class="edge" d="M145 155 C265 155 325 285 435 285"/>
+            <path class="edge" d="M145 285 C265 285 325 155 435 155"/>
+            <path class="edge" d="M145 285 C255 285 325 285 435 285"/>
+            <path class="edge" d="M525 155 C650 155 710 220 805 220"/>
+            <path class="edge" d="M525 285 C650 285 710 220 805 220"/>
+
+            <circle class="node" cx="105" cy="155" r="40"/>
+            <circle class="node" cx="105" cy="285" r="40"/>
+            <circle class="node" cx="480" cy="155" r="45"/>
+            <circle class="node" cx="480" cy="285" r="45"/>
+            <circle class="node" cx="850" cy="220" r="48"/>
+            <text x="105" y="162" text-anchor="middle" class="shape-label">x₁</text>
+            <text x="105" y="292" text-anchor="middle" class="shape-label">x₂</text>
+            <text x="480" y="162" text-anchor="middle" class="shape-label">a¹₁</text>
+            <text x="480" y="292" text-anchor="middle" class="shape-label">a¹₂</text>
+            <text x="850" y="227" text-anchor="middle" class="shape-label">ŷ</text>
+
+            <path class="signal-arrow" d="M168 372 H410"/>
+            <path class="signal-arrow" d="M542 372 H785"/>
+            <text x="289" y="350" text-anchor="middle" class="shape-label">W¹ ∈ ℝ²×² · b¹ ∈ ℝ²</text>
+            <text x="664" y="350" text-anchor="middle" class="shape-label">W² ∈ ℝ¹×² · b² ∈ ℝ</text>
+
+            <path class="back-arrow" d="M805 110 H555"/>
+            <path class="back-arrow" d="M430 110 H180"/>
+            <text x="680" y="102" text-anchor="middle" class="layer-label is-gradient">δ²</text>
+            <text x="305" y="102" text-anchor="middle" class="layer-label is-gradient">δ¹</text>
+          </svg>
+        </div>
+
+        <div class="equation-strip" aria-label="前向计算公式">
+          <div class="eq-step"><span class="tagline">线性变换</span><span class="formula">z¹ = W¹x + b¹</span><span class="shape">ℝ²×² · ℝ² + ℝ² → ℝ²</span></div>
+          <div class="eq-step"><span class="tagline">逐元素激活</span><span class="formula">a¹ = ReLU(z¹)</span><span class="shape">ℝ² → ℝ²</span></div>
+          <div class="eq-step"><span class="tagline">线性变换</span><span class="formula">z² = W²a¹ + b²</span><span class="shape">ℝ¹×² · ℝ² + ℝ → ℝ</span></div>
+          <div class="eq-step"><span class="tagline">输出激活</span><span class="formula">ŷ = σ(z²)</span><span class="shape">ℝ → ℝ</span></div>
+        </div>
+      </section>
+
+      <aside class="reverse-rail min0" aria-labelledby="reverse-title">
+        <h2 id="reverse-title">沿计算图逆序求梯度</h2>
+        <p class="rail-intro">上游梯度乘局部导数，矩阵转置让形状重新对齐。</p>
+        <div class="reverse-list">
+          <div class="reverse-step"><div class="formula">δ² = ∂L/∂z²</div><div class="shape-note">输出层误差信号：δ² ∈ ℝ</div></div>
+          <div class="reverse-step"><div class="formula">∂L/∂W² = δ²(a¹)ᵀ</div><div class="shape-note">ℝ · ℝ¹×² → ℝ¹×²</div></div>
+          <div class="reverse-step"><div class="formula">δ¹ = (W²)ᵀδ² ⊙ ReLU′(z¹)</div><div class="shape-note">ℝ²×¹ · ℝ ⊙ ℝ² → ℝ²</div></div>
+          <div class="reverse-step"><div class="formula">∂L/∂W¹ = δ¹xᵀ</div><div class="shape-note">ℝ² · ℝ¹×² → ℝ²×²</div></div>
+        </div>
+        <p class="claim">反向传播就是链式法则在矩阵计算图上的系统复用。</p>
+        <div id="path-status" class="status" role="status" aria-live="polite">当前强调前向路径：从 x 依次得到 z¹、a¹、z² 与 ŷ。</div>
+      </aside>
+    </main>
+  </div>
+  <script src="assets/base.js"></script>
+  <script>
+    (() => {
+      const root = document.getElementById('matrix-widget');
+      const buttons = Array.from(document.querySelectorAll('[data-mode-btn]'));
+      const status = document.getElementById('path-status');
+      const messages = {
+        forward: '当前强调前向路径：从 x 依次得到 z¹、a¹、z² 与 ŷ。',
+        backward: '当前强调反向路径：从 δ² 逆序得到两层权重梯度；矩阵形状逐步对齐。'
+      };
+      function render(mode) {
+        root.dataset.mode = mode;
+        buttons.forEach(btn => btn.setAttribute('aria-pressed', String(btn.dataset.modeBtn === mode)));
+        status.textContent = messages[mode];
+      }
+      buttons.forEach(btn => btn.addEventListener('click', () => render(btn.dataset.modeBtn)));
+      render('forward');
+      Deck.init({index:19,total:22});
+    })();
+  </script>
+</body>
+</html>

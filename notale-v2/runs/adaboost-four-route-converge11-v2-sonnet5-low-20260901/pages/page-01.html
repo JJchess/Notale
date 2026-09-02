@@ -1,0 +1,231 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>AdaBoosting 算法</title>
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  :root{
+    --bg:#EEF1F5; --text:#111820;
+    --font-sans:"Noto Sans CJK SC",ui-sans-serif,system-ui,sans-serif;
+  }
+  #stage{ position:relative; background:var(--bg); overflow:hidden; }
+  #net{ position:absolute; inset:0; }
+  .hero{
+    position:absolute; left:56px; top:340px; width:760px;
+    display:flex; flex-direction:column; gap:18px;
+  }
+  .hero h1{
+    margin:0; font-family:var(--font-display),var(--font-sans);
+    font-weight:700; font-size:64px; line-height:1.08; color:var(--text);
+    letter-spacing:.5px;
+  }
+  .hero h1 em{ font-style:normal; color:var(--weight); }
+  .hero .dek{
+    margin:0; font-size:var(--fs-lead); line-height:1.5; color:var(--muted);
+    max-width:620px;
+  }
+  .hero .rule{ width:64px; height:3px; background:var(--weight); }
+  .legend{
+    position:absolute; right:56px; bottom:56px; display:flex; flex-direction:column;
+    gap:10px; align-items:flex-end;
+  }
+  .legend .li{ display:flex; align-items:center; gap:10px; font-size:var(--fs-label); color:var(--muted); }
+  .legend .sw{ width:14px; height:14px; border-radius:50%; display:inline-block; }
+</style>
+</head>
+<body data-page="1" data-total="8">
+<div id="stage" tabindex="0" aria-label="多个弱分类器方向各异，随训练收敛为统一决策方向">
+  <canvas id="net" class="cv-fill no-pan" aria-hidden="true"></canvas>
+  <header class="hero">
+    <h1>Ada<em>Boost</em> 算法</h1>
+    <div class="rule"></div>
+    <p class="dek">一群只比瞎猜强一点的弱分类器，靠反复重点关注被错分的样本，被加权拼成一个强分类器。</p>
+  </header>
+  <div class="legend" aria-hidden="true">
+    <div class="li"><span class="sw" style="background:var(--weak)"></span>弱分类器的当前判断方向</div>
+    <div class="li"><span class="sw" style="background:var(--error)"></span>持续被错分、权重升高的样本</div>
+  </div>
+</div>
+<script src="assets/base.js"></script>
+<script>
+(() => {
+  "use strict";
+
+  const CONFIG = Object.freeze({
+    seed: 20260901,
+    classifierCount: 46,
+    errorPointCount: 5,
+    margin: 40,
+    convergeRate: 0.28,      // 每轮向共识方向收敛的比例
+    roundPeriodMs: 2600,     // 一“轮”训练的时长
+    pullRadius: 230          // 错分点吸引周围分类器角度的半径
+  });
+
+  const stage = document.querySelector("#stage");
+  const canvas = document.querySelector("#net");
+  const reducedMotion = Deck.reduced();
+
+  function mulberry32(seed) {
+    let a = seed >>> 0;
+    return function() {
+      a |= 0; a = (a + 0x6D2B79F5) | 0;
+      let t = Math.imul(a ^ (a >>> 15), 1 | a);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+  const rand = mulberry32(CONFIG.seed);
+
+  let W = 1600, H = 900, ctx = null;
+  let classifiers = [];
+  let errorPoints = [];
+  let consensusAngle = -0.34; // 最终共识方向（弧度）
+  let clock = 0;
+  let stopLoop = () => {};
+  let removeResize = () => {};
+
+  // 标题区：左侧留白，避免遮挡文字
+  function titleFieldDensity(x, y) {
+    const dx = (x - 420) / 470;
+    const dy = (y - 560) / 340;
+    const d = Math.hypot(dx, dy);
+    if (d < 0.72) return 0.06;
+    if (d < 1.05) return 0.06 + (d - 0.72) / 0.33 * 0.94;
+    return 1;
+  }
+
+  function buildModel() {
+    classifiers = [];
+    for (let i = 0; i < CONFIG.classifierCount; i++) {
+      let x, y, tries = 0;
+      do {
+        x = CONFIG.margin + rand() * (W - CONFIG.margin * 2);
+        y = CONFIG.margin + rand() * (H - CONFIG.margin * 2);
+        tries++;
+      } while (titleFieldDensity(x, y) < 0.35 && tries < 20);
+      classifiers.push({
+        x, y,
+        angle: rand() * Math.PI * 2,           // 弱分类器初始判断方向：随机、分散
+        weight: 0.35 + rand() * 0.25,           // 分类器权重：影响收敛速度与线宽
+        phase: rand() * Math.PI * 2,
+        len: 20 + rand() * 14
+      });
+    }
+    // 固定几个持续被错分的样本点，分布在右侧区域，靠权重不断被强调
+    errorPoints = [];
+    const positions = [[1180, 260], [1340, 520], [1080, 700], [1420, 760], [1240, 160]];
+    for (let i = 0; i < CONFIG.errorPointCount; i++) {
+      const [px, py] = positions[i % positions.length];
+      errorPoints.push({ x: px, y: py, weight: 0.5 + rand() * 0.3, phase: rand() * Math.PI * 2 });
+    }
+  }
+
+  function stepModel(dtMs) {
+    clock += dtMs;
+    const roundProgress = (clock % CONFIG.roundPeriodMs) / CONFIG.roundPeriodMs; // 0..1 一轮内进度
+    const globalConverge = Math.min(1, clock / 9000); // 整体逐渐收敛到共识方向
+
+    for (const c of classifiers) {
+      // 每个分类器的目标角度：全局共识 + 受邻近错分点“拉扯”的微小偏移
+      let pull = 0, pullWeight = 0;
+      for (const ep of errorPoints) {
+        const dx = c.x - ep.x, dy = c.y - ep.y;
+        const dist = Math.hypot(dx, dy);
+        if (dist < CONFIG.pullRadius) {
+          const f = (1 - dist / CONFIG.pullRadius) * ep.weight;
+          const toErrAngle = Math.atan2(ep.y - c.y, ep.x - c.x);
+          pull += toErrAngle * f;
+          pullWeight += f;
+        }
+      }
+      const target = pullWeight > 0.02
+        ? (consensusAngle * (1 - pullWeight * 0.5) + (pull / pullWeight) * (pullWeight * 0.5))
+        : consensusAngle;
+
+      const k = CONFIG.convergeRate * c.weight * globalConverge * (dtMs / 1000) * 2.2;
+      let diff = target - c.angle;
+      while (diff > Math.PI) diff -= Math.PI * 2;
+      while (diff < -Math.PI) diff += Math.PI * 2;
+      c.angle += diff * Math.min(1, k);
+      c.wobble = Math.sin(clock / 1000 * 0.6 + c.phase) * (1 - globalConverge) * 0.5;
+    }
+  }
+
+  function draw() {
+    if (!ctx) return;
+    ctx.clearRect(0, 0, W, H);
+
+    const weakColor = Deck.rgb("weak");
+    const errorColor = Deck.rgb("error");
+    const correctColor = Deck.rgb("correct");
+    const lineColor = Deck.rgb("line");
+
+    // 淡背景网格线：坐标基线感
+    ctx.strokeStyle = `rgba(${lineColor[0]},${lineColor[1]},${lineColor[2]},0.5)`;
+    ctx.lineWidth = 1;
+
+    // 弱分类器方向线
+    for (const c of classifiers) {
+      const density = titleFieldDensity(c.x, c.y);
+      if (density < 0.12) continue;
+      const a = c.angle + (c.wobble || 0);
+      const hx = Math.cos(a) * c.len, hy = Math.sin(a) * c.len;
+      const alpha = 0.85 * density;
+      const globalConverge = Math.min(1, clock / 9000);
+      const col = globalConverge > 0.55 ? correctColor : weakColor;
+      ctx.strokeStyle = `rgba(${col[0]},${col[1]},${col[2]},${alpha})`;
+      ctx.lineWidth = 1.1 + c.weight * 2.4;
+      ctx.beginPath();
+      ctx.moveTo(c.x - hx * 0.35, c.y - hy * 0.35);
+      ctx.lineTo(c.x + hx * 0.65, c.y + hy * 0.65);
+      ctx.stroke();
+
+      ctx.fillStyle = `rgba(${col[0]},${col[1]},${col[2]},${alpha})`;
+      ctx.beginPath();
+      ctx.arc(c.x + hx * 0.65, c.y + hy * 0.65, 1.6, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // 错分样本点：始终醒目
+    for (const ep of errorPoints) {
+      const pulse = reducedMotion ? 1 : 0.85 + Math.sin(clock / 1000 * 1.4 + ep.phase) * 0.15;
+      const r = (6 + ep.weight * 6) * pulse;
+      ctx.fillStyle = `rgba(${errorColor[0]},${errorColor[1]},${errorColor[2]},0.92)`;
+      ctx.beginPath();
+      ctx.arc(ep.x, ep.y, r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = `rgba(${errorColor[0]},${errorColor[1]},${errorColor[2]},0.28)`;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.arc(ep.x, ep.y, r + 10, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+  }
+
+  function frame(_t, dtMs) {
+    stepModel(reducedMotion ? 0 : Math.min(dtMs, 50));
+    draw();
+  }
+
+  Deck.init();
+  buildModel();
+  try {
+    ctx = Deck.fit(canvas);
+    W = Deck.W; H = Deck.H;
+  } catch (e) { ctx = null; }
+
+  if (ctx) {
+    removeResize = Deck.onResize(() => {
+      ctx = Deck.fit(canvas);
+      W = Deck.W; H = Deck.H;
+      buildModel();
+      draw();
+    });
+    stopLoop = Deck.loop(frame, { still: 9200 });
+  }
+})();
+</script>
+</body>
+</html>

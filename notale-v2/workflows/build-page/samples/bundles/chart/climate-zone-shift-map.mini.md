@@ -8,6 +8,40 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Climate lines move</title>
 <link rel="stylesheet" href="assets/base.css">
+<style>
+  :root{--bg:#dfe9e9;--text:#18201f;--focus:#164b58;--paper:rgba(248,247,240,.94);--font-sans:Arial,Helvetica,sans-serif}
+  #stage{position:fixed}
+  .map{position:absolute;inset:0 8px;overflow:hidden}
+  .map>canvas,.fallback{position:absolute;inset:0;width:100%;height:100%}
+  #future,.future{opacity:0;transition:opacity 1.1s cubic-bezier(.4,0,.2,1)}
+  .show-future #future,.show-future .future{opacity:1}
+  .instant #future,.instant .future{transition:none}
+  header,.controls,.city-copy,.legend{background:var(--paper)}
+  header{position:absolute;z-index:4;left:36px;top:30px;width:565px;padding:16px 19px;border-left:5px solid #164b58}
+  .eyebrow{font-size:13px;letter-spacing:.12em;font-weight:700;color:#355b61}
+  h1{font:500 42px/.98 Georgia,serif;margin:7px 0 8px;letter-spacing:-.025em}
+  header p{font-size:16px;line-height:1.35}
+  .controls{position:absolute;z-index:5;right:34px;top:32px;display:flex;border:1px solid #667875}
+  .controls button{height:48px;padding:0 17px;border:0;border-right:1px solid #879592;background:transparent;font-weight:700;cursor:pointer}
+  .controls button:last-child{border:0}
+  .controls [aria-pressed=true]{color:#fff;background:#164b58}
+  .annotation{position:absolute;z-index:3;width:430px;padding-top:18px;transform:translateX(-50%);pointer-events:none}
+  .annotation::before{content:"";position:absolute;left:50%;top:0;width:14px;height:14px;transform:translate(-50%,-50%);border:3px solid #fff;background:#18201f;outline:2px solid #18201f;border-radius:50%}
+  .city-copy{padding:9px 13px;border-top:3px solid #18201f}
+  .city-copy strong{font:600 21px Georgia,serif}
+  .city-copy p{font-size:14px;line-height:1.3;margin-top:4px}
+  .city-copy span{display:inline-block;width:9px;height:9px;margin-right:6px;border:1px solid #333}
+  .present-row span{background:#cbd6ff}.future-row span{background:#bcdfff}
+  .future-row,.is-future .present-row{opacity:.52}
+  .is-future .future-row{opacity:1;font-weight:700}
+  .legend{position:absolute;z-index:4;left:36px;right:36px;bottom:26px;height:59px;padding:10px 13px;display:grid;grid-template-columns:180px 1fr 260px;gap:13px;align-items:center;border-top:1px solid #667875}
+  .legend strong,#stateNote{font-size:14px;font-weight:700}
+  .palette{height:21px;display:grid;grid-template-columns:repeat(30,1fr);border:1px solid #596865}
+  #stateNote{text-align:right;line-height:1.3}
+  .fallback{display:grid;grid-template:repeat(25,1fr)/repeat(44,1fr)}
+  .failure{position:absolute;z-index:3;inset:280px 480px;padding:35px;background:#f8f7f0;border:2px solid;text-align:center}
+  .failure h2{font:30px Georgia,serif;margin-bottom:10px}.failure p{font-size:17px;line-height:1.4}
+</style>
 </head>
 <body>
 <main id="stage">

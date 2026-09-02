@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>局部效应怎样组成整条路径的敏感度</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    #stage > header{flex:0 0 auto}
+    #sensitivity-lab{display:grid;grid-template-columns:minmax(0,1fr) 380px;gap:28px;flex:1;min-height:0;margin-top:20px}
+    #sensitivity-lab .model{display:flex;flex-direction:column;min-width:0;min-height:0;border-top:2px solid var(--rule);border-bottom:2px solid var(--rule);background:var(--paper)}
+    #sensitivity-lab .model-head{display:flex;align-items:flex-start;justify-content:space-between;gap:24px;padding:18px 22px 10px}
+    #sensitivity-lab .model-head h2{font-size:var(--fs-h2)}
+    #sensitivity-lab .fixed{color:var(--muted);font-size:var(--fs-label);text-align:right;line-height:1.4}
+    #sensitivity-lab .chain-wrap{position:relative;flex:1;min-height:0;padding:0 18px 4px}
+    #sensitivity-lab svg{display:block;width:100%;height:100%;min-height:390px}
+    #sensitivity-lab .node{fill:var(--paper);stroke:var(--rule-strong);stroke-width:2}
+    #sensitivity-lab .node.active{stroke:var(--attention);stroke-width:4}
+    #sensitivity-lab .node.loss{stroke:var(--loss);stroke-width:3}
+    #sensitivity-lab .wire{fill:none;stroke:var(--model);stroke-width:4}
+    #sensitivity-lab .backwire{fill:none;stroke:var(--loss);stroke-width:2.5;stroke-dasharray:8 6}
+    #sensitivity-lab .node-title{fill:var(--muted);font:650 15px var(--font-sans)}
+    #sensitivity-lab .node-value{fill:var(--text);font:600 28px var(--font-num)}
+    #sensitivity-lab .node-formula{fill:var(--muted);font:15px var(--font-sans)}
+    #sensitivity-lab .local-box{fill:var(--bg);stroke:var(--rule);stroke-width:1.5}
+    #sensitivity-lab .local-label{fill:var(--muted);font:14px var(--font-sans)}
+    #sensitivity-lab .local-value{fill:var(--loss);font:650 19px var(--font-num)}
+    #sensitivity-lab .baseline-mark{stroke:var(--rule-strong);stroke-width:2;stroke-dasharray:5 5}
+    #sensitivity-lab .delta-bracket{stroke:var(--attention);stroke-width:3;fill:none}
+    #sensitivity-lab .delta-text{fill:var(--attention);font:650 17px var(--font-num)}
+    #sensitivity-lab .product-band{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:18px;margin:0 22px 18px;padding-top:14px;border-top:1px solid var(--rule)}
+    #sensitivity-lab .product-band .equation{font:600 25px/1.3 var(--font-num);color:var(--loss);white-space:nowrap}
+    #sensitivity-lab .product-band .explain{color:var(--muted);font-size:var(--fs-sec);line-height:1.4}
+    #sensitivity-lab .side{display:flex;flex-direction:column;gap:16px;min-width:0;min-height:0}
+    #sensitivity-lab .side .panel{padding:18px 20px}
+    #sensitivity-lab .control-panel h2{margin-bottom:14px}
+    #sensitivity-lab .control-panel .ctl{display:block}
+    #sensitivity-lab .control-panel label{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-bottom:8px;font-size:var(--fs-sec);font-weight:650}
+    #sensitivity-lab .control-panel output{color:var(--attention);font:650 25px var(--font-num)}
+    #sensitivity-lab .range-ends{display:flex;justify-content:space-between;color:var(--muted);font:var(--fs-tick) var(--font-num)}
+    #sensitivity-lab .btns{margin-top:14px}
+    #sensitivity-lab .results{flex:1;display:flex;flex-direction:column;min-height:0}
+    #sensitivity-lab .readrow{display:flex;justify-content:space-between;align-items:baseline;gap:16px;padding:12px 0;border-bottom:1px solid var(--rule)}
+    #sensitivity-lab .readrow:first-of-type{padding-top:4px}
+    #sensitivity-lab .readrow span{color:var(--muted);font-size:var(--fs-sec)}
+    #sensitivity-lab .readrow strong{font:650 27px var(--font-num);white-space:nowrap}
+    #sensitivity-lab .readrow.loss strong{color:var(--loss)}
+    #sensitivity-lab .meter{position:relative;height:36px;margin:18px 0 8px;border-bottom:2px solid var(--rule-strong)}
+    #sensitivity-lab .meter-zero{position:absolute;left:50%;top:7px;bottom:-6px;width:2px;background:var(--rule-strong)}
+    #sensitivity-lab .meter-bar{position:absolute;top:12px;height:14px;background:var(--loss);transition:left .12s ease-out,width .12s ease-out}
+    #sensitivity-lab .meter-labels{display:flex;justify-content:space-between;color:var(--muted);font:var(--fs-tick) var(--font-num)}
+    #sensitivity-lab .verdict{margin-top:auto;padding-top:14px;color:var(--text);font-size:var(--fs-sec);line-height:1.5}
+    #sensitivity-lab .verdict strong{color:var(--loss)}
+    #sensitivity-lab .dead-note{display:none;margin-top:8px;color:var(--loss);font-size:var(--fs-label);line-height:1.4}
+    #sensitivity-lab[data-dead="true"] .dead-note{display:block}
+    #sensitivity-lab[data-dead="true"] .local-box.first{stroke:var(--loss);stroke-width:3}
+    @media (prefers-reduced-motion:reduce){#sensitivity-lab .meter-bar{transition:none}}
+  </style>
+</head>
+<body data-page="16" data-total="24">
+  <div id="stage">
+    <header>
+      <p class="kicker">反向传播 · 路径敏感度</p>
+      <h1>整条链的敏感度，是各段局部效应的乘积</h1>
+      <p class="lead" style="margin-top:10px">扰动中间量 <span class="num">z</span>，沿固定计算链追踪激活、预测与损失怎样一起改变。</p>
+    </header>
+
+    <main id="sensitivity-lab" aria-label="计算链敏感度实验">
+      <section class="model min0" aria-labelledby="chain-title">
+        <div class="model-head">
+          <h2 id="chain-title">从中间量到最终损失</h2>
+          <p class="fixed">保持不变：权重 <span class="num">1.2</span>，偏置 <span class="num">0.1</span>，目标 <span class="num">1.4</span></p>
+        </div>
+        <div class="chain-wrap min0">
+          <svg viewBox="0 0 1000 440" role="img" aria-labelledby="svg-title svg-desc">
+            <title id="svg-title">中间量 z 经过 ReLU、线性层和平方损失的计算链</title>
+            <desc id="svg-desc">实线表示前向计算，虚线表示损失对中间量的敏感度由右向左组合。每段连线上显示当前局部导数。</desc>
+            <defs>
+              <marker id="p16-forward" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#2457A6"/></marker>
+              <marker id="p16-back" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#A33D3D"/></marker>
+            </defs>
+            <g aria-hidden="true">
+              <path class="wire" marker-end="url(#p16-forward)" d="M205 190H296"/>
+              <path class="wire" marker-end="url(#p16-forward)" d="M455 190H548"/>
+              <path class="wire" marker-end="url(#p16-forward)" d="M707 190H798"/>
+              <path class="backwire" marker-end="url(#p16-back)" d="M802 352H205"/>
+              <text x="500" y="382" text-anchor="middle" class="node-formula">反向组合：沿同一路径把局部导数相乘</text>
+            </g>
+
+            <g transform="translate(30 115)">
+              <rect width="175" height="150" rx="6" class="node active"/>
+              <text x="18" y="32" class="node-title">你扰动的中间量</text>
+              <text id="svg-z" x="18" y="82" class="node-value">z = 1.10</text>
+              <text x="18" y="119" class="node-formula">基线 z₀ = 0.80</text>
+              <line x1="36" y1="138" x2="136" y2="138" class="baseline-mark"/>
+              <path id="delta-bracket" d="M86 132V122H124V132" class="delta-bracket"/>
+              <text id="svg-delta" x="105" y="112" text-anchor="middle" class="delta-text">+0.30</text>
+            </g>
+            <g transform="translate(296 115)">
+              <rect width="159" height="150" rx="6" class="node"/>
+              <text x="18" y="32" class="node-title">激活</text>
+              <text id="svg-a" x="18" y="82" class="node-value">a = 1.10</text>
+              <text x="18" y="119" class="node-formula">a = ReLU(z)</text>
+            </g>
+            <g transform="translate(548 115)">
+              <rect width="159" height="150" rx="6" class="node"/>
+              <text x="18" y="32" class="node-title">预测</text>
+              <text id="svg-yhat" x="18" y="82" class="node-value">ŷ = 1.42</text>
+              <text x="18" y="119" class="node-formula">ŷ = 1.2a + 0.1</text>
+            </g>
+            <g transform="translate(798 115)">
+              <rect width="172" height="150" rx="6" class="node loss"/>
+              <text x="18" y="32" class="node-title">最终损失</text>
+              <text id="svg-loss" x="18" y="82" class="node-value">L = 0.0002</text>
+              <text x="18" y="119" class="node-formula">L = ½(ŷ − 1.4)²</text>
+            </g>
+
+            <g transform="translate(220 40)">
+              <rect width="135" height="58" rx="4" class="local-box first"/>
+              <text x="68" y="21" text-anchor="middle" class="local-label">局部 ∂a/∂z</text>
+              <text id="d1" x="68" y="46" text-anchor="middle" class="local-value">1.000</text>
+            </g>
+            <g transform="translate(472 40)">
+              <rect width="135" height="58" rx="4" class="local-box"/>
+              <text x="68" y="21" text-anchor="middle" class="local-label">局部 ∂ŷ/∂a</text>
+              <text id="d2" x="68" y="46" text-anchor="middle" class="local-value">1.200</text>
+            </g>
+            <g transform="translate(724 40)">
+              <rect width="148" height="58" rx="4" class="local-box"/>
+              <text x="74" y="21" text-anchor="middle" class="local-label">局部 ∂L/∂ŷ</text>
+              <text id="d3" x="74" y="46" text-anchor="middle" class="local-value">0.020</text>
+            </g>
+          </svg>
+        </div>
+        <div class="product-band">
+          <span class="tag">链式法则</span>
+          <div id="product-equation" class="equation">1.000 × 1.200 × 0.020 = 0.024</div>
+          <div class="explain">乘积就是当前<br><strong>∂L/∂z</strong></div>
+        </div>
+      </section>
+
+      <aside class="side min0">
+        <section class="panel control-panel" aria-labelledby="control-title">
+          <h2 id="control-title">扰动 <span class="num">z</span></h2>
+          <div class="ctl">
+            <label for="delta"><span>相对基线的改变量</span><output id="delta-out" for="delta">+0.30</output></label>
+            <input id="delta" type="range" min="-1.8" max="1.2" step="0.05" value="0.3" aria-describedby="range-hint">
+            <div class="range-ends"><span>−1.80</span><span>0</span><span>+1.20</span></div>
+          </div>
+          <p id="range-hint" class="hint" style="margin-top:8px">拖动滑块；方向键每次改变 0.05。</p>
+          <div class="btns">
+            <button class="btn" id="small-step" type="button">设为 +0.10</button>
+            <button class="btn" id="dead-zone" type="button">越过 ReLU 零点</button>
+            <button class="btn" id="reset" type="button">恢复初始扰动</button>
+          </div>
+          <p class="dead-note">当前 z ≤ 0，ReLU 的局部导数为 0；这段路径不再传递微小变化。</p>
+        </section>
+
+        <section class="panel results" aria-labelledby="results-title">
+          <h2 id="results-title">损失变化</h2>
+          <div class="readrow"><span>基线损失 L₀</span><strong id="base-loss">0.0578</strong></div>
+          <div class="readrow"><span>当前损失 L</span><strong id="current-loss">0.0002</strong></div>
+          <div class="readrow loss"><span>最终变化 ΔL</span><strong id="loss-delta">−0.0576</strong></div>
+          <div class="meter" aria-hidden="true"><span class="meter-zero"></span><span id="meter-bar" class="meter-bar"></span></div>
+          <div class="meter-labels"><span>损失减小</span><span>0</span><span>损失增大</span></div>
+          <p id="verdict" class="verdict" aria-live="off">当前三段局部效应的乘积为 <strong>0.024</strong>：再把 z 增大一点，损失会增大。</p>
+        </section>
+      </aside>
+    </main>
+  </div>
+  <script src="assets/base.js"></script>
+  <script>
+    Deck.init({index:16,total:24});
+    (() => {
+      const root = document.getElementById('sensitivity-lab');
+      const q = s => root.querySelector(s);
+      const els = {
+        range:q('#delta'), out:q('#delta-out'), z:q('#svg-z'), delta:q('#svg-delta'), a:q('#svg-a'), y:q('#svg-yhat'), loss:q('#svg-loss'),
+        d1:q('#d1'), d2:q('#d2'), d3:q('#d3'), equation:q('#product-equation'), current:q('#current-loss'), change:q('#loss-delta'),
+        bar:q('#meter-bar'), verdict:q('#verdict'), small:q('#small-step'), dead:q('#dead-zone'), reset:q('#reset')
+      };
+      const initial = 0.30;
+      const z0 = 0.8, target = 1.4;
+      const calc = z => { const a=Math.max(0,z), y=1.2*a+0.1, err=y-target; return {z,a,y,L:0.5*err*err,d1:z>0?1:0,d2:1.2,d3:err,grad:(z>0?1:0)*1.2*err}; };
+      const base = calc(z0);
+      const signed = (v,d=2) => `${v>=0?'+':'−'}${Math.abs(v).toFixed(d)}`;
+      let state = {delta:initial};
+      function render(announce=false){
+        const cur=calc(z0+state.delta), dl=cur.L-base.L;
+        root.dataset.dead=String(cur.z<=0);
+        els.range.value=state.delta.toFixed(2);
+        els.out.textContent=signed(state.delta,2);
+        els.z.textContent=`z = ${cur.z.toFixed(2)}`;
+        els.delta.textContent=signed(state.delta,2);
+        els.a.textContent=`a = ${cur.a.toFixed(2)}`;
+        els.y.textContent=`ŷ = ${cur.y.toFixed(2)}`;
+        els.loss.textContent=`L = ${cur.L.toFixed(4)}`;
+        els.d1.textContent=cur.d1.toFixed(3); els.d2.textContent=cur.d2.toFixed(3); els.d3.textContent=cur.d3.toFixed(3);
+        els.equation.textContent=`${cur.d1.toFixed(3)} × ${cur.d2.toFixed(3)} × ${cur.d3.toFixed(3)} = ${cur.grad.toFixed(3)}`;
+        els.current.textContent=cur.L.toFixed(4); els.change.textContent=signed(dl,4);
+        const magnitude=Math.min(50,Math.abs(dl)/0.85*50);
+        els.bar.style.left=dl<0?`${50-magnitude}%`:'50%'; els.bar.style.width=`${magnitude}%`;
+        let message;
+        if(cur.z<=0) message='第一段局部效应为 0，所以整条路径的当前敏感度也是 0；继续做微小扰动不会改变损失。';
+        else if(Math.abs(cur.grad)<0.0005) message='当前预测恰好接近目标，损失曲线处在最低点附近，路径敏感度接近 0。';
+        else message=`当前三段局部效应的乘积为 <strong>${cur.grad.toFixed(3)}</strong>：再把 z 增大一点，损失会${cur.grad>0?'增大':'减小'}。`;
+        els.verdict.setAttribute('aria-live',announce?'polite':'off');
+        els.verdict.innerHTML=message;
+      }
+      function setDelta(v,announce=true){state.delta=Math.max(-1.8,Math.min(1.2,Number(v)));render(announce)}
+      const onInput=e=>setDelta(e.target.value,false);
+      const onChange=e=>setDelta(e.target.value,true);
+      const onSmall=()=>setDelta(0.10), onDead=()=>setDelta(-1.20), onReset=()=>setDelta(initial);
+      els.range.addEventListener('input',onInput);
+      els.range.addEventListener('change',onChange);
+      els.small.addEventListener('click',onSmall);
+      els.dead.addEventListener('click',onDead);
+      els.reset.addEventListener('click',onReset);
+      render(false);
+      let destroyed=false;
+      window.sensitivityLab={
+        reset:onReset,
+        destroy(){
+          if(destroyed)return;
+          destroyed=true;
+          els.range.removeEventListener('input',onInput);
+          els.range.removeEventListener('change',onChange);
+          els.small.removeEventListener('click',onSmall);
+          els.dead.removeEventListener('click',onDead);
+          els.reset.removeEventListener('click',onReset);
+        }
+      };
+    })();
+  </script>
+</body>
+</html>

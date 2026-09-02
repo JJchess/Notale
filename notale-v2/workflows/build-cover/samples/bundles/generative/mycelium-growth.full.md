@@ -9,6 +9,90 @@
   <meta name="color-scheme" content="dark">
   <title>菌丝｜地下的生长网络</title>
   <link rel="stylesheet" href="assets/base.css">
+  <style>
+:root{
+  --stage-w:1600px;
+  --stage-h:900px;
+  --bg:#11140f;
+  --surface:#1b2018;
+  --text:#f0eadc;
+  --text-soft:#beb6a6;
+  --muted:#837d70;
+  --line:#45483c;
+  --mycelium:#c8c5b0;
+  --mycelium-hot:#eee2c3;
+  --nutrient:#bd8437;
+  --spore:#7b9276;
+  --signal:#d2ad56;
+  --focus:#d2ad56;
+  --font-sans:"Noto Sans CJK SC","Noto Sans SC","Microsoft YaHei",system-ui,sans-serif;
+  --font-display:"Noto Serif CJK SC","Songti SC","STSong","Times New Roman",serif;
+}
+
+html,body{ width:100%; height:100%; }
+
+#stage{
+  isolation:isolate;
+  background:var(--bg);
+  color:var(--text);
+  overflow:hidden;
+}
+
+.field{
+  position:absolute;
+  inset:0;
+  z-index:1;
+  overflow:hidden;
+}
+
+.field canvas{ pointer-events:none; }
+#ambient-canvas{ z-index:2; }
+
+.cover-copy{
+  position:absolute;
+  left:92px;
+  top:185px;
+  z-index:7;
+  width:570px;
+}
+
+h1{
+  display:flex;
+  flex-direction:column;
+  align-items:flex-start;
+  font-weight:500;
+}
+
+.title-cn{
+  font-family:var(--font-display);
+  font-size:194px;
+  line-height:.86;
+  letter-spacing:-.08em;
+}
+
+.subtitle{
+  position:relative;
+  margin-top:50px;
+  padding-top:25px;
+  padding-left:7px;
+  color:var(--text-soft);
+  font-size:29px;
+  font-weight:400;
+  letter-spacing:.14em;
+  line-height:1.35;
+}
+
+.subtitle::before{
+  content:"";
+  position:absolute;
+  top:0;
+  left:7px;
+  width:54px;
+  height:1px;
+  background:var(--nutrient);
+}
+
+  </style>
 </head>
 <body>
   <main id="stage" aria-labelledby="cover-title">

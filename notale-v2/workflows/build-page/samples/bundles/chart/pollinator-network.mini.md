@@ -41,6 +41,30 @@
 </html>
 ```
   </file>
+  <file path="samples/chart/pollinator-network/mini/pages/assets/app.css">
+```css
+:root{--bg:#cfd8d0;--text:#17211c;--font-sans:"Microsoft YaHei",system-ui,sans-serif;--paper:#f5f6f1;--muted:#687168;--rule:#bcc5bb;--green:#285b49;--amber:#dd922e;--a:#795574;--b:#2f6c73;--focus:#b64d2e}
+#stage{position:fixed;background:var(--paper)}
+header{position:absolute;left:52px;top:28px}h1{font-size:49px;line-height:1;letter-spacing:-.055em}
+header p{margin-top:9px;color:var(--muted)}
+nav{position:absolute;z-index:3;right:52px;top:40px;display:flex;gap:7px}
+button{border:0}nav button{padding:10px 13px;border:1px solid var(--rule);background:transparent;color:var(--muted);font-weight:700}
+nav button[aria-pressed=true]{border-color:var(--green);color:var(--green)}
+#network{position:absolute;left:40px;top:145px;width:1138px;height:650px;background:#fbfbf8}
+.zone{stroke-dasharray:5 6}.zone.a{fill:#eee3eb;stroke:#79557466}.zone.b{fill:#deeceb;stroke:#2f6c7366}
+.corridor{fill:#f3dfbd73;stroke:#9c5a144d;stroke-dasharray:3 6}.zone-label{font-size:14px;font-weight:800}
+.zone-label.a{fill:var(--a)}.zone-label.b{fill:var(--b)}.edge{fill:none;stroke-linecap:round;mix-blend-mode:multiply}
+.edge.a{stroke:var(--a)}.edge.b{stroke:var(--b)}.node{cursor:pointer}.node text{fill:var(--text);stroke:#fbfbf8;stroke-width:5px;paint-order:stroke;font-size:13px;font-weight:750}
+.plant .symbol{fill:var(--green)}.pollinator .symbol{fill:var(--amber);stroke:#9c5a14;stroke-width:2px}
+.pollinator.bridge .symbol{fill:var(--text);stroke:var(--amber)}
+aside{position:absolute;left:1210px;top:168px;width:338px;padding-left:24px;border-left:1px solid var(--rule)}
+aside>p:first-child{color:var(--green)}aside h2{margin-top:9px;font-size:31px;line-height:1.15}
+.note{margin:14px 0 22px;color:var(--muted)}.case{display:grid;width:100%;padding:13px 0;border-block:1px solid var(--rule);text-align:left;background:transparent}
+.case b{font-size:17px}.case span,.key{margin-top:4px;color:var(--muted)}.case[aria-pressed=true] b{color:#9c5a14}
+#status{position:absolute;left:52px;bottom:40px;color:var(--green);font-size:14px}
+#fallback{position:absolute;z-index:4;left:310px;top:330px;width:520px;padding:28px;background:#fbfbf8;border:1px solid var(--rule)}
+```
+  </file>
   <file path="samples/chart/pollinator-network/mini/pages/assets/app.js">
 ```javascript
 (() => {

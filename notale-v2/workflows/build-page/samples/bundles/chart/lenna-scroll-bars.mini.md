@@ -8,6 +8,22 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Lenna：网络余波</title>
 <link rel="stylesheet" href="assets/base.css">
+<style>
+  :root{--bg:#390a29;--text:#fff2e8;--focus:#a5f2d5;--axis:#f2c299;--grid:#58123f;--bar:#681b4d;--paper:#fffaf5;--ink:#282828;--font-sans:Arial,"PingFang SC",sans-serif}
+  html,body{overflow:hidden}#stage{position:fixed;background:var(--bg)}
+  .heading{position:absolute;z-index:3;left:50px;top:24px}.heading h1{font-size:30px;line-height:1.08;letter-spacing:-.025em}
+  #chart{position:absolute;inset:0;width:1600px;height:900px;overflow:visible;shape-rendering:crispEdges}
+  .grid line{stroke:var(--grid)}.axis text{fill:var(--axis);font:14px ui-monospace,monospace}.axis .current{fill:var(--text);font-size:18px;font-weight:700}
+  .bar{fill:var(--bar)}.bar.current{stroke:var(--focus);stroke-width:3px}
+  .card{position:absolute;z-index:4;right:120px;top:50%;width:360px;padding:28px;color:var(--ink);background:var(--paper);transform:translateY(-50%)}
+  .card p{font-size:18px;line-height:1.62}.card strong{font-weight:750}.card .year{padding:0 4px;outline:2px solid var(--focus)}
+  .controls{position:absolute;z-index:5;right:50px;top:28px;display:flex;border:1px solid var(--axis)}.controls button{height:44px;padding:0 17px;border:0;border-right:1px solid var(--axis);color:var(--text);background:#390a29;font-weight:700;cursor:pointer}.controls button:disabled{opacity:.42;cursor:default}
+  .domain-key{position:absolute;z-index:3;left:140px;top:188px;display:none;gap:9px;flex-direction:column}.domains .domain-key{display:flex}.domain-key span{width:108px;padding:6px 8px;color:var(--text)}.domain-key i{display:inline-block;width:20px;height:20px;margin-right:10px;vertical-align:middle}
+  .source{position:absolute;z-index:3;left:50px;bottom:27px;color:var(--axis);font:13px ui-monospace,monospace;opacity:.76}
+  #status{position:absolute;left:50px;bottom:52px;color:var(--axis);font:14px ui-monospace,monospace}
+  .fallback{position:absolute;z-index:6;left:50%;top:50%;width:520px;padding:30px;color:var(--ink);background:var(--paper);transform:translate(-50%,-50%);font-size:18px;line-height:1.55}
+  @media(prefers-reduced-motion:reduce){.bar,.segment{transition:none!important}}
+</style>
 </head>
 <body>
 <main id="stage">

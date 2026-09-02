@@ -9,6 +9,42 @@
   <title>共享旋律</title>
   <link rel="icon" href="data:,">
   <link rel="stylesheet" href="assets/base.css">
+  <style>
+    :root{--bg:#252222;--text:#fff;--font-sans:Arial,Helvetica,sans-serif;--pad-x:1px;--focus:#fde300;--error:#ff7859}
+    #stage{padding:0 var(--pad-x)}
+    #replica{position:absolute;left:349px;top:46px;width:900px;margin:0;font-size:24px;line-height:33.6px}
+    .buttons{display:flex;height:87.586px;justify-content:space-between;margin-bottom:23.414px}
+    .u{width:227.391px}.r{width:512.391px}
+    .clip{position:relative;display:flex;width:100%;height:48px;align-items:center;overflow:hidden;padding:6px 8px 6px 12px;border:0;border-radius:6px;background:#efefef;color:#252222;font-size:24px;font-weight:700;white-space:nowrap}
+    .clip:hover{background:#cacaca}.label,.icon{position:relative;z-index:2}
+    .icon{width:36px;height:36px;flex:none;margin-left:6px;background:url(assets/play-circle.svg) center/30px no-repeat}
+    .playing .icon{background-image:url(assets/pause-circle.svg)}
+    .progress{position:absolute;inset:0 auto 0 0;width:0;border-radius:6px;background:var(--focus)}
+    .source{height:33.586px;margin-top:6px}
+    .keybed{position:relative;width:900px;height:384.798px;overflow:hidden;background:#0b1013}
+    .key{position:absolute;padding:0;border:0;touch-action:none}
+    .white{top:0;height:372px;z-index:1;border-right:2px solid #737779;border-radius:0 0 8px 8px;background:linear-gradient(90deg,#c8cace,#fff 12%,#f7f7f5 80%,#b8bbbc);box-shadow:inset 2px 0 #fff,0 6px #858989,0 10px 8px #0009}
+    .black{top:0;height:243px;z-index:2;border-radius:0 0 5px 5px;background:linear-gradient(0deg,#0d1218,#303642 7%,transparent 8%),linear-gradient(90deg,#080d12,#4a505e 12%,#111820 28%,#080d12 74%,#414753 93%,#080d12);box-shadow:inset 2px 0 3px #9aa1b066,10px 13px 5px #0006}
+    .key::before{content:attr(data-name);position:absolute;inset:auto 0 13px;color:#222;font:700 13px Arial;text-align:center;opacity:0}
+    .black::before{bottom:8px;color:#fff}.down::before,.key:focus-visible::before{opacity:.9}
+    .down{transform:translateY(3px)}
+    .white.down{box-shadow:inset 0 0 0 4px var(--focus),0 3px #707575}
+    .black.down{filter:brightness(1.25);box-shadow:inset 0 0 0 3px var(--focus),5px 7px 4px #0008}
+    .mark{position:absolute;inset:0;z-index:4;width:100%;height:100%;pointer-events:none;opacity:0}
+    .mark.show{opacity:1}
+    #lesson{position:absolute;left:349px;top:590px;width:900px;height:268px;border-top:1px solid #5b5656;padding-top:24px}
+    .lesson-head{height:34px}h1{font-size:28px;line-height:1.1;letter-spacing:-.03em}
+    .builder{display:flex;height:82px;align-items:center;justify-content:space-between;margin-top:16px}
+    .slot{width:88px;height:48px;padding:0;border:0;border-bottom:2px solid #8d8888;border-radius:0;background:transparent;font-size:18px;font-weight:700}
+    .slot.selected,.slot:focus-visible{border-color:var(--focus);color:var(--focus);outline:0}
+    .interval{width:124px;color:#bdb8b8;text-align:center;font-size:15px}.interval.bad{color:var(--error)}
+    .feedback{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:28px;align-items:start;margin-top:16px}
+    .status{min-width:0;min-height:60px}#message{color:#ddd;font-size:17px;line-height:1.45}
+    .controls{display:flex;gap:10px}
+    .controls button{height:44px;padding:0 20px;border:1px solid #8d8888;border-radius:2px;background:transparent;font-weight:700}
+    #check{border-color:var(--focus);background:var(--focus);color:#252222}
+    .audio-off{margin-top:6px;color:#bdb8b8;font-size:14px}
+  </style>
 </head>
 <body>
   <div id="stage">

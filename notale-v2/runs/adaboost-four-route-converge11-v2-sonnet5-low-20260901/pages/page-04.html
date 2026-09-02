@@ -1,0 +1,508 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  #stage{
+    display:flex;
+    flex-direction:column;
+    padding:28px 56px;
+    box-sizing:border-box;
+    gap:14px;
+  }
+  h1{
+    font-family:var(--font-display);
+    font-size:var(--fs-h2);
+    font-weight:700;
+    color:var(--text);
+    margin:0;
+  }
+  .lead{
+    font-size:var(--fs-lead);
+    color:var(--muted);
+    margin:0 0 2px;
+  }
+  .lead b{ color:var(--weight); font-weight:700; }
+  .body-row{
+    flex:1;
+    min-height:0;
+    display:flex;
+    gap:24px;
+  }
+  .stage-evidence{
+    flex:0 0 62%;
+    min-width:0;
+    display:flex;
+    flex-direction:column;
+    background:var(--surface);
+    border:1px solid var(--line);
+  }
+  .scene-wrap{
+    flex:1;
+    min-height:0;
+    position:relative;
+  }
+  .scene-wrap canvas{ position:absolute; inset:0; width:100%; height:100%; }
+  .hint-band{
+    flex:0 0 auto;
+    padding:10px 20px;
+    border-top:1px solid var(--line);
+    font-size:var(--fs-sec);
+    color:var(--muted);
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    gap:16px;
+  }
+  .hint-band .metric{ font-family:var(--font-mono); color:var(--text); }
+  .hint-band .metric b{ color:var(--error); font-weight:700; }
+
+  .side{
+    flex:1;
+    min-width:0;
+    display:flex;
+    flex-direction:column;
+    gap:14px;
+  }
+  .panel{
+    background:var(--surface);
+    border:1px solid var(--line);
+    padding:16px 18px;
+  }
+  .panel h2{
+    font-size:var(--fs-h2);
+    font-family:var(--font-display);
+    margin:0 0 10px;
+    color:var(--text);
+    font-weight:700;
+  }
+  .ctl-row{
+    display:flex;
+    align-items:center;
+    gap:12px;
+    margin-bottom:4px;
+  }
+  .ctl-row label{
+    font-size:var(--fs-label);
+    color:var(--muted);
+    flex:0 0 auto;
+    width:96px;
+  }
+  .ctl-row input[type=range]{ flex:1; accent-color:var(--weight); }
+  .ctl-row .val{
+    font-family:var(--font-mono);
+    font-size:var(--fs-label);
+    color:var(--text);
+    width:52px;
+    text-align:right;
+  }
+  .btns{ display:flex; gap:10px; margin-top:10px; }
+  .btn{
+    font-family:var(--font-sans);
+    font-size:var(--fs-label);
+    padding:8px 16px;
+    border:1px solid var(--line);
+    background:transparent;
+    color:var(--text);
+    cursor:pointer;
+  }
+  .btn:hover{ border-color:var(--weight); color:var(--weight); }
+  .btn.primary{ background:var(--weight); color:#fff; border-color:var(--weight); }
+  .btn.primary:hover{ opacity:.88; color:#fff; }
+
+  .big{
+    font-family:var(--font-mono);
+    font-weight:700;
+    color:var(--weight);
+  }
+  .stat-grid{
+    display:flex;
+    flex-direction:column;
+    gap:8px;
+  }
+  .stat-row{
+    display:flex;
+    justify-content:space-between;
+    align-items:baseline;
+    font-size:var(--fs-body);
+    color:var(--text);
+  }
+  .stat-row .num{
+    font-family:var(--font-mono);
+    font-size:20px;
+    font-weight:700;
+    color:var(--weight);
+  }
+  .stat-row.err .num{ color:var(--error); }
+  .stat-row .unit{ font-size:var(--fs-label); color:var(--muted); margin-left:2px; }
+  .note{
+    font-size:var(--fs-sec);
+    color:var(--muted);
+    line-height:1.5;
+    margin:2px 0 0;
+  }
+  .legend{
+    display:flex;
+    gap:16px;
+    flex-wrap:wrap;
+    margin-top:2px;
+  }
+  .li{ display:flex; align-items:center; gap:6px; font-size:var(--fs-label); color:var(--muted); }
+  .sw{ width:12px; height:12px; border-radius:50%; display:inline-block; flex:0 0 auto; }
+</style>
+</head>
+<body data-page="04" data-total="8">
+<div id="stage">
+  <h1>拖动分类器，看权重被"逼着"转移到错分点</h1>
+  <p class="lead">阈值线把点分成两类；<b>被分错的点半径会变大</b>——下一轮弱分类器将被迫更关注它们。</p>
+
+  <div class="body-row">
+    <div class="stage-evidence">
+      <div class="scene-wrap">
+        <canvas id="cv" class="cv-fill no-pan"></canvas>
+      </div>
+      <div class="hint-band">
+        <span>拖动竖直虚线，或用 ← → 微调（步长 0.1）</span>
+        <span class="metric">当前阈值 x = <b id="thrRead">0.0</b></span>
+      </div>
+    </div>
+
+    <div class="side">
+      <div class="panel">
+        <h2>本轮弱分类器</h2>
+        <div class="ctl-row">
+          <label for="thrSlider">阈值 x</label>
+          <input type="range" id="thrSlider" min="-5" max="5" step="0.1" value="0">
+          <span class="val" id="thrVal">0.0</span>
+        </div>
+        <div class="ctl-row">
+          <label for="dirSel">判正方向</label>
+          <select id="dirSel" style="flex:1;font-family:var(--font-mono);font-size:var(--fs-label);background:var(--bg);color:var(--text);border:1px solid var(--line);padding:5px 8px;">
+            <option value="1">x &gt; 阈值 → 判为正类</option>
+            <option value="-1">x &lt; 阈值 → 判为正类</option>
+          </select>
+        </div>
+        <div class="btns">
+          <button class="btn primary" id="applyBtn">提交本轮，更新样本权重</button>
+          <button class="btn" id="resetBtn">重置</button>
+        </div>
+        <p class="note">规则 h(x) = sign(方向 × (x − 阈值))。提交后，错分样本权重上调，正确样本权重下调，用于训练下一个弱分类器。</p>
+      </div>
+
+      <div class="panel" style="flex:1;min-height:0;overflow:auto;">
+        <h2>第 <span id="roundNo">1</span> 轮证据</h2>
+        <div class="stat-grid">
+          <div class="stat-row err"><span>加权误差 ε</span><span class="num" id="epsVal">0.000</span></div>
+          <div class="stat-row"><span>分类器权重 α = ½ln((1−ε)/ε)</span><span class="num" id="alphaVal">—</span></div>
+          <div class="stat-row"><span>错分样本数</span><span class="num" id="missVal">0 <span class="unit">/ 20</span></span></div>
+        </div>
+        <p class="note" id="verdict">调整阈值，观察误差 ε 如何随之变化；ε 越小，α 越大，这个弱分类器在最终投票里的话语权越重。</p>
+        <div class="legend">
+          <span class="li"><span class="sw" style="background:var(--correct)"></span>正类·分类正确</span>
+          <span class="li"><span class="sw" style="background:var(--weak)"></span>负类·分类正确</span>
+          <span class="li"><span class="sw" style="background:var(--error)"></span>被分错（权重上调）</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="assets/base.js"></script>
+<script>
+(() => {
+  "use strict";
+
+  // ---- 数据：固定种子生成的 20 个一维样本（沿 x 轴，y 仅用于视觉分层避免重叠） ----
+  // 真实标签：x < -0.5 为负类(-1)，x > 0.5 为正类(+1)；[-0.5,0.5] 是刻意制造的重叠混淆带。
+  const RAW = [
+    {x:-4.6,label:-1},{x:-4.1,label:-1},{x:-3.5,label:-1},{x:-3.0,label:-1},
+    {x:-2.4,label:-1},{x:-1.9,label:-1},{x:-1.3,label:-1},{x:-0.8,label:-1},
+    {x:-0.2,label:1},{x:0.1,label:-1},
+    {x:0.3,label:1},{x:0.6,label:-1},
+    {x:0.9,label:1},{x:1.4,label:1},
+    {x:2.0,label:1},{x:2.6,label:1},
+    {x:3.1,label:1},{x:3.7,label:1},
+    {x:4.2,label:1},{x:4.8,label:1},
+  ];
+  const N = RAW.length;
+
+  function createInitialState() {
+    const w = new Array(N).fill(1 / N);
+    return {
+      round: 1,
+      threshold: 0,
+      dir: 1,
+      weights: w,           // 当前生效（已提交）的样本权重
+      applied: false,       // 本轮是否已提交
+      eps: null,
+      alpha: null,
+      preds: new Array(N).fill(0),
+      misses: new Array(N).fill(false)
+    };
+  }
+
+  let state = createInitialState();
+
+  const el = {
+    cv: document.getElementById("cv"),
+    thrSlider: document.getElementById("thrSlider"),
+    thrVal: document.getElementById("thrVal"),
+    thrRead: document.getElementById("thrRead"),
+    dirSel: document.getElementById("dirSel"),
+    applyBtn: document.getElementById("applyBtn"),
+    resetBtn: document.getElementById("resetBtn"),
+    epsVal: document.getElementById("epsVal"),
+    alphaVal: document.getElementById("alphaVal"),
+    missVal: document.getElementById("missVal"),
+    verdict: document.getElementById("verdict"),
+    roundNo: document.getElementById("roundNo"),
+  };
+
+  // 预测与误差始终基于「候选阈值」实时算出，供拖动时预览；提交后写回 canonical 权重。
+  function predict(threshold, dir) {
+    return RAW.map(p => (dir * (p.x - threshold) >= 0 ? 1 : -1));
+  }
+
+  function evaluate(threshold, dir, weights) {
+    const preds = predict(threshold, dir);
+    const misses = preds.map((p, i) => p !== RAW[i].label);
+    let eps = 0;
+    for (let i = 0; i < N; i++) if (misses[i]) eps += weights[i];
+    return { preds, misses, eps };
+  }
+
+  function deriveEvidence() {
+    return evaluate(state.threshold, state.dir, state.weights);
+  }
+
+  // ---- 渲染 ----
+  const W = 1600 * 0.62 - 2, H = 900; // 仅用于比例参考，实际用 autofit 的逻辑宽高
+  let fit = null;
+  const PAD_X = 60;
+
+  function xToPx(x, w) {
+    return PAD_X + (x + 5) / 10 * (w - PAD_X * 2);
+  }
+
+  function draw(ctx, w, h) {
+    ctx.clearRect(0, 0, w, h);
+    const bg = Deck.token("surface");
+    ctx.fillStyle = bg;
+    ctx.fillRect(0, 0, w, h);
+
+    const midY = h * 0.52;
+    const rowGap = 34;
+
+    // 坐标轴
+    ctx.strokeStyle = Deck.token("line");
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(PAD_X, midY);
+    ctx.lineTo(w - PAD_X, midY);
+    ctx.stroke();
+
+    // 刻度
+    ctx.fillStyle = Deck.token("muted");
+    ctx.font = "12px " + Deck.token("font-mono").replace(/^"|"$/g, "");
+    ctx.textAlign = "center";
+    for (let t = -5; t <= 5; t++) {
+      const px = xToPx(t, w);
+      ctx.beginPath();
+      ctx.moveTo(px, midY - 4);
+      ctx.lineTo(px, midY + 4);
+      ctx.strokeStyle = Deck.token("line");
+      ctx.stroke();
+      if (t % 2 === 0) ctx.fillText(String(t), px, midY + 22);
+    }
+
+    const ev = deriveEvidence();
+
+    // 阈值线
+    const thrPx = xToPx(state.threshold, w);
+    ctx.save();
+    ctx.setLineDash([7, 6]);
+    ctx.strokeStyle = Deck.token("weight");
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.moveTo(thrPx, 40);
+    ctx.lineTo(thrPx, h - 40);
+    ctx.stroke();
+    ctx.restore();
+
+    // 判正方向箭头标注
+    ctx.fillStyle = Deck.token("weight");
+    ctx.font = "13px " + Deck.token("font-sans").replace(/^"|"$/g, "");
+    ctx.textAlign = state.dir === 1 ? "left" : "right";
+    const arrowY = 34;
+    ctx.fillText(state.dir === 1 ? "判正 →" : "← 判正", thrPx + (state.dir === 1 ? 8 : -8), arrowY);
+
+    // 样本点：按 x 排序后交错分行，避免重叠；半径映射权重
+    const order = [...RAW.keys()].sort((a, b) => RAW[a].x - RAW[b].x);
+    const lastRowAtBucket = new Map();
+    const rows = new Array(N).fill(0);
+    order.forEach(i => {
+      const bucket = Math.round(xToPx(RAW[i].x, w) / 26);
+      let r = 0;
+      while ([-1,0,1].some(d => lastRowAtBucket.get(bucket + d) === r)) r = r === 0 ? 1 : (r === 1 ? -1 : r + 1);
+      lastRowAtBucket.set(bucket, r);
+      rows[i] = r;
+    });
+
+    const maxW = Math.max(...state.weights);
+    const minR = 9, maxR = 22;
+
+    for (const i of order) {
+      const p = RAW[i];
+      const px = xToPx(p.x, w);
+      const py = midY - state.dir * 0 - rows[i] * rowGap - (p.label === 1 ? rowGap * 2.1 : -rowGap * 2.1);
+      const wRatio = state.weights[i] / maxW;
+      const r = minR + (maxR - minR) * wRatio;
+
+      const isMiss = ev.misses[i];
+      let color;
+      if (isMiss) color = Deck.token("error");
+      else color = p.label === 1 ? Deck.token("correct") : Deck.token("weak");
+
+      ctx.beginPath();
+      ctx.arc(px, py, r, 0, Math.PI * 2);
+      ctx.fillStyle = color;
+      ctx.globalAlpha = 0.92;
+      ctx.fill();
+      ctx.globalAlpha = 1;
+
+      if (isMiss) {
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = Deck.token("error");
+        ctx.beginPath();
+        ctx.arc(px, py, r + 3, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+
+      // 标签: + / -
+      ctx.fillStyle = "#fff";
+      ctx.font = "bold 12px " + Deck.token("font-mono").replace(/^"|"$/g, "");
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(p.label === 1 ? "+" : "−", px, py + 1);
+    }
+    ctx.textBaseline = "alphabetic";
+
+    // 类别分隔提示文字
+    ctx.fillStyle = Deck.token("muted");
+    ctx.font = "13px " + Deck.token("font-sans").replace(/^"|"$/g, "");
+    ctx.textAlign = "left";
+    ctx.fillText("真实负类 −1（下方）", PAD_X, h - 14);
+    ctx.textAlign = "right";
+    ctx.fillText("真实正类 +1（上方）", w - PAD_X, h - 14);
+  }
+
+  function render() {
+    const ev = deriveEvidence();
+    const missCount = ev.misses.filter(Boolean).length;
+
+    el.thrVal.textContent = state.threshold.toFixed(1);
+    el.thrRead.textContent = state.threshold.toFixed(1);
+    el.missVal.innerHTML = `${missCount} <span class="unit">/ ${N}</span>`;
+    el.roundNo.textContent = state.round;
+
+    if (state.applied) {
+      el.epsVal.textContent = state.eps.toFixed(3);
+      el.alphaVal.textContent = state.alpha === null ? "—" : state.alpha.toFixed(3);
+      if (state.eps <= 0) {
+        el.verdict.textContent = "误差为 0：这个弱分类器已经完全分对，α 趋于极大，几乎独断最终投票。";
+      } else if (state.eps >= 0.5) {
+        el.verdict.textContent = "误差 ≥ 0.5：这个弱分类器不比随机猜好，α ≤ 0，不会被采纳为有效投票。";
+      } else {
+        el.verdict.textContent = `已提交第 ${state.round - 1} 轮：${missCount} 个错分点的权重已经上调，实心红圈越大，下一个弱分类器越会被它们“拉过去”。`;
+      }
+    } else {
+      el.epsVal.textContent = ev.eps.toFixed(3);
+      el.alphaVal.textContent = "预览中";
+      el.verdict.textContent = `拖动预览：若在此阈值提交，加权误差 ε = ${ev.eps.toFixed(3)}，${missCount} 个点会被标记为错分。`;
+    }
+
+    if (fit) fit.redraw();
+  }
+
+  fit = Deck.autofit(el.cv, (ctx, w, h) => draw(ctx, w, h));
+
+  function setThreshold(v) {
+    state.threshold = Deck.clamp(Math.round(v * 10) / 10, -5, 5);
+    state.applied = false;
+    render();
+  }
+
+  function applyRound() {
+    const ev = deriveEvidence();
+    const eps = Math.max(1e-6, Math.min(1 - 1e-6, ev.eps));
+    const alpha = 0.5 * Math.log((1 - eps) / eps);
+
+    // 规范 AdaBoost 权重更新：w_i *= exp(-alpha * y_i * h_i)，再归一化。
+    const nextW = state.weights.map((w, i) => {
+      const y = RAW[i].label;
+      const h = ev.preds[i];
+      return w * Math.exp(-alpha * y * h);
+    });
+    const sum = nextW.reduce((a, b) => a + b, 0);
+    const normalized = nextW.map(v => v / sum);
+
+    state.weights = normalized;
+    state.eps = ev.eps;
+    state.alpha = alpha;
+    state.preds = ev.preds;
+    state.misses = ev.misses;
+    state.applied = true;
+    state.round += 1;
+    render();
+  }
+
+  function resetAll() {
+    state = createInitialState();
+    el.thrSlider.value = 0;
+    el.dirSel.value = "1";
+    render();
+  }
+
+  el.thrSlider.addEventListener("input", () => setThreshold(parseFloat(el.thrSlider.value)));
+  el.dirSel.addEventListener("change", () => {
+    state.dir = parseInt(el.dirSel.value, 10);
+    state.applied = false;
+    render();
+  });
+  el.applyBtn.addEventListener("click", applyRound);
+  el.resetBtn.addEventListener("click", resetAll);
+
+  // 键盘微调阈值（对齐滑块的非指针路径）
+  el.cv.setAttribute("tabindex", "0");
+  el.cv.addEventListener("keydown", (e) => {
+    if (e.key === "ArrowLeft") { setThreshold(state.threshold - 0.1); el.thrSlider.value = state.threshold; e.preventDefault(); }
+    else if (e.key === "ArrowRight") { setThreshold(state.threshold + 0.1); el.thrSlider.value = state.threshold; e.preventDefault(); }
+  });
+
+  // 拖拽阈值线：canvas 指针坐标经 Deck.pt 换算为逻辑坐标，再反算 x 值
+  let dragging = false;
+  function pxToX(px, w) {
+    return (px - PAD_X) / (w - PAD_X * 2) * 10 - 5;
+  }
+  el.cv.addEventListener("pointerdown", (e) => {
+    dragging = true;
+    el.cv.setPointerCapture(e.pointerId);
+    handleDrag(e);
+  });
+  el.cv.addEventListener("pointermove", (e) => { if (dragging) handleDrag(e); });
+  el.cv.addEventListener("pointerup", (e) => { dragging = false; try{el.cv.releasePointerCapture(e.pointerId);}catch(_){} });
+  el.cv.addEventListener("pointercancel", () => { dragging = false; });
+  function handleDrag(e) {
+    const p = Deck.pt(el.cv, e);
+    const x = pxToX(p.x, el.cv.clientWidth);
+    setThreshold(x);
+    el.thrSlider.value = state.threshold;
+  }
+
+  render();
+})();
+</script>
+</body>
+</html>

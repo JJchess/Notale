@@ -1,0 +1,305 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  :root{
+    --bg:#EEF1F5; --surface:#FAFBFC; --text:#111820; --muted:#657181;
+    --weak:#617CA8; --correct:#294E86; --weight:#164E9B; --error:#C64232;
+    --line:#C8D0DB; --focus:#164E9B;
+    --font-sans:"Noto Sans CJK SC",ui-sans-serif,system-ui,sans-serif;
+    --font-mono:"JetBrains Mono",ui-monospace,Consolas,monospace;
+    --font-display:"Clear Sans","Noto Sans CJK SC",ui-sans-serif,sans-serif;
+    --fs-h1:54px; --fs-h2:25px; --fs-lead:22px; --fs-body:18px;
+    --fs-sec:16px; --fs-label:14px; --fs-tick:12px;
+    --stage-w:1600px; --stage-h:900px;
+  }
+  #stage{display:flex;flex-direction:column;padding:28px 56px;gap:14px;font-family:var(--font-sans);color:var(--text)}
+  .head{display:flex;align-items:baseline;gap:22px}
+  .head h1{font:700 38px/1.15 var(--font-display);margin:0}
+  .head .lead{font-size:var(--fs-sec);color:var(--muted)}
+  .main{flex:1;min-height:0;display:flex;gap:20px}
+  .colL{width:470px;min-width:0;display:flex;flex-direction:column;gap:12px}
+  .colR{flex:1;min-width:0;display:flex;flex-direction:column;gap:12px}
+  .panel{background:var(--surface);border:1px solid var(--line);padding:14px 16px;display:flex;flex-direction:column;min-height:0}
+  .panel h2{font:600 var(--fs-sec)/1.3 var(--font-sans);margin:0 0 8px;color:var(--text)}
+  .btns{display:flex;gap:8px;flex-wrap:wrap}
+  .btn{font:600 var(--fs-label)/1 var(--font-sans);padding:10px 14px;border:1px solid var(--weight);
+       background:var(--weight);color:#fff;cursor:pointer}
+  .btn.ghost{background:transparent;color:var(--weight)}
+  .btn:disabled{border-color:var(--line);background:var(--surface);color:var(--muted);cursor:default}
+  .btn:not(:disabled):focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+  .seg{display:flex;border:1px solid var(--line)}
+  .seg button{flex:1;font:500 var(--fs-label)/1 var(--font-sans);padding:9px 10px;border:0;background:var(--surface);
+              color:var(--muted);cursor:pointer}
+  .seg button[aria-pressed="true"]{background:var(--weight);color:#fff}
+  .stats{display:flex;gap:26px;align-items:baseline;flex-wrap:wrap}
+  .stat .lab{font-size:var(--fs-label);color:var(--muted)}
+  .big{font:600 30px/1 var(--font-mono);color:var(--weight)}
+  .big.err{color:var(--error)}
+  .stumpList{font:var(--fs-tick)/1.7 var(--font-mono);color:var(--muted);overflow:auto;min-height:0;flex:1;margin:0}
+  .stumpList b{color:var(--weight);font-weight:600}
+  .stumpList .hit{color:var(--error)}
+  .cvbox{position:relative;flex:1;min-height:0}
+  .cvbox canvas{position:absolute;inset:0;width:100%;height:100%}
+  .note{font-size:var(--fs-tick);color:var(--muted);margin:6px 0 0}
+  .legend{display:flex;gap:16px;font-size:var(--fs-label);color:var(--muted);align-items:center}
+  .sw{display:inline-block;width:12px;height:12px;margin-right:5px;vertical-align:-1px}
+</style>
+</head>
+<body data-page="12" data-total="16">
+<div id="stage">
+  <div class="head">
+    <h1>模拟训练一个 AdaBoosting 模型</h1>
+    <div class="lead">每一轮：按权重找一个错误率最低的 stump，再按错误率放大被分错样本的权重。看权重怎么把下一轮的注意力推向难样本。</div>
+  </div>
+  <div class="main">
+    <div class="colL">
+      <div class="panel" style="gap:10px">
+        <h2>数据集</h2>
+        <div class="seg" role="group" aria-label="选择数据集">
+          <button id="dsA" aria-pressed="true">两团分离样本</button>
+          <button id="dsB" aria-pressed="false">交错样本（难）</button>
+        </div>
+        <div class="btns" style="margin-top:4px">
+          <button class="btn" id="btnStep">训练一轮</button>
+          <button class="btn ghost" id="btnAuto">自动训练</button>
+          <button class="btn ghost" id="btnReset">重置</button>
+        </div>
+      </div>
+      <div class="panel">
+        <h2>本轮读数</h2>
+        <div class="stats">
+          <div class="stat"><div class="lab">轮次 t</div><div class="big" id="rdT">0</div></div>
+          <div class="stat"><div class="lab">本轮错误率 ε</div><div class="big" id="rdEps">—</div></div>
+          <div class="stat"><div class="lab">分类器权重 α</div><div class="big" id="rdAlpha">—</div></div>
+          <div class="stat"><div class="lab">集成训练错误率</div><div class="big err" id="rdAcc">—</div></div>
+        </div>
+        <p class="note" id="rdMsg">权重初始均等。点「训练一轮」开始。</p>
+      </div>
+      <div class="panel" style="flex:1">
+        <h2>各轮选出的 stump</h2>
+        <div class="stumpList" id="stumps"><div style="color:var(--muted)">还没有 stump。</div></div>
+      </div>
+    </div>
+    <div class="colR">
+      <div class="panel" style="flex:1.7">
+        <h2>样本与集成决策区域 <span style="font-weight:400;color:var(--muted)">圆越大权重越高，描红边的是本轮分错样本</span></h2>
+        <div class="cvbox"><canvas id="cv"></canvas></div>
+        <div class="legend" style="margin-top:8px">
+          <span><span class="sw" style="background:var(--correct)"></span>正类 (+1)</span>
+          <span><span class="sw" style="background:var(--weak)"></span>负类 (−1)</span>
+          <span><span class="sw" style="background:var(--weight)"></span>深色 / 浅色底 = 集成判为 +1 / −1</span>
+        </div>
+      </div>
+      <div class="panel" style="flex:1">
+        <h2>集成训练错误率随轮数下降</h2>
+        <div class="cvbox" id="chart"></div>
+      </div>
+    </div>
+  </div>
+</div>
+<script src="assets/base.js"></script>
+<script src="assets/lib/echarts.min.js"></script>
+<script src="assets/lib/seedrandom.min.js"></script>
+<script>
+(function(){
+'use strict';
+const N_PER = 15, MAXT = 20;
+let pts, w, stumps, kind = 'A', timer = null;
+
+function genData(k){
+  const rnd = new Math.seedrandom('adaboost-12-' + k);
+  const g = (cx,cy,sx,sy,n,label)=>{
+    const out=[];
+    for(let i=0;i<n;i++) out.push({x:cx+ (rnd()*2-1)*sx, y:cy+(rnd()*2-1)*sy, y:label, id:k+i+'-'+label+Math.floor(rnd()*1e6)});
+    return out;
+  };
+  if(k==='A') return [].concat(g(3.2,3.0,0.9,0.8,N_PER,+1), g(7.0,6.2,1.0,0.9,N_PER,-1));
+  return [].concat(g(3.0,3.0,0.7,0.7,7,+1), g(7.2,6.4,0.7,0.7,8,+1),
+                   g(3.0,6.4,0.7,0.7,8,-1), g(7.2,3.0,0.7,0.7,7,-1));
+}
+function reset(){
+  if(timer){clearInterval(timer); timer=null; document.getElementById('btnAuto').textContent='自动训练';}
+  pts = genData(kind);
+  w = pts.map(()=>1/pts.length);
+  stumps = [];
+  drawAll();
+}
+function stumpsFor(data){
+  const list=[];
+  for(const f of ['x','y']){
+    const v = data.map(p=>p[f]).sort((a,b)=>a-b);
+    for(let i=0;i<v.length-1;i++){
+      const t=(v[i]+v[i+1])/2;
+      if(v[i+1]-v[i]<1e-9) continue;
+      list.push({f,t,s:1},{f,t,s:-1});
+    }
+  }
+  return list;
+}
+function step(){
+  if(stumps.length>=MAXT) return false;
+  const m = pts.length;
+  let best=null;
+  for(const s of stumpsFor(pts)){
+    let e=0;
+    for(let i=0;i<m;i++){ if((s.s*(pts[i][s.f]-s.t)>=0?1:-1)!==pts[i].y) e+=w[i]; }
+    if(!best||e<best.e) best={...s,e};
+  }
+  if(!best || best.e>=0.5){ document.getElementById('rdMsg').textContent='找不到错误率低于 0.5 的 stump，停止。'; return false; }
+  const eps = Math.max(best.e,1e-6);
+  const alpha = 0.5*Math.log((1-eps)/eps);
+  let mis=[];
+  for(let i=0;i<m;i++){
+    const pred = best.s*(pts[i][best.f]-best.t)>=0?1:-1;
+    if(pred!==pts[i].y) mis.push(i);
+    w[i] *= Math.exp(-alpha*pts[i].y*pred);
+  }
+  const Z = w.reduce((a,b)=>a+b,0);
+  w = w.map(v=>v/Z);
+  stumps.push({...best, eps, alpha, mis});
+  drawAll();
+  return true;
+}
+function ensPred(p){
+  let s=0;
+  for(const h of stumps) s += h.alpha*(h.s*(p[h.f]-h.t)>=0?1:-1);
+  return s>=0?1:-1;
+}
+function ensErr(){
+  if(!stumps.length) return null;
+  return pts.filter((p,i)=>ensPred(p)!==p.y).length/pts.length;
+}
+
+/* ---- scatter canvas ---- */
+const cv = document.getElementById('cv');
+let ctx = null;
+function fitAndDraw(){
+  ctx = Deck.fit(cv);
+  drawAll();
+}
+function bounds(){
+  let x0=1e9,x1=-1e9,y0=1e9,y1=-1e9;
+  for(const p of pts){x0=Math.min(x0,p.x);x1=Math.max(x1,p.x);y0=Math.min(y0,p.y);y1=Math.max(y1,p.y);}
+  const mx=(x1-x0)*0.18, my=(y1-y0)*0.18;
+  return {x0:x0-mx,x1:x1+mx,y0:y0-my,y1:y1+my};
+}
+function drawAll(){
+  if(!ctx) return;
+  const W=cv.offsetWidth, H=cv.offsetHeight;
+  ctx.clearRect(0,0,W,H);
+  if(!pts) return;
+  const b=bounds(), pad=10;
+  const X=x=>pad+(x-b.x0)/(b.x1-b.x0)*(W-2*pad);
+  const Y=y=>H-pad-(y-b.y0)/(b.y1-b.y0)*(H-2*pad);
+  const css=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+  const last = stumps[stumps.length-1];
+  // decision regions
+  if(stumps.length){
+    const cP=css('--correct'), cN=css('--weak');
+    const nx=80, ny=80;
+    const gx0=b.x0, gx1=b.x1, gy0=b.y0, gy1=b.y1;
+    const pw=(W-2*pad)/nx, ph=(H-2*pad)/ny;
+    for(let i=0;i<nx;i++){
+      for(let j=0;j<ny;j++){
+        const gx=gx0+(i+0.5)/nx*(gx1-gx0), gy=gy0+(j+0.5)/ny*(gy1-gy0);
+        const p=ensPred({x:gx,y:gy});
+        ctx.fillStyle = p>0 ? cP : cN;
+        ctx.globalAlpha = p>0 ? 0.16 : 0.08;
+        ctx.fillRect(pad+i*pw, H-pad-(j+1)*ph, pw, ph);
+        ctx.globalAlpha = 1;
+      }
+    }
+  }
+  // axes
+  ctx.strokeStyle=css('--line'); ctx.lineWidth=1;
+  ctx.strokeRect(pad,pad,W-2*pad,H-2*pad);
+  // 最新 stump 的分界线
+  if(last){
+    ctx.strokeStyle=css('--weight'); ctx.lineWidth=2; ctx.setLineDash([7,5]);
+    ctx.beginPath();
+    if(last.f==='x'){ const vx=X(last.t); ctx.moveTo(vx,pad); ctx.lineTo(vx,H-pad); }
+    else { const vy=Y(last.t); ctx.moveTo(pad,vy); ctx.lineTo(W-pad,vy); }
+    ctx.stroke(); ctx.setLineDash([]);
+    ctx.fillStyle=css('--weight'); ctx.font='12px JetBrains Mono, monospace';
+    const lbl=(last.f==='x'?'x':'y')+'=' + last.t.toFixed(2);
+    if(last.f==='x') ctx.fillText(lbl, X(last.t)+6, pad+16);
+    else ctx.fillText(lbl, pad+8, Y(last.t)-6);
+  }
+  // points
+  pts.forEach((p,i)=>{
+    const wn=w[i]*pts.length;                 // 1 = 均等
+    const r=5+9*Math.min(Math.log2(1+wn-1e-9)+0.6,2.6);
+    ctx.beginPath(); ctx.arc(X(p.x),Y(p.y),r,0,7);
+    ctx.fillStyle = p.y>0?css('--correct'):css('--weak'); ctx.fill();
+    if(last && last.mis.includes(i)){
+      ctx.strokeStyle=css('--error'); ctx.lineWidth=2.5; ctx.stroke();
+    }
+  });
+  document.getElementById('rdT').textContent = stumps.length;
+  const lastS = stumps[stumps.length-1];
+  document.getElementById('rdEps').textContent = lastS?lastS.eps.toFixed(3):'—';
+  document.getElementById('rdAlpha').textContent = lastS?lastS.alpha.toFixed(3):'—';
+  const e=ensErr();
+  document.getElementById('rdAcc').textContent = e===null?'—':(e*100).toFixed(1)+'%';
+  const sl=document.getElementById('stumps');
+  if(!stumps.length){ sl.innerHTML='<div style="color:var(--muted)">还没有 stump。</div>'; }
+  else sl.innerHTML = stumps.map((h,i)=>
+    `第 ${i+1} 轮 · ${h.f==='x'?'横轴':'纵轴'} stump @ ${h.t.toFixed(2)} · 方向 ${h.s>0?'≥':'≤'} · <b>α=${h.alpha.toFixed(2)}</b> · ε=${h.eps.toFixed(2)} · 错 ${h.mis.length} 个`
+  ).join('<br>');
+  updateChart();
+}
+fitAndDraw();
+Deck.onResize(fitAndDraw);
+/* ---- error curve ---- */
+const chart = echarts.init(document.getElementById('chart'), null, {renderer:'svg'});
+function updateChart(){
+  const rounds=[], err=[];
+  const saved=stumps.slice();
+  stumps=[];
+  for(const h of saved){
+    stumps.push(h);
+    rounds.push(stumps.length);
+    err.push(+(ensErr()*100).toFixed(1));
+  }
+  chart.setOption({
+    grid:{left:46,right:16,top:14,bottom:30},
+    xAxis:{type:'category',data:rounds,axisLabel:{fontSize:12,fontFamily:'JetBrains Mono',color:'#657181'},
+           axisLine:{lineStyle:{color:'#C8D0DB'}},axisTick:{show:false},name:'轮数',nameTextStyle:{fontSize:12,color:'#657181'}},
+    yAxis:{type:'value',min:0,max:100,axisLabel:{formatter:'{value}%',fontSize:12,fontFamily:'JetBrains Mono',color:'#657181'},
+           splitLine:{lineStyle:{color:'#E3E8EF'}}},
+    series:[{type:'line',data:err,symbol:'circle',symbolSize:7,lineStyle:{color:'#164E9B',width:2},
+             itemStyle:{color:'#164E9B'},label:{show:true,formatter:'{c}',fontSize:12,fontFamily:'JetBrains Mono',color:'#164E9B',position:'top'}}]
+  });
+}
+
+/* ---- controls ---- */
+const bStep=document.getElementById('btnStep'), bAuto=document.getElementById('btnAuto'), bReset=document.getElementById('btnReset');
+bStep.addEventListener('click',()=>{
+  if(timer){clearInterval(timer);timer=null;bAuto.textContent='自动训练';}
+  if(!step()) bStep.disabled = stumps.length>=MAXT || !canStep();
+});
+function canStep(){ return stumps.length<MAXT; }
+bAuto.addEventListener('click',()=>{
+  if(timer){clearInterval(timer);timer=null;bAuto.textContent='自动训练';return;}
+  bAuto.textContent='暂停';
+  timer=setInterval(()=>{ if(!step()){clearInterval(timer);timer=null;bAuto.textContent='自动训练';} },700);
+});
+bReset.addEventListener('click',reset);
+document.getElementById('dsA').addEventListener('click',()=>setKind('A'));
+document.getElementById('dsB').addEventListener('click',()=>setKind('B'));
+function setKind(k){
+  kind=k;
+  document.getElementById('dsA').setAttribute('aria-pressed',k==='A');
+  document.getElementById('dsB').setAttribute('aria-pressed',k==='B');
+  reset();
+}
+Deck.init({index:12,total:16});
+reset();
+})();
+</script>
+</body>
+</html>

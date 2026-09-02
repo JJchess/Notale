@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    #stage{gap:20px}
+    .page-head{flex:0 0 auto;max-width:1180px}
+    .page-head h1{font-family:var(--font-sans);font-size:var(--fs-h1);letter-spacing:0}
+    .page-head .lead{margin-top:10px;max-width:48em;color:var(--muted)}
+    .trace-layout{flex:1;min-height:0;display:grid;grid-template-columns:minmax(0,1fr) 338px;gap:28px}
+    .network-sheet{min-width:0;min-height:0;display:grid;grid-template-rows:minmax(0,1fr) auto;border-top:var(--line-strong) solid var(--text);border-bottom:var(--line) solid var(--rule-strong);background:rgba(247,250,250,.52)}
+    .diagram{min-height:0;padding:14px 16px 0}
+    .diagram svg{display:block;width:100%;height:100%}
+    .calc-band{display:grid;grid-template-columns:.82fr 1.15fr 1.15fr 1fr;border-top:var(--line) solid var(--rule-strong)}
+    .calc-cell{min-width:0;padding:14px 16px 16px;border-right:var(--line) solid var(--rule)}
+    .calc-cell:last-child{border-right:0}
+    .calc-cell .lab{display:block;margin-bottom:7px;color:var(--muted);font-size:var(--fs-label);font-weight:700}
+    .formula{font-family:var(--font-mono);font-size:var(--fs-sec);font-weight:600;line-height:1.45;white-space:nowrap}
+    .formula strong{color:var(--model);font-size:21px}
+    .rail{min-width:0;min-height:0;display:flex;flex-direction:column;gap:18px}
+    .rule-box{padding:20px 22px;border:var(--line-strong) solid var(--text);border-radius:var(--radius)}
+    .rule-box h2{margin-bottom:14px}
+    .rule-formula{display:grid;grid-template-columns:auto 1fr;gap:8px 12px;align-items:baseline;margin:14px 0 12px;font-family:var(--font-mono);font-size:var(--fs-body)}
+    .rule-formula .eq{color:var(--model);font-size:25px;font-weight:600}
+    .steps{flex:1;display:flex;flex-direction:column;justify-content:center;border-top:var(--line) solid var(--rule-strong);border-bottom:var(--line) solid var(--rule-strong)}
+    .step-note{display:grid;grid-template-columns:36px 1fr;gap:12px;padding:15px 2px;border-bottom:var(--line) solid var(--rule)}
+    .step-note:last-child{border-bottom:0}
+    .step-no{font-family:var(--font-mono);font-size:var(--fs-label);font-weight:600;color:var(--muted)}
+    .step-note strong{display:block;margin-bottom:4px;font-size:var(--fs-sec)}
+    .step-note p{color:var(--muted);font-size:var(--fs-label);line-height:1.42}
+    .takeaway{padding:15px 17px;background:var(--model-soft);border:var(--line) solid var(--model);border-radius:var(--radius);font-size:var(--fs-sec);font-weight:700;line-height:1.45}
+    .node{fill:var(--paper-strong);stroke:var(--text);stroke-width:3}
+    .node.hidden{stroke:var(--model)}
+    .node.output{fill:var(--model-soft);stroke:var(--model);stroke-width:4}
+    .edge{fill:none;stroke:var(--rule-strong);stroke-width:2.5}
+    .edge.hot{stroke:var(--model);stroke-width:3.5}
+    .arrow{fill:var(--rule-strong)}
+    .arrow.hot{fill:var(--model)}
+    .col-label{fill:var(--muted);font-family:var(--font-sans);font-size:17px;font-weight:700}
+    .node-name{fill:var(--text);font-family:var(--font-mono);font-size:18px;font-weight:600;text-anchor:middle}
+    .node-value{fill:var(--model);font-family:var(--font-mono);font-size:23px;font-weight:600;text-anchor:middle}
+    .weight{fill:var(--muted);font-family:var(--font-mono);font-size:14px;font-weight:600;paint-order:stroke;stroke:var(--bg);stroke-width:6px;stroke-linejoin:round}
+    .op{fill:var(--attention);font-family:var(--font-sans);font-size:15px;font-weight:700;text-anchor:middle}
+    .brace{fill:none;stroke:var(--attention);stroke-width:2}
+    .caption{fill:var(--muted);font-family:var(--font-sans);font-size:15px;text-anchor:middle}
+  </style>
+</head>
+<body data-page="06" data-total="24">
+  <div id="stage">
+    <header class="page-head">
+      <span class="kicker">前向传播 · 逐层追踪</span>
+      <h1>一条小网络，只是在重复同一种局部计算</h1>
+      <p class="lead">从左向右代入：每个神经元只读取上一层，先做加权求和，再经过 ReLU。</p>
+    </header>
+
+    <main class="trace-layout min0">
+      <section class="network-sheet min0" aria-label="两输入、两个隐藏神经元和一个输出神经元的前向传播图">
+        <div class="diagram min0">
+          <svg viewBox="0 0 1080 470" role="img" aria-label="输入 x1 等于 1、x2 等于 2。隐藏层 h1 计算得到 1.5，h2 计算得到 1。输出 y 计算得到 2。">
+            <defs>
+              <marker id="end" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="arrow" d="M0,0 L8,4 L0,8 Z"/></marker>
+              <marker id="endHot" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="arrow hot" d="M0,0 L8,4 L0,8 Z"/></marker>
+            </defs>
+
+            <text class="col-label" x="110" y="34">输入</text>
+            <text class="col-label" x="465" y="34">隐藏层</text>
+            <text class="col-label" x="870" y="34">输出</text>
+
+            <path class="edge" marker-end="url(#end)" d="M190 139 C285 139 332 126 420 126"/>
+            <path class="edge" marker-end="url(#end)" d="M184 153 C286 190 329 298 421 310"/>
+            <path class="edge" marker-end="url(#end)" d="M184 329 C284 294 330 167 421 148"/>
+            <path class="edge" marker-end="url(#end)" d="M190 343 C286 343 330 334 420 332"/>
+            <path class="edge hot" marker-end="url(#endHot)" d="M562 137 C676 137 717 214 829 231"/>
+            <path class="edge hot" marker-end="url(#endHot)" d="M562 321 C676 321 717 257 829 243"/>
+
+            <text class="weight" x="290" y="122">× 0.5</text>
+            <text class="weight" x="306" y="228">× (−1)</text>
+            <text class="weight" x="305" y="266">× 0.5</text>
+            <text class="weight" x="290" y="360">× 1</text>
+            <text class="weight" x="687" y="164">× 1</text>
+            <text class="weight" x="687" y="319">× 0.5</text>
+
+            <g transform="translate(120 145)">
+              <circle class="node" r="70"/>
+              <text class="node-name" y="-8">x₁</text><text class="node-value" y="27">1</text>
+            </g>
+            <g transform="translate(120 337)">
+              <circle class="node" r="70"/>
+              <text class="node-name" y="-8">x₂</text><text class="node-value" y="27">2</text>
+            </g>
+            <g transform="translate(492 137)">
+              <circle class="node hidden" r="70"/>
+              <text class="node-name" y="-8">h₁</text><text class="node-value" y="27">1.5</text>
+            </g>
+            <g transform="translate(492 321)">
+              <circle class="node hidden" r="70"/>
+              <text class="node-name" y="-8">h₂</text><text class="node-value" y="27">1</text>
+            </g>
+            <g transform="translate(900 237)">
+              <circle class="node output" r="72"/>
+              <text class="node-name" y="-8">y</text><text class="node-value" y="28">2</text>
+            </g>
+
+            <path class="brace" d="M411 52 v-10 h162 v10"/>
+            <text class="op" x="492" y="78">两次执行同一规则</text>
+            <path class="brace" d="M818 145 v-10 h164 v10"/>
+            <text class="op" x="900" y="116">再执行一次</text>
+            <text class="caption" x="525" y="438">每条边传递“上一层的值 × 权重”，节点负责相加并激活</text>
+          </svg>
+        </div>
+
+        <div class="calc-band" aria-label="逐层计算记录">
+          <div class="calc-cell">
+            <span class="lab">本页约定</span>
+            <div class="formula">ReLU(z)=max(0,z)</div>
+          </div>
+          <div class="calc-cell">
+            <span class="lab">算出 h₁</span>
+            <div class="formula">ReLU(1×0.5 + 2×0.5) = <strong>1.5</strong></div>
+          </div>
+          <div class="calc-cell">
+            <span class="lab">算出 h₂</span>
+            <div class="formula">ReLU(1×(−1) + 2×1) = <strong>1</strong></div>
+          </div>
+          <div class="calc-cell">
+            <span class="lab">最后算出 y</span>
+            <div class="formula">ReLU(1.5×1 + 1×0.5) = <strong>2</strong></div>
+          </div>
+        </div>
+      </section>
+
+      <aside class="rail min0" aria-label="前向传播规则与追踪方法">
+        <section class="rule-box">
+          <h2>每个节点都做两件事</h2>
+          <div class="rule-formula" aria-label="节点的局部计算规则">
+            <span>先算</span><span class="eq">z = Σ(输入 × 权重)</span>
+            <span>再算</span><span class="eq">输出 = ReLU(z)</span>
+          </div>
+          <p class="small">节点不需要知道整张网络，只需要上一层传来的数值和连线权重。</p>
+        </section>
+
+        <section class="steps" aria-label="追踪顺序">
+          <div class="step-note">
+            <span class="step-no">01</span>
+            <div><strong>固定输入</strong><p>先把 x₁、x₂ 放进网络。</p></div>
+          </div>
+          <div class="step-note">
+            <span class="step-no">02</span>
+            <div><strong>算完一层再向右</strong><p>h₁、h₂ 都只依赖输入层，可分别计算。</p></div>
+          </div>
+          <div class="step-note">
+            <span class="step-no">03</span>
+            <div><strong>用新结果继续算</strong><p>输出层读取 h₁、h₂，重复同一条规则。</p></div>
+          </div>
+        </section>
+
+        <p class="takeaway">前向传播 = 按层推进的局部计算；上一层的输出，就是下一层的输入。</p>
+      </aside>
+    </main>
+  </div>
+  <script src="assets/base.js"></script>
+  <script>Deck.init({index:6,total:24});</script>
+</body>
+</html>

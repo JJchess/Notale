@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>参数决定神经元输出</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    #stage > header{flex:0 0 auto}
+    #neuronLab{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(390px,.74fr);gap:30px;flex:1;min-height:0;margin-top:20px}
+    #neuronLab .model{display:flex;flex-direction:column;min-width:0;min-height:0;padding:22px 26px;border:2px solid var(--rule);border-radius:var(--radius);background:var(--paper)}
+    #neuronLab .model-head{display:flex;align-items:flex-start;justify-content:space-between;gap:24px;margin-bottom:6px}
+    #neuronLab .model-head .small{margin-top:4px}
+    #neuronLab .formula{flex:0 0 auto;padding-top:3px;font-family:var(--font-num);font-size:28px;font-weight:600;white-space:nowrap}
+    #neuronLab .formula span{transition:color .12s ease}
+    #neuronLab[data-last="x"] .xterm,#neuronLab[data-last="w"] .wterm,#neuronLab[data-last="b"] .bterm{color:var(--attention)}
+    #neuronLab .diagram{display:block;flex:1;width:100%;min-height:0}
+    #neuronLab .controls{display:flex;flex-direction:column;min-width:0;min-height:0;padding:22px 24px;border:2px solid var(--rule);border-radius:var(--radius);background:var(--paper)}
+    #neuronLab .controls h2{margin-bottom:4px}
+    #neuronLab .controls > .small{margin-bottom:16px}
+    #neuronLab .ctl{grid-template-columns:74px minmax(0,1fr) 56px;padding:14px 0;border-top:1px solid var(--rule)}
+    #neuronLab .ctl label{font-size:var(--fs-sec);font-weight:650}
+    #neuronLab .ctl output{text-align:right;font-family:var(--font-num);font-size:var(--fs-sec);font-weight:650;font-variant-numeric:tabular-nums}
+    #neuronLab .presets{margin-top:18px;padding-top:17px;border-top:1px solid var(--rule)}
+    #neuronLab .presets .hint{margin-bottom:9px}
+    #neuronLab .btns{gap:8px}
+    #neuronLab .reset{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;margin-top:auto;padding-top:18px}
+    #neuronLab .status{min-height:48px;max-width:230px;color:var(--muted);font-size:var(--fs-sec);line-height:1.4}
+    #neuronLab svg text{font-family:var(--font-sans);fill:var(--text)}
+    #neuronLab svg .muted{fill:var(--muted)}
+    #neuronLab svg .mono{font-family:var(--font-num);font-variant-numeric:tabular-nums}
+    #neuronLab svg .axis{stroke:var(--rule-strong);stroke-width:2;vector-effect:non-scaling-stroke}
+    #neuronLab svg .tick{stroke:var(--rule);stroke-width:1.5;vector-effect:non-scaling-stroke}
+    #neuronLab svg .product{stroke:var(--model);stroke-width:18;stroke-linecap:butt;vector-effect:non-scaling-stroke}
+    #neuronLab svg .bias{stroke:var(--attention);stroke-width:18;stroke-linecap:butt;vector-effect:non-scaling-stroke}
+    #neuronLab svg .sum{stroke:var(--model);stroke-width:8;stroke-linecap:round;vector-effect:non-scaling-stroke}
+    #neuronLab svg .zero{stroke:var(--text);stroke-width:2;vector-effect:non-scaling-stroke}
+    #neuronLab svg .node{fill:var(--paper);stroke:var(--model);stroke-width:4;vector-effect:non-scaling-stroke}
+    #neuronLab svg .wire{stroke:var(--rule-strong);stroke-width:3;fill:none;vector-effect:non-scaling-stroke}
+    #neuronLab svg .arrowhead{fill:var(--model)}
+    #neuronLab svg .dir{font-family:var(--font-display);font-size:25px;font-weight:650}
+    @media (prefers-reduced-motion:reduce){#neuronLab .formula span{transition:none}}
+  </style>
+</head>
+<body data-page="04" data-total="24">
+  <div id="stage">
+    <header>
+      <p class="kicker">单个神经元 · 前向计算</p>
+      <h1>参数把同一个输入推向不同方向</h1>
+      <p class="lead" style="margin-top:10px">调节输入 <span class="num">x</span>、权重 <span class="num">w</span> 与偏置 <span class="num">b</span>，观察它们怎样合成输出 <span class="num">z = wx + b</span>。</p>
+    </header>
+
+    <main id="neuronLab" data-last="" aria-label="单神经元参数实验">
+      <section class="model min0" aria-labelledby="modelTitle">
+        <div class="model-head">
+          <div class="min0">
+            <h2 id="modelTitle">一条数轴，直接看合成结果</h2>
+            <p class="small">蓝色段表示 <span class="num">wx</span>，橙色段表示 <span class="num">b</span>；首尾相接的终点就是 <span class="num">z</span>。</p>
+          </div>
+          <div class="formula" aria-label="z 等于 w 乘 x 加 b"><span>z = </span><span class="wterm">w</span><span>·</span><span class="xterm">x</span><span> + </span><span class="bterm">b</span></div>
+        </div>
+        <svg class="diagram" viewBox="0 0 930 520" role="img" aria-labelledby="svgTitle svgDesc">
+          <title id="svgTitle">神经元输入、加权与偏置合成图</title>
+          <desc id="svgDesc">输入经过权重相乘，再与偏置相加。固定负六到正六的数轴显示输出方向和幅度。</desc>
+          <defs>
+            <marker id="p04Arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto-start-reverse" markerUnits="strokeWidth"><path class="arrowhead" d="M0,0 L10,5 L0,10 Z"/></marker>
+          </defs>
+          <g aria-hidden="true">
+            <circle cx="104" cy="120" r="46" class="node"/>
+            <text x="104" y="113" text-anchor="middle" font-size="18" class="muted">输入</text>
+            <text id="nodeX" x="104" y="141" text-anchor="middle" font-size="24" class="mono">1.2</text>
+            <path d="M150 120 H285" class="wire" marker-end="url(#p04Arrow)"/>
+            <text id="wireW" x="220" y="96" text-anchor="middle" font-size="18" class="mono">× 1.5</text>
+            <circle cx="340" cy="120" r="54" class="node"/>
+            <text x="340" y="112" text-anchor="middle" font-size="18" class="muted">加权</text>
+            <text id="nodeP" x="340" y="143" text-anchor="middle" font-size="24" class="mono">1.8</text>
+            <path d="M394 120 H520" class="wire" marker-end="url(#p04Arrow)"/>
+            <text id="wireB" x="457" y="96" text-anchor="middle" font-size="18" class="mono">+ −0.4</text>
+            <circle cx="580" cy="120" r="61" class="node"/>
+            <text x="580" y="109" text-anchor="middle" font-size="18" class="muted">输出 z</text>
+            <text id="nodeZ" x="580" y="146" text-anchor="middle" font-size="31" class="mono">1.4</text>
+            <text id="directionTop" x="685" y="128" class="dir">向正方向</text>
+          </g>
+          <g transform="translate(0,15)" aria-hidden="true">
+            <text x="30" y="243" font-size="17" class="muted">固定尺度：−6 到 6</text>
+            <line x1="70" y1="300" x2="860" y2="300" class="axis"/>
+            <g id="ticks"></g>
+            <line id="productBar" x1="465" y1="274" x2="583.5" y2="274" class="product"/>
+            <line id="biasBar" x1="583.5" y1="274" x2="557.2" y2="274" class="bias"/>
+            <line x1="465" y1="258" x2="465" y2="326" class="zero"/>
+            <line id="sumArrow" x1="465" y1="365" x2="557.2" y2="365" class="sum" marker-end="url(#p04Arrow)"/>
+            <text id="productLabel" x="524" y="250" text-anchor="middle" font-size="17" class="mono">wx = 1.8</text>
+            <text id="biasLabel" x="570" y="225" text-anchor="middle" font-size="17" class="mono">b = −0.4</text>
+            <text x="465" y="345" text-anchor="middle" font-size="15" class="muted">0</text>
+            <text id="zLabel" x="557" y="410" text-anchor="middle" font-size="23" font-weight="650" class="mono">z = 1.4</text>
+            <text id="conclusion" x="465" y="470" text-anchor="middle" font-size="20">输出向右；离零点越远，正向幅度越大。</text>
+          </g>
+        </svg>
+      </section>
+
+      <aside class="controls min0" aria-labelledby="controlTitle">
+        <h2 id="controlTitle">调三个量，盯住终点</h2>
+        <p class="small">拖动滑块，或聚焦后用方向键微调。</p>
+        <div class="ctl">
+          <label for="xCtl">输入 x</label>
+          <input id="xCtl" type="range" min="-2" max="2" step="0.1" value="1.2">
+          <output id="xOut" for="xCtl">1.2</output>
+        </div>
+        <div class="ctl">
+          <label for="wCtl">权重 w</label>
+          <input id="wCtl" type="range" min="-2" max="2" step="0.1" value="1.5">
+          <output id="wOut" for="wCtl">1.5</output>
+        </div>
+        <div class="ctl">
+          <label for="bCtl">偏置 b</label>
+          <input id="bCtl" type="range" min="-2" max="2" step="0.1" value="-0.4">
+          <output id="bOut" for="bCtl">−0.4</output>
+        </div>
+        <div class="presets">
+          <p class="hint">快速比较反向与抵消</p>
+          <div class="btns">
+            <button class="btn" type="button" data-preset="reverse">权重取负，方向反转</button>
+            <button class="btn" type="button" data-preset="cancel">偏置抵消，输出归零</button>
+          </div>
+        </div>
+        <div class="reset">
+          <p id="status" class="status" aria-live="polite">当前输出为正，幅度 1.4。</p>
+          <button id="resetBtn" class="btn" type="button">恢复初始参数</button>
+        </div>
+      </aside>
+    </main>
+  </div>
+  <script src="assets/base.js"></script>
+  <script>
+  (() => {
+    Deck.init({index:4,total:24});
+    const root=document.getElementById('neuronLab');
+    const q=s=>root.querySelector(s);
+    const els={x:q('#xCtl'),w:q('#wCtl'),b:q('#bCtl'),xo:q('#xOut'),wo:q('#wOut'),bo:q('#bOut'),nx:q('#nodeX'),ww:q('#wireW'),np:q('#nodeP'),wb:q('#wireB'),nz:q('#nodeZ'),dt:q('#directionTop'),pb:q('#productBar'),bb:q('#biasBar'),sa:q('#sumArrow'),pl:q('#productLabel'),bl:q('#biasLabel'),zl:q('#zLabel'),co:q('#conclusion'),st:q('#status'),ticks:q('#ticks'),reset:q('#resetBtn')};
+    const initial={x:1.2,w:1.5,b:-0.4,last:'',preset:''};
+    let state={...initial};
+    const listeners=[];
+    const on=(el,type,fn)=>{el.addEventListener(type,fn);listeners.push(()=>el.removeEventListener(type,fn))};
+    const fmt=v=>Math.abs(v)<.05?'0.0':(v<0?'−':'')+Math.abs(v).toFixed(1);
+    const sx=v=>465+v*(395/6);
+    for(let v=-6;v<=6;v+=2){
+      const x=sx(v),ns='http://www.w3.org/2000/svg';
+      const line=document.createElementNS(ns,'line');line.setAttribute('x1',x);line.setAttribute('x2',x);line.setAttribute('y1',292);line.setAttribute('y2',309);line.setAttribute('class','tick');
+      const text=document.createElementNS(ns,'text');text.setAttribute('x',x);text.setAttribute('y',330);text.setAttribute('text-anchor','middle');text.setAttribute('font-size','13');text.setAttribute('class','muted mono');text.textContent=v<0?'−'+Math.abs(v):v;
+      els.ticks.append(line,text);
+    }
+    function render(announce=false){
+      const p=state.x*state.w,z=p+state.b,px=sx(p),zx=sx(z);
+      root.dataset.last=state.last;
+      els.x.value=state.x;els.w.value=state.w;els.b.value=state.b;
+      els.xo.textContent=els.nx.textContent=fmt(state.x);els.wo.textContent=fmt(state.w);els.bo.textContent=fmt(state.b);
+      els.ww.textContent='× '+fmt(state.w);els.np.textContent=fmt(p);els.wb.textContent='+ '+fmt(state.b);els.nz.textContent=fmt(z);
+      els.pb.setAttribute('x1',sx(0));els.pb.setAttribute('x2',px);els.bb.setAttribute('x1',px);els.bb.setAttribute('x2',zx);els.sa.setAttribute('x1',sx(0));els.sa.setAttribute('x2',zx);
+      els.pl.setAttribute('x',(sx(0)+px)/2);els.pl.setAttribute('y',Math.abs(p)<.45?246:250);els.pl.textContent='wx = '+fmt(p);
+      els.bl.setAttribute('x',(px+zx)/2);els.bl.setAttribute('y',Math.abs(state.b)<.45?214:225);els.bl.textContent='b = '+fmt(state.b);
+      els.zl.setAttribute('x',zx);els.zl.textContent='z = '+fmt(z);
+      let dir='停在零点',con='乘积与偏置恰好抵消，输出幅度为 0。';
+      if(z>.05){dir='向正方向';con='输出向右；离零点越远，正向幅度越大。'}
+      if(z<-.05){dir='向负方向';con='输出向左；离零点越远，负向幅度越大。'}
+      els.dt.textContent=dir;els.dt.setAttribute('fill',Math.abs(z)<=.05?'var(--muted)':'var(--model)');els.co.textContent=con;
+      els.st.textContent=Math.abs(z)<=.05?'乘积与偏置抵消，输出为零。':`当前输出为${z>0?'正':'负'}，幅度 ${Math.abs(z).toFixed(1)}。`;
+      root.querySelectorAll('[data-preset]').forEach(btn=>btn.setAttribute('aria-pressed',String(btn.dataset.preset===state.preset)));
+      if(announce) els.st.setAttribute('aria-atomic','true');
+    }
+    ['x','w','b'].forEach(k=>on(els[k],'input',()=>{state={...state,[k]:Number(els[k].value),last:k,preset:''};render(false)}));
+    ['x','w','b'].forEach(k=>on(els[k],'change',()=>render(true)));
+    root.querySelectorAll('[data-preset]').forEach(btn=>on(btn,'click',()=>{
+      state=btn.dataset.preset==='reverse'?{x:1.5,w:-1.2,b:0,last:'w',preset:'reverse'}:{x:1.2,w:1.5,b:-1.8,last:'b',preset:'cancel'};
+      render(true);
+    }));
+    on(els.reset,'click',()=>{state={...initial};render(true)});
+    function destroy(){listeners.splice(0).forEach(off=>off())}
+    window.addEventListener('pagehide',destroy,{once:true});
+    render();
+  })();
+  </script>
+</body>
+</html>

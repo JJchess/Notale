@@ -9,6 +9,135 @@
   <meta name="theme-color" content="#10110f">
   <title>磁场｜看不见的秩序</title>
   <link rel="stylesheet" href="assets/base.css">
+  <style>
+:root{
+  --bg:#10110f;
+  --surface:#22231f;
+  --text:#f2eee2;
+  --text-soft:#c9c3b5;
+  --muted:#87857c;
+  --line:#4a4b43;
+  --field:#b8b3a2;
+  --field-bright:#eee7d6;
+  --north:#bd4f3b;
+  --south:#315f86;
+  --focus:#d8a83f;
+  --pad-x:98px;
+  --font-sans:"Noto Sans SC","Source Han Sans SC","PingFang SC","Microsoft YaHei",system-ui,sans-serif;
+  --font-mono:"SFMono-Regular","Cascadia Code","Roboto Mono",ui-monospace,monospace;
+  --stage-w:1600px;
+  --stage-h:900px;
+}
+
+html,body{ width:100%; height:100%; }
+body{ background:#090a08; }
+
+#stage{
+  isolation:isolate;
+  padding:0 var(--pad-x);
+  background:var(--bg);
+  color:var(--text);
+  contain:layout paint;
+}
+
+#field{
+  z-index:1;
+  max-width:none;
+  pointer-events:none;
+}
+
+.cover-copy{
+  position:absolute;
+  left:var(--pad-x);
+  top:125px;
+  width:530px;
+  z-index:5;
+  pointer-events:none;
+}
+
+h1{
+  display:flex;
+  align-items:flex-end;
+  margin-top:56px;
+  color:var(--text);
+  font-size:192px;
+  font-weight:650;
+  line-height:.84;
+  letter-spacing:-.1em;
+  white-space:nowrap;
+}
+
+.subtitle-row{
+  display:flex;
+  align-items:center;
+  gap:20px;
+  margin-top:52px;
+}
+
+.subtitle-row::before{
+  content:"";
+  width:44px;
+  height:1px;
+  flex:0 0 auto;
+  background:var(--north);
+}
+
+.subtitle{
+  color:var(--text-soft);
+  font-size:27px;
+  font-weight:400;
+  line-height:1.2;
+  letter-spacing:.3em;
+  white-space:nowrap;
+}
+
+.dipole{
+  position:absolute;
+  left:982px;
+  top:412px;
+  width:324px;
+  height:76px;
+  z-index:4;
+  margin:0;
+  pointer-events:none;
+}
+
+.magnet-core{
+  position:absolute;
+  inset:0;
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  overflow:hidden;
+  background:var(--surface);
+  box-shadow:0 18px 46px rgba(0,0,0,.28);
+}
+
+.pole{
+  display:flex;
+  align-items:center;
+  min-width:0;
+  padding:0 25px;
+  font-family:var(--font-mono);
+  font-size:18px;
+  font-weight:700;
+  line-height:1;
+  letter-spacing:.08em;
+  text-transform:uppercase;
+}
+
+.pole-s{
+  justify-content:flex-start;
+  color:var(--text);
+  background:var(--south);
+  border-right:1px solid rgba(242,238,226,.5);
+}
+
+.pole-n{
+  justify-content:flex-end;
+  color:var(--text);
+  background:var(--north);
+}
+  </style>
 </head>
 <body>
   <main id="stage" aria-labelledby="cover-title">

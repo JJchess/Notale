@@ -1,0 +1,250 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+:root{
+  --bg:#EEF1F5;
+  --text:#111820;
+  --font-sans:"Noto Sans CJK SC",ui-sans-serif,system-ui,sans-serif;
+}
+body{margin:0;background:var(--bg);}
+#stage{
+  width:1600px;height:900px;
+  display:flex;flex-direction:column;
+  position:relative;overflow:hidden;
+  font-family:var(--font-sans);
+  background:var(--bg);
+}
+#field{position:absolute;inset:0;}
+.wrap{
+  position:relative;z-index:2;
+  flex:1;display:flex;flex-direction:column;
+  justify-content:center;
+  padding:0 96px;
+  min-height:0;
+}
+h1{
+  font-family:"Clear Sans","Noto Sans CJK SC",ui-sans-serif,sans-serif;
+  font-size:96px;line-height:1.05;margin:0;color:var(--text);
+  font-weight:700;letter-spacing:-.01em;
+}
+h1 em{
+  font-style:normal;color:var(--weight);
+}
+.lead{
+  font-size:22px;line-height:1.5;color:var(--muted);
+  margin:28px 0 0 0;max-width:760px;
+}
+.legend{
+  position:relative;z-index:2;
+  display:flex;gap:36px;align-items:center;
+  padding:0 96px 56px 96px;
+  font-family:"JetBrains Mono",ui-monospace,Consolas,monospace;
+  font-size:14px;color:var(--muted);
+}
+.li{display:flex;align-items:center;gap:10px;}
+.sw{width:14px;height:14px;border-radius:50%;display:inline-block;flex:none;}
+</style>
+</head>
+<body data-page="1" data-total="16">
+<div id="stage">
+  <canvas id="field" class="cv-fill" aria-hidden="true"></canvas>
+  <div class="wrap">
+    <h1>Ada<em>Boost</em>ing 算法</h1>
+    <p class="lead">一群只比瞎猜强一点的弱分类器，按各自的权重投票叠加，一轮接一轮地把上一轮分错的样本找出来重点纠正，最终合成一个强分类器。</p>
+  </div>
+  <div class="legend" aria-hidden="true">
+    <span class="li"><i class="sw" style="background:var(--weak)"></i>弱分类器决策线</span>
+    <span class="li"><i class="sw" style="background:var(--error)"></i>被分错的样本</span>
+    <span class="li"><i class="sw" style="background:var(--correct)"></i>已被纠正的样本</span>
+    <span class="li"><i class="sw" style="background:var(--weight)"></i>当前轮次权重</span>
+  </div>
+</div>
+<script src="assets/base.js"></script>
+<script>
+(() => {
+  "use strict";
+
+  // ---- 概念规则 ----
+  // AdaBoost 的governing rule：每一轮训练一个"弱分类器"（一条决策线），
+  // 它只需要比随机猜测略好；样本权重根据上一轮的错分结果调整——
+  // 错分样本的权重升高，下一轮的弱分类器被迫更关注它们。
+  // 可视化：样本点在场地上分两类（上/下），若干条决策线依次"生效"，
+  // 每生效一条，之前被分错、现在被这条线纠正的样本从 error 变为 correct。
+  // 决策线本身按它在当前轮的权重(alpha)加粗、变亮。
+
+  const CONFIG = Object.freeze({
+    seed: 20260901,
+    nRounds: 6,
+    nPoints: 46,
+    margin: 90,
+    roundDuration: 1450,   // 每轮从"生效"到"稳定"的动画时长 ms
+    holdAfter: 1900        // 全部完成后停留时长 ms 才重新开始
+  });
+
+  const canvas = document.getElementById("field");
+  const reduced = Deck.reduced();
+  let ctx = null;
+  let W = Deck.W, H = Deck.H;
+
+  // 标题区排斥场：避免线条与高亮样本压住左侧文字
+  function titleField(x, y) {
+    const dx = (x - 430) / 560;
+    const dy = (y - 330) / 300;
+    return Math.hypot(dx, dy); // <1 在标题区内
+  }
+
+  function seededRandom(seed) {
+    let s = seed % 2147483647;
+    if (s <= 0) s += 2147483646;
+    return () => {
+      s = (s * 16807) % 2147483647;
+      return (s - 1) / 2147483646;
+    };
+  }
+
+  // ---- 生成确定性数据：真实标签由一条隐藏的"真实边界"决定 ----
+  let points = [];   // {x,y,label,wrong[roundIdx]}
+  let lines = [];     // {a,b,alpha} 决策线端点 + 权重
+
+  function buildModel() {
+    const rand = seededRandom(CONFIG.seed);
+    const M = CONFIG.margin;
+    points = [];
+    for (let i = 0; i < CONFIG.nPoints; i++) {
+      let x, y, tries = 0;
+      do {
+        x = M + rand() * (W - 2 * M);
+        y = M + rand() * (H - 2 * M);
+        tries++;
+      } while (titleField(x, y) < 1 && tries < 20);
+      // 真实边界：一条略微弯曲的曲线 y = 480 + 90*sin(x/260)
+      const trueBoundary = 480 + 90 * Math.sin(x / 260);
+      const label = y < trueBoundary ? 1 : -1;
+      points.push({ x, y, label, correctedAt: -1 });
+    }
+
+    // 6 条弱分类器决策线：轴对齐或倾斜的简单阈值线，依次覆盖不同区域的错误
+    // 每条线是 (x1,y1)-(x2,y2)，判定规则：该侧样本被视为该轮"重点纠正"的样本
+    const rawLines = [
+      { x1: 120, y1: 300, x2: 1500, y2: 260, band: 60 },
+      { x1: 120, y1: 620, x2: 1500, y2: 560, band: 55 },
+      { x1: 700, y1: 90,  x2: 620,  y2: 810, band: 50 },
+      { x1: 300, y1: 120, x2: 1180, y2: 800, band: 45 },
+      { x1: 1500,y1: 200, x2: 260,  y2: 700, band: 42 },
+      { x1: 200, y1: 780, x2: 1480, y2: 140, band: 40 }
+    ];
+
+    // 模拟"逐轮纠正"：每一轮，找出当前仍处于"错误"状态、且落在该轮决策带内的样本，标记为本轮纠正
+    const stillWrong = new Set(points.map((_, i) => i));
+    // 初始：假设第 0 轮之前，落在真实边界附近 130px 内的点都算"当前误判"（弱分类器的天然弱点）
+    lines = rawLines.map((L, idx) => {
+      const dx = L.x2 - L.x1, dy = L.y2 - L.y1;
+      const len = Math.hypot(dx, dy);
+      const nx = -dy / len, ny = dx / len;
+      let fixedCount = 0;
+      for (const i of Array.from(stillWrong)) {
+        const p = points[i];
+        const t = ((p.x - L.x1) * dx + (p.y - L.y1) * dy) / (len * len);
+        if (t < -0.1 || t > 1.1) continue;
+        const dist = (p.x - L.x1) * nx + (p.y - L.y1) * ny;
+        if (Math.abs(dist) < L.band) {
+          points[i].correctedAt = idx;
+          stillWrong.delete(i);
+          fixedCount++;
+        }
+      }
+      // alpha(权重) ~ 该轮修正的样本比例，模拟 AdaBoost 中错误率越低权重越高
+      const rate = fixedCount / CONFIG.nPoints;
+      const alpha = 0.5 * Math.log((rate + 0.05) / (1 - rate + 0.05) + 1) + 0.35;
+      return { ...L, alpha: Math.max(0.3, Math.min(1, alpha)) };
+    });
+    // 剩余未被任何轮次覆盖的样本：留在最后一轮之后仍标 error（真实存在的残余误差，不编造）
+  }
+
+  buildModel();
+
+  function colorAt(role, alpha) {
+    const c = Deck.rgb(role);
+    return `rgba(${c[0]},${c[1]},${c[2]},${alpha})`;
+  }
+
+  function draw(tSec) {
+    if (!ctx) return;
+    ctx.clearRect(0, 0, W, H);
+
+    const cycleLen = CONFIG.nRounds * CONFIG.roundDuration + CONFIG.holdAfter;
+    const tMs = reduced ? cycleLen - 40 : (tSec * 1000) % cycleLen;
+    const activeRound = Math.min(CONFIG.nRounds - 1, Math.floor(tMs / CONFIG.roundDuration));
+    const roundProgress = Deck.clamp((tMs - activeRound * CONFIG.roundDuration) / CONFIG.roundDuration, 0, 1);
+
+    // 决策线：已过轮次实线常驻变暗，当前轮描绘中，未来轮不画
+    for (let i = 0; i < lines.length; i++) {
+      const L = lines[i];
+      let drawProgress, opacity, lineWidth;
+      if (i < activeRound) {
+        drawProgress = 1; opacity = 0.16; lineWidth = 1.2;
+      } else if (i === activeRound) {
+        drawProgress = Deck.clamp(roundProgress / 0.55, 0, 1);
+        opacity = 0.34 + 0.5 * L.alpha;
+        lineWidth = 1.4 + 2.6 * L.alpha;
+      } else continue;
+
+      const dampedField = (x, y) => 1 - Math.max(0, 1 - titleField(x, y)) * 0.85;
+      const midx = (L.x1 + L.x2) / 2, midy = (L.y1 + L.y2) / 2;
+      const fieldDamp = dampedField(midx, midy);
+
+      const ex = L.x1 + (L.x2 - L.x1) * drawProgress;
+      const ey = L.y1 + (L.y2 - L.y1) * drawProgress;
+      ctx.beginPath();
+      ctx.moveTo(L.x1, L.y1);
+      ctx.lineTo(ex, ey);
+      ctx.strokeStyle = i === activeRound ? colorAt("weight", opacity * fieldDamp) : colorAt("weak", opacity * fieldDamp);
+      ctx.lineWidth = lineWidth;
+      ctx.lineCap = "round";
+      ctx.stroke();
+    }
+
+    // 样本点：尚未被纠正 且 轮次已到达它理应被纠正的时刻之前 → error；之后 → correct
+    for (const p of points) {
+      const damp = 1 - Math.max(0, 1 - titleField(p.x, p.y)) * 0.7;
+      let isCorrected = p.correctedAt >= 0 && p.correctedAt < activeRound;
+      if (p.correctedAt === activeRound && roundProgress > 0.55) isCorrected = true;
+
+      let role, r;
+      if (p.correctedAt === -1) {
+        role = "error"; r = 5.5; // 残余误差：整个演化过程都未被这 6 条弱分类器覆盖
+      } else if (isCorrected) {
+        role = "correct"; r = 4.5;
+      } else {
+        role = "error"; r = 5.5;
+      }
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+      ctx.fillStyle = colorAt(role, 0.85 * damp);
+      ctx.fill();
+    }
+  }
+
+  try {
+    ctx = Deck.fit(canvas);
+  } catch (e) {
+    ctx = null;
+  }
+
+  function resize() {
+    W = Deck.W; H = Deck.H;
+    buildModel();
+    ctx = Deck.fit(canvas);
+  }
+
+  Deck.onResize(resize);
+  Deck.init({ index: 1, total: 16 });
+  Deck.loop((t) => draw(t / 1000), { still: (CONFIG.nRounds * CONFIG.roundDuration + CONFIG.holdAfter - 40) / 1000 });
+})();
+</script>
+</body>
+</html>

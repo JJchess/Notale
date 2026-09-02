@@ -37,6 +37,35 @@
 </html>
 ```
   </file>
+  <file path="samples/generative/neural-signal-network/pages/theme.css">
+```css
+:root { --bg:#02050a; --text:#eef6fb; --font-sans:"PingFang SC",system-ui,sans-serif; --signal:#00e5ff; --network:#72bed1; }
+#stage { cursor:crosshair; background:radial-gradient(900px 560px at 74% 43%,#0081a613,transparent 66%),radial-gradient(760px 520px at 9% 107%,#5f3eaa0e,transparent 62%),linear-gradient(#07101a,#03070d 52%,#02050a); }
+#stage::after { content:""; position:absolute; inset:0; z-index:8; pointer-events:none; box-shadow:inset 0 0 210px #000a; }
+#net { z-index:1; }
+.fallback-network { position:absolute; inset:0; z-index:1; width:100%; height:100%; color:var(--network); }
+.scrim { position:absolute; inset:0; z-index:2; pointer-events:none; background:radial-gradient(690px 420px at 27% 49%,#02050aeb,#02050ab8 47%,transparent 76%),linear-gradient(90deg,#02050aa8,#02050a33 38%,transparent 61%); }
+.top { position:absolute; z-index:5; left:68px; right:68px; top:16px; display:grid; grid-template-columns:auto 1fr auto; align-items:center; gap:28px; color:#445064; font:11px ui-monospace,monospace; letter-spacing:.14em; }
+.rail { height:3px; background:linear-gradient(90deg,var(--signal) 0 6.7%,#ffffff17 6.7%); }
+.page { color:#78859a; font-size:14px; }
+.hero { position:absolute; z-index:5; left:104px; top:292px; width:670px; pointer-events:none; }
+.kicker { display:flex; align-items:center; gap:12px; color:var(--signal); font:13px ui-monospace,monospace; letter-spacing:.22em; }
+.kicker::before { content:""; width:25px; height:2px; background:linear-gradient(90deg,var(--signal),transparent); }
+h1 { margin-top:22px; color:#f8fbfd; font-size:112px; font-weight:750; line-height:.94; letter-spacing:-.045em; text-shadow:0 8px 42px #000c; }
+h1 em { color:var(--signal); font-style:normal; text-shadow:0 0 32px #00e5ff7a,0 0 90px #00e5ff2e; }
+.rule { width:74px; height:2px; margin-top:28px; background:linear-gradient(90deg,var(--signal),transparent); }
+.dek { margin-top:20px; color:#8090a5; font-size:19px; line-height:1.68; }
+.dek strong { color:var(--signal); font-weight:500; }
+.meta { display:flex; align-items:center; gap:13px; margin-top:23px; color:#445064; font:11px ui-monospace,monospace; letter-spacing:.18em; }
+.meta i { width:4px; height:4px; border-radius:50%; background:currentColor; }
+.stats { position:absolute; z-index:5; right:68px; bottom:92px; display:flex; gap:34px; text-align:right; font-family:ui-monospace,monospace; }
+.stats dt { color:#445064; font-size:10px; letter-spacing:.16em; }
+.stats dd { margin-top:6px; color:#8492a7; font-size:21px; }
+.stats dd.on { color:var(--signal); text-shadow:0 0 15px #00e5ff59; }
+#stage:focus-visible { outline:0; }
+#stage:focus-visible .kicker { filter:brightness(1.6); }
+```
+  </file>
   <file path="samples/generative/neural-signal-network/pages/neural-network.js">
 ```javascript
 (() => {

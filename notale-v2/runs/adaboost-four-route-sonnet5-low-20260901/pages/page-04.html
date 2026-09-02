@@ -1,0 +1,485 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  #stage{ display:flex; flex-direction:column; gap:14px; }
+
+  .head{ flex:0 0 auto; display:flex; flex-direction:column; gap:4px; }
+  .head h1{ font-family:var(--font-display); font-size:var(--fs-h1); font-weight:600; margin:0; }
+  .head p{ font-size:var(--fs-lead); color:var(--muted); margin:0; max-width:1100px; }
+
+  .body{ flex:1; min-height:0; display:flex; gap:16px; }
+
+  .stagepanel{ flex:1 1 62%; min-width:0; display:flex; flex-direction:column; gap:10px; }
+  .sidepanel{ flex:0 0 360px; min-width:0; display:flex; flex-direction:column; gap:10px; }
+
+  .board-wrap{ position:relative; flex:1; min-height:0; border-radius:12px; }
+  #board{ width:100%; height:100%; display:block; cursor:ew-resize; touch-action:none; }
+
+  .round-row{ flex:0 0 auto; display:flex; align-items:baseline; justify-content:space-between; }
+  .round-row .rlabel{ font-size:var(--fs-h2); font-family:var(--font-display); font-weight:600; }
+  .round-row .rsub{ font-size:var(--fs-sec); color:var(--muted); }
+
+  .metric-row{ flex:0 0 auto; display:flex; gap:10px; }
+  .metric{ flex:1; border:1px solid var(--line); border-radius:10px; padding:10px 14px; background:var(--panel-bg); }
+  .metric .mlabel{ font-size:var(--fs-label); color:var(--muted); }
+  .metric .mval{ font-family:var(--font-num); font-size:22px; color:var(--text); margin-top:2px; }
+  .metric .mval.focus{ color:var(--focus); }
+  .metric .mval.ensemble{ color:var(--ensemble); }
+
+  .ctlrow{ flex:0 0 auto; display:flex; align-items:center; gap:10px; }
+  .ctlrow .ctl{ flex:1; }
+
+  .btns{ flex:0 0 auto; display:flex; gap:10px; }
+
+  .legend{ flex:0 0 auto; }
+
+  .history{ flex:0 0 auto; display:flex; flex-direction:column; gap:6px; }
+  .history h2{ font-size:var(--fs-h2); font-family:var(--font-display); font-weight:600; margin:0; }
+  .hist-list{ display:flex; flex-direction:column; gap:6px; max-height:210px; overflow:auto; }
+  .hist-item{ display:flex; align-items:center; gap:8px; font-size:var(--fs-sec); border:1px solid var(--line); border-radius:8px; padding:6px 10px; }
+  .hist-item .hi-round{ font-family:var(--font-num); color:var(--muted); width:2.4em; }
+  .hist-item .hi-eps{ font-family:var(--font-num); }
+  .hist-item .hi-alpha{ font-family:var(--font-num); color:var(--ensemble); }
+  .hist-item.active{ border-color:var(--focus); }
+
+  .hint{ flex:0 0 auto; }
+
+  .note{ flex:0 0 auto; }
+</style>
+</head>
+<body data-page="04" data-total="8">
+<div id="stage">
+
+  <div class="head">
+    <h1>拖动分割阈值，看误分点的权重被"逼"变大</h1>
+    <p class="lead">10 个样本分布在数轴上，红色为负类、蓝色为正类。拖动竖线选择本轮弱分类器（决策树桩）的分割阈值和朝向，确认后错分样本的权重会按公式上升——下一轮的阈值将不得不向它们靠近。</p>
+  </div>
+
+  <div class="body">
+
+    <div class="stagepanel">
+      <div class="round-row">
+        <span class="rlabel">第 <span id="roundNo" class="num" style="font-family:var(--font-num)">1</span> 轮</span>
+        <span class="rsub" id="roundSub">拖动阈值线，或点样本切换分类方向后确认</span>
+      </div>
+
+      <div class="board-wrap panel q">
+        <canvas id="board" class="cv-fill no-pan" tabindex="0" role="img"
+          aria-label="数轴上的样本权重与分割阈值示意图"></canvas>
+      </div>
+
+      <div class="hint" id="hintline">
+        <span class="hint">拖动灰色竖线调整阈值；点击竖线上的方向箭头翻转左右判定。</span>
+      </div>
+
+      <div class="legend" id="legend">
+        <div class="li"><span class="sw" style="background:var(--wrong)"></span>负类样本（y=−1）</div>
+        <div class="li"><span class="sw" style="background:var(--weak)"></span>正类样本（y=+1）</div>
+        <div class="li"><span class="sw" style="border:2px solid var(--wrong); background:transparent"></span>被当前树桩错分（描边）</div>
+      </div>
+    </div>
+
+    <div class="sidepanel">
+
+      <div class="metric-row">
+        <div class="metric">
+          <div class="mlabel">加权错误率 ε</div>
+          <div class="mval focus num" id="epsVal">0.000</div>
+        </div>
+        <div class="metric">
+          <div class="mlabel">分类器权重 α</div>
+          <div class="mval ensemble num" id="alphaVal">0.000</div>
+        </div>
+      </div>
+
+      <div class="ctlrow">
+        <div class="ctl" style="flex-direction:column; align-items:stretch; gap:4px;">
+          <label for="threshSlider" style="font-size:var(--fs-label); color:var(--muted)">阈值位置</label>
+          <input type="range" id="threshSlider" min="-10" max="10" step="0.1" value="0">
+        </div>
+      </div>
+
+      <div class="btns">
+        <button class="btn" id="flipBtn" type="button">翻转判定方向</button>
+        <button class="btn selected" id="commitBtn" type="button">确认本轮 · 更新权重</button>
+      </div>
+      <div class="btns">
+        <button class="btn" id="resetBtn" type="button">重置到第 1 轮</button>
+      </div>
+
+      <div class="note small" id="statusNote" style="color:var(--muted)">
+        移动阈值线，观察 ε 如何随分割位置变化；ε 越低，α 越大，这个弱分类器在最终投票里的话语权越重。
+      </div>
+
+      <div class="history">
+        <h2>各轮小结</h2>
+        <div class="hist-list" id="histList"></div>
+      </div>
+
+    </div>
+
+  </div>
+
+</div>
+<script src="assets/base.js"></script>
+<script>
+(() => {
+  "use strict";
+
+  // ---------- 数据：10 个样本固定在数轴上，y 为真实类别 ----------
+  const SAMPLES = [
+    { x: -9.0, y: -1 },
+    { x: -7.0, y: -1 },
+    { x: -5.0, y: -1 },
+    { x: -3.2, y: +1 },   // 与正类交错，制造真实的分类难度
+    { x: -1.4, y: -1 },
+    { x:  0.6, y: +1 },
+    { x:  2.4, y: -1 },
+    { x:  4.5, y: +1 },
+    { x:  6.8, y: +1 },
+    { x:  8.8, y: +1 },
+  ];
+  const N = SAMPLES.length;
+  const MAX_ROUNDS = 3;
+
+  const byId = (id) => document.getElementById(id);
+  const ui = {
+    board: byId("board"),
+    threshSlider: byId("threshSlider"),
+    flipBtn: byId("flipBtn"),
+    commitBtn: byId("commitBtn"),
+    resetBtn: byId("resetBtn"),
+    epsVal: byId("epsVal"),
+    alphaVal: byId("alphaVal"),
+    roundNo: byId("roundNo"),
+    roundSub: byId("roundSub"),
+    statusNote: byId("statusNote"),
+    histList: byId("histList"),
+  };
+
+  // ---------- 权威状态 ----------
+  function createInitialState() {
+    return {
+      round: 1,                                // 当前进行到第几轮（1..MAX_ROUNDS）
+      weights: new Array(N).fill(1 / N),       // 当前样本权重，归一化
+      thresh: 0,                               // 当前树桩阈值（可拖动）
+      dir: 1,                                  // 1: x>thresh 判为 +1；-1: x>thresh 判为 -1
+      committed: false,                        // 本轮是否已确认（确认后禁止再拖，直到进入下一轮）
+      history: [],                             // 每轮小结 {round, thresh, dir, eps, alpha}
+      finished: false,
+    };
+  }
+
+  let state = createInitialState();
+  let fit = null;
+  let dragging = false;
+
+  // ---------- 派生计算 ----------
+  function predict(x, thresh, dir) {
+    return (x > thresh ? 1 : -1) * dir;
+  }
+
+  function weightedError(weights, thresh, dir) {
+    let err = 0;
+    SAMPLES.forEach((s, i) => {
+      if (predict(s.x, thresh, dir) !== s.y) err += weights[i];
+    });
+    return err;
+  }
+
+  function bestDirFor(weights, thresh) {
+    const e1 = weightedError(weights, thresh, 1);
+    const e2 = weightedError(weights, thresh, -1);
+    return e1 <= e2 ? 1 : -1;
+  }
+
+  function deriveEvidence(s) {
+    const eps = weightedError(s.weights, s.thresh, s.dir);
+    const epsClamped = Math.min(Math.max(eps, 1e-6), 1 - 1e-6);
+    const alpha = 0.5 * Math.log((1 - epsClamped) / epsClamped);
+    const wrongMask = SAMPLES.map((sam, i) => predict(sam.x, s.thresh, s.dir) !== sam.y);
+    return { eps, alpha, wrongMask };
+  }
+
+  // ---------- 权重更新（AdaBoost 核心公式） ----------
+  function updateWeights(weights, thresh, dir, alpha) {
+    const raw = SAMPLES.map((s, i) => {
+      const correct = predict(s.x, thresh, dir) === s.y;
+      return weights[i] * Math.exp(correct ? -alpha : alpha);
+    });
+    const sum = raw.reduce((a, b) => a + b, 0);
+    return raw.map((w) => w / sum);
+  }
+
+  // ---------- 坐标映射：数轴 x∈[-10,10] 映射到画布 ----------
+  const AXIS_MIN = -10, AXIS_MAX = 10;
+  const PAD_X = 70, PAD_TOP = 60, PAD_BOTTOM = 60;
+
+  function layout(w, h) {
+    const plotW = w - PAD_X * 2;
+    const plotH = h - PAD_TOP - PAD_BOTTOM;
+    const toPx = (x) => PAD_X + ((x - AXIS_MIN) / (AXIS_MAX - AXIS_MIN)) * plotW;
+    const toX = (px) => AXIS_MIN + ((px - PAD_X) / plotW) * (AXIS_MAX - AXIS_MIN);
+    const midY = PAD_TOP + plotH / 2;
+    return { toPx, toX, midY, plotW, plotH, w, h };
+  }
+
+  function radiusFor(weight) {
+    // 权重范围大致在 [1/N * 0.2, 1/N * 数倍]；用面积感知映射，保底可见
+    const base = 10;
+    const scale = Math.sqrt(weight * N);
+    return Deck.clamp(base * scale, 7, 30);
+  }
+
+  // ---------- 绘制 ----------
+  function draw(ctx, w, h) {
+    const L = layout(w, h);
+    ctx.clearRect(0, 0, w, h);
+
+    const evid = deriveEvidence(state);
+
+    // 数轴
+    ctx.strokeStyle = Deck.token("line");
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(L.toPx(AXIS_MIN), L.midY);
+    ctx.lineTo(L.toPx(AXIS_MAX), L.midY);
+    ctx.stroke();
+
+    // 刻度
+    ctx.fillStyle = Deck.token("muted");
+    ctx.font = "13px " + Deck.token("font-num");
+    ctx.textAlign = "center";
+    for (let t = -10; t <= 10; t += 2) {
+      const px = L.toPx(t);
+      ctx.beginPath();
+      ctx.moveTo(px, L.midY - 5);
+      ctx.lineTo(px, L.midY + 5);
+      ctx.stroke();
+      ctx.fillText(String(t), px, L.midY + 24);
+    }
+
+    // 两个判定区背景色带（弱色块，说明左右各判什么）
+    const threshPx = L.toPx(state.thresh);
+    const leftLabel = state.dir === 1 ? "−1" : "+1";
+    const rightLabel = state.dir === 1 ? "+1" : "−1";
+    ctx.save();
+    ctx.globalAlpha = 0.08;
+    ctx.fillStyle = state.dir === 1 ? Deck.token("wrong") : Deck.token("weak");
+    ctx.fillRect(L.toPx(AXIS_MIN), PAD_TOP - 30, threshPx - L.toPx(AXIS_MIN), L.plotH + 60);
+    ctx.fillStyle = state.dir === 1 ? Deck.token("weak") : Deck.token("wrong");
+    ctx.fillRect(threshPx, PAD_TOP - 30, L.toPx(AXIS_MAX) - threshPx, L.plotH + 60);
+    ctx.restore();
+
+    ctx.font = "15px " + Deck.token("font-sans");
+    ctx.fillStyle = Deck.token("muted");
+    ctx.textAlign = "center";
+    ctx.fillText(`判为 ${leftLabel}`, (L.toPx(AXIS_MIN) + threshPx) / 2, PAD_TOP - 14);
+    ctx.fillText(`判为 ${rightLabel}`, (threshPx + L.toPx(AXIS_MAX)) / 2, PAD_TOP - 14);
+
+    // 阈值竖线
+    ctx.strokeStyle = Deck.token("text");
+    ctx.lineWidth = 3;
+    ctx.setLineDash(state.committed ? [] : [2, 2]);
+    ctx.beginPath();
+    ctx.moveTo(threshPx, PAD_TOP - 30);
+    ctx.lineTo(threshPx, PAD_TOP + L.plotH + 30);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // 方向箭头（表示当前判定朝向），放在竖线顶端
+    const arrowY = PAD_TOP - 30;
+    ctx.fillStyle = Deck.token("text");
+    ctx.save();
+    ctx.translate(threshPx, arrowY);
+    const dirSign = state.dir === 1 ? 1 : -1;
+    ctx.beginPath();
+    ctx.moveTo(0, -8);
+    ctx.lineTo(10 * dirSign, 0);
+    ctx.lineTo(0, 8);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+
+    // 样本点：气泡大小=权重，颜色=真实类别，描边=当前是否被错分
+    SAMPLES.forEach((s, i) => {
+      const px = L.toPx(s.x);
+      const py = L.midY;
+      const r = radiusFor(state.weights[i]);
+      const color = s.y === -1 ? Deck.token("wrong") : Deck.token("weak");
+      ctx.beginPath();
+      ctx.arc(px, py, r, 0, Math.PI * 2);
+      ctx.fillStyle = color;
+      ctx.globalAlpha = 0.88;
+      ctx.fill();
+      ctx.globalAlpha = 1;
+      if (evid.wrongMask[i]) {
+        ctx.lineWidth = 3;
+        ctx.strokeStyle = Deck.token("wrong");
+        ctx.beginPath();
+        ctx.arc(px, py, r + 4, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+    });
+  }
+
+  function ensureBoard() {
+    if (fit) return;
+    fit = Deck.autofit(ui.board, (ctx, w, h) => draw(ctx, w, h));
+  }
+
+  // ---------- 派生 UI 更新 ----------
+  function renderUI() {
+    const evid = deriveEvidence(state);
+    ui.epsVal.textContent = evid.eps.toFixed(3);
+    ui.alphaVal.textContent = evid.alpha.toFixed(3);
+    ui.roundNo.textContent = String(state.round);
+    ui.threshSlider.value = String(state.thresh);
+    ui.threshSlider.disabled = state.committed;
+    ui.flipBtn.disabled = state.committed;
+    ui.commitBtn.disabled = state.finished;
+    ui.commitBtn.textContent = state.finished
+      ? "已完成 3 轮"
+      : (state.committed ? "进入下一轮" : "确认本轮 · 更新权重");
+
+    if (state.finished) {
+      ui.roundSub.textContent = "三轮弱分类器已生成，可在下一页看它们如何合成最终边界";
+      ui.statusNote.textContent = "三轮结束。观察下方小结：每一轮的 ε 是否随权重集中在难分点而变化。";
+    } else if (state.committed) {
+      ui.roundSub.textContent = `本轮阈值 ${state.thresh.toFixed(1)}、方向已确认，权重已按 α 更新——请开始下一轮`;
+      ui.statusNote.textContent = "错分样本的气泡变大了：exp(+α) 放大了它的权重；正确样本 exp(−α) 缩小。下一轮的 ε 要在新权重下重新计算。";
+    } else {
+      ui.roundSub.textContent = "拖动阈值线，或点样本切换分类方向后确认";
+      ui.statusNote.textContent = "移动阈值线，观察 ε 如何随分割位置变化；ε 越低，α 越大，这个弱分类器在最终投票里的话语权越重。";
+    }
+
+    ui.histList.innerHTML = state.history.map((h) => `
+      <div class="hist-item">
+        <span class="hi-round">R${h.round}</span>
+        <span>阈值 ${h.thresh.toFixed(1)}，方向 ${h.dir === 1 ? "右+" : "右−"}</span>
+        <span class="hi-eps">ε=${h.eps.toFixed(3)}</span>
+        <span class="hi-alpha">α=${h.alpha.toFixed(3)}</span>
+      </div>
+    `).join("") || `<div class="hist-item" style="color:var(--muted)">尚无已确认的轮次</div>`;
+  }
+
+  function redrawAll() {
+    fit && fit.redraw();
+    renderUI();
+  }
+
+  // ---------- 动作 ----------
+  function setThresh(x) {
+    if (state.committed || state.finished) return;
+    state.thresh = Deck.clamp(Math.round(x * 10) / 10, AXIS_MIN, AXIS_MAX);
+    redrawAll();
+  }
+
+  function flipDir() {
+    if (state.committed || state.finished) return;
+    state.dir = state.dir === 1 ? -1 : 1;
+    redrawAll();
+  }
+
+  function commitRound() {
+    if (state.committed || state.finished) return;
+    const evid = deriveEvidence(state);
+    state.history.push({
+      round: state.round,
+      thresh: state.thresh,
+      dir: state.dir,
+      eps: evid.eps,
+      alpha: evid.alpha,
+    });
+    state.weights = updateWeights(state.weights, state.thresh, state.dir, evid.alpha);
+    state.committed = true;
+    redrawAll();
+  }
+
+  function nextRound() {
+    if (!state.committed) return;
+    if (state.round >= MAX_ROUNDS) {
+      state.finished = true;
+      redrawAll();
+      return;
+    }
+    // 自动把阈值/方向定位到当前权重下的最优起点附近，但仍需学习者自己确认（不预设答案，只是给一个可继续拖动的起点）
+    state.round += 1;
+    state.committed = false;
+    state.dir = bestDirFor(state.weights, state.thresh);
+    redrawAll();
+  }
+
+  function resetAll() {
+    state = createInitialState();
+    redrawAll();
+  }
+
+  // ---------- 输入 ----------
+  function pointerToThresh(evt) {
+    const p = Deck.pt(ui.board, evt);
+    const rectW = ui.board.clientWidth || 1600;
+    const rectH = ui.board.clientHeight || 900;
+    const L = layout(rectW, rectH);
+    return L.toX(p.x);
+  }
+
+  let pointerActive = false;
+
+  function onPointerDown(e) {
+    if (state.committed || state.finished) return;
+    pointerActive = true;
+    ui.board.setPointerCapture?.(e.pointerId);
+    setThresh(pointerToThresh(e));
+  }
+  function onPointerMove(e) {
+    if (!pointerActive) return;
+    setThresh(pointerToThresh(e));
+  }
+  function onPointerUp(e) {
+    pointerActive = false;
+    ui.board.releasePointerCapture?.(e.pointerId);
+  }
+
+  function onKeyDown(e) {
+    if (state.committed || state.finished) return;
+    if (e.key === "ArrowLeft") { setThresh(state.thresh - 0.2); e.preventDefault(); }
+    else if (e.key === "ArrowRight") { setThresh(state.thresh + 0.2); e.preventDefault(); }
+    else if (e.key === " ") { flipDir(); e.preventDefault(); }
+  }
+
+  const events = new AbortController();
+  function init() {
+    ensureBoard();
+    renderUI();
+
+    const opt = { signal: events.signal };
+    ui.board.addEventListener("pointerdown", onPointerDown, opt);
+    ui.board.addEventListener("pointermove", onPointerMove, opt);
+    ui.board.addEventListener("pointerup", onPointerUp, opt);
+    ui.board.addEventListener("pointercancel", onPointerUp, opt);
+    ui.board.addEventListener("keydown", onKeyDown, opt);
+
+    ui.threshSlider.addEventListener("input", (e) => setThresh(parseFloat(e.target.value)), opt);
+    ui.flipBtn.addEventListener("click", flipDir, opt);
+    ui.commitBtn.addEventListener("click", () => {
+      if (state.committed) nextRound();
+      else commitRound();
+    }, opt);
+    ui.resetBtn.addEventListener("click", resetAll, opt);
+
+    window.addEventListener("pagehide", () => {
+      fit?.stop();
+      events.abort();
+    }, { once: true });
+  }
+
+  init();
+})();
+</script>
+</body>
+</html>

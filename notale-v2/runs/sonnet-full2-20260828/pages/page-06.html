@@ -1,0 +1,228 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  .p6-head h1 { font-size: 32px; }
+  .p6-formula {
+    font-family: var(--font-mono);
+    font-size: 30px;
+    color: var(--forward);
+    letter-spacing: .5px;
+  }
+  .p6-formula .t { color: var(--backward); }
+  .p6-formula .y { color: var(--attention); }
+  .p6-explain { display: flex; flex-direction: column; gap: 10px; }
+  .p6-explain .row { display: flex; gap: 10px; align-items: baseline; font-size: var(--fs-body); }
+  .p6-explain .row .sw {
+    font-family: var(--font-mono); font-size: var(--fs-label); color: var(--muted);
+    flex: 0 0 34px;
+  }
+  .p6-readout { display: flex; gap: 28px; margin-top: 4px; }
+  .p6-readout .item { display: flex; flex-direction: column; gap: 2px; }
+  .p6-readout .item .lab { font-family: var(--font-mono); font-size: var(--fs-label); color: var(--muted); }
+  .p6-ctl { display: flex; flex-direction: column; gap: 8px; margin-top: auto; }
+  .p6-ctl .row2 { display: flex; align-items: center; gap: 14px; }
+  #p6canvas-wrap { flex: 1; min-height: 0; }
+</style>
+</head>
+<body data-page="06" data-total="20">
+<div id="stage">
+  <div class="layout-split" style="flex-direction:column; gap:14px;">
+    <div class="p6-head" style="flex:0 0 auto;">
+      <span class="kicker">损失函数</span>
+      <h1>把"错多少"变成一个数</h1>
+    </div>
+
+    <div style="flex:1; display:flex; gap:40px; min-height:0;">
+      <div class="col-a min0" style="flex:0 0 40%; display:flex; flex-direction:column; gap:16px;">
+        <div class="panel">
+          <div class="p6-formula">L = 0.5 × (<span class="t">t</span> − <span class="y">y</span>)²</div>
+        </div>
+        <div class="p6-explain">
+          <div class="row"><span class="sw" style="color:var(--backward)">t</span><span>目标值,固定取 1,代表"正确答案"</span></div>
+          <div class="row"><span class="sw" style="color:var(--attention)">y</span><span>模型当前的输出,拖动下面的滑块改变它</span></div>
+          <div class="row"><span class="sw" style="color:var(--forward)">L</span><span>损失:y 离 1 越远,L 越大</span></div>
+        </div>
+        <div class="p6-readout">
+          <div class="item"><span class="lab">当前 y</span><span class="big att" id="p6-yval">0.500</span></div>
+          <div class="item"><span class="lab">当前 L</span><span class="big" id="p6-lval">0.125</span></div>
+        </div>
+        <div class="p6-ctl">
+          <div class="ctl">
+            <div class="ctl-label"><span>拖动 y（模型输出）</span><span class="hint">0 — 1</span></div>
+            <input type="range" class="dial" id="p6-slider" min="0" max="1" step="0.001" value="0.5"
+              aria-label="模型输出 y" aria-valuetext="y = 0.500, L = 0.125">
+          </div>
+          <div class="row2">
+            <button class="btn" id="p6-reset">复位到 y=0.5</button>
+            <span class="hint">也可用键盘方向键微调</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="col-b min0" style="flex:1; display:flex; flex-direction:column; gap:10px;">
+        <div class="legend">
+          <div class="li"><span class="sw"></span>损失曲线 L(y)</div>
+          <div class="li"><span class="sw dot"></span>当前 y 对应的点</div>
+        </div>
+        <div class="panel min0" style="flex:1; display:flex; padding:14px;">
+          <div class="cvbox min0" id="p6canvas-wrap">
+            <canvas id="p6canvas" class="cv-fill"></canvas>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<script src="assets/base.js"></script>
+<script>
+(function(){
+  const slider = document.getElementById('p6-slider');
+  const yval = document.getElementById('p6-yval');
+  const lval = document.getElementById('p6-lval');
+  const resetBtn = document.getElementById('p6-reset');
+  const cv = document.getElementById('p6canvas');
+
+  const T = 1; // 目标值固定为 1
+
+  function lossOf(y){ return 0.5 * (T - y) * (T - y); }
+
+  function fmtY(y){ return y.toFixed(3); }
+  function fmtL(l){ return l.toFixed(3); }
+
+  function updateReadout(y){
+    const l = lossOf(y);
+    yval.textContent = fmtY(y);
+    lval.textContent = fmtL(l);
+    slider.setAttribute('aria-valuetext', 'y = ' + fmtY(y) + ', L = ' + fmtL(l));
+  }
+
+  function draw(){
+    const ctx = Deck.fit(cv);
+    const w = cv.clientWidth, h = cv.clientHeight;
+    const pad = { l: 56, r: 24, t: 24, b: 44 };
+    const plotW = w - pad.l - pad.r;
+    const plotH = h - pad.t - pad.b;
+
+    ctx.clearRect(0, 0, w, h);
+
+    const rule = Deck.token('--rule');
+    const ruleStrong = Deck.token('--rule-strong');
+    const muted = Deck.token('--muted');
+    const text = Deck.token('--text');
+    const forward = Deck.token('--forward');
+    const attention = Deck.token('--attention');
+
+    function xOf(y){ return pad.l + y * plotW; }
+    function yOf(l){ return pad.t + plotH - (l / 0.5) * plotH; }
+
+    // 网格 / 轴
+    ctx.strokeStyle = rule;
+    ctx.lineWidth = 1;
+    for (let g = 0; g <= 5; g++){
+      const ly = g * 0.1;
+      const yy = yOf(ly);
+      ctx.beginPath();
+      ctx.moveTo(pad.l, yy);
+      ctx.lineTo(pad.l + plotW, yy);
+      ctx.stroke();
+    }
+    ctx.strokeStyle = ruleStrong;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(pad.l, pad.t);
+    ctx.lineTo(pad.l, pad.t + plotH);
+    ctx.lineTo(pad.l + plotW, pad.t + plotH);
+    ctx.stroke();
+
+    // 轴刻度文字
+    ctx.font = '13px ' + Deck.token('--font-mono');
+    ctx.fillStyle = muted;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    for (let g = 0; g <= 5; g++){
+      const yv = g * 0.2;
+      ctx.fillText(yv.toFixed(1), xOf(yv), pad.t + plotH + 8);
+    }
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'middle';
+    for (let g = 0; g <= 5; g++){
+      const lv = g * 0.1;
+      ctx.fillText(lv.toFixed(1), pad.l - 8, yOf(lv));
+    }
+    ctx.textAlign = 'center';
+    ctx.fillText('模型输出 y', pad.l + plotW / 2, pad.t + plotH + 26);
+    ctx.save();
+    ctx.translate(pad.l - 42, pad.t + plotH / 2);
+    ctx.rotate(-Math.PI/2);
+    ctx.textAlign = 'center';
+    ctx.fillText('损失 L', 0, 0);
+    ctx.restore();
+
+    // 损失曲线
+    ctx.strokeStyle = forward;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    const N = 200;
+    for (let i = 0; i <= N; i++){
+      const yv = i / N;
+      const lv = lossOf(yv);
+      const px = xOf(yv), py = yOf(lv);
+      if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+    }
+    ctx.stroke();
+
+    // 当前点
+    const curY = parseFloat(slider.value);
+    const curL = lossOf(curY);
+    const px = xOf(curY), py = yOf(curL);
+
+    ctx.fillStyle = Deck.rgba('--attention', .18);
+    ctx.beginPath();
+    ctx.arc(px, py, 12, 0, Math.PI*2);
+    ctx.fill();
+
+    ctx.fillStyle = attention;
+    ctx.beginPath();
+    ctx.arc(px, py, 6, 0, Math.PI*2);
+    ctx.fill();
+    ctx.strokeStyle = Deck.token('--paper');
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    // 数值标签
+    ctx.font = '600 15px ' + Deck.token('--font-mono');
+    ctx.fillStyle = text;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'bottom';
+    const labelX = Math.min(px + 10, w - 130);
+    ctx.fillText('y=' + curY.toFixed(3), labelX, py - 10);
+    ctx.fillText('L=' + curL.toFixed(3), labelX, py - 28);
+  }
+
+  function setY(y){
+    y = Deck.clamp(y, 0, 1);
+    slider.value = y;
+    updateReadout(y);
+    draw();
+  }
+
+  slider.addEventListener('input', () => {
+    updateReadout(parseFloat(slider.value));
+    draw();
+  });
+
+  resetBtn.addEventListener('click', () => setY(0.5));
+
+  Deck.onResize(draw);
+  updateReadout(parseFloat(slider.value));
+  draw();
+
+  Deck.init({ index: 6, total: 20 });
+})();
+</script>
+</body>
+</html>

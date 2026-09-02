@@ -1,0 +1,66 @@
+<!doctype html><html lang=zh-CN><head><meta charset=utf-8><meta name=viewport content="width=device-width"><title>神经网络 · 会自己调参数的机器</title><link rel=stylesheet href=assets/base.css><style>
+:root{--bg:#02050a;--text:#eef6fb;--font-sans:"PingFang SC",system-ui,sans-serif;--signal:#00e5ff;--network:#72bed1}
+#stage{cursor:crosshair;background:radial-gradient(900px 560px at 74% 43%,#0081a613,transparent 66%),radial-gradient(760px 520px at 9% 107%,#5f3eaa0e,transparent 62%),linear-gradient(#07101a,#03070d 52%,#02050a)}
+#stage:after{content:"";position:absolute;inset:0;z-index:8;pointer-events:none;box-shadow:inset 0 0 210px #000a}
+#net{z-index:1}.scrim{position:absolute;inset:0;z-index:2;pointer-events:none;background:radial-gradient(690px 420px at 27% 49%,#02050aeb,#02050ab8 47%,transparent 76%),linear-gradient(90deg,#02050aa8,#02050a33 38%,transparent 61%)}
+.top{position:absolute;z-index:5;left:68px;right:68px;top:16px;display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:28px;color:#445064;font:11px ui-monospace,monospace;letter-spacing:.14em}.rail{height:3px;background:linear-gradient(90deg,var(--signal) 0 6.7%,#ffffff17 6.7%)}.page{font-size:14px;color:#78859a}
+.hero{position:absolute;z-index:5;left:104px;top:292px;width:670px;pointer-events:none}.kicker{display:flex;align-items:center;gap:12px;color:var(--signal);font:13px ui-monospace,monospace;letter-spacing:.22em}.kicker:before{content:"";width:25px;height:2px;background:linear-gradient(90deg,var(--signal),transparent)}
+h1{margin-top:22px;font-size:112px;line-height:.94;font-weight:750;letter-spacing:-.045em;color:#f8fbfd;text-shadow:0 8px 42px #000c}h1 em{color:var(--signal);font-style:normal;text-shadow:0 0 32px #00e5ff7a,0 0 90px #00e5ff2e}.rule{width:74px;height:2px;margin-top:28px;background:linear-gradient(90deg,var(--signal),transparent)}
+.dek{margin-top:20px;color:#8090a5;font-size:19px;line-height:1.68}.dek strong{color:var(--signal);font-weight:500}.meta{display:flex;align-items:center;gap:13px;margin-top:23px;color:#445064;font:11px ui-monospace,monospace;letter-spacing:.18em}.meta i{width:4px;height:4px;border-radius:50%;background:currentColor}
+.stats{position:absolute;z-index:5;right:68px;bottom:92px;display:flex;gap:34px;text-align:right;font-family:ui-monospace,monospace}.stats dt{color:#445064;font-size:10px;letter-spacing:.16em}.stats dd{margin-top:6px;color:#8492a7;font-size:21px}.stats dd.on{color:var(--signal);text-shadow:0 0 15px #00e5ff59}
+#stage:focus-visible{outline:0}#stage:focus-visible .kicker{filter:brightness(1.6)}
+</style></head><body><main id=stage tabindex=0 aria-label="神经网络。移动指针扰动节点；点击或回车注入沿连线传播的信号，R 重置。">
+<canvas id="net" class="cv-fill no-pan" aria-hidden="true"></canvas><div class="scrim"></div>
+<div class="top" aria-hidden="true"><span>神经网络 · 交互讲义</span><div class="rail"></div><span class="page">01/14</span></div>
+<header class="hero"><p class="kicker">第一幕 · 进门</p><h1>神经<em>网络</em></h1><div class="rule"></div><p class="dek">让万千经验穿过层层连接，在计算深处沉淀为<strong>直觉</strong>。</p><p class="meta">十四页<i></i>六幕<i></i>每一页都要你动手</p></header>
+<dl class="stats" aria-hidden="true"><div><dt>节点</dt><dd id="nodes">0</dd></div><div><dt>活跃连线</dt><dd id="links">0</dd></div><div><dt>已注入信号</dt><dd id="signals">0</dd></div></dl>
+</main><script src=assets/base.js></script><script src=assets/lib/seedrandom.min.js></script><script>
+(()=>{'use strict';
+const N=720,L=80,M=34,R=168,V=840,$=s=>document.querySelector(s),stage=$('#stage'),cv=$('#net'),abort=new AbortController(),on={signal:abort.signal},reduced=Deck.reduced();
+const out=['#nodes','#links','#signals'].map($),x=new Float32Array(N),y=new Float32Array(N),angle=new Float32Array(N),speed=new Float32Array(N),turn=new Float32Array(N),phase=new Float32Array(N),size=new Float32Array(N),lit=new Float32Array(N),pa=new Int32Array(14e3),pb=new Int32Array(14e3),pd=new Float32Array(14e3),cursor={on:false};
+let ctx,W=1600,H=900,pairs=0,pulses=[],count=0,clock=0,next=6900,step=0,stop,off,ink,cyan,spark;
+const rgba=(c,a)=>`rgba(${c[0]},${c[1]},${c[2]},${a})`,field=(a,b)=>Math.hypot((a-365)/470,(b-474)/260),quiet=(a,b)=>{let q=field(a,b);return q<1?.08:q<1.34?.08+(q-1)/.34*.92:1};
+
+function reset(){
+  const rng=new Math.seedrandom('notale-neural-cover-v1');
+  for(let i=0;i<N;i++){let a,b,n=0;do{a=-M+rng()*(W+2*M);b=-M+rng()*(H+2*M)}while(field(a,b)<1&&++n<16);x[i]=a;y[i]=b;angle[i]=rng()*7;speed[i]=5+rng()*15;turn[i]=(rng()-.5)*.24;phase[i]=rng()*7;size[i]=.75+rng()*1.35}
+  cursor.on=false;pulses=[];count=clock=step=0;next=6900;inject(800,706,.82,900,false);sync();
+}
+function makePairs(){
+  pairs=0;for(let i=0;i<N;i++)for(let j=i+1;j<N;j++){let dx=x[i]-x[j],dy=y[i]-y[j],d=dx*dx+dy*dy;if(d<L*L){pa[pairs]=i;pb[pairs]=j;pd[pairs++]=Math.sqrt(d)}}
+}
+function arrival(src){
+  const near=Array.from({length:N},()=>[]);
+  for(let k=0;k<pairs;k++){let a=pa[k],b=pb[k],w=pd[k]/V;near[a].push([b,w]);near[b].push([a,w])}
+  const at=new Float32Array(N),queued=new Uint8Array(N),q=[src];at.fill(Infinity);at[src]=0;queued[src]=1;
+  for(let h=0;h<q.length;h++){let u=q[h];queued[u]=0;for(const [v,w] of near[u]){let t=at[u]+w;if(t+1e-5<at[v]){at[v]=t;if(!queued[v]){q.push(v);queued[v]=1}}}}
+  return at;
+}
+function inject(a,b,amp=1,t0=clock,tally=true){
+  makePairs();let src=0,best=Infinity;for(let i=0;i<N;i++){let dx=x[i]-a,dy=y[i]-b,d=dx*dx+dy*dy;if(d<best){best=d;src=i}}
+  if(pulses.length===5)pulses.shift();pulses.push({at:arrival(src),t0,amp});if(tally){count++;sync()}
+}
+function move(ms){
+  let dt=Math.min(ms,50)/1000,t=clock/1000,lo=-M;
+  for(let i=0;i<N;i++){angle[i]+=(turn[i]+Math.sin(t*.31+phase[i])*.055)*dt;x[i]+=Math.cos(angle[i])*speed[i]*dt;y[i]+=Math.sin(angle[i])*speed[i]*dt;if(x[i]<lo||x[i]>W+M){x[i]=Deck.clamp(x[i],lo,W+M);angle[i]=Math.PI-angle[i]}if(y[i]<lo||y[i]>H+M){y[i]=Deck.clamp(y[i],lo,H+M);angle[i]=-angle[i]}if(cursor.on){let dx=x[i]-cursor.x,dy=y[i]-cursor.y,d=Math.hypot(dx,dy)||.001,f=1-d/R;if(f>0){x[i]+=dx/d*f*f*46*dt;y[i]+=dy/d*f*f*46*dt}}}
+}
+function light(){
+  lit.fill(0);if(cursor.on)for(let i=0;i<N;i++){let f=1-Math.hypot(x[i]-cursor.x,y[i]-cursor.y)/R;if(f>0)lit[i]=Math.min(1,f*f*1.15)}
+  for(let p=pulses.length-1;p>=0;p--){let P=pulses[p],age=(clock-P.t0)/1000;if(age>5){pulses.splice(p,1);continue}if(age<0)continue;let fade=age<4?1:5-age;for(let i=0;i<N;i++){let lag=age-P.at[i];if(lag>=0&&lag<1.5)lit[i]=Math.max(lit[i],Math.exp(-lag*2.7)*P.amp*fade)}}
+}
+function draw(){
+  ctx.clearRect(0,0,W,H);ctx.lineCap='round';makePairs();light();const alpha=[.026,.047,.075,.112,.17];
+  for(let b=0;b<5;b++){ctx.beginPath();for(let k=0;k<pairs;k++){let a=pa[k],d=pb[k],s=(1-pd[k]/L)*quiet((x[a]+x[d])/2,(y[a]+y[d])/2);if(Math.min(4,s*5|0)===b){ctx.moveTo(x[a],y[a]);ctx.lineTo(x[d],y[d])}}ctx.strokeStyle=rgba(ink,alpha[b]);ctx.lineWidth=1;ctx.stroke()}
+  ctx.beginPath();for(let k=0;k<pairs;k++){let a=pa[k],b=pb[k];if((lit[a]>.12||lit[b]>.12)&&quiet((x[a]+x[b])/2,(y[a]+y[b])/2)>.18){ctx.moveTo(x[a],y[a]);ctx.lineTo(x[b],y[b])}}ctx.strokeStyle=rgba(cyan,.3);ctx.lineWidth=1.2;ctx.stroke();
+  const front=[];ctx.beginPath();for(const P of pulses){let age=(clock-P.t0)/1000;if(age<0||age>4.32)continue;for(let k=0;k<pairs;k++){let a=pa[k],b=pb[k],ta=P.at[a],tb=P.at[b],start=Math.min(ta,tb),end=Math.max(ta,tb);if(!isFinite(start)||age<start||age>end+.32||quiet((x[a]+x[b])/2,(y[a]+y[b])/2)<.18)continue;ctx.moveTo(x[a],y[a]);ctx.lineTo(x[b],y[b]);if(age<=end&&end>start){let u=ta<tb?a:b,v=ta<tb?b:a,f=(age-start)/(end-start);front.push(Deck.lerp(x[u],x[v],f),Deck.lerp(y[u],y[v],f))}}}ctx.strokeStyle=rgba(cyan,.82);ctx.lineWidth=1.55;ctx.stroke();
+  ctx.fillStyle=rgba(ink,.34);ctx.beginPath();for(let i=0;i<N;i++)if(lit[i]<=.06&&quiet(x[i],y[i])>.22){ctx.moveTo(x[i]+size[i],y[i]);ctx.arc(x[i],y[i],size[i],0,7)}ctx.fill();
+  ctx.save();ctx.globalCompositeOperation='lighter';for(let i=0;i<N;i++)if(lit[i]>.06){let g=Math.min(1,lit[i]),s=10+30*g;ctx.globalAlpha=.28+.62*g;ctx.drawImage(spark,x[i]-s/2,y[i]-s/2,s,s)}ctx.restore();ctx.fillStyle='#dcfdff';ctx.beginPath();for(let i=0;i<N;i++)if(lit[i]>.06){let r=size[i]+Math.min(1,lit[i])*1.3;ctx.moveTo(x[i]+r,y[i]);ctx.arc(x[i],y[i],r,0,7)}for(let i=0;i<front.length;i+=2){ctx.moveTo(front[i]+2.1,front[i+1]);ctx.arc(front[i],front[i+1],2.1,0,7)}ctx.fill();sync();
+}
+function sync(){out[0].textContent=N;out[1].textContent=pairs;out[2].textContent=count;out[0].className=lit.some(v=>v>.06)?'on':'';out[2].className=count?'on':''}
+function render(t,dt){clock=reduced?1400:clock+Math.min(dt,50);if(!reduced&&clock>=next){let p=[[1240,410],[1040,690],[1450,230],[850,760]][step++%4];inject(...p,.46,clock,false);next=clock+7800}move(reduced?0:dt);draw()}
+function point(e){let p=Deck.pt(cv,e);cursor.x=p.x;cursor.y=p.y;cursor.on=true;return p}
+stage.addEventListener('pointermove',e=>{point(e);if(reduced)draw()},on);stage.addEventListener('pointerleave',()=>{cursor.on=false;if(reduced)draw()},on);stage.addEventListener('pointerdown',e=>{let p=point(e);stage.focus({preventScroll:true});inject(p.x,p.y,1,reduced?clock-650:clock);if(reduced)draw()},on);
+stage.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();inject(1060,520,1,reduced?clock-650:clock);if(reduced)draw()}else if(e.key.toLowerCase()==='r'){reset();if(reduced)clock=1400;draw()}},on);
+Deck.init();ctx=Deck.fit(cv);ink=Deck.rgb('network');cyan=Deck.rgb('signal');spark=document.createElement('canvas');spark.width=spark.height=40;let g=spark.getContext('2d'),r=g.createRadialGradient(20,20,0,20,20,20);r.addColorStop(0,'#bff');r.addColorStop(.35,'#00e5ff80');r.addColorStop(1,'#00e5ff00');g.fillStyle=r;g.fillRect(0,0,40,40);reset();off=Deck.onResize(()=>{ctx=Deck.fit(cv);draw()});stop=Deck.loop(render,{still:1400});addEventListener('pagehide',()=>{stop();off();abort.abort()});
+})();
+</script></body></html>

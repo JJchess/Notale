@@ -1,0 +1,229 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>亲手做一次前向计算</title>
+  <link rel="stylesheet" href="assets/base.css">
+  <link rel="stylesheet" href="assets/theme.css">
+  <style>
+    #neuron-widget{flex:1;min-height:0}
+    #neuron-widget .head{display:flex;flex-direction:column;align-items:flex-start}
+    #neuron-widget .head h1{margin-bottom:6px}
+    #neuron-widget .bench{min-height:0}
+    #neuron-widget .flow{position:relative;min-height:0;padding:20px 22px 18px;display:flex;flex-direction:column;justify-content:space-between}
+    #neuron-widget .flow-title{display:flex;justify-content:space-between;gap:20px;align-items:flex-start}
+    #neuron-widget .flow-title h2{margin:0}
+    #neuron-widget .equation{font-size:var(--fs-sec);color:var(--muted);white-space:nowrap}
+    #neuron-widget .diagram{position:relative;flex:1;min-height:390px;margin-top:8px}
+    #neuron-widget .wires{position:absolute;inset:0;width:100%;height:100%;overflow:visible}
+    #neuron-widget .node{position:absolute;z-index:2;display:flex;flex-direction:column;justify-content:center;background:var(--paper);border:var(--line) solid var(--rule-strong);border-radius:var(--radius)}
+    #neuron-widget .input{left:2%;width:178px;height:112px;padding:15px 18px}
+    #neuron-widget .input.one{top:13%}
+    #neuron-widget .input.two{bottom:13%}
+    #neuron-widget .node-label{font-size:var(--fs-label);font-weight:700;color:var(--muted)}
+    #neuron-widget .node-value{font:650 32px/1.18 var(--font-num);font-variant-numeric:tabular-nums}
+    #neuron-widget .weight{position:absolute;z-index:3;left:27%;width:205px;padding:12px 14px;background:var(--bg);border-bottom:var(--line) solid var(--model)}
+    #neuron-widget .weight.one{top:12%}
+    #neuron-widget .weight.two{bottom:12%}
+    #neuron-widget .weight .formula{font-size:var(--fs-sec);font-weight:650}
+    #neuron-widget .product{display:block;margin-top:3px;font:650 25px/1.15 var(--font-num);color:var(--model);font-variant-numeric:tabular-nums}
+    #neuron-widget .sum{left:55%;top:50%;width:174px;height:174px;transform:translateY(-50%);align-items:center;text-align:center;border-color:var(--text);border-width:3px;border-radius:50%}
+    #neuron-widget .sum .node-value{font-size:38px}
+    #neuron-widget .sum-detail{font-size:var(--fs-label);color:var(--muted)}
+    #neuron-widget .activation{right:2%;top:50%;width:238px;min-height:174px;padding:18px;transform:translateY(-50%);border-color:var(--model)}
+    #neuron-widget .activation .formula{font-size:var(--fs-sec);line-height:1.45;color:var(--model)}
+    #neuron-widget .activation .big{margin-top:8px;color:var(--model)}
+    #neuron-widget .flow-caption{display:flex;align-items:center;justify-content:space-between;gap:20px;padding-top:12px;border-top:1px solid var(--rule)}
+    #neuron-widget .contrib{display:flex;gap:22px;font-size:var(--fs-label);color:var(--muted)}
+    #neuron-widget .contrib strong{font-family:var(--font-num);color:var(--model)}
+    #neuron-widget .controls{display:flex;flex-direction:column;justify-content:flex-start;gap:10px}
+    #neuron-widget .controls h2{margin-bottom:0}
+    #neuron-widget .controls .lead{margin-bottom:4px}
+    #neuron-widget .ctl{grid-template-columns:62px minmax(120px,1fr) 76px;margin:9px 0 3px}
+    #neuron-widget .ctl label{font-family:var(--font-num);font-size:var(--fs-body);font-weight:650}
+    #neuron-widget .ctl output{font-size:var(--fs-body);color:var(--attention);font-weight:700}
+    #neuron-widget .range-note{display:flex;justify-content:space-between;margin-left:74px;color:var(--muted);font:var(--fs-tick)/1.2 var(--font-num)}
+    #neuron-widget .control-rule{height:1px;background:var(--rule);margin:6px 0}
+    #neuron-widget .btn{width:100%;margin-top:8px}
+    #neuron-widget .claim{display:flex;align-items:center;gap:18px;min-height:62px;padding:10px 16px;border-top:var(--line) solid var(--rule-strong);font-size:var(--fs-sec)}
+    #neuron-widget .claim-mark{flex:none;width:16px;height:16px;border-radius:50%;background:var(--model)}
+    #neuron-widget .claim strong{font-size:var(--fs-body)}
+    #neuron-widget .status{color:var(--muted)}
+    @media (prefers-reduced-motion:no-preference){#neuron-widget .product,#neuron-widget .node-value,#neuron-widget .big{transition:color .12s ease}}
+  </style>
+</head>
+<body data-page="03" data-total="22">
+  <div id="stage">
+    <main id="neuron-widget" class="workbench" aria-labelledby="page-title">
+      <header class="head">
+        <span class="kicker">单个神经元 · 前向计算</span>
+        <h1 id="page-title">亲手做一次前向计算</h1>
+        <p class="lead">每条输入先乘权重，再与偏置相加；权重决定这条输入贡献的<strong>符号与大小</strong>。</p>
+      </header>
+
+      <div class="bench min0">
+        <section class="flow panel q min0" aria-labelledby="flow-heading">
+          <div class="flow-title">
+            <h2 id="flow-heading">数值沿连线汇入神经元</h2>
+            <div class="equation formula">z = x₁w₁ + x₂w₂ + b</div>
+          </div>
+
+          <div class="diagram" aria-label="两个输入分别乘权重，连同偏置相加，再经过 Sigmoid 函数">
+            <svg class="wires" viewBox="0 0 1000 440" preserveAspectRatio="none" aria-hidden="true">
+              <defs>
+                <marker id="arrow-model" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                  <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--model)"></path>
+                </marker>
+              </defs>
+              <path d="M180 94 C320 94, 420 150, 555 206" class="forward" marker-end="url(#arrow-model)"></path>
+              <path d="M180 346 C320 346, 420 290, 555 234" class="forward" marker-end="url(#arrow-model)"></path>
+              <path d="M715 220 L790 220" class="forward" marker-end="url(#arrow-model)"></path>
+            </svg>
+
+            <div class="node input one">
+              <span class="node-label">输入 x₁</span>
+              <span class="node-value">0.60</span>
+            </div>
+            <div class="node input two">
+              <span class="node-label">输入 x₂</span>
+              <span class="node-value">−0.40</span>
+            </div>
+
+            <div class="weight one">
+              <span class="formula">0.60 × <span id="wire-w1">0.80</span></span>
+              <strong class="product" id="prod1">+0.48</strong>
+            </div>
+            <div class="weight two">
+              <span class="formula">−0.40 × <span id="wire-w2">−0.50</span></span>
+              <strong class="product" id="prod2">+0.20</strong>
+            </div>
+
+            <div class="node sum">
+              <span class="node-label">加权和 z</span>
+              <span class="node-value" id="z-value">0.78</span>
+              <span class="sum-detail">含偏置 <span class="num" id="sum-b">+0.10</span></span>
+            </div>
+
+            <div class="node activation">
+              <span class="node-label">输出 ŷ</span>
+              <span class="formula">σ(z) = 1/(1+e<sup>−z</sup>)</span>
+              <strong class="big sm" id="y-value">0.686</strong>
+            </div>
+          </div>
+
+          <div class="flow-caption">
+            <div class="legend" aria-label="颜色图例">
+              <span class="li is-model"><span class="sw line"></span>前向数值</span>
+            </div>
+            <div class="contrib" aria-label="当前带符号贡献">
+              <span>x₁ 的贡献 <strong id="cap1">+0.48</strong></span>
+              <span>x₂ 的贡献 <strong id="cap2">+0.20</strong></span>
+              <span>偏置 <strong id="capb">+0.10</strong></span>
+            </div>
+          </div>
+        </section>
+
+        <aside class="controls panel min0" aria-labelledby="controls-heading">
+          <h2 id="controls-heading">改变带符号贡献</h2>
+          <p class="small">拖动任一滑杆，乘积、z 与 ŷ 会同时重算。</p>
+
+          <div>
+            <div class="ctl">
+              <label for="w1">w₁</label>
+              <input id="w1" type="range" min="-2" max="2" step="0.05" value="0.8" aria-describedby="w1-range">
+              <output id="w1-out" for="w1">0.80</output>
+            </div>
+            <div class="range-note" id="w1-range"><span>−2.00</span><span>2.00</span></div>
+          </div>
+
+          <div>
+            <div class="ctl">
+              <label for="w2">w₂</label>
+              <input id="w2" type="range" min="-2" max="2" step="0.05" value="-0.5" aria-describedby="w2-range">
+              <output id="w2-out" for="w2">−0.50</output>
+            </div>
+            <div class="range-note" id="w2-range"><span>−2.00</span><span>2.00</span></div>
+          </div>
+
+          <div class="control-rule"></div>
+
+          <div>
+            <div class="ctl">
+              <label for="bias">b</label>
+              <input id="bias" type="range" min="-1" max="1" step="0.05" value="0.1" aria-describedby="b-range">
+              <output id="b-out" for="bias">0.10</output>
+            </div>
+            <div class="range-note" id="b-range"><span>−1.00</span><span>1.00</span></div>
+          </div>
+
+          <p class="note">输入 x₁=0.60、x₂=−0.40 固定。数值均无量纲。</p>
+          <button class="btn" id="reset" type="button">复位到 0.80, −0.50, 0.10</button>
+          <p class="hint">可用方向键微调当前滑杆。</p>
+        </aside>
+      </div>
+
+      <footer class="claim" aria-label="本页结论">
+        <span class="claim-mark" aria-hidden="true"></span>
+        <strong>权重不是抽象旋钮：</strong>
+        <span class="status" id="plain-status" aria-live="polite">当前两条输入都向上推高 z。</span>
+      </footer>
+    </main>
+  </div>
+
+  <script src="assets/base.js"></script>
+  <script>
+    (() => {
+      const root = document.getElementById('neuron-widget');
+      const $ = (id) => root.querySelector('#' + id);
+      const controls = { w1: $('w1'), w2: $('w2'), b: $('bias') };
+      const initial = { w1: 0.80, w2: -0.50, b: 0.10 };
+      const fixed = (v, d = 2) => Math.abs(v) < 0.0000001 ? (0).toFixed(d) : v.toFixed(d).replace('-', '−');
+      const signed = (v, d = 2) => Math.abs(v) < 0.0000001 ? (0).toFixed(d) : (v > 0 ? '+' : '−') + Math.abs(v).toFixed(d);
+      const direction = (v) => v > 0.0000001 ? '向上推高' : v < -0.0000001 ? '向下拉低' : '不改变';
+
+      function readState(){
+        return { w1: Number(controls.w1.value), w2: Number(controls.w2.value), b: Number(controls.b.value) };
+      }
+
+      function render(announce = false){
+        const s = readState();
+        const p1 = 0.60 * s.w1;
+        const p2 = -0.40 * s.w2;
+        const z = p1 + p2 + s.b;
+        const y = 1 / (1 + Math.exp(-z));
+
+        $('w1-out').textContent = fixed(s.w1);
+        $('w2-out').textContent = fixed(s.w2);
+        $('b-out').textContent = fixed(s.b);
+        $('wire-w1').textContent = fixed(s.w1);
+        $('wire-w2').textContent = fixed(s.w2);
+        $('prod1').textContent = signed(p1);
+        $('prod2').textContent = signed(p2);
+        $('cap1').textContent = signed(p1);
+        $('cap2').textContent = signed(p2);
+        $('capb').textContent = signed(s.b);
+        $('sum-b').textContent = signed(s.b);
+        $('z-value').textContent = fixed(z);
+        $('y-value').textContent = y.toFixed(3);
+
+        const sentence = `x₁ ${direction(p1)} z，x₂ ${direction(p2)} z。`;
+        $('plain-status').textContent = sentence;
+        if(announce) $('plain-status').setAttribute('aria-label', `权重一 ${fixed(s.w1)}，权重二 ${fixed(s.w2)}，偏置 ${fixed(s.b)}；加权和 ${fixed(z)}，输出 ${y.toFixed(3)}。${sentence}`);
+      }
+
+      Object.values(controls).forEach((control) => control.addEventListener('input', () => render(true)));
+      $('reset').addEventListener('click', () => {
+        controls.w1.value = initial.w1;
+        controls.w2.value = initial.w2;
+        controls.b.value = initial.b;
+        render(true);
+        controls.w1.focus();
+      });
+
+      render(false);
+      Deck.init({ index: 3, total: 22 });
+    })();
+  </script>
+</body>
+</html>

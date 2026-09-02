@@ -1,0 +1,21 @@
+import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+
+const root=new URL("../candidate/pages/",import.meta.url);
+const report=JSON.parse(await readFile(new URL("../report.json",import.meta.url),"utf8"));
+const html=await readFile(new URL("index.html",root),"utf8");
+const css=await readFile(new URL("page.css",root),"utf8");
+const script=await readFile(new URL("story.js",root),"utf8");
+assert.match(script,/\["five","field","contexts","portrait"\]/);
+assert.match(script,/appendImages\(seedNodes,memes,"seed",5/);
+assert.match(script,/appendImages\(echoNodes,memes,"echo",20/);
+assert.match(script,/appendImages\(contextNodes,contexts,"context",5/);
+assert.match(script,/gsap\.timeline/);
+assert.match(script,/dataset\.identity/);
+assert.match(script,/timeline\.kill/);
+assert.match(script,/removeEventListener/);
+assert.match(html,/lenna-pixels\.png/);
+const chars=[html,css,script].reduce((total,file)=>total+[...file].length,0);
+assert.equal(chars,report.mini_chars);
+assert.ok(chars<10000);
+console.log(JSON.stringify({passed:true,authorChars:chars,states:4,seeds:5,echoes:20,contexts:5},null,2));

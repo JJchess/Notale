@@ -8,7 +8,7 @@
 
 - Planner 四个标签现已一一对应 `build-cover / build-page / build-interaction / build-code`；代码仍属于学习交互体系，但因 `CodeScaffold` 和受保护多文件运行时而独立路由。
 - `SKILL.md` 随路由直接进入 system，第一轮由 Agent 使用原生并行 `Read` 读取唯一 reference 和一个 Main；默认不注册 Aux/mini，没有 `WorkflowContext`、`Skill` 选择工具或字符数字段。
-- 完整 sample 原件保留在各 workflow 的 `samples/`；Agent 读取 `samples/bundles/` 下的生成上下文版本。bundle 保留文件边界与 HTML/JS/算法/状态，只剥离独立 CSS 和 HTML 内联 `<style>`。
+- 完整 sample 原件保留在各 workflow 的 `samples/`；Agent 读取 `samples/bundles/` 下的生成上下文版本。三个视觉 workflow 的 bundle 保留 catalog 已选文件与 HTML 内联 `<style>`；只有固定 runtime/template 拥有视觉层的 `build-code` 剥离独立 CSS 和内联 `<style>`。
 - Planner 单次调用、单次校验，不设最少页数/字符数/规则数，不重试、不复用旧 run，也不生成空 HTML 骨架。
 - Builder 工具面从第一轮到结束保持不变，effort 不分阶段；模型停止调用工具即结束。产物存在性与一次独立审计分开记录，不再有首次 Write、重复 Write、Check clean 或停止确认闸门。
 - 当前可执行测试计划以 `EVAL_PLAN.md` 为准；下面 2026-08-31 及更早 checkpoint 保留研究演进记录，冲突处均由本节覆盖。

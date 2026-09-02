@@ -1,0 +1,224 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>现在反着走：一次完整反向传播</title>
+<link rel="stylesheet" href="assets/base.css">
+<link rel="stylesheet" href="assets/theme.css">
+<style>
+  #stage { gap: 18px; }
+  .page-head { flex: 0 0 auto; max-width: 1180px; }
+  .page-head h1 { margin-bottom: 0; }
+  #gradient-tracer { min-height: 0; }
+  #gradient-tracer .graph-region { min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: 12px; }
+  #gradient-tracer .graph-board { flex: 1; min-height: 0; position: relative; border-top: var(--line) solid var(--rule-strong); border-bottom: var(--line) solid var(--rule-strong); background: rgba(248,251,253,.42); }
+  #gradient-tracer svg { width: 100%; height: 100%; display: block; }
+  #gradient-tracer .node rect { fill: var(--paper-strong); stroke: var(--rule-strong); stroke-width: 2; rx: 8; }
+  #gradient-tracer .node .name { font-family: var(--font-display); font-size: 17px; font-weight: 700; }
+  #gradient-tracer .node .value { font-family: var(--font-num); font-size: 18px; font-weight: 650; }
+  #gradient-tracer .node .sub { font-size: 14px; fill: var(--muted); }
+  #gradient-tracer .node.loss rect { stroke: var(--target); stroke-width: 3; }
+  #gradient-tracer .forward-path { fill: none; stroke: var(--model); stroke-width: 4; marker-end: url(#arrow-forward); }
+  #gradient-tracer .target-path { fill: none; stroke: var(--target); stroke-width: 3; marker-end: url(#arrow-target); }
+  #gradient-tracer .back-path { fill: none; stroke: var(--gradient); stroke-width: 4; stroke-dasharray: 10 8; marker-end: url(#arrow-back); opacity: 0; transition: opacity .25s ease; }
+  #gradient-tracer .back-path.thin { stroke-width: 3; }
+  #gradient-tracer .gradient-readout { opacity: 0; transition: opacity .25s ease; }
+  #gradient-tracer .gradient-readout rect { fill: var(--paper-strong); stroke: var(--gradient); stroke-width: 2; rx: 5; }
+  #gradient-tracer .gradient-readout text { fill: var(--gradient); font-family: var(--font-num); font-size: 16px; font-weight: 650; }
+  #gradient-tracer[data-step="1"] .s1,
+  #gradient-tracer[data-step="2"] .s1, #gradient-tracer[data-step="2"] .s2,
+  #gradient-tracer[data-step="3"] .s1, #gradient-tracer[data-step="3"] .s2, #gradient-tracer[data-step="3"] .s3,
+  #gradient-tracer[data-step="4"] .s1, #gradient-tracer[data-step="4"] .s2, #gradient-tracer[data-step="4"] .s3, #gradient-tracer[data-step="4"] .s4 { opacity: 1; }
+  #gradient-tracer .graph-key { flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 18px; }
+  #gradient-tracer .graph-caption { margin: 0; color: var(--muted); font-size: var(--fs-sec); }
+  #gradient-tracer .rail { min-height: 0; display: flex; flex-direction: column; gap: 16px; justify-content: flex-start; }
+  #gradient-tracer .rail h2 { margin-bottom: 5px; }
+  #gradient-tracer .rail-intro { margin-bottom: 0; color: var(--muted); font-size: var(--fs-sec); }
+  #gradient-tracer .formula-list { display: grid; gap: 0; border-top: var(--line) solid var(--rule-strong); }
+  #gradient-tracer .formula-row { min-height: 79px; padding: 12px 0; border-bottom: 1px solid var(--rule); opacity: .34; transition: opacity .25s ease; }
+  #gradient-tracer .formula-row .label { display: block; margin-bottom: 4px; color: var(--muted); font-size: var(--fs-label); font-weight: 650; }
+  #gradient-tracer .formula-row .formula { font-size: 17px; line-height: 1.4; }
+  #gradient-tracer[data-step="1"] .r1,
+  #gradient-tracer[data-step="2"] .r1, #gradient-tracer[data-step="2"] .r2,
+  #gradient-tracer[data-step="3"] .r1, #gradient-tracer[data-step="3"] .r2, #gradient-tracer[data-step="3"] .r3,
+  #gradient-tracer[data-step="4"] .r1, #gradient-tracer[data-step="4"] .r2, #gradient-tracer[data-step="4"] .r3, #gradient-tracer[data-step="4"] .r4 { opacity: 1; }
+  #gradient-tracer .meaning { display: grid; gap: 10px; padding-top: 2px; }
+  #gradient-tracer .meaning p { margin: 0; padding: 10px 0; border-bottom: 1px solid var(--rule); font-size: var(--fs-sec); line-height: 1.45; }
+  #gradient-tracer .meaning strong { color: var(--gradient); }
+  #gradient-tracer .controls { margin-top: auto; display: grid; gap: 9px; }
+  #gradient-tracer .controls .btn { width: 100%; min-height: 48px; }
+  #gradient-tracer .status { min-height: 46px; margin: 0; color: var(--muted); font-size: var(--fs-label); line-height: 1.4; }
+  #gradient-tracer .status strong { color: var(--gradient); }
+  @media (prefers-reduced-motion: reduce) {
+    #gradient-tracer .back-path, #gradient-tracer .gradient-readout, #gradient-tracer .formula-row { transition: none; }
+  }
+</style>
+</head>
+<body data-page="12" data-total="22">
+<div id="stage">
+  <header class="page-head">
+    <span class="kicker">计算图 · 反向传播</span>
+    <h1 id="page-title">现在反着走：一次完整反向传播</h1>
+  </header>
+
+  <main id="gradient-tracer" class="matrix min0" data-step="0" aria-labelledby="page-title">
+    <section class="graph-region min0" aria-label="单神经元前向值与反向梯度计算图">
+      <div class="graph-board min0">
+        <svg viewBox="0 0 1040 620" role="img" aria-labelledby="graph-title graph-desc">
+          <title id="graph-title">单神经元的一次完整反向传播</title>
+          <desc id="graph-desc">蓝色实线从输入和参数走向损失，紫色虚线依次从损失返回 z、w、b 和 x。</desc>
+          <defs>
+            <marker id="arrow-forward" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L0,6 L9,3 z" fill="var(--model)"/></marker>
+            <marker id="arrow-target" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L0,6 L9,3 z" fill="var(--target)"/></marker>
+            <marker id="arrow-back" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L0,6 L9,3 z" fill="var(--gradient)"/></marker>
+          </defs>
+
+          <text x="36" y="42" font-size="15" font-weight="700" fill="var(--model)">前向保存的值</text>
+          <text x="840" y="42" font-size="15" font-weight="700" fill="var(--gradient)">梯度从 L 返回</text>
+
+          <path class="forward-path" d="M160 158 C205 158 202 242 248 242"/>
+          <path class="forward-path" d="M160 302 C205 302 202 258 248 258"/>
+          <path class="forward-path" d="M358 250 L420 250"/>
+          <path class="forward-path" d="M500 420 C500 355 500 335 500 305"/>
+          <path class="forward-path" d="M580 250 L650 250"/>
+          <path class="forward-path" d="M770 250 L840 250"/>
+          <path class="target-path" d="M900 420 L900 307"/>
+
+          <path class="back-path s1" d="M840 218 C795 175 760 175 710 198"/>
+          <path class="back-path s1" d="M650 218 C610 175 565 175 520 198"/>
+          <path class="back-path s2 thin" d="M462 198 C420 145 356 130 312 198"/>
+          <path class="back-path s2 thin" d="M270 207 C220 185 200 155 160 145"/>
+          <path class="back-path s3 thin" d="M470 305 C465 342 468 362 474 378"/>
+          <path class="back-path s4 thin" d="M258 207 C220 230 203 283 160 288"/>
+
+          <g class="node" transform="translate(36 112)">
+            <rect width="124" height="78"/><text class="name" x="18" y="29">输入 x</text><text class="value" x="18" y="57">2.000</text>
+          </g>
+          <g class="node" transform="translate(36 264)">
+            <rect width="124" height="78"/><text class="name" x="18" y="29">权重 w</text><text class="value" x="18" y="57">0.500</text>
+          </g>
+          <g class="node" transform="translate(248 208)">
+            <rect width="110" height="84"/><text class="name" x="22" y="31">乘法</text><text class="value" x="17" y="61">wx=1.000</text>
+          </g>
+          <g class="node" transform="translate(420 198)">
+            <rect width="160" height="107"/><text class="name" x="18" y="30">加法</text><text class="value" x="18" y="60">z=0.800</text><text class="sub" x="18" y="85">wx + b</text>
+          </g>
+          <g class="node" transform="translate(438 378)">
+            <rect width="124" height="78"/><text class="name" x="18" y="29">偏置 b</text><text class="value" x="18" y="57">−0.200</text>
+          </g>
+          <g class="node" transform="translate(650 198)">
+            <rect width="120" height="107"/><text class="name" x="18" y="30">sigmoid</text><text class="value" x="18" y="60">ŷ=0.690</text><text class="sub" x="18" y="85">σ(0.8)</text>
+          </g>
+          <g class="node loss" transform="translate(840 198)">
+            <rect width="154" height="109"/><text class="name" x="18" y="31">交叉熵 L</text><text class="value" x="18" y="62">0.371 nat</text><text class="sub" x="18" y="87">−ln(ŷ)</text>
+          </g>
+          <g class="node" transform="translate(840 378)">
+            <rect width="120" height="78"/><text class="name" x="18" y="29">目标 y</text><text class="value" x="18" y="57">1</text>
+          </g>
+
+          <g class="gradient-readout s1" transform="translate(580 92)"><rect width="252" height="54"/><text x="14" y="34">∂L/∂z = ŷ−y = −0.310</text></g>
+          <g class="gradient-readout s2" transform="translate(32 24)"><rect y="54" width="286" height="54"/><text x="14" y="88">∂L/∂w = (∂L/∂z)x = −0.620</text></g>
+          <g class="gradient-readout s3" transform="translate(350 486)"><rect width="250" height="54"/><text x="14" y="34">∂L/∂b = −0.310</text></g>
+          <g class="gradient-readout s4" transform="translate(32 486)"><rect width="286" height="54"/><text x="14" y="34">∂L/∂x = (∂L/∂z)w = −0.155</text></g>
+        </svg>
+      </div>
+      <div class="graph-key">
+        <div class="legend" aria-label="路径图例">
+          <span class="li is-model"><span class="sw line"></span>前向计算</span>
+          <span class="li is-target"><span class="sw line"></span>已知目标</span>
+          <span class="li is-gradient"><span class="sw line"></span>反向梯度</span>
+        </div>
+        <p class="graph-caption">所有变量无量纲；显示值保留三位小数</p>
+      </div>
+    </section>
+
+    <aside class="rail min0" aria-label="梯度推导与训练含义">
+      <div>
+        <h2>沿路径逐项复用</h2>
+        <p class="rail-intro">ŷ 使用未四舍五入的 σ(0.8) 参与计算。</p>
+      </div>
+
+      <div class="formula-list" aria-label="反向传播四个结果">
+        <div class="formula-row r1"><span class="label">合并交叉熵与 sigmoid</span><span class="formula">∂L/∂z = ŷ−y = <strong>−0.310</strong></span></div>
+        <div class="formula-row r2"><span class="label">z 沿乘法路径回到 w</span><span class="formula">∂L/∂w = (∂L/∂z)x = <strong>−0.620</strong></span></div>
+        <div class="formula-row r3"><span class="label">z 对偏置的局部导数为 1</span><span class="formula">∂L/∂b = <strong>−0.310</strong></span></div>
+        <div class="formula-row r4"><span class="label">z 沿乘法路径回到 x</span><span class="formula">∂L/∂x = (∂L/∂z)w = <strong>−0.155</strong></span></div>
+      </div>
+
+      <div class="meaning">
+        <p><strong>训练参数：</strong>w、b 接收梯度。</p>
+        <p><strong>输入：</strong>x 也可收到梯度，但普通训练不更新原始样本。</p>
+        <p class="small">此页只计算梯度，不更新参数。</p>
+      </div>
+
+      <div class="controls">
+        <button type="button" class="btn" id="reveal-btn">逐步显示梯度</button>
+        <p class="status" id="gradient-status" aria-live="polite">先读蓝色前向值，再从损失 L 向左追踪。</p>
+      </div>
+    </aside>
+  </main>
+</div>
+<script src="assets/base.js"></script>
+<script>
+(() => {
+  const root = document.getElementById('gradient-tracer');
+  const button = root.querySelector('#reveal-btn');
+  const status = root.querySelector('#gradient-status');
+  const messages = [
+    '先读蓝色前向值，再从损失 L 向左追踪。',
+    '<strong>先到 z：</strong>交叉熵配 sigmoid 可化简为 ŷ−y。',
+    '<strong>再到 w：</strong>乘上前向保存的 x=2.000。',
+    '<strong>再到 b：</strong>z 对 b 的局部导数是 1。',
+    '<strong>最后到 x：</strong>乘上前向保存的 w=0.500。四个梯度已显示。'
+  ];
+  let step = 0;
+  let timers = [];
+  let replaying = false;
+
+  function clearTimers() {
+    timers.forEach(clearTimeout);
+    timers = [];
+  }
+
+  function render() {
+    root.dataset.step = String(step);
+    status.innerHTML = messages[step];
+    button.textContent = step === 4 ? '全部重播' : '逐步显示梯度';
+    button.disabled = replaying;
+    button.setAttribute('aria-label', step === 4 ? '从头自动重播全部梯度' : `显示第 ${step + 1} 个梯度`);
+  }
+
+  function replayAll() {
+    clearTimers();
+    replaying = true;
+    step = 0;
+    render();
+    const delay = Deck.reduced() ? 80 : 560;
+    for (let i = 1; i <= 4; i++) {
+      timers.push(setTimeout(() => {
+        step = i;
+        if (i === 4) replaying = false;
+        render();
+      }, delay * i));
+    }
+  }
+
+  function advance() {
+    if (replaying) return;
+    if (step < 4) {
+      step += 1;
+      render();
+    } else {
+      replayAll();
+    }
+  }
+
+  button.addEventListener('click', advance);
+  window.addEventListener('pagehide', clearTimers, { once: true });
+  render();
+  Deck.init({ index: 12, total: 22 });
+})();
+</script>
+</body>
+</html>

@@ -28,7 +28,353 @@
     <title>草坪上的最短路</title>
     <link rel="icon" href="data:," />
     <link rel="stylesheet" href="./assets/base.css" />
-</head>
+<style>
+/* base.css 管底盘；这里定义本页 1600×900 视觉。 */
+
+:root {
+  color-scheme: dark;
+
+  --bg: #151616;
+  --text: #f1f0e9;
+  --font-sans: "Helvetica Neue", Helvetica, Arial, "PingFang SC", "Microsoft YaHei", sans-serif;
+
+  --line: #3d413f;
+  --muted: #a8aca8;
+  --accent: #f0df55;
+  --accent-ink: #202113;
+  --player: #ef9a31;        /* 走一遍 */
+  --player-2: #d1552f;      /* 走两遍 */
+  --player-3: #a32a24;      /* 走三遍及以上 */
+  --optimal: #77dc78;
+  --focus: var(--accent);
+  --serif: Georgia, "Songti SC", SimSun, serif;
+
+  --pad: 64px;
+}
+
+button {
+  border: 0;
+  border-radius: 0;
+  background: none;
+  cursor: pointer;
+}
+
+.scene {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  padding: var(--pad);
+}
+
+.scene-intro {
+  justify-content: center;
+}
+
+.intro-block {
+  max-width: 1100px;
+  text-align: center;
+}
+
+h1 {
+  margin-bottom: 32px;
+  font-family: var(--serif);
+  font-size: 88px;
+  font-weight: 400;
+  letter-spacing: -0.045em;
+  line-height: 1.04;
+}
+
+.lede {
+  max-width: 720px;
+  margin: 0 auto;
+  color: #c9cbc7;
+  font-family: var(--serif);
+  font-size: 26px;
+  line-height: 1.62;
+}
+
+.intro-preview {
+  width: 220px;
+  height: 220px;
+  margin: 44px auto 0;
+  opacity: 0.85;
+  box-shadow: 0 16px 44px rgb(3 15 7 / 35%);
+}
+
+.intro-actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 32px;
+  margin-top: 48px;
+}
+
+.primary-button {
+  min-height: 52px;
+  padding: 0 30px;
+  background: #f3f2eb;
+  color: #202220;
+  font-size: 17px;
+  font-weight: 850;
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+  box-shadow: 6px 6px 0 rgb(8 26 13 / 32%);
+  transition: background 160ms ease, color 160ms ease, transform 120ms ease, box-shadow 120ms ease;
+}
+
+.primary-button:hover {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+.primary-button:active {
+  transform: translate(3px, 3px);
+  box-shadow: 3px 3px 0 rgb(8 26 13 / 32%);
+}
+
+.text-button {
+  padding: 4px 0;
+  border-bottom: 1px solid #737773;
+  color: #d7d9d5;
+  font-size: 16px;
+  font-weight: 750;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+  transition: border-color 160ms ease, color 160ms ease;
+}
+
+.text-button:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.scene-play,
+.scene-result {
+  justify-content: center;
+  gap: 80px;
+}
+
+.play-side,
+.result-side {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.play-side {
+  flex: 0 0 520px;
+  gap: 36px;
+}
+
+.play-side h2 {
+  color: var(--accent);
+  font-family: var(--serif);
+  font-size: 44px;
+  font-weight: 400;
+  line-height: 1.25;
+}
+
+.readouts {
+  display: flex;
+  gap: 56px;
+  width: 100%;
+}
+
+.readout {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.readout-label {
+  color: var(--muted);
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+}
+
+.readout-value,
+.efficiency-value {
+  font-variant-numeric: tabular-nums;
+  font-weight: 300;
+  line-height: 1;
+}
+
+.readout-value {
+  color: var(--text);
+  font-size: 60px;
+  letter-spacing: -0.02em;
+}
+
+.readout-unit {
+  color: var(--muted);
+  font-size: 22px;
+  letter-spacing: 0;
+}
+
+.progress {
+  width: 100%;
+  height: 4px;
+  margin-top: 10px;
+  background: #2f3331;
+}
+
+.progress i {
+  display: block;
+  width: 2%;
+  height: 100%;
+  background: var(--accent);
+  transition: width 180ms ease-out;
+}
+
+.instruction {
+  color: #c7cac6;
+  font-size: 17px;
+  line-height: 1.5;
+}
+
+.dpad {
+  display: grid;
+  grid-template-columns: repeat(3, 60px);
+  grid-template-rows: repeat(2, 60px);
+  gap: 8px;
+}
+
+.dpad button {
+  border: 1px solid #555a56;
+  background: #252826;
+  color: var(--text);
+  font-size: 24px;
+  transition: background 140ms ease, transform 120ms ease;
+}
+
+.dpad button:hover {
+  background: #343834;
+}
+
+.dpad button:active {
+  transform: translateY(1px) scale(0.97);
+}
+
+.dpad button[data-direction="ArrowUp"] {
+  grid-column: 2;
+}
+
+.dpad button[data-direction="ArrowLeft"] {
+  grid-column: 1;
+  grid-row: 2;
+}
+
+.dpad button[data-direction="ArrowDown"] {
+  grid-column: 2;
+  grid-row: 2;
+}
+
+.dpad button[data-direction="ArrowRight"] {
+  grid-column: 3;
+  grid-row: 2;
+}
+
+.board-wrap {
+  position: relative;
+  flex: 0 0 720px;
+  height: 720px;
+  background: #40984b;
+  box-shadow: 0 26px 80px rgb(3 15 7 / 35%);
+}
+
+.board-wrap.is-bumped {
+  animation: bump 180ms ease-out;
+}
+
+#gameCanvas {
+  width: 100%;
+  height: 100%;
+}
+
+.result-side {
+  flex: 0 0 504px;
+  gap: 32px;
+}
+
+.results-copy {
+  font-family: var(--serif);
+  font-size: 27px;
+  line-height: 1.55;
+}
+
+.results-copy strong {
+  color: var(--accent);
+  font-weight: 400;
+}
+
+.efficiency {
+  display: flex;
+  align-items: baseline;
+  gap: 18px;
+}
+
+.efficiency-value {
+  color: var(--accent);
+  font-size: 76px;
+  letter-spacing: -0.03em;
+}
+
+.takeaway {
+  padding-top: 28px;
+  border-top: 1px solid var(--line);
+}
+
+.takeaway h2 {
+  margin-bottom: 14px;
+  font-family: var(--serif);
+  font-size: 28px;
+  font-weight: 400;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+}
+
+.takeaway p {
+  color: #c3c6c1;
+  font-family: var(--serif);
+  font-size: 18px;
+  line-height: 1.6;
+}
+
+.comparison {
+  display: flex;
+  gap: 48px;
+}
+
+.comparison figure {
+  width: 420px;
+}
+
+.comparison figcaption {
+  margin-bottom: 14px;
+  color: #e6e7e2;
+  font-size: 16px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-align: center;
+}
+
+.comparison canvas {
+  width: 420px;
+  height: 420px;
+  border: 1px solid #4d514e;
+  background: #181a19;
+}
+
+@keyframes bump {
+  0%, 100% { transform: translateX(0); }
+  35% { transform: translateX(-6px); }
+  70% { transform: translateX(5px); }
+}
+    </style>
+  </head>
   <body>
     <div id="stage" data-scene="intro">
       <section class="scene scene-intro" id="sceneIntro">
