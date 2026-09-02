@@ -875,4 +875,6 @@
 }());
 ```
   </file>
+  <omitted path="assets/base.css">provided by the deck chassis or the vendored library index; not part of this sample</omitted>
+  <omitted path="assets/base.js">provided by the deck chassis or the vendored library index; not part of this sample</omitted>
 </sample>

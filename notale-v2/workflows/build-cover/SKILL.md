@@ -11,7 +11,7 @@ Choose the visual system that would still identify the opening without its other
 - `motion`: setup, transformation, and payoff over time carry the identity.
 - `generative`: a rule, field, growth system, simulation, shader, or seeded drawing process carries the identity.
 
-In your first response, choose one category and issue parallel `Read` calls for exactly one reference and one Main path from that category. Do not read any other sample. Select by transferable composition or motion mechanism, not topic words. Do not read another reference later and do not copy sample subject matter, labels, or styling.
+Before choosing, name the one visual carrier this page relies on. Select the Main by its composition, motion, or generative mechanism, never by a similar topic name. In the first response, state the needed transferable pattern in one sentence, then issue parallel `Read` calls for exactly one reference and one Main from the same category. Do not read any other sample. Do not read another reference later and do not copy sample subject matter, labels, or styling.
 
 ## References
 

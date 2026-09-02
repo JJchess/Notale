@@ -127,6 +127,29 @@ class BundleTests(unittest.TestCase):
                 else:
                     self.assertRegex(expected, r"(?i)<style\b|```css")
 
+    def test_visual_full_bundles_declare_every_omitted_dependency(self):
+        for path, text in sample_bundles.render_all().items():
+            if "build-code" in path.parts or not path.name.endswith(".full.md"):
+                continue
+            with self.subTest(path=path):
+                self.assertIn("<omitted path=", text)  # every sample uses the chassis
+        with self.assertRaises(ValueError):
+            sample_bundles.omitted_lines(
+                "x", {"files": ["index.html"]}, '<script src="assets/data.js"></script>'
+            )
+        with self.assertRaises(ValueError):
+            sample_bundles.omitted_lines(
+                "x", {"files": ["index.html"], "omitted": {"stale.js": "n"}}, ""
+            )
+        self.assertEqual(
+            sample_bundles.omitted_lines(
+                "x", {"files": ["index.html"], "omitted": {"data/*.js": "rows"}},
+                '<script src="assets/base.js"></script><script src="data/a.js"></script>',
+            ),
+            ['  <omitted path="assets/base.js">' + sample_bundles._PROVIDED_NOTE + "</omitted>",
+             '  <omitted path="data/a.js">rows</omitted>'],
+        )
+
     def test_main_only_and_combined_code_contracts(self):
         interaction = json.loads(
             (skills.WORKFLOWS / "build-interaction/samples/catalog.json").read_text()
@@ -210,7 +233,7 @@ class ToolSurfaceTests(unittest.TestCase):
             code_full = read("build-code", "example.full.md")
 
         self.assertTrue(visual_full.startswith("<sample_use>"))
-        self.assertIn("independent page with comparable", visual_full)
+        self.assertIn("worked example, not a template", visual_full)
         self.assertNotIn("<sample_use>", visual_mini)
         self.assertNotIn("<sample_use>", code_full)
 

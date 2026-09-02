@@ -598,4 +598,7 @@ h1 em { color:var(--signal); font-style:normal; text-shadow:0 0 32px #00e5ff7a,0
 })();
 ```
   </file>
+  <omitted path="assets/base.css">provided by the deck chassis or the vendored library index; not part of this sample</omitted>
+  <omitted path="assets/base.js">provided by the deck chassis or the vendored library index; not part of this sample</omitted>
+  <omitted path="assets/lib/seedrandom.min.js">provided by the deck chassis or the vendored library index; not part of this sample</omitted>
 </sample>

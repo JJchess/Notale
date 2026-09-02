@@ -652,4 +652,7 @@ h1 {
 })();
 ```
   </file>
+  <omitted path="assets/base.css">provided by the deck chassis or the vendored library index; not part of this sample</omitted>
+  <omitted path="assets/base.js">provided by the deck chassis or the vendored library index; not part of this sample</omitted>
+  <omitted path="assets/cities.js">window.CITIES: 70 city rows with id, name, temp_<period>, type_<period> (present-day and future climate subtype and annual mean temperature)</omitted>
 </sample>

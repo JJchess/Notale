@@ -504,4 +504,8 @@
 })();
 ```
   </file>
+  <omitted path="assets/base.css">provided by the deck chassis or the vendored library index; not part of this sample</omitted>
+  <omitted path="assets/base.js">provided by the deck chassis or the vendored library index; not part of this sample</omitted>
+  <omitted path="assets/data/cities-screen.js">window.CLIMATE_CITIES: anchor cities with name, screen x/y, temp_<period>, type_<period></omitted>
+  <omitted path="assets/data/climate-grid.js">window.CLIMATE_GRID_RLE: run-length-encoded present and future climate-class raster, decoded by decodeGrid() into grid.present / grid.future</omitted>
 </sample>

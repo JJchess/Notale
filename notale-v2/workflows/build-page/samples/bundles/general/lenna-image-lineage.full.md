@@ -725,4 +725,8 @@ body {
 })();
 ```
   </file>
+  <omitted path="assets/base.css">provided by the deck chassis or the vendored library index; not part of this sample</omitted>
+  <omitted path="assets/base.js">provided by the deck chassis or the vendored library index; not part of this sample</omitted>
+  <omitted path="assets/img/lenna-pixels.png">84×84 pixelated portrait thumbnail used as the lineage origin image</omitted>
+  <omitted path="assets/lib/gsap.min.js">provided by the deck chassis or the vendored library index; not part of this sample</omitted>
 </sample>

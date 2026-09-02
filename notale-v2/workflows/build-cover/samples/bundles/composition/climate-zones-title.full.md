@@ -261,4 +261,8 @@
 })();
 ```
   </file>
+  <omitted path="assets/base.css">provided by the deck chassis or the vendored library index; not part of this sample</omitted>
+  <omitted path="assets/base.js">provided by the deck chassis or the vendored library index; not part of this sample</omitted>
+  <omitted path="assets/map-data.js">generated payload window.CLIMATE_MAP_DATA = {width, height, frame, land, countries, zones: [[class, path], ...]}: Path2D strings for the Natural Earth land and country outlines plus three climate-zone layers</omitted>
+  <omitted path="media/title.svg">wordmark image for the title 'Climate Zones'</omitted>
 </sample>

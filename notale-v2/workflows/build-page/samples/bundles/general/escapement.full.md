@@ -1228,4 +1228,7 @@ button:focus-visible, input:focus-visible { outline: 3px solid rgba(47, 103, 146
 })();
 ```
   </file>
+  <omitted path="assets/base.css">provided by the deck chassis or the vendored library index; not part of this sample</omitted>
+  <omitted path="assets/base.js">provided by the deck chassis or the vendored library index; not part of this sample</omitted>
+  <omitted path="assets/lib/three.min.js">provided by the deck chassis or the vendored library index; not part of this sample</omitted>
 </sample>

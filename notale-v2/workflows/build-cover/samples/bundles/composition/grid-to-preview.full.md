@@ -327,4 +327,5 @@ img{display:block;width:100%;height:100%;object-fit:cover;object-position:50% 50
 })();
 ```
   </file>
+  <omitted path="assets/gsap.min.js">provided by the deck chassis or the vendored library index; not part of this sample</omitted>
 </sample>

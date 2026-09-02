@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
+from fnmatch import fnmatch
 from pathlib import Path
 
 
@@ -30,6 +31,14 @@ LANGUAGES = {
     ".svg": "svg",
 }
 _STYLE = re.compile(r"\s*<style\b[^>]*>.*?</style>\s*", re.I | re.S)
+_REF = re.compile(r'(?:src|href)="([^"#?]+)"')
+# Chassis files and vendored libraries reach the Builder through <chassis> and
+# the <tech> library index, so a sample may reference them without a note.
+_PROVIDED = re.compile(r"(?:^|/)(?:base\.css|base\.js|[\w.-]+\.min\.js)$")
+_PROVIDED_NOTE = (
+    "provided by the deck chassis or the vendored library index; "
+    "not part of this sample"
+)
 
 
 def _fence(text: str) -> str:
@@ -44,6 +53,40 @@ def _context_text(path: Path, *, include_css: bool) -> str | None:
         return None
     text = path.read_text(encoding="utf-8")
     return _STYLE.sub("\n", text) if path.suffix.lower() == ".html" else text
+
+
+def omitted_lines(sample: str, spec: dict, html: str) -> list[str]:
+    """One ``<omitted>`` line per relative dependency the bundle does not carry.
+
+    Every relative ``src``/``href`` in the HTML must be bundled, declared in the
+    catalog's ``omitted`` map (fnmatch keys), or be a chassis/vendored file.
+    Anything else raises: a silently missing data file is exactly the failure
+    this guards against.
+    """
+    declared = dict(spec.get("omitted") or {})
+    files = set(spec["files"])
+    lines, missing, used = [], [], set()
+    refs = {r[2:] if r.startswith("./") else r for r in _REF.findall(html)}
+    for ref in sorted(refs):
+        if ref.startswith(("http:", "https:", "data:", "//")) or ref in files:
+            continue
+        key = next((k for k in declared if fnmatch(ref, k)), None)
+        if key is not None:
+            used.add(key)
+            note = declared[key]
+        elif _PROVIDED.search(ref):
+            note = _PROVIDED_NOTE
+        else:
+            missing.append(ref)
+            continue
+        lines.append(f'  <omitted path="{ref}">{note}</omitted>')
+    unused = sorted(set(declared) - used)
+    if missing or unused:
+        raise ValueError(
+            f"{sample}: undeclared relative dependencies {missing}; "
+            f"declared but unreferenced {unused}"
+        )
+    return lines
 
 
 def _variant(skill_dir: Path, row: dict, name: str, spec: dict) -> str:
@@ -81,6 +124,9 @@ def _variant(skill_dir: Path, row: dict, name: str, spec: dict) -> str:
                 "  </file>",
             )
         )
+    if name == "full" and include_css:
+        html = next(t for p, t in files if p.suffix.lower() == ".html")
+        lines.extend(omitted_lines(f"{skill_dir.name}/{row['id']}", spec, html))
     lines.append("</sample>")
     return "\n".join(lines) + "\n"
 

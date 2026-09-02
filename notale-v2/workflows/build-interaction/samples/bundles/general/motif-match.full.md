@@ -374,4 +374,10 @@ init();
 })();
 ```
   </file>
+  <omitted path="assets/base.css">provided by the deck chassis or the vendored library index; not part of this sample</omitted>
+  <omitted path="assets/base.js">provided by the deck chassis or the vendored library index; not part of this sample</omitted>
+  <omitted path="assets/marker-1.svg">four small SVG position markers laid over the piano keys</omitted>
+  <omitted path="assets/marker-2.svg">four small SVG position markers laid over the piano keys</omitted>
+  <omitted path="assets/marker-3.svg">four small SVG position markers laid over the piano keys</omitted>
+  <omitted path="assets/marker-4.svg">four small SVG position markers laid over the piano keys</omitted>
 </sample>

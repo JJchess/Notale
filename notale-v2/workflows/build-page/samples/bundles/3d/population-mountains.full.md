@@ -446,4 +446,8 @@ button:disabled{cursor:wait;opacity:.55}
 })();
 ```
   </file>
+  <omitted path="assets/base.css">provided by the deck chassis or the vendored library index; not part of this sample</omitted>
+  <omitted path="assets/base.js">provided by the deck chassis or the vendored library index; not part of this sample</omitted>
+  <omitted path="assets/lib/three.min.js">provided by the deck chassis or the vendored library index; not part of this sample</omitted>
+  <omitted path="assets/population-data.js">window.POPULATION_DATA = {cells, cellCount, maxPopulation, totalPopulation, peak, sourceWindow}: gridded population cells rendered as the height field</omitted>
 </sample>

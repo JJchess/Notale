@@ -258,4 +258,7 @@ html:not(.js) .fallback{position:fixed;inset:0;padding:140px 180px}
 }());
 ```
   </file>
+  <omitted path="assets/base.css">provided by the deck chassis or the vendored library index; not part of this sample</omitted>
+  <omitted path="assets/base.js">provided by the deck chassis or the vendored library index; not part of this sample</omitted>
+  <omitted path="data/simpson.js">observation rows (named species, Simpson's diversity index, occurrence count) that the beeswarm positions and sizes</omitted>
 </sample>

@@ -22,13 +22,14 @@ VISUAL_SAMPLE_WORKFLOWS = frozenset({
     "build-interaction",
 })
 VISUAL_SAMPLE_USE = """<sample_use>
-This sample demonstrates the expected level of visual and implementation
-quality. Learn selectively from techniques that suit the current page.
+This is a worked example, not a template. Before Write, name the one
+composition, visual mechanism, or interaction loop you will adapt. Carry that
+pattern into the current subject and supplied theme at comparable visual and
+implementation fidelity.
 
-Design from the current subject, purpose, and supplied theme. Do not preserve
-the sample's composition, visual motif, wording, data, labels, palette, or
-interaction model. The result should be an independent page with comparable
-care and completeness.
+Replace the sample's subject matter, prose, data, labels, palette, and
+unrelated deck or interface chrome. The result must visibly retain the chosen
+pattern, not merely copy the sample's component syntax.
 </sample_use>"""
 
 IMG_EXT = {".png", ".jpg", ".jpeg", ".webp", ".gif"}

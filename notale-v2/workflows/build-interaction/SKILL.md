@@ -12,7 +12,7 @@ Choose one category:
 - `3d`: acting on depth, orientation, occlusion, assembly, volume, terrain, or geographic space changes the model or evidence.
 - `general`: every other consequential browser interaction.
 
-In your first response, issue parallel `Read` calls for the selected reference and, for `general`, exactly one Main path. Do not read any other sample. Select the Main by action → state transition → visible evidence, not topic words. The `3d` category currently has no approved sample and reads only its reference.
+Before choosing, name the main action → state → evidence loop of this page. Select the Main by its interaction loop, never by a similar topic name. In the first response, state the needed transferable pattern in one sentence, then issue parallel `Read` calls for exactly one reference and one Main from the same category. Do not read any other sample. The `3d` category currently has no approved sample and reads only its reference.
 
 ## References
 

@@ -408,4 +408,12 @@ void main(){
 })();
 ```
   </file>
+  <omitted path="assets/base.css">provided by the deck chassis or the vendored library index; not part of this sample</omitted>
+  <omitted path="assets/base.js">provided by the deck chassis or the vendored library index; not part of this sample</omitted>
+  <omitted path="assets/lib/three.min.js">provided by the deck chassis or the vendored library index; not part of this sample</omitted>
+  <omitted path="media/01-asphalt.svg">five illustration panels (01-asphalt, 02-pavers, 03-garden, 04-roof, 05-wetland) shown as the surface pictures</omitted>
+  <omitted path="media/02-pavers.svg">five illustration panels (01-asphalt, 02-pavers, 03-garden, 04-roof, 05-wetland) shown as the surface pictures</omitted>
+  <omitted path="media/03-garden.svg">five illustration panels (01-asphalt, 02-pavers, 03-garden, 04-roof, 05-wetland) shown as the surface pictures</omitted>
+  <omitted path="media/04-roof.svg">five illustration panels (01-asphalt, 02-pavers, 03-garden, 04-roof, 05-wetland) shown as the surface pictures</omitted>
+  <omitted path="media/05-wetland.svg">five illustration panels (01-asphalt, 02-pavers, 03-garden, 04-roof, 05-wetland) shown as the surface pictures</omitted>
 </sample>

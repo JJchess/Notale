@@ -263,4 +263,15 @@ body{background:#10100f;color:#1a1a1a;font-family:"Helvetica Neue",Arial,sans-se
 })();
 ```
   </file>
+  <omitted path="assets/gsap.min.js">provided by the deck chassis or the vendored library index; not part of this sample</omitted>
+  <omitted path="assets/img-1.webp">ten nested-scale photographs (img-1 … img-10) shown in the archive strip</omitted>
+  <omitted path="assets/img-10.webp">ten nested-scale photographs (img-1 … img-10) shown in the archive strip</omitted>
+  <omitted path="assets/img-2.webp">ten nested-scale photographs (img-1 … img-10) shown in the archive strip</omitted>
+  <omitted path="assets/img-3.webp">ten nested-scale photographs (img-1 … img-10) shown in the archive strip</omitted>
+  <omitted path="assets/img-4.webp">ten nested-scale photographs (img-1 … img-10) shown in the archive strip</omitted>
+  <omitted path="assets/img-6.webp">ten nested-scale photographs (img-1 … img-10) shown in the archive strip</omitted>
+  <omitted path="assets/img-7.webp">ten nested-scale photographs (img-1 … img-10) shown in the archive strip</omitted>
+  <omitted path="assets/img-8.webp">ten nested-scale photographs (img-1 … img-10) shown in the archive strip</omitted>
+  <omitted path="assets/img-9.webp">ten nested-scale photographs (img-1 … img-10) shown in the archive strip</omitted>
+  <omitted path="assets/img-big.jpg">full-frame hero photograph used for the back and front media layers</omitted>
 </sample>
