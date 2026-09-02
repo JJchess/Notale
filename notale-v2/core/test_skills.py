@@ -237,6 +237,51 @@ class ToolSurfaceTests(unittest.TestCase):
         self.assertNotIn("<sample_use>", visual_mini)
         self.assertNotIn("<sample_use>", code_full)
 
+    def test_check_use_is_returned_only_for_visual_workflows(self):
+        for name in ("build-cover", "build-page", "build-interaction"):
+            with self.subTest(name=name):
+                text = tools.check_use(name)
+                self.assertTrue(text.startswith(f'<check_use workflow="{name}">'))
+                self.assertIn("instrumentation, not approval", text)
+                self.assertIn("one piece of evidence you actually verified", text)
+        self.assertEqual(tools.check_use("build-code"), "")
+        self.assertEqual(tools.check_use(None), "")
+
+        original = tools._selfcheck
+        tools._selfcheck = lambda *a, **k: "── page-01.html\n   渲染无报错"
+        try:
+            with tempfile.TemporaryDirectory() as td:
+                page = tools._check(Path(td), {"page": "page-01.html"}, "build-page")
+                code = tools._check(Path(td), {"page": "page-01.html"}, "build-code")
+        finally:
+            tools._selfcheck = original
+        self.assertTrue(page.text.startswith('<check_use workflow="build-page">'))
+        self.assertIn("渲染无报错", page.text)
+        self.assertNotIn("<check_use", code.text)
+
+    def test_check_inlines_initial_and_final_state_screenshots(self):
+        shots = [Path(f"/s/page-01{suffix}.png") for suffix in ("", "-after1", "-after2", "-after3")]
+        self.assertEqual(tools._pick_shots(shots), ([shots[0], shots[3]], shots[1:3]))
+        self.assertEqual(tools._pick_shots(shots[:2]), (shots[:2], []))
+
+    def test_own_run_screenshots_are_readable_but_other_runs_are_not(self):
+        with tempfile.TemporaryDirectory() as td:
+            base = Path(td)
+            pages = base / "mine/pages"
+            pages.mkdir(parents=True)
+            mine = base / "mine/.shots/page-01-after3.png"
+            other = base / "other/.shots/page-01-after3.png"
+            self.assertIsNone(
+                tools._out_of_bounds("Read", {"file_path": str(mine)}, pages, "page-01")
+            )
+            self.assertIsNotNone(
+                tools._out_of_bounds("Read", {"file_path": str(other)}, pages, "page-01")
+            )
+            self.assertIsNotNone(
+                tools._out_of_bounds("Write", {"file_path": str(mine), "content": ""},
+                                     pages, "page-01")
+            )
+
     def test_raw_sample_sources_are_not_builder_readable(self):
         with tempfile.TemporaryDirectory() as td:
             base = Path(td)

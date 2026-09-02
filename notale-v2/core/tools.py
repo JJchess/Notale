@@ -32,6 +32,47 @@ unrelated deck or interface chrome. The result must visibly retain the chosen
 pattern, not merely copy the sample's component syntax.
 </sample_use>"""
 
+_CHECK_USE_HEAD = (
+    "This report is instrumentation, not approval. Inspect the returned screenshots "
+    "and the actual state changes. No runtime error, clipping, or density note does "
+    "not prove that the page is truthful or complete."
+)
+_CHECK_USE_TAIL = (
+    "When you finish, name one piece of evidence you actually verified here, "
+    "not the absence of warnings."
+)
+_CHECK_USE_ITEMS = {
+    "build-cover": (
+        "Check that the title, the main visual, and the representative frame form one composition.",
+        "Copy, legends, and ARIA may only describe behavior the code actually produces.",
+        "If the visual claims to show an algorithm's result, trace one representative "
+        "result; decoration must not imitate the algorithm.",
+    ),
+    "build-page": (
+        "Check that there is one main evidence field, not repeated process boxes or a set of cards.",
+        "Recompute at least one derived value from the page's own data and formulas.",
+        "The same data must agree across prose, chart, and annotations.",
+    ),
+    "build-interaction": (
+        "Walk one legal progression path with the after states.",
+        "Also cover the applicable illegal or boundary case, the completion state, and Reset.",
+        "A legal action must change the real model and the visible evidence; an action "
+        "the copy declares invalid must not be committable.",
+        "Every result must offer the next legal action.",
+    ),
+}
+
+
+def check_use(workflow: str | None) -> str:
+    """Acceptance prompt returned with every Check report of a visual workflow."""
+    items = _CHECK_USE_ITEMS.get(workflow or "")
+    if not items:
+        return ""
+    body = "\n".join(f"- {item}" for item in items)
+    return (f'<check_use workflow="{workflow}">\n{_CHECK_USE_HEAD}\n{body}\n'
+            f"{_CHECK_USE_TAIL}\n</check_use>")
+
+
 IMG_EXT = {".png", ".jpg", ".jpeg", ".webp", ".gif"}
 
 # ── 越界访问 ────────────────────────────────────────────────────────
@@ -79,9 +120,11 @@ def _out_of_bounds(
         else:
             # 路径型参数能解析,就精确判。**只比基名挡不住「别的 run 里的同名页」。**
             target = (Path(s) if Path(s).is_absolute() else cwd / s).resolve()
-            allowed_resource = (
-                name == "Read"
-                and _is_workflow_resource(target, resource_root)
+            # Check/Look 的截图存在 run/.shots/(见 _selfcheck),报告会列出没内联的
+            # 那些路径让模型自己 Read。实测模型照做被这里拒了,然后凭前两张收尾。
+            allowed_resource = name == "Read" and (
+                _is_workflow_resource(target, resource_root)
+                or target.is_relative_to(root.parent / ".shots")
             )
             outside = [] if target.is_relative_to(root) or allowed_resource else [s]
         if outside:
@@ -185,7 +228,8 @@ SCHEMAS = [
     {"name": "Check", "description":
         "把页面真渲染一遍并报告:JS 报错、超出画布、被裁、字号地板、画面占用比。"
         "每次都会重新加载页面并在加载约 1.2 秒后采样初态,不是等待或调试被动动画的工具。"
-        "把用户能主动触发且会改变学习结果或版面的主要状态合并进同一次 after,不要拆成多次 Check。",
+        "把用户能主动触发且会改变学习结果或版面的主要状态合并进同一次 after,不要拆成多次 Check;"
+        "决定性终态放在最后一段。截图超过两张时只内联初态和最后一个状态,其余列出路径可单独 Read。",
      "parameters": {"type": "object", "properties": {
          "page": {"type": "string", "description": "页面文件名,例 page-07.html"},
          "after": {"type": "array", "items": {"type": "string"},
@@ -298,18 +342,27 @@ def _shot_paths(report: str, kind: str) -> list[Path]:
     return [Path(m) for m in re.findall(rf"^\s*{kind} (\S+\.png)", report, re.M)]
 
 
-def _check(cwd: Path, a: dict) -> Out:
+def _pick_shots(shots: list[Path]) -> tuple[list[Path], list[Path]]:
+    """Inline the initial state and the last after state; list the rest by path."""
+    if len(shots) <= MAX_IMAGES:
+        return shots, []
+    return [shots[0], shots[-1]], shots[1:-1]
+
+
+def _check(cwd: Path, a: dict, workflow: str | None = None) -> Out:
     page = str(a["page"])
     rep = _selfcheck(cwd, page, a.get("after") or (), shot=bool(a.get("shot")))
     imgs: list[tuple[str, str]] = []
     if a.get("shot"):
         shots = [p for p in _shot_paths(rep, "截图") if p.exists()]
-        for p in shots[:MAX_IMAGES]:
+        inline, rest = _pick_shots(shots)
+        for p in inline:
             imgs += _image(p).images
-        if len(shots) > MAX_IMAGES:
-            rep += ("\n（只把前 " + str(MAX_IMAGES) + " 张图给你了，其余的要看就单独 Read："
-                    + "、".join(str(p) for p in shots[MAX_IMAGES:]) + "）")
-    return Out(rep, imgs)
+        if rest:
+            rep += ("\n（只内联了初态和最后一个状态的截图，其余的要看就单独 Read："
+                    + "、".join(str(p) for p in rest) + "）")
+    use = check_use(workflow)
+    return Out((use + "\n\n" + rep) if use else rep, imgs)
 
 
 def _look(cwd: Path, a: dict) -> Out:
@@ -416,7 +469,7 @@ def _dispatch(name: str, a: dict, cwd: Path, resource_root: Path | None) -> str 
         return _patch(cwd, a)
 
     if name == "Check":
-        return _check(cwd, a)
+        return _check(cwd, a, resource_root.name if resource_root else None)
 
     if name == "Look":
         return _look(cwd, a)
