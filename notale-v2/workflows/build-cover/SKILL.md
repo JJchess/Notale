@@ -24,46 +24,34 @@ Before choosing, name the one visual carrier this page relies on. Select the Mai
 ### composition
 
 - `climate-zones-title`
-  - Scene: a climate-geography title over a continental field.
-  - Visual: an editorial map crop, protected type area, and geographic texture behave as one frame.
-  - Main: `<skill-dir>/samples/bundles/composition/climate-zones-title.full.md`
+  - an editorial map crop, protected type area, and geographic texture behave as one frame.
+  `<skill-dir>/samples/bundles/composition/climate-zones-title.full.md`
 - `grid-to-preview`
-  - Scene: an image archive grid resolving into one focused work.
-  - Visual: a poster-like grid, oversized typography, and full-frame preview share a continuous image hierarchy.
-  - Main: `<skill-dir>/samples/bundles/composition/grid-to-preview.full.md`
+  - a poster-like grid, oversized typography, and full-frame preview share a continuous image hierarchy.
+  `<skill-dir>/samples/bundles/composition/grid-to-preview.full.md`
 - `prism-light`
-  - Scene: a prism separating white light into a spectral beam.
-  - Visual: subject geometry, title, and restrained light motion align on one focal axis.
-  - Main: `<skill-dir>/samples/bundles/composition/prism-light.full.md`
+  - subject geometry, title, and restrained light motion align on one focal axis.
+  `<skill-dir>/samples/bundles/composition/prism-light.full.md`
 
 ### motion
 
 - `telescope-zoom`
-  - Scene: a continuous journey through nested observational scales.
-  - Visual: spatial handoffs and scale continuity create the opening instead of interface chrome.
-  - Main: `<skill-dir>/samples/bundles/motion/telescope-zoom.full.md`
+  - spatial handoffs and scale continuity create the opening instead of interface chrome.
+  `<skill-dir>/samples/bundles/motion/telescope-zoom.full.md`
 
 ### generative
 
 - `lenna-pixel-field`
-  - Scene: an image dissolving and persisting through a seeded pixel field.
-  - Visual: erosion remains subordinate to a stable typographic foreground.
-  - Main: `<skill-dir>/samples/bundles/generative/lenna-pixel-field.full.md`
+  - erosion remains subordinate to a stable typographic foreground.
+  `<skill-dir>/samples/bundles/generative/lenna-pixel-field.full.md`
 - `magnetic-field`
-  - Scene: deterministic dipole field lines flowing around a central subject.
-  - Visual: curved trajectories organize density while preserving a calm title region.
-  - Main: `<skill-dir>/samples/bundles/generative/magnetic-field.full.md`
+  - curved trajectories organize density while preserving a calm title region.
+  `<skill-dir>/samples/bundles/generative/magnetic-field.full.md`
 - `mycelium-growth`
-  - Scene: branching mycelium growing toward distributed resources.
-  - Visual: a legible settled network emerges from constrained growth rather than undirected particles.
-  - Main: `<skill-dir>/samples/bundles/generative/mycelium-growth.full.md`
-- `neural-signal-network`
-  - Scene: signals propagating through a graph of neurons.
-  - Visual: node pulses and edge travel coordinate around a stable title foreground.
-  - Main: `<skill-dir>/samples/bundles/generative/neural-signal-network.full.md`
+  - a legible settled network emerges from constrained growth rather than undirected particles.
+  `<skill-dir>/samples/bundles/generative/mycelium-growth.full.md`
 - `tactile-grid`
-  - Scene: a pin surface displaced by a moving field.
-  - Visual: material height, light, and wave response make a tactile WebGL field without dashboard chrome.
-  - Main: `<skill-dir>/samples/bundles/generative/tactile-grid.full.md`
+  - material height, light, and wave response make a tactile WebGL field without dashboard chrome.
+  `<skill-dir>/samples/bundles/generative/tactile-grid.full.md`
 
 Follow the selected reference as the construction contract. Preserve the supplied chassis, theme interface, page brief, and output path.

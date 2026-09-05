@@ -102,7 +102,7 @@ function seededCenter() {
 		state ^= state << 5;
 		return (state >>> 0) / 4294967296;
 	};
-	return [(random() - .5) * 13, (random() - .5) * 13];
+	return [(random() - .5) * 12, (random() - .5) * 7];
 }
 
 function showFallback() {
@@ -113,14 +113,17 @@ function showFallback() {
 		for (let column = 0; column < GRID_SIZE; column++) {
 			const x = (column - 19.5) * .82;
 			const z = (row - 19.5) * .82;
+			if (Math.abs(x) > 8.2 || Math.abs(z) > 4.8) continue;
 			const phase = Math.hypot(x - centerX, z - centerZ) - .82 * 6;
 			const height = Math.cos(phase * 1.25) * Math.exp(-phase * phase / 7) * .48;
-			const screenX = 800 + (x - z) * 23;
-			const screenY = 365 + (x + z) * 9 - height * 86;
-			const blue = Math.max(0, height / .48);
-			pins += `<path d="M${screenX - 18} ${screenY}L${screenX} ${screenY - 7}` +
-				`L${screenX + 18} ${screenY}L${screenX} ${screenY + 7}Z" ` +
-				`fill="hsl(218 80% ${86 - blue * 44}%)"/>`;
+			const blue = Math.min(1, Math.max(0, height / .48));
+			const mix = (base, high) => Math.round(base + (high - base) * blue);
+			const left = Math.max(0, 800 + x * 103 - 39);
+			const top = Math.max(0, 450 + z * 103 - 39);
+			const width = Math.min(1600, 800 + x * 103 + 39) - left;
+			const heightPx = Math.min(900, 450 + z * 103 + 39) - top;
+			pins += `<rect x="${left}" y="${top}" width="${width}" height="${heightPx}" ` +
+				`fill="rgb(${mix(244, 7)} ${mix(244, 94)} ${mix(242, 232)})"/>`;
 		}
 	}
 	fallback.innerHTML = `<g stroke="#6b6b6b" stroke-width=".35">${pins}</g>`;
@@ -138,9 +141,10 @@ if (renderer) start(renderer);
 function start(renderer) {
 	const scene = new THREE.Scene();
 	scene.background = new THREE.Color("#858585");
-	const camera = new THREE.PerspectiveCamera(39, WIDTH / HEIGHT, .1, 120);
-	camera.position.set(0, 27, 30);
-	camera.lookAt(0, -.7, 0);
+	const camera = new THREE.PerspectiveCamera(40, WIDTH / HEIGHT, .1, 120);
+	camera.position.set(0, 12, 0);
+	camera.up.set(0, 0, -1);
+	camera.lookAt(0, 0, 0);
 
 	renderer.toneMapping = THREE.ACESFilmicToneMapping;
 	renderer.toneMappingExposure = 1.35;
