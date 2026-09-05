@@ -48,7 +48,7 @@ SHOT_W, SHOT_H = 800, 450       # 截图尺寸,只影响截图不影响测量
 OCC_FLOOR = 45
 TEXT_LO, TEXT_HI = 20, 70
 
-PROBE = """() => {
+PROBE = r"""() => {
   const num = v => { const f = parseFloat(v); return Number.isFinite(f) ? f : 0; };
   const W = %d, H = %d;
   const clipped = [], escaped = [], sizes = [];
@@ -214,7 +214,104 @@ PROBE = """() => {
   const stageEl = document.getElementById('stage');
   const stagePad = stageEl ? getComputedStyle(stageEl).padding : '';
 
+  // 主体:最大内容块与第二大的面积比。**只报数,不判定。**
+  // 「一页要有一个主体」这句话 reference、check_use、反套路清单各说了一遍
+  // (check_use 随每次 Check 回传,一轮 27 页发了 73 遍),而报告里从来没有一个数
+  // 对应它 —— 模型无从知道自己这页是 1.4 倍。缺的不是话,是镜子。
+  // 铺满层不算内容,和占用比同一口径。
+  const blocks = [];
+  for (const el of document.querySelectorAll('#stage *')) {
+    const cs2 = getComputedStyle(el), r2 = el.getBoundingClientRect();
+    if (cs2.display === 'none' || cs2.visibility === 'hidden') continue;
+    if (num(cs2.opacity) <= .05 || r2.width <= 0 || r2.height <= 0) continue;
+    const a = r2.width * r2.height;
+    if (a >= W * H * 0.98) continue;
+    const media = ['CANVAS','SVG','IMG','VIDEO'].includes(el.tagName);
+    let leafText = '';
+    for (const n of el.childNodes) if (n.nodeType === 3) leafText += n.textContent;
+    if (media || (el.children.length === 0 && leafText.trim())) blocks.push(a);
+  }
+  blocks.sort((a, b) => b - a);
+  const subject = blocks.length
+    ? {top: blocks[0] / (W * H), ratio: blocks[1] ? blocks[0] / blocks[1] : 0}
+    : null;
+
+  // 字阶:主题在 :root 上声明了哪些 --fs-*,页面上有多少文字元素不在这些档位。
+  // 契约「字号只用主题 token」写在 tech.md,此前从无判据。
+  // 次级文字:小且低对比。**口径写死在这里,规则文本引用同一个定义。**
+  // ≤15px 与「低对比」是两个条件的合取 —— 只按字号算是 59%%,合取后是 38%%,
+  // 两个数不能混用(2026-09-05 第一稿混用过)。
+  const lum = c => {
+    const m = (c.match(/[\d.]+/g) || [0,0,0]).slice(0,3).map(Number);
+    const [r0,g0,b0] = m.map(v => { v/=255; return v<=.03928 ? v/12.92
+                                    : Math.pow((v+.055)/1.055, 2.4); });
+    return .2126*r0 + .7152*g0 + .0722*b0;
+  };
+  const stageCS = getComputedStyle(stage);
+  const bgL = lum(stageCS.backgroundColor === 'rgba(0, 0, 0, 0)'
+                  ? 'rgb(255,255,255)' : stageCS.backgroundColor);
+  const contrast = c => { const l = lum(c), a = Math.max(l,bgL), b2 = Math.min(l,bgL);
+                          return (a+.05)/(b2+.05); };
+  const mainContrast = contrast(stageCS.color);
+  let minorN = 0, minorChars = 0, allChars = 0;
+  const minorAt = [];
+  for (const el of stage.querySelectorAll('*')) {
+    if (el.children.length) continue;
+    let own = ''; for (const n of el.childNodes) if (n.nodeType === 3) own += n.textContent;
+    own = own.trim(); if (!own) continue;
+    const cs3 = getComputedStyle(el), r3 = el.getBoundingClientRect();
+    if (cs3.display === 'none' || cs3.visibility === 'hidden' || r3.width <= 0) continue;
+    allChars += own.length;
+    if ((parseFloat(cs3.fontSize)||0) <= 15 && contrast(cs3.color) < mainContrast*0.75) {
+      minorN++; minorChars += own.length;
+      if (minorAt.length < 3) minorAt.push(Math.round(r3.left)+','+Math.round(r3.top)
+                                           +' «'+own.slice(0,18)+'»');
+    }
+  }
+
+  // 粗侧边条:**只算卡片/callout**,即有底色或圆角的容器。表格底边线和图表轴线
+  // 也是单边描边,但它们合法 —— 第一稿没收窄口径,46 处里混了大量误报。
+  const railAt = [];
+  for (const el of stage.querySelectorAll('*')) {
+    const cs4 = getComputedStyle(el), r4 = el.getBoundingClientRect();
+    if (r4.width <= 0 || r4.height <= 0) continue;
+    const boxy = cs4.backgroundColor !== 'rgba(0, 0, 0, 0)'
+                 || (parseFloat(cs4.borderTopLeftRadius)||0) > 0;
+    if (!boxy) continue;
+    for (const side of ['Left','Right']) {
+      const w4 = parseFloat(cs4['border'+side+'Width'])||0;
+      if (w4 <= 1 || cs4['border'+side+'Style'] === 'none') continue;
+      if (cs4['border'+side+'Color'] === 'rgba(0, 0, 0, 0)') continue;
+      const others = ['Left','Right','Top','Bottom'].filter(s => s !== side)
+        .map(s => parseFloat(cs4['border'+s+'Width'])||0);
+      if (others.every(o => o < w4) && railAt.length < 3) {
+        railAt.push('border-'+side.toLowerCase()+' '+w4+'px @'
+                    +Math.round(r4.left)+','+Math.round(r4.top));
+      }
+    }
+  }
+
+  const rootCS = getComputedStyle(document.documentElement);
+  const scale = new Set();
+  for (const sheet of document.styleSheets) {
+    let rules; try { rules = sheet.cssRules; } catch (e) { continue; }
+    for (const rule of rules || []) {
+      if (!rule.style) continue;
+      for (const prop of rule.style) {
+        if (prop.startsWith('--fs')) {
+          const v = num(rootCS.getPropertyValue(prop));
+          if (v) scale.add(Math.round(v));
+        }
+      }
+    }
+  }
+  const offScale = scale.size
+    ? sizes.filter(s => !scale.has(Math.round(s))).length : 0;
+
   return {theme: {padX: padX, stagePad: stagePad},
+          subject: subject, scale: [...scale].sort((a,b)=>a-b), offScale: offScale,
+          minor: {n: minorN, chars: minorChars, all: allChars, at: minorAt},
+          rails: railAt,
           clipped: clipped.slice(0, 25), escaped: escaped.slice(0, 25), sizes,
           canvases: document.querySelectorAll('canvas').length,
           boxes: boxes.length, texts: texts.length, overlap: overlap,
@@ -398,6 +495,30 @@ def report(name: str, states: list) -> None:
         if sizes:
             print(f"   canvas {probe['canvases']} 个;有文字的元素 {len(sizes)} 个,"
                   f"字号最小 {sizes[0]:g}px 中位 {sizes[len(sizes)//2]:g}px 最大 {sizes[-1]:g}px")
+        # 主体与字阶 —— **只报数,不判定,不升级为 ✗。**
+        # 升级为闸的代价记在下面占用比那段账里(Sonnet 打满 100 步、92 分钟只交付 8 页),
+        # 而这两条还各有正当例外:对照页天然多主体平权,`.big` 这类展示数值也不在 --fs 档里。
+        # 判定权留给模型,harness 只负责让它看得见。
+        subj = probe.get("subject")
+        if subj and subj.get("ratio"):
+            print(f"   主体 最大内容块占版心 {subj['top'] * 100:.0f}%,"
+                  f"比第二大的大 {subj['ratio']:.1f} 倍")
+        # 次级文字与粗侧边条 —— 同样只报数与位置,不判定。
+        # **报位置是必要的**:只给比例,模型不知道该去看哪里。
+        mn = probe.get("minor") or {}
+        if mn.get("all"):
+            pct = mn["chars"] * 100 // mn["all"]
+            note = ("；例如 " + "、".join(mn.get("at") or [])) if mn.get("at") else ""
+            print(f"   次级文字 ≤15px 且低对比的 {mn['n']} 处,承载 {pct}% 的字符{note}")
+        rails = probe.get("rails") or []
+        if rails:
+            print(f"   侧边条 有底色或圆角的容器上有 {len(rails)} 处单边粗描边："
+                  + "、".join(rails))
+        scale = probe.get("scale") or []
+        off = probe.get("offScale") or 0
+        if scale and sizes:
+            print(f"   字阶 {off}/{len(sizes)} 个文字元素不在主题声明的档位上"
+                  f"（{'/'.join(str(x) for x in scale)}px）")
         # 密度 —— 「版面不空不挤」以前只能靠看截图判断,这几个数把它变成可读的量。
         #
         # **原来是「只陈述,不判定」,现在给下限。** 理由是量出来的:24 轮统一量完之后,
