@@ -18,6 +18,7 @@
 ## 版面
 
 - 只修改 `#stage` 内容；不把页码显示给读者。
+- 目标 HTML 由你从零创建；不修改 `assets/`，不新建旁路文件，不读其他 `page-*.html`。
 - 逻辑画布固定 {canvas_w} × {canvas_h}，不得滚动。`#stage` 是 flex 列；
   顶层区块给固定高度或 flex 份额，主内容区 `flex:1` 且 `min-height:0`，
   需要收缩的 flex/grid 子元素加 `.min0`。
@@ -42,6 +43,9 @@
 可用库：
 
 {libs}
+
+按上面的索引直接引用；只有确需索引未给出的 API 细节时才读 `assets/lib/LIBS.md`，
+不要用 Bash/Read 枚举依赖，也不要读 `*.min.js`。
 
 ## 数据
 

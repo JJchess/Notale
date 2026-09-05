@@ -24,19 +24,16 @@ Before choosing, name the main action → state → evidence loop of this page. 
 ### general
 
 - `future-climate-analogy`
-  - Scene: a selected city matched to a future climate analogue on a map.
-  - Visual: geographic anchors, comparison values, and map evidence remain one coherent field.
-  - Interaction: choosing a city runs a real matching model and updates the derived analogue and spatial evidence.
-  - Main: `<skill-dir>/samples/bundles/general/future-climate-analogy.full.md`
+  - geographic anchors, comparison values, and map evidence remain one coherent field.
+  - choosing a city runs a real matching model and updates the derived analogue and spatial evidence.
+  `<skill-dir>/samples/bundles/general/future-climate-analogy.full.md`
 - `lawn-path`
-  - Scene: a path-construction puzzle crossing a constrained lawn grid.
-  - Visual: legal progress, blocked structure, and route consequence stay visible on one board.
-  - Interaction: each segment changes a constrained path state; illegal moves, completion, and exact reset derive from the same rule system.
-  - Main: `<skill-dir>/samples/bundles/general/lawn-path.full.md`
+  - legal progress, blocked structure, and route consequence stay visible on one board.
+  - each segment changes a constrained path state; illegal moves, completion, and exact reset derive from the same rule system.
+  `<skill-dir>/samples/bundles/general/lawn-path.full.md`
 - `motif-match`
-  - Scene: a short musical motif constructed on an interactive piano.
-  - Visual: keys, interval positions, and current sequence form a compact instrument rather than a quiz card.
-  - Interaction: each note changes the deterministic interval sequence and produces audible, spatial, and corrective evidence.
-  - Main: `<skill-dir>/samples/bundles/general/motif-match.full.md`
+  - keys, interval positions, and current sequence form a compact instrument rather than a quiz card.
+  - each note changes the deterministic interval sequence and produces audible, spatial, and corrective evidence.
+  `<skill-dir>/samples/bundles/general/motif-match.full.md`
 
 Follow the selected reference as the construction contract. Preserve the supplied chassis, theme interface, page brief, and output path.
