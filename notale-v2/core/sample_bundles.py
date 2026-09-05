@@ -139,7 +139,7 @@ def render_all(workflows: Path = WORKFLOWS) -> dict[Path, str]:
             continue
         catalog = json.loads(catalog_path.read_text(encoding="utf-8"))
         for row in catalog.get("samples", []):
-            for variant in ("full", "mini"):
+            for variant in ("full", "mini", "one"):
                 spec = row.get(variant)
                 if not isinstance(spec, dict):
                     continue

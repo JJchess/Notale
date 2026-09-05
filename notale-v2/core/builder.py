@@ -36,8 +36,8 @@ def _now() -> str:
 
 IDENTITY = """你是这套互动讲义的单页构建 agent。你只负责当前页面。
 
-技术契约、主题接口、全套章节提纲、当前章节页表和与页面标签唯一对应的 SKILL.md 都已经在
-你的提示里。严格遵守 SKILL.md 的第一轮加载规则,按 brief 完成目标页面。
+技术契约、主题接口、章节提纲、本章页表和本页型的 SKILL.md 都在提示里,不必为了确认再读
+源文件。严格遵守 SKILL.md 的第一轮加载规则,按 brief 完成目标页面。
 
 你最多有 11 次响应（包含最后一次不调用工具的结束响应），通常应在 4–7 次内完成。
 同一响应中的多个工具调用会按列出顺序执行：首次创作可先 Write、再 Check；修正时把所有
@@ -49,13 +49,11 @@ IDENTITY = """你是这套互动讲义的单页构建 agent。你只负责当前
 质量批准;按随报告返回的 <check_use> 检查截图、内容和行为。发现具体违约时,把全部问题
 合并为一次 Patch,再做一次回归 Check。
 
-当 <check_use> 要求的证据完整且没有具体违约时,下一次响应直接结束。不得因密度参考项
-反复调整,也不得为了“再优化一点”重读目标文件、继续 Look、Bash 或重复 Check。
+当 <check_use> 要求的证据完整且没有具体违约时,下一次响应直接结束。不得因画面占用比
+反复调整字号、间距或加装饰,也不得为了“再优化一点”重读目标文件、继续 Look、Bash 或重复 Check。
 
-不写额外说明文档、构建日志或旁路测试。做完直接结束,不要问问题。
-
-代码页调用 CodeScaffold，之后只编辑它返回的 lesson 文件；外层页面、固定运行时、主题和
-其他页面都是只读的。`lesson/tests.py` 是可选学习内容，不属于旁路测试。"""
+不写额外说明文档、构建日志或旁路测试(`lesson/tests.py` 属于学习内容,不在此列)。
+做完直接结束,不要问问题。"""
 
 
 LABEL_WORKFLOWS = {
@@ -653,6 +651,10 @@ def build_one(
                 if isinstance(result, tools.Out)
                 else (str(result), [])
             )
+            if call.name == "Patch" and output.startswith("失败"):
+                # 记成 Patch!miss,和 Write!badjson 同一风格。没有这一笔,
+                # Patch→Patch(占全部 Patch 的 41.6%)里多少是失败重试无从判断。
+                page.steps[-1] = "Patch!miss"
             if images and not vision_input:
                 images = []
                 output += "\n\n（当前模型不接收图片输入；仅保留文本报告。）"
@@ -694,9 +696,15 @@ def build_one(
     return page
 
 
-def workflow_runtimes(cfg: dict, default: llm.ModelProfile) -> dict[str, llm.ModelRuntime]:
-    """One runtime per workflow. ``builder.workflow_profiles`` overrides the default per page type."""
-    overrides = (cfg.get("builder") or {}).get("workflow_profiles") or {}
+def workflow_runtimes(cfg: dict, default: llm.ModelProfile,
+                      uniform: bool = False) -> dict[str, llm.ModelRuntime]:
+    """One runtime per workflow. ``builder.workflow_profiles`` overrides the default per page type.
+
+    ``uniform`` drops those overrides so one run can put every page type on the
+    same profile. config.yaml is shared state, so a single ablation must not
+    have to edit it — same reason planner has ``--base-url`` / ``--key-env``.
+    """
+    overrides = {} if uniform else (cfg.get("builder") or {}).get("workflow_profiles") or {}
     unknown = sorted(set(overrides) - set(skills.PAGE_WORKFLOWS))
     if unknown:
         raise ValueError(f"workflow_profiles names unknown workflows: {unknown}")
@@ -718,6 +726,17 @@ def main() -> None:
     parser.add_argument("--profile", help="config.yaml 中的 Builder profile")
     parser.add_argument("--workflows", default=str(skills.WORKFLOWS))
     parser.add_argument(
+        "--samples",
+        choices=skills.SAMPLE_MODES,
+        default="full",
+        help="样本消融臂：full=完整实例，mini=紧凑实例（代码页=单个作者层），none=只给 reference",
+    )
+    parser.add_argument(
+        "--uniform",
+        action="store_true",
+        help="忽略 config 的 workflow_profiles，所有页型都用 --profile 那一个",
+    )
+    parser.add_argument(
         "--aux-samples",
         action="store_true",
         help="实验开关：在 Main 之外注册可选 mini samples；默认关闭",
@@ -726,7 +745,7 @@ def main() -> None:
 
     cfg = config()
     profile = llm.resolve_builder_profile(cfg, args.profile)
-    runtimes = workflow_runtimes(cfg, profile)
+    runtimes = workflow_runtimes(cfg, profile, args.uniform)
 
     root = ROOT / "runs" / args.label
     briefs = json.loads((root / "briefs.json").read_text(encoding="utf-8"))
@@ -774,6 +793,10 @@ def main() -> None:
         "visionInput": profile.vision_input,
         "workflowProfiles": {name: rt.profile.id for name, rt in runtimes.items()},
         "auxiliarySamples": args.aux_samples,
+        "samples": args.samples,
+        # mini 臂里因为缺 mini 而仍用 full 的样本。统计时用到它们的页要剔除,
+        # 否则那几页混着对照条件。见 skills.MINI_FALLBACKS。
+        "miniFallbacks": dict(skills.MINI_FALLBACKS),
         "pages": [page.pid for page in pages],
         "startedAt": _now(),
     }
@@ -782,7 +805,8 @@ def main() -> None:
         encoding="utf-8",
     )
 
-    base = IDENTITY + "\n\n" + skills.anti_slop_block(workflow_root)
+    base = (IDENTITY + "\n\n" + skills.philosophy_block("page")
+            + "\n\n" + skills.anti_slop_block(workflow_root))
     shared = shared_preload(root, len(briefs))
     base += "\n\n" + shared
     chapters = chapter_preloads(root, len(briefs))
@@ -791,6 +815,7 @@ def main() -> None:
             name,
             workflow_root,
             include_aux=args.aux_samples,
+            samples=args.samples,
         )
         for name in skills.PAGE_WORKFLOWS
     }
@@ -817,6 +842,7 @@ def main() -> None:
         f"adapter={profile.adapter}，effort={profile.reasoning_effort}，"
         f"vision={'on' if profile.vision_input else 'off'}，"
         + "".join(f"{n}→{rt.profile.id}，" for n, rt in runtimes.items() if rt.profile.id != profile.id)
+        + f"samples={args.samples}，"
         + f"aux-samples={'on' if args.aux_samples else 'off'}\n"
         f"  完整 system {lengths[0]:,}–{lengths[-1]:,} 字符，"
         f"按 workflow 分 {len(groups)} 组共享\n"

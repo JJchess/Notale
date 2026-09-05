@@ -29,9 +29,16 @@ class WorkflowRegistryTests(unittest.TestCase):
                 block = skills.routed_workflow(name)
                 self.assertIn(f'<workflow_skill name="{name}"', block)
                 self.assertNotIn("<skill-dir>", block)
-                paths = re.findall(r"(/[^`\s()]+\.md)", block)
-                self.assertTrue(paths)
-                self.assertTrue(all(Path(path).is_file() for path in paths))
+                # 路径根只写一次，其余是相对 workflow 根的路径（省下每条重复
+                # 60 多字符的绝对前缀）。所以判据从「绝对路径存在」改成
+                # 「按 root 解析后存在」，并且 root 必须真的声明出来。
+                root = re.search(r'root="([^"]+)"', block)
+                self.assertIsNotNone(root)
+                rels = re.findall(
+                    r"(?:`|\()((?:references|samples)/[^`)]+\.md)(?:`|\))", block)
+                self.assertTrue(rels)
+                for rel in rels:
+                    self.assertTrue((Path(root.group(1)) / rel).is_file(), rel)
 
     def test_reference_taxonomy_is_non_overlapping(self):
         expected = {
@@ -52,7 +59,7 @@ class WorkflowRegistryTests(unittest.TestCase):
 
     def test_sample_catalog_describes_transferable_surface_not_topics_only(self):
         counts = {
-            "build-cover": 9,
+            "build-cover": 8,
             "build-page": 11,
             "build-interaction": 3,
             "build-code": 1,
@@ -71,11 +78,15 @@ class WorkflowRegistryTests(unittest.TestCase):
                 for row in catalog["samples"]:
                     self.assertIn(f"- `{row['id']}`", text)
                     section = text.split(f"- `{row['id']}`", 1)[1].split("\n- `", 1)[0]
-                    self.assertIn("Scene:", section)
-                    self.assertIn("Visual:", section)
-                    self.assertIn("Main:", section)
-                    if name == "build-interaction":
-                        self.assertIn("Interaction:", section)
+                    # 2026-09-05 删掉了 Scene 那一行（题材描述）。SKILL 正文明令
+                    # 「按证据几何选 Main，绝不按题材相似选」，而 Scene 恰恰只描述题材，
+                    # 留着等于一边禁止一边提供。判据改成：必须有可迁移描述和路径，
+                    # 且不得再出现题材行。
+                    self.assertNotIn("Scene:", section)
+                    self.assertIn(f"{row['category']}/{row['id']}", section)
+                    body = [l.strip(" -") for l in section.splitlines()
+                            if l.strip(" -") and ".md" not in l]
+                    self.assertTrue(body, f"{row['id']} 没有可迁移描述")
 
     def test_main_only_is_default_and_aux_minis_are_opt_in(self):
         for name in skills.PAGE_WORKFLOWS:
@@ -113,10 +124,65 @@ class WorkflowRegistryTests(unittest.TestCase):
         self.assertIn("four contrasting author layers", code)
 
 
+class SampleAblationTests(unittest.TestCase):
+    """三档样本预算必须真的改变 SKILL 正文,而不是静默不变。
+
+    一个悄悄没生效的消融臂等于偷偷跑了对照组,比直接崩掉更糟 —— 结论会反过来。
+    """
+
+    def test_none_removes_every_worked_sample(self):
+        for name in skills.PAGE_WORKFLOWS:
+            with self.subTest(name=name):
+                body = skills.routed_workflow(name, samples="none")
+                self.assertNotIn(".full.md", body)
+                self.assertNotIn(".mini.md", body)
+                self.assertNotIn("## Samples", body)
+                # reference 必须还在,否则这一臂连构造契约都没有
+                self.assertRegex(body, r"references/[a-z0-9-]+\.md")
+
+    def test_mini_swaps_mains_and_records_fallbacks(self):
+        skills.MINI_FALLBACKS.clear()
+        for name in skills.PAGE_WORKFLOWS:
+            with self.subTest(name=name):
+                body = skills.routed_workflow(name, samples="mini")
+                root = re.search(r'root="([^"]+)"', body).group(1)
+                for rel in re.findall(
+                        r"(?:`|\()((?:references|samples)/[^`)]+\.md)(?:`|\))", body):
+                    self.assertTrue((Path(root) / rel).is_file(), rel)
+        # build-cover 有三份 Main 至今没有 mini,必须被记下来而不是静默换掉菜单
+        self.assertIn("build-cover", skills.MINI_FALLBACKS)
+        self.assertIn("telescope-zoom", skills.MINI_FALLBACKS["build-cover"])
+
+    def test_code_mini_is_one_author_layer(self):
+        full = skills.routed_workflow("build-code", samples="full")
+        one = skills.routed_workflow("build-code", samples="mini")
+        self.assertIn("code-core-bundle.full.md", full)
+        self.assertIn("four contrasting author layers", full)
+        self.assertIn("code-core-bundle.one.md", one)
+        self.assertIn("one worked author layer", one)
+        bundles = skills.WORKFLOWS / "build-code/samples/bundles/code"
+        self.assertLess(
+            (bundles / "code-core-bundle.one.md").stat().st_size,
+            (bundles / "code-core-bundle.full.md").stat().st_size / 2,
+        )
+
+    def test_bad_mode_and_aux_conflict_are_refused(self):
+        with self.assertRaises(ValueError):
+            skills.routed_workflow("build-page", samples="tiny")
+        with self.assertRaises(ValueError):
+            skills.routed_workflow("build-page", samples="none", include_aux=True)
+
+    def test_mini_plus_aux_is_the_many_small_samples_arm(self):
+        body = skills.routed_workflow("build-page", samples="mini", include_aux=True)
+        self.assertIn("<aux_sample_catalog", body)
+        self.assertNotIn(".full.md", body)
+        self.assertGreaterEqual(body.count(".mini.md"), 4)
+
+
 class BundleTests(unittest.TestCase):
     def test_generated_bundles_are_current_and_keep_visual_css(self):
         rendered = sample_bundles.render_all()
-        self.assertEqual(len(rendered), 43)
+        self.assertEqual(len(rendered), 42)
         for path, expected in rendered.items():
             with self.subTest(path=path):
                 self.assertEqual(path.read_text(encoding="utf-8"), expected)

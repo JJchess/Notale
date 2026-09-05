@@ -115,6 +115,74 @@ builder:
       adapter: chat
       reasoning_effort: high
       vision_input: false
+    # 2026-09-04 探这条中转线（api.999555999.com，与 PARATERA 不同的账号/路由）。
+    # 逐条量的，不是抄的：
+    #   /v1/models          4 个模型，gemini-3.8-flash 在表上
+    #   tool_calls          正常返回 function 调用，finish_reason=tool_calls
+    #   图片输入            真截图 166KB PNG 读得出内容 → vision_input: true
+    #                       （1×1 手搓 PNG 会回 400 "Unable to process input image"，
+    #                        那是图坏了，不是路由不支持——别据此判 false）
+    #   reasoning_effort    接受，不报错
+    #   max_tokens=128000   接受
+    #   前缀缓存            **在生效，但报账口径和 paratera 相反**（2026-09-04 量的）。
+    #                       没有 prompt_tokens_details，所以 cache_reported=false —— 
+    #                       但那只是「没有单独字段」，不是「没缓存」。
+    #                       实测同一段 31,318 token 的前缀：冷 31,318 → 热 2,679（省 91%）；
+    #                       只改前缀结尾一个字仍是 2,679，只改开头立刻回 31,319。
+    #                       即命中的部分**直接从 prompt_tokens 里扣掉**了
+    #                       （响应 id 是 msg_01… 的 Anthropic 形状，那边 input_tokens
+    #                        本就不含 cache read）。
+    #   ⚠ 口径不可比        paratera 的 tok_in 是毛数、另报 tok_cached；
+    #                       这条线的 tok_in 已是净数。跨路由比 tok_in 大小是错的。
+    #   ⚠ 剥掉 thought_signature   这条线把 Gemini 3 工具调用附带的
+    #                       extra_content.google.thought_signature 整个剥掉了（tool_call 只剩
+    #                       id/type/function，id 还是 toolu_ 形态）。Gemini 3 要求回传时带上它，
+    #                       缺了会以 MALFORMED_FUNCTION_CALL 拒掉模型的下一次工具调用——
+    #                       而这条线把它报成 finish_reason=stop + 空正文。2026-09-04 实测：
+    #                       同一份缺签名的历史，Google 官方回 MALFORMED_FUNCTION_CALL 3/5，
+    #                       这条线回「stop、无工具、正文 0 字」2/5。首轮 5 页里 4 次「正文为空」
+    #                       就是这个，不是思考吃光了预算。harness 修不了：签名在上游就没了。
+    #                       多轮工具循环别走这条线跑 Gemini 3；走 gemini38-google-*。
+    # 这条线不支持 /v1/responses（见文件顶部那段账），所以 adapter 必须是 chat。
+    gemini38-flash-low:
+      model: gemini-3.8-flash
+      base_url: https://api.999555999.com/v1
+      api_key_env: ROUTER_GEMINI_API_KEY
+      adapter: chat
+      reasoning_effort: low
+      vision_input: true
+    # 2026-09-04 Google 官方端点（generativelanguage.googleapis.com 的 OpenAI 兼容层）。
+    # 和上面那条中转的区别是实测出来的，不是猜的：
+    #   reasoning_effort  **真生效且真校验**。传 banana 回 400 并列出合法值：
+    #                     high / low / medium / minimal / none。中转那条五档一个都不认。
+    #   缓存报账          prompt_tokens 是毛数，另给 prompt_tokens_details.cached_tokens
+    #                     （实测 86,478 中命中 81,885）。这正是 _adapt_chat 已经在读的字段，
+    #                     所以 cache_reported=true、tok_cached 能记上，不用改代码。
+    #                     另有显式缓存 createCachedContent（原生端点）能 100% 确定性命中，
+    #                     隐式缓存则是尽力而为——四次里有两次没命中。目前两条都没接。
+    #   工具调用/视觉     都通；工具调用会额外带 google.thought_signature。
+    #   原生 thinking     generationConfig.thinkingConfig.thinkingBudget（v1beta 没有
+    #                     thinkingLevel，传了回 Unknown name）。budget=0 关不掉思考，
+    #                     它是上限不是目标。走兼容层时用 reasoning_effort 就够了。
+    gemini38-google-low:
+      model: gemini-3.8-flash
+      base_url: https://generativelanguage.googleapis.com/v1beta/openai
+      api_key_env: GEMINI_API_KEY
+      adapter: chat
+      reasoning_effort: low
+      vision_input: true
+    # 2026-09-04 试过 gemini38-google-low-cached（显式前缀缓存），**已删**。
+    # 同一份 27 页规划实测：隐式 $3.264（未命中 55/215、命中率 74%），
+    # 显式 $6.114（未命中 0/228、命中率 24%）——贵 87%。
+    # 显式缓存把命中数钉死在静态前缀那 8k，剩下的不再走隐式缓存，
+    # 而真正值钱的是每页那段不断增长的对话前缀。别再试第二遍，账见 core/llm.py。
+    gemini38-google-medium:
+      model: gemini-3.8-flash
+      base_url: https://generativelanguage.googleapis.com/v1beta/openai
+      api_key_env: GEMINI_API_KEY
+      adapter: chat
+      reasoning_effort: medium
+      vision_input: true
     glm53-flash-high:
       model: GLM-5.3-Flash
       base_url: https://llmapi.paratera.com/v1
