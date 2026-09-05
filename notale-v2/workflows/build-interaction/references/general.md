@@ -45,7 +45,7 @@ Use real units and valid ranges. State whether a model is calibrated, approximat
 
 ## Make the learning world the interface
 
-The stage is not an illustration above a control panel. It is the place where action, state, and evidence meet.
+The stage is not an illustration with its inputs set apart from it. It is the place where action, state, and evidence meet.
 
 - Give the model world the largest uninterrupted region.
 - Put each control beside the variable or object it changes.
@@ -268,7 +268,7 @@ Define:
 - units, domain, baseline, aggregation, missing values, and uncertainty;
 - fixed comparison scales across attempts;
 - prediction, threshold, target, or baseline overlays;
-- exact DOM readout and fallback table;
+- exact DOM values and fallback table;
 - bounded history and named attempts.
 
 Keep controls near the feature they change. Highlight new evidence without erasing the baseline. If domains change, expose that change rather than animating an illusion. Hover remains supplemental; mirror selected marks and exact values in semantic DOM.
@@ -382,7 +382,7 @@ On teardown, disconnect observers, remove listeners, release pointer capture, de
 
 | Failure | Cause | Repair |
 |---|---|---|
-| Control-panel demo | Controls and readouts surround a passive illustration | Move action, evidence, and state into one dominant world |
+| Instrument demo | Inputs and values surround a passive illustration | Move action, evidence, and state into one dominant world |
 | Slider theater | A parameter changes appearance but not measured consequence | Connect it to a model variable, evidence, and next action |
 | Hover museum | Selection only repeats labels | Expose local mechanism, operation, or comparison |
 | Animated answer | The learner watches after an answer | Preserve prediction and let conditions affect model-derived evidence |

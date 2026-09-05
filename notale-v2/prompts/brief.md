@@ -1,4 +1,4 @@
-构建互动讲义《{query}》的 `{pid}.html`。
+为《{query}》做 `{pid}.html` 这一页。
 
 工作目录是当前 run 的 `pages/`；路径均相对于它。共 {total} 页。
 

@@ -47,7 +47,7 @@ A **reference view** gives a stable map that can be pointed into later. It favor
 
 An **intuition view** makes a mechanism directly visible. It favors recognizable functional parts, sections, flows, forces, accumulation, and a simplified spatial metaphor.
 
-Choose one language as primary. If both are necessary, give one the dominant stage and use the other as a compact locator or legend. Do not create an unresolved hybrid whose boxes look schematic while its connectors, perspective, and textures imply a physical scene.
+Choose one language as primary. If both are necessary, give one the dominant stage and use the other as a compact locator or legend. Do not create an unresolved hybrid whose shapes look schematic while its connectors, perspective, and textures imply a physical scene.
 
 For intuition views, draw the mechanism rather than a diagram about the mechanism:
 
@@ -69,7 +69,7 @@ Allocate space in this order:
 4. authored-state or playback controls;
 5. supporting context.
 
-The evidence stage should read as one world, not as a collection of independent widgets. Place status and readouts inside or immediately beside the region that produces them. Keep the claim close enough to be tested against the evidence without eye travel across unrelated panels.
+The evidence stage should read as one world, not as a collection of independent parts. Place status and values inside or immediately beside the region that produces them. Keep the claim close enough to be tested against the evidence without eye travel across unrelated panels.
 
 Use geometry to encode relations:
 
@@ -152,7 +152,7 @@ Do not add a second renderer to compensate for an unclear representation. Prefer
 - Group entities by semantic role and give each a stable ID.
 - Keep connector paths behind nodes and annotations above evidence.
 - Use explicit `<tspan>` lines for controlled wrapping; do not depend on implicit SVG text wrap.
-- Measure or conservatively budget the longest label before setting boxes.
+- Measure or conservatively budget the longest label before setting node sizes.
 - Render state through keyed groups rather than rebuilding anonymous shapes in a changing order.
 
 ### Canvas and p5 construction
@@ -187,7 +187,7 @@ const pageState = {
 };
 ```
 
-Store relations, labels, ordering, geometry, and named states outside renderer nodes. Derive DOM, SVG, Canvas, and readouts from this state. Do not recover truth from CSS classes, partially animated transforms, pixels, or sprite order.
+Store relations, labels, ordering, geometry, and named states outside renderer nodes. Derive DOM, SVG, Canvas, and displayed values from this state. Do not recover truth from CSS classes, partially animated transforms, pixels, or sprite order.
 
 Choose logical scene dimensions independent of CSS size. Compute one logical-to-host transform for marks, overlays, and optional inspection. Use the actual rendered host rectangle for resize and coordinates; do not combine CSS scaling with a second undocumented correction.
 
@@ -252,7 +252,7 @@ Hover, focus, selection, pan, zoom, or filtering may reveal predetermined detail
 |---|---|---|
 | Component cabinet | Independent regions replaced one relationship | Recompose around one evidence stage and shared geometry |
 | Label fog | Text compensates for weak objects or no callout lanes | Improve silhouettes, align callouts, and reserve label space |
-| Diagram about a mechanism | Boxes name parts but do not expose operation | Draw functional parts, changed state, path, and outcome |
+| Diagram about a mechanism | Labels name parts but do not expose operation | Draw functional parts, changed state, path, and outcome |
 | Primitive soup | Generic shapes have no subject identity | Build functional silhouettes and subject-derived geometry |
 | Connector collisions | Paths were drawn after layout without reserved lanes | Recalculate entity, label, and path bounds together |
 | Reveal theater | Motion delays evidence without changing interpretation | Show the decisive state directly and retain only useful motion |

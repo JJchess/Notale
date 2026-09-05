@@ -50,7 +50,7 @@ _CHECK_USE_ITEMS = {
         "result; decoration must not imitate the algorithm.",
     ),
     "build-page": (
-        "Check that there is one main evidence field, not repeated process boxes or a set of cards.",
+        "Check that there is one main evidence field, not several equal parts.",
         "Recompute at least one derived value from the page's own data and formulas.",
         "The same data must agree across prose, chart, and annotations.",
     ),
@@ -173,6 +173,25 @@ def _is_workflow_resource(path: Path, resource_root: Path | None) -> bool:
             or (len(rel.parts) >= 3 and rel.parts[:2] == ("samples", "bundles"))
         )
     )
+
+
+SAMPLE_SHOTS = False  # 消融开关（builder --sample-shots）：读 Main bundle 时附上该 sample 的多态拼图
+TEXT_REPORT = False   # 实验开关（builder --notes cap|notes）：Check 报告多报一行画面字数/讲稿字数
+
+
+def _sample_sheet(path: Path, resource_root: Path | None) -> Path | None:
+    """`samples/bundles/<cat>/<id>.<variant>.md` → `samples/<cat>/<id>/shots.png`，没有就 None。"""
+    if not SAMPLE_SHOTS or resource_root is None:
+        return None
+    try:
+        rel = path.resolve().relative_to(resource_root.resolve())
+    except (OSError, ValueError):
+        return None
+    if len(rel.parts) != 4 or rel.parts[:2] != ("samples", "bundles"):
+        return None
+    sample_id = path.name.split(".")[0]
+    sheet = resource_root / "samples" / rel.parts[2] / sample_id / "shots.png"
+    return sheet if sheet.is_file() else None
 
 
 def _visual_main_sample(path: Path, resource_root: Path | None) -> bool:
@@ -343,6 +362,8 @@ def _selfcheck(cwd: Path, page: str, after=(), shot=False, crop=None, zoom=2) ->
         cmd += ["--crop", ",".join(str(int(v)) for v in crop), "--zoom", str(int(zoom))]
     for js in after or ():
         cmd += ["--after", js]
+    if TEXT_REPORT:
+        cmd += ["--text-report"]
     r = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, timeout=SHOT_TIMEOUT)
     return ((r.stdout or "") + (("\n[stderr]\n" + r.stderr) if r.stderr else "")).strip() \
         or f"(自检没有输出,退出码 {r.returncode})"
@@ -490,10 +511,16 @@ def _dispatch(name: str, a: dict, cwd: Path, resource_root: Path | None) -> str 
                 if _visual_main_sample(p, resource_root)
                 else ""
             )
-            return (guidance
+            body = (guidance
                     + f"（工作流资源全文开始：{p.name}，共 {n} 行）\n"
                     + text
                     + f"\n（工作流资源全文结束：{p.name} · EOF）")
+            sheet = _sample_sheet(p, resource_root)
+            if sheet is None:
+                return body
+            shot = _image(sheet)
+            return Out(body + "\n\n随附这个 sample 的多态截图拼图（按编号顺序是它的真实状态序列）："
+                       + shot.text, shot.images)
         lines = p.read_text(encoding="utf-8", errors="replace").split("\n")
         off = max(0, int(a.get("offset") or 1) - 1)
         lines = lines[off:off + int(a.get("limit") or 2000)]

@@ -51,7 +51,7 @@ Before choosing, name the one visual carrier this page relies on. Select the Mai
   - a legible settled network emerges from constrained growth rather than undirected particles.
   `<skill-dir>/samples/bundles/generative/mycelium-growth.full.md`
 - `tactile-grid`
-  - material height, light, and wave response make a tactile WebGL field without dashboard chrome.
+  - material height, light, and wave response make a tactile WebGL field without interface chrome.
   `<skill-dir>/samples/bundles/generative/tactile-grid.full.md`
 
 Follow the selected reference as the construction contract. Preserve the supplied chassis, theme interface, page brief, and output path.

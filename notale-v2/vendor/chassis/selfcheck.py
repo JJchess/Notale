@@ -45,16 +45,18 @@ SHOT_W, SHOT_H = 800, 450       # 截图尺寸,只影响截图不影响测量
 # 版面密度的下限与区间。实测:Opus 那条线占用比 57–69%(nn-06 69%、nn-11 63%)、
 # 文本块中位 29–62;我们三个模型占用比 22–44%,ape-ds3 有 23/50 页低于 20%。
 # 45 是留了余量的保守值;文本块超 80 的页人眼一看就太满(nn-10 有 4 页)。
-OCC_FLOOR = 45
-TEXT_LO, TEXT_HI = 20, 70
+# OCC_FLOOR / TEXT_LO / TEXT_HI 2026-09-05 删 —— 见 report() 里那段注释。
 
+# 2026-09-05 修:这段是 r-string,里面写 `\\(` 到了 JS 里是「转义的反斜杠 + 括号」,于是
+# alpha() 的正则永远匹配不到 rgb(...) —— 只有底色/描边的容器一直被当成"没有容器",报告里
+# "容器 0 个"出现在满屏卡片的页上。同类的 `\\s+` 也一并修。修前后:史记 C-02 容器 2 → 8。
 PROBE = r"""() => {
   const num = v => { const f = parseFloat(v); return Number.isFinite(f) ? f : 0; };
   const W = %d, H = %d;
   const clipped = [], escaped = [], sizes = [];
   const boxes = [], texts = [];
   const alpha = c => {
-    const m = /rgba?\\(([^)]+)\\)/.exec(c || '');
+    const m = /rgba?\(([^)]+)\)/.exec(c || '');
     if (!m) return 0;
     const p = m[1].split(',').map(x => parseFloat(x));
     return p.length > 3 ? p[3] : 1;
@@ -72,7 +74,7 @@ PROBE = r"""() => {
         || (cs.overflowY !== 'visible' && el.scrollHeight > el.clientHeight + 1);
   };
   const label = el => {
-    const c = (el.className || '').toString().trim().split(/\\s+/)[0];
+    const c = (el.className || '').toString().trim().split(/\s+/)[0];
     return el.tagName.toLowerCase() + (el.id ? '#' + el.id : (c ? '.' + c : ''));
   };
 
@@ -253,7 +255,7 @@ PROBE = r"""() => {
   const contrast = c => { const l = lum(c), a = Math.max(l,bgL), b2 = Math.min(l,bgL);
                           return (a+.05)/(b2+.05); };
   const mainContrast = contrast(stageCS.color);
-  let minorN = 0, minorChars = 0, allChars = 0;
+  let minorN = 0, minorChars = 0, allChars = 0, allCjk = 0;
   const minorAt = [];
   for (const el of stage.querySelectorAll('*')) {
     if (el.children.length) continue;
@@ -262,12 +264,18 @@ PROBE = r"""() => {
     const cs3 = getComputedStyle(el), r3 = el.getBoundingClientRect();
     if (cs3.display === 'none' || cs3.visibility === 'hidden' || r3.width <= 0) continue;
     allChars += own.length;
+    allCjk += (own.match(/[\u4e00-\u9fff]/g) || []).length;
     if ((parseFloat(cs3.fontSize)||0) <= 15 && contrast(cs3.color) < mainContrast*0.75) {
       minorN++; minorChars += own.length;
       if (minorAt.length < 3) minorAt.push(Math.round(r3.left)+','+Math.round(r3.top)
                                            +' «'+own.slice(0,18)+'»');
     }
   }
+
+  // 讲稿区:#stage 之外的 <aside class="notes" hidden>。不渲染,所以上面所有几何量都不含它;
+  // 这里单独数它的字,和画面字数并排报 —— 「画面 ≤ N 字,其余进讲稿」这条约束要有两个数才能看。
+  const notesEl = document.querySelector('aside.notes');
+  const notesChars = notesEl ? (notesEl.textContent || '').replace(/\s+/g, '').length : 0;
 
   // 粗侧边条:**只算卡片/callout**,即有底色或圆角的容器。表格底边线和图表轴线
   // 也是单边描边,但它们合法 —— 第一稿没收窄口径,46 处里混了大量误报。
@@ -291,6 +299,31 @@ PROBE = r"""() => {
     }
   }
 
+  // 容器填充率:带底色/描边/阴影、面积 ≥5%% 版心的容器里,叶子内容(文字/媒体/控件)的包围盒占容器面积的比例,
+  // 以及内容底边到容器底边的空隙占容器高度的比例。抓的是「字删了盒子没缩」的半空卡片。
+  const fills = [];
+  for (const el of stage.querySelectorAll('*')) {
+    const cs5 = getComputedStyle(el), r5 = el.getBoundingClientRect();
+    if (cs5.display === 'none' || cs5.visibility === 'hidden' || num(cs5.opacity) <= .05) continue;
+    const a5 = r5.width * r5.height; if (a5 < W * H * 0.05 || a5 > W * H * 0.9) continue;
+    const boxy5 = alpha(cs5.backgroundColor) > 0.02 || (num(cs5.borderTopWidth) > 0 && alpha(cs5.borderTopColor) > 0.02)
+                  || (cs5.boxShadow && cs5.boxShadow !== 'none');
+    if (!boxy5) continue;
+    let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9, n5 = 0;
+    for (const c of el.querySelectorAll('*')) {
+      const cc = getComputedStyle(c); if (cc.display === 'none' || cc.visibility === 'hidden') continue;
+      const tg = c.tagName.toLowerCase(); let own5 = '';
+      for (const nd of c.childNodes) if (nd.nodeType === 3) own5 += nd.textContent;
+      if (!own5.trim() && !['svg','canvas','img','input','button','select'].includes(tg)) continue;
+      const rr = c.getBoundingClientRect(); if (rr.width < 2 || rr.height < 2) continue;
+      x0 = Math.min(x0, rr.left); y0 = Math.min(y0, rr.top); x1 = Math.max(x1, rr.right); y1 = Math.max(y1, rr.bottom); n5++;
+    }
+    const fill = n5 ? ((x1 - x0) * (y1 - y0)) / a5 : 0;
+    const gap = n5 ? (r5.bottom - y1) / r5.height : 1;
+    fills.push({tag: label(el), at: at(r5), fill: Math.round(fill * 100) / 100, gap: Math.round(gap * 100) / 100,
+                area: Math.round(a5 / (W * H) * 100) / 100});
+  }
+
   const rootCS = getComputedStyle(document.documentElement);
   const scale = new Set();
   for (const sheet of document.styleSheets) {
@@ -311,6 +344,8 @@ PROBE = r"""() => {
   return {theme: {padX: padX, stagePad: stagePad},
           subject: subject, scale: [...scale].sort((a,b)=>a-b), offScale: offScale,
           minor: {n: minorN, chars: minorChars, all: allChars, at: minorAt},
+          text: {chars: allChars, cjk: allCjk, notes: notesChars},
+          fills: fills.slice(0, 30),
           rails: railAt,
           clipped: clipped.slice(0, 25), escaped: escaped.slice(0, 25), sizes,
           canvases: document.querySelectorAll('canvas').length,
@@ -461,7 +496,7 @@ def _shrink(path: Path) -> None:
         im.resize((SHOT_W, SHOT_H), Image.LANCZOS).save(path)
 
 
-def report(name: str, states: list) -> None:
+def report(name: str, states: list, text_report: bool = False) -> None:
     """把一页的每个状态各打一段。初始状态不加标题,`--after` 的状态标出来。"""
     print(f"\n── {name}")
     for st in states:
@@ -514,78 +549,28 @@ def report(name: str, states: list) -> None:
         if rails:
             print(f"   侧边条 有底色或圆角的容器上有 {len(rails)} 处单边粗描边："
                   + "、".join(rails))
+        # 画面字数 / 讲稿字数 —— 只在 --text-report 时打印,基线报告一个字节不变。
+        # 2026-09-05 实测:生成页每页可见字符中位 550–750,金样本中位 206;这是 G3「字太密」的数。
+        tx = probe.get("text") or {}
+        if text_report and tx:
+            print(f"   文字 画面 {tx.get('chars', 0)} 字（汉字 {tx.get('cjk', 0)}）· 讲稿 {tx.get('notes', 0)} 字")
         scale = probe.get("scale") or []
         off = probe.get("offScale") or 0
         if scale and sizes:
             print(f"   字阶 {off}/{len(sizes)} 个文字元素不在主题声明的档位上"
                   f"（{'/'.join(str(x) for x in scale)}px）")
-        # 密度 —— 「版面不空不挤」以前只能靠看截图判断,这几个数把它变成可读的量。
-        #
-        # **原来是「只陈述,不判定」,现在给下限。** 理由是量出来的:24 轮统一量完之后,
-        # 占用比是离 Opus 最远的一项。而这条项目一贯的规律是:
-        # **有可算的数的约束起作用,没数的不起作用** —— 字号地板给了数,
-        # 不达标率 66%→20%;「不要太满」写在四处、七轮零改变。
-        # 「填满版心」到今天为止一直是后者:契约里只有形容词,没有一个数。
-        #
-        # 建页的 agent 每轮本来就跑了 219–357 次 selfcheck —— **仪器早在它们手里,
-        # 缺的只是目标**。所以判定放在这里,不放在契约里当一句要求。
-        occ = probe.get("occupied")
-        if occ is not None:
-            cells = probe.get("cells") or 1
-            print(f"   密度: 画面占用 {occ * 100 // cells}%"
-                  f"(32×18 格,铺满层不计)   容器 {probe.get('boxes', 0)} 个"
-                  f"   文本块 {probe.get('texts', 0)} 个")
-            occ_pct = occ * 100 // cells
-            n_text = probe.get("texts", 0)
-            # **2026-08-27:这两条从 ✗ 降成参考行。** 上面那段账没有删,它记的是
-            # 「为什么当初给了数」;下面记的是「为什么它不能是这一页的合格线」。
-            #
-            # **2026-08-29:下面这段账的前提变了一半。** 规格塌缩成「标签+一句话」之后,
-            # 内容量归建页 agent 定(brief:「其余由你定,不是漏写」),所以「出路不在它手里」
-            # 已经不成立,提示语改成了「值得看一眼是不是该多讲一层」。
-            # 但**这条仍然不升级为 ✗** —— 下面记的那个代价与规格形态无关,照旧成立。
-            #
-            # 出路不在建页 agent 手里。原文写着「要么把该讲的讲透,要么和相邻页合并」——
-            # 内容量由 pNN.md 定死,合并页是 planner 的决定,**两条它都无权执行**。
-            # 而 `prompts/brief.md` 要求「反复改到不再报 ✗ 为止」,于是这个循环在
-            # 每轮 3–7 页上根本无法终止。
-            #
-            # 代价按模型分裂,这才是真正的问题:
-            #   AWS-GPT-5.6-Sol       无视这条,照常收尾 —— 20 页 19.2 分 / 1,343 万 tok
-            #   AWS-Claude-Sonnet-5   照办 —— page-09 打满 100 步,其中 Patch 39 次、
-            #                         整页却只有 3 处真 ✗;它在步 61/91/100 的自述是
-            #                         「调整字号间距边际效益递减」「initial 提升到 59%
-            #                         了但出现叠压」「144 个文本块…让我数一下」。
-            #                         92 分钟 5,195 万 tok 只交付 8 页。
-            # **一条只有肯违反指令的模型才能通过的闸,不是闸,是陷阱。**
-            #
-            # 另外它和 system 块自相矛盾,这一点 core/builder.py 早就记下了:
-            # `page-rhythm` 写着「允许有意保持内容较少的页面」,这里判它不合格。
-            #
-            # 数字继续打印 —— 它仍然是有用的体检项(plan_quality 和 check_palette
-            # 读的是 JSON 里的 occupied/cells,不受影响),只是判归判、报归报。
-            # **2026-08-28 试过把这条改成几何判定,不成立,已撤。留着免得再推一遍。**
-            # 当时的想法是:低占用未必是内容不够,可能是主内容区没拿到 `flex:1`、
-            # 子块停在自然高度、底部空一片 —— 那样出路就在建页 agent 手里,该报 ✗。
-            # 支持它的数据是「缺 `flex:1` 的 4 页占用比均值 17、其余 16 页 49」。
-            #
-            # **那个 17 vs 49 是假的。** 它来自 grep 每页的内联 `<style>`,而版式类
-            # (`.layout-cover` 那些)定义在 `theme.css` 里,grep 看不到 ——
-            # 量的是代理不是产物。改成渲染后读 computed style 再量,
-            # sonnet-full2-20260828 的 20 页**全部** flex-grow ≥ 1、
-            # 内容底边离版心底边的余量**全部是 0px**,新判据 0/20 命中,已删。
-            #
-            # 也就是说:`#stage` 每一页都撑满了,空是空在**那个撑满的容器内部**;
-            # 没有比占用比自己更便宜的几何代理。要再动这条,得先有新证据。
-            # (同一批页还测了:规格长度 vs 占用比 r = -0.07,内容量也不解释它。)
-            if occ_pct < OCC_FLOOR:
-                print(f"   参考 密度偏低:占用比 {occ_pct}% < 目标 {OCC_FLOOR}%。"
-                      f"**这是参考项,不是失败项**,不要为它反复调字号、间距或加装饰。"
-                      f"但内容量现在归你定,值得看一眼:是不是该把这一页的道理多讲一层")
-            if n_text and not (TEXT_LO <= n_text <= TEXT_HI):
-                which = "偏少" if n_text < TEXT_LO else "偏多"
-                print(f"   参考 文本块 {n_text} 个,{which}(参考区间 {TEXT_LO}–{TEXT_HI}),"
-                      f"同上,不是失败项")
+        # 2026-09-05 删掉了这里的「密度/占用比/文本块」三行。占用比数的是 32×18 格被内容盖住的比例,
+        # 同样的内容铺满整页比集中在一处得分高一倍 —— 它在奖励"铺开"、惩罚"集中",正是半空卡片与
+        # 碎留白的来源;文本块区间同理在鼓励多块文字。数字仍在 JSON 里(occupied/cells/texts),
+        # 只是不再念给模型听。占用比曾是这个仓库追得最狠的一个数,历史见 git log。
+        # 取而代之的构图数只有两个:上面的「主体」,和下面的「容器填充率」。
+        fl = probe.get("fills") or []
+        if fl:
+            half = [f for f in fl if f["fill"] < 0.45 or f["gap"] > 0.35]
+            where = "、".join(f"{f['tag']}@{f['at'][0]},{f['at'][1]} 填充 {int(f['fill']*100)}%" for f in half[:3])
+            print(f"   区块 {len(fl)} 个(带底色或描边,≥5% 版心),其中 {len(half)} 个半空(内容填充 <45% 或底部空 >35%)"
+                  + (f":{where}" if where else "")
+                  + ("。字删了区块要跟着缩:合并、去掉或改自然高度,把留白集中到主体周围" if half else ""))
         # 主题有没有生效。**报参考,不报 ✗** —— 页面无权改 `assets/`(brief 明令),
         # 报 ✗ 就复制了占用比那个陷阱(它降级为参考的理由正是「出路不在建页 agent
         # 手里」)。这条的代价量过:theme.css 首行残留一个 markdown 围栏,浏览器把它
@@ -600,19 +585,21 @@ def report(name: str, states: list) -> None:
                   f"--pad-x={th['padX']} —— 查一下本页 <style> 是不是覆盖了 "
                   f"`#stage` 的 padding")
 
-            flags = []
-            if probe.get("overlap"):
-                flags.append(f"文字叠压 {probe['overlap']} 处")
-            # **侵入必须打印出来。** 这一段浏览器侧一直在算,Python 这边却从没输出 ——
-            # 于是拿 `grep 侵入` 去数的人得到的是 0,而那不是「量出来的 0」,是没量。
-            # 我自己就据此报过「侵入 70 → 0,问题修好了」,而新那两轮根本没被测过。
-            # 采集了不打印的指标,比没有这个指标更坏:它会让人以为已经看过了。
-            if probe.get("intrude"):
-                flags.append(f"侵入页眉页脚带 {len(probe['intrude'])} 处")
-            if probe.get("tiny"):
-                flags.append(f"占比 <1% 的小容器 {probe['tiny']} 个")
-            if flags:
-                print("        " + " / ".join(flags))
+        # 2026-09-05 修:这一块原来缩进在上面的 elif 里,只有版心 padding 为 0 时才会打印 ——
+        # 叠压/侵入/小容器三条一直被静默吞掉。现在无条件打印。
+        flags = []
+        if probe.get("overlap"):
+            flags.append(f"文字叠压 {probe['overlap']} 处")
+        # **侵入必须打印出来。** 这一段浏览器侧一直在算,Python 这边却从没输出 ——
+        # 于是拿 `grep 侵入` 去数的人得到的是 0,而那不是「量出来的 0」,是没量。
+        # 我自己就据此报过「侵入 70 → 0,问题修好了」,而新那两轮根本没被测过。
+        # 采集了不打印的指标,比没有这个指标更坏:它会让人以为已经看过了。
+        if probe.get("intrude"):
+            flags.append(f"侵入页眉页脚带 {len(probe['intrude'])} 处")
+        if probe.get("tiny"):
+            flags.append(f"占比 <1% 的小容器 {probe['tiny']} 个")
+        if flags:
+            print("        " + " / ".join(flags))
         if st["png"]:
             print(f"   截图 {st['png']}  ({SHOT_W}×{SHOT_H},约 {SHOT_W*SHOT_H//750} token)")
         if st.get("crop"):
@@ -636,6 +623,8 @@ def main():
                          "每个状态各出一张 -crop.png")
     ap.add_argument("--zoom", type=int, default=2, help="裁图放大倍数,默认 2")
     ap.add_argument("--json", action="store_true")
+    ap.add_argument("--text-report", action="store_true",
+                    help="多报一行「画面 N 字 · 讲稿 K 字」(builder --notes 臂用);默认不报")
     a = ap.parse_args()
 
     files = a.pages or sorted(str(p) for p in Path(".").glob("page-*.html"))
@@ -666,7 +655,7 @@ def main():
         return 0
 
     for name, states in res:
-        report(name, states)
+        report(name, states, a.text_report)
     return 0
 
 

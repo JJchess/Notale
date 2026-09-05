@@ -14,7 +14,7 @@ Before CSS, commit to:
 
 Build color by role: source the background from the subject or supplied image; keep text and structural lines distinct
 after contrast loss; use one accent for one focal state and extra hues only for stable, visibly labelled categories;
-keep neutrals in one temperature; never imply precision with arbitrary readouts or colors; name tokens by meaning
+keep neutrals in one temperature; never imply precision with arbitrary numbers or colors; name tokens by meaning
 (`--cause`, `--observed`, `--uncertain`), not appearance.
 
 Spend boldness on the explanatory visual or signature, not every surface. Keep one light/dark family and invert only
@@ -22,6 +22,5 @@ for a real transition. Remove effects that compete with labels, diagrams, contro
 only after those work. Keep shadows quiet and component states in the same material language. One-off spectacle belongs
 to the page, not the shared theme.
 
-A signature must embody the subject and aid explanation. A glowing orb, generic grid, floating particles, three equal
-cards, or a large decorative number is not a direction by itself. Express decisions only through `theme.css` and its
+A signature must embody the subject and aid explanation. A glowing orb, generic grid, floating particles, or a large decorative number is not a direction by itself. Express decisions only through `theme.css` and its
 interface comment; do not output a separate essay.

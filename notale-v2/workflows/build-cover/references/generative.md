@@ -40,7 +40,7 @@ Parameters should change how the system behaves:
 - probabilities change branching or transition likelihood;
 - thresholds change when a phase or rule activates.
 
-Do not expose a control merely because a constant exists. Color pickers, particle size, and effect toggles are shallow unless they change the concept. Covers do not need parameter panels or seed navigation unless explicitly requested.
+Do not expose a control merely because a constant exists. Color pickers, particle size, and effect toggles are shallow unless they change the concept. Covers do not need parameter inputs or seed navigation unless explicitly requested.
 
 ## Choose renderer and lifecycle
 
@@ -193,4 +193,4 @@ For a few DOM/SVG title tracks, use CSS or WAAPI. When a host-provided timeline 
 - Measure the representative worst-case frame; do not rely on assumed particle limits.
 - Confirm reset replaces the complete state and does not leave old buffers, loops, canvases, or listeners.
 - Replay or remount the title choreography and confirm no second timeline or draw loop remains active.
-- Confirm the result communicates the conceptual rule without requiring auxiliary explanation or a control panel.
+- Confirm the result communicates the conceptual rule without requiring auxiliary explanation or separate controls.

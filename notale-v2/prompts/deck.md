@@ -1,4 +1,4 @@
-一次规划并完整交付《{query}》这套 {minutes} 分钟互动讲义。
+一次规划并完整交付《{query}》这套 {minutes} 分钟的内容。
 - 读者：{audience}
 - 场合：{scenario}
 内容深度、术语、例子、互动与视觉必须适配读者和场合。
@@ -24,7 +24,7 @@
 
 {philosophy}
 
-`{minutes}` 是整套讲义的总时长。把 `{query}` 给出的主题和大纲当作范围边界，按重要性分配页面；
+`{minutes}` 是整套内容的总时长。把 `{query}` 给出的主题和大纲当作范围边界，按重要性分配页面；
 一个算法或一个概念通常 3–5 页，枝节不升格为章节，只有大纲的顶层主题才可插标题页。
 不为凑时长或填满画布扩写、拆页。
 
@@ -58,7 +58,7 @@
 
 ## CSS 边界
 
-只生成共享 token、区域关系和复用组件；不生成页眉页脚、`mount()`、utility 类或标题位置。
+只生成共享 token 与区域关系；不生成页眉页脚、`mount()`、utility 类或标题位置。
 单页专用的尺寸、gap 和 flex 份额留给建页 agent 内联。
 
 ## 固定版心
@@ -68,7 +68,7 @@
     :root { --pad-x: 56px; --pad-y: 28px; }
     #stage { display: flex; flex-direction: column; padding: var(--pad-y) var(--pad-x); }
 
-逻辑画布 {canvas_w}×{canvas_h}；顶层区块用固定高度或 flex 份额，主区 `flex:1`。
+逻辑画布 {canvas_w}×{canvas_h}；只有主区 `flex:1`，其余区块自然高度，剩余空间留作主区周围的整块留白。
 `base.css` 已负责缩放、reset、`[hidden]`、`.sr-only/.min0/.cv-fill/.no-pan`、焦点和
 reduced-motion；不重复或覆盖。
 
@@ -90,37 +90,32 @@ reduced-motion；不重复或覆盖。
 
 舞台背景不用重复条纹、点阵或网格；网格线只属于真实坐标系或图表。
 
-## 共享组件
+## 共享样式
 
-定义并在接口列出：数值 `.big/.big.sm/.big.lg` `.num` `.unit`；操作 `.hint` `.btn` `.btns`
-`.ctl` 及 range；标记 `.tag` `.legend>.li>.sw` `.sw.line`；媒体 `.cvbox`（只定位、圆角、裁切）；
-作答 `.quiz` `.opt` `.fb`；文字 `.lead` `.small` `.note`；仪器 `.panel` 与无填色但等边距的 `.panel.q`。
-数字用等宽或 tabular nums；操作含焦点、选中、禁用态，选中与正确性分开，不默认红绿对错。
-不用粗色侧条、渐变字、装饰边框 metric 卡或多层卡片底色；填色主要留给 `.panel`，其余用线、
-缩进和字号组织。仅有整页底图时定义 `.backdrop/.backdrop-note`。文件末尾加入：
+只定义 token 与版心；不预置任何组件类，页面需要的样式由建页 agent 按内容写。文件末尾加入：
 
     svg .bar, svg .cell, svg .box { width:auto; height:auto; }
 
 ## 接口注释
 
 `theme.css` 第一段必须用下列定界符，逐行列出 Builder 可用的每个 token（hex、唯一语义、位置）、
-版心、版式几何和组件用法；未列出的等于不可用，其余注释只留短标题。
+版心和版式几何；未列出的等于不可用，其余注释只留短标题。
 
     /* ==== INTERFACE ====
        token  --model #2457A6  当前模型值｜预测、前向箭头
        token  --fs-body 18     正文
        版心   1488×844         #stage 已含 padding
        版式   .focus           标题后单一主区
-       组件   .panel           读数与控件
        ==== /INTERFACE ==== */
 
 ## `pages.md`：标签加主题
 
 每页只写**一个标签和一句主题**：这页讲什么、读者要明白什么，可带冒号补语指方向。
-Planner 只决定顺序、标签和主题；数据、控件、步骤、公式、讲解、UI 和构图都归建页 agent，
+Planner 只决定顺序、标签和主题；数据、操作、步骤、公式、讲解、UI 和构图都归建页 agent，
 主题里不写“调节…观察…”这类操作句。
 
 只有用户要求或媒介确实关键时，才用括号注明「学习游戏／模拟训练」。
+{visual_focus}
 
 下例校准粒度：AdaBoost 在 90 分钟《集成学习》里只占这五页，单独成套也不多于此。
 

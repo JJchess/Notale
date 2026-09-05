@@ -51,7 +51,7 @@ Before choosing, name the one evidence relation the reader must see. Select the 
   - a shared time axis and annotations expose lag and the storage gap.
   `<skill-dir>/samples/bundles/chart/solar-storage.full.md`
 - `swarm-spectrum`
-  - a directly labelled beeswarm combines position and occurrence area without dashboard cards.
+  - a directly labelled beeswarm combines position and occurrence area without decorative chrome.
   `<skill-dir>/samples/bundles/chart/swarm-spectrum.full.md`
 
 ### 3d

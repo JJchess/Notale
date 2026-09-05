@@ -1,6 +1,6 @@
 # Chart as Authored Evidence
 
-Position, length, area, color, shape, or connection must encode the data supporting the claim. Compose that evidence as a complete authored page, not a dashboard or renderer demo.
+Position, length, area, color, shape, or connection must encode the data supporting the claim. Compose that evidence as a complete authored page, not a renderer demo.
 
 ## Write the chart-page contract
 
@@ -46,7 +46,7 @@ Record:
 - annotation targets and source note;
 - optional inspection state and exact reset.
 
-Keep canonical records outside renderer options. Derive series, scales, filtered records, annotations, selected datum, and DOM readouts from one page state.
+Keep canonical records outside renderer options. Derive series, scales, filtered records, annotations, selected datum, and DOM values from one page state.
 
 Use semantic color roles. Assign categorical roles consistently across chart, annotation, legend, and prose. Use a continuous theme-derived ramp only for an ordered or continuous variable. Do not color successive stages arbitrarily or let decorative gradients imply magnitude.
 
@@ -55,7 +55,7 @@ Use semantic color roles. Assign categorical roles consistently across chart, an
 - Put units in axis names, tooltips, nearby values, and tables.
 - Use a zero baseline for bars unless the exception is explained next to the chart.
 - Represent missing observations explicitly; do not silently interpolate them.
-- Share domains for panels intended for direct magnitude comparison.
+- Share domains for views intended for direct magnitude comparison.
 - Show uncertainty with bands, intervals, ranges, or a precise note.
 - Use area and angle only when approximate comparison is acceptable.
 - Sort categories by a meaningful order and preserve it across states.
@@ -84,7 +84,7 @@ Reserve room for real text:
 - include axis-name and source-note clearance in the plot budget;
 - rotate labels only when a different orientation, wrapping, abbreviation, or chart form is worse;
 - keep connector and label endpoints within the visible host at narrow and wide bounds;
-- use internal chart padding for marks and labels, not an oversized outer card that shrinks the plot.
+- use internal chart padding for marks and labels, not an oversized outer frame that shrinks the plot.
 
 Format values through one function shared by axis ticks, tooltip, direct labels, annotation, DOM evidence, and fallback table. Preserve meaningful precision; do not show more decimals than the evidence supports. Attach units at the axis or value level where they remain unambiguous.
 
@@ -144,9 +144,9 @@ Keep scales and geometry in `render(state)`. Highlight a selected entity and its
 | Failure | Cause | Repair |
 |---|---|---|
 | Chart wallpaper | Marks are present but no reader question was chosen | Name the question and annotate the decisive evidence |
-| Dashboard drift | Several charts compete without a shared claim | Keep the one representation that carries the conclusion |
-| False comparison | Panels use different domains or baselines | Share scales or state the non-comparability explicitly |
-| Tooltip dependence | Exact evidence exists only on hover | Add direct labels, DOM readout, or evidence table |
+| View drift | Several charts compete without a shared claim | Keep the one representation that carries the conclusion |
+| False comparison | Views use different domains or baselines | Share scales or state the non-comparability explicitly |
+| Tooltip dependence | Exact evidence exists only on hover | Add direct labels, DOM values, or evidence table |
 | Force decoration | Network moves forever without adding information | Seed, settle, and stop the layout |
 | Renderer truth | Data exists only inside chart options | Keep canonical records and derive options from state |
 | Reset drift | Filters, ordering, or layout survive reset | Rebuild all derived state from one initial snapshot |

@@ -53,6 +53,7 @@ class PromptTests(unittest.TestCase):
                 theme_bans="theme bans", font_floor=skills.FONT_FLOOR,
                 css_path="/run/pages/assets/theme.css",
                 pages_path="/run/pages/plan/pages.md",
+                visual_focus="",
             ),
         }
         for name, args in cases.items():
@@ -64,7 +65,7 @@ class PromptTests(unittest.TestCase):
     def test_planner_owns_only_sequence_label_topic_and_shared_theme(self):
         deck = (ROOT / "prompts/deck.md").read_text(encoding="utf-8")
         self.assertIn("Planner 只决定顺序、标签和主题", deck)
-        self.assertIn("数据、控件、步骤", deck)
+        self.assertIn("数据、操作、步骤", deck)
         self.assertIn("公式、讲解、UI 和构图都归建页 agent", deck)
         self.assertIn("# page-NN [代码页]", deck)
         self.assertIn("代码实操 AdaBoosting 算法", deck)

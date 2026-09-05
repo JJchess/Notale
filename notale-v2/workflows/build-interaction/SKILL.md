@@ -32,7 +32,7 @@ Before choosing, name the main action → state → evidence loop of this page. 
   - each segment changes a constrained path state; illegal moves, completion, and exact reset derive from the same rule system.
   `<skill-dir>/samples/bundles/general/lawn-path.full.md`
 - `motif-match`
-  - keys, interval positions, and current sequence form a compact instrument rather than a quiz card.
+  - keys, interval positions, and current sequence form a compact instrument rather than a quiz.
   - each note changes the deterministic interval sequence and produces audible, spatial, and corrective evidence.
   `<skill-dir>/samples/bundles/general/motif-match.full.md`
 

@@ -34,7 +34,21 @@ VENDOR = Path(__file__).resolve().parent.parent / "vendor"
 from .trace import Writer
 
 PROMPTS = ROOT / "prompts"
-IDENTITY = "你在为一套互动讲义做规划。只输出被要求的东西,不写说明、不写总结、不加围栏。"
+IDENTITY = "你在为一套内容做规划。只输出被要求的东西,不写说明、不写总结、不加围栏。"
+
+# 实验开关 --visual-focus:页表每页多一行「视觉焦点」,把主证据场的决定从 builder 挪到 planner。
+# 默认不注入,deck.md 里的 {visual_focus} 槽位填空串,基线一字不变。
+VISUAL_FOCUS_SPEC = """
+### 视觉焦点
+
+每页主题之后再写一行 `视觉焦点：…`：一句话说清读者第一眼落在哪一个画面、它让哪一个关系可见。
+它是这一页的主证据场，不是布局说明——写「什么东西、显示什么关系」，不写位置、尺寸、配色和操作。
+一页只有一个焦点；`[标题页]` 写主视觉；`[代码页]` 不写这一行。
+
+    # page-NN [内容页]
+    袋外评估：未进入某棵树训练样本的观测可形成无需额外验证集的近似评估
+    视觉焦点：一张样本×树的 in-bag/OOB 矩阵，每行约三分之一格子是 OOB，由此汇出每个样本的袋外预测
+""".strip()
 PLANNER_WRITE_SPEC = [{
     "type": "function",
     "name": "Write",
@@ -68,6 +82,8 @@ class Run:
     prompts: Path = PROMPTS
     # 两张选项菜单表接不接回 direction 块。**有期限的开关**,见 skills.direction_block。
     direction_menus: bool = False
+    # 页表每页多一行「视觉焦点」。实验开关,见 VISUAL_FOCUS_SPEC。
+    visual_focus: bool = False
     root: Path = field(init=False)
     log: Writer = field(init=False)
 
@@ -757,7 +773,8 @@ def plan_run(run: Run, chassis: Path, lib: Path,
         philosophy=skills.philosophy_block("deck", run.prompts),
         direction=skills.direction_block(run.prompts, menus=run.direction_menus),
         theme_bans=skills.theme_slop_block(workflow_root),
-        font_floor=skills.FONT_FLOOR))
+        font_floor=skills.FONT_FLOOR,
+        visual_focus=VISUAL_FOCUS_SPEC if run.visual_focus else ""))
 
     pages = split_pages(pages_doc)
     gaps = iface_gaps(css)
@@ -825,6 +842,8 @@ def main() -> None:
     # 见 skills.direction_block 的 docstring。
     a.add_argument("--direction-menus", action="store_true",
                    help="把两张选项菜单表接回 direction 块(对照臂用);默认不接")
+    a.add_argument("--visual-focus", action="store_true",
+                   help="实验开关:页表每页多一行「视觉焦点」(主证据场由 planner 定);默认关")
     n = a.parse_args()
     if not Path(n.prompts).is_dir():
         raise SystemExit(f"✗ --prompts 指的 {n.prompts} 不是目录")
@@ -856,7 +875,8 @@ def main() -> None:
     llm.override(name=n.model, wire_api=n.wire, base_url=n.base_url, api_key_env=n.key_env)
     if n.effort: config()["planner"]["reasoning_effort"] = n.effort
     plan_run(Run(n.query, n.minutes, n.audience, n.label, n.scenario,
-                 prompts=Path(n.prompts), direction_menus=n.direction_menus),
+                 prompts=Path(n.prompts), direction_menus=n.direction_menus,
+                 visual_focus=n.visual_focus),
              Path(n.chassis), Path(n.lib), workflow_root)
 
 

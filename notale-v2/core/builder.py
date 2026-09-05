@@ -34,7 +34,7 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
 
-IDENTITY = """你是这套互动讲义的单页构建 agent。你只负责当前页面。
+IDENTITY = """你负责这一套里的一页画面。你只负责当前页面。
 
 技术契约、主题接口、章节提纲、本章页表和本页型的 SKILL.md 都在提示里,不必为了确认再读
 源文件。严格遵守 SKILL.md 的第一轮加载规则,按 brief 完成目标页面。
@@ -49,11 +49,44 @@ IDENTITY = """你是这套互动讲义的单页构建 agent。你只负责当前
 质量批准;按随报告返回的 <check_use> 检查截图、内容和行为。发现具体违约时,把全部问题
 合并为一次 Patch,再做一次回归 Check。
 
-当 <check_use> 要求的证据完整且没有具体违约时,下一次响应直接结束。不得因画面占用比
+当 <check_use> 要求的证据完整且没有具体违约时,下一次响应直接结束。不得为了填满画面
 反复调整字号、间距或加装饰,也不得为了“再优化一点”重读目标文件、继续 Look、Bash 或重复 Check。
 
 不写额外说明文档、构建日志或旁路测试(`lesson/tests.py` 属于学习内容,不在此列)。
 做完直接结束,不要问问题。"""
+
+# 实验开关 --visual-focus:与 planner 的同名开关配对。页表每页多一行「视觉焦点」,
+# 这段告诉 builder 怎么用它。默认不注入,基线 system 一字不变。
+VISUAL_FOCUS_BLOCK = """<chapter_context> 里每页的「视觉焦点」一行是 planner 定下的主证据场,本页的构图从它出发:
+- 第一眼必须落在它上面;它占主区,标题、注释、控件围着它排,不得让它缩小成配图。
+- 不得替换成别的图,不得拆散;它显示的那个关系必须在初态就读得出来,不靠 hover 或播放。
+- 选 Main sample 时按它的证据几何选(矩阵、分布、机构、地图……),不按题目名。
+- Check 之后先对着截图回答三件事:它在不在、是不是第一眼落点、那个关系读不读得出;都成立再看别的。
+没有这一行的页(代码页)照常处理。"""
+
+
+# 实验开关 --notes:cap = 只给画面字数硬数;notes = 硬数 + 讲稿区出口。默认 off,基线 system 一字不变。
+# 2026-09-05 量的:生成页每页可见字符中位 550–750,金样本中位 206;用户的直觉是「字太密、一堆卡片」。
+# 假设:模型把所有想说的都写上画面,是因为没有别处可写。cap 臂回答「光给数够不够」,notes 臂回答「出口有没有额外作用」。
+TEXT_CAP_BLOCK = """<text_budget>
+画面上的可见文字总量不超过 200 个字符(标题、正文、标签、数值都算;Check 报告会给出实测字数)。
+超了就删:一页只留读者必须看见的那一句判断、必要的标签和数值;解释、推导、背景不上画面。
+不得用缩小字号、压行高、折叠或切换来"藏"字。
+</text_budget>"""
+NOTES_BLOCK = TEXT_CAP_BLOCK + """
+
+<speaker_notes>
+不上画面但要讲的话,写进 `<aside class="notes" hidden>…</aside>`,放在 `</body>` 之前 ——
+这是 `#stage` 之外唯一允许写的东西。讲稿按讲的顺序分段,写老师会对学生说的话(解释、推导、例子、过渡),
+不写页面说明;Check 报告会同时给画面字数和讲稿字数。
+</speaker_notes>"""
+# only = 只给讲稿出口,不提字数 —— 单独检验「出口本身能不能疏导」这条假设(C 臂把它和硬数混在一起了)。
+NOTES_ONLY_BLOCK = """<speaker_notes>
+不上画面但要讲的话,写进 `<aside class="notes" hidden>…</aside>`,放在 `</body>` 之前 ——
+这是 `#stage` 之外唯一允许写的东西。讲稿按讲的顺序分段,写老师会对学生说的话(解释、推导、例子、过渡),
+不写页面说明;Check 报告会同时给画面字数和讲稿字数。
+</speaker_notes>"""
+NOTES_BLOCKS = {"off": "", "cap": TEXT_CAP_BLOCK, "notes": NOTES_BLOCK, "only": NOTES_ONLY_BLOCK}
 
 
 LABEL_WORKFLOWS = {
@@ -741,7 +774,25 @@ def main() -> None:
         action="store_true",
         help="实验开关：在 Main 之外注册可选 mini samples；默认关闭",
     )
+    parser.add_argument(
+        "--sample-shots",
+        action="store_true",
+        help="实验开关：读 Main bundle 时附上该 sample 的多态截图拼图（samples/<cat>/<id>/shots.png）；默认关闭",
+    )
+    parser.add_argument(
+        "--visual-focus",
+        action="store_true",
+        help="实验开关：页表带「视觉焦点」行时，system 追加使用规则；默认关闭（基线不变）",
+    )
+    parser.add_argument(
+        "--notes",
+        choices=tuple(NOTES_BLOCKS),
+        default="off",
+        help="实验开关：cap=画面 ≤200 字的硬数 + Check 报字数；notes=cap + 讲稿区 <aside class=notes>；默认 off（基线不变）",
+    )
     args = parser.parse_args()
+    tools.SAMPLE_SHOTS = args.sample_shots
+    tools.TEXT_REPORT = args.notes != "off"
 
     cfg = config()
     profile = llm.resolve_builder_profile(cfg, args.profile)
@@ -794,6 +845,9 @@ def main() -> None:
         "workflowProfiles": {name: rt.profile.id for name, rt in runtimes.items()},
         "auxiliarySamples": args.aux_samples,
         "samples": args.samples,
+        "sampleShots": args.sample_shots,
+        "visualFocus": args.visual_focus,
+        "notesMode": args.notes,
         # mini 臂里因为缺 mini 而仍用 full 的样本。统计时用到它们的页要剔除,
         # 否则那几页混着对照条件。见 skills.MINI_FALLBACKS。
         "miniFallbacks": dict(skills.MINI_FALLBACKS),
@@ -807,6 +861,10 @@ def main() -> None:
 
     base = (IDENTITY + "\n\n" + skills.philosophy_block("page")
             + "\n\n" + skills.anti_slop_block(workflow_root))
+    if args.visual_focus:
+        base += "\n\n" + VISUAL_FOCUS_BLOCK
+    if NOTES_BLOCKS[args.notes]:
+        base += "\n\n" + NOTES_BLOCKS[args.notes]
     shared = shared_preload(root, len(briefs))
     base += "\n\n" + shared
     chapters = chapter_preloads(root, len(briefs))
@@ -843,6 +901,9 @@ def main() -> None:
         f"vision={'on' if profile.vision_input else 'off'}，"
         + "".join(f"{n}→{rt.profile.id}，" for n, rt in runtimes.items() if rt.profile.id != profile.id)
         + f"samples={args.samples}，"
+        + f"sample-shots={'on' if args.sample_shots else 'off'}，"
+        + f"visual-focus={'on' if args.visual_focus else 'off'}，"
+        + f"notes={args.notes}，"
         + f"aux-samples={'on' if args.aux_samples else 'off'}\n"
         f"  完整 system {lengths[0]:,}–{lengths[-1]:,} 字符，"
         f"按 workflow 分 {len(groups)} 组共享\n"
