@@ -329,17 +329,7 @@ def _adapt_chat(
         }
         if getattr(msg, "tool_calls", None):
             replay_message["tool_calls"] = [
-                {
-                    "id": getattr(tc, "id", ""),
-                    "type": "function",
-                    "function": {
-                        "name": getattr(getattr(tc, "function", None), "name", ""),
-                        "arguments": getattr(
-                            getattr(tc, "function", None), "arguments", "{}"
-                        ),
-                    },
-                }
-                for tc in msg.tool_calls
+                _replay_tool_call(tc) for tc in msg.tool_calls
             ]
         if replay_reasoning:
             for key in _CHAT_REASONING_KEYS:
@@ -355,6 +345,37 @@ def _adapt_chat(
         replay_items=replay_items,
         raw=r,
     )
+
+
+def _replay_tool_call(tc) -> dict:
+    """One assistant tool call in the shape the next request must echo back.
+
+    **`extra_content` has to survive the round trip.** Gemini 3 returns
+    `extra_content.google.thought_signature` on every tool call and then rejects
+    the follow-up turn without it:
+
+        400 Function call is missing a thought_signature in functionCall parts.
+            This is required for tools to work correctly.
+
+    Measured on the official endpoint: dropping it killed 4 of 5 pages at the
+    second response, one page per turn-two. This is the same class of opaque
+    provider state as GLM's thinking blocks (see ``replay_reasoning``) — carried
+    verbatim, never interpreted. Only fields the provider itself sent are echoed,
+    so a provider that sends nothing extra is unaffected.
+    """
+    fn = getattr(tc, "function", None)
+    out = {
+        "id": getattr(tc, "id", "") or "",
+        "type": "function",
+        "function": {
+            "name": getattr(fn, "name", "") or "",
+            "arguments": getattr(fn, "arguments", "{}") or "{}",
+        },
+    }
+    extra = (getattr(tc, "model_extra", None) or {}).get("extra_content")
+    if extra:
+        out["extra_content"] = extra
+    return out
 
 
 def _chat_body(body: dict) -> dict:
@@ -864,6 +885,23 @@ def _post_messages_for(profile: ModelProfile, body: dict) -> _Resp:
         raise APIConnectionError(request=hreq) from e
 
 
+# ── 显式前缀缓存:试过,删了 ────────────────────────────────────────
+# 2026-09-04 实现过 GeminiPrefixCache(把 system 前缀 + 工具声明烤进 Google 的
+# cachedContents,请求侧改用 extra_body.google.cached_content 引用),**同一份 27 页
+# 规划实测反而更贵,已整块删除。**
+#
+#                     未命中        命中率      全价输入      合计
+#   隐式(现状)        55/215        74%        200 万      $3.264
+#   显式前缀缓存       0/228        24%        607 万      $6.114
+#
+# 机制在逐步账里一眼可见(page-11):隐式缓存会随对话变长把**整段历史**一起缓存,
+# 第 9 步能命中 40,811;显式缓存把命中数钉死在 8,138 —— 就是那段静态前缀,
+# 一个字节不多,剩下的全按全价。两者在 Gemini 上是互斥的。
+#
+# 教训:真正值钱的缓存对象是**每页那段不断增长的对话前缀**,它动态、逐页不同,
+# 隐式缓存自动就在处理。「未命中 26%」看着像浪费,其实是这套机制的入场费。
+# 盯着未命中率去优化,就是优化代理指标、损害真实目标。
+#
 class ModelAdapter:
     """Provider boundary: complete one canonical request and return one response."""
 
