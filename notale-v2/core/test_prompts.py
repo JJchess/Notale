@@ -49,6 +49,7 @@ class PromptTests(unittest.TestCase):
             "deck": dict(
                 query="Q", minutes=90, audience="students", scenario="classroom",
                 canvas_w=1600, canvas_h=900, direction="direction",
+                philosophy=skills.philosophy_block("deck"),
                 theme_bans="theme bans", font_floor=skills.FONT_FLOOR,
                 css_path="/run/pages/assets/theme.css",
                 pages_path="/run/pages/plan/pages.md",
@@ -72,12 +73,19 @@ class PromptTests(unittest.TestCase):
 
     def test_builder_prompt_separates_global_loop_from_page_facts(self):
         brief = (ROOT / "prompts/brief.md").read_text(encoding="utf-8")
-        self.assertIn("目标文件尚不存在", brief)
-        self.assertIn("CodeScaffold", brief)
-        self.assertIn("不要用 Bash/Read 枚举依赖", brief)
+        self.assertIn("chapter_context", brief)
         self.assertNotIn("第一轮", brief)
         self.assertNotIn("使用 `Check`", brief)
         self.assertNotIn("WorkflowContext", brief)
+
+        # Each shared rule lives in exactly one block. The brief carries only
+        # this page's facts; the deck-wide contract stays in the cached prefix.
+        tech = (ROOT / "prompts/tech.md").read_text(encoding="utf-8")
+        self.assertIn("不要用 Bash/Read 枚举依赖", tech)
+        self.assertIn("不修改 `assets/`", tech)
+        for shared in ("chassis", "tech", "theme_css", "deck_outline",
+                       "CodeScaffold", "base.js", "不修改 `assets/`"):
+            self.assertNotIn(shared, brief)
 
         self.assertEqual(builder.RESPONSE_TARGET, 11)
         self.assertIn("最多有 11 次响应", builder.IDENTITY)
@@ -85,6 +93,25 @@ class PromptTests(unittest.TestCase):
         self.assertIn("同一响应中的多个工具调用会按列出顺序执行", builder.IDENTITY)
         self.assertIn("首次 Write 前先核对确定性数据", builder.IDENTITY)
         self.assertIn("下一次响应直接结束", builder.IDENTITY)
+
+    def test_philosophy_reaches_both_sides_and_stays_minimal(self):
+        """这份文件此前代码里零引用 —— 谁也收不到。接线后要保证两侧各拿到自己那块。
+
+        同时钉住「不重复 reference 已经讲过的」：一条规则说四遍不会更成立，
+        实测 check_use 的「one main evidence field」发了 73 遍，页面照样是卡片墙。
+        """
+        deck = skills.philosophy_block("deck")
+        page = skills.philosophy_block("page")
+        self.assertIn("重要的概念给更多页", deck)
+        self.assertIn("不要缩字号", page)
+        # 拆页是 planner 的动作，给 builder 就是一条它执行不了的出路
+        self.assertNotIn("拆页", page)
+        # 与 reference / check_use 重复的三条不得回流
+        for dup in ("主体", "首屏", "card", "grid"):
+            self.assertNotIn(dup, page)
+        self.assertLess(len(deck) + len(page), 400)
+        with self.assertRaises(ValueError):
+            skills.philosophy_block("both")
 
     def test_anti_slop_guidance_is_split_by_decision_owner(self):
         builder_block = skills.anti_slop_block(skills.WORKFLOWS)
@@ -156,7 +183,14 @@ class PlannerExecutionTests(unittest.TestCase):
             self.assertEqual((root / planner.CSS_REL).read_text(), CSS_OK)
             self.assertEqual((root / planner.PAGES_REL).read_text(), PAGES_OK)
 
-    def test_invalid_deck_is_rejected_once_without_retry(self):
+    def test_invalid_deck_retries_then_raises_with_diagnostic(self):
+        """A half-delivery is retried, not fatal on the first try.
+
+        Measured 2026-09-04: this step dropped one of its two Write calls six
+        times running (5x gemini-3.8-flash, 1x AWS-GPT-5.6-Sol), always writing a
+        complete theme.css and never calling Write for pages.md. One shot with no
+        retry turned that into a dead run.
+        """
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             run = SimpleNamespace(root=root, log=SimpleNamespace(add=lambda *args: None))
@@ -168,8 +202,35 @@ class PlannerExecutionTests(unittest.TestCase):
             with patch.object(planner.llm, "respond", return_value=response) as respond:
                 with self.assertRaisesRegex(RuntimeError, "交付不合格"):
                     planner.deck_call(run, "prompt")
-            self.assertEqual(respond.call_count, 1)
+            self.assertEqual(respond.call_count, planner.DECK_TRIES)
             self.assertTrue((root / "deck.rejected.json").is_file())
+
+    def test_deck_recovers_when_a_later_try_delivers_both(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "pages" / "plan").mkdir(parents=True)
+            run = SimpleNamespace(root=root, log=SimpleNamespace(add=lambda *args: None))
+            half = SimpleNamespace(
+                output=[self.function_call(root / planner.CSS_REL, CSS_OK, "css")],
+                usage=None, id="half")
+            whole = SimpleNamespace(
+                output=[self.function_call(root / planner.CSS_REL, CSS_OK, "css"),
+                        self.function_call(root / planner.PAGES_REL, PAGES_OK, "pages")],
+                usage=None, id="whole")
+            seen = []
+
+            def fake(_ident, msgs, _spec, _eff, tag=None):
+                seen.append(msgs[0]["content"])
+                return half if len(seen) == 1 else whole
+
+            with patch.object(planner.llm, "respond", fake):
+                css, pages = planner.deck_call(run, "prompt")
+            self.assertEqual((css, pages), (CSS_OK, PAGES_OK))
+            self.assertEqual(len(seen), 2)
+            # The retry tells the model what was missing instead of re-rolling blind.
+            self.assertIn("上一次尝试被判不合格", seen[1])
+            self.assertIn("pages.md", seen[1])
+            self.assertFalse((root / "deck.rejected.json").exists())
 
     def test_plan_run_leaves_every_page_target_absent(self):
         with tempfile.TemporaryDirectory() as td, patch.object(planner, "ROOT", Path(td)):

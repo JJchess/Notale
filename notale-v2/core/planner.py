@@ -245,9 +245,50 @@ def _split_specs(text: str, nns) -> dict:
     return out
 
 
-def deck_call(run: Run, prompt: str) -> tuple[str, str]:
-    """Make one model call, validate once, then atomically materialize its two writes."""
+DECK_TRIES = 3
+
+
+def deck_call(run: Run, prompt: str, tries: int = DECK_TRIES) -> tuple[str, str]:
+    """Call, validate, retry with the rejection reason, then materialize both writes.
+
+    **The retry is not defensive padding; it is measured.** This step asks for two
+    files in one response, and models drop one of them at a rate that makes a
+    single shot unusable: 2026-09-04 it failed 6 times running — 5× gemini-3.8-flash
+    (across the 999 router and Google's own endpoint, effort low and medium) and
+    1× AWS-GPT-5.6-Sol, every time writing a complete, valid `theme.css` and simply
+    never calling Write for `pages.md`. Nothing was truncated; the second call just
+    never came. One shot with a validator and no retry turns that into a dead run.
+
+    The rejection reason goes back to the model rather than re-rolling a bare
+    prompt: what is missing is exactly what the validator already knows.
+    """
     css_p, pages_p = run.root / CSS_REL, run.root / PAGES_REL
+    for attempt in range(1, tries + 1):
+        try:
+            return _deck_attempt(run, prompt, css_p, pages_p, attempt)
+        except _DeckRejected as exc:
+            if attempt == tries:
+                rejected = run.root / "deck.rejected.json"
+                rejected.write_text(json.dumps(
+                    {"bad": exc.bad, "attempts": tries, **exc.got},
+                    ensure_ascii=False, indent=1), encoding="utf-8")
+                raise RuntimeError(
+                    f"deck 交付不合格({tries} 次都没过): {'; '.join(exc.bad)}。"
+                    f"诊断见 {rejected}") from None
+            print(f"  ⚠ deck 第 {attempt} 次不合格({'; '.join(exc.bad)}),重试")
+            prompt = (exc.prompt + "\n\n上一次尝试被判不合格：" + "；".join(exc.bad)
+                      + "。两个文件都必须在这一次响应里各调用一次 Write 写出来。")
+    raise AssertionError("unreachable")
+
+
+class _DeckRejected(RuntimeError):
+    def __init__(self, bad: list, got: dict, prompt: str):
+        super().__init__("; ".join(bad))
+        self.bad, self.got, self.prompt = bad, got, prompt
+
+
+def _deck_attempt(run: Run, prompt: str, css_p: Path, pages_p: Path,
+                  attempt: int) -> tuple[str, str]:
     t0, started = time.time(), _now()
     r = llm.respond(IDENTITY, [{"role": "user", "content": prompt}],
                     PLANNER_WRITE_SPEC, config()["planner"]["reasoning_effort"], tag="deck")
@@ -275,11 +316,7 @@ def deck_call(run: Run, prompt: str) -> tuple[str, str]:
     elif pages_bad:
         bad.append(f"{PAGES_REL}: {pages_bad}")
     if bad:
-        rejected = run.root / "deck.rejected.json"
-        rejected.write_text(json.dumps(
-            {"bad": bad, **{k: v for k, v in got.items()}},
-            ensure_ascii=False, indent=1), encoding="utf-8")
-        raise RuntimeError(f"deck 交付不合格: {'; '.join(bad)}。诊断见 {rejected}")
+        raise _DeckRejected(bad, dict(got), prompt)
 
     css_p.parent.mkdir(parents=True, exist_ok=True)
     pages_p.parent.mkdir(parents=True, exist_ok=True)
@@ -717,6 +754,7 @@ def plan_run(run: Run, chassis: Path, lib: Path,
         canvas_w=w, canvas_h=h,
         css_path=run.root / CSS_REL,
         pages_path=run.root / PAGES_REL,
+        philosophy=skills.philosophy_block("deck", run.prompts),
         direction=skills.direction_block(run.prompts, menus=run.direction_menus),
         theme_bans=skills.theme_slop_block(workflow_root),
         font_floor=skills.FONT_FLOOR))
@@ -740,11 +778,10 @@ def plan_run(run: Run, chassis: Path, lib: Path,
     pool = assets(run, pages_doc.split("# page-", 1)[0])
 
     ch = run.assets / "CHASSIS.md"
-    if "已知陷阱" not in ch.read_text(encoding="utf-8"):
+    if "Deck.fmt(v, d)" not in ch.read_text(encoding="utf-8"):
         ch.write_text(ch.read_text(encoding="utf-8").rstrip() + '''
-`Deck.fmt(v, d)` **给非负数加 `+`** —— 它是给增量用的（`+3.2%`、`余量 +0.42 cm`）。
-**绝对量不要用它**：年代、质量、温度、距离一律 `v.toFixed(d)`。
-实测代价：一页把年代印成「约 +366 万年前」，19 处。
+`Deck.fmt(v, d)` **给非负数加 `+`**，只用于增量（`+3.2%`）；年代、质量、温度、距离等
+绝对量一律 `v.toFixed(d)`。
 ''', encoding="utf-8")
         print("  接口交接     已知陷阱（Deck.fmt 带符号）→ CHASSIS.md")
 
