@@ -93,3 +93,13 @@ Deck.loop(fn[,opt])      rAF 循环,返回 stop()
 Deck.clamp / Deck.lerp / Deck.fmt / Deck.rgba
 Deck.rr(ctx,x,y,w,h,r)              圆角矩形路径(有原生 roundRect 就用原生)
 ```
+
+## 分步出场（可选）
+
+课堂讲授时一页可以分几步出现：元素上写 `data-step="2"` 表示第 2 步才出现（第 0 步是页面刚打开
+的样子，第 1 步是按第一下）。右方向键先在页内推进，出完才翻页，左键对称回退。
+canvas/svg 里画的东西用 `Deck.onStep(function(step, max){ … })` 按步重绘。
+未出场的元素透明且 `inert`。`?all` 或系统 reduced-motion 直接停在末步，给课后复看。
+出场手法（淡入加 6px 上移）是底盘默认，页面可以覆盖。用了就至少 2 步；每一步都该新增证据，
+不是再冒出一段文字；所有步都显示出来时，这一页仍然要读得通。
+

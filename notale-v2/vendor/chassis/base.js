@@ -83,19 +83,9 @@
 
       if (cfg.title) document.title = cfg.title;
 
-      if (cfg.keys !== false && total > 1) {
-        document.addEventListener('keydown', function (e) {
-          if (e.metaKey || e.ctrlKey || e.altKey) return;
-          var t = (e.target && e.target.tagName) || '';
-          if (t === 'INPUT' || t === 'TEXTAREA' || t === 'SELECT') return;
-          if (e.target && e.target.isContentEditable) return;
-          if ((e.key === 'ArrowRight' || e.key === 'PageDown') && n < total) {
-            location.href = href(n + 1);
-          } else if ((e.key === 'ArrowLeft' || e.key === 'PageUp') && n > 1) {
-            location.href = href(n - 1);
-          }
-        });
-      }
+      // 键盘只登记翻页配置;真正的按键处理在文件末尾那一个监听里 ——
+      // 「下一步」先出元素、出完才翻页,两件事必须是同一个动作,所以只能有一个处理函数。
+      if (cfg.keys !== false && total > 1) Deck._nav = { n: n, total: total, href: href };
 
       Deck.resize();
       return Deck;
@@ -190,6 +180,58 @@
     /* ---------------------------------------------------------------------
        动画
        --------------------------------------------------------------------- */
+    /* ---------------------------------------------------------------------
+       分步出场。**公开表面只有三样**:
+         元素上写 data-step="2"      —— 第 2 步才出现(1 起数;第 0 步是页面刚打开)
+         Deck.onStep(fn)             —— canvas/svg 里画的东西按 fn(step, max) 重绘
+         下一步 = 先出元素,出完才翻页 —— 右方向键 / PageDown;左键对称回退
+       其余是实现:根上一个 --step 变量,元素上一个 --at,可见性由 base.css 用 calc 算,
+       未出场的元素加 inert(透明的东西不能还能点)。?all 或 reduced-motion 直接停在末步,
+       学生课后复看走这条;上一页回来时落在它的末步(#last)。
+       没写 data-step 的页面 stepMax=0,next() 直接翻页,与以前完全一样。
+       --------------------------------------------------------------------- */
+    step: 0,
+    stepMax: 0,
+    _stepFns: [],
+    _nav: null,
+    onStep: function (fn) {
+      Deck._stepFns.push(fn);
+      fn(Deck.step, Deck.stepMax);
+      return function () {
+        var i = Deck._stepFns.indexOf(fn);
+        if (i >= 0) Deck._stepFns.splice(i, 1);
+      };
+    },
+    stepTo: function (i) {
+      i = Math.max(0, Math.min(Deck.stepMax, i | 0));
+      Deck.step = i;
+      document.documentElement.style.setProperty('--step', i);
+      var els = document.querySelectorAll('#stage [data-step]');
+      for (var k = 0; k < els.length; k++) {
+        var at = parseInt(els[k].getAttribute('data-step'), 10) || 0;
+        if (at > i) els[k].setAttribute('inert', ''); else els[k].removeAttribute('inert');
+      }
+      for (var j = 0; j < Deck._stepFns.length; j++) Deck._stepFns[j](i, Deck.stepMax);
+      return i;
+    },
+    next: function () {
+      if (Deck.step < Deck.stepMax) { Deck.stepTo(Deck.step + 1); return true; }
+      return false;
+    },
+    prev: function () {
+      if (Deck.step > 0) { Deck.stepTo(Deck.step - 1); return true; }
+      return false;
+    },
+    rescan: function () {
+      var els = document.querySelectorAll('#stage [data-step]'), max = 0;
+      for (var k = 0; k < els.length; k++) {
+        var at = parseInt(els[k].getAttribute('data-step'), 10) || 0;
+        if (at > 0) { els[k].style.setProperty('--at', at); if (at > max) max = at; }
+      }
+      Deck.stepMax = max;
+      return max;
+    },
+
     reduced: function () {
       return !!(window.matchMedia &&
                 window.matchMedia('(prefers-reduced-motion: reduce)').matches);
@@ -269,6 +311,42 @@
   window.addEventListener('resize', Deck.resize);
   window.addEventListener('orientationchange', Deck.resize);
   Deck.resize();
+
+  // 分步:扫一遍 data-step,决定起始步。不依赖 Deck.init —— 实测两套里 7 页没调它。
+  function bootSteps() {
+    Deck.rescan();
+    var all = Deck.reduced() || /[?&]all\b/.test(location.search);
+    var last = location.hash === '#last';
+    if (all || last) document.documentElement.setAttribute('data-steps', 'all');   // 不要开场动画
+    Deck.stepTo(all || last ? Deck.stepMax : 0);
+    if (last && !all) setTimeout(function () {
+      document.documentElement.removeAttribute('data-steps');                       // 之后回退仍有过渡
+    }, 60);
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', bootSteps);
+  else bootSteps();
+
+  // 唯一的按键处理:先步进,步进不了才翻页。
+  document.addEventListener('keydown', function (e) {
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    var t = (e.target && e.target.tagName) || '';
+    if (t === 'INPUT' || t === 'TEXTAREA' || t === 'SELECT') return;
+    if (e.target && e.target.isContentEditable) return;
+    var fwd = e.key === 'ArrowRight' || e.key === 'PageDown';
+    var back = e.key === 'ArrowLeft' || e.key === 'PageUp';
+    if (!fwd && !back) return;
+    if (fwd ? Deck.next() : Deck.prev()) { e.preventDefault(); return; }
+    var nav = Deck._nav;
+    if (!nav) return;
+    var q = location.search;                       // ?all 要跟着翻页走,否则复看模式翻一页就丢
+    if (fwd && nav.n < nav.total) {
+      var to = nav.href(nav.n + 1);
+      location.href = to + (to.indexOf('?') < 0 ? q : '');
+    } else if (back && nav.n > 1) {
+      var back_to = nav.href(nav.n - 1);
+      location.href = back_to + (back_to.indexOf('?') < 0 ? q : '') + '#last';
+    }
+  });
 
   global.Deck = Deck;
 })(window);

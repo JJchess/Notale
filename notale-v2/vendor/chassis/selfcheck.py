@@ -392,6 +392,31 @@ async def run(files, shot_dir=None, wait=1200, after=(), crop=None, zoom=2):
             try:
                 await pg.goto("file://" + str(Path(f).resolve()), wait_until="load")
                 await pg.wait_for_timeout(wait)          # 让动画/初始化跑起来
+                # 分步出场:页面声明了 data-step 就逐步拍,**主截图和越界判定以末步为准** ——
+                # 末步才是完整画面;拿第 0 步当 00.png 会让占用比、judge 全部失真。
+                smax = await pg.evaluate("(window.Deck && Deck.stepMax) || 0")
+                step_pngs, step_issues = [], []
+                if smax:
+                    counts = await pg.evaluate(
+                        "Array.from({length: Deck.stepMax + 1}, (_, i) =>"
+                        " document.querySelectorAll('#stage [data-step=\"' + i + '\"]').length)")
+                    fns = await pg.evaluate("Deck._stepFns.length")
+                    if smax < 2:
+                        step_issues.append("分步只有 1 步,没意义:要么 ≥2 步,要么不分步")
+                    for i in range(1, smax + 1):
+                        if counts[i] == 0 and not fns:
+                            step_issues.append(f"第 {i} 步没有任何元素出场,也没有 Deck.onStep(空步)")
+                    if shot_dir:
+                        for i in range(0, smax):
+                            await pg.evaluate(f"Deck.stepTo({i})")
+                            await pg.wait_for_timeout(350)
+                            q = Path(shot_dir) / f"{stem}-step{i}.png"
+                            q.parent.mkdir(parents=True, exist_ok=True)
+                            await pg.screenshot(path=str(q))
+                            _shrink(q)
+                            step_pngs.append(q)
+                    await pg.evaluate(f"Deck.stepTo({smax})")
+                    await pg.wait_for_timeout(350)
                 probe = await pg.evaluate(PROBE)
             except Exception as e:
                 out.append((Path(f).name, [{"label": None, "probe": {"fatal": str(e)[:200]},
@@ -412,7 +437,8 @@ async def run(files, shot_dir=None, wait=1200, after=(), crop=None, zoom=2):
                 return dst
 
             states = [{"label": None, "probe": probe, "errs": list(errs),
-                       "bad": list(bad), "png": None}]
+                       "bad": list(bad), "png": None,
+                       "steps": smax, "step_pngs": step_pngs, "step_issues": step_issues}]
             if shot_dir:
                 png = shoot(Path(shot_dir) / f"{stem}.png")
                 await pg.screenshot(path=str(png))
@@ -527,6 +553,10 @@ def report(name: str, states: list, text_report: bool = False) -> None:
                   f"{_at(x)} «{x['text']}»")
         if not errs and not bad and not probe["escaped"] and not probe["clipped"]:
             print("   渲染无报错,没有元素超出画布或被裁")
+        if st.get("steps"):
+            print(f"   分步 {st['steps']} 步(右方向键逐步出场,出完才翻页;以上判定按末步)")
+        for x in st.get("step_issues") or []:
+            print(f"   ✗ {x}")
         if sizes:
             print(f"   canvas {probe['canvases']} 个;有文字的元素 {len(sizes)} 个,"
                   f"字号最小 {sizes[0]:g}px 中位 {sizes[len(sizes)//2]:g}px 最大 {sizes[-1]:g}px")
@@ -601,7 +631,10 @@ def report(name: str, states: list, text_report: bool = False) -> None:
         if flags:
             print("        " + " / ".join(flags))
         if st["png"]:
-            print(f"   截图 {st['png']}  ({SHOT_W}×{SHOT_H},约 {SHOT_W*SHOT_H//750} token)")
+            for i, q in enumerate(st.get("step_pngs") or []):
+                print(f"   截图 {q}  (第 {i} 步)")
+            print(f"   截图 {st['png']}  ({SHOT_W}×{SHOT_H},约 {SHOT_W*SHOT_H//750} token"
+                  + (f",第 {st['steps']} 步 = 完整画面" if st.get("steps") else "") + ")")
         if st.get("crop"):
             from PIL import Image as _I
             w, h = _I.open(st["crop"]).size
