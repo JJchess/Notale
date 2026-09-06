@@ -50,11 +50,13 @@ _CHECK_USE_ITEMS = {
         "result; decoration must not imitate the algorithm.",
     ),
     "build-page": (
+        "For every large block that carries a fill or a border, ask what is lost if its fill, border and shadow are removed. If only grouping is lost, remove the skin and fix proximity, alignment or the title position instead; keep the boundary only when a set, a shape or an interaction state would be lost. Name the concrete edit, not a verdict.",
         "Check that there is one main evidence field, not several equal parts.",
         "Recompute at least one derived value from the page's own data and formulas.",
         "The same data must agree across prose, chart, and annotations.",
     ),
     "build-interaction": (
+        "For every large block that carries a fill or a border, ask what is lost if its fill, border and shadow are removed. If only grouping is lost, remove the skin and fix proximity, alignment or the title position instead; keep the boundary only when a set, a shape or an interaction state would be lost. Name the concrete edit, not a verdict.",
         "Walk one legal progression path with the after states.",
         "Also cover the applicable illegal or boundary case, the completion state, and Reset.",
         "A legal action must change the real model and the visible evidence; an action "

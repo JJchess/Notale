@@ -504,6 +504,23 @@ def audit_delivery(
     }
 
 
+REF_SHOTS_NOTE = """<references>
+随附两张真人做的页面截图,是这套内容的风格参照。借它们的**组织方式**:标题与图形共享对齐线,
+注释靠近它解释的对象,组间距离明显大于组内距离,分组不靠给每块垫底色画框。不抄配色、题材和文案。
+</references>"""
+
+
+def ref_images(root: Path, n: int = 2) -> list[dict]:
+    """style director 为这套挑的参照,取前 n 条的截图,缩到 900 宽。没有 style-picks.tsv 就是空。"""
+    picks = root / "style-picks.tsv"
+    if not picks.is_file():
+        return []
+    from . import director, gallery
+    ids = [l.split("\t")[0].strip() for l in picks.read_text(encoding="utf-8").splitlines() if l.strip()]
+    rows = gallery.facts(ids[:n])
+    return director._images(rows) if rows else []
+
+
 def build_one(
     page: Page,
     pages_dir: Path,
@@ -513,13 +530,20 @@ def build_one(
     effort: str,
     vision_input: bool = True,
     runtime: llm.ModelRuntime | None = None,
+    refs: list[dict] | None = None,
 ) -> Page:
     """Run one free-form agent loop to natural stop and audit separately."""
     log = Writer(trace, str(uuid.uuid4()))
     resource_root = (
         workflow_root / page.workflow if page.workflow else workflow_root
     ).resolve()
-    hist: list = [{"role": "user", "content": page.prompt}]
+    if refs and vision_input and page.workflow != "build-code":
+        # 参照图随首条消息进上下文。放在 brief 之后,一段说明它们该怎么用。
+        hist: list = [{"role": "user", "content":
+                       [{"type": "input_text", "text": page.prompt + "\n\n" + REF_SHOTS_NOTE}] + list(refs)}]
+        page.images += len(refs)
+    else:
+        hist = [{"role": "user", "content": page.prompt}]
 
     specs = tools.specs()
     if not vision_input:
@@ -802,6 +826,11 @@ def main() -> None:
         help="实验开关：页表带「视觉焦点」行时，system 追加使用规则；默认关闭（基线不变）",
     )
     parser.add_argument(
+        "--ref-shots",
+        action="store_true",
+        help="实验开关：把 style director 挑的前两条参照截图随 brief 发给建页 agent；默认关",
+    )
+    parser.add_argument(
         "--steps",
         action="store_true",
         help="实验开关：system 里说明分步出场协议(data-step / Deck.onStep)；默认关",
@@ -877,6 +906,7 @@ def main() -> None:
         "notesMode": args.notes,
         "frameCap": args.frame_cap,
         "steps": args.steps,
+        "refShots": args.ref_shots,
         # mini 臂里因为缺 mini 而仍用 full 的样本。统计时用到它们的页要剔除,
         # 否则那几页混着对照条件。见 skills.MINI_FALLBACKS。
         "miniFallbacks": dict(skills.MINI_FALLBACKS),
@@ -943,6 +973,9 @@ def main() -> None:
     )
 
     started = time.time()
+    refs = ref_images(root) if args.ref_shots else []
+    if args.ref_shots:
+        print(f"  参照图 {len(refs)} 张随 brief 发给每页(来自 style-picks.tsv)")
 
     def guard(page: Page) -> Page:
         rt = runtimes[page.workflow]
@@ -956,6 +989,7 @@ def main() -> None:
                 rt.profile.reasoning_effort,
                 rt.profile.vision_input,
                 rt,
+                refs,
             )
         except Exception as exc:  # noqa: BLE001
             page.why = f"{type(exc).__name__}: {str(exc)[:160]}"
