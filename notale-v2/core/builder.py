@@ -88,6 +88,13 @@ NOTES_ONLY_BLOCK = """<speaker_notes>
 </speaker_notes>"""
 NOTES_BLOCKS = {"off": "", "cap": TEXT_CAP_BLOCK, "notes": NOTES_BLOCK, "only": NOTES_ONLY_BLOCK}
 
+# 实验开关 --frame-cap:对准「每个区块画一圈描边」这个动作。2026-09-06 同题重跑后 judge 判 AI 的前三条线索
+# 是边框/卡片/面板(17/15/14 次),而删词汇只把版块从 11 压到 8、没动描边。硬数 + Check 报数,不再靠词。
+FRAME_CAP_BLOCK = """<frame_budget>
+带描边或底色的区块最多 1 个,而且只能是主体本身;其余内容靠留白、对齐和共享基线分组,不加框、不铺底色。
+对照(A 与 B)放在同一条基线或同一坐标系上并排表达,不用并排的框。Check 报告里「区块 N 个」就是这个数,超过 1 就改。
+</frame_budget>"""
+
 
 LABEL_WORKFLOWS = {
     "标题页": "build-cover",
@@ -785,6 +792,11 @@ def main() -> None:
         help="实验开关：页表带「视觉焦点」行时，system 追加使用规则；默认关闭（基线不变）",
     )
     parser.add_argument(
+        "--frame-cap",
+        action="store_true",
+        help="实验开关：带描边/底色的区块 ≤1（只能是主体）；默认关",
+    )
+    parser.add_argument(
         "--notes",
         choices=tuple(NOTES_BLOCKS),
         default="off",
@@ -848,6 +860,7 @@ def main() -> None:
         "sampleShots": args.sample_shots,
         "visualFocus": args.visual_focus,
         "notesMode": args.notes,
+        "frameCap": args.frame_cap,
         # mini 臂里因为缺 mini 而仍用 full 的样本。统计时用到它们的页要剔除,
         # 否则那几页混着对照条件。见 skills.MINI_FALLBACKS。
         "miniFallbacks": dict(skills.MINI_FALLBACKS),
@@ -865,6 +878,8 @@ def main() -> None:
         base += "\n\n" + VISUAL_FOCUS_BLOCK
     if NOTES_BLOCKS[args.notes]:
         base += "\n\n" + NOTES_BLOCKS[args.notes]
+    if args.frame_cap:
+        base += "\n\n" + FRAME_CAP_BLOCK
     shared = shared_preload(root, len(briefs))
     base += "\n\n" + shared
     chapters = chapter_preloads(root, len(briefs))
@@ -903,7 +918,7 @@ def main() -> None:
         + f"samples={args.samples}，"
         + f"sample-shots={'on' if args.sample_shots else 'off'}，"
         + f"visual-focus={'on' if args.visual_focus else 'off'}，"
-        + f"notes={args.notes}，"
+        + f"notes={args.notes}，frame-cap={'on' if args.frame_cap else 'off'}，"
         + f"aux-samples={'on' if args.aux_samples else 'off'}\n"
         f"  完整 system {lengths[0]:,}–{lengths[-1]:,} 字符，"
         f"按 workflow 分 {len(groups)} 组共享\n"

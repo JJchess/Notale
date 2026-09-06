@@ -1,6 +1,6 @@
 ---
 name: build-page
-description: "Build a 1600×900 explanatory page whose claim is understandable without learner manipulation. Use for planner pages labeled [内容页], including authored diagrams, charts, and necessary 3D evidence."
+description: "Build a non-scrolling explanatory picture whose claim is understandable without learner manipulation. Use for planner pages labeled [内容页], including authored diagrams, charts, and necessary 3D evidence."
 ---
 
 # Build Page

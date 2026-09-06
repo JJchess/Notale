@@ -21,7 +21,7 @@ CSS_OK = """/* ==== INTERFACE ====
 token --bg #ffffff page background
 ==== /INTERFACE ==== */
 :root { --pad-x:56px; --pad-y:28px; --bg:#fff; }
-#stage { display:flex; flex-direction:column; padding:var(--pad-y) var(--pad-x); }
+#stage { padding:var(--pad-y) var(--pad-x); }
 """
 
 PAGES_OK = """本套无需图池
@@ -145,11 +145,12 @@ class ValidatorTests(unittest.TestCase):
 
     def test_css_validator_has_no_arbitrary_rule_count(self):
         self.assertEqual(planner._valid_css(CSS_OK), "")
-        self.assertIn(
-            "display:flex",
+        # #stage 的排法不再由共享层规定,只剩围栏和 INTERFACE 两条硬闸
+        self.assertEqual(
             planner._valid_css(
-                "/* ==== INTERFACE ==== x ==== /INTERFACE ==== */\n#stage{padding:1px}"
+                "/* ==== INTERFACE ==== x ==== /INTERFACE ==== */\n#stage{position:absolute}"
             ),
+            "",
         )
         self.assertIn("围栏", planner._valid_css("```css\n" + CSS_OK + "\n```"))
 

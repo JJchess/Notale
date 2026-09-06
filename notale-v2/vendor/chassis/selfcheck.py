@@ -570,7 +570,7 @@ def report(name: str, states: list, text_report: bool = False) -> None:
             where = "、".join(f"{f['tag']}@{f['at'][0]},{f['at'][1]} 填充 {int(f['fill']*100)}%" for f in half[:3])
             print(f"   区块 {len(fl)} 个(带底色或描边,≥5% 版心),其中 {len(half)} 个半空(内容填充 <45% 或底部空 >35%)"
                   + (f":{where}" if where else "")
-                  + ("。字删了区块要跟着缩:合并、去掉或改自然高度,把留白集中到主体周围" if half else ""))
+                  + ("。字删了区块要跟着缩:合并、去掉,或者干脆不要这个容器" if half else ""))
         # 主题有没有生效。**报参考,不报 ✗** —— 页面无权改 `assets/`(brief 明令),
         # 报 ✗ 就复制了占用比那个陷阱(它降级为参考的理由正是「出路不在建页 agent
         # 手里」)。这条的代价量过:theme.css 首行残留一个 markdown 围栏,浏览器把它

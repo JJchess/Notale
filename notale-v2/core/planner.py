@@ -84,6 +84,8 @@ class Run:
     direction_menus: bool = False
     # 页表每页多一行「视觉焦点」。实验开关,见 VISUAL_FOCUS_SPEC。
     visual_focus: bool = False
+    # theme.css 交给 style director(core/director.py)另起一路并行写,deck 这步只写页表。
+    style_director: bool = False
     root: Path = field(init=False)
     log: Writer = field(init=False)
 
@@ -99,8 +101,15 @@ class Run:
     assets = property(lambda self: self.root / "pages" / "assets")
 
     def prompt(self, name: str, **kw: object) -> str:
-        return fill((self.prompts / f"{name}.md").read_text(encoding="utf-8"),
-                    _where=f"{name}.md", **kw)
+        raw = (self.prompts / f"{name}.md").read_text(encoding="utf-8")
+        # deck.md 里跟 theme.css 有关的段落用 <!--css:…--> 括着,交给 director 时整段剥掉;
+        # 只在那时才生效的说明用 <!--pages-only:…--> 括着。两套标记都从同一个文件走,
+        # 免得复制出第二份 deck.md 然后两边各自漂移。
+        drop = "css" if self.style_director else "pages-only"
+        keep = "pages-only" if self.style_director else "css"
+        raw = re.sub(rf"<!--{drop}:start-->.*?<!--{drop}:end-->", "", raw, flags=re.S)
+        raw = raw.replace(f"<!--{keep}:start-->", "").replace(f"<!--{keep}:end-->", "")
+        return fill(raw, _where=f"{name}.md", **kw)
 
 
 def _valid_css(text: str) -> str:
@@ -108,12 +117,11 @@ def _valid_css(text: str) -> str:
     if text.lstrip().startswith("```"):
         return "theme.css 不能包含 markdown 代码围栏"
     bare = re.sub(r"/\*.*?\*/", "", text, flags=re.S)
-    body = " ".join(m.group(1) for m in re.finditer(r"#stage\s*\{([^}]*)\}", bare, re.S))
-    if not (re.search(r"display\s*:\s*flex", body)
-            and re.search(r"flex-direction\s*:\s*column", body)):
-        return "`#stage` 必须设置 `display:flex` 和 `flex-direction:column`"
-    if not re.search(r"padding\s*:", body):
-        return "`#stage` 必须在共享层设置 padding"
+    # 2026-09-06 删掉「#stage 必须是 flex 列」这道闸。它当初是照抄 Opus 的 deck.css 加的,
+    # 实测把填充率从 89% 提到 93–95%、每页 Edit 从 17.2 降到 6.4;但它同时把版面锁成
+    # 「切格子」,卡片墙是这个骨架的必然产物 —— 逐页量下来我们每页 5 处像素坐标、0 处
+    # absolute,而同一题目下的 Opus 是每页 20 处像素坐标、5 处 absolute,#stage 只有
+    # position:absolute 没有 display。填不满的老问题要靠 A/B 盯住(填充率 + 每页 Edit)。
     if "==== INTERFACE ====" not in text or "==== /INTERFACE ====" not in text:
         return "缺少完整的 INTERFACE 接口块"
     return ""
@@ -151,6 +159,8 @@ PAGES_REL = "pages/plan/pages.md"
 
 def write_targets(run: Run) -> dict:
     """Return the Planner's two exact output targets."""
+    if getattr(run, "style_director", False):
+        return {(run.root / PAGES_REL).resolve(): "pages.md"}
     return {(run.root / CSS_REL).resolve(): "theme.css",
             (run.root / PAGES_REL).resolve(): "pages.md"}
 
@@ -323,7 +333,11 @@ def _deck_attempt(run: Run, prompt: str, css_p: Path, pages_p: Path,
     bad = list(refused)
     css_bad = _valid_css(got["theme.css"]) if "theme.css" in got else ""
     pages_bad = _valid_pages(got["pages.md"]) if "pages.md" in got else ""
-    if "theme.css" not in got:
+    if getattr(run, "style_director", False):
+        # 主题另有一路在写,这里多写一个文件反而要拦下来(两边会互相覆盖)
+        if "theme.css" in got:
+            bad.append("这一步不写 theme.css,主题由 style director 另行产出")
+    elif "theme.css" not in got:
         bad.append(f"没有写 {CSS_REL}")
     elif css_bad:
         bad.append(f"{CSS_REL}: {css_bad}")
@@ -334,6 +348,10 @@ def _deck_attempt(run: Run, prompt: str, css_p: Path, pages_p: Path,
     if bad:
         raise _DeckRejected(bad, dict(got), prompt)
 
+    if getattr(run, "style_director", False):
+        pages_p.parent.mkdir(parents=True, exist_ok=True)
+        pages_p.write_text(got["pages.md"], encoding="utf-8")
+        return "", got["pages.md"]
     css_p.parent.mkdir(parents=True, exist_ok=True)
     pages_p.parent.mkdir(parents=True, exist_ok=True)
     css_p.write_text(got["theme.css"], encoding="utf-8")
@@ -764,6 +782,26 @@ def plan_run(run: Run, chassis: Path, lib: Path,
     t0 = time.time()
     seed(run, chassis, lib)
     w, h = run.canvas
+
+    # style director 与页表并行。两边互不看对方的输出:director 不知道有几页、
+    # 讲什么顺序,planner 不知道底色是什么 —— 这是刻意的,删组件词汇那一轮已经
+    # 验证过「模型看见什么词就画什么形状」。语义色与概念的绑定由 builder 那边
+    # 按 theme.css 的接口块自己认。
+    director_err = []
+    director_thread = None
+    if run.style_director:
+        from . import director as _director
+
+        def _run_director():
+            try:
+                _director.direct(run, config()["planner"]["reasoning_effort"], workflow_root)
+            except Exception as exc:            # noqa: BLE001 —— 失败要能报出来,不能吞
+                director_err.append(exc)
+
+        import threading
+        director_thread = threading.Thread(target=_run_director, daemon=False)
+        director_thread.start()
+
     css, pages_doc = deck_call(run, run.prompt(
         "deck", query=run.query, minutes=run.minutes,
         audience=run.audience, scenario=run.scenario or "（没写）",
@@ -775,6 +813,12 @@ def plan_run(run: Run, chassis: Path, lib: Path,
         theme_bans=skills.theme_slop_block(workflow_root),
         font_floor=skills.FONT_FLOOR,
         visual_focus=VISUAL_FOCUS_SPEC if run.visual_focus else ""))
+
+    if director_thread:
+        director_thread.join()
+        if director_err:
+            raise RuntimeError(f"style director 失败:{director_err[0]}") from director_err[0]
+        css = (run.root / CSS_REL).read_text(encoding="utf-8")
 
     pages = split_pages(pages_doc)
     gaps = iface_gaps(css)
@@ -844,6 +888,8 @@ def main() -> None:
                    help="把两张选项菜单表接回 direction 块(对照臂用);默认不接")
     a.add_argument("--visual-focus", action="store_true",
                    help="实验开关:页表每页多一行「视觉焦点」(主证据场由 planner 定);默认关")
+    a.add_argument("--style-director", action="store_true",
+                   help="theme.css 由 core.director 并行产出(两次调用 + 四道闸);默认关")
     n = a.parse_args()
     if not Path(n.prompts).is_dir():
         raise SystemExit(f"✗ --prompts 指的 {n.prompts} 不是目录")
@@ -876,7 +922,7 @@ def main() -> None:
     if n.effort: config()["planner"]["reasoning_effort"] = n.effort
     plan_run(Run(n.query, n.minutes, n.audience, n.label, n.scenario,
                  prompts=Path(n.prompts), direction_menus=n.direction_menus,
-                 visual_focus=n.visual_focus),
+                 visual_focus=n.visual_focus, style_director=n.style_director),
              Path(n.chassis), Path(n.lib), workflow_root)
 
 

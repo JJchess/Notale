@@ -50,6 +50,10 @@ class Writer:
 
     def __init__(self, path, session: str):
         self.path, self.session, self.prev = path, session, None
+        # planner 和 style director 并行时两条线共用一个 Writer。没有锁的话
+        # self.prev 会被互相覆盖,父子链错乱,两条线的行也可能交错写进同一行。
+        import threading
+        self._lock = threading.Lock()
 
     def add(self, req_blocks: list[dict], text: str, usage: dict,
             rid: str, started: str, finished: str, tag: dict | None = None) -> None:
@@ -76,8 +80,8 @@ class Writer:
                      message={"role": "assistant",
                               "content": [{"type": "text", "text": text}], "usage": usage},
                      toolUseResult=tag)
-        self.prev = b.uuid
-        with self.path.open("a", encoding="utf-8") as f:
+        with self._lock, self.path.open("a", encoding="utf-8") as f:
+            self.prev = b.uuid
             for row in (a, b):
                 f.write(row.model_dump_json(exclude_none=True) + "\n")
 

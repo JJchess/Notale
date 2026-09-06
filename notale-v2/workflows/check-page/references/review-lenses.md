@@ -30,7 +30,7 @@
 - Remove decoration that does not clarify subject, hierarchy, state, or atmosphere.
 - Prefer the subject's materials and instruments over generic gradients and dashboard styling.
 - Check that motion has an explanatory job and that reduced motion preserves information.
-- Cross-check against `workflows/scrub-visual-slop.md`: gradient-fill headings, three-column icon grids, colored side-stripe borders, italic display headings, fabricated numbers with no traceable source, redrawn device/browser chrome, decorative-only sparklines/rings.
+- Cross-check against `workflows/scrub-visual-slop.md` as written: italic display headings, unanchored floating glow, emoji as icons, redrawn device/browser chrome, decorative-only sparklines/rings, invented kickers, fabricated numbers with no traceable source, overshoot easing, looping pulse dots, repeating stripe/grid backgrounds.
 
 ## Evidence format
 

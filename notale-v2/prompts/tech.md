@@ -19,11 +19,12 @@
 
 - 只修改 `#stage` 内容；不把页码显示给读者。
 - 目标 HTML 由你从零创建；不修改 `assets/`，不新建旁路文件，不读其他 `page-*.html`。
-- 逻辑画布固定 {canvas_w} × {canvas_h}，不得滚动。`#stage` 是 flex 列；
-  只有主体区 `flex:1` 且 `min-height:0`，其余区块用自然高度；剩余空间留在主体周围
-  成为一整块留白，不要切给区块。需要收缩的 flex/grid 子元素加 `.min0`。
-- 不移除或覆盖 `.min0`、`.cv-fill`、`.no-pan` 的机制；缩放画布内禁止 `position:fixed`。
-- 默认用 flex；只有真正二维对齐时才用 grid。
+- 每页是一个不可滚动的画面。`#stage` 就是这块画面，坐标系 {canvas_w} × {canvas_h}
+  （底盘负责缩放铺满视口）。元素可以用 `position:absolute` 直接落在坐标上；
+  画面主体可以 `inset:0` 满幅铺底，文字压在它上面。
+  flex 和 grid 留给真正的行列关系，需要收缩的子元素加 `.min0`。
+- 不移除或覆盖 `.min0`、`.cv-fill`、`.no-pan` 的机制；`position:fixed` 会脱出缩放，不能用
+  （`absolute` 相对 `#stage`，不受影响）。
 
 ## 视觉
 

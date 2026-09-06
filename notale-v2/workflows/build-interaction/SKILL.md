@@ -1,6 +1,6 @@
 ---
 name: build-interaction
-description: "Build a 1600×900 learning interaction where learner action changes real model state and visible evidence. Use for planner pages labeled [交互页], excluding pages whose primary action is editing runnable code."
+description: "Build a non-scrolling learning interaction where learner action changes real model state and visible evidence. Use for planner pages labeled [交互页], excluding pages whose primary action is editing runnable code."
 ---
 
 # Build Interaction

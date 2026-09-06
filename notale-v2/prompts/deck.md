@@ -5,10 +5,12 @@
 
 ## 交付
 
-同一回复只调用两次 `Write`，不输出正文：
+<!--css:start-->同一回复只调用两次 `Write`，不输出正文：
 
 1. `Write(file_path="{css_path}", content=…)`：完整纯 CSS，不加代码围栏。
-2. `Write(file_path="{pages_path}", content=…)`：图池后接全部页面：
+2. <!--css:end--><!--pages-only:start-->只调用一次 `Write`，不输出正文：
+
+<!--pages-only:end-->`Write(file_path="{pages_path}", content=…)`：图池后接全部页面：
 
        （图池表，或者一行「本套无需图池」）
 
@@ -46,6 +48,7 @@
   孤立背景照片做组件素材。
 - `用在哪几页` 写页号，逗号分隔——harness 按这一列把文件名发给对应的页，写错就送不到。
 
+<!--css:start-->
 ## `theme.css`
 
 ### 视觉方向
@@ -58,17 +61,17 @@
 
 ## CSS 边界
 
-只生成共享 token 与区域关系；不生成页眉页脚、`mount()`、utility 类或标题位置。
-单页专用的尺寸、gap 和 flex 份额留给建页 agent 内联。
+只生成共享 token；不生成页眉页脚、`mount()`、utility 类或标题位置，也不规定各页怎么排版。
+单页的尺寸、坐标与份额留给建页 agent 内联。
 
 ## 固定版心
 
 必须原样包含：
 
     :root { --pad-x: 56px; --pad-y: 28px; }
-    #stage { display: flex; flex-direction: column; padding: var(--pad-y) var(--pad-x); }
 
-逻辑画布 {canvas_w}×{canvas_h}；只有主区 `flex:1`，其余区块自然高度，剩余空间留作主区周围的整块留白。
+每页是一个不可滚动的画面，坐标系 {canvas_w}×{canvas_h}。共享层不规定 `#stage` 怎么排
+——各页自己决定是在画面上定点摆放还是切分区域。
 `base.css` 已负责缩放、reset、`[hidden]`、`.sr-only/.min0/.cv-fill/.no-pan`、焦点和
 reduced-motion；不重复或覆盖。
 
@@ -85,8 +88,8 @@ reduced-motion；不重复或覆盖。
 
 ## 版式
 
-共享版式只定义可复用的区域关系，不规定某页的具体内容；不要用万能两栏冒充全部版式。
-知识关系（过程／对照／归类／概括）由各页用 SVG、Canvas、图表或自己的布局表达，不预置骨架类。
+共享层不预置任何版式骨架类。构图由各页在画布上自己定：知识关系（过程／对照／归类／概括）
+用 SVG、Canvas、图表或定点摆放来表达。
 
 舞台背景不用重复条纹、点阵或网格；网格线只属于真实坐标系或图表。
 
@@ -105,9 +108,9 @@ reduced-motion；不重复或覆盖。
        token  --model #2457A6  当前模型值｜预测、前向箭头
        token  --fs-body 18     正文
        版心   1488×844         #stage 已含 padding
-       版式   .focus           标题后单一主区
        ==== /INTERFACE ==== */
 
+<!--css:end-->
 ## `pages.md`：标签加主题
 
 每页只写**一个标签和一句主题**：这页讲什么、读者要明白什么，可带冒号补语指方向。

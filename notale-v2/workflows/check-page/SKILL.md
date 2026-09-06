@@ -17,7 +17,7 @@ Read the brief — the page spec is one tag plus one sentence naming what this p
 
 ## 2. Capture representative states
 
-Open the page at the real route and logical 1600×900 stage. Capture the initial state, each major interaction outcome, reset, and reduced-motion state when animation matters. Use keyboard navigation as well as pointer input.
+Open the page at the real route; the stage is one non-scrolling picture in logical 1600×900 coordinates. Capture the initial state, each major interaction outcome, reset, and reduced-motion state when animation matters. Use keyboard navigation as well as pointer input.
 
 Do not infer visual quality from DOM or CSS. If a region looks questionable, inspect a crop at readable scale.
 

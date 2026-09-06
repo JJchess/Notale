@@ -1,6 +1,6 @@
 ---
 name: build-code
-description: "Build a 1600×900 runnable Python learning page in the supplied Notale code workbench. Use for planner pages labeled [代码页], not simulations or interactions without learner-authored code."
+description: "Build a non-scrolling runnable Python learning page in the supplied Notale code workbench. Use for planner pages labeled [代码页], not simulations or interactions without learner-authored code."
 ---
 
 # Build Code

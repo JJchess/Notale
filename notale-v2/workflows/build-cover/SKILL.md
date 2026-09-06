@@ -1,6 +1,6 @@
 ---
 name: build-cover
-description: "Build a 1600×900 title or chapter-opening page led by composition, authored motion, or a procedural visual system. Use for planner pages labeled [标题页], not explanatory or learning-interaction pages."
+description: "Build a non-scrolling title or chapter-opening picture led by composition, authored motion, or a procedural visual system. Use for planner pages labeled [标题页], not explanatory or learning-interaction pages."
 ---
 
 # Build Cover
