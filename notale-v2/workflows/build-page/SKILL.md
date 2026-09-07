@@ -11,7 +11,7 @@ Choose the medium carrying the decisive evidence:
 - `chart`: quantitative encoding, comparison, distribution, uncertainty, or a data relation carries the claim.
 - `general`: authored HTML, SVG, Canvas, diagrams, mechanisms, maps, bounded objects, or narrative motion carry the claim.
 
-Before choosing, name the one evidence relation the reader must see. Select the Main by its evidence geometry and state organisation, never by a similar topic name. In the first response, state the needed transferable pattern in one sentence, then issue parallel `Read` calls for exactly one reference and one Main from the same category. Do not read any other sample. Never combine references or use `general` as a base layer beneath another category.
+In the first response, name the evidence relation and transferable pattern in one sentence. Choose Main by evidence geometry and state organisation, not topic similarity; then issue parallel `Read` calls for exactly one reference and one Main from the same category. Do not read any other sample. Never combine references or use `general` as a base layer beneath another category.
 
 ## References
 
@@ -63,4 +63,4 @@ Before choosing, name the one evidence relation the reader must see. Select the 
   - synchronized spatial and profile views connect position, height, and quantity.
   `<skill-dir>/samples/bundles/3d/population-mountains.full.md`
 
-Follow the selected reference as the construction contract. Preserve the supplied chassis, theme interface, page brief, and output path.
+Follow the selected reference to develop this same construction decision; do not write a second contract.

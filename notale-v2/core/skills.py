@@ -190,6 +190,7 @@ def routed_workflow(
         raise FileNotFoundError(f"routed workflow is not installed: {path}")
     body = _apply_sample_mode(
         name, path.read_text(encoding="utf-8", errors="replace").strip(), samples)
+    body = re.sub(r"\A---\n.*?\n---\s*", "", body, count=1, flags=re.S)
     aux = _aux_sample_catalog(name, root) if include_aux else ""
     if aux:
         marker = "Do not read any other sample."
@@ -203,13 +204,11 @@ def routed_workflow(
     # **路径根只写一次。** 展开成绝对路径时,每条都重复
     # `/…/workflows/build-page/` 这 60 多个字符 —— build-page 的 SKILL 里 25 条路径,
     # 光前缀就占 1,575 字符(全块的 22.6%),四个 workflow 合计 3,089 字符。
-    # 工具侧接受相对 workflow 根的路径(tools._is_workflow_resource 按 resource_root
-    # 解析),所以留相对路径 + 在标签上声明根目录即可,零信息损失。
+    # 路径声明由 builder.environment_context 统一生成，工具仍按 resource_root 解析。
     root_dir = path.parent.resolve()
     body = body.replace("<skill-dir>/", "").replace("<skill-dir>", str(root_dir))
     block = (
-        f'<workflow_skill name="{name}" root="{root_dir}">\n'
-        f"下面所有 `references/…` 与 `samples/…` 路径都相对上面这个 root。\n\n"
+        f'<workflow_skill name="{name}">\n'
         f"{body}\n</workflow_skill>"
     )
     return block + ("\n\n" + aux if aux else "")
@@ -276,9 +275,10 @@ def _source_block(root: Path, sources: tuple[tuple[str, str], ...]) -> str:
     return "\n\n".join(parts)
 
 
-def anti_slop_block(root: Path = WORKFLOWS) -> str:
-    """Copy and visual guidance belongs to every Builder page."""
-    return _source_block(root, ANTI_SLOP_FILES)
+def anti_slop_block(root: Path = WORKFLOWS, *, include_visual: bool = True) -> str:
+    """Keep factual copy guidance shared; code owns its visual policy."""
+    sources = ANTI_SLOP_FILES if include_visual else ANTI_SLOP_FILES[:1]
+    return _source_block(root, sources)
 
 
 def theme_slop_block(root: Path = WORKFLOWS) -> str:

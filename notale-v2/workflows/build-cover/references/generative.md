@@ -17,9 +17,9 @@ Extract one subtle conceptual seed from the subject, then map it to behavior:
 
 Do not begin by choosing a familiar pattern. First state: “The subject behaves like `<rule>`; viewers will see it through `<visible consequence>`.” Select particles, fields, cells, branches, geometry, or shaders only after that sentence is concrete.
 
-## Write the generative specification
+## Develop the generative decision
 
-Record:
+Refine the first-response choice with these questions; no separate written specification:
 
 - conceptual seed and governing rule;
 - entity or field being updated;
@@ -178,11 +178,8 @@ For a few DOM/SVG title tracks, use CSS or WAAPI. When a host-provided timeline 
 | Tutorial pattern | A known effect was selected before a concept | Rewrite the governing-rule sentence and change the entity behavior |
 | Random wallpaper | Randomness changes placement but expresses no relationship | Couple variation to a constraint, field, threshold, or feedback rule |
 | Cosmetic controls | Parameters only change hue or primitive size | Expose density, rate, ratio, threshold, or interaction distance instead |
-| Seed drift | Mixed random sources or unstable creation order | Use one seeded stream and stable entity ordering |
 | Flat hierarchy | Every region has similar density and contrast | Add a compositional attractor and title exclusion field |
-| Layer inflation | Buffers duplicate the same visual role | Assign each layer a distinct update or semantic responsibility |
 | Runaway loop | Work accumulates without bound | Bound population/history, reuse storage, and stop when a still is complete |
-| Resize mutation | Scaling stretches a seed into a different composition | Reconstruct deterministically from logical size and canonical seed |
 
 ## Verify the system
 

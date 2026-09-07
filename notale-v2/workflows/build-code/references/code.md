@@ -25,7 +25,7 @@ Require:
 
 Reject syntax highlighting without execution, fixed answers inside an editor, hard-coded frames unrelated to the current model, pass/fail feedback that erases the failing state, and generic output when the target depends on structure.
 
-Before coding, record the learning target, misconception, first edit, runtime and limits, authoritative files, semantic entities and identities, trace strategy, visible evidence, boundary states, next action, and exact reset snapshot. Keep learner code natural: learners practice the language and algorithm, not a visualization API.
+Before coding, determine the first edit, semantic trace and visible evidence; use the following contract without writing a separate specification. Keep learner code natural: learners practice the language and algorithm, not a visualization API.
 
 ## Respect the host and author boundary
 
@@ -144,7 +144,12 @@ Rules are intentionally small:
 
 The view may use browser-native HTML, SVG, Canvas, and local relative images. It cannot use `fetch`, XHR, WebSocket, Worker, dynamic imports, external scripts, external fonts, or runtime CDNs. Put markup in `index.html`, styling in `style.css`, and classic JavaScript in `render.js`.
 
-The fixed host fetches those three files with `no-store`, composes an iframe `srcdoc`, and applies `sandbox="allow-scripts"` without `allow-same-origin`. A CSP blocks connections, workers, frames, forms, and non-inline scripts. Parent and child validate a private channel and message source. The iframe cannot read the parent document. View errors are caught by the bridge and shown without destroying learner source.
+This code workflow owns the workbench's visual language independently of the surrounding deck.
+Use the native view's foundation palette, typography and semantic colors below; do not read or
+reproduce the deck's `assets/theme.css`, style-director choices or neighboring-page styling.
+Subject-specific composition, geometry and meaningful motion remain yours. Keep the editor and
+host shell unchanged; authoring `view/style.css` is not permission to replace the code foundation
+with the deck's theme.
 
 `core/native-view.css` provides only reset, typography, reduced-motion behavior, and these foundation tokens:
 
@@ -214,7 +219,7 @@ Use the VS Code-like chrome as working context. Do not add a bottom blue status 
 
 ## Bound execution honestly
 
-Learner Python runs in a dedicated Pyodide Worker. The main thread watchdog terminates and recreates that Worker on timeout. Bound source size and paths, execution time, trace count and bytes, stdout/stderr, snapshot depth and width, string length, and displayed failures. Gate messages by request ID and Worker generation and destroy Python proxies after conversion.
+The host owns Worker timeout recovery and message isolation. Set lesson limits for source, execution time, trace, output and snapshot size.
 
 A Worker protects UI responsiveness; it is not a hardened multi-tenant security boundary. Do not place credentials or sensitive same-origin data in the page. Hostile code, native packages, persistence, network access, or compiled languages require an explicitly authorized backend sandbox.
 
@@ -234,23 +239,16 @@ Use local dependencies and no runtime CDN. Report runtime initialization failure
 
 Reset cancels playback and active execution, invalidates stale messages, restores all authored models, clears markers/output/tests/trace/decoration, restores the initial step, speed, and Output height, and sends a normal packet with `playback.reason === "reset"` and `previousStep === null`.
 
-On teardown, dispose Monaco models and editor, terminate the Worker, cancel timers, release pointer capture, remove the iframe message listener, and remove the iframe. Retry may preserve repaired source; Reset restores authored source.
+The host owns editor and Worker teardown. Retry may preserve repaired source; Reset restores authored source.
 
 ## Repair common failures
 
 | Failure | Cause | Repair |
 |---|---|---|
-| Prerecorded view | Frames do not come from current source | Execute current models and render returned trace only |
 | Variable-name guessing | Meaning is inferred from `i`, `graph`, or `root` | Author a semantic `trace.py` contract |
 | Instrumentation exercise | Learner code is filled with display calls | Move observation to trace helpers |
 | Pass/fail wall | Tests hide observed state | Return the failing case, property, and trace |
 | Generic bars everywhere | Structure is coerced into numbers | Author relationship-preserving native HTML/SVG/Canvas |
-| View-owned truth | DOM position is the only state | Render from JSON-safe steps with stable IDs |
-| Whole-scene replacement | Identity and motion become ambiguous | Key and update persistent elements |
-| Stale run wins | Cancelled Worker updates the page | Gate by request ID and generation |
-| Frozen page | Learner loop blocks the main thread | Run in Worker and terminate on timeout |
-| Dirty reset | State survives Reset | Restore the full authored snapshot |
-| Sandbox escape assumption | Pyodide Worker is claimed as hostile-code security | State the boundary or use a backend sandbox |
 | Empty right pane | Evidence appears only after Run | Author an informative initial step |
 
 ## Verify the complete interaction
@@ -261,10 +259,6 @@ On teardown, dispose Monaco models and editor, terminate the Worker, cancel time
 - Compare Run, manual Step, and autoplay at the same index.
 - Test representative empty, duplicate, disconnected, negative, deep, or large states when relevant.
 - Reset during playback and execution, twice, and compare the full snapshot.
-- Drag and keyboard-resize Output; confirm right-pane geometry is unchanged.
 - Verify keyboard access and reduced motion.
-- Confirm one persistent iframe across frame changes and exact `sandbox="allow-scripts"`.
-- Confirm the iframe cannot read `parent.document` and cannot fetch.
 - Force a `renderNotaleView` error; verify the parent error surface appears and source remains.
 - Generate fresh output, serve it, and confirm no CDN requests, missing resources, console errors, clipping, or page scrolling.
-- Destroy and remount; confirm one Worker, one editor, one iframe, and one response per action.

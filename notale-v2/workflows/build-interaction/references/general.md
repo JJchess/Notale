@@ -24,7 +24,7 @@ Every consequential outcome must be computed from the learner's current input th
 
 ## Write the interaction contract
 
-Complete this specification before UI work:
+Refine the first-response construction decision with these questions before UI work; no separate written contract:
 
 | Decision | Required answer |
 |---|---|
@@ -351,7 +351,7 @@ When support is needed, diagnose the current attempt before escalating:
 4. procedural nudge without exact values;
 5. parallel worked example rather than the current solution.
 
-Record the highest support used. Scaffolded completion and an unassisted changed-condition attempt are different evidence. Do not infer motivation, confidence, mastery, or durable disposition from one run.
+Do not infer motivation, confidence, mastery, or durable disposition from one run.
 
 ## Reset, retry, and teardown
 
@@ -390,11 +390,6 @@ On teardown, disconnect observers, remove listeners, release pointer capture, de
 | Quiz with effects | Choice is checked against an answer key | Generate a rule-based consequence and allow revision |
 | Decorative physics | Objects move without inspectable quantities | Expose physical variables and outcomes or remove the engine |
 | Fake learning game | Reward loop survives after removing the concept | Bind the primary verb, pressure, and failure to the target relation |
-| Renderer-owned truth | Nodes, bodies, sprites, or marks are the only state | Dispatch logical actions and render from canonical state |
-| Two clocks | Manual, autoplay, engine, or ticker advance different models | Own one step transition and one lifecycle clock |
-| Detached feedback | Text disagrees with geometry, data, or criteria | Derive feedback and visuals from the same evidence evaluation |
-| Empty initial state | The first useful evidence requires Start | Author a representative, active, inspectable initial condition |
-| Dirty reset | Selection, history, support, seed, or renderer survives | Replace the complete snapshot after cancelling owned work |
 
 ## Verify the complete interaction
 
@@ -407,7 +402,7 @@ On teardown, disconnect observers, remove listeners, release pointer capture, de
 - For comparisons, hold scale, unit, start, and clock constant while isolating one variable.
 - For games, verify fair start, grace, readable failure evidence, rapid retry, pause, and one loop.
 - Interrupt motion or direct manipulation with Reset and compare the complete initial snapshot twice.
-- Resize at narrow and wide bounds and verify logical coordinates, overlays, labels, controls, and safe action regions.
+- Verify logical coordinates, overlays, labels, controls and action regions when the fixed stage is scaled.
 - Force reduced motion and renderer fallback; verify the learning loop and all evidence remain available.
 - Destroy and remount; confirm one renderer, one clock, one listener response, and stable owned-resource counts.
 - Confirm zero clipped controls, unreachable actions, failed resources, stale callbacks, and runtime errors.

@@ -2,13 +2,9 @@
 
 The claim must remain understandable without the learner changing a governing model. Rich motion and bounded inspection may expose authored evidence, but they cannot substitute for the decisive initial view.
 
-## Write the page contract
+## Develop the construction decision
 
-Before choosing components or a renderer, complete:
-
-`The learner should understand <one claim> because <visible evidence or relationship>.`
-
-Record:
+Use these questions to refine the claim and evidence already chosen in the first response; no separate written contract:
 
 | Decision | Required answer |
 |---|---|
@@ -22,7 +18,7 @@ Record:
 | Signature | Which subject-specific visual event makes this page memorable? |
 | First view | What complete evidence is visible before hover, playback, or scrolling? |
 
-Remove material that does not change the contract. If all required entities, labels, and relations cannot occupy the target canvas without compressed type or ambiguous paths, split the explanation into overview and detail pages.
+Remove material that does not serve the claim. If it cannot fit, cut supporting explanation or disclose useful detail through interaction; preserve readable type and the decisive evidence.
 
 ## Choose representation from intent
 
@@ -193,7 +189,7 @@ Choose logical scene dimensions independent of CSS size. Compute one logical-to-
 
 ## Use motion as page language
 
-Motion is expected to be considered for every page, including pages described as static. It may establish hierarchy, preserve identity, reveal correspondence, show continuous change, pace a process, or give the scene restrained life. It must not make the initial evidence blank or force the learner to remember a transient frame.
+Choose motion or a static composition from the content. Motion may establish hierarchy, correspondence, process or atmosphere; preserve useful initial evidence and an inspectable result. Classroom progression may use Deck steps.
 
 Design named states before transitions:
 
@@ -214,7 +210,7 @@ Choose the smallest motion mechanism that fits the authored behavior:
 
 With GSAP, use labels that match named page states and the position parameter for overlap. Use timeline defaults for shared durations and easing. Own one top-level timeline, cancel or kill it before reconstruction, and do not chain a sequence through scattered `delay` values.
 
-Keep authored playback, scroll progression, direct beat navigation, annotation, and progress indicator synchronized through one controller. A reader must be able to inspect the decisive state without replaying an entire sequence. Under reduced motion, render the decisive or compact key-state composition immediately.
+Keep authored playback, direct beat navigation, annotation, and progress indicators synchronized through one controller. A reader must be able to inspect the decisive state without replaying an entire sequence. Under reduced motion, render the decisive or compact key-state composition immediately.
 
 Ambient motion is permitted when it reinforces material or spatial depth. Keep it slower and lower contrast than explanatory motion, stop it while hidden, and make no claim depend on it.
 
@@ -232,7 +228,7 @@ Hover, focus, selection, pan, zoom, or filtering may reveal predetermined detail
 
 - Measure the actual host with one observer.
 - Recompute logical-to-host transforms and overlays from canonical geometry.
-- Decide whether a narrow layout reflows, crops peripheral scenery, or switches to an authored alternate composition.
+- The fixed logical stage scales as one picture; verify labels and overlays at the displayed size.
 - Preserve the evidence region, real labels, and title before decorative detail.
 - Initialize each renderer once, update existing instances, and keep one owned animation clock.
 - On reset, cancel active motion before restoring the initial snapshot.
@@ -254,11 +250,8 @@ Hover, focus, selection, pan, zoom, or filtering may reveal predetermined detail
 | Label fog | Text compensates for weak objects or no callout lanes | Improve silhouettes, align callouts, and reserve label space |
 | Diagram about a mechanism | Labels name parts but do not expose operation | Draw functional parts, changed state, path, and outcome |
 | Primitive soup | Generic shapes have no subject identity | Build functional silhouettes and subject-derived geometry |
-| Connector collisions | Paths were drawn after layout without reserved lanes | Recalculate entity, label, and path bounds together |
 | Reveal theater | Motion delays evidence without changing interpretation | Show the decisive state directly and retain only useful motion |
-| State drift | Text, controls, and visuals use separate truths | Derive all authored views from one state controller |
 | Dead canvas | A custom renderer is static, flat, and visually unfinished | Add subject material, layer roles, signature detail, and restrained life |
-| Busy canvas | Effects compete with evidence | Reduce moving layers, contrast, and unrelated texture before reducing evidence |
 | Dirty remount | Loops, observers, or canvases survive | Centralize ownership and teardown, then remount-test |
 
 ## Verify the complete page
@@ -266,7 +259,7 @@ Hover, focus, selection, pan, zoom, or filtering may reveal predetermined detail
 - State the page claim using only visible evidence.
 - Trace each conclusion to an object, path, value, or spatial relation.
 - Inspect initial, focus, decisive, settled, and reduced-motion states as still compositions.
-- Test the longest real label, most crowded relation, and narrowest supported host.
+- Test the longest real label and most crowded relation at the target display size.
 - Confirm connector endpoints, callout targets, overlays, and optional hit regions remain aligned after resize.
 - Replay, interrupt, jump, reset, and replay again when authored motion exists; verify one controller and no stale completion.
 - Confirm theme roles remain semantically stable across states.

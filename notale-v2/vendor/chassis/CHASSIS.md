@@ -1,8 +1,6 @@
 # CHASSIS.md —— 底盘接口速查
 
-`base.css` 和 `base.js` 的**全部对外接口**在这一页里；只有和主题无关的机制（画布缩放、
-canvas 高分屏适配、指针坐标换算、可访问性地板）。**没有任何配色、字体、字号、间距或
-组件外观** —— 那些是每次生成自己的设计。
+底盘负责画布缩放、canvas 高分屏、指针坐标与可访问性机制；主题提供视觉 token。
 
 ---
 
@@ -10,15 +8,7 @@ canvas 高分屏适配、指针坐标换算、可访问性地板）。**没有�
 
 引入方式：`<link rel="stylesheet" href="assets/base.css">`，放在你自己的样式之前。
 
-### 必须由你给出的三个 token（底盘不给默认值，缺了页面会明显不对）
-
-```css
-:root{
-  --bg:        #0b0e14;      /* 页面底色 */
-  --text:      #e6e6e6;      /* 默认文字色 */
-  --font-sans: "Noto Sans SC", system-ui, sans-serif;
-}
-```
+主题须提供 `--bg`、`--text`、`--font-sans`，底盘不给默认值。
 
 底盘另外会读 `--stage-w` / `--stage-h`（画布逻辑尺寸，默认 1600 / 900）和
 `--focus`（焦点圈颜色）。缩放比由底盘算出后写回 `:root` 的 `--s`，CSS 里可以直接用。
@@ -32,8 +22,8 @@ canvas 高分屏适配、指针坐标换算、可访问性地板）。**没有�
 
 | 类 | 作用 | 什么时候必须加 |
 |---|---|---|
-| `.min0` | `min-width:0; min-height:0` | **任何 grid/flex 分栏的子项。** 子项默认不许缩到比内容小，一段长文本或一个宽 canvas 会把整列顶开、被裁掉，表现为「右边内容莫名其妙没了」 |
-| `.cv-fill` | `position:absolute; inset:0; width:100%; height:100%` | 铺满父容器的 `<canvas>`。canvas 是替换元素，有 300×150 的默认尺寸，只写 `inset:0` 拉不开它 |
+| `.min0` | `min-width:0; min-height:0` | grid/flex 分栏的子项，允许内容收缩 |
+| `.cv-fill` | `position:absolute; inset:0; width:100%; height:100%` | 铺满父容器的 canvas，不能只写 inset |
 | `.no-pan` | 关掉触摸平移 | 需要拖动的交互区 |
 | `.sr-only` | 只给读屏软件 | 图形的文字替代 |
 
@@ -102,6 +92,4 @@ canvas/svg 里画的东西用 `Deck.onStep(function(step, max){ … }, n)` 按�
 （页面没有 `data-step` 元素时步数就从这里来）。函数是步数的函数：任何 step（含 0）都要画出那一步的
 完整画面，不能只向前追加——回退、`?all`、课后复看靠的都是这一点。
 未出场的元素透明且 `inert`。`?all` 或系统 reduced-motion 直接停在末步，给课后复看。
-出场手法（淡入加 6px 上移）是底盘默认，页面可以覆盖。用了就至少 2 步；每一步都该新增证据，
-不是再冒出一段文字；所有步都显示出来时，这一页仍然要读得通。
-
+默认淡入加 6px 上移，页面可覆盖；使用时至少 2 步。

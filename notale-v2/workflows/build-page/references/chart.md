@@ -8,7 +8,7 @@ Complete:
 
 `The learner should understand <one quantitative or relational claim> because <visible marks, values, comparison, or uncertainty>.`
 
-Record before selecting a library:
+Refine the first-response construction decision before selecting a library; no separate written contract:
 
 - audience and page job;
 - reader question and intended conclusion;
@@ -38,8 +38,6 @@ Before selecting a renderer, state the reader's question and map each data field
 
 Record:
 
-- canonical records and stable IDs;
-- reader question and intended conclusion;
 - x, y, length, size, color, shape, and connection encodings actually used;
 - units, domains, sort order, aggregation, and missing-value policy;
 - comparison groups and which scales must be shared;
@@ -83,7 +81,7 @@ Reserve room for real text:
 - measure or conservatively estimate the longest category, tick, direct label, and annotation;
 - include axis-name and source-note clearance in the plot budget;
 - rotate labels only when a different orientation, wrapping, abbreviation, or chart form is worse;
-- keep connector and label endpoints within the visible host at narrow and wide bounds;
+- keep connector and label endpoints within the scaled stage;
 - use internal chart padding for marks and labels, not an oversized outer frame that shrinks the plot.
 
 Format values through one function shared by axis ticks, tooltip, direct labels, annotation, DOM evidence, and fallback table. Preserve meaningful precision; do not show more decimals than the evidence supports. Attach units at the axis or value level where they remain unambiguous.
@@ -145,13 +143,7 @@ Keep scales and geometry in `render(state)`. Highlight a selected entity and its
 |---|---|---|
 | Chart wallpaper | Marks are present but no reader question was chosen | Name the question and annotate the decisive evidence |
 | View drift | Several charts compete without a shared claim | Keep the one representation that carries the conclusion |
-| False comparison | Views use different domains or baselines | Share scales or state the non-comparability explicitly |
-| Tooltip dependence | Exact evidence exists only on hover | Add direct labels, DOM values, or evidence table |
-| Force decoration | Network moves forever without adding information | Seed, settle, and stop the layout |
-| Renderer truth | Data exists only inside chart options | Keep canonical records and derive options from state |
-| Reset drift | Filters, ordering, or layout survive reset | Rebuild all derived state from one initial snapshot |
 | Clipped evidence | Host sizing and label budget were left to defaults | Measure the host, reserve label space, then resize one existing instance |
-| Motion illusion | Axis or aggregation changes while marks animate | Hold domains or expose the changed rule before comparison |
 | Theme-only identity | The page looks polished but could contain any dataset | Add subject notation, a decisive annotation, and a data-specific signature relation |
 
 ## Verify the chart
@@ -161,6 +153,6 @@ Keep scales and geometry in `render(state)`. Highlight a selected entity and its
 - Change each inspection control and confirm chart, annotation, and DOM evidence agree.
 - Reset twice and compare data ordering, scales, selection, and deterministic layout.
 - Inspect initial, decisive, settled, and reduced-motion states without hover.
-- Resize at narrow and wide bounds and inspect clipped labels and legend collisions.
+- Verify scaled-stage labels and legend collisions.
 - Compare chart values, annotation, DOM evidence, and fallback table for identical units and formatting.
 - Confirm the renderer initializes once and all simulations, observers, and instances are disposed.

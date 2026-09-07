@@ -111,8 +111,6 @@ Pause nonessential loops while the document is hidden. On resize, either preserv
 | Naked zoom | Scale changes without a destination | End on a concrete subject cue or delete the camera move |
 | Equal activity | Every layer moves at similar speed and contrast | Assign one primary motion and quiet the rest |
 | Title collision | The visual track ignores the title field | Reserve the field in every key state, not only the final frame |
-| Replay stacking | Timers or animations accumulate | Cancel active work and restore the named initial state before replay |
-| Reduced-motion blank | Meaning exists only during interpolation | Design and render the payoff as a complete still |
 
 ## Verify the sequence
 

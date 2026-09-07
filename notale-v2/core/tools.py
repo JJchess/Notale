@@ -23,24 +23,15 @@ VISUAL_SAMPLE_WORKFLOWS = frozenset({
     "build-interaction",
 })
 VISUAL_SAMPLE_USE = """<sample_use>
-This is a worked example, not a template. Before Write, name the one
-composition, visual mechanism, or interaction loop you will adapt. Carry that
-pattern into the current subject and supplied theme at comparable visual and
-implementation fidelity.
-
-Replace the sample's subject matter, prose, data, labels, palette, and
-unrelated deck or interface chrome. The result must visibly retain the chosen
-pattern, not merely copy the sample's component syntax.
+This is a worked example, not a template. Adapt its chosen composition,
+visual mechanism or state loop at comparable fidelity. Replace subject matter,
+data, copy, palette, host skeleton and unrelated navigation with this page's
+contract. Retain the visual relationship, not just component syntax.
 </sample_use>"""
 
 _CHECK_USE_HEAD = (
-    "This report is instrumentation, not approval. Inspect the returned screenshots "
-    "and the actual state changes. No runtime error, clipping, or density note does "
-    "not prove that the page is truthful or complete."
-)
-_CHECK_USE_TAIL = (
-    "When you finish, name one piece of evidence you actually verified here, "
-    "not the absence of warnings."
+    "This report is instrumentation, not approval. Verify screenshots, content "
+    "and actual state changes against the reference."
 )
 _CHECK_USE_ITEMS = {
     "build-cover": (
@@ -50,13 +41,13 @@ _CHECK_USE_ITEMS = {
         "result; decoration must not imitate the algorithm.",
     ),
     "build-page": (
-        "For every large block that carries a fill or a border, ask what is lost if its fill, border and shadow are removed. If only grouping is lost, remove the skin and fix proximity, alignment or the title position instead; keep the boundary only when a set, a shape or an interaction state would be lost. Name the concrete edit, not a verdict.",
+        "Remove fills, borders and shadows that only group content; use proximity and alignment. Keep boundaries that encode a set, shape or interaction state.",
         "Check that there is one main evidence field, not several equal parts.",
         "Recompute at least one derived value from the page's own data and formulas.",
         "The same data must agree across prose, chart, and annotations.",
     ),
     "build-interaction": (
-        "For every large block that carries a fill or a border, ask what is lost if its fill, border and shadow are removed. If only grouping is lost, remove the skin and fix proximity, alignment or the title position instead; keep the boundary only when a set, a shape or an interaction state would be lost. Name the concrete edit, not a verdict.",
+        "Remove fills, borders and shadows that only group content; use proximity and alignment. Keep boundaries that encode a set, shape or interaction state.",
         "Walk one legal progression path with the after states.",
         "Also cover the applicable illegal or boundary case, the completion state, and Reset.",
         "A legal action must change the real model and the visible evidence; an action "
@@ -72,8 +63,7 @@ def check_use(workflow: str | None) -> str:
     if not items:
         return ""
     body = "\n".join(f"- {item}" for item in items)
-    return (f'<check_use workflow="{workflow}">\n{_CHECK_USE_HEAD}\n{body}\n'
-            f"{_CHECK_USE_TAIL}\n</check_use>")
+    return f'<check_use workflow="{workflow}">\n{_CHECK_USE_HEAD}\n{body}\n</check_use>'
 
 
 IMG_EXT = {".png", ".jpg", ".jpeg", ".webp", ".gif"}
@@ -138,10 +128,7 @@ def _out_of_bounds(
     return None
 IMG_MAX_W = 1600     # 比这更宽的图先缩到这个宽度再进上下文。素材图有 3000px 的,
                      # 原样 base64 一张就能顶掉半个上下文,而看清版面并不需要那些像素。
-MAX_IMAGES = 2       # 一次工具调用最多内联几张图。builder 那边 hist 只留最近 2 张
-                     # (见 builder.evict_images),一次回 4 张的话前两张会在下一次
-                     # 请求前就被挤掉 —— 等于白算。多出来的**报出路径**让它自己 Read,
-                     # 不静默丢弃:静默丢弃正是这一轮修的那个 bug 的形状。
+MAX_IMAGES = 2       # 每次调用内联首尾两张，其余列路径；历史仅超软上限时淘汰。
 
 SELFCHECK = "assets/selfcheck.py"
 @dataclass
@@ -197,7 +184,7 @@ def _sample_sheet(path: Path, resource_root: Path | None) -> Path | None:
 
 
 def _visual_main_sample(path: Path, resource_root: Path | None) -> bool:
-    """True only for full Main bundles in the three visual page workflows."""
+    """Visual full and mini bundles share the same migration boundary."""
     if resource_root is None or resource_root.name not in VISUAL_SAMPLE_WORKFLOWS:
         return False
     try:
@@ -207,37 +194,35 @@ def _visual_main_sample(path: Path, resource_root: Path | None) -> bool:
     return (
         len(rel.parts) >= 3
         and rel.parts[:2] == ("samples", "bundles")
-        and path.name.endswith(".full.md")
+        and path.name.endswith((".full.md", ".mini.md"))
     )
 
 
 SCHEMAS = [
     {"name": "Read", "description":
         "读一个文件。普通文本回带行号的内容;png/jpg 回图片本身。"
-        "工作流 references/*.md 总是一次返回全文并明确标记 EOF,不要分段重读。",
+        "工作流 reference 和 sample bundle 返回全文及 EOF，忽略 offset/limit。路径按环境块解析。",
      "parameters": {"type": "object", "properties": {
-         "file_path": {"type": "string", "description": "相对 pages/ 的路径；也接受绝对路径"},
+         "file_path": {"type": "string", "description": "文件路径"},
          "offset": {"type": "integer", "description": "从第几行开始读"},
          "limit": {"type": "integer", "description": "读多少行"}},
          "required": ["file_path"], "additionalProperties": False}},
     {"name": "Write", "description":
         "写入完整文件，适合首次创建或确需整体重构；已有页面的局部修正优先用 Patch/Edit。",
      "parameters": {"type": "object", "properties": {
-         "file_path": {"type": "string", "description": "相对 pages/ 的路径；也接受绝对路径"},
+         "file_path": {"type": "string", "description": "文件路径"},
          "content": {"type": "string", "description": "完整内容"}},
          "required": ["file_path", "content"], "additionalProperties": False}},
-    {"name": "Edit", "description": "精确字符串替换。old_string 必须唯一匹配,否则失败。"
-                                    "要一次改好几处就用 Patch。",
+    {"name": "Edit", "description": "精确字符串替换。old_string 必须唯一匹配；replace_all=true 时替换全部匹配。",
      "parameters": {"type": "object", "properties": {
-         "file_path": {"type": "string", "description": "相对 pages/ 的路径；也接受绝对路径"},
+         "file_path": {"type": "string", "description": "文件路径"},
          "old_string": {"type": "string", "description": "要被替换的原文"},
          "new_string": {"type": "string", "description": "替换成什么"},
          "replace_all": {"type": "boolean", "description": "替换全部出现处"}},
          "required": ["file_path", "old_string", "new_string"], "additionalProperties": False}},
     {"name": "Patch", "description":
-        "一次原子地改页面里的好几处。"
-        "任何一处的 old 找不到就整批不写,并告诉你是哪一处 —— 不会改一半。"
-        "这是改页的首选:比一处一次地 Edit 少几倍来回。",
+        "批量修改页面：先确认每个 old 在原文件中存在，否则整批不写；"
+        "然后按顺序将每个 old 的全部匹配替换为 new。",
      "parameters": {"type": "object", "properties": {
          "page": {"type": "string", "description": "页面文件名,例 page-07.html"},
          "edits": {"type": "array", "description": "要替换的若干处,按顺序应用",
@@ -248,8 +233,8 @@ SCHEMAS = [
          },
          "required": ["page", "edits"], "additionalProperties": False}},
     {"name": "Check", "description":
-        "把页面真渲染一遍并报告:JS 报错、超出画布、被裁、字号地板、画面占用比。"
-        "每次都会重新加载页面并在加载约 1.2 秒后采样,不是等待或调试被动动画的工具。"
+        "渲染页面，报告运行/资源错误、越界、裁切、字号统计、主题字阶偏离和构图指标。"
+        "每次重新加载，在加载约 1.2 秒后采样。"
         "页面声明了 data-step 时会逐步各拍一张,越界与字号按末步判。"
         "把用户能主动触发且会改变学习结果或版面的主要状态合并进同一次 after,不要拆成多次 Check;"
         "决定性终态放在最后一段。截图超过两张时只内联初态和最后一个状态,其余列出路径可单独 Read。",
@@ -261,8 +246,7 @@ SCHEMAS = [
          "shot": {"type": "boolean", "description": "是否返回 800×450 整页截图；视觉模型默认 true"}},
          "required": ["page"], "additionalProperties": False}},
     {"name": "Look", "description":
-        "把画面里的一块裁出来放大看。box 用 Check 报告里 @x,y w×h 那四个数。"
-        "看不清某处到底怎么了就用这个,不要靠猜。box 给小一点(一个元素左右),整页看用 Check 的 shot。",
+        "重新加载页面，执行 after 后裁图放大。box 取 Check 报告的 @x,y w×h；整页截图用 Check。",
      "parameters": {"type": "object", "properties": {
          "page": {"type": "string", "description": "页面文件名,例 page-07.html"},
          "box": {"type": "array", "items": {"type": "integer"},
@@ -273,14 +257,35 @@ SCHEMAS = [
          "required": ["page", "box"], "additionalProperties": False}},
     {"name": "Bash", "description": f"执行 shell 命令。工作目录固定为该页所在的 pages/,超时 {TIMEOUT}s。",
      "parameters": {"type": "object", "properties": {
-         "command": {"type": "string", "description": "要执行的命令"},
-         "description": {"type": "string", "description": "一句话说明这条命令做什么"}},
+         "command": {"type": "string", "description": "要执行的命令"}},
          "required": ["command"], "additionalProperties": False}},
 ]
 
 
-def specs() -> list[dict]:
-    return [{"type": "function", **s} for s in SCHEMAS]
+def specs(workflow: str | None = None, *, vision_input: bool = True) -> list[dict]:
+    rows = [{"type": "function", **s} for s in SCHEMAS]
+    if workflow == "build-code":
+        rows = [s for s in rows if s["name"] in {"Read", "Write", "Edit", "Check", "Look"}]
+    elif workflow:
+        rows = [s for s in rows if s["name"] != "Edit"]
+    if not vision_input:
+        rows = [s for s in rows if s["name"] != "Look"]
+    for s in rows:
+        if s["name"] == "Write" and workflow:
+            edit = "Edit" if workflow == "build-code" else "Patch"
+            s["description"] = f"写完整文件，用于创建或整体重构；局部修正用 {edit}。"
+    return rows
+
+
+def resolve_read_path(file_path: str, cwd: Path, resource_root: Path | None) -> Path:
+    """Use identical resolution for Read execution and reference-read accounting."""
+    path = Path(file_path)
+    resolved = (path if path.is_absolute() else cwd / path).resolve()
+    if not path.is_absolute() and not resolved.exists() and resource_root is not None:
+        alt = (resource_root / path).resolve()
+        if alt.is_file() and _is_workflow_resource(alt, resource_root):
+            return alt
+    return resolved
 
 
 def run(
@@ -306,17 +311,10 @@ def run(
     call_args = dict(args)
     if name in {"Read", "Write", "Edit"} and call_args.get("file_path"):
         path = Path(str(call_args["file_path"]))
-        if not path.is_absolute():
-            resolved = (cwd / path).resolve()
-            # SKILL 里的 references/… 与 samples/… 是**相对 workflow 根**的
-            # (路径根只写一次,省下每条重复的 60 多字符绝对前缀,见 skills.routed_workflow)。
-            # 只在 pages/ 下找不到、且落在 workflow 根内时才回退,所以不会
-            # 让页面路径意外逃出 run 目录 —— 越界仍由 tool_guard 拦。
-            if name == "Read" and not resolved.exists() and resource_root is not None:
-                alt = (Path(resource_root) / path).resolve()
-                if alt.is_file() and _is_workflow_resource(alt, resource_root):
-                    resolved = alt
-            call_args["file_path"] = str(resolved)
+        if name == "Read":
+            call_args["file_path"] = str(resolve_read_path(str(path), cwd, resource_root))
+        elif not path.is_absolute():
+            call_args["file_path"] = str((cwd / path).resolve())
     try:
         r = _dispatch(name, call_args, cwd, resource_root)
         cap = CAP
@@ -392,9 +390,9 @@ def _check(cwd: Path, a: dict, workflow: str | None = None) -> Out:
         inline, rest = _pick_shots(shots)
         for p in inline:
             imgs += _image(p).images
-        if rest:
-            rep += ("\n（只内联了初态和最后一个状态的截图，其余的要看就单独 Read："
-                    + "、".join(str(p) for p in rest) + "）")
+        inline_set = set(inline)
+        rep = re.sub(r"(?m)^(\s*截图 )(\S+\.png)([^\n]*)$",
+                     lambda m: m[0] + (" [已内联]" if Path(m[2]) in inline_set else " [可 Read]"), rep)
     use = check_use(workflow)
     return Out((use + "\n\n" + rep) if use else rep, imgs)
 

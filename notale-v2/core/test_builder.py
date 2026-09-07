@@ -61,6 +61,78 @@ def page(pid="page-01", workflow="build-cover", label="标题页") -> builder.Pa
 
 
 class PlanningContextTests(unittest.TestCase):
+    def test_code_and_cover_receive_only_applicable_guidance(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = self.make_root(Path(td))
+            (root / 'pages/assets/CHASSIS.md').write_text('API\n## 分步出场\nDeck.onStep')
+            code = '\n\n'.join(builder.instruction_blocks(root, 6, 'build-code', notes='notes').values())
+            cover = '\n\n'.join(builder.instruction_blocks(root, 6, 'build-cover').values())
+        self.assertNotIn('Deck.onStep', code)
+        self.assertNotIn('<speaker_notes>', code)
+        self.assertNotIn('Patch', code)
+        self.assertIn('只编辑', code)
+        self.assertIn('Deck.onStep', cover)
+        self.assertNotIn('做成分步并删掉控件', cover)
+
+    def test_theme_keeps_style_contract_and_drops_director_revision(self):
+        with tempfile.TemporaryDirectory() as td:
+            p = Path(td) / 'theme.css'
+            p.write_text('/* ==== INTERFACE ====\n论点 A\n材质 B\n签名 C\n禁令 D\n修订 E\n==== /INTERFACE ==== */\n:root{}')
+            interface = builder._theme_interface(p)
+        for row in ['论点 A', '材质 B', '签名 C', '禁令 D']:
+            self.assertIn(row, interface)
+        self.assertNotIn('修订', interface)
+
+    def test_code_inputs_are_invariant_to_deck_theme_and_chassis(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = self.make_root(Path(td))
+            assets = root / 'pages/assets'
+            def instructions(workflow):
+                return '\n\n'.join(builder.instruction_blocks(
+                    root, 6, workflow, notes='notes', visual_focus=True, frame_cap=True).values())
+            (assets / 'theme.css').write_text(
+                '/* ==== INTERFACE ====\n论点 LIGHT_THEME_SENTINEL\n'
+                'token --bg #E8EEF1\n==== /INTERFACE ==== */')
+            before = instructions('build-code')
+            cover_before = instructions('build-cover')
+            (assets / 'theme.css').write_text(
+                '/* ==== INTERFACE ====\n论点 MAGENTA_THEME_SENTINEL\n'
+                'token --bg #ff00ff\n==== /INTERFACE ==== */')
+            (assets / 'CHASSIS.md').write_text('DECK_CHASSIS_SENTINEL')
+            after = instructions('build-code')
+            cover_after = instructions('build-cover')
+        self.assertEqual(before, after)
+        for token in ['<theme_css>', '<chassis>', '<anti_ai_slop_visual>',
+                      '<speaker_notes>', '<visual_focus>', '<frame_budget>',
+                      'LIGHT_THEME_SENTINEL', 'MAGENTA_THEME_SENTINEL', 'DECK_CHASSIS_SENTINEL']:
+            self.assertNotIn(token, after)
+        self.assertIn('<deck_outline>', after)
+        self.assertIn('<anti_ai_slop_copy>', after)
+        self.assertIn('单位、适用条件、必要图例和错误提示必须保留', after)
+        self.assertIn('LIGHT_THEME_SENTINEL', cover_before)
+        self.assertIn('MAGENTA_THEME_SENTINEL', cover_after)
+        self.assertIn('DECK_CHASSIS_SENTINEL', cover_after)
+        self.assertIn('<anti_ai_slop_visual>', cover_after)
+
+    def test_code_preload_does_not_read_deck_style_assets(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = self.make_root(Path(td))
+            (root / 'pages/assets/theme.css').unlink()
+            (root / 'pages/assets/CHASSIS.md').unlink()
+            code = builder.shared_preload(root, 6, workflow='build-code')
+        self.assertIn('<deck_outline>', code)
+        self.assertIn('references/code.md', code)
+        self.assertNotIn('<theme_css>', code)
+
+    def test_code_cannot_read_deck_theme_or_neighbor_page(self):
+        with tempfile.TemporaryDirectory() as td:
+            pages = Path(td)
+            for name in ['assets/theme.css', 'page-24.html']:
+                with self.subTest(name=name):
+                    denial = builder.code_runtime.tool_guard(
+                        'Read', {'file_path': name}, pages, 'page-25', ROOT / 'workflows/build-code')
+                    self.assertIsNotNone(denial)
+
     @staticmethod
     def make_root(path: Path) -> Path:
         assets = path / "pages" / "assets"
@@ -166,6 +238,30 @@ class RoutingTests(unittest.TestCase):
 
 
 class AgentLoopTests(unittest.TestCase):
+    def test_guidance_is_sent_once_per_page_without_rewriting_history(self):
+        snapshots = []
+        use = builder.tools.check_use('build-cover')
+        responses = [tool_response(call('Check', page='page-01.html')),
+                     tool_response(call('Check', page='page-01.html')),
+                     done_response()]
+
+        def respond(_instructions, hist, _specs, _effort, **_kwargs):
+            snapshots.append(copy.deepcopy(hist))
+            return responses.pop(0)
+
+        with tempfile.TemporaryDirectory() as td, \
+                patch.object(builder, 'respond', respond), \
+                patch.object(builder.tools, 'run', return_value=use + '\n\nmeasured'):
+            builder.build_one(page(), Path(td), Path(td) / 'trace.jsonl',
+                              ROOT / 'workflows', 'instructions', 'low')
+        outputs = [x['output'] for x in snapshots[-1] if x.get('type') == 'function_call_output']
+        self.assertEqual(len(outputs), 2)
+        self.assertIn('<check_use', outputs[0])
+        self.assertEqual(outputs[1], 'measured')
+        self.assertEqual(snapshots[-1][:len(snapshots[1])], snapshots[1])
+        # A second page gets its own first copy; no process-global suppression.
+        self.assertEqual(builder.first_guidance_only(use, set()), use)
+
     @staticmethod
     def fake_run_factory(events: list, fatal_audit: bool = False):
         def fake_run(name, args, cwd, _resource_root, _pid):
@@ -354,6 +450,8 @@ class AgentLoopTests(unittest.TestCase):
         surfaces = []
 
         def fake_respond(_instructions, _hist, specs, _effort, tag="-"):
+            self.assertIsInstance(_hist[0]['content'], str)
+            self.assertNotIn(builder.REF_SHOTS_NOTE, _hist[0]['content'])
             surfaces.append({row["name"] for row in specs})
             return responses.pop(0)
 
@@ -374,6 +472,7 @@ class AgentLoopTests(unittest.TestCase):
                 page("page-04", "build-code", "代码页"),
                 Path(td), Path(td) / "trace.jsonl", ROOT / "workflows",
                 "instructions", "low",
+                refs=[{'type': 'input_image', 'image_url': 'data:image/png;base64,stub'}],
             )
 
         self.assertTrue(result.artifact_present)

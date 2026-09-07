@@ -6,7 +6,7 @@ frame informative and decoration behind content and pointer input.
 
 Before CSS, commit to:
 - a background, readable text, neutrals, focus, and only needed semantic hues;
-- one subject-derived material (flat color if none), edge/radius family, and line-weight family;
+- one subject-derived material (flat color if none) and line-weight tokens; page geometry stays with the builder;
 - display, body, and optional numeric roles using justified local fonts—not default Inter, Roboto, Arial, or monospace;
 - one recurring subject-derived signature; page-specific explanation and interaction stay with the build agent;
 - consistent media crop, contrast, tint, annotation, and attribution;

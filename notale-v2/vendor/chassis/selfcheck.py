@@ -35,6 +35,8 @@
 
 import argparse
 import asyncio
+import contextlib
+import io
 import json
 import sys
 from pathlib import Path
@@ -531,7 +533,7 @@ def _shrink(path: Path) -> None:
         im.resize((SHOT_W, SHOT_H), Image.LANCZOS).save(path)
 
 
-def report(name: str, states: list, text_report: bool = False) -> None:
+def _report_state(name: str, states: list, text_report: bool = False) -> None:
     """把一页的每个状态各打一段。初始状态不加标题,`--after` 的状态标出来。"""
     print(f"\n── {name}")
     for st in states:
@@ -563,7 +565,7 @@ def report(name: str, states: list, text_report: bool = False) -> None:
         if not errs and not bad and not probe["escaped"] and not probe["clipped"]:
             print("   渲染无报错,没有元素超出画布或被裁")
         if st.get("steps"):
-            print(f"   分步 {st['steps']} 步(右方向键逐步出场,出完才翻页;以上判定按末步)")
+            print(f"   分步 {st['steps']} 步，以上判定按末步")
         for x in st.get("step_issues") or []:
             print(f"   ✗ {x}")
         if sizes:
@@ -642,12 +644,56 @@ def report(name: str, states: list, text_report: bool = False) -> None:
         if st["png"]:
             for i, q in enumerate(st.get("step_pngs") or []):
                 print(f"   截图 {q}  (第 {i} 步)")
-            print(f"   截图 {st['png']}  ({SHOT_W}×{SHOT_H},约 {SHOT_W*SHOT_H//750} token"
+            print(f"   截图 {st['png']}  ({SHOT_W}×{SHOT_H}"
                   + (f",第 {st['steps']} 步 = 完整画面" if st.get("steps") else "") + ")")
         if st.get("crop"):
             from PIL import Image as _I
             w, h = _I.open(st["crop"]).size
-            print(f"   裁图 {st['crop']}  ({w}×{h},约 {w*h//750} token)")
+            print(f"   裁图 {st['crop']}  ({w}×{h})")
+
+
+def report(name: str, states: list, text_report: bool = False) -> None:
+    """Every state is measured upstream; compress equal output, never probe data.
+
+    Compare against the first measured state, not the previous state. Errors and
+    image paths always remain explicit; disappearing metrics are named as well.
+    """
+    print(f"\n── {name}")
+    baseline = None
+    baseline_label = "初态"
+    scales = set()
+    for index, state in enumerate(states):
+        if index:
+            print(f"   ┄ after{index} «{state['label']}»")
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            _report_state(name, [state], text_report)
+        lines = [line for line in buf.getvalue().splitlines()
+                 if line.strip() and not line.lstrip().startswith(("──", "┄"))]
+        measured = state.get("probe") is not None and not state.get("js_error") \
+            and not state["probe"].get("fatal")
+        metrics = [line for line in lines if not line.lstrip().startswith(
+            ("✗", "打不开:", "截图 ", "裁图 "))]
+        emitted = lines
+        if measured and baseline is not None:
+            emitted = [line for line in lines if line not in metrics or line not in baseline]
+            current_keys = {line.strip().split()[0] for line in metrics}
+            missing = sorted({line.strip().split()[0] for line in baseline} - current_keys)
+            unchanged = sum(line in baseline for line in metrics)
+            if unchanged:
+                print(f"   已测，{'其余 ' + str(unchanged) + ' 项' if emitted or missing else '指标'}同{baseline_label}")
+            if missing:
+                print("   本状态不再报告的项目：" + "、".join(missing))
+        elif measured:
+            baseline = metrics
+            baseline_label = "初态" if index == 0 else f"after{index}"
+        for line in emitted:
+            if line.lstrip().startswith("字阶 ") and "（" in line:
+                head, scale = line.split("（", 1)
+                if scale in scales:
+                    line = head
+                scales.add(scale)
+            print(line)
 
 
 def main():

@@ -9,7 +9,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from core import code_runtime, sample_bundles, skills, tools
+from core import builder, code_runtime, sample_bundles, skills, tools
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -32,8 +32,9 @@ class WorkflowRegistryTests(unittest.TestCase):
                 # 路径根只写一次，其余是相对 workflow 根的路径（省下每条重复
                 # 60 多字符的绝对前缀）。所以判据从「绝对路径存在」改成
                 # 「按 root 解析后存在」，并且 root 必须真的声明出来。
-                root = re.search(r'root="([^"]+)"', block)
-                self.assertIsNotNone(root)
+                env = builder.environment_context(Path('/tmp/pages'), builder.Page('page-01', ''), skills.WORKFLOWS / name)
+                root = re.search(r'<read_only_skill>(.*?)</read_only_skill>', env)
+                self.assertNotIn('root=', block)
                 rels = re.findall(
                     r"(?:`|\()((?:references|samples)/[^`)]+\.md)(?:`|\))", block)
                 self.assertTrue(rels)
@@ -145,7 +146,7 @@ class SampleAblationTests(unittest.TestCase):
         for name in skills.PAGE_WORKFLOWS:
             with self.subTest(name=name):
                 body = skills.routed_workflow(name, samples="mini")
-                root = re.search(r'root="([^"]+)"', body).group(1)
+                root = skills.WORKFLOWS / name
                 for rel in re.findall(
                         r"(?:`|\()((?:references|samples)/[^`)]+\.md)(?:`|\))", body):
                     self.assertTrue((Path(root) / rel).is_file(), rel)
@@ -232,6 +233,20 @@ class BundleTests(unittest.TestCase):
 
 
 class ToolSurfaceTests(unittest.TestCase):
+    def test_relative_workflow_read_matches_logged_resolution(self):
+        with tempfile.TemporaryDirectory() as td:
+            cwd = Path(td) / 'pages'
+            cwd.mkdir()
+            resource = skills.WORKFLOWS / 'build-page'
+            relative = 'references/general.md'
+            resolved = tools.resolve_read_path(relative, cwd, resource)
+            self.assertEqual(resolved, resource / relative)
+            self.assertIn('EOF', tools.run('Read', {'file_path': relative}, cwd, resource, 'page-01'))
+            # An actual page-local file still takes precedence.
+            (cwd / 'references').mkdir()
+            (cwd / relative).write_text('local')
+            self.assertEqual(tools.resolve_read_path(relative, cwd, resource), cwd / relative)
+
     def test_surface_has_no_selection_or_media_tools(self):
         names = [schema["name"] for schema in tools.specs()]
         self.assertEqual(
@@ -275,7 +290,7 @@ class ToolSurfaceTests(unittest.TestCase):
         self.assertIn("EOF", result)
         self.assertIn("拒绝", denied)
 
-    def test_sample_use_frames_only_visual_full_main_bundles(self):
+    def test_sample_use_frames_both_visual_bundle_variants(self):
         with tempfile.TemporaryDirectory() as td:
             base = Path(td)
             pages = base / "run/pages"
@@ -300,7 +315,7 @@ class ToolSurfaceTests(unittest.TestCase):
 
         self.assertTrue(visual_full.startswith("<sample_use>"))
         self.assertIn("worked example, not a template", visual_full)
-        self.assertNotIn("<sample_use>", visual_mini)
+        self.assertTrue(visual_mini.startswith("<sample_use>"))
         self.assertNotIn("<sample_use>", code_full)
 
     def test_check_use_is_returned_only_for_visual_workflows(self):
@@ -309,7 +324,7 @@ class ToolSurfaceTests(unittest.TestCase):
                 text = tools.check_use(name)
                 self.assertTrue(text.startswith(f'<check_use workflow="{name}">'))
                 self.assertIn("instrumentation, not approval", text)
-                self.assertIn("one piece of evidence you actually verified", text)
+                self.assertNotIn("When you finish", text)
         self.assertEqual(tools.check_use("build-code"), "")
         self.assertEqual(tools.check_use(None), "")
 
@@ -329,6 +344,31 @@ class ToolSurfaceTests(unittest.TestCase):
         shots = [Path(f"/s/page-01{suffix}.png") for suffix in ("", "-after1", "-after2", "-after3")]
         self.assertEqual(tools._pick_shots(shots), ([shots[0], shots[3]], shots[1:3]))
         self.assertEqual(tools._pick_shots(shots[:2]), (shots[:2], []))
+
+    def test_check_lists_each_screenshot_once_with_inline_status(self):
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as td:
+            shots = [Path(td) / f'page-01-{i}.png' for i in range(3)]
+            for shot in shots:
+                shot.touch()
+            report = '\n'.join(f'   截图 {shot} (800×450)' for shot in shots)
+            with patch.object(tools, '_selfcheck', return_value=report), \
+                 patch.object(tools, '_image', return_value=tools.Out('', [('image/png', 'stub')])):
+                out = tools._check(Path(td), {'page': 'page-01.html', 'shot': True})
+        self.assertEqual(len(out.images), 2)
+        self.assertEqual(out.text.count('[已内联]'), 2)
+        self.assertEqual(out.text.count('[可 Read]'), 1)
+        for shot in shots:
+            self.assertEqual(out.text.count(str(shot)), 1)
+
+    def test_tool_descriptions_only_recommend_available_editors(self):
+        for workflow, edit in [('build-code', 'Edit'), ('build-cover', 'Patch')]:
+            rows = {row['name']: row for row in tools.specs(workflow)}
+            self.assertIn(edit, rows)
+            self.assertIn(edit, rows['Write']['description'])
+            self.assertNotIn('Patch' if edit == 'Edit' else 'Edit', rows['Write']['description'])
+        self.assertNotIn('description', next(row for row in tools.specs()
+                         if row['name'] == 'Bash')['parameters']['properties'])
 
     def test_own_run_screenshots_are_readable_but_other_runs_are_not(self):
         with tempfile.TemporaryDirectory() as td:

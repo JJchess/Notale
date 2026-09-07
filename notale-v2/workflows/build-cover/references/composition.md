@@ -4,7 +4,7 @@ The representative still must read as a complete cover rather than a miniature c
 
 ## Convert the brief into a frame
 
-Write a compact frame specification before styling:
+Refine the first-response frame decision before styling; no separate written specification:
 
 | Decision | Required answer |
 |---|---|
@@ -31,7 +31,7 @@ A strong cover frame has:
 
 When a new element becomes active, subordinate, dim, crop, or remove an old one. Do not solve weak hierarchy by adding more glow, blur, labels, or decorative particles.
 
-Test the frame in grayscale and at thumbnail size before refining it. If the protagonist and title field disappear, repair scale and placement rather than color.
+Test the frame in grayscale and at thumbnail size. Repair scale and placement if the protagonist or title field disappears.
 
 ## Build a subject-specific visual world
 
@@ -92,16 +92,13 @@ If understanding requires watching a setup and payoff, strengthen the representa
 3. **Material:** assign theme color roles, then derive texture, stroke, and lighting from the subject cue.
 4. **Subtraction:** remove the weakest supporting element and restore it only if the subject becomes less legible.
 
-Judge each pass at the target aspect ratio and at the narrowest supported crop. Avoid polishing a composition that has not passed the thumbnail test.
+Judge each pass at the fixed stage's aspect ratio and thumbnail size.
 
 ## Diagnose weak covers
 
 | Failure | Cause | Repair |
 |---|---|---|
 | Poster collage | Several motifs compete as protagonists | Choose the motif that best names the subject; subordinate or delete the rest |
-| Title pasted on top | No title field was reserved | Move the visual mass or redesign its silhouette around the title |
-| Generic atmosphere | Palette and effects could fit any topic | Replace one decorative motif with a characteristic material, tool, or process |
-| Abstract icon soup | Nouns were illustrated independently | Choose one process verb and show its transformation in a single system |
 | False emptiness | Large unused area has no tension or direction | Let an edge, gaze, trajectory, or scale relationship activate the empty field |
 | Accidental crop | Responsive behavior was left to overflow | Name the focal anchor and define what may crop at each boundary |
 | Annotation page | Explanatory labels compete with the title | Move the explanation to a page; retain only the subject cue |
@@ -111,7 +108,7 @@ Judge each pass at the target aspect ratio and at the narrowest supported crop. 
 - The exact title is readable without a protective effect doing all the work.
 - The protagonist is recognizable at full size and thumbnail size.
 - The gaze path reaches the title without crossing several equal-strength focal points.
-- The frame still works in grayscale and under the narrowest supported crop.
+- The frame still works in grayscale and when the fixed stage is scaled.
 - The opening and settled frames preserve the same protagonist, title field, and hierarchy when restrained motion exists.
 - No decorative element could be removed without changing nothing.
 - The frame establishes the subject or register without attempting to explain the whole lesson.

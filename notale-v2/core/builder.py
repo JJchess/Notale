@@ -34,26 +34,13 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
 
-IDENTITY = """你负责这一套里的一页画面。你只负责当前页面。
-
-技术契约、主题接口、章节提纲、本章页表和本页型的 SKILL.md 都在提示里,不必为了确认再读
-源文件。严格遵守 SKILL.md 的第一轮加载规则,按 brief 完成目标页面。
-
-你最多有 11 次响应（包含最后一次不调用工具的结束响应），通常应在 4–7 次内完成。
-同一响应中的多个工具调用会按列出顺序执行：首次创作可先 Write、再 Check；修正时把所有
-已确认问题合并为一次 Patch。代码页可在同一响应写完多个 lesson 文件,再 Check。
-首次 Write 前先核对确定性数据、公式和预期状态的一致性,并按 SKILL.md 与随后返回的
-<sample_use> 完成 Main 的选择与模式迁移;不要把能事先算清的逻辑矛盾留到截图后逐项修补。
-
-一次 Check 用 after 覆盖主要主动状态,决定性终态放在最后一段。Check 返回的是测量,不是
-质量批准;按随报告返回的 <check_use> 检查截图、内容和行为。发现具体违约时,把全部问题
-合并为一次 Patch,再做一次回归 Check。
-
-当 <check_use> 要求的证据完整且没有具体违约时,下一次响应直接结束。不得为了填满画面
-反复调整字号、间距或加装饰,也不得为了“再优化一点”重读目标文件、继续 Look、Bash 或重复 Check。
-
-不写额外说明文档、构建日志或旁路测试(`lesson/tests.py` 属于学习内容,不在此列)。
-做完直接结束,不要问问题。"""
+IDENTITY = """你负责当前页面，按 brief 与本页型 SKILL 的首轮加载规则完成。
+预置材料无需重读。响应目标不超过 11 次（含结束响应），通常应在 4–7 次内完成。
+同一响应中的多个工具调用会按列出顺序执行，可先写文件、再 Check。
+首次 Write 前先核对确定性数据、公式和预期状态的一致性。
+按 reference 的验收项及返回的截图、测量检查内容和行为；合并已确认的问题修正，再回归 Check。
+证据完整且没有具体违约时，下一次响应直接结束，不为填满画面或泛泛优化继续调用工具。
+不写额外说明文档、构建日志或旁路测试（lesson/tests.py 属于学习内容）。不要问问题。"""
 
 # 实验开关 --visual-focus:与 planner 的同名开关配对。页表每页多一行「视觉焦点」,
 # 这段告诉 builder 怎么用它。默认不注入,基线 system 一字不变。
@@ -96,13 +83,16 @@ FRAME_CAP_BLOCK = """<frame_budget>
 </frame_budget>"""
 
 STEPS_BLOCK = """<steps>
-这套是课堂讲授,一页可以分步出现:元素上写 data-step="n"(n 从 1 起),右方向键逐步出场,
-出完才翻页;canvas/svg 用 Deck.onStep(fn, n) 按步重绘,fn 对任何步数都画出完整画面。用不用你定;用就至少 2 步。
+课堂讲授可使用底盘分步，API 见 chassis。
 每一步必须新增证据 —— 一条线、一个状态、一次变化 —— 不是再冒出一段文字;
 第 0 步就要能看出这页在讲什么;所有步都显示出来时这一页仍要读得通(课后复看就是这样看的)。
 只让人按既定顺序看下一段的按钮、标签、点开答案,做成分步并删掉控件;
 读者自选顺序、反复对照的控件保留;能累积就累积,只让结论随步更新。
-Check 会按步各拍一张,越界与字号按末步判。
+</steps>"""
+
+COVER_STEPS_BLOCK = """<steps>
+封面可按构图需要采用静态、动画或底盘分步；分步 API 见 chassis。
+使用分步时，每步新增视觉证据，初态可辨主题，完整画面仍然成立。
 </steps>"""
 
 
@@ -417,19 +407,27 @@ def _theme_interface(path: Path) -> str:
     end = "==== /INTERFACE ==== */"
     if end not in text:
         raise ValueError(f"theme interface delimiter is missing: {path}")
-    return text.split(end, 1)[0] + end
+    interface = text.split(end, 1)[0] + end
+    return re.sub(r"(?m)^\s*修订\s+[^\n]*\n", "", interface)
 
 
-def shared_preload(root: Path, n_pages: int, prompts: Path = None) -> str:
-    """Return the byte-identical shared Builder prefix for every page."""
+def shared_preload(root: Path, n_pages: int, prompts: Path = None,
+                   workflow: str | None = None) -> str:
+    """Return shared assets plus the technical contract for this workflow."""
     paths = {"CHASSIS.md": root / "pages" / "assets" / "CHASSIS.md",
              "theme.css": root / "pages" / "assets" / "theme.css",
              "pages.md": root / "pages" / "plan" / "pages.md"}
+    if workflow == "build-code":
+        # Code has its own host and visual foundation. Deck style assets must
+        # not enter author context, even as an allegedly read-only interface.
+        return (_deck_outline(paths["pages.md"]) + "\n\n"
+                + _wrap("tech", (prompts or ROOT / "prompts") / "tech-code.md"))
+    chassis = paths["CHASSIS.md"].read_text(encoding="utf-8").strip()
     text = "\n\n".join(
         (f"<{tag}>\n{_theme_interface(paths[name]).strip()}\n</{tag}>"
          if name == "theme.css" else
          _deck_outline(paths[name])
-         if name == "pages.md" else _wrap(tag, paths[name]))
+         if name == "pages.md" else f"<chassis>\n{chassis}\n</chassis>")
         for tag, name in PRELOAD_TAGS)
     return text + "\n\n" + tech_block(root, n_pages, prompts)
 
@@ -443,8 +441,44 @@ def environment_context(pages_dir: Path, page: Page, resource_root: Path) -> str
         f"  <target>{html.escape(str(target.resolve()))}</target>\n"
         "  <target_state>absent</target_state>\n"
         f"  <read_only_skill>{html.escape(str(resource_root.resolve()))}</read_only_skill>\n"
+        "  <paths>页面路径相对 cwd；references/ 与 samples/ 相对 read_only_skill。</paths>\n"
         "</environment_context>"
     )
+
+
+def instruction_blocks(root: Path, n_pages: int, workflow: str, *,
+                       workflow_root: Path = skills.WORKFLOWS,
+                       prompts: Path | None = None, samples: str = "full",
+                       include_aux: bool = False, notes: str = "off",
+                       visual_focus: bool = False, frame_cap: bool = False) -> dict[str, str]:
+    """One assembly path for production, offline sizing and frozen comparisons."""
+    blocks = {"identity": IDENTITY, "philosophy": skills.philosophy_block("page"),
+              "anti_slop": skills.anti_slop_block(
+                  workflow_root, include_visual=workflow != "build-code")}
+    if workflow != "build-code":
+        if visual_focus:
+            blocks["visual_focus"] = VISUAL_FOCUS_BLOCK
+        if NOTES_BLOCKS[notes]:
+            blocks["notes"] = NOTES_BLOCKS[notes]
+        if frame_cap:
+            blocks["frame_cap"] = FRAME_CAP_BLOCK
+        blocks["steps"] = COVER_STEPS_BLOCK if workflow == "build-cover" else STEPS_BLOCK
+    blocks["shared"] = shared_preload(root, n_pages, prompts, workflow)
+    blocks["workflow"] = skills.routed_workflow(
+        workflow, workflow_root, include_aux=include_aux, samples=samples)
+    return blocks
+
+
+def first_guidance_only(output: str, seen: set[str]) -> str:
+    """Deduplicate newly returned guidance; never rewrite prior conversation turns."""
+    match = re.match(r"^<(check_use|sample_use)\b[^>]*>.*?</\1>\s*", output, re.S)
+    if not match:
+        return output
+    tag = match[1]
+    if tag in seen:
+        return output[match.end():]
+    seen.add(tag)
+    return output
 
 
 _FATAL_PREFIX = re.compile(
@@ -545,22 +579,11 @@ def build_one(
     else:
         hist = [{"role": "user", "content": page.prompt}]
 
-    specs = tools.specs()
-    if not vision_input:
-        specs = [row for row in specs if row["name"] != "Look"]
+    specs = tools.specs(page.workflow, vision_input=vision_input)
     if page.workflow == "build-code":
-        allowed = {"Read", "Write", "Edit", "Check"}
-        if vision_input:
-            allowed.add("Look")
-        specs = [code_runtime.tool_schema()] + [
-            row for row in specs if row["name"] in allowed
-        ]
-    else:
-        # Patch covers both one and many local page edits. Keeping Edit as a
-        # second equivalent choice induced low-effort agents to repair one
-        # literal per response; normal pages therefore expose only Patch.
-        specs = [row for row in specs if row["name"] != "Edit"]
+        specs = [code_runtime.tool_schema()] + specs
 
+    seen_guidance: set[str] = set()
     t0 = time.time()
     while True:
         if time.time() - t0 > MAX_SECONDS:
@@ -708,8 +731,7 @@ def build_one(
                         result = tools.Out(base_text + "\n\n" + extra, base_images)
 
             if call.name == "Read" and args.get("file_path"):
-                path = Path(str(args["file_path"]))
-                path = path if path.is_absolute() else pages_dir / path
+                path = tools.resolve_read_path(str(args["file_path"]), pages_dir, resource_root)
                 try:
                     rel = path.resolve().relative_to(resource_root)
                     if (
@@ -725,6 +747,7 @@ def build_one(
                 if isinstance(result, tools.Out)
                 else (str(result), [])
             )
+            output = first_guidance_only(output, seen_guidance)
             if call.name == "Patch" and output.startswith("失败"):
                 # 记成 Patch!miss,和 Write!badjson 同一风格。没有这一笔,
                 # Patch→Patch(占全部 Patch 的 41.6%)里多少是失败重试无从判断。
@@ -912,25 +935,14 @@ def main() -> None:
         encoding="utf-8",
     )
 
-    base = (IDENTITY + "\n\n" + skills.philosophy_block("page")
-            + "\n\n" + skills.anti_slop_block(workflow_root))
-    if args.visual_focus:
-        base += "\n\n" + VISUAL_FOCUS_BLOCK
-    if NOTES_BLOCKS[args.notes]:
-        base += "\n\n" + NOTES_BLOCKS[args.notes]
-    if args.frame_cap:
-        base += "\n\n" + FRAME_CAP_BLOCK
-    base += "\n\n" + STEPS_BLOCK
-    shared = shared_preload(root, len(briefs))
-    base += "\n\n" + shared
     chapters = chapter_preloads(root, len(briefs))
     routed_blocks = {
-        name: skills.routed_workflow(
-            name,
-            workflow_root,
+        name: "\n\n".join(instruction_blocks(
+            root, len(briefs), name, workflow_root=workflow_root,
             include_aux=args.aux_samples,
             samples=args.samples,
-        )
+            notes=args.notes, visual_focus=args.visual_focus, frame_cap=args.frame_cap,
+        ).values())
         for name in skills.PAGE_WORKFLOWS
     }
     for page in pages:
@@ -944,7 +956,7 @@ def main() -> None:
         )
 
     instructions = {
-        page.pid: base + "\n\n" + routed_blocks[page.workflow]
+        page.pid: routed_blocks[page.workflow]
         for page in pages
     }
     groups = Counter(instructions.values())

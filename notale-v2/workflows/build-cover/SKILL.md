@@ -11,7 +11,7 @@ Choose the visual system that would still identify the opening without its other
 - `motion`: setup, transformation, and payoff over time carry the identity.
 - `generative`: a rule, field, growth system, simulation, shader, or seeded drawing process carries the identity.
 
-Before choosing, name the one visual carrier this page relies on. Select the Main by its composition, motion, or generative mechanism, never by a similar topic name. In the first response, state the needed transferable pattern in one sentence, then issue parallel `Read` calls for exactly one reference and one Main from the same category. Do not read any other sample. Do not read another reference later and do not copy sample subject matter, labels, or styling.
+In the first response, name the visual carrier and transferable pattern in one sentence. Choose Main by composition, motion or generative mechanism, not topic similarity; then issue parallel `Read` calls for exactly one reference and one Main from the same category. Do not read any other sample. Do not read another reference later and do not copy sample subject matter, labels, or styling.
 
 ## References
 
@@ -54,4 +54,4 @@ Before choosing, name the one visual carrier this page relies on. Select the Mai
   - material height, light, and wave response make a tactile WebGL field without interface chrome.
   `<skill-dir>/samples/bundles/generative/tactile-grid.full.md`
 
-Follow the selected reference as the construction contract. Preserve the supplied chassis, theme interface, page brief, and output path.
+Follow the selected reference to develop this same construction decision; do not write a second contract.
