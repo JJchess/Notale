@@ -95,13 +95,13 @@ FRAME_CAP_BLOCK = """<frame_budget>
 对照(A 与 B)放在同一条基线或同一坐标系上并排表达,不用并排的框。Check 报告里「区块 N 个」就是这个数,超过 1 就改。
 </frame_budget>"""
 
-# 实验开关 --steps:告诉建页 agent 底盘有分步出场协议。默认关 —— 判据(Check 按步截图)
-# 不管开关都在,先看它读了 CHASSIS.md 会不会自己用;开关只决定 system 里多不多这一段。
 STEPS_BLOCK = """<steps>
 这套是课堂讲授,一页可以分步出现:元素上写 data-step="n"(n 从 1 起),右方向键逐步出场,
-出完才翻页;canvas/svg 用 Deck.onStep(fn) 按步重绘。用不用你定;用就至少 2 步。
+出完才翻页;canvas/svg 用 Deck.onStep(fn, n) 按步重绘,fn 对任何步数都画出完整画面。用不用你定;用就至少 2 步。
 每一步必须新增证据 —— 一条线、一个状态、一次变化 —— 不是再冒出一段文字;
 第 0 步就要能看出这页在讲什么;所有步都显示出来时这一页仍要读得通(课后复看就是这样看的)。
+只让人按既定顺序看下一段的按钮、标签、点开答案,做成分步并删掉控件;
+读者自选顺序、反复对照的控件保留;能累积就累积,只让结论随步更新。
 Check 会按步各拍一张,越界与字号按末步判。
 </steps>"""
 
@@ -831,11 +831,6 @@ def main() -> None:
         help="实验开关：把 style director 挑的前两条参照截图随 brief 发给建页 agent；默认关",
     )
     parser.add_argument(
-        "--steps",
-        action="store_true",
-        help="实验开关：system 里说明分步出场协议(data-step / Deck.onStep)；默认关",
-    )
-    parser.add_argument(
         "--frame-cap",
         action="store_true",
         help="实验开关：带描边/底色的区块 ≤1（只能是主体）；默认关",
@@ -905,7 +900,6 @@ def main() -> None:
         "visualFocus": args.visual_focus,
         "notesMode": args.notes,
         "frameCap": args.frame_cap,
-        "steps": args.steps,
         "refShots": args.ref_shots,
         # mini 臂里因为缺 mini 而仍用 full 的样本。统计时用到它们的页要剔除,
         # 否则那几页混着对照条件。见 skills.MINI_FALLBACKS。
@@ -926,8 +920,7 @@ def main() -> None:
         base += "\n\n" + NOTES_BLOCKS[args.notes]
     if args.frame_cap:
         base += "\n\n" + FRAME_CAP_BLOCK
-    if args.steps:
-        base += "\n\n" + STEPS_BLOCK
+    base += "\n\n" + STEPS_BLOCK
     shared = shared_preload(root, len(briefs))
     base += "\n\n" + shared
     chapters = chapter_preloads(root, len(briefs))

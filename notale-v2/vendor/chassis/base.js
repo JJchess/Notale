@@ -183,7 +183,7 @@
     /* ---------------------------------------------------------------------
        分步出场。**公开表面只有三样**:
          元素上写 data-step="2"      —— 第 2 步才出现(1 起数;第 0 步是页面刚打开)
-         Deck.onStep(fn)             —— canvas/svg 里画的东西按 fn(step, max) 重绘
+         Deck.onStep(fn, n)          —— canvas/svg 里画的东西按 fn(step, max) 重绘;n 声明这个 fn 需要几步
          下一步 = 先出元素,出完才翻页 —— 右方向键 / PageDown;左键对称回退
        其余是实现:根上一个 --step 变量,元素上一个 --at,可见性由 base.css 用 calc 算,
        未出场的元素加 inert(透明的东西不能还能点)。?all 或 reduced-motion 直接停在末步,
@@ -193,9 +193,11 @@
     step: 0,
     stepMax: 0,
     _stepFns: [],
+    _need: 0,           // onStep 声明的步数;纯 JS 驱动的页没有 data-step 元素,stepMax 从这里来
     _nav: null,
-    onStep: function (fn) {
+    onStep: function (fn, n) {
       Deck._stepFns.push(fn);
+      if ((n | 0) > Deck._need) { Deck._need = n | 0; if (Deck._need > Deck.stepMax) Deck.stepMax = Deck._need; }
       fn(Deck.step, Deck.stepMax);
       return function () {
         var i = Deck._stepFns.indexOf(fn);
@@ -228,8 +230,8 @@
         var at = parseInt(els[k].getAttribute('data-step'), 10) || 0;
         if (at > 0) { els[k].style.setProperty('--at', at); if (at > max) max = at; }
       }
-      Deck.stepMax = max;
-      return max;
+      Deck.stepMax = Math.max(max, Deck._need);
+      return Deck.stepMax;
     },
 
     reduced: function () {

@@ -415,6 +415,15 @@ async def run(files, shot_dir=None, wait=1200, after=(), crop=None, zoom=2):
                             await pg.screenshot(path=str(q))
                             _shrink(q)
                             step_pngs.append(q)
+                        # 回退门禁:走到末步再退回第 0 步,画面必须和开场一样 —— onStep 的 fn
+                        # 若只向前追加、不按步数整体重绘,这里字节就对不上。
+                        await pg.evaluate(f"Deck.stepTo({smax}); Deck.stepTo(0)")
+                        await pg.wait_for_timeout(350)
+                        back = Path(shot_dir) / f"{stem}-step0-back.png"
+                        await pg.screenshot(path=str(back)); _shrink(back)
+                        if back.read_bytes() != step_pngs[0].read_bytes():
+                            step_issues.append("回退到第 0 步后画面与开场不同:onStep 的 fn 没按步数完整重绘,只是向前追加")
+                        back.unlink()
                     await pg.evaluate(f"Deck.stepTo({smax})")
                     await pg.wait_for_timeout(350)
                 probe = await pg.evaluate(PROBE)
