@@ -16,12 +16,39 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class WorkflowRegistryTests(unittest.TestCase):
-    def test_registry_is_exactly_the_four_page_routes_plus_auditor(self):
+    def test_registry_is_exactly_the_four_page_routes(self):
         self.assertEqual(
             skills.PAGE_WORKFLOWS,
             ("build-cover", "build-page", "build-interaction", "build-code"),
         )
-        self.assertEqual(set(skills.available()), set(skills.ALL_WORKFLOWS))
+        self.assertEqual(set(skills.available()), set(skills.PAGE_WORKFLOWS))
+
+    def test_planner_skill_descriptions_read_live_metadata_only(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            for name in skills.PAGE_WORKFLOWS:
+                path = root / name / "SKILL.md"
+                path.parent.mkdir()
+                path.write_text(
+                    f"---\nname: {name}\ndescription: >-\n  Capability for {name}\n"
+                    "  across multiple lines.\nlicense: EXTRA_METADATA\n---\n"
+                    "BODY_SENTINEL\n## Samples\nSAMPLE_SENTINEL\n", encoding="utf-8")
+            # An installed auditor must not become a page-building option.
+            auditor = root / "extra-auditor" / "SKILL.md"
+            auditor.parent.mkdir()
+            auditor.write_text("---\nname: extra-auditor\ndescription: AUDITOR_SENTINEL\n---\n")
+            block = skills.page_skill_descriptions(root)
+            self.assertEqual(block, "\n".join(
+                f"- {name}: Capability for {name} across multiple lines."
+                for name in skills.PAGE_WORKFLOWS))
+
+            path = root / "build-code" / "SKILL.md"
+            path.write_text('---\nname: custom-code\ndescription: "Updated: Python"\n---\n'
+                            'NEW_BODY_SENTINEL', encoding="utf-8")
+            updated = skills.page_skill_descriptions(root)
+            self.assertIn("- custom-code: Updated: Python", updated)
+            self.assertNotIn("Capability for build-code", updated)
+            self.assertNotIn("SENTINEL", updated)
 
     def test_routed_skill_is_inline_and_paths_are_directly_readable(self):
         for name in skills.PAGE_WORKFLOWS:
@@ -61,8 +88,8 @@ class WorkflowRegistryTests(unittest.TestCase):
     def test_sample_catalog_describes_transferable_surface_not_topics_only(self):
         counts = {
             "build-cover": 8,
-            "build-page": 11,
-            "build-interaction": 3,
+            "build-page": 31,
+            "build-interaction": 12,
             "build-code": 1,
         }
         for name, count in counts.items():
@@ -176,14 +203,17 @@ class SampleAblationTests(unittest.TestCase):
     def test_mini_plus_aux_is_the_many_small_samples_arm(self):
         body = skills.routed_workflow("build-page", samples="mini", include_aux=True)
         self.assertIn("<aux_sample_catalog", body)
-        self.assertNotIn(".full.md", body)
+        fallback_ids = re.findall(r"samples/bundles/[^/]+/([^/`]+)\.full\.md", body)
+        self.assertEqual(set(fallback_ids), set(skills.MINI_FALLBACKS.get("build-page", [])))
+        catalog = json.loads((skills.WORKFLOWS / "build-page/samples/catalog.json").read_text())
+        self.assertTrue(all("mini" not in row for row in catalog["samples"] if row["id"] in fallback_ids))
         self.assertGreaterEqual(body.count(".mini.md"), 4)
 
 
 class BundleTests(unittest.TestCase):
     def test_generated_bundles_are_current_and_keep_visual_css(self):
         rendered = sample_bundles.render_all()
-        self.assertEqual(len(rendered), 42)
+        self.assertEqual(len(rendered), 86)
         for path, expected in rendered.items():
             with self.subTest(path=path):
                 self.assertEqual(path.read_text(encoding="utf-8"), expected)
@@ -194,12 +224,37 @@ class BundleTests(unittest.TestCase):
                 else:
                     self.assertRegex(expected, r"(?i)<style\b|```css")
 
+    def test_shared_minis_keep_full_content_notes_and_routing(self):
+        shared = []
+        for name in ("build-page", "build-interaction"):
+            root = skills.WORKFLOWS / name
+            catalog = json.loads((root / "samples/catalog.json").read_text())
+            full_route = skills.routed_workflow(name, samples="full")
+            mini_route = skills.routed_workflow(name, samples="mini")
+            aux = skills._aux_sample_catalog(name, skills.WORKFLOWS)
+            for row in catalog["samples"]:
+                if row.get("mini") != row["full"]:
+                    continue
+                shared.append(row["id"])
+                with self.subTest(sample=row["id"]):
+                    rel = f"samples/bundles/{row['category']}/{row['id']}"
+                    full = (root / f"{rel}.full.md").read_text()
+                    mini = (root / f"{rel}.mini.md").read_text()
+                    self.assertEqual(mini, full.replace('variant="full"', 'variant="mini"', 1))
+                    self.assertIn(f"{rel}.full.md", full_route)
+                    self.assertIn(f"{rel}.mini.md", mini_route)
+                    self.assertNotIn(row["id"], skills.MINI_FALLBACKS.get(name, []))
+                    self.assertFalse(row["aux"])
+                    self.assertNotIn(row["id"], aux)
+        self.assertEqual(len(shared), 15)
+
     def test_visual_full_bundles_declare_every_omitted_dependency(self):
         for path, text in sample_bundles.render_all().items():
             if "build-code" in path.parts or not path.name.endswith(".full.md"):
                 continue
             with self.subTest(path=path):
-                self.assertIn("<omitted path=", text)  # every sample uses the chassis
+                # Dependencies may all be inlined; render_all validates every relative HTML reference.
+                self.assertIn("<sample ", text)
         with self.assertRaises(ValueError):
             sample_bundles.omitted_lines(
                 "x", {"files": ["index.html"]}, '<script src="assets/data.js"></script>'
@@ -216,6 +271,17 @@ class BundleTests(unittest.TestCase):
             ['  <omitted path="assets/base.js">' + sample_bundles._PROVIDED_NOTE + "</omitted>",
              '  <omitted path="data/a.js">rows</omitted>'],
         )
+
+    def test_crossword_bundle_exposes_its_core_mechanism(self):
+        root = skills.WORKFLOWS / "build-interaction"
+        text = (root / "samples/bundles/general/crossword-representation.full.md").read_text()
+        for marker in (
+            "vendor/svelte-crossword/src/Crossword.svelte",
+            "function onCellUpdate(", "function onHistoricalChange(",
+            "function onKeydown(", "function onCheck(",
+            "$: isComplete = percentCorrect == 1;", "MIT License",
+        ):
+            self.assertIn(marker, text)
 
     def test_main_only_and_combined_code_contracts(self):
         interaction = json.loads(
@@ -247,15 +313,17 @@ class ToolSurfaceTests(unittest.TestCase):
             (cwd / relative).write_text('local')
             self.assertEqual(tools.resolve_read_path(relative, cwd, resource), cwd / relative)
 
-    def test_surface_has_no_selection_or_media_tools(self):
+    def test_surface_has_shared_media_but_no_selection_tools(self):
         names = [schema["name"] for schema in tools.specs()]
         self.assertEqual(
-            names, ["Read", "Write", "Edit", "Patch", "Check", "Look", "Bash"]
+            names, ["Read", "Write", "Edit", "Patch", "Check", "Look", "Bash", "ImageSearch", "ImageGen"]
         )
         self.assertNotIn("WorkflowContext", names)
         self.assertNotIn("Skill", names)
-        self.assertNotIn("ImageSearch", names)
-        self.assertNotIn("ImageGen", names)
+        for row in tools.specs():
+            if row["name"] in {"ImageSearch", "ImageGen"}:
+                self.assertNotIn("pages", row["parameters"]["properties"])
+                self.assertNotIn("out", row["parameters"]["properties"])
 
     def test_check_schema_exposes_reload_and_batched_state_semantics(self):
         check = next(row for row in tools.specs() if row["name"] == "Check")

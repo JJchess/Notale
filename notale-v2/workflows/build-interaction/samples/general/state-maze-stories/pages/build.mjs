@@ -1,0 +1,1 @@
+import {build} from 'vite';import fs from 'node:fs';await build({configFile:new URL('./vite.config.mjs',import.meta.url).pathname});const source=fs.readFileSync(new URL('./build/build.html',import.meta.url),'utf8');fs.writeFileSync(new URL('./index.html',import.meta.url),source.replaceAll('src="./','src="./build/').replaceAll('href="./','href="./build/'));

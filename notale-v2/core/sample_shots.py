@@ -20,6 +20,9 @@ import argparse
 import asyncio
 import json
 import shutil
+import threading
+from functools import partial
+from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 import tempfile
 from pathlib import Path
 
@@ -96,19 +99,31 @@ async def _capture(html: Path, shots: list[dict], out_dir: Path) -> list[Path]:
         pg.on("pageerror", lambda e: errs.append(str(e)))
         pg.on("console", lambda m: m.type == "error" and errs.append(f"console.error: {m.text[:100]}"))
         pg.on("requestfailed", lambda r: errs.append(f"missing: {r.url.split('/pages/')[-1]}"))
-        await pg.goto("file://" + str(html.resolve()), wait_until="load")
-        for i, st in enumerate(shots):
-            if st.get("after"):
-                try:
-                    await pg.evaluate(f"() => {{ {st['after']} }}")
-                except Exception as exc:  # 记下来继续拍：拍到的是上一个状态，由人看图判断
-                    errs.append(f"state {i} after failed: {' '.join(str(exc).split())[:120]}")
-            await pg.wait_for_timeout(int(st.get("wait", DEFAULT_WAIT)))
-            png = out_dir / f"{i:02d}.png"
-            await pg.screenshot(path=str(png))
-            Image.open(png).resize((TW, TH), Image.LANCZOS).save(png)
-            pngs.append(png)
-        await b.close()
+        # Modules and fetch() need an HTTP origin, including fully local samples.
+        class QuietHandler(SimpleHTTPRequestHandler):
+            def log_message(self, *_args):
+                pass
+        server = ThreadingHTTPServer(("127.0.0.1", 0), partial(QuietHandler, directory=str(html.parent)))
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            await pg.goto(f"http://127.0.0.1:{server.server_port}/{html.name}", wait_until="load")
+            for i, st in enumerate(shots):
+                if st.get("after"):
+                    try:
+                        await pg.evaluate(f"() => {{ {st['after']} }}")
+                    except Exception as exc:
+                        errs.append(f"state {i} after failed: {' '.join(str(exc).split())[:120]}")
+                await pg.wait_for_timeout(int(st.get("wait", DEFAULT_WAIT)))
+                png = out_dir / f"{i:02d}.png"
+                await pg.screenshot(path=str(png))
+                Image.open(png).resize((TW, TH), Image.LANCZOS).save(png)
+                pngs.append(png)
+        finally:
+            await b.close()
+            server.shutdown()
+            server.server_close()
+            thread.join()
     if errs:  # 不中断：先出图，错误打出来由人判断截到的是不是真实状态
         print(f"   ⚠ page errors: {errs[:3]}")
     return pngs

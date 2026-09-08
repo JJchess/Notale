@@ -1,4 +1,4 @@
-"""Planner: one model call produces the shared theme and the ordered page list.
+"""Planner: fetch and inspect media, then submit the compact page list.
 
 The harness materializes only deterministic planning artifacts.  Page HTML is
 intentionally absent until the routed Builder creates it.
@@ -12,9 +12,7 @@ import argparse
 import json
 import re
 import shutil
-import urllib.request
 import sys
-import subprocess
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -22,7 +20,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from . import skills
-from . import imgcut
+from . import media, tools
 from .artifacts import Brief
 from . import llm
 from .llm import ROOT, config, fill, strip_fence
@@ -127,68 +125,11 @@ def _valid_css(text: str) -> str:
     return ""
 
 
-# ── 一次调用的产物:由模型用 `Write` 工具直接写文件 ──────────────────────
-#
-# **2026-08-28 从「分隔行 + 从散文里抠」改成走工具。这是根因修复,不是加判据。**
-#
-# 原来的形状是模型吐一篇复合散文(`=== CSS ===` / `=== PAGES ===` 分隔行),
-# harness 再用 `_extract_code` 的候选启发式把 CSS 切出来。代价当天就付了:
-# CSS 首行残留一个 markdown 围栏,浏览器把它当选择器、连同紧随的 `:root` 一起
-# 丢弃,**整套 token 失效、20 页全部无样式渲染**,而所有既有判据都报绿
-# (文件在、HTTP 200、解析出 89 条规则、`_valid_css` 的文本检查全过、
-#  selfcheck 报 0 失败、占用比因为元素散开反而更高)。
-#
-# 走工具之后文件内容是 tool call 的 JSON 字符串字段:**没有围栏可言,
-# 没有分隔行要找,没有候选要猜** —— 这一整类 bug 消失,而不是被判据兜住。
-#
-# 仍然是**一次模型调用**:一个响应里带多个 tool call 在这条路由上是实测可行的
-# (builder 日志里的 `步 2 Read Read Read`)。大号工具参数也是实测过的 ——
-# builder 常规地把整页 HTML 当 `Write` 的参数写出去,iface8 那轮 21 次 Write
-# 输出中位 5,253 tok、最大 7,893,而这里的 theme.css 约 3,110 tok。
-#
-# **只发两个 Write,不是每页一个。** 一次响应里发 21 个 tool call 在这条路由上
-# 没有实测证据(观察到的最大是 5 个小 Read);而按 `# page-NN` 切散文**不是**
-# 出过问题的地方 —— 那里没有围栏、没有代码,`_split_specs` 已经跑了很多轮。
-# 只把出过事的那一份挪到工具上,改动面最小。
 N_CEIL = 60  # resource cap; the Planner otherwise decides page count
 PAGE_LABELS = frozenset({"标题页", "内容页", "交互页", "代码页"})
 
 CSS_REL = "pages/assets/theme.css"
 PAGES_REL = "pages/plan/pages.md"
-
-
-def write_targets(run: Run) -> dict:
-    """Return the Planner's two exact output targets."""
-    if getattr(run, "style_director", False):
-        return {(run.root / PAGES_REL).resolve(): "pages.md"}
-    return {(run.root / CSS_REL).resolve(): "theme.css",
-            (run.root / PAGES_REL).resolve(): "pages.md"}
-
-
-def take_writes(calls, run: Run) -> tuple[dict, list]:
-    """Collect one response's writes and report every protocol violation."""
-    allow = write_targets(run)
-    got, refused = {}, []
-    for c in calls:
-        if c.name != "Write":
-            refused.append(f"只给了 `Write` 工具,不该调 `{c.name}`")
-            continue
-        try:
-            a = json.loads(c.arguments or "{}")
-        except json.JSONDecodeError as ex:
-            refused.append(f"Write 的参数不是合法 JSON({ex}) —— 多半是被截断了")
-            continue
-        raw = str(a.get("file_path") or "")
-        try:
-            target = Path(raw).resolve()
-        except OSError:
-            target = None
-        name = allow.get(target)
-        if not name:
-            refused.append(f"不许写 `{raw}`;这一步只能写 {CSS_REL} 和 {PAGES_REL}")
-            continue
-        got[name] = str(a.get("content") or "")
-    return got, refused
 
 
 def split_pages(text: str) -> dict:
@@ -203,8 +144,6 @@ def _valid_pages(text: str) -> str:
     if not pages:
         return "没有 `# page-NN` 块 —— 每页一个,页号两位、从 01 连续编"
     nn = sorted(int(k) for k in pages)
-    if len(nn) > N_CEIL:
-        return f"页数超过资源上限 {N_CEIL}"
     if nn != list(range(1, len(nn) + 1)):
         miss = sorted(set(range(1, max(nn) + 1)) - set(nn))
         return f"页号不连续,缺 {' '.join(f'page-{x:02d}' for x in miss)} —— 从 01 编到 N,不跳号"
@@ -217,8 +156,6 @@ def _valid_pages(text: str) -> str:
             return f"page-{key} 使用未知标签 `[{label}]`"
         if not topic:
             return f"page-{key} 的主题为空"
-        if key == "01" and label != "标题页":
-            return "page-01 必须是 `[标题页]`"
     return ""
 
 
@@ -271,92 +208,118 @@ def _split_specs(text: str, nns) -> dict:
     return out
 
 
-DECK_TRIES = 3
+DECK_TRIES = 3  # existing malformed-delivery retries, not a tool/response budget
+FINALIZE_SPEC = {
+    "type": "function", "name": "FinalizePlan",
+    "description": "提交完整页表及选用的图片路径；无图可省略映射。",
+    "parameters": {"type": "object", "properties": {
+        "pages_md": {"type": "string", "description": "原有页表：每页标签＋一句主题"},
+        "media_by_page": {"type": "object", "additionalProperties": {
+            "type": "array", "items": {"type": "string"}},
+            "description": "页号（如 page-03）到本次工具返回的路径列表；仅列有图页面"}},
+        "required": ["pages_md"], "additionalProperties": False},
+}
 
 
-def deck_call(run: Run, prompt: str, tries: int = DECK_TRIES) -> tuple[str, str]:
-    """Call, validate, retry with the rejection reason, then materialize both writes.
-
-    **The retry is not defensive padding; it is measured.** This step asks for two
-    files in one response, and models drop one of them at a rate that makes a
-    single shot unusable: 2026-09-04 it failed 6 times running — 5× gemini-3.8-flash
-    (across the 999 router and Google's own endpoint, effort low and medium) and
-    1× AWS-GPT-5.6-Sol, every time writing a complete, valid `theme.css` and simply
-    never calling Write for `pages.md`. Nothing was truncated; the second call just
-    never came. One shot with a validator and no retry turns that into a dead run.
-
-    The rejection reason goes back to the model rather than re-rolling a bare
-    prompt: what is missing is exactly what the validator already knows.
-    """
-    css_p, pages_p = run.root / CSS_REL, run.root / PAGES_REL
-    for attempt in range(1, tries + 1):
-        try:
-            return _deck_attempt(run, prompt, css_p, pages_p, attempt)
-        except _DeckRejected as exc:
-            if attempt == tries:
-                rejected = run.root / "deck.rejected.json"
-                rejected.write_text(json.dumps(
-                    {"bad": exc.bad, "attempts": tries, **exc.got},
-                    ensure_ascii=False, indent=1), encoding="utf-8")
-                raise RuntimeError(
-                    f"deck 交付不合格({tries} 次都没过): {'; '.join(exc.bad)}。"
-                    f"诊断见 {rejected}") from None
-            print(f"  ⚠ deck 第 {attempt} 次不合格({'; '.join(exc.bad)}),重试")
-            prompt = (exc.prompt + "\n\n上一次尝试被判不合格：" + "；".join(exc.bad)
-                      + "。两个文件都必须在这一次响应里各调用一次 Write 写出来。")
-    raise AssertionError("unreachable")
+def validate_media(mapping: dict, pages_doc: str, available: dict, pages: Path) -> dict:
+    if not isinstance(mapping, dict):
+        raise ValueError("media_by_page 必须是页号到路径列表")
+    page_ids = {f"page-{nn}" for nn in split_pages(pages_doc)}
+    normalized = {}
+    for pid, paths in mapping.items():
+        match = re.fullmatch(r"(?:page[-_])?([0-9]{1,2})", pid) if isinstance(pid, str) else None
+        if match:
+            pid = f"page-{int(match.group(1)):02d}"
+        if pid not in page_ids or not isinstance(paths, list):
+            raise ValueError(f"无效页面或路径列表：{pid}")
+        if pid in normalized:
+            raise ValueError(f"页面映射重复：{pid}")
+        for path in paths:
+            if not isinstance(path, str) or path not in available:
+                raise ValueError(f"图片尚未在此前工具结果中返回：{path}")
+            target = (pages / path).resolve()
+            target.relative_to(pages.resolve())
+            if not target.is_file():
+                raise ValueError(f"图片不存在：{path}")
+        normalized[pid] = paths
+    return normalized
 
 
-class _DeckRejected(RuntimeError):
-    def __init__(self, bad: list, got: dict, prompt: str):
-        super().__init__("; ".join(bad))
-        self.bad, self.got, self.prompt = bad, got, prompt
-
-
-def _deck_attempt(run: Run, prompt: str, css_p: Path, pages_p: Path,
-                  attempt: int) -> tuple[str, str]:
-    t0, started = time.time(), _now()
-    r = llm.respond(IDENTITY, [{"role": "user", "content": prompt}],
-                    PLANNER_WRITE_SPEC, config()["planner"]["reasoning_effort"], tag="deck")
-    calls = [o for o in r.output if getattr(o, "type", "") == "function_call"]
-    tin, tout, cached_tok = llm.usage_of(r)
-    run.log.add([{"type": "text", "text": prompt}], llm.text_of(r),
-                {"input_tokens": tin, "output_tokens": tout,
-                 "cache_read_input_tokens": cached_tok or 0},
-                getattr(r, "id", None) or f"req_{uuid.uuid4().hex[:16]}",
-                started, _now(),
-                {"step": "deck", "tools": [{"name": c.name} for c in calls]})
-    got, refused = take_writes(calls, run)
-    print(f"  deck         {time.time()-t0:6.1f}s  in={tin:>7,}  out={tout:>6,} tok  "
-          f"{len(calls)} 个工具调用 → {sorted(got) or '无产物'}")
-
-    bad = list(refused)
-    css_bad = _valid_css(got["theme.css"]) if "theme.css" in got else ""
-    pages_bad = _valid_pages(got["pages.md"]) if "pages.md" in got else ""
-    if getattr(run, "style_director", False):
-        # 主题另有一路在写,这里多写一个文件反而要拦下来(两边会互相覆盖)
-        if "theme.css" in got:
-            bad.append("这一步不写 theme.css,主题由 style director 另行产出")
-    elif "theme.css" not in got:
-        bad.append(f"没有写 {CSS_REL}")
-    elif css_bad:
-        bad.append(f"{CSS_REL}: {css_bad}")
-    if "pages.md" not in got:
-        bad.append(f"没有写 {PAGES_REL}")
-    elif pages_bad:
-        bad.append(f"{PAGES_REL}: {pages_bad}")
-    if bad:
-        raise _DeckRejected(bad, dict(got), prompt)
-
-    if getattr(run, "style_director", False):
-        pages_p.parent.mkdir(parents=True, exist_ok=True)
-        pages_p.write_text(got["pages.md"], encoding="utf-8")
-        return "", got["pages.md"]
-    css_p.parent.mkdir(parents=True, exist_ok=True)
-    pages_p.parent.mkdir(parents=True, exist_ok=True)
-    css_p.write_text(got["theme.css"], encoding="utf-8")
-    pages_p.write_text(got["pages.md"], encoding="utf-8")
-    return got["theme.css"], got["pages.md"]
+def deck_call(run: Run, prompt: str, tries: int = DECK_TRIES) -> tuple[str, str, dict]:
+    """Free tool loop; one validated final submission, no intermediate page files."""
+    hist = [{"role": "user", "content": prompt}]
+    separate_theme = getattr(run, "style_director", False)
+    specs = [FINALIZE_SPEC, *media.SCHEMAS]
+    if not separate_theme:
+        specs += PLANNER_WRITE_SPEC
+    css, available, rejected = "", {}, 0
+    while True:
+        started = _now()
+        r = llm.respond(IDENTITY, hist, specs, config()["planner"]["reasoning_effort"], tag="deck")
+        calls = [o for o in r.output if getattr(o, "type", "") == "function_call"]
+        tin, tout, cached = llm.usage_of(r)
+        run.log.add([{"type": "text", "text": prompt if len(hist) == 1 else "(tool results)"}],
+                    llm.text_of(r), {"input_tokens": tin, "output_tokens": tout,
+                    "cache_read_input_tokens": cached or 0}, getattr(r, "id", None) or uuid.uuid4().hex,
+                    started, _now(), {"step": "deck", "tools": [
+                        {"name": c.name, "arguments": c.arguments} for c in calls]})
+        print(f"  deck  in={tin:,} out={tout:,}  {' '.join(c.name for c in calls)}", flush=True)
+        if not calls:
+            raise RuntimeError("Planner 结束但未提交有效 FinalizePlan")
+        hist.extend(llm.replay_item(item) for item in llm.ModelRuntime.replay(r))
+        returned, pending_images, final = {}, [], None
+        for call in calls:
+            if call.name == "FinalizePlan":
+                final = None
+            try:
+                args = json.loads(call.arguments or "{}")
+                if call.name in media.NAMES:
+                    result = tools.media_call(call.name, args, run.root / "pages", "planner")
+                    payload = json.loads(result.text)
+                    rows = payload["results"] if call.name == "ImageSearch" else payload
+                    returned.update({row["path"]: row for row in rows if "path" in row})
+                    query = args.get("query", args.get("prompt", ""))
+                    for row, (mime, data) in zip((r for r in rows if "path" in r), result.images):
+                        need = query[row["query_index"]] if isinstance(query, list) else query
+                        pending_images.extend([
+                            {"type": "input_text", "text": json.dumps(
+                                {"需求": need, "path": row["path"]}, ensure_ascii=False)},
+                            {"type": "input_image", "image_url": f"data:{mime};base64,{data}"},
+                        ])
+                    output = result.text
+                elif call.name == "Write" and not separate_theme:
+                    if Path(args["file_path"]).resolve() != (run.root / CSS_REL).resolve():
+                        raise ValueError("Write 只用于 theme.css；页表用 FinalizePlan")
+                    error = _valid_css(args["content"])
+                    if error:
+                        raise ValueError(error)
+                    css = args["content"]
+                    output = "主题已接收"
+                elif call.name == "FinalizePlan":
+                    pages_doc = args["pages_md"]
+                    error = _valid_pages(pages_doc)
+                    if error:
+                        raise ValueError(error)
+                    mapping = validate_media(args.get("media_by_page", {}), pages_doc,
+                                             available, run.root / "pages")
+                    if not separate_theme and not css:
+                        raise ValueError("缺少 theme.css，请先 Write 主题")
+                    final = css, pages_doc, mapping
+                    output = "定稿已接收"
+                else:
+                    raise ValueError(f"未知工具：{call.name}")
+            except Exception as exc:
+                output = f"{type(exc).__name__}: {exc}"
+                if call.name not in media.NAMES:
+                    rejected += 1
+            hist.append({"type": "function_call_output", "call_id": call.call_id, "output": output})
+        available.update(returned)
+        if pending_images:
+            hist.append({"role": "user", "content": pending_images})
+        if final is not None:
+            return final
+        if rejected >= tries:
+            raise RuntimeError(f"Planner 交付不合格：{output}")
 
 
 def seed(run: Run, chassis: Path, lib: Path) -> None:
@@ -391,386 +354,24 @@ def seed(run: Run, chassis: Path, lib: Path) -> None:
     print(f"  seed         底盘已就位,库 {len(list(lib.glob('*.js')))} 个（真拷贝,非软链接）")
 
 
-_FIELD = re.compile(r"\s*(?:[-*]\s*)?\*{0,2}[^：:\n]{1,15}[：:]")
-_BULLET = re.compile(r"\s*(?:[-*]|\d+[.、)])\s+")
-
-
-_SOURCES = "wikimedia,nasa,met,loc,internetarchive"
-
-
-# 两条守卫,都是文本/统计,不是判断:
-#   G1 检索词和标题的实词重叠 —— 抓「met 给了一只玛雅陶哨」这种彻底不相干的
-#   G2 内容图近白底 —— 抓「拿到的是白底图表不是照片」,那种图放在暗底讲义上很难看
-# 都拿真实数据验过:10 个已知案例判对 9 个,唯一漏的那个(Hominin statures 身高图)
-# 正好被 G2 拦住(平均亮度 242)。**标题是馆藏编号的放过** ——
-# `Galet MHNT PRE.2009.0.200.1.jpg` 是对的图,只是没有词可比,
-# 而这个项目为「猜标签里的词」栽过一整轮。
-_STOP = set("the a of and in on at for with photo image museum specimen object cast view "
-            "detail close up jpg png file wikimedia commons during test".split())
-
-
-def _words(s: str) -> set:
-    return {w for w in re.findall(r"[a-z]{4,}", (s or "").lower()) if w not in _STOP}
-
-
-def _off_topic(query: str, title: str) -> bool:
-    """检索词和标题一个实词都不重叠 → 判为不相干。
-
-    **豁免只给带馆藏编号(≥3 位数字)的标题。** 第一版豁免的是「实词少于 3 个」,
-    结果 `Whistling vessel`(一只玛雅陶哨,用在讲用火遗址的页上)靠两个词溜过去了;
-    而真正该豁免的是 `Galet MHNT PRE.2009.0.200.1.jpg` 这种 —— 它没有词可比,
-    但那串编号本身就是机构标本记录的标志。换成按数字判之后 8 个已知案例判对 7 个,
-    唯一漏的那张(白底身高对比图)由 `_too_pale` 拦住。
-    """
-    if _words(query) & _words(title):
-        return False
-    return not re.search(r"\d{3,}", title or "")
-
-
-def _too_pale(path: Path) -> bool:
-    """内容图近白底 —— 白底图表贴在暗底讲义上是剪贴画。"""
-    try:
-        from PIL import Image
-        im = Image.open(path).convert("RGB").resize((48, 48))
-        px = list(im.getdata()); n = len(px)
-        L = sum(round(.2126 * r + .7152 * g + .0722 * b) for r, g, b in px) / n
-        return L > 200
-    except Exception:
-        return False
-
-
-def _search(query: str) -> list:
-    """跑一次检索,返回 results 列表。输出是 dict 不是 list —— 按 list 迭代会拿到键名。"""
-    try:
-        r = subprocess.run([sys.executable, str(_WEBMEDIA), query, "--type", "image",
-                            "--source", _SOURCES, "--count", "12", "--json"],
-                           capture_output=True, text=True, timeout=180)
-        return (json.loads(r.stdout or "{}") or {}).get("results") or []
-    except Exception:
-        return []
-
-
-_UA = "notale-deck/1.0 (lecture-deck research; +https://github.com/JJchess/Notale)"
-_WEBMEDIA = skills.DEFAULT / "web-media-getter" / "webmedia.py"
-_GEN = skills.DEFAULT / "make-illustration" / "scripts" / "gen.py"
-
-_IMG_ROW = re.compile(r"^\s*\|\s*([\w.-]+\.(?:jpg|jpeg|png|webp))\s*\|([^|]*)\|([^|]*)\|([^|]*)\|([^|]*)\|")
-
-
-def img_plan(plan_text: str) -> list[dict]:
-    """图池表 → 逐行的取图任务。
-
-    只认「第一列是个文件名」的行,所以表头和分隔行自动被跳过,
-    也不怕模型多写或少写一列的说明文字。
-
-    2026-08-28 起入参是 `=== IMAGES ===` 那一段(见 `segment()`),
-    不再需要先去 PLAN.md 里找 `## 0.7` —— 那一节和 PLAN.md 一起没了。
-    """
-    out = []
-    for line in (plan_text or "").splitlines():
-        r = _IMG_ROW.match(line)
-        if not r:
-            continue
-        kind = r.group(2).strip()
-        out.append(dict(name=r.group(1).strip(),
-                        kind="插画" if "插画" in kind else "照片",
-                        query=r.group(3).strip().strip("`"),
-                        pages=r.group(4).strip(),
-                        use=r.group(5).strip()))
-    return out
-
-
-P95_CEIL = 90        # 整页底图的局部亮度上限。见 _dim_backdrop 的注释。
-
-
-def _lum_p95(path: Path) -> int:
-    """图的 p95 亮度 —— **不是平均色**。
-
-    这是量出来的:`illus-savanna-horizon.png` 平均色 `rgb(53,57,62)` 看着很暗,
-    可它有一个亮太阳,那块峰值亮度 167。底图压到 `opacity:.19`(精确命中要求的 .16–.22)
-    之后,那一页右下角的正文对比只有 **2.60:1**(WCAG 正文要求 4.5:1)。
-    **控制不住结果的不是 opacity,是源图的亮度分布** —— 所以要量峰值,不是均值。
-    """
-    try:
-        from PIL import Image
-        im = Image.open(path).convert("RGB").resize((96, 96))
-        L = sorted(round(.2126 * r + .7152 * g + .0722 * b) for r, g, b in im.getdata())
-        return L[int(len(L) * .95)]
-    except Exception:
-        return -1
-
-
-def _dim_backdrop(path: Path) -> tuple:
-    """整页底图太亮就压暗后落盘,返回 (压暗前 p95, 压暗后 p95)。
-
-    压暗放在图池这一步,而不是让 `theme.css` 再调 opacity ——
-    opacity 已经给对了,再调它是把一个控制不住结果的旋钮拧得更紧。
-    """
-    before = _lum_p95(path)
-    if before < 0 or before <= P95_CEIL:
-        return before, before
-    try:
-        from PIL import Image
-        im = Image.open(path).convert("RGB")
-        k = P95_CEIL / before
-        im.point(lambda v: int(v * k)).save(path)
-        return before, _lum_p95(path)
-    except Exception:
-        return before, before
-
-
-def _mean_rgb(path: Path) -> str:
-    """图的平均色 —— 给写 theme.css 那一步判断底色能不能承托这些图。
-
-    这是「看图」的**文字代理**,不是同一件事:同类任务里协调者在写 CSS 之前
-    把 14 张图拼成一张联系表**看了一眼**(它的第 22 次调用),然后才定下暖近黑的底色。
-    我们的 wire 层现在只有文本块 —— 端点其实支持图片(探过:它把测试图里的
-    748291 读对了、两半颜色也说对了),要真的看图得先给 wire 加图像块,那是另一件事。
-    """
-    try:
-        from PIL import Image
-        im = Image.open(path)
-        # **抠过的图要只算不透明那部分。** 直接 convert("RGB") 会把透明区按它底下的
-        # 原像素算进来,而天体照的底是黑的太空 —— 一张亮木星的抠图会报成近黑,
-        # 而这个数正是写 theme.css 那一步用来定底色的。
-        if im.mode in ("RGBA", "LA", "P"):
-            im = im.convert("RGBA").resize((32, 32))
-            px = [c[:3] for c in im.getdata() if c[3] > 128]
-            if px:
-                n = len(px)
-                return "rgb(%d,%d,%d)" % tuple(sum(c[k] for c in px) // n for k in range(3))
-        im = im.convert("RGB").resize((32, 32))
-        px = list(im.getdata())
-        n = len(px)
-        return "rgb(%d,%d,%d)" % tuple(sum(c[k] for c in px) // n for k in range(3))
-    except Exception:
-        return "?"
-
-
-def assets(run: Run, plan_text: str) -> str:
-    """建图池:照 PLAN.md 第 0.7 节把图取好,产出 `img/IMG.md` 索引 + `CREDITS.md`。
-
-    **为什么放在 plan 阶段。** 这是量出来的,而且量的是同一个建页模型:
-    同类任务里协调者在第 5–21 次调用就把 20 张图取完了,写规格是第 31–35 次 ——
-    所以它的规格能**直接点名已存在的文件**加一句现成的 `title=` 归属,
-    建页只需引用,它 44 页出图 16 张。我们上一轮的规格 0/51 份含文件路径,
-    写的是检索任务,建页要自己搜挑下内联编归属四步,48 页出图 4 张。
-    消融证据是干净的:**拿它的规格配我们的建页模型,出图 16 张。**
-
-    只取 8–14 张公共图池。某一页临时需要、池子里没有的,仍然由 builder 侧并行取 ——
-    那边是 8–50 路并行,而这里是串行,不该把全部取图都搬过来。
-
-    一行取不到**不阻断**。照 `expand()` 的先例:一页不过不许杀掉整轮。
-    """
-    plan = img_plan(plan_text)
-    d = run.assets / "img"
-    d.mkdir(parents=True, exist_ok=True)
-    if not plan:
-        # **「明说不要图」和「这一段写坏了」是两件事,不能报同一句话。**
-        # 提示词允许写一行「本套无需图池」(纯计算/纯示意的题目本来就不需要照片),
-        # 模型照做了,而这道闸只会找表格 —— 于是报出「规格将没有文件可点名,
-        # 建页只能各自去搜」,而实际上根本不该点名任何文件。判据比语义窄。
-        #
-        # 2026-08-28:入参从 PLAN.md 全文换成 `=== IMAGES ===` 那一段,所以不再
-        # 先去找 `## 0.7` 小节标题 —— 整段就是那一节。**告警措辞也跟着改**:
-        # 原来那句点名「PLAN.md 第 0.7 节」,而那两样都不存在了,照着它去改的人
-        # 会去找一个没有的东西。删接口要连广告它的话一起删,这里是同一条。
-        if re.search(r"无需图池|不需要图池|不用图|无图池", plan_text or ""):
-            print("  图池         声明本套无需图池 —— 跳过取图")
-            return ""
-        print("  图池         ⚠ `=== IMAGES ===` 段里没有可读的表格 —— "
-              "这一轮没有文件可点名,建页只能各自去搜(实测到达率 20%)。"
-              "确实不需要图就在那一段写明「本套无需图池」")
-        return ""
-    got, miss = [], []
-    for it in plan:
-        out = d / it["name"]
-        if out.exists() and out.stat().st_size > 4096:
-            got.append(dict(it, path=out, credit="（已存在）", p95=-1, dim=-1))
-            continue
-        try:
-            if it["kind"] == "插画":
-                # 组件素材要抠图,所以背景必须可分离 —— **这句由 harness 追加,
-                # 不靠模型每次记得写。** 确定的事 harness 做。
-                #
-                # 措辞是三次实测换来的,前两次都被闸挡下:
-                #   `flat chroma magenta 背景` → 白色主体被洋红反光染透,
-                #     despill 碰到前景 57%(任何饱和底色都会往白主体上反)
-                #   `flat black background, no floor` → 模型加了个受光地面,
-                #     上两角 [0,0,0]、下两角 [112,111,116],四角差 208
-                #   `floats alone in empty black space` + 逐项否掉 ground/floor/
-                #     surface/shadow/horizon → 一次过,1331×419、边界 0%
-                # **黑底还有一个好处:不反光,所以走和照片完全同一条路,不需要 despill。**
-                q = it["query"]
-                if "组件素材" in it["use"]:
-                    q += (", the object floats alone in empty black space, "
-                          "nothing else in frame, pure #000000 void all around it, "
-                          "no ground, no floor, no surface, no shadow, no horizon, "
-                          "no stars, no glow, centred, filling the frame, "
-                          "no text, no labels, no watermark")
-                subprocess.run([sys.executable, str(_GEN), q,
-                                "--out", str(out), "--size", "1600x900"],
-                               capture_output=True, text=True, timeout=300, check=True)
-                credit = "生成插画（非真实照片）"
-            else:
-                res = _search(it["query"])
-                if not res:
-                    # **检索词太长会 0 结果,砍短再搜。** 实测:GPT 写的 8 个词
-                    # `Laetoli hominin footprints trackway cast museum photograph Tanzania`
-                    # 可下 0 个,而 3 个词的 `Laetoli footprints hominin` 有 10 个 ——
-                    # 同类任务里协调者写的一直是 3–4 个词。
-                    short = " ".join(it["query"].split()[:3])
-                    if short != it["query"]:
-                        res = _search(short)
-                cand = sorted((h for h in res if h.get("dl")
-                               and not _off_topic(it["query"], h.get("title") or "")),
-                              key=lambda h: -(h.get("w") or 0))
-                if not cand:
-                    raise RuntimeError(
-                        f"{len(res)} 个结果里没有一个既可下载又和检索词沾边")
-                h = None
-                for c in cand[:6]:
-                    try:
-                        # **必须带 UA。** Wikimedia 对 Python 的默认 UA 直接 403 ——
-                        # 实测:默认 UA 403,带 UA 就通。同类任务里协调者为这件事
-                        # 连写了 dl.py / dl2.py / dl3.py / dl4.py 四个下载脚本。
-                        req = urllib.request.Request(c["dl"], headers={"User-Agent": _UA})
-                        with urllib.request.urlopen(req, timeout=45) as resp:  # noqa: S310
-                            out.write_bytes(resp.read())
-                        from PIL import Image
-                        if max(Image.open(out).size) < 800:
-                            continue
-                        if it["use"].find("底图") < 0 and _too_pale(out):
-                            continue          # 近白底图表,换下一个
-                        h = c
-                        break
-                    except Exception:
-                        continue
-                if h is None:
-                    raise RuntimeError(f"{len(cand)} 个候选都下不下来或太小(长边 <800)")
-                # 四项分开存。上一版把它们拼成一个字符串,于是无出处图库那串关键词标签
-                # (`planet, saturn, space, galaxy…`)原样成了页面上的图注。
-                meta = dict(title=(h.get("title") or "").strip(),
-                            author=(h.get("author") or "").strip(),
-                            license=(h.get("license") or "").strip(),
-                            page=(h.get("page_url") or "").strip())
-                credit = " · ".join(x for x in (meta["title"], meta["author"],
-                                                meta["license"]) if x)
-            if not out.exists() or out.stat().st_size < 4096:
-                raise RuntimeError("落地的文件太小")
-            p95 = dim = -1
-            if "底图" in it["use"]:
-                p95, dim = _dim_backdrop(out)
-            # 「组件素材」= 要当物体用(可拖、可摆、可点选),所以要透明底。
-            # **抠图放在这一步,不放建页侧**,理由和取图同一条:同一套规格配同一个建页模型,
-            # 直接点名已存在的文件出图 16 张,让建页自己搜挑下内联出图 4 张。
-            # 抠图比取图更容易出坏产物(绿边、抠掉一半、水印残留),更不该在 8–12 路
-            # 并行里各赌一次。抠不干净就当「没取到」——fail-visible 对 fail-wrong。
-            cut_note = ""
-            if "组件素材" in it["use"]:
-                # 插画也走 key=None:生成的组件素材背景是黑虚空,和天体照同一种输入。
-                # `imgcut` 的 chroma/despill 那条路目前没人用,留着是给「深色主体
-                # 抠不出来、只能换浅底」那种情况 —— 出现了再说。
-                img, acc = imgcut.cut(out)
-                if img is None:
-                    raise RuntimeError("抠图不合格:" + acc.get("why", ""))
-                png = out.with_suffix(".png")
-                img.save(png)
-                if png != out:
-                    out.unlink()
-                    out = png
-                cut_note = (f"（已抠成透明底 {acc['size'][0]}×{acc['size'][1]}，"
-                            f"不透明 {acc['opaque_frac']:.0%}）")
-            got.append(dict(it, name=out.name, path=out, credit=credit,
-                            p95=p95, dim=dim, cut_note=cut_note,
-                            meta=(meta if it["kind"] != "插画" else {})))
-        except Exception as e:
-            miss.append(dict(it, why=f"{type(e).__name__}: {str(e)[:70]}"))
-    lines = ["# 图池 —— 这一轮已经取好的图", "",
-             "**逐页规格直接点名这里的文件,并照抄它给好的 `title=`。**", "",
-             "| 文件 | 尺寸 | 平均色 | p95 亮度 | 用法 | 用在哪几页 | `title=` 照抄这个 |",
-             "|---|---|---|---|---|---|---|"]
-    for g in got:
-        try:
-            from PIL import Image
-            w, h_ = Image.open(g["path"]).size
-        except Exception:
-            w = h_ = 0
-        pl = "—" if g.get("p95", -1) < 0 else (
-            f"{g['p95']}" if g["p95"] == g["dim"] else f"{g['p95']}→{g['dim']}（已压暗）")
-        lines.append(f"| `assets/img/{g['name']}` | {w}×{h_} | {_mean_rgb(g['path'])} "
-                     f"| {pl} | {g['use']}{g.get('cut_note', '')} | {g['pages']} | `{g['credit']}` |")
-    if miss:
-        lines += ["", "**没取到（规格不要点名这些，需要就自己写检索词交给建页）**", ""]
-        lines += [f"- `{m['name']}` —— {m['why']}" for m in miss]
-    txt = "\n".join(lines) + "\n"
-    (d / "IMG.md").write_text(txt, encoding="utf-8")
-    (d / "CREDITS.md").write_text(
-        "# 出处与许可\n\n"
-        + "\n".join(f"- `{g['name']}` —— {g['credit']}"
-                    + (f"  <{g['meta']['page']}>" if g.get("meta", {}).get("page") else "")
-                    for g in got) + "\n",
-        encoding="utf-8")
-    # 底图拼成联系表,交给写 theme.css 那一步**看**。只拼底图 ——
-    # 内容图它不需要看(同类任务里协调者也只看了三张要当底图的插画)。
-    backs = [g for g in got if "底图" in g["use"]]
-    sheet = d / "backdrops.jpg"
-    if backs:
-        try:
-            from PIL import Image
-            ims = [Image.open(g["path"]).convert("RGB").resize((360, 203)) for g in backs]
-            sh = Image.new("RGB", (360 * len(ims), 203))
-            for i, im in enumerate(ims):
-                sh.paste(im, (i * 360, 0))
-            sh.save(sheet, quality=72)
-            print(f"  图池         底图联系表 {len(ims)} 张 → {sheet.name}")
-        except Exception as e:
-            print(f"  图池         ⚠ 联系表拼不出来:{type(e).__name__}")
-    print(f"  图池         {len(got)}/{len(plan)} 张就位"
-          + (f"，{len(miss)} 张没取到" if miss else "")
-          + f"  → {d.name}/IMG.md")
-    return txt
-
-
-def _img_lines(pool: str, nn: str) -> str:
-    """这一页能用哪几张图 —— 从图池表的「用在哪几页」列**确定性**地取。
-
-    **不靠散文去点名文件。** 实测代价:规格写检索任务而不是文件名时,48 页出图 4 张;
-    点名已存在的文件时出图 16 张(`assets()` 上面那段账)。页面正文现在是自由散文,
-    没有字段可写,所以这条由 harness 接 —— 它本来就是确定的事。
-    """
-    rows = []
-    for task in img_plan(pool or ""):
-        pages = {x.strip().zfill(2) for x in task["pages"].replace("，", ",").split(",")}
-        if nn in pages:
-            rows.append(f"- `assets/img/{task['name']}`（{task['use']}）")
-    if not rows:
-        return ""
-    return ("\n\n## 本页可用的图\n\n" + "\n".join(rows)
-            + "\n\n用法和 `title=` 见 `assets/img/IMG.md`。不要另找图,也不要重新生成。")
-
-
-def briefs(run: Run, nns: list, pool: str = "") -> list[Brief]:
-    """按模板填。每页 = 标签与主题 + 该页的图片清单。
-
-    **全流程唯一一处没照抄 Claude Code 的地方**,理由是量出来的:nn-03 里主 agent
-    逐字手写 14 份 brief,派发时刻拉开 6:24,而 brief 之间七成内容一样。
-    要换回原样,把这里改成一次模型调用即可 —— 信息一致,只是慢。
-    """
+def briefs(run: Run, nns: list, mapping: dict | None = None) -> list[Brief]:
+    """Keep the existing brief schema; append only this page's selected paths."""
+    records = media.sources(run.pages)
     out = []
     for nn in nns:
         pid = f"page-{nn}"
-        out.append(Brief(f"Build {pid}", run.prompt(
-            "brief", query=run.query, pid=pid, total=len(nns))
-            + _img_lines(pool, nn)))
-    lens = sorted(len(b.prompt) for b in out)
-    print(f"  briefs       {len(out)} 份,{lens[0]}–{lens[-1]} 字符,中位 {lens[len(lens)//2]}")
+        prompt = run.prompt("brief", query=run.query, pid=pid, total=len(nns))
+        paths = (mapping or {}).get(pid, [])
+        if paths:
+            prompt += "\n\n本页可用素材（按内容需要选用）：\n" + "\n".join(
+                media.describe(path, records.get(path, {})) for path in paths)
+        out.append(Brief(f"Build {pid}", prompt))
     return out
 
 
 def plan_run(run: Run, chassis: Path, lib: Path,
              workflow_root: Path = None) -> dict:
-    """**一次模型调用**,产出每页的标签与主题 + 一份 theme.css。
+    """规划页表与素材，主题策略保持原样。
 
     2026-08-28 之前这里是 7+ 次串行调用(lec.js → PLAN.md → 图池 → theme.css →
     CONTRACT.md → 逐幕规格),外加一整套围绕页表和规格建立的闸与仪器。
@@ -802,13 +403,14 @@ def plan_run(run: Run, chassis: Path, lib: Path,
         director_thread = threading.Thread(target=_run_director, daemon=False)
         director_thread.start()
 
-    css, pages_doc = deck_call(run, run.prompt(
+    css, pages_doc, mapping = deck_call(run, run.prompt(
         "deck", query=run.query, minutes=run.minutes,
         audience=run.audience, scenario=run.scenario or "（没写）",
         canvas_w=w, canvas_h=h,
         css_path=run.root / CSS_REL,
         pages_path=run.root / PAGES_REL,
         philosophy=skills.philosophy_block("deck", run.prompts),
+        page_skills=skills.page_skill_descriptions(workflow_root),
         direction=skills.direction_block(run.prompts, menus=run.direction_menus),
         theme_bans=skills.theme_slop_block(workflow_root),
         font_floor=skills.FONT_FLOOR,
@@ -820,6 +422,10 @@ def plan_run(run: Run, chassis: Path, lib: Path,
             raise RuntimeError(f"style director 失败:{director_err[0]}") from director_err[0]
         css = (run.root / CSS_REL).read_text(encoding="utf-8")
 
+    (run.root / PAGES_REL).parent.mkdir(parents=True, exist_ok=True)
+    (run.root / PAGES_REL).write_text(pages_doc, encoding="utf-8")
+    if not run.style_director:
+        (run.root / CSS_REL).write_text(css, encoding="utf-8")
     pages = split_pages(pages_doc)
     gaps = iface_gaps(css)
     if gaps:
@@ -833,11 +439,6 @@ def plan_run(run: Run, chassis: Path, lib: Path,
     lens = sorted(len(pages[nn]) for nn in nns)
     print(f"  逐页内容     {len(nns)} 页,{lens[0]}–{lens[-1]} 字符,中位 {lens[len(lens)//2]}")
 
-    # 取图排在切分之后:图池表和 CSS 出自同一次调用,所以这一轮 CSS 看不到底图。
-    # 那是「一次调用」换来的代价,已知并接受(旧形状里 backdrops.jpg 会作为图片
-    # 喂给写 theme 的那一步)。图片本身仍然按表抓、按页发。
-    pool = assets(run, pages_doc.split("# page-", 1)[0])
-
     ch = run.assets / "CHASSIS.md"
     if "Deck.fmt(v, d)" not in ch.read_text(encoding="utf-8"):
         ch.write_text(ch.read_text(encoding="utf-8").rstrip() + '''
@@ -847,8 +448,12 @@ def plan_run(run: Run, chassis: Path, lib: Path,
         print("  接口交接     已知陷阱（Deck.fmt 带符号）→ CHASSIS.md")
 
     (run.root / "briefs.json").write_text(
-        json.dumps([b.as_tool_input() for b in briefs(run, nns, pool)],
+        json.dumps([b.as_tool_input() for b in briefs(run, nns, mapping)],
                    ensure_ascii=False, indent=2), encoding="utf-8")
+    try:
+        media.write_credits(run.pages)
+    except (OSError, ValueError) as exc:
+        print(f"  素材来源汇总失败（不影响交付）：{exc}")
     print(f"\n  合计 {time.time()-t0:.0f}s  →  {run.root}")
     return {"pages": len(nns), "root": str(run.root)}
 
@@ -874,10 +479,7 @@ def main() -> None:
     a.add_argument("--wire", choices=("responses", "chat", "messages"),
                    help="覆盖 wire_api;Anthropic 系模型要用 messages")
     a.add_argument("--lib", default=str(VENDOR / "chassis" / "lib"))
-    # --chassis / --lib 一直可以换,skill 根却写死在 skills.DEFAULT 里。
-    # 代价实测:skill 目录不在时,`webmedia.py` 和 `gen.py` 一起消失,
-    # 图池 0/12、45 份规格的「必用skill」全空,而**这些都只报警不判死**,
-    # 一轮跑完才看得出来。三个外部依赖要么都能换,要么都不能换。
+    # 外部 skill 根可替换；ImageGen 仍依赖其中的生成脚本。
     a.add_argument("--skills", default=str(skills.DEFAULT))
     a.add_argument("--workflows", default=str(skills.WORKFLOWS))
     a.add_argument("--prompts", default=str(PROMPTS),
@@ -899,8 +501,7 @@ def main() -> None:
         raise SystemExit(f"✗ --prompts 指的 {n.prompts} 缺 {', '.join(missing)} —— "
                          f"缺哪份要当场报错,不能等跑到那一步才 FileNotFoundError。")
     if not Path(n.skills).is_dir():
-        raise SystemExit(f"✗ --skills 指的 {n.skills} 不是目录 —— "
-                         f"缺了它取图脚本找不到,图池会全空,而那条只报警。")
+        raise SystemExit(f"✗ --skills 指的 {n.skills} 不是目录，ImageGen 生成脚本不可用")
     workflow_root = Path(n.workflows)
     if not workflow_root.is_dir():
         raise SystemExit(f"✗ --workflows 指的 {workflow_root} 不是目录")
@@ -908,16 +509,10 @@ def main() -> None:
                if not (workflow_root / name / "SKILL.md").is_file()]
     if missing:
         raise SystemExit(f"✗ --workflows 缺少建页工作流: {' '.join(missing)}")
-    # `_WEBMEDIA` / `_GEN` 是模块级常量,**导入时就绑定了 `skills.DEFAULT`** ——
-    # 只加一个 `--skills` 参数,取图那两行仍然指着旧路径,属于「改了参数不生效」。
-    # 所以这里显式重绑,并且立刻验证两个脚本真的在。
-    global _WEBMEDIA, _GEN
     skills.DEFAULT = Path(n.skills)
-    _WEBMEDIA = Path(n.skills) / "web-media-getter" / "webmedia.py"
-    _GEN = Path(n.skills) / "make-illustration" / "scripts" / "gen.py"
-    for _p, _why in ((_WEBMEDIA, "取照片"), (_GEN, "生成插画")):
-        if not _p.exists():
-            raise SystemExit(f"✗ {_why}的脚本不在:{_p}")
+    for script in ("make-illustration/scripts/gen.py",):
+        if not (skills.DEFAULT / script).is_file():
+            raise SystemExit(f"✗ 取图脚本不存在：{skills.DEFAULT / script}")
     llm.override(name=n.model, wire_api=n.wire, base_url=n.base_url, api_key_env=n.key_env)
     if n.effort: config()["planner"]["reasoning_effort"] = n.effort
     plan_run(Run(n.query, n.minutes, n.audience, n.label, n.scenario,

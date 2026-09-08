@@ -243,7 +243,11 @@ def gates(css: str, dist: dict, fonts: list[str], picks: list[dict] | None = Non
     faces = sorted({m.group(0) for m in SURFACE.finditer(bare)})
     if faces:
         bad.append(f"不许定义承载面 token:{faces};分组靠留白与对齐,不靠给每块垫底色")
-    words = sorted({m.group(0) for m in SURFACE_WORDS.finditer(css)})
+    # 只查接口里的 token 用途；材质比喻和「禁止面板」不是承载面许可。
+    interface = re.search(r"==== INTERFACE ====(.*?)==== /INTERFACE ====", css, re.S)
+    token_lines = re.findall(r"^[ \t]*\*?[ \t]*token[ \t]+--[\w-]+\b[^\n]*",
+                             interface.group(1) if interface else "", re.M)
+    words = sorted({m.group(0) for line in token_lines for m in SURFACE_WORDS.finditer(line)})
     if words:
         bad.append(f"接口块里不许把 token 说成{words};底只有 --bg 一个")
     # 字体

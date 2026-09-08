@@ -25,6 +25,8 @@ LANGUAGES = {
     ".css": "css",
     ".html": "html",
     ".js": "javascript",
+    ".jsx": "jsx",
+    ".svelte": "svelte",
     ".json": "json",
     ".mjs": "javascript",
     ".py": "python",
@@ -124,7 +126,8 @@ def _variant(skill_dir: Path, row: dict, name: str, spec: dict) -> str:
                 "  </file>",
             )
         )
-    if name == "full" and include_css:
+    # A compact full may also serve as mini; retain its dependency notes.
+    if include_css and (name == "full" or spec == row.get("full")):
         html = next(t for p, t in files if p.suffix.lower() == ".html")
         lines.extend(omitted_lines(f"{skill_dir.name}/{row['id']}", spec, html))
     lines.append("</sample>")

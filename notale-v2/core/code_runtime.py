@@ -211,12 +211,17 @@ def tool_guard(
     resource_root: Path | None = None,
 ) -> str | None:
     """Reject any post-scaffold code tool access outside this page's ``lesson/``."""
+    if name in {"ImageSearch", "ImageGen"}:
+        return None  # executor allocates private media paths; no shell or theme access
     if name in {"Read", "Write", "Edit"}:
         raw = str(args.get("file_path") or "")
         if not raw:
             return "file_path is required"
         path = Path(raw)
         target = (path if path.is_absolute() else pages_dir / path).resolve()
+        if (name == "Read" and target.is_relative_to((pages_dir / "assets/img").resolve())
+                and target.suffix.lower() in {".png", ".jpg", ".jpeg", ".webp", ".gif"}):
+            return None
         if (name == "Read" and resource_root is not None
                 and target.is_relative_to(resource_root.resolve())):
             return None

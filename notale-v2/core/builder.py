@@ -135,11 +135,7 @@ def _replay(item: dict) -> dict:
     400 `Unknown parameter: input[1].status` 打回来。递归剥掉,别的原样保留 ——
     `call_id` 和 reasoning 的 `id` 都是回传必需的,不能一起清掉。
     """
-    if isinstance(item, dict):
-        return {k: _replay(v) for k, v in item.items() if k != "status" and v is not None}
-    if isinstance(item, list):
-        return [_replay(x) for x in item]
-    return item
+    return llm.replay_item(item)
 
 
 @dataclass
@@ -1012,6 +1008,11 @@ def main() -> None:
 
     with ThreadPoolExecutor(max_workers=args.concurrency) as pool:
         done = list(pool.map(guard, pages))
+
+    try:
+        tools.media.write_credits(pages_dir)
+    except (OSError, ValueError) as exc:
+        print(f"  素材来源汇总失败（不影响页面产物）：{exc}")
 
     wall = time.time() - started
     delivered = [page for page in done if page.artifact_present]

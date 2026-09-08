@@ -1,6 +1,6 @@
 ---
 name: build-interaction
-description: "Build a non-scrolling learning interaction where learner action changes real model state and visible evidence. Use for planner pages labeled [交互页], excluding pages whose primary action is editing runnable code."
+description: "Builds interactive learning models in which learner actions change state and produce corresponding results and feedback."
 ---
 
 # Build Interaction
@@ -35,5 +35,42 @@ In the first response, name the action → state → evidence loop and transfera
   - keys, interval positions, and current sequence form a compact instrument rather than a quiz.
   - each note changes the deterministic interval sequence and produces audible, spatial, and corrective evidence.
   `<skill-dir>/samples/bundles/general/motif-match.full.md`
+
+
+- `onion-cut-lab`
+  - Changing cut geometry recomputes piece areas and dispersion; the exploded pieces explain the resulting distribution.
+  `<skill-dir>/samples/bundles/general/onion-cut-lab.full.md`
+
+- `crokinole-shot-lab`
+  - Position, angle, and power controls or hold-to-charge set up a shot; collisions, legal settlement, scoring, and reset derive from one physics state.
+  `<skill-dir>/samples/bundles/general/crokinole-shot-lab.full.md`
+
+- `pocket-fit-desk`
+  - Selecting a known-size object compares its dimensions with pocket openings and precomputed fitting rectangles, then highlights the fit evidence.
+  `<skill-dir>/samples/bundles/general/pocket-fit-desk.full.md`
+
+- `state-maze-stories`
+  - Keyboard or touch moves along legal maze cells; visited paths, completion, and saved progress derive from the same grid.
+  `<skill-dir>/samples/bundles/general/state-maze-stories.full.md`
+
+- `crossword-representation`
+  - Letter entry updates a constrained grid, crossing words, validation, undo history, and completion evidence.
+  `<skill-dir>/samples/bundles/general/crossword-representation.full.md`
+
+- `photo-history-quiz`
+  - A committed date estimate generates an error against the true year and a comparison with recorded reader distributions.
+  `<skill-dir>/samples/bundles/general/photo-history-quiz.full.md`
+
+- `waveform-air-lab`
+  - Amplitude, frequency, and phase drive one waveform model, particle displacement, and the corresponding audible oscillator.
+  `<skill-dir>/samples/bundles/general/waveform-air-lab.full.md`
+
+- `coin-flip-wealth`
+  - Each outcome transfers a wager based on the poorer balance; conservation, changing wealth order, and trajectories share one state.
+  `<skill-dir>/samples/bundles/general/coin-flip-wealth.full.md`
+
+- `grandmas-kimchi-kitchen`
+  - Collecting required objects changes a persistent completion set, gates the next scene, and preserves spatial narrative clues.
+  `<skill-dir>/samples/bundles/general/grandmas-kimchi-kitchen.full.md`
 
 Follow the selected reference to develop this same construction decision; do not write a second contract.

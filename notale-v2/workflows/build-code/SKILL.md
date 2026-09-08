@@ -1,6 +1,6 @@
 ---
 name: build-code
-description: "Build a non-scrolling runnable Python learning page in the supplied Notale code workbench. Use for planner pages labeled [代码页], not simulations or interactions without learner-authored code."
+description: "Builds Python learning workbenches where learners edit and run code, with execution results, test feedback, and visualizations linked to program state."
 ---
 
 # Build Code

@@ -42,6 +42,15 @@ ROOT = Path(__file__).resolve().parents[1]
 
 _OVERRIDE: dict = {}
 
+
+def replay_item(item):
+    """Strip output-only status fields while preserving IDs and reasoning items."""
+    if isinstance(item, dict):
+        return {k: replay_item(v) for k, v in item.items() if k != "status" and v is not None}
+    if isinstance(item, list):
+        return [replay_item(x) for x in item]
+    return item
+
 # Anthropic 系模型名的特征词。不做完整枚举 —— 三条实测记录(config.yaml:36-41、
 # core/check_cache.py:11-21、core/llm.py:526-536)都在说同一件事:这一族模型走默认的
 # responses wire 时前缀缓存 100% 失效,而且**不报任何错误**,只是悄悄全额计费。

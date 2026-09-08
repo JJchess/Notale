@@ -8,8 +8,12 @@ import json
 import re
 import subprocess
 import sys
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
+
+from . import media
+from .redact import redact
 
 CAP = 30_000  # 普通 tool_result 的字符上限。实测 nn-06 最大一个 679,500 字符,
               # 不截断的话一次就把上下文灌爆。
@@ -113,6 +117,11 @@ def _out_of_bounds(
         else:
             # 路径型参数能解析,就精确判。**只比基名挡不住「别的 run 里的同名页」。**
             target = (Path(s) if Path(s).is_absolute() else cwd / s).resolve()
+            image_root = root / "assets/img"
+            if name in {"Write", "Edit", "Patch"} and target.is_relative_to(image_root):
+                relative = target.relative_to(image_root)
+                if not relative.parts or not relative.parts[0].startswith(pid + "-"):
+                    return f"{s}(共享或其他页面的素材只读)"
             # Check/Look 的截图存在 run/.shots/(见 _selfcheck),报告会列出没内联的
             # 那些路径让模型自己 Read。实测模型照做被这里拒了,然后凭前两张收尾。
             allowed_resource = name == "Read" and (
@@ -274,7 +283,40 @@ def specs(workflow: str | None = None, *, vision_input: bool = True) -> list[dic
         if s["name"] == "Write" and workflow:
             edit = "Edit" if workflow == "build-code" else "Patch"
             s["description"] = f"写完整文件，用于创建或整体重构；局部修正用 {edit}。"
+    if vision_input:
+        rows += media.SCHEMAS
     return rows
+
+
+def media_call(name: str, args: dict, cwd: Path, owner: str) -> Out:
+    """Same executor and image-return path for Planner and Builders."""
+    started = time.monotonic()
+    backend = media.search_backend() if name == "ImageSearch" else None
+    out, rows, errors = media.fetch(name, args, cwd, owner, backend=backend)
+    images = []
+    for row in rows:
+        if "path" not in row:
+            row.setdefault("error", "未取得可用图片")
+            continue
+        try:
+            if name == "ImageSearch":
+                _, row["w"], row["h"] = media.image_info(cwd / row["path"])
+            shot = _image(cwd / row["path"])
+            images.extend(shot.images)
+        except (OSError, ValueError) as exc:
+            row["error"] = str(exc)
+            row.pop("path", None)
+    if name == "ImageSearch":
+        fields = ("query_index", "title", "source", "page_url", "url", "author", "license", "path", "w", "h", "error")
+        result = {"results": [{k: row[k] for k in fields if row.get(k) is not None and row.get(k) != ""}
+                              for row in rows], "errors": errors}
+        result = json.loads(redact(json.dumps(result, ensure_ascii=False)))
+        try:
+            media.record_search(out, cwd, args, backend, time.monotonic() - started, result, rows)
+        except (OSError, ValueError) as exc:
+            result["errors"].append(media._error("record", exc))
+        return Out(json.dumps(result, ensure_ascii=False), images)
+    return Out(json.dumps(rows, ensure_ascii=False), images)
 
 
 def resolve_read_path(file_path: str, cwd: Path, resource_root: Path | None) -> Path:
@@ -300,6 +342,11 @@ def run(
     不给默认值是故意的:默认值等于「忘了传就静默不设防」,而静默退化正是这个仓库
     反复栽过的形状 —— 分不清「设防了」和「以为设防了」。
     """
+    if name in media.NAMES:
+        try:
+            return media_call(name, args, cwd, pid)
+        except Exception as exc:
+            return f"{type(exc).__name__}: {exc}"
     off = _out_of_bounds(name, args, cwd, pid, resource_root)
     if off:
         return (f"拒绝:`{off}` 不在当前页面的工作范围内。"

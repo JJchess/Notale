@@ -1,6 +1,6 @@
 ---
 name: build-page
-description: "Build a non-scrolling explanatory picture whose claim is understandable without learner manipulation. Use for planner pages labeled [内容页], including authored diagrams, charts, and necessary 3D evidence."
+description: "Builds pages explaining concepts, mechanisms, or data relationships through diagrams, charts, and animated demonstrations, without requiring learner manipulation to convey the core explanation."
 ---
 
 # Build Page
@@ -36,6 +36,39 @@ In the first response, name the evidence relation and transferable pattern in on
   - comparable mini-landscapes share a grammar while each path remains distinct.
   `<skill-dir>/samples/bundles/general/rain-paths.full.md`
 
+
+- `wine-bottle-choice`
+  - A stable object lineup uses original rotation frames, focus, and reveal to expose category evidence.
+  `<skill-dir>/samples/bundles/general/wine-bottle-choice.full.md`
+
+- `menu-reading-room`
+  - Original scans move from a spatial collection into a readable zoom-and-pan inspection surface.
+  `<skill-dir>/samples/bundles/general/menu-reading-room.full.md`
+
+- `walk-photo-journal`
+  - A persistent route joins dated photographs and videos to their geographic and narrative positions.
+  `<skill-dir>/samples/bundles/general/walk-photo-journal.full.md`
+
+- `flipbook-branches`
+  - Synchronized image sequences expose divergent branches through a shared frame index and stable panels.
+  `<skill-dir>/samples/bundles/general/flipbook-branches.full.md`
+
+- `iconography-lens`
+  - Registered masks reveal overlapping motifs without moving the underlying original image or its landmarks.
+  `<skill-dir>/samples/bundles/general/iconography-lens.full.md`
+
+- `pantheon-index`
+  - A dense original sprite index links compact visual identities to detailed illustrations and related records.
+  `<skill-dir>/samples/bundles/general/pantheon-index.full.md`
+
+- `music-sample-pair`
+  - Paired original recordings, waveform regions, and sequential playback make a source-to-derivative correspondence inspectable.
+  `<skill-dir>/samples/bundles/general/music-sample-pair.full.md`
+
+- `masked-wrestler-index`
+  - A sprite atlas preserves individual identities across an animated pixel reveal, an index, and linked biographies.
+  `<skill-dir>/samples/bundles/general/masked-wrestler-index.full.md`
+
 ### chart
 
 - `climate-zone-shift-map`
@@ -53,6 +86,55 @@ In the first response, name the evidence relation and transferable pattern in on
 - `swarm-spectrum`
   - a directly labelled beeswarm combines position and occurrence area without decorative chrome.
   `<skill-dir>/samples/bundles/chart/swarm-spectrum.full.md`
+
+
+- `waistline-cohorts`
+  - Stable image identities and percentile interpolation expose how overlapping cohorts occupy a shared scale.
+  `<skill-dir>/samples/bundles/chart/waistline-cohorts.full.md`
+
+- `brand-size-atlas`
+  - Aligned intervals and a common measurement axis reveal disagreement among category labels.
+  `<skill-dir>/samples/bundles/chart/brand-size-atlas.full.md`
+
+- `wine-animal-rankings`
+  - Original object images retain identity while metric-driven ordering changes on a shared ranking field.
+  `<skill-dir>/samples/bundles/chart/wine-animal-rankings.full.md`
+
+- `illustrated-cover-shelves`
+  - A common image-shelf grammar links individual covers, yearly cohorts, and aggregate proportions.
+  `<skill-dir>/samples/bundles/chart/illustrated-cover-shelves.full.md`
+
+- `jersey-edition-board`
+  - Original uniform images act as stable category keys for game counts and edition comparisons.
+  `<skill-dir>/samples/bundles/chart/jersey-edition-board.full.md`
+
+- `dog-flow-atlas`
+  - Paired geographic flows use a shared breed identity and count encoding to compare inbound and outbound movement.
+  `<skill-dir>/samples/bundles/chart/dog-flow-atlas.full.md`
+
+- `population-clock`
+  - A shared time state maps real observations into alternative geographic and population encodings.
+  `<skill-dir>/samples/bundles/chart/population-clock.full.md`
+
+- `banknote-firsts`
+  - Original portraits and banknote images form a chronological index with explicit missing-image states and gender comparisons.
+  `<skill-dir>/samples/bundles/chart/banknote-firsts.full.md`
+
+- `foundation-shade-desk`
+  - Common histogram bins and count-driven opacity reveal distribution differences across paired product ranges.
+  `<skill-dir>/samples/bundles/chart/foundation-shade-desk.full.md`
+
+- `artist-repetition-lab`
+  - Individual song points and a shared reference distribution connect within-group variation to a population baseline.
+  `<skill-dir>/samples/bundles/chart/artist-repetition-lab.full.md`
+
+- `yearbook-hair-timeline`
+  - Original image cohorts remain registered to a shared time series, connecting aggregate measurements to visual evidence.
+  `<skill-dir>/samples/bundles/chart/yearbook-hair-timeline.full.md`
+
+- `dress-code-clothing`
+  - Stable grouped labels use authored highlighting and original counts to separate prevalence from category composition.
+  `<skill-dir>/samples/bundles/chart/dress-code-clothing.full.md`
 
 ### 3d
 

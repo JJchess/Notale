@@ -476,7 +476,7 @@ class AgentLoopTests(unittest.TestCase):
             )
 
         self.assertTrue(result.artifact_present)
-        expected = {"CodeScaffold", "Read", "Write", "Edit", "Check", "Look"}
+        expected = {"CodeScaffold", "Read", "Write", "Edit", "Check", "Look", "ImageSearch", "ImageGen"}
         self.assertTrue(all(surface == expected for surface in surfaces))
         self.assertNotIn("Bash", surfaces[0])
         self.assertNotIn("Patch", surfaces[0])

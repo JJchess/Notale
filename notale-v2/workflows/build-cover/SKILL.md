@@ -1,6 +1,6 @@
 ---
 name: build-cover
-description: "Build a non-scrolling title or chapter-opening picture led by composition, authored motion, or a procedural visual system. Use for planner pages labeled [标题页], not explanatory or learning-interaction pages."
+description: "Builds course covers and chapter-opening pages using static composition, animation, or procedural visuals."
 ---
 
 # Build Cover

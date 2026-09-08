@@ -6,6 +6,8 @@ import json
 import re
 from pathlib import Path
 
+import yaml
+
 ROOT = Path(__file__).resolve().parent.parent
 LEGACY = ROOT / "vendor" / "skills"
 WORKFLOWS = ROOT / "workflows"
@@ -18,7 +20,6 @@ PAGE_WORKFLOWS = (
     "build-interaction",
     "build-code",
 )
-ALL_WORKFLOWS = PAGE_WORKFLOWS + ("check-page",)
 
 FONT_FLOOR = (
     "正文与成句说明 ≥16px，控件标签、图例、图注和提示 ≥14px，"
@@ -32,6 +33,20 @@ def available(root: Path = WORKFLOWS) -> tuple[str, ...]:
     return tuple(sorted(
         item.name for item in root.iterdir() if (item / "SKILL.md").is_file()
     ))
+
+
+def page_skill_descriptions(root: Path = WORKFLOWS) -> str:
+    """Expose only the four build skills' discovery metadata to the Planner."""
+    rows = []
+    for workflow in PAGE_WORKFLOWS:
+        path = root / workflow / "SKILL.md"
+        text = path.read_text(encoding="utf-8")
+        header = re.match(r"\A---\n(.*?)\n---(?:\n|$)", text, re.S)
+        if header is None:
+            raise ValueError(f"missing skill frontmatter: {path}")
+        metadata = yaml.safe_load(header.group(1))
+        rows.append(f"- {metadata['name']}: {metadata['description'].strip()}")
+    return "\n".join(rows)
 
 
 def _aux_sample_catalog(name: str, root: Path) -> str:
@@ -81,7 +96,7 @@ def _aux_sample_catalog(name: str, root: Path) -> str:
 #
 # 三档在两类 workflow 上的含义不同,因为它们的样本形状本来就不同:
 #   视觉页(cover/page/interaction)  full = 完整实例(中位 21k 字符)
-#                                   mini = 同一页压到 10k 的紧凑重写
+#                                   mini = 紧凑版本；原本足够短的 full 可同源复用
 #                                   none = 只读 reference,不给实例
 #   代码页(build-code)              full = code-core-bundle 的四个作者层
 #                                   mini = 只给一个作者层(one)
