@@ -393,7 +393,7 @@ class MediaTests(unittest.TestCase):
 
     def test_interrupted_page_write_never_publishes_briefs(self):
         with patch.object(planner, 'ROOT', self.root):
-            run = planner.Run('test', 10, 'test', 'write-failure')
+            run = planner.Run('test', 10, 'test', 'write-failure', style_director=False)
         def seed(current, *_):
             (current.assets / 'CHASSIS.md').write_text('Deck.fmt(v, d)')
         write = Path.write_text

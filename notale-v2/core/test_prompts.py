@@ -177,7 +177,8 @@ class PlannerExecutionTests(unittest.TestCase):
     def test_deck_call_returns_one_final_submission_without_intermediate_files(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
-            run = SimpleNamespace(root=root, log=SimpleNamespace(add=lambda *args: None))
+            run = SimpleNamespace(root=root, style_director=False,
+                                  log=SimpleNamespace(add=lambda *args: None))
             response = SimpleNamespace(
                 output=[
                     self.function_call(root / planner.CSS_REL, CSS_OK, "css"),
@@ -225,7 +226,8 @@ class PlannerExecutionTests(unittest.TestCase):
         """
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
-            run = SimpleNamespace(root=root, log=SimpleNamespace(add=lambda *args: None))
+            run = SimpleNamespace(root=root, style_director=False,
+                                  log=SimpleNamespace(add=lambda *args: None))
             response = SimpleNamespace(
                 output=[self.function_call(root / planner.PAGES_REL, PAGES_OK, "pages")],
                 usage=None,
@@ -241,7 +243,8 @@ class PlannerExecutionTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             (root / "pages" / "plan").mkdir(parents=True)
-            run = SimpleNamespace(root=root, log=SimpleNamespace(add=lambda *args: None))
+            run = SimpleNamespace(root=root, style_director=False,
+                                  log=SimpleNamespace(add=lambda *args: None))
             half = SimpleNamespace(
                 output=[self.function_call(root / planner.PAGES_REL, PAGES_OK, "pages")],
                 usage=None, id="half")
@@ -266,6 +269,7 @@ class PlannerExecutionTests(unittest.TestCase):
     def test_plan_run_leaves_every_page_target_absent(self):
         with tempfile.TemporaryDirectory() as td, patch.object(planner, "ROOT", Path(td)):
             run = planner.Run("AdaBoosting 算法", 20, "students", "fresh")
+            self.assertTrue(run.style_director)
 
             def fake_seed(current, _chassis, _lib):
                 current.assets.mkdir(parents=True, exist_ok=True)
@@ -275,24 +279,45 @@ class PlannerExecutionTests(unittest.TestCase):
                 self.assertIn(skills.page_skill_descriptions(), _prompt)
                 self.assertNotIn("check-page", _prompt)
                 self.assertNotIn("In the first response", _prompt)
-                css_path = current.root / planner.CSS_REL
-                pages_path = current.root / planner.PAGES_REL
-                css_path.parent.mkdir(parents=True, exist_ok=True)
-                pages_path.parent.mkdir(parents=True, exist_ok=True)
-                css_path.write_text(CSS_OK, encoding="utf-8")
-                pages_path.write_text(PAGES_OK, encoding="utf-8")
-                return CSS_OK, PAGES_OK, {}
+                self.assertNotIn("## `theme.css`", _prompt)
+                self.assertNotIn("提交完整纯 CSS", _prompt)
+                return "", PAGES_OK, {}
+
+            def fake_direct(current, *_):
+                (current.assets / "theme.css").write_text(CSS_OK, encoding="utf-8")
 
             with patch.object(planner, "seed", fake_seed), \
-                    patch.object(planner, "deck_call", fake_deck):
+                    patch.object(planner, "deck_call", fake_deck), \
+                    patch("core.director.direct", side_effect=fake_direct) as direct:
                 result = planner.plan_run(
                     run, Path(td) / "chassis", Path(td) / "lib", skills.WORKFLOWS
                 )
 
+            direct.assert_called_once()
+            self.assertEqual((run.assets / "theme.css").read_text(), CSS_OK)
             self.assertEqual(result["pages"], 4)
             self.assertEqual(len(list((run.pages / "plan").glob("p??.md"))), 4)
             self.assertEqual(list(run.pages.glob("page-*.html")), [])
             self.assertTrue((run.root / "briefs.json").is_file())
+
+    def test_planner_cli_director_default_and_overrides(self):
+        for flags, expected in (([], True), (["--style-director"], True),
+                                (["--no-style-director"], False)):
+            with self.subTest(flags=flags), tempfile.TemporaryDirectory() as td:
+                root = Path(td)
+                script = root / "skills/make-illustration/scripts/gen.py"
+                script.parent.mkdir(parents=True)
+                script.touch()
+                argv = ["planner", "--query", "test", "--label", "cli",
+                        "--skills", str(root / "skills"), *flags]
+                with patch("sys.argv", argv), \
+                        patch.object(planner, "ROOT", root), \
+                        patch.object(skills, "DEFAULT", root / "skills"), \
+                        patch.object(planner.llm, "override"), \
+                        patch.object(planner, "plan_run") as plan:
+                    planner.main()
+                plan.assert_called_once()
+                self.assertEqual(plan.call_args.args[0].style_director, expected)
 
     def test_planner_receives_skill_metadata_with_and_without_director(self):
         with tempfile.TemporaryDirectory() as td, patch.object(planner, "ROOT", Path(td)):

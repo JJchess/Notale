@@ -83,7 +83,7 @@ class Run:
     # 页表每页多一行「视觉焦点」。实验开关,见 VISUAL_FOCUS_SPEC。
     visual_focus: bool = False
     # theme.css 交给 style director(core/director.py)另起一路并行写,deck 这步只写页表。
-    style_director: bool = False
+    style_director: bool = True
     root: Path = field(init=False)
     log: Writer = field(init=False)
 
@@ -248,7 +248,7 @@ def validate_media(mapping: dict, pages_doc: str, available: dict, pages: Path) 
 def deck_call(run: Run, prompt: str, tries: int = DECK_TRIES) -> tuple[str, str, dict]:
     """Free tool loop; one validated final submission, no intermediate page files."""
     hist = [{"role": "user", "content": prompt}]
-    separate_theme = getattr(run, "style_director", False)
+    separate_theme = getattr(run, "style_director", True)
     specs = [FINALIZE_SPEC, *media.SCHEMAS]
     if not separate_theme:
         specs += PLANNER_WRITE_SPEC
@@ -490,8 +490,8 @@ def main() -> None:
                    help="把两张选项菜单表接回 direction 块(对照臂用);默认不接")
     a.add_argument("--visual-focus", action="store_true",
                    help="实验开关:页表每页多一行「视觉焦点」(主证据场由 planner 定);默认关")
-    a.add_argument("--style-director", action="store_true",
-                   help="theme.css 由 core.director 并行产出(两次调用 + 四道闸);默认关")
+    a.add_argument("--style-director", action=argparse.BooleanOptionalAction, default=True,
+                   help="theme.css 由 core.director 并行产出；默认开启，--no-style-director 关闭")
     n = a.parse_args()
     if not Path(n.prompts).is_dir():
         raise SystemExit(f"✗ --prompts 指的 {n.prompts} 不是目录")
