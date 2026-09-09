@@ -10,6 +10,7 @@
 按 1600×900 的视口用无头 Chromium 打开,等页面跑起来,然后报告:
 
   · JS 报错、console.error、加载失败的资源(这些在浏览器里不点开控制台是看不见的)
+  · 基础 CSS/JS、唯一舞台、1600×900 逻辑尺寸及独立小视口的居中等比缩放
   · 超出 1600×900 画布的元素(会被裁掉)
   · 自身内容装不下、被 overflow 裁掉的元素
   · 字号的最小值与中位数
@@ -49,20 +50,60 @@ SHOT_W, SHOT_H = 800, 450       # 截图尺寸,只影响截图不影响测量
 # 45 是留了余量的保守值;文本块超 80 的页人眼一看就太满(nn-10 有 4 页)。
 # OCC_FLOOR / TEXT_LO / TEXT_HI 2026-09-05 删 —— 见 report() 里那段注释。
 
+CONTRACT = r"""() => {
+  const issues = [];
+  const named = (url, name) => url && new URL(url, document.baseURI).pathname.split('/').pop() === name;
+  const base = [...document.querySelectorAll('link[rel~="stylesheet"]')].find(e => named(e.href, 'base.css'));
+  if (!base) issues.push('缺少基础样式 base.css 引用');
+  else if (!base.sheet || base.disabled || (base.media && !matchMedia(base.media).matches))
+    issues.push('基础样式 base.css 未加载或未启用');
+  if (![...document.scripts].some(e => named(e.src, 'base.js')))
+    issues.push('缺少基础脚本 base.js 引用');
+  else if (!window.Deck || typeof Deck.resize !== 'function')
+    issues.push('基础脚本 base.js 未初始化');
+  const stages = document.querySelectorAll('#stage');
+  if (stages.length !== 1) issues.push('页面必须有且仅有一个 #stage');
+  // Missing dependencies are the cause, not a reason to invent layout repairs.
+  if (issues.length) return issues;
+  const stage = stages[0], cs = getComputedStyle(stage), r = stage.getBoundingClientRect();
+  const W = %d, H = %d, scale = Math.min(innerWidth / W, innerHeight / H);
+  if (Math.abs(parseFloat(cs.width) - W) > 1 || Math.abs(parseFloat(cs.height) - H) > 1)
+    issues.push(`舞台逻辑尺寸应为 ${W}×${H}，实际 ${cs.width}×${cs.height}`);
+  const expected = [(innerWidth-W*scale)/2, (innerHeight-H*scale)/2, W*scale, H*scale];
+  const actual = [r.x, r.y, r.width, r.height];
+  if (actual.some((v, i) => Math.abs(v - expected[i]) > 1))
+    issues.push(`舞台未居中等比适配 ${innerWidth}×${innerHeight} 视口，实际 [x,y,w,h]=${actual.map(v=>Math.round(v*10)/10)}`);
+  return issues;
+}""" % (W, H)
+
 # 2026-09-05 修:这段是 r-string,里面写 `\\(` 到了 JS 里是「转义的反斜杠 + 括号」,于是
 # alpha() 的正则永远匹配不到 rgb(...) —— 只有底色/描边的容器一直被当成"没有容器",报告里
 # "容器 0 个"出现在满屏卡片的页上。同类的 `\\s+` 也一并修。修前后:史记 C-02 容器 2 → 8。
 PROBE = r"""() => {
+  const contract = (%s)();
+  if (contract.length) return {contract};
+  const stage = document.querySelector('#stage');
   const num = v => { const f = parseFloat(v); return Number.isFinite(f) ? f : 0; };
   const W = %d, H = %d;
   const clipped = [], escaped = [], sizes = [];
   const boxes = [], texts = [];
-  const alpha = c => {
-    const m = /rgba?\(([^)]+)\)/.exec(c || '');
-    if (!m) return 0;
-    const p = m[1].split(',').map(x => parseFloat(x));
-    return p.length > 3 ? p[3] : 1;
+  // Native conversion also handles oklch()/display-p3; never split color strings.
+  const colorCanvas = document.createElement('canvas');
+  colorCanvas.width = colorCanvas.height = 1;
+  const colorCtx = colorCanvas.getContext('2d', {willReadFrequently: true});
+  const colorCache = new Map();
+  const rgba = c => {
+    if (!colorCache.has(c)) {
+      if (!c || !CSS.supports('color', c)) return null;
+      colorCtx.clearRect(0, 0, 1, 1);
+      colorCtx.fillStyle = 'transparent';
+      colorCtx.fillStyle = c;
+      colorCtx.fillRect(0, 0, 1, 1);
+      colorCache.set(c, [...colorCtx.getImageData(0, 0, 1, 1).data]);
+    }
+    return colorCache.get(c);
   };
+  const alpha = c => (rgba(c) || [0,0,0,0])[3] / 255;
 
   // 被点名的元素带上它在 1600×900 里的位置。**这是给 Look 用的** ——
   // 「把 selfcheck 刚点名的那个元素裁出来放大看」需要坐标,而报告以前只给
@@ -209,14 +250,15 @@ PROBE = r"""() => {
   }
   const tiny = boxes.filter(b => b.area < 0.01).length;
 
-  // 主题到底有没有落到元素上。**判据必须落在 token 解析上,不能落在
-  // `#stage` 的 computed padding 上** —— 实测 20 页里有 5 页在页内 <style> 里
-  // 硬写了字面值 `#stage{padding:28px 56px}`,主题整份失效时它们照样显示
-  // 28px 56px,会把失败完全掩盖掉;而 `--pad-x` 在那 5 页上全是空。
-  const padX = getComputedStyle(document.documentElement)
-                 .getPropertyValue('--pad-x').trim();
-  const stageEl = document.getElementById('stage');
-  const stagePad = stageEl ? getComputedStyle(stageEl).padding : '';
+  // Check the published required values, not an optional layout token or padding.
+  const rootCS = getComputedStyle(document.documentElement);
+  const requiredTokens = {}, invalidTokens = [];
+  for (const [name, property] of [['--bg','background-color'], ['--text','color'],
+                                 ['--font-sans','font-family']]) {
+    const value = rootCS.getPropertyValue(name).trim();
+    requiredTokens[name] = value;
+    if (!value || !CSS.supports(property, value)) invalidTokens.push(name);
+  }
 
   // 主体:最大内容块与第二大的面积比。**只报数,不判定。**
   // 「一页要有一个主体」这句话 reference、check_use、反套路清单各说了一遍
@@ -240,24 +282,25 @@ PROBE = r"""() => {
     ? {top: blocks[0] / (W * H), ratio: blocks[1] ? blocks[0] / blocks[1] : 0}
     : null;
 
-  // 字阶:主题在 :root 上声明了哪些 --fs-*,页面上有多少文字元素不在这些档位。
-  // 契约「字号只用主题 token」写在 tech.md,此前从无判据。
   // 次级文字:小且低对比。**口径写死在这里,规则文本引用同一个定义。**
   // ≤15px 与「低对比」是两个条件的合取 —— 只按字号算是 59%%,合取后是 38%%,
   // 两个数不能混用(2026-09-05 第一稿混用过)。
   const lum = c => {
-    const m = (c.match(/[\d.]+/g) || [0,0,0]).slice(0,3).map(Number);
-    const [r0,g0,b0] = m.map(v => { v/=255; return v<=.03928 ? v/12.92
+    const pixels = rgba(c);
+    if (!pixels || pixels[3] !== 255) return null;
+    const [r0,g0,b0] = pixels.slice(0,3).map(v => { v/=255; return v<=.03928 ? v/12.92
                                     : Math.pow((v+.055)/1.055, 2.4); });
     return .2126*r0 + .7152*g0 + .0722*b0;
   };
   const stageCS = getComputedStyle(stage);
-  const bgL = lum(stageCS.backgroundColor === 'rgba(0, 0, 0, 0)'
-                  ? 'rgb(255,255,255)' : stageCS.backgroundColor);
-  const contrast = c => { const l = lum(c), a = Math.max(l,bgL), b2 = Math.min(l,bgL);
+  const backgroundImage = stageCS.backgroundImage;
+  const bgL = lum(stageCS.backgroundColor);
+  const complexBackground = backgroundImage !== 'none' || bgL === null;
+  const contrast = c => { const l = lum(c); if (l === null || bgL === null) return null;
+                          const a = Math.max(l,bgL), b2 = Math.min(l,bgL);
                           return (a+.05)/(b2+.05); };
   const mainContrast = contrast(stageCS.color);
-  let minorN = 0, minorChars = 0, allChars = 0, allCjk = 0;
+  let minorN = 0, minorChars = 0, allChars = 0, allCjk = 0, unmeasuredChars = 0;
   const minorAt = [];
   for (const el of stage.querySelectorAll('*')) {
     if (el.children.length) continue;
@@ -267,7 +310,19 @@ PROBE = r"""() => {
     if (cs3.display === 'none' || cs3.visibility === 'hidden' || r3.width <= 0) continue;
     allChars += own.length;
     allCjk += (own.match(/[\u4e00-\u9fff]/g) || []).length;
-    if ((parseFloat(cs3.fontSize)||0) <= 15 && contrast(cs3.color) < mainContrast*0.75) {
+    // Local backgrounds, transparency and filtering need compositing, not a
+    // comparison with the bare stage. Count them as unmeasured, never as passing.
+    let covered = !complexBackground && mainContrast !== null;
+    for (let node = el; covered && node; node = node.parentElement) {
+      const s = getComputedStyle(node);
+      if (num(s.opacity) < 1 || s.filter !== 'none' || s.backdropFilter !== 'none'
+          || s.mixBlendMode !== 'normal') covered = false;
+      if (node !== stage && stage.contains(node)
+          && (s.backgroundImage !== 'none' || alpha(s.backgroundColor) > 0)) covered = false;
+    }
+    const textContrast = contrast(cs3.color);
+    if (!covered || textContrast === null) unmeasuredChars += own.length;
+    else if ((parseFloat(cs3.fontSize)||0) <= 15 && textContrast < mainContrast*0.75) {
       minorN++; minorChars += own.length;
       if (minorAt.length < 3) minorAt.push(Math.round(r3.left)+','+Math.round(r3.top)
                                            +' «'+own.slice(0,18)+'»');
@@ -326,26 +381,15 @@ PROBE = r"""() => {
                 area: Math.round(a5 / (W * H) * 100) / 100});
   }
 
-  const rootCS = getComputedStyle(document.documentElement);
-  const scale = new Set();
-  for (const sheet of document.styleSheets) {
-    let rules; try { rules = sheet.cssRules; } catch (e) { continue; }
-    for (const rule of rules || []) {
-      if (!rule.style) continue;
-      for (const prop of rule.style) {
-        if (prop.startsWith('--fs')) {
-          const v = num(rootCS.getPropertyValue(prop));
-          if (v) scale.add(Math.round(v));
-        }
-      }
-    }
-  }
-  const offScale = scale.size
-    ? sizes.filter(s => !scale.has(Math.round(s))).length : 0;
-
-  return {theme: {padX: padX, stagePad: stagePad},
-          subject: subject, scale: [...scale].sort((a,b)=>a-b), offScale: offScale,
-          minor: {n: minorN, chars: minorChars, all: allChars, at: minorAt},
+  return {theme: {requiredTokens, invalidTokens,
+                 variant: document.documentElement.dataset.variant || '',
+                 backgroundImage: backgroundImage,
+                 backgroundColor: stageCS.backgroundColor, color: stageCS.color,
+                 fontFamily: stageCS.fontFamily,
+                 contrastCoverage: complexBackground ? 'uncovered-background: inspect screenshot' : 'solid-stage-only',
+                 backgroundLuminance: complexBackground ? null : bgL},
+          subject: subject,
+          minor: {n: minorN, chars: minorChars, all: allChars, at: minorAt, unmeasuredChars},
           text: {chars: allChars, cjk: allCjk, notes: notesChars},
           fills: fills.slice(0, 30),
           rails: railAt,
@@ -355,7 +399,20 @@ PROBE = r"""() => {
           overlap_pairs: pairs.slice(0, 4), tiny: tiny,
           bands: bands.length, intrude: intrude.slice(0, 12),
           occupied: used, cells: GX * GY};
-}""" % (W, H)
+}""" % (CONTRACT, W, H)
+
+
+async def _viewport_contract(browser, file, wait):
+    """Independent context: adaptation must not resize the interaction under test."""
+    small = await browser.new_page(viewport={"width": W // 2, "height": H // 2})
+    try:
+        await small.goto(Path(file).resolve().as_uri(), wait_until="load")
+        await small.wait_for_timeout(wait)
+        return await small.evaluate(CONTRACT)
+    except Exception as exc:
+        return [f'缩放检查未完成: {str(exc)[:160]}']
+    finally:
+        await small.close()
 
 
 async def run(files, shot_dir=None, wait=1200, after=(), crop=None, zoom=2):
@@ -394,38 +451,37 @@ async def run(files, shot_dir=None, wait=1200, after=(), crop=None, zoom=2):
             try:
                 await pg.goto("file://" + str(Path(f).resolve()), wait_until="load")
                 await pg.wait_for_timeout(wait)          # 让动画/初始化跑起来
-                # 分步出场:页面声明了 data-step 就逐步拍,**主截图和越界判定以末步为准** ——
+                # 分步出场:页面声明了 data-deck-step 就逐步拍,**主截图和越界判定以末步为准** ——
                 # 末步才是完整画面;拿第 0 步当 00.png 会让占用比、judge 全部失真。
-                smax = await pg.evaluate("(window.Deck && Deck.stepMax) || 0")
+                contract = await pg.evaluate(CONTRACT)
+                smax = 0 if contract else await pg.evaluate("(window.Deck && Deck.stepMax) || 0")
                 step_pngs, step_issues = [], []
+                rewind_png = None
                 if smax:
                     counts = await pg.evaluate(
                         "Array.from({length: Deck.stepMax + 1}, (_, i) =>"
-                        " document.querySelectorAll('#stage [data-step=\"' + i + '\"]').length)")
+                        " document.querySelectorAll('#stage [data-deck-step=\"' + i + '\"]').length)")
                     fns = await pg.evaluate("Deck._stepFns.length")
-                    if smax < 2:
-                        step_issues.append("分步只有 1 步,没意义:要么 ≥2 步,要么不分步")
                     for i in range(1, smax + 1):
                         if counts[i] == 0 and not fns:
                             step_issues.append(f"第 {i} 步没有任何元素出场,也没有 Deck.onStep(空步)")
-                    if shot_dir:
-                        for i in range(0, smax):
-                            await pg.evaluate(f"Deck.stepTo({i})")
-                            await pg.wait_for_timeout(350)
+                    # Exercise the same states with or without screenshots.
+                    for i in range(0, smax):
+                        await pg.evaluate(f"Deck.stepTo({i})")
+                        await pg.wait_for_timeout(350)
+                        if shot_dir:
                             q = Path(shot_dir) / f"{stem}-step{i}.png"
                             q.parent.mkdir(parents=True, exist_ok=True)
                             await pg.screenshot(path=str(q))
                             _shrink(q)
                             step_pngs.append(q)
-                        # 回退门禁:走到末步再退回第 0 步,画面必须和开场一样 —— onStep 的 fn
-                        # 若只向前追加、不按步数整体重绘,这里字节就对不上。
-                        await pg.evaluate(f"Deck.stepTo({smax}); Deck.stepTo(0)")
-                        await pg.wait_for_timeout(350)
-                        back = Path(shot_dir) / f"{stem}-step0-back.png"
-                        await pg.screenshot(path=str(back)); _shrink(back)
-                        if back.read_bytes() != step_pngs[0].read_bytes():
-                            step_issues.append("回退到第 0 步后画面与开场不同:onStep 的 fn 没按步数完整重绘,只是向前追加")
-                        back.unlink()
+                    # Rewind remains exercised and visible. PNG byte differences cannot
+                    # diagnose state correctness (antialiasing/animation may differ).
+                    await pg.evaluate(f"Deck.stepTo({smax}); Deck.stepTo(0)")
+                    await pg.wait_for_timeout(350)
+                    if shot_dir:
+                        rewind_png = Path(shot_dir) / f"{stem}-step0-back.png"
+                        await pg.screenshot(path=str(rewind_png)); _shrink(rewind_png)
                     await pg.evaluate(f"Deck.stepTo({smax})")
                     await pg.wait_for_timeout(350)
                 probe = await pg.evaluate(PROBE)
@@ -434,6 +490,11 @@ async def run(files, shot_dir=None, wait=1200, after=(), crop=None, zoom=2):
                                             "errs": errs, "bad": bad, "png": None}]))
                 await pg.close()
                 continue
+
+            # Both checks retain their waits and isolated contexts. Let the small
+            # viewport initialize while the primary page is captured/exercised.
+            viewport_task = (asyncio.create_task(_viewport_contract(b, f, wait))
+                             if not probe.get('contract') else None)
 
             def shoot(dst):
                 """截当前状态。**不许改视口来缩图。**
@@ -449,7 +510,8 @@ async def run(files, shot_dir=None, wait=1200, after=(), crop=None, zoom=2):
 
             states = [{"label": None, "probe": probe, "errs": list(errs),
                        "bad": list(bad), "png": None,
-                       "steps": smax, "step_pngs": step_pngs, "step_issues": step_issues}]
+                       "steps": smax, "step_pngs": step_pngs, "rewind_png": rewind_png,
+                       "step_issues": step_issues}]
             if shot_dir:
                 png = shoot(Path(shot_dir) / f"{stem}.png")
                 await pg.screenshot(path=str(png))
@@ -471,7 +533,7 @@ async def run(files, shot_dir=None, wait=1200, after=(), crop=None, zoom=2):
                 st = {"label": " ".join(js.split())[:60], "probe": None,
                       "errs": [], "bad": [], "png": None, "js_error": None}
                 try:
-                    await pg.evaluate(f"() => {{ {js} }}")
+                    st["result"] = await pg.evaluate(f"() => {{ {js} }}")
                 except Exception as e:
                     st["js_error"] = " ".join(str(e).split())[:160]
                 else:
@@ -489,6 +551,9 @@ async def run(files, shot_dir=None, wait=1200, after=(), crop=None, zoom=2):
                 states.append(st)
 
             out.append((Path(f).name, states))
+            # A separate page checks adaptation; never resize the screenshot/after instance.
+            if viewport_task is not None:
+                states[0]['viewport_issues'] = await viewport_task
             await pg.close()
         await b.close()
     return out
@@ -544,15 +609,24 @@ def _report_state(name: str, states: list, text_report: bool = False) -> None:
         if st.get("js_error"):
             print(f"   ✗ 这段 JS 报错了,**这个状态没测到**: {st['js_error']}")
             continue
+        if st.get("result") is not None:
+            print("   返回值 " + json.dumps(st["result"], ensure_ascii=False))
         probe, errs, bad = st["probe"], st["errs"], st["bad"]
         if probe.get("fatal"):
             print(f"   打不开: {probe['fatal']}")
             continue
-        sizes = sorted(probe["sizes"])
         for e in errs[:6]:
             print(f"   ✗ {e}")
         for x in bad[:6]:
             print(f"   ✗ 资源加载失败 {x}")
+        contract = probe.get('contract', []) + st.get('viewport_issues', [])
+        for issue in contract:
+            print(f"   ✗ 底盘契约: {issue}")
+        if probe.get('contract'):
+            if st.get('png'):
+                print(f"   截图 {st['png']}")
+            continue
+        sizes = sorted(probe["sizes"])
         for x in probe["escaped"][:6]:
             l, t, r, b2 = x["out"]
             side = ", ".join(s for s, v in (("左", l), ("上", t), ("右", r), ("下", b2)) if v) or "?"
@@ -562,69 +636,35 @@ def _report_state(name: str, states: list, text_report: bool = False) -> None:
         for x in probe["clipped"][:6]:
             print(f"   ✗ 被裁 {x['el']} 内容 {x['need']} 容器只有 {x['have']} "
                   f"{_at(x)} «{x['text']}»")
-        if not errs and not bad and not probe["escaped"] and not probe["clipped"]:
+        if not errs and not bad and not contract and not probe["escaped"] and not probe["clipped"]:
             print("   渲染无报错,没有元素超出画布或被裁")
         if st.get("steps"):
-            print(f"   分步 {st['steps']} 步，以上判定按末步")
+            print(f"   分步 0..{st['steps']}（{st['steps'] + 1} 个状态），以上判定按末步")
         for x in st.get("step_issues") or []:
             print(f"   ✗ {x}")
         if sizes:
             print(f"   canvas {probe['canvases']} 个;有文字的元素 {len(sizes)} 个,"
                   f"字号最小 {sizes[0]:g}px 中位 {sizes[len(sizes)//2]:g}px 最大 {sizes[-1]:g}px")
-        # 主体与字阶 —— **只报数,不判定,不升级为 ✗。**
-        # 升级为闸的代价记在下面占用比那段账里(Sonnet 打满 100 步、92 分钟只交付 8 页),
-        # 而这两条还各有正当例外:对照页天然多主体平权,`.big` 这类展示数值也不在 --fs 档里。
-        # 判定权留给模型,harness 只负责让它看得见。
-        subj = probe.get("subject")
-        if subj and subj.get("ratio"):
-            print(f"   主体 最大内容块占版心 {subj['top'] * 100:.0f}%,"
-                  f"比第二大的大 {subj['ratio']:.1f} 倍")
-        # 次级文字与粗侧边条 —— 同样只报数与位置,不判定。
+        # 可读性测量保留；构图/卡片统计留在原始 JSON，不主动灌入 Builder。
         # **报位置是必要的**:只给比例,模型不知道该去看哪里。
         mn = probe.get("minor") or {}
         if mn.get("all"):
             pct = mn["chars"] * 100 // mn["all"]
             note = ("；例如 " + "、".join(mn.get("at") or [])) if mn.get("at") else ""
-            print(f"   次级文字 ≤15px 且低对比的 {mn['n']} 处,承载 {pct}% 的字符{note}")
-        rails = probe.get("rails") or []
-        if rails:
-            print(f"   侧边条 有底色或圆角的容器上有 {len(rails)} 处单边粗描边："
-                  + "、".join(rails))
+            print(f"   次级文字 舞台纯色参考下 ≤15px 且低对比的 {mn['n']} 处,承载 {pct}% 的字符{note}")
+            if mn.get('unmeasuredChars'):
+                print(f"   对比度 {mn['unmeasuredChars']} 字涉及复杂背景、局部底色或透明/过滤，未测；需看图")
         # 画面字数 / 讲稿字数 —— 只在 --text-report 时打印,基线报告一个字节不变。
         # 2026-09-05 实测:生成页每页可见字符中位 550–750,金样本中位 206;这是 G3「字太密」的数。
         tx = probe.get("text") or {}
         if text_report and tx:
             print(f"   文字 画面 {tx.get('chars', 0)} 字（汉字 {tx.get('cjk', 0)}）· 讲稿 {tx.get('notes', 0)} 字")
-        scale = probe.get("scale") or []
-        off = probe.get("offScale") or 0
-        if scale and sizes:
-            print(f"   字阶 {off}/{len(sizes)} 个文字元素不在主题声明的档位上"
-                  f"（{'/'.join(str(x) for x in scale)}px）")
-        # 2026-09-05 删掉了这里的「密度/占用比/文本块」三行。占用比数的是 32×18 格被内容盖住的比例,
-        # 同样的内容铺满整页比集中在一处得分高一倍 —— 它在奖励"铺开"、惩罚"集中",正是半空卡片与
-        # 碎留白的来源;文本块区间同理在鼓励多块文字。数字仍在 JSON 里(occupied/cells/texts),
-        # 只是不再念给模型听。占用比曾是这个仓库追得最狠的一个数,历史见 git log。
-        # 取而代之的构图数只有两个:上面的「主体」,和下面的「容器填充率」。
-        fl = probe.get("fills") or []
-        if fl:
-            half = [f for f in fl if f["fill"] < 0.45 or f["gap"] > 0.35]
-            where = "、".join(f"{f['tag']}@{f['at'][0]},{f['at'][1]} 填充 {int(f['fill']*100)}%" for f in half[:3])
-            print(f"   区块 {len(fl)} 个(带底色或描边,≥5% 版心),其中 {len(half)} 个半空(内容填充 <45% 或底部空 >35%)"
-                  + (f":{where}" if where else "")
-                  + ("。字删了区块要跟着缩:合并、去掉,或者干脆不要这个容器" if half else ""))
-        # 主题有没有生效。**报参考,不报 ✗** —— 页面无权改 `assets/`(brief 明令),
-        # 报 ✗ 就复制了占用比那个陷阱(它降级为参考的理由正是「出路不在建页 agent
-        # 手里」)。这条的代价量过:theme.css 首行残留一个 markdown 围栏,浏览器把它
-        # 连同 `:root` 一起丢弃,20 页全部无样式渲染,而当时所有判据都报绿。
+        # Report the missing/invalid values, not an unproven diagnosis of broken CSS.
         th = probe.get("theme") or {}
-        if not th.get("padX"):
-            print("   参考 主题 token 没生效:`--pad-x` 在 :root 上解析不出来。"
-                  "**这不是本页能修的** —— 去看 `assets/theme.css` 是不是坏了"
-                  "(首行残留代码围栏、语法错误吞掉 :root 之类)，页面无权改它")
-        elif th.get("stagePad") in ("0px", "", None):
-            print(f"   参考 版心 padding 是 {th.get('stagePad')!r},而主题声明了 "
-                  f"--pad-x={th['padX']} —— 查一下本页 <style> 是不是覆盖了 "
-                  f"`#stage` 的 padding")
+        if th.get("invalidTokens"):
+            print("   参考 根上缺失或不可用于对应属性的必需主题值："
+                  + "、".join(th["invalidTokens"])
+                  + "；页面无权改共享资产，不能据此断言 CSS 语法损坏")
 
         # 2026-09-05 修:这一块原来缩进在上面的 elif 里,只有版心 padding 为 0 时才会打印 ——
         # 叠压/侵入/小容器三条一直被静默吞掉。现在无条件打印。
@@ -637,13 +677,13 @@ def _report_state(name: str, states: list, text_report: bool = False) -> None:
         # 采集了不打印的指标,比没有这个指标更坏:它会让人以为已经看过了。
         if probe.get("intrude"):
             flags.append(f"侵入页眉页脚带 {len(probe['intrude'])} 处")
-        if probe.get("tiny"):
-            flags.append(f"占比 <1% 的小容器 {probe['tiny']} 个")
         if flags:
             print("        " + " / ".join(flags))
         if st["png"]:
             for i, q in enumerate(st.get("step_pngs") or []):
                 print(f"   截图 {q}  (第 {i} 步)")
+            if st.get("rewind_png"):
+                print(f"   截图 {st['rewind_png']}  (回退到第 0 步，供核对状态)")
             print(f"   截图 {st['png']}  ({SHOT_W}×{SHOT_H}"
                   + (f",第 {st['steps']} 步 = 完整画面" if st.get("steps") else "") + ")")
         if st.get("crop"):
@@ -661,7 +701,6 @@ def report(name: str, states: list, text_report: bool = False) -> None:
     print(f"\n── {name}")
     baseline = None
     baseline_label = "初态"
-    scales = set()
     for index, state in enumerate(states):
         if index:
             print(f"   ┄ after{index} «{state['label']}»")
@@ -671,9 +710,9 @@ def report(name: str, states: list, text_report: bool = False) -> None:
         lines = [line for line in buf.getvalue().splitlines()
                  if line.strip() and not line.lstrip().startswith(("──", "┄"))]
         measured = state.get("probe") is not None and not state.get("js_error") \
-            and not state["probe"].get("fatal")
+            and not state["probe"].get("fatal") and not state["probe"].get("contract")
         metrics = [line for line in lines if not line.lstrip().startswith(
-            ("✗", "打不开:", "截图 ", "裁图 "))]
+            ("✗", "打不开:", "截图 ", "裁图 ", "返回值 "))]
         emitted = lines
         if measured and baseline is not None:
             emitted = [line for line in lines if line not in metrics or line not in baseline]
@@ -688,11 +727,6 @@ def report(name: str, states: list, text_report: bool = False) -> None:
             baseline = metrics
             baseline_label = "初态" if index == 0 else f"after{index}"
         for line in emitted:
-            if line.lstrip().startswith("字阶 ") and "（" in line:
-                head, scale = line.split("（", 1)
-                if scale in scales:
-                    line = head
-                scales.add(scale)
             print(line)
 
 
@@ -704,7 +738,7 @@ def main():
     ap.add_argument("--wait", type=int, default=1200, help="打开后等多少毫秒再测")
     ap.add_argument("--after", action="append", default=[], metavar="JS",
                     help="在页面里跑这段 JS,然后**把这一页重新测一遍**(可多次给,依次叠加)。"
-                         "不需要配 --shot;配了才另存 -afterN.png。"
+                         "不需要配 --shot;配了才另存 -afterN.png。可 return JSON 值供核对计算结果。"
                          "例:--after \"document.querySelector('#btn').click()\"")
     ap.add_argument("--crop", metavar="X,Y,W,H",
                     help="从 1600×900 原图里裁这一块再放大(报告里 @x,y w×h 那几个数)。"
@@ -734,7 +768,9 @@ def main():
         print(json.dumps(
             [{"page": n,
               "states": [{"after": st["label"], "js_error": st.get("js_error"),
+                          "result": st.get("result"),
                           **(st["probe"] or {}), "errors": st["errs"], "failed": st["bad"],
+                          "viewport_issues": st.get("viewport_issues", []),
                           "shot": str(st["png"]) if st["png"] else None,
                           "crop": str(st["crop"]) if st.get("crop") else None}
                          for st in states]}

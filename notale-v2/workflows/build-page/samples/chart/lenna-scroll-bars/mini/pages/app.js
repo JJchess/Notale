@@ -13,7 +13,7 @@ const status = byId("status");
 const chart = d3.select("#chart"), barsLayer = chart.select(".bars"), stacksLayer = chart.select(".stacks");
 const controller = new AbortController(), signal = controller.signal;
 const xScale = d3.scaleBand().domain(d3.range(1972, 2022)).range([50, 1550]).paddingInner(.1);
-const yScale = d3.scaleLinear().domain([0, 287]).range([800, 100]);
+const yScale = d3.scaleLinear().domain([0, 287]).range([800, 270]);
 let yearly = [], bars, segments, stateIndex = 0;
 let ready = false, destroyed = false;
 function aggregate(rows) {

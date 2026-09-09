@@ -4,9 +4,9 @@ A read-only listing beside a prerecorded animation is not a code interaction. Cu
 
 ## Know the capability boundary
 
-The bundled v2 workbench currently executes **Python in Pyodide only**. It can represent the full data-structures-and-algorithms teaching space because the trace packet and native HTML/SVG/Canvas view are representation-neutral; that does not make it a universal language runtime.
+The bundled v2 workbench executes **Python in Pyodide, with the standard library and NumPy available before execution**. This applies to learner source, trace adapters, and tests. Dependency installation belongs to the fixed platform, not the lesson. It can represent the full data-structures-and-algorithms teaching space because the trace packet and native HTML/SVG/Canvas view are representation-neutral; that does not make it a universal language runtime.
 
-Use the template directly for browser-executable Python lessons. If the learner runtime must be JavaScript, Java, C/C++, Rust, or requires native packages, network access, a persistent filesystem, or hostile-code isolation, treat that as a platform-runtime change. Do not simulate support, silently swap languages, or add a one-off runtime inside `lesson/`.
+Use the template directly for browser-executable Python lessons. If the learner runtime must be JavaScript, Java, C/C++, Rust, or requires additional packages, network access, a persistent filesystem, or hostile-code isolation, treat that as a platform-runtime change. Do not simulate support, silently swap languages, or add a one-off runtime inside `lesson/`.
 
 ## Require the learning loop
 
@@ -45,7 +45,7 @@ Author-layer responsibilities:
 
 Treat the outer page, `core/`, `runtime/`, `index.html`, `styles.css`, `check.py`, and shared dependencies as fixed platform code. Do not fork Monaco, Worker, timeout, playback, reset, iframe, or fixed-stage behavior for one lesson. Preview through the host HTTP server, never `file://`.
 
-Verification covers both the outer deck page and the inner workbench: execution, errors, timeout recovery, native view, exact reset, fixed layout, and representative screenshots.
+Page Check verifies the authored lesson: current source execution, lesson tests, real trace frames, native view, reset, and loading/runtime errors. Fixed editor options, splitter behavior, sandbox enforcement, playback plumbing, and generic runtime protocols belong to platform regression tests, not each lesson's repair loop.
 
 ## Keep source, execution, and evidence identical
 
@@ -220,6 +220,7 @@ Use the VS Code-like chrome as working context. Do not add a bottom blue status 
 ## Bound execution honestly
 
 The host owns Worker timeout recovery and message isolation. Set lesson limits for source, execution time, trace, output and snapshot size.
+Timeout and trace-limit protection are verified by platform regression tests, not repeated for every lesson. Do not tune lesson limits to force a particular protection branch.
 
 A Worker protects UI responsiveness; it is not a hardened multi-tenant security boundary. Do not place credentials or sensitive same-origin data in the page. Hostile code, native packages, persistence, network access, or compiled languages require an explicitly authorized backend sandbox.
 
@@ -254,11 +255,10 @@ The host owns editor and Worker teardown. Retry may preserve repaired source; Re
 ## Verify the complete interaction
 
 - Edit the starter so the trace changes; confirm the right view changes from that exact source.
-- Exercise applicable success, syntax, runtime, logical, timeout, and trace-limit paths.
+- Exercise applicable success, syntax, runtime, and logical failure paths.
 - Confirm filenames and decorated lines match executed Monaco models.
-- Compare Run, manual Step, and autoplay at the same index.
+- Inspect representative and final executed frames; the view must follow the actual lesson state.
 - Test representative empty, duplicate, disconnected, negative, deep, or large states when relevant.
-- Reset during playback and execution, twice, and compare the full snapshot.
-- Verify keyboard access and reduced motion.
-- Force a `renderNotaleView` error; verify the parent error surface appears and source remains.
+- Reset and confirm authored source and the initial lesson view are restored.
+- Verify keyboard access and reduced motion for controls and motion authored by the lesson.
 - Generate fresh output, serve it, and confirm no CDN requests, missing resources, console errors, clipping, or page scrolling.

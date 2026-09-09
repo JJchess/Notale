@@ -84,10 +84,14 @@ class Run:
     visual_focus: bool = False
     # theme.css 交给 style director(core/director.py)另起一路并行写,deck 这步只写页表。
     style_director: bool = True
+    template: Path | None = None
+    style: str | None = None
     root: Path = field(init=False)
     log: Writer = field(init=False)
 
     def __post_init__(self) -> None:
+        from .theme import check_options
+        check_options(self.template, self.style, self.style_director)
         self.root = ROOT / "runs" / self.label
         if self.root.exists():
             raise FileExistsError(
@@ -112,17 +116,8 @@ class Run:
 
 def _valid_css(text: str) -> str:
     """Validate the shared CSS contract that every page depends on."""
-    if text.lstrip().startswith("```"):
-        return "theme.css 不能包含 markdown 代码围栏"
-    bare = re.sub(r"/\*.*?\*/", "", text, flags=re.S)
-    # 2026-09-06 删掉「#stage 必须是 flex 列」这道闸。它当初是照抄 Opus 的 deck.css 加的,
-    # 实测把填充率从 89% 提到 93–95%、每页 Edit 从 17.2 降到 6.4;但它同时把版面锁成
-    # 「切格子」,卡片墙是这个骨架的必然产物 —— 逐页量下来我们每页 5 处像素坐标、0 处
-    # absolute,而同一题目下的 Opus 是每页 20 处像素坐标、5 处 absolute,#stage 只有
-    # position:absolute 没有 display。填不满的老问题要靠 A/B 盯住(填充率 + 每页 Edit)。
-    if "==== INTERFACE ====" not in text or "==== /INTERFACE ====" not in text:
-        return "缺少完整的 INTERFACE 接口块"
-    return ""
+    from .theme import inspect
+    return '；'.join(inspect(text)[0])
 
 
 N_CEIL = 60  # resource cap; the Planner otherwise decides page count
@@ -492,7 +487,14 @@ def main() -> None:
                    help="实验开关:页表每页多一行「视觉焦点」(主证据场由 planner 定);默认关")
     a.add_argument("--style-director", action=argparse.BooleanOptionalAction, default=True,
                    help="theme.css 由 core.director 并行产出；默认开启，--no-style-director 关闭")
+    a.add_argument("--template", type=Path, help="参考图片或 theme.css / shots 目录")
+    a.add_argument("--style", help="风格要求；修改成品主题必须显式指定")
     n = a.parse_args()
+    from .theme import check_options
+    try:
+        check_options(n.template, n.style, n.style_director)
+    except ValueError as exc:
+        a.error(str(exc))
     if not Path(n.prompts).is_dir():
         raise SystemExit(f"✗ --prompts 指的 {n.prompts} 不是目录")
     missing = [f"{x}.md" for x in ("brief", "deck")
@@ -517,7 +519,8 @@ def main() -> None:
     if n.effort: config()["planner"]["reasoning_effort"] = n.effort
     plan_run(Run(n.query, n.minutes, n.audience, n.label, n.scenario,
                  prompts=Path(n.prompts), direction_menus=n.direction_menus,
-                 visual_focus=n.visual_focus, style_director=n.style_director),
+                 visual_focus=n.visual_focus, style_director=n.style_director,
+                 template=n.template, style=n.style),
              Path(n.chassis), Path(n.lib), workflow_root)
 
 

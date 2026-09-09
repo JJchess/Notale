@@ -20,7 +20,7 @@ ROOT = Path(__file__).resolve().parents[1]
 CSS_OK = """/* ==== INTERFACE ====
 token --bg #ffffff page background
 ==== /INTERFACE ==== */
-:root { --pad-x:56px; --pad-y:28px; --bg:#fff; }
+:root { --pad-x:56px; --pad-y:28px; --bg:#fff; --text:#111; --font-sans:sans-serif; }
 #stage { padding:var(--pad-y) var(--pad-x); }
 """
 
@@ -41,6 +41,13 @@ AdaBoosting 算法的历史
 
 
 class PromptTests(unittest.TestCase):
+    def test_text_cap_is_restored_and_keeps_notes(self):
+        self.assertIn('可见文字总量不超过 200 个字符', builder.NOTES_BLOCK)
+        self.assertIn('标题、正文、标签、数值都算', builder.NOTES_BLOCK)
+        self.assertNotIn('按内容复杂度与可读性决定文字量', builder.NOTES_BLOCK)
+        self.assertIn('<aside class="notes" hidden>', builder.NOTES_BLOCK)
+        self.assertNotIn('200', builder.NOTES_ONLY_BLOCK)
+
     def test_templates_fill_without_placeholders(self):
         cases = {
             "brief": dict(query="Q", pid="page-01", total=4),
@@ -98,8 +105,28 @@ class PromptTests(unittest.TestCase):
         self.assertIn("响应目标不超过 11 次", builder.IDENTITY)
         self.assertIn("通常应在 4–7 次内完成", builder.IDENTITY)
         self.assertIn("同一响应中的多个工具调用会按列出顺序执行", builder.IDENTITY)
-        self.assertIn("首次 Write 前先核对确定性数据", builder.IDENTITY)
+        self.assertIn("设计时先核对确定性数据和公式", builder.IDENTITY)
+        self.assertIn("实现正确就据实调整解释，不修改数据或显示值来凑结论", builder.IDENTITY)
+        self.assertNotIn("公式和预期状态的一致性", builder.IDENTITY)
         self.assertIn("下一次响应直接结束", builder.IDENTITY)
+
+    def test_library_index_routes_first_read_without_injecting_api_body(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            library = root / 'pages/assets/lib'
+            library.mkdir(parents=True)
+            source = (ROOT / 'vendor/chassis/lib/LIBS.md').read_text()
+            (library / 'LIBS.md').write_text(source)
+            index = builder._libs_index(root)
+        self.assertIn('mlp.js', index)
+        self.assertIn('matter.min.js', index)
+        self.assertIn('首轮一并 Read', index)
+        self.assertNotIn('activationLevels()', index)
+        self.assertNotIn('Matter.Engine.create()', index)
+        self.assertIn('activationLevels()', source)
+        self.assertIn('Matter.Engine.create()', source)
+        self.assertNotIn('zzz/lib', source)
+        self.assertNotIn('自行下载', source)
 
     def test_philosophy_reaches_both_sides_and_stays_minimal(self):
         """这份文件此前代码里零引用 —— 谁也收不到。接线后要保证两侧各拿到自己那块。
@@ -152,10 +179,10 @@ class ValidatorTests(unittest.TestCase):
 
     def test_css_validator_has_no_arbitrary_rule_count(self):
         self.assertEqual(planner._valid_css(CSS_OK), "")
-        # #stage 的排法不再由共享层规定,只剩围栏和 INTERFACE 两条硬闸
+        # No arbitrary rule count; actual missing values / chassis overrides are errors.
         self.assertEqual(
             planner._valid_css(
-                "/* ==== INTERFACE ==== x ==== /INTERFACE ==== */\n#stage{position:absolute}"
+                CSS_OK + '\n.nt-controls{border:2px solid;border-radius:12px}'
             ),
             "",
         )

@@ -53,7 +53,7 @@ class WorkflowRegistryTests(unittest.TestCase):
     def test_routed_skill_is_inline_and_paths_are_directly_readable(self):
         for name in skills.PAGE_WORKFLOWS:
             with self.subTest(name=name):
-                block = skills.routed_workflow(name)
+                block = skills.routed_workflow(name, include_aux=False)
                 self.assertIn(f'<workflow_skill name="{name}"', block)
                 self.assertNotIn("<skill-dir>", block)
                 # 路径根只写一次，其余是相对 workflow 根的路径（省下每条重复
@@ -116,7 +116,7 @@ class WorkflowRegistryTests(unittest.TestCase):
                             if l.strip(" -") and ".md" not in l]
                     self.assertTrue(body, f"{row['id']} 没有可迁移描述")
 
-    def test_main_only_is_default_and_aux_minis_are_opt_in(self):
+    def test_mini_plus_aux_is_default_and_main_only_remains_available(self):
         for name in skills.PAGE_WORKFLOWS:
             with self.subTest(name=name):
                 skill_text = (skills.WORKFLOWS / name / "SKILL.md").read_text(
@@ -125,8 +125,13 @@ class WorkflowRegistryTests(unittest.TestCase):
                 default = skills.routed_workflow(name)
                 self.assertNotIn("  - Aux:", skill_text)
                 self.assertNotIn(".mini.md", skill_text)
-                self.assertNotIn("<aux_sample_catalog", default)
-                self.assertNotIn(".mini.md", default)
+                self.assertEqual(default, skills.routed_workflow(
+                    name, samples="mini", include_aux=True))
+                full = skills.routed_workflow(name, samples="full", include_aux=False)
+                self.assertNotIn("<aux_sample_catalog", full)
+                self.assertNotIn(".mini.md", full)
+                main_only = skills.routed_workflow(name, include_aux=False)
+                self.assertNotIn("<aux_sample_catalog", main_only)
 
         for name in ("build-cover", "build-page", "build-interaction"):
             with self.subTest(aux_enabled=name):
@@ -172,14 +177,15 @@ class SampleAblationTests(unittest.TestCase):
         skills.MINI_FALLBACKS.clear()
         for name in skills.PAGE_WORKFLOWS:
             with self.subTest(name=name):
-                body = skills.routed_workflow(name, samples="mini")
+                body = skills.routed_workflow(name, samples="mini", include_aux=False)
                 root = skills.WORKFLOWS / name
                 for rel in re.findall(
                         r"(?:`|\()((?:references|samples)/[^`)]+\.md)(?:`|\))", body):
                     self.assertTrue((Path(root) / rel).is_file(), rel)
-        # build-cover 有三份 Main 至今没有 mini,必须被记下来而不是静默换掉菜单
-        self.assertIn("build-cover", skills.MINI_FALLBACKS)
-        self.assertIn("telescope-zoom", skills.MINI_FALLBACKS["build-cover"])
+        # All visual Main samples now have a registered mini.
+        self.assertNotIn("build-cover", skills.MINI_FALLBACKS)
+        self.assertNotIn("build-page", skills.MINI_FALLBACKS)
+        self.assertEqual(skills.MINI_FALLBACKS, {})
 
     def test_code_mini_is_one_author_layer(self):
         full = skills.routed_workflow("build-code", samples="full")
@@ -213,7 +219,7 @@ class SampleAblationTests(unittest.TestCase):
 class BundleTests(unittest.TestCase):
     def test_generated_bundles_are_current_and_keep_visual_css(self):
         rendered = sample_bundles.render_all()
-        self.assertEqual(len(rendered), 86)
+        self.assertEqual(len(rendered), 104)
         for path, expected in rendered.items():
             with self.subTest(path=path):
                 self.assertEqual(path.read_text(encoding="utf-8"), expected)
@@ -226,7 +232,7 @@ class BundleTests(unittest.TestCase):
 
     def test_shared_minis_keep_full_content_notes_and_routing(self):
         shared = []
-        for name in ("build-page", "build-interaction"):
+        for name in ("build-cover", "build-page", "build-interaction"):
             root = skills.WORKFLOWS / name
             catalog = json.loads((root / "samples/catalog.json").read_text())
             full_route = skills.routed_workflow(name, samples="full")
@@ -244,9 +250,38 @@ class BundleTests(unittest.TestCase):
                     self.assertIn(f"{rel}.full.md", full_route)
                     self.assertIn(f"{rel}.mini.md", mini_route)
                     self.assertNotIn(row["id"], skills.MINI_FALLBACKS.get(name, []))
-                    self.assertFalse(row["aux"])
-                    self.assertNotIn(row["id"], aux)
-        self.assertEqual(len(shared), 15)
+                    if name == "build-cover":
+                        self.assertTrue(row["aux"])
+                        self.assertIn(row["id"], aux)
+                    else:
+                        self.assertFalse(row["aux"])
+                        self.assertNotIn(row["id"], aux)
+        self.assertEqual(len(shared), 7)
+        # These now need an independent layout to fit a 1600 × 900 slide.
+        self.assertTrue({"music-sample-pair", "flipbook-branches",
+                         "onion-cut-lab", "dress-code-clothing",
+                         "pantheon-index", "iconography-lens", "jersey-edition-board",
+                         "banknote-firsts", "dog-flow-atlas",
+                         "photo-history-quiz", "walk-photo-journal",
+                         "population-clock"}.isdisjoint(shared))
+
+    def test_independent_mini_dependencies_are_preserved(self):
+        for name, sample in (
+            ("build-page", "foundation-shade-desk"),
+            ("build-page", "yearbook-hair-timeline"),
+            ("build-interaction", "crokinole-shot-lab"),
+        ):
+            root = skills.WORKFLOWS / name
+            catalog = json.loads((root / "samples/catalog.json").read_text())
+            row = next(row for row in catalog["samples"] if row["id"] == sample)
+            spec = row["mini"]
+            self.assertNotEqual(spec["root"], row["full"]["root"])
+            html = (root / spec["root"] / "index.html").read_text()
+            expected = sample_bundles.omitted_lines(sample, spec, html)
+            self.assertTrue(expected)
+            text = sample_bundles._variant(root, row, "mini", spec)
+            for line in expected:
+                self.assertIn(line, text)
 
     def test_visual_full_bundles_declare_every_omitted_dependency(self):
         for path, text in sample_bundles.render_all().items():
@@ -289,7 +324,7 @@ class BundleTests(unittest.TestCase):
         )
         climate = next(row for row in interaction["samples"]
                        if row["id"] == "future-climate-analogy")
-        self.assertNotIn("mini", climate)
+        self.assertIn("mini", climate)
 
         code = json.loads(
             (skills.WORKFLOWS / "build-code/samples/catalog.json").read_text()
@@ -316,7 +351,7 @@ class ToolSurfaceTests(unittest.TestCase):
     def test_surface_has_shared_media_but_no_selection_tools(self):
         names = [schema["name"] for schema in tools.specs()]
         self.assertEqual(
-            names, ["Read", "Write", "Edit", "Patch", "Check", "Look", "Bash", "ImageSearch", "ImageGen"]
+            names, ["Read", "Write", "Edit", "Patch", "Check", "Bash", "ImageSearch", "ImageGen"]
         )
         self.assertNotIn("WorkflowContext", names)
         self.assertNotIn("Skill", names)
@@ -357,6 +392,26 @@ class ToolSurfaceTests(unittest.TestCase):
         self.assertIn("UNIQUE EOF", result)
         self.assertIn("EOF", result)
         self.assertIn("拒绝", denied)
+
+    def test_only_current_library_guide_reads_fully_even_with_limits(self):
+        with tempfile.TemporaryDirectory() as td:
+            pages = Path(td) / 'pages'
+            guide = pages / 'assets/lib/LIBS.md'
+            guide.parent.mkdir(parents=True)
+            body = 'START\n' + 'usage\n' * 5500 + 'END'
+            guide.write_text(body)
+            full = tools.run('Read', {'file_path':'assets/lib/LIBS.md', 'offset':10, 'limit':1},
+                             pages, None, 'page-01')
+            for name in ('page-01.html', 'assets/lib/example.js', 'LIBS.md'):
+                (pages / name).write_text('first\nsecond\nthird')
+                partial = tools.run('Read', {'file_path':name, 'offset':2, 'limit':1},
+                                    pages, None, 'page-01')
+                self.assertIn('second', partial)
+                self.assertNotIn('first', partial)
+                self.assertNotIn('third', partial)
+        self.assertIn('START', full)
+        self.assertIn('END', full)
+        self.assertIn('EOF', full)
 
     def test_sample_use_frames_both_visual_bundle_variants(self):
         with tempfile.TemporaryDirectory() as td:

@@ -85,6 +85,41 @@ class Writer:
             for row in (a, b):
                 f.write(row.model_dump_json(exclude_none=True) + "\n")
 
+    def tool(self, *, rid: str, call_id: str, page: str, name: str,
+             arguments: str, output: str, started: str, finished: str,
+             seconds: float, images=()) -> None:
+        """Record actual tool evidence without injecting it into model history.
+
+        Images are content-addressed because .shots is overwritten by later checks.
+        Request/response rows and their timing parent links remain unchanged.
+        """
+        import base64
+        import hashlib
+        import json
+        import uuid
+
+        pictures = []
+        for media_type, encoded in images:
+            data = base64.b64decode(encoded, validate=True)
+            digest = hashlib.sha256(data).hexdigest()
+            path = self.path.parent / '.trace-images' / digest
+            path.parent.mkdir(exist_ok=True)
+            # Identical concurrent writes have identical content; no mutable screenshot names.
+            with self._lock:
+                if not path.exists():
+                    path.write_bytes(data)
+            pictures.append({'path': str(path.relative_to(self.path.parent)),
+                             'mimeType': media_type, 'sha256': digest, 'bytes': len(data)})
+        payload = json.loads(redact(json.dumps(dict(
+            page=page, call_id=call_id, name=name, arguments=arguments, output=output,
+            started=started, seconds=seconds, images=pictures), ensure_ascii=False)))
+        with self._lock, self.path.open('a', encoding='utf-8') as stream:
+            row = TraceRow(uuid=str(uuid.uuid4()), parentUuid=self.prev, sessionId=self.session,
+                           timestamp=finished, type='system', requestId=rid,
+                           message={'role': 'system', 'content': []},
+                           toolUseResult=payload)
+            stream.write(row.model_dump_json(exclude_none=True) + '\n')
+
 
 def usage_of(rows: Iterable[TraceRow]) -> Usage:
     """一组同 requestId 的行,取真实 usage。

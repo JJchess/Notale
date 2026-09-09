@@ -35,7 +35,8 @@ Test the frame in grayscale and at thumbnail size. Repair scale and placement if
 
 ## Build a subject-specific visual world
 
-Resolve color and typography from the supplied theme, then derive the rest of the visual language from the subject:
+Use the supplied theme direction and shared styling foundations, then design this cover's visual expression from the subject. Theme classes are optional tools, not a predesigned page:
+Keep the theme's typography hierarchy and shape/material language while changing subject geometry, emphasis and scale; a cover need not match a content page's layout or title size.
 
 - **silhouette:** make the protagonist recognizable from its functional outline before adding detail;
 - **geometry:** borrow ratios, paths, cross-sections, tools, notation, or spatial behavior that belong to the subject;
@@ -43,7 +44,7 @@ Resolve color and typography from the supplied theme, then derive the rest of th
 - **semantic roles:** use theme colors consistently for field, structure, protagonist, secondary cue, and exception;
 - **signature detail:** add one small but memorable event that could not be transferred unchanged to an unrelated cover.
 
-Use a continuous gradient only for a continuous physical or spatial property such as heat, depth, density, or illumination. Use discrete theme roles for categories and states. Texture should come from repeatable marks or material logic, not from a blur/noise overlay that hides weak geometry.
+When encoding evidence, use a continuous gradient only for a continuous physical or spatial property such as heat, depth, density, or illumination; use discrete roles for categories and states. Theme-directed decorative gradients and textures need not encode data, but must not imply false scientific meaning or hide weak geometry.
 
 ## Lay out by occupied regions
 
@@ -89,7 +90,7 @@ If understanding requires watching a setup and payoff, strengthen the representa
 
 1. **Thumbnail:** block only protagonist, title field, and gaze direction in grayscale.
 2. **Geometry:** fix occupied regions, crop behavior, depth, and actual title line breaks.
-3. **Material:** assign theme color roles, then derive texture, stroke, and lighting from the subject cue.
+3. **Material:** express the subject cue through the theme's texture, stroke and lighting language; keep its colour roles, without inventing a separate page skin.
 4. **Subtraction:** remove the weakest supporting element and restore it only if the subject becomes less legible.
 
 Judge each pass at the fixed stage's aspect ratio and thumbnail size.

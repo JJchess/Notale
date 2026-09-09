@@ -91,8 +91,8 @@ function start() {
   byId("palette").innerHTML = palette.slice(1)
     .map(color => `<i style="background:${color}"></i>`).join("");
   const cityPoint = naturalEarth(10.7480333, 59.9186361);
-  annotation.style.left = `${cityPoint[0]}px`;
-  annotation.style.top = `${cityPoint[1]}px`;
+  byId("cityPoint").style.left = `${cityPoint[0]/width*100}%`;
+  byId("cityPoint").style.top = `${cityPoint[1]/height*100}%`;
   try {
     const packed = window.CLIMATE_GRID_RLE;
     if (!packed || packed.width !== width || packed.height !== height) throw new Error("Grid unavailable");

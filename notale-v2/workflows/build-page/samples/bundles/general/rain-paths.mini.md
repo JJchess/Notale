@@ -54,7 +54,7 @@ body{background:#172021}button{border:0;background:0;cursor:pointer}
 .claim{position:absolute;z-index:4;left:72px;top:675px;width:270px;font:20px/1.5 var(--serif)}
 .reset{position:absolute;z-index:7;right:44px;top:28px;padding:7px 12px;border:1px solid #ffffff55;font-size:12px;letter-spacing:.12em}
 #rail{position:absolute;z-index:3;inset:125px 0 92px;overflow:hidden}
-.track{display:flex;gap:220px;width:max-content;height:620px;padding-left:300px;transform:translate3d(0,0,0)}
+.track{display:flex;gap:120px;width:max-content;height:620px;padding-left:220px;transform:translate3d(0,0,0)}
 .surface{position:relative;flex:none;width:360px;height:500px;padding:0;text-align:left;box-shadow:inset 0 0 0 1px #ffffff24}
 .surface:nth-child(2){margin-top:72px}.surface img{width:100%;height:100%;object-fit:cover}.ok .surface[aria-current] img{visibility:hidden}
 .surface b{position:absolute;left:-74px;bottom:64px;width:490px;font:400 49px/1 var(--serif);letter-spacing:-.055em;text-shadow:0 2px 18px #0004}
@@ -65,6 +65,9 @@ body{background:#172021}button{border:0;background:0;cursor:pointer}
 .detail h2{margin:38px 0 28px;font:400 78px var(--serif);letter-spacing:-.07em}
 .detail p{width:500px;margin-top:68px;font:24px/1.75 var(--serif)}
 .close{position:absolute;right:130px;top:31px;width:36px;height:36px;font-size:24px}
+
+/* Visibility switches must be immediate so keyboard focus can return to a card. */
+.track,.surface{transition:none!important}
 ```
   </file>
   <file path="samples/general/rain-paths/mini/pages/rain-paths.js">
@@ -117,7 +120,7 @@ void main(){
 		scroll=immediate ? targetScroll : scroll + .075 * (targetScroll - scroll);
 		track.style.transform = `translate3d(${-scroll}px,0,0)`;
 		const active = detailIndex >= 0;
-		const targetX = active ? 370 : 480 + 580 * current - scroll;
+		const targetX = active ? 370 : 400 + 480 * current;
 		const targetY = active ? 450 : 375 + current % 2 * 72;
 		const amount = immediate ? 1 : .09;
 		const reveal = active || hover === current || reduced;
@@ -135,7 +138,7 @@ void main(){
 	}
 	function select(index) {
 		current = Deck.clamp(index, 0, 2);
-		targetScroll = 580 * current;
+		targetScroll = 0;
 		stage.style.setProperty("--bg", cards[current].dataset.bg);
 		stage.style.setProperty("--ink", cards[current].dataset.ink);
 		cards.forEach((card, cardIndex) => card.toggleAttribute("aria-current", cardIndex === current));
@@ -149,7 +152,7 @@ void main(){
 		detailIndex = index;
 		if (index < 0) {
 			stage.classList.remove("on");
-			cards[current].focus();
+			cards[current].focus({preventScroll:true});
 		} else {
 			const card = cards[index];
 			select(index);

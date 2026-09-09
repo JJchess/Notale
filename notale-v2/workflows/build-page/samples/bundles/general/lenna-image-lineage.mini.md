@@ -66,7 +66,7 @@ background:var(--field);
   background-size:7px 7px
 }
 #caption{
-  position:absolute;left:1120px;top:326px;z-index:20;width:360px;height:248px;
+  position:absolute;left:1140px;top:290px;z-index:20;width:360px;height:320px;
   padding:30px 32px;background:var(--paper);color:var(--ink)
 }
 #caption p{

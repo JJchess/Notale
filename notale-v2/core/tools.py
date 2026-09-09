@@ -9,6 +9,7 @@ import re
 import subprocess
 import sys
 import time
+from copy import deepcopy
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -45,18 +46,19 @@ _CHECK_USE_ITEMS = {
         "result; decoration must not imitate the algorithm.",
     ),
     "build-page": (
-        "Remove fills, borders and shadows that only group content; use proximity and alignment. Keep boundaries that encode a set, shape or interaction state.",
+        "Judge local fills, borders and shadows by this page's composition and reading. Theme-directed materials may group content; neither grouping nor a theme class alone justifies keeping or removing a container. Preserve boundaries that encode evidence or interaction state.",
         "Check that there is one main evidence field, not several equal parts.",
         "Recompute at least one derived value from the page's own data and formulas.",
         "The same data must agree across prose, chart, and annotations.",
     ),
     "build-interaction": (
-        "Remove fills, borders and shadows that only group content; use proximity and alignment. Keep boundaries that encode a set, shape or interaction state.",
+        "Judge local fills, borders and shadows by this page's composition and reading. Theme-directed materials may group content; neither grouping nor a theme class alone justifies keeping or removing a container. Preserve boundaries that encode evidence or interaction state.",
         "Walk one legal progression path with the after states.",
         "Also cover the applicable illegal or boundary case, the completion state, and Reset.",
         "A legal action must change the real model and the visible evidence; an action "
         "the copy declares invalid must not be committable.",
-        "Every result must offer the next legal action.",
+        "For computed metrics, return an independent recomputation from the data/model "
+        "used by the visual alongside the displayed value; reading a label alone is not verification.",
     ),
 }
 
@@ -122,7 +124,7 @@ def _out_of_bounds(
                 relative = target.relative_to(image_root)
                 if not relative.parts or not relative.parts[0].startswith(pid + "-"):
                     return f"{s}(共享或其他页面的素材只读)"
-            # Check/Look 的截图存在 run/.shots/(见 _selfcheck),报告会列出没内联的
+            # Check 的截图存在 run/.shots/(见 _selfcheck),报告会列出没内联的
             # 那些路径让模型自己 Read。实测模型照做被这里拒了,然后凭前两张收尾。
             allowed_resource = name == "Read" and (
                 _is_workflow_resource(target, resource_root)
@@ -210,7 +212,7 @@ def _visual_main_sample(path: Path, resource_root: Path | None) -> bool:
 SCHEMAS = [
     {"name": "Read", "description":
         "读一个文件。普通文本回带行号的内容;png/jpg 回图片本身。"
-        "工作流 reference 和 sample bundle 返回全文及 EOF，忽略 offset/limit。路径按环境块解析。",
+        "工作流 reference、sample bundle 及 assets/lib/LIBS.md 返回全文及 EOF，忽略 offset/limit。路径按环境块解析。",
      "parameters": {"type": "object", "properties": {
          "file_path": {"type": "string", "description": "文件路径"},
          "offset": {"type": "integer", "description": "从第几行开始读"},
@@ -242,28 +244,25 @@ SCHEMAS = [
          },
          "required": ["page", "edits"], "additionalProperties": False}},
     {"name": "Check", "description":
-        "渲染页面，报告运行/资源错误、越界、裁切、字号统计、主题字阶偏离和构图指标。"
+        "渲染页面，报告运行/资源错误、越界、裁切、实际字号统计和必需主题值。"
         "每次重新加载，在加载约 1.2 秒后采样。"
-        "页面声明了 data-step 时会逐步各拍一张,越界与字号按末步判。"
+        "有分步出场时会逐步各拍一张,越界与字号按末步判。"
+        "默认返回整页截图；需要看局部细节时用 box 指定区域，裁图不改变整页检查范围。"
         "把用户能主动触发且会改变学习结果或版面的主要状态合并进同一次 after,不要拆成多次 Check;"
         "决定性终态放在最后一段。截图超过两张时只内联初态和最后一个状态,其余列出路径可单独 Read。",
      "parameters": {"type": "object", "properties": {
          "page": {"type": "string", "description": "页面文件名,例 page-07.html"},
          "after": {"type": "array", "items": {"type": "string"},
                    "description": "在页面里依次跑的 JS,每段之后重测一遍主要交互状态。"
+                                  "可 return {computed, displayed} 回传计算结果与显示值，和操作合在同一次检查。"
                                   "例 [\"document.getElementById('go').click()\"]"},
-         "shot": {"type": "boolean", "description": "是否返回 800×450 整页截图；视觉模型默认 true"}},
-         "required": ["page"], "additionalProperties": False}},
-    {"name": "Look", "description":
-        "重新加载页面，执行 after 后裁图放大。box 取 Check 报告的 @x,y w×h；整页截图用 Check。",
-     "parameters": {"type": "object", "properties": {
-         "page": {"type": "string", "description": "页面文件名,例 page-07.html"},
+         "shot": {"type": "boolean", "description": "是否返回截图；视觉模型默认 true。false 时只检查，不生成整页或局部截图。"},
          "box": {"type": "array", "items": {"type": "integer"},
-                 "description": "[x, y, w, h],1600×900 画布里的坐标"},
-         "after": {"type": "array", "items": {"type": "string"},
-                   "description": "先跑这几段 JS 再裁,用来看交互之后的样子"},
-         "zoom": {"type": "integer", "description": "放大倍数,默认 2"}},
-         "required": ["page", "box"], "additionalProperties": False}},
+                 "minItems": 4, "maxItems": 4,
+                 "description": "可选局部截图区域 [x,y,w,h]，使用 1600×900 画布坐标，宽高须大于 0。省略或指定整个画布时返回 800×450 整页图。"},
+         "zoom": {"type": "integer", "minimum": 1,
+                  "description": "局部裁图放大倍数，默认 2；无局部 box 或 shot=false 时忽略。"}},
+         "required": ["page"], "additionalProperties": False}},
     {"name": "Bash", "description": f"执行 shell 命令。工作目录固定为该页所在的 pages/,超时 {TIMEOUT}s。",
      "parameters": {"type": "object", "properties": {
          "command": {"type": "string", "description": "要执行的命令"}},
@@ -272,14 +271,17 @@ SCHEMAS = [
 
 
 def specs(workflow: str | None = None, *, vision_input: bool = True) -> list[dict]:
-    rows = [{"type": "function", **s} for s in SCHEMAS]
+    rows = [{"type": "function", **deepcopy(s)} for s in SCHEMAS]
     if workflow == "build-code":
-        rows = [s for s in rows if s["name"] in {"Read", "Write", "Edit", "Check", "Look"}]
+        rows = [s for s in rows if s["name"] in {"Read", "Write", "Edit", "Check"}]
     elif workflow:
         rows = [s for s in rows if s["name"] != "Edit"]
-    if not vision_input:
-        rows = [s for s in rows if s["name"] != "Look"]
     for s in rows:
+        if s["name"] == "Check" and not vision_input:
+            for key in ("box", "zoom"):
+                s["parameters"]["properties"].pop(key, None)
+            s["description"] = s["description"].replace(
+                "默认返回整页截图；需要看局部细节时用 box 指定区域，裁图不改变整页检查范围。", "")
         if s["name"] == "Write" and workflow:
             edit = "Edit" if workflow == "build-code" else "Patch"
             s["description"] = f"写完整文件，用于创建或整体重构；局部修正用 {edit}。"
@@ -366,7 +368,8 @@ def run(
         r = _dispatch(name, call_args, cwd, resource_root)
         cap = CAP
         if name == "Read" and call_args.get("file_path") \
-                and _is_workflow_resource(Path(call_args["file_path"]), resource_root):
+                and (_is_workflow_resource(Path(call_args["file_path"]), resource_root)
+                     or Path(call_args["file_path"]).resolve() == (cwd / "assets/lib/LIBS.md").resolve()):
             cap = WORKFLOW_RESOURCE_CAP
         return Out(_cap(r.text, cap), r.images) if isinstance(r, Out) else _cap(r, cap)
     except Exception as e:  # 工具出错要回给模型让它自己修,不能把循环打断
@@ -430,38 +433,36 @@ def _pick_shots(shots: list[Path]) -> tuple[list[Path], list[Path]]:
 
 def _check(cwd: Path, a: dict, workflow: str | None = None) -> Out:
     page = str(a["page"])
-    rep = _selfcheck(cwd, page, a.get("after") or (), shot=bool(a.get("shot")))
+    shot = bool(a.get("shot"))
+    box = a.get("box") if shot else None
+    zoom = 2
+    if box is not None:
+        if (not isinstance(box, list) or len(box) != 4
+                or any(type(v) is not int for v in box) or box[2] <= 0 or box[3] <= 0):
+            return Out("失败：box 必须是 [x,y,w,h] 整数数组，宽高必须大于 0。")
+        if box == [0, 0, 1600, 900]:
+            box = None
+        else:
+            if box[0] >= 1600 or box[1] >= 900 or box[0] + box[2] <= 0 or box[1] + box[3] <= 0:
+                return Out("失败：box 超出画布，没有可裁区域。")
+            zoom = a.get("zoom", 2)
+            if type(zoom) is not int or zoom < 1:
+                return Out("失败：zoom 必须是大于等于 1 的整数。")
+    rep = _selfcheck(cwd, page, a.get("after") or (), shot=shot, crop=box, zoom=zoom)
     imgs: list[tuple[str, str]] = []
-    if a.get("shot"):
-        shots = [p for p in _shot_paths(rep, "截图") if p.exists()]
+    if shot:
+        kind = "裁图" if box else "截图"
+        shots = [p for p in _shot_paths(rep, kind) if p.exists()]
         inline, rest = _pick_shots(shots)
         for p in inline:
             imgs += _image(p).images
         inline_set = set(inline)
-        rep = re.sub(r"(?m)^(\s*截图 )(\S+\.png)([^\n]*)$",
+        rep = re.sub(rf"(?m)^(\s*{kind} )(\S+\.png)([^\n]*)$",
                      lambda m: m[0] + (" [已内联]" if Path(m[2]) in inline_set else " [可 Read]"), rep)
+        if box and not shots:
+            rep += "\n失败：没有生成局部截图，请检查渲染报告。"
     use = check_use(workflow)
     return Out((use + "\n\n" + rep) if use else rep, imgs)
-
-
-def _look(cwd: Path, a: dict) -> Out:
-    box = a.get("box") or []
-    if len(box) != 4:
-        return Out("失败:box 要给四个数 [x, y, w, h]。Check 报告里 @x,y w×h 就是这四个。")
-    rep = _selfcheck(cwd, str(a["page"]), a.get("after") or (), crop=box,
-                     zoom=int(a.get("zoom") or 2))
-    crops = [p for p in _shot_paths(rep, "裁图") if p.exists()]
-    if not crops:
-        return Out(rep + "\n\n(没裁出图 —— box 可能整块落在画布外,或者页面根本没渲染出来)")
-    lines, imgs = [], []
-    for p in crops[:MAX_IMAGES]:
-        o = _image(p)
-        lines.append(o.text)
-        imgs += o.images
-    if len(crops) > MAX_IMAGES:
-        lines.append(f"(另外 {len(crops) - MAX_IMAGES} 张没内联,要看单独 Read:"
-                     + "、".join(str(p) for p in crops[MAX_IMAGES:]) + ")")
-    return Out("裁出来放大给你看:" + "、".join(lines) + "\n\n" + rep, imgs)
 
 
 # ── Patch 失败的仪表 ─────────────────────────────────────────────────
@@ -551,6 +552,9 @@ def _dispatch(name: str, a: dict, cwd: Path, resource_root: Path | None) -> str 
         p = Path(a["file_path"])
         if p.suffix.lower() in IMG_EXT:
             return _image(p)
+        if p.resolve() == (cwd / "assets/lib/LIBS.md").resolve():
+            text = p.read_text(encoding="utf-8")
+            return f"（库用法全文开始：LIBS.md）\n{text}\n（库用法全文结束：LIBS.md · EOF）"
         if _is_workflow_resource(p, resource_root):
             text = p.read_text(encoding="utf-8", errors="replace")
             n = text.count("\n") + 1
@@ -598,9 +602,6 @@ def _dispatch(name: str, a: dict, cwd: Path, resource_root: Path | None) -> str 
 
     if name == "Check":
         return _check(cwd, a, resource_root.name if resource_root else None)
-
-    if name == "Look":
-        return _look(cwd, a)
 
     if name == "Bash":
         r = subprocess.run(a["command"], shell=True, cwd=cwd, capture_output=True,

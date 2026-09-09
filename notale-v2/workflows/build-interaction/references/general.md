@@ -64,7 +64,8 @@ Labels confirm object identity; they do not replace the mechanism. A circle labe
 
 ### Build subject-specific visual language
 
-The supplied theme owns palette, typography, common surfaces, and controls. This reference owns the learning world's geometry and behavior.
+The supplied theme sets the direction and offers shared styling foundations. Design this learning world's visual expression, geometry and behavior from the subject; theme classes are optional tools, not mandatory containers.
+Carry the theme's typography hierarchy and shape/material language into diagrams and controls; interaction is not a separate visual skin. Preserve meaningful state distinctions and use published chart styling across SVG or chart libraries.
 
 Choose:
 
@@ -75,7 +76,7 @@ Choose:
 - semantic theme colors for category, state, intensity, and exception;
 - one signature interaction where the governing relationship becomes unusually clear.
 
-Use continuous color only for a continuous variable such as temperature, depth, density, potential, or intensity. Use discrete roles for categories and states. Texture should come from material logic—hatching, particles, fibers, strata, paths, accumulation—not from indiscriminate blur or noise.
+For data encoding, use continuous color only for a continuous variable such as temperature, depth, density, potential, or intensity; use discrete roles for categories and states. Theme-directed decorative gradients and textures need not encode data. Develop subject-specific materials without implying false rules or hiding the evidence in blur or noise.
 
 Ambient motion may give the world life, but it stays slower and quieter than learner-caused motion. Learner actions receive the clearest trace, transition, count, flash, ghost, or measured response so cause and effect remain attributable.
 

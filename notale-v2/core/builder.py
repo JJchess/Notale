@@ -1,6 +1,6 @@
 """builder —— 每页一个自由循环,并发跑。
 
-Harness 不把创作过程做成状态机,也不补催、不重启。模型不再要求工具就结束；
+Harness 只约束首次实现前的一轮预读；之后自由创作，不补催、不重启。模型不再要求工具就结束；
 提示词要求最多 11 次响应并在 4–7 次内完成，但 harness 不在第 11 次截断，
 而是让模型自然结束并事后记录是否超出目标。最终产物与一次独立审计分别记录。
 
@@ -35,10 +35,11 @@ def _now() -> str:
 
 
 IDENTITY = """你负责当前页面，按 brief 与本页型 SKILL 的首轮加载规则完成。
-预置材料无需重读。响应目标不超过 11 次（含结束响应），通常应在 4–7 次内完成。
-同一响应中的多个工具调用会按列出顺序执行，可先写文件、再 Check。
-首次 Write 前先核对确定性数据、公式和预期状态的一致性。
-按 reference 的验收项及返回的截图、测量检查内容和行为；合并已确认的问题修正，再回归 Check。
+首轮一次性并行 Read 所需材料（代码页同轮 CodeScaffold）；主题与底盘接口已预置，不做源码巡读。材料返回后，下一轮直接完成首版 Write（代码页可 Edit 课程文件），不要写占位空壳。
+首次实现成功前只有首轮可以 Read，不调用 Bash 或其他探索工具；加载失败或违反这个顺序会停止本页，不补读、不补催。首次实现后，遇到具体问题可定点 Read。
+响应目标不超过 11 次（含结束响应），通常应在 4–7 次内完成。同一响应中的多个工具调用会按列出顺序执行，写入或修正后同轮接 Check。
+设计时先核对确定性数据和公式；需实际执行的数值验证在写入后立即完成。计算结果不支持预设结论时，先核对实现与适用条件；实现正确就据实调整解释，不修改数据或显示值来凑结论。
+按 reference 验收内容与行为。截图用于检查排版和绘制；修订已实现的数据或公式，应依据具体计算错误或数学条件，不因图形不符合预想而修改。合并已确认的问题后再 Check。
 证据完整且没有具体违约时，下一次响应直接结束，不为填满画面或泛泛优化继续调用工具。
 不写额外说明文档、构建日志或旁路测试（lesson/tests.py 属于学习内容）。不要问问题。"""
 
@@ -79,7 +80,7 @@ NOTES_BLOCKS = {"off": "", "cap": TEXT_CAP_BLOCK, "notes": NOTES_BLOCK, "only": 
 # 是边框/卡片/面板(17/15/14 次),而删词汇只把版块从 11 压到 8、没动描边。硬数 + Check 报数,不再靠词。
 FRAME_CAP_BLOCK = """<frame_budget>
 带描边或底色的区块最多 1 个,而且只能是主体本身;其余内容靠留白、对齐和共享基线分组,不加框、不铺底色。
-对照(A 与 B)放在同一条基线或同一坐标系上并排表达,不用并排的框。Check 报告里「区块 N 个」就是这个数,超过 1 就改。
+对照(A 与 B)放在同一条基线或同一坐标系上并排表达,不用并排的框。按截图核对区块数量。
 </frame_budget>"""
 
 STEPS_BLOCK = """<steps>
@@ -120,11 +121,9 @@ def _tag_of(c) -> str:
     if c.name == "Check":
         n = len(a.get("after") or [])
         return str(a.get("page", "")) + (f" +after×{n}" if n else "") + (
-            " +shot" if a.get("shot") else "")
+            " +shot" if a.get("shot") else "") + (f" @{a['box']}" if a.get("box") else "")
     if c.name == "Patch":
         return f"{a.get('page','')} ×{len(a.get('edits') or [])}"
-    if c.name == "Look":
-        return f"{a.get('page','')} @{a.get('box')}"
     return str(a.get("file_path", "")).split("/")[-1]
 
 
@@ -268,7 +267,7 @@ def evict_images(hist: list, tok_in: int) -> int:
     n = 0
     for i in idx[:-KEEP_IMAGES] if len(idx) > KEEP_IMAGES else []:
         hist[i] = {"role": "user", "content": [{"type": "input_text", "text":
-            "（这里原来有一张图，为了不撑爆上下文已经拿掉了。要再看就重新 Check/Look 一次。）"}]}
+            "（这里原来有一张图，为了不撑爆上下文已经拿掉了。要再看就重新 Check，需要局部细节时指定 box。）"}]}
         n += 1
     return n
 
@@ -314,7 +313,7 @@ def _libs_index(root: Path) -> str:
     body = text.split(_LIBS_INDEX, 1)[1]
     body = body.split("\n## ", 1)[0]
     return (body.strip()
-            + "\n\n用法细节、版本和适用边界在 `assets/lib/LIBS.md`,需要时再读。")
+            + "\n\n本页使用上列库时，首轮一并 Read `assets/lib/LIBS.md`；它完整返回版本、调用方式和限制，无需阅读库源码。不用库就不读。")
 
 
 def tech_block(root: Path, n_pages: int, prompts: Path = None) -> str:
@@ -400,10 +399,11 @@ def chapter_preloads(root: Path, n_pages: int) -> dict[str, str]:
 def _theme_interface(path: Path) -> str:
     """Return the validated theme interface rather than the full CSS implementation."""
     text = path.read_text(encoding="utf-8", errors="replace")
-    end = "==== /INTERFACE ==== */"
-    if end not in text:
+    from .theme import INTERFACE
+    match = INTERFACE.search(text)
+    if not match:
         raise ValueError(f"theme interface delimiter is missing: {path}")
-    interface = text.split(end, 1)[0] + end
+    interface = match.group(0)
     return re.sub(r"(?m)^\s*修订\s+[^\n]*\n", "", interface)
 
 
@@ -444,8 +444,8 @@ def environment_context(pages_dir: Path, page: Page, resource_root: Path) -> str
 
 def instruction_blocks(root: Path, n_pages: int, workflow: str, *,
                        workflow_root: Path = skills.WORKFLOWS,
-                       prompts: Path | None = None, samples: str = "full",
-                       include_aux: bool = False, notes: str = "off",
+                       prompts: Path | None = None, samples: str = "mini",
+                       include_aux: bool | None = None, notes: str = "off",
                        visual_focus: bool = False, frame_cap: bool = False) -> dict[str, str]:
     """One assembly path for production, offline sizing and frozen comparisons."""
     blocks = {"identity": IDENTITY, "philosophy": skills.philosophy_block("page"),
@@ -481,7 +481,7 @@ _FATAL_PREFIX = re.compile(
     r"^(?:失败:|拒绝[：:]|Traceback|TimeoutExpired:|[A-Za-z]+Error:)"
 )
 _FATAL_CHECK = re.compile(
-    r"✗.*(?:JS 报错|console\.error|资源加载失败|无法渲染|代码工作台自检失败)"
+    r"✗.*(?:JS 报错|console\.error|资源加载失败|无法渲染|代码工作台自检失败|底盘契约)"
 )
 
 
@@ -535,8 +535,9 @@ def audit_delivery(
 
 
 REF_SHOTS_NOTE = """<references>
-随附两张真人做的页面截图,是这套内容的风格参照。借它们的**组织方式**:标题与图形共享对齐线,
-注释靠近它解释的对象,组间距离明显大于组内距离,分组不靠给每块垫底色画框。不抄配色、题材和文案。
+随附图片标注了用途。用户/主题包参考可沿用要求的颜色、字体气质与材质，不复制题材、营销文案和导航。
+最终 theme_css 接口与明确修改要求优先；原参考不冒充修改后的效果。画廊候选仅供启发。
+只有封面样张时正文是推导。内容分组不自动对应可见容器；具名局部样式按接口用途使用。
 </references>"""
 
 
@@ -549,6 +550,14 @@ def ref_images(root: Path, n: int = 2) -> list[dict]:
     ids = [l.split("\t")[0].strip() for l in picks.read_text(encoding="utf-8").splitlines() if l.strip()]
     rows = gallery.facts(ids[:n])
     return director._images(rows) if rows else []
+
+
+def user_ref_images(root: Path) -> list[dict]:
+    from . import director
+    from .theme import IMAGES
+    shots = root / 'pages/assets/style/shots'
+    paths = [p for p in sorted(shots.rglob('*')) if p.suffix.lower() in IMAGES - {'.svg'} and p.is_file()]
+    return director._images([{'id': '用户/主题包参考', 'shot': str(p)} for p in paths])
 
 
 def build_one(
@@ -571,8 +580,10 @@ def build_one(
         # 参照图随首条消息进上下文。放在 brief 之后,一段说明它们该怎么用。
         hist: list = [{"role": "user", "content":
                        [{"type": "input_text", "text": page.prompt + "\n\n" + REF_SHOTS_NOTE}] + list(refs)}]
-        page.images += len(refs)
+        page.images += sum(x.get('type') == 'input_image' for x in refs)
     else:
+        if refs and not vision_input and page.workflow != 'build-code':
+            raise ValueError('本次有视觉参考，但 Builder 模型未启用 vision_input；不能声称看过参考')
         hist = [{"role": "user", "content": page.prompt}]
 
     specs = tools.specs(page.workflow, vision_input=vision_input)
@@ -580,6 +591,7 @@ def build_one(
         specs = [code_runtime.tool_schema()] + specs
 
     seen_guidance: set[str] = set()
+    implemented = False  # 本次真实写入，不以旧页面或 CodeScaffold 作为首次实现。
     t0 = time.time()
     while True:
         if time.time() - t0 > MAX_SECONDS:
@@ -607,6 +619,7 @@ def build_one(
             item for item in response.output
             if getattr(item, "type", "") == "function_call"
         ]
+        request_id = getattr(response, "id", None) or f"req_{uuid.uuid4().hex[:16]}"
         log.add(
             [{"type": "text", "text": page.prompt if page.calls == 1 else "(tool results)"}],
             text_of(response),
@@ -616,18 +629,29 @@ def build_one(
                 "cache_read_input_tokens": cached or 0,
                 "cache_creation_input_tokens": llm.cache_write_of(response),
             },
-            getattr(response, "id", None) or f"req_{uuid.uuid4().hex[:16]}",
+            request_id,
             started,
             _now(),
             {
                 "page": page.pid,
-                "tools": [{"name": call.name, "arg": _tag_of(call)} for call in calls],
+                **({"instructions": instructions} if page.calls == 1 else {}),
+                "tools": [{"name": call.name, "arg": _tag_of(call),
+                           "call_id": call.call_id, "arguments": call.arguments} for call in calls],
             },
         )
 
         if not calls:
             page.why = text_of(response).strip()[:200]
             page.termination = "no_tool_use"
+            break
+
+        if page.calls == 1 and (
+            not any(call.name == "Read" for call in calls)
+            or any(call.name not in ({"Read", "CodeScaffold"} if page.workflow == "build-code" else {"Read"})
+                   for call in calls)
+        ):
+            page.termination = "initial_read_order"
+            page.why = "首轮只允许一批并行 Read（代码页可同轮 CodeScaffold）；本批工具未执行。"
             break
 
         print(
@@ -644,9 +668,21 @@ def build_one(
         pending_images: list[tuple[str, str]] = []
 
         for call in calls:
+            tool_started, tool_clock = _now(), time.monotonic()
+            if page.calls > 1 and not implemented and call.name not in (
+                {"Write", "Edit"} if page.workflow == "build-code" else {"Write"}
+            ):
+                page.termination = "initial_read_order"
+                page.why = f"首轮材料已返回，首次实现前不能执行 {call.name}；本页停止，不追加补读。"
+                log.tool(rid=request_id, call_id=call.call_id, page=page.pid, name=call.name,
+                         arguments=call.arguments, output=page.why,
+                         started=tool_started, finished=_now(), seconds=time.monotonic()-tool_clock)
+                break
             try:
                 args = json.loads(call.arguments or "{}")
-            except json.JSONDecodeError as exc:
+                if not isinstance(args, dict):
+                    raise ValueError("工具参数必须是 JSON 对象")
+            except ValueError as exc:
                 hist.append(
                     {
                         "type": "function_call_output",
@@ -658,7 +694,25 @@ def build_one(
                     }
                 )
                 page.steps.append(f"{call.name}!badjson")
+                log.tool(rid=request_id, call_id=call.call_id, page=page.pid, name=call.name,
+                         arguments=call.arguments, output=hist[-1]['output'],
+                         started=tool_started, finished=_now(), seconds=time.monotonic()-tool_clock)
+                if page.calls == 1:
+                    page.termination = "initial_read_failed"
+                    page.why = f"首轮 {call.name} 参数无效：{exc}"
+                    break
                 continue
+
+            writing = None
+            before = None
+            if not implemented and call.name in {"Write", "Edit"} and args.get("file_path"):
+                candidate = (pages_dir / str(args["file_path"])).resolve()
+                own_target = (pages_dir / f"{page.pid}.html").resolve()
+                allowed = (candidate.is_relative_to(code_runtime.editable_root(pages_dir, page.pid).resolve())
+                           if page.workflow == "build-code" else candidate == own_target)
+                if allowed:
+                    writing = candidate
+                    before = candidate.read_bytes() if candidate.is_file() else None
 
             page.steps.append(
                 call.name
@@ -691,6 +745,8 @@ def build_one(
                         actual_args.setdefault("shot", True)
                     else:
                         actual_args["shot"] = False
+                        actual_args.pop("box", None)
+                        actual_args.pop("zoom", None)
 
                 denied = None
                 if page.workflow == "build-code":
@@ -751,6 +807,9 @@ def build_one(
             if images and not vision_input:
                 images = []
                 output += "\n\n（当前模型不接收图片输入；仅保留文本报告。）"
+            log.tool(rid=request_id, call_id=call.call_id, page=page.pid, name=call.name,
+                     arguments=call.arguments, output=output, images=images,
+                     started=tool_started, finished=_now(), seconds=time.monotonic()-tool_clock)
             hist.append(
                 {
                     "type": "function_call_output",
@@ -759,6 +818,18 @@ def build_one(
                 }
             )
             pending_images.extend(images)
+
+            if page.calls == 1 and (_FATAL_PREFIX.search(output.strip())
+                                    or output.startswith("CodeScaffold 失败")):
+                page.termination = "initial_read_failed"
+                page.why = f"首轮 {call.name} 失败：{output[:300]}"
+                break
+            if writing is not None and writing.is_file():
+                after = writing.read_bytes()
+                implemented = bool(after.strip()) and after != before and not _FATAL_PREFIX.search(output.strip())
+
+        if page.termination in {"initial_read_order", "initial_read_failed"}:
+            break
 
         for media_type, encoded in pending_images:
             hist.append(
@@ -811,7 +882,7 @@ def workflow_runtimes(cfg: dict, default: llm.ModelProfile,
     return out
 
 
-def main() -> None:
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--label", required=True)
     parser.add_argument("--only", action="append", help="只跑指定页面，可重复")
@@ -821,8 +892,8 @@ def main() -> None:
     parser.add_argument(
         "--samples",
         choices=skills.SAMPLE_MODES,
-        default="full",
-        help="样本消融臂：full=完整实例，mini=紧凑实例（代码页=单个作者层），none=只给 reference",
+        default="mini",
+        help="样本模式：full=完整实例，mini=紧凑实例（默认；代码页=单个作者层），none=只给 reference",
     )
     parser.add_argument(
         "--uniform",
@@ -831,8 +902,9 @@ def main() -> None:
     )
     parser.add_argument(
         "--aux-samples",
-        action="store_true",
-        help="实验开关：在 Main 之外注册可选 mini samples；默认关闭",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="在 Main 之外注册可选 mini samples；默认开启，samples=none 时默认关闭",
     )
     parser.add_argument(
         "--sample-shots",
@@ -858,9 +930,16 @@ def main() -> None:
         "--notes",
         choices=tuple(NOTES_BLOCKS),
         default="off",
-        help="实验开关：cap=画面 ≤200 字的硬数 + Check 报字数；notes=cap + 讲稿区 <aside class=notes>；默认 off（基线不变）",
+        help="cap=画面 ≤200 字的硬数；notes=同样要求加讲稿区 <aside class=notes>；only=只给讲稿区；默认 off",
     )
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
+    if args.aux_samples is None:
+        args.aux_samples = args.samples != "none"
+    return args
+
+
+def main() -> None:
+    args = parse_args()
     tools.SAMPLE_SHOTS = args.sample_shots
     tools.TEXT_REPORT = args.notes != "off"
 
@@ -974,9 +1053,11 @@ def main() -> None:
     )
 
     started = time.time()
-    refs = ref_images(root) if args.ref_shots else []
-    if args.ref_shots:
-        print(f"  参照图 {len(refs)} 张随 brief 发给每页(来自 style-picks.tsv)")
+    refs = user_ref_images(root)
+    if not refs and args.ref_shots:
+        refs = ref_images(root)
+    if refs:
+        print(f"  参照图 {sum(x.get('type') == 'input_image' for x in refs)} 张随视觉页输入")
 
     def guard(page: Page) -> Page:
         rt = runtimes[page.workflow]

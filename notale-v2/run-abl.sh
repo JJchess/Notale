@@ -21,5 +21,5 @@ run() {  # $1=label  $2=臂说明  $3...=builder 额外参数
     --uniform --concurrency 6 "$@" > "runs/$L.builder.log" 2>&1
   echo "exit=$?"; tail -7 "runs/$L.builder.log"
 }
-run ensemble-abl-mini-20260904    "samples=mini"          --samples mini
+run ensemble-abl-mini-20260904    "samples=mini"          --samples mini --no-aux-samples
 run ensemble-abl-mini3-20260904   "samples=mini+aux"      --samples mini --aux-samples

@@ -78,6 +78,11 @@ def _ensure_shared_runtime(pages_dir: Path) -> Path:
     if missing:
         raise FileNotFoundError("missing code runtime dependencies: " + ", ".join(missing))
 
+    package_root = VENDOR_ROOT / "pyodide"
+    numpy = json.loads((package_root / "pyodide-lock.json").read_text())["packages"]["numpy"]
+    if not (package_root / numpy["file_name"]).is_file():
+        raise FileNotFoundError("missing code runtime dependency: NumPy wheel " + numpy["file_name"])
+
     shared = pages_dir / "assets" / "code-runtime"
     with _LOCK:
         shared.mkdir(parents=True, exist_ok=True)
@@ -128,8 +133,8 @@ def _outer_page(pid: str, title: str, total: int) -> str:
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>{safe_title}</title>
   <link rel="stylesheet" href="assets/base.css">
-  <link rel="stylesheet" href="assets/theme.css">
   <style>
+    :root {{ --bg:#181818; --text:#cccccc; --font-sans:system-ui,sans-serif; }}
     html,body{{overflow:hidden}}
     #stage{{display:block!important;padding:0!important;overflow:hidden!important;background:#181818}}
     .code-workbench-frame{{display:block;width:1600px;height:900px;border:0;background:#181818}}
@@ -228,7 +233,7 @@ def tool_guard(
         if not target.is_relative_to(editable_root(pages_dir, pid).resolve()):
             return f"{target} is fixed or belongs to another page; edit only {editable_root(pages_dir, pid)}"
         return None
-    if name in {"Check", "Look"}:
+    if name == "Check":
         if str(args.get("page") or "") != f"{pid}.html":
             return f"check only {pid}.html"
         return None

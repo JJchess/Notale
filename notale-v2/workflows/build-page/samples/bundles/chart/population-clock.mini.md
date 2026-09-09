@@ -1,10 +1,10 @@
 <sample id="population-clock" category="chart" variant="mini">
-  <file path="samples/chart/population-clock/pages/index.html">
+  <file path="samples/chart/population-clock/mini/pages/index.html">
 ```html
-<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>此刻，一座城 · Population Clock</title><link rel="stylesheet" href="style.css"><body><header><a href="../../../../../index.html" target="_top">Pudding / Samples</a><button id="theme" aria-pressed="false">浅色模式</button></header><main><h1>此刻，一座城</h1><p class="intro">A clock where the time is the population of a US place.</p><section class="clock" aria-label="人口时钟"><p>Approximately</p><p class="time"><mark id="digits">—</mark><span id="period">PM</span></p><p class="place">people live in <a id="place" target="_blank" rel="noreferrer">…</a><span id="state"></span></p><p class="count"><span id="count">正在载入</span> <span id="place-word">places</span> with this <em>population</em></p><div class="switch"><button id="previous" disabled aria-label="上一个同人口城镇">←</button><button id="next" disabled>换一座城 ↻</button><button id="details" disabled>查看全部</button></div></section><section class="controls" aria-label="时间设置"><label for="time">选一个时间</label><input id="time" type="time" value="06:29" disabled><button id="live" disabled aria-pressed="true">跟随当前时间</button><p id="mode" role="status">正在读取原数据…</p></section></main><footer><span>Russell Samora · Data Clocks</span><a href="https://pudding.cool/projects/clocks/populations" target="_blank" rel="noreferrer">原作 ↗</a><a href="SAMPLE.md">复核记录</a><p>保留原作仓库的数据快照（作品发布于 2023 年）；人口数是原数据近似值。时间去掉冒号后，寻找人口相同的地方。</p></footer><dialog id="matches"><form method="dialog"><button class="close">关闭 ×</button></form><h2>同一时刻，不同地方</h2><p id="list-title"></p><p class="method">沿用原作优先顺序：先选非 township、非 unincorporated 的记录；没有时逐级回退。</p><ol id="places"></ol><a href="assets/populations.csv" download>下载完整原 CSV</a></dialog><script type="module" src="app.js"></script></body></html>
+<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>此刻，一座城 · Population Clock</title><link rel="stylesheet" href="style.css"><link rel="stylesheet" href="mini-scrollbars.css"><body><header><a href="../../../../../../index.html" target="_top">Pudding / Samples</a><button id="theme" aria-pressed="false">浅色模式</button></header><main><h1>此刻，一座城</h1><p class="intro">A clock where the time is the population of a US place.</p><section class="clock" aria-label="人口时钟"><p>Approximately</p><p class="time"><mark id="digits">—</mark><span id="period">PM</span></p><p class="place">people live in <a id="place" target="_blank" rel="noreferrer">…</a><span id="state"></span></p><p class="count"><span id="count">正在载入</span> <span id="place-word">places</span> with this <em>population</em></p><div class="switch"><button id="previous" disabled aria-label="上一个同人口城镇">←</button><button id="next" disabled>换一座城 ↻</button><button id="details" disabled>查看全部</button></div></section><section class="controls" aria-label="时间设置"><label for="time">选一个时间</label><input id="time" type="time" value="06:29" disabled><button id="live" disabled aria-pressed="true">跟随当前时间</button><p id="mode" role="status">正在读取原数据…</p></section></main><footer><span>Russell Samora · Data Clocks</span><a href="https://pudding.cool/projects/clocks/populations" target="_blank" rel="noreferrer">原作 ↗</a><a href="SAMPLE.md">复核记录</a><p>保留原作仓库的数据快照（作品发布于 2023 年）；人口数是原数据近似值。时间去掉冒号后，寻找人口相同的地方。</p></footer><dialog id="matches"><form method="dialog"><button class="close">关闭 ×</button></form><h2>同一时刻，不同地方</h2><p id="list-title"></p><p class="method">沿用原作优先顺序：先选非 township、非 unincorporated 的记录；没有时逐级回退。</p><ol id="places"></ol><a href="assets/populations.csv" download>下载完整原 CSV</a></dialog><script type="module" src="app.js"></script></body></html>
 ```
   </file>
-  <file path="samples/chart/population-clock/pages/app.js">
+  <file path="samples/chart/population-clock/mini/pages/app.js">
 ```javascript
 const $=s=>document.querySelector(s);let rows=[],options=[],index=0,live=true,last='',ready=false;
 export function getOptions(data,h,m){const num=Number(`${Number(h)}${String(m).padStart(2,'0')}`),all=data.filter(d=>Number(d.population)===num),notTownship=all.filter(d=>d.type!=='s'),notUn=notTownship.filter(d=>d.type!=='u');return notUn.length?notUn:notTownship.length?notTownship:all}
@@ -19,12 +19,48 @@ try{rows=await fetch('assets/populations.json').then(r=>{if(!r.ok)throw Error();
 window.populationClock={getOptions,setTime,get state(){return {ready,live,index,options,rows,time:last}}};
 ```
   </file>
-  <file path="samples/chart/population-clock/pages/style.css">
+  <file path="samples/chart/population-clock/mini/pages/style.css">
 ```css
 @font-face{font-family:Rubik;src:url(assets/rubik-v14-latin-regular.woff2);font-weight:400}@font-face{font-family:Rubik;src:url(assets/rubik-v14-latin-700.woff2);font-weight:700}@font-face{font-family:Rubik;src:url(assets/rubik-v14-latin-900.woff2);font-weight:900}:root{--bg:#262626;--fg:#efefef;--secondary:#cacaca;--mark:#f20099;--line:#555}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font-family:Rubik,Arial,sans-serif;min-height:100vh;display:flex;flex-direction:column}body.light{--bg:#efefef;--fg:#4e4e4e;--secondary:#666;--mark:#d00084;--line:#bbb}header{padding:20px 26px;display:flex;justify-content:space-between;align-items:center;font-size:13px}a{color:inherit;text-underline-offset:7px}button,input{font:inherit;background:transparent;border:1px solid var(--line);border-radius:2px;color:inherit;padding:9px 14px;font-size:13px}button{cursor:pointer}button:disabled{opacity:.4;cursor:wait}button:hover:enabled{border-color:var(--fg)}button:focus-visible,a:focus-visible,input:focus-visible{outline:3px solid var(--mark);outline-offset:5px}main{flex:1;display:flex;flex-direction:column;justify-content:center;padding:30px 20px}h1{text-align:center;font-size:17px;letter-spacing:2px;font-weight:400;margin:0}.intro{font-size:12px;text-align:center;color:var(--secondary);margin:12px 0 56px}.clock{text-align:center}.clock>p{line-height:1.2;font-size:clamp(24px,4vmin,64px);color:var(--secondary);margin:0;padding:0 16px}.clock p.time{position:relative;display:table;margin:0 auto;padding:0;line-height:1.2}.time mark{display:inline-block;background:transparent;color:var(--mark);font-size:2em;font-weight:900}.time>span{position:absolute;left:100%;top:50%;transform:translateY(-50%);font-weight:900;opacity:.25;margin-left:14px}.place a{color:var(--fg);font-weight:700;text-decoration:none;border-bottom:1px solid currentColor}.clock p.count{font-size:14px;margin:55px 0 16px}.count em{color:var(--mark);font-style:normal;font-weight:700}.switch{display:flex;justify-content:center;gap:12px}.switch button{border-radius:30px}.controls{display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:10px;font-size:12px;margin:64px auto 0;max-width:520px}.controls p{width:100%;text-align:center;color:var(--secondary);margin:4px}input{color-scheme:dark}body.light input{color-scheme:light}#live[aria-pressed=true]{border-color:var(--mark)}footer{padding:24px 26px;display:flex;gap:22px;flex-wrap:wrap;font-size:11px;color:var(--secondary)}footer p{margin:0;width:100%;line-height:1.7;max-width:750px}dialog{background:var(--bg);color:var(--fg);border:1px solid var(--line);width:min(680px,calc(100% - 32px));max-height:80vh;padding:30px}dialog::backdrop{background:#0009}.close{float:right}dialog h2{font-size:24px;margin-top:55px}.method{font-size:12px;color:var(--secondary);line-height:1.7}ol{padding-left:22px}li{padding:10px 0;border-bottom:1px solid var(--line)}li button{text-align:left;border:0;padding:7px;display:block;width:100%}li small{display:block;color:var(--secondary);margin-top:5px}@media(max-width:600px){header{padding:20px}main{padding:30px 18px}.intro{max-width:260px;margin:12px auto 50px;line-height:1.6}.clock .place{margin-top:10px;line-height:1.5;font-size:24px}.clock p.count{margin-top:35px}.controls{margin-top:42px}.switch{gap:8px}.switch button{font-size:12px;padding:10px 12px}footer{padding:24px 20px;gap:14px}.time>span{font-size:23px}.controls label{width:100%;text-align:center}}
 ```
   </file>
-  <omitted path="../../../../../index.html">Navigation back to the formal sample gallery.</omitted>
+  <file path="samples/chart/population-clock/mini/pages/mini-scrollbars.css">
+```css
+/* Local scrollbars inherit the surrounding ink, including light/dark themes. */
+@supports selector(::-webkit-scrollbar) {
+  * { scrollbar-width: auto !important; scrollbar-color: auto !important; }
+  *::-webkit-scrollbar { width: 8px !important; height: 8px !important; }
+  *::-webkit-scrollbar-track, *::-webkit-scrollbar-corner { background: transparent !important; }
+  *::-webkit-scrollbar-thumb {
+    background: #8888 !important;
+    background: color-mix(in srgb, currentColor 28%, transparent) !important;
+    border: 2px solid transparent !important;
+    border-radius: 999px !important;
+    background-clip: padding-box !important;
+    min-height: 28px !important;
+    min-width: 28px !important;
+  }
+  *::-webkit-scrollbar-thumb:hover {
+    background-color: color-mix(in srgb, currentColor 46%, transparent) !important;
+  }
+  *::-webkit-scrollbar-thumb:active {
+    background-color: color-mix(in srgb, currentColor 62%, transparent) !important;
+  }
+}
+@supports not selector(::-webkit-scrollbar) {
+  * { scrollbar-width: thin !important; scrollbar-color: #8888 transparent !important; }
+  @supports (color: color-mix(in srgb, black, transparent)) {
+    * { scrollbar-color: color-mix(in srgb, currentColor 28%, transparent) transparent !important; }
+    *:hover, *:focus-visible { scrollbar-color: color-mix(in srgb, currentColor 46%, transparent) transparent !important; }
+  }
+}
+@media (forced-colors: active) {
+  * { scrollbar-width: auto !important; scrollbar-color: auto !important; }
+  *::-webkit-scrollbar-thumb { background: ButtonText !important; }
+}
+```
+  </file>
+  <omitted path="../../../../../../index.html">Navigation back to the formal sample gallery.</omitted>
   <omitted path="SAMPLE.md">Local source attribution and approval record; not part of the rendering algorithm.</omitted>
   <omitted path="assets/populations.csv">Original local media or dataset retained byte-for-byte in the runnable sample; see its source manifest.</omitted>
 </sample>

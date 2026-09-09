@@ -14,7 +14,7 @@
   <file path="samples/3d/gimbal/mini/pages/assets/style.css">
 ```css
 :root{--bg:#edf2f3;--text:#172326;--soft:#52666b;--line:#b7c5c8;--hot:#c95832;--font-sans:"PingFang SC",system-ui,sans-serif}
-#stage{position:fixed;padding:28px 34px}header{height:82px;border-bottom:1px solid var(--line)}h1{font-size:43px}header p{margin-top:6px;font-size:19px;color:var(--soft)}
+#stage{position:fixed;padding:28px 34px}header{height:96px;border-bottom:1px solid var(--line)}h1{font-size:43px}header p{margin-top:6px;font-size:19px;color:var(--soft)}
 #scene{position:absolute;left:34px;top:128px;width:1116px;height:652px;overflow:hidden;border:1px solid var(--line);background:radial-gradient(circle,#f4f7f7,#d8e2e4)}#webgl{width:100%;height:100%}
 #phase{position:absolute;right:22px;top:20px;width:326px;padding:14px;border-top:2px solid var(--hot);background:#edf2f3e8;font-size:23px}.legend{position:absolute;left:20px;bottom:17px;color:var(--soft)}
 aside{position:absolute;left:1182px;top:128px;padding-left:28px;border-left:1px solid var(--line)}aside>strong{display:block;margin:25px 0 10px;color:var(--hot);font:52px Georgia}aside>p,dt{color:var(--soft)}

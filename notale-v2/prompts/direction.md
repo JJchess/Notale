@@ -1,26 +1,16 @@
 # Visual direction
 
-Derive one coherent shared system from the subject, audience, setting, and media—not generic product UI or a
-mood-only rationale. It must remain legible under projector ambient light, distance, and scaling; keep the first
-frame informative and decoration behind content and pointer input.
+Set a coherent theme direction from the user's explicit request, supplied references, subject, audience and setting.
+Typography, local materials, image treatment, shapes and timing can all contribute; do not reduce a style to hex values.
+A reference palette and a style are coordinated in this step, not composed by a separate pipeline.
+Coordinate combined references into one deck-wide language; do not assign a different reference style to each page type unless explicitly requested.
+Typography roles, shape/stroke treatment and materials remain related across variants; vary emphasis and composition for the content, not the identity.
 
-Before CSS, commit to:
-- a background, readable text, neutrals, focus, and only needed semantic hues;
-- one subject-derived material (flat color if none) and line-weight tokens; page geometry stays with the builder;
-- display, body, and optional numeric roles using justified local fonts—not default Inter, Roboto, Arial, or monospace;
-- one recurring subject-derived signature; page-specific explanation and interaction stay with the build agent;
-- consistent media crop, contrast, tint, annotation, and attribution;
-- shared timing/easing and reduced-motion behavior; page choreography stays with the build agent.
-
-Build color by role: source the background from the subject or supplied image; keep text and structural lines distinct
-after contrast loss; use one accent for one focal state and extra hues only for stable, visibly labelled categories;
-keep neutrals in one temperature; never imply precision with arbitrary numbers or colors; name tokens by meaning
-(`--cause`, `--observed`, `--uncertain`), not appearance.
-
-Spend boldness on the explanatory visual or signature, not every surface. Keep one light/dark family and invert only
-for a real transition. Remove effects that compete with labels, diagrams, controls, or pointing targets; add decoration
-only after those work. Keep shadows quiet and component states in the same material language. One-off spectacle belongs
-to the page, not the shared theme.
-
-A signature must embody the subject and aid explanation. A glowing orb, generic grid, floating particles, or a large decorative number is not a direction by itself. Express decisions only through `theme.css` and its
-interface comment; do not output a separate essay.
+Keep the first frame informative and text readable under scaling and projector conditions.
+Offer named local styles as optional foundations, not mandatory components. Builder designs each page's visual expression, composition, scientific relationships and interaction choreography within the theme direction.
+Decoration may be purely visual, but must not masquerade as evidence, data, controls or scientific meaning.
+Colour roles distinguish current interaction, stable states and actual labelled categories; don't invent a global concept map.
+Do not force one neutral temperature, font family, lightness band or muted material on every explicit style.
+Give a usable no-image state when using backgrounds. Keep image masks in the same stage background composition.
+Keep decoration behind content and input, respect focus/hidden/reduced-motion, and leave code workbenches independent.
+Express the result only in theme.css and its short INTERFACE comment, with local referenced assets.

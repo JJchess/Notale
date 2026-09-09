@@ -1,5 +1,6 @@
 """Style Director gate regressions; no model calls or local font dependency."""
 import unittest
+from pathlib import Path
 
 from core import director
 
@@ -11,13 +12,13 @@ def theme(description="页面底色", contract="", extra_css="", outside="", pre
 {contract}
 ==== /INTERFACE ==== */
 {outside}
-:root {{ --bg: #F4F6F2; {extra_css} }}
+:root {{ --bg: #F4F6F2; --text: #111; --font-sans: sans-serif; {extra_css} }}
 """
 
 
 class DirectorGateTests(unittest.TestCase):
     def check(self, css):
-        return director.gates(css, {}, [])
+        return director.gates(css, assets=Path('/tmp'), browser=False)
 
     def test_plain_theme_passes(self):
         self.assertEqual(self.check(theme()), [])
@@ -30,16 +31,34 @@ class DirectorGateTests(unittest.TestCase):
             with self.subTest(contract=contract):
                 self.assertEqual(self.check(theme(contract=contract)), [])
 
-    def test_token_surface_descriptions_still_fail(self):
+    def test_token_prose_is_not_interpreted_as_surface_permission(self):
         for word in ("承载面", "底板", "卡片底", "面板", "容器背景", "区块底色"):
             for prefix in ("", "   ", " * "):
                 with self.subTest(word=word, prefix=prefix):
-                    self.assertTrue(any("接口块" in error for error in
-                                        self.check(theme(word, prefix=prefix))))
+                    self.assertEqual(self.check(theme(f"页面底色，不用于{word}", prefix=prefix)), [])
 
-    def test_renamed_surface_token_description_still_fails(self):
-        css = theme(contract="token --context #A1B2C3 图表承载面")
-        self.assertTrue(any("接口块" in error for error in self.check(css)))
+    def test_undefined_token_still_fails_without_semantic_keyword_gate(self):
+        css = theme(contract="token --context #A1B2C3 不是图表承载面")
+        self.assertIn('接口 token 未定义: --context', self.check(css))
+        self.assertEqual(self.check(theme(contract="token --context #A1B2C3 不是图表承载面",
+                                          extra_css="--context:#A1B2C3;")), [])
+
+    def test_function_and_attribute_commas_do_not_split_local_scope(self):
+        for selector in ('.nt-button:is(:hover, :focus-visible)',
+                         '.nt-controls:not(:is(.compact, .hidden))',
+                         '.nt-controls[data-label="a,b"], .nt-other:has(button, input)'):
+            with self.subTest(selector=selector):
+                css = theme(outside=selector + '{--surface:#fff;color:var(--text)}')
+                self.assertEqual(self.check(css), [])
+
+    def test_top_level_branches_still_enforce_shared_boundaries(self):
+        for rule, error in (
+            ('.nt-button:is(:hover, :focus-visible), button {color:red}', '共享样式'),
+            ('.nt-controls:is(:hover, :focus-visible), :root {--surface:#fff}', '承载面'),
+            ('.nt-controls:is(:hover, :focus-visible), #stage {transform:none}', '底盘'),
+        ):
+            with self.subTest(rule=rule):
+                self.assertTrue(any(error in issue for issue in self.check(theme(outside=rule))))
 
     def test_actual_surface_tokens_still_fail(self):
         for name in ("surface", "panel", "card", "board", "panel-bg"):

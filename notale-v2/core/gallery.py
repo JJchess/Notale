@@ -92,7 +92,7 @@ def index_text(rows: list[dict] | None = None) -> str:
     for r in rows:
         bg = r["pal"][0]
         acc = " ".join(f"{p['hex']}({p['share']}%)" for p in r["pal"][1:4])
-        out.append(f"{r['id']}\t{r['src']}\t{r['title']}\t底 {bg['hex']} H{bg['h']} S{bg['s']} L{bg['l']}\t次 {acc}")
+        out.append(f"{r['id']}\t{r['src']}\t{r['title']}\t主色 {bg['hex']} H{bg['h']} S{bg['s']} L{bg['l']}\t次 {acc}")
     return "\n".join(out)
 
 

@@ -1,26 +1,74 @@
 <sample id="pantheon-index" category="general" variant="mini">
-  <file path="samples/general/pantheon-index/pages/index.html">
+  <file path="samples/general/pantheon-index/mini/pages/index.html">
 ```html
-<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>137 幅形象，一部图像索引</title><link rel="stylesheet" href="style.css"><script src="app.js" defer></script><main><header><a href="../../../../../index.html" target="_top">← Samples</a><span>THE AZTEC PANTHEON / 137 ILLUSTRATIONS</span></header><div class="heading"><h1>一部图像索引</h1><p>同一个领域，可以由不同神祇共同体现。<br>点亮一个主题，再选择图像，阅读原作档案。</p></div><div class="toolbar"><div id="fields" role="group" aria-label="主题高亮"><button data-field="death">死亡</button><button data-field="life">生命</button><button data-field="spiritual">精神</button><button data-field="material">物质</button><button data-field="">重置</button></div><output id="count">137 幅图像</output><label>查找 <input id="search" type="search" list="names" placeholder="输入名称或另一种拼写"><datalist id="names"></datalist></label></div><p id="search-status" role="status"></p><div class="workspace"><section><div class="map-scroll" tabindex="0" aria-label="神像索引，可水平滚动"><div id="map"></div></div><p class="legend">红底：原作的主要神祇 · 白底：次要神祇 · 淡化：未匹配主题<br>手机可左右移动图像索引，或直接使用上方搜索。</p></section><aside aria-live="polite"><img id="portrait" alt=""><div class="detail-top"><span id="type"></span><button id="hide">收起详情 ×</button></div><h2 id="name">选择一幅图像</h2><p id="bio"></p><div class="detail-tabs"><button id="read" aria-pressed="true">原作讲解</button><button id="sources" aria-pressed="false">图像与文献来源</button></div><div id="content" lang="en"></div></aside></div><footer><a href="https://pudding.cool/2022/06/aztec-gods/">原作 ↗</a><a href="SAMPLE.md">来源与复核</a><span>图文 Gwendal Uguen · 原作交互 Luc Guillemot · 已审阅入库</span></footer></main></html>
+<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>137 幅形象，一部图像索引</title><link rel="stylesheet" href="style.css"><script src="app.js" defer></script><main><header><a href="../../../../../../index.html" target="_top">← Samples</a><span>THE AZTEC PANTHEON / 137 ILLUSTRATIONS</span></header><div class="heading"><h1>一部图像索引</h1><p>同一个领域，可以由不同神祇共同体现。<br>点亮一个主题，再选择图像，阅读原作档案。</p></div><div class="toolbar"><div id="fields" role="group" aria-label="主题高亮"><button data-field="death">死亡</button><button data-field="life">生命</button><button data-field="spiritual">精神</button><button data-field="material">物质</button><button data-field="">重置</button></div><output id="count">137 幅图像</output><label>查找 <input id="search" type="search" list="names" placeholder="输入名称或另一种拼写"><datalist id="names"></datalist></label></div><p id="search-status" role="status"></p><div class="workspace"><section><div class="map-scroll" tabindex="0" aria-label="神像索引，可水平滚动"><div id="map"></div></div><p class="legend">红底：原作的主要神祇 · 白底：次要神祇 · 淡化：未匹配主题<br>手机可左右移动图像索引，或直接使用上方搜索。</p></section><aside aria-live="polite"><img id="portrait" alt=""><div class="detail-top"><span id="type"></span><button id="hide">收起详情 ×</button></div><h2 id="name">选择一幅图像</h2><p id="bio"></p><div class="detail-tabs"><button id="read" aria-pressed="true">原作讲解</button><button id="sources" aria-pressed="false">图像与文献来源</button></div><div id="content" lang="en"></div></aside></div><footer><a href="https://pudding.cool/2022/06/aztec-gods/">原作 ↗</a><a href="SAMPLE.md">来源与复核</a><span>图文 Gwendal Uguen · 原作交互 Luc Guillemot · 已审阅入库</span></footer></main><link rel="stylesheet" href="mini-scrollbars.css"></html>
 ```
   </file>
-  <file path="samples/general/pantheon-index/pages/app.js">
+  <file path="samples/general/pantheon-index/mini/pages/app.js">
 ```javascript
 const $=id=>document.getElementById(id);let nodes=[],doc,order=[],current=null,field='',mode='read';const fold=s=>s.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
 function detail(){const n=current;$('portrait').src=`assets/gods/svg/${n.id}.svg`;$('portrait').alt=n.name+' — 原作插画';$('name').textContent=n.name;$('type').textContent=n.importance+' god';$('bio').textContent=n.bio;$('read').setAttribute('aria-pressed',String(mode==='read'));$('sources').setAttribute('aria-pressed',String(mode==='sources'));const content=$('content');content.replaceChildren();content.scrollTop=0;const main=doc.main_gods.find(d=>d.id===n.name);if(mode==='read'){if(main)for(const c of main.content){const h=document.createElement('h3');h.textContent=c.subtitle;content.append(h);for(const text of c.subcontent){const p=document.createElement('p');p.innerHTML=text;content.append(p)}}else{const p=document.createElement('p');p.textContent='原作未为此项提供额外长文，简介与图像出处仍可查看。';content.append(p)}}else{const h=document.createElement('h3');h.textContent='Source of illustration';const p=document.createElement('p');p.textContent=n.source;content.append(h,p);if(n.spellings){const spelling=document.createElement('p');spelling.textContent='Other spellings: '+n.spellings;content.append(spelling)}for(const s of main?.sources_group||[]){const p=document.createElement('p'),a=document.createElement('a');a.textContent=s.title;a.href=s.url;p.append(a,document.createTextNode(s.author?', '+s.author:''));content.append(p)}}}
 function highlight(){let total=0;document.querySelectorAll('.tile').forEach((b,i)=>{const n=nodes[i],selected=current?.id===n.id,match=!field||n[field]===1;if(match)total++;b.style.opacity=match||selected?'1':'0.1';b.style.backgroundColor=selected?'black':n.importance==='secondary'?'white':'#d90b0b';b.setAttribute('aria-pressed',String(selected))});$('count').textContent=field?`${total} / 137 匹配主题`:'137 幅图像';document.querySelectorAll('[data-field]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.field===field)))}
 function choose(n,scroll=false){current=n;mode='read';detail();highlight();if(scroll&&matchMedia('(max-width:850px)').matches)document.querySelector('aside').scrollIntoView({block:'start',behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth'})}
-function layout(){const width=$('map').clientWidth,extent=Math.max(...nodes.flatMap(n=>[Math.abs(n.x),Math.abs(n.y)])),rad=(width-20)*.06;document.querySelectorAll('.tile').forEach((b,i)=>{const n=nodes[i];b.style.width=b.style.height=rad+'px';b.style.left=((n.x+extent)/(2*extent)*(width-40)+10)+'px';b.style.top=((extent-n.y)/(2*extent)*(width-40)+10)+'px';b.style.borderWidth=rad*.01+'px'})}
+function layout(){const width=$('map').clientWidth,extent=Math.max(...nodes.flatMap(n=>[Math.abs(n.x),Math.abs(n.y)])),rad=(width-20)*.06;document.querySelectorAll('.tile').forEach((b,i)=>{const n=nodes[i];b.style.width=b.style.height=rad+'px';b.style.left=((n.x+extent)/(2*extent)*(width-rad-4)+rad/2+2)+'px';b.style.top=((extent-n.y)/(2*extent)*(width-rad-4)+rad/2+2)+'px';b.style.borderWidth=rad*.01+'px'})}
 for(const b of document.querySelectorAll('[data-field]'))b.onclick=()=>{field=b.dataset.field;highlight()};for(const m of ['read','sources'])$(m).onclick=()=>{if(current){mode=m;detail()}};$('hide').onclick=()=>{current=null;$('portrait').removeAttribute('src');$('name').textContent='选择一幅图像';$('type').textContent='';$('bio').textContent='';$('content').replaceChildren();highlight();$('search').focus()};$('search').oninput=()=>{const value=fold($('search').value.trim());if(!value){$('search-status').textContent='';return}const matches=nodes.filter(n=>fold(n.name).includes(value)||fold(n.spellings||'').includes(value));$('search-status').textContent=matches.length?`${matches.length} 个名称或拼写匹配`:'没有匹配项';const exact=matches.find(n=>fold(n.name)===value);if(exact)choose(exact);else if(matches.length===1)choose(matches[0])};
 Promise.all(['data/gods/tidy/nodes.json','data/doc.json','sprite-order.json'].map(p=>fetch(p).then(r=>r.json()))).then(([n,d,o])=>{nodes=n;doc=d;order=o;for(const node of nodes){const b=document.createElement('button');b.className='tile';b.dataset.id=node.id;b.setAttribute('aria-label',node.name);b.title=node.name;b.style.backgroundPosition=`0% ${403*order.indexOf(node.id)/54800*100}%`;b.onclick=()=>choose(node,true);$('map').append(b);$('names').append(new Option(node.name,node.name))}new ResizeObserver(layout).observe($('map'));layout();choose(nodes.find(n=>n.name==='Ometeotl'));document.body.dataset.ready='true'}).catch(e=>{$('search-status').textContent='图像索引载入失败，请刷新重试';console.error(e)});
 ```
   </file>
-  <file path="samples/general/pantheon-index/pages/style.css">
+  <file path="samples/general/pantheon-index/mini/pages/style.css">
 ```css
 *{box-sizing:border-box}body{margin:0;background:#ffe39c;color:#29271f;font-family:Arial,"PingFang SC",sans-serif}main{max-width:1600px;margin:auto;padding:28px 40px}a{color:inherit;text-underline-offset:3px}header,footer{display:flex;justify-content:space-between;gap:20px;font-size:11px}header{border-bottom:1px solid #baa46c;padding-bottom:24px}.heading{display:flex;justify-content:space-between;align-items:center;gap:30px;margin:28px 0}h1{font:500 46px Georgia,"Songti SC",serif;margin:0}.heading p{font-size:13px;line-height:1.8;color:#72623d}.toolbar{display:flex;align-items:center;gap:24px;flex-wrap:wrap;padding:20px 0;border-top:1px solid #baa46c;border-bottom:1px solid #baa46c}button,input{font:inherit;color:inherit}button{background:transparent;border:1px solid #d90b0b;padding:9px 13px;cursor:pointer}#fields{display:flex;gap:8px;flex-wrap:wrap}#fields button{font-size:12px}button:not(.tile)[aria-pressed=true]{background:#d90b0b;color:#fff8dd}.toolbar label{margin-left:auto;font-size:12px}.toolbar input{width:260px;padding:9px;border:0;border-bottom:1px solid #d90b0b;background:#fff1c4}#count,#search-status{font-size:11px;color:#72623d}#search-status{min-height:16px;margin:12px 0}.workspace{display:grid;grid-template-columns:minmax(0,1.7fr) minmax(320px,1fr);gap:45px}.map-scroll{overflow:auto}#map{position:relative;width:100%;min-width:600px;aspect-ratio:1}.tile{position:absolute;padding:0;border-radius:2px;background-image:url('assets/gods/sprite/gods.sprite.png');background-size:100% 13700%;transform:translate(-50%,-50%);transition:opacity 180ms;cursor:pointer}.tile:hover{outline:2px solid #29271f;z-index:2!important;opacity:1!important}.tile[aria-pressed=true]{outline:2px solid #29271f;z-index:3!important}button:focus-visible,input:focus-visible,.map-scroll:focus-visible{outline:3px solid #29271f;outline-offset:3px}.tile:focus-visible{opacity:1!important;z-index:4!important}.legend{font-size:10px;line-height:1.8;color:#72623d}aside{padding:0 10px;min-width:0}#portrait{display:block;max-width:100%;width:100%;height:300px;object-fit:contain;margin-bottom:20px}#portrait:not([src]){display:none}.detail-top{display:flex;justify-content:space-between;align-items:center;font-size:11px;text-transform:uppercase}#hide{font-size:10px;padding:6px}h2{font-size:28px;font-weight:500;margin:18px 0}#bio{font-size:14px;line-height:1.65}.detail-tabs{display:flex;gap:10px;margin:22px 0}.detail-tabs button{font-size:11px}#content{font:15px/1.75 Georgia,serif;max-height:390px;overflow:auto;padding-right:12px}#content h3{font:13px Arial;text-transform:uppercase;color:#c40a0a;margin:25px 0 10px}#content li{margin-bottom:14px}footer{margin-top:45px;padding-top:25px;border-top:1px solid #baa46c}@media(max-width:850px){main{padding:24px}.heading{display:block}h1{font-size:37px}.toolbar label{margin-left:0;width:100%}.toolbar input{width:calc(100% - 40px)}.workspace{grid-template-columns:1fr;gap:25px}.legend{margin-top:15px}#portrait{height:280px}#content{max-height:none}header span{max-width:130px;text-align:right;font-size:9px}footer{flex-wrap:wrap}aside{padding:20px 0;border-top:1px solid #baa46c}}@media(prefers-reduced-motion:reduce){.tile{transition:none}}
 .workspace>section{min-width:0}
+
+/* Preserve the spatial index in full; only the selected article scrolls. */
+@media(min-width:1200px) and (min-height:700px){
+ main{width:100%;height:900px;display:grid;grid-template-rows:30px 64px 60px 24px minmax(0,1fr) 36px;gap:8px;padding:24px 40px}
+ header{padding-bottom:12px}.heading{margin:0}.heading h1{font-size:38px}.toolbar{padding:10px 0}#search-status{margin:0;align-self:center}
+ .workspace{min-height:0;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:40px}.workspace>section{min-height:0;display:flex;flex-direction:column}
+ .map-scroll{min-height:0;flex:1;display:flex;align-items:center;justify-content:center}#map{width:540px;min-width:0;flex:none}.legend{margin:6px 0 0;flex:none}
+ aside{min-height:0;display:grid;grid-template-columns:180px minmax(0,1fr);grid-template-rows:28px 40px 104px 40px minmax(0,1fr);gap:8px;padding:0}
+ #portrait{grid-column:1;grid-row:1/4;height:180px;margin:0}.detail-top{grid-column:2;grid-row:1}#name{grid-column:2;grid-row:2;margin:0;font-size:25px;align-self:center}#bio{grid-column:2;grid-row:3;margin:0;overflow:auto}
+ .detail-tabs{grid-column:1/-1;grid-row:4;margin:0;align-items:center}#content{grid-column:1/-1;grid-row:5;min-height:0;max-height:none;overscroll-behavior:contain}
+ footer{margin:0;padding-top:12px;align-items:start}
+}
 ```
   </file>
-  <omitted path="../../../../../index.html">Navigation back to the formal sample gallery.</omitted>
+  <file path="samples/general/pantheon-index/mini/pages/mini-scrollbars.css">
+```css
+/* Local scrollbars inherit the surrounding ink, including light/dark themes. */
+@supports selector(::-webkit-scrollbar) {
+  * { scrollbar-width: auto !important; scrollbar-color: auto !important; }
+  *::-webkit-scrollbar { width: 8px !important; height: 8px !important; }
+  *::-webkit-scrollbar-track, *::-webkit-scrollbar-corner { background: transparent !important; }
+  *::-webkit-scrollbar-thumb {
+    background: #8888 !important;
+    background: color-mix(in srgb, currentColor 28%, transparent) !important;
+    border: 2px solid transparent !important;
+    border-radius: 999px !important;
+    background-clip: padding-box !important;
+    min-height: 28px !important;
+    min-width: 28px !important;
+  }
+  *::-webkit-scrollbar-thumb:hover {
+    background-color: color-mix(in srgb, currentColor 46%, transparent) !important;
+  }
+  *::-webkit-scrollbar-thumb:active {
+    background-color: color-mix(in srgb, currentColor 62%, transparent) !important;
+  }
+}
+@supports not selector(::-webkit-scrollbar) {
+  * { scrollbar-width: thin !important; scrollbar-color: #8888 transparent !important; }
+  @supports (color: color-mix(in srgb, black, transparent)) {
+    * { scrollbar-color: color-mix(in srgb, currentColor 28%, transparent) transparent !important; }
+    *:hover, *:focus-visible { scrollbar-color: color-mix(in srgb, currentColor 46%, transparent) transparent !important; }
+  }
+}
+@media (forced-colors: active) {
+  * { scrollbar-width: auto !important; scrollbar-color: auto !important; }
+  *::-webkit-scrollbar-thumb { background: ButtonText !important; }
+}
+```
+  </file>
+  <omitted path="../../../../../../index.html">Navigation back to the formal sample gallery.</omitted>
   <omitted path="SAMPLE.md">Local source attribution and approval record; not part of the rendering algorithm.</omitted>
 </sample>

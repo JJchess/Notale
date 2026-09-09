@@ -46,7 +46,7 @@ void main(){
 		scroll=immediate ? targetScroll : scroll + .075 * (targetScroll - scroll);
 		track.style.transform = `translate3d(${-scroll}px,0,0)`;
 		const active = detailIndex >= 0;
-		const targetX = active ? 370 : 480 + 580 * current - scroll;
+		const targetX = active ? 370 : 400 + 480 * current;
 		const targetY = active ? 450 : 375 + current % 2 * 72;
 		const amount = immediate ? 1 : .09;
 		const reveal = active || hover === current || reduced;
@@ -64,7 +64,7 @@ void main(){
 	}
 	function select(index) {
 		current = Deck.clamp(index, 0, 2);
-		targetScroll = 580 * current;
+		targetScroll = 0;
 		stage.style.setProperty("--bg", cards[current].dataset.bg);
 		stage.style.setProperty("--ink", cards[current].dataset.ink);
 		cards.forEach((card, cardIndex) => card.toggleAttribute("aria-current", cardIndex === current));
@@ -78,7 +78,7 @@ void main(){
 		detailIndex = index;
 		if (index < 0) {
 			stage.classList.remove("on");
-			cards[current].focus();
+			cards[current].focus({preventScroll:true});
 		} else {
 			const card = cards[index];
 			select(index);

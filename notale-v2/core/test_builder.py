@@ -60,7 +60,36 @@ def page(pid="page-01", workflow="build-cover", label="标题页") -> builder.Pa
     )
 
 
+class SampleDefaultsTests(unittest.TestCase):
+    def test_cli_defaults_to_mini_plus_aux(self):
+        args = builder.parse_args(["--label", "test"])
+        self.assertEqual(args.samples, "mini")
+        self.assertTrue(args.aux_samples)
+
+    def test_cli_supports_explicit_sample_overrides(self):
+        for flags, mode, aux in [
+            (["--no-aux-samples"], "mini", False),
+            (["--samples", "full", "--no-aux-samples"], "full", False),
+            (["--samples", "none"], "none", False),
+            (["--samples", "mini", "--aux-samples"], "mini", True),
+        ]:
+            with self.subTest(flags=flags):
+                args = builder.parse_args(["--label", "test", *flags])
+                self.assertEqual((args.samples, args.aux_samples), (mode, aux))
+
+
 class PlanningContextTests(unittest.TestCase):
+    def test_instruction_defaults_match_explicit_mini_plus_aux(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = self.make_root(Path(td))
+            for workflow in builder.skills.PAGE_WORKFLOWS:
+                with self.subTest(workflow=workflow):
+                    self.assertEqual(
+                        builder.instruction_blocks(root, 6, workflow),
+                        builder.instruction_blocks(root, 6, workflow,
+                                                   samples="mini", include_aux=True),
+                    )
+
     def test_code_and_cover_receive_only_applicable_guidance(self):
         with tempfile.TemporaryDirectory() as td:
             root = self.make_root(Path(td))
@@ -238,10 +267,104 @@ class RoutingTests(unittest.TestCase):
 
 
 class AgentLoopTests(unittest.TestCase):
+    def test_second_read_and_bash_before_write_stop_without_retry(self):
+        for forbidden in (call('Read', file_path='assets/base.js'),
+                          call('Bash', command='cat assets/base.js'),
+                          call('Check', page='page-01.html')):
+            with self.subTest(tool=forbidden.name), tempfile.TemporaryDirectory() as td:
+                events = []
+                responses = [tool_response(call('Read', file_path='reference.md')),
+                             tool_response(forbidden, call('Write', file_path='page-01.html', content='<html/>'))]
+                with patch.object(builder, 'respond', side_effect=responses) as respond, \
+                     patch.object(builder.tools, 'run', self.fake_run_factory(events)):
+                    result = builder.build_one(page(), Path(td), Path(td)/'trace.jsonl',
+                                               ROOT/'workflows', 'instructions', 'low')
+                self.assertEqual(respond.call_count, 2)
+                self.assertEqual(result.termination, 'initial_read_order')
+                self.assertEqual([name for name, _ in events], ['Read'])
+                self.assertFalse(result.artifact_present)
+                self.assertIn(forbidden.name, result.why)
+
+    def test_mixed_first_batch_is_not_partially_executed(self):
+        with tempfile.TemporaryDirectory() as td:
+            with patch.object(builder, 'respond', return_value=tool_response(
+                    call('Read', file_path='reference.md'),
+                    call('Write', file_path='page-01.html', content='<html/>'))) as respond, \
+                 patch.object(builder.tools, 'run') as execute:
+                result = builder.build_one(page(), Path(td), Path(td)/'trace.jsonl',
+                                           ROOT/'workflows', 'instructions', 'low')
+            execute.assert_not_called()
+            respond.assert_called_once()
+            self.assertEqual(result.termination, 'initial_read_order')
+
+    def test_initial_read_failure_and_bad_json_stop_without_followup(self):
+        for broken_args in (False, True):
+            with self.subTest(bad_json=broken_args), tempfile.TemporaryDirectory() as td:
+                reading = call('Read', file_path='missing.md')
+                if broken_args:
+                    reading.arguments = '{'
+                with patch.object(builder, 'respond', return_value=tool_response(reading)) as respond, \
+                     patch.object(builder.tools, 'run', return_value='FileNotFoundError: missing') as execute:
+                    result = builder.build_one(page(), Path(td), Path(td)/'trace.jsonl',
+                                               ROOT/'workflows', 'instructions', 'low')
+                respond.assert_called_once()
+                self.assertEqual(execute.call_count, 0 if broken_args else 1)
+                self.assertEqual(result.termination, 'initial_read_failed')
+
+    def test_existing_file_empty_write_and_failed_write_do_not_unlock_reads(self):
+        cases = ('existing', 'empty', 'unchanged', 'failed')
+        for case in cases:
+            with self.subTest(case=case), tempfile.TemporaryDirectory() as td:
+                pages = Path(td)
+                if case in ('existing', 'unchanged'):
+                    (pages/'page-01.html').write_text('<html/>')
+                writing = [] if case == 'existing' else [tool_response(
+                    call('Write', file_path='page-01.html', content='' if case == 'empty' else '<html/>'))]
+                responses = [tool_response(call('Read', file_path='reference.md'))] + writing + [
+                    tool_response(call('Read', file_path='assets/base.js'))]
+                events = []
+                normal = self.fake_run_factory(events)
+                def execute(name, args, cwd, resource, pid):
+                    if case == 'failed' and name == 'Write':
+                        return 'PermissionError: cannot write'
+                    return normal(name, args, cwd, resource, pid)
+                with patch.object(builder, 'respond', side_effect=responses), \
+                     patch.object(builder.tools, 'run', side_effect=execute):
+                    result = builder.build_one(page(), pages, pages/'trace.jsonl',
+                                               ROOT/'workflows', 'instructions', 'low')
+                self.assertEqual(result.termination, 'initial_read_order')
+                self.assertEqual(sum(name == 'Read' for name, _ in events), 1)
+
+    def test_code_scaffold_does_not_unlock_but_real_lesson_edit_does(self):
+        for edit in (False, True):
+            with self.subTest(edit=edit), tempfile.TemporaryDirectory() as td:
+                pages = Path(td)
+                lesson = builder.code_runtime.editable_root(pages, 'page-04')
+                source = lesson/'starter.py'
+                reference = ROOT/'workflows/build-code/references/code.md'
+                def scaffold(*_args):
+                    lesson.mkdir(parents=True)
+                    source.write_text('x = 1')
+                    (pages/'page-04.html').write_text('<html/>')
+                    return {'editable':[{'path':str(source),'content':'x = 1'}]}
+                responses = [tool_response(call('Read', file_path=str(reference)), call('CodeScaffold'))]
+                if edit:
+                    responses.append(tool_response(call('Edit', file_path=str(source), old_string='x = 1', new_string='x = 2')))
+                responses += [tool_response(call('Read', file_path=str(source))), done_response()]
+                with patch.object(builder, 'respond', side_effect=responses), \
+                     patch.object(builder.code_runtime, 'scaffold', side_effect=scaffold), \
+                     patch.object(builder, 'audit_delivery', return_value={}):
+                    result = builder.build_one(page('page-04','build-code','代码页'), pages, pages/'trace.jsonl',
+                                               ROOT/'workflows', 'instructions', 'low')
+                self.assertEqual(result.termination, 'no_tool_use' if edit else 'initial_read_order')
+                self.assertEqual(source.read_text(), 'x = 2' if edit else 'x = 1')
+
     def test_guidance_is_sent_once_per_page_without_rewriting_history(self):
         snapshots = []
         use = builder.tools.check_use('build-cover')
-        responses = [tool_response(call('Check', page='page-01.html')),
+        responses = [tool_response(call('Read', file_path='reference.md')),
+                     tool_response(call('Write', file_path='page-01.html', content='<html/>')),
+                     tool_response(call('Check', page='page-01.html')),
                      tool_response(call('Check', page='page-01.html')),
                      done_response()]
 
@@ -249,16 +372,22 @@ class AgentLoopTests(unittest.TestCase):
             snapshots.append(copy.deepcopy(hist))
             return responses.pop(0)
 
+        ordinary = self.fake_run_factory([])
+
+        def execute(name, args, cwd, resource, pid):
+            return use + '\n\nmeasured' if name == 'Check' else ordinary(name, args, cwd, resource, pid)
+
         with tempfile.TemporaryDirectory() as td, \
                 patch.object(builder, 'respond', respond), \
-                patch.object(builder.tools, 'run', return_value=use + '\n\nmeasured'):
+                patch.object(builder.tools, 'run', side_effect=execute):
             builder.build_one(page(), Path(td), Path(td) / 'trace.jsonl',
                               ROOT / 'workflows', 'instructions', 'low')
-        outputs = [x['output'] for x in snapshots[-1] if x.get('type') == 'function_call_output']
+        outputs = [x['output'] for x in snapshots[-1] if x.get('type') == 'function_call_output'
+                   and x['call_id'].startswith('c-Check-')]
         self.assertEqual(len(outputs), 2)
         self.assertIn('<check_use', outputs[0])
         self.assertEqual(outputs[1], 'measured')
-        self.assertEqual(snapshots[-1][:len(snapshots[1])], snapshots[1])
+        self.assertEqual(snapshots[-1][:len(snapshots[-2])], snapshots[-2])
         # A second page gets its own first copy; no process-global suppression.
         self.assertEqual(builder.first_guidance_only(use, set()), use)
 
@@ -298,7 +427,8 @@ class AgentLoopTests(unittest.TestCase):
         respond.assert_called_once()
 
     def test_response_target_is_not_a_runtime_cap(self):
-        responses = [
+        responses = [tool_response(call('Read', file_path='reference.md')),
+                     tool_response(call('Write', file_path='page-01.html', content='<html/>'))] + [
             tool_response(
                 call("Read", file_path=f"missing-{index}.md"),
                 index=index,
@@ -314,13 +444,14 @@ class AgentLoopTests(unittest.TestCase):
                 "instructions", "low",
             )
 
-        self.assertEqual(result.calls, builder.RESPONSE_TARGET + 2)
-        self.assertEqual(respond.call_count, builder.RESPONSE_TARGET + 2)
+        self.assertEqual(result.calls, builder.RESPONSE_TARGET + 4)
+        self.assertEqual(respond.call_count, builder.RESPONSE_TARGET + 4)
         self.assertEqual(result.termination, "no_tool_use")
-        self.assertFalse(result.artifact_present)
+        self.assertTrue(result.artifact_present)
 
     def test_tools_in_one_response_execute_in_listed_order(self):
         responses = [
+            tool_response(call('Read', file_path='reference.md')),
             tool_response(
                 call("Write", file_path="page-01.html", content="<html>one</html>"),
                 call("Check", page="page-01.html", after=[]),
@@ -336,9 +467,9 @@ class AgentLoopTests(unittest.TestCase):
                 "instructions", "low",
             )
 
-        self.assertEqual(result.calls, 2)
+        self.assertEqual(result.calls, 3)
         self.assertEqual(result.termination, "no_tool_use")
-        self.assertEqual([name for name, _ in events[:2]], ["Write", "Check"])
+        self.assertEqual([name for name, _ in events[1:3]], ["Write", "Check"])
         self.assertTrue(result.artifact_present)
 
     def test_native_reads_then_write_use_one_constant_surface_and_effort(self):
@@ -386,6 +517,7 @@ class AgentLoopTests(unittest.TestCase):
 
     def test_repeated_write_is_not_masked_or_rejected(self):
         responses = [
+            tool_response(call('Read', file_path='reference.md')),
             tool_response(
                 call("Write", file_path="page-01.html", content="<html>first</html>"),
                 index=0,
@@ -419,6 +551,7 @@ class AgentLoopTests(unittest.TestCase):
 
     def test_artifact_and_failed_audit_are_recorded_separately(self):
         responses = [
+            tool_response(call('Read', file_path='reference.md')),
             tool_response(call("Write", file_path="page-01.html", content="<html/>")),
             done_response(),
         ]
@@ -476,7 +609,7 @@ class AgentLoopTests(unittest.TestCase):
             )
 
         self.assertTrue(result.artifact_present)
-        expected = {"CodeScaffold", "Read", "Write", "Edit", "Check", "Look", "ImageSearch", "ImageGen"}
+        expected = {"CodeScaffold", "Read", "Write", "Edit", "Check", "ImageSearch", "ImageGen"}
         self.assertTrue(all(surface == expected for surface in surfaces))
         self.assertNotIn("Bash", surfaces[0])
         self.assertNotIn("Patch", surfaces[0])
@@ -487,6 +620,7 @@ class AgentLoopTests(unittest.TestCase):
 
     def test_text_only_profile_removes_look_and_forces_text_check(self):
         responses = [
+            tool_response(call('Read', file_path='reference.md')),
             tool_response(call("Write", file_path="page-01.html", content="<html/>")),
             tool_response(call("Check", page="page-01.html", shot=True)),
             done_response(),

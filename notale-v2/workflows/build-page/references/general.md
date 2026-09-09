@@ -81,7 +81,8 @@ Group with the lightest sufficient device: proximity, negative space, alignment,
 
 ## Build a subject-specific visual world
 
-The supplied theme owns palette, typography, surface, and common controls. The page reference owns the content world.
+The supplied theme sets the direction and offers shared styling foundations. Design the content world's visual expression from the subject; theme classes are optional tools, not mandatory containers.
+Keep its typography hierarchy and shape/material language for equivalent roles; subject-driven geometry is not permission to invent a separate page skin. Chart libraries should carry the published stroke, point and label treatment, not just its palette.
 
 Choose:
 

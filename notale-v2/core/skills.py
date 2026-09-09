@@ -50,7 +50,7 @@ def page_skill_descriptions(root: Path = WORKFLOWS) -> str:
 
 
 def _aux_sample_catalog(name: str, root: Path) -> str:
-    """Build the opt-in mini-sample registry; it is absent from default context."""
+    """Build the optional auxiliary mini-sample registry."""
     skill_dir = root / name
     catalog_path = skill_dir / "samples" / "catalog.json"
     if not catalog_path.is_file():
@@ -188,14 +188,16 @@ def routed_workflow(
     name: str,
     root: Path = WORKFLOWS,
     *,
-    include_aux: bool = False,
-    samples: str = "full",
+    include_aux: bool | None = None,
+    samples: str = "mini",
 ) -> str:
     """Inline the one Planner-routed SKILL; references and samples stay deferred."""
     if name not in PAGE_WORKFLOWS:
         raise ValueError(f"unknown routed workflow {name!r}; expected {PAGE_WORKFLOWS}")
     if samples not in SAMPLE_MODES:
         raise ValueError(f"unknown sample mode {samples!r}; expected {SAMPLE_MODES}")
+    if include_aux is None:
+        include_aux = samples != "none"
     # aux = Main 之外再挂 0–3 份同类 mini。配 mini 就是「多份紧凑样本」那一臂;
     # 配 none 无意义 —— aux 目录里那句「别再选 Main 的 id」没有指代对象。
     if include_aux and samples == "none":

@@ -142,6 +142,12 @@ def _notale_load_adapter(source, filename, limits):
 
 def _notale_error(exc, user_files, fallback_line=1, kind="runtime"):
     file_map = user_files if isinstance(user_files, dict) else {path: _notale_os.path.basename(path) for path in user_files}
+    file_map = dict(file_map)
+    file_map[_notale_os.path.abspath("<lesson/trace.py>")] = "lesson/trace.py"
+    file_map[_notale_os.path.abspath("<lesson/tests.py>")] = "lesson/tests.py"
+    original = exc
+    while exc.__cause__ is not None:
+        exc = exc.__cause__
     if isinstance(exc, SyntaxError):
         absolute = _notale_os.path.abspath(exc.filename or "")
         filename = file_map.get(absolute, _notale_os.path.basename(exc.filename or ""))
@@ -163,14 +169,16 @@ def _notale_error(exc, user_files, fallback_line=1, kind="runtime"):
         absolute = _notale_os.path.abspath(entry.filename)
         source = {"file": file_map.get(absolute, _notale_os.path.basename(entry.filename)), "line": entry.lineno or 1, "column": 1}
     else:
-        source = {"file": "starter.py", "line": fallback_line or 1, "column": 1}
+        source = ({"file": "lesson/trace.py" if kind == "trace" else "lesson/tests.py", "line": 1, "column": 1}
+                  if kind in ("trace", "tests") else
+                  {"file": "starter.py", "line": fallback_line or 1, "column": 1})
     message = str(exc) if isinstance(exc, (_NotaleTraceLimit, _NotaleTraceAdapterError)) else f"{type(exc).__name__}: {exc}"
     return {
         "kind": kind,
         "message": message,
         "source": source,
         "traceback": "".join(
-            _notale_traceback.format_exception(type(exc), exc, traceback_object)
+            _notale_traceback.format_exception(type(original), original, original.__traceback__)
             if traceback_object
             else _notale_traceback.format_exception_only(type(exc), exc)
         ).strip(),
@@ -213,18 +221,21 @@ def _notale_run(files_json, entry, trace_source, tests_source, limits_json, seed
 
     absolute_files = {_notale_os.path.abspath(_notale_os.path.join(root, filename)): filename for filename in normalized_files}
     user_file_set = set(absolute_files)
-    adapter = _notale_load_adapter(trace_source, "<lesson/trace.py>", limits)
-    capture = adapter["capture"]
-    before_execution = adapter.get("before_execution")
-    finalize = adapter.get("finalize")
-
     namespace = {
         "__name__": "__main__",
         "__file__": entry,
         "__builtins__": __builtins__,
     }
-    if callable(before_execution):
-        before_execution(namespace)
+    try:
+        adapter = _notale_load_adapter(trace_source, "<lesson/trace.py>", limits)
+        capture = adapter["capture"]
+        before_execution = adapter.get("before_execution")
+        finalize = adapter.get("finalize")
+        if callable(before_execution):
+            before_execution(namespace)
+    except BaseException as exc:
+        error = _notale_error(exc, absolute_files, kind="trace")
+        return _notale_json.dumps({"ok": False, "error": error, "frames": [], "tests": []}, ensure_ascii=False)
 
     frames = []
     previous_state = None
@@ -327,7 +338,7 @@ def _notale_run(files_json, entry, trace_source, tests_source, limits_json, seed
         try:
             append_step(finalize(namespace, previous_state), _notale_os.path.join(root, entry), last_user_line)
         except BaseException as exc:
-            error = _notale_error(_NotaleTraceAdapterError(f"trace.py finalize 失败：{type(exc).__name__}: {exc}"), absolute_files, last_user_line, "trace")
+            error = _notale_error(exc, absolute_files, last_user_line, "trace")
             return _notale_json.dumps({"ok": False, "error": error, "frames": frames, "tests": []}, ensure_ascii=False)
 
     tests = []
@@ -351,12 +362,7 @@ def _notale_run(files_json, entry, trace_source, tests_source, limits_json, seed
                     "observed": _notale_safe(item.get("observed"), limits),
                 })
         except BaseException as exc:
-            error = {
-                "kind": "tests",
-                "message": f"测试适配器错误：{type(exc).__name__}: {exc}",
-                "source": {"file": "tests.py", "line": 1, "column": 1},
-                "traceback": "".join(_notale_traceback.format_exception(type(exc), exc, exc.__traceback__)).strip(),
-            }
+            error = _notale_error(exc, absolute_files, kind="tests")
             return _notale_json.dumps({"ok": False, "error": error, "frames": frames, "tests": tests}, ensure_ascii=False)
 
     return _notale_json.dumps({"ok": True, "frames": frames, "tests": tests}, ensure_ascii=False)
@@ -367,7 +373,10 @@ let runner = null;
 let pythonVersion = "";
 
 const ready = (async () => {
-  pyodide = await loadPyodide({ indexURL: PYODIDE_BASE });
+  pyodide = await loadPyodide({ indexURL: PYODIDE_BASE, packageBaseUrl: PYODIDE_BASE });
+  await pyodide.loadPackage("numpy");
+  // Loading failures must not announce a usable workbench.
+  pyodide.runPython("import numpy");
   pyodide.runPython(RUNNER_SOURCE);
   runner = pyodide.globals.get("_notale_run");
   pythonVersion = pyodide.runPython("import platform; platform.python_version()");
@@ -441,7 +450,7 @@ async function runSource(message) {
       error: {
         kind: "worker",
         message: error?.message || String(error),
-        source: { file: String(message.entry || "starter.py"), line: 1, column: 1 },
+        source: null,
         traceback: error?.stack || "",
       },
       stdout: stdout.join("\n"),
@@ -460,5 +469,5 @@ self.addEventListener("message", (event) => {
 });
 
 ready.catch((error) => {
-  self.postMessage({ type: "fatal", message: error?.message || String(error) });
+  self.postMessage({ type: "fatal", message: `工作台初始化失败（Python / NumPy）：${error?.message || String(error)}` });
 });

@@ -151,8 +151,8 @@
 
     /* ---------------------------------------------------------------------
        读 CSS token。canvas 的 fillStyle 不认 var(--x),必须先读出真值。
-       颜色归一化借用 canvas 自己的解析器:任何合法 CSS 颜色写法(hex3/hex6/
-       rgb()/hsl()/颜色名)赋给 fillStyle 后再读回来,浏览器都会吐出规范形式。
+       用浏览器绘制后读回 sRGB 像素,不假定 fillStyle 序列化一定是 hex/rgb。
+       完全透明或无效颜色返回黑色；rgba() 的 alpha 由调用者提供。
        --------------------------------------------------------------------- */
     token: function (name) {
       var k = name.charAt(0) === '-' ? name : '--' + name;
@@ -162,15 +162,16 @@
     rgb: function (name) {
       var v = Deck.token(name);
       if (!v) return [0, 0, 0];
-      if (!_probe) _probe = document.createElement('canvas').getContext('2d');
+      if (!_probe) {
+        var canvas = document.createElement('canvas');
+        canvas.width = canvas.height = 1;
+        _probe = canvas.getContext('2d', {willReadFrequently: true});
+      }
+      _probe.clearRect(0, 0, 1, 1);
       _probe.fillStyle = '#000';
       _probe.fillStyle = v;
-      var out = _probe.fillStyle;                       // '#rrggbb' 或 'rgba(r, g, b, a)'
-      if (out.charAt(0) === '#') {
-        return [1, 3, 5].map(function (i) { return parseInt(out.substr(i, 2), 16); });
-      }
-      var m = out.match(/[\d.]+/g) || [0, 0, 0];
-      return [+m[0] | 0, +m[1] | 0, +m[2] | 0];
+      _probe.fillRect(0, 0, 1, 1);
+      return Array.from(_probe.getImageData(0, 0, 1, 1).data).slice(0, 3);
     },
 
     rgba: function (name, a) {
@@ -182,18 +183,18 @@
        --------------------------------------------------------------------- */
     /* ---------------------------------------------------------------------
        分步出场。**公开表面只有三样**:
-         元素上写 data-step="2"      —— 第 2 步才出现(1 起数;第 0 步是页面刚打开)
+         元素上写 data-deck-step="2"      —— 第 2 步才出现(1 起数;第 0 步是页面刚打开)
          Deck.onStep(fn, n)          —— canvas/svg 里画的东西按 fn(step, max) 重绘;n 声明这个 fn 需要几步
          下一步 = 先出元素,出完才翻页 —— 右方向键 / PageDown;左键对称回退
        其余是实现:根上一个 --step 变量,元素上一个 --at,可见性由 base.css 用 calc 算,
        未出场的元素加 inert(透明的东西不能还能点)。?all 或 reduced-motion 直接停在末步,
        学生课后复看走这条;上一页回来时落在它的末步(#last)。
-       没写 data-step 的页面 stepMax=0,next() 直接翻页,与以前完全一样。
+       没写 data-deck-step 的页面 stepMax=0,next() 直接翻页,与以前完全一样。
        --------------------------------------------------------------------- */
     step: 0,
     stepMax: 0,
     _stepFns: [],
-    _need: 0,           // onStep 声明的步数;纯 JS 驱动的页没有 data-step 元素,stepMax 从这里来
+    _need: 0,           // onStep 声明的步数;纯 JS 驱动的页没有 data-deck-step 元素,stepMax 从这里来
     _nav: null,
     onStep: function (fn, n) {
       Deck._stepFns.push(fn);
@@ -208,9 +209,9 @@
       i = Math.max(0, Math.min(Deck.stepMax, i | 0));
       Deck.step = i;
       document.documentElement.style.setProperty('--step', i);
-      var els = document.querySelectorAll('#stage [data-step]');
+      var els = document.querySelectorAll('#stage [data-deck-step]');
       for (var k = 0; k < els.length; k++) {
-        var at = parseInt(els[k].getAttribute('data-step'), 10) || 0;
+        var at = parseInt(els[k].getAttribute('data-deck-step'), 10) || 0;
         if (at > i) els[k].setAttribute('inert', ''); else els[k].removeAttribute('inert');
       }
       for (var j = 0; j < Deck._stepFns.length; j++) Deck._stepFns[j](i, Deck.stepMax);
@@ -225,9 +226,9 @@
       return false;
     },
     rescan: function () {
-      var els = document.querySelectorAll('#stage [data-step]'), max = 0;
+      var els = document.querySelectorAll('#stage [data-deck-step]'), max = 0;
       for (var k = 0; k < els.length; k++) {
-        var at = parseInt(els[k].getAttribute('data-step'), 10) || 0;
+        var at = parseInt(els[k].getAttribute('data-deck-step'), 10) || 0;
         if (at > 0) { els[k].style.setProperty('--at', at); if (at > max) max = at; }
       }
       Deck.stepMax = Math.max(max, Deck._need);
@@ -314,7 +315,7 @@
   window.addEventListener('orientationchange', Deck.resize);
   Deck.resize();
 
-  // 分步:扫一遍 data-step,决定起始步。不依赖 Deck.init —— 实测两套里 7 页没调它。
+  // 分步:扫一遍 data-deck-step,决定起始步。不依赖 Deck.init —— 实测两套里 7 页没调它。
   function bootSteps() {
     Deck.rescan();
     var all = Deck.reduced() || /[?&]all\b/.test(location.search);
