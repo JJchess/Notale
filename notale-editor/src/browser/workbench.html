@@ -1,0 +1,296 @@
+<!doctype html>
+<html lang="zh">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Notale · 讲义工作台</title>
+    <link rel="stylesheet" href="/workbench.css" />
+  </head>
+  <body>
+    <header class="app-header">
+      <a class="brand" href="/">Notale<span>讲义工作台</span></a
+      ><select id="documents" aria-label="选择讲义"></select
+      ><span id="save-status" role="status">正在连接</span><button id="export">导出工程</button
+      ><label class="button">导入工程<input id="import" type="file" accept=".zip" hidden /></label
+      ><button id="present" class="primary">放映 ↗</button>
+    </header>
+    <nav class="toolbar" aria-label="编辑工具">
+      <button id="undo" title="Ctrl Z">↶ 撤销</button
+      ><button id="redo" title="Ctrl Shift Z">↷ 重做</button><i></i
+      ><select id="insert-kind" aria-label="插入对象">
+        <option value="text">文字</option>
+        <option value="shape">形状</option>
+        <option value="line">自由箭头</option>
+        <option value="connector">连接所选对象</option>
+        <option value="table">表格</option>
+        <option value="chart">图表</option>
+        <option value="image">图片</option>
+        <option value="video">视频</option>
+        <option value="audio">音频</option></select
+      ><button id="insert">＋ 插入</button><button id="duplicate-object">复制对象</button
+      ><button id="delete-object">删除对象</button><i></i><button id="group">编组</button
+      ><button id="ungroup">取消编组</button><button id="align-left">左对齐</button
+      ><button id="distribute">水平分布</button><span class="grow"></span
+      ><button id="interact" aria-pressed="false">体验互动</button
+      ><button id="overview">总览</button>
+    </nav>
+    <main class="workspace">
+      <aside class="slide-rail">
+        <div class="rail-title">页面 <span id="slide-count"></span></div>
+        <div id="slides"></div>
+        <div class="rail-actions">
+          <button id="add-slide">＋ 新页</button><button id="copy-slide">复制页</button
+          ><button id="delete-slide">删除页</button><button id="up-slide">上移</button
+          ><button id="down-slide">下移</button>
+        </div>
+      </aside>
+      <section class="center">
+        <div class="canvas-label">
+          <span id="page-name"></span><span>HTML 原生画布 · 双击文字编辑</span>
+        </div>
+        <div class="canvas-wrap">
+          <iframe
+            id="canvas"
+            title="讲义编辑画布"
+            sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+          ></iframe>
+          <div id="empty">正在加载讲义…</div>
+        </div>
+        <div class="stepbar">
+          <button id="step-prev">← 上一步</button
+          ><label>页内 steps <input id="step" type="range" min="0" max="0" value="0" /></label
+          ><output id="step-label">0 / 0</output><button id="step-next">下一步 →</button>
+        </div>
+        <div class="bottom-panel">
+          <label
+            >演讲者备注<textarea id="notes" rows="3" placeholder="这页要讲什么？"></textarea></label
+          ><button id="save-notes">保存备注</button><button id="speaker">演讲者模式 ↗</button>
+          <div id="timeline" class="timeline"></div>
+        </div>
+      </section>
+      <aside class="inspector">
+        <div class="tabs">
+          <button data-tab="objects" class="active">对象</button
+          ><button data-tab="format">格式</button><button data-tab="animation">动画</button
+          ><button data-tab="document">讲义</button>
+        </div>
+        <section data-panel="objects">
+          <p class="hint">点选画布或对象列表。按住 Shift 可多选。</p>
+          <div id="objects"></div>
+        </section>
+        <section data-panel="format" hidden>
+          <div class="selection-name" id="selection-name">未选择对象</div>
+          <label>文字<textarea id="object-text" rows="3"></textarea></label
+          ><button id="apply-text">应用文字</button>
+          <div class="field-grid">
+            <label>字号<input id="font-size" type="number" min="1" value="32" /></label
+            ><label>颜色<input id="color" type="color" value="#263449" /></label
+            ><label>X 偏移<input id="tx" type="number" value="0" /></label
+            ><label>Y 偏移<input id="ty" type="number" value="0" /></label
+            ><label>旋转<input id="rotation" type="number" value="0" /></label
+            ><label>缩放<input id="scale" type="number" step="0.1" value="1" /></label
+            ><label>宽度<input id="object-width" type="number" min="1" /></label
+            ><label>高度<input id="object-height" type="number" min="1" /></label>
+          </div>
+          <button id="apply-format">应用格式</button>
+          <label><input id="text-reflow" type="checkbox" checked /> 文字框调整尺寸时保持字号</label>
+          <div class="inline">
+            <button id="bold">加粗</button><button id="italic">斜体</button
+            ><button id="lock">锁定 / 解锁</button><button id="front">置顶</button
+            ><button id="back">置底</button><button id="layer-forward" disabled>上移一层</button
+            ><button id="layer-backward" disabled>下移一层</button>
+          </div>
+          <fieldset id="connector-panel" hidden>
+            <legend>对象连接线</legend>
+            <p>拖动圆形端点连接对象或空白位置；按住 Alt 可强制使用自由端点。</p>
+            <div id="connector-start-point" hidden>
+              <label>X<input id="connector-start-x" type="number" step="any" /></label
+              ><label>Y<input id="connector-start-y" type="number" step="any" /></label>
+            </div>
+            <label>起点对象<select id="connector-start"></select></label
+            ><label
+              >起点位置<select id="connector-start-anchor">
+                <option value="auto">自动</option>
+                <option value="top">上边</option>
+                <option value="right">右边</option>
+                <option value="bottom">下边</option>
+                <option value="left">左边</option>
+              </select></label
+            >
+            <div id="connector-end-point" hidden>
+              <label>X<input id="connector-end-x" type="number" step="any" /></label
+              ><label>Y<input id="connector-end-y" type="number" step="any" /></label>
+            </div>
+            <label>终点对象<select id="connector-end"></select></label
+            ><label
+              >终点位置<select id="connector-end-anchor">
+                <option value="auto">自动</option>
+                <option value="top">上边</option>
+                <option value="right">右边</option>
+                <option value="bottom">下边</option>
+                <option value="left">左边</option>
+              </select></label
+            >
+            <label
+              >线形<select id="connector-kind">
+                <option value="straight">直线</option>
+                <option value="elbow">折线</option>
+                <option value="curve">曲线</option>
+              </select></label
+            >
+            <label>颜色<input id="connector-color" value="#466ddb" /></label
+            ><label
+              >线宽<input id="connector-width" type="number" min=".5" max="30" step=".5"
+            /></label>
+            <label
+              >线条<select id="connector-dash">
+                <option value="solid">实线</option>
+                <option value="dashed">虚线</option>
+                <option value="dotted">点线</option>
+              </select></label
+            >
+            <label><input id="connector-start-arrow" type="checkbox" />起点箭头</label
+            ><label><input id="connector-end-arrow" type="checkbox" />终点箭头</label
+            ><button id="save-connector">应用连接线</button>
+          </fieldset>
+          <fieldset id="scene-panel" hidden>
+            <legend>互动场景参数</legend>
+            <p id="scene-status" class="hint">
+              读取当前互动状态后，可以保存本次采样和修改启动参数。
+            </p>
+            <label>状态组<select id="scene-choice"></select></label>
+            <button id="select-scene-root" hidden>选择完整互动区域</button>
+            <button id="read-scene">读取当前互动状态</button>
+            <div id="scene-parameters"></div>
+            <button id="save-scene" disabled>保存场景参数</button>
+            <button id="reset-scene">恢复源稿参数</button>
+          </fieldset>
+          <fieldset id="native-chart-panel" hidden>
+            <legend>原生图表</legend>
+            <p class="hint" id="native-chart-status">读取图表后可编辑序列数据与样式。</p>
+            <button id="inspect-native-chart">读取当前图表</button>
+            <label>序列<select id="native-chart-series"></select></label>
+            <label>序列名称<input id="native-chart-name" /></label>
+            <label>颜色<input id="native-chart-color" value="#466ddb" /></label>
+            <label
+              >线宽<input
+                id="native-chart-width"
+                type="number"
+                min="0"
+                max="50"
+                step=".5"
+                value="2"
+            /></label>
+            <label><input id="native-chart-symbols" type="checkbox" />显示数据点</label>
+            <label>序列数据 JSON<textarea id="native-chart-data" rows="5">[]</textarea></label>
+            <label><input id="native-chart-save-data" type="checkbox" />固定为这组数据</label>
+            <button id="save-native-chart-series">应用序列编辑</button>
+            <details>
+              <summary>图表配置</summary>
+              <label>配置补丁 JSON<textarea id="native-chart-option" rows="6">{}</textarea></label>
+              <button id="save-native-chart-option">应用配置</button>
+            </details>
+            <button id="reset-native-chart">恢复原生图表配置</button>
+          </fieldset>
+          <label
+            >互动初始值<input id="binding-value" placeholder="选择滑块、输入框或下拉框" /></label
+          ><button id="save-binding">保存互动默认值</button>
+          <details>
+            <summary>CSS 与属性</summary>
+            <label>CSS JSON<textarea id="style-json" rows="4">{}</textarea></label
+            ><label>属性 JSON<textarea id="attrs-json" rows="4">{}</textarea></label
+            ><button id="apply-advanced">应用</button>
+          </details>
+        </section>
+        <section data-panel="animation" hidden>
+          <p class="hint">动画作用于当前选中对象，可按页内步骤依次播放。</p>
+          <label
+            >效果<select id="effect">
+              <option value="fade-in">淡入</option>
+              <option value="appear">出现</option>
+              <option value="fly-in">飞入</option>
+              <option value="zoom-in">缩放进入</option>
+              <option value="fade-out">淡出</option>
+              <option value="fly-out">飞出</option>
+              <option value="pulse">强调 · 脉冲</option>
+              <option value="spin">旋转</option>
+              <option value="motion">移动路径</option>
+            </select></label
+          >
+          <div class="field-grid">
+            <label>步骤<input id="animation-step" type="number" min="0" value="1" /></label
+            ><label>时长 ms<input id="duration" type="number" min="0" value="600" /></label
+            ><label>延迟 ms<input id="delay" type="number" min="0" value="0" /></label
+            ><label>水平位移<input id="dx" type="number" value="120" /></label>
+          </div>
+          <label
+            >开始方式<select id="trigger">
+              <option value="click">该步骤开始</option>
+              <option value="with-previous">与上一动画同时</option>
+              <option value="after-previous">上一动画之后</option>
+              <option value="object">点击指定对象</option>
+            </select></label
+          ><label>触发对象<select id="trigger-target"></select></label
+          ><button id="add-animation" class="primary">添加动画</button>
+          <div id="animations"></div>
+          <button id="preview-animation">从头预览</button>
+        </section>
+        <section data-panel="document" hidden>
+          <label>讲义标题<input id="deck-title" /></label>
+          <div class="field-grid">
+            <label>画布宽<input id="deck-width" type="number" /></label
+            ><label>画布高<input id="deck-height" type="number" /></label>
+          </div>
+          <label>主题 CSS 变量<textarea id="theme-json" rows="4">{}</textarea></label
+          ><button id="save-deck">保存讲义设置</button
+          ><label>页面名称<input id="slide-name" /></label><label>章节<input id="section" /></label
+          ><label
+            >页面转场<select id="transition">
+              <option>fade</option>
+              <option>slide</option>
+              <option>none</option>
+              <option>convex</option>
+              <option>concave</option>
+              <option>zoom</option>
+            </select></label
+          ><label>自动翻页间隔 ms<input id="advance" type="number" value="0" min="0" /></label
+          ><label><input id="hidden-slide" type="checkbox" /> 放映时跳过此页</label
+          ><button id="save-slide">保存页面设置</button>
+          <details id="guide-settings">
+            <summary>参考线与吸附</summary>
+            <p class="hint">
+              移动：Alt 暂停吸附，Shift 限制方向。缩放：Ctrl/⌘ 暂停吸附，Alt 从中心缩放，Shift
+              等比。Esc 取消。
+            </p>
+            <label
+              ><input id="snap-enabled" type="checkbox" checked /> 吸附到对象、页面和参考线</label
+            >
+            <label><input id="rulers-visible" type="checkbox" /> 显示标尺（拖出参考线）</label>
+            <label><input id="guides-visible" type="checkbox" checked /> 显示参考线</label>
+            <label
+              >网格间距（0 关闭）<input id="snap-grid" type="number" min="0" max="10000" value="0"
+            /></label>
+            <div class="field-grid">
+              <label
+                >方向<select id="guide-axis">
+                  <option value="x">垂直 X</option>
+                  <option value="y">水平 Y</option>
+                </select></label
+              >
+              <label
+                >页面坐标<input id="guide-position" type="number" value="100" step="any"
+              /></label>
+            </div>
+            <button id="add-guide">添加参考线</button>
+            <div id="guide-list"></div>
+          </details>
+          <label>历史版本<select id="history"></select></label
+          ><button id="restore">恢复所选版本</button>
+        </section>
+      </aside>
+    </main>
+    <input id="media-file" type="file" hidden />
+    <div id="toast" role="alert" hidden></div>
+    <script type="module" src="/workbench.js"></script>
+  </body>
+</html>

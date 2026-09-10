@@ -4,18 +4,206 @@
 #   api.999555999   6/8 成功   墙钟 180.8s   吞吐  2.0 次/分   2 次超时
 #   llmapi.paratera 8/8 成功   墙钟  12.8s   吞吐 37.4 次/分   0 次失败
 #
-# 差 18.7 倍。之前 20 并发跑 builder 累计空等 84 分钟,根源就是前者扛不住并发。
+# 差 18.7 倍。之前 20 并发跑 builder 累计空等 84 分钟,根源就是**前者**扛不住并发。
+#
+# **不要拿那 84 分钟去压 paratera 上的并发。** 那是 api.999555999 的账,
+# 而 paratera 实测 8/8 成功、37.4 次/分,并发上限 100。
+# 我一度把 builder 压到 6、spec 压到 8,结果 48 页的 builder 墙钟 37 分钟,
+# 其中绝大部分是排队,不是生成。
+# 2026-08-21 换路由。并行云(paratera)的账号被砍到只剩 8 个模型
+# (GLM-4-Flash / GLM-4.5-Flash / GLM-Z1-Flash / GLM-4V-Flash / GLM-CogView3-Flash /
+#  Intern-S2-Preview / PaddleOCR-VL-0.9B / PaddleOCR-VL-1.5),
+# `AWS-GPT-5.6-Sol` / `DeepSeek-V4-Flash` / `DeepSeek-V4-Pro` / `AWS-Claude-Sonnet-5`
+# 一律 403 team_model_access_denied。同一个模型 `gpt-5.6-sol` 在这条中转上还能用,
+# 所以只换路由不换模型 —— ape-g7 的基线因此仍然可比。
+#
+# **这条路由不支持 responses**:POST /v1/responses 回 200 + {"detail":"Internal server error"}。
+# 所以 wire_api 改成 chat,由 core/llm.py 的适配层冒充 responses 对象,
+# planner 和 builder 一行没改。
+#
+# 这条路由上还验过可用的:claude-opus-5 / claude-sonnet-5 / claude-opus-4-1 /
+# claude-sonnet-4-5 / claude-haiku-4-5 —— 但它们只在 Anthropic 风格的
+# /v1/messages 上(要另一个 wire 分支),不在 /v1/chat/completions 上。
+# 2026-08-21 晚:并行云权限**已恢复** —— 可用模型从 8 个回到 98 个,
+# AWS-GPT-5.6-Sol / DeepSeek-V4-Flash / DeepSeek-V4-Pro / AWS-Claude-Sonnet-5 都回来了。
+# 切回这条路由(它支持 responses)。中转那条(api.999555999.com + wire_api: chat)
+# 的适配层留着不动 —— core/llm.py 里 wire=="chat" 那条分支已经验过能跑完整轮,
+# 下次哪条路由再挂可以一行切回去。
+# 2026-08-26 量了这条路由的缓存行为,三条要记住:
+#
+#   AWS-GPT-5.6-Sol / Terra   走 responses,自动前缀缓存,同前缀第二次命中 99.9%
+#                             —— 白拿的,不需要任何请求侧的提示
+#   AWS-Claude-Sonnet-5       走 responses **一分钱不省**(三次同前缀全部 cached=0)。
+#                             Anthropic 系不做自动缓存,要显式 cache_control,
+#                             而 to_responses() 在那一侧没有对应物只能丢掉。
+#                             所以它必须配 `wire_api: messages`(或 builder --wire messages),
+#                             那条走裸 /v1/messages,实测第二次 cache_read 4,582。
+#   **换模型不换 wire 不会报错,只会静默变成全额计费。** 用 core/check_cache.py 验。
+#
+# 上下文窗口实测 ≥375,011 token(超额回 context_length_exceeded,逐级试到 375k 仍通过);
+# 而 builder 的实测输入峰值只有 36k–70k。core/builder.py 的 CONTEXT_SOFT 就是按这个定的。
 model:
-  base_url: https://llmapi.paratera.com/v1
-  name: AWS-GPT-5.6-Sol
-  api_key_env: PARATERA_API_KEY
-  wire_api: responses
+  base_url: https://generativelanguage.googleapis.com/v1beta/openai
+  name: gemini-3.8-flash
+  api_key_env: GEMINI_API_KEY
+  wire_api: chat
   http_timeout_sec: 900
   max_output_tokens: 128000
-  reasoning_effort: medium
+  reasoning_effort: low
+  vision_input: true
+
+media:
+  # One Gemini Google Search request per ImageSearch; no legacy fallback.
+  image_search_backend: gemini
 
 planner:
-  # 步骤顺序是从 nn-06 主 agent 的动作时间线抄下来的,不是设计的:
-  #   探环境 → theme.css → lec.js → PLAN.md → CONTRACT.md → 建骨架
-  # nn-03 是同一条线,两轮一致,所以固定成流水线而不是让模型自己决定。
-  reasoning_effort: high
+  # 页表与 Style Director 并行，共用顶层模型及此 effort。
+  reasoning_effort: low
+
+builder:
+  default_profile: gemini38-google-low
+  # 按页型覆盖 profile；没列出的页型用 default_profile（或命令行 --profile）。
+  # 2026-09-02 page-14 冒烟（冻结 fixture，同一页）：
+  #   sonnet5-low            10 步  7.1 分  自检通过
+  #   deepseek-v4-flash-low  13 步 22.1 分  自检通过
+  #   deepseek-v4-flash-medium 9 步 31.4 分  自检通过
+  #   deepseek-v4-flash-high  4 步 73.2 分  撞 3600s 时限，自检未过（4 次 900s 超时重试）
+  #   glm53-flash-high        3 步 65.2 分  撞时限，自检未过；glm53-flash-low 09-01 亦未过
+  # high 档都是单次请求超过 http_timeout_sec 被重试吃掉墙钟，不是模型不会写。
+  workflow_profiles:
+    build-code: deepseek-v4-flash-low
+  profiles:
+    sonnet5-low:
+      model: AWS-Claude-Sonnet-5
+      base_url: https://llmapi.paratera.com/v1
+      api_key_env: PARATERA_API_KEY
+      adapter: messages
+      reasoning_effort: low
+      vision_input: true
+    deepseek-v4-flash-siliconflow:
+      model: deepseek-ai/DeepSeek-V4-Flash
+      base_url_env: SILICONFLOW_BASE_URL
+      base_url: https://api.siliconflow.cn/v1
+      api_key_env: SILICONFLOW_API_KEY
+      adapter: chat
+      reasoning_effort: low
+      # 2026-08-31 对当前 SiliconFlow endpoint 实测：模型卡虽标视觉输入，
+      # base64 图片请求仍返回 “not a VLM”；因此这一 profile 只接收 Check 文本报告。
+      vision_input: false
+    deepseek-v4-flash-low:
+      model: deepseek-ai/DeepSeek-V4-Flash
+      base_url_env: SILICONFLOW_BASE_URL
+      base_url: https://api.siliconflow.cn/v1
+      api_key_env: SILICONFLOW_API_KEY
+      adapter: chat
+      reasoning_effort: low
+      vision_input: false
+    deepseek-v4-flash-medium:
+      model: deepseek-ai/DeepSeek-V4-Flash
+      base_url_env: SILICONFLOW_BASE_URL
+      base_url: https://api.siliconflow.cn/v1
+      api_key_env: SILICONFLOW_API_KEY
+      adapter: chat
+      reasoning_effort: medium
+      vision_input: false
+    deepseek-v4-flash-high:
+      model: deepseek-ai/DeepSeek-V4-Flash
+      base_url_env: SILICONFLOW_BASE_URL
+      base_url: https://api.siliconflow.cn/v1
+      api_key_env: SILICONFLOW_API_KEY
+      adapter: chat
+      reasoning_effort: high
+      vision_input: false
+    # 2026-09-04 探这条中转线（api.999555999.com，与 PARATERA 不同的账号/路由）。
+    # 逐条量的，不是抄的：
+    #   /v1/models          4 个模型，gemini-3.8-flash 在表上
+    #   tool_calls          正常返回 function 调用，finish_reason=tool_calls
+    #   图片输入            真截图 166KB PNG 读得出内容 → vision_input: true
+    #                       （1×1 手搓 PNG 会回 400 "Unable to process input image"，
+    #                        那是图坏了，不是路由不支持——别据此判 false）
+    #   reasoning_effort    接受，不报错
+    #   max_tokens=128000   接受
+    #   前缀缓存            **在生效，但报账口径和 paratera 相反**（2026-09-04 量的）。
+    #                       没有 prompt_tokens_details，所以 cache_reported=false —— 
+    #                       但那只是「没有单独字段」，不是「没缓存」。
+    #                       实测同一段 31,318 token 的前缀：冷 31,318 → 热 2,679（省 91%）；
+    #                       只改前缀结尾一个字仍是 2,679，只改开头立刻回 31,319。
+    #                       即命中的部分**直接从 prompt_tokens 里扣掉**了
+    #                       （响应 id 是 msg_01… 的 Anthropic 形状，那边 input_tokens
+    #                        本就不含 cache read）。
+    #   ⚠ 口径不可比        paratera 的 tok_in 是毛数、另报 tok_cached；
+    #                       这条线的 tok_in 已是净数。跨路由比 tok_in 大小是错的。
+    #   ⚠ 剥掉 thought_signature   这条线把 Gemini 3 工具调用附带的
+    #                       extra_content.google.thought_signature 整个剥掉了（tool_call 只剩
+    #                       id/type/function，id 还是 toolu_ 形态）。Gemini 3 要求回传时带上它，
+    #                       缺了会以 MALFORMED_FUNCTION_CALL 拒掉模型的下一次工具调用——
+    #                       而这条线把它报成 finish_reason=stop + 空正文。2026-09-04 实测：
+    #                       同一份缺签名的历史，Google 官方回 MALFORMED_FUNCTION_CALL 3/5，
+    #                       这条线回「stop、无工具、正文 0 字」2/5。首轮 5 页里 4 次「正文为空」
+    #                       就是这个，不是思考吃光了预算。harness 修不了：签名在上游就没了。
+    #                       多轮工具循环别走这条线跑 Gemini 3；走 gemini38-google-*。
+    # 这条线不支持 /v1/responses（见文件顶部那段账），所以 adapter 必须是 chat。
+    gemini38-flash-low:
+      model: gemini-3.8-flash
+      base_url: https://api.999555999.com/v1
+      api_key_env: ROUTER_GEMINI_API_KEY
+      adapter: chat
+      reasoning_effort: low
+      vision_input: true
+    # 2026-09-04 Google 官方端点（generativelanguage.googleapis.com 的 OpenAI 兼容层）。
+    # 和上面那条中转的区别是实测出来的，不是猜的：
+    #   reasoning_effort  **真生效且真校验**。传 banana 回 400 并列出合法值：
+    #                     high / low / medium / minimal / none。中转那条五档一个都不认。
+    #   缓存报账          prompt_tokens 是毛数，另给 prompt_tokens_details.cached_tokens
+    #                     （实测 86,478 中命中 81,885）。这正是 _adapt_chat 已经在读的字段，
+    #                     所以 cache_reported=true、tok_cached 能记上，不用改代码。
+    #                     另有显式缓存 createCachedContent（原生端点）能 100% 确定性命中，
+    #                     隐式缓存则是尽力而为——四次里有两次没命中。目前两条都没接。
+    #   工具调用/视觉     都通；工具调用会额外带 google.thought_signature。
+    #   原生 thinking     generationConfig.thinkingConfig.thinkingBudget（v1beta 没有
+    #                     thinkingLevel，传了回 Unknown name）。budget=0 关不掉思考，
+    #                     它是上限不是目标。走兼容层时用 reasoning_effort 就够了。
+    gemini38-google-low:
+      model: gemini-3.8-flash
+      base_url: https://generativelanguage.googleapis.com/v1beta/openai
+      api_key_env: GEMINI_API_KEY
+      adapter: chat
+      reasoning_effort: low
+      vision_input: true
+    # 2026-09-04 试过 gemini38-google-low-cached（显式前缀缓存），**已删**。
+    # 同一份 27 页规划实测：隐式 $3.264（未命中 55/215、命中率 74%），
+    # 显式 $6.114（未命中 0/228、命中率 24%）——贵 87%。
+    # 显式缓存把命中数钉死在静态前缀那 8k，剩下的不再走隐式缓存，
+    # 而真正值钱的是每页那段不断增长的对话前缀。别再试第二遍，账见 core/llm.py。
+    gemini38-google-medium:
+      model: gemini-3.8-flash
+      base_url: https://generativelanguage.googleapis.com/v1beta/openai
+      api_key_env: GEMINI_API_KEY
+      adapter: chat
+      reasoning_effort: medium
+      vision_input: true
+    glm53-flash-high:
+      model: GLM-5.3-Flash
+      base_url: https://llmapi.paratera.com/v1
+      api_key_env: PARATERA_API_KEY
+      adapter: chat
+      reasoning_effort: high
+      vision_input: true
+      replay_reasoning: true
+      request_options:
+        thinking:
+          type: enabled
+          clear_thinking: false
+    glm53-flash-low:
+      model: GLM-5.3-Flash
+      base_url: https://llmapi.paratera.com/v1
+      api_key_env: PARATERA_API_KEY
+      adapter: chat
+      reasoning_effort: low
+      vision_input: true
+      replay_reasoning: true
+      # GLM 的思考状态属于 Chat API 方言，由 Adapter 透传并在工具回合间原样重放。
+      request_options:
+        thinking:
+          type: enabled
+          clear_thinking: false

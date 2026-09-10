@@ -13,6 +13,11 @@ from pathlib import Path
 PLACEHOLDER = re.compile(r"__[A-Z0-9_]+__")
 TAG = re.compile(r"customElements\.define\(\s*[\"']([a-z0-9-]+)[\"']")
 REMOTE = re.compile(r"https?://|[\"']//[^\"']+", re.IGNORECASE)
+CANVAS_USAGE = re.compile(r"getContext\(\s*[\"']2d[\"']|<canvas\b", re.IGNORECASE)
+BARE_SVG_SHAPE = re.compile(r"<(?:rect|circle)\b")
+SVG_TEXTURE = re.compile(
+    r"<(?:path|polygon|polyline|image|pattern|linearGradient|radialGradient|use)\b"
+)
 
 
 def require(pattern: str, text: str, message: str, failures: list[str]) -> None:
@@ -20,15 +25,16 @@ def require(pattern: str, text: str, message: str, failures: list[str]) -> None:
         failures.append(message)
 
 
-def validate(root: Path) -> list[str]:
+def validate(root: Path) -> tuple[list[str], list[str]]:
     failures: list[str] = []
+    hints: list[str] = []
     index_path = root / "index.html"
     component_path = root / "game-component.js"
     for path in (index_path, component_path):
         if not path.is_file():
             failures.append(f"missing required file: {path.name}")
     if failures:
-        return failures
+        return failures, hints
 
     index = index_path.read_text(encoding="utf-8")
     component = component_path.read_text(encoding="utf-8")
@@ -74,6 +80,18 @@ def validate(root: Path) -> list[str]:
     require(r"addEventListener\(\s*[\"']click[\"']", component,
             "pointer or touch-compatible click handler is required", failures)
 
+    if (
+        "<svg" in combined
+        and CANVAS_USAGE.search(combined) is None
+        and BARE_SVG_SHAPE.search(combined) is not None
+        and SVG_TEXTURE.search(combined) is None
+    ):
+        hints.append(
+            "only bare SVG <rect>/<circle> primitives detected with no canvas, path, pattern, or "
+            "gradient — confirm this is exact-geometry content (chart/diagram/graph), not a "
+            "stand-in for tiles or characters"
+        )
+
     node = shutil.which("node")
     if node:
         result = subprocess.run(
@@ -85,7 +103,7 @@ def validate(root: Path) -> list[str]:
         if result.returncode != 0:
             detail = (result.stderr or result.stdout).strip().splitlines()
             failures.append(f"JavaScript syntax check failed: {detail[-1] if detail else 'unknown error'}")
-    return failures
+    return failures, hints
 
 
 def main() -> int:
@@ -93,7 +111,7 @@ def main() -> int:
     parser.add_argument("directory", type=Path, help="Generated game directory.")
     args = parser.parse_args()
     try:
-        failures = validate(args.directory.resolve())
+        failures, hints = validate(args.directory.resolve())
     except (OSError, UnicodeError) as error:
         print(f"ERROR: {error}")
         return 1
@@ -103,6 +121,8 @@ def main() -> int:
             print(f"- {failure}")
         return 1
     print("PASS: native Web Component mini-game contract is complete")
+    for hint in hints:
+        print(f"HINT: {hint}")
     return 0
 
 

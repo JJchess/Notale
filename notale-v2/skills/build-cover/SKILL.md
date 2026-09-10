@@ -1,0 +1,57 @@
+---
+name: build-cover
+description: "Builds course covers and chapter-opening pages using static composition, animation, or procedural visuals."
+---
+
+# Build Cover
+
+Choose the visual system that would still identify the opening without its other layers:
+
+- `composition`: an authored still arrangement carries the identity.
+- `motion`: setup, transformation, and payoff over time carry the identity.
+- `generative`: a rule, field, growth system, simulation, shader, or seeded drawing process carries the identity.
+
+In the first response, name the visual carrier and transferable pattern in one sentence. Choose Main by composition, motion or generative mechanism, not topic similarity; then issue parallel `Read` calls for exactly one reference and one Main from the same category. Do not read any other sample. Do not read another reference later and do not copy sample subject matter, labels, or styling.
+
+## References
+
+- `composition`: `<skill-dir>/references/composition.md`
+- `motion`: `<skill-dir>/references/motion.md`
+- `generative`: `<skill-dir>/references/generative.md`
+
+## Samples
+
+### composition
+
+- `climate-zones-title`
+  - an editorial map crop, protected type area, and geographic texture behave as one frame.
+  `<skill-dir>/samples/bundles/composition/climate-zones-title.mini.md`
+- `grid-to-preview`
+  - a poster-like grid, oversized typography, and full-frame preview share a continuous image hierarchy.
+  `<skill-dir>/samples/bundles/composition/grid-to-preview.mini.md`
+- `prism-light`
+  - subject geometry, title, and restrained light motion align on one focal axis.
+  `<skill-dir>/samples/bundles/composition/prism-light.mini.md`
+
+### motion
+
+- `telescope-zoom`
+  - spatial handoffs and scale continuity create the opening instead of interface chrome.
+  `<skill-dir>/samples/bundles/motion/telescope-zoom.mini.md`
+
+### generative
+
+- `lenna-pixel-field`
+  - erosion remains subordinate to a stable typographic foreground.
+  `<skill-dir>/samples/bundles/generative/lenna-pixel-field.mini.md`
+- `magnetic-field`
+  - curved trajectories organize density while preserving a calm title region.
+  `<skill-dir>/samples/bundles/generative/magnetic-field.mini.md`
+- `mycelium-growth`
+  - a legible settled network emerges from constrained growth rather than undirected particles.
+  `<skill-dir>/samples/bundles/generative/mycelium-growth.mini.md`
+- `tactile-grid`
+  - material height, light, and wave response make a tactile WebGL field without interface chrome.
+  `<skill-dir>/samples/bundles/generative/tactile-grid.mini.md`
+
+Follow the selected reference to develop this same construction decision; do not write a second contract.

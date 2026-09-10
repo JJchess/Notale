@@ -1,15 +1,8 @@
-"""builder —— 每页一个循环,并发跑。
+"""builder —— 每页一个自由循环,并发跑。
 
-planner 能做成固定流水线,是因为 nn-03 和 nn-06 两轮动作序列完全一致。
-builder 不行:实测每页 16–73 次调用,相差 4.6 倍,工具配比也各不相同
-(page-09 是 Bash×22,page-20 是 Edit×26)。所以这里只能是循环。
-
-循环在什么上收敛也是数出来的:`Write` 恒等于 1,之后全是 Edit + Bash + Read,
-而 Bash 的 67% 是 selfcheck。每页跑 3–10 次 selfcheck,中位 8。
-**写一次 + 闸驱动收敛。**
-
-终止照抄 Claude Code:模型不再要求调工具就算交付。另加两道兜底,
-因为「模型自己说完了」在没有 schema 约束时是不可验证的。
+Harness 只约束首次实现前的一轮预读；之后自由创作，不补催、不重启。模型不再要求工具就结束；
+提示词要求最多 11 次响应并在 4–7 次内完成，但 harness 不在第 11 次截断，
+而是让模型自然结束并事后记录是否超出目标。最终产物与一次独立审计分别记录。
 
     python3 -m core.builder --label orbit-01 [--only page-01] [--concurrency 20]
 """
@@ -17,21 +10,26 @@ builder 不行:实测每页 16–73 次调用,相差 4.6 倍,工具配比也各�
 from __future__ import annotations
 
 import argparse
+import html
 import json
 import re
 import time
 import uuid
+from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
-from . import skills, tools
+from . import skills
+from tools.check import code as code_check
+from tools import runtime as tools
+from tools.code_scaffold import tool as code_runtime
 from . import llm
-from .llm import ROOT, config, respond, text_of
+from .llm import ROOT, RUNS_ROOT, config, respond, text_of
 from .trace import Writer
 
-MAX_STEPS = 100      # 实测最多 73;打满记为失败,不静默交付
+RESPONSE_TARGET = 11  # 行为目标与事后指标，不是运行时熔断
 MAX_SECONDS = 3600
 
 
@@ -39,10 +37,71 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
 
-IDENTITY = """你是这套互动讲义的单页构建 agent。你只负责一个 HTML 文件。
+IDENTITY = """你负责当前页面，按 brief 与本页型 SKILL 的首轮加载规则完成。
+首轮一次性并行 Read 所需材料（代码页同轮 CodeScaffold）；主题与底盘接口已预置，不做源码巡读。材料返回后，下一轮直接完成首版 Write（代码页可 Edit 课程文件），不要写占位空壳。
+首次实现成功前只有首轮可以 Read，不调用 Bash 或其他探索工具；加载失败或违反这个顺序会停止本页，不补读、不补催。首次实现后，遇到具体问题可定点 Read。
+响应目标不超过 11 次（含结束响应），通常应在 4–7 次内完成。同一响应中的多个工具调用会按列出顺序执行，写入或修正后同轮接 Check。
+设计时先核对确定性数据和公式；需实际执行的数值验证在写入后立即完成。计算结果不支持预设结论时，先核对实现与适用条件；实现正确就据实调整解释，不修改数据或显示值来凑结论。
+按 reference 验收内容与行为。截图用于检查排版和绘制；修订已实现的数据或公式，应依据具体计算错误或数学条件，不因图形不符合预想而修改。合并已确认的问题后再 Check。
+证据完整且没有具体违约时，下一次响应直接结束，不为填满画面或泛泛优化继续调用工具。
+不写额外说明文档、构建日志或旁路测试（lesson/tests.py 属于学习内容）。不要问问题。"""
 
-按 brief 说的做:先读契约和规划,再施工,完工前用 selfcheck 自检到干净为止。
-不写说明文档、不写测试、不写总结。做完直接结束,不要问问题。"""
+# 实验开关 --visual-focus:与 planner 的同名开关配对。页表每页多一行「视觉焦点」,
+# 这段告诉 builder 怎么用它。默认不注入,基线 system 一字不变。
+VISUAL_FOCUS_BLOCK = """<chapter_context> 里每页的「视觉焦点」一行是 planner 定下的主证据场,本页的构图从它出发:
+- 第一眼必须落在它上面;它占主区,标题、注释、控件围着它排,不得让它缩小成配图。
+- 不得替换成别的图,不得拆散;它显示的那个关系必须在初态就读得出来,不靠 hover 或播放。
+- 选 Main sample 时按它的证据几何选(矩阵、分布、机构、地图……),不按题目名。
+- Check 之后先对着截图回答三件事:它在不在、是不是第一眼落点、那个关系读不读得出;都成立再看别的。
+没有这一行的页(代码页)照常处理。"""
+
+
+# 实验开关 --notes:cap = 只给画面字数硬数;notes = 硬数 + 讲稿区出口。默认 off,基线 system 一字不变。
+# 2026-09-05 量的:生成页每页可见字符中位 550–750,金样本中位 206;用户的直觉是「字太密、一堆卡片」。
+# 假设:模型把所有想说的都写上画面,是因为没有别处可写。cap 臂回答「光给数够不够」,notes 臂回答「出口有没有额外作用」。
+TEXT_CAP_BLOCK = """<text_budget>
+画面上的可见文字总量不超过 200 个字符(标题、正文、标签、数值都算;Check 报告会给出实测字数)。
+超了就删:一页只留读者必须看见的那一句判断、必要的标签和数值;解释、推导、背景不上画面。
+不得用缩小字号、压行高、折叠或切换来"藏"字。
+</text_budget>"""
+NOTES_BLOCK = TEXT_CAP_BLOCK + """
+
+<speaker_notes>
+不上画面但要讲的话,写进 `<aside class="notes" hidden>…</aside>`,放在 `</body>` 之前 ——
+这是 `#stage` 之外唯一允许写的东西。讲稿按讲的顺序分段,写老师会对学生说的话(解释、推导、例子、过渡),
+不写页面说明;Check 报告会同时给画面字数和讲稿字数。
+</speaker_notes>"""
+# only = 只给讲稿出口,不提字数 —— 单独检验「出口本身能不能疏导」这条假设(C 臂把它和硬数混在一起了)。
+NOTES_ONLY_BLOCK = """<speaker_notes>
+不上画面但要讲的话,写进 `<aside class="notes" hidden>…</aside>`,放在 `</body>` 之前 ——
+这是 `#stage` 之外唯一允许写的东西。讲稿按讲的顺序分段,写老师会对学生说的话(解释、推导、例子、过渡),
+不写页面说明;Check 报告会同时给画面字数和讲稿字数。
+</speaker_notes>"""
+NOTES_BLOCKS = {"off": "", "cap": TEXT_CAP_BLOCK, "notes": NOTES_BLOCK, "only": NOTES_ONLY_BLOCK}
+
+STEPS_BLOCK = """<steps>
+课堂讲授可使用底盘分步，API 见 chassis。
+每一步必须新增证据 —— 一条线、一个状态、一次变化 —— 不是再冒出一段文字;
+第 0 步就要能看出这页在讲什么;所有步都显示出来时这一页仍要读得通(课后复看就是这样看的)。
+只让人按既定顺序看下一段的按钮、标签、点开答案,做成分步并删掉控件;
+读者自选顺序、反复对照的控件保留;能累积就累积,只让结论随步更新。
+</steps>"""
+
+COVER_STEPS_BLOCK = """<steps>
+封面可按构图需要采用静态、动画或底盘分步；分步 API 见 chassis。
+使用分步时，每步新增视觉证据，初态可辨主题，完整画面仍然成立。
+</steps>"""
+
+
+LABEL_WORKFLOWS = {
+    "标题页": "build-cover",
+    "内容页": "build-page",
+    "交互页": "build-interaction",
+    "代码页": "build-code",
+}
+_SPEC_HEADING = re.compile(
+    r"^#\s+(page-(\d+))\s+\[(标题页|内容页|交互页|代码页)\]\s*$", re.M
+)
 
 
 def _tag_of(c) -> str:
@@ -51,10 +110,16 @@ def _tag_of(c) -> str:
         a = json.loads(c.arguments or "{}")
     except Exception:
         return ""
-    if c.name == "Skill":
-        return str(a.get("skill", ""))
+    if c.name == "CodeScaffold":
+        return "fixed-python-workbench"
     if c.name == "Bash":
         return str(a.get("command", ""))[:120]
+    if c.name == "Check":
+        n = len(a.get("after") or [])
+        return str(a.get("page", "")) + (f" +after×{n}" if n else "") + (
+            " +shot" if a.get("shot") else "") + (f" @{a['box']}" if a.get("box") else "")
+    if c.name == "Patch":
+        return f"{a.get('page','')} ×{len(a.get('edits') or [])}"
     return str(a.get("file_path", "")).split("/")[-1]
 
 
@@ -65,158 +130,1040 @@ def _replay(item: dict) -> dict:
     400 `Unknown parameter: input[1].status` 打回来。递归剥掉,别的原样保留 ——
     `call_id` 和 reasoning 的 `id` 都是回传必需的,不能一起清掉。
     """
-    if isinstance(item, dict):
-        return {k: _replay(v) for k, v in item.items() if k != "status" and v is not None}
-    if isinstance(item, list):
-        return [_replay(x) for x in item]
-    return item
+    return llm.replay_item(item)
 
 
 @dataclass
 class Page:
     pid: str
     prompt: str
-    required: tuple = ()          # 规划指派的必用 skill
     calls: int = 0
     steps: list[str] = None
-    ok: bool = False
     why: str = ""
     seconds: float = 0.0
 
-    nagged: bool = False
+    images: int = 0      # 这一页进上下文的图片张数(Opus 那条线是每页 6.0 张)
+    evicted: int = 0     # 被挤出上下文的图片张数
+
+    # token 账。2026-08-26 之前这三个数一个都没记,于是「前缀缓存到底生效没有」
+    # 只能靠离线探针 —— 而实测这条路由自动缓存能到 99.9%,一次淘汰却会把它打回 0。
+    # 没有这三个数就看不见那件事,所以先记再谈优化。
+    tok_in: int = 0      # 累计输入 token(每步都含被重发的全部历史)
+    tok_cached: int = 0  # 其中命中前缀缓存的部分(读,便宜)
+    tok_write: int = 0   # 其中写进缓存的部分(写,通常带溢价 —— 和读不是一个价)
+    tok_out: int = 0     # 累计输出 token
+    tok_max: int = 0     # 单步输入峰值 —— 判 CONTEXT_SOFT 用
+    artifact_present: bool = False
+    audit: dict | None = None
+    cache_seen: bool = False   # 这条路由到底报不报 cached;不报和没命中要分得开
+    label: str = ""
+    workflow: str = ""
+    spec_text: str = ""
+    total: int = 0
 
     def __post_init__(self):
         self.steps = []
         self.steps_arg = {}
+        self.reference_reads = []
+        self.termination = ""
 
 
-def build_one(page: Page, pages_dir: Path, trace: Path, skill_root: Path,
-              instructions: str, effort: str) -> Page:
-    """一页的完整循环。
-
-    历史只增不改 —— 每步追加一个 function_call 和一个 function_call_output。
-    Claude Code 每步追加三条,第三条是 `role: system` 的剩余 token 提醒;
-    那属于 CLI 自省,状态在 harness 手里,砍掉。
-    """
-    log = Writer(trace, str(uuid.uuid4()))
-    hist: list = [{"role": "user", "content": page.prompt}]
-    spec = tools.specs()
-    t0 = time.time()
-
-    while True:
-        if page.calls >= MAX_STEPS:
-            page.why = f"打到步数上限 {MAX_STEPS}"
-            break
-        if time.time() - t0 > MAX_SECONDS:
-            page.why = f"超过单页时限 {MAX_SECONDS}s"
-            break
-
-        started = _now()
-        r = respond(instructions, hist, spec, effort, tag=page.pid)
-        page.calls += 1
-        u = getattr(r, "usage", None)
-        calls = [o for o in r.output if getattr(o, "type", "") == "function_call"]
-        log.add([{"type": "text", "text": page.prompt if page.calls == 1 else "(tool results)"}],
-                text_of(r),
-                {"input_tokens": int(getattr(u, "input_tokens", 0) or 0),
-                 "output_tokens": int(getattr(u, "output_tokens", 0) or 0)},
-                getattr(r, "id", None) or f"req_{uuid.uuid4().hex[:16]}",
-                started, _now(),
-                {"page": page.pid,
-                 # 记名字也记关键参数:只记工具名的话,「调了 Skill 11 次」查得到,
-                 # 「调了哪个 skill」查不到 —— 而后者才是这一轮要观测的东西。
-                 "tools": [{"name": c.name, "arg": _tag_of(c)} for c in calls]})
-
-        if not calls:
-            # 模型不再要工具 = 它认为做完了(照抄 Claude Code 的终止条件)。
-            # 但规划指派的技法文档是硬要求,没读就不算完 —— 补一轮再收尾,
-            # 而不是直接判失败:那会白扔掉一整页已经做完的工作。
-            got = {t for t in page.steps_arg.get("Skill", [])}
-            missed = [x for x in page.required if x not in got]
-            if missed and not page.nagged:
-                page.nagged = True
-                hist.append({"role": "user", "content":
-                    "你还没有读规划为这一页指派的技法文档:" + "、".join(missed) +
-                    "。先用 Skill 工具逐个读完,按里面的做法检查并改进你刚写的页面,"
-                    "再收尾。"})
-                continue
-            page.ok = not missed
-            page.why = ((text_of(r)).strip()[:200] if not missed
-                        else f"未读指派的 skill: {' '.join(missed)}")
-            break
-
-        print(f"      {page.pid} 步{page.calls:>3}  "
-              f"{' '.join(c.name for c in calls)[:52]}", flush=True)
-        hist += [_replay(o.model_dump()) for o in r.output]
-        for c in calls:
-            args = json.loads(c.arguments or "{}")
-            page.steps_arg.setdefault(c.name, []).append(_tag_of(c))
-            page.steps.append(c.name if c.name != "Bash"
-                              else ("SELFCHECK" if "selfcheck" in str(args.get("command", ""))
-                                    else "Bash"))
-            hist.append({"type": "function_call_output", "call_id": c.call_id,
-                         "output": tools.run(c.name, args, pages_dir, skill_root)})
-
-    page.seconds = time.time() - t0
-    n_sc = page.steps.count("SELFCHECK")
-    print(f"  {page.pid}  {'✓' if page.ok else '✗'}  {page.calls:>3} 次调用  "
-          f"{page.seconds/60:>5.1f} 分  selfcheck {n_sc:>2}  "
-          f"skill {page.steps.count('Skill')}  {page.why[:60]}", flush=True)
+def route_page(root: Path, page: Page) -> Page:
+    """Read the planner-owned pNN heading and assign exactly one production workflow."""
+    path = root / "pages" / "plan" / f"{page.pid.replace('page-', 'p')}.md"
+    if not path.is_file():
+        raise FileNotFoundError(f"cannot route {page.pid}: missing planner spec {path}")
+    text = path.read_text(encoding="utf-8", errors="replace")
+    matches = list(_SPEC_HEADING.finditer(text))
+    if len(matches) != 1:
+        raise ValueError(
+            f"cannot route {page.pid}: expected one "
+            "'# page-NN [标题页|内容页|交互页|代码页]' heading"
+        )
+    heading_pid, digits, label = matches[0].groups()
+    if heading_pid != page.pid or int(digits) != int(page.pid.split("-")[1]):
+        raise ValueError(f"planner spec id {heading_pid!r} does not match {page.pid!r}")
+    page.label = label
+    page.workflow = LABEL_WORKFLOWS[label]
+    page.spec_text = text
     return page
 
 
-def main() -> None:
-    a = argparse.ArgumentParser()
-    a.add_argument("--label", required=True)
-    a.add_argument("--only", action="append", help="只跑某几页,可多次给")
-    a.add_argument("--concurrency", type=int, default=20)
-    a.add_argument("--effort", default="medium")
-    a.add_argument("--skills", default=str(skills.DEFAULT))
-    a.add_argument("--model")
-    a.add_argument("--rebuild", action="store_true", help="已建好的也重做")
-    n = a.parse_args()
-    llm.override(name=n.model)
+def _lesson_title(page: Page) -> str:
+    """Derive a concise scaffold title from the planner prose without another model choice."""
+    for raw in page.spec_text.splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or line.startswith("<"):
+            continue
+        line = re.sub(r"^[\-*]\s*", "", line)
+        return line[:80]
+    return page.pid
 
-    root = ROOT / "runs" / n.label
-    briefs = json.loads((root / "briefs.json").read_text(encoding="utf-8"))
-    pages = [Page(b["description"].replace("Build ", ""), b["prompt"],
-                  tuple(re.findall(r"^  - (\S+)$", b["prompt"], re.M))) for b in briefs]
-    if n.only:
-        pages = [p for p in pages if p.pid in set(n.only)]
-    if not n.rebuild:
-        # 已经建好的跳过。和 planner 的 cached() 同一条理由:这条链路会中途挂,
-        # 断点续跑是刚需,没道理把已完成的页重烧一遍。--rebuild 强制重做。
-        done_already = [p for p in pages
-                        if (root / "pages" / f"{p.pid}.html").stat().st_size > 1000]
-        if done_already:
-            print(f"  跳过已建好的 {len(done_already)} 页: "
-                  f"{' '.join(p.pid for p in done_already)}")
-        pages = [p for p in pages if p not in done_already]
 
-    skill_root = Path(n.skills)
-    instructions = IDENTITY + "\n\n" + skills.catalog(skill_root)
-    print(f"\n▸ builder · {n.label}\n  {len(pages)} 页,并发 {n.concurrency},"
-          f"effort={n.effort},skill 清单 {len(skills.catalog(skill_root)):,} 字符\n")
+def page_from_brief(raw: dict) -> Page:
+    """A brief contains only the target id and the Planner's compact prose."""
+    return Page(raw["description"].replace("Build ", ""), raw["prompt"])
 
+
+KEEP_IMAGES = 2  # 真触发淘汰时,hist 里留几张图
+
+# 淘汰的触发线:上一次调用的真实输入 token 超过它才清图,否则**一个字节都不动历史**。
+#
+# 2026-08-26 改的。原来是「图片数 > KEEP_IMAGES 就淘汰」,于是淘汰频率≈截图张数
+# (wf2 那轮 143 张图、102 次挤出)。而 evict_images 是原地改写 hist[i],
+# 实测「未改写 100% 命中 → 淘汰当次 0% → 下一次 99.9%」——
+# **每次淘汰 = 一次全价重算整段前缀**,按 trace 里的真实 input_tokens 折算,
+# 图多的轮次有 28–34% 的输入 token 是这么烧掉的。
+#
+# 换成按上下文大小判,理由是三条实测:
+#   · 上下文窗口 ≥375,011 token(超额请求回 context_length_exceeded,逐级试到 375k 仍通过);
+#     而实测输入峰值只有 36k–70k,不到 19%。
+#   · evict_images 的 docstring 里那句「11/16 个 subagent 上下文撑爆」写的是
+#     **lab 那条线** —— 那条线有自动压缩、是另一个 harness。这条路由上从没发生过。
+#   · 缓存命中的 input token 按折扣计费。留着旧图 = 每轮多花「几千 token × 折扣价」;
+#     淘汰 = 下一次全价重算约两万 token。**自动缓存生效时,留着比扔掉便宜。**
+#
+# 150k 是峰值的两倍多,仍不到已验证下限的 40%。正常轮次一次都不触发。
+# 判据晚一步(先调用才知道大小)无害:150k → 155k 离 375k 仍很远。
+CONTEXT_SOFT = 150_000
+
+
+def _is_image_msg(m) -> bool:
+    return (isinstance(m, dict) and m.get("role") == "user"
+            and isinstance(m.get("content"), list)
+            and any(isinstance(b, dict) and b.get("type") == "input_image"
+                    for b in m["content"]))
+
+
+def evict_images(hist: list, tok_in: int) -> int:
+    """输入超过 `CONTEXT_SOFT` 时,`hist` 里只留最近 KEEP_IMAGES 张图,更早的换成一句话。
+
+    **触发条件 2026-08-26 从「图片数」改成「真实输入 token」** —— 理由见 CONTEXT_SOFT
+    上面那段账。下面这段是原来的记录,它解释的是**为什么要有这个机制**,仍然成立;
+    但「什么时候该动手」已经不再由图片数决定。
+
+    **这不是省钱,是防炸,而且是量出来的**(原始记录在 zzz/selfcheck.py 的 docstring 里):
+    lab 那条线一轮 171 张截图约 324k token,而图片随每一步重发、**永久占上下文** ——
+    结果 11/16 个 subagent 上下文撑爆被自动压缩,整轮墙钟拉长 1.9 倍。
+    我们这条线没有自动压缩,撑爆就是撞 max_output_tokens 或者直接 400。
+
+    换成一句话而不是整条删掉,理由只剩一条:**告诉模型那张图被拿走了**,
+    否则它会凭记忆改页面。原先还写着「删元素会让 parentUuid 那条链和步数对不上」——
+    2026-08-26 查证不成立:`parentUuid` 在 trace.py 里按**轮次**串(Writer.prev),
+    与 `hist` 下标无关;`page.calls` / `page.steps` 也都不由 `hist` 长度推导。
+    不过这不构成改写法的理由 —— **删元素和改写元素一样会断前缀缓存**,
+    所以保持原样,只把触发条件挪到 CONTEXT_SOFT 上。
+    确定的事 harness 做 —— 这属于确定的事。
+    """
+    if tok_in <= CONTEXT_SOFT:
+        # **没超线就一个字节都不碰。** 动了历史(改写或删除都算)前缀缓存就断,
+        # 而这条路由的自动缓存实测能到 99.9%。
+        return 0
+    idx = [i for i, m in enumerate(hist) if _is_image_msg(m)]
+    n = 0
+    for i in idx[:-KEEP_IMAGES] if len(idx) > KEEP_IMAGES else []:
+        hist[i] = {"role": "user", "content": [{"type": "input_text", "text":
+            "（这里原来有一张图，为了不撑爆上下文已经拿掉了。要再看就重新 Check，需要局部细节时指定 box。）"}]}
+        n += 1
+    return n
+
+
+# Shared material stays byte-identical across pages for prefix caching. Per-page
+# chapter context stays in the first user message.
+PRELOAD_TAGS = (("chassis", "CHASSIS.md"), ("theme_css", "theme.css"),
+                ("deck_outline", "pages.md"))
+
+# 技术契约 2026-08-28 从「每轮让模型写一份 CONTRACT.md」改成**仓库常量**
+# `prompts/tech.md`,由 builder 填几个槽位。
+#
+# 它本来就几乎全是跳轮不变的东西(画布尺寸、flex 规则、字号地板、库表、禁 CDN),
+# 每轮重新生成一遍既花一次调用,又让 21 页共享的那段前缀按轮次变化、吃不到跨轮缓存。
+# 而按轮次真正会变的两节(§1 全课主线、§7 文字风格口径)交给每页自己的内容承载。
+#
+# **同时替掉了 `skills.FLOORS`。** 那两份是同一批规则的两份副本,而 FLOORS 默认不注入 ——
+# `../runs/notale-v2/floors-ab-experiment.json` 的结论是 `reject_no_effect`,并写着「不要靠 system 块
+# 前言去替代 CONTRACT.md」。注意那次搬的是**摘要式前言**、CONTRACT 原文仍在(所以只是
+# 第三份副本,自然无效应);这次是把契约原文本身放进 system 块,不是同一件事。
+TECH_SLOTS = dict(canvas_w=1600, canvas_h=900)
+
+
+def _wrap(tag: str, path: Path) -> str:
+    """读一份文件,包一层标签。和 skills.anti_slop_block 同一条确定性路径:
+    读原文、不摘要、路径给错就报错 —— 静默跳过会让人以为预置了其实没有。"""
+    if not path.is_file():
+        raise FileNotFoundError(f"预置 <{tag}> 需要 {path},但它不存在")
+    return f"<{tag}>\n{path.read_text(encoding='utf-8', errors='replace').strip()}\n</{tag}>"
+
+
+_LIBS_INDEX = "## 按「要做的事」查"
+
+
+def _libs_index(root: Path) -> str:
+    """Inject only the dependency routing table, not every library's API details."""
+    f = root / "pages" / "assets" / "lib" / "LIBS.md"
+    if not f.is_file():
+        raise FileNotFoundError(f"dependency index is missing: {f}")
+    text = f.read_text(encoding="utf-8")
+    if _LIBS_INDEX not in text:
+        raise ValueError(f"dependency index anchor {_LIBS_INDEX!r} is missing: {f}")
+    body = text.split(_LIBS_INDEX, 1)[1]
+    body = body.split("\n## ", 1)[0]
+    return (body.strip()
+            + "\n\n本页使用上列库时，首轮一并 Read `assets/lib/LIBS.md`；它完整返回版本、调用方式和限制，无需阅读库源码。不用库就不读。")
+
+
+def tech_block(root: Path, n_pages: int, prompts: Path = None) -> str:
+    """静态技术契约,填上这一轮的页数和库路由表。见 TECH_SLOTS 上面那段账。"""
+    tpl = ((prompts or ROOT / "prompts") / "tech.md").read_text(encoding="utf-8")
+    return "<tech>\n" + llm.fill(
+        tpl, _where="tech.md", n_pages=n_pages, font_floor=skills.FONT_FLOOR,
+        libs=_libs_index(root), **TECH_SLOTS).strip() + "\n</tech>"
+
+
+def _page_entries(text: str) -> list[tuple[str, str, str]]:
+    """Parse planner's compact page blocks into ``(pid, label, body)`` rows."""
+    hits = list(_SPEC_HEADING.finditer(text))
+    rows = []
+    for i, match in enumerate(hits):
+        pid, _, label = match.groups()
+        end = hits[i + 1].start() if i + 1 < len(hits) else len(text)
+        rows.append((pid, label, text[match.end():end].strip()))
+    return rows
+
+
+def _xml_page(pid: str, label: str, body: str, current: bool = False) -> str:
+    attrs = f'id="{html.escape(pid, quote=True)}" label="{html.escape(label, quote=True)}"'
+    if current:
+        attrs += ' current="true"'
+    return f"  <page {attrs}>{html.escape(body, quote=False)}</page>"
+
+
+def _deck_outline(path: Path) -> str:
+    """Return only title-page boundaries from ``pages.md`` as compact XML.
+
+    The image-pool preface and content-page details do not belong in the shared system
+    prefix. Title pages are enough to show the whole-deck arc; current-chapter details
+    arrive separately in ``<chapter_context>``.
+    """
+    rows = _page_entries(path.read_text(encoding="utf-8", errors="replace"))
+    titles = [_xml_page(pid, label, body) for pid, label, body in rows if label == "标题页"]
+    return "<deck_outline>\n" + "\n".join(titles) + "\n</deck_outline>"
+
+
+def chapter_preloads(root: Path, n_pages: int) -> dict[str, str]:
+    """Build one XML chapter block per page from the Planner's ``pNN.md`` files.
+
+    Every ``[标题页]`` starts a chapter group. The opening cover therefore travels with
+    the first chapter, while a final closing title may form a one-page group. Each
+    result is appended to that page's first user message.
+    """
+    rows: list[tuple[str, str, str, Path]] = []
+    for nn in range(1, n_pages + 1):
+        pid = f"page-{nn:02d}"
+        path = root / "pages" / "plan" / f"p{nn:02d}.md"
+        if not path.is_file():
+            raise FileNotFoundError(f"预置 <chapter_context> 需要 {path},但它不存在")
+        entries = _page_entries(path.read_text(encoding="utf-8", errors="replace"))
+        if len(entries) != 1 or entries[0][0] != pid:
+            raise ValueError(f"{path} 必须且只能包含 {pid} 的一份规格")
+        entry_pid, label, body = entries[0]
+        rows.append((entry_pid, label, body, path))
+
+    groups: list[list[tuple[str, str, str, Path]]] = []
+    group: list[tuple[str, str, str, Path]] = []
+    for row in rows:
+        if row[1] == "标题页" and group:
+            groups.append(group)
+            group = []
+        group.append(row)
+    if group:
+        groups.append(group)
+
+    out: dict[str, str] = {}
+    for chapter in groups:
+        for current_pid, _, _, _ in chapter:
+            body = "\n".join(
+                _xml_page(pid, label, prose, pid == current_pid)
+                for pid, label, prose, _ in chapter
+            )
+            out[current_pid] = (
+                f'<chapter_context current="{current_pid}">\n{body}\n</chapter_context>'
+            )
+    return out
+
+
+def _theme_interface(path: Path) -> str:
+    """Return the validated theme interface rather than the full CSS implementation."""
+    text = path.read_text(encoding="utf-8", errors="replace")
+    from .theme import INTERFACE
+    match = INTERFACE.search(text)
+    if not match:
+        raise ValueError(f"theme interface delimiter is missing: {path}")
+    interface = match.group(0)
+    return re.sub(r"(?m)^\s*修订\s+[^\n]*\n", "", interface)
+
+
+def shared_preload(root: Path, n_pages: int, prompts: Path = None,
+                   workflow: str | None = None) -> str:
+    """Return shared assets plus the technical contract for this workflow."""
+    paths = {"CHASSIS.md": root / "pages" / "assets" / "CHASSIS.md",
+             "theme.css": root / "pages" / "assets" / "theme.css",
+             "pages.md": root / "pages" / "plan" / "pages.md"}
+    if workflow == "build-code":
+        # Code has its own host and visual foundation. Deck style assets must
+        # not enter author context, even as an allegedly read-only interface.
+        return (_deck_outline(paths["pages.md"]) + "\n\n"
+                + _wrap("tech", (prompts or ROOT / "prompts") / "tech-code.md"))
+    chassis = paths["CHASSIS.md"].read_text(encoding="utf-8").strip()
+    text = "\n\n".join(
+        (f"<{tag}>\n{_theme_interface(paths[name]).strip()}\n</{tag}>"
+         if name == "theme.css" else
+         _deck_outline(paths[name])
+         if name == "pages.md" else f"<chassis>\n{chassis}\n</chassis>")
+        for tag, name in PRELOAD_TAGS)
+    return text + "\n\n" + tech_block(root, n_pages, prompts)
+
+
+def environment_context(pages_dir: Path, page: Page, resource_root: Path) -> str:
+    """Describe the real working directory in the same user message as the brief."""
+    target = pages_dir / f"{page.pid}.html"
+    return (
+        "<environment_context>\n"
+        f"  <cwd>{html.escape(str(pages_dir.resolve()))}</cwd>\n"
+        f"  <target>{html.escape(str(target.resolve()))}</target>\n"
+        "  <target_state>absent</target_state>\n"
+        f"  <read_only_skill>{html.escape(str(resource_root.resolve()))}</read_only_skill>\n"
+        "  <paths>页面路径相对 cwd；references/ 与 samples/ 相对 read_only_skill。</paths>\n"
+        "</environment_context>"
+    )
+
+
+def instruction_blocks(root: Path, n_pages: int, workflow: str, *,
+                       workflow_root: Path = skills.WORKFLOWS,
+                       prompts: Path | None = None, samples: str = "mini",
+                       include_aux: bool | None = None, notes: str = "off",
+                       visual_focus: bool = False) -> dict[str, str]:
+    """One assembly path for production, offline sizing and frozen comparisons."""
+    blocks = {"identity": IDENTITY, "philosophy": skills.philosophy_block("page"),
+              "anti_slop": skills.anti_slop_block(
+                  workflow_root, include_visual=workflow != "build-code")}
+    if workflow != "build-code":
+        if visual_focus:
+            blocks["visual_focus"] = VISUAL_FOCUS_BLOCK
+        if NOTES_BLOCKS[notes]:
+            blocks["notes"] = NOTES_BLOCKS[notes]
+        blocks["steps"] = COVER_STEPS_BLOCK if workflow == "build-cover" else STEPS_BLOCK
+    blocks["shared"] = shared_preload(root, n_pages, prompts, workflow)
+    blocks["workflow"] = skills.routed_workflow(
+        workflow, workflow_root, include_aux=include_aux, samples=samples)
+    return blocks
+
+
+def first_guidance_only(output: str, seen: set[str]) -> str:
+    """Deduplicate newly returned guidance; never rewrite prior conversation turns."""
+    match = re.match(r"^<(check_use|sample_use)\b[^>]*>.*?</\1>\s*", output, re.S)
+    if not match:
+        return output
+    tag = match[1]
+    if tag in seen:
+        return output[match.end():]
+    seen.add(tag)
+    return output
+
+
+_FATAL_PREFIX = re.compile(
+    r"^(?:失败:|拒绝[：:]|Traceback|TimeoutExpired:|[A-Za-z]+Error:)"
+)
+_FATAL_CHECK = re.compile(
+    r"✗.*(?:JS 报错|console\.error|资源加载失败|无法渲染|代码工作台自检失败|底盘契约)"
+)
+
+
+def _audit_lines(report: str) -> tuple[list[str], list[str]]:
+    fatal, visual = [], []
+    for raw in report.splitlines():
+        line = raw.strip()
+        if not line:
+            continue
+        if _FATAL_PREFIX.search(line) or _FATAL_CHECK.search(line):
+            fatal.append(line)
+        elif line.startswith("✗"):
+            visual.append(line)
+    return fatal, visual
+
+
+def audit_delivery(
+    pages_dir: Path,
+    page: Page,
+    resource_root: Path,
+) -> dict:
+    """Audit once after the agent stops; never feed the result back into its loop."""
+    target = pages_dir / f"{page.pid}.html"
+    if not target.is_file() or target.stat().st_size == 0:
+        return {
+            "fatal_errors": [f"target missing: {target}"],
+            "visual_warnings": [],
+            "code_result": None,
+        }
+
+    checked = tools.run(
+        "Check",
+        {"page": target.name, "shot": False},
+        pages_dir,
+        resource_root,
+        page.pid,
+    )
+    report = checked.text if isinstance(checked, tools.Out) else str(checked)
+    fatal, visual = _audit_lines(report)
+    code_result = None
+    if page.workflow == "build-code":
+        code_result, _ = code_check.run_browser_check(pages_dir, page.pid, False)
+        code_fatal, code_visual = _audit_lines(code_result)
+        fatal.extend(code_fatal)
+        visual.extend(code_visual)
+    return {
+        "fatal_errors": fatal,
+        "visual_warnings": visual,
+        "code_result": code_result,
+    }
+
+
+REF_SHOTS_NOTE = """<references>
+随附图片是最终主题采用的参考，不是成品页面；按 INTERFACE 说明借鉴，仅供配色的图不授权照搬结构。
+实际颜色、字体和变体以 theme_css 与明确修改要求为准，原参考不冒充修改后的效果。
+只有封面样张时，正文外观需按主题方向推导。
+</references>"""
+
+
+def user_ref_images(root: Path) -> list[dict]:
+    from . import director
+    from .theme import IMAGES
+    shots = root / 'pages/assets/style/shots'
+    paths = [p for p in sorted(shots.rglob('*')) if p.suffix.lower() in IMAGES - {'.svg'} and p.is_file()]
+    return director._images([{'id': '用户/主题包参考', 'shot': str(p)} for p in paths])
+
+
+def theme_ref_images(root: Path) -> list[dict]:
+    """Final declared reference wins; old packages keep their explicit user sample."""
+    from . import director, theme
+    assets = root / 'pages/assets'
+    css = (assets / 'theme.css').read_text(encoding='utf-8')
+    selected = theme.reference_images(css, assets)
+    if selected:
+        return director._images(selected)
+    # Old themes have no final-reference line. Do not turn gallery candidates
+    # into a purported final direction or force new pictures onto a reused theme.
+    return user_ref_images(root)
+
+
+def build_one(
+    page: Page,
+    pages_dir: Path,
+    trace: Path,
+    workflow_root: Path,
+    instructions: str,
+    effort: str,
+    vision_input: bool = True,
+    runtime: llm.ModelRuntime | None = None,
+    refs: list[dict] | None = None,
+) -> Page:
+    """Run one free-form agent loop to natural stop and audit separately."""
+    log = Writer(trace, str(uuid.uuid4()))
+    resource_root = (
+        workflow_root / page.workflow if page.workflow else workflow_root
+    ).resolve()
+    if refs and vision_input and page.workflow != "build-code":
+        # 参照图随首条消息进上下文。放在 brief 之后,一段说明它们该怎么用。
+        hist: list = [{"role": "user", "content":
+                       [{"type": "input_text", "text": page.prompt + "\n\n" + REF_SHOTS_NOTE}] + list(refs)}]
+        page.images += sum(x.get('type') == 'input_image' for x in refs)
+    else:
+        if refs and not vision_input and page.workflow != 'build-code':
+            raise ValueError('本次有视觉参考，但 Builder 模型未启用 vision_input；不能声称看过参考')
+        hist = [{"role": "user", "content": page.prompt}]
+
+    specs = tools.specs(page.workflow, vision_input=vision_input)
+    if page.workflow == "build-code":
+        specs = [code_runtime.tool_schema()] + specs
+
+    seen_guidance: set[str] = set()
+    implemented = False  # 本次真实写入，不以旧页面或 CodeScaffold 作为首次实现。
     t0 = time.time()
-    with ThreadPoolExecutor(max_workers=n.concurrency) as ex:
-        done = list(ex.map(lambda p: build_one(p, root / "pages", root / "trace.jsonl",
-                                               skill_root, instructions, n.effort), pages))
+    while True:
+        if time.time() - t0 > MAX_SECONDS:
+            page.why = f"超过单页时限 {MAX_SECONDS}s"
+            page.termination = "max_seconds"
+            break
 
-    ok = [p for p in done if p.ok]
-    calls = sorted(p.calls for p in done)
-    print(f"\n  {len(ok)}/{len(done)} 页交付   墙钟 {(time.time()-t0)/60:.1f} 分")
-    print(f"  每页调用数 {calls[0]}–{calls[-1]},中位 {calls[len(calls)//2]}   "
-          f"合计 {sum(calls)}")
-    print(f"  selfcheck 合计 {sum(p.steps.count('SELFCHECK') for p in done)}   "
-          f"Skill 合计 {sum(p.steps.count('Skill') for p in done)}")
-    asg = sum(len(p.required) for p in done)
-    hit = sum(len([x for x in p.required if x in p.steps_arg.get('Skill', [])]) for p in done)
-    print(f"  指派 skill {asg} 项,实际读到 {hit} 项"
-          + (f"  (补催过 {sum(1 for p in done if p.nagged)} 页)" if any(p.nagged for p in done) else ""))
-    for p in done:
-        if not p.ok:
-            print(f"  ✗ {p.pid}: {p.why}")
+        started = _now()
+        response = (
+            runtime.respond(instructions, hist, specs, tag=page.pid)
+            if runtime
+            else respond(instructions, hist, specs, effort, tag=page.pid)
+        )
+        page.calls += 1
+        tin, tout, cached = llm.usage_of(response)
+        page.tok_in += tin
+        page.tok_out += tout
+        page.tok_write += llm.cache_write_of(response)
+        page.tok_max = max(page.tok_max, tin)
+        if cached is not None:
+            page.cache_seen = True
+            page.tok_cached += cached
+
+        calls = [
+            item for item in response.output
+            if getattr(item, "type", "") == "function_call"
+        ]
+        request_id = getattr(response, "id", None) or f"req_{uuid.uuid4().hex[:16]}"
+        log.add(
+            [{"type": "text", "text": page.prompt if page.calls == 1 else "(tool results)"}],
+            text_of(response),
+            {
+                "input_tokens": tin,
+                "output_tokens": tout,
+                "cache_read_input_tokens": cached or 0,
+                "cache_creation_input_tokens": llm.cache_write_of(response),
+            },
+            request_id,
+            started,
+            _now(),
+            {
+                "page": page.pid,
+                **({"instructions": instructions} if page.calls == 1 else {}),
+                "tools": [{"name": call.name, "arg": _tag_of(call),
+                           "call_id": call.call_id, "arguments": call.arguments} for call in calls],
+            },
+        )
+
+        if not calls:
+            page.why = text_of(response).strip()[:200]
+            page.termination = "no_tool_use"
+            break
+
+        if page.calls == 1 and (
+            not any(call.name == "Read" for call in calls)
+            or any(call.name not in ({"Read", "CodeScaffold"} if page.workflow == "build-code" else {"Read"})
+                   for call in calls)
+        ):
+            page.termination = "initial_read_order"
+            page.why = "首轮只允许一批并行 Read（代码页可同轮 CodeScaffold）；本批工具未执行。"
+            break
+
+        print(
+            f"      {page.pid} 步{page.calls:>3}  "
+            f"{' '.join(call.name for call in calls)[:52]}",
+            flush=True,
+        )
+        replay = (
+            runtime.replay(response)
+            if runtime
+            else [item.model_dump() for item in response.output]
+        )
+        hist += [_replay(item) for item in replay]
+        pending_images: list[tuple[str, str]] = []
+
+        for call in calls:
+            tool_started, tool_clock = _now(), time.monotonic()
+            if page.calls > 1 and not implemented and call.name not in (
+                {"Write", "Edit"} if page.workflow == "build-code" else {"Write"}
+            ):
+                page.termination = "initial_read_order"
+                page.why = f"首轮材料已返回，首次实现前不能执行 {call.name}；本页停止，不追加补读。"
+                log.tool(rid=request_id, call_id=call.call_id, page=page.pid, name=call.name,
+                         arguments=call.arguments, output=page.why,
+                         started=tool_started, finished=_now(), seconds=time.monotonic()-tool_clock)
+                break
+            try:
+                args = json.loads(call.arguments or "{}")
+                if not isinstance(args, dict):
+                    raise ValueError("工具参数必须是 JSON 对象")
+            except ValueError as exc:
+                hist.append(
+                    {
+                        "type": "function_call_output",
+                        "call_id": call.call_id,
+                        "output": (
+                            f"{call.name} arguments 不是合法 JSON：{exc}。"
+                            "请缩短内容并重发同一调用。"
+                        ),
+                    }
+                )
+                page.steps.append(f"{call.name}!badjson")
+                log.tool(rid=request_id, call_id=call.call_id, page=page.pid, name=call.name,
+                         arguments=call.arguments, output=hist[-1]['output'],
+                         started=tool_started, finished=_now(), seconds=time.monotonic()-tool_clock)
+                if page.calls == 1:
+                    page.termination = "initial_read_failed"
+                    page.why = f"首轮 {call.name} 参数无效：{exc}"
+                    break
+                continue
+
+            writing = None
+            before = None
+            if not implemented and call.name in {"Write", "Edit"} and args.get("file_path"):
+                candidate = (pages_dir / str(args["file_path"])).resolve()
+                own_target = (pages_dir / f"{page.pid}.html").resolve()
+                allowed = (candidate.is_relative_to(code_runtime.editable_root(pages_dir, page.pid).resolve())
+                           if page.workflow == "build-code" else candidate == own_target)
+                if allowed:
+                    writing = candidate
+                    before = candidate.read_bytes() if candidate.is_file() else None
+
+            page.steps.append(
+                call.name
+                if call.name != "Bash"
+                else (
+                    "SELFCHECK"
+                    if "selfcheck" in str(args.get("command", ""))
+                    else "Bash"
+                )
+            )
+            page.steps_arg.setdefault(call.name, []).append(_tag_of(call))
+
+            if call.name == "CodeScaffold":
+                try:
+                    made = code_runtime.scaffold(
+                        pages_dir,
+                        page.pid,
+                        _lesson_title(page),
+                        page.total,
+                    )
+                    result: str | tools.Out = json.dumps(
+                        made, ensure_ascii=False, indent=2
+                    )
+                except (OSError, RuntimeError, ValueError) as exc:
+                    result = f"CodeScaffold 失败：{type(exc).__name__}: {exc}"
+            else:
+                actual_args = dict(args)
+                if call.name == "Check":
+                    if vision_input:
+                        actual_args.setdefault("shot", True)
+                    else:
+                        actual_args["shot"] = False
+                        actual_args.pop("box", None)
+                        actual_args.pop("zoom", None)
+
+                denied = None
+                if page.workflow == "build-code":
+                    denied = code_runtime.tool_guard(
+                        call.name,
+                        actual_args,
+                        pages_dir,
+                        page.pid,
+                        resource_root,
+                    )
+                if denied:
+                    result = "拒绝：" + denied
+                else:
+                    result = tools.run(
+                        call.name,
+                        actual_args,
+                        pages_dir,
+                        resource_root,
+                        page.pid,
+                    )
+                    if page.workflow == "build-code" and call.name == "Check":
+                        base_text, base_images = (
+                            (result.text, list(result.images))
+                            if isinstance(result, tools.Out)
+                            else (str(result), [])
+                        )
+                        extra, shots = code_check.run_browser_check(
+                            pages_dir,
+                            page.pid,
+                            bool(actual_args.get("shot")) and vision_input,
+                        )
+                        for shot in shots[: max(0, tools.MAX_IMAGES - len(base_images))]:
+                            base_images.extend(tools._image(shot).images)
+                        result = tools.Out(base_text + "\n\n" + extra, base_images)
+
+            if call.name == "Read" and args.get("file_path"):
+                path = tools.resolve_read_path(str(args["file_path"]), pages_dir, resource_root)
+                try:
+                    rel = path.resolve().relative_to(resource_root)
+                    if (
+                        rel.parts[:1] == ("references",)
+                        or rel.parts[:2] == ("samples", "bundles")
+                    ):
+                        page.reference_reads.append(rel.as_posix())
+                except (OSError, ValueError):
+                    pass
+
+            output, images = (
+                (result.text, result.images)
+                if isinstance(result, tools.Out)
+                else (str(result), [])
+            )
+            output = first_guidance_only(output, seen_guidance)
+            if call.name == "Patch" and output.startswith("失败"):
+                # 记成 Patch!miss,和 Write!badjson 同一风格。没有这一笔,
+                # Patch→Patch(占全部 Patch 的 41.6%)里多少是失败重试无从判断。
+                page.steps[-1] = "Patch!miss"
+            if images and not vision_input:
+                images = []
+                output += "\n\n（当前模型不接收图片输入；仅保留文本报告。）"
+            log.tool(rid=request_id, call_id=call.call_id, page=page.pid, name=call.name,
+                     arguments=call.arguments, output=output, images=images,
+                     started=tool_started, finished=_now(), seconds=time.monotonic()-tool_clock)
+            hist.append(
+                {
+                    "type": "function_call_output",
+                    "call_id": call.call_id,
+                    "output": output,
+                }
+            )
+            pending_images.extend(images)
+
+            if page.calls == 1 and (_FATAL_PREFIX.search(output.strip())
+                                    or output.startswith("CodeScaffold 失败")):
+                page.termination = "initial_read_failed"
+                page.why = f"首轮 {call.name} 失败：{output[:300]}"
+                break
+            if writing is not None and writing.is_file():
+                after = writing.read_bytes()
+                implemented = bool(after.strip()) and after != before and not _FATAL_PREFIX.search(output.strip())
+
+        if page.termination in {"initial_read_order", "initial_read_failed"}:
+            break
+
+        for media_type, encoded in pending_images:
+            hist.append(
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "input_image",
+                            "image_url": f"data:{media_type};base64,{encoded}",
+                        }
+                    ],
+                }
+            )
+            page.images += 1
+        page.evicted += evict_images(hist, page.tok_max)
+
+    target = pages_dir / f"{page.pid}.html"
+    page.artifact_present = target.is_file() and target.stat().st_size > 0
+    page.audit = audit_delivery(pages_dir, page, resource_root)
+    page.seconds = time.time() - t0
+    mark = "✓" if page.artifact_present else "✗"
+    print(
+        f"  {page.pid}  {mark}  {page.calls:>3} 次调用  "
+        f"{page.seconds / 60:>5.1f} 分  图 {page.images:>2}  "
+        f"{page.termination}",
+        flush=True,
+    )
+    return page
+
+
+def workflow_runtimes(cfg: dict, default: llm.ModelProfile,
+                      uniform: bool = False) -> dict[str, llm.ModelRuntime]:
+    """One runtime per workflow. ``builder.workflow_profiles`` overrides the default per page type.
+
+    ``uniform`` drops those overrides so one run can put every page type on the
+    same profile. config.yaml is shared state, so a single ablation must not
+    have to edit it — same reason planner has ``--base-url`` / ``--key-env``.
+    """
+    overrides = {} if uniform else (cfg.get("builder") or {}).get("workflow_profiles") or {}
+    unknown = sorted(set(overrides) - set(skills.PAGE_WORKFLOWS))
+    if unknown:
+        raise ValueError(f"workflow_profiles names unknown workflows: {unknown}")
+    cache = {default.id: llm.ModelRuntime(default)}
+    out = {}
+    for name in skills.PAGE_WORKFLOWS:
+        pid = overrides.get(name, default.id)
+        if pid not in cache:
+            cache[pid] = llm.ModelRuntime(llm.resolve_builder_profile(cfg, pid))
+        out[name] = cache[pid]
+    return out
+
+
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--label", required=True)
+    parser.add_argument("--only", action="append", help="只跑指定页面，可重复")
+    parser.add_argument("--concurrency", type=int, default=100)
+    parser.add_argument("--profile", help="config.yaml 中的 Builder profile")
+    parser.add_argument("--workflows", default=str(skills.WORKFLOWS))
+    parser.add_argument(
+        "--samples",
+        choices=skills.SAMPLE_MODES,
+        default="mini",
+        help="样本模式：mini=紧凑实例（默认；代码页=单个作者层），none=只给 reference",
+    )
+    parser.add_argument(
+        "--uniform",
+        action="store_true",
+        help="忽略 config 的 workflow_profiles，所有页型都用 --profile 那一个",
+    )
+    parser.add_argument(
+        "--aux-samples",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="在 Main 之外注册可选 mini samples；默认开启，samples=none 时默认关闭",
+    )
+    parser.add_argument(
+        "--sample-shots",
+        action="store_true",
+        help="实验开关：读 Main bundle 时附上该 sample 的多态截图拼图（samples/<cat>/<id>/shots.png）；默认关闭",
+    )
+    parser.add_argument(
+        "--visual-focus",
+        action="store_true",
+        help="实验开关：页表带「视觉焦点」行时，system 追加使用规则；默认关闭（基线不变）",
+    )
+    parser.add_argument(
+        "--notes",
+        choices=tuple(NOTES_BLOCKS),
+        default="off",
+        help="cap=画面 ≤200 字的硬数；notes=同样要求加讲稿区 <aside class=notes>；only=只给讲稿区；默认 off",
+    )
+    args = parser.parse_args(argv)
+    if args.aux_samples is None:
+        args.aux_samples = args.samples != "none"
+    return args
+
+
+def main() -> None:
+    args = parse_args()
+    tools.read.SAMPLE_SHOTS = args.sample_shots
+    tools.check.TEXT_REPORT = args.notes != "off"
+
+    cfg = config()
+    profile = llm.resolve_builder_profile(cfg, args.profile)
+    runtimes = workflow_runtimes(cfg, profile, args.uniform)
+
+    root = RUNS_ROOT / args.label
+    briefs = json.loads((root / "briefs.json").read_text(encoding="utf-8"))
+    workflow_root = Path(args.workflows).resolve()
+    missing = [
+        name
+        for name in skills.PAGE_WORKFLOWS
+        if not (workflow_root / name / "SKILL.md").is_file()
+    ]
+    if missing:
+        raise FileNotFoundError(
+            "生产 workflow 未安装完整: " + ", ".join(missing)
+        )
+
+    pages = [route_page(root, page_from_brief(raw)) for raw in briefs]
+    for page in pages:
+        page.total = len(briefs)
+    if args.only:
+        wanted = set(args.only)
+        pages = [page for page in pages if page.pid in wanted]
+
+    manifest_path = root / "builder-manifest.json"
+    if manifest_path.exists():
+        raise FileExistsError(
+            f"{manifest_path} 已存在；新实验请使用新的 run label"
+        )
+    pages_dir = root / "pages"
+    for page in pages:
+        target = pages_dir / f"{page.pid}.html"
+        lesson = code_runtime.lesson_root(pages_dir, page.pid)
+        if target.exists() or lesson.exists():
+            raise FileExistsError(
+                f"{page.pid} 已有构建产物；新实验必须从 absent target 开始"
+            )
+
+    refs = theme_ref_images(root) if any(p.workflow != 'build-code' for p in pages) else []
+    manifest = {
+        "schemaVersion": 3,
+        "label": args.label,
+        "profile": profile.id,
+        "model": profile.model,
+        "baseUrl": profile.base_url,
+        "apiKeyEnv": profile.api_key_env,
+        "adapter": profile.adapter,
+        "reasoningEffort": profile.reasoning_effort,
+        "visionInput": profile.vision_input,
+        "workflowProfiles": {name: rt.profile.id for name, rt in runtimes.items()},
+        "auxiliarySamples": args.aux_samples,
+        "samples": args.samples,
+        "sampleShots": args.sample_shots,
+        "visualFocus": args.visual_focus,
+        "notesMode": args.notes,
+        "refShots": any(x['type'] == 'input_image' for x in refs),
+        "themeReferences": [x['text'] for x in refs if x['type'] == 'input_text'],
+        "pages": [page.pid for page in pages],
+        "startedAt": _now(),
+    }
+    manifest_path.write_text(
+        json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+    chapters = chapter_preloads(root, len(briefs))
+    routed_blocks = {
+        name: "\n\n".join(instruction_blocks(
+            root, len(briefs), name, workflow_root=workflow_root,
+            include_aux=args.aux_samples,
+            samples=args.samples,
+            notes=args.notes, visual_focus=args.visual_focus,
+        ).values())
+        for name in skills.PAGE_WORKFLOWS
+    }
+    for page in pages:
+        resource_root = workflow_root / page.workflow
+        page.prompt = (
+            environment_context(pages_dir, page, resource_root)
+            + "\n\n"
+            + page.prompt
+            + "\n\n"
+            + chapters[page.pid]
+        )
+
+    instructions = {
+        page.pid: routed_blocks[page.workflow]
+        for page in pages
+    }
+    groups = Counter(instructions.values())
+    lengths = sorted(map(len, groups)) or [0]
+    print(
+        f"\n▸ builder · {args.label}\n"
+        f"  {len(pages)} 页，并发 {args.concurrency}，"
+        f"profile={profile.id}，model={profile.model}，"
+        f"adapter={profile.adapter}，effort={profile.reasoning_effort}，"
+        f"vision={'on' if profile.vision_input else 'off'}，"
+        + "".join(f"{n}→{rt.profile.id}，" for n, rt in runtimes.items() if rt.profile.id != profile.id)
+        + f"samples={args.samples}，"
+        + f"sample-shots={'on' if args.sample_shots else 'off'}，"
+        + f"visual-focus={'on' if args.visual_focus else 'off'}，"
+        + f"notes={args.notes}，"
+        + f"aux-samples={'on' if args.aux_samples else 'off'}\n"
+        f"  完整 system {lengths[0]:,}–{lengths[-1]:,} 字符，"
+        f"按 workflow 分 {len(groups)} 组共享\n"
+    )
+
+    started = time.time()
+    if refs:
+        print(f"  参照图 {sum(x.get('type') == 'input_image' for x in refs)} 张随视觉页输入")
+
+    def guard(page: Page) -> Page:
+        rt = runtimes[page.workflow]
+        try:
+            return build_one(
+                page,
+                pages_dir,
+                root / "trace.jsonl",
+                workflow_root,
+                instructions[page.pid],
+                rt.profile.reasoning_effort,
+                rt.profile.vision_input,
+                rt,
+                refs,
+            )
+        except Exception as exc:  # noqa: BLE001
+            page.why = f"{type(exc).__name__}: {str(exc)[:160]}"
+            page.termination = "agent_exception"
+            target = pages_dir / f"{page.pid}.html"
+            page.artifact_present = target.is_file() and target.stat().st_size > 0
+            page.audit = audit_delivery(
+                pages_dir, page, workflow_root / page.workflow
+            )
+            print(
+                f"  {page.pid}  ✗ agent_exception，不影响其他页：{page.why}",
+                flush=True,
+            )
+            return page
+
+    with ThreadPoolExecutor(max_workers=args.concurrency) as pool:
+        done = list(pool.map(guard, pages))
+
+    try:
+        tools.media.write_credits(pages_dir)
+    except (OSError, ValueError) as exc:
+        print(f"  素材来源汇总失败（不影响页面产物）：{exc}")
+
+    wall = time.time() - started
+    delivered = [page for page in done if page.artifact_present]
+    calls = sorted(page.calls for page in done) or [0]
+    print(
+        f"\n  {len(delivered)}/{len(done)} 页留下产物，墙钟 {wall / 60:.1f} 分\n"
+        f"  每页调用数 {calls[0]}–{calls[-1]}，"
+        f"中位 {calls[len(calls) // 2]}，合计 {sum(calls)}"
+    )
+    over_target = [page.pid for page in done if page.calls > RESPONSE_TARGET]
+    print(
+        f"  响应目标 ≤{RESPONSE_TARGET}："
+        f"{len(done) - len(over_target)}/{len(done)} 达成"
+    )
+    fatal_pages = [
+        page.pid
+        for page in done
+        if page.audit and page.audit.get("fatal_errors")
+    ]
+    warning_pages = [
+        page.pid
+        for page in done
+        if page.audit and page.audit.get("visual_warnings")
+    ]
+    print(
+        f"  独立审计：致命错误 {len(fatal_pages)} 页，"
+        f"视觉警告 {len(warning_pages)} 页"
+    )
+
+    results = {
+        page.pid: {
+            "calls": page.calls,
+            "within_response_target": page.calls <= RESPONSE_TARGET,
+            "seconds": round(page.seconds, 1),
+            "label": page.label,
+            "workflow": page.workflow,
+            "profile": runtimes[page.workflow].profile.id,
+            "termination": page.termination,
+            "artifact_present": page.artifact_present,
+            "audit": page.audit,
+            "steps": page.steps,
+            "args": page.steps_arg,
+            "reference_reads": page.reference_reads,
+            "images": page.images,
+            "evicted": page.evicted,
+            "tok_in": page.tok_in,
+            "tok_cached": page.tok_cached,
+            "tok_write": page.tok_write,
+            "tok_out": page.tok_out,
+            "tok_max": page.tok_max,
+            "cache_reported": page.cache_seen,
+            "why": page.why,
+        }
+        for page in done
+    }
+    (root / "builder-results.json").write_text(
+        json.dumps(results, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+    manifest.update(
+        {
+            "completedAt": _now(),
+            "wallSeconds": round(wall, 1),
+            "artifacts": len(delivered),
+            "attempted": len(done),
+            "fatalAuditPages": fatal_pages,
+            "visualWarningPages": warning_pages,
+            "overResponseTargetPages": over_target,
+            "inputTokens": sum(page.tok_in for page in done),
+            "outputTokens": sum(page.tok_out for page in done),
+            "checkCalls": sum(page.steps.count("Check") for page in done),
+        }
+    )
+    manifest_path.write_text(
+        json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+    reads = Counter(
+        tag
+        for page in done
+        for tag in page.steps_arg.get("Read", [])
+    )
+    top = "  ".join(f"{name} {count}" for name, count in reads.most_common(8))
+    print(f"  读取次数(前 8)：{top or '无'}")
+    for page in done:
+        if not page.artifact_present:
+            print(f"  ✗ {page.pid}: 没有产物；{page.termination} {page.why}")
 
 
 if __name__ == "__main__":

@@ -24,3 +24,13 @@
 cd lecture-agent && uv sync --extra app
 uv run python scripts/serve_app.py       # 浏览器打开 http://127.0.0.1:8778/app.html
 ```
+
+
+
+
+
+
+
+
+
+

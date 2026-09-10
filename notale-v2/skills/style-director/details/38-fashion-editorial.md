@@ -1,0 +1,53 @@
+# Fashion Editorial · 时尚大片风
+
+稳定 ID：`38-fashion-editorial`。本资料是创作参考，不是成品主题或固定版式。
+
+## 核心特征
+
+以摄影或造型图像主导画面，通过裁切、尺度和展示性排印建立影像与短文本的编排关系。
+
+与一般 Editorial 交叠，此方向侧重影像造型与展示性排印；不要求衬线字体或与内容无关的模特照片。
+
+## 参考图观察
+
+高对比细衬线、大幅摄影、标题与照片重叠、精简辅助字。
+
+## 字体建议
+
+| 角色 | 推荐资源 | 字重 | 字姿 |
+| --- | --- | --- | --- |
+| 中文标题 | [zcool-xiaowei](../../../vendor/fonts/zcool-xiaowei/) | 400 | normal |
+| 英文标题 | [bodoni-moda](../../../vendor/fonts/bodoni-moda/) | 500 | normal |
+| 中文正文 | [noto-sans-sc](../../../vendor/fonts/noto-sans-sc/) | 400 | normal |
+| 英文正文 | [inter](../../../vendor/fonts/inter/) | 400 | normal |
+| 数字与标签 | [inter](../../../vendor/fonts/inter/) | 400 | normal |
+
+小薇体短中文展示字配 Bodoni Moda 拉丁；长正文用 Noto/Inter，细衬线只在足够大字号使用。
+
+条件备选：连续阅读层级可用 [noto-serif-sc](../../../vendor/fonts/noto-serif-sc/) 600 与 [source-serif-4](../../../vendor/fonts/source-serif-4/) 600；短标题强调笔形时可用 [zcool-xiaowei](../../../vendor/fonts/zcool-xiaowei/) 400 与 [bodoni-moda](../../../vendor/fonts/bodoni-moda/) 600；需要无衬线字图对照时可用 [noto-sans-sc](../../../vendor/fonts/noto-sans-sc/) 600 与 [inter](../../../vendor/fonts/inter/) 600。按当前字图关系选一套标题方向，不将衬线视为必选，也不混用备选凑字体数量。
+
+## 可变表达
+
+影像可保留本色，界面与展示字配色可变；不绑定品牌红、黑白或金色，事实照片不任意染色。
+
+## 项目应用建议
+
+### 构图与阅读
+
+封面让标题与照片形成有意遮叠但不遮证据主体；正文回到可读编辑层级；交互控件保留清楚边界。
+
+### 形状与材质
+
+大幅裁切、精细规则线和节制色点；图像必须相关，不用无关模特照代替本题内容。
+
+### 使用边界
+
+小薇体不是 Didone 中文等价物；只能称其笔形与拉丁标题协调，不能假称精准复刻。
+
+## 来源与定义边界
+
+本条目按用户参考整理为项目采用的视觉方向；未以外部统一规范为依据，不声称它是互斥流派或唯一标准。核心特征是本库的工作描述，参考图仅代表一种实现。
+
+原始视觉依据：[用户参考裁图](../shots/38-fashion-editorial.png)，原图 08/3。“参考图观察”保留个例；字体、配色组合和 slides 落点属于项目建议，不能反向当作风格定义。静态图不证明动态行为。
+
+字体作者与授权、覆盖范围和混排说明见[字体库说明](../../../vendor/fonts/README.md)及各资源目录。共享行为边界见[创作约定](../GUIDE.md)。
