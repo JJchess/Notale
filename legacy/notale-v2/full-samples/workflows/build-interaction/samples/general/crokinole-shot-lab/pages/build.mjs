@@ -1,1 +1,0 @@
-import {build} from 'vite';import {readFile,writeFile} from 'node:fs/promises';await build({configFile:'vite.config.js'});await writeFile('index.html',(await readFile('build/index.dev.html','utf8')).replaceAll('./assets/','./build/assets/'));

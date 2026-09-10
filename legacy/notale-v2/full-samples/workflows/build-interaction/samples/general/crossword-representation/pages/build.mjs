@@ -1,1 +1,0 @@
-import {build} from 'vite';import {readFile,writeFile} from 'node:fs/promises';const source=await readFile('entry.html','utf8');await writeFile('index.html',source);await build();let html=await readFile('build/index.html','utf8');html=html.replaceAll('./assets/','./build/assets/');await writeFile('index.html',html);
