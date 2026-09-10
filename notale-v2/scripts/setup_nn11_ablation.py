@@ -27,11 +27,11 @@ import shutil
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent))
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
 from core.artifacts import Brief          # noqa: E402
 from core.llm import fill                 # noqa: E402
 
-ROOT = Path(__file__).parent
 RUNS_ROOT = ROOT.parent / "runs" / ROOT.name
 SRC = Path.home() / "exp/lecture/pages"
 PROMPTS = ROOT / "prompts"

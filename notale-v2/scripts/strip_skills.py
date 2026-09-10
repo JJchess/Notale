@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """把 briefs.json 里的 skill 指派段整块剥掉,做消融的「无指派」那一臂。
 
-    python3 strip_skills.py --label s5-orb            # 就地剥,先自动留底
-    python3 strip_skills.py --label s5-orb --restore  # 从留底恢复(有指派)
-    python3 strip_skills.py --label s5-orb --check    # 只看,不改
+    python3 scripts/strip_skills.py --label s5-orb            # 就地剥,先自动留底
+    python3 scripts/strip_skills.py --label s5-orb --restore  # 从留底恢复(有指派)
+    python3 scripts/strip_skills.py --label s5-orb --check    # 只看,不改
 
 ## 为什么要整块剥,而不是只删名字
 
@@ -36,7 +36,7 @@ import shutil
 import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent
+ROOT = Path(__file__).resolve().parents[1]
 RUNS_ROOT = ROOT.parent / "runs" / ROOT.name
 NONE_LINE = "  (这一页没有指派技法文档,直接动手)"
 
@@ -127,7 +127,7 @@ def main() -> None:
     lens = sorted(len(b["prompt"]) for b in out)
     print(f"  已剥掉 {removed} 段,{len(out)} 份 brief 现为 {lens[0]}–{lens[-1]} 字符"
           f"(中位 {lens[len(lens)//2]})")
-    print(f"  恢复:  python3 strip_skills.py --label {n.label} --restore")
+    print(f"  恢复:  python3 scripts/strip_skills.py --label {n.label} --restore")
 
 
 if __name__ == "__main__":
