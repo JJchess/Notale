@@ -1,4 +1,4 @@
-import {diagramTheme} from './diagram-theme.mjs';
+import {diagramTheme} from './diagram-theme.js';
 /** Small, legible previews of the structures inserted by smartArt in templates.ts. */
 export function diagramPreview(kind:'process'|'list'|'cycle') {
   const {ink,accent,soft,border}=diagramTheme;

@@ -3,7 +3,7 @@ import {join} from 'node:path';
 
 // Current diagrams are editable text and vector geometry. They need no page fonts
 // or photographs. Refuse unexpected asset references instead of silently dropping them.
-export async function writeDiagramPayload(base, data) {
+export async function writeDiagramPayload(base:string, data:{id:string;name:string;diagram?:{html:string;width:number;height:number}}) {
   if(!data.diagram)return;
   const {html,width,height}=data.diagram;
   if(/(?:assets\/|<img\b|@font-face)/i.test(html))throw new Error(`${data.id}: diagram assets must be declared explicitly`);

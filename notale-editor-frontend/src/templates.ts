@@ -1,4 +1,4 @@
-import {diagramTheme as diagram} from './diagram-theme.mjs';
+import {diagramTheme as diagram} from './diagram-theme.js';
 import katex from 'katex';
 import { chartSvg } from '@notale/editor/browser';
 import { iconChildren } from './icon-library.js';

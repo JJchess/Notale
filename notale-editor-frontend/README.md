@@ -65,7 +65,7 @@ See [backend/frontend integration coverage](docs/INTEGRATION-COVERAGE.md) for ve
 
 顶部不再显示复制、剪切、粘贴、复制对象和删除对象按钮；选中对象后使用 Ctrl/Cmd+C、X、V、D 和 Delete。文字输入框仍使用原生文字编辑快捷键。
 
-运行 `node scripts/audit-lecture-preview.mjs` 可对完整参考讲义做只读加载与步骤切换检查，报告和截图写入 `.local/lecture-preview-audit/`。可用 `EDITOR_AUDIT_DOCUMENT` 指定其他文档，`EDITOR_PREVIEW_URL` 指定前端地址；此检查不等同于全部编辑功能回归。
+运行 `npm run audit:lecture` 可对完整参考讲义做只读加载与步骤切换检查，报告和截图写入 `.local/lecture-preview-audit/`。可用 `EDITOR_AUDIT_DOCUMENT` 指定其他文档，`EDITOR_PREVIEW_URL` 指定前端地址；此检查不等同于全部编辑功能回归。
 
 页面列表支持右键或 F2 打开页面设置，可修改名称、章节和“放映时跳过”；也可点击页面栏标题旁的菜单按钮。隐藏页保留在编辑器中，放映时跳过。
 
@@ -98,3 +98,5 @@ See [backend/frontend integration coverage](docs/INTEGRATION-COVERAGE.md) for ve
 左侧保留插入、页面、图层、样式、动画。「样式」打开时，有选区显示对象属性，无选区显示全局尺寸、主题与母版；选区变化不抢占其他侧栏。标题菜单提供重命名、切换、历史与草稿恢复；页面设置统一承接转场、计时和本页母版内容；底栏视图菜单承接标尺、吸附及参考线。视图偏好不创建讲义版本，参考线编辑继续保存并可撤销。
 
 设置迁移定向检查：`npx playwright test tests/settings-navigation.spec.ts --workers=1`（候选入口默认 4318，可用 SETTINGS_TEST_URL 覆盖）。覆盖独立双页副本、母版、保存范围、历史恢复及重开，不运行整套讲义回归。
+
+开发源码与工具脚本统一使用 TypeScript。`npm run build:scripts` 将脚本编译到 `.local/tooling/`，`npm start`、`npm run templates:prepare`、`npm run diagrams:prepare`、`npm run experience:create` 自动编译后执行；请在此前端目录运行。浏览器产物仍由 esbuild 生成 JavaScript。

@@ -16,12 +16,12 @@ const assets = new Map([
   ['/katex.min.css', ['katex.min.css', 'text/css; charset=utf-8']],
 ]);
 const server = createServer(async (req, res) => {
-  const pathname = new URL(req.url, 'http://frontend.local').pathname;
+  const pathname = new URL(req.url!, 'http://frontend.local').pathname;
   const requestHost = new URL('http://' + (req.headers.host ?? 'localhost')).hostname;
   const isContentHost = requestHost === publicContent.hostname;
   if (isContentHost) {
-    if (!pathname.startsWith('/content/') || !['GET', 'HEAD'].includes(req.method)) { res.writeHead(404).end('Not found'); return; }
-    const target = new URL(contentBackend); target.pathname = pathname; target.search = new URL(req.url, 'http://frontend.local').search;
+    if (!pathname.startsWith('/content/') || !['GET', 'HEAD'].includes(req.method!)) { res.writeHead(404).end('Not found'); return; }
+    const target = new URL(contentBackend); target.pathname = pathname; target.search = new URL(req.url!, 'http://frontend.local').search;
     const send = target.protocol === 'https:' ? httpsRequest : httpRequest;
     const upstream = send(target, { method: req.method, headers: { ...req.headers, host: contentBackend.host, cookie: '', authorization: '' } }, response => {
       res.writeHead(response.statusCode ?? 502, response.headers); response.pipe(res);
@@ -32,11 +32,11 @@ const server = createServer(async (req, res) => {
   // Signed slide content is never served on the editor/API origin.
   if (pathname.startsWith('/content/')) { res.writeHead(404).end('Not found'); return; }
   const asset = assets.get(pathname) ?? (/^\/chunks\/[a-zA-Z0-9_.-]+\.js$/.test(pathname)?[pathname.slice(1),'text/javascript; charset=utf-8']:undefined);
-  const templateAsset = /^\/templates\/refined\/(?:assets\/)?[a-zA-Z0-9_.-]+\.(?:json|html|png|jpg|woff2)$/.test(pathname) ? [pathname.slice(1), ({json:'application/json',html:'text/html; charset=utf-8',png:'image/png',jpg:'image/jpeg',woff2:'font/woff2'})[pathname.split('.').pop()]] : undefined;
+  const templateAsset = /^\/templates\/refined\/(?:assets\/)?[a-zA-Z0-9_.-]+\.(?:json|html|png|jpg|woff2)$/.test(pathname) ? [pathname.slice(1), ({json:'application/json',html:'text/html; charset=utf-8',png:'image/png',jpg:'image/jpeg',woff2:'font/woff2'})[pathname.split('.').pop() as 'json'|'html'|'png'|'jpg'|'woff2']] : undefined;
   const staticAsset=asset??templateAsset;
   if (staticAsset && req.method === 'GET') {
     try {
-      const body = await readFile(process.env.EDITOR_DIST_DIR ? resolve(process.env.EDITOR_DIST_DIR,staticAsset[0]) : new URL('../dist/' + staticAsset[0], import.meta.url));
+      const body = await readFile(process.env.EDITOR_DIST_DIR ? resolve(process.env.EDITOR_DIST_DIR,staticAsset[0]) : new URL('../../../dist/' + staticAsset[0], import.meta.url));
       res.writeHead(200, { 'content-type': staticAsset[1], 'cache-control': 'no-cache' }).end(body);
     } catch { res.writeHead(503).end('Build frontend first: npm run build'); }
     return;
@@ -45,14 +45,14 @@ const server = createServer(async (req, res) => {
   if (pathname.startsWith('/api/') || ['/health', '/show.html', '/show.js', '/reveal.css'].includes(pathname)) {
     const target = new URL(backend);
     target.pathname = pathname;
-    target.search = new URL(req.url, 'http://frontend.local').search;
+    target.search = new URL(req.url!, 'http://frontend.local').search;
     const send = target.protocol === 'https:' ? httpsRequest : httpRequest;
     const rewritePreview = req.method === 'GET' && /^\/api\/documents\/[^/]+\/preview$/.test(pathname);
     const upstream = send(target, {
       method: req.method, headers: { ...req.headers, host: backend.host, ...(rewritePreview ? { 'accept-encoding': 'identity' } : {}) },
     }, response => {
       if (rewritePreview && response.statusCode === 200) {
-        const chunks = [];
+        const chunks:Buffer[] = [];
         response.on('data', chunk => chunks.push(chunk));
         response.on('end', () => {
           try {

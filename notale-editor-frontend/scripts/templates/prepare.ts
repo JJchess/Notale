@@ -1,24 +1,24 @@
-import {writeDiagramPayload} from './diagram-payload.mjs';
-import {diagramTheme} from '../../src/diagram-theme.mjs';
+import {writeDiagramPayload} from './diagram-payload.js';
+import {diagramTheme} from '../../src/diagram-theme.js';
 import {chromium} from '@playwright/test';
 import {readFile,writeFile,mkdir,copyFile} from 'node:fs/promises';
 import {resolve,dirname,extname} from 'node:path';
 import {pathToFileURL,fileURLToPath} from 'node:url';
 import {createHash} from 'node:crypto';
-import {refineDOM} from './refine-dom.mjs';
-import {extractDiagram} from './extract-diagram.mjs';
-const frontend=resolve(dirname(fileURLToPath(import.meta.url)),'../..');
+import {refineDOM} from './refine-dom.js';
+import {extractDiagram} from './extract-diagram.js';
+const frontend=resolve(dirname(fileURLToPath(import.meta.url)),'../../../..');
 const source=resolve(frontend,'../refs/template/organized'),out=resolve(frontend,'templates/refined');
 const selected=['P004','E3-02','P002','P007','P015','P016','E1-02','E4-05'];
-const titles={'P004':'金字塔 · 分层思考','E3-02':'三图 · 卡片排版','P002':'5W1H · 六维分析','P007':'黄金圈 · 由内而外','P015':'PREP · 表达步骤','P016':'ABC · 事件与信念','E1-02':'单图 · 工作回顾','E4-05':'四图 · 胶片排版'};
-const fonts=[['Notale CJK','NotaleCJK-Regular',400],['Notale CJK','NotaleCJK-Bold',700],['Notale CJK','NotaleCJK-Bold',800],['Notale Zen Hei','NotaleZenHei',400],['Notale Droid','NotaleDroid',400]];
+const titles:Record<string,string>={'P004':'金字塔 · 分层思考','E3-02':'三图 · 卡片排版','P002':'5W1H · 六维分析','P007':'黄金圈 · 由内而外','P015':'PREP · 表达步骤','P016':'ABC · 事件与信念','E1-02':'单图 · 工作回顾','E4-05':'四图 · 胶片排版'};
+const fonts:[string,string,number][]=[['Notale CJK','NotaleCJK-Regular',400],['Notale CJK','NotaleCJK-Bold',700],['Notale CJK','NotaleCJK-Bold',800],['Notale Zen Hei','NotaleZenHei',400],['Notale Droid','NotaleDroid',400]];
 const manifest=JSON.parse(await readFile(resolve(source,'native-template-manifest.json'),'utf8'));
 await mkdir(resolve(out,'assets'),{recursive:true});
 const browser=await chromium.launch({headless:true,executablePath:process.env.CHROMIUM_PATH??'/data1/home/zhuyifan/.cache/ms-playwright/chromium-1234/chrome-linux64/chrome'});
 const results=[];
 try {
  for(const code of selected){
-  const spec=manifest.pages.find(p=>p.code===code),original=resolve(source,spec.html);
+  const spec=manifest.pages.find((p:{code:string;width:number;height:number;html:string})=>p.code===code),original=resolve(source,spec.html);
   const page=await browser.newPage({viewport:{width:spec.width,height:spec.height},deviceScaleFactor:1,javaScriptEnabled:false});
   // Strip source runtime before navigation. Styles and original image assets remain available via file URLs.
   let input=await readFile(original,'utf8');
@@ -28,7 +28,7 @@ try {
   await page.setContent(input,{waitUntil:'load'});
   await page.evaluate(()=>document.fonts.ready);
   let html=await page.evaluate(refineDOM,spec);
-  const assets=[];
+  const assets:{path:string;mime:string;hash?:string}[]=[];
   for(const match of [...html.matchAll(/(?:src|href)="([^"#][^"]*)"/g)]) {
    const value=match[1];if(!value||value.startsWith('data:'))continue;
    const path=fileURLToPath(new URL(value,pathToFileURL(original)));
@@ -40,13 +40,13 @@ try {
   const used=fonts.filter(([family])=>html.includes(family));
   const fontCss=used.map(([family,file,weight])=>`@font-face{font-family:"${family}";font-weight:${weight};font-style:normal;src:url("assets/${file}.woff2") format("woff2");font-display:block}`).join('\n');
   for(const [,file]of used)if(!assets.some(a=>a.path===`assets/${file}.woff2`))assets.push({path:`assets/${file}.woff2`,mime:'font/woff2'});
-  const documentHtml=body=>`<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><style>html,body{margin:0;background:#fff}*{box-sizing:border-box}${fontCss}</style></head><body>${body}</body></html>`;
+  const documentHtml=(body:string)=>`<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><style>html,body{margin:0;background:#fff}*{box-sizing:border-box}${fontCss}</style></head><body>${body}</body></html>`;
   await writeFile(resolve(out,code+'.html'),documentHtml(html));
   // Assign stable source IDs for grouping and clipboard remapping, including SVG definitions.
   await page.goto(pathToFileURL(resolve(out,code+'.html')).href,{waitUntil:'load'});
   await page.evaluate(()=>document.fonts.ready);
-  const variants=await page.evaluate(({code})=>{
-    const root=document.querySelector('[data-template]');let seq=0;
+  const variants:{page:string;diagram?:Awaited<ReturnType<typeof extractDiagram>>}=await page.evaluate(({code})=>{
+    const root=document.querySelector('[data-template]')!;let seq=0;
     for(const n of [root,...root.querySelectorAll('*')])n.setAttribute('data-notale-id',`${code.toLowerCase()}-${++seq}`);
     const result={page:root.outerHTML};
     return result;

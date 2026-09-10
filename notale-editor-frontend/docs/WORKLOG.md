@@ -118,7 +118,7 @@ Strict build passed. Extended the existing real-lecture component workflow rathe
 
 ## 2026-09-09: visual component states and shared insertion
 
-The preceding goal turn made verified progress by creating the six-page editable experience document and inspecting its cover, reveal, teaching-step transition and native Canvas loading on port 4312. The sample is isolated from the protected original; its manifest is `.local/experience.json`, with reproduction script `scripts/create-experience.mjs`.
+The preceding goal turn made verified progress by creating the six-page editable experience document and inspecting its cover, reveal, teaching-step transition and native Canvas loading on port 4312. The sample is isolated from the protected original; its manifest is `.local/experience.json`, with reproduction script `scripts/create-experience.ts`.
 
 Reworked the inherited component inspector into collapsible task sections. State appearance now exposes text color, background and opacity; only touched fields change, blank fields remove the state override, CSS values are validated and existing unexposed style properties remain intact. Released the basic inspector under Style after integration evidence; advanced source editing, instance override JSON, native-chart state values, step mapping and container layouts remain gated. Other generic component drawers remain gated. These are product release boundaries, not a reduction in the backend objective.
 
