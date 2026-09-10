@@ -4,13 +4,14 @@
 from __future__ import annotations
 
 import json
+from fnmatch import fnmatch
 import re
 import shutil
 import tempfile
 import unittest
 from pathlib import Path
 
-from core import builder, sample_bundles, sample_shots, skills
+from core import builder, skills
 from tools import code_runtime, runtime as tools
 
 
@@ -205,35 +206,57 @@ class SampleAblationTests(unittest.TestCase):
 
 
 class BundleTests(unittest.TestCase):
-    def test_sample_shots_stage_the_mini_without_full_or_mirror(self):
-        with tempfile.TemporaryDirectory() as td:
-            root = Path(td) / "build-page"
-            entry = root / "samples/general/example/mini/pages/index.html"
-            entry.parent.mkdir(parents=True)
-            entry.write_text("MINI_ONLY")
-            row = {"id": "example", "category": "general",
-                   "mini": {"root": "samples/general/example/mini/pages",
-                            "files": ["index.html"]}}
-            staged, html = sample_shots._stage(root, row)
-            try:
-                self.assertEqual(html.read_text(), "MINI_ONLY")
-                self.assertIn("mini/pages", str(html))
-                self.assertFalse((staged / "example/pages").exists())
-            finally:
-                shutil.rmtree(staged)
+    def bundles(self):
+        for name in skills.PAGE_WORKFLOWS:
+            root = skills.WORKFLOWS / name
+            rows = json.loads((root / "samples/catalog.json").read_text())["samples"]
+            for row in rows:
+                variant = "mini" if "mini" in row else "one"
+                spec = row[variant]
+                path = root / "samples/bundles" / row["category"] / f'{row["id"]}.{variant}.md'
+                yield root, row, spec, path.read_text(encoding="utf-8")
 
-    def test_generated_bundles_are_current_and_keep_visual_css(self):
-        rendered = sample_bundles.render_all()
-        self.assertEqual(len(rendered), 52)
-        for path, expected in rendered.items():
-            with self.subTest(path=path):
-                self.assertEqual(path.read_text(encoding="utf-8"), expected)
-                self.assertIn("<sample ", expected)
-                self.assertIn("<file path=", expected)
-                if "build-code" in path.parts:
-                    self.assertNotRegex(expected, r"(?i)<style\b|```css")
+    def test_current_bundles_keep_authored_source_and_visual_css(self):
+        count = 0
+        for root, row, spec, text in self.bundles():
+            count += 1
+            with self.subTest(sample=row["id"]):
+                self.assertIn("<sample ", text)
+                self.assertIn("<file path=", text)
+                if root.name == "build-code":
+                    self.assertNotRegex(text, r"(?i)<style\b|```css")
                 else:
-                    self.assertRegex(expected, r"(?i)<style\b|```css")
+                    self.assertRegex(text, r"(?i)<style\b|```css")
+                    # Check the delivered source directly, without rebuilding bundles.
+                    for relative in spec["files"]:
+                        source = (root / spec["root"] / relative).read_text(encoding="utf-8").rstrip()
+                        self.assertIn(source, text)
+                self.assertEqual(
+                    sum(len((root / spec["root"] / rel).read_text(encoding="utf-8"))
+                        for rel in spec["files"]), spec["chars"])
+        self.assertEqual(count, 52)
+
+    def test_current_bundle_dependencies_are_declared(self):
+        for root, row, spec, text in self.bundles():
+            if root.name == "build-code" or not spec.get("omitted"):
+                continue
+            entry = next(rel for rel in spec["files"] if rel.endswith(".html"))
+            html = (root / spec["root"] / entry).read_text()
+            refs = {r.removeprefix("./") for r in re.findall(r'(?:src|href)="([^"#?]+)"', html)}
+            notes = dict(re.findall(r'<omitted path="([^"]+)">(.*?)</omitted>', text))
+            used = set()
+            for ref in refs:
+                if ref.startswith(("http:", "https:", "data:", "//")) or ref in spec["files"]:
+                    continue
+                with self.subTest(sample=row["id"], dependency=ref):
+                    self.assertIn(ref, notes)
+                    key = next((k for k in spec["omitted"] if fnmatch(ref, k)), None)
+                    if key:
+                        used.add(key)
+                        self.assertEqual(notes[ref], spec["omitted"][key])
+                    else:
+                        self.assertRegex(ref, r"(?:^|/)(?:base\.css|base\.js|[\w.-]+\.min\.js)$")
+            self.assertEqual(used, set(spec["omitted"]))
 
     def test_live_catalogs_only_register_independent_minis(self):
         count = 0
@@ -252,58 +275,6 @@ class BundleTests(unittest.TestCase):
                         self.assertTrue(p.is_relative_to(root.resolve()))
         self.assertEqual(count, 52)
 
-    def test_independent_mini_dependencies_are_preserved(self):
-        for name, sample in (
-            ("build-page", "foundation-shade-desk"),
-            ("build-page", "yearbook-hair-timeline"),
-            ("build-interaction", "crokinole-shot-lab"),
-        ):
-            root = skills.WORKFLOWS / name
-            catalog = json.loads((root / "samples/catalog.json").read_text())
-            row = next(row for row in catalog["samples"] if row["id"] == sample)
-            spec = row["mini"]
-            self.assertNotIn("full", row)
-            html = (root / spec["root"] / "index.html").read_text()
-            expected = sample_bundles.omitted_lines(sample, spec, html)
-            self.assertTrue(expected)
-            text = sample_bundles._variant(root, row, "mini", spec)
-            for line in expected:
-                self.assertIn(line, text)
-
-    def test_visual_minis_preserve_dependency_checks(self):
-        for path, text in sample_bundles.render_all().items():
-            if "build-code" in path.parts:
-                continue
-            with self.subTest(path=path):
-                # Dependencies may all be inlined; render_all validates every relative HTML reference.
-                self.assertIn("<sample ", text)
-        with self.assertRaises(ValueError):
-            sample_bundles.omitted_lines(
-                "x", {"files": ["index.html"]}, '<script src="assets/data.js"></script>'
-            )
-        with self.assertRaises(ValueError):
-            sample_bundles.omitted_lines(
-                "x", {"files": ["index.html"], "omitted": {"stale.js": "n"}}, ""
-            )
-        self.assertEqual(
-            sample_bundles.omitted_lines(
-                "x", {"files": ["index.html"], "omitted": {"data/*.js": "rows"}},
-                '<script src="assets/base.js"></script><script src="data/a.js"></script>',
-            ),
-            ['  <omitted path="assets/base.js">' + sample_bundles._PROVIDED_NOTE + "</omitted>",
-             '  <omitted path="data/a.js">rows</omitted>'],
-        )
-
-    def test_crossword_bundle_exposes_its_core_mechanism(self):
-        root = skills.WORKFLOWS / "build-interaction"
-        text = (ROOT.parent / "legacy/notale-v2/full-samples/workflows/build-interaction/samples/bundles/general/crossword-representation.full.md").read_text()
-        for marker in (
-            "vendor/svelte-crossword/src/Crossword.svelte",
-            "function onCellUpdate(", "function onHistoricalChange(",
-            "function onKeydown(", "function onCheck(",
-            "$: isComplete = percentCorrect == 1;", "MIT License",
-        ):
-            self.assertIn(marker, text)
 
     def test_crossword_mini_contains_authors_and_declares_local_dependencies(self):
         root = skills.WORKFLOWS / "build-interaction"
@@ -314,8 +285,7 @@ class BundleTests(unittest.TestCase):
             "index.html", "src/App.svelte", "src/components/Play.svelte",
             "src/main.js", "src/utils/loadData.js", "style.css", "mini-scrollbars.css",
         ])
-        text = sample_bundles._variant(root, row, "mini", spec)
-        self.assertEqual(text, (root / "samples/bundles/general/crossword-representation.mini.md").read_text())
+        text = (root / "samples/bundles/general/crossword-representation.mini.md").read_text()
         for path in re.findall(r'<file path="([^"]+)"', text):
             self.assertNotIn("/vendor/", path)
             self.assertNotIn("/src/data/", path)
@@ -332,6 +302,7 @@ class BundleTests(unittest.TestCase):
                     *spec["omitted"]):
             self.assertTrue((source / rel).is_file(), rel)
 
+
     def test_main_only_and_combined_code_contracts(self):
         interaction = json.loads(
             (skills.WORKFLOWS / "build-interaction/samples/catalog.json").read_text()
@@ -346,6 +317,7 @@ class BundleTests(unittest.TestCase):
         self.assertEqual(len(code["one"]["files"]), 7)
         self.assertNotIn("full", code)
         self.assertNotIn("mini", code)
+
 
 
 class ToolSurfaceTests(unittest.TestCase):

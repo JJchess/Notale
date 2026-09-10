@@ -74,4 +74,4 @@ python3 -B -m unittest test.test_style_fonts_browser
 - 四个主题未人工改 CSS，但仍可有混排字重、字距和材质上的审美问题。手绘示例的语言分支只匹配部分显式 lang；已补提示词要求 :lang(zh) 覆盖继承/地区标签及真实字重，未为这一提示改动重跑整组模型。
 - 不引入审美评分/配色阈值，不优化代码页，不更改历史截图或旧主题。
 
-复现：`scripts/fetch_style_fonts.py`（固定上游资源）、`scripts/style_font_preview.py`（无模型）、`scripts/style_detail_smoke.py`（付费调用）、`scripts/style_detail_audit.py`（无模型）。
+当前字体维护：`scripts/fetch_style_fonts.py`（固定上游资源）、`scripts/style_font_preview.py`（无模型）。历史 smoke / audit 脚本已移至 [retired-style-probes](../legacy/notale-v2/experiments/retired-style-probes/README.md)，复现需恢复其记录的 baseline，不是当前实验入口。
