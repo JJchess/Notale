@@ -1,6 +1,6 @@
 # 媒体与视觉主题包 · 历史计划与 A 阶段记录
 
-2026-09-07 原计划；2026-09-08 归档。A 阶段功能链路已验证，验证范围与内容质量问题见[实验报告](../../../notale-v2/experiments/media-a-20260907/VALIDATION.md)。**后续唯一实施依据为[风格控制升级方案](../../../notale-v2/PLAN-style-control.md)**，已取代本文 B/C 及相关主题、调度、验收建议；本文不再作为后续实施指令。第 3 节保留媒体 A 的交付契约，其余内容留作历史依据。本文当时替代了[更早计划](PLAN-media-template.md)；[v3 图](../architecture/ARCHITECTURE-v3.html)现在以新方案为准。
+2026-09-07 原计划；2026-09-08 归档。A 阶段功能链路已验证，验证范围与内容质量问题见[实验报告](../../../notale-v2/experiments/media-a-20260907/VALIDATION.md)。**后续唯一实施依据为[风格控制升级方案](../../../notale-v2/doc/PLAN-style-control.md)**，已取代本文 B/C 及相关主题、调度、验收建议；本文不再作为后续实施指令。第 3 节保留媒体 A 的交付契约，其余内容留作历史依据。本文当时替代了[更早计划](PLAN-media-template.md)；[v3 图](../architecture/ARCHITECTURE-v3.html)现在以新方案为准。
 
 ## 1. 目标与取舍
 
@@ -123,4 +123,4 @@ A 阶段的回归必须验证具体页与具体素材的对应关系，不接受
 
 只有观测到对应问题才追加机制：重复下载成本显著再加去重；进程内隔离确实不足再拆进程；局部对比失败频繁再评估像素测量或自动蒙版；用户需要固定版式再扩展模板能力。
 
-A 阶段验证记录见 `experiments/media-a-20260907/`；原 B/C 未按本文实施，其能力已纳入[新的唯一实施方案](../../../notale-v2/PLAN-style-control.md)。新方案仍待实施。
+A 阶段验证记录见 `experiments/media-a-20260907/`；原 B/C 未按本文实施，其能力已纳入[新的唯一实施方案](../../../notale-v2/doc/PLAN-style-control.md)。新方案仍待实施。

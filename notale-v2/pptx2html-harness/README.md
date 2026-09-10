@@ -21,15 +21,13 @@ python3 -m pip install -r requirements.txt
 不会在准备阶段强制检查整套转换工具或渲染 PPTX。
 
 ```bash
-python3 run.py prepare \
-  --run-dir runs/xiuzhong-01 \
-  --pptx '/data1/home/zhuyifan/ws2/Notale/秀钟书院特色课程PPT模板-课程名称在母版视图修改.pptx'
-
 # 在当前 shell 设置自己的 GEMINI_API_KEY 后执行。
-python3 run.py run --run-dir runs/xiuzhong-01
-
-python3 run.py inspect --run-dir runs/xiuzhong-01
+python3 run.py --pptx '/data1/home/zhuyifan/ws2/Notale/秀钟书院特色课程PPT模板-课程名称在母版视图修改.pptx'
 ```
+
+这一条命令自动准备输入并运行，结果写入本目录 `runs/<UTC时间戳>/`，启动时打印实际路径。
+需要命名实验时加 `--run-dir runs/xiuzhong-02`；已有目录不会覆盖。
+`prepare --pptx ... --run-dir ...`、`run --run-dir ...` 和 `inspect --run-dir ...` 仍可单独使用。
 
 模型固定为 `gemini-3.8-flash`（用户目标 Gemini 3.8 Flash）。默认采用主项目已使用的 Google Chat 路线：
 `https://generativelanguage.googleapis.com/v1beta/openai`，`reasoning_effort=low`。
@@ -62,7 +60,8 @@ JS cell、Code-mode RPC、checkpoint、结构校验、逐布局覆盖闸、浏�
 runs/<name>/
   manifest.json             输入路径与固定模型
   workspace/input/          只读原件
-  workspace/output/         HTML、资源、模型自行保存的参照/截图
+  workspace/output/         纯 HTML 模板及实际引用的必要素材
+  workspace/scratch/        模型自行保存的参照、截图及中间文件（不随模板交付）
   workspace/.tmp/           模型临时文件
   state/request-*.json      实际 Chat 请求（不含授权 header）
   state/response-*.json     原始模型响应
@@ -90,7 +89,9 @@ python3 -m unittest -q test_harness
 
 抽查中导航、文字编辑和滑块联动有效；主要偏差是往原模板留白处加入课程内容、
 标识比例发生变化，以及互动示例的绿电渗透率可超过 100%。产物保留原样作为基线。
-下一轮优先明确保留空白模板、示例另放的任务边界，暂不增加 gate。
+当前目标进一步收敛为逐页 1:1 复刻：保留原有文字与留白，不生成课程、复用/互动示例、导航侧栏或编辑器。
+`output/` 仅交付 HTML 与必要素材，参照、截图和中间文件放 `scratch/`。这是任务要求，不增加运行期 gate。
+首轮原始 query 仍保存在该轮 state/request-001.json 中。
 
 [架构图](../ARCHITECTURE-template2html.html) ·
 [原始 Astra 采集](../../infra/codex-harness-kit/runs/astra-xiuzhong-01/) ·

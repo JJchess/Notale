@@ -76,7 +76,7 @@ export function createContextInspector() {
       empty.hidden = has;
       for (const group of [geometry, arrangement, identity, advanced]) group.hidden = !has;
       (geometry as HTMLFieldSetElement).disabled = locked;
-      el('selection-name').textContent = !has ? '对象属性' : selected.length > 1 ? `已选择 ${selected.length} 个对象` : `${one!.attributes['data-notale-name'] || (one!.attributes['data-notale-shape'] ? '形状' : one!.attributes['data-notale-icon'] ? '图标' : one!.attributes['data-notale-smart'] ? '版式' : one!.attributes['data-notale-tex'] !== undefined ? '公式' : '') || ({img:'图片', video:'视频',audio:'音频',canvas:'互动画布',svg:'图形'} as Record<string,string>)[one!.tag] || (isText(one!) ? '文字' : '对象')}${locked ? ' · 已锁定' : ''}`;
+      el('selection-name').textContent = !has ? '对象属性' : selected.length > 1 ? `已选择 ${selected.length} 个对象` : `${one!.attributes['data-notale-name'] || (one!.attributes['data-notale-shape'] ? '形状' : one!.attributes['data-notale-icon'] ? '图标' : one!.attributes['data-notale-smart'] ? '图示' : one!.attributes['data-notale-tex'] !== undefined ? '公式' : '') || ({img:'图片', video:'视频',audio:'音频',canvas:'互动画布',svg:'图形'} as Record<string,string>)[one!.tag] || (isText(one!) ? '文字' : '对象')}${locked ? ' · 已锁定' : ''}`;
       const label = panel.querySelector<HTMLElement>('#property-lock-hint') ?? document.createElement('p');
       label.id = 'property-lock-hint'; label.className = 'hint';
       label.textContent = '对象已锁定。在“名称与可见性”中解锁后可编辑。';

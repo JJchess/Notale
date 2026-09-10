@@ -9,10 +9,19 @@ const ready = (page: Page) => page.evaluate(() => (window as any).NotaleWorkbenc
 const version = (page: Page) => page.evaluate(() => (window as any).NotaleWorkbench.getSnapshot().version);
 // Media entries live inside the insert drawer; teaching steps sit in a collapsed details. Objects are selected through the
 // workbench API because page content often overlaps the fixed insertion point and intercepts canvas clicks.
+// The insert drawer groups entries into collapsible categories; open whatever contains
+// the entry rather than naming a category.
+async function pick(page: Page, selector: string) {
+  if ((await page.locator('[data-tool="insert"]').getAttribute('aria-pressed')) !== 'true') await page.locator('[data-tool="insert"]').click();
+  const button = page.locator(selector);
+  await button.evaluate((el) => { for (let node = el.parentElement; node; node = node.parentElement) if (node instanceof HTMLDetailsElement) node.open = true; });
+  await button.click();
+}
+// Media entries move between categories as the drawer is reorganised, so open whichever
+// category currently holds the image entry.
 async function openMedia(page: Page) {
   if ((await page.locator('[data-tool="insert"]').getAttribute('aria-pressed')) !== 'true') await page.locator('[data-tool="insert"]').click();
-  const media = page.locator('[data-insert-category="resources"]');
-  if (!(await media.evaluate(el => (el as HTMLDetailsElement).open))) await media.locator('> summary').click();
+  await page.locator('[data-insert="image"]').evaluate((el) => { for (let node = el.parentElement; node; node = node.parentElement) if (node instanceof HTMLDetailsElement) node.open = true; });
 }
 async function openSteps(page: Page) {
   await page.locator('[data-tool="animation"]').click();
@@ -72,7 +81,7 @@ test('independent editor: zoom, pan, edit/retry/reopen, page ordering, native in
 
   await page.locator('[data-tool="insert"]').click();
   await expect(page.locator('#tool-panel')).toBeVisible();
-  await change(page, () => page.locator('[data-insert="text"]').click());
+  await change(page, () => pick(page, '[data-insert="text"]'));
   const text = page.frameLocator('#canvas').getByText('输入你的内容', { exact: true });
   await selectObject(page, (await text.getAttribute('data-notale-id'))!);
   await openStyleTab(page);
@@ -372,7 +381,7 @@ test('media library reuses uploaded assets and replaces nested-page images with 
   await openMedia(page);
   await expect(page.locator('#asset-empty')).toBeVisible();
   for(const [name,color] of [['diagram one.svg','#aa3300'],['第二张图.svg','#0055aa']]) {
-    await page.locator('[data-insert="image"]').click();
+    await pick(page, '[data-insert="image"]');
     await change(page,()=>page.locator('#media-file').setInputFiles({name,mimeType:'image/svg+xml',buffer:Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="160" height="100"><rect width="160" height="100" fill="${color}"/></svg>`)}));
   }
   await expect(page.locator('#asset-count')).toHaveText('2');
@@ -653,36 +662,38 @@ test('rich paragraphs create nested lists and keep an animated inline target aft
   expect(await(await page.request.get('/api/documents/'+original)).json()).toEqual(baseline);
 });
 
-test('two editor windows retain a rejected concurrent edit and export it before loading the new head',async({page,context})=>{
-  test.fixme(true,'The sync endpoint now merges concurrent edits per object and attribute instead of answering 409; the conflict scenario needs a genuinely unmergeable edit (see tests/sync-session.spec.ts).');
+test('two editor windows merge concurrent edits to different objects without a conflict',async({page,context})=>{
   const baseline=await(await page.request.get('/api/documents/'+original)).json();
   const doc=structuredClone(baseline.document);doc.id=randomUUID();doc.title='Concurrent frontend acceptance';
   expect((await page.request.post('/api/documents',{data:doc})).status()).toBe(201);
   const other=await context.newPage();
-  for(const tab of [page,other]){await tab.goto('/?document='+doc.id);await expect(tab.locator('#save-status')).toContainText('已保存');await ready(tab);await tab.locator('[data-tool="insert"]').click();}
-  const base=await version(other);
-  await change(page,()=>page.locator('[data-insert="text"]').click());
+  for(const tab of [page,other]){await tab.goto('/?document='+doc.id);await expect(tab.locator('#save-status')).toContainText('已保存');await ready(tab);}
+  // The sync endpoint merges per object and property, so two windows editing different
+  // objects both keep their work; an unmergeable edit is covered by tests/sync-session.spec.ts.
+  const ids=await page.evaluate(()=>{const objects=(window as any).NotaleWorkbench.getObjects();return {title:objects.find((o:any)=>o.tag==='h1').id,lead:objects.find((o:any)=>o.tag==='p'&&o.text.trim()).id};});
+  let conflicts=0;
+  for(const tab of [page,other])tab.on('response',r=>{if(r.url().endsWith('/sync')&&r.status()===409)conflicts++;});
+  await page.evaluate(id=>(window as any).NotaleWorkbench.select(id),ids.title);
+  await other.evaluate(id=>(window as any).NotaleWorkbench.select(id),ids.lead);
+  await openStyleTab(page);await openStyleTab(other);
+  await page.locator('#object-text').fill('左窗口改标题');
+  await other.locator('#object-text').fill('右窗口改导语');
+  await Promise.all([
+    change(page,()=>page.locator('#apply-text').click()),
+    change(other,()=>other.locator('#apply-text').click()),
+  ]);
+  for(const tab of [page,other])await expect(tab.locator('#save-status')).toContainText('已保存');
+  expect(conflicts).toBe(0);
   const head=await(await page.request.get('/api/documents/'+doc.id)).json();
-  const rejected=other.waitForResponse(r=>r.url().endsWith('/commits')&&r.status()===409);
-  await other.locator('[data-insert="text"]').click();await rejected;
-  await expect(other.locator('#save-status')).toContainText('版本冲突');
-  await expect(other.locator('#toast')).toContainText('修改仍保留在本机');
-  const pending=await other.evaluate(()=>(window as any).NotaleWorkbench.getPending());
-  expect(pending.request.baseVersion).toBe(base);
-  expect(await(await page.request.get('/api/documents/'+doc.id)).json()).toEqual(head);
-  await other.reload();await expect(other.locator('#retry-save')).toBeVisible();await ready(other);
-  expect(await other.evaluate(()=>(window as any).NotaleWorkbench.getPending())).toEqual(pending);
-  await other.locator('#retry-save').click();await expect(other.locator('#save-status')).toContainText('版本冲突');
-  await other.locator('#recovery-panel summary').click();
-  const downloadPromise=other.waitForEvent('download');await other.locator('[data-export-recovery]').click();
-  const download=await downloadPromise;const stream=await download.createReadStream();const chunks:Buffer[]=[];for await(const chunk of stream!)chunks.push(Buffer.from(chunk));
-  expect(JSON.parse(Buffer.concat(chunks).toString()).task).toEqual(pending);
-  await other.locator('#reload-head').click();await expect(other.locator('#save-status')).toContainText('已保存');await ready(other);
-  expect(await other.evaluate(()=>(window as any).NotaleWorkbench.getPending())).toBeUndefined();
-  expect(await version(other)).toBe(head.version);
-  await expect(other.frameLocator('#canvas').getByText('输入你的内容',{exact:true})).toHaveCount(1);
-  await expect(other.locator('#undo')).toBeDisabled();
-  expect(await(await page.request.get('/api/documents/'+doc.id)).json()).toEqual(head);
+  const html=head.document.slides[0].html;
+  expect(html).toContain('左窗口改标题');
+  expect(html).toContain('右窗口改导语');
+  for(const tab of [page,other]){
+    await tab.reload();await expect(tab.locator('#save-status')).toContainText('已保存');await ready(tab);
+    await expect(tab.frameLocator('#canvas').getByText('左窗口改标题',{exact:true})).toHaveCount(1);
+    await expect(tab.frameLocator('#canvas').getByText('右窗口改导语',{exact:true})).toHaveCount(1);
+    expect(await tab.evaluate(()=>(window as any).NotaleWorkbench.getPending())).toBeUndefined();
+  }
   expect(await(await page.request.get('/api/documents/'+original)).json()).toEqual(baseline);
 });
 
@@ -727,7 +738,7 @@ test('visual image crop preserves source and geometry through drag save undo and
   const baseline=await(await page.request.get('/api/documents/'+original)).json();const doc=structuredClone(baseline.document);doc.id=randomUUID();doc.title='Visual crop acceptance';
   expect((await page.request.post('/api/documents',{data:doc})).status()).toBe(201);
   await page.goto('/?document='+doc.id);await expect(page.locator('#save-status')).toContainText('已保存');await ready(page);
-  await openMedia(page);await page.locator('[data-insert="image"]').click();
+  await openMedia(page);await pick(page, '[data-insert="image"]');
   await change(page,()=>page.locator('#media-file').setInputFiles({name:'裁剪示例.svg',mimeType:'image/svg+xml',buffer:Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="500" height="320"><rect width="250" height="320" fill="#6638dc"/><rect x="250" width="250" height="320" fill="#f7b955"/></svg>')}));
   const image=page.frameLocator('#canvas').locator('img[alt="插入图片"]');const id=await image.getAttribute('data-notale-id'),src=await image.getAttribute('src');
   await page.evaluate(async ({slideId,target})=>{await(window as any).NotaleWorkbench.commands([{type:'element.patch',slideId,target,patch:{style:{width:'200px',height:'600px'}}}]);},{slideId:doc.slides[0].id,target:id});await ready(page);
@@ -766,7 +777,7 @@ test('unfinished integrations stay hidden across renders while connected editing
   await expect(page.locator('[data-tool="components"]')).toBeHidden();
   await openStyle(page,true);
   for(const id of ['layout-source-controls','layout-placeholder-author','visual-layout-preset','publish-layout-canvas'])await expect(page.locator('#'+id)).toBeHidden();
-  await page.locator('[data-tool="insert"]').click();await change(page,()=>page.locator('[data-insert="text"]').click());
+  await page.locator('[data-tool="insert"]').click();await change(page,()=>pick(page, '[data-insert="text"]'));
   const text=page.frameLocator('#canvas').getByText('输入你的内容',{exact:true});await selectObject(page,(await text.getAttribute('data-notale-id'))!);await page.locator('[data-tool="style"]').click();
   await expect(page.locator('#property-advanced')).toBeHidden();
   await expect(page.locator('#apply-text')).toBeEnabled();await expect(page.locator('#open-rich-editor')).toBeEnabled();
@@ -857,7 +868,7 @@ test('table inspector edits cells and rows without replacing table identity',asy
   const baseline=await(await page.request.get('/api/documents/'+original)).json();const doc=structuredClone(baseline.document);doc.id=randomUUID();doc.title='Table inspector acceptance';
   expect((await page.request.post('/api/documents',{data:doc})).status()).toBe(201);
   await page.goto('/?document='+doc.id);await expect(page.locator('#save-status')).toContainText('已保存');await ready(page);
-  await page.locator('[data-tool="insert"]').click();await change(page,()=>page.locator('[data-insert="table"]').click());
+  await page.locator('[data-tool="insert"]').click();await change(page,()=>pick(page, '[data-insert="table"]'));
   const table=page.frameLocator('#canvas').locator('table').last();const id=await table.getAttribute('data-notale-id');
   await page.evaluate(id=>(window as any).NotaleWorkbench.select(id),id);await page.locator('[data-tool="style"]').click();
   await expect(page.locator('#visual-table-panel')).toBeVisible();
@@ -886,7 +897,7 @@ test('table range styles and merges preserve content through undo and reopen',as
   const baseline=await(await page.request.get('/api/documents/'+original)).json();const doc=structuredClone(baseline.document);doc.id=randomUUID();doc.title='Table range acceptance';
   expect((await page.request.post('/api/documents',{data:doc})).status()).toBe(201);
   await page.goto('/?document='+doc.id);await expect(page.locator('#save-status')).toContainText('已保存');await ready(page);
-  await page.locator('[data-tool="insert"]').click();await change(page,()=>page.locator('[data-insert="table"]').click());
+  await page.locator('[data-tool="insert"]').click();await change(page,()=>pick(page, '[data-insert="table"]'));
   const table=page.frameLocator('#canvas').locator('table').last(),id=await table.getAttribute('data-notale-id');
   const ids=await table.locator('tbody td').evaluateAll(cells=>cells.map(cell=>cell.getAttribute('data-notale-id')!));
   await page.evaluate(id=>(window as any).NotaleWorkbench.select(id),id);await page.locator('[data-tool="style"]').click();
@@ -923,7 +934,7 @@ test('chart editor saves category and series changes with geometry and undo inta
   const baseline=await(await page.request.get('/api/documents/'+original)).json();const doc=structuredClone(baseline.document);doc.id=randomUUID();doc.title='Chart data acceptance';
   expect((await page.request.post('/api/documents',{data:doc})).status()).toBe(201);
   await page.goto('/?document='+doc.id);await expect(page.locator('#save-status')).toContainText('已保存');await ready(page);
-  await page.locator('[data-tool="insert"]').click();await change(page,()=>page.locator('[data-insert="chart"]').click());
+  await page.locator('[data-tool="insert"]').click();await change(page,()=>pick(page, '[data-insert="chart"]'));
   const chart=page.frameLocator('#canvas').locator('svg[data-notale-chart]').last(),id=await chart.getAttribute('data-notale-id');
   const initial=JSON.parse((await chart.getAttribute('data-notale-chart'))!);const geometry=await chart.evaluate(el=>{const s=getComputedStyle(el);return[s.width,s.height,s.left,s.top,s.transform,el.getAttribute('viewBox')];});
   await page.evaluate(id=>(window as any).NotaleWorkbench.select(id),id);await page.locator('[data-tool="style"]').click();await page.locator('#open-chart-editor').click();
@@ -1023,7 +1034,7 @@ test('shared component source can be recovered after its original page is remove
 test('chart spreadsheet paste validates drafts, preserves identity and survives undo and reopening',async({page})=>{
   const baseline=await(await page.request.get('/api/documents/'+original)).json();const doc=structuredClone(baseline.document);doc.id=randomUUID();doc.title='Chart spreadsheet acceptance';expect((await page.request.post('/api/documents',{data:doc})).status()).toBe(201);
   await page.goto('/?document='+doc.id);await expect(page.locator('#save-status')).toContainText('已保存');await ready(page);
-  await page.locator('[data-tool="insert"]').click();await change(page,()=>page.locator('[data-insert="chart"]').click());
+  await page.locator('[data-tool="insert"]').click();await change(page,()=>pick(page, '[data-insert="chart"]'));
   const chart=page.frameLocator('#canvas').locator('svg[data-notale-chart]').last(),id=await chart.getAttribute('data-notale-id');const initial=JSON.parse((await chart.getAttribute('data-notale-chart'))!);
   await page.evaluate(id=>(window as any).NotaleWorkbench.select(id),id);await page.locator('[data-tool="style"]').click();await page.locator('#open-chart-editor').click();await page.locator('#chart-paste-panel > summary').click();
   const before=await version(page);const apply=async(text:string)=>{await page.locator('#chart-paste-data').fill(text);await page.locator('#chart-paste-apply').click();};

@@ -1,3 +1,6 @@
+import {createTemplateLibrary} from './template-library.js';
+import {createEchartsEditor} from './echarts-editor.js';
+import type {ChartAuthoring} from '@notale/editor/browser';
 import {prepareSvgImport} from './vector-import.js';
 import {createVectorIngress} from './vector-ingress.js';
 import {createVectorInspector} from './vector-inspector.js';
@@ -59,9 +62,16 @@ import { selectIds } from '@notale/editor/browser';
 import { isSvgLayer } from '@notale/editor/browser';
 import { mediaSettingsSchema } from '@notale/editor/browser';
 import type { Snapshot, Slide, Command, AnimationSpec } from '@notale/editor/browser';
-import { template, DEFAULT_TEX } from './templates.js';
+import { template, DEFAULT_TEX, cycleContent, cycleLabels } from './templates.js';
 import { createEquationEditor } from './equation-editor.js';
+import { createCodeEditor } from './code-editor.js';
 import { buildInsertPanel } from './insert-panel.js';
+import { createAppearanceInspector, toHex } from './appearance-inspector.js';
+import { createThemePanel } from './theme-panel.js';
+import { createFindReplace } from './find-replace.js';
+import { createPageBackground } from './page-background.js';
+import { createCommentsPanel } from './comments-panel.js';
+import { parsePptx } from './pptx-import.js';
 type ObjectInfo = {
   id: string;
   tag: string;
@@ -115,6 +125,7 @@ function releaseBusy() {
 }
 let pending: Pending | undefined;
 let pendingConflict = false;
+let echartsUI:ReturnType<typeof createEchartsEditor>|undefined;
 let documentUI:ReturnType<typeof createDocumentUI>|undefined;
 type Capture = {
   rectangles: (Rect & {
@@ -173,9 +184,11 @@ async function captureSelection(ids = [...selected]): Promise<Capture> {
 let clipboardCapture: Promise<void> | undefined;
 function copySelection(mode: 'copy' | 'cut') {
   const task = (async () => {
+    await echartsUI?.flush();
     const ids = [...selected],
       source = structuredClone(slide()),
       documentId = snapshot.document.id;
+    for(const state of geometrySession.states(source.id))if(state.chart)source.nativeCharts[state.id]=structuredClone(state.chart);
     const capture = await captureSelection(ids);
     clipboard = { documentId, source, targets: ids, mode, capture };
   })();
@@ -228,7 +241,7 @@ const geometrySession = new GeometrySession({
   recovered:task=>{journal.clear(task);if(pending?.request.mutationId===task.request.mutationId)pending=undefined;},
   confirm:(task,version)=>{const plan=nextHistory(task,version);undo=plan.undo;redo=plan.redo;sessionStorage.setItem(historyKey(task.documentId),JSON.stringify({version:Math.max(version,snapshot.version),...plan}));mark();},
   remote: async()=>{if(!busy&&!canvasGesture&&!textSession&&snapshot){const head=await api(`/api/documents/${snapshot.document.id}/sync-head`);if(head.version<=snapshot.version)return;const next:Snapshot=await api(`/api/documents/${snapshot.document.id}`);if(next.version>snapshot.version){const previous=slide();snapshot=next;await updateAuthor(previous);mark();}}},
-  paint: states => send('geometry-draft',{states}),
+  paint: states => {const chartStates=states.filter(s=>s.chart);if(chartStates.length){const charts={...slide().nativeCharts};for(const state of chartStates){charts[state.id]=state.chart!;if(selected.has(state.id)&&state.chart?.authoring)echartsUI?.restore(state.chart.authoring);}send('charts-update',{charts});}send('geometry-draft',{states:states.filter(s=>!s.chart)});},
   changed: () => {if(snapshot)mark();},error,
 });
 let textSession:{sessionId:string;target:string}|undefined;
@@ -321,15 +334,21 @@ function mark() {
 async function updateAuthor(previous:Slide){
   const next=snapshot.document.slides.find(s=>s.id===slideId);if(!next){await render();return;}
   const shape=(html:string)=>{const d=new DOMParser().parseFromString(html,'text/html');return JSON.stringify([...d.querySelectorAll('[data-notale-id]')].map(e=>[e.getAttribute('data-notale-id'),e.tagName,e.parentElement?.getAttribute('data-notale-id')]));};
-  const metadata=({html,transforms,notes,animations,...rest}:Slide)=>JSON.stringify(rest);
+  const metadata=({html,transforms,notes,animations,nativeCharts,...rest}:Slide)=>JSON.stringify(rest);
   const runtime=(html:string)=>{const d=new DOMParser().parseFromString(html,'text/html');return JSON.stringify([...d.querySelectorAll('script,style,link')].map(e=>e.outerHTML));};
   if(previous.id!==next.id||shape(previous.html)!==shape(next.html)||metadata(previous)!==metadata(next)||runtime(previous.html)!==runtime(next.html)){await render();return;}
   send('author-update',{before:previous.html,after:next.html,transforms:next.transforms});
+  if(JSON.stringify(previous.nativeCharts)!==JSON.stringify(next.nativeCharts))paintChartModels();
   if(JSON.stringify(previous.animations)!==JSON.stringify(next.animations)){send('animations-update',{animations:next.animations});renderAnimations();teachingStepsUI.render();}
 }
 const flushWaiters=new Map<string,()=>void>();
 async function flushTextEditor(){const id=uuid();await new Promise<void>((resolve,reject)=>{const timer=setTimeout(()=>{flushWaiters.delete(id);reject(Error('画布尚未确认编辑内容，请稍后再试'));},5000);flushWaiters.set(id,()=>{clearTimeout(timer);resolve();});send('flush-editor',{id});});await textIngress.flush();await vectorIngress.flush();}
-async function flushAuthor(){await whenReady();await flushTextEditor();await whenEditsIdle();await geometrySession.barrier();await geometrySession.pull();}
+function paintChartModels(){
+  const charts=structuredClone(slide().nativeCharts);
+  for(const state of geometrySession.states(slideId))if(state.chart)charts[state.id]=state.chart;
+  send('charts-update',{charts});const id=[...selected][0];if(charts[id]?.authoring)echartsUI?.restore(charts[id].authoring!);
+}
+async function flushAuthor(){await echartsUI?.flush();await whenReady();await flushTextEditor();await whenEditsIdle();await geometrySession.barrier();await geometrySession.pull();}
 const historyKey = (id: string) => `notale-editor-history-v2:${id}`;
 function nextHistory(task:Pending,version:number):HistoryPlan {
   const old=validHistory(task.after)?task.after:{undo:[...undo],redo:[...redo]};
@@ -382,7 +401,7 @@ async function transmit(task: Pending) {
     redo = [...plan.redo];
     if (!foreign && task.slideId && result.document.slides.some((s) => s.id === task.slideId))
       slideId = task.slideId;
-    if(!geometryOnly&&!foreign&&!task.textEdit) selected = new Set(task.selection ?? []);
+    if(!geometryOnly&&!foreign&&!task.textEdit&&!task.chart) selected = new Set(task.selection ?? []);
     journal.clear(task);
     pending = undefined;
     history.replaceState(null, '', `?document=${task.documentId}`);
@@ -391,6 +410,7 @@ async function transmit(task: Pending) {
       const doc=new DOMParser().parseFromString(slide().html,'text/html'),node=doc.querySelector<HTMLElement>(`[data-notale-id="${CSS.escape(task.textEdit.target)}"]`);
       if(node){send('text-confirm',{...task.textEdit,html:node.innerHTML});const cached=objects.find(o=>o.id===task.textEdit!.target);if(cached){cached.html=node.outerHTML;cached.text=node.textContent??'';}}
       send('author-update',{before:previousSlide.html,after:slide().html,transforms:slide().transforms});renderedSlide=structuredClone(slide());mark();
+    }else if(task.chart&&canvasReady&&task.slideId===slideId){paintChartModels();mark();
     }else if(task.vector&&canvasReady&&task.slideId===slideId){send('author-update',{before:previousSlide.html,after:slide().html,transforms:slide().transforms});renderedSlide=structuredClone(slide());mark();
     }else if(animationOnly){send('animations-update',{animations:slide().animations});renderAnimations();teachingStepsUI.render();mark();}
     else if (geometryOnly||foreign) {
@@ -552,6 +572,10 @@ function openObjectMenu(data:MenuContext) {
    {id:'animation',label:'动画…',icon:'animation',run:()=>editorShell.inspect('animation')},
    {id:'format',label:'设置对象格式',icon:'format',run:()=>editorShell.inspect('format')},edit('删除','delete','Delete',locked,true)];
  }
+ if(!data.text&&data.ids.length===1&&slide().nativeCharts[data.ids[0]]?.authoring)items.unshift(
+ {id:'chart-data',label:'编辑图表数据',icon:'format',disabled:locked,run:async()=>{await echartsUI?.render();await echartsUI?.openData();}},
+ {id:'chart-type',label:'更改图表类型',disabled:locked,run:async()=>{await echartsUI?.render();echartsUI?.changeType();}},
+ {id:'chart-format',label:'设置图表格式',separator:true,run:()=>editorShell.inspect('format')});
  const rect=frame.getBoundingClientRect(),scale=rect.width/data.width;
  objectMenu.open(rect.left+data.x*scale,rect.top+data.y*scale,items,formatControls(data),valid);
 }
@@ -603,6 +627,7 @@ async function render() {
   renderGuides();
   if (generation !== renderGeneration) return;
   previewLease?.stop();
+  previewSlides = previews.slides;
   previewLease = keepPreviewAlive(snapshot.document.id, previews);
   pageThumbnails.update(previews.slides, snapshot.document);
   channel = previews.channel;
@@ -680,7 +705,12 @@ function renderSelection() {
   editorShell.selectionChanged(selected.size > 0);
   renderSelectionTools(objects, selected, slide().groups, canvasReady);
   chartEditor.render();
+  appearanceInspector.render();
+  themePanel.render();
+  pageBackground.render();
+  commentsPanel.render();
   equationEditor.render();
+  codeEditor.render();
   tableInspector.render();
   imageCrop.render();
   richEditor.render();
@@ -695,6 +725,7 @@ function renderSelection() {
   $<HTMLButtonElement>('layer-backward').disabled = !hasSelection;
   renderConnector();
   renderNativeChart();
+  void echartsUI?.render();
   renderScene();
   for (const id of ['apply-format', 'apply-text', 'apply-advanced'])
     $<HTMLButtonElement>(id).disabled = [...selected].some((id) =>
@@ -736,26 +767,11 @@ function renderSelection() {
   set('scale', t.scaleX);
   set('object-width', t.width ?? '');
   set('object-height', t.height ?? '');
-  const shape = selected.size === 1 && o.tag === 'svg' && !!o.attributes['data-notale-shape'],
-    icon = selected.size === 1 && o.tag === 'svg' && !!o.attributes['data-notale-icon'],
-    accent = selected.size === 1 && !shape && !icon && (o.attributes['data-notale-smart'] !== undefined || o.attributes['data-notale-wordart'] !== undefined),
-    layoutItem = selected.size === 1 && !!o.parent && objects.find((x) => x.id === o.parent)?.attributes['data-notale-smart'] !== undefined
-      && ['process', 'list'].includes(objects.find((x) => x.id === o.parent)!.attributes['data-notale-smart']);
-  $('shape-fill-field').hidden = !shape;
-  $('shape-stroke-field').hidden = !(shape || icon);
-  $('accent-field').hidden = !accent;
-  $('layout-item-tools').hidden = !layoutItem;
-  if (shape || icon || accent) {
-    // Templates use CSS variables, so read the resolved colours from the canvas.
-    const key = fieldsKey;
-    void captureSelection([o.id]).then((capture) => {
-      if (selectionFieldsKey !== key) return;
-      const css = capture.computedStyles?.[o.id] ?? {};
-      if (shape) set('object-fill', toHex(css.fill) ?? '#dee8ff');
-      if (shape || icon) set('object-stroke', toHex(css.stroke) ?? '#466ddb');
-      if (accent) set('object-accent', toHex(o.style['--accent']) ?? toHex(css['--accent'] ?? css.stroke ?? css.color) ?? '#466ddb');
-    }, () => undefined);
-  }
+  const layoutParent = o.parent ? objects.find((x) => x.id === o.parent) : undefined;
+  $('layout-item-tools').hidden = !(selected.size === 1 && ['process', 'list'].includes(layoutParent?.attributes['data-notale-smart'] ?? ''));
+  const cycle = selected.size === 1 && o.attributes['data-notale-smart'] === 'cycle';
+  $('cycle-count-field').hidden = !cycle;
+  if (cycle) set('cycle-count', String(objects.filter((x) => x.parent === o.id && x.tag === 'p').length || 3));
   for (const id of ['tx', 'ty', 'rotation', 'scale', 'object-width', 'object-height']) $<HTMLInputElement>(id).dataset.initial = value(id);
   set('color', /^#[0-9a-f]{6}$/i.test(o.style.color ?? '') ? o.style.color : '#263449');
   for (const id of ['font-size', 'color']) $<HTMLInputElement>(id).dataset.initial = value(id);
@@ -1007,6 +1023,7 @@ window.addEventListener('message', (e) => {
     sceneRequests.get(data.requestId)?.(data);
     sceneRequests.delete(data.requestId);
   }
+  echartsUI?.receive(type,data);
   if (type === 'native-chart-error') error(new Error(`原生图表：${data.error}`));
   if (type === 'native-chart-inspect') {
     nativeChartRequests.get(data.requestId)?.(data);
@@ -1733,6 +1750,7 @@ async function inspectNativeChart() {
     `${result.series.length} 个序列；未固定的数据继续响应原页面互动。`;
   $<HTMLButtonElement>('save-native-chart-series').disabled = !result.series.length;
   fillNativeSeries();
+  return result;
 }
 function fillNativeSeries() {
   const index = num('native-chart-series'),
@@ -1806,6 +1824,7 @@ on('save-binding', () => {
   ]);
 });
 function fillAnimation(a: AnimationSpec) {
+  if(a.effect==='chart-state'&&!$<HTMLSelectElement>('effect').querySelector('option[value="chart-state"]'))$('effect').append(new Option('图表变化','chart-state'));
   set('effect', a.effect);
   showAnimationGroup(effectGroups.find(g=>g.effects.includes(a.effect))?.kind??'entrance');
   if(!$<HTMLSelectElement>('animation-step').querySelector(`option[value="${a.step}"]`))$('animation-step').append(new Option(`${a.step} · 单击步骤`,String(a.step)));
@@ -1838,6 +1857,7 @@ function readAnimation(id: string) {
     id,
     target: current().id,
     effect: value('effect'),
+    ...(value('effect')==='chart-state'?{chartStateId:slide().animations.find(a=>a.id===id)?.chartStateId}:{}),
     step: num('animation-step'),
     duration: Math.round(num('duration') * 1000),
     delay: Math.round(num('delay') * 1000),
@@ -1960,10 +1980,10 @@ on('add-slide', () => {
   );
 });
 let uploadAction:
-  | { kind: string; target?: string; poster?: boolean; documentId: string; slideId: string }
+  | { kind: string; target?: string; poster?: boolean; documentId: string; slideId: string; point?: { x: number; y: number } }
   | undefined;
-function chooseMedia(kind: string, target?: string, poster = false) {
-  uploadAction = { kind, target, poster, documentId: snapshot.document.id, slideId };
+function chooseMedia(kind: string, target?: string, poster = false, point?: { x: number; y: number }) {
+  uploadAction = { kind, target, poster, documentId: snapshot.document.id, slideId, point };
   $<HTMLInputElement>('media-file').accept = kind === 'image' ? 'image/*' : `${kind}/*`;
   $('media-file').click();
 }
@@ -1975,7 +1995,7 @@ async function uploadAsset(bytes: Uint8Array, mime: string) {
 }
 // KaTeX HTML output needs one stylesheet (fonts are inlined). Reuse the lecture's
 // own copy when the import brought one; otherwise store the bundled copy once.
-async function insertEquation() {
+async function insertEquation(client?: { x: number; y: number }) {
   const existing = Object.keys(snapshot.document.assets).find((p) => p.endsWith('lib/katex.min.css')),
     path = existing ?? 'assets/lib/katex.min.css',
     href = '../'.repeat(slide().sourcePath.split('/').length - 1) + path.split('/').map(encodeURIComponent).join('/'),
@@ -1985,21 +2005,89 @@ async function insertEquation() {
     if (!response.ok) throw new Error('无法加载公式样式');
     edits.push({ type: 'asset.put', path, asset: await uploadAsset(new Uint8Array(await response.arrayBuffer()), 'text/css') });
   }
-  edits.push({ type: 'element.insert', slideId, html: template('equation', DEFAULT_TEX, href) });
+  edits.push({ type: 'element.insert', slideId, html: placed(template('equation', DEFAULT_TEX, href), 'equation', client) });
   return commands(edits);
 }
-function insertObject(kind: string, value?: string) {
+// New objects land in the middle of what the author is looking at, each one offset from
+// the last so repeats do not hide under each other. PowerPoint centres in the view;
+// dragging an entry from the panel drops at the pointer, as in Figma.
+const NOMINAL: Record<string, [number, number]> = {
+  text: [600, 60], 'vertical-text': [100, 420], symbol: [120, 80], wordart: [420, 90], date: [420, 60],
+  code: [720, 130], shape: [300, 160], icon: [160, 160], line: [400, 80], table: [650, 170],
+  chart: [680, 400], equation: [320, 110], image: [500, 320], video: [600, 340], audio: [600, 60],
+  'smart:process': [1100, 190], 'smart:list': [820, 250], 'smart:cycle': [640, 640],
+};
+let insertRun = { slide: '', count: 0 };
+function documentPoint(client?: { x: number; y: number }) {
+  const bounds = frame.getBoundingClientRect(),
+    view = $('canvas-viewport').getBoundingClientRect(),
+    scale = bounds.width / snapshot.document.width || 1;
+  const at = client ?? {
+    x: (Math.max(bounds.left, view.left) + Math.min(bounds.right, view.right)) / 2,
+    y: (Math.max(bounds.top, view.top) + Math.min(bounds.bottom, view.bottom)) / 2,
+  };
+  return { x: (at.x - bounds.left) / scale, y: (at.y - bounds.top) / scale };
+}
+function placement(kind: string, client?: { x: number; y: number }) {
+  const { x, y } = documentPoint(client);
+  if (insertRun.slide !== slideId) insertRun = { slide: slideId, count: 0 };
+  const stagger = client ? 0 : (insertRun.count++ % 5) * 24;
+  const [w, h] = NOMINAL[kind] ?? NOMINAL[kind.split(':')[0]] ?? [220, 140];
+  const clamp = (v: number, max: number) => Math.round(Math.max(0, Math.min(max - 40, v)));
+  // New objects go on top of existing page content, as in PowerPoint and Figma; the
+  // layer controls move them afterwards.
+  return `left:${clamp(x - w / 2 + stagger, snapshot.document.width)}px;top:${clamp(y - h / 2 + stagger, snapshot.document.height)}px;z-index:50;`;
+}
+const placed = (html: string, kind: string, client?: { x: number; y: number }) =>
+  html.replace('left:120px;top:160px;', placement(kind, client));
+function insertObject(kind: string, value?: string, client?: { x: number; y: number }) {
   if (kind === 'connector') return createConnector();
   if (['image', 'video', 'audio'].includes(kind)) {
-    chooseMedia(kind);
+    chooseMedia(kind, undefined, false, client);
     return;
   }
-  if (kind === 'equation') return insertEquation();
-  return commands([{ type: 'element.insert', slideId, html: template(kind, value) }]);
+  if (kind === 'equation') return insertEquation(client);
+  if(kind==='chart')return echartsUI?.openGallery();
+  return commands([{ type: 'element.insert', slideId, html: placed(template(kind, value), kind, client) }]);
+}
+// Dragging an entry onto the canvas drops the object where the pointer released. The
+// slide runs in an isolated frame, so a surface above it receives the drag, the same
+// way file drops are handled.
+const insertDrop = document.createElement('div');
+insertDrop.id = 'insert-drop-overlay';
+insertDrop.hidden = true;
+insertDrop.textContent = '松开以放置对象';
+$('canvas-viewport').append(insertDrop);
+function showInsertDrop(show: boolean) {
+  if (!show) { insertDrop.hidden = true; return; }
+  const bounds = $('canvas-viewport').getBoundingClientRect();
+  Object.assign(insertDrop.style, { left: `${bounds.left}px`, top: `${bounds.top}px`, width: `${bounds.width}px`, height: `${bounds.height}px` });
+  insertDrop.hidden = false;
 }
 for (const button of document.querySelectorAll<HTMLButtonElement>('[data-insert]')) {
   button.addEventListener('click', () => Promise.resolve().then(() => insertObject(button.dataset.insert!, button.dataset.symbol)).catch(error));
+  button.draggable = true;
+  button.addEventListener('dragstart', (event) => {
+    event.dataTransfer?.setData('application/x-notale-insert', JSON.stringify({ kind: button.dataset.insert, value: button.dataset.symbol }));
+    if (event.dataTransfer) event.dataTransfer.effectAllowed = 'copy';
+    showInsertDrop(true);
+  });
+  button.addEventListener('dragend', () => showInsertDrop(false));
 }
+insertDrop.addEventListener('dragover', (event) => {
+  event.preventDefault();
+  if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy';
+});
+insertDrop.addEventListener('dragleave', () => showInsertDrop(false));
+insertDrop.addEventListener('drop', (event) => {
+  event.preventDefault();
+  showInsertDrop(false);
+  const raw = event.dataTransfer?.getData('application/x-notale-insert');
+  if (!raw) return;
+  const { kind, value } = JSON.parse(raw) as { kind: string; value?: string };
+  const { clientX: x, clientY: y } = event;
+  void Promise.resolve().then(() => insertObject(kind, value, { x, y })).catch(error);
+});
 $<HTMLInputElement>('media-file').onchange = () =>
   void (async () => {
     const input = $<HTMLInputElement>('media-file'),
@@ -2025,7 +2113,7 @@ $<HTMLInputElement>('media-file').onchange = () =>
             target: action.target,
             patch: action.poster ? { poster: src } : { src },
           }
-        : { type: 'element.insert', slideId, html: template(action.kind, src) },
+        : { type: 'element.insert', slideId, html: placed(template(action.kind, src), action.kind, action.point) },
     ]);
   })().catch(error);
 async function restore(
@@ -2060,6 +2148,34 @@ async function redoEdit() {
 on('undo', undoEdit);
 on('redo', redoEdit);
 
+let previewSlides: { id: string; url: string }[] = [];
+// PDF goes through the browser's own print pipeline: one page per slide at the deck's
+// size, printed from a plain sheet of frames. PowerPoint's export is a single file with
+// one slide per page; the print dialog's "Save as PDF" produces the same thing without
+// putting a headless browser in the backend.
+on('export-pdf', async () => {
+  await flushAuthor();
+  const pages = snapshot.document.slides.filter((s) => !s.hidden);
+  const frames = pages.map((page) => previewSlides.find((preview) => preview.id === page.id)?.url).filter((url): url is string => !!url);
+  if (frames.length !== pages.length) throw new Error('请等待页面预览就绪后再导出 PDF');
+  const sheet = window.open('', '_blank');
+  if (!sheet) throw new Error('请允许打开新窗口以导出 PDF');
+  const { width, height } = snapshot.document;
+  sheet.document.write(
+    `<!doctype html><html lang="zh"><head><meta charset="utf-8"><title>${esc(snapshot.document.title)}</title><style>@page{size:${width}px ${height}px;margin:0}html,body{margin:0;padding:0;background:#fff}.print-page{width:${width}px;height:${height}px;overflow:hidden;break-after:page}.print-page:last-child{break-after:auto}iframe{width:${width}px;height:${height}px;border:0;display:block}#print-hint{position:fixed;inset:auto 16px 16px auto;padding:10px 14px;border-radius:8px;background:#263449;color:#fff;font:14px system-ui}</style></head><body><div id="print-hint">正在准备 ${frames.length} 页…</div>${frames
+      .map((url) => `<div class="print-page"><iframe src="${esc(url)}" title="讲义页面"></iframe></div>`)
+      .join('')}</body></html>`,
+  );
+  sheet.document.close();
+  const loaded = [...sheet.document.querySelectorAll('iframe')].map(
+    (node) => new Promise<void>((resolve) => node.addEventListener('load', () => resolve(), { once: true })),
+  );
+  await Promise.race([Promise.all(loaded), new Promise((resolve) => sheet.setTimeout(resolve, 20000))]);
+  await new Promise((resolve) => sheet.setTimeout(resolve, 600));
+  sheet.document.getElementById('print-hint')?.remove();
+  sheet.focus();
+  sheet.print();
+});
 on('export', async () => {
   await flushAuthor();
   location.href = `/api/documents/${snapshot.document.id}/export?version=${snapshot.version}`;
@@ -2076,6 +2192,42 @@ $<HTMLInputElement>('import').onchange = () =>
     });
     const result = await api('/api/import', { data });
     await init(result.document.id);
+  })().catch(error);
+// PPTX import creates a new lecture rather than merging into the open one, so the
+// original file and the current work are both left intact.
+$<HTMLInputElement>('import-pptx').onchange = () =>
+  void (async () => {
+    const input = $<HTMLInputElement>('import-pptx'), file = input.files?.[0];
+    input.value = '';
+    if (!file) return;
+    $('save-status').textContent = '正在导入 PPTX…';
+    const deck = parsePptx(new Uint8Array(await file.arrayBuffer()));
+    if (!deck.slides.length) throw new Error('这份 PPTX 里没有可导入的页面');
+    const id = uuid();
+    const assets: Record<string, unknown> = {};
+    const slides = [];
+    for (const [index, page] of deck.slides.entries()) {
+      const sourcePath = `page-${String(index + 1).padStart(2, '0')}.html`;
+      let html = page.html;
+      for (const item of page.media) {
+        const asset = await uploadAsset(item.bytes, item.mime);
+        assets[item.path] = asset;
+        html = html.replaceAll(item.path, item.path.split('/').map(encodeURIComponent).join('/'));
+      }
+      slides.push({ id: uuid(), name: page.name, sourcePath, html });
+    }
+    const created = await api('/api/documents', {
+      schemaVersion: 1,
+      id,
+      title: file.name.replace(/\.pptx$/i, '') || '导入的演示文稿',
+      width: deck.width,
+      height: deck.height,
+      slides,
+      assets,
+    });
+    await init(created.document?.id ?? id);
+    if (deck.skipped)
+      $('toast').textContent = `导入完成，跳过 ${deck.skipped} 个无法读取的元素（表格、图表、艺术效果等）。`;
   })().catch(error);
 on('overview', () => document.body.classList.toggle('overview-mode'));
 async function show(speaker = false) {
@@ -2265,15 +2417,26 @@ async function drainEdits() {
     editWaiters.clear();
   }
 }
+// A surface with a text cursor keeps the browser's own undo. Colour swatches, sliders,
+// spinners and menus carry no text history, so Ctrl+Z with one of them focused must undo
+// the document instead of doing nothing — the same as PowerPoint and Figma. Other
+// shortcuts stay out of every field, where they would fight with editing.
+const TEXT_ENTRY = new Set(['text', 'search', 'url', 'email', 'tel', 'password', '']);
+function keepsNativeUndo(target: EventTarget | null) {
+  if (!(target instanceof HTMLElement)) return false;
+  if (target.isContentEditable || target.tagName === 'TEXTAREA') return true;
+  return target instanceof HTMLInputElement && TEXT_ENTRY.has(target.type);
+}
 document.addEventListener('keydown', (e) => {
-  if (
-    e.target instanceof HTMLElement &&
-    (e.target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName))
-  )
-    return;
+  if((e.target as Element)?.closest?.('#chart-data-dock')){if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='z'){e.preventDefault();void(e.shiftKey?redoEdit():undoEdit()).catch(error);}return;}
   const action = editShortcut(e);
-  if (action?.type === 'paste' && !clipboard) return; // Native files when no internal object clipboard is active.
-  if (action && !interacting) {
+  if (!action) return;
+  const inField =
+    e.target instanceof HTMLElement &&
+    (e.target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName));
+  if (inField && (!['undo', 'redo'].includes(action.type) || keepsNativeUndo(e.target))) return;
+  if (action.type === 'paste' && !clipboard) return; // Native files when no internal object clipboard is active.
+  if (!interacting) {
     e.preventDefault();
     enqueueEdit(action);
   }
@@ -2282,18 +2445,30 @@ document.addEventListener('keydown', (e) => {
 const vectorIngress=createVectorIngress(geometrySession,()=>snapshot.document.id,()=>snapshot.version,error);
 
 async function init(id?: string) {
+  const chosen = id ?? new URLSearchParams(location.search).get('document');
+  const populate = (docs: {id:string;title:string}[]) => {
+    // Preserve a document opened or created while the catalogue was loading.
+    const current = snapshot?.document;
+    if(current && !docs.some(d=>d.id===current.id))docs=[current,...docs];
+    $('documents').innerHTML = docs.map(d=>`<option value="${d.id}">${esc(d.title)}</option>`).join('');
+    if(current)set('documents',current.id);
+  };
+  if(chosen){
+    // The catalogue is auxiliary; it must never delay opening an explicit document.
+    await load(chosen);
+    void api('/api/documents').then(populate).catch(()=>{
+      $('documents').title='讲义列表暂时不可用，当前讲义可继续编辑';
+    });
+    return;
+  }
   const docs = await api('/api/documents');
-  $('documents').innerHTML = docs
-    .map((d: { id: string; title: string }) => `<option value="${d.id}">${esc(d.title)}</option>`)
-    .join('');
-  const chosen = id ?? new URLSearchParams(location.search).get('document') ?? docs[0]?.id;
-  if (!chosen) {
+  populate(docs);
+  if (!docs[0]?.id) {
     $('empty').textContent = '尚无讲义。请使用导入脚本导入 HTML slides，或导入已有工程包。';
     $('save-status').textContent = '等待导入';
     return;
   }
-  set('documents', chosen);
-  await load(chosen);
+  await load(docs[0].id);
 }
 $<HTMLSelectElement>('documents').onchange = () =>
   void load(value('documents')).catch((e) => {
@@ -2818,26 +2993,82 @@ createMediaIngress({
 const imageCrop=createImageCrop({selected:()=>selected.size===1?objects.find(o=>selected.has(o.id)):undefined,key:()=>JSON.stringify([snapshot.document.id,snapshot.version,slideId,[...selected]]),slideId:()=>slideId,preview:()=>frame.src,capture:captureSelection,commands});
 const layoutManager=createLayoutManager({mount:$('global-master-mount'),document:()=>snapshot.document,slide,commands,show:async id=>{await showPage(id);editorShell.inspect('format');},error});
 const tableInspector=createTableInspector({objects:()=>objects,selection:()=>[...selected],select:id=>{changeSelection([id]);renderObjects();renderSelection();},slideId:()=>slideId,commands,error});
-function toHex(color: string | undefined) {
-  if (!color) return undefined;
-  if (/^#[0-9a-f]{6}$/i.test(color)) return color.toLowerCase();
-  const m = /^rgba?\((\d+),\s*(\d+),\s*(\d+)/.exec(color);
-  return m ? '#' + m.slice(1, 4).map((n) => Number(n).toString(16).padStart(2, '0')).join('') : undefined;
-}
-for (const [id, property] of [['object-fill', 'fill'], ['object-stroke', 'stroke'], ['object-accent', '--accent']] as const)
-  $<HTMLInputElement>(id).onchange = () =>
-    commands([{ type: 'element.patch', slideId, target: current().id, patch: { style: { [property]: value(id) } } }]).catch(error);
+const themePanel = createThemePanel({ document: () => snapshot.document, commands, error });
+const pageBackground = createPageBackground({ document: () => snapshot.document, slide, commands, error });
+const commentsPanel = createCommentsPanel({
+  document: () => snapshot.document,
+  slideId: () => slideId,
+  objects: () => objects,
+  selected: () => [...selected],
+  commands,
+  show: showPage,
+  select: (id) => { changeSelection([id]); renderObjects(); renderSelection(); },
+  uuid,
+  error,
+});
+on('toggle-comments', () => {
+  const open = commentsPanel.toggle();
+  $('toggle-comments').setAttribute('aria-pressed', String(open));
+  $('toggle-comments').setAttribute('aria-expanded', String(open));
+});
+const findReplace = createFindReplace({
+  document: () => snapshot.document,
+  commands,
+  show: showPage,
+  select: (id) => { changeSelection([id]); renderObjects(); renderSelection(); },
+  error,
+});
+// Ctrl/Cmd+H opens replace, the PowerPoint shortcut; the pages panel has a button too.
+document.addEventListener('keydown', (event) => {
+  if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== 'h') return;
+  const target = event.target;
+  if (target instanceof HTMLElement && (target.isContentEditable || target.closest('input,textarea,select'))) return;
+  event.preventDefault();
+  findReplace.open();
+});
+on('open-find-replace', () => findReplace.open());
+const appearanceInspector = createAppearanceInspector({
+  objects: () => objects,
+  selected: () => [...selected],
+  key: () => JSON.stringify([snapshot.document.id, snapshot.version, slideId, [...selected]]),
+  slideId: () => slideId,
+  commands,
+  capture: captureSelection,
+  error,
+});
+// A cycle is regenerated from its labels, so changing the count re-flows the ring and
+// keeps whatever text the author already wrote.
+$('cycle-count').addEventListener('change', () => void Promise.resolve().then(() => {
+  const root = current(), count = Math.max(3, Math.min(6, num('cycle-count')));
+  const existing = objects.filter((o) => o.parent === root.id && o.tag === 'p').map((o) => o.text.trim());
+  return commands([
+    { type: 'element.content', slideId, target: root.id, html: cycleContent(cycleLabels(count, existing)) },
+    { type: 'element.patch', slideId, target: root.id, patch: { attributes: { 'data-notale-cycle': String(count) } } },
+  ]);
+}).catch(error));
 on('layout-item-duplicate', () => commands([{ type: 'element.duplicate', slideId, target: current().id }]));
 on('layout-item-delete', () => commands([{ type: 'element.delete', slideId, target: current().id }]));
 const equationEditor = createEquationEditor({ objects: () => objects, selection: () => [...selected], slideId: () => slideId, commands, error });
+const codeEditor = createCodeEditor({ objects: () => objects, selection: () => [...selected], slideId: () => slideId, commands, error });
 const chartEditor=createChartEditor({objects:()=>objects,selection:()=>[...selected],key:()=>JSON.stringify([snapshot.document.id,snapshot.version,slideId,[...selected]]),slideId:()=>slideId,commands,error});
+echartsUI=createEchartsEditor({documentId:()=>snapshot.document.id,slide,selection:()=>[...selected],locked:()=>[...selected].some(id=>objects.find(o=>o.id===id)?.locked),
+  inspect:async()=>{const id=[...selected][0];if(!rects.some(r=>r.id===id&&r.nativeChart))return {target:id,available:false,series:[]};return await inspectNativeChart()??{target:id,available:false,series:[]};},
+  send,select:id=>{changeSelection([id]);renderObjects();renderSelection();},format:()=>editorShell.inspect('format'),commands,error,step:()=>step,setStep,
+  commit:async(pageId,target,before,after)=>{
+    const chart=snapshot.document.slides.find(s=>s.id===pageId)!.nativeCharts[target]??{adapter:'echarts' as const,option:{}};
+    await geometrySession.enqueue({id:uuid(),slideId:pageId,runtimeId:'chart',sequence:Date.now(),commands:[{type:'native-chart.edit',slideId:pageId,target,model:after,before}],before:[{id:target,style:null,chart:{...chart,authoring:before}}],after:[{id:target,style:null,chart:{...chart,authoring:after}}],chart:true});
+  },
+});
+$('native-chart-panel').classList.add('chart-legacy-replaced');
 pageSettings.bindValues(()=>layoutValuesUI.render(),()=>layoutValuesUI.reset());
 const previewOverlay = createPreviewOverlay({
   prepare: async () => {
-    await initialized; await flushAuthor(); await whenIdle();
+    await initialized; await echartsUI?.flush();
+    if(!geometrySession.onlyChartEdits){await flushAuthor();await whenIdle();}
     await whenReady();
-    if (pending) throw new Error('修改尚未保存，请先重试保存后再预览');
-    return { snapshot: structuredClone(snapshot), slideId };
+    const frozen=structuredClone(snapshot);
+    for(const page of frozen.document.slides)for(const state of geometrySession.states(page.id))if(state.chart)page.nativeCharts[state.id]=structuredClone(state.chart);
+    return { snapshot: frozen, slideId };
   },
   present: () => $('present').click(), error,
 });
@@ -2850,6 +3081,11 @@ const canvasLoading = createCanvasLoading(async () => { await whenIdle(); await 
 documentUI=createDocumentUI({document:()=>snapshot.document,version:()=>snapshot.version,commands,load,history:()=>api(`/api/documents/${snapshot.document.id}/history`),restore,flush:flushAuthor,error});
 applyFeatureAvailability();
 const vectorUI=createVectorInspector((action,data={})=>send('vector-action',{action,...data}));
+createTemplateLibrary({ready:()=>initialized,snapshot:()=>snapshot,slide,commands,upload:uploadAsset,error,selectInstance:instance=>{
+  const root=objects.find(o=>o.attributes['data-template-instance']===instance);if(!root)return;
+  const members=objects.filter(o=>o.parent===root.id&&o.tag!=='style').map(o=>o.id);
+  changeSelection(members);renderObjects();renderSelection();
+}});
 const initialized = init();
 void initialized.catch(error);
 // A small stable surface for host integration and browser acceptance tests.

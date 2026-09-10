@@ -1,3 +1,4 @@
+import { chartAuthoringSchema } from '../domain/chart-authoring.js';
 import {stageBounds} from './stage-bounds.js';
 import {paintVector} from './vector-dom.js';
 import type {createVectorEditor} from './vector-editor.js';
@@ -69,6 +70,8 @@ let step = 0,
   selected = new Set<string>();
 let cues = timeline(slide);
 const active: Animation[] = [];
+const chartTimers=new Set<ReturnType<typeof setTimeout>>();
+const chartStateIds=new Map<string,string[]>();
 const triggered = new Set<string>();
 const get = (id: string) =>
   document.querySelector<HTMLElement>(`[data-notale-id="${CSS.escape(id)}"]`);
@@ -83,6 +86,9 @@ const media = mediaController(send);
 const canvasInstances = canvasInstanceController(slide);
 const nativeCharts = nativeChartController(slide.nativeCharts ?? {}, (target, error) =>
   send('native-chart-error', { target, error }),
+  ()=>mode==='edit'&&selected.size===1?[...selected][0]:undefined,
+  (target,selection)=>send('chart-selected',{target,selection}),
+  (type,data)=>send(type,data),
 );
 const connectors = connectorController(slide.connectors ?? [], {
   selected: () => (mode === 'edit' && selected.size === 1 ? [...selected][0] : undefined),
@@ -562,6 +568,7 @@ function stopAuthorPreview() {
 }
 document.addEventListener('pointerdown',()=>{if(mode==='edit')stopAuthorPreview();},true);
 function cancel() {
+  for(const timer of chartTimers)clearTimeout(timer);chartTimers.clear();
   stopAuthorPreview();
   for (const animation of active) animation.cancel();
   active.length = 0;
@@ -572,6 +579,7 @@ function animateObject(
   delay: number,
   fill: FillMode = 'both',
 ) {
+  if(spec.effect==='chart-state'){const apply=()=>{const ids=chartStateIds.get(spec.target)??[];if(spec.chartStateId)ids.push(spec.chartStateId);chartStateIds.set(spec.target,ids);nativeCharts.state(spec.target,ids,spec.duration);};if(delay){const timer=setTimeout(apply,delay);chartTimers.add(timer);}else apply();return [];}
   const source = frames(spec),
     hasTransform = source.some((f) => f.transform !== undefined),
     out: Animation[] = [];
@@ -607,6 +615,7 @@ function seek(next: number, animate = false, componentStep = next) {
   cancel();
   media.seek(step, animate, mode !== 'edit' && mediaEnabled);
   triggered.clear();
+  chartStateIds.clear();nativeCharts.resetStates();
   const native = slide.stepMap?.length
     ? slide.stepMap[Math.min(step, slide.stepMap.length - 1)]
     : step;
@@ -629,6 +638,10 @@ function seek(next: number, animate = false, componentStep = next) {
   for (const cue of ordered) {
     const el = get(cue.spec.target);
     if (!el) continue;
+    if(cue.spec.effect==='chart-state'){
+      if(cue.spec.step<=step&&!cue.eventTarget){const apply=()=>{const ids=chartStateIds.get(cue.spec.target)??[];if(cue.spec.chartStateId)ids.push(cue.spec.chartStateId);chartStateIds.set(cue.spec.target,ids);nativeCharts.state(cue.spec.target,ids,animate&&cue.spec.step===step?cue.spec.duration:0);};if(animate&&cue.spec.step===step&&cue.start){const timer=setTimeout(apply,cue.start);chartTimers.add(timer);}else apply();}continue;
+    }
+
     const earlier = ordered
       .slice(0, ordered.indexOf(cue))
       .some(
@@ -667,6 +680,7 @@ function setMode(next: string) {
   cancelDrag();
   endMarquee(true);
   mode = next === 'edit' ? 'edit' : 'play';
+  nativeCharts.editing(mode==='edit');
   refreshGuides();
   document.documentElement.dataset.notaleMode = mode;
   seek(mode === 'edit' ? total() : 0, mode === 'play', 0);
@@ -699,6 +713,7 @@ document.addEventListener(
         ? event.target.closest<HTMLElement>('[data-notale-id]')
         : null;
     if (mode === 'edit') {
+      if(target&&selected.has(target.dataset.notaleId!)&&slide.nativeCharts[target.dataset.notaleId!]?.authoring&&!suppressClick)return;
       event.preventDefault();
       event.stopImmediatePropagation();
       if (suppressClick) {
@@ -790,6 +805,7 @@ document.addEventListener(
   'dblclick',
   (event) => {
     if (mode !== 'edit') return;
+    if((event.target as Element)?.closest('[data-notale-chart-ui]'))return;
     const hit = document.elementFromPoint(event.clientX, event.clientY);
     const el = hit?.closest<HTMLElement>('[data-notale-id]') ?? null;
     const component = componentHit(el);
@@ -1019,6 +1035,7 @@ document.addEventListener('pointerdown', (event) => {
     stage.setPointerCapture(event.pointerId);
     return;
   }
+  if(el&&selected.has(el.dataset.notaleId!)&&slide.nativeCharts[el.dataset.notaleId!]?.authoring){suppressClick=false;return;}
   if (el.isContentEditable) return;
   const id = el.dataset.notaleId!;
   if (event.shiftKey) {
@@ -1031,7 +1048,12 @@ document.addEventListener('pointerdown', (event) => {
   }
   suppressClick = true;
 });
+let chartDragCandidate:MouseEvent|undefined;
+document.addEventListener('mousemove',event=>{if(chartDragCandidate&&Math.hypot(event.clientX-chartDragCandidate.clientX,event.clientY-chartDragCandidate.clientY)>4){const original=chartDragCandidate;chartDragCandidate=undefined;handles.dragStart(original);}},true);
+document.addEventListener('mouseup',()=>chartDragCandidate=undefined,true);
 document.addEventListener('mousedown', event => {
+  if((event.target as Element)?.closest('[data-notale-chart-ui]'))return;
+  const chart=(event.target as Element)?.closest<HTMLElement>('[data-notale-id]');if(mode==='edit'&&chart&&selected.has(chart.dataset.notaleId!)&&slide.nativeCharts[chart.dataset.notaleId!]?.authoring&&!event.altKey){chartDragCandidate=event;return;}
   if(mode === 'edit' && !vectorActive && event.button === 0 && event.target instanceof Element && event.target.closest('[data-notale-id]') && !event.target.closest('[data-notale-handles]')) handles.dragStart(event);
 });
 document.addEventListener('pointermove', (event) => {
@@ -1141,6 +1163,18 @@ window.addEventListener('message', (event) => {
   )
     return;
   const { type, data } = event.data;
+  if(type==='chart-draft'){
+    const parsed=chartAuthoringSchema.safeParse(data.model);if(parsed.success&&get(data.target)){
+      slide.nativeCharts[data.target]={...slide.nativeCharts[data.target],adapter:'echarts',option:slide.nativeCharts[data.target]?.option??{},authoring:parsed.data};
+      nativeCharts.update({...slide.nativeCharts});nativeCharts.state(data.target,data.stepState?[data.stepState]:[]);
+    }return;
+  }
+  if(type==='charts-update'){
+    nativeCharts.update(data.charts);slide.nativeCharts=data.charts;return;
+  }
+  if(type==='chart-selection'){nativeCharts.highlight(data.target,data.selection);return;}
+  if(type==='chart-export'){send('chart-exported',{url:nativeCharts.exportImage(data.target,data.format),format:data.format});return;}
+
   if (type === 'animations-update' && mode === 'edit' && Array.isArray(data.animations)) {
     const parsed = data.animations.map((a:unknown)=>animationSchema.safeParse(a));
     if(parsed.every((a:ReturnType<typeof animationSchema.safeParse>)=>a.success)) {

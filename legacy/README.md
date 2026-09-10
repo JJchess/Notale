@@ -1,5 +1,7 @@
 # lecture-agent
 
+> `demos/`：草坪路径、排序和 Dijkstra 的旧演示，2026-09-10 从 Notale 根目录归档；当前 harness 不依赖此目录。内部资源软链接已调整，文档中的旧启动路径仅作历史记录。
+
 > 统一归档入口：当前 Notale v2 的旧代码、方案、实验脚本和样例见 [notale-v2/](notale-v2/README.md)；旧模板工具见 [native-template-tools/](native-template-tools/README.md)，旧库缓存见 [vendor/](vendor/README.md)。以下正文为早期 lecture-agent 的历史说明，不代表现行 harness。
 
 自演化的**讲义生成 agent**：给一个课题，产出一份合法、可交互的 **LectureDoc**——由 reveal.js 运行时渲染成的网页讲义（富文本、KaTeX 公式、浏览器内仿真、可编辑代码、测验、AI 助教）。

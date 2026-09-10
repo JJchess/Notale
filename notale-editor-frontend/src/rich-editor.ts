@@ -14,6 +14,7 @@ export function createRichEditor(context:{selected:()=>ObjectInfo|undefined;key:
   const originals=new Map<string,Element>();
   function source(object:ObjectInfo) {
     const doc=new DOMParser().parseFromString(object.html,'text/html');const root=doc.body.firstElementChild;
+    if(root?.hasAttribute('data-notale-authored-chart'))return;
     if(!root||!['p','div','section','article','h1','h2','h3','h4','h5','h6','span','li','blockquote','a'].includes(object.tag))return;
     if([...root.querySelectorAll('*')].some(el=>!allowed.has(el.localName)))return;
     return root;

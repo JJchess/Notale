@@ -163,5 +163,66 @@ class HarnessTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((destination/'workspace/input/template.pptx').read_bytes(), self.source.read_bytes())
 
 
+class CommandTests(unittest.TestCase):
+    def test_one_command_creates_run_and_protects_existing_results(self):
+        replies = iter([
+            calls(tool('exec_command', {'cmd': "printf '<html>candidate</html>' > output/index.html"})),
+            final(),
+        ])
+        received = []
+
+        class Handler(BaseHTTPRequestHandler):
+            def log_message(self, *args):
+                pass
+
+            def do_POST(self):
+                received.append(json.loads(self.rfile.read(int(self.headers['Content-Length']))))
+                data = json.dumps(next(replies)).encode()
+                self.send_response(200)
+                self.send_header('Content-Type', 'application/json')
+                self.send_header('Content-Length', str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
+
+        server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            with tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                standalone = root/'standalone'
+                shutil.copytree(Path(__file__).parent, standalone,
+                               ignore=shutil.ignore_patterns('runs', '__pycache__', '.env', '.venv'))
+                source = root/'中文 template.pptx'
+                source.write_bytes(b'original input')
+
+                def invoke(*args):
+                    return subprocess.run([sys.executable, str(standalone/'run.py'), *args,
+                        '--base-url', f'http://127.0.0.1:{server.server_port}/v1',
+                        '--api-key-env', 'HARNESS_TEST_KEY'], cwd=root,
+                        env={**os.environ, 'HARNESS_TEST_KEY': 'local-fixture-only'},
+                        capture_output=True, text=True, timeout=15)
+
+                result = invoke('--pptx', str(source))
+                self.assertEqual(result.returncode, 0, result.stderr)
+                run = Path(json.loads(result.stdout.splitlines()[0])['run_dir'])
+                self.assertEqual(run.parent, standalone/'runs')
+                self.assertEqual((run/'workspace/input/template.pptx').read_bytes(), source.read_bytes())
+                candidate = run/'workspace/output/index.html'
+                self.assertEqual(candidate.read_text(), '<html>candidate</html>')
+                inspection = invoke('inspect', '--run-dir', str(run))
+                self.assertEqual(inspection.returncode, 0, inspection.stderr)
+                self.assertEqual(json.loads(inspection.stdout)['status'], 'delivered_unreviewed')
+                for args in [('--pptx', str(source), '--run-dir', str(run)), ('run', '--run-dir', str(run))]:
+                    rejected = invoke(*args)
+                    self.assertEqual(rejected.returncode, 2, rejected.stderr)
+                self.assertEqual(candidate.read_text(), '<html>candidate</html>')
+                self.assertEqual(len(received), 2)
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join()
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -6,6 +6,7 @@ export type Pending = {
   inverseVersion?: number;
   historyAction?: 'undo' | 'redo';
   geometry?: boolean;
+  chart?: boolean;
   vector?: boolean;
   textEdit?: {sessionId:string;sequence:number;target:string};
   documentId: string;

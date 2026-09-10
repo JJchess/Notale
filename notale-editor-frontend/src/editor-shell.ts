@@ -201,16 +201,15 @@ export function createEditorShell(onZoom: (scale: number) => void = () => {}) {
       element('tool-panel').hidden = false;
       element('tool-panel-title').textContent = button.textContent;
       element('tool-message').textContent = '';
-      for (const section of document.querySelectorAll<HTMLElement>('[data-library]')) section.hidden = section.dataset.editorUnavailable === 'true' || !(tool === 'insert' && ['text','resources','insert','interactive'].includes(section.dataset.library ?? ''));
+      element('insert-drawer').hidden = tool !== 'insert';
+      element('template-drawer').hidden = tool !== 'templates';
+      for (const section of document.querySelectorAll<HTMLElement>('[data-library]')) section.hidden = section.dataset.editorUnavailable === 'true' || !(tool === 'insert' && !!section.closest('#insert-drawer'));
       document.body.classList.add('tools-open');
     }
     refreshPanels();
   });
   element('close-tool-panel').addEventListener('click', () => { closeTools(); refreshPanels(); });
   for (const button of document.querySelectorAll<HTMLButtonElement>('[data-inspect]')) button.addEventListener('click', () => inspect('format', button.dataset.inspect));
-  element('library-preview').addEventListener('click', () => {
-    if (element('interact').getAttribute('aria-pressed') !== 'true') element('interact').click();
-  });
   element('focus-canvas').addEventListener('click', () => { closeTools(); refreshPanels(); });
 
   const search = element<HTMLInputElement>('slide-search');

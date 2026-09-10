@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""Independent minimal PPTX→HTML harness: prepare, run, inspect."""
+"""Convert a PPTX in one command; prepare and inspect remain optional utilities."""
 import argparse
 import asyncio
+from datetime import datetime, timezone
 import json
 import os
 from pathlib import Path
@@ -47,14 +48,18 @@ def check_delivery(work, record):
 def main():
     os.umask(0o077)
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument('command', choices=['prepare', 'run', 'inspect'])
-    p.add_argument('--run-dir', type=Path, required=True)
+    p.add_argument('command', choices=['prepare', 'run', 'inspect'], nargs='?', default='run')
+    p.add_argument('--run-dir', type=Path, help='Default: a fresh timestamped directory under runs/')
     p.add_argument('--pptx', type=Path)
     p.add_argument('--base-url', default=DEFAULT_BASE_URL)
     p.add_argument('--api-key-env', default='GEMINI_API_KEY')
     p.add_argument('--max-turns', type=int)
     args = p.parse_args()
-    run = args.run_dir.resolve()
+    if args.max_turns is not None and args.max_turns < 1:
+        p.error('--max-turns must be positive')
+    if not args.run_dir and (args.command == 'inspect' or not args.pptx):
+        p.error('provide --pptx for a new run, or --run-dir for an existing run')
+    run = (args.run_dir or HERE/'runs'/datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')).resolve()
     if args.command == 'prepare':
         if not args.pptx:
             p.error('--pptx is required for prepare')
@@ -64,11 +69,16 @@ def main():
         status = run/'state/result.json'
         print(status.read_text() if status.exists() else json.dumps({'status': 'not_completed'}))
         return 0
-    if args.max_turns is not None and args.max_turns < 1:
-        p.error('--max-turns must be positive')
+    if args.pptx:
+        if run.exists():
+            p.error('--pptx requires a fresh run directory; existing results are not overwritten')
+        prepare(args.pptx, run)
     manifest = run/'manifest.json'
     if not manifest.is_file() or json.loads(manifest.read_text()).get('harness') != 'pptx2html-minimal-v1':
-        p.error('prepare a fresh run in this harness first')
+        p.error('provide --pptx to prepare a fresh run')
+    if (run/'state/started.json').exists():
+        p.error('this run has already started; use --pptx with a fresh run directory')
+    print(json.dumps({'run_dir': str(run), 'output': str(run/'workspace/output')}), flush=True)
     work = run/'workspace'
     sandbox = Sandbox(work, run/'state')
     sandbox.preflight()

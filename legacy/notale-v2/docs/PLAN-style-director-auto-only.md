@@ -1,6 +1,6 @@
 # Style Director 收窄：只留 auto 一条路，主题失败不拖死整轮（历史草案，2026-09-09）
 
-> 2026-09-10：已由 [PLAN-style-control.md「当前方案」](../../../notale-v2/PLAN-style-control.md) 综合评议并取代，不再待批或作为实施依据。保留本文用于追溯；auto-only、默认降级主题、style.json 与线程重构未获本轮采纳，代码未据此实施。
+> 2026-09-10：已由 [PLAN-style-control.md「当前方案」](../../../notale-v2/doc/PLAN-style-control.md) 综合评议并取代，不再待批或作为实施依据。保留本文用于追溯；auto-only、默认降级主题、style.json 与线程重构未获本轮采纳，代码未据此实施。
 
 一句话：删掉 `--template / --style` 带来的 reuse / modify / reference 三条路线和它们的导入沙箱、白名单、样张交接；Director 只剩 pick → theme → 闸；Director 失败时发一份最简主题继续建页，失败原因落盘并写进 INTERFACE。不动线程结构、不动两阶段选样、不动技术闸。
 

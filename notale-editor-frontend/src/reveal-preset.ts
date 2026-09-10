@@ -7,9 +7,11 @@ export function createRevealPreset(context:{
 }) {
   const panel=document.querySelector<HTMLElement>('[data-library="interactive"]')!;
   const box=document.createElement('div');box.id='reveal-preset';
-  box.innerHTML=`<button id="insert-reveal" class="preset-card"><strong>点击展开解释</strong><span>先提问，再揭示答案；支持再次收起。</span></button><fieldset id="reveal-editor" hidden><legend>展开解释</legend><label>组件名称<input id="reveal-name"></label><label>展开按钮文字<input id="reveal-closed-label"></label><label>收起按钮文字<input id="reveal-open-label"></label><label>解释内容<textarea id="reveal-answer" rows="4"></textarea></label><label>打开页面时<select id="reveal-initial"><option value="closed">收起解释</option><option value="open">显示解释</option></select></label><button id="save-reveal">保存互动内容</button><p class="hint">点“体验本页互动”检查展开和收起。组件也可以复制到其他页面。</p></fieldset>`;
+  box.innerHTML=`<button id="insert-reveal" class="preset-card"><strong>点击展开解释</strong><span>先提问，再揭示答案；支持再次收起。</span></button><fieldset id="reveal-editor" hidden><legend>展开解释</legend><label>组件名称<input id="reveal-name"></label><label>展开按钮文字<input id="reveal-closed-label"></label><label>收起按钮文字<input id="reveal-open-label"></label><label>解释内容<textarea id="reveal-answer" rows="4"></textarea></label><label>打开页面时<select id="reveal-initial"><option value="closed">收起解释</option><option value="open">显示解释</option></select></label><button id="save-reveal">保存互动内容</button><p class="hint">使用画布右下角的预览检查展开和收起。组件也可以复制到其他页面。</p></fieldset>`;
   panel.prepend(box);
-  const el=<T extends HTMLElement=HTMLElement>(id:string)=>box.querySelector<T>('#'+id)!;
+  const controls=new Map(Array.from(box.querySelectorAll<HTMLElement>('[id]'),node=>[node.id,node]));
+  document.getElementById('selection-name')!.after(controls.get('reveal-editor')!);
+  const el=<T extends HTMLElement=HTMLElement>(id:string)=>controls.get(id)! as T;
   const val=(id:string)=>el<HTMLInputElement>(id).value;
   let key='';let busy=false;
   function current() {

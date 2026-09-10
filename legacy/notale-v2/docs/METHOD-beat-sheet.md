@@ -1,6 +1,6 @@
 # 方法论：一页是一段有时长的过程，不是一组属性
 
-> 2026-09-10 归档：保留历史输入或提案，不作为当前实施清单。当前风格契约见 [PLAN-style-control.md](../../../notale-v2/PLAN-style-control.md)，全链路见 [架构 v4](../../../notale-v2/ARCHITECTURE-v4.html)。下文历史命令与代码路径仍相对 notale-v2 根目录。
+> 2026-09-10 归档：保留历史输入或提案，不作为当前实施清单。当前风格契约见 [PLAN-style-control.md](../../../notale-v2/doc/PLAN-style-control.md)，全链路见 [架构 v4](../../../notale-v2/ARCHITECTURE-v4.html)。下文历史命令与代码路径仍相对 notale-v2 根目录。
 
 ## 现在的失效方式
 

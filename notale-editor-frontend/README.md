@@ -29,6 +29,7 @@ For local port forwarding, only forward **4312**. Preview URLs use `http://notal
 ## Current working flow
 
 - Narrow creation rail; contextual text/media/shape/interaction/component drawers; on-demand pages, properties and speaker notes.
+- 面板视觉规则：工具面板里的条目是「选择器」而不是卡片——静止无边框无底色，悬停出浅底，选中出主色浅底；形状与图标库不显示文字标签（名字在 tooltip 里），缩略图用按钮的颜色（中性灰），颜色只属于画布。只有装着渲染缩略图的格子（图示预览、主题色板）和没有图形的文字按钮保留底片或边框。改动集中在 `src/editor.css` 末尾的 Panel chrome 区块。
 - Insert gallery: a generated drawer (`src/insert-panel.ts`) with twelve shapes, 48 Lucide icons, KaTeX equations (display or inline, edited through a LaTeX dialog, selected as one object), symbols, word-art presets, date and code blocks, and three layouts whose items can be duplicated or deleted. Generated objects carry their colours as CSS variables so they follow the lecture theme and recolour from one accent field; `tests/insert-gallery.spec.ts` covers them including nested-page paste, export and the slide show.
 - Reusable document media catalog with filename search, lazy image thumbnails, insertion and same-type replacement; uploads retain readable filenames and reuse does not upload again.
 - Fit-to-window and 25–200% zoom presets, fine zoom buttons, hand panning, focus view and panel preference persistence. These operations never modify the document.

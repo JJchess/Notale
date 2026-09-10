@@ -31,11 +31,13 @@ const server = createServer(async (req, res) => {
   }
   // Signed slide content is never served on the editor/API origin.
   if (pathname.startsWith('/content/')) { res.writeHead(404).end('Not found'); return; }
-  const asset = assets.get(pathname);
-  if (asset && req.method === 'GET') {
+  const asset = assets.get(pathname) ?? (/^\/chunks\/[a-zA-Z0-9_.-]+\.js$/.test(pathname)?[pathname.slice(1),'text/javascript; charset=utf-8']:undefined);
+  const templateAsset = /^\/templates\/refined\/(?:assets\/)?[a-zA-Z0-9_.-]+\.(?:json|html|png|jpg|woff2)$/.test(pathname) ? [pathname.slice(1), ({json:'application/json',html:'text/html; charset=utf-8',png:'image/png',jpg:'image/jpeg',woff2:'font/woff2'})[pathname.split('.').pop()]] : undefined;
+  const staticAsset=asset??templateAsset;
+  if (staticAsset && req.method === 'GET') {
     try {
-      const body = await readFile(process.env.EDITOR_DIST_DIR ? resolve(process.env.EDITOR_DIST_DIR,asset[0]) : new URL('../dist/' + asset[0], import.meta.url));
-      res.writeHead(200, { 'content-type': asset[1], 'cache-control': 'no-cache' }).end(body);
+      const body = await readFile(process.env.EDITOR_DIST_DIR ? resolve(process.env.EDITOR_DIST_DIR,staticAsset[0]) : new URL('../dist/' + staticAsset[0], import.meta.url));
+      res.writeHead(200, { 'content-type': staticAsset[1], 'cache-control': 'no-cache' }).end(body);
     } catch { res.writeHead(503).end('Build frontend first: npm run build'); }
     return;
   }

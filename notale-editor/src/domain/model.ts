@@ -230,6 +230,25 @@ export const componentDefinitionSchema = z
     computedStyles: z.record(identifier, styleSchema).default({}),
   })
   .strict();
+export const commentSchema = z
+  .object({
+    id: identifier,
+    slideId: identifier,
+    target: identifier.optional(),
+    author: z.string().min(1).max(120),
+    text: z.string().min(1).max(4000),
+    createdAt: z.string().min(1).max(40),
+    resolved: z.boolean().default(false),
+    replies: z
+      .array(
+        z
+          .object({ id: identifier, author: z.string().min(1).max(120), text: z.string().min(1).max(4000), createdAt: z.string().min(1).max(40) })
+          .strict(),
+      )
+      .max(200)
+      .default([]),
+  })
+  .strict();
 export const documentSchema = z
   .object({
     schemaVersion: z.literal(1),
@@ -242,6 +261,7 @@ export const documentSchema = z
     componentLibrary: z.array(componentDefinitionSchema).max(100).optional(),
     slides: z.array(slideSchema).min(1).max(1000),
     assets: z.record(filePath, assetSchema).default({}),
+    comments: z.array(commentSchema).max(2000).default([]),
     presentation: z
       .object({ loop: z.boolean().default(false), showSlideNumber: z.boolean().default(true) })
       .strict()
@@ -277,6 +297,8 @@ export const commandSchema = z.discriminatedUnion('type', [
     })
     .strict(),
   z.object({ type: z.literal('layout.set'), layout: layoutSchema }).strict(),
+  z.object({ type: z.literal('comment.set'), comment: commentSchema }).strict(),
+  z.object({ type: z.literal('comment.remove'), id: identifier }).strict(),
   z.object({ type: z.literal('layout.remove'), id: identifier }).strict(),
   z.object({ type: z.literal('layout.detach'), ...slideId }).strict(),
   z.object({ type: z.literal('layout.checkout'), id: identifier, newId: identifier }).strict(),
@@ -330,6 +352,7 @@ export const commandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('connector.set'), ...slideId, connector: connectorSchema }).strict(),
   z.object({ type: z.literal('element.patch'), ...target, patch }).strict(),
   z.object({ type: z.literal('media.update'), ...target, patch: mediaPatchSchema }).strict(),
+  z.object({type:z.literal('native-chart.convert'),...target}).strict(),
   z.object({ type: z.literal('chart.update'), ...target, data: chartDataSchema }).strict(),
   z
     .object({
@@ -483,7 +506,7 @@ export const commandSchema = z.discriminatedUnion('type', [
     .strict(),
   z.object({ type: z.literal('native-chart.remove'), ...target }).strict(),
   z.object({type:z.literal('native-chart.create'),...target,model:chartAuthoringSchema,x:z.number().finite().default(180),y:z.number().finite().default(140),width:z.number().min(160).max(10000).default(900),height:z.number().min(120).max(10000).default(520)}).strict(),
-  z.object({type:z.literal('native-chart.edit'),...target,model:chartAuthoringSchema}).strict(),
+  z.object({type:z.literal('native-chart.edit'),...target,model:chartAuthoringSchema,before:chartAuthoringSchema.optional()}).strict(),
   z.object({type:z.literal('native-chart.reset'),...target,scope:z.enum(['appearance','data','all']).default('appearance')}).strict(),
   z
     .object({ type: z.literal('container.layout'), ...target, layout: containerLayoutSchema })

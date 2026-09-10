@@ -3,7 +3,7 @@
 这里保存已退役的实现、被取代的方案和旧架构，不是待实施清单，也不是运行时输入。
 2026-09-10 整理；整理前 baseline：`eea81f9f`。原 `notale-v2/legacy/` 与 `notale-v2/attic/` 统一迁至此目录，只迁移、不销毁历史内容。
 
-当前入口：[Style Director 契约](../../notale-v2/PLAN-style-control.md) · [架构 v4](../../notale-v2/ARCHITECTURE-v4.html)。
+当前入口：[Style Director 契约](../../notale-v2/doc/PLAN-style-control.md) · [架构 v4](../../notale-v2/ARCHITECTURE-v4.html)。
 
 | 位置 | 内容与边界 |
 | --- | --- |
@@ -16,6 +16,12 @@
 | [full-samples/](full-samples/) | 完整样例归档，内部目录结构与资源不变 |
 | [image-search/](image-search/README.md) | 图片检索旧实现，保留恢复用源码快照 |
 | [attic/](attic/README.md) | 更早的 schema、workflow 等实现，保留内部结构与历史状态，不作为可直接运行的现行代码 |
+
+## 辅助代码归档（2026-09-10）
+
+`auxiliary/scripts/` 保存旧图片统计、索引、固定风格实验和字体预览脚本；`auxiliary/test/` 保存七组行为测试收敛前的原文件（含实验模型测试）。内容按归档前状态保留，原 import、路径和命令不保证在归档目录运行；不纳入当前测试或 TS 重写。
+
+当前辅助入口：`notale-v2/scripts/dump_page.py`、`notale-v2/scripts/inspect_run.py images [目录]` / `index <目录>`；字体维护为 `notale-v2/vendor/fonts/fetch.py`，远程开发为 `infra/remote-dev.ps1`（均相对 Notale 根目录）。
 
 ## 方案索引
 

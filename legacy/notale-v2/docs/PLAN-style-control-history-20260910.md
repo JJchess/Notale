@@ -1,6 +1,6 @@
 # Style Director 历史方案与实验记录
 
-2026-09-10 归档。以下保留当时的方案与状态，不再作为实施清单。当前契约见 [PLAN-style-control.md](../../../notale-v2/PLAN-style-control.md)。
+2026-09-10 归档。以下保留当时的方案与状态，不再作为实施清单。当前契约见 [PLAN-style-control.md](../../../notale-v2/doc/PLAN-style-control.md)。
 
 > 当前风格容器减法整改见第 10 节：实现与手绘/Bento 两页实验已完成，功能通过、视觉未完全通过；此前过宽的去容器 diff 已撤回。
 
@@ -292,7 +292,7 @@ python -B -m pytest core/test_check_report.py -q
 
 本轮新增用户指定的 8 张风格海报，共 40 项，已逐张看图并整理为[风格参考表](../../../notale-v2/references/styles/INDEX.md)。40 项全部纳入创作参考范围，裁图和运行时接入已完成；不以早先六个候选方向代替。
 
-同日追加：轻索引→风格详情按需读取、中英字体资料与本地交付已实施；对应字体样张、真实主题与失败记录见[详情与字体验证](../../../notale-v2/STYLE-DETAILS-VALIDATION.md)。
+同日追加：轻索引→风格详情按需读取、中英字体资料与本地交付已实施；对应字体样张、真实主题与失败记录见[详情与字体验证](../../../notale-v2/doc/STYLE-DETAILS-VALIDATION.md)。
 
 ## 1. 为什么改，改到哪里
 

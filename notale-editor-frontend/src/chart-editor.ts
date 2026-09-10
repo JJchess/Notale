@@ -19,6 +19,8 @@ export function createChartEditor(context: {
   button.id = "open-chart-editor";
   button.textContent = "编辑图表数据";
   document.getElementById("selection-name")!.after(button);
+  const convert=document.createElement('button');convert.id='convert-echarts';convert.textContent='转换为可编辑互动图表';button.after(convert);
+  convert.onclick=()=>{const item=selected();if(item)void context.commands([{type:'native-chart.convert',slideId:context.slideId(),target:item.id}]).catch(context.error);};
   const dialog = document.createElement("dialog");
   dialog.id = "chart-editor-dialog";
   dialog.setAttribute("aria-labelledby", "chart-editor-title");
@@ -248,7 +250,7 @@ export function createChartEditor(context: {
   return {
     render() {
       const item = selected();
-      button.hidden = !item;
+      button.hidden = !item;convert.hidden=!item;convert.disabled=!!item?.locked;
       button.disabled = !!item?.locked;
     },
   };

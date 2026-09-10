@@ -1,4 +1,4 @@
-import { cleanChartReferences } from './chart-authoring.js';
+import { cleanChartReferences, mergeChartEdit, newChart } from './chart-authoring.js';
 import { applyVectorCommand } from './vector-commands.js';
 import { validateCanvasInstances, correlationHash } from './canvas-instances.js';
 import { applyLayoutAuthoring } from './layout-authoring.js';
@@ -32,7 +32,7 @@ import { transferObjects } from './clipboard.js';
 import { orderSvgObjects } from './svg-order.js';
 import { editTable } from './tables.js';
 import { mediaSettingsSchema } from './media.js';
-import { chartMarkup } from './charts.js';
+import { chartMarkup, chartDataSchema } from './charts.js';
 import {
   type Element,
   parse,
@@ -143,6 +143,7 @@ export function validateDocument(input: unknown): DeckDocument {
         'DUPLICATE_ID',
         'Metadata IDs must be unique',
       );
+    for(const a of s.animations)if(a.effect==='chart-state')invariant(!!a.chartStateId&&s.nativeCharts[a.target]?.authoring?.states.some(state=>state.id===a.chartStateId),'INVALID_CHART_STATE','Animation references a missing chart state');
     const targets = [
       ...s.animations.flatMap((a) => [a.target, ...(a.triggerTarget ? [a.triggerTarget] : [])]),
       ...s.bindings.map((b) => b.target),
@@ -495,6 +496,17 @@ export function applyCommands(
       doc.layouts = doc.layouts.filter((l) => l.id !== cmd.id);
       continue;
     }
+    if (cmd.type === 'comment.set') {
+      invariant(doc.slides.some((s) => s.id === cmd.comment.slideId), 'SLIDE_NOT_FOUND', 'Comment page missing');
+      const at = doc.comments.findIndex((c) => c.id === cmd.comment.id);
+      if (at < 0) doc.comments.push(cmd.comment);
+      else doc.comments[at] = cmd.comment;
+      continue;
+    }
+    if (cmd.type === 'comment.remove') {
+      doc.comments = doc.comments.filter((c) => c.id !== cmd.id);
+      continue;
+    }
     if (cmd.type === 'asset.put') {
       doc.assets[cmd.path] = cmd.asset;
       continue;
@@ -752,6 +764,8 @@ export function applyCommands(
     if (cmd.type === 'slide.delete') {
       invariant(doc.slides.length > 1, 'LAST_SLIDE', 'Cannot remove the last slide');
       doc.slides = doc.slides.filter((x) => x !== s);
+      // A deleted page takes its comments with it; they are page-anchored.
+      doc.comments = doc.comments.filter((comment) => comment.slideId !== s.id);
       continue;
     }
     if (cmd.type === 'slide.move') {
@@ -899,7 +913,7 @@ export function applyCommands(
       invariant(!elements(root).some(e=>attr(e,NODE_ID)===cmd.target),'DUPLICATE_ID','Chart already exists');
       const parent=elements(root).find(e=>attr(e,'id')==='stage')??elements(root).find(e=>e.tagName==='body')!;
       assertContentParent(parent,s);
-      appendHtml(parent,`<div data-notale-id="${cmd.target}" data-notale-authored-chart="" data-notale-name="图表" style="position:absolute;left:${cmd.x}px;top:${cmd.y}px;width:${cmd.width}px;height:${cmd.height}px"></div>`);
+      appendHtml(parent,`<div data-notale-id="${cmd.target}" data-notale-authored-chart="" data-notale-name="图表" style="position:absolute;left:${cmd.x}px;top:${cmd.y}px;width:${cmd.width}px;height:${cmd.height}px"></div>`,undefined,false);
       s.nativeCharts[cmd.target]={adapter:'echarts',option:{},authoring:cmd.model};s.html=serialize(root);continue;
     }
     if (cmd.type === 'element.insert') {
@@ -972,6 +986,7 @@ export function applyCommands(
         'table.edit',
         'chart.update',
         'native-chart.edit',
+        'native-chart.convert',
         'native-chart.reset',
         'native-chart.set',
         'native-chart.remove',
@@ -1004,9 +1019,25 @@ export function applyCommands(
         'DERIVED_GEOMETRY',
         'Edit connector endpoints and line settings with connector.set',
       );
+    if(cmd.type==='native-chart.convert') {
+      invariant(el.tagName==='svg'&&attr(el,'data-notale-chart'),'NOT_A_CHART','Choose a data-backed SVG chart');
+      const legacy=chartDataSchema.parse(JSON.parse(attr(el,'data-notale-chart')!));
+      const model=newChart(legacy.kind==='bar'?'column':legacy.kind),series=legacy.series??[{name:legacy.title||'系列 1',values:legacy.values}];
+      model.columns=[{id:'label',name:'分类',type:'text'},...series.map((s,i)=>({id:`value_${i}`,name:s.name,type:'number' as const}))];
+      model.series=series.map((s,i)=>({id:`series_${i}`,columnId:`value_${i}`,name:s.name,axis:'primary',style:{labels:legacy.showValues,width:legacy.lineWidth,symbolSize:legacy.pointRadius*2},points:{}}));
+      model.rows=legacy.labels.map((label,i)=>({id:`row_${i}`,values:{label,...Object.fromEntries(series.map((s,j)=>[`value_${j}`,s.values[i]]))}}));
+      model.bindings={label:'label'};model.appearance={title:legacy.title,palette:legacy.colors,fontSize:legacy.fontSize,textColor:legacy.textColor,background:legacy.background,legend:legacy.showLegend?'auto':'none',precision:legacy.valueDecimals};model.xAxis={rotate:legacy.labelAngle};model.yAxis={grid:legacy.showGrid};
+      const viewBox=(attr(el,'viewBox')??'0 0 640 400').split(/\s+/).map(Number);
+      el.tagName='div';el.nodeName='div';el.namespaceURI='http://www.w3.org/1999/xhtml' as typeof el.namespaceURI;
+      const width=attr(el,'width')??String(viewBox[2]),height=attr(el,'height')??String(viewBox[3]);
+      el.attrs=el.attrs.filter(a=>!['viewBox','xmlns','data-notale-chart','width','height'].includes(a.name));
+      setInner(el,'');setAttr(el,'data-notale-authored-chart','');
+      const style=attr(el,'style')??'';patchStyle(el,{...(!/(?:^|;)\s*width\s*:/.test(style)?{width:/^\d+(?:\.\d+)?$/.test(width)?width+'px':width}:{}),...(!/(?:^|;)\s*height\s*:/.test(style)?{height:/^\d+(?:\.\d+)?$/.test(height)?height+'px':height}:{}),...(!/(?:^|;)\s*position\s*:/.test(style)?{position:'relative'}:{})});
+      s.nativeCharts[cmd.target]={adapter:'echarts',option:{},authoring:model};
+    }
     if(cmd.type==='native-chart.edit') {
       const previous=s.nativeCharts[cmd.target];
-      s.nativeCharts[cmd.target]={...previous,adapter:'echarts',option:previous?.option??{},authoring:cleanChartReferences(structuredClone(cmd.model))};
+      s.nativeCharts[cmd.target]={...previous,source:previous?.source??(cmd.model.origin==='native'?inspectChartSources(s).get(cmd.target):undefined),adapter:'echarts',option:previous?.option??{},authoring:previous?.authoring&&cmd.before?mergeChartEdit(previous.authoring,cmd.before,cmd.model):cleanChartReferences(structuredClone(cmd.model))};
       const states=new Set(cmd.model.states.map(state=>state.id));
       s.animations=s.animations.filter(a=>a.target!==cmd.target||a.effect!=='chart-state'||states.has(a.chartStateId??''));
     }
@@ -1014,7 +1045,7 @@ export function applyCommands(
       const chart=s.nativeCharts[cmd.target];invariant(chart,'INVALID_NATIVE_CHART','Chart does not exist');
       if(chart.authoring) {
         if(cmd.scope==='appearance'||cmd.scope==='all'){chart.authoring.appearance={};chart.authoring.xAxis={};chart.authoring.yAxis={};chart.authoring.secondaryAxis={};for(const series of chart.authoring.series){series.style={};series.points={};}}
-        if(cmd.scope==='data'||cmd.scope==='all'){invariant(chart.source,'INVALID_NATIVE_CHART','Manual chart has no dynamic source');chart.authoring.origin='native';}
+        if(cmd.scope==='data'||cmd.scope==='all'&&chart.source){invariant(chart.source,'INVALID_NATIVE_CHART','Manual chart has no dynamic source');chart.authoring.origin='native';}
       } else chart.option={};
     }
     if (cmd.type === 'native-chart.set')

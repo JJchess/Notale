@@ -1,6 +1,8 @@
+import {diagramTheme as diagram} from './diagram-theme.mjs';
 import katex from 'katex';
 import { chartSvg } from '@notale/editor/browser';
 import { iconChildren } from './icon-library.js';
+import { highlight } from './code-highlight.js';
 const esc = (s: string) =>
   s.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('"', '&quot;');
 const box = 'position:absolute;left:120px;top:160px;';
@@ -26,8 +28,10 @@ const SHAPES: Record<string, [label: string, inner: string]> = {
   callout: ['对话框', '<path d="M20 4H280Q296 4 296 20V110Q296 126 280 126H120L70 156L80 126H20Q4 126 4 110V20Q4 4 20 4Z"/>'],
 };
 export const shapes = Object.entries(SHAPES).map(([name, [label]]) => ({ name, label }));
+// Gallery glyphs are drawn in the button's own colour, so the tool panel stays neutral
+// and only the canvas carries the palette (the PowerPoint shape gallery does the same).
 export function shapeIcon(name: string) {
-  return `<svg viewBox="0 0 300 160" width="42" height="24" aria-hidden="true" style="fill:#dee8ff;stroke:#466ddb;stroke-width:8;stroke-linejoin:round">${SHAPES[name][1]}</svg>`;
+  return `<svg viewBox="0 0 300 160" width="42" height="24" aria-hidden="true" style="fill:currentColor;fill-opacity:.16;stroke:currentColor;stroke-width:8;stroke-linejoin:round">${SHAPES[name][1]}</svg>`;
 }
 export const DEFAULT_TEX = '\\hat{y}=\\sum_{i=1}^{n} w_i x_i + b';
 export function renderTex(tex: string, display = true) {
@@ -37,36 +41,49 @@ export const iconStyle = 'fill:none;stroke:var(--accent,#466ddb);stroke-width:2;
 // Simplified SmartArt: plain containers with <p> leaves, so text stays editable
 // and the whole layout drags as one container object. Process steps are single
 // chevron cards, so duplicating or deleting one keeps the row consistent.
+const diagramPalette = `--accent:${diagram.accent};--accent-soft:${diagram.soft};--ink:${diagram.ink};--diagram-border:${diagram.border};font-family:${diagram.font.replaceAll('"', "'")};`;
 const chevron = 'clip-path:polygon(0 0,calc(100% - 26px) 0,100% 50%,calc(100% - 26px) 100%,0 100%,26px 50%)';
 const step = (title: string, note: string, first = false) =>
   `<div style="flex:1;padding:26px 24px 26px ${first ? 28 : 44}px;background:var(--accent-soft);${first ? chevron.replace(',26px 50%', ',0 50%') : chevron}"><p style="margin:0;font-size:30px;font-weight:700;color:var(--ink)">${title}</p><p style="margin:8px 0 0;font-size:22px;color:var(--ink);opacity:.75">${note}</p></div>`;
 function smartArt(kind: string) {
   if (kind === 'process')
-    return `<div data-notale-smart="process" ${name('流程版式')} style="${box}${palette}display:flex;align-items:stretch;gap:0;width:1100px">${['步骤一', '步骤二', '步骤三']
+    return `<div data-notale-smart="process" ${name('流程图示')} style="${box}${diagramPalette}display:flex;align-items:stretch;gap:0;width:1100px">${['步骤一', '步骤二', '步骤三']
       .map((t, i) => step(t, '说明', i === 0))
       .join('')}</div>`;
   if (kind === 'list')
-    return `<div data-notale-smart="list" ${name('列表版式')} style="${box}${palette}display:grid;gap:14px;width:820px">${['要点一', '要点二', '要点三']
+    return `<div data-notale-smart="list" ${name('列表图示')} style="${box}${diagramPalette}display:grid;gap:14px;width:820px">${['要点一', '要点二', '要点三']
       .map(
         (t, i) =>
-          `<div style="display:flex;gap:18px;align-items:center;padding:18px 22px;border-radius:14px;background:#fff;border:1px solid var(--accent)"><span style="flex:none;width:44px;height:44px;border-radius:50%;background:var(--accent);color:#fff;font-size:24px;font-weight:700;display:flex;align-items:center;justify-content:center">${i + 1}</span><p style="margin:0;font-size:28px;color:var(--ink)">${t}</p></div>`,
+          `<div style="display:flex;gap:18px;align-items:center;padding:18px 22px;border-radius:14px;background:#fff;border:1px solid var(--diagram-border)"><span style="flex:none;width:44px;height:44px;border-radius:50%;background:var(--accent);color:#fff;font-size:24px;font-weight:700;display:flex;align-items:center;justify-content:center">${i + 1}</span><p style="margin:0;font-size:28px;color:var(--ink)">${t}</p></div>`,
       )
       .join('')}</div>`;
-  if (kind === 'cycle') {
-    // Three arcs with arrowheads around a ring; labels sit at 90°, 210°, 330°.
-    const arc = (a: number) => {
-      const r = 220, cx = 320, cy = 320, s = ((a + 12) * Math.PI) / 180, e = ((a + 108) * Math.PI) / 180;
-      const x1 = cx + r * Math.cos(s), y1 = cy + r * Math.sin(s), x2 = cx + r * Math.cos(e), y2 = cy + r * Math.sin(e);
-      const t = e + 0.02, tx = cx + r * Math.cos(t), ty = cy + r * Math.sin(t), nx = -Math.sin(e), ny = Math.cos(e);
-      return `<path d="M${x1.toFixed(1)} ${y1.toFixed(1)}A${r} ${r} 0 0 1 ${x2.toFixed(1)} ${y2.toFixed(1)}"/><path d="M${(tx - nx * 22 + Math.cos(e) * 18).toFixed(1)} ${(ty - ny * 22 + Math.sin(e) * 18).toFixed(1)}L${(tx + nx * 4).toFixed(1)} ${(ty + ny * 4).toFixed(1)}L${(tx - nx * 22 - Math.cos(e) * 18).toFixed(1)} ${(ty - ny * 22 - Math.sin(e) * 18).toFixed(1)}"/>`;
-    };
-    const label = (t: string, a: number) => {
-      const x = 320 + 220 * Math.cos((a * Math.PI) / 180) - 90, y = 320 + 220 * Math.sin((a * Math.PI) / 180) - 36;
-      return `<p style="position:absolute;left:${x.toFixed(0)}px;top:${y.toFixed(0)}px;width:180px;height:72px;margin:0;display:flex;align-items:center;justify-content:center;border-radius:36px;background:var(--accent-soft);border:2px solid var(--accent);font-size:26px;font-weight:700;color:var(--ink)">${t}</p>`;
-    };
-    return `<div data-notale-smart="cycle" ${name('循环版式')} style="${box}${palette}position:relative;width:640px;height:640px"><svg width="640" height="640" viewBox="0 0 640 640" style="position:absolute;left:0;top:0;fill:none;stroke:var(--accent);stroke-width:6;stroke-linecap:round;stroke-linejoin:round">${[-90, 30, 150].map(arc).join('')}</svg>${label('阶段一', -90)}${label('阶段二', 30)}${label('阶段三', 150)}</div>`;
-  }
+  if (kind === 'cycle')
+    return `<div data-notale-smart="cycle" data-notale-cycle="3" ${name('循环图示')} style="${box}${diagramPalette}position:relative;width:640px;height:640px">${cycleContent(['阶段一', '阶段二', '阶段三'])}</div>`;
   throw new Error(`Unknown layout ${kind}`);
+}
+// The ring is laid out from the label count, so items can be added or removed and the
+// arrows still meet, the way SmartArt re-flows a cycle.
+const STAGES = ['阶段一', '阶段二', '阶段三', '阶段四', '阶段五', '阶段六'];
+export function cycleLabels(count: number, existing: string[] = []) {
+  return Array.from({ length: count }, (_, index) => existing[index] ?? STAGES[index] ?? `阶段${index + 1}`);
+}
+export function cycleContent(labels: string[]) {
+  const r = 220, cx = 320, cy = 320, span = 360 / labels.length, gap = Math.min(18, span * 0.18);
+  const arc = (start: number) => {
+    const from = ((start + gap) * Math.PI) / 180, to = ((start + span - gap) * Math.PI) / 180;
+    const x1 = cx + r * Math.cos(from), y1 = cy + r * Math.sin(from), x2 = cx + r * Math.cos(to), y2 = cy + r * Math.sin(to);
+    const nx = -Math.sin(to), ny = Math.cos(to), hx = cx + r * Math.cos(to), hy = cy + r * Math.sin(to);
+    const head = `M${(hx - nx * 20 + Math.cos(to) * 16).toFixed(1)} ${(hy - ny * 20 + Math.sin(to) * 16).toFixed(1)}L${(hx + nx * 3).toFixed(1)} ${(hy + ny * 3).toFixed(1)}L${(hx - nx * 20 - Math.cos(to) * 16).toFixed(1)} ${(hy - ny * 20 - Math.sin(to) * 16).toFixed(1)}`;
+    return `<path d="M${x1.toFixed(1)} ${y1.toFixed(1)}A${r} ${r} 0 0 1 ${x2.toFixed(1)} ${y2.toFixed(1)}"/><path d="${head}"/>`;
+  };
+  const label = (text: string, angle: number) => {
+    const x = cx + r * Math.cos((angle * Math.PI) / 180) - 90, y = cy + r * Math.sin((angle * Math.PI) / 180) - 36;
+    return `<p style="position:absolute;left:${x.toFixed(0)}px;top:${y.toFixed(0)}px;width:180px;height:72px;margin:0;display:flex;align-items:center;justify-content:center;text-align:center;border-radius:36px;background:var(--accent-soft);border:2px solid var(--diagram-border,var(--accent));font-size:${labels.length > 4 ? 22 : 26}px;font-weight:700;color:var(--ink)">${esc(text)}</p>`;
+  };
+  const angles = labels.map((_, index) => -90 + index * span);
+  return `<svg width="640" height="640" viewBox="0 0 640 640" aria-hidden="true" style="position:absolute;left:0;top:0;fill:none;stroke:var(--accent);stroke-width:6;stroke-linecap:round;stroke-linejoin:round">${angles
+    .map(arc)
+    .join('')}</svg>${labels.map((text, index) => label(text, angles[index])).join('')}`;
 }
 export function template(kind: string, value = '', href = '', display = true): string {
   if (kind === 'text' || kind === 'vertical-text' || kind === 'symbol') {
@@ -86,8 +103,11 @@ export function template(kind: string, value = '', href = '', display = true): s
   }
   if (kind === 'date')
     return template('text', new Date().toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric' })).replace('<p ', `<p ${name('日期')} `);
-  if (kind === 'code')
-    return `<pre ${name('代码')} style="${box}width:720px;margin:0;padding:24px 28px;border-radius:14px;background:#1e1e2e;color:#cdd6f4;font:24px/1.5 ui-monospace,Consolas,monospace;white-space:pre-wrap;tab-size:4">${esc(value || 'def predict(x):\n    return sum(w * xi for w, xi in zip(weights, x)) + b')}</pre>`;
+  if (kind === 'code') {
+    // Highlighting is baked in as inline colours, so the slide needs no extra stylesheet.
+    const code = value || 'def predict(x):\n    return sum(w * xi for w, xi in zip(weights, x)) + b';
+    return `<pre data-notale-code="${esc(code)}" data-notale-code-lang="python" ${name('代码')} style="${box}width:720px;margin:0;padding:24px 28px;border-radius:14px;background:#1e1e2e;color:#cdd6f4;font:24px/1.5 ui-monospace,Consolas,monospace;white-space:pre-wrap;tab-size:4">${highlight(code, 'python')}</pre>`;
+  }
   if (kind.startsWith('icon:'))
     return `<svg width="160" height="160" viewBox="0 0 24 24" data-notale-icon="${kind.slice(5)}" ${name(`图标 ${kind.slice(5)}`)} style="${box}${palette}overflow:visible;${iconStyle}">${iconChildren(kind.slice(5))}</svg>`;
   if (kind.startsWith('smart:')) return smartArt(kind.slice(6));
@@ -95,7 +115,10 @@ export function template(kind: string, value = '', href = '', display = true): s
   if (kind.startsWith('shape:')) {
     const key = kind.slice(6), shape = SHAPES[key];
     if (!shape) throw new Error(`Unknown shape ${key}`);
-    return `<svg width="300" height="160" viewBox="0 0 300 160" data-notale-shape="${key}" ${name(shape[0])} style="${box}${palette}overflow:visible;fill:var(--accent-soft);stroke:var(--accent);stroke-width:3;stroke-linejoin:round">${shape[1]}</svg>`;
+    // A shape holds text, as in PowerPoint: the outline is an SVG that stretches with the
+    // box, the caption is an ordinary editable paragraph centred over it, and fill/stroke
+    // live on the root because both properties inherit into the drawing.
+    return `<div data-notale-shape="${key}" ${name(shape[0])} style="${box}${palette}width:300px;height:160px;display:grid;place-items:center;fill:var(--accent-soft);stroke:var(--accent);stroke-width:3;stroke-linejoin:round"><svg viewBox="0 0 300 160" preserveAspectRatio="none" aria-hidden="true" style="position:absolute;left:0;top:0;width:100%;height:100%;overflow:visible">${shape[1]}</svg><p style="position:relative;margin:0;padding:6px 22px;max-width:100%;text-align:center;font-size:28px;line-height:1.3;color:var(--ink)">${esc(value || '文字')}</p></div>`;
   }
   if (kind === 'line')
     return `<svg width="400" height="80" viewBox="0 0 400 80" ${name('箭头')} style="${box}${palette}overflow:visible;fill:none;stroke:var(--accent);stroke-width:4"><path d="M 5 40 L 370 40 M 350 20 L 370 40 L 350 60"/></svg>`;

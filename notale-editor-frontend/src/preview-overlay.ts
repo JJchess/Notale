@@ -105,6 +105,7 @@ export function createPreviewOverlay(context: {
     const {type,data} = event.data;
     if (type === 'ready' && data?.slideId === pages[index]?.id && !ready) {
       max = Math.max(0,Math.min(500,Number(data.max)||0)); step = ending ? max : Math.min(max,initialStep); initialStep = 0;
+      const page=source?.snapshot.document.slides.find(s=>s.id===pages[index]?.id);if(page)send('charts-update',{charts:page.nativeCharts});
       ready = true; clearTimeout(timeout); send('mode',{mode:'play'}); send('seek',{step,animate:!ending}); ending = false;
       frame.style.visibility = 'visible'; el('preview-loading').hidden = true; el('preview-retry').hidden = true; status();
     }

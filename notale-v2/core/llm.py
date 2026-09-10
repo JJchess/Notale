@@ -26,7 +26,7 @@ from openai import (APIConnectionError, APITimeoutError, BadRequestError,
 
 
 ROOT = Path(__file__).resolve().parents[1]
-RUNS_ROOT = ROOT.parent / "runs" / ROOT.name
+RUNS_ROOT = ROOT.parent / "experiments" / "runs" / ROOT.name
 
 
 _OVERRIDE: dict = {}

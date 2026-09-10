@@ -7,11 +7,13 @@ export function createAssetLibrary(context: {
   commands: (commands:Command[]) => Promise<unknown>;
   error: (error:unknown) => void;
 }) {
-  const section=document.querySelector<HTMLElement>('[data-library="resources"]')!;
-  const panel=document.createElement('section'); panel.id='asset-library';
+  const section=document.querySelector<HTMLElement>('[data-library="media"]')!;
+  const panel=document.createElement('section'); panel.id='media-asset-library';panel.className='asset-library';
   panel.innerHTML=`<h3>讲义中的素材 <span id="asset-count"></span></h3><label>搜索素材<input id="asset-search" type="search" placeholder="文件名或目录"></label><label class="sr-only">素材类型<select id="asset-kind"><option value="all">全部媒体</option><option value="image">图片</option><option value="video">视频</option><option value="audio">音频</option></select></label><div id="asset-results" class="asset-results"></div><p id="asset-empty" class="hint" hidden>没有匹配的素材。可以上传本地文件。</p><button id="asset-more" hidden>显示更多</button><div id="asset-actions" hidden><p id="asset-selected-name"></p><button id="asset-insert">插入到当前页</button><button id="asset-replace" disabled>替换选中媒体</button><p id="asset-hint" class="hint"></p></div>`;
+  panel.innerHTML=panel.innerHTML.replace(/id="asset-/g,'id="media-asset-');
   section.append(panel);
-  const el=<T extends HTMLElement=HTMLElement>(id:string)=>panel.querySelector<T>('#'+id)!;
+  const el=<T extends HTMLElement=HTMLElement>(id:string)=>panel.querySelector<T>('#media-'+id)!;
+  el('asset-actions').classList.add('asset-actions');el('asset-more').classList.add('asset-more');
   let base='', documentId='', selectedPath='', limit=36;
   let entries:[string,Asset][]=[];
   let busy=false;

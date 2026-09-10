@@ -1,6 +1,6 @@
 # builder 收到的完整输入 · `ape-g7`
 
-> 2026-09-10 归档：保留历史输入或提案，不作为当前实施清单。当前风格契约见 [PLAN-style-control.md](../../../notale-v2/PLAN-style-control.md)，全链路见 [架构 v4](../../../notale-v2/ARCHITECTURE-v4.html)。下文历史命令与代码路径仍相对 notale-v2 根目录。
+> 2026-09-10 归档：保留历史输入或提案，不作为当前实施清单。当前风格契约见 [PLAN-style-control.md](../../../notale-v2/doc/PLAN-style-control.md)，全链路见 [架构 v4](../../../notale-v2/ARCHITECTURE-v4.html)。下文历史命令与代码路径仍相对 notale-v2 根目录。
 
 两页做例子,**全文照搬,没有摘要**。
 
