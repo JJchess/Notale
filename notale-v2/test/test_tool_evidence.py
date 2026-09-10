@@ -66,26 +66,26 @@ class ToolEvidenceTests(unittest.TestCase):
 
 class CheckCropTests(unittest.TestCase):
     def test_full_stage_uses_overview_and_preserves_after(self):
-        with patch.object(tools, '_selfcheck', return_value='overview') as render:
-            result = tools._check(Path('/tmp'), {'page':'page-01.html', 'box':[0,0,1600,900],
+        with patch.object(tools.check, '_selfcheck', return_value='overview') as render:
+            result = tools.check._check(Path('/tmp'), {'page':'page-01.html', 'box':[0,0,1600,900],
                                                'shot':True, 'zoom':2, 'after':['act()']})
             self.assertEqual(result.text, 'overview')
             render.assert_called_once_with(Path('/tmp'), 'page-01.html', ['act()'],
                                            shot=True, crop=None, zoom=2)
 
     def test_actual_crop_is_not_changed_into_overview(self):
-        with patch.object(tools, '_selfcheck', return_value='no crop') as render:
-            tools._check(Path('/tmp'), {'page':'page-01.html','box':[50,60,300,200],'zoom':3,'shot':True})
+        with patch.object(tools.check, '_selfcheck', return_value='no crop') as render:
+            tools.check._check(Path('/tmp'), {'page':'page-01.html','box':[50,60,300,200],'zoom':3,'shot':True})
             render.assert_called_once_with(Path('/tmp'), 'page-01.html', (),
                                            shot=True, crop=[50,60,300,200], zoom=3)
 
     def test_invalid_crop_and_report_only(self):
-        with patch.object(tools, '_selfcheck', return_value='report') as render:
+        with patch.object(tools.check, '_selfcheck', return_value='report') as render:
             for extra in ({'box':[1,2,0,4]}, {'box':[0,0,True,4]}, {'box':[1600,0,10,10]},
                           {'box':[0,0,10,10],'zoom':0}):
-                self.assertIn('失败', tools._check(Path('/tmp'), dict(page='page-01.html',shot=True,**extra)).text)
+                self.assertIn('失败', tools.check._check(Path('/tmp'), dict(page='page-01.html',shot=True,**extra)).text)
             render.assert_not_called()
-            tools._check(Path('/tmp'), {'page':'page-01.html','shot':False,'box':'ignored','after':['act()']})
+            tools.check._check(Path('/tmp'), {'page':'page-01.html','shot':False,'box':'ignored','after':['act()']})
             render.assert_called_once_with(Path('/tmp'),'page-01.html',['act()'],shot=False,crop=None,zoom=2)
 
     def test_specs_do_not_mutate_visual_schema(self):
@@ -112,7 +112,7 @@ class BrowserCheckTests(unittest.TestCase):
 <link rel="stylesheet" href="assets/base.css">
 <style>:root{--bg:white;--text:black;--font-sans:sans-serif}</style>
 <div id="stage"><p id="label">initial</p></div><script src="assets/base.js"></script>''')
-            result = tools._check(pages, {'page':'page-01.html', 'box':[0,0,1600,900], 'shot':True,
+            result = tools.check._check(pages, {'page':'page-01.html', 'box':[0,0,1600,900], 'shot':True,
                 'after':["document.querySelector('#label').textContent='after-state'; return {computed:100,displayed:74};"]})
             self.assertEqual(len(result.images), 2)
             for _, encoded in result.images:
@@ -122,7 +122,7 @@ class BrowserCheckTests(unittest.TestCase):
             self.assertIn('返回值 {"computed": 100, "displayed": 74}', result.text)
             self.assertNotIn('裁图', result.text)
 
-            cropped = tools._check(pages, {'page':'page-01.html', 'shot':True,
+            cropped = tools.check._check(pages, {'page':'page-01.html', 'shot':True,
                 'box':[0,0,200,100], 'zoom':3,
                 'after':["window.count=(window.count||0)+1; return count;"] * 3})
             self.assertEqual(len(cropped.images), 2)

@@ -6,7 +6,7 @@ import tempfile
 import unittest
 
 from playwright.async_api import Browser, Page, async_playwright
-from tools import code_runtime
+from tools import code_scaffold as code_runtime
 
 spec = importlib.util.spec_from_file_location("lesson_check", code_runtime.TEMPLATE_ROOT / "check.py")
 lesson_check = importlib.util.module_from_spec(spec)

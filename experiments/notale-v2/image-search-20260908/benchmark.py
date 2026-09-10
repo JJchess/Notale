@@ -12,7 +12,8 @@ import time
 ROOT = Path(__file__).resolve().parents[3] / 'notale-v2'
 sys.path.insert(0, str(ROOT))
 from core import llm
-from tools import media, runtime as tools
+from tools import runtime as tools
+from tools.shared import media
 from core.redact import redact
 
 QUERIES = [

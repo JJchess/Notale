@@ -11,7 +11,7 @@ from playwright.async_api import async_playwright
 ROOT = Path(__file__).resolve().parents[3] / 'notale-v2'
 RUNS_ROOT = ROOT.parent / 'runs' / ROOT.name
 sys.path.insert(0, str(ROOT))
-from tools import code_runtime
+from tools import code_scaffold as code_runtime
 
 
 def snapshots():

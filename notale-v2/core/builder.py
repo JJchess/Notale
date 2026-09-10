@@ -22,7 +22,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from . import skills
-from tools import code_runtime, runtime as tools
+from tools.check import code as code_check
+from tools import code_scaffold as code_runtime, runtime as tools
 from . import llm
 from .llm import ROOT, RUNS_ROOT, config, respond, text_of
 from .trace import Writer
@@ -515,7 +516,7 @@ def audit_delivery(
     fatal, visual = _audit_lines(report)
     code_result = None
     if page.workflow == "build-code":
-        code_result, _ = code_runtime.run_browser_check(pages_dir, page.pid, False)
+        code_result, _ = code_check.run_browser_check(pages_dir, page.pid, False)
         code_fatal, code_visual = _audit_lines(code_result)
         fatal.extend(code_fatal)
         visual.extend(code_visual)
@@ -767,7 +768,7 @@ def build_one(
                             if isinstance(result, tools.Out)
                             else (str(result), [])
                         )
-                        extra, shots = code_runtime.run_browser_check(
+                        extra, shots = code_check.run_browser_check(
                             pages_dir,
                             page.pid,
                             bool(actual_args.get("shot")) and vision_input,
@@ -924,8 +925,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
-    tools.SAMPLE_SHOTS = args.sample_shots
-    tools.TEXT_REPORT = args.notes != "off"
+    tools.read.SAMPLE_SHOTS = args.sample_shots
+    tools.check.TEXT_REPORT = args.notes != "off"
 
     cfg = config()
     profile = llm.resolve_builder_profile(cfg, args.profile)

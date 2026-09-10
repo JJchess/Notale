@@ -11,7 +11,8 @@ import httpx
 from PIL import Image
 
 from core import llm
-from tools import image_search as search, media, runtime as tools
+from tools import image_search as search, runtime as tools
+from tools.shared import media
 
 
 class ImageSearchTests(unittest.TestCase):

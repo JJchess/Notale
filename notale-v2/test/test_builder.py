@@ -609,7 +609,7 @@ class AgentLoopTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as td, \
                 patch.object(builder, "respond", fake_respond), \
                 patch.object(builder.code_runtime, "scaffold", side_effect=fake_scaffold), \
-                patch.object(builder.code_runtime, "run_browser_check", return_value=("✓ inner", [])), \
+                    patch.object(builder.code_check, "run_browser_check", return_value=("✓ inner", [])), \
                 patch.object(builder.tools, "run", return_value="✓ outer"):
             result = builder.build_one(
                 page("page-04", "build-code", "代码页"),

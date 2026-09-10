@@ -1,6 +1,14 @@
 """One grounded Gemini request, then ordinary public HTTP image retrieval."""
 from __future__ import annotations
 
+SCHEMA = {"type": "function", "name": "ImageSearch",
+     "description": "搜索并下载图片候选，返回来源、可用路径、图片及实际错误；查看后按内容需要选用。",
+     "parameters": {"type": "object", "properties": {
+         "query": {"anyOf": [{"type": "string"}, {"type": "array", "items": {"type": "string"}, "minItems": 1}],
+                   "description": "要找的图片及用途，说明主体与图片类型；多个需求用数组一次提交"},
+         "count": {"type": "integer", "minimum": 1, "description": "每个需求的候选数，默认 3"}},
+         "required": ["query"], "additionalProperties": False}}
+
 from html.parser import HTMLParser
 import http.client
 import json
@@ -11,7 +19,7 @@ from urllib.parse import unquote, urljoin, urlsplit
 
 import httpx
 
-from . import media
+from ..shared import media
 from core.redact import redact
 
 MODEL = "gemini-3.8-flash"

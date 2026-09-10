@@ -8,7 +8,6 @@ import ipaddress
 import socket
 import ssl
 import subprocess
-import sys
 import time
 import uuid
 import warnings
@@ -18,24 +17,10 @@ from urllib.parse import urljoin, urlsplit
 import httpx
 from PIL import Image
 
-from core import skills
+from .. import image_search, image_gen
 from core.redact import redact
 
-SCHEMAS = [
-    {"type": "function", "name": "ImageSearch",
-     "description": "搜索并下载图片候选，返回来源、可用路径、图片及实际错误；查看后按内容需要选用。",
-     "parameters": {"type": "object", "properties": {
-         "query": {"anyOf": [{"type": "string"}, {"type": "array", "items": {"type": "string"}, "minItems": 1}],
-                   "description": "要找的图片及用途，说明主体与图片类型；多个需求用数组一次提交"},
-         "count": {"type": "integer", "minimum": 1, "description": "每个需求的候选数，默认 3"}},
-         "required": ["query"], "additionalProperties": False}},
-    {"type": "function", "name": "ImageGen",
-     "description": "生成插画或场景，返回路径和图片；真实人物、器物等证据请用 ImageSearch。",
-     "parameters": {"type": "object", "properties": {
-         "prompt": {"type": "string"},
-         "n": {"type": "integer", "minimum": 1, "description": "生成张数，默认 1"}},
-         "required": ["prompt"], "additionalProperties": False}},
-]
+SCHEMAS = [image_search.SCHEMA, image_gen.SCHEMA]
 NAMES = frozenset(s["name"] for s in SCHEMAS)
 
 
@@ -160,20 +145,14 @@ def fetch(name: str, args: dict, pages: Path, owner: str, *, backend: str | None
         backend = backend or search_backend()
         try:
             if backend == "gemini":
-                from .image_search import search
+                from ..image_search import search
                 raw_rows, errors = search(args.get("query"), count, out)
             else:
                 raise ValueError(f"未知图片检索后端：{backend}")
         except (OSError, ValueError, RuntimeError, httpx.HTTPError, subprocess.TimeoutExpired) as exc:
             return out, [], [_error(backend, exc)]
     else:
-        cmd = [sys.executable, str(skills.DEFAULT / "make-illustration/scripts/gen.py"),
-               args["prompt"], "--n", str(count), "--out", str((out / "image.png").resolve())]
-        result_file = out / "illustrations.json"
-        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
-        if proc.returncode or not result_file.is_file():
-            raise RuntimeError((proc.stderr or proc.stdout or "media returned no results")[-1500:])
-        raw_rows = json.loads(result_file.read_text())
+        raw_rows = image_gen.generate(args, count, out)
     records = []
     for raw in raw_rows:
         if name == "ImageSearch" and not isinstance(raw, dict):

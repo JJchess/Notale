@@ -13,7 +13,8 @@ from unittest.mock import Mock, patch
 from PIL import Image
 
 from core import planner
-from tools import code_runtime, image_search, media, runtime as tools
+from tools import code_scaffold as code_runtime, image_search, runtime as tools
+from tools.shared import media
 
 PAGES = '# page-01 [标题页]\n开场\n\n# page-02 [内容页]\n算法的提出背景\n'
 

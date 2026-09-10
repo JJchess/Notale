@@ -12,7 +12,7 @@ import unittest
 from pathlib import Path
 
 from core import builder, skills
-from tools import code_runtime, runtime as tools
+from tools import code_scaffold as code_runtime, runtime as tools
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -438,22 +438,22 @@ class ToolSurfaceTests(unittest.TestCase):
         self.assertEqual(tools.check_use("build-code"), "")
         self.assertEqual(tools.check_use(None), "")
 
-        original = tools._selfcheck
-        tools._selfcheck = lambda *a, **k: "── page-01.html\n   渲染无报错"
+        original = tools.check._selfcheck
+        tools.check._selfcheck = lambda *a, **k: "── page-01.html\n   渲染无报错"
         try:
             with tempfile.TemporaryDirectory() as td:
-                page = tools._check(Path(td), {"page": "page-01.html"}, "build-page")
-                code = tools._check(Path(td), {"page": "page-01.html"}, "build-code")
+                page = tools.check._check(Path(td), {"page": "page-01.html"}, "build-page")
+                code = tools.check._check(Path(td), {"page": "page-01.html"}, "build-code")
         finally:
-            tools._selfcheck = original
+            tools.check._selfcheck = original
         self.assertTrue(page.text.startswith('<check_use workflow="build-page">'))
         self.assertIn("渲染无报错", page.text)
         self.assertNotIn("<check_use", code.text)
 
     def test_check_inlines_initial_and_final_state_screenshots(self):
         shots = [Path(f"/s/page-01{suffix}.png") for suffix in ("", "-after1", "-after2", "-after3")]
-        self.assertEqual(tools._pick_shots(shots), ([shots[0], shots[3]], shots[1:3]))
-        self.assertEqual(tools._pick_shots(shots[:2]), (shots[:2], []))
+        self.assertEqual(tools.check._pick_shots(shots), ([shots[0], shots[3]], shots[1:3]))
+        self.assertEqual(tools.check._pick_shots(shots[:2]), (shots[:2], []))
 
     def test_check_lists_each_screenshot_once_with_inline_status(self):
         from unittest.mock import patch
@@ -462,9 +462,9 @@ class ToolSurfaceTests(unittest.TestCase):
             for shot in shots:
                 shot.touch()
             report = '\n'.join(f'   截图 {shot} (800×450)' for shot in shots)
-            with patch.object(tools, '_selfcheck', return_value=report), \
-                 patch.object(tools, '_image', return_value=tools.Out('', [('image/png', 'stub')])):
-                out = tools._check(Path(td), {'page': 'page-01.html', 'shot': True})
+            with patch.object(tools.check, '_selfcheck', return_value=report), \
+                 patch.object(tools.check, '_image', return_value=tools.Out('', [('image/png', 'stub')])):
+                out = tools.check._check(Path(td), {'page': 'page-01.html', 'shot': True})
         self.assertEqual(len(out.images), 2)
         self.assertEqual(out.text.count('[已内联]'), 2)
         self.assertEqual(out.text.count('[可 Read]'), 1)

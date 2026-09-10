@@ -10,7 +10,8 @@ from unittest.mock import patch
 
 from playwright.async_api import async_playwright
 
-from tools import code_runtime
+from tools.check import code as code_check
+from tools import code_scaffold as code_runtime
 
 
 class CodeRuntimeTests(unittest.TestCase):
@@ -107,7 +108,7 @@ def capture(frame, event, previous_state):
     result = _lesson_capture(frame, event, previous_state)
     return result if result is not None else {"state": {"items": []}}
 ''')
-        result, _ = code_runtime.run_browser_check(self.pages, 'page-01')
+        result, _ = code_check.run_browser_check(self.pages, 'page-01')
         self.assertTrue(result.startswith('✓ 代码工作台自检通过'), result)
         self.assertNotIn('timeout recovery', result)
 
@@ -121,7 +122,7 @@ def finalize(namespace, previous_state):
 ''')
         lesson = root / 'lesson.js'
         lesson.write_text(lesson.read_text().replace('testsUrl: "./lesson/tests.py"', 'testsUrl: null'))
-        result, _ = code_runtime.run_browser_check(self.pages, 'page-01')
+        result, _ = code_check.run_browser_check(self.pages, 'page-01')
         self.assertTrue(result.startswith('✓ 代码工作台自检通过'), result)
 
     def test_lesson_errors_are_not_hidden_by_platform_split(self):
@@ -135,7 +136,7 @@ def finalize(namespace, previous_state):
             with self.subTest(path=path):
                 try:
                     target.write_text(source)
-                    result, _ = code_runtime.run_browser_check(self.pages, 'page-01')
+                    result, _ = code_check.run_browser_check(self.pages, 'page-01')
                     self.assertTrue(result.startswith('✗'), result)
                     self.assertIn(expected, result.lower())
                 finally:

@@ -20,7 +20,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from . import skills
-from tools import media, runtime as tools
+from tools import runtime as tools, finalize_plan, image_gen
+from tools.shared import media
+from tools.finalize_plan import FINALIZE_SPEC
+from tools.write import planner as planner_write
+from tools.write.planner import PLANNER_WRITE_SPEC
 from .artifacts import Brief
 from . import llm
 from .llm import ROOT, RUNS_ROOT, config, fill, strip_fence
@@ -47,20 +51,6 @@ VISUAL_FOCUS_SPEC = """
     袋外评估：未进入某棵树训练样本的观测可形成无需额外验证集的近似评估
     视觉焦点：一张样本×树的 in-bag/OOB 矩阵，每行约三分之一格子是 OOB，由此汇出每个样本的袋外预测
 """.strip()
-PLANNER_WRITE_SPEC = [{
-    "type": "function",
-    "name": "Write",
-    "description": "写完整文件",
-    "parameters": {
-        "type": "object",
-        "properties": {
-            "file_path": {"type": "string", "description": "绝对路径"},
-            "content": {"type": "string", "description": "完整内容"},
-        },
-        "required": ["file_path", "content"],
-        "additionalProperties": False,
-    },
-}]
 
 
 def _now() -> str:
@@ -177,16 +167,6 @@ def _split_specs(text: str, nns) -> dict:
 
 
 DECK_TRIES = 3  # existing malformed-delivery retries, not a tool/response budget
-FINALIZE_SPEC = {
-    "type": "function", "name": "FinalizePlan",
-    "description": "提交完整页表及选用的图片路径；无图可省略映射。",
-    "parameters": {"type": "object", "properties": {
-        "pages_md": {"type": "string", "description": "原有页表：每页标签＋一句主题"},
-        "media_by_page": {"type": "object", "additionalProperties": {
-            "type": "array", "items": {"type": "string"}},
-            "description": "页号（如 page-03）到本次工具返回的路径列表；仅列有图页面"}},
-        "required": ["pages_md"], "additionalProperties": False},
-}
 
 
 def validate_media(mapping: dict, pages_doc: str, available: dict, pages: Path) -> dict:
@@ -256,24 +236,9 @@ def deck_call(run: Run, prompt: str, tries: int = DECK_TRIES) -> tuple[str, str,
                         ])
                     output = result.text
                 elif call.name == "Write" and not separate_theme:
-                    if Path(args["file_path"]).resolve() != (run.root / CSS_REL).resolve():
-                        raise ValueError("Write 只用于 theme.css；页表用 FinalizePlan")
-                    error = _valid_css(args["content"])
-                    if error:
-                        raise ValueError(error)
-                    css = args["content"]
-                    output = "主题已接收"
+                    css, output = planner_write.execute(args, run.root)
                 elif call.name == "FinalizePlan":
-                    pages_doc = args["pages_md"]
-                    error = _valid_pages(pages_doc)
-                    if error:
-                        raise ValueError(error)
-                    mapping = validate_media(args.get("media_by_page", {}), pages_doc,
-                                             available, run.root / "pages")
-                    if not separate_theme and not css:
-                        raise ValueError("缺少 theme.css，请先 Write 主题")
-                    final = css, pages_doc, mapping
-                    output = "定稿已接收"
+                    final, output = finalize_plan.execute(args, available, run.root, separate_theme, css)
                 else:
                     raise ValueError(f"未知工具：{call.name}")
             except Exception as exc:
@@ -477,9 +442,9 @@ def main() -> None:
     if missing:
         raise SystemExit(f"✗ --workflows 缺少建页工作流: {' '.join(missing)}")
     skills.DEFAULT = Path(n.skills)
-    for script in ("make-illustration/scripts/gen.py",):
-        if not (skills.DEFAULT / script).is_file():
-            raise SystemExit(f"✗ 取图脚本不存在：{skills.DEFAULT / script}")
+    for script in (image_gen.script_path(skills.DEFAULT),):
+        if not script.is_file():
+            raise SystemExit(f"✗ 取图脚本不存在：{script}")
     llm.override(name=n.model, wire_api=n.wire, base_url=n.base_url, api_key_env=n.key_env)
     if n.effort: config()["planner"]["reasoning_effort"] = n.effort
     plan_run(Run(n.query, n.minutes, n.audience, n.label, n.scenario,
