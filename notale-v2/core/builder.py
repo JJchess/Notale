@@ -23,7 +23,8 @@ from pathlib import Path
 
 from . import skills
 from tools.check import code as code_check
-from tools import code_scaffold as code_runtime, runtime as tools
+from tools import runtime as tools
+from tools.code_scaffold import tool as code_runtime
 from . import llm
 from .llm import ROOT, RUNS_ROOT, config, respond, text_of
 from .trace import Writer

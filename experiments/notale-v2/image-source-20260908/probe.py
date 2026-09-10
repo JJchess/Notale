@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parents[3] / 'notale-v2'
 RUNS_ROOT = ROOT.parent / 'runs' / ROOT.name
 sys.path.insert(0, str(ROOT))
 from core import llm
-from tools import image_search
+from tools.image_search import tool as image_search
 from core.redact import redact
 
 

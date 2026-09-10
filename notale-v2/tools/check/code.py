@@ -2,7 +2,7 @@ from __future__ import annotations
 from pathlib import Path
 import subprocess
 import sys
-from ..code_scaffold import lesson_root
+from tools.code_scaffold.tool import lesson_root
 
 
 CHECK_TIMEOUT = 420

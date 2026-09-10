@@ -20,9 +20,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from . import skills
-from tools import runtime as tools, finalize_plan, image_gen
+from tools import runtime as tools
+from tools.finalize_plan import tool as finalize_plan
+from tools.image_gen import tool as image_gen
 from tools.shared import media
-from tools.finalize_plan import FINALIZE_SPEC
+from tools.finalize_plan.tool import FINALIZE_SPEC
 from tools.write import planner as planner_write
 from tools.write.planner import PLANNER_WRITE_SPEC
 from .artifacts import Brief

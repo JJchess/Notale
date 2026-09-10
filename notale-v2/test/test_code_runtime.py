@@ -11,7 +11,7 @@ from unittest.mock import patch
 from playwright.async_api import async_playwright
 
 from tools.check import code as code_check
-from tools import code_scaffold as code_runtime
+from tools.code_scaffold import tool as code_runtime
 
 
 class CodeRuntimeTests(unittest.TestCase):

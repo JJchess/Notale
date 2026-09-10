@@ -12,7 +12,8 @@ import unittest
 from pathlib import Path
 
 from core import builder, skills
-from tools import code_scaffold as code_runtime, runtime as tools
+from tools import runtime as tools
+from tools.code_scaffold import tool as code_runtime
 
 
 ROOT = Path(__file__).resolve().parents[1]

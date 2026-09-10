@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 from playwright.sync_api import sync_playwright
 from core import theme
-from tools import code_scaffold as code_runtime
+from tools.code_scaffold import tool as code_runtime
 from test.test_style_upgrade import CSS
 
 ROOT = Path(__file__).resolve().parents[1]

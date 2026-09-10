@@ -2,6 +2,8 @@
 
 这里只整理现有实现，不改变工具名、schema、执行顺序、参数默认值、返回格式、权限、错误处理或重试。迁移前生产版本：`def3afb2`。
 
+各工具的 schema 与主实现放在 `tool.py`；`__init__.py` 仅保留包说明，不承载实现或可变状态。调用方直接导入 `from tools.<name> import tool as <name>`，专用的 `code.py`、`style.py`、`director.py`、`planner.py` 保持独立。
+
 | 目录 | 对模型的工具名与职责 |
 | --- | --- |
 | `read/` | Read：文件与样本读取；`style.py` 单独保留 Director 的风格详情读取 |

@@ -5,13 +5,18 @@ import time
 from copy import deepcopy
 from pathlib import Path
 from core.redact import redact
-from . import read, write, edit, patch, check, bash
+from tools.read import tool as read
+from tools.write import tool as write
+from tools.edit import tool as edit
+from tools.patch import tool as patch
+from tools.check import tool as check
+from tools.bash import tool as bash
 from .shared import media
 from .shared.result import CAP, Out, _cap
 from .shared.paths import _out_of_bounds, _is_workflow_resource
 from .shared.image import _image
-from .read import resolve_read_path
-from .check import MAX_IMAGES, check_use
+from tools.read.tool import resolve_read_path
+from tools.check.tool import MAX_IMAGES, check_use
 
 WORKFLOW_RESOURCE_CAP = 160_000
 

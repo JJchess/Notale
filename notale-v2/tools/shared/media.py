@@ -17,7 +17,8 @@ from urllib.parse import urljoin, urlsplit
 import httpx
 from PIL import Image
 
-from .. import image_search, image_gen
+from tools.image_search import tool as image_search
+from tools.image_gen import tool as image_gen
 from core.redact import redact
 
 SCHEMAS = [image_search.SCHEMA, image_gen.SCHEMA]
@@ -145,7 +146,7 @@ def fetch(name: str, args: dict, pages: Path, owner: str, *, backend: str | None
         backend = backend or search_backend()
         try:
             if backend == "gemini":
-                from ..image_search import search
+                from tools.image_search.tool import search
                 raw_rows, errors = search(args.get("query"), count, out)
             else:
                 raise ValueError(f"未知图片检索后端：{backend}")
