@@ -1,7 +1,7 @@
 """记录层:从 Claude Code 的 transcript 行删减得到。
 
 实测 nn-03 的 346 行里出现过 35 个字段,这里留 9 个。字段名逐字照抄(camelCase),
-这样 lab/timing.py 和 lab/audit.py 一行不改就能审计我们自己的 harness,
+这样 experiments/lab/timing.py 和 experiments/lab/audit.py 能审计我们自己的 harness,
 也能把 harness 的运行和 Claude Code 实验轮直接摆在一起对比。
 
 留:
@@ -11,8 +11,7 @@
 ✂ 文件回滚      snapshot backup trackingPath snapshotMessageId isSnapshotUpdate messageId
 ✂ 其它          attachment operation mode leafUuid content session_id pendingBackgroundAgentCount
 
-wire.Request 里**没有任何时间戳**,transcript 里**没有完整请求体**。
-这是两份记录,不是一份的两种写法 —— 之前把它们拍成一个扁平 Call,两边都记不全。
+模型请求体和带时间戳的 transcript 是两份记录，不合并成一个扁平 Call。
 """
 
 from __future__ import annotations

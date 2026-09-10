@@ -48,7 +48,7 @@
 
     main {
       width: 100%;
-      height: 100dvh;
+      min-height: 100dvh;
       padding: 32px;
       display: grid;
       place-items: center;
@@ -89,6 +89,13 @@
 
     text { user-select: none; }
 
+    figcaption { font-size: 13px; line-height: 1.65; }
+    figcaption table { width: 100%; border-collapse: collapse; background: var(--paper); }
+    figcaption th, figcaption td { padding: 9px 14px; border-bottom: 1px solid var(--hairline); text-align: left; vertical-align: top; }
+    figcaption th { width: 150px; font-weight: 500; white-space: nowrap; }
+    figcaption p { margin: 8px 0 0; color: var(--muted); }
+    figcaption a { color: var(--blue); }
+
     @media (prefers-reduced-motion: reduce) {
       .model-call, .tool-use, .decision, .terminal, .fixed {
         animation: none;
@@ -108,8 +115,8 @@
   <main>
     <figure class="architecture">
 <svg class="diagram" width="100%" viewBox="0 0 1200 700" role="img" aria-labelledby="diagram-title diagram-description" xmlns="http://www.w3.org/2000/svg">
-<title id="diagram-title">Notale v2 互动讲义流水线 · v4：2026-09-09 工作树的实际实现</title>
-<desc id="diagram-description">只画已实现的现状。没有编排模块：两个 CLI 进程由 shell（run12.sh / scripts/style_e2e.py）拼接，core.planner 先跑，退出码为 0 且 briefs.json 非空才启动 core.builder。Style Director 是 planner 进程内的线程，与页表调用并行，两路共享一个加锁的 trace.jsonl，互不读对方产物；planner 丢弃线程返回值，主题从磁盘重读。Director 在任何模型调用之前定四条路线：有效成品主题无修改要求走 reuse，零模型调用；有原主题加明确要求走 modify；只给参考图走 reference；都没有才走 auto 的选样。选样只看文本索引和实测调色板，不发图；写主题时才发画廊截图、用户样张与风格详情图，可按需取图，Write 必须独占一次响应，技术校验含静态闸与真实 headless Chromium 逐 variant 检查。视觉页只预载主题的 INTERFACE 块，用户样张随首条 user 消息附上；代码页既无主题也无样张。Look 已合并进 Check 的 box/zoom。Builder 按页标签一对一路由到四个 workflow，system 前缀按 workflow 至多四份且跨页字节相同，每页独立 history，终止分六类，终止后跑一次绝不回喂的独立审计。</desc>
+<title id="diagram-title">Notale v2 互动讲义流水线 · v4：2026-09-10 剪枝后工作树的实际实现</title>
+<desc id="diagram-description">2026-09-10 剪枝后实现。Planner 与默认开启的 Style Director 独立并行，互不读对方产物；两路成功后才发布 briefs 并启动并发 Builder。Director 自动选样看 40 项轻索引与带 ID 概览；选中详情、原图、中英字体自动加载，pick 与 theme 使用同一 history。风格与配色可组合，输出 theme.css 内含 INTERFACE 和最终 reference。Builder 保留具体页面设计权，视觉页默认 Gemini 3.8 Flash low，代码页默认 DeepSeek V4 Flash low。每页独立 history，Check 合并截图与局部裁切，终止后独立审计不回喂。旧 ask 调用链、请求模型和抠图模块已从生产清除。预览由外部 make_deck 独立组装，不调用模型。</desc>
       <defs>
         <marker id="arrow-blue" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
           <path d="M2 1L8 5L2 9" fill="none" stroke="var(--blue)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
@@ -129,7 +136,7 @@
       </defs>
 <rect x="12" y="12" width="1176" height="676" rx="12" fill="var(--paper)" stroke="#cfd7e2" stroke-width="0.7" />
 <path d="M28 74H1172" fill="none" stroke="var(--hairline)" stroke-width="0.5"/>
-<text x="30" y="39" text-anchor="start" dominant-baseline="central" font-size="14" font-weight="500" fill="var(--ink)">Notale v2 · 互动讲义流水线 · v4 现状（2026-09-09 工作树）</text>
+<text x="30" y="39" text-anchor="start" dominant-baseline="central" font-size="14" font-weight="500" fill="var(--ink)">Notale v2 · 互动讲义流水线 · v4 现状（2026-09-10 剪枝后工作树）</text>
 <g aria-label="Execution legend">
 <rect x="640" y="34" width="18" height="13" rx="3" fill="white" stroke="var(--blue)" stroke-width="0.7" />
 <text x="665" y="41" text-anchor="start" dominant-baseline="central" font-size="12" font-weight="500" fill="var(--ink)">模型调用</text>
@@ -142,8 +149,8 @@
 </g>
 <g class="fixed" data-node-type="deterministic">
 <rect x="28" y="80" width="1160" height="22" rx="5" fill="var(--slate-node)" stroke="var(--slate)" stroke-width="0.7" />
-<text x="40" y="91" text-anchor="start" dominant-baseline="central" font-size="11" font-weight="500" fill="#3d4859">两个进程：core.planner（内含 Director 线程，共享加锁 trace.jsonl）→ 退出码 0 且 briefs.json 非空 → core.builder ｜ 没有编排模块，闸口在 shell</text>
-<title>run12.sh 与 scripts/style_e2e.py 是唯一的编排：先 python3 -m core.planner，退出码为 0 且 runs/&lt;label&gt;/briefs.json 非空才 python3 -m core.builder。core/wire.py 不是主干，是 trace 用的 pydantic 结构。Director 是 planner 进程内 daemon=False 的线程，异常直接把 planner 拖死，briefs.json 就不会写出，Builder 也就无法启动。runs/&lt;label&gt; 已存在时 planner 直接 FileExistsError，重跑必须换 label；没有断点续跑。</title>
+<text x="40" y="91" text-anchor="start" dominant-baseline="central" font-size="11" font-weight="500" fill="#3d4859">两个进程：core.planner（内含 Director 线程，共享加锁 trace.jsonl）→ 退出码 0 且 briefs.json 非空 → core.builder ｜ 外部入口编排，不新增协调 agent</text>
+<title>两个 CLI 由外部脚本衔接，例如 scripts/style_e2e.py；并非只有一个固定编排入口。Planner 成功并写出 briefs.json 后才运行 Builder。Director 为 Planner 进程内非 daemon 线程；主线程 join 后检查其异常，再发布页表与 briefs。现行调用统一经 llm.ModelRuntime；wire.py 只保留 trace 用的 Usage。旧 ask / Request 模型与抠图链路不在主干。新 run 使用新 label，不自动续跑或换模型。</title>
 </g>
 <path d="M148 102V110" fill="none" stroke="var(--slate)" stroke-width="1.1" marker-end="url(#arrow-slate)"/>
 <path d="M400 102V110" fill="none" stroke="var(--slate)" stroke-width="1.1" marker-end="url(#arrow-slate)"/>
@@ -153,13 +160,13 @@
 <rect x="144" y="115" width="118" height="18" rx="9" fill="var(--blue-soft)" stroke="var(--blue)" stroke-width="0.7" />
 <text x="203" y="124" text-anchor="middle" dominant-baseline="central" font-size="9.5" font-weight="500" fill="var(--blue)">进程 ① core.planner</text>
 <rect x="284" y="112" width="234" height="552" rx="8" fill="#f9fbfd" stroke="var(--hairline)" stroke-width="0.7" />
-<text x="298" y="124" text-anchor="start" dominant-baseline="central" font-size="14" font-weight="500" fill="var(--ink)">Style Director · 外观</text>
+<text x="298" y="124" text-anchor="start" dominant-baseline="central" font-size="14" font-weight="500" fill="var(--ink)">Style Director · 主题方向</text>
 <rect x="432" y="115" width="80" height="18" rx="9" fill="var(--blue-soft)" stroke="var(--blue)" stroke-width="0.7" />
 <text x="472" y="124" text-anchor="middle" dominant-baseline="central" font-size="9" font-weight="500" fill="var(--blue)">同进程 · 并行线程</text>
 <g class="fixed" data-node-type="deterministic">
 <rect x="46" y="136" width="204" height="30" rx="5" fill="var(--slate-node)" stroke="var(--slate)" stroke-width="0.7" />
 <text x="148" y="151" text-anchor="middle" dominant-baseline="central" font-size="13" font-weight="500" fill="#3d4859">seed() · 底盘 + 库</text>
-<title>planner 进程在 fork 出 Director 线程和发第一次模型调用之前执行，零模型调用。把 base.css、base.js、CHASSIS.md、selfcheck.py 从 --chassis 复制进 runs/&lt;label&gt;/pages/assets，缺任何一件立即 FileNotFoundError；JavaScript 库目录整棵 copytree 真拷贝，不用软链。</title>
+<title>planner 进程在 fork 出 Director 线程和发第一次模型调用之前执行，零模型调用。把 base.css、base.js、CHASSIS.md、selfcheck.py 从 --chassis 复制进 ../runs/notale-v2/&lt;label&gt;/pages/assets，缺任何一件立即 FileNotFoundError；JavaScript 库目录整棵 copytree 真拷贝，不用软链。</title>
 </g>
 <path d="M148 166V178" fill="none" stroke="var(--slate)" stroke-width="1.1" marker-end="url(#arrow-slate)"/>
 <g class="model-call" data-node-type="model-call">
@@ -204,7 +211,7 @@
 <rect x="46" y="528" width="204" height="38" rx="5" fill="var(--slate-node)" stroke="var(--slate)" stroke-width="0.7" />
 <text x="148" y="541" text-anchor="middle" dominant-baseline="central" font-size="12.5" font-weight="500" fill="#3d4859">split_pages()</text>
 <text x="148" y="557" text-anchor="middle" dominant-baseline="central" font-size="10.5" font-weight="400" fill="var(--muted)">pages.md → p01…pNN.md</text>
-<title>校验通过、且 Director 线程 join 成功之后才写页表并切分。公开接口引用须真实存在，私有实现不要求逐类列入接口。写入失败就不会有 briefs.json，Builder 无从启动。</title>
+<title>页表校验通过且 Director 线程 join 成功后，写 pages.md，按页号拆成 pNN.md，并发布 briefs.json。没有 iface_gaps 扫描或另一轮跨角色接口沟通。Builder 读取磁盘主题 INTERFACE；主题的声明与资源有效性由 Director 技术校验负责。</title>
 </g>
 <path d="M148 566V574" fill="none" stroke="var(--slate)" stroke-width="1.1" marker-end="url(#arrow-slate)"/>
 <g class="fixed" data-node-type="deterministic">
@@ -216,7 +223,7 @@
 <g class="terminal" data-node-type="planner-failure">
 <rect x="46" y="630" width="204" height="30" rx="5" fill="white" stroke="var(--muted)" stroke-width="0.7" stroke-dasharray="3 2"/>
 <text x="148" y="645" text-anchor="middle" dominant-baseline="central" font-size="10.5" font-weight="500" fill="var(--ink)">无有效定稿 → STOP · 记录原因</text>
-<title>三次拒绝或响应里没有工具调用即抛出，整个 planner 进程失败：不把草稿或带悬空引用的计划交给 Builder。缺少可选图片本身不算失败。没有断点续跑，runs/&lt;label&gt; 已被占用，重试必须换 label。外部请求沿用有限重试与超时保护。</title>
+<title>三次拒绝或响应里没有工具调用即抛出，整个 planner 进程失败：不把草稿或带悬空引用的计划交给 Builder。缺少可选图片本身不算失败。没有断点续跑，../runs/notale-v2/&lt;label&gt; 已被占用，重试必须换 label。外部请求沿用有限重试与超时保护。</title>
 </g>
 <g class="fixed" data-node-type="input">
 <rect x="300" y="136" width="200" height="54" rx="5" fill="white" stroke="var(--slate)" stroke-width="0.7" stroke-dasharray="3 2"/>
@@ -236,33 +243,34 @@
 <text x="355" y="248" text-anchor="middle" dominant-baseline="central" font-size="9.2" font-weight="500" fill="#3d4859">reference · 只给图</text>
 <rect x="402" y="240" width="86" height="16" rx="4" fill="white" stroke="var(--slate)" stroke-width="0.5"/>
 <text x="445" y="248" text-anchor="middle" dominant-baseline="central" font-size="9.2" font-weight="500" fill="#3d4859">auto · 先选样</text>
-<title>路线在任何模型调用之前由入参决定，不让模型或关键词分类器猜：目录里有有效 theme.css 且没有 --style 就是 reuse —— 跑完整技术校验后直接 publish，零模型调用，校验不过就报错而不是擅自重写；有 theme.css 加 --style 是 modify，原主题全文进上下文；只有参考图是 reference；什么都没给才是 auto。除 reuse 外都要求模型 profile 开着 vision_input，否则报错，不允许盲写参考主题。</title>
+<title>路线由输入决定：有效主题无修改要求走 reuse，校验后零模型调用发布；有原主题加明确要求走 modify；提供参考图走 reference。无模板时走 auto，但 --style 精确匹配已有风格可直接加载详情、跳过 pick。非 reuse 路线要求视觉模型。reference / modify 跳过 pick，不保证写主题永远只有一次响应：工具使用与被拒提交会增加实际调用。</title>
 </g>
+<path d="M300 248H286V364H298" fill="none" stroke="var(--slate)" stroke-width="1.1" stroke-dasharray="3 2" marker-end="url(#arrow-slate)"><title>reference / modify / 精确命中的 --style：跳过 pick，直接加载写主题输入。</title></path>
 <path d="M400 262V270" fill="none" stroke="var(--slate)" stroke-width="1.1" marker-end="url(#arrow-slate)"/>
 <g class="model-call" data-node-type="model-call">
 <rect x="300" y="272" width="200" height="66" rx="6" fill="white" stroke="var(--blue)" stroke-width="0.7" />
-<text x="400" y="285" text-anchor="middle" dominant-baseline="central" font-size="11.5" font-weight="500" fill="var(--blue)">① pick 选样 · 仅 auto</text>
+<text x="400" y="285" text-anchor="middle" dominant-baseline="central" font-size="11.5" font-weight="500" fill="var(--blue)">① pick 看图选方向</text>
 <rect x="312" y="296" width="176" height="17" rx="3" fill="var(--green-node)" stroke="var(--green-line)" stroke-width="0.7" />
-<text x="400" y="305" text-anchor="middle" dominant-baseline="central" font-size="10" font-weight="500" fill="#174f38">Write style-picks.tsv · 5 个 ID</text>
-<text x="400" y="326" text-anchor="middle" dominant-baseline="central" font-size="9.5" font-weight="400" fill="var(--ink)">输入是文本索引 + 实测调色板，不发图</text>
-<title>只有 auto 走这一步：有 --template 就整段跳过，picks 为空。输入是画廊的文本索引加每条实测的五色调色板事实（面积占比，不代表语义），这一步不发任何图片。工具只有 Write，目标只能是 runs/&lt;label&gt;/style-picks.tsv，每次响应恰好一个 Write；校验 5 个真实且唯一的画廊 ID、选中的截图能真的被打开。TRIES=3，失败以 function_call_output 回传原因。画廊在仓库外的 refs/quality，不入版本库。</title>
+<text x="400" y="305" text-anchor="middle" dominant-baseline="central" font-size="10" font-weight="500" fill="#174f38">Write · 主方向 ID + 依据</text>
+<text x="400" y="326" text-anchor="middle" dominant-baseline="central" font-size="9.5" font-weight="400" fill="var(--ink)">40 项索引 + 带 ID 小概览</text>
+<title>无模板且未精确命中 --style 时执行 pick。输入为版本库内 40 项 ID / 名称 / 描述和 contact-sheets 索引列出的全部小概览；看图选择，不使用旧画廊调色板。Write style-picks.tsv，每行 ID 加依据，首行为主方向，可有真实互补辅助；不要求五项。仅检查真实唯一 ID、图片可读、正确 Write 目标；TRIES=3，不按色相、明度、理由长度或风格数量评分。</title>
 </g>
 <path d="M400 338V346" fill="none" stroke="var(--blue)" stroke-width="1.1" marker-end="url(#arrow-blue)"/>
 <g class="fixed" data-node-type="deterministic">
 <rect x="300" y="348" width="200" height="32" rx="5" fill="var(--slate-node)" stroke="var(--slate)" stroke-width="0.7" />
-<text x="400" y="364" text-anchor="middle" dominant-baseline="central" font-size="10" font-weight="500" fill="#3d4859">画廊 / 用户样张 + 风格详情图 → 上下文</text>
-<title>写主题这一步才发图：画廊选中的截图与用户样张压成 900px JPEG，风格表详情图 1600px，每张前面配一行说明文字。主题阶段按需调用的 ImageSearch / ImageGen 结果也走同一条回灌通道，返回路径加图片；用前必须先回灌看过。可选装饰失败可以放弃。</title>
+<text x="400" y="364" text-anchor="middle" dominant-baseline="central" font-size="10" font-weight="500" fill="#3d4859">详情 + 原图 + 中英字体 → 自动预载</text>
+<title>pick 与 theme 共用同一 history。选中项的 Markdown 详情、1600px 原参考图和本地中英字体声明由宿主自动加载，不需要额外模型 Read。用户参考压成 900px 图加入；只有用户图或需要额外组合资料时才按需 Read。没有 Planner 页表输入，也没有新协调回合。</title>
 </g>
 <path d="M400 380V388" fill="none" stroke="var(--slate)" stroke-width="1.1" marker-end="url(#arrow-slate)"/>
 <g class="model-call" data-node-type="model-call">
 <rect x="300" y="388" width="200" height="84" rx="6" fill="white" stroke="var(--blue)" stroke-width="0.7" />
-<text x="400" y="401" text-anchor="middle" dominant-baseline="central" font-size="11.5" font-weight="500" fill="var(--blue)">② theme 看图写主题 · 可修订</text>
+<text x="400" y="401" text-anchor="middle" dominant-baseline="central" font-size="11.5" font-weight="500" fill="var(--blue)">② theme · 风格与配色组合</text>
 <rect x="312" y="412" width="176" height="17" rx="3" fill="var(--green-node)" stroke="var(--green-line)" stroke-width="0.7" />
 <text x="400" y="421" text-anchor="middle" dominant-baseline="central" font-size="10" font-weight="500" fill="#174f38">Write theme.css · 独占一次响应</text>
 <rect x="312" y="432" width="176" height="17" rx="3" fill="var(--green-node)" stroke="var(--green-line)" stroke-width="0.7" />
 <text x="400" y="441" text-anchor="middle" dominant-baseline="central" font-size="9.5" font-weight="500" fill="#174f38">ImageSearch / ImageGen · 风格表 Read</text>
 <text x="400" y="460" text-anchor="middle" dominant-baseline="central" font-size="9.5" font-weight="500" fill="var(--ink)">TRIES=3 只数 Write 提交</text>
-<title>上下文：style-theme 提示词 + 实测调色板事实 + direction 块 + scrub-theme-slop 禁忌 + 风格表索引 + 明确风格要求 + （modify 时）原主题全文 + 已导入素材的重定位路径清单（CSS 必须用重定位后的路径）。工具三个：Write（只能写 pages/assets/theme.css）、ImageSearch / ImageGen、风格表 Read。同一响应里 Write 和别的工具并存会被拒——先接收工具结果，下一次响应再提交。纯工具轮免费，TRIES=3 只在 Write 提交时计数；每次被拒都写 style.rejected.json，保留候选 CSS 与具体错误，在同一 history 里修订，不重选画廊、不按审美分数重写。主题用 CSS token、具名局部样式和 data-variant 表达，没有 style.json，也没有编译器。</title>
+<title>上下文为 style-theme、direction、已选详情/原图/中英字体、明确要求、导入素材路径，以及 modify 的原 CSS。ban list 在 pick 输入加载并保留于同一 history；跳过 pick 时在 theme 加载。主题方向与配色可组合，Builder 保留具体页面设计权。Write 独占响应；Read 与媒体工具结果进入同一 history。TRIES=3 只计被拒的 Write 提交，工具轮仍是模型调用、并非免费。交付 theme.css，INTERFACE 就是 CSS 顶部注释，不另生成交接 MD。</title>
 </g>
 <path d="M500 430H506V364H502" fill="none" stroke="var(--green-line)" stroke-width="1.1" stroke-dasharray="3 2" marker-end="url(#arrow-green)"><title>主题阶段按需调用共享取图工具，结果回到主题上下文后再采用。这不是 Planner 与 Director 通信。</title></path>
 <path d="M400 472V480" fill="none" stroke="var(--blue)" stroke-width="1.1" marker-end="url(#arrow-blue)"/>
@@ -274,26 +282,19 @@
 <text x="400" y="543" text-anchor="middle" dominant-baseline="central" font-size="9" font-weight="400" fill="var(--muted)">font_library.prepare → 原子 publish</text>
 <title>静态闸：INTERFACE 块必须完整且在最前、没有代码围栏、括号与注释闭合（明确拒绝解析器的 EOF 兜底）、禁 @import、选择器分支只能锚在 .nt-* / #stage / :root / html / body、公开层禁 --surface|panel|card 一类承载面 token、不得覆盖 #stage 的 transform/position/overflow、:root 必须有 --bg/--text/--font-sans、INTERFACE 声明的 variant/token/class 必须真实存在、url() 只能是 assets 边界内存在的本地文件。浏览器闸：真实 headless Chromium 探针页，page.route 掐断 assets 之外的一切请求；默认态与每个声明的 variant 都验 token 能解析且 CSS.supports 通过、#stage 的定位缩放裁剪没被破坏、[hidden] 与品牌伪元素机制完好、至少要有一个无背景图的状态，并对每张引用图片 decode()、每个字体 FontFace.load()。字体只从 vendor/fonts 白名单按 SHA-256 落地，不在运行时下载。通过后原子写入 theme.css。</title>
 </g>
-<path d="M300 524H292V430H298" fill="none" stroke="var(--muted)" stroke-width="1.1" stroke-dasharray="3 2" marker-end="url(#arrow-muted)"><title>技术校验失败：把失败候选与具体错误回传同一 history，最多三次修订；不重选画廊，不按审美分数重写。三次用尽则 Director 失败，整个 planner 进程随之失败。</title></path>
+<path d="M300 524H292V430H298" fill="none" stroke="var(--muted)" stroke-width="1.1" stroke-dasharray="3 2" marker-end="url(#arrow-muted)"><title>技术校验失败回传同一 history，最多三次被拒 Write 提交；不重选方向、不按审美分数修复、不默认降级。耗尽则 Director 失败，Planner 不交付 briefs。</title></path>
 <path d="M500 163H512V500H502" fill="none" stroke="var(--slate)" stroke-width="1.1" stroke-dasharray="3 2" marker-end="url(#arrow-slate)"><title>用户给的资源不经模型：harness 直接导入并在校验成功后冻结。reuse 路线整段跳过模型，只跑这一步的校验。</title></path>
 <g class="fixed" data-node-type="deterministic">
 <rect x="300" y="556" width="200" height="34" rx="5" fill="white" stroke="var(--slate)" stroke-width="0.7" />
-<text x="400" y="567" text-anchor="middle" dominant-baseline="central" font-size="10" font-weight="500" fill="#3d4859">--template 导入沙箱</text>
-<text x="400" y="581" text-anchor="middle" dominant-baseline="central" font-size="9" font-weight="400" fill="var(--muted)">shots 总拷 · 只拷 --style 点名的资源</text>
-<title>一切拷进 pages/assets/style/，用 is_relative_to 做边界检查，指向外部的符号链接直接报错。shots/* 一律拷（后面随视觉页发给 Builder）；其他资源只有相对路径字面出现在 --style 文本里才拷——不做清单、不猜角色、不整包搬。字体的许可与声明文件随字体一起拷。导入主题里的 url() 全部重写成重定位后的相对路径。</title>
+<text x="400" y="567" text-anchor="middle" dominant-baseline="central" font-size="10" font-weight="500" fill="#3d4859">资源导入 · 本地边界</text>
+<text x="400" y="581" text-anchor="middle" dominant-baseline="central" font-size="9" font-weight="400" fill="var(--muted)">调用前导入 · 引用资源与 shots</text>
+<title>模型调用之前，导入主题与参考到 pages/assets/style/；边界外路径/软链接拒绝。拷贝 shots、CSS 引用资源及其字体许可，以及 --style 明确点名的额外资源；CSS URL 与用户 reference 路径同步重定位。不整包执行脚本，不猜素材角色，不新增 manifest。最终交给 Builder 的图以主题 INTERFACE 的 reference 为准。</title>
 </g>
 <path d="M400 590V598" fill="none" stroke="var(--violet)" stroke-width="1.2"/>
 <circle cx="400" cy="598" r="2.6" fill="var(--violet)"/>
 <text x="254" y="605" text-anchor="start" dominant-baseline="central" font-size="9.8" font-weight="500" fill="var(--violet)">两路都成功 → briefs.json + theme.css → N 个 page 任务</text>
 <path d="M250 598H526V162H550" fill="none" stroke="var(--violet)" stroke-width="1.1" marker-end="url(#arrow-violet)"/>
 <path d="M526 239H550" fill="none" stroke="var(--violet)" stroke-width="1.1" marker-end="url(#arrow-violet)"/>
-<g class="fixed" data-node-type="note">
-<rect x="300" y="612" width="200" height="46" rx="5" fill="var(--slate-node)" stroke="var(--slate)" stroke-width="0.8" />
-<text x="312" y="624" text-anchor="start" dominant-baseline="central" font-size="9.8" font-weight="500" fill="#3d4859">两路不交换任何产物</text>
-<text x="312" y="638" text-anchor="start" dominant-baseline="central" font-size="9" font-weight="400" fill="#3d4859">Director 不知道有几页；planner 丢弃线程</text>
-<text x="312" y="651" text-anchor="start" dominant-baseline="central" font-size="9" font-weight="400" fill="#3d4859">返回值，theme.css 从磁盘重读。</text>
-<title>Director 只看题目、读者、场合与风格要求，不读页表；Planner 不知道配色。语义色与概念的绑定留给每个 Builder 自己读 INTERFACE 决定——依据是删掉组件词表那次实验：模型看见什么词就画什么形状。两路共享一个加锁的 trace.jsonl Writer，除此之外没有共享状态、没有文件轮询、没有中间摘要。</title>
-</g>
 <g transform="translate(204 0)">
       <!-- ══════════ Builder ══════════ -->
       <rect x="334" y="112" width="650" height="552" rx="8" fill="var(--green-soft)" stroke="#b9d9c6" stroke-width="0.7"/>
@@ -315,7 +316,7 @@
           <rect x="808" y="163" width="132" height="18" rx="4" fill="var(--slate-node)" stroke="var(--slate)" stroke-width="0.5"/>
           <text x="874" y="172" text-anchor="middle" dominant-baseline="central" fill="#3d4859">代码页 → build-code</text>
         </g>
-        <title>route_page() 读取 pNN.md 中唯一的 [标题页|内容页|交互页|代码页] 标签并映射到一个 workflow，不调模型做路由判断。每个 workflow 可以绑独立模型 profile（当前 build-code 走 deepseek-v4-flash-low，其余走默认 sonnet5-low）。预检拒绝复用 run：builder-manifest.json 必须不存在，每个目标 page-NN.html 与 lesson 目录必须都还不存在。</title>
+        <title>route_page() 按唯一页型标签路由四个 workflow，不调用模型。默认视觉页 gemini38-google-low，代码页 deepseek-v4-flash-low；--uniform 可显式统一。Builder 拒绝已有 manifest 或目标页面/lesson 的 run，避免覆盖。每个 workflow 绑定独立 ModelRuntime，不改全局模型。</title>
       </g>
       <path d="M661 188V200" fill="none" stroke="var(--slate)" stroke-width="1.1" marker-end="url(#arrow-slate)"/>
 
@@ -337,10 +338,10 @@
           <rect x="788" y="230" width="58" height="17" rx="4" fill="var(--green-node)"/>
           <text x="817" y="239" text-anchor="middle" dominant-baseline="central" fill="#174f38">tech.md</text>
           <rect x="854" y="230" width="102" height="17" rx="4" fill="#c4e6d1" stroke="var(--green-line)" stroke-width="0.5"/>
-          <text x="905" y="239" text-anchor="middle" dominant-baseline="central" font-size="10" font-weight="500" fill="#174f38">SKILL + samples</text>
+          <text x="905" y="239" text-anchor="middle" dominant-baseline="central" font-size="10" font-weight="500" fill="#174f38">SKILL + 样例索引</text>
         </g>
-        <text x="366" y="258" dominant-baseline="central" font-size="10" fill="var(--muted)">代码页：只有 deck_outline + tech-code.md —— 无主题、无样张、无视觉 anti-slop</text>
-        <title>视觉页只注入 theme.css 的 /* ==== INTERFACE ==== */ 块（并剥掉其中的“修订”行），完整 CSS 留在磁盘、由浏览器加载，模型有需要可以在第一次实现之后自己 Read。deck_outline 只保留标题页那几行；本章其余页的全文按页作为 chapter_context 走 user 消息。库文档只给 LIBS.md 的路由表，API 要自己 Read。样例不注入：SKILL 要求首轮并行读“一个 reference + 一个 Main 样例”，--samples full|mini|none 改写的是 SKILL 文本本身。代码页连号称只读的主题接口也不给，外壳还解除共享 CSS 以防品牌泄漏。</title>
+        <text x="366" y="258" dominant-baseline="central" font-size="10" fill="var(--muted)">代码页共享资料：deck_outline + tech-code.md；不含主题与参考图，保留代码 workflow</text>
+        <title>视觉页共享前缀含 IDENTITY、philosophy、anti-slop、CHASSIS、theme INTERFACE、deck_outline、tech 与 workflow。theme 仅注入 INTERFACE，完整 CSS 在磁盘由浏览器加载；不另生成 MD。库 API 与样例正文不全量预载，首批 Read 取对应 reference + Main，启用 aux 时按规则加辅助。代码页保留通用身份、非视觉规范与代码 workflow，其共享资料为 deck_outline + tech-code；无主题与视觉参考。同章页表全文在 user 上下文。每页首条 user 消息另含 environment_context、本页 brief/素材来源、同章上下文和最终主题参考。参考优先按 INTERFACE 的 reference 解析；旧主题无声明时仅回退显式用户 shots，不使用候选图冒充最终方向。</title>
       </g>
       <path d="M661 268V276" fill="none" stroke="var(--green-line)" stroke-width="1.2" marker-end="url(#arrow-green)"/>
 
@@ -367,7 +368,7 @@
         <rect x="594" y="344" width="188" height="44" rx="6" fill="white" stroke="var(--blue)" stroke-width="0.8"/>
         <text x="688" y="358" text-anchor="middle" dominant-baseline="central" font-size="12" font-weight="500" fill="var(--blue)">模型响应</text>
         <text x="688" y="375" text-anchor="middle" dominant-baseline="central" font-size="10.5" fill="var(--ink)">0 或 1..n 个工具调用</text>
-        <title>IDENTITY 要求通常 4–7 次、最多 11 次响应，但 RESPONSE_TARGET=11 只是提示与事后统计，harness 不会在第 11 次强制截断；没有创作状态机、不补催、不重启。传输层的重试在 llm.ModelRuntime.respond 里：限流、5xx、连接与超时按退避阶梯重试，其他 400 立即抛出。</title>
+        <title>IDENTITY 建议通常 4–7 次、最多 11 次响应；RESPONSE_TARGET=11 只提示与统计，不强制截断。ModelRuntime.respond 统一执行有限退避：限流、5xx、连接/超时及命中特定网关错误的 400 可重试，其他 400 抛出。不存在旧 llm.ask 的第二套文本调用、空响应补催或自动升 token 链。</title>
       </g>
       <path d="M594 360H568" fill="none" stroke="var(--green-line)" stroke-width="1.2" marker-end="url(#arrow-green)"/>
 
@@ -407,9 +408,9 @@
         <rect x="594" y="402" width="188" height="60" rx="5" fill="white" stroke="var(--muted)" stroke-width="0.7" stroke-dasharray="3 2"/>
         <text x="688" y="415" text-anchor="middle" dominant-baseline="central" font-size="11.5" font-weight="500" fill="var(--ink)">终止 · 六类，无重试</text>
         <text x="688" y="431" text-anchor="middle" dominant-baseline="central" font-size="9.2" fill="var(--ink)">无工具调用（正常）· 单页墙钟 3600s</text>
-        <text x="688" y="443" text-anchor="middle" dominant-baseline="central" font-size="9.2" fill="var(--ink)">首轮读序违规 → 整批不执行 · 首读失败</text>
-        <text x="688" y="455" text-anchor="middle" dominant-baseline="central" font-size="9.2" fill="var(--ink)">实现前出现非 Write 工具 · 页内异常</text>
-        <title>六类退出汇合：模型响应不含工具调用时自然停止（正常出口）；新一轮开始前发现单页墙钟超过 MAX_SECONDS=3600 秒时停止，不取消已发出的请求；首轮批次含非 Read 工具时整批不执行并终止；首轮工具返回致命错误或参数不是合法 JSON 时终止；第一次真实实现之前出现除 Write 以外的工具时终止；build_one() 抛出的页内异常由 guard 捕获。页级没有重试、补催或重启，六者之后都跑一次独立审计。artifact 只有在目标文件真的变化且非空时才算实现。</title>
+        <text x="688" y="443" text-anchor="middle" dominant-baseline="central" font-size="9.2" fill="var(--ink)">首轮读序违规 / 首读失败</text>
+        <text x="688" y="455" text-anchor="middle" dominant-baseline="central" font-size="9.2" fill="var(--ink)">首次实现顺序违规 · 页内异常</text>
+        <title>自然无工具调用、单页墙钟上限、首轮工具顺序违规、首读失败、首次实现顺序违规、页内异常均进入独立审计。首轮视觉页只允许 Read；代码页须有 Read，可同轮 CodeScaffold。首批资料返回后，视觉页首次实现仅允许 Write；代码页允许 Write / Edit。模型响应上限只是提示与统计，不在第 11 次强制终止。不补催、不重启或换模型；MAX_SECONDS 在新调用前检查，不取消在途请求。</title>
       </g>
 
       <g class="fixed" data-node-type="deterministic">
@@ -429,11 +430,11 @@
         <text x="898" y="370" text-anchor="middle" dominant-baseline="central" font-size="11" font-weight="500" fill="var(--violet)">结果绝不回喂</text>
         <text x="898" y="404" text-anchor="middle" dominant-baseline="central" font-size="11" fill="var(--muted)">致命错误 / 视觉警告</text>
         <text x="898" y="430" text-anchor="middle" dominant-baseline="central" font-size="11" fill="var(--muted)">运行统计</text>
-        <text x="898" y="456" text-anchor="middle" dominant-baseline="central" font-size="10" fill="var(--muted)">代码页加工作台自检</text>
+        <text x="898" y="456" text-anchor="middle" dominant-baseline="central" font-size="10" fill="var(--muted)">代码页加课程检查</text>
         <rect x="838" y="500" width="120" height="34" rx="4" fill="white" stroke="var(--slate)" stroke-width="0.8"/>
         <text x="898" y="511" text-anchor="middle" dominant-baseline="central" font-size="9.5" font-weight="500" fill="#3d4859">素材送达 ≠ 实际加载</text>
         <text x="898" y="525" text-anchor="middle" dominant-baseline="central" font-size="9.2" fill="var(--muted)">两个数分别报告</text>
-        <title>build_one() 无论因为哪一类终止退出，都会调用一次 audit_delivery()；guard 捕获页内异常后也会调用。目标缺失直接记致命错误；其余页面跑一次无截图的 Check，代码页再加工作台浏览器自检。审计与产物分开记录，结果绝不回喂模型：自然终止不等于验收通过，汇总里明确标出失败页。取图来源数量与实际渲染图数分别报告；机器零告警不代表数据或排版正确（0909 三路端到端就有过图形坐标错误与字体回退未被检查发现）。</title>
+        <title>每页循环结束后审计一次；guard 捕获异常也会审计。缺目标记致命错误，其他页运行无截图 Check。代码页另调用 lesson/check.py 检查当前课程执行、测试、trace、可视化、重置与页面错误；固定平台的超时、帧数保护、Worker/编辑器自检留在平台回归，不要求 Builder 修平台。审计不回喂模型，产物存在不等于通过。</title>
       </g>
 
 
@@ -455,16 +456,21 @@
         <text x="924" y="587" text-anchor="middle" dominant-baseline="central" font-size="9.5" fill="#3d4859">.shots/*.png</text>
         <title>页面本体、取图目录与 CREDITS.md、append-only 的 trace.jsonl 加按内容哈希存放的原始返回图片、builder-manifest.json（跑前写入全部开关与 profile，跑后更新）、builder-results.json（每页调用数、秒数、终止类型、产物是否存在、审计结果、token 明细）、Check 截图 .shots/page-NN[-afterK].png。CREDITS.md 明确包含未采用的候选，不等同于实际渲染；汇总失败不阻断页面交付。</title>
       </g>
-      <g class="fixed" data-node-type="note">
-        <rect x="350" y="614" width="618" height="38" rx="5" fill="var(--slate-node)" stroke="var(--slate)" stroke-width="0.8"/>
-        <text x="366" y="627" dominant-baseline="central" font-size="10.5" font-weight="500" fill="#3d4859">每页首条 user 消息 = environment_context ＋ brief（含本页素材路径与来源）＋ 同章各页全文 ＋ 用户样张</text>
-        <text x="366" y="642" dominant-baseline="central" font-size="10" fill="#3d4859">style/shots/** 随每个视觉页附上（代码页永不给）；无 --template 时 --ref-shots 才退回画廊前两张。</text>
-        <title>用户样张已接通：--template 导入的 pages/assets/style/shots/** 全部压成 900px JPEG，附在每个视觉页首条 user 消息后面，并带一段说明它们只是方向参考。--ref-shots 只是兜底，取 style-picks.tsv 前两个 ID 重渲画廊截图。有参考图而 profile 没开 vision_input 时直接报错——不允许声称看过看不见的参考。代码页不给样张也不给主题。brief 只传路径与来源文本，不自动附图；Builder 是否查看、使用或另行补图由它自己判断，也不回写 Planner。</title>
-      </g>
 
 </g>
-<text x="30" y="678" dominant-baseline="central" font-size="9.5" fill="var(--muted)">现状图 · 出处：core/{planner,director,theme,builder,tools,media,skills}.py 与 run12.sh、scripts/style_e2e.py ｜ 悬停节点看机制 ｜ v3 是升级前快照</text>
+<text x="30" y="678" dominant-baseline="central" font-size="9.5" fill="var(--muted)">2026-09-10 · 按当前源码核对 · Planner ∥ Director · 同一 Director history · Builder 保留页面设计权 · 悬停看机制</text>
 </svg>
+      <figcaption>
+        <table aria-label="当前实现补充说明">
+          <tbody>
+            <tr><th scope="row">默认模型</th><td>Planner / Director / 视觉 Builder：Gemini 3.8 Flash low；代码 Builder：DeepSeek V4 Flash low。实验的显式 profile 与 <code>--uniform</code> 可覆盖默认；以每次 manifest / trace 为准。</td></tr>
+            <tr><th scope="row">模型调用边界</th><td>Director auto 的最短路径为 pick + theme 两次；reuse 为零次。参考图、修改或精确指定方向可跳过 pick，但 Read、媒体工具和技术修订会增加响应次数。Planner 与 Director 各自独立 history，Director 内部选样与写主题共用 history；模型响应数不等于媒体工具内部 API 请求数。</td></tr>
+            <tr><th scope="row">底盘与检查</th><td><code>data-deck-step</code> 控制分步出场，不占用页面自己的 <code>data-step</code>。Check 核对基础资源、舞台尺寸与缩放，并可返回整页/局部截图；代码页检查当前课程，固定工作台平台测试在创作循环外。</td></tr>
+            <tr><th scope="row">产出 → 预览</th><td><a href="../experiments/lab/make_deck.py">make_deck.py</a> 独立读取产物，按内容哈希复用缩略图，生成预览与缓存；不调用模型、不回写源页面。<a href="../experiments/lab/preview.js">preview.js</a> 按需加载 iframe、预热下一页；新页就绪后再切换，概览使用静态缩略图。组装不是 Planner / Builder 内的隐含步骤。</td></tr>
+          </tbody>
+        </table>
+        <p>源码：<a href="core/planner.py">Planner</a> · <a href="core/director.py">Director</a> · <a href="core/style_catalog.py">风格资料</a> · <a href="core/builder.py">Builder</a> · <a href="core/llm.py">ModelRuntime</a> · <a href="config.yaml">默认配置</a> ｜ <a href="PLAN-style-control.md">当前风格契约</a> · <a href="../legacy/notale-v2/README.md">历史归档</a>。本图描述当前实现，不是新增门禁或待实施方案。</p>
+      </figcaption>
     </figure>
   </main>
 </body>

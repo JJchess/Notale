@@ -48,7 +48,7 @@ judge 的两条方法教训（都已修正）：
 原始记录：scratchpad `judge-ai.jsonl` / `judge-pair.jsonl`（跨用途，作废）/ `judge-pair-sample.jsonl` / `judge-style.jsonl`；脚本 `judge.py`。
 
 
-### 0′.2 第一个实验：讲稿区（2026-09-05 晚，`runs/notes3-experiment.json`）
+### 0′.2 第一个实验：讲稿区（2026-09-05 晚，`../runs/notale-v2/notes3-experiment.json`）
 
 用户直觉"字太密、一堆卡片"→ 假设"模型没有别处可写"。三臂 × 40 页，同一冻结规划：
 
@@ -118,7 +118,7 @@ audit_delivery: 停止后跑一次无截图 Check(+代码页浏览器自检) →
 
 配置沿用 run-philos.sh（planner 默认模型；builder gemini38-google-low、--uniform、mini+aux 样本、并发 6）。
 四套新题是这个仓库**从未见过的学科**。全部页面用无头 Chromium 渲染、截图、逐个点击/拉动控件并量像素与文本变化。
-预览（reveal 拼版）：`http://127.0.0.1:4190/lab/preview-<label>/index.html`，label 见下表。
+预览（reveal 拼版）：`http://127.0.0.1:4190/experiments/lab/preview-<label>/index.html`，label 见下表。
 
 | deck (label) | 学科/结构 | 分钟 | 页 (封/内/交/码) | 墙钟 | 输入 tok | 占用比中位 | 小字占比中位 | 主体比中位 | 有控件的内容页 | 版式指纹命中 (非封面页) |
 |---|---|---|---|---|---|---|---|---|---|---|
@@ -203,7 +203,7 @@ page-07「战勇 −15 治军 −20，与本传偏离度 0%→92%」，page-13�
 现状：31/36 轮是 ML。要泛化就必须先有"从未见过"的题，并且题的两个维度要交叉：**学科**（数学/CS、自然科学、工程、人文、社科、艺术语言）×**内容结构**（机制/过程 M、量化关系 Q、文本/证据解释 T、程序/技能 P）。
 24 题草案在 `scratchpad/bench-briefs.md`（本轮跑的 4 题已在其中）。规则：
 
-- **冻结**：query/audience/minutes 逐字不变；每题存一份冻结的 planner 产物，builder 层实验统一在冻结规划上跑（`run-focus.sh` 的 `freeze()` 已是这条路）。planner 层实验才重新规划。
+- **冻结**：query/audience/minutes 逐字不变；每题存一份冻结的 planner 产物，builder 层实验统一在冻结规划上跑（历史例子见 [run-focus.sh](../legacy/notale-v2/experiments/run-focus.sh) 的 `freeze()`；脚本含删除重建操作，不直接重跑）。planner 层实验才重新规划。
 - **开发集 / 盲测集**：16 + 8，盲测集每域至少 1 题、每结构 2 题；接受一项改动前只跑一次盲测集，迭代过程中不看它。
 - **轮换防过拟合**：一项改动被接受后，把它优化过程中看过最多的 2 题移入"已过拟合"名单，从题库外补 2 题。
 - **抽样跑法**：日常实验不必 24 题全跑。builder 层一轮抽 6 题（每域 1，结构轮换）≈ 100 页 ≈ 6.5 分钟墙钟、$12；planner 层一轮 6 题 ≈ 6 次调用、$1。
@@ -290,7 +290,7 @@ planner 与 builder 之间是否再加"页面合同"步骤，取决于 D2 实验
 - `eval/KNOWLEDGE.md` —— 设计知识，只收"有对照证据"的条目，每条附实验 label（例如 `#stage flex column` 那条）。禁止收"感觉"。
 - 样本库治理（`workflows/*/samples/catalog.json` 加字段）：每份样本的读取次数、被读后产物的盲评均分；**一个类别 ≥ 40% 读取集中在一份样本上就触发"补样本或删样本"**；新样本必须来自盲评最差的那类失败。
 - `eval/regression/` —— 金样本：每个失败模式一个"曾经坏过、现在好"的 (冻结规划页, 探测器期望值) 对；每次接受改动后全跑。现有 `experiments/workflow-skills-next/fixtures/adaboost-cold-gray` 就是第一份。
-- 实验记录沿用 `runs/*-experiment.json` 的形状，但补齐固定字段（§4.8）。
+- 实验记录沿用 `../runs/notale-v2/*-experiment.json` 的形状，但补齐固定字段（§4.8）。
 
 ### 4.8 一次实验失败时记什么、何时 revert（问题 10）
 
@@ -395,6 +395,6 @@ B. 只加量化词探测器进 Check 报告（"本页 6 处分值/百分比，�
 
 ## 附录
 
-- 本轮产物：`runs/probe-{shiji,buffer,uhi,econpaper}-20260905/`；预览 `lab/preview-probe-*/`（端口 4190，no-store）。
+- 本轮产物：`../runs/notale-v2/probe-{shiji,buffer,uhi,econpaper}-20260905/`；预览 `experiments/lab/preview-probe-*/`（端口 4190，no-store）。
 - 原型仪器（scratchpad，未入库）：`explore.py`（交互探针）、`layout_sig.py`（版式指纹）、`metrics.py`（汇总）、`bench-briefs.md`（24 题草案）。
-- 基线数据：`runs/abc-compare-20260905/stats.json`、各 `builder-results.json`。
+- 基线数据：`../runs/notale-v2/abc-compare-20260905/stats.json`、各 `builder-results.json`。

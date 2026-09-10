@@ -18,7 +18,7 @@ Planner/Director 使用当前默认 `AWS-GPT-5.6-Sol`、medium；Builder 使用�
 
 没有手改模型产物、替换模型或失败后新建 run 补跑；不使用前轮 420 秒的脚本截止时间，保留生产默认时限。旧主题保持只读。
 
-[4177 实验面板](http://localhost:4177/notale-v2/runs/style-e2e-0909a-report/) · [冻结输入与代码哈希](runs/style-e2e-0909a-report/experiment.json)
+[4177 实验面板](http://localhost:4177/runs/notale-v2/style-e2e-0909a-report/) · [冻结输入与代码哈希](../runs/notale-v2/style-e2e-0909a-report/experiment.json)
 
 ## 已确认的失败与偏差
 
@@ -27,7 +27,7 @@ Planner/Director 使用当前默认 `AWS-GPT-5.6-Sol`、medium；Builder 使用�
 3. **两页提前空交付。** reference/page-01、modify/page-03 均在 2 次响应后以 `no_tool_use` 结束，没有 HTML；最终文本均为 “I'm ready to help. What would you like to work on?”。现有记录不足以将原因归给模型或网关/适配链某一层。适配器 5 项确定性测试通过，不替代线上链路排查。
 4. **修改主题没有采用所选详情的标题字体。** trace 确认输入包含 Fashion Editorial 详情及 `NTF-zcool-xiaowei`、`NTF-bodoni-moda` 声明；最终 CSS 仍用旧主题的 Barlow Condensed / Noto Sans SC。详情搭配本身是建议，技术闸不会阻止这一选择；但这是本次风格执行的明显偏差，不能宣称所选字体已落实。
 5. **手绘内容页图表坐标错误，最终版本未修正。** SVG 将两条序列的本金 100 都画在 `(70,420)`，与标为 0 的横轴重合，100 刻度却在其上方；正确的表格文字不能弥补图形误导。这不是配色或审美偏好，属于数据表达错误。补充审计从最终 DOM 提取刻度、轴线、折线并记录 `initial_amount_plotted_on_zero=true`、`ok=false`。
-6. **局部 SVG 标签回退服务器字体。** 扩展检查 4 页共 191 个直接含文字的可见元素；手绘交互页 `20% 参照` 中的 2 个汉字实际来自系统 `WenQuanYi Zen Hei`，不是随包字体。其余检查到的文字未发现系统字体。只抽查标题和正文会漏掉此处。逐元素 CDP 字体证据在 [补充审计](runs/style-e2e-0909a-report/supplemental.json)。
+6. **局部 SVG 标签回退服务器字体。** 扩展检查 4 页共 191 个直接含文字的可见元素；手绘交互页 `20% 参照` 中的 2 个汉字实际来自系统 `WenQuanYi Zen Hei`，不是随包字体。其余检查到的文字未发现系统字体。只抽查标题和正文会漏掉此处。逐元素 CDP 字体证据在 [补充审计](../runs/notale-v2/style-e2e-0909a-report/supplemental.json)。
 7. **技术检查未覆盖的排版错误。** 修改路内容页的 `<text class="label fixed">200.00</text>` 被主题 `svg.nt-growth-chart .fixed` 的线条规则附加了 4px 蓝色描边，数值发糊；右侧公式断行为两行，阅读不佳。机器零视觉告警不能称视觉质量通过。
 
 ## 验收范围
@@ -57,13 +57,13 @@ Planner/Director 使用当前默认 `AWS-GPT-5.6-Sol`、medium；Builder 使用�
 - 已逐张看过 4 张最终截图。补充字体/交互/数据检查的 HTML 哈希与最终 4 个文件全部一致，保留手绘内容页较早一次检查作为 `previous_snapshot`。
 - 原始复用主题 SHA-256 未变；两个交付主题与 Director 最后一次成功 Write 文本完全一致，没有被人工或 Builder 改写。
 
-[完整机器结果](runs/style-e2e-0909a-report/summary.json) · [调用与耗时统计](runs/style-e2e-0909a-report/metrics.json) · [补充语义与字体证据](runs/style-e2e-0909a-report/supplemental.json)
+[完整机器结果](../runs/notale-v2/style-e2e-0909a-report/summary.json) · [调用与耗时统计](../runs/notale-v2/style-e2e-0909a-report/metrics.json) · [补充语义与字体证据](../runs/notale-v2/style-e2e-0909a-report/supplemental.json)
 
 ### 版本与结论边界
 
 本轮工作只新增实验脚本、报告和审计数据，未修改生产代码或模型产物。脚本在模型运行期间补了最终报告排版和后续复现的失败退出码，不影响已在运行进程内加载的实验流程；本次旧进程退出 0，**不能以进程退出码代替结构化的 `passed=false` 结果**。当前脚本在任一路失败时会退出 1。
 
-共享工作树在运行期间检测到两处其他修改：`core/sample_bundles.py`（00:41）与 `core/test_skills.py`（00:51），均晚于两个 Builder 进程启动。已保留，没有覆盖；变更文件名列于 summary/metrics 的 `changed_code_during_experiment`。本轮因此不是完全静止工作树下的基线对照，也没有借此推断任何失败的归因。
+共享工作树在运行期间检测到两处其他修改：`core/sample_bundles.py`（00:41）与 `test/test_skills.py`（00:51），均晚于两个 Builder 进程启动。已保留，没有覆盖；变更文件名列于 summary/metrics 的 `changed_code_during_experiment`。本轮因此不是完全静止工作树下的基线对照，也没有借此推断任何失败的归因。
 
 这些结果证明**当前这组三路端到端没有验收通过**，不能据此估计整体失败率，也不能未经同输入基线对照就说全部问题由本次升级引入。未覆盖全部 40 种风格、代码页、外部图片生成或所有媒体/背景场景。
 
@@ -78,12 +78,12 @@ Planner/Director 使用当前默认 `AWS-GPT-5.6-Sol`、medium；Builder 使用�
 回归命令：
 
 ```sh
-python3 -B -m unittest core.test_director core.test_style_upgrade core.test_style_fonts core.test_builder core.test_llm_adapters core.test_prompts core.test_skills core.test_media core.test_artifacts
-python3 -B -m unittest core.test_style_consumers core.test_style_browser core.test_style_fonts_browser
-python3 -B -m pytest core/test_check_report.py -q
+python3 -B -m unittest test.test_director test.test_style_upgrade test.test_style_fonts test.test_builder test.test_llm_adapters test.test_prompts test.test_skills test.test_media test.test_artifacts
+python3 -B -m unittest test.test_style_consumers test.test_style_browser test.test_style_fonts_browser
+python3 -B -m pytest test/test_check_report.py -q
 ```
 
-分别通过 136、10、4 项（合计 150 项）；全部离线/模拟调用，无新增付费模型请求。新增 [消费者回归](core/test_style_consumers.py) 实际验证拼装后的 Builder 输入、Read/Check 提示、混排标签字体命中、SVG 描边用途、1600→800 同比缩放与点击/键盘、现代颜色与连续探针状态、复杂背景未覆盖，以及真实缺资源/JS/越界仍报告。CSS 使用明确的回归夹具，不能当作模型生成质量证据。
+分别通过 136、10、4 项（合计 150 项）；全部离线/模拟调用，无新增付费模型请求。新增 [消费者回归](test/test_style_consumers.py) 实际验证拼装后的 Builder 输入、Read/Check 提示、混排标签字体命中、SVG 描边用途、1600→800 同比缩放与点击/键盘、现代颜色与连续探针状态、复杂背景未覆盖，以及真实缺资源/JS/越界仍报告。CSS 使用明确的回归夹具，不能当作模型生成质量证据。
 
 另将新 PROBE 只读用于原四页，四页的必需 token 均有效，不再产生 pad-x/offScale 误判。四份 HTML 与两份主题前后哈希一致；原字体回退、SVG 标签、图表坐标及视口字号问题没有被暗中手改。本节表示新生成链路的规则与消费者已修，**不改变本报告原三路 0/3 通过的结论，也不声称原产物或空交付已修复**。
 
@@ -91,7 +91,7 @@ python3 -B -m pytest core/test_check_report.py -q
 
 ## 整改后 auto 全流程重跑 · 0909b
 
-[4177 查看本套](http://localhost:4177/notale-v2/runs/style-e2e-0909b-report/) · [机器结果](runs/style-e2e-0909b-report/summary.json) · [补充审计](runs/style-e2e-0909b-report/supplemental.json)
+[4177 查看本套](http://localhost:4177/runs/notale-v2/style-e2e-0909b-report/) · [机器结果](../runs/notale-v2/style-e2e-0909b-report/summary.json) · [补充审计](../runs/notale-v2/style-e2e-0909b-report/supplemental.json)
 
 使用上一轮相同的指数增长三页任务及模型配置，从自动选参考、Planner 与 Director 到三页 Builder 全量执行，没有复用页表或主题。命令：`python3 -B scripts/style_e2e.py --prefix style-e2e-0909b --route auto`。脚本新增单路选择和 auto 独立预检；原三路默认行为保留。运行期间冻结文件哈希没有变化。
 

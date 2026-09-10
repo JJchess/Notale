@@ -25,7 +25,7 @@ npm start
 In another terminal, import the final slide output:
 
 ```bash
-npm run import:slides -- ../notale-v2/runs/ens-trim-full-0907/pages '集成学习 · 完整资源讲义'
+npm run import:slides -- ../runs/notale-v2/ens-trim-full-0907/pages '集成学习 · 完整资源讲义'
 ```
 
 Open **http://127.0.0.1:4310/**. The importer copies resources, including symlinked runtime dependencies, into PostgreSQL; it never modifies the input directory. It prints the imported document URL. Existing source generation code is not invoked.

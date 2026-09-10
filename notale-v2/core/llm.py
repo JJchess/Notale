@@ -1,17 +1,6 @@
-"""模型传输层。从 notale 搬过来的那部分基础设施,只留 planner 用得到的。
+"""模型传输层：统一请求形态，由 ModelRuntime 按 profile 路由到 Responses、Chat 或 Messages。
 
-一处必须说清的落差:
-
-  `wire.py` 是我们的**标准上下文表示**,它是对 Claude Code 抓包的减法 ——
-  system[] 带 cache_control 断点、四种 content block、tool_use 交结构化数据。
-  但实际能用的账号走的是 **OpenAI Responses API**(`api.999555999.com`,
-  `gpt-5.6-sol`),不是 Anthropic。
-
-  所以 wire.Request 在这里是「内部规范形式」,发出去之前由 `to_responses()`
-  翻一道。好处是换供应商只改这一个函数;代价是 cache_control 断点在这条链路上
-  没有对应物,prefix 复用的收益拿不到 —— 那是 Anthropic 特有的。
-  这一点要记着,别把 nn-06 的 token 账直接套过来比。
-"""
+Planner / Director 使用默认 runtime；Builder 使用各自绑定 profile 的 runtime。"""
 
 from __future__ import annotations
 
@@ -35,9 +24,9 @@ from dotenv import load_dotenv
 from openai import (APIConnectionError, APITimeoutError, BadRequestError,
                     InternalServerError, OpenAI, RateLimitError)
 
-from .wire import Request
 
 ROOT = Path(__file__).resolve().parents[1]
+RUNS_ROOT = ROOT.parent / "runs" / ROOT.name
 
 
 _OVERRIDE: dict = {}
@@ -68,7 +57,6 @@ def override(**kw) -> None:
               f"(默认 wire 下前缀缓存 100% 失效且不报错)")
     _OVERRIDE.update({k: v for k, v in kw.items() if v})
     config.cache_clear()
-    client.cache_clear()
     default_runtime.cache_clear()
 
 
@@ -86,28 +74,6 @@ def _normalized_base_url(value: str) -> str:
     return urlunsplit(
         (p.scheme, p.netloc, p.path.rstrip("/") or "/v1", p.query, p.fragment)
     )
-
-
-@lru_cache(maxsize=1)
-def client() -> OpenAI:
-    m = config()["model"]
-    key = os.getenv(m["api_key_env"])
-    if not key:
-        raise RuntimeError(f"环境变量 {m['api_key_env']} 没有值,检查 .env.local")
-    # base_url 没写路径时要补 /v1 —— 直接用裸域名会 503。notale 那边同样处理。
-    return OpenAI(api_key=key, base_url=_normalized_base_url(m["base_url"]),
-                  timeout=m["http_timeout_sec"],
-                  max_retries=0)  # 重试由我们自己管,不让 SDK 和上层各退避一次
-
-
-@dataclass
-class Reply:
-    text: str
-    input_tokens: int = 0
-    output_tokens: int = 0
-    cached_tokens: int = 0
-    raw: object = None
-    truncated: bool = False
 
 
 @dataclass(frozen=True)
@@ -196,39 +162,6 @@ def _default_model_profile(cfg: dict | None = None) -> ModelProfile:
         request_options=dict(raw.get("request_options") or {}),
         replay_reasoning=bool(raw.get("replay_reasoning", adapter == "chat")),
     )
-
-
-def to_responses(req: Request) -> dict:
-    """wire.Request → Responses API 请求体。
-
-    system 块拼成 instructions;messages 里的 text 块拼成 input。
-    cache_control 在这一侧无对应物,直接丢掉 —— 丢的是信息不是语义。
-    """
-    instructions = "\n\n".join(b.text for b in req.system)
-    parts: list[str] = []
-    imgs: list[dict] = []
-    for m in req.messages:
-        for b in m.content:
-            t = getattr(b, "type", None)
-            if t == "text":
-                parts.append(b.text)
-            elif t == "image":
-                imgs.append({"type": "input_image",
-                             "image_url": f"data:{b.media_type};base64,{b.data}"})
-    # 有图就走结构化的 input;没图仍然是一个字符串 —— 不改已经跑通的那条路。
-    inp = ("\n\n".join(parts) if not imgs else
-           [{"role": "user",
-             "content": [{"type": "input_text", "text": "\n\n".join(parts)}] + imgs}])
-    body = {
-        "model": req.model,
-        "instructions": instructions,
-        "input": inp,
-        "max_output_tokens": req.max_tokens,
-    }
-    effort = (req.output_config or {}).get("effort")
-    if effort:
-        body["reasoning"] = {"effort": effort}
-    return body
 
 
 # ── chat-completions 适配层 ─────────────────────────────────
@@ -325,8 +258,7 @@ def _adapt_chat(
             cached_tokens=None if cached is None else int(cached)))
     # **截断不能只信 `finish_reason`。** 实测这条路由会撒谎:
     # `max_tokens=16` 打满、正文切在半句话("……身体可近"),
-    # 它照样报 `finish_reason: "stop"`。而截断识别驱动着 OUTPUT_CEILING 的自动加倍,
-    # 认不出来就会把一份结尾没了的规划往下发给 45 个建页 agent。
+    # 它照样报 `finish_reason: "stop"`。仍须把截断状态准确交给调用方。
     # 所以再加一条可算的判据:输出 token 顶到上限就是打满 —— 别信自报,量。
     fin = getattr(ch, "finish_reason", None)
     hit_cap = bool(want) and usage.output_tokens >= want
@@ -468,34 +400,6 @@ def _chat_history(items: list) -> list[dict]:
 # 长生成 —— 失败重来的代价远高于多等一会,所以梯子拉长而不是拉密。
 LADDER = (5, 15, 40, 90, 180, 300, 300, 300)
 
-# 空响应最多重试几次(见 ask())。3 次 = 最多多等 5+15+40=60s。
-EMPTY_RUNGS = 3
-
-# 一次请求最多来得及吐多少 output token。= 最慢实测吞吐(70 tok/s) × http_timeout_sec(900s)。
-# 超过这个数的请求不可能在超时前回来,所以自动升档到此为止 —— 再升只是把
-# 「截断」换成「超时」,两者都是白等。
-OUTPUT_CEILING = 60_000
-
-# 超时最多重试几次。**不能和限流共用整条梯子** —— 这是量出来的:
-# ape-01 那轮 PLAN.md 连续超时,走了 4 级就烧掉 1 小时 20 分钟且毫无进展,
-# 按 8 级走完最坏要两个半小时才失败。原因是一次超时的代价是
-# `http_timeout_sec`(900s)的死等,而限流的代价只是梯子上那点退避。
-# 限流说"稍后再来",值得等;900s 超时说"这个请求完不成",重试八次是纯浪费。
-# 流水线里最慢的一步实测 416s,所以 3 次尝试(≈45 分钟上限)足够区分抖动和系统性故障。
-TIMEOUT_RUNGS = 2
-
-
-class EmptyReply(RuntimeError):
-    """回来了,但没有文本。
-
-    这条链路特有的失败形状,而且**比抛异常更危险** —— 实测 s5-orb 的 theme.css
-    那一步 `out=229 tok / 0 字符`:模型只出了 reasoning,一个字的正文都没有。
-    `text_of()` 只防住了 SDK 在 text=None 上抛 TypeError,防不住"回来是空的"。
-    不把它变成异常,planner 就会把空串写进 theme.css 继续往下走,
-    结果是整套页面无样式而**没有任何一处报错**。宁可炸。
-    """
-
-
 # 网关的 fallback 失败会伪装成 400。实测原文:
 #     400 The `reasoning_content` in the thinking mode must be passed back to the API.
 #     Error doing the fallback: ServiceUnavailableError:
@@ -520,79 +424,9 @@ def _is_gateway_flake(e: Exception) -> str:
     return next((h for h in _GATEWAY_HINTS if h in m), "")
 
 
-def ask(req: Request, min_chars: int = 1) -> Reply:
-    """发一次调用,拿回文本。planner 的每一步都是一次这个。
-
-    `min_chars` —— 短于这个数视同上游抖动,走同一条退避梯子重试。
-    调用方按步给:theme.css / PLAN.md 这类产物不可能只有几十个字符。
-    """
-    body = to_responses(req)
-    last: Exception | None = None
-    # 空响应只在梯子前 EMPTY_RUNGS 级上重试。限流值得等 300s,空响应不值得:
-    # 它要么是一次抖动(重来一次就好),要么是确定性的(等多久都一样)。
-    # 走满整条梯子会白等 15 分钟,每一步都这样就是一整轮。
-    empties = timeouts = 0
-    escalated = False
-    t_start = time.time()
-    for i, wait in enumerate((0,) + LADDER):
-        if wait and last is not None:
-            # `last is None` 只在「上一轮不是异常」时出现 —— 现在只有截断自动升档
-            # 会走到那里,它自己已经打过一行了,不该再打一句「上游 NoneType」。
-            print(f"      上游 {type(last).__name__},等 {wait}s 重试 ({i}/{len(LADDER)})"
-                  f"  已累计死等 {time.time()-t_start:.0f}s", flush=True)
-            time.sleep(wait)
-        try:
-            r = _once(body)
-            if r.truncated:
-                cap = int(body.get("max_output_tokens") or 0)
-                # **截断自动升一档,只升一次。** 手工改常量是行不通的:
-                # spec 那一步我按不同模型的观测手工改了四次(8k → 20k → 40k → 60k),
-                # 每次都要杀掉重跑。上限本质上是「按一个模型的观测定的数」,
-                # 换模型就不够,所以该由 harness 自己抬,而不是等人来抬。
-                if cap and cap * 2 <= OUTPUT_CEILING and not body.get("_escalated"):
-                    body = {**body, "max_output_tokens": cap * 2, "_escalated": True}
-                    body.pop("_escalated")           # 别把自定义键发给上游
-                    escalated = True
-                    print(f"      产物在 {cap:,} tok 处被截断,自动升到 {cap*2:,} 重试一次",
-                          flush=True)
-                    continue
-                raise RuntimeError(
-                    f"产物被 max_output_tokens 截断(已出 {r.output_tokens} tok,"
-                    f"上限 {cap:,}"
-                    + (",已自动升过一档" if escalated else "")
-                    + f")。再往上就超过这条链路能吐的量(约 {OUTPUT_CEILING:,},"
-                    f"= 最慢实测吞吐 70 tok/s × 超时 {config()['model']['http_timeout_sec']}s)。"
-                    f"这不是上限不够,是这一步在要一份写不完的东西 —— 去看它的输入。")
-            if len(r.text) < min_chars:
-                empties += 1
-                last = EmptyReply(f"只回了 {len(r.text)} 字符(要求 ≥{min_chars}),"
-                                  f"输出 {r.output_tokens} tok")
-                if empties > EMPTY_RUNGS:
-                    raise last
-                continue
-            return r
-        except BadRequestError as e:
-            hint = _is_gateway_flake(e)
-            if not hint:
-                raise
-            last = e
-            print(f"      400 命中网关抖动特征「{hint}」,重试。原文: "
-                  f"{' '.join(str(e).split())[:300]}", flush=True)
-        except (RateLimitError, InternalServerError, APIConnectionError, APITimeoutError) as e:
-            last = e
-            if isinstance(e, (APITimeoutError, APIConnectionError)):
-                timeouts += 1
-                if timeouts > TIMEOUT_RUNGS:
-                    print(f"      超时 {timeouts} 次,不再重试(累计死等 "
-                          f"{time.time()-t_start:.0f}s)。梯子是给限流用的,"
-                          f"超时重试八次只会白烧墙钟。", flush=True)
-                    raise last
-    raise last
-
-
 def respond(instructions: str, history: list, tools: list[dict], effort: str,
             tag: str = "-"):
-    """Compatibility entry point for Planner and old tests.
+    """Default-runtime entry point for Planner and Director.
 
     Production Builder creates an explicit ``ModelRuntime`` from its profile,
     so concurrent model runs never mutate this module's global configuration.
@@ -682,11 +516,7 @@ def cache_write_of(r) -> int:
 # 实测(2026-08-26,paratera 同一条路由):
 #     AWS-Claude-Sonnet-5 走 responses,连打三次同一个 7,632 token 前缀,三次 cached=0
 #     同一模型走 /v1/messages 带 cache_control,第二次 cache_read 4,582 —— 全额变折扣
-# Anthropic 系不做自动前缀缓存,断点是唯一入口;而 to_responses() 把断点丢了
-# (在那一侧确实没有对应物)。所以不是换个 base_url 就行,要单独一条 wire。
-#
-# `core/wire.py` 的 CacheControl / TextBlock.cache_control 本来就是为这条建的
-# —— wire 是对 Claude Code 抓包的减法。这里是把设计意图接回去,不是新增概念。
+# Anthropic 的显式 cache_control 由 to_messages() 添加；更换 base_url 本身不会转换协议。
 # --------------------------------------------------------------------------
 
 _ANTHROPIC_VERSION = "2023-06-01"
@@ -710,9 +540,7 @@ def to_messages(body: dict) -> dict:
             msgs.append({"role": role, "content": [block]})
 
     inp = body.get("input") or []
-    # **planner 那条路传的是一个纯字符串**(to_responses 无图时就返回 str) ——
-    # 直接遍历会把它拆成一个个字符、全被 isinstance 跳过,messages 变空,
-    # 而 Anthropic 要求至少一条消息。builder 传的才是 item 列表。
+    # 请求 input 可为字符串或 item 列表；先统一成消息，避免把字符串逐字符遍历。
     if isinstance(inp, str):
         inp = [{"role": "user", "content": inp}]
     for it in inp:
@@ -854,7 +682,7 @@ def _adapt_messages(r: dict) -> _Resp:
 def _post_messages_for(profile: ModelProfile, body: dict) -> _Resp:
     """裸 HTTP 打 /v1/messages,**并把 urllib 的异常翻成 SDK 的类型**。
 
-    翻译不是洁癖,是必需的:respond() / ask() 的退避阶梯捕的是 openai 那几个
+    翻译不是洁癖,是必需的:ModelRuntime.respond() 的退避阶梯捕的是 openai 那几个
     异常类,而 urllib 抛的是 HTTPError / URLError / TimeoutError ——
     不翻的话**这条 wire 一次重试都没有**。而这条网关实测会抖
     (trim-net 那轮日志里就有「[page-18] InternalServerError 等 6s 重试 1/8」),
@@ -1072,7 +900,7 @@ class ModelRuntime:
 
 @lru_cache(maxsize=1)
 def default_runtime() -> ModelRuntime:
-    """Legacy singleton for Planner; Builder always constructs its own runtime."""
+    """Shared default for Planner / Director; Builder constructs its own runtime."""
     return ModelRuntime(_default_model_profile())
 
 
@@ -1093,26 +921,6 @@ def usage_of(r) -> tuple[int, int, int | None]:
     if cached is None and getattr(u, "cache_read_input_tokens", None) is not None:
         cached = int(getattr(u, "cache_read_input_tokens") or 0)
     return tin, tout, cached
-
-
-def _once(body: dict) -> Reply:
-    r = default_runtime().complete(body)
-    u = getattr(r, "usage", None)
-    # 撞上 max_output_tokens 的截断。Responses API 会给
-    # status="incomplete" + incomplete_details.reason="max_output_tokens"。
-    # **必须显式拿出来** —— 截断的产物看上去是一份正常文件,只是结尾没了,
-    # 而下游(theme/contract/brief)会照着这份残缺的规划一路建二十多页。
-    det = getattr(r, "incomplete_details", None)
-    tin, tout, cached = usage_of(r)
-    return Reply(
-        text=text_of(r).strip(),
-        input_tokens=tin,
-        output_tokens=tout,
-        cached_tokens=cached or 0,
-        raw=r,
-        truncated=(getattr(r, "status", None) == "incomplete"
-                   or getattr(det, "reason", None) == "max_output_tokens"),
-    )
 
 
 _LEFTOVER = re.compile(r"\{[a-z_][a-z0-9_]*\}")

@@ -1,7 +1,7 @@
 """脱敏层。
 
 `proxy.py` 当初对请求头做了 REDACT,这套新代码把那一层丢了 —— 结果
-`runs/orbit-01/trace.jsonl` 里进了一个真实 API key,推 GitHub 之前才被内容级
+`../runs/notale-v2/orbit-01/trace.jsonl` 里进了一个真实 API key,推 GitHub 之前才被内容级
 扫描拦下来。靠 `.gitignore` 躲开是绕过不是修复:trace 是我们做时间和成本审计
 的唯一数据源,不该永远不能分享。
 

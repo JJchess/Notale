@@ -1,6 +1,6 @@
 # Style Director 当前契约与收敛记录
 
-2026-09-10。唯一当前入口；[历史方案与实验](PLAN-style-control-history-20260910.md)只供追溯，不作为并行实施清单。
+2026-09-10。唯一当前入口；[历史方案与实验](../legacy/notale-v2/docs/PLAN-style-control-history-20260910.md)只供追溯，不作为并行实施清单。
 
 ## 职责与流程
 
@@ -33,13 +33,13 @@ Builder 首轮 Read、自由修订、结束条件和最终独立 Check 保持。
 
 - 同一角色的重复提示按职责归位：CHASSIS 管机制，tech 管创作契约，direction 管方向，style-theme 管 CSS 交付，ban list 管失效模式，Check 管实际证据。跨角色必要规则保留。
 - 40 项详情删除公共套话，保留原 description、参考图、字体搭配及资源链接，不新增 Read。
-- 退役 `--frame-cap`、`--direction-menus`、`planner.iface_gaps()` 和未被生产调用的 `builder.ref_images()`。旧参数报未知参数，无兼容空实现；旧产物和主题包仍可使用。历史菜单见 [归档](attic/direction-menus.md)。
+- 退役 `--frame-cap`、`--direction-menus`、`planner.iface_gaps()` 和未被生产调用的 `builder.ref_images()`。旧参数报未知参数，无兼容空实现；旧产物和主题包仍可使用。历史菜单见 [归档](../legacy/notale-v2/prompts/direction-menus.md)。
 - 默认 Planner/Director/视觉 Builder 为 `gemini38-google-low`，代码页保留 `deepseek-v4-flash-low`；显式覆盖及实验模型固定保留。默认配置对齐与提示剪枝分开记录。
 
 ## 验证与未解决问题
 
-剪枝前证据：[三题 auto 报告](runs/style-auto-adapt-0910-r1-report/REVIEW.md)。9 页交付，三题方向可辨；种子套装仍有 Paper 重复，中文字体尚未充分分化。不是全风格稳定性证明。
+剪枝前证据：[三题 auto 报告](../runs/notale-v2/style-auto-adapt-0910-r1-report/REVIEW.md)。9 页交付，三题方向可辨；种子套装仍有 Paper 重复，中文字体尚未充分分化。不是全风格稳定性证明。
 
-本轮剪枝已完成：[收敛验收记录](runs/style-prune-auto-0910-r1-report/REVIEW.md)。58 项相关离线检查通过（0.601s），40 项详情与字体可解析；唯一一次三题 auto 交付 9/9 页，生成墙钟 168.79s，主链路 78 次响应，Director 各 3 次。各套只组装一次，查看全部 9 页并抽查核心交互，无运行错误；种子操作区空白、细部观察不足等视觉弱项仍保留。未指定风格、未跑付费 reference/modify、未手工修页或追加实验；不据单次采样声称性能提升。
+本轮剪枝已完成：[收敛验收记录](../runs/notale-v2/style-prune-auto-0910-r1-report/REVIEW.md)。58 项相关离线检查通过（0.601s），40 项详情与字体可解析；唯一一次三题 auto 交付 9/9 页，生成墙钟 168.79s，主链路 78 次响应，Director 各 3 次。各套只组装一次，查看全部 9 页并抽查核心交互，无运行错误；种子操作区空白、细部观察不足等视觉弱项仍保留。未指定风格、未跑付费 reference/modify、未手工修页或追加实验；不据单次采样声称性能提升。
 
 发现明确失败如实保留；确定性修复只补相关检查，修改后未再生成验证的状态明确标注。稳定预览保留，不用失败候选覆盖。

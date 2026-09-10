@@ -39,7 +39,6 @@ class ExperimentModelsTest(unittest.TestCase):
                 planner.main()
         finally:
             llm.config.cache_clear()
-            llm.client.cache_clear()
             llm.default_runtime.cache_clear()
         profile = captured['profile']
         self.assertEqual(profile.model, 'gemini-3.8-flash')

@@ -17,20 +17,20 @@
 126 项回归通过：
 
 ```sh
-python3 -B -m unittest core.test_director core.test_style_upgrade core.test_prompts core.test_media core.test_builder core.test_skills core.test_artifacts core.test_check_report core.test_llm_adapters
+python3 -B -m unittest test.test_director test.test_style_upgrade test.test_prompts test.test_media test.test_builder test.test_skills test.test_artifacts test.test_check_report test.test_llm_adapters
 ```
 
 独立离线浏览器测试 2 项通过（每项包含多场景断言）：
 
 ```sh
-python3 -B -m unittest core.test_style_browser
+python3 -B -m unittest test.test_style_browser
 ```
 
 覆盖三种背景机制、深浅/无图状态、品牌指针层、隐藏元素、缩放点击、键盘、reduced-motion、SVG/Canvas 根取色与代码外壳隔离；另外验证损坏图片/字体、合法颜色函数及通用字体。`git diff --check` 通过。
 
 ## 真实效果：3 个方向 × 3 个页型
 
-[九宫格](runs/style-upgrade-0908b-audit/contact.png) · [逐页操作结果](runs/style-upgrade-0908b-audit/audit.json)
+[九宫格](../runs/notale-v2/style-upgrade-0908b-audit/contact.png) · [逐页操作结果](../runs/notale-v2/style-upgrade-0908b-audit/audit.json)
 
 冻结内容：本金 100、年增长率 20%，`A(n)=100*(1+r)^n`，`n=0..5`。封面、正文图表、交互各一页。真实模型生成，不是九张手写主题演示。
 

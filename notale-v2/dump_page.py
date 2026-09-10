@@ -15,6 +15,7 @@ from core import builder, skills
 
 
 ROOT = Path(__file__).resolve().parent
+RUNS_ROOT = ROOT.parent / "runs" / ROOT.name
 
 
 def fence(text: str, language: str = "") -> str:
@@ -31,7 +32,7 @@ def main() -> None:
     parser.add_argument("--workflows", default=str(skills.WORKFLOWS))
     args = parser.parse_args()
 
-    run = ROOT / "runs" / args.label
+    run = RUNS_ROOT / args.label
     workflow_root = Path(args.workflows).resolve()
     raw_briefs = json.loads((run / "briefs.json").read_text(encoding="utf-8"))
     raw = next(

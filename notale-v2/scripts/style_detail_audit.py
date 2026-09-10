@@ -11,6 +11,7 @@ from playwright.sync_api import sync_playwright
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+RUNS_ROOT = ROOT.parent / 'runs' / ROOT.name
 from core import theme
 
 
@@ -28,15 +29,15 @@ def main():
     builder_label = args.builder_label or args.prefix + '-hand'
     if Path(builder_label).name != builder_label or builder_label in ('.', '..'):
         ap.error('builder-label must be a single directory name')
-    output = ROOT / 'runs' / (args.prefix + '-audit')
+    output = RUNS_ROOT / (args.prefix + '-audit')
     output.mkdir(exist_ok=True)
     cases = ('auto', 'hand', 'pixel', 'fashion')
     validations = {}
     for case in cases:
-        assets = ROOT / 'runs' / f'{args.prefix}-{case}' / 'pages/assets'
+        assets = RUNS_ROOT / f'{args.prefix}-{case}' / 'pages/assets'
         css = assets / 'theme.css'
         validations[case] = theme.validate(css.read_text(), assets) if css.exists() else ['missing theme']
-    server = ThreadingHTTPServer(('127.0.0.1', 0), partial(Quiet, directory=str(ROOT / 'runs')))
+    server = ThreadingHTTPServer(('127.0.0.1', 0), partial(Quiet, directory=str(RUNS_ROOT)))
     threading.Thread(target=server.serve_forever, daemon=True).start()
     base = f'http://127.0.0.1:{server.server_port}/'
     records = []
@@ -69,7 +70,7 @@ def main():
                 row.update(js_errors=errors, request_failures=failures,
                            ok=not errors and not failures and all(f['custom'] and f['appearance']['inViewport'] for f in row['fonts']))
                 page.close()
-            path = ROOT / 'runs' / builder_label / 'pages/page-01.html'
+            path = RUNS_ROOT / builder_label / 'pages/page-01.html'
             if path.exists():
                 page = browser.new_page(viewport={'width': 1600, 'height': 900}, reduced_motion='reduce')
                 page.add_init_script('''window.__fontDraws=[];for(const name of ['fillText','measureText']){
@@ -112,7 +113,7 @@ def main():
     for case in cases:
         links.append(f'<section><h2>{case}</h2><p><a href="../{args.prefix}-{case}/pages/specimen.html">打开实际主题测试页</a></p>'
                      f'<a href="{case}.png"><img src="{case}.png" alt="{case}" style="width:100%;height:auto"></a></section>')
-    if (ROOT / 'runs' / builder_label / 'pages/page-01.html').exists():
+    if (RUNS_ROOT / builder_label / 'pages/page-01.html').exists():
         links.append(f'<p><a href="../{builder_label}/pages/page-01.html">真实 Builder 手绘交互页</a></p><img src="builder-hand.png" style="max-width:100%">')
     elif args.builder_label:
         links.append('<p>Builder 集成未通过：本次在 7 分钟测试上限内未产出交互页，未继续补跑。四个主题测试页不能代替这一项。</p>')

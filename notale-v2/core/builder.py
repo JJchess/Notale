@@ -23,7 +23,7 @@ from pathlib import Path
 
 from . import code_runtime, skills, tools
 from . import llm
-from .llm import ROOT, config, respond, text_of
+from .llm import ROOT, RUNS_ROOT, config, respond, text_of
 from .trace import Writer
 
 RESPONSE_TARGET = 11  # 行为目标与事后指标，不是运行时熔断
@@ -278,7 +278,7 @@ PRELOAD_TAGS = (("chassis", "CHASSIS.md"), ("theme_css", "theme.css"),
 # 而按轮次真正会变的两节(§1 全课主线、§7 文字风格口径)交给每页自己的内容承载。
 #
 # **同时替掉了 `skills.FLOORS`。** 那两份是同一批规则的两份副本,而 FLOORS 默认不注入 ——
-# `runs/floors-ab-experiment.json` 的结论是 `reject_no_effect`,并写着「不要靠 system 块
+# `../runs/notale-v2/floors-ab-experiment.json` 的结论是 `reject_no_effect`,并写着「不要靠 system 块
 # 前言去替代 CONTRACT.md」。注意那次搬的是**摘要式前言**、CONTRACT 原文仍在(所以只是
 # 第三份副本,自然无效应);这次是把契约原文本身放进 system 块,不是同一件事。
 TECH_SLOTS = dict(canvas_w=1600, canvas_h=900)
@@ -930,7 +930,7 @@ def main() -> None:
     profile = llm.resolve_builder_profile(cfg, args.profile)
     runtimes = workflow_runtimes(cfg, profile, args.uniform)
 
-    root = ROOT / "runs" / args.label
+    root = RUNS_ROOT / args.label
     briefs = json.loads((root / "briefs.json").read_text(encoding="utf-8"))
     workflow_root = Path(args.workflows).resolve()
     missing = [

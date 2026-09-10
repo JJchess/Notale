@@ -17,12 +17,13 @@ import time
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+RUNS_ROOT = ROOT.parent / 'runs' / ROOT.name
 from core import builder, director, llm, planner, skills, theme
 from scripts.style_e2e import hashes, now, save
 
 BASELINE = '4cefcc9a'
-FIXTURE = ROOT / 'runs/style-e2e-0909a-reference'
-TOPICS = ROOT / 'runs/four-topics-0909-171933-report/experiment.json'
+FIXTURE = RUNS_ROOT / 'style-e2e-0909a-reference'
+TOPICS = RUNS_ROOT / 'four-topics-0909-171933-report/experiment.json'
 
 
 def old_file(path):
@@ -146,7 +147,7 @@ def main():
         ap.error('prefix must be a fresh directory name')
     if args.mode == 'transfer' and not args.theme_source:
         ap.error('transfer needs --theme-source pointing to theme assets')
-    report = ROOT / 'runs' / f'{args.prefix}-report'
+    report = RUNS_ROOT / f'{args.prefix}-report'
     report.mkdir()  # Do not overwrite an earlier experiment.
     profile = llm.resolve_builder_profile(llm.config(), 'gemini38-google-low')
     llm.override(name=profile.model, base_url=profile.base_url, api_key_env=profile.api_key_env,

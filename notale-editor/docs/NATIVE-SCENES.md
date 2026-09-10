@@ -1,6 +1,6 @@
 # Native scene audit
 
-This records the initial scene audit against the actual 32-page lecture. The observations below predate the ECharts adapter; implementation and subsequent evidence are recorded at the end. Source files under `../notale-v2/runs/ens-trim-full-0907/pages` were read without modification. Runtime probes used the original imported document at version 1 and verified that its complete before/after API snapshots were identical.
+This records the initial scene audit against the actual 32-page lecture. The observations below predate the ECharts adapter; implementation and subsequent evidence are recorded at the end. Source files under `../runs/notale-v2/ens-trim-full-0907/pages` were read without modification. Runtime probes used the original imported document at version 1 and verified that its complete before/after API snapshots were identical.
 
 ## Observed scene types
 

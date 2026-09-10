@@ -14,6 +14,7 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+RUNS_ROOT = ROOT.parent / 'runs' / ROOT.name
 from core import director, planner
 
 QUERY = ('知识的形状 / The shape of knowledge：用本金100、年增长率20%解释指数增长。'
@@ -41,7 +42,7 @@ def main():
     if args.builder_from:
         if Path(args.builder_from).name != args.builder_from or args.builder_from in ('.', '..'):
             ap.error('builder-from must be one run label')
-        source = ROOT / 'runs' / args.builder_from
+        source = RUNS_ROOT / args.builder_from
         for required in ('pages/assets/theme.css', 'pages/plan/pages.md', 'pages/plan/p01.md'):
             if not (source / required).is_file():
                 ap.error(f'Missing input: {source / required}')
@@ -59,7 +60,7 @@ def main():
     cases = [('auto', None), ('hand', '19-hand-drawn'), ('pixel', '20-pixel'), ('fashion', '38-fashion-editorial')]
     # Validate all destinations before the first paid request.
     for name, _ in cases:
-        if (ROOT / 'runs' / f'{args.prefix}-{name}').exists():
+        if (RUNS_ROOT / f'{args.prefix}-{name}').exists():
             ap.error('Use a fresh prefix; existing results are never overwritten')
 
     def one(case):

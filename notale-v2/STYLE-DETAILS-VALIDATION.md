@@ -13,8 +13,8 @@
 
 ## 可直接查看
 
-- [40 项中英字体样张](http://localhost:4177/notale-v2/runs/style-fonts-0908/)
-- [四个真实 Director 主题测试页](http://localhost:4177/notale-v2/runs/style-details-0908a-audit/)
+- [40 项中英字体样张](http://localhost:4177/runs/notale-v2/style-fonts-0908/)
+- [四个真实 Director 主题测试页](http://localhost:4177/runs/notale-v2/style-details-0908a-audit/)
 - [完整风格索引](references/styles/INDEX.md) · [字体来源与授权](vendor/fonts/README.md)
 
 第一组是确定性字样测试，不是 40 套生成作品。第二组 CSS 来自真实 Director，HTML 使用相同固定文字和排布，不冒充四个 Builder 成品。
@@ -30,14 +30,14 @@
 最终确定性回归 135 项通过，原有底盘浏览器测试 2 项通过，新增字体/Canvas 浏览器测试 2 项通过；作用域内 `git diff --check` 通过。
 
 ```sh
-python3 -B -m unittest core.test_director core.test_style_upgrade core.test_style_fonts core.test_prompts core.test_media core.test_builder core.test_skills core.test_artifacts core.test_check_report core.test_llm_adapters
-python3 -B -m unittest core.test_style_browser
-python3 -B -m unittest core.test_style_fonts_browser
+python3 -B -m unittest test.test_director test.test_style_upgrade test.test_style_fonts test.test_prompts test.test_media test.test_builder test.test_skills test.test_artifacts test.test_check_report test.test_llm_adapters
+python3 -B -m unittest test.test_style_browser
+python3 -B -m unittest test.test_style_fonts_browser
 ```
 
 ### 40 项字体字样
 
-`scripts/style_font_preview.py` 在阻断外网的 Chromium 中渲染 40 项 × 5 类文字。200 项全部通过：cmap 覆盖样本文字，实际渲染字体均为随包 webfont；无 JS 异常或失败请求。每项截图及实际 glyph-count/family/PostScript 记录保存在 [字体审计](runs/style-fonts-0908/audit.json)。不是只看 CSS 名称，也不是只看字体请求成功。
+`scripts/style_font_preview.py` 在阻断外网的 Chromium 中渲染 40 项 × 5 类文字。200 项全部通过：cmap 覆盖样本文字，实际渲染字体均为随包 webfont；无 JS 异常或失败请求。每项截图及实际 glyph-count/family/PostScript 记录保存在 [字体审计](../runs/notale-v2/style-fonts-0908/audit.json)。不是只看 CSS 名称，也不是只看字体请求成功。
 
 ### 四个真实主题
 
@@ -54,7 +54,7 @@ python3 -B -m unittest core.test_style_fonts_browser
 
 共 10 次 Director 响应，输入 106,239 token，输出 35,421 token，缓存读取 40,904 token。数据来自各 run trace，包含重复上下文；未猜测价格。
 
-四页 × 五类文本的实际渲染均为随包字体，位于视口内；没有 JS 异常或失败请求，原生主题校验通过。[逐项证据](runs/style-details-0908a-audit/audit.json)
+四页 × 五类文本的实际渲染均为随包字体，位于视口内；没有 JS 异常或失败请求，原生主题校验通过。[逐项证据](../runs/notale-v2/style-details-0908a-audit/audit.json)
 
 ### Builder 集成
 
@@ -62,7 +62,7 @@ python3 -B -m unittest core.test_style_fonts_browser
 
 首个测试脚本把页号传成 `page-01`，而 brief 构造器需要 `01`；随后发现测试准备漏了完整底盘。两次均在模型调用前失败，属于测试脚本错误，不归因给 Builder 模型。已改为正确页号并使用正常 `planner.seed()`。失败输入和 manifest 保留在 `style-details-0908a-hand`。
 
-使用新 run `style-details-0908b-hand`，复制已经生成的手绘主题与同一页内容，再运行一次正常 Builder；本阶段没有重跑 Director。配置仍为 `sonnet5-low`、mini＋aux、视觉输入开启。实际完成 3 次响应（读取参考），在预设 420 秒内没有写出页面，父进程超时终止；没有继续补跑，不能声称 Builder 端到端通过。[失败记录](runs/style-details-0908b-hand/style-detail-result.json)
+使用新 run `style-details-0908b-hand`，复制已经生成的手绘主题与同一页内容，再运行一次正常 Builder；本阶段没有重跑 Director。配置仍为 `sonnet5-low`、mini＋aux、视觉输入开启。实际完成 3 次响应（读取参考），在预设 420 秒内没有写出页面，父进程超时终止；没有继续补跑，不能声称 Builder 端到端通过。[失败记录](../runs/notale-v2/style-details-0908b-hand/style-detail-result.json)
 
 因此本轮结果是：详情读取与字体交付实现、200 项字样及四个实际主题通过；真实 Builder 页面集成尚未通过。独立字体/Canvas 浏览器测试证明加载机制，不替代失败的模型页面测试。测试脚本现已补上结构化超时记录，保留这次旧脚本的退出记录。
 

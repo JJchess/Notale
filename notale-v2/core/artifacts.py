@@ -1,7 +1,7 @@
 """harness 的产物格式。
 
 **这里没有一个字段是设计出来的。** 全部从 nn-06 那一轮 Claude Code 自己写出来的
-`PLAN.md` / `CONTRACT.md` / brief 里量出来,存档在 `lab/derived-nn-06/`。
+`PLAN.md` / `CONTRACT.md` / brief 里量出来,存档在 `experiments/lab/derived-nn-06/`。
 
 量出来的事实,按证据强度排:
 

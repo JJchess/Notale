@@ -23,7 +23,7 @@ from . import skills
 from . import media, tools
 from .artifacts import Brief
 from . import llm
-from .llm import ROOT, config, fill, strip_fence
+from .llm import ROOT, RUNS_ROOT, config, fill, strip_fence
 
 # harness 的全部外部输入(底盘、库、技法文档)都在这下面,**不指向 notale-v2 外面**。
 # 以前是三条写死的绝对路径,指向同级的 `notale/zzz` 和 `notale/zero`;那两个目录
@@ -90,7 +90,7 @@ class Run:
     def __post_init__(self) -> None:
         from .theme import check_options
         check_options(self.template, self.style, self.style_director)
-        self.root = ROOT / "runs" / self.label
+        self.root = RUNS_ROOT / self.label
         if self.root.exists():
             raise FileExistsError(
                 f"run already exists: {self.root}; use a new --label for a fresh test")
@@ -300,7 +300,7 @@ def seed(run: Run, chassis: Path, lib: Path) -> None:
     builder 侧早就切开了:`builder._libs_index()` 只把开头那张「按要做的事查」路由表
     拼进 `prompts/tech.md`(覆盖每一页),细节留给一次 `Read`(`prompts/brief.md` 指路)。
     规划这一步现在只在 deck.md 里读到一句「库由 harness 预置,选型和 API 归建页 agent」。
-    代价记在 runs/direction-trim-experiment.json:散文里不再出现
+    代价记在 ../runs/notale-v2/direction-trim-experiment.json:散文里不再出现
     `MLP.create({sizes:…})` / `renderer:'svg'` 这类 API 级细节,跨页选库一致性会松。
     """
     # 底盘件一律从 --chassis 取,**不留第二份实现**。

@@ -15,6 +15,7 @@ import threading
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+RUNS_ROOT = ROOT.parent / 'runs' / ROOT.name
 from core import font_library as fonts, style_catalog as catalog
 
 SAMPLES = {
@@ -85,7 +86,8 @@ class Quiet(SimpleHTTPRequestHandler):
 
 def audit(output, cards):
     from playwright.sync_api import sync_playwright
-    server = ThreadingHTTPServer(('127.0.0.1', 0), partial(Quiet, directory=str(ROOT)))
+    workspace = ROOT.parent
+    server = ThreadingHTTPServer(('127.0.0.1', 0), partial(Quiet, directory=str(workspace)))
     threading.Thread(target=server.serve_forever, daemon=True).start()
     base = f'http://127.0.0.1:{server.server_port}/'
     results, errors, failures = [], [], []
@@ -96,7 +98,7 @@ def audit(output, cards):
             page.route('**/*', lambda r: r.continue_() if r.request.url.startswith(base) else r.abort())
             page.on('pageerror', lambda e: errors.append(str(e)))
             page.on('requestfailed', lambda r: failures.append(r.url))
-            page.goto(base + output.relative_to(ROOT).as_posix() + '/index.html', timeout=120000)
+            page.goto(base + output.relative_to(workspace).as_posix() + '/index.html', timeout=120000)
             page.evaluate('document.fonts.ready')
             cdp = page.context.new_cdp_session(page)
             cdp.send('DOM.enable'); cdp.send('CSS.enable')
@@ -130,7 +132,7 @@ def main():
     args = parser.parse_args()
     if Path(args.label).name != args.label or args.label in ('.', '..'):
         parser.error('label must be a single directory name')
-    output = ROOT / 'runs' / args.label
+    output = RUNS_ROOT / args.label
     cards = build(output)
     if not audit(output, cards): raise SystemExit(1)
 

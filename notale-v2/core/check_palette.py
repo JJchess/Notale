@@ -41,7 +41,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from core.llm import ROOT  # noqa: E402
+from core.llm import RUNS_ROOT  # noqa: E402
 
 # 语义色 token 的名字不固定(每轮由模型自己定),所以按"不是中性名"来筛。
 NEUTRAL = re.compile(r"--(bg|paper|surface|text|ink|muted|rule|line|border|"
@@ -114,8 +114,8 @@ def main() -> None:
     a.add_argument("--json", action="store_true")
     n = a.parse_args()
 
-    labels = n.label or sorted(p.name for p in (ROOT / "runs").iterdir() if p.is_dir())
-    rows = [r for r in (one(ROOT / "runs" / x / "pages" / "assets" / "theme.css")
+    labels = n.label or sorted(p.name for p in RUNS_ROOT.iterdir() if p.is_dir())
+    rows = [r for r in (one(RUNS_ROOT / x / "pages" / "assets" / "theme.css")
                         for x in labels) if r]
     if not rows:
         raise SystemExit("✗ 没找到任何 theme.css")

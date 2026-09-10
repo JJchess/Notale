@@ -37,6 +37,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
+RUNS_ROOT = ROOT.parent / "runs" / ROOT.name
 NONE_LINE = "  (这一页没有指派技法文档,直接动手)"
 
 # 指派段整块拿掉,连同尾随空行。
@@ -70,7 +71,7 @@ NAME = re.compile(r"^  - (\S+)$", re.M)
 
 
 def load(label: str) -> tuple[Path, list]:
-    p = ROOT / "runs" / label / "briefs.json"
+    p = RUNS_ROOT / label / "briefs.json"
     if not p.is_file():
         sys.exit(f"找不到 {p}")
     return p, json.loads(p.read_text(encoding="utf-8"))

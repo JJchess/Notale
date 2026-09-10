@@ -10,7 +10,7 @@ Browser tests generate their red/blue PNGs and PCM WAV tone in memory. No extern
 
 `package-consumer.ts.txt` is copied into a separate temporary TypeScript project by `npm run test:package`. Keeping it as a fixture prevents the source build from resolving the package against its own stale build output.
 
-The following HTML files are byte-identical source copies from the final lecture under `notale-v2/runs/ens-trim-full-0907/pages`. Domain tests read these local copies, so they do not depend on the sibling generation workspace. They contain source references to assets, not a complete standalone runtime bundle; browser acceptance uses the imported 32-page lecture and its immutable assets. Package-consumer fixtures strip unrelated links and use source-only runtime stubs where documented.
+The following HTML files are byte-identical source copies from the final lecture under `runs/notale-v2/ens-trim-full-0907/pages`. Domain tests read these local copies, so they do not depend on the sibling generation workspace. They contain source references to assets, not a complete standalone runtime bundle; browser acceptance uses the imported 32-page lecture and its immutable assets. Package-consumer fixtures strip unrelated links and use source-only runtime stubs where documented.
 
 | Fixture | Original page | HTML SHA-256 |
 | --- | --- | --- |

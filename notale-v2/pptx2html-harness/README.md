@@ -80,7 +80,17 @@ python3 -m unittest -q test_harness
 
 定向测试使用本地 HTTP 模型替身及真实 shell 隔离，覆盖 Chat 工具/图片与 thought signature 回放、
 只读输入、进程续接、最小 gate、预算/错误退出和目录独立运行。
-**本目录尚未发起真实 Gemini 的完整 PPTX 转换，不能据这些测试宣称质量已验证。**
+2026-09-10 已完成首轮真实转换 `runs/xiuzhong-01`：使用与 Astra 完全相同的任务和输入，
+仅调用 Gemini 3.8 Flash，耗时 13 分 8 秒、87 次模型响应，交付 7 页及 2 个示例。
+模型自主渲染、看图；运行结果仍是 `delivered_unreviewed`，不等于完整质量验收。
+
+[首轮预览](runs/xiuzhong-01/workspace/output/index.html) ·
+[抽查记录](runs/xiuzhong-01/review/README.md) ·
+[原始轨迹](runs/xiuzhong-01/state/)
+
+抽查中导航、文字编辑和滑块联动有效；主要偏差是往原模板留白处加入课程内容、
+标识比例发生变化，以及互动示例的绿电渗透率可超过 100%。产物保留原样作为基线。
+下一轮优先明确保留空白模板、示例另放的任务边界，暂不增加 gate。
 
 [架构图](../ARCHITECTURE-template2html.html) ·
 [原始 Astra 采集](../../infra/codex-harness-kit/runs/astra-xiuzhong-01/) ·

@@ -5,7 +5,7 @@ import { lookup } from 'mime-types';
 import { documentSchema, slideSchema } from '../src/domain/model.js';
 import { importHtml } from '../src/domain/html.js';
 
-const directory = resolve(process.argv[2] ?? '../notale-v2/runs/ens-trim-full-0907/pages');
+const directory = resolve(process.argv[2] ?? '../runs/notale-v2/ens-trim-full-0907/pages');
 const origin = process.env.EDITOR_URL ?? 'http://127.0.0.1:4310';
 async function post(path: string, body: unknown) {
   const r = await fetch(origin + path, {

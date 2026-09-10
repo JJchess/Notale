@@ -14,8 +14,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+RUNS_ROOT = ROOT.parent / 'runs' / ROOT.name
 from core import planner, director
-from core.test_style_upgrade import CSS
+from test.test_style_upgrade import CSS
 
 QUERY = '指数增长：用本金 100、年增长率 20% 解释 A(n)=100×(1+r)^n，n=0..5。'
 PAGES = '''# page-01 [标题页]
@@ -37,9 +38,9 @@ def main():
     args=ap.parse_args()
     if args.retry_covers_from:
         def retry(style):
-            source=ROOT/'runs'/f'{args.retry_covers_from}-{style}'
+            source=RUNS_ROOT/f'{args.retry_covers_from}-{style}'
             label=f'{args.prefix}-{style}'
-            target=ROOT/'runs'/label
+            target=RUNS_ROOT/label
             target.mkdir()
             shutil.copytree(source/'pages/assets',target/'pages/assets')
             shutil.copytree(source/'pages/plan',target/'pages/plan')
@@ -56,7 +57,7 @@ builder.main()
         with ThreadPoolExecutor(max_workers=2) as pool:
             list(pool.map(retry,('auto','glass')))
         return
-    package=ROOT/'runs'/f'{args.prefix}-input'
+    package=RUNS_ROOT/f'{args.prefix}-input'
     package.mkdir(parents=True,exist_ok=True)
     (package/'assets').mkdir(exist_ok=True)
     photo=ROOT/'workflows/build-page/samples/general/walk-photo-journal/pages/assets/images/holden-pond.jpg'
@@ -70,7 +71,7 @@ builder.main()
     def one(case):
         name,template,style=case
         label=f'{args.prefix}-{name}'
-        root=ROOT/'runs'/label
+        root=RUNS_ROOT/label
         if not (root/'pages/assets/theme.css').is_file():
             run=planner.Run(QUERY,10,'理解乘法的初学者',label,'投影课堂',template=template,style=style)
             planner.seed(run,ROOT/'vendor/chassis',ROOT/'vendor/chassis/lib')

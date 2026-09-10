@@ -38,12 +38,12 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from core.llm import ROOT, config  # noqa: E402
+from core.llm import RUNS_ROOT, config  # noqa: E402
 
 
 def tally(label: str) -> dict:
     """Read per-page token totals from the current Builder result artifact."""
-    f = ROOT / "runs" / label / "builder-results.json"
+    f = RUNS_ROOT / label / "builder-results.json"
     if not f.is_file():
         raise SystemExit(f"✗ 找不到 {f}")
     d = json.loads(f.read_text(encoding="utf-8"))

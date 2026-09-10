@@ -19,6 +19,7 @@ import time
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+RUNS_ROOT = ROOT.parent / 'runs' / ROOT.name
 from core import llm, planner, theme
 
 MODEL_PROFILE = 'gemini38-google-low'
@@ -195,10 +196,10 @@ def main():
         ap.error('Use one run prefix')
     cases = [('auto', None, None),
              ('reference', ROOT / 'references/styles/shots/19-hand-drawn.png', '19-hand-drawn'),
-             ('modify', ROOT / 'runs/style-details-0908a-auto/pages/assets', '38-fashion-editorial')]
+             ('modify', RUNS_ROOT / 'style-details-0908a-auto/pages/assets', '38-fashion-editorial')]
     cases = [case for case in cases if args.route == 'all' or case[0] == args.route]
-    report = ROOT / 'runs' / (args.prefix + '-report')
-    if report.exists() or any((ROOT / 'runs' / f'{args.prefix}-{name}').exists() for name, _, _ in cases):
+    report = RUNS_ROOT / (args.prefix + '-report')
+    if report.exists() or any((RUNS_ROOT / f'{args.prefix}-{name}').exists() for name, _, _ in cases):
         ap.error('Use a fresh prefix; no result is overwritten')
     for _, template, _ in cases:
         if template and not template.exists(): ap.error(f'Missing input: {template}')
@@ -239,7 +240,7 @@ def main():
     def one(case):
         name, template, style = case
         label = args.prefix + '-' + name
-        folder, root = report / name, ROOT / 'runs' / label
+        folder, root = report / name, RUNS_ROOT / label
         result = {'route': name, 'label': label, 'started': now(), 'phase': 'planner+director'}
         save(folder / 'result.json', result)
         t0 = time.monotonic()

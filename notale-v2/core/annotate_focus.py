@@ -3,7 +3,7 @@
 The visual-focus ablation must differ from its baseline by those lines only, so the
 frozen ``pages.md`` is annotated by one planner-model call and every heading and topic
 line is verified byte-identical afterwards.  Output goes to ``plan-focus/`` beside the
-source ``plan/``; ``run-focus.sh`` copies it over the arm's ``plan/``.
+source ``plan/``; the historical ``../legacy/notale-v2/experiments/run-focus.sh`` copied it over the arm's ``plan/``.
 
     python3 -m core.annotate_focus --src ensemble-l8-google-low-r2-20260904
 """
@@ -16,7 +16,7 @@ from pathlib import Path
 
 from . import llm
 from .builder import _SPEC_HEADING, _page_entries
-from .llm import ROOT, config
+from .llm import RUNS_ROOT, config
 from .planner import IDENTITY, VISUAL_FOCUS_SPEC
 
 FOCUS = re.compile(r"^视觉焦点[：:]\s*(\S.*)$", re.M)
@@ -67,7 +67,7 @@ def main() -> None:
     ap.add_argument("--src", required=True, help="冻结 fixture 的 run label")
     ap.add_argument("--effort", default=config()["planner"]["reasoning_effort"])
     a = ap.parse_args()
-    plan = ROOT / "runs" / a.src / "pages" / "plan"
+    plan = RUNS_ROOT / a.src / "pages" / "plan"
     out_dir = plan.parent / "plan-focus"
     original = (plan / "pages.md").read_text(encoding="utf-8")
     out_dir.mkdir(exist_ok=True)

@@ -32,6 +32,7 @@ from core.artifacts import Brief          # noqa: E402
 from core.llm import fill                 # noqa: E402
 
 ROOT = Path(__file__).parent
+RUNS_ROOT = ROOT.parent / "runs" / ROOT.name
 SRC = Path.home() / "exp/lecture/pages"
 PROMPTS = ROOT / "prompts"
 
@@ -106,7 +107,7 @@ SKELETON = """<!doctype html>
 
 
 def build(label: str) -> None:
-    run = ROOT / "runs" / label
+    run = RUNS_ROOT / label
     pages = run / "pages"
     (pages / "assets").mkdir(parents=True, exist_ok=True)
 

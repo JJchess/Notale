@@ -16,8 +16,8 @@
     AWS-Claude-Sonnet-5       连打三次同一个 7,632 token 前缀,三次全 0
 
 差别不是路由问题,是**模型族**问题:OpenAI 系做自动前缀缓存(≥1024 token 门槛),
-Anthropic 系不做,要显式 `cache_control` 断点。而 `to_responses()` 把断点丢了
-(它在这一侧没有对应物)。所以同一条 paratera 路由上,换个模型缓存就没了,
+Anthropic 系要显式 `cache_control` 断点（由当前 `to_messages()` 添加）。旧 Responses
+转换没有表达该断点，所以当时同一条 paratera 路由上，换个模型缓存就没了，
 **而且不会有任何报错或警告**。这正是要装一条闸的形状。
 
 ## 判据
@@ -68,7 +68,7 @@ def probe_openai(model: str) -> dict:
 
 
 def probe_anthropic(model: str) -> dict:
-    """Anthropic 系走裸 /v1/messages,因为 to_responses() 会把断点丢掉。
+    """Anthropic 系走裸 /v1/messages，显式比较有无缓存断点。
 
     带断点和不带断点各打一次,两边都要对上才算通过 —— 只看「带断点命中」
     分不清是断点起作用还是路由本来就在缓存。

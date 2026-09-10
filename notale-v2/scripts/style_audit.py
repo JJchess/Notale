@@ -11,6 +11,7 @@ from playwright.sync_api import sync_playwright
 
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT))
+RUNS_ROOT = ROOT.parent / 'runs' / ROOT.name
 from core import theme
 
 
@@ -23,16 +24,16 @@ def main():
     ap.add_argument('--prefix',required=True)
     ap.add_argument('--cover-prefix',help='两个补测封面所在的新 run 前缀；其余页保持原输出')
     args=ap.parse_args()
-    output=ROOT/'runs'/f'{args.prefix}-audit'
+    output=RUNS_ROOT/f'{args.prefix}-audit'
     output.mkdir(exist_ok=True)
-    server=ThreadingHTTPServer(('127.0.0.1',0),partial(Quiet,directory=str(ROOT/'runs')))
+    server=ThreadingHTTPServer(('127.0.0.1',0),partial(Quiet,directory=str(RUNS_ROOT)))
     threading.Thread(target=server.serve_forever,daemon=True).start()
     records=[]
     try:
         # validate outside the browser context (sync Playwright cannot nest event loops)
         validation={}
         for style in ('auto','glass','photo'):
-            assets=ROOT/'runs'/f'{args.prefix}-{style}'/'pages/assets'
+            assets=RUNS_ROOT/f'{args.prefix}-{style}'/'pages/assets'
             validation[style]=theme.validate((assets/'theme.css').read_text(),assets)
         with sync_playwright() as pw:
             browser=pw.chromium.launch()
@@ -42,7 +43,7 @@ def main():
                     if args.cover_prefix and number==1 and style in ('auto','glass'):
                         label=f'{args.cover_prefix}-{style}'
                     pid=f'page-{number:02d}'
-                    target=ROOT/'runs'/label/'pages'/f'{pid}.html'
+                    target=RUNS_ROOT/label/'pages'/f'{pid}.html'
                     row={'style':style,'page':pid,'run':label,'theme_errors':validation[style]}
                     records.append(row)
                     if not target.is_file():

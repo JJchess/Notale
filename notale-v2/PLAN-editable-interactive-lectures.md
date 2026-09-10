@@ -33,7 +33,7 @@
 
 这 80 页源码中均未发现 `data-edit-id` / `data-node-id` 标记。这是对拟用标记的检查，不等于页面完全没有 DOM id。
 
-具体阻碍可见 [集成学习 page-07](runs/ens-trim-full-0907/pages/page-07.html)：图形标签使用 `ctx.fillText` 绘制；参数和随机种子位于函数内部的 `state`；结论文案会被 `textContent` 重写。只编辑当前 DOM 文字会在下一次交互时丢失；只改 Canvas 的宽高也无法修改其内部内容。
+具体阻碍可见 [集成学习 page-07](../runs/notale-v2/ens-trim-full-0907/pages/page-07.html)：图形标签使用 `ctx.fillText` 绘制；参数和随机种子位于函数内部的 `state`；结论文案会被 `textContent` 重写。只编辑当前 DOM 文字会在下一次交互时丢失；只改 Canvas 的宽高也无法修改其内部内容。
 
 **3．技术路线比较**
 

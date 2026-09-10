@@ -1,0 +1,455 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Notale v2 Architecture · v3 修订（媒体 + 视觉主题包）</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --canvas: #e9edf2;
+      --paper: #fcfdfe;
+      --ink: #172231;
+      --muted: #687486;
+      --hairline: #d7dee8;
+      --blue: #2f78d6;
+      --blue-soft: #eef5ff;
+      --violet: #7652d6;
+      --violet-soft: #f4f0ff;
+      --green: #237650;
+      --green-soft: #eff8f2;
+      --green-node: #d7efdf;
+      --green-line: #2f8a60;
+      --slate: #7b8697;
+      --slate-node: #eceff4;
+      --amber: #b45309;
+      --amber-soft: #fff4e5;
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body {
+      margin: 0;
+      min-width: 1080px;
+      min-height: 100%;
+    }
+
+    body {
+      min-height: 100dvh;
+      overflow: auto;
+      display: grid;
+      place-items: center;
+      color: var(--ink);
+      font-family: "Avenir Next", Avenir, "Segoe UI", system-ui, sans-serif;
+      background:
+        linear-gradient(rgba(23, 34, 49, 0.035) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(23, 34, 49, 0.035) 1px, transparent 1px),
+        var(--canvas);
+      background-size: 28px 28px;
+    }
+
+    main {
+      width: 100%;
+      height: 100dvh;
+      padding: 32px;
+      display: grid;
+      place-items: center;
+    }
+
+    .architecture {
+      width: min(100%, 1720px, calc((100dvh - 128px) * 1.7143));
+      margin: 0;
+      display: grid;
+      gap: 12px;
+    }
+
+    .diagram {
+      display: block;
+      width: 100%;
+      height: auto;
+      filter: drop-shadow(0 20px 42px rgba(23, 34, 49, 0.11));
+    }
+
+    .model-call,
+    .tool-use,
+    .decision,
+    .terminal,
+    .fixed {
+      transform-box: fill-box;
+      transform-origin: center;
+      transition: transform 150ms ease, filter 150ms ease;
+    }
+
+    .model-call:hover,
+    .tool-use:hover,
+    .decision:hover,
+    .terminal:hover,
+    .fixed:hover {
+      transform: translateY(-1px);
+      filter: drop-shadow(0 4px 5px rgba(23, 34, 49, 0.10));
+    }
+
+    text { user-select: none; }
+
+    @keyframes enter {
+      from { opacity: 0; transform: translateY(2px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .model-call, .tool-use, .decision, .terminal, .fixed {
+        animation: none;
+        transition: none;
+      }
+    }
+
+    @media print {
+      body { background: white; }
+      main { padding: 0; }
+      .architecture { width: 100%; }
+      .diagram { filter: none; }
+    }
+  </style>
+</head>
+<body>
+<p style="padding:12px;text-align:center">历史架构，仅供追溯。当前入口：<a href="../../../notale-v2/ARCHITECTURE-v4.html">架构 v4</a> · <a href="../../../notale-v2/PLAN-style-control.md">风格契约</a></p>
+  <main>
+    <figure class="architecture">
+<svg class="diagram" width="100%" viewBox="0 0 1200 700" role="img" aria-labelledby="diagram-title diagram-description" xmlns="http://www.w3.org/2000/svg">
+<title id="diagram-title">Notale v2 互动讲义流水线 · v3 修订：媒体与视觉主题包</title>
+<desc id="diagram-description">媒体 A 已验证，Director 已默认开启；其余风格升级待实施。唯一实施依据为 PLAN-style-control.md。编排先 seed，Planner 与 Director 独立并行，不交换页表或概念映射；两者成功后启动 N 路 Builder。Director 自动选样后看图写主题；用户参考跳过选样，有效成品主题无修改要求则直接复用。主题以 CSS、INTERFACE 与本地资源表达；html 的 data-variant 同时选择背景与前景，stage 多重背景原生合成，品牌层独立。公共承载面许可收紧，具名局部实现允许；修订保留候选与错误。视觉页只预载主题接口，按需提供用户样张，不全量注入 CSS；代码页保持隔离。复杂背景报告未测区域并实际看图。琥珀色节点和“改”表示待实施设计。</desc>
+      <defs>
+        <marker id="arrow-blue" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+          <path d="M2 1L8 5L2 9" fill="none" stroke="var(--blue)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+        </marker>
+        <marker id="arrow-green" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+          <path d="M2 1L8 5L2 9" fill="none" stroke="var(--green-line)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+        </marker>
+        <marker id="arrow-slate" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+          <path d="M2 1L8 5L2 9" fill="none" stroke="var(--slate)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+        </marker>
+        <marker id="arrow-muted" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+          <path d="M2 1L8 5L2 9" fill="none" stroke="var(--muted)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+        </marker>
+        <marker id="arrow-violet" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+          <path d="M2 1L8 5L2 9" fill="none" stroke="var(--violet)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+        </marker>
+      <marker id="arrow-amber" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+          <path d="M2 1L8 5L2 9" fill="none" stroke="var(--amber)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+        </marker>
+      </defs>
+<rect x="12" y="12" width="1176" height="676" rx="12" fill="var(--paper)" stroke="#cfd7e2" stroke-width="0.7" />
+<path d="M28 74H1172" fill="none" stroke="var(--hairline)" stroke-width="0.5"/>
+<text x="30" y="39" text-anchor="start" dominant-baseline="central" font-size="14" font-weight="500" fill="var(--ink)">Notale v2 · 互动讲义流水线 · v3 修订：媒体 + 视觉主题包</text>
+<g aria-label="Execution legend">
+<rect x="560" y="34" width="18" height="13" rx="3" fill="white" stroke="var(--blue)" stroke-width="0.7" />
+<text x="585" y="41" text-anchor="start" dominant-baseline="central" font-size="12" font-weight="500" fill="var(--ink)">模型调用</text>
+<rect x="663" y="34" width="18" height="13" rx="3" fill="var(--green-node)" stroke="var(--green-line)" stroke-width="0.7" />
+<text x="688" y="41" text-anchor="start" dominant-baseline="central" font-size="12" font-weight="500" fill="var(--ink)">工具调用</text>
+<rect x="766" y="34" width="18" height="13" rx="3" fill="var(--slate-node)" stroke="var(--slate)" stroke-width="0.7" />
+<text x="791" y="41" text-anchor="start" dominant-baseline="central" font-size="12" font-weight="500" fill="var(--ink)">harness 固定流程</text>
+<rect x="928" y="34" width="18" height="13" rx="3" fill="white" stroke="var(--muted)" stroke-width="0.7" stroke-dasharray="3 2"/>
+<text x="953" y="41" text-anchor="start" dominant-baseline="central" font-size="12" font-weight="500" fill="var(--ink)">循环终止</text>
+<rect x="1030" y="34" width="18" height="13" rx="3" fill="var(--amber-soft)" stroke="var(--amber)" stroke-width="0.7" />
+<text x="1055" y="41" text-anchor="start" dominant-baseline="central" font-size="12" font-weight="500" fill="var(--amber)">待实施</text>
+</g>
+<g class="fixed" data-node-type="deterministic">
+<rect x="28" y="80" width="1160" height="22" rx="5" fill="var(--slate-node)" stroke="var(--amber)" stroke-width="0.7" />
+<text x="40" y="91" text-anchor="start" dominant-baseline="central" font-size="11" font-weight="500" fill="#3d4859">编排：seed → Planner ∥ Director 独立产出 → 两者成功 → N 路 Builder ｜ Director 默认开启 · 无页表通信</text>
+<rect x="1130" y="83" width="26" height="15" rx="3" fill="var(--amber-soft)" stroke="var(--amber)" stroke-width="0.7" /><text x="1143" y="90.5" text-anchor="middle" dominant-baseline="central" font-size="9.5" font-weight="600" fill="var(--amber)">改</text>
+<title>保留现有独立并行：Director 看题目、读者、场合与风格要求，不读 Planner 页表，不新增概念绑定或中间摘要。默认开启已实现，--no-style-director 可显式关闭；主题升级仍待实施。两边成功后才建页，无效主题或页表不能启动 Builder。不增加角色、进程或文件轮询。</title>
+</g>
+<path d="M148 102V110" fill="none" stroke="var(--slate)" stroke-width="1.1" marker-end="url(#arrow-slate)"/>
+<path d="M400 102V110" fill="none" stroke="var(--slate)" stroke-width="1.1" marker-end="url(#arrow-slate)"/>
+<path d="M863 102V110" fill="none" stroke="var(--slate)" stroke-width="1.1" marker-end="url(#arrow-slate)"/>
+<rect x="28" y="112" width="242" height="552" rx="8" fill="#f9fbfd" stroke="var(--hairline)" stroke-width="0.7" />
+<text x="42" y="124" text-anchor="start" dominant-baseline="central" font-size="14" font-weight="500" fill="var(--ink)">Planner · 内容</text>
+<rect x="150" y="115" width="112" height="18" rx="9" fill="var(--blue-soft)" stroke="var(--blue)" stroke-width="0.7" />
+<text x="206" y="124" text-anchor="middle" dominant-baseline="central" font-size="10.5" font-weight="500" fill="var(--blue)">按需取图 · 定稿</text>
+<rect x="284" y="112" width="234" height="552" rx="8" fill="#f9fbfd" stroke="var(--hairline)" stroke-width="0.7" />
+<text x="298" y="124" text-anchor="start" dominant-baseline="central" font-size="14" font-weight="500" fill="var(--ink)">Style Director · 外观</text>
+<rect x="446" y="115" width="64" height="18" rx="9" fill="var(--blue-soft)" stroke="var(--blue)" stroke-width="0.7" />
+<text x="478" y="124" text-anchor="middle" dominant-baseline="central" font-size="10" font-weight="500" fill="var(--blue)">看图定主题</text>
+<g class="fixed" data-node-type="deterministic">
+<rect x="46" y="136" width="204" height="30" rx="5" fill="var(--slate-node)" stroke="var(--slate)" stroke-width="0.7" />
+<text x="148" y="151" text-anchor="middle" dominant-baseline="central" font-size="13" font-weight="500" fill="#3d4859">seed() · 底盘 + 库</text>
+<title>由编排层在两个角色启动前执行。沿用复制 base.css、base.js、CHASSIS.md、selfcheck.py 与 JavaScript 库的固定流程；此处沿用原图的起点位置。</title>
+</g>
+<path d="M148 166V178" fill="none" stroke="var(--slate)" stroke-width="1.1" marker-end="url(#arrow-slate)"/>
+<g class="model-call" data-node-type="model-call">
+<rect x="46" y="180" width="204" height="92" rx="6" fill="white" stroke="var(--blue)" stroke-width="0.7" />
+<text x="148" y="193" text-anchor="middle" dominant-baseline="central" font-size="12" font-weight="500" fill="var(--blue)">deck · 规划与取图</text>
+<rect x="58" y="206" width="180" height="17" rx="3" fill="var(--green-node)" stroke="var(--green-line)" stroke-width="0.7" />
+<text x="148" y="215" text-anchor="middle" dominant-baseline="central" font-size="10.5" font-weight="500" fill="#174f38">N × ImageSearch / ImageGen</text>
+<text x="148" y="237" text-anchor="middle" dominant-baseline="central" font-size="10.5" font-weight="400" fill="var(--ink)">拟定页序与证据需求 · 按需找图</text>
+<title>Planner 规划内容与证据需求，模型只发工具调用。无图可直接调用 FinalizePlan；草稿留在对话与 trace，不另建草稿文件协议。按需取图与查看，不新增响应次数或取图配额。</title>
+</g>
+<path d="M148 272V284" fill="none" stroke="var(--blue)" stroke-width="1.1" marker-end="url(#arrow-blue)"/>
+<g class="fixed" data-node-type="deterministic">
+<rect x="46" y="286" width="204" height="72" rx="5" fill="var(--slate-node)" stroke="var(--slate)" stroke-width="0.7" />
+<text x="148" y="299" text-anchor="middle" dominant-baseline="central" font-size="12" font-weight="500" fill="#3d4859">工具体 · 取图</text>
+<text x="148" y="346" text-anchor="middle" dominant-baseline="central" font-size="10" font-weight="500" fill="#3d4859">下载成功 ≠ 最终采用</text>
+<title>Planner / Builder 已共用同一份 schema 与执行体；Director 接入尚未实施。成功取图返回相对 pages/ 的路径、图片与供应商已有来源信息；失败返回原因。路径直接作为标识，复用脚本来源记录，不新增 ID 或素材服务。</title>
+</g>
+<path d="M148 358V370" fill="none" stroke="var(--slate)" stroke-width="1.1" marker-end="url(#arrow-slate)"/>
+<g class="model-call" data-node-type="model-call">
+<rect x="46" y="372" width="204" height="78" rx="6" fill="white" stroke="var(--blue)" stroke-width="0.7" />
+<text x="148" y="385" text-anchor="middle" dominant-baseline="central" font-size="12" font-weight="500" fill="var(--blue)">看结果 · 确认采用</text>
+<rect x="58" y="398" width="180" height="17" rx="3" fill="var(--green-node)" stroke="var(--green-line)" stroke-width="0.7" />
+<text x="148" y="407" text-anchor="middle" dominant-baseline="central" font-size="10.5" font-weight="500" fill="#174f38">剔除 / 替换 · 按需补搜</text>
+<rect x="58" y="420" width="180" height="17" rx="3" fill="var(--green-node)" stroke="var(--green-line)" stroke-width="0.7" />
+<text x="148" y="429" text-anchor="middle" dominant-baseline="central" font-size="10" font-weight="500" fill="#174f38">FinalizePlan · 页表 + 采用映射</text>
+<title>FinalizePlan 一次提交原样页表 pages_md 和可选的页号到图片路径列表 media_by_page，替代最终页表 Write，不负责取图或调度。未列入的候选不采用。补搜返回后必须再看结果，按内容需要决定继续取图或定稿。</title>
+</g>
+<path d="M250 407H258V322H252" fill="none" stroke="var(--muted)" stroke-width="1.1" stroke-dasharray="3 2" marker-end="url(#arrow-muted)"/>
+<path d="M148 450V462" fill="none" stroke="var(--blue)" stroke-width="1.1" marker-end="url(#arrow-blue)"/>
+<g class="decision" data-node-type="validator">
+<path d="M148 464L248 490L148 516L48 490Z" fill="white" stroke="var(--slate)" stroke-width="0.8"/>
+<text x="148" y="483" text-anchor="middle" dominant-baseline="central" font-size="11.5" font-weight="500" fill="#3d4859">校验 FinalizePlan</text>
+<text x="148" y="500" text-anchor="middle" dominant-baseline="central" font-size="10.5" font-weight="400" fill="var(--ink)">页表 + 素材均有效？</text>
+<title>校验原有页表契约、页号存在、路径来自此前可用图片结果、文件存在且未越界。图片返回后才能选用，不增加查看确认工具或审批状态。</title>
+</g>
+<path d="M248 490H266V385H252" fill="none" stroke="var(--muted)" stroke-width="1.1" stroke-dasharray="3 2" marker-end="url(#arrow-muted)"/>
+<path d="M48 490H38V645H44" fill="none" stroke="var(--muted)" stroke-width="1.1" stroke-dasharray="3 2" marker-end="url(#arrow-muted)"/>
+<path d="M148 516V526" fill="none" stroke="var(--slate)" stroke-width="1.1" marker-end="url(#arrow-slate)"/>
+<g class="fixed" data-node-type="deterministic">
+<rect x="46" y="528" width="204" height="38" rx="5" fill="var(--slate-node)" stroke="var(--slate)" stroke-width="0.7" />
+<text x="148" y="541" text-anchor="middle" dominant-baseline="central" font-size="12.5" font-weight="500" fill="#3d4859">split_pages()</text>
+<text x="148" y="557" text-anchor="middle" dominant-baseline="central" font-size="10.5" font-weight="400" fill="var(--muted)">pages.md → p01…pNN.md</text>
+<title>FinalizePlan 校验通过后才写入页表并切分。现有编排函数完成写入后才启动 Builder；写入失败不启动，不新增发布协议。</title>
+</g>
+<path d="M148 566V574" fill="none" stroke="var(--slate)" stroke-width="1.1" marker-end="url(#arrow-slate)"/>
+<g class="fixed" data-node-type="deterministic">
+<rect x="46" y="576" width="204" height="44" rx="5" fill="var(--slate-node)" stroke="var(--slate)" stroke-width="0.7" />
+<text x="148" y="590" text-anchor="middle" dominant-baseline="central" font-size="12" font-weight="500" fill="#3d4859">briefs() · 路径与来源</text>
+<text x="148" y="607" text-anchor="middle" dominant-baseline="central" font-size="10" font-weight="400" fill="var(--muted)">briefs.json</text>
+<title>将最终映射中的本页路径和来源附到 prompt；briefs.json 保持 description/prompt 两个字段。取图无 pages 参数，页表不塞图片路径，不解析图池表。目前仅传路径和来源文本，不自动附图；Builder 按需查看、使用或补图，不回写 Planner。</title>
+</g>
+<g class="terminal" data-node-type="planner-failure">
+<rect x="46" y="630" width="204" height="30" rx="5" fill="white" stroke="var(--muted)" stroke-width="0.7" stroke-dasharray="3 2"/>
+<text x="148" y="645" text-anchor="middle" dominant-baseline="central" font-size="10.5" font-weight="500" fill="var(--ink)">无有效定稿 → STOP · 记录原因</text>
+<title>运行结束仍无有效定稿则阶段失败，不将草稿或带悬空引用的计划交给 Builder。缺少可选图片本身不算失败；沿用现有超时与有限的外部请求重试保护。</title>
+</g>
+<g class="fixed" data-node-type="input">
+<rect x="300" y="136" width="200" height="58" rx="5" fill="white" stroke="var(--slate)" stroke-width="0.7" stroke-dasharray="3 2"/>
+<text x="392" y="150" text-anchor="middle" dominant-baseline="central" font-size="12" font-weight="500" fill="#3d4859">风格要求 / 主题包 · 可选</text>
+<rect x="466" y="141" width="26" height="15" rx="3" fill="var(--amber-soft)" stroke="var(--amber)" stroke-width="0.7" /><text x="479" y="148.5" text-anchor="middle" dominant-baseline="central" font-size="9.5" font-weight="600" fill="var(--amber)">改</text>
+<text x="400" y="167" text-anchor="middle" dominant-baseline="central" font-size="10.5" font-weight="400" fill="var(--ink)">theme.css · assets · shots</text>
+<title>待实施入口 --template 接收图片或目录，--style 给出明确风格要求。成品包无 --style 时校验后直接复用，有 --style 才修改，不让模型或关键词分类器猜复用分支。只要求有效 theme.css 及被引用资源，样张可选；不建旧提案目录兼容层，不承诺 PPTX 解析。新参数与 --no-style-director 冲突时预先报错。</title>
+</g>
+<path d="M400 194V206" fill="none" stroke="var(--slate)" stroke-width="1.1" marker-end="url(#arrow-slate)"/>
+<g class="model-call" data-node-type="model-call">
+<rect x="300" y="208" width="200" height="70" rx="6" fill="white" stroke="var(--blue)" stroke-width="0.7" />
+<text x="388" y="221" text-anchor="middle" dominant-baseline="central" font-size="12" font-weight="500" fill="var(--blue)">① 索引选少量参照</text>
+<rect x="466" y="213" width="26" height="15" rx="3" fill="var(--amber-soft)" stroke="var(--amber)" stroke-width="0.7" /><text x="479" y="220.5" text-anchor="middle" dominant-baseline="central" font-size="9.5" font-weight="600" fill="var(--amber)">改</text>
+<rect x="312" y="232" width="176" height="17" rx="3" fill="var(--green-node)" stroke="var(--green-line)" stroke-width="0.7" />
+<text x="400" y="241" text-anchor="middle" dominant-baseline="central" font-size="10.5" font-weight="500" fill="#174f38">Write picks · 用户参考跳过</text>
+<rect x="312" y="252" width="176" height="17" rx="3" fill="var(--green-node)" stroke="var(--amber)" stroke-width="0.7" />
+<text x="400" y="261" text-anchor="middle" dominant-baseline="central" font-size="10" font-weight="500" fill="#174f38">只查 ID / 图片，不按明度重选</text>
+<title>自动路径保留索引选少量参照，再看截图创作。用户参考跳过选样；有效成品主题不需修改时跳过模型。保留当前图片载荷设置，不强制跨明度档，不要求未被下游使用的选样理由，不新建视觉标签库。装饰取图在主题阶段按需进行。</title>
+</g>
+<path d="M400 278V288" fill="none" stroke="var(--blue)" stroke-width="1.1" marker-end="url(#arrow-blue)"/>
+<g class="fixed" data-node-type="deterministic">
+<rect x="300" y="290" width="200" height="34" rx="5" fill="var(--slate-node)" stroke="var(--amber)" stroke-width="0.7" />
+<text x="400" y="307" text-anchor="middle" dominant-baseline="central" font-size="11" font-weight="500" fill="#3d4859">看图输入 / 按需取图结果</text>
+<title>画廊或用户截图进入主题上下文；主题阶段按需调用现有 ImageSearch / ImageGen，同一执行体返回路径和图片。保留原图，使用前先回灌。可选装饰失败可放弃，不另建搜索或背景渲染器；有取图就有额外响应，不承诺固定两次调用。</title>
+</g>
+<path d="M400 324V336" fill="none" stroke="var(--slate)" stroke-width="1.1" marker-end="url(#arrow-slate)"/>
+<g class="model-call" data-node-type="model-call">
+<rect x="300" y="338" width="200" height="80" rx="6" fill="white" stroke="var(--blue)" stroke-width="0.7" />
+<text x="384" y="351" text-anchor="middle" dominant-baseline="central" font-size="11.5" font-weight="500" fill="var(--blue)">② 看图定风格 · 可修订</text>
+<rect x="466" y="343" width="26" height="15" rx="3" fill="var(--amber-soft)" stroke="var(--amber)" stroke-width="0.7" /><text x="479" y="350.5" text-anchor="middle" dominant-baseline="central" font-size="9.5" font-weight="600" fill="var(--amber)">改</text>
+<rect x="312" y="364" width="176" height="17" rx="3" fill="var(--green-node)" stroke="var(--green-line)" stroke-width="0.7" />
+<text x="400" y="373" text-anchor="middle" dominant-baseline="central" font-size="10" font-weight="500" fill="#174f38">Write theme.css · 完整样式 + 接口</text>
+<text x="400" y="407" text-anchor="middle" dominant-baseline="central" font-size="9.8" font-weight="500" fill="var(--amber)">用户参考优先于默认审美偏好</text>
+<title>主题使用 CSS token、具名局部样式与 data-variant，接口说明公开用途。技术错误在同一 history 回传失败候选与具体错误，修订不重选画廊。Write 是候选提交，不新增 FinalizeTheme。允许局部材质，根与公开接口不发布通用承载面许可。没有页表输入、概念映射、style.json 或编译器。</title>
+</g>
+<path d="M300 394H292V307H298" fill="none" stroke="var(--amber)" stroke-width="1.1" stroke-dasharray="3 2" marker-end="url(#arrow-amber)"><title>主题阶段按需调用共享取图工具，结果回到主题上下文后再采用。不是 Planner 与 Director 通信。</title></path>
+<path d="M400 418V430" fill="none" stroke="var(--blue)" stroke-width="1.1" marker-end="url(#arrow-blue)"/>
+<g class="fixed" data-node-type="deterministic">
+<rect x="300" y="432" width="200" height="74" rx="5" fill="var(--slate-node)" stroke="var(--amber)" stroke-width="0.7" />
+<text x="384" y="445" text-anchor="middle" dominant-baseline="central" font-size="11.5" font-weight="500" fill="#3d4859">主题 / 资源 · 校验交付</text>
+<rect x="466" y="437" width="26" height="15" rx="3" fill="var(--amber-soft)" stroke="var(--amber)" stroke-width="0.7" /><text x="479" y="444.5" text-anchor="middle" dominant-baseline="central" font-size="9.5" font-weight="600" fill="var(--amber)">改</text>
+<text x="400" y="494" text-anchor="middle" dominant-baseline="central" font-size="10" font-weight="400" fill="#3d4859">复杂底图：报告检查覆盖范围</text>
+<title>harness 导入图片、字体与 logo，保留目录与来源，重定位 CSS URL，并检查语法、作用域、接口与加载。CSS 在 stage 上用多重背景合成蒙版与原图，独立品牌伪元素不拦截操作；无图状态也用变体。harness 不追加第二套背景实现。可选资源失败可降级，用户必需资源缺失报告未满足。校验成功后冻结资源再建页。</title>
+</g>
+<path d="M500 165H510V468H502" fill="none" stroke="var(--slate)" stroke-width="1.1" stroke-dasharray="3 2" marker-end="url(#arrow-slate)"/>
+<path d="M500 478H506V398H502" fill="none" stroke="var(--amber)" stroke-width="1.1" stroke-dasharray="3 2" marker-end="url(#arrow-amber)"><title>技术检查失败：回传失败候选与具体错误，沿用有限修订；不重选画廊，不按审美分数重写。</title></path>
+<text x="410" y="560" text-anchor="start" dominant-baseline="central" font-size="9" fill="var(--muted)">无修改成品直接复用</text>
+<path d="M400 506V598" fill="none" stroke="var(--violet)" stroke-width="1.2"/>
+<text x="410" y="540" text-anchor="start" dominant-baseline="central" font-size="10.5" font-weight="500" fill="var(--violet)">theme.css</text>
+<circle cx="400" cy="598" r="2.6" fill="var(--violet)"/>
+<path d="M250 598H526V162H550" fill="none" stroke="var(--violet)" stroke-width="1.1" marker-end="url(#arrow-violet)"/>
+<path d="M526 239H550" fill="none" stroke="var(--violet)" stroke-width="1.1" marker-end="url(#arrow-violet)"/>
+<text x="320" y="586" text-anchor="middle" dominant-baseline="central" font-size="10.5" font-weight="500" fill="var(--violet)">两者成功 → N 个 page 任务</text>
+<g transform="translate(204 0)">
+      <!-- ══════════ Builder ══════════ -->
+      <rect x="334" y="112" width="650" height="552" rx="8" fill="var(--green-soft)" stroke="#b9d9c6" stroke-width="0.7"/>
+      <text x="348" y="124" dominant-baseline="central" font-size="14" font-weight="500" fill="var(--ink)">Builder · 页面</text>
+      <rect x="776" y="115" width="196" height="18" rx="9" fill="white" stroke="var(--green-line)" stroke-width="0.5"/>
+      <text x="874" y="124" text-anchor="middle" dominant-baseline="central" font-size="12" font-weight="500" fill="var(--green)">ThreadPoolExecutor · N 路并发</text>
+
+      <!-- routing -->
+      <g class="fixed" data-node-type="deterministic">
+        <rect x="350" y="136" width="618" height="52" rx="5" fill="white" stroke="var(--slate)" stroke-width="0.7"/>
+        <text x="366" y="152" dominant-baseline="central" font-size="12" font-weight="500" fill="#3d4859">按页标签路由（一对一，无模型参与）</text>
+        <g font-size="11" font-weight="500">
+          <rect x="366" y="163" width="132" height="18" rx="4" fill="var(--slate-node)" stroke="var(--slate)" stroke-width="0.5"/>
+          <text x="432" y="172" text-anchor="middle" dominant-baseline="central" fill="#3d4859">标题页 → build-cover</text>
+          <rect x="508" y="163" width="132" height="18" rx="4" fill="var(--slate-node)" stroke="var(--slate)" stroke-width="0.5"/>
+          <text x="574" y="172" text-anchor="middle" dominant-baseline="central" fill="#3d4859">内容页 → build-page</text>
+          <rect x="650" y="163" width="148" height="18" rx="4" fill="var(--slate-node)" stroke="var(--slate)" stroke-width="0.5"/>
+          <text x="724" y="172" text-anchor="middle" dominant-baseline="central" fill="#3d4859">交互页 → build-interaction</text>
+          <rect x="808" y="163" width="132" height="18" rx="4" fill="var(--slate-node)" stroke="var(--slate)" stroke-width="0.5"/>
+          <text x="874" y="172" text-anchor="middle" dominant-baseline="central" fill="#3d4859">代码页 → build-code</text>
+        </g>
+        <title>route_page() 读取 pNN.md 中唯一的 [标题页|内容页|交互页|代码页] 标签并映射到一个 workflow；每个 workflow 可以绑定独立模型 profile，不再调用模型做路由判断</title>
+      </g>
+      <path d="M661 188V200" fill="none" stroke="var(--slate)" stroke-width="1.1" marker-end="url(#arrow-slate)"/>
+
+      <!-- shared prefix -->
+      <g class="fixed" data-node-type="deterministic">
+        <rect x="350" y="202" width="618" height="66" rx="5" fill="white" stroke="var(--green-line)" stroke-width="0.7"/>
+        <text x="366" y="218" dominant-baseline="central" font-size="12" font-weight="500" fill="var(--green)">视觉页 system 前缀 · 同 workflow 内逐页字节相同 → 可复用缓存</text>
+        <g font-size="11">
+          <rect x="366" y="230" width="64" height="17" rx="4" fill="var(--green-node)"/>
+          <text x="398" y="239" text-anchor="middle" dominant-baseline="central" fill="#174f38">IDENTITY</text>
+          <rect x="438" y="230" width="70" height="17" rx="4" fill="var(--green-node)"/>
+          <text x="473" y="239" text-anchor="middle" dominant-baseline="central" fill="#174f38">anti-slop</text>
+          <rect x="516" y="230" width="72" height="17" rx="4" fill="var(--green-node)"/>
+          <text x="552" y="239" text-anchor="middle" dominant-baseline="central" fill="#174f38">CHASSIS.md</text>
+          <rect x="596" y="230" width="72" height="17" rx="4" fill="var(--green-node)" stroke="var(--amber)" stroke-width="0.8"/>
+          <text x="632" y="239" text-anchor="middle" dominant-baseline="central" fill="#174f38">theme 接口</text>
+          <rect x="676" y="230" width="82" height="17" rx="4" fill="var(--green-node)"/>
+          <text x="717" y="239" text-anchor="middle" dominant-baseline="central" fill="#174f38">deck_outline</text>
+          <rect x="766" y="230" width="58" height="17" rx="4" fill="var(--green-node)"/>
+          <text x="795" y="239" text-anchor="middle" dominant-baseline="central" fill="#174f38">tech.md</text>
+          <rect x="832" y="230" width="124" height="17" rx="4" fill="#c4e6d1" stroke="var(--green-line)" stroke-width="0.5"/>
+          <text x="894" y="239" text-anchor="middle" dominant-baseline="central" font-weight="500" fill="#174f38">SKILL + samples</text>
+        </g>
+        <text x="366" y="258" dominant-baseline="central" font-size="10" fill="var(--muted)">代码页：独立主题与技术契约；不接入讲义视觉输入</text>
+        <title>视觉页保持只预载 INTERFACE，不注入完整 CSS。待实施：用户/主题包代表样张随视觉页 user 消息提供，修正统一“不抄配色”的错误指令；自动画廊候选不升级成默认主题命令。主题实现由浏览器加载。代码页不接收主题或样张；外壳解除共享 CSS 以防品牌泄漏，不优化外观。</title>
+      </g>
+      <path d="M661 268V276" fill="none" stroke="var(--green-line)" stroke-width="1.2" marker-end="url(#arrow-green)"/>
+
+      <!-- N independent build_one loops, stacked like concurrent work cards -->
+      <g aria-label="N concurrent page builders">
+        <rect x="374" y="278" width="426" height="266" rx="8" fill="var(--green-node)" fill-opacity="0.28" stroke="var(--green-line)" stroke-width="0.6"/>
+        <text x="390" y="286" dominant-baseline="central" font-size="10.5" font-weight="500" fill="var(--green)">page-NN · build_one()</text>
+        <rect x="362" y="292" width="438" height="260" rx="8" fill="#f5fbf7" stroke="var(--green-line)" stroke-width="0.6"/>
+        <text x="378" y="300" dominant-baseline="central" font-size="10.5" font-weight="500" fill="var(--green)">page-02 · build_one()</text>
+        <rect x="350" y="306" width="450" height="252" rx="8" fill="white" stroke="var(--green-line)" stroke-width="0.8"/>
+        <path d="M350 334H800" fill="none" stroke="#b9d9c6" stroke-width="0.5"/>
+        <text x="366" y="321" dominant-baseline="central" font-size="12" font-weight="500" fill="var(--ink)">page-01 · build_one()</text>
+        <rect x="548" y="313" width="86" height="16" rx="8" fill="var(--blue-soft)" stroke="var(--blue)" stroke-width="0.5"/>
+        <text x="591" y="321" text-anchor="middle" dominant-baseline="central" font-size="9.5" font-weight="500" fill="var(--blue)">4–7 · ≤11 指标</text>
+        <rect x="642" y="313" width="68" height="16" rx="8" fill="var(--green-soft)" stroke="var(--green-line)" stroke-width="0.5"/>
+        <text x="676" y="321" text-anchor="middle" dominant-baseline="central" font-size="10" font-weight="500" fill="var(--green)">独立 history</text>
+        <rect x="718" y="313" width="68" height="16" rx="8" fill="var(--green-soft)" stroke="var(--green-line)" stroke-width="0.5"/>
+        <text x="752" y="321" text-anchor="middle" dominant-baseline="central" font-size="10" font-weight="500" fill="var(--green)">guard 隔离</text>
+        <title>ThreadPoolExecutor 按 --concurrency 并发运行选中的页面；每页拥有独立 history 和 build_one() 循环。guard 只隔离 build_one() 内的单页异常，其他页继续执行</title>
+      </g>
+
+      <!-- one build_one session: model response branches into a visible tool-result ring -->
+      <g class="model-call" data-node-type="model-call">
+        <rect x="594" y="344" width="188" height="44" rx="6" fill="white" stroke="var(--blue)" stroke-width="0.8"/>
+        <text x="688" y="358" text-anchor="middle" dominant-baseline="central" font-size="12" font-weight="500" fill="var(--blue)">模型响应</text>
+        <text x="688" y="375" text-anchor="middle" dominant-baseline="central" font-size="10.5" fill="var(--ink)">0 或 1..n 个工具调用</text>
+        <title>IDENTITY 要求通常 4–7 次、最多 11 次响应，但 RESPONSE_TARGET=11 只是提示与事后统计，harness 不会在第 11 次强制截断；harness 不做创作状态机、不补催、不重启</title>
+      </g>
+      <path d="M594 360H568" fill="none" stroke="var(--green-line)" stroke-width="1.2" marker-end="url(#arrow-green)"/>
+
+      <g class="tool-use" data-node-type="tool-use">
+        <rect x="378" y="344" width="188" height="168" rx="6" fill="var(--green-node)" fill-opacity="0.45" stroke="var(--green-line)" stroke-width="0.7"/>
+        <text x="472" y="357" text-anchor="middle" dominant-baseline="central" font-size="12" font-weight="500" fill="#174f38">工具调用 · 典型路径</text>
+        <text x="472" y="372" text-anchor="middle" dominant-baseline="central" font-size="9.5" fill="#287052">同一响应 1..n 个 · 按列出顺序</text>
+
+        <rect x="388" y="382" width="168" height="22" rx="4" fill="white" stroke="var(--green-line)" stroke-width="0.5"/>
+        <text x="472" y="393" text-anchor="middle" dominant-baseline="central" font-size="10" font-weight="500" fill="#174f38">读证据 · Read / Look*</text>
+        <path d="M472 404V408" fill="none" stroke="var(--green-line)" stroke-width="1" marker-end="url(#arrow-green)"/>
+
+        <rect x="388" y="410" width="168" height="22" rx="4" fill="white" stroke="var(--green-line)" stroke-width="0.8"/>
+        <text x="472" y="421" text-anchor="middle" dominant-baseline="central" font-size="10" font-weight="500" fill="#174f38">取图 · ImageSearch / ImageGen</text>
+        <path d="M472 432V436" fill="none" stroke="var(--green-line)" stroke-width="1" marker-end="url(#arrow-green)"/>
+        <rect x="388" y="438" width="168" height="40" rx="4" fill="#c9e9d5" stroke="var(--green-line)" stroke-width="0.5"/>
+        <text x="472" y="449" text-anchor="middle" dominant-baseline="central" font-size="9.5" fill="#174f38">普通页 · Write / Patch / Bash</text>
+        <text x="472" y="467" text-anchor="middle" dominant-baseline="central" font-size="9.2" fill="#174f38">代码页 · CodeScaffold / Write / Edit</text>
+        <path d="M472 478V482" fill="none" stroke="var(--green-line)" stroke-width="1" marker-end="url(#arrow-green)"/>
+
+        <rect x="388" y="484" width="168" height="22" rx="4" fill="white" stroke="var(--green-line)" stroke-width="0.5"/>
+        <text x="472" y="495" text-anchor="middle" dominant-baseline="central" font-size="10" font-weight="500" fill="#174f38">验收证据 · Check</text>
+        <title>先用 brief 中已确认素材；按需补图，看结果后采用，本页私有素材落 assets/img/pNN-*，不能覆盖共享素材。真实具名对象用 Search，场景或材质用 Gen，数据几何用 SVG。视觉模型的各页型都可按需取图；输出目录由 harness 分配，不授予共享素材写权限。这是提示词引导的典型工具路径，不是 harness 强制状态机。普通视觉页暴露 Read、Write、Patch、Check、Bash，并在 vision_input=true 时暴露 Look；代码页暴露 CodeScaffold、Read、Write、Edit、Check，并同样按 vision_input 决定是否暴露 Look。同一响应可选择其中任意一个或多个调用，harness 严格按模型列出的顺序执行。提示词要求把已确认修正合并成一次 Patch；代码页外壳和运行时只读，只能编辑 CodeScaffold 返回的 lesson 文件</title>
+      </g>
+
+      <path d="M472 512V520" fill="none" stroke="var(--green-line)" stroke-width="1.2" marker-end="url(#arrow-green)"/>
+      <g class="fixed" data-node-type="tool-results">
+        <rect x="378" y="522" width="188" height="26" rx="5" fill="white" stroke="var(--green-line)" stroke-width="0.7"/>
+        <text x="472" y="535" text-anchor="middle" dominant-baseline="central" font-size="10.5" font-weight="500" fill="var(--green)">tool results → 追加 history</text>
+        <title>每个 function_call_output 都追加到本页 history；Check、Look、Read 或取图工具返回的图片再作为 user image 追加。完成整批后进入下一次模型调用</title>
+      </g>
+      <path d="M566 535H580V376H592" fill="none" stroke="var(--green-line)" stroke-width="1.2" marker-end="url(#arrow-green)"/>
+
+      <!-- zero-tool response leaves the ring -->
+      <path d="M688 388V400" fill="none" stroke="var(--muted)" stroke-width="1" stroke-dasharray="3 2" marker-end="url(#arrow-muted)"/>
+      <g class="terminal" data-node-type="termination">
+        <rect x="594" y="402" width="188" height="46" rx="5" fill="white" stroke="var(--muted)" stroke-width="0.7" stroke-dasharray="3 2"/>
+        <text x="688" y="425" text-anchor="middle" dominant-baseline="central" font-size="12" font-weight="500" fill="var(--ink)">0 tool → 循环终止</text>
+        <title>三类退出汇合：模型响应不含工具调用时自然停止；新一轮开始前发现单页墙钟超过 3600 秒时停止；build_one() 抛出的页内异常由 guard 捕获。三者之后都运行独立审计</title>
+      </g>
+
+      <g class="fixed" data-node-type="deterministic">
+        <rect x="594" y="462" width="188" height="56" rx="5" fill="var(--slate-node)" stroke="var(--slate)" stroke-width="0.7"/>
+        <text x="688" y="474" text-anchor="middle" dominant-baseline="central" font-size="11" font-weight="500" fill="#3d4859">运行时兜底</text>
+        <text x="688" y="499" text-anchor="middle" dominant-baseline="central" font-size="10" fill="var(--muted)">上下文保护 · 超时</text>
+        <title>evict_images() 只在已完成调用的输入峰值超过 150,000 token 时改写旧图片消息，并保留最近两张；否则 append-only 历史一个字节都不动，以保留可复用前缀。MAX_SECONDS=3600 在每次新模型调用前检查，不会取消已经发出的请求。不新增取图配额或另一套 Builder 规划状态机。</title>
+      </g>
+      <path d="M688 462V450" fill="none" stroke="var(--muted)" stroke-width="1" stroke-dasharray="3 2" marker-end="url(#arrow-muted)"/>
+
+      <!-- every page termination is audited once; audit never re-enters the loop -->
+      <path d="M782 425H812V350H826" fill="none" stroke="var(--violet)" stroke-width="1.2" marker-end="url(#arrow-violet)"/>
+      <g class="fixed" data-node-type="deterministic">
+        <rect x="828" y="306" width="140" height="252" rx="8" fill="var(--violet-soft)" stroke="var(--violet)" stroke-width="0.7"/>
+        <text x="898" y="326" text-anchor="middle" dominant-baseline="central" font-size="13" font-weight="500" fill="var(--violet)">独立审计</text>
+        <text x="898" y="348" text-anchor="middle" dominant-baseline="central" font-size="11" fill="var(--ink)">任一终止后 · 一次</text>
+        <text x="898" y="370" text-anchor="middle" dominant-baseline="central" font-size="11" font-weight="500" fill="var(--violet)">结果绝不回喂</text>
+        <text x="898" y="410" text-anchor="middle" dominant-baseline="central" font-size="11" fill="var(--muted)">错误 / 警告</text>
+        <text x="898" y="465" text-anchor="middle" dominant-baseline="central" font-size="11" fill="var(--muted)">运行统计</text>
+        <rect x="838" y="508" width="120" height="34" rx="4" fill="var(--amber-soft)" stroke="var(--amber)" stroke-width="0.8"/>
+        <text x="898" y="519" text-anchor="middle" dominant-baseline="central" font-size="9.5" font-weight="500" fill="var(--amber)">素材送达 / 实际加载</text>
+        <text x="898" y="533" text-anchor="middle" dominant-baseline="central" font-size="9.2" fill="var(--amber)">对比检查注明覆盖范围</text>
+        <title>build_one() 因无工具响应或超时退出后都会调用 audit_delivery()；guard 捕获页内 agent 异常后也会调用。目标缺失直接记致命错误；其余页面运行一次无截图 Check，代码页再加工作台浏览器自检。审计与产物分开记录，结果绝不回喂模型。自然终止不等于验收通过，汇总明确标出失败页。来源数量与实际渲染图数分别报告；可测的纯色区域给出对比值，复杂背景报告未覆盖，p95 不作为全页通过证明。</title>
+      </g>
+
+
+      <!-- common outputs from the concurrent batch and its audits -->
+      <path d="M472 548V570" fill="none" stroke="var(--slate)" stroke-width="1"/>
+      <path d="M898 558V570" fill="none" stroke="var(--violet)" stroke-width="1"/>
+      <g class="fixed" data-node-type="outputs">
+        <rect x="350" y="572" width="618" height="30" rx="5" fill="white" stroke="var(--slate)" stroke-width="0.7"/>
+        <text x="366" y="587" dominant-baseline="central" font-size="11" font-weight="500" fill="#3d4859">outputs</text>
+        <rect x="416" y="578" width="98" height="18" rx="4" fill="var(--slate-node)"/>
+        <text x="465" y="587" text-anchor="middle" dominant-baseline="central" font-size="10.5" fill="#3d4859">page-NN.html</text>
+        <rect x="522" y="578" width="180" height="18" rx="4" fill="var(--slate-node)" stroke="var(--slate)" stroke-width="0.7"/>
+        <text x="612" y="587" text-anchor="middle" dominant-baseline="central" font-size="10.5" fill="#3d4859">assets/img/* · CREDITS.md</text>
+        <rect x="710" y="578" width="76" height="18" rx="4" fill="var(--slate-node)"/>
+        <text x="748" y="587" text-anchor="middle" dominant-baseline="central" font-size="10.5" fill="#3d4859">trace.jsonl</text>
+        <rect x="794" y="578" width="90" height="18" rx="4" fill="var(--slate-node)"/>
+        <text x="839" y="587" text-anchor="middle" dominant-baseline="central" font-size="10.5" fill="#3d4859">manifest.json</text>
+        <rect x="892" y="578" width="70" height="18" rx="4" fill="var(--violet-soft)"/>
+        <text x="927" y="587" text-anchor="middle" dominant-baseline="central" font-size="10.5" fill="var(--violet)">results.json</text>
+        <title>沿用页面、trace.jsonl、builder-manifest.json 和 builder-results.json。取图脚本各自记录来源，批次结束由 harness 单点汇总 CREDITS.md，不并发追加。明确包含未采用候选，不等同于实际渲染；汇总失败不阻断页面交付。</title>
+      </g>
+      <g class="fixed" data-node-type="note">
+        <rect x="350" y="614" width="618" height="38" rx="5" fill="var(--slate-node)" stroke="var(--slate)" stroke-width="0.8"/>
+        <text x="366" y="627" dominant-baseline="central" font-size="10.5" font-weight="500" fill="#3d4859">已接通：Planner / Builder 共用 ImageSearch / ImageGen</text>
+        <text x="366" y="642" dominant-baseline="central" font-size="10" fill="#3d4859">当前 brief 只传路径与来源；Builder 是否查看、使用，仍由其判断。</text>
+        <title>执行体复用已有 vendor/skills/{web-media-getter,make-illustration}，未接入 imgcut 或 Director 取底图。取图与交接已实现，但不保证 Builder 采用：本轮集成学习实际未使用图片，馆藏小样 5 页均实际加载图片。</title>
+      </g>
+
+</g>
+<a href="../../../notale-v2/PLAN-style-control.md"><text x="30" y="678" dominant-baseline="central" font-size="9.5" fill="var(--muted)">媒体 A 已验证 · 风格升级待实施 · 唯一实施依据 PLAN-style-control.md ↗</text></a>
+</svg>
+    </figure>
+  </main>
+</body>
+</html>
